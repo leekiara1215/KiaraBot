@@ -1,0 +1,50 @@
+syntax = "proto3";
+
+package kiarabot.v1;
+
+import "kiarabot/v1/actions.proto";
+import "kiarabot/v1/common.proto";
+import "kiarabot/v1/events.proto";
+
+message RegisterAdapterRequest {
+  string adapter_id = 1;
+  string implementation = 2;
+  string implementation_version = 3;
+  string protocol_version = 4;
+  repeated Account accounts = 5;
+  repeated Capability capabilities = 6;
+}
+
+message Account {
+  string account_id = 1;
+  string display_name = 2;
+  bool enabled = 3;
+}
+
+message RegisterAdapterResponse {
+  bool accepted = 1;
+  string assigned_instance_id = 2;
+  string required_protocol_version = 3;
+  uint32 heartbeat_interval_seconds = 4;
+  Error error = 5;
+}
+
+message AdapterToCore {
+  oneof body {
+    RegisterAdapterRequest register = 1;
+    EventEnvelope event = 2;
+    Heartbeat heartbeat = 3;
+    ActionResult action_result = 4;
+  }
+}
+
+message CoreToAdapter {
+  oneof body {
+    RegisterAdapterResponse register_result = 1;
+    ActionEnvelope action = 2;
+    HeartbeatAck heartbeat_ack = 3;
+  }
+}
+
+message Heartbeat { string instance_id = 1; uint64 sent_at_unix_ms = 2; }
+message HeartbeatAck { uint64 received_at_unix_ms = 1; }

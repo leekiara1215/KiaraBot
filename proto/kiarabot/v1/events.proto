@@ -1,0 +1,81 @@
+syntax = "proto3";
+
+package kiarabot.v1;
+
+import "google/protobuf/timestamp.proto";
+import "kiarabot/v1/common.proto";
+
+message EventEnvelope {
+  string event_id = 1;
+  string schema_version = 2;
+  google.protobuf.Timestamp occurred_at = 3;
+  string trace_id = 4;
+  SourceRef source = 5;
+  Subject subject = 6;
+  uint64 sequence = 7;
+  EventDeliveryMode delivery_mode = 8;
+
+  oneof payload {
+    MessageReceived message_received = 20;
+    MessageSent message_sent = 21;
+    GroupMemberChanged group_member_changed = 22;
+    FriendRequest friend_request = 23;
+    TimerTriggered timer_triggered = 24;
+    AdapterStatusChanged adapter_status_changed = 25;
+    PluginStatusChanged plugin_status_changed = 26;
+  }
+}
+
+message MessageReceived {
+  string message_id = 1;
+  string sender_id = 2;
+  ConversationRef conversation = 3;
+  Message message = 4;
+  repeated string mentions = 5;
+  string reply_to_message_id = 6;
+}
+
+message MessageSent {
+  string message_id = 1;
+  string action_id = 2;
+  ConversationRef conversation = 3;
+  Message message = 4;
+}
+
+message GroupMemberChanged {
+  string group_id = 1;
+  string user_id = 2;
+  enum ChangeType {
+    CHANGE_TYPE_UNSPECIFIED = 0;
+    JOINED = 1;
+    LEFT = 2;
+    PROMOTED = 3;
+    DEMOTED = 4;
+  }
+  ChangeType change_type = 3;
+}
+
+message FriendRequest {
+  string user_id = 1;
+  string comment = 2;
+}
+
+message TimerTriggered {
+  string task_id = 1;
+  string owner_plugin_id = 2;
+  google.protobuf.Timestamp scheduled_at = 3;
+  bytes payload = 4;
+}
+
+message AdapterStatusChanged {
+  string adapter_id = 1;
+  HealthState state = 2;
+  string reason = 3;
+}
+
+message PluginStatusChanged {
+  string plugin_id = 1;
+  string version = 2;
+  HealthState state = 3;
+  string reason = 4;
+}

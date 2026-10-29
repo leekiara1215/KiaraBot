@@ -1,0 +1,481 @@
+openapi: 3.0.3
+info:
+  title: KiaraBot Control API
+  version: 1.0.0
+  description: Versioned control-plane contract for the language-independent Core.
+  license:
+    name: MIT
+    url: https://github.com/leekiara1215/KiaraBot/blob/main/LICENSE.md
+servers:
+  - url: /api/v1
+security:
+  - bearerAuth: []
+paths:
+  /auth/login:
+    post:
+      security: []
+      operationId: login
+      summary: Create an access and refresh token pair
+      parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LoginRequest' }
+      responses:
+        '200':
+          description: Authenticated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TokenPair' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /auth/refresh:
+    post:
+      security: []
+      operationId: refreshToken
+      summary: Rotate an access token
+      parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RefreshRequest' }
+      responses:
+        '200':
+          description: Rotated token pair
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TokenPair' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /health:
+    get:
+      operationId: getHealth
+      summary: Return aggregate readiness and dependency state
+      responses:
+        '200':
+          description: Ready or degraded
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Health' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /adapters:
+    get:
+      operationId: listAdapters
+      summary: List adapter instances
+      parameters: [{ $ref: '#/components/parameters/PageSize' }, { $ref: '#/components/parameters/PageToken' }]
+      responses:
+        '200':
+          description: Adapter page
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdapterPage' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/Internal' }
+  /plugins:
+    get:
+      operationId: listPlugins
+      summary: List installed plugins
+      parameters: [{ $ref: '#/components/parameters/PageSize' }, { $ref: '#/components/parameters/PageToken' }]
+      responses:
+        '200':
+          description: Plugin page
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PluginPage' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/Internal' }
+  /plugins/validate:
+    post:
+      operationId: validatePlugin
+      summary: Validate a plugin manifest without enabling it
+      parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PluginManifest' }
+      responses:
+        '200':
+          description: Validation result
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ValidationResult' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '500': { $ref: '#/components/responses/Internal' }
+  /plugins/{pluginId}/enable:
+    post:
+      operationId: enablePlugin
+      summary: Enable a validated plugin
+      parameters: [{ $ref: '#/components/parameters/PluginId' }, { $ref: '#/components/parameters/IdempotencyKey' }]
+      responses:
+        '202': { description: Enable request accepted }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/Internal' }
+  /plugins/{pluginId}/disable:
+    post:
+      operationId: disablePlugin
+      summary: Disable a plugin and pause its tasks
+      parameters: [{ $ref: '#/components/parameters/PluginId' }, { $ref: '#/components/parameters/IdempotencyKey' }]
+      responses:
+        '202': { description: Disable request accepted }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/Internal' }
+  /plugins/{pluginId}/config:
+    get:
+      operationId: getPluginConfig
+      summary: Read a plugin configuration
+      parameters: [{ $ref: '#/components/parameters/PluginId' }]
+      responses:
+        '200':
+          description: Versioned configuration
+          content: { application/json: { schema: { $ref: '#/components/schemas/PluginConfig' } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/Internal' }
+    put:
+      operationId: updatePluginConfig
+      summary: Replace a plugin configuration
+      parameters: [{ $ref: '#/components/parameters/PluginId' }, { $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/PluginConfigUpdate' } } }
+      responses:
+        '200':
+          description: Updated configuration
+          content: { application/json: { schema: { $ref: '#/components/schemas/PluginConfig' } } }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/Internal' }
+  /plugins/{pluginId}/health:
+    get:
+      operationId: getPluginHealth
+      summary: Return plugin health and dependency state
+      parameters: [{ $ref: '#/components/parameters/PluginId' }]
+      responses:
+        '200':
+          description: Plugin health
+          content: { application/json: { schema: { $ref: '#/components/schemas/Health' } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/Internal' }
+  /audit:
+    get:
+      operationId: listAuditEntries
+      summary: Query audit entries
+      parameters: [{ $ref: '#/components/parameters/PageSize' }, { $ref: '#/components/parameters/PageToken' }]
+      responses:
+        '200':
+          description: Audit page
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuditPage' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '500': { $ref: '#/components/responses/Internal' }
+  /bots:
+    get:
+      operationId: listBots
+      summary: List bot accounts
+      parameters: [{ $ref: '#/components/parameters/PageSize' }, { $ref: '#/components/parameters/PageToken' }]
+      responses:
+        '200':
+          description: Bot page
+          content: { application/json: { schema: { $ref: '#/components/schemas/BotPage' } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '500': { $ref: '#/components/responses/Internal' }
+  /models:
+    get:
+      operationId: listModels
+      summary: List configured model providers
+      parameters: [{ $ref: '#/components/parameters/PageSize' }, { $ref: '#/components/parameters/PageToken' }]
+      responses:
+        '200':
+          description: Model page
+          content: { application/json: { schema: { $ref: '#/components/schemas/ModelPage' } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '500': { $ref: '#/components/responses/Internal' }
+  /groups:
+    get:
+      operationId: listGroups
+      summary: List known groups
+      parameters: [{ $ref: '#/components/parameters/PageSize' }, { $ref: '#/components/parameters/PageToken' }]
+      responses:
+        '200':
+          description: Group page
+          content: { application/json: { schema: { $ref: '#/components/schemas/GroupPage' } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '500': { $ref: '#/components/responses/Internal' }
+  /users:
+    get:
+      operationId: listUsers
+      summary: List known users
+      parameters: [{ $ref: '#/components/parameters/PageSize' }, { $ref: '#/components/parameters/PageToken' }]
+      responses:
+        '200':
+          description: User page
+          content: { application/json: { schema: { $ref: '#/components/schemas/UserPage' } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '500': { $ref: '#/components/responses/Internal' }
+  /tasks:
+    get:
+      operationId: listTasks
+      summary: List scheduled tasks
+      parameters: [{ $ref: '#/components/parameters/PageSize' }, { $ref: '#/components/parameters/PageToken' }]
+      responses:
+        '200':
+          description: Task page
+          content: { application/json: { schema: { $ref: '#/components/schemas/TaskPage' } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '500': { $ref: '#/components/responses/Internal' }
+  /logs:
+    get:
+      operationId: listLogs
+      summary: Query redacted structured logs
+      parameters: [{ $ref: '#/components/parameters/PageSize' }, { $ref: '#/components/parameters/PageToken' }]
+      responses:
+        '200':
+          description: Log page
+          content: { application/json: { schema: { $ref: '#/components/schemas/LogPage' } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '500': { $ref: '#/components/responses/Internal' }
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    PageSize:
+      name: page_size
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+    PageToken:
+      name: page_token
+      in: query
+      schema: { type: string }
+    PluginId:
+      name: pluginId
+      in: path
+      required: true
+      schema: { type: string, pattern: '^[a-z0-9][a-z0-9.-]{1,63}$' }
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: Replays return the original response for this key for 24 hours.
+      schema: { type: string, minLength: 16, maxLength: 128 }
+  responses:
+    BadRequest:
+      description: Invalid request
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    Unauthorized:
+      description: Missing or invalid credentials
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    NotFound:
+      description: Resource not found
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    Conflict:
+      description: State conflict
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    Unavailable:
+      description: Core is not ready
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    Forbidden:
+      description: Authenticated but not authorized
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    RateLimited:
+      description: Rate limit exceeded
+      headers:
+        Retry-After: { schema: { type: integer, minimum: 1 } }
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    Internal:
+      description: Internal server error
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+  schemas:
+    LoginRequest:
+      type: object
+      required: [username, password]
+      properties:
+        username: { type: string, minLength: 1 }
+        password: { type: string, minLength: 1, format: password }
+    RefreshRequest:
+      type: object
+      required: [refresh_token]
+      properties: { refresh_token: { type: string, minLength: 20 } }
+    TokenPair:
+      type: object
+      required: [access_token, refresh_token, expires_in]
+      properties:
+        access_token: { type: string }
+        refresh_token: { type: string }
+        expires_in: { type: integer, format: int32 }
+    Error:
+      type: object
+      required: [code, message, request_id]
+      properties:
+        code: { type: string, enum: [INVALID_ARGUMENT, UNAUTHENTICATED, PERMISSION_DENIED, NOT_FOUND, CONFLICT, CAPABILITY_NOT_SUPPORTED, RATE_LIMITED, TIMEOUT, UPSTREAM_UNAVAILABLE, PLUGIN_UNAVAILABLE, INTERNAL] }
+        message: { type: string }
+        request_id: { type: string }
+        trace_id: { type: string }
+        retryable: { type: boolean, default: false }
+        details: { type: object, additionalProperties: { type: string } }
+    PageInfo:
+      type: object
+      properties:
+        next_page_token: { type: string }
+        page_size: { type: integer }
+    Health:
+      type: object
+      required: [state, components]
+      properties:
+        state: { type: string, enum: [HEALTHY, DEGRADED, UNHEALTHY] }
+        components: { type: array, items: { $ref: '#/components/schemas/HealthComponent' } }
+    HealthComponent:
+      type: object
+      required: [component, state]
+      properties:
+        component: { type: string }
+        state: { type: string, enum: [HEALTHY, DEGRADED, UNHEALTHY] }
+        reason: { type: string }
+    Adapter:
+      type: object
+      required: [id, state, implementation]
+      properties:
+        id: { type: string }
+        state: { type: string, enum: [HEALTHY, DEGRADED, UNHEALTHY] }
+        implementation: { type: string }
+        version: { type: string }
+        capabilities: { type: array, items: { type: string } }
+    PluginManifest:
+      type: object
+      required: [id, name, version, api_version, runtime]
+      properties:
+        id: { type: string, pattern: '^[a-z0-9][a-z0-9.-]{1,63}$' }
+        name: { type: string }
+        version: { type: string }
+        api_version: { type: string }
+        runtime: { type: string, enum: [python-rpc, cpp-rpc, cpp-native] }
+        isolation: { type: string, enum: [process, native, wasm], default: process }
+        ordered: { type: boolean, default: false }
+        permissions: { type: array, items: { type: string } }
+    Plugin:
+      allOf:
+        - $ref: '#/components/schemas/PluginManifest'
+        - type: object
+          required: [state]
+          properties:
+            state: { type: string, enum: [PLUGIN_STATE_DISABLED, PLUGIN_STATE_STARTING, PLUGIN_STATE_READY, PLUGIN_STATE_RUNNING, PLUGIN_STATE_STOPPING, PLUGIN_STATE_STOPPED, PLUGIN_STATE_UNAVAILABLE, PLUGIN_STATE_FAILED] }
+    PluginConfig:
+      type: object
+      required: [version, values]
+      properties:
+        version: { type: string }
+        values: { type: object, additionalProperties: true }
+    PluginConfigUpdate:
+      type: object
+      required: [expected_version, values]
+      properties:
+        expected_version: { type: string }
+        values: { type: object, additionalProperties: true }
+    ValidationResult:
+      type: object
+      required: [valid, errors]
+      properties:
+        valid: { type: boolean }
+        errors: { type: array, items: { type: string } }
+    AuditEntry:
+      type: object
+      required: [id, occurred_at, actor, action]
+      properties:
+        id: { type: string }
+        occurred_at: { type: string, format: date-time }
+        actor: { type: string }
+        action: { type: string }
+        resource: { type: string }
+        request_id: { type: string }
+    AdapterPage:
+      type: object
+      required: [items, page]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/Adapter' } }
+        page: { $ref: '#/components/schemas/PageInfo' }
+    PluginPage:
+      type: object
+      required: [items, page]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/Plugin' } }
+        page: { $ref: '#/components/schemas/PageInfo' }
+    AuditPage:
+      type: object
+      required: [items, page]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/AuditEntry' } }
+        page: { $ref: '#/components/schemas/PageInfo' }
+    GenericResource:
+      type: object
+      required: [id, name]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        state: { type: string }
+        created_at: { type: string, format: date-time }
+    BotPage:
+      type: object
+      required: [items, page]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/GenericResource' } }
+        page: { $ref: '#/components/schemas/PageInfo' }
+    ModelPage:
+      type: object
+      required: [items, page]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/GenericResource' } }
+        page: { $ref: '#/components/schemas/PageInfo' }
+    GroupPage:
+      type: object
+      required: [items, page]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/GenericResource' } }
+        page: { $ref: '#/components/schemas/PageInfo' }
+    UserPage:
+      type: object
+      required: [items, page]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/GenericResource' } }
+        page: { $ref: '#/components/schemas/PageInfo' }
+    TaskPage:
+      type: object
+      required: [items, page]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/GenericResource' } }
+        page: { $ref: '#/components/schemas/PageInfo' }
+    LogPage:
+      type: object
+      required: [items, page]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/GenericResource' } }
+        page: { $ref: '#/components/schemas/PageInfo' }

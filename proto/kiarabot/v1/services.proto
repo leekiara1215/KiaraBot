@@ -1,0 +1,14 @@
+syntax = "proto3";
+
+package kiarabot.v1;
+
+import "kiarabot/v1/adapters.proto";
+import "kiarabot/v1/plugins.proto";
+
+service AdapterBridge {
+  rpc Connect(stream AdapterToCore) returns (stream CoreToAdapter);
+}
+
+service PluginBridge {
+  rpc Connect(stream PluginToCore) returns (stream CoreToPlugin);
+}

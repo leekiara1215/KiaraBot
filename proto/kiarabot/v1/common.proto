@@ -1,0 +1,117 @@
+syntax = "proto3";
+
+package kiarabot.v1;
+
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+
+option cc_enable_arenas = true;
+
+enum ErrorCode {
+  ERROR_CODE_UNSPECIFIED = 0;
+  INVALID_ARGUMENT = 1;
+  UNAUTHENTICATED = 2;
+  PERMISSION_DENIED = 3;
+  NOT_FOUND = 4;
+  CONFLICT = 5;
+  CAPABILITY_NOT_SUPPORTED = 6;
+  RATE_LIMITED = 7;
+  TIMEOUT = 8;
+  UPSTREAM_UNAVAILABLE = 9;
+  PLUGIN_UNAVAILABLE = 10;
+  INTERNAL = 11;
+}
+
+enum HealthState {
+  HEALTH_STATE_UNSPECIFIED = 0;
+  HEALTHY = 1;
+  DEGRADED = 2;
+  UNHEALTHY = 3;
+}
+
+enum EventDeliveryMode {
+  EVENT_DELIVERY_MODE_UNSPECIFIED = 0;
+  AT_LEAST_ONCE = 1;
+}
+
+message Error {
+  ErrorCode code = 1;
+  string message = 2;
+  map<string, string> details = 3;
+  string request_id = 4;
+  string trace_id = 5;
+  bool retryable = 6;
+}
+
+message SourceRef {
+  string adapter_id = 1;
+  string adapter_instance_id = 2;
+  string account_id = 3;
+}
+
+message Subject {
+  string user_id = 1;
+  string conversation_id = 2;
+  string group_id = 3;
+}
+
+message ConversationRef {
+  string id = 1;
+  enum Type {
+    TYPE_UNSPECIFIED = 0;
+    PRIVATE = 1;
+    GROUP = 2;
+    CHANNEL = 3;
+  }
+  Type type = 2;
+  string account_id = 3;
+}
+
+message MessageSegment {
+  enum Type {
+    SEGMENT_TYPE_UNSPECIFIED = 0;
+    TEXT = 1;
+    IMAGE = 2;
+    AUDIO = 3;
+    VIDEO = 4;
+    FILE = 5;
+    MENTION = 6;
+    REPLY = 7;
+    LOCATION = 8;
+    UNKNOWN = 9;
+  }
+  Type type = 1;
+  string text = 2;
+  string uri = 3;
+  string id = 4;
+  google.protobuf.Struct metadata = 5;
+}
+
+message Message {
+  repeated MessageSegment segments = 1;
+  string plain_text = 2;
+}
+
+message Capability {
+  string name = 1;
+  string version = 2;
+  bool supported = 3;
+}
+
+message PageRequest {
+  uint32 page_size = 1;
+  string page_token = 2;
+}
+
+message PageInfo {
+  string next_page_token = 1;
+  uint32 page_size = 2;
+}
+
+message Health {
+  HealthState state = 1;
+  string component = 2;
+  string version = 3;
+  google.protobuf.Timestamp checked_at = 4;
+  repeated Error dependencies = 5;
+}

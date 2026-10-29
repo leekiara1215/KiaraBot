@@ -1,0 +1,71 @@
+syntax = "proto3";
+
+package kiarabot.v1;
+
+import "google/protobuf/struct.proto";
+import "kiarabot/v1/actions.proto";
+import "kiarabot/v1/common.proto";
+import "kiarabot/v1/events.proto";
+
+message PluginManifest {
+  string id = 1;
+  string name = 2;
+  string version = 3;
+  string api_version = 4;
+  string runtime = 5;
+  string entrypoint = 6;
+  repeated string capabilities = 7;
+  repeated string permissions = 8;
+  repeated string dependencies = 9;
+  string config_schema = 10;
+  string isolation = 11;
+  bool ordered = 12;
+}
+
+enum PluginState {
+  PLUGIN_STATE_UNSPECIFIED = 0;
+  PLUGIN_STATE_DISABLED = 1;
+  PLUGIN_STATE_STARTING = 2;
+  PLUGIN_STATE_READY = 3;
+  PLUGIN_STATE_RUNNING = 4;
+  PLUGIN_STATE_STOPPING = 5;
+  PLUGIN_STATE_STOPPED = 6;
+  PLUGIN_STATE_UNAVAILABLE = 7;
+  PLUGIN_STATE_FAILED = 8;
+}
+
+message RegisterPluginRequest {
+  PluginManifest manifest = 1;
+  string instance_id = 2;
+}
+
+message RegisterPluginResponse {
+  bool accepted = 1;
+  string required_api_version = 2;
+  repeated string granted_permissions = 3;
+  Error error = 4;
+}
+
+message PluginToCore {
+  oneof body {
+    RegisterPluginRequest register = 1;
+    PluginEventAck event_ack = 2;
+    PluginActionRequest action = 3;
+    PluginHeartbeat heartbeat = 4;
+  }
+}
+
+message CoreToPlugin {
+  oneof body {
+    RegisterPluginResponse register_result = 1;
+    EventEnvelope event = 2;
+    PluginConfig config = 3;
+    PluginHeartbeatAck heartbeat_ack = 4;
+  }
+}
+
+message PluginEventAck { string event_id = 1; bool accepted = 2; Error error = 3; }
+message PluginActionRequest { ActionEnvelope action = 1; }
+message PluginHeartbeat { string instance_id = 1; uint64 sent_at_unix_ms = 2; }
+message PluginHeartbeatAck { uint64 received_at_unix_ms = 1; }
+message PluginConfig { string version = 1; google.protobuf.Struct values = 2; }

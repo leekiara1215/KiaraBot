@@ -1,0 +1,62 @@
+# ---- 环境与工具链（全部不入库）----
+.venv/
+.tools/
+.uv/
+.env
+.env.*
+
+# ---- Python 适配器临时文件 ----
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.cache/
+*.log
+
+# ---- C++ ----
+build/
+cmake-build-*/
+out/
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+CTestTestfile.cmake
+Makefile
+compile_commands.json
+*.o
+*.obj
+*.a
+*.so
+*.dylib
+*.dll
+
+# ---- TypeScript ----
+node_modules/
+dist/
+.vite/
+.turbo/
+coverage/
+
+# ---- 运行数据 ----
+data/
+logs/
+*.db
+*.db-wal
+*.db-shm
+napcat/
+NapCat*/
+
+# ---- 编辑器 / 系统 ----
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# ---- 密钥兜底（防止误提交凭证）----
+*.pem
+*.key
+secrets/
+cookies.json

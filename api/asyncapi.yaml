@@ -1,0 +1,156 @@
+asyncapi: 2.6.0
+id: https://github.com/leekiara1215/KiaraBot
+info:
+  title: KiaraBot Control WebSocket API
+  version: 1.0.0
+  description: Authenticated real-time channels used by the control panel.
+  contact:
+    name: KiaraBot maintainers
+    url: https://github.com/leekiara1215/KiaraBot
+    email: kiarabot@example.invalid
+  license:
+    name: MIT
+    url: https://github.com/leekiara1215/KiaraBot/blob/main/LICENSE.md
+tags:
+  - name: control-plane
+    description: Authenticated control-panel streaming channels.
+defaultContentType: application/json
+servers:
+  control:
+    url: control.example.invalid/ws
+    protocol: wss
+    description: Production requires TLS; local development may use ws on loopback.
+    security:
+      - bearerAuth: []
+channels:
+  control:
+    publish:
+      operationId: receiveClientHandshake
+      summary: Client authentication and resume handshake
+      message:
+        oneOf:
+          - $ref: '#/components/messages/Hello'
+          - $ref: '#/components/messages/Resume'
+    subscribe:
+      operationId: receiveControlEvent
+      message:
+        oneOf:
+          - $ref: '#/components/messages/ResyncRequired'
+          - $ref: '#/components/messages/HealthUpdate'
+          - $ref: '#/components/messages/LogUpdate'
+          - $ref: '#/components/messages/AdapterUpdate'
+          - $ref: '#/components/messages/PluginUpdate'
+          - $ref: '#/components/messages/TaskUpdate'
+          - $ref: '#/components/messages/MessageUpdate'
+  health:
+    subscribe:
+      operationId: subscribeHealth
+      message: { $ref: '#/components/messages/HealthChannelUpdate' }
+  logs:
+    subscribe:
+      operationId: subscribeLogs
+      message: { $ref: '#/components/messages/LogChannelUpdate' }
+  adapters:
+    subscribe:
+      operationId: subscribeAdapters
+      message: { $ref: '#/components/messages/AdapterChannelUpdate' }
+  plugins:
+    subscribe:
+      operationId: subscribePlugins
+      message: { $ref: '#/components/messages/PluginChannelUpdate' }
+  tasks:
+    subscribe:
+      operationId: subscribeTasks
+      message: { $ref: '#/components/messages/TaskChannelUpdate' }
+  messages:
+    subscribe:
+      operationId: subscribeMessages
+      message: { $ref: '#/components/messages/MessageChannelUpdate' }
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  messages:
+    Hello:
+      name: Hello
+      messageId: hello
+      title: Initial authentication handshake
+      payload: { $ref: '#/components/schemas/Hello' }
+    Resume:
+      name: Resume
+      messageId: resume
+      title: Resume a previous WebSocket session
+      payload: { $ref: '#/components/schemas/Resume' }
+    ResyncRequired:
+      name: ResyncRequired
+      messageId: resync-required
+      title: Server requests a REST snapshot
+      payload: { $ref: '#/components/schemas/ResyncRequired' }
+    HealthUpdate:
+      messageId: health-update
+      payload: { $ref: '#/components/schemas/StreamEnvelope' }
+    LogUpdate:
+      messageId: log-update
+      payload: { $ref: '#/components/schemas/StreamEnvelope' }
+    AdapterUpdate:
+      messageId: adapter-update
+      payload: { $ref: '#/components/schemas/StreamEnvelope' }
+    PluginUpdate:
+      messageId: plugin-update
+      payload: { $ref: '#/components/schemas/StreamEnvelope' }
+    TaskUpdate:
+      messageId: task-update
+      payload: { $ref: '#/components/schemas/StreamEnvelope' }
+    MessageUpdate:
+      messageId: message-update
+      payload: { $ref: '#/components/schemas/StreamEnvelope' }
+    HealthChannelUpdate:
+      messageId: health-channel-update
+      payload: { $ref: '#/components/schemas/StreamEnvelope' }
+    LogChannelUpdate:
+      messageId: log-channel-update
+      payload: { $ref: '#/components/schemas/StreamEnvelope' }
+    AdapterChannelUpdate:
+      messageId: adapter-channel-update
+      payload: { $ref: '#/components/schemas/StreamEnvelope' }
+    PluginChannelUpdate:
+      messageId: plugin-channel-update
+      payload: { $ref: '#/components/schemas/StreamEnvelope' }
+    TaskChannelUpdate:
+      messageId: task-channel-update
+      payload: { $ref: '#/components/schemas/StreamEnvelope' }
+    MessageChannelUpdate:
+      messageId: message-channel-update
+      payload: { $ref: '#/components/schemas/StreamEnvelope' }
+  schemas:
+    StreamEnvelope:
+      type: object
+      required: [schema_version, event_type, sequence, occurred_at, payload]
+      properties:
+        schema_version: { type: string, example: kiarabot.stream.v1 }
+        event_type: { type: string }
+        sequence: { type: integer, format: int64 }
+        occurred_at: { type: string, format: date-time }
+        payload: { type: object, additionalProperties: true }
+    Hello:
+      type: object
+      required: [type, access_token, last_sequence]
+      properties:
+        type: { type: string, enum: [hello] }
+        access_token: { type: string, minLength: 20 }
+        last_sequence: { type: integer, format: int64, minimum: 0 }
+    Resume:
+      type: object
+      required: [type, session_id, last_sequence]
+      properties:
+        type: { type: string, enum: [resume] }
+        session_id: { type: string }
+        last_sequence: { type: integer, format: int64, minimum: 0 }
+    ResyncRequired:
+      type: object
+      required: [type, reason]
+      properties:
+        type: { type: string, enum: [RESYNC_REQUIRED] }
+        reason: { type: string }

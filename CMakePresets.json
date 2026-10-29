@@ -1,0 +1,33 @@
+{
+  "version": 5,
+  "cmakeMinimumRequired": { "major": 3, "minor": 24, "patch": 0 },
+  "configurePresets": [
+    {
+      "name": "dev",
+      "displayName": "KiaraBot development",
+      "generator": "Unix Makefiles",
+      "binaryDir": "${sourceDir}/build/dev",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_CXX_STANDARD": "20",
+        "CMAKE_CXX_STANDARD_REQUIRED": "ON",
+        "KIARABOT_GENERATE_PROTO": "OFF"
+      }
+    },
+    {
+      "name": "proto",
+      "inherits": "dev",
+      "displayName": "KiaraBot development with protocol generation",
+      "binaryDir": "${sourceDir}/build/proto",
+      "cacheVariables": { "KIARABOT_GENERATE_PROTO": "ON" }
+    }
+  ],
+  "buildPresets": [
+    { "name": "dev", "configurePreset": "dev" },
+    { "name": "proto", "configurePreset": "proto" }
+  ],
+  "testPresets": [
+    { "name": "dev", "configurePreset": "dev", "output": { "outputOnFailure": true } },
+    { "name": "proto", "configurePreset": "proto", "output": { "outputOnFailure": true } }
+  ]
+}

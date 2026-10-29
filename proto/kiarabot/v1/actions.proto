@@ -1,0 +1,57 @@
+syntax = "proto3";
+
+package kiarabot.v1;
+
+import "google/protobuf/timestamp.proto";
+import "kiarabot/v1/common.proto";
+
+message ActionEnvelope {
+  string action_id = 1;
+  string idempotency_key = 2;
+  google.protobuf.Timestamp deadline = 3;
+  string trace_id = 4;
+  string requested_by = 5;
+  SourceRef target_source = 6;
+  Subject target = 7;
+
+  oneof payload {
+    SendMessage send_message = 20;
+    DeleteMessage delete_message = 21;
+    ReactMessage react_message = 22;
+    MuteMember mute_member = 23;
+    KickMember kick_member = 24;
+    ApproveRequest approve_request = 25;
+    ScheduleTask schedule_task = 26;
+  }
+}
+
+message SendMessage {
+  ConversationRef conversation = 1;
+  Message message = 2;
+  bool reply = 3;
+  string reply_to_message_id = 4;
+}
+
+message DeleteMessage { string message_id = 1; }
+message ReactMessage { string message_id = 1; string reaction = 2; }
+message MuteMember { string group_id = 1; string user_id = 2; uint32 duration_seconds = 3; }
+message KickMember { string group_id = 1; string user_id = 2; string reason = 3; }
+message ApproveRequest { string request_id = 1; bool approve = 2; string reason = 3; }
+message ScheduleTask { string task_id = 1; string schedule = 2; bytes payload = 3; }
+
+enum ActionStatus {
+  ACTION_STATUS_UNSPECIFIED = 0;
+  ACCEPTED = 1;
+  SUCCEEDED = 2;
+  FAILED = 3;
+  EXPIRED = 4;
+  CANCELLED = 5;
+}
+
+message ActionResult {
+  string action_id = 1;
+  ActionStatus status = 2;
+  string platform_message_id = 3;
+  Error error = 4;
+  google.protobuf.Timestamp completed_at = 5;
+}
