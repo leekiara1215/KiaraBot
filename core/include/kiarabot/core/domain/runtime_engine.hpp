@@ -8,8 +8,7 @@ class RuntimeEngine {
 public:
   explicit RuntimeEngine(RuntimeStatePort& store, RuntimeOptions options = {},
                          RuntimeClock clock = {}, RuntimeRandom random = {})
-      : store_(&store), options_(options), clock_(std::move(clock)),
-        random_(std::move(random)) {
+      : store_(&store), options_(options), clock_(std::move(clock)), random_(std::move(random)) {
     options_.retention = std::max(options_.retention, std::chrono::hours(24));
   }
 

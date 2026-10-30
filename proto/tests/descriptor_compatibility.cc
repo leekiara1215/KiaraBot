@@ -1,10 +1,11 @@
 #include <algorithm>
 #include <fstream>
-#include <google/protobuf/descriptor.pb.h>
-#include <google/protobuf/util/message_differencer.h>
 #include <iostream>
 #include <string>
 #include <string_view>
+
+#include <google/protobuf/descriptor.pb.h>
+#include <google/protobuf/util/message_differencer.h>
 
 namespace {
 

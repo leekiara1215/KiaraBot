@@ -7,7 +7,7 @@ if [[ ! -f build/proto/compile_commands.json ]]; then
   echo 'Configure and build the proto preset with CMAKE_EXPORT_COMPILE_COMMANDS=ON first' >&2
   exit 1
 fi
-set -- -p build/proto --warnings-as-errors='*' --header-filter="^${root}/(core|proto|control|infrastructure)/"
+set -- -p build/proto --checks='clang-analyzer-*' --warnings-as-errors='*' --header-filter="^${root}/(core|proto|control|infrastructure)/"
 if [[ "$(uname -s)" == Darwin ]]; then
   compiler="$(sed -n 's/^CMAKE_CXX_COMPILER:FILEPATH=//p' build/proto/CMakeCache.txt)"
   if [[ -z "$compiler" ]]; then

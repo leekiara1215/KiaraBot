@@ -3,9 +3,9 @@
 #include <source_location>
 #include <stdexcept>
 
-#include "kiarabot/core/runtime/in_memory_runtime_store.hpp"
 #include "kiarabot/core/application/action_router.hpp"
 #include "kiarabot/core/application/runtime.h"
+#include "kiarabot/core/runtime/in_memory_runtime_store.hpp"
 #include "kiarabot/core/runtime/request_digest.hpp"
 #include "kiarabot/infrastructure/sqlite_runtime_store.hpp"
 

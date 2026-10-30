@@ -64,7 +64,8 @@ void event_order_and_backpressure() {
 void retries_dead_letters_and_replay() {
   RuntimeTimePoint now{};
   kiarabot::core::detail::RuntimeState store;
-  kiarabot::core::detail::RuntimeEngine runtime(store, {}, [&] { return now; }, [] { return 0.5; });
+  kiarabot::core::detail::RuntimeEngine runtime(
+      store, {}, [&] { return now; }, [] { return 0.5; });
   const std::array delays{1s, 2s, 4s, 8s, 16s};
   assert(runtime.ingest({"retry", "trace", "", 0, false}) == EventResult::accepted);
   assert(runtime.mark_dispatched("retry"));
@@ -101,7 +102,8 @@ void jitter_bounds() {
   RuntimeTimePoint now{};
   kiarabot::core::detail::RuntimeState low_store;
   kiarabot::core::detail::RuntimeState high_store;
-  kiarabot::core::detail::RuntimeEngine low(low_store, {}, [&] { return now; }, [] { return 0.0; });
+  kiarabot::core::detail::RuntimeEngine low(
+      low_store, {}, [&] { return now; }, [] { return 0.0; });
   kiarabot::core::detail::RuntimeEngine high(
       high_store, {}, [&] { return now; }, [] { return 1.0; });
   const std::array bases{1000ms, 2000ms, 4000ms, 8000ms, 16000ms};
@@ -114,7 +116,8 @@ void jitter_bounds() {
 void actions_and_retention() {
   RuntimeTimePoint now{};
   kiarabot::core::detail::RuntimeState store;
-  kiarabot::core::detail::RuntimeEngine runtime(store, {}, [&] { return now; }, [] { return 0.5; });
+  kiarabot::core::detail::RuntimeEngine runtime(
+      store, {}, [&] { return now; }, [] { return 0.5; });
   const ActionRecord action{"action", "key", now + 1h};
   const auto accepted = runtime.submit_action(action);
   assert(accepted.result == ActionResult::accepted);
@@ -156,7 +159,8 @@ void actions_and_retention() {
 void plugins_and_transactions() {
   RuntimeTimePoint now{};
   kiarabot::core::detail::RuntimeState store;
-  kiarabot::core::detail::RuntimeEngine runtime(store, {}, [&] { return now; }, [] { return 0.5; });
+  kiarabot::core::detail::RuntimeEngine runtime(
+      store, {}, [&] { return now; }, [] { return 0.5; });
   assert(runtime.register_plugin("plugin", "v1", {"read", "send"}));
   assert(runtime.plugin_started("plugin"));
   assert(runtime.plugin_disconnected("plugin"));
@@ -218,7 +222,8 @@ void plugins_and_transactions() {
 void restart_recovers_unacknowledged_dispatch() {
   RuntimeTimePoint now{};
   kiarabot::core::detail::RuntimeState store;
-  kiarabot::core::detail::RuntimeEngine before(store, {}, [&] { return now; }, [] { return 0.5; });
+  kiarabot::core::detail::RuntimeEngine before(
+      store, {}, [&] { return now; }, [] { return 0.5; });
   const std::string envelope("\x01\x00\x02", 3);
   assert(before.ingest({"inflight", "trace", "", 0, false, envelope}) == EventResult::accepted);
   assert(before.ingest({"waiting", "trace", "", 0, false}) == EventResult::accepted);
@@ -259,7 +264,8 @@ void restart_recovers_unacknowledged_dispatch() {
 void expired_action_idempotency_and_transaction_isolation() {
   RuntimeTimePoint now{};
   kiarabot::core::detail::RuntimeState store;
-  kiarabot::core::detail::RuntimeEngine runtime(store, {}, [&] { return now; }, [] { return 0.5; });
+  kiarabot::core::detail::RuntimeEngine runtime(
+      store, {}, [&] { return now; }, [] { return 0.5; });
   const ActionRecord already_expired{"old-action", "same-key", now};
   store.set_fail_commit(true);
   assert(runtime.submit_action(already_expired).result == ActionResult::storage_error);

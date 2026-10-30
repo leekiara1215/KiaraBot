@@ -63,6 +63,8 @@ int main(int argc, char* argv[]) try {
   request.metadata.access_token = "token";
   request.operation = core::ControlList{core::ControlResource::Plugins, 101, {}};
   check(core::validate_control_request(request, now)->code() == wire::INVALID_ARGUMENT);
+  // Exercise rejection of an unknown resource value.
+  // NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange)
   request.operation = core::ControlList{static_cast<core::ControlResource>(999), 20, {}};
   check(core::validate_control_request(request, now)->code() == wire::INVALID_ARGUMENT);
   request.operation = core::ControlSetPluginEnabled{"../private", true};
@@ -76,6 +78,8 @@ int main(int argc, char* argv[]) try {
   check(core::control_http_status(wire::UPSTREAM_UNAVAILABLE) == 503);
   check(core::control_http_status(wire::CONFLICT) == 409);
   check(core::control_http_status(wire::PERMISSION_DENIED) == 403);
+  // Exercise the fallback for an unknown wire error value.
+  // NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange)
   check(core::control_http_status(static_cast<wire::ErrorCode>(999)) == 500);
   std::cout
       << "Control operation coverage, default deny, request validation and HTTP errors passed\n";

@@ -1,6 +1,6 @@
-#include "kiarabot/core/domain/runtime_engine.hpp"
-
 #include <type_traits>
+
+#include "kiarabot/core/domain/runtime_engine.hpp"
 
 static_assert(std::is_abstract_v<kiarabot::core::detail::RuntimeStatePort>);
 static_assert(!std::is_default_constructible_v<kiarabot::core::detail::RuntimeEngine>);

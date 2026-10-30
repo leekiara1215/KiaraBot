@@ -5,9 +5,9 @@
 #include <thread>
 #include <unistd.h>
 
-#include "kiarabot/core/runtime/in_memory_runtime_store.hpp"
 #include "kiarabot/core/application/adapter_ingress.hpp"
 #include "kiarabot/core/runtime/bridge_server.hpp"
+#include "kiarabot/core/runtime/in_memory_runtime_store.hpp"
 #include "kiarabot/infrastructure/sqlite_runtime_store.hpp"
 
 namespace {

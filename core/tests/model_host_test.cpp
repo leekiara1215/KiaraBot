@@ -3,8 +3,8 @@
 #include <source_location>
 #include <stdexcept>
 
-#include "kiarabot/core/runtime/in_memory_runtime_store.hpp"
 #include "kiarabot/core/application/host_dispatcher.hpp"
+#include "kiarabot/core/runtime/in_memory_runtime_store.hpp"
 
 namespace {
 namespace wire = kiarabot::v1;
@@ -42,7 +42,8 @@ int main() try {
   kiarabot::core::InMemoryRuntimeStore store;
   auto now = kiarabot::core::RuntimeTimePoint(1000s);
   auto provider = std::make_shared<Provider>();
-  kiarabot::core::HostDispatcher host(store, [&] { return now; }, {}, provider);
+  kiarabot::core::HostDispatcher host(
+      store, [&] { return now; }, {}, provider);
   kiarabot::core::PluginSession plugin{
       "one", "instance", "fence", {}, {"model.chat", "storage.namespace"}};
   wire::HostRequest request;

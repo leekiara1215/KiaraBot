@@ -18,7 +18,8 @@ using kiarabot::core::detail::RuntimeState;
 void independent_delivery_and_order() {
   RuntimeTimePoint now{};
   kiarabot::core::detail::RuntimeState store;
-  kiarabot::core::detail::RuntimeEngine runtime(store, {}, [&] { return now; }, [] { return 0.5; });
+  kiarabot::core::detail::RuntimeEngine runtime(
+      store, {}, [&] { return now; }, [] { return 0.5; });
   assert(runtime.register_plugin("ordered", "v1", {}, true));
   assert(runtime.register_plugin("free"));
   assert(runtime.plugin_started("ordered"));
@@ -72,7 +73,8 @@ void independent_delivery_and_order() {
 void recovery_disconnect_and_jitter() {
   RuntimeTimePoint now{};
   kiarabot::core::detail::RuntimeState store;
-  kiarabot::core::detail::RuntimeEngine runtime(store, {}, [&] { return now; }, [] { return 1.0; });
+  kiarabot::core::detail::RuntimeEngine runtime(
+      store, {}, [&] { return now; }, [] { return 1.0; });
   assert(runtime.register_plugin("p", "v1", {}, true));
   assert(runtime.plugin_started("p"));
   assert(runtime.ingest({"event", "trace", "conversation", 1, true}, {"p"}) ==
@@ -145,7 +147,8 @@ void transaction_failures_and_backpressure() {
 void retry_exhaustion_and_retention() {
   RuntimeTimePoint now{};
   kiarabot::core::detail::RuntimeState store;
-  kiarabot::core::detail::RuntimeEngine runtime(store, {}, [&] { return now; }, [] { return 0.5; });
+  kiarabot::core::detail::RuntimeEngine runtime(
+      store, {}, [&] { return now; }, [] { return 0.5; });
   assert(runtime.register_plugin("p"));
   assert(runtime.register_plugin("q"));
   assert(runtime.plugin_started("p"));

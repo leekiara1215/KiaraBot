@@ -3,9 +3,9 @@
 #include <source_location>
 #include <stdexcept>
 
-#include "kiarabot/core/runtime/in_memory_runtime_store.hpp"
 #include "kiarabot/core/application/host_dispatcher.hpp"
 #include "kiarabot/core/application/runtime.h"
+#include "kiarabot/core/runtime/in_memory_runtime_store.hpp"
 #include "kiarabot/core/runtime/request_digest.hpp"
 #include "kiarabot/infrastructure/sqlite_runtime_store.hpp"
 
@@ -109,7 +109,8 @@ void scenarios(kiarabot::core::RuntimeStore& store,
 void limits() {
   kiarabot::core::InMemoryRuntimeStore store;
   kiarabot::core::NamespacePolicy policy{4, 6, 2, 5, 100};
-  HostDispatcher host(store, [] { return RuntimeTimePoint(1000s); }, policy);
+  HostDispatcher host(
+      store, [] { return RuntimeTimePoint(1000s); }, policy);
   PluginSession plugin{"one", "instance", "fence", {}, {"storage.namespace"}};
   check(host.dispatch(plugin, set("one", "1234", "first12345678901")).has_storage_set());
   check(host.dispatch(plugin, set("two", "567", "second1234567890")).error().code() ==
@@ -121,13 +122,15 @@ void limits() {
         wire::RATE_LIMITED);
   kiarabot::core::InMemoryRuntimeStore receipt_store;
   policy.receipts = 1;
-  HostDispatcher bounded(receipt_store, [] { return RuntimeTimePoint(1000s); }, policy);
+  HostDispatcher bounded(
+      receipt_store, [] { return RuntimeTimePoint(1000s); }, policy);
   check(bounded.dispatch(plugin, set("one", "1", "first12345678901")).has_storage_set());
   check(bounded.dispatch(plugin, set("two", "2", "second1234567890")).error().code() ==
         wire::RATE_LIMITED);
   check(!value(receipt_store.read()).namespaces.at("one").contains("two"));
   policy.audit_records = 0;
-  HostDispatcher audit_failure(receipt_store, [] { return RuntimeTimePoint(1000s); }, policy);
+  HostDispatcher audit_failure(
+      receipt_store, [] { return RuntimeTimePoint(1000s); }, policy);
   check(audit_failure.dispatch(plugin, set("two", "2", "third12345678901")).error().code() ==
         wire::UPSTREAM_UNAVAILABLE);
   kiarabot::core::InMemoryRuntimeStore timed_store;

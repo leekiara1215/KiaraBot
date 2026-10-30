@@ -4,12 +4,12 @@
 #include <stdexcept>
 #include <thread>
 
-#include "kiarabot/core/runtime/in_memory_runtime_store.hpp"
 #include "kiarabot/core/application/adapter_ingress.hpp"
 #include "kiarabot/core/application/control_service.hpp"
 #include "kiarabot/core/application/plugin_hub.hpp"
 #include "kiarabot/core/application/runtime.h"
 #include "kiarabot/core/runtime/bridge_server.hpp"
+#include "kiarabot/core/runtime/in_memory_runtime_store.hpp"
 #include "kiarabot/infrastructure/sqlite_runtime_store.hpp"
 
 namespace {

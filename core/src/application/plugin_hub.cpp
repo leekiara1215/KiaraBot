@@ -5,8 +5,8 @@
 
 #include "kiarabot/core/application/control_service.hpp"
 #include "kiarabot/core/domain/runtime_engine.hpp"
-#include "kiarabot/core/runtime/runtime_state.hpp"
 #include "kiarabot/core/runtime/request_digest.hpp"
+#include "kiarabot/core/runtime/runtime_state.hpp"
 
 namespace kiarabot::core {
 bool PluginHub::connected(const std::string& identity) {

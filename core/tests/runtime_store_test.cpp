@@ -1,8 +1,8 @@
 #include <iostream>
 #include <stdexcept>
 
-#include "kiarabot/core/runtime/in_memory_runtime_store.hpp"
 #include "kiarabot/core/application/runtime.h"
+#include "kiarabot/core/runtime/in_memory_runtime_store.hpp"
 
 namespace {
 void check(bool result) {
@@ -26,7 +26,8 @@ int main() {
   try {
     InMemoryRuntimeStore store;
     auto now = RuntimeTimePoint{} + std::chrono::hours(1);
-    Runtime runtime(store, {}, [&] { return now; }, [] { return 0.5; });
+    Runtime runtime(
+        store, {}, [&] { return now; }, [] { return 0.5; });
     check(!value(runtime.find_action("missing")).has_value());
     store.set_fail_reads(true);
     check(std::get<StorageError>(runtime.find_action("missing")) == StorageError::Unavailable);

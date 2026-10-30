@@ -99,7 +99,8 @@ int main() {
     check(value(from_v4->read()).delivery_order == 12 && value(from_v4->read()).tasks.empty());
     {
       auto store = value(SqliteRuntimeStore::open(path));
-      Runtime runtime(*store, {}, [&] { return now; }, [] { return 0.5; });
+      Runtime runtime(
+          *store, {}, [&] { return now; }, [] { return 0.5; });
       check(value(runtime.register_plugin("plugin", "v1", {"message.send"}, true)));
       check(value(runtime.plugin_started("plugin")));
       check(value(runtime.ingest({"event", "trace", "session", 1, true, std::string("a\0b", 3)},
@@ -117,7 +118,8 @@ int main() {
       transaction->snapshot().events.clear();
     }
     auto store = value(SqliteRuntimeStore::open(path));
-    Runtime restarted(*store, {}, [&] { return now; }, [] { return 0.5; });
+    Runtime restarted(
+        *store, {}, [&] { return now; }, [] { return 0.5; });
     auto snapshot = value(store->read());
     check(snapshot.events.at("event").record.serialized_envelope == std::string("a\0b", 3));
     check(snapshot.sessions.at("session").last_sequence == 1);

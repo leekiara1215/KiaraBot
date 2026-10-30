@@ -6,10 +6,11 @@
 #include <fcntl.h>
 #include <string>
 #include <string_view>
-#include <sys/stat.h>
 #include <unistd.h>
 #include <utility>
 #include <vector>
+
+#include <sys/stat.h>
 
 namespace kiarabot::infrastructure {
 namespace {
@@ -79,7 +80,7 @@ core::PortResult<std::vector<std::byte>> FileStorage::get(std::string_view key) 
   if (file.get() < 0) {
     return error(errno == ENOENT ? kiarabot::v1::NOT_FOUND : kiarabot::v1::INTERNAL);
   }
-  struct stat stat_buffer{};
+  struct stat stat_buffer {};
   if (::fstat(file.get(), &stat_buffer) != 0 || !S_ISREG(stat_buffer.st_mode)) {
     return error(kiarabot::v1::INTERNAL);
   }

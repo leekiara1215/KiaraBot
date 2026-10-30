@@ -1,5 +1,3 @@
-#include "kiarabot/infrastructure/file_storage.hpp"
-
 #include <cassert>
 #include <cstddef>
 #include <cstdlib>
@@ -8,6 +6,8 @@
 #include <string>
 #include <variant>
 #include <vector>
+
+#include "kiarabot/infrastructure/file_storage.hpp"
 
 namespace {
 void exercise(kiarabot::core::IFileStorage& store) {
