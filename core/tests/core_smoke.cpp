@@ -1,7 +1,7 @@
+#include "kiarabot/core/runtime.h"
+
 #include <cassert>
 #include <chrono>
-
-#include "kiarabot/core/runtime.h"
 
 int main() {
   using namespace std::chrono_literals;
@@ -22,9 +22,9 @@ int main() {
   RuntimeOptions options;
   options.queue_limit = 32;
   options.max_attempts = 3;
-  options.retention = 1h;
+  options.retention = 24h;
   options.plugin_failure_after = 5min;
-  Runtime runtime(store, options, [&now] { return now; });
+  Runtime runtime(store, options, [&now] { return now; }, [] { return 0.5; });
 
   assert(runtime.ingest({"event-1", "trace-1"}) == EventResult::accepted);
   assert(runtime.ingest({"event-1", "trace-1"}) == EventResult::duplicate);
@@ -45,14 +45,21 @@ int main() {
   assert(runtime.due_retries().empty());
   now += 1s;
   assert(runtime.due_retries().size() == 1);
+  assert(runtime.mark_dispatched("event-2"));
   assert(runtime.fail_event("event-2", true));
   now += 2s;
   assert(runtime.due_retries().size() == 1);
+  assert(runtime.mark_dispatched("event-2"));
+  assert(runtime.fail_event("event-2", true));
+  now += 4s;
+  assert(runtime.due_retries().size() == 1);
+  assert(runtime.mark_dispatched("event-2"));
   assert(runtime.fail_event("event-2", true));
   assert(runtime.dead_letter_size() == 1);
 
+  assert(runtime.mark_dispatched("event-1"));
   assert(runtime.acknowledge_event("event-1"));
-  now += 2h;
+  now += 25h;
   assert(runtime.purge_expired() == 2);
 
   const ActionRecord action{"action-1", "idem-1", now + 10s};

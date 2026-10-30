@@ -4,7 +4,9 @@
 
 ## 当前 reference runtime
 
-`core/include/kiarabot/core/runtime.h` 提供与本语义对应的可替换状态机。`RuntimeStore` 是持久化端口，保存 inbox、Action 和插件状态；`InMemoryRuntimeStore` 只用于测试。Core 运行时不直接访问数据库，基础设施实现该端口后，Core 重启仍可恢复去重、重试、死信和 Action 幂等状态。
+`core/include/kiarabot/core/runtime.h` 提供与本语义对应的可替换状态机。`RuntimeStore` 和 `UnitOfWork` 是 Core 持久化端口，保存 inbox、会话顺序状态、Action 和插件状态；`InMemoryRuntimeStore` 只用于测试和本地开发。Core 运行时不直接访问数据库，基础设施实现该端口后，Core 重启仍可恢复去重、会话状态、重试、死信和 Action 幂等状态。端口实现须保证事务内写入原子提交，失败时回滚，且按事件 ID 和 Action 幂等键提供唯一性。当前参考 Runtime 及内存存储由调用方串行访问；并发访问需由宿主或存储实现提供隔离。
+
+接收事件和提交 Action 的内部结果分别区分重复、输入拒绝、背压或过期及存储失败；存储端口插入结果明确区分唯一键冲突和其他失败，存储失败不得伪装成重复。事件及 Action 的检查和写入在同一事务执行；提交返回失败时端口必须保证可回滚且不会留下已提交写入。内存端口拒绝重叠事务。批量恢复、过期和清理返回已处理数量及存储失败标志，已成功的记录保持提交。跨进程边界由服务层按现有协议映射错误，不新增协议错误码。时钟和范围为 `[0, 1]` 的随机样本可注入；默认使用系统时钟和随机源。
 
 每个运行时操作都必须通过未来的日志端口记录 `operation`、`outcome` 以及相关事件、Action 或插件标识。日志不会替代状态存储，也不会承载业务命令。日志实现可以评估腾讯 [BqLog](https://github.com/Tencent/BqLog)，但当前 Core 不直接依赖它。
 
@@ -12,6 +14,7 @@
 
 - Core 与适配器使用至少一次投递；
 - 适配器只有在 Core 持久化 inbox 记录后才认为事件已确认；
+- inbox 保存传入的序列化 `EventEnvelope` 字节，Core 将其视为不透明数据；恢复和重放保留这些字节，由传输层在投递时解码并使用记录中的当前 trace ID；
 - 事件可能重复，插件必须用 `event_id` 幂等；
 - Core 默认保留已确认事件和幂等键 7 天，配置不得低于 24 小时；
 - 过期事件不自动重放，人工重放生成新的 `trace_id`。
@@ -22,7 +25,9 @@
 - 同一 `(adapter_id, account_id, conversation_id)` 内按 `sequence` 单调递增；
 - 不同会话可以并行；
 - 缺少 sequence 或跳号只影响该会话，并报告 `DEGRADED`；
+- 跳号事件仍可接收并推进该会话的最大 sequence；较小或相同的非重复 sequence 被拒绝。会话的最大 sequence 和 degraded 状态独立保存，不因 inbox 保留期清理而丢失；
 - 插件声明 `ordered=true` 时，Core 对该插件按会话串行投递；
+- Core 在接收事件的同一事务中按当时的订阅快照为每个目标插件创建独立投递记录，重复事件不会追加目标；`ordered=true` 时，同一插件、同一非空会话的较早记录在 ACK 或死信之前阻塞后续记录，即使正在等待重试；不同插件及不同会话互不阻塞。缺少会话标识时无法建立会话顺序，宿主应提供稳定会话键；
 - 队列达到上限时暂停读取非关键事件并返回 `RATE_LIMITED`。
 
 ## 确认和重试
@@ -33,17 +38,25 @@ RECEIVED → PERSISTED → DISPATCHED → ACKED
 ```
 
 - 插件 ACK 表示接受事件，不表示 Action 成功；
-- 默认最多重试 5 次，延迟 1s、2s、4s、8s、16s，并加入 20% 抖动；
+- 默认最多重试 5 次，延迟 1s、2s、4s、8s、16s，并在每次基础延迟上均匀加入 ±20% 抖动；第 5 次重试仍失败后进入死信；
 - 非重试错误直接进入死信；
-- 死信可由控制面板人工重放；
+- 死信可查询和人工重放，重放保留事件 ID、重置重试次数并使用新的 trace ID；重放也受队列上限约束；
 - 同一事件不会向同一插件并发投递。
+- 逐插件投递以 `(event_id, plugin_id)` 标识，ACK、重试次数、下次尝试时间、死信和重放 trace ID 均各自持久化；同一事件其他插件的状态不受影响。事件只有在所有目标插件均 ACK 或进入死信后才成为终态并开始保留期清理。逐插件死信重放只重置选定插件的记录；
+- 人工重放不能撤销已经完成的后续事件；有序插件重放时仍等待同会话中当前投递结束，避免并发；
+- 未运行的插件不会获得新投递；断线后未确认的投递保留，宿主确认旧连接停止后调用逐插件恢复，将 `DISPATCHED` 记录转入退避或死信。ACK 的插件身份来自已认证连接；当前协议没有投递尝试编号，延迟 ACK 无法区分不同尝试，应按至少一次投递处理；
+- 宿主确认旧投递者已停止后，在启动恢复阶段调用 `recover_inflight_events()`；残留的 `DISPATCHED` 记录按一次可重试失败进入退避或死信。`dispatchable_events()` 返回已持久化事件和到期重试，恢复和投递必须由同一串行宿主管理，避免对仍在运行的投递者重复投递。
 
 ## Action 语义
 
 - Action 必须带 `idempotency_key`；
 - Core 保存 Action 结果 7 天，重复请求返回原结果；
+- 内部提交结果包含已有 Action 的状态和结果；终态包括 `SUCCEEDED`、`FAILED`、`EXPIRED` 和 `CANCELLED`，终态记录从最后一次状态更新起保留，默认 7 天且不得少于 24 小时；清理只删除到期终态记录；
+- 首次提交时 deadline 已到的 Action 也保存 `EXPIRED` 终态和幂等键；之后使用同一键的请求返回原记录，不会重新执行；
 - 适配器可先返回 `ACCEPTED`，最终返回 `SUCCEEDED` 或 `FAILED`；
 - 到达 `deadline` 后标记 `EXPIRED`，适配器不得再执行；
+- 参考 Runtime 不自带调度线程：宿主须定期调用 `expire_actions()` 并在执行前检查状态和 deadline；
+- 取消只能作用于尚未到期的 `ACCEPTED` Action；到期后的完成或取消不会覆盖 `EXPIRED`；
 - 网络超时不等于平台执行失败，必须通过幂等键查询最终结果。
 - 查询接口返回 `ACCEPTED` 表示尚未终结；`SUCCEEDED`、`FAILED`、`EXPIRED`、`CANCELLED` 是终结状态。终结结果保留 7 天；查询超时不改变 Action 状态。按幂等键查询受已认证调用方的授权范围限制。
 
@@ -51,7 +64,8 @@ RECEIVED → PERSISTED → DISPATCHED → ACKED
 
 - 插件断开后进入 `UNAVAILABLE`，Core 暂停投递并保留未确认事件；
 - 重新注册且 API 版本和权限一致后恢复；
-- 超过 5 分钟未恢复则为 `FAILED`，由策略决定是否重启。
+- 断线时间从首次断线开始计，不因重复断线通知重置；达到 5 分钟仍未恢复则为 `FAILED`，由策略决定是否重启。
+- 宿主须定期调用 `update_plugin_recovery()` 推进断线超时；Runtime 不自行启动后台线程。
 
 ## 控制面板流恢复
 
