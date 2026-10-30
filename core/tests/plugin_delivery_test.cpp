@@ -1,23 +1,23 @@
-#include "kiarabot/core/runtime.h"
-
 #include <cassert>
 #include <chrono>
 #include <string>
 #include <vector>
 
+#include "kiarabot/core/runtime_engine.hpp"
+
 namespace {
 using namespace std::chrono_literals;
 using kiarabot::core::DeliveryState;
 using kiarabot::core::EventResult;
-using kiarabot::core::InMemoryRuntimeStore;
-using kiarabot::core::Runtime;
 using kiarabot::core::RuntimeOptions;
 using kiarabot::core::RuntimeTimePoint;
+using kiarabot::core::detail::RuntimeEngine;
+using kiarabot::core::detail::RuntimeState;
 
 void independent_delivery_and_order() {
   RuntimeTimePoint now{};
-  InMemoryRuntimeStore store;
-  Runtime runtime(store, {}, [&] { return now; }, [] { return 0.5; });
+  kiarabot::core::detail::RuntimeState store;
+  kiarabot::core::detail::RuntimeEngine runtime(store, {}, [&] { return now; }, [] { return 0.5; });
   assert(runtime.register_plugin("ordered", "v1", {}, true));
   assert(runtime.register_plugin("free"));
   assert(runtime.plugin_started("ordered"));
@@ -70,8 +70,8 @@ void independent_delivery_and_order() {
 
 void recovery_disconnect_and_jitter() {
   RuntimeTimePoint now{};
-  InMemoryRuntimeStore store;
-  Runtime runtime(store, {}, [&] { return now; }, [] { return 1.0; });
+  kiarabot::core::detail::RuntimeState store;
+  kiarabot::core::detail::RuntimeEngine runtime(store, {}, [&] { return now; }, [] { return 1.0; });
   assert(runtime.register_plugin("p", "v1", {}, true));
   assert(runtime.plugin_started("p"));
   assert(runtime.ingest({"event", "trace", "conversation", 1, true}, {"p"}) ==
@@ -79,7 +79,8 @@ void recovery_disconnect_and_jitter() {
   assert(runtime.mark_plugin_dispatched("event", "p"));
   assert(runtime.plugin_disconnected("p"));
   assert(runtime.dispatchable_deliveries("p").empty());
-  Runtime restarted(store, {}, [&] { return now; }, [] { return 1.0; });
+  kiarabot::core::detail::RuntimeEngine restarted(
+      store, {}, [&] { return now; }, [] { return 1.0; });
   store.set_fail_commit(true);
   assert(restarted.recover_plugin_inflight("p").storage_error);
   assert(store.find_delivery("event", "p")->state == DeliveryState::dispatched);
@@ -98,10 +99,11 @@ void recovery_disconnect_and_jitter() {
 
 void transaction_failures_and_backpressure() {
   RuntimeTimePoint now{};
-  InMemoryRuntimeStore store;
+  kiarabot::core::detail::RuntimeState store;
   RuntimeOptions options;
   options.queue_limit = 1;
-  Runtime runtime(store, options, [&] { return now; }, [] { return 0.5; });
+  kiarabot::core::detail::RuntimeEngine runtime(
+      store, options, [&] { return now; }, [] { return 0.5; });
   assert(runtime.register_plugin("p", {}, {}, true));
   assert(runtime.register_plugin("q"));
   assert(runtime.plugin_started("p"));
@@ -141,8 +143,8 @@ void transaction_failures_and_backpressure() {
 
 void retry_exhaustion_and_retention() {
   RuntimeTimePoint now{};
-  InMemoryRuntimeStore store;
-  Runtime runtime(store, {}, [&] { return now; }, [] { return 0.5; });
+  kiarabot::core::detail::RuntimeState store;
+  kiarabot::core::detail::RuntimeEngine runtime(store, {}, [&] { return now; }, [] { return 0.5; });
   assert(runtime.register_plugin("p"));
   assert(runtime.register_plugin("q"));
   assert(runtime.plugin_started("p"));

@@ -1,5 +1,35 @@
 # PluginSDK 与插件运行时设计
 
+## T06a Host 存储 API
+
+注册协商 host.storage.v1 后，Context.storage_get(key)、storage_set(key, value, idempotency_key, expires_at) 和 storage_delete(key, idempotency_key) 使用现有 HostRequest/HostResponse。SDK 自动关联 request_id/trace_id，deadline 默认五秒且最多五分钟；写入/删除幂等键由插件提供（16–128 字符），重试必须保持原键和内容。namespace 由认证插件身份确定，接口不接受自报 namespace。获授 storage.namespace 才能访问。
+
+键 1–256 字节，值最多 64 KiB；每插件最多 1024 个未过期键、1 MiB 有效值。expires_at 缺省永久，否则必须为未来 UTC、最多三十天；到期读取 NOT_FOUND，删除不存在/已过期键成功。写入超限 RATE_LIMITED。成功写操作与幂等响应、审计原子提交；同一插件同键不同规范化内容 CONFLICT，重放不延长 TTL。幂等响应保留七天，每插件最多一万条，满时拒绝写入。断线后同键重试可恢复结果，失败不会污染命名空间。
+
+## T04b Action 客户端
+
+Context 提供 submit_action(ActionEnvelope)、query_action(action_id 或 idempotency_key) 与 cancel_action(action_id)。使用生成类型，自动创建每次调用的 request_id，只有 action.result.v1 协商成功后才发送；未协商本地 CAPABILITY_NOT_SUPPORTED。读取响应独立于事件回调，回调中调用 Action 不会阻塞接收器。断开/超时抛稳定 PluginError，不能把未知结果包装成 FAILED；调用者重连后用原幂等键查询。SDK 不自动重发可能已有副作用的请求。
+
+## T03b Python SDK 与进程生命周期
+
+`sdk/python` 提供 `Plugin.on_start(context)`、`on_event(EventEnvelope, context)`、`on_stop(reason)` 和本机 gRPC runner，事件类型直接使用生成协议。插件自行实现业务幂等；SDK 不把网络 ACK 当作 Action 完成。清单由 protobuf JSON 解析并校验现行 T03a 子集，不导入 Core 或 NoneBot。
+
+本地 on_start 成功后才注册；每次连接生成新 instance_id，重新验证 required_api_version 与 granted_permissions。完整授权成功才处理事件。正常处理发送正 ACK；异常转换为不含自由文本的 INTERNAL，协作式处理超时返回可重试 TIMEOUT。断线保持结果未知，Core 按至少一次语义重投。停止先取消流，再调用 on_stop；阻塞解释器或拒绝取消的插件由宿主进程硬超时回收。
+
+Core 可启动配置的 Python 插件子进程，使用 argv 而非 shell，显式传入插件凭据，不继承适配器 token、数据库或模型配置。注册前失败/超时阻止受管插件启动成功；运行中崩溃不终止 Core。停止对独立进程组发送 SIGTERM，超过宽限期发送 SIGKILL 并 waitpid。进程隔离不是操作系统权限沙箱。
+
+SDK 提供真实本机 gRPC FakeHost，用于注册、事件、ACK、拒绝和断线测试；现已覆盖 Action/Host 存储帧的成功和故障交互，模型/任务仍待后续任务。示例位于 plugins/event-observer。依赖由 sdk/python/uv.lock 固定，生成代码进入忽略的 build 目录。验收入口见 sdk/python/README.md。
+
+## T03a 当前桥接子集
+
+PluginBridge 首帧注册绑定认证主体，要求 api_version=kiarabot.plugin.v1、runtime=python-rpc、isolation=process。当前只支持无依赖、空配置 schema（空串或 {}）的事件插件；未实现的配置/依赖/运行时明确返回 CAPABILITY_NOT_SUPPORTED。权限必须是宿主配置允许列表的子集，自报清单不会授予权限。
+
+事件订阅由 capabilities 决定：event.message.received / event.message.sent 需要 message.read，event.group.member.changed 需要 member.read，event.friend.request 需要 request.read，event.adapter.status.changed 需要 adapter.read。未知 capability 拒绝。注册成功只表示该进程外连接已可收事件，不表示 Core 已启动或管理插件进程；启动器仍属于 T03b。
+
+同一插件只允许一个活动流。旧流尚未完成读取退出、发送线程取消和 join 时，新注册返回可重试 CONFLICT；旧流完全停止后才回收在途投递。重连重新协商权限/API/ordered，必须与持久化记录一致；订阅清单可重新声明，既有待投递目标不变。一次每插件最多一个在途事件，保证有序会话不并发；不同插件独立 ACK。事件 trace_id 使用逐插件投递的当前值，支持死信重放。
+
+ACK 只能确认本连接身份的 DISPATCHED 记录；成功 ACK 不得带 error，失败 ACK 必须有有效稳定错误码及 retryable。重复成功 ACK 幂等，不重复审计；非法 ACK 或存储失败结束流并保留可恢复状态。未协商或尚未接线的 Action/Host 功能显式拒绝 CAPABILITY_NOT_SUPPORTED。传输关闭/取消不等于业务失败；当前协议无尝试编号，仍是至少一次语义。
+
 ## 责任
 
 PluginSDK 是插件与 Core 之间的稳定边界。它负责：

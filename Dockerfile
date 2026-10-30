@@ -3,7 +3,7 @@ FROM ubuntu:24.04 AS build
 
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update \
-    && apt-get install --no-install-recommends -y ca-certificates cmake g++ make \
+    && apt-get install --no-install-recommends -y ca-certificates cmake g++ make python3 \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /src

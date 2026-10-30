@@ -1,5 +1,7 @@
 # 统一协议层设计
 
+T03a 新增 CoreToPlugin.error（oneof 字段 6），承载注册之后的终止错误，不复用旧编号。注册拒绝仍使用 RegisterPluginResponse.error；注册前身份错误仍为 gRPC UNAUTHENTICATED/PERMISSION_DENIED。注册后的非法 ACK、权限/状态拒绝、依赖故障使用终止 Error 帧，随后结束流；断线/取消可能使该帧不可达，此时客户端保持未确认结果未知并重新注册。完整注册、订阅和 ACK 约束见 doc/03-plugin-sdk.md 的 T03a 子集。
+
 ## 责任
 
 统一协议层负责定义所有语言和进程都能理解的事件、动作、错误、能力和版本信息。
@@ -68,6 +70,14 @@ unknown
 平台不支持的类型由适配器报告能力错误，不能在 Core 中写平台判断。
 
 ## Action 协议
+
+T04a 定义可选功能 `action.result.v1`：RegisterPluginRequest.supported_features（字段 3）申请，RegisterPluginResponse.enabled_features（字段 5）返回实际支持的交集。缺省为空，旧客户端仍只使用事件能力；新客户端连接旧 Core 时不得发送 Action 请求，应本地返回 CAPABILITY_NOT_SUPPORTED。Core 不得声明尚未接线的功能，未协商的 Action 帧明确拒绝。未知功能名不启用。
+
+PluginToCore.action 保留字段 3，PluginActionRequest.action 保留字段 1，新增 request_id=2；新增 action_query=6、action_cancel=7；CoreToPlugin.action_response=7。响应带同一 request_id，outcome 恰好一个 result 或 error。提交/查询/取消均为一问一答；不承诺异步终态推送，客户端通过查询获得终态。请求 ID 在当前连接的在途操作中唯一，长度 1–128；trace_id 同样非空且最多 128。ID/幂等键沿用 ASCII 字母数字、点、下划线、连字符约束。
+
+提交必须有 action_id、idempotency_key、trace_id、deadline 和已知 payload；身份来自认证插件连接，requested_by 为空时由 Core 填入，非空且不匹配则 PERMISSION_DENIED。幂等索引为调用方身份+Action 幂等键，与连接实例和 request_id 无关；相同键/相同规范化内容返回原 action_id 和状态，不同内容返回 CONFLICT。查询 PluginActionQuery 的 selector 必须恰好为 action_id 或 idempotency_key；查询和取消均要求未来 UTC deadline。不可见/不存在/保留期后记录统一 NOT_FOUND。取消仅对未派发、未到期 ACCEPTED 生效；已派发且结果未知返回 CONFLICT，已有终态返回原结果。
+
+拒绝、查询超时、存储故障使用 response.error：INVALID_ARGUMENT、PERMISSION_DENIED、CAPABILITY_NOT_SUPPORTED、CONFLICT、NOT_FOUND、RATE_LIMITED、TIMEOUT、UPSTREAM_UNAVAILABLE、INTERNAL。它们不自动生成 Action FAILED。ActionResult 沿用已有状态；ACCEPTED 不带 completed_at/error，终态带 completed_at，FAILED 必须带稳定 Error；EXPIRED 使用 TIMEOUT，CANCELLED 不要求 error。断线、缺失响应、未知枚举或 NOT_FOUND 均不得解释为平台执行失败；重新协商后按同一调用方及幂等键查询。协议已定义不代表服务已实现，T04b 负责实际接线。
 
 插件和 Core 不直接调用平台 API，而是产生 Action：
 
@@ -139,6 +149,8 @@ RegisterAdapterResponse
 - 运行时是否被允许启动。
 
 ### 插件 Host API v1
+
+T06a 在现有功能协商字段中增加 host.storage.v1 名称，不新增线协议字段；仅协商成功后使用 storage_get/set/delete。Core 原样关联 request_id，HostResponse.error 与 result 必须互斥。具体 TTL、限额和稳定错误见 doc/03-plugin-sdk.md；读取/写入必须获授 storage.namespace。失败状态不以空值代替；空 bytes 是合法存储值。其余 Host operation 在后续功能接线前明确 CAPABILITY_NOT_SUPPORTED。
 
 `PluginBridge` 注册成功后，插件以 `HostRequest` 调用模型、私有存储和一次性任务服务；Core 使用相同 `request_id` 返回 `HostResponse`。请求必须携带非空 `request_id`、`trace_id` 和未来的 UTC `deadline`。`storage_set`、`storage_delete`、`task_create`、`task_cancel` 必须携带幂等键；同一插件和幂等键重放返回原结果，载荷不同返回 `CONFLICT`。响应必须恰好包含对应的结果或 `Error`，不得同时包含两者。插件身份来自已注册连接，不能由请求指定；所有调用均先经过 Core 权限检查。断线后未确认结果须由调用者以相同幂等键查询或重试，不能假定超时代表未执行。
 
@@ -227,3 +239,17 @@ protoc --descriptor_set_out=build/kiarabot-v1.pb \
 ## 代码启动句
 
 > 请只创建 `proto/kiarabot/v1` 的 Protobuf 协议和生成测试，先实现事件、Action、适配器注册、插件注册及稳定错误码，不实现任何平台或业务逻辑。
+
+## 桥接连接认证（T01b）
+
+两个 Connect RPC 的 metadata 必须恰好包含一个 `authorization: Bearer <token>`。凭据由宿主配置绑定角色（adapter/plugin）与资源 ID，不从请求取得授权身份。缺失、重复、错误格式或未知凭据返回 gRPC UNAUTHENTICATED；角色不匹配或注册 ID 冒用返回 PERMISSION_DENIED。错误详情 `Status.error_details()` 为序列化的 `kiarabot.v1.Error`，客户端使用 code 判定，不解析自由文本。
+
+未配置相应 T02a/T03a 业务入口时，已认证连接的首条请求返回 `CAPABILITY_NOT_SUPPORTED` / gRPC INTERNAL；不会发送 accepted、持久化确认或心跳成功。空消息返回 INVALID_ARGUMENT，客户端正常半关闭无消息返回 OK；取消及 deadline 使用 gRPC 传输状态 CANCELLED/DEADLINE_EXCEEDED，不代表业务成功。关闭服务取消等待中的流并等待处理器退出。已接线的注册和权限约束见 T02a/T03a 对应章节。
+
+## T02a 注册与 inbox 确认
+
+启用持久化接收的 AdapterBridge 首帧必须是 RegisterAdapterRequest。协议版本固定 kiarabot.v1；账号至少一个，必须 enabled 且在宿主配置的允许列表中；自报账号及 Capability 不授予权限。注册成功返回 accepted、随机 assigned_instance_id、required_protocol_version 和 30 秒心跳间隔；注册失败返回 accepted=false 和稳定 Error，然后正常结束流。新注册替换同身份旧实例，旧连接不能继续入库。事件和心跳必须绑定当前实例。身份冒用仍以 gRPC PERMISSION_DENIED 终止。
+
+CoreToAdapter.event_ack 使用新编号 4。AdapterEventAck 包含 event_id、trace_id、status、error、retry_after_ms：PERSISTED 表示 inbox/会话水位/审计和幂等记录已原子提交，DUPLICATE 表示同内容已提交，REJECTED 表示本次未接收。只有前两者是确认；不是插件 ACK 或 Action 完成。
+
+内容或顺序冲突使用 CONFLICT，错误 schema/缺失字段使用 INVALID_ARGUMENT，无账号授权或伪造 Core 内部事件使用 PERMISSION_DENIED，队列满 RATE_LIMITED，存储不可用 UPSTREAM_UNAVAILABLE，损坏/内部失败 INTERNAL。RATE_LIMITED、存储暂时故障及版本提交冲突可重试，retry_after_ms=1000；内容冲突不可重试。传输超时/取消依旧使用 gRPC 状态，确认丢失不能推断未入库。未装配 ActionRouter 时 ActionResult 明确拒绝 CAPABILITY_NOT_SUPPORTED / gRPC INTERNAL；T04b 装配后按已认证适配器归属验证并持久化结果。未配置持久化入口时保留 T01b 拒绝语义。

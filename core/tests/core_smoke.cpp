@@ -1,7 +1,7 @@
-#include "kiarabot/core/runtime.h"
-
 #include <cassert>
 #include <chrono>
+
+#include "kiarabot/core/runtime_engine.hpp"
 
 int main() {
   using namespace std::chrono_literals;
@@ -11,20 +11,21 @@ int main() {
   using kiarabot::core::DeliveryState;
   using kiarabot::core::EventRecord;
   using kiarabot::core::EventResult;
-  using kiarabot::core::InMemoryRuntimeStore;
   using kiarabot::core::PluginState;
-  using kiarabot::core::Runtime;
   using kiarabot::core::RuntimeOptions;
   using kiarabot::core::RuntimeTimePoint;
+  using kiarabot::core::detail::RuntimeEngine;
+  using kiarabot::core::detail::RuntimeState;
 
   RuntimeTimePoint now{};
-  InMemoryRuntimeStore store;
+  kiarabot::core::detail::RuntimeState store;
   RuntimeOptions options;
   options.queue_limit = 32;
   options.max_attempts = 3;
   options.retention = 24h;
   options.plugin_failure_after = 5min;
-  Runtime runtime(store, options, [&now] { return now; }, [] { return 0.5; });
+  kiarabot::core::detail::RuntimeEngine runtime(
+      store, options, [&now] { return now; }, [] { return 0.5; });
 
   assert(runtime.ingest({"event-1", "trace-1"}) == EventResult::accepted);
   assert(runtime.ingest({"event-1", "trace-1"}) == EventResult::duplicate);
@@ -76,8 +77,8 @@ int main() {
   assert(runtime.update_plugin_recovery("plugin-1"));
   assert(store.find_plugin("plugin-1")->state == PluginState::failed);
 
-  // The store port keeps inbox state across Runtime instances.
-  Runtime restarted(store, options, [&now] { return now; });
+  // The store port keeps inbox state across kiarabot::core::detail::RuntimeEngine instances.
+  kiarabot::core::detail::RuntimeEngine restarted(store, options, [&now] { return now; });
   assert(restarted.ingest({"event-3", "trace-3", "conversation-1", 3, true}) ==
          EventResult::duplicate);
   assert(restarted.ingest({"event-5", "trace-5", "conversation-1", 2, true}) ==

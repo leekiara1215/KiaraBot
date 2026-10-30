@@ -1,0 +1,12 @@
+{
+  "id": "event-observer",
+  "name": "Event observer",
+  "version": "0.1.0",
+  "api_version": "kiarabot.plugin.v1",
+  "runtime": "python-rpc",
+  "entrypoint": "observer:create_plugin",
+  "capabilities": ["event.message.received"],
+  "permissions": ["message.read"],
+  "isolation": "process",
+  "ordered": true
+}

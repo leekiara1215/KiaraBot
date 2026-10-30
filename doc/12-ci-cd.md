@@ -314,4 +314,4 @@ PROD_KNOWN_HOSTS
 
 ## 当前运维配置的部署限制
 
-当前仓库已提供 Compose、非 root 的 Core 镜像构建、迁移前 SQLite 快照、健康探针和按指定 Core digest 回滚的脚本；用法与故障处理见 [部署与可观测性](08-operations.md)。生产 Compose 的全零 digest 是占位值，发布系统必须注入实际镜像 digest。现有 Core 仍是一次性骨架，迁移命令、适配器、面板和进程健康端点尚未交付；因此这些配置还不能支持真实的 staging 或 production 自动发布，也不能将 Compose 配置解析成功当作上线验收。OpenAPI 中的 `/api/v1/health` 与预留的进程健康端点是不同接口，后者仍需明确公共契约和实现。镜像回滚不自动恢复数据库，发布流程必须验证 schema 向后兼容或按运维流程显式恢复迁移前备份。
+当前仓库已提供 Compose、非 root 的 Core 镜像构建、迁移前 SQLite 快照、健康探针和按指定 Core digest 回滚的脚本；用法与故障处理见 [部署与可观测性](08-operations.md)。生产 Compose 的全零 digest 是占位值，发布系统必须注入实际镜像 digest。现有 Core 已有 POSIX 常驻/停止入口，但尚无 RPC 与持久化接线，迁移命令、适配器、面板和进程健康端点尚未交付；因此这些配置还不能支持真实的 staging 或 production 自动发布，也不能将 Compose 配置解析成功当作上线验收。OpenAPI 中的 `/api/v1/health` 与预留的进程健康端点是不同接口，后者仍需明确公共契约和实现。镜像回滚不自动恢复数据库，发布流程必须验证 schema 向后兼容或按运维流程显式恢复迁移前备份。

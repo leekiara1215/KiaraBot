@@ -1,0 +1,477 @@
+# 分层开发任务与实施台账
+
+## 当前范围和执行约束
+
+遵循用户最新要求：保持 C++20 Core、独立 Python NoneBot2 适配器、Python 进程外 SDK/插件和 TypeScript 面板。纯 C++ 替换只是未来方向，T12 延期。本台账将原 12 个工作包拆成 23 个当前任务和 1 个延期任务；状态只有验收后才能更新，不以协议或占位实现计完成。
+
+共同规则：每个任务只修改列出的目录及直接相关文档，禁止修改其余模块内部实现；跨层任务再按协议、各模块实现、集成测试拆提交。C++20/CMake 3.24+，Protobuf 25+/gRPC 1.60+，Python 适配器及 SDK 3.11+；面板依赖使用现有锁文件。新增依赖先固定版本，不顺手升级。拒绝、超时、依赖故障使用现有稳定错误；尚未冻结的跨边界字段先完成契约任务，不能用自由文本代替。
+
+文档影响：每项列出必须同步的文档；未改变的协议/API 不修改。所有代码任务运行相应构建/测试/格式检查，并检查文档本地链接和 git diff --check。修改协议额外运行解析、生成、兼容门禁；没有历史 descriptor 不得声称向后兼容通过。
+
+## 检查命令组
+
+- C：`cmake --preset dev && cmake --build --preset dev && ctest --preset dev`。
+- P：C 加 `cmake --preset proto -DCMAKE_EXPORT_COMPILE_COMMANDS=ON && cmake --build --preset proto && ctest --preset proto`；契约变化运行 `./proto/tests/check_contracts.sh`、相应 OpenAPI/AsyncAPI lint 和 descriptor 基线检查（见 proto/tests/README.md）。
+- I：P 加 `cmake -S infrastructure -B build/infrastructure && cmake --build build/infrastructure && ctest --test-dir build/infrastructure --output-on-failure`；新测试注册 CTest。
+- S：P/I 的相关项，加 SDK 项目固定依赖环境中的 `python -m pytest`；任务首次落地时提供锁文件、fake host 和可执行测试，不允许“无测试收集”通过。
+- E：独立适配器按其项目锁文件安装，执行 `python -m pytest`；再运行 T07 新增的集成入口。独立仓库位置未知时先定位，不能假定不存在或在 Core 内创建 Python 实现。
+- W：`cd panel && npm run generate && npm run check:contracts && npm run lint && npm test && npm run build`，再运行 T09 新增的真实服务集成测试。
+- O：`bash -n scripts/deploy/*.sh`（逐文件检查），Compose config、镜像构建、隔离部署/备份恢复演练；不得以 config 成功代替服务验收。
+- 所有 C++ 变更另跑 `./scripts/check-toolchain.sh`，记录失败原因及直接验证结果。
+
+## 依赖顺序
+
+建议串行执行：T01a → T01b → T05a → T05b → T10a → T02a → T02b → T03a → T03b → T04a → T04b → T06a → T06b → T06c → T07a → T07b → T08a → T08b → T09a → T09b → T10b → T11a → T11b。T10a 虽属于管理工作包，授权是业务闭环前置，所以提前；T07a 在各模块开发时逐步补齐，不能等全系统完成才测试。T12 不执行。
+
+## T01a：Core 进程启停
+
+- 原工作包：1；状态：**已实现；dev 4/4、proto 7/7 通过**。
+- 依赖：无。
+- 允许修改：core/、根构建依赖、Dockerfile；禁止修改其余模块内部实现。
+- 输入、输出与错误：CLI/停止信号 → 退出状态；参数错误 2、系统失败 1、正常 0。
+- 文档同步：doc/02-core.md、doc/08-operations.md、doc/11-toolchain.md、doc/12-ci-cd.md。
+- 验证命令组：C。
+- 验收：
+  - [x] 持续存活。
+  - [x] SIGINT/SIGTERM 正常退出。
+  - [x] --check 一次退出。
+  - [x] 未知参数拒绝。
+
+## T01b：gRPC 服务与身份边界
+
+- 原工作包：1；状态：**已实现：本机认证传输；业务注册/投递仍由后续任务实现**。
+- 依赖：T01a。
+- 允许修改：core/、proto/ 直接受影响契约；禁止修改其余模块内部实现。
+- 输入、输出与错误：连接/凭据 → 认证上下文；未认证 UNAUTHENTICATED、无权限 PERMISSION_DENIED。
+- 文档同步：doc/01-contracts.md、doc/02-core.md、proto/README.md。
+- 验证命令组：P。
+- 验收：
+  - [x] 监听可配置。
+  - [x] 端口占用启动失败。
+  - [x] 未认证拒绝。
+  - [x] 停止取消流并 join。
+  - [x] 不得接收业务后无声丢弃。
+
+## T05a：统一运行时存储端口
+
+- 原工作包：5；状态：**已实现；dev 5/5 通过，完整回归见交付记录**。
+- 依赖：T01a。
+- 允许修改：core/、infrastructure/ 接口适配；禁止修改其余模块内部实现。
+- 输入、输出与错误：事件/Action/投递操作 → 显式成功、未找到、重复、存储失败。
+- 文档同步：doc/02-core.md、doc/05-infrastructure.md、doc/01-runtime-semantics.md。
+- 验证命令组：C。
+- 验收：
+  - [x] 保留逐插件唯一键与会话水位。
+  - [x] 读故障不能伪装不存在。
+  - [x] 事务销毁回滚。
+  - [x] 现有内存测试不回退。
+
+## T05b：SQLite 事务、迁移与恢复
+
+- 原工作包：5；状态：**已实现；SQLite 适配器及集成测试通过，进程接线已由 T02a 完成**。
+- 依赖：T05a。
+- 允许修改：infrastructure/、CMake 集成；禁止修改其余模块内部实现。
+- 输入、输出与错误：数据库路径/迁移版本 → 持久化端口；坏 schema/写故障明确失败。
+- 文档同步：doc/05-infrastructure.md、doc/08-operations.md。
+- 验证命令组：I。
+- 验收：
+  - [x] 迁移重复安全。
+  - [x] 提交/回滚和唯一性。
+  - [x] 关闭重开保持事件/投递/Action/会话。
+  - [x] 磁盘故障与并发冲突可复现。
+
+## T10a：Core 权限决策与审计端口
+
+- 原工作包：10；状态：**已实现；Core 命令授权与事务审计，T02a/T03a 已接入桥接入口**。
+- 依赖：T05a。
+- 允许修改：core/、infrastructure/ 审计实现；禁止修改其余模块内部实现。
+- 输入、输出与错误：可信身份/权限/资源 → 允许或 PERMISSION_DENIED；审计故障阻止受保护写入。
+- 文档同步：doc/02-core.md、doc/05-infrastructure.md、doc/06-control-api.md。
+- 验证命令组：I。
+- 验收：
+  - [x] 默认拒绝。
+  - [x] 插件自报权限不授予。
+  - [x] 拒绝无副作用。
+  - [x] 成功写入与幂等/审计原子提交。
+  - [x] 失败审计不泄密。
+
+## T02a：适配器事件确认契约与 Core 接收
+
+- 原工作包：2；状态：**已实现；协议与持久化接收验收通过，插件/Action 闭环仍待后续任务**。
+- 依赖：T01b、T05b、T10a。
+- 允许修改：proto/、core/；禁止修改其余模块内部实现。
+- 输入、输出与错误：注册/事件 → 注册结果及持久化确认；INVALID_ARGUMENT、RATE_LIMITED、存储失败。
+- 文档同步：proto/README.md、doc/01-contracts.md、doc/01-runtime-semantics.md、doc/04-nonebot-adapter.md。
+- 验证命令组：P。
+- 验收：
+  - [x] 先定义当前缺少的事件确认消息。
+  - [x] 不复用字段编号。
+  - [x] 提交后确认。
+  - [x] 重投不重复执行。
+  - [x] 背压不丢事件。
+
+## T02b：独立 Python NoneBot2 适配器
+
+- 原工作包：2；状态：**已实现；独立项目 20 项自动验收通过，真实 QQ 留待 T07b**。
+- 依赖：T02a。
+- 允许修改：独立 kiarabot-adapter-nonebot 项目；本仓库仅契约测试语料；禁止修改其余模块内部实现。
+- 输入、输出与错误：OneBot V11 → EventEnvelope；映射不支持返回稳定错误。
+- 文档同步：doc/04-nonebot-adapter.md。
+- 验证命令组：E。
+- 验收：
+  - [x] 文本/群/私聊映射。
+  - [x] 注册能力。
+  - [x] 断线重投。
+  - [x] 确认前保留事件。
+  - [x] Python 依赖锁定。
+  - [x] 真实平台仅最后验收（未运行，归入 T07b）。
+
+## T03a：插件注册、订阅和投递接线
+
+- 原工作包：3；状态：**已实现；注册、订阅、逐插件投递验收通过，SDK/启动器已由 T03b 完成**。
+- 依赖：T01b、T05b、T10a。
+- 允许修改：core/、proto/ 必要协商扩展；禁止修改其余模块内部实现。
+- 输入、输出与错误：manifest/认证流 → 授权订阅与投递；版本/权限不兼容拒绝。
+- 文档同步：doc/02-core.md、doc/03-plugin-sdk.md、doc/01-runtime-semantics.md。
+- 验证命令组：P。
+- 验收：
+  - [x] 两个插件独立 ACK。
+  - [x] 有序会话不并发。
+  - [x] 断线后停止旧投递者再恢复。
+  - [x] 重放 trace 更新。
+
+## T03b：Python SDK、fake host 与生命周期
+
+- 原工作包：3；状态：**已实现；SDK 22/22，proto 15/15，dev 5/5 通过**。
+- 依赖：T03a。
+- 允许修改：sdk/python/、tools/ 插件工具、core/ 宿主启动器；禁止修改其余模块内部实现。
+- 输入、输出与错误：插件清单/生命周期 → 注册、事件处理、停止结果。
+- 文档同步：doc/03-plugin-sdk.md、sdk/PLUGIN_SDK_DEPENDENCIES.md。
+- 验证命令组：S。
+- 验收：
+  - [x] SDK 只依赖生成协议。
+  - [x] 示例插件收事件。
+  - [x] 异常隔离。
+  - [x] 停止超时回收进程。
+  - [x] 重连重新协商。
+  - [x] fake host 测试。
+
+## T04a：Action 结果传递与查询契约
+
+- 原工作包：4；状态：**已实现；协议生成、round-trip、旧端解码和 HEAD descriptor 兼容检查通过**。
+- 依赖：T03a。
+- 允许修改：proto/、api/ 直接受影响 schema；禁止修改其余模块内部实现。
+- 输入、输出与错误：Action/查询 → ACCEPTED 或终态；权限、能力、超时错误。
+- 文档同步：doc/01-contracts.md、doc/01-runtime-semantics.md、doc/06-control-api.md。
+- 验证命令组：P。
+- 验收：
+  - [x] 补插件结果/查询承载。
+  - [x] 调用方作用域幂等键。
+  - [x] 按 ID 查询。
+  - [x] 兼容旧客户端。
+  - [x] 未知结果不误报失败。
+
+## T04b：Action 分发与适配器执行
+
+- 原工作包：4；状态：**已实现；阶段验收 Core 16/16、SDK 28/28；最终适配器 34/34 通过，当前 send_message 纯文本子集**。
+- 依赖：T04a、T02b、T03b。
+- 允许修改：core/、独立适配器、SDK 各自公共实现，以及直接受影响的 infrastructure/ 快照编解码和迁移；禁止修改其余模块内部实现。
+- 输入、输出与错误：授权 Action → 平台调用与持久化结果。
+- 文档同步：doc/02-core.md、doc/03-plugin-sdk.md、doc/04-nonebot-adapter.md。
+- 验证命令组：E。
+- 验收：
+  - [x] 权限拒绝不调用平台。
+  - [x] 执行前 deadline。
+  - [x] 重复请求重用结果。
+  - [x] 断线查询终态。
+  - [x] 取消不覆盖已到期。
+
+## T06a：Host 请求分发与存储 API
+
+- 原工作包：6；状态：**已实现；Core Host 测试及 SDK 35/35 通过，schema v4 迁移覆盖 v1/v2/v3**。
+- 依赖：T03b、T05b、T10a。
+- 允许修改：core/、infrastructure/、sdk/python/；禁止修改其余模块内部实现。
+- 输入、输出与错误：HostRequest → 对应 HostResponse；deadline/参数/幂等冲突错误。
+- 文档同步：doc/03-plugin-sdk.md、doc/05-infrastructure.md、doc/01-runtime-semantics.md。
+- 验证命令组：S。
+- 验收：
+  - [x] 关联 request_id。
+  - [x] 身份确定 namespace。
+  - [x] 同键不同内容 CONFLICT。
+  - [x] TTL/限额。
+  - [x] 业务/幂等/审计原子化。
+
+## T06b：非流式模型 Provider 与示例 AI 插件
+
+- 原工作包：6；状态：**待实现**。
+- 依赖：T06a。
+- 允许修改：infrastructure/、plugins/、sdk/python/；禁止修改其余模块内部实现。
+- 输入、输出与错误：ModelChatRequest → 非流式结果；TIMEOUT、RATE_LIMITED、UPSTREAM_UNAVAILABLE。
+- 文档同步：doc/03-plugin-sdk.md、doc/05-infrastructure.md。
+- 验证命令组：S。
+- 验收：
+  - [ ] fake 正常/超时/限流/中断。
+  - [ ] 密钥不外泄。
+  - [ ] 示例插件仅通过 SDK。
+  - [ ] 外部模型不参与单元测试。
+
+## T06c：持久化一次性任务调度
+
+- 原工作包：6；状态：**待实现**。
+- 依赖：T06a。
+- 允许修改：core/、infrastructure/、sdk/python/；禁止修改其余模块内部实现。
+- 输入、输出与错误：任务时间/取消 → 持久化状态；非法时区/过期/权限错误。
+- 文档同步：doc/01-runtime-semantics.md、doc/05-infrastructure.md。
+- 验证命令组：I。
+- 验收：
+  - [ ] UTC/时区/DST 校验。
+  - [ ] claim fencing。
+  - [ ] 重启 running→retrying。
+  - [ ] 取消不重复投递。
+  - [ ] 旧 claim 不覆盖新结果。
+
+## T07a：最小闭环故障测试
+
+- 原工作包：7；状态：**待实现**。
+- 依赖：T04b。
+- 允许修改：tests/、各模块测试入口；禁止修改其余模块内部实现。
+- 输入、输出与错误：固定事件与故障脚本 → 可重复断言/测试报告。
+- 文档同步：doc/02-core.md、doc/12-ci-cd.md。
+- 验证命令组：P。
+- 验收：
+  - [ ] fake 平台事件→插件→Action→结果。
+  - [ ] 拒绝无副作用。
+  - [ ] 重复/重启/断线恢复。
+  - [ ] 可独立 CI 运行。
+
+## T07b：真实独立组件联调
+
+- 原工作包：7；状态：**待实现**。
+- 依赖：T07a、T06b、T06c。
+- 允许修改：tests/、独立适配器测试、deploy/ 联调环境；禁止修改其余模块内部实现。
+- 输入、输出与错误：隔离 QQ/模型测试配置 → 人工或受控联调结果。
+- 文档同步：doc/04-nonebot-adapter.md、doc/08-operations.md。
+- 验证命令组：E。
+- 验收：
+  - [ ] 确认账号及依赖版本。
+  - [ ] 真实收发和回滚。
+  - [ ] 敏感配置不提交。
+  - [ ] 平台不可用明确记未验证。
+
+## T08a：控制应用端口与剩余契约决策
+
+- 原工作包：8；状态：**待实现**。
+- 依赖：T04a、T10a。
+- 允许修改：core/、api/、必要 proto/；禁止修改其余模块内部实现。
+- 输入、输出与错误：管理查询/配置命令 → 分页资源/接受状态。
+- 文档同步：doc/06-control-api.md、doc/13-control-api-contract-handoff.md。
+- 验证命令组：P。
+- 验收：
+  - [ ] 先核对历史交接与现行契约。
+  - [ ] 确认同进程端口或版本化 RPC。
+  - [ ] 会话撤销、幂等、分页/快照与错误逐项冻结。
+
+## T08b：控制 API 服务
+
+- 原工作包：8；状态：**待实现**。
+- 依赖：T08a、T05b。
+- 允许修改：control/api/、core/ 应用服务；禁止修改其余模块内部实现。
+- 输入、输出与错误：REST 请求 → 契约响应；401/403/409/429/503/504。
+- 文档同步：doc/06-control-api.md、doc/08-operations.md。
+- 验证命令组：P。
+- 验收：
+  - [ ] 登录轮换/撤销。
+  - [ ] 每个写入口授权审计。
+  - [ ] 查询与配置版本冲突。
+  - [ ] mock 和真实端口同套契约测试。
+
+## T09a：服务端控制事件流
+
+- 原工作包：9；状态：**待实现**。
+- 依赖：T08b。
+- 允许修改：control/api/、core/ 事件端口、infrastructure/ 保留实现；禁止修改其余模块内部实现。
+- 输入、输出与错误：hello/resume → SESSION_READY、重放或 RESYNC_REQUIRED。
+- 文档同步：doc/06-control-api.md、doc/01-runtime-semantics.md。
+- 验证命令组：P。
+- 验收：
+  - [ ] 绑定认证主体。
+  - [ ] 10 分钟保留。
+  - [ ] 频道权限过滤。
+  - [ ] 过期 token 拒绝。
+  - [ ] 恢复与快照无遗漏。
+
+## T09b：TypeScript 面板真实集成
+
+- 原工作包：9；状态：**待实现**。
+- 依赖：T09a。
+- 允许修改：panel/、control/api/ 测试夹具；禁止修改其余模块内部实现。
+- 输入、输出与错误：真实 REST/WSS → 页面和状态；会话过期回登录。
+- 文档同步：doc/07-control-panel.md。
+- 验证命令组：W。
+- 验收：
+  - [ ] 保留现有 TS 技术栈。
+  - [ ] 登录刷新/401/403。
+  - [ ] 断线恢复/重同步。
+  - [ ] 角色来自服务端。
+  - [ ] 日志脱敏。
+
+## T10b：运行时结构化日志接线
+
+- 原工作包：10；状态：**待实现**。
+- 依赖：T10a、T03a。
+- 允许修改：core/ 日志端口、infrastructure/ sink；禁止修改其余模块内部实现。
+- 输入、输出与错误：运行时操作 → 结构化标识/结果。
+- 文档同步：doc/02-core.md、doc/05-infrastructure.md、doc/08-operations.md。
+- 验证命令组：I。
+- 验收：
+  - [ ] 成功/拒绝/重试/死信/故障覆盖。
+  - [ ] 不记录正文密钥。
+  - [ ] sink 故障行为明确。
+  - [ ] 日志不代替业务提交。
+
+## T11a：健康契约、迁移命令和启动接线
+
+- 原工作包：11；状态：**待实现**。
+- 依赖：T01b、T05b、T08b。
+- 允许修改：api/、core/、control/api/、infrastructure/ 迁移入口；禁止修改其余模块内部实现。
+- 输入、输出与错误：健康请求/迁移调用 → 稳定响应/退出码。
+- 文档同步：doc/08-operations.md、doc/06-control-api.md。
+- 验证命令组：P。
+- 验收：
+  - [ ] 先定义进程探针与控制健康关系。
+  - [ ] 迁移失败禁止 ready。
+  - [ ] 存活不依赖数据库。
+  - [ ] 坏 schema 拒绝启动。
+
+## T11b：镜像、部署与恢复演练
+
+- 原工作包：11；状态：**待实现**。
+- 依赖：T11a、T09b、T10b、T07b。
+- 允许修改：Dockerfile、deploy/、scripts/deploy/、CI；禁止修改其余模块内部实现。
+- 输入、输出与错误：固定镜像/配置/备份 → 可追踪部署。
+- 文档同步：doc/08-operations.md、doc/12-ci-cd.md。
+- 验证命令组：O。
+- 验收：
+  - [ ] 真实镜像替换占位。
+  - [ ] 启动/关闭顺序。
+  - [ ] 备份校验恢复。
+  - [ ] 回滚前验证 schema。
+  - [ ] 隔离 staging 演练。
+
+## T12：未来 C++ 客户端替换
+
+- 原工作包：12；状态：**延期：用户明确当前不需要**。
+- 依赖：未来单独决策。
+- 允许修改：未来客户端目录；当前禁止实施；禁止修改其余模块内部实现。
+- 输入、输出与错误：复用 REST/WSS → 原生客户端。
+- 文档同步：doc/07-control-panel.md。
+- 验证命令组：—。
+- 验收：
+  - [ ] 当前版本不要求。
+  - [ ] 未来先确认 GUI/CLI 范围再定义功能等价验收。
+
+
+## 本轮交付记录
+
+已实现 T01a，未宣称 T01b 或任何完整跨层工作包完成。新增真实子进程测试覆盖持续存活、SIGINT/SIGTERM、--check、--help、非法参数和多余参数；dev 4/4、proto 7/7 通过。新增 Python 3.9+ 构建测试依赖已同步 CMake、Docker 构建阶段和工具链文档；运行镜像不加入 Python。
+
+变更 main.cpp 已使用 Xcode clang-format 格式化且单文件 dry-run 通过。统一检查最初因 PATH 中没有 clang-format 停止；使用 Xcode 工具路径后因缺少 clang-tidy 停止，静态分析未运行。全仓格式脚本还存在既有源码格式差异，并扫描 .venv/.tools 第三方头文件，本轮未批量格式化或修改检查范围。未运行镜像构建、非 POSIX 平台、真实网络或生产部署；无协议/API 字段改动，未重跑 descriptor 基线兼容门禁。文档链接路径和 git diff --check 必须通过。
+
+本轮文档影响：更新 doc/02-core.md、doc/08-operations.md 的启停语义；doc/11-toolchain.md 与 doc/12-ci-cd.md 同步测试依赖和部署限制；索引、评估、缺口清单及本台账同步当前范围。proto/、api/、doc/01-contracts.md、doc/01-runtime-semantics.md、doc/03 至 doc/07 无新增接口、投递、权限或业务状态变化，无需修改；纯 C++ 未来设计保留。
+
+## T01b 验收记录（2026-10-30）
+
+- 实现：core/include/kiarabot/core/bridge_server.hpp、core/src/bridge_server.cpp、main.cpp，根 CMake 与 Core 测试注册；两个桥接的本机监听和 bearer 身份边界。不宣称业务注册、事件入库或插件执行可用。
+- 验收：proto 配置/编译/CTest 9/9；新增 core_bridge 与 core_grpc_process，覆盖缺失/错误/重复凭据、角色不匹配、身份冒用、空消息、显式不支持、deadline、活动流关闭、端口复用、外部地址拒绝和两个进程停止信号。dev 回归 4/4 通过。
+- 文档：services.proto 增补连接认证注释（字段/RPC 签名未变）；更新 proto/README.md、doc/01-contracts.md、doc/02-core.md、doc/08-operations.md 以及台账。API、面板、SDK 与事件投递语义未改动，无需同步。
+- 检查：契约脚本、相对 HEAD 的 descriptor 兼容检查和四个变更 C++ 文件格式检查通过；统一工具链仍因缺少 clang-tidy 停止。测试使用隔离的本机临时端口，不依赖外部服务。尚未进行 TLS/跨主机/真实 Python 组件验收，属于后续任务。
+- 下一任务 T05a 仍未完成：需消除 RuntimeStore 读取接口的故障歧义，再连接 SQLite，禁止用“未找到”吞掉存储故障。
+
+## T05a/T05b 连续实施记录（2026-10-30）
+
+T05a：公共 Runtime/RuntimeStore 统一为事务快照和显式 StorageResult；旧状态机移入 detail::RuntimeEngine，原三组算法测试保留；新增公共端口测试覆盖读错误、未找到、重复、提交失败、放弃事务、版本冲突及投递唯一性。Host ports 移除不完整 Repository，复用 RuntimeSnapshot 和 Result 约定。
+
+T05b：SQLite schema v1 初始化、64 MiB 私有快照编码、revision 原子更新；支持关闭重开、逐插件恢复、Action 幂等、会话水位、事务回滚、重复迁移与损坏拒绝。测试使用临时数据库及独立连接，注入写锁、并发旧版本提交、损坏数据、未知 schema 和数据库文件移除，验证失败不伪装成功。
+
+验收结果：dev 5/5；proto 启用 KIARABOT_ENABLE_INFRASTRUCTURE=ON 后 12/12；基础设施独立构建 2/2。数据层均为 C++，未迁移 Python SDK/适配器或 TypeScript 面板。快照方案复制全部状态，未做性能或生产容量认证；未连接 daemon、Host 组合事务或健康服务。
+
+文档影响：更新 doc/02-core.md、doc/05-infrastructure.md、doc/01-runtime-semantics.md（公共批量操作整体提交）、doc/08-operations.md、基础设施交接和本台账；跨语言 proto/API 字段未变，无需修改其 schema。业务桥后续必须实现 StorageError 的稳定映射。格式检查覆盖本轮修改 C++；全量工具链检查仍需记录 clang-tidy 可用性，未验证生产部署或真实 QQ。
+
+## T10a 连续实施记录（2026-10-30）
+
+完成静态默认拒绝授权、可信身份上下文、成功命令幂等以及与业务状态原子提交的审计。内存与 SQLite 使用同一验收：拒绝不调用业务、同键重放不重复副作用、不同 fingerprint 冲突、回调失败撤销状态且脱敏、审计容量不足拒绝、提交失败不留下业务/幂等/审计记录。Runtime 普通操作保留审计与命令元数据，SQLite v1→v2 迁移及重开后的审计/幂等恢复纳入验收。
+
+本轮共连续实施 T05a、T05b、T10a。最新集成构建启用基础设施后 13/13 测试通过；此前 T05b 的 12/12 是增加授权测试前的阶段结果。更新 doc/02-core.md、doc/05-infrastructure.md、doc/06-control-api.md 和 schema 迁移说明；REST/Protobuf/AsyncAPI 字段未改变，未新增跨进程授权接口。静态授权配置不等于网络业务已可用，T02a 起还须将桥接认证身份接到应用入口并提供持久化确认。
+
+## T02a 连续实施记录（2026-10-30）
+
+新增 AdapterEventAck 与 CoreToAdapter.event_ack=4；认证注册、配置账号授权、实例替换、事件校验、SHA-256 内容去重、事务审计和提交后确认已接线。队列满返回可重试 RATE_LIMITED 并结束流，未确认事件由发送方保留。可通过 KIARABOT_RUNTIME_DB/KIARABOT_ADAPTER_ACCOUNTS 启用 SQLite 入口；未配置时维持显式拒绝业务。
+
+验收：dev 5/5、proto+基础设施 14/14、独立基础设施 3/3；新增 adapter_ingress 覆盖身份/账号/载荷拒绝、读写失败回滚、重投/内容冲突、队列满、旧连接隔离以及提交后丢失确认、关闭重开后去重。进程测试验证持久化启动、重复打开、非法配置、坏 schema 禁止启动及停止信号。协议检查与相对 HEAD 的 descriptor 兼容门禁通过。
+
+文档影响：同步 proto/README.md、doc/01-contracts.md、doc/01-runtime-semantics.md、doc/02-core.md、doc/04-nonebot-adapter.md、doc/08-operations.md、doc/11-toolchain.md；doc/05-infrastructure.md 与交接说明修正当前接线状态。OpenAPI/AsyncAPI、面板和 SDK 未改变接口，无需更新。OpenSSL Crypto 为显式构建依赖（本机检测 4.1.0，要求 3.0+）；精确发布依赖锁定留待 T11。尚未验证真实 QQ、跨主机 TLS、生产吞吐和完整闭环。
+
+## T02b 连续实施记录（2026-10-30）
+
+独立项目位于 `/Users/betta/Workspace/kiarabot-adapter-nonebot`。已实现 NoneBot2 正向 WebSocket、群/私聊映射、消息段转换、有界持久化 outbox、会话序号、能力注册、确认前保留、断线重投、稳定错误和脱敏日志。Python 3.11.18 与 uv.lock 固定环境；生成代码放入忽略目录，协议唯一来源仍是本仓库 proto/。
+
+在独立项目运行 `CORE_TEST_BINARY=../KiaraBot/build/proto/core/kiarabot-core .venv/bin/python -m pytest -q`：**20/20 通过**。包含实际 NoneBot 子进程连接 fake WebSocket/Core，以及 Python 客户端连接真实 C++ Core、重启后去重。真实 NapCat/QQ 留待 T07b，Action 执行留待 T04b。初次清理测试错误地要求正常停止也必须抛取消异常，已修正为两种有效退出都可通过，并始终清理 fake server；业务断言未放宽。
+
+## T03a 连续实施记录（2026-10-30）
+
+已实现 PluginHub、认证注册、配置权限、接收事件时的订阅快照、逐插件投递/ACK、每插件一条在途事件、连接隔离、发送线程受控 join、重启恢复及重放 trace 更新。兼容新增 CoreToPlugin.error=6。当前注册支持文档限定的 Python/process 事件插件子集；进程启动器、配置 schema 和 Host/Action 服务仍待后续任务。CLI 配置一个插件；库与实际 gRPC 测试覆盖两个独立插件。
+
+验收：启用基础设施的 proto 构建及 CTest **15/15**，dev **5/5**，独立基础设施 **3/3**，Python 适配器 **20/20**；插件关闭/重连测试另连续通过 10 次。协议检查和相对 HEAD 的 descriptor 兼容检查通过。SQLite 故障测试还验证读锁返回可重试 Conflict。重连验收等待远端发送线程退出；客户端本地取消完成不代表服务端清理已完成。
+
+文档影响：更新 proto/README.md、doc/01-contracts.md、doc/01-runtime-semantics.md、doc/02-core.md、doc/03-plugin-sdk.md、doc/04-nonebot-adapter.md、doc/05-infrastructure.md、doc/06-control-api.md、doc/08-operations.md、doc/11-toolchain.md、doc/13-infrastructure-integration-follow-up.md、本台账及独立项目 README。OpenAPI/AsyncAPI schema 与面板行为没有改变，无需额外同步；SDK 尚未实现，T03b 需按当前协议校正其历史依赖说明。
+
+最终检查：28 个变更 C++ 文件的 clang-format dry-run、Markdown 本地链接校验、git diff --check 均通过；独立项目 uv lock --check 与 uv pip check 通过。已运行要求的 ./scripts/check-toolchain.sh，在 PATH 加入 Xcode 工具后仍因缺少 clang-tidy 停止，静态分析未运行。仓库改动不包含生成源码、构建产物、token 或本地环境。真实 QQ/模型、TLS、容量性能、Docker 部署及生产恢复未验证。本轮连续完成 T05a、T05b、T10a、T02a、T02b、T03a；**下一待实现任务为 T03b**。当前混合语言架构保持不变，T12 延期。
+
+
+## T03b → T04a → T04b → T06a 连续实施记录（2026-10-30）
+
+本轮按依赖连续完成四项，保持混合语言架构，未实施 T12。下一待实现为 T06b（非流式模型 Provider 与示例 AI 插件），之后 T06c；其余未完成项仍保持待实现，不以接口草案替代验收。
+
+### T03b：SDK 与进程生命周期
+
+目标模块：sdk/python、plugins/event-observer、core 宿主及对应构建。输入为清单/凭据/停止信号，输出为注册、事件 ACK 和进程退出；非法配置 INVALID_ARGUMENT，不支持运行时 CAPABILITY_NOT_SUPPORTED，回调异常 INTERNAL，协作超时 TIMEOUT，依赖失联 UPSTREAM_UNAVAILABLE。SDK 仅依赖生成协议；Core 不链接 Python。POSIX 启动器使用独立进程组、显式最小环境，启动等待注册，停止 TERM → 有界等待 → KILL/reap。未启动操作系统安全沙箱，当前面向可信插件。
+
+阶段验收 SDK 22/22、proto 15/15、dev 5/5。真实 C++ Core 启动 Python SDK，测试事件接收、正常停止、阻塞停止强制回收、启动超时、插件崩溃 Core 存活、配置错误和环境隔离。FakeHost 覆盖注册拒绝、异常/超时隔离、重连更新实例并重新校验权限。
+
+### T04a：Action 契约
+
+兼容新增 action.result.v1 功能协商、Action 请求关联、查询/取消和结果 oneof，不复用字段。调用方+幂等键决定作用域，按 ID 查询也验证归属；传输未知、查询失败和未知状态不会误报 FAILED。REST/AsyncAPI 路径和 schema 未改变。
+
+验证 C++ roundtrip、Python 生成/旧 reader 未知字段保留、旧服务默认不启用功能、查询 selector 和未知状态；check_contracts.sh、api_contract_test.rb、descriptor_compatibility_test.sh 及相对本仓库 HEAD 的 descriptor 检查均通过。没有发布版 descriptor，不声称发布版本兼容认证。API 校验脚本原来引用旧 LogEnvelope/Session，已改为验证现行 LogStreamEnvelope→REST LogEntry 和 SessionReady；没有改变契约来迎合测试。
+
+### T04b：Action 执行闭环
+
+允许修改扩展至直接受影响的 infrastructure 快照编解码/迁移，用于持久化请求、所有者、fingerprint、派发标志和终态。ActionRouter 在提交后派发，按认证适配器/账号/实例接收结果；同键同内容复用，内容冲突拒绝，派发后取消 CONFLICT，到期优先 EXPIRED。首次已到期请求仍持久化过期结果，不要求在线适配器。当前只支持群/私聊 send_message 的 plain_text，其他操作/段明确拒绝。
+
+独立适配器 /Users/betta/Workspace/kiarabot-adapter-nonebot 增加 .actions SQLite 执行日志；执行前落盘，正常重放返回原结果。平台调用超时/断线/取消保持未知，不再次执行可能发生的副作用。真实 NoneBot 子进程通过 fake OneBot 验证发送，另用真实 Core + Python SDK + Python 适配器验证闭环和重启后查询/去重。未知结果可能最终 EXPIRED，不能撤销平台已发生的副作用。没有连接真实 QQ。
+
+关闭回归发现 gRPC 取消可能以传输失败返回并触发重连退避，已在 SDK/适配器退出前检查任务取消状态；新增模拟该竞态的测试，完整适配器验收 34/34，最终运行约 2.3 秒。
+
+### T06a：Host 存储事务
+
+HostDispatcher、SDK storage_get/set/delete 与 host.storage.v1 协商接线。namespace 由认证插件确定；要求 storage.namespace 权限。值最多 64 KiB，单插件 1024 个有效键/1 MiB，TTL 最多三十天；成功写幂等响应保留七天、单插件最多一万条。缺失/过期 NOT_FOUND，超限 RATE_LIMITED，内容冲突 CONFLICT。请求关联、业务数据、幂等响应和审计在同一 RuntimeTransaction 中完成，提交失败回滚；提交前再次检查 deadline。
+
+SQLite 当前 schema v4，覆盖 v1/v2/v3 迁移、重开与数据保留。旧二进制不能读 v4，回滚需迁移前备份。原 Runtime/插件/事件操作保留 Host 集合。Core 测试验证两个插件隔离、二进制/空值、TTL 重放不续期、容量限制、读写/审计失败和超时回滚；SDK 验证畸形响应、未协商拒绝、权限拒绝及真实 Core 重启后读/重放。模型和调度未接线，不启用其功能。
+
+### 最终验收与文档影响
+
+实际命令及结果：
+- cmake --preset dev / cmake --build --preset dev / ctest --preset dev：5/5。
+- cmake --preset proto -DKIARABOT_ENABLE_INFRASTRUCTURE=ON -DCMAKE_EXPORT_COMPILE_COMMANDS=ON / cmake --build --preset proto / ctest --preset proto：17/17。
+- cmake -S infrastructure -B build/infrastructure / cmake --build build/infrastructure / ctest --test-dir build/infrastructure --output-on-failure：3/3。
+- sdk/python/.venv/bin/python sdk/python/tools/generate_proto.py 与 python -m pytest -q sdk/python/tests：生成成功，35/35。
+- 独立适配器重新生成协议，CORE_TEST_BINARY 指向当前 Core 后 python -m pytest -q：34/34。
+- SDK uv lock --check、uv pip check：通过；协议/descriptor/API 校验见 T04a 记录。
+- 36 个变更 C++ 文件的 clang-format dry-run、21 个 Markdown 文件本地链接/UTF-8 校验、主仓库 git diff --check 均通过；不格式化第三方环境。独立适配器目录尚未初始化 Git，无法运行 git diff --check，改用源文件/文档文本与行尾空白检查通过；没有擅自初始化或提交仓库。
+- scripts/check-toolchain.sh：实际执行，因缺少 clang-tidy 停止，静态分析未运行。未运行生产部署、Docker、TLS、容量性能、真实 QQ/模型或非 POSIX 平台验收。
+
+一次全量回归中 sqlite_runtime_store 报告了无行号断言失败。已补充 source_location 便于定位，未放宽断言；随后该测试顺序重复 20 次、8 路并发共 64 次及最终全量回归均通过，暂未复现，仍需在 T07a/CI 中留意该偶发失败，不能宣称已经定位根因。
+
+文档影响判断：功能协商/帧更新 proto/README.md、proto/tests/README.md、doc/01-contracts.md；ACK、未知结果、幂等、取消、TTL 更新 doc/01-runtime-semantics.md；模块行为同步 doc/02-core.md、doc/03-plugin-sdk.md、doc/04-nonebot-adapter.md、doc/05-infrastructure.md；运行配置/迁移同步 doc/08-operations.md、doc/11-toolchain.md；当前交接同步 doc/13-infrastructure-integration-follow-up.md、sdk/PLUGIN_SDK_DEPENDENCIES.md、sdk/python/README.md、本台账及独立适配器 README。doc/06-control-api.md 只补充与插件 Action 查询共享语义，REST 接口未变。
+
+无需更新：api/openapi.yaml、api/asyncapi.yaml 和 doc/07-control-panel.md（REST/WS/面板行为未改）；doc/00-boundaries.md（模块责任与混合语言边界未改）；doc/12-ci-cd.md 与 Dockerfile（本轮未新增容器运行依赖或改变发布流程）；历史评估/缺口文档沿用台账作为实时进度源。构建产物、生成代码、虚拟环境、本机凭据均未纳入交付。

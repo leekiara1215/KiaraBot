@@ -1,11 +1,14 @@
 # 开发工具链与本地质量检查
 
+T03b Python SDK 固定 Python 3.11.18，依赖以 sdk/python/uv.lock 为准；从唯一 proto 源生成到 sdk/python/build/generated。运行 `uv sync --project sdk/python --locked`、`sdk/python/.venv/bin/python sdk/python/tools/generate_proto.py` 和 `sdk/python/.venv/bin/python -m pytest -q sdk/python/tests`。真实进程测试要求先构建启用基础设施的 proto Core，不跳过缺少的二进制。Core 使用 POSIX posix_spawn 管理外部解释器，不链接 Python 库；当前仅支持 POSIX 进程管理。详细启动配置见 doc/08-operations.md。
+
 本文件规定本仓库的工具版本和可重复的本地检查。不要把本机绝对路径写入仓库配置；通过 `PATH` 选择工具，使用 `CXX` 选择 C++ 编译器。
 
 ## 要求
 
 | 工具 | 要求 | 检查方式 |
 |---|---|---|
+| Python | POSIX 进程测试需要 Python 3.9+，仅构建测试依赖 | CMake 查找解释器及 CTest 进程测试 |
 | CMake | 3.24+ | 版本、dev/proto 配置和构建 |
 | GNU Make | 3.81+ | 版本；预设使用 Unix Makefiles |
 | C++ 编译器 | AppleClang 15+、Clang 16+ 或 GCC 13+，支持 C++20 | 预定义宏和 C++20 编译、运行 |
@@ -67,3 +70,11 @@ ctest --preset proto
 - **协议发布和 CI/CD**：保存上一发布版本的 descriptor；协议变更的检查中设置 `KIARABOT_BASELINE_DESCRIPTOR`，按 `proto/tests/README.md` 执行兼容性比较。未提供基线时，本地统一检查只验证当前 descriptor 和契约，不证明与旧版本兼容。
 - **新 C++ 模块**：手写 C++ 需通过统一格式检查。当前 clang-tidy 的编译数据库检查范围仅为 `core/` 和 `proto/tests/`；引入其他 C++ 模块时，由工具链维护者同步扩展 `scripts/quality/check-tidy.sh` 和对应构建目标。
 - **独立 Python 适配器和 SDK 项目**：分别维护自己的 Python 依赖、代码生成和测试；本仓库的检查不覆盖其实现。
+
+## SQLite 可选构建
+
+T05b 新增 SQLite3 开发库依赖，仅在基础设施独立构建或根构建 `KIARABOT_ENABLE_INFRASTRUCTURE=ON` 时需要。本次 macOS 使用系统 SQLite 3.54.0；依赖版本不硬编码到 Core。发布镜像固定版本仍由 T11 执行。根 proto 集成验收：`cmake --preset proto -DKIARABOT_ENABLE_INFRASTRUCTURE=ON && cmake --build --preset proto && ctest --preset proto`。
+
+## T02a 请求指纹
+
+gRPC Core 构建显式链接 OpenSSL Crypto 3.0+，使用 EVP SHA-256 计算适配器请求指纹，不自行实现密码算法。沿用本机/构建环境提供的 OpenSSL；发布镜像的精确依赖锁定仍在 T11b 完成，不能把本机验收当成发布可复现性验收。

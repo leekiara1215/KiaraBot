@@ -1,5 +1,9 @@
 # 基础设施适配器设计
 
+T06a schema v4 在 RuntimeSnapshot 中增加 namespaces（身份→键→值/过期时间）和 host_receipts（身份→幂等键→fingerprint/响应/保留期限）。旧 v1/v2/v3 在同一事务迁移，新增集合初始为空；原有事件、Action、插件、审计保留。运行时和桥接的其他状态更新必须保留这两组集合。Host 存储通过现有 RuntimeTransaction 与审计、幂等记录共同提交，不另建独立提交的 namespace 数据库。
+
+T04b RuntimeSnapshot 的 ActionRecord 增加 owner、serialized_envelope、fingerprint，ActionEntry 增加 dispatched。SQLite schema v3 在同一事务从 v1/v2 解码旧字段后重编码；旧记录缺少所有者，不能通过新的插件查询获得。迁移失败整体回滚，新版本拒绝未知 schema。此处只保存 Core 定义的数据，不执行权限或平台规则。
+
 ## 责任
 
 基础设施适配器把 Core 定义的端口接口连接到具体数据库、模型、缓存、文件系统和调度器。
@@ -135,3 +139,27 @@ next_run_at
 ## 代码启动句
 
 > 请只实现第一版基础设施端口和 SQLite、模型 HTTP、调度器及审计日志适配器，使用 fake Core 和 fake Plugin 完成超时、事务、重试、权限和数据隔离测试，不接入 NoneBot2 或控制面板。
+
+## T05a 统一事务快照端口
+
+当前公共 Runtime 通过 RuntimeStore::read/begin 和 RuntimeTransaction::snapshot/commit 访问基础设施。所有公共查询和写操作返回 StorageResult<T>（共享 Result<Value, Error> 即 std::variant）；成功的空 optional 表示不存在，StorageError 的 Unavailable/Conflict/Corrupt 明确表示依赖故障、并发冲突或数据损坏。边界服务将其分别映射到 UPSTREAM_UNAVAILABLE、CONFLICT、INTERNAL，不允许以空记录或 false 吞掉存储错误。Host PortResult 使用同一个 Result 约定及已有 Protobuf Error。
+
+事务提供独立快照，销毁未提交事务丢弃修改；提交失败不改变持久状态。完整快照包括事件、逐插件投递、会话水位、Action、插件和投递序号。Runtime 单次调用以一个快照提交，不自动重试冲突；批量调用现在整体提交，不再部分持久化。调用方须检查外层 StorageError 后才能使用内层业务结果。公共 Runtime 串行访问；存储实现须保护不同事务之间的并发冲突。
+
+原内存状态机移至 detail::RuntimeEngine，仅操作事务私有内存。其 bool/optional 不是数据库端口，故障由外层显式返回。原 ports.hpp 的不完整 IRuntimeRepository 移除，Host UnitOfWork 直接暴露同一 RuntimeSnapshot；Host 存储/幂等/审计组合事务已由 T06a 使用 RuntimeTransaction 实现。完整快照是首版正确性实现，会复制全部状态，规模较大时应以同样事务语义优化，不能作为吞吐性能保证。
+
+## T05b SQLite 运行时存储
+
+SqliteRuntimeStore::open(path) 在事务中创建 schema v4（PRAGMA user_version=4），并事务化迁移 v1/v2/v3 快照，已有版本重复打开不重建；未知版本或损坏快照拒绝打开。runtime_snapshot 单行保存完整快照与 revision，提交使用带 revision 条件的原子 UPDATE。两个连接读取同一版本时只有第一个提交成功，其余返回 Conflict；SQLITE_BUSY/LOCKED 也映射 Conflict，不自动重试。FULL 同步模式下 SQLite 承担崩溃原子性；未提交事务只持有私有内存，销毁即可回滚。
+
+私有文本编码保留二进制 envelope、UTC 纳秒时间、逐插件状态、会话、Action 和插件；数据库格式与 schema 一起版本化，不是公共线协议。快照上限 64 MiB，所有集合合计最多一百万项；超限提交失败，损坏解码返回 Corrupt。该实现是整库状态快照，尚未进行容量/性能认证。Host 命名空间和响应幂等已在 v4 中持久化；模型和任务仍待后续实现；T10a 的命令审计从 v2 起持久化。SQLite 打开迁移并不代替 T11 独立迁移命令和部署演练。
+
+独立构建使用原基础设施命令；根构建可传入 `-DKIARABOT_ENABLE_INFRASTRUCTURE=ON` 纳入测试。新增依赖为 SQLite3 开发库，版本由构建环境记录；生产打包需随 T11 固定依赖。Core 仍经端口注入，不直接访问 SQL。
+
+## T10a 受保护的应用命令
+
+AuthorizedCommands 是 Core 内部入口：调用方必须从已认证连接构造 CommandContext，并由服务端计算规范化请求的 SHA-256 fingerprint（64 位小写十六进制），不能相信插件自报身份、权限或 fingerprint。静态 PermissionGrant 按 subject/permission/resource 精确匹配，只有配置中的资源 `*` 表示全部资源；没有匹配规则时默认拒绝。此入口不是跨进程 SDK。
+
+execute 的回调只能修改传入的 RuntimeSnapshot，不得执行网络/平台副作用或另启 Runtime 事务。业务修改、成功幂等记录和审计在同一提交中完成；提交失败全部不生效。幂等范围为主体+权限+资源+键，同键同 fingerprint 重放成功且不重复审计；不同 fingerprint 返回 CONFLICT。重放前重新鉴权。拒绝及回调失败记录审计，失败回调的状态变更被回滚；错误详情只保留稳定码和请求标识，不转发回调的自由文本。审计满（默认十万条）时返回 UPSTREAM_UNAVAILABLE 且不执行回调。审计/幂等保留和清理策略须后续管理任务落实，不能当作无限容量服务。
+
+SQLite 从 v2 起保存审计和命令幂等记录，当前 v4 还保存 Action 路由和 Host 命名空间/幂等响应；模型与任务尚未接线。T02a 适配器桥和 T03a 插件桥已使用此入口；控制 API 仍须在后续任务接线。

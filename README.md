@@ -26,6 +26,10 @@ TypeScript 控制面板                 第一个控制面板客户端
 
 ## 当前仓库状态
 
+当前开发保持 C++ Core、独立 Python 适配器/SDK 和 TypeScript 面板；纯 C++ 替换为未来可选路线。任务依赖、验收和实现进度见 [开发台账](doc/16-development-tasks.md)。Core 无参数入口在 POSIX 平台保持存活，SIGINT/SIGTERM 正常退出；`--check` 执行一次性自检。持续存活不代表 RPC 或健康服务已就绪。
+
+详细的实现对照、文档导航及纯 C++ 演进清单见 [实现现状与纯 C++ 演进评估](doc/14-implementation-assessment.md)。
+
 当前仓库不包含 Python 业务实现。NoneBot2、OneBot 适配器和 NapCatQQ 都按独立组件处理；它们只通过设计文档中规定的协议和适配器边界接入。
 
 仓库现在包含一个不依赖第三方 SDK 的 C++ Core 构建骨架，以及实际的 Protobuf、OpenAPI 和 AsyncAPI 契约：

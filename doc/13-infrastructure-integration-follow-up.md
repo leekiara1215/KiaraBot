@@ -2,37 +2,37 @@
 
 ## 当前状态
 
-本次变更是未完成的阶段性交付，不是可运行的完整基础设施。已新增插件 Host 消息、Core 端口草案和部分请求校验；已有 POSIX 文件存储及其 fake 和基本测试。协议消息的存在不代表 Core 已处理这些请求，也不代表插件已能调用它们。
+当前是阶段性交付，不是可部署的完整机器人。已有 POSIX 文件存储、SQLite 运行时、插件 SDK/启动器、Action 纯文本闭环和 Host 命名空间存储。模型/任务端口及消息仍需实际实现，不能因协议存在就声称可用。逐项验收以 doc/16-development-tasks.md 为准。
 
-SQLite 迁移、Repository、Unit of Work、命名空间存储、模型 Provider、Scheduler、AuditLogger、相应 fake 和故障注入测试均尚未实现。`RuntimeStore` 与新端口尚未接通，不能部署为持久化运行时。
+T05a/T05b 已提供统一事务快照端口；T10a 实现命令事务审计；T03b 实现进程启动与 SDK；T04b/T06a 将 Action 路由、Host 存储/幂等响应加入 schema v4，并完成真实 C++/Python 故障验收。仍缺模型 Provider、Scheduler、通用日志接线和部署演练。
 
 ## 需要其他模块完成的工作
 
 ### Core / 插件宿主
 
-- 在 `PluginBridge` 中处理 `HostRequest`，将响应与请求 ID 关联，并执行身份、权限、期限、载荷大小及 schema 校验。请求中的插件身份不得由插件自报。
-- 完成幂等记录与响应重放，在同一 Unit of Work 原子提交业务写入、幂等结果和审计；同一键不同载荷返回 `CONFLICT`。明确幂等记录的保留期及清理策略。
-- 将 Runtime 接到能区分不存在、重复和存储故障的端口。当前 `RuntimeStore` 的 `bool` 返回值仍会把部分存储故障当作重复；必须更新调用路径和跨边界错误映射，不得吞掉故障。
+- T06a 已在 PluginBridge 处理存储 HostRequest，关联 request_id 并校验身份、权限、deadline、TTL 和容量；模型/任务仍需扩展。
+- T06a 已使用 RuntimeTransaction 原子提交存储写入、七天幂等响应和审计，同键不同内容 CONFLICT；未来扩展应保持相同原子性。
+- T05a 已将公共 Runtime 改为 StorageResult，桥接业务实现需将 Unavailable/Conflict/Corrupt 映射到 UPSTREAM_UNAVAILABLE/CONFLICT/INTERNAL；不能对未检查的 variant 取业务结果。
 - 核对 `ports.hpp` 在实际应用服务中的事务所有权、Scheduler 领取与 fencing、错误和关闭语义，并以契约测试验证；当前只是接口草案，尚无完整实现。
-- 把 `validate_host_request` 接入入口，并补齐尚未实现的 UTC 时间戳有效性、IANA 时区与夏令时、过期时间、权限、限流、上游故障和幂等验证。测试成功、拒绝、超时、取消及依赖故障。
-- `RuntimeTimePoint` 改为系统时钟以供持久化；实现重启恢复测试并评估时钟跳变对到期判断的影响。
+- T06a 已将 validate_host_request 接入存储入口，覆盖 UTC deadline、TTL、权限、限额、存储故障和幂等；模型/任务仍需补齐其各自验证，包括 IANA 时区与夏令时。
+- RuntimeTimePoint 已为 UTC 系统时钟；T05b 已验证重启恢复，仍需在业务服务接线后验证时钟跳变和调度策略。
 
 ### Plugin SDK
 
-- 基于生成的 `plugins.proto` 类型提供非流式模型、插件命名空间存储及一次性任务 API；不要复制协议消息或暴露数据库连接、Core 表、模型密钥。
-- 实现请求/响应关联、deadline、断线后的幂等重试、稳定错误及任务状态处理，覆盖两个插件的隔离和取消场景。
+- T06a 已提供生成类型驱动的插件命名空间存储；下一步实现非流式模型与一次性任务 API，不暴露数据库、Core 表或模型密钥。
+- 已实现 Action/存储请求关联、deadline、断线未知结果及同键重试；任务状态和任务取消仍待 T06c。
 - 流式模型仍未定义，不能将本次非流式消息描述为流式能力。
 
 ### 协议和契约维护
 
 - 评估原有 `ActionEnvelope.schedule_task.schedule` 的语法和迁移路径。新 Host API 使用结构化一次性时间，但没有替换或重新解释旧字段；不要假定两条路径已经等价。
-- 为 Host 结果互斥、字段规则、模型错误映射、请求重放及任务状态转换补齐跨语言兼容、正常/拒绝/超时/依赖故障测试。当前检查验证生成、序列化及旧 descriptor 兼容，不验证 Host 服务执行。
-- 明确模型消息、命名空间值和任务 payload 的资源上限及 schema 治理；现有协议只提供字段，尚未执行这些策略。
+- 存储已有真实服务执行、结果互斥、隔离、重放、拒绝、超时与依赖故障测试；模型错误和任务状态仍待各自任务覆盖。
+- 命名空间值与总量限额已执行；模型消息和任务 payload 的资源限制仍待冻结并实现。
 
 ### 运维与工具链
 
 - 待 SQLite 迁移命令和服务接线落地后，更新启动顺序、迁移锁、健康检查、备份恢复、密钥注入及审计输出配置，并验证失败时阻止启动。
-- 仓库 `.clang-format` 的 `AllowShortLoopsOnASingleLine: Never` 不能被当前 Apple clang-format 21 解析。工具链维护者需修复并验证仓库配置；本次仅以临时配置将该值等效替换为 `false` 执行格式检查，没有改动仓库配置。
+- 当前 Xcode clang-format 可以解析仓库配置，修改文件格式检查通过；clang-tidy 缺失，统一静态分析仍未执行。
 
 ## 基础设施后续验收
 

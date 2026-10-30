@@ -5,6 +5,11 @@ package kiarabot.v1;
 import "kiarabot/v1/adapters.proto";
 import "kiarabot/v1/plugins.proto";
 
+// Connect metadata: exactly one authorization: Bearer <token>. The host binds
+// credentials to a role and identity; self-reported IDs never grant authority.
+// Failures carry serialized kiarabot.v1.Error in grpc::Status.error_details().
+// Unimplemented business operations fail explicitly (CAPABILITY_NOT_SUPPORTED,
+// gRPC INTERNAL); reading a request is never a durable acknowledgement.
 service AdapterBridge {
   rpc Connect(stream AdapterToCore) returns (stream CoreToAdapter);
 }

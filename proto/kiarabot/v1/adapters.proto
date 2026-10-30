@@ -43,8 +43,25 @@ message CoreToAdapter {
     RegisterAdapterResponse register_result = 1;
     ActionEnvelope action = 2;
     HeartbeatAck heartbeat_ack = 3;
+    AdapterEventAck event_ack = 4;
   }
 }
 
 message Heartbeat { string instance_id = 1; uint64 sent_at_unix_ms = 2; }
 message HeartbeatAck { uint64 received_at_unix_ms = 1; }
+
+// Inbox confirmation, not plugin ACK or Action completion. Missing response is
+// an unknown outcome: retain the event and resend after reconnect/registration.
+message AdapterEventAck {
+  enum Status {
+    STATUS_UNSPECIFIED = 0;
+    PERSISTED = 1;
+    DUPLICATE = 2;
+    REJECTED = 3;
+  }
+  string event_id = 1;
+  string trace_id = 2;
+  Status status = 3;
+  Error error = 4;
+  uint32 retry_after_ms = 5;
+}

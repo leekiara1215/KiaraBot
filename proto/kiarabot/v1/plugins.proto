@@ -38,6 +38,8 @@ enum PluginState {
 message RegisterPluginRequest {
   PluginManifest manifest = 1;
   string instance_id = 2;
+  // Optional features this client understands. Absence means legacy event-only.
+  repeated string supported_features = 3;
 }
 
 message RegisterPluginResponse {
@@ -45,6 +47,8 @@ message RegisterPluginResponse {
   string required_api_version = 2;
   repeated string granted_permissions = 3;
   Error error = 4;
+  // Intersection of requested features and implemented server features.
+  repeated string enabled_features = 5;
 }
 
 message PluginToCore {
@@ -54,6 +58,8 @@ message PluginToCore {
     PluginActionRequest action = 3;
     PluginHeartbeat heartbeat = 4;
     HostRequest host_request = 5;
+    PluginActionQuery action_query = 6;
+    PluginActionCancel action_cancel = 7;
   }
 }
 
@@ -64,11 +70,45 @@ message CoreToPlugin {
     PluginConfig config = 3;
     PluginHeartbeatAck heartbeat_ack = 4;
     HostResponse host_response = 5;
+    // Terminal stream failure; absent frame on disconnect remains unknown outcome.
+    Error error = 6;
+    PluginActionResponse action_response = 7;
   }
 }
 
 message PluginEventAck { string event_id = 1; bool accepted = 2; Error error = 3; }
-message PluginActionRequest { ActionEnvelope action = 1; }
+// action.result.v1 must be enabled before sending any Action operation.
+// request_id correlates a call; action.idempotency_key survives reconnects.
+message PluginActionRequest {
+  ActionEnvelope action = 1;
+  string request_id = 2;
+}
+message PluginActionQuery {
+  string request_id = 1;
+  string trace_id = 2;
+  google.protobuf.Timestamp deadline = 3;
+  // Scoped to the authenticated plugin. NOT_FOUND does not prove nonexecution.
+  oneof selector {
+    string action_id = 10;
+    string idempotency_key = 11;
+  }
+}
+message PluginActionCancel {
+  string request_id = 1;
+  string trace_id = 2;
+  google.protobuf.Timestamp deadline = 3;
+  string action_id = 4;
+}
+// Exactly one outcome. Query/transport errors never become Action FAILED.
+// ACCEPTED is durable but nonterminal; callers query to observe completion.
+// No unsolicited final-result push is promised by action.result.v1.
+message PluginActionResponse {
+  string request_id = 1;
+  oneof outcome {
+    ActionResult result = 10;
+    Error error = 11;
+  }
+}
 message PluginHeartbeat { string instance_id = 1; uint64 sent_at_unix_ms = 2; }
 message PluginHeartbeatAck { uint64 received_at_unix_ms = 1; }
 message PluginConfig { string version = 1; google.protobuf.Struct values = 2; }

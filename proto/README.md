@@ -1,5 +1,11 @@
 # KiaraBot Protocol Contracts
 
+T06a 使用同一 features 协商字段启用 host.storage.v1，承载已定义的 HostRequest/HostResponse 存储操作；未协商不发送，其他未实现 Host operation 显式拒绝。未改变 Host 字段编号或类型，详细限额/TTL/错误见 doc/03-plugin-sdk.md。
+
+T04a 兼容新增插件功能协商（supported_features=3 / enabled_features=5）、PluginActionRequest.request_id=2、PluginToCore.action_query=6/action_cancel=7、CoreToPlugin.action_response=7。action.result.v1 经双向确认后才能使用；旧端缺省不启用。查询可按认证调用方作用域中的 Action ID 或幂等键进行。响应 oneof 区分结果与操作错误，未知传输结果不能生成 FAILED。详细语义见 doc/01-contracts.md；服务接线由 T04b 实现。
+
+T03a 兼容新增 CoreToPlugin.error=6，承载注册后的终止错误。注册拒绝仍在 register_result.error；客户端不能把流关闭当作 ACK。插件订阅使用现有 capabilities 中的事件能力名，与 doc/03-plugin-sdk.md 中权限映射一致，不新增私有跨语言类型。
+
 本目录是跨语言契约的唯一来源。C++ Core、Python NoneBot2 适配器、C++ 插件和其他客户端不得复制这些消息定义。
 
 ## 依赖
@@ -43,3 +49,11 @@ v1 的稳定枚举词汇也由 REST 和 WebSocket 契约复用：`ErrorCode`、`
 ## 插件 Host API
 
 模型、命名空间存储和一次性任务使用 `plugins.proto` 中的 HostRequest/HostResponse，通过已注册 PluginBridge 传递。鉴权、幂等、时区、状态及错误语义见 `doc/01-contracts.md` 和 `doc/01-runtime-semantics.md`。
+
+## 桥接认证
+
+Connect 使用单个 bearer metadata，错误详情携带序列化 Error；身份绑定、失败及尚未实现行为见 [契约说明](../doc/01-contracts.md#桥接连接认证t01b)。T01b 未改变字段编号或 RPC 签名。
+
+## 适配器持久化确认（T02a）
+
+CoreToAdapter 新增 oneof event_ack=4，类型 AdapterEventAck；原字段编号保持不变。PERSISTED/DUPLICATE 才允许适配器移除本地待确认事件；REJECTED 必须检查稳定 Error.code/retryable。未知字段兼容旧客户端，但旧客户端必须升级支持 event_ack 后才能可靠清理缓存。注册 protocol_version 和事件 schema_version 为 kiarabot.v1。

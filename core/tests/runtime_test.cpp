@@ -1,10 +1,10 @@
-#include "kiarabot/core/runtime.h"
-
 #include <array>
 #include <cassert>
 #include <chrono>
 #include <string>
 #include <vector>
+
+#include "kiarabot/core/runtime_engine.hpp"
 
 namespace {
 
@@ -14,19 +14,20 @@ using kiarabot::core::ActionResult;
 using kiarabot::core::ActionState;
 using kiarabot::core::DeliveryState;
 using kiarabot::core::EventResult;
-using kiarabot::core::InMemoryRuntimeStore;
 using kiarabot::core::PluginState;
-using kiarabot::core::Runtime;
 using kiarabot::core::RuntimeOptions;
 using kiarabot::core::RuntimeTimePoint;
 using kiarabot::core::StoreInsertResult;
+using kiarabot::core::detail::RuntimeEngine;
+using kiarabot::core::detail::RuntimeState;
 
 void event_order_and_backpressure() {
   RuntimeTimePoint now{};
-  InMemoryRuntimeStore store;
+  kiarabot::core::detail::RuntimeState store;
   RuntimeOptions options;
   options.queue_limit = 4;
-  Runtime runtime(store, options, [&] { return now; }, [] { return 0.5; });
+  kiarabot::core::detail::RuntimeEngine runtime(
+      store, options, [&] { return now; }, [] { return 0.5; });
 
   assert(runtime.ingest({"a1", "t1", "a", 1, true}) == EventResult::accepted);
   assert(runtime.ingest({"a1", "changed", "a", 1, true}) == EventResult::duplicate);
@@ -40,7 +41,8 @@ void event_order_and_backpressure() {
   assert(runtime.ingest({"full", "t6", "b", 2, true}) == EventResult::rate_limited);
   assert(runtime.ingest({"a1", "t1", "a", 1, true}) == EventResult::duplicate);
 
-  Runtime restarted(store, options, [&] { return now; }, [] { return 0.5; });
+  kiarabot::core::detail::RuntimeEngine restarted(
+      store, options, [&] { return now; }, [] { return 0.5; });
   assert(restarted.session_degraded("a"));
   assert(restarted.session_degraded("c"));
   assert(!restarted.session_degraded("b"));
@@ -51,7 +53,8 @@ void event_order_and_backpressure() {
   assert(restarted.acknowledge_event("a3"));
   now += 7 * 24h;
   assert(restarted.purge_expired().count == 2);
-  Runtime after_purge(store, options, [&] { return now; }, [] { return 0.5; });
+  kiarabot::core::detail::RuntimeEngine after_purge(
+      store, options, [&] { return now; }, [] { return 0.5; });
   assert(after_purge.session_degraded("a"));
   assert(after_purge.session_status("a")->last_sequence == 3);
   assert(after_purge.ingest({"late", "t", "a", 2, true}) == EventResult::out_of_order);
@@ -59,8 +62,8 @@ void event_order_and_backpressure() {
 
 void retries_dead_letters_and_replay() {
   RuntimeTimePoint now{};
-  InMemoryRuntimeStore store;
-  Runtime runtime(store, {}, [&] { return now; }, [] { return 0.5; });
+  kiarabot::core::detail::RuntimeState store;
+  kiarabot::core::detail::RuntimeEngine runtime(store, {}, [&] { return now; }, [] { return 0.5; });
   const std::array delays{1s, 2s, 4s, 8s, 16s};
   assert(runtime.ingest({"retry", "trace", "", 0, false}) == EventResult::accepted);
   assert(runtime.mark_dispatched("retry"));
@@ -68,7 +71,8 @@ void retries_dead_letters_and_replay() {
   for (const auto delay : delays) {
     assert(runtime.fail_event("retry", true));
     assert(store.find_event("retry")->state == DeliveryState::retrying);
-    Runtime restarted(store, {}, [&] { return now; }, [] { return 0.5; });
+    kiarabot::core::detail::RuntimeEngine restarted(
+        store, {}, [&] { return now; }, [] { return 0.5; });
     assert(restarted.due_retries().empty());
     assert(runtime.due_retries().empty());
     now += delay - 1ms;
@@ -82,7 +86,8 @@ void retries_dead_letters_and_replay() {
   assert(runtime.ingest({"fatal", "fatal-trace", "", 0, false}) == EventResult::accepted);
   assert(runtime.fail_event("fatal", false));
   assert(runtime.dead_letter_size() == 2);
-  Runtime restarted(store, {}, [&] { return now; }, [] { return 0.5; });
+  kiarabot::core::detail::RuntimeEngine restarted(
+      store, {}, [&] { return now; }, [] { return 0.5; });
   assert(restarted.dead_letter_size() == 2);
   assert(runtime.replay_dead_letter("retry", "new-trace"));
   assert(store.find_event("retry")->record.trace_id == "new-trace");
@@ -93,10 +98,11 @@ void retries_dead_letters_and_replay() {
 
 void jitter_bounds() {
   RuntimeTimePoint now{};
-  InMemoryRuntimeStore low_store;
-  InMemoryRuntimeStore high_store;
-  Runtime low(low_store, {}, [&] { return now; }, [] { return 0.0; });
-  Runtime high(high_store, {}, [&] { return now; }, [] { return 1.0; });
+  kiarabot::core::detail::RuntimeState low_store;
+  kiarabot::core::detail::RuntimeState high_store;
+  kiarabot::core::detail::RuntimeEngine low(low_store, {}, [&] { return now; }, [] { return 0.0; });
+  kiarabot::core::detail::RuntimeEngine high(
+      high_store, {}, [&] { return now; }, [] { return 1.0; });
   const std::array bases{1000ms, 2000ms, 4000ms, 8000ms, 16000ms};
   for (std::size_t attempt = 1; attempt <= bases.size(); ++attempt) {
     assert(low.retry_delay_for_attempt(attempt) == bases[attempt - 1] * 8 / 10);
@@ -106,8 +112,8 @@ void jitter_bounds() {
 
 void actions_and_retention() {
   RuntimeTimePoint now{};
-  InMemoryRuntimeStore store;
-  Runtime runtime(store, {}, [&] { return now; }, [] { return 0.5; });
+  kiarabot::core::detail::RuntimeState store;
+  kiarabot::core::detail::RuntimeEngine runtime(store, {}, [&] { return now; }, [] { return 0.5; });
   const ActionRecord action{"action", "key", now + 1h};
   const auto accepted = runtime.submit_action(action);
   assert(accepted.result == ActionResult::accepted);
@@ -137,7 +143,8 @@ void actions_and_retention() {
   const auto failed = runtime.submit_action({"failed-again", "failed-key", now + 1h});
   assert(failed.action->state == ActionState::failed);
   assert(failed.action->error_code == "UPSTREAM_UNAVAILABLE");
-  Runtime restarted(store, {}, [&] { return now; }, [] { return 0.5; });
+  kiarabot::core::detail::RuntimeEngine restarted(
+      store, {}, [&] { return now; }, [] { return 0.5; });
   assert(restarted.submit_action(action).action->result == "message-id");
   now += 7 * 24h;
   const auto purged = restarted.purge_expired();
@@ -147,8 +154,8 @@ void actions_and_retention() {
 
 void plugins_and_transactions() {
   RuntimeTimePoint now{};
-  InMemoryRuntimeStore store;
-  Runtime runtime(store, {}, [&] { return now; }, [] { return 0.5; });
+  kiarabot::core::detail::RuntimeState store;
+  kiarabot::core::detail::RuntimeEngine runtime(store, {}, [&] { return now; }, [] { return 0.5; });
   assert(runtime.register_plugin("plugin", "v1", {"read", "send"}));
   assert(runtime.plugin_started("plugin"));
   assert(runtime.plugin_disconnected("plugin"));
@@ -163,7 +170,8 @@ void plugins_and_transactions() {
   now += 5min;
   assert(runtime.update_plugin_recovery("plugin"));
   assert(store.find_plugin("plugin")->state == PluginState::failed);
-  Runtime restarted(store, {}, [&] { return now; }, [] { return 0.5; });
+  kiarabot::core::detail::RuntimeEngine restarted(
+      store, {}, [&] { return now; }, [] { return 0.5; });
   assert(!restarted.plugin_reconnected("plugin", "v1", {"read", "send"}));
 
   const std::size_t commits = store.commit_count();
@@ -208,14 +216,15 @@ void plugins_and_transactions() {
 
 void restart_recovers_unacknowledged_dispatch() {
   RuntimeTimePoint now{};
-  InMemoryRuntimeStore store;
-  Runtime before(store, {}, [&] { return now; }, [] { return 0.5; });
+  kiarabot::core::detail::RuntimeState store;
+  kiarabot::core::detail::RuntimeEngine before(store, {}, [&] { return now; }, [] { return 0.5; });
   const std::string envelope("\x01\x00\x02", 3);
   assert(before.ingest({"inflight", "trace", "", 0, false, envelope}) == EventResult::accepted);
   assert(before.ingest({"waiting", "trace", "", 0, false}) == EventResult::accepted);
   assert(before.mark_dispatched("inflight"));
 
-  Runtime restarted(store, {}, [&] { return now; }, [] { return 0.5; });
+  kiarabot::core::detail::RuntimeEngine restarted(
+      store, {}, [&] { return now; }, [] { return 0.5; });
   store.set_fail_event_writes(true);
   const auto failed_recovery = restarted.recover_inflight_events();
   assert(failed_recovery.storage_error && failed_recovery.count == 0);
@@ -238,7 +247,8 @@ void restart_recovers_unacknowledged_dispatch() {
 
   RuntimeOptions no_retries;
   no_retries.max_attempts = 0;
-  Runtime last_restart(store, no_retries, [&] { return now; }, [] { return 0.5; });
+  kiarabot::core::detail::RuntimeEngine last_restart(
+      store, no_retries, [&] { return now; }, [] { return 0.5; });
   assert(last_restart.recover_inflight_events().count == 1);
   assert(store.find_event("inflight")->state == DeliveryState::dead_letter);
   assert(last_restart.replay_dead_letter("inflight", "replay-trace"));
@@ -247,8 +257,8 @@ void restart_recovers_unacknowledged_dispatch() {
 
 void expired_action_idempotency_and_transaction_isolation() {
   RuntimeTimePoint now{};
-  InMemoryRuntimeStore store;
-  Runtime runtime(store, {}, [&] { return now; }, [] { return 0.5; });
+  kiarabot::core::detail::RuntimeState store;
+  kiarabot::core::detail::RuntimeEngine runtime(store, {}, [&] { return now; }, [] { return 0.5; });
   const ActionRecord already_expired{"old-action", "same-key", now};
   store.set_fail_commit(true);
   assert(runtime.submit_action(already_expired).result == ActionResult::storage_error);
@@ -257,7 +267,8 @@ void expired_action_idempotency_and_transaction_isolation() {
   const auto expired = runtime.submit_action(already_expired);
   assert(expired.result == ActionResult::expired);
   assert(expired.action->state == ActionState::expired);
-  Runtime restarted(store, {}, [&] { return now; }, [] { return 0.5; });
+  kiarabot::core::detail::RuntimeEngine restarted(
+      store, {}, [&] { return now; }, [] { return 0.5; });
   const auto duplicate = restarted.submit_action({"new-action", "same-key", now + 1h});
   assert(duplicate.result == ActionResult::duplicate);
   assert(duplicate.action->record.action_id == "old-action");

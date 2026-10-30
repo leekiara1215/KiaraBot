@@ -1,5 +1,7 @@
 # Protocol tests
 
+For the Action feature negotiation and legacy Python reader test, generate the SDK types, then run `PYTHONPATH=sdk/python/build/generated sdk/python/.venv/bin/python proto/tests/action_contract_test.py` from the root. This verifies legacy readers preserve unknown fields, legacy servers default to no enabled features, query selectors and unknown status values. The C++ roundtrip test also covers the new frames and unchanged field numbers. This wire test does not certify that a service implements Action dispatch.
+
 `check_contracts.sh` uses Python 3 for exact enum vocabulary checks, performs static consistency checks, and compiles every v1 `.proto` file into a descriptor set. It intentionally exits with code `2` when `protoc` is unavailable so CI cannot report a false green result.
 
 Run it from the repository root:

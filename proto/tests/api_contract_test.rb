@@ -32,7 +32,18 @@ channels.each do |channel, (name, event_type, required)|
   end
   %w[Update ChannelUpdate].each do |suffix|
     ref = messages.fetch("#{name}#{suffix}").fetch('payload').fetch('$ref')
-    check(ref.end_with?("/#{name}Envelope"), "#{channel} has an incorrect envelope")
+    expected = channel == 'logs' ? 'LogStreamEnvelope' : "#{name}Envelope"
+    check(ref.end_with?("/#{expected}"), "#{channel} has an incorrect envelope")
+  end
+  if channel == 'logs'
+    envelope = schemas.fetch('LogStreamEnvelope').fetch('allOf').last.fetch('properties')
+    check(envelope.fetch('event_type').fetch('enum') == ['log.updated'], 'logs event type')
+    check(envelope.fetch('payload').fetch('$ref') == './openapi.yaml#/components/schemas/LogEntry',
+          'logs must use the canonical REST LogEntry')
+    entry = openapi.fetch('components').fetch('schemas').fetch('LogEntry').fetch('allOf')
+    check(entry.first.fetch('$ref').end_with?('/GenericResource'), 'log resource identity')
+    check(entry.last.fetch('required') == %w[occurred_at level component message], 'log fields')
+    next
   end
   envelope = schemas.fetch("#{name}Envelope").fetch('allOf').last.fetch('properties')
   check(envelope.fetch('event_type').fetch('enum') == [event_type], "#{channel} event type")
@@ -45,7 +56,7 @@ check(schemas.fetch('PluginPayload').fetch('anyOf').map { |entry| entry.fetch('r
       [%w[state], %w[health_state]], 'plugin payload requires a state dimension')
 check(schemas.fetch('MessagePayload').fetch('additionalProperties') == false,
       'message payload must exclude unlisted content')
-check(messages.fetch('Session').fetch('payload').fetch('$ref').end_with?('/Session'),
+check(messages.fetch('SessionReady').fetch('payload').fetch('$ref').end_with?('/SessionReady'),
       'control session response missing')
 
 operations = openapi.fetch('paths')

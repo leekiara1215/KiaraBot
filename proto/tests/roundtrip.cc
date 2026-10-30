@@ -1,11 +1,12 @@
+#include <cassert>
+#include <string>
+
+#include <google/protobuf/descriptor.h>
+
 #include "kiarabot/v1/actions.pb.h"
 #include "kiarabot/v1/adapters.pb.h"
 #include "kiarabot/v1/events.pb.h"
 #include "kiarabot/v1/plugins.pb.h"
-
-#include <cassert>
-#include <google/protobuf/descriptor.h>
-#include <string>
 
 int main() {
   kiarabot::v1::EventEnvelope event;
@@ -91,6 +92,25 @@ int main() {
   assert(decoded_adapter_message.ParseFromString(encoded));
   assert(decoded_adapter_message.body_case() == kiarabot::v1::AdapterToCore::kEvent);
 
+  kiarabot::v1::CoreToAdapter confirmation;
+  confirmation.mutable_event_ack()->set_event_id("event-roundtrip");
+  confirmation.mutable_event_ack()->set_status(kiarabot::v1::AdapterEventAck::PERSISTED);
+  encoded.clear();
+  assert(confirmation.SerializeToString(&encoded));
+  kiarabot::v1::CoreToAdapter decoded_confirmation;
+  assert(decoded_confirmation.ParseFromString(encoded));
+  assert(decoded_confirmation.event_ack().status() == kiarabot::v1::AdapterEventAck::PERSISTED);
+  assert(kiarabot::v1::CoreToAdapter::descriptor()->FindFieldByName("event_ack")->number() == 4);
+
+  kiarabot::v1::CoreToPlugin stream_failure;
+  stream_failure.mutable_error()->set_code(kiarabot::v1::PERMISSION_DENIED);
+  encoded.clear();
+  assert(stream_failure.SerializeToString(&encoded));
+  kiarabot::v1::CoreToPlugin decoded_stream_failure;
+  assert(decoded_stream_failure.ParseFromString(encoded));
+  assert(decoded_stream_failure.error().code() == kiarabot::v1::PERMISSION_DENIED);
+  assert(kiarabot::v1::CoreToPlugin::descriptor()->FindFieldByName("error")->number() == 6);
+
   kiarabot::v1::PluginToCore plugin_message;
   plugin_message.mutable_action()->mutable_action()->set_action_id("action-roundtrip");
   assert(plugin_message.body_case() == kiarabot::v1::PluginToCore::kAction);
@@ -122,5 +142,49 @@ int main() {
   assert(decoded_response.host_response().error().code() == kiarabot::v1::RATE_LIMITED);
   assert(decoded_response.host_response().result_case() ==
          kiarabot::v1::HostResponse::RESULT_NOT_SET);
+  kiarabot::v1::PluginToCore action_call;
+  action_call.mutable_register_()->add_supported_features("action.result.v1");
+  assert(action_call.SerializeToString(&encoded));
+  kiarabot::v1::PluginToCore parsed_call;
+  assert(parsed_call.ParseFromString(encoded));
+  assert(parsed_call.register_().supported_features(0) == "action.result.v1");
+  action_call.mutable_action()->set_request_id("submit-1");
+  action_call.mutable_action()->mutable_action()->set_action_id("action-1");
+  assert(action_call.SerializeToString(&encoded));
+  assert(parsed_call.ParseFromString(encoded));
+  assert(parsed_call.action().request_id() == "submit-1");
+  auto* lookup = action_call.mutable_action_query();
+  lookup->set_request_id("query-1");
+  lookup->set_action_id("action-1");
+  lookup->set_idempotency_key("key-1");
+  assert(lookup->selector_case() == kiarabot::v1::PluginActionQuery::kIdempotencyKey);
+  assert(action_call.SerializeToString(&encoded));
+  assert(parsed_call.ParseFromString(encoded));
+  assert(parsed_call.action_query().idempotency_key() == "key-1");
+  action_call.mutable_action_cancel()->set_action_id("action-1");
+  assert(action_call.SerializeToString(&encoded));
+  assert(parsed_call.ParseFromString(encoded));
+  assert(parsed_call.action_cancel().action_id() == "action-1");
+  response.mutable_register_result()->add_enabled_features("action.result.v1");
+  assert(response.SerializeToString(&encoded));
+  assert(decoded_response.ParseFromString(encoded));
+  assert(decoded_response.register_result().enabled_features(0) == "action.result.v1");
+  response.mutable_action_response()->set_request_id("query-1");
+  response.mutable_action_response()->mutable_result()->set_status(
+      static_cast<kiarabot::v1::ActionStatus>(12345));
+  assert(response.SerializeToString(&encoded));
+  assert(decoded_response.ParseFromString(encoded));
+  assert(decoded_response.action_response().result().status() == 12345);
+  response.mutable_action_response()->mutable_error()->set_code(kiarabot::v1::TIMEOUT);
+  assert(!response.action_response().has_result());
+  assert(response.SerializeToString(&encoded));
+  assert(decoded_response.ParseFromString(encoded));
+  assert(decoded_response.action_response().error().code() == kiarabot::v1::TIMEOUT);
+  assert(!decoded_response.action_response().has_result());
+  assert(kiarabot::v1::PluginToCore::descriptor()->FindFieldByName("action")->number() == 3);
+  assert(kiarabot::v1::PluginActionRequest::descriptor()->FindFieldByName("action")->number() == 1);
+  assert(kiarabot::v1::PluginToCore::descriptor()->FindFieldByName("action_query")->number() == 6);
+  assert(kiarabot::v1::CoreToPlugin::descriptor()->FindFieldByName("action_response")->number() ==
+         7);
   return 0;
 }

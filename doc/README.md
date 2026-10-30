@@ -56,6 +56,8 @@ Python NoneBot2 适配器按独立项目维护，不把实现放回本仓库的 
 
 ## 文档索引
 
+现状、文档分类和纯 C++ 替换路线见 [实现现状与纯 C++ 演进评估](14-implementation-assessment.md)。下列模块文档主要描述目标设计；实现状态以该评估和源码为准。
+
 - [C++ 主编码规范](12-cpp-coding-standard.md)
 - [开发边界与协作规则](00-boundaries.md)
 - [统一协议层](01-contracts.md)
@@ -71,6 +73,11 @@ Python NoneBot2 适配器按独立项目维护，不把实现放回本仓库的 
 - [编码任务模板](10-task-template.md)
 - [开发工具链版本](11-toolchain.md)
 - [CI/CD 流程方案](12-ci-cd.md)
+- [控制 API 契约交接（待确认）](13-control-api-contract-handoff.md)
+- [基础设施接入后续事项](13-infrastructure-integration-follow-up.md)
+- [SDK 跨模块依赖与协议缺口（待核验）](../sdk/PLUGIN_SDK_DEPENDENCIES.md)
+- [实现现状与纯 C++ 演进评估](14-implementation-assessment.md)
+- [跨层未完成事项清单](15-cross-layer-gaps.md)
 
 ## 依赖方向
 
@@ -110,3 +117,5 @@ Core 的端口接口 ───────────────► 基础设�
 7. 它如何被单独启动或替换。
 
 每个文档末尾都有一句“代码启动句”。以后可以直接把这句话作为一次独立编码任务的描述。
+
+- [分层开发任务与实施台账](16-development-tasks.md)

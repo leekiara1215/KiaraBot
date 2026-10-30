@@ -1,8 +1,5 @@
 #pragma once
 
-#include "kiarabot/core/runtime.h"
-#include "kiarabot/v1/plugins.pb.h"
-
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
@@ -13,24 +10,15 @@
 #include <variant>
 #include <vector>
 
+#include "kiarabot/core/runtime.h"
+#include "kiarabot/v1/plugins.pb.h"
+
 namespace kiarabot::core {
 
 // Error is the protocol's canonical error; no exception crosses this interface.
-template <typename Value> using PortResult = std::variant<Value, kiarabot::v1::Error>;
+template <typename Value> using PortResult = Result<Value, kiarabot::v1::Error>;
 using PortStatus = PortResult<std::monostate>;
 using WallTime = std::chrono::system_clock::time_point;
-
-class IRuntimeRepository {
-public:
-  virtual ~IRuntimeRepository() = default;
-  virtual PortResult<std::optional<EventEntry>> find_event(std::string_view event_id) = 0;
-  virtual PortStatus insert_event(const EventEntry& entry) = 0;
-  virtual PortStatus update_event(const EventEntry& entry) = 0;
-  virtual PortStatus erase_event(std::string_view event_id) = 0;
-  virtual PortResult<std::optional<ActionEntry>> find_action(std::string_view idempotency_key) = 0;
-  virtual PortStatus insert_action(const ActionEntry& entry) = 0;
-  virtual PortStatus update_action(const ActionEntry& entry) = 0;
-};
 
 class INamespaceStore {
 public:
@@ -65,7 +53,7 @@ class IUnitOfWork {
 public:
   virtual ~IUnitOfWork() = default;
   // References are valid only while this unit of work is alive.
-  virtual IRuntimeRepository& runtime_repository() = 0;
+  virtual RuntimeSnapshot& runtime_snapshot() = 0;
   virtual INamespaceStore& namespace_store() = 0;
   virtual IAuditLogger& audit_logger() = 0;
   virtual IIdempotencyStore& idempotency_store() = 0;
