@@ -1,9 +1,18 @@
 name: CI
 
+# 2026-10-30 起暂停自动触发：只保留手动 workflow_dispatch。
+# 恢复自动触发时，取消下面 Pull Request / push 触发器的注释，并删除 workflow_dispatch 的 base_ref 输入。
 on:
-  pull_request:
-  push:
-    branches: [main]
+  workflow_dispatch:
+    inputs:
+      base_ref:
+        description: 'Descriptor 基线提交（commit SHA，默认 origin/main）'
+        required: false
+        default: origin/main
+        type: string
+  # pull_request:
+  # push:
+  #   branches: [main]
 
 permissions:
   contents: read
@@ -104,7 +113,7 @@ jobs:
           npm run build --prefix panel
       - name: Compare with base commit descriptor
         env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before || inputs.base_ref }}
         run: scripts/ci/check-descriptor.sh "$BASE_SHA"
       - name: Verify incompatible descriptors fail
         run: scripts/ci/test-descriptor-gate.sh

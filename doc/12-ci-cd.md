@@ -92,7 +92,17 @@ ghcr.io/leekiara1215/kiarabot-core:v1.0.0
 
 ## 已实现的 CI 与协议门禁
 
-`.github/workflows/ci.yml` 在 Pull Request 和 push 到 `main` 时运行，不引用 production Environment 或生产密钥，仓库权限仅为 `contents: read`。它执行：
+### 2026-10-30 起暂停自动触发
+
+`.github/workflows/ci.yml` 目前只保留 `workflow_dispatch`：Pull Request 和 push 到 `main` 不再触发 CI，CD 本就未接通，本次不涉及镜像构建与部署。暂停是临时状态，恢复方式：
+
+- 手动运行：Actions 页面选择 `CI` → `Run workflow`，`base_ref` 填 descriptor 基线提交（默认 `origin/main`）。协议兼容性 job 需要可解析的基准提交，不会使用空 SHA。
+- 恢复自动触发：取消 `ci.yml` 顶部 `pull_request`、`push: branches: [main]` 触发器的注释，并删除 `workflow_dispatch.inputs.base_ref` 与 `BASE_SHA` 表达式中的 `|| inputs.base_ref` 兜底。
+- 影响：若 `main` 的必需状态检查仍指向本 workflow，暂停期间 PR 会因检查一直 pending 而无法合并，恢复前需临时调整分支保护；「验收标准」中「任意 Pull Request 都能自动编译和运行测试」在该状态下暂时不成立。
+
+下面描述的是本 workflow 的完整检查内容，恢复自动触发后按原文生效。
+
+`.github/workflows/ci.yml` 原本在 Pull Request 和 push 到 `main` 时运行，不引用 production Environment 或生产密钥，仓库权限仅为 `contents: read`。它执行：
 
 - GCC 13、Clang 16 分别配置和构建 `dev` 预设，运行全部 CTest；协议任务配置、构建 `proto` 并运行全部 CTest。
 - `proto/tests/check_contracts.sh` 检查契约；`scripts/ci/check-descriptor.sh` 从 PR 目标分支的 base SHA（push 时为推送前 SHA）生成 descriptor，再使用现有兼容性检查器比较。找不到基准或基准为全零时失败；`scripts/ci/test-descriptor-gate.sh` 验证不兼容字段和更改的基准会失败。基准来自 Git 历史而非 PR 提供的文件，descriptor 构建产物以被检提交 SHA 命名。
