@@ -70,7 +70,7 @@ if '--sqlite' in sys.argv[2:]:
                         process.kill()
                         process.wait(timeout=5)
         with sqlite3.connect(database) as connection:
-            assert connection.execute('PRAGMA user_version').fetchone()[0] == 4
+            assert connection.execute('PRAGMA user_version').fetchone()[0] == 5
             connection.execute('PRAGMA user_version=999')
         assert subprocess.run(args, env=durable, capture_output=True, timeout=5).returncode == 1
     print('Durable ingress startup, reopen and corrupt-schema refusal passed')

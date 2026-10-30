@@ -1,5 +1,7 @@
 # CI/CD 流程方案
 
+T07a 的 contracts job 使用现有 pinned vcpkg，同步构建 Protobuf/gRPC、SQLite、libcurl 和 Abseil，启用 KIARABOT_ENABLE_INFRASTRUCTURE，安装 uv 0.13.6 与锁定 Python 3.11.18 SDK 环境后运行 tests/acceptance/run.sh。入口覆盖 CTest、真实 Core/SQLite/SDK 与协议 fake 平台闭环、模型 HTTP fake、任务恢复；缺少环境失败而非跳过。该流程不需要账号/密钥，不表示真实 QQ 或模型联调通过。独立适配器可通过 KIARABOT_ADAPTER_DIR 接入本地同一入口，其 checkout 不复制到本仓库。详细命令见 tests/acceptance/README.md；本地执行与远端 GitHub Actions 结果分别记录。
+
 ## 责任
 
 CI/CD 层负责把代码变更安全地转换为可验证、可追踪、可回滚的部署版本。

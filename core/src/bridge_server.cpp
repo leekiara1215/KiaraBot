@@ -184,7 +184,12 @@ public:
           try {
             while (!stop.stop_requested() && !context->IsCancelled()) {
               const auto next = actions_->next(registration.session);
-              if (std::holds_alternative<kiarabot::v1::Error>(next)) {
+              if (const auto* error = std::get_if<kiarabot::v1::Error>(&next)) {
+                if (error->code() == kiarabot::v1::CONFLICT && error->retryable()) {
+                  // Optimistic storage conflict: nothing has been written to the stream.
+                  std::this_thread::sleep_for(std::chrono::milliseconds(20));
+                  continue;
+                }
                 context->TryCancel();
                 break;
               }
@@ -313,6 +318,22 @@ public:
       if (storage_enabled) {
         registration.response.add_enabled_features("host.storage.v1");
       }
+      const bool model_enabled =
+          host_ && host_->has_model() && registration.response.accepted() &&
+          std::find(request.register_().supported_features().begin(),
+                    request.register_().supported_features().end(),
+                    "host.model.v1") != request.register_().supported_features().end();
+      if (model_enabled) {
+        registration.response.add_enabled_features("host.model.v1");
+      }
+      const bool tasks_enabled =
+          host_ && host_->has_scheduler() && registration.response.accepted() &&
+          std::find(request.register_().supported_features().begin(),
+                    request.register_().supported_features().end(),
+                    "host.tasks.v1") != request.register_().supported_features().end();
+      if (tasks_enabled) {
+        registration.response.add_enabled_features("host.tasks.v1");
+      }
       kiarabot::v1::CoreToPlugin response;
       *response.mutable_register_result() = registration.response;
       if (!registration.response.accepted()) {
@@ -359,6 +380,10 @@ public:
             const auto delivery = hub_->next(registration.session);
             kiarabot::v1::CoreToPlugin output;
             if (const auto* error = std::get_if<kiarabot::v1::Error>(&delivery)) {
+              if (error->code() == kiarabot::v1::CONFLICT && error->retryable()) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(20));
+                continue;
+              }
               *output.mutable_error() = *error;
               {
                 std::lock_guard lock(write_mutex);
@@ -393,7 +418,13 @@ public:
         PortStatus outcome = std::monostate{};
         if (request.has_event_ack()) {
           outcome = hub_->acknowledge(registration.session, request.event_ack());
-        } else if (request.has_host_request() && storage_enabled &&
+        } else if (request.has_host_request() &&
+                   (request.host_request().has_model_chat() ? model_enabled
+                    : request.host_request().has_task_create() ||
+                            request.host_request().has_task_get() ||
+                            request.host_request().has_task_cancel()
+                        ? tasks_enabled
+                        : storage_enabled) &&
                    hub_->current(registration.session)) {
           *response.mutable_host_response() =
               host_->dispatch(registration.session, request.host_request());

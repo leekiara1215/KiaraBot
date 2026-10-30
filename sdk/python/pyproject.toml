@@ -11,7 +11,7 @@ dev = ["grpcio-tools==1.81.1", "pytest==9.2.0", "pytest-asyncio==1.4.1"]
 package = false
 
 [tool.pytest.ini_options]
-pythonpath = ["src", "build/generated", "../../plugins/event-observer"]
+pythonpath = ["src", "build/generated", "../../plugins/event-observer", "../../plugins/ai-reply"]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 testpaths = ["tests"]

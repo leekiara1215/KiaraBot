@@ -84,6 +84,12 @@ struct ScheduledTask {
   bool cancel_requested{false};
 };
 
+class ITimeZoneResolver {
+public:
+  virtual ~ITimeZoneResolver() = default;
+  virtual PortResult<WallTime> resolve(const kiarabot::v1::LocalTaskTime& local) = 0;
+};
+
 struct TaskClaim {
   ScheduledTask task;
   std::string claim_token;

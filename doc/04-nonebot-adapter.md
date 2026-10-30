@@ -1,5 +1,7 @@
 # Python NoneBot2 适配器设计
 
+T07b 真实 QQ/NapCat 尚待用户配置；已核对独立适配器当前 OneBot 正向 WS 与 Core 环境变量，准备步骤见 [真实联调环境准备](../tests/acceptance/real-environment.md)。模板只运行消息观察插件，不主动发送；真实收发和回滚仍未验证。
+
 ## T04b Action 执行子集
 
 独立适配器支持 action.send_message.text.v1，将 send_message 的纯文本群/私聊转换为 OneBot send_group_msg/send_private_msg；只使用注册账号的 Bot。执行前核验目标身份、消息格式、能力和 deadline。其他操作/消息段拒绝 CAPABILITY_NOT_SUPPORTED，不降级丢字段。Core 负责业务授权，适配器不接受插件直接调用。

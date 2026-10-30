@@ -85,12 +85,17 @@ async def cleanup(process):
 
 @pytest.mark.parametrize('mode', ['graceful', 'stop_timeout', 'crash', 'start_timeout'])
 async def test_managed_lifecycle_environment_reclaim_and_event(tmp_path, mode):
-    process = await launch(environment(tmp_path, mode))
+    env = environment(tmp_path, mode)
+    env.update(KIARABOT_MODEL_ENDPOINT='http://127.0.0.1:1/chat/completions',
+               KIARABOT_MODEL_API_KEY='private-model-key', KIARABOT_MODEL_NAME='default')
+    process = await launch(env)
     try:
         marker = json.loads(await wait_file(tmp_path / 'marker.json'))
         child_environment = marker['environment']
         assert 'PRIVATE_SECRET' not in child_environment
         assert 'KIARABOT_ADAPTER_TOKEN' not in child_environment
+        assert 'KIARABOT_MODEL_API_KEY' not in child_environment
+        assert 'KIARABOT_MODEL_ENDPOINT' not in child_environment
         assert child_environment['PLUGIN_AUTH_TOKEN'] == 'p' * 32
         if mode == 'start_timeout':
             output, error = await asyncio.wait_for(process.communicate(), 5)

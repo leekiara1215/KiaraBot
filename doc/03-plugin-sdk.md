@@ -1,5 +1,15 @@
 # PluginSDK 与插件运行时设计
 
+## T06c 任务客户端
+
+Context.task_create(task_id, target_conversation, payload, idempotency_key, run_at=UTC datetime 或 local_time=LocalTaskTime 字段字典)、task_get(task_id)、task_cancel(task_id, idempotency_key) 使用 host.tasks.v1，默认五秒 deadline。必须获授 task.schedule；创建还需 event.timer.triggered 订阅。返回生成的 TaskResponse；本地时间不猜测 DST，详见 doc/05-infrastructure.md。任务身份来自注册会话，不接受自报 owner；事件仅交给创建插件。COMPLETED 代表 TimerTriggered 已入队，回调仍可能重复，消费者按 task_id 幂等。
+
+## T06b 模型客户端
+
+Context.model_chat(model, messages, timeout=5.0) 返回生成的 ModelChatResponse；messages 使用 role/text 字段。只在 host.model.v1 协商成功后发送，必须获授 model.chat。请求限制与错误码见 doc/05-infrastructure.md。默认五秒、最多五分钟的 Host deadline 另受 Provider 最长三十秒限制。模型调用没有幂等回放，SDK 不自动重发；断线或 TIMEOUT 可能已经产生费用。插件不接触 HTTP 客户端、端点和 API Key。
+
+plugins/ai-reply 示例仅对 /ai 前缀纯文本事件应答，通过 SDK 存储先记录调用意图，再调用配置模型别名 default，最后发送 Action。若调用完成前崩溃/超时，意图记录阻止重放再次调用模型；该事件可能不产生回复，需要人工处理。已经保存的回答可以重放提交相同 Action 幂等键。示例需要 message.read、message.send、model.chat、storage.namespace，事件回调超时应配置为大于模型调用时限。
+
 ## T06a Host 存储 API
 
 注册协商 host.storage.v1 后，Context.storage_get(key)、storage_set(key, value, idempotency_key, expires_at) 和 storage_delete(key, idempotency_key) 使用现有 HostRequest/HostResponse。SDK 自动关联 request_id/trace_id，deadline 默认五秒且最多五分钟；写入/删除幂等键由插件提供（16–128 字符），重试必须保持原键和内容。namespace 由认证插件身份确定，接口不接受自报 namespace。获授 storage.namespace 才能访问。
@@ -18,7 +28,7 @@ Context 提供 submit_action(ActionEnvelope)、query_action(action_id 或 idempo
 
 Core 可启动配置的 Python 插件子进程，使用 argv 而非 shell，显式传入插件凭据，不继承适配器 token、数据库或模型配置。注册前失败/超时阻止受管插件启动成功；运行中崩溃不终止 Core。停止对独立进程组发送 SIGTERM，超过宽限期发送 SIGKILL 并 waitpid。进程隔离不是操作系统权限沙箱。
 
-SDK 提供真实本机 gRPC FakeHost，用于注册、事件、ACK、拒绝和断线测试；现已覆盖 Action/Host 存储帧的成功和故障交互，模型/任务仍待后续任务。示例位于 plugins/event-observer。依赖由 sdk/python/uv.lock 固定，生成代码进入忽略的 build 目录。验收入口见 sdk/python/README.md。
+SDK 提供真实本机 gRPC FakeHost，用于注册、事件、ACK、拒绝和断线测试；现已覆盖 Action/Host 存储帧的成功和故障交互，模型调用已由 T06b 接线，任务由 T06c 接线。示例位于 plugins/event-observer。依赖由 sdk/python/uv.lock 固定，生成代码进入忽略的 build 目录。验收入口见 sdk/python/README.md。
 
 ## T03a 当前桥接子集
 

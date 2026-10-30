@@ -49,6 +49,9 @@ std::string subscription(const kiarabot::v1::EventEnvelope& event) {
   }
 }
 std::string required_permission(const std::string& capability) {
+  if (capability == "event.timer.triggered") {
+    return "task.schedule";
+  }
   if (capability == "event.message.received" || capability == "event.message.sent") {
     return "message.read";
   }

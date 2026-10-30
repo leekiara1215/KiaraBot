@@ -15,6 +15,16 @@ tags:
   - name: control-plane
     description: Authenticated control-panel streaming channels.
 defaultContentType: application/json
+x-control-session-policy:
+  authorization: Current roles and permissions follow openapi.yaml x-control-policy; control contains the union of allowed channels, never unfiltered data.
+  permissions: {health: health.read, logs: log.read, adapters: adapter.read, plugins: plugin.read, tasks: task.read, messages: message.read}
+  messages_default: No default role grants message.read; explicit policy is required, including for admins. Only metadata is emitted.
+  sequences: Per authenticated stream session; SESSION_READY.last_sequence is the accepted replay boundary. Replay follows SESSION_READY before live events.
+  snapshots: Establish stream before REST reads, buffer events during reads, then refresh affected resources. A lost stream during snapshot loading requires resume or a new hello and full refresh.
+  retention_seconds: 600
+  revoke_expiry: Validate at handshake and before every event; close within one second after session revocation, permission loss or access expiry.
+  close_codes: {invalid_first_frame: 4400, unauthenticated: 4401, forbidden: 4403, internal: 1011}
+  resync: Send RESYNC_REQUIRED with CURSOR_EXPIRED, INVALID_CURSOR or SERVER_RESTART, then close 1000. Client discards the stream session.
 servers:
   control:
     url: control.example.invalid/ws

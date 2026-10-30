@@ -1,0 +1,12 @@
+{
+  "id": "ai-reply",
+  "name": "AI reply example",
+  "version": "0.1.0",
+  "api_version": "kiarabot.plugin.v1",
+  "runtime": "python-rpc",
+  "entrypoint": "ai_reply:create_plugin",
+  "capabilities": ["event.message.received"],
+  "permissions": ["message.read", "message.send", "model.chat", "storage.namespace"],
+  "isolation": "process",
+  "ordered": true
+}

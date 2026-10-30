@@ -23,7 +23,9 @@
 #include "kiarabot/core/plugin_hub.hpp"
 #endif
 #ifdef KIARABOT_HAS_SQLITE
+#include "kiarabot/infrastructure/http_model_provider.hpp"
 #include "kiarabot/infrastructure/sqlite_runtime_store.hpp"
+#include "kiarabot/infrastructure/time_zone_resolver.hpp"
 #endif
 
 namespace {
@@ -92,6 +94,7 @@ int run_process(std::string_view listen = {}) {
 #ifdef KIARABOT_HAS_GRPC
   std::unique_ptr<kiarabot::core::RuntimeStore> persistent_store;
   std::unique_ptr<kiarabot::core::BridgeServer> server;
+  std::jthread scheduling;
   if (!listen.empty()) {
     std::vector<kiarabot::core::BridgeCredential> credentials;
     for (const auto role :
@@ -166,13 +169,64 @@ int run_process(std::string_view listen = {}) {
     }
     auto actions =
         plugins ? std::make_shared<kiarabot::core::ActionRouter>(*persistent_store) : nullptr;
-    auto host =
-        plugins ? std::make_shared<kiarabot::core::HostDispatcher>(*persistent_store) : nullptr;
+    std::shared_ptr<kiarabot::core::IModelProvider> model;
+    const char* model_endpoint = std::getenv("KIARABOT_MODEL_ENDPOINT");
+    const char* model_key = std::getenv("KIARABOT_MODEL_API_KEY");
+    const char* model_name = std::getenv("KIARABOT_MODEL_NAME");
+    if (model_endpoint || model_key || model_name) {
+#ifdef KIARABOT_HAS_SQLITE
+      if (!plugins || !model_endpoint || !model_key || !model_name) {
+        std::cerr << "operation=model_config outcome=failed error_code=INVALID_ARGUMENT\n";
+        return 1;
+      }
+      auto provider = kiarabot::infrastructure::HttpModelProvider::open(
+          {model_endpoint, model_key, model_name});
+      if (std::holds_alternative<kiarabot::v1::Error>(provider)) {
+        std::cerr << "operation=model_config outcome=failed error_code=INVALID_ARGUMENT\n";
+        return 1;
+      }
+      model = std::get<std::shared_ptr<kiarabot::infrastructure::HttpModelProvider>>(
+          std::move(provider));
+#else
+      return 1;
+#endif
+    }
+    std::shared_ptr<kiarabot::core::TaskScheduler> scheduler;
+#ifdef KIARABOT_HAS_SQLITE
+    if (plugins) {
+      scheduler = std::make_shared<kiarabot::core::TaskScheduler>(
+          *persistent_store, std::make_shared<kiarabot::infrastructure::TimeZoneResolver>());
+      if (std::holds_alternative<kiarabot::v1::Error>(scheduler->recover())) {
+        std::cerr << "operation=scheduler_recover outcome=failed error_code=UPSTREAM_UNAVAILABLE\n";
+        return 1;
+      }
+    }
+#endif
+    auto host = plugins ? std::make_shared<kiarabot::core::HostDispatcher>(
+                              *persistent_store, kiarabot::core::RuntimeClock{},
+                              kiarabot::core::NamespacePolicy{}, model, scheduler)
+                        : nullptr;
     server = std::make_unique<kiarabot::core::BridgeServer>(std::move(credentials), ingress,
                                                             plugins, actions, host);
     if (!server->start(std::string(listen))) {
       std::cerr << "operation=grpc_start outcome=failed error_code=INTERNAL\n";
       return 1;
+    }
+    if (scheduler) {
+      scheduling = std::jthread([scheduler](std::stop_token stop) {
+        auto previous = kiarabot::v1::ERROR_CODE_UNSPECIFIED;
+        while (!stop.stop_requested()) {
+          const auto result = scheduler->tick();
+          const auto* failure = std::get_if<kiarabot::v1::Error>(&result);
+          const auto code = failure ? failure->code() : kiarabot::v1::ERROR_CODE_UNSPECIFIED;
+          if (code != previous && failure) {
+            std::cerr << "operation=scheduler_tick outcome=failed error_code="
+                      << kiarabot::v1::ErrorCode_Name(code) << '\n';
+          }
+          previous = code;
+          std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
+      });
     }
     std::cout << "transport_listening=true port=" << server->port()
               << " rpc_ready=false adapter_ingress_ready=" << (ingress ? "true" : "false")
@@ -199,6 +253,10 @@ int run_process(std::string_view listen = {}) {
       while (!plugins->connected(identity)) {
         if (stop_pending(signals)) {
           child.stop(stop_timeout);
+          scheduling.request_stop();
+          if (scheduling.joinable()) {
+            scheduling.join();
+          }
           server->stop();
           return 0;
         }
@@ -234,6 +292,10 @@ int run_process(std::string_view listen = {}) {
   }
 #ifdef KIARABOT_HAS_GRPC
   if (server) {
+    scheduling.request_stop();
+    if (scheduling.joinable()) {
+      scheduling.join();
+    }
     server->stop();
   }
 #endif

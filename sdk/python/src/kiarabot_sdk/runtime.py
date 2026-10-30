@@ -75,11 +75,42 @@ class Context:
         request = plugins.HostRequest(request_id=str(uuid.uuid4()), trace_id=str(uuid.uuid4()),
                                       idempotency_key=idempotency_key, **{operation: kwargs})
         request.deadline.FromDatetime(datetime.now(timezone.utc) + timedelta(seconds=timeout))
-        response = await self._call(plugins.PluginToCore(host_request=request), timeout, 'host.storage.v1')
+        feature = 'host.model.v1' if operation == 'model_chat' else ('host.tasks.v1' if operation.startswith('task_') else 'host.storage.v1')
+        try:
+            response = await self._call(plugins.PluginToCore(host_request=request), timeout, feature)
+        except PluginError as error:
+            if operation == 'model_chat' and error.code != common.RATE_LIMITED:
+                raise PluginError(error.code, False) from None
+            raise
         return getattr(response, operation)
 
     async def storage_get(self, key, timeout=5.0):
         return (await self._host('storage_get', timeout, key=key)).value
+
+    async def model_chat(self, model, messages, timeout=5.0):
+        return await self._host('model_chat', timeout, model=model, messages=messages)
+
+    async def task_create(self, task_id, target_conversation, payload, idempotency_key,
+                          *, run_at=None, local_time=None, timeout=5.0):
+        if (run_at is None) == (local_time is None):
+            raise PluginError(common.INVALID_ARGUMENT)
+        operation = dict(task_id=task_id, target_conversation=target_conversation, payload=payload)
+        if run_at is not None:
+            from google.protobuf.timestamp_pb2 import Timestamp
+            if run_at.tzinfo is None or run_at.utcoffset() != timedelta(0):
+                raise PluginError(common.INVALID_ARGUMENT)
+            date = Timestamp()
+            date.FromDatetime(run_at)
+            operation['run_at'] = date
+        else:
+            operation['local_time'] = local_time
+        return await self._host('task_create', timeout, idempotency_key, **operation)
+
+    async def task_get(self, task_id, timeout=5.0):
+        return await self._host('task_get', timeout, task_id=task_id)
+
+    async def task_cancel(self, task_id, idempotency_key, timeout=5.0):
+        return await self._host('task_cancel', timeout, idempotency_key, task_id=task_id)
 
     async def storage_set(self, key, value, idempotency_key, *, expires_at=None, timeout=5.0):
         operation = dict(key=key, value=value)
@@ -245,7 +276,7 @@ class Runner:
 
             try:
                 await write(plugins.PluginToCore(register=plugins.RegisterPluginRequest(
-                    manifest=self.manifest, instance_id=instance, supported_features=['action.result.v1', 'host.storage.v1'])))
+                    manifest=self.manifest, instance_id=instance, supported_features=['action.result.v1', 'host.storage.v1', 'host.model.v1', 'host.tasks.v1'])))
                 response = await asyncio.wait_for(call.read(), self.options.io_timeout)
                 if response is grpc.aio.EOF or response.WhichOneof('body') != 'register_result':
                     raise PluginError(common.UPSTREAM_UNAVAILABLE, True)
@@ -256,7 +287,7 @@ class Runner:
                         or set(registered.granted_permissions) != set(self.manifest.permissions)
                         or len(registered.granted_permissions) != len(set(registered.granted_permissions))
                         or registered.HasField('error')
-                        or not set(registered.enabled_features).issubset({'action.result.v1', 'host.storage.v1'})):
+                        or not set(registered.enabled_features).issubset({'action.result.v1', 'host.storage.v1', 'host.model.v1', 'host.tasks.v1'})):
                     raise PluginError(common.PERMISSION_DENIED)
                 self.context._permissions = frozenset(registered.granted_permissions)
                 self.context._features = frozenset(registered.enabled_features)

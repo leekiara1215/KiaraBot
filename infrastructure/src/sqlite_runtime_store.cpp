@@ -169,12 +169,12 @@ SqliteRuntimeStore::open(const std::string& path) {
       if (sqlite3_bind_blob(insert.get(), 1, bytes.data(), static_cast<int>(bytes.size()),
                             SQLITE_TRANSIENT) != SQLITE_OK ||
           sqlite3_step(insert.get()) != SQLITE_DONE ||
-          sqlite3_exec(state->database, "PRAGMA user_version=4", nullptr, nullptr, nullptr) !=
+          sqlite3_exec(state->database, "PRAGMA user_version=5", nullptr, nullptr, nullptr) !=
               SQLITE_OK) {
         rollback();
         return core::StorageError::Unavailable;
       }
-    } else if (version == 1 || version == 2 || version == 3) {
+    } else if (version == 1 || version == 2 || version == 3 || version == 4) {
       Statement query(state->database, "SELECT payload FROM runtime_snapshot WHERE id=1");
       if (sqlite3_step(query.get()) != SQLITE_ROW) {
         rollback();
@@ -192,12 +192,12 @@ SqliteRuntimeStore::open(const std::string& path) {
       if (sqlite3_bind_blob(update.get(), 1, migrated.data(), static_cast<int>(migrated.size()),
                             SQLITE_TRANSIENT) != SQLITE_OK ||
           sqlite3_step(update.get()) != SQLITE_DONE ||
-          sqlite3_exec(state->database, "PRAGMA user_version=4", nullptr, nullptr, nullptr) !=
+          sqlite3_exec(state->database, "PRAGMA user_version=5", nullptr, nullptr, nullptr) !=
               SQLITE_OK) {
         rollback();
         return core::StorageError::Unavailable;
       }
-    } else if (version != 4) {
+    } else if (version != 5) {
       rollback();
       return core::StorageError::Corrupt;
     }

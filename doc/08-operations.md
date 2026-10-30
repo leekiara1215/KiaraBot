@@ -1,8 +1,14 @@
 # 部署与可观测性设计
 
-T06a 持久化插件入口同时装配 HostDispatcher，只协商已实现的 host.storage.v1；storage.namespace 必须显式列入 KIARABOT_PLUGIN_PERMISSIONS。数据库迁移到 schema v4，回滚使用迁移前备份。Host 存储和幂等响应随 Core 数据库一起备份，不能单独删除幂等响应后重放写入。
+T07b 真实联调环境尚未提供（用户已确认）。准备说明和不含密钥的模板见 [真实联调环境准备](../tests/acceptance/real-environment.md)。先以 event-observer 验证接收，模板不自动发送平台消息或模型请求；真实收发、模型和恢复结果仍待实际环境验收，不能用 T07a 替代。
 
-T04b 启用持久化插件入口时装配 ActionRouter，插件 message.send 权限仍显式配置；只声明已实现的 action.result.v1。T04b 引入 schema v3，当前 T06a 已继续升级至 v4，旧二进制不能读取新 schema，回滚必须使用迁移前备份。独立适配器在 OUTBOX_PATH 旁维护 .actions 执行日志，备份/恢复须与事件 outbox 一起处理，禁止删除未终态记录后重放平台请求。
+T06c 持久化插件入口装配 TaskScheduler 并协商 host.tasks.v1；插件权限显式添加 task.schedule，定时事件订阅为 event.timer.triggered。数据库升级至 v5，包含任务/领取 token；启动在开启监听前恢复 RUNNING，恢复失败拒绝启动。一个数据库只运行一个 Core；替换进程必须先停止旧进程。任务每 100ms 检查，系统必须安装 IANA zoneinfo（Linux tzdata）；备份任务/inbox/幂等记录须保持同一快照。COMPLETED 只表示入队，排障同时检查插件投递状态。
+
+T06b 可选配置 KIARABOT_MODEL_ENDPOINT（完整 /chat/completions URL）、KIARABOT_MODEL_API_KEY 和 KIARABOT_MODEL_NAME，三者必须同时设置且持久化插件入口已启用；部分/非法配置启动失败 INVALID_ARGUMENT。未配置时不协商 host.model.v1。插件须获授 model.chat。只允许 HTTPS 或本机 127.0.0.1 HTTP；禁用环境代理/重定向，证书校验开启，最大请求三十秒，停机可能等到该调用期限。密钥不要放命令行或入库；受管 Python 环境白名单不包含任何模型配置。模型只读探活与实际外部供应商联调仍未验证。
+
+T06a 持久化插件入口同时装配 HostDispatcher，只协商已实现的 host.storage.v1；storage.namespace 必须显式列入 KIARABOT_PLUGIN_PERMISSIONS。T06a 引入 schema v4，当前版本升级为 v5，回滚使用迁移前备份。Host 存储和幂等响应随 Core 数据库一起备份，不能单独删除幂等响应后重放写入。
+
+T04b 启用持久化插件入口时装配 ActionRouter，插件 message.send 权限仍显式配置；只声明已实现的 action.result.v1。T04b 引入 schema v3，当前 T06c 已继续升级至 v5，旧二进制不能读取新 schema，回滚必须使用迁移前备份。独立适配器在 OUTBOX_PATH 旁维护 .actions 执行日志，备份/恢复须与事件 outbox 一起处理，禁止删除未终态记录后重放平台请求。
 
 ## T03b 受管 Python 插件
 

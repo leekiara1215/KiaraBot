@@ -66,11 +66,11 @@ jobs:
       - name: Install build prerequisites
         run: |
           sudo apt-get update
-          sudo apt-get install -y gcc-13 g++-13 autoconf automake libtool pkg-config ninja-build
+          sudo apt-get install -y gcc-13 g++-13 autoconf automake libtool pkg-config ninja-build python3-venv tzdata ruby
       - name: Install pinned Protobuf and gRPC
         run: |
           "$VCPKG_ROOT/bootstrap-vcpkg.sh" -disableMetrics
-          "$VCPKG_ROOT/vcpkg" install grpc protobuf --triplet x64-linux
+          "$VCPKG_ROOT/vcpkg" install grpc protobuf curl sqlite3 --triplet x64-linux
           echo "$VCPKG_ROOT/installed/x64-linux/tools/protobuf" >> "$GITHUB_PATH"
           echo "$VCPKG_ROOT/installed/x64-linux/tools/grpc" >> "$GITHUB_PATH"
       - name: Configure proto
@@ -81,10 +81,16 @@ jobs:
           cmake --preset proto
           -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake"
           -DVCPKG_MANIFEST_MODE=OFF
+          -DKIARABOT_ENABLE_INFRASTRUCTURE=ON
       - name: Build proto and compatibility tool
         run: cmake --build --preset proto --parallel 2
-      - name: Test proto
-        run: ctest --preset proto --no-tests=error
+      - name: Install locked Python SDK test environment
+        run: |
+          python3 -m venv /tmp/kiarabot-ci-uv
+          /tmp/kiarabot-ci-uv/bin/pip install uv==0.13.6
+          /tmp/kiarabot-ci-uv/bin/uv sync --project sdk/python --locked --python 3.11.18
+      - name: Test Core and mixed-language closed loop
+        run: bash tests/acceptance/run.sh
       - name: Compare with base commit descriptor
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}

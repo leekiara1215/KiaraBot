@@ -1,6 +1,7 @@
 #!/usr/bin/env ruby
 # Contract-shape checks complement the OpenAPI and AsyncAPI validators.
 require 'yaml'
+require 'open3'
 
 root = File.expand_path('../..', __dir__)
 openapi = YAML.safe_load_file(File.join(root, 'api/openapi.yaml'))
@@ -83,3 +84,43 @@ check(terminal.fetch('required').include?('completed_at') &&
       terminal.fetch('properties').fetch('status').fetch('enum') == %w[SUCCEEDED EXPIRED CANCELLED],
       'terminal result requirements')
 puts 'OpenAPI and AsyncAPI channel and Action contract checks passed'
+
+policy = openapi.fetch('x-control-policy')
+check(policy.fetch('application_port') == 'in-process-cpp-v1', 'control port decision')
+check(policy.fetch('default_authorization') == 'deny', 'default deny')
+check(policy.fetch('idempotency').fetch('retention_seconds') == 86400, 'idempotency retention')
+check(policy.fetch('pagination').fetch('retention_seconds') == 600, 'snapshot retention')
+check(operations.fetch('/auth/sessions/{sessionId}/revoke').fetch('post').fetch('responses').key?('204'), 'session revoke')
+check(operations.fetch('/auth/me').fetch('get').fetch('operationId') == 'getCurrentPrincipal', 'current principal')
+binary = ENV.fetch('CONTROL_POLICY_BINARY', File.join(root, 'build/proto/kiarabot-control-application-test'))
+output, status = Open3.capture2(binary, '--dump-policy')
+check(status.success?, 'Core policy inspection failed')
+core_policy = output.lines.map { |line| fields = line.split; [fields.first, fields.drop(1)] }.to_h
+count = 0
+operations.each do |path, verbs|
+  verbs.each do |method, operation|
+    next unless %w[get post put].include?(method)
+    count += 1
+    name = operation.fetch('operationId')
+    permission = operation.fetch('x-permission')
+    observed = core_policy.fetch(name)
+    check(observed[0] == permission, "Core permission drift: #{name}")
+    check(observed[1] == (method == 'get' ? '0' : '1'), "Core mutation drift: #{name}")
+    if !%w[public refresh.credential].include?(permission)
+      %w[admin operator viewer].each_with_index do |role, index|
+        grants = policy.fetch('roles').fetch(role)
+        expected = grants.include?('*') || grants.include?(permission)
+        check((observed[2 + index] == '1') == expected, "Core role drift: #{role}/#{permission}")
+      end
+    end
+    %w[400 401 429 500 503 504].each do |code|
+      check(operation.fetch('responses').key?(code), "Missing #{code}: #{path}")
+    end
+    if method != 'get'
+      check(operation.fetch('responses').key?('409'), "Missing idempotency conflict: #{path}")
+    end
+  end
+end
+check(core_policy.size == count, 'Core and REST operation coverage differ')
+check(asyncapi.fetch('x-control-session-policy').fetch('retention_seconds') == 600, 'stream retention')
+puts 'Control session, role, operation, pagination and error contracts match the compiled Core port'

@@ -51,8 +51,18 @@ template <typename Archive, typename Value>
 void fields(Archive& archive, Value& value) {
   archive(value.fingerprint, value.serialized_response, value.expires_at);
 }
+template <typename Archive, typename Value>
+  requires std::is_same_v<std::remove_const_t<Value>, core::TaskEntry>
+void fields(Archive& archive, Value& value) {
+  archive(value.serialized_request, value.state, value.scheduled_at, value.next_run_at,
+          value.attempts, value.cancel_requested, value.claim_token, value.event_id);
+  if (value.state < core::TaskState::Pending || value.state > core::TaskState::Cancelled ||
+      value.event_id.empty()) {
+    throw std::runtime_error("Invalid task state");
+  }
+}
 struct Encoder {
-  static constexpr int version = 4;
+  static constexpr int version = 5;
   std::ostringstream stream;
   std::size_t remaining_items{1000000};
   void reserve_items(std::size_t count) {
@@ -104,7 +114,7 @@ struct Encoder {
 struct Decoder {
   std::istringstream stream;
   std::size_t remaining_items{1000000};
-  int version{4};
+  int version{5};
   template <typename... T> void operator()(T&... values) {
     (one(values), ...);
   }
@@ -124,8 +134,11 @@ struct Decoder {
   void one(T& value) {
     int number = 0;
     one(number);
-    const int maximum = std::is_same_v<T, core::PluginState> ? 3 : 4;
-    if (number < 0 || number > maximum) {
+    const int minimum = std::is_same_v<T, core::TaskState> ? 1 : 0;
+    const int maximum = std::is_same_v<T, core::TaskState>     ? 6
+                        : std::is_same_v<T, core::PluginState> ? 3
+                                                               : 4;
+    if (number < minimum || number > maximum) {
       throw std::runtime_error("Corrupt enum");
     }
     value = static_cast<T>(number);
@@ -228,6 +241,9 @@ void fields(Archive& archive, Value& value) {
   if (archive.version >= 4) {
     archive(value.namespaces, value.host_receipts);
   }
+  if (archive.version >= 5) {
+    archive(value.tasks);
+  }
 }
 template <typename Archive, typename Value>
   requires std::is_same_v<std::remove_const_t<Value>, core::RuntimeAuditEntry>
@@ -246,7 +262,7 @@ inline std::string encode(const core::RuntimeSnapshot& snapshot) {
   encoder.one(snapshot);
   return encoder.stream.str();
 }
-inline core::RuntimeSnapshot decode(const std::string& bytes, int version = 4) {
+inline core::RuntimeSnapshot decode(const std::string& bytes, int version = 5) {
   Decoder decoder{std::istringstream(bytes)};
   decoder.stream.imbue(std::locale::classic());
   decoder.version = version;

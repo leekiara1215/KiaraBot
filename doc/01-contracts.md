@@ -161,6 +161,12 @@ T06a 在现有功能协商字段中增加 host.storage.v1 名称，不新增线�
 
 ## 错误模型
 
+T08a 控制面 REST 新增会话查询/撤销及当前主体接口，具体响应、RBAC、幂等与分页在 OpenAPI x-control-policy 冻结；WebSocket 的关闭码/权限/撤销/重同步在 AsyncAPI x-control-session-policy 冻结。REST 503 还覆盖 PLUGIN_UNAVAILABLE 和 CAPABILITY_NOT_SUPPORTED；其余映射见 doc/06-control-api.md。这是同进程应用端口，不新增 Protobuf 管理 service，也不改变既有 gRPC 错误映射。
+
+T06c 使用 host.tasks.v1，task.schedule 权限和 event.timer.triggered 订阅；task_get/cancel 无订阅要求但仍需权限。字段及状态数值不变；文档中的 PENDING/RUNNING/RETRYING/COMPLETED/FAILED/CANCELLED 均是 ScheduledTaskState 的 SCHEDULED_TASK_ 同名枚举缩写，不能与 ActionStatus 混用。非法日期/时区/DST/过期任务时间 INVALID_ARGUMENT，非所有者 NOT_FOUND，幂等/终态取消/旧 claim 冲突 CONFLICT，限额 RATE_LIMITED，存储错误按既有映射返回。创建/取消失败不产生事件；详细验收与取消边界见 doc/01-runtime-semantics.md。
+
+T06b 增加现有功能协商名 host.model.v1，不新增字段。model_chat 使用对应 HostResponse.model_chat；模型未配置或未协商 CAPABILITY_NOT_SUPPORTED，未获授 model.chat 为 PERMISSION_DENIED。TIMEOUT 和不确定 UPSTREAM_UNAVAILABLE 不可自动重试（retryable=false），RATE_LIMITED 可稍后重试。模型不属于上述写操作幂等回放范围；详细限制和 HTTP 映射以 doc/05-infrastructure.md 的 T06b 实现范围为准。
+
 错误必须包含稳定错误码，不让前端或插件解析自由文本：
 
 ```text

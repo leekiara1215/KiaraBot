@@ -1,5 +1,9 @@
 # 开发工具链与本地质量检查
 
+T06c 时区转换使用 Protobuf/gRPC 已依赖的 Abseil CMake 包（absl::time）和系统 zoneinfo；Linux 验收机安装 tzdata。独立 infrastructure 构建也显式查找该包，Core 领域代码只依赖 ITimeZoneResolver。新增 task_scheduler CTest 和 SDK test_tasks.py 覆盖跨进程恢复。
+
+T06b 基础设施构建新增 libcurl >= 7.85（CMake CURL::libcurl）；JSON 编解码复用已固定的 Protobuf，不引入模型厂商 SDK。macOS 本轮验收使用系统 libcurl 8.7.1。协议注释/功能协商名修改仍需运行生成、descriptor 和契约测试；Provider 验收只使用本机 HTTP 假服务，不调用外部模型。
+
 T03b Python SDK 固定 Python 3.11.18，依赖以 sdk/python/uv.lock 为准；从唯一 proto 源生成到 sdk/python/build/generated。运行 `uv sync --project sdk/python --locked`、`sdk/python/.venv/bin/python sdk/python/tools/generate_proto.py` 和 `sdk/python/.venv/bin/python -m pytest -q sdk/python/tests`。真实进程测试要求先构建启用基础设施的 proto Core，不跳过缺少的二进制。Core 使用 POSIX posix_spawn 管理外部解释器，不链接 Python 库；当前仅支持 POSIX 进程管理。详细启动配置见 doc/08-operations.md。
 
 本文件规定本仓库的工具版本和可重复的本地检查。不要把本机绝对路径写入仓库配置；通过 `PATH` 选择工具，使用 `CXX` 选择 C++ 编译器。

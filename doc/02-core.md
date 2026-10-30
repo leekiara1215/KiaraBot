@@ -1,5 +1,13 @@
 # C++ Core 设计
 
+T08a 增加同进程 IControlApplication v1 类型化端口与请求形状、默认角色、HTTP 错误映射辅助函数。它接收凭据而非调用者自报身份，真实会话验证/查询/管理实现由 T08b 完成；控制端口与 PluginSession 权限不混用。API/WS 决策以 OpenAPI/AsyncAPI 为准，Core 不依赖 HTTP 框架或面板类型。
+
+T07a tests/acceptance/run.sh 提供独立闭环验收入口。test_closed_loop.py 将真实 Core/SQLite/SDK 与协议 fake 平台相连，验证权限拒绝无平台副作用、重复事件、平台已执行但 ActionResult 丢失后的断线/重启恢复，以及按原 action_id 回放结果。与模型/任务验收一同执行；真实平台联调结果单独由 T07b 记录。
+
+T06c TaskScheduler 实现 IScheduler，规则和事务属于 Core，IANA 时间转换通过 ITimeZoneResolver 端口注入。HostDispatcher 将任务操作交给调度服务；主进程在启动桥之前恢复领取状态，停机先停止并 join 调度线程再停桥。每个 tick 的入队与任务终态同一 RuntimeStore 事务，复用 RuntimeEngine 的 inbox/逐插件投递。
+
+T06b HostDispatcher 通过 IModelProvider 注入模型实现，使用已认证 PluginSession 的 model.chat 权限；调用前提交审计，释放事务/存储锁后调用 Provider，再单独记录结果审计。该外部操作无法与数据库原子提交，不提供自动重试或结果幂等。Bridge 仅在 Provider 配置成功且客户端请求时协商 host.model.v1；基础设施实现和密钥只由启动组合根装配。
+
 T06a HostDispatcher 使用已认证 PluginSession 和 RuntimeStore 事务处理存储请求，默认拒绝未获授 storage.namespace 的插件；业务判断在 Core，SQLite 只保存数据。限额和 TTL 由 Core 决定。该路径复用 RuntimeTransaction 作为统一原子工作单元，不调用彼此独立提交的存储/审计端口；旧 IUnitOfWork 接口仍是后续扩展端口，并非另一套已接线事务。
 
 ## T04b Action 接线范围

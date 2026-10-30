@@ -1,12 +1,12 @@
 #pragma once
 
-#include "kiarabot/v1/plugins.pb.h"
-
 #include <chrono>
 #include <optional>
 #include <string>
 #include <string_view>
 #include <utility>
+
+#include "kiarabot/v1/plugins.pb.h"
 
 namespace kiarabot::core {
 
@@ -52,7 +52,8 @@ validate_host_request(const kiarabot::v1::HostRequest& request,
   }
   switch (request.operation_case()) {
   case kiarabot::v1::HostRequest::kModelChat:
-    if (!valid_id(request.model_chat().model()) || request.model_chat().messages().empty()) {
+    if (!valid_id(request.model_chat().model()) || request.model_chat().messages().empty() ||
+        request.model_chat().messages_size() > 128 || request.model_chat().ByteSizeLong() > 65536) {
       return reject(kiarabot::v1::INVALID_ARGUMENT, "Invalid model request");
     }
     for (const auto& message : request.model_chat().messages()) {

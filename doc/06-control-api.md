@@ -1,5 +1,19 @@
 # 控制面板 API 设计
 
+## T08a 冻结决策（2026-10-30）
+
+控制 API 使用同进程 C++ 应用端口 IControlApplication（core/include/kiarabot/core/control_application.hpp），由组合根注入到 control/api；不新增跨进程管理 RPC，不改变当前 Python 适配器/SDK 和 TypeScript 面板。端口覆盖当前全部 REST 操作；输入为 bearer 凭据、request_id/trace_id/deadline（最长三十秒）、幂等键及类型化命令，禁止自报 actor/role。Core 每次重新核验会话、执行授权、事务和审计；端口返回显式 PortResult，资源文档在输出前脱敏，HTTP 层按 OpenAPI 校验映射。端口本身不表示 REST 服务已实现，实际服务属于 T08b。
+
+已逐项核对历史 doc/13 交接：SessionReady 和 Action 查询已由前序任务定义，保留现行契约；其余 P0 决策写入 OpenAPI 的 x-control-policy、操作 x-permission 和 AsyncAPI 的 x-control-session-policy，作为唯一来源。新增 GET /auth/me（服务端角色/权限）、GET /auth/sessions 和 POST /auth/sessions/{sessionId}/revoke；管理员可管理全部会话，其他角色仅自己，不可见与不存在均 NOT_FOUND。TokenPair 保留既有字段，通过 /auth/me 查询当前 session_id。
+
+认证时限为 access 十五分钟、refresh 三十天；refresh 轮换不改变 session_id。撤销后所有 REST 立即拒绝，WebSocket 最迟一秒关闭。幂等成功响应保留二十四小时；主体、operationId、资源 ID 和 key 为作用域；同键不同载荷 CONFLICT。登录以规范化用户名、刷新以原会话隔离，密码/token 仅作为加密摘要进入 fingerprint。已轮换旧 refresh 用不同键返回 UNAUTHENTICATED，同键可重放当前代次响应；会话撤销、过期或返回 token 代次已失效时，登录/刷新重放也返回 UNAUTHENTICATED。缓存 token 响应须加密，不写明文审计。失败不缓存；审计故障阻止新副作用。
+
+列表为十分钟不可变快照，游标绑定用户、资源、当前权限、页大小和排序。v1 不支持未声明过滤参数；过期/篡改/跨范围 token 为 INVALID_ARGUMENT。默认二十、最大一百；末页省略 next_page_token。资源按 ID 升序，audit/logs 按 occurred_at、ID，sessions 按 created_at、session_id；这替代旧版统一 created_at 排序建议。先建立 WebSocket，再读 REST，并缓存此期间事件、刷新受影响资源，避免快照装载期间漏更新；无连接连续性时重新建立会话并全量刷新。
+
+admin/operator/viewer 的默认权限和每个入口要求由 OpenAPI 给出，未知角色/权限默认拒绝；会话的所有者限制在角色检查之后执行。日志仅 operator/admin，用户与审计仅 admin；消息元数据频道仍须显式 message.read，不因管理员角色自动开放。所有写入口及拒绝都审计，幂等重放不再次产生业务副作用。202 仅表示命令已持久化接受，不能提前报告插件已启动；配置更新先比较 expected_version，冲突不修改数据。
+
+HTTP 映射冻结为 INVALID_ARGUMENT=400、UNAUTHENTICATED=401、PERMISSION_DENIED=403、NOT_FOUND=404、CONFLICT=409、RATE_LIMITED=429（Retry-After）、TIMEOUT=504、UPSTREAM_UNAVAILABLE/PLUGIN_UNAVAILABLE/CAPABILITY_NOT_SUPPORTED=503、INTERNAL/未知码=500；不改变桥接 gRPC 既有映射。所有操作补齐实际可产生的依赖、超时、输入和认证响应，写操作补齐幂等冲突。
+
 T04a 插件桥接新增 Action 结果和查询承载，与 REST 查询共享调用方隔离和“查询失败不代表执行失败”的语义。插件通过 action.result.v1 协商，不复用浏览器认证主体。REST 路径、schema 和 HTTP 映射此次不变；服务实现仍由 T08 承担。
 
 ## 责任
@@ -73,7 +87,7 @@ control/api/
 - API 不返回或记录模型 API Key、OneBot Token 和 Core 内部凭据；
 - 写请求使用 `Idempotency-Key`，重复请求返回原响应。
 
-分页规范：使用不透明 `page_token`；默认 20 条、最大 100 条；token 绑定用户、过滤条件和资源版本；列表使用稳定的 `created_at, id` 排序。
+分页规范：使用不透明 `page_token`；默认 20 条、最大 100 条；token 绑定当前用户、资源、权限、页大小和十分钟不可变快照；排序及无过滤参数规则以 T08a 和 OpenAPI x-control-policy 为准。
 
 `GET /groups` 返回群组标识、角色和有效权限标识；`GET /users` 返回用户所属群组、有效角色和有效权限标识。权限由服务端计算并执行，客户端只展示结果。`GET /logs` 返回脱敏后的日志时间、级别、组件、消息及可选 trace ID；日志不得包含凭据。
 

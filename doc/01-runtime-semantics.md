@@ -1,5 +1,9 @@
 # 事件与 Action 运行时语义
 
+T07a 闭环回归发现派发事务与 ACK 竞争：Bridge 的事件/Action 发送循环遇到 retryable=true 的 CONFLICT 时等待 20ms 后重新读取并尝试派发，不断开流；此时尚未向流写出该帧。非可重试冲突及其他存储故障仍走原错误/断线恢复路径。此重试仅针对 Core 内部未提交的领取，不重发插件业务请求或模型调用。
+
+T06b 模型调用在网络调用前后分别提交 STARTED/结果审计，网络期间不持有数据库事务。崩溃可能仅留下 STARTED，响应丢失也可能已计费；模型请求不提供幂等回放且 SDK/Provider 都不自动重试。结果审计故障返回不可重试存储错误；可通过 request_id/trace_id 关联两条审计，审计不保存对话、密钥或供应商原始错误。
+
 T03b SDK 回调成功才发正 ACK，异常发 INTERNAL 负 ACK，协作式超时发可重试 TIMEOUT。错误不携带插件异常正文。传输中断和未发出的 ACK 保持未知，重连重新注册并允许重复事件；插件负责业务幂等。本地初始化完成后才注册；停止断开流后执行清理，强制终止由 Core 宿主兜底。
 
 T03a 将逐插件状态机接入 PluginBridge。订阅来自已授权活动连接的 capabilities；在事件事务中确定目标，不事后追加。每插件当前最多一个在途事件，ACK 只改变本插件记录。断线处理先取消并 join 旧发送线程，再将 DISPATCHED 转入重试；旧连接未停止时拒绝新注册。传输故障不覆盖已提交 ACK，重连恢复也不重复确认。重放使用投递记录的 trace_id 覆盖序列化事件中的旧 trace。活动订阅在重连时重新声明，不修改既有投递目标。
@@ -81,6 +85,12 @@ T04a 插件 Action 使用 action.result.v1 显式协商和 request_id 关联。�
 控制流使用 AsyncAPI 中的 `SESSION_READY` 会话 ID 和已处理的 `sequence` 恢复；服务端保留 10 分钟事件。服务端返回 `RESYNC_REQUIRED` 时，客户端丢弃旧会话，通过 `hello` 建立新会话并重新拉取 REST 快照。事件可能与快照重叠，客户端按事件触发刷新，不能将流视为业务状态的唯一来源。
 
 ## 插件任务和 Host 请求
+
+T06c：task.schedule 权限控制 task_create/get/cancel，功能名 host.tasks.v1；创建还要求插件声明 event.timer.triggered 订阅。同 owner/task_id 不同内容 CONFLICT，相同内容返回当前状态。Host 相同幂等键返回最初响应（查询当前状态使用 task_get），保留七天。创建和取消先校验 deadline，再在提交前复核；失败不修改任务/幂等记录。
+
+Core 每 100ms 检查最多 32 个到期任务，领取原子置 RUNNING、增加 attempts 并生成随机 claim_token。完成事务验证 token，将唯一 event_id 的 TimerTriggered 和仅发给所有者的逐插件投递入队，再将任务置 COMPLETED；COMPLETED 表示已可靠入队，不表示插件回调已 ACK。任务的 payload、target_conversation 和原定时间进入事件，适配器不能伪造该事件。离线插件重连后按既有至少一次语义收取。
+
+领取后入队失败重试间隔一秒，最多五次后 FAILED；写库失败保留 RUNNING，后续 tick 会重试相同 claim，进程重启 recovery 改为 RETRYING 并撤销旧 token。只能在上一调度进程停止后执行 recovery；不支持多个 Core 调度进程同时拥有同一数据库。旧 token 完成/重试返回 CONFLICT。PENDING/RETRYING 取消立即 CANCELLED；RUNNING 取消设置 cancel_requested，在尚未入队时阻止入队，完成收尾为 CANCELLED。已经 COMPLETED 的任务取消返回 CONFLICT，不能撤销已持久化事件；重复取消 CANCELLED 成功。取消后的旧领取不能创建第二条事件。
 
 Host 请求按注册插件身份隔离。任务创建与取消使用幂等键；任务持久化成功后才返回成功。任务为一次性任务，启动时恢复 pending 和 retrying 状态；进程中断时 running 任务恢复为 retrying，投递至少一次，消费者按 task_id 幂等。每次领取生成新的 claim token；完成或重试只接受当前 token，旧进程的迟到结果不能覆盖新的领取。取消 pending 或 retrying 任务后不再投递；取消 running 任务只阻止后续重试，不撤销已开始的处理。终态任务不可重新运行。重试次数与退避由 Core 策略决定并随任务持久化。状态、取消和重试不得由插件直接修改数据库。
 

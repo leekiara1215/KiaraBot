@@ -148,6 +148,8 @@ message HostResponse {
 }
 
 message ModelChatRequest {
+  // Requires negotiated host.model.v1 and granted model.chat. Non-streaming;
+  // no automatic retry or idempotent replay after timeout/disconnection.
   string model = 1;
   repeated ModelMessage messages = 2;
 }
@@ -181,6 +183,8 @@ message LocalTaskTime {
   string time_zone = 7;
 }
 message TaskCreateRequest {
+  // Requires host.tasks.v1, task.schedule and event.timer.triggered subscription.
+  // COMPLETED means the owner's TimerTriggered event is durably enqueued.
   string task_id = 1;
   string target_conversation = 2;
   bytes payload = 3;

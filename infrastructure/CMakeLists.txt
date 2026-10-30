@@ -20,9 +20,25 @@ add_custom_command(OUTPUT ${PROTO_SOURCES} ${PROTO_HEADERS}
   COMMAND ${CMAKE_COMMAND} -E make_directory ${PROTO_OUTPUT}
   COMMAND ${KIARABOT_PROTOC} --proto_path=${PROTO_ROOT} --cpp_out=${PROTO_OUTPUT} ${PROTO_INPUTS}
   DEPENDS ${PROTO_INPUTS} VERBATIM)
-add_library(infrastructure_proto STATIC ${PROTO_SOURCES})
-target_include_directories(infrastructure_proto SYSTEM PUBLIC ${PROTO_OUTPUT})
-target_link_libraries(infrastructure_proto PUBLIC protobuf::libprotobuf)
+if(TARGET kiarabot_proto)
+  add_library(infrastructure_proto ALIAS kiarabot_proto)
+else()
+  add_library(infrastructure_proto STATIC ${PROTO_SOURCES})
+  target_include_directories(infrastructure_proto SYSTEM PUBLIC ${PROTO_OUTPUT})
+  target_link_libraries(infrastructure_proto PUBLIC protobuf::libprotobuf)
+endif()
+find_package(CURL 7.85 REQUIRED)
+find_package(absl CONFIG REQUIRED)
+add_library(kiarabot_time_zone STATIC src/time_zone_resolver.cpp)
+target_include_directories(kiarabot_time_zone PUBLIC include ../core/include)
+target_link_libraries(kiarabot_time_zone PUBLIC infrastructure_proto PRIVATE absl::time)
+target_compile_options(kiarabot_time_zone PRIVATE
+  $<$<CXX_COMPILER_ID:AppleClang,Clang,GNU>:-Wall -Wextra -Wpedantic>)
+add_library(kiarabot_model STATIC src/http_model_provider.cpp)
+target_include_directories(kiarabot_model PUBLIC include ../core/include)
+target_link_libraries(kiarabot_model PUBLIC infrastructure_proto PRIVATE CURL::libcurl)
+target_compile_options(kiarabot_model PRIVATE
+  $<$<CXX_COMPILER_ID:AppleClang,Clang,GNU>:-Wall -Wextra -Wpedantic>)
 add_library(kiarabot_infrastructure STATIC src/file_storage.cpp)
 target_include_directories(kiarabot_infrastructure PUBLIC include ../core/include)
 target_link_libraries(kiarabot_infrastructure PUBLIC infrastructure_proto)

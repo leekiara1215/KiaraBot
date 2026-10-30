@@ -115,14 +115,14 @@ private:
 
 public:
   RuntimeSnapshot snapshot() const {
-    return {events_,         sessions_, actions_, plugins_,    deliveries_,
-            delivery_order_, {},        {},       namespaces_, host_receipts_};
+    return {events_, sessions_, actions_,    plugins_,       deliveries_, delivery_order_,
+            {},      {},        namespaces_, host_receipts_, tasks_};
   }
   explicit RuntimeState(const RuntimeSnapshot& snapshot = {})
       : events_(snapshot.events), sessions_(snapshot.sessions), actions_(snapshot.actions),
         plugins_(snapshot.plugins), deliveries_(snapshot.deliveries),
         delivery_order_(snapshot.delivery_order), namespaces_(snapshot.namespaces),
-        host_receipts_(snapshot.host_receipts) {}
+        host_receipts_(snapshot.host_receipts), tasks_(snapshot.tasks) {}
 
   [[nodiscard]] std::unique_ptr<UnitOfWork> begin_transaction() override {
     if (transaction_active_) {
@@ -387,6 +387,7 @@ private:
   std::uint64_t delivery_order_{0};
   decltype(RuntimeSnapshot::namespaces) namespaces_;
   decltype(RuntimeSnapshot::host_receipts) host_receipts_;
+  decltype(RuntimeSnapshot::tasks) tasks_;
   bool fail_event_writes_{false};
   bool fail_session_writes_{false};
   bool fail_delivery_writes_{false};

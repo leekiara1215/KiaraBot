@@ -203,50 +203,50 @@
 
 ## T06b：非流式模型 Provider 与示例 AI 插件
 
-- 原工作包：6；状态：**待实现**。
+- 原工作包：6；状态：**已完成并验收**。
 - 依赖：T06a。
-- 允许修改：infrastructure/、plugins/、sdk/python/；禁止修改其余模块内部实现。
+- 允许修改：infrastructure/、plugins/、sdk/python/；为接通已有 IModelProvider 端口，直接扩展 Core HostDispatcher、Bridge 功能协商和启动组合根，以及对应构建/测试入口；不修改其他领域规则。
 - 输入、输出与错误：ModelChatRequest → 非流式结果；TIMEOUT、RATE_LIMITED、UPSTREAM_UNAVAILABLE。
 - 文档同步：doc/03-plugin-sdk.md、doc/05-infrastructure.md。
 - 验证命令组：S。
 - 验收：
-  - [ ] fake 正常/超时/限流/中断。
-  - [ ] 密钥不外泄。
-  - [ ] 示例插件仅通过 SDK。
-  - [ ] 外部模型不参与单元测试。
+  - [x] fake 正常/超时/限流/中断。
+  - [x] 密钥不外泄。
+  - [x] 示例插件仅通过 SDK。
+  - [x] 外部模型不参与单元测试。
 
 ## T06c：持久化一次性任务调度
 
-- 原工作包：6；状态：**待实现**。
+- 原工作包：6；状态：**已完成并验收**。
 - 依赖：T06a。
 - 允许修改：core/、infrastructure/、sdk/python/；禁止修改其余模块内部实现。
 - 输入、输出与错误：任务时间/取消 → 持久化状态；非法时区/过期/权限错误。
 - 文档同步：doc/01-runtime-semantics.md、doc/05-infrastructure.md。
 - 验证命令组：I。
 - 验收：
-  - [ ] UTC/时区/DST 校验。
-  - [ ] claim fencing。
-  - [ ] 重启 running→retrying。
-  - [ ] 取消不重复投递。
-  - [ ] 旧 claim 不覆盖新结果。
+  - [x] UTC/时区/DST 校验。
+  - [x] claim fencing。
+  - [x] 重启 running→retrying。
+  - [x] 取消不重复投递。
+  - [x] 旧 claim 不覆盖新结果。
 
 ## T07a：最小闭环故障测试
 
-- 原工作包：7；状态：**待实现**。
+- 原工作包：7；状态：**已完成并验收**。
 - 依赖：T04b。
-- 允许修改：tests/、各模块测试入口；禁止修改其余模块内部实现。
+- 允许修改：tests/、各模块测试入口；验收定位到 Bridge 未提交派发的可重试事务冲突，因此直接修复发送循环，其他业务实现不变。
 - 输入、输出与错误：固定事件与故障脚本 → 可重复断言/测试报告。
 - 文档同步：doc/02-core.md、doc/12-ci-cd.md。
 - 验证命令组：P。
 - 验收：
-  - [ ] fake 平台事件→插件→Action→结果。
-  - [ ] 拒绝无副作用。
-  - [ ] 重复/重启/断线恢复。
-  - [ ] 可独立 CI 运行。
+  - [x] fake 平台事件→插件→Action→结果。
+  - [x] 拒绝无副作用。
+  - [x] 重复/重启/断线恢复。
+  - [x] 可独立 CI 运行（入口本机已执行，远端 Actions 尚未运行）。
 
 ## T07b：真实独立组件联调
 
-- 原工作包：7；状态：**待实现**。
+- 原工作包：7；状态：**等待真实环境，未验收**。用户已确认目前没有隔离 QQ/NapCat、模型及目标会话配置；准备说明见 tests/acceptance/real-environment.md。
 - 依赖：T07a、T06b、T06c。
 - 允许修改：tests/、独立适配器测试、deploy/ 联调环境；禁止修改其余模块内部实现。
 - 输入、输出与错误：隔离 QQ/模型测试配置 → 人工或受控联调结果。
@@ -256,20 +256,20 @@
   - [ ] 确认账号及依赖版本。
   - [ ] 真实收发和回滚。
   - [ ] 敏感配置不提交。
-  - [ ] 平台不可用明确记未验证。
+  - [x] 平台不可用明确记未验证；用户正在准备环境。
 
 ## T08a：控制应用端口与剩余契约决策
 
-- 原工作包：8；状态：**待实现**。
+- 原工作包：8；状态：**已完成并验收（端口与契约；服务仍属 T08b）**。
 - 依赖：T04a、T10a。
 - 允许修改：core/、api/、必要 proto/；禁止修改其余模块内部实现。
 - 输入、输出与错误：管理查询/配置命令 → 分页资源/接受状态。
 - 文档同步：doc/06-control-api.md、doc/13-control-api-contract-handoff.md。
 - 验证命令组：P。
 - 验收：
-  - [ ] 先核对历史交接与现行契约。
-  - [ ] 确认同进程端口或版本化 RPC。
-  - [ ] 会话撤销、幂等、分页/快照与错误逐项冻结。
+  - [x] 先核对历史交接与现行契约。
+  - [x] 确认同进程端口或版本化 RPC。
+  - [x] 会话撤销、幂等、分页/快照与错误逐项冻结。
 
 ## T08b：控制 API 服务
 
@@ -475,3 +475,45 @@ SQLite 当前 schema v4，覆盖 v1/v2/v3 迁移、重开与数据保留。旧�
 文档影响判断：功能协商/帧更新 proto/README.md、proto/tests/README.md、doc/01-contracts.md；ACK、未知结果、幂等、取消、TTL 更新 doc/01-runtime-semantics.md；模块行为同步 doc/02-core.md、doc/03-plugin-sdk.md、doc/04-nonebot-adapter.md、doc/05-infrastructure.md；运行配置/迁移同步 doc/08-operations.md、doc/11-toolchain.md；当前交接同步 doc/13-infrastructure-integration-follow-up.md、sdk/PLUGIN_SDK_DEPENDENCIES.md、sdk/python/README.md、本台账及独立适配器 README。doc/06-control-api.md 只补充与插件 Action 查询共享语义，REST 接口未变。
 
 无需更新：api/openapi.yaml、api/asyncapi.yaml 和 doc/07-control-panel.md（REST/WS/面板行为未改）；doc/00-boundaries.md（模块责任与混合语言边界未改）；doc/12-ci-cd.md 与 Dockerfile（本轮未新增容器运行依赖或改变发布流程）；历史评估/缺口文档沿用台账作为实时进度源。构建产物、生成代码、虚拟环境、本机凭据均未纳入交付。
+
+
+## 2026-10-30 连续实现记录：T06b → T06c → T07a → T08a
+
+按用户要求先提交上轮已验收改动：Core 9d532c8，独立适配器初始化独立 Git 并提交 3b79bd3；没有推送。随后保持混合语言架构，完成下列四项。T07b 真实环境尚未提供，用户已确认将自行准备，因此没有伪造真实收发结果；继续了不依赖它的 T08a。下一实现项是 T08b，T09/T10b/T11 仍待后续，T12 继续延期。
+
+### T06b：模型
+
+新增 infrastructure HttpModelProvider，使用 libcurl >= 7.85、现有 Protobuf JSON，接通 IModelProvider → Core HostDispatcher → host.model.v1 → Python Context.model_chat。配置单个上游模型，default 为别名；仅 HTTPS/回环 HTTP、禁代理/重定向、限额和三十秒上限。权限及调用前审计提交失败不发网络请求，网络期间不持有数据库事务；结果审计单独提交。超时/断连可能已计费，SDK/Provider 不自动重试；原始上游错误与密钥不越过边界。ai-reply 示例仅通过 SDK，记录调用意图避免重放重复计费，未知调用可能不回复。
+
+验收：fake 正常、TIMEOUT、429、503、中断、畸形/超大响应、工具调用、非法 URL、权限/功能拒绝；审计失败不调用、结果审计失败不宣称未执行、deadline、子进程密钥隔离及示例重复事件。T06b 阶段 CTest 18/18、SDK 54/54；后续累计结果见下。
+
+### T06c：任务
+
+新增 Core TaskScheduler、ITimeZoneResolver 及基础设施 Abseil 实现，使用系统 IANA zoneinfo；UTC/本地日期/DST 歧义严格校验。SQLite schema v5 保存任务、原定时间、重试状态、随机 claim token 与唯一 timer event ID，迁移 v1–v4。Host 创建/取消的授权、幂等、审计原子提交。每 100ms 领取最多 32 个，最多五次重试；完成与 owner-only TimerTriggered 入队原子提交。重启恢复撤销旧 token，取消未入队任务不投递，终态不可覆盖。COMPLETED 是入队完成，不是插件 ACK。
+
+验收发现旧快照枚举解码范围不足，已为 TaskState 增加 1–6 范围并验证 CANCELLED/FAILED 重开。UTC/IANA/DST、fencing、旧 token、取消竞争、失败回滚、五次重试、SQLite 重开以及真实 Core 被终止后 SDK 收取定时事件均通过。T06c 阶段 CTest 19/19、SDK 56/56。
+
+### T07a：闭环与 CI
+
+新增 tests/acceptance/run.sh，可独立执行 CTest、编译后 Core/REST 权限对照、SDK 与可选独立适配器验收。新增四种真实 Core/SQLite/SDK + fake 平台场景：正常、拒绝、平台执行后结果丢失/重连、结果丢失/Core 重启；重复事件和 Action ID 不重复副作用。
+
+全量测试定位到派发与 ACK 的乐观事务冲突导致 Bridge 断线，修复为仅对 retryable CONFLICT 等待 20ms 后重取未提交派发；此时尚未向流写出，不重发模型或插件业务调用。修复后四场景连续五轮（20 个场景）通过。此前台账记录的另一个 SQLite 单次未定位断言未据此宣称修复。CI contracts job 补齐 SQLite/libcurl/Abseil、tzdata 与锁定 Python 环境，远端 GitHub Actions 尚未运行。
+
+### T07b 准备与 T08a 契约
+
+真实环境指南与两个无密钥模板位于 tests/acceptance/real-environment.md、core.env.example、adapter.env.example。按实际源码核对环境变量；Core/独立适配器配置分开，默认消息观察插件不会发消息/调用模型。用户待提供本机配置路径、账号、会话及版本；真实 QQ/模型/TLS/部署恢复未验收。
+
+T08a 选择同进程 C++ IControlApplication，不新增管理 gRPC，不改变 Python/TS 模块。补齐当前主体、会话列表/撤销、逐入口权限与错误响应；以 OpenAPI x-control-policy 和 AsyncAPI x-control-session-policy 冻结角色、幂等/轮换/撤销、十分钟不可变快照、流恢复及 HTTP 错误。C++ 端口类型和校验辅助实现已通过正常/拒绝/超时/依赖错误映射测试，编译后的全部 23 个操作与 OpenAPI 权限/默认角色一致。历史 doc/13 标记为交接历史，不再与现行契约竞争。T08b HTTP 服务未实现，T09 服务端事件流也未实现，不以端口验收冒充运行服务。
+
+### 实际检查与文档影响
+
+- proto + infrastructure 构建无新增编译警告，CTest 20/20；dev 5/5；独立 infrastructure 3/3。
+- 统一验收入口：SDK 60/60、独立适配器 34/34；Python 协议生成成功。SDK uv lock --check、uv pip check 通过。
+- OpenAPI Redocly 校验、AsyncAPI parser、Ruby API/Core 对照、HEAD 基线 descriptor 兼容检查通过；AsyncAPI 保留现有 2.6.0，只有升级/未引用组件提示。
+- panel npm run generate/lint/test/build/check:contracts 全部通过，4/4 测试；生成代码/构建产物不提交。
+- 23 个本轮 C++ 文件 clang-format dry-run 通过；Markdown UTF-8/本地链接、shell 模板/入口语法、workflow YAML、git diff --check 通过。
+- 实际运行 scripts/check-toolchain.sh，仍因缺少 clang-tidy 停止，静态分析未运行。远端 CI、真实 QQ/模型、生产 TLS、Docker、性能容量及非 POSIX 平台未验证。
+
+文档影响判断：模型/任务新增公共能力与配置，控制面冻结接口/权限/错误，CI 验收入口和 SQLite 迁移也变化，必须同步直接文档。已更新 proto/README.md、plugins.proto 注释、api/openapi.yaml、api/asyncapi.yaml、doc/01-contracts.md、doc/01-runtime-semantics.md、doc/02-core.md、doc/03-plugin-sdk.md、doc/04-nonebot-adapter.md（仅 T07b 准备段）、doc/05-infrastructure.md、doc/06-control-api.md、doc/08-operations.md、doc/11-toolchain.md、doc/12-ci-cd.md、doc/13-control-api-contract-handoff.md、sdk/python/README.md、tests/acceptance/ 和本台账。
+
+无需更新 doc/00-boundaries.md（混合语言边界和责任不变）、doc/07-control-panel.md（面板 UI/业务实现未改，仅验证新增兼容契约生成）、Dockerfile（仍是历史仅 dev Core 容器，不声称支持新增生产能力，部署升级属于 T11）、历史评估清单（实时进度由本台账维护）。文档校验命令为 proto/tests/check_contracts.sh、scripts/ci/check-descriptor.sh HEAD、scripts/quality/check-openapi.sh、scripts/quality/check-asyncapi.sh、ruby proto/tests/api_contract_test.rb、panel npm run check:contracts 及本地链接检查，均通过。

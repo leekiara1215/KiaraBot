@@ -152,6 +152,24 @@ struct HostReceipt {
   std::string serialized_response;
   RuntimeTimePoint expires_at{};
 };
+enum class TaskState {
+  Pending = 1,
+  Running = 2,
+  Retrying = 3,
+  Completed = 4,
+  Failed = 5,
+  Cancelled = 6
+};
+struct TaskEntry {
+  std::string serialized_request;
+  TaskState state{TaskState::Pending};
+  RuntimeTimePoint scheduled_at{};
+  RuntimeTimePoint next_run_at{};
+  std::uint32_t attempts{0};
+  bool cancel_requested{false};
+  std::string claim_token;
+  std::string event_id;
+};
 struct RuntimeSnapshot {
   std::unordered_map<std::string, EventEntry> events;
   std::unordered_map<std::string, SessionStatus> sessions;
@@ -163,5 +181,6 @@ struct RuntimeSnapshot {
   std::unordered_map<std::string, std::unordered_map<std::string, RuntimeCommandRecord>> commands;
   std::unordered_map<std::string, std::unordered_map<std::string, NamespaceEntry>> namespaces;
   std::unordered_map<std::string, std::unordered_map<std::string, HostReceipt>> host_receipts;
+  std::unordered_map<std::string, std::unordered_map<std::string, TaskEntry>> tasks;
 };
 } // namespace kiarabot::core

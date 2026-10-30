@@ -89,6 +89,14 @@ int main() {
     check(v3_state.namespaces.empty() && v3_state.host_receipts.empty());
     check(v3_state.delivery_order == 8);
     const auto now = RuntimeTimePoint{} + std::chrono::hours(1);
+    const auto v4_path = (directory.path / "v4.db").string();
+    execute(
+        v4_path,
+        "CREATE TABLE runtime_snapshot(id INTEGER PRIMARY KEY,revision INTEGER NOT NULL,payload "
+        "BLOB NOT NULL);"
+        "INSERT INTO runtime_snapshot VALUES(1,0,'0 0 0 0 0 12 0 0 0 0 '); PRAGMA user_version=4");
+    auto from_v4 = value(SqliteRuntimeStore::open(v4_path));
+    check(value(from_v4->read()).delivery_order == 12 && value(from_v4->read()).tasks.empty());
     {
       auto store = value(SqliteRuntimeStore::open(path));
       Runtime runtime(*store, {}, [&] { return now; }, [] { return 0.5; });

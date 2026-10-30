@@ -24,6 +24,6 @@ sdk/python/.venv/bin/python -m kiarabot_sdk --manifest /absolute/path/to/plugin.
 
 由 Core 管理时使用 `KIARABOT_PLUGIN_EXECUTABLE`、`KIARABOT_PLUGIN_MANIFEST` 和 `KIARABOT_PLUGIN_PYTHONPATH`，并配置持久化桥接、插件身份/凭据/权限，详见 [运维说明](../../doc/08-operations.md)。宿主只传递插件所需的环境变量；插件日志目前丢弃，后续统一日志任务再接入。进程隔离不是操作系统安全沙箱，仅用于可信插件的生命周期和故障隔离。
 
-Context.granted_permissions 在注册协商完成后可用，断开后清空。重连重新注册并核对全部权限；SDK 不缓存授权决定。已提供 submit_action/query_action/cancel_action（action.result.v1）以及 storage_get/storage_set/storage_delete（host.storage.v1）；必须协商后使用。storage_set/delete 的幂等键由插件提供，详情见 [SDK 设计](../../doc/03-plugin-sdk.md)。模型/调度客户端尚未实现。
+Context.granted_permissions 在注册协商完成后可用，断开后清空。重连重新注册并核对全部权限；SDK 不缓存授权决定。已提供 submit_action/query_action/cancel_action（action.result.v1）以及 storage_get/storage_set/storage_delete（host.storage.v1）；必须协商后使用。storage_set/delete 的幂等键由插件提供，详情见 [SDK 设计](../../doc/03-plugin-sdk.md)。模型客户端 model_chat(model, messages, timeout=5.0) 已提供，需 host.model.v1 和 model.chat；返回 ModelChatResponse，超时/断线不可自动重试。调度客户端 task_create/task_get/task_cancel 已提供，需 host.tasks.v1、task.schedule；创建还需 event.timer.triggered，支持 UTC datetime 和 local_time 字典。AI 示例见 ../../plugins/ai-reply/plugin.json，插件使用 default 别名，由 Core 映射到 KIARABOT_MODEL_NAME；示例只通过 SDK，不读取密钥。
 
 FakeHost 使用真实 gRPC 和生成类型，测试可向 outgoing 队列放入 CoreToPlugin 帧，从 acknowledgements 队列读取 ACK；放入 None 模拟连接断开。Action 请求进入 actions 队列，Host 请求进入 host_requests 队列；测试显式设置 features 并写入对应响应。它不模拟 Core 的数据库、权限策略或业务状态机。

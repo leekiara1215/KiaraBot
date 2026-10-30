@@ -29,15 +29,92 @@ bool expired(const NamespaceEntry& entry, RuntimeTimePoint now) {
   return entry.expires_at != RuntimeTimePoint{} && entry.expires_at <= now;
 }
 } // namespace
-HostDispatcher::HostDispatcher(RuntimeStore& store, RuntimeClock clock, NamespacePolicy policy)
-    : store_(store), clock_(std::move(clock)), policy_(policy) {}
+HostDispatcher::HostDispatcher(RuntimeStore& store, RuntimeClock clock, NamespacePolicy policy,
+                               std::shared_ptr<IModelProvider> model,
+                               std::shared_ptr<TaskScheduler> scheduler)
+    : model_(std::move(model)), scheduler_(std::move(scheduler)), store_(store),
+      clock_(std::move(clock)), policy_(policy) {}
+
+wire::HostResponse HostDispatcher::model_chat(const PluginSession& session,
+                                              const wire::HostRequest& request) {
+  if (!model_) {
+    return rejected(request, wire::CAPABILITY_NOT_SUPPORTED);
+  }
+  const bool allowed = std::find(session.permissions.begin(), session.permissions.end(),
+                                 "model.chat") != session.permissions.end();
+  const auto audit = [&](const std::string& outcome) -> std::optional<wire::HostResponse> {
+    std::lock_guard lock(mutex_);
+    auto begun = store_.begin();
+    if (const auto* error = std::get_if<StorageError>(&begun)) {
+      return mapped(request, *error);
+    }
+    auto transaction = std::get<std::unique_ptr<RuntimeTransaction>>(std::move(begun));
+    if (!transaction || transaction->snapshot().audit.size() >= policy_.audit_records) {
+      return rejected(request, wire::UPSTREAM_UNAVAILABLE);
+    }
+    transaction->snapshot().audit.push_back(
+        {"plugin/" + session.identity, "model.chat", session.identity, request.request_id(),
+         request.trace_id(), clock_ ? clock_() : std::chrono::system_clock::now(), allowed,
+         outcome});
+    const auto committed = transaction->commit();
+    if (const auto* error = std::get_if<StorageError>(&committed)) {
+      return mapped(request, *error);
+    }
+    return std::nullopt;
+  };
+  if (const auto error = audit(allowed ? "STARTED" : "PERMISSION_DENIED")) {
+    return *error;
+  }
+  if (!allowed) {
+    return rejected(request, wire::PERMISSION_DENIED);
+  }
+  const auto now = clock_ ? clock_() : std::chrono::system_clock::now();
+  const auto deadline = RuntimeTimePoint(std::chrono::duration_cast<RuntimeTimePoint::duration>(
+      std::chrono::seconds(request.deadline().seconds()) +
+      std::chrono::nanoseconds(request.deadline().nanos())));
+  auto response = rejected(request, wire::TIMEOUT);
+  if (deadline > now) {
+    const auto result =
+        model_->chat(request.model_chat(),
+                     std::chrono::duration_cast<std::chrono::milliseconds>(deadline - now));
+    if (const auto* error = std::get_if<wire::Error>(&result)) {
+      // Never pass provider messages/details (possibly credentials) across the boundary.
+      const auto code = error->code();
+      response = rejected(request,
+                          wire::ErrorCode_IsValid(code) && code != wire::ERROR_CODE_UNSPECIFIED
+                              ? code
+                              : wire::INTERNAL,
+                          code == wire::RATE_LIMITED && error->retryable());
+    } else {
+      response.Clear();
+      response.set_request_id(request.request_id());
+      *response.mutable_model_chat() = std::get<wire::ModelChatResponse>(result);
+    }
+  }
+  if ((clock_ ? clock_() : std::chrono::system_clock::now()) >= deadline) {
+    response = rejected(request, wire::TIMEOUT);
+  }
+  if (auto error =
+          audit(response.has_error() ? wire::ErrorCode_Name(response.error().code()) : "OK")) {
+    error->mutable_error()->set_retryable(false); // External call may have completed.
+    return *error;
+  }
+  return response;
+}
 wire::HostResponse HostDispatcher::dispatch(const PluginSession& session,
                                             const wire::HostRequest& request) try {
-  std::lock_guard lock(mutex_);
   const auto now = clock_ ? clock_() : std::chrono::system_clock::now();
   if (const auto failure = validate_host_request(request, now)) {
     return rejected(request, failure->code(), failure->code() == wire::TIMEOUT);
   }
+  if (request.has_model_chat()) {
+    return model_chat(session, request);
+  }
+  if (request.has_task_create() || request.has_task_get() || request.has_task_cancel()) {
+    return scheduler_ ? scheduler_->dispatch(session, request)
+                      : rejected(request, wire::CAPABILITY_NOT_SUPPORTED);
+  }
+  std::lock_guard lock(mutex_);
   const bool writing = request.has_storage_set() || request.has_storage_delete();
   if (!writing && !request.has_storage_get()) {
     return rejected(request, wire::CAPABILITY_NOT_SUPPORTED);

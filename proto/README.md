@@ -1,6 +1,6 @@
 # KiaraBot Protocol Contracts
 
-T06a 使用同一 features 协商字段启用 host.storage.v1，承载已定义的 HostRequest/HostResponse 存储操作；未协商不发送，其他未实现 Host operation 显式拒绝。未改变 Host 字段编号或类型，详细限额/TTL/错误见 doc/03-plugin-sdk.md。
+T06a 使用同一 features 协商字段启用 host.storage.v1，T06b 启用 host.model.v1，承载已定义的 HostRequest/HostResponse 操作；未协商不发送，其他未实现 Host operation 显式拒绝。未改变 Host 字段编号或类型，详细限额/TTL/错误见 doc/03-plugin-sdk.md 和 doc/05-infrastructure.md。
 
 T04a 兼容新增插件功能协商（supported_features=3 / enabled_features=5）、PluginActionRequest.request_id=2、PluginToCore.action_query=6/action_cancel=7、CoreToPlugin.action_response=7。action.result.v1 经双向确认后才能使用；旧端缺省不启用。查询可按认证调用方作用域中的 Action ID 或幂等键进行。响应 oneof 区分结果与操作错误，未知传输结果不能生成 FAILED。详细语义见 doc/01-contracts.md；服务接线由 T04b 实现。
 
@@ -47,6 +47,8 @@ python -m grpc_tools.protoc \
 
 v1 的稳定枚举词汇也由 REST 和 WebSocket 契约复用：`ErrorCode`、`HealthState`、`PluginState` 和 `ActionStatus` 在 `api/openapi.yaml` 与 `api/asyncapi.yaml` 中必须逐项保持一致。
 ## 插件 Host API
+
+T06c 协商 host.tasks.v1 后启用 task_create/get/cancel；timer 事件只投递给任务所有者，任务状态值使用既有 ScheduledTaskState。没有新增线协议字段，运行时语义见 doc/01-runtime-semantics.md。
 
 模型、命名空间存储和一次性任务使用 `plugins.proto` 中的 HostRequest/HostResponse，通过已注册 PluginBridge 传递。鉴权、幂等、时区、状态及错误语义见 `doc/01-contracts.md` 和 `doc/01-runtime-semantics.md`。
 
