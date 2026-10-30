@@ -521,6 +521,34 @@ components:
         name: { type: string }
         state: { type: string }
         created_at: { type: string, format: date-time }
+    Group:
+      allOf:
+        - $ref: '#/components/schemas/GenericResource'
+        - type: object
+          required: [roles, permissions]
+          properties:
+            roles: { type: array, items: { type: string }, description: Roles assigned to this group }
+            permissions: { type: array, items: { type: string }, description: Effective permission identifiers }
+    User:
+      allOf:
+        - $ref: '#/components/schemas/GenericResource'
+        - type: object
+          required: [groups, roles, permissions]
+          properties:
+            groups: { type: array, items: { type: string }, description: Group identifiers }
+            roles: { type: array, items: { type: string }, description: Effective role identifiers }
+            permissions: { type: array, items: { type: string }, description: Effective permission identifiers }
+    LogEntry:
+      allOf:
+        - $ref: '#/components/schemas/GenericResource'
+        - type: object
+          required: [occurred_at, level, component, message]
+          properties:
+            occurred_at: { type: string, format: date-time }
+            level: { type: string, enum: [DEBUG, INFO, WARN, ERROR] }
+            component: { type: string }
+            message: { type: string, description: Redacted log message }
+            trace_id: { type: string }
     BotPage:
       type: object
       required: [items, page]
@@ -537,13 +565,13 @@ components:
       type: object
       required: [items, page]
       properties:
-        items: { type: array, items: { $ref: '#/components/schemas/GenericResource' } }
+        items: { type: array, items: { $ref: '#/components/schemas/Group' } }
         page: { $ref: '#/components/schemas/PageInfo' }
     UserPage:
       type: object
       required: [items, page]
       properties:
-        items: { type: array, items: { $ref: '#/components/schemas/GenericResource' } }
+        items: { type: array, items: { $ref: '#/components/schemas/User' } }
         page: { $ref: '#/components/schemas/PageInfo' }
     TaskPage:
       type: object
@@ -555,5 +583,5 @@ components:
       type: object
       required: [items, page]
       properties:
-        items: { type: array, items: { $ref: '#/components/schemas/GenericResource' } }
+        items: { type: array, items: { $ref: '#/components/schemas/LogEntry' } }
         page: { $ref: '#/components/schemas/PageInfo' }

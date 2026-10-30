@@ -19,9 +19,7 @@ servers:
   control:
     url: control.example.invalid/ws
     protocol: wss
-    description: Production requires TLS; local development may use ws on loopback. Each channel connection authenticates with bearer credentials and sends hello or resume as its first frame. Resume requires fresh bearer authentication and a session bound to the same identity and channel.
-    security:
-      - bearerAuth: []
+    description: Production requires TLS; hello and resume authenticate with an access token in the first frame. Resume requires a session bound to the same identity and channel. Local development may use ws on loopback.
 channels:
   control:
     publish:
@@ -35,7 +33,7 @@ channels:
       operationId: receiveControlEvent
       message:
         oneOf:
-          - $ref: '#/components/messages/Session'
+          - $ref: '#/components/messages/SessionReady'
           - $ref: '#/components/messages/ResyncRequired'
           - $ref: '#/components/messages/HealthUpdate'
           - $ref: '#/components/messages/LogUpdate'
@@ -134,6 +132,11 @@ components:
       scheme: bearer
       bearerFormat: JWT
   messages:
+    SessionReady:
+      name: SessionReady
+      messageId: session-ready
+      title: Session established or resumed
+      payload: { $ref: '#/components/schemas/SessionReady' }
     Hello:
       name: Hello
       messageId: hello
@@ -144,11 +147,6 @@ components:
       messageId: resume
       title: Resume a previous WebSocket session
       payload: { $ref: '#/components/schemas/Resume' }
-    Session:
-      name: Session
-      messageId: session
-      title: Authenticated stream session
-      payload: { $ref: '#/components/schemas/Session' }
     ResyncRequired:
       name: ResyncRequired
       messageId: resync-required
@@ -159,7 +157,7 @@ components:
       payload: { $ref: '#/components/schemas/HealthEnvelope' }
     LogUpdate:
       messageId: log-update
-      payload: { $ref: '#/components/schemas/LogEnvelope' }
+      payload: { $ref: '#/components/schemas/LogStreamEnvelope' }
     AdapterUpdate:
       messageId: adapter-update
       payload: { $ref: '#/components/schemas/AdapterEnvelope' }
@@ -177,7 +175,7 @@ components:
       payload: { $ref: '#/components/schemas/HealthEnvelope' }
     LogChannelUpdate:
       messageId: log-channel-update
-      payload: { $ref: '#/components/schemas/LogEnvelope' }
+      payload: { $ref: '#/components/schemas/LogStreamEnvelope' }
     AdapterChannelUpdate:
       messageId: adapter-channel-update
       payload: { $ref: '#/components/schemas/AdapterEnvelope' }
@@ -198,7 +196,7 @@ components:
       payload: { $ref: '#/components/schemas/Resume' }
     HealthSession:
       messageId: health-session
-      payload: { $ref: '#/components/schemas/Session' }
+      payload: { $ref: '#/components/schemas/SessionReady' }
     HealthResyncRequired:
       messageId: health-resync-required
       payload: { $ref: '#/components/schemas/ResyncRequired' }
@@ -210,7 +208,7 @@ components:
       payload: { $ref: '#/components/schemas/Resume' }
     LogSession:
       messageId: logs-session
-      payload: { $ref: '#/components/schemas/Session' }
+      payload: { $ref: '#/components/schemas/SessionReady' }
     LogResyncRequired:
       messageId: logs-resync-required
       payload: { $ref: '#/components/schemas/ResyncRequired' }
@@ -222,7 +220,7 @@ components:
       payload: { $ref: '#/components/schemas/Resume' }
     AdapterSession:
       messageId: adapters-session
-      payload: { $ref: '#/components/schemas/Session' }
+      payload: { $ref: '#/components/schemas/SessionReady' }
     AdapterResyncRequired:
       messageId: adapters-resync-required
       payload: { $ref: '#/components/schemas/ResyncRequired' }
@@ -234,7 +232,7 @@ components:
       payload: { $ref: '#/components/schemas/Resume' }
     PluginSession:
       messageId: plugins-session
-      payload: { $ref: '#/components/schemas/Session' }
+      payload: { $ref: '#/components/schemas/SessionReady' }
     PluginResyncRequired:
       messageId: plugins-resync-required
       payload: { $ref: '#/components/schemas/ResyncRequired' }
@@ -246,7 +244,7 @@ components:
       payload: { $ref: '#/components/schemas/Resume' }
     TaskSession:
       messageId: tasks-session
-      payload: { $ref: '#/components/schemas/Session' }
+      payload: { $ref: '#/components/schemas/SessionReady' }
     TaskResyncRequired:
       messageId: tasks-resync-required
       payload: { $ref: '#/components/schemas/ResyncRequired' }
@@ -258,11 +256,18 @@ components:
       payload: { $ref: '#/components/schemas/Resume' }
     MessageSession:
       messageId: messages-session
-      payload: { $ref: '#/components/schemas/Session' }
+      payload: { $ref: '#/components/schemas/SessionReady' }
     MessageResyncRequired:
       messageId: messages-resync-required
       payload: { $ref: '#/components/schemas/ResyncRequired' }
   schemas:
+    SessionReady:
+      type: object
+      required: [type, session_id, last_sequence]
+      properties:
+        type: { type: string, enum: [SESSION_READY] }
+        session_id: { type: string, minLength: 32, description: Opaque secret session capability bound to the authenticated principal }
+        last_sequence: { type: integer, format: int64, minimum: 0 }
     StreamEnvelope:
       type: object
       description: Sequence increases within one authorized session; replay retains events for 10 minutes. Different sessions do not share a sequence space. All times use UTC.
@@ -272,13 +277,18 @@ components:
         event_type: { type: string }
         sequence: { type: integer, format: int64, minimum: 0, description: Monotonic within the authenticated stream session. }
         occurred_at: { type: string, format: date-time }
-        payload:
-          type: object
-          description: Event-specific payload, refined by the channel envelope schema.
-          additionalProperties: true
+        payload: { type: object, additionalProperties: true }
+    LogStreamEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/StreamEnvelope'
+        - type: object
+          required: [event_type, payload]
+          properties:
+            event_type: { type: string, enum: [log.updated] }
+            payload: { $ref: './openapi.yaml#/components/schemas/LogEntry' }
     Hello:
       type: object
-      description: First frame for a new session; access_token must identify the authenticated bearer principal. Use last_sequence 0 for a new session.
+      description: First frame for a new session; access_token authenticates the principal. Use last_sequence 0 for a new session.
       required: [type, access_token, last_sequence]
       properties:
         type: { type: string, enum: [hello] }
@@ -286,19 +296,12 @@ components:
         last_sequence: { type: integer, format: int64, enum: [0] }
     Resume:
       type: object
-      description: First frame for an existing session; last_sequence is the last event received by the client. Bearer authentication is required again.
-      required: [type, session_id, last_sequence]
+      description: First frame for an existing session; access_token reauthenticates the same principal and last_sequence is the last event received by the client.
+      required: [type, access_token, session_id, last_sequence]
       properties:
         type: { type: string, enum: [resume] }
-        session_id: { type: string, minLength: 1 }
-        last_sequence: { type: integer, format: int64, minimum: 0 }
-    Session:
-      type: object
-      description: Sent after a successful hello or resume, before live or replayed events. last_sequence is the acknowledged starting cursor.
-      required: [type, session_id, last_sequence]
-      properties:
-        type: { type: string, enum: [session] }
-        session_id: { type: string, minLength: 1 }
+        access_token: { type: string, minLength: 20 }
+        session_id: { type: string, minLength: 32, description: Opaque secret session capability returned by SESSION_READY }
         last_sequence: { type: integer, format: int64, minimum: 0 }
     ResyncRequired:
       type: object

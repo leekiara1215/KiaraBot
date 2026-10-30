@@ -73,6 +73,8 @@ control/api/
 
 分页规范：使用不透明 `page_token`；默认 20 条、最大 100 条；token 绑定用户、过滤条件和资源版本；列表使用稳定的 `created_at, id` 排序。
 
+`GET /groups` 返回群组标识、角色和有效权限标识；`GET /users` 返回用户所属群组、有效角色和有效权限标识。权限由服务端计算并执行，客户端只展示结果。`GET /logs` 返回脱敏后的日志时间、级别、组件、消息及可选 trace ID；日志不得包含凭据。
+
 ## 插件管理接口
 
 至少提供：
@@ -104,12 +106,12 @@ GET  /plugins/{id}/health
 
 WebSocket 只推送经过权限过滤的数据。普通面板用户不能订阅全部私聊消息或完整模型上下文。
 
-WebSocket 服务端使用 WSS 和 bearer 认证；每个频道连接首帧必须是 `hello` 或带已有会话的 `resume`。`hello.access_token` 必须与 bearer 身份一致，恢复连接重新进行 bearer 认证，会话绑定身份和频道。成功后返回 `session` 帧（`session_id` 和起始 `last_sequence`），再发送重放和实时事件。`sequence` 在该授权会话内单调递增，不跨会话共享；断线后携带最后收到的 `last_sequence` 重连。服务端保留 10 分钟事件，无法补齐或游标无效时返回 `RESYNC_REQUIRED`，客户端重新拉取 REST 快照并建立新会话。每个消息组件都有唯一 `messageId`。
+WebSocket 服务端使用 WSS；首帧必须是携带 access token 的 `hello` 或同时携带 access token 与已有会话 ID 的 `resume`，不能要求浏览器在握手时设置自定义 Authorization 头。成功后服务端发送 `SESSION_READY`，包含 `session_id` 和确认的 `last_sequence`；会话 ID 是绑定认证主体和频道的不可预测秘密，必须保护、过期和撤销，不能记录或放入 URL。断线后客户端携带会话 ID 和最后处理的序号重连。服务端保留 10 分钟事件，无法补齐时返回 `RESYNC_REQUIRED`：客户端丢弃旧会话、重新以 `hello` 建立会话，并重新拉取 REST 快照。客户端忽略未知事件及字段，已知事件触发对应快照刷新；日志事件 `log.updated` 的 payload 使用 OpenAPI `LogEntry`。每个消息组件都有唯一 `messageId`。
 
 所有事件使用 `schema_version`、`event_type`、`sequence`、UTC `occurred_at` 和 `payload` envelope。`/ws/control` 汇聚事件；独立频道与它使用相同事件类型和 payload：
 
 - `health.updated`：`state`、`components`，使用 `HealthState`；
-- `log.updated`：`id`、`occurred_at`、`level`、`component`、`operation`、`outcome`，可选 `trace_id`，必须脱敏；
+- `log.updated`：使用 OpenAPI `LogEntry`，必须脱敏；
 - `adapter.updated`：`id`、`state`、`implementation`，可选 `version`、`capabilities`；
 - `plugin.updated`：`id`、`version`，至少一个 `state`（`PluginState`）或 `health_state`（`HealthState`），可选 `reason`；
 - `task.updated`：`id`、`name`、字符串 `state`；
@@ -150,7 +152,7 @@ REST 的 `Error.code`、健康状态、插件状态和 Action 状态分别引用
 - 适配器、插件 SDK 和面板客户端：兼容缺失的生命周期字段及未知枚举数值；面板使用 `session_id` 和 `sequence` 恢复，收到 `RESYNC_REQUIRED` 后刷新 REST 快照。客户端不得从健康状态推断生命周期。
 - 运维与 CI：配置 HTTPS/WSS 和密钥脱敏，提供已发布 descriptor 基线并在 CI 中运行兼容性、生成、round-trip 和 API 校验；修正仓库格式配置中的无效布尔值后恢复标准 `clang-format` 检查。
 
-这些是下游实施要求，当前协议变更不修改上述模块内部实现。浏览器 WebSocket 无法自行设置 bearer 请求头，控制 API 的浏览器认证接入方式需要在下游实现中解决，同时保持本契约的认证要求。
+这些是下游实施要求，当前协议变更不修改上述模块内部实现。浏览器通过首帧提供 access token；服务端须在恢复连接时重新认证并验证会话绑定。
 
 ## 不属于本层的内容
 
