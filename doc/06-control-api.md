@@ -72,6 +72,8 @@ control/api/
 
 分页规范：使用不透明 `page_token`；默认 20 条、最大 100 条；token 绑定用户、过滤条件和资源版本；列表使用稳定的 `created_at, id` 排序。
 
+`GET /groups` 返回群组标识、角色和有效权限标识；`GET /users` 返回用户所属群组、有效角色和有效权限标识。权限由服务端计算并执行，客户端只展示结果。`GET /logs` 返回脱敏后的日志时间、级别、组件、消息及可选 trace ID；日志不得包含凭据。
+
 ## 插件管理接口
 
 至少提供：
@@ -103,7 +105,7 @@ GET  /plugins/{id}/health
 
 WebSocket 只推送经过权限过滤的数据。普通面板用户不能订阅全部私聊消息或完整模型上下文。
 
-WebSocket 服务端使用 WSS 和 bearer 认证；首帧必须是 `hello` 或带已有会话的 `resume`。服务端返回 `session_id` 和 `last_sequence`。断线后客户端携带 `last_sequence` 重连；服务端保留 10 分钟事件，无法补齐时返回 `RESYNC_REQUIRED`，客户端重新拉取 REST 快照。每个消息组件都有唯一 `messageId`，频道复用时不得把同一消息实例重复注册。
+WebSocket 服务端使用 WSS；首帧必须是携带 access token 的 `hello` 或带已有会话的 `resume`，不能要求浏览器在握手时设置自定义 Authorization 头。成功后服务端发送 `SESSION_READY`，包含 `session_id` 和确认的 `last_sequence`；会话 ID 是绑定认证主体的不可预测秘密，必须保护、过期和撤销，不能记录或放入 URL。断线后客户端携带会话 ID 和最后处理的序号重连。服务端保留 10 分钟事件，无法补齐时返回 `RESYNC_REQUIRED`：客户端丢弃旧会话、重新以 `hello` 建立会话，并重新拉取 REST 快照。客户端忽略未知事件及字段，已知事件触发对应快照刷新；日志事件 `log.updated` 的 payload 使用 OpenAPI `LogEntry`。每个消息组件都有唯一 `messageId`。
 
 频道、首帧、消息 envelope 和重连语义以 [`api/asyncapi.yaml`](../api/asyncapi.yaml) 为唯一契约。OpenAPI 只描述 REST，不再把 WebSocket 仅作为文字建议。插件健康查询使用 `GET /plugins/{pluginId}/health`，返回统一 `Health` schema。
 

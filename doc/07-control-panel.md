@@ -63,17 +63,20 @@ panel/
 
 ## 实时状态
 
-WebSocket 消息应包含：
+服务端以 `SESSION_READY` 返回会话 ID 和确认序号；客户端断线后按退避重连并以 `resume` 发送会话 ID 和最后处理的序号。收到 `RESYNC_REQUIRED` 时清除旧会话，以 `hello` 建立新会话并重新拉取 REST 快照。日志事件使用 `log.updated` 和 OpenAPI `LogEntry`。客户端允许未知事件和未知字段，权限页面展示服务端计算的有效权限。
 
-```text
-channel
-schema_version
-event_type
-occurred_at
-payload
-```
+## 本地运行和检查
 
-客户端必须允许未知事件和未知字段，断线后按退避重新连接。
+`panel/` 使用 React、TypeScript 和 Vite。`npm ci` 根据锁文件安装依赖，并从 `api/openapi.yaml`、`api/asyncapi.yaml` 生成类型；生成目录、`node_modules/` 和 `dist/` 均不提交。默认 `npm run dev` 使用内存 mock API 和 mock WebSocket，输入任意非空用户名和密码可登录。仅在连接真实控制 API 时设置 `VITE_API_MODE=live`，可使用 `VITE_API_BASE` 和 `VITE_WS_URL` 指定端点；生产环境必须使用 HTTPS/WSS。
+
+access token、refresh token 和流会话仅保存在内存；到期前调用 refresh 接口轮换，刷新页面后需要重新登录。列表显示服务端快照，日志事件及重新同步触发快照刷新；面板不计算权限。检查命令（在 `panel/` 下执行）：`npm ci`、`npm run check:contracts`、`npm run lint`、`npm test`、`npm run build`。
+
+## 其他模块的后续事项
+
+- **控制 API 服务（`control/api/`）**：实现更新后的 `Group`、`User` 和 `LogEntry` 响应，返回服务端计算的有效角色、权限和脱敏日志；继续执行默认拒绝的 RBAC 和 401/403 错误契约。现有 `GenericResource` 消费方需要适配新增必填字段。
+- **控制 API 流服务**：实现首帧认证、`SESSION_READY`、绑定认证主体的秘密会话 ID、10 分钟事件保留、按序恢复和 `RESYNC_REQUIRED`；浏览器不提供自定义 WebSocket 握手 Authorization 头。`log.updated` 必须携带契约中的脱敏 `LogEntry`。
+- **Core / 基础设施端口**：由相应模块负责人确认如何提供有效权限关系与脱敏结构化日志，再通过既有公开端口提供给控制 API；本变更不假设或修改它们的内部实现。
+- **跨模块验收**：服务端应覆盖登录和轮换、权限允许/拒绝、日志脱敏、会话过期、断线恢复、保留期外重新同步及依赖故障，并以更新后的契约校验真实服务响应。当前面板验证使用 mock，不能证明服务端已实现这些行为。
 
 ## 未来 C++ 控制面板
 
