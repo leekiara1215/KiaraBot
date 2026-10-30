@@ -114,12 +114,18 @@ npm audit --prefix scripts/ci --audit-level=high
 
 ### 其他模块及仓库管理依赖
 
-- **仓库编码配置维护者**：根目录 `.clang-format` 的 `AllowShortLoopsOnASingleLine: Never` 不是合法布尔值，需在该文件的授权修改任务中改为 `false`，再按规范处理现有手写代码的格式差异。本任务不能修改该文件或 Core；格式 job 会如实失败，不能关闭检查或以替代配置掩盖问题。
+- **仓库编码配置维护者**：维护 `.clang-format` 配置，并处理检查发现的手写代码格式差异。
 - **Core 和控制 API**：实现真实服务进程与 `/health/live`、`/health/ready`，并协调运维文档和 API 契约；已有 `api/openapi.yaml` 仅定义 `/api/v1/health`，不能把它当成上述探针的实现。
 - **基础设施/运维**：提供可重复的 `kiarabot-migrate`、迁移前备份及校验、Dockerfile、staging/production Compose、部署冒烟测试和失败回滚。它们均不在当前 CI 任务范围。
 - **仓库管理员**：配置 `main` 必需状态检查；将来启用生产发布前，配置 `production` Environment 的 required reviewers、环境密钥和分支/tag 限制。workflow 中写 `environment: production` 本身不能创建人工审批保护。
 
 以下镜像、部署和回滚章节是待实施方案；当前 workflow 不构建镜像、不发布、不部署，也不触及生产密钥。
+
+```bash
+ruby -e "require 'yaml'; YAML.load_file('api/openapi.yaml'); YAML.load_file('api/asyncapi.yaml')"
+npx --yes @redocly/cli@2.72.1 lint api/openapi.yaml
+./scripts/quality/check-asyncapi.sh
+```
 
 ## 构建镜像
 

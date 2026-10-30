@@ -35,7 +35,8 @@
 ## 依赖和命令
 - 编译器与库版本：<版本>
 - 生成命令：<完整命令>
-- 构建和测试命令：<完整命令>
+- 统一工具链和质量检查：`./scripts/check-toolchain.sh`
+- 构建和测试命令：<完整命令；单项检查见 doc/11-toolchain.md>
 
 ## 验收标准
 - [ ] <正常路径>
@@ -51,7 +52,7 @@
 
 ### C++ Core 骨架
 
-> 只修改 `core/` 和根目录 CMake 文件；使用 C++20 和 CMake 3.24+，实现无第三方业务 SDK 的 Core 进程、mock adapter、事件 inbox 和 Action dispatcher；执行 `cmake -S . -B build && cmake --build build && ctest --test-dir build`；禁止导入 NoneBot、NapCat、模型 SDK 或面板代码。
+> 只修改 `core/` 和根目录 CMake 文件；使用 C++20 和 CMake 3.24+，实现无第三方业务 SDK 的 Core 进程、mock adapter、事件 inbox 和 Action dispatcher；执行 `./scripts/check-toolchain.sh`；禁止导入 NoneBot、NapCat、模型 SDK 或面板代码。
 
 ### Python 适配器
 

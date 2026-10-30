@@ -12,8 +12,15 @@ NamespaceIndentation: None
 SpaceBeforeParens: ControlStatements
 AllowShortFunctionsOnASingleLine: Empty
 AllowShortIfStatementsOnASingleLine: Never
-AllowShortLoopsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
 SortIncludes: CaseSensitive
 IncludeBlocks: Regroup
+IncludeCategories:
+  - Regex: '^<[^/]+>$'
+    Priority: 1
+  - Regex: '^<'
+    Priority: 2
+  - Regex: '^"'
+    Priority: 3
 Standard: c++20
 ...
