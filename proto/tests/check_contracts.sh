@@ -14,11 +14,10 @@ if grep -Eq '^  string type = ' "$proto_dir/kiarabot/v1/events.proto" "$proto_di
   exit 1
 fi
 
-for code in CAPABILITY_NOT_SUPPORTED TIMEOUT UPSTREAM_UNAVAILABLE PLUGIN_UNAVAILABLE; do
-  grep -q "$code" "$proto_dir/kiarabot/v1/common.proto"
-  grep -q "$code" "$root/api/openapi.yaml"
-done
+python3 "$proto_dir/tests/check_enum_consistency.py"
 
+grep -q '^security:' "$root/api/openapi.yaml"
+grep -q 'bearerAuth:' "$root/api/openapi.yaml"
 grep -q 'Idempotency-Key' "$root/api/openapi.yaml"
 grep -q 'trace_id:' "$root/api/openapi.yaml"
 grep -q 'retryable:' "$root/api/openapi.yaml"
@@ -34,6 +33,11 @@ grep -q '^  messages:' "$root/api/asyncapi.yaml"
 for message_id in hello resume resync-required health-update log-update adapter-update plugin-update task-update message-update health-channel-update log-channel-update adapter-channel-update plugin-channel-update task-channel-update message-channel-update; do
   grep -q "messageId: $message_id" "$root/api/asyncapi.yaml"
 done
+duplicate_message_ids="$(sed -n 's/^[[:space:]]*messageId: //p' "$root/api/asyncapi.yaml" | sort | uniq -d)"
+if [[ -n "$duplicate_message_ids" ]]; then
+  echo "AsyncAPI messageId values must be unique: $duplicate_message_ids" >&2
+  exit 1
+fi
 
 if ! command -v protoc >/dev/null 2>&1; then
   echo "protoc is required for descriptor validation; install it before running this test" >&2
