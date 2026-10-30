@@ -105,9 +105,12 @@ python3 scripts/quality/check-boundaries.py
 cmake --preset dev
 cmake --build --preset dev
 ctest --preset dev
-cmake --preset proto -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+cmake --preset proto -DKIARABOT_ENABLE_INFRASTRUCTURE=ON -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
 cmake --build --preset proto
 ctest --preset proto
+cmake -S infrastructure -B build/infrastructure
+cmake --build build/infrastructure
+ctest --test-dir build/infrastructure --output-on-failure
 ./proto/tests/check_contracts.sh
 ./scripts/quality/check-format.sh
 ./scripts/quality/check-tidy.sh

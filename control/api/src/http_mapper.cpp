@@ -5,7 +5,6 @@
 
 #include <google/protobuf/util/json_util.h>
 
-#include "kiarabot/core/application/control_service.hpp"
 #include "kiarabot/core/runtime/request_digest.hpp"
 
 namespace kiarabot::control {
@@ -146,11 +145,7 @@ HttpReply handle_http(core::IControlApplication& application, const HttpRequest&
         return failure(wire::INVALID_ARGUMENT, meta);
       }
       if (path == "/health/ready") {
-        auto* service = dynamic_cast<core::ControlService*>(&application);
-        if (!service) {
-          return failure(wire::UPSTREAM_UNAVAILABLE, meta);
-        }
-        const auto result = service->readiness();
+        const auto result = application.readiness();
         if (const auto* error = std::get_if<wire::Error>(&result)) {
           return failure(error->code(), meta, true);
         }

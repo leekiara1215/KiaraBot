@@ -56,7 +56,7 @@ Python NoneBot2 适配器由本仓库 `adapters/nonebot/` 维护，不把实现�
 
 ## 文档索引
 
-当前实施与验收状态见 [开发台账](16-development-tasks.md) 和源码；[实现现状与纯 C++ 演进评估](14-implementation-assessment.md) 为历史评估。下列模块文档同时包含目标设计和阶段记录。
+当前实施与验收状态见 [开发台账](16-development-tasks.md) 和源码；[实现现状与纯 C++ 演进评估](14-implementation-assessment.md)、[跨层未完成事项清单](15-cross-layer-gaps.md) 以及两份 13-* 交接文档均为历史快照，不是现行清单。下列模块文档同时包含目标设计和阶段记录。
 
 - [C++ 主编码规范](12-cpp-coding-standard.md)
 - [开发边界与协作规则](00-boundaries.md)
@@ -73,11 +73,11 @@ Python NoneBot2 适配器由本仓库 `adapters/nonebot/` 维护，不把实现�
 - [编码任务模板](10-task-template.md)
 - [开发工具链版本](11-toolchain.md)
 - [CI/CD 流程方案](12-ci-cd.md)
-- [控制 API 契约交接（待确认）](13-control-api-contract-handoff.md)
-- [基础设施接入后续事项](13-infrastructure-integration-follow-up.md)
+- [控制 API 契约交接（历史快照，待确认）](13-control-api-contract-handoff.md)
+- [基础设施接入交接（历史快照）](13-infrastructure-integration-follow-up.md)
 - [SDK 跨模块依赖与协议缺口（待核验）](../sdk/PLUGIN_SDK_DEPENDENCIES.md)
-- [实现现状与纯 C++ 演进评估](14-implementation-assessment.md)
-- [跨层未完成事项清单](15-cross-layer-gaps.md)
+- [实现现状与纯 C++ 演进评估（历史快照）](14-implementation-assessment.md)
+- [跨层未完成事项清单（历史快照）](15-cross-layer-gaps.md)
 - [账号封禁风险评估与分层控制建议](17-account-ban-risk.md)
 - [目标架构基线（人类维护，AI 只读）](18-architecture-baseline.md)
 

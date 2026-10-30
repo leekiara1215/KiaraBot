@@ -30,6 +30,8 @@ protoc 与 protobuf runtime 必须遵守官方跨版本兼容窗口；优先使�
 
 GitHub Actions 的 dev 构建使用 GCC 13 和 Clang 16；proto job 使用固定到 `ce613c41372b23b1f51333815feb3edd87ef8a8b` 的 vcpkg registry/tool，解析 Protobuf 29.3（C++ runtime 5.29.3）和 gRPC 1.71.0。CI 工具锁文件为 `scripts/ci/package-lock.json`，其中包含 Redocly CLI 2.72.1 和 AsyncAPI parser 3.6.6；Node.js 使用 22。actionlint 固定为 1.7.7，Gitleaks 固定为 8.28.0。详见 [CI/CD 流程方案](12-ci-cd.md)。
 
+CI 的 C++ 静态分析 job 使用 `build/dev/compile_commands.json` 分析 dev 预设的全部翻译单元（`clang-analyzer-*`，warning 即失败）；`control/api` 与 `infrastructure` 的完整覆盖仍由本机 `scripts/quality/check-tidy.sh` 在启用基础设施的 proto 构建后执行；该脚本先校验编译数据库覆盖全部待分析文件，缺条目直接失败。CI 另对跟踪的 `.sh` 文件执行 `bash -n` 语法检查，工作流 YAML 使用 python3-yaml 解析。
+
 ## 统一检查
 
 在仓库根目录运行：
@@ -38,9 +40,9 @@ GitHub Actions 的 dev 构建使用 GCC 13 和 Clang 16；proto job 使用固定
 ./scripts/check-toolchain.sh
 ```
 
-脚本遇到第一个错误即退出，缺少工具、版本不满足、生成失败或任何检查失败都返回非零状态。它依次检查工具版本、C++20 编译和运行、protoc/gRPC 实际生成、脚本语法、dev 和 proto 预设的配置/完整构建/CTest、协议契约检查、C++ 格式和静态分析、OpenAPI 与 AsyncAPI lint。proto 配置启用 `CMAKE_EXPORT_COMPILE_COMMANDS`，供 clang-tidy 使用。生成物只由构建写入忽略的 `build/` 或临时目录，不提交。
+脚本遇到第一个错误即退出，缺少工具、版本不满足、生成失败或任何检查失败都返回非零状态。它依次检查工具版本、C++20 编译和运行、protoc/gRPC 实际生成、脚本语法、dev 预设的配置/完整构建/CTest，以 `-DKIARABOT_ENABLE_INFRASTRUCTURE=ON -DCMAKE_EXPORT_COMPILE_COMMANDS=ON` 配置 proto 预设并执行其完整构建与 CTest，再执行独立基础设施构建（`cmake -S infrastructure -B build/infrastructure`）及其 CTest，最后进行协议契约检查、C++ 格式和静态分析、OpenAPI 与 AsyncAPI lint。proto 配置同时导出编译数据库，供 clang-tidy 使用。生成物只由构建写入忽略的 `build/` 或临时目录，不提交。
 
-格式检查扫描仓库手写 C++ 头文件和源文件，排除 `build/`、`node_modules/` 和 `.pb.*` 生成文件。clang-tidy 显式启用 `clang-analyzer-*` 检查，并使用 proto 预设的编译数据库检查 `core/`、`proto/tests/`、`control/api/` 与 `infrastructure/` 的 C++ 源文件及其仓库头文件，并将诊断警告视为错误；macOS 的 AppleClang 构建使用 `SDKROOT` 或 `xcrun` 查找 SDK。CMake 会缓存已配置的编译器，切换 `CXX` 时须重新配置构建目录。AsyncAPI parser 输出所有诊断，severity 0 的错误或没有解析结果时失败；信息和提示仍会显示。
+格式检查扫描仓库手写 C++ 头文件和源文件，排除 `build/`、`node_modules/` 和 `.pb.*` 生成文件。clang-tidy 显式启用 `clang-analyzer-*` 检查，并使用 proto 预设的编译数据库检查 `core/`、`proto/tests/`、`control/api/`、`infrastructure/src/` 与 `infrastructure/tests/` 的 C++ 源文件及其仓库头文件（覆盖范围以 `scripts/quality/check-tidy.sh` 实际 `find` 目录为准），并将诊断警告视为错误；运行前先校验 `build/proto/compile_commands.json` 覆盖全部待分析文件，缺条目直接失败，因此须先完成启用基础设施的 proto 构建。macOS 的 AppleClang 构建使用 `SDKROOT` 或 `xcrun` 查找 SDK。CMake 会缓存已配置的编译器，切换 `CXX` 时须重新配置构建目录。AsyncAPI parser 输出所有诊断，severity 0 的错误或没有解析结果时失败；信息和提示仍会显示。
 
 可以单独运行下列检查以定位失败，运行 clang-tidy 前需先完成 proto 配置和构建：
 
@@ -71,9 +73,9 @@ python3 ./scripts/quality/check-boundaries.py
 
 本次没有要求 Core、协议、API 或其他业务模块修改公共接口；已修复的 Core 和协议测试改动仅涉及格式。以下事项在对应模块或流程落地时处理，不影响当前本地检查结果：
 
-- **CI/CD**：CI 工作流位于 `.github/workflows/ci.yml`，安装本文件列出的工具和运行库，运行 `./scripts/check-toolchain.sh`，并将非零退出码作为失败。`doc/12-ci-cd.md` 描述完整流程方案。
+- **CI/CD**：CI 工作流位于 `.github/workflows/ci.yml`，安装本文件列出的工具和运行库，按 job 分别执行 dev 构建与 CTest、协议兼容与跨语言闭环验收、workflow lint（含跟踪 `.sh` 文件的 `bash -n`）、C++ 格式、clang-tidy 静态分析（覆盖 dev 预设全部翻译单元）、API 契约、依赖审计和密钥扫描，并将非零退出码作为失败。CI 不直接调用 `./scripts/check-toolchain.sh`，上述检查以该工作流为准；`doc/12-ci-cd.md` 描述完整流程方案。
 - **协议发布和 CI/CD**：保存上一发布版本的 descriptor；协议变更的检查中设置 `KIARABOT_BASELINE_DESCRIPTOR`，按 `proto/tests/README.md` 执行兼容性比较。未提供基线时，本地统一检查只验证当前 descriptor 和契约，不证明与旧版本兼容。
-- **新 C++ 模块**：手写 C++ 需通过统一格式检查。当前 clang-tidy 的编译数据库检查覆盖 `core/`、`proto/tests/`、`control/api/` 和 `infrastructure/`；引入其他 C++ 模块时同步扩展 `scripts/quality/check-tidy.sh` 和对应构建目标。
+- **新 C++ 模块**：手写 C++ 需通过统一格式检查。当前 clang-tidy 的编译数据库检查覆盖 `core/`、`proto/tests/`、`control/api/`、`infrastructure/src/` 和 `infrastructure/tests/`（以 `scripts/quality/check-tidy.sh` 的 `find` 目录为准）；引入其他 C++ 模块时同步扩展 `scripts/quality/check-tidy.sh` 和对应构建目标。
 - **Python 适配器和 SDK 项目**：适配器位于 `adapters/nonebot/`，SDK 位于 `sdk/python/`；各自维护 Python 依赖、代码生成和测试，本仓库的统一 C++ 检查不覆盖其实现。
 
 ## SQLite 可选构建

@@ -135,6 +135,8 @@ error_code
 
 **当前不能作为完整部署验收**：Core 已有插件/Action 闭环、控制 API 和进程探针，T11a 提供独立迁移程序；适配器及面板镜像、生产 TLS、真实环境及隔离部署恢复仍归 T11b/T07b。进程探针为根路径 `/health/live`（不访问存储）、`/health/ready`（写事务探测）；详情为认证的 `/api/v1/health`，不提供历史 `/health/details`。唯一来源是 OpenAPI。
 
+**当前实现状态：部署骨架尚不可运行**：`deploy/compose.*.yml` 中的 `HEALTH_PORT` 目前没有代码读取；适配器与面板的 8081/8082 HTTP 健康服务尚未实现；默认 `Dockerfile` 只构建 dev Core（未启用 proto/infrastructure，因此不提供 `/health/live`、`/health/ready`）；生产/暂存 compose 的镜像 digest 仍是全零占位。因此 `scripts/deploy/deploy.sh start`/`upgrade` 的成功路径尚不可用，T11b 未验收。上文的生产设计仍是目标，需在镜像、健康服务和真实 digest 落地后才成立。
+
 Compose 在 `deploy/.env` 存在时可通过可选 `env_file` 注入运行配置，也可以使用 `KIARABOT_ENV_FILE` 指定外部文件；Compose 插值变量通过启动进程环境或 Compose 的 `--env-file` 提供。环境文件和密钥不应放进仓库或构建上下文，权限应限制为部署账户可读。镜像构建不需要 Token、API Key 或 SSH key。不要把这些值放进镜像标签、命令行或日志。
 
 ```bash

@@ -100,14 +100,24 @@ ghcr.io/leekiara1215/kiarabot-core:v1.0.0
 - 恢复自动触发：取消 `ci.yml` 顶部 `pull_request`、`push: branches: [main]` 触发器的注释，并删除 `workflow_dispatch.inputs.base_ref` 与 `BASE_SHA` 表达式中的 `|| inputs.base_ref` 兜底。
 - 影响：若 `main` 的必需状态检查仍指向本 workflow，暂停期间 PR 会因检查一直 pending 而无法合并，恢复前需临时调整分支保护；「验收标准」中「任意 Pull Request 都能自动编译和运行测试」在该状态下暂时不成立。
 
+本轮针对已知失败点做了修复，但**尚未在远端验证全绿**，因此保持仅手动触发：
+
+- 契约 YAML 解析不再依赖 runner 的 ruby/psych：`Workflow lint` 与 `API contracts` 改为安装 `python3-yaml` 后用 python3 解析 `.github/workflows/*.yml`、`api/openapi.yaml`、`api/asyncapi.yaml`。解析失败会直接给出文件与异常。
+- 密钥扫描失败时上传 `gitleaks-report.json` artifact，便于定位命中文件与规则；扫描门禁仍为阻断式。
+- 闭环验收接入适配器：Protocol job 增加 `uv sync --project adapters/nonebot --locked --python 3.11.18`，并以 `KIARABOT_ADAPTER_DIR` 运行 `tests/acceptance/run.sh`；验收脚本增加分阶段 `trap` 与 `bash -x` 追踪，失败时打印阶段和命令。
+- `C++ static analysis` 从 2 个翻译单元扩展为 `build/dev/compile_commands.json` 中的全部 dev 翻译单元（`clang-analyzer-*`，warning 即失败）。完整覆盖（control/infrastructure）仍依赖本机 `scripts/quality/check-tidy.sh` 在 proto+infrastructure 构建后执行。
+- `Workflow lint` 增加仓库内全部跟踪 `.sh` 的 `bash -n` 检查。
+
+恢复顺序：先手动 `Run workflow` 确认全部 job 通过，再按上文恢复自动触发；若仍失败，使用 `gitleaks-report.json` 与失败阶段日志定位，不要先恢复自动触发。
+
 下面描述的是本 workflow 的完整检查内容，恢复自动触发后按原文生效。
 
 `.github/workflows/ci.yml` 原本在 Pull Request 和 push 到 `main` 时运行，不引用 production Environment 或生产密钥，仓库权限仅为 `contents: read`。它执行：
 
 - GCC 13、Clang 16 分别配置和构建 `dev` 预设，运行全部 CTest；协议任务配置、构建 `proto` 并运行全部 CTest。
 - `proto/tests/check_contracts.sh` 检查契约；`scripts/ci/check-descriptor.sh` 从 PR 目标分支的 base SHA（push 时为推送前 SHA）生成 descriptor，再使用现有兼容性检查器比较。找不到基准或基准为全零时失败；`scripts/ci/test-descriptor-gate.sh` 验证不兼容字段和更改的基准会失败。基准来自 Git 历史而非 PR 提供的文件，descriptor 构建产物以被检提交 SHA 命名。
-- 检查 workflow YAML、actionlint、手写 C++ 的 clang-format 和 Core 翻译单元的 clang-tidy；Redocly lint OpenAPI，AsyncAPI parser 拒绝错误诊断。
-- Gitleaks 扫描 Git 历史；npm audit 扫描 `scripts/ci/package-lock.json` 中锁定的 CI 工具及传递依赖。当前 npm audit **不覆盖** vcpkg 的 C++ 依赖：需另行接入能识别 vcpkg 已解析依赖的漏洞数据，不能将此检查描述为完整 C++ 依赖漏洞扫描。
+- 检查 workflow YAML、actionlint、手写 C++ 的 clang-format 和 dev 预设全部翻译单元的 clang-tidy；仓库内跟踪 `.sh` 的 `bash -n`；Redocly lint OpenAPI，AsyncAPI parser 拒绝错误诊断。
+- Gitleaks 扫描 Git 历史（使用仓库根 `.gitleaks.toml`，默认规则保持启用，只允许明确写成 `secret-key-must-not-leak`、`platform-test-token` 等测试占位值，避免测试夹具造成误报；真实凭据仍在扫描范围）；失败时上传 `gitleaks-report.json` 工件。npm audit 扫描 `scripts/ci/package-lock.json` 中锁定的 CI 工具及传递依赖。当前 npm audit **不覆盖** vcpkg 的 C++ 依赖：需另行接入能识别 vcpkg 已解析依赖的漏洞数据，不能将此检查描述为完整 C++ 依赖漏洞扫描。
 
 CI 的 vcpkg registry/tool 固定为 `ce613c41372b23b1f51333815feb3edd87ef8a8b`（2025.04.09，Protobuf 29.3 / C++ runtime 5.29.3、gRPC 1.71.0）。Node 工具使用 `scripts/ci/package-lock.json`。版本升级需同时更新锁定来源并重新运行协议生成、兼容性和测试。CI 检查本身不能配置分支保护；仓库管理员需将所有 CI job 设为 `main` 的必需状态检查，并禁止绕过规则，才能阻止不兼容变更合并。新建分支或 force push 无法提供有效前一 SHA 时，push 的协议任务会失败，需要先提供可审计的比较基准。
 

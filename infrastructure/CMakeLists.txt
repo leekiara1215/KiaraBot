@@ -46,6 +46,14 @@ target_compile_options(kiarabot_infrastructure PRIVATE
   $<$<CXX_COMPILER_ID:AppleClang,Clang,GNU>:-Wall -Wextra -Wpedantic>
   $<$<CXX_COMPILER_ID:MSVC>:/W4>)
 enable_testing()
+if(UNIX)
+  add_executable(http_model_provider_test tests/http_model_provider_test.cpp)
+  target_link_libraries(http_model_provider_test PRIVATE kiarabot_model)
+  target_compile_options(http_model_provider_test PRIVATE
+    $<$<CXX_COMPILER_ID:AppleClang,Clang,GNU>:-Wall -Wextra -Wpedantic>)
+  add_test(NAME http_model_provider COMMAND http_model_provider_test)
+  set_tests_properties(http_model_provider PROPERTIES TIMEOUT 30)
+endif()
 add_executable(file_storage_test tests/file_storage_test.cpp)
 target_link_libraries(file_storage_test PRIVATE kiarabot_infrastructure)
 add_test(NAME file_storage COMMAND file_storage_test)

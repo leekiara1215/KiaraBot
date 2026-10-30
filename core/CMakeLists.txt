@@ -48,6 +48,9 @@ if(UNIX)
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/scripts/quality/tests/boundaries_test.py)
   add_test(NAME deploy_healthcheck
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/scripts/deploy/tests/healthcheck_test.py)
+  add_test(NAME deploy_deployment
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/scripts/deploy/tests/deployment_test.py)
+  set_tests_properties(deploy_deployment PROPERTIES TIMEOUT 30)
   add_test(NAME core_process_lifecycle
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/process_lifecycle_test.py
       $<TARGET_FILE:kiarabot-core>)

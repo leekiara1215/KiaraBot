@@ -8,7 +8,6 @@
 #include "kiarabot/core/runtime/runtime_log.hpp"
 
 namespace kiarabot::core {
-using ControlJson = nlohmann::json;
 struct ControlUser {
   std::string id;
   std::string username;
@@ -34,9 +33,9 @@ class ControlService final : public IControlApplication {
 public:
   ControlService(RuntimeStore& store, ControlOptions options, RuntimeClock clock = {});
   PortResult<ControlReply> invoke(const ControlRequest& request) override;
-  PortStatus readiness();
+  PortStatus readiness() override;
   // Current authenticated projection, also used by event streaming. No secret state escapes.
-  PortResult<ControlJson> stream_snapshot(const ControlMetadata& metadata);
+  PortResult<ControlJson> stream_snapshot(const ControlMetadata& metadata) override;
 
 private:
   PortResult<ControlReply> invoke_locked(const ControlRequest& request);

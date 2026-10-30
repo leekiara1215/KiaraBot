@@ -259,12 +259,7 @@ struct HttpServer::Impl {
   explicit Impl(core::IControlApplication& app)
       : application(app),
         events([&app](const auto& metadata) -> core::PortResult<core::ControlJson> {
-          if (auto* service = dynamic_cast<core::ControlService*>(&app)) {
-            return service->stream_snapshot(metadata);
-          }
-          kiarabot::v1::Error error;
-          error.set_code(kiarabot::v1::CAPABILITY_NOT_SUPPORTED);
-          return error;
+          return app.stream_snapshot(metadata);
         }) {}
   void tick() {
     ticker.expires_after(std::chrono::milliseconds(100));

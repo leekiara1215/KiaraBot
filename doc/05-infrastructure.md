@@ -65,6 +65,8 @@ Core 内部接口位于 `core/include/kiarabot/core/ports/ports.hpp`，协议类
 
 Core 使用可信插件身份检查 model.chat，持久化 STARTED 审计成功后才调用网络；调用不持有数据库事务或 Host 存储锁。结果另写一条仅含稳定码的审计。启动审计失败时不发请求；结果审计失败时返回存储错误，此时外部调用可能已经完成。模型不提供幂等回放，断线/崩溃后不能保证未计费，插件不得自动重发。中断连接不会取消已开始的同步 HTTP 调用，但会在上述期限内结束。
 
+实现位于 `infrastructure/src/http_model_provider.cpp`。本轮新增 `infrastructure/tests/http_model_provider_test.cpp`，已加入独立基础设施构建的测试目标（Unix 下注册 CTest `http_model_provider`，链接 `kiarabot_model`）：覆盖 Provider 配置校验边界（非法 scheme/非回环 HTTP、URL userinfo/query/fragment、API key 非法字符）以及本机回环 HTTP 假服务的响应映射，不连接外部模型。本机缺少构建工具链，该测试本轮未运行，具体结果以实际运行记录为准；真实上游模型仍未联调（T07b 真实环境未提供）。
+
 模型适配器负责：
 
 - Provider 和模型选择；

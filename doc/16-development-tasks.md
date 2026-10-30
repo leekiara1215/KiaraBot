@@ -112,7 +112,7 @@
 
 ## T02b：Python NoneBot2 适配器
 
-- 原工作包：2；状态：**已实现；适配器 20 项自动验收通过，真实 QQ 留待 T07b**。
+- 原工作包：2；状态：**已实现；适配器迁入本仓库后验收 34/34（迁入前为 20 项），真实 QQ 留待 T07b**。
 - 依赖：T02a。
 - 允许修改：适配器实现（`adapters/nonebot/`）；本仓库仅契约测试语料；禁止修改其余模块内部实现。
 - 归属调整（2026-10-30）：适配器源码、锁文件和测试已迁入本仓库 `adapters/nonebot/`；迁入后仍须按本次交付结果核对测试。后续可再考虑拆成单独插件。
@@ -243,7 +243,7 @@
   - [x] fake 平台事件→插件→Action→结果。
   - [x] 拒绝无副作用。
   - [x] 重复/重启/断线恢复。
-  - [x] 可独立 CI 运行（入口本机已执行，远端 Actions 尚未运行）。
+  - [x] 可独立 CI 运行（入口本机已执行；远端 Actions 当时尚未运行，后续 5 次运行均未通过，见文末「2026-10-30 现状」）。
 
 ## T07b：真实独立组件联调
 
@@ -415,9 +415,9 @@ T05b：SQLite schema v1 初始化、64 MiB 私有快照编码、revision 原子�
 
 ## T02b 连续实施记录（2026-10-30）
 
-独立项目位于 `/Users/betta/Workspace/kiarabot-adapter-nonebot`。已实现 NoneBot2 正向 WebSocket、群/私聊映射、消息段转换、有界持久化 outbox、会话序号、能力注册、确认前保留、断线重投、稳定错误和脱敏日志。Python 3.11.18 与 uv.lock 固定环境；生成代码放入忽略目录，协议唯一来源仍是本仓库 proto/。
+适配器当时位于独立检出（已迁入本仓库 `adapters/nonebot/`）。已实现 NoneBot2 正向 WebSocket、群/私聊映射、消息段转换、有界持久化 outbox、会话序号、能力注册、确认前保留、断线重投、稳定错误和脱敏日志。Python 3.11.18 与 uv.lock 固定环境；生成代码放入忽略目录，协议唯一来源仍是本仓库 proto/。
 
-在独立项目运行 `CORE_TEST_BINARY=../KiaraBot/build/proto/core/kiarabot-core .venv/bin/python -m pytest -q`：**20/20 通过**。包含实际 NoneBot 子进程连接 fake WebSocket/Core，以及 Python 客户端连接真实 C++ Core、重启后去重。真实 NapCat/QQ 留待 T07b，Action 执行留待 T04b。初次清理测试错误地要求正常停止也必须抛取消异常，已修正为两种有效退出都可通过，并始终清理 fake server；业务断言未放宽。
+在当时的独立检出运行 `CORE_TEST_BINARY=<KiaraBot 仓库>/build/proto/core/kiarabot-core .venv/bin/python -m pytest -q`：**20/20 通过**（迁入前口径；迁入后验收 34/34，见 T04b/T06a 记录）。包含实际 NoneBot 子进程连接 fake WebSocket/Core，以及 Python 客户端连接真实 C++ Core、重启后去重。真实 NapCat/QQ 留待 T07b，Action 执行留待 T04b。初次清理测试错误地要求正常停止也必须抛取消异常，已修正为两种有效退出都可通过，并始终清理 fake server；业务断言未放宽。
 
 ## T03a 连续实施记录（2026-10-30）
 
@@ -450,7 +450,7 @@ T05b：SQLite schema v1 初始化、64 MiB 私有快照编码、revision 原子�
 
 允许修改扩展至直接受影响的 infrastructure 快照编解码/迁移，用于持久化请求、所有者、fingerprint、派发标志和终态。ActionRouter 在提交后派发，按认证适配器/账号/实例接收结果；同键同内容复用，内容冲突拒绝，派发后取消 CONFLICT，到期优先 EXPIRED。首次已到期请求仍持久化过期结果，不要求在线适配器。当前只支持群/私聊 send_message 的 plain_text，其他操作/段明确拒绝。
 
-独立适配器 /Users/betta/Workspace/kiarabot-adapter-nonebot 增加 .actions SQLite 执行日志；执行前落盘，正常重放返回原结果。平台调用超时/断线/取消保持未知，不再次执行可能发生的副作用。真实 NoneBot 子进程通过 fake OneBot 验证发送，另用真实 Core + Python SDK + Python 适配器验证闭环和重启后查询/去重。未知结果可能最终 EXPIRED，不能撤销平台已发生的副作用。没有连接真实 QQ。
+独立适配器（已迁入本仓库 `adapters/nonebot/`）增加 .actions SQLite 执行日志；执行前落盘，正常重放返回原结果。平台调用超时/断线/取消保持未知，不再次执行可能发生的副作用。真实 NoneBot 子进程通过 fake OneBot 验证发送，另用真实 Core + Python SDK + Python 适配器验证闭环和重启后查询/去重。未知结果可能最终 EXPIRED，不能撤销平台已发生的副作用。没有连接真实 QQ。
 
 关闭回归发现 gRPC 取消可能以传输失败返回并触发重连退避，已在 SDK/适配器退出前检查任务取消状态；新增模拟该竞态的测试，完整适配器验收 34/34，最终运行约 2.3 秒。
 
@@ -499,13 +499,13 @@ SQLite 当前 schema v4，覆盖 v1/v2/v3 迁移、重开与数据保留。旧�
 
 新增 tests/acceptance/run.sh，可独立执行 CTest、编译后 Core/REST 权限对照、SDK 与可选独立适配器验收。新增四种真实 Core/SQLite/SDK + fake 平台场景：正常、拒绝、平台执行后结果丢失/重连、结果丢失/Core 重启；重复事件和 Action ID 不重复副作用。
 
-全量测试定位到派发与 ACK 的乐观事务冲突导致 Bridge 断线，修复为仅对 retryable CONFLICT 等待 20ms 后重取未提交派发；此时尚未向流写出，不重发模型或插件业务调用。修复后四场景连续五轮（20 个场景）通过。此前台账记录的另一个 SQLite 单次未定位断言未据此宣称修复。CI contracts job 补齐 SQLite/libcurl/Abseil、tzdata 与锁定 Python 环境，远端 GitHub Actions 尚未运行。
+全量测试定位到派发与 ACK 的乐观事务冲突导致 Bridge 断线，修复为仅对 retryable CONFLICT 等待 20ms 后重取未提交派发；此时尚未向流写出，不重发模型或插件业务调用。修复后四场景连续五轮（20 个场景）通过。此前台账记录的另一个 SQLite 单次未定位断言未据此宣称修复。CI contracts job 补齐 SQLite/libcurl/Abseil、tzdata 与锁定 Python 环境，远端 GitHub Actions 当时尚未运行（后续 5 次运行均未通过，见文末「2026-10-30 现状」）。
 
 ### T07b 准备与 T08a 契约
 
 真实环境指南与两个无密钥模板位于 tests/acceptance/real-environment.md、core.env.example、adapter.env.example。按实际源码核对环境变量；Core/独立适配器配置分开，默认消息观察插件不会发消息/调用模型。用户待提供本机配置路径、账号、会话及版本；真实 QQ/模型/TLS/部署恢复未验收。
 
-T08a 选择同进程 C++ IControlApplication，不新增管理 gRPC，不改变 Python/TS 模块。补齐当前主体、会话列表/撤销、逐入口权限与错误响应；以 OpenAPI x-control-policy 和 AsyncAPI x-control-session-policy 冻结角色、幂等/轮换/撤销、十分钟不可变快照、流恢复及 HTTP 错误。C++ 端口类型和校验辅助实现已通过正常/拒绝/超时/依赖错误映射测试，编译后的全部 23 个操作与 OpenAPI 权限/默认角色一致。历史 doc/13 标记为交接历史，不再与现行契约竞争。T08b HTTP 服务未实现，T09 服务端事件流也未实现，不以端口验收冒充运行服务。
+T08a 选择同进程 C++ IControlApplication，不新增管理 gRPC，不改变 Python/TS 模块。补齐当前主体、会话列表/撤销、逐入口权限与错误响应；以 OpenAPI x-control-policy 和 AsyncAPI x-control-session-policy 冻结角色、幂等/轮换/撤销、十分钟不可变快照、流恢复及 HTTP 错误。C++ 端口类型和校验辅助实现已通过正常/拒绝/超时/依赖错误映射测试，编译后的全部 23 个操作与 OpenAPI 权限/默认角色一致。历史 `doc/13-control-api-contract-handoff.md` 标记为交接历史，不再与现行契约竞争。T08b HTTP 服务未实现，T09 服务端事件流也未实现，不以端口验收冒充运行服务。
 
 ### 实际检查与文档影响
 
@@ -514,7 +514,7 @@ T08a 选择同进程 C++ IControlApplication，不新增管理 gRPC，不改变 
 - OpenAPI Redocly 校验、AsyncAPI parser、Ruby API/Core 对照、HEAD 基线 descriptor 兼容检查通过；AsyncAPI 保留现有 2.6.0，只有升级/未引用组件提示。
 - panel npm run generate/lint/test/build/check:contracts 全部通过，4/4 测试；生成代码/构建产物不提交。
 - 23 个本轮 C++ 文件 clang-format dry-run 通过；Markdown UTF-8/本地链接、shell 模板/入口语法、workflow YAML、git diff --check 通过。
-- 实际运行 scripts/check-toolchain.sh，仍因缺少 clang-tidy 停止，静态分析未运行。远端 CI、真实 QQ/模型、生产 TLS、Docker、性能容量及非 POSIX 平台未验证。
+- 实际运行 scripts/check-toolchain.sh，仍因缺少 clang-tidy 停止，静态分析未运行。远端 CI 当时未运行（后续 5 次运行均未通过，截至 `e70de83`）；真实 QQ/模型、生产 TLS、Docker、性能容量及非 POSIX 平台未验证。
 
 文档影响判断：模型/任务新增公共能力与配置，控制面冻结接口/权限/错误，CI 验收入口和 SQLite 迁移也变化，必须同步直接文档。已更新 proto/README.md、plugins.proto 注释、api/openapi.yaml、api/asyncapi.yaml、doc/01-contracts.md、doc/01-runtime-semantics.md、doc/02-core.md、doc/03-plugin-sdk.md、doc/04-nonebot-adapter.md（仅 T07b 准备段）、doc/05-infrastructure.md、doc/06-control-api.md、doc/08-operations.md、doc/11-toolchain.md、doc/12-ci-cd.md、doc/13-control-api-contract-handoff.md、sdk/python/README.md、tests/acceptance/ 和本台账。
 
@@ -548,7 +548,7 @@ Core 单测对内存和 SQLite 执行同一应用验收；HTTP schema/路由/角
 - `proto/tests/check_contracts.sh`、`scripts/ci/check-descriptor.sh HEAD`、Ruby API/Core 权限对照、OpenAPI lint、AsyncAPI parser 均通过；只有现有 AsyncAPI 升级/未使用组件提示。不声称发布版 descriptor 兼容认证。
 - 本轮 25 个 C++ 文件 clang-format dry-run 通过；Markdown UTF-8/本地链接、workflow YAML、变更 shell 语法、uv lock --check / uv pip check、git diff --check 通过。
 - 实际运行全仓 `scripts/quality/check-format.sh`：排除生成/依赖目录后，仍有 5 个未改动文件的既有格式问题（file_storage 三文件、host_validation_test.cpp、descriptor_compatibility.cc）；遵照仓库规则未顺手格式化。本轮修改文件检查通过。
-- 实际运行 `scripts/check-toolchain.sh`：缺少 clang-tidy，静态分析未运行。远端 CI/actionlint、生产代理、Docker 镜像/部署恢复、性能容量、非 POSIX 平台及 T07b 真实环境未验收。
+- 实际运行 `scripts/check-toolchain.sh`：缺少 clang-tidy，静态分析未运行。远端 CI/actionlint 当时未运行（后续 5 次运行均未通过，截至 `e70de83`）；生产代理、Docker 镜像/部署恢复、性能容量、非 POSIX 平台及 T07b 真实环境未验收。
 
 ### 文档影响判断
 
@@ -580,11 +580,12 @@ Core 单测对内存和 SQLite 执行同一应用验收；HTTP schema/路由/角
 
 - `cmake --preset proto -DKIARABOT_ENABLE_INFRASTRUCTURE=ON`、`cmake --build --preset proto --parallel 6` 通过，无新增编译警告。
 - `KIARABOT_ADAPTER_DIR=<适配器检出绝对路径> bash tests/acceptance/run.sh` 完整通过：真实 HTTP/Core/SDK 控制面验收 **17/17**、proto CTest **24/24**、SDK **66/66**、适配器 **34/34**，API/Core 权限契约对照通过。
+- 以上为本机历史记录；仓库当前 HEAD 无法在本机复跑（缺工具链），远端 CI 尚未通过，数字待 CI 复跑校准。
 - `cmake --preset dev`、`cmake --build --preset dev --parallel 6`、`ctest --preset dev` 通过 **5/5**。
 - panel `npm run generate && npm run check:contracts && npm run lint && npm test && npm run build` 通过，测试 **7/7**；生成文件位于忽略目录，没有提交。
 - `proto/tests/check_contracts.sh`、`scripts/ci/check-descriptor.sh HEAD`、`scripts/quality/check-openapi.sh` 通过；descriptor 对照仅针对本地 HEAD，不冒充发布版兼容认证。
 - 本次涉及的 **12 个 C++ 文件**通过 `clang-format --dry-run --Werror`；`git diff --check` 通过。全仓既有格式问题不在本次范围。
-- 未运行 clang-tidy：本机无该工具。未新增依赖或变更基础设施实现，因此没有重复独立基础设施构建；它们已由完整 proto CTest 回归。未运行远端 CI、Docker/生产环境及 T07b/T11b 验收。
+- 未运行 clang-tidy：本机无该工具。未新增依赖或变更基础设施实现，因此没有重复独立基础设施构建；它们已由完整 proto CTest 回归。远端 CI 当时未运行；后续远端 CI 已运行 5 次但均未通过（截至 `e70de83`），且自 `16191cb` 起暂停自动触发。未运行 Docker/生产环境及 T07b/T11b 验收。
 
 文档影响判断与同步：
 
@@ -592,3 +593,35 @@ Core 单测对内存和 SQLite 执行同一应用验收；HTTP schema/路由/角
 - 无需修改 `api/asyncapi.yaml` 或 `doc/07-control-panel.md`：未增加 WebSocket 事件/面板操作，配置应用状态通过 GET 查询，现有 plugin.updated 继续通知期望状态变化。面板类型重新生成和现有交互回归已验证兼容。
 - 无需修改 `doc/00-boundaries.md`、`doc/04-nonebot-adapter.md`、`doc/05-infrastructure.md`、`doc/11-toolchain.md`、`doc/12-ci-cd.md`、部署脚本或路线图：模块/语言边界、适配器行为、存储格式、依赖和 CI 入口均未变化；现有统一入口自动纳入新测试。同期其他工作改动予以保留。
 - 文档校验包括上述协议生成/descriptor、OpenAPI lint、API 权限对照、panel check:contracts，以及本次文档 UTF-8/本地 Markdown 链接检查和 git diff --check，均通过。没有未验证的新增契约字段。
+
+## 2026-10-30 现状
+
+- **远端 CI**：GitHub Actions 历史上 5 次运行均未通过（4 次失败、1 次取消；HEAD `e70de83` 仍有 4 个 job 失败）。自提交 `16191cb`（2026-10-30）起 `.github/workflows/ci.yml` 暂停自动触发，仅保留手动 `workflow_dispatch`；恢复自动触发前需先让手动运行变绿。具体失败根因尚未确认，本文档不推测。
+- **部署骨架不可运行**：`deploy/compose.*.yml` 的 `HEALTH_PORT` 没有代码读取；适配器/面板的 8081/8082 HTTP 健康服务尚未实现；默认 `Dockerfile` 只构建 dev Core，未启用 proto/infrastructure，因此不提供 `/health/live`、`/health/ready`；staging/prod compose 的镜像 digest 仍是全零占位；`scripts/deploy/deploy.sh start`/`upgrade` 的成功路径尚不可用，T11b 未验收。
+- **受保护基线差异**：`doc/18-architecture-baseline.md` 附录 A 仍记载“仓库没有 `adapters/`、适配器暂存于同级检出 `../kiarabot-adapter-nonebot/`，规划迁入 `adapters/nonebot/`”，与适配器已入仓 `adapters/nonebot/` 的事实不符。该文档由人类维护、AI 只读；本台账不修改 doc/18，差异由人类维护者裁定。
+
+## 2026-10-30 本轮 CI/测试/文档修整记录
+
+CI 修复（本轮只改工作流，未复跑；不能据此宣称 CI 已绿）：
+
+- 工作流 YAML 解析改用 python3-yaml，不再依赖 ruby/psych。
+- 密钥扫描失败时上传 `gitleaks-report.json` 工件；新增根目录 `.gitleaks.toml`（`useDefault = true`），只允许测试占位值（`secret-key-must-not-leak`、`platform-test-token`、`mock-access-token-*` 等），真实凭据仍在扫描范围。
+- 闭环验收接入适配器锁定环境；CI 设置 `KIARABOT_ADAPTER_DIR` 并以 `bash -x tests/acceptance/run.sh` 运行，`tests/acceptance/run.sh` 增加分阶段 ERR trap 以定位失败阶段。
+- clang-tidy job 改为分析 `build/dev/compile_commands.json` 中 dev 预设的全部翻译单元（`clang-analyzer-*`，warning 即失败）。
+- 新增对跟踪 `.sh` 文件的 `bash -n` 语法检查。
+- 自动触发仍暂停（仅 `workflow_dispatch`）；需手动 Run workflow 验证全绿后再恢复自动触发；不得写成 CI 已通过。
+
+测试与工具链接线：
+
+- 新增 `infrastructure/tests/http_model_provider_test.cpp`（Provider 配置校验边界与回环 HTTP 响应映射），在 `infrastructure/CMakeLists.txt` 注册为独立基础设施构建的测试目标；本机无 CMake/依赖，未运行。
+- `core/CMakeLists.txt` 注册 `deploy_deployment` CTest（`scripts/deploy/tests/deployment_test.py`，5 个用例，TIMEOUT 30）。
+- `scripts/check-toolchain.sh` 以 `-DKIARABOT_ENABLE_INFRASTRUCTURE=ON -DCMAKE_EXPORT_COMPILE_COMMANDS=ON` 配置 proto 预设，同时执行 proto CTest 与独立基础设施构建/测试两组。
+- `scripts/quality/check-tidy.sh` 增加 compile_commands 覆盖校验，待分析文件缺少编译条目时直接失败。
+
+解耦：
+
+- `IControlApplication` 新增 `readiness()` 与 `stream_snapshot()`（默认分别返回 503 语义与不支持）；`control/api` 的 http_mapper/http_server 去除 `dynamic_cast<ControlService>`，行为不变。
+
+文档同步：README、doc/01、doc/02、doc/05、doc/08、doc/11、doc/13、doc/15、doc/16、doc/17、doc/README。
+
+未验证：本机无 cmake/clang-tidy/uv/node，构建、测试与部署未复跑；远端 CI 未复跑。不得宣称 CI 已绿或上述测试已通过。

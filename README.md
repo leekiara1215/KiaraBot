@@ -44,12 +44,13 @@ TypeScript 控制面板                 第一个控制面板客户端
 
 ## 当前状态
 
-- **已实现并纳入自动验收**：Core 进程启停与 gRPC 身份边界；统一运行时存储（内存/SQLite）；适配器持久化接收、命令授权、幂等与审计；插件注册、订阅和逐插件投递；Python 进程外插件 SDK；Action 纯文本闭环；Host storage/model/tasks 与任务调度；控制 API、认证/RBAC、WebSocket 事件流与面板真实服务闭环；结构化日志、健康探针，以及配置 API 到运行中 SDK 的下发与应用确认。
+- **已实现并纳入自动验收**：Core 进程启停与 gRPC 身份边界；统一运行时存储（内存/SQLite）；适配器持久化接收、命令授权、幂等与审计；插件注册、订阅和逐插件投递；Python 进程外插件 SDK；Action 纯文本闭环；Host storage/model/tasks 与任务调度；控制 API、认证/RBAC、WebSocket 事件流与面板真实服务闭环；结构化日志、健康探针，以及配置 API 到运行中 SDK 的下发与应用确认。Python NoneBot2 适配器测试已由 CI Protocol job 以锁定环境和 `KIARABOT_ADAPTER_DIR` 接入 `tests/acceptance/run.sh`，但远端 CI 尚未复跑，不能据此宣称适配器已验证通过。
 - **跨语言闭环**：`tests/acceptance/run.sh` 使用真实 gRPC/SQLite/SDK 和协议 fake 平台验证事件→Action、权限拒绝、重复事件、断线重放和重启恢复；这是协议级验收，不代表真实 QQ/NapCat 联调。
 - **尚未完成或未验收**：生产部署、备份恢复和发布镜像（T11b，依赖真实环境）；真实 QQ、真实模型联调（T07b，等待真实环境）；纯 C++ 替换是延期选项（T12）。
 - 面板默认使用 mock 数据，`VITE_API_MODE=live` 时才连接实际控制 API。
 - Python NoneBot2 适配器由本仓库 `adapters/nonebot/` 维护；后续可再考虑拆成单独插件。
-- 实时任务状态、交付记录和已知限制以 [开发台账](doc/16-development-tasks.md) 与 [跨层未完成事项清单](doc/15-cross-layer-gaps.md) 为准；[实现现状评估](doc/14-implementation-assessment.md) 是早期快照。
+- **远端 CI 与自动触发**：GitHub Actions 历史上 5 次运行均未通过（4 次失败、1 次取消；HEAD `e70de83` 仍有 4 个 job 失败）；自 2026-10-30（`16191cb`）起 `.github/workflows/ci.yml` 已暂停自动触发，只支持手动 `workflow_dispatch`。恢复自动触发前需先让手动运行变绿。
+- 实时任务状态和交付记录以 [开发台账](doc/16-development-tasks.md) 为准；[跨层未完成事项清单](doc/15-cross-layer-gaps.md) 是历史快照、不是现行清单，[实现现状评估](doc/14-implementation-assessment.md) 是早期快照。
 
 ## 构建与测试
 
@@ -112,7 +113,7 @@ npm run build
 ./scripts/check-toolchain.sh
 ```
 
-脚本依次检查工具版本、C++20、协议生成、预设构建与 CTest、契约、C++ 格式、静态分析和 API lint。也可以单独运行 `./scripts/quality/check-format.sh`、`./scripts/quality/check-tidy.sh`、`./scripts/quality/check-openapi.sh`、`./scripts/quality/check-asyncapi.sh` 和 `./proto/tests/check_contracts.sh`。CI 在 GCC 13/Clang 16 上构建 dev，用 pinned vcpkg 构建 proto + infrastructure 并运行闭环验收，另执行格式、静态分析、API 契约、工作流、依赖审计和密钥扫描检查。
+脚本依次检查工具版本、C++20、协议生成、dev/proto 预设的构建与 CTest、独立基础设施构建与 CTest、契约、C++ 格式、静态分析和 API lint。也可以单独运行 `./scripts/quality/check-format.sh`、`./scripts/quality/check-tidy.sh`、`./scripts/quality/check-openapi.sh`、`./scripts/quality/check-asyncapi.sh` 和 `./proto/tests/check_contracts.sh`。CI 不直接调用 `scripts/check-toolchain.sh`：各 job 分别执行构建/测试、契约兼容、格式、静态分析、API 契约、工作流、依赖审计和密钥扫描检查（在 GCC 13/Clang 16 上构建 dev，用 pinned vcpkg 构建 proto + infrastructure 并运行闭环验收），与 [开发工具链](doc/11-toolchain.md) 的说明一致。
 
 ## 运行 Core
 

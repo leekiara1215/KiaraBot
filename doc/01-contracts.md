@@ -38,7 +38,9 @@ EventEnvelope
   trace_id          链路追踪 ID
   source            适配器和账号
   subject           用户和会话
-  payload           事件内容
+  sequence          会话内单调递增序号（uint64，0 表示未提供）
+  delivery_mode     投递语义（EventDeliveryMode，当前定义 AT_LEAST_ONCE）
+  payload           事件内容（oneof discriminator）
 ```
 
 第一批事件：
@@ -133,7 +135,7 @@ RegisterAdapterResponse
   accepted
   assigned_instance_id
   required_protocol_version
-  heartbeat_interval
+  heartbeat_interval_seconds  心跳间隔秒数（uint32，字段 4）
   error（失败时返回）
 ```
 

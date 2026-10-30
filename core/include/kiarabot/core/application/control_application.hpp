@@ -2,10 +2,14 @@
 
 #include <array>
 
+#include <nlohmann/json.hpp>
+
 #include "kiarabot/core/application/plugin_config_delivery.hpp"
 #include "kiarabot/core/ports/ports.hpp"
 
 namespace kiarabot::core {
+// Public JSON projection of control resources. The transport never sees domain types.
+using ControlJson = nlohmann::json;
 // In-process port v1. Never accept a caller-supplied role or user identity.
 // The implementation validates credentials and current session for every invocation.
 struct ControlMetadata {
@@ -120,6 +124,21 @@ class IControlApplication {
 public:
   virtual ~IControlApplication() = default;
   virtual PortResult<ControlReply> invoke(const ControlRequest& request) = 0;
+  // Readiness probe for /health/ready: only a writable store may report ready.
+  // Implementations without readiness support keep the pre-existing 503 semantics.
+  virtual PortStatus readiness() {
+    kiarabot::v1::Error error;
+    error.set_code(kiarabot::v1::UPSTREAM_UNAVAILABLE);
+    error.set_retryable(true);
+    return error;
+  }
+  // Authenticated snapshot used by the event stream. The default reports the capability
+  // as unsupported instead of exposing a concrete implementation to the transport.
+  virtual PortResult<ControlJson> stream_snapshot(const ControlMetadata& /*metadata*/) {
+    kiarabot::v1::Error error;
+    error.set_code(kiarabot::v1::CAPABILITY_NOT_SUPPORTED);
+    return error;
+  }
 };
 
 struct ControlOperationPolicy {

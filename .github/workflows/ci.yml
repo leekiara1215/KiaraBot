@@ -1,7 +1,9 @@
 name: CI
 
 # 2026-10-30 起暂停自动触发：只保留手动 workflow_dispatch。
-# 恢复自动触发时，取消下面 Pull Request / push 触发器的注释，并删除 workflow_dispatch 的 base_ref 输入。
+# 修复 CI 失败后先手动 Run workflow 验证一次全绿，再恢复 Pull Request / push 触发器并删除 base_ref 输入。
+# 当前修复：YAML 解析不再依赖 ruby（改用 python3-yaml）；密钥扫描失败时上传报告；
+# 适配器锁定环境接入闭环验收；clang-tidy 覆盖 dev 预设全部 TU；补充 shell 语法检查。
 on:
   workflow_dispatch:
     inputs:
@@ -99,8 +101,12 @@ jobs:
           /tmp/kiarabot-ci-uv/bin/pip install uv==0.13.6
           /tmp/kiarabot-ci-uv/bin/uv sync --project sdk/python --locked --python 3.11.18
           /tmp/kiarabot-ci-uv/bin/uv sync --project control/api/tests --locked --python 3.11.18
+      - name: Install locked adapter test environment
+        run: /tmp/kiarabot-ci-uv/bin/uv sync --project adapters/nonebot --locked --python 3.11.18
       - name: Test Core and mixed-language closed loop
-        run: bash tests/acceptance/run.sh
+        env:
+          KIARABOT_ADAPTER_DIR: ${{ github.workspace }}/adapters/nonebot
+        run: bash -x tests/acceptance/run.sh
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '22'
@@ -134,8 +140,22 @@ jobs:
         with:
           go-version: '1.25.1'
           cache: false
+      - name: Install YAML parser
+        run: sudo apt-get update && sudo apt-get install -y python3-yaml
       - name: Parse workflow YAML
-        run: ruby -e 'require "yaml"; ARGV.each { |f| YAML.load_file(f); puts "Parsed #{f}" }' .github/workflows/*.yml
+        run: |
+          python3 - .github/workflows/*.yml <<'PY'
+          import sys
+
+          import yaml
+
+          for path in sys.argv[1:]:
+              with open(path, encoding="utf-8") as handle:
+                  yaml.safe_load(handle)
+              print(f"Parsed {path}")
+          PY
+      - name: Check tracked shell syntax
+        run: git ls-files -z '*.sh' | xargs -0 -r bash -n
       - name: Run actionlint
         run: |
           go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.7
@@ -161,8 +181,19 @@ jobs:
           CC: clang-16
           CXX: clang++-16
         run: cmake --preset dev -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
-      - name: Analyze Core translation units
-        run: clang-tidy-16 -p build/dev core/app/main.cpp core/tests/core_smoke.cpp --warnings-as-errors='*'
+      - name: Analyze all dev translation units
+        run: |
+          mapfile -t files < <(python3 - <<'PY'
+          import json
+
+          with open('build/dev/compile_commands.json', encoding='utf-8') as handle:
+              for entry in json.load(handle):
+                  print(entry['file'])
+          PY
+          )
+          clang-tidy-16 -p build/dev --checks='clang-analyzer-*' \
+            --warnings-as-errors='*' --header-filter="$GITHUB_WORKSPACE/(core|proto|control|infrastructure)/" \
+            "${files[@]}"
 
   api-contracts:
     name: API contracts
@@ -173,8 +204,20 @@ jobs:
         with:
           node-version: '22'
       - run: npm ci --prefix scripts/ci --ignore-scripts --no-audit --no-fund
+      - name: Install YAML parser
+        run: sudo apt-get update && sudo apt-get install -y python3-yaml
       - name: Parse API YAML
-        run: ruby -e 'require "yaml"; ARGV.each { |f| YAML.load_file(f); puts "Parsed #{f}" }' api/openapi.yaml api/asyncapi.yaml
+        run: |
+          python3 - api/openapi.yaml api/asyncapi.yaml <<'PY'
+          import sys
+
+          import yaml
+
+          for path in sys.argv[1:]:
+              with open(path, encoding="utf-8") as handle:
+                  yaml.safe_load(handle)
+              print(f"Parsed {path}")
+          PY
       - name: Lint OpenAPI
         run: scripts/ci/node_modules/.bin/redocly lint api/openapi.yaml
       - name: Parse and validate AsyncAPI
@@ -205,4 +248,13 @@ jobs:
       - name: Scan Git history
         run: |
           go install github.com/zricethezav/gitleaks/v8@v8.28.0
-          "$(go env GOPATH)/bin/gitleaks" git --redact --no-banner --exit-code=1 .
+          "$(go env GOPATH)/bin/gitleaks" git --config .gitleaks.toml --redact --no-banner \
+            --exit-code=1 --report-format json --report-path gitleaks-report.json .
+      - name: Upload secret scan findings
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: gitleaks-report-${{ github.sha }}
+          path: gitleaks-report.json
+          if-no-files-found: ignore
+          retention-days: 7

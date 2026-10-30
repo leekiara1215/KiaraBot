@@ -1,0 +1,14 @@
+# Gitleaks configuration for KiaraBot.
+#
+# The default ruleset stays enabled; only explicitly fake fixture values used by tests
+# are allowlisted so that a red scan always points at real history findings, not
+# placeholder strings such as "secret-key-must-not-leak".
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Test-only placeholder credentials, never real secrets."
+regexTarget = "match"
+regexes = [
+  '''(?i)(secret-key-must-not-leak|must-not-leak|must-not-reach-child|platform-test-token|private-model-key|mock-(?:access|refresh)-token[a-z0-9-]*)''',
+]

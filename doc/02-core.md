@@ -259,6 +259,8 @@ AdapterIngress 依赖 RuntimeStore 和宿主提供的 AdapterPolicy；负责注�
 
 T08b 在 Core 应用层实现 IControlApplication：认证、角色权限、会话、配置版本、幂等和审计事务；control/api 仅做 HTTP 映射。保留命名空间 `$control` 存放加密状态，`$control.enabled` 保存插件投递开关，`$control.manifests` 保存注册后的公共清单。插件身份不能含 `$`，Host API 不可访问这些命名空间。运行时更新仍须完整保留 namespaces。控制状态与审计提交失败时没有新副作用，读取故障不能伪装成空资源。
 
+T08b 后续解耦：`IControlApplication` 除 `invoke()` 外还暴露 `readiness()` 与 `stream_snapshot()`，默认实现分别返回 UPSTREAM_UNAVAILABLE（HTTP 503）与 CAPABILITY_NOT_SUPPORTED；`control/api` 传输层改为通过这两个接口访问，不再用 `dynamic_cast<ControlService>` 依赖具体实现。行为不变：健康探针与事件流快照语义保持原样。
+
 ## T10b 结构化运行日志
 
 LoggingRuntimeStore 装饰现有 RuntimeStore，不改变事务结果；提交后按新增审计、事件/投递/Action 状态产生结构化记录，覆盖成功、拒绝、retrying、dead_letter 和存储故障。日志端口不接收事件正文、Host 值、配置值或凭据，只接收操作、稳定结果和关联标识。sink 故障计数并 fail-open，不把已提交操作报告为失败；需要阻止副作用的审计仍在原业务事务内。
