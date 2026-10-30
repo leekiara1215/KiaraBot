@@ -1,6 +1,6 @@
 # Third-Party Notices
 
-KiaraBot 本身的代码采用 MIT 许可证，许可证文本见 [LICENSE.md](LICENSE.md)。当前仓库不包含下列组件的源码；它们由部署环境单独安装或由独立适配器进程使用，并保持各自项目的名称、版权和许可证。
+KiaraBot 本身的代码采用 MIT 许可证，许可证文本见 [LICENSE.md](LICENSE.md)。当前仓库不包含下列组件的源码；它们由部署环境单独安装或由适配器进程使用，并保持各自项目的名称、版权和许可证。
 
 ## NoneBot2
 
@@ -47,3 +47,11 @@ AI 插件、模型 SDK、数据库驱动及其他运行时依赖必须按照各�
 4. 是否随源码、安装包或容器一起分发。
 
 如果某个插件的许可证与 KiaraBot 的分发方式不兼容，应在集成前先确认授权条件。
+
+## 控制服务构建依赖
+
+- [Boost](https://www.boost.org/users/license.html)：Boost Software License 1.0；使用 Beast/Asio，源码不纳入仓库。
+- [libsodium](https://github.com/jedisct1/libsodium/blob/master/LICENSE)：ISC；使用 Argon2id、keyed hash 与 secretbox，动态链接系统/CI 安装。
+- [nlohmann/json 3.11.3](https://github.com/nlohmann/json/blob/v3.11.3/LICENSE.MIT)：MIT；单头文件只下载至构建目录，发布二进制应附许可证。
+
+版本和校验值见 [工具链文档](doc/11-toolchain.md)，测试 Python 依赖由 control/api/tests/uv.lock 固定。

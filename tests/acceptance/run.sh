@@ -8,6 +8,9 @@ test -x "$python" || { echo 'Create the locked sdk/python virtual environment fi
 test -x "$build_dir/core/kiarabot-core" || { echo 'Build proto + infrastructure Core first' >&2; exit 2; }
 export CORE_TEST_BINARY="$build_dir/core/kiarabot-core"
 "$python" sdk/python/tools/generate_proto.py
+control_python="${KIARABOT_CONTROL_TEST_PYTHON:-$root/control/api/tests/.venv/bin/python}"
+test -x "$control_python" || { echo 'Create the locked control/api/tests environment first' >&2; exit 2; }
+"$control_python" -m pytest -q control/api/tests
 ctest --test-dir "$build_dir" --output-on-failure --no-tests=error
 CONTROL_POLICY_BINARY="$build_dir/kiarabot-control-application-test" ruby proto/tests/api_contract_test.rb
 "$python" -m pytest -q sdk/python/tests

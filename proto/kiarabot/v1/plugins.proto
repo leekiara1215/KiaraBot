@@ -60,6 +60,8 @@ message PluginToCore {
     HostRequest host_request = 5;
     PluginActionQuery action_query = 6;
     PluginActionCancel action_cancel = 7;
+    // Requires plugin.config.v1; identity is bound to the authenticated stream.
+    PluginConfigAck config_ack = 8;
   }
 }
 
@@ -111,7 +113,22 @@ message PluginActionResponse {
 }
 message PluginHeartbeat { string instance_id = 1; uint64 sent_at_unix_ms = 2; }
 message PluginHeartbeatAck { uint64 received_at_unix_ms = 1; }
-message PluginConfig { string version = 1; google.protobuf.Struct values = 2; }
+// Full desired snapshot; only sent when plugin.config.v1 is negotiated.
+// One outstanding delivery per connection; reconnect always reapplies latest.
+message PluginConfig {
+  string version = 1;
+  google.protobuf.Struct values = 2;
+  string delivery_id = 3;
+  uint32 apply_timeout_ms = 4;
+}
+// Success means the callback completed, not merely that bytes were received.
+// Failure requires a stable error; success forbids error. No raw exception text.
+message PluginConfigAck {
+  string version = 1;
+  string delivery_id = 2;
+  bool accepted = 3;
+  Error error = 4;
+}
 
 // Host requests are authorized against the registered plugin instance. The
 // namespace and task owner are derived from that identity, never from input.

@@ -247,8 +247,20 @@ AuthorizedCommands 是 Core 内部入口：调用方必须从已认证连接构�
 
 execute 的回调只能修改传入的 RuntimeSnapshot，不得执行网络/平台副作用或另启 Runtime 事务。业务修改、成功幂等记录和审计在同一提交中完成；提交失败全部不生效。幂等范围为主体+权限+资源+键，同键同 fingerprint 重放成功且不重复审计；不同 fingerprint 返回 CONFLICT。重放前重新鉴权。拒绝及回调失败记录审计，失败回调的状态变更被回滚；错误详情只保留稳定码和请求标识，不转发回调的自由文本。审计满（默认十万条）时返回 UPSTREAM_UNAVAILABLE 且不执行回调。审计/幂等保留和清理策略须后续管理任务落实，不能当作无限容量服务。
 
-SQLite 从 v2 起保存审计和命令幂等记录，当前 v4 还保存 Action 路由和 Host 命名空间/幂等响应；模型与任务尚未接线。T02a 适配器桥和 T03a 插件桥已使用此入口；控制 API 仍须在后续任务接线。
+SQLite 从 v2 起保存审计和命令幂等记录，当前 v4 还保存 Action 路由和 Host 命名空间/幂等响应；模型与任务尚未接线。T02a 适配器桥和 T03a 插件桥已使用此入口；控制 API 已由 T08b 通过独立应用端口接入同一事务存储。
 
 ## T02a 适配器接收应用入口
 
 AdapterIngress 依赖 RuntimeStore 和宿主提供的 AdapterPolicy；负责注册账号权限、实例替换、输入校验、命令授权审计、事件去重与事务提交。BridgeServer 仅绑定认证身份并转换流消息，不从注册载荷生成权限。实例状态按连接生命周期管理，事件/幂等/水位持久化到 RuntimeStore。无持久化入口的 BridgeServer 继续显式拒绝业务，不发送假确认。订阅路由、插件执行及 Action 分发由后续任务实现。
+
+## 控制应用服务
+
+T08b 在 Core 应用层实现 IControlApplication：认证、角色权限、会话、配置版本、幂等和审计事务；control/api 仅做 HTTP 映射。保留命名空间 `$control` 存放加密状态，`$control.enabled` 保存插件投递开关，`$control.manifests` 保存注册后的公共清单。插件身份不能含 `$`，Host API 不可访问这些命名空间。运行时更新仍须完整保留 namespaces。控制状态与审计提交失败时没有新副作用，读取故障不能伪装成空资源。
+
+## T10b 结构化运行日志
+
+LoggingRuntimeStore 装饰现有 RuntimeStore，不改变事务结果；提交后按新增审计、事件/投递/Action 状态产生结构化记录，覆盖成功、拒绝、retrying、dead_letter 和存储故障。日志端口不接收事件正文、Host 值、配置值或凭据，只接收操作、稳定结果和关联标识。sink 故障计数并 fail-open，不把已提交操作报告为失败；需要阻止副作用的审计仍在原业务事务内。
+
+## 配置下发闭环
+
+配置通过 plugin.config.v1 / PluginConfig / PluginConfigAck 下发并按连接确认。REST GET 的 delivery 区分持久化与运行实例应用，PUT/幂等重放只确认持久化。状态、超时、重连、错误及事件门控的完整规则见 [PluginSDK 配置下发闭环](03-plugin-sdk.md#配置下发闭环t08b-后续)。协议唯一来源为 proto/kiarabot/v1/plugins.proto，REST 为 api/openapi.yaml；无新增错误码或 HTTP/gRPC 映射。

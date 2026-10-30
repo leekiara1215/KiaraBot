@@ -2,6 +2,7 @@
 
 #include <array>
 
+#include "kiarabot/core/plugin_config_delivery.hpp"
 #include "kiarabot/core/ports.hpp"
 
 namespace kiarabot::core {
@@ -95,6 +96,7 @@ struct ControlPage {
 struct ControlPluginConfig {
   std::string version;
   google::protobuf::Struct values;
+  std::optional<ConfigDeliveryStatus> delivery{};
 };
 struct ControlValidation {
   bool valid{false};

@@ -3,6 +3,7 @@
 #include <stdexcept>
 #include <unordered_set>
 
+#include "kiarabot/core/control_service.hpp"
 #include "kiarabot/core/request_digest.hpp"
 #include "kiarabot/core/runtime_engine.hpp"
 
@@ -135,6 +136,9 @@ PluginRegistration PluginHub::attach(const std::string& principal,
     CommandContext context{"plugin/" + principal,  "plugin.connect", principal, fence, fence, fence,
                            request_digest(request)};
     const auto outcome = commands.execute(context, [&](RuntimeSnapshot& snapshot) -> PortStatus {
+      if (!control_plugin_enabled(snapshot, principal)) {
+        return error(kiarabot::v1::PLUGIN_UNAVAILABLE);
+      }
       for (const auto& permission : permissions) {
         if (std::find(policy->permissions.begin(), policy->permissions.end(), permission) ==
             policy->permissions.end()) {
@@ -187,6 +191,7 @@ PluginRegistration PluginHub::attach(const std::string& principal,
         return error(kiarabot::v1::INTERNAL);
       }
       replace_state(snapshot, state);
+      snapshot.namespaces["$control.manifests"][principal] = {control_json(manifest).dump(), {}};
       return std::monostate{};
     });
     if (const auto* failure = std::get_if<kiarabot::v1::Error>(&outcome)) {
@@ -197,6 +202,13 @@ PluginRegistration PluginHub::attach(const std::string& principal,
                       fence,
                       {manifest.capabilities().begin(), manifest.capabilities().end()},
                       permissions};
+    if (configuration_ &&
+        std::find(request.supported_features().begin(), request.supported_features().end(),
+                  "plugin.config.v1") != request.supported_features().end()) {
+      result.session.config_enabled = true;
+      configuration_->attach(principal, fence);
+      result.response.add_enabled_features("plugin.config.v1");
+    }
     active_[principal] = result.session;
     result.response.set_accepted(true);
     for (const auto& permission : permissions) {
@@ -206,6 +218,32 @@ PluginRegistration PluginHub::attach(const std::string& principal,
   } catch (...) {
     return reject(error(kiarabot::v1::INTERNAL));
   }
+}
+
+void PluginHub::set_configuration(std::shared_ptr<PluginConfigDelivery> configuration) {
+  configuration_ = std::move(configuration);
+}
+PortResult<std::optional<kiarabot::v1::PluginConfig>>
+PluginHub::next_config(const PluginSession& session) {
+  std::lock_guard lock(mutex_);
+  if (!current_locked(session)) {
+    return error(kiarabot::v1::PERMISSION_DENIED);
+  }
+  if (!session.config_enabled) {
+    return std::optional<kiarabot::v1::PluginConfig>{};
+  }
+  return configuration_->next(session.identity, session.fence);
+}
+PortStatus PluginHub::acknowledge_config(const PluginSession& session,
+                                         const kiarabot::v1::PluginConfigAck& ack) {
+  std::lock_guard lock(mutex_);
+  if (!current_locked(session)) {
+    return error(kiarabot::v1::PERMISSION_DENIED);
+  }
+  if (!session.config_enabled) {
+    return error(kiarabot::v1::CAPABILITY_NOT_SUPPORTED);
+  }
+  return configuration_->acknowledge(session.identity, session.fence, ack);
 }
 
 bool PluginHub::current_locked(const PluginSession& session) const {
@@ -223,7 +261,8 @@ std::vector<std::string> PluginHub::targets(const RuntimeSnapshot& snapshot,
   const auto capability = subscription(event);
   for (const auto& [id, session] : active_) {
     const auto plugin = snapshot.plugins.find(id);
-    if (plugin != snapshot.plugins.end() && plugin->second.state == PluginState::running &&
+    if (control_plugin_enabled(snapshot, id) && plugin != snapshot.plugins.end() &&
+        plugin->second.state == PluginState::running &&
         std::find(session.subscriptions.begin(), session.subscriptions.end(), capability) !=
             session.subscriptions.end()) {
       result.push_back(id);
@@ -248,6 +287,12 @@ PluginHub::next(const PluginSession& session) try {
     return error(kiarabot::v1::UPSTREAM_UNAVAILABLE, true);
   }
   auto& snapshot = transaction->snapshot();
+  if (!control_plugin_enabled(snapshot, session.identity)) {
+    return error(kiarabot::v1::PLUGIN_UNAVAILABLE);
+  }
+  if (session.config_enabled && !configuration_->ready(session.identity, session.fence)) {
+    return std::optional<kiarabot::v1::EventEnvelope>{};
+  }
   for (const auto& [event_id, deliveries] : snapshot.deliveries) {
     const auto delivery = deliveries.find(session.identity);
     if (delivery != deliveries.end() && delivery->second.state == DeliveryState::dispatched) {
@@ -342,6 +387,9 @@ PortStatus PluginHub::detach(const PluginSession& session) try {
     return std::monostate{};
   }
   active_.erase(session.identity);
+  if (session.config_enabled) {
+    configuration_->detach(session.identity, session.fence);
+  }
   auto begun = store_.begin();
   if (const auto* failure = std::get_if<StorageError>(&begun)) {
     return mapped(*failure);

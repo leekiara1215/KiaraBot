@@ -100,6 +100,13 @@ count = 0
 operations.each do |path, verbs|
   verbs.each do |method, operation|
     next unless %w[get post put].include?(method)
+    if operation['x-process-probe']
+      check(%w[/health/live /health/ready].include?(path), 'Unknown process probe')
+      check(method == 'get' && operation['security'] == [] && operation['x-permission'] == 'public', 'Probe authentication contract')
+      check(verbs['servers'] == [{ 'url' => '/' }], 'Process probes must use root paths')
+      check(operation.fetch('responses').key?('200'), 'Probe response missing')
+      next
+    end
     count += 1
     name = operation.fetch('operationId')
     permission = operation.fetch('x-permission')

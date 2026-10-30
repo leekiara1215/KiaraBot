@@ -1,6 +1,6 @@
 # CI/CD 流程方案
 
-T07a 的 contracts job 使用现有 pinned vcpkg，同步构建 Protobuf/gRPC、SQLite、libcurl 和 Abseil，启用 KIARABOT_ENABLE_INFRASTRUCTURE，安装 uv 0.13.6 与锁定 Python 3.11.18 SDK 环境后运行 tests/acceptance/run.sh。入口覆盖 CTest、真实 Core/SQLite/SDK 与协议 fake 平台闭环、模型 HTTP fake、任务恢复；缺少环境失败而非跳过。该流程不需要账号/密钥，不表示真实 QQ 或模型联调通过。独立适配器可通过 KIARABOT_ADAPTER_DIR 接入本地同一入口，其 checkout 不复制到本仓库。详细命令见 tests/acceptance/README.md；本地执行与远端 GitHub Actions 结果分别记录。
+T07a 的 contracts job 使用现有 pinned vcpkg，同步构建 Protobuf/gRPC、SQLite、libcurl 和 Abseil，启用 KIARABOT_ENABLE_INFRASTRUCTURE，安装 uv 0.13.6 与锁定 Python 3.11.18 SDK 环境后运行 tests/acceptance/run.sh。入口覆盖 CTest、真实 Core/SQLite/SDK 与协议 fake 平台闭环、模型 HTTP fake、任务恢复；缺少环境失败而非跳过。该流程不需要账号/密钥，不表示真实 QQ 或模型联调通过。Python 适配器当前暂存于同级检出，可通过 KIARABOT_ADAPTER_DIR 接入本地同一入口；迁入 `adapters/` 后改为仓库内验收入口。详细命令见 tests/acceptance/README.md；本地执行与远端 GitHub Actions 结果分别记录。
 
 ## 责任
 
@@ -317,3 +317,7 @@ PROD_KNOWN_HOSTS
 ## 当前运维配置的部署限制
 
 当前仓库已提供 Compose、非 root 的 Core 镜像构建、迁移前 SQLite 快照、健康探针和按指定 Core digest 回滚的脚本；用法与故障处理见 [部署与可观测性](08-operations.md)。生产 Compose 的全零 digest 是占位值，发布系统必须注入实际镜像 digest。现有 Core 已有 POSIX 常驻/停止入口，但尚无 RPC 与持久化接线，迁移命令、适配器、面板和进程健康端点尚未交付；因此这些配置还不能支持真实的 staging 或 production 自动发布，也不能将 Compose 配置解析成功当作上线验收。OpenAPI 中的 `/api/v1/health` 与预留的进程健康端点是不同接口，后者仍需明确公共契约和实现。镜像回滚不自动恢复数据库，发布流程必须验证 schema 向后兼容或按运维流程显式恢复迁移前备份。
+
+## 控制面持续验收（T08b–T11a）
+
+contracts job 在原固定 vcpkg registry 中增加 boost-beast、boost-asio、libsodium；锁定版本见 doc/11-toolchain.md。安装 control/api/tests/uv.lock 环境，统一入口强制运行 HTTP/WebSocket/健康/迁移测试。面板真实服务测试需要已构建 Core 与该 Python 环境；纯 UI 单测可单独 `npx vitest run tests/integration.test.tsx`。这些是本机隔离验收，不包含真实平台、远端部署、TLS 代理或生产恢复。

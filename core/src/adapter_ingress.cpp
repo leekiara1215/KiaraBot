@@ -8,6 +8,11 @@
 #include "kiarabot/core/runtime_engine.hpp"
 
 namespace kiarabot::core {
+bool AdapterIngress::connected(const std::string& identity) {
+  std::lock_guard lock(mutex_);
+  return instances_.contains(identity);
+}
+
 namespace {
 bool valid_id(const std::string& value) {
   return !value.empty() && value.size() <= 128 &&

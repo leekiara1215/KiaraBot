@@ -6,7 +6,7 @@
 
 ## 结论
 
-1. **有封号风险，且根因不在 Core/插件层。** 当前链路用 NapCatQQ 以第三方工具操控 NTQQ 客户端登录**个人 QQ 号**（[README](../README.md#L10)）。《QQ 软件许可及服务协议》禁止以非腾讯授权第三方工具接入、以非人工方式批量操作，并明列封禁措施。腾讯据此处置账号时，代码层没有"技术合规"申诉空间。
+1. **有封号风险，且根因不在 Core/插件层。** 当前链路用 NapCatQQ 以第三方工具操控 NTQQ 客户端登录**个人 QQ 号**（[README](../README.md#目标架构)）。《QQ 软件许可及服务协议》禁止以非腾讯授权第三方工具接入、以非人工方式批量操作，并明列封禁措施。腾讯据此处置账号时，代码层没有"技术合规"申诉空间。
 2. **工程手段只能在保持个人号协议端的前提下降低概率、控制影响范围，不能"避免封号"。** 真正称得上"避免"的只有**渠道层替换**：接入官方 QQ 机器人（QQ 开放平台），或改用其他 IM 的官方 bot。
 3. **现有架构的隔离方向正确。** 渠道适配器可替换、Core 不解析 OneBot、当前只开放纯文本发送、Action 幂等且未知结果不重复调用平台。这样换渠道、停用个人号或按渠道降级时，Core 与插件不需要重写。
 4. **缺口集中在四处：** 没有出站发送配额；危险 Action 没有默认门禁；适配器不区分风控类平台错误；没有账号、网络和暴露面的运维规范。前两项应在 Core 的 Action 路径上强制，第三项在适配器落地，第四项写入运维文档。
@@ -32,7 +32,7 @@ C++ Core                                ← 权限、幂等、审计、Action �
 
 | 层 | 当前实现 | 典型封号/风控触发 | 现有控制 | 残余风险 |
 | --- | --- | --- | --- | --- |
-| L0 平台/协议端 | NapCatQQ 登录个人号（[README](../README.md#L10)、[THIRD_PARTY](../THIRD_PARTY_NOTICES.md#L27-L38)） | 第三方客户端识别、账号画像（新号、机房 IP、异常活跃）、被举报 | 无；由外部组件决定 | **高**，Core 无法消除 |
+| L0 平台/协议端 | NapCatQQ 登录个人号（[README](../README.md#目标架构)、[THIRD_PARTY](../THIRD_PARTY_NOTICES.md#L27-L38)） | 第三方客户端识别、账号画像（新号、机房 IP、异常活跃）、被举报 | 无；由外部组件决定 | **高**，Core 无法消除 |
 | L1 账号/网络 | 单账号，可部署在服务器 | 公网暴露 OneBot/WebUI、token 缺失、频繁切 IP/设备、多开 | 适配器要求 token；Core gRPC 只连 `127.0.0.1`；NapCat 不进入镜像 | 中高 |
 | L2 适配器 | NoneBot2 转发、本地 outbox、Action 执行日志 | 平台限频、错误重试导致重复发送、登录态失效 | 执行日志按 `action_id` 去重；未知结果不重发；重连退避 1–30 秒（[doc/04](04-nonebot-adapter.md#L7-L8)；适配器独立项目 README 的 outbox/去重说明） | 中 |
 | L3 Core/Action | 权限、能力、幂等、审计、1 万条容量 | 高频发送、群发、危险管理动作 | 只接受 `send_message` 文本；`MuteMember`/`KickMember`/`ApproveRequest` 当前被拒绝（[action_router.cpp](../core/src/action_router.cpp#L110-L119)） | 中，缺速率与内容策略 |
@@ -55,7 +55,7 @@ C++ Core                                ← 权限、幂等、审计、Action �
 
 ## 3. 现有设计中有效的隔离
 
-- **渠道可替换**：目标架构明确适配器可替换为 C++ 适配器而不改 Core（[README](../README.md#L25)、[doc/04](04-nonebot-adapter.md#L124-L134)）。换官方渠道时主要新增适配器实现，不改业务规则。
+- **渠道可替换**：目标架构明确适配器可替换为 C++ 适配器而不改 Core（[README](../README.md#目标架构)、[doc/04](04-nonebot-adapter.md#L124-L134)）。换官方渠道时主要新增适配器实现，不改业务规则。
 - **Core 不接触平台对象**：Core 禁止导入 NoneBot2/NapCat，插件不得调用 OneBot API（[doc/00](00-boundaries.md#L21)、[doc/00](00-boundaries.md#L72-L74)）；平台字段不会写进业务分支（[doc/02](02-core.md#L186-L197)）。
 - **当前 Action 面很窄**：Core 只接受 `send_message` 纯文本，踢人、禁言、审批等危险动作虽在契约中定义（[actions.proto](../proto/kiarabot/v1/actions.proto#L18-L26)），当前实现会拒绝（[action_router.cpp](../core/src/action_router.cpp#L110-L119)；适配器 `../kiarabot-adapter-nonebot/src/kiarabot_adapter_nonebot/actions.py` 的 `validate` 同样只放行 `send_message`）。
 - **不重复副作用**：适配器执行日志按 `action_id` 落盘占用，同键重投返回原结果；平台调用超时或未知时不重发，由 Core 按 deadline 过期（[doc/04](04-nonebot-adapter.md#L7-L8)）。

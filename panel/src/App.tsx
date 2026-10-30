@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { ApiClient, ApiError, type Health, type Page as ApiPage, type TokenPair } from './api/client';
+import { useCallback, useEffect, useState } from 'react';
+import { ApiClient, ApiError, type Health, type Page as ApiPage, type TokenPair, type Schemas } from './api/client';
 import { ControlStream, type SocketFactory, type StreamStatus } from './stream/control-stream';
 import './styles.css';
 
@@ -43,15 +43,25 @@ async function loadView(api: ApiClient, page: Exclude<Page, 'overview'>, token?:
 function formatTime(value: string) { const date = new Date(value); return Number.isNaN(date.valueOf()) ? value : date.toLocaleString('zh-CN'); }
 function errorText(error: unknown) { return error instanceof ApiError && error.status === 403 ? `权限不足，无法访问此资源（${error.code}）` : error instanceof Error ? error.message : '请求失败，请重试'; }
 
-export function App({ api, socketFactory, streamUrl = '/ws', mock = false }: { api: ApiClient; socketFactory: SocketFactory; streamUrl?: string; mock?: boolean }) {
+export function App({ api, socketFactory, streamUrl = '/ws/control', mock = false }: { api: ApiClient; socketFactory: SocketFactory; streamUrl?: string; mock?: boolean }) {
   const [tokens, setTokens] = useState<TokenPair>(); const [page, setPage] = useState<Page>('overview');
   const [authError, setAuthError] = useState('');
+  const [principal, setPrincipal] = useState<Schemas['Principal']>();
+  const [streamReady, setStreamReady] = useState(false);
+  const expire = useCallback(() => { api.setToken(); setTokens(undefined); setPrincipal(undefined); setStreamReady(false); setAuthError('会话已失效，请重新登录'); }, [api]);
+  useEffect(() => { api.setUnauthorizedHandler(expire); return () => api.setUnauthorizedHandler(); }, [api, expire]);
+  useEffect(() => {
+    if (!tokens) return;
+    let active = true;
+    api.principal().then((value) => { if (active) setPrincipal(value); }).catch(() => { if (active) expire(); });
+    return () => { active = false; };
+  }, [api, tokens, expire]);
   const [status, setStatus] = useState<StreamStatus>('disconnected'); const [revision, setRevision] = useState(0);
   useEffect(() => {
     if (!tokens) return;
-    const stream = new ControlStream({ url: streamUrl, accessToken: tokens.access_token, factory: socketFactory, onStatus: setStatus, onRefresh: () => setRevision((n) => n + 1) });
+    const stream = new ControlStream({ url: streamUrl, accessToken: tokens.access_token, factory: socketFactory, onStatus: (value) => { setStatus(value); if (value === 'connected') setStreamReady(true); }, onUnauthorized: expire, onRefresh: () => setRevision((n) => n + 1) });
     stream.start(); return () => stream.stop();
-  }, [tokens, socketFactory, streamUrl]);
+  }, [tokens, socketFactory, streamUrl, expire]);
   useEffect(() => {
     if (!tokens) return;
     let active = true;
@@ -59,7 +69,9 @@ export function App({ api, socketFactory, streamUrl = '/ws', mock = false }: { a
     return () => { active = false; clearTimeout(timer); };
   }, [api, tokens]);
   if (!tokens) return <Login api={api} mock={mock} initialError={authError} onLogin={(next) => { setAuthError(''); setTokens(next); }} />;
-  return <div className="shell"><aside className="sidebar"><div className="brand"><span className="brand-icon">K</span><div><strong>KiaraBot</strong><small>CONTROL PLANE</small></div></div><div className="nav-label">工作空间</div><nav aria-label="主导航">{nav.map((item) => <button key={item.key} className={page === item.key ? 'nav-item selected' : 'nav-item'} onClick={() => setPage(item.key)}><span aria-hidden="true">{item.icon}</span>{item.label}</button>)}</nav><div className="sidebar-bottom"><span className={`dot ${status}`} /> <span>{statusText[status]}</span></div></aside><main><header className="topbar"><div><span className="crumb">工作空间 / </span><strong>{nav.find((item) => item.key === page)?.label}</strong></div><div className="top-actions">{mock && <span className="mock-badge">MOCK 环境</span>}<button className="text-button" onClick={() => { api.setToken(); setTokens(undefined); setPage('overview'); }}>退出登录</button></div></header><div className="content"><div className="page-title"><div><p className="eyebrow">KIARABOT CONTROL</p><h1>{nav.find((item) => item.key === page)?.label}</h1><p className="muted">{page === 'overview' ? '系统运行状态与服务概览' : '查看来自控制 API 的最新数据'}</p></div><button className="secondary" onClick={() => setRevision((n) => n + 1)}>↻ 刷新</button></div><div role="status" className={`connection ${status}`}><span className={`dot ${status}`} />{statusText[status]}</div>{page === 'overview' ? <Overview api={api} revision={revision} /> : <ResourceView key={page} api={api} page={page} revision={revision} />}</div></main></div>;
+  const pagePermission: Record<Page, string> = { overview: 'health.read', bots: 'bot.read', adapters: 'adapter.read', plugins: 'plugin.read', models: 'model.read', permissions: 'user.read', tasks: 'task.read', logs: 'log.read', audit: 'audit.read' };
+  const visibleNav = nav.filter((item) => principal?.permissions.includes(pagePermission[item.key]));
+  return <div className="shell"><aside className="sidebar"><div className="brand"><span className="brand-icon">K</span><div><strong>KiaraBot</strong><small>CONTROL PLANE</small></div></div><div className="nav-label">工作空间</div><nav aria-label="主导航">{visibleNav.map((item) => <button key={item.key} className={page === item.key ? 'nav-item selected' : 'nav-item'} onClick={() => setPage(item.key)}><span aria-hidden="true">{item.icon}</span>{item.label}</button>)}</nav><div className="sidebar-bottom"><span className={`dot ${status}`} /> <span>{statusText[status]}</span></div></aside><main><header className="topbar"><div><span className="crumb">工作空间 / </span><strong>{nav.find((item) => item.key === page)?.label}</strong></div><div className="top-actions"><span>{principal?.roles.join("、")}</span>{mock && <span className="mock-badge">MOCK 环境</span>}<button className="text-button" onClick={async () => { try { if (principal) await api.revokeSession(principal.session_id); } finally { api.setToken(); setTokens(undefined); setPrincipal(undefined); setStreamReady(false); setPage('overview'); } }}>退出登录</button></div></header><div className="content"><div className="page-title"><div><p className="eyebrow">KIARABOT CONTROL</p><h1>{nav.find((item) => item.key === page)?.label}</h1><p className="muted">{page === 'overview' ? '系统运行状态与服务概览' : '查看来自控制 API 的最新数据'}</p></div><button className="secondary" onClick={() => setRevision((n) => n + 1)}>↻ 刷新</button></div><div role="status" className={`connection ${status}`}><span className={`dot ${status}`} />{statusText[status]}</div>{!streamReady || !principal ? <p>正在建立会话…</p> : page === 'overview' ? <Overview api={api} revision={revision} /> : <ResourceView key={page} api={api} page={page} revision={revision} />}</div></main></div>;
 }
 function Login({ api, onLogin, mock, initialError }: { api: ApiClient; onLogin: (tokens: TokenPair) => void; mock: boolean; initialError: string }) {
   const [username, setUsername] = useState(''); const [password, setPassword] = useState(''); const [error, setError] = useState(initialError); const [busy, setBusy] = useState(false);
@@ -72,6 +84,7 @@ function Overview({ api, revision }: { api: ApiClient; revision: number }) {
 }
 function ResourceView({ api, page, revision }: { api: ApiClient; page: Exclude<Page, 'overview'>; revision: number }) {
   const [data, setData] = useState<ViewData>(); const [error, setError] = useState(''); const [loading, setLoading] = useState(true); const [token, setToken] = useState<string>();
+  useEffect(() => { setToken(undefined); }, [revision]);
   useEffect(() => { let active = true; setLoading(true); setError(''); loadView(api, page, token).then((value) => { if (active) setData(value); }).catch((e) => { if (active) { setData(undefined); setError(errorText(e)); } }).finally(() => { if (active) setLoading(false); }); return () => { active = false; }; }, [api, page, revision, token]);
   return <section className="table-card"><div className="table-head"><div><p className="eyebrow">LIVE DATA</p><h2>{nav.find((item) => item.key === page)?.label}列表</h2></div><span className="count">{data?.rows.length ?? 0} 条</span></div>{loading && <p className="empty">正在加载…</p>}{error && <div role="alert" className="error">{error}</div>}{!loading && data && (data.rows.length ? <div className="table-wrap"><table><thead><tr>{data.columns.map((column) => <th key={column}>{column}</th>)}</tr></thead><tbody>{data.rows.map((row) => <tr key={row.id}>{row.cells.map((cell, index) => <td key={index}>{cell}</td>)}</tr>)}</tbody></table></div> : <p className="empty">暂无数据</p>)}<div className="pagination">{token && <button className="secondary" onClick={() => setToken(undefined)}>返回首页</button>}{data?.next && <button className="secondary" onClick={() => setToken(data.next)}>下一页 →</button>}</div></section>;
 }

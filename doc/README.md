@@ -52,7 +52,7 @@ tests/             跨模块测试
 doc/               架构和开发规范
 ```
 
-Python NoneBot2 适配器按独立项目维护，不把实现放回本仓库的 `core/`、`plugins/` 或 `panel/`。
+Python NoneBot2 适配器由本仓库 `adapters/` 维护（当前实现暂存于同级独立检出 `../kiarabot-adapter-nonebot/`，待迁入），不把实现放进 `core/`、`plugins/` 或 `panel/`；后续可再考虑拆成单独插件。
 
 ## 文档索引
 

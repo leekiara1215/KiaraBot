@@ -8,5 +8,5 @@ const useMock = import.meta.env.VITE_API_MODE !== 'live';
 const mock = new MockServer();
 const api = new ApiClient(useMock ? mock.fetch : fetch, import.meta.env.VITE_API_BASE || '/api/v1');
 const factory: SocketFactory = useMock ? mock.socketFactory : (url) => new WebSocket(url);
-const streamUrl = import.meta.env.VITE_WS_URL || `${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/ws`;
+const streamUrl = import.meta.env.VITE_WS_URL || `${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/ws/control`;
 createRoot(document.getElementById('root')!).render(<React.StrictMode><App api={api} socketFactory={factory} streamUrl={streamUrl} mock={useMock} /></React.StrictMode>);

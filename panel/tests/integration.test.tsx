@@ -63,14 +63,27 @@ describe('WebSocket resume and resync', () => {
     stream.start(); await Promise.resolve(); await Promise.resolve();
     expect(server.sockets[0].sent[0]).toEqual({ type: 'hello', access_token: 'mock-access-token-0123456789', last_sequence: 0 });
     server.sockets[0].emit({ schema_version: 'kiarabot.stream.v1', event_type: 'future.event', sequence: 4, occurred_at: '2026-01-01T00:00:00Z', payload: {}, unknown: true });
-    expect(refresh).not.toHaveBeenCalled();
+    expect(refresh).toHaveBeenCalledTimes(1);
     server.sockets[0].close(); vi.advanceTimersByTime(1000); await Promise.resolve(); await Promise.resolve();
     expect(server.sockets[1].sent[0]).toEqual({ type: 'resume', access_token: 'mock-access-token-0123456789', session_id: 'mock-session-capability-0123456789', last_sequence: 4 });
     server.sockets[1].emit({ type: 'RESYNC_REQUIRED', reason: 'expired' });
     expect(statuses).toContain('resync');
     vi.advanceTimersByTime(1000); await Promise.resolve(); await Promise.resolve();
     expect(server.sockets[2].sent[0]).toEqual({ type: 'hello', access_token: 'mock-access-token-0123456789', last_sequence: 0 });
-    expect(refresh).toHaveBeenCalledTimes(1);
+    expect(refresh).toHaveBeenCalledTimes(3);
     stream.stop();
+  });
+});
+
+describe('authentication races', () => {
+  it('does not expire a newer session when an old request receives 401', async () => {
+    let respond!: (response: Response) => void;
+    const api = new ApiClient(() => new Promise<Response>((resolve) => { respond = resolve; }));
+    const expired = vi.fn(); api.setUnauthorizedHandler(expired); api.setToken('old');
+    const pending = api.health();
+    api.setToken('new');
+    respond(new Response(JSON.stringify({ code: 'UNAUTHENTICATED' }), { status: 401 }));
+    await expect(pending).rejects.toMatchObject({ status: 401 });
+    expect(expired).not.toHaveBeenCalled();
   });
 });

@@ -21,6 +21,10 @@ export class ApiError extends Error {
 
 export class ApiClient {
   private accessToken?: string;
+  private unauthorized?: () => void;
+  setUnauthorizedHandler(handler?: () => void) { this.unauthorized = handler; }
+  principal() { return this.request<Schemas['Principal']>('/auth/me'); }
+  revokeSession(sessionId: string) { return this.request<void>(`/auth/sessions/${encodeURIComponent(sessionId)}/revoke`, { method: 'POST' }); }
   constructor(private readonly fetcher: Fetcher = fetch, private readonly base = '/api/v1') {}
   setToken(token?: string) { this.accessToken = token; }
   async login(input: LoginRequest): Promise<TokenPair> {
@@ -29,7 +33,10 @@ export class ApiClient {
     return tokens;
   }
   async refresh(refreshToken: string): Promise<TokenPair> {
-    return this.request<TokenPair>('/auth/refresh', { method: 'POST', body: { refresh_token: refreshToken }, auth: false });
+    const previous = this.accessToken;
+    const tokens = await this.request<TokenPair>('/auth/refresh', { method: 'POST', body: { refresh_token: refreshToken }, auth: false });
+    if (this.accessToken === previous) this.setToken(tokens.access_token);
+    return tokens;
   }
   health() { return this.request<Health>('/health'); }
   bots(token?: string) { return this.list<GenericResource>('/bots', token); }
@@ -43,17 +50,20 @@ export class ApiClient {
   audit(token?: string) { return this.list<AuditEntry>('/audit', token); }
   private list<T>(path: string, token?: string): Promise<Page<T>> { return this.request(`${path}${token ? `?page_token=${encodeURIComponent(token)}` : ''}`); }
   private async request<T>(path: string, options: { method?: string; body?: unknown; auth?: boolean } = {}): Promise<T> {
+    const requestToken = this.accessToken;
     const headers = new Headers({ Accept: 'application/json' });
     if (options.body !== undefined) {
       headers.set('Content-Type', 'application/json');
-      headers.set('Idempotency-Key', crypto.randomUUID());
     }
+    if (options.method && options.method !== 'GET') headers.set('Idempotency-Key', crypto.randomUUID());
     if (options.auth !== false && this.accessToken) headers.set('Authorization', `Bearer ${this.accessToken}`);
     const response = await this.fetcher(`${this.base}${path}`, { method: options.method ?? 'GET', headers, body: options.body === undefined ? undefined : JSON.stringify(options.body) });
     if (!response.ok) {
+      if (response.status === 401 && options.auth !== false && requestToken === this.accessToken) this.unauthorized?.();
       const error: Partial<ErrorBody> = await response.json().catch(() => ({}));
       throw new ApiError(response.status, error.code ?? 'INTERNAL', error.message ?? `HTTP ${response.status}`, error.request_id);
     }
+    if (response.status === 204 || response.status === 202) return undefined as T;
     return response.json() as Promise<T>;
   }
 }

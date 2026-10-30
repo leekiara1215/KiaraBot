@@ -32,7 +32,7 @@ SDK 提供真实本机 gRPC FakeHost，用于注册、事件、ACK、拒绝和�
 
 ## T03a 当前桥接子集
 
-PluginBridge 首帧注册绑定认证主体，要求 api_version=kiarabot.plugin.v1、runtime=python-rpc、isolation=process。当前只支持无依赖、空配置 schema（空串或 {}）的事件插件；未实现的配置/依赖/运行时明确返回 CAPABILITY_NOT_SUPPORTED。权限必须是宿主配置允许列表的子集，自报清单不会授予权限。
+PluginBridge 首帧注册绑定认证主体，要求 api_version=kiarabot.plugin.v1、runtime=python-rpc、isolation=process。当前只支持无依赖、空配置 schema（空串或 {}）的事件插件；未实现的配置 schema/依赖/运行时明确返回 CAPABILITY_NOT_SUPPORTED。权限必须是宿主配置允许列表的子集，自报清单不会授予权限。
 
 事件订阅由 capabilities 决定：event.message.received / event.message.sent 需要 message.read，event.group.member.changed 需要 member.read，event.friend.request 需要 request.read，event.adapter.status.changed 需要 adapter.read。未知 capability 拒绝。注册成功只表示该进程外连接已可收事件，不表示 Core 已启动或管理插件进程；启动器仍属于 T03b。
 
@@ -223,11 +223,13 @@ list(owner_plugin_id)
 
 ### ConfigService
 
-Core 使用 JSON Schema 校验插件配置，并向插件推送带版本号的配置变更：
+当前只支持空配置 schema（空串或 `{}`），非空 schema 返回 CAPABILITY_NOT_SUPPORTED；JSON Schema 解释器仍为后续能力。Core 向协商 `plugin.config.v1` 的插件推送带版本和 delivery_id 的完整配置：
 
 ```text
-on_config_changed(old_config, new_config)
+on_config(PluginConfig, Context)
 ```
+
+成功返回才确认应用；上一成功快照可从 context.config 读取。详见本页配置下发闭环。
 
 ### Host RPC 契约
 
@@ -332,3 +334,13 @@ FakeScheduler
 ## 代码启动句
 
 > 请只实现 PluginSDK v1 的插件清单校验、进程外生命周期、事件订阅、MessageService、ModelService、StorageService、PermissionService 和 SchedulerService 接口，使用 fake host 完成 Python 插件端到端测试，不连接 QQ 和真实模型。
+
+## 配置下发闭环（T08b 后续）
+
+REST PUT 配置成功只确认 desired version/value 已加密持久化；GET 返回当前连接的 delivery：UNAVAILABLE（离线、停用或未协商）、PENDING、APPLIED、REJECTED，以及该连接最后成功的 applied_version。REJECTED 带脱敏稳定 Error。PUT 与幂等重放不携带瞬时 delivery，查询使用 GET；接口权限与 HTTP 错误映射不变。状态只在内存保留，Core 重启/断线清除应用证据，重新连接必须重新确认。配置值仍禁止秘密字段，只支持空 schema，不新增 JSON Schema 解释器。
+
+PluginBridge 协商 `plugin.config.v1`，注册后下发最新完整 PluginConfig（初始 version=0、values={}）。每连接最多一条在途配置，delivery_id 随机且绑定会话；SDK 的 `on_config(config, context)` 成功后才发送 PluginConfigAck。SDK 保存配置副本为 `context.config`；该属性返回副本，失败保留上一成功快照。配置回调与事件回调串行，但 RPC 响应继续独立接收，因此回调可调用 Host API。回调异常 INTERNAL、协作超时 TIMEOUT；PluginError 保留稳定码和 retryable，无原始异常文本。
+
+Core 等待 ACK 最多十秒，SDK 回调上限为 min(hook_timeout, apply_timeout_ms/1000)，宿主下发 5000 ms。当前版本被拒绝或超时后不在同连接自动重试；提交新版本或重连恢复。Core 发现新版本后暂停新的事件投递，直到该 desired version 应用成功；已经执行的事件不撤销。失败不是回滚插件自有副作用的承诺，回调应先校验后原子替换本地状态。拒绝取消的回调沿用进程隔离退出机制。
+
+更新期间保留在途帧，随后合并到最新 desired version，允许跳过中间版本。旧版本 ACK 不会让新版本显示 APPLIED；重复当前 delivery ACK 幂等，超时后的 ACK 不改变结果；错误 delivery/version 为 INVALID_ARGUMENT 并关闭流，旧连接 PERMISSION_DENIED。关闭/重启可能发生“已应用但 ACK 丢失”，重连重新应用最新快照，插件应使配置回调幂等。旧客户端不请求该能力时仍可收事件；API 不宣称其已应用配置。存储读取失败沿用 UPSTREAM_UNAVAILABLE/INTERNAL，关闭流后等待恢复，不回退到空配置。

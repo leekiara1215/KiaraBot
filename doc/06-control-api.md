@@ -200,3 +200,28 @@ AuthorizedCommands 是 Core 内部入口：调用方必须从已认证连接构�
 execute 的回调只能修改传入的 RuntimeSnapshot，不得执行网络/平台副作用或另启 Runtime 事务。业务修改、成功幂等记录和审计在同一提交中完成；提交失败全部不生效。幂等范围为主体+权限+资源+键，同键同 fingerprint 重放成功且不重复审计；不同 fingerprint 返回 CONFLICT。重放前重新鉴权。拒绝及回调失败记录审计，失败回调的状态变更被回滚；错误详情只保留稳定码和请求标识，不转发回调的自由文本。审计满（默认十万条）时返回 UPSTREAM_UNAVAILABLE 且不执行回调。审计/幂等保留和清理策略须后续管理任务落实，不能当作无限容量服务。
 
 SQLite schema v2 保存审计和命令幂等记录，并事务化升级 v1 快照；该版本仍不包含 Host 模型/任务/命名空间存储。控制 API 和桥接业务还需在相应任务中使用这一入口；当前网络服务不会因该类存在就获得业务能力。
+
+## T08b 实施与验收范围
+
+Core ControlService 实现同进程端口，control/api 使用 Boost.Beast 提供回环 HTTP；生产由同机反向代理终止 HTTPS/WSS，服务拒绝非回环监听。会话及幂等响应使用 libsodium Argon2id/secretbox，控制密钥由私有配置提供，错误仅输出稳定码。状态存于 RuntimeStore 保留命名空间 `$control` 的加密文档，与成功审计同一事务提交；插件身份不允许 `$`，不能访问这些记录。控制存储未新增 SQLite schema；后续配置确认帧见本页配置下发闭环。
+
+首版账号/角色及已安装插件由启动配置指定；没有用户创建或插件安装 API。插件 enable/disable 持久化投递开关，停用后拒绝注册和新投递，已发生的平台副作用不会撤回；enable 允许外部 SDK 重连，202 不代表进程启动完成。配置 API 管理非秘密 JSON 配置与不透明版本；敏感字段拒绝，更新成功仅表示控制配置已持久化；运行实例应用情况由 GET 的 delivery 确认，见配置下发闭环。未配置的资源返回真实空集合，不填充演示数据。
+
+验收包含同一传输映射调用 fake/真实应用端口、HTTP 契约、登录/轮换/撤销、服务端角色、不可变分页、配置冲突、幂等重放、拒绝审计、超时/依赖故障回滚和 SQLite 重启恢复。T07b 真实 QQ/模型不参与本验收。
+
+## T09a 事件流实现
+
+同一监听提供 `/ws/control` 及 health/logs/adapters/plugins/tasks/messages 频道。会话绑定 REST 会话、用户、当前权限和频道；令牌只出现在首帧与服务内存。消息正文不进入投影，默认角色不能订阅 messages。服务器每 100ms 比较经过 Core 授权的资源投影，推送变更后的当前状态；这是允许合并中间状态的刷新通知，不替代逐操作审计。每条已发布通知保留十分钟，客户端仍遵守先 SESSION_READY、再 REST 快照的顺序。
+
+重连按每流序号重放，SESSION_READY 确认客户端最后已处理位置，之后才重放后续事件。保留过期或容量上限导致无法补齐时明确 RESYNC_REQUIRED，禁止静默跳过；进程重启丢弃内存流会话，旧客户端收到 SERVER_RESTART 并重建快照。每次轮询重新核验认证，撤销/过期最迟一秒关闭；慢连接有界排队并关闭，不能无限缓存。实时流不声称保存每一次中间状态。
+
+
+## T11a 进程健康契约
+
+OpenAPI 单独定义根路径 `/health/live` 和 `/health/ready`（每路径 servers=/，不带 /api/v1）。两者无认证且只返回 `{state: HEALTHY}` 或稳定 Error，不披露配置、版本、用户或凭据；监听仍仅限回环。live 不调用存储，ready 在迁移、gRPC/控制监听初始化后执行无业务修改的写事务探针，读写失败 503。`/api/v1/health` 保留认证/RBAC 和 Health 组件详情，同时验证存储可写；探针失败不表示进程死亡。历史 `/health/details` 不实现，使用认证的 `/api/v1/health`。
+
+## 配置下发闭环
+
+配置通过 plugin.config.v1 / PluginConfig / PluginConfigAck 下发并按连接确认。REST GET 的 delivery 区分持久化与运行实例应用，PUT/幂等重放只确认持久化。状态、超时、重连、错误及事件门控的完整规则见 [PluginSDK 配置下发闭环](03-plugin-sdk.md#配置下发闭环t08b-后续)。协议唯一来源为 proto/kiarabot/v1/plugins.proto，REST 为 api/openapi.yaml；无新增错误码或 HTTP/gRPC 映射。
+
+GET 配置的 delivery 是查询时观察值，未新增 WebSocket 事件类型；现有 plugin.updated 表示期望配置/插件投影变化，不承诺确认状态推送，客户端轮询 GET 观察应用结果。

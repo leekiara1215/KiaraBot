@@ -33,6 +33,15 @@ class Context:
         self._permissions = frozenset()
         self._rpc = None
         self._features = frozenset()
+        self._config = None
+
+    @property
+    def config(self):
+        if self._config is None:
+            return None
+        result = plugins.PluginConfig()
+        result.CopyFrom(self._config)
+        return result
 
     @property
     def granted_permissions(self) -> frozenset[str]:
@@ -132,6 +141,9 @@ class Plugin:
     async def on_event(self, event, context: Context) -> None:
         raise PluginError(common.CAPABILITY_NOT_SUPPORTED)
 
+    async def on_config(self, config, context: Context) -> None:
+        pass
+
     async def on_stop(self, reason: str) -> None:
         pass
 
@@ -217,11 +229,13 @@ class Runner:
 
     async def _session(self):
         self.context._permissions = frozenset()
+        self.context._config = None
         instance = str(uuid.uuid4())
         pending = {}
         expected = {}
         write_lock = asyncio.Lock()
-        event_queue = asyncio.Queue(maxsize=1)
+        event_queue = asyncio.Queue(maxsize=2)
+        config_seen = {}
         worker = read_task = None
         async with grpc.aio.insecure_channel(self.options.endpoint, options=[
             ('grpc.max_receive_message_length', 1024 * 1024),
@@ -259,7 +273,39 @@ class Runner:
 
             async def events():
                 while True:
-                    event = await event_queue.get()
+                    frame = await event_queue.get()
+                    if frame.HasField('config'):
+                        config = frame.config
+                        fingerprint = config.SerializeToString(deterministic=True)
+                        previous = config_seen.get(config.delivery_id)
+                        if previous:
+                            if previous[0] != fingerprint:
+                                raise PluginError(common.INVALID_ARGUMENT)
+                            await write(plugins.PluginToCore(config_ack=previous[1]))
+                            continue
+                        ack = plugins.PluginConfigAck(version=config.version, delivery_id=config.delivery_id)
+                        snapshot = plugins.PluginConfig()
+                        snapshot.CopyFrom(config)
+                        try:
+                            await invoke(self.plugin.on_config(config, self.context),
+                                         min(self.options.hook_timeout, config.apply_timeout_ms / 1000))
+                            self.context._config = snapshot
+                            ack.accepted = True
+                        except UncooperativeHook:
+                            raise
+                        except Exception as failure:
+                            code = failure.code if isinstance(failure, PluginError) else common.INTERNAL
+                            retryable = failure.retryable if isinstance(failure, PluginError) else False
+                            if not code or code not in common.ErrorCode.values():
+                                code, retryable = common.INTERNAL, False
+                            ack.error.CopyFrom(common.Error(code=code, message=common.ErrorCode.Name(code),
+                                request_id=ack.delivery_id, retryable=retryable))
+                        config_seen[ack.delivery_id] = (fingerprint, ack)
+                        if len(config_seen) > 32:
+                            del config_seen[next(iter(config_seen))]
+                        await write(plugins.PluginToCore(config_ack=ack))
+                        continue
+                    event = frame.event
                     event_id, trace_id = event.event_id, event.trace_id
                     ack = plugins.PluginEventAck(event_id=event_id)
                     try:
@@ -276,7 +322,7 @@ class Runner:
 
             try:
                 await write(plugins.PluginToCore(register=plugins.RegisterPluginRequest(
-                    manifest=self.manifest, instance_id=instance, supported_features=['action.result.v1', 'host.storage.v1', 'host.model.v1', 'host.tasks.v1'])))
+                    manifest=self.manifest, instance_id=instance, supported_features=['action.result.v1', 'host.storage.v1', 'host.model.v1', 'host.tasks.v1', 'plugin.config.v1'])))
                 response = await asyncio.wait_for(call.read(), self.options.io_timeout)
                 if response is grpc.aio.EOF or response.WhichOneof('body') != 'register_result':
                     raise PluginError(common.UPSTREAM_UNAVAILABLE, True)
@@ -287,7 +333,7 @@ class Runner:
                         or set(registered.granted_permissions) != set(self.manifest.permissions)
                         or len(registered.granted_permissions) != len(set(registered.granted_permissions))
                         or registered.HasField('error')
-                        or not set(registered.enabled_features).issubset({'action.result.v1', 'host.storage.v1', 'host.model.v1', 'host.tasks.v1'})):
+                        or not set(registered.enabled_features).issubset({'action.result.v1', 'host.storage.v1', 'host.model.v1', 'host.tasks.v1', 'plugin.config.v1'})):
                     raise PluginError(common.PERMISSION_DENIED)
                 self.context._permissions = frozenset(registered.granted_permissions)
                 self.context._features = frozenset(registered.enabled_features)
@@ -341,15 +387,24 @@ class Runner:
                         else:
                             future.set_exception(PluginError(common.UPSTREAM_UNAVAILABLE, True))
                         continue
-                    if kind != 'event':
+                    if kind == 'config':
+                        config = response.config
+                        if 'plugin.config.v1' not in self.context._features:
+                            raise PluginError(common.CAPABILITY_NOT_SUPPORTED)
+                        if (not config.version
+                                or len(config.version) > 128 or not config.delivery_id
+                                or len(config.delivery_id) > 128 or not 1 <= config.apply_timeout_ms <= 5000):
+                            raise PluginError(common.INVALID_ARGUMENT)
+                    elif kind != 'event':
                         raise PluginError(common.CAPABILITY_NOT_SUPPORTED)
                     try:
-                        event_queue.put_nowait(response.event)
+                        event_queue.put_nowait(response)
                     except asyncio.QueueFull:
                         raise PluginError(common.RATE_LIMITED, True) from None
             finally:
                 self.context._permissions = frozenset()
                 self.context._features = frozenset()
+                self.context._config = None
                 self.context._rpc = None
                 call.cancel()
                 for future in pending.values():

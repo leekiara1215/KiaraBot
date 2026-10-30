@@ -36,9 +36,40 @@ x-control-policy:
     order: Ascending ID except audit/logs/sessions, which use timestamp then ID. Audit/logs use occurred_at; sessions use created_at.
     last_page: Omit next_page_token.
     stream: Subscribe and receive SESSION_READY before fetching REST snapshots; buffer stream events during snapshot fetch and refresh affected resources afterwards.
-  plugin_commands: 202 means durably accepted, not completed. Query plugin status/health for completion. Config writes compare expected_version before commit.
+  plugin_commands: 202 means durably accepted, not completed. Enable/disable controls registration and new delivery, without claiming process start or cancellation of existing external effects. Query plugin status/health for completion.
+  plugin_configuration: Config writes compare expected_version before commit and persist non-secret control values. Successful writes confirm persistence only. GET includes live delivery status; APPLIED requires a matching plugin.config.v1 acknowledgement.
+  limits: Login is limited to 30 attempts per normalized username per minute. At most 4096 unexpired authentication sessions, 10000 retained successful receipts and 1024 in-memory page cursors. Exceeding a limit returns RATE_LIMITED.
   audit: Every mutation, authorization denial and authentication failure records a stable outcome without credentials or message bodies. Audit failure prevents new effects.
 paths:
+  /health/live:
+    servers: [{ url: / }]
+    get:
+      operationId: getProcessLiveness
+      x-permission: public
+      x-process-probe: true
+      security: []
+      summary: Process liveness without database access
+      responses:
+        '200':
+          description: The HTTP process is alive, independent of storage readiness
+          content: { application/json: { schema: { $ref: '#/components/schemas/ProcessProbe' } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '500': { $ref: '#/components/responses/Internal' }
+  /health/ready:
+    servers: [{ url: / }]
+    get:
+      operationId: getProcessReadiness
+      x-permission: public
+      x-process-probe: true
+      security: []
+      summary: Readiness after migration and a successful storage write probe
+      responses:
+        '200':
+          description: Core transports started and runtime storage accepts transactions
+          content: { application/json: { schema: { $ref: '#/components/schemas/ProcessProbe' } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '500': { $ref: '#/components/responses/Internal' }
+        '503': { $ref: '#/components/responses/Unavailable' }
   /auth/me:
     get:
       operationId: getCurrentPrincipal
@@ -543,6 +574,12 @@ components:
       description: Query timed out (TIMEOUT); action outcome may remain unknown
       content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
   schemas:
+    ProcessProbe:
+      type: object
+      required: [state]
+      additionalProperties: false
+      properties:
+        state: { $ref: '#/components/schemas/HealthState' }
     Principal:
       type: object
       required: [user_id, session_id, roles, permissions]
@@ -672,8 +709,23 @@ components:
       type: object
       required: [version, values]
       properties:
+        delivery: { $ref: '#/components/schemas/PluginConfigDelivery' }
         version: { type: string }
         values: { type: object, additionalProperties: true }
+    PluginConfigDelivery:
+      type: object
+      additionalProperties: false
+      required: [state]
+      properties:
+        state: { type: string, enum: [UNAVAILABLE, PENDING, APPLIED, REJECTED] }
+        applied_version: { type: string }
+        error: { $ref: '#/components/schemas/Error' }
+      description: >-
+        GET-only live observation. UNAVAILABLE means no negotiated active connection;
+        PENDING means the desired version is not confirmed; APPLIED means its callback
+        completed on this connection; REJECTED includes a sanitized callback error or TIMEOUT.
+        Applied version is scoped to the active connection and is cleared on reconnect.
+        PUT responses and idempotent replays confirm persistence, not application.
     PluginConfigUpdate:
       type: object
       required: [expected_version, values]

@@ -11,6 +11,7 @@ class FakeHost(services.PluginBridgeServicer):
         self.token = token
         self.registrations = asyncio.Queue()
         self.acknowledgements = asyncio.Queue()
+        self.config_acknowledgements = asyncio.Queue()
         self.outgoing = asyncio.Queue()
         self.grants = None
         self.features = []
@@ -50,6 +51,8 @@ class FakeHost(services.PluginBridgeServicer):
             async for request in requests:
                 if request.WhichOneof('body') == 'event_ack':
                     await self.acknowledgements.put(request.event_ack)
+                elif request.WhichOneof('body') == 'config_ack':
+                    await self.config_acknowledgements.put(request.config_ack)
                 elif request.WhichOneof('body') in ('action', 'action_query', 'action_cancel'):
                     await self.actions.put(request)
                 elif request.WhichOneof('body') == 'host_request':

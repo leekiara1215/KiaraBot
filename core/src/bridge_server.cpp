@@ -377,6 +377,27 @@ public:
       guard.sender = std::jthread([&](std::stop_token stop) {
         try {
           while (!stop.stop_requested() && !context->IsCancelled()) {
+            const auto configuration = hub_->next_config(registration.session);
+            if (const auto* failure = std::get_if<kiarabot::v1::Error>(&configuration)) {
+              kiarabot::v1::CoreToPlugin output;
+              *output.mutable_error() = *failure;
+              {
+                std::lock_guard lock(write_mutex);
+                stream->Write(output);
+              }
+              context->TryCancel();
+              break;
+            }
+            if (const auto& frame =
+                    std::get<std::optional<kiarabot::v1::PluginConfig>>(configuration)) {
+              kiarabot::v1::CoreToPlugin output;
+              *output.mutable_config() = *frame;
+              std::lock_guard lock(write_mutex);
+              if (!stream->Write(output)) {
+                context->TryCancel();
+                break;
+              }
+            }
             const auto delivery = hub_->next(registration.session);
             kiarabot::v1::CoreToPlugin output;
             if (const auto* error = std::get_if<kiarabot::v1::Error>(&delivery)) {
@@ -416,7 +437,9 @@ public:
       while (stream->Read(&request)) {
         response.Clear();
         PortStatus outcome = std::monostate{};
-        if (request.has_event_ack()) {
+        if (request.has_config_ack()) {
+          outcome = hub_->acknowledge_config(registration.session, request.config_ack());
+        } else if (request.has_event_ack()) {
           outcome = hub_->acknowledge(registration.session, request.event_ack());
         } else if (request.has_host_request() &&
                    (request.host_request().has_model_chat() ? model_enabled

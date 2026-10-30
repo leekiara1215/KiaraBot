@@ -59,3 +59,5 @@ Connect 使用单个 bearer metadata，错误详情携带序列化 Error；身�
 ## 适配器持久化确认（T02a）
 
 CoreToAdapter 新增 oneof event_ack=4，类型 AdapterEventAck；原字段编号保持不变。PERSISTED/DUPLICATE 才允许适配器移除本地待确认事件；REJECTED 必须检查稳定 Error.code/retryable。未知字段兼容旧客户端，但旧客户端必须升级支持 event_ack 后才能可靠清理缓存。注册 protocol_version 和事件 schema_version 为 kiarabot.v1。
+
+配置能力 `plugin.config.v1` 使用 PluginConfig.delivery_id/apply_timeout_ms 与 PluginToCore.config_ack=8（PluginConfigAck）。旧客户端不协商则不下发；确认、失败、重连语义见 doc/03-plugin-sdk.md。

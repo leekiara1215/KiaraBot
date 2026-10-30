@@ -117,3 +117,11 @@ Host 请求按注册插件身份隔离。任务创建与取消使用幂等键；
 入口串行提交，使用带长度的三元组会话键防止拼接冲突。重投的内容 fingerprint 使用确定性 Protobuf + SHA-256，忽略 source.adapter_instance_id（重连后须填新实例），其余内容应保持相同。同 event_id 不同内容返回 CONFLICT，不覆盖已存记录；重复确认不重复推进水位/审计/副作用。成功返回前必须提交，连接在提交后断开时，重投得到 DUPLICATE。当前命令幂等元数据保留到显式清理，尚未实现清理调度。
 
 队列上限默认 1024，满时回复可重试 RATE_LIMITED 并关闭本次流，不再读取后续业务消息；未确认事件仍属于发送方，退避后重连重投。应用层不缓存额外事件；gRPC 单消息上限 1 MiB。新注册在同一入口锁内替换旧实例，存储 I/O 后释放锁再发送响应。启用 T03a 后按活动订阅快照同步创建逐插件投递；未配置插件入口时只入 inbox。
+
+## 控制面实时刷新（T09a）
+
+REST 不可变分页用于一致列表；WebSocket 是资源状态刷新通知，Core 投影每 100ms 比较，可合并中间状态。先建立流收到 SESSION_READY，再读取 REST；读取期间来的事件需要标记并在加载后刷新。已发布事件按流保留十分钟并按序重放，序号不跨流或重启延续。无法补齐明确 RESYNC_REQUIRED；客户端重新 hello 并全量刷新。状态通知不是审计和业务投递 ACK，不得用于计算平台副作用次数。
+
+## 配置下发闭环
+
+配置通过 plugin.config.v1 / PluginConfig / PluginConfigAck 下发并按连接确认。REST GET 的 delivery 区分持久化与运行实例应用，PUT/幂等重放只确认持久化。状态、超时、重连、错误及事件门控的完整规则见 [PluginSDK 配置下发闭环](03-plugin-sdk.md#配置下发闭环t08b-后续)。协议唯一来源为 proto/kiarabot/v1/plugins.proto，REST 为 api/openapi.yaml；无新增错误码或 HTTP/gRPC 映射。

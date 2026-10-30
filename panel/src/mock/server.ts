@@ -29,6 +29,8 @@ export class MockServer {
     }
     if (path === '/auth/refresh') return json({ access_token: 'mock-access-token-rotated-0123456789', refresh_token: 'mock-refresh-token-rotated-0123456789', expires_in: 900 } satisfies Schemas['TokenPair']);
     if (!new Headers(init?.headers).get('Authorization')) return json({ code: 'UNAUTHENTICATED', message: '请登录', request_id: 'mock-auth' }, 401);
+    if (path === '/auth/me') return json({ user_id: 'mock-user', session_id: 'mock-session', roles: ['admin'], permissions: ['health.read', 'bot.read', 'adapter.read', 'plugin.read', 'model.read', 'user.read', 'group.read', 'task.read', 'log.read', 'audit.read'] } satisfies Schemas['Principal']);
+    if (path.endsWith('/revoke')) return new Response(null, { status: 204 });
     if (this.denied.has(path)) return json({ code: 'PERMISSION_DENIED', message: '权限不足', request_id: 'mock-denied' }, 403);
     const value = data[path as keyof typeof data];
     return value ? json(value) : json({ code: 'NOT_FOUND', message: '资源不存在', request_id: 'mock-missing' }, 404);

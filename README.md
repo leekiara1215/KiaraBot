@@ -1,72 +1,144 @@
 # KiaraBot
 
-KiaraBot 是一个面向 QQ 的可扩展机器人平台。当前仓库保存 C++ Core、跨语言协议、PluginSDK 和控制面板的设计；Python NoneBot2 适配器作为独立组件接入，不与 Core 业务代码混在一起。
+KiaraBot 是一个面向 QQ 的可扩展机器人平台：C++20 Core 负责事件、权限、插件调度和业务编排，Protobuf/gRPC 契约隔离各进程，Python PluginSDK 支持进程外插件，TypeScript 控制面板通过 Control API 管理运行时。QQ 协议端 NapCatQQ 是独立组件；Python NoneBot2 适配器由本仓库维护（规划 `adapters/`，当前源码暂存于同级检出），二者都只通过公共协议接入。后续可再考虑把适配器拆成单独插件。
 
 ## 目标架构
 
 ```text
 QQ
 │
-└─ NapCatQQ                         独立 QQ 协议端
+└─ NapCatQQ                          独立 QQ 协议端
    │ OneBot V11 / WebSocket
    ▼
-Python NoneBot2 适配器               可替换渠道适配器
+kiarabot-adapter-nonebot            Python NoneBot2 适配器（本仓库 adapters/）
    │ gRPC / Protobuf
    ▼
-C++ Core                            事件、权限、插件、数据和业务编排
-   │
-   ├─ PluginSDK                     Python/C++ 插件边界
-   ├─ 基础设施适配器                 模型、数据库、任务和日志
+C++20 Core                          事件、权限、插件调度、Action、持久化编排
+   ├─ PluginSDK（Python/C++）        进程外插件边界
+   ├─ 基础设施适配器                 SQLite、模型、时区、任务
    └─ Control API                   REST / WebSocket
        ▼
 TypeScript 控制面板                 第一个控制面板客户端
 ```
 
-未来可以把 Python NoneBot2 适配器替换为 C++ 适配器，把 Python 插件替换为 C++ 插件，把 TypeScript 面板替换为 C++ 客户端，而不改变公共协议。
+协议和 API 契约是跨模块唯一来源；未来可以替换 NoneBot2 适配器、插件语言或面板客户端，而不改变公共协议。
 
-## 当前仓库状态
+## 仓库组成
 
-当前开发保持 C++ Core、独立 Python 适配器/SDK 和 TypeScript 面板；纯 C++ 替换为未来可选路线。任务依赖、验收和实现进度见 [开发台账](doc/16-development-tasks.md)。Core 无参数入口在 POSIX 平台保持存活，SIGINT/SIGTERM 正常退出；`--check` 执行一次性自检。持续存活不代表 RPC 或健康服务已就绪。
+| 路径 | 内容 |
+| --- | --- |
+| `proto/kiarabot/v1/` | 跨语言唯一契约：事件、Action、适配器、插件和 gRPC 服务 |
+| `api/` | OpenAPI 与 AsyncAPI 契约 |
+| `core/` | C++20 Core：Runtime、AdapterBridge/PluginBridge、插件调度、Action/Host、任务调度和控制应用端口 |
+| `infrastructure/` | Core 端口实现：SQLite RuntimeStore、HTTP 模型 Provider、时区解析、文件存储 |
+| `sdk/python/` | 进程外插件 SDK（`uv.lock` 锁定依赖） |
+| `plugins/` | 示例 Python 插件：`event-observer`、`ai-reply` |
+| `adapters/` | 渠道适配器（规划目录）；Python NoneBot2 适配器当前暂存于同级检出，待迁入 |
+| `panel/` | TypeScript/React 控制面板，默认 mock，可切换 live |
+| `control/` | Control API 服务：把 Core 控制应用端口映射为 REST/WebSocket |
+| `deploy/` | Docker Compose 与 systemd 编排骨架 |
+| `scripts/` | 工具链、契约、格式、静态分析、CI 与运维脚本 |
+| `tests/acceptance/` | 跨模块闭环验收入口 |
+| `doc/` | 架构、模块、规范与开发台账 |
+| `.github/workflows/ci.yml` | GitHub Actions 构建、契约、格式、依赖与密钥检查 |
 
-详细的实现对照、文档导航及纯 C++ 演进清单见 [实现现状与纯 C++ 演进评估](doc/14-implementation-assessment.md)。
+## 当前状态
 
-当前仓库不包含 Python 业务实现。NoneBot2、OneBot 适配器和 NapCatQQ 都按独立组件处理；它们只通过设计文档中规定的协议和适配器边界接入。
+- **已实现并纳入自动验收**：Core 进程启停与 gRPC 身份边界；统一运行时存储（内存/SQLite）；适配器持久化接收、命令授权、幂等与审计；插件注册、订阅和逐插件投递；Python 进程外插件 SDK；Action 纯文本闭环；Host storage/model/tasks 与任务调度；控制 API、认证/RBAC、WebSocket 事件流与面板真实服务闭环；结构化日志、健康探针，以及配置 API 到运行中 SDK 的下发与应用确认。
+- **跨语言闭环**：`tests/acceptance/run.sh` 使用真实 gRPC/SQLite/SDK 和协议 fake 平台验证事件→Action、权限拒绝、重复事件、断线重放和重启恢复；这是协议级验收，不代表真实 QQ/NapCat 联调。
+- **尚未完成或未验收**：生产部署、备份恢复和发布镜像（T11b，依赖真实环境）；真实 QQ、真实模型联调（T07b，等待真实环境）；纯 C++ 替换是延期选项（T12）。
+- 面板默认使用 mock 数据，`VITE_API_MODE=live` 时才连接实际控制 API。
+- Python NoneBot2 适配器纳入本仓库维护范围（规划 `adapters/`），不再使用独立仓库；当前源码仍暂存于同级检出，尚未迁入，后续可再考虑拆成单独插件。
+- 实时任务状态、交付记录和已知限制以 [开发台账](doc/16-development-tasks.md) 与 [跨层未完成事项清单](doc/15-cross-layer-gaps.md) 为准；[实现现状评估](doc/14-implementation-assessment.md) 是早期快照。
 
-仓库现在包含一个不依赖第三方 SDK 的 C++ Core 构建骨架，以及实际的 Protobuf、OpenAPI 和 AsyncAPI 契约：
+## 构建与测试
+
+### 依赖
+
+- CMake 3.24+，C++20 编译器：AppleClang 15+、Clang 16+ 或 GCC 13+；
+- Python 3.9+（dev 构建的 CTest 进程测试）；Python 3.11.18 + `uv`（SDK 与闭环验收，依赖见 `sdk/python/uv.lock`）；
+- 协议构建：`protoc` 25+、Protobuf 运行库 25.0+、gRPC 1.60+、OpenSSL 3.0+ Crypto；
+- 控制 API 构建：Boost 1.86+、libsodium，以及构建时按内容哈希获取的 nlohmann/json 3.11.3；
+- 基础设施构建：SQLite3、libcurl 7.85+、Abseil（`absl::time`），以及系统 IANA zoneinfo（Linux 为 tzdata）；
+- 面板：Node 20.19+（低于 21）或 22.12+、npm 10+；
+- 契约与质量检查：Ruby、clang-format 16+、clang-tidy 16+。
+
+完整版本矩阵与检查方式见 [开发工具链](doc/11-toolchain.md)。
+
+### dev 构建（不需要 protobuf/gRPC）
 
 ```bash
-cmake -S . -B build
-cmake --build build
+cmake --preset dev
+cmake --build --preset dev
+ctest --preset dev --no-tests=error
 ```
 
-## 设计文档
+### 协议 + 基础设施构建
 
-所有架构和开发文档统一放在 [`doc/`](doc/README.md) 目录，不再拆分 `docs/` 和 `doc/`：
+```bash
+cmake --preset proto -DKIARABOT_ENABLE_INFRASTRUCTURE=ON
+cmake --build --preset proto
+ctest --preset proto --no-tests=error
+```
 
-- [分层开发规范索引](doc/README.md)
-- [AI 开发入口规则](AGENTS.md)
-- [C++ 主编码规范](doc/12-cpp-coding-standard.md)
-- [开发边界与协作规则](doc/00-boundaries.md)
-- [统一协议层](doc/01-contracts.md)
-- [实际 Protobuf 契约](proto/README.md)
-- [实际 OpenAPI 契约](api/openapi.yaml)
-- [实际 AsyncAPI 契约](api/asyncapi.yaml)
-- [事件运行时语义](doc/01-runtime-semantics.md)
-- [C++ Core](doc/02-core.md)
-- [PluginSDK 与插件运行时](doc/03-plugin-sdk.md)
-- [Python NoneBot2 适配器](doc/04-nonebot-adapter.md)
-- [基础设施适配器](doc/05-infrastructure.md)
-- [控制面板 API](doc/06-control-api.md)
-- [TypeScript 控制面板](doc/07-control-panel.md)
-- [部署与可观测性](doc/08-operations.md)
-- [分阶段开发顺序](doc/09-roadmap.md)
-- [开发工具链版本](doc/11-toolchain.md)
-- [CI/CD 流程方案](doc/12-ci-cd.md)
+### 跨语言闭环验收
 
-每份模块文档都写明了责任边界、输入输出、允许和禁止的依赖、验收标准，以及可以直接作为独立编码任务描述的“代码启动句”。
+需要上面的 proto + infrastructure 构建、Ruby，以及锁定 SDK 和控制 API 测试环境：
 
-## 独立组件和许可证
+```bash
+uv sync --project sdk/python --python 3.11.18 --locked
+uv sync --project control/api/tests --python 3.11.18 --locked
+bash tests/acceptance/run.sh
+```
 
-请将 NapCatQQ、NoneBot2 和 OneBot 适配器分别安装和运行，不要把 NapCatQQ 源码复制到本仓库，也不要把它重新打包成 KiaraBot 的一部分。第三方组件及其许可证见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+可选设置 `KIARABOT_ADAPTER_DIR=适配器检出绝对路径`（当前为同级 `../kiarabot-adapter-nonebot`，迁入后为仓库内 `adapters/nonebot`），把适配器的全部测试一并接入；缺少构建或 Python 环境会直接失败，不会跳过。详见 [验收说明](tests/acceptance/README.md)。
 
-KiaraBot 自有代码采用 MIT 许可证，许可证文本见 [LICENSE.md](LICENSE.md)。
+### 控制面板
+
+```bash
+cd panel
+npm ci
+npm run check:contracts
+npm run lint
+npm test
+npm run build
+```
+
+`npm run dev` 默认使用 mock 数据；连接真实服务时设置 `VITE_API_MODE=live`，必要时再设置 `VITE_API_BASE` 和 `VITE_WS_URL`。
+
+### 统一检查
+
+```bash
+./scripts/check-toolchain.sh
+```
+
+脚本依次检查工具版本、C++20、协议生成、预设构建与 CTest、契约、C++ 格式、静态分析和 API lint。也可以单独运行 `./scripts/quality/check-format.sh`、`./scripts/quality/check-tidy.sh`、`./scripts/quality/check-openapi.sh`、`./scripts/quality/check-asyncapi.sh` 和 `./proto/tests/check_contracts.sh`。CI 在 GCC 13/Clang 16 上构建 dev，用 pinned vcpkg 构建 proto + infrastructure 并运行闭环验收，另执行格式、静态分析、API 契约、工作流、依赖审计和密钥扫描检查。
+
+## 运行 Core
+
+```bash
+# 一次性自检
+build/dev/core/kiarabot-core --check
+
+# gRPC 入口（需 proto 构建；未配置业务凭据时只提供传输监听）
+build/proto/core/kiarabot-core --grpc-listen 127.0.0.1:50051
+```
+
+持久化适配器接收、插件进程、模型 Provider、任务调度和完整环境变量见 [部署与可观测性](doc/08-operations.md)。传输监听不等于业务就绪：`rpc_ready` 保持 false，业务配置必须完整提供，部分配置会拒绝启动。数据库 schema 不保证向旧二进制回滚，升级前先备份。
+
+## 文档
+
+- **规范与规则**：[AI 开发入口规则](AGENTS.md)、[C++ 主编码规范](doc/12-cpp-coding-standard.md)、[开发边界与协作规则](doc/00-boundaries.md)、[分层开发规范索引](doc/README.md)
+- **唯一契约**：[Protobuf](proto/README.md)、[OpenAPI](api/openapi.yaml)、[AsyncAPI](api/asyncapi.yaml)、[统一协议层](doc/01-contracts.md)、[事件与 Action 运行时语义](doc/01-runtime-semantics.md)
+- **模块设计**：[C++ Core](doc/02-core.md)、[PluginSDK 与插件运行时](doc/03-plugin-sdk.md)、[Python NoneBot2 适配器](doc/04-nonebot-adapter.md)、[基础设施适配器](doc/05-infrastructure.md)、[控制面板 API](doc/06-control-api.md)、[TypeScript 控制面板](doc/07-control-panel.md)、[部署与可观测性](doc/08-operations.md)
+- **过程与质量**：[分层开发任务与实施台账](doc/16-development-tasks.md)、[分阶段开发顺序](doc/09-roadmap.md)、[可执行编码任务模板](doc/10-task-template.md)、[开发工具链](doc/11-toolchain.md)、[CI/CD 流程方案](doc/12-ci-cd.md)、[本机闭环验收](tests/acceptance/README.md)、[Python SDK 使用说明](sdk/python/README.md)
+- **现状与缺口**：[实现现状与纯 C++ 演进评估](doc/14-implementation-assessment.md)、[跨层未完成事项清单](doc/15-cross-layer-gaps.md)、[账号封禁风险评估](doc/17-account-ban-risk.md)、[控制 API 契约补充任务说明](doc/13-control-api-contract-handoff.md)、[基础设施接入后续事项](doc/13-infrastructure-integration-follow-up.md)
+
+修改代码前先阅读 [AI 开发入口规则](AGENTS.md) 和 [C++ 主编码规范](doc/12-cpp-coding-standard.md)；只要改变了外部可见的接口、协议、状态、错误语义、配置或运行方式，就必须在同一变更中同步对应文档。
+
+## 独立组件与许可证
+
+- NapCatQQ 作为独立 QQ 协议端安装和运行，不复制源码到本仓库，也不重新打包成 KiaraBot 的一部分。
+- Python NoneBot2 适配器由本仓库维护（规划 `adapters/`），通过 `proto/` 契约接入；当前源码暂存于同级检出 `../kiarabot-adapter-nonebot`，尚未迁入，后续可再考虑拆成单独插件。
+- 第三方组件及其许可证见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+- KiaraBot 自有代码采用 MIT 许可证，许可证文本见 [LICENSE.md](LICENSE.md)。

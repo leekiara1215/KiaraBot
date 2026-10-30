@@ -70,7 +70,7 @@ jobs:
       - name: Install pinned Protobuf and gRPC
         run: |
           "$VCPKG_ROOT/bootstrap-vcpkg.sh" -disableMetrics
-          "$VCPKG_ROOT/vcpkg" install grpc protobuf curl sqlite3 --triplet x64-linux
+          "$VCPKG_ROOT/vcpkg" install grpc protobuf curl sqlite3 boost-beast boost-asio libsodium --triplet x64-linux
           echo "$VCPKG_ROOT/installed/x64-linux/tools/protobuf" >> "$GITHUB_PATH"
           echo "$VCPKG_ROOT/installed/x64-linux/tools/grpc" >> "$GITHUB_PATH"
       - name: Configure proto
@@ -89,8 +89,19 @@ jobs:
           python3 -m venv /tmp/kiarabot-ci-uv
           /tmp/kiarabot-ci-uv/bin/pip install uv==0.13.6
           /tmp/kiarabot-ci-uv/bin/uv sync --project sdk/python --locked --python 3.11.18
+          /tmp/kiarabot-ci-uv/bin/uv sync --project control/api/tests --locked --python 3.11.18
       - name: Test Core and mixed-language closed loop
         run: bash tests/acceptance/run.sh
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+      - name: Test TypeScript panel against Core
+        run: |
+          npm ci --prefix panel --no-audit --no-fund
+          npm run check:contracts --prefix panel
+          npm run lint --prefix panel
+          npm test --prefix panel
+          npm run build --prefix panel
       - name: Compare with base commit descriptor
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
@@ -128,7 +139,7 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - run: sudo apt-get update && sudo apt-get install -y clang-format-16
       - name: Check handwritten C++
-        run: git ls-files -z 'core/*.cpp' 'core/*.h' 'core/*.hpp' 'proto/tests/*.cc' | xargs -0 -r clang-format-16 --dry-run --Werror
+        run: git ls-files -z 'core/*.cpp' 'core/*.h' 'core/*.hpp' 'proto/tests/*.cc' 'control/*.cpp' 'control/*.hpp' 'infrastructure/*.cpp' 'infrastructure/*.hpp' | xargs -0 -r clang-format-16 --dry-run --Werror
 
   clang-tidy:
     name: C++ static analysis

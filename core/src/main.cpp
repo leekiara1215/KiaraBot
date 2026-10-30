@@ -16,6 +16,8 @@
 #include "kiarabot/core/runtime.h"
 
 #ifdef KIARABOT_HAS_GRPC
+#include "kiarabot/control/configuration.hpp"
+#include "kiarabot/control/http_server.hpp"
 #include "kiarabot/core/action_router.hpp"
 #include "kiarabot/core/adapter_ingress.hpp"
 #include "kiarabot/core/bridge_server.hpp"
@@ -24,6 +26,7 @@
 #endif
 #ifdef KIARABOT_HAS_SQLITE
 #include "kiarabot/infrastructure/http_model_provider.hpp"
+#include "kiarabot/infrastructure/runtime_log_sink.hpp"
 #include "kiarabot/infrastructure/sqlite_runtime_store.hpp"
 #include "kiarabot/infrastructure/time_zone_resolver.hpp"
 #endif
@@ -92,8 +95,17 @@ int run_process(std::string_view listen = {}) {
     return 1;
   }
 #ifdef KIARABOT_HAS_GRPC
+#ifdef KIARABOT_HAS_SQLITE
+  auto log_sink = std::make_shared<kiarabot::infrastructure::BufferedRuntimeLogSink>();
+#endif
   std::unique_ptr<kiarabot::core::RuntimeStore> persistent_store;
   std::unique_ptr<kiarabot::core::BridgeServer> server;
+  std::unique_ptr<kiarabot::core::ControlService> control_application;
+  std::unique_ptr<kiarabot::control::HttpServer> control_server;
+  const char* control_config = std::getenv("KIARABOT_CONTROL_CONFIG");
+  if (control_config && listen.empty()) {
+    return 1;
+  }
   std::jthread scheduling;
   if (!listen.empty()) {
     std::vector<kiarabot::core::BridgeCredential> credentials;
@@ -126,6 +138,8 @@ int run_process(std::string_view listen = {}) {
       }
       persistent_store = std::get<std::unique_ptr<kiarabot::infrastructure::SqliteRuntimeStore>>(
           std::move(opened));
+      persistent_store = std::make_unique<kiarabot::core::LoggingRuntimeStore>(
+          std::move(persistent_store), log_sink);
       std::vector<std::string> allowed_accounts;
       const std::string list(accounts);
       std::size_t begin = 0;
@@ -206,11 +220,62 @@ int run_process(std::string_view listen = {}) {
                               *persistent_store, kiarabot::core::RuntimeClock{},
                               kiarabot::core::NamespacePolicy{}, model, scheduler)
                         : nullptr;
-    server = std::make_unique<kiarabot::core::BridgeServer>(std::move(credentials), ingress,
-                                                            plugins, actions, host);
-    if (!server->start(std::string(listen))) {
-      std::cerr << "operation=grpc_start outcome=failed error_code=INTERNAL\n";
-      return 1;
+    if (control_config) {
+      if (!persistent_store) {
+        return 1;
+      }
+      auto configuration = kiarabot::control::read_configuration(control_config);
+#ifdef KIARABOT_HAS_SQLITE
+      configuration.application.logs = [log_sink] { return log_sink->read(); };
+#endif
+      if (const char* id = std::getenv("KIARABOT_ADAPTER_ID")) {
+        configuration.application.adapter_id = id;
+        configuration.application.adapter_connected = [ingress, identity = std::string(id)] {
+          return ingress && ingress->connected(identity);
+        };
+      }
+      if (accounts) {
+        std::string list(accounts);
+        std::size_t position = 0;
+        while (position < list.size()) {
+          const auto end = list.find(',', position);
+          configuration.application.accounts.push_back(
+              list.substr(position, end == std::string::npos ? end : end - position));
+          if (end == std::string::npos) {
+            break;
+          }
+          position = end + 1;
+        }
+      }
+      if (model_name) {
+        configuration.application.model_name = model_name;
+      }
+      if (plugins) {
+        configuration.application.config_delivery =
+            std::make_shared<kiarabot::core::PluginConfigDelivery>(
+                *persistent_store, configuration.application.encryption_key);
+        plugins->set_configuration(configuration.application.config_delivery);
+      }
+      control_application = std::make_unique<kiarabot::core::ControlService>(
+          *persistent_store, std::move(configuration.application));
+      server = std::make_unique<kiarabot::core::BridgeServer>(std::move(credentials), ingress,
+                                                              plugins, actions, host);
+      if (!server->start(std::string(listen))) {
+        return 1;
+      }
+      control_server = std::make_unique<kiarabot::control::HttpServer>(*control_application);
+      if (!control_server->start(configuration.listen)) {
+        return 1;
+      }
+      std::cout << "operation=control_start port=" << control_server->port() << "\n" << std::flush;
+    }
+    if (!server) {
+      server = std::make_unique<kiarabot::core::BridgeServer>(std::move(credentials), ingress,
+                                                              plugins, actions, host);
+      if (!server->start(std::string(listen))) {
+        std::cerr << "operation=grpc_start outcome=failed error_code=INTERNAL\n";
+        return 1;
+      }
     }
     if (scheduler) {
       scheduling = std::jthread([scheduler](std::stop_token stop) {
@@ -291,6 +356,9 @@ int run_process(std::string_view listen = {}) {
     return 1;
   }
 #ifdef KIARABOT_HAS_GRPC
+  if (control_server) {
+    control_server->stop();
+  }
   if (server) {
     scheduling.request_stop();
     if (scheduling.joinable()) {

@@ -7,7 +7,7 @@ if [[ ! -f build/proto/compile_commands.json ]]; then
   echo 'Configure and build the proto preset with CMAKE_EXPORT_COMPILE_COMMANDS=ON first' >&2
   exit 1
 fi
-set -- -p build/proto --warnings-as-errors='*' --header-filter="^${root}/(core|proto)/"
+set -- -p build/proto --warnings-as-errors='*' --header-filter="^${root}/(core|proto|control|infrastructure)/"
 if [[ "$(uname -s)" == Darwin ]]; then
   compiler="$(sed -n 's/^CMAKE_CXX_COMPILER:FILEPATH=//p' build/proto/CMakeCache.txt)"
   if [[ -z "$compiler" ]]; then
@@ -21,5 +21,5 @@ if [[ "$(uname -s)" == Darwin ]]; then
       --extra-arg=-isystem --extra-arg="$sdk/usr/include/c++/v1"
   fi
 fi
-find core proto/tests -type f \( -name '*.cpp' -o -name '*.cc' \) \
+find core proto/tests control/api infrastructure/src infrastructure/tests -type f \( -name '*.cpp' -o -name '*.cc' \) \
   -print0 | xargs -0 clang-tidy "$@"

@@ -33,6 +33,7 @@ public:
                                        const kiarabot::v1::RegisterAdapterRequest& request);
   kiarabot::v1::AdapterEventAck ingest(const AdapterSession& session,
                                        const kiarabot::v1::EventEnvelope& event);
+  bool connected(const std::string& identity);
   bool current(const AdapterSession& session);
   void disconnect(const AdapterSession& session);
 

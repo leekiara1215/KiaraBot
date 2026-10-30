@@ -56,7 +56,7 @@
 
 ### Python 适配器
 
-> 在独立适配器项目中使用 Python 3.11、NoneBot2 和 nonebot-adapter-onebot，实现 `AdapterBridge.Connect`、OneBot V11 消息段转换、Action 执行、重连和能力注册；使用 mock Core 测试；不得修改本仓库的 C++ Core、插件或面板。
+> 在 `adapters/` 的 Python 适配器项目中使用 Python 3.11、NoneBot2 和 nonebot-adapter-onebot，实现 `AdapterBridge.Connect`、OneBot V11 消息段转换、Action 执行、重连和能力注册；使用 mock Core 测试；不得修改 C++ Core、插件或面板。
 
 ### 控制面板 API
 

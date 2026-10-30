@@ -95,7 +95,7 @@ IOutboxRepository.append(action)
 IActionRepository.get_by_idempotency_key(key)
 ```
 
-迁移由独立的 `kiarabot-migrate` 命令执行：先获取迁移锁，按版本顺序执行，成功后写入 migration table；锁等待超过 30 秒失败，不允许多个进程同时迁移。SQLite 必须启用 WAL、外键约束和 busy timeout。
+迁移由独立的 `kiarabot-migrate` 命令执行：先获取迁移锁，按版本顺序执行，成功后写入 migration table；锁等待超过 30 秒失败，不允许多个进程同时迁移。当前单快照适配器使用 FULL 同步与 SQLite 默认 journal；没有关系表外键。独立迁移命令对锁冲突做三十秒有界重试，运行时提交仍立即报告 CONFLICT，避免长时间阻塞桥接。
 
 ## 文件存储
 
@@ -176,4 +176,11 @@ AuthorizedCommands 是 Core 内部入口：调用方必须从已认证连接构�
 
 execute 的回调只能修改传入的 RuntimeSnapshot，不得执行网络/平台副作用或另启 Runtime 事务。业务修改、成功幂等记录和审计在同一提交中完成；提交失败全部不生效。幂等范围为主体+权限+资源+键，同键同 fingerprint 重放成功且不重复审计；不同 fingerprint 返回 CONFLICT。重放前重新鉴权。拒绝及回调失败记录审计，失败回调的状态变更被回滚；错误详情只保留稳定码和请求标识，不转发回调的自由文本。审计满（默认十万条）时返回 UPSTREAM_UNAVAILABLE 且不执行回调。审计/幂等保留和清理策略须后续管理任务落实，不能当作无限容量服务。
 
-SQLite 从 v2 起保存审计和命令幂等记录，当前 v5 还保存 Action 路由和 Host 命名空间/幂等响应；模型已接线，任务由 T06c 接线。T02a 适配器桥和 T03a 插件桥已使用此入口；控制 API 仍须在后续任务接线。
+SQLite 从 v2 起保存审计和命令幂等记录，当前 v5 还保存 Action 路由和 Host 命名空间/幂等响应；模型已接线，任务由 T06c 接线。T02a 适配器桥和 T03a 插件桥已使用此入口；控制 API 已由 T08b 通过独立应用端口接入同一事务存储。
+
+## T10b 日志 sink
+
+BufferedRuntimeLogSink 实现 Core 的 IRuntimeLogSink，互斥保护有界环形缓冲，保留十分钟、最多 4096 条；可输出单行 JSON 到 stdout。字段仅来自 Core 的结构化记录，不接收正文或任意异常消息。输出失败返回 false，内存缓冲仍可查询；Core 统计失败次数，业务提交不回滚。日志不是审计持久层，重启清空日志；持久审计不受影响。控制 API 通过组合根注入的只读回调取得日志，不直接读取基础设施类或数据库。
+
+
+T11a `kiarabot-migrate` 复用 SqliteRuntimeStore::open 的同事务迁移，SQLite BEGIN IMMEDIATE 为迁移锁；不重复维护 schema 或手写第二套迁移 SQL。进程级测试覆盖重复迁移、旧版迁移（存储单测）、坏 schema、锁冲突恢复和失败不就绪。

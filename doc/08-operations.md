@@ -8,7 +8,7 @@ T06b 可选配置 KIARABOT_MODEL_ENDPOINT（完整 /chat/completions URL）、KI
 
 T06a 持久化插件入口同时装配 HostDispatcher，只协商已实现的 host.storage.v1；storage.namespace 必须显式列入 KIARABOT_PLUGIN_PERMISSIONS。T06a 引入 schema v4，当前版本升级为 v5，回滚使用迁移前备份。Host 存储和幂等响应随 Core 数据库一起备份，不能单独删除幂等响应后重放写入。
 
-T04b 启用持久化插件入口时装配 ActionRouter，插件 message.send 权限仍显式配置；只声明已实现的 action.result.v1。T04b 引入 schema v3，当前 T06c 已继续升级至 v5，旧二进制不能读取新 schema，回滚必须使用迁移前备份。独立适配器在 OUTBOX_PATH 旁维护 .actions 执行日志，备份/恢复须与事件 outbox 一起处理，禁止删除未终态记录后重放平台请求。
+T04b 启用持久化插件入口时装配 ActionRouter，插件 message.send 权限仍显式配置；只声明已实现的 action.result.v1。T04b 引入 schema v3，当前 T06c 已继续升级至 v5，旧二进制不能读取新 schema，回滚必须使用迁移前备份。Python 适配器在 OUTBOX_PATH 旁维护 .actions 执行日志，备份/恢复须与事件 outbox 一起处理，禁止删除未终态记录后重放平台请求。
 
 ## T03b 受管 Python 插件
 
@@ -37,7 +37,7 @@ scripts/
   check-boundaries.sh
 ```
 
-数据库迁移源码位于 `infrastructure/sqlite/migrations/`，运维目录只负责编排、启动、健康检查、备份和回滚。
+数据库迁移由 `infrastructure/src/sqlite_runtime_store.cpp` 实现，独立命令入口为 `infrastructure/src/migrate.cpp`；运维目录只负责编排、启动、健康检查、备份和回滚。
 
 ## 进程
 
@@ -65,7 +65,7 @@ kiarabot-panel
 ```text
 /health/live     进程是否存活
 /health/ready    是否可以接收请求
-/health/details  依赖和版本详情
+/api/v1/health   认证后的组件详情
 ```
 
 `live` 只检查进程；`ready` 检查数据库 schema、数据库可写、协议服务和必要运行时；`details` 必须脱敏。Core 未 ready 时 API 返回 503，适配器未 ready 时不接收新 Action。
@@ -133,7 +133,7 @@ error_code
 
 运维模块提供 `Dockerfile`、`.dockerignore`、`deploy/compose.staging.yml`、`deploy/compose.prod.yml`、`deploy/systemd/kiarabot.service` 和 `scripts/deploy/`。镜像只复制 Core 构建输入及运维脚本，构建上下文使用白名单；运行用户为 UID/GID 10001。Compose 的四个服务依次等待迁移成功、Core ready 和适配器 ready，面板也有独立 ready 检查。适配器、面板镜像必须自带 `curl`，以 UID 10001 运行，并在各自容器的 8081、8082 端口提供健康接口。镜像引用和命令可通过 Compose 中的 `KIARABOT_*` 变量配置；生产配置中的全零 digest 仅是无法拉取的占位值，部署前必须指定真实 digest 镜像。staging 和 production 使用独立数据卷及默认端口。
 
-**当前不能作为完整部署运行**：Core 已有 POSIX 持续等待与受控关闭入口，并可显式启动本机 gRPC 认证传输，并可在 T02a 配置下持久化接收适配器事件，但尚未具备插件/Action 闭环；仓库仍缺迁移程序、适配器及面板服务镜像，也没有三个进程健康端点。OpenAPI 当前只定义控制 API 的 `/api/v1/health`，并未定义这里的 `/health/live`、`/health/ready`、`/health/details`。这些进程端点的可访问性、认证、响应和失败语义仍需所属模块及公共契约明确；运维配置保留既有文档要求，不将它们伪装成已实现的 API。补齐这些依赖后才能验证真实服务启动及跨模块健康状态。
+**当前不能作为完整部署验收**：Core 已有插件/Action 闭环、控制 API 和进程探针，T11a 提供独立迁移程序；适配器及面板镜像、生产 TLS、真实环境及隔离部署恢复仍归 T11b/T07b。进程探针为根路径 `/health/live`（不访问存储）、`/health/ready`（写事务探测）；详情为认证的 `/api/v1/health`，不提供历史 `/health/details`。唯一来源是 OpenAPI。
 
 Compose 在 `deploy/.env` 存在时可通过可选 `env_file` 注入运行配置，也可以使用 `KIARABOT_ENV_FILE` 指定外部文件；Compose 插值变量通过启动进程环境或 Compose 的 `--env-file` 提供。环境文件和密钥不应放进仓库或构建上下文，权限应限制为部署账户可读。镜像构建不需要 Token、API Key 或 SSH key。不要把这些值放进镜像标签、命令行或日志。
 
@@ -173,7 +173,7 @@ docker compose -f deploy/compose.prod.yml run --rm --no-deps migrate /usr/local/
 下列事项由对应模块负责人实现并验证；运维层不代替它们定义业务行为或修改公共契约。
 
 1. **Core**：将现有一次性启动检查替换为可持续运行并可正常停止的服务；提供所属接口约定的健康检查，使存活与依赖就绪可区分。就绪条件须覆盖已确认的 schema、存储及协议监听状态，健康详情不得泄露秘密。当前无参数入口保持存活，SIGINT/SIGTERM 正常退出；`--check` 仅做一次性自检。入口尚无 RPC、存储和健康服务，仍无法通过 Compose 的 ready 检查。
-2. **协议和控制 API**：明确进程级 `/health/live`、`/health/ready`、`/health/details` 与现有 `/api/v1/health` 的归属和关系，确定监听地址、认证、响应和失败状态，并在唯一契约及对应文档中同步。当前 OpenAPI 没有定义前述三条路径；运维侧的路径和端口仅为待实现的配置约定。
+2. **协议和控制 API**：明确进程级 `/health/live`、`/health/ready`、`/health/details` 与现有 `/api/v1/health` 的归属和关系，确定监听地址、认证、响应和失败状态，并在唯一契约及对应文档中同步。T11a 已冻结根路径 live/ready 与认证 /api/v1/health；部署脚本须按该契约接入。
 3. **基础设施／数据库**：提供可独立、可重复执行且失败时返回非零的迁移程序，明确迁移锁、数据库路径和 schema 版本来源，并确认与运维脚本的 SQLite 快照和 `PRAGMA user_version` 记录兼容。迁移还须明确旧版本对迁移后 schema 的兼容性；不兼容时，镜像回滚前需要按恢复流程处理数据。
 4. **适配器与面板**：各自提供可运行的镜像、启动命令和进程健康接口，并确认可用 UID、探针工具、监听端口及必要配置。Compose 中的镜像、命令、`CORE_ENDPOINT`、`CONTROL_API_URL` 和端口均须由所属模块核对；其中连接地址是占位配置，不能作为已确认的跨模块协议。
 5. **业务日志与插件配置**：各业务进程负责输出本节此前列出的关联字段和脱敏内容，运维 JSON 日志不能替代业务日志。插件负责人还须明确配置的权威存储、导出和恢复方式；当前脚本只备份 SQLite 数据库，不覆盖插件配置。
@@ -191,3 +191,26 @@ T05b/T10a 在打开数据库时事务化初始化 PRAGMA user_version=2，支持
 ## T02a 持久化接收启动
 
 使用 proto 且 KIARABOT_ENABLE_INFRASTRUCTURE=ON 构建后，可设置 KIARABOT_RUNTIME_DB（非空文件路径，禁止 :memory: 和 file: URI）及 KIARABOT_ADAPTER_ACCOUNTS（逗号分隔的非空账号允许列表），并保留 KIARABOT_ADAPTER_ID/TOKEN 和 --grpc-listen。启动先打开 SQLite/迁移，失败退出 1；配置仅部分提供时拒绝启动。未配置数据库时仍为传输认证模式，所有业务显式拒绝。接收可用只表示 adapter_ingress_ready=true，完整 rpc_ready 仍为 false；插件入口可按 T03a 配置启用，Action 纯文本闭环已由 T04b 实现，模型和任务仍未接线。账号授权来自该配置，不能由适配器自报。
+
+## 控制 API（T08b）
+
+proto + infrastructure 构建可通过 `KIARABOT_CONTROL_CONFIG` 指定私有 JSON 文件，在同一 Core 进程启动 REST 服务。文件须为当前用户所有的普通文件且权限 0600，不得提交。字段包括 `listen`（127.0.0.1:端口）、`encryption_key`（32 字节的 hex）、`users`（id、username、Argon2id password_hash、role）及可选 `plugins` 公共清单。角色为 admin/operator/viewer；用户名 ASCII 且不区分大小写。密钥丢失或变化会导致已有加密状态无法读取，必须与数据库备份一起安全保管。
+
+构建提供 `kiarabot-control-credentials`：默认从 stdin 读一行密码并输出 Argon2id 哈希；`--key` 输出随机控制密钥。只在受保护终端/管道中运行，不在命令行传密码。不配置控制文件时原 gRPC 启动方式保持不变。控制服务要求现有持久化配置，不接受临时内存库作为部署状态。监听占用、无效配置或无法解密状态使启动失败。
+
+请求体上限 64 KiB、HTTP 头上限 16 KiB、连接有界；登录每用户名/分钟限额，超限返回 429/Retry-After。服务绑定回环地址，浏览器通过同源代理连接；不启用宽泛 CORS，不信任代理头提供的身份。
+
+## 结构化运行日志（T10b）
+
+持久化运行模式通过日志存储装饰器写入有界结构化日志缓冲，sink 也支持可选 JSON 输出（daemon 默认不写阻塞 stdout），字段含 id、occurred_at、level、component、operation、outcome、resource、request_id、trace_id。禁止输出消息正文、模型请求、配置值、密码或令牌；标识限制为安全字符。sink 写失败不影响已提交业务，并累计失败计数。`GET /logs` 只对 operator/admin 返回十分钟内有界内存记录，日志不代替 `/audit` 的持久审计，也不是无限历史查询。
+
+
+## T11a 独立迁移入口
+
+`kiarabot-migrate DATABASE_PATH` 调用同一 SQLite schema v5 迁移实现；缺参数/非法路径退出 2，未知 schema、损坏快照、依赖故障或锁等待超时退出 1，成功 0。迁移依赖 SQLite 的 BEGIN IMMEDIATE 互斥，不创建可能遗留的文本锁文件；冲突最多等待三十秒并重试整个未提交迁移，其他错误不重试。重复运行安全，成功只表示数据库就绪，不宣称其他服务 ready。daemon 启动沿用相同迁移逻辑，坏 schema/无法解密控制状态禁止监听控制端口。
+
+运行 `build/proto/infrastructure/kiarabot-migrate /path/to/runtime.db`；生产迁移前仍须备份，旧二进制回滚不得直接读取新 schema。该命令不绕过端口修改业务记录。
+
+## 配置应用确认
+
+启用私有 KIARABOT_CONTROL_CONFIG 且配置插件桥接身份/权限后，支持 plugin.config.v1 的 SDK 自动接收配置。PUT 成功后轮询 GET /plugins/{plugin_id}/config 的 delivery；APPLIED 才表示当前运行连接完成回调。REJECTED 需修复配置提交新版本或重连，UNAVAILABLE 需检查插件连接/停用/能力协商。Core 重启后重新确认，不能用旧进程的 applied_version 作健康证明。不新增配置项、SQLite schema 或真实环境验收要求。

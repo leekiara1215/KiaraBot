@@ -20,14 +20,14 @@
 
 使用模拟适配器、模拟插件和内存存储实现事件路由、权限和 Action 分发。Core 必须可以脱离 Python 和 NapCat 启动。
 
-## 阶段 3：Python NoneBot2 适配器（独立项目）
+## 阶段 3：Python NoneBot2 适配器（本仓库 adapters/）
 
-新建独立的 Python 适配器项目，只做 OneBot 连接、事件转换和 Action 执行。本仓库当前没有 Python NoneBot2 入口，不把 Python 代码放回 Core 仓库。
+在 `adapters/` 下实现 Python 适配器，只做 OneBot 连接、事件转换和 Action 执行；不把 NoneBot2 细节或 Python 运行时依赖引入 Core。适配器当前暂存于同级检出，待迁入本仓库；后续可再考虑拆成单独插件。
 
-推荐的独立项目结构：
+推荐的目标结构：
 
 ```text
-kiarabot-adapter-nonebot/
+adapters/nonebot/
   pyproject.toml
   src/kiarabot_adapter_nonebot/
     onebot/
@@ -78,7 +78,7 @@ kiarabot-adapter-nonebot/
 
 1. 协议定义；
 2. C++ Core 空壳；
-3. Python 适配器桥（独立项目）；
+3. Python 适配器桥（本仓库 `adapters/`）；
 4. Python PluginSDK（独立 SDK 包）；
 5. AI 插件；
 6. SQLite 和模型适配器；

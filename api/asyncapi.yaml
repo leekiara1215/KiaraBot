@@ -22,6 +22,8 @@ x-control-session-policy:
   sequences: Per authenticated stream session; SESSION_READY.last_sequence is the accepted replay boundary. Replay follows SESSION_READY before live events.
   snapshots: Establish stream before REST reads, buffer events during reads, then refresh affected resources. A lost stream during snapshot loading requires resume or a new hello and full refresh.
   retention_seconds: 600
+  coalescing: Resource snapshots are compared every 100ms; notifications may coalesce intermediate states and are not an audit log. Every published notification is sequenced.
+  capacity: At most 4096 retained events per stream and 1024 retained stream sessions. Gaps caused by eviction require RESYNC_REQUIRED; replay is delivered in bounded batches before live events.
   revoke_expiry: Validate at handshake and before every event; close within one second after session revocation, permission loss or access expiry.
   close_codes: {invalid_first_frame: 4400, unauthenticated: 4401, forbidden: 4403, internal: 1011}
   resync: Send RESYNC_REQUIRED with CURSOR_EXPIRED, INVALID_CURSOR or SERVER_RESTART, then close 1000. Client discards the stream session.

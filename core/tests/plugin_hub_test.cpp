@@ -6,6 +6,7 @@
 
 #include "kiarabot/core/adapter_ingress.hpp"
 #include "kiarabot/core/bridge_server.hpp"
+#include "kiarabot/core/control_service.hpp"
 #include "kiarabot/core/plugin_hub.hpp"
 #include "kiarabot/core/runtime.h"
 #include "kiarabot/infrastructure/sqlite_runtime_store.hpp"
@@ -93,6 +94,42 @@ void insert(kiarabot::core::RuntimeStore& store, const std::shared_ptr<PluginHub
   require(ingress.ingest(registered.session, payload).status() ==
           kiarabot::v1::AdapterEventAck::PERSISTED);
 }
+void configuration_gate() {
+  InMemoryRuntimeStore store;
+  auto delivery =
+      std::make_shared<kiarabot::core::PluginConfigDelivery>(store, std::string(64, 'a'));
+  auto hub =
+      std::make_shared<PluginHub>(store, std::vector<PluginPolicy>{{"one", {"message.read"}}});
+  hub->set_configuration(delivery);
+  auto request = registration("one");
+  request.add_supported_features("plugin.config.v1");
+  auto registered = hub->attach("one", request);
+  require(registered.response.accepted());
+  insert(store, hub, "waiting-for-config", 1);
+  auto config = *value(hub->next_config(registered.session));
+  require(!value(hub->next(registered.session)));
+  kiarabot::v1::PluginConfigAck confirmation;
+  confirmation.set_version(config.version());
+  confirmation.set_delivery_id(config.delivery_id());
+  confirmation.mutable_error()->set_code(kiarabot::v1::INVALID_ARGUMENT);
+  value(hub->acknowledge_config(registered.session, confirmation));
+  require(!value(hub->next(registered.session)));
+  require(value(store.read()).deliveries.at("waiting-for-config").at("one").state !=
+          DeliveryState::dispatched);
+  value(hub->detach(registered.session));
+  registered = hub->attach("one", request);
+  require(registered.response.accepted());
+  config = *value(hub->next_config(registered.session));
+  confirmation.Clear();
+  confirmation.set_version(config.version());
+  confirmation.set_delivery_id(config.delivery_id());
+  confirmation.set_accepted(true);
+  value(hub->acknowledge_config(registered.session, confirmation));
+  require(value(hub->next(registered.session))->event_id() == "waiting-for-config");
+  value(hub->acknowledge(registered.session, ack("waiting-for-config")));
+  value(hub->detach(registered.session));
+}
+
 void application() {
   InMemoryRuntimeStore store;
   auto now = RuntimeTimePoint{} + std::chrono::hours(1);
@@ -259,6 +296,7 @@ void transport() {
 }
 } // namespace
 int main() try {
+  configuration_gate();
   application();
   transport();
   std::cout << "Plugin authorization, subscriptions, independent ACK, replay and fencing passed\n";

@@ -71,12 +71,12 @@ panel/
 
 access token、refresh token 和流会话仅保存在内存；到期前调用 refresh 接口轮换，刷新页面后需要重新登录。列表显示服务端快照，日志事件及重新同步触发快照刷新；面板不计算权限。检查命令（在 `panel/` 下执行）：`npm ci`、`npm run check:contracts`、`npm run lint`、`npm test`、`npm run build`。
 
-## 其他模块的后续事项
+## 服务接入与验收边界
 
-- **控制 API 服务（`control/api/`）**：实现更新后的 `Group`、`User` 和 `LogEntry` 响应，返回服务端计算的有效角色、权限和脱敏日志；继续执行默认拒绝的 RBAC 和 401/403 错误契约。现有 `GenericResource` 消费方需要适配新增必填字段。
-- **控制 API 流服务**：实现首帧认证、`SESSION_READY`、绑定认证主体的秘密会话 ID、10 分钟事件保留、按序恢复和 `RESYNC_REQUIRED`；浏览器不提供自定义 WebSocket 握手 Authorization 头。`log.updated` 必须携带契约中的脱敏 `LogEntry`。
-- **Core / 基础设施端口**：由相应模块负责人确认如何提供有效权限关系与脱敏结构化日志，再通过既有公开端口提供给控制 API；本变更不假设或修改它们的内部实现。
-- **跨模块验收**：服务端应覆盖登录和轮换、权限允许/拒绝、日志脱敏、会话过期、断线恢复、保留期外重新同步及依赖故障，并以更新后的契约校验真实服务响应。当前面板验证使用 mock，不能证明服务端已实现这些行为。
+- T08b 已提供认证/RBAC、Group/User/LogEntry 与真实 REST 服务，响应由 OpenAPI schema 验证。
+- T09a 已提供首帧认证、主体绑定、十分钟保留、重放及 RESYNC_REQUIRED；日志复用 REST LogEntry。
+- T09b 增加 TypeScript 客户端对真实 Core 的登录、轮换、401/403、事件刷新和断线恢复测试；同时保留 mock UI 测试。
+- 本机 HTTPS/WSS 通过临时可信证书的测试代理验证；生产代理配置、真实平台及部署恢复仍等待 T11b/T07b。
 
 ## 未来 C++ 控制面板
 
@@ -99,3 +99,11 @@ access token、refresh token 和流会话仅保存在内存；到期前调用 re
 ## 代码启动句
 
 > 请只实现基于 `api/openapi.yaml` 的 TypeScript 控制面板骨架、认证、总览、适配器、插件、模型、权限和实时日志页面，使用 mock API 开发，不连接数据库、NapCat 或 Python 进程。
+
+## T09b 真实服务集成
+
+保留 React/TypeScript/Vite 与生成契约类型。登录后读取 `/auth/me` 展示服务端角色/权限；导航按服务端权限展示，但授权仍由服务器执行。任一受保护 REST 请求的 401 或 WebSocket 4401 清空内存凭据并回到登录；403 保留登录并显示权限错误。刷新轮换后更新 API 和流使用的令牌；退出调用会话撤销。
+
+真实默认流端点为 `/ws/control`。收到首个 SESSION_READY 后才装载 REST 视图；所有已知资源事件及重新连接触发刷新，异步加载旧响应被取消展示，分页刷新返回首个快照。RESYNC_REQUIRED 清除旧流凭据后重新 hello；未知事件只推进已处理序号。服务端返回的日志按文本渲染，不渲染 HTML、不写持久化浏览器存储。
+
+验收增加使用真实 C++ Core 子进程的 TypeScript HTTP/WebSocket 集成；mock 保留独立 UI 测试。本机 HTTP/WS 及带证书验证的 HTTPS/WSS 测试代理验收，不替代生产代理部署和 T07b 真实平台验证。
