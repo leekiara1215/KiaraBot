@@ -28,3 +28,10 @@ target_compile_options(kiarabot-plugin-delivery-test PRIVATE
   $<$<CXX_COMPILER_ID:MSVC>:/W4>
 )
 add_test(NAME core_plugin_delivery COMMAND kiarabot-plugin-delivery-test)
+if(KIARABOT_GENERATE_PROTO)
+  add_executable(kiarabot-host-validation-test tests/host_validation_test.cpp)
+  target_include_directories(kiarabot-host-validation-test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include ${CMAKE_BINARY_DIR}/generated/cpp)
+  target_link_libraries(kiarabot-host-validation-test PRIVATE kiarabot_proto)
+  add_test(NAME host_validation COMMAND kiarabot-host-validation-test)
+endif()
