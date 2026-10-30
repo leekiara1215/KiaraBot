@@ -1,6 +1,6 @@
 # KiaraBot
 
-KiaraBot 是一个面向 QQ 的可扩展机器人平台：C++20 Core 负责事件、权限、插件调度和业务编排，Protobuf/gRPC 契约隔离各进程，Python PluginSDK 支持进程外插件，TypeScript 控制面板通过 Control API 管理运行时。QQ 协议端 NapCatQQ 是独立组件；Python NoneBot2 适配器由本仓库维护（规划 `adapters/`，当前源码暂存于同级检出），二者都只通过公共协议接入。后续可再考虑把适配器拆成单独插件。
+KiaraBot 是一个面向 QQ 的可扩展机器人平台：C++20 Core 负责事件、权限、插件调度和业务编排，Protobuf/gRPC 契约隔离各进程，Python PluginSDK 支持进程外插件，TypeScript 控制面板通过 Control API 管理运行时。QQ 协议端 NapCatQQ 是独立组件；Python NoneBot2 适配器由本仓库 `adapters/nonebot/` 维护，二者都只通过公共协议接入。后续可再考虑把适配器拆成单独插件。
 
 ## 目标架构
 
@@ -21,7 +21,7 @@ C++20 Core                          事件、权限、插件调度、Action、�
 TypeScript 控制面板                 第一个控制面板客户端
 ```
 
-协议和 API 契约是跨模块唯一来源；未来可以替换 NoneBot2 适配器、插件语言或面板客户端，而不改变公共协议。
+协议和 API 契约是跨模块唯一来源；未来可以替换 NoneBot2 适配器、插件语言或面板客户端，而不改变公共协议。完整设计基线见 [目标架构基线（人类维护，AI 只读）](doc/18-architecture-baseline.md)。
 
 ## 仓库组成
 
@@ -33,7 +33,7 @@ TypeScript 控制面板                 第一个控制面板客户端
 | `infrastructure/` | Core 端口实现：SQLite RuntimeStore、HTTP 模型 Provider、时区解析、文件存储 |
 | `sdk/python/` | 进程外插件 SDK（`uv.lock` 锁定依赖） |
 | `plugins/` | 示例 Python 插件：`event-observer`、`ai-reply` |
-| `adapters/` | 渠道适配器（规划目录）；Python NoneBot2 适配器当前暂存于同级检出，待迁入 |
+| `adapters/` | 渠道适配器；Python NoneBot2 适配器位于 `adapters/nonebot/` |
 | `panel/` | TypeScript/React 控制面板，默认 mock，可切换 live |
 | `control/` | Control API 服务：把 Core 控制应用端口映射为 REST/WebSocket |
 | `deploy/` | Docker Compose 与 systemd 编排骨架 |
@@ -48,7 +48,7 @@ TypeScript 控制面板                 第一个控制面板客户端
 - **跨语言闭环**：`tests/acceptance/run.sh` 使用真实 gRPC/SQLite/SDK 和协议 fake 平台验证事件→Action、权限拒绝、重复事件、断线重放和重启恢复；这是协议级验收，不代表真实 QQ/NapCat 联调。
 - **尚未完成或未验收**：生产部署、备份恢复和发布镜像（T11b，依赖真实环境）；真实 QQ、真实模型联调（T07b，等待真实环境）；纯 C++ 替换是延期选项（T12）。
 - 面板默认使用 mock 数据，`VITE_API_MODE=live` 时才连接实际控制 API。
-- Python NoneBot2 适配器纳入本仓库维护范围（规划 `adapters/`），不再使用独立仓库；当前源码仍暂存于同级检出，尚未迁入，后续可再考虑拆成单独插件。
+- Python NoneBot2 适配器由本仓库 `adapters/nonebot/` 维护；后续可再考虑拆成单独插件。
 - 实时任务状态、交付记录和已知限制以 [开发台账](doc/16-development-tasks.md) 与 [跨层未完成事项清单](doc/15-cross-layer-gaps.md) 为准；[实现现状评估](doc/14-implementation-assessment.md) 是早期快照。
 
 ## 构建与测试
@@ -91,7 +91,7 @@ uv sync --project control/api/tests --python 3.11.18 --locked
 bash tests/acceptance/run.sh
 ```
 
-可选设置 `KIARABOT_ADAPTER_DIR=适配器检出绝对路径`（当前为同级 `../kiarabot-adapter-nonebot`，迁入后为仓库内 `adapters/nonebot`），把适配器的全部测试一并接入；缺少构建或 Python 环境会直接失败，不会跳过。详见 [验收说明](tests/acceptance/README.md)。
+可选设置 `KIARABOT_ADAPTER_DIR=适配器目录绝对路径`（仓库内 `adapters/nonebot`），把适配器的全部测试一并接入；缺少构建或 Python 环境会直接失败，不会跳过。详见 [验收说明](tests/acceptance/README.md)。
 
 ### 控制面板
 
@@ -128,7 +128,7 @@ build/proto/core/kiarabot-core --grpc-listen 127.0.0.1:50051
 
 ## 文档
 
-- **规范与规则**：[AI 开发入口规则](AGENTS.md)、[C++ 主编码规范](doc/12-cpp-coding-standard.md)、[开发边界与协作规则](doc/00-boundaries.md)、[分层开发规范索引](doc/README.md)
+- **规范与规则**：[AI 开发入口规则](AGENTS.md)、[目标架构基线（人类维护，AI 只读）](doc/18-architecture-baseline.md)、[C++ 主编码规范](doc/12-cpp-coding-standard.md)、[开发边界与协作规则](doc/00-boundaries.md)、[分层开发规范索引](doc/README.md)
 - **唯一契约**：[Protobuf](proto/README.md)、[OpenAPI](api/openapi.yaml)、[AsyncAPI](api/asyncapi.yaml)、[统一协议层](doc/01-contracts.md)、[事件与 Action 运行时语义](doc/01-runtime-semantics.md)
 - **模块设计**：[C++ Core](doc/02-core.md)、[PluginSDK 与插件运行时](doc/03-plugin-sdk.md)、[Python NoneBot2 适配器](doc/04-nonebot-adapter.md)、[基础设施适配器](doc/05-infrastructure.md)、[控制面板 API](doc/06-control-api.md)、[TypeScript 控制面板](doc/07-control-panel.md)、[部署与可观测性](doc/08-operations.md)
 - **过程与质量**：[分层开发任务与实施台账](doc/16-development-tasks.md)、[分阶段开发顺序](doc/09-roadmap.md)、[可执行编码任务模板](doc/10-task-template.md)、[开发工具链](doc/11-toolchain.md)、[CI/CD 流程方案](doc/12-ci-cd.md)、[本机闭环验收](tests/acceptance/README.md)、[Python SDK 使用说明](sdk/python/README.md)
@@ -139,6 +139,6 @@ build/proto/core/kiarabot-core --grpc-listen 127.0.0.1:50051
 ## 独立组件与许可证
 
 - NapCatQQ 作为独立 QQ 协议端安装和运行，不复制源码到本仓库，也不重新打包成 KiaraBot 的一部分。
-- Python NoneBot2 适配器由本仓库维护（规划 `adapters/`），通过 `proto/` 契约接入；当前源码暂存于同级检出 `../kiarabot-adapter-nonebot`，尚未迁入，后续可再考虑拆成单独插件。
+- Python NoneBot2 适配器由本仓库 `adapters/nonebot/` 维护，通过 `proto/` 契约接入；后续可再考虑拆成单独插件。
 - 第三方组件及其许可证见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
 - KiaraBot 自有代码采用 MIT 许可证，许可证文本见 [LICENSE.md](LICENSE.md)。

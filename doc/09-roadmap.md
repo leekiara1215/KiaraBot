@@ -22,7 +22,7 @@
 
 ## 阶段 3：Python NoneBot2 适配器（本仓库 adapters/）
 
-在 `adapters/` 下实现 Python 适配器，只做 OneBot 连接、事件转换和 Action 执行；不把 NoneBot2 细节或 Python 运行时依赖引入 Core。适配器当前暂存于同级检出，待迁入本仓库；后续可再考虑拆成单独插件。
+在 `adapters/` 下实现 Python 适配器，只做 OneBot 连接、事件转换和 Action 执行；不把 NoneBot2 细节或 Python 运行时依赖引入 Core。适配器位于 `adapters/nonebot/`；后续可再考虑拆成单独插件。
 
 推荐的目标结构：
 

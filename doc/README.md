@@ -40,23 +40,23 @@ proto/             跨语言协议
 api/               OpenAPI / AsyncAPI 契约
 core/              C++ Core、端口和运行时
 infrastructure/    Core 端口的具体实现
-sdk/               Python、C++ 和 TypeScript SDK
+sdk/               Python SDK（C++ 和 TypeScript SDK 为规划）
 plugins/           可选业务插件
 adapters/          同仓库渠道适配器
 control/api/       控制面板 API 服务
 panel/             TypeScript 控制面板
-tools/             插件与契约工具
+tools/             插件与契约工具（规划）
 deploy/            Compose、Docker 和 systemd
 scripts/           检查与运维脚本
 tests/             跨模块测试
 doc/               架构和开发规范
 ```
 
-Python NoneBot2 适配器由本仓库 `adapters/` 维护（当前实现暂存于同级独立检出 `../kiarabot-adapter-nonebot/`，待迁入），不把实现放进 `core/`、`plugins/` 或 `panel/`；后续可再考虑拆成单独插件。
+Python NoneBot2 适配器由本仓库 `adapters/nonebot/` 维护，不把实现放进 `core/`、`plugins/` 或 `panel/`；后续可再考虑拆成单独插件。
 
 ## 文档索引
 
-现状、文档分类和纯 C++ 替换路线见 [实现现状与纯 C++ 演进评估](14-implementation-assessment.md)。下列模块文档主要描述目标设计；实现状态以该评估和源码为准。
+当前实施与验收状态见 [开发台账](16-development-tasks.md) 和源码；[实现现状与纯 C++ 演进评估](14-implementation-assessment.md) 为历史评估。下列模块文档同时包含目标设计和阶段记录。
 
 - [C++ 主编码规范](12-cpp-coding-standard.md)
 - [开发边界与协作规则](00-boundaries.md)
@@ -79,6 +79,7 @@ Python NoneBot2 适配器由本仓库 `adapters/` 维护（当前实现暂存于
 - [实现现状与纯 C++ 演进评估](14-implementation-assessment.md)
 - [跨层未完成事项清单](15-cross-layer-gaps.md)
 - [账号封禁风险评估与分层控制建议](17-account-ban-risk.md)
+- [目标架构基线（人类维护，AI 只读）](18-architecture-baseline.md)
 
 ## 依赖方向
 

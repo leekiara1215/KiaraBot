@@ -18,5 +18,5 @@ if [[ -n "${KIARABOT_ADAPTER_DIR:-}" ]]; then
   adapter_python="$KIARABOT_ADAPTER_DIR/.venv/bin/python"
   test -x "$adapter_python" || { echo 'Adapter locked environment is required' >&2; exit 2; }
   export SDK_SOURCE="$root/sdk/python/src"
-  (cd "$KIARABOT_ADAPTER_DIR" && "$adapter_python" -m pytest -q)
+  (cd "$KIARABOT_ADAPTER_DIR" && "$adapter_python" tools/generate_proto.py "$root/proto" && "$adapter_python" -m pytest -q)
 fi

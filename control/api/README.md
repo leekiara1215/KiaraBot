@@ -53,8 +53,8 @@ and successful receipts persist encrypted; stream sessions, page snapshots and l
 are bounded process memory and restart requires new snapshots.
 
 Plugin enable/disable controls registration and new delivery. Config updates persist
-non-secret control values with optimistic versions; current SDK instances do not
-consume them. An accepted command never claims a child process has started or that
+non-secret control values with optimistic versions; supported SDK instances apply
+them through the configuration delivery and acknowledgement protocol. An accepted command never claims a child process has started or that
 an external side effect was cancelled. This is a functional local baseline, not a
 load, hostile-traffic or production deployment certification.
 

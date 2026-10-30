@@ -20,6 +20,8 @@ WebSocket 客户端
 
 ## 目录
 
+下图为目标目录；当前代码集中在 `src/App.tsx`、`src/api/`、`src/stream/` 和 `src/mock/`。
+
 ```text
 panel/
   package.json
@@ -36,6 +38,8 @@ panel/
 `src/api/` 使用 OpenAPI/AsyncAPI 生成的客户端类型；面板不直接导入 `core/`、`infrastructure/` 或适配器代码。
 
 ## 页面分区
+
+以下为目标页面，不表示全部已实现。当前页面包括总览、机器人、适配器、插件、模型、权限、任务、日志和审计，主要展示服务端资源。
 
 ```text
 登录

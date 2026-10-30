@@ -33,6 +33,8 @@ AsyncAPI：api/asyncapi.yaml
 
 ## 目录
 
+下图是目标职责划分；当前实现集中在 `control/api/src/` 的 `http_server.cpp`、`http_mapper.cpp`、`event_stream.cpp` 和 `configuration.cpp`。
+
 ```text
 control/api/
   src/
@@ -160,7 +162,9 @@ REST 的 `Error.code`、健康状态、插件状态和 Action 状态分别引用
 
 查询错误使用统一 Error：400 `INVALID_ARGUMENT`、401 `UNAUTHENTICATED`、403 `PERMISSION_DENIED`、404 `NOT_FOUND`（包括不存在、已过期和不可见）、429 `RATE_LIMITED`、500 `INTERNAL`、503 `UPSTREAM_UNAVAILABLE`、504 `TIMEOUT`。查询超时不代表 Action 执行失败。
 
-## 下游模块待实现
+## 历史：协议交接时的下游实施要求
+
+以下为协议交接时的历史清单，不代表当前状态；后续接线见本页 T08b、T09a 和[开发台账](16-development-tasks.md)。
 
 - Core：在插件状态事件中独立填充健康状态和生命周期字段；按现有 `PluginState` 数值编码，保留未知值。提供按 Action ID 和按已认证调用方及幂等键查询结果的应用服务；执行中的不确定结果不能被误报为失败。终结结果保留 7 天。
 - 基础设施：实现 Core 端口要求的 Action 结果和调用方范围内幂等键索引、7 天保留及清理；支持控制 API 会话重放所需的 10 分钟事件保留，不自行决定业务状态。

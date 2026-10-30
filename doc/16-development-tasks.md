@@ -2,7 +2,7 @@
 
 ## 当前范围和执行约束
 
-遵循用户最新要求：保持 C++20 Core、本仓库维护的 Python NoneBot2 适配器（规划 `adapters/`，当前实现暂存于同级检出，待迁入）、Python 进程外 SDK/插件和 TypeScript 面板。适配器不再作为独立仓库维护，后续可再考虑拆成单独插件；纯 C++ 替换只是未来方向，T12 延期。本台账将原 12 个工作包拆成 23 个当前任务和 1 个延期任务；状态只有验收后才能更新，不以协议或占位实现计完成。
+遵循用户最新要求：保持 C++20 Core、本仓库维护的 Python NoneBot2 适配器（`adapters/nonebot/`）、Python 进程外 SDK/插件和 TypeScript 面板。适配器不再作为独立仓库维护，后续可再考虑拆成单独插件；纯 C++ 替换只是未来方向，T12 延期。本台账将原 12 个工作包拆成 23 个当前任务和 1 个延期任务；状态只有验收后才能更新，不以协议或占位实现计完成。
 
 共同规则：每个任务只修改列出的目录及直接相关文档，禁止修改其余模块内部实现；跨层任务再按协议、各模块实现、集成测试拆提交。C++20/CMake 3.24+，Protobuf 25+/gRPC 1.60+，Python 适配器及 SDK 3.11+；面板依赖使用现有锁文件。新增依赖先固定版本，不顺手升级。拒绝、超时、依赖故障使用现有稳定错误；尚未冻结的跨边界字段先完成契约任务，不能用自由文本代替。
 
@@ -14,7 +14,7 @@
 - P：C 加 `cmake --preset proto -DCMAKE_EXPORT_COMPILE_COMMANDS=ON && cmake --build --preset proto && ctest --preset proto`；契约变化运行 `./proto/tests/check_contracts.sh`、相应 OpenAPI/AsyncAPI lint 和 descriptor 基线检查（见 proto/tests/README.md）。
 - I：P 加 `cmake -S infrastructure -B build/infrastructure && cmake --build build/infrastructure && ctest --test-dir build/infrastructure --output-on-failure`；新测试注册 CTest。
 - S：P/I 的相关项，加 SDK 项目固定依赖环境中的 `python -m pytest`；任务首次落地时提供锁文件、fake host 和可执行测试，不允许“无测试收集”通过。
-- E：适配器按锁定环境安装，执行 `python -m pytest`；再运行 T07 新增的集成入口。适配器目标目录为 `adapters/`（当前暂存于同级检出，待迁入）；未迁入前按检出路径执行，不得把迁移前的临时路径写入仓库配置。
+- E：适配器按锁定环境安装，执行 `python -m pytest`；再运行 T07 新增的集成入口。适配器目录为 `adapters/nonebot/`，按其 README 安装锁定依赖并生成协议。
 - W：`cd panel && npm run generate && npm run check:contracts && npm run lint && npm test && npm run build`，再运行 T09 新增的真实服务集成测试。
 - O：`bash -n scripts/deploy/*.sh`（逐文件检查），Compose config、镜像构建、隔离部署/备份恢复演练；不得以 config 成功代替服务验收。
 - 所有 C++ 变更另跑 `./scripts/check-toolchain.sh`，记录失败原因及直接验证结果。
@@ -114,8 +114,8 @@
 
 - 原工作包：2；状态：**已实现；适配器 20 项自动验收通过，真实 QQ 留待 T07b**。
 - 依赖：T02a。
-- 允许修改：适配器实现（目标 `adapters/`，当前为同级检出 `../kiarabot-adapter-nonebot/`）；本仓库仅契约测试语料；禁止修改其余模块内部实现。
-- 归属调整（2026-10-30）：用户决定适配器不再作为独立仓库维护，改为本仓库 `adapters/` 维护；当前代码仍在同级检出，待后续迁移任务把代码、锁文件、测试和验收入口迁入，并同步本台账与 doc/04。后续可再考虑拆成单独插件。
+- 允许修改：适配器实现（`adapters/nonebot/`）；本仓库仅契约测试语料；禁止修改其余模块内部实现。
+- 归属调整（2026-10-30）：适配器源码、锁文件和测试已迁入本仓库 `adapters/nonebot/`；迁入后仍须按本次交付结果核对测试。后续可再考虑拆成单独插件。
 - 输入、输出与错误：OneBot V11 → EventEnvelope；映射不支持返回稳定错误。
 - 文档同步：doc/04-nonebot-adapter.md。
 - 验证命令组：E。

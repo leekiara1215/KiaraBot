@@ -1,0 +1,23 @@
+[project]
+name = "kiarabot-adapter-nonebot"
+version = "0.1.0"
+description = "Independent OneBot V11 to KiaraBot adapter"
+requires-python = ">=3.11,<3.13"
+dependencies = [
+  "nonebot2[websockets]>=2.4,<3",
+  "nonebot-adapter-onebot>=2.4,<3",
+  "grpcio>=1.60,<2",
+  "protobuf>=5,<7",
+]
+
+[dependency-groups]
+dev = ["grpcio-tools>=1.60,<2", "pytest>=8,<10", "pytest-asyncio>=0.24,<2"]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+pythonpath = ["src", "generated"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["tests"]

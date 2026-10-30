@@ -1,10 +1,10 @@
 # T07b 真实联调环境准备
 
-当前用户尚未配置真实 QQ/NapCat、模型服务与目标会话，T07b 未验收。保持 C++ Core、Python 适配器/SDK 和 TypeScript 面板；适配器当前暂存于同级检出，待迁入主仓库 `adapters/`。
+当前用户尚未配置真实 QQ/NapCat、模型服务与目标会话，T07b 未验收。保持 C++ Core、Python 适配器/SDK 和 TypeScript 面板；适配器位于主仓库 `adapters/nonebot/`。
 
 ## 1. QQ 与 NapCat
 
-准备测试 QQ 账号和测试私聊/小群，记录机器人 QQ 号、测试对端 QQ/群号、NapCat/QQ 版本。Mac 可继续运行 Core 和适配器（当前为同级检出），NapCat 放在 Linux/Windows，按 [官方安装说明](https://napneko.github.io/guide/boot/Shell) 部署。
+准备测试 QQ 账号和测试私聊/小群，记录机器人 QQ 号、测试对端 QQ/群号、NapCat/QQ 版本。Mac 可继续运行 Core 和适配器，NapCat 放在 Linux/Windows，按 [官方安装说明](https://napneko.github.io/guide/boot/Shell) 部署。
 
 NapCat WebUI 登录后，新建并启用 **OneBot V11 正向 WebSocket 服务端**：监听 127.0.0.1:3001，消息格式 array，reportSelfMessage=false，使用全双工 API + 事件连接，设置 OneBot token。这个 token 与 WebUI 登录密码不同。字段见 [官方配置说明](https://napneko.github.io/config/basic)。
 
@@ -37,14 +37,14 @@ chmod 600 data/t07b/core.env data/t07b/adapter.env
 
 替换两个文件中的全部 REPLACE_ 占位符。可用 `openssl rand -hex 32` 在本机生成随机 token：Core adapter token 与适配器 CORE_AUTH_TOKEN 相同；plugin token 使用另一个随机值；ONEBOT_ACCESS_TOKEN 填 NapCat OneBot token。data/ 已被 Git 忽略，密钥不要粘贴到聊天。
 
-适配器检出目录（当前与 KiaraBot 同级，待迁入主仓库）执行：
+适配器目录 `adapters/nonebot/`执行：
 
 ```sh
 uv sync --locked --python 3.11.18
-.venv/bin/python tools/generate_proto.py ../KiaraBot/proto
+.venv/bin/python tools/generate_proto.py ../../proto
 ```
 
-若 uv 不在 PATH，可使用本机已有 KiaraBot/.tools/uv-aarch64-apple-darwin/uv。两个项目的 .venv、生成目录和锁文件保持独立。
+若 uv 不在 PATH，可使用本机已有 ../../.tools/uv-aarch64-apple-darwin/uv。两个项目的 .venv、生成目录和锁文件保持独立。
 
 ## 4. 启动
 
@@ -57,11 +57,11 @@ set +a
 build/proto/core/kiarabot-core --grpc-listen 127.0.0.1:50051
 ```
 
-终端 B 在适配器检出根目录，只加载适配器配置：
+终端 B 在 `adapters/nonebot/`，只加载适配器配置：
 
 ```sh
 set -a
-source ../KiaraBot/data/t07b/adapter.env
+source ../../data/t07b/adapter.env
 set +a
 PYTHONPATH=generated:src .venv/bin/python -m kiarabot_adapter_nonebot
 ```

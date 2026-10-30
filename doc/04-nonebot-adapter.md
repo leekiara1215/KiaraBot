@@ -27,7 +27,7 @@ Python 适配器是第一种渠道适配器，负责连接 NapCatQQ，并把 One
 
 ## 目录
 
-该适配器由本仓库维护，规划位于 `adapters/nonebot/`，不再单独设仓库；当前实现暂存于同级检出 `../kiarabot-adapter-nonebot/`，待迁入。目标结构如下：
+该适配器由本仓库维护，位置为 `adapters/nonebot/`。下图为目标结构；当前具体文件和运行命令见 [适配器 README](../adapters/nonebot/README.md)：
 
 ```text
 adapters/nonebot/
@@ -156,6 +156,6 @@ NapCat 的 WebUI 密码、OneBot Token 和 Core Token 必须分开管理。
 
 ## T02b 适配器实现
 
-当前实现暂存于相邻检出 `../kiarabot-adapter-nonebot/`，尚未迁入 `adapters/`；配置、锁文件和测试命令见该检出 README。用户已决定适配器不再作为独立仓库维护，迁入后按 `adapters/nonebot/` 维护，后续可再考虑拆成单独插件。当前使用 NoneBot websockets driver 和 onebot_ws_urls 连接 NapCat 正向 WebSocket，反向连接尚未配置。
+当前实现维护于 `adapters/nonebot/`；配置、锁文件和测试命令见该目录 README。后续可再考虑拆成单独插件。当前使用 NoneBot websockets driver 和 onebot_ws_urls 连接 NapCat 正向 WebSocket，反向连接尚未配置。
 
-消息先进入本地有界 outbox 并原子分配会话 sequence；等待 Core 确认期间保留 pending，重连注册后重新绑定 instance 并重投。永久拒绝保留 failed 记录。当前仅接收群/私聊消息及 text/image/at/reply，未知段降级；不注册 Action 执行能力。限制为 10000 条、64 MiB、单消息 1 MB，已确认索引保留 7 天，水位不回退；达到上限明确失败。平台到 outbox 之前没有消费 ACK，真实可靠性仍需 T07b 验证。
+消息先进入本地有界 outbox 并原子分配会话 sequence；等待 Core 确认期间保留 pending，重连注册后重新绑定 instance 并重投。永久拒绝保留 failed 记录。当前仅接收群/私聊消息及 text/image/at/reply，未知段降级；Action 纯文本发送能力见上方 T04b。限制为 10000 条、64 MiB、单消息 1 MB，已确认索引保留 7 天，水位不回退；达到上限明确失败。平台到 outbox 之前没有消费 ACK，真实可靠性仍需 T07b 验证。
