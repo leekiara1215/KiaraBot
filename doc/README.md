@@ -78,6 +78,7 @@ Python NoneBot2 适配器按独立项目维护，不把实现放回本仓库的 
 - [SDK 跨模块依赖与协议缺口（待核验）](../sdk/PLUGIN_SDK_DEPENDENCIES.md)
 - [实现现状与纯 C++ 演进评估](14-implementation-assessment.md)
 - [跨层未完成事项清单](15-cross-layer-gaps.md)
+- [账号封禁风险评估与分层控制建议](17-account-ban-risk.md)
 
 ## 依赖方向
 
