@@ -69,41 +69,41 @@ struct RuntimeOptions {
 // RuntimeStore is the Core port implemented by infrastructure. It owns the
 // durable inbox/outbox/action records; Runtime owns the business transitions.
 class RuntimeStore {
- public:
+public:
   virtual ~RuntimeStore() = default;
 
   [[nodiscard]] virtual bool contains_event(std::string_view event_id) const = 0;
-  [[nodiscard]] virtual std::optional<EventEntry> find_event(
-      std::string_view event_id) const = 0;
+  [[nodiscard]] virtual std::optional<EventEntry> find_event(std::string_view event_id) const = 0;
   [[nodiscard]] virtual std::size_t pending_event_count() const = 0;
   [[nodiscard]] virtual std::vector<EventEntry> events() const = 0;
   virtual bool insert_event(EventEntry entry) = 0;
   virtual bool update_event(EventEntry entry) = 0;
   virtual bool erase_event(std::string_view event_id) = 0;
 
-  [[nodiscard]] virtual std::optional<ActionEntry> find_action_by_idempotency(
-      std::string_view idempotency_key) const = 0;
+  [[nodiscard]] virtual std::optional<ActionEntry>
+  find_action_by_idempotency(std::string_view idempotency_key) const = 0;
   [[nodiscard]] virtual std::vector<ActionEntry> actions() const = 0;
   virtual bool insert_action(ActionEntry entry) = 0;
   virtual bool update_action(ActionEntry entry) = 0;
 
-  [[nodiscard]] virtual std::optional<PluginEntry> find_plugin(
-      std::string_view plugin_id) const = 0;
+  [[nodiscard]] virtual std::optional<PluginEntry>
+  find_plugin(std::string_view plugin_id) const = 0;
   virtual bool upsert_plugin(std::string plugin_id, PluginEntry entry) = 0;
 };
 
 // Test and local-development store. Production infrastructure can replace it
 // with SQLite or another repository without changing Runtime.
 class InMemoryRuntimeStore final : public RuntimeStore {
- public:
+public:
   [[nodiscard]] bool contains_event(std::string_view event_id) const override {
     return events_.contains(std::string(event_id));
   }
 
-  [[nodiscard]] std::optional<EventEntry> find_event(
-      std::string_view event_id) const override {
+  [[nodiscard]] std::optional<EventEntry> find_event(std::string_view event_id) const override {
     const auto iterator = events_.find(std::string(event_id));
-    if (iterator == events_.end()) return std::nullopt;
+    if (iterator == events_.end()) {
+      return std::nullopt;
+    }
     return iterator->second;
   }
 
@@ -120,7 +120,9 @@ class InMemoryRuntimeStore final : public RuntimeStore {
   [[nodiscard]] std::vector<EventEntry> events() const override {
     std::vector<EventEntry> result;
     result.reserve(events_.size());
-    for (const auto& [_, entry] : events_) result.push_back(entry);
+    for (const auto& [_, entry] : events_) {
+      result.push_back(entry);
+    }
     return result;
   }
 
@@ -130,7 +132,9 @@ class InMemoryRuntimeStore final : public RuntimeStore {
 
   bool update_event(EventEntry entry) override {
     const auto iterator = events_.find(entry.record.event_id);
-    if (iterator == events_.end()) return false;
+    if (iterator == events_.end()) {
+      return false;
+    }
     iterator->second = std::move(entry);
     return true;
   }
@@ -139,17 +143,21 @@ class InMemoryRuntimeStore final : public RuntimeStore {
     return events_.erase(std::string(event_id)) != 0;
   }
 
-  [[nodiscard]] std::optional<ActionEntry> find_action_by_idempotency(
-      std::string_view idempotency_key) const override {
+  [[nodiscard]] std::optional<ActionEntry>
+  find_action_by_idempotency(std::string_view idempotency_key) const override {
     const auto iterator = actions_.find(std::string(idempotency_key));
-    if (iterator == actions_.end()) return std::nullopt;
+    if (iterator == actions_.end()) {
+      return std::nullopt;
+    }
     return iterator->second;
   }
 
   [[nodiscard]] std::vector<ActionEntry> actions() const override {
     std::vector<ActionEntry> result;
     result.reserve(actions_.size());
-    for (const auto& [_, entry] : actions_) result.push_back(entry);
+    for (const auto& [_, entry] : actions_) {
+      result.push_back(entry);
+    }
     return result;
   }
 
@@ -159,15 +167,18 @@ class InMemoryRuntimeStore final : public RuntimeStore {
 
   bool update_action(ActionEntry entry) override {
     const auto iterator = actions_.find(entry.record.idempotency_key);
-    if (iterator == actions_.end()) return false;
+    if (iterator == actions_.end()) {
+      return false;
+    }
     iterator->second = std::move(entry);
     return true;
   }
 
-  [[nodiscard]] std::optional<PluginEntry> find_plugin(
-      std::string_view plugin_id) const override {
+  [[nodiscard]] std::optional<PluginEntry> find_plugin(std::string_view plugin_id) const override {
     const auto iterator = plugins_.find(std::string(plugin_id));
-    if (iterator == plugins_.end()) return std::nullopt;
+    if (iterator == plugins_.end()) {
+      return std::nullopt;
+    }
     return iterator->second;
   }
 
@@ -176,14 +187,14 @@ class InMemoryRuntimeStore final : public RuntimeStore {
     return true;
   }
 
- private:
+private:
   std::unordered_map<std::string, EventEntry> events_;
   std::unordered_map<std::string, ActionEntry> actions_;
   std::unordered_map<std::string, PluginEntry> plugins_;
 };
 
 class Runtime {
- public:
+public:
   explicit Runtime(RuntimeOptions options = {}, RuntimeClock clock = {})
       : owned_store_(), store_(&owned_store_), options_(options), clock_(std::move(clock)) {
     rebuild_sequence_index();
@@ -195,12 +206,20 @@ class Runtime {
   }
 
   EventResult ingest(EventRecord event) {
-    if (event.event_id.empty()) return EventResult::invalid;
-    if (store_->contains_event(event.event_id)) return EventResult::duplicate;
-    if (store_->pending_event_count() >= options_.queue_limit) return EventResult::rate_limited;
+    if (event.event_id.empty()) {
+      return EventResult::invalid;
+    }
+    if (store_->contains_event(event.event_id)) {
+      return EventResult::duplicate;
+    }
+    if (store_->pending_event_count() >= options_.queue_limit) {
+      return EventResult::rate_limited;
+    }
 
     if (event.has_sequence) {
-      if (event.session_key.empty() || event.sequence == 0) return EventResult::invalid;
+      if (event.session_key.empty() || event.sequence == 0) {
+        return EventResult::invalid;
+      }
       const auto last = last_sequences_.find(event.session_key);
       if (last != last_sequences_.end() && event.sequence <= last->second) {
         return EventResult::out_of_order;
@@ -216,15 +235,23 @@ class Runtime {
     return store_->insert_event(std::move(entry)) ? EventResult::accepted : EventResult::duplicate;
   }
 
-  [[nodiscard]] std::size_t inbox_size() const { return store_->events().size(); }
+  [[nodiscard]] std::size_t inbox_size() const {
+    return store_->events().size();
+  }
 
-  [[nodiscard]] std::size_t pending_size() const { return store_->pending_event_count(); }
+  [[nodiscard]] std::size_t pending_size() const {
+    return store_->pending_event_count();
+  }
 
-  [[nodiscard]] bool sequence_gap_detected() const noexcept { return sequence_gap_detected_; }
+  [[nodiscard]] bool sequence_gap_detected() const noexcept {
+    return sequence_gap_detected_;
+  }
 
   bool mark_dispatched(std::string_view event_id) {
     const auto entry = store_->find_event(event_id);
-    if (!entry.has_value()) return false;
+    if (!entry.has_value()) {
+      return false;
+    }
     EventEntry updated = *entry;
     updated.state = DeliveryState::dispatched;
     updated.updated_at = current_time();
@@ -233,7 +260,9 @@ class Runtime {
 
   bool acknowledge_event(std::string_view event_id) {
     const auto entry = store_->find_event(event_id);
-    if (!entry.has_value()) return false;
+    if (!entry.has_value()) {
+      return false;
+    }
     EventEntry updated = *entry;
     updated.state = DeliveryState::acked;
     updated.updated_at = current_time();
@@ -242,7 +271,9 @@ class Runtime {
 
   bool fail_event(std::string_view event_id, bool retryable) {
     const auto entry = store_->find_event(event_id);
-    if (!entry.has_value()) return false;
+    if (!entry.has_value()) {
+      return false;
+    }
     EventEntry updated = *entry;
     ++updated.attempts;
     if (!retryable || updated.attempts >= options_.max_attempts) {
@@ -270,7 +301,9 @@ class Runtime {
   [[nodiscard]] std::size_t dead_letter_size() const {
     std::size_t count = 0;
     for (const EventEntry& entry : store_->events()) {
-      if (entry.state == DeliveryState::dead_letter) ++count;
+      if (entry.state == DeliveryState::dead_letter) {
+        ++count;
+      }
     }
     return count;
   }
@@ -279,8 +312,8 @@ class Runtime {
     const RuntimeTimePoint cutoff = current_time() - options_.retention;
     std::size_t removed = 0;
     for (const EventEntry& entry : store_->events()) {
-      const bool terminal = entry.state == DeliveryState::acked ||
-                            entry.state == DeliveryState::dead_letter;
+      const bool terminal =
+          entry.state == DeliveryState::acked || entry.state == DeliveryState::dead_letter;
       if (terminal && entry.updated_at <= cutoff && store_->erase_event(entry.record.event_id)) {
         ++removed;
       }
@@ -289,20 +322,26 @@ class Runtime {
   }
 
   ActionResult submit_action(ActionRecord action) {
-    if (action.action_id.empty() || action.idempotency_key.empty()) return ActionResult::invalid;
+    if (action.action_id.empty() || action.idempotency_key.empty()) {
+      return ActionResult::invalid;
+    }
     if (store_->find_action_by_idempotency(action.idempotency_key).has_value()) {
       return ActionResult::duplicate;
     }
     const RuntimeTimePoint now = current_time();
-    if (action.deadline <= now) return ActionResult::expired;
+    if (action.deadline <= now) {
+      return ActionResult::expired;
+    }
     ActionEntry entry{std::move(action), ActionState::accepted, now};
     return store_->insert_action(std::move(entry)) ? ActionResult::accepted
-                                                    : ActionResult::duplicate;
+                                                   : ActionResult::duplicate;
   }
 
   bool complete_action(std::string_view idempotency_key, bool succeeded) {
     const auto entry = store_->find_action_by_idempotency(idempotency_key);
-    if (!entry.has_value() || entry->state != ActionState::accepted) return false;
+    if (!entry.has_value() || entry->state != ActionState::accepted) {
+      return false;
+    }
     ActionEntry updated = *entry;
     updated.state = succeeded ? ActionState::succeeded : ActionState::failed;
     updated.updated_at = current_time();
@@ -317,20 +356,26 @@ class Runtime {
         ActionEntry updated = entry;
         updated.state = ActionState::expired;
         updated.updated_at = now;
-        if (store_->update_action(std::move(updated))) ++expired;
+        if (store_->update_action(std::move(updated))) {
+          ++expired;
+        }
       }
     }
     return expired;
   }
 
   bool register_plugin(std::string plugin_id) {
-    if (plugin_id.empty()) return false;
+    if (plugin_id.empty()) {
+      return false;
+    }
     return store_->upsert_plugin(std::move(plugin_id), PluginEntry{PluginState::ready, {}});
   }
 
   bool plugin_started(std::string_view plugin_id) {
     const auto entry = store_->find_plugin(plugin_id);
-    if (!entry.has_value()) return false;
+    if (!entry.has_value()) {
+      return false;
+    }
     PluginEntry updated = *entry;
     updated.state = PluginState::running;
     updated.disconnected_at = {};
@@ -339,7 +384,9 @@ class Runtime {
 
   bool plugin_disconnected(std::string_view plugin_id) {
     const auto entry = store_->find_plugin(plugin_id);
-    if (!entry.has_value()) return false;
+    if (!entry.has_value()) {
+      return false;
+    }
     PluginEntry updated = *entry;
     updated.state = PluginState::unavailable;
     updated.disconnected_at = current_time();
@@ -348,7 +395,9 @@ class Runtime {
 
   bool update_plugin_recovery(std::string_view plugin_id) {
     const auto entry = store_->find_plugin(plugin_id);
-    if (!entry.has_value() || entry->state != PluginState::unavailable) return false;
+    if (!entry.has_value() || entry->state != PluginState::unavailable) {
+      return false;
+    }
     PluginEntry updated = *entry;
     if (current_time() - updated.disconnected_at >= options_.plugin_failure_after) {
       updated.state = PluginState::failed;
@@ -357,12 +406,16 @@ class Runtime {
     return true;
   }
 
- private:
+private:
   void rebuild_sequence_index() {
     for (const EventEntry& entry : store_->events()) {
-      if (!entry.record.has_sequence || entry.record.session_key.empty()) continue;
+      if (!entry.record.has_sequence || entry.record.session_key.empty()) {
+        continue;
+      }
       auto& last_sequence = last_sequences_[entry.record.session_key];
-      if (entry.record.sequence > last_sequence) last_sequence = entry.record.sequence;
+      if (entry.record.sequence > last_sequence) {
+        last_sequence = entry.record.sequence;
+      }
     }
   }
 
@@ -384,4 +437,4 @@ class Runtime {
   bool sequence_gap_detected_{false};
 };
 
-}  // namespace kiarabot::core
+} // namespace kiarabot::core

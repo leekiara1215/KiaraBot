@@ -161,8 +161,8 @@ protoc \
 
 ```bash
 ruby -e "require 'yaml'; YAML.load_file('api/openapi.yaml'); YAML.load_file('api/asyncapi.yaml')"
-npx --yes @redocly/cli@latest lint api/openapi.yaml
-# 使用锁定版本的 @asyncapi/parser 校验 api/asyncapi.yaml，并拒绝 severity=0 的诊断
+npx --yes @redocly/cli@2.72.1 lint api/openapi.yaml
+./scripts/quality/check-asyncapi.sh
 ```
 
 ## 构建镜像

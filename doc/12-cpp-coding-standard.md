@@ -61,10 +61,10 @@
 
 ## 3. 格式
 
-格式由根目录 [`.clang-format`](../.clang-format) 自动化执行；提交前应运行：
+格式由根目录 [`.clang-format`](../.clang-format) 自动化执行；提交前应运行统一检查（包括全仓库手写 C++ 的格式检查，以及 `core/` 和 `proto/tests/` 的静态分析）：
 
 ```bash
-clang-format --dry-run --Werror <changed-cpp-files>
+./scripts/check-toolchain.sh
 ```
 
 固定规则如下：
@@ -159,12 +159,14 @@ cmake --build --preset dev
 ctest --preset dev
 ```
 
-启用协议生成时使用：
+启用协议生成和 clang-tidy 编译数据库时使用：
 
 ```bash
-cmake --preset proto
-cmake --build --preset proto --target kiarabot_proto
+cmake --preset proto -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+cmake --build --preset proto
 ctest --preset proto
+./scripts/quality/check-format.sh
+./scripts/quality/check-tidy.sh
 ```
 
 ## 10. AI 开发流程
@@ -205,6 +207,6 @@ AI 不得：
 - [ ] 修改仍位于正确模块，依赖方向没有反转。
 - [ ] 所有权、生命周期、错误和线程安全语义清晰。
 - [ ] 没有裸拥有指针、未说明的全局状态或跨边界异常。
-- [ ] 已运行 clang-format 或确认变更不涉及 C++ 格式。
+- [ ] 已运行 `./scripts/check-toolchain.sh`，或记录未运行的具体检查及原因。
 - [ ] 已运行相关构建和测试，并记录结果。
 - [ ] `git diff` 中没有构建产物、生成源码、密钥和无关变更。
