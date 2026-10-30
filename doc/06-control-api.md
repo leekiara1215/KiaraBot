@@ -42,6 +42,7 @@ control/api/
 /api/v1/groups
 /api/v1/users
 /api/v1/tasks
+/api/v1/actions
 /api/v1/logs
 /api/v1/audit
 /api/v1/health
@@ -103,7 +104,18 @@ GET  /plugins/{id}/health
 
 WebSocket 只推送经过权限过滤的数据。普通面板用户不能订阅全部私聊消息或完整模型上下文。
 
-WebSocket 服务端使用 WSS 和 bearer 认证；首帧必须是 `hello` 或带已有会话的 `resume`。服务端返回 `session_id` 和 `last_sequence`。断线后客户端携带 `last_sequence` 重连；服务端保留 10 分钟事件，无法补齐时返回 `RESYNC_REQUIRED`，客户端重新拉取 REST 快照。每个消息组件都有唯一 `messageId`，频道复用时不得把同一消息实例重复注册。
+WebSocket 服务端使用 WSS 和 bearer 认证；每个频道连接首帧必须是 `hello` 或带已有会话的 `resume`。`hello.access_token` 必须与 bearer 身份一致，恢复连接重新进行 bearer 认证，会话绑定身份和频道。成功后返回 `session` 帧（`session_id` 和起始 `last_sequence`），再发送重放和实时事件。`sequence` 在该授权会话内单调递增，不跨会话共享；断线后携带最后收到的 `last_sequence` 重连。服务端保留 10 分钟事件，无法补齐或游标无效时返回 `RESYNC_REQUIRED`，客户端重新拉取 REST 快照并建立新会话。每个消息组件都有唯一 `messageId`。
+
+所有事件使用 `schema_version`、`event_type`、`sequence`、UTC `occurred_at` 和 `payload` envelope。`/ws/control` 汇聚事件；独立频道与它使用相同事件类型和 payload：
+
+- `health.updated`：`state`、`components`，使用 `HealthState`；
+- `log.updated`：`id`、`occurred_at`、`level`、`component`、`operation`、`outcome`，可选 `trace_id`，必须脱敏；
+- `adapter.updated`：`id`、`state`、`implementation`，可选 `version`、`capabilities`；
+- `plugin.updated`：`id`、`version`，至少一个 `state`（`PluginState`）或 `health_state`（`HealthState`），可选 `reason`；
+- `task.updated`：`id`、`name`、字符串 `state`；
+- `message.updated`：`message_id`、`conversation_id`、`direction`（`received`/`sent`），可选 `action_id`；默认不推送正文。
+
+每个频道只推送已授权的数据。具体 schema 和字段约束以 AsyncAPI 为准。
 
 频道、首帧、消息 envelope 和重连语义以 [`api/asyncapi.yaml`](../api/asyncapi.yaml) 为唯一契约。OpenAPI 只描述 REST，不再把 WebSocket 仅作为文字建议。插件健康查询使用 `GET /plugins/{pluginId}/health`，返回统一 `Health` schema。
 
@@ -123,6 +135,22 @@ WebSocket 服务端使用 WSS 和 bearer 认证；首帧必须是 `hello` 或带
   "details": {}
 }
 ```
+
+REST 的 `Error.code`、健康状态、插件状态和 Action 状态分别引用 `api/openapi.yaml` 的 `ErrorCode`、`HealthState`、`PluginState` 和 `ActionStatus` schema。它们与 Protobuf 和 AsyncAPI 中的同名枚举逐项一致；`ERROR_CODE_UNSPECIFIED` 等未指定值只用于兼容解码，服务端返回业务错误时使用稳定的具体错误码。
+
+`GET /actions/{actionId}` 按 ID 查询；`GET /actions/by-idempotency-key` 使用 `Idempotency-Key` 请求头，在已认证调用方的授权范围内查询，密钥不得写入日志。`by-idempotency-key` 为保留路径段。两者返回 `ActionResult`：`action_id` 和 `status` 必填；`ACCEPTED` 未终结，`SUCCEEDED`、`FAILED`、`EXPIRED`、`CANCELLED` 已终结，终结结果必须有 `completed_at`，`FAILED` 必须有 `error`。终结结果保留 7 天。
+
+查询错误使用统一 Error：400 `INVALID_ARGUMENT`、401 `UNAUTHENTICATED`、403 `PERMISSION_DENIED`、404 `NOT_FOUND`（包括不存在、已过期和不可见）、429 `RATE_LIMITED`、500 `INTERNAL`、503 `UPSTREAM_UNAVAILABLE`、504 `TIMEOUT`。查询超时不代表 Action 执行失败。
+
+## 下游模块待实现
+
+- Core：在插件状态事件中独立填充健康状态和生命周期字段；按现有 `PluginState` 数值编码，保留未知值。提供按 Action ID 和按已认证调用方及幂等键查询结果的应用服务；执行中的不确定结果不能被误报为失败。终结结果保留 7 天。
+- 基础设施：实现 Core 端口要求的 Action 结果和调用方范围内幂等键索引、7 天保留及清理；支持控制 API 会话重放所需的 10 分钟事件保留，不自行决定业务状态。
+- 控制 API：实现 OpenAPI 所列两个 Action 查询，进行认证、授权、幂等键作用域隔离及稳定错误映射；落实 AsyncAPI 的会话认证、10 分钟重放、权限过滤和各频道 payload。日志必须脱敏，消息事件默认不含正文。
+- 适配器、插件 SDK 和面板客户端：兼容缺失的生命周期字段及未知枚举数值；面板使用 `session_id` 和 `sequence` 恢复，收到 `RESYNC_REQUIRED` 后刷新 REST 快照。客户端不得从健康状态推断生命周期。
+- 运维与 CI：配置 HTTPS/WSS 和密钥脱敏，提供已发布 descriptor 基线并在 CI 中运行兼容性、生成、round-trip 和 API 校验；修正仓库格式配置中的无效布尔值后恢复标准 `clang-format` 检查。
+
+这些是下游实施要求，当前协议变更不修改上述模块内部实现。浏览器 WebSocket 无法自行设置 bearer 请求头，控制 API 的浏览器认证接入方式需要在下游实现中解决，同时保持本契约的认证要求。
 
 ## 不属于本层的内容
 

@@ -19,7 +19,7 @@ servers:
   control:
     url: control.example.invalid/ws
     protocol: wss
-    description: Production requires TLS; local development may use ws on loopback.
+    description: Production requires TLS; local development may use ws on loopback. Each channel connection authenticates with bearer credentials and sends hello or resume as its first frame. Resume requires fresh bearer authentication and a session bound to the same identity and channel.
     security:
       - bearerAuth: []
 channels:
@@ -35,6 +35,7 @@ channels:
       operationId: receiveControlEvent
       message:
         oneOf:
+          - $ref: '#/components/messages/Session'
           - $ref: '#/components/messages/ResyncRequired'
           - $ref: '#/components/messages/HealthUpdate'
           - $ref: '#/components/messages/LogUpdate'
@@ -43,29 +44,89 @@ channels:
           - $ref: '#/components/messages/TaskUpdate'
           - $ref: '#/components/messages/MessageUpdate'
   health:
+    publish:
+      operationId: handshakeHealthChannel
+      message:
+        oneOf:
+          - $ref: '#/components/messages/HealthHello'
+          - $ref: '#/components/messages/HealthResume'
     subscribe:
       operationId: subscribeHealth
-      message: { $ref: '#/components/messages/HealthChannelUpdate' }
+      message:
+        oneOf:
+          - $ref: '#/components/messages/HealthSession'
+          - $ref: '#/components/messages/HealthResyncRequired'
+          - $ref: '#/components/messages/HealthChannelUpdate'
   logs:
+    publish:
+      operationId: handshakeLogChannel
+      message:
+        oneOf:
+          - $ref: '#/components/messages/LogHello'
+          - $ref: '#/components/messages/LogResume'
     subscribe:
       operationId: subscribeLogs
-      message: { $ref: '#/components/messages/LogChannelUpdate' }
+      message:
+        oneOf:
+          - $ref: '#/components/messages/LogSession'
+          - $ref: '#/components/messages/LogResyncRequired'
+          - $ref: '#/components/messages/LogChannelUpdate'
   adapters:
+    publish:
+      operationId: handshakeAdapterChannel
+      message:
+        oneOf:
+          - $ref: '#/components/messages/AdapterHello'
+          - $ref: '#/components/messages/AdapterResume'
     subscribe:
       operationId: subscribeAdapters
-      message: { $ref: '#/components/messages/AdapterChannelUpdate' }
+      message:
+        oneOf:
+          - $ref: '#/components/messages/AdapterSession'
+          - $ref: '#/components/messages/AdapterResyncRequired'
+          - $ref: '#/components/messages/AdapterChannelUpdate'
   plugins:
+    publish:
+      operationId: handshakePluginChannel
+      message:
+        oneOf:
+          - $ref: '#/components/messages/PluginHello'
+          - $ref: '#/components/messages/PluginResume'
     subscribe:
       operationId: subscribePlugins
-      message: { $ref: '#/components/messages/PluginChannelUpdate' }
+      message:
+        oneOf:
+          - $ref: '#/components/messages/PluginSession'
+          - $ref: '#/components/messages/PluginResyncRequired'
+          - $ref: '#/components/messages/PluginChannelUpdate'
   tasks:
+    publish:
+      operationId: handshakeTaskChannel
+      message:
+        oneOf:
+          - $ref: '#/components/messages/TaskHello'
+          - $ref: '#/components/messages/TaskResume'
     subscribe:
       operationId: subscribeTasks
-      message: { $ref: '#/components/messages/TaskChannelUpdate' }
+      message:
+        oneOf:
+          - $ref: '#/components/messages/TaskSession'
+          - $ref: '#/components/messages/TaskResyncRequired'
+          - $ref: '#/components/messages/TaskChannelUpdate'
   messages:
+    publish:
+      operationId: handshakeMessageChannel
+      message:
+        oneOf:
+          - $ref: '#/components/messages/MessageHello'
+          - $ref: '#/components/messages/MessageResume'
     subscribe:
       operationId: subscribeMessages
-      message: { $ref: '#/components/messages/MessageChannelUpdate' }
+      message:
+        oneOf:
+          - $ref: '#/components/messages/MessageSession'
+          - $ref: '#/components/messages/MessageResyncRequired'
+          - $ref: '#/components/messages/MessageChannelUpdate'
 components:
   securitySchemes:
     bearerAuth:
@@ -83,6 +144,11 @@ components:
       messageId: resume
       title: Resume a previous WebSocket session
       payload: { $ref: '#/components/schemas/Resume' }
+    Session:
+      name: Session
+      messageId: session
+      title: Authenticated stream session
+      payload: { $ref: '#/components/schemas/Session' }
     ResyncRequired:
       name: ResyncRequired
       messageId: resync-required
@@ -90,67 +156,282 @@ components:
       payload: { $ref: '#/components/schemas/ResyncRequired' }
     HealthUpdate:
       messageId: health-update
-      payload: { $ref: '#/components/schemas/StreamEnvelope' }
+      payload: { $ref: '#/components/schemas/HealthEnvelope' }
     LogUpdate:
       messageId: log-update
-      payload: { $ref: '#/components/schemas/StreamEnvelope' }
+      payload: { $ref: '#/components/schemas/LogEnvelope' }
     AdapterUpdate:
       messageId: adapter-update
-      payload: { $ref: '#/components/schemas/StreamEnvelope' }
+      payload: { $ref: '#/components/schemas/AdapterEnvelope' }
     PluginUpdate:
       messageId: plugin-update
-      payload: { $ref: '#/components/schemas/StreamEnvelope' }
+      payload: { $ref: '#/components/schemas/PluginEnvelope' }
     TaskUpdate:
       messageId: task-update
-      payload: { $ref: '#/components/schemas/StreamEnvelope' }
+      payload: { $ref: '#/components/schemas/TaskEnvelope' }
     MessageUpdate:
       messageId: message-update
-      payload: { $ref: '#/components/schemas/StreamEnvelope' }
+      payload: { $ref: '#/components/schemas/MessageEnvelope' }
     HealthChannelUpdate:
       messageId: health-channel-update
-      payload: { $ref: '#/components/schemas/StreamEnvelope' }
+      payload: { $ref: '#/components/schemas/HealthEnvelope' }
     LogChannelUpdate:
       messageId: log-channel-update
-      payload: { $ref: '#/components/schemas/StreamEnvelope' }
+      payload: { $ref: '#/components/schemas/LogEnvelope' }
     AdapterChannelUpdate:
       messageId: adapter-channel-update
-      payload: { $ref: '#/components/schemas/StreamEnvelope' }
+      payload: { $ref: '#/components/schemas/AdapterEnvelope' }
     PluginChannelUpdate:
       messageId: plugin-channel-update
-      payload: { $ref: '#/components/schemas/StreamEnvelope' }
+      payload: { $ref: '#/components/schemas/PluginEnvelope' }
     TaskChannelUpdate:
       messageId: task-channel-update
-      payload: { $ref: '#/components/schemas/StreamEnvelope' }
+      payload: { $ref: '#/components/schemas/TaskEnvelope' }
     MessageChannelUpdate:
       messageId: message-channel-update
-      payload: { $ref: '#/components/schemas/StreamEnvelope' }
+      payload: { $ref: '#/components/schemas/MessageEnvelope' }
+    HealthHello:
+      messageId: health-hello
+      payload: { $ref: '#/components/schemas/Hello' }
+    HealthResume:
+      messageId: health-resume
+      payload: { $ref: '#/components/schemas/Resume' }
+    HealthSession:
+      messageId: health-session
+      payload: { $ref: '#/components/schemas/Session' }
+    HealthResyncRequired:
+      messageId: health-resync-required
+      payload: { $ref: '#/components/schemas/ResyncRequired' }
+    LogHello:
+      messageId: logs-hello
+      payload: { $ref: '#/components/schemas/Hello' }
+    LogResume:
+      messageId: logs-resume
+      payload: { $ref: '#/components/schemas/Resume' }
+    LogSession:
+      messageId: logs-session
+      payload: { $ref: '#/components/schemas/Session' }
+    LogResyncRequired:
+      messageId: logs-resync-required
+      payload: { $ref: '#/components/schemas/ResyncRequired' }
+    AdapterHello:
+      messageId: adapters-hello
+      payload: { $ref: '#/components/schemas/Hello' }
+    AdapterResume:
+      messageId: adapters-resume
+      payload: { $ref: '#/components/schemas/Resume' }
+    AdapterSession:
+      messageId: adapters-session
+      payload: { $ref: '#/components/schemas/Session' }
+    AdapterResyncRequired:
+      messageId: adapters-resync-required
+      payload: { $ref: '#/components/schemas/ResyncRequired' }
+    PluginHello:
+      messageId: plugins-hello
+      payload: { $ref: '#/components/schemas/Hello' }
+    PluginResume:
+      messageId: plugins-resume
+      payload: { $ref: '#/components/schemas/Resume' }
+    PluginSession:
+      messageId: plugins-session
+      payload: { $ref: '#/components/schemas/Session' }
+    PluginResyncRequired:
+      messageId: plugins-resync-required
+      payload: { $ref: '#/components/schemas/ResyncRequired' }
+    TaskHello:
+      messageId: tasks-hello
+      payload: { $ref: '#/components/schemas/Hello' }
+    TaskResume:
+      messageId: tasks-resume
+      payload: { $ref: '#/components/schemas/Resume' }
+    TaskSession:
+      messageId: tasks-session
+      payload: { $ref: '#/components/schemas/Session' }
+    TaskResyncRequired:
+      messageId: tasks-resync-required
+      payload: { $ref: '#/components/schemas/ResyncRequired' }
+    MessageHello:
+      messageId: messages-hello
+      payload: { $ref: '#/components/schemas/Hello' }
+    MessageResume:
+      messageId: messages-resume
+      payload: { $ref: '#/components/schemas/Resume' }
+    MessageSession:
+      messageId: messages-session
+      payload: { $ref: '#/components/schemas/Session' }
+    MessageResyncRequired:
+      messageId: messages-resync-required
+      payload: { $ref: '#/components/schemas/ResyncRequired' }
   schemas:
     StreamEnvelope:
       type: object
+      description: Sequence increases within one authorized session; replay retains events for 10 minutes. Different sessions do not share a sequence space. All times use UTC.
       required: [schema_version, event_type, sequence, occurred_at, payload]
       properties:
         schema_version: { type: string, example: kiarabot.stream.v1 }
         event_type: { type: string }
-        sequence: { type: integer, format: int64 }
+        sequence: { type: integer, format: int64, minimum: 0, description: Monotonic within the authenticated stream session. }
         occurred_at: { type: string, format: date-time }
-        payload: { type: object, additionalProperties: true }
+        payload:
+          type: object
+          description: Event-specific payload, refined by the channel envelope schema.
+          additionalProperties: true
     Hello:
       type: object
+      description: First frame for a new session; access_token must identify the authenticated bearer principal. Use last_sequence 0 for a new session.
       required: [type, access_token, last_sequence]
       properties:
         type: { type: string, enum: [hello] }
         access_token: { type: string, minLength: 20 }
-        last_sequence: { type: integer, format: int64, minimum: 0 }
+        last_sequence: { type: integer, format: int64, enum: [0] }
     Resume:
       type: object
+      description: First frame for an existing session; last_sequence is the last event received by the client. Bearer authentication is required again.
       required: [type, session_id, last_sequence]
       properties:
         type: { type: string, enum: [resume] }
-        session_id: { type: string }
+        session_id: { type: string, minLength: 1 }
+        last_sequence: { type: integer, format: int64, minimum: 0 }
+    Session:
+      type: object
+      description: Sent after a successful hello or resume, before live or replayed events. last_sequence is the acknowledged starting cursor.
+      required: [type, session_id, last_sequence]
+      properties:
+        type: { type: string, enum: [session] }
+        session_id: { type: string, minLength: 1 }
         last_sequence: { type: integer, format: int64, minimum: 0 }
     ResyncRequired:
       type: object
+      description: Replay is unavailable or the cursor is invalid; obtain a fresh REST snapshot and start a new session.
       required: [type, reason]
       properties:
         type: { type: string, enum: [RESYNC_REQUIRED] }
         reason: { type: string }
+    ErrorCode:
+      type: string
+      enum: [ERROR_CODE_UNSPECIFIED, INVALID_ARGUMENT, UNAUTHENTICATED, PERMISSION_DENIED, NOT_FOUND, CONFLICT, CAPABILITY_NOT_SUPPORTED, RATE_LIMITED, TIMEOUT, UPSTREAM_UNAVAILABLE, PLUGIN_UNAVAILABLE, INTERNAL]
+    Error:
+      type: object
+      required: [code, message, request_id]
+      properties:
+        code: { $ref: '#/components/schemas/ErrorCode' }
+        message: { type: string }
+        request_id: { type: string }
+        trace_id: { type: string }
+        retryable: { type: boolean, default: false }
+        details: { type: object, additionalProperties: { type: string } }
+    HealthState:
+      type: string
+      enum: [HEALTH_STATE_UNSPECIFIED, HEALTHY, DEGRADED, UNHEALTHY]
+    PluginState:
+      type: string
+      enum: [PLUGIN_STATE_UNSPECIFIED, PLUGIN_STATE_DISABLED, PLUGIN_STATE_STARTING, PLUGIN_STATE_READY, PLUGIN_STATE_RUNNING, PLUGIN_STATE_STOPPING, PLUGIN_STATE_STOPPED, PLUGIN_STATE_UNAVAILABLE, PLUGIN_STATE_FAILED]
+    ActionStatus:
+      type: string
+      enum: [ACTION_STATUS_UNSPECIFIED, ACCEPTED, SUCCEEDED, FAILED, EXPIRED, CANCELLED]
+
+    HealthComponent:
+      type: object
+      required: [component, state]
+      properties:
+        component: { type: string }
+        state: { $ref: '#/components/schemas/HealthState' }
+        reason: { type: string }
+    HealthPayload:
+      type: object
+      required: [state, components]
+      properties:
+        state: { $ref: '#/components/schemas/HealthState' }
+        components: { type: array, items: { $ref: '#/components/schemas/HealthComponent' } }
+    LogPayload:
+      type: object
+      description: Redacted structured log; secrets and message bodies are excluded.
+      required: [id, occurred_at, level, component, operation, outcome]
+      properties:
+        id: { type: string }
+        occurred_at: { type: string, format: date-time }
+        level: { type: string }
+        component: { type: string }
+        operation: { type: string }
+        outcome: { type: string }
+        trace_id: { type: string }
+    AdapterPayload:
+      type: object
+      required: [id, state, implementation]
+      properties:
+        id: { type: string }
+        state: { $ref: '#/components/schemas/HealthState' }
+        implementation: { type: string }
+        version: { type: string }
+        capabilities: { type: array, items: { type: string } }
+    PluginPayload:
+      type: object
+      required: [id, version]
+      anyOf:
+        - required: [state]
+        - required: [health_state]
+      properties:
+        id: { type: string }
+        version: { type: string }
+        state: { $ref: '#/components/schemas/PluginState' }
+        health_state: { $ref: '#/components/schemas/HealthState' }
+        reason: { type: string }
+    TaskPayload:
+      type: object
+      required: [id, name, state]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        state: { type: string }
+    MessagePayload:
+      type: object
+      description: Metadata only; message content is not pushed by default.
+      required: [message_id, conversation_id, direction]
+      properties:
+        message_id: { type: string }
+        conversation_id: { type: string }
+        direction: { type: string, enum: [received, sent] }
+        action_id: { type: string }
+      additionalProperties: false
+    HealthEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/StreamEnvelope'
+        - type: object
+          properties:
+            event_type: { type: string, enum: [health.updated] }
+            payload: { $ref: '#/components/schemas/HealthPayload' }
+    LogEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/StreamEnvelope'
+        - type: object
+          properties:
+            event_type: { type: string, enum: [log.updated] }
+            payload: { $ref: '#/components/schemas/LogPayload' }
+    AdapterEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/StreamEnvelope'
+        - type: object
+          properties:
+            event_type: { type: string, enum: [adapter.updated] }
+            payload: { $ref: '#/components/schemas/AdapterPayload' }
+    PluginEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/StreamEnvelope'
+        - type: object
+          properties:
+            event_type: { type: string, enum: [plugin.updated] }
+            payload: { $ref: '#/components/schemas/PluginPayload' }
+    TaskEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/StreamEnvelope'
+        - type: object
+          properties:
+            event_type: { type: string, enum: [task.updated] }
+            payload: { $ref: '#/components/schemas/TaskPayload' }
+    MessageEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/StreamEnvelope'
+        - type: object
+          properties:
+            event_type: { type: string, enum: [message.updated] }
+            payload: { $ref: '#/components/schemas/MessagePayload' }

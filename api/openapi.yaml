@@ -250,6 +250,38 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '500': { $ref: '#/components/responses/Internal' }
+  /actions/by-idempotency-key:
+    get:
+      operationId: getActionByIdempotencyKey
+      summary: Find an action result using its idempotency key
+      description: The key is scoped to the authenticated caller and must not be logged. Missing, expired, or invisible results return NOT_FOUND. Query timeout does not imply action failure.
+      parameters: [{ $ref: '#/components/parameters/ActionLookupKey' }]
+      responses:
+        '200': { $ref: '#/components/responses/ActionResult' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/Internal' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+        '504': { $ref: '#/components/responses/Timeout' }
+  /actions/{actionId}:
+    get:
+      operationId: getActionResult
+      summary: Get an action result by ID
+      description: Missing, expired, or invisible results return NOT_FOUND. The literal by-idempotency-key is reserved for key lookup.
+      parameters: [{ $ref: '#/components/parameters/ActionId' }]
+      responses:
+        '200': { $ref: '#/components/responses/ActionResult' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/Internal' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+        '504': { $ref: '#/components/responses/Timeout' }
   /logs:
     get:
       operationId: listLogs
@@ -282,6 +314,17 @@ components:
       in: path
       required: true
       schema: { type: string, pattern: '^[a-z0-9][a-z0-9.-]{1,63}$' }
+    ActionId:
+      name: actionId
+      in: path
+      required: true
+      schema: { type: string, minLength: 1, maxLength: 256 }
+    ActionLookupKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: Action idempotency key, scoped to the authenticated caller.
+      schema: { type: string, minLength: 1, maxLength: 256 }
     IdempotencyKey:
       name: Idempotency-Key
       in: header
@@ -289,31 +332,37 @@ components:
       description: Replays return the original response for this key for 24 hours.
       schema: { type: string, minLength: 16, maxLength: 128 }
   responses:
+    ActionResult:
+      description: Current action status; a query timeout does not change the action status.
+      content: { application/json: { schema: { $ref: '#/components/schemas/ActionResult' } } }
     BadRequest:
-      description: Invalid request
+      description: Invalid request (INVALID_ARGUMENT)
       content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
     Unauthorized:
-      description: Missing or invalid credentials
+      description: Missing or invalid credentials (UNAUTHENTICATED)
       content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
     NotFound:
-      description: Resource not found
+      description: Resource not found or not visible (NOT_FOUND)
       content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
     Conflict:
       description: State conflict
       content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
     Unavailable:
-      description: Core is not ready
+      description: Core is not ready or unavailable (UPSTREAM_UNAVAILABLE)
       content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
     Forbidden:
-      description: Authenticated but not authorized
+      description: Authenticated but not authorized (PERMISSION_DENIED)
       content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
     RateLimited:
-      description: Rate limit exceeded
+      description: Rate limit exceeded (RATE_LIMITED)
       headers:
         Retry-After: { schema: { type: integer, minimum: 1 } }
       content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
     Internal:
-      description: Internal server error
+      description: Internal server error (INTERNAL)
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    Timeout:
+      description: Query timed out (TIMEOUT); action outcome may remain unknown
       content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
   schemas:
     LoginRequest:
@@ -337,36 +386,42 @@ components:
       type: object
       required: [code, message, request_id]
       properties:
-        code: { type: string, enum: [INVALID_ARGUMENT, UNAUTHENTICATED, PERMISSION_DENIED, NOT_FOUND, CONFLICT, CAPABILITY_NOT_SUPPORTED, RATE_LIMITED, TIMEOUT, UPSTREAM_UNAVAILABLE, PLUGIN_UNAVAILABLE, INTERNAL] }
+        code: { $ref: '#/components/schemas/ErrorCode' }
         message: { type: string }
         request_id: { type: string }
         trace_id: { type: string }
         retryable: { type: boolean, default: false }
         details: { type: object, additionalProperties: { type: string } }
+    ErrorCode:
+      type: string
+      enum: [ERROR_CODE_UNSPECIFIED, INVALID_ARGUMENT, UNAUTHENTICATED, PERMISSION_DENIED, NOT_FOUND, CONFLICT, CAPABILITY_NOT_SUPPORTED, RATE_LIMITED, TIMEOUT, UPSTREAM_UNAVAILABLE, PLUGIN_UNAVAILABLE, INTERNAL]
     PageInfo:
       type: object
       properties:
         next_page_token: { type: string }
         page_size: { type: integer }
+    HealthState:
+      type: string
+      enum: [HEALTH_STATE_UNSPECIFIED, HEALTHY, DEGRADED, UNHEALTHY]
     Health:
       type: object
       required: [state, components]
       properties:
-        state: { type: string, enum: [HEALTHY, DEGRADED, UNHEALTHY] }
+        state: { $ref: '#/components/schemas/HealthState' }
         components: { type: array, items: { $ref: '#/components/schemas/HealthComponent' } }
     HealthComponent:
       type: object
       required: [component, state]
       properties:
         component: { type: string }
-        state: { type: string, enum: [HEALTHY, DEGRADED, UNHEALTHY] }
+        state: { $ref: '#/components/schemas/HealthState' }
         reason: { type: string }
     Adapter:
       type: object
       required: [id, state, implementation]
       properties:
         id: { type: string }
-        state: { type: string, enum: [HEALTHY, DEGRADED, UNHEALTHY] }
+        state: { $ref: '#/components/schemas/HealthState' }
         implementation: { type: string }
         version: { type: string }
         capabilities: { type: array, items: { type: string } }
@@ -388,7 +443,30 @@ components:
         - type: object
           required: [state]
           properties:
-            state: { type: string, enum: [PLUGIN_STATE_DISABLED, PLUGIN_STATE_STARTING, PLUGIN_STATE_READY, PLUGIN_STATE_RUNNING, PLUGIN_STATE_STOPPING, PLUGIN_STATE_STOPPED, PLUGIN_STATE_UNAVAILABLE, PLUGIN_STATE_FAILED] }
+            state: { $ref: '#/components/schemas/PluginState' }
+    PluginState:
+      type: string
+      enum: [PLUGIN_STATE_UNSPECIFIED, PLUGIN_STATE_DISABLED, PLUGIN_STATE_STARTING, PLUGIN_STATE_READY, PLUGIN_STATE_RUNNING, PLUGIN_STATE_STOPPING, PLUGIN_STATE_STOPPED, PLUGIN_STATE_UNAVAILABLE, PLUGIN_STATE_FAILED]
+    ActionStatus:
+      type: string
+      enum: [ACTION_STATUS_UNSPECIFIED, ACCEPTED, SUCCEEDED, FAILED, EXPIRED, CANCELLED]
+    ActionResult:
+      type: object
+      required: [action_id, status]
+      description: ACCEPTED is pending; terminal results are retained for seven days.
+      properties:
+        action_id: { type: string }
+        status: { $ref: '#/components/schemas/ActionStatus' }
+        platform_message_id: { type: string }
+        error: { $ref: '#/components/schemas/Error' }
+        completed_at: { type: string, format: date-time }
+      oneOf:
+        - required: [status]
+          properties: { status: { type: string, enum: [ACCEPTED] } }
+        - required: [status, completed_at, error]
+          properties: { status: { type: string, enum: [FAILED] } }
+        - required: [status, completed_at]
+          properties: { status: { type: string, enum: [SUCCEEDED, EXPIRED, CANCELLED] } }
     PluginConfig:
       type: object
       required: [version, values]

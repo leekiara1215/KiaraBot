@@ -45,6 +45,7 @@ RECEIVED → PERSISTED → DISPATCHED → ACKED
 - 适配器可先返回 `ACCEPTED`，最终返回 `SUCCEEDED` 或 `FAILED`；
 - 到达 `deadline` 后标记 `EXPIRED`，适配器不得再执行；
 - 网络超时不等于平台执行失败，必须通过幂等键查询最终结果。
+- 查询接口返回 `ACCEPTED` 表示尚未终结；`SUCCEEDED`、`FAILED`、`EXPIRED`、`CANCELLED` 是终结状态。终结结果保留 7 天；查询超时不改变 Action 状态。按幂等键查询受已认证调用方的授权范围限制。
 
 ## 插件重连
 

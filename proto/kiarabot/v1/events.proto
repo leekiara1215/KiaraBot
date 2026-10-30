@@ -78,4 +78,7 @@ message PluginStatusChanged {
   string version = 2;
   HealthState state = 3;
   string reason = 4;
+  // Numeric value of kiarabot.v1.PluginState; absence means not supplied.
+  // Unknown values must be preserved. This field does not imply health state.
+  optional int32 lifecycle_state = 5;
 }
