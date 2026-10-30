@@ -42,6 +42,10 @@ plugins/<plugin_name>/  插件清单、配置、实现和测试
 
 SDK 包按语言分别维护自己的包配置和测试目录；插件实现不能放入 `core/` 或 `sdk/`。
 
+当前冻结契约的缺口、建议协议任务和其他模块的配合事项见
+[`sdk/PLUGIN_SDK_DEPENDENCIES.md`](../sdk/PLUGIN_SDK_DEPENDENCIES.md)。该文件为待评审建议，
+不改变现有协议或承诺未实现的 SDK 行为。
+
 ## 插件清单
 
 每个插件必须提供 `plugin.json`：
