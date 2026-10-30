@@ -88,82 +88,38 @@ ghcr.io/leekiara1215/kiarabot-core:git-<commit-sha>
 ghcr.io/leekiara1215/kiarabot-core:v1.0.0
 ```
 
-## CI 流程
+## 已实现的 CI 与协议门禁
 
-新增 `.github/workflows/ci.yml`，在 Pull Request 和 push 到 `main` 时执行：
+`.github/workflows/ci.yml` 在 Pull Request 和 push 到 `main` 时运行，不引用 production Environment 或生产密钥，仓库权限仅为 `contents: read`。它执行：
 
-```yaml
-name: ci
+- GCC 13、Clang 16 分别配置和构建 `dev` 预设，运行全部 CTest；协议任务配置、构建 `proto` 并运行全部 CTest。
+- `proto/tests/check_contracts.sh` 检查契约；`scripts/ci/check-descriptor.sh` 从 PR 目标分支的 base SHA（push 时为推送前 SHA）生成 descriptor，再使用现有兼容性检查器比较。找不到基准或基准为全零时失败；`scripts/ci/test-descriptor-gate.sh` 验证不兼容字段和更改的基准会失败。基准来自 Git 历史而非 PR 提供的文件，descriptor 构建产物以被检提交 SHA 命名。
+- 检查 workflow YAML、actionlint、手写 C++ 的 clang-format 和 Core 翻译单元的 clang-tidy；Redocly lint OpenAPI，AsyncAPI parser 拒绝错误诊断。
+- Gitleaks 扫描 Git 历史；npm audit 扫描 `scripts/ci/package-lock.json` 中锁定的 CI 工具及传递依赖。当前 npm audit **不覆盖** vcpkg 的 C++ 依赖：需另行接入能识别 vcpkg 已解析依赖的漏洞数据，不能将此检查描述为完整 C++ 依赖漏洞扫描。
 
-on:
-  pull_request:
-  push:
-    branches: [main]
+CI 的 vcpkg registry/tool 固定为 `ce613c41372b23b1f51333815feb3edd87ef8a8b`（2025.04.09，Protobuf 29.3 / C++ runtime 5.29.3、gRPC 1.71.0）。Node 工具使用 `scripts/ci/package-lock.json`。版本升级需同时更新锁定来源并重新运行协议生成、兼容性和测试。CI 检查本身不能配置分支保护；仓库管理员需将所有 CI job 设为 `main` 的必需状态检查，并禁止绕过规则，才能阻止不兼容变更合并。新建分支或 force push 无法提供有效前一 SHA 时，push 的协议任务会失败，需要先提供可审计的比较基准。
 
-permissions:
-  contents: read
-
-concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
-
-jobs:
-  build-test:
-    name: ${{ matrix.name }}
-    runs-on: ubuntu-24.04
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - name: gcc
-            cc: gcc-13
-            cxx: g++-13
-          - name: clang
-            cc: clang
-            cxx: clang++
-
-    env:
-      CC: ${{ matrix.cc }}
-      CXX: ${{ matrix.cxx }}
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y cmake ${{ matrix.cxx }}
-
-      - name: Configure
-        run: cmake --preset dev
-
-      - name: Build
-        run: cmake --build --preset dev --parallel
-
-      - name: Test
-        run: ctest --preset dev
-```
-
-协议依赖锁定后增加独立的 `contract-check` job：
+本地验证示例（需先安装对应工具和协议依赖）：
 
 ```bash
-mkdir -p build
-protoc \
-  --descriptor_set_out=build/kiarabot-v1.pb \
-  --include_imports \
-  -I proto \
-  proto/kiarabot/v1/*.proto
+cmake --preset dev && cmake --build --preset dev && ctest --preset dev --no-tests=error
+cmake --preset proto && cmake --build --preset proto && ctest --preset proto --no-tests=error
+scripts/ci/check-descriptor.sh <base-commit-sha>
+scripts/ci/test-descriptor-gate.sh
+npm ci --prefix scripts/ci --ignore-scripts
+scripts/ci/node_modules/.bin/redocly lint api/openapi.yaml
+node scripts/ci/validate-asyncapi.cjs api/asyncapi.yaml
+npm audit --prefix scripts/ci --audit-level=high
 ```
 
-协议变更必须比较当前 descriptor 与基线，确认没有复用字段编号、删除未废弃字段或改变服务签名。生成文件只能写入 `build/generated/`，不能提交生成源码。
+### 其他模块及仓库管理依赖
 
-控制面契约检查还必须运行：
+- **仓库编码配置维护者**：根目录 `.clang-format` 的 `AllowShortLoopsOnASingleLine: Never` 不是合法布尔值，需在该文件的授权修改任务中改为 `false`，再按规范处理现有手写代码的格式差异。本任务不能修改该文件或 Core；格式 job 会如实失败，不能关闭检查或以替代配置掩盖问题。
+- **Core 和控制 API**：实现真实服务进程与 `/health/live`、`/health/ready`，并协调运维文档和 API 契约；已有 `api/openapi.yaml` 仅定义 `/api/v1/health`，不能把它当成上述探针的实现。
+- **基础设施/运维**：提供可重复的 `kiarabot-migrate`、迁移前备份及校验、Dockerfile、staging/production Compose、部署冒烟测试和失败回滚。它们均不在当前 CI 任务范围。
+- **仓库管理员**：配置 `main` 必需状态检查；将来启用生产发布前，配置 `production` Environment 的 required reviewers、环境密钥和分支/tag 限制。workflow 中写 `environment: production` 本身不能创建人工审批保护。
 
-```bash
-ruby -e "require 'yaml'; YAML.load_file('api/openapi.yaml'); YAML.load_file('api/asyncapi.yaml')"
-npx --yes @redocly/cli@latest lint api/openapi.yaml
-# 使用锁定版本的 @asyncapi/parser 校验 api/asyncapi.yaml，并拒绝 severity=0 的诊断
-```
+以下镜像、部署和回滚章节是待实施方案；当前 workflow 不构建镜像、不发布、不部署，也不触及生产密钥。
 
 ## 构建镜像
 
@@ -294,7 +250,7 @@ PROD_KNOWN_HOSTS
 
 数据库迁移必须向后兼容，采用 expand/contract 方式，避免回滚应用时旧版本无法读取新 schema。破坏性迁移应拆成多个发布步骤，不能和不可逆的数据删除放在同一次部署中。
 
-## 实施顺序
+## 后续实施顺序
 
 ### 第 1 步：建立 CI
 

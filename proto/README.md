@@ -17,7 +17,7 @@ cmake --build build --target kiarabot_proto
 
 该目标会调用 `protoc` 和 `grpc_cpp_plugin`，输出到 `build/generated/cpp/kiarabot/v1/`。如果本机没有这两个可执行文件，配置阶段应失败，而不是生成不完整的代码。
 
-协议兼容性检查器由 `kiarabot_descriptor_compatibility` 构建目标提供。它读取当前 descriptor 和上一版本 descriptor，检查已发布文件、消息字段编号、类型、枚举值和 gRPC 方法签名；新增字段和枚举值允许，删除或改变已发布定义会失败。
+协议兼容性检查器由 `kiarabot_descriptor_compatibility` 构建目标提供。它读取当前 descriptor 和上一版本 descriptor，按文件名、语法/包名、消息字段编号及完整字段元数据、oneof、嵌套类型、扩展/保留范围、枚举值和 gRPC 方法签名与选项进行语义比较；不比较 descriptor 二进制序列化结果。新增字段和枚举值允许，删除或改变已发布定义会失败。
 
 ## 生成 Python 代码
 
@@ -38,3 +38,5 @@ python -m grpc_tools.protoc \
 - 删除字段先标记 deprecated，再在下一个主版本移除；
 - 枚举新增值必须由旧客户端安全忽略；
 - 每次协议变更必须运行 descriptor diff 和跨语言 round-trip 测试。
+
+v1 的稳定枚举词汇也由 REST 和 WebSocket 契约复用：`ErrorCode`、`HealthState`、`PluginState` 和 `ActionStatus` 在 `api/openapi.yaml` 与 `api/asyncapi.yaml` 中必须逐项保持一致。

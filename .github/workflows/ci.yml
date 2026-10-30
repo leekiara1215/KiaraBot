@@ -1,0 +1,182 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-test:
+    name: Build and test (${{ matrix.name }})
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: GCC 13
+            cc: gcc-13
+            cxx: g++-13
+            packages: gcc-13 g++-13
+          - name: Clang 16
+            cc: clang-16
+            cxx: clang++-16
+            packages: clang-16
+    env:
+      CC: ${{ matrix.cc }}
+      CXX: ${{ matrix.cxx }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Install compiler
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ${{ matrix.packages }}
+      - name: Configure dev
+        run: cmake --preset dev
+      - name: Build dev
+        run: cmake --build --preset dev --parallel 2
+      - name: Test dev
+        run: ctest --preset dev --no-tests=error
+
+  contracts:
+    name: Protocol compatibility
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      VCPKG_ROOT: ${{ github.workspace }}/.ci-vcpkg
+      VCPKG_MAX_CONCURRENCY: 2
+      PROTOBUF_INCLUDE_DIR: ${{ github.workspace }}/.ci-vcpkg/installed/x64-linux/include
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+      - name: Check out pinned vcpkg registry and tool
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          repository: microsoft/vcpkg
+          ref: ce613c41372b23b1f51333815feb3edd87ef8a8b # 2025.04.09
+          path: .ci-vcpkg
+          persist-credentials: false
+      - name: Install build prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-13 g++-13 autoconf automake libtool pkg-config ninja-build
+      - name: Install pinned Protobuf and gRPC
+        run: |
+          "$VCPKG_ROOT/bootstrap-vcpkg.sh" -disableMetrics
+          "$VCPKG_ROOT/vcpkg" install grpc protobuf --triplet x64-linux
+          echo "$VCPKG_ROOT/installed/x64-linux/tools/protobuf" >> "$GITHUB_PATH"
+          echo "$VCPKG_ROOT/installed/x64-linux/tools/grpc" >> "$GITHUB_PATH"
+      - name: Configure proto
+        env:
+          CC: gcc-13
+          CXX: g++-13
+        run: >-
+          cmake --preset proto
+          -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake"
+          -DVCPKG_MANIFEST_MODE=OFF
+      - name: Build proto and compatibility tool
+        run: cmake --build --preset proto --parallel 2
+      - name: Test proto
+        run: ctest --preset proto --no-tests=error
+      - name: Compare with base commit descriptor
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: scripts/ci/check-descriptor.sh "$BASE_SHA"
+      - name: Verify incompatible descriptors fail
+        run: scripts/ci/test-descriptor-gate.sh
+      - name: Save descriptor for this commit
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: descriptor-${{ github.sha }}
+          path: build/proto/generated/kiarabot-v1.pb
+          if-no-files-found: error
+          retention-days: 14
+
+  workflow-lint:
+    name: Workflow lint
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+        with:
+          go-version: '1.25.1'
+          cache: false
+      - name: Parse workflow YAML
+        run: ruby -e 'require "yaml"; ARGV.each { |f| YAML.load_file(f); puts "Parsed #{f}" }' .github/workflows/*.yml
+      - name: Run actionlint
+        run: |
+          go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.7
+          "$(go env GOPATH)/bin/actionlint"
+
+  format:
+    name: C++ format
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - run: sudo apt-get update && sudo apt-get install -y clang-format-16
+      - name: Check handwritten C++
+        run: git ls-files -z 'core/*.cpp' 'core/*.h' 'core/*.hpp' 'proto/tests/*.cc' | xargs -0 -r clang-format-16 --dry-run --Werror
+
+  clang-tidy:
+    name: C++ static analysis
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - run: sudo apt-get update && sudo apt-get install -y clang-16 clang-tidy-16
+      - name: Configure compile database
+        env:
+          CC: clang-16
+          CXX: clang++-16
+        run: cmake --preset dev -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+      - name: Analyze Core translation units
+        run: clang-tidy-16 -p build/dev core/src/main.cpp core/tests/core_smoke.cpp --warnings-as-errors='*'
+
+  api-contracts:
+    name: API contracts
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+      - run: npm ci --prefix scripts/ci --ignore-scripts --no-audit --no-fund
+      - name: Parse API YAML
+        run: ruby -e 'require "yaml"; ARGV.each { |f| YAML.load_file(f); puts "Parsed #{f}" }' api/openapi.yaml api/asyncapi.yaml
+      - name: Lint OpenAPI
+        run: scripts/ci/node_modules/.bin/redocly lint api/openapi.yaml
+      - name: Parse and validate AsyncAPI
+        run: node scripts/ci/validate-asyncapi.cjs api/asyncapi.yaml
+
+  dependency-scan:
+    name: Dependency scan
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+      - name: Audit locked CI dependencies
+        run: npm audit --prefix scripts/ci --audit-level=high
+
+  secret-scan:
+    name: Secret scan
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+        with:
+          go-version: '1.25.1'
+          cache: false
+      - name: Scan Git history
+        run: |
+          go install github.com/zricethezav/gitleaks/v8@v8.28.0
+          "$(go env GOPATH)/bin/gitleaks" git --redact --no-banner --exit-code=1 .

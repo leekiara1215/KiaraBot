@@ -19,6 +19,10 @@
 
 最低版本由根目录 `CMakeLists.txt`、`CMakePresets.json` 和 `proto/README.md` 共同约束。依赖必须锁定在实现项目的 lockfile 或包管理配置中。
 
+## CI 固定工具链
+
+GitHub Actions 的 dev 构建使用 GCC 13 和 Clang 16；proto job 使用固定到 `ce613c41372b23b1f51333815feb3edd87ef8a8b` 的 vcpkg registry/tool，解析 Protobuf 29.3（C++ runtime 5.29.3）和 gRPC 1.71.0。CI 工具锁文件为 `scripts/ci/package-lock.json`，其中包含 Redocly CLI 2.72.1 和 AsyncAPI parser 3.6.6；Node.js 使用 22。actionlint 固定为 1.7.7，Gitleaks 固定为 8.28.0。详见 [CI/CD 流程方案](12-ci-cd.md)。
+
 ## 当前检查到的环境
 
 | 工具 | 检查结果 |

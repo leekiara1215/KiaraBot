@@ -1,0 +1,9 @@
+{
+  "name": "kiarabot-ci-tools",
+  "private": true,
+  "version": "1.0.0",
+  "dependencies": {
+    "@asyncapi/parser": "3.6.6",
+    "@redocly/cli": "2.72.1"
+  }
+}
