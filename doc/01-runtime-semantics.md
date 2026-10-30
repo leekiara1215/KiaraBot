@@ -4,7 +4,7 @@
 
 ## 当前 reference runtime
 
-`core/include/kiarabot/core/runtime.h` 提供与本语义对应的可替换状态机。`RuntimeStore` 是持久化端口，保存 inbox、Action 和插件状态；`InMemoryRuntimeStore` 只用于测试。Core 运行时不直接访问数据库，基础设施实现该端口后，Core 重启仍可恢复去重、重试、死信和 Action 幂等状态。
+`core/include/kiarabot/core/runtime.h` 提供与本语义对应的可替换状态机。`RuntimeStore` 是持久化端口，保存 inbox、Action 和插件状态；`InMemoryRuntimeStore` 只用于测试。Core 运行时不直接访问数据库，基础设施实现该端口后，Core 重启仍可恢复去重、重试、死信和 Action 幂等状态。持久化时间点使用 UTC 系统时钟而非进程单调时钟；系统时间发生调整时，已保存的绝对到期时间不变。
 
 每个运行时操作都必须通过未来的日志端口记录 `operation`、`outcome` 以及相关事件、Action 或插件标识。日志不会替代状态存储，也不会承载业务命令。日志实现可以评估腾讯 [BqLog](https://github.com/Tencent/BqLog)，但当前 Core 不直接依赖它。
 
@@ -51,6 +51,10 @@ RECEIVED → PERSISTED → DISPATCHED → ACKED
 - 插件断开后进入 `UNAVAILABLE`，Core 暂停投递并保留未确认事件；
 - 重新注册且 API 版本和权限一致后恢复；
 - 超过 5 分钟未恢复则为 `FAILED`，由策略决定是否重启。
+
+## 插件任务和 Host 请求
+
+Host 请求按注册插件身份隔离。任务创建与取消使用幂等键；任务持久化成功后才返回成功。任务为一次性任务，启动时恢复 pending 和 retrying 状态；进程中断时 running 任务恢复为 retrying，投递至少一次，消费者按 task_id 幂等。每次领取生成新的 claim token；完成或重试只接受当前 token，旧进程的迟到结果不能覆盖新的领取。取消 pending 或 retrying 任务后不再投递；取消 running 任务只阻止后续重试，不撤销已开始的处理。终态任务不可重新运行。重试次数与退避由 Core 策略决定并随任务持久化。状态、取消和重试不得由插件直接修改数据库。
 
 ## 必须测试
 

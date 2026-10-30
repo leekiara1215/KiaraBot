@@ -3,6 +3,7 @@ syntax = "proto3";
 package kiarabot.v1;
 
 import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
 import "kiarabot/v1/actions.proto";
 import "kiarabot/v1/common.proto";
 import "kiarabot/v1/events.proto";
@@ -52,6 +53,7 @@ message PluginToCore {
     PluginEventAck event_ack = 2;
     PluginActionRequest action = 3;
     PluginHeartbeat heartbeat = 4;
+    HostRequest host_request = 5;
   }
 }
 
@@ -61,6 +63,7 @@ message CoreToPlugin {
     EventEnvelope event = 2;
     PluginConfig config = 3;
     PluginHeartbeatAck heartbeat_ack = 4;
+    HostResponse host_response = 5;
   }
 }
 
@@ -69,3 +72,96 @@ message PluginActionRequest { ActionEnvelope action = 1; }
 message PluginHeartbeat { string instance_id = 1; uint64 sent_at_unix_ms = 2; }
 message PluginHeartbeatAck { uint64 received_at_unix_ms = 1; }
 message PluginConfig { string version = 1; google.protobuf.Struct values = 2; }
+
+// Host requests are authorized against the registered plugin instance. The
+// namespace and task owner are derived from that identity, never from input.
+message HostRequest {
+  string request_id = 1;
+  string trace_id = 2;
+  google.protobuf.Timestamp deadline = 3;
+  string idempotency_key = 4;
+  oneof operation {
+    ModelChatRequest model_chat = 10;
+    StorageGetRequest storage_get = 11;
+    StorageSetRequest storage_set = 12;
+    StorageDeleteRequest storage_delete = 13;
+    TaskCreateRequest task_create = 14;
+    TaskCancelRequest task_cancel = 15;
+    TaskGetRequest task_get = 16;
+  }
+}
+
+message HostResponse {
+  string request_id = 1;
+  // On failure error is present and result is unset. On success the matching
+  // result is set and error is absent.
+  Error error = 2;
+  oneof result {
+    ModelChatResponse model_chat = 10;
+    StorageGetResponse storage_get = 11;
+    StorageSetResponse storage_set = 12;
+    StorageDeleteResponse storage_delete = 13;
+    TaskResponse task_create = 14;
+    TaskResponse task_cancel = 15;
+    TaskResponse task_get = 16;
+  }
+}
+
+message ModelChatRequest {
+  string model = 1;
+  repeated ModelMessage messages = 2;
+}
+message ModelMessage { string role = 1; string text = 2; }
+message ModelChatResponse {
+  string text = 1;
+  uint64 input_tokens = 2;
+  uint64 output_tokens = 3;
+}
+message StorageGetRequest { string key = 1; }
+message StorageGetResponse { bytes value = 1; }
+message StorageSetRequest {
+  string key = 1;
+  bytes value = 2;
+  // Optional expiration; absent means no expiration.
+  google.protobuf.Timestamp expires_at = 3;
+}
+message StorageSetResponse {}
+message StorageDeleteRequest { string key = 1; }
+message StorageDeleteResponse {}
+
+// A one-shot local civil time in an IANA time zone. Ambiguous and nonexistent
+// civil times are rejected; callers must select a different local time.
+message LocalTaskTime {
+  int32 year = 1;
+  int32 month = 2;
+  int32 day = 3;
+  int32 hour = 4;
+  int32 minute = 5;
+  int32 second = 6;
+  string time_zone = 7;
+}
+message TaskCreateRequest {
+  string task_id = 1;
+  string target_conversation = 2;
+  bytes payload = 3;
+  oneof when {
+    google.protobuf.Timestamp run_at = 4;
+    LocalTaskTime local_time = 5;
+  }
+}
+message TaskCancelRequest { string task_id = 1; }
+message TaskGetRequest { string task_id = 1; }
+enum ScheduledTaskState {
+  SCHEDULED_TASK_STATE_UNSPECIFIED = 0;
+  SCHEDULED_TASK_PENDING = 1;
+  SCHEDULED_TASK_RUNNING = 2;
+  SCHEDULED_TASK_RETRYING = 3;
+  SCHEDULED_TASK_COMPLETED = 4;
+  SCHEDULED_TASK_FAILED = 5;
+  SCHEDULED_TASK_CANCELLED = 6;
+}
+message TaskResponse {
+  string task_id = 1;
+  ScheduledTaskState state = 2;
+  google.protobuf.Timestamp next_run_at = 3;
+}

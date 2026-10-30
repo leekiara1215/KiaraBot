@@ -82,6 +82,12 @@ ApplicationService
 
 当前 C++ reference runtime 已将 `RuntimeStore` 作为 Core 端口：它负责 inbox、outbox/action 记录和插件状态的持久化接口，Runtime 只负责去重、会话顺序、重试、死信、Action 过期和插件重连状态转换。默认的 `InMemoryRuntimeStore` 只用于 smoke test 和本地开发；生产环境必须由基础设施提供 SQLite 等持久化实现，不能把内存实现当作生产存储。
 
+## 基础设施端口契约
+
+`core/include/kiarabot/core/ports.hpp` 定义 Core 内部端口，直接使用生成的 `kiarabot.v1` Host 消息和 `Error`，不复制跨语言类型。端口返回 `PortResult<T>`：成功值或已有协议 `Error`，不可把依赖故障伪装成未找到或重复。Core 应用服务负责鉴权、业务策略和事务边界；命名空间及任务所有者由 Core 从认证身份传入，基础设施不能接受插件直接访问。
+
+Unit of Work 将 Repository、命名空间、任务、幂等结果和审计写入绑定到同一事务，显式 commit 或 rollback；销毁未提交事务须回滚。模型端口不暴露凭据，超时与结果通过端口表达。调度端口的领取和完成/重试操作必须持久化，重启恢复与取消语义见 `doc/01-runtime-semantics.md`。审计端口只接受明确的标识和状态字段，不接受消息正文或密钥。文件存储以逻辑键访问，不向调用方暴露文件系统路径。
+
 ## 结构化日志
 
 日志端口将在后续日志任务中实现。每个公开运行时操作和每条拒绝、重复、超时、重试、死信、存储失败及状态转换路径都必须写一条结构化记录。记录至少包含：

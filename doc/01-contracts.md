@@ -138,6 +138,15 @@ RegisterAdapterResponse
 - 配置 Schema 是否有效；
 - 运行时是否被允许启动。
 
+### 插件 Host API v1
+
+`PluginBridge` 注册成功后，插件以 `HostRequest` 调用模型、私有存储和一次性任务服务；Core 使用相同 `request_id` 返回 `HostResponse`。请求必须携带非空 `request_id`、`trace_id` 和未来的 UTC `deadline`。`storage_set`、`storage_delete`、`task_create`、`task_cancel` 必须携带幂等键；同一插件和幂等键重放返回原结果，载荷不同返回 `CONFLICT`。响应必须恰好包含对应的结果或 `Error`，不得同时包含两者。插件身份来自已注册连接，不能由请求指定；所有调用均先经过 Core 权限检查。断线后未确认结果须由调用者以相同幂等键查询或重试，不能假定超时代表未执行。
+
+- 模型请求包含模型名和角色/文本消息，角色仅允许 `system`、`user`、`assistant`；响应包含文本及输入、输出 token 数。API Key、上游响应正文和私密消息不得进入日志或错误详情。
+- 存储的命名空间由 Core 根据插件身份绑定；键仅在该命名空间内有效。缺失或过期键返回 `NOT_FOUND`；删除不存在的键成功。可选过期时间为 UTC，大小和 schema 校验由 Core 策略决定。
+- 任务属于调用插件，读取和取消其他插件的任务返回 `NOT_FOUND`。`run_at` 是 UTC；`local_time` 使用 IANA 时区的当地一次性时间。无效时区、模糊或不存在的当地时间返回 `INVALID_ARGUMENT`；不自动猜测夏令时偏移。任务状态由 `ScheduledTaskState` 定义。`ScheduleTask.schedule` 是原有 Action 字段，不在此处重新解释。
+- 模型超时映射 `TIMEOUT`，限流映射 `RATE_LIMITED`，可重试的上游连接或服务故障映射 `UPSTREAM_UNAVAILABLE`，拒绝由 Core 映射 `PERMISSION_DENIED`；其他内部故障映射 `INTERNAL`。`retryable` 必须反映该次失败是否允许重试，不得包含密钥或上游原始内容。
+
 ## 错误模型
 
 错误必须包含稳定错误码，不让前端或插件解析自由文本：

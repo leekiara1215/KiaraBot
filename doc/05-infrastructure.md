@@ -45,6 +45,10 @@ IFileStorage
 IAuditLogger
 ```
 
+## Core 端口
+
+Core 内部接口位于 `core/include/kiarabot/core/ports.hpp`，协议类型和稳定错误使用生成的 `kiarabot.v1` 类型。所有调用必须区分协议 `Error` 与成功值；数据库故障不能伪装为重复或未找到。事务、任务领取、时区转换、文件和模型实现必须遵守端口及 `doc/01-contracts.md`、`doc/01-runtime-semantics.md` 的语义。接口的存在不表示适配器或插件 Host 服务已经接入。
+
 ## 模型适配器
 
 模型适配器负责：
@@ -78,6 +82,18 @@ IActionRepository.get_by_idempotency_key(key)
 ```
 
 迁移由独立的 `kiarabot-migrate` 命令执行：先获取迁移锁，按版本顺序执行，成功后写入 migration table；锁等待超过 30 秒失败，不允许多个进程同时迁移。SQLite 必须启用 WAL、外键约束和 busy timeout。
+
+## 文件存储
+
+`FileStorage` 使用已存在、由 Core 进程控制的目录；逻辑键仅允许 1–256 个 ASCII 字母、数字、`-`、`_`，不接受路径。读取不跟随末级符号链接；写入使用同目录临时文件和原子替换，删除不存在的键成功。文件权限为 0600；调用方不得直接向插件暴露目录或文件描述符。该实现针对 POSIX 平台，不承诺断电后的目录项持久性。`FakeFileStorage` 支持下一次操作故障注入。
+
+独立构建与测试（需要 Protobuf 的 CMake 包和 protoc）：
+
+```bash
+cmake -S infrastructure -B /tmp/kiarabot-infrastructure-build
+cmake --build /tmp/kiarabot-infrastructure-build
+ctest --test-dir /tmp/kiarabot-infrastructure-build --output-on-failure
+```
 
 ## 调度器
 

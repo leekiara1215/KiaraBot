@@ -185,6 +185,10 @@ Core 使用 JSON Schema 校验插件配置，并向插件推送带版本号的�
 on_config_changed(old_config, new_config)
 ```
 
+### Host RPC 契约
+
+具体消息以 `proto/kiarabot/v1/plugins.proto` 中的 `HostRequest` 和 `HostResponse` 为准；调用通过已注册的 `PluginBridge` 连接关联插件身份，不能由插件指定存储命名空间或任务所有者。v1 的模型接口是非流式聊天；流式接口仍是后续能力。任务接口支持一次性 UTC 或 IANA 时区当地时间，不接受含糊或不存在的夏令时时间。幂等、错误和断线语义见 `doc/01-contracts.md` 和 `doc/01-runtime-semantics.md`。
+
 ## 权限
 
 第一批权限：

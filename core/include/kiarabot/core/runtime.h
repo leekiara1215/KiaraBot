@@ -13,7 +13,7 @@
 
 namespace kiarabot::core {
 
-using RuntimeTimePoint = std::chrono::steady_clock::time_point;
+using RuntimeTimePoint = std::chrono::system_clock::time_point;
 using RuntimeClock = std::function<RuntimeTimePoint()>;
 
 enum class EventResult { accepted, duplicate, invalid, out_of_order, rate_limited };
@@ -367,7 +367,7 @@ class Runtime {
   }
 
   [[nodiscard]] RuntimeTimePoint current_time() const {
-    return clock_ ? clock_() : std::chrono::steady_clock::now();
+    return clock_ ? clock_() : std::chrono::system_clock::now();
   }
 
   [[nodiscard]] std::chrono::milliseconds retry_delay(std::size_t attempt) const {

@@ -38,3 +38,7 @@ python -m grpc_tools.protoc \
 - 删除字段先标记 deprecated，再在下一个主版本移除；
 - 枚举新增值必须由旧客户端安全忽略；
 - 每次协议变更必须运行 descriptor diff 和跨语言 round-trip 测试。
+
+## 插件 Host API
+
+模型、命名空间存储和一次性任务使用 `plugins.proto` 中的 HostRequest/HostResponse，通过已注册 PluginBridge 传递。鉴权、幂等、时区、状态及错误语义见 `doc/01-contracts.md` 和 `doc/01-runtime-semantics.md`。
