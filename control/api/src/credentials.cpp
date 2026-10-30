@@ -1,6 +1,6 @@
 #include <iostream>
 
-#include "kiarabot/core/control_service.hpp"
+#include "kiarabot/core/application/control_service.hpp"
 
 int main(int argc, char* argv[]) try {
   if (argc == 2 && std::string_view(argv[1]) == "--key") {

@@ -47,36 +47,38 @@ spdlog 或同类结构化日志库
 
 ## 目录
 
+Core 头文件和实现按 `domain/`（状态与状态机）、`application/`（用例与调度）、`ports/`（端口）、`runtime/`（传输、进程和运行时支撑）分组；进程组合根在 `core/app/main.cpp`。`RuntimeEngine` 通过内部 `RuntimeStatePort` 操作事务私有状态；`RuntimeState` 将快照适配为该端口。持久化端口 `runtime_store.hpp` 与测试和本地开发用的 `in_memory_runtime_store.hpp` 分开。Core 的 CMake 文件负责声明自身源码及日志目标，外层只链接 Core 目标。
+
 ```text
 core/
   CMakeLists.txt
   include/kiarabot/core/
     domain/
-      entities/
-      value_objects/
-      policies/
+      runtime_types.hpp
+      runtime_engine.hpp
+      runtime_state_port.hpp
     application/
-      event_router/
-      command_dispatcher/
-      services/
+      runtime.h
+      action_router.hpp
+      control_application.hpp
+      ...
     ports/
-      model_provider.hpp
-      conversation_store.hpp
-      scheduler.hpp
-      audit_logger.hpp
+      ports.hpp
+      runtime_store.hpp
     runtime/
-      grpc_server/
-      plugin_host/
-      adapter_registry/
+      runtime_state.hpp
+      in_memory_runtime_store.hpp
+      bridge_server.hpp
+      plugin_process.hpp
+      ...
   src/
-    domain/
     application/
     runtime/
+  app/
     main.cpp
   tests/
-    unit/
-    integration/
     core_smoke.cpp
+    ...
 ```
 
 ## Core 拥有的状态和事务边界
@@ -119,7 +121,7 @@ ApplicationService
 
 ## 基础设施端口契约
 
-`core/include/kiarabot/core/ports.hpp` 定义 Core 内部端口，直接使用生成的 `kiarabot.v1` Host 消息和 `Error`，不复制跨语言类型。端口返回 `PortResult<T>`：成功值或已有协议 `Error`，不可把依赖故障伪装成未找到或重复。Core 应用服务负责鉴权、业务策略和事务边界；命名空间及任务所有者由 Core 从认证身份传入，基础设施不能接受插件直接访问。
+`core/include/kiarabot/core/ports/ports.hpp` 定义 Core 内部端口，直接使用生成的 `kiarabot.v1` Host 消息和 `Error`，不复制跨语言类型。端口返回 `PortResult<T>`：成功值或已有协议 `Error`，不可把依赖故障伪装成未找到或重复。Core 应用服务负责鉴权、业务策略和事务边界；命名空间及任务所有者由 Core 从认证身份传入，基础设施不能接受插件直接访问。
 
 Unit of Work 将 Repository、命名空间、任务、幂等结果和审计写入绑定到同一事务，显式 commit 或 rollback；销毁未提交事务须回滚。模型端口不暴露凭据，超时与结果通过端口表达。调度端口的领取和完成/重试操作必须持久化，重启恢复与取消语义见 `doc/01-runtime-semantics.md`。审计端口只接受明确的标识和状态字段，不接受消息正文或密钥。文件存储以逻辑键访问，不向调用方暴露文件系统路径。
 
@@ -247,7 +249,7 @@ AuthorizedCommands 是 Core 内部入口：调用方必须从已认证连接构�
 
 execute 的回调只能修改传入的 RuntimeSnapshot，不得执行网络/平台副作用或另启 Runtime 事务。业务修改、成功幂等记录和审计在同一提交中完成；提交失败全部不生效。幂等范围为主体+权限+资源+键，同键同 fingerprint 重放成功且不重复审计；不同 fingerprint 返回 CONFLICT。重放前重新鉴权。拒绝及回调失败记录审计，失败回调的状态变更被回滚；错误详情只保留稳定码和请求标识，不转发回调的自由文本。审计满（默认十万条）时返回 UPSTREAM_UNAVAILABLE 且不执行回调。审计/幂等保留和清理策略须后续管理任务落实，不能当作无限容量服务。
 
-SQLite 从 v2 起保存审计和命令幂等记录，当前 v4 还保存 Action 路由和 Host 命名空间/幂等响应；模型与任务尚未接线。T02a 适配器桥和 T03a 插件桥已使用此入口；控制 API 已由 T08b 通过独立应用端口接入同一事务存储。
+SQLite 从 v2 起保存审计和命令幂等记录，当前 v5 还保存 Action 路由、Host 命名空间/幂等响应和任务；模型和任务已接线。T02a 适配器桥和 T03a 插件桥已使用此入口；控制 API 已由 T08b 通过独立应用端口接入同一事务存储。
 
 ## T02a 适配器接收应用入口
 

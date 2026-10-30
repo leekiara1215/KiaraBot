@@ -2,7 +2,7 @@
 
 #include <mutex>
 
-#include "kiarabot/core/ports.hpp"
+#include "kiarabot/core/ports/ports.hpp"
 
 namespace kiarabot::infrastructure {
 // Configuration belongs to the composition root, never to a plugin request.

@@ -3,7 +3,7 @@
 #include <stdexcept>
 #include <string>
 
-#include "kiarabot/core/bridge_server.hpp"
+#include "kiarabot/core/runtime/bridge_server.hpp"
 
 namespace {
 void require(bool value, const char* message) {

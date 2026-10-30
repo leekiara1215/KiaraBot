@@ -1,7 +1,8 @@
 #include <iostream>
 #include <stdexcept>
 
-#include "kiarabot/core/runtime.h"
+#include "kiarabot/core/runtime/in_memory_runtime_store.hpp"
+#include "kiarabot/core/application/runtime.h"
 
 namespace {
 void check(bool result) {

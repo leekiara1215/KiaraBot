@@ -1,6 +1,6 @@
 #pragma once
 
-#include "kiarabot/core/runtime_store.hpp"
+#include "kiarabot/core/ports/runtime_store.hpp"
 
 namespace kiarabot::infrastructure {
 class SqliteRuntimeStore final : public core::RuntimeStore {

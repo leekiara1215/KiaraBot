@@ -3,9 +3,10 @@
 #include <source_location>
 #include <stdexcept>
 
+#include "kiarabot/core/runtime/in_memory_runtime_store.hpp"
 #include "kiarabot/control/http_mapper.hpp"
-#include "kiarabot/core/control_service.hpp"
-#include "kiarabot/core/plugin_hub.hpp"
+#include "kiarabot/core/application/control_service.hpp"
+#include "kiarabot/core/application/plugin_hub.hpp"
 #include "kiarabot/infrastructure/sqlite_runtime_store.hpp"
 
 namespace {

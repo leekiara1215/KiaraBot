@@ -7,12 +7,12 @@
 
 ## P0：最小运行闭环（7 项）
 
-1. **服务生命周期与桥接 — Core ↔ 协议**。已有 AdapterBridge、PluginBridge 服务声明和 C++ 状态机；缺持续运行的 gRPC 服务、注册/认证、消息与 Runtime 转换、关闭和重连接线。验收：fake 客户端连接、注册、传输和关闭，异常/断线按契约处理。依据：[services.proto](../proto/kiarabot/v1/services.proto)、[main.cpp](../core/src/main.cpp)。
+1. **服务生命周期与桥接 — Core ↔ 协议**。已有 AdapterBridge、PluginBridge 服务声明和 C++ 状态机；缺持续运行的 gRPC 服务、注册/认证、消息与 Runtime 转换、关闭和重连接线。验收：fake 客户端连接、注册、传输和关闭，异常/断线按契约处理。依据：[services.proto](../proto/kiarabot/v1/services.proto)、[当前入口](../core/app/main.cpp)。本项为历史快照，当前状态以开发台账为准。
 2. **事件入口与确认 — 适配器 ↔ Core**。需实现 OneBot 到 EventEnvelope 的映射、身份和序列校验，Core 持久化后确认、背压及断线重投。验收：真实或协议兼容 fake 发送重复、乱序、跳号和断线事件，验证确认与去重；独立 Python 适配器的现状未知。依据：[适配器设计](04-nonebot-adapter.md)、[运行语义](01-runtime-semantics.md)。
 3. **插件投递和生命周期 — Core ↔ 插件宿主/SDK**。Runtime 已有逐插件状态、ACK、重试和死信算法；缺订阅解析、认证连接绑定、实际发送/ACK 映射、进程管理及 SDK。验收：两个插件隔离，断线恢复、有序投递、重复事件与死信重放按契约运行。依据：[Core 接入需求](02-core.md#其他模块接入需求)、[plugins.proto](../proto/kiarabot/v1/plugins.proto)。
 4. **Action 往返 — 插件 ↔ Core ↔ 适配器**。需执行权限、能力和 deadline 检查，发送 Action、接收并关联终态、提供安全结果查询；Runtime 的内部状态不等于平台执行。验收：成功、拒绝、超时结果未知、重复幂等键和断线后查询均按契约处理，不重复执行副作用。依据：[Action 语义](01-runtime-semantics.md#action-语义)、[控制 API 下游事项](06-control-api.md#下游模块待实现)。
-5. **持久化事务与恢复 — Core ↔ 基础设施**。`RuntimeStore` 和 `ports.hpp` 是两组尚未接通的端口；需实现数据库迁移、事务、唯一约束及逐插件投递和会话状态持久化，并明确存储错误。验收：提交/回滚、并发唯一性、进程重启后的去重、重试、Action 和投递恢复；内存测试不能替代此验收。依据：[基础设施交接](13-infrastructure-integration-follow-up.md)、[runtime.h](../core/include/kiarabot/core/runtime.h)。
-6. **Host API — 插件 SDK ↔ Core ↔ 基础设施**。`plugins.proto` 已有非流式模型、命名空间存储、一次性任务的请求/响应消息及部分校验；缺宿主处理、请求关联、身份授权、deadline、幂等/审计事务、SDK 和具体 Provider。验收：两个插件隔离，覆盖拒绝、超时、故障、重复请求及任务取消/恢复；流式模型另需契约决策。依据：[基础设施交接](13-infrastructure-integration-follow-up.md)、[host_validation.hpp](../core/include/kiarabot/core/host_validation.hpp)。
+5. **持久化事务与恢复 — Core ↔ 基础设施**。`RuntimeStore` 和 `ports.hpp` 是两组尚未接通的端口；需实现数据库迁移、事务、唯一约束及逐插件投递和会话状态持久化，并明确存储错误。验收：提交/回滚、并发唯一性、进程重启后的去重、重试、Action 和投递恢复；内存测试不能替代此验收。依据：[基础设施交接](13-infrastructure-integration-follow-up.md)、[runtime.h](../core/include/kiarabot/core/application/runtime.h)。
+6. **Host API — 插件 SDK ↔ Core ↔ 基础设施**。`plugins.proto` 已有非流式模型、命名空间存储、一次性任务的请求/响应消息及部分校验；缺宿主处理、请求关联、身份授权、deadline、幂等/审计事务、SDK 和具体 Provider。验收：两个插件隔离，覆盖拒绝、超时、故障、重复请求及任务取消/恢复；流式模型另需契约决策。依据：[基础设施交接](13-infrastructure-integration-follow-up.md)、[host_validation.hpp](../core/include/kiarabot/core/application/host_validation.hpp)。
 7. **端到端安全与故障验证 — 所有闭环层**。现有单元测试及 mock 无法验证实际网络、持久化、鉴权或外部平台。需建立共享契约语料与集成环境，覆盖授权拒绝无副作用、依赖故障、崩溃重启、重复投递和结果不确定性。验收：事件→插件→Action→结果全链路及故障注入可重复通过，并记录环境与版本。依据：[Core 验收](02-core.md#验收标准)、[运行时必须测试](01-runtime-semantics.md#必须测试)。
 
 ## P1：管理和运维闭环（4 项）

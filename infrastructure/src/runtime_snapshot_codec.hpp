@@ -6,7 +6,7 @@
 #include <stdexcept>
 #include <type_traits>
 
-#include "kiarabot/core/runtime_types.hpp"
+#include "kiarabot/core/domain/runtime_types.hpp"
 
 namespace kiarabot::infrastructure::detail {
 template <typename Archive, typename Value>

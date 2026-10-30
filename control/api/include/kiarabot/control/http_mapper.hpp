@@ -2,7 +2,7 @@
 
 #include <map>
 
-#include "kiarabot/core/control_application.hpp"
+#include "kiarabot/core/application/control_application.hpp"
 
 namespace kiarabot::control {
 struct HttpRequest {

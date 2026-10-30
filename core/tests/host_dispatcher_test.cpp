@@ -3,9 +3,10 @@
 #include <source_location>
 #include <stdexcept>
 
-#include "kiarabot/core/host_dispatcher.hpp"
-#include "kiarabot/core/request_digest.hpp"
-#include "kiarabot/core/runtime.h"
+#include "kiarabot/core/runtime/in_memory_runtime_store.hpp"
+#include "kiarabot/core/application/host_dispatcher.hpp"
+#include "kiarabot/core/application/runtime.h"
+#include "kiarabot/core/runtime/request_digest.hpp"
 #include "kiarabot/infrastructure/sqlite_runtime_store.hpp"
 
 namespace {

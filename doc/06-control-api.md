@@ -2,7 +2,7 @@
 
 ## T08a 冻结决策（2026-10-30）
 
-控制 API 使用同进程 C++ 应用端口 IControlApplication（core/include/kiarabot/core/control_application.hpp），由组合根注入到 control/api；不新增跨进程管理 RPC，不改变当前 Python 适配器/SDK 和 TypeScript 面板。端口覆盖当前全部 REST 操作；输入为 bearer 凭据、request_id/trace_id/deadline（最长三十秒）、幂等键及类型化命令，禁止自报 actor/role。Core 每次重新核验会话、执行授权、事务和审计；端口返回显式 PortResult，资源文档在输出前脱敏，HTTP 层按 OpenAPI 校验映射。端口本身不表示 REST 服务已实现，实际服务属于 T08b。
+控制 API 使用同进程 C++ 应用端口 IControlApplication（core/include/kiarabot/core/application/control_application.hpp），由组合根注入到 control/api；不新增跨进程管理 RPC，不改变当前 Python 适配器/SDK 和 TypeScript 面板。端口覆盖当前全部 REST 操作；输入为 bearer 凭据、request_id/trace_id/deadline（最长三十秒）、幂等键及类型化命令，禁止自报 actor/role。Core 每次重新核验会话、执行授权、事务和审计；端口返回显式 PortResult，资源文档在输出前脱敏，HTTP 层按 OpenAPI 校验映射。T08b 已实现并完成本机 REST 服务验收。
 
 已逐项核对历史 doc/13 交接：SessionReady 和 Action 查询已由前序任务定义，保留现行契约；其余 P0 决策写入 OpenAPI 的 x-control-policy、操作 x-permission 和 AsyncAPI 的 x-control-session-policy，作为唯一来源。新增 GET /auth/me（服务端角色/权限）、GET /auth/sessions 和 POST /auth/sessions/{sessionId}/revoke；管理员可管理全部会话，其他角色仅自己，不可见与不存在均 NOT_FOUND。TokenPair 保留既有字段，通过 /auth/me 查询当前 session_id。
 
@@ -199,7 +199,7 @@ AuthorizedCommands 是 Core 内部入口：调用方必须从已认证连接构�
 
 execute 的回调只能修改传入的 RuntimeSnapshot，不得执行网络/平台副作用或另启 Runtime 事务。业务修改、成功幂等记录和审计在同一提交中完成；提交失败全部不生效。幂等范围为主体+权限+资源+键，同键同 fingerprint 重放成功且不重复审计；不同 fingerprint 返回 CONFLICT。重放前重新鉴权。拒绝及回调失败记录审计，失败回调的状态变更被回滚；错误详情只保留稳定码和请求标识，不转发回调的自由文本。审计满（默认十万条）时返回 UPSTREAM_UNAVAILABLE 且不执行回调。审计/幂等保留和清理策略须后续管理任务落实，不能当作无限容量服务。
 
-SQLite schema v2 保存审计和命令幂等记录，并事务化升级 v1 快照；该版本仍不包含 Host 模型/任务/命名空间存储。控制 API 和桥接业务还需在相应任务中使用这一入口；当前网络服务不会因该类存在就获得业务能力。
+SQLite 从 v2 起保存审计和命令幂等记录，当前 schema v5 还包含 Host 命名空间及任务；控制 API 和桥接业务已接入相应应用入口。
 
 ## T08b 实施与验收范围
 

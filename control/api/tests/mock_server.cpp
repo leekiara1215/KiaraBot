@@ -3,7 +3,7 @@
 #include <signal.h>
 
 #include "kiarabot/control/http_server.hpp"
-#include "kiarabot/core/control_service.hpp"
+#include "kiarabot/core/application/control_service.hpp"
 
 namespace {
 namespace core = kiarabot::core;

@@ -101,6 +101,7 @@ echo "C++20 compile and Protobuf/gRPC generation passed"
 while IFS= read -r -d '' script; do
   bash -n "$script"
 done < <(find scripts -type f -name '*.sh' -print0)
+python3 scripts/quality/check-boundaries.py
 cmake --preset dev
 cmake --build --preset dev
 ctest --preset dev

@@ -1,4 +1,5 @@
-add_executable(kiarabot-core src/main.cpp)
+include(${CMAKE_CURRENT_LIST_DIR}/cmake/log.cmake)
+add_executable(kiarabot-core app/main.cpp)
 target_compile_features(kiarabot-core PRIVATE cxx_std_20)
 target_include_directories(kiarabot-core PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
@@ -11,7 +12,7 @@ add_executable(kiarabot-core-smoke tests/core_smoke.cpp)
 target_include_directories(kiarabot-core-smoke PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 add_test(NAME core_smoke COMMAND kiarabot-core-smoke)
 
-add_executable(kiarabot-runtime-test tests/runtime_test.cpp)
+add_executable(kiarabot-runtime-test tests/runtime_test.cpp tests/runtime_engine_header_test.cpp)
 target_compile_features(kiarabot-runtime-test PRIVATE cxx_std_20)
 target_include_directories(kiarabot-runtime-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_compile_options(kiarabot-runtime-test PRIVATE
@@ -37,10 +38,16 @@ if(KIARABOT_GENERATE_PROTO)
 endif()
 
 if(UNIX)
-  target_sources(kiarabot-core PRIVATE src/plugin_process.cpp)
+  target_sources(kiarabot-core PRIVATE src/runtime/plugin_process.cpp)
   find_package(Threads REQUIRED)
   target_link_libraries(kiarabot-core PRIVATE Threads::Threads)
   find_package(Python3 3.9 COMPONENTS Interpreter REQUIRED)
+  add_test(NAME architecture_boundaries
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/scripts/quality/check-boundaries.py)
+  add_test(NAME architecture_boundaries_test
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/scripts/quality/tests/boundaries_test.py)
+  add_test(NAME deploy_healthcheck
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/scripts/deploy/tests/healthcheck_test.py)
   add_test(NAME core_process_lifecycle
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/process_lifecycle_test.py
       $<TARGET_FILE:kiarabot-core>)

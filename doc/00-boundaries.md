@@ -20,6 +20,8 @@
 
 负责领域规则、事件编排、权限和插件调度。它不能导入 NoneBot2、NapCat、Python 运行时、浏览器代码或第三方模型 SDK。
 
+`core/app/` 是进程组合根：创建并连接 Core、基础设施及控制 API 的具体实现。`core/src/` 和 `core/include/` 按领域、应用、端口和运行时分组，不得依赖这些外层实现；Core 的 CMake 负责声明 Core 源码，外层通过目标链接。`scripts/quality/check-boundaries.py` 检查直接 include，不构成完整的传递依赖或运行时行为审计。
+
 ### 适配器模块
 
 目录：`adapters/`

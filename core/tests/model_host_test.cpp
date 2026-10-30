@@ -3,7 +3,8 @@
 #include <source_location>
 #include <stdexcept>
 
-#include "kiarabot/core/host_dispatcher.hpp"
+#include "kiarabot/core/runtime/in_memory_runtime_store.hpp"
+#include "kiarabot/core/application/host_dispatcher.hpp"
 
 namespace {
 namespace wire = kiarabot::v1;

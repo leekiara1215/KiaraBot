@@ -1,8 +1,8 @@
-#include "kiarabot/core/host_validation.hpp"
-#include "kiarabot/core/ports.hpp"
-
 #include <cassert>
 #include <chrono>
+
+#include "kiarabot/core/application/host_validation.hpp"
+#include "kiarabot/core/ports/ports.hpp"
 
 int main() {
   using namespace std::chrono_literals;

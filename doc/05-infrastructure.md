@@ -35,7 +35,7 @@ infrastructure/
   fake/
 ```
 
-迁移文件归 `infrastructure/sqlite/migrations/` 管理；`deploy/` 只负责调用迁移命令和编排进程。
+上图为目标目录；当前实现位于 `infrastructure/src/` 和 `infrastructure/include/`，SQLite 迁移在 `sqlite_runtime_store.cpp` 中实现，`migrate.cpp` 提供命令入口。`deploy/` 只负责编排和调用迁移命令。
 
 ## 第一批端口
 
@@ -51,7 +51,7 @@ IAuditLogger
 
 ## Core 端口
 
-Core 内部接口位于 `core/include/kiarabot/core/ports.hpp`，协议类型和稳定错误使用生成的 `kiarabot.v1` 类型。所有调用必须区分协议 `Error` 与成功值；数据库故障不能伪装为重复或未找到。事务、任务领取、时区转换、文件和模型实现必须遵守端口及 `doc/01-contracts.md`、`doc/01-runtime-semantics.md` 的语义。接口的存在不表示适配器或插件 Host 服务已经接入。
+Core 内部接口位于 `core/include/kiarabot/core/ports/ports.hpp`，协议类型和稳定错误使用生成的 `kiarabot.v1` 类型。所有调用必须区分协议 `Error` 与成功值；数据库故障不能伪装为重复或未找到。事务、任务领取、时区转换、文件和模型实现必须遵守端口及 `doc/01-contracts.md`、`doc/01-runtime-semantics.md` 的语义。接口的存在不表示适配器或插件 Host 服务已经接入。
 
 ## 模型适配器
 
@@ -95,7 +95,7 @@ IOutboxRepository.append(action)
 IActionRepository.get_by_idempotency_key(key)
 ```
 
-迁移由独立的 `kiarabot-migrate` 命令执行：先获取迁移锁，按版本顺序执行，成功后写入 migration table；锁等待超过 30 秒失败，不允许多个进程同时迁移。当前单快照适配器使用 FULL 同步与 SQLite 默认 journal；没有关系表外键。独立迁移命令对锁冲突做三十秒有界重试，运行时提交仍立即报告 CONFLICT，避免长时间阻塞桥接。
+独立的 `kiarabot-migrate` 命令使用 SQLite `BEGIN IMMEDIATE` 互斥并在事务内迁移快照，成功后写入 `PRAGMA user_version`；锁等待超过 30 秒失败。当前单快照适配器使用 FULL 同步与 SQLite 默认 journal；没有关系表外键。运行时提交遇到冲突立即报告 CONFLICT。
 
 ## 文件存储
 

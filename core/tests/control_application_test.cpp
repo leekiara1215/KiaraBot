@@ -1,7 +1,7 @@
 #include <iostream>
 #include <stdexcept>
 
-#include "kiarabot/core/control_application.hpp"
+#include "kiarabot/core/application/control_application.hpp"
 
 namespace core = kiarabot::core;
 namespace wire = kiarabot::v1;

@@ -12,7 +12,7 @@ T03a 将逐插件状态机接入 PluginBridge。订阅来自已授权活动连�
 
 ## 当前 reference runtime
 
-`core/include/kiarabot/core/runtime.h` 提供与本语义对应的可替换状态机。`RuntimeStore` 和 `RuntimeTransaction` 是 Core 持久化端口，保存 inbox、会话顺序状态、Action 和插件状态；`InMemoryRuntimeStore` 只用于测试和本地开发。Core 运行时不直接访问数据库，基础设施实现该端口后，Core 重启仍可恢复去重、会话状态、重试、死信和 Action 幂等状态。端口实现须保证事务内写入原子提交，失败时回滚，且按事件 ID 和 Action 幂等键提供唯一性。当前参考 Runtime 及内存存储由调用方串行访问；并发访问需由宿主或存储实现提供隔离。
+`core/include/kiarabot/core/application/runtime.h` 提供与本语义对应的可替换状态机。`RuntimeStore` 和 `RuntimeTransaction` 是 Core 持久化端口，保存 inbox、会话顺序状态、Action 和插件状态；`InMemoryRuntimeStore` 只用于测试和本地开发。Core 运行时不直接访问数据库，基础设施实现该端口后，Core 重启仍可恢复去重、会话状态、重试、死信和 Action 幂等状态。端口实现须保证事务内写入原子提交，失败时回滚，且按事件 ID 和 Action 幂等键提供唯一性。当前参考 Runtime 及内存存储由调用方串行访问；并发访问需由宿主或存储实现提供隔离。
 
 接收事件和提交 Action 的内部结果分别区分重复、输入拒绝、背压或过期及存储失败；事务内状态机插入结果区分唯一键冲突，外层 StorageResult 区分存储失败，存储失败不得伪装成重复。事件及 Action 的检查和写入在同一事务执行；提交返回失败时端口必须保证可回滚且不会留下已提交写入。内存端口允许独立快照，但拒绝旧 revision 的重叠提交。T05a 后公共批量操作整体提交；外层 StorageError 表示整次提交失败，不能将内部计数当作已持久化数量。跨进程边界由服务层按现有协议映射错误，不新增协议错误码。时钟和范围为 `[0, 1]` 的随机样本可注入；默认使用系统时钟和随机源。
 持久化时间点使用 UTC 系统时钟而非进程单调时钟；系统时间发生调整时，已保存的绝对到期时间不变。

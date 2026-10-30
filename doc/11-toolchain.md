@@ -54,6 +54,7 @@ ctest --preset proto
 ./proto/tests/check_contracts.sh
 ./scripts/quality/check-format.sh
 ./scripts/quality/check-tidy.sh
+python3 ./scripts/quality/check-boundaries.py
 ./scripts/quality/check-openapi.sh
 ./scripts/quality/check-asyncapi.sh
 ```

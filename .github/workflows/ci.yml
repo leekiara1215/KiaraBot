@@ -153,7 +153,7 @@ jobs:
           CXX: clang++-16
         run: cmake --preset dev -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
       - name: Analyze Core translation units
-        run: clang-tidy-16 -p build/dev core/src/main.cpp core/tests/core_smoke.cpp --warnings-as-errors='*'
+        run: clang-tidy-16 -p build/dev core/app/main.cpp core/tests/core_smoke.cpp --warnings-as-errors='*'
 
   api-contracts:
     name: API contracts

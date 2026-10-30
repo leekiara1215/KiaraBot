@@ -1,6 +1,6 @@
 #pragma once
 
-#include "kiarabot/core/ports.hpp"
+#include "kiarabot/core/ports/ports.hpp"
 
 namespace kiarabot::infrastructure {
 class TimeZoneResolver final : public core::ITimeZoneResolver {

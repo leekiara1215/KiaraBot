@@ -2,6 +2,7 @@
 #include <sstream>
 #include <stdexcept>
 
+#include "kiarabot/core/runtime/in_memory_runtime_store.hpp"
 #include "kiarabot/infrastructure/runtime_log_sink.hpp"
 
 namespace {

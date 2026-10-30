@@ -3,7 +3,7 @@
 #include <deque>
 #include <functional>
 
-#include "kiarabot/core/control_service.hpp"
+#include "kiarabot/core/application/control_service.hpp"
 
 namespace kiarabot::control {
 struct StreamReply {

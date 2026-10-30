@@ -4,7 +4,7 @@
 #include <mutex>
 #include <ostream>
 
-#include "kiarabot/core/runtime_log.hpp"
+#include "kiarabot/core/runtime/runtime_log.hpp"
 
 namespace kiarabot::infrastructure {
 class BufferedRuntimeLogSink final : public core::IRuntimeLogSink {

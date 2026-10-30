@@ -383,7 +383,7 @@
 
 ## T01b 验收记录（2026-10-30）
 
-- 实现：core/include/kiarabot/core/bridge_server.hpp、core/src/bridge_server.cpp、main.cpp，根 CMake 与 Core 测试注册；两个桥接的本机监听和 bearer 身份边界。不宣称业务注册、事件入库或插件执行可用。
+- 实现：core/include/kiarabot/core/runtime/bridge_server.hpp、core/src/runtime/bridge_server.cpp、main.cpp，根 CMake 与 Core 测试注册；两个桥接的本机监听和 bearer 身份边界。不宣称业务注册、事件入库或插件执行可用。
 - 验收：proto 配置/编译/CTest 9/9；新增 core_bridge 与 core_grpc_process，覆盖缺失/错误/重复凭据、角色不匹配、身份冒用、空消息、显式不支持、deadline、活动流关闭、端口复用、外部地址拒绝和两个进程停止信号。dev 回归 4/4 通过。
 - 文档：services.proto 增补连接认证注释（字段/RPC 签名未变）；更新 proto/README.md、doc/01-contracts.md、doc/02-core.md、doc/08-operations.md 以及台账。API、面板、SDK 与事件投递语义未改动，无需同步。
 - 检查：契约脚本、相对 HEAD 的 descriptor 兼容检查和四个变更 C++ 文件格式检查通过；统一工具链仍因缺少 clang-tidy 停止。测试使用隔离的本机临时端口，不依赖外部服务。尚未进行 TLS/跨主机/真实 Python 组件验收，属于后续任务。

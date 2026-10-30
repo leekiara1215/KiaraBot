@@ -3,7 +3,9 @@
 #include <sqlite3.h>
 #include <stdexcept>
 
-#include "kiarabot/core/authorized_commands.hpp"
+#include "kiarabot/core/runtime/in_memory_runtime_store.hpp"
+#include "kiarabot/core/application/authorized_commands.hpp"
+#include "kiarabot/core/application/runtime.h"
 #include "kiarabot/infrastructure/sqlite_runtime_store.hpp"
 
 namespace {
