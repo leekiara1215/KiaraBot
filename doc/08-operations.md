@@ -157,7 +157,7 @@ Linux 主机可将仓库部署到 `/opt/kiarabot`，将 `deploy/systemd/kiarabot
 
 ### 备份、迁移和回滚
 
-`scripts/deploy/migrate.sh` 使用排他锁；数据库已存在时先用 SQLite `VACUUM INTO` 创建一致性快照，并写入 `PRAGMA user_version`、SHA-256 和创建时间。数据库不存在视为首次部署；未设置 `MIGRATION_COMMAND` 时以非零状态停止，因为必须显式指定迁移命令；仓库已提供可重复运行的 `kiarabot-migrate`，但当前默认镜像未打包该程序。部署镜像完成接线后，通过受控环境变量提供命令。确认无需迁移时可明确设置 `MIGRATION_COMMAND=true`；命令失败会以非零状态阻止后续服务。异常终止可能留下锁文件，确认无迁移进程后才能人工删除。备份保存在数据卷内，操作员还须定期复制到独立的受保护位置；本配置不包含插件配置备份。
+`scripts/deploy/migrate.sh` 使用排他锁；数据库已存在时先用 SQLite `VACUUM INTO` 创建一致性快照，并写入 `PRAGMA user_version`、SHA-256 和创建时间；校验使用 sha256sum 或 shasum -a 256，缺少两者时明确失败。数据库不存在视为首次部署；未设置 `MIGRATION_COMMAND` 时以非零状态停止，因为必须显式指定迁移命令；仓库已提供可重复运行的 `kiarabot-migrate`，但当前默认镜像未打包该程序。部署镜像完成接线后，通过受控环境变量提供命令。确认无需迁移时可明确设置 `MIGRATION_COMMAND=true`；命令失败会以非零状态阻止后续服务。异常终止可能留下锁文件，确认无迁移进程后才能人工删除。备份保存在数据卷内，操作员还须定期复制到独立的受保护位置；本配置不包含插件配置备份。
 
 ```bash
 # 命令在数据卷内运行；输出最后一行是备份文件路径
@@ -168,7 +168,7 @@ docker compose -f deploy/compose.prod.yml stop panel adapter core
 docker compose -f deploy/compose.prod.yml run --rm --no-deps migrate /usr/local/bin/backup.sh restore --input /var/lib/kiarabot/backups/<backup-set>/database.db
 ```
 
-升级前设置 `KIARABOT_CORE_IMAGE_DIGEST=sha256:<64位十六进制>` 和 `ROLLBACK_IMAGE_DIGEST=sha256:<64位十六进制>`，然后运行 `scripts/deploy/deploy.sh upgrade`。脚本停止服务、在数据卷内运行迁移（先备份），再依次等待各服务 ready；任一步失败会尝试以指定的旧 Core digest 依次启动服务并返回非零。`scripts/deploy/deploy.sh rollback sha256:<64位十六进制>` 可单独执行镜像回滚，不再次执行迁移。镜像回滚不会自动恢复数据库：只有确认旧版本与当前 schema 兼容时才能直接使用；否则停止所有数据库使用者，核对备份和 schema 后显式恢复，再启动旧版本。升级和回滚只更换 Core 镜像，适配器和面板的版本由其镜像变量独立管理。备份恢复涉及数据替换，必须先确认恢复点及写入损失。
+升级前设置 `KIARABOT_CORE_IMAGE_DIGEST=sha256:<64位十六进制>`，并记录旧镜像 digest，然后运行 `scripts/deploy/deploy.sh upgrade`。脚本停止服务、在数据卷内运行迁移（先备份），再依次等待各服务 ready；迁移或启动失败时停止服务并返回非零，不自动启动旧镜像；操作员须先核对 schema 与迁移前备份，再决定恢复或显式回滚。`scripts/deploy/deploy.sh rollback sha256:<64位十六进制>` 可单独执行镜像回滚，不再次执行迁移。镜像回滚不会自动恢复数据库：只有确认旧版本与当前 schema 兼容时才能直接使用；否则停止所有数据库使用者，核对备份和 schema 后显式恢复，再启动旧版本。升级和回滚只更换 Core 镜像，适配器和面板的版本由其镜像变量独立管理。备份恢复涉及数据替换，必须先确认恢复点及写入损失。
 
 ## 其他模块需要完成的依赖
 

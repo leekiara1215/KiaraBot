@@ -41,21 +41,14 @@ case "${1:-}" in
     ;;
   upgrade)
     new_digest="${KIARABOT_CORE_IMAGE_DIGEST:-}"
-    rollback_digest="${ROLLBACK_IMAGE_DIGEST:-}"
     require_digest "$new_digest"
-    require_digest "$rollback_digest"
     "${compose[@]}" stop panel adapter core
     if KIARABOT_CORE_IMAGE="${repository}@${new_digest}" "${compose[@]}" run --rm --no-deps migrate \
         && start_in_order "${repository}@${new_digest}"; then
       kiarabot_log info deploy upgrade success "services upgraded" ""
     else
-      kiarabot_log error deploy upgrade failure "upgrade failed; attempting image rollback" UPGRADE_FAILED
+      kiarabot_log error deploy upgrade failure "upgrade failed; verify schema and backup before rollback" UPGRADE_FAILED
       "${compose[@]}" stop panel adapter core || true
-      if start_in_order "${repository}@${rollback_digest}"; then
-        kiarabot_log info deploy rollback success "previous image started; verify database compatibility" ""
-      else
-        kiarabot_log error deploy rollback failure "image rollback failed" ROLLBACK_FAILED
-      fi
       exit 1
     fi
     ;;

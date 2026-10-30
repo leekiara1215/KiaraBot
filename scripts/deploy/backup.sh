@@ -24,7 +24,14 @@ while (($# > 0)); do
   esac
 done
 
-checksum() { sha256sum "$1" | awk '{print $1}'; }
+if command -v sha256sum >/dev/null 2>&1; then
+  checksum() { sha256sum "$1" | awk '{print $1}'; }
+elif command -v shasum >/dev/null 2>&1; then
+  checksum() { shasum -a 256 "$1" | awk '{print $1}'; }
+else
+  kiarabot_log error backup validate failure "SHA-256 utility is required" DEPENDENCY_MISSING
+  exit 1
+fi
 
 case "$mode" in
   backup)
