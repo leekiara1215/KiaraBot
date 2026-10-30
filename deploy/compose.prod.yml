@@ -1,0 +1,104 @@
+name: ${COMPOSE_PROJECT_NAME:-kiarabot-production}
+
+services:
+  migrate:
+    image: ${KIARABOT_CORE_IMAGE:-ghcr.io/leekiara1215/kiarabot-core@sha256:0000000000000000000000000000000000000000000000000000000000000000}
+    user: "10001:10001"
+    command: ["/usr/local/bin/migrate.sh"]
+    env_file:
+      - path: ${KIARABOT_ENV_FILE:-.env}
+        required: false
+    environment:
+      KIARABOT_ENVIRONMENT: production
+      DATABASE_PATH: ${DATABASE_PATH:-/var/lib/kiarabot/kiarabot.db}
+      BACKUP_DIR: ${BACKUP_DIR:-/var/lib/kiarabot/backups}
+      MIGRATION_COMMAND: ${MIGRATION_COMMAND:-}
+    volumes:
+      - kiarabot-production-data:/var/lib/kiarabot
+    restart: "no"
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+
+  core:
+    image: ${KIARABOT_CORE_IMAGE:-ghcr.io/leekiara1215/kiarabot-core@sha256:0000000000000000000000000000000000000000000000000000000000000000}
+    user: "10001:10001"
+    command: ["/usr/local/bin/kiarabot-core"]
+    env_file:
+      - path: ${KIARABOT_ENV_FILE:-.env}
+        required: false
+    environment:
+      KIARABOT_ENVIRONMENT: production
+      HEALTH_PORT: "8080"
+    ports:
+      - "127.0.0.1:${KIARABOT_CORE_PORT:-8080}:8080"
+    volumes:
+      - kiarabot-production-data:/var/lib/kiarabot
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "curl --fail --silent --show-error http://127.0.0.1:8080/health/ready >/dev/null"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 20s
+    restart: unless-stopped
+    init: true
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+
+  adapter:
+    image: ${KIARABOT_ADAPTER_IMAGE:-ghcr.io/leekiara1215/kiarabot-adapter-nonebot@sha256:0000000000000000000000000000000000000000000000000000000000000000}
+    user: "10001:10001"
+    command: ["/bin/sh", "-c", "exec ${KIARABOT_ADAPTER_COMMAND:-kiarabot-adapter-nonebot}"]
+    env_file:
+      - path: ${KIARABOT_ENV_FILE:-.env}
+        required: false
+    environment:
+      KIARABOT_ENVIRONMENT: production
+      CORE_ENDPOINT: ${CORE_ENDPOINT:-http://core:8080}
+      HEALTH_PORT: "8081"
+    depends_on:
+      core:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl --fail --silent --show-error http://127.0.0.1:8081/health/ready >/dev/null"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 20s
+    restart: unless-stopped
+    init: true
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+
+  panel:
+    image: ${KIARABOT_PANEL_IMAGE:-ghcr.io/leekiara1215/kiarabot-panel@sha256:0000000000000000000000000000000000000000000000000000000000000000}
+    user: "10001:10001"
+    command: ["/bin/sh", "-c", "exec ${KIARABOT_PANEL_COMMAND:-kiarabot-panel}"]
+    env_file:
+      - path: ${KIARABOT_ENV_FILE:-.env}
+        required: false
+    environment:
+      KIARABOT_ENVIRONMENT: production
+      CONTROL_API_URL: ${CONTROL_API_URL:-http://core:8080}
+      HEALTH_PORT: "8082"
+    ports:
+      - "127.0.0.1:${KIARABOT_PANEL_PORT:-8082}:8082"
+    depends_on:
+      adapter:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl --fail --silent --show-error http://127.0.0.1:8082/health/ready >/dev/null"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 20s
+    restart: unless-stopped
+    init: true
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+
+volumes:
+  kiarabot-production-data:
+    name: ${KIARABOT_PRODUCTION_VOLUME:-kiarabot-production-data}

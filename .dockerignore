@@ -1,0 +1,20 @@
+# Use an allowlist so local configuration and credentials never enter the build context.
+**
+!CMakeLists.txt
+!core/
+!core/**
+!scripts/
+!scripts/deploy/
+!scripts/deploy/*.sh
+**/.env
+**/.env.*
+**/*.pem
+**/*.key
+**/id_rsa*
+**/id_ed25519*
+**/.ssh/**
+**/secrets/**
+**/*token*
+**/*TOKEN*
+**/*api_key*
+**/*API_KEY*
