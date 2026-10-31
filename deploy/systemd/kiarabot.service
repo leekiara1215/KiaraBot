@@ -5,15 +5,34 @@ After=docker.service network-online.target
 Wants=network-online.target
 
 [Service]
+# The unit manages the Compose stack; Docker restarts individual containers.
+# deploy.sh runs docker CLI commands, so the service runs as root and relies on
+# NoNewPrivileges=no for the CLI-to-daemon handoff.
 Type=oneshot
 RemainAfterExit=yes
+Restart=on-failure
+RestartSec=10s
+StartLimitIntervalSec=0
 WorkingDirectory=/opt/kiarabot
 Environment=KIARABOT_ENVIRONMENT=production
+Environment=COMPOSE_PROJECT_NAME=kiarabot-production
 EnvironmentFile=-/etc/kiarabot/production.env
 ExecStart=/opt/kiarabot/scripts/deploy/deploy.sh start
+ExecStartPost=/opt/kiarabot/scripts/deploy/smoke.sh
 ExecStop=/opt/kiarabot/scripts/deploy/deploy.sh stop
-TimeoutStartSec=300
-TimeoutStopSec=120
+TimeoutStartSec=600
+TimeoutStopSec=180
+KillMode=mixed
+UMask=0027
+# Hardening that is compatible with the docker CLI. /dev and the Docker socket
+# remain writable; the compose files and environment files stay read-only.
+NoNewPrivileges=no
+PrivateTmp=yes
+ProtectHome=yes
+ProtectSystem=full
+ReadWritePaths=/var/lib/docker
+LimitNOFILE=65536
+LimitCORE=0
 
 [Install]
 WantedBy=multi-user.target

@@ -1,8 +1,28 @@
-# Use an allowlist so local configuration and credentials never enter the build context.
+# Use an allowlist so local configuration and credentials never enter the build
+# context. The production image and the adapter/panel images are all built from
+# this repository root context (see deploy/docker/*.Dockerfile).
 **
 !CMakeLists.txt
+!cmake/
+!cmake/**
 !core/
 !core/**
+!proto/
+!proto/**
+!infrastructure/
+!infrastructure/**
+!control/
+!control/**
+!adapters/
+!adapters/nonebot/
+!adapters/nonebot/**
+!panel/
+!panel/**
+!api/
+!api/**
+!deploy/
+!deploy/docker/
+!deploy/docker/**
 !scripts/
 !scripts/deploy/
 !scripts/deploy/*.sh
@@ -18,3 +38,7 @@
 **/*TOKEN*
 **/*api_key*
 **/*API_KEY*
+**/node_modules
+**/.venv
+**/generated
+**/dist

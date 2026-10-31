@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Exercise deployment failure handling and SQLite backup without Docker."""
+import json
 import os
 from pathlib import Path
 import shutil
@@ -25,7 +26,8 @@ class DeploymentTest(unittest.TestCase):
             log = path / 'calls'
             env = dict(os.environ, PATH=f'{path}:{os.environ["PATH"]}',
                        CALL_LOG=str(log), KIARABOT_CORE_IMAGE_DIGEST='sha256:' + 'a' * 64,
-                       ROLLBACK_IMAGE_DIGEST='sha256:' + 'b' * 64)
+                       ROLLBACK_IMAGE_DIGEST='sha256:' + 'b' * 64,
+                       DEPLOY_RECORD_FILE=str(path / 'deploy-record.jsonl'))
             result = subprocess.run([str(DEPLOY), 'upgrade'], env=env, text=True,
                                     capture_output=True, check=False)
             self.assertEqual(result.returncode, 1)
@@ -43,7 +45,8 @@ class DeploymentTest(unittest.TestCase):
             docker.chmod(0o755)
             log = path / 'calls'
             env = dict(os.environ, PATH=f'{path}:{os.environ["PATH"]}',
-                       CALL_LOG=str(log), KIARABOT_CORE_IMAGE_DIGEST='sha256:' + 'a' * 64)
+                       CALL_LOG=str(log), KIARABOT_CORE_IMAGE_DIGEST='sha256:' + 'a' * 64,
+                       DEPLOY_RECORD_FILE=str(path / 'deploy-record.jsonl'))
             result = subprocess.run([str(DEPLOY), 'upgrade'], env=env, text=True,
                                     capture_output=True, check=False)
             self.assertEqual(result.returncode, 1)
@@ -51,6 +54,67 @@ class DeploymentTest(unittest.TestCase):
             self.assertTrue(any(' up ' in f' {line} ' and line.endswith(' core') for line in calls))
             self.assertFalse(any(' up ' in f' {line} ' and line.endswith(' panel') for line in calls))
             self.assertIn(' stop panel adapter core', calls[-1])
+
+    def test_start_records_deployment(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory)
+            docker = path / 'docker'
+            docker.write_text('#!/bin/bash\nprintf "%s\\n" "$*" >> "$CALL_LOG"\n')
+            docker.chmod(0o755)
+            record = path / 'deploy-record.jsonl'
+            env = dict(os.environ, PATH=f'{path}:{os.environ["PATH"]}',
+                       CALL_LOG=str(path / 'calls'), KIARABOT_ENVIRONMENT='staging',
+                       DEPLOY_RECORD_FILE=str(record))
+            result = subprocess.run([str(DEPLOY), 'start'], env=env, text=True,
+                                    capture_output=True, check=False)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            entry = json.loads(record.read_text().splitlines()[-1])
+            self.assertEqual(entry['environment'], 'staging')
+            self.assertEqual(entry['outcome'], 'started')
+            self.assertEqual(entry['image'], 'compose-default')
+
+    def test_rollback_uses_last_recorded_digest(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory)
+            docker = path / 'docker'
+            docker.write_text('#!/bin/bash\nprintf "%s :: %s\\n" "${KIARABOT_CORE_IMAGE:-}" "$*" >> "$CALL_LOG"\n')
+            docker.chmod(0o755)
+            digest = 'sha256:' + 'c' * 64
+            record = path / 'deploy-record.jsonl'
+            record.write_text(json.dumps({'timestamp': 'x', 'environment': 'staging',
+                                          'outcome': 'upgraded',
+                                          'image': f'ghcr.io/leekiara1215/kiarabot-core@{digest}',
+                                          'schema_version': '5', 'commit': ''}) + '\n')
+            env = dict(os.environ, PATH=f'{path}:{os.environ["PATH"]}',
+                       CALL_LOG=str(path / 'calls'), KIARABOT_ENVIRONMENT='staging',
+                       DEPLOY_RECORD_FILE=str(record))
+            result = subprocess.run([str(DEPLOY), 'rollback'], env=env, text=True,
+                                    capture_output=True, check=False)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            calls = (path / 'calls').read_text().splitlines()
+            self.assertTrue(any(digest in line and ' up ' in f' {line} ' for line in calls))
+            self.assertEqual(json.loads(record.read_text().splitlines()[-1])['outcome'], 'rolled-back')
+
+    def test_rollback_rejects_schema_mismatch(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory)
+            docker = path / 'docker'
+            docker.write_text('#!/bin/bash\nprintf "%s\\n" "$*" >> "$CALL_LOG"\n')
+            docker.chmod(0o755)
+            database = path / 'runtime.db'
+            with sqlite3.connect(database) as connection:
+                connection.execute('CREATE TABLE sample (value TEXT)')
+                connection.execute('PRAGMA user_version = 4')
+            env = dict(os.environ, PATH=f'{path}:{os.environ["PATH"]}',
+                       CALL_LOG=str(path / 'calls'), KIARABOT_ENVIRONMENT='staging',
+                       DATABASE_PATH=str(database),
+                       DEPLOY_RECORD_FILE=str(path / 'deploy-record.jsonl'),
+                       ROLLBACK_IMAGE_DIGEST='sha256:' + 'd' * 64)
+            result = subprocess.run([str(DEPLOY), 'rollback'], env=env, text=True,
+                                    capture_output=True, check=False)
+            self.assertEqual(result.returncode, 1)
+            self.assertIn('SCHEMA_MISMATCH', result.stdout)
+            self.assertFalse((path / 'calls').exists())
 
     def test_backup_restore_and_reject_tampered_backup(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -68,7 +132,8 @@ class DeploymentTest(unittest.TestCase):
             self.assertIn('schema_version=5', Path(f'{snapshot}.metadata').read_text())
             with sqlite3.connect(database) as connection:
                 connection.execute("UPDATE sample SET value='after'")
-            restore = [str(BACKUP), 'restore', '--database', str(database), '--input', str(snapshot)]
+            restore = [str(BACKUP), 'restore', '--database', str(database),
+                       '--input', str(snapshot), '--confirm']
             subprocess.run(restore, capture_output=True, check=True)
             with sqlite3.connect(database) as connection:
                 self.assertEqual(connection.execute('SELECT value FROM sample').fetchone()[0], 'before')
@@ -80,6 +145,40 @@ class DeploymentTest(unittest.TestCase):
             with sqlite3.connect(database) as connection:
                 self.assertEqual(connection.execute('SELECT value FROM sample').fetchone()[0], 'before')
 
+    def test_restore_requires_explicit_confirmation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory)
+            database = path / 'runtime.db'
+            with sqlite3.connect(database) as connection:
+                connection.execute('CREATE TABLE sample (value TEXT)')
+                connection.execute('PRAGMA user_version = 5')
+            backup = subprocess.run([str(BACKUP), 'backup', '--database', str(database),
+                                     '--output', str(path / 'backups')], text=True,
+                                    capture_output=True, check=True)
+            snapshot = Path(backup.stdout.splitlines()[-1])
+            result = subprocess.run([str(BACKUP), 'restore', '--database', str(database),
+                                     '--input', str(snapshot)], text=True,
+                                    capture_output=True, check=False)
+            self.assertEqual(result.returncode, 2)
+            self.assertIn('RESTORE_CONFIRMATION_REQUIRED', result.stdout)
+
+    def test_backup_retention_keeps_newest_sets(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory)
+            backups = path / 'backups'
+            for stamp in ('20260101T000000Z', '20260102T000000Z', '20260103T000000Z'):
+                (backups / f'kiarabot-{stamp}-aaaaaaaa').mkdir(parents=True)
+            database = path / 'runtime.db'
+            with sqlite3.connect(database) as connection:
+                connection.execute('PRAGMA user_version = 5')
+            result = subprocess.run([str(BACKUP), 'backup', '--database', str(database),
+                                     '--output', str(backups), '--retain', '2'],
+                                    text=True, capture_output=True, check=True)
+            self.assertIn('sha256=', Path(result.stdout.splitlines()[-1] + '.metadata').read_text())
+            remaining = sorted(entry.name for entry in backups.iterdir())
+            self.assertEqual(len(remaining), 2)
+            self.assertFalse(any('20260101' in name for name in remaining))
+
     def test_migration_failure_releases_lock_and_does_not_report_success(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory)
@@ -90,6 +189,20 @@ class DeploymentTest(unittest.TestCase):
             self.assertEqual(result.returncode, 1)
             self.assertIn('MIGRATION_FAILED', result.stdout)
             self.assertFalse((path / 'lock').exists())
+
+    def test_migration_verifies_resulting_schema(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory)
+            database = path / 'runtime.db'
+            with sqlite3.connect(database) as connection:
+                connection.execute('CREATE TABLE sample (value TEXT)')
+                connection.execute('PRAGMA user_version = 4')
+            env = dict(os.environ, DATABASE_PATH=str(database),
+                       BACKUP_DIR=str(path / 'backups'), MIGRATION_LOCK_FILE=str(path / 'lock'),
+                       MIGRATION_COMMAND='true')
+            result = subprocess.run([str(MIGRATE)], env=env, text=True, capture_output=True, check=False)
+            self.assertEqual(result.returncode, 1)
+            self.assertIn('MIGRATION_SCHEMA_MISMATCH', result.stdout)
 
     @unittest.skipUnless(shutil.which('shasum'), 'shasum is unavailable')
     def test_backup_falls_back_to_shasum(self):

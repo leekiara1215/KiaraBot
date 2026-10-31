@@ -1,8 +1,17 @@
 name: ${COMPOSE_PROJECT_NAME:-kiarabot-staging}
 
+# Single-host deployment model: Core, the control API, the adapter health port
+# and the panel reverse proxy all bind 127.0.0.1 only (see doc/08-operations.md,
+# "网络、端口与限制"). Containers therefore use host networking on Linux; that
+# is not supported by Docker Desktop unless host networking is explicitly
+# enabled. NapCat/QQ runs on the same host outside this Compose project and is
+# reached at 127.0.0.1 as well.
 services:
   migrate:
     image: ${KIARABOT_CORE_IMAGE:-ghcr.io/leekiara1215/kiarabot-core:staging}
+    build:
+      context: ..
+      dockerfile: Dockerfile
     user: "10001:10001"
     command: ["/usr/local/bin/migrate.sh"]
     env_file:
@@ -10,95 +19,145 @@ services:
         required: false
     environment:
       KIARABOT_ENVIRONMENT: staging
-      DATABASE_PATH: ${DATABASE_PATH:-/var/lib/kiarabot/kiarabot.db}
-      BACKUP_DIR: ${BACKUP_DIR:-/var/lib/kiarabot/backups}
-      MIGRATION_COMMAND: ${MIGRATION_COMMAND:-}
+      DATABASE_PATH: ${KIARABOT_RUNTIME_DB:-/var/lib/kiarabot/kiarabot.db}
+      BACKUP_DIR: /var/lib/kiarabot/backups
+      # Authoritative migration command: the core image ships kiarabot-migrate
+      # at this path. A missing or failing command stops the stack before Core.
+      MIGRATION_COMMAND: /usr/local/bin/kiarabot-migrate
+      EXPECTED_SCHEMA_VERSION: "5"
     volumes:
       - kiarabot-staging-data:/var/lib/kiarabot
+      - kiarabot-staging-backups:/var/lib/kiarabot/backups
     restart: "no"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
     security_opt: [no-new-privileges:true]
     cap_drop: [ALL]
 
   core:
     image: ${KIARABOT_CORE_IMAGE:-ghcr.io/leekiara1215/kiarabot-core:staging}
+    build:
+      context: ..
+      dockerfile: Dockerfile
     user: "10001:10001"
-    command: ["/usr/local/bin/kiarabot-core"]
+    command:
+      - /usr/local/bin/kiarabot-core
+      - --grpc-listen
+      - 127.0.0.1:${KIARABOT_GRPC_PORT:-50051}
+    # Host networking is required because Core only binds loopback addresses.
+    # The "listen" field inside KIARABOT_CONTROL_CONFIG must equal
+    # KIARABOT_CONTROL_PORT; deploy.sh validates that before start/upgrade.
+    network_mode: host
     env_file:
       - path: ${KIARABOT_ENV_FILE:-.env}
         required: false
     environment:
       KIARABOT_ENVIRONMENT: staging
-      HEALTH_PORT: "8080"
-    ports:
-      - "127.0.0.1:${KIARABOT_CORE_PORT:-18080}:8080"
+      KIARABOT_CONTROL_CONFIG: /etc/kiarabot/control.json
+      KIARABOT_CONTROL_PORT: ${KIARABOT_CONTROL_PORT:-8080}
     volumes:
       - kiarabot-staging-data:/var/lib/kiarabot
+      - ${KIARABOT_CONTROL_CONFIG_FILE:-./control/control.json}:/etc/kiarabot/control.json:ro
     depends_on:
       migrate:
         condition: service_completed_successfully
     healthcheck:
-      test: ["CMD-SHELL", "curl --fail --silent --show-error http://127.0.0.1:8080/health/ready >/dev/null"]
+      test: ["CMD-SHELL", "curl -fsS \"http://127.0.0.1:$${KIARABOT_CONTROL_PORT:-8080}/health/ready\" >/dev/null"]
       interval: 10s
       timeout: 3s
       retries: 6
-      start_period: 10s
+      start_period: 20s
     restart: unless-stopped
     init: true
+    stop_grace_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
     security_opt: [no-new-privileges:true]
     cap_drop: [ALL]
 
   adapter:
     image: ${KIARABOT_ADAPTER_IMAGE:-ghcr.io/leekiara1215/kiarabot-adapter-nonebot:staging}
+    build:
+      context: ..
+      dockerfile: deploy/docker/adapter.Dockerfile
     user: "10001:10001"
-    command: ["/bin/sh", "-c", "exec ${KIARABOT_ADAPTER_COMMAND:-kiarabot-adapter-nonebot}"]
+    network_mode: host
     env_file:
       - path: ${KIARABOT_ENV_FILE:-.env}
         required: false
     environment:
       KIARABOT_ENVIRONMENT: staging
-      CORE_ENDPOINT: ${CORE_ENDPOINT:-http://core:8080}
-      HEALTH_PORT: "8081"
+      CORE_GRPC_ENDPOINT: 127.0.0.1:${KIARABOT_GRPC_PORT:-50051}
+      HEALTH_PORT: ${KIARABOT_ADAPTER_HEALTH_PORT:-8081}
+    volumes:
+      # Persistent outbox + .actions execution log (idempotency state).
+      - kiarabot-staging-adapter:/var/lib/kiarabot-adapter
     depends_on:
       core:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "curl --fail --silent --show-error http://127.0.0.1:8081/health/ready >/dev/null"]
+      test: ["CMD-SHELL", "curl -fsS \"http://127.0.0.1:$${HEALTH_PORT:-8081}/health/ready\" >/dev/null"]
       interval: 10s
       timeout: 3s
       retries: 6
-      start_period: 10s
+      start_period: 20s
     restart: unless-stopped
     init: true
+    stop_grace_period: 20s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
     security_opt: [no-new-privileges:true]
     cap_drop: [ALL]
 
   panel:
     image: ${KIARABOT_PANEL_IMAGE:-ghcr.io/leekiara1215/kiarabot-panel:staging}
-    user: "10001:10001"
-    command: ["/bin/sh", "-c", "exec ${KIARABOT_PANEL_COMMAND:-kiarabot-panel}"]
-    env_file:
-      - path: ${KIARABOT_ENV_FILE:-.env}
-        required: false
+    build:
+      context: ..
+      dockerfile: deploy/docker/panel.Dockerfile
+      args:
+        VITE_API_MODE: live
+        VITE_API_BASE: /api/v1
+    # The nginx unprivileged image runs as uid/gid 101 internally.
+    user: "101:101"
+    network_mode: host
     environment:
       KIARABOT_ENVIRONMENT: staging
-      CONTROL_API_URL: ${CONTROL_API_URL:-http://core:8080}
-      HEALTH_PORT: "8082"
-    ports:
-      - "127.0.0.1:${KIARABOT_PANEL_PORT:-18082}:8082"
+      KIARABOT_CONTROL_HOST: 127.0.0.1
+      KIARABOT_CONTROL_PORT: ${KIARABOT_CONTROL_PORT:-8080}
+      KIARABOT_PANEL_PORT: ${KIARABOT_PANEL_PORT:-8082}
     depends_on:
-      adapter:
+      core:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "curl --fail --silent --show-error http://127.0.0.1:8082/health/ready >/dev/null"]
+      test: ["CMD-SHELL", "curl -fsS \"http://127.0.0.1:$${KIARABOT_PANEL_PORT:-8082}/health/ready\" >/dev/null"]
       interval: 10s
       timeout: 3s
       retries: 6
-      start_period: 10s
+      start_period: 20s
     restart: unless-stopped
     init: true
+    stop_grace_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
     security_opt: [no-new-privileges:true]
     cap_drop: [ALL]
 
 volumes:
   kiarabot-staging-data:
     name: ${KIARABOT_STAGING_VOLUME:-kiarabot-staging-data}
+  kiarabot-staging-backups:
+    name: ${KIARABOT_STAGING_BACKUP_VOLUME:-kiarabot-staging-backups}
+  kiarabot-staging-adapter:
+    name: ${KIARABOT_STAGING_ADAPTER_VOLUME:-kiarabot-staging-adapter}
