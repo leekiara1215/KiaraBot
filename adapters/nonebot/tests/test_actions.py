@@ -2,7 +2,8 @@ import asyncio
 import pytest
 from kiarabot.v1 import actions_pb2 as actions, common_pb2 as common
 from kiarabot_adapter_nonebot.actions import ActionExecutor
-from kiarabot_adapter_nonebot.mapper import AdapterError
+from kiarabot_adapter_nonebot.mapper import AdapterError, map_message
+from test_mapping_outbox import raw
 
 
 def request(deadline=2000):
@@ -68,7 +69,8 @@ async def test_unknown_never_reexecutes_or_becomes_failed(tmp_path, mode):
 
 @pytest.mark.parametrize('mode,code', [('deadline', common.TIMEOUT), ('owner', common.PERMISSION_DENIED),
     ('instance', common.PERMISSION_DENIED), ('segment', common.CAPABILITY_NOT_SUPPORTED),
-    ('payload', common.CAPABILITY_NOT_SUPPORTED), ('invalid', common.INVALID_ARGUMENT)])
+    ('payload', common.CAPABILITY_NOT_SUPPORTED), ('invalid', common.INVALID_ARGUMENT),
+    ('prefixed', common.INVALID_ARGUMENT)])
 async def test_rejection_has_no_platform_side_effect(tmp_path, mode, code):
     async def call(api, params):
         pytest.fail('platform must not be called')
@@ -85,11 +87,43 @@ async def test_rejection_has_no_platform_side_effect(tmp_path, mode, code):
             action.delete_message.message_id = 'message'
         if mode == 'invalid':
             action.send_message.conversation.id = '-1'
+        if mode == 'prefixed':
+            action.send_message.conversation.id = 'group:789'
+            action.target.conversation_id = 'group:789'
         result = await executor.execute(action, 'instance')
         assert result.error.code == code
         assert result.status == (actions.EXPIRED if mode == 'deadline' else actions.FAILED)
     finally:
         executor.close()
+
+
+@pytest.mark.parametrize('kind,api,field,number', [
+    ('group', 'send_group_msg', 'group_id', 789),
+    ('private', 'send_private_msg', 'user_id', 456),
+])
+async def test_event_conversation_roundtrip(tmp_path, kind, api, field, number):
+    """The inbound MessageReceived conversation is directly usable for SendMessage."""
+    event = map_message(raw(kind), 'adapter', '123')
+    action = actions.ActionEnvelope(action_id='action-' + kind, idempotency_key='key-' + kind,
+                                    trace_id=event.trace_id)
+    action.deadline.seconds = 2000
+    action.target_source.CopyFrom(event.source)
+    action.target_source.adapter_instance_id = 'instance'
+    action.target.CopyFrom(event.subject)
+    action.send_message.conversation.CopyFrom(event.message_received.conversation)
+    action.send_message.message.plain_text = 'hello back'
+    calls = []
+    async def call(api_name, params):
+        calls.append((api_name, params))
+        return {'message_id': 99}
+    executor = ActionExecutor(tmp_path / (kind + '.db'), 'adapter', '123', call, now=lambda: 1000)
+    try:
+        result = await executor.execute(action, 'instance')
+    finally:
+        executor.close()
+    assert result.status == actions.SUCCEEDED
+    assert calls == [(api, {field: number,
+                            'message': [{'type': 'text', 'data': {'text': 'hello back'}}]})]
 
 
 async def test_capacity_and_database_failure_prevent_platform(tmp_path):

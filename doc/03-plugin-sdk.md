@@ -24,11 +24,37 @@ Context 提供 submit_action(ActionEnvelope)、query_action(action_id 或 idempo
 
 `sdk/python` 提供 `Plugin.on_start(context)`、`on_event(EventEnvelope, context)`、`on_stop(reason)` 和本机 gRPC runner，事件类型直接使用生成协议。插件自行实现业务幂等；SDK 不把网络 ACK 当作 Action 完成。清单由 protobuf JSON 解析并校验现行 T03a 子集，不导入 Core 或 NoneBot。
 
-本地 on_start 成功后才注册；每次连接生成新 instance_id，重新验证 required_api_version 与 granted_permissions。完整授权成功才处理事件。正常处理发送正 ACK；异常转换为不含自由文本的 INTERNAL，协作式处理超时返回可重试 TIMEOUT。断线保持结果未知，Core 按至少一次语义重投。停止先取消流，再调用 on_stop；阻塞解释器或拒绝取消的插件由宿主进程硬超时回收。
+本地 on_start 成功后才注册；每次连接生成新 instance_id，重新验证 required_api_version 与 granted_permissions。完整授权成功才处理事件。正常处理发送正 ACK；`PluginError` 保留稳定码与 retryable，其他异常转换为不含自由文本的 INTERNAL，协作式处理超时返回可重试 TIMEOUT。断线保持结果未知，Core 按至少一次语义重投。停止先取消流，再调用 on_stop；阻塞解释器或拒绝取消的插件由宿主进程硬超时回收。
 
 Core 可启动配置的 Python 插件子进程，使用 argv 而非 shell，显式传入插件凭据，不继承适配器 token、数据库或模型配置。注册前失败/超时阻止受管插件启动成功；运行中崩溃不终止 Core。停止对独立进程组发送 SIGTERM，超过宽限期发送 SIGKILL 并 waitpid。进程隔离不是操作系统权限沙箱。
 
-SDK 提供真实本机 gRPC FakeHost，用于注册、事件、ACK、拒绝和断线测试；现已覆盖 Action/Host 存储帧的成功和故障交互，模型调用已由 T06b 接线，任务由 T06c 接线。示例位于 plugins/event-observer。依赖由 sdk/python/uv.lock 固定，生成代码进入忽略的 build 目录。验收入口见 sdk/python/README.md。
+SDK 提供真实本机 gRPC FakeHost，用于注册、事件、ACK、拒绝、断线、心跳不返回（`heartbeat_acks=False`）以及 Action/Host/配置帧的成功和故障交互；模型调用由 T06b、任务由 T06c、配置由 T08b 接线。依赖由 sdk/python/uv.lock 固定，生成代码进入忽略的 build 目录。验收入口见 sdk/python/README.md。
+
+## 运行时参数（T03b 补充）
+
+`python -m kiarabot_sdk --manifest <path>` 只从环境读取以下变量；缺失必填项或非法数值以稳定码 `INVALID_ARGUMENT` 退出：
+
+| 变量 | 默认 | 含义 |
+| --- | --- | --- |
+| `PLUGIN_CORE_ENDPOINT` | 必填 | 仅接受 `127.0.0.1:<端口>` |
+| `PLUGIN_AUTH_TOKEN` | 必填 | 32–4096 个可打印 ASCII 字符 |
+| `PLUGIN_IO_TIMEOUT` | 5.0 | gRPC 单次写入/读取响应的秒级超时 |
+| `PLUGIN_HOOK_TIMEOUT` | 5.0 | `on_start/on_event/on_stop` 协作超时；配置回调另受 `apply_timeout_ms` 限制 |
+| `PLUGIN_HEARTBEAT_INTERVAL` | 1.0 | 心跳发送与读循环检查间隔 |
+| `PLUGIN_RETRY_DELAY` | 1.0 | 可重试连接失败后的等待 |
+
+Core 受管启动器当前只传递最小 PATH、endpoint、token 与可选 PYTHONPATH，尚未透传其余四项（交接 core）；受管插件使用默认值。宿主启动/停止硬超时由 Core 的 `KIARABOT_PLUGIN_START_TIMEOUT_MS`/`KIARABOT_PLUGIN_STOP_TIMEOUT_MS` 控制，与这组参数无关。
+
+## 示例插件
+
+| 插件 | 使用能力 | 权限 | 说明 |
+| --- | --- | --- | --- |
+| `plugins/group_admin` | `event.message.received`、`send_message` 纯文本、storage | `message.read`、`message.send`、`storage.namespace` | `/group help/info/rules/rule add/welcome`；`Mute/Kick/Approve` 在 v1 契约中未实现，本示例从不构造这些 payload |
+| `plugins/reminder` | `event.message.received`、`event.timer.triggered`、`task_create/get/cancel` | `message.read`、`message.send`、`task.schedule` | `/remind <秒> <文本>`、`status`、`cancel`；定时到点由 TimerTriggered 回投递回复，task_id 与 Action 幂等键确定，重复 timer 不重复副作用 |
+| `plugins/ai-reply` | `event.message.received`、非流式 `model_chat`、storage、`send_message` | `message.read`、`message.send`、`model.chat`、`storage.namespace` | `/ai` 前缀单轮回复；先记录调用意图再调模型，避免重放重复计费 |
+| `plugins/event-observer` | `event.message.received` | `message.read` | 最小收事件示例 |
+
+基线要求的三类示例插件中，`ai_chat` 由 `ai-reply` 对应；`group_admin`、`reminder` 现在以 v1 现有协议能力补齐（不含任何未实现 payload）。两个新示例的配置样例为 `plugins/<name>/config.example.json`，经 `plugin.config.v1` 下发（当前只支持空 schema，插件在 `on_config` 中自行校验）。插件测试：`sdk/python/.venv/bin/python -m pytest -q -c sdk/python/pyproject.toml plugins/group_admin/tests plugins/reminder/tests`。
 
 ## T03a 当前桥接子集
 
@@ -73,11 +99,11 @@ NoneBot2 是渠道适配器，不是业务插件。AI 聊天、群管理和提�
 
 ```text
 proto/kiarabot/v1/      跨语言协议
-sdk/python/             Python RPC SDK
-sdk/cpp/                C++ RPC / C ABI SDK
-sdk/typescript/         控制面板客户端类型
-tools/kiara-plugin/     创建、校验、测试和打包插件
-plugins/<plugin_name>/  插件清单、配置、实现和测试
+sdk/python/             Python RPC SDK（当前唯一已实现）
+sdk/cpp/                C++ RPC / C ABI SDK（未实现）
+sdk/typescript/         控制面板客户端类型（未实现，面板从 api/*.yaml 生成类型）
+tools/kiara-plugin/     创建、校验、测试和打包插件（未实现，交接项）
+plugins/<plugin_name>/  插件清单、配置样例、实现和测试
 ```
 
 SDK 包按语言分别维护自己的包配置和测试目录；插件实现不能放入 `core/` 或 `sdk/`。
@@ -88,46 +114,35 @@ SDK 包按语言分别维护自己的包配置和测试目录；插件实现不�
 
 ## 插件清单
 
-每个插件必须提供 `plugin.json`：
+每个插件必须提供 `plugin.json`。下面是当前**可注册**的最小示例（与 `plugins/group_admin/plugin.json` 一致）：
 
 ```json
 {
-  "id": "ai-chat",
-  "name": "AI Chat",
-  "version": "1.0.0",
+  "id": "group-admin",
+  "name": "Group admin example",
+  "version": "0.1.0",
   "api_version": "kiarabot.plugin.v1",
   "runtime": "python-rpc",
-  "entrypoint": "kiarabot_ai_chat:create_plugin",
-  "capabilities": [
-    "event.message.received",
-    "action.message.send",
-    "model.chat",
-    "conversation.read",
-    "conversation.write"
-  ],
-  "permissions": [
-    "message.read",
-    "message.send",
-    "model.chat",
-    "storage.namespace"
-  ],
-  "config_schema": "config.schema.json",
-  "dependencies": [],
+  "entrypoint": "group_admin:create_plugin",
+  "capabilities": ["event.message.received"],
+  "permissions": ["message.read", "message.send", "storage.namespace"],
   "isolation": "process",
-  "ordered": false
+  "ordered": true
 }
 ```
 
-Core 在启用前必须检查：
+当前 v1 子集由 SDK（`load_manifest`/`validate_manifest`）与 Core（`PluginHub::attach`）双方校验：
 
-- ID 是否重复；
-- API 版本是否兼容；
-- 依赖是否满足；
-- 权限是否允许；
-- 配置 Schema 是否有效；
-- 运行时和隔离模式是否允许。
+- `id`/`version` 为 1–128 个 `[A-Za-z0-9_.-]`；`name` 非空且 ≤128；`api_version` 必须为 `kiarabot.plugin.v1`；
+- `entrypoint` 必须是 `module:factory` 形式且 ≤256；SDK 需要可导入，因此该正则比 Core 的「非空/长度」检查更严，这是有意的本地约束；
+- `runtime` 必须为 `python-rpc`，`isolation` 必须显式写 `process`（**没有默认值**）；`native`/`wasm` 与依赖解析尚未实现，返回 `CAPABILITY_NOT_SUPPORTED`；
+- `dependencies` 非空返回 `CAPABILITY_NOT_SUPPORTED`（无依赖解析）；
+- `config_schema` 只接受空串或 `{}`，非空返回 `CAPABILITY_NOT_SUPPORTED`（无 JSON Schema 解释器，配置值仍可经 `plugin.config.v1` 下发）；
+- `capabilities` 只能取 `event.message.received`、`event.message.sent`、`event.group.member.changed`、`event.friend.request`、`event.adapter.status.changed`、`event.timer.triggered`，且必须同时声明其所需权限（映射见 T03a）；未知 capability 返回 `CAPABILITY_NOT_SUPPORTED`，缺少所需权限返回 `PERMISSION_DENIED`；
+- `permissions`/`capabilities` 各 ≤128、不得重复、名称必须匹配 `[A-Za-z0-9_.-]{1,128}`；
+- `ordered` 由 Core 持久化并在重连时与注册清单比对（不一致返回 `CONFLICT`）；SDK 原样传递，不在本地重新解释。
 
-`isolation` 只能是 `process`、`native` 或 `wasm`，默认使用 `process`；`ordered` 表示是否要求同一会话内按事件顺序串行投递。该字段与 `proto/kiarabot/v1/plugins.proto` 保持一致。
+注意：早期草案示例中的 `config_schema: "config.schema.json"` 与非事件 capability（`action.message.send`、`model.chat`、`conversation.*`）在当前实现下会被拒绝，已按上表修正。
 
 ## 生命周期
 
@@ -146,9 +161,9 @@ Discovered
 
 ```text
 register(manifest)
-configure(config)
+configure(config)   # 当前实现为 on_config 回调，无独立 configure RPC
 start(context)
-health()
+health()            # 未实现：插件健康目前只由注册/断线状态推断
 stop(reason)
 ```
 
@@ -167,63 +182,31 @@ stop(reason)
 
 ### MessageService
 
-```text
-send(target, message, options) -> ActionResult
-reply(event, message, options) -> ActionResult
-```
-
-所有消息发送都会经过权限、限流、审计和适配器能力检查。
+状态：**未实现该 service 形态**。v1 通过 `Context.submit_action(ActionEnvelope)` 发送 `send_message` 纯文本（群/私聊），Action 会经过权限、限流、审计和适配器能力检查。
 
 ### ModelService
 
-```text
-chat(request) -> ChatResponse
-stream_chat(request) -> Stream<ChatDelta>
-```
-
-插件提交模型请求，但不能获得模型 API Key。Provider、模型、超时、配额和重试由 Core 管理。
+状态：**仅非流式已实现**（`Context.model_chat`，T06b）。`stream_chat` 未实现，协议没有流式消息。插件提交模型请求，但不能获得模型 API Key；Provider、模型、超时、配额和重试由 Core 管理。
 
 ### ConversationService
 
-```text
-get(conversation_id, options)
-append(conversation_id, message)
-clear(conversation_id)
-```
-
-插件数据必须按插件 ID 隔离命名空间。
+状态：**未实现**。`HostRequest` 没有会话读写操作，插件只能把会话相关数据写入自己的 storage 命名空间（`storage_get/set/delete`）并自行编码。会话管理需要先冻结协议（交接 proto）。
 
 ### StorageService
 
-```text
-get(namespace, key)
-set(namespace, key, value, ttl)
-delete(namespace, key)
-```
-
-插件不能获得数据库连接，也不能修改 Core 的表结构。
+状态：**已实现**（`host.storage.v1`；签名以 T06a 章节的 `storage_get/set/delete` 为准）。namespace 由认证插件身份确定，不接受自报 namespace；插件不能获得数据库连接，也不能修改 Core 的表结构。
 
 ### PermissionService
 
-```text
-check(subject, permission, resource) -> Decision
-```
-
-清单声明的权限只是申请，不代表自动获得权限。最终决策由管理员、群组策略和用户角色共同决定。
+状态：**未实现**。没有权限查询 RPC；插件只能读取 `Context.granted_permissions`（注册协商后的静态授予集合）做自省，最终决策仍由 Core 在实际操作时执行（交接 proto）。清单声明的权限只是申请，不代表自动获得权限。
 
 ### SchedulerService
 
-```text
-schedule(task)
-cancel(task_id)
-list(owner_plugin_id)
-```
-
-每个任务必须记录插件 ID、目标会话和取消策略。
+状态：**部分实现**：`task_create`/`task_cancel`/`task_get` 已可用（T06c），`list(owner_plugin_id)` 未实现（协议无列表操作）。每个任务记录插件 ID、目标会话和取消策略；任务身份来自注册会话。
 
 ### ConfigService
 
-当前只支持空配置 schema（空串或 `{}`），非空 schema 返回 CAPABILITY_NOT_SUPPORTED；JSON Schema 解释器仍为后续能力。Core 向协商 `plugin.config.v1` 的插件推送带版本和 delivery_id 的完整配置：
+状态：**已实现**（`plugin.config.v1`；仅当 Core 配置了控制面配置下发时协商）。当前只支持空配置 schema（空串或 `{}`），非空 schema 返回 CAPABILITY_NOT_SUPPORTED；JSON Schema 解释器仍为后续能力。配置值样例见 `plugins/group_admin/config.example.json` 与 `plugins/reminder/config.example.json`，插件在 `on_config` 中自行校验类型。Core 向协商 `plugin.config.v1` 的插件推送带版本和 delivery_id 的完整配置：
 
 ```text
 on_config(PluginConfig, Context)
@@ -237,32 +220,22 @@ on_config(PluginConfig, Context)
 
 ## 权限
 
-第一批权限：
+当前 Core 实现实际使用的权限词表（`core/src/application/plugin_hub.cpp` 的 `required_permission`、`HostDispatcher`、`ActionRouter` 与 `plugins/*/plugin.json`）：
 
 ```text
-message.read
-message.send
-message.delete
-user.read
-group.read
-group.manage
-conversation.read
-conversation.write
-model.chat
-storage.namespace
-scheduler.create
-admin.config
+message.read        订阅 event.message.received / event.message.sent
+message.send        提交 send_message Action
+model.chat          host.model.v1 model_chat
+storage.namespace   host.storage.v1
+task.schedule       host.tasks.v1 与 event.timer.triggered 订阅
+member.read         event.group.member.changed
+request.read        event.friend.request
+adapter.read        event.adapter.status.changed
 ```
 
-权限必须绑定作用域：
+以下名称只出现在早期设计草案，当前没有协议入口或实现，不应写入可运行清单：`conversation.read`、`conversation.write`、`scheduler.create`、`message.delete`、`user.read`、`group.read`、`group.manage`、`admin.config`。它们不会驱动任何已实现能力。
 
-```text
-global
-account:<id>
-group:<id>
-user:<id>
-conversation:<id>
-```
+权限作用域（`account:<id>`/`group:<id>`/`user:<id>`/`conversation:<id>`）仍是后续能力；当前权限按插件身份全局授予，由 Core 在每次操作时校验，插件不能自报身份或作用域。
 
 ## 运行模式
 
@@ -293,43 +266,38 @@ extern "C" void kiarabot_plugin_stop();
 
 进程内插件必须和 RPC 插件遵守相同的事件、Action、权限和错误语义。
 
-## Python 插件目标形态
+## Python 插件形态
 
-下面是目标接口示意：
+下面是当前实际可用的形态（完整示例见 `plugins/group_admin`、`plugins/reminder`）：
 
 ```python
-from kiarabot_sdk import Plugin, MessageReceived
+from kiarabot.v1 import actions_pb2 as actions
+from kiarabot_sdk import Plugin
 
 
-class AIChatPlugin(Plugin):
-    async def on_start(self, context):
-        self.model = context.models.default()
-
-    async def on_message(self, event: MessageReceived):
-        if not event.mentions_me and not event.is_private:
+class Example(Plugin):
+    async def on_event(self, event, context):
+        if not event.HasField('message_received'):
             return
-        response = await self.model.chat(
-            conversation_id=event.conversation.id,
-            text=event.text,
-        )
-        await self.messages.reply(event, response.text)
+        action = actions.ActionEnvelope(
+            action_id=event.event_id + ':reply',
+            idempotency_key=event.event_id + ':reply',
+            trace_id=event.trace_id,
+            requested_by='example',
+            target_source=event.source,
+            target=event.subject)
+        action.send_message.conversation.CopyFrom(event.message_received.conversation)
+        action.send_message.message.plain_text = 'hello'
+        await context.submit_action(action)
 ```
 
-这段代码不能导入 NoneBot2，也不能调用 OneBot API。
+早期草案中的 `MessageService`/`on_message`/`context.models.default()`/`messages.reply()` 尚未实现，不应作为现行 API 使用。这段代码不能导入 NoneBot2，也不能调用 OneBot API。
 
 ## 测试能力
 
-SDK 应提供：
+当前 SDK 只提供 `kiarabot_sdk.testing.FakeHost`（真实 gRPC + 生成类型）：注册/事件/心跳、Action 请求与响应、Host 请求与响应、配置帧与 ACK 队列；`FakeHost(heartbeat_acks=False)` 可模拟心跳不返回以验证 `io_timeout` 重连。早期列出的 `FakeEvent`/`FakeMessageService`/`FakeModelService`/`FakeStorage`/`FakeScheduler` 尚未实现（交接项），插件测试直接构造生成消息或使用 FakeHost。
 
-```text
-FakeEvent
-FakeMessageService
-FakeModelService
-FakeStorage
-FakeScheduler
-```
-
-必须测试事件触发、权限拒绝、模型超时、重复事件、配置变更、插件停用和适配器能力不足等情况。
+已覆盖：事件触发/ACK、注册拒绝、权限拒绝、模型超时/限流/畸形响应、重复事件、配置变更/拒绝/超时、心跳超时、队列满 `RATE_LIMITED`、Action 取消、storage TTL 帧、任务 local_time 转发、manifest 非法字段；真实 C++ Core 子进程验收见 `tests/acceptance/run.sh`。未覆盖：插件停用事件（协议无停用帧）与适配器能力不足（属适配器模块）。
 
 ## 代码启动句
 

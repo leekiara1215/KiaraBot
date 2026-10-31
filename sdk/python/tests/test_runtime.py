@@ -145,3 +145,65 @@ async def test_start_precedes_registration_and_stop_runs():
         stop.set()
         await asyncio.wait_for(running, 2)
         assert plugin.seen == ['start', 'stop']
+
+
+def test_manifest_capabilities_match_host_validation():
+    unknown = manifest()
+    unknown.capabilities.append('event.not.real')
+    with pytest.raises(PluginError) as failure:
+        validate_manifest(unknown)
+    assert failure.value.code == common.CAPABILITY_NOT_SUPPORTED
+    missing = manifest()
+    missing.capabilities.append('event.timer.triggered')
+    with pytest.raises(PluginError) as failure:
+        validate_manifest(missing)
+    assert failure.value.code == common.PERMISSION_DENIED
+    invalid = manifest()
+    invalid.permissions.append('not a permission')
+    with pytest.raises(PluginError) as failure:
+        validate_manifest(invalid)
+    assert failure.value.code == common.INVALID_ARGUMENT
+
+
+async def test_ordered_manifest_is_forwarded_and_heartbeat_timeout_reconnects():
+    plugin, stop = create_plugin(), asyncio.Event()
+    async with FakeHost(heartbeat_acks=False) as host:
+        runner = Runner(manifest(), plugin,
+                        options(host, io_timeout=.05))
+        running = asyncio.create_task(runner.run(stop))
+        try:
+            first = await get(host.registrations)
+            assert first.manifest.ordered is True
+            second = await get(host.registrations)
+            assert second.instance_id != first.instance_id
+            assert not (await get(host.heartbeats)).instance_id == ''
+        finally:
+            stop.set()
+            await asyncio.wait_for(running, 2)
+
+
+async def test_full_event_queue_rate_limits_and_reconnects():
+    class Blocking(Plugin):
+        def __init__(self):
+            self.release = asyncio.Event()
+
+        async def on_event(self, event, context):
+            await self.release.wait()
+
+    plugin, stop = Blocking(), asyncio.Event()
+    async with FakeHost() as host:
+        runner = Runner(manifest(), plugin, options(host))
+        running = asyncio.create_task(runner.run(stop))
+        try:
+            await get(host.registrations)
+            # The first event is consumed by the serial hook, the next two fill the
+            # queue and the fourth overflows it with RATE_LIMITED, forcing a reconnect.
+            for index in range(4):
+                await host.outgoing.put(plugins.CoreToPlugin(
+                    event=events.EventEnvelope(event_id=f'event-{index}')))
+            second = await get(host.registrations)
+            assert second.instance_id
+        finally:
+            plugin.release.set()
+            stop.set()
+            await asyncio.wait_for(running, 2)

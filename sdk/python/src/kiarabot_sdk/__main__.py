@@ -2,11 +2,39 @@ import argparse
 import asyncio
 import importlib
 import logging
+import math
 import os
 import signal
 
 from kiarabot.v1 import common_pb2 as common
 from .runtime import Options, Plugin, PluginError, Runner, UncooperativeHook, load_manifest
+
+
+def options_from_environment(environ=None):
+    values = os.environ if environ is None else environ
+    try:
+        endpoint = values['PLUGIN_CORE_ENDPOINT']
+        token = values['PLUGIN_AUTH_TOKEN']
+    except KeyError:
+        raise PluginError(common.INVALID_ARGUMENT) from None
+
+    def seconds(name, default):
+        raw = values.get(name)
+        if raw is None:
+            return default
+        try:
+            value = float(raw)
+        except ValueError:
+            raise PluginError(common.INVALID_ARGUMENT) from None
+        if not math.isfinite(value) or value <= 0:
+            raise PluginError(common.INVALID_ARGUMENT)
+        return value
+
+    return Options(endpoint, token,
+                   io_timeout=seconds('PLUGIN_IO_TIMEOUT', 5.0),
+                   hook_timeout=seconds('PLUGIN_HOOK_TIMEOUT', 5.0),
+                   heartbeat_interval=seconds('PLUGIN_HEARTBEAT_INTERVAL', 1.0),
+                   retry_delay=seconds('PLUGIN_RETRY_DELAY', 1.0))
 
 
 async def run(manifest_path):
@@ -16,7 +44,7 @@ async def run(manifest_path):
         plugin = getattr(importlib.import_module(module), factory)()
         if not isinstance(plugin, Plugin):
             raise PluginError(common.INVALID_ARGUMENT)
-        options = Options(os.environ['PLUGIN_CORE_ENDPOINT'], os.environ['PLUGIN_AUTH_TOKEN'])
+        options = options_from_environment()
         stop = asyncio.Event()
         loop = asyncio.get_running_loop()
         for signum in (signal.SIGINT, signal.SIGTERM):

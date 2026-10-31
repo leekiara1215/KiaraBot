@@ -7,8 +7,12 @@ from kiarabot.v1 import plugins_pb2 as plugins, services_pb2_grpc as services
 
 
 class FakeHost(services.PluginBridgeServicer):
-    def __init__(self, token='t' * 32):
+    def __init__(self, token='t' * 32, heartbeat_acks=True):
         self.token = token
+        # A False value keeps the stream open without answering heartbeats so the
+        # SDK's io_timeout/reconnect path can be exercised.
+        self.heartbeat_acks = heartbeat_acks
+        self.heartbeats = asyncio.Queue()
         self.registrations = asyncio.Queue()
         self.acknowledgements = asyncio.Queue()
         self.config_acknowledgements = asyncio.Queue()
@@ -58,7 +62,10 @@ class FakeHost(services.PluginBridgeServicer):
                 elif request.WhichOneof('body') == 'host_request':
                     await self.host_requests.put(request.host_request)
                 elif request.WhichOneof('body') == 'heartbeat':
-                    await responses.put(plugins.CoreToPlugin(heartbeat_ack=plugins.PluginHeartbeatAck()))
+                    await self.heartbeats.put(request.heartbeat)
+                    if self.heartbeat_acks:
+                        await responses.put(
+                            plugins.CoreToPlugin(heartbeat_ack=plugins.PluginHeartbeatAck()))
         async def forward():
             while True:
                 await responses.put(await self.outgoing.get())

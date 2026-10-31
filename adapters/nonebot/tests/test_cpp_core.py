@@ -6,9 +6,11 @@ import signal
 from contextlib import suppress
 
 import pytest
+from kiarabot.v1 import common_pb2 as common
 from kiarabot_adapter_nonebot.client import ClientConfig, CoreClient
 from kiarabot_adapter_nonebot.mapper import map_message
 from kiarabot_adapter_nonebot.outbox import Outbox
+from kiarabot_adapter_nonebot.status import AdapterStatusReporter
 from test_client import until
 from test_mapping_outbox import raw
 
@@ -30,11 +32,16 @@ async def test_cpp_persistence_and_python_protocol(tmp_path):
             port = int(re.search(rb'port=(\d+)', line)[1])
             store = Outbox(tmp_path / f'outbox-{attempt}.db')
             store.enqueue(original)
+            # Core persists per-session sequence; only the first attempt owns the
+            # status event because the second reuses the same Core database.
+            reporter = AdapterStatusReporter(store, 'adapter', '123') if attempt == 0 else None
+            status_id = reporter.report(common.HEALTHY, 'core_connected') if reporter else None
             client = CoreClient(ClientConfig(f'127.0.0.1:{port}', 'x' * 32, 'adapter', '123',
-                                             retry_base=0.01, idle_interval=0.01), store)
+                                             retry_base=0.01, idle_interval=0.01), store, None, reporter)
             stop = asyncio.Event()
             task = asyncio.create_task(client.run(stop))
-            await until(lambda: store.status(original.event_id) == ('acked', 0))
+            await until(lambda: store.status(original.event_id) == ('acked', 0)
+                        and (status_id is None or store.status(status_id) == ('acked', 0)))
         finally:
             if task:
                 task.cancel()

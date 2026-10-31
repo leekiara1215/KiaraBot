@@ -14,7 +14,6 @@ from kiarabot_adapter_nonebot.actions import ActionExecutor
 from kiarabot_adapter_nonebot.client import ClientConfig, CoreClient
 from kiarabot_adapter_nonebot.outbox import Outbox
 from kiarabot_adapter_nonebot.mapper import map_message
-from test_actions import request
 from test_client import until
 from test_mapping_outbox import raw
 
@@ -30,8 +29,13 @@ async def test_sdk_core_adapter_action_and_restart(tmp_path):
     async def platform(api, params):
         calls.append((api, params))
         return {'message_id': 'pipeline-message'}
-    action = request(int(time.time()) + 60)
-    action.target_source.adapter_instance_id = ''
+    event = map_message(raw(), 'adapter', '123')
+    action = actions.ActionEnvelope(action_id='action', idempotency_key='key', trace_id=event.trace_id)
+    action.deadline.seconds = int(time.time()) + 60
+    action.target_source.CopyFrom(event.source)
+    action.target.CopyFrom(event.subject)
+    action.send_message.conversation.CopyFrom(event.message_received.conversation)
+    action.send_message.message.plain_text = 'closed loop'
     completed = asyncio.Event()
     class Sender(Plugin):
         async def on_event(self, event, context):
@@ -80,6 +84,8 @@ async def test_sdk_core_adapter_action_and_restart(tmp_path):
                 duplicate = await runner.context.submit_action(action)
                 assert duplicate.action_id == 'action' and duplicate.status == actions.SUCCEEDED
             assert len(calls) == 1
+            assert calls == [('send_group_msg', {'group_id': 789,
+                             'message': [{'type': 'text', 'data': {'text': 'closed loop'}}]})]
         finally:
             for task in tasks:
                 task.cancel()
