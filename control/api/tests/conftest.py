@@ -4,6 +4,7 @@ from pathlib import Path
 import secrets
 import select
 import subprocess
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -19,7 +20,7 @@ SPEC = yaml.safe_load((ROOT / "api/openapi.yaml").read_text())
 
 
 class Server:
-    def __init__(self, directory, mock=False, plugin=False):
+    def __init__(self, directory, mock=False, plugin=False, settings=None):
         self.mock = mock
         self.plugin_token = secrets.token_hex(32) if plugin else None
         self.directory = directory
@@ -30,7 +31,12 @@ class Server:
         self.settings = {"listen": "127.0.0.1:0", "encryption_key": secrets.token_hex(32), "users": [
             {"id": role, "username": role, "password_hash": hashed, "role": role}
             for role in ("admin", "operator", "viewer")], "plugins": [
-            {"id": "test.plugin", "name": "Test", "version": "1.0.0", "api_version": "kiarabot.plugin.v1", "runtime": "python-rpc"}]}
+            {"id": "test.plugin", "name": "Test", "version": "1.0.0", "api_version": "kiarabot.plugin.v1", "runtime": "python-rpc"}],
+            "cors_origins": ["http://localhost:5173"]}
+        if settings:
+            self.settings.update(settings)
+        self.stderr_lines = []
+        self._stderr_thread = None
         self.config.write_text(json.dumps(self.settings))
         self.config.chmod(0o600)
         self.process = None
@@ -49,11 +55,15 @@ class Server:
         command = [BUILD / "control/api/kiarabot-control-mock"] if self.mock else [BUILD / "core/kiarabot-core", "--grpc-listen", "127.0.0.1:0"]
         self.process = subprocess.Popen(command,
                                         env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        self.stderr_lines = []
+        self._stderr_thread = threading.Thread(target=self._drain_stderr, daemon=True)
+        self._stderr_thread.start()
         deadline = time.monotonic() + 10
         collected = b""
         while time.monotonic() < deadline:
             if self.process.poll() is not None:
-                raise AssertionError("Core startup failed: " + self.process.stderr.read().decode())
+                self._stderr_thread.join(timeout=2)
+                raise AssertionError("Core startup failed: " + self.stderr_text())
             if select.select([self.process.stdout], [], [], 0.1)[0]:
                 collected += os.read(self.process.stdout.fileno(), 4096)
                 for line in collected.decode().splitlines():
@@ -67,16 +77,34 @@ class Server:
         self.stop()
         raise AssertionError("Core startup timed out")
 
+    def _drain_stderr(self):
+        for line in self.process.stderr:
+            self.stderr_lines.append(line.decode(errors="replace"))
+
+    def stderr_text(self):
+        return "".join(self.stderr_lines)
+
+    def wait_log(self, predicate, timeout=3.0):
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            for line in list(self.stderr_lines):
+                if predicate(line):
+                    return line
+            time.sleep(0.02)
+        raise AssertionError("expected log line not observed; stderr=" + self.stderr_text()[-2000:])
+
     def stop(self):
         if self.process and self.process.poll() is None:
             self.process.terminate()
             try:
-                self.process.communicate(timeout=8)
+                self.process.wait(timeout=8)
             except subprocess.TimeoutExpired:
                 self.process.kill()
-                self.process.communicate()
+                self.process.wait()
                 raise AssertionError("Core did not stop within deadline")
-            assert self.process.returncode == 0
+            if self._stderr_thread:
+                self._stderr_thread.join(timeout=2)
+            assert self.process.returncode == 0, self.stderr_text()
 
     def request(self, path, method="GET", body=None, token=None, key=None, headers=None):
         request_headers = {"Accept": "application/json", **(headers or {})}

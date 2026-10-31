@@ -1,5 +1,6 @@
 #include "kiarabot/control/event_stream.hpp"
 
+#include <algorithm>
 #include <map>
 
 namespace kiarabot::control {
@@ -39,6 +40,16 @@ EventStream::EventStream(Source source, core::RuntimeClock clock)
     clock_ = [] { return std::chrono::system_clock::now(); };
   }
 }
+void EventStream::set_max_streams_per_token(std::uint32_t value) {
+  max_streams_per_token_ = std::max<std::uint32_t>(1, value);
+}
+std::size_t EventStream::active_streams(const std::string& token) const {
+  return static_cast<std::size_t>(
+      std::count_if(sessions_.begin(), sessions_.end(), [&](const auto& entry) {
+        return entry.second.token == token && entry.second.detached_at == core::WallTime{} &&
+               !entry.second.failure;
+      }));
+}
 core::PortResult<Json> EventStream::snapshot(const std::string& token) {
   return source_({token, "stream", "stream", "", clock_() + std::chrono::seconds(30)});
 }
@@ -68,6 +79,9 @@ StreamReply EventStream::handshake(const std::string& channel, const Json& frame
     if (sessions_.size() >= 1024) {
       return {{}, 1011};
     }
+    if (active_streams(token) >= max_streams_per_token_) {
+      return {{}, 1013};
+    }
     id = instance_ + core::control_secret();
     sessions_[id] = Session{channel, token, projection, {}, 0, 0, 0, {}};
   } else {
@@ -91,7 +105,7 @@ StreamReply EventStream::handshake(const std::string& channel, const Json& frame
     // New access tokens from the same REST session may resume after refresh.
     session.token = token;
     session.failure = 0;
-    update(session);
+    update(session, current);
     if (session.failure) {
       return {{}, session.failure};
     }
@@ -113,7 +127,9 @@ StreamReply EventStream::handshake(const std::string& channel, const Json& frame
   return {{}, 4400};
 }
 void EventStream::update(Session& session) {
-  const auto current = snapshot(session.token);
+  update(session, snapshot(session.token));
+}
+void EventStream::update(Session& session, const core::PortResult<Json>& current) {
   if (const auto* error = std::get_if<kiarabot::v1::Error>(&current)) {
     session.failure = close_code(*error);
     return;
@@ -163,10 +179,21 @@ void EventStream::tick() {
     return entry.second.detached_at != core::WallTime{} &&
            entry.second.detached_at + std::chrono::minutes(10) <= now;
   });
+  // One Core snapshot per access token per tick; detached sessions are refreshed by resume.
+  std::unordered_map<std::string, core::PortResult<Json>> snapshots;
   for (auto& [id, session] : sessions_) {
     (void)id;
-    if (!session.failure) {
-      update(session);
+    if (session.failure || session.detached_at != core::WallTime{}) {
+      continue;
+    }
+    const auto found = snapshots.find(session.token);
+    if (found == snapshots.end()) {
+      auto value = snapshot(session.token);
+      const auto [position, inserted] = snapshots.emplace(session.token, std::move(value));
+      (void)inserted;
+      update(session, position->second);
+    } else {
+      update(session, found->second);
     }
   }
 }

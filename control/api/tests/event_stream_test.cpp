@@ -74,7 +74,39 @@ int main() try {
   revoked = true;
   events.tick();
   check(events.poll(id, 1).close_code == 4401);
-  std::cout << "stream binding/replay/retention/revocation passed\n";
+
+  // One Core snapshot is shared by every live stream of the same access token, and detached
+  // streams stop polling until their next resume.
+  int snapshots = 0;
+  kiarabot::control::EventStream shared(
+      [&](const auto&) -> kiarabot::core::PortResult<Json> {
+        ++snapshots;
+        return projection;
+      },
+      [&] { return now; });
+  shared.set_max_streams_per_token(2);
+  const Json shared_hello{
+      {"type", "hello"}, {"access_token", std::string(64, 'c')}, {"last_sequence", 0u}};
+  const auto first_ready = shared.handshake("plugins", shared_hello);
+  const auto second_ready = shared.handshake("plugins", shared_hello);
+  check(first_ready.close_code == 0 && second_ready.close_code == 0);
+  snapshots = 0;
+  shared.tick();
+  check(snapshots == 1);
+  check(shared.handshake("plugins", shared_hello).close_code == 1013);
+  const std::string detached = second_ready.frames[0].at("session_id");
+  shared.detach(detached);
+  snapshots = 0;
+  shared.tick();
+  check(snapshots == 1);
+  projection["plugins"][0]["state"] = "PLUGIN_STATE_RUNNING";
+  const auto resumed = shared.handshake("plugins", Json{{"type", "resume"},
+                                                        {"access_token", std::string(64, 'c')},
+                                                        {"session_id", detached},
+                                                        {"last_sequence", 0u}});
+  check(resumed.close_code == 0 && resumed.frames.size() == 2);
+  check(resumed.frames[1].at("payload").at("state") == "PLUGIN_STATE_RUNNING");
+  std::cout << "stream binding/replay/retention/revocation/snapshot-sharing passed\n";
 } catch (const std::exception& error) {
   std::cerr << error.what() << '\n';
   return 1;
