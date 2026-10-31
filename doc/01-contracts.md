@@ -8,6 +8,31 @@ T03a 新增 CoreToPlugin.error（oneof 字段 6），承载注册之后的终止
 
 它是 Python 适配器、C++ Core、C++ 插件和 TypeScript 面板之间唯一的共享语言。
 
+## 契约实现状态（v1）
+
+`proto/tests/contract_status.json` 是"契约声明 → 实现状态"的机器可读登记表，`python3 proto/tests/check_implementation_status.py` 会校验：每个 Proto 字段/oneof 载荷、枚举值、AsyncAPI 频道/事件、OpenAPI 操作都必须登记为 `implemented`、`not_implemented` 或 `deprecated`；未实现项必须在 `.proto` 内有 `CONTRACT_STATUS` 注释、在 `api/*.yaml` 的 `x-contract-status` 中列出，并在下表出现。**未列为本表可用的契约项不得在文档、面板或客户端中被当作已可用能力。**
+
+<!-- contract-status:start -->
+| 契约项 | 状态 | 说明 |
+| --- | --- | --- |
+| `EventEnvelope.message_sent`、`EventEnvelope.group_member_changed`、`EventEnvelope.friend_request`、`EventEnvelope.adapter_status_changed`、`EventEnvelope.plugin_status_changed` | not_implemented | 唯一适配器只产生 `MessageReceived`；Core 只有接收/订阅映射。插件订阅这些事件收不到数据。 |
+| `ActionEnvelope.delete_message`、`ActionEnvelope.react_message`、`ActionEnvelope.mute_member`、`ActionEnvelope.kick_member`、`ActionEnvelope.approve_request`、`ActionEnvelope.schedule_task`、`SendMessage.reply`、`SendMessage.reply_to_message_id` | not_implemented | Core 与适配器都以 `CAPABILITY_NOT_SUPPORTED` 显式拒绝；v1 仅支持群/私聊 `send_message` 纯文本。 |
+| `MessageSegment.Type.AUDIO`、`MessageSegment.Type.VIDEO`、`MessageSegment.Type.FILE`、`MessageSegment.Type.LOCATION`、`ConversationRef.Type.CHANNEL`、`PluginState.PLUGIN_STATE_STARTING`、`PluginState.PLUGIN_STATE_STOPPING` | not_implemented | 适配器把非 text/image/at/reply 段降级为 `UNKNOWN`；CHANNEL 会话被拒绝；运行时状态机不产生 STARTING/STOPPING。 |
+| `Error.details`、`Account.display_name` | not_implemented | 无生产/消费点；REST `Error.details` 保持空对象。 |
+| `PageRequest.page_size`、`PageRequest.page_token`、`PageInfo.next_page_token`、`PageInfo.page_size`、`Health.state`、`Health.component`、`Health.version`、`Health.checked_at`、`Health.dependencies` | not_implemented | REST 使用 OpenAPI 自己的分页/健康 schema，v1 无代码引用这些 Protobuf 消息。 |
+| `PluginManifest.dependencies`、`PluginManifest.config_schema` | not_implemented | 非空值被 `CAPABILITY_NOT_SUPPORTED` 拒绝；`config_schema` 只接受空串或 `{}`。 |
+| `CoreToAdapter.shutdown`、`CoreToPlugin.shutdown`、`ShutdownNotice.reason`、`ShutdownNotice.drain_timeout_ms`、`semantic.transport.graceful_shutdown` | not_implemented | 帧已定义但 v1 Core 不发送；关闭流仍按“结果未知”处理，见“优雅停机”。 |
+| `channels.messages`、`events.message.updated`、`semantic.stream.message_read_grant`、`semantic.stream.plugin_updated_health_state` | not_implemented | `/ws/messages` 无投影、无事件、无角色获授 `message.read`，所有订阅返回 4403；`plugin.updated` 只推送 `state`。 |
+| `events.health.updated` | not_implemented | health 投影固定 `HEALTHY` 单组件，事件永不产生；`/ws/health` 只会停在 SESSION_READY。 |
+| `operations.getActionByIdempotencyKey`、`operations.getActionResult`、`operations.listGroups` | not_implemented | REST Action 查询没有写入方（无 `control/<user>` owner），恒 404；`/groups` 无 Groups 分支，恒空页。 |
+| `semantic.action.deadline_max_300s`、`semantic.action.target_source_id_charset` | not_implemented | deadline 只校验正时间戳，无 300 秒上限；Action 的 `target_source` 用比入口更窄的字符集。 |
+| `semantic.adapter.backpressure_retryable_rate_limited` | not_implemented | 契约要求队列满返回可重试 `RATE_LIMITED`，实现返回 `retryable=false` 且不关流。 |
+| `semantic.host.unknown_operation_error` | not_implemented | 契约要求未知 Host operation 返回 `CAPABILITY_NOT_SUPPORTED`，实现先返回 `INVALID_ARGUMENT`。 |
+| `semantic.rest.action_query_terminal_retention`、`semantic.rest.action_query_deadline_expired` | not_implemented | REST 查询未实现 168 小时终态保留与到期 `EXPIRED` 迁移；语义已冻结，待 control-api 接线。 |
+| `semantic.grpc.business_error_mapping` | deprecated | 旧文档的 `CONFLICT→ALREADY_EXISTS/ABORTED` 等业务错误映射已废止；业务错误以 in-band `Error` 帧为准，见“错误模型”。 |
+| `semantic.rest.admin_role_wildcard` | deprecated | 旧 `admin: ['*']` 通配授权已废止；角色改为显式权限列表，任何默认角色都不含 `message.read`。 |
+<!-- contract-status:end -->
+
 ## 目录
 
 ```text
@@ -55,6 +80,8 @@ AdapterStatusChanged
 PluginStatusChanged
 ```
 
+上表是事件词表，不是实现承诺：v1 只有 `MessageReceived` 与 `TimerTriggered` 端到端闭环，其余五种见“契约实现状态”中的 `not_implemented` 行。客户端/插件不得订阅尚未实现的事件并假定能收到数据；Core 保留订阅映射只为后续接线。
+
 消息内容必须使用平台无关的消息段：
 
 ```text
@@ -68,6 +95,8 @@ reply
 location
 unknown
 ```
+
+其中 `audio`、`video`、`file`、`location` 在 v1 由适配器降级为 `unknown`（见状态表），不得假定适配器会透传。
 
 平台不支持的类型由适配器报告能力错误，不能在 Core 中写平台判断。
 
@@ -92,6 +121,10 @@ KickMember
 ApproveRequest
 ScheduleTask
 ```
+
+Action 词表同样大于 v1 实现子集：只有 `SendMessage` 的群/私聊纯文本可用；其余 6 个载荷、`reply`、`reply_to_message_id` 和非 text/image/at/reply 消息段都被显式拒绝（`CAPABILITY_NOT_SUPPORTED`），见“契约实现状态”。`ActionEnvelope.deadline` 契约上限为 300 秒（未来 UTC），但 v1 只校验正时间戳、不强制该上限，超长 deadline 的 Action 不会提前过期（`semantic.action.deadline_max_300s` = not_implemented）。
+
+REST Action 查询与 Bridge 查询共享同一份 Action 记录与语义：终态结果从最后一次状态更新起保留 604800 秒（7 天，不得少于 86400 秒）；`ACCEPTED` 且 `deadline <= now` 的记录在读取时迁移为 `EXPIRED`，其 `error.code` 为 `TIMEOUT`；缺失、已过期（保留期外）或不可见统一返回 `NOT_FOUND`；查询超时不改变 Action 状态。v1 的 REST 查询路径尚未接线（无 `control/<user>` owner 写入方、无保留期/EXPIRED 迁移），当前恒返回 `NOT_FOUND`；客户端不得把该 404 当作平台执行失败，连接中的插件应通过 Bridge 的 `PluginActionQuery` 查询。
 
 每个 Action 都有：
 
@@ -161,6 +194,54 @@ T06a 在现有功能协商字段中增加 host.storage.v1 名称，不新增线�
 - 任务属于调用插件，读取和取消其他插件的任务返回 `NOT_FOUND`。`run_at` 是 UTC；`local_time` 使用 IANA 时区的当地一次性时间。无效时区、模糊或不存在的当地时间返回 `INVALID_ARGUMENT`；不自动猜测夏令时偏移。任务状态由 `ScheduledTaskState` 定义。`ScheduleTask.schedule` 是原有 Action 字段，不在此处重新解释。
 - 模型超时映射 `TIMEOUT`，限流映射 `RATE_LIMITED`，可重试的上游连接或服务故障映射 `UPSTREAM_UNAVAILABLE`，拒绝由 Core 映射 `PERMISSION_DENIED`；其他内部故障映射 `INTERNAL`。`retryable` 必须反映该次失败是否允许重试，不得包含密钥或上游原始内容。
 
+## 权限、能力与订阅词表（v1 冻结）
+
+以下名称是跨进程授权与功能协商的唯一词表。未知功能名不启用；未知订阅/能力名在注册时返回 `CAPABILITY_NOT_SUPPORTED`；未获授所需权限返回 `PERMISSION_DENIED`。词表与 `core/src/runtime/bridge_server.cpp`、`core/src/application/plugin_hub.cpp`、`core/src/application/action_router.cpp`、`core/src/application/host_dispatcher.cpp` 的实现映射一致，改动任一侧必须同时更新 `proto/tests/contract_status.json` 与本节。
+
+<!-- vocabulary:start -->
+功能协商名（`supported_features` / `enabled_features`，双向确认后才可用）：
+
+```text
+action.result.v1
+host.storage.v1
+host.model.v1
+host.tasks.v1
+plugin.config.v1
+```
+
+插件事件订阅能力名（写入 manifest `capabilities`），箭头后为所需权限：
+
+```text
+event.message.received       -> message.read
+event.message.sent           -> message.read
+event.group.member.changed   -> member.read
+event.friend.request         -> request.read
+event.adapter.status.changed -> adapter.read
+event.timer.triggered        -> task.schedule
+```
+
+插件权限名（写入 manifest `permissions`，由宿主策略显式授予）：
+
+```text
+message.read
+message.send
+member.read
+request.read
+adapter.read
+task.schedule
+model.chat
+storage.namespace
+```
+
+适配器能力名（写入 `RegisterAdapterRequest.capabilities`）：
+
+```text
+action.send_message.text.v1
+```
+<!-- vocabulary:end -->
+
+v1 不存在其他功能/权限名；`doc/03-plugin-sdk.md` 中更宽的规划词表不构成本契约承诺。`message.send` 只对 Action 生效，`message.read` 不授予任何控制面默认角色。
+
 ## 错误模型
 
 T08a 控制面 REST 新增会话查询/撤销及当前主体接口，具体响应、RBAC、幂等与分页在 OpenAPI x-control-policy 冻结；WebSocket 的关闭码/权限/撤销/重同步在 AsyncAPI x-control-session-policy 冻结。REST 503 还覆盖 PLUGIN_UNAVAILABLE 和 CAPABILITY_NOT_SUPPORTED；其余映射见 doc/06-control-api.md。这是同进程应用端口，不新增 Protobuf 管理 service，也不改变既有 gRPC 错误映射。
@@ -185,7 +266,7 @@ PLUGIN_UNAVAILABLE
 INTERNAL
 ```
 
-错误码在 Protobuf、REST 和 WebSocket 中保持同名语义；gRPC 状态映射为：`INVALID_ARGUMENT → INVALID_ARGUMENT`、`UNAUTHENTICATED → UNAUTHENTICATED`、`PERMISSION_DENIED → PERMISSION_DENIED`、`NOT_FOUND → NOT_FOUND`、`CONFLICT → ALREADY_EXISTS/ABORTED`、`RATE_LIMITED → RESOURCE_EXHAUSTED`、`TIMEOUT → DEADLINE_EXCEEDED`，其他错误映射为 `INTERNAL`。
+错误码在 Protobuf、REST 和 WebSocket 中保持同名语义。两个 Bridge 的 gRPC 状态只用于认证、权限、参数和传输层：`UNAUTHENTICATED`、`PERMISSION_DENIED`、`INVALID_ARGUMENT`、`INTERNAL`、`CANCELLED`、`DEADLINE_EXCEEDED`。**业务错误（`CONFLICT`、`NOT_FOUND`、`RATE_LIMITED`、`TIMEOUT`、`UPSTREAM_UNAVAILABLE`、`PLUGIN_UNAVAILABLE`、`CAPABILITY_NOT_SUPPORTED`）不在 gRPC 状态中映射，而以 in-band `CoreToAdapter.error` / `CoreToPlugin.error` 或注册响应内的 `Error` 承载。**旧版本文档中的 `CONFLICT→ALREADY_EXISTS/ABORTED`、`RATE_LIMITED→RESOURCE_EXHAUSTED`、`TIMEOUT→DEADLINE_EXCEEDED` 业务映射已废止（`semantic.grpc.business_error_mapping` = deprecated），客户端不得按那些状态码判定业务结果。
 
 跨协议的稳定枚举词汇必须逐项一致：
 
@@ -199,6 +280,30 @@ INTERNAL
 已发布的 `PluginStatusChanged.state`（字段 3）保持为 `HealthState`；新增 `optional int32 lifecycle_state = 5`，其数值以 `plugins.proto` 中的 `PluginState` 为唯一来源，不重新定义枚举。缺失表示事件没有提供生命周期状态，显式 0 表示 `PLUGIN_STATE_UNSPECIFIED`；未知数值必须保留。健康状态为 `HEALTH_STATE_UNSPECIFIED` 表示未知，两个状态不能互相推断。旧消费者忽略新增字段，旧生产者不提供生命周期状态。
 
 `events.proto` 不能导入依赖它的 `plugins.proto`；整数载体避免循环依赖，消费方需要显式校验或保留 `PluginState` 的数值，不能依赖生成代码的枚举类型检查。
+
+## 标识符语法（v1 统一）
+
+所有标识符非空；长度按 UTF-8 字节计。不同边界不再各自发明长度/字符集，统一按下表执行；`proto/tests/check_semantic_rules.py` 会对照本节与 OpenAPI/AsyncAPI 参数。
+
+<!-- id-rules:start -->
+| 标识符类别 | 长度上限 | 字符集/格式 | 使用边界 |
+| --- | --- | --- | --- |
+| Action `action_id`、Action/Host `idempotency_key`、`request_id`、`trace_id` | 128 | `[A-Za-z0-9._-]` | Protobuf Action/Host、Bridge 请求元数据、REST `ActionId` / `ActionLookupKey` |
+| `adapter_id`、`adapter_instance_id`、`account_id` | 128 | `[A-Za-z0-9._:@-]` | 适配器注册/事件入口；Action `target_source` 目前使用更窄字符集（见状态表） |
+| `conversation_id`、`message_id`、`event_id`、`task_id` | 256 | 可见 ASCII，不含空白与控制字符；适配器可在会话 ID 中使用 `group:` / `private:` 前缀 | 事件/Action/Host 存储键 |
+| 插件 `id` | 64 | `^[a-z0-9][a-z0-9.-]*$` | manifest.id、REST `PluginId`；Bridge 暂容忍更长值，客户端必须按本节 |
+| 流 `session_id` | 最小 32、最大 256 | 不透明秘密，不记录、不入 URL | AsyncAPI `SESSION_READY`、REST `SessionId` |
+<!-- id-rules:end -->
+
+Action `deadline` 为未来 UTC 时间，契约上限 300 秒；v1 仅校验正时间戳，上限强制执行是待接线项（`semantic.action.deadline_max_300s` = not_implemented）。
+
+## 优雅停机与 drain
+
+v1 Core 关闭 `AdapterBridge` / `PluginBridge` 时直接取消或结束流，不发送 `ShutdownNotice`（`CoreToAdapter.shutdown=5`、`CoreToPlugin.shutdown=8` 已定义，状态为 not_implemented）。因此：
+
+- 客户端收到流关闭（无论 gRPC 状态）都视为**未知结果**，不得推断事件未入库或 Action 未执行；
+- 重连后必须重新注册，并按 `event_id` 幂等重投未确认事件、按认证调用方 + 幂等键查询未确认 Action；
+- 将来 Core 发送 `ShutdownNotice` 时，`reason` 给出原因，`drain_timeout_ms` 给出在途处理上限：客户端应停止领取新工作、在上限内完成并确认在途请求，然后正常关闭。未收到该帧时的行为与 v1 完全相同；旧客户端必须忽略未知 oneof 成员。
 
 ## 代码生成和字段校验
 
@@ -216,7 +321,7 @@ protoc --descriptor_set_out=build/kiarabot-v1.pb \
   --include_imports -I proto proto/kiarabot/v1/*.proto
 ```
 
-字段规则：所有 ID 非空且最长 256 字节；时间戳使用 UTC；`page_size` 默认 20、最大 100；`deadline` 最长 5 分钟；消息段总大小默认 1 MiB。
+字段规则：标识符长度/字符集按上文“标识符语法”表；时间戳使用 UTC；`page_size` 默认 20、最大 100；`deadline` 最长 5 分钟（300 秒，强制执行待接线）；消息段总大小默认 1 MiB。
 
 ## 兼容性
 
@@ -226,6 +331,13 @@ protoc --descriptor_set_out=build/kiarabot-v1.pb \
 - 已删除的字段编号永不复用；
 - 枚举新增值时客户端必须允许未知值；
 - 协议变更必须有兼容性测试。
+
+### reserved / deprecated 可执行规则
+
+- 删除任何字段或枚举值前，先在 `.proto` 标记 `[deprecated = true]`，并在 `proto/tests/contract_status.json` 登记为 `deprecated`、在本文档状态表出现；`check_implementation_status.py` 会拒绝只写注释或只改文档的不一致。
+- 实际删除时，字段号/枚举号必须写入 `reserved`（字段用数字或范围，枚举用名称或数值范围）；`reserved` 不得与现存字段号/枚举值重叠，编号永不复用。`check_semantic_rules.py` 校验当前 `.proto` 的 reserved 语法与重叠；CI 可用时 descriptor 兼容性检查再做跨版本比较。
+- 枚举禁止 `allow_alias`（重复数值会让“重编号”不可检测）；v1 的名称/数值冻结在 `proto/tests/enum_baseline.json`，新增值允许但必须在同一变更更新基线，删除或改名直接失败。
+- 未实现的已声明项不能以“未来会实现”为理由进入 `implemented`；状态以运行接线与测试证据为准，见“契约实现状态”。
 
 ## 不属于本层的内容
 
@@ -242,7 +354,8 @@ protoc --descriptor_set_out=build/kiarabot-v1.pb \
 - 一条事件可以从适配器发送到 Core，再转换为 Action；
 - 重复 `event_id` 不会造成重复处理；
 - 未知字段不会导致旧客户端崩溃；
-- 错误码和协议版本有自动化测试。
+- 错误码和协议版本有自动化测试；
+- 枚举名称/数值基线、契约实现状态清单、`x-contract-status` 与文档状态表的一致性由可执行门禁检查；依赖不可用时以未运行报告，不能当作通过。
 
 ## 代码启动句
 

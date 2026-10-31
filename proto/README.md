@@ -45,7 +45,39 @@ python -m grpc_tools.protoc \
 - 枚举新增值必须由旧客户端安全忽略；
 - 每次协议变更必须运行 descriptor diff 和跨语言 round-trip 测试。
 
-v1 的稳定枚举词汇也由 REST 和 WebSocket 契约复用：`ErrorCode`、`HealthState`、`PluginState` 和 `ActionStatus` 在 `api/openapi.yaml` 与 `api/asyncapi.yaml` 中必须逐项保持一致。
+### reserved / deprecated 可执行规则
+
+- 删除字段/枚举值前先在 `.proto` 标记 `[deprecated = true]`，并在 `proto/tests/contract_status.json` 登记 `deprecated`、在 `doc/01-contracts.md` 状态表出现；只改注释或只改文档会被门禁拒绝。
+- 真正删除时字段号/枚举号必须进入 `reserved`，且不得与现存字段号/枚举值重叠；编号永不复用。
+- 枚举禁止 `allow_alias`；v1 全部 10 个枚举（含嵌套枚举）的名称与数值冻结在 `proto/tests/enum_baseline.json`。新增值允许，但必须在同一变更更新基线；改名、删除或重编号失败。
+- 未实现的声明项不得被文档暗示为可用；状态以运行接线和测试证据为准，清单见 `proto/tests/contract_status.json` 与 `doc/01-contracts.md` 的“契约实现状态”。
+
+v1 的稳定枚举词汇也由 REST 和 WebSocket 契约复用：`ErrorCode`、`HealthState`、`PluginState` 和 `ActionStatus` 在 `api/openapi.yaml` 与 `api/asyncapi.yaml` 中必须逐项保持一致；其余六个枚举（`EventDeliveryMode`、`ConversationRef.Type`、`MessageSegment.Type`、`GroupMemberChanged.ChangeType`、`AdapterEventAck.Status`、`ScheduledTaskState`）只属于线协议，但同样受数值基线保护。
+
+## 契约实现状态与门禁
+
+`proto/tests/contract_status.json` 登记每个 Protobuf 字段/oneof 载荷、枚举值、AsyncAPI 频道/事件和 OpenAPI 操作的 `implemented` / `not_implemented` / `deprecated` 状态。未实现项在 `.proto` 内有 `CONTRACT_STATUS` 注释、在 `api/*.yaml` 的 `x-contract-status` 中列出，并在 `doc/01-contracts.md` 状态表中说明。
+
+本机可运行的契约门禁（无需 protoc）：
+
+```bash
+python3 proto/tests/check_enum_consistency.py
+python3 proto/tests/check_implementation_status.py
+python3 proto/tests/check_semantic_rules.py
+```
+
+需要 protoc / 构建产物的完整门禁：
+
+```bash
+./proto/tests/check_contracts.sh
+```
+
+`check_contracts.sh` 还会在具备 `protoc`、descriptor 兼容工具与生成后 Python 包的 CI 环境中，执行 `descriptor_compatibility_test.sh` 的 6 个负例与 `action_contract_test.py` 的旧 reader 兼容检查。缺少依赖时脚本以退出码 2 明确失败，不能当作通过。
+
+## 优雅停机（drain）
+
+`common.proto` 定义 `ShutdownNotice`，两个 Bridge 的 oneof 预留 `shutdown` 帧（`CoreToAdapter.shutdown=5`、`CoreToPlugin.shutdown=8`）。v1 Core 不发送该帧，状态为 `not_implemented`；客户端必须把未收到帧的流关闭视为未知结果，重连后重新注册并按幂等键恢复，见 `doc/01-runtime-semantics.md`。
+
 ## 插件 Host API
 
 T06c 协商 host.tasks.v1 后启用 task_create/get/cancel；timer 事件只投递给任务所有者，任务状态值使用既有 ScheduledTaskState。没有新增线协议字段，运行时语义见 doc/01-runtime-semantics.md。

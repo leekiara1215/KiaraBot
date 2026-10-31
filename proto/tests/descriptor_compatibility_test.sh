@@ -20,7 +20,11 @@ cp -R "$root/proto/kiarabot" "$tmp_dir/baseline/"
 make_descriptor() {
   local source_dir="$1"
   local output="$2"
-  protoc --proto_path="$source_dir" --descriptor_set_out="$output" --include_imports \
+  local include_args=(--proto_path="$source_dir")
+  if [[ -n "${PROTOBUF_INCLUDE_DIR:-}" ]]; then
+    include_args+=(--proto_path="$PROTOBUF_INCLUDE_DIR")
+  fi
+  protoc "${include_args[@]}" --descriptor_set_out="$output" --include_imports \
     "$source_dir"/kiarabot/v1/*.proto
 }
 

@@ -17,11 +17,16 @@ message EventEnvelope {
 
   oneof payload {
     MessageReceived message_received = 20;
+    // CONTRACT_STATUS: not_implemented - no adapter emits MessageSent in v1.
     MessageSent message_sent = 21;
+    // CONTRACT_STATUS: not_implemented - no adapter emits GroupMemberChanged in v1.
     GroupMemberChanged group_member_changed = 22;
+    // CONTRACT_STATUS: not_implemented - no adapter emits FriendRequest in v1.
     FriendRequest friend_request = 23;
     TimerTriggered timer_triggered = 24;
+    // CONTRACT_STATUS: not_implemented - no adapter emits AdapterStatusChanged in v1.
     AdapterStatusChanged adapter_status_changed = 25;
+    // CONTRACT_STATUS: not_implemented - Core has no producer and plugins cannot subscribe.
     PluginStatusChanged plugin_status_changed = 26;
   }
 }
@@ -35,6 +40,7 @@ message MessageReceived {
   string reply_to_message_id = 6;
 }
 
+// CONTRACT_STATUS: not_implemented - no adapter emits MessageSent in v1.
 message MessageSent {
   string message_id = 1;
   string action_id = 2;
@@ -42,6 +48,7 @@ message MessageSent {
   Message message = 4;
 }
 
+// CONTRACT_STATUS: not_implemented - no adapter emits GroupMemberChanged in v1.
 message GroupMemberChanged {
   string group_id = 1;
   string user_id = 2;
@@ -55,6 +62,7 @@ message GroupMemberChanged {
   ChangeType change_type = 3;
 }
 
+// CONTRACT_STATUS: not_implemented - no adapter emits FriendRequest in v1.
 message FriendRequest {
   string user_id = 1;
   string comment = 2;
@@ -67,12 +75,14 @@ message TimerTriggered {
   bytes payload = 4;
 }
 
+// CONTRACT_STATUS: not_implemented - no adapter emits AdapterStatusChanged in v1.
 message AdapterStatusChanged {
   string adapter_id = 1;
   HealthState state = 2;
   string reason = 3;
 }
 
+// CONTRACT_STATUS: not_implemented - Core has no producer and plugins cannot subscribe.
 message PluginStatusChanged {
   string plugin_id = 1;
   string version = 2;
@@ -80,5 +90,6 @@ message PluginStatusChanged {
   string reason = 4;
   // Numeric value of kiarabot.v1.PluginState; absence means not supplied.
   // Unknown values must be preserved. This field does not imply health state.
+  // CONTRACT_STATUS: not_implemented - no producer or consumer in v1.
   optional int32 lifecycle_state = 5;
 }

@@ -13,12 +13,16 @@ message PluginManifest {
   string name = 2;
   string version = 3;
   string api_version = 4;
+  // v1 accepts only "python-rpc"; other runtime names are rejected (CAPABILITY_NOT_SUPPORTED).
   string runtime = 5;
   string entrypoint = 6;
   repeated string capabilities = 7;
   repeated string permissions = 8;
+  // CONTRACT_STATUS: not_implemented - a non-empty value is rejected (CAPABILITY_NOT_SUPPORTED).
   repeated string dependencies = 9;
+  // CONTRACT_STATUS: not_implemented - only an empty value or "{}" is accepted.
   string config_schema = 10;
+  // v1 accepts only "process"; omitted means "process" for the REST validator.
   string isolation = 11;
   bool ordered = 12;
 }
@@ -26,9 +30,11 @@ message PluginManifest {
 enum PluginState {
   PLUGIN_STATE_UNSPECIFIED = 0;
   PLUGIN_STATE_DISABLED = 1;
+  // CONTRACT_STATUS: not_implemented - the runtime never produces STARTING/STOPPING.
   PLUGIN_STATE_STARTING = 2;
   PLUGIN_STATE_READY = 3;
   PLUGIN_STATE_RUNNING = 4;
+  // CONTRACT_STATUS: not_implemented - the runtime never produces STARTING/STOPPING.
   PLUGIN_STATE_STOPPING = 5;
   PLUGIN_STATE_STOPPED = 6;
   PLUGIN_STATE_UNAVAILABLE = 7;
@@ -75,6 +81,8 @@ message CoreToPlugin {
     // Terminal stream failure; absent frame on disconnect remains unknown outcome.
     Error error = 6;
     PluginActionResponse action_response = 7;
+    // CONTRACT_STATUS: not_implemented - v1 Core closes the stream without this frame.
+    ShutdownNotice shutdown = 8;
   }
 }
 

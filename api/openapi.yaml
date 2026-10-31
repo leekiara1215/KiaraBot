@@ -10,13 +10,30 @@ servers:
   - url: /api/v1
 security:
   - bearerAuth: []
+x-contract-status:
+  contract_version: kiarabot.v1
+  status_registry: proto/tests/contract_status.json
+  # OperationIds whose contract exists but whose v1 Core path is not wired yet.
+  not_implemented:
+    - getActionByIdempotencyKey
+    - getActionResult
+    - listGroups
+  deprecated: []
 x-control-policy:
   application_port: in-process-cpp-v1
   default_authorization: deny
   roles:
-    admin: ['*']
+    admin: [session.read, session.revoke, health.read, adapter.read, plugin.read, plugin.manage, plugin.config.read, plugin.config.write, bot.read, model.read, group.read, task.read, action.read, log.read, audit.read, user.read]
     operator: [session.read, session.revoke, health.read, adapter.read, plugin.read, plugin.manage, plugin.config.read, plugin.config.write, bot.read, model.read, group.read, task.read, action.read, log.read]
     viewer: [session.read, session.revoke, health.read, adapter.read, plugin.read, bot.read, model.read, group.read, task.read, action.read]
+  role_notes: >-
+    Roles are explicit permission lists, not wildcard grants. No default role,
+    including admin, receives message.read: the WebSocket messages channel is
+    not implemented in v1 (see api/asyncapi.yaml x-contract-status), so enabling
+    it requires an explicit grant policy and a contract update. Operations that
+    are not implemented still require their declared permission and return the
+    documented error: GET /groups returns an empty page, and both Action query
+    paths currently return NOT_FOUND for every caller.
   session_scope: Admin may query/revoke all sessions; other roles may query/revoke only their own. Cross-owner targets return NOT_FOUND.
   access_seconds: 900
   refresh_seconds: 2592000
@@ -36,6 +53,24 @@ x-control-policy:
     order: Ascending ID except audit/logs/sessions, which use timestamp then ID. Audit/logs use occurred_at; sessions use created_at.
     last_page: Omit next_page_token.
     stream: Subscribe and receive SESSION_READY before fetching REST snapshots; buffer stream events during snapshot fetch and refresh affected resources afterwards.
+  action_results:
+    query_scope: Authenticated caller; the REST query reads the same Action records as the PluginBridge ActionRouter lookup.
+    terminal_retention_seconds: 604800
+    retention_minimum_seconds: 86400
+    retained_from: last state update
+    terminal_states: [SUCCEEDED, FAILED, EXPIRED, CANCELLED]
+    accepted_nonterminal: true
+    missing_expired_invisible: NOT_FOUND
+    deadline_transition: EXPIRED
+    expired_error_code: TIMEOUT
+    query_timeout: TIMEOUT does not change the action status; a query timeout never proves failure
+    implementation: >-
+      not_implemented in the v1 REST control path: Core has no writer of
+      control-owned Action records, and the current query does not apply the
+      168 hour terminal retention or the deadline to EXPIRED transition. The
+      intended semantics above are frozen for the control-api implementation;
+      until then both query paths return NOT_FOUND and clients must not treat
+      that as proof of failure (use the plugin bridge query while connected).
   plugin_commands: 202 means durably accepted, not completed. Enable/disable controls registration and new delivery, without claiming process start or cancellation of existing external effects. Query plugin status/health for completion.
   plugin_configuration: Config writes compare expected_version before commit and persist non-secret control values. Successful writes confirm persistence only. GET includes live delivery status; APPLIED requires a matching plugin.config.v1 acknowledgement.
   limits: Login is limited to 30 attempts per normalized username per minute. At most 4096 unexpired authentication sessions, 10000 retained successful receipts and 1024 in-memory page cursors. Exceeding a limit returns RATE_LIMITED.
@@ -399,7 +434,13 @@ paths:
     get:
       operationId: listGroups
       x-permission: group.read
+      x-contract-status: not_implemented
       summary: List known groups
+      description: >-
+        Contract status not_implemented: v1 Core resources() has no Groups
+        branch and returns an empty page unconditionally. Do not treat the empty
+        page as authoritative; the field is reserved for the control-service
+        follow-up that projects stored group/role/permission data.
       parameters: [{ $ref: '#/components/parameters/PageSize' }, { $ref: '#/components/parameters/PageToken' }]
       responses:
         '200':
@@ -450,8 +491,18 @@ paths:
     get:
       operationId: getActionByIdempotencyKey
       x-permission: action.read
+      x-contract-status: not_implemented
       summary: Find an action result using its idempotency key
-      description: The key is scoped to the authenticated caller and must not be logged. Missing, expired, or invisible results return NOT_FOUND. Query timeout does not imply action failure.
+      description: >-
+        Contract status not_implemented: v1 Core does not create control-owned
+        Action records, so this operation returns NOT_FOUND for every caller
+        until the control-api branch wires the shared Action record set. Intended
+        semantics once wired: the key is scoped to the authenticated caller and
+        must not be logged; missing, expired (terminal results are retained for
+        604800 seconds from the last state update) or invisible results return
+        NOT_FOUND; an ACCEPTED action whose deadline has passed is returned as
+        EXPIRED with error.code TIMEOUT; a query timeout does not imply action
+        failure.
       parameters: [{ $ref: '#/components/parameters/ActionLookupKey' }]
       responses:
         '200': { $ref: '#/components/responses/ActionResult' }
@@ -467,8 +518,17 @@ paths:
     get:
       operationId: getActionResult
       x-permission: action.read
+      x-contract-status: not_implemented
       summary: Get an action result by ID
-      description: Missing, expired, or invisible results return NOT_FOUND. The literal by-idempotency-key is reserved for key lookup.
+      description: >-
+        Contract status not_implemented: v1 Core does not create control-owned
+        Action records, so this operation returns NOT_FOUND for every caller
+        until the control-api branch wires the shared Action record set. Intended
+        semantics once wired: missing, expired (terminal results are retained for
+        604800 seconds from the last state update) or invisible results return
+        NOT_FOUND; an ACCEPTED action whose deadline has passed is returned as
+        EXPIRED with error.code TIMEOUT. The literal by-idempotency-key is
+        reserved for key lookup.
       parameters: [{ $ref: '#/components/parameters/ActionId' }]
       responses:
         '200': { $ref: '#/components/responses/ActionResult' }
@@ -527,13 +587,13 @@ components:
       name: actionId
       in: path
       required: true
-      schema: { type: string, minLength: 1, maxLength: 256 }
+      schema: { type: string, minLength: 1, maxLength: 128, pattern: '^[A-Za-z0-9._-]+$' }
     ActionLookupKey:
       name: Idempotency-Key
       in: header
       required: true
       description: Action idempotency key, scoped to the authenticated caller.
-      schema: { type: string, minLength: 1, maxLength: 256 }
+      schema: { type: string, minLength: 1, maxLength: 128, pattern: '^[A-Za-z0-9._-]+$' }
     IdempotencyKey:
       name: Idempotency-Key
       in: header
@@ -665,16 +725,40 @@ components:
         capabilities: { type: array, items: { type: string } }
     PluginManifest:
       type: object
+      description: >-
+        Mirrors proto/kiarabot/v1/plugins.proto PluginManifest. v1 accepts only
+        the python-rpc runtime under process isolation; other declared runtimes
+        are rejected with CAPABILITY_NOT_SUPPORTED, so they are not advertised
+        here (contract claims never exceed implementation).
       required: [id, name, version, api_version, runtime]
       properties:
         id: { type: string, pattern: '^[a-z0-9][a-z0-9.-]{1,63}$' }
         name: { type: string }
         version: { type: string }
         api_version: { type: string }
-        runtime: { type: string, enum: [python-rpc, cpp-rpc, cpp-native] }
-        isolation: { type: string, enum: [process, native, wasm], default: process }
+        runtime: { type: string, enum: [python-rpc] }
+        entrypoint:
+          type: string
+          minLength: 1
+          maxLength: 256
+          description: Required by PluginBridge registration; the REST validate path does not currently enforce it.
+        capabilities:
+          type: array
+          items: { type: string }
+          description: Event subscription names from the frozen vocabulary in doc/01-contracts.md.
+        dependencies:
+          type: array
+          items: { type: string }
+          description: Contract status not_implemented; v1 rejects a non-empty list with CAPABILITY_NOT_SUPPORTED.
+        config_schema:
+          type: string
+          description: Contract status not_implemented; v1 accepts only an empty value or the empty object literal.
+        isolation: { type: string, enum: [process], default: process }
         ordered: { type: boolean, default: false }
-        permissions: { type: array, items: { type: string } }
+        permissions:
+          type: array
+          items: { type: string }
+          description: Permission names from the frozen vocabulary in doc/01-contracts.md.
     Plugin:
       allOf:
         - $ref: '#/components/schemas/PluginManifest'
@@ -691,7 +775,12 @@ components:
     ActionResult:
       type: object
       required: [action_id, status]
-      description: ACCEPTED is pending; terminal results are retained for seven days.
+      description: >-
+        ACCEPTED is pending and nonterminal. Terminal results are retained for
+        604800 seconds from the last state update; missing, expired or invisible
+        records return NOT_FOUND. An ACCEPTED record whose deadline has passed
+        reads as EXPIRED with error.code TIMEOUT. REST query wiring is
+        not_implemented in v1 (see x-control-policy action_results).
       properties:
         action_id: { type: string }
         status: { $ref: '#/components/schemas/ActionStatus' }

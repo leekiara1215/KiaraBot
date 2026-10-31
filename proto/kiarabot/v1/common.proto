@@ -37,6 +37,7 @@ enum EventDeliveryMode {
 message Error {
   ErrorCode code = 1;
   string message = 2;
+  // CONTRACT_STATUS: not_implemented - no producer or consumer in v1; REST Error.details stays empty.
   map<string, string> details = 3;
   string request_id = 4;
   string trace_id = 5;
@@ -61,6 +62,7 @@ message ConversationRef {
     TYPE_UNSPECIFIED = 0;
     PRIVATE = 1;
     GROUP = 2;
+    // CONTRACT_STATUS: not_implemented - Core and the adapter reject channel conversations.
     CHANNEL = 3;
   }
   Type type = 2;
@@ -72,11 +74,15 @@ message MessageSegment {
     SEGMENT_TYPE_UNSPECIFIED = 0;
     TEXT = 1;
     IMAGE = 2;
+    // CONTRACT_STATUS: not_implemented - the adapter degrades audio/video/file/location to UNKNOWN.
     AUDIO = 3;
+    // CONTRACT_STATUS: not_implemented - the adapter degrades audio/video/file/location to UNKNOWN.
     VIDEO = 4;
+    // CONTRACT_STATUS: not_implemented - the adapter degrades audio/video/file/location to UNKNOWN.
     FILE = 5;
     MENTION = 6;
     REPLY = 7;
+    // CONTRACT_STATUS: not_implemented - the adapter degrades audio/video/file/location to UNKNOWN.
     LOCATION = 8;
     UNKNOWN = 9;
   }
@@ -98,20 +104,32 @@ message Capability {
   bool supported = 3;
 }
 
+// CONTRACT_STATUS: not_implemented - REST uses its own page schemas; no v1 producer or consumer.
 message PageRequest {
   uint32 page_size = 1;
   string page_token = 2;
 }
 
+// CONTRACT_STATUS: not_implemented - REST uses its own page schemas; no v1 producer or consumer.
 message PageInfo {
   string next_page_token = 1;
   uint32 page_size = 2;
 }
 
+// CONTRACT_STATUS: not_implemented - REST health is defined in api/openapi.yaml; v1 never emits this.
 message Health {
   HealthState state = 1;
   string component = 2;
   string version = 3;
   google.protobuf.Timestamp checked_at = 4;
   repeated Error dependencies = 5;
+}
+
+// CONTRACT_STATUS: not_implemented - v1 servers close bridge streams without sending this frame.
+// When sent, it is followed by stream closure: drain_timeout_ms bounds in-flight work, and a
+// client that never receives it must treat the close as an unknown outcome (see
+// doc/01-runtime-semantics.md, graceful shutdown).
+message ShutdownNotice {
+  string reason = 1;
+  uint32 drain_timeout_ms = 2;
 }
