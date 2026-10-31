@@ -92,3 +92,30 @@ async def test_storage_real_cpp_core_and_restart(tmp_path, allowed):
                 await asyncio.wait_for(process.communicate(), 5)
             await cleanup(process)
             assert process.returncode == 0
+
+
+async def test_storage_expiration_is_forwarded_unchanged():
+    from datetime import datetime, timedelta, timezone
+
+    async with FakeHost() as host:
+        host.features = ['host.storage.v1']
+        policy = manifest()
+        policy.permissions.append('storage.namespace')
+        stop = asyncio.Event()
+        runner = Runner(policy, Plugin(), options(host))
+        task = asyncio.create_task(runner.run(stop))
+        try:
+            await ready(runner)
+            expiration = datetime.now(timezone.utc) + timedelta(hours=1)
+            pending = asyncio.create_task(runner.context.storage_set(
+                'key', b'value', 'idempotency-key-1', expires_at=expiration))
+            request = await get(host.host_requests)
+            assert request.storage_set.key == 'key' and request.storage_set.value == b'value'
+            sent = request.storage_set.expires_at.ToDatetime(tzinfo=timezone.utc)
+            assert abs(sent - expiration) < timedelta(seconds=1)
+            await host.outgoing.put(plugins.CoreToPlugin(host_response=plugins.HostResponse(
+                request_id=request.request_id, storage_set=plugins.StorageSetResponse())))
+            await pending
+        finally:
+            stop.set()
+            await asyncio.wait_for(task, 2)

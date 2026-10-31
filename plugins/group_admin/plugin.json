@@ -1,0 +1,12 @@
+{
+  "id": "group-admin",
+  "name": "Group admin example",
+  "version": "0.1.0",
+  "api_version": "kiarabot.plugin.v1",
+  "runtime": "python-rpc",
+  "entrypoint": "group_admin:create_plugin",
+  "capabilities": ["event.message.received"],
+  "permissions": ["message.read", "message.send", "storage.namespace"],
+  "isolation": "process",
+  "ordered": true
+}
