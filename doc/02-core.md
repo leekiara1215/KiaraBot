@@ -114,6 +114,8 @@ ApplicationService
 
 逐插件投递以 `(event_id, plugin_id)` 持久化，事件、会话状态和全部目标插件投递在同一事务提交。插件清单的 `ordered` 随投递记录保存；同一插件和会话按接收顺序等待较早投递进入 ACK 或死信，再开始后续投递。插件独立确认、退避和重放，其他插件不受影响。
 
+会话排序键由 Core 从事件派生：`(adapter_id, account_id, conversation_id, conversation_type)` 的带长度前缀编码，类型来自消息载荷 `ConversationRef.type`，无会话载荷事件取 `TYPE_UNSPECIFIED`。会话水位（最大 sequence、degraded）与逐插件有序投递分组都使用该键；群号与私聊号相同不会共享水位。入口与持久化格式见 `doc/01-runtime-semantics.md`「顺序和背压」「T02a 适配器 inbox 入口」，快照 v6 迁移会重键旧三元组水位。
+
 ### 其他模块接入需求
 
 - 插件宿主应在接收事件时确定订阅插件，传入其 ID，并使用注册清单中的 `ordered`；从已认证插件连接确定 ACK 的插件身份，将 ACK、拒绝及可重试错误映射到逐插件操作。连接断开或进程重启后，确认旧投递者停止再恢复未确认投递；重放时使用逐插件 trace ID 更新解码后的 envelope。

@@ -249,12 +249,70 @@ void friend_request_cases() {
           decoded.friend_request().request_id() == "request-1" &&
           decoded.friend_request().user_id() == "user");
 }
+void session_identity_cases() {
+  InMemoryRuntimeStore store;
+  AdapterIngress ingress(store, {{"adapter", {"account"}}}, {});
+  const auto registered = ingress.register_adapter("adapter", registration());
+  require(registered.response.accepted());
+  auto message = [&](std::string id, std::uint64_t sequence, int type) {
+    auto result = event(registered.session, std::move(id), sequence);
+    result.mutable_subject()->set_conversation_id("123");
+    auto* conversation = result.mutable_message_received()->mutable_conversation();
+    conversation->set_id("123");
+    conversation->set_type(static_cast<kiarabot::v1::ConversationRef::Type>(type));
+    return result;
+  };
+  constexpr int group = kiarabot::v1::ConversationRef::GROUP;
+  constexpr int private_conversation = kiarabot::v1::ConversationRef::PRIVATE;
+  // A group and a private conversation that reuse the same platform number must not
+  // share a sequence watermark: private sequence 1 after group sequence 1 is accepted.
+  require(ingress.ingest(registered.session, message("group-1", 1, group)).status() ==
+          AdapterEventAck::PERSISTED);
+  require(
+      ingress.ingest(registered.session, message("private-1", 1, private_conversation)).status() ==
+      AdapterEventAck::PERSISTED);
+  require(ingress.ingest(registered.session, message("group-2", 2, group)).status() ==
+          AdapterEventAck::PERSISTED);
+  require(
+      ingress.ingest(registered.session, message("private-2", 2, private_conversation)).status() ==
+      AdapterEventAck::PERSISTED);
+  // Events without a conversation payload use the unspecified type in their own domain.
+  auto status = event(registered.session, "status", 1);
+  status.clear_payload();
+  status.mutable_subject()->clear_conversation_id();
+  status.mutable_subject()->clear_user_id();
+  status.mutable_adapter_status_changed()->set_adapter_id("adapter");
+  status.mutable_adapter_status_changed()->set_state(kiarabot::v1::HEALTHY);
+  require(ingress.ingest(registered.session, status).status() == AdapterEventAck::PERSISTED);
+  const auto snapshot = std::get<RuntimeSnapshot>(store.read());
+  require(snapshot.events.size() == 5 && snapshot.sessions.size() == 3);
+  const std::string group_key = "7:adapter7:account3:1231:2";
+  const std::string private_key = "7:adapter7:account3:1231:1";
+  const std::string status_key = "7:adapter7:account0:1:0";
+  require(snapshot.events.at("group-1").record.session_key == group_key);
+  require(snapshot.events.at("private-1").record.session_key == private_key);
+  require(snapshot.events.at("status").record.session_key == status_key);
+  require(snapshot.sessions.at(group_key).last_sequence == 2 &&
+          snapshot.sessions.at(group_key).has_sequence &&
+          !snapshot.sessions.at(group_key).degraded);
+  require(snapshot.sessions.at(private_key).last_sequence == 2 &&
+          snapshot.sessions.at(private_key).has_sequence &&
+          !snapshot.sessions.at(private_key).degraded);
+  require(snapshot.sessions.at(status_key).last_sequence == 1);
+  // The private watermark only rejects its own lower replay; the group domain is free.
+  rejected(ingress.ingest(registered.session, message("private-lower", 1, private_conversation)),
+           kiarabot::v1::CONFLICT);
+  require(ingress.ingest(registered.session, message("group-3", 3, group)).status() ==
+          AdapterEventAck::PERSISTED);
+}
 } // namespace
 int main() try {
   application_cases();
+  session_identity_cases();
   friend_request_cases();
   grpc_recovery();
-  std::cout << "Adapter registration, durable ACK, rollback, replay and backpressure passed\n";
+  std::cout << "Adapter registration, durable ACK, rollback, replay, session identity and "
+               "backpressure passed\n";
   return 0;
 } catch (const std::exception& error) {
   std::cerr << error.what() << '\n';

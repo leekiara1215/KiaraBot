@@ -132,7 +132,7 @@ ctest --test-dir /tmp/kiarabot-infrastructure-build --output-on-failure
 
 T06c 的规则由 Core TaskScheduler 实现，基础设施提供 SQLite 任务快照（当前 schema v6）和 Abseil 时区解析端口。沿用 Protobuf/gRPC 已依赖的 Abseil time，使用系统 IANA zoneinfo；不通过进程全局 TZ 环境切换时区。允许 UTC 或 IANA 地区名称，公历年份 1970–2100，拒绝非法日期、无效时区及 DST 重复/缺失时间；UTC run_at 也限制在此范围且必须晚于当前时间。启动预检与错误区分（2026-10-31 补齐）：`TimeZoneResolver::zone_info_available()` 用真实 IANA 地区名探测系统 zoneinfo（`UTC` 可能内建于 Abseil，不能作为探测依据）；`resolve()` 在 zone 数据不可用时返回 `UPSTREAM_UNAVAILABLE`，只有名称/日期/夏令时歧义等调用方错误返回 `INVALID_ARGUMENT`。Core 组合根应在监听前调用预检并拒绝启动；当前 `core/app/main.cpp` 尚未接入该预检（交接 core 分支，不属于本模块可改范围）。测试见 `infrastructure/tests/time_zone_resolver_test.cpp`（有效 UTC/IANA、非法日期/名称、DST gap/fold、注入数据不可用路径）。
 
-每插件最多 1024 个任务（含终态），payload 最多 64 KiB，task_id 1–128 个 ASCII 字母/数字/点/横线/下划线，目标会话 1–256 字节。任务记录不自动清理，超限 RATE_LIMITED。Host 创建/取消与成功幂等响应、审计同一事务；读/取消其他插件任务 NOT_FOUND。新旧 Runtime 操作必须保留任务集合，v1–v4 数据库迁移为 v5；旧二进制回滚需备份。
+每插件最多 1024 个任务（含终态），payload 最多 64 KiB，task_id 1–128 个 ASCII 字母/数字/点/横线/下划线，目标会话 1–256 字节。任务记录不自动清理，超限 RATE_LIMITED。Host 创建/取消与成功幂等响应、审计同一事务；读/取消其他插件任务 NOT_FOUND。新旧 Runtime 操作必须保留任务集合，v1–v5 数据库迁移为 v6；旧二进制回滚需备份。
 
 调度器负责保存任务、触发任务、处理时区和重试。任务必须记录：
 
@@ -185,7 +185,7 @@ next_run_at
 
 SqliteRuntimeStore::open(path) 在事务中创建 schema v6（PRAGMA user_version=6），并事务化迁移 v1–v5 快照，已有版本重复打开不重建；未知版本或损坏快照拒绝打开。runtime_snapshot 单行保存完整快照与 revision，提交使用带 revision 条件的原子 UPDATE。两个连接读取同一版本时只有第一个提交成功，其余返回 Conflict；SQLITE_BUSY/LOCKED 也映射 Conflict，不自动重试。FULL 同步模式下 SQLite 承担崩溃原子性；未提交事务只持有私有内存，销毁即可回滚。崩溃/半写恢复证据（2026-10-31 补齐）：`infrastructure/tests/crash_recovery_test.cpp` 让子进程持续提交 12 MiB 快照并在不同时点收到 SIGKILL，父进程重开同一数据库后校验快照可解码、`PRAGMA integrity_check` 为 `ok`、且可以继续提交；该测试不依赖真实断电，但也不能替代生产备份演练（T11b）。
 
-私有文本编码保留二进制 envelope、UTC 纳秒时间、逐插件状态、会话、Action 和插件；v6 起还保存 Action 审计目标（账号/会话）与按 `(action kind, 账号)` 的 UTC 日预算计数器。数据库格式与 schema 一起版本化，不是公共线协议。快照上限 64 MiB，所有集合合计最多一百万项；超限提交失败，损坏解码返回 Corrupt。超限语义（2026-10-31 明确）：提交时编码后字节数超过 64 MiB、或所有集合合计条目超过一百万项，返回 `StorageError::Unavailable` 且持久状态不变（事务可以在缩小快照后重试）；读取/打开时发现已存载荷超过 64 MiB 返回 `StorageError::Corrupt`。`SqliteRuntimeStore::limits()` 返回编译期上限，`rejected_snapshots()` 返回逐实例单调拒绝计数（oversized_bytes / oversized_items / oversized_reads）；组合根尚未把计数导出到健康或指标端点（交接 Core/运维）。测试见 `infrastructure/tests/snapshot_limits_test.cpp`（字节上限、百万项上限、超大存量载荷、失败后重试与计数）。该实现是整库状态快照，尚未进行容量/性能认证。Host 命名空间和响应幂等已在 v4 中持久化；模型由 T06b 接线，任务由 T06c 接线；T10a 的命令审计从 v2 起持久化。SQLite 打开迁移并不代替 T11 独立迁移命令和部署演练。
+私有文本编码保留二进制 envelope、UTC 纳秒时间、逐插件状态、会话、Action 和插件；v6 起还保存 Action 审计目标（账号/会话）与按 `(action kind, 账号)` 的 UTC 日预算计数器。v6 迁移同时把旧的三元组会话排序键重键为含会话类型的四元组：从事件保存的 envelope 推导类型，同一旧键覆盖群/私聊同号时两个新键继承同一水位；没有保留事件的旧水位无法归因、被丢弃，解码失败的 envelope 保留旧键（语义见 `doc/01-runtime-semantics.md`「T02a 适配器 inbox 入口」）。数据库格式与 schema 一起版本化，不是公共线协议。快照上限 64 MiB，所有集合合计最多一百万项；超限提交失败，损坏解码返回 Corrupt。超限语义（2026-10-31 明确）：提交时编码后字节数超过 64 MiB、或所有集合合计条目超过一百万项，返回 `StorageError::Unavailable` 且持久状态不变（事务可以在缩小快照后重试）；读取/打开时发现已存载荷超过 64 MiB 返回 `StorageError::Corrupt`。`SqliteRuntimeStore::limits()` 返回编译期上限，`rejected_snapshots()` 返回逐实例单调拒绝计数（oversized_bytes / oversized_items / oversized_reads）；组合根尚未把计数导出到健康或指标端点（交接 Core/运维）。测试见 `infrastructure/tests/snapshot_limits_test.cpp`（字节上限、百万项上限、超大存量载荷、失败后重试与计数）与 `infrastructure/tests/sqlite_runtime_store_test.cpp`（v1–v5 迁移与 v5→v6 会话键重键）。该实现是整库状态快照，尚未进行容量/性能认证。Host 命名空间和响应幂等已在 v4 中持久化；模型由 T06b 接线，任务由 T06c 接线；T10a 的命令审计从 v2 起持久化。SQLite 打开迁移并不代替 T11 独立迁移命令和部署演练。
 
 独立构建使用原基础设施命令；根构建可传入 `-DKIARABOT_ENABLE_INFRASTRUCTURE=ON` 纳入测试。新增依赖为 SQLite3 开发库，版本由构建环境记录；生产打包需随 T11 固定依赖。Core 仍经端口注入，不直接访问 SQL。
 

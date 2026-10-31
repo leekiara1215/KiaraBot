@@ -31,7 +31,8 @@ T03a 将逐插件状态机接入 PluginBridge。订阅来自已授权活动连�
 ## 顺序和背压
 
 - 不提供全局顺序；
-- 同一 `(adapter_id, account_id, conversation_id)` 内按 `sequence` 单调递增；
+- 同一会话的排序域 `(adapter_id, account_id, conversation_id, conversation_type)` 内按 `sequence` 单调递增；`conversation_type` 取自消息载荷 `ConversationRef.type`，没有会话载荷的事件（如 `AdapterStatusChanged`）取 `TYPE_UNSPECIFIED`，因此群号与私聊号相同时两个会话各自独立；
+- 会话键是上述四元组的带长度前缀编码，只存在于 Core 与持久化快照中，不是线协议字段；它同时决定会话水位和逐插件有序投递的分组；
 - 不同会话可以并行；
 - 缺少 sequence 或跳号只影响该会话，并报告 `DEGRADED`；
 - 跳号事件仍可接收并推进该会话的最大 sequence；较小或相同的非重复 sequence 被拒绝。会话的最大 sequence 和 degraded 状态独立保存，不因 inbox 保留期清理而丢失；
@@ -174,7 +175,9 @@ Host 请求按注册插件身份隔离。任务创建与取消使用幂等键；
 
 事件必须经认证注册后接收，source.adapter_id、account_id 和当前 adapter_instance_id 必须匹配连接；账号权限来自宿主允许列表。事件支持 MessageReceived、MessageSent、GroupMemberChanged、FriendRequest、AdapterStatusChanged，适配器不能伪造 TimerTriggered/PluginStatusChanged。消息的 conversation/account/subject 必须一致，事件必须含有效 occurred_at、非空 event_id/trace_id、schema_version=kiarabot.v1 和 AT_LEAST_ONCE。sequence=0 作为未提供处理并按原规则降级会话。
 
-入口串行提交，使用带长度的三元组会话键防止拼接冲突。重投的内容 fingerprint 使用确定性 Protobuf + SHA-256，忽略 source.adapter_instance_id（重连后须填新实例），其余内容应保持相同。同 event_id 不同内容返回 CONFLICT，不覆盖已存记录；重复确认不重复推进水位/审计/副作用。成功返回前必须提交，连接在提交后断开时，重投得到 DUPLICATE。当前命令幂等元数据保留到显式清理，尚未实现清理调度。
+入口串行提交，使用带长度的四元组会话键防止拼接冲突；第四个分量是会话类型（无会话载荷事件取 `TYPE_UNSPECIFIED`）。重投的内容 fingerprint 使用确定性 Protobuf + SHA-256，忽略 source.adapter_instance_id（重连后须填新实例），其余内容应保持相同。同 event_id 不同内容返回 CONFLICT，不覆盖已存记录；重复确认不重复推进水位/审计/副作用。成功返回前必须提交，连接在提交后断开时，重投得到 DUPLICATE。当前命令幂等元数据保留到显式清理，尚未实现清理调度。
+
+schema v6 迁移把已经持久化的三元组会话键重键为四元组：Core 从每个事件保存的 serialized envelope 重新推导类型；同一旧键同时覆盖群/私聊同号会话时，派生出的两个新键继承同一水位（该水位只会让 Core 接受继续的 sequence，不会错误拒绝）；没有保留事件的旧水位无法归因，被丢弃，升级后该会话首个事件以新水位建立并可能报告一次 `DEGRADED`；envelope 无法解码的事件保留旧键。适配器本地 outbox 的 sequence 键同步升级（其独立数据库 user_version 1→2，旧共享计数器保守复制到群/私聊两类），两侧独立迁移但排序域语义一致。
 
 队列上限默认 1024，满时回复可重试 RATE_LIMITED 并关闭本次流，不再读取后续业务消息；未确认事件仍属于发送方，退避后重连重投。应用层不缓存额外事件；gRPC 单消息上限 1 MiB。新注册在同一入口锁内替换旧实例，存储 I/O 后释放锁再发送响应。启用 T03a 后按活动订阅快照同步创建逐插件投递；未配置插件入口时只入 inbox。
 

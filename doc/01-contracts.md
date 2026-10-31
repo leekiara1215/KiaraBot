@@ -79,6 +79,8 @@ EventEnvelope
   payload           事件内容（oneof discriminator）
 ```
 
+`sequence` 的排序域由 Core 从 envelope 派生，不是独立字段：`(source.adapter_id, source.account_id, subject.conversation_id, 消息载荷 ConversationRef.type)`。群号与私聊号相同的两个会话因此各自独立；没有会话载荷的事件（如 `AdapterStatusChanged`）使用 `TYPE_UNSPECIFIED`，不与消息会话共享排序域。`TimerTriggered` 由 Core 生成且不占用会话排序域。客户端、插件和适配器都不得只凭 `conversation_id` 推断排序域。
+
 第一批事件：
 
 ```text

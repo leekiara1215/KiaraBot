@@ -32,8 +32,8 @@
    - 基线第 8–9 层（C++ 适配器、C ABI 插件、C++/TS SDK）仍为"未来"，用户已明确延期（T12）；
    - 基线第 7.1 节"控制面板至少需要管理 11 项"：W4 已补插件/会话/Action 管理，但机器人账号、模型 API Key、群白名单、用户角色写接口仍无 OpenAPI 端点（契约侧缺口），是否收窄基线或补契约由你决定。
 2. **契约/架构决策**（会影响后续实现，当前按"不伪造能力"处理）：
-   - Action 7 类：只做纯文本 `send_message` 作为 v1 边界，还是排期 Mute/Kick/Approve 等（需同时补权限门禁与速率策略，见 `doc/17`）；
-   - 会话 ID：W3 已统一为"平台原生数字 ID + type"，但 Core 的 session key 仅用 conversation_id，群/私聊数字 ID 撞号时会共享排序键；是否给 Core/契约增加会话类型维度；
+   - ~~Action 7 类：只做纯文本 `send_message` 作为 v1 边界，还是排期 Mute/Kick/Approve 等~~ → **已决策并实现**（2026-10-31，`1faa272`）：方案 B 完成 `react_message`/`delete_message`/`mute_member`/`kick_member`/`approve_request`，`schedule_task` 标记 deprecated；授权模型含权限门禁、速率、每日预算、会话白名单与审计目标（见 `doc/01-runtime-semantics.md`、`doc/17`）；
+   - ~~会话 ID：W3 已统一为"平台原生数字 ID + type"，但 Core 的 session key 仅用 conversation_id，群/私聊数字 ID 撞号时会共享排序键；是否给 Core/契约增加会话类型维度~~ → **已决策并实现（方案 B）**：排序域改为 `(adapter_id, account_id, conversation_id, conversation_type)` 的带长度四元组，适配器本地 outbox sequence 键同步升级；Core 快照 v6 迁移重键旧三元组水位、适配器 outbox DB 1→2 迁移（见 `doc/01-runtime-semantics.md`、`doc/05-infrastructure.md`、`doc/08-operations.md`、`doc/04-nonebot-adapter.md`）；
    - 命令幂等：当前按"数量上限确定性淘汰"（core W2），时间型过期需要快照格式版本升级，是否排期；
    - 多插件/多适配器装配、完整 RBAC、`message.send` 速率/内容策略：本轮明确未做，是否作为下一轮 P1；
    - FileStorage：当前"已实现未接线"，是接线还是明确废弃；

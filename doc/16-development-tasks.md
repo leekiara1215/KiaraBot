@@ -982,3 +982,24 @@ CI 修复（本轮只改工作流，未复跑；不能据此宣称 CI 已绿）�
 - 方案 B 交付摘要：授权模型（按 Action 类型的权限门禁、进程内滑动窗口、持久化每日预算、危险 Action 会话白名单、审计目标账号/会话、失效/过期数据清理）；Action 面 `send_message`、`react_message`、`delete_message`（仅本 bot 已发送消息）、`mute_member`/`kick_member`（群管理门禁）、`approve_request`（好友请求 + `FriendRequest` 事件前置）；`schedule_task` 弃用。未实现且已声明：群邀请/加群请求事件、真实渠道联调。
 - 未运行与原因：真实 QQ/NapCat 全链路（T07b，需要真实账号/群与平台权限）；`clang-tidy` 本机未安装；远端 CI 自动触发仍暂停（需手动运行 workflow）。
 - 文档影响判断：更新 `proto/kiarabot/v1/actions.proto`、`proto/tests/contract_status.json`、`doc/01-contracts.md`、`doc/01-runtime-semantics.md`、`doc/13-infrastructure-integration-follow-up.md`、`README.md`、`doc/17` 与本台账；`api/` 未改；`doc/18` 受保护未改。
+
+## 2026-10-31 W7：会话排序键加入 conversation_type（方案 B）
+
+- 状态：**已决策并实现（方案 B）**；实现代码位于 `1faa272`（与方案 B 收口同一提交，schema v6 共存），本增量补齐该语义的回归测试、v5→v6 重键迁移测试与文档/待确认项收口。
+- 决策：接受"群号与私聊号理论上可能相同"的长期风险不再用概率论证；排序域从 `(adapter_id, account_id, conversation_id)` 改为 `(adapter_id, account_id, conversation_id, conversation_type)`，`conversation_type` 取自消息载荷 `ConversationRef.type`，无会话载荷事件（如 `AdapterStatusChanged`）取 `TYPE_UNSPECIFIED`；不回退 `group:`/`private:` 前缀方案（与 W3 结论一致）。
+- Core：新增 `core/include/kiarabot/core/domain/session_key.hpp`（带长度前缀的四元组编码 + envelope 派生），`AdapterIngress` 改用该实现；会话水位与逐插件有序投递分组共用同一键，群/私聊同号不再共享排序键。
+- 持久化迁移（schema v6，未发布的新版本）：`runtime_snapshot_codec.hpp` 增加 `migrate_session_keys`，从事件保存的 serialized envelope 重新推导类型；同一旧三元组键覆盖群/私聊同号时两类新键继承同一水位（只会接受继续的 sequence，不会错误拒绝）；无保留事件的旧水位不能归因、被丢弃，升级后该会话首个事件以新水位建立并可能报告一次 `DEGRADED`；envelope 无法解码的事件保留旧键。`SqliteRuntimeStore::open` 对 v1–v5 快照在迁移事务内执行重键后写为 v6。
+- 适配器（与 Core 同语义，独立 DB）：outbox sequence 键改为 `[adapter_id, account_id, conversation_id, conversation_type]` 四元组；本地 outbox DB `user_version` 1→2 迁移把旧三元组共享计数器保守复制到群/私聊两类（sequence 相同、空会话归 type 0），pending/failed 行不动，未知版本 fail-closed 为 `INTERNAL`。
+- 测试（本增量新增）：
+  - `core/tests/adapter_ingress_test.cpp` `session_identity_cases()`：群 `123` 与私聊 `123` 交替 sequence 1/1、2/2 均 PERSISTED，两个会话水位独立且均未 DEGRADED；断言三个实际 session key（group/private/status type 0）；私聊较低 sequence 重放仍返回 CONFLICT。
+  - `infrastructure/tests/sqlite_runtime_store_test.cpp`：手工构造 v5 快照（同一旧键覆盖群/私聊同号事件、status 键、无事件水位）→ 打开后断言 user_version=6、水位 fan-out 到两类、status type 0 键、事件与投递记录重键、无事件水位被丢弃、重复打开不重复迁移；同时覆盖 v1–v4 既有迁移路径。
+- 实际运行（本机 2026-10-31，全部实际执行）：
+  - `cmake --build build/full -j 8`：成功。
+  - `ctest --test-dir build/full --output-on-failure -j 4`：**34/34 passed**（含 `adapter_ingress`、`sqlite_runtime_store`、`core_grpc_process`、deploy 与架构边界测试）。
+  - `./build/full/infrastructure/sqlite_runtime_store_test`、`./build/full/kiarabot-adapter-ingress-test`：通过（含新增用例）。
+  - 适配器：`cd adapters/nonebot && .venv/bin/python -m pytest -q`：**68 passed, 2 skipped**（跳过项为需 `CORE_TEST_BINARY` 的跨语言集成用例）。
+  - 契约门禁：`check_implementation_status.py`、`check_semantic_rules.py`、`check_enum_consistency.py` 与 `KIARABOT_LEGACY_READER_TEST=1 KIARABOT_DESCRIPTOR_COMPATIBILITY_TOOL=build/full/kiarabot_descriptor_compatibility bash proto/tests/check_contracts.sh`：全部通过（本轮未改 proto/API）。
+  - 格式：`build/format-venv/bin/clang-format`（16.0.6）应用于改动 C++ 文件并 `--dry-run --Werror` 通过；`git diff --check` 通过。
+- 未运行与原因：真实 QQ/NapCat 的群/私聊同号场景未联调（T07b 无真实环境）；远端 CI 自动触发仍暂停（需手动 Run）；`clang-tidy` 本机未安装。
+- 文档影响判断：更新 `doc/01-runtime-semantics.md`（排序域四元组、四元组会话键、v6 重键迁移语义）、`doc/01-contracts.md`（`sequence` 排序域派生说明）、`doc/02-core.md`（Core 会话排序键）、`doc/05-infrastructure.md`（v6 迁移含会话键重键、迁移测试）、`doc/08-operations.md`（升级说明与一次性 DEGRADED、适配器 outbox 1→2、`EXPECTED_SCHEMA_VERSION` 默认 6、陈旧 v5 引用）、`doc/04-nonebot-adapter.md`（适配器四元组与 DB 迁移，已在 `1faa272`）、`reports/pending-confirmation.md`（Action 7 类与会话 ID 两项从待裁定改为已决策）与本台账；`proto/`、`api/`、`deploy/` 本轮未改（版本号与部署断言已在 `1faa272` 升为 6）；`doc/18` 受保护未改。
+- 后续/风险：适配器 outbox 的旧共享计数器无法区分类型，迁移对每个旧键同时生成群/私聊两个计数器；真实环境升级后同一会话首个事件可能有一次 `DEGRADED`（仅诊断，不影响接收）；遥测侧尚未把 `session_degraded`/`sequence_gap_detected` 导出到健康或指标端点，是否接线由后续任务决定。

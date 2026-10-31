@@ -6,9 +6,9 @@ T06c 持久化插件入口装配 TaskScheduler 并协商 host.tasks.v1；插件�
 
 T06b 可选配置 KIARABOT_MODEL_ENDPOINT（完整 /chat/completions URL）、KIARABOT_MODEL_API_KEY 和 KIARABOT_MODEL_NAME，三者必须同时设置且持久化插件入口已启用；部分/非法配置启动失败 INVALID_ARGUMENT。未配置时不协商 host.model.v1。插件须获授 model.chat。只允许 HTTPS 或本机 127.0.0.1 HTTP；禁用环境代理/重定向，证书校验开启，最大请求三十秒，停机可能等到该调用期限。密钥不要放命令行或入库；受管 Python 环境白名单不包含任何模型配置。模型只读探活与实际外部供应商联调仍未验证。
 
-T06a 持久化插件入口装配 HostDispatcher；存储、可选模型和任务能力按实际配置协商，storage.namespace 必须显式列入 KIARABOT_PLUGIN_PERMISSIONS。T06a 引入 schema v4，当前版本升级为 v5，回滚使用迁移前备份。Host 存储和幂等响应随 Core 数据库一起备份，不能单独删除幂等响应后重放写入。
+T06a 持久化插件入口装配 HostDispatcher；存储、可选模型和任务能力按实际配置协商，storage.namespace 必须显式列入 KIARABOT_PLUGIN_PERMISSIONS。T06a 引入 schema v4，当前版本升级为 v6，回滚使用迁移前备份。Host 存储和幂等响应随 Core 数据库一起备份，不能单独删除幂等响应后重放写入。
 
-T04b 启用持久化插件入口时装配 ActionRouter，插件 message.send 权限仍显式配置；只声明已实现的 action.result.v1。T04b 引入 schema v3，当前 T06c 已继续升级至 v5，旧二进制不能读取新 schema，回滚必须使用迁移前备份。Python 适配器在 OUTBOX_PATH 旁维护 .actions 执行日志，备份/恢复须与事件 outbox 一起处理，禁止删除未终态记录后重放平台请求。
+T04b 启用持久化插件入口时装配 ActionRouter，插件 message.send 权限仍显式配置；只声明已实现的 action.result.v1。T04b 引入 schema v3，当前已继续升级至 v6，旧二进制不能读取新 schema，回滚必须使用迁移前备份。Python 适配器在 OUTBOX_PATH 旁维护 .actions 执行日志，备份/恢复须与事件 outbox 一起处理，禁止删除未终态记录后重放平台请求。
 
 ## T03b 受管 Python 插件
 
@@ -96,7 +96,7 @@ TLS 由本层之外的反向代理/SSH 隧道提供；仓库当前**未交付 TL
 
 ## 启动顺序
 
-1. `migrate` 服务获取迁移锁，用 `kiarabot-migrate` 完成数据库迁移；**迁移前**自动做 SQLite 一致性快照，迁移后校验 `PRAGMA user_version` 等于 `EXPECTED_SCHEMA_VERSION`（默认 5），失败即以非零退出并阻断后续服务；
+1. `migrate` 服务获取迁移锁，用 `kiarabot-migrate` 完成数据库迁移；**迁移前**自动做 SQLite 一致性快照，迁移后校验 `PRAGMA user_version` 等于 `EXPECTED_SCHEMA_VERSION`（默认 6），失败即以非零退出并阻断后续服务；
 2. Core 启动：打开数据库（再次校验 schema）、恢复 RUNNING、启动 BridgeServer 与控制 API，`/health/ready` 通过后 Compose 认为 core healthy；
 3. 适配器在 core healthy 后启动，注册能力并开启 8081 健康服务；Core ready 不要求 QQ 在线，适配器 ready 依赖 Core 注册；
 4. 面板在 core healthy 后启动（**不依赖适配器**，符合“Panel ready 依赖 API 可达，不要求 QQ 在线”），其 `/health/ready` 直接转发 Core ready；
@@ -168,6 +168,7 @@ error_code
 
 - 迁移唯一权威命令是镜像内 `/usr/local/bin/kiarabot-migrate`；`MIGRATION_COMMAND` 默认值即该命令（`migrate.sh` 会把数据库路径作为唯一参数追加，也支持 `{database}` 占位符覆盖）。迁移失败或 schema 校验失败会阻止 Core 启动；
 - 升级：`KIARABOT_CORE_IMAGE_DIGEST=sha256:<64 位十六进制> scripts/deploy/deploy.sh upgrade`。脚本停止面板/适配器/Core，用新镜像在数据卷内运行 `migrate`（先备份），成功后再按 core → adapter → panel 顺序等待 ready；失败不自动启动旧镜像，保留停机状态等待操作员核对 schema 与迁移前备份；
+- schema v6 的会话键类型化迁移（session key 加入 conversation_type）在 Core 数据库迁移时自动完成：有保留事件的会话水位被重键为含类型的四元组，同一旧键同时覆盖群/私聊同号时两类密钥继承同一水位；没有保留事件的旧水位无法归因、被丢弃，升级后该会话首个事件可能报告一次 `DEGRADED`（正常现象，无需手工处理）。适配器本地 outbox 数据库在自己的 `user_version` 1→2 迁移中同步升级 sequence 键，同样自动完成；两端均需保留迁移前备份。
 - 回滚：`scripts/deploy/deploy.sh rollback sha256:<digest>`。不传 digest 时使用 `<数据卷>/deploy-record.jsonl` 中最后一次成功记录；回滚前用 `sqlite3` 检查当前 `PRAGMA user_version` 等于 `EXPECTED_SCHEMA_VERSION`，不匹配则拒绝并要求先恢复迁移前备份（确认后可用 `ROLLBACK_FORCE=1` 覆盖）；镜像回滚不会自动恢复数据库；
 - 每次 start/upgrade/rollback 都向 `deploy-record.jsonl` 追加一条 JSON 记录（time、environment、outcome、image、schema_version、commit=`KIARABOT_COMMIT`），用于审计追踪与默认回滚点；
 - 部署后验证：`scripts/deploy/deploy.sh verify`（即 `smoke.sh`）检查 Core live/ready、可选认证 `/api/v1/health`、适配器 ready 与面板 ready；systemd 单元在 `ExecStartPost` 中调用它，smoke 失败使 unit 失败并可用 `ExecStop` 清理（`KIARABOT_SMOKE_SKIP=adapter,panel` 可裁剪检查项）；

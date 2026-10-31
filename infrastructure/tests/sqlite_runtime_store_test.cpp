@@ -6,8 +6,10 @@
 #include <source_location>
 #include <sqlite3.h>
 #include <stdexcept>
+#include <string>
 #include <unistd.h>
 
+#include "../src/runtime_snapshot_codec.hpp"
 #include "kiarabot/core/application/authorized_commands.hpp"
 #include "kiarabot/core/application/runtime.h"
 #include "kiarabot/infrastructure/sqlite_runtime_store.hpp"
@@ -44,6 +46,56 @@ void execute(const std::string& path, const char* sql) {
   int result = sqlite3_exec(database, sql, nullptr, nullptr, nullptr);
   sqlite3_close(database);
   check(result == SQLITE_OK);
+}
+void write_snapshot(const std::string& path, const std::string& payload, int version) {
+  sqlite3* database = nullptr;
+  check(sqlite3_open(path.c_str(), &database) == SQLITE_OK);
+  check(sqlite3_exec(database,
+                     "CREATE TABLE runtime_snapshot(id INTEGER PRIMARY KEY,revision INTEGER NOT "
+                     "NULL,payload BLOB NOT NULL)",
+                     nullptr, nullptr, nullptr) == SQLITE_OK);
+  sqlite3_stmt* statement = nullptr;
+  check(sqlite3_prepare_v2(database, "INSERT INTO runtime_snapshot VALUES(1,0,?)", -1, &statement,
+                           nullptr) == SQLITE_OK);
+  check(sqlite3_bind_blob(statement, 1, payload.data(), static_cast<int>(payload.size()),
+                          SQLITE_TRANSIENT) == SQLITE_OK);
+  check(sqlite3_step(statement) == SQLITE_DONE);
+  sqlite3_finalize(statement);
+  const std::string pragma = "PRAGMA user_version=" + std::to_string(version);
+  check(sqlite3_exec(database, pragma.c_str(), nullptr, nullptr, nullptr) == SQLITE_OK);
+  sqlite3_close(database);
+}
+int user_version(const std::string& path) {
+  sqlite3* database = nullptr;
+  check(sqlite3_open(path.c_str(), &database) == SQLITE_OK);
+  sqlite3_stmt* statement = nullptr;
+  check(sqlite3_prepare_v2(database, "PRAGMA user_version", -1, &statement, nullptr) == SQLITE_OK);
+  check(sqlite3_step(statement) == SQLITE_ROW);
+  const int version = sqlite3_column_int(statement, 0);
+  sqlite3_finalize(statement);
+  sqlite3_close(database);
+  return version;
+}
+kiarabot::v1::EventEnvelope message_envelope(std::string event_id, std::uint64_t sequence,
+                                             int type) {
+  kiarabot::v1::EventEnvelope result;
+  result.set_event_id(std::move(event_id));
+  result.set_trace_id("trace");
+  result.set_schema_version("kiarabot.v1");
+  result.mutable_occurred_at()->set_seconds(1000);
+  result.set_delivery_mode(kiarabot::v1::AT_LEAST_ONCE);
+  result.set_sequence(sequence);
+  result.mutable_source()->set_adapter_id("adapter");
+  result.mutable_source()->set_account_id("account");
+  result.mutable_subject()->set_conversation_id("123");
+  result.mutable_subject()->set_user_id("user");
+  auto* payload = result.mutable_message_received();
+  payload->set_message_id("message");
+  payload->set_sender_id("user");
+  payload->mutable_conversation()->set_id("123");
+  payload->mutable_conversation()->set_account_id("account");
+  payload->mutable_conversation()->set_type(static_cast<kiarabot::v1::ConversationRef::Type>(type));
+  return result;
 }
 } // namespace
 int main() {
@@ -97,6 +149,89 @@ int main() {
         "INSERT INTO runtime_snapshot VALUES(1,0,'0 0 0 0 0 12 0 0 0 0 '); PRAGMA user_version=4");
     auto from_v4 = value(SqliteRuntimeStore::open(v4_path));
     check(value(from_v4->read()).delivery_order == 12 && value(from_v4->read()).tasks.empty());
+    // v5 -> v6: session ordering keys gain the conversation type. The stored envelope is
+    // decoded to derive the typed key. One legacy key covered a group and a private
+    // conversation with the same numeric id, so both typed watermarks inherit it; a
+    // watermark with no surviving event cannot be attributed and is dropped.
+    const auto v5_path = (directory.path / "v5.db").string();
+    {
+      const std::string legacy_conversation = "7:adapter7:account3:123";
+      const std::string legacy_status = "7:adapter7:account0:";
+      kiarabot::core::RuntimeSnapshot legacy;
+      const auto group = message_envelope("group-event", 5, kiarabot::v1::ConversationRef::GROUP);
+      const auto private_conversation =
+          message_envelope("private-event", 5, kiarabot::v1::ConversationRef::PRIVATE);
+      kiarabot::v1::EventEnvelope status;
+      status.set_event_id("status-event");
+      status.set_trace_id("trace");
+      status.set_schema_version("kiarabot.v1");
+      status.mutable_occurred_at()->set_seconds(1000);
+      status.set_delivery_mode(kiarabot::v1::AT_LEAST_ONCE);
+      status.set_sequence(2);
+      status.mutable_source()->set_adapter_id("adapter");
+      status.mutable_source()->set_account_id("account");
+      status.mutable_adapter_status_changed()->set_adapter_id("adapter");
+      status.mutable_adapter_status_changed()->set_state(kiarabot::v1::HEALTHY);
+      auto event_entry = [&](std::uint64_t sequence, const std::string& session_key,
+                             const kiarabot::v1::EventEnvelope& envelope) {
+        return kiarabot::core::EventEntry{{envelope.event_id(), "trace", session_key, sequence,
+                                           true, envelope.SerializeAsString()},
+                                          kiarabot::core::DeliveryState::persisted,
+                                          0,
+                                          RuntimeTimePoint{},
+                                          now,
+                                          true};
+      };
+      legacy.events.emplace("group-event", event_entry(5, legacy_conversation, group));
+      legacy.events.emplace("private-event",
+                            event_entry(5, legacy_conversation, private_conversation));
+      legacy.events.emplace("status-event", event_entry(2, legacy_status, status));
+      legacy.deliveries["group-event"]["plugin"] = {"group-event",
+                                                    "plugin",
+                                                    legacy_conversation,
+                                                    "trace",
+                                                    1,
+                                                    true,
+                                                    kiarabot::core::DeliveryState::persisted,
+                                                    0,
+                                                    RuntimeTimePoint{},
+                                                    now};
+      legacy.deliveries["private-event"]["plugin"] = {"private-event",
+                                                      "plugin",
+                                                      legacy_conversation,
+                                                      "trace",
+                                                      2,
+                                                      true,
+                                                      kiarabot::core::DeliveryState::persisted,
+                                                      0,
+                                                      RuntimeTimePoint{},
+                                                      now};
+      legacy.sessions[legacy_conversation] = {5, true, true};
+      legacy.sessions[legacy_status] = {2, true, false};
+      legacy.sessions["legacy-watermark-without-event"] = {3, true, false};
+      legacy.delivery_order = 2;
+      write_snapshot(v5_path, kiarabot::infrastructure::detail::encode(legacy, 5), 5);
+    }
+    auto from_v5 = value(SqliteRuntimeStore::open(v5_path));
+    check(user_version(v5_path) == 6);
+    const auto v5_state = value(from_v5->read());
+    const std::string group_key = "7:adapter7:account3:1231:2";
+    const std::string private_key = "7:adapter7:account3:1231:1";
+    const std::string status_key = "7:adapter7:account0:1:0";
+    check(v5_state.sessions.size() == 3);
+    check(v5_state.sessions.at(group_key).last_sequence == 5 &&
+          v5_state.sessions.at(group_key).has_sequence && v5_state.sessions.at(group_key).degraded);
+    check(v5_state.sessions.at(private_key).last_sequence == 5 &&
+          v5_state.sessions.at(private_key).has_sequence);
+    check(v5_state.sessions.at(status_key).last_sequence == 2 &&
+          v5_state.sessions.at(status_key).has_sequence);
+    check(v5_state.events.at("group-event").record.session_key == group_key);
+    check(v5_state.events.at("private-event").record.session_key == private_key);
+    check(v5_state.events.at("status-event").record.session_key == status_key);
+    check(v5_state.deliveries.at("group-event").at("plugin").session_key == group_key);
+    check(v5_state.deliveries.at("private-event").at("plugin").session_key == private_key);
+    auto reopened_v5 = value(SqliteRuntimeStore::open(v5_path));
+    check(user_version(v5_path) == 6 && value(reopened_v5->read()).sessions.size() == 3);
     {
       auto store = value(SqliteRuntimeStore::open(path));
       Runtime runtime(
