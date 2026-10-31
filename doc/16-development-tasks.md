@@ -625,3 +625,43 @@ CI 修复（本轮只改工作流，未复跑；不能据此宣称 CI 已绿）�
 文档同步：README、doc/01、doc/02、doc/05、doc/08、doc/11、doc/13、doc/15、doc/16、doc/17、doc/README。
 
 未验证：本机无 cmake/clang-tidy/uv/node，构建、测试与部署未复跑；远端 CI 未复跑。不得宣称 CI 已绿或上述测试已通过。
+
+## 2026-10-31 contracts 分支：契约门禁与“契约 ≥ 实现”收敛
+
+状态：**契约/测试/文档修改完成；本机可运行门禁通过，依赖构建产物的门禁未运行**。分支 `kiarabot-contracts`（基线 `8caecb1`）。只修改 `proto/`、`proto/tests/`、`api/`、`doc/01-*.md`、`proto/README.md`、本台账 contracts 条目；未修改任何实现目录（`core/`、`adapters/`、`sdk/`、`control/`、`infrastructure/`、`panel/`、`deploy/`、`.github/`、`scripts/ci/`），未修改受保护 `doc/18`。
+
+目标与输入输出：
+
+- 目标：让契约门禁有判别力，并消除契约文件对实现能力的过度宣称，同时补齐 v1 契约缺项。
+- 输入：`reports/modules/contracts.md` 的 P0-1/P0-2/P1 缺口与 `proto/`、`api/`、`doc/01-*` 现状。
+- 输出：可执行门禁（枚举全量+数值基线、契约→实现状态清单、语义规则检查、旧夹具接入）、状态登记表 `proto/tests/contract_status.json`、API/文档收敛、跨模块语义决定清单。
+- 错误语义：缺少 `protoc`/descriptor 工具/Python SDK 生成包时门禁退出码 `2`；状态登记缺失、未实现项缺少 `CONTRACT_STATUS` 注释或文档状态行、API 的 `x-contract-status` 与登记表不一致、OpenAPI 枚举超出实现集合、证据路径不存在时退出码 `1`。
+
+契约/行为变化：
+
+- 兼容新增：`common.proto` `ShutdownNotice`，`CoreToAdapter.shutdown=5`、`CoreToPlugin.shutdown=8`；状态 `not_implemented`，旧客户端按未知字段忽略。既有字段编号/数值/枚举未改。
+- 收敛：OpenAPI `PluginManifest.runtime` 只留 `python-rpc`、`isolation` 只留 `process`，补齐 `entrypoint`/`capabilities`/`dependencies`/`config_schema`/`permissions` 并标注不支持字段；`admin` 角色改为 16 项显式权限（无 `*`，仍无 `message.read`）；`/actions/{actionId}`、`/actions/by-idempotency-key`、`/groups` 标记 `x-contract-status: not_implemented` 并写明本应语义与当前恒 `NOT_FOUND`/空页；Action 查询冻结 604800 秒终态保留、`EXPIRED` + `ERROR TIMEOUT`、缺失/过期/不可见 `NOT_FOUND`。
+- AsyncAPI：`/ws/messages` 与 `message.updated` 明确 `not_implemented`（无投影/无生产者/无 `message.read` 授予路径，订阅 4403）；`health.updated` 标记未实现；`plugin.updated.health_state` 标注 v1 不产生；补 `slow_consumer: 1013`；securityScheme 注明首帧 in-band 认证。
+- 文档：`doc/01-contracts.md` 增“契约实现状态”表、“权限/能力/订阅词表”、“标识符语法”、“优雅停机与 drain”、reserved/deprecated 规则，修正 gRPC 业务错误映射为 in-band；`doc/01-runtime-semantics.md` 增 Action REST 查询与 `ActionRouter::lookup` 的保留/EXPIRED 差异、背压分歧、drain 未知结果规则。
+
+实际运行的检查（本机）：
+
+- `python3 proto/tests/check_enum_consistency.py`：通过（10/10 枚举，名称/数值/顺序+API 词表）。
+- `python3 proto/tests/check_implementation_status.py`：通过（66 消息/261 字段覆盖、API 扩展、证据、文档状态表、词表）。
+- `python3 proto/tests/check_semantic_rules.py`：通过（ID/deadline/gRPC/reserved/drain/Action 查询/角色/manifest）。
+- `python3 scripts/quality/check-boundaries.py`：通过。
+- `ruby -c proto/tests/api_contract_test.rb`：语法通过；另将文件截断到 Core `--dump-policy` 之前实际运行了契约形状部分（频道/状态/角色/manifest/Action 保留期/运行时语义断言），通过——完整 Core 策略对照仍未运行。
+- `ruby -ryaml`：OpenAPI/AsyncAPI 可解析；新增 JSON 可解析；`bash -n` 覆盖 `proto/tests/*.sh`；`git diff --check` 通过。
+- 门禁判别力负例（临时副本，运行后清理）：枚举重编号、删除 `CONTRACT_STATUS` 注释、恢复 admin 通配、PluginManifest 增加 `cpp-rpc`、删除文档状态表行、删除频道 `x-contract-status` 均以退出码 1 失败；未修改仓库文件。
+- **未运行**：`./proto/tests/check_contracts.sh` 全流程、`descriptor_compatibility_test.sh` 6 负例、`action_contract_test.py`、`ruby proto/tests/api_contract_test.rb` 完整版、`protoc`/descriptor 生成、OpenAPI lint（redocly）、AsyncAPI parser、CTest/CMake 构建、`roundtrip.cc`（含新增 drain 帧断言）——本机无 protoc/cmake/node/uv/redocly/asyncapi parser 及 build 产物，故不能声称通过；CI 自动触发仍暂停，需人工 `workflow_dispatch` 复跑校准。
+
+跨模块交接（本分支不改实现）：
+
+- core：REST Action 记录 owner/168h 保留/EXPIRED；deadline ≤300 秒；target_source 字符集与入口统一；队列满返回可重试 `RATE_LIMITED`；Host 未知 operation 返回 `CAPABILITY_NOT_SUPPORTED`；关闭前发送 `ShutdownNotice`。
+- control-api：按 OpenAPI 新语义实现两个 Action 查询与 `/groups`；messages 频道保持 4403/停用声明；读取显式 admin 权限表。
+- adapter-nonebot：消费 `heartbeat_interval_seconds`；补 `MessageSent` 等生产端（当前契约标记未实现）；消费 `ShutdownNotice`（未收到时按未知结果）。
+- plugin-sdk：未知枚举值保留、冻结词表、drain 客户端流程；`doc/03-plugin-sdk.md` 更宽词表按本契约 v1 子集校正。
+- panel：不得依赖 `message.updated`；权限展示改用显式 admin 列表。
+- ci-cd：确认 `check_contracts.sh` 新依赖（descriptor 兼容工具、SDK 生成包）在 contracts job 中可用；恢复自动触发前先手动跑绿。
+
+未完成/风险：未运行项如上；`roundtrip.cc`/`api_contract_test.rb` 的新增断言未在本机执行；新增 `ShutdownNotice` 帧与 OpenAPI/AsyncAPI 变更尚未经远程 CI 验证；`doc/06-control-api.md`、`doc/03-plugin-sdk.md` 等接口文档按本任务范围未更新（已列为交接），与 `api/` 的同步需由对应分支完成。本记录不改变 `doc/18` 受保护基线，其附录 A 的既有差异仍只报告不修改。

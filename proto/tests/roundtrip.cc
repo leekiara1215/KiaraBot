@@ -102,6 +102,18 @@ int main() {
   assert(decoded_confirmation.event_ack().status() == kiarabot::v1::AdapterEventAck::PERSISTED);
   assert(kiarabot::v1::CoreToAdapter::descriptor()->FindFieldByName("event_ack")->number() == 4);
 
+  kiarabot::v1::CoreToAdapter drain;
+  drain.mutable_shutdown()->set_reason("deploy");
+  drain.mutable_shutdown()->set_drain_timeout_ms(5000);
+  encoded.clear();
+  assert(drain.SerializeToString(&encoded));
+  kiarabot::v1::CoreToAdapter decoded_drain;
+  assert(decoded_drain.ParseFromString(encoded));
+  assert(decoded_drain.body_case() == kiarabot::v1::CoreToAdapter::kShutdown);
+  assert(decoded_drain.shutdown().reason() == "deploy");
+  assert(decoded_drain.shutdown().drain_timeout_ms() == 5000);
+  assert(kiarabot::v1::CoreToAdapter::descriptor()->FindFieldByName("shutdown")->number() == 5);
+
   kiarabot::v1::CoreToPlugin stream_failure;
   stream_failure.mutable_error()->set_code(kiarabot::v1::PERMISSION_DENIED);
   encoded.clear();
@@ -110,6 +122,16 @@ int main() {
   assert(decoded_stream_failure.ParseFromString(encoded));
   assert(decoded_stream_failure.error().code() == kiarabot::v1::PERMISSION_DENIED);
   assert(kiarabot::v1::CoreToPlugin::descriptor()->FindFieldByName("error")->number() == 6);
+
+  kiarabot::v1::CoreToPlugin plugin_drain;
+  plugin_drain.mutable_shutdown()->set_reason("deploy");
+  encoded.clear();
+  assert(plugin_drain.SerializeToString(&encoded));
+  kiarabot::v1::CoreToPlugin decoded_plugin_drain;
+  assert(decoded_plugin_drain.ParseFromString(encoded));
+  assert(decoded_plugin_drain.body_case() == kiarabot::v1::CoreToPlugin::kShutdown);
+  assert(decoded_plugin_drain.shutdown().reason() == "deploy");
+  assert(kiarabot::v1::CoreToPlugin::descriptor()->FindFieldByName("shutdown")->number() == 8);
 
   kiarabot::v1::PluginToCore plugin_message;
   plugin_message.mutable_action()->mutable_action()->set_action_id("action-roundtrip");

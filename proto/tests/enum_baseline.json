@@ -1,0 +1,93 @@
+{
+  "_comment": [
+    "Frozen v1 enum name/number baseline. This is a reviewed contract fixture, not a build artifact.",
+    "check_enum_consistency.py fails when a published value is renamed or renumbered.",
+    "Adding a value is a compatible change and requires updating this file in the same commit.",
+    "proto/tests/README.md documents the review rule; descriptor comparison is not required to catch renumbering."
+  ],
+  "enums": {
+    "kiarabot.v1.ErrorCode": {
+      "ERROR_CODE_UNSPECIFIED": 0,
+      "INVALID_ARGUMENT": 1,
+      "UNAUTHENTICATED": 2,
+      "PERMISSION_DENIED": 3,
+      "NOT_FOUND": 4,
+      "CONFLICT": 5,
+      "CAPABILITY_NOT_SUPPORTED": 6,
+      "RATE_LIMITED": 7,
+      "TIMEOUT": 8,
+      "UPSTREAM_UNAVAILABLE": 9,
+      "PLUGIN_UNAVAILABLE": 10,
+      "INTERNAL": 11
+    },
+    "kiarabot.v1.HealthState": {
+      "HEALTH_STATE_UNSPECIFIED": 0,
+      "HEALTHY": 1,
+      "DEGRADED": 2,
+      "UNHEALTHY": 3
+    },
+    "kiarabot.v1.EventDeliveryMode": {
+      "EVENT_DELIVERY_MODE_UNSPECIFIED": 0,
+      "AT_LEAST_ONCE": 1
+    },
+    "kiarabot.v1.ConversationRef.Type": {
+      "TYPE_UNSPECIFIED": 0,
+      "PRIVATE": 1,
+      "GROUP": 2,
+      "CHANNEL": 3
+    },
+    "kiarabot.v1.MessageSegment.Type": {
+      "SEGMENT_TYPE_UNSPECIFIED": 0,
+      "TEXT": 1,
+      "IMAGE": 2,
+      "AUDIO": 3,
+      "VIDEO": 4,
+      "FILE": 5,
+      "MENTION": 6,
+      "REPLY": 7,
+      "LOCATION": 8,
+      "UNKNOWN": 9
+    },
+    "kiarabot.v1.GroupMemberChanged.ChangeType": {
+      "CHANGE_TYPE_UNSPECIFIED": 0,
+      "JOINED": 1,
+      "LEFT": 2,
+      "PROMOTED": 3,
+      "DEMOTED": 4
+    },
+    "kiarabot.v1.AdapterEventAck.Status": {
+      "STATUS_UNSPECIFIED": 0,
+      "PERSISTED": 1,
+      "DUPLICATE": 2,
+      "REJECTED": 3
+    },
+    "kiarabot.v1.ActionStatus": {
+      "ACTION_STATUS_UNSPECIFIED": 0,
+      "ACCEPTED": 1,
+      "SUCCEEDED": 2,
+      "FAILED": 3,
+      "EXPIRED": 4,
+      "CANCELLED": 5
+    },
+    "kiarabot.v1.PluginState": {
+      "PLUGIN_STATE_UNSPECIFIED": 0,
+      "PLUGIN_STATE_DISABLED": 1,
+      "PLUGIN_STATE_STARTING": 2,
+      "PLUGIN_STATE_READY": 3,
+      "PLUGIN_STATE_RUNNING": 4,
+      "PLUGIN_STATE_STOPPING": 5,
+      "PLUGIN_STATE_STOPPED": 6,
+      "PLUGIN_STATE_UNAVAILABLE": 7,
+      "PLUGIN_STATE_FAILED": 8
+    },
+    "kiarabot.v1.ScheduledTaskState": {
+      "SCHEDULED_TASK_STATE_UNSPECIFIED": 0,
+      "SCHEDULED_TASK_PENDING": 1,
+      "SCHEDULED_TASK_RUNNING": 2,
+      "SCHEDULED_TASK_RETRYING": 3,
+      "SCHEDULED_TASK_COMPLETED": 4,
+      "SCHEDULED_TASK_FAILED": 5,
+      "SCHEDULED_TASK_CANCELLED": 6
+    }
+  }
+}

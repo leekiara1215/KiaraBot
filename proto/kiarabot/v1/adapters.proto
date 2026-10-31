@@ -17,6 +17,7 @@ message RegisterAdapterRequest {
 
 message Account {
   string account_id = 1;
+  // CONTRACT_STATUS: not_implemented - no producer or consumer in v1.
   string display_name = 2;
   bool enabled = 3;
 }
@@ -44,6 +45,8 @@ message CoreToAdapter {
     ActionEnvelope action = 2;
     HeartbeatAck heartbeat_ack = 3;
     AdapterEventAck event_ack = 4;
+    // CONTRACT_STATUS: not_implemented - v1 Core closes the stream without this frame.
+    ShutdownNotice shutdown = 5;
   }
 }
 

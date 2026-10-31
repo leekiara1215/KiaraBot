@@ -10,6 +10,8 @@ import "kiarabot/v1/plugins.proto";
 // Failures carry serialized kiarabot.v1.Error in grpc::Status.error_details().
 // Unimplemented business operations fail explicitly (CAPABILITY_NOT_SUPPORTED,
 // gRPC INTERNAL); reading a request is never a durable acknowledgement.
+// v1 Core closes both streams without a ShutdownNotice frame; clients must treat
+// such a close as an unknown outcome (see doc/01-runtime-semantics.md).
 service AdapterBridge {
   rpc Connect(stream AdapterToCore) returns (stream CoreToAdapter);
 }

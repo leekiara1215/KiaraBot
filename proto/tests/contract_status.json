@@ -1,0 +1,686 @@
+{
+  "schema_version": 1,
+  "contract_version": "kiarabot.v1",
+  "status_values": [
+    "implemented",
+    "not_implemented",
+    "deprecated"
+  ],
+  "status_definitions": {
+    "implemented": "Produced and consumed by wired v1 code and covered by at least one test.",
+    "not_implemented": "Declared in the contract but not wired in v1. Clients must not rely on it; docs must list it in the status table.",
+    "deprecated": "Removed from the normative contract. Kept only to explain past documents and migration; never implement it as new behavior."
+  },
+  "categories": {
+    "proto_messages": {
+      "Account": "implemented",
+      "ActionEnvelope": "implemented",
+      "ActionResult": "implemented",
+      "AdapterEventAck": "implemented",
+      "AdapterStatusChanged": "not_implemented",
+      "AdapterToCore": "implemented",
+      "ApproveRequest": "not_implemented",
+      "Capability": "implemented",
+      "ConversationRef": "implemented",
+      "CoreToAdapter": "implemented",
+      "CoreToPlugin": "implemented",
+      "DeleteMessage": "not_implemented",
+      "Error": "implemented",
+      "EventEnvelope": "implemented",
+      "FriendRequest": "not_implemented",
+      "GroupMemberChanged": "not_implemented",
+      "Health": "not_implemented",
+      "Heartbeat": "implemented",
+      "HeartbeatAck": "implemented",
+      "HostRequest": "implemented",
+      "HostResponse": "implemented",
+      "KickMember": "not_implemented",
+      "LocalTaskTime": "implemented",
+      "Message": "implemented",
+      "MessageReceived": "implemented",
+      "MessageSegment": "implemented",
+      "MessageSent": "not_implemented",
+      "ModelChatRequest": "implemented",
+      "ModelChatResponse": "implemented",
+      "ModelMessage": "implemented",
+      "MuteMember": "not_implemented",
+      "PageInfo": "not_implemented",
+      "PageRequest": "not_implemented",
+      "PluginActionCancel": "implemented",
+      "PluginActionQuery": "implemented",
+      "PluginActionRequest": "implemented",
+      "PluginActionResponse": "implemented",
+      "PluginConfig": "implemented",
+      "PluginConfigAck": "implemented",
+      "PluginEventAck": "implemented",
+      "PluginHeartbeat": "implemented",
+      "PluginHeartbeatAck": "implemented",
+      "PluginManifest": "implemented",
+      "PluginStatusChanged": "not_implemented",
+      "PluginToCore": "implemented",
+      "ReactMessage": "not_implemented",
+      "RegisterAdapterRequest": "implemented",
+      "RegisterAdapterResponse": "implemented",
+      "RegisterPluginRequest": "implemented",
+      "RegisterPluginResponse": "implemented",
+      "ScheduleTask": "not_implemented",
+      "SendMessage": "implemented",
+      "ShutdownNotice": "not_implemented",
+      "SourceRef": "implemented",
+      "StorageDeleteRequest": "implemented",
+      "StorageDeleteResponse": "implemented",
+      "StorageGetRequest": "implemented",
+      "StorageGetResponse": "implemented",
+      "StorageSetRequest": "implemented",
+      "StorageSetResponse": "implemented",
+      "Subject": "implemented",
+      "TaskCancelRequest": "implemented",
+      "TaskCreateRequest": "implemented",
+      "TaskGetRequest": "implemented",
+      "TaskResponse": "implemented",
+      "TimerTriggered": "implemented"
+    },
+    "proto_fields": {
+      "Account.account_id": "implemented",
+      "Account.display_name": "not_implemented",
+      "Account.enabled": "implemented",
+      "ActionEnvelope.action_id": "implemented",
+      "ActionEnvelope.approve_request": "not_implemented",
+      "ActionEnvelope.deadline": "implemented",
+      "ActionEnvelope.delete_message": "not_implemented",
+      "ActionEnvelope.idempotency_key": "implemented",
+      "ActionEnvelope.kick_member": "not_implemented",
+      "ActionEnvelope.mute_member": "not_implemented",
+      "ActionEnvelope.react_message": "not_implemented",
+      "ActionEnvelope.requested_by": "implemented",
+      "ActionEnvelope.schedule_task": "not_implemented",
+      "ActionEnvelope.send_message": "implemented",
+      "ActionEnvelope.target": "implemented",
+      "ActionEnvelope.target_source": "implemented",
+      "ActionEnvelope.trace_id": "implemented",
+      "ActionResult.action_id": "implemented",
+      "ActionResult.completed_at": "implemented",
+      "ActionResult.error": "implemented",
+      "ActionResult.platform_message_id": "implemented",
+      "ActionResult.status": "implemented",
+      "AdapterEventAck.error": "implemented",
+      "AdapterEventAck.event_id": "implemented",
+      "AdapterEventAck.retry_after_ms": "implemented",
+      "AdapterEventAck.status": "implemented",
+      "AdapterEventAck.trace_id": "implemented",
+      "AdapterStatusChanged.adapter_id": "not_implemented",
+      "AdapterStatusChanged.reason": "not_implemented",
+      "AdapterStatusChanged.state": "not_implemented",
+      "AdapterToCore.action_result": "implemented",
+      "AdapterToCore.event": "implemented",
+      "AdapterToCore.heartbeat": "implemented",
+      "AdapterToCore.register": "implemented",
+      "ApproveRequest.approve": "not_implemented",
+      "ApproveRequest.reason": "not_implemented",
+      "ApproveRequest.request_id": "not_implemented",
+      "Capability.name": "implemented",
+      "Capability.supported": "implemented",
+      "Capability.version": "implemented",
+      "ConversationRef.account_id": "implemented",
+      "ConversationRef.id": "implemented",
+      "ConversationRef.type": "implemented",
+      "CoreToAdapter.action": "implemented",
+      "CoreToAdapter.event_ack": "implemented",
+      "CoreToAdapter.heartbeat_ack": "implemented",
+      "CoreToAdapter.register_result": "implemented",
+      "CoreToAdapter.shutdown": "not_implemented",
+      "CoreToPlugin.action_response": "implemented",
+      "CoreToPlugin.config": "implemented",
+      "CoreToPlugin.error": "implemented",
+      "CoreToPlugin.event": "implemented",
+      "CoreToPlugin.heartbeat_ack": "implemented",
+      "CoreToPlugin.host_response": "implemented",
+      "CoreToPlugin.register_result": "implemented",
+      "CoreToPlugin.shutdown": "not_implemented",
+      "DeleteMessage.message_id": "not_implemented",
+      "Error.code": "implemented",
+      "Error.details": "not_implemented",
+      "Error.message": "implemented",
+      "Error.request_id": "implemented",
+      "Error.retryable": "implemented",
+      "Error.trace_id": "implemented",
+      "EventEnvelope.adapter_status_changed": "not_implemented",
+      "EventEnvelope.delivery_mode": "implemented",
+      "EventEnvelope.event_id": "implemented",
+      "EventEnvelope.friend_request": "not_implemented",
+      "EventEnvelope.group_member_changed": "not_implemented",
+      "EventEnvelope.message_received": "implemented",
+      "EventEnvelope.message_sent": "not_implemented",
+      "EventEnvelope.occurred_at": "implemented",
+      "EventEnvelope.plugin_status_changed": "not_implemented",
+      "EventEnvelope.schema_version": "implemented",
+      "EventEnvelope.sequence": "implemented",
+      "EventEnvelope.source": "implemented",
+      "EventEnvelope.subject": "implemented",
+      "EventEnvelope.timer_triggered": "implemented",
+      "EventEnvelope.trace_id": "implemented",
+      "FriendRequest.comment": "not_implemented",
+      "FriendRequest.user_id": "not_implemented",
+      "GroupMemberChanged.change_type": "not_implemented",
+      "GroupMemberChanged.group_id": "not_implemented",
+      "GroupMemberChanged.user_id": "not_implemented",
+      "Health.checked_at": "not_implemented",
+      "Health.component": "not_implemented",
+      "Health.dependencies": "not_implemented",
+      "Health.state": "not_implemented",
+      "Health.version": "not_implemented",
+      "Heartbeat.instance_id": "implemented",
+      "Heartbeat.sent_at_unix_ms": "implemented",
+      "HeartbeatAck.received_at_unix_ms": "implemented",
+      "HostRequest.deadline": "implemented",
+      "HostRequest.idempotency_key": "implemented",
+      "HostRequest.model_chat": "implemented",
+      "HostRequest.request_id": "implemented",
+      "HostRequest.storage_delete": "implemented",
+      "HostRequest.storage_get": "implemented",
+      "HostRequest.storage_set": "implemented",
+      "HostRequest.task_cancel": "implemented",
+      "HostRequest.task_create": "implemented",
+      "HostRequest.task_get": "implemented",
+      "HostRequest.trace_id": "implemented",
+      "HostResponse.error": "implemented",
+      "HostResponse.model_chat": "implemented",
+      "HostResponse.request_id": "implemented",
+      "HostResponse.storage_delete": "implemented",
+      "HostResponse.storage_get": "implemented",
+      "HostResponse.storage_set": "implemented",
+      "HostResponse.task_cancel": "implemented",
+      "HostResponse.task_create": "implemented",
+      "HostResponse.task_get": "implemented",
+      "KickMember.group_id": "not_implemented",
+      "KickMember.reason": "not_implemented",
+      "KickMember.user_id": "not_implemented",
+      "LocalTaskTime.day": "implemented",
+      "LocalTaskTime.hour": "implemented",
+      "LocalTaskTime.minute": "implemented",
+      "LocalTaskTime.month": "implemented",
+      "LocalTaskTime.second": "implemented",
+      "LocalTaskTime.time_zone": "implemented",
+      "LocalTaskTime.year": "implemented",
+      "Message.plain_text": "implemented",
+      "Message.segments": "implemented",
+      "MessageReceived.conversation": "implemented",
+      "MessageReceived.mentions": "implemented",
+      "MessageReceived.message": "implemented",
+      "MessageReceived.message_id": "implemented",
+      "MessageReceived.reply_to_message_id": "implemented",
+      "MessageReceived.sender_id": "implemented",
+      "MessageSegment.id": "implemented",
+      "MessageSegment.metadata": "implemented",
+      "MessageSegment.text": "implemented",
+      "MessageSegment.type": "implemented",
+      "MessageSegment.uri": "implemented",
+      "MessageSent.action_id": "not_implemented",
+      "MessageSent.conversation": "not_implemented",
+      "MessageSent.message": "not_implemented",
+      "MessageSent.message_id": "not_implemented",
+      "ModelChatRequest.messages": "implemented",
+      "ModelChatRequest.model": "implemented",
+      "ModelChatResponse.input_tokens": "implemented",
+      "ModelChatResponse.output_tokens": "implemented",
+      "ModelChatResponse.text": "implemented",
+      "ModelMessage.role": "implemented",
+      "ModelMessage.text": "implemented",
+      "MuteMember.duration_seconds": "not_implemented",
+      "MuteMember.group_id": "not_implemented",
+      "MuteMember.user_id": "not_implemented",
+      "PageInfo.next_page_token": "not_implemented",
+      "PageInfo.page_size": "not_implemented",
+      "PageRequest.page_size": "not_implemented",
+      "PageRequest.page_token": "not_implemented",
+      "PluginActionCancel.action_id": "implemented",
+      "PluginActionCancel.deadline": "implemented",
+      "PluginActionCancel.request_id": "implemented",
+      "PluginActionCancel.trace_id": "implemented",
+      "PluginActionQuery.action_id": "implemented",
+      "PluginActionQuery.deadline": "implemented",
+      "PluginActionQuery.idempotency_key": "implemented",
+      "PluginActionQuery.request_id": "implemented",
+      "PluginActionQuery.trace_id": "implemented",
+      "PluginActionRequest.action": "implemented",
+      "PluginActionRequest.request_id": "implemented",
+      "PluginActionResponse.error": "implemented",
+      "PluginActionResponse.request_id": "implemented",
+      "PluginActionResponse.result": "implemented",
+      "PluginConfig.apply_timeout_ms": "implemented",
+      "PluginConfig.delivery_id": "implemented",
+      "PluginConfig.values": "implemented",
+      "PluginConfig.version": "implemented",
+      "PluginConfigAck.accepted": "implemented",
+      "PluginConfigAck.delivery_id": "implemented",
+      "PluginConfigAck.error": "implemented",
+      "PluginConfigAck.version": "implemented",
+      "PluginEventAck.accepted": "implemented",
+      "PluginEventAck.error": "implemented",
+      "PluginEventAck.event_id": "implemented",
+      "PluginHeartbeat.instance_id": "implemented",
+      "PluginHeartbeat.sent_at_unix_ms": "implemented",
+      "PluginHeartbeatAck.received_at_unix_ms": "implemented",
+      "PluginManifest.api_version": "implemented",
+      "PluginManifest.capabilities": "implemented",
+      "PluginManifest.config_schema": "not_implemented",
+      "PluginManifest.dependencies": "not_implemented",
+      "PluginManifest.entrypoint": "implemented",
+      "PluginManifest.id": "implemented",
+      "PluginManifest.isolation": "implemented",
+      "PluginManifest.name": "implemented",
+      "PluginManifest.ordered": "implemented",
+      "PluginManifest.permissions": "implemented",
+      "PluginManifest.runtime": "implemented",
+      "PluginManifest.version": "implemented",
+      "PluginStatusChanged.lifecycle_state": "not_implemented",
+      "PluginStatusChanged.plugin_id": "not_implemented",
+      "PluginStatusChanged.reason": "not_implemented",
+      "PluginStatusChanged.state": "not_implemented",
+      "PluginStatusChanged.version": "not_implemented",
+      "PluginToCore.action": "implemented",
+      "PluginToCore.action_cancel": "implemented",
+      "PluginToCore.action_query": "implemented",
+      "PluginToCore.config_ack": "implemented",
+      "PluginToCore.event_ack": "implemented",
+      "PluginToCore.heartbeat": "implemented",
+      "PluginToCore.host_request": "implemented",
+      "PluginToCore.register": "implemented",
+      "ReactMessage.message_id": "not_implemented",
+      "ReactMessage.reaction": "not_implemented",
+      "RegisterAdapterRequest.accounts": "implemented",
+      "RegisterAdapterRequest.adapter_id": "implemented",
+      "RegisterAdapterRequest.capabilities": "implemented",
+      "RegisterAdapterRequest.implementation": "implemented",
+      "RegisterAdapterRequest.implementation_version": "implemented",
+      "RegisterAdapterRequest.protocol_version": "implemented",
+      "RegisterAdapterResponse.accepted": "implemented",
+      "RegisterAdapterResponse.assigned_instance_id": "implemented",
+      "RegisterAdapterResponse.error": "implemented",
+      "RegisterAdapterResponse.heartbeat_interval_seconds": "implemented",
+      "RegisterAdapterResponse.required_protocol_version": "implemented",
+      "RegisterPluginRequest.instance_id": "implemented",
+      "RegisterPluginRequest.manifest": "implemented",
+      "RegisterPluginRequest.supported_features": "implemented",
+      "RegisterPluginResponse.accepted": "implemented",
+      "RegisterPluginResponse.enabled_features": "implemented",
+      "RegisterPluginResponse.error": "implemented",
+      "RegisterPluginResponse.granted_permissions": "implemented",
+      "RegisterPluginResponse.required_api_version": "implemented",
+      "ScheduleTask.payload": "not_implemented",
+      "ScheduleTask.schedule": "not_implemented",
+      "ScheduleTask.task_id": "not_implemented",
+      "SendMessage.conversation": "implemented",
+      "SendMessage.message": "implemented",
+      "SendMessage.reply": "not_implemented",
+      "SendMessage.reply_to_message_id": "not_implemented",
+      "ShutdownNotice.drain_timeout_ms": "not_implemented",
+      "ShutdownNotice.reason": "not_implemented",
+      "SourceRef.account_id": "implemented",
+      "SourceRef.adapter_id": "implemented",
+      "SourceRef.adapter_instance_id": "implemented",
+      "StorageDeleteRequest.key": "implemented",
+      "StorageGetRequest.key": "implemented",
+      "StorageGetResponse.value": "implemented",
+      "StorageSetRequest.expires_at": "implemented",
+      "StorageSetRequest.key": "implemented",
+      "StorageSetRequest.value": "implemented",
+      "Subject.conversation_id": "implemented",
+      "Subject.group_id": "implemented",
+      "Subject.user_id": "implemented",
+      "TaskCancelRequest.task_id": "implemented",
+      "TaskCreateRequest.local_time": "implemented",
+      "TaskCreateRequest.payload": "implemented",
+      "TaskCreateRequest.run_at": "implemented",
+      "TaskCreateRequest.target_conversation": "implemented",
+      "TaskCreateRequest.task_id": "implemented",
+      "TaskGetRequest.task_id": "implemented",
+      "TaskResponse.next_run_at": "implemented",
+      "TaskResponse.state": "implemented",
+      "TaskResponse.task_id": "implemented",
+      "TimerTriggered.owner_plugin_id": "implemented",
+      "TimerTriggered.payload": "implemented",
+      "TimerTriggered.scheduled_at": "implemented",
+      "TimerTriggered.task_id": "implemented"
+    },
+    "event_payloads": {
+      "EventEnvelope.message_received": "implemented",
+      "EventEnvelope.message_sent": "not_implemented",
+      "EventEnvelope.group_member_changed": "not_implemented",
+      "EventEnvelope.friend_request": "not_implemented",
+      "EventEnvelope.timer_triggered": "implemented",
+      "EventEnvelope.adapter_status_changed": "not_implemented",
+      "EventEnvelope.plugin_status_changed": "not_implemented"
+    },
+    "action_payloads": {
+      "ActionEnvelope.send_message": "implemented",
+      "ActionEnvelope.delete_message": "not_implemented",
+      "ActionEnvelope.react_message": "not_implemented",
+      "ActionEnvelope.mute_member": "not_implemented",
+      "ActionEnvelope.kick_member": "not_implemented",
+      "ActionEnvelope.approve_request": "not_implemented",
+      "ActionEnvelope.schedule_task": "not_implemented"
+    },
+    "host_operations": {
+      "HostRequest.model_chat": "implemented",
+      "HostRequest.storage_get": "implemented",
+      "HostRequest.storage_set": "implemented",
+      "HostRequest.storage_delete": "implemented",
+      "HostRequest.task_create": "implemented",
+      "HostRequest.task_cancel": "implemented",
+      "HostRequest.task_get": "implemented"
+    },
+    "host_results": {
+      "HostResponse.model_chat": "implemented",
+      "HostResponse.storage_get": "implemented",
+      "HostResponse.storage_set": "implemented",
+      "HostResponse.storage_delete": "implemented",
+      "HostResponse.task_create": "implemented",
+      "HostResponse.task_cancel": "implemented",
+      "HostResponse.task_get": "implemented"
+    },
+    "enum_values": {
+      "MessageSegment.Type.AUDIO": "not_implemented",
+      "MessageSegment.Type.VIDEO": "not_implemented",
+      "MessageSegment.Type.FILE": "not_implemented",
+      "MessageSegment.Type.LOCATION": "not_implemented",
+      "ConversationRef.Type.CHANNEL": "not_implemented",
+      "PluginState.PLUGIN_STATE_STARTING": "not_implemented",
+      "PluginState.PLUGIN_STATE_STOPPING": "not_implemented"
+    },
+    "channels": {
+      "channels.control": "implemented",
+      "channels.health": "implemented",
+      "channels.logs": "implemented",
+      "channels.adapters": "implemented",
+      "channels.plugins": "implemented",
+      "channels.tasks": "implemented",
+      "channels.messages": "not_implemented"
+    },
+    "stream_events": {
+      "events.health.updated": "not_implemented",
+      "events.log.updated": "implemented",
+      "events.adapter.updated": "implemented",
+      "events.plugin.updated": "implemented",
+      "events.task.updated": "implemented",
+      "events.message.updated": "not_implemented"
+    },
+    "operations": {
+      "operations.getProcessLiveness": "implemented",
+      "operations.getProcessReadiness": "implemented",
+      "operations.getCurrentPrincipal": "implemented",
+      "operations.listSessions": "implemented",
+      "operations.revokeSession": "implemented",
+      "operations.login": "implemented",
+      "operations.refreshToken": "implemented",
+      "operations.getHealth": "implemented",
+      "operations.listAdapters": "implemented",
+      "operations.listPlugins": "implemented",
+      "operations.validatePlugin": "implemented",
+      "operations.enablePlugin": "implemented",
+      "operations.disablePlugin": "implemented",
+      "operations.getPluginConfig": "implemented",
+      "operations.updatePluginConfig": "implemented",
+      "operations.getPluginHealth": "implemented",
+      "operations.listAuditEntries": "implemented",
+      "operations.listBots": "implemented",
+      "operations.listModels": "implemented",
+      "operations.listGroups": "not_implemented",
+      "operations.listUsers": "implemented",
+      "operations.listTasks": "implemented",
+      "operations.getActionByIdempotencyKey": "not_implemented",
+      "operations.getActionResult": "not_implemented",
+      "operations.listLogs": "implemented"
+    },
+    "semantic_rules": {
+      "semantic.action.deadline_max_300s": "not_implemented",
+      "semantic.action.target_source_id_charset": "not_implemented",
+      "semantic.adapter.backpressure_retryable_rate_limited": "not_implemented",
+      "semantic.host.unknown_operation_error": "not_implemented",
+      "semantic.transport.graceful_shutdown": "not_implemented",
+      "semantic.grpc.business_error_mapping": "deprecated",
+      "semantic.rest.action_query_terminal_retention": "not_implemented",
+      "semantic.rest.action_query_deadline_expired": "not_implemented",
+      "semantic.rest.admin_role_wildcard": "deprecated",
+      "semantic.stream.message_read_grant": "not_implemented",
+      "semantic.stream.plugin_updated_health_state": "not_implemented"
+    }
+  },
+  "evidence": {
+    "EventEnvelope.message_sent": [
+      "adapters/nonebot/src/kiarabot_adapter_nonebot/client.py",
+      "adapters/nonebot/src/kiarabot_adapter_nonebot/mapper.py"
+    ],
+    "EventEnvelope.group_member_changed": [
+      "adapters/nonebot/src/kiarabot_adapter_nonebot/client.py"
+    ],
+    "EventEnvelope.friend_request": [
+      "adapters/nonebot/src/kiarabot_adapter_nonebot/client.py"
+    ],
+    "EventEnvelope.adapter_status_changed": [
+      "adapters/nonebot/src/kiarabot_adapter_nonebot/client.py"
+    ],
+    "EventEnvelope.plugin_status_changed": [
+      "core/src/application/plugin_hub.cpp",
+      "core/src/application/adapter_ingress.cpp"
+    ],
+    "ActionEnvelope.delete_message": [
+      "core/src/application/action_router.cpp",
+      "adapters/nonebot/src/kiarabot_adapter_nonebot/actions.py"
+    ],
+    "ActionEnvelope.react_message": [
+      "core/src/application/action_router.cpp",
+      "adapters/nonebot/src/kiarabot_adapter_nonebot/actions.py"
+    ],
+    "ActionEnvelope.mute_member": [
+      "core/src/application/action_router.cpp",
+      "adapters/nonebot/src/kiarabot_adapter_nonebot/actions.py"
+    ],
+    "ActionEnvelope.kick_member": [
+      "core/src/application/action_router.cpp",
+      "adapters/nonebot/src/kiarabot_adapter_nonebot/actions.py"
+    ],
+    "ActionEnvelope.approve_request": [
+      "core/src/application/action_router.cpp",
+      "adapters/nonebot/src/kiarabot_adapter_nonebot/actions.py"
+    ],
+    "ActionEnvelope.schedule_task": [
+      "core/src/application/action_router.cpp",
+      "adapters/nonebot/src/kiarabot_adapter_nonebot/actions.py"
+    ],
+    "MessageSegment.Type.AUDIO": [
+      "adapters/nonebot/src/kiarabot_adapter_nonebot/mapper.py"
+    ],
+    "MessageSegment.Type.VIDEO": [
+      "adapters/nonebot/src/kiarabot_adapter_nonebot/mapper.py"
+    ],
+    "MessageSegment.Type.FILE": [
+      "adapters/nonebot/src/kiarabot_adapter_nonebot/mapper.py"
+    ],
+    "MessageSegment.Type.LOCATION": [
+      "adapters/nonebot/src/kiarabot_adapter_nonebot/mapper.py"
+    ],
+    "ConversationRef.Type.CHANNEL": [
+      "core/src/application/action_router.cpp",
+      "adapters/nonebot/src/kiarabot_adapter_nonebot/actions.py"
+    ],
+    "channels.messages": [
+      "control/api/src/event_stream.cpp",
+      "control/api/src/http_server.cpp",
+      "core/src/application/control_application.cpp"
+    ],
+    "events.health.updated": [
+      "core/src/application/control_service.cpp",
+      "control/api/src/event_stream.cpp"
+    ],
+    "events.message.updated": [
+      "control/api/src/event_stream.cpp",
+      "core/src/application/control_service.cpp"
+    ],
+    "operations.listGroups": [
+      "core/src/application/control_service.cpp"
+    ],
+    "operations.getActionByIdempotencyKey": [
+      "core/src/application/control_service.cpp",
+      "core/src/application/action_router.cpp"
+    ],
+    "operations.getActionResult": [
+      "core/src/application/control_service.cpp",
+      "core/src/application/action_router.cpp"
+    ],
+    "semantic.action.deadline_max_300s": [
+      "core/src/application/action_router.cpp"
+    ],
+    "semantic.action.target_source_id_charset": [
+      "core/src/application/action_router.cpp",
+      "core/src/application/adapter_ingress.cpp"
+    ],
+    "semantic.adapter.backpressure_retryable_rate_limited": [
+      "core/src/application/adapter_ingress.cpp",
+      "core/src/runtime/bridge_server.cpp"
+    ],
+    "semantic.host.unknown_operation_error": [
+      "core/include/kiarabot/core/application/host_validation.hpp"
+    ],
+    "semantic.transport.graceful_shutdown": [
+      "core/src/runtime/bridge_server.cpp",
+      "proto/kiarabot/v1/common.proto"
+    ],
+    "semantic.grpc.business_error_mapping": [
+      "core/src/runtime/bridge_server.cpp"
+    ],
+    "semantic.rest.action_query_terminal_retention": [
+      "core/src/application/control_service.cpp",
+      "core/src/application/action_router.cpp"
+    ],
+    "semantic.rest.action_query_deadline_expired": [
+      "core/src/application/control_service.cpp",
+      "core/src/application/action_router.cpp"
+    ],
+    "semantic.rest.admin_role_wildcard": [
+      "api/openapi.yaml",
+      "core/src/application/control_application.cpp"
+    ],
+    "semantic.stream.message_read_grant": [
+      "core/src/application/control_application.cpp",
+      "control/api/src/event_stream.cpp"
+    ],
+    "semantic.stream.plugin_updated_health_state": [
+      "control/api/src/event_stream.cpp"
+    ],
+    "Error.details": [
+      "core/src/application/control_service.cpp"
+    ],
+    "Account.display_name": [
+      "adapters/nonebot/src/kiarabot_adapter_nonebot/client.py"
+    ],
+    "SendMessage.reply": [
+      "core/src/application/action_router.cpp",
+      "adapters/nonebot/src/kiarabot_adapter_nonebot/actions.py"
+    ],
+    "SendMessage.reply_to_message_id": [
+      "core/src/application/action_router.cpp",
+      "adapters/nonebot/src/kiarabot_adapter_nonebot/actions.py"
+    ],
+    "PluginManifest.dependencies": [
+      "core/src/application/plugin_hub.cpp"
+    ],
+    "PluginManifest.config_schema": [
+      "core/src/application/plugin_hub.cpp"
+    ],
+    "CoreToAdapter.shutdown": [
+      "core/src/runtime/bridge_server.cpp"
+    ],
+    "CoreToPlugin.shutdown": [
+      "core/src/runtime/bridge_server.cpp"
+    ],
+    "PageRequest.page_size": [
+      "core/src/application/control_service.cpp",
+      "api/openapi.yaml"
+    ],
+    "PageRequest.page_token": [
+      "core/src/application/control_service.cpp",
+      "api/openapi.yaml"
+    ],
+    "PageInfo.next_page_token": [
+      "core/src/application/control_service.cpp",
+      "api/openapi.yaml"
+    ],
+    "PageInfo.page_size": [
+      "core/src/application/control_service.cpp",
+      "api/openapi.yaml"
+    ],
+    "Health.state": [
+      "core/src/application/control_service.cpp",
+      "api/openapi.yaml"
+    ],
+    "Health.component": [
+      "core/src/application/control_service.cpp",
+      "api/openapi.yaml"
+    ],
+    "Health.version": [
+      "core/src/application/control_service.cpp",
+      "api/openapi.yaml"
+    ],
+    "Health.checked_at": [
+      "core/src/application/control_service.cpp",
+      "api/openapi.yaml"
+    ],
+    "Health.dependencies": [
+      "core/src/application/control_service.cpp",
+      "api/openapi.yaml"
+    ],
+    "ShutdownNotice.reason": [
+      "core/src/runtime/bridge_server.cpp",
+      "doc/01-runtime-semantics.md"
+    ],
+    "ShutdownNotice.drain_timeout_ms": [
+      "core/src/runtime/bridge_server.cpp",
+      "doc/01-runtime-semantics.md"
+    ],
+    "PluginState.PLUGIN_STATE_STARTING": [
+      "core/include/kiarabot/core/domain/runtime_engine.hpp"
+    ],
+    "PluginState.PLUGIN_STATE_STOPPING": [
+      "core/include/kiarabot/core/domain/runtime_engine.hpp"
+    ]
+  },
+  "vocabulary": {
+    "features": [
+      "action.result.v1",
+      "host.storage.v1",
+      "host.model.v1",
+      "host.tasks.v1",
+      "plugin.config.v1"
+    ],
+    "subscriptions": [
+      "event.message.received",
+      "event.message.sent",
+      "event.group.member.changed",
+      "event.friend.request",
+      "event.adapter.status.changed",
+      "event.timer.triggered"
+    ],
+    "permissions": [
+      "message.read",
+      "message.send",
+      "member.read",
+      "request.read",
+      "adapter.read",
+      "task.schedule",
+      "model.chat",
+      "storage.namespace"
+    ],
+    "adapter_capabilities": [
+      "action.send_message.text.v1"
+    ]
+  },
+  "schema_enum_implemented_values": {
+    "PluginManifest.runtime": [
+      "python-rpc"
+    ],
+    "PluginManifest.isolation": [
+      "process"
+    ]
+  }
+}

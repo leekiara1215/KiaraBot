@@ -8,35 +8,54 @@ import "kiarabot/v1/common.proto";
 message ActionEnvelope {
   string action_id = 1;
   string idempotency_key = 2;
+  // Future UTC deadline. v1 documents a 300 second upper bound; the bound is not
+  // enforced yet, so a longer deadline never expires early (contract status: not_implemented).
   google.protobuf.Timestamp deadline = 3;
   string trace_id = 4;
   string requested_by = 5;
   SourceRef target_source = 6;
+  // Only target.conversation_id is consumed in v1; target.user_id/group_id are unused.
   Subject target = 7;
 
   oneof payload {
     SendMessage send_message = 20;
+    // CONTRACT_STATUS: not_implemented - Core and the adapter reject this payload (CAPABILITY_NOT_SUPPORTED).
     DeleteMessage delete_message = 21;
+    // CONTRACT_STATUS: not_implemented - Core and the adapter reject this payload (CAPABILITY_NOT_SUPPORTED).
     ReactMessage react_message = 22;
+    // CONTRACT_STATUS: not_implemented - Core and the adapter reject this payload (CAPABILITY_NOT_SUPPORTED).
     MuteMember mute_member = 23;
+    // CONTRACT_STATUS: not_implemented - Core and the adapter reject this payload (CAPABILITY_NOT_SUPPORTED).
     KickMember kick_member = 24;
+    // CONTRACT_STATUS: not_implemented - Core and the adapter reject this payload (CAPABILITY_NOT_SUPPORTED).
     ApproveRequest approve_request = 25;
+    // CONTRACT_STATUS: not_implemented - Core and the adapter reject this payload (CAPABILITY_NOT_SUPPORTED).
     ScheduleTask schedule_task = 26;
   }
 }
 
+// v1 subset: group/private conversations with plain text only. Non-text segments,
+// reply/reply_to_message_id and channel conversations are rejected explicitly.
 message SendMessage {
   ConversationRef conversation = 1;
   Message message = 2;
+  // CONTRACT_STATUS: not_implemented - Core and the adapter reject reply=true.
   bool reply = 3;
+  // CONTRACT_STATUS: not_implemented - Core and the adapter reject a non-empty reply target.
   string reply_to_message_id = 4;
 }
 
+// CONTRACT_STATUS: not_implemented - the remaining Action payloads are rejected in v1.
 message DeleteMessage { string message_id = 1; }
+// CONTRACT_STATUS: not_implemented - the remaining Action payloads are rejected in v1.
 message ReactMessage { string message_id = 1; string reaction = 2; }
+// CONTRACT_STATUS: not_implemented - the remaining Action payloads are rejected in v1.
 message MuteMember { string group_id = 1; string user_id = 2; uint32 duration_seconds = 3; }
+// CONTRACT_STATUS: not_implemented - the remaining Action payloads are rejected in v1.
 message KickMember { string group_id = 1; string user_id = 2; string reason = 3; }
+// CONTRACT_STATUS: not_implemented - the remaining Action payloads are rejected in v1.
 message ApproveRequest { string request_id = 1; bool approve = 2; string reason = 3; }
+// CONTRACT_STATUS: not_implemented - the remaining Action payloads are rejected in v1.
 message ScheduleTask { string task_id = 1; string schedule = 2; bytes payload = 3; }
 
 enum ActionStatus {

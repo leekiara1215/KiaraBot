@@ -39,6 +39,8 @@ T03a 将逐插件状态机接入 PluginBridge。订阅来自已授权活动连�
 - Core 在接收事件的同一事务中按当时的订阅快照为每个目标插件创建独立投递记录，重复事件不会追加目标；`ordered=true` 时，同一插件、同一非空会话的较早记录在 ACK 或死信之前阻塞后续记录，即使正在等待重试；不同插件及不同会话互不阻塞。缺少会话标识时无法建立会话顺序，宿主应提供稳定会话键；
 - 队列达到上限时暂停读取非关键事件并返回 `RATE_LIMITED`。
 
+  背压契约要求该 `RATE_LIMITED` 可重试（`retryable=true`、`retry_after_ms=1000`）并关闭本次流；v1 实现返回 `retryable=false` 且不关流，登记为 `semantic.adapter.backpressure_retryable_rate_limited` = `not_implemented`。适配器仍必须按“确认丢失 = 未知结果”处理：保留未确认事件，退避后重连重投，不能因不可重试标记丢弃事件。
+
 ## 确认和重试
 
 ```text
@@ -73,12 +75,28 @@ T04a 插件 Action 使用 action.result.v1 显式协商和 request_id 关联。�
 - 网络超时不等于平台执行失败，必须通过幂等键查询最终结果。
 - 查询接口返回 `ACCEPTED` 表示尚未终结；`SUCCEEDED`、`FAILED`、`EXPIRED`、`CANCELLED` 是终结状态。终结结果保留 7 天；查询超时不改变 Action 状态。按幂等键查询受已认证调用方的授权范围限制。
 
+### REST 查询与 Bridge 查询的保留/EXPIRED 语义（v1 状态）
+
+Bridge 的 `ActionRouter::lookup` 是当前唯一实现的 Action 查询：按认证调用方作用域匹配 `action_id` 或幂等键；非 `ACCEPTED` 记录从最后一次状态更新起超过 168 小时返回 `NOT_FOUND`；`ACCEPTED` 且 `deadline <= now` 时先迁移为 `EXPIRED`（`error.code = TIMEOUT`）并提交审计，再返回结果；不存在/不可见/保留期外统一 `NOT_FOUND`。查询超时不改变状态。
+
+REST 的 `GET /actions/{actionId}` 与 `GET /actions/by-idempotency-key` 必须读取同一份 Action 记录集并复用同一套 168 小时保留与到期 `EXPIRED` 规则，不得维护副本或另行定义保留期。v1 控制面查询尚未接线：Core 没有创建 `control/<user>` owner 记录的写入方，REST 分支也没有保留期/过期迁移，因此当前对所有真实 Action 返回 `NOT_FOUND`。该差异登记为 `semantic.rest.action_query_terminal_retention` / `semantic.rest.action_query_deadline_expired` = `not_implemented`；控制面接线时以本节作为契约测试断言，且不得把 `NOT_FOUND` 解释为平台执行失败。
+
 ## 插件重连
 
 - 插件断开后进入 `UNAVAILABLE`，Core 暂停投递并保留未确认事件；
 - 重新注册且 API 版本和权限一致后恢复；
 - 断线时间从首次断线开始计，不因重复断线通知重置；达到 5 分钟仍未恢复则为 `FAILED`，由策略决定是否重启。
 - 宿主须定期调用 `update_plugin_recovery()` 推进断线超时；Runtime 不自行启动后台线程。
+
+## 优雅停机与 drain
+
+v1 Core 关闭服务时取消等待中的流并等待处理器退出；两个 Bridge 都不会发送 `ShutdownNotice`（`CoreToAdapter.shutdown=5`、`CoreToPlugin.shutdown=8` 已定义，状态为 `not_implemented`）。客户端收到流结束、`CANCELLED`、EOF 或连接关闭时，一律视为**未知结果**：
+
+- 不得推断事件未入库、插件 ACK 未生效或 Action 未执行；
+- 重连后重新注册，按 `event_id` 幂等重投未确认事件、按认证调用方 + 幂等键查询未确认 Action；
+- 正常运维重启与故障断开在 v1 不可区分，重试必须幂等。
+
+将来 Core 在关闭前发送 `ShutdownNotice` 时，`drain_timeout_ms` 给出在途处理上限：客户端停止领取新工作，在上限内完成并确认在途请求，然后正常关闭。未收到该帧的客户端行为与 v1 相同；旧客户端必须忽略未知 oneof 成员。
 
 ## 控制面板流恢复
 
