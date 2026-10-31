@@ -16,6 +16,7 @@ from .actions import ActionExecutor
 from .health import HealthServer
 from .mapper import AdapterError, map_message
 from .outbox import Outbox
+from .platform_errors import classify_retcode
 from .status import AdapterStatusReporter
 
 
@@ -54,10 +55,13 @@ def configure():
             raise AdapterError(common.UPSTREAM_UNAVAILABLE) from None
         try:
             return await bot.call_api(api, **params)
-        except ActionFailed:
+        except ActionFailed as failure:
             # Platform answered and rejected the call: reachable but degraded.
-            status.report(common.DEGRADED, 'platform_action_failed')
-            raise AdapterError(common.UPSTREAM_UNAVAILABLE) from None
+            retcode = failure.info.get('retcode') if isinstance(failure.info, dict) else None
+            code = classify_retcode(retcode)
+            if code in (common.PERMISSION_DENIED, common.RATE_LIMITED):
+                status.report(common.DEGRADED, 'platform_action_failed')
+            raise AdapterError(code) from None
     executor = ActionExecutor(os.environ['OUTBOX_PATH'] + '.actions', config.adapter_id, config.account_id, call_platform)
     client = CoreClient(config, outbox, executor, status)
     stop = asyncio.Event()

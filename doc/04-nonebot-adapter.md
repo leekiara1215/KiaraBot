@@ -123,6 +123,7 @@ NapCat 的 WebUI 密码、OneBot Token 和 Core Token 必须分开管理。
 - Core 不可用时，适配器持续重连但使用退避；
 - 适配器通过 `AdapterStatusChanged` 上报状态迁移（Core 连接、平台连接/断开、平台动作失败），状态不变时不重复上报；
 - 平台调用超时/取消/断线保留 `ACCEPTED` 未知结果，不伪造 `TIMEOUT`；执行前 deadline 已过返回 `EXPIRED` + `TIMEOUT`；
+- OneBot `ActionFailed` 按 `retcode` 分类为 `RATE_LIMITED`/`PERMISSION_DENIED`/`NOT_FOUND`/`UPSTREAM_UNAVAILABLE` 后再回传 `ActionResult`，不把明确拒绝当作未知；
 - 不支持的 Action 返回 `CAPABILITY_NOT_SUPPORTED`；
 - 适配器重连后重新注册能力和账号；
 - 不在适配器内无限缓存消息。

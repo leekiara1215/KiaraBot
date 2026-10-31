@@ -19,7 +19,7 @@ PYTHONPATH=generated:src uv run python -m kiarabot_adapter_nonebot
 
 outbox 使用自己的数据库保存待确认统一事件、顺序水位和失败码。PERSISTED/DUPLICATE 才将事件标为 acked；确认丢失、超时、断线或 retryable 拒绝保留 pending。RATE_LIMITED（Core 入口背压）一律按可重试处理，即使 Core 返回 retryable=false 也保留 pending 并退避重投，不标 failed、不丢弃。其余永久拒绝标为 failed，保留稳定码供排查，不当作成功。重连重新注册、重绑 instance，保留其余事件字段。相同 ID 不同内容 CONFLICT。单个事件最多 1 MB，pending 最多 10000 条；acked/failed 记录不占 pending 上限、7 天后清理（总量有上限），sequence 不回退。达到上限会明确拒绝入队；OneBot 本身不提供可靠消费 ACK，平台到本地 outbox 的投递保证需在真实联调确认，不能宣称端到端零丢失。
 
-Core 连接采用 1–30 秒退避。每次连接只发送一个待确认事件；空闲按注册响应 `heartbeat_interval_seconds` 发心跳，并持续读取 Core 推送的 Action（不等待下一次心跳）。`/health/live` / `/health/ready` 的语义见 doc/04「健康检查」；连接/平台状态迁移通过 `AdapterStatusChanged` 上报。响应不匹配时保留待发项并重连。日志只输出稳定错误码，不输出载荷、token、URL 或上游异常正文。关闭取消连接任务并关闭本地存储。
+Core 连接采用 1–30 秒退避。每次连接只发送一个待确认事件；空闲按注册响应 `heartbeat_interval_seconds` 发心跳，并持续读取 Core 推送的 Action（不等待下一次心跳）。`/health/live` / `/health/ready` 的语义见 doc/04「健康检查」；连接/平台状态迁移通过 `AdapterStatusChanged` 上报；OneBot `ActionFailed` 的 `retcode` 分类为 RATE_LIMITED/PERMISSION_DENIED/NOT_FOUND/UPSTREAM_UNAVAILABLE 后回传 ActionResult。响应不匹配时保留待发项并重连。日志只输出稳定错误码，不输出载荷、token、URL 或上游异常正文。关闭取消连接任务并关闭本地存储。
 
 ## 验收范围
 
