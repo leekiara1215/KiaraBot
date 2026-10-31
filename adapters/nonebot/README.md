@@ -15,7 +15,7 @@ PYTHONPATH=generated:src uv run python -m kiarabot_adapter_nonebot
 
 ## 输入、输出与失败
 
-只接收 OneBot V11 群聊/私聊 message，稳定 event_id 由适配器/账号/会话/message_id/时间派生；会话 sequence 在本地 SQLite 入队时原子递增。消息段支持 text/image/at/reply；其它段转换为 UNKNOWN 且不携带原始 OneBot 对象。原始 JSON 不越过协议边界。缺少字段或非法数据返回 INVALID_ARGUMENT，账号不符 PERMISSION_DENIED，未支持事件 CAPABILITY_NOT_SUPPORTED，容量不足 RATE_LIMITED，本地存储失败 UPSTREAM_UNAVAILABLE。
+只接收 OneBot V11 群聊/私聊 message，稳定 event_id 由适配器/账号/会话/message_id/时间派生；会话 sequence 在本地 SQLite 入队时原子递增。会话 ID 使用平台原生数字 ID（正整数字符串，≤20 位），群/私聊由 `ConversationRef.type` 区分，不再使用 `group:`/`private:` 前缀；入站事件与出站 `send_message` 使用同一个 conversation 值，插件可直接把事件会话用于回复。消息段支持 text/image/at/reply；其它段转换为 UNKNOWN 且不携带原始 OneBot 对象。原始 JSON 不越过协议边界。缺少字段或非法数据返回 INVALID_ARGUMENT，账号不符 PERMISSION_DENIED，未支持事件 CAPABILITY_NOT_SUPPORTED，容量不足 RATE_LIMITED，本地存储失败 UPSTREAM_UNAVAILABLE。
 
 outbox 使用自己的数据库保存待确认统一事件、顺序水位和失败码。PERSISTED/DUPLICATE 才将事件标为 acked；确认丢失、超时、断线或 retryable 拒绝保留 pending。永久拒绝标为 failed，保留稳定码供排查，不当作成功。重连重新注册、重绑 instance，保留其余事件字段。相同 ID 不同内容 CONFLICT。单个事件最多 1 MB，最多 10000 条记录；acked 7 天后可清理，sequence 不回退。达到上限会明确拒绝入队；OneBot 本身不提供可靠消费 ACK，平台到本地 outbox 的投递保证需在真实联调确认，不能宣称端到端零丢失。
 

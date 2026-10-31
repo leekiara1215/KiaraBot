@@ -26,6 +26,19 @@ def identifier(value: object) -> str:
     return result
 
 
+def platform_id(value: object) -> str:
+    """OneBot IDs are positive integers; conversation IDs keep the native number only.
+
+    The same value is used for inbound MessageReceived and outbound SendMessage so Core
+    and plugins can echo the event conversation without rewriting it. Group and private
+    conversations are distinguished by ConversationRef.type, not by an ID prefix.
+    """
+    result = identifier(value)
+    if not result.isdigit() or len(result) > 20 or int(result) <= 0:
+        raise AdapterError(common.INVALID_ARGUMENT)
+    return result
+
+
 def map_message(raw: Mapping, adapter_id: str, account_id: str) -> events.EventEnvelope:
     try:
         return _map_message(raw, identifier(adapter_id), identifier(account_id))
@@ -40,9 +53,9 @@ def _map_message(raw: Mapping, adapter_id: str, account_id: str) -> events.Event
         raise AdapterError(common.CAPABILITY_NOT_SUPPORTED)
     if identifier(raw['self_id']) != account_id:
         raise AdapterError(common.PERMISSION_DENIED)
-    user = identifier(raw['user_id'])
-    group = identifier(raw['group_id']) if raw['message_type'] == 'group' else ''
-    conversation = 'group:' + group if group else 'private:' + user
+    user = platform_id(raw['user_id'])
+    group = platform_id(raw['group_id']) if raw['message_type'] == 'group' else ''
+    conversation = group if group else user
     message_id = identifier(raw['message_id'])
     timestamp = raw['time']
     if isinstance(timestamp, bool) or not isinstance(timestamp, int) or not 0 <= timestamp <= 253402300799:

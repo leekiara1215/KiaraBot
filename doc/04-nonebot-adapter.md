@@ -4,7 +4,7 @@ T07b 真实 QQ/NapCat 尚待用户配置；已核对适配器检出当前 OneBot
 
 ## T04b Action 执行子集
 
-适配器支持 action.send_message.text.v1，将 send_message 的纯文本群/私聊转换为 OneBot send_group_msg/send_private_msg；只使用注册账号的 Bot。执行前核验目标身份、消息格式、能力和 deadline。其他操作/消息段拒绝 CAPABILITY_NOT_SUPPORTED，不降级丢字段。Core 负责业务授权，适配器不接受插件直接调用。
+适配器支持 action.send_message.text.v1，将 send_message 的纯文本群/私聊转换为 OneBot send_group_msg/send_private_msg；会话 ID 使用与事件一致的原生数字 ID（见「会话 ID 规范」）；只使用注册账号的 Bot。执行前核验目标身份、消息格式、能力和 deadline。其他操作/消息段拒绝 CAPABILITY_NOT_SUPPORTED，不降级丢字段。Core 负责业务授权，适配器不接受插件直接调用。
 
 Action 执行日志使用独立本机 SQLite 文件（默认 OUTBOX_PATH 加 .actions），按 action_id 和内容 fingerprint 去重；执行前持久化占用，终态保存后才回传。正常重投返回原结果。平台调用超时、取消或进程在调用后退出时保留 ACCEPTED/未知，不重复调用平台；Core 可查询并最终按 deadline 过期。此策略避免重复副作用，但不能提供平台不支持的端到端 exactly-once。无已知平台结果时不伪造 FAILED。日志容量有上限，终态保留七天，未终态不自动删除。
 
@@ -87,6 +87,10 @@ OneBot message
 
 原始 OneBot JSON 只能出现在适配器日志或诊断接口中，不能进入插件 SDK。
 
+### 会话 ID 规范（T04b/W3）
+
+`ConversationRef.id` 使用 OneBot 平台原生数字 ID（正整数字符串，≤20 位），群聊与私聊不再使用 `group:`/`private:` 前缀，改由 `ConversationRef.type`（`GROUP`/`PRIVATE`）区分。事件 `MessageReceived.conversation`、`subject.conversation_id` 与 Action `SendMessage.conversation` 使用完全相同的值，因此插件可以把收到事件的会话直接用于回复，无需解析或改写 ID。非数字或带前缀的会话 ID 在入站映射和 Action 校验中均返回 `INVALID_ARGUMENT`。
+
 ## Action 转换
 
 Core 下发统一 Action：
@@ -158,4 +162,4 @@ NapCat 的 WebUI 密码、OneBot Token 和 Core Token 必须分开管理。
 
 当前实现维护于 `adapters/nonebot/`；配置、锁文件和测试命令见该目录 README。后续可再考虑拆成单独插件。当前使用 NoneBot websockets driver 和 onebot_ws_urls 连接 NapCat 正向 WebSocket，反向连接尚未配置。
 
-消息先进入本地有界 outbox 并原子分配会话 sequence；等待 Core 确认期间保留 pending，重连注册后重新绑定 instance 并重投。永久拒绝保留 failed 记录。当前仅接收群/私聊消息及 text/image/at/reply，未知段降级；Action 纯文本发送能力见上方 T04b。限制为 10000 条、64 MiB、单消息 1 MB，已确认索引保留 7 天，水位不回退；达到上限明确失败。平台到 outbox 之前没有消费 ACK，真实可靠性仍需 T07b 验证。
+消息先进入本地有界 outbox 并原子分配会话 sequence；等待 Core 确认期间保留 pending，重连注册后重新绑定 instance 并重投。永久拒绝保留 failed 记录。会话 ID 使用平台原生数字 ID（见上方「会话 ID 规范」），事件与 Action 共用同一值。当前仅接收群/私聊消息及 text/image/at/reply，未知段降级；Action 纯文本发送能力见上方 T04b。限制为 10000 条、64 MiB、单消息 1 MB，已确认索引保留 7 天，水位不回退；达到上限明确失败。平台到 outbox 之前没有消费 ACK，真实可靠性仍需 T07b 验证。

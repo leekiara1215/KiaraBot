@@ -13,12 +13,13 @@ def raw(kind='group', message_id=1):
 
 
 @pytest.mark.parametrize('kind,conversation,ctype', [
-    ('group', 'group:789', common.ConversationRef.GROUP),
-    ('private', 'private:456', common.ConversationRef.PRIVATE),
+    ('group', '789', common.ConversationRef.GROUP),
+    ('private', '456', common.ConversationRef.PRIVATE),
 ])
 def test_mapping(kind, conversation, ctype):
     result = map_message(raw(kind), 'adapter', '123')
     assert result.subject.conversation_id == conversation
+    assert result.message_received.conversation.id == conversation
     assert result.message_received.conversation.type == ctype
     assert result.message_received.message.plain_text == 'hello'
     assert result.source.account_id == '123' and result.schema_version == 'kiarabot.v1'
@@ -47,6 +48,9 @@ def test_segments_and_no_platform_objects():
     ({'time': True}, common.INVALID_ARGUMENT),
     ({'time': -1}, common.INVALID_ARGUMENT),
     ({'user_id': {}}, common.INVALID_ARGUMENT),
+    ({'user_id': 'not-a-number'}, common.INVALID_ARGUMENT),
+    ({'group_id': 0}, common.INVALID_ARGUMENT),
+    ({'group_id': -789}, common.INVALID_ARGUMENT),
     ({'message': 'unsupported CQ string'}, common.INVALID_ARGUMENT),
     ({'message': [{'type': 'text', 'data': {'text': 1}}]}, common.INVALID_ARGUMENT),
 ])
