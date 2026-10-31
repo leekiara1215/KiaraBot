@@ -10,7 +10,9 @@
 namespace kiarabot::infrastructure {
 
 // The directory must exist and be owned by the Core process. Keys are opaque
-// single components, limited to ASCII letters, digits, hyphen and underscore.
+// single path components of 1-255 bytes (POSIX NAME_MAX), limited to ASCII
+// letters, digits, hyphen and underscore. This adapter is implemented but not
+// wired into a Core use case yet; see doc/05 "端口覆盖现状".
 class FileStorage final : public core::IFileStorage {
 public:
   explicit FileStorage(std::string directory);

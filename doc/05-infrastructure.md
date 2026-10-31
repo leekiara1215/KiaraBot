@@ -49,9 +49,33 @@ IFileStorage
 IAuditLogger
 ```
 
+2026-10-31 核对：`ports.hpp` 中实际存在的首批接口是 `IModelProvider`、`IScheduler`、`IFileStorage`、`IAuditLogger`（另有 `ITimeZoneResolver`、`INamespaceStore`、`IIdempotencyStore`、`IUnitOfWork` 等）。其中模型、时区由基础设施实现，调度器由 Core `TaskScheduler` 实现，文件存储已实现但未接线，审计端口未实现（审计写入 `RuntimeSnapshot`）。`IConversationStore`/`IUserRepository`/`IPermissionStore` 尚无接口或实现，属于未来扩展，不能按名字假定可用。
+
 ## Core 端口
 
 Core 内部接口位于 `core/include/kiarabot/core/ports/ports.hpp`，协议类型和稳定错误使用生成的 `kiarabot.v1` 类型。所有调用必须区分协议 `Error` 与成功值；数据库故障不能伪装为重复或未找到。事务、任务领取、时区转换、文件和模型实现必须遵守端口及 `doc/01-contracts.md`、`doc/01-runtime-semantics.md` 的语义。接口的存在不表示适配器或插件 Host 服务已经接入。
+
+## 端口覆盖现状（2026-10-31）
+
+下表记录 `core/include/kiarabot/core/ports/ports.hpp` 各端口在当前实现的真实状态；接口存在不等于已实现或已接线。
+
+| 端口 | infrastructure 实现 | 组合根接线 | 状态 |
+| --- | --- | --- | --- |
+| `RuntimeStore` / `RuntimeTransaction` | `SqliteRuntimeStore` | `core/app/main.cpp` 在启用 SQLite 且配置 `KIARABOT_RUNTIME_DB` 时创建，外层包 Core `LoggingRuntimeStore` | 已接线（条件性） |
+| `IModelProvider` | `HttpModelProvider`（T06b） | 三个 `KIARABOT_MODEL_*` 齐全时创建 | 已接线（条件性） |
+| `ITimeZoneResolver` | `TimeZoneResolver`（T06c） | 由 Core `TaskScheduler` 使用 | 已接线 |
+| `IFileStorage` | `FileStorage` + `FakeFileStorage` | **无**：Core 当前没有文件存储用例，组合根未创建；`FileStorage` 仅由 `file_storage_test` 使用 | 未接线（实现存在；`FakeFileStorage` 只用于测试） |
+| `INamespaceStore` | 无 | 无 | 未实现、不使用；命名空间存储由 `RuntimeSnapshot.namespaces` + `HostDispatcher` 在同一事务中承担 |
+| `IIdempotencyStore` | 无 | 无 | 未实现、不使用；Host 幂等响应由 `RuntimeSnapshot.host_receipts` 承担 |
+| `IAuditLogger` | 无 | 无 | 未实现、不使用；审计由 `RuntimeSnapshot.audit`（`RuntimeAuditEntry`，不是协议 `AuditRecord`）承担 |
+| `IUnitOfWork` / `IUnitOfWorkFactory` | 无 | 无 | 未实现、不使用；应用服务直接使用 `RuntimeStore`/`RuntimeTransaction` 组合事务（`doc/02-core.md` 称其为后续扩展端口） |
+| `IScheduler` | 无（调度器在 Core） | Core `TaskScheduler` | 基础设施不提供调度适配器；基线 `CronSchedulerAdapter` 为未来选项 |
+
+约束与交接：
+
+- 本模块不删除、不修改 `core/include/kiarabot/core/ports/` 的接口；若 Core 决定启用 `IUnitOfWork` 系列、独立仓储或审计端口，应先由 Core 确定事务所有权和错误语义，再在 infrastructure 增加适配器（交接 core 分支）。
+- `FileStorage` 的 POSIX 实现和 `FakeFileStorage` 已有单测，但没有任何 Core 调用链；接入前需要先由 Core 定义文件存储用例（上传/附件等）以及目录所有权、容量和清理策略。
+- `doc/18` 基线列出的 `PostgresAdapter`/`RedisAdapter` 未实现、无任务、无验收，属未排期未来项；`CronSchedulerAdapter` 由 Core `TaskScheduler` 替代，不再单独实现。
 
 ## 模型适配器
 
@@ -88,20 +112,13 @@ plugin:<plugin_id>:<key>
 
 插件不得创建或修改 Core 表，不得保存未经过 Schema 校验的任意大对象。
 
-基础设施必须实现 Core 定义的接口：
-
-```text
-IUnitOfWork.begin() / commit() / rollback()
-IInboxRepository.put_if_absent(event_id)
-IOutboxRepository.append(action)
-IActionRepository.get_by_idempotency_key(key)
-```
+Core 端口的实现与接线现状见「端口覆盖现状」。历史草案中的 `IUnitOfWork.begin/commit/rollback`、`IInboxRepository.put_if_absent`、`IOutboxRepository.append`、`IActionRepository.get_by_idempotency_key` 不是当前实际落地的端口：`IUnitOfWork` 只有接口没有实现，`IInboxRepository`/`IOutboxRepository`/`IActionRepository` 在 `ports.hpp` 中从未定义。当前以 `RuntimeStore`/`RuntimeTransaction` 的整快照事务为准，不得据此声称独立仓储/工作单元端口已实现。
 
 独立的 `kiarabot-migrate` 命令使用 SQLite `BEGIN IMMEDIATE` 互斥并在事务内迁移快照，成功后写入 `PRAGMA user_version`；锁等待超过 30 秒失败。当前单快照适配器使用 FULL 同步与 SQLite 默认 journal；没有关系表外键。运行时提交遇到冲突立即报告 CONFLICT。
 
 ## 文件存储
 
-`FileStorage` 使用已存在、由 Core 进程控制的目录；逻辑键仅允许 1–256 个 ASCII 字母、数字、`-`、`_`，不接受路径。读取不跟随末级符号链接；写入使用同目录临时文件和原子替换，删除不存在的键成功。文件权限为 0600；调用方不得直接向插件暴露目录或文件描述符。该实现针对 POSIX 平台，不承诺断电后的目录项持久性。`FakeFileStorage` 支持下一次操作故障注入。
+`FileStorage` 使用已存在、由 Core 进程控制的目录；逻辑键仅允许 1–255 字节的 ASCII 字母、数字、`-`、`_`（POSIX 单级文件名 `NAME_MAX=255`；256 字节键在接触文件系统前就被拒绝为 INVALID_ARGUMENT），不接受路径。读取不跟随末级符号链接；写入使用同目录临时文件和原子替换，删除不存在的键成功。文件权限为 0600；调用方不得直接向插件暴露目录或文件描述符。该实现针对 POSIX 平台，不承诺断电后的目录项持久性。`FakeFileStorage` 支持下一次操作故障注入。
 
 独立构建与测试（需要 Protobuf 的 CMake 包和 protoc）：
 
@@ -113,7 +130,7 @@ ctest --test-dir /tmp/kiarabot-infrastructure-build --output-on-failure
 
 ## 调度器
 
-T06c 的规则由 Core TaskScheduler 实现，基础设施提供 SQLite schema v5 的任务快照和 Abseil 时区解析端口。沿用 Protobuf/gRPC 已依赖的 Abseil time，使用系统 IANA zoneinfo；不通过进程全局 TZ 环境切换时区。允许 UTC 或 IANA 地区名称，公历年份 1970–2100，拒绝非法日期、无效时区及 DST 重复/缺失时间；UTC run_at 也限制在此范围且必须晚于当前时间。
+T06c 的规则由 Core TaskScheduler 实现，基础设施提供 SQLite schema v5 的任务快照和 Abseil 时区解析端口。沿用 Protobuf/gRPC 已依赖的 Abseil time，使用系统 IANA zoneinfo；不通过进程全局 TZ 环境切换时区。允许 UTC 或 IANA 地区名称，公历年份 1970–2100，拒绝非法日期、无效时区及 DST 重复/缺失时间；UTC run_at 也限制在此范围且必须晚于当前时间。启动预检与错误区分（2026-10-31 补齐）：`TimeZoneResolver::zone_info_available()` 用真实 IANA 地区名探测系统 zoneinfo（`UTC` 可能内建于 Abseil，不能作为探测依据）；`resolve()` 在 zone 数据不可用时返回 `UPSTREAM_UNAVAILABLE`，只有名称/日期/夏令时歧义等调用方错误返回 `INVALID_ARGUMENT`。Core 组合根应在监听前调用预检并拒绝启动；当前 `core/app/main.cpp` 尚未接入该预检（交接 core 分支，不属于本模块可改范围）。测试见 `infrastructure/tests/time_zone_resolver_test.cpp`（有效 UTC/IANA、非法日期/名称、DST gap/fold、注入数据不可用路径）。
 
 每插件最多 1024 个任务（含终态），payload 最多 64 KiB，task_id 1–128 个 ASCII 字母/数字/点/横线/下划线，目标会话 1–256 字节。任务记录不自动清理，超限 RATE_LIMITED。Host 创建/取消与成功幂等响应、审计同一事务；读/取消其他插件任务 NOT_FOUND。新旧 Runtime 操作必须保留任务集合，v1–v4 数据库迁移为 v5；旧二进制回滚需备份。
 
@@ -166,9 +183,9 @@ next_run_at
 
 ## T05b SQLite 运行时存储
 
-SqliteRuntimeStore::open(path) 在事务中创建 schema v5（PRAGMA user_version=5），并事务化迁移 v1/v2/v3/v4 快照，已有版本重复打开不重建；未知版本或损坏快照拒绝打开。runtime_snapshot 单行保存完整快照与 revision，提交使用带 revision 条件的原子 UPDATE。两个连接读取同一版本时只有第一个提交成功，其余返回 Conflict；SQLITE_BUSY/LOCKED 也映射 Conflict，不自动重试。FULL 同步模式下 SQLite 承担崩溃原子性；未提交事务只持有私有内存，销毁即可回滚。
+SqliteRuntimeStore::open(path) 在事务中创建 schema v5（PRAGMA user_version=5），并事务化迁移 v1/v2/v3/v4 快照，已有版本重复打开不重建；未知版本或损坏快照拒绝打开。runtime_snapshot 单行保存完整快照与 revision，提交使用带 revision 条件的原子 UPDATE。两个连接读取同一版本时只有第一个提交成功，其余返回 Conflict；SQLITE_BUSY/LOCKED 也映射 Conflict，不自动重试。FULL 同步模式下 SQLite 承担崩溃原子性；未提交事务只持有私有内存，销毁即可回滚。崩溃/半写恢复证据（2026-10-31 补齐）：`infrastructure/tests/crash_recovery_test.cpp` 让子进程持续提交 12 MiB 快照并在不同时点收到 SIGKILL，父进程重开同一数据库后校验快照可解码、`PRAGMA integrity_check` 为 `ok`、且可以继续提交；该测试不依赖真实断电，但也不能替代生产备份演练（T11b）。
 
-私有文本编码保留二进制 envelope、UTC 纳秒时间、逐插件状态、会话、Action 和插件；数据库格式与 schema 一起版本化，不是公共线协议。快照上限 64 MiB，所有集合合计最多一百万项；超限提交失败，损坏解码返回 Corrupt。该实现是整库状态快照，尚未进行容量/性能认证。Host 命名空间和响应幂等已在 v4 中持久化；模型由 T06b 接线，任务由 T06c 接线；T10a 的命令审计从 v2 起持久化。SQLite 打开迁移并不代替 T11 独立迁移命令和部署演练。
+私有文本编码保留二进制 envelope、UTC 纳秒时间、逐插件状态、会话、Action 和插件；数据库格式与 schema 一起版本化，不是公共线协议。快照上限 64 MiB，所有集合合计最多一百万项；超限提交失败，损坏解码返回 Corrupt。超限语义（2026-10-31 明确）：提交时编码后字节数超过 64 MiB、或所有集合合计条目超过一百万项，返回 `StorageError::Unavailable` 且持久状态不变（事务可以在缩小快照后重试）；读取/打开时发现已存载荷超过 64 MiB 返回 `StorageError::Corrupt`。`SqliteRuntimeStore::limits()` 返回编译期上限，`rejected_snapshots()` 返回逐实例单调拒绝计数（oversized_bytes / oversized_items / oversized_reads）；组合根尚未把计数导出到健康或指标端点（交接 Core/运维）。测试见 `infrastructure/tests/snapshot_limits_test.cpp`（字节上限、百万项上限、超大存量载荷、失败后重试与计数）。该实现是整库状态快照，尚未进行容量/性能认证。Host 命名空间和响应幂等已在 v4 中持久化；模型由 T06b 接线，任务由 T06c 接线；T10a 的命令审计从 v2 起持久化。SQLite 打开迁移并不代替 T11 独立迁移命令和部署演练。
 
 独立构建使用原基础设施命令；根构建可传入 `-DKIARABOT_ENABLE_INFRASTRUCTURE=ON` 纳入测试。新增依赖为 SQLite3 开发库，版本由构建环境记录；生产打包需随 T11 固定依赖。Core 仍经端口注入，不直接访问 SQL。
 
@@ -182,7 +199,7 @@ SQLite 从 v2 起保存审计和命令幂等记录，当前 v5 还保存 Action 
 
 ## T10b 日志 sink
 
-BufferedRuntimeLogSink 实现 Core 的 IRuntimeLogSink，互斥保护有界环形缓冲，保留十分钟、最多 4096 条；可输出单行 JSON 到 stdout。字段仅来自 Core 的结构化记录，不接收正文或任意异常消息。输出失败返回 false，内存缓冲仍可查询；Core 统计失败次数，业务提交不回滚。日志不是审计持久层，重启清空日志；持久审计不受影响。控制 API 通过组合根注入的只读回调取得日志，不直接读取基础设施类或数据库。
+BufferedRuntimeLogSink 实现 Core 的 IRuntimeLogSink，互斥保护有界环形缓冲，保留十分钟、最多 4096 条；可输出单行 JSON 到 stdout。字段仅来自 Core 的结构化记录，不接收正文或任意异常消息。输出失败返回 false，内存缓冲仍可查询；Core 统计失败次数，业务提交不回滚。日志不是审计持久层，重启清空日志；持久审计不受影响。控制 API 通过组合根注入的只读回调取得日志，不直接读取基础设施类或数据库。字段与观测口径（2026-10-31 明确）：JSON 行包含 `id、timestamp、occurred_at、level、component、operation、outcome、resource、resource_id、request_id、trace_id`；`timestamp` 与 `occurred_at` 同为 UTC ISO-8601（对齐 `doc/08` 的 timestamp），`resource_id` 是 `resource` 的别名。不输出独立的 `event_id`/`action_id`：Core `RuntimeLog` 未提供这两个字段，事件/动作标识承载在 `resource`（`event.persist` 为 event_id，`action.state` 为 action_id）。不输出 `message`/`error_code`：sink 不接收自由文本，`outcome` 即稳定码（OK/TIMEOUT/CONFLICT/DEAD_LETTER 等）。sink 自身新增 `write_failures()` 单调失败计数（与 Core 装饰器的 `sink_failures()` 并存）；组合根尚未把两个计数导出到健康或指标端点（交接 core/运维）。测试 `infrastructure/tests/runtime_log_test.cpp` 增加 timestamp/resource_id 字段与写失败计数断言。
 
 
-T11a `kiarabot-migrate` 复用 SqliteRuntimeStore::open 的同事务迁移，SQLite BEGIN IMMEDIATE 为迁移锁；不重复维护 schema 或手写第二套迁移 SQL。进程级测试覆盖重复迁移、旧版迁移（存储单测）、坏 schema、锁冲突恢复和失败不就绪。
+T11a `kiarabot-migrate` 复用 SqliteRuntimeStore::open 的同事务迁移，SQLite BEGIN IMMEDIATE 为迁移锁；不重复维护 schema 或手写第二套迁移 SQL。进程级测试 `infrastructure/tests/migrate_cli_test.cpp`（CTest `migrate_cli`，2026-10-31 新增）直接调用构建产物覆盖：缺参数/`:memory:`/`file:` 退出 2、首次迁移与重复迁移退出 0、v1 旧库迁移、未知 schema 与损坏载荷退出 1 且不改写数据库、持有写锁 1.5 秒后释放时 CLI 重试成功、两个实例并发启动都成功、父目录缺失退出 1。`doc/08` 的“非法路径退出 2”仅指参数形态非法；路径不存在属于依赖故障，退出 1。

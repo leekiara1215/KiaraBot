@@ -7,8 +7,16 @@
 #include <type_traits>
 
 #include "kiarabot/core/domain/runtime_types.hpp"
+#include "kiarabot/infrastructure/snapshot_limits.hpp"
 
 namespace kiarabot::infrastructure::detail {
+// Raised when the private snapshot exceeds an infrastructure capacity limit.
+// Commits map it to StorageError::Unavailable; corruption keeps using the
+// generic exceptions below.
+class SnapshotLimitError : public std::runtime_error {
+public:
+  using std::runtime_error::runtime_error;
+};
 template <typename Archive, typename Value>
   requires std::is_same_v<std::remove_const_t<Value>, core::EventRecord>
 void fields(Archive& archive, Value& value);
@@ -64,10 +72,10 @@ void fields(Archive& archive, Value& value) {
 struct Encoder {
   static constexpr int version = 5;
   std::ostringstream stream;
-  std::size_t remaining_items{1000000};
+  std::size_t remaining_items{kMaximumSnapshotItems};
   void reserve_items(std::size_t count) {
     if (count > remaining_items) {
-      throw std::runtime_error("Snapshot limit");
+      throw SnapshotLimitError("Snapshot item limit");
     }
     remaining_items -= count;
   }
@@ -113,7 +121,7 @@ struct Encoder {
 };
 struct Decoder {
   std::istringstream stream;
-  std::size_t remaining_items{1000000};
+  std::size_t remaining_items{kMaximumSnapshotItems};
   int version{5};
   template <typename... T> void operator()(T&... values) {
     (one(values), ...);
@@ -157,7 +165,7 @@ struct Decoder {
     std::size_t count = 0;
     one(count);
     if (count > remaining_items) {
-      throw std::runtime_error("Snapshot limit");
+      throw SnapshotLimitError("Snapshot item limit");
     }
     remaining_items -= count;
     for (std::size_t i = 0; i < count; ++i) {
@@ -170,7 +178,7 @@ struct Decoder {
     std::size_t count = 0;
     one(count);
     if (count > remaining_items) {
-      throw std::runtime_error("Snapshot limit");
+      throw SnapshotLimitError("Snapshot item limit");
     }
     remaining_items -= count;
     for (std::size_t i = 0; i < count; ++i) {

@@ -34,7 +34,7 @@ private:
 };
 
 bool valid_key(std::string_view key) {
-  if (key.empty() || key.size() > 256) {
+  if (key.empty() || key.size() > 255) {
     return false;
   }
   for (const unsigned char c : key) {

@@ -694,3 +694,30 @@ CI 修复（本轮只改工作流，未复跑；不能据此宣称 CI 已绿）�
 文档影响判断：已更新 `doc/02-core.md`（维护循环、容量/超时配置、失败语义、ACK 超时与冲突重试、未完成项）与本台账。未更新 `doc/01-runtime-semantics.md`（ACK 超时/维护周期属运行语义，需由 contracts 分支或后续 core 任务同步）、`doc/08-operations.md`（新增环境变量需运维文档同步）、`doc/05-infrastructure.md`（时间型命令幂等过期需快照格式版本升级）——均列为交接项；`proto/`/`api/` 无变更。
 
 交接与未完成：`control/api` 的 `/groups` 仍无数据源（契约已标 `not_implemented`）；时间型命令幂等过期需基础设施快照格式升级；多适配器/多插件装配、完整 RBAC 与 `message.send` 速率/内容策略不在本轮；任务每插件上限仍固定 1024。
+
+## 2026-10-31 W2 基础设施可靠性补强记录
+
+范围：`infrastructure/`（include/src/tests）、`doc/05-infrastructure.md`、本条台账。未改 `core/`（含 `core/ports`）、`proto/`、`api/`、`deploy/`；`doc/18` 只读未改。本记录不代表 CI 已绿。
+
+- P1-1 容量与失败语义：新增 `infrastructure/include/kiarabot/infrastructure/snapshot_limits.hpp`（64 MiB / 1,000,000 项公开上限 + `SnapshotLimits`/`SnapshotRejections`），编解码新增独立 `SnapshotLimitError`；`SqliteRuntimeStore::limits()`/`rejected_snapshots()` 暴露上限与单调拒绝计数。语义：超限 commit 仍返回 `Unavailable` 且持久状态不变（可缩容重试）；超限存量载荷返回 `Corrupt`。新增测试 `snapshot_limits`（字节超限、百万项超限、超大存量载荷、失败后重试、计数与重开清零）。
+- P1-2 崩溃/半写恢复：新增 `crash_recovery_test`：子进程持续提交 12 MiB 快照，父进程在 1–200 ms 不同延迟 SIGKILL（可能落在提交中），随后重开数据库断言最后已提交快照可解码、`PRAGMA integrity_check=ok`、可继续提交。不依赖真实断电；生产备份/恢复演练仍归 T11b。
+- P1-3 migrate CLI：新增 `migrate_cli_test`（CTest `migrate_cli`）直接调用构建产物：缺参数/`:memory:`/`file:` 退出 2；首次与重复迁移退出 0；v1 旧库迁移成功；未知 schema 与损坏载荷退出 1 且不改写数据库；持有写锁 1.5 秒后释放时 CLI 重试成功；两实例并发启动都成功；父目录缺失退出 1（依赖故障，不是参数错误）。
+- P1-4 时区预检：新增 `TimeZoneResolver::zone_info_available()`（用真实 IANA 地区名探测，`UTC` 可能内建于 Abseil）与可注入 availability 探针；zone 数据不可用返回 `UPSTREAM_UNAVAILABLE`，仅名称/日期/DST 歧义等调用方错误返回 `INVALID_ARGUMENT`。新增 `time_zone_resolver_test`。**交接 core**：`core/app/main.cpp` 仍未在启动时调用预检（本分支不可改 core）。
+- P1-5 日志字段：JSON 行新增 `timestamp`（与 `occurred_at` 同为 UTC ISO-8601 的 doc/08 别名）与 `resource_id`（`resource` 别名）；明确不输出独立 `event_id`/`action_id`（Core `RuntimeLog` 无此字段，事件/动作标识在 `resource`）、不输出 `message`/`error_code`（sink 不收自由文本，`outcome` 即稳定码）。`BufferedRuntimeLogSink::write_failures()` 记录写失败；**交接 core/运维**：组合根尚未导出 `write_failures()`/`sink_failures()` 到健康或指标。
+- P1-6 端口处置：`doc/05` 新增「端口覆盖现状」并修正历史草案表述——`INamespaceStore`/`IIdempotencyStore`/`IAuditLogger`/`IUnitOfWork(Factory)` 无实现且不使用（由 `RuntimeSnapshot` + `HostDispatcher` 组合事务承担）；`IFileStorage` 已实现但 Core 无调用链、组合根未接线；`IScheduler` 由 Core `TaskScheduler` 实现；`IInboxRepository`/`IOutboxRepository`/`IActionRepository` 从未在 `ports.hpp` 定义。**交接 core**：不删除/不修改 `core/ports` 接口；若启用这些扩展端口，由 core 先定事务所有权与错误语义。
+- P1-7 文件键长：`valid_key` 上限由 256 收敛为 255 字节（POSIX `NAME_MAX`），256 字节键在 syscall 前返回 `INVALID_ARGUMENT`；`file_storage_test` 补 255 字节 put/get/erase 与 256 字节拒绝（FileStorage 与 FakeFileStorage 都覆盖）。
+- 模型 provider 测试：W1 修复后 `http_model_provider` 在独立 infra 构建与 `full` 预设中实际执行并通过（此前从未运行）；真实上游/TLS 仍属 T07b 未验收。
+- 文档影响判断：端口观测行为、日志 JSON 字段、文件键校验、迁移/时区错误语义与测试接线变化，更新 `doc/05-infrastructure.md`；本条记录 `doc/16`。`doc/08` 的迁移退出码/日志字段运维口径差异不在本分支允许修改范围（交接 ops）；`doc/18` 只读未改。
+
+实际运行的命令与结果（本机 2026-10-31，cmake 4.4.4 / protoc 36.2 / local clang-format 23；与 CI 钉住的 clang-format-16 不同，不能据此宣称 CI 通过）：
+
+- `cmake -S infrastructure -B build/infrastructure -DCMAKE_BUILD_TYPE=Debug && cmake --build build/infrastructure --parallel 4 && ctest --test-dir build/infrastructure --output-on-failure --no-tests=error`：configure/build 成功，**9/9 测试通过**（time_zone_resolver、http_model_provider、file_storage、sqlite_runtime_store、snapshot_limits、crash_recovery、authorized_commands、runtime_log、migrate_cli），总耗时 6.83 s。
+- `cmake --preset full && cmake --build --preset full --parallel 4 && ctest --preset full --no-tests=error`：configure/build 成功，**32/32 测试通过**（含 9 个 infra 测试与全部 core/control/proto/部署脚本测试），总耗时 22.80 s。
+- `clang-format --dry-run --Werror`（本机 clang-format 23）检查本分支改动的 C++ 文件：新增/修改文件通过；唯一报错是 `infrastructure/src/file_storage.cpp:83` 的既有排版，7235b07 基线同样报错（未顺手格式化，按仓库规则保留；CI 使用 clang-format-16，是否同样报错未复核）。
+- 未运行：远端 CI（自动触发仍暂停，未手动 dispatch）；真实模型上游/TLS（T07b）；生产部署/备份恢复演练（T11b）；Docker 构建；Windows 构建。`doc/08` 未同步（超出本分支允许范围）。
+
+剩余与交接：
+
+- core：启动时调用 `TimeZoneResolver::zone_info_available()` 预检并 fail fast；导出 `sink_failures()`/`write_failures()`（或接入健康/指标）；若启用 `IUnitOfWork`/独立仓储/审计端口，先定事务语义再要求 infrastructure 适配器。
+- ops：`doc/08` 的“非法路径退出 2”与实测（路径不存在退出 1）对齐；日志通用字段（event_id/action_id/message/error_code）与 sink 实际字段的差异同步；生产备份/恢复演练（T11b）。
+- 风险：容量上限仍无监控导出（仅 API 计数）；`create_schema` 之外没有性能/容量压测；崩溃测试是 SIGKILL 模拟而非断电；`file_storage.cpp` 既有格式问题可能被 CI clang-format-16 判失败（待 CI 校准）。

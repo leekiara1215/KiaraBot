@@ -34,6 +34,12 @@ int main() try {
   check(sink->read().size() == 4);
   check(output.str().find("private-body-and-token") == std::string::npos);
   check(output.str().find("RETRYING") != std::string::npos);
+  // doc/08 alias fields: timestamp mirrors occurred_at, resource_id mirrors the
+  // resource identifier (event/action id depending on the operation).
+  check(output.str().find("\"timestamp\"") != std::string::npos);
+  check(output.str().find("\"occurred_at\"") != std::string::npos);
+  check(output.str().find("\"resource_id\"") != std::string::npos);
+  check(sink->write_failures() == 0);
   begun = store.begin();
   transaction = std::get<std::unique_ptr<core::RuntimeTransaction>>(std::move(begun));
   transaction->snapshot().deliveries["event"]["plugin"].state = core::DeliveryState::dead_letter;
@@ -48,6 +54,7 @@ int main() try {
   transaction->snapshot().audit.push_back({"actor", "write", "x", "req", "trace", now, true, "OK"});
   check(std::holds_alternative<std::monostate>(transaction->commit()));
   check(store.sink_failures() == 1);
+  check(sink->write_failures() == 1);
   check(std::get<core::RuntimeSnapshot>(store.read()).audit.size() == 3);
   now += 601s;
   check(sink->read().empty());
