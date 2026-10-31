@@ -128,8 +128,8 @@ wire::ErrorCode validate(const wire::ActionEnvelope& action) {
 }
 } // namespace
 
-ActionRouter::ActionRouter(RuntimeStore& store, RuntimeClock clock)
-    : store_(store), clock_(std::move(clock)) {}
+ActionRouter::ActionRouter(RuntimeStore& store, RuntimeClock clock, RuntimeLimits limits)
+    : store_(store), clock_(std::move(clock)), limits_(limits) {}
 RuntimeTimePoint ActionRouter::now() const {
   return clock_ ? clock_() : std::chrono::system_clock::now();
 }
@@ -178,7 +178,7 @@ PortResult<wire::ActionResult> ActionRouter::lookup(const std::string& owner,
   }
   if (entry.state == ActionState::accepted && entry.record.deadline <= instant) {
     expire(entry, instant);
-    if (state.audit.size() >= 100000) {
+    if (state.audit.size() >= limits_.audit_limit) {
       return error(wire::UPSTREAM_UNAVAILABLE);
     }
     state.audit.push_back({"core", "action.expire", entry.record.action_id, entry.record.action_id,
@@ -221,7 +221,7 @@ wire::PluginActionResponse ActionRouter::submit(const PluginSession& session,
   if (permitted(session)) {
     grants.push_back({"plugin/" + session.identity, "message.send", "actions"});
   }
-  AuthorizedCommands commands(store_, grants, clock_);
+  AuthorizedCommands commands(store_, grants, clock_, limits_.audit_limit);
   CommandContext context{"plugin/" + session.identity,
                          "message.send",
                          "actions",
@@ -240,7 +240,7 @@ wire::PluginActionResponse ActionRouter::submit(const PluginSession& session,
         })) {
       return error(wire::CONFLICT);
     }
-    if (state.actions.size() >= 10000) {
+    if (state.actions.size() >= limits_.action_limit) {
       return error(wire::RATE_LIMITED);
     }
     if (time_point(action.deadline()) > now()) {
@@ -315,7 +315,8 @@ wire::PluginActionResponse ActionRouter::cancel(const PluginSession& session,
     return respond(existing);
   }
   AuthorizedCommands commands(
-      store_, {{"plugin/" + session.identity, "action.cancel", request.action_id()}}, clock_);
+      store_, {{"plugin/" + session.identity, "action.cancel", request.action_id()}}, clock_,
+      limits_.audit_limit);
   CommandContext context{"plugin/" + session.identity, "action.cancel",    request.action_id(),
                          request.request_id(),         request.trace_id(), request.request_id(),
                          request_digest(request)};
@@ -381,7 +382,7 @@ PortResult<std::optional<wire::ActionEnvelope>> ActionRouter::next(const Adapter
     }
     action.mutable_target_source()->set_adapter_instance_id(session.instance);
     AuthorizedCommands commands(store_, {{"core", "action.dispatch", entry.record.action_id}},
-                                clock_);
+                                clock_, limits_.audit_limit);
     CommandContext context{"core",
                            "action.dispatch",
                            entry.record.action_id,
@@ -435,7 +436,8 @@ PortStatus ActionRouter::complete(const AdapterSession& session, const wire::Act
     return error(wire::INVALID_ARGUMENT);
   }
   AuthorizedCommands commands(
-      store_, {{"adapter/" + session.identity, "action.complete", result.action_id()}}, clock_);
+      store_, {{"adapter/" + session.identity, "action.complete", result.action_id()}}, clock_,
+      limits_.audit_limit);
   CommandContext context{"adapter/" + session.identity,
                          "action.complete",
                          result.action_id(),

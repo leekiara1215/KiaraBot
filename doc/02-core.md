@@ -265,6 +265,16 @@ T08b 后续解耦：`IControlApplication` 除 `invoke()` 外还暴露 `readiness
 
 LoggingRuntimeStore 装饰现有 RuntimeStore，不改变事务结果；提交后按新增审计、事件/投递/Action 状态产生结构化记录，覆盖成功、拒绝、retrying、dead_letter 和存储故障。日志端口不接收事件正文、Host 值、配置值或凭据，只接收操作、稳定结果和关联标识。sink 故障计数并 fail-open，不把已提交操作报告为失败；需要阻止副作用的审计仍在原业务事务内。
 
+## 维护循环与容量上限（W2）
+
+组合根在持久化装配下启动维护循环（`RuntimeMaintenance`，`core/include/kiarabot/core/application/runtime_maintenance.hpp`），默认每 60 秒一次，并在启动时先执行一次。每次维护在同一个 `RuntimeTransaction` 内完成：删除超过保留期（默认 168 小时、不得低于 24 小时）的终态事件及其逐插件投递记录、终态 Action；按保留期与水位裁剪审计；按数量上限裁剪命令幂等记录；清理过期 namespace TTL 条目与过期 Host 幂等响应。只有确实删除记录才提交，事务提交失败不改变持久状态；与共享存储的 revision 冲突按维护周期重试，不自动重试、不影响业务请求，失败与每次实际清理量都以 `operation=maintenance` 结构化日志输出。
+
+容量与超时由组合根注入，不再全部使用硬编码默认值：`KIARABOT_EVENT_QUEUE_LIMIT`（1–100000，默认 1024）、`KIARABOT_AUDIT_LIMIT`（1000–10000000，默认 100000）、`KIARABOT_ACTION_LIMIT`（100–1000000，默认 10000）、`KIARABOT_ACK_TIMEOUT_MS`（1000–600000，默认 30000）、`KIARABOT_MAINTENANCE_INTERVAL_MS`（1000–3600000，默认 60000）、`KIARABOT_RETENTION_HOURS`（24–8760，默认 168）。非法值以 `operation=runtime_config outcome=failed error_code=INVALID_ARGUMENT` 退出 1。审计/命令上限的维护水位为上限的五分之四，保证写入方始终有头部空间；审计达到硬上限时 `AuthorizedCommands` 仍返回 `UPSTREAM_UNAVAILABLE`（可观测的稳定错误），快照超过存储实现上限时提交返回 `UPSTREAM_UNAVAILABLE`。命令幂等记录没有时间戳（快照格式只保存 fingerprint），因此按确定性数量上限裁剪；业务幂等仍由事件、Action 与 Host receipt 记录保证，被裁剪项重放会重新执行幂等回调并追加一条审计。
+
+插件投递新增 ACK 超时：`dispatched` 记录超过 `KIARABOT_ACK_TIMEOUT_MS` 未确认时按一次可重试失败处理（进入退避；达到最大尝试次数后进入死信），使挂起插件不再永久阻塞该插件的投递队列。桥接层对 `retryable=true` 的 `CONFLICT` 在事件 ACK、配置 ACK、Action 提交/查询/取消、适配器 Action 结果与 Host 请求路径做 3 次 20ms 重试；重试预算耗尽后仍按原断连语义处理，断连原因由稳定错误码表达。控制应用 `stream_snapshot` 增加会话用户查找失败的防御性判断（返回 `UNAUTHENTICATED`）。
+
+未完成项：`GET /groups` 仍是有策略无数据源（由控制 API/契约分支补数据来源）；任务每插件上限仍固定 1024；多适配器/多插件装配、完整 RBAC 与速率/内容策略不在 W2 范围。时间型命令幂等过期需要存储快照格式版本升级，属基础设施交接项。
+
 ## 配置下发闭环
 
 配置通过 plugin.config.v1 / PluginConfig / PluginConfigAck 下发并按连接确认。REST GET 的 delivery 区分持久化与运行实例应用，PUT/幂等重放只确认持久化。状态、超时、重连、错误及事件门控的完整规则见 [PluginSDK 配置下发闭环](03-plugin-sdk.md#配置下发闭环t08b-后续)。协议唯一来源为 proto/kiarabot/v1/plugins.proto，REST 为 api/openapi.yaml；无新增错误码或 HTTP/gRPC 映射。

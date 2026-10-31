@@ -22,7 +22,8 @@ add_library(kiarabot_bridge
   ${CMAKE_CURRENT_LIST_DIR}/../src/application/control_application.cpp
   ${CMAKE_CURRENT_LIST_DIR}/../src/application/control_service.cpp
   ${CMAKE_CURRENT_LIST_DIR}/../src/application/control_crypto.cpp
-  ${CMAKE_CURRENT_LIST_DIR}/../src/application/plugin_config_delivery.cpp)
+  ${CMAKE_CURRENT_LIST_DIR}/../src/application/plugin_config_delivery.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/../src/application/runtime_maintenance.cpp)
 target_include_directories(kiarabot_bridge PUBLIC ${CMAKE_CURRENT_LIST_DIR}/../include)
 target_include_directories(kiarabot_bridge SYSTEM PRIVATE ${SODIUM_INCLUDE_DIR})
 target_link_libraries(kiarabot_bridge PUBLIC kiarabot_proto kiarabot_core_json OpenSSL::Crypto

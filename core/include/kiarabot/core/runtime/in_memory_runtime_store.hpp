@@ -1,14 +1,19 @@
 #pragma once
 
+#include <mutex>
+
 #include "kiarabot/core/ports/runtime_store.hpp"
 
 namespace kiarabot::core {
 
-// Single-owner reference store; transaction state may outlive its originating store.
+// Reference store for tests and local development. Independent transactions are
+// isolated by revision; a conflicting commit fails instead of overwriting.
 class InMemoryRuntimeStore final : public RuntimeStore {
   struct State {
+    mutable std::mutex mutex;
     RuntimeSnapshot snapshot;
     std::uint64_t revision{0};
+    std::size_t fail_conflicts{0};
     bool fail_reads{false};
     bool fail_commits{false};
   };
@@ -20,6 +25,11 @@ class InMemoryRuntimeStore final : public RuntimeStore {
       return snapshot_;
     }
     StorageStatus commit() override {
+      std::lock_guard lock(state_->mutex);
+      if (state_->fail_conflicts > 0) {
+        --state_->fail_conflicts;
+        return StorageError::Conflict;
+      }
       if (finished_ || state_->revision != revision_ ||
           revision_ == std::numeric_limits<std::uint64_t>::max()) {
         return StorageError::Conflict;
@@ -43,22 +53,31 @@ class InMemoryRuntimeStore final : public RuntimeStore {
 
 public:
   StorageResult<RuntimeSnapshot> read() const override {
+    std::lock_guard lock(state_->mutex);
     if (state_->fail_reads) {
       return StorageError::Unavailable;
     }
     return state_->snapshot;
   }
   StorageResult<std::unique_ptr<RuntimeTransaction>> begin() override {
+    std::lock_guard lock(state_->mutex);
     if (state_->fail_reads) {
       return StorageError::Unavailable;
     }
     return std::unique_ptr<RuntimeTransaction>(std::make_unique<Transaction>(state_));
   }
   void set_fail_reads(bool value) {
+    std::lock_guard lock(state_->mutex);
     state_->fail_reads = value;
   }
   void set_fail_commits(bool value) {
+    std::lock_guard lock(state_->mutex);
     state_->fail_commits = value;
+  }
+  // Injects a bounded number of optimistic-locking conflicts for retry tests.
+  void set_fail_conflicts(std::size_t count) {
+    std::lock_guard lock(state_->mutex);
+    state_->fail_conflicts = count;
   }
 
 private:

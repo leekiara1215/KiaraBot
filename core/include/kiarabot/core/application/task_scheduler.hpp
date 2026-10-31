@@ -7,7 +7,7 @@ namespace kiarabot::core {
 class TaskScheduler final : public IScheduler {
 public:
   TaskScheduler(RuntimeStore& store, std::shared_ptr<ITimeZoneResolver> zones,
-                RuntimeClock clock = {});
+                RuntimeClock clock = {}, RuntimeLimits limits = {});
   kiarabot::v1::HostResponse dispatch(const PluginSession& session,
                                       const kiarabot::v1::HostRequest& request);
   PortResult<kiarabot::v1::TaskResponse>
@@ -30,6 +30,7 @@ private:
   RuntimeStore& store_;
   std::shared_ptr<ITimeZoneResolver> zones_;
   RuntimeClock clock_;
+  RuntimeLimits limits_;
   std::mutex mutex_;
 };
 } // namespace kiarabot::core
