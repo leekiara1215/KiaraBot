@@ -721,3 +721,51 @@ CI 修复（本轮只改工作流，未复跑；不能据此宣称 CI 已绿）�
 - core：启动时调用 `TimeZoneResolver::zone_info_available()` 预检并 fail fast；导出 `sink_failures()`/`write_failures()`（或接入健康/指标）；若启用 `IUnitOfWork`/独立仓储/审计端口，先定事务语义再要求 infrastructure 适配器。
 - ops：`doc/08` 的“非法路径退出 2”与实测（路径不存在退出 1）对齐；日志通用字段（event_id/action_id/message/error_code）与 sink 实际字段的差异同步；生产备份/恢复演练（T11b）。
 - 风险：容量上限仍无监控导出（仅 API 计数）；`create_schema` 之外没有性能/容量压测；崩溃测试是 SIGKILL 模拟而非断电；`file_storage.cpp` 既有格式问题可能被 CI clang-format-16 判失败（待 CI 校准）。
+
+## 2026-10-31 W3 插件 SDK 示例、文档与健壮性补强记录
+
+范围：`sdk/python/`（runtime/testing/__main__/tests/README/pyproject）、`plugins/`（新增 group_admin、reminder）、`sdk/PLUGIN_SDK_DEPENDENCIES.md`、`doc/03-plugin-sdk.md`、本条台账。未改 `core/`、`proto/`、`api/`、`adapters/`、`panel/`、`tests/acceptance/`；`doc/18` 只读未改。本记录不代表远端 CI 已绿。
+
+目标模块与允许文件：PluginSDK（`sdk/`）与示例插件（`plugins/`）。输入：插件清单、配置快照、EventEnvelope/TimerTriggered、Host/Action 响应；输出：进程外生命周期、事件 ACK、Host 请求、纯文本 Action。错误语义保持既有稳定码：清单/参数非法 INVALID_ARGUMENT，未实现运行时/依赖/配置 schema 与未知 capability CAPABILITY_NOT_SUPPORTED，缺少 capability 所需权限 PERMISSION_DENIED，网络/依赖失联 UPSTREAM_UNAVAILABLE，超时 TIMEOUT，队列满 RATE_LIMITED。
+
+实现与验收条件：
+
+- [x] P1-1 新增 `plugins/group_admin`：`/group help/info/rules/rule add/welcome`，仅用 `event.message.received`、纯文本 `send_message` 与 `storage.namespace`；测试断言从不构造 mute/kick/approve payload，并说明 v1 未实现。含 `plugin.json`、`config.example.json`、`tests/test_group_admin.py`（8 用例）。
+- [x] P1-1 新增 `plugins/reminder`：`/remind <秒> <文本>`、`status`、`cancel` 使用 `task_create/get/cancel`，TimerTriggered 回投递后按 task_id 生成确定性 Action 幂等键；测试覆盖调度/边界/取消/状态重复 timer/配置边界/无关事件（6 用例）。含清单与配置样例。
+- [x] P1-2 `doc/03-plugin-sdk.md` 修正：清单示例改为可注册版本（去掉非空 config_schema 与未支持 capability），补充双方清单校验规则、示例插件表、运行时参数表；Host API 各服务标注「已实现/部分/未实现」；权限词表改为 Core 实际使用的 8 项并列出仅存在于草案、不得写入清单的名称；测试能力改为如实描述 FakeHost；Python 形态改为现行 API；`isolation` 默认值、PluginError 稳定码保留等表述修正；SDK 组成中 sdk/cpp、sdk/typescript、tools/kiara-plugin 标注未实现。
+- [x] P1-2 `sdk/PLUGIN_SDK_DEPENDENCIES.md`：T06b/T06c 改为已实现；FakeHost 与运行时参数如实描述；示例插件列表补齐；新增「插件发现/日志/健康/自动重启无协议入口」与未实现测试夹具/工具链/其他 SDK 的交接说明。
+- [x] P1-2 `sdk/python/README.md`：运行时环境变量、插件清单约束、四个示例、FakeHost 心跳行为与插件测试命令。
+- [x] P1-3 `runtime.py` 本地清单校验与 Core 对齐：capabilities 白名单 + 所需权限映射（未知 CAPABILITY_NOT_SUPPORTED、缺权限 PERMISSION_DENIED）、permissions/capabilities 字符集与去重、`module:factory` entrypoint（比 Core 更严，因为 SDK 需导入）、runtime/isolation/dependencies/config_schema 显式拒绝；`ordered` 由 Core 持久化并在重连比对，SDK 原样转发（新增测试断言注册帧 ordered）。
+- [x] P1-3 `__main__.py` 运行时可配置：新增 `options_from_environment()`，支持 `PLUGIN_IO_TIMEOUT`/`PLUGIN_HOOK_TIMEOUT`/`PLUGIN_HEARTBEAT_INTERVAL`/`PLUGIN_RETRY_DELAY`，缺失必填或非法值 INVALID_ARGUMENT。
+- [x] P1-3 `testing.py` FakeHost 支持 `heartbeat_acks=False`，记录 `heartbeats` 队列；用于心跳超时重连测试。
+- [x] P1-3 新增测试：manifest capability/权限/字符集；ordered 转发与心跳超时重连；事件队列满 RATE_LIMITED 重连；cancel_action 与 query_action 双选/均缺；storage expires_at 帧；task local_time 原样转发与 both/neither 非法；环境参数解析与非法值（新增 test_options.py）。
+- [x] P1-4 跨模块只写交接（见下），未修改 core/proto/api/adapters/panel。
+
+实际运行的命令与结果（本机 2026-10-31，worktree `/tmp/kb-sdk-w3`，uv 0.13.5，Python 3.11.17）：
+
+- `uv sync --project sdk/python --locked --python 3.11.17`：成功（lock 与 pyproject 要求 3.11.18，但本机 uv 无该补丁下载；用 3.11.17 满足 `>=3.11,<3.13`）。**偏差：与 README/CI 钉住的 3.11.18 不完全一致**。
+- `sdk/python/.venv/bin/python sdk/python/tools/generate_proto.py`：成功。
+- `cmake --preset proto -DKIARABOT_ENABLE_INFRASTRUCTURE=ON && cmake --build --preset proto --parallel 6`（Homebrew protobuf/grpc/curl/sqlite + `CMAKE_PREFIX_PATH`）：configure/build 成功，产出 `build/proto/core/kiarabot-core`。
+- `sdk/python/.venv/bin/python -m pytest -q sdk/python/tests`：**82 passed**（W3 前基线 66；新增 16）。
+- `sdk/python/.venv/bin/python -m pytest -q -c sdk/python/pyproject.toml plugins/group_admin/tests plugins/reminder/tests`：**14 passed**。
+- 未运行：远端 CI（自动触发仍暂停，未手动 dispatch）；`tests/acceptance/run.sh` 全量入口（不在本分支允许修改范围，未运行 Ruby/适配器阶段）；`uv sync --python 3.11.18`（本机无该补丁）；clang-format/clang-tidy（本分支无 C++ 改动）。
+
+文档影响判断与同步：
+
+- 已更新：`doc/03-plugin-sdk.md`（清单校验、运行时参数、示例插件、Host API 状态、权限词表、测试能力、Python 形态、SDK 组成）、`sdk/PLUGIN_SDK_DEPENDENCIES.md`、`sdk/python/README.md`、本条台账。
+- 无需更新：`proto/`、`api/`（无契约变更）；`doc/01-*`、`doc/02`、`doc/04`–`doc/08`（未改变跨进程语义或 Core/适配器行为，仅插件侧文档）；`doc/18`（人类基线，只读）。
+- 文档校验：无协议/API 变更，未运行 OpenAPI/AsyncAPI/descriptor 检查；Markdown 结构人工检查。
+
+交接项：
+
+- core：受管启动器透传 `PLUGIN_IO_TIMEOUT`/`PLUGIN_HOOK_TIMEOUT`/`PLUGIN_HEARTBEAT_INTERVAL`/`PLUGIN_RETRY_DELAY`；当前 CLI 只能配置单个插件，需插件发现/多实例托管；插件 stdout/stderr 仍重定向 `/dev/null`，需日志帧/采集；无自动重启与插件健康 API；`plugin.config.v1` 仅当 `KIARABOT_CONTROL_CONFIG` 存在时装配。
+- proto + core：插件日志/健康通道、会话管理（ConversationService）、模型流、权限查询、插件停用原因帧、动态订阅；`PluginHeartbeat.sent_at_unix_ms` 未被使用。
+- ops：若 core 透传新环境变量，同步 `doc/08-operations.md`；示例插件部署配置（group_admin/reminder 的权限与 PYTHONPATH）尚未写入运维文档。
+- contracts：若未来支持非空 config_schema/依赖解析，需先冻结协议与错误语义。
+
+风险与未完成：
+
+- 示例插件只做最小命令集，不含持久化迁移、限流、权限细化；group_admin 的欢迎语开关只能经控制面配置，聊天内不可写。
+- reminder 依赖 Core 调度实际投递 TimerTriggered；本机仅单元测试覆盖插件逻辑，真实 Core 闭环未在本分支新增验收（W1/W2 的 SDK 真实 Core 测试仍覆盖 Host/任务路径）。
+- `ai-reply` 仍是最小示例，未采用新运行时参数（可用 `PLUGIN_HOOK_TIMEOUT` 调整）；未修改其行为以免扩大范围。
+- 基线 `doc/18` 仍称 `sdk/{cpp,typescript}` 与 `plugins/{ai_chat,group_admin,reminder}` 为建议结构；当前对应关系与未实现项已在 doc/03 说明，`doc/18` 由人类维护者裁定。

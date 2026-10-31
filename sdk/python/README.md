@@ -14,18 +14,26 @@ sdk/python/.venv/bin/python -m pytest -q sdk/python/tests
 
 测试默认使用 `build/proto/core/kiarabot-core`；可用 `CORE_TEST_BINARY` 指定另一构建。缺少二进制会失败，不跳过真实进程验收。测试使用临时数据库、本机随机端口与测试凭据，不连接真实 QQ。生成目录、虚拟环境均不提交。
 
-插件继承 `kiarabot_sdk.Plugin`，提供异步 `on_start(context)`、`on_event(event, context)` 和 `on_stop(reason)`。event 为生成的 EventEnvelope；成功返回后发送正 ACK，异常转为脱敏 INTERNAL，协作超时转为 TIMEOUT。ACK 不表示 Action 成功；至少一次投递可能重复，插件需要使自身副作用幂等。
+插件继承 `kiarabot_sdk.Plugin`，提供异步 `on_start(context)`、`on_event(event, context)`、`on_config(config, context)` 和 `on_stop(reason)`。event 为生成的 EventEnvelope；成功返回后发送正 ACK；`PluginError` 保留稳定码与 retryable，其他异常转为脱敏 INTERNAL，协作超时转为 TIMEOUT。ACK 不表示 Action 成功；至少一次投递可能重复，插件需要使自身副作用幂等。
 
-清单示例见 [event-observer](../../plugins/event-observer/plugin.json)。开发时将 `sdk/python/src`、`sdk/python/build/generated` 与插件目录的绝对路径加入 `PYTHONPATH`，配置 `PLUGIN_CORE_ENDPOINT=127.0.0.1:端口` 和 `PLUGIN_AUTH_TOKEN` 后执行：
+清单示例见 [event-observer](../../plugins/event-observer/plugin.json)，另有 [group_admin](../../plugins/group_admin/plugin.json)、[reminder](../../plugins/reminder/plugin.json)、[ai-reply](../../plugins/ai-reply/plugin.json)。capabilities 只能取 `event.message.received`、`event.message.sent`、`event.group.member.changed`、`event.friend.request`、`event.adapter.status.changed`、`event.timer.triggered` 并必须声明对应权限；`runtime=python-rpc`、`isolation=process` 必填，`dependencies` 非空或非空 `config_schema` 会被拒绝。开发时将 `sdk/python/src`、`sdk/python/build/generated` 与插件目录的绝对路径加入 `PYTHONPATH`，配置 `PLUGIN_CORE_ENDPOINT=127.0.0.1:端口` 和 `PLUGIN_AUTH_TOKEN` 后执行：
 
 ```bash
 sdk/python/.venv/bin/python -m kiarabot_sdk --manifest /absolute/path/to/plugin.json
 ```
 
-由 Core 管理时使用 `KIARABOT_PLUGIN_EXECUTABLE`、`KIARABOT_PLUGIN_MANIFEST` 和 `KIARABOT_PLUGIN_PYTHONPATH`，并配置持久化桥接、插件身份/凭据/权限，详见 [运维说明](../../doc/08-operations.md)。宿主只传递插件所需的环境变量；插件日志目前丢弃，后续统一日志任务再接入。进程隔离不是操作系统安全沙箱，仅用于可信插件的生命周期和故障隔离。
+由 Core 管理时使用 `KIARABOT_PLUGIN_EXECUTABLE`、`KIARABOT_PLUGIN_MANIFEST` 和 `KIARABOT_PLUGIN_PYTHONPATH`，并配置持久化桥接、插件身份/凭据/权限，详见 [运维说明](../../doc/08-operations.md)。SDK 进程可另选 `PLUGIN_IO_TIMEOUT`、`PLUGIN_HOOK_TIMEOUT`、`PLUGIN_HEARTBEAT_INTERVAL`、`PLUGIN_RETRY_DELAY`（默认 5/5/1/1 秒，非法值 `INVALID_ARGUMENT`）；Core 受管启动器尚未透传这四项（交接 core）。宿主只传递插件所需的环境变量；插件日志目前丢弃，后续统一日志任务再接入。进程隔离不是操作系统安全沙箱，仅用于可信插件的生命周期和故障隔离。
 
-Context.granted_permissions 在注册协商完成后可用，断开后清空。重连重新注册并核对全部权限；SDK 不缓存授权决定。已提供 submit_action/query_action/cancel_action（action.result.v1）以及 storage_get/storage_set/storage_delete（host.storage.v1）；必须协商后使用。storage_set/delete 的幂等键由插件提供，详情见 [SDK 设计](../../doc/03-plugin-sdk.md)。模型客户端 model_chat(model, messages, timeout=5.0) 已提供，需 host.model.v1 和 model.chat；返回 ModelChatResponse，超时/断线不可自动重试。调度客户端 task_create/task_get/task_cancel 已提供，需 host.tasks.v1、task.schedule；创建还需 event.timer.triggered，支持 UTC datetime 和 local_time 字典。AI 示例见 ../../plugins/ai-reply/plugin.json，插件使用 default 别名，由 Core 映射到 KIARABOT_MODEL_NAME；示例只通过 SDK，不读取密钥。
+Context.granted_permissions 在注册协商完成后可用，断开后清空。重连重新注册并核对全部权限；SDK 不缓存授权决定。已提供 submit_action/query_action/cancel_action（action.result.v1）以及 storage_get/storage_set/storage_delete（host.storage.v1）；必须协商后使用。storage_set/delete 的幂等键由插件提供，详情见 [SDK 设计](../../doc/03-plugin-sdk.md)。模型客户端 model_chat(model, messages, timeout=5.0) 已提供，需 host.model.v1 和 model.chat；返回 ModelChatResponse，超时/断线不可自动重试。调度客户端 task_create/task_get/task_cancel 已提供，需 host.tasks.v1、task.schedule；创建还需 event.timer.triggered，支持 UTC datetime 和 local_time 字典。示例：AI 见 ../../plugins/ai-reply（default 别名由 Core 映射到 KIARABOT_MODEL_NAME，只通过 SDK，不读取密钥）；群管理命令见 ../../plugins/group_admin；定时提醒见 ../../plugins/reminder。示例配置值见各目录 `config.example.json`（当前只支持空 schema，插件在 on_config 中自行校验）。
 
-FakeHost 使用真实 gRPC 和生成类型，测试可向 outgoing 队列放入 CoreToPlugin 帧，从 acknowledgements 队列读取 ACK；放入 None 模拟连接断开。Action 请求进入 actions 队列，Host 请求进入 host_requests 队列；测试显式设置 features 并写入对应响应。它不模拟 Core 的数据库、权限策略或业务状态机。
+FakeHost 使用真实 gRPC 和生成类型，测试可向 outgoing 队列放入 CoreToPlugin 帧，从 acknowledgements 队列读取 ACK；放入 None 模拟连接断开。Action 请求进入 actions 队列，Host 请求进入 host_requests 队列，配置 ACK 进入 config_acknowledgements，心跳进入 heartbeats；`FakeHost(heartbeat_acks=False)` 不响应心跳以验证 io_timeout 重连。测试显式设置 features 并写入对应响应。它不模拟 Core 的数据库、权限策略或业务状态机。
 
 配置闭环：可实现异步 `on_config(config, context)`，config 为生成的 PluginConfig 完整快照；默认回调接受配置。成功后 `context.config` 返回最新成功快照的副本。失败保留旧快照，异常/超时发送脱敏错误 ACK；配置与事件回调串行，Host RPC 接收独立。on_start 在注册前执行，首次配置在其后到达；重连重新调用 on_config，须使副作用幂等。未协商时 context.config 为 None。完整错误/版本/重连规则见 doc/03-plugin-sdk.md。
+
+插件测试与 SDK 测试使用同一 venv（`-c` 用于让插件目录继承 SDK 的 pytest 配置）：
+
+```bash
+sdk/python/.venv/bin/python -m pytest -q sdk/python/tests
+sdk/python/.venv/bin/python -m pytest -q -c sdk/python/pyproject.toml \
+    plugins/group_admin/tests plugins/reminder/tests
+```
