@@ -16,6 +16,7 @@ from .actions import ActionExecutor
 from .health import HealthServer
 from .mapper import AdapterError, map_message
 from .outbox import Outbox
+from .platform_errors import classify_retcode
 from .status import AdapterStatusReporter
 
 
@@ -54,10 +55,13 @@ def configure():
             raise AdapterError(common.UPSTREAM_UNAVAILABLE) from None
         try:
             return await bot.call_api(api, **params)
-        except ActionFailed:
+        except ActionFailed as failure:
             # Platform answered and rejected the call: reachable but degraded.
-            status.report(common.DEGRADED, 'platform_action_failed')
-            raise AdapterError(common.UPSTREAM_UNAVAILABLE) from None
+            retcode = failure.info.get('retcode') if isinstance(failure.info, dict) else None
+            code = classify_retcode(retcode)
+            if code in (common.PERMISSION_DENIED, common.RATE_LIMITED):
+                status.report(common.DEGRADED, 'platform_action_failed')
+            raise AdapterError(code) from None
     executor = ActionExecutor(os.environ['OUTBOX_PATH'] + '.actions', config.adapter_id, config.account_id, call_platform)
     client = CoreClient(config, outbox, executor, status)
     stop = asyncio.Event()
@@ -80,6 +84,13 @@ def configure():
         raise AdapterError(common.INVALID_ARGUMENT)
     health = HealthServer(ready_snapshot, host='127.0.0.1', port=health_port)
 
+    async def serve_health():
+        try:
+            await health.start()
+        except OSError:
+            # A busy port must not kill the adapter; health is reported by absence.
+            logging.getLogger(__name__).error('operation=health_listen error_code=UPSTREAM_UNAVAILABLE')
+
     @driver.on_bot_connect
     async def bot_connected(bot: Bot):
         status.report(common.HEALTHY, 'platform_connected')
@@ -100,7 +111,7 @@ def configure():
     @driver.on_startup
     async def startup():
         tasks.append(asyncio.create_task(client.run(stop)))
-        tasks.append(asyncio.create_task(health.start()))
+        tasks.append(asyncio.create_task(serve_health()))
 
     @driver.on_shutdown
     async def shutdown():
