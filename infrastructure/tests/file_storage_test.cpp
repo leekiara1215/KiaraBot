@@ -22,6 +22,16 @@ void exercise(kiarabot::core::IFileStorage& store) {
   assert(std::holds_alternative<std::monostate>(store.erase("key")));
   assert(std::holds_alternative<std::monostate>(store.erase("key")));
   assert(std::get<Error>(store.get("key")).code() == NOT_FOUND);
+  // Boundary: 255 bytes is the POSIX NAME_MAX for one path component; 256 is
+  // rejected before touching the filesystem.
+  const std::string maximum_key(255, 'a');
+  assert(std::holds_alternative<std::monostate>(store.put(maximum_key, value)));
+  assert(std::get<std::vector<std::byte>>(store.get(maximum_key)) == value);
+  assert(std::holds_alternative<std::monostate>(store.erase(maximum_key)));
+  const std::string oversized_key(256, 'a');
+  assert(std::get<Error>(store.get(oversized_key)).code() == INVALID_ARGUMENT);
+  assert(std::get<Error>(store.put(oversized_key, value)).code() == INVALID_ARGUMENT);
+  assert(std::get<Error>(store.erase(oversized_key)).code() == INVALID_ARGUMENT);
 }
 } // namespace
 
