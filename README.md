@@ -50,6 +50,7 @@ TypeScript 控制面板                 第一个控制面板客户端
 - 面板默认使用 mock 数据，`VITE_API_MODE=live` 时才连接实际控制 API。
 - Python NoneBot2 适配器由本仓库 `adapters/nonebot/` 维护；后续可再考虑拆成单独插件。
 - **远端 CI 与自动触发**：GitHub Actions 历史上 5 次运行均未通过（4 次失败、1 次取消；HEAD `e70de83` 仍有 4 个 job 失败）；自 2026-10-30（`16191cb`）起 `.github/workflows/ci.yml` 已暂停自动触发，只支持手动 `workflow_dispatch`。恢复自动触发前需先让手动运行变绿。
+- **2026-10-31 十模块集成（W1–W4）**：contracts、toolchain、ci-cd、core、infrastructure、adapter、plugin-sdk、control-api、control-panel、operations 十个模块分支的 P0 + 阻断主线 P1 已完成并合并；本机验收：`full` 构建 CTest **32/32**、contracts 门禁 17/17、adapter 46、SDK 82、plugin 14、control-api 27、panel 17（live 2 项需 C++/venv 前置）、deploy 11/11；新增 `full` CMake 预设、契约状态登记/枚举基线、CI full-build 与依赖审计、Core 维护循环与可配置容量、SQLite 容量/崩溃/迁移测试、适配器健康与会话 ID 统一、插件示例、控制面生产传输、面板管理动作、可运行化的 Docker/compose 骨架。**仍未验证**：远端 CI 手动运行、Docker/T11b、真实 QQ/NapCat/模型 T07b；环境差异（Python 3.11.18、clang-format 16、vcpkg 版本）需 CI 复跑确认。待确认事项见 [`reports/pending-confirmation.md`](reports/pending-confirmation.md)，执行记录见 [`reports/execution/`](reports/execution/)。
 - 实时任务状态和交付记录以 [开发台账](doc/16-development-tasks.md) 为准；[跨层未完成事项清单](doc/15-cross-layer-gaps.md) 是历史快照、不是现行清单，[实现现状评估](doc/14-implementation-assessment.md) 是早期快照。
 
 ## 构建与测试

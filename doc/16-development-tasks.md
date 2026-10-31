@@ -827,3 +827,12 @@ CI 修复（本轮只改工作流，未复跑；不能据此宣称 CI 已绿）�
 - 文档影响判断：更新 `doc/07-control-panel.md`（页面集合 9→10、管理动作与错误状态、契约漂移检测、live 前置与 mock 覆盖、流状态）与本台账。未改 `api/`：本轮只消费既有契约，未新增/修改 REST/WS 操作；messages 频道、`health.updated`、Action REST 生产者、`/groups` 数据源仍是 control-api/core 交接项，面板明确不伪造。
 - 交接：control-api/core 需实现 messages 授权/投影、`health.updated`、Action 查询的 control 拥有记录与 7 天保留、`/groups` 数据源、插件配置 delivery 推送（当前面板 GET 轮询观察）；ops 需承担 TLS 终止与生产反代。
 - 风险：真实服务测试依赖本机 C++/Python 环境，CI 自动触发恢复前仍需手动运行；npm 默认 TLS 证书链在本机不可用（仅影响本地安装）；视觉/可访问性只做了基础属性，未做 axe 自动化。
+
+## 2026-10-31 十模块 W1–W4 集成记录（本轮交付）
+
+- 范围：十个模块分支（contracts、toolchain、ci-cd、core、infrastructure、adapter、plugin-sdk、control-api、control-panel、operations）的 P0 + 阻断主线 P1。
+- 前置修复（main 原有、CI 从未捕获）：`control/api/src/http_mapper.cpp` 缺 `control_service.hpp` include；`infrastructure/tests/http_model_provider_test.cpp` 的 `const auto&` 绑定导致 12 处编译错误。
+- 合并顺序：contracts / toolchain / ci-cd → core / infrastructure → adapter / plugin-sdk / control-api → control-panel / operations；每个分支 push 后合并 main，冲突仅出现在各方都追加记录的 `doc/16`，均保留双方内容。
+- 本机验收（实际运行）：`full` 构建 CTest **32/32**；contracts 17/17；adapter 46；SDK 82；plugin 14；control-api 27；panel 17（live 前置时 19）；deploy 11/11；边界检查 7/7、YAML 解析通过。
+- 未验证：远端 CI 手动运行与恢复自动触发、Docker/T11b、真实 QQ/NapCat/模型 T07b；本机 Python 3.11.17、clang-format 23、protobuf 36 与 CI 固定版本不同，需 CI 复跑确认。
+- 待确认：见 `reports/pending-confirmation.md`；执行记录见 `reports/execution/`。`doc/18` 受保护未修改，差异由人类维护者裁定。
