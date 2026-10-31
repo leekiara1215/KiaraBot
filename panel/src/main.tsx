@@ -3,10 +3,17 @@ import { createRoot } from 'react-dom/client';
 import { App } from './App';
 import { ApiClient } from './api/client';
 import { MockServer } from './mock/server';
+import { ErrorBoundary } from './ui';
 import type { SocketFactory } from './stream/control-stream';
 const useMock = import.meta.env.VITE_API_MODE !== 'live';
 const mock = new MockServer();
 const api = new ApiClient(useMock ? mock.fetch : fetch, import.meta.env.VITE_API_BASE || '/api/v1');
 const factory: SocketFactory = useMock ? mock.socketFactory : (url) => new WebSocket(url);
 const streamUrl = import.meta.env.VITE_WS_URL || `${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/ws/control`;
-createRoot(document.getElementById('root')!).render(<React.StrictMode><App api={api} socketFactory={factory} streamUrl={streamUrl} mock={useMock} /></React.StrictMode>);
+createRoot(document.getElementById('root')!).render(
+  <React.StrictMode>
+    <ErrorBoundary onReset={() => location.reload()}>
+      <App api={api} socketFactory={factory} streamUrl={streamUrl} mock={useMock} />
+    </ErrorBoundary>
+  </React.StrictMode>,
+);
