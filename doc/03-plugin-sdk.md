@@ -43,7 +43,7 @@ SDK 提供真实本机 gRPC FakeHost，用于注册、事件、ACK、拒绝、�
 | `PLUGIN_HEARTBEAT_INTERVAL` | 1.0 | 心跳发送与读循环检查间隔 |
 | `PLUGIN_RETRY_DELAY` | 1.0 | 可重试连接失败后的等待 |
 
-Core 受管启动器当前只传递 endpoint、token 与 PYTHONPATH，尚未透传其余四项（交接 core）；受管插件使用默认值。宿主启动/停止硬超时由 Core 的 `KIARABOT_PLUGIN_START_TIMEOUT_MS`/`KIARABOT_PLUGIN_STOP_TIMEOUT_MS` 控制，与这组参数无关。
+Core 受管启动器当前只传递最小 PATH、endpoint、token 与可选 PYTHONPATH，尚未透传其余四项（交接 core）；受管插件使用默认值。宿主启动/停止硬超时由 Core 的 `KIARABOT_PLUGIN_START_TIMEOUT_MS`/`KIARABOT_PLUGIN_STOP_TIMEOUT_MS` 控制，与这组参数无关。
 
 ## 示例插件
 
