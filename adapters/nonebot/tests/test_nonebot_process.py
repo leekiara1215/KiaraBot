@@ -47,7 +47,8 @@ async def test_nonebot_process_with_fake_platform(tmp_path):
             environment = dict(os.environ, CORE_GRPC_ENDPOINT=f'127.0.0.1:{port}',
                 CORE_AUTH_TOKEN='x' * 32, ADAPTER_ID='adapter', ACCOUNT_ID='123',
                 ONEBOT_WS_URL=f'ws://127.0.0.1:{ws_port}', ONEBOT_ACCESS_TOKEN='platform-test-token',
-                OUTBOX_PATH=str(outbox), PYTHONPATH=os.pathsep.join([str(root/'src'), str(root/'generated')]))
+                OUTBOX_PATH=str(outbox), HEALTH_PORT='0',
+                PYTHONPATH=os.pathsep.join([str(root/'src'), str(root/'generated')]))
             process = await asyncio.create_subprocess_exec(sys.executable, '-m', 'kiarabot_adapter_nonebot',
                 cwd=root, env=environment, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
             await until(lambda: any(event.HasField('message_received') for event in core.events)

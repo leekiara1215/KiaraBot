@@ -84,6 +84,13 @@ def configure():
         raise AdapterError(common.INVALID_ARGUMENT)
     health = HealthServer(ready_snapshot, host='127.0.0.1', port=health_port)
 
+    async def serve_health():
+        try:
+            await health.start()
+        except OSError:
+            # A busy port must not kill the adapter; health is reported by absence.
+            logging.getLogger(__name__).error('operation=health_listen error_code=UPSTREAM_UNAVAILABLE')
+
     @driver.on_bot_connect
     async def bot_connected(bot: Bot):
         status.report(common.HEALTHY, 'platform_connected')
@@ -104,7 +111,7 @@ def configure():
     @driver.on_startup
     async def startup():
         tasks.append(asyncio.create_task(client.run(stop)))
-        tasks.append(asyncio.create_task(health.start()))
+        tasks.append(asyncio.create_task(serve_health()))
 
     @driver.on_shutdown
     async def shutdown():
