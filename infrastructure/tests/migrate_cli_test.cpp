@@ -13,10 +13,11 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
-#include <sys/wait.h>
 #include <unistd.h>
 #include <utility>
 #include <vector>
+
+#include <sys/wait.h>
 
 #include "kiarabot/infrastructure/sqlite_runtime_store.hpp"
 
@@ -26,8 +27,7 @@ using kiarabot::infrastructure::SqliteRuntimeStore;
 
 void check(bool result, const std::source_location& location = std::source_location::current()) {
   if (!result) {
-    throw std::runtime_error("Migrate CLI assertion failed at " +
-                             std::to_string(location.line()));
+    throw std::runtime_error("Migrate CLI assertion failed at " + std::to_string(location.line()));
   }
 }
 class Directory {
@@ -175,9 +175,7 @@ int main(int argc, char* argv[]) {
   const std::string migrate = argv[1];
   try {
     Directory directory;
-    const auto database = [&](const std::string& name) {
-      return (directory.path / name).string();
-    };
+    const auto database = [&](const std::string& name) { return (directory.path / name).string(); };
 
     check(run(migrate, {}).exit_code == 2);
     check(run(migrate, {":memory:"}).exit_code == 2);

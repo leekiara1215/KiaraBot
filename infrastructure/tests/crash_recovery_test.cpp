@@ -14,8 +14,9 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
-#include <sys/wait.h>
 #include <unistd.h>
+
+#include <sys/wait.h>
 
 #include "kiarabot/infrastructure/sqlite_runtime_store.hpp"
 
