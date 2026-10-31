@@ -26,58 +26,109 @@ T03a：在持久化入口配置基础上，设置 KIARABOT_PLUGIN_ID/TOKEN 及 K
 
 ```text
 deploy/
-  compose.dev.yml
-  compose.staging.yml
-  compose.prod.yml
+  compose.staging.yml        # staging 单机栈（可从仓库构建镜像）
+  compose.prod.yml           # production 单机栈（只接受 digest 镜像）
   docker/
-  systemd/
+    adapter.Dockerfile       # NoneBot 适配器镜像
+    panel.Dockerfile         # 面板静态构建 + nginx 反代镜像
+    panel-nginx.conf.template
+  control/control.example.json  # 控制配置模板（复制后改权限/属主）
+  env.example                # 部署环境变量模板（复制为 deploy/.env）
+  systemd/kiarabot.service
 scripts/
   check-toolchain.sh
-  check-contracts.sh
-  check-boundaries.sh
+  ci/…                       # CI 脚本（不属本层）
+  deploy/
+    deploy.sh  migrate.sh  backup.sh  healthcheck.sh  smoke.sh  log.sh
+    tests/deployment_test.py  tests/healthcheck_test.py
+  quality/…
 ```
 
-数据库迁移由 `infrastructure/src/sqlite_runtime_store.cpp` 实现，独立命令入口为 `infrastructure/src/migrate.cpp`；运维目录只负责编排、启动、健康检查、备份和回滚。
+数据库迁移由 `infrastructure/src/sqlite_runtime_store.cpp` 实现，独立命令入口为 `infrastructure/src/migrate.cpp`（镜像内 `/usr/local/bin/kiarabot-migrate`）；运维目录只负责构建、编排、启动、健康检查、备份、验证和回滚。
 
-## 进程
+## 进程与部署模型
+
+真实链路是 4 个进程，其中只有 3 个由本仓库构建镜像：
 
 ```text
-napcat
-kiarabot-adapter-nonebot
-kiarabot-core
-kiarabot-panel
+napcat（第三方，宿主机进程，不入镜像、不入 Compose）
+kiarabot-adapter-nonebot（本仓库镜像）
+kiarabot-core（本仓库镜像，控制 API 同进程）
+kiarabot-panel（本仓库镜像：nginx 静态站点 + 反代）
 ```
 
-开发环境可以使用 Docker Compose，单机生产环境也可以使用 systemd。无论使用何种方式，进程配置都不能改变业务协议。
+Core、控制 API、适配器健康探针和面板反代都**只监听 127.0.0.1**，这是协议与安全基线（Core 的 gRPC 只接受 `127.0.0.1:` 前缀，控制 HTTP 只接受回环 listen）。因此 Compose 采用 **Linux host 网络** 单机模型：
+
+- 所有容器共享宿主机网络命名空间，`127.0.0.1` 在 Core、适配器、面板之间是同一个回环地址；
+- 不需要跨容器 DNS，也不发布任何端口；对宿主机以外的访问只能通过 SSH 隧道或另行部署的反向代理；
+- 该模型要求 Linux 主机，Docker Desktop 默认不支持；NapCat 必须在同一台宿主机上以 `127.0.0.1` 监听 OneBot 正向 WebSocket（默认端口 3001）。
+
+不允许把回环监听改成 `0.0.0.0` 来“让跨容器可用”。需要多主机/多容器隔离时，应先评审 Core 的绑定地址策略和 TLS 方案，而不是改 Compose。
+
+## 端口与暴露面
+
+| 端口 | 所属进程 | 绑定 | 用途 |
+| --- | --- | --- | --- |
+| `${KIARABOT_CONTROL_PORT}`（默认 8080） | Core 控制 API | `127.0.0.1` | REST/WS、`/health/live`、`/health/ready`、`/api/v1/health` |
+| `${KIARABOT_GRPC_PORT}`（默认 50051） | Core BridgeServer | `127.0.0.1` | 适配器/插件 gRPC（明文回环，非生产 TLS 服务） |
+| `${KIARABOT_ADAPTER_HEALTH_PORT}`（默认 8081） | 适配器健康服务 | `127.0.0.1` | `/health/live`、`/health/ready` |
+| `${KIARABOT_PANEL_PORT}`（默认 8082） | 面板 nginx | `127.0.0.1` | 静态站点 + `/api/`、`/ws/` 反代 + `/health/live`、`/health/ready`（转发 Core ready） |
+| 3001（示例） | NapCat | `127.0.0.1` | OneBot 正向 WS，属于外部组件配置 |
+
+TLS 由本层之外的反向代理/SSH 隧道提供；仓库当前**未交付 TLS 终止配置**，Compose 中不发布公网端口，不能把本配置当作“已启用 HTTPS”的生产入口。
+
+## 镜像构建
+
+`Dockerfile` 使用与 CI 相同的 pinned vcpkg toolchain（`ARG VCPKG_COMMIT`，2025.04.09）构建，显式启用：
+
+```text
+-DKIARABOT_GENERATE_PROTO=ON
+-DKIARABOT_ENABLE_INFRASTRUCTURE=ON
+--target kiarabot-core kiarabot-migrate
+```
+
+因此镜像内的 `kiarabot-core` 包含 gRPC、控制 API、SQLite 持久化和 `/health/live`、`/health/ready` 探针；`kiarabot-migrate` 随镜像提供。运行阶段安装 `ca-certificates curl sqlite3 tzdata`（任务调度需要 IANA zoneinfo），以 UID/GID 10001 非 root 运行，只复制运行时二进制与 `scripts/deploy/*.sh`。
+
+适配器与面板镜像由 `deploy/docker/` 提供，均从仓库根上下文构建（`.dockerignore` 白名单包含 `proto/`、`adapters/nonebot/`、`panel/`、`api/`，仍排除 `.env`、密钥、`node_modules`、`.venv`、生成物）：
+
+- `adapter.Dockerfile`：`python:3.11-slim` + uv（锁定 `uv.lock`）+ 用仓库 `proto/` 生成 Python stub，运行 `python -m kiarabot_adapter_nonebot`，安装 curl，UID 10001，outbox 持久化到 `/var/lib/kiarabot-adapter`；
+- `panel.Dockerfile`：`node:22` 构建 `VITE_API_MODE=live` 的静态产物，`nginxinc/nginx-unprivileged` 提供 8082 回环站点，并把 `/api/`、`/ws/`、`/health/ready` 反代到 Core。
 
 ## 启动顺序
 
-1. `kiarabot-migrate` 获取迁移锁并完成数据库迁移；
-2. Core 启动并检查 schema 版本；
-3. Python 适配器注册并报告能力；
-4. NapCatQQ 连接适配器；
-5. 面板静态资源或面板服务连接 API。
+1. `migrate` 服务获取迁移锁，用 `kiarabot-migrate` 完成数据库迁移；**迁移前**自动做 SQLite 一致性快照，迁移后校验 `PRAGMA user_version` 等于 `EXPECTED_SCHEMA_VERSION`（默认 5），失败即以非零退出并阻断后续服务；
+2. Core 启动：打开数据库（再次校验 schema）、恢复 RUNNING、启动 BridgeServer 与控制 API，`/health/ready` 通过后 Compose 认为 core healthy；
+3. 适配器在 core healthy 后启动，注册能力并开启 8081 健康服务；Core ready 不要求 QQ 在线，适配器 ready 依赖 Core 注册；
+4. 面板在 core healthy 后启动（**不依赖适配器**，符合“Panel ready 依赖 API 可达，不要求 QQ 在线”），其 `/health/ready` 直接转发 Core ready；
+5. NapCatQQ 由操作员在宿主机运行并连接适配器；Compose 不管理它。
+
+## 环境变量与配置注入
+
+单一权威来源是 `deploy/.env`（或 `KIARABOT_ENV_FILE` 指向的文件，`chmod 600`）：Compose 用它做插值，也通过 `env_file` 注入 core/migrate/adapter 容器。模板见 `deploy/env.example`，至少需要：
+
+- Core：`KIARABOT_RUNTIME_DB`、`KIARABOT_ADAPTER_ACCOUNTS`、`KIARABOT_ADAPTER_ID`、`KIARABOT_ADAPTER_TOKEN`；可选 `KIARABOT_PLUGIN_ID/TOKEN/PERMISSIONS`、模型三件套。
+- Core 运行时容量/维护参数（W2 新增，`core/app/main.cpp` 读取并校验范围，非法值启动退出 1）：
+  `KIARABOT_EVENT_QUEUE_LIMIT`（默认 1024）、`KIARABOT_AUDIT_LIMIT`（100000）、`KIARABOT_ACTION_LIMIT`（10000）、`KIARABOT_ACK_TIMEOUT_MS`（30000）、`KIARABOT_MAINTENANCE_INTERVAL_MS`（60000）、`KIARABOT_RETENTION_HOURS`（168）。
+- 控制面：`KIARABOT_CONTROL_CONFIG=/etc/kiarabot/control.json`（容器内路径）与 `KIARABOT_CONTROL_PORT`（默认 8080）。宿主机文件路径由 `KIARABOT_CONTROL_CONFIG_FILE` 指定并只读挂载；文件必须属于 UID 10001、权限 0600、普通文件且非符号链接，否则 Core 拒绝启动。`deploy/control/control.example.json` 给出字段模板，`encryption_key` 用 `kiarabot-control-credentials --key` 生成，密码哈希用同工具从 stdin 生成。
+- 适配器：`CORE_GRPC_ENDPOINT`、`CORE_AUTH_TOKEN`、`ADAPTER_ID`、`ACCOUNT_ID`、`ONEBOT_WS_URL`、`ONEBOT_ACCESS_TOKEN`、`OUTBOX_PATH`、`HEALTH_PORT`。`CORE_AUTH_TOKEN` 必须等于 Core 的 `KIARABOT_ADAPTER_TOKEN`。
+- 面板：`VITE_API_MODE=live`、`VITE_API_BASE=/api/v1` 是**构建期**参数（由 `panel.Dockerfile` 的 build args 传入）；运行期只读取 nginx 模板变量 `KIARABOT_CONTROL_HOST/PORT`、`KIARABOT_PANEL_PORT`。Compose 中不再使用 `CORE_ENDPOINT`、`CONTROL_API_URL` 这类不存在的运行期变量。
+
+systemd 的 `EnvironmentFile=-/etc/kiarabot/production.env` 只进入 `deploy.sh` 进程，用于 Compose 插值；**不会**自动进入容器。容器环境来自 `deploy/.env`（`KIARABOT_ENV_FILE`）。如需单一文件，请把 `KIARABOT_ENV_FILE` 指向同一路径。
 
 ## 健康检查
 
-每个进程必须提供：
+每个进程必须提供（`api/openapi.yaml` 是根路径探针的唯一契约来源）：
 
 ```text
-/health/live     进程是否存活
-/health/ready    是否可以接收请求
-/api/v1/health   认证后的组件详情
+/health/live     进程是否存活（不访问存储）
+/health/ready    是否可以接收请求（Core 做无业务修改的写事务探针）
+/api/v1/health   认证后的组件详情（需 health.read 权限）
 ```
 
-`live` 只检查进程；`ready` 检查数据库 schema、数据库可写、协议服务和必要运行时；`details` 必须脱敏。Core 未 ready 时 API 返回 503，适配器未 ready 时不接收新 Action。
-
-```text
-Core live       不依赖数据库
-Core ready      依赖迁移完成 + 数据库可写 + RPC 监听
-Adapter ready   依赖 Core 注册 + NapCat 连接
-Panel ready     依赖 API 可达，不要求 QQ 在线
-```
-
-适配器还要报告 NapCat 和 Core 的连接状态。插件通过 PluginSDK 上报健康状态。
+- Core：根路径 live/ready 由控制 API 提供；未 ready 时 API 返回 503；适配器/插件状态在 `/api/v1/health` 聚合。
+- 适配器：`HEALTH_PORT`（默认 8081）上的 `127.0.0.1:/health/live`、`/health/ready`；ready 快照包含 `core`（是否已注册/连接）与 `platform`（是否有 OneBot bot 连接）组件，端口被占用只记录错误，不杀死进程。
+- 面板：nginx 的 `/health/live` 返回静态 200（进程存活），`/health/ready` 转发 Core `/health/ready`（等价“API 可达即 ready”）；不要求 QQ 在线。
+- 控制面传输层（W3）：支持 `OPTIONS`/`405 + Allow`、入站 `traceparent`/`X-Trace-ID` 传播并回写 `X-Request-ID`/`X-Trace-ID`、访问日志（JSON→stderr，含 method/path/status/duration/request_id/trace_id）；CORS 只在 `control.json` 的 `cors_origins` 精确白名单内放行（默认空=不做跨源），其余请求返回 429 + `Retry-After` 的限流按 `limits` 配置（认证 1000 rps/burst 2000，公开 30 rps/burst 60，默认值）。这些是传输层行为，不改变业务状态码语义。
 
 ## 日志
 
@@ -97,92 +148,95 @@ message
 error_code
 ```
 
-每个操作的成功、拒绝、重复、超时、重试、死信、依赖故障和状态转换都必须产生至少一条结构化记录，并通过 `request_id`、`trace_id`、`event_id` 或 `action_id` 关联。日志中不得记录 Token、API Key、消息正文和未经脱敏的私聊内容。日志端口和 sink 在后续实现任务中落地，运维层负责 JSON sink、轮转、集中收集、保留期和告警。腾讯 [BqLog](https://github.com/Tencent/BqLog) 是候选 sink，接入前需要单独完成许可证、性能、格式和跨平台评估。
+每个操作的成功、拒绝、重复、超时、重试、死信、依赖故障和状态转换都必须产生至少一条结构化记录，并通过 `request_id`、`trace_id`、`event_id` 或 `action_id` 关联。日志中不得记录 Token、API Key、消息正文和未经脱敏的私聊内容。
+
+部署侧当前提供：`scripts/deploy/*.sh` 的 JSON 日志（`timestamp/level/component/operation/outcome/request_id/trace_id/resource_id/message/error_code`，不含正文）、Core/适配器结构化日志、控制面访问日志；Compose 为每个服务配置 `json-file` 驱动并限制 `max-size=10m`、`max-file=5`。**尚未交付**：集中收集（如 vector/promtail）、保留期策略、日志告警。运维层不把日志通道当作命令通道。
 
 ## 备份和升级
 
-- `.env` 和密钥不进入 Git；
-- 数据库在迁移前备份；
-- 插件升级前记录版本和校验值；
-- 协议升级先做兼容测试；
-- NapCat、适配器和 Core 分别记录版本；
-- 失败升级应可以回滚到上一个版本。
-- 迁移命令必须可单独、可重复运行，失败时阻止后续服务启动；
-- 备份必须包含 schema 版本和校验值。
+- `.env`、控制配置和密钥不进入 Git/镜像；控制配置与 `encryption_key` 必须与数据库备份一起离线保管，丢失密钥会导致既有加密状态不可读；
+- 数据库备份使用 SQLite `VACUUM INTO` 一致性快照，写入 `PRAGMA user_version`、SHA-256 和创建时间；快照与恢复前都执行 `PRAGMA integrity_check`；
+- 备份与数据库**分卷**：`kiarabot-<env>-data` 挂载 `/var/lib/kiarabot`，`kiarabot-<env>-backups` 挂载 `/var/lib/kiarabot/backups`；默认保留最近 7 份，可用 `--retain`/`BACKUP_RETENTION` 调整。仍要求操作员定期复制该卷到独立受保护位置，本配置不提供异地复制；
+- 恢复必须显式传 `--confirm`（或 `RESTORE_CONFIRM=1`），且目标数据库不得存在 `-wal/-shm`、迁移锁；恢复会校验校验和、`integrity_check` 和 `schema_version` 与 `EXPECTED_SCHEMA_VERSION`，不匹配拒绝覆盖；
+- 插件配置、控制配置和适配器 outbox/.actions 不包含在 SQLite 备份中，需单独备份（见下文依赖）。
+
+## 升级与回滚
+
+- 迁移唯一权威命令是镜像内 `/usr/local/bin/kiarabot-migrate`；`MIGRATION_COMMAND` 默认值即该命令（`migrate.sh` 会把数据库路径作为唯一参数追加，也支持 `{database}` 占位符覆盖）。迁移失败或 schema 校验失败会阻止 Core 启动；
+- 升级：`KIARABOT_CORE_IMAGE_DIGEST=sha256:<64 位十六进制> scripts/deploy/deploy.sh upgrade`。脚本停止面板/适配器/Core，用新镜像在数据卷内运行 `migrate`（先备份），成功后再按 core → adapter → panel 顺序等待 ready；失败不自动启动旧镜像，保留停机状态等待操作员核对 schema 与迁移前备份；
+- 回滚：`scripts/deploy/deploy.sh rollback sha256:<digest>`。不传 digest 时使用 `<数据卷>/deploy-record.jsonl` 中最后一次成功记录；回滚前用 `sqlite3` 检查当前 `PRAGMA user_version` 等于 `EXPECTED_SCHEMA_VERSION`，不匹配则拒绝并要求先恢复迁移前备份（确认后可用 `ROLLBACK_FORCE=1` 覆盖）；镜像回滚不会自动恢复数据库；
+- 每次 start/upgrade/rollback 都向 `deploy-record.jsonl` 追加一条 JSON 记录（time、environment、outcome、image、schema_version、commit=`KIARABOT_COMMIT`），用于审计追踪与默认回滚点；
+- 部署后验证：`scripts/deploy/deploy.sh verify`（即 `smoke.sh`）检查 Core live/ready、可选认证 `/api/v1/health`、适配器 ready 与面板 ready；systemd 单元在 `ExecStartPost` 中调用它，smoke 失败使 unit 失败并可用 `ExecStop` 清理（`KIARABOT_SMOKE_SKIP=adapter,panel` 可裁剪检查项）；
+- 升级窗口：当前 `upgrade` 是“先停后起”的计划内宕机窗口，不提供蓝绿/滚动；systemd `TimeoutStartSec=600` 超时会发送 SIGTERM，操作员需按部署记录判断栈状态。
 
 ## 不属于本层的内容
 
-- 不修改业务数据绕过 API；
+- 不修改业务数据绕过 API（备份恢复是文档化的停机例外）；
 - 不在启动脚本中实现权限判断；
 - 不把第三方源码复制进 Core；
 - 不通过日志系统传递业务命令。
 
 ## 验收标准
 
-- 任一进程退出后可被单独重启；
-- Core 和适配器断线可以恢复；
-- 健康检查能区分存活和就绪；
-- 日志可以按 trace_id 关联一条消息链路；
-- 数据库和插件配置有备份方案。
+- 任一进程退出后可被单独重启（Compose `restart: unless-stopped`；迁移服务一次性运行）；
+- Core 和适配器断线可以恢复（连接退避在适配器侧）；
+- 健康检查能区分存活和就绪（core/adapter/panel 三套探针语义见上）；
+- 日志可以按 trace_id 关联一条消息链路（业务日志 + 控制面访问日志；集中收集待交付）；
+- 数据库、插件配置和适配器 outbox 有备份方案（SQLite 自动快照已验证；插件配置/outbox 需操作员额外复制）。
+
+## 当前实现状态与未验证事项（2026-10-31 W4）
+
+- 本分支把部署骨架从“不可运行”推进为“可解释地接近可运行”：镜像构建启用 proto+infrastructure 并包含 `kiarabot-migrate`；Compose 补齐 `--grpc-listen`、持久化环境变量、控制配置挂载、host 网络与回环约束、adapter/panel 镜像、健康检查、日志驱动、独立备份卷与迁移权威命令。
+- 宿主机依赖：Docker Engine + Docker Compose v2（`env_file.path/required`、`--wait` 需要较新版本）、`curl`（探针/smoke）、`sqlite3`（回滚前 schema 检查、备份校验）、bash；systemd 单元还需 `docker compose` 在 PATH 中。
+- **本机没有 Docker**：`docker build`、`docker compose config/up` 均未运行；镜像构建、host 网络行为、健康检查与 Compose 依赖链的真实结果必须在有 Docker 的 Linux 环境或 CI 中验证，本分支不声称部署已验收（T11b 继续未完成）。
+- 仍需外部环境验证：真实 NapCat/QQ 联调（T07b）、TLS 反代、集中日志、指标/告警、备份/恢复与回滚演练、真实 digest 发布、CI 镜像构建与推送。
+- 生产 Compose 的全零 digest 是“不可拉取”的占位符；发布系统必须注入真实 digest。staging Compose 的镜像引用是 `:staging` 标签，且可通过 `build:` 从仓库构建。
+
+## 其他模块需要完成的依赖
+
+下列事项由对应模块负责人实现并验证；运维层不代替它们定义业务行为或修改公共契约：
+
+1. **Core**：已提供持久化、控制 API、进程探针和 6 个运行时参数；运维镜像已按 proto+infrastructure 构建。剩余：`/health/ready` 在控制配置缺失时的错误信息（当前只返回 1，排障困难）、插件进程的容器化路径（运行层不含 Python，受管插件仍按 T03b 本机模型运行）。
+2. **协议和控制 API**：根路径探针与认证 `/api/v1/health` 已在 OpenAPI 冻结；控制配置的 `cors_origins`/`limits` 字段由 W3 实现，运维模板已同步。
+3. **基础设施/数据库**：独立迁移程序已随镜像发布；Core 打开数据库时仍会自动迁移 v1–v4→v5，因此运维必须保证先运行 migrate 服务（Compose 依赖已强制）；备份/恢复演练仍待 T11b。
+4. **适配器与面板**：适配器健康接口与 `HEALTH_PORT` 已实现并有测试；outbox 容量/失败记录清理仍需适配器负责人给出运维导出/清理工具；面板是静态站点，运行形态由 `panel.Dockerfile` 固定为 nginx 回环反代，若要求公网 TLS 需另加反向代理。
+5. **CI/CD**：镜像构建、GHCR 发布、staging 部署与部署记录尚未接入流水线（CI 自动触发暂停中）；本分支只提供 Dockerfile/Compose/脚本和本地单测，不声称 CI 已绿。
+6. **发布验收**：依赖完成后必须用真实 digest 镜像与隔离数据重新验证迁移失败阻断、live/ready/details、启动顺序、备份恢复、指定 digest 回滚和旧版本 schema 兼容性。
 
 ## 代码启动句
 
 > 请只实现 KiaraBot 各进程的 Docker Compose/systemd 启动配置、健康检查、结构化日志、重启策略和本地开发环境，不修改 Core、插件或适配器业务代码。
 
-## 当前部署配置与依赖
-
-运维模块提供 `Dockerfile`、`.dockerignore`、`deploy/compose.staging.yml`、`deploy/compose.prod.yml`、`deploy/systemd/kiarabot.service` 和 `scripts/deploy/`。镜像只复制 Core 构建输入及运维脚本，构建上下文使用白名单；运行用户为 UID/GID 10001。Compose 的四个服务依次等待迁移成功、Core ready 和适配器 ready，面板也有独立 ready 检查。适配器、面板镜像必须自带 `curl`，以 UID 10001 运行，并在各自容器的 8081、8082 端口提供健康接口。镜像引用和命令可通过 Compose 中的 `KIARABOT_*` 变量配置；生产配置中的全零 digest 仅是无法拉取的占位值，部署前必须指定真实 digest 镜像。staging 和 production 使用独立数据卷及默认端口。
-
-**当前不能作为完整部署验收**：Core 已有插件/Action 闭环、控制 API 和进程探针，T11a 提供独立迁移程序；适配器及面板镜像、生产 TLS、真实环境及隔离部署恢复仍归 T11b/T07b。进程探针为根路径 `/health/live`（不访问存储）、`/health/ready`（写事务探测）；详情为认证的 `/api/v1/health`，不提供历史 `/health/details`。唯一来源是 OpenAPI。
-
-**当前实现状态：部署骨架尚不可运行**：`deploy/compose.*.yml` 中的 `HEALTH_PORT` 目前没有代码读取；适配器与面板的 8081/8082 HTTP 健康服务尚未实现；默认 `Dockerfile` 只构建 dev Core（未启用 proto/infrastructure，因此不提供 `/health/live`、`/health/ready`）；生产/暂存 compose 的镜像 digest 仍是全零占位。因此 `scripts/deploy/deploy.sh start`/`upgrade` 的成功路径尚不可用，T11b 未验收。上文的生产设计仍是目标，需在镜像、健康服务和真实 digest 落地后才成立。
-
-Compose 在 `deploy/.env` 存在时可通过可选 `env_file` 注入运行配置，也可以使用 `KIARABOT_ENV_FILE` 指定外部文件；Compose 插值变量通过启动进程环境或 Compose 的 `--env-file` 提供。环境文件和密钥不应放进仓库或构建上下文，权限应限制为部署账户可读。镜像构建不需要 Token、API Key 或 SSH key。不要把这些值放进镜像标签、命令行或日志。
+## 部署操作摘要
 
 ```bash
-# 检查配置；生产环境先设置三个真实的镜像引用（含 digest）
-docker compose -f deploy/compose.staging.yml config
-docker compose -f deploy/compose.prod.yml config
-KIARABOT_ENVIRONMENT=staging scripts/deploy/deploy.sh start
-KIARABOT_ENVIRONMENT=staging scripts/deploy/deploy.sh status
-KIARABOT_ENVIRONMENT=staging scripts/deploy/deploy.sh stop
+# 1) 环境与配置（一次性）
+cp deploy/env.example deploy/.env && chmod 600 deploy/.env   # 填入真实值
+cp deploy/control/control.example.json deploy/control/control.json
+chmod 600 deploy/control/control.json && chown 10001:10001 deploy/control/control.json
+# encryption_key / password_hash 用镜像内的 kiarabot-control-credentials 生成
 
-# 运维探针不输出响应正文；详情需要有 health.read 权限的 access token 文件
+# 2) 启动 / 状态 / 验证
+KIARABOT_ENVIRONMENT=staging scripts/deploy/deploy.sh start   # 需 KIARABOT_BUILD_IMAGES=1 首次构建
+KIARABOT_ENVIRONMENT=staging scripts/deploy/deploy.sh status
+KIARABOT_ENVIRONMENT=staging scripts/deploy/deploy.sh verify
+
+# 3) 探针（不输出响应正文；详情需要 health.read token 文件）
 scripts/deploy/healthcheck.sh --url http://127.0.0.1:8080 --endpoint /health/live
 scripts/deploy/healthcheck.sh --url http://127.0.0.1:8080 --endpoint /health/ready
-scripts/deploy/healthcheck.sh --url http://127.0.0.1:8080 --endpoint /api/v1/health --token-file /path/to/access-token
-```
+scripts/deploy/healthcheck.sh --url http://127.0.0.1:8080 --endpoint /api/v1/health --token-file /path/to/token
 
-`--token-file` 仅读取包含 access token 的文件，用于 `/api/v1/health`；调用方应将文件限制为当前用户可读并在使用后删除。令牌不会出现在命令参数或脚本日志中。缺少、无法读取或格式非法返回 2；服务认证拒绝或不可用返回 1。
-
-Linux 主机可将仓库部署到 `/opt/kiarabot`，将 `deploy/systemd/kiarabot.service` 安装到 systemd，使用 `/etc/kiarabot/production.env` 指定环境变量，再运行 `systemctl daemon-reload` 和 `systemctl enable --now kiarabot.service`。该服务由 Docker 守护进程管理容器重启；停止服务会执行 Compose down，但保留数据卷。变更这些示例路径时应同步修改 unit。容器 stdout/stderr 使用 Docker 日志驱动，部署脚本输出 JSON 字段 `timestamp`、`level`、`component`、`operation`、`outcome`、`request_id`、`trace_id`、`resource_id`、`message`、`error_code`；业务进程仍须自行提供上文要求的结构化字段与脱敏，运维脚本不会将日志作为命令通道。
-
-### 备份、迁移和回滚
-
-`scripts/deploy/migrate.sh` 使用排他锁；数据库已存在时先用 SQLite `VACUUM INTO` 创建一致性快照，并写入 `PRAGMA user_version`、SHA-256 和创建时间；校验使用 sha256sum 或 shasum -a 256，缺少两者时明确失败。数据库不存在视为首次部署；未设置 `MIGRATION_COMMAND` 时以非零状态停止，因为必须显式指定迁移命令；仓库已提供可重复运行的 `kiarabot-migrate`，但当前默认镜像未打包该程序。部署镜像完成接线后，通过受控环境变量提供命令。确认无需迁移时可明确设置 `MIGRATION_COMMAND=true`；命令失败会以非零状态阻止后续服务。异常终止可能留下锁文件，确认无迁移进程后才能人工删除。备份保存在数据卷内，操作员还须定期复制到独立的受保护位置；本配置不包含插件配置备份。
-
-```bash
-# 命令在数据卷内运行；输出最后一行是备份文件路径
+# 4) 备份 / 恢复（恢复必须停机并显式确认）
 docker compose -f deploy/compose.prod.yml run --rm --no-deps migrate /usr/local/bin/backup.sh backup
-# 停止所有数据库使用者后，检查并清理不再使用的 SQLite -wal/-shm 文件，
-# 再用备份的精确路径恢复；脚本先校验 SHA-256，拒绝存在 sidecar 的目标。
 docker compose -f deploy/compose.prod.yml stop panel adapter core
-docker compose -f deploy/compose.prod.yml run --rm --no-deps migrate /usr/local/bin/backup.sh restore --input /var/lib/kiarabot/backups/<backup-set>/database.db
+docker compose -f deploy/compose.prod.yml run --rm --no-deps migrate \
+  /usr/local/bin/backup.sh restore --input /var/lib/kiarabot/backups/<set>/database.db --confirm
+KIARABOT_ENVIRONMENT=production scripts/deploy/deploy.sh start
+
+# 5) 升级 / 回滚
+KIARABOT_CORE_IMAGE_DIGEST=sha256:<64 位十六进制> scripts/deploy/deploy.sh upgrade
+scripts/deploy/deploy.sh rollback sha256:<64 位十六进制>   # 省略参数时用 deploy-record.jsonl 最后成功记录
 ```
-
-升级前设置 `KIARABOT_CORE_IMAGE_DIGEST=sha256:<64位十六进制>`，并记录旧镜像 digest，然后运行 `scripts/deploy/deploy.sh upgrade`。脚本停止服务、在数据卷内运行迁移（先备份），再依次等待各服务 ready；迁移或启动失败时停止服务并返回非零，不自动启动旧镜像；操作员须先核对 schema 与迁移前备份，再决定恢复或显式回滚。`scripts/deploy/deploy.sh rollback sha256:<64位十六进制>` 可单独执行镜像回滚，不再次执行迁移。镜像回滚不会自动恢复数据库：只有确认旧版本与当前 schema 兼容时才能直接使用；否则停止所有数据库使用者，核对备份和 schema 后显式恢复，再启动旧版本。升级和回滚只更换 Core 镜像，适配器和面板的版本由其镜像变量独立管理。备份恢复涉及数据替换，必须先确认恢复点及写入损失。
-
-## 其他模块需要完成的依赖
-
-下列事项由对应模块负责人实现并验证；运维层不代替它们定义业务行为或修改公共契约。
-
-1. **Core**：已提供持续进程、本机 RPC、持久化及控制服务健康探针。默认镜像未启用协议和基础设施，Compose 默认入口未启动这些服务，仍无法通过 ready 检查；生产镜像和配置接线待 T11b 验收。
-2. **协议和控制 API**：T11a 已冻结根路径 live/ready 与认证的 `/api/v1/health`；部署时须提供正确监听配置及有权限的详情查询凭据。
-3. **基础设施／数据库**：独立、可重复执行的迁移程序已实现；仍须在部署演练中验证与运维脚本的 SQLite 快照和 `PRAGMA user_version` 记录兼容。不兼容新 schema 的旧版本须在镜像回滚前按恢复流程处理数据。
-4. **适配器与面板**：各自提供可运行的镜像、启动命令和进程健康接口，并确认可用 UID、探针工具、监听端口及必要配置。Compose 中的镜像、命令、`CORE_ENDPOINT`、`CONTROL_API_URL` 和端口均须由所属模块核对；其中连接地址是占位配置，不能作为已确认的跨模块协议。
-5. **业务日志与插件配置**：各业务进程负责输出本节此前列出的关联字段和脱敏内容，运维 JSON 日志不能替代业务日志。插件负责人还须明确配置的权威存储、导出和恢复方式；当前脚本只备份 SQLite 数据库，不覆盖插件配置。
-
-依赖完成后，应使用真实发布镜像及隔离数据重新验证迁移失败阻断、live/ready/details、服务启动顺序、备份恢复、指定 digest 回滚及旧版本的 schema 兼容性。
 
 ## T01b 本机传输验证
 

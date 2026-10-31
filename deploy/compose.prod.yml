@@ -1,5 +1,9 @@
 name: ${COMPOSE_PROJECT_NAME:-kiarabot-production}
 
+# Production uses the same single-host loopback/host-network model as staging
+# (see doc/08-operations.md, "网络、端口与限制"). Images must be immutable
+# digests: every all-zero digest below is an intentionally unpullable
+# placeholder that the release pipeline must replace before deployment.
 services:
   migrate:
     image: ${KIARABOT_CORE_IMAGE:-ghcr.io/leekiara1215/kiarabot-core@sha256:0000000000000000000000000000000000000000000000000000000000000000}
@@ -10,95 +14,126 @@ services:
         required: false
     environment:
       KIARABOT_ENVIRONMENT: production
-      DATABASE_PATH: ${DATABASE_PATH:-/var/lib/kiarabot/kiarabot.db}
-      BACKUP_DIR: ${BACKUP_DIR:-/var/lib/kiarabot/backups}
-      MIGRATION_COMMAND: ${MIGRATION_COMMAND:-}
+      DATABASE_PATH: ${KIARABOT_RUNTIME_DB:-/var/lib/kiarabot/kiarabot.db}
+      BACKUP_DIR: /var/lib/kiarabot/backups
+      MIGRATION_COMMAND: /usr/local/bin/kiarabot-migrate
+      EXPECTED_SCHEMA_VERSION: "5"
     volumes:
       - kiarabot-production-data:/var/lib/kiarabot
+      - kiarabot-production-backups:/var/lib/kiarabot/backups
     restart: "no"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
     security_opt: [no-new-privileges:true]
     cap_drop: [ALL]
 
   core:
     image: ${KIARABOT_CORE_IMAGE:-ghcr.io/leekiara1215/kiarabot-core@sha256:0000000000000000000000000000000000000000000000000000000000000000}
     user: "10001:10001"
-    command: ["/usr/local/bin/kiarabot-core"]
+    command:
+      - /usr/local/bin/kiarabot-core
+      - --grpc-listen
+      - 127.0.0.1:${KIARABOT_GRPC_PORT:-50051}
+    network_mode: host
     env_file:
       - path: ${KIARABOT_ENV_FILE:-.env}
         required: false
     environment:
       KIARABOT_ENVIRONMENT: production
-      HEALTH_PORT: "8080"
-    ports:
-      - "127.0.0.1:${KIARABOT_CORE_PORT:-8080}:8080"
+      KIARABOT_CONTROL_CONFIG: /etc/kiarabot/control.json
+      KIARABOT_CONTROL_PORT: ${KIARABOT_CONTROL_PORT:-8080}
     volumes:
       - kiarabot-production-data:/var/lib/kiarabot
+      - ${KIARABOT_CONTROL_CONFIG_FILE:-./control/control.json}:/etc/kiarabot/control.json:ro
     depends_on:
       migrate:
         condition: service_completed_successfully
     healthcheck:
-      test: ["CMD-SHELL", "curl --fail --silent --show-error http://127.0.0.1:8080/health/ready >/dev/null"]
+      test: ["CMD-SHELL", "curl -fsS \"http://127.0.0.1:$${KIARABOT_CONTROL_PORT:-8080}/health/ready\" >/dev/null"]
       interval: 10s
       timeout: 3s
       retries: 12
       start_period: 20s
     restart: unless-stopped
     init: true
+    stop_grace_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
     security_opt: [no-new-privileges:true]
     cap_drop: [ALL]
 
   adapter:
     image: ${KIARABOT_ADAPTER_IMAGE:-ghcr.io/leekiara1215/kiarabot-adapter-nonebot@sha256:0000000000000000000000000000000000000000000000000000000000000000}
     user: "10001:10001"
-    command: ["/bin/sh", "-c", "exec ${KIARABOT_ADAPTER_COMMAND:-kiarabot-adapter-nonebot}"]
+    network_mode: host
     env_file:
       - path: ${KIARABOT_ENV_FILE:-.env}
         required: false
     environment:
       KIARABOT_ENVIRONMENT: production
-      CORE_ENDPOINT: ${CORE_ENDPOINT:-http://core:8080}
-      HEALTH_PORT: "8081"
+      CORE_GRPC_ENDPOINT: 127.0.0.1:${KIARABOT_GRPC_PORT:-50051}
+      HEALTH_PORT: ${KIARABOT_ADAPTER_HEALTH_PORT:-8081}
+    volumes:
+      - kiarabot-production-adapter:/var/lib/kiarabot-adapter
     depends_on:
       core:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "curl --fail --silent --show-error http://127.0.0.1:8081/health/ready >/dev/null"]
+      test: ["CMD-SHELL", "curl -fsS \"http://127.0.0.1:$${HEALTH_PORT:-8081}/health/ready\" >/dev/null"]
       interval: 10s
       timeout: 3s
       retries: 12
       start_period: 20s
     restart: unless-stopped
     init: true
+    stop_grace_period: 20s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
     security_opt: [no-new-privileges:true]
     cap_drop: [ALL]
 
   panel:
     image: ${KIARABOT_PANEL_IMAGE:-ghcr.io/leekiara1215/kiarabot-panel@sha256:0000000000000000000000000000000000000000000000000000000000000000}
-    user: "10001:10001"
-    command: ["/bin/sh", "-c", "exec ${KIARABOT_PANEL_COMMAND:-kiarabot-panel}"]
-    env_file:
-      - path: ${KIARABOT_ENV_FILE:-.env}
-        required: false
+    user: "101:101"
+    network_mode: host
     environment:
       KIARABOT_ENVIRONMENT: production
-      CONTROL_API_URL: ${CONTROL_API_URL:-http://core:8080}
-      HEALTH_PORT: "8082"
-    ports:
-      - "127.0.0.1:${KIARABOT_PANEL_PORT:-8082}:8082"
+      KIARABOT_CONTROL_HOST: 127.0.0.1
+      KIARABOT_CONTROL_PORT: ${KIARABOT_CONTROL_PORT:-8080}
+      KIARABOT_PANEL_PORT: ${KIARABOT_PANEL_PORT:-8082}
     depends_on:
-      adapter:
+      core:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "curl --fail --silent --show-error http://127.0.0.1:8082/health/ready >/dev/null"]
+      test: ["CMD-SHELL", "curl -fsS \"http://127.0.0.1:$${KIARABOT_PANEL_PORT:-8082}/health/ready\" >/dev/null"]
       interval: 10s
       timeout: 3s
       retries: 12
       start_period: 20s
     restart: unless-stopped
     init: true
+    stop_grace_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
     security_opt: [no-new-privileges:true]
     cap_drop: [ALL]
 
 volumes:
   kiarabot-production-data:
     name: ${KIARABOT_PRODUCTION_VOLUME:-kiarabot-production-data}
+  kiarabot-production-backups:
+    name: ${KIARABOT_PRODUCTION_BACKUP_VOLUME:-kiarabot-production-backups}
+  kiarabot-production-adapter:
+    name: ${KIARABOT_PRODUCTION_ADAPTER_VOLUME:-kiarabot-production-adapter}

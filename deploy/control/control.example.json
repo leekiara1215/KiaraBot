@@ -1,0 +1,23 @@
+{
+  "listen": "127.0.0.1:8080",
+  "encryption_key": "REPLACE_WITH_64_HEX_CHARS_FROM_kiarabot-control-credentials_--key",
+  "users": [
+    {
+      "id": "admin",
+      "username": "admin",
+      "password_hash": "$argon2id$v=19$m=65536,t=3,p=4$REPLACE_WITH_SALT$REPLACE_WITH_HASH",
+      "role": "admin"
+    }
+  ],
+  "cors_origins": [],
+  "limits": {
+    "authenticated_requests_per_second": 1000,
+    "authenticated_burst": 2000,
+    "public_requests_per_second": 30,
+    "public_burst": 60,
+    "max_streams_per_token": 16,
+    "max_requests_per_connection": 1000,
+    "idle_timeout_seconds": 30,
+    "drain_timeout_seconds": 3
+  }
+}

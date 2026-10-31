@@ -347,7 +347,7 @@
 
 ## T11b：镜像、部署与恢复演练
 
-- 原工作包：11；状态：**等待依赖：T07b 真实环境由用户准备；本机未安装 Docker，未做部署/恢复验收**。
+- 原工作包：11；状态：**进行中（W4 2026-10-31 完成部署骨架接线，本机无 Docker 仍未验收；T07b 真实环境仍待提供）**。
 - 依赖：T11a、T09b、T10b、T07b。
 - 允许修改：Dockerfile、deploy/、scripts/deploy/、CI；禁止修改其余模块内部实现。
 - 输入、输出与错误：固定镜像/配置/备份 → 可追踪部署。
@@ -779,3 +779,29 @@ CI 修复（本轮只改工作流，未复跑；不能据此宣称 CI 已绿）�
 - 未运行：远端 CI（自动触发暂停）、TLS 生产代理/证书（T11b）、Docker、跨平台；`clang-tidy` 未运行（本机无）；`clang-format` 未运行（本机无）。
 - 交接（不在本分支范围）：contracts 登记 405/OPTIONS/HEAD/CORS/429/1013/X-Request-ID 语义；core 修 health.updated、messages 授权/投影、Action 查询生产者与保留期、/groups 数据源、/logs 与审计解耦；ops 承担 TLS 终止与生产反代。
 - 文档影响判断：更新 `control/api/README.md`（配置字段、传输行为、限流/关闭码）、`doc/06-control-api.md`（W3 行为与交接），本条记录本台账；`api/` 未改（规则要求先契约后实现，本轮属契约未声明的传输增强，已列为交接）；`doc/08-operations.md` 的运维口径未同步（超出本分支允许范围，交接 ops）。
+
+## 2026-10-31 W4：operations 部署骨架可运行化
+
+- 状态：**本机实现，部署未验收**。本机没有 Docker，`docker build`/`docker compose config/up` 均未运行；T11b 继续保持未验收，不声称镜像可构建或 Compose 可启动。
+- 范围（本分支唯一允许修改）：`Dockerfile`、`.dockerignore`、`deploy/`、`scripts/deploy/`、`doc/08-operations.md`、本台账条目；未修改 core/control/api/adapters/panel/proto/api/.github/scripts/ci。
+- 输入输出与错误：Dockerfile 构建上下文/参数 → 镜像；Compose 环境与配置 → 容器集合；迁移/备份/升级/回滚命令 → 稳定退出码与 JSON 错误码。
+- 实现要点：
+  - Dockerfile 改为 pinned vcpkg proto+infrastructure 构建（`KIARABOT_GENERATE_PROTO=ON`、`KIARABOT_ENABLE_INFRASTRUCTURE=ON`），构建并复制 `kiarabot-core`、`kiarabot-migrate`；运行层安装 curl/sqlite3/tzdata，非 root（10001），只复制部署脚本；`.dockerignore` 白名单加入 proto/infrastructure/control/adapters/panel/api/deploy/docker。
+  - 新增 `deploy/docker/adapter.Dockerfile`（python 3.11 + uv + 生成 proto + `python -m kiarabot_adapter_nonebot` + outbox 卷 + curl）与 `deploy/docker/panel.Dockerfile` + nginx 模板（静态站点、`/api/`、`/ws/`、`/health/ready` 反代 Core）。
+  - Compose staging/prod：Linux host 网络（全部回环监听）、core 增加 `--grpc-listen`、运行时 DB/账号/适配器凭据由 `deploy/.env` 注入、控制配置 0600 只读挂载、迁移服务唯一权威 `MIGRATION_COMMAND=/usr/local/bin/kiarabot-migrate` + schema 校验、数据/备份/适配器 outbox 分卷、json-file 日志轮转、健康检查与 `depends_on` 链、TLS/公网暴露明确不在本配置内。
+  - `migrate.sh` 默认命令改为 `kiarabot-migrate` 并追加数据库路径、迁移后校验 `user_version`；`backup.sh` 增加 `integrity_check`、备份保留（默认 7 份）、恢复 `--confirm`、恢复侧完整性与 schema 校验、迁移锁拒绝；`deploy.sh` 增加 preflight（控制配置属主/0600/listen 一致）、部署记录 `deploy-record.jsonl`、rollback 默认使用最后成功记录并在回滚前校验 schema、新增 `verify` 子命令；新增 `smoke.sh`；systemd 单元增加启动后 smoke、超时、日志/加固配置。
+  - 新增 `deploy/env.example`、`deploy/control/control.example.json`；`doc/08-operations.md` 重写部署/网络/镜像/环境变量/健康/日志/备份/升级回滚/验收章节并同步 W2 的 6 个运行时参数、适配器 HEALTH_PORT/健康接口、W3 的 405/OPTIONS/CORS/429/trace/访问日志。
+- 实际运行（本机 2026-10-31，worktree `/tmp/kb-ops-w4`，macOS，bash 3.2，python3.9，sqlite3 3.51，ruby）：
+  - `python3 scripts/deploy/tests/deployment_test.py` → **11 tests OK**（新增 start 记录、rollback 使用记录 digest、rollback schema 拒绝、备份保留、恢复确认、迁移 schema 校验）；
+  - `python3 scripts/deploy/tests/healthcheck_test.py` → **2 tests OK**；
+  - `ruby -ryaml -e 'YAML.load_file("deploy/compose.staging.yml"); YAML.load_file("deploy/compose.prod.yml"); puts "yaml ok"'` → `yaml ok`；
+  - `bash -n scripts/deploy/*.sh` → 全部通过；
+  - 手工 smoke 探针（本地 fake HTTP server + `smoke.sh`）通过；`healthcheck.sh` 行为不变。
+- 未运行/未验证：`docker build`（无 Docker）、`docker compose config/up`（无 Docker；Compose 语义、host 网络、健康检查依赖链均未实测）、vcpkg 镜像构建耗时与产物、adapter/panel 镜像构建、systemd 单元实机行为、TLS 反代、集中日志/指标/告警、备份恢复演练、真实 digest 发布。
+- 交接项：
+  - ci-cd：在 CI 中增加 `docker build`/`docker compose config` 或发布 job，验证本分支镜像与 Compose；CI 自动触发仍暂停。
+  - core：`KIARABOT_CONTROL_CONFIG` 缺失/权限错误只返回退出 1，建议输出稳定错误码；受管 Python 插件镜像化仍待决策（运行层不含 Python）。
+  - contracts/control-api：405/OPTIONS/CORS/429/1013/X-Request-ID 语义需登记契约（W3 已列交接，ops 未改 `api/`）。
+  - adapter：outbox 容量/失败记录清理工具、`HEALTH_PORT` 之外的运行配置文档；面板生产形态（TLS 反代）已固定在 ops 的 nginx 模板，如需外置代理需复核。
+  - 人类维护者：`doc/18` 中 `deploy/{docker,systemd}` 与实际（`deploy/docker`、`deploy/*.yml`、`deploy/systemd`）的差异只读保留，未修改。
+- 风险：host 网络模型只支持 Linux 单机；TLS 未交付；迁移/备份属“脚本级”保障，未做真实演练；Compose 使用 `env_file.path/required` 长语法，需要较新 Docker Compose；staging 首次启动需 `KIARABOT_BUILD_IMAGES=1` 构建镜像。
