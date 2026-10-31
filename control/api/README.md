@@ -29,9 +29,23 @@ the same response schema suite. The TypeScript live test uses `tests/live_fixtur
   "users": [
     {"id": "administrator", "username": "admin", "password_hash": "REPLACE_WITH_ARGON2ID_HASH", "role": "admin"}
   ],
-  "plugins": []
+  "plugins": [],
+  "cors_origins": ["https://panel.example.invalid"],
+  "limits": {
+    "authenticated_requests_per_second": 1000,
+    "authenticated_burst": 2000,
+    "public_requests_per_second": 30,
+    "public_burst": 60,
+    "max_streams_per_token": 16,
+    "max_requests_per_connection": 1000,
+    "idle_timeout_seconds": 30,
+    "drain_timeout_seconds": 3
+  }
 }
 ```
+
+`cors_origins` and `limits` are optional; a missing field keeps the defaults above and
+unknown limit names or malformed origins fail startup.
 
 Use `build/proto/control/api/kiarabot-control-credentials --key` to generate the key;
 without arguments it reads a password line from stdin and prints its Argon2id hash.
@@ -51,6 +65,27 @@ retention. Backlogs are sent in batches of 32; an unfillable gap requires resync
 Streams coalesce resource states every 100ms and are not an audit history. Sessions
 and successful receipts persist encrypted; stream sessions, page snapshots and logs
 are bounded process memory and restart requires new snapshots.
+
+Transport production behavior (W3):
+
+- HTTP/1.1 keep-alive is enabled with an idle timeout, a bounded per-connection request
+  count and per-connection drain on shutdown. `HEAD` mirrors the matching GET headers
+  with an empty body; a known path with the wrong method returns `405` and `Allow`;
+  `OPTIONS` returns allowed methods for a known path.
+- CORS is deny-by-default and only granted to exact origins listed in
+  `cors_origins`. Preflight responses include `Allow-Methods`/`Allow-Headers`; no
+  wildcard and no credential sharing is offered.
+- `traceparent` (W3C) and `X-Request-ID`/`X-Trace-ID` are accepted when well formed and
+  echoed on every response; they are never trusted as identity. An access log line per
+  request is written to stderr as JSON (`component=control-api`, `operation=http_request`,
+  method/path/status/duration/request_id/trace_id, no credentials or query tokens).
+- Per-client token buckets protect the listener (separate authenticated/public rates);
+  exceeding them returns `429`/`Retry-After`. Authenticated streams are limited per
+  access token (default 16) and return WebSocket close code `1013`; `1013` remains a
+  transport-only code pending contracts registration.
+- `SIGTERM`/`SIGINT` stop accepting connections, let in-flight HTTP requests finish,
+  send WebSocket close `1001` to every stream, then join the io thread; the HTTP writer
+  and idle keep-alive connections are closed after a bounded drain timeout.
 
 Plugin enable/disable controls registration and new delivery. Config updates persist
 non-secret control values with optimistic versions; supported SDK instances apply

@@ -229,3 +229,24 @@ OpenAPI 单独定义根路径 `/health/live` 和 `/health/ready`（每路径 ser
 配置通过 plugin.config.v1 / PluginConfig / PluginConfigAck 下发并按连接确认。REST GET 的 delivery 区分持久化与运行实例应用，PUT/幂等重放只确认持久化。状态、超时、重连、错误及事件门控的完整规则见 [PluginSDK 配置下发闭环](03-plugin-sdk.md#配置下发闭环t08b-后续)。协议唯一来源为 proto/kiarabot/v1/plugins.proto，REST 为 api/openapi.yaml；无新增错误码或 HTTP/gRPC 映射。
 
 GET 配置的 delivery 是查询时观察值，未新增 WebSocket 事件类型；现有 plugin.updated 表示期望配置/插件投影变化，不承诺确认状态推送，客户端轮询 GET 观察应用结果。
+
+## W3 生产可用性与事件流开销（2026-10-31）
+
+本层新增的传输行为不改变 `api/openapi.yaml` 与 `api/asyncapi.yaml` 的操作、schema 或稳定错误码；以下语义属于契约尚未单独描述、需要 contracts 后续登记的部分（见交接项）：
+
+- HTTP/1.1 keep-alive 与有界连接复用：空闲超时、每连接请求上限、关闭时排空在途响应；`HEAD` 返回与 GET 一致的头部且无正文；已知路径的方法不匹配返回 `405` 与 `Allow`；`OPTIONS` 返回允许方法（`../api/openapi.yaml` 尚未声明 405，客户端不得把 405 当作业务错误码）。
+- CORS 默认拒绝，仅对 `KIARABOT_CONTROL_CONFIG` 的 `cors_origins` 精确匹配来源授予 `Access-Control-Allow-Origin`；无通配符、无凭据共享；预检返回允许方法与头部。仍要求生产使用同源代理，CORS 只是浏览器集成的显式白名单，不改变身份信任模型。
+- 关联标识：接受格式合法的 W3C `traceparent` 与 `X-Request-ID`/`X-Trace-ID`，并在响应中回传 `X-Request-ID`/`X-Trace-ID`；这些值只用于关联，绝不作为身份或授权依据。每个请求向 stderr 输出一行 JSON 访问日志（`component=control-api`、`operation=http_request`，含方法/路径/状态/耗时/request_id/trace_id，不含凭据与 query 中的游标）。
+- 传输层限流：认证请求与公开（探针/未认证）请求使用独立的令牌桶；超限返回 `429` 与 `Retry-After`，响应体为稳定 `Error`。该限流独立于 Core 的登录限流与会话/收据/游标容量上限，后者仍由 Core 返回 `RATE_LIMITED`。
+- 每访问令牌的并发流配额（默认 16，含 `/ws/control` 与各频道）：超限以 WebSocket `1013` 关闭；`1013` 目前不在 AsyncAPI `x-control-session-policy.close_codes` 中，属于交接 contracts 的待登记关闭码。其它关闭码（4400/4401/4403/1011）不变。
+- 优雅关闭：收到 SIGTERM/SIGINT 后停止 accept，等待在途 HTTP 响应与 WebSocket close 握手（有界 drain 超时），向每个已建立流发送 close `1001`，再停止 io 线程；未完成握手的连接与空闲 keep-alive 连接直接关闭。此前实现为立即中止。
+- 事件流开销：只轮询已连接（未 detach）的流会话；同一访问令牌的多个流在同一 tick 复用一份 Core 投影；断线会话不继续轮询，恢复时以一次合并更新补齐（符合 AsyncAPI 允许合并中间状态、按序号重放）。`SESSION_READY`/序号/重放/resync 语义不变。
+
+验收与证据见 `doc/16-development-tasks.md` 的 W3 记录；实际运行命令为 `cmake --preset full`、`cmake --build --preset full`、`control/api/tests/.venv/bin/python -m pytest -q control/api/tests`（27 passed）。
+
+### W3 跨模块交接项（本分支不修改这些模块）
+
+1. contracts：登记传输层 `429`（通用限流）、`405`、`OPTIONS`、`HEAD`、CORS 响应头、`X-Request-ID`/`X-Trace-ID` 回传及 WebSocket `1013` 关闭码；确认是否放入 OpenAPI/AsyncAPI 或仅模块文档。若契约要求不同形状，以契约为准回改本层映射。
+2. core：`health.updated` 事件（当前流内 health 投影为常量）、`messages` 频道授权与投影、Action 查询的 `control/<user>` 生产者与 7 天保留期、`/groups` 数据源、`/logs` 与审计解耦。
+3. contracts/core：`message.read` 权限的授予入口（当前任何角色都无法持有）——W3 未改变权限模型，事件流对 messages 仍返回 4403。
+4. ops/security：TLS 终止、生产反代与证书管理仍由 T11b 承担；本层只保证回环监听与有界资源。

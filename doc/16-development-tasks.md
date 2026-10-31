@@ -721,3 +721,13 @@ CI 修复（本轮只改工作流，未复跑；不能据此宣称 CI 已绿）�
 - core：启动时调用 `TimeZoneResolver::zone_info_available()` 预检并 fail fast；导出 `sink_failures()`/`write_failures()`（或接入健康/指标）；若启用 `IUnitOfWork`/独立仓储/审计端口，先定事务语义再要求 infrastructure 适配器。
 - ops：`doc/08` 的“非法路径退出 2”与实测（路径不存在退出 1）对齐；日志通用字段（event_id/action_id/message/error_code）与 sink 实际字段的差异同步；生产备份/恢复演练（T11b）。
 - 风险：容量上限仍无监控导出（仅 API 计数）；`create_schema` 之外没有性能/容量压测；崩溃测试是 SIGKILL 模拟而非断电；`file_storage.cpp` 既有格式问题可能被 CI clang-format-16 判失败（待 CI 校准）。
+
+## 2026-10-31 W3：control-api 生产可用性与事件流开销
+
+- 状态：**本机实现并验收**（static+动态均在本机运行；远端 CI 未运行、自动触发仍暂停）。范围=`control/api/`、`control/api/README.md`、`doc/06-control-api.md`、本台账；未修改 core/proto/api/panel/deploy。
+- 输入输出与错误：REST/WS 请求 → 既有 OpenAPI 响应；新增传输层 405/OPTIONS/HEAD、CORS 白名单、通用限流 429、trace 回传、访问日志、keep-alive、优雅关闭（WS 1001）、每令牌流配额（WS 1013，交接 contracts）。
+- 实现：`http_server.cpp` 重写连接生命周期（keep-alive/排空/关闭码/访问日志/限流/HEAD/OPTIONS/CORS/配额）、`http_mapper.cpp` 增加 405/OPTIONS/HEAD 路由语义与 trace 传播、`event_stream.cpp` 仅轮询已连接会话并按令牌复用快照、`configuration.cpp` 新增可选 `cors_origins`/`limits`（默认值向后兼容、非法值 fail-closed）。
+- 验收：`cmake --preset full`、`cmake --build --preset full`（本机 macOS，无新增警告）、`ctest --preset full`、`control/api/tests/.venv/bin/python -m pytest -q control/api/tests` → **27 passed**（含新增 `test_production.py` 10 项：trace/访问日志、keep-alive/HEAD/405、CORS、限流、流配额 1013、握手超时 4400、优雅关闭 1001、并发同键写、64 KiB 边界、分页游标容量 429、并发读负载；`event_stream_test` 新增快照复用/断线暂停断言）。测试环境用 Python 3.12（本机无 3.11.18；`pyproject` 要求 >=3.11；CI 仍用钉住的 3.11.18，未验证该版本）。
+- 未运行：远端 CI（自动触发暂停）、TLS 生产代理/证书（T11b）、Docker、跨平台；`clang-tidy` 未运行（本机无）；`clang-format` 未运行（本机无）。
+- 交接（不在本分支范围）：contracts 登记 405/OPTIONS/HEAD/CORS/429/1013/X-Request-ID 语义；core 修 health.updated、messages 授权/投影、Action 查询生产者与保留期、/groups 数据源、/logs 与审计解耦；ops 承担 TLS 终止与生产反代。
+- 文档影响判断：更新 `control/api/README.md`（配置字段、传输行为、限流/关闭码）、`doc/06-control-api.md`（W3 行为与交接），本条记录本台账；`api/` 未改（规则要求先契约后实现，本轮属契约未声明的传输增强，已列为交接）；`doc/08-operations.md` 的运维口径未同步（超出本分支允许范围，交接 ops）。
