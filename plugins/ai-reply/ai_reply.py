@@ -13,21 +13,21 @@ class AiReply(Plugin):
         text = event.message_received.message.plain_text
         if not text.startswith('/ai ') or not text[4:].strip():
             return
-        key = 'ai:' + hashlib.sha256(event.event_id.encode()).hexdigest()
+        key = 'ai-' + hashlib.sha256(event.event_id.encode()).hexdigest()
         try:
             saved = await context.storage_get(key)
         except PluginError as error:
             if error.code != common.NOT_FOUND:
                 raise
-            await context.storage_set(key, b'', key + ':start')
+            await context.storage_set(key, b'', key + '-start')
             response = await context.model_chat('default', [{'role': 'user', 'text': text[4:]}], timeout=2)
             saved = response.text.encode()
             if not saved:
                 return
-            await context.storage_set(key, saved, key + ':answer')
+            await context.storage_set(key, saved, key + '-answer')
         if not saved:
             return  # Prior request is ambiguous; do not bill the model twice.
-        action = actions.ActionEnvelope(action_id=key, idempotency_key=key + ':reply',
+        action = actions.ActionEnvelope(action_id=key, idempotency_key=key + '-reply',
             trace_id=event.trace_id, requested_by='ai-reply', target_source=event.source,
             target=event.subject)
         action.deadline.FromDatetime(event.occurred_at.ToDatetime(tzinfo=timezone.utc) + timedelta(minutes=5))
