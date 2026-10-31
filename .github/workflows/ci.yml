@@ -1,16 +1,21 @@
 name: CI
 
-# 2026-10-30 起暂停自动触发：只保留手动 workflow_dispatch。
-# 修复 CI 失败后先手动 Run workflow 验证一次全绿，再恢复 Pull Request / push 触发器并删除 base_ref 输入。
-# 当前修复：YAML 解析不再依赖 ruby（改用 python3-yaml）；密钥扫描失败时上传报告；
-# 适配器锁定环境接入闭环验收；clang-tidy 覆盖 dev 预设全部 TU；补充 shell 语法检查。
+# 自动触发仍暂停：先手动 Run workflow 验证全绿，再恢复 pull_request / push 触发器。
+# 2026-10-31 更新：descriptor 基线支持从上一发布版 Release 资产下载；新增 Clang 16
+# full 构建 + 全模块静态分析 job；依赖审计扩展到 panel 与 Python（report-only）。
+# 恢复步骤见 doc/12-ci-cd.md「恢复自动触发」。
 on:
   workflow_dispatch:
     inputs:
       base_ref:
-        description: 'Descriptor 基线提交（commit SHA，默认 origin/main）'
+        description: 'Descriptor 基线提交（commit SHA，默认 origin/main；main 上手动运行会与自身比较）'
         required: false
         default: origin/main
+        type: string
+      baseline_release:
+        description: '可选：上一发布版 descriptor 的 GitHub Release tag（设置后从 release 资产下载并做发布兼容比较）'
+        required: false
+        default: ''
         type: string
   # pull_request:
   # push:
@@ -123,6 +128,17 @@ jobs:
         run: scripts/ci/check-descriptor.sh "$BASE_SHA"
       - name: Verify incompatible descriptors fail
         run: scripts/ci/test-descriptor-gate.sh
+      - name: Download previous release descriptor (optional)
+        if: inputs.baseline_release != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p baseline
+          gh release download "${{ inputs.baseline_release }}" --pattern 'kiarabot-v1.pb' --dir baseline
+          test -s baseline/kiarabot-v1.pb
+      - name: Compare with previous release descriptor (optional)
+        if: inputs.baseline_release != ''
+        run: KIARABOT_BASELINE_DESCRIPTOR="$PWD/baseline/kiarabot-v1.pb" ./proto/tests/check_contracts.sh
       - name: Save descriptor for this commit
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
@@ -233,6 +249,20 @@ jobs:
           node-version: '22'
       - name: Audit locked CI dependencies
         run: npm audit --prefix scripts/ci --audit-level=high
+      # Panel and Python audits are report-only until their findings are triaged:
+      # they must not be described as complete dependency coverage (see doc/12-ci-cd.md).
+      - name: Audit panel dependencies (report-only)
+        continue-on-error: true
+        run: npm audit --prefix panel --package-lock-only --audit-level=high
+      - name: Audit Python SDK and control dependencies (report-only)
+        continue-on-error: true
+        run: |
+          python3 -m venv /tmp/kiarabot-audit
+          /tmp/kiarabot-audit/bin/pip install --quiet uv==0.13.6 pip-audit
+          /tmp/kiarabot-audit/bin/uv export --project sdk/python --locked --no-hashes --format requirements-txt > /tmp/sdk-req.txt
+          /tmp/kiarabot-audit/bin/uv export --project control/api/tests --locked --no-hashes --format requirements-txt > /tmp/control-req.txt
+          /tmp/kiarabot-audit/bin/pip-audit -r /tmp/sdk-req.txt
+          /tmp/kiarabot-audit/bin/pip-audit -r /tmp/control-req.txt
 
   secret-scan:
     name: Secret scan
@@ -256,5 +286,67 @@ jobs:
         with:
           name: gitleaks-report-${{ github.sha }}
           path: gitleaks-report.json
+          if-no-files-found: ignore
+          retention-days: 7
+
+  full-build:
+    name: Full build and static analysis (Clang 16)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      VCPKG_ROOT: ${{ github.workspace }}/.ci-vcpkg
+      VCPKG_MAX_CONCURRENCY: 2
+      PROTOBUF_INCLUDE_DIR: ${{ github.workspace }}/.ci-vcpkg/installed/x64-linux/include
+      CC: clang-16
+      CXX: clang++-16
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Check out pinned vcpkg registry and tool
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          repository: microsoft/vcpkg
+          ref: ce613c41372b23b1f51333815feb3edd87ef8a8b # 2025.04.09
+          path: .ci-vcpkg
+          persist-credentials: false
+      - name: Install build prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang-16 clang-tidy-16 autoconf automake libtool pkg-config ninja-build python3-venv tzdata
+      - name: Install pinned C++ dependencies
+        run: |
+          "$VCPKG_ROOT/bootstrap-vcpkg.sh" -disableMetrics
+          "$VCPKG_ROOT/vcpkg" install grpc protobuf curl sqlite3 boost-beast boost-asio libsodium --triplet x64-linux
+          echo "$VCPKG_ROOT/installed/x64-linux/tools/protobuf" >> "$GITHUB_PATH"
+          echo "$VCPKG_ROOT/installed/x64-linux/tools/grpc" >> "$GITHUB_PATH"
+      - name: Configure full preset
+        run: >-
+          cmake --preset full
+          -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake"
+          -DVCPKG_MANIFEST_MODE=OFF
+      - name: Build full preset
+        run: |
+          set -o pipefail
+          cmake --build --preset full --parallel 2 2>&1 | tee build-full.log
+      - name: Test full preset
+        run: ctest --preset full --no-tests=error --output-on-failure
+      - name: Analyze all full translation units
+        run: |
+          mapfile -t files < <(python3 - <<'PY'
+          import json
+
+          with open('build/full/compile_commands.json', encoding='utf-8') as handle:
+              for entry in json.load(handle):
+                  print(entry['file'])
+          PY
+          )
+          clang-tidy-16 -p build/full --checks='clang-analyzer-*' \
+            --warnings-as-errors='*' --header-filter="$GITHUB_WORKSPACE/(core|proto|control|infrastructure)/" \
+            "${files[@]}"
+      - name: Upload full build log on failure
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: full-build-log-${{ github.sha }}
+          path: build-full.log
           if-no-files-found: ignore
           retention-days: 7
