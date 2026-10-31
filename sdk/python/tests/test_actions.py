@@ -76,3 +76,28 @@ async def test_unknown_results_never_become_failed(mode, code):
         finally:
             stop.set()
             await asyncio.wait_for(task, 2)
+
+
+async def test_cancel_action_and_query_selector_validation():
+    async with FakeHost() as host:
+        host.features = ['action.result.v1']
+        stop = asyncio.Event()
+        runner = Runner(manifest(), Plugin(), options(host))
+        task = asyncio.create_task(runner.run(stop))
+        try:
+            await ready(runner)
+            for kwargs in ({}, {'action_id': 'both', 'idempotency_key': 'also'}):
+                with pytest.raises(PluginError) as failure:
+                    await runner.context.query_action(**kwargs)
+                assert failure.value.code == common.INVALID_ARGUMENT
+            pending = asyncio.create_task(runner.context.cancel_action('action'))
+            request = (await get(host.actions)).action_cancel
+            assert request.action_id == 'action' and request.trace_id
+            await host.outgoing.put(plugins.CoreToPlugin(action_response=plugins.PluginActionResponse(
+                request_id=request.request_id,
+                result=actions.ActionResult(action_id='action', status=actions.CANCELLED,
+                                            completed_at={'seconds': 1}))))
+            assert (await pending).status == actions.CANCELLED
+        finally:
+            stop.set()
+            await asyncio.wait_for(task, 2)

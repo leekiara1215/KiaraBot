@@ -1,0 +1,12 @@
+{
+  "id": "reminder",
+  "name": "Reminder example",
+  "version": "0.1.0",
+  "api_version": "kiarabot.plugin.v1",
+  "runtime": "python-rpc",
+  "entrypoint": "reminder:create_plugin",
+  "capabilities": ["event.message.received", "event.timer.triggered"],
+  "permissions": ["message.read", "message.send", "task.schedule"],
+  "isolation": "process",
+  "ordered": true
+}

@@ -148,12 +148,29 @@ class Plugin:
         pass
 
 
+# Mirrors the host allow-list in core/src/application/plugin_hub.cpp: unknown
+# capabilities and capabilities whose required permission was not requested are
+# rejected by Core; failing locally keeps load_manifest a complete pre-flight.
+CAPABILITY_PERMISSIONS = {
+    'event.message.received': 'message.read',
+    'event.message.sent': 'message.read',
+    'event.group.member.changed': 'member.read',
+    'event.friend.request': 'request.read',
+    'event.adapter.status.changed': 'adapter.read',
+    'event.timer.triggered': 'task.schedule',
+}
+MANIFEST_IDENTIFIER = re.compile(r'[A-Za-z0-9_.-]{1,128}\Z')
+MANIFEST_ENTRYPOINT = re.compile(r'[A-Za-z_][\w.]*:[A-Za-z_]\w*\Z')
+
+
 def validate_manifest(manifest: plugins.PluginManifest) -> None:
-    identifier = re.compile(r'[A-Za-z0-9_.-]{1,128}\Z')
-    if (not identifier.fullmatch(manifest.id) or not identifier.fullmatch(manifest.version)
+    if (not MANIFEST_IDENTIFIER.fullmatch(manifest.id)
+            or not MANIFEST_IDENTIFIER.fullmatch(manifest.version)
             or not manifest.name or len(manifest.name) > 128
             or manifest.api_version != 'kiarabot.plugin.v1'
-            or not re.fullmatch(r'[A-Za-z_][\w.]*:[A-Za-z_]\w*', manifest.entrypoint)
+            # The SDK imports module:factory itself, so it must stay importable
+            # even though the host only checks length. Intentionally stricter.
+            or not MANIFEST_ENTRYPOINT.fullmatch(manifest.entrypoint)
             or len(manifest.entrypoint) > 256):
         raise PluginError(common.INVALID_ARGUMENT)
     if (manifest.runtime != 'python-rpc' or manifest.isolation != 'process'
@@ -162,6 +179,17 @@ def validate_manifest(manifest: plugins.PluginManifest) -> None:
     for values in (manifest.permissions, manifest.capabilities):
         if len(values) > 128 or len(set(values)) != len(values):
             raise PluginError(common.INVALID_ARGUMENT)
+        if any(not MANIFEST_IDENTIFIER.fullmatch(value) for value in values):
+            raise PluginError(common.INVALID_ARGUMENT)
+    for capability in manifest.capabilities:
+        required = CAPABILITY_PERMISSIONS.get(capability)
+        if required is None:
+            raise PluginError(common.CAPABILITY_NOT_SUPPORTED)
+        if required not in manifest.permissions:
+            raise PluginError(common.PERMISSION_DENIED)
+    # `ordered` is a delivery property persisted by Core and compared on
+    # re-registration (CONFLICT on drift). The SDK forwards it unchanged and
+    # never reinterprets it, so there is no local value to validate.
 
 
 def load_manifest(path: str | Path) -> plugins.PluginManifest:
