@@ -63,7 +63,7 @@ jobs:
   contracts:
     name: Protocol compatibility
     runs-on: ubuntu-24.04
-    timeout-minutes: 90
+    timeout-minutes: 120
     env:
       VCPKG_ROOT: ${{ github.workspace }}/.ci-vcpkg
       VCPKG_MAX_CONCURRENCY: 2
@@ -297,7 +297,7 @@ jobs:
   full-build:
     name: Full build and static analysis (Clang 16)
     runs-on: ubuntu-24.04
-    timeout-minutes: 90
+    timeout-minutes: 120
     env:
       VCPKG_ROOT: ${{ github.workspace }}/.ci-vcpkg
       VCPKG_MAX_CONCURRENCY: 2
