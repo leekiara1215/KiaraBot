@@ -36,20 +36,29 @@ bool BufferedRuntimeLogSink::write(const core::RuntimeLog& record) noexcept {
               std::chrono::duration_cast<std::chrono::milliseconds>(
                   record.occurred_at.time_since_epoch())
                   .count()));
-      *output_ << "{\"id\":" << quote(record.id) << ",\"occurred_at\":" << quote(timestamp)
-               << ",\"level\":" << quote(record.level)
+      *output_ << "{\"id\":" << quote(record.id) << ",\"timestamp\":" << quote(timestamp)
+               << ",\"occurred_at\":" << quote(timestamp) << ",\"level\":" << quote(record.level)
                << ",\"component\":" << quote(record.component)
                << ",\"operation\":" << quote(record.operation)
                << ",\"outcome\":" << quote(record.outcome)
                << ",\"resource\":" << quote(record.resource)
+               << ",\"resource_id\":" << quote(record.resource)
                << ",\"request_id\":" << quote(record.request_id)
                << ",\"trace_id\":" << quote(record.trace_id) << "}\n";
-      return static_cast<bool>(*output_);
+      const bool written = static_cast<bool>(*output_);
+      if (!written) {
+        write_failures_.fetch_add(1, std::memory_order_relaxed);
+      }
+      return written;
     }
     return true;
   } catch (...) {
+    write_failures_.fetch_add(1, std::memory_order_relaxed);
     return false;
   }
+}
+std::uint64_t BufferedRuntimeLogSink::write_failures() const {
+  return write_failures_.load(std::memory_order_relaxed);
 }
 std::vector<core::RuntimeLog> BufferedRuntimeLogSink::read() const {
   std::lock_guard lock(mutex_);

@@ -182,7 +182,7 @@ SQLite 从 v2 起保存审计和命令幂等记录，当前 v5 还保存 Action 
 
 ## T10b 日志 sink
 
-BufferedRuntimeLogSink 实现 Core 的 IRuntimeLogSink，互斥保护有界环形缓冲，保留十分钟、最多 4096 条；可输出单行 JSON 到 stdout。字段仅来自 Core 的结构化记录，不接收正文或任意异常消息。输出失败返回 false，内存缓冲仍可查询；Core 统计失败次数，业务提交不回滚。日志不是审计持久层，重启清空日志；持久审计不受影响。控制 API 通过组合根注入的只读回调取得日志，不直接读取基础设施类或数据库。
+BufferedRuntimeLogSink 实现 Core 的 IRuntimeLogSink，互斥保护有界环形缓冲，保留十分钟、最多 4096 条；可输出单行 JSON 到 stdout。字段仅来自 Core 的结构化记录，不接收正文或任意异常消息。输出失败返回 false，内存缓冲仍可查询；Core 统计失败次数，业务提交不回滚。日志不是审计持久层，重启清空日志；持久审计不受影响。控制 API 通过组合根注入的只读回调取得日志，不直接读取基础设施类或数据库。字段与观测口径（2026-10-31 明确）：JSON 行包含 `id、timestamp、occurred_at、level、component、operation、outcome、resource、resource_id、request_id、trace_id`；`timestamp` 与 `occurred_at` 同为 UTC ISO-8601（对齐 `doc/08` 的 timestamp），`resource_id` 是 `resource` 的别名。不输出独立的 `event_id`/`action_id`：Core `RuntimeLog` 未提供这两个字段，事件/动作标识承载在 `resource`（`event.persist` 为 event_id，`action.state` 为 action_id）。不输出 `message`/`error_code`：sink 不接收自由文本，`outcome` 即稳定码（OK/TIMEOUT/CONFLICT/DEAD_LETTER 等）。sink 自身新增 `write_failures()` 单调失败计数（与 Core 装饰器的 `sink_failures()` 并存）；组合根尚未把两个计数导出到健康或指标端点（交接 core/运维）。测试 `infrastructure/tests/runtime_log_test.cpp` 增加 timestamp/resource_id 字段与写失败计数断言。
 
 
 T11a `kiarabot-migrate` 复用 SqliteRuntimeStore::open 的同事务迁移，SQLite BEGIN IMMEDIATE 为迁移锁；不重复维护 schema 或手写第二套迁移 SQL。进程级测试 `infrastructure/tests/migrate_cli_test.cpp`（CTest `migrate_cli`，2026-10-31 新增）直接调用构建产物覆盖：缺参数/`:memory:`/`file:` 退出 2、首次迁移与重复迁移退出 0、v1 旧库迁移、未知 schema 与损坏载荷退出 1 且不改写数据库、持有写锁 1.5 秒后释放时 CLI 重试成功、两个实例并发启动都成功、父目录缺失退出 1。`doc/08` 的“非法路径退出 2”仅指参数形态非法；路径不存在属于依赖故障，退出 1。
