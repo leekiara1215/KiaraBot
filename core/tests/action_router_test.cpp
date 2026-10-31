@@ -149,10 +149,31 @@ void scenarios(kiarabot::core::RuntimeStore& store,
   value(runtime.ingest({"event", "trace", "", 0, false}));
   require(router.query(plugin, query("first")).result().platform_message_id() == "platform-1");
 }
+
+void capacity() {
+  // Injected limits come from the composition root; the router enforces them
+  // instead of a hard-coded constant.
+  kiarabot::core::InMemoryRuntimeStore store;
+  auto now = RuntimeTimePoint(1000s);
+  kiarabot::core::RuntimeLimits limits;
+  limits.action_limit = 2;
+  limits.audit_limit = 1000;
+  ActionRouter router(store, [&] { return now; }, limits);
+  PluginSession plugin{"one", "instance", "fence", {}, {"message.send"}};
+  AdapterSession adapter{"adapter", "adapter-instance", {"account"}};
+  router.attach(adapter, registration());
+  require(router.submit(plugin, action("a1", "k1")).result().status() == wire::ACCEPTED);
+  require(router.submit(plugin, action("a2", "k2")).result().status() == wire::ACCEPTED);
+  require(router.submit(plugin, action("a3", "k3")).error().code() == wire::RATE_LIMITED);
+  // A replayed idempotent submit is still answered while the capacity is full.
+  require(router.submit(plugin, action("a1", "k1")).result().action_id() == "a1");
+}
+
 } // namespace
 int main() try {
   kiarabot::core::InMemoryRuntimeStore store;
   scenarios(store, &store);
+  capacity();
   // Actual SQLite persistence including reopening schema v3.
   const auto path = std::filesystem::temp_directory_path() /
                     ("kiarabot-action-" + kiarabot::core::random_instance_id() + ".db");

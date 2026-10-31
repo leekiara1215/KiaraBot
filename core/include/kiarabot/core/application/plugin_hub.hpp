@@ -28,7 +28,8 @@ struct PluginRegistration {
 // Store must support concurrent independent transactions and outlive this hub.
 class PluginHub {
 public:
-  PluginHub(RuntimeStore& store, std::vector<PluginPolicy> policies, RuntimeClock clock = {});
+  PluginHub(RuntimeStore& store, std::vector<PluginPolicy> policies, RuntimeClock clock = {},
+            RuntimeOptions options = {}, RuntimeLimits limits = {});
   PluginRegistration attach(const std::string& principal,
                             const kiarabot::v1::RegisterPluginRequest& request);
   PortResult<std::optional<kiarabot::v1::EventEnvelope>> next(const PluginSession& session);
@@ -51,6 +52,8 @@ private:
   RuntimeStore& store_;
   const std::vector<PluginPolicy> policies_;
   RuntimeClock clock_;
+  RuntimeOptions options_;
+  RuntimeLimits limits_;
   std::mutex mutex_;
   std::unordered_map<std::string, PluginSession> active_;
   std::shared_ptr<PluginConfigDelivery> configuration_;

@@ -83,8 +83,10 @@ PortStatus commit(RuntimeTransaction& transaction) {
 }
 } // namespace
 
-PluginHub::PluginHub(RuntimeStore& store, std::vector<PluginPolicy> policies, RuntimeClock clock)
-    : store_(store), policies_(std::move(policies)), clock_(std::move(clock)) {
+PluginHub::PluginHub(RuntimeStore& store, std::vector<PluginPolicy> policies, RuntimeClock clock,
+                     RuntimeOptions options, RuntimeLimits limits)
+    : store_(store), policies_(std::move(policies)), clock_(std::move(clock)), options_(options),
+      limits_(limits) {
   std::unordered_set<std::string> ids;
   for (const auto& policy : policies_) {
     if (!valid_id(policy.identity) || !ids.insert(policy.identity).second) {
@@ -133,7 +135,7 @@ PluginRegistration PluginHub::attach(const std::string& principal,
                                          manifest.permissions().end());
     std::sort(permissions.begin(), permissions.end());
     AuthorizedCommands commands(store_, {{"plugin/" + principal, "plugin.connect", principal}},
-                                clock_);
+                                clock_, limits_.audit_limit);
     CommandContext context{"plugin/" + principal,  "plugin.connect", principal, fence, fence, fence,
                            request_digest(request)};
     const auto outcome = commands.execute(context, [&](RuntimeSnapshot& snapshot) -> PortStatus {
@@ -170,7 +172,7 @@ PluginRegistration PluginHub::attach(const std::string& principal,
         return error(kiarabot::v1::CONFLICT);
       }
       detail::RuntimeState state(snapshot);
-      detail::RuntimeEngine engine(state, {}, clock_);
+      detail::RuntimeEngine engine(state, options_, clock_);
       if (previous != snapshot.plugins.end()) {
         if (previous->second.state != PluginState::failed &&
             !engine.plugin_disconnected(principal)) {
@@ -294,16 +296,49 @@ PluginHub::next(const PluginSession& session) try {
   if (session.config_enabled && !configuration_->ready(session.identity, session.fence)) {
     return std::optional<kiarabot::v1::EventEnvelope>{};
   }
+  detail::RuntimeState state(snapshot);
+  detail::RuntimeEngine engine(state, options_, clock_);
+  // A peer that received a delivery but never acknowledged it must not block the
+  // plugin queue forever: after the ACK window the attempt counts as a retryable
+  // failure (backoff, then the existing dead-letter bound). The next poll only
+  // dispatches again once the backoff expires.
+  const auto now = clock_ ? clock_() : std::chrono::system_clock::now();
+  bool timed_out = false;
+  bool blocked = false;
   for (const auto& [event_id, deliveries] : snapshot.deliveries) {
     const auto delivery = deliveries.find(session.identity);
-    if (delivery != deliveries.end() && delivery->second.state == DeliveryState::dispatched) {
-      return std::optional<kiarabot::v1::EventEnvelope>{};
+    if (delivery == deliveries.end() || delivery->second.state != DeliveryState::dispatched) {
+      continue;
     }
+    if (now - delivery->second.updated_at < options_.ack_timeout) {
+      blocked = true;
+      continue;
+    }
+    if (!engine.fail_plugin_event(event_id, session.identity, true)) {
+      return error(kiarabot::v1::INTERNAL);
+    }
+    timed_out = true;
   }
-  detail::RuntimeState state(snapshot);
-  detail::RuntimeEngine engine(state, {}, clock_);
+  if (timed_out) {
+    replace_state(snapshot, state);
+  }
+  if (blocked) {
+    if (timed_out) {
+      const auto committed = commit(*transaction);
+      if (const auto* failure = std::get_if<kiarabot::v1::Error>(&committed)) {
+        return *failure;
+      }
+    }
+    return std::optional<kiarabot::v1::EventEnvelope>{};
+  }
   const auto candidates = engine.dispatchable_deliveries(session.identity);
   if (candidates.empty()) {
+    if (timed_out) {
+      const auto committed = commit(*transaction);
+      if (const auto* failure = std::get_if<kiarabot::v1::Error>(&committed)) {
+        return *failure;
+      }
+    }
     return std::optional<kiarabot::v1::EventEnvelope>{};
   }
   const auto& candidate = candidates.front();
@@ -360,11 +395,11 @@ PortStatus PluginHub::acknowledge(const PluginSession& session,
   if (delivery.state != DeliveryState::dispatched) {
     return error(kiarabot::v1::CONFLICT);
   }
-  if (snapshot.audit.size() >= 100000) {
+  if (snapshot.audit.size() >= limits_.audit_limit) {
     return error(kiarabot::v1::UPSTREAM_UNAVAILABLE, true);
   }
   detail::RuntimeState state(snapshot);
-  detail::RuntimeEngine engine(state, {}, clock_);
+  detail::RuntimeEngine engine(state, options_, clock_);
   const bool changed =
       ack.accepted()
           ? engine.acknowledge_plugin_event(ack.event_id(), session.identity)
@@ -400,7 +435,7 @@ PortStatus PluginHub::detach(const PluginSession& session) try {
     return error(kiarabot::v1::UPSTREAM_UNAVAILABLE, true);
   }
   detail::RuntimeState state(transaction->snapshot());
-  detail::RuntimeEngine engine(state, {}, clock_);
+  detail::RuntimeEngine engine(state, options_, clock_);
   if (!engine.plugin_disconnected(session.identity) ||
       engine.recover_plugin_inflight(session.identity).storage_error) {
     return error(kiarabot::v1::INTERNAL);

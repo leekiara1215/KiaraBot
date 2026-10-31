@@ -11,7 +11,7 @@ namespace kiarabot::core {
 // outlives router and supports concurrent transactions. Dispatch commits first.
 class ActionRouter {
 public:
-  explicit ActionRouter(RuntimeStore& store, RuntimeClock clock = {});
+  explicit ActionRouter(RuntimeStore& store, RuntimeClock clock = {}, RuntimeLimits limits = {});
   void attach(const AdapterSession& session, const kiarabot::v1::RegisterAdapterRequest& request);
   void detach(const AdapterSession& session);
   kiarabot::v1::PluginActionResponse submit(const PluginSession& session,
@@ -34,6 +34,7 @@ private:
                                                 const std::string& selector, bool by_key);
   RuntimeStore& store_;
   RuntimeClock clock_;
+  RuntimeLimits limits_;
   std::mutex mutex_;
   std::unordered_map<std::string, AdapterRoute> adapters_;
 };

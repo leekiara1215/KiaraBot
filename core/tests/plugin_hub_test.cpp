@@ -295,11 +295,73 @@ void transport() {
   server.stop();
   shutdown.close();
 }
+
+void ack_timeout() {
+  InMemoryRuntimeStore store;
+  auto now = RuntimeTimePoint{} + std::chrono::hours(1);
+  kiarabot::core::RuntimeOptions options;
+  options.ack_timeout = std::chrono::seconds(2);
+  options.max_attempts = 1;
+  auto hub = std::make_shared<PluginHub>(
+      store, std::vector<PluginPolicy>{{"one", {"message.read"}}}, [&] { return now; }, options);
+  const auto attached = hub->attach("one", registration("one"));
+  require(attached.response.accepted());
+  insert(store, hub, "event1", 1);
+  require(value(hub->next(attached.session))->event_id() == "event1");
+  // The peer received the event but never acknowledged it: the delivery must not
+  // block the plugin queue forever.
+  now += std::chrono::seconds(3);
+  require(!value(hub->next(attached.session)));
+  require(value(store.read()).deliveries.at("event1").at("one").state == DeliveryState::retrying);
+  require(value(store.read()).deliveries.at("event1").at("one").attempts == 1);
+  now += std::chrono::seconds(2);
+  require(value(hub->next(attached.session))->event_id() == "event1");
+  now += std::chrono::seconds(3);
+  require(!value(hub->next(attached.session)));
+  require(value(store.read()).deliveries.at("event1").at("one").state ==
+          DeliveryState::dead_letter);
+  insert(store, hub, "event2", 2);
+  require(value(hub->next(attached.session))->event_id() == "event2");
+}
+
+void conflict_retry() {
+  InMemoryRuntimeStore store;
+  auto now = RuntimeTimePoint{} + std::chrono::hours(1);
+  auto hub = std::make_shared<PluginHub>(
+      store, std::vector<PluginPolicy>{{"one", {"message.read"}}}, [&] { return now; });
+  const std::string token(32, 'c');
+  BridgeServer server({{BridgeRole::Plugin, "one", token}}, {}, hub);
+  require(server.start("127.0.0.1:0"));
+  auto stub = kiarabot::v1::PluginBridge::NewStub(grpc::CreateChannel(
+      "127.0.0.1:" + std::to_string(server.port()), grpc::InsecureChannelCredentials()));
+  Connection one(*stub, "one", token);
+  require(one.accepted);
+  insert(store, hub, "event1", 1);
+  require(one.read().event().event_id() == "event1");
+  // A single optimistic-locking conflict must be retried inside the bridge; the
+  // plugin stream stays open and the acknowledgement is still persisted.
+  store.set_fail_conflicts(1);
+  one.confirm("event1");
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+  while (std::chrono::steady_clock::now() < deadline &&
+         value(store.read()).deliveries.at("event1").at("one").state != DeliveryState::acked) {
+    std::this_thread::yield();
+  }
+  require(value(store.read()).deliveries.at("event1").at("one").state == DeliveryState::acked);
+  insert(store, hub, "event2", 2);
+  require(one.read().event().event_id() == "event2");
+  one.confirm("event2");
+  one.close();
+  server.stop();
+}
+
 } // namespace
 int main() try {
   configuration_gate();
   application();
   transport();
+  ack_timeout();
+  conflict_retry();
   std::cout << "Plugin authorization, subscriptions, independent ACK, replay and fencing passed\n";
   return 0;
 } catch (const std::exception& error) {

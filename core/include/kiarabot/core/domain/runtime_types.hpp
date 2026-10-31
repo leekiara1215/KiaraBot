@@ -128,6 +128,17 @@ struct RuntimeOptions {
   std::size_t max_attempts{5};
   std::chrono::hours retention{168};
   std::chrono::minutes plugin_failure_after{5};
+  // A dispatched per-plugin delivery that is not acknowledged within this
+  // window is treated as one retryable failure (backoff, then dead letter).
+  std::chrono::milliseconds ack_timeout{30000};
+};
+
+// Capacity limits shared by the Core application services. Injected by the
+// composition root; services never own deployment policy.
+struct RuntimeLimits {
+  std::size_t audit_limit{100000};
+  std::size_t action_limit{10000};
+  std::size_t command_limit{100000};
 };
 
 struct RuntimeAuditEntry {
