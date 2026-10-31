@@ -341,3 +341,12 @@ PROD_KNOWN_HOSTS
 ## 控制面持续验收（T08b–T11a）
 
 contracts job 在原固定 vcpkg registry 中增加 boost-beast、boost-asio、libsodium；锁定版本见 doc/11-toolchain.md。安装 control/api/tests/uv.lock 环境，统一入口强制运行 HTTP/WebSocket/健康/迁移测试。面板真实服务测试需要已构建 Core 与该 Python 环境；纯 UI 单测可单独 `npx vitest run tests/integration.test.tsx`。这些是本机隔离验收，不包含真实平台、远端部署、TLS 代理或生产恢复。
+
+## 2026-10-31 更新：基线、全模块构建与审计
+
+- **descriptor 基线**：`workflow_dispatch` 新增输入 `baseline_release`，可从上一发布版 GitHub Release 下载 `kiarabot-v1.pb` 作为 `KIARABOT_BASELINE_DESCRIPTOR` 做发布兼容比较；与 base commit 的比较保留（PR 用 `pull_request.base.sha`，push 用 `event.before`，手动用 `base_ref`）。注意：在 `main` 上手动运行且未给 release 时 `origin/main == HEAD`，只能验证当前 descriptor 与测试门禁，不能声称跨版本兼容。
+- **新增 `full-build` job**（Clang 16 + pinned vcpkg + CMake `full` 预设）：构建 proto + infrastructure、运行 full CTest，并用 `build/full/compile_commands.json` 对 core/proto/control/infrastructure 全部翻译单元执行 clang-tidy。这补上了原 `build-test` 只跑 dev、原 tidy job 只分析 core 的覆盖缺口。
+- **依赖审计**：`dependency-scan` 增加面板 `npm audit` 与 Python `uv export + pip-audit`（两者当前 report-only，不阻断）；vcpkg C++ 依赖仍不在审计范围，不能宣称完整漏洞覆盖。
+- **失败工件**：`full-build` 失败时上传 `build-full.log`；密钥扫描已有 gitleaks 报告工件。
+- **自动触发仍暂停**，恢复步骤不变：先手动 Run workflow 全绿 → 取消 `pull_request`/`push` 注释 → 删除 `base_ref` fallback。在恢复并复跑前，「任意 Pull Request 都能自动编译和运行测试」仍不成立。
+- 本地验证：`ruby -ryaml` 解析通过，actionlint 1.7.12 通过；GitHub Actions 未在远端执行（需要仓库管理员手动 Run workflow）。
