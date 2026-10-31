@@ -6,7 +6,7 @@ import sqlite3
 import time
 
 from kiarabot.v1 import actions_pb2 as actions, common_pb2 as common
-from .mapper import AdapterError, identifier
+from .mapper import AdapterError, identifier, platform_id
 
 
 def terminal(action_id, status, code=0, platform_id=''):
@@ -47,16 +47,16 @@ class ActionExecutor:
         if (send.reply or send.reply_to_message_id or send.message.segments
                 or send.conversation.type not in (common.ConversationRef.GROUP, common.ConversationRef.PRIVATE)):
             raise AdapterError(common.CAPABILITY_NOT_SUPPORTED)
-        if (not send.conversation.id.isascii() or not send.conversation.id.isdigit()
-                or len(send.conversation.id) > 20 or int(send.conversation.id) <= 0
-                or send.conversation.account_id != self.account_id or action.target.conversation_id != send.conversation.id
+        # Native OneBot numeric ID, identical to the inbound MessageReceived conversation.
+        conversation = platform_id(send.conversation.id)
+        if (send.conversation.account_id != self.account_id or action.target.conversation_id != conversation
                 or not send.message.plain_text or len(send.message.plain_text.encode()) > 65536
                 or not 0 < action.deadline.seconds <= 9223372035 or not 0 <= action.deadline.nanos < 10**9):
             raise AdapterError(common.INVALID_ARGUMENT)
         group = send.conversation.type == common.ConversationRef.GROUP
         # Plain text is a OneBot text segment, never CQ-code input.
         return ('send_group_msg' if group else 'send_private_msg',
-                {('group_id' if group else 'user_id'): int(send.conversation.id),
+                {('group_id' if group else 'user_id'): int(conversation),
                  'message': [{'type': 'text', 'data': {'text': send.message.plain_text}}]})
 
     async def execute(self, action, instance):
