@@ -12,8 +12,9 @@ T03b Python SDK 固定 Python 3.11.18，依赖以 sdk/python/uv.lock 为准；�
 
 | 工具 | 要求 | 检查方式 |
 |---|---|---|
-| Python | POSIX 进程测试需要 Python 3.9+，仅构建测试依赖 | CMake 查找解释器及 CTest 进程测试 |
-| CMake | 3.24+ | 版本、dev/proto 配置和构建 |
+| Python | POSIX 进程测试需要 Python 3.9+，统一检查的边界/契约脚本也直接调用 `python3` | CMake 查找解释器、CTest 进程测试及脚本门禁 |
+| ripgrep (`rg`) | 近期版本即可 | `scripts/quality/check-format.sh` 用它在 `.gitignore` 约束下枚举手写 C++；缺失时统一检查在构建开始前失败 |
+| CMake | 3.24+ | 版本、dev/proto/full 配置和构建 |
 | GNU Make | 3.81+ | 版本；预设使用 Unix Makefiles |
 | C++ 编译器 | AppleClang 15+、Clang 16+ 或 GCC 13+，支持 C++20 | 预定义宏和 C++20 编译、运行 |
 | protoc | 25+ | 版本、C++ 和 descriptor 生成 |
@@ -30,7 +31,7 @@ protoc 与 protobuf runtime 必须遵守官方跨版本兼容窗口；优先使�
 
 GitHub Actions 的 dev 构建使用 GCC 13 和 Clang 16；proto job 使用固定到 `ce613c41372b23b1f51333815feb3edd87ef8a8b` 的 vcpkg registry/tool，解析 Protobuf 29.3（C++ runtime 5.29.3）和 gRPC 1.71.0。CI 工具锁文件为 `scripts/ci/package-lock.json`，其中包含 Redocly CLI 2.72.1 和 AsyncAPI parser 3.6.6；Node.js 使用 22。actionlint 固定为 1.7.7，Gitleaks 固定为 8.28.0。详见 [CI/CD 流程方案](12-ci-cd.md)。
 
-CI 的 C++ 静态分析 job 使用 `build/dev/compile_commands.json` 分析 dev 预设的全部翻译单元（`clang-analyzer-*`，warning 即失败）；`control/api` 与 `infrastructure` 的完整覆盖仍由本机 `scripts/quality/check-tidy.sh` 在启用基础设施的 proto 构建后执行；该脚本先校验编译数据库覆盖全部待分析文件，缺条目直接失败。CI 另对跟踪的 `.sh` 文件执行 `bash -n` 语法检查，工作流 YAML 使用 python3-yaml 解析。
+CI 的 C++ 静态分析 job 使用 `build/dev/compile_commands.json` 分析 dev 预设的全部翻译单元（`clang-analyzer-*`，warning 即失败）；`control/api` 与 `infrastructure` 的完整覆盖仍由本机 `scripts/quality/check-tidy.sh` 在 full 预设构建后执行；该脚本先校验编译数据库覆盖全部待分析文件，缺条目直接失败。CI 另对跟踪的 `.sh` 文件执行 `bash -n` 语法检查，工作流 YAML 使用 python3-yaml 解析。**待 CI 配合**：`.github/workflows/ci.yml` 应改用 full 预设或等价的 proto+infrastructure 编译库，使 CI 与本机 static analysis 覆盖同一文件集（由 ci-cd 分支负责，本分支只提供 full 预设与脚本）。
 
 ## 统一检查
 
@@ -40,23 +41,27 @@ CI 的 C++ 静态分析 job 使用 `build/dev/compile_commands.json` 分析 dev 
 ./scripts/check-toolchain.sh
 ```
 
-脚本遇到第一个错误即退出，缺少工具、版本不满足、生成失败或任何检查失败都返回非零状态。它依次检查工具版本、C++20 编译和运行、protoc/gRPC 实际生成、脚本语法、dev 预设的配置/完整构建/CTest，以 `-DKIARABOT_ENABLE_INFRASTRUCTURE=ON -DCMAKE_EXPORT_COMPILE_COMMANDS=ON` 配置 proto 预设并执行其完整构建与 CTest，再执行独立基础设施构建（`cmake -S infrastructure -B build/infrastructure`）及其 CTest，最后进行协议契约检查、C++ 格式和静态分析、OpenAPI 与 AsyncAPI lint。proto 配置同时导出编译数据库，供 clang-tidy 使用。生成物只由构建写入忽略的 `build/` 或临时目录，不提交。
+脚本遇到第一个错误即退出，缺少工具、版本不满足、生成失败或任何检查失败都返回非零状态。它依次检查工具版本（含 `rg`、`python3`、`ruby`）、C++20 编译和运行、protoc/gRPC 实际生成、全部跟踪 `.sh` 的语法、边界检查及其自测、dev 预设构建/CTest，再用 `full` 预设（proto + infrastructure + `CMAKE_EXPORT_COMPILE_COMMANDS=ON`）构建并运行 CTest，随后独立构建 infrastructure 并跑 CTest，最后执行协议契约、格式、clang-tidy、OpenAPI/AsyncAPI lint。统一检查覆盖 C++ 与契约侧；面板（npm）、Python SDK/适配器（uv/pytest）、`tests/acceptance/run.sh` 属于独立入口，不在本脚本内，以免缺少 venv 的环境被误判为全量通过。生成物只由构建写入忽略的 `build/` 或临时目录，不提交。
 
-格式检查扫描仓库手写 C++ 头文件和源文件，排除 `build/`、`node_modules/` 和 `.pb.*` 生成文件。clang-tidy 显式启用 `clang-analyzer-*` 检查，并使用 proto 预设的编译数据库检查 `core/`、`proto/tests/`、`control/api/`、`infrastructure/src/` 与 `infrastructure/tests/` 的 C++ 源文件及其仓库头文件（覆盖范围以 `scripts/quality/check-tidy.sh` 实际 `find` 目录为准），并将诊断警告视为错误；运行前先校验 `build/proto/compile_commands.json` 覆盖全部待分析文件，缺条目直接失败，因此须先完成启用基础设施的 proto 构建。macOS 的 AppleClang 构建使用 `SDKROOT` 或 `xcrun` 查找 SDK。CMake 会缓存已配置的编译器，切换 `CXX` 时须重新配置构建目录。AsyncAPI parser 输出所有诊断，severity 0 的错误或没有解析结果时失败；信息和提示仍会显示。
+格式检查扫描仓库手写 C++ 头文件和源文件，排除 `build/`、`node_modules/` 和 `.pb.*` 生成文件。clang-tidy 显式启用 `clang-analyzer-*` 检查，并使用 `full` 预设的编译数据库（默认 `build/full/compile_commands.json`，可用 `KIARABOT_TIDY_BUILD_DIR` 覆盖）检查 `core/`、`proto/tests/`、`control/api/`、`infrastructure/src/` 与 `infrastructure/tests/` 的 C++ 源文件及其仓库头文件（覆盖范围以 `scripts/quality/check-tidy.sh` 实际 `find` 目录为准），并将诊断警告视为错误；运行前先校验编译数据库覆盖全部待分析文件，缺条目直接失败，因此须先完成 full 预设构建。边界检查同时覆盖 C++ include、Python import（测试文件豁免）、面板 TypeScript import 方向、CMake target 方向与 Core 头文件一跳传递依赖。macOS 的 AppleClang 构建使用 `SDKROOT` 或 `xcrun` 查找 SDK。CMake 会缓存已配置的编译器，切换 `CXX` 时须重新配置构建目录。AsyncAPI parser 输出所有诊断，severity 0 的错误或没有解析结果时失败；信息和提示仍会显示。
 
-可以单独运行下列检查以定位失败，运行 clang-tidy 前需先完成 proto 配置和构建：
+可以单独运行下列检查以定位失败，运行 clang-tidy 前需先完成 full 预设配置和构建：
 
 ```bash
 cmake --preset dev
 cmake --build --preset dev
-ctest --preset dev
-cmake --preset proto -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
-cmake --build --preset proto
-ctest --preset proto
+ctest --preset dev --no-tests=error
+cmake --preset full
+cmake --build --preset full
+ctest --preset full --no-tests=error
+cmake -S infrastructure -B build/infrastructure
+cmake --build build/infrastructure
+ctest --test-dir build/infrastructure --no-tests=error --output-on-failure
 ./proto/tests/check_contracts.sh
 ./scripts/quality/check-format.sh
 ./scripts/quality/check-tidy.sh
 python3 ./scripts/quality/check-boundaries.py
+python3 ./scripts/quality/tests/boundaries_test.py
 ./scripts/quality/check-openapi.sh
 ./scripts/quality/check-asyncapi.sh
 ```

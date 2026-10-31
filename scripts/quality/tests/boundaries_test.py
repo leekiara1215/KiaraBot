@@ -47,5 +47,49 @@ class BoundariesTest(unittest.TestCase):
             self.assertEqual(len(list(BOUNDARIES.violations(root))), 1)
 
 
+    def test_one_hop_indirect_include_is_reported(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / 'core/include/kiarabot/core/domain').mkdir(parents=True)
+            (root / 'core/src').mkdir()
+            (root / 'core/include/kiarabot/core/domain/dep.hpp').write_text('#include <sqlite3.h>\n')
+            (root / 'core/src/uses.cpp').write_text('#include "kiarabot/core/domain/dep.hpp"\n')
+            errors = list(BOUNDARIES.violations(root))
+            self.assertTrue(
+                any('indirect forbidden include' in error and 'uses.cpp' in error for error in errors),
+                errors)
+
+    def test_python_imports_are_checked_but_tests_are_exempt(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / 'sdk/python/src').mkdir(parents=True)
+            (root / 'sdk/python/src/bad.py').write_text('from kiarabot_adapter_nonebot import main\n')
+            (root / 'sdk/python/src/good.py').write_text('from kiarabot.v1 import events_pb2\n')
+            self.assertEqual(len(list(BOUNDARIES.violations(root))), 1)
+            (root / 'sdk/python/tests').mkdir(parents=True)
+            (root / 'sdk/python/tests/test_fixture.py').write_text('import kiarabot_adapter_nonebot\n')
+            self.assertEqual(len(list(BOUNDARIES.violations(root))), 1)
+
+    def test_panel_must_not_import_repository_modules(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / 'panel/src').mkdir(parents=True)
+            (root / 'core').mkdir()
+            (root / 'panel/src/App.ts').write_text("import x from '../../core/x';\n")
+            errors = list(BOUNDARIES.violations(root))
+            self.assertEqual(len(errors), 1)
+            self.assertIn('outside panel/', errors[0])
+
+    def test_infrastructure_cannot_reference_control(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / 'infrastructure').mkdir()
+            (root / 'infrastructure/CMakeLists.txt').write_text(
+                'target_link_libraries(x PRIVATE kiarabot_control)\n')
+            errors = list(BOUNDARIES.violations(root))
+            self.assertEqual(len(errors), 1)
+            self.assertIn('references control', errors[0])
+
+
 if __name__ == '__main__':
     unittest.main()
