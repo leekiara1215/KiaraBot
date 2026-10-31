@@ -49,9 +49,33 @@ IFileStorage
 IAuditLogger
 ```
 
+2026-10-31 核对：`ports.hpp` 中实际存在的首批接口是 `IModelProvider`、`IScheduler`、`IFileStorage`、`IAuditLogger`（另有 `ITimeZoneResolver`、`INamespaceStore`、`IIdempotencyStore`、`IUnitOfWork` 等）。其中模型、时区由基础设施实现，调度器由 Core `TaskScheduler` 实现，文件存储已实现但未接线，审计端口未实现（审计写入 `RuntimeSnapshot`）。`IConversationStore`/`IUserRepository`/`IPermissionStore` 尚无接口或实现，属于未来扩展，不能按名字假定可用。
+
 ## Core 端口
 
 Core 内部接口位于 `core/include/kiarabot/core/ports/ports.hpp`，协议类型和稳定错误使用生成的 `kiarabot.v1` 类型。所有调用必须区分协议 `Error` 与成功值；数据库故障不能伪装为重复或未找到。事务、任务领取、时区转换、文件和模型实现必须遵守端口及 `doc/01-contracts.md`、`doc/01-runtime-semantics.md` 的语义。接口的存在不表示适配器或插件 Host 服务已经接入。
+
+## 端口覆盖现状（2026-10-31）
+
+下表记录 `core/include/kiarabot/core/ports/ports.hpp` 各端口在当前实现的真实状态；接口存在不等于已实现或已接线。
+
+| 端口 | infrastructure 实现 | 组合根接线 | 状态 |
+| --- | --- | --- | --- |
+| `RuntimeStore` / `RuntimeTransaction` | `SqliteRuntimeStore` | `core/app/main.cpp` 在启用 SQLite 且配置 `KIARABOT_RUNTIME_DB` 时创建，外层包 Core `LoggingRuntimeStore` | 已接线（条件性） |
+| `IModelProvider` | `HttpModelProvider`（T06b） | 三个 `KIARABOT_MODEL_*` 齐全时创建 | 已接线（条件性） |
+| `ITimeZoneResolver` | `TimeZoneResolver`（T06c） | 由 Core `TaskScheduler` 使用 | 已接线 |
+| `IFileStorage` | `FileStorage` + `FakeFileStorage` | **无**：Core 当前没有文件存储用例，组合根未创建；`FileStorage` 仅由 `file_storage_test` 使用 | 未接线（实现存在；`FakeFileStorage` 只用于测试） |
+| `INamespaceStore` | 无 | 无 | 未实现、不使用；命名空间存储由 `RuntimeSnapshot.namespaces` + `HostDispatcher` 在同一事务中承担 |
+| `IIdempotencyStore` | 无 | 无 | 未实现、不使用；Host 幂等响应由 `RuntimeSnapshot.host_receipts` 承担 |
+| `IAuditLogger` | 无 | 无 | 未实现、不使用；审计由 `RuntimeSnapshot.audit`（`RuntimeAuditEntry`，不是协议 `AuditRecord`）承担 |
+| `IUnitOfWork` / `IUnitOfWorkFactory` | 无 | 无 | 未实现、不使用；应用服务直接使用 `RuntimeStore`/`RuntimeTransaction` 组合事务（`doc/02-core.md` 称其为后续扩展端口） |
+| `IScheduler` | 无（调度器在 Core） | Core `TaskScheduler` | 基础设施不提供调度适配器；基线 `CronSchedulerAdapter` 为未来选项 |
+
+约束与交接：
+
+- 本模块不删除、不修改 `core/include/kiarabot/core/ports/` 的接口；若 Core 决定启用 `IUnitOfWork` 系列、独立仓储或审计端口，应先由 Core 确定事务所有权和错误语义，再在 infrastructure 增加适配器（交接 core 分支）。
+- `FileStorage` 的 POSIX 实现和 `FakeFileStorage` 已有单测，但没有任何 Core 调用链；接入前需要先由 Core 定义文件存储用例（上传/附件等）以及目录所有权、容量和清理策略。
+- `doc/18` 基线列出的 `PostgresAdapter`/`RedisAdapter` 未实现、无任务、无验收，属未排期未来项；`CronSchedulerAdapter` 由 Core `TaskScheduler` 替代，不再单独实现。
 
 ## 模型适配器
 
@@ -88,14 +112,7 @@ plugin:<plugin_id>:<key>
 
 插件不得创建或修改 Core 表，不得保存未经过 Schema 校验的任意大对象。
 
-基础设施必须实现 Core 定义的接口：
-
-```text
-IUnitOfWork.begin() / commit() / rollback()
-IInboxRepository.put_if_absent(event_id)
-IOutboxRepository.append(action)
-IActionRepository.get_by_idempotency_key(key)
-```
+Core 端口的实现与接线现状见「端口覆盖现状」。历史草案中的 `IUnitOfWork.begin/commit/rollback`、`IInboxRepository.put_if_absent`、`IOutboxRepository.append`、`IActionRepository.get_by_idempotency_key` 不是当前实际落地的端口：`IUnitOfWork` 只有接口没有实现，`IInboxRepository`/`IOutboxRepository`/`IActionRepository` 在 `ports.hpp` 中从未定义。当前以 `RuntimeStore`/`RuntimeTransaction` 的整快照事务为准，不得据此声称独立仓储/工作单元端口已实现。
 
 独立的 `kiarabot-migrate` 命令使用 SQLite `BEGIN IMMEDIATE` 互斥并在事务内迁移快照，成功后写入 `PRAGMA user_version`；锁等待超过 30 秒失败。当前单快照适配器使用 FULL 同步与 SQLite 默认 journal；没有关系表外键。运行时提交遇到冲突立即报告 CONFLICT。
 
