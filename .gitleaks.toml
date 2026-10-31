@@ -11,4 +11,7 @@ description = "Test-only placeholder credentials, never real secrets."
 regexTarget = "match"
 regexes = [
   '''(?i)(secret-key-must-not-leak|must-not-leak|must-not-reach-child|platform-test-token|private-model-key|mock-(?:access|refresh)-token[a-z0-9-]*)''',
+  # Documentation/fixture placeholders that generic-api-key flags but which are never
+  # usable credentials: README config template and a test idempotency-key value.
+  '''(?:REPLACE_WITH_[A-Z0-9_]+|idempotency-key-1)''',
 ]
