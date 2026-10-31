@@ -50,6 +50,10 @@ class FakeCore(services.AdapterBridgeServicer):
                 ack.status = adapters.AdapterEventAck.REJECTED
                 ack.error.code, ack.error.retryable = common.RATE_LIMITED, True
                 ack.retry_after_ms = 1
+            if self.mode == 'rate-limited' and len(self.events) == 1:
+                # Core ingress backpressure: RATE_LIMITED arrives with retryable=false.
+                ack.status = adapters.AdapterEventAck.REJECTED
+                ack.error.code, ack.error.retryable = common.RATE_LIMITED, False
             if self.mode == 'wrong-id':
                 ack.event_id = 'not-the-event'
             yield adapters.CoreToAdapter(event_ack=ack)
@@ -67,7 +71,7 @@ async def until(predicate):
             await asyncio.sleep(0.005)
 
 
-@pytest.mark.parametrize('mode', ['hold', 'disconnect', 'reject', 'retry', 'wrong-id'])
+@pytest.mark.parametrize('mode', ['hold', 'disconnect', 'reject', 'retry', 'rate-limited', 'wrong-id'])
 async def test_confirmation_and_reconnect(tmp_path, caplog, mode):
     core = FakeCore(mode)
     server = grpc.aio.server()
@@ -92,7 +96,7 @@ async def test_confirmation_and_reconnect(tmp_path, caplog, mode):
             await until(lambda: store.status(event.event_id)[0] != 'pending')
             assert store.status(event.event_id) == (('failed', common.INVALID_ARGUMENT) if mode == 'reject' else ('acked', 0))
         assert core.registrations[0].capabilities[0].name == 'event.message_received'
-        if mode in ('disconnect', 'retry'):
+        if mode in ('disconnect', 'retry', 'rate-limited'):
             assert len(core.registrations) >= 2 and len(core.events) == 2
             first, second = core.events
             assert first.source.adapter_instance_id != second.source.adapter_instance_id

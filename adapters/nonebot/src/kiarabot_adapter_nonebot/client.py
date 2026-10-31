@@ -14,6 +14,9 @@ from .outbox import Outbox
 
 logger = logging.getLogger(__name__)
 
+# Rejections that must keep the event pending even if Core omits retryable=true.
+ALWAYS_RETRYABLE_REJECTIONS = frozenset({common.RATE_LIMITED})
+
 
 @dataclass(frozen=True)
 class ClientConfig:
@@ -115,8 +118,15 @@ class CoreClient:
                     elif ack.status == adapters.AdapterEventAck.REJECTED and ack.error.code:
                         if ack.error.code not in common.ErrorCode.values():
                             raise RetryConnection(common.INTERNAL)
-                        if ack.error.retryable:
-                            raise RetryConnection(ack.error.code, min(30.0, ack.retry_after_ms / 1000))
+                        # Ingress backpressure is always retryable: Core currently returns
+                        # queue-full RATE_LIMITED with retryable=false, but resending the
+                        # same event_id is idempotent and dropping it would lose the
+                        # platform message (OneBot has no consumer ACK for replay).
+                        retryable = (ack.error.retryable
+                                     or ack.error.code in ALWAYS_RETRYABLE_REJECTIONS)
+                        if retryable:
+                            delay = min(30.0, ack.retry_after_ms / 1000) if ack.retry_after_ms else 0.0
+                            raise RetryConnection(ack.error.code, delay)
                         self.outbox.finish(event.event_id, ack.error.code)
                     else:
                         raise RetryConnection(common.INTERNAL)
