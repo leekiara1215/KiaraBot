@@ -1,5 +1,6 @@
 #include "kiarabot/infrastructure/sqlite_runtime_store.hpp"
 
+#include <atomic>
 #include <limits>
 #include <mutex>
 #include <sqlite3.h>
@@ -9,7 +10,6 @@
 
 namespace kiarabot::infrastructure {
 namespace {
-constexpr int kMaximumSnapshotBytes = 64 * 1024 * 1024;
 core::StorageError database_error(sqlite3* database) {
   const int code = sqlite3_errcode(database);
   if (code == SQLITE_BUSY || code == SQLITE_LOCKED) {
@@ -47,6 +47,9 @@ private:
 struct SqliteRuntimeStore::State {
   sqlite3* database{nullptr};
   mutable std::mutex mutex;
+  mutable std::atomic<std::uint64_t> oversized_bytes{0};
+  mutable std::atomic<std::uint64_t> oversized_items{0};
+  mutable std::atomic<std::uint64_t> oversized_reads{0};
   ~State() {
     if (database) {
       sqlite3_close(database);
@@ -65,7 +68,11 @@ struct SqliteRuntimeStore::State {
       }
       const auto revision = sqlite3_column_int64(query.get(), 0);
       const int count = sqlite3_column_bytes(query.get(), 1);
-      if (revision < 0 || count <= 0 || count > kMaximumSnapshotBytes) {
+      if (count > static_cast<int>(kMaximumSnapshotBytes)) {
+        oversized_reads.fetch_add(1, std::memory_order_relaxed);
+        return core::StorageError::Corrupt;
+      }
+      if (revision < 0 || count <= 0) {
         return core::StorageError::Corrupt;
       }
       const auto* bytes = static_cast<const char*>(sqlite3_column_blob(query.get(), 1));
@@ -96,6 +103,7 @@ public:
     try {
       const std::string bytes = detail::encode(snapshot_);
       if (bytes.size() > kMaximumSnapshotBytes) {
+        state_->oversized_bytes.fetch_add(1, std::memory_order_relaxed);
         return core::StorageError::Unavailable;
       }
       Statement update(
@@ -112,6 +120,9 @@ public:
       }
       finished_ = true;
       return std::monostate{};
+    } catch (const detail::SnapshotLimitError&) {
+      state_->oversized_items.fetch_add(1, std::memory_order_relaxed);
+      return core::StorageError::Unavailable;
     } catch (const DatabaseFailure& failure) {
       return failure.error;
     } catch (...) {
@@ -131,6 +142,14 @@ SqliteRuntimeStore::SqliteRuntimeStore(std::shared_ptr<State> state) : state_(st
   }
 }
 SqliteRuntimeStore::~SqliteRuntimeStore() = default;
+SnapshotLimits SqliteRuntimeStore::limits() {
+  return {};
+}
+SnapshotRejections SqliteRuntimeStore::rejected_snapshots() const {
+  return {state_->oversized_bytes.load(std::memory_order_relaxed),
+          state_->oversized_items.load(std::memory_order_relaxed),
+          state_->oversized_reads.load(std::memory_order_relaxed)};
+}
 core::StorageResult<std::unique_ptr<SqliteRuntimeStore>>
 SqliteRuntimeStore::open(const std::string& path) {
   auto state = std::make_shared<State>();
@@ -140,7 +159,8 @@ SqliteRuntimeStore::open(const std::string& path) {
                       nullptr) != SQLITE_OK) {
     return core::StorageError::Unavailable;
   }
-  sqlite3_limit(state->database, SQLITE_LIMIT_LENGTH, kMaximumSnapshotBytes + 1024);
+  sqlite3_limit(state->database, SQLITE_LIMIT_LENGTH,
+                static_cast<int>(kMaximumSnapshotBytes) + 1024);
   if (sqlite3_exec(state->database, "PRAGMA synchronous=FULL; BEGIN IMMEDIATE", nullptr, nullptr,
                    nullptr) != SQLITE_OK) {
     return database_error(state->database);
@@ -182,7 +202,7 @@ SqliteRuntimeStore::open(const std::string& path) {
       }
       const int count = sqlite3_column_bytes(query.get(), 0);
       const auto* raw = static_cast<const char*>(sqlite3_column_blob(query.get(), 0));
-      if (!raw || count <= 0 || count > kMaximumSnapshotBytes) {
+      if (!raw || count <= 0 || count > static_cast<int>(kMaximumSnapshotBytes)) {
         rollback();
         return core::StorageError::Corrupt;
       }
