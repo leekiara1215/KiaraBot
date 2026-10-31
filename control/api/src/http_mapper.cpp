@@ -5,6 +5,7 @@
 
 #include <google/protobuf/util/json_util.h>
 
+#include "kiarabot/core/application/control_service.hpp"
 #include "kiarabot/core/runtime/request_digest.hpp"
 
 namespace kiarabot::control {
