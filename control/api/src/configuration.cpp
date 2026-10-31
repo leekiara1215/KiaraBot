@@ -110,7 +110,7 @@ Configuration read_configuration(const std::string& path) {
       close(descriptor);
     }
   } file{descriptor};
-  struct stat status{};
+  struct stat status {};
   if (fstat(descriptor, &status) != 0 || !S_ISREG(status.st_mode) || status.st_uid != getuid() ||
       (status.st_mode & 0777) != 0600 || status.st_size < 1 || status.st_size > 1048576) {
     throw std::runtime_error("invalid control configuration permissions");

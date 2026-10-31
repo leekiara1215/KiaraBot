@@ -158,7 +158,8 @@ void capacity() {
   kiarabot::core::RuntimeLimits limits;
   limits.action_limit = 2;
   limits.audit_limit = 1000;
-  ActionRouter router(store, [&] { return now; }, limits);
+  ActionRouter router(
+      store, [&] { return now; }, limits);
   PluginSession plugin{"one", "instance", "fence", {}, {"message.send"}};
   AdapterSession adapter{"adapter", "adapter-instance", {"account"}};
   router.attach(adapter, registration());
