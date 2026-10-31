@@ -805,3 +805,25 @@ CI 修复（本轮只改工作流，未复跑；不能据此宣称 CI 已绿）�
   - adapter：outbox 容量/失败记录清理工具、`HEALTH_PORT` 之外的运行配置文档；面板生产形态（TLS 反代）已固定在 ops 的 nginx 模板，如需外置代理需复核。
   - 人类维护者：`doc/18` 中 `deploy/{docker,systemd}` 与实际（`deploy/docker`、`deploy/*.yml`、`deploy/systemd`）的差异只读保留，未修改。
 - 风险：host 网络模型只支持 Linux 单机；TLS 未交付；迁移/备份属“脚本级”保障，未做真实演练；Compose 使用 `env_file.path/required` 长语法，需要较新 Docker Compose；staging 首次启动需 `KIARABOT_BUILD_IMAGES=1` 构建镜像。
+
+## 2026-10-31 W4：control-panel 管理动作接线与契约漂移检测
+
+- 状态：**实现与测试完成；mock/live 测试、契约检查、lint、build 在本机实际运行**；远端 CI 未运行（自动触发仍暂停）。范围=`panel/`、`doc/07-control-panel.md`、本台账；未修改 `core/`、`control/`、`proto/`、`api/`、`deploy/`；`doc/18` 只读未改。
+- 目标：把 `reports/modules/control-panel.md` 的 P1 项接入已就绪端点、增加契约漂移检测、让 live 测试可复现，并修少量 P2 UI 缺陷。
+- 输入输出与错误：面板 UI 操作 → 既有 OpenAPI 操作（插件 validate/enable/disable/config GET/PUT/health、会话列表与撤销、Action 查询占位）；客户端只做展示与体验性校验，权限/状态/冲突由服务端决定；错误按 400/401/403/404/409/429/503/504 分类展示 status/code/request_id，429 显示 Retry-After。
+- 实现：
+  - P1-1 `panel/src/views/plugins.tsx`：插件启用/禁用（202 已接受≠完成）、配置读写（`expected_version`，409 冲突提示重读，`delivery` 区分持久化/应用）、health、manifest 校验，每操作加载/成功/失败态；`panel/src/views/sessions.tsx`：会话列表与撤销（可见范围由服务端）；`panel/src/views/actions.tsx`：两个 Action 查询接线占位，遇到 NOT_FOUND 显示"契约标记 not_implemented，不代表动作失败"，不伪造生产者。
+  - P1-2 `panel/src/api/client.ts`：所有 REST 端点改为 `operation('<path>','<method>')` 声明、类型参数取自生成的 `paths`；`scripts/check-contracts.mjs` 新增“面板端点表 ⊆ openapi.yaml（23 个）”与“`KNOWN_EVENTS` == AsyncAPI 未标 `x-contract-status: not_implemented` 的事件（log/adapter/plugin/task.updated）”两项断言。
+  - P1-3 `tests/live.test.ts`：按 `build/proto`（或 `KIARABOT_ACCEPTANCE_BUILD=build/full`）+ `control/api/tests/.venv` 前置探测，缺失时 `describe.skipIf` 并打印原因；`tests/integration.test.tsx` 扩展到 17 项，mock 增加分页 `next_page_token`、page_size、资源事件推送、4401/4403/4400/1013、429/503 与 Action not_implemented 404。
+  - P2：4403/4400/1013 终止性状态文案、RESYNC 状态不再被覆盖为 disconnected、`streamReady` 断开复位、错误分类与 request_id、`ErrorBoundary`、`page_size`（20/50/100）、重登录 page 复位。
+- 实际运行（worktree `/tmp/kb-panel-w4`，node 26.12.1 / npm 11.20.0）：
+  - `npm ci --prefix panel --no-audit --no-fund --strict-ssl=false --cache /tmp/npm-cache-w4`：成功（本机 npm 默认证书链失败 `UNABLE_TO_GET_ISSUER_CERT_LOCALLY`，仅本地绕过，不改仓库配置）。
+  - `npm run check:contracts --prefix panel`：通过（23 个面板端点、4 个已知事件与契约一致）。
+  - `npm run lint --prefix panel`：通过（tsc --noEmit，0 错误）。
+  - `npm test --prefix panel`（无 live 前置）：17 passed，live 2 skipped（打印缺失 `.venv`/`build/proto` 原因）。
+  - live 前置：`uv sync --project control/api/tests --python 3.11.17`（`UV_CACHE_DIR=/tmp/uv-cache-w4`）+ `cmake --preset full && cmake --build --preset full --parallel 6`（Homebrew protobuf/grpc/curl/sqlite + `CMAKE_PREFIX_PATH`）；`KIARABOT_ACCEPTANCE_BUILD=/tmp/kb-panel-w4/build/full npm test --prefix panel` → **19 passed**（含真实 C++ HTTP/WebSocket 2 项）。
+  - `npm run build --prefix panel`：成功（dist 38 modules，gzip JS 60 kB）。
+  - 未运行：远端 CI（自动触发暂停）、TLS 反向代理、真实 QQ/NapCat（T07b）、Docker/部署（T11b）。
+- 文档影响判断：更新 `doc/07-control-panel.md`（页面集合 9→10、管理动作与错误状态、契约漂移检测、live 前置与 mock 覆盖、流状态）与本台账。未改 `api/`：本轮只消费既有契约，未新增/修改 REST/WS 操作；messages 频道、`health.updated`、Action REST 生产者、`/groups` 数据源仍是 control-api/core 交接项，面板明确不伪造。
+- 交接：control-api/core 需实现 messages 授权/投影、`health.updated`、Action 查询的 control 拥有记录与 7 天保留、`/groups` 数据源、插件配置 delivery 推送（当前面板 GET 轮询观察）；ops 需承担 TLS 终止与生产反代。
+- 风险：真实服务测试依赖本机 C++/Python 环境，CI 自动触发恢复前仍需手动运行；npm 默认 TLS 证书链在本机不可用（仅影响本地安装）；视觉/可访问性只做了基础属性，未做 axe 自动化。

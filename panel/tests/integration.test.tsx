@@ -4,6 +4,7 @@ import { App } from '../src/App';
 import { ApiClient } from '../src/api/client';
 import { MockServer } from '../src/mock/server';
 import { ControlStream } from '../src/stream/control-stream';
+import { ErrorBoundary } from '../src/ui';
 
 async function login(server: MockServer) {
   const api = new ApiClient(server.fetch);
@@ -12,7 +13,12 @@ async function login(server: MockServer) {
   fireEvent.change(screen.getByLabelText('密码'), { target: { value: 'secret' } });
   fireEvent.click(screen.getByRole('button', { name: /登录/ }));
   await screen.findByText('一切运行正常');
+  await waitFor(() => expect(server.sockets[0]?.ready).toBe(true));
   return api;
+}
+
+function navigate(name: string) {
+  fireEvent.click(within(screen.getByRole('navigation')).getByRole('button', { name }));
 }
 
 describe('mock API integration and UI', () => {
@@ -36,7 +42,7 @@ describe('mock API integration and UI', () => {
       ['日志', '服务已启动', '/logs'], ['审计', 'control-panel', '/audit'],
     ];
     for (const [page, content, path] of expected) {
-      fireEvent.click(within(screen.getByRole('navigation')).getByRole('button', { name: page }));
+      navigate(page);
       expect(await screen.findByText(content)).toBeInTheDocument();
       expect(server.requests).toContain(path);
     }
@@ -47,10 +53,142 @@ describe('mock API integration and UI', () => {
     const server = new MockServer(); server.denied.add('/logs');
     await login(server);
     await waitFor(() => expect(screen.getAllByText('实时连接正常').length).toBeGreaterThan(0));
-    fireEvent.click(within(screen.getByRole('navigation')).getByRole('button', { name: '日志' }));
+    navigate('日志');
     expect(await screen.findByRole('alert')).toHaveTextContent('权限不足');
     act(() => server.sockets[0].close());
     expect(screen.getAllByText('连接已断开，正在重试').length).toBeGreaterThan(0);
+  });
+});
+
+describe('plugin management endpoints', () => {
+  it('enables, disables and reads plugin health', async () => {
+    const server = new MockServer();
+    await login(server);
+    navigate('插件');
+    await screen.findByText('Welcome');
+
+    fireEvent.click(screen.getByRole('button', { name: '禁用 Welcome' }));
+    expect(await screen.findByText(/禁用请求已接受/)).toBeInTheDocument();
+    expect(server.requests).toContain('/plugins/welcome/disable');
+    expect(await screen.findByText('已禁用')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: '启用 Welcome' }));
+    expect(await screen.findByText(/启用请求已接受/)).toBeInTheDocument();
+    expect(server.requests).toContain('/plugins/welcome/enable');
+
+    fireEvent.click(screen.getByRole('button', { name: '健康 Welcome' }));
+    expect(await screen.findByText(/聚合状态/)).toBeInTheDocument();
+    expect(server.requests).toContain('/plugins/welcome/health');
+  });
+
+  it('reads config with expected_version, saves it, and surfaces a 409 conflict', async () => {
+    const server = new MockServer();
+    await login(server);
+    navigate('插件');
+    await screen.findByText('Welcome');
+
+    fireEvent.click(screen.getByRole('button', { name: '配置 Welcome' }));
+    const editor = await screen.findByLabelText('配置值（JSON 对象）');
+    expect(editor).toHaveValue(JSON.stringify({ greeting: '你好' }, null, 2));
+    fireEvent.change(editor, { target: { value: JSON.stringify({ greeting: '你好', reply: '收到' }, null, 2) } });
+    fireEvent.click(screen.getByRole('button', { name: /保存（expected_version=1）/ }));
+    expect(await screen.findByText(/已保存持久化版本 2/)).toBeInTheDocument();
+    const put = server.requests.lastIndexOf('/plugins/welcome/config');
+    expect(put).toBeGreaterThanOrEqual(0);
+
+    server.bumpConfig('welcome');
+    fireEvent.click(screen.getByRole('button', { name: /保存（expected_version=2）/ }));
+    expect(await screen.findByText('版本冲突')).toBeInTheDocument();
+  });
+
+  it('validates a plugin manifest without enabling it', async () => {
+    const server = new MockServer();
+    await login(server);
+    navigate('插件');
+    await screen.findByText('Welcome');
+    fireEvent.click(screen.getByRole('button', { name: '校验清单' }));
+    expect(await screen.findByText('清单有效')).toBeInTheDocument();
+    expect(server.requests).toContain('/plugins/validate');
+  });
+});
+
+describe('sessions and action lookup', () => {
+  it('lists sessions and revokes one', async () => {
+    const server = new MockServer();
+    await login(server);
+    navigate('权限');
+    expect(await screen.findByText('认证会话')).toBeInTheDocument();
+    expect(server.requests).toContain('/auth/sessions');
+    const revokeButtons = screen.getAllByRole('button', { name: /撤销会话/ });
+    fireEvent.click(revokeButtons[0]);
+    expect(await screen.findByText(/已撤销/)).toBeInTheDocument();
+    expect(server.requests.some((path) => path.endsWith('/revoke'))).toBe(true);
+  });
+
+  it('shows the not_implemented explanation for Action queries', async () => {
+    const server = new MockServer();
+    await login(server);
+    navigate('动作');
+    fireEvent.change(screen.getByLabelText('action_id'), { target: { value: 'action-1' } });
+    fireEvent.click(screen.getByRole('button', { name: '按 ID 查询' }));
+    expect(await screen.findByText('未找到（契约标记 not_implemented）')).toBeInTheDocument();
+    expect(server.requests).toContain('/actions/action-1');
+  });
+});
+
+describe('pagination, filters and stream events', () => {
+  it('pages through logs and requests page_size', async () => {
+    const server = new MockServer();
+    await login(server);
+    navigate('日志');
+    await screen.findByText('服务已启动');
+    expect(screen.getAllByRole('row')).toHaveLength(21);
+    fireEvent.click(screen.getByRole('button', { name: '下一页 →' }));
+    expect(await screen.findByText('第 25 条运行日志')).toBeInTheDocument();
+    expect(server.queries.some((query) => query.includes('page_token=logs-page-2'))).toBe(true);
+
+    fireEvent.change(screen.getByLabelText('每页条数'), { target: { value: '50' } });
+    await waitFor(() => expect(server.queries.some((query) => query.includes('page_size=50'))).toBe(true));
+    expect(await screen.findByText('第 25 条运行日志')).toBeInTheDocument();
+  });
+
+  it('refreshes the current view when a known stream event arrives', async () => {
+    const server = new MockServer();
+    await login(server);
+    navigate('插件');
+    await screen.findByText('Welcome');
+    const before = server.requests.filter((path) => path === '/plugins').length;
+    act(() => server.pushEvent('plugin.updated', { id: 'welcome' }));
+    await waitFor(() => expect(server.requests.filter((path) => path === '/plugins').length).toBeGreaterThan(before));
+    act(() => server.pushEvent('future.event', { ignored: true }));
+    expect(server.requests.filter((path) => path === '/plugins').length).toBe(before + 1);
+  });
+
+  it('returns to login on 4401', async () => {
+    const server = new MockServer();
+    await login(server);
+    act(() => server.sockets[0].closeWith(4401));
+    expect(await screen.findByLabelText('用户名')).toBeInTheDocument();
+  });
+
+  it('reports 4403 without retrying', async () => {
+    const server = new MockServer();
+    await login(server);
+    act(() => server.sockets[0].closeWith(4403));
+    expect(await screen.findAllByText('无权访问该数据流，已停止重连')).not.toHaveLength(0);
+    expect(server.sockets).toHaveLength(1);
+  });
+
+  it('classifies 429 and 503 failures with Retry-After and request_id', async () => {
+    const server = new MockServer();
+    server.failures.set('/logs', { status: 429, code: 'RATE_LIMITED', retryAfter: 7 });
+    server.failures.set('/audit', { status: 503, code: 'UPSTREAM_UNAVAILABLE' });
+    await login(server);
+    navigate('日志');
+    expect(await screen.findByText('请求过于频繁')).toBeInTheDocument();
+    expect(screen.getByText(/约 7 秒/)).toBeInTheDocument();
+    navigate('审计');
+    expect(await screen.findByText('依赖不可用')).toBeInTheDocument();
   });
 });
 
@@ -73,9 +211,21 @@ describe('WebSocket resume and resync', () => {
     expect(refresh).toHaveBeenCalledTimes(3);
     stream.stop();
   });
+
+  it('stops on terminal close codes 4403, 4400 and 1013', async () => {
+    for (const [code, text] of [[4403, 'forbidden'], [4400, 'protocol'], [1013, 'throttled']] as const) {
+      const server = new MockServer(); const statuses: string[] = [];
+      const stream = new ControlStream({ url: 'ws://mock/ws', accessToken: 'token', factory: server.socketFactory, onStatus: (status) => statuses.push(status), onRefresh: () => {} });
+      stream.start(); await Promise.resolve(); await Promise.resolve();
+      server.sockets[0].closeWith(code);
+      expect(statuses.at(-1)).toBe(text);
+      expect(server.sockets).toHaveLength(1);
+      stream.stop();
+    }
+  });
 });
 
-describe('authentication races', () => {
+describe('authentication races and rendering', () => {
   it('does not expire a newer session when an old request receives 401', async () => {
     let respond!: (response: Response) => void;
     const api = new ApiClient(() => new Promise<Response>((resolve) => { respond = resolve; }));
@@ -85,5 +235,13 @@ describe('authentication races', () => {
     respond(new Response(JSON.stringify({ code: 'UNAUTHENTICATED' }), { status: 401 }));
     await expect(pending).rejects.toMatchObject({ status: 401 });
     expect(expired).not.toHaveBeenCalled();
+  });
+
+  it('renders a recoverable error boundary instead of a blank page', () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    function Boom(): JSX.Element { throw new Error('render exploded'); }
+    render(<ErrorBoundary><Boom /></ErrorBoundary>);
+    expect(screen.getByText('界面渲染失败')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '重试渲染' })).toBeInTheDocument();
   });
 });
