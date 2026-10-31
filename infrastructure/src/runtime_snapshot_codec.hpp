@@ -1,12 +1,16 @@
 #pragma once
 
+#include <cstddef>
 #include <iomanip>
 #include <locale>
 #include <sstream>
 #include <stdexcept>
 #include <type_traits>
+#include <unordered_map>
+#include <unordered_set>
 
 #include "kiarabot/core/domain/runtime_types.hpp"
+#include "kiarabot/core/domain/session_key.hpp"
 #include "kiarabot/infrastructure/snapshot_limits.hpp"
 
 namespace kiarabot::infrastructure::detail {
@@ -48,6 +52,9 @@ void fields(Archive& archive, Value& value);
 template <typename Archive, typename Value>
   requires std::is_same_v<std::remove_const_t<Value>, core::RuntimeCommandRecord>
 void fields(Archive& archive, Value& value);
+template <typename Archive, typename Value>
+  requires std::is_same_v<std::remove_const_t<Value>, core::DailyBudgetEntry>
+void fields(Archive& archive, Value& value);
 // Private on-disk format, versioned with the database schema. No platform objects.
 template <typename Archive, typename Value>
   requires std::is_same_v<std::remove_const_t<Value>, core::NamespaceEntry>
@@ -70,7 +77,7 @@ void fields(Archive& archive, Value& value) {
   }
 }
 struct Encoder {
-  static constexpr int version = 5;
+  int version{6};
   std::ostringstream stream;
   std::size_t remaining_items{kMaximumSnapshotItems};
   void reserve_items(std::size_t count) {
@@ -122,7 +129,7 @@ struct Encoder {
 struct Decoder {
   std::istringstream stream;
   std::size_t remaining_items{kMaximumSnapshotItems};
-  int version{5};
+  int version{6};
   template <typename... T> void operator()(T&... values) {
     (one(values), ...);
   }
@@ -252,25 +259,109 @@ void fields(Archive& archive, Value& value) {
   if (archive.version >= 5) {
     archive(value.tasks);
   }
+  if (archive.version >= 6) {
+    archive(value.daily_budgets);
+  }
 }
 template <typename Archive, typename Value>
   requires std::is_same_v<std::remove_const_t<Value>, core::RuntimeAuditEntry>
 void fields(Archive& archive, Value& value) {
   archive(value.actor, value.permission, value.resource, value.request_id, value.trace_id,
           value.occurred_at, value.allowed, value.outcome);
+  if (archive.version >= 6) {
+    archive(value.target_account_id, value.target_conversation_id);
+  }
 }
 template <typename Archive, typename Value>
   requires std::is_same_v<std::remove_const_t<Value>, core::RuntimeCommandRecord>
 void fields(Archive& archive, Value& value) {
   archive(value.fingerprint);
 }
-inline std::string encode(const core::RuntimeSnapshot& snapshot) {
+template <typename Archive, typename Value>
+  requires std::is_same_v<std::remove_const_t<Value>, core::DailyBudgetEntry>
+void fields(Archive& archive, Value& value) {
+  archive(value.day, value.used);
+}
+
+// Schema v6 migration of the private session ordering keys. Before v6 the key was the
+// three-tuple (adapter_id, account_id, conversation_id); it is now the four-tuple with
+// the conversation type (doc/01-runtime-semantics.md "顺序和背压"). The stored envelope
+// is the only place that still carries the type, so each event with a session key is
+// decoded and re-derived; events that cannot be decoded keep their legacy key (and the
+// matching watermark cannot be attributed anymore).
+//
+// A legacy key cannot distinguish a group and a private conversation that reused the
+// same platform number, so every typed key derived from it inherits the same watermark.
+// The watermark can only make Core accept a continuing sequence, never reject one.
+// Watermarks with no surviving event are dropped; the first post-upgrade event for such
+// a conversation starts a new session and is reported DEGRADED once.
+struct SessionKeyMigration {
+  std::size_t rekeyed_events{0};
+  std::size_t rekeyed_deliveries{0};
+  std::size_t rekeyed_watermarks{0};
+  std::size_t dropped_watermarks{0};
+  std::size_t unparsed_events{0};
+};
+inline SessionKeyMigration migrate_session_keys(core::RuntimeSnapshot& snapshot) {
+  SessionKeyMigration result;
+  std::unordered_map<std::string, std::unordered_set<std::string>> derived;
+  std::unordered_map<std::string, std::string> event_keys;
+  for (auto& [event_id, entry] : snapshot.events) {
+    core::EventRecord& record = entry.record;
+    if (record.session_key.empty()) {
+      continue;
+    }
+    kiarabot::v1::EventEnvelope envelope;
+    if (!envelope.ParseFromString(record.serialized_envelope)) {
+      ++result.unparsed_events;
+      continue;
+    }
+    std::string typed = core::session_key(envelope);
+    if (typed == record.session_key) {
+      continue;
+    }
+    derived[record.session_key].insert(typed);
+    record.session_key = std::move(typed);
+    event_keys[event_id] = record.session_key;
+    ++result.rekeyed_events;
+  }
+  for (auto& [event_id, deliveries] : snapshot.deliveries) {
+    const auto found = event_keys.find(event_id);
+    if (found == event_keys.end()) {
+      continue;
+    }
+    for (auto& [plugin_id, delivery] : deliveries) {
+      static_cast<void>(plugin_id);
+      if (delivery.session_key == found->second) {
+        continue;
+      }
+      delivery.session_key = found->second;
+      ++result.rekeyed_deliveries;
+    }
+  }
+  std::unordered_map<std::string, core::SessionStatus> sessions;
+  for (const auto& [legacy, status] : snapshot.sessions) {
+    const auto found = derived.find(legacy);
+    if (found == derived.end()) {
+      ++result.dropped_watermarks;
+      continue;
+    }
+    for (const std::string& typed : found->second) {
+      sessions[typed] = status;
+    }
+    ++result.rekeyed_watermarks;
+  }
+  snapshot.sessions = std::move(sessions);
+  return result;
+}
+inline std::string encode(const core::RuntimeSnapshot& snapshot, int version = 6) {
   Encoder encoder;
+  encoder.version = version;
   encoder.stream.imbue(std::locale::classic());
   encoder.one(snapshot);
   return encoder.stream.str();
 }
-inline core::RuntimeSnapshot decode(const std::string& bytes, int version = 5) {
+inline core::RuntimeSnapshot decode(const std::string& bytes, int version = 6) {
   Decoder decoder{std::istringstream(bytes)};
   decoder.stream.imbue(std::locale::classic());
   decoder.version = version;

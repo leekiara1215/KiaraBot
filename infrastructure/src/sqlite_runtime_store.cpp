@@ -189,12 +189,12 @@ SqliteRuntimeStore::open(const std::string& path) {
       if (sqlite3_bind_blob(insert.get(), 1, bytes.data(), static_cast<int>(bytes.size()),
                             SQLITE_TRANSIENT) != SQLITE_OK ||
           sqlite3_step(insert.get()) != SQLITE_DONE ||
-          sqlite3_exec(state->database, "PRAGMA user_version=5", nullptr, nullptr, nullptr) !=
+          sqlite3_exec(state->database, "PRAGMA user_version=6", nullptr, nullptr, nullptr) !=
               SQLITE_OK) {
         rollback();
         return core::StorageError::Unavailable;
       }
-    } else if (version == 1 || version == 2 || version == 3 || version == 4) {
+    } else if (version == 1 || version == 2 || version == 3 || version == 4 || version == 5) {
       Statement query(state->database, "SELECT payload FROM runtime_snapshot WHERE id=1");
       if (sqlite3_step(query.get()) != SQLITE_ROW) {
         rollback();
@@ -206,18 +206,19 @@ SqliteRuntimeStore::open(const std::string& path) {
         rollback();
         return core::StorageError::Corrupt;
       }
-      const auto migrated = detail::encode(
-          detail::decode(std::string(raw, static_cast<std::size_t>(count)), version));
+      auto snapshot = detail::decode(std::string(raw, static_cast<std::size_t>(count)), version);
+      static_cast<void>(detail::migrate_session_keys(snapshot));
+      const auto migrated = detail::encode(snapshot);
       Statement update(state->database, "UPDATE runtime_snapshot SET payload=? WHERE id=1");
       if (sqlite3_bind_blob(update.get(), 1, migrated.data(), static_cast<int>(migrated.size()),
                             SQLITE_TRANSIENT) != SQLITE_OK ||
           sqlite3_step(update.get()) != SQLITE_DONE ||
-          sqlite3_exec(state->database, "PRAGMA user_version=5", nullptr, nullptr, nullptr) !=
+          sqlite3_exec(state->database, "PRAGMA user_version=6", nullptr, nullptr, nullptr) !=
               SQLITE_OK) {
         rollback();
         return core::StorageError::Unavailable;
       }
-    } else if (version != 5) {
+    } else if (version != 6) {
       rollback();
       return core::StorageError::Corrupt;
     }

@@ -24,7 +24,7 @@ services:
       # Authoritative migration command: the core image ships kiarabot-migrate
       # at this path. A missing or failing command stops the stack before Core.
       MIGRATION_COMMAND: /usr/local/bin/kiarabot-migrate
-      EXPECTED_SCHEMA_VERSION: "5"
+      EXPECTED_SCHEMA_VERSION: "6"
     volumes:
       - kiarabot-staging-data:/var/lib/kiarabot
       - kiarabot-staging-backups:/var/lib/kiarabot/backups

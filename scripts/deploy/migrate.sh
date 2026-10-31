@@ -9,7 +9,7 @@ script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 lock_file="${MIGRATION_LOCK_FILE:-/var/lib/kiarabot/migrate.lock}"
 database_path="${DATABASE_PATH:-/var/lib/kiarabot/kiarabot.db}"
 backup_dir="${BACKUP_DIR:-/var/lib/kiarabot/backups}"
-expected_schema_version="${EXPECTED_SCHEMA_VERSION:-5}"
+expected_schema_version="${EXPECTED_SCHEMA_VERSION:-6}"
 # The authoritative migration command is the standalone kiarabot-migrate binary
 # shipped in the Core image. Operators may override it for staging, but the
 # command must accept exactly one database path argument.

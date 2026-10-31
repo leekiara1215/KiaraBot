@@ -72,4 +72,4 @@ PYTHONPATH=generated:src .venv/bin/python -m kiarabot_adapter_nonebot
 
 ## 5. 停止与备份
 
-分别 Ctrl+C 停止适配器和 Core，再停止 SSH 隧道。保留 data/t07b/core.db、adapter-outbox.db 和 adapter-outbox.db.actions。全部停止后再复制整个数据目录到本机受保护位置，不上传 env 文件。schema v5 不能由旧二进制直接读取，回滚使用匹配二进制与迁移前备份；不要删除未知结果的 Action 日志再重发。真实回滚演练仍待验收。
+分别 Ctrl+C 停止适配器和 Core，再停止 SSH 隧道。保留 data/t07b/core.db、adapter-outbox.db 和 adapter-outbox.db.actions。全部停止后再复制整个数据目录到本机受保护位置，不上传 env 文件。schema v6 不能由旧二进制直接读取，回滚使用匹配二进制与迁移前备份；不要删除未知结果的 Action 日志再重发。真实回滚演练仍待验收。

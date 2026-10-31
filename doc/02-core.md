@@ -12,7 +12,9 @@ T06a HostDispatcher 使用已认证 PluginSession 和 RuntimeStore 事务处理�
 
 ## T04b Action 接线范围
 
-ActionRouter 通过 RuntimeStore 原子保存请求、认证所有者、规范化 fingerprint、派发标志和结果；插件申请 message.send 且获授后才可提交。当前实现 send_message 的群/私聊纯文本子集，其余 payload/消息段明确 CAPABILITY_NOT_SUPPORTED。适配器须声明 action.send_message.text.v1；账号和实例由注册上下文约束。提交、取消、派发和结果更新均记录事务审计；任何提交失败不调用平台。
+ActionRouter 通过 RuntimeStore 原子保存请求、认证所有者、规范化 fingerprint、派发标志和结果；插件按 Action 类型申请对应权限（`message.send`、`message.react`、`message.delete`、`member.mute`、`member.kick`、`request.approve`）且获授后才可提交。v1 实现 `send_message` 的群/私聊纯文本子集、`react_message` 的群/私聊表情回应（平台中立 token）、`delete_message` 的 bot 自发送消息撤回、`mute_member`/`kick_member` 群管理动作（受会话白名单、每日预算与速率限制约束），以及 `approve_request` 好友请求审批（`request_id` 回填 FriendRequest token），其余 payload/消息段明确 `CAPABILITY_NOT_SUPPORTED`。适配器须声明对应能力（`action.send_message.text.v1`、`action.react_message.v1`、`action.delete_message.v1`、`action.mute_member.v1`、`action.kick_member.v1`、`action.approve_request.v1`）；账号和实例由注册上下文约束。提交、取消、派发和结果更新均记录事务审计；任何提交失败不调用平台。
+
+ActionRouter 在受理可派发 Action 前按 `(Action 类型, 账号)` 与 `(Action 类型, 会话)` 检查进程内滑动窗口配额（`ActionQuota`，默认单账号 10 次/分钟、单群 3 次/分钟、单用户私聊 1 次/10 秒），超限返回可重试 `RATE_LIMITED` 并写审计。配额窗口不持久化，进程重启后重置；账号/会话/窗口键在进程内的跟踪数量有上限，达到上限时淘汰最久未触达的窗口。配额只约束 Core 侧出站，平台侧限频与风控信号仍由适配器错误分类上报。
 
 响应与查询使用 T04a 协议。相同调用方/幂等键复用原结果，内容冲突拒绝，其他调用方不可查询；action_id 在存量记录中全局唯一。规范化内容忽略 action_id、trace_id 和目标连接实例，其余内容（含 deadline）不变。派发前持久化 dispatched，重连可重发同一 Action；适配器必须持久去重。派发后的取消返回 CONFLICT。到期优先 EXPIRED，迟到结果不能覆盖终态；已发生的平台副作用不能由 EXPIRED 撤销。终态保留至少七天，清理由运维任务补齐。
 
@@ -249,7 +251,7 @@ AuthorizedCommands 是 Core 内部入口：调用方必须从已认证连接构�
 
 execute 的回调只能修改传入的 RuntimeSnapshot，不得执行网络/平台副作用或另启 Runtime 事务。业务修改、成功幂等记录和审计在同一提交中完成；提交失败全部不生效。幂等范围为主体+权限+资源+键，同键同 fingerprint 重放成功且不重复审计；不同 fingerprint 返回 CONFLICT。重放前重新鉴权。拒绝及回调失败记录审计，失败回调的状态变更被回滚；错误详情只保留稳定码和请求标识，不转发回调的自由文本。审计满（默认十万条）时返回 UPSTREAM_UNAVAILABLE 且不执行回调。审计/幂等保留和清理策略须后续管理任务落实，不能当作无限容量服务。
 
-SQLite 从 v2 起保存审计和命令幂等记录，当前 v5 还保存 Action 路由、Host 命名空间/幂等响应和任务；模型和任务已接线。T02a 适配器桥和 T03a 插件桥已使用此入口；控制 API 已由 T08b 通过独立应用端口接入同一事务存储。
+SQLite 从 v2 起保存审计和命令幂等记录；当前 schema v6 还保存 Action 路由、Host 命名空间/幂等响应、任务、Action 审计目标（账号/会话）与每日 Action 预算计数器。模型和任务已接线。T02a 适配器桥和 T03a 插件桥已使用此入口；控制 API 已由 T08b 通过独立应用端口接入同一事务存储。
 
 ## T02a 适配器接收应用入口
 
@@ -267,9 +269,9 @@ LoggingRuntimeStore 装饰现有 RuntimeStore，不改变事务结果；提交�
 
 ## 维护循环与容量上限（W2）
 
-组合根在持久化装配下启动维护循环（`RuntimeMaintenance`，`core/include/kiarabot/core/application/runtime_maintenance.hpp`），默认每 60 秒一次，并在启动时先执行一次。每次维护在同一个 `RuntimeTransaction` 内完成：删除超过保留期（默认 168 小时、不得低于 24 小时）的终态事件及其逐插件投递记录、终态 Action；按保留期与水位裁剪审计；按数量上限裁剪命令幂等记录；清理过期 namespace TTL 条目与过期 Host 幂等响应。只有确实删除记录才提交，事务提交失败不改变持久状态；与共享存储的 revision 冲突按维护周期重试，不自动重试、不影响业务请求，失败与每次实际清理量都以 `operation=maintenance` 结构化日志输出。
+组合根在持久化装配下启动维护循环（`RuntimeMaintenance`，`core/include/kiarabot/core/application/runtime_maintenance.hpp`），默认每 60 秒一次，并在启动时先执行一次。每次维护在同一个 `RuntimeTransaction` 内完成：删除超过保留期（默认 168 小时、不得低于 24 小时）的终态事件及其逐插件投递记录、终态 Action；按保留期与水位裁剪审计；按数量上限裁剪命令幂等记录；清理过期 namespace TTL 条目、过期 Host 幂等响应和过期每日 Action 预算计数器。只有确实删除记录才提交，事务提交失败不改变持久状态；与共享存储的 revision 冲突按维护周期重试，不自动重试、不影响业务请求，失败与每次实际清理量都以 `operation=maintenance` 结构化日志输出。
 
-容量与超时由组合根注入，不再全部使用硬编码默认值：`KIARABOT_EVENT_QUEUE_LIMIT`（1–100000，默认 1024）、`KIARABOT_AUDIT_LIMIT`（1000–10000000，默认 100000）、`KIARABOT_ACTION_LIMIT`（100–1000000，默认 10000）、`KIARABOT_ACK_TIMEOUT_MS`（1000–600000，默认 30000）、`KIARABOT_MAINTENANCE_INTERVAL_MS`（1000–3600000，默认 60000）、`KIARABOT_RETENTION_HOURS`（24–8760，默认 168）。非法值以 `operation=runtime_config outcome=failed error_code=INVALID_ARGUMENT` 退出 1。审计/命令上限的维护水位为上限的五分之四，保证写入方始终有头部空间；审计达到硬上限时 `AuthorizedCommands` 仍返回 `UPSTREAM_UNAVAILABLE`（可观测的稳定错误），快照超过存储实现上限时提交返回 `UPSTREAM_UNAVAILABLE`。命令幂等记录没有时间戳（快照格式只保存 fingerprint），因此按确定性数量上限裁剪；业务幂等仍由事件、Action 与 Host receipt 记录保证，被裁剪项重放会重新执行幂等回调并追加一条审计。
+容量与超时由组合根注入，不再全部使用硬编码默认值：`KIARABOT_EVENT_QUEUE_LIMIT`（1–100000，默认 1024）、`KIARABOT_AUDIT_LIMIT`（1000–10000000，默认 100000）、`KIARABOT_ACTION_LIMIT`（100–1000000，默认 10000）、`KIARABOT_ACK_TIMEOUT_MS`（1000–600000，默认 30000）、`KIARABOT_MAINTENANCE_INTERVAL_MS`（1000–3600000，默认 60000）、`KIARABOT_RETENTION_HOURS`（24–8760，默认 168）、`KIARABOT_ACTION_ACCOUNT_LIMIT_PER_MINUTE`（1–100000，默认 10）、`KIARABOT_ACTION_GROUP_LIMIT_PER_MINUTE`（1–100000，默认 3）、`KIARABOT_ACTION_PRIVATE_LIMIT_PER_10_SECONDS`（1–1000，默认 1）、`KIARABOT_ACTION_DAILY_LIMITS`（逗号分隔的 `<action kind>=<limit>`，limit 1–100000，默认空=不限制）、`KIARABOT_ACTION_ALLOWED_CONVERSATIONS`（逗号分隔的 `<action kind>=<会话>|<会话>...`，默认空=该 kind 不额外限制；出现的 kind 只允许白名单会话）。非法值以 `operation=runtime_config outcome=failed error_code=INVALID_ARGUMENT` 退出 1。审计/命令上限的维护水位为上限的五分之四，保证写入方始终有头部空间；审计达到硬上限时 `AuthorizedCommands` 仍返回 `UPSTREAM_UNAVAILABLE`（可观测的稳定错误），快照超过存储实现上限时提交返回 `UPSTREAM_UNAVAILABLE`。命令幂等记录没有时间戳（快照格式只保存 fingerprint），因此按确定性数量上限裁剪；业务幂等仍由事件、Action 与 Host receipt 记录保证，被裁剪项重放会重新执行幂等回调并追加一条审计。
 
 插件投递新增 ACK 超时：`dispatched` 记录超过 `KIARABOT_ACK_TIMEOUT_MS` 未确认时按一次可重试失败处理（进入退避；达到最大尝试次数后进入死信），使挂起插件不再永久阻塞该插件的投递队列。桥接层对 `retryable=true` 的 `CONFLICT` 在事件 ACK、配置 ACK、Action 提交/查询/取消、适配器 Action 结果与 Host 请求路径做 3 次 20ms 重试；重试预算耗尽后仍按原断连语义处理，断连原因由稳定错误码表达。控制应用 `stream_snapshot` 增加会话用户查找失败的防御性判断（返回 `UNAUTHENTICATED`）。
 

@@ -44,7 +44,7 @@ def test_migration_repeat_corruption_and_lock(tmp_path):
         result = subprocess.run([executable, path], capture_output=True, timeout=4)
         assert result.returncode == 0
     connection = sqlite3.connect(path)
-    assert connection.execute("PRAGMA user_version").fetchone()[0] == 5
+    assert connection.execute("PRAGMA user_version").fetchone()[0] == 6
     connection.execute("BEGIN IMMEDIATE")
     process = subprocess.Popen([executable, path], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     try:

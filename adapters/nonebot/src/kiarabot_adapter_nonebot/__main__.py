@@ -8,13 +8,13 @@ from contextlib import suppress
 from urllib.parse import urlparse
 
 import nonebot
-from nonebot.adapters.onebot.v11 import Adapter, Bot, MessageEvent
+from nonebot.adapters.onebot.v11 import Adapter, Bot, MessageEvent, RequestEvent
 from kiarabot.v1 import common_pb2 as common
 
 from .client import ClientConfig, CoreClient
 from .actions import ActionExecutor
 from .health import HealthServer
-from .mapper import AdapterError, map_message
+from .mapper import AdapterError, map_message, map_request
 from .outbox import Outbox
 from .platform_errors import classify_retcode
 from .status import AdapterStatusReporter
@@ -106,6 +106,19 @@ def configure():
             outbox.enqueue(map_message(raw, config.adapter_id, config.account_id))
         except AdapterError as error:
             logging.getLogger(__name__).warning('operation=event_enqueue error_code=%s',
+                                               common.ErrorCode.Name(error.code))
+
+    request_matcher = nonebot.on_request(priority=1, block=False)
+
+    @request_matcher.handle()
+    async def receive_request(bot: Bot, event: RequestEvent):
+        try:
+            raw = event.model_dump(mode='json')
+            mapped = map_request(raw, config.adapter_id, config.account_id)
+            executor.remember_request(mapped.friend_request.request_id, raw['flag'])
+            outbox.enqueue(mapped)
+        except AdapterError as error:
+            logging.getLogger(__name__).warning('operation=request_enqueue error_code=%s',
                                                common.ErrorCode.Name(error.code))
 
     @driver.on_startup

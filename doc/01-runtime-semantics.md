@@ -73,7 +73,47 @@ T04a 插件 Action 使用 action.result.v1 显式协商和 request_id 关联。�
 - 参考 Runtime 不自带调度线程：宿主须定期调用 `expire_actions()` 并在执行前检查状态和 deadline；
 - 取消只能作用于尚未到期的 `ACCEPTED` Action；到期后的完成或取消不会覆盖 `EXPIRED`；
 - 网络超时不等于平台执行失败，必须通过幂等键查询最终结果。
+- Core 在受理可派发 Action 前按 `(Action 类型, 账号)` 与 `(Action 类型, 会话)` 检查进程内滑动窗口配额；默认单账号 10 次/分钟、单群 3 次/分钟、单用户私聊 1 次/10 秒，由组合根环境变量覆盖。超限返回可重试 `RATE_LIMITED` 并写入审计；重复幂等提交与 deadline 已过的提交不消耗配额。配额不是平台限频的替代：平台侧限频/风控错误仍由适配器分类上报。
+- 危险 Action 可配置**持久化每日预算**：按 `(Action 类型, 账号)` 与 UTC 日计数，配置项 `KIARABOT_ACTION_DAILY_LIMITS`（`<action kind>=<limit>`）；超限返回可重试 `RATE_LIMITED` 并写审计，被拒绝的请求不消耗预算。计数器与 Action 记录同一快照事务提交，跨重启保留；维护循环删除过期日期的计数器。默认不配置预算（空），只为危险动作开启。
+- Action 审计记录包含目标账号与会话（`target_account_id`、`target_conversation_id`）；控制面 `/audit` 对非空目标输出 `account_id`/`conversation_id` 字段。
 - 查询接口返回 `ACCEPTED` 表示尚未终结；`SUCCEEDED`、`FAILED`、`EXPIRED`、`CANCELLED` 是终结状态。终结结果保留 7 天；查询超时不改变 Action 状态。按幂等键查询受已认证调用方的授权范围限制。
+
+### ReactMessage（表情回应，W6）
+
+`react_message` 在 v1 只支持群/私聊消息，`conversation` 必填且 `type` 只能是 `GROUP`/`PRIVATE`；`conversation.account_id` 必须等于 `target_source.account_id`，`target.conversation_id` 必须等于 `conversation.id`。`reaction` 使用平台中立 token：`like`、`laugh`、`surprise`、`sad`、`angry`，由适配器映射到平台表情 ID；Core 不写平台 emoji ID。
+
+- 权限：需要 `message.react`，与 `message.send` 相互独立（`message.send` 不隐含 `message.react`）。适配器必须协商能力 `action.react_message.v1`，否则提交返回 `CAPABILITY_NOT_SUPPORTED`。
+- 校验与错误：非法 ID/账号/会话不一致返回 `INVALID_ARGUMENT`；不支持的会话类型、未知或空 reaction token 分别返回 `CAPABILITY_NOT_SUPPORTED`/`INVALID_ARGUMENT`；缺少权限或账号未授权返回 `PERMISSION_DENIED`。
+- 成功可以不返回平台消息 ID：适配器回传 `SUCCEEDED` 且 `platform_message_id` 为空是合法终态；不得因此伪造 `ACCEPTED`、视为失败或重试平台调用。
+- 幂等、配额、deadline 与 `send_message` 相同；配额按 Action 类型使用独立滑动窗口。平台限频/风控拒绝由适配器分类为稳定错误码。
+
+### DeleteMessage（撤回，W6c）
+
+`delete_message` 在 v1 只允许撤回**本机器人账号自己发送过**的消息；`conversation` 必填且 `type` 只能是 `GROUP`/`PRIVATE`，账号与 `target.conversation_id` 校验与 `react_message` 相同。适配器维护自己的已发送消息索引（send 成功后按平台消息 ID 记录，保留七天），只有索引中且会话匹配的消息 ID 才能撤回；未索引或会话不匹配返回 `PERMISSION_DENIED`，不把平台消息 ID 当作可任意撤回的凭据。
+
+- 权限：需要 `message.delete`，与 `message.send`/`message.react` 独立；适配器必须协商能力 `action.delete_message.v1`，否则提交返回 `CAPABILITY_NOT_SUPPORTED`。
+- 校验与错误：非法 ID/账号/会话不一致返回 `INVALID_ARGUMENT`；不支持的会话类型返回 `CAPABILITY_NOT_SUPPORTED`；未索引/非本账号消息返回 `PERMISSION_DENIED`；平台明确拒绝按稳定码 `FAILED`。
+- 成功可以不返回平台消息 ID：适配器回传 `SUCCEEDED` 且 `platform_message_id` 为空是合法终态。
+- 幂等、配额与 deadline 与 `send_message` 相同；配额按 Action 类型使用独立窗口。撤回窗口由平台决定，适配器不因窗口外失败重试。
+
+### MuteMember / KickMember（群管理，W6e）
+
+`mute_member` 与 `kick_member` 在 v1 只支持群聊：payload 的 `group_id` 必须等于 `ActionEnvelope.target.conversation_id`，`user_id` 必须是平台数字 ID。`mute_member.duration_seconds` 取值 1–2592000（30 天），0 或超上限返回 `INVALID_ARGUMENT`；`kick_member.reason` 最长 256 字节，**只作为审计元数据**，OneBot V11 没有对应字段，适配器不下发。
+
+- 权限与能力：分别需要 `member.mute` / `member.kick`，与 `message.send` 等互不隐含；适配器必须协商 `action.mute_member.v1` / `action.kick_member.v1`，否则提交返回 `CAPABILITY_NOT_SUPPORTED`。
+- 默认门禁（Core 强制，fail closed）：组合根可配置 `KIARABOT_ACTION_ALLOWED_CONVERSATIONS`（`<action kind>=<会话>|<会话>...`）。某 kind 一旦出现在该配置中，只允许目标会话在白名单内的提交，其他一律 `PERMISSION_DENIED`；未出现的 kind 不受此配置限制，因此部署危险动作时必须显式配置白名单（见 `doc/08-operations.md`）。
+- 配额：先检查进程内滑动窗口，再检查持久化每日预算（`KIARABOT_ACTION_DAILY_LIMITS`），超限统一返回可重试 `RATE_LIMITED`；被拒绝的提交不消耗每日预算。危险动作建议同时配置白名单、每日预算与速率上限。
+- 适配器映射：mute → OneBot `set_group_ban`（`group_id`/`user_id`/`duration`）；kick → `set_group_kick`（`group_id`/`user_id`/`reject_add_request=false`）。成功可以不返回平台消息 ID；平台明确拒绝按稳定码回传 `FAILED`。
+- 幂等、deadline 与审计与其他 Action 相同，审计记录目标账号/会话；平台限频/风控拒绝由适配器分类。
+
+### FriendRequest 与 ApproveRequest（好友审批，W6f）
+
+事件前置：唯一适配器把 OneBot V11 `post_type=request`、`request_type=friend` 映射为 `EventEnvelope.friend_request`，字段为 `user_id`、`comment`（≤256 字节）与 `request_id`。`request_id` 是适配器作用域的确定性安全 token（等于事件 ID），**不是平台 `flag`**；原始 `flag` 只保存在适配器本机 `requests` 索引（保留七天），不进入事件、插件或日志。事件 source 绑定当前账号，Core 走既有入库、去重与逐插件投递；插件须声明订阅 `event.friend.request` 且获授 `request.read`，否则注册阶段返回 `PERMISSION_DENIED`/`CAPABILITY_NOT_SUPPORTED`。
+
+- 审批 Action：`approve_request` 需要 `request.approve`，适配器必须协商 `action.approve_request.v1`；`request_id` 必须回填事件中的 token，`approve` 表示通过/拒绝，`reason` 最长 256 字节且**只作为审计元数据**（OneBot `set_friend_add_request` 没有该字段）。
+- 适配器解析 token 后调用 `set_friend_add_request`（`flag`、`approve`）；未知或过期 token 回传稳定码 `NOT_FOUND`（Action 失败），不猜测平台请求。成功可以不返回平台消息 ID。
+- 幂等、deadline、配额与审计与其他 Action 相同；审批没有会话目标，因此不参与会话白名单，但账号滑动窗口与可配置每日预算（`action.approve_request.v1`）仍然生效。
+- v1 只映射好友请求；群邀请/加群请求没有契约事件，仍不支持，不得用 `approve_request` 猜测审批对象。
 
 ### REST 查询与 Bridge 查询的保留/EXPIRED 语义（v1 状态）
 
@@ -103,6 +143,8 @@ v1 Core 关闭服务时取消等待中的流并等待处理器退出；两个 Br
 控制流使用 AsyncAPI 中的 `SESSION_READY` 会话 ID 和已处理的 `sequence` 恢复；服务端保留 10 分钟事件。服务端返回 `RESYNC_REQUIRED` 时，客户端丢弃旧会话，通过 `hello` 建立新会话并重新拉取 REST 快照。事件可能与快照重叠，客户端按事件触发刷新，不能将流视为业务状态的唯一来源。
 
 ## 插件任务和 Host 请求
+
+调度只有一条受支持路径：`host.tasks.v1` + `task.schedule` 权限 + `event.timer.triggered` 订阅。旧的 `ActionEnvelope.schedule_task` 已 `deprecated`：它与 Host API 的时间语义、幂等和重试模型不等价（见 `doc/13`），v1 Core 与适配器继续以 `CAPABILITY_NOT_SUPPORTED` 拒绝；不得把它当作 `host.tasks.v1` 的别名实现，也不得用旧字段重新解释调度时间。
 
 T06c：task.schedule 权限控制 task_create/get/cancel，功能名 host.tasks.v1；创建还要求插件声明 event.timer.triggered 订阅。同 owner/task_id 不同内容 CONFLICT，相同内容返回当前状态。Host 相同幂等键返回最初响应（查询当前状态使用 task_get），保留七天。创建和取消先校验 deadline，再在提交前复核；失败不修改任务/幂等记录。
 

@@ -48,6 +48,51 @@ def map_message(raw: Mapping, adapter_id: str, account_id: str) -> events.EventE
         raise AdapterError(common.INVALID_ARGUMENT) from None
 
 
+def map_request(raw: Mapping, adapter_id: str, account_id: str) -> events.EventEnvelope:
+    """Map a OneBot V11 friend request into a FriendRequest event.
+
+    The emitted request_id is the deterministic event id (adapter-scoped safe
+    token); the adapter records the platform flag under it so ApproveRequest can
+    resolve the raw flag later without exposing it to plugins.
+    """
+    try:
+        return _map_request(raw, identifier(adapter_id), identifier(account_id))
+    except AdapterError:
+        raise
+    except (KeyError, TypeError, ValueError, OverflowError):
+        raise AdapterError(common.INVALID_ARGUMENT) from None
+
+
+def _map_request(raw: Mapping, adapter_id: str, account_id: str) -> events.EventEnvelope:
+    if raw.get('post_type') != 'request' or raw.get('request_type') != 'friend':
+        raise AdapterError(common.CAPABILITY_NOT_SUPPORTED)
+    if identifier(raw['self_id']) != account_id:
+        raise AdapterError(common.PERMISSION_DENIED)
+    user = platform_id(raw['user_id'])
+    identifier(raw['flag'])
+    comment = raw.get('comment', '')
+    if not isinstance(comment, str) or len(comment.encode()) > 256:
+        raise AdapterError(common.INVALID_ARGUMENT)
+    timestamp = raw['time']
+    if isinstance(timestamp, bool) or not isinstance(timestamp, int) or not 0 <= timestamp <= 253402300799:
+        raise AdapterError(common.INVALID_ARGUMENT)
+    identity = json.dumps([adapter_id, account_id, str(raw['flag']), timestamp],
+                          separators=(',', ':'))
+    request_id = str(uuid.uuid5(uuid.NAMESPACE_URL, 'kiarabot:onebot:v11:request:' + identity))
+    result = events.EventEnvelope(event_id=request_id, trace_id=request_id,
+                                  schema_version='kiarabot.v1',
+                                  delivery_mode=common.AT_LEAST_ONCE)
+    result.occurred_at.seconds = timestamp
+    result.source.adapter_id = adapter_id
+    result.source.account_id = account_id
+    result.subject.user_id = user
+    payload = result.friend_request
+    payload.user_id = user
+    payload.comment = comment
+    payload.request_id = request_id
+    return result
+
+
 def _map_message(raw: Mapping, adapter_id: str, account_id: str) -> events.EventEnvelope:
     if raw.get('post_type') != 'message' or raw.get('message_type') not in ('group', 'private'):
         raise AdapterError(common.CAPABILITY_NOT_SUPPORTED)

@@ -662,12 +662,20 @@ std::vector<ControlJson> ControlService::resources(ControlResource resource,
       const auto& entry = snapshot.audit[index];
       const auto id = std::to_string(index);
       if (resource == ControlResource::Audit) {
-        result.push_back({{"id", id},
-                          {"occurred_at", control_timestamp(entry.occurred_at)},
-                          {"actor", entry.actor},
-                          {"action", entry.permission},
-                          {"resource", entry.resource},
-                          {"request_id", entry.request_id}});
+        Json item{{"id", id},
+                  {"occurred_at", control_timestamp(entry.occurred_at)},
+                  {"actor", entry.actor},
+                  {"action", entry.permission},
+                  {"resource", entry.resource},
+                  {"request_id", entry.request_id}};
+        // Action audits carry the platform target; other audits leave it empty.
+        if (!entry.target_account_id.empty()) {
+          item["account_id"] = entry.target_account_id;
+        }
+        if (!entry.target_conversation_id.empty()) {
+          item["conversation_id"] = entry.target_conversation_id;
+        }
+        result.push_back(std::move(item));
       }
     }
   } else if (resource == ControlResource::Tasks) {

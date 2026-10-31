@@ -13,7 +13,7 @@ private:
     explicit Transaction(RuntimeState& store)
         : store_(store), events_(store.events_), sessions_(store.sessions_),
           actions_(store.actions_), plugins_(store.plugins_), deliveries_(store.deliveries_),
-          delivery_order_(store.delivery_order_) {}
+          delivery_order_(store.delivery_order_), daily_budgets_(store.daily_budgets_) {}
 
     ~Transaction() override {
       rollback();
@@ -44,6 +44,7 @@ private:
       store_.plugins_ = std::move(plugins_);
       store_.deliveries_ = std::move(deliveries_);
       store_.delivery_order_ = delivery_order_;
+      store_.daily_budgets_ = std::move(daily_budgets_);
       store_.transaction_active_ = false;
       ++store_.rollback_count_;
     }
@@ -56,6 +57,7 @@ private:
     std::unordered_map<std::string, PluginEntry> plugins_;
     std::unordered_map<std::string, std::unordered_map<std::string, PluginDelivery>> deliveries_;
     std::uint64_t delivery_order_;
+    decltype(RuntimeSnapshot::daily_budgets) daily_budgets_;
     bool finished_{false};
     bool committed_{false};
   };
@@ -63,13 +65,14 @@ private:
 public:
   RuntimeSnapshot snapshot() const {
     return {events_, sessions_, actions_,    plugins_,       deliveries_, delivery_order_,
-            {},      {},        namespaces_, host_receipts_, tasks_};
+            {},      {},        namespaces_, host_receipts_, tasks_,      daily_budgets_};
   }
   explicit RuntimeState(const RuntimeSnapshot& snapshot = {})
       : events_(snapshot.events), sessions_(snapshot.sessions), actions_(snapshot.actions),
         plugins_(snapshot.plugins), deliveries_(snapshot.deliveries),
         delivery_order_(snapshot.delivery_order), namespaces_(snapshot.namespaces),
-        host_receipts_(snapshot.host_receipts), tasks_(snapshot.tasks) {}
+        host_receipts_(snapshot.host_receipts), tasks_(snapshot.tasks),
+        daily_budgets_(snapshot.daily_budgets) {}
 
   [[nodiscard]] std::unique_ptr<UnitOfWork> begin_transaction() override {
     if (transaction_active_) {
@@ -335,6 +338,7 @@ private:
   decltype(RuntimeSnapshot::namespaces) namespaces_;
   decltype(RuntimeSnapshot::host_receipts) host_receipts_;
   decltype(RuntimeSnapshot::tasks) tasks_;
+  decltype(RuntimeSnapshot::daily_budgets) daily_budgets_;
   bool fail_event_writes_{false};
   bool fail_session_writes_{false};
   bool fail_delivery_writes_{false};

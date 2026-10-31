@@ -27,7 +27,7 @@ T05a/T05b 已提供统一事务快照端口；T10a 实现命令事务审计；T0
 
 ### 协议和契约维护
 
-- 评估原有 `ActionEnvelope.schedule_task.schedule` 的语法和迁移路径。新 Host API 使用结构化一次性时间，但没有替换或重新解释旧字段；不要假定两条路径已经等价。
+- 原有 `ActionEnvelope.schedule_task` 与 `ScheduleTask.*` 已标记 `deprecated`（2026-10-31 W6g）：新 Host API 使用结构化一次性时间，没有替换或重新解释旧字段，Core/适配器继续以 `CAPABILITY_NOT_SUPPORTED` 拒绝；不要假定两条路径已经等价。
 - 存储已有真实服务执行、结果互斥、隔离、重放、拒绝、超时与依赖故障测试；模型错误和任务状态当时仍待各自任务覆盖（T06b/T06c 后续已覆盖，详见台账）。
 - 命名空间值与总量限额已执行；模型消息和任务 payload 的资源限制当时仍待冻结并实现（T06b/T06c 后续已实现并本机验收，详见台账）。
 

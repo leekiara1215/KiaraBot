@@ -126,6 +126,19 @@ StorageResult<MaintenanceStats> RuntimeMaintenance::run(RuntimeTimePoint now) {
     stats.host_receipts += before - receipts.size();
   }
 
+  // Daily action budgets only matter for the current UTC day; stale counters
+  // are removed so account churn cannot grow the snapshot indefinitely.
+  const auto day = static_cast<std::uint64_t>(
+      std::chrono::duration_cast<std::chrono::hours>(now.time_since_epoch()).count() / 24);
+  for (auto entry = snapshot.daily_budgets.begin(); entry != snapshot.daily_budgets.end();) {
+    if (entry->second.day < day) {
+      entry = snapshot.daily_budgets.erase(entry);
+      ++stats.daily_budgets;
+    } else {
+      ++entry;
+    }
+  }
+
   if (!stats.changed()) {
     return stats; // Destruction rolls the transaction back; nothing was written.
   }

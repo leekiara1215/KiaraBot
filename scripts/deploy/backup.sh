@@ -21,7 +21,7 @@ backup_dir="${BACKUP_DIR:-/var/lib/kiarabot/backups}"
 input_file=""
 retain="${BACKUP_RETENTION:-7}"
 confirm="${RESTORE_CONFIRM:-0}"
-expected_schema_version="${EXPECTED_SCHEMA_VERSION:-5}"
+expected_schema_version="${EXPECTED_SCHEMA_VERSION:-6}"
 while (($# > 0)); do
   case "$1" in
     --database) [[ $# -ge 2 ]] || { usage; exit 2; }; database_path="$2"; shift 2 ;;

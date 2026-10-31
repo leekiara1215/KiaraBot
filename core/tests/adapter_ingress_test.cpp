@@ -225,9 +225,34 @@ void grpc_recovery() {
     server.stop();
   }
 }
+
+void friend_request_cases() {
+  InMemoryRuntimeStore store;
+  AdapterIngress ingress(store, {{"adapter", {"account"}}}, {});
+  const auto registered = ingress.register_adapter("adapter", registration());
+  require(registered.response.accepted());
+  auto request_event = event(registered.session, "friend-event");
+  request_event.clear_payload();
+  request_event.mutable_subject()->clear_conversation_id();
+  request_event.mutable_subject()->clear_group_id();
+  auto* friend_request = request_event.mutable_friend_request();
+  friend_request->set_user_id("user");
+  friend_request->set_comment("hello");
+  friend_request->set_request_id("request-1");
+  require(ingress.ingest(registered.session, request_event).status() ==
+          kiarabot::v1::AdapterEventAck::PERSISTED);
+  const auto snapshot = std::get<RuntimeSnapshot>(store.read());
+  require(snapshot.events.size() == 1);
+  kiarabot::v1::EventEnvelope decoded;
+  require(decoded.ParseFromString(snapshot.events.at("friend-event").record.serialized_envelope));
+  require(decoded.payload_case() == kiarabot::v1::EventEnvelope::kFriendRequest &&
+          decoded.friend_request().request_id() == "request-1" &&
+          decoded.friend_request().user_id() == "user");
+}
 } // namespace
 int main() try {
   application_cases();
+  friend_request_cases();
   grpc_recovery();
   std::cout << "Adapter registration, durable ACK, rollback, replay and backpressure passed\n";
   return 0;

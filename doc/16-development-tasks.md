@@ -862,3 +862,123 @@ CI 修复（本轮只改工作流，未复跑；不能据此宣称 CI 已绿）�
   - 环境准备（未入库）：`sdk/python/.venv` 用 `--python 3.11.17` 安装并生成 `sdk/python/build/generated`，用于跑通既有 `test_config_delivery`；仓库 `.python-version` 钉 3.11.18，uv 本机无该解释器，属既有环境缺口。
 - 未运行与原因：远端 CI（自动触发需人工 Run）；本机 `clang-tidy` 未安装；Docker/Compose 与部署验收（T11b，本机无 Docker）；真实 QQ/NapCat（T07b）；live 链路的 `message.updated` 端到端断言未做——需以 gRPC adapter 客户端注入 `MessageReceived`，成本高，改由 EventStream 单测、Core 投影/入站单测与 `test_stream.py` 握手用例覆盖，缺口已在 `test_stream.py` 注释注明。
 - 文档影响判断：更新 `doc/06-control-api.md`（频道清单、事件语义、T09a、W3 交接闭环、W5 节）、`doc/07-control-panel.md`（实时状态、契约漂移检测、已知事件刷新、W5 节）、`doc/08-operations.md`（`users[].permissions`、示例与安全提示、W5 节）、`reports/pending-confirmation.md`（2.1 从待裁定改为已决策）与本台账；`doc/18-architecture-baseline.md` 受保护只读未改；`doc/01-contracts.md` 与 `api/`、`proto/tests/` 归 Lead 写入域，本任务未修改。
+
+## 2026-10-31 W6：Action 扩展方案 B — 第 1 增量（出站配额）
+
+- 状态：已落到工作树并完成本机验证；这是 B 的**第 1 增量**，不是 B 完成。
+- 目标：在 Action 统一路径上落地发送侧兜底（doc/17 §5.3 的出站配额），作为后续危险 Action 授权门禁/每日预算/审计扩展的基础；本轮不新增 Action payload、不改 proto 与权限词表。
+- Core：新增 `core/include|src/application/action_quota.*`：进程内滑动窗口，键为 `(Action 类型, 账号)` 与 `(Action 类型, 会话)`，窗口固定 60s/60s/10s，窗口跟踪上限 8192，满时淘汰最久未触达项。`ActionRouter` 在 deadline 未过、适配器和账号校验通过后检查配额；超限返回可重试 `RATE_LIMITED`（经 `AuthorizedCommands` 写审计）；重复幂等提交与 deadline 已过的提交不消耗配额。
+- 组合根：新增 `KIARABOT_ACTION_ACCOUNT_LIMIT_PER_MINUTE`（默认 10）、`KIARABOT_ACTION_GROUP_LIMIT_PER_MINUTE`（3）、`KIARABOT_ACTION_PRIVATE_LIMIT_PER_10_SECONDS`（1），范围校验失败时 `operation=runtime_config ... INVALID_ARGUMENT` 退出 1。
+- 测试：`core/tests/action_router_test.cpp` 新增 `quota()` 场景（群 3/分钟、私聊 1/10s、账号 10/分钟、跨会话独立、幂等重放不消耗、EXPIRED 不消耗、窗口滚动恢复），既有场景改为显式注入宽松配额；`core/tests/grpc_process_test.py` 增加 3 个非法环境变量用例。
+- 实际运行（本机，2026-10-31）：
+  - `cmake --build build/full -j 8`：成功（全部目标）。
+  - `ctest --test-dir build/full --output-on-failure -j 4`：**34/34 passed**。
+  - `./build/full/kiarabot-action-router-test`：通过。
+  - `python3 proto/tests/check_implementation_status.py`、`python3 proto/tests/check_semantic_rules.py`：通过（本轮未改契约）。
+  - `build/format-venv/bin/clang-format`（16.0.6）作用于改动的 C++ 文件；复检 `--dry-run --Werror` 通过。
+- 未运行与原因：`clang-tidy` 本机未安装（沿用既有复核结论）；远端 CI 自动触发仍暂停；真实 QQ/NapCat/T07b 未联调。
+- 文档影响判断：更新 `doc/01-runtime-semantics.md`（Action 配额语义）、`doc/02-core.md`（ActionRouter 配额与配置项）、`doc/08-operations.md`（环境变量）、`deploy/env.example`（可选配置样例）与本台账；`proto/`、`api/`、`doc/01-contracts.md` 未改（无新契约项，配额属于运行时语义而非冻结词表）；`doc/18` 受保护未改。`doc/17` 仅加状态更新注记，不重写其评估结论。
+- 后续（B 剩余）：权限词表与适配器能力名扩展、审计字段扩展（账号/会话/决策）、每日预算持久化、React/Delete/Mute/Kick 全链路、ApproveRequest 事件前置、ScheduleTask 弃用与契约状态收口。
+
+## 2026-10-31 W6b：Action 扩展方案 B — 第 2 增量（ReactMessage）
+
+- 状态：已落到工作树并完成本机验证；B 的第 2 增量。
+- 契约：`ReactMessage` 增加 `ConversationRef conversation = 3`（会话作用域与配额需要）；`ActionEnvelope.react_message`、`ReactMessage.conversation/message_id/reaction` 在 `proto/tests/contract_status.json` 登记为 `implemented`；`doc/01-contracts.md` 词表新增权限 `message.react` 与适配器能力 `action.react_message.v1`，状态表移除 react 并追加 implemented 注记；`doc/01-runtime-semantics.md` 新增 ReactMessage 语义（token 词表、错误码、成功可无 platform_message_id、配额与幂等）；`doc/02-core.md`、`doc/03-plugin-sdk.md`、`doc/04-nonebot-adapter.md`、`README.md` 同步。
+- Core：`ActionRouter` capability 由单一 text 布尔改为适配器声明的能力集合（版本 "1"）；提交按 payload 选择权限（send→message.send，react→message.react）并分别授权/审计；新增 react 校验（群/私聊、会话账号与 target 一致、message_id/会话 ID、reaction token 词表）；派发跳过适配器未声明的能力；配额按 Action 类型独立窗口。
+- 适配器：注册 `action.react_message.v1`；`ActionExecutor.validate` 按 payload 分派，react 映射为 NapCat 扩展 `set_msg_emoji_like`（`REACTIONS`：like/laugh/surprise/sad/angry → NapCat emoji ID）；成功结果允许无平台消息 ID 并回传 `SUCCEEDED`（send_message 同样改为显式成功，不再停留在 ACCEPTED）。
+- 测试：`core/tests/action_router_test.cpp` 新增 `reactions()`（权限独立、能力门禁、未知/空 token、非法 ID、CHANNEL 会话、派发与空 platform_message_id 终态、幂等重放）；`adapters/nonebot/tests/test_actions.py` 新增 React 执行/幂等/拒绝用例。
+- 实际运行（本机，2026-10-31）：
+  - `cmake --build build/full -j 8`：成功（protoc 重新生成后全部目标编译）。
+  - `ctest --test-dir build/full --output-on-failure -j 4`：**34/34 passed**（含重新生成的 `proto_roundtrip`、`action_router`、`core_grpc_process`）。
+  - `./build/full/kiarabot_proto_roundtrip`：通过（新增 ReactMessage 序列化/字段编号断言）。
+  - `./build/full/kiarabot-action-router-test`：通过。
+  - `adapters/nonebot`：`UV_CACHE_DIR=/tmp/kb-uv-cache uv sync --project adapters/nonebot --python 3.11.17`，然后 `.venv/bin/python tools/generate_proto.py ../../proto && .venv/bin/python -m pytest -q`：**49 passed, 2 skipped**。
+  - 契约门禁：`python3 proto/tests/check_implementation_status.py`、`check_semantic_rules.py`、`check_enum_consistency.py` 与 `KIARABOT_LEGACY_READER_TEST=1 KIARABOT_DESCRIPTOR_COMPATIBILITY_TOOL=build/full/kiarabot_descriptor_compatibility bash proto/tests/check_contracts.sh`：全部通过。
+- 未运行与原因：真实 QQ/NapCat 的 `set_msg_emoji_like` 行为未验证（T07b）；远端 CI 自动触发暂停；`clang-tidy` 未安装。
+- 文档影响判断：更新 `proto/kiarabot/v1/actions.proto`、`proto/tests/contract_status.json`、`doc/01-contracts.md`、`doc/01-runtime-semantics.md`、`doc/02-core.md`、`doc/03-plugin-sdk.md`、`doc/04-nonebot-adapter.md`、`README.md` 与本台账；`api/` 未改（REST/WS 接口无变化）；`doc/18` 受保护未改。
+- 风险与后续：reaction token → NapCat emoji ID 映射为扩展 API 约定，需真机核对；下一步为 DeleteMessage（仅限 bot 自己发送的消息，含适配器已发送消息索引）或先补审计字段扩展（账号/会话/决策）与每日预算持久化，再进入 Mute/Kick。
+
+## 2026-10-31 W6c：Action 扩展方案 B — 第 3 增量（DeleteMessage）
+
+- 状态：已落到工作树并完成本机验证；B 的第 3 增量。
+- 安全边界：v1 的 `delete_message` 只允许撤回**本机器人账号自己发送过**的消息。适配器在 send 成功后把平台消息 ID、会话写入本机 SQLite `own_messages` 索引（保留七天）；Delete 只接受索引内且会话匹配的消息 ID，未索引/跨会话返回 `PERMISSION_DENIED`，不把“拿到 message_id”当作撤回授权。
+- 契约：`DeleteMessage` 增加 `ConversationRef conversation = 2`；`ActionEnvelope.delete_message`、`DeleteMessage.conversation/message_id` 在 `proto/tests/contract_status.json` 登记为 `implemented`；`doc/01-contracts.md` 词表新增权限 `message.delete`、能力 `action.delete_message.v1`，状态表移除 delete 并追加 implemented 注记；`doc/01-runtime-semantics.md` 新增 DeleteMessage 语义（own-message 索引、错误码、成功可无 platform_message_id、配额与幂等）；同步 `doc/02-core.md`、`doc/03-plugin-sdk.md`、`doc/04-nonebot-adapter.md`、`README.md`、适配器 README、`doc/17` 状态注记。
+- Core：`action_kind`/`required_permission`/会话提取增加 delete；校验统一为 `validate_conversation()`（群/私聊、账号、target 与会话一致）+ message_id 校验；权限独立为 `message.delete`；配额按 Action 类型独立窗口；派发仍按适配器能力集合门禁。
+- 适配器：`own_messages` 表与 schema 版本 2（v1 打开时自动建表）；send 成功在写终态的同一事务记录 own message；Delete 校验 own_messages 后调用 OneBot `delete_msg`；注册 `action.delete_message.v1`。
+- 测试：Core `deletions()`（权限独立、能力门禁、CHANNEL/空 ID/会话不一致拒绝、派发与空 platform_message_id 终态、幂等重放）；适配器 `test_delete_only_recalls_messages_sent_by_this_bot` 与 3 个拒绝用例；`roundtrip.cc` 增加 Delete 序列化/字段编号断言。
+- 实际运行（本机，2026-10-31）：
+  - `cmake --build build/full -j 8`：成功。
+  - `ctest --test-dir build/full --output-on-failure -j 4`：**34/34 passed**。
+  - `./build/full/kiarabot_proto_roundtrip`、`./build/full/kiarabot-action-router-test`：通过。
+  - 适配器：`generate_proto.py` + `.venv/bin/python -m pytest -q`：**53 passed, 2 skipped**。
+  - 契约门禁（含 descriptor 与 legacy reader）：全部通过。
+- 未运行与原因：真实 QQ/NapCat 的 `delete_msg` 撤回窗口与权限未验证（T07b）；远端 CI 自动触发暂停；`clang-tidy` 未安装。
+- 文档影响判断：更新 `proto/kiarabot/v1/actions.proto`、`proto/tests/contract_status.json`、`proto/tests/roundtrip.cc`、`doc/01-contracts.md`、`doc/01-runtime-semantics.md`、`doc/02-core.md`、`doc/03-plugin-sdk.md`、`doc/04-nonebot-adapter.md`、`README.md`、`adapters/nonebot/README.md`、`doc/17` 与本台账；`api/` 未改；`doc/18` 受保护未改。
+- 后续：Audit 字段扩展（账号/会话/决策，含快照 schema v6 迁移与 REST 投影）与每日预算持久化 → Mute/Kick；之后 ApproveRequest 需先补 friend/group request 事件；ScheduleTask 标 deprecated。
+
+## 2026-10-31 W6d：Action 扩展方案 B — 第 4 增量（审计目标 + 每日预算持久化 + schema v6）
+
+- 状态：已落到工作树并完成本机验证；B 的授权模型底座（权限门禁、速率、每日预算、审计）此增量补齐。工作区同时存在另一条 v6 迁移（session ordering key 类型化，见 `session_key.hpp`/codec），两类特性已共存于 schema v6；并补了 `kiarabot_sqlite_runtime` 对生成 proto 头的 include 传递（codec 解码 envelope 需要），否则该目标无法编译。
+- 审计扩展：`RuntimeAuditEntry` 增加 `target_account_id`/`target_conversation_id`；`CommandContext` 透传目标，Action 提交/派发审计写入账号与会话；控制面 `/audit` 对非空目标输出可选 `account_id`/`conversation_id`，OpenAPI AuditEntry 增加可选属性，面板类型重新生成。
+- 每日预算：`RuntimeSnapshot.daily_budgets`（键 `<action kind>|<账号>`，UTC 日 + 计数）随 Action 快照事务持久化；`ActionQuotaPolicy.daily_limits` 与 `KIARABOT_ACTION_DAILY_LIMITS`（`<kind>=<limit>[,..]`）注入；超限返回可重试 `RATE_LIMITED`，被拒绝请求回滚计数；维护循环清理过期日计数器（`operation=maintenance ... daily_budgets=`）。
+- 快照 schema：codec v6（审计目标、每日预算；版本门控解码）、SQLite 打开创建 v6 并迁移 v1–v5、`kiarabot-migrate` 输出 `schema=6`；部署脚本/Compose 的 `EXPECTED_SCHEMA_VERSION` 默认与断言升级为 6。
+- 测试：Core `budgets()`（每日预算限制、次日重置、审计目标字段）；control_service 审计投影断言；migrate/sqlite/grpc/control-api/deploy 测试版本断言升级；`grpc_process_test` 增加非法每日预算配置用例。
+- 实际运行（本机，2026-10-31）：
+  - `cmake --build build/full -j 8`：成功（含并发 session-key 迁移改动）。
+  - `ctest --test-dir build/full --output-on-failure -j 4`：**34/34 passed**。
+  - 适配器（并发改动一并验证）：`generate_proto.py` + `pytest -q`：**57 passed, 2 skipped**。
+  - 契约门禁（含 descriptor 与 legacy reader）：通过。
+  - 面板：`npm run generate`、`check:contracts`（23 endpoints/5 events）、`tsc --noEmit`：通过。
+  - 格式：clang-format 16.0.6 作用于改动文件并通过 `--dry-run --Werror`。
+- 未运行与原因：真实 QQ/NapCat（T07b）；远端 CI 自动触发暂停；`clang-tidy` 未安装。
+- 文档影响判断：更新 `core` 领域/应用头与实现、`infrastructure` codec/SQLite/migrate、`api/openapi.yaml`（AuditEntry 可选字段，无新操作）、`doc/01-runtime-semantics.md`、`doc/02-core.md`、`doc/05-infrastructure.md`、`doc/06-control-api.md`、`doc/08-operations.md`、`deploy/env.example`、部署脚本与 Compose 期望 schema、`doc/17` 与本台账；`proto/` 未改（本轮无契约项翻转）；`doc/18` 受保护未改。面板生成类型未入库（gitignore）。
+- 后续：Mute/Kick（默认拒绝 + 群白名单 + 每日预算 + 审计 + 适配器）、ApproveRequest 事件前置、ScheduleTask 弃用。
+
+## 2026-10-31 W6e：Action 扩展方案 B — 第 5 增量（MuteMember / KickMember）
+
+- 状态：已落到工作树并完成本机验证；B 的第 5 增量。
+- 契约：`ActionEnvelope.mute_member`/`kick_member`、`MuteMember.*`、`KickMember.*` 在 `proto/tests/contract_status.json` 登记为 `implemented`；`doc/01-contracts.md` 词表新增权限 `member.mute`/`member.kick` 与能力 `action.mute_member.v1`/`action.kick_member.v1`，状态表移除 mute/kick 并追加 implemented 注记；`doc/01-runtime-semantics.md` 新增群管理语义；同步 `doc/02`、`doc/03`、`doc/04`、`README`、适配器 README、`doc/08`、`deploy/env.example`、`doc/17`。
+- 安全门禁（Core 强制，fail closed）：mute/kick 只接受群聊，`group_id` 必须等于 `target.conversation_id`；mute `duration_seconds` 限 1–2592000（0/超限 `INVALID_ARGUMENT`），kick `reason` ≤256 字节且只作为审计元数据；新增 `KIARABOT_ACTION_ALLOWED_CONVERSATIONS`（`<kind>=<会话>|<会话>...`）会话白名单，配置的 kind 只允许白名单会话（`PERMISSION_DENIED`，不消耗配额/预算），并复用 `KIARABOT_ACTION_DAILY_LIMITS` 每日预算与滑动窗口速率限制；权限 `member.mute`/`member.kick` 与 `message.send` 等互不隐含。
+- 适配器：注册两个新能力；mute → `set_group_ban`（group_id/user_id/duration），kick → `set_group_kick`（group_id/user_id/reject_add_request=false，reason 不下发）；成功可无 `platform_message_id`。
+- 测试：Core `moderation()`（权限独立、能力门禁、duration/ID/target 校验、白名单拒绝、派发与空平台 ID 终态、kick 每日预算、审计目标字段）；适配器新增 mute/kick 映射与拒绝用例；`roundtrip.cc` 增加 mute/kick 序列化断言；`grpc_process_test` 增加白名单非法配置用例。
+- 实际运行（本机，2026-10-31）：
+  - `cmake --build build/full -j 8`：成功。
+  - `ctest --test-dir build/full --output-on-failure -j 4`：**34/34 passed**。
+  - 适配器：`generate_proto.py` + `pytest -q`：**62 passed, 2 skipped**。
+  - 契约门禁（含 descriptor 与 legacy reader）：通过。
+  - 格式：clang-format 16.0.6 + `--dry-run --Werror` 通过。
+- 未运行与原因：真实 QQ/NapCat 的 set_group_ban/set_group_kick 权限与限频未验证（T07b）；需要机器人是群管理员；远端 CI 自动触发暂停；`clang-tidy` 未安装。
+- 文档影响判断：更新 `proto/kiarabot/v1/actions.proto`、`proto/tests/contract_status.json`、`proto/tests/roundtrip.cc`、`core` 应用/测试、`adapters/nonebot`、`doc/01-contracts.md`、`doc/01-runtime-semantics.md`、`doc/02-core.md`、`doc/03-plugin-sdk.md`、`doc/04-nonebot-adapter.md`、`doc/08-operations.md`、`deploy/env.example`、`README.md`、`adapters/nonebot/README.md`、`doc/17` 与本台账；`api/` 未改；`doc/18` 受保护未改。
+- 后续：ApproveRequest（先补 friend/group request 事件与 request.read 订阅链路）→ ScheduleTask 标 deprecated → B 收口验收。
+
+## 2026-10-31 W6f：Action 扩展方案 B — 第 6 增量（FriendRequest 事件 + ApproveRequest）
+
+- 状态：已落到工作树并完成本机验证；B 的第 6 增量。
+- 契约：`FriendRequest` 增加 `request_id`（适配器作用域安全 token）并翻转为 implemented；`EventEnvelope.friend_request`、`ApproveRequest`/字段、`ActionEnvelope.approve_request` 在 `proto/tests/contract_status.json` 登记为 `implemented`；`doc/01-contracts.md` 词表新增权限 `request.approve` 与能力 `action.approve_request.v1`，事件/状态行与说明同步；`doc/01-runtime-semantics.md` 新增 FriendRequest/ApproveRequest 语义；同步 `doc/02`、`doc/03`、`doc/04`、`README`、适配器 README、`doc/17`。
+- Core：`ActionRouter` 增加 approve kind/权限，校验 `request_id`/`reason` 长度；审批无会话目标，不参与会话白名单，但账号速率窗口与可选每日预算生效。事件路径复用既有 AdapterIngress/PluginHub（`event.friend.request` 订阅 + `request.read`）；新增 ingress 好友请求入库测试。
+- 适配器：新增 `map_request`（OneBot friend request → FriendRequest，事件 ID 即安全 `request_id`）；`ActionExecutor` schema v3 增加本机 `requests(request_id→flag)` 索引（7 天），`remember_request` 与 ApproveRequest 的 `set_friend_add_request` 映射；未知 token 返回 `NOT_FOUND`；原始 `flag` 不进入事件/插件/日志；NoneBot `on_request` 处理器接入。
+- 测试：Core `approvals()`（权限独立、能力门禁、request_id/reason 校验、派发与空平台 ID 终态、幂等重放）；`adapter_ingress_test` 好友请求 PERSISTED 与 payload 持久化断言；适配器 mapper 好友请求映射与拒绝用例、approve Action 解析 flag/未知 token 用例；`roundtrip.cc` 增加 FriendRequest/ApproveRequest 序列化与字段编号断言。
+- 实际运行（本机，2026-10-31）：
+  - `cmake --build build/full -j 8`：成功。
+  - `ctest --test-dir build/full --output-on-failure -j 4`：**34/34 passed**。
+  - 适配器：`generate_proto.py` + `pytest -q`：**68 passed, 2 skipped**。
+  - 契约门禁（含 descriptor 与 legacy reader）：通过。
+- 未运行与原因：真实 QQ/NapCat 好友请求与审批（T07b）；群邀请/加群请求无契约事件仍不支持；远端 CI 自动触发暂停；`clang-tidy` 未安装。
+- 文档影响判断：更新 `proto/kiarabot/v1/events.proto`、`proto/kiarabot/v1/actions.proto`、`proto/tests/contract_status.json`、`proto/tests/roundtrip.cc`、`core` 应用/测试、`adapters/nonebot`、`doc/01-contracts.md`、`doc/01-runtime-semantics.md`、`doc/02-core.md`、`doc/03-plugin-sdk.md`、`doc/04-nonebot-adapter.md`、`README.md`、`adapters/nonebot/README.md`、`doc/17` 与本台账；`api/` 未改；`doc/18` 受保护未改。
+- 后续：ScheduleTask 标 `deprecated`（与 host.tasks.v1 重复）、contract_status 收口，然后做 B 的全量验收与文档收尾。
+
+## 2026-10-31 W6g：Action 扩展方案 B — 第 7 增量（ScheduleTask 弃用与 B 收口）
+
+- 状态：已落到工作树并完成本机全量验收；方案 B 的 Action 面扩展收口。
+- 契约：`ActionEnvelope.schedule_task`、`ScheduleTask` 及 `ScheduleTask.task_id/schedule/payload` 在 `proto/tests/contract_status.json` 标记为 `deprecated`，`.proto` 内联注释同步；`doc/01-contracts.md` 状态表新增 deprecated 行，说明与 `host.tasks.v1` 重复且语义不等价（`doc/13`）；`doc/01-runtime-semantics.md` 明确调度只走 `host.tasks.v1`，旧 payload 继续 `CAPABILITY_NOT_SUPPORTED`；`doc/13` 记录弃用结论。`doc/02`、`doc/03`、`doc/04` 在前序增量已同步 Action 面。
+- 行为：Core 与适配器对 `schedule_task` 维持拒绝（无新增实现），避免形成第二套调度/重试/幂等语义；契约承诺从“未实现”改为“弃用”。
+- 收口验收（本机 2026-10-31，实际运行）：
+  - `cmake --build build/full -j 8`：成功。
+  - `ctest --test-dir build/full --output-on-failure -j 4`：**34/34 passed**。
+  - 适配器：`cd adapters/nonebot && .venv/bin/python tools/generate_proto.py ../../proto && .venv/bin/python -m pytest -q`：**68 passed, 2 skipped**。
+  - SDK：`cd sdk/python && CORE_TEST_BINARY=<repo>/build/full/core/kiarabot-core .venv/bin/python -m pytest -q`：**82 passed**。
+  - 契约门禁：`check_implementation_status.py`、`check_semantic_rules.py`、`check_enum_consistency.py` 与 `KIARABOT_LEGACY_READER_TEST=1 KIARABOT_DESCRIPTOR_COMPATIBILITY_TOOL=build/full/kiarabot_descriptor_compatibility bash proto/tests/check_contracts.sh`：通过。
+  - 格式：clang-format 16.0.6 `--dry-run --Werror`；`git diff --check` 通过。
+- 方案 B 交付摘要：授权模型（按 Action 类型的权限门禁、进程内滑动窗口、持久化每日预算、危险 Action 会话白名单、审计目标账号/会话、失效/过期数据清理）；Action 面 `send_message`、`react_message`、`delete_message`（仅本 bot 已发送消息）、`mute_member`/`kick_member`（群管理门禁）、`approve_request`（好友请求 + `FriendRequest` 事件前置）；`schedule_task` 弃用。未实现且已声明：群邀请/加群请求事件、真实渠道联调。
+- 未运行与原因：真实 QQ/NapCat 全链路（T07b，需要真实账号/群与平台权限）；`clang-tidy` 本机未安装；远端 CI 自动触发仍暂停（需手动运行 workflow）。
+- 文档影响判断：更新 `proto/kiarabot/v1/actions.proto`、`proto/tests/contract_status.json`、`doc/01-contracts.md`、`doc/01-runtime-semantics.md`、`doc/13-infrastructure-integration-follow-up.md`、`README.md`、`doc/17` 与本台账；`api/` 未改；`doc/18` 受保护未改。

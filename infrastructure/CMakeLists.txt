@@ -64,10 +64,13 @@ add_test(NAME file_storage COMMAND file_storage_test)
 find_package(SQLite3 REQUIRED)
 add_library(kiarabot_sqlite_runtime STATIC src/sqlite_runtime_store.cpp)
 target_include_directories(kiarabot_sqlite_runtime PUBLIC include ../core/include)
+# The private snapshot codec decodes serialized envelopes for session-key
+# migration, so the generated protocol headers must be on this target's include
+# path (propagated through infrastructure_proto / kiarabot_proto).
 if(TARGET SQLite3::SQLite3)
-  target_link_libraries(kiarabot_sqlite_runtime PUBLIC SQLite3::SQLite3)
+  target_link_libraries(kiarabot_sqlite_runtime PUBLIC SQLite3::SQLite3 infrastructure_proto)
 else()
-  target_link_libraries(kiarabot_sqlite_runtime PUBLIC SQLite::SQLite3)
+  target_link_libraries(kiarabot_sqlite_runtime PUBLIC SQLite::SQLite3 infrastructure_proto)
 endif()
 target_compile_options(kiarabot_sqlite_runtime PRIVATE
   $<$<CXX_COMPILER_ID:AppleClang,Clang,GNU>:-Wall -Wextra -Wpedantic>

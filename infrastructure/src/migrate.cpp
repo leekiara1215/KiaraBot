@@ -13,7 +13,7 @@ int main(int argc, char* argv[]) {
     const auto opened = kiarabot::infrastructure::SqliteRuntimeStore::open(argv[1]);
     const auto* error = std::get_if<kiarabot::core::StorageError>(&opened);
     if (!error) {
-      std::cout << "operation=migrate outcome=completed schema=5\n";
+      std::cout << "operation=migrate outcome=completed schema=6\n";
       return 0;
     }
     if (*error != kiarabot::core::StorageError::Conflict ||

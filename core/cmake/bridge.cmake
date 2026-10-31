@@ -16,6 +16,7 @@ add_library(kiarabot_bridge
   ${CMAKE_CURRENT_LIST_DIR}/../src/runtime/request_digest.cpp
   ${CMAKE_CURRENT_LIST_DIR}/../src/application/adapter_ingress.cpp
   ${CMAKE_CURRENT_LIST_DIR}/../src/application/plugin_hub.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/../src/application/action_quota.cpp
   ${CMAKE_CURRENT_LIST_DIR}/../src/application/action_router.cpp
   ${CMAKE_CURRENT_LIST_DIR}/../src/application/host_dispatcher.cpp
   ${CMAKE_CURRENT_LIST_DIR}/../src/application/task_scheduler.cpp

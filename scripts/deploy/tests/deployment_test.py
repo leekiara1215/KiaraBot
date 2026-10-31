@@ -123,13 +123,13 @@ class DeploymentTest(unittest.TestCase):
             with sqlite3.connect(database) as connection:
                 connection.execute('CREATE TABLE sample (value TEXT)')
                 connection.execute("INSERT INTO sample VALUES ('before')")
-                connection.execute('PRAGMA user_version = 5')
+                connection.execute('PRAGMA user_version = 6')
             result = subprocess.run([str(BACKUP), 'backup', '--database', str(database),
                                      '--output', str(path / 'backups')], text=True,
                                     capture_output=True, check=True)
             snapshot = Path(result.stdout.splitlines()[-1])
             self.assertTrue(snapshot.is_file())
-            self.assertIn('schema_version=5', Path(f'{snapshot}.metadata').read_text())
+            self.assertIn('schema_version=6', Path(f'{snapshot}.metadata').read_text())
             with sqlite3.connect(database) as connection:
                 connection.execute("UPDATE sample SET value='after'")
             restore = [str(BACKUP), 'restore', '--database', str(database),
@@ -151,7 +151,7 @@ class DeploymentTest(unittest.TestCase):
             database = path / 'runtime.db'
             with sqlite3.connect(database) as connection:
                 connection.execute('CREATE TABLE sample (value TEXT)')
-                connection.execute('PRAGMA user_version = 5')
+                connection.execute('PRAGMA user_version = 6')
             backup = subprocess.run([str(BACKUP), 'backup', '--database', str(database),
                                      '--output', str(path / 'backups')], text=True,
                                     capture_output=True, check=True)
@@ -170,7 +170,7 @@ class DeploymentTest(unittest.TestCase):
                 (backups / f'kiarabot-{stamp}-aaaaaaaa').mkdir(parents=True)
             database = path / 'runtime.db'
             with sqlite3.connect(database) as connection:
-                connection.execute('PRAGMA user_version = 5')
+                connection.execute('PRAGMA user_version = 6')
             result = subprocess.run([str(BACKUP), 'backup', '--database', str(database),
                                      '--output', str(backups), '--retain', '2'],
                                     text=True, capture_output=True, check=True)

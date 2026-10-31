@@ -4,7 +4,7 @@ T07b 真实 QQ/NapCat 尚待用户配置；已核对适配器检出当前 OneBot
 
 ## T04b Action 执行子集
 
-适配器支持 action.send_message.text.v1，将 send_message 的纯文本群/私聊转换为 OneBot send_group_msg/send_private_msg；会话 ID 使用与事件一致的原生数字 ID（见「会话 ID 规范」）；只使用注册账号的 Bot。执行前核验目标身份、消息格式、能力和 deadline。其他操作/消息段拒绝 CAPABILITY_NOT_SUPPORTED，不降级丢字段。Core 负责业务授权，适配器不接受插件直接调用。
+适配器支持 action.send_message.text.v1、action.react_message.v1、action.delete_message.v1、action.mute_member.v1、action.kick_member.v1 与 action.approve_request.v1：SendMessage 的纯文本群/私聊转换为 OneBot send_group_msg/send_private_msg；ReactMessage 的群/私聊转换为 NapCat 扩展 API set_msg_emoji_like（reaction token → emoji ID 的映射见适配器 `REACTIONS`；该 API 不属于 OneBot V11 标准动作集，真实平台行为待 T07b 验证）；DeleteMessage 转换为 delete_msg，只允许撤回本适配器记录过的已发送消息；MuteMember 转换为 set_group_ban（duration 1–2592000 秒）；KickMember 转换为 set_group_kick（`reason` 只作为 Core 审计元数据，不下发平台）；ApproveRequest 用 `request_id` 解析本机保存的好友请求 `flag` 后调用 set_friend_add_request（`reason` 不同样下发）。会话 ID 使用与事件一致的原生数字 ID（见「会话 ID 规范」）；只使用注册账号的 Bot。执行前核验目标身份、消息格式、能力和 deadline。其他操作/消息段拒绝 CAPABILITY_NOT_SUPPORTED，不降级丢字段。Core 负责业务授权，适配器不接受插件直接调用。
 
 Action 执行日志使用独立本机 SQLite 文件（默认 OUTBOX_PATH 加 .actions），按 action_id 和内容 fingerprint 去重；执行前持久化占用，终态保存后才回传。正常重投返回原结果。平台调用超时、取消或进程在调用后退出时保留 ACCEPTED/未知，不重复调用平台；Core 可查询并最终按 deadline 过期。此策略避免重复副作用，但不能提供平台不支持的端到端 exactly-once。无已知平台结果时不伪造 FAILED。日志容量有上限，终态保留七天，未终态不自动删除。
 
@@ -74,6 +74,10 @@ OneBot 原始事件必须在适配器内完成转换：
 OneBot message
   → MessageReceived
   → Core
+
+OneBot request (request_type=friend)
+  → FriendRequest（request_id 为适配器作用域安全 token）
+  → Core；原始 flag 只保存在适配器本机索引
 ```
 
 适配器需要处理：
@@ -89,7 +93,7 @@ OneBot message
 
 ### 会话 ID 规范（T04b/W3）
 
-`ConversationRef.id` 使用 OneBot 平台原生数字 ID（正整数字符串，≤20 位），群聊与私聊不再使用 `group:`/`private:` 前缀，改由 `ConversationRef.type`（`GROUP`/`PRIVATE`）区分。事件 `MessageReceived.conversation`、`subject.conversation_id` 与 Action `SendMessage.conversation` 使用完全相同的值，因此插件可以把收到事件的会话直接用于回复，无需解析或改写 ID。非数字或带前缀的会话 ID 在入站映射和 Action 校验中均返回 `INVALID_ARGUMENT`。
+`ConversationRef.id` 使用 OneBot 平台原生数字 ID（正整数字符串，≤20 位），群聊与私聊不再使用 `group:`/`private:` 前缀，改由 `ConversationRef.type`（`GROUP`/`PRIVATE`）区分。事件 `MessageReceived.conversation`、`subject.conversation_id` 与 Action `SendMessage.conversation` 使用完全相同的值，因此插件可以把收到事件的会话直接用于回复，无需解析或改写 ID。非数字或带前缀的会话 ID 在入站映射和 Action 校验中均返回 `INVALID_ARGUMENT`。`ConversationRef.type` 也参与适配器本地 outbox 的会话 sequence 键（键为 adapter/account/conversation/type 四元组），群号与私聊号相同的两个会话各自独立计数。
 
 ## Action 转换
 
@@ -97,12 +101,14 @@ Core 下发统一 Action：
 
 ```text
 SendMessage
+ReactMessage
+DeleteMessage
 MuteMember
 KickMember
 ApproveRequest
 ```
 
-适配器负责把它们转换成 OneBot API 调用，并返回 `ActionResult`。权限由 Core 检查，适配器只检查平台能力和连接状态。
+适配器负责把它们转换成 OneBot API 调用，并返回 `ActionResult`。权限由 Core 检查，适配器只检查平台能力和连接状态。成功结果允许 `platform_message_id` 为空（例如表情回应、撤回、禁言、踢人或审批不返回消息 ID），此时仍回传 `SUCCEEDED`；平台明确拒绝才回传 `FAILED`。`DeleteMessage` 只允许撤回适配器自己记录过的已发送消息（本机 SQLite `own_messages` 索引，保留七天），未索引或会话不匹配返回 `PERMISSION_DENIED`。`MuteMember`/`KickMember` 只做平台调用与参数校验；白名单、每日预算和权限门禁全部在 Core 执行，适配器不复制这些业务规则。`ApproveRequest` 用适配器本机 `requests` 索引把 `request_id` 解析为平台 `flag`；未知/过期 token 返回 `NOT_FOUND`，原始 flag 不离开适配器。
 
 ## 配置
 
@@ -167,4 +173,4 @@ NapCat 的 WebUI 密码、OneBot Token 和 Core Token 必须分开管理。
 
 当前实现维护于 `adapters/nonebot/`；配置、锁文件和测试命令见该目录 README。后续可再考虑拆成单独插件。当前使用 NoneBot websockets driver 和 onebot_ws_urls 连接 NapCat 正向 WebSocket，反向连接尚未配置。
 
-消息先进入本地有界 outbox 并原子分配会话 sequence；等待 Core 确认期间保留 pending，重连注册后重新绑定 instance 并重投。永久拒绝保留 failed 记录。会话 ID 使用平台原生数字 ID（见上方「会话 ID 规范」），事件与 Action 共用同一值。注册响应心跳间隔、健康探针与 AdapterStatusChanged 上报见上方「健康检查」与「故障处理」。当前仅接收群/私聊消息及 text/image/at/reply，未知段降级；Action 纯文本发送能力见上方 T04b。pending 上限为 10000 条、64 MiB、单消息 1 MB；已确认/失败记录属于去重与诊断索引，不占 pending 上限，7 天后清理（总量仍有上限，极端负载下去重窗口可能提前收缩），水位不回退；pending 达到上限明确失败。平台到 outbox 之前没有消费 ACK，真实可靠性仍需 T07b 验证。
+消息先进入本地有界 outbox 并原子分配会话 sequence；本地 outbox DB 由 user_version 1 迁移到 2，旧共享计数器保守复制到群/私聊两类（sequence 相同，空会话归入 type 0），pending/failed 行不动，未知版本 fail-closed 为 INTERNAL；等待 Core 确认期间保留 pending，重连注册后重新绑定 instance 并重投。永久拒绝保留 failed 记录。会话 ID 使用平台原生数字 ID（见上方「会话 ID 规范」），事件与 Action 共用同一值。注册响应心跳间隔、健康探针与 AdapterStatusChanged 上报见上方「健康检查」与「故障处理」。当前仅接收群/私聊消息及 text/image/at/reply，未知段降级；Action 纯文本发送能力见上方 T04b。pending 上限为 10000 条、64 MiB、单消息 1 MB；已确认/失败记录属于去重与诊断索引，不占 pending 上限，7 天后清理（总量仍有上限，极端负载下去重窗口可能提前收缩），水位不回退；pending 达到上限明确失败。平台到 outbox 之前没有消费 ACK，真实可靠性仍需 T07b 验证。

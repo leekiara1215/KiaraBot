@@ -150,9 +150,19 @@ struct RuntimeAuditEntry {
   RuntimeTimePoint occurred_at{};
   bool allowed{false};
   std::string outcome;
+  // Target of a plugin Action, when applicable. Empty for other audits.
+  std::string target_account_id{};
+  std::string target_conversation_id{};
 };
 struct RuntimeCommandRecord {
   std::string fingerprint;
+};
+// Persisted per (action kind, account) daily budget counter. The day is the
+// UTC day number since the Unix epoch; a stale day is reset on next use or
+// pruned by maintenance.
+struct DailyBudgetEntry {
+  std::uint64_t day{0};
+  std::uint64_t used{0};
 };
 struct NamespaceEntry {
   std::string value;
@@ -193,5 +203,8 @@ struct RuntimeSnapshot {
   std::unordered_map<std::string, std::unordered_map<std::string, NamespaceEntry>> namespaces;
   std::unordered_map<std::string, std::unordered_map<std::string, HostReceipt>> host_receipts;
   std::unordered_map<std::string, std::unordered_map<std::string, TaskEntry>> tasks;
+  // Keyed by "<action kind>|<account>"; only dangerous action kinds carry a
+  // configured daily limit, so the map stays empty for text-only deployments.
+  std::unordered_map<std::string, DailyBudgetEntry> daily_budgets;
 };
 } // namespace kiarabot::core

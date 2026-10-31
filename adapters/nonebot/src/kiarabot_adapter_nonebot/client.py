@@ -68,6 +68,10 @@ class CoreClient:
         request.capabilities.add(name='event.message_received', version='1', supported=True)
         if self.executor:
             request.capabilities.add(name='action.send_message.text.v1', version='1', supported=True)
+            request.capabilities.add(name='action.react_message.v1', version='1', supported=True)
+            request.capabilities.add(name='action.delete_message.v1', version='1', supported=True)
+            request.capabilities.add(name='action.mute_member.v1', version='1', supported=True)
+            request.capabilities.add(name='action.kick_member.v1', version='1', supported=True)
         return adapters.AdapterToCore(register=request)
 
     async def write(self, call, request):

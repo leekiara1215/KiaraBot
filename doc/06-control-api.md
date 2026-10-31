@@ -12,6 +12,8 @@
 
 admin/operator/viewer 的默认权限和每个入口要求由 OpenAPI 给出，未知角色/权限默认拒绝；会话的所有者限制在角色检查之后执行。日志仅 operator/admin，用户与审计仅 admin；消息元数据频道仍须显式 `message.read`，不因管理员角色自动开放，唯一授予入口是私有控制配置中的每用户显式权限（见 [运维文档](08-operations.md)，W5）。所有写入口及拒绝都审计，幂等重放不再次产生业务副作用。202 仅表示命令已持久化接受，不能提前报告插件已启动；配置更新先比较 expected_version，冲突不修改数据。
 
+`/audit` 条目对 Action 审计额外带可选 `account_id`/`conversation_id`（来自 Action 目标账号与会话）；其他审计省略这两个字段，OpenAPI 中二者均为可选属性。
+
 HTTP 映射冻结为 INVALID_ARGUMENT=400、UNAUTHENTICATED=401、PERMISSION_DENIED=403、NOT_FOUND=404、CONFLICT=409、RATE_LIMITED=429（Retry-After）、TIMEOUT=504、UPSTREAM_UNAVAILABLE/PLUGIN_UNAVAILABLE/CAPABILITY_NOT_SUPPORTED=503、INTERNAL/未知码=500；不改变桥接 gRPC 既有映射。所有操作补齐实际可产生的依赖、超时、输入和认证响应，写操作补齐幂等冲突。
 
 T04a 插件桥接新增 Action 结果和查询承载，与 REST 查询共享调用方隔离和“查询失败不代表执行失败”的语义。插件通过 action.result.v1 协商，不复用浏览器认证主体。REST 路径、schema 和 HTTP 映射此次不变；服务实现仍由 T08 承担。
@@ -203,7 +205,7 @@ AuthorizedCommands 是 Core 内部入口：调用方必须从已认证连接构�
 
 execute 的回调只能修改传入的 RuntimeSnapshot，不得执行网络/平台副作用或另启 Runtime 事务。业务修改、成功幂等记录和审计在同一提交中完成；提交失败全部不生效。幂等范围为主体+权限+资源+键，同键同 fingerprint 重放成功且不重复审计；不同 fingerprint 返回 CONFLICT。重放前重新鉴权。拒绝及回调失败记录审计，失败回调的状态变更被回滚；错误详情只保留稳定码和请求标识，不转发回调的自由文本。审计满（默认十万条）时返回 UPSTREAM_UNAVAILABLE 且不执行回调。审计/幂等保留和清理策略须后续管理任务落实，不能当作无限容量服务。
 
-SQLite 从 v2 起保存审计和命令幂等记录，当前 schema v5 还包含 Host 命名空间及任务；控制 API 和桥接业务已接入相应应用入口。
+SQLite 从 v2 起保存审计和命令幂等记录，当前 schema v6 还包含 Host 命名空间、任务、Action 审计目标（账号/会话）与每日预算计数器；控制 API 和桥接业务已接入相应应用入口。
 
 ## T08b 实施与验收范围
 

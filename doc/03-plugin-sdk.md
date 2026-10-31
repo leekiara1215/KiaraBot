@@ -182,7 +182,7 @@ stop(reason)
 
 ### MessageService
 
-状态：**未实现该 service 形态**。v1 通过 `Context.submit_action(ActionEnvelope)` 发送 `send_message` 纯文本（群/私聊），Action 会经过权限、限流、审计和适配器能力检查。
+状态：**未实现该 service 形态**。v1 通过 `Context.submit_action(ActionEnvelope)` 发送 `send_message` 纯文本（群/私聊）、`react_message` 表情回应（群/私聊）、`delete_message` 撤回（仅限本 bot 自己发送的消息）、`mute_member` 禁言、`kick_member` 踢人（群管理，受白名单/每日预算门禁）与 `approve_request` 好友请求审批（`request_id` 回填 `FriendRequest.request_id`），语义见 `doc/01-runtime-semantics.md`，Action 会经过权限、限流、审计和适配器能力检查。
 
 ### ModelService
 
@@ -225,15 +225,20 @@ on_config(PluginConfig, Context)
 ```text
 message.read        订阅 event.message.received / event.message.sent
 message.send        提交 send_message Action
+message.react       提交 react_message Action
+message.delete      提交 delete_message Action（仅限本 bot 自己发送的消息）
+member.mute         提交 mute_member Action（受白名单/每日预算门禁）
+member.kick         提交 kick_member Action（受白名单/每日预算门禁）
 model.chat          host.model.v1 model_chat
 storage.namespace   host.storage.v1
 task.schedule       host.tasks.v1 与 event.timer.triggered 订阅
 member.read         event.group.member.changed
 request.read        event.friend.request
+request.approve     提交 approve_request Action（好友请求审批）
 adapter.read        event.adapter.status.changed
 ```
 
-以下名称只出现在早期设计草案，当前没有协议入口或实现，不应写入可运行清单：`conversation.read`、`conversation.write`、`scheduler.create`、`message.delete`、`user.read`、`group.read`、`group.manage`、`admin.config`。它们不会驱动任何已实现能力。
+以下名称只出现在早期设计草案，当前没有协议入口或实现，不应写入可运行清单：`conversation.read`、`conversation.write`、`scheduler.create`、`user.read`、`group.read`、`group.manage`、`admin.config`。它们不会驱动任何已实现能力。
 
 权限作用域（`account:<id>`/`group:<id>`/`user:<id>`/`conversation:<id>`）仍是后续能力；当前权限按插件身份全局授予，由 Core 在每次操作时校验，插件不能自报身份或作用域。
 

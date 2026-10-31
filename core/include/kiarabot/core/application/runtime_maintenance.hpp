@@ -24,10 +24,11 @@ struct MaintenanceStats {
   std::size_t commands{0};
   std::size_t namespace_entries{0};
   std::size_t host_receipts{0};
+  std::size_t daily_budgets{0};
 
   [[nodiscard]] bool changed() const noexcept {
     return events != 0 || deliveries != 0 || actions != 0 || audit != 0 || commands != 0 ||
-           namespace_entries != 0 || host_receipts != 0;
+           namespace_entries != 0 || host_receipts != 0 || daily_budgets != 0;
   }
 };
 

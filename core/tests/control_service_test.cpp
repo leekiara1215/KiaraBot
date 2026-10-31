@@ -189,6 +189,26 @@ void suite(core::RuntimeStore& store) {
   code(other.call(core::ControlSetPluginEnabled{"test.plugin", false}), wire::PERMISSION_DENIED);
   code(other.call(core::ControlRevokeSession{principal.session_id}), wire::NOT_FOUND);
   check(std::get<core::RuntimeSnapshot>(store.read()).audit.size() == audit_before + 3);
+  // Action audits project their platform target as optional account_id /
+  // conversation_id fields; unrelated audits keep the previous shape.
+  {
+    auto transaction = std::get<std::unique_ptr<core::RuntimeTransaction>>(store.begin());
+    transaction->snapshot().audit.push_back({"plugin/audit", "message.send", "actions", "request",
+                                             "trace", now, true, "OK", "account", "123"});
+    check(std::holds_alternative<std::monostate>(transaction->commit()));
+    const auto page = value<core::ControlPage>(
+        client.call(core::ControlList{core::ControlResource::Audit, 100, {}}));
+    bool projected = false;
+    for (const auto& item : page.items) {
+      const auto& fields = item.fields();
+      const auto account = fields.find("account_id");
+      if (account != fields.end() && account->second.string_value() == "account") {
+        const auto conversation = fields.find("conversation_id");
+        projected = conversation != fields.end() && conversation->second.string_value() == "123";
+      }
+    }
+    check(projected);
+  }
   const auto first = value<core::ControlPage>(
       client.call(core::ControlList{core::ControlResource::Sessions, 1, {}}));
   check(first.next_page_token.has_value());

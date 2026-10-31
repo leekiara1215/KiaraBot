@@ -5,6 +5,7 @@
 
 #include "kiarabot/core/application/plugin_hub.hpp"
 #include "kiarabot/core/domain/runtime_engine.hpp"
+#include "kiarabot/core/domain/session_key.hpp"
 #include "kiarabot/core/runtime/request_digest.hpp"
 #include "kiarabot/core/runtime/runtime_state.hpp"
 
@@ -33,14 +34,6 @@ kiarabot::v1::Error error(kiarabot::v1::ErrorCode code, bool retryable = false) 
 std::string fingerprint(kiarabot::v1::EventEnvelope event) {
   event.mutable_source()->clear_adapter_instance_id();
   return request_digest(event);
-}
-std::string session_key(const kiarabot::v1::EventEnvelope& event) {
-  std::string result;
-  for (const auto* value : {&event.source().adapter_id(), &event.source().account_id(),
-                            &event.subject().conversation_id()}) {
-    result += std::to_string(value->size()) + ":" + *value;
-  }
-  return result;
 }
 std::optional<kiarabot::v1::ErrorCode> validate(const AdapterSession& session,
                                                 const kiarabot::v1::EventEnvelope& event) {

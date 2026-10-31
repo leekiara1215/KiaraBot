@@ -181,15 +181,15 @@ int main(int argc, char* argv[]) {
     check(run(migrate, {":memory:"}).exit_code == 2);
     check(run(migrate, {"file:" + database("uri.db")}).exit_code == 2);
 
-    // Fresh database: creates schema v5, reports completed; repeated run is a
+    // Fresh database: creates schema v6, reports completed; repeated run is a
     // no-op success.
     const std::string fresh = database("fresh.db");
     auto first = run(migrate, {fresh});
     check(first.exit_code == 0);
-    check(first.output.find("operation=migrate outcome=completed schema=5") != std::string::npos);
+    check(first.output.find("operation=migrate outcome=completed schema=6") != std::string::npos);
     {
       Sqlite check_database(fresh);
-      check(check_database.integer("PRAGMA user_version") == 5);
+      check(check_database.integer("PRAGMA user_version") == 6);
     }
     check(run(migrate, {fresh}).exit_code == 0);
 
@@ -223,7 +223,7 @@ int main(int argc, char* argv[]) {
     check(failed.exit_code == 1);
     {
       Sqlite check_database(corrupt);
-      check(check_database.integer("PRAGMA user_version") == 5);
+      check(check_database.integer("PRAGMA user_version") == 6);
       check(check_database.integer("SELECT length(payload) FROM runtime_snapshot") == 1);
     }
 
@@ -250,7 +250,7 @@ int main(int argc, char* argv[]) {
     check(left_result.exit_code == 0 && right_result.exit_code == 0);
     {
       Sqlite check_database(concurrent);
-      check(check_database.integer("PRAGMA user_version") == 5);
+      check(check_database.integer("PRAGMA user_version") == 6);
       check(check_database.text("PRAGMA integrity_check") == "ok");
     }
 

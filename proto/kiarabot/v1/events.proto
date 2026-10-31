@@ -21,7 +21,7 @@ message EventEnvelope {
     MessageSent message_sent = 21;
     // CONTRACT_STATUS: not_implemented - no adapter emits GroupMemberChanged in v1.
     GroupMemberChanged group_member_changed = 22;
-    // CONTRACT_STATUS: not_implemented - no adapter emits FriendRequest in v1.
+    // CONTRACT_STATUS: implemented - the NoneBot adapter emits friend requests from OneBot V11.
     FriendRequest friend_request = 23;
     TimerTriggered timer_triggered = 24;
     // CONTRACT_STATUS: not_implemented - no adapter emits AdapterStatusChanged in v1.
@@ -62,10 +62,12 @@ message GroupMemberChanged {
   ChangeType change_type = 3;
 }
 
-// CONTRACT_STATUS: not_implemented - no adapter emits FriendRequest in v1.
+// v1: friend request from OneBot V11. request_id is an adapter-scoped token that
+// ApproveRequest.request_id must echo; it is not the raw platform flag.
 message FriendRequest {
   string user_id = 1;
   string comment = 2;
+  string request_id = 3;
 }
 
 message TimerTriggered {

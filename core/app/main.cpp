@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <charconv>
 #include <chrono>
 #include <cstdlib>
@@ -5,6 +6,8 @@
 #include <iostream>
 #include <string_view>
 #include <thread>
+#include <unordered_map>
+#include <unordered_set>
 
 #if defined(__unix__) || defined(__APPLE__)
 #include <pthread.h>
@@ -80,6 +83,101 @@ bool process_count(const char* name, std::size_t fallback, std::size_t minimum, 
   return true;
 }
 
+// Action-kind and conversation identifiers share the same conservative ASCII
+// alphabet so a typo in deployment configuration fails startup.
+bool deployment_identifier(std::string_view value) {
+  return !value.empty() && value.size() <= 128 &&
+         std::all_of(value.begin(), value.end(), [](unsigned char character) {
+           return (character >= 'a' && character <= 'z') ||
+                  (character >= 'A' && character <= 'Z') ||
+                  (character >= '0' && character <= '9') || character == '_' || character == '.' ||
+                  character == '-';
+         });
+}
+
+// Parses comma-separated "<action kind>=<daily limit>" pairs. The action kind
+// is the adapter capability name; empty input means no daily budgets.
+bool process_daily_limits(const char* name, std::unordered_map<std::string, std::size_t>& limits) {
+  const char* text = std::getenv(name);
+  if (text == nullptr || *text == '\0') {
+    return true;
+  }
+  const std::string_view input(text);
+  std::size_t position = 0;
+  while (position < input.size()) {
+    const auto end = input.find(',', position);
+    const auto item = input.substr(position, end == std::string_view::npos ? end : end - position);
+    const auto separator = item.find('=');
+    if (separator == std::string_view::npos || separator == 0 || separator + 1 == item.size()) {
+      return false;
+    }
+    const auto kind = item.substr(0, separator);
+    const auto limit_text = item.substr(separator + 1);
+    if (!deployment_identifier(kind)) {
+      return false;
+    }
+    std::size_t limit = 0;
+    const auto parsed =
+        std::from_chars(limit_text.data(), limit_text.data() + limit_text.size(), limit);
+    if (parsed.ec != std::errc{} || parsed.ptr != limit_text.data() + limit_text.size() ||
+        limit < 1 || limit > 100000) {
+      return false;
+    }
+    limits[std::string(kind)] = limit;
+    if (end == std::string_view::npos) {
+      break;
+    }
+    position = end + 1;
+  }
+  return true;
+}
+
+// Parses comma-separated "<action kind>=<conversation>|<conversation>..." pairs.
+// A kind that appears here may only target the listed conversations.
+bool process_allowed_conversations(
+    const char* name, std::unordered_map<std::string, std::unordered_set<std::string>>& allowed) {
+  const char* text = std::getenv(name);
+  if (text == nullptr || *text == '\0') {
+    return true;
+  }
+  const std::string_view input(text);
+  std::size_t position = 0;
+  while (position < input.size()) {
+    const auto end = input.find(',', position);
+    const auto item = input.substr(position, end == std::string_view::npos ? end : end - position);
+    const auto separator = item.find('=');
+    if (separator == std::string_view::npos || separator == 0 || separator + 1 == item.size()) {
+      return false;
+    }
+    const auto kind = item.substr(0, separator);
+    if (!deployment_identifier(kind)) {
+      return false;
+    }
+    const auto list = item.substr(separator + 1);
+    std::unordered_set<std::string> conversations;
+    std::size_t list_position = 0;
+    while (list_position < list.size()) {
+      const auto list_end = list.find('|', list_position);
+      const auto conversation = list.substr(
+          list_position, list_end == std::string_view::npos ? list_end : list_end - list_position);
+      if (!deployment_identifier(conversation)) {
+        return false;
+      }
+      conversations.insert(std::string(conversation));
+      if (list_end == std::string_view::npos) {
+        break;
+      }
+      list_position = list_end + 1;
+    }
+    allowed[std::string(kind)] = std::move(conversations);
+    if (end == std::string_view::npos) {
+      break;
+    }
+    position = end + 1;
+  }
+  return true;
+}
+
 std::string_view storage_code(kiarabot::core::StorageError error) {
   switch (error) {
   case kiarabot::core::StorageError::Conflict:
@@ -97,7 +195,8 @@ void log_maintenance(const kiarabot::core::MaintenanceStats& stats) {
             << " deliveries=" << stats.deliveries << " actions=" << stats.actions
             << " audit=" << stats.audit << " commands=" << stats.commands
             << " namespace_entries=" << stats.namespace_entries
-            << " host_receipts=" << stats.host_receipts << '\n';
+            << " host_receipts=" << stats.host_receipts << " daily_budgets=" << stats.daily_budgets
+            << '\n';
 }
 #endif
 
@@ -144,13 +243,24 @@ int run_process(std::string_view listen = {}) {
   std::size_t ack_timeout_ms = 0;
   std::size_t maintenance_interval_ms = 0;
   std::size_t retention_hours = 0;
+  std::size_t account_rate = 0;
+  std::size_t group_rate = 0;
+  std::size_t private_rate = 0;
+  std::unordered_map<std::string, std::size_t> daily_limits;
+  std::unordered_map<std::string, std::unordered_set<std::string>> allowed_conversations;
   if (!process_count("KIARABOT_EVENT_QUEUE_LIMIT", 1024, 1, 100000, queue_limit) ||
       !process_count("KIARABOT_AUDIT_LIMIT", 100000, 1000, 10000000, audit_limit) ||
       !process_count("KIARABOT_ACTION_LIMIT", 10000, 100, 1000000, action_limit) ||
       !process_count("KIARABOT_ACK_TIMEOUT_MS", 30000, 1000, 600000, ack_timeout_ms) ||
       !process_count("KIARABOT_MAINTENANCE_INTERVAL_MS", 60000, 1000, 3600000,
                      maintenance_interval_ms) ||
-      !process_count("KIARABOT_RETENTION_HOURS", 168, 24, 8760, retention_hours)) {
+      !process_count("KIARABOT_RETENTION_HOURS", 168, 24, 8760, retention_hours) ||
+      !process_count("KIARABOT_ACTION_ACCOUNT_LIMIT_PER_MINUTE", 10, 1, 100000, account_rate) ||
+      !process_count("KIARABOT_ACTION_GROUP_LIMIT_PER_MINUTE", 3, 1, 100000, group_rate) ||
+      !process_count("KIARABOT_ACTION_PRIVATE_LIMIT_PER_10_SECONDS", 1, 1, 1000, private_rate) ||
+      !process_daily_limits("KIARABOT_ACTION_DAILY_LIMITS", daily_limits) ||
+      !process_allowed_conversations("KIARABOT_ACTION_ALLOWED_CONVERSATIONS",
+                                     allowed_conversations)) {
     std::cerr << "operation=runtime_config outcome=failed error_code=INVALID_ARGUMENT\n";
     return 1;
   }
@@ -162,6 +272,12 @@ int run_process(std::string_view listen = {}) {
   runtime_limits.audit_limit = audit_limit;
   runtime_limits.action_limit = action_limit;
   runtime_limits.command_limit = audit_limit;
+  kiarabot::core::ActionQuotaPolicy quota_policy;
+  quota_policy.account_limit = account_rate;
+  quota_policy.group_limit = group_rate;
+  quota_policy.private_limit = private_rate;
+  quota_policy.daily_limits = std::move(daily_limits);
+  quota_policy.allowed_conversations = std::move(allowed_conversations);
 #ifdef KIARABOT_HAS_SQLITE
   auto log_sink = std::make_shared<kiarabot::infrastructure::BufferedRuntimeLogSink>();
 #endif
@@ -252,7 +368,8 @@ int run_process(std::string_view listen = {}) {
 #endif
     }
     auto actions = plugins ? std::make_shared<kiarabot::core::ActionRouter>(
-                                 *persistent_store, kiarabot::core::RuntimeClock{}, runtime_limits)
+                                 *persistent_store, kiarabot::core::RuntimeClock{}, runtime_limits,
+                                 quota_policy)
                            : nullptr;
     std::shared_ptr<kiarabot::core::IModelProvider> model;
     const char* model_endpoint = std::getenv("KIARABOT_MODEL_ENDPOINT");

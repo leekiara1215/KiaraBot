@@ -17,7 +17,7 @@ services:
       DATABASE_PATH: ${KIARABOT_RUNTIME_DB:-/var/lib/kiarabot/kiarabot.db}
       BACKUP_DIR: /var/lib/kiarabot/backups
       MIGRATION_COMMAND: /usr/local/bin/kiarabot-migrate
-      EXPECTED_SCHEMA_VERSION: "5"
+      EXPECTED_SCHEMA_VERSION: "6"
     volumes:
       - kiarabot-production-data:/var/lib/kiarabot
       - kiarabot-production-backups:/var/lib/kiarabot/backups

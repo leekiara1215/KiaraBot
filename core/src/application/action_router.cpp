@@ -1,5 +1,7 @@
 #include "kiarabot/core/application/action_router.hpp"
 
+#include <array>
+
 #include "kiarabot/core/runtime/request_digest.hpp"
 
 namespace kiarabot::core {
@@ -97,15 +99,182 @@ wire::PluginActionResponse response(const std::string& request,
   }
   return result;
 }
-bool permitted(const PluginSession& session) {
-  return std::find(session.permissions.begin(), session.permissions.end(), "message.send") !=
+bool permitted(const PluginSession& session, const std::string& permission) {
+  return std::find(session.permissions.begin(), session.permissions.end(), permission) !=
          session.permissions.end();
+}
+// Action kind doubles as the adapter capability name. New payloads extend this
+// mapping together with their permission and capability vocabulary entry.
+std::string action_kind(const wire::ActionEnvelope& action) {
+  switch (action.payload_case()) {
+  case wire::ActionEnvelope::kSendMessage:
+    return "action.send_message.text.v1";
+  case wire::ActionEnvelope::kReactMessage:
+    return "action.react_message.v1";
+  case wire::ActionEnvelope::kDeleteMessage:
+    return "action.delete_message.v1";
+  case wire::ActionEnvelope::kMuteMember:
+    return "action.mute_member.v1";
+  case wire::ActionEnvelope::kKickMember:
+    return "action.kick_member.v1";
+  case wire::ActionEnvelope::kApproveRequest:
+    return "action.approve_request.v1";
+  default:
+    return {};
+  }
+}
+std::string required_permission(const wire::ActionEnvelope& action) {
+  switch (action.payload_case()) {
+  case wire::ActionEnvelope::kSendMessage:
+    return "message.send";
+  case wire::ActionEnvelope::kReactMessage:
+    return "message.react";
+  case wire::ActionEnvelope::kDeleteMessage:
+    return "message.delete";
+  case wire::ActionEnvelope::kMuteMember:
+    return "member.mute";
+  case wire::ActionEnvelope::kKickMember:
+    return "member.kick";
+  case wire::ActionEnvelope::kApproveRequest:
+    return "request.approve";
+  default:
+    return {};
+  }
+}
+// Platform-neutral reaction tokens mapped per adapter; unknown tokens are
+// rejected before reaching the platform.
+constexpr std::array<std::string_view, 5> kReactionTokens{"like", "laugh", "surprise", "sad",
+                                                          "angry"};
+std::string conversation_id(const wire::ActionEnvelope& action) {
+  if (action.has_send_message()) {
+    return action.send_message().conversation().id();
+  }
+  if (action.has_react_message()) {
+    return action.react_message().conversation().id();
+  }
+  if (action.has_delete_message()) {
+    return action.delete_message().conversation().id();
+  }
+  if (action.has_mute_member()) {
+    return action.mute_member().group_id();
+  }
+  if (action.has_kick_member()) {
+    return action.kick_member().group_id();
+  }
+  return {};
+}
+bool group_conversation(const wire::ActionEnvelope& action) {
+  if (action.has_send_message()) {
+    return action.send_message().conversation().type() == wire::ConversationRef::GROUP;
+  }
+  if (action.has_react_message()) {
+    return action.react_message().conversation().type() == wire::ConversationRef::GROUP;
+  }
+  if (action.has_delete_message()) {
+    return action.delete_message().conversation().type() == wire::ConversationRef::GROUP;
+  }
+  // Group management payloads are group-scoped by definition.
+  return action.has_mute_member() || action.has_kick_member();
+}
+// Payloads that address an existing conversation share the same scope checks:
+// group/private only, same account as the Action source, and a matching target.
+wire::ErrorCode validate_conversation(const wire::ActionEnvelope& action,
+                                      const wire::ConversationRef& conversation) {
+  if (conversation.type() != wire::ConversationRef::PRIVATE &&
+      conversation.type() != wire::ConversationRef::GROUP) {
+    return wire::CAPABILITY_NOT_SUPPORTED;
+  }
+  if (!id(conversation.id()) || conversation.account_id() != action.target_source().account_id() ||
+      action.target().conversation_id() != conversation.id()) {
+    return wire::INVALID_ARGUMENT;
+  }
+  return wire::ERROR_CODE_UNSPECIFIED;
+}
+std::uint64_t utc_day(RuntimeTimePoint now) {
+  return static_cast<std::uint64_t>(
+      std::chrono::duration_cast<std::chrono::hours>(now.time_since_epoch()).count() / 24);
+}
+// Persistent daily budget for dangerous actions. The counter is part of the
+// Action snapshot transaction, so a rejected request rolls it back; a restart
+// does not reset it.
+bool consume_daily_budget(RuntimeSnapshot& state, const std::string& kind,
+                          const std::string& account, std::size_t limit, RuntimeTimePoint now) {
+  if (limit == 0) {
+    return true;
+  }
+  auto& entry = state.daily_budgets[kind + "|" + account];
+  const auto day = utc_day(now);
+  if (entry.day != day) {
+    entry.day = day;
+    entry.used = 0;
+  }
+  if (entry.used >= limit) {
+    return false;
+  }
+  ++entry.used;
+  return true;
 }
 wire::ErrorCode validate(const wire::ActionEnvelope& action) {
   if (!id(action.action_id()) || !id(action.idempotency_key()) || !id(action.trace_id()) ||
       !timestamp(action.deadline()) || !id(action.target_source().adapter_id()) ||
       !id(action.target_source().account_id())) {
     return wire::INVALID_ARGUMENT;
+  }
+  if (action.has_react_message()) {
+    const auto& react = action.react_message();
+    const auto conversation = validate_conversation(action, react.conversation());
+    if (conversation != wire::ERROR_CODE_UNSPECIFIED) {
+      return conversation;
+    }
+    if (!id(react.message_id())) {
+      return wire::INVALID_ARGUMENT;
+    }
+    if (react.reaction().empty()) {
+      return wire::INVALID_ARGUMENT;
+    }
+    if (std::find(kReactionTokens.begin(), kReactionTokens.end(), react.reaction()) ==
+        kReactionTokens.end()) {
+      return wire::CAPABILITY_NOT_SUPPORTED;
+    }
+    return wire::ERROR_CODE_UNSPECIFIED;
+  }
+  if (action.has_delete_message()) {
+    const auto& deletion = action.delete_message();
+    const auto conversation = validate_conversation(action, deletion.conversation());
+    if (conversation != wire::ERROR_CODE_UNSPECIFIED) {
+      return conversation;
+    }
+    if (!id(deletion.message_id())) {
+      return wire::INVALID_ARGUMENT;
+    }
+    return wire::ERROR_CODE_UNSPECIFIED;
+  }
+  if (action.has_mute_member()) {
+    const auto& mute = action.mute_member();
+    if (!id(mute.group_id()) || !id(mute.user_id()) ||
+        action.target().conversation_id() != mute.group_id()) {
+      return wire::INVALID_ARGUMENT;
+    }
+    if (mute.duration_seconds() == 0 || mute.duration_seconds() > 2592000) {
+      return wire::INVALID_ARGUMENT;
+    }
+    return wire::ERROR_CODE_UNSPECIFIED;
+  }
+  if (action.has_kick_member()) {
+    const auto& kick = action.kick_member();
+    if (!id(kick.group_id()) || !id(kick.user_id()) ||
+        action.target().conversation_id() != kick.group_id() || kick.reason().size() > 256) {
+      return wire::INVALID_ARGUMENT;
+    }
+    return wire::ERROR_CODE_UNSPECIFIED;
+  }
+  if (action.has_approve_request()) {
+    const auto& approve = action.approve_request();
+    // request_id echoes FriendRequest.request_id (adapter-scoped safe token).
+    if (!id(approve.request_id()) || approve.reason().size() > 256) {
+      return wire::INVALID_ARGUMENT;
+    }
+    return wire::ERROR_CODE_UNSPECIFIED;
   }
   if (!action.has_send_message()) {
     return action.payload_case() == wire::ActionEnvelope::PAYLOAD_NOT_SET
@@ -128,20 +297,23 @@ wire::ErrorCode validate(const wire::ActionEnvelope& action) {
 }
 } // namespace
 
-ActionRouter::ActionRouter(RuntimeStore& store, RuntimeClock clock, RuntimeLimits limits)
-    : store_(store), clock_(std::move(clock)), limits_(limits) {}
+ActionRouter::ActionRouter(RuntimeStore& store, RuntimeClock clock, RuntimeLimits limits,
+                           ActionQuotaPolicy quota)
+    : store_(store), clock_(std::move(clock)), limits_(limits), quota_(quota) {}
 RuntimeTimePoint ActionRouter::now() const {
   return clock_ ? clock_() : std::chrono::system_clock::now();
 }
 void ActionRouter::attach(const AdapterSession& session,
                           const wire::RegisterAdapterRequest& request) {
   std::lock_guard lock(mutex_);
-  const bool supported = std::any_of(request.capabilities().begin(), request.capabilities().end(),
-                                     [](const auto& capability) {
-                                       return capability.name() == "action.send_message.text.v1" &&
-                                              capability.version() == "1" && capability.supported();
-                                     });
-  adapters_[session.identity] = {session, supported, {}};
+  AdapterRoute route;
+  route.session = session;
+  for (const auto& capability : request.capabilities()) {
+    if (capability.supported() && capability.version() == "1") {
+      route.capabilities.insert(capability.name());
+    }
+  }
+  adapters_[session.identity] = std::move(route);
 }
 void ActionRouter::detach(const AdapterSession& session) {
   std::lock_guard lock(mutex_);
@@ -217,18 +389,21 @@ wire::PluginActionResponse ActionRouter::submit(const PluginSession& session,
   canonical.clear_action_id();
   canonical.clear_trace_id();
   const auto fingerprint = request_digest(canonical);
+  const auto permission = required_permission(action);
   std::vector<PermissionGrant> grants;
-  if (permitted(session)) {
-    grants.push_back({"plugin/" + session.identity, "message.send", "actions"});
+  if (permitted(session, permission)) {
+    grants.push_back({"plugin/" + session.identity, permission, "actions"});
   }
   AuthorizedCommands commands(store_, grants, clock_, limits_.audit_limit);
   CommandContext context{"plugin/" + session.identity,
-                         "message.send",
+                         permission,
                          "actions",
                          request.request_id(),
                          action.trace_id(),
                          action.idempotency_key(),
-                         fingerprint};
+                         fingerprint,
+                         action.target_source().account_id(),
+                         conversation_id(action)};
   const auto outcome = commands.execute(context, [&](RuntimeSnapshot& state) -> PortStatus {
     const auto scoped = key(session.identity, action.idempotency_key());
     if (auto existing = state.actions.find(scoped); existing != state.actions.end()) {
@@ -248,13 +423,27 @@ wire::PluginActionResponse ActionRouter::submit(const PluginSession& session,
       if (adapter == adapters_.end()) {
         return error(wire::UPSTREAM_UNAVAILABLE);
       }
-      if (!adapter->second.text) {
+      const auto kind = action_kind(action);
+      if (adapter->second.capabilities.find(kind) == adapter->second.capabilities.end()) {
         return error(wire::CAPABILITY_NOT_SUPPORTED);
       }
       const auto& accounts = adapter->second.session.accounts;
       if (std::find(accounts.begin(), accounts.end(), action.target_source().account_id()) ==
           accounts.end()) {
         return error(wire::PERMISSION_DENIED);
+      }
+      // Dangerous action kinds may be restricted to an explicit conversation
+      // allowlist; unknown kinds are unrestricted by this policy.
+      if (!quota_.conversation_allowed(kind, conversation_id(action))) {
+        return error(wire::PERMISSION_DENIED);
+      }
+      if (!quota_.allow(kind, action.target_source().account_id(), conversation_id(action),
+                        group_conversation(action), now())) {
+        return error(wire::RATE_LIMITED);
+      }
+      if (!consume_daily_budget(state, kind, action.target_source().account_id(),
+                                quota_.daily_limit(kind), now())) {
+        return error(wire::RATE_LIMITED);
       }
     }
     ActionEntry entry;
@@ -348,7 +537,7 @@ PortResult<std::optional<wire::ActionEnvelope>> ActionRouter::next(const Adapter
   if (route == adapters_.end() || route->second.session.instance != session.instance) {
     return error(wire::PERMISSION_DENIED);
   }
-  if (!route->second.text) {
+  if (route->second.capabilities.empty()) {
     return std::optional<wire::ActionEnvelope>{};
   }
   auto loaded = store_.read();
@@ -376,6 +565,9 @@ PortResult<std::optional<wire::ActionEnvelope>> ActionRouter::next(const Adapter
     if (action.target_source().adapter_id() != session.identity) {
       continue;
     }
+    if (route->second.capabilities.find(action_kind(action)) == route->second.capabilities.end()) {
+      continue;
+    }
     if (std::find(session.accounts.begin(), session.accounts.end(),
                   action.target_source().account_id()) == session.accounts.end()) {
       continue;
@@ -389,7 +581,9 @@ PortResult<std::optional<wire::ActionEnvelope>> ActionRouter::next(const Adapter
                            entry.record.action_id,
                            action.trace_id(),
                            session.instance,
-                           request_digest(action)};
+                           request_digest(action),
+                           action.target_source().account_id(),
+                           conversation_id(action)};
     const auto outcome = commands.execute(context, [&](RuntimeSnapshot& state) -> PortStatus {
       auto& current = state.actions.at(scoped);
       expire(current, now());

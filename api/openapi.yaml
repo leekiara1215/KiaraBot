@@ -838,6 +838,9 @@ components:
         action: { type: string }
         resource: { type: string }
         request_id: { type: string }
+        # Action audits only; other audit entries omit these fields.
+        account_id: { type: string }
+        conversation_id: { type: string }
     AdapterPage:
       type: object
       required: [items, page]

@@ -18,6 +18,9 @@ struct CommandContext {
   std::string trace_id;
   std::string idempotency_key;
   std::string fingerprint;
+  // Action targets for audit; empty for commands without a platform target.
+  std::string target_account_id{};
+  std::string target_conversation_id{};
 };
 
 class AuthorizedCommands {
@@ -67,10 +70,10 @@ public:
             if (state.audit.size() >= audit_limit_) {
               return error(kiarabot::v1::UPSTREAM_UNAVAILABLE, request);
             }
-            state.audit.push_back({request.subject, request.permission, request.resource,
-                                   request.request_id, request.trace_id,
-                                   clock_ ? clock_() : std::chrono::system_clock::now(), true,
-                                   "CONFLICT"});
+            state.audit.push_back(
+                {request.subject, request.permission, request.resource, request.request_id,
+                 request.trace_id, clock_ ? clock_() : std::chrono::system_clock::now(), true,
+                 "CONFLICT", request.target_account_id, request.target_conversation_id});
             const auto committed = transaction->commit();
             if (const auto* failure = std::get_if<StorageError>(&committed)) {
               return mapped(*failure, request);
@@ -108,7 +111,8 @@ public:
     state.audit.push_back({request.subject, request.permission, request.resource,
                            request.request_id, request.trace_id,
                            clock_ ? clock_() : std::chrono::system_clock::now(), allowed,
-                           rejected ? kiarabot::v1::ErrorCode_Name(*rejected) : "OK"});
+                           rejected ? kiarabot::v1::ErrorCode_Name(*rejected) : "OK",
+                           request.target_account_id, request.target_conversation_id});
     const auto committed = transaction->commit();
     if (const auto* failure = std::get_if<StorageError>(&committed)) {
       return mapped(*failure, request);

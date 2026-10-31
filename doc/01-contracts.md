@@ -15,8 +15,9 @@ T03a 新增 CoreToPlugin.error（oneof 字段 6），承载注册之后的终止
 <!-- contract-status:start -->
 | 契约项 | 状态 | 说明 |
 | --- | --- | --- |
-| `EventEnvelope.message_sent`、`EventEnvelope.group_member_changed`、`EventEnvelope.friend_request`、`EventEnvelope.adapter_status_changed`、`EventEnvelope.plugin_status_changed` | not_implemented | 唯一适配器只产生 `MessageReceived`；Core 只有接收/订阅映射。插件订阅这些事件收不到数据。 |
-| `ActionEnvelope.delete_message`、`ActionEnvelope.react_message`、`ActionEnvelope.mute_member`、`ActionEnvelope.kick_member`、`ActionEnvelope.approve_request`、`ActionEnvelope.schedule_task`、`SendMessage.reply`、`SendMessage.reply_to_message_id` | not_implemented | Core 与适配器都以 `CAPABILITY_NOT_SUPPORTED` 显式拒绝；v1 仅支持群/私聊 `send_message` 纯文本。 |
+| `EventEnvelope.message_sent`、`EventEnvelope.group_member_changed`、`EventEnvelope.adapter_status_changed`、`EventEnvelope.plugin_status_changed` | not_implemented | 唯一适配器只产生 `MessageReceived` 与 `FriendRequest`；Core 对其余事件只有接收/订阅映射。插件订阅这些事件收不到数据。 |
+| `ActionEnvelope.schedule_task`、`ScheduleTask.task_id`、`ScheduleTask.schedule`、`ScheduleTask.payload` | deprecated | 旧 Action 调度与 `host.tasks.v1` 重复且语义不等价（见 `doc/13`），v1 继续以 `CAPABILITY_NOT_SUPPORTED` 拒绝；调度只走 `host.tasks.v1`。 |
+| `SendMessage.reply`、`SendMessage.reply_to_message_id` | not_implemented | Core 与适配器都显式拒绝；v1 的 Action 面包含 `send_message`、`react_message`、`delete_message`、`mute_member`、`kick_member` 与 `approve_request`。 |
 | `MessageSegment.Type.AUDIO`、`MessageSegment.Type.VIDEO`、`MessageSegment.Type.FILE`、`MessageSegment.Type.LOCATION`、`ConversationRef.Type.CHANNEL`、`PluginState.PLUGIN_STATE_STARTING`、`PluginState.PLUGIN_STATE_STOPPING` | not_implemented | 适配器把非 text/image/at/reply 段降级为 `UNKNOWN`；CHANNEL 会话被拒绝；运行时状态机不产生 STARTING/STOPPING。 |
 | `Error.details`、`Account.display_name` | not_implemented | 无生产/消费点；REST `Error.details` 保持空对象。 |
 | `PageRequest.page_size`、`PageRequest.page_token`、`PageInfo.next_page_token`、`PageInfo.page_size`、`Health.state`、`Health.component`、`Health.version`、`Health.checked_at`、`Health.dependencies` | not_implemented | REST 使用 OpenAPI 自己的分页/健康 schema，v1 无代码引用这些 Protobuf 消息。 |
@@ -34,6 +35,14 @@ T03a 新增 CoreToPlugin.error（oneof 字段 6），承载注册之后的终止
 <!-- contract-status:end -->
 
 `/ws/messages` 自 2026-10-31（W5）起为 `implemented`：只有被私有控制配置显式授予 `message.read` 的用户可订阅，事件 `message.updated` 仅含消息元数据（`message_id`、`conversation_id`、`direction`；v1 只产生 `received`），不推送正文、没有 REST 消息投影、也不构成审计；任何默认角色（含 admin）都不持有 `message.read`。授权模型见 `doc/08-operations.md`。
+
+`ActionEnvelope.react_message` 自 2026-10-31（W6）起为 `implemented`：只接受群/私聊消息、平台中立 reaction token（`like`/`laugh`/`surprise`/`sad`/`angry`），需要插件权限 `message.react`，且适配器必须协商能力 `action.react_message.v1`；语义、错误码与“成功可无平台消息 ID”见 `doc/01-runtime-semantics.md`。
+
+`ActionEnvelope.delete_message` 自 2026-10-31（W6c）起为 `implemented`：只允许撤回**本机器人账号自己发送过**的消息，需要插件权限 `message.delete` 与适配器能力 `action.delete_message.v1`；适配器维护已发送消息索引，未索引的平台消息 ID 返回 `PERMISSION_DENIED`，语义见 `doc/01-runtime-semantics.md`。
+
+`ActionEnvelope.mute_member` 与 `ActionEnvelope.kick_member` 自 2026-10-31（W6e）起为 `implemented`：仅群聊，需要插件权限 `member.mute`/`member.kick` 与适配器能力 `action.mute_member.v1`/`action.kick_member.v1`；危险动作默认要求 `KIARABOT_ACTION_ALLOWED_CONVERSATIONS` 白名单与每日预算（`KIARABOT_ACTION_DAILY_LIMITS`），语义见 `doc/01-runtime-semantics.md` 与 `doc/08-operations.md`。
+
+`ActionEnvelope.approve_request` 自 2026-10-31（W6f）起为 `implemented`：v1 只审批好友请求，需要插件权限 `request.approve` 与适配器能力 `action.approve_request.v1`；`request_id` 必须回填对应 `FriendRequest.request_id`，`reason` 只作为审计元数据，未知/过期 token 由适配器返回 `NOT_FOUND`。事件前置与语义见 `doc/01-runtime-semantics.md`。
 
 ## 目录
 
@@ -82,7 +91,9 @@ AdapterStatusChanged
 PluginStatusChanged
 ```
 
-上表是事件词表，不是实现承诺：v1 只有 `MessageReceived` 与 `TimerTriggered` 端到端闭环，其余五种见“契约实现状态”中的 `not_implemented` 行。客户端/插件不得订阅尚未实现的事件并假定能收到数据；Core 保留订阅映射只为后续接线。
+上表是事件词表，不是实现承诺：v1 端到端闭环 `MessageReceived`、`TimerTriggered` 与 `FriendRequest`；其余四种见“契约实现状态”中的 `not_implemented` 行。客户端/插件不得订阅尚未实现的事件并假定能收到数据；Core 保留订阅映射只为后续接线。
+
+`FriendRequest` 自 2026-10-31（W6f）起由 NoneBot 适配器产生：`user_id`、`comment`、`request_id`（适配器作用域的安全 token，不是平台 `flag`）；插件必须订阅能力 `event.friend.request` 且获授 `request.read`。审批使用 ApproveRequest Action 并回填同一 `request_id`；适配器在本机解析原始 `flag` 后调用 OneBot `set_friend_add_request`。v1 只映射好友请求，群邀请/加群请求没有契约事件，仍不支持。
 
 消息内容必须使用平台无关的消息段：
 
@@ -124,7 +135,7 @@ ApproveRequest
 ScheduleTask
 ```
 
-Action 词表同样大于 v1 实现子集：只有 `SendMessage` 的群/私聊纯文本可用；其余 6 个载荷、`reply`、`reply_to_message_id` 和非 text/image/at/reply 消息段都被显式拒绝（`CAPABILITY_NOT_SUPPORTED`），见“契约实现状态”。`ActionEnvelope.deadline` 契约上限为 300 秒（未来 UTC），但 v1 只校验正时间戳、不强制该上限，超长 deadline 的 Action 不会提前过期（`semantic.action.deadline_max_300s` = not_implemented）。
+Action 词表同样大于 v1 实现子集：`SendMessage` 的群/私聊纯文本、`ReactMessage` 的群/私聊表情回应、`DeleteMessage` 的 bot 自己消息撤回、`MuteMember`/`KickMember` 的群管理动作与 `ApproveRequest` 的好友请求审批可用；`ScheduleTask` 已 `deprecated`（旧调度契约，改用 `host.tasks.v1`），与 `reply`、`reply_to_message_id` 和非 text/image/at/reply 消息段一样被显式拒绝（`CAPABILITY_NOT_SUPPORTED`），见“契约实现状态”。`ActionEnvelope.deadline` 契约上限为 300 秒（未来 UTC），但 v1 只校验正时间戳、不强制该上限，超长 deadline 的 Action 不会提前过期（`semantic.action.deadline_max_300s` = not_implemented）。
 
 REST Action 查询与 Bridge 查询共享同一份 Action 记录与语义：终态结果从最后一次状态更新起保留 604800 秒（7 天，不得少于 86400 秒）；`ACCEPTED` 且 `deadline <= now` 的记录在读取时迁移为 `EXPIRED`，其 `error.code` 为 `TIMEOUT`；缺失、已过期（保留期外）或不可见统一返回 `NOT_FOUND`；查询超时不改变 Action 状态。v1 的 REST 查询路径尚未接线（无 `control/<user>` owner 写入方、无保留期/EXPIRED 迁移），当前恒返回 `NOT_FOUND`；客户端不得把该 404 当作平台执行失败，连接中的插件应通过 Bridge 的 `PluginActionQuery` 查询。
 
@@ -227,8 +238,13 @@ event.timer.triggered        -> task.schedule
 ```text
 message.read
 message.send
+message.react
+message.delete
 member.read
+member.mute
+member.kick
 request.read
+request.approve
 adapter.read
 task.schedule
 model.chat
@@ -239,10 +255,15 @@ storage.namespace
 
 ```text
 action.send_message.text.v1
+action.react_message.v1
+action.delete_message.v1
+action.mute_member.v1
+action.kick_member.v1
+action.approve_request.v1
 ```
 <!-- vocabulary:end -->
 
-v1 不存在其他功能/权限名；`doc/03-plugin-sdk.md` 中更宽的规划词表不构成本契约承诺。`message.send` 只对 Action 生效，`message.read` 不授予任何控制面默认角色。
+v1 不存在其他功能/权限名；`doc/03-plugin-sdk.md` 中更宽的规划词表不构成本契约承诺。`message.send`、`message.react`、`message.delete`、`member.mute`、`member.kick`、`request.approve` 只对 Action 生效且互不隐含；`message.read` 不授予任何控制面默认角色。
 
 ## 错误模型
 

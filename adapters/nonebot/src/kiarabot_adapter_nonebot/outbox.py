@@ -9,6 +9,54 @@ from pathlib import Path
 from kiarabot.v1 import common_pb2 as common, events_pb2 as events
 from .mapper import AdapterError
 
+SCHEMA_VERSION = 2
+
+
+def _conversation_type(event: events.EventEnvelope) -> int:
+    """Conversation type carried by the payload, or type 0 when there is none.
+
+    MessageReceived/MessageSent expose an explicit ConversationRef; status and other
+    non-conversation payloads have no conversation to distinguish.
+    """
+    payload = event.WhichOneof('payload')
+    if payload == 'message_received':
+        return event.message_received.conversation.type
+    if payload == 'message_sent':
+        return event.message_sent.conversation.type
+    return common.ConversationRef.TYPE_UNSPECIFIED
+
+
+def _session_key(adapter_id: str, account_id: str, conversation_id: str, conversation_type: int) -> str:
+    return json.dumps([adapter_id, account_id, conversation_id, conversation_type])
+
+
+def _migrate_sessions_v1_to_v2(db) -> None:
+    """Rewrite 3-element v1 session keys as 4-element keys carrying the type.
+
+    A v1 key counted group and private conversations with the same native ID as one
+    session, so its sequence is conservatively copied to both types (the watermark can
+    only over-estimate, never report out of order); empty conversations move to type 0.
+    Malformed rows abort the surrounding transaction instead of partially migrating.
+    """
+    migrated: dict[str, int] = {}
+    for key, sequence in db.execute('SELECT key, sequence FROM sessions').fetchall():
+        try:
+            parts = json.loads(key)
+        except (TypeError, ValueError):
+            raise AdapterError(common.INTERNAL) from None
+        if (not isinstance(parts, list) or len(parts) != 3
+                or not all(isinstance(part, str) for part in parts)
+                or isinstance(sequence, bool) or not isinstance(sequence, int) or sequence < 0):
+            raise AdapterError(common.INTERNAL)
+        adapter_id, account_id, conversation_id = parts
+        types = ((common.ConversationRef.GROUP, common.ConversationRef.PRIVATE) if conversation_id
+                 else (common.ConversationRef.TYPE_UNSPECIFIED,))
+        for conversation_type in types:
+            new_key = _session_key(adapter_id, account_id, conversation_id, conversation_type)
+            migrated[new_key] = max(migrated.get(new_key, 0), sequence)
+    db.execute('DELETE FROM sessions')
+    db.executemany('INSERT INTO sessions(key,sequence) VALUES(?,?)', migrated.items())
+
 
 class Outbox:
     """Single event-loop owner; separate database from Core, bounded durable spool."""
@@ -18,7 +66,7 @@ class Outbox:
         self.db = sqlite3.connect(path)
         try:
             version = self.db.execute('PRAGMA user_version').fetchone()[0]
-            if version not in (0, 1):
+            if version not in (0, 1, SCHEMA_VERSION):
                 raise AdapterError(common.INTERNAL)
             self.db.execute('PRAGMA synchronous=FULL')
             with self.db:
@@ -26,7 +74,9 @@ class Outbox:
                 self.db.execute('CREATE TABLE IF NOT EXISTS outbox (position INTEGER PRIMARY KEY AUTOINCREMENT, '
                                 'id TEXT NOT NULL UNIQUE, fingerprint TEXT NOT NULL, payload BLOB NOT NULL, '
                                 "status TEXT NOT NULL DEFAULT 'pending', error INTEGER NOT NULL DEFAULT 0, updated REAL NOT NULL)")
-                self.db.execute('PRAGMA user_version=1')
+                if version == 1:
+                    _migrate_sessions_v1_to_v2(self.db)
+                self.db.execute(f'PRAGMA user_version={SCHEMA_VERSION}')
         except Exception:
             self.db.close()
             raise
@@ -37,7 +87,8 @@ class Outbox:
         canonical.source.adapter_instance_id = ''
         canonical.sequence = 0
         fingerprint = hashlib.sha256(canonical.SerializeToString(deterministic=True)).hexdigest()
-        key = json.dumps([event.source.adapter_id, event.source.account_id, event.subject.conversation_id])
+        key = _session_key(event.source.adapter_id, event.source.account_id,
+                           event.subject.conversation_id, _conversation_type(event))
         try:
             with self.db:
                 self.db.execute('BEGIN IMMEDIATE')

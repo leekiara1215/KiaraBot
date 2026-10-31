@@ -72,6 +72,105 @@ int main() {
   assert(decoded_action.action_id() == "action-roundtrip");
   assert(decoded_action.payload_case() == kiarabot::v1::ActionEnvelope::kSendMessage);
 
+  kiarabot::v1::ActionEnvelope reaction;
+  reaction.set_action_id("reaction-roundtrip");
+  reaction.set_idempotency_key("idempotency-roundtrip");
+  auto* react = reaction.mutable_react_message();
+  react->set_message_id("9001");
+  react->set_reaction("like");
+  react->mutable_conversation()->set_id("456");
+  react->mutable_conversation()->set_account_id("123");
+  react->mutable_conversation()->set_type(kiarabot::v1::ConversationRef::GROUP);
+  encoded.clear();
+  assert(reaction.SerializeToString(&encoded));
+  kiarabot::v1::ActionEnvelope decoded_reaction;
+  assert(decoded_reaction.ParseFromString(encoded));
+  assert(decoded_reaction.payload_case() == kiarabot::v1::ActionEnvelope::kReactMessage);
+  assert(decoded_reaction.react_message().message_id() == "9001");
+  assert(decoded_reaction.react_message().reaction() == "like");
+  assert(decoded_reaction.react_message().conversation().id() == "456");
+  assert(decoded_reaction.react_message().conversation().type() ==
+         kiarabot::v1::ConversationRef::GROUP);
+  assert(kiarabot::v1::ReactMessage::descriptor()->FindFieldByName("conversation")->number() == 3);
+
+  kiarabot::v1::ActionEnvelope deletion;
+  deletion.set_action_id("deletion-roundtrip");
+  deletion.set_idempotency_key("idempotency-roundtrip");
+  auto* remove = deletion.mutable_delete_message();
+  remove->set_message_id("9002");
+  remove->mutable_conversation()->set_id("456");
+  remove->mutable_conversation()->set_account_id("123");
+  remove->mutable_conversation()->set_type(kiarabot::v1::ConversationRef::GROUP);
+  encoded.clear();
+  assert(deletion.SerializeToString(&encoded));
+  kiarabot::v1::ActionEnvelope decoded_deletion;
+  assert(decoded_deletion.ParseFromString(encoded));
+  assert(decoded_deletion.payload_case() == kiarabot::v1::ActionEnvelope::kDeleteMessage);
+  assert(decoded_deletion.delete_message().message_id() == "9002");
+  assert(decoded_deletion.delete_message().conversation().id() == "456");
+  assert(decoded_deletion.delete_message().conversation().type() ==
+         kiarabot::v1::ConversationRef::GROUP);
+  assert(kiarabot::v1::DeleteMessage::descriptor()->FindFieldByName("conversation")->number() == 2);
+
+  kiarabot::v1::ActionEnvelope mute;
+  mute.set_action_id("mute-roundtrip");
+  mute.set_idempotency_key("idempotency-roundtrip");
+  auto* mute_payload = mute.mutable_mute_member();
+  mute_payload->set_group_id("456");
+  mute_payload->set_user_id("789");
+  mute_payload->set_duration_seconds(600);
+  encoded.clear();
+  assert(mute.SerializeToString(&encoded));
+  kiarabot::v1::ActionEnvelope decoded_mute;
+  assert(decoded_mute.ParseFromString(encoded));
+  assert(decoded_mute.payload_case() == kiarabot::v1::ActionEnvelope::kMuteMember);
+  assert(decoded_mute.mute_member().group_id() == "456");
+  assert(decoded_mute.mute_member().user_id() == "789");
+  assert(decoded_mute.mute_member().duration_seconds() == 600);
+
+  kiarabot::v1::ActionEnvelope kick;
+  kick.set_action_id("kick-roundtrip");
+  kick.set_idempotency_key("idempotency-roundtrip");
+  auto* kick_payload = kick.mutable_kick_member();
+  kick_payload->set_group_id("456");
+  kick_payload->set_user_id("789");
+  kick_payload->set_reason("spam");
+  encoded.clear();
+  assert(kick.SerializeToString(&encoded));
+  kiarabot::v1::ActionEnvelope decoded_kick;
+  assert(decoded_kick.ParseFromString(encoded));
+  assert(decoded_kick.payload_case() == kiarabot::v1::ActionEnvelope::kKickMember);
+  assert(decoded_kick.kick_member().reason() == "spam");
+
+  kiarabot::v1::ActionEnvelope approve;
+  approve.set_action_id("approve-roundtrip");
+  approve.set_idempotency_key("idempotency-roundtrip");
+  auto* approve_payload = approve.mutable_approve_request();
+  approve_payload->set_request_id("request-1");
+  approve_payload->set_approve(true);
+  approve_payload->set_reason("ok");
+  encoded.clear();
+  assert(approve.SerializeToString(&encoded));
+  kiarabot::v1::ActionEnvelope decoded_approve;
+  assert(decoded_approve.ParseFromString(encoded));
+  assert(decoded_approve.payload_case() == kiarabot::v1::ActionEnvelope::kApproveRequest);
+  assert(decoded_approve.approve_request().request_id() == "request-1");
+  assert(decoded_approve.approve_request().approve());
+
+  kiarabot::v1::EventEnvelope friend_request;
+  friend_request.set_event_id("friend-roundtrip");
+  friend_request.set_trace_id("friend-roundtrip");
+  friend_request.mutable_friend_request()->set_user_id("456");
+  friend_request.mutable_friend_request()->set_comment("hello");
+  friend_request.mutable_friend_request()->set_request_id("request-1");
+  encoded.clear();
+  assert(friend_request.SerializeToString(&encoded));
+  kiarabot::v1::EventEnvelope decoded_friend_request;
+  assert(decoded_friend_request.ParseFromString(encoded));
+  assert(decoded_friend_request.payload_case() == kiarabot::v1::EventEnvelope::kFriendRequest);
+  assert(decoded_friend_request.friend_request().request_id() == "request-1");
+  assert(kiarabot::v1::FriendRequest::descriptor()->FindFieldByName("request_id")->number() == 3);
+
   kiarabot::v1::ActionResult action_result;
   action_result.set_action_id("action-roundtrip");
   action_result.set_status(kiarabot::v1::FAILED);

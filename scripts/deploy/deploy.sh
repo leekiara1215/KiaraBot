@@ -17,7 +17,7 @@ project_name="${COMPOSE_PROJECT_NAME:-kiarabot-${environment}}"
 compose=(docker compose --project-name "$project_name" --file "$compose_file")
 repository="${KIARABOT_CORE_IMAGE_REPOSITORY:-ghcr.io/leekiara1215/kiarabot-core}"
 database_path="${DATABASE_PATH:-${KIARABOT_RUNTIME_DB:-/var/lib/kiarabot/kiarabot.db}}"
-expected_schema_version="${EXPECTED_SCHEMA_VERSION:-5}"
+expected_schema_version="${EXPECTED_SCHEMA_VERSION:-6}"
 runtime_uid="${KIARABOT_RUNTIME_UID:-10001}"
 deploy_record_file="${DEPLOY_RECORD_FILE:-/var/lib/kiarabot/deploy-record.jsonl}"
 

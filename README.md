@@ -44,7 +44,7 @@ TypeScript 控制面板                 第一个控制面板客户端
 
 ## 当前状态
 
-- **已实现并纳入自动验收**：Core 进程启停与 gRPC 身份边界；统一运行时存储（内存/SQLite）；适配器持久化接收、命令授权、幂等与审计；插件注册、订阅和逐插件投递；Python 进程外插件 SDK；Action 纯文本闭环；Host storage/model/tasks 与任务调度；控制 API、认证/RBAC、WebSocket 事件流与面板真实服务闭环；结构化日志、健康探针，以及配置 API 到运行中 SDK 的下发与应用确认。Python NoneBot2 适配器测试已由 CI Protocol job 以锁定环境和 `KIARABOT_ADAPTER_DIR` 接入 `tests/acceptance/run.sh`，但远端 CI 尚未复跑，不能据此宣称适配器已验证通过。
+- **已实现并纳入自动验收**：Core 进程启停与 gRPC 身份边界；统一运行时存储（内存/SQLite）；适配器持久化接收、命令授权、幂等与审计；插件注册、订阅和逐插件投递；Python 进程外插件 SDK；Action 纯文本/表情回应/撤回/群管理/好友审批闭环（权限门禁 + 会话白名单 + 每日预算 + 审计的授权模型）；Host storage/model/tasks 与任务调度；控制 API、认证/RBAC、WebSocket 事件流与面板真实服务闭环；结构化日志、健康探针，以及配置 API 到运行中 SDK 的下发与应用确认。Python NoneBot2 适配器测试已由 CI Protocol job 以锁定环境和 `KIARABOT_ADAPTER_DIR` 接入 `tests/acceptance/run.sh`，但远端 CI 尚未复跑，不能据此宣称适配器已验证通过。
 - **跨语言闭环**：`tests/acceptance/run.sh` 使用真实 gRPC/SQLite/SDK 和协议 fake 平台验证事件→Action、权限拒绝、重复事件、断线重放和重启恢复；这是协议级验收，不代表真实 QQ/NapCat 联调。
 - **尚未完成或未验收**：生产部署、备份恢复和发布镜像（T11b，依赖真实环境）；真实 QQ、真实模型联调（T07b，等待真实环境）；纯 C++ 替换是延期选项（T12）。
 - 面板默认使用 mock 数据，`VITE_API_MODE=live` 时才连接实际控制 API。

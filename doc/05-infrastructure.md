@@ -130,7 +130,7 @@ ctest --test-dir /tmp/kiarabot-infrastructure-build --output-on-failure
 
 ## 调度器
 
-T06c 的规则由 Core TaskScheduler 实现，基础设施提供 SQLite schema v5 的任务快照和 Abseil 时区解析端口。沿用 Protobuf/gRPC 已依赖的 Abseil time，使用系统 IANA zoneinfo；不通过进程全局 TZ 环境切换时区。允许 UTC 或 IANA 地区名称，公历年份 1970–2100，拒绝非法日期、无效时区及 DST 重复/缺失时间；UTC run_at 也限制在此范围且必须晚于当前时间。启动预检与错误区分（2026-10-31 补齐）：`TimeZoneResolver::zone_info_available()` 用真实 IANA 地区名探测系统 zoneinfo（`UTC` 可能内建于 Abseil，不能作为探测依据）；`resolve()` 在 zone 数据不可用时返回 `UPSTREAM_UNAVAILABLE`，只有名称/日期/夏令时歧义等调用方错误返回 `INVALID_ARGUMENT`。Core 组合根应在监听前调用预检并拒绝启动；当前 `core/app/main.cpp` 尚未接入该预检（交接 core 分支，不属于本模块可改范围）。测试见 `infrastructure/tests/time_zone_resolver_test.cpp`（有效 UTC/IANA、非法日期/名称、DST gap/fold、注入数据不可用路径）。
+T06c 的规则由 Core TaskScheduler 实现，基础设施提供 SQLite 任务快照（当前 schema v6）和 Abseil 时区解析端口。沿用 Protobuf/gRPC 已依赖的 Abseil time，使用系统 IANA zoneinfo；不通过进程全局 TZ 环境切换时区。允许 UTC 或 IANA 地区名称，公历年份 1970–2100，拒绝非法日期、无效时区及 DST 重复/缺失时间；UTC run_at 也限制在此范围且必须晚于当前时间。启动预检与错误区分（2026-10-31 补齐）：`TimeZoneResolver::zone_info_available()` 用真实 IANA 地区名探测系统 zoneinfo（`UTC` 可能内建于 Abseil，不能作为探测依据）；`resolve()` 在 zone 数据不可用时返回 `UPSTREAM_UNAVAILABLE`，只有名称/日期/夏令时歧义等调用方错误返回 `INVALID_ARGUMENT`。Core 组合根应在监听前调用预检并拒绝启动；当前 `core/app/main.cpp` 尚未接入该预检（交接 core 分支，不属于本模块可改范围）。测试见 `infrastructure/tests/time_zone_resolver_test.cpp`（有效 UTC/IANA、非法日期/名称、DST gap/fold、注入数据不可用路径）。
 
 每插件最多 1024 个任务（含终态），payload 最多 64 KiB，task_id 1–128 个 ASCII 字母/数字/点/横线/下划线，目标会话 1–256 字节。任务记录不自动清理，超限 RATE_LIMITED。Host 创建/取消与成功幂等响应、审计同一事务；读/取消其他插件任务 NOT_FOUND。新旧 Runtime 操作必须保留任务集合，v1–v4 数据库迁移为 v5；旧二进制回滚需备份。
 
@@ -183,9 +183,9 @@ next_run_at
 
 ## T05b SQLite 运行时存储
 
-SqliteRuntimeStore::open(path) 在事务中创建 schema v5（PRAGMA user_version=5），并事务化迁移 v1/v2/v3/v4 快照，已有版本重复打开不重建；未知版本或损坏快照拒绝打开。runtime_snapshot 单行保存完整快照与 revision，提交使用带 revision 条件的原子 UPDATE。两个连接读取同一版本时只有第一个提交成功，其余返回 Conflict；SQLITE_BUSY/LOCKED 也映射 Conflict，不自动重试。FULL 同步模式下 SQLite 承担崩溃原子性；未提交事务只持有私有内存，销毁即可回滚。崩溃/半写恢复证据（2026-10-31 补齐）：`infrastructure/tests/crash_recovery_test.cpp` 让子进程持续提交 12 MiB 快照并在不同时点收到 SIGKILL，父进程重开同一数据库后校验快照可解码、`PRAGMA integrity_check` 为 `ok`、且可以继续提交；该测试不依赖真实断电，但也不能替代生产备份演练（T11b）。
+SqliteRuntimeStore::open(path) 在事务中创建 schema v6（PRAGMA user_version=6），并事务化迁移 v1–v5 快照，已有版本重复打开不重建；未知版本或损坏快照拒绝打开。runtime_snapshot 单行保存完整快照与 revision，提交使用带 revision 条件的原子 UPDATE。两个连接读取同一版本时只有第一个提交成功，其余返回 Conflict；SQLITE_BUSY/LOCKED 也映射 Conflict，不自动重试。FULL 同步模式下 SQLite 承担崩溃原子性；未提交事务只持有私有内存，销毁即可回滚。崩溃/半写恢复证据（2026-10-31 补齐）：`infrastructure/tests/crash_recovery_test.cpp` 让子进程持续提交 12 MiB 快照并在不同时点收到 SIGKILL，父进程重开同一数据库后校验快照可解码、`PRAGMA integrity_check` 为 `ok`、且可以继续提交；该测试不依赖真实断电，但也不能替代生产备份演练（T11b）。
 
-私有文本编码保留二进制 envelope、UTC 纳秒时间、逐插件状态、会话、Action 和插件；数据库格式与 schema 一起版本化，不是公共线协议。快照上限 64 MiB，所有集合合计最多一百万项；超限提交失败，损坏解码返回 Corrupt。超限语义（2026-10-31 明确）：提交时编码后字节数超过 64 MiB、或所有集合合计条目超过一百万项，返回 `StorageError::Unavailable` 且持久状态不变（事务可以在缩小快照后重试）；读取/打开时发现已存载荷超过 64 MiB 返回 `StorageError::Corrupt`。`SqliteRuntimeStore::limits()` 返回编译期上限，`rejected_snapshots()` 返回逐实例单调拒绝计数（oversized_bytes / oversized_items / oversized_reads）；组合根尚未把计数导出到健康或指标端点（交接 Core/运维）。测试见 `infrastructure/tests/snapshot_limits_test.cpp`（字节上限、百万项上限、超大存量载荷、失败后重试与计数）。该实现是整库状态快照，尚未进行容量/性能认证。Host 命名空间和响应幂等已在 v4 中持久化；模型由 T06b 接线，任务由 T06c 接线；T10a 的命令审计从 v2 起持久化。SQLite 打开迁移并不代替 T11 独立迁移命令和部署演练。
+私有文本编码保留二进制 envelope、UTC 纳秒时间、逐插件状态、会话、Action 和插件；v6 起还保存 Action 审计目标（账号/会话）与按 `(action kind, 账号)` 的 UTC 日预算计数器。数据库格式与 schema 一起版本化，不是公共线协议。快照上限 64 MiB，所有集合合计最多一百万项；超限提交失败，损坏解码返回 Corrupt。超限语义（2026-10-31 明确）：提交时编码后字节数超过 64 MiB、或所有集合合计条目超过一百万项，返回 `StorageError::Unavailable` 且持久状态不变（事务可以在缩小快照后重试）；读取/打开时发现已存载荷超过 64 MiB 返回 `StorageError::Corrupt`。`SqliteRuntimeStore::limits()` 返回编译期上限，`rejected_snapshots()` 返回逐实例单调拒绝计数（oversized_bytes / oversized_items / oversized_reads）；组合根尚未把计数导出到健康或指标端点（交接 Core/运维）。测试见 `infrastructure/tests/snapshot_limits_test.cpp`（字节上限、百万项上限、超大存量载荷、失败后重试与计数）。该实现是整库状态快照，尚未进行容量/性能认证。Host 命名空间和响应幂等已在 v4 中持久化；模型由 T06b 接线，任务由 T06c 接线；T10a 的命令审计从 v2 起持久化。SQLite 打开迁移并不代替 T11 独立迁移命令和部署演练。
 
 独立构建使用原基础设施命令；根构建可传入 `-DKIARABOT_ENABLE_INFRASTRUCTURE=ON` 纳入测试。新增依赖为 SQLite3 开发库，版本由构建环境记录；生产打包需随 T11 固定依赖。Core 仍经端口注入，不直接访问 SQL。
 
@@ -195,7 +195,7 @@ AuthorizedCommands 是 Core 内部入口：调用方必须从已认证连接构�
 
 execute 的回调只能修改传入的 RuntimeSnapshot，不得执行网络/平台副作用或另启 Runtime 事务。业务修改、成功幂等记录和审计在同一提交中完成；提交失败全部不生效。幂等范围为主体+权限+资源+键，同键同 fingerprint 重放成功且不重复审计；不同 fingerprint 返回 CONFLICT。重放前重新鉴权。拒绝及回调失败记录审计，失败回调的状态变更被回滚；错误详情只保留稳定码和请求标识，不转发回调的自由文本。审计满（默认十万条）时返回 UPSTREAM_UNAVAILABLE 且不执行回调。审计/幂等保留和清理策略须后续管理任务落实，不能当作无限容量服务。
 
-SQLite 从 v2 起保存审计和命令幂等记录，当前 v5 还保存 Action 路由和 Host 命名空间/幂等响应；模型已接线，任务由 T06c 接线。T02a 适配器桥和 T03a 插件桥已使用此入口；控制 API 已由 T08b 通过独立应用端口接入同一事务存储。
+SQLite 从 v2 起保存审计和命令幂等记录，当前 v6 还保存 Action 路由、Host 命名空间/幂等响应、任务、Action 审计目标与每日预算计数器；模型已接线，任务由 T06c 接线。T02a 适配器桥和 T03a 插件桥已使用此入口；控制 API 已由 T08b 通过独立应用端口接入同一事务存储。
 
 ## T10b 日志 sink
 

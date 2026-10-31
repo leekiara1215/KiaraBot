@@ -19,17 +19,17 @@ message ActionEnvelope {
 
   oneof payload {
     SendMessage send_message = 20;
-    // CONTRACT_STATUS: not_implemented - Core and the adapter reject this payload (CAPABILITY_NOT_SUPPORTED).
+    // CONTRACT_STATUS: implemented - Core and the adapter accept group/private recalls of bot-sent messages.
     DeleteMessage delete_message = 21;
-    // CONTRACT_STATUS: not_implemented - Core and the adapter reject this payload (CAPABILITY_NOT_SUPPORTED).
+    // CONTRACT_STATUS: implemented - Core and the adapter accept group/private message reactions.
     ReactMessage react_message = 22;
-    // CONTRACT_STATUS: not_implemented - Core and the adapter reject this payload (CAPABILITY_NOT_SUPPORTED).
+    // CONTRACT_STATUS: implemented - Core and the adapter accept group member mutes.
     MuteMember mute_member = 23;
-    // CONTRACT_STATUS: not_implemented - Core and the adapter reject this payload (CAPABILITY_NOT_SUPPORTED).
+    // CONTRACT_STATUS: implemented - Core and the adapter accept group member kicks.
     KickMember kick_member = 24;
-    // CONTRACT_STATUS: not_implemented - Core and the adapter reject this payload (CAPABILITY_NOT_SUPPORTED).
+    // CONTRACT_STATUS: implemented - Core and the adapter accept friend-request approvals.
     ApproveRequest approve_request = 25;
-    // CONTRACT_STATUS: not_implemented - Core and the adapter reject this payload (CAPABILITY_NOT_SUPPORTED).
+    // CONTRACT_STATUS: deprecated - use host.tasks.v1; the legacy payload is rejected.
     ScheduleTask schedule_task = 26;
   }
 }
@@ -45,17 +45,46 @@ message SendMessage {
   string reply_to_message_id = 4;
 }
 
-// CONTRACT_STATUS: not_implemented - the remaining Action payloads are rejected in v1.
-message DeleteMessage { string message_id = 1; }
-// CONTRACT_STATUS: not_implemented - the remaining Action payloads are rejected in v1.
-message ReactMessage { string message_id = 1; string reaction = 2; }
-// CONTRACT_STATUS: not_implemented - the remaining Action payloads are rejected in v1.
-message MuteMember { string group_id = 1; string user_id = 2; uint32 duration_seconds = 3; }
-// CONTRACT_STATUS: not_implemented - the remaining Action payloads are rejected in v1.
-message KickMember { string group_id = 1; string user_id = 2; string reason = 3; }
-// CONTRACT_STATUS: not_implemented - the remaining Action payloads are rejected in v1.
-message ApproveRequest { string request_id = 1; bool approve = 2; string reason = 3; }
-// CONTRACT_STATUS: not_implemented - the remaining Action payloads are rejected in v1.
+// v1: recall a message that this bot account sent. The adapter only allows
+// messages it recorded as its own; arbitrary platform message IDs are rejected.
+message DeleteMessage {
+  string message_id = 1;
+  // Required for scope and quota; must match ActionEnvelope.target.conversation_id.
+  ConversationRef conversation = 2;
+}
+// v1: group/private message reaction with a platform-neutral token
+// (like/laugh/surprise/sad/angry); the adapter maps the token to its platform.
+message ReactMessage {
+  string message_id = 1;
+  string reaction = 2;
+  // Required for scope and quota; must match ActionEnvelope.target.conversation_id.
+  ConversationRef conversation = 3;
+}
+// v1: mute a group member. duration_seconds must be 1..2592000 (30 days);
+// group_id must equal ActionEnvelope.target.conversation_id.
+message MuteMember {
+  string group_id = 1;
+  string user_id = 2;
+  uint32 duration_seconds = 3;
+}
+// v1: kick a group member. reason is audit metadata only and is not sent to the
+// platform (OneBot V11 has no reason field); group_id must equal
+// ActionEnvelope.target.conversation_id.
+message KickMember {
+  string group_id = 1;
+  string user_id = 2;
+  string reason = 3;
+}
+// v1: approve or reject a friend request. request_id is the token emitted by
+// FriendRequest.request_id; reason is audit metadata only and is not sent to
+// the platform.
+message ApproveRequest {
+  string request_id = 1;
+  bool approve = 2;
+  string reason = 3;
+}
+// CONTRACT_STATUS: deprecated - legacy duplicate of host.tasks.v1; Core and the
+// adapter reject it (CAPABILITY_NOT_SUPPORTED). Scheduling uses host.tasks.v1.
 message ScheduleTask { string task_id = 1; string schedule = 2; bytes payload = 3; }
 
 enum ActionStatus {

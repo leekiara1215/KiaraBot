@@ -109,6 +109,10 @@ TLS 由本层之外的反向代理/SSH 隧道提供；仓库当前**未交付 TL
 - Core：`KIARABOT_RUNTIME_DB`、`KIARABOT_ADAPTER_ACCOUNTS`、`KIARABOT_ADAPTER_ID`、`KIARABOT_ADAPTER_TOKEN`；可选 `KIARABOT_PLUGIN_ID/TOKEN/PERMISSIONS`、模型三件套。
 - Core 运行时容量/维护参数（W2 新增，`core/app/main.cpp` 读取并校验范围，非法值启动退出 1）：
   `KIARABOT_EVENT_QUEUE_LIMIT`（默认 1024）、`KIARABOT_AUDIT_LIMIT`（100000）、`KIARABOT_ACTION_LIMIT`（10000）、`KIARABOT_ACK_TIMEOUT_MS`（30000）、`KIARABOT_MAINTENANCE_INTERVAL_MS`（60000）、`KIARABOT_RETENTION_HOURS`（168）。
+- Core 出站 Action 配额（`action_quota.hpp`，范围 1–100000，非法值启动退出 1；窗口固定为 60 秒/60 秒/10 秒，仅限制值可配）：
+  `KIARABOT_ACTION_ACCOUNT_LIMIT_PER_MINUTE`（默认 10，单账号所有 Action）、`KIARABOT_ACTION_GROUP_LIMIT_PER_MINUTE`（默认 3，单群）、`KIARABOT_ACTION_PRIVATE_LIMIT_PER_10_SECONDS`（默认 1，单私聊会话）。配额为进程内滑动窗口，重启重置；超限返回可重试 `RATE_LIMITED` 并写审计。默认值来自 `doc/17` 的起始建议，必须在真实平台实测后调整。
+- Core 危险 Action 每日预算：`KIARABOT_ACTION_DAILY_LIMITS`（逗号分隔 `<action kind>=<limit>`，limit 1–100000，默认空=不限制；非法格式启动退出 1）。预算按 `(action kind, 账号)` 与 UTC 日持久化计数，跨重启保留，维护循环清理过期日；超限返回可重试 `RATE_LIMITED` 并写审计。当前只为危险动作配置（如 `action.mute_member.v1=20,action.kick_member.v1=5`）。
+- Core 危险 Action 会话白名单（fail closed）：`KIARABOT_ACTION_ALLOWED_CONVERSATIONS`（逗号分隔 `<action kind>=<会话>|<会话>...`，默认空；非法格式启动退出 1）。kind 一旦出现，只允许目标会话在白名单内的提交，其他返回 `PERMISSION_DENIED`；未出现的 kind 不受此配置限制。**部署禁言/踢人时必须为 `action.mute_member.v1`、`action.kick_member.v1` 配置白名单**，并同时配置每日预算与速率上限。
 - 控制面：`KIARABOT_CONTROL_CONFIG=/etc/kiarabot/control.json`（容器内路径）与 `KIARABOT_CONTROL_PORT`（默认 8080）。宿主机文件路径由 `KIARABOT_CONTROL_CONFIG_FILE` 指定并只读挂载；文件必须属于 UID 10001、权限 0600、普通文件且非符号链接，否则 Core 拒绝启动。`deploy/control/control.example.json` 给出字段模板，`encryption_key` 用 `kiarabot-control-credentials --key` 生成，密码哈希用同工具从 stdin 生成。
 - 适配器：`CORE_GRPC_ENDPOINT`、`CORE_AUTH_TOKEN`、`ADAPTER_ID`、`ACCOUNT_ID`、`ONEBOT_WS_URL`、`ONEBOT_ACCESS_TOKEN`、`OUTBOX_PATH`、`HEALTH_PORT`。`CORE_AUTH_TOKEN` 必须等于 Core 的 `KIARABOT_ADAPTER_TOKEN`。
 - 面板：`VITE_API_MODE=live`、`VITE_API_BASE=/api/v1` 是**构建期**参数（由 `panel.Dockerfile` 的 build args 传入）；运行期只读取 nginx 模板变量 `KIARABOT_CONTROL_HOST/PORT`、`KIARABOT_PANEL_PORT`。Compose 中不再使用 `CORE_ENDPOINT`、`CONTROL_API_URL` 这类不存在的运行期变量。
@@ -198,7 +202,7 @@ error_code
 
 1. **Core**：已提供持久化、控制 API、进程探针和 6 个运行时参数；运维镜像已按 proto+infrastructure 构建。剩余：`/health/ready` 在控制配置缺失时的错误信息（当前只返回 1，排障困难）、插件进程的容器化路径（运行层不含 Python，受管插件仍按 T03b 本机模型运行）。
 2. **协议和控制 API**：根路径探针与认证 `/api/v1/health` 已在 OpenAPI 冻结；控制配置的 `cors_origins`/`limits` 字段由 W3 实现，运维模板已同步。
-3. **基础设施/数据库**：独立迁移程序已随镜像发布；Core 打开数据库时仍会自动迁移 v1–v4→v5，因此运维必须保证先运行 migrate 服务（Compose 依赖已强制）；备份/恢复演练仍待 T11b。
+3. **基础设施/数据库**：独立迁移程序已随镜像发布；Core 打开数据库时仍会自动迁移 v1–v5→v6，因此运维必须保证先运行 migrate 服务（Compose 依赖已强制）；备份/恢复演练仍待 T11b。
 4. **适配器与面板**：适配器健康接口与 `HEALTH_PORT` 已实现并有测试；outbox 容量/失败记录清理仍需适配器负责人给出运维导出/清理工具；面板是静态站点，运行形态由 `panel.Dockerfile` 固定为 nginx 回环反代，若要求公网 TLS 需另加反向代理。
 5. **CI/CD**：镜像构建、GHCR 发布、staging 部署与部署记录尚未接入流水线（CI 自动触发暂停中）；本分支只提供 Dockerfile/Compose/脚本和本地单测，不声称 CI 已绿。
 6. **发布验收**：依赖完成后必须用真实 digest 镜像与隔离数据重新验证迁移失败阻断、live/ready/details、启动顺序、备份恢复、指定 digest 回滚和旧版本 schema 兼容性。
@@ -244,11 +248,11 @@ scripts/deploy/deploy.sh rollback sha256:<64 位十六进制>   # 省略参数�
 
 ## SQLite 运行时开发验证
 
-当前数据库初始化为 PRAGMA user_version=5，支持 v1–v4 事务升级并拒绝未知版本与损坏数据。T02a 已可选接入进程启动，健康探针及独立迁移命令也已实现。运行时快照包含事件、投递、会话、Action、插件、命令审计、Host 命名空间和任务；完整生产备份与恢复仍须演练。
+当前数据库初始化为 PRAGMA user_version=6，支持 v1–v5 事务升级并拒绝未知版本与损坏数据。T02a 已可选接入进程启动，健康探针及独立迁移命令也已实现。运行时快照包含事件、投递、会话、Action、插件、命令审计、Host 命名空间、任务、Action 审计目标与每日 Action 预算；完整生产备份与恢复仍须演练。
 
 ## T02a 持久化接收启动
 
-使用 proto 且 KIARABOT_ENABLE_INFRASTRUCTURE=ON 构建后，可设置 KIARABOT_RUNTIME_DB（非空文件路径，禁止 :memory: 和 file: URI）及 KIARABOT_ADAPTER_ACCOUNTS（逗号分隔的非空账号允许列表），并保留 KIARABOT_ADAPTER_ID/TOKEN 和 --grpc-listen。启动先打开 SQLite/迁移，失败退出 1；配置仅部分提供时拒绝启动。未配置数据库时仍为传输认证模式，所有业务显式拒绝。接收可用只表示 adapter_ingress_ready=true，完整 rpc_ready 仍为 false；插件入口可按 T03a 配置启用，Action 纯文本闭环已由 T04b 实现，模型和任务已接线，具体能力取决于配置。账号授权来自该配置，不能由适配器自报。
+使用 proto 且 KIARABOT_ENABLE_INFRASTRUCTURE=ON 构建后，可设置 KIARABOT_RUNTIME_DB（非空文件路径，禁止 :memory: 和 file: URI）及 KIARABOT_ADAPTER_ACCOUNTS（逗号分隔的非空账号允许列表），并保留 KIARABOT_ADAPTER_ID/TOKEN 和 --grpc-listen。启动先打开 SQLite/迁移，失败退出 1；配置仅部分提供时拒绝启动。未配置数据库时仍为传输认证模式，所有业务显式拒绝。接收可用只表示 adapter_ingress_ready=true，完整 rpc_ready 仍为 false；插件入口可按 T03a 配置启用，Action 纯文本/表情回应闭环已由 T04b 实现，模型和任务已接线，具体能力取决于配置。账号授权来自该配置，不能由适配器自报。
 
 ## 控制 API（T08b）
 
@@ -295,7 +299,7 @@ proto + infrastructure 构建可通过 `KIARABOT_CONTROL_CONFIG` 指定私有 JS
 
 ## T11a 独立迁移入口
 
-`kiarabot-migrate DATABASE_PATH` 调用同一 SQLite schema v5 迁移实现；缺参数/非法路径退出 2，未知 schema、损坏快照、依赖故障或锁等待超时退出 1，成功 0。迁移依赖 SQLite 的 BEGIN IMMEDIATE 互斥，不创建可能遗留的文本锁文件；冲突最多等待三十秒并重试整个未提交迁移，其他错误不重试。重复运行安全，成功只表示数据库就绪，不宣称其他服务 ready。daemon 启动沿用相同迁移逻辑，坏 schema/无法解密控制状态禁止监听控制端口。
+`kiarabot-migrate DATABASE_PATH` 调用同一 SQLite schema v6 迁移实现；缺参数/非法路径退出 2，未知 schema、损坏快照、依赖故障或锁等待超时退出 1，成功 0。迁移依赖 SQLite 的 BEGIN IMMEDIATE 互斥，不创建可能遗留的文本锁文件；冲突最多等待三十秒并重试整个未提交迁移，其他错误不重试。重复运行安全，成功只表示数据库就绪，不宣称其他服务 ready。daemon 启动沿用相同迁移逻辑，坏 schema/无法解密控制状态禁止监听控制端口。
 
 运行 `build/proto/infrastructure/kiarabot-migrate /path/to/runtime.db`；生产迁移前仍须备份，旧二进制回滚不得直接读取新 schema。该命令不绕过端口修改业务记录。
 

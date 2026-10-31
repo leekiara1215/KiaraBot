@@ -22,7 +22,14 @@ if subprocess.run([binary, '--grpc-listen', '0.0.0.0:0'], env=environment,
 for name, value in (('KIARABOT_AUDIT_LIMIT', 'abc'), ('KIARABOT_ACTION_LIMIT', '0'),
                     ('KIARABOT_EVENT_QUEUE_LIMIT', '0'), ('KIARABOT_ACK_TIMEOUT_MS', '1'),
                     ('KIARABOT_MAINTENANCE_INTERVAL_MS', '0'),
-                    ('KIARABOT_RETENTION_HOURS', '1')):
+                    ('KIARABOT_RETENTION_HOURS', '1'),
+                    ('KIARABOT_ACTION_ACCOUNT_LIMIT_PER_MINUTE', '0'),
+                    ('KIARABOT_ACTION_GROUP_LIMIT_PER_MINUTE', 'abc'),
+                    ('KIARABOT_ACTION_PRIVATE_LIMIT_PER_10_SECONDS', '0'),
+                    ('KIARABOT_ACTION_DAILY_LIMITS', 'action.mute_member.v1=0'),
+                    ('KIARABOT_ACTION_DAILY_LIMITS', 'not-a-pair'),
+                    ('KIARABOT_ACTION_ALLOWED_CONVERSATIONS', 'action.mute_member.v1='),
+                    ('KIARABOT_ACTION_ALLOWED_CONVERSATIONS', 'not-a-pair')):
     invalid = dict(environment, **{name: value})
     if subprocess.run(args, env=invalid, capture_output=True, timeout=5).returncode != 1:
         raise RuntimeError('Invalid ' + name + ' did not fail startup')
@@ -98,7 +105,7 @@ if '--sqlite' in sys.argv[2:]:
                         process.kill()
                         process.wait(timeout=5)
         with sqlite3.connect(database) as connection:
-            assert connection.execute('PRAGMA user_version').fetchone()[0] == 5
+            assert connection.execute('PRAGMA user_version').fetchone()[0] == 6
             connection.execute('PRAGMA user_version=999')
         assert subprocess.run(args, env=durable, capture_output=True, timeout=5).returncode == 1
     print('Durable ingress startup, reopen and corrupt-schema refusal passed')
