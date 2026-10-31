@@ -50,9 +50,13 @@ async def test_nonebot_process_with_fake_platform(tmp_path):
                 OUTBOX_PATH=str(outbox), PYTHONPATH=os.pathsep.join([str(root/'src'), str(root/'generated')]))
             process = await asyncio.create_subprocess_exec(sys.executable, '-m', 'kiarabot_adapter_nonebot',
                 cwd=root, env=environment, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
-            await until(lambda: len(core.events) == 1 or process.returncode is not None)
-            assert len(core.events) == 1, (await process.communicate()) if process.returncode is not None else ''
-            assert core.events[0].event_id == expected_id
+            await until(lambda: any(event.HasField('message_received') for event in core.events)
+                        or process.returncode is not None)
+            assert any(event.HasField('message_received') for event in core.events), \
+                (await process.communicate()) if process.returncode is not None else ''
+            message = next(event for event in core.events if event.HasField('message_received'))
+            assert message.event_id == expected_id
+            assert any(event.HasField('adapter_status_changed') for event in core.events)
 
             def acknowledged():
                 with sqlite3.connect(outbox) as connection:

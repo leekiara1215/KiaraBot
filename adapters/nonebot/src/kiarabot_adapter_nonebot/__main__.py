@@ -13,8 +13,10 @@ from kiarabot.v1 import common_pb2 as common
 
 from .client import ClientConfig, CoreClient
 from .actions import ActionExecutor
+from .health import HealthServer
 from .mapper import AdapterError, map_message
 from .outbox import Outbox
+from .status import AdapterStatusReporter
 
 
 def configure():
@@ -43,6 +45,7 @@ def configure():
     driver = nonebot.get_driver()
     driver.register_adapter(Adapter)
     outbox = Outbox(os.environ['OUTBOX_PATH'])
+    status = AdapterStatusReporter(outbox, config.adapter_id, config.account_id)
     async def call_platform(api, params):
         from nonebot.adapters.onebot.v11.exception import ActionFailed
         try:
@@ -52,12 +55,38 @@ def configure():
         try:
             return await bot.call_api(api, **params)
         except ActionFailed:
+            # Platform answered and rejected the call: reachable but degraded.
+            status.report(common.DEGRADED, 'platform_action_failed')
             raise AdapterError(common.UPSTREAM_UNAVAILABLE) from None
     executor = ActionExecutor(os.environ['OUTBOX_PATH'] + '.actions', config.adapter_id, config.account_id, call_platform)
-    client = CoreClient(config, outbox, executor)
+    client = CoreClient(config, outbox, executor, status)
     stop = asyncio.Event()
-    task = None
+    tasks = []
     matcher = nonebot.on_message(priority=1, block=False)
+
+    def ready_snapshot():
+        core_connected = client.instance is not None
+        platform_connected = bool(nonebot.get_bots())
+        return {
+            'ready': core_connected,
+            'components': {
+                'core': 'HEALTHY' if core_connected else 'UNHEALTHY',
+                'platform': 'HEALTHY' if platform_connected else 'DEGRADED',
+            },
+        }
+
+    health_port = int(os.environ.get('HEALTH_PORT', '8081'))
+    if not 0 <= health_port <= 65535:
+        raise AdapterError(common.INVALID_ARGUMENT)
+    health = HealthServer(ready_snapshot, host='127.0.0.1', port=health_port)
+
+    @driver.on_bot_connect
+    async def bot_connected(bot: Bot):
+        status.report(common.HEALTHY, 'platform_connected')
+
+    @driver.on_bot_disconnect
+    async def bot_disconnected(bot: Bot):
+        status.report(common.DEGRADED, 'platform_disconnected')
 
     @matcher.handle()
     async def receive(bot: Bot, event: MessageEvent):
@@ -70,16 +99,18 @@ def configure():
 
     @driver.on_startup
     async def startup():
-        nonlocal task
-        task = asyncio.create_task(client.run(stop))
+        tasks.append(asyncio.create_task(client.run(stop)))
+        tasks.append(asyncio.create_task(health.start()))
 
     @driver.on_shutdown
     async def shutdown():
         stop.set()
-        if task:
+        for task in tasks:
             task.cancel()
+        for task in tasks:
             with suppress(asyncio.CancelledError):
                 await task
+        await health.close()
         executor.close()
         outbox.close()
     return driver
