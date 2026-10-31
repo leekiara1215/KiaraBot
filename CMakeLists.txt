@@ -121,7 +121,7 @@ option(KIARABOT_ENABLE_INFRASTRUCTURE "Build infrastructure adapters and tests" 
 if(KIARABOT_ENABLE_INFRASTRUCTURE)
   add_subdirectory(infrastructure)
   if(KIARABOT_GENERATE_PROTO)
-    target_link_libraries(kiarabot-core PRIVATE kiarabot_sqlite_runtime kiarabot_model kiarabot_time_zone kiarabot_runtime_log)
+    target_link_libraries(kiarabot-core PRIVATE kiarabot_sqlite_runtime kiarabot_model kiarabot_time_zone kiarabot_runtime_log kiarabot_message_projection)
     target_compile_definitions(kiarabot-core PRIVATE KIARABOT_HAS_SQLITE=1)
     add_executable(kiarabot-control-service-test core/tests/control_service_test.cpp)
     target_link_libraries(kiarabot-control-service-test PRIVATE kiarabot_control kiarabot_sqlite_runtime)

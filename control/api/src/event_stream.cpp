@@ -9,11 +9,9 @@ using Json = core::ControlJson;
 const std::map<std::string, std::string> kPermissions{
     {"health", "health.read"},  {"logs", "log.read"},   {"adapters", "adapter.read"},
     {"plugins", "plugin.read"}, {"tasks", "task.read"}, {"messages", "message.read"}};
-const std::map<std::string, std::string> kEvents{{"health", "health.updated"},
-                                                 {"logs", "log.updated"},
-                                                 {"adapters", "adapter.updated"},
-                                                 {"plugins", "plugin.updated"},
-                                                 {"tasks", "task.updated"}};
+const std::map<std::string, std::string> kEvents{
+    {"health", "health.updated"},  {"logs", "log.updated"},   {"adapters", "adapter.updated"},
+    {"plugins", "plugin.updated"}, {"tasks", "task.updated"}, {"messages", "message.updated"}};
 StreamReply resync(const std::string& reason) {
   return {{{{"type", "RESYNC_REQUIRED"}, {"reason", reason}}}, 1000};
 }

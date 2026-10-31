@@ -5,6 +5,7 @@
 #include <nlohmann/json.hpp>
 
 #include "kiarabot/core/application/control_application.hpp"
+#include "kiarabot/core/runtime/message_projection.hpp"
 #include "kiarabot/core/runtime/runtime_log.hpp"
 
 namespace kiarabot::core {
@@ -13,6 +14,10 @@ struct ControlUser {
   std::string username;
   std::string password_hash;
   std::string role;
+  // Permissions granted outside the frozen role table. v1 grants only
+  // message.read here; no default role holds it, so the messages stream stays
+  // opt-in per user instead of a wildcard or admin privilege.
+  std::vector<std::string> permissions;
 };
 struct ControlOptions {
   std::vector<ControlUser> users;
@@ -23,6 +28,9 @@ struct ControlOptions {
   std::string model_name;
   std::function<bool()> adapter_connected;
   std::function<std::vector<RuntimeLog>()> logs;
+  // Bounded metadata-only projection of accepted messages; empty disables the
+  // messages channel projection even for explicitly granted users.
+  std::function<std::vector<MessageMetadata>()> messages;
   std::string encryption_key; // 32 bytes, hex encoded; never returned or logged.
   std::size_t audit_limit{100000};
   std::shared_ptr<PluginConfigDelivery> config_delivery;
@@ -58,6 +66,13 @@ ControlJson control_json(const google::protobuf::Message& message);
 google::protobuf::Struct control_struct(const ControlJson& value);
 std::string control_timestamp(WallTime value);
 std::vector<std::string> control_permissions(std::string_view role);
+// Effective permissions: the frozen role table plus explicitly granted permissions.
+std::vector<std::string> control_permissions(std::string_view role,
+                                             const std::vector<std::string>& grants);
+// Permissions a private control configuration may grant explicitly. v1 has only
+// message.read: everything else stays fixed by the role table.
+const std::vector<std::string>& control_grantable_permissions();
+bool control_user_allows(const ControlUser& user, std::string_view permission);
 // Cryptographic operations use libsodium Argon2id, keyed BLAKE2b and secretbox.
 std::string control_password_hash(std::string_view password);
 bool control_password_verify(std::string_view hash, std::string_view password);

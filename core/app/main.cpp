@@ -27,6 +27,7 @@
 #endif
 #ifdef KIARABOT_HAS_SQLITE
 #include "kiarabot/infrastructure/http_model_provider.hpp"
+#include "kiarabot/infrastructure/message_projection.hpp"
 #include "kiarabot/infrastructure/runtime_log_sink.hpp"
 #include "kiarabot/infrastructure/sqlite_runtime_store.hpp"
 #include "kiarabot/infrastructure/time_zone_resolver.hpp"
@@ -315,6 +316,16 @@ int run_process(std::string_view listen = {}) {
       auto configuration = kiarabot::control::read_configuration(control_config);
 #ifdef KIARABOT_HAS_SQLITE
       configuration.application.logs = [log_sink] { return log_sink->read(); };
+      // Metadata-only message projection for the opt-in /ws/messages channel.
+      // No body and no persistence: the stream is a notification feed only.
+      auto message_projection =
+          std::make_shared<kiarabot::infrastructure::BufferedMessageProjection>();
+      configuration.application.messages = [message_projection] {
+        return message_projection->read();
+      };
+      if (ingress) {
+        ingress->set_message_sink(message_projection);
+      }
 #endif
       if (const char* id = std::getenv("KIARABOT_ADAPTER_ID")) {
         configuration.application.adapter_id = id;

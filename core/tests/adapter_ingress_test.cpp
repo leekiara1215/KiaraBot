@@ -1,5 +1,6 @@
 #include <filesystem>
 #include <iostream>
+#include <memory>
 #include <source_location>
 #include <stdexcept>
 #include <thread>
@@ -69,6 +70,13 @@ void rejected(const AdapterEventAck& result, kiarabot::v1::ErrorCode code, bool 
   require(result.error().code() == code && result.error().retryable() == retryable);
   require(result.retry_after_ms() == (retryable ? 1000 : 0));
 }
+struct RecordingSink final : kiarabot::core::IMessageMetadataSink {
+  std::vector<kiarabot::core::MessageMetadata> records;
+  bool write(const kiarabot::core::MessageMetadata& record) noexcept override {
+    records.push_back(record);
+    return true;
+  }
+};
 void application_cases() {
   InMemoryRuntimeStore store;
   RuntimeOptions options;
@@ -88,6 +96,9 @@ void application_cases() {
   auto registered = ingress.register_adapter("adapter", registration());
   require(registered.response.accepted() &&
           registered.response.assigned_instance_id().size() == 32);
+  // Accepted message metadata reaches the control projection; nothing else does.
+  auto messages = std::make_shared<RecordingSink>();
+  ingress.set_message_sink(messages);
   auto input = event(registered.session);
   auto invalid = input;
   invalid.mutable_source()->set_account_id("other");
@@ -112,12 +123,16 @@ void application_cases() {
           snapshot.commands.empty());
   require(ingress.ingest(registered.session, input).status() == AdapterEventAck::PERSISTED);
   require(ingress.ingest(registered.session, input).status() == AdapterEventAck::DUPLICATE);
+  require(messages->records.size() == 1 && messages->records.front().message_id == "message" &&
+          messages->records.front().conversation_id == "group" &&
+          messages->records.front().direction == "received");
   snapshot = std::get<RuntimeSnapshot>(store.read());
   require(snapshot.events.size() == 1 && snapshot.audit.size() == 1 &&
           snapshot.sessions.size() == 1);
   invalid = input;
   invalid.mutable_message_received()->mutable_message()->set_plain_text("changed");
   rejected(ingress.ingest(registered.session, invalid), kiarabot::v1::CONFLICT);
+  require(messages->records.size() == 1);
   rejected(ingress.ingest(registered.session, event(registered.session, "event2", 2)),
            kiarabot::v1::RATE_LIMITED, true);
   auto new_registration = ingress.register_adapter("adapter", registration());

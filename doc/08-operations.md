@@ -252,11 +252,41 @@ scripts/deploy/deploy.sh rollback sha256:<64 位十六进制>   # 省略参数�
 
 ## 控制 API（T08b）
 
-proto + infrastructure 构建可通过 `KIARABOT_CONTROL_CONFIG` 指定私有 JSON 文件，在同一 Core 进程启动 REST 服务。文件须为当前用户所有的普通文件且权限 0600，不得提交。字段包括 `listen`（127.0.0.1:端口）、`encryption_key`（32 字节的 hex）、`users`（id、username、Argon2id password_hash、role）及可选 `plugins` 公共清单。角色为 admin/operator/viewer；用户名 ASCII 且不区分大小写。密钥丢失或变化会导致已有加密状态无法读取，必须与数据库备份一起安全保管。
+proto + infrastructure 构建可通过 `KIARABOT_CONTROL_CONFIG` 指定私有 JSON 文件，在同一 Core 进程启动 REST 服务。文件须为当前用户所有的普通文件且权限 0600，不得提交。字段包括 `listen`（127.0.0.1:端口）、`encryption_key`（32 字节的 hex）、`users`（id、username、Argon2id password_hash、role，及可选 `permissions` 显式权限数组）及可选 `plugins` 公共清单。角色为 admin/operator/viewer；用户名 ASCII 且不区分大小写。密钥丢失或变化会导致已有加密状态无法读取，必须与数据库备份一起安全保管。
 
 构建提供 `kiarabot-control-credentials`：默认从 stdin 读一行密码并输出 Argon2id 哈希；`--key` 输出随机控制密钥。只在受保护终端/管道中运行，不在命令行传密码。不配置控制文件时原 gRPC 启动方式保持不变。控制服务要求现有持久化配置，不接受临时内存库作为部署状态。监听占用、无效配置或无法解密状态使启动失败。
 
 请求体上限 64 KiB、HTTP 头上限 16 KiB、连接有界；登录每用户名/分钟限额，超限返回 429/Retry-After。服务绑定回环地址，浏览器通过同源代理连接；不启用宽泛 CORS，不信任代理头提供的身份。
+
+## W5 messages 频道授权与 users[].permissions（2026-10-31）
+
+控制配置的 `users[]` 支持可选 `permissions` 字符串数组，给单个用户显式追加权限；有效权限 = 角色权限 + 显式授予，`GET /auth/me` 与 WebSocket 流投影返回的都是有效权限。当前唯一允许的显式权限是 `message.read`：它不由任何默认角色持有（admin/operator/viewer 都没有），只能逐用户授予，授予后该用户可订阅 `/ws/messages`（只推送消息元数据，不含正文）。未知权限值、重复值或类型错误在 Core 构造配置时直接启动失败（fail-closed），不会静默忽略。
+
+最小示例（仅展示 `users[]` 相关字段；`password_hash`/`encryption_key` 用 `kiarabot-control-credentials` 生成，文件须 0600 且不提交）：
+
+```json
+{
+  "listen": "127.0.0.1:8080",
+  "encryption_key": "REPLACE_WITH_64_HEX_CHARS_FROM_kiarabot-control-credentials_--key",
+  "users": [
+    {
+      "id": "admin",
+      "username": "admin",
+      "password_hash": "$argon2id$v=19$m=65536,t=3,p=4$REPLACE_WITH_SALT$REPLACE_WITH_HASH",
+      "role": "admin"
+    },
+    {
+      "id": "auditor",
+      "username": "auditor",
+      "password_hash": "$argon2id$v=19$m=65536,t=3,p=4$REPLACE_WITH_SALT$REPLACE_WITH_HASH",
+      "role": "viewer",
+      "permissions": ["message.read"]
+    }
+  ]
+}
+```
+
+安全提示：`message.read` 让该用户看到全站消息元数据（`message_id`、`conversation_id`、`direction`）。v1 不推送消息正文，但元数据仍可关联会话与收发方向，应按最小权限授予、为授予账号单独审计；该授予不改变角色、不扩大任何 REST 权限，也不能用于读取消息正文或历史。频道是内存投影：重启后不补历史，10 分钟重放且有界，不能当作审计。
 
 ## 结构化运行日志（T10b）
 

@@ -10,7 +10,7 @@
 
 列表为十分钟不可变快照，游标绑定用户、资源、当前权限、页大小和排序。v1 不支持未声明过滤参数；过期/篡改/跨范围 token 为 INVALID_ARGUMENT。默认二十、最大一百；末页省略 next_page_token。资源按 ID 升序，audit/logs 按 occurred_at、ID，sessions 按 created_at、session_id；这替代旧版统一 created_at 排序建议。先建立 WebSocket，再读 REST，并缓存此期间事件、刷新受影响资源，避免快照装载期间漏更新；无连接连续性时重新建立会话并全量刷新。
 
-admin/operator/viewer 的默认权限和每个入口要求由 OpenAPI 给出，未知角色/权限默认拒绝；会话的所有者限制在角色检查之后执行。日志仅 operator/admin，用户与审计仅 admin；消息元数据频道仍须显式 message.read，不因管理员角色自动开放。所有写入口及拒绝都审计，幂等重放不再次产生业务副作用。202 仅表示命令已持久化接受，不能提前报告插件已启动；配置更新先比较 expected_version，冲突不修改数据。
+admin/operator/viewer 的默认权限和每个入口要求由 OpenAPI 给出，未知角色/权限默认拒绝；会话的所有者限制在角色检查之后执行。日志仅 operator/admin，用户与审计仅 admin；消息元数据频道仍须显式 `message.read`，不因管理员角色自动开放，唯一授予入口是私有控制配置中的每用户显式权限（见 [运维文档](08-operations.md)，W5）。所有写入口及拒绝都审计，幂等重放不再次产生业务副作用。202 仅表示命令已持久化接受，不能提前报告插件已启动；配置更新先比较 expected_version，冲突不修改数据。
 
 HTTP 映射冻结为 INVALID_ARGUMENT=400、UNAUTHENTICATED=401、PERMISSION_DENIED=403、NOT_FOUND=404、CONFLICT=409、RATE_LIMITED=429（Retry-After）、TIMEOUT=504、UPSTREAM_UNAVAILABLE/PLUGIN_UNAVAILABLE/CAPABILITY_NOT_SUPPORTED=503、INTERNAL/未知码=500；不改变桥接 gRPC 既有映射。所有操作补齐实际可产生的依赖、超时、输入和认证响应，写操作补齐幂等冲突。
 
@@ -111,20 +111,20 @@ GET  /plugins/{id}/health
 
 ## WebSocket 频道
 
-建议按频道隔离：
+T09a 已实现同一监听提供以下频道；各频道状态如下：
 
 ```text
-/ws/health
+/ws/health      # health.updated 仍标 x-contract-status: not_implemented（频道可建但无可推送事件）
 /ws/logs
 /ws/adapters
 /ws/plugins
 /ws/tasks
-/ws/messages
+/ws/messages    # 已实现（W5）：仅推送 message.updated 元数据；需每用户显式 message.read
 ```
 
 WebSocket 只推送经过权限过滤的数据。普通面板用户不能订阅全部私聊消息或完整模型上下文。
 
-WebSocket 服务端使用 WSS；首帧必须是携带 access token 的 `hello` 或同时携带 access token 与已有会话 ID 的 `resume`，不能要求浏览器在握手时设置自定义 Authorization 头。成功后服务端发送 `SESSION_READY`，包含 `session_id` 和确认的 `last_sequence`；会话 ID 是绑定认证主体和频道的不可预测秘密，必须保护、过期和撤销，不能记录或放入 URL。断线后客户端携带会话 ID 和最后处理的序号重连。服务端保留 10 分钟事件，无法补齐时返回 `RESYNC_REQUIRED`：客户端丢弃旧会话、重新以 `hello` 建立会话，并重新拉取 REST 快照。客户端忽略未知事件及字段，已知事件触发对应快照刷新；日志事件 `log.updated` 的 payload 使用 OpenAPI `LogEntry`。每个消息组件都有唯一 `messageId`。
+WebSocket 服务端使用 WSS；首帧必须是携带 access token 的 `hello` 或同时携带 access token 与已有会话 ID 的 `resume`，不能要求浏览器在握手时设置自定义 Authorization 头。成功后服务端发送 `SESSION_READY`，包含 `session_id` 和确认的 `last_sequence`；会话 ID 是绑定认证主体和频道的不可预测秘密，必须保护、过期和撤销，不能记录或放入 URL。断线后客户端携带会话 ID 和最后处理的序号重连。服务端保留 10 分钟事件，无法补齐时返回 `RESYNC_REQUIRED`：客户端丢弃旧会话、重新以 `hello` 建立会话，并重新拉取 REST 快照。客户端忽略未知事件及字段，已知事件触发对应快照刷新；日志事件 `log.updated` 的 payload 使用 OpenAPI `LogEntry`。`message.updated` 是自包含元数据通知，没有可刷新的 REST 消息投影：客户端只触发既有刷新，不得据此重建历史，也不应期待消息正文；订阅需显式 `message.read`，未授予仍以 4403 关闭。每个消息组件都有唯一 `messageId`。
 
 所有事件使用 `schema_version`、`event_type`、`sequence`、UTC `occurred_at` 和 `payload` envelope。`/ws/control` 汇聚事件；独立频道与它使用相同事件类型和 payload：
 
@@ -133,7 +133,7 @@ WebSocket 服务端使用 WSS；首帧必须是携带 access token 的 `hello` �
 - `adapter.updated`：`id`、`state`、`implementation`，可选 `version`、`capabilities`；
 - `plugin.updated`：`id`、`version`，至少一个 `state`（`PluginState`）或 `health_state`（`HealthState`），可选 `reason`；
 - `task.updated`：`id`、`name`、字符串 `state`；
-- `message.updated`：`message_id`、`conversation_id`、`direction`（`received`/`sent`），可选 `action_id`；默认不推送正文。
+- `message.updated`：`message_id`、`conversation_id`、`direction`（`received`/`sent`，v1 只产生 `received`），可选 `action_id`（字段保留，v1 不产生）；payload 不含任何消息正文。该通知自包含，不提供 REST 消息投影。
 
 每个频道只推送已授权的数据。具体 schema 和字段约束以 AsyncAPI 为准。
 
@@ -215,7 +215,7 @@ Core ControlService 实现同进程端口，control/api 使用 Boost.Beast 提�
 
 ## T09a 事件流实现
 
-同一监听提供 `/ws/control` 及 health/logs/adapters/plugins/tasks/messages 频道。会话绑定 REST 会话、用户、当前权限和频道；令牌只出现在首帧与服务内存。消息正文不进入投影，默认角色不能订阅 messages。服务器每 100ms 比较经过 Core 授权的资源投影，推送变更后的当前状态；这是允许合并中间状态的刷新通知，不替代逐操作审计。每条已发布通知保留十分钟，客户端仍遵守先 SESSION_READY、再 REST 快照的顺序。
+同一监听提供 `/ws/control` 及 health/logs/adapters/plugins/tasks/messages 频道。会话绑定 REST 会话、用户、当前权限和频道；令牌只出现在首帧与服务内存。`messages` 频道已实现（W5，见本文末节）：它是仅元数据的通知流，不提供 REST 消息投影；消息正文不进入 Core 流投影，`message.updated` 的 payload 只有 `message_id`、`conversation_id`、`direction`，v1 只产生 `direction=received`。订阅要求每用户显式授予 `message.read`，任何默认角色（含 admin）都不持有，未授予仍以 4403 关闭。服务器每 100ms 比较经过 Core 授权的资源投影，推送变更后的当前状态；这是允许合并中间状态的刷新通知，不替代逐操作审计。每条已发布通知保留十分钟、每流最多 4096 条并按有界批次重放；进程重启丢弃内存流会话和内存投影，旧客户端收到 SERVER_RESTART 且不补历史。客户端仍遵守先 SESSION_READY、再 REST 快照的顺序。
 
 重连按每流序号重放，SESSION_READY 确认客户端最后已处理位置，之后才重放后续事件。保留过期或容量上限导致无法补齐时明确 RESYNC_REQUIRED，禁止静默跳过；进程重启丢弃内存流会话，旧客户端收到 SERVER_RESTART 并重建快照。每次轮询重新核验认证，撤销/过期最迟一秒关闭；慢连接有界排队并关闭，不能无限缓存。实时流不声称保存每一次中间状态。
 
@@ -247,6 +247,15 @@ GET 配置的 delivery 是查询时观察值，未新增 WebSocket 事件类型�
 ### W3 跨模块交接项（本分支不修改这些模块）
 
 1. contracts：登记传输层 `429`（通用限流）、`405`、`OPTIONS`、`HEAD`、CORS 响应头、`X-Request-ID`/`X-Trace-ID` 回传及 WebSocket `1013` 关闭码；确认是否放入 OpenAPI/AsyncAPI 或仅模块文档。若契约要求不同形状，以契约为准回改本层映射。
-2. core：`health.updated` 事件（当前流内 health 投影为常量）、`messages` 频道授权与投影、Action 查询的 `control/<user>` 生产者与 7 天保留期、`/groups` 数据源、`/logs` 与审计解耦。
-3. contracts/core：`message.read` 权限的授予入口（当前任何角色都无法持有）——W3 未改变权限模型，事件流对 messages 仍返回 4403。
+2. core：`health.updated` 事件（当前流内 health 投影为常量，仍未实现）、Action 查询的 `control/<user>` 生产者与 7 天保留期、`/groups` 数据源、`/logs` 与审计解耦；`messages` 频道授权与投影已由 W5 闭环（见末节）。
+3. contracts/core：`message.read` 权限的授予入口——已由 W5 闭环（2026-10-31）：私有控制配置每用户显式授予，有效权限包含授予项；未授予仍返回 4403；messages 事件与频道已从 `not_implemented` 移除。
 4. ops/security：TLS 终止、生产反代与证书管理仍由 T11b 承担；本层只保证回环监听与有界资源。
+
+## W5 messages 频道实现（2026-10-31）
+
+`/ws/messages` 从 `x-contract-status: not_implemented` 改为已实现；频道与其它流共用 envelope（`schema_version`、`event_type`、`sequence`、`occurred_at`、`payload`）、首帧认证、序号重放和关闭码语义。契约唯一来源仍为 [`api/asyncapi.yaml`](../api/asyncapi.yaml)。
+
+- 授权：`message.read` 不由任何默认角色（admin/operator/viewer）持有；唯一授予入口是私有控制配置中每用户显式 `"permissions": ["message.read"]`，字段与示例见 [运维文档](08-operations.md) 的 W5 节。未知或重复的权限值在 Core 构造时启动失败。有效权限 = 角色权限 + 显式授予：`GET /auth/me` 的 `permissions` 与流投影的权限都包含授予项。未授予订阅仍以 4403 关闭。
+- 事件：只产生 `message.updated`，payload 仅 `{message_id, conversation_id, direction}`，不含任何消息正文；v1 只产生 `direction="received"`，`event.message.sent` 仍为 not_implemented，`action_id` 字段保留但 v1 不产生。
+- 无 REST 消息投影：频道是自包含元数据的通知流（十分钟/4096 条有界重放、每批 32 条下发、容量或时间缺口返回 RESYNC_REQUIRED、重启 SERVER_RESTART 后不补历史），不是审计也不能当作审计；客户端不得据此重建历史。面板收到事件只触发既有快照刷新，不新增消息页面、不展示消息历史。
+- 频道不再带 `x-contract-status: not_implemented`；`health.updated` 与 `plugin.updated.health_state` 仍未实现，保持原样。

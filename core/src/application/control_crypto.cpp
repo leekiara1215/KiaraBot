@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <array>
 #include <sodium.h>
 #include <stdexcept>
@@ -133,6 +134,27 @@ std::vector<std::string> control_permissions(std::string_view role) {
     }
   }
   return result;
+}
+std::vector<std::string> control_permissions(std::string_view role,
+                                             const std::vector<std::string>& grants) {
+  auto result = control_permissions(role);
+  for (const auto& grant : grants) {
+    if (std::find(result.begin(), result.end(), grant) == result.end()) {
+      result.push_back(grant);
+    }
+  }
+  return result;
+}
+const std::vector<std::string>& control_grantable_permissions() {
+  static const std::vector<std::string> grantable{"message.read"};
+  return grantable;
+}
+bool control_user_allows(const ControlUser& user, std::string_view permission) {
+  if (control_role_allows(user.role, permission)) {
+    return true;
+  }
+  return std::find(user.permissions.begin(), user.permissions.end(), permission) !=
+         user.permissions.end();
 }
 bool control_plugin_enabled(const RuntimeSnapshot& snapshot, const std::string& plugin_id) {
   const auto found = snapshot.namespaces.find("$control.enabled");

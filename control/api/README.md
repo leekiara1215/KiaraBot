@@ -47,6 +47,12 @@ the same response schema suite. The TypeScript live test uses `tests/live_fixtur
 `cors_origins` and `limits` are optional; a missing field keeps the defaults above and
 unknown limit names or malformed origins fail startup.
 
+Each `users[]` entry may carry an optional `permissions` string array of explicit grants.
+A non-array or non-string value fails startup; Core's startup whitelist currently accepts
+only `message.read`, the grant required to subscribe to the `/ws/messages` event stream
+(no default role, including `admin`, holds it). The event payload is metadata only; see
+[`api/asyncapi.yaml`](../../api/asyncapi.yaml) and [`doc/06-control-api.md`](../../doc/06-control-api.md).
+
 Use `build/proto/control/api/kiarabot-control-credentials --key` to generate the key;
 without arguments it reads a password line from stdin and prints its Argon2id hash.
 Keep these outputs out of source control and logs. Supply the existing Core runtime

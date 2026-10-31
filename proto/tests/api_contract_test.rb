@@ -106,13 +106,13 @@ check(openapi_status.fetch('not_implemented').sort ==
 check(openapi_status.fetch('deprecated') == [], 'OpenAPI deprecated list must be empty')
 asyncapi_status = asyncapi.fetch('x-contract-status')
 check(asyncapi_status.fetch('not_implemented').sort ==
-      %w[health.updated message.updated messages plugin.updated.health_state].sort,
+      %w[health.updated plugin.updated.health_state].sort,
       'AsyncAPI not_implemented surface list')
 check(asyncapi_status.fetch('deprecated') == [], 'AsyncAPI deprecated list must be empty')
-check(asyncapi.fetch('channels').fetch('messages').fetch('x-contract-status') == 'not_implemented',
-      'messages channel must be marked not_implemented')
-check(messages.fetch('MessageUpdate').fetch('x-contract-status') == 'not_implemented',
-      'message.updated must be marked not_implemented')
+check(!asyncapi.fetch('channels').fetch('messages').key?('x-contract-status'),
+      'messages channel must be implemented')
+check(!messages.fetch('MessageUpdate').key?('x-contract-status'),
+      'message.updated must be implemented')
 check(messages.fetch('HealthUpdate').fetch('x-contract-status') == 'not_implemented',
       'health.updated must be marked not_implemented')
 session_policy = asyncapi.fetch('x-control-session-policy')
@@ -120,6 +120,8 @@ check(session_policy.fetch('close_codes').fetch('slow_consumer') == 1013,
       'slow consumer close code')
 check(session_policy.fetch('messages_default').include?('No default role grants message.read'),
       'messages channel must not imply a default grant')
+check(session_policy.fetch('messages_default').include?('users[].permissions'),
+      'messages channel must document the explicit per-user grant path')
 check(asyncapi.fetch('components').fetch('securitySchemes').fetch('bearerAuth')
               .fetch('description').include?('First-frame'),
       'bearerAuth must document in-band first-frame authentication')

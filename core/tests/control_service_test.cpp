@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <filesystem>
 #include <iostream>
 #include <source_location>
@@ -250,6 +251,70 @@ void suite(core::RuntimeStore& store) {
   now += 901s;
   code(other.call(core::ControlPrincipalQuery{}), wire::UNAUTHENTICATED);
 }
+void messages_suite(core::RuntimeStore& store) {
+  auto now = core::WallTime(1700000000s);
+  auto settings = options();
+  const auto hash = core::control_password_hash("private-test-password");
+  settings.users.push_back({"auditor-id", "auditor", hash, "viewer", {"message.read"}});
+  settings.messages = [] {
+    return std::vector<core::MessageMetadata>{{"message-1", "conversation-1", "received"},
+                                              {"message-2", "conversation-2", "received"}};
+  };
+  core::ControlService app(store, settings, [&] { return now; });
+  core::ControlMetadata metadata{"", "request", "trace", "", now + 30s};
+
+  Client admin{app, now, {}, 0};
+  admin.access = value<core::ControlTokenPair>(
+                     admin.call(core::ControlLogin{"admin", "private-test-password"}))
+                     .access_token;
+  Client auditor{app, now, {}, 100};
+  auditor.access = value<core::ControlTokenPair>(
+                       auditor.call(core::ControlLogin{"auditor", "private-test-password"}))
+                       .access_token;
+
+  const auto admin_principal =
+      value<core::ControlPrincipal>(admin.call(core::ControlPrincipalQuery{}));
+  check(std::find(admin_principal.permissions.begin(), admin_principal.permissions.end(),
+                  "message.read") == admin_principal.permissions.end());
+  const auto auditor_principal =
+      value<core::ControlPrincipal>(auditor.call(core::ControlPrincipalQuery{}));
+  check(std::find(auditor_principal.permissions.begin(), auditor_principal.permissions.end(),
+                  "message.read") != auditor_principal.permissions.end());
+
+  // The projection is metadata only and never exposes message content.
+  metadata.access_token = auditor.access;
+  const auto granted = std::get<Json>(app.stream_snapshot(metadata));
+  check(granted.at("messages").size() == 2);
+  check(granted.at("messages")[0] == Json{{"message_id", "message-1"},
+                                          {"conversation_id", "conversation-1"},
+                                          {"direction", "received"}});
+  check(std::find(granted.at("permissions").begin(), granted.at("permissions").end(),
+                  Json("message.read")) != granted.at("permissions").end());
+  metadata.access_token = admin.access;
+  const auto ungranted = std::get<Json>(app.stream_snapshot(metadata));
+  check(!ungranted.contains("messages"));
+
+  // Only the frozen grantable set is accepted, without duplicates.
+  auto invalid = settings;
+  invalid.users.back().permissions = {"user.read"};
+  bool rejected = false;
+  try {
+    core::ControlService forged(store, invalid, [&] { return now; });
+    (void)forged;
+  } catch (const std::invalid_argument&) {
+    rejected = true;
+  }
+  check(rejected);
+  invalid.users.back().permissions = {"message.read", "message.read"};
+  rejected = false;
+  try {
+    core::ControlService duplicated(store, invalid, [&] { return now; });
+    (void)duplicated;
+  } catch (const std::invalid_argument&) {
+    rejected = true;
+  }
+  check(rejected);
+}
 class FailingApplication final : public core::IControlApplication {
 public:
   wire::ErrorCode result{wire::TIMEOUT};
@@ -293,6 +358,7 @@ void faults() {
 int main() try {
   core::InMemoryRuntimeStore memory;
   suite(memory);
+  messages_suite(memory);
   const auto path =
       std::filesystem::temp_directory_path() / ("control-" + core::control_secret() + ".db");
   {

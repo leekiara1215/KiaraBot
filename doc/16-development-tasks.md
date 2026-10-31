@@ -836,3 +836,29 @@ CI 修复（本轮只改工作流，未复跑；不能据此宣称 CI 已绿）�
 - 本机验收（实际运行）：`full` 构建 CTest **32/32**；contracts 17/17；adapter 46；SDK 82；plugin 14；control-api 27；panel 17（live 前置时 19）；deploy 11/11；边界检查 7/7、YAML 解析通过。
 - 未验证：远端 CI 手动运行与恢复自动触发、Docker/T11b、真实 QQ/NapCat/模型 T07b；本机 Python 3.11.17、clang-format 23、protobuf 36 与 CI 固定版本不同，需 CI 复跑确认。
 - 待确认：见 `reports/pending-confirmation.md`；执行记录见 `reports/execution/`。`doc/18` 受保护未修改，差异由人类维护者裁定。
+
+## 2026-10-31 W5：messages 频道实现（方案 C）
+
+- 状态：**已落到工作树并完成本机集成验证（2026-10-31）**；远端 CI 未运行（自动触发仍暂停，需人工 Run）。
+- 目标：把 `/ws/messages` 从 `not_implemented` 改为已实现，采用方案 C——只推送消息元数据事件、不提供 REST 消息投影、`message.read` 逐用户显式授予；不新增消息页面/历史查询，不伪造正文或历史。
+- 契约改动（唯一来源 `api/asyncapi.yaml`、`api/openapi.yaml`）：messages 频道、`MessageUpdate`、`MessageChannelUpdate` 移除 `x-contract-status: not_implemented`（`x-contract-status.not_implemented` 只剩 `health.updated` 与 `plugin.updated.health_state`）；`x-control-session-policy.messages_default` 写明无默认角色持有 `message.read`、唯一授予入口是 `users[].permissions`、仅元数据/无正文、v1 仅 `received`、无 REST 投影、十分钟有界重放且不是审计；`MessagePayload` 保持 required `[message_id, conversation_id, direction]`、`additionalProperties=false`、direction 枚举保留 `[received, sent]`（v1 只产生 `received`，`event.message.sent` 仍 not_implemented）；OpenAPI role_notes 同步为显式授予说明；`proto/tests/contract_status.json` 与 `proto/tests/api_contract_test.rb` 同步状态。
+- Core：`ControlUser` 增加显式 `permissions`；有效权限 = 角色权限 + 显式授予（`GET /auth/me` 与流投影一致）；可显式授予白名单当前只有 `message.read`，未知/重复值在 Core 构造时启动失败（fail-closed）；新增仅元数据的内存有界投影（`MessageMetadata{message_id, conversation_id, direction}`、`IMessageMetadataSink`），只观察已接受的 MessageReceived 事件，不含正文、不是审计；`control_service.cpp` 与适配器入站观察接线。
+- infrastructure：新增 `message_projection.{hpp,cpp}` 与 `message_projection_test.cpp`，为 Core 端口提供有界内存实现（重启丢弃，符合“不补历史”语义）。
+- control-api：`configuration.cpp` 逐用户解析可选 `permissions`（JSON 形状错误即启动失败，白名单由 Core 判定）；`event_stream.cpp` 的 `kEvents` 增加 `messages → message.updated`，payload 直接取 Core 投影 item（不加字段）；未授予订阅仍 4403；`event_stream_test.cpp`/`test_stream.py` 增加授予可订阅、`message.updated` 恰好一次、未授予 4403 等用例。
+- panel：`panel/src/stream/control-stream.ts` 的 `KNOWN_EVENTS` 增加 `message.updated`（当前 5 个），注释改为“自包含元数据、无 REST 资源、收到只触发既有刷新”；`scripts/check-contracts.mjs` 保持从契约自动推导已实现事件并比对（仅更新过时注释，未改校验逻辑）；`tests/integration.test.tsx` 的已知事件刷新用例增加一次 mock `message.updated` 投递断言（被接受并触发刷新），未知事件仍不触发；不新增 UI。
+- 实际运行（本机 2026-10-31，node 26.12.1 / npm 11.20.0）：
+  - `npm ci --prefix panel --no-audit --no-fund --strict-ssl=false --cache /tmp/npm-cache-w5`：成功（482 packages；postinstall 生成 `src/generated/openapi.d.ts` 与 AsyncAPI 类型；`--strict-ssl=false` 仅绕过本机 npm 证书链问题，不改仓库配置）。
+  - `npm run check:contracts --prefix panel`：通过，`23 panel endpoints and 5 known events match the contracts`。
+  - `npm run lint --prefix panel`：通过（`tsc --noEmit`，0 错误）。
+  - `npm test --prefix panel`：**17 passed | 2 skipped**（live 套件按设计跳过：缺 `build/proto/core/kiarabot-core`、`build/proto/control/api/kiarabot-control-credentials` 与 `control/api/tests/.venv`）。
+  - `npm run build --prefix panel`：成功（38 modules，gzip JS 60.17 kB）。
+  - 契约门禁（Lead 实跑）：`python3 proto/tests/check_implementation_status.py`、`python3 proto/tests/check_semantic_rules.py` 通过。
+- W5 集成验证（Lead，2026-10-31，本机实测）：
+  - 构建：复用既有 `build/full` 预设（`cmake --build build/full -j 8` 触发 CMake 自动 reconfigure）：成功，全部目标编译。
+  - `ctest --test-dir build/full --output-on-failure -j 4`：**33/33 passed**（含 `control_event_stream`、`control_service`、`adapter_ingress`、`message_projection`、`core_bridge`、`architecture_boundaries`）。
+  - `UV_CACHE_DIR=/tmp/kb-uv-cache uv sync --project control/api/tests` 后 `KIARABOT_ACCEPTANCE_BUILD=build/full control/api/tests/.venv/bin/python -m pytest -q control/api/tests`：**27 passed**（含 admin→messages 4403、显式授予用户 messages/logs 握手 SESSION_READY）。
+  - 契约门禁：`python3 proto/tests/check_implementation_status.py`、`python3 proto/tests/check_semantic_rules.py`、`bash proto/tests/check_contracts.sh` 通过；`CONTROL_POLICY_BINARY=build/full/kiarabot-control-application-test ruby proto/tests/api_contract_test.rb` 通过（频道/状态/角色与编译后 Core 权限一致）。
+  - 格式：`build/format-venv/bin/clang-format -i`（16.0.6，与 CI 一致）作用于本次改动的 C++ 文件，复检 `--dry-run --Werror` exit 0。
+  - 环境准备（未入库）：`sdk/python/.venv` 用 `--python 3.11.17` 安装并生成 `sdk/python/build/generated`，用于跑通既有 `test_config_delivery`；仓库 `.python-version` 钉 3.11.18，uv 本机无该解释器，属既有环境缺口。
+- 未运行与原因：远端 CI（自动触发需人工 Run）；本机 `clang-tidy` 未安装；Docker/Compose 与部署验收（T11b，本机无 Docker）；真实 QQ/NapCat（T07b）；live 链路的 `message.updated` 端到端断言未做——需以 gRPC adapter 客户端注入 `MessageReceived`，成本高，改由 EventStream 单测、Core 投影/入站单测与 `test_stream.py` 握手用例覆盖，缺口已在 `test_stream.py` 注释注明。
+- 文档影响判断：更新 `doc/06-control-api.md`（频道清单、事件语义、T09a、W3 交接闭环、W5 节）、`doc/07-control-panel.md`（实时状态、契约漂移检测、已知事件刷新、W5 节）、`doc/08-operations.md`（`users[].permissions`、示例与安全提示、W5 节）、`reports/pending-confirmation.md`（2.1 从待裁定改为已决策）与本台账；`doc/18-architecture-baseline.md` 受保护只读未改；`doc/01-contracts.md` 与 `api/`、`proto/tests/` 归 Lead 写入域，本任务未修改。

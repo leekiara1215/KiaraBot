@@ -13,12 +13,19 @@ export type StreamStatus = 'connecting' | 'connected' | 'disconnected' | 'resync
 
 /**
  * Stream event types the panel refreshes on. Derived from the AsyncAPI envelopes
- * marked implemented: `health.updated`, `message.updated` and the messages
- * channel carry `x-contract-status: not_implemented` in api/asyncapi.yaml and
- * must not be treated as live signals. `scripts/check-contracts.mjs` compares
- * this list with the contract's implemented event types.
+ * marked implemented; `health.updated` is still `x-contract-status: not_implemented`
+ * in api/asyncapi.yaml and must not be treated as a live signal.
+ *
+ * `message.updated` is implemented, but it is a self-contained metadata
+ * notification (`message_id`, `conversation_id`, `direction`, never content)
+ * with no REST message projection to reload. A received event must only trigger
+ * the existing snapshot refresh; the panel does not fetch or render message
+ * history and gets no dedicated messages view.
+ *
+ * `scripts/check-contracts.mjs` compares this list with the contract's
+ * implemented event types.
  */
-export const KNOWN_EVENTS = ['log.updated', 'adapter.updated', 'plugin.updated', 'task.updated'] as const;
+export const KNOWN_EVENTS = ['log.updated', 'adapter.updated', 'plugin.updated', 'task.updated', 'message.updated'] as const;
 export type KnownEvent = (typeof KNOWN_EVENTS)[number];
 
 export class ControlStream {

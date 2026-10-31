@@ -16,12 +16,22 @@
 
 ## 2. 需要人类维护者裁定（AI 只报告，不修改）
 
+### 2.1 `messages` 频道：已决策（2026-10-31）
+
+- 裁定：采用**方案 C** 实现 `/ws/messages`——频道保留并转为已实现（不删除、不标 deprecated、不再标 `x-contract-status: not_implemented`）；`message.read` 通过私有控制配置逐用户显式授予。
+- 授权模型：`message.read` 不由任何默认角色持有（admin/operator/viewer 都没有）；唯一授予入口是控制配置 `users[].permissions`（见 `doc/08-operations.md` W5 节）；有效权限 = 角色权限 + 显式授予，`GET /auth/me` 与流投影返回一致；未知或重复权限值在 Core 构造时启动失败；未授予订阅仍以 4403 关闭。
+- 事件语义：`message.updated` 与其它流事件共用 envelope；payload 仅 `{message_id, conversation_id, direction}`；v1 只产生 `direction="received"`（`event.message.sent` 仍 not_implemented）；`action_id` 字段保留但 v1 不产生。
+- 隐私边界：不推送任何消息正文，频道不是审计也不能当作审计；通知自包含元数据，无 REST 消息投影；保留为 10 分钟/4096 条有界内存重放，客户端不得据此重建历史。
+- 残留项（本轮不解决）：无 REST 消息历史查询；仅 `received` 方向；内存投影与流会话在重启后丢失（SERVER_RESTART 不补历史）；面板无消息页面/消息 UI，收到事件只触发既有刷新。
+- 已同步文档：`api/asyncapi.yaml`、`api/openapi.yaml`、`doc/06-control-api.md`、`doc/07-control-panel.md`、`doc/08-operations.md`、`doc/16-development-tasks.md`（W5）。
+
+### 2.2 仍需裁定
+
 1. **`doc/18` 受保护基线与实现的差异**（按规则只报告，不编辑）：
    - 附录 A 仍写"仓库没有 `adapters/`、适配器暂存同级检出"，实际适配器已在 `adapters/nonebot/`；
    - 基线第 8–9 层（C++ 适配器、C ABI 插件、C++/TS SDK）仍为"未来"，用户已明确延期（T12）；
    - 基线第 7.1 节"控制面板至少需要管理 11 项"：W4 已补插件/会话/Action 管理，但机器人账号、模型 API Key、群白名单、用户角色写接口仍无 OpenAPI 端点（契约侧缺口），是否收窄基线或补契约由你决定。
 2. **契约/架构决策**（会影响后续实现，当前按"不伪造能力"处理）：
-   - `messages` 频道：保留并从契约删除/标记 deprecated，还是排期补 `message.read` 授予 + 投影 + 生产者（当前契约已标 `not_implemented`，任何角色订阅 4403）；
    - Action 7 类：只做纯文本 `send_message` 作为 v1 边界，还是排期 Mute/Kick/Approve 等（需同时补权限门禁与速率策略，见 `doc/17`）；
    - 会话 ID：W3 已统一为"平台原生数字 ID + type"，但 Core 的 session key 仅用 conversation_id，群/私聊数字 ID 撞号时会共享排序键；是否给 Core/契约增加会话类型维度；
    - 命令幂等：当前按"数量上限确定性淘汰"（core W2），时间型过期需要快照格式版本升级，是否排期；

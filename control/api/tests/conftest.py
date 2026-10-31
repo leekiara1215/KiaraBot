@@ -28,11 +28,17 @@ class Server:
         self.password = secrets.token_urlsafe(24)
         credentials = BUILD / "control/api/kiarabot-control-credentials"
         hashed = subprocess.check_output([credentials], input=(self.password + "\n").encode()).decode().strip()
-        self.settings = {"listen": "127.0.0.1:0", "encryption_key": secrets.token_hex(32), "users": [
-            {"id": role, "username": role, "password_hash": hashed, "role": role}
-            for role in ("admin", "operator", "viewer")], "plugins": [
-            {"id": "test.plugin", "name": "Test", "version": "1.0.0", "api_version": "kiarabot.plugin.v1", "runtime": "python-rpc"}],
-            "cors_origins": ["http://localhost:5173"]}
+        users = [{"id": role, "username": role, "password_hash": hashed, "role": role}
+                 for role in ("admin", "operator", "viewer")]
+        # An explicit message.read grant is the only way to open /ws/messages; no built-in
+        # role (including admin) holds it. The operator role still provides log.read.
+        users.append({"id": "reader", "username": "reader", "password_hash": hashed,
+                      "role": "operator", "permissions": ["message.read"]})
+        plugins = [{"id": "test.plugin", "name": "Test", "version": "1.0.0",
+                    "api_version": "kiarabot.plugin.v1", "runtime": "python-rpc"}]
+        self.settings = {"listen": "127.0.0.1:0", "encryption_key": secrets.token_hex(32),
+                         "users": users, "plugins": plugins,
+                         "cors_origins": ["http://localhost:5173"]}
         if settings:
             self.settings.update(settings)
         self.stderr_lines = []

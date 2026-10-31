@@ -4,6 +4,8 @@
 #include <fcntl.h>
 #include <stdexcept>
 #include <unistd.h>
+#include <utility>
+#include <vector>
 
 #include <sys/stat.h>
 
@@ -135,8 +137,24 @@ Configuration read_configuration(const std::string& path) {
   result.listen = value.at("listen");
   result.application.encryption_key = value.at("encryption_key");
   for (const auto& user : value.at("users")) {
-    result.application.users.push_back(
-        {user.at("id"), user.at("username"), user.at("password_hash"), user.at("role")});
+    // Optional explicit permission grants. Parsing only checks the JSON shape; Core owns the
+    // whitelist (currently message.read) and rejects anything else at startup.
+    std::vector<std::string> permissions;
+    if (user.contains("permissions")) {
+      const auto& entries = user.at("permissions");
+      if (!entries.is_array()) {
+        throw std::invalid_argument("invalid control user permissions");
+      }
+      for (const auto& entry : entries) {
+        if (!entry.is_string()) {
+          throw std::invalid_argument("invalid control user permission");
+        }
+        permissions.push_back(entry.get<std::string>());
+      }
+    }
+    result.application.users.push_back({user.at("id"), user.at("username"),
+                                        user.at("password_hash"), user.at("role"),
+                                        std::move(permissions)});
   }
   result.application.plugins = value.value("plugins", std::vector<core::ControlJson>{});
   read_transport(value, result.transport);

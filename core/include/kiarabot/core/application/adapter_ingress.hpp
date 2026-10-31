@@ -1,10 +1,12 @@
 #pragma once
 
+#include <memory>
 #include <mutex>
 #include <unordered_map>
 #include <vector>
 
 #include "kiarabot/core/application/authorized_commands.hpp"
+#include "kiarabot/core/runtime/message_projection.hpp"
 #include "kiarabot/v1/adapters.pb.h"
 
 namespace kiarabot::core {
@@ -36,12 +38,16 @@ public:
   bool connected(const std::string& identity);
   bool current(const AdapterSession& session);
   void disconnect(const AdapterSession& session);
+  // Optional best-effort metadata projection of accepted MessageReceived events.
+  // Set once by the composition root before ingestion starts; nullptr disables it.
+  void set_message_sink(std::shared_ptr<IMessageMetadataSink> sink);
 
 private:
   RuntimeStore& store_;
   const std::vector<AdapterPolicy> policies_;
   RuntimeOptions options_;
   std::shared_ptr<PluginHub> plugins_;
+  std::shared_ptr<IMessageMetadataSink> message_sink_;
   std::mutex mutex_;
   std::unordered_map<std::string, std::string> instances_;
 };

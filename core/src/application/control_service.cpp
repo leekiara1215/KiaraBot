@@ -160,6 +160,14 @@ ControlService::ControlService(RuntimeStore& store, ControlOptions options, Runt
         !names.insert(user.username).second) {
       throw std::invalid_argument("invalid control user");
     }
+    std::set<std::string> grants;
+    for (const auto& permission : user.permissions) {
+      const auto& grantable = control_grantable_permissions();
+      if (std::find(grantable.begin(), grantable.end(), permission) == grantable.end() ||
+          !grants.insert(permission).second) {
+        throw std::invalid_argument("invalid control permission grant");
+      }
+    }
   }
   ids.clear();
   for (const auto& plugin : options_.plugins) {
@@ -323,7 +331,7 @@ PortResult<ControlReply> ControlService::invoke_locked(const ControlRequest& req
     }
     actor = user->id;
     if (!std::holds_alternative<ControlRefresh>(request.operation) &&
-        !control_role_allows(user->role, policy.permission)) {
+        !control_user_allows(*user, policy.permission)) {
       return finish_error(wire::PERMISSION_DENIED);
     }
   }
@@ -393,7 +401,8 @@ PortResult<ControlReply> ControlService::invoke_locked(const ControlRequest& req
     reply = ControlTokenPair{access, refresh, 900};
     token_reply = true;
   } else if (std::holds_alternative<ControlPrincipalQuery>(request.operation)) {
-    reply = ControlPrincipal{user->id, session_id, {user->role}, control_permissions(user->role)};
+    reply = ControlPrincipal{
+        user->id, session_id, {user->role}, control_permissions(user->role, user->permissions)};
   } else if (const auto* revoke = std::get_if<ControlRevokeSession>(&request.operation)) {
     if (!sessions.contains(revoke->session_id) ||
         (user->role != "admin" && sessions.at(revoke->session_id).at("user") != user->id)) {
@@ -646,7 +655,7 @@ std::vector<ControlJson> ControlService::resources(ControlResource resource,
                         {"name", entry.username},
                         {"groups", Json::array()},
                         {"roles", Json::array({entry.role})},
-                        {"permissions", control_permissions(entry.role)}});
+                        {"permissions", control_permissions(entry.role, entry.permissions)}});
     }
   } else if (resource == ControlResource::Audit || resource == ControlResource::Logs) {
     for (std::size_t index = 0; index < snapshot.audit.size(); ++index) {
@@ -741,6 +750,16 @@ PortResult<ControlJson> ControlService::stream_snapshot(const ControlMetadata& m
                                           : config->at("version").get<std::string>();
           }
         }
+      }
+    }
+    if (options_.messages && control_user_allows(*found, "message.read")) {
+      // Event-stream projection only: no REST resource exposes message metadata.
+      // The callback returns bounded, metadata-only records, oldest first.
+      result["messages"] = Json::array();
+      for (const auto& record : options_.messages()) {
+        result["messages"].push_back({{"message_id", record.message_id},
+                                      {"conversation_id", record.conversation_id},
+                                      {"direction", record.direction}});
       }
     }
     return result;

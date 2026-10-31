@@ -134,6 +134,10 @@ AdapterIngress::AdapterIngress(RuntimeStore& store, std::vector<AdapterPolicy> p
     }
   }
 }
+void AdapterIngress::set_message_sink(std::shared_ptr<IMessageMetadataSink> sink) {
+  std::lock_guard lock(mutex_);
+  message_sink_ = std::move(sink);
+}
 AdapterRegistration
 AdapterIngress::register_adapter(const std::string& principal,
                                  const kiarabot::v1::RegisterAdapterRequest& request) {
@@ -253,6 +257,12 @@ kiarabot::v1::AdapterEventAck AdapterIngress::ingest(const AdapterSession& sessi
     });
     if (const auto* failure = std::get_if<kiarabot::v1::Error>(&result)) {
       return reject(*failure);
+    }
+    if (created && message_sink_ &&
+        event.payload_case() == kiarabot::v1::EventEnvelope::kMessageReceived) {
+      // Metadata only: the control projection never observes the message body.
+      message_sink_->write({event.message_received().message_id(),
+                            event.message_received().conversation().id(), "received"});
     }
     response.set_status(created ? kiarabot::v1::AdapterEventAck::PERSISTED
                                 : kiarabot::v1::AdapterEventAck::DUPLICATE);

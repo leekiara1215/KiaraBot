@@ -160,8 +160,12 @@ describe('pagination, filters and stream events', () => {
     const before = server.requests.filter((path) => path === '/plugins').length;
     act(() => server.pushEvent('plugin.updated', { id: 'welcome' }));
     await waitFor(() => expect(server.requests.filter((path) => path === '/plugins').length).toBeGreaterThan(before));
+    // message.updated is metadata-only and has no REST projection: it must still trigger the
+    // existing refresh, not a message fetch, and must not be dropped as an unknown event.
+    act(() => server.pushEvent('message.updated', { message_id: 'message-1', conversation_id: 'conversation-1', direction: 'received' }));
+    await waitFor(() => expect(server.requests.filter((path) => path === '/plugins').length).toBe(before + 2));
     act(() => server.pushEvent('future.event', { ignored: true }));
-    expect(server.requests.filter((path) => path === '/plugins').length).toBe(before + 1);
+    expect(server.requests.filter((path) => path === '/plugins').length).toBe(before + 2);
   });
 
   it('returns to login on 4401', async () => {

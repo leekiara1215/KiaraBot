@@ -67,7 +67,7 @@ panel/
 
 ## 实时状态
 
-服务端以 `SESSION_READY` 返回会话 ID 和确认序号；客户端断线后按退避重连并以 `resume` 发送 access token、会话 ID 和最后处理的序号。收到 `RESYNC_REQUIRED` 时清除旧会话，以 `hello` 建立新会话并重新拉取 REST 快照，重连状态显示"正在重新同步"而不是误导性的"已断开"。`4403`/`4400`/`1013` 是终止性失败，面板停止重连并显示精确原因；`4401` 回到登录。日志事件使用 `log.updated` 和 OpenAPI `LogEntry`。客户端允许未知事件和未知字段，权限页面展示服务端计算的有效权限。
+服务端以 `SESSION_READY` 返回会话 ID 和确认序号；客户端断线后按退避重连并以 `resume` 发送 access token、会话 ID 和最后处理的序号。收到 `RESYNC_REQUIRED` 时清除旧会话，以 `hello` 建立新会话并重新拉取 REST 快照，重连状态显示"正在重新同步"而不是误导性的"已断开"。`4403`/`4400`/`1013` 是终止性失败，面板停止重连并显示精确原因；`4401` 回到登录。日志事件使用 `log.updated` 和 OpenAPI `LogEntry`。客户端允许未知事件和未知字段，权限页面展示服务端计算的有效权限。`message.updated` 已实现，但只携带消息元数据且没有可刷新的 REST 消息投影：面板收到时只触发既有视图刷新，不展示消息正文或历史，也不新增消息页面；未授予 `message.read` 时服务端以 4403 关闭。
 
 ## 管理动作与错误状态（W4）
 
@@ -81,13 +81,13 @@ panel/
 
 ## 契约漂移检测（W4）
 
-`panel/src/api/client.ts` 用 `operation('<path>', '<method>')` 声明端点，其类型参数是生成的 `paths` 键：契约中改名/删除操作会让 `npm run lint`（`tsc --noEmit`）失败。`npm run check:contracts` 再把同一张表与 `api/openapi.yaml` 逐项比对（当前 23 个端点），并校验 `control-stream.ts` 的 `KNOWN_EVENTS` 等于 AsyncAPI 中未标记 `x-contract-status: not_implemented` 的事件类型（当前 `log/adapter/plugin/task.updated` 4 个）。`health.updated` 与 `message.updated` 在 v1 不产生，面板不会把它们当作刷新信号。
+`panel/src/api/client.ts` 用 `operation('<path>', '<method>')` 声明端点，其类型参数是生成的 `paths` 键：契约中改名/删除操作会让 `npm run lint`（`tsc --noEmit`）失败。`npm run check:contracts` 再把同一张表与 `api/openapi.yaml` 逐项比对（当前 23 个端点），并校验 `control-stream.ts` 的 `KNOWN_EVENTS` 等于 AsyncAPI 中未标记 `x-contract-status: not_implemented` 的事件类型（当前 `log/adapter/plugin/task/message.updated` 5 个）。`health.updated` 在 v1 不产生，面板不会把它当作刷新信号；`message.updated` 已实现并作为刷新信号，但消息事件没有 REST 投影——面板只触发既有刷新，不新增消息 UI、不展示正文或历史。
 
 ## 本地运行和检查
 
 `panel/` 使用 React、TypeScript 和 Vite。`npm ci` 根据锁文件安装依赖，并从 `api/openapi.yaml`、`api/asyncapi.yaml` 生成类型；生成目录、`node_modules/` 和 `dist/` 均不提交。默认 `npm run dev` 使用内存 mock API 和 mock WebSocket，输入任意非空用户名和密码可登录。仅在连接真实控制 API 时设置 `VITE_API_MODE=live`，可使用 `VITE_API_BASE` 和 `VITE_WS_URL` 指定端点；生产环境必须使用 HTTPS/WSS。
 
-access token、refresh token 和流会话仅保存在内存；到期前调用 refresh 接口轮换，刷新页面后需要重新登录。列表显示服务端快照，已知资源事件（log/adapter/plugin/task.updated）与重连/重同步触发快照刷新；面板不计算权限。列表支持 `page_size`（20/50/100）与 `page_token` 翻页。检查命令（在 `panel/` 下执行）：`npm ci`、`npm run check:contracts`、`npm run lint`、`npm test`、`npm run build`。
+access token、refresh token 和流会话仅保存在内存；到期前调用 refresh 接口轮换，刷新页面后需要重新登录。列表显示服务端快照，已知资源事件（log/adapter/plugin/task/message.updated；message 事件只触发既有刷新）与重连/重同步触发快照刷新；面板不计算权限。列表支持 `page_size`（20/50/100）与 `page_token` 翻页。检查命令（在 `panel/` 下执行）：`npm ci`、`npm run check:contracts`、`npm run lint`、`npm test`、`npm run build`。
 
 `npm test` 包含 mock 集成测试与真实服务测试。真实服务测试需要 C++ 构建产物（默认 `build/proto`，可用 `KIARABOT_ACCEPTANCE_BUILD=build/full` 指向 full 预设）与 `control/api/tests/.venv`（`uv sync --project control/api/tests`）；缺少前置时该套件以原因信息跳过（`console.warn` 输出缺失项），不会让 mock 测试失败。
 
@@ -126,7 +126,7 @@ mock 覆盖：登录/刷新、`/auth/me`、会话列表与撤销、9 个资源�
 
 - 状态：**实现完成；mock 测试、契约检查、lint 与 build 在本机实际运行**；真实服务测试需 C++ 构建与 `control/api/tests/.venv`，本机按文档前置执行（见执行记录）。远端 CI 未运行。
 - 范围：仅 `panel/` 与 `doc/07-control-panel.md`、`doc/16` 台账；未修改 `core/`、`control/`、`proto/`、`api/`、`deploy/`。
-- 未实现（仍为交接项）：messages 频道/`health.updated`、REST Action 查询生产者、`/groups` 数据源、插件配置 delivery 的实时推送（面板靠 GET 轮询观察）；面板不在前端伪造这些能力。
+- 未实现（仍为交接项）：`health.updated`、REST Action 查询生产者、`/groups` 数据源、插件配置 delivery 的实时推送（面板靠 GET 轮询观察）；messages 频道已由 W5 闭环（见末节）；面板不在前端伪造这些能力。
 - 文档影响：页面集合从 9 页增加到 10 页（新增动作页）；管理动作、错误分类、契约漂移检测、live 测试前置、mock 覆盖均同步到本文件与台账。
 
 ## T09b 真实服务集成
@@ -136,3 +136,10 @@ mock 覆盖：登录/刷新、`/auth/me`、会话列表与撤销、9 个资源�
 真实默认流端点为 `/ws/control`。收到首个 SESSION_READY 后才装载 REST 视图；所有已知资源事件及重新连接触发刷新，异步加载旧响应被取消展示，分页刷新返回首个快照。RESYNC_REQUIRED 清除旧流凭据后重新 hello；未知事件只推进已处理序号。服务端返回的日志按文本渲染，不渲染 HTML、不写持久化浏览器存储。
 
 验收增加使用真实 C++ Core 子进程的 TypeScript HTTP/WebSocket 集成；mock 保留独立 UI 测试。本机 HTTP/WS 及带证书验证的 HTTPS/WSS 测试代理验收，不替代生产代理部署和 T07b 真实平台验证。
+
+## W5 messages 频道事件与面板边界（2026-10-31）
+
+- `panel/src/stream/control-stream.ts` 的 `KNOWN_EVENTS` 增加 `message.updated`（当前 5 个：`log/adapter/plugin/task/message.updated`），由 `npm run check:contracts` 与 AsyncAPI 中未标 `x-contract-status: not_implemented` 的事件自动比对，不靠手工维护；`health.updated` 仍是唯一未实现的已知事件。
+- `message.updated` 的 payload 只有 `message_id`、`conversation_id`、`direction`，v1 只产生 `received`，不含消息正文。频道没有 REST 消息投影，因此面板收到事件时只触发既有视图刷新（与 `log/adapter/plugin/task.updated` 相同的刷新路径），不新增消息页面、不缓存或重建消息历史，也不展示正文。
+- 订阅要求每用户显式 `message.read`（admin/operator/viewer 默认都不持有）；未授予时服务端仍以 4403 关闭，面板按终止性失败提示并停止重连。
+- 测试：`panel/tests/integration.test.tsx` 的已知事件刷新用例增加一次 mock `message.updated` 投递断言（被接受并触发刷新），并保留未知事件不触发的断言；未新增 UI。

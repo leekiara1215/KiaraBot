@@ -64,6 +64,16 @@ def test_stream_permissions_identity_and_restart(server):
             socket.recv(timeout=3)
         assert failure.value.rcvd.code == 4403
         socket.close()
+    # Only an explicit message.read grant opens /ws/messages; the built-in roles never have it.
+    # Inbound adapter events are not injected from here (that needs the adapter gRPC bridge),
+    # so this asserts the handshake only; message.updated payload/sequence/replay semantics are
+    # covered by event_stream_test.cpp against a projection fixture.
+    reader = server.login("reader")["access_token"]
+    for channel in ("logs", "messages"):
+        socket = open_stream(server, reader, channel)
+        ready = json.loads(socket.recv(timeout=3))
+        assert ready["type"] == "SESSION_READY" and ready["last_sequence"] == 0
+        socket.close()
     socket = open_stream(server, admin, "plugins")
     ready = json.loads(socket.recv(timeout=3))
     socket.close()

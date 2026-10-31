@@ -22,7 +22,7 @@ T03a 新增 CoreToPlugin.error（oneof 字段 6），承载注册之后的终止
 | `PageRequest.page_size`、`PageRequest.page_token`、`PageInfo.next_page_token`、`PageInfo.page_size`、`Health.state`、`Health.component`、`Health.version`、`Health.checked_at`、`Health.dependencies` | not_implemented | REST 使用 OpenAPI 自己的分页/健康 schema，v1 无代码引用这些 Protobuf 消息。 |
 | `PluginManifest.dependencies`、`PluginManifest.config_schema` | not_implemented | 非空值被 `CAPABILITY_NOT_SUPPORTED` 拒绝；`config_schema` 只接受空串或 `{}`。 |
 | `CoreToAdapter.shutdown`、`CoreToPlugin.shutdown`、`ShutdownNotice.reason`、`ShutdownNotice.drain_timeout_ms`、`semantic.transport.graceful_shutdown` | not_implemented | 帧已定义但 v1 Core 不发送；关闭流仍按“结果未知”处理，见“优雅停机”。 |
-| `channels.messages`、`events.message.updated`、`semantic.stream.message_read_grant`、`semantic.stream.plugin_updated_health_state` | not_implemented | `/ws/messages` 无投影、无事件、无角色获授 `message.read`，所有订阅返回 4403；`plugin.updated` 只推送 `state`。 |
+| `semantic.stream.plugin_updated_health_state` | not_implemented | `plugin.updated` 只推送 `state`，不推送 `health_state`。 |
 | `events.health.updated` | not_implemented | health 投影固定 `HEALTHY` 单组件，事件永不产生；`/ws/health` 只会停在 SESSION_READY。 |
 | `operations.getActionByIdempotencyKey`、`operations.getActionResult`、`operations.listGroups` | not_implemented | REST Action 查询没有写入方（无 `control/<user>` owner），恒 404；`/groups` 无 Groups 分支，恒空页。 |
 | `semantic.action.deadline_max_300s`、`semantic.action.target_source_id_charset` | not_implemented | deadline 只校验正时间戳，无 300 秒上限；Action 的 `target_source` 用比入口更窄的字符集。 |
@@ -32,6 +32,8 @@ T03a 新增 CoreToPlugin.error（oneof 字段 6），承载注册之后的终止
 | `semantic.grpc.business_error_mapping` | deprecated | 旧文档的 `CONFLICT→ALREADY_EXISTS/ABORTED` 等业务错误映射已废止；业务错误以 in-band `Error` 帧为准，见“错误模型”。 |
 | `semantic.rest.admin_role_wildcard` | deprecated | 旧 `admin: ['*']` 通配授权已废止；角色改为显式权限列表，任何默认角色都不含 `message.read`。 |
 <!-- contract-status:end -->
+
+`/ws/messages` 自 2026-10-31（W5）起为 `implemented`：只有被私有控制配置显式授予 `message.read` 的用户可订阅，事件 `message.updated` 仅含消息元数据（`message_id`、`conversation_id`、`direction`；v1 只产生 `received`），不推送正文、没有 REST 消息投影、也不构成审计；任何默认角色（含 admin）都不持有 `message.read`。授权模型见 `doc/08-operations.md`。
 
 ## 目录
 

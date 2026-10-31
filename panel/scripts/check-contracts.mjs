@@ -38,8 +38,8 @@ for (const { path, method } of operations) {
 }
 
 // 2. The panel's known-event whitelist must match the AsyncAPI event types whose message is
-//    not marked x-contract-status: not_implemented (health.updated / message.updated are not
-//    produced in v1 and must not be treated as live refresh signals).
+//    not marked x-contract-status: not_implemented (health.updated is not produced in v1 and
+//    must not be treated as a live refresh signal).
 const streamSource = await readFile(new URL('../src/stream/control-stream.ts', import.meta.url), 'utf8');
 const knownMatch = streamSource.match(/KNOWN_EVENTS\s*=\s*\[([^\]]+)\]/);
 assert.ok(knownMatch, 'KNOWN_EVENTS declaration is missing from control-stream.ts');

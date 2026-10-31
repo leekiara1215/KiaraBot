@@ -28,10 +28,11 @@ x-control-policy:
     viewer: [session.read, session.revoke, health.read, adapter.read, plugin.read, bot.read, model.read, group.read, task.read, action.read]
   role_notes: >-
     Roles are explicit permission lists, not wildcard grants. No default role,
-    including admin, receives message.read: the WebSocket messages channel is
-    not implemented in v1 (see api/asyncapi.yaml x-contract-status), so enabling
-    it requires an explicit grant policy and a contract update. Operations that
-    are not implemented still require their declared permission and return the
+    including admin, receives message.read: the WebSocket messages channel
+    requires an explicit per-user grant (`users[].permissions` in the private
+    control configuration) and has no role or wildcard path. The channel carries
+    message metadata only, never message content. Operations that are not
+    implemented still require their declared permission and return the
     documented error: GET /groups returns an empty page, and both Action query
     paths currently return NOT_FOUND for every caller.
   session_scope: Admin may query/revoke all sessions; other roles may query/revoke only their own. Cross-owner targets return NOT_FOUND.

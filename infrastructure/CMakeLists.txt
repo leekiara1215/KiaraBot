@@ -97,6 +97,13 @@ target_compile_options(kiarabot_runtime_log PRIVATE $<$<CXX_COMPILER_ID:AppleCla
 add_executable(runtime_log_test tests/runtime_log_test.cpp)
 target_link_libraries(runtime_log_test PRIVATE kiarabot_runtime_log)
 add_test(NAME runtime_log COMMAND runtime_log_test)
+add_library(kiarabot_message_projection STATIC src/message_projection.cpp)
+target_include_directories(kiarabot_message_projection PUBLIC include ../core/include)
+target_compile_options(kiarabot_message_projection PRIVATE
+  $<$<CXX_COMPILER_ID:AppleClang,Clang,GNU>:-Wall -Wextra -Wpedantic>)
+add_executable(message_projection_test tests/message_projection_test.cpp)
+target_link_libraries(message_projection_test PRIVATE kiarabot_message_projection)
+add_test(NAME message_projection COMMAND message_projection_test)
 add_executable(kiarabot-migrate src/migrate.cpp)
 target_link_libraries(kiarabot-migrate PRIVATE kiarabot_sqlite_runtime)
 if(UNIX)

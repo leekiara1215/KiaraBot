@@ -395,7 +395,7 @@
       "channels.adapters": "implemented",
       "channels.plugins": "implemented",
       "channels.tasks": "implemented",
-      "channels.messages": "not_implemented"
+      "channels.messages": "implemented"
     },
     "stream_events": {
       "events.health.updated": "not_implemented",
@@ -403,7 +403,7 @@
       "events.adapter.updated": "implemented",
       "events.plugin.updated": "implemented",
       "events.task.updated": "implemented",
-      "events.message.updated": "not_implemented"
+      "events.message.updated": "implemented"
     },
     "operations": {
       "operations.getProcessLiveness": "implemented",
@@ -442,7 +442,7 @@
       "semantic.rest.action_query_terminal_retention": "not_implemented",
       "semantic.rest.action_query_deadline_expired": "not_implemented",
       "semantic.rest.admin_role_wildcard": "deprecated",
-      "semantic.stream.message_read_grant": "not_implemented",
+      "semantic.stream.message_read_grant": "implemented",
       "semantic.stream.plugin_updated_health_state": "not_implemented"
     }
   },
@@ -506,8 +506,7 @@
     ],
     "channels.messages": [
       "control/api/src/event_stream.cpp",
-      "control/api/src/http_server.cpp",
-      "core/src/application/control_application.cpp"
+      "core/src/application/control_service.cpp"
     ],
     "events.health.updated": [
       "core/src/application/control_service.cpp",
@@ -562,8 +561,8 @@
       "core/src/application/control_application.cpp"
     ],
     "semantic.stream.message_read_grant": [
-      "core/src/application/control_application.cpp",
-      "control/api/src/event_stream.cpp"
+      "core/src/application/control_service.cpp",
+      "control/api/src/configuration.cpp"
     ],
     "semantic.stream.plugin_updated_health_state": [
       "control/api/src/event_stream.cpp"
