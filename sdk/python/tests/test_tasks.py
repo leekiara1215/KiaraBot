@@ -7,7 +7,7 @@ import pytest
 from kiarabot.v1 import plugins_pb2 as plugins, common_pb2 as common
 from kiarabot_sdk import Options, Plugin, PluginError, Runner
 from kiarabot_sdk.testing import FakeHost
-from test_runtime import manifest, options
+from test_runtime import get, manifest, options
 from test_actions import ready
 from test_process import environment, launch, cleanup
 
@@ -97,3 +97,38 @@ async def test_task_sdk_requires_feature_and_unambiguous_time():
         finally:
             stop.set()
             await asyncio.wait_for(task, 3)
+
+
+async def test_task_local_time_is_forwarded_without_local_dst_logic():
+    async with FakeHost() as host:
+        host.features = ['host.tasks.v1']
+        policy = manifest()
+        policy.permissions.append('task.schedule')
+        policy.capabilities.append('event.timer.triggered')
+        stop = asyncio.Event()
+        runner = Runner(policy, Plugin(), options(host))
+        task = asyncio.create_task(runner.run(stop))
+        try:
+            await ready(runner)
+            local = {'year': 2030, 'month': 3, 'day': 9, 'hour': 2, 'minute': 30,
+                     'second': 0, 'time_zone': 'America/New_York'}
+            pending = asyncio.create_task(runner.context.task_create(
+                'task-1', 'conversation-1', b'payload', 'idempotency-key-1', local_time=local))
+            request = await get(host.host_requests)
+            assert request.task_create.local_time.time_zone == 'America/New_York'
+            assert (request.task_create.local_time.hour,
+                    request.task_create.local_time.minute) == (2, 30)
+            assert request.task_create.WhichOneof('when') == 'local_time'
+            await host.outgoing.put(plugins.CoreToPlugin(host_response=plugins.HostResponse(
+                request_id=request.request_id,
+                task_create=plugins.TaskResponse(task_id='task-1',
+                                                 state=plugins.SCHEDULED_TASK_PENDING))))
+            assert (await pending).state == plugins.SCHEDULED_TASK_PENDING
+            for kwargs in ({}, {'run_at': datetime.now(timezone.utc), 'local_time': local}):
+                with pytest.raises(PluginError) as failure:
+                    await runner.context.task_create('task-2', 'conversation-1', b'payload',
+                                                     'idempotency-key-2', **kwargs)
+                assert failure.value.code == common.INVALID_ARGUMENT
+        finally:
+            stop.set()
+            await asyncio.wait_for(task, 2)
