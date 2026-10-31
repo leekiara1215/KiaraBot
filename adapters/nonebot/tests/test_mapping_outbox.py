@@ -90,6 +90,29 @@ def test_outbox_restart_dedup_and_sequence(tmp_path):
     store.close()
 
 
+def test_terminal_records_do_not_consume_pending_capacity(tmp_path):
+    store = Outbox(tmp_path / 'outbox.db', limit=1, now=lambda: 100)
+    try:
+        first = map_message(raw(message_id=1), 'adapter', '123')
+        store.enqueue(first)
+        store.finish(first.event_id)
+        second = map_message(raw(message_id=2), 'adapter', '123')
+        store.enqueue(second)
+        assert store.next_pending().event_id == second.event_id
+        store.finish(second.event_id, common.INVALID_ARGUMENT)
+        third = map_message(raw(message_id=3), 'adapter', '123')
+        store.enqueue(third)
+        assert store.status(third.event_id) == ('pending', 0)
+        store.finish(third.event_id)
+        store.now = lambda: 8 * 86400
+        fourth = map_message(raw(message_id=4), 'adapter', '123')
+        store.enqueue(fourth)
+        statuses = [row[0] for row in store.db.execute('SELECT status FROM outbox').fetchall()]
+        assert 'acked' not in statuses and 'failed' not in statuses
+    finally:
+        store.close()
+
+
 def test_capacity_retention_and_atomic_sequence(tmp_path):
     store = Outbox(tmp_path / 'outbox.db', limit=1, now=lambda: 100)
     first, second = (map_message(raw(message_id=i), 'adapter', '123') for i in (1, 2))

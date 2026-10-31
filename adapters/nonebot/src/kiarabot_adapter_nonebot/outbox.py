@@ -46,10 +46,21 @@ class Outbox:
                     if previous[0] != fingerprint:
                         raise AdapterError(common.CONFLICT)
                     return event.event_id
-                self.db.execute("DELETE FROM outbox WHERE status='acked' AND updated < ?", (self.now() - 7 * 86400,))
-                count, size = self.db.execute('SELECT count(*),coalesce(sum(length(payload)),0) FROM outbox').fetchone()
-                if count >= self.limit or size + canonical.ByteSize() > 64 * 1024 * 1024:
+                # Terminal (acked/failed) records are diagnostics/dedup indexes, not
+                # backlog: they expire after seven days and never consume the pending
+                # limit. A hard row cap bounds dedup growth under extreme load.
+                self.db.execute("DELETE FROM outbox WHERE status IN ('acked','failed') AND updated < ?",
+                                (self.now() - 7 * 86400,))
+                pending, size = self.db.execute(
+                    "SELECT count(*),coalesce(sum(length(payload)),0) FROM outbox WHERE status='pending'").fetchone()
+                if pending >= self.limit or size + canonical.ByteSize() > 64 * 1024 * 1024:
                     raise AdapterError(common.RATE_LIMITED)
+                total = self.db.execute('SELECT count(*) FROM outbox').fetchone()[0]
+                if total >= self.limit * 4:
+                    self.db.execute(
+                        "DELETE FROM outbox WHERE position IN (SELECT position FROM outbox "
+                        "WHERE status IN ('acked','failed') ORDER BY position LIMIT ?)",
+                        (total - self.limit * 4 + 1,))
                 current = self.db.execute('SELECT sequence FROM sessions WHERE key=?', (key,)).fetchone()
                 sequence = (current[0] if current else 0) + 1
                 if sequence >= 2**63:

@@ -166,4 +166,4 @@ NapCat 的 WebUI 密码、OneBot Token 和 Core Token 必须分开管理。
 
 当前实现维护于 `adapters/nonebot/`；配置、锁文件和测试命令见该目录 README。后续可再考虑拆成单独插件。当前使用 NoneBot websockets driver 和 onebot_ws_urls 连接 NapCat 正向 WebSocket，反向连接尚未配置。
 
-消息先进入本地有界 outbox 并原子分配会话 sequence；等待 Core 确认期间保留 pending，重连注册后重新绑定 instance 并重投。永久拒绝保留 failed 记录。会话 ID 使用平台原生数字 ID（见上方「会话 ID 规范」），事件与 Action 共用同一值。注册响应心跳间隔、健康探针与 AdapterStatusChanged 上报见上方「健康检查」与「故障处理」。当前仅接收群/私聊消息及 text/image/at/reply，未知段降级；Action 纯文本发送能力见上方 T04b。限制为 10000 条、64 MiB、单消息 1 MB，已确认索引保留 7 天，水位不回退；达到上限明确失败。平台到 outbox 之前没有消费 ACK，真实可靠性仍需 T07b 验证。
+消息先进入本地有界 outbox 并原子分配会话 sequence；等待 Core 确认期间保留 pending，重连注册后重新绑定 instance 并重投。永久拒绝保留 failed 记录。会话 ID 使用平台原生数字 ID（见上方「会话 ID 规范」），事件与 Action 共用同一值。注册响应心跳间隔、健康探针与 AdapterStatusChanged 上报见上方「健康检查」与「故障处理」。当前仅接收群/私聊消息及 text/image/at/reply，未知段降级；Action 纯文本发送能力见上方 T04b。pending 上限为 10000 条、64 MiB、单消息 1 MB；已确认/失败记录属于去重与诊断索引，不占 pending 上限，7 天后清理（总量仍有上限，极端负载下去重窗口可能提前收缩），水位不回退；pending 达到上限明确失败。平台到 outbox 之前没有消费 ACK，真实可靠性仍需 T07b 验证。
