@@ -32,7 +32,10 @@ version_from_output() {
 }
 
 cxx="${CXX:-c++}"
-for tool in cmake "$cxx" make protoc grpc_cpp_plugin node npm npx clang-format clang-tidy; do
+# rg, python3 and ruby are used by the format, boundary and contract checks.
+# Require them before any build so a missing tool fails immediately instead of
+# surfacing after two full builds.
+for tool in cmake "$cxx" make protoc grpc_cpp_plugin node npm npx clang-format clang-tidy rg python3 ruby; do
   require_command "$tool"
 done
 
@@ -62,6 +65,7 @@ else
   exit 1
 fi
 require_version protoc "$(protoc --version | version_from_output)" 25
+require_version Python "$(python3 --version | version_from_output)" 3.9
 node_version="$(node --version | version_from_output)"
 require_version Node "$node_version" 20.19
 node_major="${node_version%%.*}"
@@ -98,19 +102,23 @@ for generated in smoke.pb.h smoke.pb.cc smoke.grpc.pb.h smoke.grpc.pb.cc; do
 done
 echo "C++20 compile and Protobuf/gRPC generation passed"
 
+# Shell syntax gate over every tracked script, not only scripts/.
 while IFS= read -r -d '' script; do
   bash -n "$script"
-done < <(find scripts -type f -name '*.sh' -print0)
+done < <(git ls-files -z '*.sh')
 python3 scripts/quality/check-boundaries.py
+python3 scripts/quality/tests/boundaries_test.py
 cmake --preset dev
 cmake --build --preset dev
-ctest --preset dev
-cmake --preset proto -DKIARABOT_ENABLE_INFRASTRUCTURE=ON -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
-cmake --build --preset proto
-ctest --preset proto
+ctest --preset dev --no-tests=error
+# Full preset = proto + infrastructure + compile database, so one build feeds
+# CTest, contract checks and clang-tidy. Keep it in sync with check-tidy.sh.
+cmake --preset full
+cmake --build --preset full
+ctest --preset full --no-tests=error
 cmake -S infrastructure -B build/infrastructure
 cmake --build build/infrastructure
-ctest --test-dir build/infrastructure --output-on-failure
+ctest --test-dir build/infrastructure --output-on-failure --no-tests=error
 ./proto/tests/check_contracts.sh
 ./scripts/quality/check-format.sh
 ./scripts/quality/check-tidy.sh

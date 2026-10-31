@@ -20,14 +20,26 @@
       "displayName": "KiaraBot development with protocol generation",
       "binaryDir": "${sourceDir}/build/proto",
       "cacheVariables": { "KIARABOT_GENERATE_PROTO": "ON" }
+    },
+    {
+      "name": "full",
+      "inherits": "proto",
+      "displayName": "KiaraBot full checks (protocol + infrastructure + compile database)",
+      "binaryDir": "${sourceDir}/build/full",
+      "cacheVariables": {
+        "KIARABOT_ENABLE_INFRASTRUCTURE": "ON",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+      }
     }
   ],
   "buildPresets": [
     { "name": "dev", "configurePreset": "dev" },
-    { "name": "proto", "configurePreset": "proto" }
+    { "name": "proto", "configurePreset": "proto" },
+    { "name": "full", "configurePreset": "full" }
   ],
   "testPresets": [
     { "name": "dev", "configurePreset": "dev", "output": { "outputOnFailure": true } },
-    { "name": "proto", "configurePreset": "proto", "output": { "outputOnFailure": true } }
+    { "name": "proto", "configurePreset": "proto", "output": { "outputOnFailure": true } },
+    { "name": "full", "configurePreset": "full", "output": { "outputOnFailure": true } }
   ]
 }

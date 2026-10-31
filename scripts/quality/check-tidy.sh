@@ -3,21 +3,26 @@ set -euo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$root"
 command -v clang-tidy >/dev/null 2>&1 || { echo 'clang-tidy is required' >&2; exit 1; }
-if [[ ! -f build/proto/compile_commands.json ]]; then
-  echo 'Configure and build the proto preset with CMAKE_EXPORT_COMPILE_COMMANDS=ON first' >&2
+# The full preset enables protocol + infrastructure and exports the compile
+# database, so this script and the unified check analyze the same file set.
+build_dir="${KIARABOT_TIDY_BUILD_DIR:-build/full}"
+database="$build_dir/compile_commands.json"
+if [[ ! -f "$database" ]]; then
+  echo "Configure and build the full preset first ($database)" >&2
+  echo 'Run: cmake --preset full && cmake --build --preset full' >&2
   exit 1
 fi
 files="$(mktemp "${TMPDIR:-/tmp}/kiarabot-tidy.XXXXXXXX")"
 trap 'rm -f "$files"' EXIT
 find core proto/tests control/api infrastructure/src infrastructure/tests -type f \( -name '*.cpp' -o -name '*.cc' \) \
   -print0 > "$files"
-python3 - "$files" <<'PY'
+python3 - "$files" "$database" <<'PY'
 """Fail when a file scheduled for analysis has no compile-command entry."""
 import json
 import os
 import sys
 
-database_path = 'build/proto/compile_commands.json'
+database_path = sys.argv[2]
 with open(database_path, encoding='utf-8') as stream:
     database = json.load(stream)
 compiled = set()
@@ -34,12 +39,12 @@ if missing:
     print(f'{database_path} has no compile command for:', file=sys.stderr)
     for path in missing:
         print('  ' + os.path.relpath(path), file=sys.stderr)
-    print('Reconfigure the proto preset so every file above is built.', file=sys.stderr)
+    print('Reconfigure the full preset so every file above is built.', file=sys.stderr)
     sys.exit(1)
 PY
-set -- -p build/proto --checks='clang-analyzer-*' --warnings-as-errors='*' --header-filter="^${root}/(core|proto|control|infrastructure)/"
+set -- -p "$build_dir" --checks='clang-analyzer-*' --warnings-as-errors='*' --header-filter="^${root}/(core|proto|control|infrastructure)/"
 if [[ "$(uname -s)" == Darwin ]]; then
-  compiler="$(sed -n 's/^CMAKE_CXX_COMPILER:FILEPATH=//p' build/proto/CMakeCache.txt)"
+  compiler="$(sed -n 's/^CMAKE_CXX_COMPILER:FILEPATH=//p' "$build_dir/CMakeCache.txt")"
   if [[ -z "$compiler" ]]; then
     echo 'CMake did not record the C++ compiler' >&2
     exit 1
