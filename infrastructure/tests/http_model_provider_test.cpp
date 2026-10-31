@@ -212,7 +212,7 @@ void test_request_validation() {
   const auto opened = HttpModelProvider::open(config(server.endpoint()));
   check(std::holds_alternative<std::shared_ptr<HttpModelProvider>>(opened),
         "loopback provider must open");
-  const auto& provider = *std::get<std::shared_ptr<HttpModelProvider>>(opened);
+  auto& provider = *std::get<std::shared_ptr<HttpModelProvider>>(opened);
 
   check(code_of(provider.chat(request(), std::chrono::milliseconds(0))) == wire::TIMEOUT,
         "non-positive deadline must return TIMEOUT without a request");
@@ -245,7 +245,7 @@ void test_network_mapping() {
                            R"("usage":{"prompt_tokens":3,"completion_tokens":5}})");
     });
     const auto opened = HttpModelProvider::open(config(server.endpoint()));
-    const auto& provider = *std::get<std::shared_ptr<HttpModelProvider>>(opened);
+    auto& provider = *std::get<std::shared_ptr<HttpModelProvider>>(opened);
     const auto response = provider.chat(request(), std::chrono::milliseconds(2000));
     const auto* value = std::get_if<wire::ModelChatResponse>(&response);
     check(value != nullptr && value->text() == "pong" && value->input_tokens() == 3 &&
@@ -262,14 +262,14 @@ void test_network_mapping() {
       return http_response(429, "Too Many Requests", R"({"error":"slow down"})");
     });
     const auto opened = HttpModelProvider::open(config(server.endpoint()));
-    const auto& provider = *std::get<std::shared_ptr<HttpModelProvider>>(opened);
+    auto& provider = *std::get<std::shared_ptr<HttpModelProvider>>(opened);
     check(code_of(provider.chat(request(), std::chrono::milliseconds(2000))) == wire::RATE_LIMITED,
           "429 must map to RATE_LIMITED");
   }
   {
     LoopbackServer server([](const std::string&) { return http_response(500, "Error", "{}"); });
     const auto opened = HttpModelProvider::open(config(server.endpoint()));
-    const auto& provider = *std::get<std::shared_ptr<HttpModelProvider>>(opened);
+    auto& provider = *std::get<std::shared_ptr<HttpModelProvider>>(opened);
     check(code_of(provider.chat(request(), std::chrono::milliseconds(2000))) ==
               wire::UPSTREAM_UNAVAILABLE,
           "5xx must map to UPSTREAM_UNAVAILABLE");
@@ -277,7 +277,7 @@ void test_network_mapping() {
   {
     LoopbackServer server([](const std::string&) { return http_response(200, "OK", "{not json"); });
     const auto opened = HttpModelProvider::open(config(server.endpoint()));
-    const auto& provider = *std::get<std::shared_ptr<HttpModelProvider>>(opened);
+    auto& provider = *std::get<std::shared_ptr<HttpModelProvider>>(opened);
     check(code_of(provider.chat(request(), std::chrono::milliseconds(2000))) ==
               wire::UPSTREAM_UNAVAILABLE,
           "malformed body must map to UPSTREAM_UNAVAILABLE");
@@ -288,7 +288,7 @@ void test_network_mapping() {
                            R"({"choices":[{"message":{"content":"x","tool_calls":[]}}]})");
     });
     const auto opened = HttpModelProvider::open(config(server.endpoint()));
-    const auto& provider = *std::get<std::shared_ptr<HttpModelProvider>>(opened);
+    auto& provider = *std::get<std::shared_ptr<HttpModelProvider>>(opened);
     check(code_of(provider.chat(request(), std::chrono::milliseconds(2000))) ==
               wire::UPSTREAM_UNAVAILABLE,
           "tool calls must be rejected instead of being executed");
@@ -299,7 +299,7 @@ void test_network_mapping() {
       return http_response(200, "OK", R"({"choices":[{"message":{"content":"late"}}]})");
     });
     const auto opened = HttpModelProvider::open(config(server.endpoint()));
-    const auto& provider = *std::get<std::shared_ptr<HttpModelProvider>>(opened);
+    auto& provider = *std::get<std::shared_ptr<HttpModelProvider>>(opened);
     check(code_of(provider.chat(request(), std::chrono::milliseconds(100))) == wire::TIMEOUT,
           "deadline expiry must map to TIMEOUT");
   }
@@ -307,7 +307,7 @@ void test_network_mapping() {
     LoopbackServer server(
         [](const std::string&) { return http_response(200, "OK", std::string(1200000, 'x')); });
     const auto opened = HttpModelProvider::open(config(server.endpoint()));
-    const auto& provider = *std::get<std::shared_ptr<HttpModelProvider>>(opened);
+    auto& provider = *std::get<std::shared_ptr<HttpModelProvider>>(opened);
     check(code_of(provider.chat(request(), std::chrono::milliseconds(2000))) ==
               wire::UPSTREAM_UNAVAILABLE,
           "responses above the 1 MiB bound must be rejected");
