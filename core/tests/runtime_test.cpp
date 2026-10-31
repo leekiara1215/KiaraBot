@@ -4,7 +4,9 @@
 #include <string>
 #include <vector>
 
+#include "kiarabot/core/application/runtime_maintenance.hpp"
 #include "kiarabot/core/domain/runtime_engine.hpp"
+#include "kiarabot/core/runtime/in_memory_runtime_store.hpp"
 #include "kiarabot/core/runtime/runtime_state.hpp"
 
 namespace {
@@ -64,8 +66,7 @@ void event_order_and_backpressure() {
 void retries_dead_letters_and_replay() {
   RuntimeTimePoint now{};
   kiarabot::core::detail::RuntimeState store;
-  kiarabot::core::detail::RuntimeEngine runtime(
-      store, {}, [&] { return now; }, [] { return 0.5; });
+  kiarabot::core::detail::RuntimeEngine runtime(store, {}, [&] { return now; }, [] { return 0.5; });
   const std::array delays{1s, 2s, 4s, 8s, 16s};
   assert(runtime.ingest({"retry", "trace", "", 0, false}) == EventResult::accepted);
   assert(runtime.mark_dispatched("retry"));
@@ -102,8 +103,7 @@ void jitter_bounds() {
   RuntimeTimePoint now{};
   kiarabot::core::detail::RuntimeState low_store;
   kiarabot::core::detail::RuntimeState high_store;
-  kiarabot::core::detail::RuntimeEngine low(
-      low_store, {}, [&] { return now; }, [] { return 0.0; });
+  kiarabot::core::detail::RuntimeEngine low(low_store, {}, [&] { return now; }, [] { return 0.0; });
   kiarabot::core::detail::RuntimeEngine high(
       high_store, {}, [&] { return now; }, [] { return 1.0; });
   const std::array bases{1000ms, 2000ms, 4000ms, 8000ms, 16000ms};
@@ -116,8 +116,7 @@ void jitter_bounds() {
 void actions_and_retention() {
   RuntimeTimePoint now{};
   kiarabot::core::detail::RuntimeState store;
-  kiarabot::core::detail::RuntimeEngine runtime(
-      store, {}, [&] { return now; }, [] { return 0.5; });
+  kiarabot::core::detail::RuntimeEngine runtime(store, {}, [&] { return now; }, [] { return 0.5; });
   const ActionRecord action{"action", "key", now + 1h};
   const auto accepted = runtime.submit_action(action);
   assert(accepted.result == ActionResult::accepted);
@@ -159,8 +158,7 @@ void actions_and_retention() {
 void plugins_and_transactions() {
   RuntimeTimePoint now{};
   kiarabot::core::detail::RuntimeState store;
-  kiarabot::core::detail::RuntimeEngine runtime(
-      store, {}, [&] { return now; }, [] { return 0.5; });
+  kiarabot::core::detail::RuntimeEngine runtime(store, {}, [&] { return now; }, [] { return 0.5; });
   assert(runtime.register_plugin("plugin", "v1", {"read", "send"}));
   assert(runtime.plugin_started("plugin"));
   assert(runtime.plugin_disconnected("plugin"));
@@ -222,8 +220,7 @@ void plugins_and_transactions() {
 void restart_recovers_unacknowledged_dispatch() {
   RuntimeTimePoint now{};
   kiarabot::core::detail::RuntimeState store;
-  kiarabot::core::detail::RuntimeEngine before(
-      store, {}, [&] { return now; }, [] { return 0.5; });
+  kiarabot::core::detail::RuntimeEngine before(store, {}, [&] { return now; }, [] { return 0.5; });
   const std::string envelope("\x01\x00\x02", 3);
   assert(before.ingest({"inflight", "trace", "", 0, false, envelope}) == EventResult::accepted);
   assert(before.ingest({"waiting", "trace", "", 0, false}) == EventResult::accepted);
@@ -264,8 +261,7 @@ void restart_recovers_unacknowledged_dispatch() {
 void expired_action_idempotency_and_transaction_isolation() {
   RuntimeTimePoint now{};
   kiarabot::core::detail::RuntimeState store;
-  kiarabot::core::detail::RuntimeEngine runtime(
-      store, {}, [&] { return now; }, [] { return 0.5; });
+  kiarabot::core::detail::RuntimeEngine runtime(store, {}, [&] { return now; }, [] { return 0.5; });
   const ActionRecord already_expired{"old-action", "same-key", now};
   store.set_fail_commit(true);
   assert(runtime.submit_action(already_expired).result == ActionResult::storage_error);
@@ -301,6 +297,105 @@ void expired_action_idempotency_and_transaction_isolation() {
   assert(store.find_event("after").has_value());
 }
 
+void maintenance_retention_and_capacity() {
+  using kiarabot::core::InMemoryRuntimeStore;
+  using kiarabot::core::MaintenanceOptions;
+  using kiarabot::core::MaintenanceStats;
+  using kiarabot::core::RuntimeMaintenance;
+  using kiarabot::core::RuntimeSnapshot;
+  using kiarabot::core::StorageError;
+
+  InMemoryRuntimeStore store;
+  const RuntimeTimePoint now(1000s);
+  const RuntimeTimePoint stale = now - 48h;
+  auto begun = store.begin();
+  assert(std::holds_alternative<std::unique_ptr<kiarabot::core::RuntimeTransaction>>(begun));
+  auto transaction =
+      std::get<std::unique_ptr<kiarabot::core::RuntimeTransaction>>(std::move(begun));
+  auto& snapshot = transaction->snapshot();
+  snapshot.events["old"] = kiarabot::core::EventEntry{
+      {"old", "t", "session", 1, true}, DeliveryState::acked, 0, {}, stale, false};
+  snapshot.events["recent"] = kiarabot::core::EventEntry{
+      {"recent", "t", "", 0, false}, DeliveryState::acked, 0, {}, now, false};
+  snapshot.events["pending"] = kiarabot::core::EventEntry{
+      {"pending", "t", "", 0, false}, DeliveryState::persisted, 0, {}, stale, false};
+  snapshot.deliveries["old"]["p"] = kiarabot::core::PluginDelivery{
+      "old", "p", "session", "t", 1, true, DeliveryState::acked, 0, {}, stale};
+  snapshot.actions["old-key"] = kiarabot::core::ActionEntry{
+      {"old-action", "old-key", now + 1h}, ActionState::expired, stale, "", "", false};
+  snapshot.actions["recent-key"] = kiarabot::core::ActionEntry{
+      {"recent-action", "recent-key", now + 1h}, ActionState::failed, now, "", "INTERNAL", true};
+  snapshot.actions["live-key"] = kiarabot::core::ActionEntry{
+      {"live-action", "live-key", now + 1h}, ActionState::accepted, stale, "", "", false};
+  for (int index = 0; index < 12; ++index) {
+    snapshot.audit.push_back(
+        {"actor", "op", "res", "a" + std::to_string(index), "trace", now, true, "OK"});
+  }
+  snapshot.audit.push_back({"actor", "op", "res", "stale", "trace", stale, true, "OK"});
+  for (int index = 0; index < 6; ++index) {
+    snapshot.commands["s1"]["k" + std::to_string(index)] = {std::string(64, 'a')};
+    snapshot.commands["s2"]["k" + std::to_string(index)] = {std::string(64, 'b')};
+  }
+  snapshot.namespaces["p"]["expired"] = {"value", now - 1s};
+  snapshot.namespaces["p"]["live"] = {"value", now + 1h};
+  snapshot.namespaces["p"]["forever"] = {"value", {}};
+  snapshot.host_receipts["p"]["expired"] = {"fingerprint", "response", now - 1s};
+  snapshot.host_receipts["p"]["live"] = {"fingerprint", "response", now + 1h};
+  assert(std::holds_alternative<std::monostate>(transaction->commit()));
+
+  MaintenanceOptions options;
+  options.retention = 24h;
+  options.audit_limit = 10;
+  options.command_limit = 10;
+  RuntimeMaintenance maintenance(store, options);
+  const auto result = maintenance.run(now);
+  assert(std::holds_alternative<MaintenanceStats>(result));
+  const auto stats = std::get<MaintenanceStats>(result);
+  assert(stats.events == 1 && stats.deliveries == 1 && stats.actions == 1);
+  assert(stats.audit == 5);
+  assert(stats.commands == 4);
+  assert(stats.namespace_entries == 1 && stats.host_receipts == 1);
+  assert(stats.changed());
+
+  const auto stored = std::get<RuntimeSnapshot>(store.read());
+  assert(!stored.events.contains("old") && !stored.deliveries.contains("old"));
+  assert(stored.events.contains("recent") && stored.events.contains("pending"));
+  assert(!stored.actions.contains("old-key") && stored.actions.contains("recent-key") &&
+         stored.actions.contains("live-key"));
+  assert(stored.audit.size() == 8 && stored.audit.front().request_id == "a4");
+  assert(stored.commands.at("s1").size() == 2 && stored.commands.at("s2").size() == 6);
+  assert(stored.namespaces.at("p").size() == 2 && stored.namespaces.at("p").contains("forever"));
+  assert(stored.host_receipts.at("p").size() == 1);
+
+  const auto idle = maintenance.run(now);
+  assert(std::holds_alternative<MaintenanceStats>(idle));
+  assert(!std::get<MaintenanceStats>(idle).changed());
+
+  const auto reseed = [&] {
+    auto next = std::get<std::unique_ptr<kiarabot::core::RuntimeTransaction>>(store.begin());
+    next->snapshot().events["stale-again"] = kiarabot::core::EventEntry{
+        {"stale-again", "t", "", 0, false}, DeliveryState::acked, 0, {}, stale, false};
+    assert(std::holds_alternative<std::monostate>(next->commit()));
+  };
+  reseed();
+  store.set_fail_commits(true);
+  const auto failed = maintenance.run(now);
+  assert(std::holds_alternative<StorageError>(failed));
+  assert(std::get<StorageError>(failed) == StorageError::Unavailable);
+  assert(std::get<RuntimeSnapshot>(store.read()).events.contains("stale-again"));
+  store.set_fail_commits(false);
+
+  store.set_fail_conflicts(1);
+  const auto conflicted = maintenance.run(now);
+  assert(std::holds_alternative<StorageError>(conflicted));
+  assert(std::get<StorageError>(conflicted) == StorageError::Conflict);
+  assert(std::get<RuntimeSnapshot>(store.read()).events.contains("stale-again"));
+  const auto recovered = maintenance.run(now);
+  assert(std::holds_alternative<MaintenanceStats>(recovered));
+  assert(std::get<MaintenanceStats>(recovered).events == 1);
+  assert(!std::get<RuntimeSnapshot>(store.read()).events.contains("stale-again"));
+}
+
 } // namespace
 
 int main() {
@@ -311,5 +406,6 @@ int main() {
   plugins_and_transactions();
   restart_recovers_unacknowledged_dispatch();
   expired_action_idempotency_and_transaction_isolation();
+  maintenance_retention_and_capacity();
   return 0;
 }

@@ -23,6 +23,37 @@ grpc::Status failure(grpc::StatusCode status, kiarabot::v1::ErrorCode code) {
   return {status, error.message(), error.SerializeAsString()};
 }
 
+// A revision conflict is internal optimistic-locking pressure, not a business
+// rejection: the application call is idempotent, so retrying keeps the stream
+// alive instead of forcing the peer to reconnect. After the retry budget the
+// original error is returned and the existing disconnect semantics apply.
+bool retryable_conflict(const kiarabot::v1::Error& error) {
+  return error.code() == kiarabot::v1::CONFLICT && error.retryable();
+}
+bool retryable_conflict(const PortStatus& result) {
+  const auto* error = std::get_if<kiarabot::v1::Error>(&result);
+  return error != nullptr && retryable_conflict(*error);
+}
+bool retryable_conflict(const kiarabot::v1::HostResponse& result) {
+  return result.has_error() && retryable_conflict(result.error());
+}
+bool retryable_conflict(const kiarabot::v1::PluginActionResponse& result) {
+  return result.has_error() && retryable_conflict(result.error());
+}
+template <typename Operation> auto retry_conflict(Operation&& operation) -> decltype(operation()) {
+  constexpr int kAttempts = 3;
+  constexpr std::chrono::milliseconds kRetryDelay{20};
+  auto result = operation();
+  for (int attempt = 1; attempt < kAttempts; ++attempt) {
+    if (!retryable_conflict(result)) {
+      return result;
+    }
+    std::this_thread::sleep_for(kRetryDelay);
+    result = operation();
+  }
+  return result;
+}
+
 // No content-dependent early exit when comparing equal-length credentials.
 bool token_matches(std::string_view left, std::string_view right) {
   if (left.size() != right.size()) {
@@ -224,7 +255,8 @@ public:
           if (!ingress_->current(registration.session)) {
             return failure(grpc::StatusCode::PERMISSION_DENIED, kiarabot::v1::PERMISSION_DENIED);
           }
-          const auto completed = actions_->complete(registration.session, request.action_result());
+          const auto completed = retry_conflict(
+              [&] { return actions_->complete(registration.session, request.action_result()); });
           if (const auto* error = std::get_if<kiarabot::v1::Error>(&completed)) {
             return failure(grpc::StatusCode::INTERNAL, error->code());
           }
@@ -438,9 +470,11 @@ public:
         response.Clear();
         PortStatus outcome = std::monostate{};
         if (request.has_config_ack()) {
-          outcome = hub_->acknowledge_config(registration.session, request.config_ack());
+          outcome = retry_conflict(
+              [&] { return hub_->acknowledge_config(registration.session, request.config_ack()); });
         } else if (request.has_event_ack()) {
-          outcome = hub_->acknowledge(registration.session, request.event_ack());
+          outcome = retry_conflict(
+              [&] { return hub_->acknowledge(registration.session, request.event_ack()); });
         } else if (request.has_host_request() &&
                    (request.host_request().has_model_chat() ? model_enabled
                     : request.host_request().has_task_create() ||
@@ -449,8 +483,8 @@ public:
                         ? tasks_enabled
                         : storage_enabled) &&
                    hub_->current(registration.session)) {
-          *response.mutable_host_response() =
-              host_->dispatch(registration.session, request.host_request());
+          *response.mutable_host_response() = retry_conflict(
+              [&] { return host_->dispatch(registration.session, request.host_request()); });
         } else if (request.has_action() || request.has_action_query() ||
                    request.has_action_cancel()) {
           if (!hub_->current(registration.session)) {
@@ -462,11 +496,12 @@ public:
             error.set_code(kiarabot::v1::CAPABILITY_NOT_SUPPORTED);
             outcome = error;
           } else {
-            *response.mutable_action_response() =
-                request.has_action() ? actions_->submit(registration.session, request.action())
-                : request.has_action_query()
-                    ? actions_->query(registration.session, request.action_query())
-                    : actions_->cancel(registration.session, request.action_cancel());
+            *response.mutable_action_response() = retry_conflict([&] {
+              return request.has_action() ? actions_->submit(registration.session, request.action())
+                     : request.has_action_query()
+                         ? actions_->query(registration.session, request.action_query())
+                         : actions_->cancel(registration.session, request.action_cancel());
+            });
           }
         } else if (request.has_heartbeat() &&
                    request.heartbeat().instance_id() == registration.session.instance &&

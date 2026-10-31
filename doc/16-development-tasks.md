@@ -665,3 +665,32 @@ CI 修复（本轮只改工作流，未复跑；不能据此宣称 CI 已绿）�
 - ci-cd：确认 `check_contracts.sh` 新依赖（descriptor 兼容工具、SDK 生成包）在 contracts job 中可用；恢复自动触发前先手动跑绿。
 
 未完成/风险：未运行项如上；`roundtrip.cc`/`api_contract_test.rb` 的新增断言未在本机执行；新增 `ShutdownNotice` 帧与 OpenAPI/AsyncAPI 变更尚未经远程 CI 验证；`doc/06-control-api.md`、`doc/03-plugin-sdk.md` 等接口文档按本任务范围未更新（已列为交接），与 `api/` 的同步需由对应分支完成。本记录不改变 `doc/18` 受保护基线，其附录 A 的既有差异仍只报告不修改。
+
+## 2026-10-31 W2 core-runtime 分支：维护循环、可配置容量、ACK 超时与冲突重试
+
+状态：**实现与测试完成；dev/full 构建与 CTest 在本机通过**。分支 `kiarabot-core-runtime-w2`（基线 `7235b07`，作为 `kiarabot-core-runtime` 的 W2 提交推送）。只修改 `core/`、`doc/02-core.md` 与本台账；未修改 `proto/`、`api/`、`adapters/`、`sdk/`、`panel/`、`control/`、`infrastructure/`、部署与 CI 文件，未修改受保护 `doc/18`。
+
+目标与输入输出：
+
+- 目标：消除上一轮 `reports/modules/core-runtime.md` 的 P0/P1 阻断项——终态记录与审计无清理导致写路径永久失败、容量上限硬编码、插件 ACK 无超时、桥接层冲突即断连、`stream_snapshot` 未判空。
+- 输入：主进程装配的 `RuntimeStore` 与新增环境变量；插件事件 ACK、适配器 Action 结果、Host 请求。
+- 输出：单事务维护结果（删除计数/存储错误）、可配置容量与超时、结构化 `operation=maintenance` 日志、稳定错误码；非法配置 `INVALID_ARGUMENT` 退出 1。
+- 错误语义：维护提交失败返回存储错误且不改变持久状态，按周期重试；审计达到硬上限仍返回可重试 `UPSTREAM_UNAVAILABLE`；维护的 revision 冲突不自动重试、不阻塞业务。
+
+实现要点：
+
+- 新增 `RuntimeMaintenance`（`core/include|src/application/runtime_maintenance.*`）：终态事件+逐插件投递与终态 Action 按保留期删除；审计按保留期并裁剪到上限的五分之四；命令幂等记录按确定性数量上限裁剪；过期 namespace TTL 与过期 Host receipt 清理；只在实际删除时提交。
+- 组合根新增维护线程（默认 60 秒、启动时先跑一次）与六个可配置环境变量：`KIARABOT_EVENT_QUEUE_LIMIT`、`KIARABOT_AUDIT_LIMIT`、`KIARABOT_ACTION_LIMIT`、`KIARABOT_ACK_TIMEOUT_MS`、`KIARABOT_MAINTENANCE_INTERVAL_MS`、`KIARABOT_RETENTION_HOURS`；`RuntimeLimits` 注入 `ActionRouter`/`PluginHub`/`TaskScheduler`/`HostDispatcher`/`ControlService`，不再一律使用默认值。
+- 插件 ACK 超时：`dispatched` 超过 `KIARABOT_ACK_TIMEOUT_MS` 未确认按一次可重试失败处理，达到上限进入死信，解除队列阻塞。
+- 桥接冲突重试：事件 ACK、配置 ACK、Action 提交/查询/取消、适配器 Action 结果、Host 请求对 `retryable=true` 的 `CONFLICT` 做 3 次 20ms 重试；预算耗尽按原断连语义。
+- 控制应用 `stream_snapshot` 增加用户查找失败的防御性判断；`InMemoryRuntimeStore` 增加冲突注入与并发保护，仅用于测试。
+
+测试与检查（本机实际运行）：
+
+- `cmake --preset dev && cmake --build --preset dev --parallel 4 && ctest --preset dev --no-tests=error`：**9/9 通过**。
+- `cmake --preset full && cmake --build --preset full --parallel 4 && ctest --preset full --no-tests=error`：**28/28 通过**（含新增 `core_runtime` 维护用例、`action_router` 容量用例、`plugin_hub` ACK 超时与冲突重试用例、`core_grpc_process` 非法/合法配置用例）。
+- 全部改动文件 `clang-format --dry-run --Werror` 通过；构建无新增告警。
+
+文档影响判断：已更新 `doc/02-core.md`（维护循环、容量/超时配置、失败语义、ACK 超时与冲突重试、未完成项）与本台账。未更新 `doc/01-runtime-semantics.md`（ACK 超时/维护周期属运行语义，需由 contracts 分支或后续 core 任务同步）、`doc/08-operations.md`（新增环境变量需运维文档同步）、`doc/05-infrastructure.md`（时间型命令幂等过期需快照格式版本升级）——均列为交接项；`proto/`/`api/` 无变更。
+
+交接与未完成：`control/api` 的 `/groups` 仍无数据源（契约已标 `not_implemented`）；时间型命令幂等过期需基础设施快照格式升级；多适配器/多插件装配、完整 RBAC 与 `message.send` 速率/内容策略不在本轮；任务每插件上限仍固定 1024。

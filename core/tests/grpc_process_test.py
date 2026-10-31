@@ -19,6 +19,34 @@ environment.update(KIARABOT_ADAPTER_ID='test', KIARABOT_ADAPTER_TOKEN='x' * 32)
 if subprocess.run([binary, '--grpc-listen', '0.0.0.0:0'], env=environment,
                   capture_output=True, timeout=5).returncode != 1:
     raise RuntimeError('External address accepted')
+for name, value in (('KIARABOT_AUDIT_LIMIT', 'abc'), ('KIARABOT_ACTION_LIMIT', '0'),
+                    ('KIARABOT_EVENT_QUEUE_LIMIT', '0'), ('KIARABOT_ACK_TIMEOUT_MS', '1'),
+                    ('KIARABOT_MAINTENANCE_INTERVAL_MS', '0'),
+                    ('KIARABOT_RETENTION_HOURS', '1')):
+    invalid = dict(environment, **{name: value})
+    if subprocess.run(args, env=invalid, capture_output=True, timeout=5).returncode != 1:
+        raise RuntimeError('Invalid ' + name + ' did not fail startup')
+tuned = dict(environment, KIARABOT_EVENT_QUEUE_LIMIT='128', KIARABOT_AUDIT_LIMIT='5000',
+             KIARABOT_ACTION_LIMIT='500', KIARABOT_ACK_TIMEOUT_MS='5000',
+             KIARABOT_MAINTENANCE_INTERVAL_MS='1000', KIARABOT_RETENTION_HOURS='48')
+with subprocess.Popen(args, env=tuned, stdout=subprocess.PIPE,
+                      stderr=subprocess.PIPE) as process:
+    try:
+        with selectors.DefaultSelector() as selector:
+            selector.register(process.stdout, selectors.EVENT_READ)
+            if not selector.select(timeout=5):
+                raise RuntimeError('Tuned runtime configuration did not start')
+            line = process.stdout.readline()
+        if b'transport_listening=true' not in line:
+            raise RuntimeError('Tuned runtime configuration rejected')
+        process.send_signal(signal.SIGTERM)
+        process.communicate(timeout=5)
+        if process.returncode != 0:
+            raise RuntimeError('Tuned runtime configuration failed to stop')
+    finally:
+        if process.poll() is None:
+            process.kill()
+            process.wait(timeout=5)
 for stop in (signal.SIGINT, signal.SIGTERM):
     with subprocess.Popen(args, env=environment, stdout=subprocess.PIPE,
                           stderr=subprocess.PIPE) as process:

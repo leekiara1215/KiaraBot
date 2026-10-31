@@ -713,6 +713,12 @@ PortResult<ControlJson> ControlService::stream_snapshot(const ControlMetadata& m
     const auto state = load(snapshot, options_.encryption_key);
     const auto found = std::find_if(options_.users.begin(), options_.users.end(),
                                     [&](const auto& user) { return user.id == principal.user_id; });
+    if (found == options_.users.end()) {
+      // Defense in depth: readiness(), stream_snapshot() and invoke() share this
+      // state, so a session that outlives a user-table change must not be
+      // dereferenced after the user lookup. Authentication already rejects it.
+      return error(wire::UNAUTHENTICATED, metadata);
+    }
     Json result{
         {"user_id", principal.user_id},
         {"session_id", principal.session_id},

@@ -14,6 +14,7 @@
 #endif
 
 #include "kiarabot/core/application/runtime.h"
+#include "kiarabot/core/application/runtime_maintenance.hpp"
 
 #ifdef KIARABOT_HAS_GRPC
 #include "kiarabot/control/configuration.hpp"
@@ -58,6 +59,47 @@ std::chrono::milliseconds process_timeout(const char* name, int fallback) {
   }
   return std::chrono::milliseconds(duration);
 }
+
+#ifdef KIARABOT_HAS_GRPC
+bool process_count(const char* name, std::size_t fallback, std::size_t minimum, std::size_t maximum,
+                   std::size_t& value) {
+  const char* text = std::getenv(name);
+  if (text == nullptr) {
+    value = fallback;
+    return true;
+  }
+  const std::string_view input(text);
+  std::size_t parsed = 0;
+  const auto result = std::from_chars(input.data(), input.data() + input.size(), parsed);
+  if (input.empty() || result.ec != std::errc{} || result.ptr != input.data() + input.size() ||
+      parsed < minimum || parsed > maximum) {
+    return false;
+  }
+  value = parsed;
+  return true;
+}
+
+std::string_view storage_code(kiarabot::core::StorageError error) {
+  switch (error) {
+  case kiarabot::core::StorageError::Conflict:
+    return "CONFLICT";
+  case kiarabot::core::StorageError::Corrupt:
+    return "INTERNAL";
+  case kiarabot::core::StorageError::Unavailable:
+    return "UPSTREAM_UNAVAILABLE";
+  }
+  return "INTERNAL";
+}
+
+void log_maintenance(const kiarabot::core::MaintenanceStats& stats) {
+  std::cerr << "operation=maintenance outcome=ok events=" << stats.events
+            << " deliveries=" << stats.deliveries << " actions=" << stats.actions
+            << " audit=" << stats.audit << " commands=" << stats.commands
+            << " namespace_entries=" << stats.namespace_entries
+            << " host_receipts=" << stats.host_receipts << '\n';
+}
+#endif
+
 #endif
 
 int check_runtime() {
@@ -95,6 +137,30 @@ int run_process(std::string_view listen = {}) {
     return 1;
   }
 #ifdef KIARABOT_HAS_GRPC
+  std::size_t queue_limit = 0;
+  std::size_t audit_limit = 0;
+  std::size_t action_limit = 0;
+  std::size_t ack_timeout_ms = 0;
+  std::size_t maintenance_interval_ms = 0;
+  std::size_t retention_hours = 0;
+  if (!process_count("KIARABOT_EVENT_QUEUE_LIMIT", 1024, 1, 100000, queue_limit) ||
+      !process_count("KIARABOT_AUDIT_LIMIT", 100000, 1000, 10000000, audit_limit) ||
+      !process_count("KIARABOT_ACTION_LIMIT", 10000, 100, 1000000, action_limit) ||
+      !process_count("KIARABOT_ACK_TIMEOUT_MS", 30000, 1000, 600000, ack_timeout_ms) ||
+      !process_count("KIARABOT_MAINTENANCE_INTERVAL_MS", 60000, 1000, 3600000,
+                     maintenance_interval_ms) ||
+      !process_count("KIARABOT_RETENTION_HOURS", 168, 24, 8760, retention_hours)) {
+    std::cerr << "operation=runtime_config outcome=failed error_code=INVALID_ARGUMENT\n";
+    return 1;
+  }
+  kiarabot::core::RuntimeOptions runtime_options;
+  runtime_options.queue_limit = queue_limit;
+  runtime_options.retention = std::chrono::hours(retention_hours);
+  runtime_options.ack_timeout = std::chrono::milliseconds(ack_timeout_ms);
+  kiarabot::core::RuntimeLimits runtime_limits;
+  runtime_limits.audit_limit = audit_limit;
+  runtime_limits.action_limit = action_limit;
+  runtime_limits.command_limit = audit_limit;
 #ifdef KIARABOT_HAS_SQLITE
   auto log_sink = std::make_shared<kiarabot::infrastructure::BufferedRuntimeLogSink>();
 #endif
@@ -107,6 +173,8 @@ int run_process(std::string_view listen = {}) {
     return 1;
   }
   std::jthread scheduling;
+  std::jthread maintenance_thread;
+  std::shared_ptr<kiarabot::core::RuntimeMaintenance> maintenance;
   if (!listen.empty()) {
     std::vector<kiarabot::core::BridgeCredential> credentials;
     for (const auto role :
@@ -170,19 +238,21 @@ int run_process(std::string_view listen = {}) {
           position = end + 1;
         }
         plugins = std::make_shared<kiarabot::core::PluginHub>(
-            *persistent_store, std::vector<kiarabot::core::PluginPolicy>{{plugin_id, permissions}});
+            *persistent_store, std::vector<kiarabot::core::PluginPolicy>{{plugin_id, permissions}},
+            kiarabot::core::RuntimeClock{}, runtime_options, runtime_limits);
       }
       ingress = std::make_shared<kiarabot::core::AdapterIngress>(
           *persistent_store,
-          std::vector<kiarabot::core::AdapterPolicy>{{identity, allowed_accounts}},
-          kiarabot::core::RuntimeOptions{}, plugins);
+          std::vector<kiarabot::core::AdapterPolicy>{{identity, allowed_accounts}}, runtime_options,
+          plugins);
 #else
       std::cerr << "operation=ingress_config outcome=failed error_code=CAPABILITY_NOT_SUPPORTED\n";
       return 1;
 #endif
     }
-    auto actions =
-        plugins ? std::make_shared<kiarabot::core::ActionRouter>(*persistent_store) : nullptr;
+    auto actions = plugins ? std::make_shared<kiarabot::core::ActionRouter>(
+                                 *persistent_store, kiarabot::core::RuntimeClock{}, runtime_limits)
+                           : nullptr;
     std::shared_ptr<kiarabot::core::IModelProvider> model;
     const char* model_endpoint = std::getenv("KIARABOT_MODEL_ENDPOINT");
     const char* model_key = std::getenv("KIARABOT_MODEL_API_KEY");
@@ -209,17 +279,35 @@ int run_process(std::string_view listen = {}) {
 #ifdef KIARABOT_HAS_SQLITE
     if (plugins) {
       scheduler = std::make_shared<kiarabot::core::TaskScheduler>(
-          *persistent_store, std::make_shared<kiarabot::infrastructure::TimeZoneResolver>());
+          *persistent_store, std::make_shared<kiarabot::infrastructure::TimeZoneResolver>(),
+          kiarabot::core::RuntimeClock{}, runtime_limits);
       if (std::holds_alternative<kiarabot::v1::Error>(scheduler->recover())) {
         std::cerr << "operation=scheduler_recover outcome=failed error_code=UPSTREAM_UNAVAILABLE\n";
         return 1;
       }
     }
 #endif
+    kiarabot::core::NamespacePolicy namespace_policy;
+    namespace_policy.audit_records = runtime_limits.audit_limit;
     auto host = plugins ? std::make_shared<kiarabot::core::HostDispatcher>(
-                              *persistent_store, kiarabot::core::RuntimeClock{},
-                              kiarabot::core::NamespacePolicy{}, model, scheduler)
+                              *persistent_store, kiarabot::core::RuntimeClock{}, namespace_policy,
+                              model, scheduler)
                         : nullptr;
+    if (persistent_store) {
+      kiarabot::core::MaintenanceOptions maintenance_options;
+      maintenance_options.retention = runtime_options.retention;
+      maintenance_options.audit_limit = runtime_limits.audit_limit;
+      maintenance_options.command_limit = runtime_limits.command_limit;
+      maintenance = std::make_shared<kiarabot::core::RuntimeMaintenance>(*persistent_store,
+                                                                         maintenance_options);
+      const auto initial = maintenance->run();
+      if (const auto* failure = std::get_if<kiarabot::core::StorageError>(&initial)) {
+        std::cerr << "operation=maintenance outcome=failed error_code=" << storage_code(*failure)
+                  << '\n';
+      } else if (std::get<kiarabot::core::MaintenanceStats>(initial).changed()) {
+        log_maintenance(std::get<kiarabot::core::MaintenanceStats>(initial));
+      }
+    }
     if (control_config) {
       if (!persistent_store) {
         return 1;
@@ -256,6 +344,7 @@ int run_process(std::string_view listen = {}) {
                 *persistent_store, configuration.application.encryption_key);
         plugins->set_configuration(configuration.application.config_delivery);
       }
+      configuration.application.audit_limit = runtime_limits.audit_limit;
       control_application = std::make_unique<kiarabot::core::ControlService>(
           *persistent_store, std::move(configuration.application));
       server = std::make_unique<kiarabot::core::BridgeServer>(std::move(credentials), ingress,
@@ -292,6 +381,30 @@ int run_process(std::string_view listen = {}) {
           std::this_thread::sleep_for(std::chrono::milliseconds(100));
         }
       });
+    }
+    if (maintenance) {
+      maintenance_thread =
+          std::jthread([maintenance, interval = std::chrono::milliseconds(maintenance_interval_ms)](
+                           std::stop_token stop) {
+            auto last = std::chrono::steady_clock::now();
+            while (!stop.stop_requested()) {
+              std::this_thread::sleep_for(std::chrono::milliseconds(50));
+              if (std::chrono::steady_clock::now() - last < interval) {
+                continue;
+              }
+              last = std::chrono::steady_clock::now();
+              const auto result = maintenance->run();
+              if (const auto* failure = std::get_if<kiarabot::core::StorageError>(&result)) {
+                std::cerr << "operation=maintenance outcome=failed error_code="
+                          << storage_code(*failure) << '\n';
+                continue;
+              }
+              const auto& stats = std::get<kiarabot::core::MaintenanceStats>(result);
+              if (stats.changed()) {
+                log_maintenance(stats);
+              }
+            }
+          });
     }
     std::cout << "transport_listening=true port=" << server->port()
               << " rpc_ready=false adapter_ingress_ready=" << (ingress ? "true" : "false")
@@ -363,6 +476,10 @@ int run_process(std::string_view listen = {}) {
     scheduling.request_stop();
     if (scheduling.joinable()) {
       scheduling.join();
+    }
+    maintenance_thread.request_stop();
+    if (maintenance_thread.joinable()) {
+      maintenance_thread.join();
     }
     server->stop();
   }

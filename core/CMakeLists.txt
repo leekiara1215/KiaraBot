@@ -12,7 +12,7 @@ add_executable(kiarabot-core-smoke tests/core_smoke.cpp)
 target_include_directories(kiarabot-core-smoke PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 add_test(NAME core_smoke COMMAND kiarabot-core-smoke)
 
-add_executable(kiarabot-runtime-test tests/runtime_test.cpp tests/runtime_engine_header_test.cpp)
+add_executable(kiarabot-runtime-test tests/runtime_test.cpp tests/runtime_engine_header_test.cpp src/application/runtime_maintenance.cpp)
 target_compile_features(kiarabot-runtime-test PRIVATE cxx_std_20)
 target_include_directories(kiarabot-runtime-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_compile_options(kiarabot-runtime-test PRIVATE

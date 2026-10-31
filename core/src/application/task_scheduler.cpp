@@ -9,7 +9,6 @@ namespace kiarabot::core {
 namespace {
 namespace wire = kiarabot::v1;
 constexpr std::size_t kTasksPerPlugin = 1024;
-constexpr std::size_t kAuditLimit = 100000;
 wire::Error error(wire::ErrorCode code, bool retryable = false) {
   wire::Error result;
   result.set_code(code);
@@ -112,8 +111,8 @@ PortResult<TaskClaim> claim(std::string_view owner, const TaskEntry& entry) {
 } // namespace
 
 TaskScheduler::TaskScheduler(RuntimeStore& store, std::shared_ptr<ITimeZoneResolver> zones,
-                             RuntimeClock clock)
-    : store_(store), zones_(std::move(zones)), clock_(std::move(clock)) {}
+                             RuntimeClock clock, RuntimeLimits limits)
+    : store_(store), zones_(std::move(zones)), clock_(std::move(clock)), limits_(limits) {}
 RuntimeTimePoint TaskScheduler::now() const {
   return clock_ ? clock_() : std::chrono::system_clock::now();
 }
@@ -227,7 +226,7 @@ wire::HostResponse TaskScheduler::dispatch(const PluginSession& session,
   }
   auto transaction = std::get<std::unique_ptr<RuntimeTransaction>>(std::move(begun));
   auto& snapshot = transaction->snapshot();
-  if (snapshot.audit.size() >= kAuditLimit) {
+  if (snapshot.audit.size() >= limits_.audit_limit) {
     return reject(error(wire::UPSTREAM_UNAVAILABLE, true));
   }
   const bool allowed = std::find(session.permissions.begin(), session.permissions.end(),
@@ -410,7 +409,7 @@ PortStatus TaskScheduler::finish(std::string_view owner, std::string_view id,
       entry->state = TaskState::Completed;
     }
     entry->claim_token.clear();
-    if (snapshot.audit.size() >= kAuditLimit) {
+    if (snapshot.audit.size() >= limits_.audit_limit) {
       return error(wire::UPSTREAM_UNAVAILABLE, true);
     }
     snapshot.audit.push_back(
