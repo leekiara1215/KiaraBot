@@ -611,6 +611,18 @@ void delegation_tests() {
         "bounded proof carries source and first hop");
   check(sessions.calls == 2 && factory.script.active == 0 && factory.script.commits == 0,
         "source revalidated after signing no persistence");
+  clock.now = now + std::chrono::nanoseconds{731};
+  credential.expires_at = now + 34s + std::chrono::nanoseconds{987};
+  auto fractional = app.issue_delegation(request);
+  check(std::holds_alternative<t::IdentityDelegationReply>(fractional),
+        "fractional real clock remains usable for integral JWT NumericDate");
+  const auto& rounded = std::get<t::IdentityDelegationReply>(fractional);
+  check(rounded.claims.issued_at == now && rounded.claims.not_before == now &&
+            rounded.claims.expires_at == now + 34s &&
+            rounded.claims.expires_at <= *credential.expires_at && rounded.checked_at == now,
+        "NumericDate rounding shortens source expiry and preserves actual checked time");
+  clock.now = now;
+  credential.expires_at = now + 24h;
   crypto.while_signing = [&] { sessions.rejected = true; };
   check(error(app.issue_delegation(request), t::ErrorCode::Unauthenticated),
         "source revoked during signing rejects proof");

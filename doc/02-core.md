@@ -706,6 +706,10 @@ Platform、Adapter、Plugin分别从已登记service、Adapter资源、Instance�
 
 ### P04短期证明签发应用
 
+JWT NumericDate 只接受整秒：Core 用实际可信/数据库当前时间检查 deadline 和当前状态，
+iat/nbf 向下取整；exp 从 `min(iat+56秒, 来源access/凭据/证书到期)` 向下取整，
+只能缩短期限。返回 checked_at 保留真实数据库精度，不把测试/生产时钟伪造成整秒。
+
 `IdentityDelegationApplication::issue_delegation`消费六方法应用验证的Control会话，
 随后读取当前session、credential、精确授权与授权水位。每个tuple独立授权，水位在
 授权查询前后核对；本人ListSessions/RevokeSession沿用前述真实目标规则。

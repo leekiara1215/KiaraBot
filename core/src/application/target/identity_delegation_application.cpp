@@ -204,12 +204,16 @@ IdentityDelegationApplication::issue_delegation(const IssueIdentityDelegationReq
     }
     const auto& state = std::get<IssuanceAuthority>(authority);
     const auto now = std::max(sample.utc, state.checked_at);
-    auto expiry = identity_deadline(now, kDelegationBodyLifetime);
+    // JWT NumericDate is integral seconds. Round issuance down and cap expiry from that same
+    // instant; flooring the source limits can only shorten, never extend, authorization.
+    const TimePoint issued_at = std::chrono::floor<std::chrono::seconds>(now);
+    auto expiry = identity_deadline(issued_at, kDelegationBodyLifetime);
     if (const auto* failure = std::get_if<Failure>(&expiry)) {
       return *failure;
     }
-    const auto expires_at = std::min({std::get<TimePoint>(expiry), state.latest_expiry,
-                                      request.source.control_peer.binding.certificate.not_after});
+    const TimePoint expires_at = std::chrono::floor<std::chrono::seconds>(
+        std::min({std::get<TimePoint>(expiry), state.latest_expiry,
+                  request.source.control_peer.binding.certificate.not_after}));
     if (expires_at <= now || now >= request.source.context.deadline) {
       return authentication_rejected();
     }
@@ -226,8 +230,8 @@ IdentityDelegationApplication::issue_delegation(const IssueIdentityDelegationReq
                             std::get<MessageId>(identifier),
                             request.source.control_peer.binding.certificate.fingerprint,
                             std::get<ValidatedSession>(validated).authorization_version,
-                            now,
-                            now,
+                            issued_at,
+                            issued_at,
                             expires_at,
                             1,
                             state.credential,
