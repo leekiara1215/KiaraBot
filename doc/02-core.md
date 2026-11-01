@@ -628,6 +628,14 @@ TimePoint 使用已确定的 signed int64 epoch nanoseconds；Timestamp 规范 n
 
 此工具不验证认证、当前授权、资源存在性或owner/gate，不实现owner RPC，也不改变任何能力的 target 状态。CMake/传输接线由主集成负责，独立测试和检查见 reports/modules/architecture-p04-target-codec.md；doc18只读。
 
+### P04 继承 grant 的元数据投影
+
+to_resource_grant_metadata只把完整且可表示的ExactAssignment转成继承ResourceGrant
+元数据。id/subject/version保持一致，role分支保留单role并按每个exact资源展开Core的
+封闭有效权限名；explicit分支保持原permission/resource元组，只从kPermissionNames
+按名转换。没有假permission或空scope占位，不混配不同Assignment。授权仍只读取
+exact权威；此投影不能成为另一套授权来源。PG只调用该Core helper同步头/版本/投影。
+
 ### P04可执行纯授权/会话/秘密恢复规则
 
 identity_policy.hpp提供40项封闭权限映射、固定角色allowlist及exact resource判断。

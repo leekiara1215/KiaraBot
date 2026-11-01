@@ -199,6 +199,36 @@ inline Outcome<AssignmentProjection> project_assignment(const ExactAssignment& a
   result.scope.assign(resources.begin(), resources.end());
   return result;
 }
+// The inherited P03 grant is an effective-permission metadata projection only. Authorization
+// still reads exact assignments; never reconstruct roles x all scopes from these rows.
+inline Outcome<ResourceGrant> to_resource_grant_metadata(const ExactAssignment& assignment) {
+  const auto projected = project_assignment(assignment);
+  if (const auto* failure = std::get_if<Failure>(&projected)) {
+    return *failure;
+  }
+  const auto& projection = std::get<AssignmentProjection>(projected);
+  ResourceGrant result{assignment.id, assignment.subject, projection.role, {}, assignment.version};
+  if (projection.role) {
+    for (const auto& resource : projection.scope) {
+      for (const auto& [name, permission] : kPermissionNames) {
+        if (default_role_allows(*projection.role, permission)) {
+          result.scopes.push_back({resource, std::string{name}});
+        }
+      }
+    }
+  } else {
+    for (const auto& binding : assignment.explicit_permissions) {
+      const auto found =
+          std::find_if(kPermissionNames.begin(), kPermissionNames.end(),
+                       [&](const auto& entry) { return entry.second == binding.permission; });
+      if (found == kPermissionNames.end()) {
+        return rejected(ErrorCode::Internal, Recovery::Diagnose);
+      }
+      result.scopes.push_back({binding.resource, std::string{found->first}});
+    }
+  }
+  return result;
+}
 // A repository supplies current grants; caller authenticates CURRENT subject before this decision.
 // Workload/plugin subjects never inherit human roles. Catalog equality has no ancestor semantics.
 inline Status authorize_exact(const Principal& subject, Permission permission,
