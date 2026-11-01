@@ -453,6 +453,13 @@ UNIMPLEMENTED；平台监听继续强制mTLS，不能因换入handler改为无�
 
 主体登记返回 PENDING 初始凭据引用，保存其 ID/版本后经 RotateCredential 首次发放；GetCredentialStatus 只查询状态，不能恢复秘密。PENDING 无到期时间，不可用于连接；ACTIVE/EXPIRED 有权威到期，撤销保留历史状态而不再发秘密。禁止记录 token、refresh、密钥/摘要。会话 created_at 首次持久化后不变，Control 按 Identity checked_at 判定到期和剩余 TTL，不可补本机时间。以上需 P04 实现及故障验收；当前 stub 不可用于运维发放。
 
+### P04 peer 证据与登记
+
+gRPC TLS证书证据由真实AuthContext读取，受8张/64KiB上限约束，指纹来自实际leaf。
+缺失/重复/不安全transport或不可解析证书拒绝；不记录证书、秘密或自由诊断正文。
+证据不等于业务授权：即使CA验证成功，也必须查询当前Identity登记与凭据/SAN绑定。
+连接复用缺少中间链时不能自造证书；后续受信链验证无法完成须拒绝/重新建立完整链。
+
 ### 外部连接授权目标补全（未实现）
 
 platform.proto三类ConnectionAuthorization/RefreshConnectionAuthorization/Result与两Bridge的登记、proof、refresh帧定义短期外部连接授权。名义最多56秒、总预算60秒、每秒检查失效，单飞原子轮换；丢响应须关闭旧流、新bootstrap与连接代次。完整规则见doc/01-contracts及运行语义；内部JWT委托和P02 mTLS owner监听不变，P05/P06真实接线前仍not_implemented。授权材料禁止日志/公开投影/持久秘密收据，高风险业务仍在线核验，刷新不续投递租约、不改历史业务事实。浏览器REST/WS不使用这些proof，OpenAPI/AsyncAPI因此无schema变更。

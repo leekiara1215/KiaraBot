@@ -570,6 +570,16 @@ SessionRecord.created_at 是 Identity 持久保存的首次创建时间，刷新
 
 RegisterPrincipal 同事务创建无秘密的 PENDING CredentialStatus 引用（credential_id/principal_id/binding/version/created_at/checked_at）；尚未发放的 PENDING 不得伪造 expires_at。GetCredentialStatus 以 identity.principal.read 在线读取同一记录，默认2秒/最多5秒；ACTIVE/EXPIRED 必须有 expires_at，REVOKED 可保留原到期。状态查询不返回秘密、摘要或可重放材料。初次实际发放仍用 RotateCredential 单次 CredentialDelivery，未知结果不得从状态查询恢复秘密。当前未实现，不启用生产路由。
 
+### P04 真实传输证书证据
+
+platform的extract_peer_certificate只从ServerContext::auth_context提取经过TLS认证的
+叶证书和链，生成叶在前连续DER及叶SHA256指纹。要求唯一安全transport/叶属性，
+最多8张/64KiB，不接受请求body或metadata中的证书。gRPC服务端链可能不包含叶，
+复用连接时链可空；统一补真实leaf并仅容许链中出现的一次相同leaf，重复中间证书拒绝。
+本函数不构造VerifiedPeer、不授予权限：Identity仍须以真实指纹查询当前登记，验证
+subject/service/SAN、凭据状态/版本与期限，再交PeerCertificatePort校验受信链和时间。
+尚未接入生产RPC，不能把证据提取测试视为认证用例完成。
+
 ### 外部连接授权目标补全（未实现）
 
 platform.proto三类ConnectionAuthorization/RefreshConnectionAuthorization/Result与两Bridge的登记、proof、refresh帧定义短期外部连接授权。名义最多56秒、总预算60秒、每秒检查失效，单飞原子轮换；丢响应须关闭旧流、新bootstrap与连接代次。完整规则见doc/01-contracts及运行语义；内部JWT委托和P02 mTLS owner监听不变，P05/P06真实接线前仍not_implemented。授权材料禁止日志/公开投影/持久秘密收据，高风险业务仍在线核验，刷新不续投递租约、不改历史业务事实。浏览器REST/WS不使用这些proof，OpenAPI/AsyncAPI因此无schema变更。
