@@ -133,7 +133,7 @@ set_tests_properties(p04_identity_rpc PROPERTIES LABELS "p04;integration;securit
 add_executable(kiarabot_peer_certificate_evidence_test
   ${CMAKE_SOURCE_DIR}/core/tests/platform/peer_certificate_test.cpp)
 target_link_libraries(kiarabot_peer_certificate_evidence_test PRIVATE
-  kiarabot_service_process kiarabot_proto OpenSSL::Crypto)
+  kiarabot_service_process kiarabot_proto)
 kiarabot_platform_warnings(kiarabot_peer_certificate_evidence_test)
 add_test(NAME p04_peer_certificate_evidence COMMAND "${KIARABOT_TARGET_PYTHON}"
   ${CMAKE_SOURCE_DIR}/core/tests/platform/peer_certificate_test.py

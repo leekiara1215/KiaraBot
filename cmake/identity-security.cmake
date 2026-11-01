@@ -40,4 +40,17 @@ if(UNIX)
   set_tests_properties(p04_identity_daemon_http PROPERTIES
     LABELS "p04;integration;security;fault" TIMEOUT 120
     ENVIRONMENT "PATH=${BOOTSTRAP_OPENSSL_BIN_DIR}:${BOOTSTRAP_PYTHON_BIN_DIR}:$ENV{PATH}")
+  add_test(NAME p04_identity_daemon_tls_expiry COMMAND "${KIARABOT_TARGET_PYTHON}"
+    "${CMAKE_SOURCE_DIR}/infrastructure/postgres/tests/run_database_test.py"
+    --pg-bin "${KIARABOT_TEST_PG_BIN}" --openssl "${KIARABOT_TEST_OPENSSL}"
+    --initializer $<TARGET_FILE:kiarabot-pg-initialize>
+    --test "${CMAKE_SOURCE_DIR}/control/api/tests/architecture/identity_daemon_http_test.py"
+    --test-argument $<TARGET_FILE:kiarabot-identity-bootstrap>
+    --test-argument "${KIARABOT_TEST_PG_BIN}"
+    --test-argument $<TARGET_FILE:kiarabot-identity>
+    --test-argument $<TARGET_FILE:kiarabot-control>
+    --test-argument=--own-tls-expiry)
+  set_tests_properties(p04_identity_daemon_tls_expiry PROPERTIES
+    LABELS "p04;integration;security;fault" TIMEOUT 120
+    ENVIRONMENT "PATH=${BOOTSTRAP_OPENSSL_BIN_DIR}:${BOOTSTRAP_PYTHON_BIN_DIR}:$ENV{PATH}")
 endif()

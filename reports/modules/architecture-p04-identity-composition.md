@@ -152,3 +152,13 @@ or fake peer is used. Default regression remains the full five HTTP operation ch
 Doc01/proto/API unchanged because stable failure schema and transport contracts are
 unchanged. Protected doc18 remains untouched. Temporary build registration restored
 before delivery; integrator should register this second explicit regression variant.
+
+### 主线 own-TLS 门禁和夹具清理
+
+主线新增上述到期 CTest。内部测试清理聚合全部 child 退出结果；超时先终止并收割，
+所有 child 清理后才报告失败。敏感日志检查加入真实三把 HMAC/AEAD hex 密钥和
+Ed25519 私钥全文。测试基础设施改动没有新业务接口，proto/API/doc06 无需更新。
+peer evidence test 移除已由 service-process→config 传递的重复 OpenSSL 链接；没有屏蔽告警。
+实际 configure、完整 build 无 warning/error，clock、peer evidence、正常 daemon HTTPS、
+实际证书到期 daemon 共 4/4 通过（17.80 秒）。Python py_compile、git diff --check 通过。
+工具链文档已同步新门禁；受保护 doc18 不变。没有在局部夹具变更重跑完整发布门禁。

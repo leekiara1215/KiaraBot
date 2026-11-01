@@ -607,3 +607,7 @@ Identity RPC 接入实际 `kiarabot-identity`，内层不引入平台依赖。
 执行 `cmake --build build/full-locked` 后，运行
 `ctest --test-dir build/full-locked -R 'p04_identity_security_clock|p04_identity_daemon_http' --output-on-failure`。
 局部通过不表示剩余凭据、授权、失效流或整个 P04 已完成。
+
+`p04_identity_daemon_tls_expiry` 为同一真实链路的到期变体：临时签发八秒有效的
+Identity 服务证书，在既有 Control gRPC 通道上验证到期拒绝并退出；不修改系统时间。
+测试始终收割全部自己启动的进程，单个退出异常不能跳过另一进程清理。

@@ -71,6 +71,9 @@ def daemon_http(root):
     children = []
     log = ''
     sensitive = [(root / 'admin-password').read_text().strip(), 'PRIVATE KEY']
+    sensitive.extend((root / f'{name}.hex').read_text().strip()
+                     for name in ['token', 'request', 'receipt'])
+    sensitive.append(private.read_text().strip())
     try:
         daemon = subprocess.Popen([identity, '--config', str(root / 'identity.json')], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         children.append(daemon)
@@ -145,14 +148,26 @@ def daemon_http(root):
         expect(request('GET', '/api/v1/auth/me', token=refreshed['access_token']), 401)
         print('Production daemon HTTPS -> mTLS -> current Admin -> Core -> real PG login/replay/me/list/refresh/revoke passed')
     finally:
+        shutdown_failures = []
         for child in reversed(children):
             if child.poll() is None:
-                child.send_signal(signal.SIGTERM)
-            (output, error) = child.communicate(timeout=6)
+                try:
+                    child.send_signal(signal.SIGTERM)
+                except ProcessLookupError:
+                    pass
+            try:
+                (output, error) = child.communicate(timeout=6)
+            except subprocess.TimeoutExpired:
+                child.kill()
+                (output, error) = child.communicate(timeout=6)
+                shutdown_failures.append('daemon shutdown timed out')
             log += output.decode() + error.decode()
             expected = 1 if short_lifetime and child is daemon and expires is not None and time.time() >= expires else 0
-            assert child.returncode == expected, 'daemon shutdown failed'
+            if child.returncode != expected:
+                shutdown_failures.append('daemon shutdown failed')
+        # Reap every owned daemon before reporting any single child's failure.
         assert all((secret not in log for secret in sensitive)), 'daemon leaked secret'
+        assert not shutdown_failures, '; '.join(shutdown_failures)
 if __name__ == '__main__':
     try:
         bootstrap_fixture.main(control_server_certificate=True, after_bootstrap=daemon_http)
