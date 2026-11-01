@@ -503,7 +503,9 @@ private:
                              pair.refresh_expires_at,
                              1,
                              {1},
-                             false};
+                             false,
+                             SessionControlPeer{request.control_peer.binding.certificate.subject,
+                                                request.control_peer.binding.credential.id}};
     auto saved_security = work.transaction->session_security().save(security, {}, {});
     if (const auto* error = std::get_if<Failure>(&saved_security)) {
       return *error;

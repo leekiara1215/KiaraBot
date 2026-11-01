@@ -979,3 +979,7 @@ Runtime，subject及source credential/session保持不变，client cert改为实
 该服务当前有效身份；不重用旧leaf认证新连接。原Control撤销/失效/禁用或缺绑定拒绝。
 本批只冻结类型/端口契约，Login写入与PG schema/repo接入由父协调，未接入不得启用
 依赖此绑定的Revoke/Exchange。只读类型测试不等于真实存储或并发验收。
+
+Login 的新 SessionSecurity 现在从最终核验的实际 Control peer 写入上述稳定主体与
+credential ID；客户端请求不提供此绑定。登录原收据重放及 refresh 保持原绑定。
+对应 PG 保存与不可变约束仍由独立 schema 能力实现，缺失字段不得现场补默认值。

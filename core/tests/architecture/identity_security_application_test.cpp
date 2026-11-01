@@ -859,6 +859,9 @@ void login_and_validate() {
   assert(f.store.state.sessions.size() == 1 && f.store.state.metadata.size() == 1 &&
          f.store.state.receipts.size() == 1);
   assert(f.store.state.metadata[0].expires_at == pair.refresh_expires_at);
+  const t::SessionControlPeer control{f.peer.binding.certificate.subject,
+                                      f.peer.binding.credential.id};
+  assert(f.store.state.sessions[0].control_peer == control);
   auto validated = f.app->validate_session({f.context(), f.peer, pair.access->bytes()});
   assert(std::holds_alternative<t::ValidatedSession>(validated));
   auto principal = f.app->get_principal({f.context(), f.peer, pair.access->bytes()});
@@ -866,6 +869,7 @@ void login_and_validate() {
   auto replay = f.app->login(f.login_request());
   assert(std::holds_alternative<t::IdentityTokenReply>(replay));
   assert(f.store.state.sessions.size() == 1);
+  assert(f.store.state.sessions[0].control_peer == control);
   assert(std::ranges::equal(pair.access->bytes(),
                             std::get<t::IdentityTokenReply>(replay).tokens.access->bytes()));
   const auto opens = f.receipts.opens;
@@ -915,15 +919,19 @@ void refresh_only_recovers_original_key() {
   Fixture f;
   auto login = f.app->login(f.login_request());
   auto& original = std::get<t::IdentityTokenReply>(login).tokens;
+  const auto original_control = f.store.state.sessions[0].control_peer;
+  assert(original_control.has_value());
   auto result =
       f.app->refresh_session({f.context("refresh-key"), f.peer, original.refresh->bytes()});
   assert(std::holds_alternative<t::IdentityTokenReply>(result));
   const auto& rotated = std::get<t::IdentityTokenReply>(result).tokens;
   assert(rotated.rotation == original.rotation + 1);
+  assert(f.store.state.sessions[0].control_peer == original_control);
   assert(f.store.state.consumed.size() == 1);
   auto replay =
       f.app->refresh_session({f.context("refresh-key"), f.peer, original.refresh->bytes()});
   assert(std::holds_alternative<t::IdentityTokenReply>(replay));
+  assert(f.store.state.sessions[0].control_peer == original_control);
   assert(std::ranges::equal(rotated.refresh->bytes(),
                             std::get<t::IdentityTokenReply>(replay).tokens.refresh->bytes()));
   assert(std::holds_alternative<t::Failure>(
