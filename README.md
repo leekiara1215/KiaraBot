@@ -37,7 +37,7 @@ Host/Adapter                       各自本地 SQLite 可靠执行/发送日志
 | `proto/kiarabot/v1/` | 跨语言唯一契约：事件、Action、适配器、插件和 gRPC 服务 |
 | `api/` | OpenAPI 与 AsyncAPI 契约 |
 | `core/` | C++20 服务内层/端口及 platform 运行支撑；`core/reference/` 保留旧一体实现 |
-| `infrastructure/` | 旧 SQLite/Provider 等 reference 适配实现；目标私有 PG 适配留 P03 |
+| `infrastructure/` | 旧 reference 适配与目标四个私有 PG 库、typed仓储和本地可靠交接 |
 | `sdk/python/` | 进程外插件 SDK（`uv.lock` 锁定依赖） |
 | `plugins/` | 示例 Python 插件：`event-observer`、`ai-reply` |
 | `adapters/` | 渠道适配器；Python NoneBot2 适配器位于 `adapters/nonebot/` |
@@ -54,7 +54,7 @@ Host/Adapter                       各自本地 SQLite 可靠执行/发送日志
 
 **2026-11-01 架构重建**：当前开发按 [新方向基线](doc/19-architecture-direction-baseline.md)
 与 [P00–P14 计划](doc/23-implementation-plan.md) 推进。六个独立服务入口、分层构建与进程验收已接线，
-P00–P02本机固定环境统一门禁已通过，P03数据库开发中，业务仍未实现，不能以存活探针替代就绪。旧 Core 源码和原断言保留为
+P00–P03本机固定环境统一门禁已通过，P04认证链开发中，目标业务仍未完成，不能以存活探针替代就绪。旧 Core 源码和原断言保留为
 `core/reference/` 构建；下列旧一体化闭环记录与部署说明属于 reference 证据，
 不代表六服务已经具备这些能力。旧 `kiarabot-core` 参考产物位于构建目录的
 `reference/core/`，不作为新生产入口。实际提交、检查与未验收项见

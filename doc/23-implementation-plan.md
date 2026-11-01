@@ -2,7 +2,7 @@
 
 - 版本：v1.0
 - 日期：2026-11-01
-- 状态：P00–P02 已通过本机固定环境统一门禁；P03 开发中，后续业务未完成
+- 状态：P00–P03 已通过本机固定环境统一门禁；P04 开发中，后续业务未完成
 - 依据：[方向基线](19-architecture-direction-baseline.md)、[设计总览](20-detailed-architecture-design.md)、[通信方法](21-service-contract-design.md)、[事务与初始化](22-transactions-and-migration-design.md)
 - 当前授权：用户要求按本计划持续完成主线，交付可启动、配置和实际使用的程序；在现有 worktree 并行开发，各模块独立小步提交，由主对话统一审查集成。实施细节沿已确认基线自主决定，只有需要改变方向或确实无法继续的重大问题才请用户裁定；不以阶段报告结束主线工作
 
@@ -25,8 +25,8 @@ P00–P02 在同一集成工作分支形成目标构建基线；P01 的契约生
 | P00 | 实施规格、依赖锁、文件归属与测试入口 | 定稿设计 | 本机固定环境/来源锁与统一入口通过；远端发布环境留 P14 |
 | P01 | 统一目标 proto/API 与内部公共接口 | P00 | 基线完整门禁通过；后续补全契约按各能力另验收 |
 | P02 | 六进程、分层构建与阶段测试门禁 | P01 | 已通过本机完整构建、六进程/图隔离、全仓静态分析和统一门禁 |
-| P03 | 私有 PostgreSQL 库、UoW、收据、outbox/inbox、显式初始化 | P02 | 开发中：四库初始化/权限/writer/故障fixture及typed端口已集成，仓储和daemon装配进行中 |
-| P04 | Identity 全链路与 Control 最小认证入口 | P03 | 未开始 |
+| P03 | 私有 PostgreSQL 库、UoW、收据、outbox/inbox、显式初始化 | P02 | 本机固定环境统一门禁通过：四库typed仓储、原子收据/交接、提交未知及四daemon接线已实测；后续缺陷独立修复 |
+| P04 | Identity 全链路与 Control 最小认证入口 | P03 | 开发中：安全端口已集成，权限/会话应用、安全仓储、crypto及Control认证入口并行实现 |
 | P05 | Runtime 账号/插件资源、代次与注册 | P04 | 未开始 |
 | P06 | Adapter 事件→Runtime→Plugin，尝试与续租 | P05 | 未开始 |
 | P07 | SDK Action→Runtime→Adapter→平台替身闭环 | P06 | 未开始 |
