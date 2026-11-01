@@ -129,7 +129,8 @@ private:
   asio::thread_pool& workers_;
   std::shared_ptr<IdentityAuthClient> client_;
   std::function<void(Session*)> completed_;
-  beast::flat_buffer buffer_;
+  // Bound retained framing too: decoded body_limit alone cannot bound an unfinished chunk line.
+  beast::flat_buffer buffer_{1024 * 1024 + 8192};
   http::request_parser<http::string_body> parser_;
   http::response<http::string_body> response_;
   bool closed_ = false;
@@ -185,6 +186,7 @@ public:
       acceptor_.set_option(asio::socket_base::reuse_address(true));
       acceptor_.bind(endpoint);
       acceptor_.listen(64);
+      const auto port = acceptor_.local_endpoint().port();
       accept();
       running_.store(true);
       thread_ = std::thread([this] {
@@ -194,7 +196,7 @@ public:
         }
         running_.store(false);
       });
-      std::cout << "control_https_port=" << acceptor_.local_endpoint().port() << '\n' << std::flush;
+      std::cout << "control_https_port=" << port << '\n' << std::flush;
       return std::monostate{};
     } catch (...) {
       return unavailable();

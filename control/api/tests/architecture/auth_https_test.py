@@ -213,6 +213,13 @@ def main(control, fixture):
             malformed.sendall(b'POST /api/v1/auth/login HTTP/1.1\r\nHost: localhost\r\nContent-Length: 0\r\nContent-Length: 1\r\n\r\nx')
             assert b'400' in malformed.recv(8192).split(b'\r\n', 1)[0]
             malformed.close()
+            # An unfinished chunk-extension line must hit a retained-buffer cap before the I/O deadline.
+            chunk_metadata = context.wrap_socket(socket.create_connection(('localhost', port), timeout=3), server_hostname='localhost')
+            started = time.monotonic()
+            chunk_metadata.sendall(b'POST /api/v1/auth/login HTTP/1.1\r\nHost: localhost\r\nTransfer-Encoding: chunked\r\n\r\n1;' + b'x' * (1048576 + 8193))
+            assert b'400' in chunk_metadata.recv(8192).split(b'\r\n', 1)[0]
+            assert time.monotonic() - started < 3, 'retained framing buffer was unbounded'
+            chunk_metadata.close()
             # Header and body limits are enforced while parsing, before reaching Identity.
             oversized = context.wrap_socket(socket.create_connection(('localhost', port), timeout=5), server_hostname='localhost')
             oversized.sendall(b'POST /api/v1/auth/login HTTP/1.1\r\nHost: localhost\r\nContent-Length: 1048577\r\n\r\n')

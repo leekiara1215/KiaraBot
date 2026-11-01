@@ -118,3 +118,19 @@ implementation and protected doc/18 were not modified by this integration.
 
 Real Identity application/PG/bootstrap is not yet available from companion work;
 this generated fixture remains transport evidence only and cannot close P04.
+
+## Retained framing memory bound
+
+Beast flat_buffer now has an explicit 1MiB+8KiB maximum, in addition to parser header
+and decoded-body limits. A never-terminated chunk-extension line previously could
+accumulate until the five-second read deadline; it now gets a stable 400 when the
+retained bound is reached. A >1MiB raw TLS framing test asserts rejection before the
+read deadline. The endpoint's bound port is captured before starting io.run, avoiding
+a synchronous acceptor query concurrent with its I/O-thread accept loop.
+
+The complete HTTPS/mTLS test passed with the cap. No protocol/API/schema changes;
+doc/08 records the operational bound. This is separate from shared codec integration.
+
+Final cap/acceptor correction revalidation: -Werror Control build, full
+HTTPS/mTLS matrix (including unfinished large chunk metadata), format16,
+clang-tidy22 server analysis and whitespace checks passed.

@@ -525,3 +525,8 @@ Identity 新空库版本为 4，其余三类私有库仍为 3，启动逐库严�
 Malformed HTTP framing (including conflicting Content-Length headers) returns the
 same bounded INVALID_ARGUMENT/400 envelope when TLS permits a response; ordinary
 network EOF and expired handshake/read deadlines close the connection.
+
+The retained raw HTTP read buffer is also capped at 1MiB + 8KiB. This bounds an
+unfinished chunk-extension/framing line even before decoded body bytes are counted;
+exceeding the cap returns the same INVALID_ARGUMENT/400 response. The bound business
+port is read before the I/O thread starts so acceptor state has one thread owner.
