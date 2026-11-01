@@ -157,6 +157,9 @@ public:
                                   kChecked + std::chrono::hours{24},
                                   std::numeric_limits<std::uint64_t>::max()},
                                  kChecked};
+    if (mode.load() == 31) {
+      result.checked_at += std::chrono::seconds{901};
+    }
     if (mode.load() == 20) {
       result.tokens.access.reset();
     }
@@ -636,7 +639,8 @@ void exercise(w::IdentityService::Stub& stub, ApplicationFixture& app,
       bad.mutable_page()->set_page_size(101);
     }
     if (mode == 3) {
-      bad.mutable_page()->set_page_token("unbound-token");
+      bad.mutable_page()->set_page_token("opaque-token");
+      bad.mutable_page()->set_snapshot_id("invalid-snapshot");
     }
     rejected(call(stub, &w::IdentityService::Stub::ListSessions, bad, &listsessions_reply),
              w::INVALID_ARGUMENT);
@@ -644,6 +648,25 @@ void exercise(w::IdentityService::Stub& stub, ApplicationFixture& app,
   require(app.calls.load() == calls_before);
   listsessions.mutable_page()->set_snapshot_id(kOther);
   listsessions.mutable_page()->set_page_token("cursor-fixture");
+  require(
+      call(stub, &w::IdentityService::Stub::ListSessions, listsessions, &listsessions_reply).ok());
+  // Same committed pair after access expiry is recoverable while refresh remains valid.
+  app.mode.store(31);
+  require(call(stub, &w::IdentityService::Stub::Login, login, &login_reply).ok());
+  require(login_reply.checked_at().seconds() ==
+          kChecked.time_since_epoch().count() / 1'000'000'000 + 901);
+  require(login_reply.tokens().access_expires_at().seconds() + 1 ==
+          login_reply.checked_at().seconds());
+  require(login_reply.tokens().refresh_expires_at().seconds() > login_reply.checked_at().seconds());
+  require(
+      call(stub, &w::IdentityService::Stub::RefreshSession, refreshsession, &refreshsession_reply)
+          .ok());
+  require(refreshsession_reply.tokens().access_expires_at().SerializeAsString() ==
+          login_reply.tokens().access_expires_at().SerializeAsString());
+  app.mode.store(0);
+  // REST uses one opaque token; the optional snapshot field is not required to resume.
+  listsessions.mutable_page()->clear_snapshot_id();
+  listsessions.mutable_page()->set_page_token("opaque-next-fixture");
   require(
       call(stub, &w::IdentityService::Stub::ListSessions, listsessions, &listsessions_reply).ok());
   for (int mode : {21, 22, 23, 24, 25, 26, 27, 28}) {

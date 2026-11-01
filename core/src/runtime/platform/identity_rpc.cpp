@@ -1,5 +1,3 @@
-#include "kiarabot/core/runtime/platform/identity_rpc.hpp"
-
 #include <algorithm>
 #include <array>
 #include <chrono>
@@ -14,6 +12,7 @@
 #include <openssl/rand.h>
 
 #include "kiarabot/core/domain/target/identity_policy.hpp"
+#include "kiarabot/core/runtime/platform/identity_rpc.hpp"
 #include "kiarabot/core/runtime/platform/peer_certificate.hpp"
 #include "kiarabot/core/runtime/platform/target_codec.hpp"
 
@@ -204,7 +203,7 @@ t::Outcome<v1::TokenPair> token_pair(const t::IdentityTokenReply& input) {
   const auto& pair = input.tokens;
   if (!uuid(pair.session.value) || !pair.access || !pair.refresh || pair.access->bytes().empty() ||
       pair.refresh->bytes().empty() || pair.rotation == 0 || !positive(input.checked_at) ||
-      pair.access_expires_at <= input.checked_at ||
+      !positive(pair.access_expires_at) || pair.refresh_expires_at <= input.checked_at ||
       pair.refresh_expires_at < pair.access_expires_at) {
     return invalid_result();
   }
@@ -489,7 +488,7 @@ public:
                      page.page_size() > 100 || !page.next_page_token().empty() ||
                      page.has_expires_at() || page.page_token().size() > 1024 ||
                      (!page.snapshot_id().empty() && !uuid(page.snapshot_id())) ||
-                     (page.page_token().empty() != page.snapshot_id().empty())) {
+                     (page.page_token().empty() && !page.snapshot_id().empty())) {
                    return failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput);
                  }
                  auto reply = application_.list_sessions(t::ListSessionsRequest{

@@ -14,7 +14,7 @@ Login/Refresh/Validate/GetPrincipal的密码/token借用SecretView，Revoke/List
 
 只返回纯应用成功的已提交结果，局部完整投影后swap响应。Timestamp经target_codec保留精确纳秒，版本/rotation保持uint64最大值。持久created_at/expiry/checked_at/version/binding缺失拒绝，不填now/iat/0。Token结果必须有实际秘密及原expiry，不从旧状态或占位返回。PrincipalRecord.binding是Control/公共投影必需字段，内部Principal虽optional，此边界缺失即Internal，不能从subject虚构；Core成功路径须提供持久binding。
 
-Assignment由Core helper验证/投影：role行同role、无explicit；explicit行每个scope资源具有同一permission集合，拒绝无法安全表示的稀疏pair product。每条subject/ID独立，其他主体、重复ID或不合法resource/version拒绝。仅显示roles/permissions并集，不把显示scope做笛卡尔授权。List拒绝输入next_page_token/expires_at，cursor与snapshot_id成对，page<=100；输出页大小、snapshot、subject、有效期及会话元数据核对，跨主体/selfSession权限仍由应用决定。
+Assignment由Core helper验证/投影：role行同role、无explicit；explicit行每个scope资源具有同一permission集合，拒绝无法安全表示的稀疏pair product。每条subject/ID独立，其他主体、重复ID或不合法resource/version拒绝。仅显示roles/permissions并集，不把显示scope做笛卡尔授权。List拒绝输入next_page_token/expires_at，opaque cursor可单独使用，显式snapshot_id须合法，page<=100；输出页大小、snapshot、subject、有效期及会话元数据核对，跨主体/selfSession权限仍由应用决定。
 
 Failure编码使用唯一RpcFailure二进制详情：Acceptance三值保持，operation owner/resource/id和retry_after保留，无current_version来源则不编造。Recovery名称映射：CorrectInput→CORRECT_INPUT、Authenticate→REAUTHENTICATE、ReadCurrent→RESYNC_SNAPSHOT、QuerySameIdentity→QUERY_SAME_INTENT、Backoff→RETRY_SAME_ID、Diagnose→MANUAL_REVIEW。Unknown不可通过修正输入/重新认证等建议换新键重做；畸形组合转Internal但保留Unknown和原身份查询。异常发生在应用调用后保守Unknown，调用前NotAccepted，不输出what()/秘密。极端CSPRNG/分配故障无法形成安全关联时仅脱敏transport INTERNAL，不伪造业务容器/ID。
 
@@ -43,3 +43,12 @@ git diff --check
 未运行仓库full/check-toolchain/PG生产闭环：本任务明确不改CMake，buildchat负责最终注册，真实当前登记/业务应用/PG组合根由父任务另验。以上网络测试纯应用与verifier均为明确fixture，不证明生产认证/撤销/数据库事务已通过。
 
 最终结果：固定依赖-Werror rebuild、真实mTLS全套测试（包含Accepted/NotAccepted/Unknown、全部Recovery映射、所有未实现owner入口）、clang-format16 dry-run、两新增TU clang-tidy22全部analyzer/warnings-as-errors、inner/模块边界/状态文档门禁均退出0。Core policy依赖blob复核未变。stage后git diff --cached --check再次通过；生成物/测试证书/临时CMake均未提交。
+
+
+## 六方法独立修正：原TokenPair恢复与opaque续页
+
+父审确认原pair的access过期不妨碍同键恢复，只要原access/refresh时间为正、access<=refresh且refresh>checked_at；边界原样返回，不延长期限。测试在原checked_at+901秒恢复Login和Refresh，证明原access到期未变且可返回。ListSessions允许仅page_token续页；输出next_page_token/expires_at、坏snapshot ID及snapshot-only无cursor仍拒绝。真实mTLS测试覆盖token-only分页。
+
+本修正从HEAD六方法源/测试提取独立快照，以固定依赖重新编译并跑网络测试，不混入尚未提交的生产PeerAuthenticator能力；CMake仅在/tmp，仓库CMake不动。doc01/doc02及本报告同步，wire/API不改，doc18只读。
+
+六方法修正的独立快照最终验证：固定依赖-Werror重编译、真实mTLS六方法/正反例、clang-tidy22两TU全部analyzer且warnings-as-errors均退出0，format16按仓库配置检查、状态文档门禁和diff检查通过。仅stage六方法修正快照，生产PeerAuthenticator实现与其新增证书fixture保留未提交，避免能力混合。
