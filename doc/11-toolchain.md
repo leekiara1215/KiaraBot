@@ -527,3 +527,6 @@ Core外层service_process编译独立AuthContext证据提取源；`p04_peer_cert
 链接service_process/proto/OpenSSL::Crypto，经Python生成真实mTLS材料并比对叶指纹，
 标签p04/integration/security、30秒，PATH沿用显式OpenSSL CLI目录。此测试与infra
 `p04_peer_certificate`分开，不把TLS证据提取当作当前身份登记或业务授权。
+
+`p04_identity_application_contract` 注册p04/unit、10秒，独立编译Identity可注入应用声明；
+测试不调用尚未实现factory，不能作为认证业务完成证据。该头同时自动独立编译。

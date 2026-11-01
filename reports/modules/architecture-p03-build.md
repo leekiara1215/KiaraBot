@@ -262,3 +262,16 @@ P04全部真实CTest和注册标签结果后附；未重复统一入口，父负
 
 本树P04 CTest 6/6通过，总6.18秒；真实AuthContext证据2.35秒，更新Identity契约0.50秒；
 p04注册标签通过。
+
+## 后续接线：Identity可注入应用声明
+
+接入a11716c（本树9bffe28），Core CMake同一纯测试循环注册
+identity_application_contract_test为p04/unit、10秒。无生产或测试源码修改，
+不调用未实现factory。仅编译声明及注入边界，不冒称业务通过。
+文档影响仅doc/11和本报告构建清单；原提交应用接口报告保留，其他模块/API/proto及
+ doc/12-ci-cd无变更，doc/18只读。
+固定full-locked配置/完整构建、全TU覆盖/inner/六目标图、全仓format16通过；
+新TU精确DB tidy22 clang-analyzer-* warnings-as-errors通过。P04测试/标签结果后附。
+未取JWT或放宽tidy，未重复全仓统一入口；文档检查为路径/末尾换行与diff检查。
+
+实际P04 CTest 7/7通过，总2.74秒；新应用声明测试0.48秒，p04注册标签通过。
