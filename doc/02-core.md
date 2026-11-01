@@ -721,3 +721,36 @@ IssueDelegation / ExchangeDelegation 只在线重验权威并签名，不产生�
 requires_idempotency=false，重试可返回新的短期证明。不得将 JWT 写入普通命令收据。
 完整失败/重试与未来副作用边界见 [运行语义](01-runtime-semantics.md#p04-短期委托证明的重试边界)；
 线契约以 `proto/kiarabot/v1/identity.proto` 为准，其他命令的幂等恢复要求未改变。
+
+### P04 六方法 Identity 安全应用
+
+`make_identity_security_application` 注入同一typed安全UoW工厂与成熟crypto ports，实现
+Login、RefreshSession、ValidateSession、GetPrincipal、RevokeSession和ListSessions；
+不替换P02 factory。readiness仍false，数据库/凭据门禁Unverified，生产组合根另行接线。
+读事务释放后才运行密码/HMAC/AEAD/委托验签/随机准备；写事务重新读取当前peer、主体、
+credential head、session/rotation和授权版本，使用CAS将security/base元数据、成功收据和
+审计等原子提交。只有Committed返回新秘密；Unknown返回原key查询恢复语义，不自动重做。
+秘密重放在解密前后重查当前状态；旧凭据/撤销/轮次与期限拒绝优先于旧成功receipt。
+刷新历史只允许原peer+原key在原输入有效期及最多24小时内恢复当前成功结果轮次；新key
+不能定位旧成功。令牌通过opaque_token获得可见ASCII，不以raw随机字节填wire string。
+
+登录使用现有ASCII1..128用户名小写规范化；不存在用户与错误密码均执行密码verify，
+前者使用可信dummy verifier。验证当前Control peer后，按注入clock的monotonic执行本机
+固定窗口：每peer每分钟60次，每normalized username跨peer合计每分钟30次，两类计数键总数
+最多4096，无活跃key驱逐；满额或超频RateLimited。计入失败尝试，过期窗口释放容量，
+重启清空。它是本机CPU保护，不宣称跨实例/持久化分布式限频；部署边界限频另行负责。
+
+每次access查询读取当前权威会话、主体、凭据及逐条exact assignments；每页list先验当前
+委托签名来源session/credential、授权和版本。结果存为最多10分钟的不可变内存快照，
+绑定actor/origin、target、page size、authversion和随机opaque cursor；总记录与快照数
+受可信options限制，无有效快照驱逐、live offset或故障假空页。重启使旧cursor失效。
+Revoke普通七天收据保存完整不可变SessionMetadata，使用固定可信ReceiptCapacity10000，
+空请求指纹为成熟预计算域摘要，目标与actor已在ReceiptKey；新JWT/request_id/deadline
+不改变请求内容。重放返回原快照，checked_at仍取本次权威数据库时间。
+
+Login新建会话的最终短UoW在原收据重放分支之后调用count_unexpired，按同事务数据库当前
+UTC统计未撤销且refresh尚未到期会话，4096全局上限之外另保留可信per-subject更小限额。
+计数失败传播Failure，不当0；满额不阻止已成功原结果重放，不扫描其他主体拼造计数。
+高风险操作提交前重新采样DB时间，超过一秒授权窗口或deadline/proof/credential/session
+期限则回滚；拒绝审计只归因真实当前登记的direct peer，不用未验证represented actor，
+不记录密码/用户名/token，Unknown不另当拒绝重试或补写审计。
