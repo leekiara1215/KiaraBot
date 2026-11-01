@@ -543,3 +543,10 @@ service_process，PRIVATE链接proto/JSON/Boost/OpenSSL，Control组合根链接
 DelegationCrypto加入现有Identity crypto库与 `p04_delegation_crypto` 安全测试（30秒）。
 库及直接签验测试PRIVATE链接固定jwt-cpp::jwt-cpp、nlohmann_json::nlohmann_json，
 使用官方nlohmann traits，不通过picojson路径或关闭分析来修正诊断。
+
+PG库加入Identity凭据/Bootstrap安全仓储 `src/identity_security.cpp`，与公共UoW共用
+事务；现有common_work_checks覆盖该能力，CTest命令与120秒上限不变。
+此增量只链接冻结源，不包括尚未提交的Session实现。
+
+`p04_identity_rules` 注册独立p04/unit/security、10秒，覆盖纯授权/会话/秘密恢复规则；
+无远程依赖。RandomPort的opaque扩展须与已冻结sodium实现一起编译，避免抽象工厂缺实现。

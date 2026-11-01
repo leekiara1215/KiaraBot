@@ -332,3 +332,45 @@ header过滤或排除规则；额外bugprone失败不能记绿。仓库既定cla
 
 仓库既定clang-analyzer-* warnings-as-errors（同两TU/DB/SDK参数）通过；
 额外bugprone两Core诊断仍保留未修，不能以此替代额外门禁通过。
+
+## Control archive重复链接修复
+
+仅移除platform.cmake中Control较早的直接service_process链接，改由后加入的control_auth
+PUBLIC依赖供给。依赖未删除，实际图仍包含process/proto/TLS；未改CMake版本或屏蔽警告。
+纯构建内部变更，无公共文档影响，doc/11及模块/契约/运行文档无需重复修改，doc18只读。
+固定full-locked重新配置及实际图门禁通过；生成link.txt中process archive恰好一次。
+本树仍缺完整契约，不能完整重编Control；为实测链接，读取主树已构建obj/archive，
+按本树新生成顺序用本机c++重新链接到本树build/full-locked/control-link-probe，
+exit0、stderr空、无duplicate warning；未在主树写文件或改其构建。父集成后仍须正式link复验。
+文档检查为本报告末尾换行及git diff --check；未重复统一入口。
+
+## 后续接线：Identity Credentials/Bootstrap PG仓储
+
+仅cherry-pick父完整readreview的68c9faa（本树14365d4），未复制infra工作树后续Session
+增量。PG库增加唯一新TU identity_security.cpp；common_work_checks仍原TU，无新增
+依赖/CTest参数，原fixture/120秒不变。未修改源中已有编码形式；作者后续修复规则由其负责。
+文档影响：doc/11及本报告构建清单；infra语义已由源提交更新，其他模块/API/proto/CI
+无需额外改动，冻结doc/18只读。
+固定prefix/Python重新配置，定向PG driver/initializer构建通过；全TU覆盖/inner/六目标图、
+全仓format16通过；新TU及更新公共检查TU精确DB tidy/真实PG fixture结果后附。
+未重复已知缺契约的完整外层构建或全仓统一入口。文档检查为路径/末尾换行与diff检查。
+
+实际真实PG CTest 1/1通过，16.00秒；新增仓储/更新common检查两TU精确compile DB
+tidy22 clang-analyzer-* warnings-as-errors通过。
+
+## 后续接线：Identity纯规则及ASCII opaque端口实现
+
+同步5a1f5eb/ef956c6/9d3204e（本树0b71462/6c7984a/af7d084）；doc/02追加冲突保留双方，
+crypto报告只保留真正ASCII follow-up，不复制未取600loader章节。未取未提交应用代码。
+新增独立identity_rules_test为p04/unit/security、10秒。无生产/测试源码更改，声明与
+成熟opaque实现成组同步，保持RandomPort完整实现。
+文档影响仅doc/11和本报告构建说明；原能力Core及报告已同步，其他模块/API/proto与
+ doc/12-ci-cd不变，doc/18只读。
+
+固定prefix/Python配置成功；新规则及五crypto target定向构建通过，相关CTest6/6通过
+总4.84秒；全TU覆盖/inner/六目标图/p04注册、全仓format16通过。
+三TU精确DB tidy22 clang-analyzer-* warnings-as-errors实际失败，唯一诊断为
+core/tests/architecture/identity_rules_test.cpp:143的故意Permission(65535)产生
+clang-analyzer-optin.core.EnumCastOutOfRange；password源/测试未报诊断。没有删除断言、
+NOLINT或关闭检查，需Core所有者审定测试构造；本次不能记全静态分析通过。
+未重复全仓统一入口；文档检查为路径/末尾换行及git diff --check。

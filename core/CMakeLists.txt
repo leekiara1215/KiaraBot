@@ -31,3 +31,11 @@ foreach(COMPONENT identity_contract identity_application_contract)
   add_test(NAME p04_${COMPONENT} COMMAND kiarabot_${COMPONENT}_test)
   set_tests_properties(p04_${COMPONENT} PROPERTIES LABELS "p04;unit" TIMEOUT 10)
 endforeach()
+
+add_executable(kiarabot_identity_rules_test tests/architecture/identity_rules_test.cpp)
+target_include_directories(kiarabot_identity_rules_test PRIVATE include)
+target_compile_features(kiarabot_identity_rules_test PRIVATE cxx_std_20)
+target_compile_options(kiarabot_identity_rules_test PRIVATE
+  $<$<CXX_COMPILER_ID:AppleClang,Clang,GNU>:-Wall -Wextra -Wpedantic>)
+add_test(NAME p04_identity_rules COMMAND kiarabot_identity_rules_test)
+set_tests_properties(p04_identity_rules PROPERTIES LABELS "p04;unit;security" TIMEOUT 10)
