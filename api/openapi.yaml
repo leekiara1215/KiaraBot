@@ -3210,11 +3210,13 @@ components:
       - observed_at
       - source_service
       oneOf:
-      - properties:
+      - required: [registered]
+        properties:
           registered:
             enum:
             - false
       - required:
+        - registered
         - fence
         properties:
           registered:
@@ -3403,9 +3405,11 @@ components:
             enum:
             - OPERATION_BLOCKED
         required:
+        - state
         - reason
         - next_attempt_at
-      - properties:
+      - required: [state]
+        properties:
           state:
             enum:
             - OPERATION_ACCEPTED

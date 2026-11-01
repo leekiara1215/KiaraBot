@@ -65,3 +65,9 @@ OpenAPI 新增33个管理操作，引用类型化目标消息 schema，并增加
 同步doc/06-control-api.md与本报告，补target_schema_test.cjs两种模式正反例。未修改proto（原host_id/externally_managed字段已能表达此语义）、AsyncAPI（引用同一目标schema）、doc/01（状态/权限/方法无变化）、运行语义或doc/18–23；无需重新生成C++/Python或运行业务构建。本次检查为Ajv完整回归、正式OpenAPI lint、AsyncAPI parser、引用/实现状态/枚举/语义及git diff --check，结果以实际输出为准。
 
 本修正实际结果：Ajv managed/external 12项组合及既有schema回归通过；33操作引用检查、实现状态、枚举、语义、git diff --check均通过；Redocly2.72.1通过（4条现有schema组合/unused组件warning，无error，新增实例条件无warning）；AsyncAPI parser3.6.6通过。无C++/proto变化，不重复生成或运行full/tidy。
+
+## P01a 判别分支显式required
+
+外部实例修正已提交`3243aff`。主集成复核确认此前最后schema的Redocly实际有4条warning，而非早期记录的2条；上节已记录4条。本步在TargetVersionedResourceState两个分支显式required registered，在TargetOperation两个分支显式required state；它们本来已是外层required，因此不改变合法输入输出，不放宽条件，无需额外业务文档同步或proto生成。
+
+实际复验：Ajv全部模式/必填/边界回归、33操作引用、状态/枚举/语义检查、git diff --check通过；Redocly2.72.1通过且现在确为2条unused warning（TargetRpcFailure、WS跨文件使用的TargetStreamCursor），AsyncAPI parser3.6.6通过。未重复全仓构建/格式/tidy：仅schema等价约束与报告，无手写C++或实现变更。
