@@ -550,3 +550,6 @@ PG库加入Identity凭据/Bootstrap安全仓储 `src/identity_security.cpp`，�
 
 `p04_identity_rules` 注册独立p04/unit/security、10秒，覆盖纯授权/会话/秘密恢复规则；
 无远程依赖。RandomPort的opaque扩展须与已冻结sodium实现一起编译，避免抽象工厂缺实现。
+
+`p04_identity_grant_projection` 独立注册p04/unit/security、10秒，验证精确授予到继承
+元数据的一致投影；只包含纯header，不增加库或外层依赖。

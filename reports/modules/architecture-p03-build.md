@@ -374,3 +374,17 @@ core/tests/architecture/identity_rules_test.cpp:143的故意Permission(65535)产
 clang-analyzer-optin.core.EnumCastOutOfRange；password源/测试未报诊断。没有删除断言、
 NOLINT或关闭检查，需Core所有者审定测试构造；本次不能记全静态分析通过。
 未重复全仓统一入口；文档检查为路径/末尾换行及git diff --check。
+
+## 后续接线：精确Grant metadata投影纯测试
+
+同步已审bdc05b9（本树66cf08b），Core纯安全测试循环加入identity_grant_projection，
+p04/unit/security、10秒；无新增生产TU或外层依赖，不改源。PG variant/count配套与
+未审应用源暂不取。文档影响仅doc/11及本报告构建说明；源提交已同步doc/02，
+其他模块/API/proto/CI无变化，冻结doc/18只读。
+固定prefix/Python重新配置、两个纯规则target定向构建通过；全TU覆盖/inner/实际图、
+全仓format16通过；新TU精确DB tidy22 clang-analyzer-* warnings-as-errors通过。
+相关纯规则CTest及p04标签结果后附。既有identity_rules故意enum转换tidy诊断仍未修，
+不以本新TU通过替代旧TU结果；未重复全仓统一入口或已知缺契约外层构建。
+文档检查为路径/末尾换行及diff检查。
+
+相关CTest2/2通过，总1.59秒；新grant投影0.49秒，p04注册标签通过。
