@@ -853,3 +853,13 @@ credential/session及授权版本、精确收窄，再签第二跳；不绕过�
 本接口须与成熟crypto实现一起集成，未实现时不能构造假的VerifiedDelegation或开启Exchange。
 
 Issue RPC在解码/展开前同步成熟JWT的128 exact bindings上限：资源1..128、权限1..40且封闭去重，permission_count <=128/resource_count，以除法规避溢出。超限沿既有INVALID_ARGUMENT返回，不调用Core issuer的来源验证/签名；不先构建大型product再等crypto晚拒。Core自身的同一上限由Core能力维护，传输层不改其实现。
+
+### P04 公开验签材料端口
+
+独立PublicVerificationKey仅含key引用、raw32 Ed25519公钥、正版本及有限valid_until；
+VerificationKeySet含非空有界keys、正集合版本和离线Identity部署UUID Catalog锚点。
+VerificationKeyMaterialPort::snapshot只读不可变可信材料，不授权、不联网、不读DB。
+唯一active key到期、空集合或时间不可信返回UpstreamUnavailable，不伪造空成功。
+后续GetVerificationKeys由Core验证真实当前登记platform mTLS及显式identity.keys.read@
+该Catalog，不以前置JWT造成未知kid循环。known_version相等/较旧/缺省返回完整当前集合，
+future版本InvalidArgument/CorrectInput。此类型/端口提交不启用RPC或伪ready。
