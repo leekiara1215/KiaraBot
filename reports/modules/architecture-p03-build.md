@@ -289,3 +289,25 @@ identity_application_contract_test为p04/unit、10秒。无生产或测试源码
 PLUGIN_CONFIG_READ/MESSAGE_READ。先前两末端契约直接cherry已有大量冲突且中止，
 本轮不编造枚举或关闭校验。此构建失败不能记通过；codec运行/tidy暂不能验证，
 需完整已审契约基点复验。全TU覆盖/内层/实际图/标签及文档检查将在提交前执行。
+
+## 后续接线：Control HTTPS/mTLS认证边界
+
+同步e6a5683/0d3048f/1513e2b/3359b4a（本树dc869f6/97194b0/2359b52/21d70b6），
+文档冲突只保留真正Control配置/HTTPS新增节，不复制未同步契约链内容。
+根proto外层include control-auth.cmake，新库kiarabot_control_auth PUBLIC service_process
+及Core/Control include，PRIVATE proto/core_json/Boost::headers/OpenSSL SSL/Crypto；
+Control PRIVATE链接该库。独立fixture链接proto/OpenSSL Crypto，实际路径为
+control/api/tests/architecture，非提案中的tests/target。Python CTest接受control和fixture
+两target，p04/integration/fault、60秒，PATH前置cache指定OpenSSL CLI。
+
+文档影响仅doc/11和本报告构建说明；业务/配置说明由源提交已同步doc/06/08，
+其他模块/API/proto与doc/12-ci-cd不额外修改，doc/18只读。
+固定full-locked配置成功，完整构建与Control定向构建均实际失败：本树缺完整Identity
+当前投影契约，生成SessionRecord无created_at、各Identity响应无checked_at/
+authorization_version、PrincipalRecord无display_permissions、ValidateSession无assignments。
+同轮codec还缺Catalog及5个权限枚举。未改协议或删校验；因此HTTPS运行/codec运行及其
+依赖生成头的tidy不能记通过，待完整已审契约基点重验。
+全TU覆盖/inner/六目标图/p04注册、全仓format16与边界通过；dev结果后附。
+未重复全仓统一入口。文档校验为路径/末尾换行/无冲突标记与git diff --check。
+
+本树dev配置/完整构建及16/16 CTest通过；完整外层构建失败状态保持如上，不宣称全绿。

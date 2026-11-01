@@ -534,3 +534,8 @@ Core外层service_process编译独立AuthContext证据提取源；`p04_peer_cert
 独立外层 `kiarabot_target_codec` PUBLIC链接生成proto，仅供外层消费者使用；
 `p04_target_codec` 注册p04/unit/security、10秒。完整构建须同步包含Catalog与所有40个
 封闭权限的已审查目标契约，不能在构建层补造wire枚举；纯application不链接codec。
+
+Control外层 `kiarabot_control_auth` 编译identity_auth_client/https_endpoint，PUBLIC链接
+service_process，PRIVATE链接proto/JSON/Boost/OpenSSL，Control组合根链接该库。
+`p04_control_auth_https` 使用tests/architecture的真实mTLS fixture，integration/fault、
+60秒，显式OpenSSL CLI PATH；必须先同步完整Identity当前投影契约，不得删字段校验来适配旧协议。
