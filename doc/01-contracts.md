@@ -1730,3 +1730,13 @@ issued_at/expires_at 为受信UTC，名义寿命最多56秒；含既定2秒节�
 refresh只接受当前实际流、未过期未撤销的proof/refresh及正refresh_generation，在线验证当前Identity主体/凭据状态与gate后原子轮换二者和generation；旧材料不可再次换发。材料/流/Fence失配或过期UNAUTHENTICATED并关闭流，已认证请求generation冲突CONFLICT，明确失权PERMISSION_DENIED，依赖故障UPSTREAM_UNAVAILABLE，期限TIMEOUT。失败不轮换、不复活失效授权。refresh无持久秘密收据；响应丢失视授权未知，关闭旧流，经仍有效的登记凭据重新bootstrap产生新connection_generation，禁止重放旧refresh猜测结果。
 
 授权过期停止新投递、入站受理、续租和副作用，不把已有Action/Model事实变FAILED。auth刷新不续Delivery租约；ACK/Renew仍核验有效attempt、完整Fence及现有事实规则。适配器本地已执行结果在断线后通过新认证连接按原account/action ID交回，不能据失效proof新执行。所有新增字段/帧target均not_implemented，oracle和wire往返不证明生产授权或并发正确性。
+
+## P04 target transport codec（独立边界工具）
+
+`runtime/platform/target_codec.hpp/.cpp` 仅在外层把内部 target 值类型与生成消息/gRPC 转换；domain/application/ports 不引入生成类型。公开转换返回 Outcome，非法/缺失值和未知/UNSPECIFIED 枚举返回 InvalidArgument，异常转 Internal，不抛出边界。消息 presence 属于包含它的调用边界：必须先检查 has_*，不得把缺失 Timestamp 当 epoch 或缺失 ResourceRef 当默认资源；显式存在的 Unix epoch 合法。
+
+TimePoint 使用已确定的 signed int64 epoch nanoseconds；Timestamp 规范 nanos 为0..999999999，负时间采用向下取整 seconds，精确双向转换。超出 Protobuf 年份或内部 int64 纳秒范围均拒绝，不截断、不饱和。ResourceKind 和封闭 Permission 均按名称逐项显式映射，尤其 Catalog 内部15/wire16，禁止数字cast；未知权限不降级。目标资源 ID 为小写 UUIDv4，Action 保留128字节[A-Za-z0-9._-]，Task 保留256字节可见ASCII来源规则；空值拒绝。
+
+稳定错误映射严格使用 target_spec.json.error_mapping。make_error 接受稳定内部码、合法 request_id/trace_id 和显式 retryable，输出稳定码名称作脱敏message；gRPC Status.error_details() 承载序列化 kiarabot.v1.Error（标准binary详情通道），不从自由文本推断码。解码必须有合法稳定Error及关联ID，且gRPC/HTTP状态匹配稳定码；503/UNAVAILABLE等歧义由Error.code消除，缺详情/未知码/状态失配拒绝。Error.details 仍须空。此码转换不接收或压平 Failure 的 acceptance/recovery/operation；这些事实仍由所属owner的 RpcFailure 单独携带，不能丢弃后假称完整失败响应。
+
+此工具不验证认证、当前授权、资源存在性或owner/gate，不实现owner RPC，也不改变任何能力的 target 状态。CMake/传输接线由主集成负责，独立测试和检查见 reports/modules/architecture-p04-target-codec.md；doc18只读。

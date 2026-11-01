@@ -610,3 +610,13 @@ current-head索引，不读请求body中的credential_id/subject、不遍历全�
 PeerCertificatePort输入只接受真实TLS证据转换的leaf-first连续DER X509证书串，使用
 成熟d2i_X509完整消费；总量<=64KiB、<=8张、非空，无额外前缀或尾随字节。PEM/DER/X509解析
 交成熟OpenSSL adapter，不由Core手写；peer提供的根不会因此变成受信CA。
+
+## P04 target transport codec（独立边界工具）
+
+`runtime/platform/target_codec.hpp/.cpp` 仅在外层把内部 target 值类型与生成消息/gRPC 转换；domain/application/ports 不引入生成类型。公开转换返回 Outcome，非法/缺失值和未知/UNSPECIFIED 枚举返回 InvalidArgument，异常转 Internal，不抛出边界。消息 presence 属于包含它的调用边界：必须先检查 has_*，不得把缺失 Timestamp 当 epoch 或缺失 ResourceRef 当默认资源；显式存在的 Unix epoch 合法。
+
+TimePoint 使用已确定的 signed int64 epoch nanoseconds；Timestamp 规范 nanos 为0..999999999，负时间采用向下取整 seconds，精确双向转换。超出 Protobuf 年份或内部 int64 纳秒范围均拒绝，不截断、不饱和。ResourceKind 和封闭 Permission 均按名称逐项显式映射，尤其 Catalog 内部15/wire16，禁止数字cast；未知权限不降级。目标资源 ID 为小写 UUIDv4，Action 保留128字节[A-Za-z0-9._-]，Task 保留256字节可见ASCII来源规则；空值拒绝。
+
+稳定错误映射严格使用 target_spec.json.error_mapping。make_error 接受稳定内部码、合法 request_id/trace_id 和显式 retryable，输出稳定码名称作脱敏message；gRPC Status.error_details() 承载序列化 kiarabot.v1.Error（标准binary详情通道），不从自由文本推断码。解码必须有合法稳定Error及关联ID，且gRPC/HTTP状态匹配稳定码；503/UNAVAILABLE等歧义由Error.code消除，缺详情/未知码/状态失配拒绝。Error.details 仍须空。此码转换不接收或压平 Failure 的 acceptance/recovery/operation；这些事实仍由所属owner的 RpcFailure 单独携带，不能丢弃后假称完整失败响应。
+
+此工具不验证认证、当前授权、资源存在性或owner/gate，不实现owner RPC，也不改变任何能力的 target 状态。CMake/传输接线由主集成负责，独立测试和检查见 reports/modules/architecture-p04-target-codec.md；doc18只读。
