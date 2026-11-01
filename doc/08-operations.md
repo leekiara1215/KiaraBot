@@ -887,3 +887,55 @@ verifier 或 SecretReplayPayload。重复同指纹仍返回原完整快照及原
 共享 typed 表及 kind 范围变化后，Identity 新空库 schema10，Runtime/Scheduler/Model 均为
 schema5；四库 descriptor 全部更新。旧库拒绝打开，不自动迁移或清空。此持久化能力不代表
 尚未接线的 Register/Set/Revoke RPC 或生产状态已启用。
+## 今晚单机 MVP：reference 本地收发入口
+
+`scripts/local/start.py` 使用现成 reference Core、Control HTTP、SQLite、固定
+`plugins/local-reply` SDK 子进程和真实 NoneBot。默认自动启动仅 loopback 的 OneBot
+协议替身；不启动 PostgreSQL 或目标六服务，不接 QQ 或模型服务。此闭环不代表新架构完成。
+
+已有 reference 构建和锁定 Python 环境是前提：
+
+```bash
+uv sync --locked --python 3.11.18 --project adapters/nonebot
+adapters/nonebot/.venv/bin/python adapters/nonebot/tools/generate_proto.py proto
+adapters/nonebot/.venv/bin/python sdk/python/tools/generate_proto.py
+python3 scripts/local/start.py start
+python3 scripts/local/start.py status
+```
+
+默认从 `build/full-locked/reference/core/kiarabot-core`、`build/full/reference/core/kiarabot-core`、
+旧 `build/full/core/kiarabot-core` 等现有位置选择 reference 二进制；credentials 工具位于相应
+`control/api/kiarabot-control-credentials`。自定义构建可显式传 `--core PATH --credentials PATH`；
+解释器可传 `--python PATH`。不自动构建、不升级依赖。默认账号123、允许回复的会话456；首次
+启动可用 `--account 123 --conversation 456` 明确设置。保留认证、限流、幂等与 action allowlist。
+
+`start` 输出一行无秘密 JSON，包括 `control_url`、gRPC端口、demo socket和自有子进程。
+默认私有状态目录 `data/local` 已被忽略，目录0700，密码/token/config/log文件0600。
+管理员用户名 `admin`，密码见该目录 `admin-password`，不在终端输出。`init` 可先只生成配置。
+第二次 `start` 不重置密码、加密密钥、SQLite或outbox；运行中更改参数必须先 `stop`。
+
+发一条仅本机的群消息并等待实际固定 Sender 回复：
+
+```bash
+adapters/nonebot/.venv/bin/python scripts/local/onebot_demo.py message \
+  --token-file data/local/onebot-token --control-socket "$PWD/data/local/demo.sock" \
+  --type group --user-id 789 --group-id 456 --text hello --timeout 10
+python3 scripts/local/start.py stop
+```
+
+预期回复 `收到：hello`。macOS Unix socket路径须不超过100字节；长工作目录可用短的
+私有 `--state-dir /private/tmp/kb-local`（须为空或由本入口拥有，0700）。状态目录拒绝符号链接，
+不跨工作树共享。`stop` 保留数据，只向 UID、启动时间、完整命令、目录和运行标识均匹配的
+自有 supervisor 发信号；supervisor 持有进程句柄，逐一有界回收孩子。可疑旧PID/孤儿状态拒绝
+自动接管，须人工核对私有 `run.json`；不删除数据库或杀占用端口的其他程序。失败非零退出。
+
+可选网页使用 `start --ui`：要求已有锁定 `panel/node_modules` 和 Node，Vite绑定
+`127.0.0.1:5173 --strictPort`，以 live API／WS URL 连接实际 Control，仅允许该 Origin。
+登录后必须收到 `/ws/control` 的 `SESSION_READY` 才加载页面；不回退 mock。没有 `--ui` 时
+只报告 API URL，消息 CLI仍可用。缺依赖或端口占用会失败并回收本次子进程。
+
+真实平台仅在用户显式传入 `--onebot-url ws://HOST:PORT --onebot-token-file PRIVATE_FILE`
+时启用；token文件必须属于当前用户、0600，不把 token 写入参数或日志。`--demo-url` 仅供
+显式 loopback 测试替身。`--core-only` 是标明无收发的诊断模式，不作为 MVP 收发验收。
+本次实际验收覆盖默认群消息、登录、WS首帧、REST、持久重启及停止；连续群聊／私聊同一
+数字会话的额外探针私聊曾超时，未放宽现有规则，不能据此宣称私聊完整验收。
