@@ -483,3 +483,59 @@ RESOURCE_CATALOG=16必须在边界按名字显式映射，不能数值强转。�
 及非空ID，但不授予目录内容/子资源权限；有限目录ID与操作授权由对应policy精确核验。
 相同ID下Catalog/Account/Model/Task仍是不同资源，不能共享收据scope或混淆交接内容。
 基础设施的resource_kind CHECK需要独立扩到15，现有库值不重编号；本提交不修改SQL。
+
+## P04 Identity安全类型与扩展端口（声明，尚未接线）
+
+`domain/target/identity_permissions.hpp`的封闭Permission按唯一契约0de1622逐名映射，
+当前39项；Unspecified及未知值不可授权，不以数值cast替代边界映射。G08/G09的后续
+目录登记/发现及认证shape待唯一来源增量，不预先造新词条或任意字符串权限。
+`identity_types.hpp`定义带版本凭据、登录索引、会话验证材料、精确role/resource及
+permission/resource绑定、受限委托/peer/时钟、分离的管理员Bootstrap和秘密成功收据。
+access15分钟、refresh30天；公开Session.expires_at=refresh会话期限，access另有期限。
+当前凭据rotate/revoke后，旧绑定版本的后续验证、刷新和秘密回放均须拒绝。
+
+秘密结果只用move-only EphemeralTokenPair/EphemeralCredentialDelivery和SecretReplayPayload；
+SecretBuffer由成熟crypto adapter提供安全分配/析构擦除，Core仅借用span，不实现密码/
+擦除算法或输出格式。EncryptedSecretReceipt只存AEAD密文及绑定，24小时受限恢复，
+不能进入P03普通ReplayResult/七天收据或audit/outbox。AEAD绑定包含用途/scope、subject/
+session、credential版本、请求keyed commitment、输入/结果轮次及创建/截止时间；改变
+行时间不能续命。每次解密前检查当前身份/会话/凭据/轮次，不因存在密文就允许重放。
+
+`ports/target/identity_crypto.hpp`只声明密码、用途隔离HMAC、AEAD、CSPRNG、时钟、真实
+证书peer和Ed25519 JWS端口，具体adapter沿锁定jwt-cpp/libsodium；Core不手写算法。
+证书链有效不等于身份或业务授权，必须对照当前登记的SAN/服务/凭据；body自报指纹
+不是TLS证据。未知key/算法降级/任意jku-x5u拒绝；proof期限56秒+2秒节点差+2秒容差
+不超过60秒，actor链/证书绑定/收窄与最大两次业务转交留给后续规则及adapter验证。
+密码、签名、密钥调用不持DB锁；SecurityClock不替代P03当前DB UTC。
+
+`identity_repository.hpp`新增IdentitySecurityUnitOfWork继承P03 IdentityUnitOfWork，
+新factory显式返回该类型；旧P03类及其纯虚集合未改，禁止dynamic_cast或另开事务补仓储。
+credentials/session_security/exact_assignments/secret_receipts/bootstrap与继承的所有repos
+必须共用一个物理Identity事务。登录名/凭据索引是类型化记录，不能藏进任意字典；
+typed exact assignments是同一授予权威的规范化视图，不是复制授权库。P04授权不得
+把P03字符串metadata投影当作绕过封闭词表的路径。普通角色权限与resource在同一绑定
+原子项内匹配，默认admin无message.read；有限Catalog没有通配或子资源授权继承。
+
+管理员Bootstrap只由显式可信离线命令一次性消费，初始主体/密码/精确范围/水位/审计
+与Consumed同事务；已初始化库缺失marker应Internal，不得隐式重新Required。
+服务/插件的WorkloadBootstrap凭据独立于管理员引导；连接proof续签帧尚待契约，当前
+接口不实现该连接状态机。以上是类型/端口声明，不创建PG表、不实现RPC或解除假ready门禁。
+
+首接口补充：CredentialState显式包含Pending，PendingCredentialMaterial只保存封闭kind，
+不含任何验证秘密。make_pending_credential创建version1 stub，结构validator拒绝Active+
+PendingMaterial、Active空密码hash及Pending+已发放材料；不持久化伪Expired终态，过期按
+当前UTC/材料期限验证。G08 CredentialStatus的wire映射等唯一提交SHA，不用空hash或Revoked
+假装未发放。SessionSecurity增加不可变created_at，脱敏SessionMetadata由该行投影，
+expires_at明确为refresh期限；不得用查询now伪造创建时间。list_metadata提供单次一致的
+主体有界完整读取，超容量/依赖故障显式失败；供十分钟不可变、每页当前授权及重启失效的
+应用快照使用，不做live offset分页，当前还未实现该快照缓存。
+
+秘密幂等scope只含稳定调用者+session/credential+key（Login另有固定规范化用户名），
+不含input_rotation/expected_version。二者在SecretRequestParameters中参与keyed request
+commitment及完整AEAD binding，因此同scope异版本/轮次必须冲突，不能换scope绕过。
+RotateCredential即使没有客户端秘密正文，expected_version也必须进入commitment。
+resolve_refresh是受限当前/已消费input verifier解析入口，返回RefreshHandle不是认证成功；
+已消费历史仅对原control peer+原key、原input rotation和最长24小时/原token期限内可解析。
+record_refresh_consumption与轮换、metadata、成功密文收据同事务，永不存raw token；
+新key不能解析旧历史，原key也须当前session轮次等于原成功结果轮次、credential仍当前有效，
+才可解密重放。CredentialDelivery先当前授权，再比较原expected_version请求绑定。
