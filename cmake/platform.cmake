@@ -111,6 +111,22 @@ target_link_libraries(kiarabot_service_process PRIVATE
   kiarabot_service_config kiarabot_proto Threads::Threads)
 kiarabot_platform_warnings(kiarabot_service_process)
 
+# Identity wire adaptation stays outer and borrows the pure application through its port.
+add_library(kiarabot_identity_rpc STATIC
+  ${CMAKE_SOURCE_DIR}/core/src/runtime/platform/identity_rpc.cpp)
+target_include_directories(kiarabot_identity_rpc PUBLIC ${CMAKE_SOURCE_DIR}/core/include)
+target_link_libraries(kiarabot_identity_rpc PUBLIC kiarabot_proto PRIVATE
+  kiarabot_target_codec kiarabot_service_process OpenSSL::Crypto)
+kiarabot_platform_warnings(kiarabot_identity_rpc)
+add_executable(kiarabot_identity_rpc_test
+  ${CMAKE_SOURCE_DIR}/core/tests/platform/identity_rpc_test.cpp)
+target_link_libraries(kiarabot_identity_rpc_test PRIVATE kiarabot_identity_rpc)
+kiarabot_platform_warnings(kiarabot_identity_rpc_test)
+add_test(NAME p04_identity_rpc COMMAND "${KIARABOT_TARGET_PYTHON}"
+  ${CMAKE_SOURCE_DIR}/core/tests/platform/identity_rpc_test.py
+  $<TARGET_FILE:kiarabot_identity_rpc_test>)
+set_tests_properties(p04_identity_rpc PROPERTIES LABELS "p04;integration;security" TIMEOUT 60)
+
 add_executable(kiarabot_peer_certificate_evidence_test
   ${CMAKE_SOURCE_DIR}/core/tests/platform/peer_certificate_test.cpp)
 target_link_libraries(kiarabot_peer_certificate_evidence_test PRIVATE
@@ -186,7 +202,7 @@ set_tests_properties(architecture_p02_oracle PROPERTIES LABELS "p02;unit" TIMEOU
 add_test(NAME architecture_p02_references COMMAND "${KIARABOT_TARGET_PYTHON}"
   ${CMAKE_SOURCE_DIR}/tests/architecture/check_references.py)
 set_tests_properties(architecture_p02_references PROPERTIES LABELS "p02;unit;reference" TIMEOUT 10)
-set_tests_properties(p02_service_config p02_core_process p03_service_composition p04_peer_certificate_evidence PROPERTIES
+set_tests_properties(p02_service_config p02_core_process p03_service_composition p04_peer_certificate_evidence p04_identity_rpc PROPERTIES
   ENVIRONMENT "PATH=${OPENSSL_BIN_DIR}:$ENV{PATH}")
 add_test(NAME p01_target_api COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/quality/check-target-api.sh)
 set_tests_properties(p01_target_api PROPERTIES LABELS "p01;unit" TIMEOUT 30)

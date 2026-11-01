@@ -498,3 +498,35 @@ kiarabot_identity_security_application和独立test，p04/unit/security、30秒�
 
 本树基础应用CTest1/1通过4.94秒；两TU精确compile DB tidy22
 clang-analyzer-* warnings-as-errors通过，p04标签检查通过。
+
+### Admin初始principal resource绑定修复回归
+
+只取父批准7623d94（本树5b35f84），未取退回的角色源码或测试，CMake无需变化。
+定向Admin生产库/测试构建通过，CTest1/1通过0.41秒；更新生产/测试两TU精确DB
+ tidy22 clang-analyzer-* warnings-as-errors与format16通过。源提交已同步Core说明，
+无额外公共文档影响，仅本报告登记；末尾换行及git diff --check通过。
+应用基础接线仍为749eaf9，其余审核修复待父明确完整SHA后再同步，不冒称闭环。
+
+### 应用四审核修复及离线password loader增量回归
+
+依序同步d6f1059/6eceee1/cea4bdf/80beb54（本树c7acc21/634835a/d529185/444736a）和
+92b28ae（本树528cbe4），不改源码，CMake清单不变。应用+loader定向构建、真实CTest2/2
+通过5.33秒（应用4.79、loader0.54）；四受影响TU精确DB tidy22 clang-analyzer-*
+warnings-as-errors通过。行为说明由各源提交同步，额外无公共文档影响，仅本报告登记。
+未取9b96968或角色未批准源码，未重复全仓统一入口。报告末尾换行及diff检查通过。
+
+## 后续接线：六方法Identity RPC边界
+
+成组取3295e1f/5a69018（本树dca4026/a03dc5b），doc/02冲突保留双方真正新增段落、
+移除RPC重复章节并采用新opaque cursor语义；未取未批准9b96968。
+新增外层kiarabot_identity_rpc，PUBLIC core/include/proto（头API含generated服务类型），
+PRIVATE target_codec/service_process/OpenSSL Crypto。新C++ driver链接该外层库，Python
+真实mTLS CTest为p04/integration/security、60秒（含子driver30秒及证书生成），
+PATH前置显式openssl目录。无新inner依赖/生产main装配，不改源码/断言。
+文档影响同步doc/11及本报告构建说明，源提交已有契约/Core/运维说明；其他模块/CI和
+冻结doc18不改。
+固定配置、全TU覆盖/inner/实际图/p04注册标签通过。定向RPC构建实际失败于依赖codec：
+仍缺RESOURCE_CATALOG及五个新权限生成枚举，无法运行新mTLS测试或完成其tidy。
+全仓format16还实际失败于core/src/runtime/platform/identity_rpc.cpp:1的include首部排序。
+未自行改已审源码、关闭检查或复用旧产物声称通过；需完整契约基点及作者格式修正后复验。
+未重复全仓统一入口；文档检查为路径/末尾换行/章节唯一及git diff --check。

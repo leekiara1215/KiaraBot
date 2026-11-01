@@ -572,3 +572,7 @@ OpenSSL::Crypto头路径，实际链接由静态适配器既有依赖提供，�
 六方法Identity安全应用独立纯库 `kiarabot_identity_security_application` 与测试
 `p04_identity_security_application`（unit/security、30秒）进入dev/full构建；
 不链接crypto/PG/proto，不替代P02 stub或声明生产就绪。审核修复需成组集成后再验收闭环。
+
+六方法Identity RPC边界独立外层库 `kiarabot_identity_rpc` 链接target_codec/service_process/
+proto/OpenSSL，不使纯应用反向依赖wire。`p04_identity_rpc` 经Python生成真实mTLS材料，
+integration/security、60秒、显式OpenSSL PATH；完整契约集成后才能构建/运行。
