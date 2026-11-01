@@ -416,3 +416,23 @@ header-filter由所有非忽略手写头生成，仍枚举全部手写TU（含re
 已接线”，reference机械移动后需由主对话协调状态口径，不能自动用reference冒充新业务。
 Core所有者的format16两处纯格式修正已在主分支审查验证后同步（本分支52d7fa3），本机全仓format16检查通过；没有自行编辑业务实现。
 完整静态分析和后续恢复结果见模块执行记录，不以51项CTest通过代替这些独立门禁。
+
+## P00 Python发行摘要来源收尾（P03工具链准备）
+
+此前HTTP403限制保留，但已从固定uv0.13.6原生二进制中提取其实际使用的压缩下载清单，
+取得Python3.11.18 macOS arm64/Linux x86_64 glibc预期归档SHA-256，填入依赖锁。
+锁同时记录uv二进制、解压清单的digest与metadata_key；原生文件与固定PyPI包RECORD
+已实测匹配。并非猜测hash，也不是安装目录hash。
+
+```bash
+python3 scripts/quality/verify-python-metadata.py --uv .tools/quality/bin/uv --zstd-library /path/to/libzstd
+python3 scripts/quality/tests/python_metadata_test.py
+python3 scripts/quality/check-dependency-lock.py
+# 取得归档后再执行真正的归档体校验，不能用上面的元数据校验替代：
+python3 scripts/quality/check-dependency-lock.py --archive /path/to/cpython-3.11.18+20261026-PLATFORM-install_only_stripped.tar.gz
+```
+
+提取复验绑定已记录darwin-arm64 uv原生文件，解压库路径显式提供，不向系统安装工具；
+Linux归档的摘要同样来自该完整跨平台清单。本轮没有取得独立归档体，HTTP403不记成功，
+也不宣称Linux运行/CI/镜像digest已验收。执行证据见
+[本轮P03工具链记录](../reports/modules/architecture-p03-toolchain.md)。

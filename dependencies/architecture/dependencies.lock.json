@@ -96,14 +96,31 @@
     "artifacts": {
       "cpython-3.11.18-linux-x86_64-gnu": {
         "url": "https://releases.astral.sh/github/python-build-standalone/releases/download/20261026/cpython-3.11.18%2B20261026-x86_64-unknown-linux-gnu-install_only_stripped.tar.gz",
-        "sha256": null,
-        "hash_status": "Direct official mirror download returned HTTP 403; managed uv installation succeeded, archive hash not separately retrieved."
+        "sha256": "17c4978a36c496dc53c08899ef8dad1ad2734f6325f08d6033a1e66419e0af26",
+        "hash_status": "Expected archive hash verified against pinned uv embedded metadata; direct archive body retrieval not verified (prior HTTP 403).",
+        "source_url": "https://github.com/astral-sh/python-build-standalone/releases/download/20261026/cpython-3.11.18%2B20261026-x86_64-unknown-linux-gnu-install_only_stripped.tar.gz",
+        "metadata_key": "cpython-3.11.18-linux-x86_64-gnu",
+        "build": "20261026",
+        "archive-name": "cpython-3.11.18+20261026-x86_64-unknown-linux-gnu-install_only_stripped.tar.gz"
       },
       "cpython-3.11.18-macos-aarch64-none": {
         "url": "https://releases.astral.sh/github/python-build-standalone/releases/download/20261026/cpython-3.11.18%2B20261026-aarch64-apple-darwin-install_only_stripped.tar.gz",
-        "sha256": null,
-        "hash_status": "Direct official mirror download returned HTTP 403; managed uv installation succeeded, archive hash not separately retrieved."
+        "sha256": "f3e1cd83a7f1d70e58b0d69102c18bd6867d2f973068dc5cbfd5822e445c66df",
+        "hash_status": "Expected archive hash verified against pinned uv embedded metadata; direct archive body retrieval not verified (prior HTTP 403).",
+        "source_url": "https://github.com/astral-sh/python-build-standalone/releases/download/20261026/cpython-3.11.18%2B20261026-aarch64-apple-darwin-install_only_stripped.tar.gz",
+        "metadata_key": "cpython-3.11.18-darwin-aarch64-none",
+        "build": "20261026",
+        "archive-name": "cpython-3.11.18+20261026-aarch64-apple-darwin-install_only_stripped.tar.gz"
       }
+    },
+    "digest_provenance": {
+      "uv_version": "0.13.6",
+      "uv_binary_platform": "darwin-arm64",
+      "uv_binary_sha256": "3996850e6d85e60b0142b40af4bd984822d65f736b52209921c47312450685cb",
+      "catalog_sha256": "98e270b3d5140b27abd1ab2e1c364f30f3f3f00f5dc58cd269cb55aedeb043ba",
+      "package_lock": "dependencies/quality/requirements.txt",
+      "native_record_verified": true,
+      "verification": "scripts/quality/verify-python-metadata.py --uv PATH --zstd-library PATH"
     }
   },
   "uv": {

@@ -35,6 +35,9 @@ def validate(lock, manifest):
         errors.append('server and libpq versions differ')
     if not re.fullmatch(r'[a-f0-9]{128}', lock['postgresql']['sha512']):
         errors.append('invalid PostgreSQL source hash')
+    for name, artifact in lock['python']['artifacts'].items():
+        if not re.fullmatch(r'[a-f0-9]{64}', artifact['sha256'] or ''):
+            errors.append(f'{name}: missing/invalid Python archive hash')
     if len(lock['node']['sha256']) != 2 or any(
             not re.fullmatch(r'[a-f0-9]{64}', value) for value in lock['node']['sha256'].values()):
         errors.append('missing/invalid Node archive hashes')
@@ -104,6 +107,8 @@ def main():
         archives = {lock['postgresql']['url'].rsplit('/', 1)[1]: ('sha512', lock['postgresql']['sha512']),
                     lock['openssl-cli']['archive-name']: ('sha512', lock['openssl-cli']['sha512'])}
         archives.update({name: ('sha256', digest) for name, digest in lock['node']['sha256'].items()})
+        archives.update({entry['archive-name']: ('sha256', entry['sha256'])
+                         for entry in lock['python']['artifacts'].values()})
         archives.update({tool['url'].rsplit('/', 1)[1]: ('sha256', tool['sha256']) for tool in build_tools})
         if args.archive.name not in archives:
             raise ValueError('archive is not present in lock')
