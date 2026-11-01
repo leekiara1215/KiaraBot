@@ -22,7 +22,7 @@ foreach(COMPONENT persistence_contract persistence_rules time)
   set_tests_properties(p03_${COMPONENT} PROPERTIES LABELS "p03;unit" TIMEOUT 10)
 endforeach()
 
-foreach(COMPONENT identity_contract identity_application_contract identity_verification_keys_contract)
+foreach(COMPONENT identity_contract identity_application_contract identity_verification_keys_contract session_control_peer_contract)
   add_executable(kiarabot_${COMPONENT}_test tests/architecture/${COMPONENT}_test.cpp)
   target_include_directories(kiarabot_${COMPONENT}_test PRIVATE include)
   target_compile_features(kiarabot_${COMPONENT}_test PRIVATE cxx_std_20)
@@ -43,7 +43,7 @@ foreach(COMPONENT identity_rules identity_grant_projection identity_assignment_s
 endforeach()
 
 # Identity administrative/delegation use cases stay pure and independently linkable.
-foreach(COMPONENT identity_admin identity_delegation)
+foreach(COMPONENT identity_admin identity_delegation identity_exchange)
   add_library(kiarabot_${COMPONENT}_application STATIC
     src/application/target/${COMPONENT}_application.cpp)
   target_include_directories(kiarabot_${COMPONENT}_application PUBLIC include)
@@ -51,6 +51,16 @@ foreach(COMPONENT identity_admin identity_delegation)
   target_compile_options(kiarabot_${COMPONENT}_application PRIVATE
     $<$<CXX_COMPILER_ID:AppleClang,Clang,GNU>:-Wall -Wextra -Wpedantic>)
 endforeach()
+add_executable(kiarabot_identity_exchange_application_test
+  tests/architecture/identity_exchange_application_test.cpp)
+target_link_libraries(kiarabot_identity_exchange_application_test PRIVATE
+  kiarabot_identity_exchange_application)
+target_compile_options(kiarabot_identity_exchange_application_test PRIVATE
+  $<$<CXX_COMPILER_ID:AppleClang,Clang,GNU>:-Wall -Wextra -Wpedantic -UNDEBUG>
+  $<$<CXX_COMPILER_ID:MSVC>:/UNDEBUG>)
+add_test(NAME p04_identity_exchange_application COMMAND kiarabot_identity_exchange_application_test)
+set_tests_properties(p04_identity_exchange_application PROPERTIES
+  LABELS "p04;unit;security" TIMEOUT 10)
 add_executable(kiarabot_identity_admin_application_test
   tests/architecture/identity_admin_application_test.cpp)
 target_link_libraries(kiarabot_identity_admin_application_test PRIVATE

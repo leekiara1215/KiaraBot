@@ -78,3 +78,12 @@ bootstrap locator 清除；head 材料、字段覆盖及 FK 的 SQLSTATE 23514/2
 PG16.4 四库集群完整通过（TLS/权限/schema/锁/重启及 typed security 检查）。三个 TU tidy
 及最终两 TU 重跑均零诊断；六文件 format dry-run 通过。Python UTF8/末尾换行/受保护文档
 无 diff 检查、git diff --check 通过。两次 fixture 均确认删除 owned 临时集群和私密材料。
+
+## 主线组合门禁
+
+主线成组接入Core端口/strict fixture与PG schema6；公钥与Exchange新增fixture也补齐
+未使用by_bootstrap显式trap。正式注册Exchange纯库/测试与源Control绑定类型测试。
+完整full-locked configure/build无warning/error；31/31相关P04及两组真实PG/服务数据库
+测试通过（94.07秒），包含CLI、真实两生产daemon、证书到期及在途提交边界。
+边界/全部TU覆盖与实际链接图会在提交前复核。接口扩展没有新wire字段，
+工具链doc11同步测试入口；受保护doc18不变，不以此关闭剩余P04方法。

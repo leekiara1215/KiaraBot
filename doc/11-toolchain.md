@@ -624,3 +624,8 @@ imported target，链接沿现有依赖。finite metadata同时由正式配置�
 Core GetVerificationKeys为独立纯库 `kiarabot_identity_verification_keys_application`；
 同名p04应用测试注册unit/security、10秒，dev/full均可构建，保留源码assert。
 库仅有core/include和C++20，共享security detail为内部header，不链接PG/crypto/proto。
+
+P04 新增纯 `kiarabot_identity_exchange_application` 与独立 unit/security 测试，
+以及 SessionControlPeer 类型契约测试。它们仅链接 Core 内层；crypto 和真实 PG
+分别验证。bootstrap CURRENT locator 新纯接口的未使用 fixture 显式拒绝意外访问，
+不能用空成功掩盖新增调用。
