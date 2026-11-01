@@ -53,3 +53,45 @@ ReceiptCapacity/JournalCapacity明确仅可信应用配置，不允许请求自�
 该最小测试编译验证DB时间Outcome、四工厂所有权返回形状、任务/模型uint64版本，
 并检查同ID不同resource kind的收据scope不会相等；独立-Werror编译执行通过。
 更改后现有foundation/invariants两个测试再次-Werror编译执行，边界/inner/diff检查通过。
+
+## 第二独立能力：公共持久化纯规则
+
+新增仅四文件：
+- core/include/kiarabot/core/domain/target/persistence_rules.hpp
+- core/tests/architecture/persistence_rules_test.cpp
+- doc/02-core.md
+- reports/modules/architecture-p03-core-ports.md
+
+输入是已确认的内部记录/可选成功缺失、可信容量配置、权威时间样本；输出是
+Outcome<WriteDecision/ClaimDecision/ConfirmationDecision/OutboxClaim>或稳定Failure。
+不提供memoryDB、不存全局状态、不调用网络，不更改首接口的Repository/UoW签名。
+
+实现覆盖：ResourceRef/Service封闭校验；收据至少7天/容量/同键异hash/原结果重放；
+outbox不可变envelope/hash/版本/期限、普通与控制lane独立容量；inbox首次接收/到期/
+重复确认及max(接收,有效期)+7天保留；claim owner/100条/30秒/100次上限；候选claim
+不改输入，重领换token，精确到期边界拒绝，旧token不得确认新claim；完整uint64版本
+不经double。保留时间加法拒绝TimePoint上溢。损坏的claimed行缺token返回Internal。
+
+文档影响：同步doc/02与本报告；仅内层校验，无线协议/外部运行路径变化，proto/API和
+doc/01、03–08不改；受保护doc/18不改。未提前添加待contracts定稿的ResourceCatalog，
+未知kind当前拒绝；待唯一契约提交后再增Core枚举/映射，不能用未知值充当授权通配。
+
+能力边界与后续：数据库必须在锁/唯一条件/同一事务内复核这些规则，传入用量不可来自
+客户端或无锁估计。外部鉴权、具体ReplayResult业务有效性仍由所属应用决定；本能力
+只验证公共持久化结构/时限/幂等范围。复杂凭据/secret回放、出站失败退避/人工恢复写
+操作等在后续独立端口/业务任务补齐，本接口不是完整outbox派发器验收。
+
+实际检查：
+- c++ -std=c++20 -Wall -Wextra -Wpedantic -Werror -Icore/include
+  core/tests/architecture/persistence_rules_test.cpp -o /tmp/p03-persistence-rules-test，执行通过。
+- 相同测试加-fsanitize=undefined,address -fno-omit-frame-pointer编译执行通过，
+  含TimePoint边界/uint64精度/claim次数上限，无sanitizer报告。
+- format16、既有三内层测试回归、边界/inner与文档diff检查结果随提交前复核记录。
+
+根CMake/CTest不在本任务可改范围，工具链接线应新增persistence_rules_test为p03/unit；
+没有PG并发/唯一/锁/COMMIT未知验证，不将纯测试当作P03阶段通过。
+
+提交前复核：foundation/invariants/persistence_contract/persistence_rules四个独立测试
+均重新-Werror编译并执行通过；固定clang-format16 dry-run、check-boundaries.py、
+check-architecture.py --inner、git diff --check均通过。新增两文件的文档引用存在性检查通过。
+未重复全工具链/PG：本能力无CMake接线权限与真实数据库实现，根完整门禁由主集成执行。
