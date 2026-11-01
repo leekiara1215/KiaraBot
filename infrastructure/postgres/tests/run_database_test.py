@@ -22,7 +22,9 @@ def main():
                         help='Additional arguments for an owned local fixture driver')
     args = parser.parse_args()
     pg_bin, openssl, test = args.pg_bin.resolve(), args.openssl.resolve(), args.test.resolve()
-    driver_names = ('database_test', 'database_test_sanitized', 'kiarabot_postgres_database_test')
+    driver_names = ('database_test', 'database_test_sanitized', 'kiarabot_postgres_database_test',
+                    'kiarabot_identity_application_test',
+                    'kiarabot_identity_application_test_sanitized')
     environment = {key: value for key, value in os.environ.items() if not key.startswith('PG')}
     environment['LC_ALL'] = 'C'
 

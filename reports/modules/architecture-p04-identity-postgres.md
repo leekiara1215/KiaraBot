@@ -234,3 +234,78 @@ Core端口原注释“Base sessions() metadata shares this transaction/version�
 建议由Core作者在其修复提交中明确“security save owns base synchronization; do not save twice”；
 本任务未跨模块编辑端口或App。后续App+crypto+PG集成应取冻结修复后再验证，不能用本
 负向存储复现冒充应用通过。
+
+## 真实应用/crypto/PostgreSQL 集成（本地实测完成）
+
+从冻结root d256908切出本工作树的codex/p04-identity-integration，保留87c0fa7负向证据，
+只取已授权冻结App7f9a197/0d0aa22/38055e2和Admin7623d94/LoginReplay d6f1059；
+不复制未提交源。此能力只新增postgres/tests集成fixture、最小runner登记与直接文档，
+不改App/crypto/config/生产main/CMake或保护基线。
+
+fixture使用已有自有PG16.4/TLS/SCRAM runner，连接前检查root所有权/普通0600秘密文件，
+连接后在任何DDL前核对backend data_directory确为该root/data且非symlink；禁止外部DSN。
+真实Admin.bootstrap_offline一次提交初始登记，再用真实Admin.authenticate_peer查询/验签。
+Control证据来自内存BIO双端TLS1.3的SSL_get1_peer_certificate，临时CA/叶证书由成熟
+OpenSSL构造和验证，非请求JSON或手造VerifiedPeer。真实libsodium负责密码/随机/HMAC/
+AEAD，真实jwt-cpp/OpenSSL Ed25519负责委托；直接注入安全typed工厂，无fake crypto。
+测试clock读真实本机UTC/steady，仅在同主机自有DB时间比较通过后声明本fixture可信，
+不作为生产部署时钟证据或clock适配器实现。
+
+已实际通过正常/错误密码、原键Login/Refresh真实密文恢复、Access/GetPrincipal、真实Issue、
+保持page_size=1的token-only分页、Revoke普通快照重放、撤销后拒绝与新工厂持久状态。
+未运行任何真实外部服务；上层HTTP/进程组合门禁不在本fixture声称范围。
+文档影响仅doc05集成验收与本报告；协议/错误码/运维配置未改，doc08无需更新。
+
+### 真实组合发现的缺口与冻结修复
+
+最初普通及ASan在真实IssueDelegation处同样InvalidArgument：真实DB/clock带亚秒，
+旧crypto要求NumericDate整秒。未伪造clock、未改签名端口、未跳过真实Issue。
+父任务独立冻结7b3200b保守取整后再取入：iat/nbf=floor(actual now)，exp下取整且
+不延长源有效期，实际checked_at与deadline仍原真实时间。另取冻结6eceee1/cea4bdf/
+80beb54（同key Refresh恢复、无效snapshot码、NotFound审计），无本任务production改动。
+此前3处重复base写由38055e2修复；87c0fa7负向真实CAS证据仍保留，不放宽存储CAS。
+
+### 本地实际构建和检查
+
+`build/p04/verify_application.py`（本地忽略脚本）实际执行两次固定依赖C++20编译，
+`-Wall -Wextra -Wpedantic -Werror`，第二次附加
+`-fsanitize=address,undefined -fno-omit-frame-pointer`，均通过。对应可重现命令如下；
+KIARABOT_LOCKED_PREFIX指向工具链锁定的architecture-installed/arm64-osx：
+
+```sh
+c++ -std=c++20 -Wall -Wextra -Wpedantic -Werror \
+  -Iinfrastructure/postgres/include -Iinfrastructure/identity_crypto/include -Icore/include \
+  -isystem "$KIARABOT_LOCKED_PREFIX/include" \
+  infrastructure/postgres/src/{database,common_work,record_codec,factories,identity_security,identity_sessions,identity_receipts,identity_assignments}.cpp \
+  infrastructure/identity_crypto/src/{password_crypto,token_crypto,receipt_crypto,peer_certificate,delegation_crypto}.cpp \
+  core/src/application/target/{identity_admin_application,identity_delegation_application,identity_security_application}.cpp \
+  infrastructure/postgres/tests/{identity_application_tls,identity_application_test}.cpp \
+  -L"$KIARABOT_LOCKED_PREFIX/lib" -lpqxx -lpq -lpgcommon -lpgport -lsodium -lssl -lcrypto \
+  -framework Security -framework CoreFoundation -o build/p04/kiarabot_identity_application_test
+```
+
+sanitized构建使用上述两个sanitizer参数及输出名kiarabot_identity_application_test_sanitized。
+两个产物分别运行下列自有PG fixture，均完整通过并安全清理；backend mismatch负测先于
+任何DDL且必须精确拒绝，runner仍保持秘密/异常正文脱敏：
+
+```sh
+python infrastructure/postgres/tests/run_database_test.py \
+  --pg-bin "$KIARABOT_TEST_PG_BIN" --openssl "$KIARABOT_TEST_OPENSSL" \
+  --test build/p04/kiarabot_identity_application_test \
+  --initializer build/p03/kiarabot-pg-initialize
+```
+
+sanitized运行只替换--test产物名。已执行2新TU clang-tidy22，checks为clang-analyzer-*
+与readability-braces-around-statements、warnings-as-errors，零诊断；clang-format16对
+3新C++文件dry-run、runner py_compile、git diff --check、doc05/报告UTF8/换行/章节校验
+通过，保护doc18无差异。无生成物/密码/key提交。
+
+### 工具链接线清单与未运行检查
+
+新增executable应只含tests/identity_application_test.cpp和identity_application_tls.cpp，
+公共测试头identity_application_tls.hpp；链接现有Postgres、identity_crypto、Identity
+Admin/Delegation/Security应用及OpenSSL::SSL/OpenSSL::Crypto/libpqxx::pqxx。
+复用run_database_test.py，binary名kiarabot_identity_application_test（及_sanitized）
+已登记安全backend mismatch负测；建议外层CTest TIMEOUT120。
+本任务未改根或模块CMake，因其归工具链任务；因此未运行根CMake/CTest/全工具链，
+不将上述直接编译的真实组合实测声称为根门禁通过。也未声称HTTP/部署配置/外部平台集成。

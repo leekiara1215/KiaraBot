@@ -388,3 +388,8 @@ PEM公钥与私钥文件各最多8192字节；私钥仅接受无NUL、完整消�
 文本内容剥离至多一个末尾LF后须1..1024字节，禁止CR、其余LF和NUL。物理文件最多
 1025字节以容纳可选LF；秘密全程安全内存，不转换普通string。权限/形状/内容拒绝为
 InvalidArgument，读取/资源故障UpstreamUnavailable，不影响RPC原始SecretView语义。
+
+P04真实集成fixture仅在自有临时PG内组合公开安全工厂、实际Identity安全/Admin/Issue应用
+和成熟crypto adapters，以实际TLS握手证据登记Control，不用fake crypto或内存库替代。
+它验证本地应用/存储/密码学组合，不代表HTTP/生产配置或外部平台联调已完成；实际状态
+以reports/modules/architecture-p04-identity-postgres.md检查记录为准。
