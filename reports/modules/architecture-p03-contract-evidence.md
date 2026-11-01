@@ -70,3 +70,9 @@ G02–G05共10个typed Get/List，不用一个operation_name+Struct顶替；Get�
 ### D. 本节检查与后续文件
 
 实际只读核对runtime/identity/model/host/platform/policy.proto、target_spec.json、Core target context/foundation/UnitOfWork/business_ports和doc/20–22。静态验证确认ModelService仅6方法且无GetOperation，Runtime不存在上述11个typed查询、Identity无credential状态查询；没有生成新方法/字段或改变状态登记。草案若采用，直接影响对应proto、target_spec/descriptor/enum/状态与scope证据、api/openapi/asyncapi映射、doc01/06及相关模块；应再做同键恢复、授权/失权/空scope/all拒绝、分页/不可见、依赖故障测试。本节未跑业务/数据库或重复生成/lint：只有报告，无契约定义变更。
+
+## 定稿：主对话已采用的最小补全（本轮实施授权）
+
+主对话按用户授权采用上述G01–G09的最小补全及有限管理目录方案，本节取代B节中“建议/待裁定”的状态，不重新请求用户确认。目录是封闭RESOURCE_CATALOG、离线预注册每owner/资源族有限UUID；无通配、隐式祖先继承、任意集合或新租户系统。创建/发现对exact catalog授权，child另存精确grant。资源owner本地先提交disabled资源/收据/operation/outbox，Identity只接受登记owner的mTLS可靠交接，复核creator当前创建授权和canonical最小初始child grants；完成前不得启用gate。只发现当前本人获准的child refs，message.read等敏感权限不派生。
+
+实施按能力独立提交：Model.GetOperation及受限配置查询；Runtime typed Get/List与完整配置查询；最后目录创建恢复/Identity登记与本人发现、凭据状态/初始引用和role-scope对应。新增线协议同步唯一来源、模块最小目标说明、API映射/状态/target_spec与生成/descriptor/跨语言fixture。全部新能力target not_implemented，保留既有owner RPC和三条stub桥接断言，计数以descriptor动态推导。CMake/业务实现不在本任务范围，doc18只读。
