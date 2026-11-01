@@ -919,3 +919,13 @@ or expired credentials fail closed. RPC takes the minimum with request/transport
 budgets and passes that deadline into Core final_check, including work that starts
 before own TLS expiry and finishes later. The remote Control certificate metadata
 is never replaced. Empty callback compatibility remains confined to fixtures.
+
+### P04 授予撤销的当前状态模型
+
+`AssignmentStateRecord` 将有效 ExactAssignment 与 Active/Revoked 当前状态分开。
+撤销保留原 ID、主体和精确 scope，将版本条件推进一次并记录权威 UTC revoked_at；
+空权限列表不表示撤销。Revoked 的 ID 永不重新创建、换主体或通过 Set 恢复。
+有效授权查询只读取 Active 的 exact tuples；保留的墓碑仅供管理核验和原收据恢复，
+不能作为权限依据。同幂等键重放由应用在当前鉴权后返回原成功，新键重复撤销为 Conflict。
+纯规则沿现有版本错误语义：错预期版本 Conflict，uint64 耗尽 Internal，不回绕。
+本节只冻结领域模型；仓储按 ID 读取、撤销 CAS、base metadata 过滤及生产接线仍须独立验收。

@@ -32,7 +32,7 @@ foreach(COMPONENT identity_contract identity_application_contract identity_verif
   set_tests_properties(p04_${COMPONENT} PROPERTIES LABELS "p04;unit" TIMEOUT 10)
 endforeach()
 
-foreach(COMPONENT identity_rules identity_grant_projection)
+foreach(COMPONENT identity_rules identity_grant_projection identity_assignment_state)
   add_executable(kiarabot_${COMPONENT}_test tests/architecture/${COMPONENT}_test.cpp)
   target_include_directories(kiarabot_${COMPONENT}_test PRIVATE include)
   target_compile_features(kiarabot_${COMPONENT}_test PRIVATE cxx_std_20)
