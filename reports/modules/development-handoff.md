@@ -24,3 +24,7 @@ Register/Rotate仅声明、Pending/delivery的PG/crypto未接；工具链未提�
 Markdown中每个bash代码块单独bash -n通过；proto/tests/check_implementation_status.py通过。
 未跑C++构建/测试/format/tidy或新机安装：纯文档任务且没有改变可执行代码，不能把文档
 中的建议步骤称为已在另一机器执行。未备份/传送数据或秘密、未建立bundle、未push。
+
+最新补充：MVP源码762d6e1/407dd8c/c37df48/994a8b4与构建冻结ecf3cdc均已核对提交。
+明确今晚reference单机不启动PG/六服务、独立data不双写不导旧库；完整PG工具链步骤仅供
+后续架构开发恢复。最终launcher CLI/doc24仍由父实际验证，不猜参数。

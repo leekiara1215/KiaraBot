@@ -11,8 +11,9 @@
 用户最新优先级是单机最小「收消息 → 处理 → 回复」闭环。今晚复用隔离的 reference
 单机流作为临时交付轨；这不表示新 Runtime、P05–P14 或新架构消息闭环已经完成。
 插件机制、完整账号管理、多主机部署及其他非核心管理功能后移，不继续开启 P04 扩展。
-最新 MVP 目标、启动入口和验收顺序由主协调维护的 `doc/24-*.md` 定稿；本快照中该文档
-尚未提交，不能据此猜测启动器名称或参数。
+MVP 使用固定 SDK handler，不启动 PG 或六服务；使用独立本地 data，不双写、不导入旧库。
+最新 MVP 目标、启动入口和验收顺序由主协调维护的 `doc/24-*.md` 定稿；本次补充时该文档
+仍待父验证定稿，不能据此猜测启动器名称或参数。
 
 先阅读 [AGENTS.md](../AGENTS.md)、[C++ 主规范](12-cpp-coding-standard.md)、
 [边界](00-boundaries.md)、[工具链](11-toolchain.md) 和本页；原阶段依赖仍见
@@ -137,7 +138,17 @@
    不复制旧 `build/`、`.venv/`、`.tools/`、CMakeCache 或生成源码；不引用旧机绝对路径。
    新机编译器、SDK、PATH、PG/OpenSSL CLI 都须重新确认，macOS 本地证据不自动覆盖 Linux。
 
-## 重建与最低验收入口
+## MVP 最低验收与后续完整环境恢复
+
+先核对主集成已提交的 MVP 源码：`762d6e1` 固定 SDK handler（`plugins/local-reply/`），
+`407dd8c` 本地 OneBot demo（`scripts/local/onebot_demo.py`），`c37df48` smoke 与
+`994a8b4` 公开 factory 的端到端 smoke。它们不表示 launcher 正常流程已验收。
+父已提交的 `ecf3cdc` 是 schema10/typedResult 组的构建冻结，不提升 P04 整阶段状态。
+
+今晚最低验收只使用 reference 单机、固定 SDK handler 和 loopback 协议替身；不启动
+PG/六服务。按父实际验证后的 doc24/launcher/README 重建其所需环境并执行；当前没有
+最终已验证的 launcher CLI，不在本页猜 flags。以下完整锁定环境步骤是以后恢复新架构
+开发的独立入口，尤其 PG server、六服务和全仓门禁不是今晚启动的先决条件。
 
 以下从仓库根执行，是换机后的建议步骤，本次文档任务没有在新机执行。
 使用锁文件指定来源/hash；首次下载与构建需要网络及本机工具，不能把旧机已装依赖当作前提。
@@ -159,7 +170,7 @@ python3 scripts/quality/check-dependency-lock.py --registry "$VCPKG_ROOT"
   --triplet="$KIARABOT_VCPKG_TRIPLET" --x-install-root=build/architecture-installed
 ```
 
-PG16.4 服务端与 OpenSSL3.5.0 CLI 按 doc11 的已校验归档独立构建；libpq/vcpkg 安装不等于
+后续完整目标架构开发才需要的 PG16.4 服务端与 OpenSSL3.5.0 CLI 按 doc11 的已校验归档独立构建；libpq/vcpkg 安装不等于
 已经有 PG server。将新机实际安装位置显式放入环境变量，再配置全新构建：
 
 ```bash
@@ -202,7 +213,7 @@ KIARABOT_ACCEPTANCE_BUILD="$PWD/build/full-locked" \
 KIARABOT_CHECK_PRESET=full-locked ./scripts/check-toolchain.sh
 ```
 
-最后按已提交的 doc24/启动器完成真正的最低启动验收：新本地配置启动、登录、绑定一个
+最后按已提交的 doc24/启动器完成真正的最低启动验收：新独立 data/本地配置启动、登录、使用一个
 测试账号、本地协议替身注入一条消息、收到恰当且可核对的自动回复、正常停止，并记下精确
 提交/命令/退出码。缺任何一项就不能叫 MVP 完成。二次核对已有 smoke `67f91e5`，但尚无已提交的公开新 MVP 启动器，
 因此不能给出虚构「一键启动」命令。
