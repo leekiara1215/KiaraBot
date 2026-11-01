@@ -53,6 +53,11 @@ def main(*arguments):
                 assert response.status == expected, (response.status, payload)
                 if body is not None:
                     assert payload == {"state": body}, payload
+                if expected == 400:
+                    assert payload.get("code") == "INVALID_ARGUMENT", payload
+                    assert isinstance(payload.get("message"), str) and payload["message"], payload
+                    assert isinstance(payload.get("request_id"), str) and payload["request_id"], payload
+                    assert set(payload) == {"code", "message", "request_id"}, payload
             finally:
                 connection.close()
 
@@ -68,7 +73,9 @@ def main(*arguments):
                 probe(state["probe_port"], "/health/live", 200, "HEALTHY")
                 probe(state["probe_port"], "/health/ready", 503, "UNHEALTHY")
                 probe(state["probe_port"], "/missing", 404)
-                probe(state["probe_port"], "/health/live", 405, method="POST")
+                for path in ["/health/live", "/health/ready"]:
+                    for method in ["POST", "PUT", "OPTIONS"]:
+                        probe(state["probe_port"], path, 400, method=method)
                 for mode in ["authenticated", "no-client-certificate"]:
                     subprocess.run([rpc_client, name, f'127.0.0.1:{state["grpc_port"]}',
                                     str(root / "ca.pem"), str(root / "server.pem"),

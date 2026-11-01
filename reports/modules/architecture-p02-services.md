@@ -73,7 +73,7 @@ API/proto未改，健康体沿用既有ProcessProbe，Control业务路径仅未�
   nullability-extension警告，改临时编译外部头为SYSTEM、生成源使用生成物警告策略后通过。
 - /tmp/p02-rpc-client独立编译；
   python3 core/tests/platform/service_process_test.py /tmp /tmp/p02-rpc-client 经权限批准运行通过。
-  覆盖五服务并行、help/参数拒绝、live/ready/404/405、五owner的UNIMPLEMENTED、
+  覆盖五服务并行、help/参数拒绝、live/ready/404/非GET拒绝（400，见后续一致性修正）、五owner的UNIMPLEMENTED、
   无客户端证书握手拒绝、Runtime三个桥接UNIMPLEMENTED、两端口冲突、慢HTTP请求期间
   SIGTERM有界退出、其他四服务继续live及SIGINT退出0。测试使用临时CA/证书无生产秘密。
 - 沙箱首次网络测试启动失败；首次获批运行发现TLS起始相等边界失败，RSA重跑因耗时较长通过；
@@ -124,3 +124,17 @@ CLI/配置不提供时钟覆盖。只改配置头/源、driver/配置测试、do
 永久CMake必须跟踪头依赖，不能照搬此临时缓存。./scripts/check-toolchain.sh本轮实际
 运行退出1：Required tool not found: clang-tidy，其后full/生成/tidy门禁未运行。
 配置driver/测试与五应用单测另已运行通过；文档diff检查、Python AST语法检查通过。
+
+## 探针非GET契约一致性修正
+
+目标范围仅service_process.cpp、service_process_test.py、doc/08与本报告。
+依据既有OpenAPI两探针的400/BadRequest，将非GET输入改为400/INVALID_ARGUMENT，
+Error含必需code/message/request_id，不回显请求/秘密；不新增HTTP状态或业务入口。
+文档同步doc/08；proto/API唯一来源无需修改，doc/02无模块责任/生命周期变化无需重复。
+真实回归扩展为五服务的live/ready两路径各POST/PUT/OPTIONS，检查400与完整Error字段。
+
+实际检查：全部手写源按C++20 -Wall/-Wextra/-Wpedantic/-Werror重编译，五服务独立
+链接通过；service_process_test.py按五可执行路径及RPC client显式路径运行通过，
+覆盖30个非GET探针请求及原mTLS/UNIMPLEMENTED/冲突/信号隔离回归。
+clang-format --dry-run --Werror、check-boundaries.py、Python AST解析、git diff --check
+均通过。完整工具链未重跑：仍缺clang-tidy，固定依赖/六目标门禁等待主集成，未冒充通过。

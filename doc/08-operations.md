@@ -343,7 +343,7 @@ model_main.cpp；Plugin Host 的 CLI service 值是 plugin-host。每个入口�
 
 探针明文HTTP仅回环：GET /health/live 为200 `{"state":"HEALTHY"}`，GET /health/ready
 在P02为503 `{"state":"UNHEALTHY"}`，严格沿用ProcessProbe仅state结构；其他路径404，
-探针非GET返回405并含Allow: GET。Control 的 /api/v1/ 与 /ws/ 前缀返回503及
+探针非GET按既有BadRequest返回400/INVALID_ARGUMENT，包含脱敏message与request_id。Control 的 /api/v1/ 与 /ws/ 前缀返回503及
 CAPABILITY_NOT_SUPPORTED，不挂接旧业务或升级WebSocket。该探针不是远程业务服务器。
 
 所有非Control的业务gRPC使用配置CA验证客户端证书，未提供客户端证书不能到达RPC；

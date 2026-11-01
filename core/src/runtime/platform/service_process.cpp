@@ -134,7 +134,6 @@ void serve_probe(int listener, const target::ServiceReadinessPort& application) 
   int status = 404;
   std::string_view reason = "Not Found";
   std::string body = "{}";
-  std::string extra_headers;
   const auto line_end = request.find("\r\n");
   const auto line = request.substr(0, line_end);
   const auto first_space = line.find(' ');
@@ -146,9 +145,10 @@ void serve_probe(int listener, const target::ServiceReadinessPort& application) 
     const bool ready = path == "/health/ready";
     if (live || ready) {
       if (method != "GET") {
-        status = 405;
-        reason = "Method Not Allowed";
-        extra_headers = "Allow: GET\r\n";
+        status = 400;
+        reason = "Bad Request";
+        body = "{\"code\":\"INVALID_ARGUMENT\",\"message\":\"Probe requires GET\","
+               "\"request_id\":\"p02-process\"}";
       } else {
         // The readiness port supplies business truth. P02 applications always return false.
         const bool healthy = live || application.readiness().ready;
@@ -166,8 +166,7 @@ void serve_probe(int listener, const target::ServiceReadinessPort& application) 
   }
   const std::string response = "HTTP/1.1 " + std::to_string(status) + " " + std::string(reason) +
                                "\r\nContent-Type: application/json\r\nConnection: close\r\n" +
-                               extra_headers + "Content-Length: " + std::to_string(body.size()) +
-                               "\r\n\r\n" + body;
+                               "Content-Length: " + std::to_string(body.size()) + "\r\n\r\n" + body;
   std::size_t offset = 0;
   while (offset < response.size() && std::chrono::steady_clock::now() < deadline) {
     int flags = 0;
