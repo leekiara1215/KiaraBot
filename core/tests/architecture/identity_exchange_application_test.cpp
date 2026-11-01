@@ -163,6 +163,10 @@ public:
     throw std::logic_error("unexpected bootstrap verifier lookup");
   }
   t::Outcome<std::optional<t::CredentialVersionRecord>>
+  by_platform(const t::PlatformPeer&) override {
+    throw std::logic_error("unexpected platform actor lookup");
+  }
+  t::Outcome<std::optional<t::CredentialVersionRecord>>
   current(const t::CredentialId& id) override {
     if (state_.fail_read) {
       return failure(t::ErrorCode::UpstreamUnavailable);

@@ -122,6 +122,11 @@ class Credentials final : public t::IdentityCredentialRepository {
 public:
   explicit Credentials(State& state) : state_(state) {}
   t::Outcome<std::optional<t::CredentialVersionRecord>>
+  by_bootstrap(const t::TokenVerifier&) override {
+    ++state_.unexpected;
+    return failure();
+  }
+  t::Outcome<std::optional<t::CredentialVersionRecord>>
   current(const t::CredentialId& id) override {
     if (state_.fail_read) {
       return failure(t::ErrorCode::UpstreamUnavailable);
