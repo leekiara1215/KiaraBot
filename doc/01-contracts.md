@@ -1750,3 +1750,15 @@ Identity IssueDelegation / ExchangeDelegation 的唯一线契约 requires_idempo
 CredentialDelivery。证明仍最多 56 秒正文期限与 2 秒时钟容差，业务跳数最多两跳。
 Login、RefreshSession、RotateCredential、RevokeSession 等既有幂等/恢复要求保持原契约。
 未来若引入配额扣减或一次性消费，必须先建立独立的幂等命令契约及事务收据。
+
+## P04 Identity RPC 边界（未接生产组合根）
+
+`runtime/platform/identity_rpc.hpp/.cpp` 的 make_identity_rpc 借用 IdentitySecurityApplication 并持有组合根注入 PeerAuthenticator；只适配 Login/RefreshSession/ValidateSession/GetPrincipal/RevokeSession/ListSessions。其余Identity方法明确返回完整RpcFailure/CAPABILITY_NOT_SUPPORTED（含流式方法），不挂接reference实现；本工具存在不代表目标业务ready或implemented。
+
+每次从真实ServerContext.auth_context提取受限叶证据，再调用必须核对当前登记/凭据/SAN的可信认证回调，并核对回调的主体、证书指纹、平台角色和凭据版本。六方法要求Control peer；不相信body actor/peer、不把CA有效当业务授权。纯应用仍须复核当前Identity状态、self Principal列表和exact Session撤销权限。认证回调为同步借用契约，生产者须有自身有界I/O并遵守实际取消/deadline；边界在其前后检查预算，不声称能抢占任意阻塞回调。
+
+请求context需小写UUIDv4 request_id/trace_id（doc21§4.1），畸形关联生成新CSPRNG错误ID；幂等键至多128字节封闭字符且写方法非空。取body期限、真实gRPC期限与5秒上限最早者；未给传输期限时默认2秒。该边界预算比通用owner descriptor上限更紧，不允许正文延长。密码/token/委托正文只借用SecretView到同步应用返回，不记录秘密/异常正文。回调/应用异常分别保留未调用或Unknown语义，CSPRNG或分配故障无法形成安全关联时仅返回脱敏传输INTERNAL，不伪造ID或业务结果。
+
+成功必须是应用已提交结果，局部完整投影后才返回；checked_at/created_at/expiry/version来自应用，不补本机时间或token iat。缺持久binding、时间、版本或不合法token结果返回Internal，不造占位。Assignment投影调用Core project_assignment，固定角色显示权限调用default_role_allows；不跨assignment拼scope，角色行必须同role无explicit，explicit行各资源权限集合必须相同，无法无损表达则Internal。角色与权限仅显示并集，真正授权仍依赖逐条exact绑定。List输入拒绝expires_at/next_page_token等输出字段，cursor必须与snapshot_id成对，当前权限/快照恢复由应用裁定。
+
+Core Failure无损映射RpcFailure的acceptance/recovery/operation/retry_after，未持有的current_version不伪造。ReadCurrent→RESYNC_SNAPSHOT、Backoff→RETRY_SAME_ID、QuerySameIdentity→QUERY_SAME_INTENT、Diagnose→MANUAL_REVIEW；Unknown保留Unknown，不得携带换新身份/修正输入重做副作用建议。畸形应用失败或投影保守返回Internal/Unknown及原身份查询，决不假称NotAccepted。标准grpc-status-details-bin仅RpcFailure，无Error-only回退。

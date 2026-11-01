@@ -556,3 +556,7 @@ rollback采样，不能创建第二个持锁连接。返回工厂只表示存储
 当前effective UID、无group/other权限、可信父目录）。允许一个末尾LF；实际密码1..1024
 字节且不含CR/LF/NUL。此入口只读并返回安全内存，不自行创建管理员、生成/覆盖密码，
 不把密码放进argv、日志或公开配置；CLI业务消费由另一个组合根任务负责。
+
+### P04 Identity RPC 适配器尚未启用生产监听
+
+make_identity_rpc借用纯IdentitySecurityApplication和组合根注入的受审PeerAuthenticator。必须同时有真实mTLS证据及当前登记/凭据/SAN核验，不能用CA握手成功或fixture替代。未接纯应用/PG/认证回调时保持not ready，不激活旧reference Identity。适配器不读本机密钥或改配置/主入口；测试只在临时目录生成证书/私钥，密码/token和异常正文不入日志。认证回调须有界并遵守取消，服务寿命覆盖application和回调捕获端口直至RPC Wait结束。实际生产PG/当前凭据/撤销故障闭环由后续组合根验收；本轮只证明RPC边界。
