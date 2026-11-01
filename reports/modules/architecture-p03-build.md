@@ -228,3 +228,19 @@ P04 CTest 3/3通过，总1.88秒；password1.39秒、token0.49秒；dev配置与
 
 实际P04 CTest 4/4通过，总2.10秒，receipt0.38秒；六TU精确compile DB tidy22
 clang-analyzer-* warnings-as-errors重验通过。
+
+## 后续接线：P04 PeerCertificate OpenSSL适配器
+
+父readreview通过后接入0b598e1（本树b08f950），不改生产/测试源码。
+crypto库新增peer_certificate.cpp并PRIVATE链接OpenSSL::Crypto；现有循环加入
+peer_certificate_test（p04/unit/security、30秒），真实X509测试同样PRIVATE链接Crypto，
+沿用所有配置保留assert。公开include不变，不复制Core runtime同名helper或未审target_codec。
+文档影响仅doc/11和本报告构建说明；infra/运维语义由源提交同步，其他模块/API/proto及
+ doc/12-ci-cd无需变化，doc/18只读。
+
+固定prefix/Python full-locked配置及完整构建成功；全部TU覆盖/inner/六目标图/p04注册、
+全仓format16通过；新两TU精确DB tidy22及P04真实CTest结果后附。未重复完整统一入口，
+由父集成后统一验证；本轮不代表业务身份核验链路完成。文档检查为路径/末尾换行与diff。
+
+实际P04 CTest 5/5通过，总2.60秒；PeerCertificate0.43秒；新增两TU精确compile DB
+tidy22 clang-analyzer-* warnings-as-errors通过。

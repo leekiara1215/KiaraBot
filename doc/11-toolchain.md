@@ -518,3 +518,7 @@ unofficial-sodium::sodium，公开仅适配器include和Core内层头。proto/fu
 Identity crypto库再加入receipt_crypto及 `p04_receipt_crypto`（p04/unit/security、30秒），
 测试直接使用sodium进行篡改检查，故测试目标也PRIVATE链接官方sodium；依赖不向内层传播。
 密码/Token/Receipt三测试沿用所有配置保留assert，AEAD工厂声明现已链接真实实现。
+
+Identity crypto库加入PeerCertificate实现，PRIVATE链接固定OpenSSL::Crypto。
+`p04_peer_certificate` 注册p04/unit/security、30秒，直接生成真实X509证据，测试目标
+也PRIVATE链接Crypto，保留assert；公开工厂头与Core端口仍不暴露OpenSSL类型。
