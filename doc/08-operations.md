@@ -945,7 +945,7 @@ python3 scripts/local/start.py stop
 
 2026-11-01用户已授权本机安装配置NapCat，扫码由用户完成，其他业务功能暂停。
 使用`scripts/local/napcat.py`作为独立运维驱动，不把安装、容器或QQ登录放入Core。
-这不是已经实现的Panel内置安装向导；可替换驱动与程序内向导的建议见
+这不是已经实现的Panel内置安装向导；可替换驱动与程序内向导的已确认方向见
 [真实QQ接入设计](26-real-qq-onboarding.md)。
 
 macOS入口使用专用Colima profile：只将`data/napcat-qq/container`挂入VM，NapCat
@@ -979,5 +979,9 @@ connect从平台读取实际QQ号，仅在用户提供明确会话后启动独�
 python3 scripts/local/start.py stop --state-dir data/real-qq
 python3 scripts/local/napcat.py stop
 ```
+
+本机专用Colima profile不再使用时，可在确认其中没有其他运行容器后执行
+`colima stop kiarabot`，保留VM磁盘和QQ状态。其他机器应使用其实际专用profile名称，
+不能停止不属于本程序的共享VM。先停止业务实例、再停NapCat、最后停专用VM。
 
 当前安装/扫码/真实收发的实际进度见doc26及对应执行报告，不能把本节命令当作全项已通过。
