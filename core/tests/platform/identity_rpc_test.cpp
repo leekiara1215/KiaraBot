@@ -938,6 +938,9 @@ struct RegistryFixture {
   std::optional<t::CredentialVersionRecord> password{};
   std::optional<t::SessionSecurity> session{};
   std::vector<t::ExactAssignment> grants{};
+  std::optional<t::Principal> runtime{};
+  std::optional<t::CredentialVersionRecord> runtime_credential{};
+  bool runtime_capability = true;
   std::atomic<int> mode{0};
   std::atomic<int> active{0};
   std::atomic<int> reads{0};
@@ -950,6 +953,9 @@ class PrincipalRepositoryFixture final : public t::Repository<t::SubjectId, t::P
 public:
   explicit PrincipalRepositoryFixture(RegistryFixture& registry) : registry_(registry) {}
   t::Outcome<std::optional<t::Principal>> find(const t::SubjectId& subject) override {
+    if (registry_.runtime && subject == registry_.runtime->id) {
+      return registry_.runtime;
+    }
     if (registry_.human && subject == registry_.human->id) {
       return registry_.human;
     }
@@ -974,6 +980,9 @@ public:
   explicit CredentialRepositoryFixture(RegistryFixture& registry) : registry_(registry) {}
   t::Outcome<std::optional<t::CredentialVersionRecord>>
   current(const t::CredentialId& id) override {
+    if (registry_.runtime_credential && id == registry_.runtime_credential->ref.id) {
+      return registry_.runtime_credential;
+    }
     if (registry_.password && id == registry_.password->ref.id) {
       return registry_.password;
     }
@@ -999,6 +1008,11 @@ public:
     ++registry_.reads;
     if (registry_.mode.load() == 1) {
       return registry_unavailable();
+    }
+    if (registry_.runtime_credential &&
+        fingerprint ==
+            std::get<t::CertificateBinding>(registry_.runtime_credential->material).fingerprint) {
+      return registry_.runtime_credential;
     }
     const auto& cert = std::get<t::CertificateBinding>(registry_.credential.material);
     if (registry_.mode.load() == 2 || fingerprint != cert.fingerprint) {
@@ -1068,7 +1082,7 @@ class IssueAuthorizationFixture final : public t::Repository<t::SubjectId, t::Au
 public:
   explicit IssueAuthorizationFixture(RegistryFixture& registry) : registry_(registry) {}
   t::Outcome<std::optional<t::AuthorizationState>> find(const t::SubjectId& id) override {
-    if (id == registry_.principal.id) {
+    if (id == registry_.principal.id || (registry_.runtime && id == registry_.runtime->id)) {
       return std::optional<t::AuthorizationState>{t::AuthorizationState{id, {1}, false}};
     }
     if (!registry_.human || id != registry_.human->id) {
@@ -1087,7 +1101,10 @@ class IssueGrantsFixture final : public t::IdentityExactAssignmentRepository {
 public:
   explicit IssueGrantsFixture(RegistryFixture& registry) : registry_(registry) {}
   t::Outcome<std::vector<t::ExactAssignment>> for_subject(const t::SubjectId& id) override {
-    if (id == registry_.principal.id) {
+    if (registry_.runtime && id == registry_.runtime->id && !registry_.runtime_capability) {
+      return std::vector<t::ExactAssignment>{};
+    }
+    if (id == registry_.principal.id || (registry_.runtime && id == registry_.runtime->id)) {
       return std::vector<t::ExactAssignment>{t::ExactAssignment{
           {kCredential},
           id,
@@ -1107,11 +1124,31 @@ public:
 private:
   RegistryFixture& registry_;
 };
+class ExchangeSessionMetadataFixture final : public t::Repository<t::SessionId, t::LoginSession> {
+public:
+  explicit ExchangeSessionMetadataFixture(RegistryFixture& registry) : registry_(registry) {}
+  t::Outcome<std::optional<t::LoginSession>> find(const t::SessionId& id) override {
+    if (!registry_.session || registry_.session->id != id) {
+      return std::optional<t::LoginSession>{};
+    }
+    const auto& session = *registry_.session;
+    return std::optional<t::LoginSession>{
+        t::LoginSession{session.id, session.subject, session.version, session.rotation,
+                        session.refresh_expires_at, session.revoked}};
+  }
+  t::Status save(const t::LoginSession&, std::optional<t::ResourceVersion>) override {
+    throw std::logic_error("exchange must not mutate session metadata");
+  }
+
+private:
+  RegistryFixture& registry_;
+};
 class RegistryWorkFixture final : public t::IdentitySecurityUnitOfWork {
 public:
   explicit RegistryWorkFixture(RegistryFixture& registry)
       : registry_(registry), principals_(registry), credentials_(registry),
-        issue_sessions_(registry), issue_authorizations_(registry), issue_grants_(registry) {
+        issue_sessions_(registry), issue_authorizations_(registry), issue_grants_(registry),
+        exchange_metadata_(registry) {
     ++registry_.active;
   }
   ~RegistryWorkFixture() override {
@@ -1146,7 +1183,7 @@ public:
     throw std::logic_error("unused operation");
   }
   t::Repository<t::SessionId, t::LoginSession>& sessions() override {
-    throw std::logic_error("unused session");
+    return exchange_metadata_;
   }
   t::Repository<t::AssignmentId, t::ResourceGrant>& grants() override {
     throw std::logic_error("authentication must not grant");
@@ -1174,6 +1211,7 @@ private:
   IssueSessionRepositoryFixture issue_sessions_;
   IssueAuthorizationFixture issue_authorizations_;
   IssueGrantsFixture issue_grants_;
+  ExchangeSessionMetadataFixture exchange_metadata_;
   bool active_ = true;
 };
 class RegistryFactoryFixture final : public t::IdentitySecurityUnitOfWorkFactory {
@@ -1370,6 +1408,309 @@ private:
   RegistryFixture& registry_;
   ApplicationFixture& sessions_;
 };
+class ExchangeCryptoFixture final : public t::DelegationCryptoPort {
+public:
+  explicit ExchangeCryptoFixture(RegistryFixture& registry) : registry_(registry) {}
+  t::Outcome<t::VerifiedDelegation> verify_exchange_parent(t::SecretView proof,
+                                                           const t::VerifiedPeer& recipient,
+                                                           const t::SecurityClockSample&) override {
+    require(registry_.active.load() == 0 && same_secret(proof, "parent-proof-fixture"));
+    require(parent.client_certificate != recipient.binding.certificate.fingerprint);
+    ++verified;
+    if (mode == 1) {
+      return t::Failure{t::ErrorCode::Unauthenticated,
+                        t::Acceptance::NotAccepted,
+                        t::Recovery::Authenticate,
+                        {},
+                        {}};
+    }
+    return t::VerifiedDelegation{parent, {"fixture-parent-key"}};
+  }
+  t::Outcome<t::VerifiedDelegation> verify(t::SecretView, t::Service, const t::VerifiedPeer&,
+                                           const t::SecurityClockSample&) override {
+    throw std::logic_error("exchange must use recipient-specific parent verification");
+  }
+  t::Outcome<t::OwnedSecret> sign(const t::DelegationClaims& claims,
+                                  const t::CryptoKeyRef&) override {
+    require(registry_.active.load() == 0);
+    captured = claims;
+    ++signed_count;
+    if (mode == 2) {
+      return registry_unavailable();
+    }
+    if (mode == 3) {
+      registry_.runtime_capability = false;
+    }
+    t::OwnedSecret result = std::make_unique<FixtureSecret>("exchange-proof-fixture");
+    return result;
+  }
+  t::DelegationClaims parent{};
+  std::optional<t::DelegationClaims> captured{};
+  int verified = 0;
+  int signed_count = 0;
+  int mode = 0;
+
+private:
+  RegistryFixture& registry_;
+};
+void exercise_exchange(const std::string& leaf, const std::string& ca, const std::string& key) {
+  const auto certificate = certificate_binding(leaf);
+  const t::ResourceRef control_resource{t::ResourceKind::Principal, {kPeer}};
+  const auto current = t::TimePoint{std::chrono::duration_cast<std::chrono::nanoseconds>(
+      std::chrono::system_clock::now().time_since_epoch())};
+  RegistryFixture registry{t::Principal{{kPeer},
+                                        t::PrincipalKind::PlatformService,
+                                        control_resource,
+                                        {1},
+                                        t::LifecycleState::Active},
+                           t::CredentialVersionRecord{{{kCredential}, {1}},
+                                                      {kPeer},
+                                                      certificate,
+                                                      t::CredentialState::Active,
+                                                      certificate.not_before,
+                                                      std::nullopt,
+                                                      control_resource,
+                                                      certificate.not_after}};
+  registry.human = t::Principal{{kSubject},
+                                t::PrincipalKind::Human,
+                                t::ResourceRef{t::ResourceKind::Principal, {kSubject}},
+                                {1},
+                                t::LifecycleState::Active};
+  registry.password = t::CredentialVersionRecord{{{kAssignment}, {1}},
+                                                 {kSubject},
+                                                 t::PasswordVerifier{"fixture-verifier", {1}},
+                                                 t::CredentialState::Active,
+                                                 current - std::chrono::hours{1},
+                                                 std::nullopt,
+                                                 {t::ResourceKind::Principal, {kSubject}},
+                                                 current + std::chrono::hours{24}};
+  registry.session = t::SessionSecurity{{kSession},
+                                        {kSubject},
+                                        registry.password->ref,
+                                        {t::TokenPurpose::Access, {"fixture-key"}, {}},
+                                        {t::TokenPurpose::Refresh, {"fixture-key"}, {}},
+                                        current - std::chrono::minutes{1},
+                                        current + std::chrono::minutes{15},
+                                        current + std::chrono::hours{24},
+                                        1,
+                                        {1},
+                                        false};
+  const t::ResourceRef first{t::ResourceKind::Account, {kSubject}};
+  const t::ResourceRef second{t::ResourceKind::Account, {kOther}};
+  registry.grants = {t::ExactAssignment{{kOther},
+                                        {kSubject},
+                                        {},
+                                        {{t::Permission::MessageRead, first},
+                                         {t::Permission::ResourceRead, first},
+                                         {t::Permission::MessageRead, second},
+                                         {t::Permission::ResourceRead, second}},
+                                        {1}}};
+  ApplicationFixture sessions;
+  sessions.issued_source = t::ValidatedSession{*registry.human,
+                                               {{kSession},
+                                                {kSubject},
+                                                registry.session->created_at,
+                                                registry.session->refresh_expires_at,
+                                                1,
+                                                {1},
+                                                false},
+                                               registry.grants,
+                                               {1},
+                                               current};
+  RegistryFactoryFixture transactions{registry};
+  ClockFixture clock{registry};
+  namespace crypto = kiarabot::infrastructure::identity_crypto;
+  auto actual = std::get<std::unique_ptr<t::PeerCertificatePort>>(
+      crypto::make_peer_certificate_crypto({{ca}, crypto::PeerSanKind::Dns}));
+  t::IdentityAdminApplication admin{transactions, *actual};
+  auto authenticated =
+      std::get<p::PeerAuthenticator>(p::make_identity_peer_authenticator(admin, clock));
+  IssueRandomFixture random;
+  auto runtime_certificate = certificate;
+  runtime_certificate.subject = {"88888888-8888-4888-8888-888888888888"};
+  runtime_certificate.platform_service = t::Service::Runtime;
+  registry.runtime =
+      t::Principal{runtime_certificate.subject,
+                   t::PrincipalKind::PlatformService,
+                   t::ResourceRef{t::ResourceKind::Principal, {runtime_certificate.subject.value}},
+                   {1},
+                   t::LifecycleState::Active};
+  registry.runtime_credential = registry.credential;
+  registry.runtime_credential->ref.id = {"99999999-9999-4999-8999-999999999999"};
+  registry.runtime_credential->subject = runtime_certificate.subject;
+  registry.runtime_credential->material = runtime_certificate;
+  registry.runtime_credential->binding = {t::ResourceKind::Principal,
+                                          {runtime_certificate.subject.value}};
+  // The parent carries the previous Control fingerprint, distinct from Runtime's TLS leaf.
+  auto& control_certificate = std::get<t::CertificateBinding>(registry.credential.material);
+  control_certificate.fingerprint.bytes.front() ^= std::byte{1};
+  ExchangeCryptoFixture signer{registry};
+  signer.parent = t::DelegationClaims{"issuer-fixture",
+                                      t::Service::Runtime,
+                                      {kSubject},
+                                      {kPeer},
+                                      {{kPeer}},
+                                      registry.grants.front().explicit_permissions,
+                                      {kOther},
+                                      control_certificate.fingerprint,
+                                      {1},
+                                      current - std::chrono::seconds{1},
+                                      current - std::chrono::seconds{1},
+                                      current + std::chrono::seconds{55},
+                                      1,
+                                      registry.password->ref,
+                                      t::SessionId{kSession}};
+  t::IdentityExchangeApplication exchange{
+      transactions, signer, random, clock, {"issuer-fixture", {"signing-fixture"}}};
+  auto service = std::get<std::unique_ptr<w::IdentityService::Service>>(
+      p::make_identity_rpc(sessions, authenticated, nullptr, {}, {.exchange = &exchange}));
+  grpc::SslServerCredentialsOptions options;
+  options.pem_root_certs = ca;
+  options.pem_key_cert_pairs.push_back({key, leaf});
+  options.client_certificate_request = GRPC_SSL_REQUEST_AND_REQUIRE_CLIENT_CERTIFICATE_AND_VERIFY;
+  grpc::ServerBuilder builder;
+  int port = 0;
+  builder.RegisterService(service.get());
+  builder.AddListeningPort("127.0.0.1:0", grpc::SslServerCredentials(options), &port);
+  auto server = builder.BuildAndStart();
+  require(server && port > 0);
+  grpc::SslCredentialsOptions client;
+  client.pem_root_certs = ca;
+  client.pem_cert_chain = leaf;
+  client.pem_private_key = key;
+  auto stub = w::IdentityService::NewStub(
+      grpc::CreateChannel("localhost:" + std::to_string(port), grpc::SslCredentials(client)));
+  w::IdentityExchangeDelegationRequest request;
+  request_context(request.mutable_context());
+  request.mutable_context()->clear_idempotency_key();
+  request.set_parent_proof("parent-proof-fixture");
+  request.set_audience("model");
+  request.set_client_certificate_sha256(
+      std::string(reinterpret_cast<const char*>(certificate.fingerprint.bytes.data()), 32));
+  auto* resource = request.mutable_scope()->add_resources();
+  resource->set_kind(w::RESOURCE_ACCOUNT);
+  resource->set_id(kSubject);
+  request.add_permissions(w::PERMISSION_MESSAGE_READ);
+  w::IdentityExchangeDelegationResponse response;
+  for (const auto* target : {"model", "scheduler"}) {
+    request.set_audience(target);
+    require(call(*stub, &w::IdentityService::Stub::ExchangeDelegation, request, &response).ok());
+    require(response.delegation().proof() == "exchange-proof-fixture" &&
+            response.delegation().audience() == target &&
+            response.delegation().business_hops() == 2);
+    require(signer.captured && signer.captured->permissions.size() == 1 &&
+            signer.captured->actor_chain ==
+                std::vector<t::SubjectId>{{kPeer}, runtime_certificate.subject} &&
+            signer.captured->client_certificate == certificate.fingerprint &&
+            signer.captured->source_credential == signer.parent.source_credential &&
+            signer.captured->source_session == signer.parent.source_session &&
+            signer.captured->subject == signer.parent.subject &&
+            signer.captured->expires_at <= signer.parent.expires_at);
+  }
+  const auto reject = [&](const w::IdentityExchangeDelegationRequest& input,
+                          grpc::StatusCode code) {
+    response.Clear();
+    const auto status =
+        call(*stub, &w::IdentityService::Stub::ExchangeDelegation, input, &response);
+    require(status.error_code() == code && response.ByteSizeLong() == 0);
+    w::RpcFailure detail;
+    require(detail.ParseFromString(status.error_details()) && detail.has_error());
+  };
+  // Positive full budget, then 129 tuples rejected before any crypto/random call.
+  auto bounded = request;
+  bounded.mutable_scope()->clear_resources();
+  bounded.add_permissions(w::PERMISSION_RESOURCE_READ);
+  const auto original_parent = signer.parent;
+  const auto original_grants = registry.grants;
+  registry.grants.front().explicit_permissions.clear();
+  for (int index = 0; index < 64; ++index) {
+    const std::string id = "77777777-7777-4777-8777-00000" + std::to_string(1'000'000 + index);
+    auto* item = bounded.mutable_scope()->add_resources();
+    item->set_kind(w::RESOURCE_ACCOUNT);
+    item->set_id(id);
+    for (auto permission : {t::Permission::MessageRead, t::Permission::ResourceRead}) {
+      registry.grants.front().explicit_permissions.push_back(
+          {permission, {t::ResourceKind::Account, {id}}});
+    }
+  }
+  signer.parent.permissions = registry.grants.front().explicit_permissions;
+  require(call(*stub, &w::IdentityService::Stub::ExchangeDelegation, bounded, &response).ok());
+  require(signer.captured->permissions.size() == 128);
+  auto overflow = bounded;
+  overflow.mutable_permissions()->RemoveLast();
+  for (int index = 64; index < 129; ++index) {
+    auto* item = overflow.mutable_scope()->add_resources();
+    item->set_kind(w::RESOURCE_ACCOUNT);
+    item->set_id("77777777-7777-4777-8777-00000" + std::to_string(1'000'000 + index));
+  }
+  const int verified_before_overflow = signer.verified;
+  const int signed_before_overflow = signer.signed_count;
+  const int random_before_overflow = random.calls;
+  reject(overflow, grpc::StatusCode::INVALID_ARGUMENT);
+  require(signer.verified == verified_before_overflow &&
+          signer.signed_count == signed_before_overflow && random.calls == random_before_overflow);
+  signer.parent = original_parent;
+  registry.grants = original_grants;
+  const int before_verify = signer.verified;
+  for (const auto* target : {"identity", "runtime", "host", "control", "unknown"}) {
+    auto invalid = request;
+    invalid.set_audience(target);
+    reject(invalid, grpc::StatusCode::INVALID_ARGUMENT);
+  }
+  for (const auto& proof :
+       {std::string{}, std::string{"Bearer parent-proof-fixture"}, std::string(32769, 'x')}) {
+    auto invalid = request;
+    invalid.set_parent_proof(proof);
+    reject(invalid, grpc::StatusCode::INVALID_ARGUMENT);
+  }
+  auto invalid = request;
+  invalid.set_client_certificate_sha256(std::string(32, 'x'));
+  reject(invalid, grpc::StatusCode::INVALID_ARGUMENT);
+  invalid = request;
+  invalid.add_permissions(w::PERMISSION_MESSAGE_READ);
+  reject(invalid, grpc::StatusCode::INVALID_ARGUMENT);
+  invalid = request;
+  for (int index = 0; index < 128; ++index) {
+    *invalid.mutable_scope()->add_resources() = request.scope().resources(0);
+  }
+  reject(invalid, grpc::StatusCode::INVALID_ARGUMENT);
+  require(signer.verified == before_verify);
+  auto widened = request;
+  widened.mutable_scope()->mutable_resources(0)->set_id(kCredential);
+  reject(widened, grpc::StatusCode::PERMISSION_DENIED);
+  auto& runtime_material = std::get<t::CertificateBinding>(registry.runtime_credential->material);
+  runtime_material.platform_service = t::Service::Control;
+  reject(request, grpc::StatusCode::PERMISSION_DENIED);
+  runtime_material.platform_service = t::Service::Runtime;
+  signer.mode = 1;
+  reject(request, grpc::StatusCode::UNAUTHENTICATED);
+  signer.mode = 2;
+  reject(request, grpc::StatusCode::UNAVAILABLE);
+  signer.mode = 0;
+  registry.runtime_capability = false;
+  reject(request, grpc::StatusCode::PERMISSION_DENIED);
+  registry.runtime_capability = true;
+  signer.mode = 3;
+  reject(request, grpc::StatusCode::PERMISSION_DENIED);
+  registry.runtime_capability = true;
+  signer.mode = 0;
+  registry.session->revoked = true;
+  reject(request, grpc::StatusCode::UNAUTHENTICATED);
+  // Core also permits non-human provenance without a login session; the boundary
+  // must preserve optional absence rather than imposing Issue's human-session shape.
+  registry.human->kind = t::PrincipalKind::PlatformService;
+  auto source_certificate = certificate;
+  source_certificate.subject = {kSubject};
+  registry.password->material = source_certificate;
+  registry.password->created_at = certificate.not_before;
+  registry.password->expires_at = certificate.not_after;
+  signer.parent.source_session.reset();
+  require(call(*stub, &w::IdentityService::Stub::ExchangeDelegation, request, &response).ok());
+  require(signer.captured && !signer.captured->source_session);
+  require(sessions.calls.load() == 0);
+  server->Shutdown();
+  server->Wait();
+}
 void exercise_issue(const std::string& leaf, const std::string& ca, const std::string& key) {
   const auto certificate = certificate_binding(leaf);
   const t::ResourceRef control_resource{t::ResourceKind::Principal, {kPeer}};
@@ -1943,9 +2284,11 @@ int main(int argc, char* argv[]) {
     server->Wait();
     exercise_registered_peer(leaf, ca, key);
     exercise_issue(leaf, ca, key);
+    exercise_exchange(leaf, ca, key);
     exercise_verification_keys(leaf, ca, key, verifier);
     std::cout << "Six Identity RPCs over real mTLS: boundary projections, stable failures, unknown "
-                 "commit, peer/deadline rejection and Core Issue passed (session/signing fixtures "
+                 "commit, peer/deadline rejection and Core Issue/Exchange passed "
+                 "(repository/signing fixtures "
                  "only)\n";
     return 0;
   } catch (...) {

@@ -1859,3 +1859,23 @@ failure. Source binding does not pin a certificate version or overwrite direct p
 CheckAuthorization的actor当前有效性包含每个Control/Runtime当前显式
 identity.delegation.issue@其自身Principal；撤去、错Principal或role-only均为
 RpcFailure/UNAUTHENTICATED，不作为source业务PERMISSION_DENIED decision。
+
+
+### P04 ExchangeDelegation RPC 适配
+
+`IdentityRpcOptions{.exchange=&app}` 可选借用 Core `IdentityExchangeApplication`，生命周期至
+server 停止/Wait；原 issuer、InvocationDeadline 及 verification_keys 参数位置不变。
+未注入时返回 typed CapabilityNotSupported。只接受当前认证的 Runtime 平台 mTLS，
+子受众仅 model/scheduler；body 的32字节 client_certificate_sha256 必须等于实际 Runtime
+叶指纹。parent_proof 原样借用，不剥离 Bearer，不在外层解析 JWT，不把 Runtime 指纹
+当成父 proof 的上一跳 Control 指纹。父签验、两平台当前显式能力、来源会话/凭据/业务
+权限及签后重查均由 Core 负责。
+
+封闭 permission/resource 去重并在解码、笛卡尔积展开前限制最多128个 exact tuples；
+父 proof 非空、可见 ASCII 且最多32768字节。无普通写入幂等键要求、无收据或库写入。
+继承当前 mTLS、请求/transport/自身 TLS InvocationDeadline 的最小期限与完整 RpcFailure
+映射。成功只投影 Core 返回的原始 proof、audience、expiry、hop2，校验当前 Runtime
+指纹、actor 链和请求精确集合；异常成功结果失败关闭，不发送部分 proof。
+
+真实 mTLS fixture 覆盖该适配与实际 Core 编排；测试的仓储、随机和签验仍为明确替身，
+不代表生产 PostgreSQL、JWT 材料端口或组合根已接线可用。
