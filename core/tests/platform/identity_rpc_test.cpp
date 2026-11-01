@@ -962,6 +962,9 @@ private:
 class IssueSessionRepositoryFixture final : public t::IdentitySessionSecurityRepository {
 public:
   explicit IssueSessionRepositoryFixture(RegistryFixture& registry) : registry_(registry) {}
+  t::Outcome<std::size_t> count_unexpired() override {
+    throw std::logic_error("proof issuance does not count or create sessions");
+  }
   t::Outcome<std::optional<t::SessionSecurity>> find(const t::SessionId& id) override {
     if (!registry_.session || registry_.session->id != id) {
       return std::optional<t::SessionSecurity>{};
@@ -1236,6 +1239,9 @@ void exercise_registered_peer(const std::string& leaf, const std::string& ca,
 }
 class IssueRandomFixture final : public t::RandomPort {
 public:
+  t::Outcome<t::OwnedSecret> opaque_token() override {
+    throw std::logic_error("proof issuance does not create bearer tokens");
+  }
   t::Outcome<t::OwnedSecret> bytes(std::size_t count) override {
     // Deterministic TEST entropy; production Core uses its mature random adapter.
     t::OwnedSecret result =
@@ -1246,6 +1252,10 @@ public:
 };
 class IssueSignerFixture final : public t::DelegationCryptoPort {
 public:
+  t::Outcome<t::VerifiedDelegation> verify_exchange_parent(t::SecretView, const t::VerifiedPeer&,
+                                                           const t::SecurityClockSample&) override {
+    throw std::logic_error("proof issuance does not verify an exchange parent");
+  }
   IssueSignerFixture(RegistryFixture& registry, ApplicationFixture& sessions)
       : registry_(registry), sessions_(sessions) {}
   t::Outcome<t::OwnedSecret> sign(const t::DelegationClaims& claims,

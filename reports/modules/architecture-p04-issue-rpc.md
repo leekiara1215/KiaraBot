@@ -31,3 +31,12 @@ fixed protoc29.3重新生成当前四proto/gRPC（包括Issue/Exchange requires_
 实际命令：cmake configure/build `/tmp/kiarabot-p04-identity-rpc/build`；`python3 core/tests/platform/identity_rpc_test.py <该目录/identity_rpc_check>`；clang-format16三C++文件dry-run；clang-tidy22两个新增TU全部clang-analyzer-*、warnings-as-errors并同统一Apple SDK参数；inner、模块边界、status/semantic、Ruby46 API引用/映射和diff检查。结果通过。临时CMake需Core Admin/Delegation源与kiarabot_identity_crypto/OpenSSL，主仓库CMake不在本任务修改。生成物/证书/私钥未提交。
 
 文档影响：仅doc01/02/08同步factory生命周期、输入product/证书绑定、proof重试/秘密隔离和未实现边界；唯一wire变更已在父1b962d3，无本能力新增字段/错误码/API，所以不重复API lint/descriptor全门禁。未运行full、真实PG或生产签名/HTTPS闭环：生产组合根、端口/密钥/clock部署由父验收，target/readiness状态不变。未触碰受保护doc18。
+
+## 完整Core端口基点的严格fixture补齐
+
+主树集成新Issue测试后，发现作者旧基点遗漏count_unexpired/opaque_token，以及后继
+verify_exchange_parent三个纯virtual override。测试替身现显式将这三种意外调用作为失败，
+不返回假状态/假秘密；生产接口和断言未放宽。新RPC driver真实mTLS通过（全部p04及配置
+canary20/20，41.47秒），该TU精确compile DB tidy22 analyzer warnings-as-errors和format16
+通过。此次仅测试补齐，无公共文档影响，其他契约/运维无需重写。测试依旧明示session/sign
+fixture，真正PG/成熟crypto组合由独立p04_identity_application验证。
