@@ -868,3 +868,15 @@ VerificationKeyMaterialPort::snapshot只读不可变可信材料，不授权、�
 后续GetVerificationKeys由Core验证真实当前登记platform mTLS及显式identity.keys.read@
 该Catalog，不以前置JWT造成未知kid循环。known_version相等/较旧/缺省返回完整当前集合，
 future版本InvalidArgument/CorrectInput。此类型/端口提交不启用RPC或伪ready。
+
+### Identity own TLS lifetime gate
+
+The outer configuration retains the intersection of not-before/not-after for the
+actual OpenSSL-selected verified server chain, including its trust anchor. No inner
+Core dependency on OpenSSL is introduced. Configured Identity checks this finite
+interval through the same trusted security clock borrowed by its crypto, session
+application and real peer authenticator. Every operation gates before peer lookup,
+again after authentication and at application security checks; an established TLS
+channel does not bypass current credential validity. Invalid own credentials latch
+unavailable; readiness Credentials is unavailable and the maintenance check causes
+RPC shutdown/Wait and exit1. Clock faults keep their separately documented behavior.

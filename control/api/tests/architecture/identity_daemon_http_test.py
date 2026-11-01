@@ -5,6 +5,7 @@ Invoked only by infrastructure/postgres/tests/run_database_test.py with its owne
 cluster and compiled initializer/bootstrap/daemon binaries. No external DSN accepted.
 All material is temporary and removed by the ownership-checking fixture.
 """
+from datetime import datetime, timezone
 import http.client
 import json
 import os
@@ -38,7 +39,7 @@ def daemon_http(root):
     for name in ['token', 'request', 'receipt']:
         path = root / f'{name}.hex'
         path.write_text(secrets.token_hex(32) + '\n')
-        path.chmod(384)
+        path.chmod(0o600)
         material[name + '_key'] = {'id': name + '-v1', 'file': str(path)}
 
     def openssl(*args):
@@ -47,12 +48,26 @@ def daemon_http(root):
     private = root / 'delegation.key'
     public = root / 'delegation.pem'
     openssl('genpkey', '-algorithm', 'ED25519', '-out', str(private))
-    private.chmod(384)
+    private.chmod(0o600)
     openssl('pkey', '-in', str(private), '-pubout', '-out', str(public))
-    public.chmod(384)
+    public.chmod(0o600)
     material.update(delegation_key={'id': 'delegation-v1', 'public_key_file': str(public), 'private_key_file': str(private)}, issuer='identity-owned-test', clock={'trusted': True, 'maximum_known_skew_ms': 2000})
     config['identity_security'] = material
     (root / 'identity.json').write_text(json.dumps(config))
+    short_lifetime = '--own-tls-expiry' in sys.argv[9:]
+    expires = None
+    if short_lifetime:
+        tls = root / 'bootstrap-tls'
+        expires = int(time.time()) + 8
+        begin = datetime.fromtimestamp(expires - 60, timezone.utc).strftime('%y%m%d%H%M%SZ')
+        end = datetime.fromtimestamp(expires, timezone.utc).strftime('%y%m%d%H%M%SZ')
+        generated = subprocess.run(
+            ['openssl', 'ca', '-batch', '-config', 'ca.cnf', '-in', 'server.csr',
+             '-out', 'short-server.pem', '-subj', '/CN=ShortIdentity', '-startdate', begin, '-enddate', end,
+             '-extfile', 'extensions'], cwd=tls, capture_output=True, timeout=5)
+        assert generated.returncode == 0, 'short server certificate generation failed'
+        config['tls']['certificate_file'] = str(tls / 'short-server.pem')
+        (root / 'identity.json').write_text(json.dumps(config))
     children = []
     log = ''
     sensitive = [(root / 'admin-password').read_text().strip(), 'PRIVATE KEY']
@@ -63,10 +78,10 @@ def daemon_http(root):
         assert state['ready'] == 'false' and int(state['grpc_port']) > 0, 'Identity readiness/startup mismatch'
         tls = root / 'bootstrap-tls'
         config = {'schema_version': 1, 'service': 'control', 'probe_listen': '127.0.0.1:0', 'tls': {'certificate_file': str(tls / 'control.pem'), 'private_key_file': str(tls / 'control.key'), 'ca_file': str(tls / 'ca.pem')}, 'control_api': {'listen': '127.0.0.1:0', 'identity_endpoint': 'localhost:' + state['grpc_port']}}
-        (tls / 'control.key').chmod(384)
+        (tls / 'control.key').chmod(0o600)
         path = root / 'control.json'
         path.write_text(json.dumps(config))
-        path.chmod(384)
+        path.chmod(0o600)
         browser = subprocess.Popen([control, '--config', str(path)], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         children.append(browser)
         port = int(line(browser).split('=')[1])
@@ -115,6 +130,17 @@ def daemon_http(root):
         replay = expect(request('POST', '/api/v1/auth/refresh', {'refresh_token': tokens['refresh_token']}, key=refreshkey), 200)
         assert replay['refresh_token'] == refreshed['refresh_token']
         expect(request('GET', '/api/v1/auth/me', token=refreshed['access_token']), 200)
+        if short_lifetime:
+            # Existing Control IdentityAuthClient retains its established gRPC channel.
+            # No system clock manipulation or replacement peer is used.
+            while time.time() < expires:
+                time.sleep(min(0.05, expires - time.time()))
+            assert daemon.poll() is None, 'expiry observation missed the live daemon window'
+            refused = request('GET', '/api/v1/auth/me', token=refreshed['access_token'])
+            assert refused[0] == 503, 'expired own TLS accepted on established channel'
+            assert daemon.wait(timeout=4) == 1, 'expired credentials did not stop RPC'
+            print('Actual short server chain expiry rejected established-channel operations and stopped Identity')
+            return
         expect(request('POST', '/api/v1/auth/sessions/' + page['items'][0]['session_id'] + '/revoke', token=refreshed['access_token'], key='revoke-' + str(uuid.uuid4())), 204)
         expect(request('GET', '/api/v1/auth/me', token=refreshed['access_token']), 401)
         print('Production daemon HTTPS -> mTLS -> current Admin -> Core -> real PG login/replay/me/list/refresh/revoke passed')
@@ -124,7 +150,8 @@ def daemon_http(root):
                 child.send_signal(signal.SIGTERM)
             (output, error) = child.communicate(timeout=6)
             log += output.decode() + error.decode()
-            assert child.returncode == 0, 'daemon shutdown failed'
+            expected = 1 if short_lifetime and child is daemon and expires is not None and time.time() >= expires else 0
+            assert child.returncode == expected, 'daemon shutdown failed'
         assert all((secret not in log for secret in sensitive)), 'daemon leaked secret'
 if __name__ == '__main__':
     try:

@@ -148,6 +148,12 @@ SystemSecurityClock::SystemSecurityClock(const platform::IdentityClockDeclaratio
              {}},
       failed_(!declaration.trusted || state_.maximum_known_skew > target::kMaximumKnownClockSkew) {}
 
+SystemSecurityClock::SystemSecurityClock(const platform::IdentityClockDeclaration& declaration,
+                                         platform::TlsValidity own_credentials)
+    : SystemSecurityClock(declaration) {
+  own_credentials_ = own_credentials;
+}
+
 target::Outcome<target::SecurityClockSample> SystemSecurityClock::sample() noexcept {
   if (failed_.load()) {
     return unavailable();
@@ -167,6 +173,12 @@ target::Outcome<target::SecurityClockSample> SystemSecurityClock::sample() noexc
     }
     auto result = identity_clock_detail::observe(
         state_, std::get<identity_clock_detail::Observation>(measured));
+    if (const auto* sample = std::get_if<target::SecurityClockSample>(&result);
+        sample && own_credentials_ && !platform::tls_valid_at(*own_credentials_, sample->utc)) {
+      credentials_expired_.store(true);
+      state_.failed = true;
+      result = unavailable();
+    }
     available_.store(std::holds_alternative<target::SecurityClockSample>(result));
     failed_.store(state_.failed);
     return result;
@@ -178,6 +190,10 @@ target::Outcome<target::SecurityClockSample> SystemSecurityClock::sample() noexc
 }
 bool SystemSecurityClock::healthy() const noexcept {
   return available_.load() && !failed_.load();
+}
+
+bool SystemSecurityClock::credentials_expired() const noexcept {
+  return credentials_expired_.load();
 }
 
 } // namespace kiarabot::core::composition

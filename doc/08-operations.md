@@ -680,3 +680,18 @@ make_identity_rpc(IdentitySecurityApplication&, PeerAuthenticator, IdentityDeleg
 Issue只接受当前Control peer，subject_proof按原始AccessSession token借用，不剥Bearer或接收现成委托替代。audience显式映射封闭六服务；scope/permissions非空、去重、已知枚举与合法exact资源，client_certificate_sha256必须恰好32字节并等于真实transport peer。wire声明的permission×scope product只转换一次为exact tuples，由Core issuer逐tuple复核当前来源与权限，外层不授予或拼接其他assignment。
 
 按父定稿1b962d3，Issue/Exchange requires_idempotency=false：签发不消费配额或一次性材料、无业务意图/普通七天秘密收据，重复请求重新授权并可产生新proof ID。Login/Refresh/Revoke/Rotate仍要求原幂等键。返回只复制应用实际签出的proof及原audience/expiry/一跳信息，核对claim与请求tuple、真实证书及来源上下文一致，不补签名/期限/来源；crypto和权威查询均由Core持有。真实JWT生产签名/PG/HTTPS组合根闭环由父继续验收，本RPC fixture不据此标target implemented。
+
+### Identity own TLS expiration lifecycle
+
+Configuration records the actual OpenSSL-verified selected chain's latest not-before
+and earliest not-after, including intermediates and trust anchor. All timestamps must
+fit the supported finite UTC range; validity is inclusive at not-before and exclusive
+at not-after. It stores no guessed TTL or new clock-derived expiration. Configured
+Identity's trusted clock checks these bounds for each security sample and before/after
+real peer authentication, so an existing channel cannot admit new operations after
+expiration. The failure is UPSTREAM_UNAVAILABLE, not a permission denial. The
+Credentials readiness snapshot becomes unavailable; the next bounded maintenance
+check stops the process with exit1 and closes RPC connections. Restart requires valid
+material and the usual startup chain validation. There is no automatic reload or
+extension. The short-certificate regression uses real UTC and existing Control gRPC
+transport, without changing the system clock.

@@ -32,8 +32,9 @@ target::Failure invalid_composition() {
           {}};
 }
 struct Dependencies {
-  explicit Dependencies(const platform::IdentityClockDeclaration& declaration)
-      : clock(declaration) {}
+  Dependencies(const platform::IdentityClockDeclaration& declaration,
+               platform::TlsValidity validity)
+      : clock(declaration, validity) {}
   // Declaration order: all borrowers and the PG factory die before the clock.
   SystemSecurityClock clock;
   std::unique_ptr<target::RandomPort> random;
@@ -112,6 +113,9 @@ target::Status maintain(const std::shared_ptr<Dependencies>& dependencies) {
       !dependencies->clock_reported.exchange(true)) {
     std::cerr << "operation=identity_clock outcome=unavailable error_code=UPSTREAM_UNAVAILABLE\n";
   }
+  if (dependencies->clock.credentials_expired()) {
+    return detail::database_unavailable(); // Runner stops/Waits RPC, including existing channels.
+  }
   auto begun = dependencies->transactions->begin();
   if (const auto* error = std::get_if<target::Failure>(&begun)) {
     if (error->code == target::ErrorCode::Conflict &&
@@ -139,11 +143,11 @@ target::Status maintain(const std::shared_ptr<Dependencies>& dependencies) {
 }
 target::Outcome<platform::ServiceComposition> configured(const platform::ProcessConfig& config) {
   if (config.service != target::Service::Identity || !config.database ||
-      !config.identity_security) {
+      !config.identity_security || !config.tls.validity) {
     return invalid_composition();
   }
   const auto& material = *config.identity_security;
-  auto dependencies = std::make_shared<Dependencies>(material.clock);
+  auto dependencies = std::make_shared<Dependencies>(material.clock, *config.tls.validity);
   auto token_key =
       crypto::load_symmetric_key_file({{material.token_key.id}, material.token_key.file});
   if (const auto* error = std::get_if<target::Failure>(&token_key)) {
@@ -276,9 +280,21 @@ target::Outcome<platform::ServiceComposition> configured(const platform::Process
         if (const auto* error = std::get_if<target::Failure>(&authenticate)) {
           return *error;
         }
-        auto adapter = platform::make_identity_rpc(
-            observed->sessions(), std::move(std::get<platform::PeerAuthenticator>(authenticate)),
-            &observed->issuer());
+        auto current_peer = std::move(std::get<platform::PeerAuthenticator>(authenticate));
+        platform::PeerAuthenticator gated =
+            [dependencies, current_peer = std::move(current_peer)](
+                grpc::ServerContext& context) -> target::Outcome<target::VerifiedPeer> {
+          const auto current = dependencies->clock.sample();
+          if (const auto* error = std::get_if<target::Failure>(&current)) {
+            return *error;
+          }
+          // Existing channels also recheck the own-chain lifetime on every operation.
+          // The authenticator checks the same gated clock again after Admin returns;
+          // applications borrow it for their own security/commit phase checks.
+          return current_peer(context);
+        };
+        auto adapter = platform::make_identity_rpc(observed->sessions(), std::move(gated),
+                                                   &observed->issuer());
         if (const auto* error = std::get_if<target::Failure>(&adapter)) {
           return *error;
         }

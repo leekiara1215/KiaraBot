@@ -122,3 +122,33 @@ doc/02-core.md、doc/08-operations.md 已随生产实现说明行为，无需重
 （真实 daemon HTTPS 5.18 秒，时钟小于 0.01 秒）。构建日志无 warning/error。
 未在本接线提交重复运行全工具链：P04 其他独立能力仍在集成，待一致检查点统一运行。
 文档检查使用 git diff --check；未提交构建产物、生成物或密钥。
+
+## Own server TLS chain lifetime
+
+Independent follow-up scope: service_config outer metadata/validation, private clock
+and composition, deterministic clock test and production daemon regression, doc02/08.
+The existing mature OpenSSL verifier selects the chain; after verification its actual
+leaf/intermediate/anchor dates are intersected with checked finite UTC conversion.
+JSON/wire/API and Core ports are unchanged. An absent metadata interval cannot build
+a configured production bundle. No key/CA signature validation is reimplemented.
+
+The shared security clock latches unavailable on own-chain not-yet-valid/expiry.
+It gates each authentication before Admin and again through the real authenticator's
+post-check, as well as application/crypto security-clock samples. Credentials readiness
+therefore includes own-chain validity. Maintenance returns dependency failure on the
+latched fault, and the existing runner exits1 after RPC shutdown/Wait. Established
+channels never become a validity cache. Operational failure remains the existing
+UPSTREAM_UNAVAILABLE; no new error/status contract is added.
+
+Actually run: Werror Identity/Control/config-driver/clock-test builds, config+no-PG
+missing-key canary, deterministic nanosecond nbf-inclusive/expiry-exclusive and invalid
+interval tests, native clock with expired credentials and fault persistence, ASan/UBSan,
+format16, tidy22 four TUs, boundary checks and Python compilation passed. Actual owned
+PG + CLI + daemons with an eight-second real server certificate passed: operations
+before expiry, existing Control gRPC channel rejected with503 at expiry, Identity
+exited1 and closed RPC, Control stopped normally and cluster/private material removed.
+The test's --own-tls-expiry argument selects this additional case; no real-clock change
+or fake peer is used. Default regression remains the full five HTTP operation chain.
+Doc01/proto/API unchanged because stable failure schema and transport contracts are
+unchanged. Protected doc18 remains untouched. Temporary build registration restored
+before delivery; integrator should register this second explicit regression variant.

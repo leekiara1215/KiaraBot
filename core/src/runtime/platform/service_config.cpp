@@ -19,6 +19,8 @@
 #include <openssl/x509v3.h>
 #include <sys/stat.h>
 
+#include "kiarabot/core/domain/target/time.hpp"
+
 namespace kiarabot::core::platform {
 namespace {
 
@@ -211,7 +213,30 @@ bool valid_time(X509* certificate, std::time_t validation_time) {
 int no_password(char*, int, int, void*) {
   return 0;
 }
-bool validate_tls(const TlsMaterial& material, std::time_t validation_time) {
+std::optional<target::TimePoint> certificate_time(const ASN1_TIME* encoded) {
+  std::tm decoded{};
+  if (ASN1_TIME_to_tm(encoded, &decoded) != 1) {
+    return std::nullopt;
+  }
+  const std::chrono::year_month_day date{
+      std::chrono::year{decoded.tm_year + 1900},
+      std::chrono::month{static_cast<unsigned>(decoded.tm_mon + 1)},
+      std::chrono::day{static_cast<unsigned>(decoded.tm_mday)}};
+  if (!date.ok() || decoded.tm_hour < 0 || decoded.tm_hour > 23 || decoded.tm_min < 0 ||
+      decoded.tm_min > 59 || decoded.tm_sec < 0 || decoded.tm_sec > 59) {
+    return std::nullopt;
+  }
+  const auto seconds = std::chrono::duration_cast<std::chrono::seconds>(
+                           std::chrono::sys_days{date}.time_since_epoch()) +
+                       std::chrono::hours{decoded.tm_hour} + std::chrono::minutes{decoded.tm_min} +
+                       std::chrono::seconds{decoded.tm_sec};
+  const auto point = target::time_point_from_parts({seconds.count(), 0});
+  if (const auto* value = std::get_if<target::TimePoint>(&point)) {
+    return *value;
+  }
+  return std::nullopt;
+}
+std::optional<TlsValidity> validate_tls(const TlsMaterial& material, std::time_t validation_time) {
   using Bio = std::unique_ptr<BIO, decltype(&BIO_free)>;
   using Certificate = std::unique_ptr<X509, decltype(&X509_free)>;
   using Key = std::unique_ptr<EVP_PKEY, decltype(&EVP_PKEY_free)>;
@@ -226,7 +251,7 @@ bool validate_tls(const TlsMaterial& material, std::time_t validation_time) {
   const Bio ca_bio(BIO_new_mem_buf(material.ca.data(), static_cast<int>(material.ca.size())),
                    BIO_free);
   if (!cert_bio || !key_bio || !ca_bio) {
-    return false;
+    return std::nullopt;
   }
   const Certificate leaf(PEM_read_bio_X509(cert_bio.get(), nullptr, nullptr, nullptr), X509_free);
   const Key key(PEM_read_bio_PrivateKey(key_bio.get(), nullptr, no_password, nullptr),
@@ -234,7 +259,7 @@ bool validate_tls(const TlsMaterial& material, std::time_t validation_time) {
   const Store store(X509_STORE_new(), X509_STORE_free);
   if (!leaf || !key || !store || !valid_time(leaf.get(), validation_time) ||
       X509_check_private_key(leaf.get(), key.get()) != 1) {
-    return false;
+    return std::nullopt;
   }
   bool has_ca = false;
   for (;;) {
@@ -244,19 +269,19 @@ bool validate_tls(const TlsMaterial& material, std::time_t validation_time) {
     }
     if (!valid_time(ca.get(), validation_time) || X509_check_ca(ca.get()) <= 0 ||
         X509_STORE_add_cert(store.get(), ca.get()) != 1) {
-      return false;
+      return std::nullopt;
     }
     has_ca = true;
   }
   if (!has_ca) {
-    return false;
+    return std::nullopt;
   }
   // Keep chain ownership separate: stack only borrows certificates held by this vector.
   const auto free_stack = [](STACK_OF(X509) * stack) { sk_X509_free(stack); };
   const std::unique_ptr<STACK_OF(X509), decltype(free_stack)> chain(sk_X509_new_null(), free_stack);
   std::vector<Certificate> intermediates;
   if (!chain) {
-    return false;
+    return std::nullopt;
   }
   for (;;) {
     Certificate certificate(PEM_read_bio_X509(cert_bio.get(), nullptr, nullptr, nullptr),
@@ -266,17 +291,39 @@ bool validate_tls(const TlsMaterial& material, std::time_t validation_time) {
     }
     if (!valid_time(certificate.get(), validation_time) ||
         sk_X509_push(chain.get(), certificate.get()) == 0) {
-      return false;
+      return std::nullopt;
     }
     intermediates.push_back(std::move(certificate));
   }
   const Context context(X509_STORE_CTX_new(), X509_STORE_CTX_free);
   if (!context || X509_STORE_CTX_init(context.get(), store.get(), leaf.get(), chain.get()) != 1) {
-    return false;
+    return std::nullopt;
   }
   X509_VERIFY_PARAM_set_time(X509_STORE_CTX_get0_param(context.get()), validation_time);
-  return X509_STORE_CTX_set_purpose(context.get(), X509_PURPOSE_SSL_SERVER) == 1 &&
-         X509_verify_cert(context.get()) == 1;
+  if (X509_STORE_CTX_set_purpose(context.get(), X509_PURPOSE_SSL_SERVER) != 1 ||
+      X509_verify_cert(context.get()) != 1) {
+    return std::nullopt;
+  }
+  // Borrow exactly the chain OpenSSL selected after successful mature verification.
+  const auto* verified = X509_STORE_CTX_get0_chain(context.get());
+  if (!verified || sk_X509_num(verified) <= 0) {
+    return std::nullopt;
+  }
+  TlsValidity validity{target::TimePoint::min(), target::TimePoint::max()};
+  for (int index = 0; index < sk_X509_num(verified); ++index) {
+    const auto* certificate = sk_X509_value(verified, index);
+    const auto begin = certificate_time(X509_get0_notBefore(certificate));
+    const auto end = certificate_time(X509_get0_notAfter(certificate));
+    if (!begin || !end || *begin >= *end) {
+      return std::nullopt;
+    }
+    validity.not_before = std::max(validity.not_before, *begin);
+    validity.not_after = std::min(validity.not_after, *end);
+  }
+  if (validity.not_before >= validity.not_after) {
+    return std::nullopt;
+  }
+  return validity;
 }
 
 } // namespace
@@ -370,10 +417,10 @@ ConfigResult load_service_config(const std::string& path, target::Service servic
     const auto ca_path = document["tls"]["ca_file"].get<std::string>();
     try {
       config.tls = {read_file(certificate_path), read_file(key_path, true), read_file(ca_path)};
-      if (!validate_tls(
-              config.tls,
-              std::chrono::system_clock::to_time_t(
-                  std::chrono::time_point_cast<std::chrono::system_clock::duration>(now)))) {
+      config.tls.validity = validate_tls(
+          config.tls, std::chrono::system_clock::to_time_t(
+                          std::chrono::time_point_cast<std::chrono::system_clock::duration>(now)));
+      if (!config.tls.validity || !tls_valid_at(*config.tls.validity, now)) {
         return ConfigFailure{1, "invalid_tls"};
       }
     } catch (const FileFailure&) {

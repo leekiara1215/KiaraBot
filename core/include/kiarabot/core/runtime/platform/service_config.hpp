@@ -10,10 +10,21 @@
 
 namespace kiarabot::core::platform {
 
+// Intersection of the actual OpenSSL-selected verified leaf/intermediate/anchor chain.
+// Inclusive not-before, exclusive not-after; never a relative or inferred lifetime.
+struct TlsValidity {
+  target::TimePoint not_before;
+  target::TimePoint not_after;
+};
+inline bool tls_valid_at(const TlsValidity& validity, target::TimePoint now) noexcept {
+  return validity.not_before < validity.not_after && now >= validity.not_before &&
+         now < validity.not_after;
+}
 struct TlsMaterial {
   std::string certificate;
   std::string private_key;
   std::string ca;
+  std::optional<TlsValidity> validity = std::nullopt;
 };
 // Outer composition input only. Password is loaded from an owner-only file, never JSON/argv.
 // Connection policy (TLS verification, channel binding, timeouts) remains in the PG adapter.

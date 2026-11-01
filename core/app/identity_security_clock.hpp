@@ -40,16 +40,21 @@ namespace kiarabot::core::composition {
 class SystemSecurityClock final : public target::SecurityClockPort {
 public:
   explicit SystemSecurityClock(const platform::IdentityClockDeclaration& declaration);
+  SystemSecurityClock(const platform::IdentityClockDeclaration& declaration,
+                      platform::TlsValidity own_credentials);
   ~SystemSecurityClock() override = default;
   SystemSecurityClock(const SystemSecurityClock&) = delete;
   SystemSecurityClock& operator=(const SystemSecurityClock&) = delete;
   target::Outcome<target::SecurityClockSample> sample() noexcept override;
   // Snapshot only: never samples clocks, locks or accesses a database from readiness.
   bool healthy() const noexcept;
+  bool credentials_expired() const noexcept;
 
 private:
   std::mutex mutex_;
   identity_clock_detail::State state_;
+  std::optional<platform::TlsValidity> own_credentials_;
+  std::atomic<bool> credentials_expired_{false};
   std::atomic<bool> failed_{false};
   std::atomic<bool> available_{false};
 };

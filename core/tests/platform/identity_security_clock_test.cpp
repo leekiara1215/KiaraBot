@@ -86,6 +86,20 @@ int main() {
   refused(elapsed_overflow,
           {t::TimePoint{}, Steady::time_point::max(), Steady::time_point::max(), Ns{0}});
 
+  const kiarabot::core::platform::TlsValidity validity{t::TimePoint{Sec{100}},
+                                                       t::TimePoint{Sec{200}}};
+  assert(!kiarabot::core::platform::tls_valid_at(validity, t::TimePoint{Sec{100} - Ns{1}}));
+  assert(kiarabot::core::platform::tls_valid_at(validity, t::TimePoint{Sec{100}}));
+  assert(kiarabot::core::platform::tls_valid_at(validity, t::TimePoint{Sec{200} - Ns{1}}));
+  assert(!kiarabot::core::platform::tls_valid_at(validity, t::TimePoint{Sec{200}}));
+  assert(!kiarabot::core::platform::tls_valid_at(validity, t::TimePoint{Sec{200} + Ns{1}}));
+  assert(!kiarabot::core::platform::tls_valid_at({validity.not_after, validity.not_before},
+                                                 t::TimePoint{Sec{150}}));
+  c::SystemSecurityClock expired({true, 2000}, validity);
+  assert(std::holds_alternative<t::Failure>(expired.sample()));
+  assert(expired.credentials_expired() && !expired.healthy());
+  assert(std::holds_alternative<t::Failure>(expired.sample()));
+
   c::SystemSecurityClock untrusted({false, 0});
   assert(!untrusted.healthy());
   assert(std::holds_alternative<t::Failure>(untrusted.sample()));
