@@ -1121,3 +1121,8 @@ Active→Revoked v+1；Revoked永久保留owner/旧exact scope/终版本/有限�
 不复用ID、不删除owner。旧save(ExactAssignment)等同Active save，不能绕墓碑复活；旧base
 save也不能复活Revoked。空optional仅不存在，依赖失败必须Failure，不能伪造空查询。
 此接口与PG适配需成组接入，不将纯声明测试称为持久化或Set/Revoke应用完成。
+
+SetAssignment普通成功收据追加完整ExactAssignment快照到ReplayResult index14；既有0..12
+及RegisteredPrincipalSnapshot13保持不变。原成功的owner、版本、role/permission与exact
+scope原样保存，重放不回查可变grant或逆拼base metadata；秘密payload仍不可进入普通收据。
+此类型追加必须与PG typed codec/schema成组接入，不等于Set/Revoke应用已启用。
