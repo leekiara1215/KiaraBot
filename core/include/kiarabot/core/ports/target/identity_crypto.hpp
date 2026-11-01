@@ -47,6 +47,10 @@ public:
   virtual ~RandomPort() = default;
   // CSPRNG only, bounded count from trusted application policy; no weak fallback on failure.
   virtual Outcome<OwnedSecret> bytes(std::size_t count) = 0;
+  // Exactly 32 bytes of CSPRNG entropy encoded as 64 lowercase hexadecimal ASCII characters.
+  // Secure allocation and mature encoding remain in the adapter; the view contains no NUL.
+  // Use for string bearer/bootstrap credentials, not raw bytes or a Core-owned wiping buffer.
+  virtual Outcome<OwnedSecret> opaque_token() = 0;
 };
 class SecurityClockPort {
 public:

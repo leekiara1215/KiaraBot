@@ -570,6 +570,13 @@ SessionRecord.created_at 是 Identity 持久保存的首次创建时间，刷新
 
 RegisterPrincipal 同事务创建无秘密的 PENDING CredentialStatus 引用（credential_id/principal_id/binding/version/created_at/checked_at）；尚未发放的 PENDING 不得伪造 expires_at。GetCredentialStatus 以 identity.principal.read 在线读取同一记录，默认2秒/最多5秒；ACTIVE/EXPIRED 必须有 expires_at，REVOKED 可保留原到期。状态查询不返回秘密、摘要或可重放材料。初次实际发放仍用 RotateCredential 单次 CredentialDelivery，未知结果不得从状态查询恢复秘密。当前未实现，不启用生产路由。
 
+### P04 文本凭据的安全随机端口
+
+RandomPort::opaque_token返回安全内存中的64位小写hex文本，含32字节CSPRNG熵且不带
+NUL，供TokenPair、Bearer和bootstrap文本凭据使用；Raw bytes仍供UUID随机位等内部
+用途。成熟随机、编码和安全分配由crypto adapter完成，Core不自建明文缓冲/擦除算法，
+不能把非UTF8 raw随机字节直接送入Protobuf string/HTTP。随机/分配失败明确返回Failure。
+
 ### P04 真实传输证书证据
 
 platform的extract_peer_certificate只从ServerContext::auth_context提取经过TLS认证的
