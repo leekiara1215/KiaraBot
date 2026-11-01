@@ -333,3 +333,6 @@ JSON 根只允许 schema_version=1、service、probe_listen、tls；非 Control 
 
 文件以非阻塞方式打开后检查 regular，FIFO 等特殊文件必须有界拒绝，不能在 open
 等待写端。五服务入口的工厂装配异常也返回1及脱敏 INTERNAL，不输出异常 what()。
+
+证书时间边界为 notBefore <= 当前验证时刻 < notAfter；起始恰好相等合法，ASN1时间
+解析失败拒绝。配置校验时刻支持内部测试注入，CLI/配置不能覆盖服务器当前时间。

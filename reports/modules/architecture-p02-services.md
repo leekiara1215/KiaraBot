@@ -53,3 +53,14 @@ read_file 使用 O_NONBLOCK|O_NOFOLLOW 后 fstat，仅接收 regular；补配置
 修正验证：配置driver以 C++20 -Wall/-Wextra/-Wpedantic/-Werror重编译，配置/TLS
 测试（含4种FIFO路径）通过；五入口按相同警告门禁独立编译链接通过，格式及diff检查通过。
 网络测试属于随后runner能力，本修正不据此宣称监听已验收。
+
+## TLS 起始时刻边界修正
+
+valid_time允许notBefore比较结果-1或0，仍拒绝-2解析失败和notAfter相等/到期；
+注入UTC验证时刻并同时用于OpenSSL链验证。driver测试恰好起始成功、前一秒拒绝、
+恰好到期拒绝，另签发新EC证书后立即验证成功，无sleep。生产默认系统当前UTC，
+CLI/配置不提供时钟覆盖。只改配置头/源、driver/配置测试、doc/08与本报告。
+文档影响限TLS校验细节，无协议变化；其他文档无新增影响。
+
+实际检查：C++20 -Wall/-Wextra/-Wpedantic/-Werror重编译配置driver；
+配置/FIFO/TLS拒绝及固定时刻、新EC证书立即加载测试通过；格式和diff检查通过。

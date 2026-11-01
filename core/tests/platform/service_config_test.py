@@ -1,5 +1,6 @@
 """Configuration/TLS contract checks; all certificate material lives in a temporary directory."""
 import json
+from datetime import datetime, timezone
 import os
 from pathlib import Path
 import subprocess
@@ -7,14 +8,15 @@ import sys
 import tempfile
 
 
-def certificates(root):
+def certificates(root, key_kind="rsa"):
     def openssl(*arguments):
         subprocess.run(["openssl", *arguments], check=True, cwd=root,
                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
     openssl("req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1",
             "-subj", "/CN=P02-Test-CA", "-keyout", "ca.key", "-out", "ca.pem")
-    openssl("req", "-newkey", "rsa:2048", "-nodes", "-subj", "/CN=localhost",
+    key_options = ["-newkey", "ec", "-pkeyopt", "ec_paramgen_curve:P-256"] if key_kind == "ec" else ["-newkey", "rsa:2048"]
+    openssl("req", *key_options, "-nodes", "-subj", "/CN=localhost",
             "-keyout", "server.key", "-out", "server.csr")
     (root / "extensions").write_text(
         "subjectAltName=DNS:localhost,IP:127.0.0.1\nextendedKeyUsage=serverAuth,clientAuth\n")
@@ -51,6 +53,16 @@ def main(driver):
             assert "PRIVATE KEY" not in result.stderr and str(root) not in result.stderr
 
         expect(0)
+        path.write_text(json.dumps(config))
+        for flag, adjustment, expected in [("-startdate", 0, 0), ("-startdate", -1, 1),
+                                           ("-enddate", 0, 1)]:
+            encoded = subprocess.check_output(
+                ["openssl", "x509", "-in", str(root / "server.pem"), "-noout", flag], text=True)
+            instant = datetime.strptime(encoded.strip().split("=", 1)[1], "%b %d %H:%M:%S %Y %Z")
+            epoch = int(instant.replace(tzinfo=timezone.utc).timestamp()) + adjustment
+            result = subprocess.run([driver, str(path), str(epoch)], capture_output=True, timeout=3)
+            assert result.returncode == expected, (flag, adjustment, result.returncode)
+
         expect(2, {**config, "service": "runtime"})
         expect(2, {**config, "secret": "never-print-this"})
         expect(2, {**config, "probe_listen": "0.0.0.0:1234"})
@@ -72,6 +84,9 @@ def main(driver):
             expect(1, {**config, "tls": {**config["tls"], field: str(root / "fifo")}})
         fifo_result = subprocess.run([driver, str(root / "fifo")], capture_output=True, timeout=3)
         assert fifo_result.returncode == 2, fifo_result.returncode
+        ec_root = root / "ec"
+        ec_root.mkdir()
+        expect(0, certificates(ec_root, "ec"))
         print("P02 configuration/TLS rejection checks passed")
 
 

@@ -28,6 +28,8 @@ using ConfigResult = std::variant<ProcessConfig, ConfigFailure>;
 std::string_view service_name(target::Service service) noexcept;
 // Strict schema v1. Regular files only, <=1MiB each; private key requires owner-only permissions.
 // Reads and validates TLS chain/time/key before any listener. Failure never contains file content.
-ConfigResult load_service_config(const std::string& path, target::Service service);
+// Validation time is injectable for exact certificate-boundary tests; production uses current UTC.
+ConfigResult load_service_config(const std::string& path, target::Service service,
+                                 target::TimePoint now = std::chrono::system_clock::now());
 
 } // namespace kiarabot::core::platform

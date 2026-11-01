@@ -93,16 +93,20 @@ bool exact_keys(const nlohmann::json& object, const std::set<std::string>& keys)
   }
   return true;
 }
-bool valid_time(X509* certificate) {
+bool valid_time(X509* certificate, std::time_t validation_time) {
   const std::unique_ptr<ASN1_TIME, decltype(&ASN1_TIME_free)> now(
-      ASN1_TIME_set(nullptr, std::time(nullptr)), ASN1_TIME_free);
-  return now && ASN1_TIME_compare(X509_get0_notBefore(certificate), now.get()) == -1 &&
+      ASN1_TIME_set(nullptr, validation_time), ASN1_TIME_free);
+  if (!now) {
+    return false;
+  }
+  const auto not_before = ASN1_TIME_compare(X509_get0_notBefore(certificate), now.get());
+  return (not_before == -1 || not_before == 0) &&
          ASN1_TIME_compare(X509_get0_notAfter(certificate), now.get()) == 1;
 }
 int no_password(char*, int, int, void*) {
   return 0;
 }
-bool validate_tls(const TlsMaterial& material) {
+bool validate_tls(const TlsMaterial& material, std::time_t validation_time) {
   using Bio = std::unique_ptr<BIO, decltype(&BIO_free)>;
   using Certificate = std::unique_ptr<X509, decltype(&X509_free)>;
   using Key = std::unique_ptr<EVP_PKEY, decltype(&EVP_PKEY_free)>;
@@ -123,7 +127,7 @@ bool validate_tls(const TlsMaterial& material) {
   const Key key(PEM_read_bio_PrivateKey(key_bio.get(), nullptr, no_password, nullptr),
                 EVP_PKEY_free);
   const Store store(X509_STORE_new(), X509_STORE_free);
-  if (!leaf || !key || !store || !valid_time(leaf.get()) ||
+  if (!leaf || !key || !store || !valid_time(leaf.get(), validation_time) ||
       X509_check_private_key(leaf.get(), key.get()) != 1) {
     return false;
   }
@@ -133,7 +137,7 @@ bool validate_tls(const TlsMaterial& material) {
     if (!ca) {
       break;
     }
-    if (!valid_time(ca.get()) || X509_check_ca(ca.get()) <= 0 ||
+    if (!valid_time(ca.get(), validation_time) || X509_check_ca(ca.get()) <= 0 ||
         X509_STORE_add_cert(store.get(), ca.get()) != 1) {
       return false;
     }
@@ -155,14 +159,18 @@ bool validate_tls(const TlsMaterial& material) {
     if (!certificate) {
       break;
     }
-    if (!valid_time(certificate.get()) || sk_X509_push(chain.get(), certificate.get()) == 0) {
+    if (!valid_time(certificate.get(), validation_time) ||
+        sk_X509_push(chain.get(), certificate.get()) == 0) {
       return false;
     }
     intermediates.push_back(std::move(certificate));
   }
   const Context context(X509_STORE_CTX_new(), X509_STORE_CTX_free);
-  return context && X509_STORE_CTX_init(context.get(), store.get(), leaf.get(), chain.get()) == 1 &&
-         X509_STORE_CTX_set_purpose(context.get(), X509_PURPOSE_SSL_SERVER) == 1 &&
+  if (!context || X509_STORE_CTX_init(context.get(), store.get(), leaf.get(), chain.get()) != 1) {
+    return false;
+  }
+  X509_VERIFY_PARAM_set_time(X509_STORE_CTX_get0_param(context.get()), validation_time);
+  return X509_STORE_CTX_set_purpose(context.get(), X509_PURPOSE_SSL_SERVER) == 1 &&
          X509_verify_cert(context.get()) == 1;
 }
 
@@ -185,7 +193,8 @@ std::string_view service_name(target::Service service) noexcept {
   }
   return "unknown";
 }
-ConfigResult load_service_config(const std::string& path, target::Service service) {
+ConfigResult load_service_config(const std::string& path, target::Service service,
+                                 target::TimePoint now) {
   nlohmann::json document;
   try {
     std::vector<std::set<std::string>> object_keys;
@@ -227,7 +236,7 @@ ConfigResult load_service_config(const std::string& path, target::Service servic
     const auto ca_path = document["tls"]["ca_file"].get<std::string>();
     try {
       config.tls = {read_file(certificate_path), read_file(key_path, true), read_file(ca_path)};
-      if (!validate_tls(config.tls)) {
+      if (!validate_tls(config.tls, std::chrono::system_clock::to_time_t(now))) {
         return ConfigFailure{1, "invalid_tls"};
       }
     } catch (const FileFailure&) {
