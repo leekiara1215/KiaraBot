@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <cassert>
+#include <cstdlib>
 #include <functional>
 #include <map>
 #include <string_view>
@@ -753,6 +754,10 @@ struct Clock final : t::SecurityClockPort {
 };
 struct Delegations final : t::DelegationCryptoPort {
   explicit Delegations(Store& s) : store(s) {}
+  t::Outcome<t::VerifiedDelegation> verify_exchange_parent(t::SecretView, const t::VerifiedPeer&,
+                                                           const t::SecurityClockSample&) override {
+    std::abort();
+  }
   t::Outcome<t::OwnedSecret> sign(const t::DelegationClaims&, const t::CryptoKeyRef&) override {
     assert(store.active == 0);
     return copy(view("proof"));

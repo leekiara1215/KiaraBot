@@ -85,6 +85,16 @@ public:
   virtual Outcome<VerifiedDelegation> verify(SecretView proof, Service audience,
                                              const VerifiedPeer& direct_peer,
                                              const SecurityClockSample& clock) = 0;
+  // Exchange receives a proof addressed TO this authenticated platform recipient. The parent
+  // binds the previous sender's certificate, not the recipient's; do not compare those leaves
+  // or pretend the recipient possesses the sender's key. Verify the same closed JWT/signature,
+  // time/issuer/key rules and parent audience == recipient service (Runtime, first hop only).
+  // Core must additionally verify current recipient AND previous sender registration, the
+  // original credential/session/authorization, exact narrowing and unchanged origin before
+  // signing hop two. Cryptographic parent verification alone never grants exchange authority.
+  virtual Outcome<VerifiedDelegation> verify_exchange_parent(SecretView proof,
+                                                             const VerifiedPeer& recipient,
+                                                             const SecurityClockSample& clock) = 0;
 };
 
 } // namespace kiarabot::core::target

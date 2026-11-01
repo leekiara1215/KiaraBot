@@ -841,3 +841,13 @@ Issue只接受当前Control peer，subject_proof按原始AccessSession token借�
 Issue 接受的精确 permission/resource tuples 最多128条，与成熟JWT适配器既有容量一致；
 Core 在任何权威读取/签名前拒绝第129条。RPC在展开permission×resource product前也应
 核对同一上限，不能先构造大集合再依赖签名器拒绝。既有精确资源授权要求不变。
+
+### P04 Exchange 父证明密码学端口
+
+`DelegationCryptoPort::verify_exchange_parent`接收真实已认证Runtime recipient、父JWT和
+可信时钟。父audience必须是该recipient服务，父仍为第一业务跳；验证成熟签名/issuer/
+key/封闭claims/时间，与普通verify使用相同严格规则。父client_certificate绑定的是上一跳
+Control，不能拿接收Runtime的叶证书替代比较，也不能把Runtime冒充Control证明私钥持有。
+此入口只证明签名和受众：Core还必须核验当前recipient与上一跳Control登记、原始source
+credential/session及授权版本、精确收窄，再签第二跳；不绕过在线授权，不授予额外权限。
+本接口须与成熟crypto实现一起集成，未实现时不能构造假的VerifiedDelegation或开启Exchange。

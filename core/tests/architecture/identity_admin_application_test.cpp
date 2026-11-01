@@ -508,6 +508,10 @@ public:
                                            const t::SecurityClockSample&) override {
     std::abort();
   }
+  t::Outcome<t::VerifiedDelegation> verify_exchange_parent(t::SecretView, const t::VerifiedPeer&,
+                                                           const t::SecurityClockSample&) override {
+    std::abort();
+  }
 
 private:
   Script& script_;
