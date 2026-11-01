@@ -202,3 +202,7 @@ REST 不可变分页用于一致列表；WebSocket 是资源状态刷新通知�
 期望配置、Host进程事实、协议注册与配置应用分层；旧 desired_version 或 execution_generation 观察不能覆盖新状态。Host离线不是已停止证据，不允许盲跨主机接管。私有 namespace 绑定稳定实例，换连接不重建；共享写条件版本，TTL 重放不续期。默认私有/共享各1024键/1MiB、单值64KiB、安装聚合8192键/8MiB；成功收据实例10000/安装80000，七天内不淘汰。一次性任务实例1024/安装8192；COMPLETED 仅 Runtime 已持久入队，确认丢失重发同 occurrence/message ID。
 
 模型先提交意图再调用，后提交已知结果/UNKNOWN，同 logical_call_id 不再次调用供应商。首轮不承诺正文重放；Chat 响应丢失查询状态，不能自动换 call_id。Action 已派发取消冲突；终态168小时，过期 ACCEPTED 迁 EXPIRED/TIMEOUT，迟到平台证据不得覆盖。未知结果与权限依赖故障保持事实/Blocked，不把未能授权等同明确拒绝。
+
+### P01 调用副作用与幂等种类
+
+`target_spec.json.mutating` 表示会改变持久/观测状态，不能为了复用普通收据开关而标成只读。Chat、ACK/Renew、心跳、注册、事件/Timer/Host交接均可变更状态，但分别以 logical_call_id、attempt/fence、registration/fence、event_id+source+hash、message_id/occurrence_id、command_id+hash 防重，不等同普通 idempotency_key 响应收据。descriptor 的 requires_idempotency 只表示必需普通业务幂等键；状态变更和此开关独立。断线未收到回执仍保留原稳定业务身份恢复。所有者RPC集合必须与规格双向相等，不能有未登记额外方法。

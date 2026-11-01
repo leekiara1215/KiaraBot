@@ -44,6 +44,12 @@ def main():
     descriptor = descriptor_pb2.FileDescriptorSet.FromString(Path(sys.argv[1]).read_bytes())
     cpp = sys.argv[2]
     files = {f.name: f for f in descriptor.file if f.package == 'kiarabot.v1'}
+    expected_methods = {(m['service'], m['method']) for m in SPEC['methods']}
+    actual_methods = {(service.name, rpc.name) for file in files.values()
+                      for service in file.service if service.name in
+                      {'IdentityService', 'RuntimeService', 'HostService', 'SchedulerService', 'ModelService'}
+                      for rpc in service.method}
+    assert actual_methods == expected_methods, (actual_methods - expected_methods, expected_methods - actual_methods)
     checked = 0
     for method in SPEC['methods']:
         file = files['kiarabot/v1/' + method['file']]
@@ -54,7 +60,7 @@ def main():
         assert rpc.server_streaming == method['server_streaming']
         assert rpc.options.Extensions[policy_pb2.required_permission] == getattr(
             policy_pb2, 'PERMISSION_' + method['permission'].upper().replace('.', '_'))
-        assert rpc.options.Extensions[policy_pb2.requires_idempotency] == method['mutating']
+        assert rpc.options.Extensions[policy_pb2.requires_idempotency] == method['requires_idempotency_key']
         assert rpc.options.Extensions[policy_pb2.default_deadline_ms] == method['deadline_ms']
         assert rpc.options.Extensions[policy_pb2.max_deadline_ms] == method['max_deadline_ms']
         assert rpc.options.Extensions[policy_pb2.requires_online_authorization] == (method['risk'] == 'online')

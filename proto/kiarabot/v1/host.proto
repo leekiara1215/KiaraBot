@@ -168,21 +168,21 @@ service HostService {
   }
   rpc ApplyDesiredProcess(HostApplyDesiredProcessRequest) returns (HostApplyDesiredProcessResponse) {
     option (required_permission) = PERMISSION_HOST_EXECUTE;
-    option (requires_idempotency) = true;
+    option (requires_idempotency) = false;
     option (default_deadline_ms) = 5000;
     option (max_deadline_ms) = 30000;
     option (requires_online_authorization) = true;
   }
   rpc StopExecution(HostStopExecutionRequest) returns (HostStopExecutionResponse) {
     option (required_permission) = PERMISSION_HOST_EXECUTE;
-    option (requires_idempotency) = true;
+    option (requires_idempotency) = false;
     option (default_deadline_ms) = 5000;
     option (max_deadline_ms) = 30000;
     option (requires_online_authorization) = true;
   }
   rpc DrainHost(HostDrainHostRequest) returns (HostDrainHostResponse) {
     option (required_permission) = PERMISSION_HOST_EXECUTE;
-    option (requires_idempotency) = true;
+    option (requires_idempotency) = false;
     option (default_deadline_ms) = 5000;
     option (max_deadline_ms) = 30000;
     option (requires_online_authorization) = true;

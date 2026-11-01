@@ -659,7 +659,7 @@ service RuntimeService {
   }
   rpc PublishEvent(RuntimePublishEventRequest) returns (RuntimePublishEventResponse) {
     option (required_permission) = PERMISSION_ADAPTER_CONNECT;
-    option (requires_idempotency) = true;
+    option (requires_idempotency) = false;
     option (default_deadline_ms) = 5000;
     option (max_deadline_ms) = 30000;
     option (requires_online_authorization) = true;
@@ -820,7 +820,7 @@ service RuntimeService {
   }
   rpc AcceptTimerTrigger(RuntimeAcceptTimerTriggerRequest) returns (RuntimeAcceptTimerTriggerResponse) {
     option (required_permission) = PERMISSION_TIMER_ACCEPT;
-    option (requires_idempotency) = true;
+    option (requires_idempotency) = false;
     option (default_deadline_ms) = 5000;
     option (max_deadline_ms) = 30000;
     option (requires_online_authorization) = true;
