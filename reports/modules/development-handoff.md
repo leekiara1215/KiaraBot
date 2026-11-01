@@ -12,7 +12,9 @@ git bundle迁移及未提交内容/数据/秘密的另行安全保全；新机�
 二次复核已记录：PG state a030394、Registered snapshot4d7976f、Exact receipt fae5772、
 完整codec97976f7已审取，不把它们永久列为未合并。MVP smoke67f91e5已提交，其相关3/3
 通过为作者/主协调反馈；本任务未重跑。Assignment app71acedd仍有未解tidy诊断，不入MVP。
-Core凭据/工具链WIP仍未提交，清单仅来自git status。主集成少量组装WIP待作者测试提交。
+初次盘点 Core凭据/工具链WIP未提交；后续Core凭据已由父保存独立codex/p04-identity-wip
+的938c9d2（14文件，前基点15fd119），工作树clean且未纳主集成/MVP；doc25已更新。
+Register/Rotate仅声明、Pending/delivery的PG/crypto未接；工具链未提交清单仍依原git status。主集成少量组装WIP待作者测试提交。
 
 文档影响判断：无代码、契约、配置或运行接口改变；仅新增交接入口。doc11/doc23及模块
 报告作为已提交来源只读引用；doc24由主协调维护，本任务不抢写；proto/API、运行语义、

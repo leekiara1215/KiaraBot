@@ -52,7 +52,8 @@
 | 主协调 `codex/architecture-rollout` | `97976f7` | 二次核对已集成 PG state 与完整收据 codec；仍有少量 CMake/严格替身组装待提交，未启用注册/赋权生产路由 |
 | RPC `codex/p04-authorization-rpc` | `9bfadca`、`2d1170a`；分支头 `2d1170aa336eca4fec9a15ee198b8faf729f9d98` | CheckAuthorization 可选 `.authorization`、500ms/1s 和 decision/Failure 映射；后者仅给 Issue/Exchange fixture 补原 Control binding；基点尚未审取这两项 |
 | RPC `codex/p04-exchange-rpc` | `7714ed25ee3ef35bfc0b6de84a7ff1f3328c9f4c` | 已由主集成 `03c3974` 承接；严格新 crypto fixture 原 `958aa5e` 对应集成 `6fe4b4d`，勿重复取 |
-| Core `codex/p03-core-ports` | `15fd1195cd6540150dae9d1f04cae15b38c08565` | 完整原注册成功 snapshot 已由 `4d7976f` 审取；另有未提交凭据 WIP |
+| Core `codex/p03-core-ports` | `15fd1195cd6540150dae9d1f04cae15b38c08565` | 完整原注册成功 snapshot 已由 `4d7976f` 审取；凭据 WIP 已另存 `codex/p04-identity-wip` 的 `938c9d2`，未纳入主集成/MVP |
+| Core 冻结 `codex/p04-identity-wip` | `938c9d2` | 从 `15fd119` 保存14文件的未完成凭据能力；工作树已 clean；Register/Rotate 仍仅声明，Pending/delivery 的 PG/crypto 未接，不启用生产/MVP |
 | PG `codex/p04-complete-result-codec` | `0428f0b6443967c4e31f643625055fb8045cfc6a` | 已由 `97976f7` 审取；配套完整注册 snapshot 为 `4d7976f`，ExactAssignment 收据 index14 为 `fae5772`，仍未启用相应生产路由 |
 | PG `codex/p04-assignment-state-pg` | `eacf42d` | 永久撤销墓碑已由 `a030394` 审取；后续统一构建结果由主协调补充，不再列为未合入 |
 | Core `codex/p04-assignment-result` | `71acedd96a18c5401774df1226c50e7ad7640ee8` | 明确标记 WIP 的 Assignment mutation app/tests，已提交保存但仍有未解 tidy 诊断；非完整可用 factory，不启用路由；相关公开头 `68d3b06` 仍须独立核对 |
@@ -75,8 +76,7 @@
 
 | 工作分支 / 观察状态 | 路径与处理 |
 | --- | --- |
-| `codex/p03-core-ports`，tracked 修改 | `core/include/kiarabot/core/domain/target/identity_credential_rules.hpp`、`identity_types.hpp`；`core/tests/architecture/identity_contract_test.cpp`、`identity_rules_test.cpp`；`doc/01-runtime-semantics.md`、`doc/02-core.md` |
-| 同分支，untracked | `core/include/kiarabot/core/application/target/identity_credential_application.hpp`；`core/src/application/target/identity_credential_application.cpp`；`core/tests/architecture/identity_credential_application_test.cpp`、`identity_credential_enrollment_test.cpp`；`doc/02-core-credential-enrollment.md`；`reports/modules/architecture-p04-credential-enrollment.md`、`architecture-p04-credential-lifecycle.md` |
+| Core 凭据 WIP 已冻结 | 原 tracked/untracked 并集14文件已保存到独立 `codex/p04-identity-wip` / `938c9d2`，冻结前基点 `15fd119`，工作树 clean。精确清单用 `git show --name-only 938c9d2` 及 `git show 938c9d2:reports/modules/p04-wip-freeze.md` 查看；不再列作未提交内容，不把仅声明的 Register/Rotate 或未接 PG/crypto 认作可用能力 |
 | `codex/p03-toolchain`，tracked 修改 | `scripts/check-toolchain.sh`、`doc/11-toolchain.md`、`reports/modules/architecture-p03-toolchain.md` |
 | 同分支，untracked | `scripts/quality/cmake-check-context.py`、`scripts/quality/tests/cmake_check_context_test.py`；这是该 owner 的未提交差异，不据此断言主基点没有同名已提交文件 |
 | `codex/mvp-nonebot-smoke` | 初次观察 smoke 为 untracked；二次已提交为 `67f91e5` 且工作树干净，不再列未保存 WIP |
@@ -95,7 +95,7 @@
 | 今晚：一账号收消息并自动回复 | `core/reference/` 最小回复处理；`adapters/nonebot/` 与本地 OneBot 协议替身 | 已有 AdapterBridge/Action 路径；唯一最小处理方案由 MVP owner 决定 | 启动真实本地进程，替身送一条事件并收到预期回复，记录退出/拒绝，不能只测函数或仅接收事件 |
 | 今晚：可复现 smoke 与启动步骤 | `adapters/nonebot/tests/`、验收脚本、doc24/本页 | 前两项独立 cap 合并 | 新建 venv/build 后可重复执行；失败非零；只有 loopback 替身，无真实 QQ/付费模型 |
 | 待恢复：在线授权生产接线 | `core/runtime/platform/`、`control/api/` 组合、`proto/policy.proto` 的授权 scope 元数据及验证，由各 owner 分工 | Core 已冻结 API；RPC `9bfadca`；Control 单一 metadata 来源 | 未 annotation 方法 fail closed；不从客户端构造 permission、不复制方法表；真实 TLS/JWT/PG 测试保持 |
-| 后移：P04 凭据生命周期/登记 | 上节 Core credential WIP 与直接文档；再按已冻结端口协调 crypto/PG/RPC | 先保存 WIP，核定当前契约/错误/收据；不把草稿当公共冻结接口 | 正常/拒绝/过期/撤销/依赖故障、原收据恢复和真实组合分别通过 |
+| 后移：P04 凭据生命周期/登记 | 冻结 `938c9d2` 的14文件与直接文档；再按已冻结端口协调 crypto/PG/RPC | 先同步主集成新端口/共享 helper，核定当前契约/错误/收据；不把草稿当公共冻结接口 | 正常/拒绝/过期/撤销/依赖故障、原收据恢复和真实组合分别通过 |
 | 后移：P04 完整 Assignment 管理 | `identity_assignment_application.*`、typed receipt、PG state/codec 及将来的 RPC | state/fingerprint/完整结果契约依次审取；factory 完整实现 | 不复活墓碑、旧/新 scope 当前授权、幂等返回原 typed snapshot；实际 PG 与 RPC 测试，不启用 WIP |
 | 后移：完整 P04 失效流及管理面 | Identity/Control 对应模块与唯一契约 | 确认尚未完成的逐方法清单与当前权威 | 当前权威失败关闭、快照/增量水位和恢复验收；不能靠局部 crypto 测试关闭阶段 |
 | 后移：P05–P14 新服务业务 | 按 doc23 的各模块独立范围，先协议/端口后实现 | P04 阶段退出及各阶段依赖；用户重新排定优先级 | 每阶段真实行为/错误/故障矩阵分别通过；插件机制、完整账号管理、多机部署不加入今晚 MVP |
