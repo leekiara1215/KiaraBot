@@ -4,6 +4,7 @@ import argparse
 import os
 from pathlib import Path
 import secrets
+import shutil
 import socket
 import subprocess
 import tempfile
@@ -20,25 +21,47 @@ def main():
     environment = {key: value for key, value in os.environ.items() if not key.startswith('PG')}
     environment['LC_ALL'] = 'C'
 
-    def run(command, timeout=45):
+    def run(command, timeout=45, expected=0):
         result = subprocess.run(command, env=environment, capture_output=True, timeout=timeout)
-        if result.returncode:
+        if result.returncode != expected:
             raise RuntimeError(f'fixture command failed: {Path(command[0]).name}; '
                                f'exit={result.returncode}; output redacted')
         return result
 
+    if not test.is_file() or not args.initializer.resolve().is_file():
+        raise RuntimeError('compiled test and initializer required')
     version = run([str(pg_bin / 'postgres'), '--version']).stdout.decode().strip()
     if version != 'postgres (PostgreSQL) 16.4':
         raise RuntimeError('PG16.4 required')
-    with tempfile.TemporaryDirectory(prefix='kiarabot-p03-') as temporary:
-        root = Path(temporary).resolve()
+    root = Path(tempfile.mkdtemp(prefix='kiarabot-p03-')).resolve()
+    token = secrets.token_hex(32)
+    marker = root / 'p03-owned-marker'
+    marker.write_text(token)
+    try:
         root.chmod(0o700)
-        marker = root / 'p03-owned-marker'
-        token = secrets.token_hex(32)
-        marker.write_text(token)
         password_file = root / 'password'
         password_file.write_text(secrets.token_hex(32) + '\n')
         password_file.chmod(0o600)
+        initializer = str(args.initializer.resolve())
+        run([initializer, '--help'])
+        run([initializer], expected=2)
+        cli = [initializer, '--initialize-empty', 'runtime', 'localhost', '1',
+               'p03_runtime', 'p03_runtime_migration', 'p03_runtime_runtime',
+               str(root / 'server.pem')]
+        # File rejection is tested before a cluster exists; a FIFO must not block open().
+        fifo = root / 'password-fifo'
+        os.mkfifo(fifo, mode=0o600)
+        run(cli + [str(fifo)], timeout=2, expected=2)
+        link = root / 'password-link'
+        link.symlink_to(password_file)
+        run(cli + [str(link)], timeout=2, expected=2)
+        password_file.chmod(0o644)
+        run(cli + [str(password_file)], expected=2)
+        password_file.chmod(0o600)
+        multiline = root / 'password-multiline'
+        multiline.write_text('invalid\nmultiline\n')
+        multiline.chmod(0o600)
+        run(cli + [str(multiline)], expected=2)
         run([str(pg_bin / 'initdb'), '-D', str(root / 'data'), '-A', 'scram-sha-256',
              '-U', 'p03_admin', '--pwfile', str(password_file), '--no-locale'])
         run([str(openssl), 'req', '-x509', '-newkey', 'ec', '-pkeyopt',
@@ -57,18 +80,21 @@ def main():
             stream.write(f"\nlisten_addresses='127.0.0.1'\nport={port}\nssl=on\n"
                          f"ssl_cert_file='{root}/server.pem'\nssl_key_file='{root}/server.key'\n"
                          f"unix_socket_directories='{root}'\n")
-        try:
-            run([str(pg_bin / 'pg_ctl'), '-D', str(root / 'data'), '-l', str(root / 'pg.log'),
-                 '-w', '-t', '20', 'start'])
-            output = run([str(test), str(root), str(port), str(args.initializer.resolve())])
-            print(output.stdout.decode(), end='')
-        finally:
-            # Only this invocation's marker + fixed owned data path authorize cleanup.
-            if marker.read_text() != token:
-                raise RuntimeError('fixture ownership marker changed; refusing cluster control')
-            if (root / 'data/postmaster.pid').exists():
-                run([str(pg_bin / 'pg_ctl'), '-D', str(root / 'data'), '-m', 'immediate',
-                     '-w', '-t', '20', 'stop'], timeout=25)
+        run([str(pg_bin / 'pg_ctl'), '-D', str(root / 'data'), '-l', str(root / 'pg.log'),
+             '-w', '-t', '20', 'start'])
+        output = run([str(test), str(root), str(port), str(args.initializer.resolve())])
+        print(output.stdout.decode(), end='')
+    finally:
+        # No TemporaryDirectory auto-deletion: unknown ownership or failed bounded stop must
+        # preserve the directory for inspection, including a potentially still-live cluster.
+        if (root.is_symlink() or not root.name.startswith('kiarabot-p03-')
+                or not marker.is_file() or marker.is_symlink() or marker.read_text() != token
+                or root.stat().st_uid != os.getuid()):
+            raise RuntimeError('fixture ownership changed; refusing cluster control and removal')
+        if (root / 'data/postmaster.pid').exists():
+            run([str(pg_bin / 'pg_ctl'), '-D', str(root / 'data'), '-m', 'immediate',
+                 '-w', '-t', '20', 'stop'], timeout=25)
+        shutil.rmtree(root)
     print('Owned temporary PG cluster and private material removed')
 
 

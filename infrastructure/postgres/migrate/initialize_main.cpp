@@ -18,7 +18,7 @@ namespace target = kiarabot::core::target;
 class SecretFile final {
 public:
   explicit SecretFile(const char* path)
-      : descriptor_(::open(path, O_RDONLY | O_NOFOLLOW | O_NONBLOCK)) {}
+      : descriptor_(::open(path, O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC)) {}
   ~SecretFile() {
     if (descriptor_ >= 0) {
       ::close(descriptor_);

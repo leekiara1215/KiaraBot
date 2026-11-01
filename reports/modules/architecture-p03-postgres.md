@@ -93,3 +93,14 @@ c++ -std=c++20 -Wall -Wextra -Wpedantic -Werror \
 `git diff --check`通过；固定Python3.11 `-m py_compile` fixture通过；
 Python pathlib检查上述三个文档的P03章节/结尾换行、报告内5个source路径存在，均通过。
 未更新文档及理由同开头文档影响判断；未修改协议/API，因此没有新增契约解析任务。
+
+### Fixture 安全收尾补强
+
+后续检查发现 TemporaryDirectory 在 marker 变化或 pg_ctl 停止失败时仍会自动递归删除目录。
+改为显式拥有目录：清理前验证 prefix/非符号链接/uid/marker token，停止失败或所有权不明时
+保留目录，绝不自动删除可能仍活动的集群。密码文件描述符增加 close-on-exec。
+无公共文档影响：生产输入输出/错误/接口均保持，doc/05、doc/08 无需重复改动。
+
+同一固定-Werror命令重编CLI、format16和diff检查均通过；真实PG fixture本人再次通过。
+增加实际CLI --help/缺参数、FIFO两秒内拒绝、符号链接拒绝、0644密码拒绝、多行密码拒绝，
+均在创建集群前完成；不读取或打印秘密。文档仅本报告记录测试生命周期差异。
