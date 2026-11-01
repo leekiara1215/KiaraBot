@@ -4,6 +4,7 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <optional>
 #include <string>
 #include <utility>
@@ -13,7 +14,10 @@ namespace kiarabot::core::target {
 
 // Same value-or-error convention as core::Result, without the legacy store dependency.
 template <typename Value, typename Error> using Result = std::variant<Value, Error>;
-using TimePoint = std::chrono::system_clock::time_point;
+// Canonical signed int64 epoch nanoseconds on all supported platforms (including macOS).
+using TimePoint = std::chrono::time_point<std::chrono::system_clock, std::chrono::nanoseconds>;
+static_assert(std::numeric_limits<TimePoint::duration::rep>::is_signed &&
+              std::numeric_limits<TimePoint::duration::rep>::digits == 63);
 enum class Service { Identity, Runtime, Host, Scheduler, Model, Control };
 enum class ResourceKind {
   Account,

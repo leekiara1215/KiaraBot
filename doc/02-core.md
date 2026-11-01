@@ -460,3 +460,20 @@ ServiceComposition/ServiceComposer属于外层platform，承接已验证ProcessC
 ### Runtime typed读取目标接口（未实现）
 
 Account/Installation/Instance/Adapter/Host各有Get/List，另有GetInstanceConfig；Runtime拥有资源配置/注册目录投影，Host实际进程事实仍归Host。输入exact资源或有限登记目录、PageRequest，输出typed record/SnapshotInfo或完整配置应用投影，默认2秒/最多5秒。当前Identity授权与child独立grant决定结果，不跨库读取身份表；错误/不可见与依赖失败分别NOT_FOUND/UPSTREAM_UNAVAILABLE。目录不继承child授权、未完成配置不算ready；target尚无生产实现。
+
+### 目标时间的跨平台纳秒表示
+
+目标TimePoint明确为time_point<system_clock,nanoseconds>，编译断言其rep为有符号64位，
+不再依赖macOS/Linux原生system_clock的微秒/纳秒差异。内部保存精确int64 Unix epoch ns，
+范围[-9223372036854775808,9223372036854775807]纳秒；用于接近当前的业务时间，不能表示
+线协议允许的所有极端年份。域内转换使用`domain/target/time.hpp`的TimestampParts：
+输入nanos只允许0–999999999，先验证完整边界再乘加；无法表示则InvalidArgument，不能
+先duration_cast/窄化后再检查。最小边界为(-9223372037秒,145224192纳秒)，最大为
+(9223372036秒,854775807纳秒)。输出对负数使用floor秒与非负nanos，-1ns表示为
+(-1秒,999999999纳秒)，正负及边界均精确往返，亚微秒不得丢失。
+
+后续wire/存储codec应统一调用该helper，不通过native system_clock::duration默认窄化。
+PG原生timestamp的精度不能自动代表完整nano身份；需要精确保留的收据/去重时间应由
+实际codec/列显式保存int64 ns或秒+nanos，并另验收DB当前UTC的业务条件判断。
+证书校验的唯一to_time_t边界显式转换到native duration；此秒级证书API转换不用于
+业务收据/交接时间的持久化或精确比较。reference模型及线协议未改。

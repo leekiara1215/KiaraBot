@@ -278,7 +278,10 @@ ConfigResult load_service_config(const std::string& path, target::Service servic
     const auto ca_path = document["tls"]["ca_file"].get<std::string>();
     try {
       config.tls = {read_file(certificate_path), read_file(key_path, true), read_file(ca_path)};
-      if (!validate_tls(config.tls, std::chrono::system_clock::to_time_t(now))) {
+      if (!validate_tls(
+              config.tls,
+              std::chrono::system_clock::to_time_t(
+                  std::chrono::time_point_cast<std::chrono::system_clock::duration>(now)))) {
         return ConfigFailure{1, "invalid_tls"};
       }
     } catch (const FileFailure&) {
