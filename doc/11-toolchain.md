@@ -539,3 +539,7 @@ Control外层 `kiarabot_control_auth` 编译identity_auth_client/https_endpoint�
 service_process，PRIVATE链接proto/JSON/Boost/OpenSSL，Control组合根链接该库。
 `p04_control_auth_https` 使用tests/architecture的真实mTLS fixture，integration/fault、
 60秒，显式OpenSSL CLI PATH；必须先同步完整Identity当前投影契约，不得删字段校验来适配旧协议。
+
+DelegationCrypto加入现有Identity crypto库与 `p04_delegation_crypto` 安全测试（30秒）。
+库及直接签验测试PRIVATE链接固定jwt-cpp::jwt-cpp、nlohmann_json::nlohmann_json，
+使用官方nlohmann traits，不通过picojson路径或关闭分析来修正诊断。

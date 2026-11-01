@@ -311,3 +311,24 @@ authorization_version、PrincipalRecord无display_permissions、ValidateSession�
 未重复全仓统一入口。文档校验为路径/末尾换行/无冲突标记与git diff --check。
 
 本树dev配置/完整构建及16/16 CTest通过；完整外层构建失败状态保持如上，不宣称全绿。
+
+## 后续接线：P04 Ed25519 delegation crypto
+
+整组同步d4b81ab/73feb8e/db4561b（本树179222f/447377e/9567fca），仅保留文档双方真正
+新增段落，不改实现/测试。库加入delegation_crypto.cpp，原循环新注册
+p04_delegation_crypto（unit/security、30秒、保留assert），库与直接JWT测试PRIVATE链接
+官方jwt-cpp及固定nlohmann_json/OpenSSL Crypto，不引入picojson依赖或修改内层链接。
+文档影响仅doc/11与本报告构建说明；infra/运维由源提交已同步，其他模块/API/proto与
+ doc/12-ci-cd不另改，doc/18只读。
+
+固定full-locked重新配置，定向构建kiarabot_delegation_crypto_test成功；只构建该能力，
+不重复已知缺契约导致失败的Control/codec完整构建。五crypto CTest 5/5通过，总1.40秒，
+JWT0.44秒；全TU覆盖/inner/六目标图/p04注册、全仓format16通过。
+新增两TU精确DB额外开启clang-analyzer-*,bugprone-*且warnings-as-errors失败：
+Core identity_credential_rules.hpp:117及persistence_rules.hpp:224各报
+bugprone-unchecked-optional-access。未出现JWT NewDelete诊断，未改Core、NOLINT、
+header过滤或排除规则；额外bugprone失败不能记绿。仓库既定clang-analyzer检查另跑后附。
+文档检查为路径/末尾换行与diff检查，未重复全仓统一入口。
+
+仓库既定clang-analyzer-* warnings-as-errors（同两TU/DB/SDK参数）通过；
+额外bugprone两Core诊断仍保留未修，不能以此替代额外门禁通过。
