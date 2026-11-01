@@ -91,3 +91,30 @@ HTTP parser rejection now returns stable INVALID_ARGUMENT/400 for malformed fram
 including conflicting Content-Length headers, rather than an unexplained close when
 TLS can still respond. Added a raw TLS regression. README now clearly separates the
 target service from all preserved historical reference deployment instructions.
+
+## Shared target codec integration
+
+Continued from the reviewed complete root e34acd5 on codex/p04-control-shared-codec,
+including actual Core public security headers and the approved 96f88ce/c39f999/41413f3
+codec chain. Temporary frozen-header experimentation was discarded; the actual compile
+database confirms no frozen-core include for client or codec, and both use -Werror.
+
+Removed duplicate HTTP/gRPC error tables, UUID parsing, timestamp conversion/range
+validation and permission/resource enum validation from Control. from_grpc_failure
+strictly handles complete RpcFailure first; no Error-only fallback. from_http_failure
+checks the outward code/context pair; make_error constructs stable correlation. Current
+request correlation and successful authentication shape/temporal consistency remain in
+Control. The typed failure fixture now uses runtime, an allowed operation owner in the
+shared target contract; Identity does not fabricate its own business operation owner.
+
+Actual complete-header build of Control, generated Identity fixture and target codec
+test passed. kiarabot_target_codec_test passed all mappings, invalid enums, source IDs,
+UUID, timestamp boundaries and stable binary failure cases. auth_https_test.py passed
+all real HTTPS/mTLS success and fault cases after replacement, including malformed
+HTTP framing. format16, boundary checks and focused tidy22 client/server/fixture passed.
+Only temporary CMake registration is used locally and will be restored; the build
+owner must link kiarabot_control_auth to kiarabot_target_codec. Protocols, APIs, Core
+implementation and protected doc/18 were not modified by this integration.
+
+Real Identity application/PG/bootstrap is not yet available from companion work;
+this generated fixture remains transport evidence only and cannot close P04.

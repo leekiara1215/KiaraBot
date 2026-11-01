@@ -20,12 +20,13 @@
 #include <openssl/rand.h>
 #include <openssl/x509.h>
 
-#include "kiarabot/core/domain/target/time.hpp"
+#include "kiarabot/core/runtime/platform/target_codec.hpp"
 #include "kiarabot/v1/identity.grpc.pb.h"
 
 namespace kiarabot::control::target {
 namespace {
 namespace wire = kiarabot::v1;
+namespace codec = core::platform::target_codec;
 using Json = nlohmann::json;
 using Timestamp = google::protobuf::Timestamp;
 using TimeUtil = google::protobuf::util::TimeUtil;
@@ -37,6 +38,12 @@ struct RpcError {
   bool retryable = false;
 };
 
+template <typename Value> Value checked_value(core::target::Outcome<Value> result) {
+  if (std::holds_alternative<core::target::Failure>(result)) {
+    throw InvalidUpstream{};
+  }
+  return std::get<Value>(std::move(result));
+}
 bool safe_text(std::string_view text, std::size_t minimum, std::size_t maximum) {
   return text.size() >= minimum && text.size() <= maximum &&
          std::all_of(text.begin(), text.end(), [](unsigned char c) { return c >= 32 && c < 127; });
@@ -71,20 +78,10 @@ bool json_content_type(std::string value) {
   return encoding == "utf-8" || encoding == "\"utf-8\"";
 }
 bool uuid(std::string_view value) {
-  if (value.size() != 36 || value[14] != '4' ||
-      (value[19] != '8' && value[19] != '9' && value[19] != 'a' && value[19] != 'b')) {
-    return false;
-  }
-  for (std::size_t i = 0; i < value.size(); ++i) {
-    if (i == 8 || i == 13 || i == 18 || i == 23) {
-      if (value[i] != '-') {
-        return false;
-      }
-    } else if (!((value[i] >= '0' && value[i] <= '9') || (value[i] >= 'a' && value[i] <= 'f'))) {
-      return false;
-    }
-  }
-  return true;
+  wire::ResourceRef reference;
+  reference.set_kind(wire::RESOURCE_PRINCIPAL);
+  reference.set_id(std::string(value));
+  return std::holds_alternative<core::target::ResourceRef>(codec::from_wire(reference));
 }
 std::string request_id() {
   std::array<unsigned char, 16> bytes{};
@@ -105,76 +102,14 @@ std::string request_id() {
   return result;
 }
 unsigned int http_status(wire::ErrorCode code) {
-  switch (code) {
-  case wire::INVALID_ARGUMENT:
-    return 400;
-  case wire::UNAUTHENTICATED:
-    return 401;
-  case wire::PERMISSION_DENIED:
-    return 403;
-  case wire::NOT_FOUND:
-    return 404;
-  case wire::CONFLICT:
-    return 409;
-  case wire::RATE_LIMITED:
-    return 429;
-  case wire::TIMEOUT:
-    return 504;
-  case wire::UPSTREAM_UNAVAILABLE:
-  case wire::PLUGIN_UNAVAILABLE:
-  case wire::CAPABILITY_NOT_SUPPORTED:
-    return 503;
-  default:
-    return 500;
-  }
-}
-grpc::StatusCode grpc_status(wire::ErrorCode code) {
-  switch (code) {
-  case wire::INVALID_ARGUMENT:
-    return grpc::StatusCode::INVALID_ARGUMENT;
-  case wire::UNAUTHENTICATED:
-    return grpc::StatusCode::UNAUTHENTICATED;
-  case wire::PERMISSION_DENIED:
-    return grpc::StatusCode::PERMISSION_DENIED;
-  case wire::NOT_FOUND:
-    return grpc::StatusCode::NOT_FOUND;
-  case wire::CONFLICT:
-    return grpc::StatusCode::ABORTED;
-  case wire::CAPABILITY_NOT_SUPPORTED:
-    return grpc::StatusCode::UNIMPLEMENTED;
-  case wire::RATE_LIMITED:
-    return grpc::StatusCode::RESOURCE_EXHAUSTED;
-  case wire::TIMEOUT:
-    return grpc::StatusCode::DEADLINE_EXCEEDED;
-  case wire::UPSTREAM_UNAVAILABLE:
-  case wire::PLUGIN_UNAVAILABLE:
-    return grpc::StatusCode::UNAVAILABLE;
-  case wire::INTERNAL:
-    return grpc::StatusCode::INTERNAL;
-  default:
-    return grpc::StatusCode::UNKNOWN;
-  }
+  return static_cast<unsigned int>(
+      checked_value(codec::http_status(checked_value(codec::from_wire(code)))));
 }
 Json failure_context_json(const wire::FailureContext& context) {
-  if (!wire::AcceptanceState_IsValid(context.acceptance()) ||
-      context.acceptance() == wire::ACCEPTANCE_UNSPECIFIED ||
-      !wire::RecoveryAction_IsValid(context.recovery()) ||
-      context.recovery() == wire::RECOVERY_UNSPECIFIED ||
-      (context.has_current_version() && context.current_version() == 0)) {
-    throw InvalidUpstream{};
-  }
   Json result{{"acceptance", wire::AcceptanceState_Name(context.acceptance())},
               {"recovery", wire::RecoveryAction_Name(context.recovery())}};
   if (context.has_operation()) {
     const auto& operation = context.operation();
-    const std::set<std::string> services{"identity",  "runtime", "plugin-host",
-                                         "scheduler", "model",   "control"};
-    if (!services.contains(operation.owner_service()) || !uuid(operation.operation_id()) ||
-        !operation.has_resource() || !uuid(operation.resource().id()) ||
-        !wire::ResourceKind_IsValid(operation.resource().kind()) ||
-        operation.resource().kind() == wire::RESOURCE_KIND_UNSPECIFIED) {
-      throw InvalidUpstream{};
-    }
     result["operation"] = {{"owner_service", operation.owner_service()},
                            {"operation_id", operation.operation_id()},
                            {"resource",
@@ -192,15 +127,21 @@ Json failure_context_json(const wire::FailureContext& context) {
 AuthHttpResponse failure(wire::ErrorCode code, const std::string& id,
                          const std::optional<wire::FailureContext>& context = std::nullopt,
                          bool retryable = false) {
-  if (!wire::ErrorCode_IsValid(code) || code == wire::ERROR_CODE_UNSPECIFIED) {
+  if (std::holds_alternative<core::target::Failure>(codec::from_wire(code))) {
     code = wire::INTERNAL;
   }
-  Json body{{"code", wire::ErrorCode_Name(code)},
-            {"message", wire::ErrorCode_Name(code)},
-            {"request_id", id},
-            {"trace_id", id},
-            {"retryable", retryable}};
+  const auto stable_error =
+      checked_value(codec::make_error(checked_value(codec::from_wire(code)), id, id, retryable));
+  Json body{{"code", wire::ErrorCode_Name(stable_error.code())},
+            {"message", stable_error.message()},
+            {"request_id", stable_error.request_id()},
+            {"trace_id", stable_error.trace_id()},
+            {"retryable", stable_error.retryable()}};
   if (context) {
+    wire::RpcFailure envelope;
+    *envelope.mutable_error() = stable_error;
+    *envelope.mutable_context() = *context;
+    (void)checked_value(codec::from_http_failure(static_cast<int>(http_status(code)), envelope));
     body["failure_context"] = failure_context_json(*context);
   }
   AuthHttpResponse response{http_status(code), body.dump(), {}};
@@ -216,16 +157,15 @@ void checked(const grpc::Status& status, const wire::RequestContext& context) {
     return;
   }
   if (!status.error_details().empty()) {
-    wire::RpcFailure detail;
-    if (!detail.ParseFromString(status.error_details()) || !detail.has_error() ||
-        !detail.has_context() || !wire::ErrorCode_IsValid(detail.error().code()) ||
-        detail.error().code() == wire::ERROR_CODE_UNSPECIFIED ||
-        grpc_status(detail.error().code()) != status.error_code() ||
-        detail.error().request_id() != context.request_id() ||
+    const auto decoded = codec::from_grpc_failure(status);
+    if (!std::holds_alternative<wire::RpcFailure>(decoded)) {
+      throw RpcError{wire::INTERNAL};
+    }
+    const auto& detail = std::get<wire::RpcFailure>(decoded);
+    if (detail.error().request_id() != context.request_id() ||
         detail.error().trace_id() != context.trace_id()) {
       throw RpcError{wire::INTERNAL};
     }
-    (void)failure_context_json(detail.context());
     // Stable facts survive transport categories. Free-text messages/details never cross to HTTP.
     throw RpcError{detail.error().code(), detail.context(), detail.error().retryable()};
   }
@@ -240,11 +180,7 @@ void checked(const grpc::Status& status, const wire::RequestContext& context) {
   throw RpcError{wire::INTERNAL};
 }
 std::string time_text(const Timestamp& time) {
-  if (!TimeUtil::IsTimestampValid(time) ||
-      std::holds_alternative<core::target::Failure>(
-          core::target::time_point_from_parts({time.seconds(), time.nanos()}))) {
-    throw InvalidUpstream{};
-  }
+  (void)checked_value(codec::from_wire(time));
   return TimeUtil::ToString(time);
 }
 int compare_time(const Timestamp& a, const Timestamp& b) {
@@ -307,9 +243,8 @@ Json scope_json(const wire::ResourceScope& scope) {
   Json resources = Json::array();
   std::set<std::pair<int, std::string>> seen;
   for (const auto& resource : scope.resources()) {
-    if (!uuid(resource.id()) || resource.kind() == wire::RESOURCE_KIND_UNSPECIFIED ||
-        !wire::ResourceKind_IsValid(resource.kind()) ||
-        !seen.emplace(resource.kind(), resource.id()).second) {
+    (void)checked_value(codec::from_wire(resource));
+    if (!seen.emplace(resource.kind(), resource.id()).second) {
       throw InvalidUpstream{};
     }
     resources.push_back(
@@ -328,12 +263,11 @@ Json principal_json(const wire::IdentityValidateSessionResponse& response) {
   (void)session_json(response.session(), response.checked_at());
   if (principal.state() != wire::LIFECYCLE_ACTIVE || principal.version() == 0 ||
       principal.principal_kind().empty() || !principal.has_binding() ||
-      !uuid(principal.binding().id()) ||
-      principal.binding().kind() == wire::RESOURCE_KIND_UNSPECIFIED ||
-      !wire::ResourceKind_IsValid(principal.binding().kind()) || response.session().revoked() ||
+      response.session().revoked() ||
       compare_time(response.session().expires_at(), response.checked_at()) <= 0) {
     throw InvalidUpstream{};
   }
+  (void)checked_value(codec::from_wire(principal.binding()));
   if (principal.has_scope()) {
     (void)scope_json(principal.scope());
   }
@@ -360,9 +294,10 @@ Json principal_json(const wire::IdentityValidateSessionResponse& response) {
     }
   }
   Json permissions = Json::array();
-  for (const auto permission : response.principal().display_permissions()) {
-    if (!wire::Permission_IsValid(permission) || permission == wire::PERMISSION_UNSPECIFIED ||
-        !seen_permissions.insert(permission).second) {
+  for (int index = 0; index < response.principal().display_permissions_size(); ++index) {
+    const auto permission = response.principal().display_permissions(index);
+    (void)checked_value(codec::from_wire(permission));
+    if (!seen_permissions.insert(permission).second) {
       throw InvalidUpstream{};
     }
     permissions.push_back(wire::Permission_Name(permission));
@@ -390,9 +325,10 @@ Json principal_json(const wire::IdentityValidateSessionResponse& response) {
       }
       std::set<int> seen_assignment_permissions;
       entry["permissions"] = Json::array();
-      for (const auto permission : assignment.permissions()) {
-        if (!wire::Permission_IsValid(permission) || permission == wire::PERMISSION_UNSPECIFIED ||
-            !seen_assignment_permissions.insert(permission).second) {
+      for (int index = 0; index < assignment.permissions_size(); ++index) {
+        const auto permission = assignment.permissions(index);
+        (void)checked_value(codec::from_wire(permission));
+        if (!seen_assignment_permissions.insert(permission).second) {
           throw InvalidUpstream{};
         }
         entry["permissions"].push_back(wire::Permission_Name(permission));
@@ -612,10 +548,8 @@ public:
       const auto now =
           std::chrono::system_clock::now() +
           std::min(remaining, std::chrono::steady_clock::duration{std::chrono::seconds{2}});
-      const auto nanos =
-          std::chrono::duration_cast<std::chrono::nanoseconds>(now.time_since_epoch()).count();
-      context.mutable_deadline()->set_seconds(nanos / 1000000000);
-      context.mutable_deadline()->set_nanos(static_cast<int>(nanos % 1000000000));
+      *context.mutable_deadline() = checked_value(codec::to_wire(core::target::TimePoint{
+          std::chrono::duration_cast<core::target::TimePoint::duration>(now.time_since_epoch())}));
       const auto separator = request.target.find('?');
       const auto path = request.target.substr(0, separator);
       const bool login = path == "/api/v1/auth/login";

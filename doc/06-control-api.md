@@ -377,3 +377,9 @@ retry delay and current version are retained in HTTP failure_context. Invalid de
 fail INTERNAL, including unknown enums and invalid operation IDs. Only absent details
 allow the generic transport 503/504 mapping, without inventing acceptance/rollback.
 Bearer scheme/media type matching is case-insensitive; JSON permits UTF-8 charset.
+
+Control uses the shared boundary `runtime/platform/target_codec` for timestamp,
+permission/resource/error conversion, HTTP status mapping and complete RpcFailure
+validation. Unary details have no Error-only fallback. The HTTP envelope is checked
+with from_http_failure before projecting its failure_context. Per-request correlation
+and successful authentication response shape remain Control boundary checks.

@@ -91,7 +91,7 @@ public:
       failure_context->set_retry_after_ms(2500);
       failure_context->set_current_version(18446744073709551615ULL);
       auto* operation = failure_context->mutable_operation();
-      operation->set_owner_service("identity");
+      operation->set_owner_service("runtime");
       operation->set_operation_id("77777777-7777-4777-8777-777777777777");
       operation->mutable_resource()->set_kind(wire::RESOURCE_SESSION);
       operation->mutable_resource()->set_id(kSession);

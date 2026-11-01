@@ -150,7 +150,7 @@ def main(control, fixture):
                 assert typed[0] == expected and typed[1]['code'] == code, typed
                 facts = typed[1]['failure_context']
                 assert facts['acceptance'] == 'ACCEPTANCE_UNKNOWN' and facts['recovery'] == 'QUERY_SAME_INTENT', typed
-                assert facts['operation']['resource']['id'] == SESSION and facts['operation']['owner_service'] == 'identity'
+                assert facts['operation']['resource']['id'] == SESSION and facts['operation']['owner_service'] == 'runtime'
                 assert facts['current_version'] == '18446744073709551615' and facts['retry_after_ms'] == 2500
                 assert typed[1]['retryable'] is True and typed[1]['trace_id'] == typed[1]['request_id']
             transport = login('unavailable')
