@@ -1051,3 +1051,7 @@ denial为稳定PermissionDenied。DB/clock故障与Timeout保留Failure，不能
 known旧版本不授权旧状态；返回当前source授权版本和本次DB checked_at。前后权威水位
 变化拒绝，DB UTC回退UpstreamUnavailable，总应用窗口及最终权威读取窗口均不超过一秒。
 应用不写库、不commit、不缓存，不新增wire字段或错误枚举；外层resolver/RPC/PG接线另验收。
+
+CheckAuthorization最终无UoW时钟采样后，以max(可信最终UTC, 最终DB checked_at)再次检查
+proof/source/session/全部peer的最早有效期及请求deadline；即使DB读取仍有效、版本不变且
+单调耗时小于一秒，最后采样跨期限也返回Timeout，不返回allowed或普通业务false。

@@ -485,11 +485,13 @@ public:
       return failure(t::ErrorCode::UpstreamUnavailable);
     }
     const auto instant = calls == 2 ? monotonic : std::chrono::steady_clock::time_point{};
-    return t::SecurityClockSample{state_.now, instant, std::chrono::milliseconds{0}, trusted};
+    return t::SecurityClockSample{calls == 2 ? final_utc.value_or(state_.now) : state_.now, instant,
+                                  std::chrono::milliseconds{0}, trusted};
   }
   State& state_;
   bool fault = false, trusted = true, final_fault = false;
   int calls = 0;
+  std::optional<t::TimePoint> final_utc;
   std::chrono::steady_clock::time_point monotonic{};
 };
 class Methods final : public t::AuthorizationMethodPolicyPort {
@@ -777,6 +779,29 @@ void crypto_races_and_monotonic_budget() {
                                                            : t::ErrorCode::UpstreamUnavailable));
   }
 }
+void final_clock_crossing_expiry_never_returns_allow() {
+  for (unsigned mutation = 0; mutation < 4; ++mutation) {
+    Fixture f;
+    const auto expiry = f.state.now + std::chrono::seconds{1};
+    if (mutation == 0) {
+      f.crypto.claims.expires_at = expiry;
+    }
+    if (mutation == 1) {
+      f.state.credentials[3].expires_at = expiry;
+    }
+    if (mutation == 2) {
+      f.state.credentials[0].expires_at = expiry;
+      std::get<t::CertificateBinding>(f.state.credentials[0].material).not_after = expiry;
+    }
+    auto request = f.request();
+    request.context.deadline = mutation == 3 ? expiry : expiry + std::chrono::seconds{10};
+    f.clock.final_utc = expiry + std::chrono::nanoseconds{1};
+    f.clock.monotonic += std::chrono::milliseconds{500};
+    expect(f.app->check_authorization(request), t::ErrorCode::Timeout);
+    assert(f.state.begins == 3 && f.clock.calls == 2);
+    assert(f.state.now < expiry); // Every DB authority sample remains valid and unchanged.
+  }
+}
 void permitted_consumers_and_rejected_control() {
   for (const auto service :
        {t::Service::Runtime, t::Service::Host, t::Service::Scheduler, t::Service::Model}) {
@@ -835,4 +860,5 @@ int main() {
   workload_and_single_hop();
   crypto_races_and_monotonic_budget();
   permitted_consumers_and_rejected_control();
+  final_clock_crossing_expiry_never_returns_allow();
 }

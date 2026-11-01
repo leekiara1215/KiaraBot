@@ -370,6 +370,10 @@ private:
         final_clock.monotonic > clock.monotonic + std::chrono::seconds{1}) {
       return failure(ErrorCode::Timeout, Recovery::Backoff);
     }
+    const auto final_now = std::max(final_clock.utc, current.now);
+    if (final_now >= std::min(current.valid_until, request.context.deadline)) {
+      return failure(ErrorCode::Timeout, Recovery::Backoff);
+    }
     if (request.known_authorization_version &&
         request.known_authorization_version->value > current.version.value) {
       return failure(ErrorCode::InvalidArgument, Recovery::CorrectInput);
