@@ -227,7 +227,7 @@ NUMERIC(20,0)无损保存uint64，禁止经double或signed bigint截断。
 首次收据/接收的创建时间和最低保留期限由数据库确定；同内容重放保留原结果/期限。
 普通队列与控制保留容量分开，满额拒绝新增，不删除已受理义务。
 
-schema v3的公共部分保存共享收据/审计/交接/操作与12种分类型结果快照，尚不代表服务业务就绪。
+当前公共部分保存共享收据/审计/交接/操作与13种分类型结果快照，尚不代表服务业务就绪。
 数据库必须为UTF8，连接强制client_encoding=UTF8；服务端notice不作为应用诊断输出。
 时间列使用与Core目标TimePoint一致的signed64 UTC epoch纳秒；数据库clock_timestamp经
 精确NUMERIC算术转换为epoch纳秒，保留外部合法亚微秒，不使用double或本机时钟tick冒充。
@@ -308,7 +308,7 @@ JWT序列化使用同一jwt-cpp官方nlohmann-json traits，NumericDate先检查
 
 ### P04 Identity 安全关系存储（实施中）
 
-Identity 空库初始化将使用 schema v4；Runtime、Scheduler、Model 各自保持 v3。
+Identity 最新空库 schema v5；Runtime、Scheduler、Model 各自为 v4（含下文完整会话结果表）。
 不升级已有库，不自动初始化，不改变四库隔离。新增安全仓储借用公共 UoW 的同一物理
 事务，凭据当前头/不可变历史、会话安全元数据、精确授权、加密成功收据、refresh 恢复
 索引和管理员引导标记不能单独提交。端口存在或 schema 已创建不代表业务已接线。
@@ -338,3 +338,11 @@ RateLimited，不返回截断集合或 query-time now。refresh 恢复以数据�
 秘密收据结构复用 Core validate_secret_receipt：Login结果rotation必须1，Refresh结果为
 input_rotation+1，凭据交付结果版本为expected_version+1，均拒绝回绕；不在PG重复
 发明状态规则。存储坏行无法满足这些已确认规则时返回Internal，而不是成功/不存在。
+
+### P04 完整会话结果快照（实施中）
+
+Core SessionMetadata 作为普通 ReplayResult 的末尾 index12，无 verifier/key/token 字段；
+旧0..11序号不动。共享收据在各私有库的独立 result_session_metadata 关系表保存完整
+id/subject/created_at/expires_at/rotation/version/revoked，保留纳秒与uint64，不回查live会话。
+为此新空库 Identity 版本5、Runtime/Scheduler/Model版本4，逐库严格核对全部descriptor；
+已有库不自动迁移或清空。普通收据仍至少7日，秘密收据仍独立且最多24h。

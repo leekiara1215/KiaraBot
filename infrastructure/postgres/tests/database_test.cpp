@@ -321,7 +321,7 @@ void run(const std::filesystem::path& root, std::uint16_t port,
       pqxx::connection migration(connection_string(config));
       pqxx::read_transaction inspect(migration);
       require(inspect.exec("SELECT version FROM kiarabot.schema_versions").one_row()[0].as<int>() ==
-                  (config.service == target::Service::Identity ? 4 : 3),
+                  (config.service == target::Service::Identity ? 5 : 4),
               "per-service schema version incorrect");
     }
     if (config.service == target::Service::Identity) {

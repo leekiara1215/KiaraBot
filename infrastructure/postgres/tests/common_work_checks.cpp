@@ -531,11 +531,66 @@ void check_identity_secret_receipts(Database& database) {
   }
 }
 
+void check_session_metadata_snapshot(Database& database) {
+  target::SessionSecurity session;
+  target::CommandReceipt receipt;
+  {
+    auto access = take(detail::DatabaseAccess::begin(database));
+    const auto now = take(access.work->current_time());
+    session = {{"metadata-live"},
+               {"credential-owner"},
+               {{"credential-password"}, {2}},
+               {target::TokenPurpose::Access, {"metadata-access"}, {}},
+               {target::TokenPurpose::Refresh, {"metadata-refresh"}, {}},
+               now - std::chrono::seconds{1} + std::chrono::nanoseconds{137},
+               now + std::chrono::minutes{15},
+               now + std::chrono::hours{24},
+               1,
+               {1},
+               false};
+    auto sessions = detail::session_security_repository(*access.sql);
+    take(sessions->save(session, {}, {}));
+    const target::SessionMetadata snapshot{
+        session.id,       session.subject, session.created_at, session.refresh_expires_at,
+        session.rotation, session.version, session.revoked};
+    receipt = {{{"actor"},
+                "metadata-revoke",
+                {target::ResourceKind::Session, {session.id.value}},
+                "original-result"},
+               {},
+               snapshot,
+               now,
+               now + std::chrono::hours{168}};
+    take(access.work->receipts().insert(receipt, {100}));
+    committed(*access.work);
+  }
+  {
+    auto access = take(detail::DatabaseAccess::begin(database));
+    auto sessions = detail::session_security_repository(*access.sql);
+    session.version = {2};
+    session.revoked = true;
+    session.refresh_expires_at += std::chrono::nanoseconds{731};
+    take(sessions->save(session, target::ResourceVersion{1}, 1));
+    committed(*access.work);
+  }
+  {
+    auto access = take(detail::DatabaseAccess::begin(database));
+    const auto stored = take(access.work->receipts().find(receipt.key));
+    const auto& snapshot = std::get<target::SessionMetadata>(stored->result);
+    check(snapshot.created_at == session.created_at && snapshot.version.value == 1 &&
+              !snapshot.revoked &&
+              snapshot.expires_at == session.refresh_expires_at - std::chrono::nanoseconds{731},
+          "ordinary session snapshot reread mutable live security row");
+    access.work->rollback();
+  }
+}
+
 void check_common(Database& database, const DatabaseConfig& config) {
   if (config.service == target::Service::Identity) {
     check_identity_credentials(database);
     check_identity_sessions(database);
     check_identity_secret_receipts(database);
+    check_session_metadata_snapshot(database);
   }
   constexpr auto kHigh = std::uint64_t{1} << 63;
   constexpr auto kMaximum = std::numeric_limits<std::uint64_t>::max();
@@ -690,7 +745,14 @@ void check_common(Database& database, const DatabaseConfig& config) {
                           target::ModelCallState::Unknown,
                           {kHigh},
                           target::TimePoint::min(),
-                          target::TimePoint::max()}};
+                          target::TimePoint::max()},
+      target::SessionMetadata{{"metadata-session"},
+                              {"metadata-owner"},
+                              target::TimePoint::min() + std::chrono::nanoseconds{137},
+                              target::TimePoint::max() - std::chrono::nanoseconds{731},
+                              kMaximum,
+                              {kMaximum},
+                              true}};
   for (std::size_t index = 0; index < snapshots.size(); ++index) {
     work = begin(database);
     target::CommandReceipt receipt{
@@ -705,6 +767,14 @@ void check_common(Database& database, const DatabaseConfig& config) {
           "receipt below seven days");
     committed(*work);
     work = begin(database);
+    if (index == 12) {
+      auto& changed = std::get<target::SessionMetadata>(receipt.result);
+      changed.created_at = now;
+      changed.expires_at = now;
+      changed.rotation = 1;
+      changed.version = {1};
+      changed.revoked = false;
+    }
     const auto duplicate = take(work->receipts().insert(receipt, {0}));
     check(duplicate.duplicate && duplicate.receipt.created_at == written.receipt.created_at &&
               duplicate.receipt.retain_until == written.receipt.retain_until,
@@ -769,6 +839,15 @@ void check_common(Database& database, const DatabaseConfig& config) {
                 std::get<target::ModelIntent>(replay).observed_at == target::TimePoint::max(),
             "model version/hash lost");
       break;
+    case 12: {
+      const auto& metadata = std::get<target::SessionMetadata>(replay);
+      check(metadata.created_at == target::TimePoint::min() + std::chrono::nanoseconds{137} &&
+                metadata.expires_at == target::TimePoint::max() - std::chrono::nanoseconds{731} &&
+                metadata.rotation == kMaximum && metadata.version.value == kMaximum &&
+                metadata.revoked,
+            "immutable session metadata result lost creation time/version or read proposed state");
+      break;
+    }
     default:
       break;
     }
@@ -788,6 +867,7 @@ void check_common(Database& database, const DatabaseConfig& config) {
   std::get<target::ScheduledTask>(nul_results[8]).target.conversation_id += nul;
   std::get<target::Occurrence>(nul_results[9]).accepted_event_id->append(nul);
   std::get<target::ModelIntent>(nul_results[10]).logical_call_id += nul;
+  std::get<target::SessionMetadata>(nul_results[11]).subject.value += nul;
   auto nul_fence = snapshots[8];
   std::get<target::PluginInstance>(nul_fence).current->connection.value += nul;
   nul_results.push_back(std::move(nul_fence));

@@ -83,7 +83,8 @@ bool valid_text(const target::ReplayResult& result) noexcept {
         } else if constexpr (std::is_same_v<Value, target::Principal>) {
           return valid_sql_text(value.id.value) &&
                  (!value.binding || valid_sql_text(value.binding->id.value));
-        } else if constexpr (std::is_same_v<Value, target::LoginSession>) {
+        } else if constexpr ((std::is_same_v<Value, target::LoginSession> ||
+                              std::is_same_v<Value, target::SessionMetadata>)) {
           return valid_sql_text_fields({value.id.value, value.subject.value});
         } else if constexpr (std::is_same_v<Value, target::ResourceGrant>) {
           if (!valid_sql_text_fields({value.id.value, value.subject.value})) {
@@ -473,6 +474,11 @@ std::int64_t write_record(pqxx::transaction_base& transaction, const target::Rep
               "event_id,acknowledged_at," +
                   std::string(kHandoffFields),
               id, std::move(parameters));
+        } else if constexpr (std::is_same_v<Value, target::SessionMetadata>) {
+          put(transaction, "session_metadata",
+              "id,subject,created_at,expires_at,rotation,version,revoked", id,
+              {value.id.value, value.subject.value, timestamp(value.created_at),
+               timestamp(value.expires_at), value.rotation, value.version.value, value.revoked});
         } else if constexpr (std::is_same_v<Value, target::ModelIntent>) {
           put(transaction, "model_intents",
               "owner,logical_call_id,model,config_version,request_hash,state,version,created_at,"
@@ -677,6 +683,16 @@ target::ReplayResult load_record(pqxx::transaction_base& transaction, std::int64
         read_digest(row["request_hash"]),     enum_field<target::ModelCallState>(row["state"], 3),
         {row["version"].as<std::uint64_t>()}, time_field(row, "created_at"),
         time_field(row, "observed_at")};
+  }
+  case 12: {
+    const auto row = get(transaction, "session_metadata", id);
+    return target::SessionMetadata{{row["id"].as<std::string>()},
+                                   {row["subject"].as<std::string>()},
+                                   time_field(row, "created_at"),
+                                   time_field(row, "expires_at"),
+                                   row["rotation"].as<std::uint64_t>(),
+                                   {row["version"].as<std::uint64_t>()},
+                                   row["revoked"].as<bool>()};
   }
   default:
     throw std::runtime_error("invalid stored result kind");

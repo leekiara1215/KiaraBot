@@ -412,7 +412,8 @@ socket，不继续受理。暂时忙等可恢复情况由具体组合根区分�
 
 ### P03 common transaction limits
 
-P03 公共 schema 为 v3；P04 Identity 空库增加安全关系后为 v4，另三库仍为 v3。要求UTF8数据库；
+
+P03 公共 schema 为 v3；P04 Identity 空库含安全关系与完整会话结果后为 v5，另三库为 v4。要求UTF8数据库；
 旧版本或其他结构不自动升级，必须按本轮空库部署
 流程初始化新的专属库，不能清空原库或自动补表。schema结构描述/对象owner/运行权限均参与
 启动验证。当前仅存储公共能力，业务就绪仍由各服务已实现依赖决定。
@@ -514,7 +515,7 @@ are temporary; no bootstrap secret is put in argv or committed.
 
 ### P04 Identity 安全初始化（实施中）
 
-Identity 新空库版本为 4，其余三类私有库仍为 3，启动逐库严格核对版本及完整对象描述。
+Identity 最新新空库版本为 5，其余三类私有库为 4（含下文完整会话结果表），启动逐库严格核对版本及完整对象描述。
 此变更仅面向显式创建的空库；不存在自动升级、重置或清空旧数据的路径。
 初始化在同一 DDL 事务写入唯一 Required/v1 管理员引导标记；缺失该标记必须报告损坏，
 不能视为允许再次引导。后续可信离线引导通过同一 Identity UoW 条件消费标记，连同
@@ -530,3 +531,10 @@ The retained raw HTTP read buffer is also capped at 1MiB + 8KiB. This bounds an
 unfinished chunk-extension/framing line even before decoded body bytes are counted;
 exceeding the cap returns the same INVALID_ARGUMENT/400 response. The bound business
 port is read before the I/O thread starts so acceptor state has one thread owner.
+
+### P04 完整会话收据的空库版本（实施中）
+
+完整无秘密 SessionMetadata 普通结果表进入四库共享schema后，最新新空库版本为
+Identity5、Runtime/Scheduler/Model4；之前Identity4和另三库3不兼容，不自动升级、补表、
+清空或重置。必须按已有显式初始化流程为本轮部署创建新专属空库，保留原库与备份。
+新表随原事务/版本标记和授权一起创建，daemon仍不执行DDL，启动严格校验完整描述。

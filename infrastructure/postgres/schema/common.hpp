@@ -29,7 +29,7 @@ CREATE DOMAIN kiarabot.uint64 AS numeric(20,0)
   CHECK(VALUE>=0 AND VALUE<=18446744073709551615);
 CREATE TABLE kiarabot.replay_results (
   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-  kind integer NOT NULL CHECK(kind BETWEEN 0 AND 11)
+  kind integer NOT NULL CHECK(kind BETWEEN 0 AND 12)
 );
 CREATE TABLE kiarabot.result_mutations (
   result_id bigint PRIMARY KEY REFERENCES kiarabot.replay_results(id) ON DELETE CASCADE,
@@ -53,6 +53,10 @@ CREATE TABLE kiarabot.result_mutations (
   snapshot("sessions", R"sql(
     id text NOT NULL, subject text NOT NULL, version kiarabot.uint64 NOT NULL,
     rotation kiarabot.uint64 NOT NULL, expires_at bigint NOT NULL, revoked boolean NOT NULL
+  )sql");
+  snapshot("session_metadata", R"sql(
+    id text NOT NULL, subject text NOT NULL, created_at bigint NOT NULL, expires_at bigint NOT NULL,
+    rotation kiarabot.uint64 NOT NULL, version kiarabot.uint64 NOT NULL, revoked boolean NOT NULL
   )sql");
   snapshot("grants", R"sql(
     id text NOT NULL, subject text NOT NULL, role integer CHECK(role BETWEEN 0 AND 2),

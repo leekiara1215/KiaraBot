@@ -136,3 +136,33 @@ analyzer+braces clang-tidy22和clang-format16全部通过；真实Unknown提交�
 三个新请求的错误Login轮次/Refresh跨轮次/Delivery结果版本均InvalidArgument且整体回滚。
 文档UTF8/末尾换行/新增规则章节与diff检查通过，保护基线无差异。
 无新TU；根完整CMake/CTest仍由主任务集成接线后运行，不声称本地已跑。
+
+## 完整普通会话结果（实施中）
+
+输入为冻结 Core a7d5d72/b45241d：SessionMetadata 原样移至共享service_records、
+ReplayResult末尾追加index12，旧0..11不变；5a1f5eb纯policy/state规则也已取入。
+本步骤仅改postgres公共结果schema/codec/文本校验/测试、doc05/doc08与本报告；
+不改Core接口、proto/API/稳定码、CMake或保护基线。唯一来源为已确认Core typed接口。
+Identity新空库版本5、其他三库4；新typed表保存created_at等完整事实，所有owner一致
+更新manifest。文档影响为doc05结果类型/存储与doc08初始化版本；无须改协议/API，
+外层响应本已有完整会话字段。不得以回查live行/默认now补created_at。
+验收包括13种结果真实PG往返、纳秒/uint64边界、不变快照/NUL、严格schema和四库回归。
+
+### 完整会话结果实际检查
+
+固定依赖初始化CLI/普通/ASan+UBSan三种 -Werror 构建、两套独立真实PG四库fixture
+通过并清理。3 TU clang-tidy22（分析器+大括号）、clang-format16及diff检查通过。
+真实typed往返覆盖13种、极值纳秒/uint64、相同请求更改proposed数据仍原结果、NUL拒绝；
+额外真实live会话从v1变v2/revoked/expiry+731ns后，独立新事务重放仍v1旧完整事实。
+此前scope/secret Unknown提交、四库权限/角色/TLS/故障/锁/结构损坏测试仍通过。
+
+| owner | 新版本 | 关系对象 | 固定PG16.4 descriptor |
+| --- | --- | --- | --- |
+| Identity | 5 | 102 | bee8eac8a5db285e43dc76af6280b35a |
+| Runtime | 4 | 56 | 4d7533b0e3dcf560efc4c41c3f20d0a6 |
+| Scheduler | 4 | 55 | 2d627dd9a143a5bf9f2f88d715584717 |
+| Model | 4 | 50 | 94f2b4b0522c1328853bf98852f567e3 |
+
+全部指纹由自有临时PG创建真实DDL获取，正式启动仍严格等值验证，未放宽门禁。
+文档检查验证doc05/doc08/本报告UTF8、换行、当前版本/13种结果章节，doc18无差异。
+无新增TU、不改CMake；根完整构建/CTest由主任务接入冻结提交后执行，本工作树未运行。
