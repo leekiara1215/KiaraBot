@@ -1410,6 +1410,65 @@ void exercise_issue(const std::string& leaf, const std::string& ca, const std::s
   require(call(*stub, &w::IdentityService::Stub::IssueDelegation, request, &response).ok());
   require(signer.captured->proof_id !=
           first_proof_id); // reauthorized, not a secret success receipt.
+  // 64 exact resources x 2 permissions = the complete 128-binding budget.
+  auto bounded = request;
+  bounded.mutable_scope()->clear_resources();
+  const auto original_grants = registry.grants;
+  auto& grant = registry.grants.front();
+  grant.explicit_permissions.clear();
+  for (int index = 0; index < 64; ++index) {
+    std::string suffix = std::to_string(1'000'000 + index);
+    const std::string id = "77777777-7777-4777-8777-00000" + suffix;
+    auto* resource = bounded.mutable_scope()->add_resources();
+    resource->set_kind(w::RESOURCE_ACCOUNT);
+    resource->set_id(id);
+    for (const auto permission : {t::Permission::MessageRead, t::Permission::ResourceRead}) {
+      grant.explicit_permissions.push_back({permission, {t::ResourceKind::Account, {id}}});
+    }
+  }
+  sessions.issued_source->assignments = registry.grants;
+  require(call(*stub, &w::IdentityService::Stub::IssueDelegation, bounded, &response).ok());
+  require(signer.captured->permissions.size() == 128);
+  const auto before_source = sessions.calls.load();
+  const auto before_sign = signer.calls;
+  const auto before_random = random.calls;
+  // 129 unique resources (one permission) reject before even decoding/allocating scopes.
+  auto oversized = bounded;
+  oversized.clear_permissions();
+  oversized.add_permissions(w::PERMISSION_MESSAGE_READ);
+  for (int index = 64; index < 129; ++index) {
+    auto* resource = oversized.mutable_scope()->add_resources();
+    resource->set_kind(w::RESOURCE_ACCOUNT);
+    resource->set_id("77777777-7777-4777-8777-00000" + std::to_string(1'000'000 + index));
+  }
+  rejected(call(*stub, &w::IdentityService::Stub::IssueDelegation, oversized, &response),
+           w::INVALID_ARGUMENT);
+  // 43 resources x 3 distinct permissions = exactly 129 tuples, before any owner call.
+  auto one_over = request;
+  one_over.mutable_scope()->clear_resources();
+  for (int index = 0; index < 43; ++index) {
+    *one_over.mutable_scope()->add_resources() = bounded.scope().resources(index);
+  }
+  one_over.add_permissions(w::PERMISSION_ACTION_EXECUTE);
+  rejected(call(*stub, &w::IdentityService::Stub::IssueDelegation, one_over, &response),
+           w::INVALID_ARGUMENT);
+  // Individually bounded input counts can still exceed the product budget: 65 x 2.
+  auto product_overflow = bounded;
+  auto* extra = product_overflow.mutable_scope()->add_resources();
+  extra->set_kind(w::RESOURCE_ACCOUNT);
+  extra->set_id(kOther);
+  rejected(call(*stub, &w::IdentityService::Stub::IssueDelegation, product_overflow, &response),
+           w::INVALID_ARGUMENT);
+  auto too_many_permissions = request;
+  while (too_many_permissions.permissions_size() <= 40) {
+    too_many_permissions.add_permissions(w::PERMISSION_MESSAGE_READ);
+  }
+  rejected(call(*stub, &w::IdentityService::Stub::IssueDelegation, too_many_permissions, &response),
+           w::INVALID_ARGUMENT);
+  require(sessions.calls.load() == before_source && signer.calls == before_sign &&
+          random.calls == before_random);
+  registry.grants = original_grants;
+  sessions.issued_source->assignments = registry.grants;
   const auto calls_before = signer.calls;
   for (int mode = 0; mode < 10; ++mode) {
     auto bad = request;

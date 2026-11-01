@@ -40,3 +40,14 @@ verify_exchange_parent三个纯virtual override。测试替身现显式将这三
 canary20/20，41.47秒），该TU精确compile DB tidy22 analyzer warnings-as-errors和format16
 通过。此次仅测试补齐，无公共文档影响，其他契约/运维无需重写。测试依旧明示session/sign
 fixture，真正PG/成熟crypto组合由独立p04_identity_application验证。
+
+
+## 独立后继：product预算提前拒绝
+
+父审917b511通过后补传输层预算：在任何scope解码、product分配或Core issuer调用前要求resources_size为1..128、permissions_size为1..40，并用size_t permission_count <=128/resource_count防溢出。去重/闭合枚举和全部既有失败校验保持；有效数量与去重后的集合一致，预留vector容量只可能<=128。复用INVALID_ARGUMENT，没有新错误码/协议字段；Core应用自身早拒由父负责，本提交不越界修改。
+
+真实mTLS测试补64资源×2权限=128成功；43×3=129、129资源×1、65×2及超过40权限全部拒绝。超限前后session验证、随机源、sign计数均不变；实际f2e8500 issuer在无边界预算时会先调用session验证，故该断言验证提前拒绝。旧错误/恢复/peer/六方法断言未放松。测试仍明确session/仓储/signing为fixture，不宣称真实PG/JWT生产验收。
+
+文档同步doc01/doc02与本报告；doc08无需改：没有启动、配置或生产装配变化。proto/API唯一字段/错误码未变，128为既有成熟签名限制的前移校验，不重复descriptor/lint；API引用/状态门禁保留。最终实现保持旧lambda及失败校验布局，生产源只新增14行helper/提前预算检查和有界reserve。CMake/PG/Core纯应用/doc18未改。最终检查结果随后记录。
+
+预算fix最终检查：生产源仅14行新增，无旧lambda重排。固定依赖-Werror build、真实mTLS全套（128成功/129及其他超限拒绝，来源/随机/sign计数不变）、format16、两TU tidy22全部analyzer/warnings-as-errors、inner/模块边界、状态文档、46项API映射与diff检查全部通过。未跑full/真实PG/生产签名：仍由父组合根验收，本次无其代码或配置变动。

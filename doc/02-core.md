@@ -851,3 +851,5 @@ Control，不能拿接收Runtime的叶证书替代比较，也不能把Runtime�
 此入口只证明签名和受众：Core还必须核验当前recipient与上一跳Control登记、原始source
 credential/session及授权版本、精确收窄，再签第二跳；不绕过在线授权，不授予额外权限。
 本接口须与成熟crypto实现一起集成，未实现时不能构造假的VerifiedDelegation或开启Exchange。
+
+Issue RPC在解码/展开前同步成熟JWT的128 exact bindings上限：资源1..128、权限1..40且封闭去重，permission_count <=128/resource_count，以除法规避溢出。超限沿既有INVALID_ARGUMENT返回，不调用Core issuer的来源验证/签名；不先构建大型product再等crypto晚拒。Core自身的同一上限由Core能力维护，传输层不改其实现。

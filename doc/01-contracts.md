@@ -1779,3 +1779,5 @@ make_identity_rpc(IdentitySecurityApplication&, PeerAuthenticator, IdentityDeleg
 Issue只接受当前Control peer，subject_proof按原始AccessSession token借用，不剥Bearer或接收现成委托替代。audience显式映射封闭六服务；scope/permissions非空、去重、已知枚举与合法exact资源，client_certificate_sha256必须恰好32字节并等于真实transport peer。wire声明的permission×scope product只转换一次为exact tuples，由Core issuer逐tuple复核当前来源与权限，外层不授予或拼接其他assignment。
 
 按父定稿1b962d3，Issue/Exchange requires_idempotency=false：签发不消费配额或一次性材料、无业务意图/普通七天秘密收据，重复请求重新授权并可产生新proof ID。Login/Refresh/Revoke/Rotate仍要求原幂等键。返回只复制应用实际签出的proof及原audience/expiry/一跳信息，核对claim与请求tuple、真实证书及来源上下文一致，不补签名/期限/来源；crypto和权威查询均由Core持有。真实JWT生产签名/PG/HTTPS组合根闭环由父继续验收，本RPC fixture不据此标target implemented。
+
+Issue RPC在解码/展开前同步成熟JWT的128 exact bindings上限：资源1..128、权限1..40且封闭去重，permission_count <=128/resource_count，以除法规避溢出。超限沿既有INVALID_ARGUMENT返回，不调用Core issuer的来源验证/签名；不先构建大型product再等crypto晚拒。Core自身的同一上限由Core能力维护，传输层不改其实现。

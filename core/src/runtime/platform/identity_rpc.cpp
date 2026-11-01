@@ -323,6 +323,16 @@ principal(const t::Principal& input, const std::vector<t::ExactAssignment>& assi
   }
   return result;
 }
+// Match the mature proof encoder's budget before decoding or expanding a wire product.
+bool within_issue_budget(const v1::IdentityIssueDelegationRequest& request) {
+  if (request.scope().resources_size() < 1 || request.scope().resources_size() > 128 ||
+      request.permissions_size() < 1 || request.permissions_size() > 40) {
+    return false;
+  }
+  const auto resource_count = static_cast<std::size_t>(request.scope().resources_size());
+  const auto permission_count = static_cast<std::size_t>(request.permissions_size());
+  return permission_count <= 128 / resource_count;
+}
 t::Outcome<t::Service> audience(std::string_view value) {
   if (value == "identity") {
     return t::Service::Identity;
@@ -609,6 +619,9 @@ public:
                  if (!issuer_) {
                    return failure(t::ErrorCode::CapabilityNotSupported);
                  }
+                 if (!within_issue_budget(*request)) {
+                   return failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput);
+                 }
                  const auto target = audience(request->audience());
                  const auto* service = std::get_if<t::Service>(&target);
                  const auto bytes = secret(request->client_certificate_sha256());
@@ -645,6 +658,7 @@ public:
                  }
                  t::IssueIdentityDelegationRequest input{
                      {context, peer, secret(request->subject_proof())}, *service, {}};
+                 input.permissions.reserve(resources.size() * permissions.size());
                  for (const auto& resource : resources) {
                    for (const auto permission : permissions) {
                      input.permissions.push_back({permission, resource});
