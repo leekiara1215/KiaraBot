@@ -37,3 +37,26 @@ SQL 借用接口，不对旧 Identity 工厂或 UoW 做向下转换，也不启�
 未重跑根完整 CMake/CTest/toolchain：本步骤未改接线，完整集成由主任务和工具链任务执行。
 本地固定构建和真实数据库测试覆盖本步骤的全部变更；不将其声称为根门禁通过。
 本步骤不改变 schema；后续 Identity 安全 schema 使用独立版本 4，其余三库保持版本 3。
+
+## 安全 schema 实施范围
+
+下一步新增 Identity v4 关系和约束；doc/05 与 doc/08 已补充初始化版本、安全投影、
+恢复窗口与显式引导标记说明，状态均为实施中。Core 端口是唯一内部语义来源，
+不改 proto/API、稳定码或保护基线。验收要求四库逐库版本/manifest 严格匹配，
+凭据头与历史/证书当前查找、会话和授予复合 FK、24h 收据/refresh 约束及标记初始化。
+
+### schema 实际验证
+
+Identity v4 的固定 PG16.4 descriptor 为 `d1aa0822c7286c329a60802278aaf62c`，
+关系对象 100；另三库的版本、对象数和 descriptor 保持原值。通过独立自有临时库的
+开发 probe 获取实际描述，再以正式严格等值校验运行全部 fixture，未放宽启动验证。
+
+已执行 `build/p03/verify_build.py` 三种固定依赖 -Werror 构建，普通及 ASan+UBSan
+`run_database_test.py` 各自独立创建四库，全部通过并安全清理。
+新增真实约束验证覆盖 Pending 材料/状态、head 历史 FK、当前证书 fingerprint FK、
+会话 version/rotation/expiry/revoked 一致、grant 版本一致、Permission40 接受/41 拒绝、
+AEAD 纳秒与00ff密文、24h收据上限、refresh原peer/key关联与期限、清理级联和初始引导标记。
+clang-tidy22 对 database.cpp/database_test.cpp、clang-format16、git diff --check 通过。
+文档校验检查三个已更新 Markdown 的 UTF8/换行与 P04 说明；保护基线无差异。
+本步无新增翻译单元、不改 CMake；根完整集成仍由主任务/工具链任务执行。
+安全仓储与生产接线仍在实施，schema 通过不代表 P04 用例已完成。

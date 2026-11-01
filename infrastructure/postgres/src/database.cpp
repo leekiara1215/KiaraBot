@@ -268,7 +268,7 @@ bool schema_valid(pqxx::transaction_base& transaction, const DatabaseConfig& con
       "SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace "
       "WHERE n.nspname='kiarabot'");
   return records.size() == 1 && records[0][0].as<bool>() &&
-         records[0][1].as<int>() == schema::kVersion &&
+         records[0][1].as<int>() == schema::version(config.service) &&
          records[0][2].as<std::string>() == service_name(config.service) &&
          permissions.one_row()[0].as<bool>() && schema_permissions.one_row()[0].as<bool>() &&
          objects.one_row()[0].as<int>() == schema::relation_count(config.service) &&
@@ -328,7 +328,7 @@ core::target::Status initialize_empty(const DatabaseConfig& config) {
     transaction.exec(schema::common_sql());
     transaction.exec(schema::service_sql(config.service));
     transaction.exec("INSERT INTO kiarabot.schema_versions VALUES(true,$1,$2)",
-                     pqxx::params{schema::kVersion, service_name(config.service)});
+                     pqxx::params{schema::version(config.service), service_name(config.service)});
     transaction.exec("GRANT USAGE ON SCHEMA kiarabot TO " +
                      transaction.quote_name(config.runtime_role));
     transaction.exec("GRANT SELECT,INSERT,UPDATE,DELETE ON ALL TABLES IN SCHEMA kiarabot TO " +

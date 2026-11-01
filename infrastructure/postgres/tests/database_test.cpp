@@ -98,6 +98,104 @@ int initialize_process(const std::filesystem::path& executable, const pg::Databa
   return WEXITSTATUS(status);
 }
 
+// All mutations below belong to the already verified disposable backend and roll back together.
+void check_identity_security_schema(const pg::DatabaseConfig& config) {
+  pqxx::connection connection(connection_string(config));
+  pqxx::work transaction(connection);
+  const auto rejects = [&](const std::string& sql, const std::string& state) {
+    bool rejected = false;
+    try {
+      pqxx::subtransaction attempt(transaction);
+      attempt.exec(sql);
+      attempt.exec("SET CONSTRAINTS ALL IMMEDIATE");
+      attempt.commit();
+    } catch (const pqxx::sql_error& error) {
+      rejected = error.sqlstate() == state;
+    }
+    require(rejected, "Identity security schema accepted invalid relation");
+  };
+  require(transaction
+              .exec("SELECT state=0 AND version=1 AND administrator IS NULL AND "
+                    "consumed_at IS NULL FROM kiarabot.administrator_bootstrap WHERE "
+                    "singleton")
+              .one_row()[0]
+              .as<bool>(),
+          "explicit initial bootstrap marker incorrect");
+  transaction.exec("INSERT INTO kiarabot.principals VALUES('security-owner',0,NULL,NULL,1,0)");
+  transaction.exec("INSERT INTO kiarabot.credential_heads VALUES('security-credential',"
+                   "'security-owner',1,NULL)");
+  transaction.exec("INSERT INTO kiarabot.credential_versions VALUES('security-credential',1,"
+                   "'security-owner',0,0,137,NULL,NULL,15,'catalog')");
+  transaction.exec("INSERT INTO kiarabot.credential_pending VALUES('security-credential',1,0,1)");
+  transaction.exec("SET CONSTRAINTS ALL IMMEDIATE; SET CONSTRAINTS ALL DEFERRED");
+  rejects("UPDATE kiarabot.credential_heads SET version=2 WHERE id='security-credential'", "23503");
+  rejects("UPDATE kiarabot.credential_versions SET expires_at=731 WHERE "
+          "id='security-credential'",
+          "23514");
+  rejects("INSERT INTO kiarabot.credential_passwords VALUES('security-credential',1,1,'phc',1)",
+          "23503");
+  transaction.exec("INSERT INTO kiarabot.credential_heads VALUES('security-certificate',"
+                   "'security-owner',1,NULL)");
+  transaction.exec("INSERT INTO kiarabot.credential_versions VALUES('security-certificate',1,"
+                   "'security-owner',3,1,137,NULL,731,15,'catalog')");
+  transaction.exec(
+      "INSERT INTO kiarabot.credential_certificates VALUES('security-certificate',"
+      "1,3,'security-owner',decode(repeat('ab',32),'hex'),'registered-san',0,100,1000)");
+  transaction.exec("UPDATE kiarabot.credential_heads SET leaf_fingerprint=decode(repeat('ab',32),"
+                   "'hex') WHERE id='security-certificate'");
+  transaction.exec("SET CONSTRAINTS ALL IMMEDIATE; SET CONSTRAINTS ALL DEFERRED");
+  rejects("UPDATE kiarabot.credential_heads SET leaf_fingerprint=decode(repeat('ac',32),'hex') "
+          "WHERE id='security-certificate'",
+          "23503");
+  transaction.exec("INSERT INTO kiarabot.sessions VALUES('security-session','security-owner',1,"
+                   "18446744073709551615,1000000,false)");
+  transaction.exec(
+      "INSERT INTO kiarabot.session_security VALUES('security-session',"
+      "'security-owner','security-credential',1,'access',decode(repeat('00',32),'hex'),"
+      "'refresh',decode(repeat('ff',32),'hex'),137,731,1000000,"
+      "18446744073709551615,1,false)");
+  transaction.exec("SET CONSTRAINTS ALL IMMEDIATE; SET CONSTRAINTS ALL DEFERRED");
+  rejects("UPDATE kiarabot.sessions SET rotation=1 WHERE id='security-session'", "23503");
+  rejects("UPDATE kiarabot.sessions SET expires_at=1000001 WHERE id='security-session'", "23503");
+  rejects("UPDATE kiarabot.sessions SET revoked=true WHERE id='security-session'", "23503");
+  rejects("UPDATE kiarabot.session_security SET version=2 WHERE id='security-session'", "23503");
+  transaction.exec("INSERT INTO kiarabot.grants VALUES('security-grant','security-owner',NULL,1)");
+  transaction.exec("INSERT INTO kiarabot.exact_assignments VALUES('security-grant',"
+                   "'security-owner',1)");
+  transaction.exec(
+      "INSERT INTO kiarabot.exact_permissions VALUES('security-grant',40,15,'catalog')");
+  transaction.exec("SET CONSTRAINTS ALL IMMEDIATE; SET CONSTRAINTS ALL DEFERRED");
+  rejects("UPDATE kiarabot.grants SET version=2 WHERE id='security-grant'", "23503");
+  rejects("INSERT INTO kiarabot.exact_permissions VALUES('security-grant',41,15,'catalog')",
+          "23514");
+  transaction.exec(
+      "INSERT INTO kiarabot.secret_receipts VALUES(1,'control-peer','security-session',"
+      "'receipt','security-owner','security-session','security-credential',1,1,2,"
+      "'commitment',decode(repeat('00',32),'hex'),137,731,'sealed',1,"
+      "decode('00','hex'),decode('00ff','hex'))");
+  require(transaction
+              .exec("SELECT created_at=137 AND retain_until=731 AND "
+                    "octet_length(ciphertext)=2 FROM kiarabot.secret_receipts")
+              .one_row()[0]
+              .as<bool>(),
+          "AEAD original nanoseconds/binary bytes changed");
+  rejects("UPDATE kiarabot.secret_receipts SET retain_until=86400000000138", "23514");
+  rejects("UPDATE kiarabot.secret_receipts SET result_rotation=1", "23514");
+  transaction.exec("INSERT INTO kiarabot.consumed_refresh VALUES('refresh',"
+                   "decode(repeat('ff',32),'hex'),'security-session','security-owner',"
+                   "'security-credential',1,1,1000,1,'control-peer','receipt',137,731)");
+  transaction.exec("SET CONSTRAINTS ALL IMMEDIATE; SET CONSTRAINTS ALL DEFERRED");
+  rejects("UPDATE kiarabot.consumed_refresh SET control_peer='other-peer'", "23503");
+  rejects("UPDATE kiarabot.consumed_refresh SET recovery_until=1001", "23514");
+  rejects("UPDATE kiarabot.administrator_bootstrap SET state=1", "23514");
+  transaction.exec("DELETE FROM kiarabot.secret_receipts");
+  require(
+      transaction.exec("SELECT count(*) FROM kiarabot.consumed_refresh").one_row()[0].as<int>() ==
+          0,
+      "receipt cleanup retained orphan consumed verifier");
+  // No test data, verifiers or grant state escape this transaction.
+}
+
 void run(const std::filesystem::path& root, std::uint16_t port,
          const std::filesystem::path& initializer, std::uint16_t proxy_port) {
   require(root.filename().string().starts_with("kiarabot-p03-"), "non-fixture root");
@@ -218,6 +316,16 @@ void run(const std::filesystem::path& root, std::uint16_t port,
       pqxx::nontransaction writable(administrator);
       writable.exec("ALTER DATABASE " + writable.quote_name(config.database) +
                     " RESET default_transaction_read_only");
+    }
+    {
+      pqxx::connection migration(connection_string(config));
+      pqxx::read_transaction inspect(migration);
+      require(inspect.exec("SELECT version FROM kiarabot.schema_versions").one_row()[0].as<int>() ==
+                  (config.service == target::Service::Identity ? 4 : 3),
+              "per-service schema version incorrect");
+    }
+    if (config.service == target::Service::Identity) {
+      check_identity_security_schema(config);
     }
     pg::test::check_typed(runtime);
     if (config.service == target::Service::Identity) {

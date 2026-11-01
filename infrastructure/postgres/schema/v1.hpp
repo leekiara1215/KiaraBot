@@ -2,9 +2,13 @@
 
 #include <string_view>
 
+#include "kiarabot/core/domain/target/foundation.hpp"
+
 namespace kiarabot::infrastructure::postgres::schema {
 
-inline constexpr int kVersion = 3;
+inline constexpr int version(core::target::Service owner) {
+  return owner == core::target::Service::Identity ? 4 : 3;
+}
 // Explicit empty-database schema version; no upgrade or reset of existing databases.
 inline constexpr std::string_view kCreate = R"sql(
 CREATE SCHEMA kiarabot;

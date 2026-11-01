@@ -3,6 +3,7 @@
 #include <string>
 #include <string_view>
 
+#include "identity_security.hpp"
 #include "kiarabot/core/domain/target/foundation.hpp"
 
 namespace kiarabot::infrastructure::postgres::schema {
@@ -36,6 +37,7 @@ CREATE TABLE kiarabot.authorizations (
   invalidation_dirty boolean NOT NULL
 );
 )sql";
+    sql += kIdentitySecurity;
     break;
   case core::target::Service::Runtime:
     relation("accounts", "id");
