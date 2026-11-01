@@ -31,3 +31,19 @@ P00 检查：`python3 -m json.tool proto/tests/target_spec.json`、`git diff --c
 Python 本机默认3.9（与仓库目标3.11.18不同），临时环境 protobuf6.33.5、grpcio-tools1.76.0、grpcio1.80.0；Python生成器自带 libprotoc31.1，C++本机 protoc/runtime36.2、gRPC pkg-config 提供。不存在 Python7.35 下载版本；不绕过版本检查，改用已取得匹配生成器。根工具链任务须锁定最终统一环境，本机线格式验证不冒充目标锁验收。
 
 五服务提交实际验证：独立 `KIARABOT_TARGET_PYTHON=/tmp/kiarabot-contracts-venv/bin/python proto/tests/check_target.sh` 通过77个RPC的 request/response/权限/幂等/deadline/在线分类匹配及269种消息 Python→C++→Python 往返；C++/Python/gRPC均实际生成，C++和gRPC生成源实际编译链接。clang-format 检查 target_roundtrip.cc；全量枚举、实现状态、语义门禁均通过。生成源及本机 Abseil 宏产生 nullability extension 警告、链接重复库提示，不能据此声称无警告全构建；手写测试独立格式校验通过。新proto接线清单：platform/policy/identity/runtime/host/scheduler/model.proto，根 CMake 尚未包括，由工具链所有者接入。未运行全仓、PG、生产认证/并发测试，P01仅规格/线格式验收。
+
+## P01a REST/WS 与收尾
+
+OpenAPI 新增33个管理操作，引用类型化目标消息 schema，并增加 Error.failure_context 与规范 gRPC/HTTP错误映射；AsyncAPI 新增带 scope/owner cursor 的 operations/operation.updated。全部显式not_implemented，不扩大消息正文、模型历史、角色定义或插件市场。已有开发版本端点保留的实现状态仅指原行为，不代表已迁为六服务；不提供混合版本生产桥接。
+
+按主对话复核，补五个owner service方法集合双向相等检查，mutating和requires_idempotency_key分离。Chat/ACK/Renew/注册/心跳/交接仍是状态变更，以业务稳定身份防重，无普通响应收据开关；普通写才要求请求幂等键。
+
+文档影响：更新api/openapi.yaml、api/asyncapi.yaml、doc/01-contracts.md、doc/01-runtime-semantics.md、doc/06-control-api.md、proto/tests/README.md与本报告。proto/README已在前一提交描述全部目标文件，本步无新增文件职责无需重复更新。doc/02–05/07–08无生产实现变化，留给各实现所有者；doc/18–23未修改。
+
+实际静态检查：ruby proto/tests/target_api_test.rb（33操作/错误映射/全部跨文件引用）、实现状态检查、枚举检查、语义门禁、Ruby YAML解析、git diff --check。正式npm lint首次DNS受限，升级权限后证书链错误，系统CA重试中；未关闭TLS验证。最终结果另行追加。
+
+最终复验：`check_target.sh`（修正后的完整方法集合、独立幂等分类、77 RPC/269消息）通过；C++ protobuf36.2.0/gRPC1.84.1（Python grpcio1.80.0）、本机Python generator31.1/runtime6.33.5。下载固定lint工具时加系统CA信任后成功，Redocly2.72.1正式lint通过（2条unused组件警告：TargetRpcFailure、仅WS跨文件引用的TargetStreamCursor），AsyncAPI parser3.6.6通过（原未用组件information，无error），未禁用TLS。Ajv schema正反例通过：成功主结果/资源/操作/fence必填，缺失/空ID/零代次/uint64溢出拒绝，最大uint64与未应用配置0接受，registered和Blocked条件校验通过。
+
+全仓 `./scripts/quality/check-format.sh` 实际失败：基点现有 control/api/src/configuration.cpp、infrastructure/src/file_storage.cpp及多份core/infrastructure测试的格式与本机clang-format不一致；均不在本任务范围，不进行无关格式化。新增target_roundtrip.cc独立 `clang-format --dry-run --Werror`通过。全仓full构建/tidy/统一toolchain未运行：根CMake尚未接入新proto及target_roundtrip.cc、旧消费者尚未迁移，当前不是全仓或生产门禁。真实PG、认证拒绝/撤销SLO、租约并发、跨主机、平台及计费模型均未运行，本任务无生产实现。
+
+首轮停止P01a。后续依赖：工具链接入7个新proto、目标独立测试及API/Ajv门禁并锁定统一生成器/runtime；Core映射请求/资源/操作/Fence并实现非零/缺失校验，五服务生产者实现与文档归各模块；Control按所有者路由并实现schema/当前身份与范围授权。所有target方法/字段/频道均未实现，contract_status和target_spec明确登记。无P02/P03业务、无旧数据导入/清理、无push/merge、doc/18–23未修改。

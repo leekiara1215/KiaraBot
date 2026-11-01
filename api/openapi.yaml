@@ -18,9 +18,61 @@ x-contract-status:
     - getActionByIdempotencyKey
     - getActionResult
     - listGroups
+    - createAccount
+    - updateAccount
+    - disableAccount
+    - bindAdapter
+    - unbindAdapter
+    - createInstallation
+    - createInstance
+    - setInstanceDesiredState
+    - updateInstanceConfig
+    - getResourceState
+    - beginDeleteResource
+    - restoreResource
+    - getOperation
+    - listActionMetadata
+    - getActionPolicy
+    - updateActionPolicy
+    - setSharedMembers
+    - disableSharedNamespace
+    - listDeadLetters
+    - replayDelivery
+    - getTask
+    - cancelTask
+    - getOccurrence
+    - getModelMetadata
+    - updateModel
+    - rotateProviderSecret
+    - listAssignments
+    - setAssignment
+    - revokeAssignment
+    - registerPrincipal
+    - getPrincipalStatus
+    - rotateCredential
+    - revokeCredential
   deprecated: []
 x-control-policy:
-  application_port: in-process-cpp-v1
+  application_port: typed-owner-rpc-v1
+  resource_scope: Fixed role capabilities intersect explicit owner-validated resource grants; sensitive reads require separate grants.
+  target_status: not_implemented
+  target_role_capabilities:
+    admin: [identity.session.read, identity.session.revoke, identity.principal.manage, identity.principal.read, identity.assignment.read, identity.assignment.manage, account.manage, account.policy.read, account.policy.manage, plugin.manage, namespace.manage, resource.read, resource.manage, delivery.manage, task.read, task.schedule, model.read, model.manage, action.inspect]
+    operator: [identity.session.read, identity.session.revoke, plugin.manage, resource.read, account.policy.read, account.policy.manage, task.read, task.schedule, delivery.manage]
+    viewer: [resource.read, model.read]
+  target_role_notes: Capabilities alone never grant all resources. Intersect current fixed role capabilities with explicit owner-validated resource grants. Sensitive action.inspect, logs/audit and message metadata require separate explicit grants; no default role has message.read. The roles block below describes existing development behavior until target handlers replace it.
+  target_error_mapping:
+    INVALID_ARGUMENT: {grpc: INVALID_ARGUMENT, http: 400}
+    UNAUTHENTICATED: {grpc: UNAUTHENTICATED, http: 401}
+    PERMISSION_DENIED: {grpc: PERMISSION_DENIED, http: 403}
+    NOT_FOUND: {grpc: NOT_FOUND, http: 404}
+    CONFLICT: {grpc: ABORTED, http: 409}
+    RATE_LIMITED: {grpc: RESOURCE_EXHAUSTED, http: 429}
+    TIMEOUT: {grpc: DEADLINE_EXCEEDED, http: 504}
+    UPSTREAM_UNAVAILABLE: {grpc: UNAVAILABLE, http: 503}
+    PLUGIN_UNAVAILABLE: {grpc: UNAVAILABLE, http: 503}
+    CAPABILITY_NOT_SUPPORTED: {grpc: UNIMPLEMENTED, http: 503}
+    INTERNAL: {grpc: INTERNAL, http: 500}
   default_authorization: deny
   roles:
     admin: [session.read, session.revoke, health.read, adapter.read, plugin.read, plugin.manage, plugin.config.read, plugin.config.write, bot.read, model.read, group.read, task.read, action.read, log.read, audit.read, user.read]
@@ -559,6 +611,1811 @@ paths:
         '503': { $ref: '#/components/responses/Unavailable' }
         '504': { $ref: '#/components/responses/Timeout' }
 
+  /accounts:
+    post:
+      operationId: createAccount
+      summary: Runtime CreateAccount
+      x-contract-status: not_implemented
+      x-owner-service: runtime
+      x-owner-rpc: RuntimeService.CreateAccount
+      x-permission: account.manage
+      x-mutating: true
+      description: Target P01 declaration; production handler is not implemented. Current
+        Identity session and explicit resource grant are required. Path IDs must equal
+        any repeated body IDs; mismatch is INVALID_ARGUMENT. Versions are positive decimal
+        uint64 strings; writes reject missing expected_version except creation. An accepted
+        operation is not completed work.
+      parameters:
+      - "$ref": "#/components/parameters/IdempotencyKey"
+      responses:
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+        '404':
+          "$ref": "#/components/responses/NotFound"
+        '409':
+          "$ref": "#/components/responses/Conflict"
+        '429':
+          "$ref": "#/components/responses/RateLimited"
+        '500':
+          "$ref": "#/components/responses/Internal"
+        '503':
+          "$ref": "#/components/responses/Unavailable"
+        '504':
+          "$ref": "#/components/responses/Timeout"
+        '200':
+          description: Owner committed result or current scoped projection
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/TargetRuntimeCreateAccountResponse"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/TargetRuntimeCreateAccountRequest"
+  /accounts/{accountId}:
+    put:
+      operationId: updateAccount
+      summary: Runtime UpdateAccount
+      x-contract-status: not_implemented
+      x-owner-service: runtime
+      x-owner-rpc: RuntimeService.UpdateAccount
+      x-permission: account.manage
+      x-mutating: true
+      description: Target P01 declaration; production handler is not implemented. Current
+        Identity session and explicit resource grant are required. Path IDs must equal
+        any repeated body IDs; mismatch is INVALID_ARGUMENT. Versions are positive decimal
+        uint64 strings; writes reject missing expected_version except creation. An accepted
+        operation is not completed work.
+      parameters:
+      - name: accountId
+        in: path
+        required: true
+        schema:
+          type: string
+          minLength: 1
+      - "$ref": "#/components/parameters/IdempotencyKey"
+      responses:
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+        '404':
+          "$ref": "#/components/responses/NotFound"
+        '409':
+          "$ref": "#/components/responses/Conflict"
+        '429':
+          "$ref": "#/components/responses/RateLimited"
+        '500':
+          "$ref": "#/components/responses/Internal"
+        '503':
+          "$ref": "#/components/responses/Unavailable"
+        '504':
+          "$ref": "#/components/responses/Timeout"
+        '200':
+          description: Owner committed result or current scoped projection
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/TargetRuntimeUpdateAccountResponse"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/TargetRuntimeUpdateAccountRequest"
+  /accounts/{accountId}/disable:
+    post:
+      operationId: disableAccount
+      summary: Runtime DisableAccount
+      x-contract-status: not_implemented
+      x-owner-service: runtime
+      x-owner-rpc: RuntimeService.DisableAccount
+      x-permission: account.manage
+      x-mutating: true
+      description: Target P01 declaration; production handler is not implemented. Current
+        Identity session and explicit resource grant are required. Path IDs must equal
+        any repeated body IDs; mismatch is INVALID_ARGUMENT. Versions are positive decimal
+        uint64 strings; writes reject missing expected_version except creation. An accepted
+        operation is not completed work.
+      parameters:
+      - name: accountId
+        in: path
+        required: true
+        schema:
+          type: string
+          minLength: 1
+      - "$ref": "#/components/parameters/IdempotencyKey"
+      responses:
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+        '404':
+          "$ref": "#/components/responses/NotFound"
+        '409':
+          "$ref": "#/components/responses/Conflict"
+        '429':
+          "$ref": "#/components/responses/RateLimited"
+        '500':
+          "$ref": "#/components/responses/Internal"
+        '503':
+          "$ref": "#/components/responses/Unavailable"
+        '504':
+          "$ref": "#/components/responses/Timeout"
+        '200':
+          description: Owner committed result or current scoped projection
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/TargetRuntimeDisableAccountResponse"
+        '202':
+          description: Durably accepted; inspect operation at its owner
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/TargetRuntimeDisableAccountResponse"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/TargetRuntimeDisableAccountRequest"
+  /adapter-bindings/{accountId}:
+    put:
+      operationId: bindAdapter
+      summary: Runtime BindAdapter
+      x-contract-status: not_implemented
+      x-owner-service: runtime
+      x-owner-rpc: RuntimeService.BindAdapter
+      x-permission: account.manage
+      x-mutating: true
+      description: Target P01 declaration; production handler is not implemented. Current
+        Identity session and explicit resource grant are required. Path IDs must equal
+        any repeated body IDs; mismatch is INVALID_ARGUMENT. Versions are positive decimal
+        uint64 strings; writes reject missing expected_version except creation. An accepted
+        operation is not completed work.
+      parameters:
+      - name: accountId
+        in: path
+        required: true
+        schema:
+          type: string
+          minLength: 1
+      - "$ref": "#/components/parameters/IdempotencyKey"
+      responses:
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+        '404':
+          "$ref": "#/components/responses/NotFound"
+        '409':
+          "$ref": "#/components/responses/Conflict"
+        '429':
+          "$ref": "#/components/responses/RateLimited"
+        '500':
+          "$ref": "#/components/responses/Internal"
+        '503':
+          "$ref": "#/components/responses/Unavailable"
+        '504':
+          "$ref": "#/components/responses/Timeout"
+        '200':
+          description: Owner committed result or current scoped projection
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/TargetRuntimeBindAdapterResponse"
+        '202':
+          description: Durably accepted; inspect operation at its owner
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/TargetRuntimeBindAdapterResponse"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/TargetRuntimeBindAdapterRequest"
+    delete:
+      operationId: unbindAdapter
+      summary: Runtime UnbindAdapter
+      x-contract-status: not_implemented
+      x-owner-service: runtime
+      x-owner-rpc: RuntimeService.UnbindAdapter
+      x-permission: account.manage
+      x-mutating: true
+      description: Target P01 declaration; production handler is not implemented. Current
+        Identity session and explicit resource grant are required. Path IDs must equal
+        any repeated body IDs; mismatch is INVALID_ARGUMENT. Versions are positive decimal
+        uint64 strings; writes reject missing expected_version except creation. An accepted
+        operation is not completed work.
+      parameters:
+      - name: accountId
+        in: path
+        required: true
+        schema:
+          type: string
+          minLength: 1
+      - "$ref": "#/components/parameters/IdempotencyKey"
+      responses:
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+        '404':
+          "$ref": "#/components/responses/NotFound"
+        '409':
+          "$ref": "#/components/responses/Conflict"
+        '429':
+          "$ref": "#/components/responses/RateLimited"
+        '500':
+          "$ref": "#/components/responses/Internal"
+        '503':
+          "$ref": "#/components/responses/Unavailable"
+        '504':
+          "$ref": "#/components/responses/Timeout"
+        '200':
+          description: Owner committed result or current scoped projection
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/TargetRuntimeUnbindAdapterResponse"
+        '202':
+          description: Durably accepted; inspect operation at its owner
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/TargetRuntimeUnbindAdapterResponse"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/TargetRuntimeUnbindAdapterRequest"
+  /installations:
+    post:
+      operationId: createInstallation
+      summary: Runtime CreateInstallation
+      x-contract-status: not_implemented
+      x-owner-service: runtime
+      x-owner-rpc: RuntimeService.CreateInstallation
+      x-permission: plugin.manage
+      x-mutating: true
+      description: Target P01 declaration; production handler is not implemented. Current
+        Identity session and explicit resource grant are required. Path IDs must equal
+        any repeated body IDs; mismatch is INVALID_ARGUMENT. Versions are positive decimal
+        uint64 strings; writes reject missing expected_version except creation. An accepted
+        operation is not completed work.
+      parameters:
+      - "$ref": "#/components/parameters/IdempotencyKey"
+      responses:
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+        '404':
+          "$ref": "#/components/responses/NotFound"
+        '409':
+          "$ref": "#/components/responses/Conflict"
+        '429':
+          "$ref": "#/components/responses/RateLimited"
+        '500':
+          "$ref": "#/components/responses/Internal"
+        '503':
+          "$ref": "#/components/responses/Unavailable"
+        '504':
+          "$ref": "#/components/responses/Timeout"
+        '200':
+          description: Owner committed result or current scoped projection
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/TargetRuntimeCreateInstallationResponse"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/TargetRuntimeCreateInstallationRequest"
+  /installations/{installationId}/instances:
+    post:
+      operationId: createInstance
+      summary: Runtime CreateInstance
+      x-contract-status: not_implemented
+      x-owner-service: runtime
+      x-owner-rpc: RuntimeService.CreateInstance
+      x-permission: plugin.manage
+      x-mutating: true
+      description: Target P01 declaration; production handler is not implemented. Current
+        Identity session and explicit resource grant are required. Path IDs must equal
+        any repeated body IDs; mismatch is INVALID_ARGUMENT. Versions are positive decimal
+        uint64 strings; writes reject missing expected_version except creation. An accepted
+        operation is not completed work.
+      parameters:
+      - name: installationId
+        in: path
+        required: true
+        schema:
+          type: string
+          minLength: 1
+      - "$ref": "#/components/parameters/IdempotencyKey"
+      responses:
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+        '404':
+          "$ref": "#/components/responses/NotFound"
+        '409':
+          "$ref": "#/components/responses/Conflict"
+        '429':
+          "$ref": "#/components/responses/RateLimited"
+        '500':
+          "$ref": "#/components/responses/Internal"
+        '503':
+          "$ref": "#/components/responses/Unavailable"
+        '504':
+          "$ref": "#/components/responses/Timeout"
+        '200':
+          description: Owner committed result or current scoped projection
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/TargetRuntimeCreateInstanceResponse"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/TargetRuntimeCreateInstanceRequest"
+  /instances/{instanceId}/desired-state:
+    put:
+      operationId: setInstanceDesiredState
+      summary: Runtime SetDesiredState
+      x-contract-status: not_implemented
+      x-owner-service: runtime
+      x-owner-rpc: RuntimeService.SetDesiredState
+      x-permission: plugin.manage
+      x-mutating: true
+      description: Target P01 declaration; production handler is not implemented. Current
+        Identity session and explicit resource grant are required. Path IDs must equal
+        any repeated body IDs; mismatch is INVALID_ARGUMENT. Versions are positive decimal
+        uint64 strings; writes reject missing expected_version except creation. An accepted
+        operation is not completed work.
+      parameters:
+      - name: instanceId
+        in: path
+        required: true
+        schema:
+          type: string
+          minLength: 1
+      - "$ref": "#/components/parameters/IdempotencyKey"
+      responses:
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+        '404':
+          "$ref": "#/components/responses/NotFound"
+        '409':
+          "$ref": "#/components/responses/Conflict"
+        '429':
+          "$ref": "#/components/responses/RateLimited"
+        '500':
+          "$ref": "#/components/responses/Internal"
+        '503':
+          "$ref": "#/components/responses/Unavailable"
+        '504':
+          "$ref": "#/components/responses/Timeout"
+        '200':
+          description: Owner committed result or current scoped projection
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/TargetRuntimeSetDesiredStateResponse"
+        '202':
+          description: Durably accepted; inspect operation at its owner
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/TargetRuntimeSetDesiredStateResponse"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/TargetRuntimeSetDesiredStateRequest"
+  /instances/{instanceId}/config:
+    put:
+      operationId: updateInstanceConfig
+      summary: Runtime UpdateConfig
+      x-contract-status: not_implemented
+      x-owner-service: runtime
+      x-owner-rpc: RuntimeService.UpdateConfig
+      x-permission: plugin.manage
+      x-mutating: true
+      description: Target P01 declaration; production handler is not implemented. Current
+        Identity session and explicit resource grant are required. Path IDs must equal
+        any repeated body IDs; mismatch is INVALID_ARGUMENT. Versions are positive decimal
+        uint64 strings; writes reject missing expected_version except creation. An accepted
+        operation is not completed work.
+      parameters:
+      - name: instanceId
+        in: path
+        required: true
+        schema:
+          type: string
+          minLength: 1
+      - "$ref": "#/components/parameters/IdempotencyKey"
+      responses:
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+        '404':
+          "$ref": "#/components/responses/NotFound"
+        '409':
+          "$ref": "#/components/responses/Conflict"
+        '429':
+          "$ref": "#/components/responses/RateLimited"
+        '500':
+          "$ref": "#/components/responses/Internal"
+        '503':
+          "$ref": "#/components/responses/Unavailable"
+        '504':
+          "$ref": "#/components/responses/Timeout"
+        '200':
+          description: Owner committed result or current scoped projection
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/TargetRuntimeUpdateConfigResponse"
+        '202':
+          description: Durably accepted; inspect operation at its owner
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/TargetRuntimeUpdateConfigResponse"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/TargetRuntimeUpdateConfigRequest"
+  /resources/{resourceKind}/{resourceId}:
+    get:
+      operationId: getResourceState
+      summary: Runtime GetResourceState
+      x-contract-status: not_implemented
+      x-owner-service: runtime
+      x-owner-rpc: RuntimeService.GetResourceState
+      x-permission: resource.read
+      x-mutating: false
+      description: Target P01 declaration; production handler is not implemented. Current
+        Identity session and explicit resource grant are required. Path IDs must equal
+        any repeated body IDs; mismatch is INVALID_ARGUMENT. Versions are positive decimal
+        uint64 strings; writes reject missing expected_version except creation. An accepted
+        operation is not completed work.
+      parameters:
+      - name: resourceKind
+        in: path
+        required: true
+        schema:
+          type: string
+          enum: [RESOURCE_ACCOUNT, RESOURCE_ADAPTER, RESOURCE_PLUGIN_TYPE, RESOURCE_INSTALLATION, RESOURCE_INSTANCE, RESOURCE_HOST, RESOURCE_NAMESPACE, RESOURCE_TASK, RESOURCE_MODEL, RESOURCE_PRINCIPAL, RESOURCE_SESSION, RESOURCE_ACTION, RESOURCE_OPERATION, RESOURCE_CREDENTIAL, RESOURCE_ASSIGNMENT]
+      - name: resourceId
+        in: path
+        required: true
+        schema:
+          type: string
+          minLength: 1
+      - name: scope
+        in: query
+        required: true
+        description: Explicit resource scope; checked by owner. No role wildcard.
+        schema:
+          type: string
+          minLength: 1
+      responses:
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+        '404':
+          "$ref": "#/components/responses/NotFound"
+        '409':
+          "$ref": "#/components/responses/Conflict"
+        '429':
+          "$ref": "#/components/responses/RateLimited"
+        '500':
+          "$ref": "#/components/responses/Internal"
+        '503':
+          "$ref": "#/components/responses/Unavailable"
+        '504':
+          "$ref": "#/components/responses/Timeout"
+        '200':
+          description: Owner committed result or current scoped projection
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/TargetRuntimeGetResourceStateResponse"
+  /resources/{resourceKind}/{resourceId}/delete:
+    post:
+      operationId: beginDeleteResource
+      summary: Runtime BeginDelete
+      x-contract-status: not_implemented
+      x-owner-service: runtime
+      x-owner-rpc: RuntimeService.BeginDelete
+      x-permission: resource.manage
+      x-mutating: true
+      description: Target P01 declaration; production handler is not implemented. Current
+        Identity session and explicit resource grant are required. Path IDs must equal
+        any repeated body IDs; mismatch is INVALID_ARGUMENT. Versions are positive decimal
+        uint64 strings; writes reject missing expected_version except creation. An accepted
+        operation is not completed work.
+      parameters:
+      - name: resourceKind
+        in: path
+        required: true
+        schema:
+          type: string
+          enum: [RESOURCE_ACCOUNT, RESOURCE_ADAPTER, RESOURCE_PLUGIN_TYPE, RESOURCE_INSTALLATION, RESOURCE_INSTANCE, RESOURCE_HOST, RESOURCE_NAMESPACE, RESOURCE_TASK, RESOURCE_MODEL, RESOURCE_PRINCIPAL, RESOURCE_SESSION, RESOURCE_ACTION, RESOURCE_OPERATION, RESOURCE_CREDENTIAL, RESOURCE_ASSIGNMENT]
+      - name: resourceId
+        in: path
+        required: true
+        schema:
+          type: string
+          minLength: 1
+      - "$ref": "#/components/parameters/IdempotencyKey"
+      responses:
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+        '404':
+          "$ref": "#/components/responses/NotFound"
+        '409':
+          "$ref": "#/components/responses/Conflict"
+        '429':
+          "$ref": "#/components/responses/RateLimited"
+        '500':
+          "$ref": "#/components/responses/Internal"
+        '503':
+          "$ref": "#/components/responses/Unavailable"
+        '504':
+          "$ref": "#/components/responses/Timeout"
+        '200':
+          description: Owner committed result or current scoped projection
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/TargetRuntimeBeginDeleteResponse"
+        '202':
+          description: Durably accepted; inspect operation at its owner
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/TargetRuntimeBeginDeleteResponse"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/TargetRuntimeBeginDeleteRequest"
+  /resources/{resourceKind}/{resourceId}/restore:
+    post:
+      operationId: restoreResource
+      summary: Runtime RestoreResource
+      x-contract-status: not_implemented
+      x-owner-service: runtime
+      x-owner-rpc: RuntimeService.RestoreResource
+      x-permission: resource.manage
+      x-mutating: true
+      description: Target P01 declaration; production handler is not implemented. Current
+        Identity session and explicit resource grant are required. Path IDs must equal
+        any repeated body IDs; mismatch is INVALID_ARGUMENT. Versions are positive decimal
+        uint64 strings; writes reject missing expected_version except creation. An accepted
+        operation is not completed work.
+      parameters:
+      - name: resourceKind
+        in: path
+        required: true
+        schema:
+          type: string
+          enum: [RESOURCE_ACCOUNT, RESOURCE_ADAPTER, RESOURCE_PLUGIN_TYPE, RESOURCE_INSTALLATION, RESOURCE_INSTANCE, RESOURCE_HOST, RESOURCE_NAMESPACE, RESOURCE_TASK, RESOURCE_MODEL, RESOURCE_PRINCIPAL, RESOURCE_SESSION, RESOURCE_ACTION, RESOURCE_OPERATION, RESOURCE_CREDENTIAL, RESOURCE_ASSIGNMENT]
+      - name: resourceId
+        in: path
+        required: true
+        schema:
+          type: string
+          minLength: 1
+      - "$ref": "#/components/parameters/IdempotencyKey"
+      responses:
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+        '404':
+          "$ref": "#/components/responses/NotFound"
+        '409':
+          "$ref": "#/components/responses/Conflict"
+        '429':
+          "$ref": "#/components/responses/RateLimited"
+        '500':
+          "$ref": "#/components/responses/Internal"
+        '503':
+          "$ref": "#/components/responses/Unavailable"
+        '504':
+          "$ref": "#/components/responses/Timeout"
+        '200':
+          description: Owner committed result or current scoped projection
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/TargetRuntimeRestoreResourceResponse"
+        '202':
+          description: Durably accepted; inspect operation at its owner
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/TargetRuntimeRestoreResourceResponse"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/TargetRuntimeRestoreResourceRequest"
+  /operations/{ownerService}/{operationId}:
+    get:
+      operationId: getOperation
+      summary: Runtime GetOperation
+      x-contract-status: not_implemented
+      x-owner-service: runtime
+      x-owner-rpc: {runtime: RuntimeService.GetOperation, scheduler: SchedulerService.GetOperation, model: ModelService.GetOperation}
+      x-permission: resource.read
+      x-mutating: false
+      description: Target P01 declaration; production handler is not implemented. Current
+        Identity session and explicit resource grant are required. Path IDs must equal
+        any repeated body IDs; mismatch is INVALID_ARGUMENT. Versions are positive decimal
+        uint64 strings; writes reject missing expected_version except creation. An accepted
+        operation is not completed work.
+      parameters:
+      - name: ownerService
+        in: path
+        required: true
+        schema:
+          type: string
+          enum: [runtime, scheduler, model]
+      - name: operationId
+        in: path
+        required: true
+        schema:
+          type: string
+          minLength: 1
+      - name: scope
+        in: query
+        required: true
+        description: Explicit resource scope; checked by owner. No role wildcard.
+        schema:
+          type: string
+          minLength: 1
+      responses:
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+        '404':
+          "$ref": "#/components/responses/NotFound"
+        '409':
+          "$ref": "#/components/responses/Conflict"
+        '429':
+          "$ref": "#/components/responses/RateLimited"
+        '500':
+          "$ref": "#/components/responses/Internal"
+        '503':
+          "$ref": "#/components/responses/Unavailable"
+        '504':
+          "$ref": "#/components/responses/Timeout"
+        '200':
+          description: Owner committed result or current scoped projection
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/TargetRuntimeGetOperationResponse"
+  /actions/metadata:
+    get:
+      operationId: listActionMetadata
+      summary: Runtime ListActionMetadata
+      x-contract-status: not_implemented
+      x-owner-service: runtime
+      x-owner-rpc: RuntimeService.ListActionMetadata
+      x-permission: action.inspect
+      x-mutating: false
+      description: Target P01 declaration; production handler is not implemented. Current
+        Identity session and explicit resource grant are required. Path IDs must equal
+        any repeated body IDs; mismatch is INVALID_ARGUMENT. Versions are positive decimal
+        uint64 strings; writes reject missing expected_version except creation. An accepted
+        operation is not completed work.
+      parameters:
+      - name: scope
+        in: query
+        required: true
+        description: Explicit resource scope; checked by owner. No role wildcard.
+        schema:
+          type: string
+          minLength: 1
+      - "$ref": "#/components/parameters/PageSize"
+      - "$ref": "#/components/parameters/PageToken"
+      responses:
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+        '404':
+          "$ref": "#/components/responses/NotFound"
+        '409':
+          "$ref": "#/components/responses/Conflict"
+        '429':
+          "$ref": "#/components/responses/RateLimited"
+        '500':
+          "$ref": "#/components/responses/Internal"
+        '503':
+          "$ref": "#/components/responses/Unavailable"
+        '504':
+          "$ref": "#/components/responses/Timeout"
+        '200':
+          description: Owner committed result or current scoped projection
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/TargetRuntimeListActionMetadataResponse"
+  /accounts/{accountId}/action-policy:
+    get:
+      operationId: getActionPolicy
+      summary: Runtime GetActionPolicy
+      x-contract-status: not_implemented
+      x-owner-service: runtime
+      x-owner-rpc: RuntimeService.GetActionPolicy
+      x-permission: account.policy.read
+      x-mutating: false
+      description: Target P01 declaration; production handler is not implemented. Current
+        Identity session and explicit resource grant are required. Path IDs must equal
+        any repeated body IDs; mismatch is INVALID_ARGUMENT. Versions are positive decimal
+        uint64 strings; writes reject missing expected_version except creation. An accepted
+        operation is not completed work.
+      parameters:
+      - name: accountId
+        in: path
+        required: true
+        schema:
+          type: string
+          minLength: 1
+      - name: scope
+        in: query
+        required: true
+        description: Explicit resource scope; checked by owner. No role wildcard.
+        schema:
+          type: string
+          minLength: 1
+      responses:
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+        '404':
+          "$ref": "#/components/responses/NotFound"
+        '409':
+          "$ref": "#/components/responses/Conflict"
+        '429':
+          "$ref": "#/components/responses/RateLimited"
+        '500':
+          "$ref": "#/components/responses/Internal"
+        '503':
+          "$ref": "#/components/responses/Unavailable"
+        '504':
+          "$ref": "#/components/responses/Timeout"
+        '200':
+          description: Owner committed result or current scoped projection
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/TargetRuntimeGetActionPolicyResponse"
+    put:
+      operationId: updateActionPolicy
+      summary: Runtime UpdateActionPolicy
+      x-contract-status: not_implemented
+      x-owner-service: runtime
+      x-owner-rpc: RuntimeService.UpdateActionPolicy
+      x-permission: account.policy.manage
+      x-mutating: true
+      description: Target P01 declaration; production handler is not implemented. Current
+        Identity session and explicit resource grant are required. Path IDs must equal
+        any repeated body IDs; mismatch is INVALID_ARGUMENT. Versions are positive decimal
+        uint64 strings; writes reject missing expected_version except creation. An accepted
+        operation is not completed work.
+      parameters:
+      - name: accountId
+        in: path
+        required: true
+        schema:
+          type: string
+          minLength: 1
+      - "$ref": "#/components/parameters/IdempotencyKey"
+      responses:
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+        '404':
+          "$ref": "#/components/responses/NotFound"
+        '409':
+          "$ref": "#/components/responses/Conflict"
+        '429':
+          "$ref": "#/components/responses/RateLimited"
+        '500':
+          "$ref": "#/components/responses/Internal"
+        '503':
+          "$ref": "#/components/responses/Unavailable"
+        '504':
+          "$ref": "#/components/responses/Timeout"
+        '200':
+          description: Owner committed result or current scoped projection
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/TargetRuntimeUpdateActionPolicyResponse"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/TargetRuntimeUpdateActionPolicyRequest"
+  /namespaces/{namespaceId}/members:
+    put:
+      operationId: setSharedMembers
+      summary: Runtime SetSharedMembers
+      x-contract-status: not_implemented
+      x-owner-service: runtime
+      x-owner-rpc: RuntimeService.SetSharedMembers
+      x-permission: namespace.manage
+      x-mutating: true
+      description: Target P01 declaration; production handler is not implemented. Current
+        Identity session and explicit resource grant are required. Path IDs must equal
+        any repeated body IDs; mismatch is INVALID_ARGUMENT. Versions are positive decimal
+        uint64 strings; writes reject missing expected_version except creation. An accepted
+        operation is not completed work.
+      parameters:
+      - name: namespaceId
+        in: path
+        required: true
+        schema:
+          type: string
+          minLength: 1
+      - "$ref": "#/components/parameters/IdempotencyKey"
+      responses:
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+        '404':
+          "$ref": "#/components/responses/NotFound"
+        '409':
+          "$ref": "#/components/responses/Conflict"
+        '429':
+          "$ref": "#/components/responses/RateLimited"
+        '500':
+          "$ref": "#/components/responses/Internal"
+        '503':
+          "$ref": "#/components/responses/Unavailable"
+        '504':
+          "$ref": "#/components/responses/Timeout"
+        '200':
+          description: Owner committed result or current scoped projection
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/TargetRuntimeSetSharedMembersResponse"
+        '202':
+          description: Durably accepted; inspect operation at its owner
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/TargetRuntimeSetSharedMembersResponse"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/TargetRuntimeSetSharedMembersRequest"
+  /namespaces/{namespaceId}/disable:
+    post:
+      operationId: disableSharedNamespace
+      summary: Runtime DisableSharedNamespace
+      x-contract-status: not_implemented
+      x-owner-service: runtime
+      x-owner-rpc: RuntimeService.DisableSharedNamespace
+      x-permission: namespace.manage
+      x-mutating: true
+      description: Target P01 declaration; production handler is not implemented. Current
+        Identity session and explicit resource grant are required. Path IDs must equal
+        any repeated body IDs; mismatch is INVALID_ARGUMENT. Versions are positive decimal
+        uint64 strings; writes reject missing expected_version except creation. An accepted
+        operation is not completed work.
+      parameters:
+      - name: namespaceId
+        in: path
+        required: true
+        schema:
+          type: string
+          minLength: 1
+      - "$ref": "#/components/parameters/IdempotencyKey"
+      responses:
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+        '404':
+          "$ref": "#/components/responses/NotFound"
+        '409':
+          "$ref": "#/components/responses/Conflict"
+        '429':
+          "$ref": "#/components/responses/RateLimited"
+        '500':
+          "$ref": "#/components/responses/Internal"
+        '503':
+          "$ref": "#/components/responses/Unavailable"
+        '504':
+          "$ref": "#/components/responses/Timeout"
+        '200':
+          description: Owner committed result or current scoped projection
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/TargetRuntimeDisableSharedNamespaceResponse"
+        '202':
+          description: Durably accepted; inspect operation at its owner
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/TargetRuntimeDisableSharedNamespaceResponse"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/TargetRuntimeDisableSharedNamespaceRequest"
+  /dead-letters:
+    get:
+      operationId: listDeadLetters
+      summary: Runtime ListDeadLetters
+      x-contract-status: not_implemented
+      x-owner-service: runtime
+      x-owner-rpc: RuntimeService.ListDeadLetters
+      x-permission: delivery.manage
+      x-mutating: false
+      description: Target P01 declaration; production handler is not implemented. Current
+        Identity session and explicit resource grant are required. Path IDs must equal
+        any repeated body IDs; mismatch is INVALID_ARGUMENT. Versions are positive decimal
+        uint64 strings; writes reject missing expected_version except creation. An accepted
+        operation is not completed work.
+      parameters:
+      - name: scope
+        in: query
+        required: true
+        description: Explicit resource scope; checked by owner. No role wildcard.
+        schema:
+          type: string
+          minLength: 1
+      - "$ref": "#/components/parameters/PageSize"
+      - "$ref": "#/components/parameters/PageToken"
+      responses:
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+        '404':
+          "$ref": "#/components/responses/NotFound"
+        '409':
+          "$ref": "#/components/responses/Conflict"
+        '429':
+          "$ref": "#/components/responses/RateLimited"
+        '500':
+          "$ref": "#/components/responses/Internal"
+        '503':
+          "$ref": "#/components/responses/Unavailable"
+        '504':
+          "$ref": "#/components/responses/Timeout"
+        '200':
+          description: Owner committed result or current scoped projection
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/TargetRuntimeListDeadLettersResponse"
+  /dead-letters/{deliveryId}/replay:
+    post:
+      operationId: replayDelivery
+      summary: Runtime ReplayDelivery
+      x-contract-status: not_implemented
+      x-owner-service: runtime
+      x-owner-rpc: RuntimeService.ReplayDelivery
+      x-permission: delivery.manage
+      x-mutating: true
+      description: Target P01 declaration; production handler is not implemented. Current
+        Identity session and explicit resource grant are required. Path IDs must equal
+        any repeated body IDs; mismatch is INVALID_ARGUMENT. Versions are positive decimal
+        uint64 strings; writes reject missing expected_version except creation. An accepted
+        operation is not completed work.
+      parameters:
+      - name: deliveryId
+        in: path
+        required: true
+        schema:
+          type: string
+          minLength: 1
+      - "$ref": "#/components/parameters/IdempotencyKey"
+      responses:
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+        '404':
+          "$ref": "#/components/responses/NotFound"
+        '409':
+          "$ref": "#/components/responses/Conflict"
+        '429':
+          "$ref": "#/components/responses/RateLimited"
+        '500':
+          "$ref": "#/components/responses/Internal"
+        '503':
+          "$ref": "#/components/responses/Unavailable"
+        '504':
+          "$ref": "#/components/responses/Timeout"
+        '200':
+          description: Owner committed result or current scoped projection
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/TargetRuntimeReplayDeliveryResponse"
+        '202':
+          description: Durably accepted; inspect operation at its owner
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/TargetRuntimeReplayDeliveryResponse"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/TargetRuntimeReplayDeliveryRequest"
+  /tasks/{taskId}:
+    get:
+      operationId: getTask
+      summary: Scheduler GetTask
+      x-contract-status: not_implemented
+      x-owner-service: scheduler
+      x-owner-rpc: SchedulerService.GetTask
+      x-permission: task.read
+      x-mutating: false
+      description: Target P01 declaration; production handler is not implemented. Current
+        Identity session and explicit resource grant are required. Path IDs must equal
+        any repeated body IDs; mismatch is INVALID_ARGUMENT. Versions are positive decimal
+        uint64 strings; writes reject missing expected_version except creation. An accepted
+        operation is not completed work.
+      parameters:
+      - name: taskId
+        in: path
+        required: true
+        schema:
+          type: string
+          minLength: 1
+      - name: scope
+        in: query
+        required: true
+        description: Explicit resource scope; checked by owner. No role wildcard.
+        schema:
+          type: string
+          minLength: 1
+      responses:
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+        '404':
+          "$ref": "#/components/responses/NotFound"
+        '409':
+          "$ref": "#/components/responses/Conflict"
+        '429':
+          "$ref": "#/components/responses/RateLimited"
+        '500':
+          "$ref": "#/components/responses/Internal"
+        '503':
+          "$ref": "#/components/responses/Unavailable"
+        '504':
+          "$ref": "#/components/responses/Timeout"
+        '200':
+          description: Owner committed result or current scoped projection
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/TargetSchedulerGetTaskResponse"
+  /tasks/{taskId}/cancel:
+    post:
+      operationId: cancelTask
+      summary: Scheduler CancelTask
+      x-contract-status: not_implemented
+      x-owner-service: scheduler
+      x-owner-rpc: SchedulerService.CancelTask
+      x-permission: task.schedule
+      x-mutating: true
+      description: Target P01 declaration; production handler is not implemented. Current
+        Identity session and explicit resource grant are required. Path IDs must equal
+        any repeated body IDs; mismatch is INVALID_ARGUMENT. Versions are positive decimal
+        uint64 strings; writes reject missing expected_version except creation. An accepted
+        operation is not completed work.
+      parameters:
+      - name: taskId
+        in: path
+        required: true
+        schema:
+          type: string
+          minLength: 1
+      - "$ref": "#/components/parameters/IdempotencyKey"
+      responses:
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+        '404':
+          "$ref": "#/components/responses/NotFound"
+        '409':
+          "$ref": "#/components/responses/Conflict"
+        '429':
+          "$ref": "#/components/responses/RateLimited"
+        '500':
+          "$ref": "#/components/responses/Internal"
+        '503':
+          "$ref": "#/components/responses/Unavailable"
+        '504':
+          "$ref": "#/components/responses/Timeout"
+        '200':
+          description: Owner committed result or current scoped projection
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/TargetSchedulerCancelTaskResponse"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/TargetSchedulerCancelTaskRequest"
+  /occurrences/{occurrenceId}:
+    get:
+      operationId: getOccurrence
+      summary: Scheduler GetOccurrence
+      x-contract-status: not_implemented
+      x-owner-service: scheduler
+      x-owner-rpc: SchedulerService.GetOccurrence
+      x-permission: task.read
+      x-mutating: false
+      description: Target P01 declaration; production handler is not implemented. Current
+        Identity session and explicit resource grant are required. Path IDs must equal
+        any repeated body IDs; mismatch is INVALID_ARGUMENT. Versions are positive decimal
+        uint64 strings; writes reject missing expected_version except creation. An accepted
+        operation is not completed work.
+      parameters:
+      - name: occurrenceId
+        in: path
+        required: true
+        schema:
+          type: string
+          minLength: 1
+      - name: scope
+        in: query
+        required: true
+        description: Explicit resource scope; checked by owner. No role wildcard.
+        schema:
+          type: string
+          minLength: 1
+      responses:
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+        '404':
+          "$ref": "#/components/responses/NotFound"
+        '409':
+          "$ref": "#/components/responses/Conflict"
+        '429':
+          "$ref": "#/components/responses/RateLimited"
+        '500':
+          "$ref": "#/components/responses/Internal"
+        '503':
+          "$ref": "#/components/responses/Unavailable"
+        '504':
+          "$ref": "#/components/responses/Timeout"
+        '200':
+          description: Owner committed result or current scoped projection
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/TargetSchedulerGetOccurrenceResponse"
+  /models/{modelId}:
+    get:
+      operationId: getModelMetadata
+      summary: Model GetModelMetadata
+      x-contract-status: not_implemented
+      x-owner-service: model
+      x-owner-rpc: ModelService.GetModelMetadata
+      x-permission: model.read
+      x-mutating: false
+      description: Target P01 declaration; production handler is not implemented. Current
+        Identity session and explicit resource grant are required. Path IDs must equal
+        any repeated body IDs; mismatch is INVALID_ARGUMENT. Versions are positive decimal
+        uint64 strings; writes reject missing expected_version except creation. An accepted
+        operation is not completed work.
+      parameters:
+      - name: modelId
+        in: path
+        required: true
+        schema:
+          type: string
+          minLength: 1
+      - name: scope
+        in: query
+        required: true
+        description: Explicit resource scope; checked by owner. No role wildcard.
+        schema:
+          type: string
+          minLength: 1
+      responses:
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+        '404':
+          "$ref": "#/components/responses/NotFound"
+        '409':
+          "$ref": "#/components/responses/Conflict"
+        '429':
+          "$ref": "#/components/responses/RateLimited"
+        '500':
+          "$ref": "#/components/responses/Internal"
+        '503':
+          "$ref": "#/components/responses/Unavailable"
+        '504':
+          "$ref": "#/components/responses/Timeout"
+        '200':
+          description: Owner committed result or current scoped projection
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/TargetModelGetModelMetadataResponse"
+    put:
+      operationId: updateModel
+      summary: Model UpdateModel
+      x-contract-status: not_implemented
+      x-owner-service: model
+      x-owner-rpc: ModelService.UpdateModel
+      x-permission: model.manage
+      x-mutating: true
+      description: Target P01 declaration; production handler is not implemented. Current
+        Identity session and explicit resource grant are required. Path IDs must equal
+        any repeated body IDs; mismatch is INVALID_ARGUMENT. Versions are positive decimal
+        uint64 strings; writes reject missing expected_version except creation. An accepted
+        operation is not completed work.
+      parameters:
+      - name: modelId
+        in: path
+        required: true
+        schema:
+          type: string
+          minLength: 1
+      - "$ref": "#/components/parameters/IdempotencyKey"
+      responses:
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+        '404':
+          "$ref": "#/components/responses/NotFound"
+        '409':
+          "$ref": "#/components/responses/Conflict"
+        '429':
+          "$ref": "#/components/responses/RateLimited"
+        '500':
+          "$ref": "#/components/responses/Internal"
+        '503':
+          "$ref": "#/components/responses/Unavailable"
+        '504':
+          "$ref": "#/components/responses/Timeout"
+        '200':
+          description: Owner committed result or current scoped projection
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/TargetModelUpdateModelResponse"
+        '202':
+          description: Durably accepted; inspect operation at its owner
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/TargetModelUpdateModelResponse"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/TargetModelUpdateModelRequest"
+  /models/{modelId}/secret:
+    put:
+      operationId: rotateProviderSecret
+      summary: Model RotateProviderSecret
+      x-contract-status: not_implemented
+      x-owner-service: model
+      x-owner-rpc: ModelService.RotateProviderSecret
+      x-permission: model.manage
+      x-mutating: true
+      description: Target P01 declaration; production handler is not implemented. Current
+        Identity session and explicit resource grant are required. Path IDs must equal
+        any repeated body IDs; mismatch is INVALID_ARGUMENT. Versions are positive decimal
+        uint64 strings; writes reject missing expected_version except creation. An accepted
+        operation is not completed work.
+      parameters:
+      - name: modelId
+        in: path
+        required: true
+        schema:
+          type: string
+          minLength: 1
+      - "$ref": "#/components/parameters/IdempotencyKey"
+      responses:
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+        '404':
+          "$ref": "#/components/responses/NotFound"
+        '409':
+          "$ref": "#/components/responses/Conflict"
+        '429':
+          "$ref": "#/components/responses/RateLimited"
+        '500':
+          "$ref": "#/components/responses/Internal"
+        '503':
+          "$ref": "#/components/responses/Unavailable"
+        '504':
+          "$ref": "#/components/responses/Timeout"
+        '200':
+          description: Owner committed result or current scoped projection
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/TargetModelRotateProviderSecretResponse"
+        '202':
+          description: Durably accepted; inspect operation at its owner
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/TargetModelRotateProviderSecretResponse"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/TargetModelRotateProviderSecretRequest"
+  /assignments:
+    get:
+      operationId: listAssignments
+      summary: Identity ListAssignments
+      x-contract-status: not_implemented
+      x-owner-service: identity
+      x-owner-rpc: IdentityService.ListAssignments
+      x-permission: identity.assignment.read
+      x-mutating: false
+      description: Target P01 declaration; production handler is not implemented. Current
+        Identity session and explicit resource grant are required. Path IDs must equal
+        any repeated body IDs; mismatch is INVALID_ARGUMENT. Versions are positive decimal
+        uint64 strings; writes reject missing expected_version except creation. An accepted
+        operation is not completed work.
+      parameters:
+      - name: scope
+        in: query
+        required: true
+        description: Explicit resource scope; checked by owner. No role wildcard.
+        schema:
+          type: string
+          minLength: 1
+      - "$ref": "#/components/parameters/PageSize"
+      - "$ref": "#/components/parameters/PageToken"
+      responses:
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+        '404':
+          "$ref": "#/components/responses/NotFound"
+        '409':
+          "$ref": "#/components/responses/Conflict"
+        '429':
+          "$ref": "#/components/responses/RateLimited"
+        '500':
+          "$ref": "#/components/responses/Internal"
+        '503':
+          "$ref": "#/components/responses/Unavailable"
+        '504':
+          "$ref": "#/components/responses/Timeout"
+        '200':
+          description: Owner committed result or current scoped projection
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/TargetIdentityListAssignmentsResponse"
+    post:
+      operationId: setAssignment
+      summary: Identity SetAssignment
+      x-contract-status: not_implemented
+      x-owner-service: identity
+      x-owner-rpc: IdentityService.SetAssignment
+      x-permission: identity.assignment.manage
+      x-mutating: true
+      description: Target P01 declaration; production handler is not implemented. Current
+        Identity session and explicit resource grant are required. Path IDs must equal
+        any repeated body IDs; mismatch is INVALID_ARGUMENT. Versions are positive decimal
+        uint64 strings; writes reject missing expected_version except creation. An accepted
+        operation is not completed work.
+      parameters:
+      - "$ref": "#/components/parameters/IdempotencyKey"
+      responses:
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+        '404':
+          "$ref": "#/components/responses/NotFound"
+        '409':
+          "$ref": "#/components/responses/Conflict"
+        '429':
+          "$ref": "#/components/responses/RateLimited"
+        '500':
+          "$ref": "#/components/responses/Internal"
+        '503':
+          "$ref": "#/components/responses/Unavailable"
+        '504':
+          "$ref": "#/components/responses/Timeout"
+        '200':
+          description: Owner committed result or current scoped projection
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/TargetIdentitySetAssignmentResponse"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/TargetIdentitySetAssignmentRequest"
+  /assignments/{assignmentId}/revoke:
+    post:
+      operationId: revokeAssignment
+      summary: Identity RevokeAssignment
+      x-contract-status: not_implemented
+      x-owner-service: identity
+      x-owner-rpc: IdentityService.RevokeAssignment
+      x-permission: identity.assignment.manage
+      x-mutating: true
+      description: Target P01 declaration; production handler is not implemented. Current
+        Identity session and explicit resource grant are required. Path IDs must equal
+        any repeated body IDs; mismatch is INVALID_ARGUMENT. Versions are positive decimal
+        uint64 strings; writes reject missing expected_version except creation. An accepted
+        operation is not completed work.
+      parameters:
+      - name: assignmentId
+        in: path
+        required: true
+        schema:
+          type: string
+          minLength: 1
+      - "$ref": "#/components/parameters/IdempotencyKey"
+      responses:
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+        '404':
+          "$ref": "#/components/responses/NotFound"
+        '409':
+          "$ref": "#/components/responses/Conflict"
+        '429':
+          "$ref": "#/components/responses/RateLimited"
+        '500':
+          "$ref": "#/components/responses/Internal"
+        '503':
+          "$ref": "#/components/responses/Unavailable"
+        '504':
+          "$ref": "#/components/responses/Timeout"
+        '200':
+          description: Owner committed result or current scoped projection
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/TargetIdentityRevokeAssignmentResponse"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/TargetIdentityRevokeAssignmentRequest"
+  /principals:
+    post:
+      operationId: registerPrincipal
+      summary: Identity RegisterPrincipal
+      x-contract-status: not_implemented
+      x-owner-service: identity
+      x-owner-rpc: IdentityService.RegisterPrincipal
+      x-permission: identity.principal.manage
+      x-mutating: true
+      description: Target P01 declaration; production handler is not implemented. Current
+        Identity session and explicit resource grant are required. Path IDs must equal
+        any repeated body IDs; mismatch is INVALID_ARGUMENT. Versions are positive decimal
+        uint64 strings; writes reject missing expected_version except creation. An accepted
+        operation is not completed work.
+      parameters:
+      - "$ref": "#/components/parameters/IdempotencyKey"
+      responses:
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+        '404':
+          "$ref": "#/components/responses/NotFound"
+        '409':
+          "$ref": "#/components/responses/Conflict"
+        '429':
+          "$ref": "#/components/responses/RateLimited"
+        '500':
+          "$ref": "#/components/responses/Internal"
+        '503':
+          "$ref": "#/components/responses/Unavailable"
+        '504':
+          "$ref": "#/components/responses/Timeout"
+        '200':
+          description: Owner committed result or current scoped projection
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/TargetIdentityRegisterPrincipalResponse"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/TargetIdentityRegisterPrincipalRequest"
+  /principals/{principalId}:
+    get:
+      operationId: getPrincipalStatus
+      summary: Identity GetPrincipalStatus
+      x-contract-status: not_implemented
+      x-owner-service: identity
+      x-owner-rpc: IdentityService.GetPrincipalStatus
+      x-permission: identity.principal.read
+      x-mutating: false
+      description: Target P01 declaration; production handler is not implemented. Current
+        Identity session and explicit resource grant are required. Path IDs must equal
+        any repeated body IDs; mismatch is INVALID_ARGUMENT. Versions are positive decimal
+        uint64 strings; writes reject missing expected_version except creation. An accepted
+        operation is not completed work.
+      parameters:
+      - name: principalId
+        in: path
+        required: true
+        schema:
+          type: string
+          minLength: 1
+      - name: scope
+        in: query
+        required: true
+        description: Explicit resource scope; checked by owner. No role wildcard.
+        schema:
+          type: string
+          minLength: 1
+      responses:
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+        '404':
+          "$ref": "#/components/responses/NotFound"
+        '409':
+          "$ref": "#/components/responses/Conflict"
+        '429':
+          "$ref": "#/components/responses/RateLimited"
+        '500':
+          "$ref": "#/components/responses/Internal"
+        '503':
+          "$ref": "#/components/responses/Unavailable"
+        '504':
+          "$ref": "#/components/responses/Timeout"
+        '200':
+          description: Owner committed result or current scoped projection
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/TargetIdentityGetPrincipalStatusResponse"
+  /credentials/{credentialId}/rotate:
+    post:
+      operationId: rotateCredential
+      summary: Identity RotateCredential
+      x-contract-status: not_implemented
+      x-owner-service: identity
+      x-owner-rpc: IdentityService.RotateCredential
+      x-permission: identity.principal.manage
+      x-mutating: true
+      description: Target P01 declaration; production handler is not implemented. Current
+        Identity session and explicit resource grant are required. Path IDs must equal
+        any repeated body IDs; mismatch is INVALID_ARGUMENT. Versions are positive decimal
+        uint64 strings; writes reject missing expected_version except creation. An accepted
+        operation is not completed work.
+      parameters:
+      - name: credentialId
+        in: path
+        required: true
+        schema:
+          type: string
+          minLength: 1
+      - "$ref": "#/components/parameters/IdempotencyKey"
+      responses:
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+        '404':
+          "$ref": "#/components/responses/NotFound"
+        '409':
+          "$ref": "#/components/responses/Conflict"
+        '429':
+          "$ref": "#/components/responses/RateLimited"
+        '500':
+          "$ref": "#/components/responses/Internal"
+        '503':
+          "$ref": "#/components/responses/Unavailable"
+        '504':
+          "$ref": "#/components/responses/Timeout"
+        '200':
+          description: Owner committed result or current scoped projection
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/TargetIdentityRotateCredentialResponse"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/TargetIdentityRotateCredentialRequest"
+  /credentials/{credentialId}/revoke:
+    post:
+      operationId: revokeCredential
+      summary: Identity RevokeCredential
+      x-contract-status: not_implemented
+      x-owner-service: identity
+      x-owner-rpc: IdentityService.RevokeCredential
+      x-permission: identity.principal.manage
+      x-mutating: true
+      description: Target P01 declaration; production handler is not implemented. Current
+        Identity session and explicit resource grant are required. Path IDs must equal
+        any repeated body IDs; mismatch is INVALID_ARGUMENT. Versions are positive decimal
+        uint64 strings; writes reject missing expected_version except creation. An accepted
+        operation is not completed work.
+      parameters:
+      - name: credentialId
+        in: path
+        required: true
+        schema:
+          type: string
+          minLength: 1
+      - "$ref": "#/components/parameters/IdempotencyKey"
+      responses:
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+        '404':
+          "$ref": "#/components/responses/NotFound"
+        '409':
+          "$ref": "#/components/responses/Conflict"
+        '429':
+          "$ref": "#/components/responses/RateLimited"
+        '500':
+          "$ref": "#/components/responses/Internal"
+        '503':
+          "$ref": "#/components/responses/Unavailable"
+        '504':
+          "$ref": "#/components/responses/Timeout"
+        '200':
+          description: Owner committed result or current scoped projection
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/TargetIdentityRevokeCredentialResponse"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/TargetIdentityRevokeCredentialRequest"
 components:
   securitySchemes:
     bearerAuth:
@@ -682,9 +2539,11 @@ components:
         refresh_token: { type: string }
         expires_in: { type: integer, format: int32 }
     Error:
+      description: Stable error with optional target acceptance and recovery context.
       type: object
       required: [code, message, request_id]
       properties:
+        failure_context: { $ref: "#/components/schemas/TargetFailureContext" }
         code: { $ref: '#/components/schemas/ErrorCode' }
         message: { type: string }
         request_id: { type: string }
@@ -931,3 +2790,1593 @@ components:
       properties:
         items: { type: array, items: { $ref: '#/components/schemas/LogEntry' } }
         page: { $ref: '#/components/schemas/PageInfo' }
+    TargetRuntimeCreateAccountRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        platform:
+          type: string
+        platform_account_id:
+          type: string
+          minLength: 1
+        display_name:
+          type: string
+      x-contract-status: not_implemented
+      required:
+      - platform
+      - platform_account_id
+    TargetRuntimeCreateAccountResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        account:
+          "$ref": "#/components/schemas/TargetAccountRecord"
+      x-contract-status: not_implemented
+      required:
+      - account
+    TargetAccountRecord:
+      type: object
+      additionalProperties: false
+      properties:
+        account_id:
+          type: string
+          minLength: 1
+        platform:
+          type: string
+        platform_account_id:
+          type: string
+          minLength: 1
+        display_name:
+          type: string
+        version:
+          "$ref": "#/components/schemas/TargetPositiveUint64"
+        state:
+          type: string
+          enum:
+          - LIFECYCLE_ACTIVE
+          - LIFECYCLE_DISABLED
+          - LIFECYCLE_DELETING
+          - LIFECYCLE_DELETED
+          - LIFECYCLE_RESTORING
+          - LIFECYCLE_PURGED
+      x-contract-status: not_implemented
+      required:
+      - account_id
+      - platform
+      - platform_account_id
+      - version
+      - state
+    TargetRuntimeUpdateAccountRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        account_id:
+          type: string
+          minLength: 1
+        display_name:
+          type: string
+        expected_version:
+          "$ref": "#/components/schemas/TargetPositiveUint64"
+      x-contract-status: not_implemented
+      required:
+      - account_id
+      - expected_version
+    TargetRuntimeUpdateAccountResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        account:
+          "$ref": "#/components/schemas/TargetAccountRecord"
+      x-contract-status: not_implemented
+      required:
+      - account
+    TargetRuntimeDisableAccountRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        account_id:
+          type: string
+          minLength: 1
+        expected_version:
+          "$ref": "#/components/schemas/TargetPositiveUint64"
+      x-contract-status: not_implemented
+      required:
+      - account_id
+      - expected_version
+    TargetRuntimeDisableAccountResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        account:
+          "$ref": "#/components/schemas/TargetAccountRecord"
+        operation:
+          "$ref": "#/components/schemas/TargetOperationRef"
+      x-contract-status: not_implemented
+      required:
+      - account
+    TargetOperationRef:
+      type: object
+      additionalProperties: false
+      properties:
+        owner_service:
+          type: string
+          minLength: 1
+        operation_id:
+          type: string
+          minLength: 1
+        resource:
+          "$ref": "#/components/schemas/TargetResourceRef"
+      x-contract-status: not_implemented
+      required:
+      - owner_service
+      - operation_id
+      - resource
+    TargetResourceRef:
+      type: object
+      additionalProperties: false
+      properties:
+        kind:
+          type: string
+          enum:
+          - RESOURCE_ACCOUNT
+          - RESOURCE_ADAPTER
+          - RESOURCE_PLUGIN_TYPE
+          - RESOURCE_INSTALLATION
+          - RESOURCE_INSTANCE
+          - RESOURCE_HOST
+          - RESOURCE_NAMESPACE
+          - RESOURCE_TASK
+          - RESOURCE_MODEL
+          - RESOURCE_PRINCIPAL
+          - RESOURCE_SESSION
+          - RESOURCE_ACTION
+          - RESOURCE_OPERATION
+          - RESOURCE_CREDENTIAL
+          - RESOURCE_ASSIGNMENT
+        id:
+          type: string
+          minLength: 1
+      x-contract-status: not_implemented
+      required:
+      - kind
+      - id
+    TargetRuntimeBindAdapterRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        binding:
+          "$ref": "#/components/schemas/TargetAdapterBinding"
+        expected_version:
+          "$ref": "#/components/schemas/TargetPositiveUint64"
+      x-contract-status: not_implemented
+      required:
+      - binding
+      - expected_version
+    TargetAdapterBinding:
+      type: object
+      additionalProperties: false
+      properties:
+        account_id:
+          type: string
+          minLength: 1
+        adapter_instance_id:
+          type: string
+          minLength: 1
+        version:
+          "$ref": "#/components/schemas/TargetPositiveUint64"
+      x-contract-status: not_implemented
+      required:
+      - account_id
+      - adapter_instance_id
+      - version
+    TargetRuntimeBindAdapterResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        binding:
+          "$ref": "#/components/schemas/TargetAdapterBinding"
+        operation:
+          "$ref": "#/components/schemas/TargetOperationRef"
+      x-contract-status: not_implemented
+      required:
+      - binding
+    TargetRuntimeUnbindAdapterRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        binding:
+          "$ref": "#/components/schemas/TargetAdapterBinding"
+        expected_version:
+          "$ref": "#/components/schemas/TargetPositiveUint64"
+      x-contract-status: not_implemented
+      required:
+      - binding
+      - expected_version
+    TargetRuntimeUnbindAdapterResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        binding:
+          "$ref": "#/components/schemas/TargetAdapterBinding"
+        operation:
+          "$ref": "#/components/schemas/TargetOperationRef"
+      x-contract-status: not_implemented
+      required:
+      - binding
+    TargetRuntimeCreateInstallationRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        plugin_type_id:
+          type: string
+          minLength: 1
+        manifest:
+          "$ref": "#/components/schemas/TargetPluginManifest"
+      x-contract-status: not_implemented
+      required:
+      - plugin_type_id
+      - manifest
+    TargetPluginManifest:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          minLength: 1
+        name:
+          type: string
+        version:
+          type: string
+        api_version:
+          type: string
+        runtime:
+          type: string
+        entrypoint:
+          type: string
+        capabilities:
+          type: array
+          items:
+            type: string
+        permissions:
+          type: array
+          items:
+            type: string
+        dependencies:
+          type: array
+          items:
+            type: string
+        config_schema:
+          type: string
+        isolation:
+          type: string
+        ordered:
+          type: boolean
+      x-contract-status: not_implemented
+    TargetRuntimeCreateInstallationResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        installation:
+          "$ref": "#/components/schemas/TargetInstallationRecord"
+      x-contract-status: not_implemented
+      required:
+      - installation
+    TargetInstallationRecord:
+      type: object
+      additionalProperties: false
+      properties:
+        installation_id:
+          type: string
+          minLength: 1
+        plugin_type_id:
+          type: string
+          minLength: 1
+        manifest:
+          "$ref": "#/components/schemas/TargetPluginManifest"
+        version:
+          "$ref": "#/components/schemas/TargetPositiveUint64"
+        state:
+          type: string
+          enum:
+          - LIFECYCLE_ACTIVE
+          - LIFECYCLE_DISABLED
+          - LIFECYCLE_DELETING
+          - LIFECYCLE_DELETED
+          - LIFECYCLE_RESTORING
+          - LIFECYCLE_PURGED
+      x-contract-status: not_implemented
+      required:
+      - installation_id
+      - plugin_type_id
+      - manifest
+      - version
+      - state
+    TargetRuntimeCreateInstanceRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        installation_id:
+          type: string
+          minLength: 1
+        host_id:
+          type: string
+          minLength: 1
+        externally_managed:
+          type: boolean
+      x-contract-status: not_implemented
+      required:
+      - installation_id
+      - host_id
+    TargetRuntimeCreateInstanceResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        instance:
+          "$ref": "#/components/schemas/TargetInstanceRecord"
+      x-contract-status: not_implemented
+      required:
+      - instance
+    TargetInstanceRecord:
+      type: object
+      additionalProperties: false
+      properties:
+        instance_id:
+          type: string
+          minLength: 1
+        installation_id:
+          type: string
+          minLength: 1
+        host_id:
+          type: string
+          minLength: 1
+        externally_managed:
+          type: boolean
+        state:
+          "$ref": "#/components/schemas/TargetVersionedResourceState"
+      x-contract-status: not_implemented
+      required:
+      - instance_id
+      - installation_id
+      - externally_managed
+      - state
+    TargetVersionedResourceState:
+      type: object
+      additionalProperties: false
+      properties:
+        resource:
+          "$ref": "#/components/schemas/TargetResourceRef"
+        version:
+          "$ref": "#/components/schemas/TargetPositiveUint64"
+        lifecycle:
+          type: string
+          enum:
+          - LIFECYCLE_ACTIVE
+          - LIFECYCLE_DISABLED
+          - LIFECYCLE_DELETING
+          - LIFECYCLE_DELETED
+          - LIFECYCLE_RESTORING
+          - LIFECYCLE_PURGED
+        desired:
+          type: string
+          enum:
+          - DESIRED_RUNNING
+          - DESIRED_STOPPED
+        fence:
+          "$ref": "#/components/schemas/TargetFence"
+        registered:
+          type: boolean
+        desired_config_version:
+          "$ref": "#/components/schemas/TargetPositiveUint64"
+        applied_config_version:
+          "$ref": "#/components/schemas/TargetUint64"
+        process_outcome:
+          type: string
+          enum:
+          - EXECUTION_NOT_STARTED
+          - EXECUTION_KNOWN_SUCCEEDED
+          - EXECUTION_KNOWN_FAILED
+          - EXECUTION_UNKNOWN
+        observed_at:
+          type: string
+          format: date-time
+        source_service:
+          type: string
+          minLength: 1
+      x-contract-status: not_implemented
+      required:
+      - resource
+      - version
+      - lifecycle
+      - desired
+      - registered
+      - desired_config_version
+      - applied_config_version
+      - process_outcome
+      - observed_at
+      - source_service
+      oneOf:
+      - properties:
+          registered:
+            enum:
+            - false
+      - required:
+        - fence
+        properties:
+          registered:
+            enum:
+            - true
+    TargetFence:
+      type: object
+      additionalProperties: false
+      properties:
+        instance_id:
+          type: string
+          minLength: 1
+        execution_generation:
+          "$ref": "#/components/schemas/TargetPositiveUint64"
+        connection_generation:
+          "$ref": "#/components/schemas/TargetPositiveUint64"
+        runtime_epoch:
+          type: string
+          minLength: 1
+      x-contract-status: not_implemented
+      required:
+      - instance_id
+      - execution_generation
+      - connection_generation
+      - runtime_epoch
+    TargetRuntimeSetDesiredStateRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        instance_id:
+          type: string
+          minLength: 1
+        desired_state:
+          type: string
+          enum:
+          - DESIRED_RUNNING
+          - DESIRED_STOPPED
+        expected_version:
+          "$ref": "#/components/schemas/TargetPositiveUint64"
+      x-contract-status: not_implemented
+      required:
+      - instance_id
+      - desired_state
+      - expected_version
+    TargetRuntimeSetDesiredStateResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        instance:
+          "$ref": "#/components/schemas/TargetInstanceRecord"
+        operation:
+          "$ref": "#/components/schemas/TargetOperationRef"
+      x-contract-status: not_implemented
+      required:
+      - instance
+    TargetRuntimeUpdateConfigRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        resource:
+          "$ref": "#/components/schemas/TargetResourceRef"
+        config:
+          type: object
+          additionalProperties: true
+        expected_version:
+          "$ref": "#/components/schemas/TargetPositiveUint64"
+      x-contract-status: not_implemented
+      required:
+      - resource
+      - config
+      - expected_version
+    TargetRuntimeUpdateConfigResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        state:
+          "$ref": "#/components/schemas/TargetVersionedResourceState"
+        operation:
+          "$ref": "#/components/schemas/TargetOperationRef"
+      x-contract-status: not_implemented
+      required:
+      - state
+    TargetRuntimeGetResourceStateResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        state:
+          "$ref": "#/components/schemas/TargetVersionedResourceState"
+      x-contract-status: not_implemented
+      required:
+      - state
+    TargetRuntimeBeginDeleteRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        resource:
+          "$ref": "#/components/schemas/TargetResourceRef"
+        expected_version:
+          "$ref": "#/components/schemas/TargetPositiveUint64"
+      x-contract-status: not_implemented
+      required:
+      - resource
+      - expected_version
+    TargetRuntimeBeginDeleteResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        operation:
+          "$ref": "#/components/schemas/TargetOperationRef"
+      x-contract-status: not_implemented
+    TargetRuntimeRestoreResourceRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        resource:
+          "$ref": "#/components/schemas/TargetResourceRef"
+        expected_version:
+          "$ref": "#/components/schemas/TargetPositiveUint64"
+      x-contract-status: not_implemented
+      required:
+      - resource
+      - expected_version
+    TargetRuntimeRestoreResourceResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        operation:
+          "$ref": "#/components/schemas/TargetOperationRef"
+      x-contract-status: not_implemented
+    TargetRuntimeGetOperationResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        operation:
+          "$ref": "#/components/schemas/TargetOperation"
+      x-contract-status: not_implemented
+    TargetOperation:
+      type: object
+      additionalProperties: false
+      properties:
+        ref:
+          "$ref": "#/components/schemas/TargetOperationRef"
+        version:
+          "$ref": "#/components/schemas/TargetPositiveUint64"
+        state:
+          type: string
+          enum:
+          - OPERATION_ACCEPTED
+          - OPERATION_RUNNING
+          - OPERATION_BLOCKED
+          - OPERATION_SUCCEEDED
+          - OPERATION_FAILED
+          - OPERATION_CANCELLED
+          - OPERATION_EXPIRED
+        execution_outcome:
+          type: string
+          enum:
+          - EXECUTION_NOT_STARTED
+          - EXECUTION_KNOWN_SUCCEEDED
+          - EXECUTION_KNOWN_FAILED
+          - EXECUTION_UNKNOWN
+        participants:
+          type: array
+          items:
+            "$ref": "#/components/schemas/TargetOperationProgress"
+        observed_at:
+          type: string
+          format: date-time
+        reason:
+          "$ref": "#/components/schemas/TargetError"
+        next_attempt_at:
+          type: string
+          format: date-time
+        stalled:
+          type: boolean
+      x-contract-status: not_implemented
+      required:
+      - ref
+      - version
+      - state
+      - execution_outcome
+      - observed_at
+      oneOf:
+      - properties:
+          state:
+            enum:
+            - OPERATION_BLOCKED
+        required:
+        - reason
+        - next_attempt_at
+      - properties:
+          state:
+            enum:
+            - OPERATION_ACCEPTED
+            - OPERATION_RUNNING
+            - OPERATION_SUCCEEDED
+            - OPERATION_FAILED
+            - OPERATION_CANCELLED
+            - OPERATION_EXPIRED
+    TargetOperationProgress:
+      type: object
+      additionalProperties: false
+      properties:
+        participant:
+          type: string
+        state:
+          type: string
+          enum:
+          - OPERATION_ACCEPTED
+          - OPERATION_RUNNING
+          - OPERATION_BLOCKED
+          - OPERATION_SUCCEEDED
+          - OPERATION_FAILED
+          - OPERATION_CANCELLED
+          - OPERATION_EXPIRED
+        reason:
+          "$ref": "#/components/schemas/TargetError"
+        next_attempt_at:
+          type: string
+          format: date-time
+      x-contract-status: not_implemented
+      required:
+      - participant
+      - state
+    TargetError:
+      type: object
+      additionalProperties: false
+      properties:
+        code:
+          type: string
+          enum:
+          - INVALID_ARGUMENT
+          - UNAUTHENTICATED
+          - PERMISSION_DENIED
+          - NOT_FOUND
+          - CONFLICT
+          - CAPABILITY_NOT_SUPPORTED
+          - RATE_LIMITED
+          - TIMEOUT
+          - UPSTREAM_UNAVAILABLE
+          - PLUGIN_UNAVAILABLE
+          - INTERNAL
+        message:
+          type: string
+        details:
+          type: object
+          additionalProperties:
+            type: string
+        request_id:
+          type: string
+          minLength: 1
+        trace_id:
+          type: string
+          minLength: 1
+        retryable:
+          type: boolean
+      x-contract-status: not_implemented
+      required:
+      - code
+      - message
+      - request_id
+      - trace_id
+    TargetRuntimeListActionMetadataResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        actions:
+          type: array
+          items:
+            "$ref": "#/components/schemas/TargetActionMetadata"
+        page:
+          "$ref": "#/components/schemas/TargetSnapshotPage"
+      x-contract-status: not_implemented
+      required:
+      - actions
+      - page
+    TargetActionMetadata:
+      type: object
+      additionalProperties: false
+      properties:
+        action_id:
+          type: string
+          minLength: 1
+        owner_instance_id:
+          type: string
+          minLength: 1
+        account_id:
+          type: string
+          minLength: 1
+        status:
+          type: string
+          enum:
+          - ACCEPTED
+          - SUCCEEDED
+          - FAILED
+          - EXPIRED
+          - CANCELLED
+        execution_outcome:
+          type: string
+          enum:
+          - EXECUTION_NOT_STARTED
+          - EXECUTION_KNOWN_SUCCEEDED
+          - EXECUTION_KNOWN_FAILED
+          - EXECUTION_UNKNOWN
+        updated_at:
+          type: string
+          format: date-time
+      x-contract-status: not_implemented
+      required:
+      - action_id
+      - owner_instance_id
+      - account_id
+      - status
+      - execution_outcome
+      - updated_at
+    TargetSnapshotPage:
+      type: object
+      additionalProperties: false
+      properties:
+        page_size:
+          type: integer
+          minimum: 0
+        page_token:
+          type: string
+        snapshot_id:
+          type: string
+          minLength: 1
+        next_page_token:
+          type: string
+        expires_at:
+          type: string
+          format: date-time
+      x-contract-status: not_implemented
+    TargetRuntimeGetActionPolicyResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        policy:
+          "$ref": "#/components/schemas/TargetActionPolicy"
+      x-contract-status: not_implemented
+      required:
+      - policy
+    TargetActionPolicy:
+      type: object
+      additionalProperties: false
+      properties:
+        account_id:
+          type: string
+          minLength: 1
+        mute_enabled:
+          type: boolean
+        kick_enabled:
+          type: boolean
+        allowed_group_ids:
+          type: array
+          items:
+            type: string
+        mute_daily_budget:
+          type: integer
+          minimum: 0
+        kick_daily_budget:
+          type: integer
+          minimum: 0
+        version:
+          "$ref": "#/components/schemas/TargetPositiveUint64"
+      x-contract-status: not_implemented
+      required:
+      - account_id
+      - mute_enabled
+      - kick_enabled
+      - allowed_group_ids
+      - mute_daily_budget
+      - kick_daily_budget
+      - version
+    TargetRuntimeUpdateActionPolicyRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        policy:
+          "$ref": "#/components/schemas/TargetActionPolicy"
+        expected_version:
+          "$ref": "#/components/schemas/TargetPositiveUint64"
+      x-contract-status: not_implemented
+      required:
+      - policy
+      - expected_version
+    TargetRuntimeUpdateActionPolicyResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        policy:
+          "$ref": "#/components/schemas/TargetActionPolicy"
+      x-contract-status: not_implemented
+      required:
+      - policy
+    TargetRuntimeSetSharedMembersRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        namespace_id:
+          type: string
+          minLength: 1
+        installation_id:
+          type: string
+          minLength: 1
+        members:
+          type: array
+          items:
+            "$ref": "#/components/schemas/TargetSharedMember"
+        expected_version:
+          "$ref": "#/components/schemas/TargetPositiveUint64"
+      x-contract-status: not_implemented
+      required:
+      - namespace_id
+      - installation_id
+      - members
+      - expected_version
+    TargetSharedMember:
+      type: object
+      additionalProperties: false
+      properties:
+        instance_id:
+          type: string
+          minLength: 1
+        can_read:
+          type: boolean
+        can_write:
+          type: boolean
+      x-contract-status: not_implemented
+    TargetRuntimeSetSharedMembersResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        version:
+          "$ref": "#/components/schemas/TargetPositiveUint64"
+        operation:
+          "$ref": "#/components/schemas/TargetOperationRef"
+      x-contract-status: not_implemented
+      required:
+      - version
+    TargetRuntimeDisableSharedNamespaceRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        namespace_id:
+          type: string
+          minLength: 1
+        expected_version:
+          "$ref": "#/components/schemas/TargetPositiveUint64"
+      x-contract-status: not_implemented
+      required:
+      - namespace_id
+      - expected_version
+    TargetRuntimeDisableSharedNamespaceResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        version:
+          "$ref": "#/components/schemas/TargetPositiveUint64"
+        operation:
+          "$ref": "#/components/schemas/TargetOperationRef"
+      x-contract-status: not_implemented
+      required:
+      - version
+    TargetRuntimeListDeadLettersResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        deliveries:
+          type: array
+          items:
+            "$ref": "#/components/schemas/TargetDeadLetter"
+        page:
+          "$ref": "#/components/schemas/TargetSnapshotPage"
+      x-contract-status: not_implemented
+      required:
+      - deliveries
+      - page
+    TargetDeadLetter:
+      type: object
+      additionalProperties: false
+      properties:
+        delivery_id:
+          type: string
+          minLength: 1
+        last_attempt:
+          "$ref": "#/components/schemas/TargetDeliveryAttempt"
+        reason:
+          "$ref": "#/components/schemas/TargetError"
+      x-contract-status: not_implemented
+    TargetDeliveryAttempt:
+      type: object
+      additionalProperties: false
+      properties:
+        event_id:
+          type: string
+          minLength: 1
+        attempt_id:
+          type: string
+          minLength: 1
+        fence:
+          "$ref": "#/components/schemas/TargetFence"
+        started_at:
+          type: string
+          format: date-time
+        lease_until:
+          type: string
+          format: date-time
+        attempt_number:
+          type: integer
+          minimum: 0
+      x-contract-status: not_implemented
+    TargetRuntimeReplayDeliveryRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        delivery_id:
+          type: string
+          minLength: 1
+        target_instance_id:
+          type: string
+          minLength: 1
+        expected_version:
+          "$ref": "#/components/schemas/TargetPositiveUint64"
+      x-contract-status: not_implemented
+      required:
+      - delivery_id
+      - target_instance_id
+      - expected_version
+    TargetRuntimeReplayDeliveryResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        operation:
+          "$ref": "#/components/schemas/TargetOperationRef"
+      x-contract-status: not_implemented
+    TargetSchedulerGetTaskResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        task:
+          "$ref": "#/components/schemas/TargetTaskRecord"
+      x-contract-status: not_implemented
+      required:
+      - task
+    TargetTaskRecord:
+      type: object
+      additionalProperties: false
+      properties:
+        task_id:
+          type: string
+          minLength: 1
+        owner_instance_id:
+          type: string
+          minLength: 1
+        installation_id:
+          type: string
+          minLength: 1
+        target:
+          "$ref": "#/components/schemas/TargetConversationRef"
+        payload:
+          type: string
+          format: byte
+        run_at:
+          type: string
+          format: date-time
+        state:
+          type: string
+          enum:
+          - SCHEDULED_TASK_PENDING
+          - SCHEDULED_TASK_RUNNING
+          - SCHEDULED_TASK_RETRYING
+          - SCHEDULED_TASK_COMPLETED
+          - SCHEDULED_TASK_FAILED
+          - SCHEDULED_TASK_CANCELLED
+        version:
+          "$ref": "#/components/schemas/TargetPositiveUint64"
+        occurrence_id:
+          type: string
+          minLength: 1
+      x-contract-status: not_implemented
+      required:
+      - task_id
+      - owner_instance_id
+      - installation_id
+      - target
+      - payload
+      - run_at
+      - state
+      - version
+      - occurrence_id
+    TargetConversationRef:
+      type: object
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          minLength: 1
+        type:
+          type: string
+          enum:
+          - PRIVATE
+          - GROUP
+          - CHANNEL
+        account_id:
+          type: string
+          minLength: 1
+      x-contract-status: not_implemented
+    TargetSchedulerCancelTaskRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        task_id:
+          type: string
+          minLength: 1
+        scope:
+          "$ref": "#/components/schemas/TargetResourceScope"
+      x-contract-status: not_implemented
+      required:
+      - task_id
+      - scope
+    TargetResourceScope:
+      type: object
+      additionalProperties: false
+      properties:
+        resources:
+          type: array
+          items:
+            "$ref": "#/components/schemas/TargetResourceRef"
+          minItems: 1
+      x-contract-status: not_implemented
+      required:
+      - resources
+    TargetSchedulerCancelTaskResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        task:
+          "$ref": "#/components/schemas/TargetTaskRecord"
+      x-contract-status: not_implemented
+      required:
+      - task
+    TargetSchedulerGetOccurrenceResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        occurrence:
+          "$ref": "#/components/schemas/TargetOccurrenceRecord"
+      x-contract-status: not_implemented
+      required:
+      - occurrence
+    TargetOccurrenceRecord:
+      type: object
+      additionalProperties: false
+      properties:
+        occurrence_id:
+          type: string
+          minLength: 1
+        task_id:
+          type: string
+          minLength: 1
+        state:
+          type: string
+          enum:
+          - OPERATION_ACCEPTED
+          - OPERATION_RUNNING
+          - OPERATION_BLOCKED
+          - OPERATION_SUCCEEDED
+          - OPERATION_FAILED
+          - OPERATION_CANCELLED
+          - OPERATION_EXPIRED
+        handoff:
+          "$ref": "#/components/schemas/TargetHandoffContext"
+        accepted_event_id:
+          type: string
+          minLength: 1
+        acknowledged_at:
+          type: string
+          format: date-time
+      x-contract-status: not_implemented
+      required:
+      - occurrence_id
+      - task_id
+      - state
+    TargetHandoffContext:
+      type: object
+      additionalProperties: false
+      properties:
+        source_service:
+          type: string
+          minLength: 1
+        message_id:
+          type: string
+          minLength: 1
+        operation:
+          "$ref": "#/components/schemas/TargetOperationRef"
+        causation_id:
+          type: string
+          minLength: 1
+        resource:
+          "$ref": "#/components/schemas/TargetResourceRef"
+        resource_version:
+          "$ref": "#/components/schemas/TargetPositiveUint64"
+        payload_sha256:
+          type: string
+          format: byte
+        created_at:
+          type: string
+          format: date-time
+        valid_until:
+          type: string
+          format: date-time
+      x-contract-status: not_implemented
+    TargetModelGetModelMetadataResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        model:
+          "$ref": "#/components/schemas/TargetModelMetadata"
+      x-contract-status: not_implemented
+      required:
+      - model
+    TargetModelMetadata:
+      type: object
+      additionalProperties: false
+      properties:
+        model_id:
+          type: string
+          minLength: 1
+        alias:
+          type: string
+        config_version:
+          "$ref": "#/components/schemas/TargetPositiveUint64"
+        state:
+          type: string
+          enum:
+          - LIFECYCLE_ACTIVE
+          - LIFECYCLE_DISABLED
+          - LIFECYCLE_DELETING
+          - LIFECYCLE_DELETED
+          - LIFECYCLE_RESTORING
+          - LIFECYCLE_PURGED
+        provider_kind:
+          type: string
+      x-contract-status: not_implemented
+      required:
+      - model_id
+      - alias
+      - config_version
+      - state
+      - provider_kind
+    TargetModelUpdateModelRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        config:
+          "$ref": "#/components/schemas/TargetModelConfiguration"
+        expected_version:
+          "$ref": "#/components/schemas/TargetPositiveUint64"
+      x-contract-status: not_implemented
+      required:
+      - config
+      - expected_version
+    TargetModelConfiguration:
+      type: object
+      additionalProperties: false
+      properties:
+        model_id:
+          type: string
+          minLength: 1
+        alias:
+          type: string
+        provider_kind:
+          type: string
+        endpoint:
+          type: string
+        provider_model:
+          type: string
+        timeout_ms:
+          type: integer
+          minimum: 0
+        version:
+          "$ref": "#/components/schemas/TargetPositiveUint64"
+      x-contract-status: not_implemented
+      required:
+      - model_id
+      - alias
+      - provider_kind
+      - endpoint
+      - provider_model
+      - timeout_ms
+      - version
+    TargetModelUpdateModelResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        model:
+          "$ref": "#/components/schemas/TargetModelMetadata"
+        operation:
+          "$ref": "#/components/schemas/TargetOperationRef"
+      x-contract-status: not_implemented
+      required:
+      - model
+    TargetModelRotateProviderSecretRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        model_id:
+          type: string
+          minLength: 1
+        new_secret:
+          type: string
+          format: byte
+          writeOnly: true
+        expected_version:
+          "$ref": "#/components/schemas/TargetPositiveUint64"
+      x-contract-status: not_implemented
+      required:
+      - model_id
+      - new_secret
+      - expected_version
+    TargetModelRotateProviderSecretResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        version:
+          "$ref": "#/components/schemas/TargetPositiveUint64"
+        operation:
+          "$ref": "#/components/schemas/TargetOperationRef"
+      x-contract-status: not_implemented
+      required:
+      - version
+    TargetIdentityListAssignmentsResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        assignments:
+          type: array
+          items:
+            "$ref": "#/components/schemas/TargetAssignmentRecord"
+        page:
+          "$ref": "#/components/schemas/TargetSnapshotPage"
+      x-contract-status: not_implemented
+      required:
+      - assignments
+      - page
+    TargetAssignmentRecord:
+      type: object
+      additionalProperties: false
+      properties:
+        assignment_id:
+          type: string
+          minLength: 1
+        principal_id:
+          type: string
+          minLength: 1
+        role:
+          type: string
+          enum:
+          - ROLE_ADMIN
+          - ROLE_OPERATOR
+          - ROLE_VIEWER
+        permissions:
+          type: array
+          items:
+            type: string
+            enum:
+            - PERMISSION_ACCOUNT_MANAGE
+            - PERMISSION_ACCOUNT_POLICY_MANAGE
+            - PERMISSION_ACCOUNT_POLICY_READ
+            - PERMISSION_ACTION_EXECUTE
+            - PERMISSION_ACTION_INSPECT
+            - PERMISSION_ADAPTER_CONNECT
+            - PERMISSION_DELIVERY_MANAGE
+            - PERMISSION_DELIVERY_PROCESS
+            - PERMISSION_HOST_EXECUTE
+            - PERMISSION_HOST_READ
+            - PERMISSION_HOST_REGISTER
+            - PERMISSION_IDENTITY_ASSIGNMENT_MANAGE
+            - PERMISSION_IDENTITY_ASSIGNMENT_READ
+            - PERMISSION_IDENTITY_AUTHORIZATION_CHECK
+            - PERMISSION_IDENTITY_DELEGATION_ISSUE
+            - PERMISSION_IDENTITY_INVALIDATION_READ
+            - PERMISSION_IDENTITY_KEYS_READ
+            - PERMISSION_IDENTITY_PRINCIPAL_MANAGE
+            - PERMISSION_IDENTITY_PRINCIPAL_READ
+            - PERMISSION_IDENTITY_SESSION_CREATE
+            - PERMISSION_IDENTITY_SESSION_READ
+            - PERMISSION_IDENTITY_SESSION_REVOKE
+            - PERMISSION_MODEL_CALL_INSPECT
+            - PERMISSION_MODEL_CHAT
+            - PERMISSION_MODEL_MANAGE
+            - PERMISSION_MODEL_READ
+            - PERMISSION_NAMESPACE_MANAGE
+            - PERMISSION_PLUGIN_CONNECT
+            - PERMISSION_PLUGIN_MANAGE
+            - PERMISSION_RESOURCE_MANAGE
+            - PERMISSION_RESOURCE_READ
+            - PERMISSION_STORAGE_NAMESPACE
+            - PERMISSION_TASK_READ
+            - PERMISSION_TASK_SCHEDULE
+            - PERMISSION_TIMER_ACCEPT
+        scope:
+          "$ref": "#/components/schemas/TargetResourceScope"
+        version:
+          "$ref": "#/components/schemas/TargetPositiveUint64"
+      x-contract-status: not_implemented
+      required:
+      - assignment_id
+      - principal_id
+      - role
+      - permissions
+      - scope
+      - version
+    TargetIdentitySetAssignmentRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        assignment:
+          "$ref": "#/components/schemas/TargetAssignmentRecord"
+        expected_version:
+          "$ref": "#/components/schemas/TargetPositiveUint64"
+      x-contract-status: not_implemented
+      required:
+      - assignment
+      - expected_version
+    TargetIdentitySetAssignmentResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        assignment:
+          "$ref": "#/components/schemas/TargetAssignmentRecord"
+      x-contract-status: not_implemented
+      required:
+      - assignment
+    TargetIdentityRevokeAssignmentRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        assignment_id:
+          type: string
+          minLength: 1
+        expected_version:
+          "$ref": "#/components/schemas/TargetPositiveUint64"
+      x-contract-status: not_implemented
+      required:
+      - assignment_id
+      - expected_version
+    TargetIdentityRevokeAssignmentResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        version:
+          "$ref": "#/components/schemas/TargetPositiveUint64"
+      x-contract-status: not_implemented
+      required:
+      - version
+    TargetIdentityRegisterPrincipalRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        principal_kind:
+          type: string
+        binding:
+          "$ref": "#/components/schemas/TargetResourceRef"
+        allowed_services:
+          type: array
+          items:
+            type: string
+      x-contract-status: not_implemented
+      required:
+      - principal_kind
+      - binding
+      - allowed_services
+    TargetIdentityRegisterPrincipalResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        principal:
+          "$ref": "#/components/schemas/TargetPrincipalRecord"
+      x-contract-status: not_implemented
+      required:
+      - principal
+    TargetPrincipalRecord:
+      type: object
+      additionalProperties: false
+      properties:
+        principal_id:
+          type: string
+          minLength: 1
+        binding:
+          "$ref": "#/components/schemas/TargetResourceRef"
+        principal_kind:
+          type: string
+        version:
+          "$ref": "#/components/schemas/TargetPositiveUint64"
+        state:
+          type: string
+          enum:
+          - LIFECYCLE_ACTIVE
+          - LIFECYCLE_DISABLED
+          - LIFECYCLE_DELETING
+          - LIFECYCLE_DELETED
+          - LIFECYCLE_RESTORING
+          - LIFECYCLE_PURGED
+        roles:
+          type: array
+          items:
+            type: string
+            enum:
+            - ROLE_ADMIN
+            - ROLE_OPERATOR
+            - ROLE_VIEWER
+        scope:
+          "$ref": "#/components/schemas/TargetResourceScope"
+      x-contract-status: not_implemented
+      required:
+      - principal_id
+      - binding
+      - principal_kind
+      - version
+      - state
+      - roles
+      - scope
+    TargetIdentityGetPrincipalStatusResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        principal:
+          "$ref": "#/components/schemas/TargetPrincipalRecord"
+      x-contract-status: not_implemented
+      required:
+      - principal
+    TargetIdentityRotateCredentialRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        credential_id:
+          type: string
+          minLength: 1
+        expected_version:
+          "$ref": "#/components/schemas/TargetPositiveUint64"
+      x-contract-status: not_implemented
+      required:
+      - credential_id
+      - expected_version
+    TargetIdentityRotateCredentialResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        delivery:
+          "$ref": "#/components/schemas/TargetCredentialDelivery"
+      x-contract-status: not_implemented
+      required:
+      - delivery
+    TargetCredentialDelivery:
+      type: object
+      additionalProperties: false
+      properties:
+        credential_id:
+          type: string
+          minLength: 1
+        version:
+          "$ref": "#/components/schemas/TargetPositiveUint64"
+        new_secret:
+          type: string
+          format: byte
+        delivery_receipt_id:
+          type: string
+          minLength: 1
+        expires_at:
+          type: string
+          format: date-time
+      x-contract-status: not_implemented
+      description: One-time secret delivery; encrypted receipt replay only while current.
+        Never logged or included in ordinary resource projections.
+      required:
+      - credential_id
+      - version
+      - new_secret
+      - delivery_receipt_id
+      - expires_at
+    TargetIdentityRevokeCredentialRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        credential_id:
+          type: string
+          minLength: 1
+        expected_version:
+          "$ref": "#/components/schemas/TargetPositiveUint64"
+      x-contract-status: not_implemented
+      required:
+      - credential_id
+      - expected_version
+    TargetIdentityRevokeCredentialResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        version:
+          "$ref": "#/components/schemas/TargetPositiveUint64"
+      x-contract-status: not_implemented
+      required:
+      - version
+    TargetRpcFailure:
+      type: object
+      additionalProperties: false
+      properties:
+        context:
+          "$ref": "#/components/schemas/TargetFailureContext"
+        error:
+          "$ref": "#/components/schemas/TargetError"
+      x-contract-status: not_implemented
+      required:
+      - error
+      - context
+    TargetStreamCursor:
+      type: object
+      additionalProperties: false
+      properties:
+        source_service:
+          type: string
+          minLength: 1
+        epoch:
+          type: string
+          minLength: 1
+        scope:
+          "$ref": "#/components/schemas/TargetResourceScope"
+        sequence:
+          "$ref": "#/components/schemas/TargetUint64"
+      x-contract-status: not_implemented
+      required:
+      - source_service
+      - epoch
+      - scope
+      - sequence
+    TargetFailureContext:
+      type: object
+      additionalProperties: false
+      required:
+      - acceptance
+      - recovery
+      properties:
+        acceptance:
+          type: string
+          enum:
+          - NOT_ACCEPTED
+          - DURABLY_ACCEPTED
+          - ACCEPTANCE_UNKNOWN
+        operation:
+          "$ref": "#/components/schemas/TargetOperationRef"
+        recovery:
+          type: string
+          enum:
+          - CORRECT_INPUT
+          - REAUTHENTICATE
+          - DO_NOT_RETRY
+          - QUERY_SAME_INTENT
+          - RETRY_SAME_ID
+          - RESYNC_SNAPSHOT
+          - MANUAL_REVIEW
+        retry_after_ms:
+          type: integer
+          minimum: 0
+        current_version:
+          "$ref": "#/components/schemas/TargetPositiveUint64"
+      x-contract-status: not_implemented
+    TargetPositiveUint64:
+      type: string
+      minLength: 1
+      maxLength: 20
+      pattern: "^(?:[1-9][0-9]{0,18}|1[0-7][0-9]{18}|18[0-3][0-9]{17}|184[0-3][0-9]{16}|1844[0-5][0-9]{15}|18446[0-6][0-9]{14}|184467[0-3][0-9]{13}|1844674[0-3][0-9]{12}|184467440[0-6][0-9]{10}|1844674407[0-2][0-9]{9}|18446744073[0-6][0-9]{8}|1844674407370[0-8][0-9]{6}|18446744073709[0-4][0-9]{5}|184467440737095[0-4][0-9]{4}|18446744073709550[0-9]{3}|18446744073709551[0-5][0-9]{2}|1844674407370955160[0-9]{1}|1844674407370955161[0-4]|18446744073709551615)$"
+      description: Exact decimal uint64 range 1..18446744073709551615.
+    TargetUint64:
+      type: string
+      minLength: 1
+      maxLength: 20
+      pattern: "^(?:0|[1-9][0-9]{0,18}|1[0-7][0-9]{18}|18[0-3][0-9]{17}|184[0-3][0-9]{16}|1844[0-5][0-9]{15}|18446[0-6][0-9]{14}|184467[0-3][0-9]{13}|1844674[0-3][0-9]{12}|184467440[0-6][0-9]{10}|1844674407[0-2][0-9]{9}|18446744073[0-6][0-9]{8}|1844674407370[0-8][0-9]{6}|18446744073709[0-4][0-9]{5}|184467440737095[0-4][0-9]{4}|18446744073709550[0-9]{3}|18446744073709551[0-5][0-9]{2}|1844674407370955160[0-9]{1}|1844674407370955161[0-4]|18446744073709551615)$"
+      description: Exact decimal uint64 range 0..18446744073709551615; zero only for counters
+        or explicitly not-yet-applied configuration.

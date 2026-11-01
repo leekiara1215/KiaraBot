@@ -17,7 +17,7 @@ tags:
 defaultContentType: application/json
 x-control-session-policy:
   authorization: Current roles and permissions follow openapi.yaml x-control-policy; control contains the union of allowed channels, never unfiltered data.
-  permissions: {health: health.read, logs: log.read, adapters: adapter.read, plugins: plugin.read, tasks: task.read, messages: message.read}
+  permissions: {operations: resource.read, health: health.read, logs: log.read, adapters: adapter.read, plugins: plugin.read, tasks: task.read, messages: message.read}
   messages_default: >-
     No default role grants message.read, including admins. The messages channel
     requires an explicit per-user grant (`users[].permissions` in the private
@@ -33,6 +33,7 @@ x-control-session-policy:
   retention_seconds: 600
   coalescing: Resource snapshots are compared every 100ms; notifications may coalesce intermediate states and are not an audit log. Every published notification is sequenced.
   capacity: At most 4096 retained events per stream and 1024 retained stream sessions. Gaps caused by eviction require RESYNC_REQUIRED; replay is delivered in bounded batches before live events.
+  target_session_check: Every 250ms start or share current Identity validation; each call has 500ms budget. Close when last confirmation is older than 750ms; scheduling allowance must keep total under 1 second, otherwise not ready.
   revoke_expiry: Validate at handshake and before every event; close within one second after session revocation, permission loss or access expiry.
   close_codes: {invalid_first_frame: 4400, unauthenticated: 4401, forbidden: 4403, internal: 1011, slow_consumer: 1013}
   resync: Send RESYNC_REQUIRED with CURSOR_EXPIRED, INVALID_CURSOR or SERVER_RESTART, then close 1000. Client discards the stream session.
@@ -41,6 +42,8 @@ x-contract-status:
   status_registry: proto/tests/contract_status.json
   # Channel handles and stream event types that exist in the contract but are not usable in v1.
   not_implemented:
+    - operations
+    - operation.updated
     - health.updated
     - plugin.updated.health_state
   deprecated: []
@@ -164,6 +167,22 @@ channels:
           - $ref: '#/components/messages/MessageSession'
           - $ref: '#/components/messages/MessageResyncRequired'
           - $ref: '#/components/messages/MessageChannelUpdate'
+  operations:
+    x-contract-status: not_implemented
+    description: Scoped owner operation progress; no production publisher yet. A current Identity session and resource.read grant are required. First frame authenticates and supplies scope. Resume is bound to the same principal and scope. SESSION_READY precedes replay/live events. Owner cursor gaps require RESYNC_REQUIRED and a fresh owner snapshot; no cross-owner atomic snapshot is implied.
+    publish:
+      operationId: handshakeOperations
+      message:
+        oneOf:
+          - $ref: '#/components/messages/OperationHello'
+          - $ref: '#/components/messages/OperationResume'
+    subscribe:
+      operationId: subscribeOperations
+      message:
+        oneOf:
+          - $ref: '#/components/messages/OperationUpdate'
+          - $ref: '#/components/messages/OperationReady'
+          - $ref: '#/components/messages/OperationResync'
 components:
   securitySchemes:
     bearerAuth:
@@ -175,6 +194,22 @@ components:
         bound to a channel-level security requirement because AsyncAPI 2.x
         cannot express in-band WebSocket authentication.
   messages:
+    OperationHello:
+      messageId: operation-hello
+      payload: { $ref: '#/components/schemas/OperationHello' }
+    OperationResume:
+      messageId: operation-resume
+      payload: { $ref: '#/components/schemas/OperationResume' }
+    OperationReady:
+      messageId: operation-ready
+      payload: { $ref: '#/components/schemas/SessionReady' }
+    OperationResync:
+      messageId: operation-resync
+      payload: { $ref: '#/components/schemas/ResyncRequired' }
+    OperationUpdate:
+      messageId: operation-update
+      x-contract-status: not_implemented
+      payload: { $ref: '#/components/schemas/OperationEnvelope' }
     SessionReady:
       name: SessionReady
       messageId: session-ready
@@ -492,3 +527,28 @@ components:
           properties:
             event_type: { type: string, enum: [message.updated] }
             payload: { $ref: '#/components/schemas/MessagePayload' }
+
+    OperationHello:
+      allOf:
+        - $ref: '#/components/schemas/Hello'
+        - type: object
+          required: [scope]
+          properties:
+            scope: { $ref: './openapi.yaml#/components/schemas/TargetResourceScope' }
+    OperationResume:
+      allOf:
+        - $ref: '#/components/schemas/Resume'
+        - type: object
+          required: [scope, owner_cursor]
+          properties:
+            scope: { $ref: './openapi.yaml#/components/schemas/TargetResourceScope' }
+            owner_cursor: { $ref: './openapi.yaml#/components/schemas/TargetStreamCursor' }
+    OperationEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/StreamEnvelope'
+        - type: object
+          required: [event_type, payload, owner_cursor]
+          properties:
+            event_type: { type: string, enum: [operation.updated] }
+            payload: { $ref: './openapi.yaml#/components/schemas/TargetOperation' }
+            owner_cursor: { $ref: './openapi.yaml#/components/schemas/TargetStreamCursor' }

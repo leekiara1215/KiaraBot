@@ -52,3 +52,7 @@ CI 可设置 `KIARABOT_BASELINE_DESCRIPTOR` 指向上一发布版 descriptor。`
 ## P01 统一目标独立入口
 
 `KIARABOT_TARGET_PYTHON=<含 protobuf 和 grpcio-tools 的 Python> proto/tests/check_target.sh` 不依赖根 CMake，临时生成全部 C++/gRPC 与 Python/gRPC、descriptor，编译反射 round-trip 工具，执行目标方法/descriptor options 逐项匹配、fence presence/零值反例和 Python→C++→Python 消息往返。临时目录退出清理，不提交生成物。Python generator 使用其自带兼容运行时；禁止修改生成版本检查。`target_contract_test.py` 的校验 oracle 是规格夹具，不是生产边界实现或数据库并发证明。旧 descriptor 兼容夹具仍是旧开发快照检查，不能当作目标兼容承诺。
+
+`ruby proto/tests/target_api_test.rb` 解析 REST/WS 并递归检查所有本地/跨文件引用、33个目标操作权限/写幂等声明、错误映射与目标状态流。此静态门禁不需要旧 Control --dump-policy 二进制，也不替代固定 Redocly/AsyncAPI parser 的正式 lint。目标RPC验证比较五个owner service完整方法集合双向相等，requires_idempotency_key 与 mutating 独立，防止稳定业务身份被误当普通收据。
+
+目标JSON schema回归：用Ruby YAML解析OpenAPI为JSON临时文件，再运行 `node proto/tests/target_schema_test.cjs <固定lint环境node_modules> <临时OpenAPI.json>`。Ajv逐个证明成功主结果、资源/操作引用、完整Fence必填；拒绝空ID/零代次/缺字段/uint64越界，接受uint64最大值和未应用配置0；registered=true必须完整Fence、Blocked必须原因与下次处理时间。该检查使用lint依赖中的Ajv，未安装依赖即失败。

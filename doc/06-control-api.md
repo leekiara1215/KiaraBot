@@ -265,3 +265,15 @@ GET 配置的 delivery 是查询时观察值，未新增 WebSocket 事件类型�
 ## P01 目标公共结果（未实现）
 
 目标管理响应携带所有者、资源版本、观测时间及 OperationRef。期望配置已保存、Host 进程启动、插件注册、配置应用分别观测；HTTP 202 只表示持久受理。Operation 的 Blocked 和 stalled 不等于失败；execution_outcome=UNKNOWN 不自动重发。Control 不另建权威终态。目标错误映射见 proto/tests/target_spec.json，后续 API schema 同步声明；既有端点未因类型声明自动接线。
+
+### P01 目标管理 REST/WS（未接线）
+
+OpenAPI 增加33个类型化管理操作：账号/适配器绑定、安装/实例期望和配置、资源删除恢复及 operation、Action元数据、账号危险动作策略、共享成员、死信重放、任务查询取消和occurrence、模型配置/密钥、固定角色授予及主体/凭据。路径 ID 与重复正文 ID 必须相等；未知 kind/owner、空 scope、缺少修改版本一律 INVALID_ARGUMENT。版本使用正十进制 uint64 字符串，防止浏览器精度丢失；创建不要求 expected_version。Control 从当前会话和路径构造内部上下文，不允许浏览器提交 delegation 或自报 actor。权限为每方法 x-permission 与明确资源授予的交集，未知权限拒绝；未实现方法须显式503/CAPABILITY_NOT_SUPPORTED，不返回假资源或假成功。
+
+管理写要求 Idempotency-Key；成功 Control 收据24小时，下游业务命令收据至少七天，同键恢复前重新授权。202 响应只包含持久受理引用/版本；200 为本地已提交结果或当前查询，不证明跨服务全局完成。`/operations/{ownerService}/{operationId}` 按 runtime/scheduler/model 所有者路由并核验 ref.resource；资源类型仅接受 ResourceKind 已登记项。查询必须显式 scope，Action敏感读不靠admin默认越权。错误增加可选 failure_context，包含受理是否已知、operation、恢复动作、retry_after/current_version；Error.details 保持既有空对象语义，不返回供应商正文或秘密。
+
+AsyncAPI operations 频道增加 operation.updated，首帧 hello/resume 认证并绑定资源 scope，SESSION_READY 后才回放/直播。owner_cursor 包含源、epoch、scope、sequence；owner断档/重启或超出窗口明确 RESYNC_REQUIRED，客户端读所有者快照。Blocked/UNKNOWN 不映射成功或失败；UI流不是可靠业务outbox或审计。Identity会话每250ms发起/共享验证，单次500ms，最后确认超过750ms即关闭，调度余量总计不超过1秒；不能兑现则实例不ready。原 messages 仍仅元数据及received子集，默认角色没有message.read。
+
+以上均为目标契约声明。原已实现端点不因新增 schema 自动获得目标服务路由；实际 Control/Panel/所有者实现与故障验收属于 P04–P13。doc/02–05/07–08 的运行说明由对应实现阶段更新，本任务不声称已改变生产行为。
+
+目标 schema 的成功响应主结果、资源/操作标识与版本、完整 Fence 均明确 required，不能用 `{}` 当成功。Fence generation 与已登记资源 version 为正 uint64；配置 applied_config_version、序号与计量可为0。TargetPositiveUint64/TargetUint64 使用精确范围正则及 maxLength=20，拒绝超过18446744073709551615、负数、小数和前导零。registered=true 的状态必须有完整 fence，尚未连接状态可缺；Blocked 必须有稳定 reason 和 next_attempt_at，可选诊断/观察不会被一律设必填。

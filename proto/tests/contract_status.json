@@ -1335,7 +1335,8 @@
       "channels.adapters": "implemented",
       "channels.plugins": "implemented",
       "channels.tasks": "implemented",
-      "channels.messages": "implemented"
+      "channels.messages": "implemented",
+      "channels.operations": "not_implemented"
     },
     "stream_events": {
       "events.health.updated": "not_implemented",
@@ -1343,7 +1344,8 @@
       "events.adapter.updated": "implemented",
       "events.plugin.updated": "implemented",
       "events.task.updated": "implemented",
-      "events.message.updated": "implemented"
+      "events.message.updated": "implemented",
+      "events.operation.updated": "not_implemented"
     },
     "operations": {
       "operations.getProcessLiveness": "implemented",
@@ -1370,7 +1372,40 @@
       "operations.listTasks": "implemented",
       "operations.getActionByIdempotencyKey": "not_implemented",
       "operations.getActionResult": "not_implemented",
-      "operations.listLogs": "implemented"
+      "operations.listLogs": "implemented",
+      "operations.createAccount": "not_implemented",
+      "operations.updateAccount": "not_implemented",
+      "operations.disableAccount": "not_implemented",
+      "operations.bindAdapter": "not_implemented",
+      "operations.unbindAdapter": "not_implemented",
+      "operations.createInstallation": "not_implemented",
+      "operations.createInstance": "not_implemented",
+      "operations.setInstanceDesiredState": "not_implemented",
+      "operations.updateInstanceConfig": "not_implemented",
+      "operations.getResourceState": "not_implemented",
+      "operations.beginDeleteResource": "not_implemented",
+      "operations.restoreResource": "not_implemented",
+      "operations.getOperation": "not_implemented",
+      "operations.listActionMetadata": "not_implemented",
+      "operations.getActionPolicy": "not_implemented",
+      "operations.updateActionPolicy": "not_implemented",
+      "operations.setSharedMembers": "not_implemented",
+      "operations.disableSharedNamespace": "not_implemented",
+      "operations.listDeadLetters": "not_implemented",
+      "operations.replayDelivery": "not_implemented",
+      "operations.getTask": "not_implemented",
+      "operations.cancelTask": "not_implemented",
+      "operations.getOccurrence": "not_implemented",
+      "operations.getModelMetadata": "not_implemented",
+      "operations.updateModel": "not_implemented",
+      "operations.rotateProviderSecret": "not_implemented",
+      "operations.listAssignments": "not_implemented",
+      "operations.setAssignment": "not_implemented",
+      "operations.revokeAssignment": "not_implemented",
+      "operations.registerPrincipal": "not_implemented",
+      "operations.getPrincipalStatus": "not_implemented",
+      "operations.rotateCredential": "not_implemented",
+      "operations.revokeCredential": "not_implemented"
     },
     "semantic_rules": {
       "semantic.action.deadline_max_300s": "not_implemented",
@@ -3760,6 +3795,111 @@
       "reports/modules/architecture-contracts.md"
     ],
     "Permission.PERMISSION_ACCOUNT_POLICY_READ": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "operations.createAccount": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "operations.updateAccount": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "operations.disableAccount": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "operations.bindAdapter": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "operations.unbindAdapter": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "operations.createInstallation": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "operations.createInstance": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "operations.setInstanceDesiredState": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "operations.updateInstanceConfig": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "operations.getResourceState": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "operations.beginDeleteResource": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "operations.restoreResource": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "operations.getOperation": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "operations.listActionMetadata": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "operations.getActionPolicy": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "operations.updateActionPolicy": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "operations.setSharedMembers": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "operations.disableSharedNamespace": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "operations.listDeadLetters": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "operations.replayDelivery": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "operations.getTask": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "operations.cancelTask": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "operations.getOccurrence": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "operations.getModelMetadata": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "operations.updateModel": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "operations.rotateProviderSecret": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "operations.listAssignments": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "operations.setAssignment": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "operations.revokeAssignment": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "operations.registerPrincipal": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "operations.getPrincipalStatus": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "operations.rotateCredential": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "operations.revokeCredential": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "channels.operations": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "events.operation.updated": [
       "reports/modules/architecture-contracts.md"
     ]
   },

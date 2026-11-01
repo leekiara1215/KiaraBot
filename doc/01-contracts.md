@@ -1031,6 +1031,41 @@ T03a 新增 CoreToPlugin.error（oneof 字段 6），承载注册之后的终止
 | `RuntimeUpdateActionPolicyResponse.policy` | not_implemented | P01 目标声明；无生产实现，见模块报告。 |
 | `Permission.PERMISSION_ACCOUNT_POLICY_MANAGE` | not_implemented | P01 目标声明；无生产实现，见模块报告。 |
 | `Permission.PERMISSION_ACCOUNT_POLICY_READ` | not_implemented | P01 目标声明；无生产实现，见模块报告。 |
+| `operations.createAccount` | not_implemented | P01 目标声明；无生产实现，见模块报告。 |
+| `operations.updateAccount` | not_implemented | P01 目标声明；无生产实现，见模块报告。 |
+| `operations.disableAccount` | not_implemented | P01 目标声明；无生产实现，见模块报告。 |
+| `operations.bindAdapter` | not_implemented | P01 目标声明；无生产实现，见模块报告。 |
+| `operations.unbindAdapter` | not_implemented | P01 目标声明；无生产实现，见模块报告。 |
+| `operations.createInstallation` | not_implemented | P01 目标声明；无生产实现，见模块报告。 |
+| `operations.createInstance` | not_implemented | P01 目标声明；无生产实现，见模块报告。 |
+| `operations.setInstanceDesiredState` | not_implemented | P01 目标声明；无生产实现，见模块报告。 |
+| `operations.updateInstanceConfig` | not_implemented | P01 目标声明；无生产实现，见模块报告。 |
+| `operations.getResourceState` | not_implemented | P01 目标声明；无生产实现，见模块报告。 |
+| `operations.beginDeleteResource` | not_implemented | P01 目标声明；无生产实现，见模块报告。 |
+| `operations.restoreResource` | not_implemented | P01 目标声明；无生产实现，见模块报告。 |
+| `operations.getOperation` | not_implemented | P01 目标声明；无生产实现，见模块报告。 |
+| `operations.listActionMetadata` | not_implemented | P01 目标声明；无生产实现，见模块报告。 |
+| `operations.getActionPolicy` | not_implemented | P01 目标声明；无生产实现，见模块报告。 |
+| `operations.updateActionPolicy` | not_implemented | P01 目标声明；无生产实现，见模块报告。 |
+| `operations.setSharedMembers` | not_implemented | P01 目标声明；无生产实现，见模块报告。 |
+| `operations.disableSharedNamespace` | not_implemented | P01 目标声明；无生产实现，见模块报告。 |
+| `operations.listDeadLetters` | not_implemented | P01 目标声明；无生产实现，见模块报告。 |
+| `operations.replayDelivery` | not_implemented | P01 目标声明；无生产实现，见模块报告。 |
+| `operations.getTask` | not_implemented | P01 目标声明；无生产实现，见模块报告。 |
+| `operations.cancelTask` | not_implemented | P01 目标声明；无生产实现，见模块报告。 |
+| `operations.getOccurrence` | not_implemented | P01 目标声明；无生产实现，见模块报告。 |
+| `operations.getModelMetadata` | not_implemented | P01 目标声明；无生产实现，见模块报告。 |
+| `operations.updateModel` | not_implemented | P01 目标声明；无生产实现，见模块报告。 |
+| `operations.rotateProviderSecret` | not_implemented | P01 目标声明；无生产实现，见模块报告。 |
+| `operations.listAssignments` | not_implemented | P01 目标声明；无生产实现，见模块报告。 |
+| `operations.setAssignment` | not_implemented | P01 目标声明；无生产实现，见模块报告。 |
+| `operations.revokeAssignment` | not_implemented | P01 目标声明；无生产实现，见模块报告。 |
+| `operations.registerPrincipal` | not_implemented | P01 目标声明；无生产实现，见模块报告。 |
+| `operations.getPrincipalStatus` | not_implemented | P01 目标声明；无生产实现，见模块报告。 |
+| `operations.rotateCredential` | not_implemented | P01 目标声明；无生产实现，见模块报告。 |
+| `operations.revokeCredential` | not_implemented | P01 目标声明；无生产实现，见模块报告。 |
+| `channels.operations` | not_implemented | P01 目标声明；无生产实现，见模块报告。 |
+| `events.operation.updated` | not_implemented | P01 目标声明；无生产实现，见模块报告。 |
 <!-- contract-status:end -->
 
 `/ws/messages` 自 2026-10-31（W5）起为 `implemented`：只有被私有控制配置显式授予 `message.read` 的用户可订阅，事件 `message.updated` 仅含消息元数据（`message_id`、`conversation_id`、`direction`；v1 只产生 `received`），不推送正文、没有 REST 消息投影、也不构成审计；任何默认角色（含 admin）都不持有 `message.read`。授权模型见 `doc/08-operations.md`。
