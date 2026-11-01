@@ -530,3 +530,23 @@ PATH前置显式openssl目录。无新inner依赖/生产main装配，不改源�
 全仓format16还实际失败于core/src/runtime/platform/identity_rpc.cpp:1的include首部排序。
 未自行改已审源码、关闭检查或复用旧产物声称通过；需完整契约基点及作者格式修正后复验。
 未重复全仓统一入口；文档检查为路径/末尾换行/章节唯一及git diff --check。
+
+### NumericDate修复回归
+
+同步已审7b3200b（本树b5b2174），CMake无需改动；Admin测试定向构建、CTest1/1
+通过0.38秒，delegation生产/测试两TU精确DB tidy22 clang-analyzer-* warnings-as-errors
+及format16通过。源已同步Core说明，额外无公共文档影响，仅报告登记。未宣称真实RPC闭环。
+报告末尾换行与git diff --check通过，未重复统一入口。
+
+## Registered-peer wrapper最终依赖接线
+
+严格成组同步9b96968/86603fb（本树2b5959a/97cda68），不保留旧三端口业务编排版本。
+文档冲突保留已有Admin说明及真正wrapper章节，不夹带尚未取的proof契约段。
+RPC库PRIVATE增加kiarabot_identity_admin_application，RPC test PRIVATE增加
+kiarabot_identity_crypto（源码直接使用成熟证书factory）。无新TU/inner依赖，原mTLS
+CTest/超时不变。无额外公共行为文档影响：源已同步契约/Core/运维，doc11原外层说明
+无需重复修改；本报告登记依赖与验证，doc18只读。
+固定配置、全TU覆盖/inner/实际图通过，RPC两TU及NumericDate两TUformat16通过，
+此前RPC首部格式失败在新组源中已解决。实际定向RPC构建重试仍失败于codec依赖的
+RESOURCE_CATALOG和五权限生成枚举，未到达RPC链接；不能记mTLS运行/tidy通过，
+等待完整契约集成基点，未用旧产物替代或关闭校验。报告路径/末尾换行及diff检查通过。

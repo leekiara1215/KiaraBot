@@ -116,11 +116,12 @@ add_library(kiarabot_identity_rpc STATIC
   ${CMAKE_SOURCE_DIR}/core/src/runtime/platform/identity_rpc.cpp)
 target_include_directories(kiarabot_identity_rpc PUBLIC ${CMAKE_SOURCE_DIR}/core/include)
 target_link_libraries(kiarabot_identity_rpc PUBLIC kiarabot_proto PRIVATE
-  kiarabot_target_codec kiarabot_service_process OpenSSL::Crypto)
+  kiarabot_target_codec kiarabot_service_process kiarabot_identity_admin_application OpenSSL::Crypto)
 kiarabot_platform_warnings(kiarabot_identity_rpc)
 add_executable(kiarabot_identity_rpc_test
   ${CMAKE_SOURCE_DIR}/core/tests/platform/identity_rpc_test.cpp)
-target_link_libraries(kiarabot_identity_rpc_test PRIVATE kiarabot_identity_rpc)
+target_link_libraries(kiarabot_identity_rpc_test PRIVATE
+  kiarabot_identity_rpc kiarabot_identity_crypto)
 kiarabot_platform_warnings(kiarabot_identity_rpc_test)
 add_test(NAME p04_identity_rpc COMMAND "${KIARABOT_TARGET_PYTHON}"
   ${CMAKE_SOURCE_DIR}/core/tests/platform/identity_rpc_test.py
