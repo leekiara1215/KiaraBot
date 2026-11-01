@@ -134,3 +134,19 @@ doc/08 records the operational bound. This is separate from shared codec integra
 Final cap/acceptor correction revalidation: -Werror Control build, full
 HTTPS/mTLS matrix (including unfinished large chunk metadata), format16,
 clang-tidy22 server analysis and whitespace checks passed.
+
+## Original token-pair replay after access expiry
+
+Read-only review of actual Core application 7f9a197 reproduced a successful original
+receipt replay at +901s: the access is expired, refresh/current session and credential
+remain valid. Parent confirmed the existing TargetCurrentTokenPair clamp-zero contract.
+Control now requires refresh_expires_at > checked_at and refresh >= access expiry,
+but permits expired access on an owner-success pair. Original token bytes and deadlines
+remain unchanged; expires_in is exactly zero. No session/revocation/version/checked_at,
+UUID, time-range or expired-refresh check is weakened.
+
+The real HTTPS->mTLS generated Identity fixture advances checked_at by901s while
+returning the original pair/expiries. A new positive assertion requires200/zero TTL and
+unchanged four token/expiry fields. Every existing negative assertion remains; the
+expired_tokens fixture now expires both credentials, retaining its500 refusal test.
+No API/proto change: this fixes conformance to the existing clamp-zero contract.

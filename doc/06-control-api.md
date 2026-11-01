@@ -364,8 +364,11 @@ P04 response validation additionally rejects malformed successful Identity respo
 current principal must be ACTIVE with a positive version and valid binding, current
 session must not be revoked/expired at Identity checked_at, and timestamps must fit
 the target int64-nanosecond time range. Resource/principal/session/assignment IDs are
-canonical lowercase UUIDv4; versions stay positive and exact. Token deadlines must
-follow checked_at and the refresh deadline must cover the access deadline. Session
+canonical lowercase UUIDv4; versions stay positive and exact. The refresh deadline must
+follow checked_at and cover the access deadline. A current original-pair replay may have
+an expired access token: retain both original secrets/deadlines and return expires_in=0,
+so the client can refresh. Control must neither renew its expiry nor turn this success
+into INTERNAL. Session/revocation/current-generation decisions remain Identity's. Session
 pages must provide a snapshot UUID and a still-valid expiry within ten minutes,
 match the requested page size, and contain unique ordered records for the requested
 principal. Missing metadata never becomes an empty successful page.

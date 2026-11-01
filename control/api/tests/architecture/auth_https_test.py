@@ -103,6 +103,13 @@ def main(control, fixture):
             assert tokens['access_token'] == ACCESS
             # Same caller key is preserved over a repeated/lost-response attempt.
             assert login()[1] == tokens
+            replay_after_access_expiry = login('expired_access_replay')
+            assert replay_after_access_expiry[0] == 200, replay_after_access_expiry
+            replayed_pair = replay_after_access_expiry[1]
+            assert replayed_pair['expires_in'] == 0
+            for field in ['access_token', 'refresh_token', 'access_expires_at', 'refresh_expires_at']:
+                assert replayed_pair[field] == tokens[field], (field, replayed_pair)
+            assert replayed_pair['checked_at'] == '2023-11-14T22:28:21.500Z'
             assert request('POST', '/api/v1/auth/login', {'username': 'alice', 'password': 'never-print-password'},
                            {'Content-Type': 'Application/JSON; Charset="UTF-8"', 'Idempotency-Key': KEY})[0] == 200
             refreshed = request('POST', '/api/v1/auth/refresh', {'refresh_token': tokens['refresh_token']},

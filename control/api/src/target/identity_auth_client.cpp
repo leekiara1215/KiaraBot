@@ -198,7 +198,7 @@ Json tokens_json(const wire::TokenPair& tokens, const Timestamp& checked_at) {
   const auto checked_text = time_text(checked_at);
   const auto access_text = time_text(tokens.access_expires_at());
   const auto refresh_text = time_text(tokens.refresh_expires_at());
-  if (compare_time(tokens.access_expires_at(), checked_at) <= 0 ||
+  if (compare_time(tokens.refresh_expires_at(), checked_at) <= 0 ||
       compare_time(tokens.refresh_expires_at(), tokens.access_expires_at()) < 0) {
     throw InvalidUpstream{};
   }

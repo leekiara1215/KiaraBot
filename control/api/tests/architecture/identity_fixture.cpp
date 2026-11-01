@@ -133,7 +133,12 @@ public:
     }
     tokens(output, "login");
     if (input->username() == "expired_tokens") {
-      output->mutable_tokens()->mutable_access_expires_at()->set_seconds(kChecked - 1);
+      output->mutable_tokens()->mutable_access_expires_at()->set_seconds(kChecked - 2);
+      output->mutable_tokens()->mutable_refresh_expires_at()->set_seconds(kChecked - 1);
+    }
+    if (input->username() == "expired_access_replay") {
+      // Original pair/expiries are unchanged; only the authoritative replay check advances.
+      output->mutable_checked_at()->set_seconds(kChecked + 901);
     }
     if (input->username() == "reverse_expiry") {
       output->mutable_tokens()->mutable_refresh_expires_at()->set_seconds(kChecked + 1);
