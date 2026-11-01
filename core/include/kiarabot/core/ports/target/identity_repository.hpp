@@ -28,6 +28,11 @@ public:
   // Caller still checks current principal/state/expiry/binding/audiences; lookup is not a grant.
   virtual Outcome<std::optional<CredentialVersionRecord>>
   by_bootstrap(const TokenVerifier& verifier) = 0;
+
+  // Trusted signed actor lookup, NOT TLS authentication. Match platform service + subject on
+  // CURRENT certificate heads only, in this UoW. Zero -> empty; multiple -> Internal, never pick
+  // one or scan all principals in memory. Core checks current head/owner/state/expiry/SAN/service.
+  virtual Outcome<std::optional<CredentialVersionRecord>> by_platform(const PlatformPeer& peer) = 0;
   virtual Outcome<std::optional<LoginIdentity>> login(const std::string& normalized_login) = 0;
   virtual Status save_login(const LoginIdentity& login,
                             std::optional<ResourceVersion> expected) = 0;

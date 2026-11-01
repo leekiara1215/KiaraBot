@@ -110,6 +110,10 @@ public:
                ? std::optional{state_.credential}
                : std::optional<t::CredentialVersionRecord>{};
   }
+  t::Outcome<std::optional<t::CredentialVersionRecord>>
+  by_platform(const t::PlatformPeer&) override {
+    throw std::logic_error("unexpected platform credential lookup");
+  }
   t::Outcome<std::optional<t::LoginIdentity>> login(const std::string&) override {
     ++state_.unexpected;
     return failure();

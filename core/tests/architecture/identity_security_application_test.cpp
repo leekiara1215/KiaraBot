@@ -1,3 +1,4 @@
+#include <stdexcept>
 // clang-format off
 #include "kiarabot/core/application/target/identity_security_application.hpp"
 
@@ -175,6 +176,10 @@ public:
       }
     }
     return std::optional<t::CredentialVersionRecord>{};
+  }
+  t::Outcome<std::optional<t::CredentialVersionRecord>>
+  by_platform(const t::PlatformPeer&) override {
+    throw std::logic_error("unexpected platform credential lookup");
   }
   t::Outcome<std::optional<t::LoginIdentity>> login(const std::string& name) override {
     for (const auto& value : state_.logins) {

@@ -1010,6 +1010,10 @@ public:
     }
     return std::optional<t::CredentialVersionRecord>{credential};
   }
+  t::Outcome<std::optional<t::CredentialVersionRecord>>
+  by_platform(const t::PlatformPeer&) override {
+    throw std::logic_error("unexpected platform credential lookup");
+  }
   t::Outcome<std::optional<t::LoginIdentity>> login(const std::string&) override {
     throw std::logic_error("unused login lookup");
   }

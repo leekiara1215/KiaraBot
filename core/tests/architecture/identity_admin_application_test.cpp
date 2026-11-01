@@ -1,6 +1,7 @@
 #include <cstdlib>
 #include <functional>
 #include <iostream>
+#include <stdexcept>
 #include <string_view>
 
 #include "kiarabot/core/application/target/identity_admin_application.hpp"
@@ -71,6 +72,10 @@ public:
   version(const t::CredentialVersionRef&) override {
     check(false, "unexpected version");
     return unavailable();
+  }
+  t::Outcome<std::optional<t::CredentialVersionRecord>>
+  by_platform(const t::PlatformPeer&) override {
+    throw std::logic_error("unexpected platform credential lookup");
   }
   t::Outcome<std::optional<t::LoginIdentity>> login(const std::string&) override {
     check(false, "unexpected login");

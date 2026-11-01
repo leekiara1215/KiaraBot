@@ -1018,3 +1018,11 @@ IdentityKeysRead at the trusted offline Catalog anchor. JWT is not required or u
 as the trust bootstrap. Known version absent/equal/older yields the full current set;
 a future version is rejected after current authorization. Overall Identity readiness
 is still false while remaining Identity operations are incomplete.
+
+### P04 当前平台 actor 定位端口
+
+`IdentityCredentialRepository::by_platform(PlatformPeer)`在同一UoW按受信signed actor的
+service+subject定位CURRENT平台证书head；零条为空，多条返回Internal，不任选、不全主体
+内存扫描。这只是权威定位，不是TLS验证；Core另核验current head、owner、主体状态、
+证书SAN/service及有限期限。供无session来源的早期actor在线检查使用；PG实现另行集成，
+缺实现不得启用依赖它的用例。现有未使用fixture直接失败，不提供伪成功fallback。

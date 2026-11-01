@@ -38,6 +38,10 @@ static_assert(
     std::is_same_v<decltype(std::declval<target::IdentityCredentialRepository&>().by_bootstrap(
                        std::declval<const target::TokenVerifier&>())),
                    target::Outcome<std::optional<target::CredentialVersionRecord>>>);
+static_assert(
+    std::is_same_v<decltype(std::declval<target::IdentityCredentialRepository&>().by_platform(
+                       std::declval<const target::PlatformPeer&>())),
+                   target::Outcome<std::optional<target::CredentialVersionRecord>>>);
 static_assert(target::kAccessTokenLifetime == std::chrono::minutes{15});
 static_assert(target::kRefreshTokenLifetime == std::chrono::hours{24 * 30});
 static_assert(target::kSecretReceiptRetention == std::chrono::hours{24});
