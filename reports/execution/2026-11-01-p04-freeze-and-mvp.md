@@ -16,8 +16,9 @@ cherry-pick，使当前接口、PG实现、普通结果13/14、构建和严格fi
 实际检查：full-locked完整configure/build通过，新增契约/指纹/Exchange/Check/真实PGApp
 等定向CTest初轮9/10；RPC失败定位到fixture手工Session缺新绑定，补齐后独立1/1通过
 2.93秒。没有放宽生产缺绑定拒绝，实际指纹使用OpenSSL EVP而非测试摘要。固定format16、
-git diff --check已执行。完整结果codec的真实PG补验结果另录后续检查点，不将作者单独
-通过冒称根整组通过。未在用户收缩后重启整仓统一门禁；先验收最小可用闭环。
+git diff --check已执行。根目录随后补验真实PG应用与通用PG两项，2/2通过20.40秒，
+覆盖schema10及普通完整结果codec；不是仅沿用作者通过结论。未在用户收缩后重启
+整仓统一门禁；先验收最小可用闭环。
 
 单机MVP复用reference Core/SQLite、现SDK和实际NoneBot adapter；固定回复处理器仅为
 随程序提供的最小能力，不扩建插件安装/发现/市场/热更新。默认使用本机OneBot协议

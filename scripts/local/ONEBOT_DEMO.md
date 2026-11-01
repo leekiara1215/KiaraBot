@@ -71,7 +71,8 @@ send_private_msg（正target ID、纯文本string或≤16个text segments，合�
 成功回status=ok/retcode=0/data/echo；未知API回failed/1404/unsupported_action，错误params/
 消息回failed/1400/稳定message，保留echo。不实现send_msg或其他平台动作、不丢弃未知段。
 WS帧≤16KiB；错误token在握手阶段HTTP401，重复连接409。SIGTERM/SIGINT退出关闭自身
-WS/IPC并移除自己创建的socket；token及私有目录由launcher在子进程退出后删除。
+WS/IPC并移除自己创建的socket；本机launcher保留token和私有数据目录供同目录重启。
+手动独立运行时由调用者管理token和目录，不自动删除已有数据。
 
 ## 验证与变更范围
 

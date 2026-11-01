@@ -1,10 +1,9 @@
 # 开发交接与换机恢复
 
-记录日期：2026-11-01。盘点基点为主集成分支 `codex/architecture-rollout` 的
-`8e9974a9de943a20c03895f7b1b91617b092cca5`。第二次核对主集成已到
-`97976f7a8542a625ee1e0bc1a276b0e5b4435363`，下表更新了已审取映射；主协调仍在
-收尾构建，迁移前须用最终干净提交更新本页。原分支 SHA 与 cherry-pick 后的集成 SHA 不同，
-不能仅凭某个原 SHA 不是祖先就认定能力没合入。
+记录日期：2026-11-01晚间。主集成分支为 `codex/architecture-rollout`，本页核对至
+`a34b040`（已含MVP启动、群/私聊与live面板修复）。后续交接文档提交在它之后；
+迁移以bundle附带的最终HEAD清单为准。原分支SHA与cherry-pick后的集成SHA不同，
+不能仅凭某个原SHA不是祖先就认定能力没合入。
 
 ## 先做什么
 
@@ -12,8 +11,8 @@
 单机流作为临时交付轨；这不表示新 Runtime、P05–P14 或新架构消息闭环已经完成。
 插件机制、完整账号管理、多主机部署及其他非核心管理功能后移，不继续开启 P04 扩展。
 MVP 使用固定 SDK handler，不启动 PG 或六服务；使用独立本地 data，不双写、不导入旧库。
-最新 MVP 目标、启动入口和验收顺序由主协调维护的 `doc/24-*.md` 定稿；本次补充时该文档
-仍待父验证定稿，不能据此猜测启动器名称或参数。
+已验收的准确启动、登录、群/私聊命令见[单机运行说明](24-single-host-mvp.md)。
+本页记录未完事项和换机恢复；继续开发不需要依赖聊天上下文。
 
 先阅读 [AGENTS.md](../AGENTS.md)、[C++ 主规范](12-cpp-coding-standard.md)、
 [边界](00-boundaries.md)、[工具链](11-toolchain.md) 和本页；原阶段依赖仍见
@@ -27,7 +26,7 @@ MVP 使用固定 SDK handler，不启动 PG 或六服务；使用独立本地 da
 | P00–P03 | 计划记录本机固定环境门禁通过；依赖锁、目标契约、六进程构建/生命周期/分层图、四类私有 PG 库及 UoW/收据/交接基础已经本地验证 | 其他电脑、Linux/CI/发布镜像已通过；完整业务机器人已完成 |
 | P04 部分 | 身份/会话规则、PG 与 crypto、真实当前 mTLS 认证、Issue/Exchange、公开验证键及部分 Control 认证入口有独立实现和测试证据；纯在线授权及实际 TLS/JWT/PG 集成已有提交 | 整个 P04 已完成；全部凭据/赋权/失效流/管理 RPC 均生产可用 |
 | P05–P14 | 有计划、协议与部分基础类型；P05–P14 新服务业务未实现 | 新 Runtime 账号/插件、目标投递/Action、Host、存储、Scheduler、Model、完整 Panel 管理或多机恢复已实现 |
-| reference 临时 MVP | 保留旧单机行为及对应验收；入口源位于 `core/reference/`，二进制仍叫 `kiarabot-core` | 将旧入口改名即可完成新服务；reference 通过等于目标架构通过 |
+| reference 临时 MVP | `scripts/local/start.py`已启动实际Core/Control、SQLite、SDK处理器、NoneBot和本地平台替身；群/私聊、登录/WS/REST、live网页与持久重启已本机验收 | 真实QQ/模型已联调；新六服务已具有该闭环；完整账号/插件管理和多机部署已完成 |
 
 证据入口：[P02 验收](../reports/modules/architecture-p02-acceptance.md)、
 [P03 构建](../reports/modules/architecture-p03-build.md)、
@@ -50,20 +49,21 @@ MVP 使用固定 SDK handler，不启动 PG 或六服务；使用独立本地 da
 
 | owner / 分支 | 准确原 SHA | 状态与交接内容 |
 | --- | --- | --- |
-| 主协调 `codex/architecture-rollout` | `97976f7` | 二次核对已集成 PG state 与完整收据 codec；仍有少量 CMake/严格替身组装待提交，未启用注册/赋权生产路由 |
-| RPC `codex/p04-authorization-rpc` | `9bfadca`、`2d1170a`；分支头 `2d1170aa336eca4fec9a15ee198b8faf729f9d98` | CheckAuthorization 可选 `.authorization`、500ms/1s 和 decision/Failure 映射；后者仅给 Issue/Exchange fixture 补原 Control binding；基点尚未审取这两项 |
+| 主协调 `codex/architecture-rollout` | `ecf3cdc`、`a34b040` | 前者完成PG state/完整收据codec的CMake/严格fixture冻结，完整build通过；后者为已集成MVP的live fetch修复。未启用新架构注册/赋权生产路由 |
+| RPC `codex/p04-authorization-rpc` | `9bfadca`、`2d1170a`；分支头 `2d1170aa336eca4fec9a15ee198b8faf729f9d98` | CheckAuthorization 可选 `.authorization`、500ms/1s 和 decision/Failure 映射；后者仅给 Issue/Exchange fixture 补原 Control binding；主集成未取CheckAuthorization RPC；fixture同类绑定已在`ecf3cdc`自行补齐，审取时避免重复 |
 | RPC `codex/p04-exchange-rpc` | `7714ed25ee3ef35bfc0b6de84a7ff1f3328c9f4c` | 已由主集成 `03c3974` 承接；严格新 crypto fixture 原 `958aa5e` 对应集成 `6fe4b4d`，勿重复取 |
 | Core `codex/p03-core-ports` | `15fd1195cd6540150dae9d1f04cae15b38c08565` | 完整原注册成功 snapshot 已由 `4d7976f` 审取；凭据 WIP 已另存 `codex/p04-identity-wip` 的 `938c9d2`，未纳入主集成/MVP |
 | Core 冻结 `codex/p04-identity-wip` | `938c9d2` | 从 `15fd119` 保存14文件的未完成凭据能力；工作树已 clean；Register/Rotate 仍仅声明，Pending/delivery 的 PG/crypto 未接，不启用生产/MVP |
 | PG `codex/p04-complete-result-codec` | `0428f0b6443967c4e31f643625055fb8045cfc6a` | 已由 `97976f7` 审取；配套完整注册 snapshot 为 `4d7976f`，ExactAssignment 收据 index14 为 `fae5772`，仍未启用相应生产路由 |
-| PG `codex/p04-assignment-state-pg` | `eacf42d` | 永久撤销墓碑已由 `a030394` 审取；后续统一构建结果由主协调补充，不再列为未合入 |
+| PG `codex/p04-assignment-state-pg` | `eacf42d` | 永久撤销墓碑已由 `a030394` 审取；后续完整build与真实PG两项补验通过，不再列为未合入 |
 | Core `codex/p04-assignment-result` | `71acedd96a18c5401774df1226c50e7ad7640ee8` | 明确标记 WIP 的 Assignment mutation app/tests，已提交保存但仍有未解 tidy 诊断；非完整可用 factory，不启用路由；相关公开头 `68d3b06` 仍须独立核对 |
-| Control `codex/p04-authorization-method-policy` | `a79ad51` | 此分支头是 current delegator 检查修复，不是生产 method-policy 完成证据；主集成已有对应修复，scope annotation/resolver 尚未提交完成 |
+| Control `codex/p04-session-delegator-current` | `a534ce3` | 此current delegator能力修复尚未纳入主集成，不能与已合入`bf2fb4e`/`b3aea5c`混同；`codex/p04-authorization-method-policy`旧头`a79ad51`也不代表method-policy完成。scope annotation/resolver尚未完成 |
 | crypto `codex/p04-assignment-fingerprint-crypto` | `5f8ee3c8261ea578c21c24373e59bde2fd94636a` | typed fingerprint 已由主集成 `575a514` 承接，不需 RPC 自己哈希或让客户端提交摘要 |
-| 工具链 `codex/p03-toolchain` | `dc6677bba7a7ab6b0c593a784abed23b05d5961a` | 已提交的固定 Python 来源摘要修复；另有未提交检查入口 WIP，不能把该头当这些 WIP 已保存 |
-| MVP 启动 `codex/local-mvp-launcher` | 观察时 `da3b2bb` | 该 SHA 是既有 Identity build 门禁，不是新启动器提交；等实际独立 cap 再更新 |
-| MVP smoke `codex/mvp-nonebot-smoke` | `67f91e562e6d54e2230017b9ff898ec079df55dd` | 已提交真实 NoneBot/reference Core/固定测试 Sender 与 OneBot 本地替身闭环；作者反馈相关3/3通过；公开 Sender/launcher 尚待独立提交 |
-| MVP Core / 平台 `codex/mvp-local-reply`、`codex/mvp-onebot-demo` | 盘点期间刚切换的新分支 | 新窄任务尚无本页可确认的独立 cap，不从工作树内容推断完成 |
+| 工具链 `codex/p03-toolchain` | `dc6677b`；主集成`0d5fd94` | 原worktree仍有旧上下文检查差异；两个untracked脚本逐字节等同主集成已提交文件，不是MVP阻断项。其完整工作树差异仍需单独备份，勿盲目覆盖新脚本 |
+| MVP 启动 `codex/local-mvp-launcher` | `3a48f85`、`0aff49f` | 已分别审取为`5ac73c2`、`3d731c7`；后者更新新reference群/私聊真实验收证据 |
+| MVP smoke `codex/mvp-nonebot-smoke` | `67f91e5`、`3c1da07` | 已分别审取为`c37df48`、`994a8b4`；当前使用公开`main:create`，不再由测试内置业务Sender。主集成相关21/21通过 |
+| MVP处理器 `codex/mvp-local-reply` | `adc0d06` | 已审取`762d6e1`；SDK固定纯文本回复、稳定Action身份及幂等查询，非新插件机制 |
+| MVP平台 `codex/mvp-onebot-demo` | `4990932` | 已审取`407dd8c`；loopback WS平台替身和本地Unix控制socket，不处理机器人业务 |
 | Panel / SDK 保留分支 | `kiarabot-control-panel`：`56ca38b`；`kiarabot-plugin-sdk`：`c386493` | 旧行为成果保留；不是 P12 或新插件机制的完成证据，今晚不扩展 |
 
 可重新核对：`git worktree list --porcelain`、`git branch -vv`、
@@ -80,8 +80,11 @@ MVP 使用固定 SDK handler，不启动 PG 或六服务；使用独立本地 da
 | Core 凭据 WIP 已冻结 | 原 tracked/untracked 并集14文件已保存到独立 `codex/p04-identity-wip` / `938c9d2`，冻结前基点 `15fd119`，工作树 clean。精确清单用 `git show --name-only 938c9d2` 及 `git show 938c9d2:reports/modules/p04-wip-freeze.md` 查看；不再列作未提交内容，不把仅声明的 Register/Rotate 或未接 PG/crypto 认作可用能力 |
 | `codex/p03-toolchain`，tracked 修改 | `scripts/check-toolchain.sh`、`doc/11-toolchain.md`、`reports/modules/architecture-p03-toolchain.md` |
 | 同分支，untracked | `scripts/quality/cmake-check-context.py`、`scripts/quality/tests/cmake_check_context_test.py`；这是该 owner 的未提交差异，不据此断言主基点没有同名已提交文件 |
-| `codex/mvp-nonebot-smoke` | 初次观察 smoke 为 untracked；二次已提交为 `67f91e5` 且工作树干净，不再列未保存 WIP |
-| 主集成临时冲突态 | 观察时 `doc/05-infrastructure.md`、`doc/08-operations.md` 为 UU，并有 `infrastructure/postgres/` staged 改动及 Assignment state PG 报告；该 cherry-pick 在二次核对时已完成至 `97976f7`；当前剩余 `cmake/platform.cmake`、`core/CMakeLists.txt` 和两个 Core architecture test 的组装/严格替身修改待主协调验证提交，不复制未提交工作目录 |
+| 其他worktree | 最终逐一`git status --short`核对，除上述工具链旧差异外全部clean；主集成已完成cherry-pick，无遗留冲突。不能把ignored数据/venv/build当作git已保存内容 |
+
+本轮交接包另存工具链tracked binary patch及两个untracked脚本，并标明基点`dc6677b`。
+仅在该基点的独立恢复工作树应用patch和复制脚本；主集成已有对应能力，不把旧差异覆盖其上。
+生成包的HEAD、refs、文件SHA256及确切恢复说明见包内`handoff.json`和`README.txt`。
 
 优先让 owner 对明确代码/文档范围做独立 WIP commit 并说明未验证项，再做 git 迁移；
 不要 `git add .`，不要把 `.env`、数据库、密钥、build 或虚拟环境带入提交。
@@ -92,14 +95,40 @@ MVP 使用固定 SDK handler，不启动 PG 或六服务；使用独立本地 da
 
 | 优先级 / 目标 | 文件范围 | 前置 | 建议退出条件 |
 | --- | --- | --- | --- |
-| 今晚：单机启动、登录和最小配置 | MVP launcher 的 `scripts/`、示例及直接运行说明；reference 组合入口按 owner 分工 | 主协调定稿 doc24、干净集成点、锁定工具链 | 新空目录创建本地配置；启动/停止可复现；能登录；错误配置明确失败，不暴露秘密 |
-| 今晚：一账号收消息并自动回复 | `core/reference/` 最小回复处理；`adapters/nonebot/` 与本地 OneBot 协议替身 | 已有 AdapterBridge/Action 路径；唯一最小处理方案由 MVP owner 决定 | 启动真实本地进程，替身送一条事件并收到预期回复，记录退出/拒绝，不能只测函数或仅接收事件 |
-| 今晚：可复现 smoke 与启动步骤 | `adapters/nonebot/tests/`、验收脚本、doc24/本页 | 前两项独立 cap 合并 | 新建 venv/build 后可重复执行；失败非零；只有 loopback 替身，无真实 QQ/付费模型 |
+| 已完成：单机MVP基线复现 | `scripts/local/`、`plugins/local-reply/`、真实NoneBot及doc24 | 重建reference二进制、锁定venv、两处生成代码 | 按doc24启动/登录/群私聊/停止/重启；换机必须重新验收，旧机通过不算新机通过 |
+| 下一步：真实QQ/NapCat接入 | `adapters/nonebot/`、本机私有平台配置、直接运维文档 | 用户在自己环境准备NapCat/账号与明确会话；先维持一账号一会话，不扩建账号管理 | 显式外部OneBot模式接入、真实收发/错误凭据/断线/幂等和重启可复现；不得以替身通过冒称QQ通过 |
+| 按需求选择：实际业务回复 | `plugins/`固定能力及SDK公共端口；如启用模型按所属边界 | 先确认是否需要规则回复或模型；付费调用必须另有授权与预算 | 先有一个真实使用场景，再补必要失败/配额/超时验收；不以插件市场、namespace或多机为前置 |
+| 维护：跨机工具链与手动CI | 工具链/CI脚本及其直接文档 | 保留锁和真实失败信息；Linux或远端运行单独记录 | 换机最小闭环通过；CI手动变绿后再评估自动触发，不声称已完成远端门禁 |
 | 待恢复：在线授权生产接线 | `core/runtime/platform/`、`control/api/` 组合、`proto/policy.proto` 的授权 scope 元数据及验证，由各 owner 分工 | Core 已冻结 API；RPC `9bfadca`；Control 单一 metadata 来源 | 未 annotation 方法 fail closed；不从客户端构造 permission、不复制方法表；真实 TLS/JWT/PG 测试保持 |
 | 后移：P04 凭据生命周期/登记 | 冻结 `938c9d2` 的14文件与直接文档；再按已冻结端口协调 crypto/PG/RPC | 先同步主集成新端口/共享 helper，核定当前契约/错误/收据；不把草稿当公共冻结接口 | 正常/拒绝/过期/撤销/依赖故障、原收据恢复和真实组合分别通过 |
 | 后移：P04 完整 Assignment 管理 | `identity_assignment_application.*`、typed receipt、PG state/codec 及将来的 RPC | state/fingerprint/完整结果契约依次审取；factory 完整实现 | 不复活墓碑、旧/新 scope 当前授权、幂等返回原 typed snapshot；实际 PG 与 RPC 测试，不启用 WIP |
 | 后移：完整 P04 失效流及管理面 | Identity/Control 对应模块与唯一契约 | 确认尚未完成的逐方法清单与当前权威 | 当前权威失败关闭、快照/增量水位和恢复验收；不能靠局部 crypto 测试关闭阶段 |
 | 后移：P05–P14 新服务业务 | 按 doc23 的各模块独立范围，先协议/端口后实现 | P04 阶段退出及各阶段依赖；用户重新排定优先级 | 每阶段真实行为/错误/故障矩阵分别通过；插件机制、完整账号管理、多机部署不加入今晚 MVP |
+
+## 目标架构后移项的具体接续点
+
+下表为doc23的任务索引，全部仍待目标服务的真实业务验收；reference中已有同类能力
+可作为用例依据，不能直接勾选新阶段完成。先完成单机实际使用，再按需要恢复这些阶段。
+
+| 阶段 | 未完主线 | 主要目录与必须保留的验收点 |
+| --- | --- | --- |
+| P04收尾 | 凭据注册/轮换/撤销、Assignment、失效流、生产授权接线 | `core/` Identity应用/端口、`infrastructure/` PG/crypto、Control/RPC；按方法核对成功/拒绝/依赖失败、原收据、最终当前权威及真实组合 |
+| P05 | Runtime账号/实例/绑定与当前代次 | Runtime应用及私有PG；区分业务实例、执行/连接代次、epoch和配置版本，旧代次不能写入 |
+| P06 | 新服务事件、可靠投递与SDK/Adapter入站 | Runtime、Adapter、SDK；持久接受后ACK、重复/断线/重放、故障恢复与有界背压 |
+| P07 | 新Action与平台执行 | Runtime/Adapter；权限、allowlist、配额、幂等、UNKNOWN与真实平台执行边界 |
+| P08 | 完整Plugin Host和期望状态 | Host/SDK/Runtime；受控进程、配置应用确认、崩溃恢复及本地可靠日志；不只实现启动成功 |
+| P09 | Namespace、共享/CAS/限额 | Runtime端口/PG、SDK；所有权、共享授权、版本冲突、限额和事务原子性 |
+| P10 | Scheduler可靠任务触发 | Scheduler私有库/Runtime；时区、重复触发、可靠交接、停机补偿与恢复 |
+| P11 | Model网关和计费边界 | Model私有库/Provider外层；密钥、预算、超时/取消、结果与计费未知状态；真实付费联调另行授权 |
+| P12 | 新Control/Panel核心管理 | `control/`、`panel/`；使用所有者RPC，认证/当前授权、真实WS与管理状态，不直接访问业务库 |
+| P13 | 生命周期、清理和可观测性 | 各服务所属模块及运维；停止/取消、期限、保留/清理和跨服务关联诊断 |
+| P14 | 部署、多主机与统一交付 | `deploy/`、CI/验收；镜像与来源锁、恢复/故障矩阵、真实多机TLS/网络、手动CI变绿 |
+
+恢复P04时先核对冻结接口，再从独立能力取改动；不要整条旧分支merge。
+`938c9d2`的Register/Rotate仅声明、delivery/Pending的PG和crypto未接；
+`71acedd`仍有clang-tidy未初始化Failure.trace_id诊断，不能靠关闭检查器或NOLINT交付。
+先同步主集成共享端口/helper并补实现，再分别跑纯用例、真实PG/crypto、RPC/组合门禁。
+每个能力独立提交，协议/API有可观察变化时同步唯一契约与对应模块文档；doc18始终只读。
 
 ## 换机：先迁移 git，再重建环境
 
@@ -140,15 +169,31 @@ MVP 使用固定 SDK handler，不启动 PG 或六服务；使用独立本地 da
 
 ## MVP 最低验收与后续完整环境恢复
 
-先核对主集成已提交的 MVP 源码：`762d6e1` 固定 SDK handler（`plugins/local-reply/`），
-`407dd8c` 本地 OneBot demo（`scripts/local/onebot_demo.py`），`c37df48` smoke 与
-`994a8b4` 公开 factory 的端到端 smoke。它们不表示 launcher 正常流程已验收。
-父已提交的 `ecf3cdc` 是 schema10/typedResult 组的构建冻结，不提升 P04 整阶段状态。
+主集成MVP提交及作者原提交映射见上表；新增`a34b040`修复浏览器原生fetch上下文，
+实际live页面已登录并显示存储/Adapter/local-reply状态。`ecf3cdc`是schema10/typedResult
+组的构建冻结，不提升P04整阶段状态；后续PG两个定向测试已通过。
 
 今晚最低验收只使用 reference 单机、固定 SDK handler 和 loopback 协议替身；不启动
-PG/六服务。按父实际验证后的 doc24/launcher/README 重建其所需环境并执行；当前没有
-最终已验证的 launcher CLI，不在本页猜 flags。以下完整锁定环境步骤是以后恢复新架构
-开发的独立入口，尤其 PG server、六服务和全仓门禁不是今晚启动的先决条件。
+PG/六服务。先按[doc24](24-single-host-mvp.md)重建环境并执行已验证的启动命令。
+以下完整锁定环境步骤是以后恢复新架构开发的独立入口，尤其PG server、六服务和
+全仓门禁不是今晚启动的先决条件。
+
+首次在新机配置MVP构建时，先按doc11安装并验证固定vcpkg依赖、Python环境和OpenSSL CLI，
+从仓库根配置（下列变量必须使用新机自己的实际路径）：
+
+```bash
+: "${VCPKG_ROOT:?设置新机固定vcpkg checkout路径}"
+: "${KIARABOT_VCPKG_TRIPLET:?例如arm64-osx或x64-linux}"
+: "${KIARABOT_TEST_OPENSSL:?设置固定OpenSSL CLI路径}"
+cmake --preset full-locked \
+  -DVCPKG_TARGET_TRIPLET="$KIARABOT_VCPKG_TRIPLET" \
+  -DKIARABOT_TEST_OPENSSL="$KIARABOT_TEST_OPENSSL"
+cmake --build build/full-locked --target kiarabot-reference-core kiarabot-control-credentials
+```
+
+该配置会登记目标架构测试，但MVP不执行PG测试、不构建/启动六服务；运行所需SQL是
+reference SQLite，PG客户端库仍属于当前构建的固定依赖清单，不混用系统另一版库。
+随后按doc24生成Python协议代码和启动；可选网页先`npm ci --prefix panel`。
 
 以下从仓库根执行，是换机后的建议步骤，本次文档任务没有在新机执行。
 使用锁文件指定来源/hash；首次下载与构建需要网络及本机工具，不能把旧机已装依赖当作前提。
@@ -194,11 +239,12 @@ PATH 或拿系统另一版生成器混用。
 C++ wire 由 CMake 生成；Python wire 由各自匹配的生成器/runtime 生成，禁止复制旧 `.pb.*`
 或关闭生成器版本检查。proto 当前唯一来源是 `proto/`，不是旧工作树缓存。
 
-在主协调审取 `67f91e5` 后，可先运行它明确提供的窄闭环；这是测试入口，固定 Sender
-目前内置于测试中，不是公开用户启动器：
+可先运行已集成的窄闭环；当前测试加载公开`plugins/local-reply/main.py` factory，
+不生成测试业务替身。下例是自动测试，交互使用doc24：
 
 ```bash
-CORE_TEST_BINARY="$PWD/build/full-locked/reference/core/kiarabot-core" \
+PYTHONPATH="$PWD/sdk/python/src:$PWD/sdk/python/build/generated:$PWD/adapters/nonebot/src:$PWD/adapters/nonebot/generated" \
+  CORE_TEST_BINARY="$PWD/build/full-locked/reference/core/kiarabot-core" \
   SDK_SOURCE="$PWD/sdk/python/src" \
   adapters/nonebot/.venv/bin/python -m pytest -q adapters/nonebot/tests/test_mvp_local_smoke.py
 ```
@@ -213,10 +259,11 @@ KIARABOT_ACCEPTANCE_BUILD="$PWD/build/full-locked" \
 KIARABOT_CHECK_PRESET=full-locked ./scripts/check-toolchain.sh
 ```
 
-最后按已提交的 doc24/启动器完成真正的最低启动验收：新独立 data/本地配置启动、登录、使用一个
-测试账号、本地协议替身注入一条消息、收到恰当且可核对的自动回复、正常停止，并记下精确
-提交/命令/退出码。缺任何一项就不能叫 MVP 完成。二次核对已有 smoke `67f91e5`，但尚无已提交的公开新 MVP 启动器，
-因此不能给出虚构「一键启动」命令。
+换机后最后按doc24进行交互验收：新独立data启动、登录、测试账号群/私聊、预期回复、
+正常停止和保留密码/DB的重启；记录精确提交/命令/退出码。当前macOS本机已完成这些项目，
+详见[本轮实际验收](../reports/execution/2026-11-01-single-host-mvp.md)，新机仍需重跑。
+旧build/full遗留二进制曾造成private入站CONFLICT；当前reference构建已实测消除，
+不要带着旧二进制排查新代码或放宽权限/配额。
 
 真实 QQ/NapCat、用户账号和外部模型仍需用户端配置与另行授权；本轮只做本地协议替身，
 不调用真实 QQ、付费模型或外部部署。换机后也不能自动继承旧机账号、CLI 凭据或本机数据。

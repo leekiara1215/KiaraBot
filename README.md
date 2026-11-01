@@ -2,6 +2,27 @@
 
 KiaraBot 是一个面向 QQ 的可扩展机器人平台：C++20 Core 负责事件、权限、插件调度和业务编排，Protobuf/gRPC 契约隔离各进程，Python PluginSDK 支持进程外插件，TypeScript 控制面板通过 Control API 管理运行时。QQ 协议端 NapCatQQ 是独立组件；Python NoneBot2 适配器由本仓库 `adapters/nonebot/` 维护，二者都只通过公共协议接入。后续可再考虑把适配器拆成单独插件。
 
+## 当前先运行这一版
+
+2026-11-01晚间优先交付单机消息闭环，插件机制、完整账号管理、多机部署后移。
+已本机验收：真实NoneBot → reference C++ Core/SQLite → SDK固定处理器 → 本地OneBot
+平台替身，群/私聊回复“收到：原文”，live网页登录、停止和保留数据的重启。
+这条临时运行轨不代表六服务新架构已经完成，真实QQ/NapCat和模型尚未联调。
+
+构建与锁定环境准备完成后执行：
+
+```bash
+python3 scripts/local/start.py start --ui \
+  --core build/full-locked/reference/core/kiarabot-core \
+  --credentials build/full-locked/reference/control/api/kiarabot-control-credentials \
+  --python adapters/nonebot/.venv/bin/python
+```
+
+网页地址`http://127.0.0.1:5173`，账号`admin`，本机密码在`data/local/admin-password`。
+不需要网页可省略`--ui`。完整环境准备、收发CLI及停止命令见
+[单机运行说明](doc/24-single-host-mvp.md)；未完事项、分支与跨电脑恢复见
+[开发交接文档](doc/25-development-handoff.md)。本轮源码仅本地提交，未推送。
+
 ## 目标架构
 
 ```text
@@ -39,7 +60,7 @@ Host/Adapter                       各自本地 SQLite 可靠执行/发送日志
 | `core/` | C++20 服务内层/端口及 platform 运行支撑；`core/reference/` 保留旧一体实现 |
 | `infrastructure/` | 旧 reference 适配与目标四个私有 PG 库、typed仓储和本地可靠交接 |
 | `sdk/python/` | 进程外插件 SDK（`uv.lock` 锁定依赖） |
-| `plugins/` | 示例 Python 插件：`event-observer`、`ai-reply` |
+| `plugins/` | 单机固定处理器`local-reply`及示例`event-observer`、`ai-reply` |
 | `adapters/` | 渠道适配器；Python NoneBot2 适配器位于 `adapters/nonebot/` |
 | `panel/` | TypeScript/React 控制面板，默认 mock，可切换 live |
 | `control/` | 独立 Control application/入口及保留的旧 HTTP/WS reference；目标路由尚未接线 |

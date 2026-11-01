@@ -56,6 +56,10 @@ Python NoneBot2 适配器由本仓库 `adapters/nonebot/` 维护，不把实现�
 
 ## 文档索引
 
+2026-11-01晚间的优先运行入口为[单机最小可运行版](24-single-host-mvp.md)，
+未完工作、未合并/WIP提交与换机恢复见[开发交接](25-development-handoff.md)。
+本机reference闭环已验收，新架构后续业务阶段仍按各自退出条件确认。
+
 当前实施与验收状态见 [开发台账](16-development-tasks.md) 和源码；[实现现状与纯 C++ 演进评估](14-implementation-assessment.md)、[跨层未完成事项清单](15-cross-layer-gaps.md) 以及两份 13-* 交接文档均为历史快照，不是现行清单。下列模块文档同时包含目标设计和阶段记录。
 
 - [C++ 主编码规范](12-cpp-coding-standard.md)
