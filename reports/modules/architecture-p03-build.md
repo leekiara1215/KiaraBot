@@ -424,3 +424,17 @@ API/proto/CI及冻结doc18不改。
 
 本树真实PG CTest1/1通过，17.08秒；四TU精确compile DB tidy22
 clang-analyzer-* warnings-as-errors通过。
+
+## 后续接线：完整Identity安全工厂与exact assignments
+
+父完整review后仅取37f7a62（本树d5e58ab），不取应用首版或未提交增量。
+PG库添加identity_assignments.cpp；公开security_factory.hpp已在原PUBLIC include根，
+无需新路径/依赖。原factory及两测试TU改动由源提交负责，不改源码/断言/fixture120秒。
+文档影响仅doc/11及本报告构建说明，源提交已同步infra/运维语义，其他模块/API/proto/CI
+无需额外变化，doc/18保持只读。
+固定prefix/Python重新配置，PG driver/initializer定向构建通过；全TU覆盖/inner/实际图、
+全仓format16通过。新增assignments与更新factory/两测试共四TU tidy和真实PG结果后附。
+未重复已知缺契约外层构建或全仓统一入口；文档检查为路径/末尾换行与diff检查。
+
+本树真实PG CTest1/1通过，16.40秒；四TU精确compile DB tidy22
+clang-analyzer-* warnings-as-errors通过。

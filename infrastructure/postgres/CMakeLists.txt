@@ -2,7 +2,8 @@
 find_package(libpqxx 7.10.0 EXACT CONFIG REQUIRED)
 add_library(kiarabot_postgres STATIC
   src/database.cpp src/common_work.cpp src/record_codec.cpp src/factories.cpp
-  src/identity_security.cpp src/identity_sessions.cpp src/identity_receipts.cpp)
+  src/identity_security.cpp src/identity_sessions.cpp src/identity_receipts.cpp
+  src/identity_assignments.cpp)
 target_include_directories(kiarabot_postgres PUBLIC
   include ${CMAKE_SOURCE_DIR}/core/include)
 target_link_libraries(kiarabot_postgres PRIVATE libpqxx::pqxx Threads::Threads)

@@ -557,3 +557,6 @@ PG库加入Identity凭据/Bootstrap安全仓储 `src/identity_security.cpp`，�
 PG库加入identity_sessions/identity_receipts两个真实TU，共享原PG driver/fixture；
 须成组同步Core SessionMetadata/index12、全局count接口及对应PG schema/codec实现。
 本轮新空库Identity5、其余三库4，初始化仍唯一显式入口，不自动迁移已有库。
+
+完整Identity安全工厂接线在PG库增加identity_assignments.cpp，公开security_factory.hpp
+沿用适配器include根；工厂/测试仍借用原同一UoW，真实PG driver覆盖新增能力，无新CTest。
