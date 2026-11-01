@@ -57,3 +57,11 @@ OpenAPI 新增33个管理操作，引用类型化目标消息 schema，并增加
 - `402e42e`：33 REST操作、operations WS、严格required/uint64边界、Ajv/引用检查、登记和契约文档；正式lint/parser与全部静态检查通过。
 
 提交后对整个基点差异运行 `git diff --check 6d64b2a HEAD` 发现platform.proto新增EOF空行（此前工作区检查未覆盖已提交差异），以纯空白收尾提交修正；不改变输入输出，无新增文档行为影响，无需重新生成。最终工作树应干净。所有构建/生成产物均未提交。
+
+## P01a 外部自管实例 schema 修正
+
+主审发现创建实例无条件required host_id会拒绝已批准的外部自管实例。仅修改api/openapi.yaml的TargetRuntimeCreateInstanceRequest/TargetInstanceRecord，增加相同的模式条件：managed必须非空host，external可省略host；显式空host仍拒绝。创建请求省略模式按managed，投影必须明确模式。输入输出/错误仍属Runtime创建及查询契约，形状错误INVALID_ARGUMENT，Host存在性/授权留生产实现。
+
+同步doc/06-control-api.md与本报告，补target_schema_test.cjs两种模式正反例。未修改proto（原host_id/externally_managed字段已能表达此语义）、AsyncAPI（引用同一目标schema）、doc/01（状态/权限/方法无变化）、运行语义或doc/18–23；无需重新生成C++/Python或运行业务构建。本次检查为Ajv完整回归、正式OpenAPI lint、AsyncAPI parser、引用/实现状态/枚举/语义及git diff --check，结果以实际输出为准。
+
+本修正实际结果：Ajv managed/external 12项组合及既有schema回归通过；33操作引用检查、实现状态、枚举、语义、git diff --check均通过；Redocly2.72.1通过（4条现有schema组合/unused组件warning，无error，新增实例条件无warning）；AsyncAPI parser3.6.6通过。无C++/proto变化，不重复生成或运行full/tidy。

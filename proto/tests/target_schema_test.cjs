@@ -41,4 +41,18 @@ const state = {resource, version: '1', lifecycle: 'LIFECYCLE_ACTIVE', desired: '
 check('TargetVersionedResourceState', state, true);
 check('TargetVersionedResourceState', {...state, registered: true}, false);
 check('TargetVersionedResourceState', {...state, registered: true, fence}, true);
+// Managed instances bind to a Host; external instances register directly with Runtime.
+for (const [name, base] of [
+  ['TargetRuntimeCreateInstanceRequest', {installation_id: 'installation'}],
+  ['TargetInstanceRecord', {instance_id: 'instance', installation_id: 'installation', state}]
+]) {
+  check(name, {...base, externally_managed: false, host_id: 'host'}, true);
+  check(name, {...base, externally_managed: false}, false);
+  check(name, {...base, externally_managed: false, host_id: ''}, false);
+  check(name, {...base, externally_managed: true}, true);
+  check(name, {...base, externally_managed: true, host_id: ''}, false);
+  check(name, base, false);
+}
+check('TargetRuntimeCreateInstanceRequest', {installation_id: 'installation', host_id: 'host'}, true);
+check('TargetInstanceRecord', {instance_id: 'instance', installation_id: 'installation', state, host_id: 'host'}, false);
 console.log('Target schemas reject missing identity, empty result, zero generation and uint64 overflow; valid fixtures pass');

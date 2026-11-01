@@ -277,3 +277,5 @@ AsyncAPI operations 频道增加 operation.updated，首帧 hello/resume 认证�
 以上均为目标契约声明。原已实现端点不因新增 schema 自动获得目标服务路由；实际 Control/Panel/所有者实现与故障验收属于 P04–P13。doc/02–05/07–08 的运行说明由对应实现阶段更新，本任务不声称已改变生产行为。
 
 目标 schema 的成功响应主结果、资源/操作标识与版本、完整 Fence 均明确 required，不能用 `{}` 当成功。Fence generation 与已登记资源 version 为正 uint64；配置 applied_config_version、序号与计量可为0。TargetPositiveUint64/TargetUint64 使用精确范围正则及 maxLength=20，拒绝超过18446744073709551615、负数、小数和前导零。registered=true 的状态必须有完整 fence，尚未连接状态可缺；Blocked 必须有稳定 reason 和 next_attempt_at，可选诊断/观察不会被一律设必填。
+
+创建实例与实例投影均按部署方式校验Host绑定：受管实例必须提供非空host_id，externally_managed=true的外部自管实例可省略host_id，不要求空字符串占位；显式提供空host_id仍拒绝。创建请求省略externally_managed按false处理，必须提供Host；实例投影必须明确输出externally_managed。Host存在性及授权由Runtime实现核验，schema只校验字段形状。

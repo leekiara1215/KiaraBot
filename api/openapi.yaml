@@ -3106,7 +3106,14 @@ components:
       x-contract-status: not_implemented
       required:
       - installation_id
-      - host_id
+      description: Managed instances require a non-empty host_id. externally_managed=true allows host_id to be omitted; an explicitly supplied host_id is never allowed to be empty. A missing externally_managed request flag means managed.
+      anyOf:
+      - required: [host_id]
+        properties:
+          externally_managed: {type: boolean, enum: [false]}
+      - required: [externally_managed]
+        properties:
+          externally_managed: {type: boolean, enum: [true]}
     TargetRuntimeCreateInstanceResponse:
       type: object
       additionalProperties: false
@@ -3139,6 +3146,14 @@ components:
       - installation_id
       - externally_managed
       - state
+      description: Managed instances require a non-empty host_id. externally_managed=true allows host_id to be omitted; an explicitly supplied host_id is never allowed to be empty. A missing externally_managed request flag means managed.
+      anyOf:
+      - required: [host_id]
+        properties:
+          externally_managed: {type: boolean, enum: [false]}
+      - required: [externally_managed]
+        properties:
+          externally_managed: {type: boolean, enum: [true]}
     TargetVersionedResourceState:
       type: object
       additionalProperties: false
