@@ -12,11 +12,30 @@
 #include "kiarabot/v1/scheduler.grpc.pb.h"
 #include "kiarabot/v1/services.grpc.pb.h"
 
+namespace {
+
+class GrpcProcessLifetime final {
+public:
+  GrpcProcessLifetime() {
+    grpc_init();
+  }
+  ~GrpcProcessLifetime() {
+    // Keep the final shutdown on main, after every channel/context/stub is destroyed.
+    // Otherwise the last worker can start detached cleanup while OpenSSL exits.
+    grpc_shutdown();
+  }
+  GrpcProcessLifetime(const GrpcProcessLifetime&) = delete;
+  GrpcProcessLifetime& operator=(const GrpcProcessLifetime&) = delete;
+};
+
+} // namespace
+
 std::string read(const char* path) {
   std::ifstream stream(path);
   return {std::istreambuf_iterator<char>(stream), std::istreambuf_iterator<char>()};
 }
 int main(int argc, char* argv[]) {
+  const GrpcProcessLifetime grpc_lifetime;
   if (argc != 7) {
     return 2;
   }
