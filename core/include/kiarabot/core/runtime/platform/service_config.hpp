@@ -55,6 +55,12 @@ struct IdentityClockDeclaration {
   bool trusted = false;
   std::uint32_t maximum_known_skew_ms = 0;
 };
+struct IdentityVerificationDeclaration {
+  std::string catalog_id;
+  std::uint64_t version;
+  std::uint64_t key_version;
+  std::int64_t valid_until_epoch_seconds;
+};
 struct IdentitySecurityMaterial {
   IdentitySymmetricKeyFile token_key;
   IdentitySymmetricKeyFile request_key;
@@ -62,6 +68,7 @@ struct IdentitySecurityMaterial {
   IdentityDelegationKeyFiles delegation_key;
   std::string issuer;
   IdentityClockDeclaration clock;
+  IdentityVerificationDeclaration verification;
 };
 struct ProcessConfig {
   target::Service service;

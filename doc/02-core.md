@@ -899,3 +899,13 @@ exact IdentityKeysRead@材料离线Catalog在线授权后，返回完整公开ke
 UTC验证key/credential/cert期限与一秒授权窗口。材料必须可信单key、正集合/key版本、有限
 有效期及显式UUID Catalog；损坏形状Internal，到期或材料/依赖不可确认UpstreamUnavailable，
 不以空集合代表失败。应用不写库、不commit、不缓存、不联网、不签发；RPC/组合根另行接线。
+
+### Identity verification material composition
+
+The production bundle requires explicit offline Catalog UUID, positive set/key
+versions and finite key expiry in identity_security.verification (doc/08 exact
+schema). Secure file loading preserves key metadata; make_delegation_crypto_bundle
+builds both ports from the same configuration, and composition owns them until after
+all application/RPC borrowers stop. A current public-material snapshot is validated
+before opening PG. No public material endpoint or authorization bypass is introduced;
+the retained port awaits the independently reviewed Keys application/RPC integration.

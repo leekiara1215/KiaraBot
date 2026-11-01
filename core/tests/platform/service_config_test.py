@@ -154,6 +154,9 @@ def main(driver, identity=None):
                                'private_key_file': str(root / 'private.pem')},
             'issuer': 'kiarabot-identity',
             'clock': {'trusted': True, 'maximum_known_skew_ms': 2000},
+            'verification': {'catalog_id': '11111111-1111-4111-8111-111111111111',
+                             'version': 1, 'key_version': 1,
+                             'valid_until_epoch_seconds': 4102444800},
         }
         secured = {**database_config, 'identity_security': security}
         # Only trusted references are parsed here; the production composition loads keys securely.
@@ -175,7 +178,7 @@ def main(driver, identity=None):
             expect(2, missing)
         expect(2, {**database_config, 'identity_security': {**security, 'unexpected': True}})
         expect(2, {**database_config, 'identity_security': True})
-        for section in ['token_key', 'request_key', 'receipt_key', 'delegation_key', 'clock']:
+        for section in ['token_key', 'request_key', 'receipt_key', 'delegation_key', 'clock', 'verification']:
             for key in security[section]:
                 missing = copy.deepcopy(secured)
                 missing['identity_security'][section].pop(key)
@@ -196,6 +199,28 @@ def main(driver, identity=None):
             malformed = copy.deepcopy(secured)
             malformed['identity_security']['clock'].update(update)
             expect(2, malformed)
+        for field in ['version', 'key_version', 'valid_until_epoch_seconds']:
+            for value in [0, -1, True, 1.0, '1', None]:
+                malformed = copy.deepcopy(secured)
+                malformed['identity_security']['verification'][field] = value
+                expect(2, malformed)
+        for value in [9223372037, 18446744073709551615]:
+            malformed = copy.deepcopy(secured)
+            malformed['identity_security']['verification']['valid_until_epoch_seconds'] = value
+            expect(2, malformed)
+        for value in ['', 'all', 'keys', '11111111-1111-1111-8111-111111111111',
+                      '11111111-1111-4111-7111-111111111111',
+                      'AAAAAAAA-1111-4111-8111-111111111111', True]:
+            malformed = copy.deepcopy(secured)
+            malformed['identity_security']['verification']['catalog_id'] = value
+            expect(2, malformed)
+        maximum = copy.deepcopy(secured)
+        maximum['identity_security']['verification'].update(
+            version=18446744073709551615, key_version=18446744073709551615,
+            valid_until_epoch_seconds=9223372036)
+        expect(0, maximum)
+        expect(2, raw=json.dumps(secured).replace('"key_version": 1',
+                                                '"key_version": 1, "key_version": 2'))
         for issuer in ['', True, 'x' * 1025, 'bad\0issuer']:
             malformed = copy.deepcopy(secured)
             malformed['identity_security']['issuer'] = issuer

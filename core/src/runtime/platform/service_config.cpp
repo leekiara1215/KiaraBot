@@ -162,10 +162,39 @@ bool symmetric_key_file_shape(const nlohmann::json& value) {
   return exact_keys(value, {"id", "file"}) && bounded_config_string(value["id"], 1024) &&
          bounded_config_string(value["file"], 4096);
 }
+bool positive_integer(const nlohmann::json& value) {
+  return value.is_number_integer() && (value.is_number_unsigned() ? value.get<std::uint64_t>() > 0
+                                                                  : value.get<std::int64_t>() > 0);
+}
+bool verification_shape(const nlohmann::json& value) {
+  if (!exact_keys(value, {"catalog_id", "version", "key_version", "valid_until_epoch_seconds"}) ||
+      !value["catalog_id"].is_string() || !positive_integer(value["version"]) ||
+      !positive_integer(value["key_version"]) ||
+      !positive_integer(value["valid_until_epoch_seconds"])) {
+    return false;
+  }
+  const auto& id = value["catalog_id"].get_ref<const std::string&>();
+  if (id.size() != 36 || id[14] != '4' ||
+      (id[19] != '8' && id[19] != '9' && id[19] != 'a' && id[19] != 'b')) {
+    return false;
+  }
+  for (std::size_t index = 0; index < id.size(); ++index) {
+    if (index == 8 || index == 13 || index == 18 || index == 23) {
+      if (id[index] != '-') {
+        return false;
+      }
+    } else if (!((id[index] >= '0' && id[index] <= '9') ||
+                 (id[index] >= 'a' && id[index] <= 'f'))) {
+      return false;
+    }
+  }
+  // Largest positive whole epoch second representable by the domain int64-ns UTC.
+  return value["valid_until_epoch_seconds"].get<std::uint64_t>() <= 9223372036ULL;
+}
 bool identity_security_shape(const nlohmann::json& value) {
   if (!exact_keys(value, {"token_key", "request_key", "receipt_key", "delegation_key", "issuer",
-                          "clock"}) ||
-      !symmetric_key_file_shape(value["token_key"]) ||
+                          "clock", "verification"}) ||
+      !verification_shape(value["verification"]) || !symmetric_key_file_shape(value["token_key"]) ||
       !symmetric_key_file_shape(value["request_key"]) ||
       !symmetric_key_file_shape(value["receipt_key"]) ||
       !bounded_config_string(value["issuer"], 1024) ||
@@ -198,7 +227,11 @@ IdentitySecurityMaterial identity_security_material(const nlohmann::json& value)
            delegation["private_key_file"].get<std::string>()},
           value["issuer"].get<std::string>(),
           {value["clock"]["trusted"].get<bool>(),
-           value["clock"]["maximum_known_skew_ms"].get<std::uint32_t>()}};
+           value["clock"]["maximum_known_skew_ms"].get<std::uint32_t>()},
+          {value["verification"]["catalog_id"].get<std::string>(),
+           value["verification"]["version"].get<std::uint64_t>(),
+           value["verification"]["key_version"].get<std::uint64_t>(),
+           value["verification"]["valid_until_epoch_seconds"].get<std::int64_t>()}};
 }
 bool valid_time(X509* certificate, std::time_t validation_time) {
   const std::unique_ptr<ASN1_TIME, decltype(&ASN1_TIME_free)> now(

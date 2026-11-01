@@ -12,10 +12,12 @@
 #include "kiarabot/core/application/target/identity_application.hpp"
 #include "kiarabot/core/application/target/identity_delegation_application.hpp"
 #include "kiarabot/core/application/target/identity_security_application.hpp"
+#include "kiarabot/core/domain/target/time.hpp"
 #include "kiarabot/core/runtime/platform/identity_rpc.hpp"
 #include "kiarabot/core/runtime/platform/service_rpc.hpp"
 #include "kiarabot/infrastructure/identity_crypto/key_files.hpp"
 #include "kiarabot/infrastructure/identity_crypto/peer_certificate.hpp"
+#include "kiarabot/infrastructure/identity_crypto/verification_keys.hpp"
 #include "kiarabot/infrastructure/postgres/security_factory.hpp"
 #include "postgres_service.hpp"
 
@@ -43,6 +45,7 @@ struct Dependencies {
   std::unique_ptr<target::SecretReceiptCryptoPort> receipts;
   std::unique_ptr<target::PeerCertificatePort> certificates;
   std::unique_ptr<target::DelegationCryptoPort> delegations;
+  std::unique_ptr<target::VerificationKeyMaterialPort> verification_keys;
   std::unique_ptr<target::IdentitySecurityUnitOfWorkFactory> transactions;
   std::atomic<bool> database_available{false};
   std::atomic<bool> clock_reported{false};
@@ -163,10 +166,16 @@ target::Outcome<platform::ServiceComposition> configured(const platform::Process
   if (const auto* error = std::get_if<target::Failure>(&receipt_key)) {
     return *error;
   }
-  auto delegation_key =
-      crypto::load_delegation_key_files({{material.delegation_key.id},
-                                         material.delegation_key.public_key_file,
-                                         material.delegation_key.private_key_file});
+  const auto expiry =
+      target::time_point_from_parts({material.verification.valid_until_epoch_seconds, 0});
+  if (const auto* error = std::get_if<target::Failure>(&expiry)) {
+    return *error;
+  }
+  auto delegation_key = crypto::load_delegation_key_files({{material.delegation_key.id},
+                                                           material.delegation_key.public_key_file,
+                                                           material.delegation_key.private_key_file,
+                                                           {material.verification.key_version},
+                                                           std::get<target::TimePoint>(expiry)});
   if (const auto* error = std::get_if<target::Failure>(&delegation_key)) {
     return *error;
   }
@@ -210,13 +219,27 @@ target::Outcome<platform::ServiceComposition> configured(const platform::Process
       std::move(std::get<std::unique_ptr<target::SecretReceiptCryptoPort>>(receipts));
   std::vector<crypto::DelegationKey> delegation_keys;
   delegation_keys.push_back(std::move(std::get<crypto::DelegationKey>(delegation_key)));
-  auto delegations = crypto::make_delegation_crypto({material.issuer, std::move(delegation_keys)},
-                                                    dependencies->clock);
+  auto delegations = crypto::make_delegation_crypto_bundle(
+      {material.issuer,
+       std::move(delegation_keys),
+       {material.verification.version},
+       {target::ResourceKind::Catalog, {material.verification.catalog_id}}},
+      dependencies->clock);
   if (const auto* error = std::get_if<target::Failure>(&delegations)) {
     return *error;
   }
-  dependencies->delegations =
-      std::move(std::get<std::unique_ptr<target::DelegationCryptoPort>>(delegations));
+  auto bundle = std::move(std::get<crypto::DelegationCryptoBundle>(delegations));
+  dependencies->delegations = std::move(bundle.crypto);
+  dependencies->verification_keys = std::move(bundle.verification_keys);
+  if (!dependencies->verification_keys) {
+    return detail::database_unavailable();
+  }
+  // Validate current public material before PG. Retain the port for the future Keys RPC;
+  // this composition does not synthesize a second keyset or expose an unauthorised route.
+  const auto published = dependencies->verification_keys->snapshot();
+  if (const auto* error = std::get_if<target::Failure>(&published)) {
+    return *error;
+  }
   auto certificates =
       crypto::make_peer_certificate_crypto({{config.tls.ca}, crypto::PeerSanKind::Uri});
   if (const auto* error = std::get_if<target::Failure>(&certificates)) {

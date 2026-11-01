@@ -12,6 +12,8 @@ import os
 import secrets
 import select
 import signal
+import socket
+import copy
 import ssl
 import subprocess
 import sys
@@ -52,8 +54,26 @@ def daemon_http(root):
     openssl('pkey', '-in', str(private), '-pubout', '-out', str(public))
     public.chmod(0o600)
     material.update(delegation_key={'id': 'delegation-v1', 'public_key_file': str(public), 'private_key_file': str(private)}, issuer='identity-owned-test', clock={'trusted': True, 'maximum_known_skew_ms': 2000})
+    material['verification'] = {'catalog_id': str(uuid.uuid4()), 'version': 1,
+                                'key_version': 1,
+                                'valid_until_epoch_seconds': int(time.time()) + 3600}
     config['identity_security'] = material
     (root / 'identity.json').write_text(json.dumps(config))
+    # Valid key files with an expired declared public key must fail before any PG contact.
+    with socket.socket() as trap:
+        trap.bind(('127.0.0.1', 0))
+        trap.listen(1)
+        expired = copy.deepcopy(config)
+        expired['database']['host'] = '127.0.0.1'
+        expired['database']['port'] = trap.getsockname()[1]
+        expired['identity_security']['verification']['valid_until_epoch_seconds'] = 1
+        expired_path = root / 'expired-key.json'
+        expired_path.write_text(json.dumps(expired))
+        expired_path.chmod(0o600)
+        refused = subprocess.run([identity, '--config', str(expired_path)],
+                                 capture_output=True, timeout=5)
+        assert refused.returncode == 1 and b'probe_port=' not in refused.stdout
+        assert not select.select([trap], [], [], 0)[0], 'expired key contacted PG'
     short_lifetime = '--own-tls-expiry' in sys.argv[9:]
     expires = None
     if short_lifetime:

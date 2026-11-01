@@ -639,7 +639,13 @@ Identity alone accepts optional `identity_security`, with exactly these keys:
     "private_key_file": "/run/kiarabot/identity/delegation-private.pem"
   },
   "issuer": "kiarabot-identity",
-  "clock": {"trusted": true, "maximum_known_skew_ms": 2000}
+  "clock": {"trusted": true, "maximum_known_skew_ms": 2000},
+  "verification": {
+    "catalog_id": "11111111-1111-4111-8111-111111111111",
+    "version": 1,
+    "key_version": 1,
+    "valid_until_epoch_seconds": 4102444800
+  }
 }
 ```
 
@@ -701,3 +707,22 @@ transport, without changing the system clock.
 当前factory为make_identity_rpc(SecurityApp&, PeerAuthenticator, Issuer*=nullptr, InvocationDeadline={})，其中InvocationDeadline是function<Outcome<TimePoint>()>，闭包由服务持有。生产composition必须注入实际选定自身TLS链有效期与当前可信clock/lifecycle gate；空回调仅为fixture/源兼容，不得作为生产默认安全策略，也不得把自身到期时间写入远端Control的CertificateBinding。
 
 run保留body/gRPC/default2秒/max5秒及取消检查，可信回调失败沿原Failure进入完整RpcFailure，异常在调用应用前转Internal/NotAccepted。返回非正时间失败关闭为UpstreamUnavailable；过期期限为Timeout/NotAccepted。有效期限取已有预算与自身limit最早者，回调之后与认证之后再次检查取消/到期；传入每个Core用例的context.deadline包含此上限，由Core final_check阻止自身TLS到期后的提交。外层不授权、不查仓储、不实现TLS链/clock判断或伪造有效期。较晚limit不能延长请求期限。
+
+### Identity verification deployment metadata
+
+identity_security.verification is required whenever identity_security is present.
+Its exact four keys are catalog_id (offline canonical lowercase UUIDv4 Catalog
+anchor), version and key_version (positive uint64 integers), and
+valid_until_epoch_seconds (positive integer1–9223372036 inclusive, representable
+finite UTC seconds). Booleans, floating numbers, zero versions, implicit defaults,
+unknown/duplicate/missing fields and noncanonical identifiers exit2. A syntactically
+valid past expiry fails composition before PG/listeners. Absent identity_security
+still selects the old not-ready path; the presence of that object never selects
+legacy unlimited keys. This is trusted deployment metadata, never token-selected
+URLs, public material fetched from callers, or an automatic rotation policy.
+
+The secure loader preserves the explicit key version/expiry. The same complete
+DelegationConfig constructs signing/verification and the public verification port;
+composition retains both with their clock and validates a current snapshot before
+PG. No second keyset/configuration is built. This enables material ownership only;
+GetVerificationKeys authorization and its RPC require their own reviewed capability.

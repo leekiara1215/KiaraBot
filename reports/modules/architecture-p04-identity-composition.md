@@ -162,3 +162,41 @@ peer evidence test 移除已由 service-process→config 传递的重复 OpenSSL
 实际 configure、完整 build 无 warning/error，clock、peer evidence、正常 daemon HTTPS、
 实际证书到期 daemon 共 4/4 通过（17.80 秒）。Python py_compile、git diff --check 通过。
 工具链文档已同步新门禁；受保护 doc18 不变。没有在局部夹具变更重跑完整发布门禁。
+
+## Explicit verification catalog metadata and shared crypto bundle
+
+This independent configuration/composition capability groups with reviewed public
+port A47c23d8 and mature implementation B9cf880f. It is based on complete c83078f
+and the previously reviewed production/HTTP/ownTLS capabilities; it does not edit
+Core application/ports or mature crypto internals. Allowed changes: outer typed
+configuration/parser, production composition, config/daemon regression and doc02/08.
+The four exact verification fields and numeric/UUID limits are documented in doc/08.
+
+The loader receives explicit key version and absolute expiry. One DelegationConfig
+contains issuer, key and positive set version plus exact offline Catalog anchor;
+make_delegation_crypto_bundle returns both mature crypto and immutable public
+material. Composition owns both alongside their borrowed clock and validates a
+current snapshot before opening the complete PG factory. There is no default
+unlimited expiry, key-selected URL, second public key configuration, invented version,
+GetVerificationKeys route, or claimed whole-service readiness.
+
+Config tests cover every missing/unknown/duplicate nested field, wrong scalar types,
+boolean/float/zero/negative versions/expiry, uint64 version maximum, supported expiry
+whole-second maximum, above-range expiry, canonical UUID version/variant/case and
+non-UUID strings. The actual production HTTP regression includes valid secure key
+files with expired declared key metadata and a TCP canary proving no PG connection
+or listener on failure, followed by the full real CLI/PG/Identity/Control chain.
+
+Document impact: doc02/08 and this report updated; proto/API/doc01/doc06 unchanged
+because this is a trusted deployment schema and outer ownership change without new
+wire/error semantics. Protected doc18 untouched. Build registration is temporary;
+integrator adds B verification_keys.cpp to crypto, its unit test with official
+OpenSSL headers/assertions, plus the already reported composition targets.
+
+Actually run: Werror Identity/Control/config-driver/public-material/delegation/key-file
+target builds, strict config plus missing-key canary, public verification material
+binary, delegation/key-file tests, and full production owned-PG HTTP chain passed.
+Python compilation, locked format16/tidy22, module boundaries, document links and
+whitespace checks passed. No external provider or real platform calls occurred.
+The PG application fixture adaptations to B are owned by the PG task and are not
+claimed here; A+B+this configuration and that fixture must be integrated together.
