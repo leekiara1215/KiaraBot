@@ -38,3 +38,12 @@ corrected invocation found a widening multiplication and it was fixed. No root C
 service checks: build wiring belongs to the build task and no service is assembled here.
 Updated docs: doc/05-infrastructure.md, doc/08-operations.md. No protocol/API changes or protected
 baseline edits. Token and receipt factories are still proposals pending implementation acceptance.
+
+## Token implementation checks
+
+Token HMAC and typed commitment implemented, with no raw secret hash or secret serialization
+buffer. HMAC state is erased on destruction. Real libsodium ASan/UBSan -Werror test passed:
+correct token, cross-purpose rejection, unknown key, changed request rotation/secret, mismatched
+scope/parameter variant, empty keyring. Same compiler/include/link command as password test with
+src/token_crypto.cpp and tests/token_crypto_test.cpp added. Tidy22 clang-analyzer/bugprone passed
+with the explicit SDK/libc++ include options described above. No JWT/AEAD acceptance yet.

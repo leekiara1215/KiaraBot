@@ -256,3 +256,9 @@ libsodium 1.0.20 提供 sodium_malloc/free 安全秘密内存、CSPRNG 和 Argon
 秘密和随机请求最多64KiB，随机长度必须非零；不提供弱随机降级。
 这些操作不访问数据库、不作授权判断，调用者不得在持有事务时执行密码计算。
 当前 factory 头中的 Token/Receipt 声明不表示收据或完整认证服务已实现。
+
+P04 TokenCryptoPort 已实现用途隔离 HMAC-SHA256：token purpose、密钥引用及秘密分别
+编码；request commitment 认证封闭scope/parameter variant、全部标识、rotation或expected
+version及秘密。编码使用域标签、8字节大端整数和长度前缀，错误variant拒绝。
+未知密钥返回 UpstreamUnavailable；认证比较使用 sodium_memcmp。keyring最多16项，
+引用非空且唯一，每项32字节，factory复制进安全内存后不可变持有。
