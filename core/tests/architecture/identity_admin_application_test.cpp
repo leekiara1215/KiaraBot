@@ -372,8 +372,13 @@ void bootstrap_tests() {
   int watermarks = 0;
   int audits = 0;
   bool fail_audit = false;
-  factory.script.principals.write = [&](const auto&, auto expected) -> t::Status {
+  factory.script.principals.write = [&](const auto& row, auto expected) -> t::Status {
     check(!expected && factory.script.active == 1, "same UoW creates principal");
+    check(row.binding == t::ResourceRef{t::ResourceKind::Principal, {row.id.value}},
+          "bootstrap persists explicit self binding for both initial principals");
+    check((row.id == request.administrator && row.kind == t::PrincipalKind::Human) ||
+              (row.id == request.control && row.kind == t::PrincipalKind::PlatformService),
+          "bootstrap binds each initial subject with its actual kind");
     ++principals;
     return std::monostate{};
   };

@@ -264,9 +264,12 @@ IdentityAdminApplication::bootstrap_offline(const OfflineIdentityBootstrap& requ
                                      ResourceId{request.administrator.value}};
     const ResourceRef control_resource{ResourceKind::Principal, ResourceId{request.control.value}};
     const Principal administrator{
-        request.administrator, PrincipalKind::Human, std::nullopt, {1}, LifecycleState::Active};
-    const Principal control{
-        request.control, PrincipalKind::PlatformService, std::nullopt, {1}, LifecycleState::Active};
+        request.administrator, PrincipalKind::Human, admin_resource, {1}, LifecycleState::Active};
+    const Principal control{request.control,
+                            PrincipalKind::PlatformService,
+                            control_resource,
+                            {1},
+                            LifecycleState::Active};
     const CredentialVersionRecord password{{request.password_credential, {1}},
                                            request.administrator,
                                            request.password,

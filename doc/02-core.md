@@ -688,6 +688,10 @@ actor，aud必须变、权限-资源只收窄、subject/origin不变且期限不
 
 ### P04可信离线初始化与Peer权威登记应用
 
+初始化的人类管理员和 Control 平台主体均持久化自身 `Principal` 资源绑定，与各自凭据的
+绑定完全一致。外层 PrincipalRecord 必填 binding 直接取已存事实，不能在 RPC/Control 中
+临时拼造；这也满足后续在线 peer/credential 所有权核验。
+
 `IdentityAdminApplication`供可信离线composition初始化，以及RPC边界查询真实Peer登记。
 `bootstrap_offline`不暴露网络入口，输入为已派生密码verifier与已按可信CA/SAN校验的
 Control证书登记，不接收CA私钥。管理员、Control平台主体及真实证书绑定、login、

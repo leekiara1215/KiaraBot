@@ -1,5 +1,15 @@
 # P04 Identity离线初始化与真实Peer权威查询
 
+## 组合复核：持久化初始主体绑定
+
+实际六方法/RPC 组合要求当前凭据与主体资源绑定一致，公开 PrincipalRecord 也要求
+binding。bootstrap 现在将 Human/Control 均绑定到各自自身 Principal 资源，与已有凭据绑定
+一致；不会由外层补默认字段。严格 scripted repository 同时检查两种主体的绑定和类型。
+此改动限 Admin 生产源、同名测试、doc02 和本报告，不改变线协议、API、SQL schema、
+错误码或部署配置；其他模块文档无需同步，doc18只读。严格 C++20/Werror 加 ASan/UBSan
+编译执行通过；两 TU 固定 tidy22（clang-analyzer warnings-as-errors）和 format16、
+boundary/inner/diff 检查通过，未为局部绑定修复重复全仓统一门禁。
+
 目标Core Identity；新增identity_admin_application.hpp/.cpp及注入端口测试。
 只修改application/target、core/src/application/target、architecture测试及直接模块文档。
 线协议/API未变化，不给HTTP/gRPC暴露离线bootstrap。doc18只读。
