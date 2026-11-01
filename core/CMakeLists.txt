@@ -12,7 +12,7 @@ foreach(COMPONENT foundation invariants)
   set_tests_properties(architecture_${COMPONENT} PROPERTIES LABELS "p01;unit" TIMEOUT 10)
 endforeach()
 
-foreach(COMPONENT persistence_contract persistence_rules)
+foreach(COMPONENT persistence_contract persistence_rules time)
   add_executable(kiarabot_${COMPONENT}_test tests/architecture/${COMPONENT}_test.cpp)
   target_include_directories(kiarabot_${COMPONENT}_test PRIVATE include)
   target_compile_features(kiarabot_${COMPONENT}_test PRIVATE cxx_std_20)

@@ -481,3 +481,6 @@ P03外层组合回归 `p03_service_composition` 使用链接service_process的�
 标记p03/integration/fault、30秒超时；与p02配置/进程测试一致，将显式CA CLI所在目录
 前置PATH。仅proto/full构建注册，dev不包含该外层库。此测试验证组合保护、依赖丢失
 和资源生命周期，不表示生产数据库已装配。
+
+`p03_time` 注册p03/unit（10秒），验证目标UTC int64纳秒时间的精确转换与边界拒绝；
+新time头同样进入独立内层头编译，测试TU纳入全仓覆盖。

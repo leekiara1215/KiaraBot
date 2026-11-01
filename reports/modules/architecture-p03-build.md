@@ -87,3 +87,19 @@ tidy22 clang-analyzer-*及warnings-as-errors通过。dev配置及注册JSON确�
 文档路径/末尾换行及git diff --check作为本次文档校验。
 
 相关CTest 6/6通过，总22.92秒；composition2.96秒，真实PG1.96秒。
+
+## 能力五：目标纳秒时间测试注册
+
+接入父已审查a7d5577（本树e483f16），仅doc/02末尾追加冲突保留双方章节。
+不改时间helper/测试/配置源码，Core CMake将time加入p03纯测试循环，p03/unit、10秒。
+文档影响仅新增构建测试说明，更新doc/11和本报告；时间语义及Core说明已由源提交负责，
+API/proto、其他模块、doc/12-ci-cd不变，冻结doc/18不改。
+
+沿固定外部prefix/Python配置并完整full-locked构建成功（正常-Wall/-Wextra/-Wpedantic）；
+全TU覆盖/inner/六目标链接图/p03注册均通过；新time头/测试format16 dry-run通过，
+新time TU精确compile DB的tidy22 clang-analyzer-* warnings-as-errors通过。
+相关CTest为全部p03加p02_service_config，结果在提交前追加。
+不重复源所有者已做sanitizers或父统一全仓；不宣称Linux/CI/完整PG精度验收。
+文档校验为路径、末尾换行和git diff --check。
+
+相关CTest 6/6通过，总9.29秒；time0.52秒、配置1.63秒、真实PG3.03秒。
