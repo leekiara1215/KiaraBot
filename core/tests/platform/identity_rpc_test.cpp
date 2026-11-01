@@ -1060,6 +1060,9 @@ class IssueAuthorizationFixture final : public t::Repository<t::SubjectId, t::Au
 public:
   explicit IssueAuthorizationFixture(RegistryFixture& registry) : registry_(registry) {}
   t::Outcome<std::optional<t::AuthorizationState>> find(const t::SubjectId& id) override {
+    if (id == registry_.principal.id) {
+      return std::optional<t::AuthorizationState>{t::AuthorizationState{id, {1}, false}};
+    }
     if (!registry_.human || id != registry_.human->id) {
       return std::optional<t::AuthorizationState>{};
     }
@@ -1076,6 +1079,14 @@ class IssueGrantsFixture final : public t::IdentityExactAssignmentRepository {
 public:
   explicit IssueGrantsFixture(RegistryFixture& registry) : registry_(registry) {}
   t::Outcome<std::vector<t::ExactAssignment>> for_subject(const t::SubjectId& id) override {
+    if (id == registry_.principal.id) {
+      return std::vector<t::ExactAssignment>{t::ExactAssignment{
+          {kCredential},
+          id,
+          {},
+          {{t::Permission::IdentityDelegationIssue, {t::ResourceKind::Principal, {id.value}}}},
+          {1}}};
+    }
     if (id.value != kSubject) {
       return std::vector<t::ExactAssignment>{};
     }

@@ -51,3 +51,9 @@ fixture，真正PG/成熟crypto组合由独立p04_identity_application验证。
 文档同步doc01/doc02与本报告；doc08无需改：没有启动、配置或生产装配变化。proto/API唯一字段/错误码未变，128为既有成熟签名限制的前移校验，不重复descriptor/lint；API引用/状态门禁保留。最终实现保持旧lambda及失败校验布局，生产源只新增14行helper/提前预算检查和有界reserve。CMake/PG/Core纯应用/doc18未改。最终检查结果随后记录。
 
 预算fix最终检查：生产源仅14行新增，无旧lambda重排。固定依赖-Werror build、真实mTLS全套（128成功/129及其他超限拒绝，来源/随机/sign计数不变）、format16、两TU tidy22全部analyzer/warnings-as-errors、inner/模块边界、状态文档、46项API映射与diff检查全部通过。未跑full/真实PG/生产签名：仍由父组合根验收，本次无其代码或配置变动。
+
+## 独立fixture补正：当前Control delegator grant
+
+按父定稿，测试授权仓储同时支持registry.principal.id（实际Control）及human的授权水位；Control精确授予只含IdentityDelegationIssue@RESOURCE_PRINCIPAL/实际Control subject，无角色替代，human逐tuple业务授予仍独立。既有principal/current credential查询已同时支持二者，无单human断言。仅修改fixture数据，不实现或抢改Core新策略；缺grant/wrongPrincipal/role拒绝矩阵由Core作者验证。
+
+固定依赖-Werror构建、现有真实mTLS七方法/128/生命周期全套、fixture TU clang-tidy22全部analyzer/warnings-as-errors及format16通过。当前独立Core f2基点尚无新delegator gate，故不声称已验收新Core策略，仅预备其正fixture；父完整Root继续验证。无生产行为/接口变化，doc01/02/08无需同步；本报告记录测试变化，wire/API/保护doc18不动。GetKeys尚未提交的header/source完全不在此小提交中。
