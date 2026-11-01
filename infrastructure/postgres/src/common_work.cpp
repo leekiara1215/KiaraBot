@@ -143,6 +143,7 @@ private:
 };
 
 class CommonWork final : public target::UnitOfWork,
+                         public SqlWork,
                          public target::ReceiptRepository,
                          public target::JournalRepository,
                          public target::Repository<target::OperationId, target::Operation> {
@@ -665,6 +666,15 @@ public:
     });
   }
 
+  target::Status
+  run(const std::function<target::Status(pqxx::transaction_base&)>& function) override {
+    return invoke<std::monostate>([&]() -> target::Status {
+      // Refresh the remaining SQL timeout before lending the same transaction.
+      exec("SELECT 1");
+      return function(*transaction_);
+    });
+  }
+
 private:
   template <typename Value, typename Function> target::Outcome<Value> invoke(Function function) {
     if (!transaction_ || failed_ || session_->disabled) {
@@ -805,8 +815,7 @@ target::Status save_authorization(target::UnitOfWork& work, const target::Author
   return error(target::ErrorCode::Internal);
 }
 
-target::Outcome<std::unique_ptr<target::UnitOfWork>>
-begin_common(const std::shared_ptr<Session>& session) {
+target::Outcome<CommonWorkAccess> begin_common_access(const std::shared_ptr<Session>& session) {
   if (!session->permit.try_acquire_for(std::chrono::milliseconds(250))) {
     return error(target::ErrorCode::Conflict);
   }
@@ -815,7 +824,9 @@ begin_common(const std::shared_ptr<Session>& session) {
     return error(target::ErrorCode::UpstreamUnavailable);
   }
   try {
-    return std::unique_ptr<target::UnitOfWork>(std::make_unique<CommonWork>(session));
+    auto work = std::make_unique<CommonWork>(session);
+    auto* sql = static_cast<SqlWork*>(work.get());
+    return CommonWorkAccess{std::move(work), sql};
   } catch (...) {
     const auto failure = storage_error();
     if (failure.code == target::ErrorCode::UpstreamUnavailable) {
@@ -824,5 +835,13 @@ begin_common(const std::shared_ptr<Session>& session) {
     session->permit.release();
     return failure;
   }
+}
+target::Outcome<std::unique_ptr<target::UnitOfWork>>
+begin_common(const std::shared_ptr<Session>& session) {
+  auto begun = begin_common_access(session);
+  if (const auto* failure = std::get_if<target::Failure>(&begun)) {
+    return *failure;
+  }
+  return std::move(std::get<CommonWorkAccess>(begun).work);
 }
 } // namespace kiarabot::infrastructure::postgres::detail

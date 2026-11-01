@@ -11,6 +11,8 @@
 
 #include <pqxx/pqxx>
 
+#include "../src/record_access.hpp"
+
 namespace kiarabot::infrastructure::postgres::test {
 namespace {
 namespace target = core::target;
@@ -65,7 +67,43 @@ void rejected(target::UnitOfWork& work) {
 void check_common(Database& database, const DatabaseConfig& config) {
   constexpr auto kHigh = std::uint64_t{1} << 63;
   constexpr auto kMaximum = std::numeric_limits<std::uint64_t>::max();
+  {
+    auto access = take(detail::DatabaseAccess::begin(database));
+    const auto sampled = take(access.work->current_time());
+    target::Operation provisional{
+        {config.service, {"borrowed-rollback"}, {target::ResourceKind::Catalog, {"resource"}}},
+        {1},
+        target::OperationState::Blocked,
+        target::ExecutionOutcome::Unknown,
+        target::ErrorCode::Timeout,
+        sampled};
+    take(access.work->operations().save(provisional, {}));
+    take(access.sql->run([](pqxx::transaction_base& transaction) -> target::Status {
+      check(transaction
+                    .exec("SELECT count(*) FROM kiarabot.operations WHERE "
+                          "id='borrowed-rollback'")
+                    .one_row()[0]
+                    .as<int>() == 1,
+            "SQL borrow did not observe inherited repository transaction");
+      return std::monostate{};
+    }));
+    expect(access.sql->run([](pqxx::transaction_base&) -> target::Status {
+      return target::Failure{target::ErrorCode::Conflict,
+                             target::Acceptance::NotAccepted,
+                             target::Recovery::Diagnose,
+                             {},
+                             {}};
+    }),
+           target::ErrorCode::Conflict);
+    rejected(*access.work);
+    expect(access.sql->run([](pqxx::transaction_base&) -> target::Status {
+      throw std::runtime_error("terminal borrow must not invoke callback");
+    }),
+           target::ErrorCode::UpstreamUnavailable);
+  }
   auto work = begin(database);
+  check(!take(work->operations().find({"borrowed-rollback"})),
+        "borrow failure committed inherited repository mutation");
   const auto now = take(work->current_time());
   std::this_thread::sleep_for(std::chrono::milliseconds(10));
   check(take(work->current_time()) > now, "database clock was transaction-frozen");

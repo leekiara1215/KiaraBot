@@ -8,6 +8,10 @@
 
 namespace kiarabot::infrastructure::postgres {
 
+namespace detail {
+struct DatabaseAccess;
+}
+
 // Infrastructure configuration only. Never log this object or a connection exception.
 // No DSN is accepted: callers cannot override TLS, authentication or timeout policy.
 struct DatabaseConfig {
@@ -31,6 +35,7 @@ core::target::Status initialize_empty(const DatabaseConfig& config);
 // a new process must validate/acquire again. No transparent reconnection.
 class Database final {
   struct Impl;
+  friend struct detail::DatabaseAccess;
 
 public:
   // Construction requires the private implementation; use open().

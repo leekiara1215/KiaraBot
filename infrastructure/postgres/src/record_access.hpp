@@ -1,12 +1,34 @@
 #pragma once
 
+#include <functional>
+#include <memory>
 #include <optional>
 #include <span>
 #include <string>
 
+#include <pqxx/pqxx>
+
 #include "kiarabot/core/ports/target/unit_of_work.hpp"
+#include "kiarabot/infrastructure/postgres/database.hpp"
 
 namespace kiarabot::infrastructure::postgres::detail {
+
+// Infrastructure-only borrow. The callback must contain local SQL/codec work only: no remote
+// calls, crypto, user callbacks, commit or rollback. Failure poisons the owning common UoW.
+class SqlWork {
+public:
+  virtual ~SqlWork() = default;
+  virtual core::target::Status
+  run(const std::function<core::target::Status(pqxx::transaction_base&)>& function) = 0;
+};
+struct CommonWorkAccess {
+  std::unique_ptr<core::target::UnitOfWork> work;
+  // Non-owning; valid only while work is alive. Terminal work rejects all further access.
+  SqlWork* sql;
+};
+struct DatabaseAccess {
+  static core::target::Outcome<CommonWorkAccess> begin(Database& database);
+};
 
 // Closed infrastructure dispatch to concrete relation tables. Not a Core port or a blob store.
 enum class RecordKind {
