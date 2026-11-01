@@ -49,6 +49,17 @@ class ArchitectureTest(unittest.TestCase):
         model['configurations'][0]['targets'].pop()
         self.assertEqual(len(GATE.target_errors(model)), 1)
 
+    def test_transitive_private_outer_link_is_rejected(self):
+        graph = {}
+        for name in ('control', 'identity', 'runtime', 'host', 'scheduler', 'model'):
+            graph[f'kiarabot_{name}_application'] = {'TYPE': ['STATIC_LIBRARY']}
+        self.assertEqual(GATE.link_errors(graph, require_services=False), [])
+        graph['kiarabot_identity_application']['LINK_LIBRARIES'] = ['$<LINK_ONLY:helper>']
+        graph['helper'] = {'LINK_LIBRARIES': ['protobuf::libprotobuf']}
+        self.assertTrue(GATE.link_errors(graph, require_services=False))
+        graph['helper'] = {'KIARABOT_REFERENCE': ['TRUE']}
+        self.assertTrue(GATE.link_errors(graph, require_services=False))
+
     def test_empty_or_unclassified_stage_fails(self):
         self.assertTrue(GATE.stage_errors({'tests': []}, 'p03'))
         tests = {'tests': [{'name': 'repository', 'properties': [

@@ -92,3 +92,26 @@ root 协议生成扩至全部 13 个文件，补入已存在 target_roundtrip �
 
 文档同步 doc/11 和本记录；新运行说明由各模块所有者更新。协议/API 无语义变化。
 未宣称六入口/链接隔离或固定 PG 环境通过：它们留下一独立能力，依赖已审查共享提交。
+
+## 第四能力：纯应用、配置与完整 P01 往返接线
+
+已按主对话授权同步共享/Control、五应用、配置和 PKI 已审查提交；Git 目录重命名检测
+曾把新增 main 建议移入 reference，已逐项恢复到 core/app（原内容未改）。
+本能力仅新增 CMake/门禁，不修改这些生产源码。
+
+cmake/platform.cmake：六个纯 application 库、每个内层头独立编译、外层配置库/driver；
+p02_service_applications、p02_control_application、p02_service_config 实测 3/3 通过。
+CMake configure/build 通过。P01 fixture 使用 WHOLE_ARCHIVE，实际 CMake 二进制和 SDK
+Python 3.11.18 环境完成77 RPC策略/269消息往返，CTest p01_target_roundtrip通过。
+
+新增实际配置图导出与递归链接隔离；5 项 architecture 自测通过（首次发现 LINK_ONLY
+表达式解析错误，已修正并重跑）。实际六个 application 图检查通过，独立内层头编译
+通过。服务 executable 默认仍缺，门禁不会报告六目标完成；full tidy 实际启动但被
+compile coverage 拒绝，因为 runner 未集成，五 Core main 及 Control main 尚无构建条目。
+未通过该门禁不算静态分析通过，后续接线后必须重跑。
+
+环境增量：旧 uv0.13.5找不到3.11.18，经环境授权安装固定uv0.13.6后成功取得解释器并
+uv sync --project sdk/python --locked --python3.11.18（实际命令带空格分隔参数）成功。
+SDK生成产物/venv未提交；固定PG/gRPC依赖编译仍在进行。npm已用现有lock实际尝试，
+先遇沙箱DNS，授权后遇本机TLS CA信任问题；保持校验开启，正在使用系统公开信任根重试。
+无proto/API语义变化；doc/11同步构建/失败语义与真实检查，不更新其他所有者模块说明。

@@ -293,3 +293,24 @@ PATH="$PWD/.tools/quality/bin:$PATH" ./scripts/quality/check-tidy.sh
 `reference/`。旧 infrastructure 目标也在 reference 输出树，仍纳入全仓 tidy。
 13 个 proto 全部进入生成/descriptor；现有 target_roundtrip 与两个纯内层断言均纳入
 full compile DB。此时六入口源尚待统一集成，不把 reference 全构建通过称为 P02 完成。
+
+### P01 完整往返与 P02 纯应用图
+
+`cmake/platform.cmake` 将六个纯 application 库、各内层头独立翻译单元、配置校验驱动
+接入 full。纯库不链接协议/JSON/TLS/数据库/reference；配置校验属于外层并单独链接。
+CMake 输出 `architecture-targets.json`，从实际 LINK_LIBRARIES 和 INTERFACE_LINK_LIBRARIES
+递归验证依赖，包含 PRIVATE static link 的 LINK_ONLY 表达式。门禁自测覆盖间接协议依赖
+和间接 reference 链接，不以仅 grep 目标名替代配置图。
+
+full 由 SDK 锁定解释器生成全部 Python 协议，`p01_target_roundtrip` 使用 CMake 生成的
+fixture 执行 77 RPC/269 消息验证。fixture 以 WHOLE_ARCHIVE 链接生成协议库，确保动态
+descriptor 注册对象不被静态链接器丢弃；仅构建成功不代表往返通过。
+
+```bash
+ctest --preset full -R '^p01_target_roundtrip$' --output-on-failure
+ctest --preset full -L '^p02$' --output-on-failure
+python3 scripts/quality/check-architecture.py --links build/full/architecture-targets.json
+```
+
+P02 纯应用/配置目前已有三项 unit 标签测试。六入口和 runner 的完整构建仍需各自已审查
+提交接线；完整链接门禁默认要求六个 EXECUTABLE，不会因为只有纯库就通过。

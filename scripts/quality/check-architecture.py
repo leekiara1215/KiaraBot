@@ -72,6 +72,44 @@ def target_errors(codemodel):
     return errors
 
 
+def link_errors(graph, require_services=True):
+    errors = []
+    inner = [f'kiarabot_{name}_application' for name in
+             ('control', 'identity', 'runtime', 'host', 'scheduler', 'model')]
+    roots = ([f'kiarabot-{name}' for name in SERVICES] if require_services else []) + inner
+    forbidden = re.compile(r'(?:protobuf|grpc|json|pqxx|libpq|sqlite|OpenSSL|sodium|curl|Boost)', re.I)
+    def walk(name, chain, pure, seen):
+        if name in seen:
+            return
+        seen.add(name)
+        node = graph[name]
+        sources = ' '.join(node.get('SOURCES', []))
+        if (node.get('KIARABOT_REFERENCE') == ['TRUE'] or '/reference/' in sources or
+                name in {'kiarabot_bridge', 'kiarabot_control', 'kiarabot_sqlite_runtime',
+                         'kiarabot_model', 'kiarabot_core_log', 'kiarabot_runtime_log'}):
+            errors.append('production links reference: ' + ' -> '.join(chain))
+        if pure:
+            for directory in node.get('INCLUDE_DIRECTORIES', []):
+                if ('/reference/' in directory or '/generated' in directory or
+                        'infrastructure' in directory or '/dependencies/' in directory):
+                    errors.append('inner include path leaks outer dependency: ' + ' -> '.join(chain))
+        for link in node.get('LINK_LIBRARIES', []) + node.get('INTERFACE_LINK_LIBRARIES', []):
+            if pure and forbidden.search(link):
+                errors.append('inner links transport/database/crypto: ' + ' -> '.join(chain + [link]))
+            # Handles target names inside CMake LINK_ONLY/conditional generator expressions.
+            for dependency in re.findall(r'[A-Za-z_][A-Za-z0-9_+.-]*(?:::[A-Za-z_][A-Za-z0-9_+.-]*)*', link):
+                if dependency in graph:
+                    walk(dependency, chain + [dependency], pure, seen)
+    for root in roots:
+        if root not in graph:
+            errors.append('architecture target absent: ' + root)
+            continue
+        if root.startswith('kiarabot-') and graph[root].get('TYPE') != ['EXECUTABLE']:
+            errors.append('service target is not executable: ' + root)
+        walk(root, [root], root in inner, set())
+    return errors
+
+
 def stage_errors(tests, stage):
     errors = []
     selected = []
@@ -93,6 +131,7 @@ def main():
     parser.add_argument('--list-sources0', action='store_true')
     parser.add_argument('--database', type=Path)
     parser.add_argument('--inner', action='store_true')
+    parser.add_argument('--links', type=Path, help='configured architecture-targets.json')
     parser.add_argument('--codemodel', type=Path, help='CMake file API codemodel-v2 JSON')
     parser.add_argument('--ctest-json', type=Path, help='ctest --show-only=json-v1 output')
     parser.add_argument('--stage', choices=[f'p{n:02}' for n in range(2, 15)])
@@ -102,11 +141,13 @@ def main():
         for path in sources(root):
             sys.stdout.buffer.write(str(path).encode() + b'\0')
         return 0
-    if not any((args.database, args.inner, args.codemodel, args.stage)):
+    if not any((args.database, args.inner, args.codemodel, args.stage, args.links)):
         parser.error('select a gate; an empty check cannot pass')
     errors = []
     if args.database:
         errors.extend(coverage_errors(root, json.loads(args.database.read_text()), sources(root)))
+    if args.links:
+        errors.extend(link_errors(json.loads(args.links.read_text())))
     if args.inner:
         errors.extend(inner_errors(root))
     if args.codemodel:
