@@ -126,3 +126,27 @@ driver在前一条SQL已返回后用本次临时目录标记arm，并等代理�
 这验证故障夹具本身，不冒充待实现Core UoW的CommitResult::Unknown映射；后者收到接口后补验。
 -Werror重编driver、真实fixture、format16、Python编译、diff检查通过。
 无公共文档影响：只新增测试故障能力，doc/05、doc/08约定未变。
+
+## 能力二：公共UoW、关系结果快照与可靠交接（实施中）
+
+已按父授权cherry-pick审核接口110cf32（本分支cbd49c6），不自行造Core接口。
+输入为Core纯typed值，输出沿用Outcome/Failure/CommitResult；无新线协议或稳定错误码。
+需同步doc/05短事务/版本/结果存储行为；doc/08的显式初始化原则保持，schema变化时追加版本说明。
+其他模块文档无需改动，doc/18只读。
+
+实现计划：schema扩为公共关系表及每ReplayResult分类型不可变快照；
+公共UnitOfWork复用持锁session，不透明重连；2秒总预算/250ms锁等待；
+完整uint64值以NUMERIC(20,0)+范围CHECK保存。Receipt/Journal容量仅可信应用参数，
+当前时间样本不是租约权威，条件SQL用clock_timestamp原子重判。
+实际验收须用本真实TLS代理令UoW commit返回Unknown，再用原身份查回已提交收据。
+
+### 组合根facade声明（独立接口提交，实现随公共/typed UoW补齐）
+
+新增 `include/kiarabot/infrastructure/postgres/factories.hpp`，声明open_identity/open_runtime/
+open_scheduler/open_model(const DatabaseConfig&)，返回Core Outcome<unique_ptr<对应Factory>>。
+外层创建API不暴露pqxx；每factory单session/单writer，同session许可让并发begin最多等250ms，
+忙Conflict，不偷偷重连。许可持续至commit/rollback/析构；单个UoW仍单所有者。
+健康采样只经同factory begin→current_time→rollback，不另建连接或并发check原始Database。
+此提交仅声明，定义正在本能力实现，不把接口存在当作可链接或已完成数据库行为。
+声明按format16检查、C++20 -Werror独立头语法检查和diff检查通过；无可执行行为变化，
+本接口提交无需新增doc/08；doc/05已在能力二的同变更内说明。真实PG证据仍为上节已提交能力。
