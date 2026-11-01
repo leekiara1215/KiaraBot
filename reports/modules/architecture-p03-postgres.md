@@ -112,3 +112,17 @@ Python pathlib检查上述三个文档的P03章节/结尾换行、报告内5个s
 这是恢复已说明的“只接受空库/匹配schema”约定，无新增公共语义，doc/05和doc/08无需变化。
 真实PG四库分别创建pga：初始化拒绝、移除后可初始化；成功后再加pga启动拒绝，移除后恢复。
 两条固定-Werror构建、完整真实fixture、变更C++ format16检查及diff检查通过。
+
+## COMMIT 回执丢失真实故障夹具（尚非UoW验收）
+
+新增测试模块 `infrastructure/postgres/tests/commit_receipt_proxy.py`，现有Python runner自动启动，
+对外CTest参数/target不变。代理只在回环透传加密字节，TLS/SCRAM仍由libpq与PG端到端完成。
+driver在前一条SQL已返回后用本次临时目录标记arm，并等代理确认；下一条客户端命令为COMMIT，
+代理转发该命令、丢弃PG第一条响应并关闭连接。独立直连会话必须查到已提交行，
+单纯断线/事务回滚不能使测试通过。
+
+真实PG16.4已实跑通过：pqxx返回in_doubt/broken_connection，独立连接确认提交已持久化，
+测试表随后在本专属fixture内清理。TLS验证与通道绑定全程开启，无SSL解密/降级。
+这验证故障夹具本身，不冒充待实现Core UoW的CommitResult::Unknown映射；后者收到接口后补验。
+-Werror重编driver、真实fixture、format16、Python编译、diff检查通过。
+无公共文档影响：只新增测试故障能力，doc/05、doc/08约定未变。

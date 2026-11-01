@@ -9,6 +9,8 @@ import socket
 import subprocess
 import tempfile
 
+from commit_receipt_proxy import CommitReceiptProxy
+
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
@@ -82,8 +84,10 @@ def main():
                          f"unix_socket_directories='{root}'\n")
         run([str(pg_bin / 'pg_ctl'), '-D', str(root / 'data'), '-l', str(root / 'pg.log'),
              '-w', '-t', '20', 'start'])
-        output = run([str(test), str(root), str(port), str(args.initializer.resolve())])
-        print(output.stdout.decode(), end='')
+        with CommitReceiptProxy(port, root) as proxy:
+            output = run([str(test), str(root), str(port), str(args.initializer.resolve()),
+                          str(proxy.port)])
+            print(output.stdout.decode(), end='')
     finally:
         # No TemporaryDirectory auto-deletion: unknown ownership or failed bounded stop must
         # preserve the directory for inspection, including a potentially still-live cluster.
