@@ -685,3 +685,32 @@ refresh仅原peer+原key+原input轮次、当前轮次=input+1、原token及24�
 hops0和第三边拒绝。Identity签发/交换RPC及TLS握手不计业务边；exchange只追加当前转交
 actor，aud必须变、权限-资源只收窄、subject/origin不变且期限不延长。普通预算/密码学
 签验仍由成熟adapter及调用层执行，纯shape检查不等于JWT认证。
+
+### P04可信离线初始化与Peer权威登记应用
+
+`IdentityAdminApplication`供可信离线composition初始化，以及RPC边界查询真实Peer登记。
+`bootstrap_offline`不暴露网络入口，输入为已派生密码verifier与已按可信CA/SAN校验的
+Control证书登记，不接收CA私钥。管理员、Control平台主体及真实证书绑定、login、
+精确授权、水位、审计和一次性marker在同一Identity Security UoW提交。管理员要求
+显式scoped Admin角色；Control只接受explicit grants，不继承human角色。
+只Committed返回成功，Unknown返回Unknown/QuerySameIdentity，restart不重开已消费marker。
+
+Peer以真实TLS leaf指纹查当前登记，在线检查主体与凭据。成熟证书校验在事务外，
+校验后重查当前登记，拒绝查询期间换代/撤销；可信CA链本身不是已登记业务身份。
+查无登记Unauthenticated，查询故障传播Failure，当前存储绑定矛盾Internal。
+Platform、Adapter、Plugin分别从已登记service、Adapter资源、Instance资源构造DirectPeer。
+
+### P04短期证明签发应用
+
+`IdentityDelegationApplication::issue_delegation`消费六方法应用验证的Control会话，
+随后读取当前session、credential、精确授权与授权水位。每个tuple独立授权，水位在
+授权查询前后核对；本人ListSessions/RevokeSession沿用前述真实目标规则。
+CSPRNG生成新UUID proof ID，注入成熟delegation端口签名；随机源、clock与sign均在
+无UoW时调用。证明为第一业务跳、actor链仅Control，期限不超过56秒及源会话/凭据/
+Control证书有效期，签入明确source credential/session。签名后再次验证源会话与水位，
+源撤销、换代、超时、依赖失败均不返回证明。
+
+此签发应用不持久业务意图，不消费一次性credential，也不将JWT写入普通7天收据。
+Issue/Exchange线协议幂等选项由协议拥有者单独确认同步；本实现未修改该选项。
+Exchange和Check尚未在此类暴露；父证明的上一跳证书绑定验证，不得使用下一跳mTLS
+证书替代或跳过，须先与成熟crypto端口确定验证契约。
