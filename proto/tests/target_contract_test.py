@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 
 from google.protobuf import descriptor_pb2, message_factory
+from google.protobuf.json_format import ParseDict
 from kiarabot.v1 import platform_pb2, policy_pb2, runtime_pb2
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -90,6 +91,15 @@ def main():
         failure.context.acceptance = acceptance
         failure.context.recovery = recovery
         assert platform_pb2.RpcFailure.FromString(failure.SerializeToString()) == failure
+    goldens = json.loads((ROOT / 'proto/tests/target_wire_goldens.json').read_text())
+    assert goldens['schema_version'] == 1
+    for fixture in goldens['fixtures']:
+        module = importlib.import_module('kiarabot.v1.' + Path(fixture['file']).stem + '_pb2')
+        value = ParseDict(fixture['json'], getattr(module, fixture['message'])())
+        assert value.SerializeToString(deterministic=True).hex() == fixture['wire_hex'], fixture['message']
+        returned = subprocess.run([cpp, value.DESCRIPTOR.full_name], input=bytes.fromhex(fixture['wire_hex']),
+                                  stdout=subprocess.PIPE, check=True, cwd=ROOT).stdout
+        assert value.__class__.FromString(returned) == value
     count = 0
     for filename in files:
         module = importlib.import_module('kiarabot.v1.' + Path(filename).stem + '_pb2')
@@ -101,7 +111,7 @@ def main():
             recovered = instance.__class__.FromString(binary)
             assert recovered == instance, desc.full_name
             count += 1
-    print(f'{checked} typed RPC descriptors/policies and {count} Python/C++ message round-trips passed')
+    print(f'{checked} typed RPC descriptors/policies and {count} Python/C++ message round-trips and {len(goldens["fixtures"])} wire goldens passed')
 
 
 if __name__ == '__main__':

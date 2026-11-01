@@ -20,6 +20,7 @@ message ModelConfiguration {
   string model_id = 1;
   string alias = 2;
   string provider_kind = 3;
+  // HTTP provider URL: no userinfo/query credentials; secrets use RotateProviderSecret.
   string endpoint = 4;
   string provider_model = 5;
   uint32 timeout_ms = 6;
@@ -118,6 +119,31 @@ message ModelGetCallStatusResponse {
   ModelCallRecord call = 1;
 }
 
+// CONTRACT_STATUS: not_implemented - target owner query, producer pending.
+message ModelGetOperationRequest {
+  RequestContext context = 1;
+  OperationRef operation = 2;
+}
+
+// CONTRACT_STATUS: not_implemented - target owner query, producer pending.
+message ModelGetOperationResponse {
+  Operation operation = 1;
+}
+
+// CONTRACT_STATUS: not_implemented - target sensitive configuration query, producer pending.
+message ModelGetModelConfigurationRequest {
+  RequestContext context = 1;
+  string model_id = 2;
+  ResourceScope scope = 3;
+}
+
+// CONTRACT_STATUS: not_implemented - never returns provider credentials or historical secrets.
+message ModelGetModelConfigurationResponse {
+  ModelConfiguration config = 1;
+  bool secret_configured = 2;
+  google.protobuf.Timestamp observed_at = 3;
+}
+
 // CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
 service ModelService {
   rpc GetModelMetadata(ModelGetModelMetadataRequest) returns (ModelGetModelMetadataResponse) {
@@ -157,6 +183,20 @@ service ModelService {
   }
   rpc GetCallStatus(ModelGetCallStatusRequest) returns (ModelGetCallStatusResponse) {
     option (required_permission) = PERMISSION_MODEL_CALL_INSPECT;
+    option (requires_idempotency) = false;
+    option (default_deadline_ms) = 2000;
+    option (max_deadline_ms) = 5000;
+    option (requires_online_authorization) = true;
+  }
+  rpc GetOperation(ModelGetOperationRequest) returns (ModelGetOperationResponse) {
+    option (required_permission) = PERMISSION_RESOURCE_READ;
+    option (requires_idempotency) = false;
+    option (default_deadline_ms) = 2000;
+    option (max_deadline_ms) = 5000;
+    option (requires_online_authorization) = true;
+  }
+  rpc GetModelConfiguration(ModelGetModelConfigurationRequest) returns (ModelGetModelConfigurationResponse) {
+    option (required_permission) = PERMISSION_MODEL_MANAGE;
     option (requires_idempotency) = false;
     option (default_deadline_ms) = 2000;
     option (max_deadline_ms) = 5000;

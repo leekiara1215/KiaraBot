@@ -62,7 +62,7 @@ CI 可设置 `KIARABOT_BASELINE_DESCRIPTOR` 指向上一发布版 descriptor。`
 
 contract_status.json的categories保留历史/reference状态，不再隐含target生产可用性；
 execution_scopes.target默认not_implemented，仅明确override及独立生产source/target测试证据
-可标implemented。当前仅P02 live/ready探针，后者仍503，不代表业务ready；77个owner RPC尚未实现。
+可标implemented。当前仅P02 live/ready探针，后者仍503，不代表业务ready；owner RPC（按descriptor动态计数）尚未实现。
 API状态扩展与旧proto注释按原声明/reference语境核对，不批量更名或删除原断言。
 
 `python3 proto/tests/evidence_scopes_test.py -v`验证映射前后、Git blob、缺失/错误/重复/逃逸/

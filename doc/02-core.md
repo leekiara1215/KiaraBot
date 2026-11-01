@@ -439,3 +439,7 @@ claim请求校验owner、批量1–100及0<lease<=30秒。纯函数只提出带�
 确认使用完整source+message及当前token，精确租期边界拒绝；已确认的相同token返回
 Duplicate事实。缺token等损坏状态返回Internal，不能当作空队列。所有校验都不授予
 权限，真实库仍须条件写、唯一约束、并发锁与当前DB UTC重检，纯测试不能替代PG验收。
+
+## 目标Model查询契约补全（未实现）
+
+Model应用负责GetOperation的权威operation/resource绑定与当前授权，以及GetModelConfiguration的精确资源授权与秘密隔离；边界使用model.proto typed请求/结果，内层仍独立值类型。读取不启动Provider、不写新业务操作；缺失/不可见NOT_FOUND，授权依赖不可用UPSTREAM_UNAVAILABLE，2秒默认/5秒上限。metadata与可编辑配置读取分开，配置只返回secret存在性，不返回密钥。P02 stub/参考实现不能作为上述生产者。

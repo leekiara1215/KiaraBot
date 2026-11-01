@@ -281,7 +281,11 @@
       "RuntimeGetActionPolicyRequest": "not_implemented",
       "RuntimeGetActionPolicyResponse": "not_implemented",
       "RuntimeUpdateActionPolicyRequest": "not_implemented",
-      "RuntimeUpdateActionPolicyResponse": "not_implemented"
+      "RuntimeUpdateActionPolicyResponse": "not_implemented",
+      "ModelGetOperationRequest": "not_implemented",
+      "ModelGetOperationResponse": "not_implemented",
+      "ModelGetModelConfigurationRequest": "not_implemented",
+      "ModelGetModelConfigurationResponse": "not_implemented"
     },
     "proto_fields": {
       "Account.account_id": "implemented",
@@ -1184,7 +1188,16 @@
       "RuntimeUpdateActionPolicyRequest.context": "not_implemented",
       "RuntimeUpdateActionPolicyRequest.policy": "not_implemented",
       "RuntimeUpdateActionPolicyRequest.expected_version": "not_implemented",
-      "RuntimeUpdateActionPolicyResponse.policy": "not_implemented"
+      "RuntimeUpdateActionPolicyResponse.policy": "not_implemented",
+      "ModelGetOperationRequest.context": "not_implemented",
+      "ModelGetOperationRequest.operation": "not_implemented",
+      "ModelGetOperationResponse.operation": "not_implemented",
+      "ModelGetModelConfigurationRequest.context": "not_implemented",
+      "ModelGetModelConfigurationRequest.model_id": "not_implemented",
+      "ModelGetModelConfigurationRequest.scope": "not_implemented",
+      "ModelGetModelConfigurationResponse.config": "not_implemented",
+      "ModelGetModelConfigurationResponse.secret_configured": "not_implemented",
+      "ModelGetModelConfigurationResponse.observed_at": "not_implemented"
     },
     "event_payloads": {
       "EventEnvelope.message_received": "implemented",
@@ -1405,7 +1418,8 @@
       "operations.registerPrincipal": "not_implemented",
       "operations.getPrincipalStatus": "not_implemented",
       "operations.rotateCredential": "not_implemented",
-      "operations.revokeCredential": "not_implemented"
+      "operations.revokeCredential": "not_implemented",
+      "operations.getModelConfiguration": "not_implemented"
     },
     "semantic_rules": {
       "semantic.action.deadline_max_300s": "not_implemented",
@@ -3901,6 +3915,36 @@
     ],
     "events.operation.updated": [
       "reports/modules/architecture-contracts.md"
+    ],
+    "ModelGetOperationRequest.context": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "ModelGetOperationRequest.operation": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "ModelGetOperationResponse.operation": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "ModelGetModelConfigurationRequest.context": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "ModelGetModelConfigurationRequest.model_id": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "ModelGetModelConfigurationRequest.scope": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "ModelGetModelConfigurationResponse.config": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "ModelGetModelConfigurationResponse.secret_configured": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "ModelGetModelConfigurationResponse.observed_at": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "operations.getModelConfiguration": [
+      "reports/modules/architecture-p03-contract-evidence.md"
     ]
   },
   "vocabulary": {

@@ -26,12 +26,24 @@ walk = lambda do |node, origin|
   end
 end
 [openapi, asyncapi].each {|data| walk.call(data, data)}
+declared_rpcs = spec['methods'].map {|m| m['service'] + '.' + m['method']}
 count = 0
 openapi['paths'].each do |path, verbs|
   verbs.each do |verb, operation|
     next unless operation.is_a?(Hash) && operation['x-owner-rpc']
     raise 'missing unavailable marker' unless operation['x-contract-status'] == 'not_implemented'
     raise 'missing permission' unless operation['x-permission']
+    bindings = operation['x-owner-rpc'].is_a?(Hash) ? operation['x-owner-rpc'].values : [operation['x-owner-rpc']]
+    raise 'owner RPC mapping is undeclared' unless bindings.all? {|rpc| declared_rpcs.include?(rpc)}
+    if operation['x-owner-rpc'].is_a?(Hash)
+      operation['x-owner-rpc'].each do |owner, rpc|
+        method = spec['methods'].find {|m| m['service'] + '.' + m['method'] == rpc}
+        raise 'owner permission mapping drift' unless operation.fetch('x-owner-permissions').fetch(owner) == method['permission']
+      end
+    else
+      method = spec['methods'].find {|m| m['service'] + '.' + m['method'] == operation['x-owner-rpc']}
+      raise 'RPC permission mapping drift' unless operation['x-permission'] == method['permission']
+    end
     if verb != 'get'
       raise 'missing idempotency header' unless operation['parameters'].any? {|p| p['$ref'] == '#/components/parameters/IdempotencyKey'}
       raise 'missing body' unless operation.dig('requestBody','required')

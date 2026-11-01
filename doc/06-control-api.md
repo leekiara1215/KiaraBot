@@ -298,3 +298,5 @@ CLI、配置/TLS 校验、存活/就绪及有界关闭由外层公共 runner 提
 本节不改变 OpenAPI/AsyncAPI 的字段、权限或错误映射，不把 target 能力标为已实现。
 进程启动失败输出脱敏的稳定错误与退出码，不输出异常正文或秘密。实际构建/进程
 验收结果随本模块报告和主集成记录更新；入口文件存在不代表 P02 完成。
+
+目标GET /models/{modelId}/configuration映射ModelService.GetModelConfiguration，需model.manage及exact Model scope的当前在线核验，返回配置/secret存在性/observed_at，无秘密。scope参数为JSON编码ResourceScope（非空exact资源引用）。/operations/{ownerService}/{operationId}按runtime/scheduler/model实际owner路由，分别核验resource.read/task.read/resource.read及真实operation绑定；响应共用中立的operation结果形状，不强行视为Runtime结果。Model查询尚未实现，不因HTTP schema存在而启用生产功能。

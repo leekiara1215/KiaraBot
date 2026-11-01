@@ -43,7 +43,7 @@ PEM/DSN泄漏被拒绝，缺依赖不skip，真实本地HTTP夹具验证状态/J
 TLS分组读取grpc_environment.json，必须Python3.11.18/grpcio1.85.0（现SDK锁），不匹配立即失败。
 先运行`uv sync --project sdk/python --locked --python 3.11.18`，再使用该环境执行run.py。
 泛型序列化bytes RPC不需要Protobuf生成器/runtime；不会偷偷回退grpcurl或未锁系统包。
-五个owner service的77个方法与Runtime三条桥接流逐项验证UNIMPLEMENTED；无/外CA/过期
+五个owner service的方法（按target_spec动态计数）与Runtime三条桥接流逐项验证UNIMPLEMENTED；无/外CA/过期
 客户端以及错误服务端信任根必须UNAVAILABLE，前后可信mTLS RPC仍UNIMPLEMENTED且live正常，
 防止把服务崩溃/错误端点冒充认证拒绝。UNIMPLEMENTED状态本身不能证明服务已注册，owner
 注册/link图仍由Core及工具链独立检查；这不是业务授权或收据正确性的验收。

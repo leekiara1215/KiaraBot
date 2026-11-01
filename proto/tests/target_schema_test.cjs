@@ -55,4 +55,12 @@ for (const [name, base] of [
 }
 check('TargetRuntimeCreateInstanceRequest', {installation_id: 'installation', host_id: 'host'}, true);
 check('TargetInstanceRecord', {instance_id: 'instance', installation_id: 'installation', state, host_id: 'host'}, false);
+const modelConfiguration = {model_id: 'model', alias: 'local', provider_kind: 'http', endpoint: 'https://example.invalid/chat/completions', provider_model: 'text', timeout_ms: 30000, version: '1'};
+check('TargetModelGetModelConfigurationResponse', {config: modelConfiguration, secret_configured: false, observed_at: '2026-11-01T00:00:00Z'}, true);
+check('TargetModelGetModelConfigurationResponse', {config: modelConfiguration}, false);
+check('TargetModelGetModelConfigurationResponse', {config: {...modelConfiguration, secret: 'forbidden'}, secret_configured: true, observed_at: '2026-11-01T00:00:00Z'}, false);
+check('TargetModelConfiguration', {...modelConfiguration, endpoint: 'https://secret@example.invalid/chat'}, false);
+check('TargetModelConfiguration', {...modelConfiguration, endpoint: 'https://example.invalid/chat?api_key=secret'}, false);
+check('TargetOwnerOperationResponse', {operation}, true);
+check('TargetOwnerOperationResponse', {}, false);
 console.log('Target schemas reject missing identity, empty result, zero generation and uint64 overflow; valid fixtures pass');

@@ -76,3 +76,9 @@ G02–G05共10个typed Get/List，不用一个operation_name+Struct顶替；Get�
 主对话按用户授权采用上述G01–G09的最小补全及有限管理目录方案，本节取代B节中“建议/待裁定”的状态，不重新请求用户确认。目录是封闭RESOURCE_CATALOG、离线预注册每owner/资源族有限UUID；无通配、隐式祖先继承、任意集合或新租户系统。创建/发现对exact catalog授权，child另存精确grant。资源owner本地先提交disabled资源/收据/operation/outbox，Identity只接受登记owner的mTLS可靠交接，复核creator当前创建授权和canonical最小初始child grants；完成前不得启用gate。只发现当前本人获准的child refs，message.read等敏感权限不派生。
 
 实施按能力独立提交：Model.GetOperation及受限配置查询；Runtime typed Get/List与完整配置查询；最后目录创建恢复/Identity登记与本人发现、凭据状态/初始引用和role-scope对应。新增线协议同步唯一来源、模块最小目标说明、API映射/状态/target_spec与生成/descriptor/跨语言fixture。全部新能力target not_implemented，保留既有owner RPC和三条stub桥接断言，计数以descriptor动态推导。CMake/业务实现不在本任务范围，doc18只读。
+
+## 定稿能力：Model权威操作与配置查询
+
+新增Model.GetOperation与GetModelConfiguration，复用resource.read/model.manage与Operation/ModelConfiguration；补唯一OpenAPI配置查询、按owner的操作权限映射和中立结果schema。同步proto/README、doc01/运行语义/doc02/doc06/doc21最小目标说明。新方法/字段/API均not_implemented；不改Model配置业务范围，不调用Provider。Schema正反例检查必填与秘密字段拒绝；goldens固定两种Model查询的字段编号/序列化，往返仍逐所有owner方法双向集合核对。三条stub桥接保留；活跃说明改为动态计数，历史已执行计数不重写。
+
+Model能力实际检查：check_target.sh实际生成C++/gRPC/Python、编译并通过79 owner RPC策略/集合、273消息跨语言往返及2个固定wire golden。统一check_contracts（显式legacy reader）/9项scope回归/enum/semantic/descriptor兼容场景通过；Ruby 34目标HTTP操作的引用、RPC存在及owner权限映射通过；Ajv新增配置必填、秘密/URL凭据拒绝与中立operation响应正反例通过。Redocly2.72.1通过（3条unused warning，保留旧Runtime结果schema及WS跨文件组件），AsyncAPI parser3.6.6通过，无TLS关闭。版本沿前述临时环境，不冒充固定环境；生成物仅tmp。未跑生产服务/全量full/tidy：无业务或C++手写改动，target状态不变。

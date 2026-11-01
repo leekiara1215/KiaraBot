@@ -18,6 +18,7 @@ x-contract-status:
     - getActionByIdempotencyKey
     - getActionResult
     - listGroups
+    - getModelConfiguration
     - createAccount
     - updateAccount
     - disableAccount
@@ -1294,27 +1295,32 @@ paths:
           application/json:
             schema:
               "$ref": "#/components/schemas/TargetRuntimeRestoreResourceRequest"
-  /operations/{ownerService}/{operationId}:
+  "/operations/{ownerService}/{operationId}":
     get:
       operationId: getOperation
-      summary: Runtime GetOperation
+      summary: Query operation at its authoritative owner
       x-contract-status: not_implemented
-      x-owner-service: runtime
-      x-owner-rpc: {runtime: RuntimeService.GetOperation, scheduler: SchedulerService.GetOperation, model: ModelService.GetOperation}
+      x-owner-service: selected ownerService path value
+      x-owner-rpc:
+        runtime: RuntimeService.GetOperation
+        scheduler: SchedulerService.GetOperation
+        model: ModelService.GetOperation
       x-permission: resource.read
       x-mutating: false
-      description: Target P01 declaration; production handler is not implemented. Current
-        Identity session and explicit resource grant are required. Path IDs must equal
-        any repeated body IDs; mismatch is INVALID_ARGUMENT. Versions are positive decimal
-        uint64 strings; writes reject missing expected_version except creation. An accepted
-        operation is not completed work.
+      description: Target not implemented. Route to the named owner only. Current Identity
+        authorization is checked against the stored operation resource; client-supplied
+        scope cannot relabel an operation. Missing or invisible operations return NOT_FOUND.
+        No request or model response body is returned.
       parameters:
       - name: ownerService
         in: path
         required: true
         schema:
           type: string
-          enum: [runtime, scheduler, model]
+          enum:
+          - runtime
+          - scheduler
+          - model
       - name: operationId
         in: path
         required: true
@@ -1324,10 +1330,10 @@ paths:
       - name: scope
         in: query
         required: true
-        description: Explicit resource scope; checked by owner. No role wildcard.
-        schema:
-          type: string
-          minLength: 1
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/TargetResourceScope"
       responses:
         '400':
           "$ref": "#/components/responses/BadRequest"
@@ -1352,7 +1358,12 @@ paths:
           content:
             application/json:
               schema:
-                "$ref": "#/components/schemas/TargetRuntimeGetOperationResponse"
+                "$ref": "#/components/schemas/TargetOwnerOperationResponse"
+      x-owner-permissions:
+        runtime: resource.read
+        scheduler: task.read
+        model: resource.read
+
   /actions/metadata:
     get:
       operationId: listActionMetadata
@@ -2416,6 +2427,56 @@ paths:
           application/json:
             schema:
               "$ref": "#/components/schemas/TargetIdentityRevokeCredentialRequest"
+  "/models/{modelId}/configuration":
+    get:
+      operationId: getModelConfiguration
+      summary: Read authorized model configuration without credentials
+      x-owner-service: model
+      x-owner-rpc: ModelService.GetModelConfiguration
+      x-permission: model.manage
+      x-mutating: false
+      x-contract-status: not_implemented
+      description: Current online authorization on the exact model is required. Provider
+        secrets and URL credentials never appear; secret_configured only reports presence.
+        Unknown or invisible model is NOT_FOUND.
+      parameters:
+      - name: modelId
+        in: path
+        required: true
+        schema:
+          type: string
+          minLength: 1
+      - name: scope
+        in: query
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/TargetResourceScope"
+      responses:
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+        '404':
+          "$ref": "#/components/responses/NotFound"
+        '429':
+          "$ref": "#/components/responses/RateLimited"
+        '500':
+          "$ref": "#/components/responses/Internal"
+        '503':
+          "$ref": "#/components/responses/Unavailable"
+        '504':
+          "$ref": "#/components/responses/Timeout"
+        '200':
+          description: Current model configuration and secret presence, never credential
+            contents
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/TargetModelGetModelConfigurationResponse"
 components:
   securitySchemes:
     bearerAuth:
@@ -3995,6 +4056,9 @@ components:
           type: string
         endpoint:
           type: string
+          format: uri
+          pattern: '^https?://[^/?#@]+(/[^?#]*)?$'
+          description: Provider URL without userinfo or query credentials; secrets use the separate rotation method.
         provider_model:
           type: string
         timeout_ms:
@@ -4399,3 +4463,28 @@ components:
       pattern: "^(?:0|[1-9][0-9]{0,18}|1[0-7][0-9]{18}|18[0-3][0-9]{17}|184[0-3][0-9]{16}|1844[0-5][0-9]{15}|18446[0-6][0-9]{14}|184467[0-3][0-9]{13}|1844674[0-3][0-9]{12}|184467440[0-6][0-9]{10}|1844674407[0-2][0-9]{9}|18446744073[0-6][0-9]{8}|1844674407370[0-8][0-9]{6}|18446744073709[0-4][0-9]{5}|184467440737095[0-4][0-9]{4}|18446744073709550[0-9]{3}|18446744073709551[0-5][0-9]{2}|1844674407370955160[0-9]{1}|1844674407370955161[0-4]|18446744073709551615)$"
       description: Exact decimal uint64 range 0..18446744073709551615; zero only for counters
         or explicitly not-yet-applied configuration.
+    TargetOwnerOperationResponse:
+      type: object
+      additionalProperties: false
+      required:
+      - operation
+      properties:
+        operation:
+          "$ref": "#/components/schemas/TargetOperation"
+      x-contract-status: not_implemented
+    TargetModelGetModelConfigurationResponse:
+      type: object
+      additionalProperties: false
+      required:
+      - config
+      - secret_configured
+      - observed_at
+      properties:
+        config:
+          "$ref": "#/components/schemas/TargetModelConfiguration"
+        secret_configured:
+          type: boolean
+        observed_at:
+          type: string
+          format: date-time
+      x-contract-status: not_implemented

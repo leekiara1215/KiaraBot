@@ -99,3 +99,5 @@ CoreToAdapter 新增 oneof event_ack=4，类型 AdapterEventAck；原字段编�
 `platform.proto` 为目标公共上下文、资源、操作/未知结果、交接及 attempt 租约；原 AdapterBridge/PluginBridge 统一升级，不提供旧流兼容入口。目标注册后每帧须携当前正代次与 Runtime epoch；插件安装绑定和执行代次必填。CoreToPlugin 的 event 必须伴随同帧 delivery_attempt；ACK/Renew 都引用完整 attempt。目标方法表见 `tests/target_spec.json`，字段状态见 `tests/contract_status.json`。这些字段没有生产者，不代表旧实现已经通过目标校验。
 
 `identity.proto`、`runtime.proto`、`host.proto`、`scheduler.proto`、`model.proto` 是五个权威服务的类型化方法；`policy.proto` 封闭 Permission 与每个 RPC 的权限/幂等/默认及最大 deadline/在线授权 descriptor options。HostBridge 由 Host 主动建立，复用类型化命令/观察；逻辑 HostService 不要求另建 Runtime 主动远程执行通道。ClaimEvent/DeliverEvent 仅可信 Runtime dispatcher，不向插件公开领取能力。
+
+目标查询补全：ModelService.GetOperation复用OperationRef/Operation，必须在model owner校验已存储resource和当前授权；GetModelConfiguration按精确Model scope敏感在线查询，返回配置版本/secret_configured/observed_at，绝不返回秘密。权限复用resource.read/model.manage，默认2秒/最大5秒；二者target均not_implemented。方法计数由target_spec/descriptor动态推导，不能把UNIMPLEMENTED或reference闭环当成查询生产者。

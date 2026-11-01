@@ -1310,6 +1310,40 @@
       "server_streaming": false,
       "status": "not_implemented",
       "requires_idempotency_key": true
+    },
+    {
+      "service": "ModelService",
+      "method": "GetOperation",
+      "file": "model.proto",
+      "request": "ModelGetOperationRequest",
+      "response": "ModelGetOperationResponse",
+      "caller": "scoped Control or authorized Runtime",
+      "permission": "resource.read",
+      "risk": "online",
+      "mutating": false,
+      "idempotency": "none",
+      "deadline_ms": 2000,
+      "max_deadline_ms": 5000,
+      "server_streaming": false,
+      "status": "not_implemented",
+      "requires_idempotency_key": false
+    },
+    {
+      "service": "ModelService",
+      "method": "GetModelConfiguration",
+      "file": "model.proto",
+      "request": "ModelGetModelConfigurationRequest",
+      "response": "ModelGetModelConfigurationResponse",
+      "caller": "scoped Control or authorized Runtime",
+      "permission": "model.manage",
+      "risk": "online",
+      "mutating": false,
+      "idempotency": "none",
+      "deadline_ms": 2000,
+      "max_deadline_ms": 5000,
+      "server_streaming": false,
+      "status": "not_implemented",
+      "requires_idempotency_key": false
     }
   ],
   "error_mapping": {

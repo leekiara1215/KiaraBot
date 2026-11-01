@@ -20,7 +20,7 @@ T03a 新增 CoreToPlugin.error（oneof 字段 6），承载注册之后的终止
 | `operations.getProcessLiveness` | implemented | 进程HTTP live，200/HEALTHY，不代表业务可用 |
 | `operations.getProcessReadiness` | implemented | 进程HTTP ready，P02固定503/UNHEALTHY，不伪造ready |
 
-除上述明确override外，target所有非废弃业务声明均为not_implemented，包括旧reference已有的Action/Host/认证/WS能力及全部77个目标owner RPC；mTLS监听返回UNIMPLEMENTED不算业务实现。API已有x-contract-status列表与下表、proto内联CONTRACT_STATUS保留声明/历史reference语境；不可据其单独判断target可用性。客户端与面板须依据target执行范围及真实生产者验收，不得用历史测试通过自动启用。
+除上述明确override外，target所有非废弃业务声明均为not_implemented，包括旧reference已有的Action/Host/认证/WS能力及全部目标owner RPC（按target_spec动态计数）；mTLS监听返回UNIMPLEMENTED不算业务实现。API已有x-contract-status列表与下表、proto内联CONTRACT_STATUS保留声明/历史reference语境；不可据其单独判断target可用性。客户端与面板须依据target执行范围及真实生产者验收，不得用历史测试通过自动启用。
 <!-- execution-scopes:end -->
 
 检查器继续核对每个Proto字段/oneof、枚举、频道/事件、OpenAPI操作及原未实现项的内联注释、API列表、文档行和证据，不删除原门禁。历史Core逻辑证据路径只通过`core/reference/manifest.json`的明确source→reference映射解析并核对Git blob，未登记/缺失/字节变化/重引入/路径逃逸或符号链接均失败。target已实现项另需当前生产source及target测试，reference、旧客户端或测试内字符串不能证明target生产能力。
@@ -1079,6 +1079,40 @@ T03a 新增 CoreToPlugin.error（oneof 字段 6），承载注册之后的终止
 | `operations.revokeCredential` | not_implemented | P01 目标声明；无生产实现，见模块报告。 |
 | `channels.operations` | not_implemented | P01 目标声明；无生产实现，见模块报告。 |
 | `events.operation.updated` | not_implemented | P01 目标声明；无生产实现，见模块报告。 |
+| `Health` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `PageInfo` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `PageRequest` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `ScheduleTask` | deprecated | 目标契约补全声明，尚无生产实现。 |
+| `ShutdownNotice` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `RequestContext` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `ResourceRef` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `ResourceScope` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `Fence` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `StreamCursor` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `OperationRef` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `FailureContext` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `RpcFailure` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `OperationProgress` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `Operation` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `HandoffContext` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `DeliveryAttempt` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `DeliveryReceipt` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `VersionedResourceState` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `SnapshotPage` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `ModelGetOperationRequest` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `ModelGetOperationResponse` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `ModelGetModelConfigurationRequest` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `ModelGetModelConfigurationResponse` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `ModelGetOperationRequest.context` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `ModelGetOperationRequest.operation` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `ModelGetOperationResponse.operation` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `ModelGetModelConfigurationRequest.context` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `ModelGetModelConfigurationRequest.model_id` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `ModelGetModelConfigurationRequest.scope` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `ModelGetModelConfigurationResponse.config` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `ModelGetModelConfigurationResponse.secret_configured` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `ModelGetModelConfigurationResponse.observed_at` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `operations.getModelConfiguration` | not_implemented | 目标契约补全声明，尚无生产实现。 |
 <!-- contract-status:end -->
 
 `/ws/messages` 自 2026-10-31（W5）起为 `implemented`：只有被私有控制配置显式授予 `message.read` 的用户可订阅，事件 `message.updated` 仅含消息元数据（`message_id`、`conversation_id`、`direction`；v1 只产生 `received`），不推送正文、没有 REST 消息投影、也不构成审计；任何默认角色（含 admin）都不持有 `message.read`。授权模型见 `doc/08-operations.md`。
@@ -1464,3 +1498,7 @@ CoreToAdapter.event_ack 使用新编号 4。AdapterEventAck 包含 event_id、tr
 服务方法均有独立请求/结果类型；开放 Struct 仅用于插件配置，不能用于通用 operation dispatch。Runtime 私有存储 scope 由身份解析，共享 CAS 用 absent/version oneof；SetStorage 只允许私有覆盖，共享写和删除要求 StorageCondition，version 必须正值，absent 必须 true。Conflict 的 RpcFailure.context.current_version 仅在已授权范围返回版本。共享成员需同时获 Identity 授予和 namespace gate 允许。Get/UpdateActionPolicy 提供已批准的账号 Mute/Kick 启用、白名单和正预算配置，不扩展其他 payload。
 
 五服务全部为目标声明、无生产接线。Host 包只能使用已预置摘要/launch_profile，arguments 与 environment_names 必须命中部署白名单，不能传任意路径/shell；command_id 与 HandoffContext 持久幂等。Scheduler CreateTask 的 owner 由受限实例委托派生，时间 oneof 只接受 UTC/IANA 一次性，取消在触发交接开始后冲突。Model Chat 仅 system/user/assistant 文本，128条/64KiB输入、1MiB上游响应/64KiB结果；call 查询仅状态与计量，不存正文历史。RotateProviderSecret/RotateCredential 的秘密输入/一次性交付不得进入日志/outbox，收据加密且复核当前轮次。
+
+### Model owner查询补全（目标未实现）
+
+Model.GetOperation补齐UpdateModel/RotateProviderSecret返回operation后的权威查询链，owner_service必须model；服务端对照已存operation的resource，不信客户端以另一scope重贴标签。GetModelConfiguration需model.manage在exact Model资源上在线核验，返回无凭据的ModelConfiguration、secret_configured和权威observed_at。endpoint不可承载/回显URL凭据；供应商secret只走已有机密更新入口。未知/不可见统一NOT_FOUND，依赖故障UPSTREAM_UNAVAILABLE，超时TIMEOUT且不改业务状态。两方法是typed RPC，尚无生产实现；对应HTTP配置读取与多owner操作路由以OpenAPI为唯一来源。

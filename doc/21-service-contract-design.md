@@ -242,3 +242,7 @@ Action元数据检查、日志/审计、消息元数据等额外敏感能力须�
 设计借鉴标准机制，不声称其自动实现业务保证：[JWT BCP](https://www.rfc-editor.org/rfc/rfc8725.html)、[证书绑定 token](https://www.rfc-editor.org/rfc/rfc8705.html)、[委托语义](https://www.rfc-editor.org/rfc/rfc8693.html)、[UUID](https://www.rfc-editor.org/rfc/rfc9562.html)、[gRPC deadline](https://grpc.io/docs/guides/deadlines/)。具体参数及能力边界是本项目自主设计决策。
 
 本轮仅新增设计文档并更新总览/确认索引，不修改 proto/API/模块现行说明或实现。服务拆分、统一新契约、权限、新状态及恢复语义均是与现行实现的显式差异，实施前必须同步唯一来源与相关 doc/01–08；受保护 doc/18 保持原样。
+
+## 9. 目标查询与精确管理目录补全（实施定稿，仍未实现）
+
+本节落实已批准管理范围，不修改服务/数据库边界，也不新增自定义角色或资源继承。Model增加GetOperation（OperationRef→Operation，resource.read）与GetModelConfiguration（exact model/scope→无秘密配置、secret存在性和observed_at，model.manage），默认2秒/最多5秒、在线授权；操作查询校验存储owner/resource，不由客户端重贴scope或Control代裁定结果。后续目录/Runtime/Identity字段在同节随唯一契约逐能力补齐。线协议及生产实现状态仍分别以proto/API和execution_scopes.target为准。
