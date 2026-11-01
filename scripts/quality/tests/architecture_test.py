@@ -26,6 +26,21 @@ class ArchitectureTest(unittest.TestCase):
             self.assertEqual(GATE.coverage_errors(root, database, scheduled), [])
             self.assertTrue(GATE.coverage_errors(root, [], []))
 
+    def test_header_filter_covers_new_handwritten_directories_not_ignored_downloads(self):
+        import re
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary).resolve()
+            (root / 'new_module').mkdir()
+            (root / 'build').mkdir()
+            (root / '.ignore').write_text('build/\n')
+            own = root / 'new_module/value.hpp'
+            downloaded = root / 'build/third_party.hpp'
+            own.write_text('#pragma once\n')
+            downloaded.write_text('downloaded\n')
+            pattern = GATE.header_filter(root)
+            self.assertIsNotNone(re.search(pattern, str(own)))
+            self.assertIsNone(re.search(pattern, str(downloaded)))
+
     def test_inner_rejects_protocol_json_driver_and_sql(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary).resolve()

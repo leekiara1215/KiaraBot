@@ -26,6 +26,15 @@ def sources(root):
     return sorted((root / name.decode()).resolve() for name in output.split(b'\0') if name)
 
 
+def header_filter(root):
+    output = subprocess.check_output(['rg', '--files', '-0', '-g', '*.h', '-g', '*.hpp',
+                                      '-g', '!*.pb.h'], cwd=root)
+    headers = sorted(str((root / name.decode()).resolve()) for name in output.split(b'\0') if name)
+    if not headers:
+        raise ValueError('empty handwritten header inventory')
+    return '^(' + '|'.join(re.escape(path) for path in headers) + ')$'
+
+
 def coverage_errors(root, database, scheduled):
     compiled = set()
     for entry in database:
@@ -134,6 +143,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--root', type=Path, default=ROOT)
     parser.add_argument('--list-sources0', action='store_true')
+    parser.add_argument('--header-filter', action='store_true')
     parser.add_argument('--database', type=Path)
     parser.add_argument('--inner', action='store_true')
     parser.add_argument('--links', type=Path, help='configured architecture-targets.json')
@@ -142,6 +152,9 @@ def main():
     parser.add_argument('--stage', choices=[f'p{n:02}' for n in range(2, 15)])
     args = parser.parse_args()
     root = args.root.resolve()
+    if args.header_filter:
+        print(header_filter(root))
+        return 0
     if args.list_sources0:
         for path in sources(root):
             sys.stdout.buffer.write(str(path).encode() + b'\0')

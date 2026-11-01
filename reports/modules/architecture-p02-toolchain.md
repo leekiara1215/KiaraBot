@@ -176,3 +176,53 @@ Python语法初次py_compile被系统外部cache写权限拒绝，已用只读as
 doc/00/02/06/08/12-ci-cd由各所有者维护，doc18未改。完整统一链路仍不能宣布全绿：
 旧contract_status evidence路径在reference迁移后失效，且“implemented=生产接线”的
 历史登记需要主对话协调；本任务没有擅自把reference当新生产证据或更改语义状态。
+
+## 第八能力：锁定验证入口与完整检查范围
+
+统一入口新增full/full-locked明确选择与精确工具版本、实际CMake图/编译覆盖/内层/p02标签、
+固定standalone infrastructure、强制既有Python reader；API检查复用package-lock本地安装，
+不再每次安装临时parser或由npx重解依赖。所有跟踪shell语法、17个质量自测及文档本地链接
+校验通过，保护基线diff为空。
+
+actual full-locked统一入口实跑：版本、生成、dev及full-locked CTest通过，standalone
+infrastructure10项通过，随后在旧contract_status evidence路径失效处非零退出；这是实际
+失败，不是因未跑而推断，也未删证据/改状态凑绿。独立target API/Ajv、OpenAPI、AsyncAPI
+门禁通过（OpenAPI2 warnings保留）。固定format16仍报Core service_config.cpp两处差异，
+未动别人源。P00 Python独立归档hash HTTP403、Linux/远端CI/镜像digest仍未验收。
+
+tidy22全仓首轮81/80进度计数属于工具进度显示，实际待分析清单为80手写TU；唯一error
+落在P00 smoke默认picojson后端。改用jwt-cpp官方nlohmann-json/defaults.h+固定3.11.3
+目标后，该TU完整analyzer检查通过，同样Ed25519/错误audience/TLS+PG smoke实跑通过。
+没有关闭NewDelete/NewDeleteLeaks、改警告级别或省略手写TU。最终全仓重跑结果另列。
+
+### 本任务独立提交索引（共享/其他任务提交不重复归功）
+
+| SHA | 能力 | 主要文件 |
+| --- | --- | --- |
+| c0dbcdf | 先提交reference规格 | doc/11、本报告 |
+| 00bd566 | 首次质量工具hash锁/实际安装 | dependencies/quality/、doc/11、本报告 |
+| 59e1afd | 42文件blob不变隔离及13proto覆盖 | core/reference/manifest.json与迁移文件、根/模块CMake、check-reference.py |
+| 3956350 | 纯应用/头、实际依赖图、77/269往返 | cmake/platform.cmake、architecture-graph.cmake、check-architecture.py/自测、check-target-api.sh |
+| 3e28f1f | 六目标与11项P02黑盒 | platform.cmake、内层/图门禁、doc/11、本报告 |
+| 4d96f1b | Control27用例真实路径、清单6自测 | control/api/reference/CMakeLists.txt、platform.cmake、doc/11、本报告 |
+| 011ea40 | 固定环境/51CTest/PG-JWT smoke | dependencies/architecture/、quality锁、依赖校验/夹具、根/模块CMake与preset |
+| 本节所在提交 | 最终锁定门禁与JSON traits验证 | check-toolchain.sh、quality脚本/自测、依赖smoke、doc/11、本报告 |
+
+下一阶段：主对话审查集成工具链提交、协调旧契约登记和Core格式修正；P03需其自身真实
+PG schema/角色/UoW/提交未知 fixture，当前P00临时单库不是替代。禁止据本机P02/PG smoke
+通过直接关闭未验的Linux/CI、Python归档hash、部署/跨主机或业务阶段。
+
+最终结果：`PATH=.tools/quality/bin:... KIARABOT_TIDY_BUILD_DIR=build/full-locked
+./scripts/quality/check-tidy.sh`用22.1.8实际完整跑80/80 TU，退出0；仅保留原有两条NOLINT，
+没有新增抑制。三次分析中的19/Boost错误、22/picojson错误均保留在build日志，不伪装首次通过。
+固定nlohmann traits下P00 smoke重跑退出0；51项全量此前通过，后续只变该smoke后端便重验
+该项，不以重复全套掩盖检查顺序。所有其他C++语义未改。
+
+父分支已集成06fa2a4并明确验证format16后，本任务同步其原4205e92为52d7fa3；只有两处
+空白修正。报告冲突保留本分支现有内容，仅追加格式段，没有夹带未同步的非GET行为报告。
+本机全仓format16检查退出0，相关full-locked重编译通过；此纯格式变更未重复网络回归。
+与doc18的diff为空，所有跟踪shell语法、两份文档本地链接及git diff --check通过。
+
+最终统一入口真实失败仍是contract_status历史evidence登记，不是格式/tidy或P00 PG失败。
+Python归档独立hash仍HTTP403、Linux/CI与发布镜像未验；因此不宣称P00完整镜像锁或
+P02总体前置/全主线全部完成，交由主对话继续契约登记协调与下一阶段。

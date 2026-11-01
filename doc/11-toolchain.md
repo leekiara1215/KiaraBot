@@ -1,5 +1,8 @@
 # 开发工具链与本地质量检查
 
+前部Txx及旧dev/proto流程保留为reference历史；本轮目标构建、固定环境和实际验收以本文
+P00/P02章节及模块执行报告为准。reference通过不表示六服务业务已经实现。
+
 T06c 时区转换使用 Protobuf/gRPC 已依赖的 Abseil CMake 包（absl::time）和系统 zoneinfo；Linux 验收机安装 tzdata。独立 infrastructure 构建也显式查找该包，Core 领域代码只依赖 ITimeZoneResolver。新增 task_scheduler CTest 和 SDK test_tasks.py 覆盖跨进程恢复。
 
 T06b 基础设施构建新增 libcurl >= 7.85（CMake CURL::libcurl）；JSON 编解码复用已固定的 Protobuf，不引入模型厂商 SDK。macOS 本轮验收使用系统 libcurl 8.7.1。协议注释/功能协商名修改仍需运行生成、descriptor 和契约测试；Provider 验收只使用本机 HTTP 假服务，不调用外部模型。
@@ -269,8 +272,8 @@ P01 已集成，P02 的旧实现隔离与构建规格见
 ### P00 固定质量工具环境收尾
 
 `dependencies/quality/requirements.txt` 记录 PyPI 归档 SHA-256，固定 clang-format 16.0.6
-及 clang-tidy Python 包 19.1.0.1（其二进制报告 LLVM 19.1.0）。PyPI 不存在 tidy 16.0.6，
-因此不虚构同版本包；现有 CI clang-tidy 16 与此本机分析版本差异需在交付中保留。
+及 clang-tidy Python 包 22.1.8（其二进制报告 LLVM 22.1.8）。PyPI 不存在 tidy 16.0.6，
+因此不虚构同版本包；本机初选19.1.0.1后按SDK兼容性验证升级22.1.8。现有CI tidy16与本机版本差异需保留。
 
 ```bash
 uv --cache-dir build/uv-cache venv .tools/quality
@@ -393,3 +396,23 @@ uv本身则已纳入quality requirements的精确版本/归档hash。不得用�
 调用链报告unique_ptr泄漏，同一个http_server.cpp、编译数据库、SDK参数及全部
 clang-analyzer检查用22.1.8实测通过；没有改源码、关闭NewDeleteLeaks或降低warnings-as-errors。
 全仓22.1.8静态分析结果须以执行报告为准，不以单文件通过替代全仓。
+
+### 最终验证入口与范围
+
+`KIARABOT_CHECK_PRESET=full-locked ./scripts/check-toolchain.sh`在最低版本检查之外，要求
+Python3.11.18、Node22.14.0、format16.0.6、tidy22.1.8、protoc29.3；工具路径由PATH明确提供。
+它执行dev/full-locked、实际图/编译覆盖/内层/p02标签、固定standalone infrastructure、
+契约登记/descriptor/既有Python reader、格式/tidy和API/Ajv门禁。缺任何前置返回非零。
+OpenAPI/AsyncAPI脚本现在只复用`scripts/ci/package-lock.json`的本地安装，并验证工具版本；
+先执行`npm ci --prefix scripts/ci`，检查阶段不再临时解析未锁的传递依赖或重复下载。
+
+header-filter由所有非忽略手写头生成，仍枚举全部手写TU（含reference和P00 smoke）；
+下载到build/的第三方头不进入“仓库手写头”清单，但调用链的analyzer诊断仍会失败。
+未通过过滤或NOLINT压制报告：tidy22的全仓首轮检出了smoke默认picojson后端的释放诊断，
+遂明确选择jwt-cpp官方支持的nlohmann-json traits（同样固定3.11.3），重验Ed25519/PG
+断言和分析；生产Identity后续也应对选定traits做完整claims/错误测试。
+
+统一入口已实跑到原contract_status证据路径失败并非全绿；旧登记定义“implemented=生产
+已接线”，reference机械移动后需由主对话协调状态口径，不能自动用reference冒充新业务。
+Core所有者的format16两处纯格式修正已在主分支审查验证后同步（本分支52d7fa3），本机全仓format16检查通过；没有自行编辑业务实现。
+完整静态分析和后续恢复结果见模块执行记录，不以51项CTest通过代替这些独立门禁。

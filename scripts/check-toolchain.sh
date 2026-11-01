@@ -32,10 +32,15 @@ version_from_output() {
 }
 
 cxx="${CXX:-c++}"
+full_preset="${KIARABOT_CHECK_PRESET:-full}"
+case "$full_preset" in
+  full|full-locked) ;;
+  *) echo 'KIARABOT_CHECK_PRESET must be full or full-locked' >&2; exit 1 ;;
+esac
 # rg, python3 and ruby are used by the format, boundary and contract checks.
 # Require them before any build so a missing tool fails immediately instead of
 # surfacing after two full builds.
-for tool in cmake "$cxx" make protoc grpc_cpp_plugin node npm npx clang-format clang-tidy rg python3 ruby; do
+for tool in cmake "$cxx" make protoc grpc_cpp_plugin node npm clang-format clang-tidy rg python3 ruby; do
   require_command "$tool"
 done
 
@@ -79,6 +84,15 @@ require_version npm "$(npm --version | version_from_output)" 10
 require_version clang-format "$(clang-format --version | version_from_output)" 16
 require_version clang-tidy "$(clang-tidy --version | version_from_output)" 16
 
+if [[ "$full_preset" == full-locked ]]; then
+  [[ "$(python3 --version | version_from_output)" == 3.11.18 ]] || { echo 'Locked checks require Python 3.11.18' >&2; exit 1; }
+  [[ "$node_version" == 22.14.0 ]] || { echo 'Locked checks require Node 22.14.0' >&2; exit 1; }
+  [[ "$(clang-format --version | version_from_output)" == 16.0.6 ]] || { echo 'Locked checks require clang-format 16.0.6' >&2; exit 1; }
+  [[ "$(clang-tidy --version | version_from_output)" == 22.1.8 ]] || { echo 'Locked checks require clang-tidy LLVM 22.1.8' >&2; exit 1; }
+  protoc_version="$(protoc --version | version_from_output)"
+  [[ "$protoc_version" == 29.3 || "$protoc_version" == 29.3.0 ]] || { echo 'Locked checks require protoc 29.3' >&2; exit 1; }
+fi
+
 scratch="$(mktemp -d "${TMPDIR:-/tmp}/kiarabot-toolchain.XXXXXXXX")"
 trap 'rm -rf "$scratch"' EXIT
 cat > "$scratch/smoke.cpp" <<'CPP'
@@ -116,15 +130,35 @@ cmake --build --preset dev
 ctest --preset dev --no-tests=error
 # Full preset = proto + infrastructure + compile database, so one build feeds
 # CTest, contract checks and clang-tidy. Keep it in sync with check-tidy.sh.
-cmake --preset full
-cmake --build --preset full
-ctest --preset full --no-tests=error
-cmake -S infrastructure -B build/infrastructure
-cmake --build build/infrastructure
-ctest --test-dir build/infrastructure --output-on-failure --no-tests=error
-./proto/tests/check_contracts.sh
+cmake --preset "$full_preset"
+cmake --build --preset "$full_preset"
+ctest --preset "$full_preset" --no-tests=error
+python3 scripts/quality/check-reference.py
+python3 scripts/quality/check-architecture.py --inner \
+  --database "build/$full_preset/compile_commands.json" \
+  --links "build/$full_preset/architecture-targets.json"
+ctest --preset "$full_preset" --show-only=json-v1 > "build/$full_preset/ctest-registration.json"
+python3 scripts/quality/check-architecture.py --stage p02 \
+  --ctest-json "build/$full_preset/ctest-registration.json"
+if [[ "$full_preset" == full-locked ]]; then
+  python3 scripts/quality/check-dependency-lock.py --registry "${VCPKG_ROOT:?VCPKG_ROOT required}"
+  triplet="$(sed -n 's/^VCPKG_TARGET_TRIPLET:STRING=//p' "build/$full_preset/CMakeCache.txt")"
+  python3 scripts/quality/check-dependency-lock.py --installed build/architecture-installed --triplet "$triplet"
+  cmake -S infrastructure -B build/infrastructure-locked \
+    -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" \
+    -DVCPKG_MANIFEST_MODE=OFF -DVCPKG_INSTALLED_DIR="$root/build/architecture-installed"
+  cmake --build build/infrastructure-locked
+  ctest --test-dir build/infrastructure-locked --output-on-failure --no-tests=error
+else
+  cmake -S infrastructure -B build/infrastructure
+  cmake --build build/infrastructure
+  ctest --test-dir build/infrastructure --output-on-failure --no-tests=error
+fi
+KIARABOT_DESCRIPTOR_COMPATIBILITY_TOOL="$root/build/$full_preset/kiarabot_descriptor_compatibility" \
+  KIARABOT_LEGACY_READER_TEST=1 ./proto/tests/check_contracts.sh
 ./scripts/quality/check-format.sh
-./scripts/quality/check-tidy.sh
+KIARABOT_TIDY_BUILD_DIR="build/$full_preset" ./scripts/quality/check-tidy.sh
+./scripts/quality/check-target-api.sh
 ./scripts/quality/check-openapi.sh
 ./scripts/quality/check-asyncapi.sh
 echo "All toolchain and quality checks passed"

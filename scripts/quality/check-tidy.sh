@@ -17,7 +17,8 @@ trap 'rm -f "$files"' EXIT
 # Enumerate every non-ignored handwritten translation unit, including future modules.
 python3 scripts/quality/check-architecture.py --list-sources0 > "$files"
 python3 scripts/quality/check-architecture.py --database "$database"
-set -- -p "$build_dir" --checks='clang-analyzer-*' --warnings-as-errors='*' --header-filter="^${root}/"
+header_filter="$(python3 scripts/quality/check-architecture.py --header-filter)"
+set -- -p "$build_dir" --checks='clang-analyzer-*' --warnings-as-errors='*' --header-filter="$header_filter"
 if [[ "$(uname -s)" == Darwin ]]; then
   compiler="$(sed -n 's/^CMAKE_CXX_COMPILER:FILEPATH=//p' "$build_dir/CMakeCache.txt")"
   if [[ -z "$compiler" ]]; then

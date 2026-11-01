@@ -11,7 +11,7 @@
 #include <curl/curl.h>
 #include <google/protobuf/stubs/common.h>
 #include <grpcpp/grpcpp.h>
-#include <jwt-cpp/jwt.h>
+#include <jwt-cpp/traits/nlohmann-json/defaults.h>
 #include <openssl/crypto.h>
 #include <pqxx/pqxx>
 #include <pqxx/version>

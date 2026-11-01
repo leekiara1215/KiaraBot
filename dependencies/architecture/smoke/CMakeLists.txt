@@ -2,6 +2,7 @@ cmake_minimum_required(VERSION 3.24)
 project(kiarabot_dependency_smoke LANGUAGES CXX)
 find_package(libpqxx CONFIG REQUIRED)
 find_package(jwt-cpp CONFIG REQUIRED)
+find_package(nlohmann_json 3.11.3 EXACT CONFIG REQUIRED)
 find_package(OpenSSL 3.5.0 EXACT REQUIRED COMPONENTS SSL Crypto)
 find_package(SQLite3 REQUIRED)
 find_package(CURL REQUIRED)
@@ -14,7 +15,7 @@ add_executable(kiarabot_dependency_smoke smoke.cpp)
 target_compile_features(kiarabot_dependency_smoke PRIVATE cxx_std_20)
 target_compile_options(kiarabot_dependency_smoke PRIVATE -Wall -Wextra -Wpedantic)
 target_include_directories(kiarabot_dependency_smoke SYSTEM PRIVATE ${SODIUM_INCLUDE_DIR})
-target_link_libraries(kiarabot_dependency_smoke PRIVATE libpqxx::pqxx jwt-cpp::jwt-cpp
+target_link_libraries(kiarabot_dependency_smoke PRIVATE libpqxx::pqxx jwt-cpp::jwt-cpp nlohmann_json::nlohmann_json
   OpenSSL::SSL OpenSSL::Crypto CURL::libcurl protobuf::libprotobuf
   gRPC::grpc++ Boost::headers ${SODIUM_LIBRARY})
 
