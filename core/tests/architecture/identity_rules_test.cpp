@@ -91,6 +91,8 @@ void policy_rules() {
        {target::FixedRole::Admin, target::FixedRole::Operator, target::FixedRole::Viewer}) {
     check(!target::default_role_allows(role, target::Permission::MessageRead),
           "all default roles exclude message.read");
+    check(!target::default_role_allows(role, target::Permission::ActionInspect),
+          "all default roles exclude action.inspect");
   }
   const target::ExactAssignment sensitive{
       {"explicit"}, actor.id, {}, {{target::Permission::MessageRead, a}}, {1}};
@@ -140,9 +142,15 @@ void policy_rules() {
         "unknown permission string is not extensible authority");
   check(equals(target::permission_from_name("message.read"), target::Permission::MessageRead),
         "explicit G08 word is registered");
-  check(error_is(target::authorize_exact(actor, static_cast<target::Permission>(65535), a, grants),
+  volatile int unknown_permission_input = 65535;
+  check(error_is(target::authorize_exact(
+                     actor, static_cast<target::Permission>(unknown_permission_input), a, grants),
                  target::ErrorCode::InvalidArgument),
         "unknown enum also rejects before role scan");
+  volatile int unknown_role_input = 65535;
+  check(!target::default_role_allows(static_cast<target::FixedRole>(unknown_role_input),
+                                     target::Permission::ResourceRead),
+        "unknown role cannot inherit a common capability");
   auto plugin = actor;
   plugin.kind = target::PrincipalKind::Plugin;
   check(error_is(target::authorize_exact(plugin, target::Permission::AccountManage, a, grants),
@@ -452,7 +460,27 @@ void state_rules(target::TimePoint now) {
                  target::ErrorCode::InvalidArgument),
         "expiry arithmetic never wraps");
 }
-int main() {
+void print_role_catalog() {
+  constexpr std::array roles{std::pair{std::string_view{"admin"}, target::FixedRole::Admin},
+                             std::pair{std::string_view{"operator"}, target::FixedRole::Operator},
+                             std::pair{std::string_view{"viewer"}, target::FixedRole::Viewer}};
+  for (const auto& [name, role] : roles) {
+    for (const auto& [permission_name, permission] : target::kPermissionNames) {
+      if (target::default_role_allows(role, permission)) {
+        std::cout << name << '\t' << permission_name << '\n';
+      }
+    }
+  }
+}
+int main(int argc, char* argv[]) {
+  if (argc == 2 && std::string_view{argv[1]} == "--role-catalog") {
+    print_role_catalog();
+    return 0;
+  }
+  if (argc != 1) {
+    std::cerr << "usage: identity_rules_test [--role-catalog]\n";
+    return 2;
+  }
   policy_rules();
   state_rules(target::TimePoint{24h});
 }

@@ -386,3 +386,13 @@ permission/resource/error conversion, HTTP status mapping and complete RpcFailur
 validation. Unary details have no Error-only fallback. The HTTP envelope is checked
 with from_http_failure before projecting its failure_context. Per-request correlation
 and successful authentication response shape remain Control boundary checks.
+
+### P04默认角色目录与Core一致性
+
+目标角色能力以OpenAPI的`x-control-policy.target_role_capabilities`为唯一来源，不能
+使用开发阶段`roles`表代替。model.read属于admin/operator/viewer；会话read/revoke及
+account.policy.manage属于admin/operator。action.inspect与message.read必须显式授予，
+不由admin等默认角色派生；角色能力还须与同一assignment的精确资源范围相交。
+G08的account.read/plugin.read/adapter.read/host.read保留三角色，plugin.config.read保留
+admin/operator。本人会话规则不变。`proto/tests/identity_role_catalog_test.rb`调用`--role-catalog`输出并
+与API各角色精确集合比较，阻止文档表与实际授权函数漂移。

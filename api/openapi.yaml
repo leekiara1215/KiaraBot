@@ -70,8 +70,8 @@ x-control-policy:
   resource_scope: Fixed role capabilities intersect explicit owner-validated resource grants; sensitive reads require separate grants.
   target_status: not_implemented
   target_role_capabilities:
-    admin: [identity.session.read, identity.session.revoke, identity.principal.manage, identity.principal.read, identity.assignment.read, identity.assignment.manage, account.manage, account.policy.read, account.policy.manage, plugin.manage, namespace.manage, resource.read, resource.manage, delivery.manage, task.read, task.schedule, model.read, model.manage, action.inspect, account.read, plugin.read, adapter.read, host.read, plugin.config.read]
-    operator: [identity.session.read, identity.session.revoke, plugin.manage, resource.read, account.policy.read, account.policy.manage, task.read, task.schedule, delivery.manage, account.read, plugin.read, adapter.read, host.read, plugin.config.read]
+    admin: [identity.session.read, identity.session.revoke, identity.principal.manage, identity.principal.read, identity.assignment.read, identity.assignment.manage, account.manage, account.policy.read, account.policy.manage, plugin.manage, namespace.manage, resource.read, resource.manage, delivery.manage, task.read, task.schedule, model.read, model.manage, account.read, plugin.read, adapter.read, host.read, plugin.config.read]
+    operator: [identity.session.read, identity.session.revoke, plugin.manage, resource.read, account.policy.read, account.policy.manage, task.read, task.schedule, delivery.manage, account.read, plugin.read, adapter.read, host.read, plugin.config.read, model.read]
     viewer: [resource.read, model.read, account.read, plugin.read, adapter.read, host.read]
   target_role_notes: Capabilities alone never grant all resources. Intersect current fixed role capabilities with explicit owner-validated resource grants. Sensitive action.inspect, logs/audit and message metadata require separate explicit grants; no default role has message.read. The roles block below describes existing development behavior until target handlers replace it.
   target_error_mapping:

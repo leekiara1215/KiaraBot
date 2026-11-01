@@ -1,9 +1,11 @@
 #pragma once
 
+#include <algorithm>
 #include <array>
 #include <map>
 #include <set>
 #include <span>
+#include <string>
 #include <string_view>
 #include <utility>
 
@@ -88,6 +90,7 @@ inline bool default_role_allows(FixedRole role, Permission permission) {
   }
   switch (permission) {
   case Permission::ResourceRead:
+  case Permission::ModelRead:
   case Permission::AccountRead:
   case Permission::PluginRead:
   case Permission::AdapterRead:
@@ -100,16 +103,15 @@ inline bool default_role_allows(FixedRole role, Permission permission) {
   case Permission::AccountPolicyRead:
   case Permission::AccountPolicyManage:
   case Permission::PluginConfigRead:
+  case Permission::IdentitySessionRead:
+  case Permission::IdentitySessionRevoke:
     return role == FixedRole::Admin || role == FixedRole::Operator;
   case Permission::AccountManage:
   case Permission::IdentityAssignmentManage:
   case Permission::IdentityAssignmentRead:
   case Permission::IdentityPrincipalManage:
   case Permission::IdentityPrincipalRead:
-  case Permission::IdentitySessionRead:
-  case Permission::IdentitySessionRevoke:
   case Permission::ModelManage:
-  case Permission::ModelRead:
   case Permission::NamespaceManage:
   case Permission::ResourceManage:
     return role == FixedRole::Admin;
