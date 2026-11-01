@@ -497,3 +497,10 @@ fixture命令不变，通过唯一初始化CLI创建schema v2空库，覆盖公�
 P04首个内层契约测试 `p04_identity_contract` 注册p04/unit（10秒），可在dev及full构建
 运行；新增身份内层头自动进入独立头编译。该测试验证接口及纯凭据规则，不表示
 Identity生产认证链路、密码/JWS实现或真实身份库已完成。
+
+四PG owner daemon的组合根现在PRIVATE链接 `kiarabot_postgres`；它们和PG库均只在
+proto/full配置创建，dev不构建六daemon，因此不需要feature宏或数据库替身。
+`p03_service_database` 使用既有私有TLS集群runner和真实四daemon脚本，标记
+p03/integration/fault、120秒；PG工具/服务二进制目录与固定Python/OpenSSL的PATH均由
+现有cache和target路径导出。测试覆盖监听前拒绝、唯一writer、丢失退出与独立重启，
+PG可用仍不等于业务ready。

@@ -155,3 +155,23 @@ clang-analyzer-* warnings-as-errors通过。相关CTest选择p03全部及p04契�
 文档路径/末尾换行与git diff --check为本次文档检查。
 
 本树相关CTest 6/6通过，总18.82秒；Identity契约0.42秒、真实PG16.14秒。
+
+## 能力八：四daemon PG组合根链接及真实生命周期CTest
+
+接入父已审查78917d1（本树a0477d0），doc/02冲突只加入真正新增的实际数据库装配节，
+已有数据库组合输入/配置后组合钩子不复制；未修改mains/helper/测试正文。
+PG外层CMake PRIVATE链接四owner daemon，纯application不链接PG；dev关闭proto，
+六daemon本就不创建，不新增宏或改变dev依赖。新增p03_service_database使用原runner，
+输入为固定工具/initializer及真实脚本；ENV从cache/target导出PG工具、服务目录和
+Python/OpenSSL PATH，p03/integration/fault、timeout120；失败非零，无skip/替身。
+
+文档影响：doc/11和本报告同步构建与测试运行方式；业务装配语义由原提交doc/02/08说明，
+API/proto与doc/12-ci-cd无变化，冻结doc/18不改。
+固定full-locked配置和完整构建通过；全TU覆盖/inner/六目标图/p03注册通过，全仓format16
+通过；dev构建/CTest及相关full CTest、四mains精确DB tidy结果在提交前追加。
+未重复完整统一入口，由父在集成后执行；本轮不表示后续认证/消息业务ready或P03全阶段完成。
+文档校验为路径/末尾换行/重复章节检查与git diff --check。
+
+实际dev配置/完整构建与15/15 CTest通过（13.90秒）；full相关8/8通过（40.43秒），
+其中真实四daemon数据库测试6.04秒、存储fixture15.19秒。四main精确compile DB的
+ tidy22 clang-analyzer-* warnings-as-errors通过，helper随四main模板实例一起分析。
