@@ -12,3 +12,13 @@ foundation.hpp 定义稳定身份、代次、版本与恢复上下文。验收�
 依赖失败可保留未知受理事实；独立叶子构建不链接旧 Core/协议/SQL。
 
 已运行叶子 configure/build/CTest（1/1）、clang-format 与 git diff --check，均通过。
+
+## 能力二：上下文与本地事务端口
+
+新增 application/target/context.hpp、ports/target/unit_of_work.hpp、business_ports.hpp；
+区分可信身份与持久审计证据、提交未知与回滚。读缺失与失败分离，条件版本与
+唯一收据/claim fence 为实现强制语义。业务专属端口是 P06–P11 接口预留，未实现。
+文档更新 doc/02，本报告；其他文档影响判断同上。验收为独立编译与类型边界检查。
+
+已运行叶子 build/CTest（1/1）、clang-format、git diff --check，通过。尚无 UoW 实现，
+不声称验证数据库隔离、提交故障或恢复。

@@ -299,3 +299,14 @@ LoggingRuntimeStore 装饰现有 RuntimeStore，不改变事务结果；提交�
 独立验证：`cmake -S core/tests/architecture -B /tmp/kiarabot-core-inner`，
 `cmake --build /tmp/kiarabot-core-inner`，
 `ctest --test-dir /tmp/kiarabot-core-inner --output-on-failure`。根构建尚未接入。
+
+`application/target/context.hpp` 区分认证、命令和持久交接上下文，不携带 JWT、证书、
+秘密或浏览器 token；认证上下文只能由可信边界构造，权限字符串须匹配目标封闭词表。
+`ports/target/unit_of_work.hpp` 的 Repository 查询用成功空 optional 表示不存在，
+写入 null expected 仅创建，更新必须条件版本。Repository 借用 UoW 生命周期，
+不自行提交、不跨线程使用；应用服务持有唯一 UoW，析构活动事务必须回滚。
+commit 明确返回 Committed/RolledBack/Unknown，Unknown 只能按原身份查收据，
+不得据此重做外部调用。收据/操作/审计/outbox/inbox 属同一本地原子组。
+`business_ports.hpp` 为事件/投递、Action 配额、namespace CAS、occurrence、模型意图
+保留类型化端口；方法只参与所属服务本地事务，无实现、无跨库访问。后续业务阶段
+需添加服务专属 UoW 组及真实数据库测试，当前不是完整业务/存储端口验收。
