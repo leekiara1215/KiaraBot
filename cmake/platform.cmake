@@ -99,11 +99,11 @@ kiarabot_platform_warnings(kiarabot_service_process)
 
 add_executable(kiarabot_service_composition_driver
   ${CMAKE_SOURCE_DIR}/core/tests/platform/service_composition_driver.cpp)
-target_link_libraries(kiarabot_service_composition_driver PRIVATE kiarabot_service_process)
+target_link_libraries(kiarabot_service_composition_driver PRIVATE kiarabot_service_process kiarabot_proto)
 kiarabot_platform_warnings(kiarabot_service_composition_driver)
 add_test(NAME p03_service_composition COMMAND "${KIARABOT_TARGET_PYTHON}"
   ${CMAKE_SOURCE_DIR}/core/tests/platform/service_composition_test.py
-  $<TARGET_FILE:kiarabot_service_composition_driver>)
+  $<TARGET_FILE:kiarabot_service_composition_driver> $<TARGET_FILE:kiarabot_service_rpc_client>)
 set_tests_properties(p03_service_composition PROPERTIES LABELS "p03;integration;fault" TIMEOUT 30)
 
 foreach(SERVICE identity runtime plugin_host scheduler model)

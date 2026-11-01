@@ -175,3 +175,21 @@ API/proto与doc/12-ci-cd无变化，冻结doc/18不改。
 实际dev配置/完整构建与15/15 CTest通过（13.90秒）；full相关8/8通过（40.43秒），
 其中真实四daemon数据库测试6.04秒、存储fixture15.19秒。四main精确compile DB的
  tidy22 clang-analyzer-* warnings-as-errors通过，helper随四main模板实例一起分析。
+
+## 后续接线：受审RPC适配器装配测试
+
+接入20c16d9（本树6008a2a），doc/02与08自动合并，无重复旧章节。
+仅修改platform.cmake两处：composition_driver PRIVATE显式链接kiarabot_proto，
+其原CTest追加真实rpc_client参数。原p03/integration/fault标签及30秒超时保持。
+输入为已冻结组合hook/driver/client，输出为实际RPC固定拒绝结果；默认N/I不算通过。
+文档影响仅更新doc/11和本报告的构建说明；源提交已有Core/运维说明，无需另改
+proto/API、其他模块或doc/12-ci-cd，doc/18只读。未补取不完整Model/Runtime契约链，
+本树验证当前已授权源；没有改主树及其正在运行的统一入口快照。
+
+固定外部prefix/Python配置及构建、相关CTest和四TU tidy结果在提交前追加；
+全TU覆盖/inner/六目标图、直接边界、全仓format16已通过。文档路径/末尾换行/章节唯一
+及git diff --check为文档验证。未重复全仓统一入口，由父负责最终集成后验证。
+
+完整full-locked构建成功；相关CTest 3/3通过，总33.62秒：composition8.21秒、
+原p02进程18.63秒、真实四PG daemon6.77秒。四TU精确compile DB的tidy22
+clang-analyzer-* warnings-as-errors通过，p03实际注册标签检查通过。

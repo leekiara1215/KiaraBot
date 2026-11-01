@@ -504,3 +504,7 @@ proto/full配置创建，dev不构建六daemon，因此不需要feature宏或数
 p03/integration/fault、120秒；PG工具/服务二进制目录与固定Python/OpenSSL的PATH均由
 现有cache和target路径导出。测试覆盖监听前拒绝、唯一writer、丢失退出与独立重启，
 PG可用仍不等于业务ready。
+
+RPC装配回归复用 `p03_service_composition`：driver显式链接生成proto，CTest追加真实
+service_rpc_client参数。固定拒绝handler必须返回PERMISSION_DENIED，generated默认
+UNIMPLEMENTED不能通过该断言；测试标签/超时不变，不表示Identity认证已实现。
