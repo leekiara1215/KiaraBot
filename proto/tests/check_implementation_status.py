@@ -4,7 +4,10 @@
 The registry proto/tests/contract_status.json is the reviewed source of truth for
 which payloads, fields, enum values, WebSocket channels/events, REST operations
 and cross-contract semantic rules are implemented, not implemented, or
-deprecated in v1.
+deprecated within a named execution scope. schema v2 preserves historical categories
+as non-production reference facts; target production defaults to not_implemented and
+requires explicit overrides backed by current source and target tests. Logical evidence
+paths follow only the byte-verified core/reference manifest.
 
 This gate runs without protoc/CMake and enforces that:
   1. every Protobuf message field and oneof payload is registered;
@@ -29,6 +32,8 @@ import re
 import sys
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
+
+from evidence_scopes import EvidenceResolver, effective_status, validate_scopes, TARGET_SOURCE_ROOTS
 
 ROOT = Path(__file__).resolve().parents[2]
 PROTO_DIR = ROOT / "proto" / "kiarabot" / "v1"
@@ -260,24 +265,34 @@ def parse_schema_enum(source: str, schema: str, field: str) -> Optional[List[str
     return [item.strip().strip("'\"") for item in match.group(1).split(",") if item.strip()]
 
 
-def implementation_text() -> str:
+def implementation_text(scope="reference", root=ROOT) -> str:
+    if scope not in {"reference", "target"}:
+        raise ValueError("unknown implementation vocabulary scope")
     pieces: List[str] = []
     for root_name in IMPLEMENTATION_ROOTS:
-        root = ROOT / root_name
-        if not root.exists():
+        directory = root / root_name
+        if not directory.exists():
             continue
-        for path in root.rglob("*"):
+        for path in directory.rglob("*"):
             if path.suffix not in IMPLEMENTATION_SUFFIXES or not path.is_file():
                 continue
-            if any(part in IMPLEMENTATION_SKIP_DIRS for part in path.relative_to(ROOT).parts):
+            if any(part in IMPLEMENTATION_SKIP_DIRS for part in path.relative_to(root).parts):
+                continue
+            relative = path.relative_to(root).as_posix()
+            if scope == "target" and not relative.startswith(TARGET_SOURCE_ROOTS):
+                continue
+            if (scope == "reference" and (root / "core/reference/manifest.json").is_file()
+                    and relative.startswith("core/") and not relative.startswith("core/reference/")):
+                continue
+            if "tests" in path.relative_to(root).parts:
                 continue
             pieces.append(path.read_text(encoding="utf-8", errors="ignore"))
     return "\n".join(pieces)
 
 
 def validate_registry(registry: dict) -> None:
-    if registry.get("schema_version") != 1:
-        raise ValueError("contract_status.json schema_version must be 1")
+    if registry.get("schema_version") != 2:
+        raise ValueError("contract_status.json schema_version must be 2 (explicit reference/target execution scopes)")
     if set(registry.get("status_values", [])) != STATUS_VALUES:
         raise ValueError("contract_status.json status_values must be implemented/not_implemented/deprecated")
     for category, entries in registry["categories"].items():
@@ -322,6 +337,8 @@ def main() -> int:
     try:
         registry = read_registry()
         validate_registry(registry)
+        evidence_resolver = EvidenceResolver(ROOT)
+        validate_scopes(registry, evidence_resolver)
     except (ValueError, KeyError, json.JSONDecodeError) as error:
         print(f"contract_status.json: {error}", file=sys.stderr)
         return 1
@@ -451,10 +468,16 @@ def main() -> int:
             fail(f"missing evidence for unavailable contract item {key}")
             continue
         for relative in paths:
-            path = ROOT / relative
-            if not path.is_file():
-                fail(f"evidence path does not exist for {key}: {relative}")
+            try:
+                evidence_resolver.resolve(relative)
+            except ValueError as error:
+                fail(f"invalid evidence for {key}: {error}")
     for key, paths in evidence.items():
+        for relative in paths:
+            try:
+                evidence_resolver.resolve(relative)
+            except ValueError as error:
+                fail(f"invalid evidence for {key}: {error}")
         known = (
             key in categories["proto_fields"]
             or any(key in categories[category] for category in categories)
@@ -565,6 +588,18 @@ def main() -> int:
             if name not in sources:
                 fail(f"implementation sources do not reference declared {group} name {name}")
 
+    try:
+        target_table = read_doc_section(DOC_CONTRACTS, "<!-- execution-scopes:start -->",
+                                       "<!-- execution-scopes:end -->")
+        for category, values in categories.items():
+            for key in values:
+                if effective_status(registry, "target", category, key) == "implemented":
+                    if not any(f"`{key}`" in line and "| implemented |" in line
+                               for line in target_table.splitlines()):
+                        fail(f"target production status table omits {category}:{key}")
+    except ValueError as error:
+        fail(str(error))
+
     if errors:
         print("contract implementation status check failed:", file=sys.stderr)
         for error in errors:
@@ -572,8 +607,11 @@ def main() -> int:
         return 1
     print(
         "Contract implementation status, API extensions, evidence, documentation table "
-        "and frozen vocabulary are consistent"
+        "and reference vocabulary are consistent (historical status is not target availability)"
     )
+    target_items = [f"{category}:{key}" for category, values in categories.items() for key in values
+                    if effective_status(registry, "target", category, key) == "implemented"]
+    print("Target production implemented: " + (", ".join(target_items) or "none"))
     return 0
 
 

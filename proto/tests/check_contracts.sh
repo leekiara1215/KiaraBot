@@ -15,6 +15,7 @@ if grep -Eq '^  string type = ' "$proto_dir/kiarabot/v1/events.proto" "$proto_di
 fi
 
 python3 "$proto_dir/tests/check_enum_consistency.py"
+python3 "$proto_dir/tests/evidence_scopes_test.py"
 python3 "$proto_dir/tests/check_implementation_status.py"
 python3 "$proto_dir/tests/check_semantic_rules.py"
 

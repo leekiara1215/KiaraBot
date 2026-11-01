@@ -10,7 +10,20 @@ T03a 新增 CoreToPlugin.error（oneof 字段 6），承载注册之后的终止
 
 ## 契约实现状态（v1）
 
-`proto/tests/contract_status.json` 是"契约声明 → 实现状态"的机器可读登记表，`python3 proto/tests/check_implementation_status.py` 会校验：每个 Proto 字段/oneof 载荷、枚举值、AsyncAPI 频道/事件、OpenAPI 操作都必须登记为 `implemented`、`not_implemented` 或 `deprecated`；未实现项必须在 `.proto` 内有 `CONTRACT_STATUS` 注释、在 `api/*.yaml` 的 `x-contract-status` 中列出，并在下表出现。**未列为本表可用的契约项不得在文档、面板或客户端中被当作已可用能力。**
+`proto/tests/contract_status.json` 的 schema v2 明确区分执行范围：`categories` 保留开发版本的历史/reference 状态与现有声明，**其中的 implemented 不代表六服务 target 生产能力**；`execution_scopes.target` 是当前目标生产可用性，默认 not_implemented，只有经独立证据登记的 override 才可标 implemented，deprecated 不会被复活。所有历史 categories 状态保持，不能通过迁移或改名删除旧断言。
+
+<!-- execution-scopes:start -->
+当前 target 可用项仅为P02进程探针：
+
+| target 契约项 | 状态 | 范围 |
+| --- | --- | --- |
+| `operations.getProcessLiveness` | implemented | 进程HTTP live，200/HEALTHY，不代表业务可用 |
+| `operations.getProcessReadiness` | implemented | 进程HTTP ready，P02固定503/UNHEALTHY，不伪造ready |
+
+除上述明确override外，target所有非废弃业务声明均为not_implemented，包括旧reference已有的Action/Host/认证/WS能力及全部77个目标owner RPC；mTLS监听返回UNIMPLEMENTED不算业务实现。API已有x-contract-status列表与下表、proto内联CONTRACT_STATUS保留声明/历史reference语境；不可据其单独判断target可用性。客户端与面板须依据target执行范围及真实生产者验收，不得用历史测试通过自动启用。
+<!-- execution-scopes:end -->
+
+检查器继续核对每个Proto字段/oneof、枚举、频道/事件、OpenAPI操作及原未实现项的内联注释、API列表、文档行和证据，不删除原门禁。历史Core逻辑证据路径只通过`core/reference/manifest.json`的明确source→reference映射解析并核对Git blob，未登记/缺失/字节变化/重引入/路径逃逸或符号链接均失败。target已实现项另需当前生产source及target测试，reference、旧客户端或测试内字符串不能证明target生产能力。
 
 <!-- contract-status:start -->
 | 契约项 | 状态 | 说明 |

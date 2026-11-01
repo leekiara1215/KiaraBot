@@ -1,3 +1,5 @@
+> 执行范围：本文原v1闭环和历史限制是保留的reference断言来源，不能据此宣称六服务target已接线。当前target生产可用性以proto/tests/contract_status.json的execution_scopes.target为准；P02仅进程探针可用，业务RPC仍明确UNIMPLEMENTED。本文标为目标的租约、收据、交接和恢复语义是后续实现必须满足的规范，不是已通过生产验收。
+
 # 事件与 Action 运行时语义
 
 T07a 闭环回归发现派发事务与 ACK 竞争：Bridge 的事件/Action 发送循环遇到 retryable=true 的 CONFLICT 时等待 20ms 后重新读取并尝试派发，不断开流；此时尚未向流写出该帧。非可重试冲突及其他存储故障仍走原错误/断线恢复路径。此重试仅针对 Core 内部未提交的领取，不重发插件业务请求或模型调用。

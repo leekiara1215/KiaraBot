@@ -56,3 +56,16 @@ CI 可设置 `KIARABOT_BASELINE_DESCRIPTOR` 指向上一发布版 descriptor。`
 `ruby proto/tests/target_api_test.rb` 解析 REST/WS 并递归检查所有本地/跨文件引用、33个目标操作权限/写幂等声明、错误映射与目标状态流。此静态门禁不需要旧 Control --dump-policy 二进制，也不替代固定 Redocly/AsyncAPI parser 的正式 lint。目标RPC验证比较五个owner service完整方法集合双向相等，requires_idempotency_key 与 mutating 独立，防止稳定业务身份被误当普通收据。
 
 目标JSON schema回归：用Ruby YAML解析OpenAPI为JSON临时文件，再运行 `node proto/tests/target_schema_test.cjs <固定lint环境node_modules> <临时OpenAPI.json>`。Ajv逐个证明成功主结果、资源/操作引用、完整Fence必填；拒绝空ID/零代次/缺字段/uint64越界，接受uint64最大值和未应用配置0；registered=true必须完整Fence、Blocked必须原因与下次处理时间。该检查使用lint依赖中的Ajv，未安装依赖即失败。
+
+
+## 执行范围与证据（schema v2）
+
+contract_status.json的categories保留历史/reference状态，不再隐含target生产可用性；
+execution_scopes.target默认not_implemented，仅明确override及独立生产source/target测试证据
+可标implemented。当前仅P02 live/ready探针，后者仍503，不代表业务ready；77个owner RPC尚未实现。
+API状态扩展与旧proto注释按原声明/reference语境核对，不批量更名或删除原断言。
+
+`python3 proto/tests/evidence_scopes_test.py -v`验证映射前后、Git blob、缺失/错误/重复/逃逸/
+symlink拒绝，历史implemented保留且不自动传播target，target声明必须有当前生产source与target测试。
+历史逻辑路径严格按core/reference/manifest.json解析，无猜测/回退；reference代码和测试字符串
+只用于历史范围词表，不能满足target生产证据。新布局新增生产证据目录需审查TARGET_SOURCE_ROOTS。

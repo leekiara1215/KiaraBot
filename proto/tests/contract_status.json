@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "contract_version": "kiarabot.v1",
   "status_values": [
     "implemented",
@@ -7,8 +7,8 @@
     "deprecated"
   ],
   "status_definitions": {
-    "implemented": "Produced and consumed by wired v1 code and covered by at least one test.",
-    "not_implemented": "Declared in the contract but not wired in v1. Clients must not rely on it; docs must list it in the status table.",
+    "implemented": "Implemented within the explicitly selected execution scope only. Historical categories are reference facts, never implicit target production availability.",
+    "not_implemented": "Not implemented within the selected scope; target defaults fail closed regardless of historical reference success.",
     "deprecated": "Removed from the normative contract. Kept only to explain past documents and migration; never implement it as new behavior."
   },
   "categories": {
@@ -3950,5 +3950,32 @@
     "PluginManifest.isolation": [
       "process"
     ]
+  },
+  "execution_scopes": {
+    "reference": {
+      "status_source": "categories",
+      "production": false
+    },
+    "target": {
+      "default_status": "not_implemented",
+      "overrides": {
+        "operations": {
+          "operations.getProcessLiveness": "implemented",
+          "operations.getProcessReadiness": "implemented"
+        }
+      },
+      "evidence": {
+        "operations:operations.getProcessLiveness": [
+          "core/src/runtime/platform/service_process.cpp",
+          "core/tests/platform/service_process_test.py",
+          "tests/architecture/run.py"
+        ],
+        "operations:operations.getProcessReadiness": [
+          "core/src/runtime/platform/service_process.cpp",
+          "core/tests/platform/service_process_test.py",
+          "tests/architecture/run.py"
+        ]
+      }
+    }
   }
 }
