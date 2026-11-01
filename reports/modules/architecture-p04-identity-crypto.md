@@ -1,8 +1,9 @@
-# P04 production crypto adapter design (in progress)
+# P04 production crypto adapter implementation (in progress)
 
 Scope: infrastructure/identity_crypto/{include,src,tests}, minimal doc/05 and doc/08 notes,
 and this report. Core, PostgreSQL, build configuration, protocols/API and protected doc/18
-remain unchanged. This is a factory proposal, not an implemented production capability.
+remain unchanged. Password, Random, Token and SecretReceipt adapters are implemented below; delegation and peer
+verification remain in progress. No production service composition is claimed.
 
 Factories consume trusted move-only symmetric keys, require exactly 32 bytes and reject duplicate
 or empty references. Secure storage uses sodium_malloc/sodium_free. Separate immutable keyrings
@@ -23,7 +24,8 @@ runs outside transactions. Delegation and peer factories follow after this first
 Documentation impact: doc/05 will describe implemented adapter behavior and error distinctions;
 doc/08 will describe trusted key provisioning and application-owned database-time expiry checks. No wire/API or
 Core responsibility changes are proposed, so proto/, api/, doc/01 and doc/02 need no changes.
-Protected doc/18 is read-only. No implementation, build, security or runtime acceptance is yet claimed.
+Protected doc/18 is read-only. The dated implementation check sections below supersede this initial proposal status; no complete
+service/runtime acceptance is claimed.
 
 ## Password and random implementation checks
 
@@ -77,3 +79,67 @@ and token tests with -Werror + ASan/UBSan, executed successfully; tidy22 analyze
 format16 passed. Boundary and inner architecture checks pass; attempted nonexistent legacy
 check-inner-purity.py was corrected to check-architecture.py --inner. No external interfaces,
 Core models, API/proto, PG or protected baseline changed; doc/01/02/18 require no synchronization.
+
+## Reproducible first-stage checks
+
+Run from the operations worktree (paths below are read-only shared dependencies, not repository
+configuration). Three test commands were run with the following common flags and inputs:
+
+```sh
+crypto_prefix=/Users/leekiara/Workspace/KiaraBot.worktrees/kiarabot-toolchain/build/architecture-installed/arm64-osx
+clang++ -std=c++20 -Wall -Wextra -Wpedantic -Werror -fsanitize=address,undefined \
+  -Icore/include -Iinfrastructure/identity_crypto/include -I"$crypto_prefix/include" \
+  infrastructure/identity_crypto/src/password_crypto.cpp \
+  infrastructure/identity_crypto/tests/password_crypto_test.cpp \
+  "$crypto_prefix/lib/libsodium.a" -o build/identity-crypto/password_crypto_test
+build/identity-crypto/password_crypto_test
+```
+
+For Token, the same command additionally compiles `src/token_crypto.cpp` and substitutes
+`tests/token_crypto_test.cpp` and the corresponding executable name. For Receipt, it additionally
+compiles `src/receipt_crypto.cpp` and substitutes `tests/receipt_crypto_test.cpp` and executable name.
+All abbreviated source/test names in this paragraph are under `infrastructure/identity_crypto/`.
+
+```sh
+python3 scripts/quality/check-boundaries.py
+python3 scripts/quality/check-architecture.py --inner
+```
+
+Both pass. `git diff --check` and fixed clang-format16 `--dry-run --Werror` pass. Tidy22 used
+`--checks='-*,clang-analyzer-*,bugprone-*' --warnings-as-errors='*'` with the same includes,
+`-std=c++20 -isysroot /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk
+-isystem /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1`.
+Diagnostics in third-party/system headers are suppressed; no user-source diagnostics remain.
+No root full compile database/CTest registration exists for these additions until build integration;
+that full repository gate is deliberately not represented as passed by these manual adapter tests.
+
+## Peer certificate adapter acceptance
+
+Public factory: peer_certificate.hpp PeerTrustConfig consumes trusted public PEM roots and a fixed
+URI/DNS SAN kind. Implementation validates leaf-first concatenated DER, bounded eight certs/64KiB,
+strict OpenSSL chain at passed now, clientAuth EKU, fixed strong algorithm set, actual leaf SHA256
+fingerprint, exact NUL-free SAN and authoritative expected peer/subject/platform-service/credential
+shape. Caller must supply current credential registration and real transport evidence; no DB or
+body certificate parsing and no independent claim of live credential/revocation status.
+
+Actual verification command from operations worktree:
+
+```sh
+crypto_prefix=/Users/leekiara/Workspace/KiaraBot.worktrees/kiarabot-toolchain/build/architecture-installed/arm64-osx
+clang++ -std=c++20 -Wall -Wextra -Wpedantic -Werror -fsanitize=address,undefined \
+  -Icore/include -Iinfrastructure/identity_crypto/include -isystem "$crypto_prefix/include" \
+  infrastructure/identity_crypto/src/peer_certificate.cpp \
+  infrastructure/identity_crypto/tests/peer_certificate_test.cpp \
+  "$crypto_prefix/lib/libcrypto.a" -o build/identity-crypto/peer_certificate_test
+build/identity-crypto/peer_certificate_test
+```
+
+Passed with real OpenSSL3.5.0 Ed25519 CA and leaf generated in test memory. Negative paths include
+wrong SAN/fingerprint/service/credential/time/root, duplicate/trailing/empty/oversized DER,
+serverAuth-only EKU, unknown service enum, certificate expiry despite extended registration and
+malformed PEM trailing garbage. Tidy22 analyzer/bugprone source+test passed; shared external include
+is marked system to avoid OpenSSL macro diagnostics. Format16, boundary/inner and diff checks pass.
+Docs synchronized: doc/05 and doc/08 plus this report. No CMake/Core/PG/proto/API/doc18 changes.
+Not run: complete service/TLS transport integration and revocation/production composition; adapter
+unit tests are not evidence those boundaries have been connected. JWT still waits for final Core
+credential/session source fields, as requested by parent integration review.

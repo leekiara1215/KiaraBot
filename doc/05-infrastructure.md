@@ -274,3 +274,12 @@ InvalidArgument。最大保留窗24小时；当前到期及凭据/会话/轮次�
 密码PHC的salt/hash在成本检查后，另经libsodium ORIGINAL_NO_PADDING严格base64解码，
 要求16/32字节并重新编码逐字一致；非canonical或损坏编码返回Internal，不误报错误密码。
 密码派生及factory/Token结果分配失败在适配边界转换UpstreamUnavailable。
+
+P04 PeerCertificatePort 外层工厂位于 `identity_crypto/peer_certificate.hpp`。可信公共PEM
+根CA配置消费进不可变OpenSSL X509_STORE，禁止从请求/令牌URL加载根。真实传输证据为
+叶在前连续DER，最多8张/64KiB，完整消费、canonical DER及重复检查。固定允许Ed25519、
+EC prime256v1和RSA至少2048位，证书签名仅Ed25519或SHA256/384/512；严格链验证要求
+clientAuth EKU，时间使用调用者给定now。叶SHA256指纹、按配置选定的URI/DNS SAN精确
+ASN.1长度比较（拒绝NUL）及登记主体/服务类型/凭据形状共同检查，不以CA通过替代登记。
+凭据当前有效性与now的权威数据库来源由应用负责，不从请求正文构造已验证peer。
+验证拒绝Unauthenticated，配置错误InvalidArgument，资源故障UpstreamUnavailable。
