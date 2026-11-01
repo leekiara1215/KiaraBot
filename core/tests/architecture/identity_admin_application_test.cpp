@@ -623,6 +623,37 @@ void delegation_tests() {
         "NumericDate rounding shortens source expiry and preserves actual checked time");
   clock.now = now;
   credential.expires_at = now + 24h;
+  auto bounded_request = request;
+  bounded_request.permissions.clear();
+  t::ExactAssignment bulk{{"bulk"}, principal.id, {}, {}, {1}};
+  for (std::size_t index = 0; index <= t::kMaximumDelegationBindings; ++index) {
+    auto suffix = std::to_string(index);
+    suffix.insert(0, 12 - suffix.size(), '0');
+    const t::PermissionBinding permission{
+        t::Permission::ResourceRead,
+        {t::ResourceKind::Account, {"00000000-0000-4000-8000-" + suffix}}};
+    bounded_request.permissions.push_back(permission);
+    bulk.explicit_permissions.push_back(permission);
+  }
+  const auto calls_before_bound = sessions.calls;
+  const auto signs_before_bound = crypto.calls;
+  check(error(app.issue_delegation(bounded_request), t::ErrorCode::InvalidArgument) &&
+            sessions.calls == calls_before_bound && crypto.calls == signs_before_bound &&
+            factory.script.active == 0,
+        "129 delegation tuples reject before current-state reads or signing");
+  bounded_request.permissions.pop_back();
+  bulk.explicit_permissions.pop_back();
+  factory.script.assignments.read = [bulk]() -> t::Outcome<std::vector<t::ExactAssignment>> {
+    return std::vector{bulk};
+  };
+  auto at_bound = app.issue_delegation(bounded_request);
+  check(std::holds_alternative<t::IdentityDelegationReply>(at_bound) &&
+            std::get<t::IdentityDelegationReply>(at_bound).claims.permissions.size() ==
+                t::kMaximumDelegationBindings,
+        "128 explicitly authorized tuples remain usable at the cryptographic limit");
+  factory.script.assignments.read = []() -> t::Outcome<std::vector<t::ExactAssignment>> {
+    return std::vector<t::ExactAssignment>{};
+  };
   crypto.while_signing = [&] { sessions.rejected = true; };
   check(error(app.issue_delegation(request), t::ErrorCode::Unauthenticated),
         "source revoked during signing rejects proof");

@@ -26,6 +26,7 @@ inline constexpr auto kMaximumAuthorizationAge = std::chrono::seconds{60};
 inline constexpr auto kMaximumKnownClockSkew = std::chrono::seconds{2};
 inline constexpr auto kMaximumSignatureLeeway = std::chrono::seconds{2};
 inline constexpr std::uint32_t kMaximumBusinessHops = 2;
+inline constexpr std::size_t kMaximumDelegationBindings = 128;
 inline constexpr std::size_t kMaximumPeerChainBytes = 65536;
 inline constexpr std::size_t kMaximumPeerChainCertificates = 8;
 struct CredentialTag;

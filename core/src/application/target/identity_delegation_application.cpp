@@ -159,7 +159,8 @@ IdentityDelegationApplication::issue_delegation(const IssueIdentityDelegationReq
       return authentication_rejected();
     }
     if (options_.issuer.empty() || options_.signing_key.value.empty() ||
-        !valid_service(request.audience) || request.permissions.empty()) {
+        !valid_service(request.audience) || request.permissions.empty() ||
+        request.permissions.size() > kMaximumDelegationBindings) {
       return rejected(ErrorCode::InvalidArgument, Recovery::CorrectInput);
     }
     std::set<std::pair<Permission, ResourceRef>,
