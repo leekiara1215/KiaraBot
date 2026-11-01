@@ -256,3 +256,12 @@ fixture 的 setup/cleanup 与每个测试使用 CTest `FIXTURES_SETUP`/`FIXTURES
 - 验证：p03 integration/fault 覆盖真实 PG 唯一约束、锁/并发、COMMIT 结果不明、断线、
   schema 拒绝、运行账户 DDL 拒绝和跨库拒绝。缺 PG、驱动、证书或秘密文件直接失败，
   不 skip、不回退内存或 SQLite。内存单元测试另标 unit。
+
+## P02 reference 隔离实施接口
+
+P01 已集成，P02 的旧实现隔离与构建规格见
+[本轮工具链执行记录](../reports/modules/architecture-p02-toolchain.md)。旧 Core 内层文件
+按 blob 不变原则迁入 `core/reference/`，保留 `target/` 和 `runtime/platform/`；旧测试不删
+断言，所有 reference TU 继续进入 full compile DB/tidy。六个新进程只能链接新内层及
+自己的外层装配，不能通过旧桥接库复用快照业务。构建的 reference 通过不代表目标
+业务实现。具体实施/命令和未验项在上述记录随独立提交更新。
