@@ -213,3 +213,24 @@ ordinary receipt/sealed receipt/operation与bootstrap消费整体回滚；正向
 `kiarabot/infrastructure/postgres/security_factory.hpp`。根完整CMake/CTest由主任务接入冻结
 提交后执行，本工作树未运行该门禁；上述真实库验证使用最终重建产物，不是mock。
 该工厂为存储依赖，认证/crypto/实际HTTP应用的联调属于主任务，不能将仓储通过等同应用就绪。
+
+## 真实公开工厂的重复会话写入复现（实施中）
+
+检查已冻结App7f9a197调用组合风险，不修改App/crypto/Core接口/schema/CMake。
+本步仅改typed_work_checks真实PG测试及doc05/本报告；文档影响是明确自动同步责任。
+既有session_security.save已同步base sessions，因此再调用相同create-only或旧expected
+base save应Conflict、污染并回滚整个UoW；不为错误调用放宽CAS。doc08/协议/API/稳定码
+未变，无需同步，保护基线只读。验收为Login/Refresh/Revoke三个真实publicfactory组合。
+
+### 重复会话写入实际结果
+
+真实公开open_identity_security三种组合均复现：security save成功后，相同create-only
+Login base写或旧expected Refresh/Revoke base写返回Conflict，commit为RolledBack。
+Login两类会话行均不存在；Refresh/Revoke两类行保持原version/rotation/未撤销状态。
+本步不改实现，未放宽CAS。已执行固定依赖三种-Werror构建、普通/ASan+UBSan真实四库
+fixture全通过，typed测试TU analyzer+braces clang-tidy22、clang-format16、diff和文档
+UTF8/换行/新增责任说明检查通过；doc18无差异。根完整CMake/CTest由主任务集成执行。
+Core端口原注释“Base sessions() metadata shares this transaction/version”未明说自动写入，
+建议由Core作者在其修复提交中明确“security save owns base synchronization; do not save twice”；
+本任务未跨模块编辑端口或App。后续App+crypto+PG集成应取冻结修复后再验证，不能用本
+负向存储复现冒充应用通过。

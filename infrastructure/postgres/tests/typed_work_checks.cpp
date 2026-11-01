@@ -179,6 +179,53 @@ void security(const DatabaseConfig& config) {
           "failed security UoW consumed bootstrap");
     work->rollback();
   }
+  // Reproduce the application's old double-write sequence without weakening either CAS.
+  for (int kind = 0; kind < 3; ++kind) {
+    auto work = take(factory->begin());
+    const auto stored = take(work->session_security().find({"factory-commit-session"}));
+    check(stored.has_value(), "duplicate-write fixture session missing");
+    auto changed = *stored;
+    std::optional<target::ResourceVersion> expected;
+    std::optional<std::uint64_t> expected_rotation;
+    if (kind == 0) {
+      changed.id = {"duplicate-login-session"};
+      changed.access.key.value += "-duplicate-login";
+      changed.refresh.key.value += "-duplicate-login";
+    } else {
+      expected = stored->version;
+      expected_rotation = stored->rotation;
+      changed.version = {stored->version.value + 1};
+      if (kind == 1) {
+        ++changed.rotation;
+        changed.access.key.value += "-refreshed";
+        changed.refresh.key.value += "-refreshed";
+      } else {
+        changed.revoked = true;
+      }
+    }
+    take(work->session_security().save(changed, expected, expected_rotation));
+    const target::LoginSession duplicate{changed.id,
+                                         changed.subject,
+                                         changed.version,
+                                         changed.rotation,
+                                         changed.refresh_expires_at,
+                                         changed.revoked};
+    expect(work->sessions().save(duplicate, expected), target::ErrorCode::Conflict);
+    rollback_rejected(*work);
+    work = take(factory->begin());
+    const auto security = take(work->session_security().find(changed.id));
+    const auto base = take(work->sessions().find(changed.id));
+    if (kind == 0) {
+      check(!security && !base, "duplicate login conflict left either session projection");
+    } else {
+      check(security && base && security->version == stored->version &&
+                security->rotation == stored->rotation && !security->revoked &&
+                base->version == stored->version && base->rotation == stored->rotation &&
+                !base->revoked,
+            "duplicate refresh/revoke conflict partially committed session state");
+    }
+    work->rollback();
+  }
   auto surviving = take(factory->begin());
   factory.reset();
   check(take(surviving->credentials().current({"factory-commit-credential"})).has_value(),

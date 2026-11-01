@@ -359,3 +359,7 @@ InvalidArgument。仓储不把不同Assignment的role/scope混配，不自创per
 公开 security_factory.hpp 的open_identity_security验证Identity库后提供完整typed安全工厂。
 所有继承与安全仓储共用一个物理事务/失败状态/2秒总预算和250ms锁预算；UoW可晚于
 工厂销毁，终态释放许可，旧失效实例不重连。原open_identity接口保持兼容。
+
+安全应用写入会话时只调用session_security.save：它已原子同步sessions基础元数据。
+随后再以相同create-only/旧expected调用sessions.save会Conflict并使整笔UoW回滚；
+Login、Refresh、Revoke均不能重复写基础行，也不能放宽base CAS迁就重复调用。
