@@ -581,3 +581,11 @@ POSIX离线 `kiarabot-identity-bootstrap` 独立组合service_process/target_cod
 Core Admin，输出bin目录；`p04_identity_bootstrap`复用真实私有PG runner，重复
 --test-argument转交CLI与固定PG工具路径，integration/security/fault、120秒。
 PATH只由已有固定OpenSSL/Python cache导出，缺前置失败，不把预期fixture当通过。
+
+`p04_identity_role_catalog`以Ruby执行真实identity_rules_test的--role-catalog，再直接
+读取正式api/openapi.yaml比较逐角色精确集合，标签unit/security/contract、10秒。
+不复制预期权限表；Ruby为必需测试工具，缺失配置明确失败。
+
+`p04_identity_application`使用独立双TU真实driver，组合PG安全工厂、三个纯Identity应用
+和成熟crypto/TLS adapters；p04/integration/security/fault、120秒，runner先验证错误
+backend目录必被拒绝再运行正常临时库。它验证本地组合，不代表HTTP/生产配置已完成。

@@ -19,6 +19,24 @@ target_link_libraries(kiarabot-pg-initialize PRIVATE kiarabot_postgres)
 kiarabot_platform_warnings(kiarabot-pg-initialize)
 
 if(UNIX)
+  add_executable(kiarabot_identity_application_test
+    tests/identity_application_test.cpp tests/identity_application_tls.cpp)
+  target_link_libraries(kiarabot_identity_application_test PRIVATE
+    kiarabot_postgres kiarabot_identity_crypto kiarabot_identity_admin_application
+    kiarabot_identity_delegation_application kiarabot_identity_security_application
+    libpqxx::pqxx)
+  # Static PG/crypto adapters already supply SSL/Crypto linkage; these headers are used directly.
+  target_include_directories(kiarabot_identity_application_test SYSTEM PRIVATE
+    $<TARGET_PROPERTY:OpenSSL::Crypto,INTERFACE_INCLUDE_DIRECTORIES>)
+  kiarabot_platform_warnings(kiarabot_identity_application_test)
+  add_test(NAME p04_identity_application COMMAND "${KIARABOT_TARGET_PYTHON}"
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_database_test.py"
+    --pg-bin "${KIARABOT_TEST_PG_BIN}" --openssl "${KIARABOT_TEST_OPENSSL}"
+    --test $<TARGET_FILE:kiarabot_identity_application_test>
+    --initializer $<TARGET_FILE:kiarabot-pg-initialize>)
+  set_tests_properties(p04_identity_application PROPERTIES
+    LABELS "p04;integration;security;fault" TIMEOUT 120)
+
   add_executable(kiarabot_postgres_database_test
     tests/database_test.cpp tests/common_work_checks.cpp tests/typed_work_checks.cpp)
   target_link_libraries(kiarabot_postgres_database_test PRIVATE kiarabot_postgres libpqxx::pqxx)

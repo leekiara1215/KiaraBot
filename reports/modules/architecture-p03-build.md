@@ -569,3 +569,36 @@ CI和冻结doc18不改。
 未重复统一入口；文档检查为路径/末尾换行/CTest参数与diff检查。
 
 CLI TU精确compile DB tidy22 clang-analyzer-* warnings-as-errors通过。
+
+## 后续接线：默认角色API精确目录
+
+同步父完整批准97a6610（本树b4e1f40），API无冲突自动取提交内容，未手动粘贴能力表；
+Core/API/G08完整差异沿原能力，文档冲突保留真正追加章节，并去掉此前9b遗留的旧三端口
+PeerAuthenticator过时段（最终Admin wrapper章节保留）。新增Ruby CTest调用实际规则
+binary与正式source API路径，p04/unit/security/contract、10秒，find_program Ruby REQUIRED。
+文档影响仅doc/11和本报告构建说明；Core/API模块说明已由源提交同步，其他模块/CI和
+冻结doc18不改，不宣称补齐本树尚缺的proto链。
+固定配置、规则target构建、相关CTest2/2通过0.46秒，目录0.07秒；全TU覆盖/inner/实际图/
+p04标签、规则头/test格式、Ruby语法通过；当前规则TU精确DB tidy22 clang-analyzer-*
+warnings-as-errors通过，替代此前该TU enum诊断失败的旧源状态。OpenAPI lint结果后附。
+未重复全仓统一入口或CLI旧产物回放。文档检查为路径/末尾换行/章节唯一与diff检查。
+
+实际OpenAPI lint使用固定Node22.14.0和主树既有Redocly2.72.1安装（版本文件核对），
+工作目录仍本树、校验本树API，exit0、12 warnings；未写主树/安装依赖，不把warnings隐去。
+
+## 后续接线：真实Identity应用/PG/crypto/TLS组合
+
+同步父完整审查ee4395b（本树2e850a2），文档冲突只追加真正集成章节，不复制未取的
+87c0fa7负向报告块。新增独立kiarabot_identity_application_test编译两个真实fixture TU，
+PRIVATE链接PG/crypto/Admin/Delegation/Security应用及直接DDL用libpqxx；SSL/Crypto实际
+链接由静态依赖提供，测试额外取得官方Crypto头路径。CTest复用原runner/initializer，
+p04/integration/security/fault、120秒，无新DSN/skip/宽松TLS。
+文档影响仅doc/11及本报告构建说明；源已同步infra集成行为及报告，其他模块/API/proto/
+CI和冻结doc18不改。runner新driver白名单保持准确目标名，并保留CLI test-argument接口。
+
+固定prefix/Python配置、driver和initializer定向构建通过；首次SSL/Crypto直接链接带来
+重复archive警告，改用已有静态依赖供给后实际重链无compiler/linker warning。
+实际真实PG/TLS/crypto CTest1/1通过4.29秒（含backend mismatch前置），新两TU精确DB
+ tidy22 clang-analyzer-* warnings-as-errors、format16、全TU覆盖/inner/实际图及p04标签
+通过。未重复统一入口或用旧产物回放；不宣称生产HTTP/部署配置闭环。
+文档检查为路径/末尾换行/无冲突标记及git diff --check。
