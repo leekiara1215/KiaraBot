@@ -89,3 +89,24 @@ Checks actually run for the bundle:
   the clock static library/include core/app, clock test (Threads and assertions on),
   identity_composition.cpp to Identity, and link Identity with clock/security/admin/
   delegation/RPC/crypto; the new RPC library also links delegation application.
+
+## Actual production daemon HTTP regression
+
+The real owned PG16.4 fixture now invokes a reusable offline bootstrap setup and
+production Identity/Control binaries. Control uses the same actual URI certificate
+fingerprint enrolled by the CLI, additionally permitted for its browser TLS listener.
+The regression covers Login and original-key replay, wrong password 401, current
+principal equal to the enrolled administrator, actual session list, Refresh and
+original-key replay, successful current lookup, Revoke204 and subsequent401. Both
+daemons terminate on SIGTERM, output is checked against actual password/tokens, and
+the ownership-checking wrapper removes the temporary cluster and key material.
+
+Actual run: run_database_test.py with identity_daemon_http_test.py and compiled
+initializer/bootstrap/Identity/Control binaries passed. Python compilation, module
+boundary and diff whitespace checks passed. The bootstrap fixture's default CLI test
+path remains unchanged; its new explicit test callback allows the production chain
+without source rewriting or mocked authentication. Registration needs the same
+arguments as p04_identity_bootstrap plus Identity and Control binary paths. No CMake
+changes are committed. This validates seven implemented RPC methods through five
+HTTP operations, not the entire Identity API. Own server TLS lifetime enforcement is
+a separately identified follow-up and this evidence does not claim it is complete.

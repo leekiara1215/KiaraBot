@@ -13,7 +13,7 @@ import uuid
 from service_config_test import certificates
 
 
-def main():
+def main(*, control_server_certificate=False, after_bootstrap=None):
     root = Path(sys.argv[1]).resolve()
     port, initializer = sys.argv[2:4]
     bootstrap = str(Path(sys.argv[5]).resolve())
@@ -49,8 +49,10 @@ def main():
     config = certificates(tls_root, 'ec')
     # Use an explicit URI SAN for enrollment; the server certificate remains separate.
     extensions = tls_root / 'control.ext'
-    extensions.write_text('subjectAltName=URI:spiffe://kiarabot/control-test\n'
-                          'extendedKeyUsage=clientAuth\nbasicConstraints=critical,CA:FALSE\n'
+    browser_names = ',DNS:localhost,IP:127.0.0.1' if control_server_certificate else ''
+    purposes = 'clientAuth,serverAuth' if control_server_certificate else 'clientAuth'
+    extensions.write_text(f'subjectAltName=URI:spiffe://kiarabot/control-test{browser_names}\n'
+                          f'extendedKeyUsage={purposes}\nbasicConstraints=critical,CA:FALSE\n'
                           'keyUsage=critical,digitalSignature\nsubjectKeyIdentifier=hash\n'
                           'authorityKeyIdentifier=keyid:always\n')
     for arguments in [
@@ -142,6 +144,8 @@ def main():
     assert 'CONFLICT' in run(command, 1)
     assert 'state=consumed version=2' in run(status_arguments)
     print('Real owned PG offline bootstrap, rejected enrollment, once-only state and redaction passed')
+    if after_bootstrap is not None:
+        after_bootstrap(root)
 
 
 if __name__ == '__main__':

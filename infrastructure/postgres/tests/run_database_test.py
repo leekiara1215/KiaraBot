@@ -31,7 +31,7 @@ def main():
     def run(command, timeout=45, expected=0):
         result = subprocess.run(command, env=environment, capture_output=True, timeout=timeout)
         if result.returncode != expected:
-            if Path(command[0]).name in (*driver_names, 'identity_bootstrap_test.py'):
+            if Path(command[0]).name in (*driver_names, 'identity_bootstrap_test.py', 'identity_daemon_http_test.py'):
                 for line in result.stderr.decode(errors='replace').splitlines():
                     if line.startswith('P03 assertion: '):
                         print(line, flush=True)
