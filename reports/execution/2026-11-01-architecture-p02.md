@@ -124,3 +124,26 @@ target语义须明确，已交契约线程修复。Python发行归档独立hash�
 阶段状态。doc/02、06、08、11已在各实现提交同步行为；本汇总不再重复改变这些行为。
 proto/API无新增字段，不需以汇总为由重写；doc/18保护基线保持只读且无diff。
 V0检查为 git diff --check 与本次文档相对链接校验；后续复验结果按实际追加。
+
+## P00–P02 本机门禁关闭（固定快照 c43b51e）
+
+主工作区实际执行固定环境统一入口，日志 /tmp/kiarabot-root-locked-unified-p03.log，
+退出0且最终All toolchain and quality checks passed：dev12/12，full-locked53/53
+（139.91秒，已含P03两基础测试），独立infrastructure10/10（12.36秒），真实PG/JWT、
+registry/installed来源、实际链接图/内层/全部84手写TU覆盖、p02/p03标签、全84TU tidy22、
+format16、完整契约/9 scope回归/descriptor与legacy reader、API/Ajv及质量自测全通过。
+工具PATH显式使用锁定Python3.11.18/Node22.14/protoc29.3/format16/tidy22；vcpkg prefix
+复用已核验工具链工作区，PG16.4和OpenSSL3.5工具由CMake实际配置取得。
+
+此前统一入口的两个间歇失败保留在 /tmp/kiarabot-root-locked-unified.log：RPC helper
+退出TSD清理SIGSEGV及reference SDK明确disable后非零退出竞态。分别独立修复26defb1/
+ebdab21后，本完整入口全部通过；无删除测试/旧断言、禁用分析或改保护基线。细节与
+压力复现限制见两个architecture-p02-*-stability模块报告，不将压力无复现当穷尽证明。
+
+工具链旧聊天持续等待其历史权限审批，父已代跑其失败的HTTP fixture1/1通过，审查
+上下文补丁并独立提交0d5fd94；P03构建改派新聊天/ci-cd worktree，不让审批阻塞开发。
+Python预期归档hash已由固定uv内嵌清单验证并提交761e1e2；归档体未独立取得的HTTP403
+仍保留，不声称Linux/远端CI/跨主机/真实QQ或付费模型验收。它们不由本机门禁代替。
+
+本节只关闭上述固定快照P00–P02；其后新契约/配置/仓储增量需再验收。程序仍没有目标
+业务闭环，继续P03及后续主线，无需用户另确认。
