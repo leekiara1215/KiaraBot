@@ -940,3 +940,44 @@ python3 scripts/local/start.py stop
 本次使用当前重建的 reference 二进制，实际验收覆盖连续群聊456／私聊456回复、登录、WS
 首帧、REST、持久重启及停止。先前旧 `build/full/core/kiarabot-core` 遗留产物的私聊超时
 未在最新 reference 复核中重现；须使用当前源码构建的产物，不混用旧 checkout 二进制。
+
+## 单机真实QQ：独立协议端驱动
+
+2026-11-01用户已授权本机安装配置NapCat，扫码由用户完成，其他业务功能暂停。
+使用`scripts/local/napcat.py`作为独立运维驱动，不把安装、容器或QQ登录放入Core。
+这不是已经实现的Panel内置安装向导；可替换驱动与程序内向导的建议见
+[真实QQ接入设计](26-real-qq-onboarding.md)。
+
+macOS入口使用专用Colima profile：只将`data/napcat-qq/container`挂入VM，NapCat
+容器仅挂config/qq/plugins三个专用目录、loopback发布6099/3001；宿主机仍运行
+reference Core/Adapter/Panel。与上文整套Linux host网络Compose是两条不同运行方式，
+不更改Core回环绑定。Linux入口要求已安装可用Docker；安装系统Docker不由此脚本接管。
+
+```bash
+# macOS缺工具时，--install-tools经Homebrew安装Colima/Docker。
+python3 scripts/local/napcat.py setup --install-tools
+python3 scripts/local/napcat.py status
+# 用户扫码成功并明确测试群/私聊目标后，再替换数字运行：
+python3 scripts/local/napcat.py connect --conversation 123456789 --ui
+```
+
+setup保存实际image digest、独立WebUI/OneBot随机凭据及配置；重跑复用现有值，
+不自动升级或覆盖用户登录配置。WebUI地址`http://127.0.0.1:6099/webui/`，本机
+密码文件`data/napcat-qq/webui-password`。setup只证明WebUI就绪，仍可能等待QQ登录。
+status分别报告容器、WebUI、经认证的OneBot只读get_login_info与get_status.online，
+未登录/未在线/无法验证均非零退出，未知状态不当作已在线。
+connect从平台读取实际QQ号，仅在用户提供明确会话后启动独立`data/real-qq`链路；
+该步骤本身不主动发送测试消息。运行中的其他本机Panel需先停止或安排其他端口。
+如5173被其他进程占用，可传`connect ... --ui --ui-port 5174`；不停止未知占用者。
+
+驱动只接管owner标签匹配的容器，发现非loopback发布或外来容器拒绝；端口占用
+不杀他人进程。状态目录0700、秘密/配置0600且拒绝符号链接；同目录操作用flock串行。
+镜像、VM、QQ登录态和本机秘密不提交。命令失败仅输出稳定本地诊断，不打印平台
+异常正文、token或docker inspect的完整环境。stop保留全部数据，仅停止本驱动容器：
+
+```bash
+python3 scripts/local/start.py stop --state-dir data/real-qq
+python3 scripts/local/napcat.py stop
+```
+
+当前安装/扫码/真实收发的实际进度见doc26及对应执行报告，不能把本节命令当作全项已通过。
