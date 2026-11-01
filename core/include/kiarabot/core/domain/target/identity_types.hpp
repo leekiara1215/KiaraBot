@@ -305,6 +305,11 @@ struct DelegationClaims {
   CredentialVersionRef source_credential;
   std::optional<SessionId> source_session;
 };
+// Signature and authenticated recipient audience only. This is NOT evidence that the business
+// recipient observed the signed direct actor's TLS connection; its owner must use ordinary verify.
+struct AuthorityVerifiedDelegation {
+  DelegationClaims claims;
+};
 struct VerifiedDelegation {
   DelegationClaims claims;
   CryptoKeyRef signing_key;

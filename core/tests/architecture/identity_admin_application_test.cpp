@@ -531,6 +531,12 @@ public:
                                            const t::SecurityClockSample&) override {
     std::abort();
   }
+  t::Outcome<t::AuthorityVerifiedDelegation>
+  verify_for_authorization(t::SecretView, const t::VerifiedPeer&,
+                           const t::SecurityClockSample&) override {
+    check(false, "unexpected authorization crypto call");
+    return t::rejected(t::ErrorCode::Internal, t::Recovery::Diagnose);
+  }
   t::Outcome<t::VerifiedDelegation> verify_exchange_parent(t::SecretView, const t::VerifiedPeer&,
                                                            const t::SecurityClockSample&) override {
     std::abort();

@@ -376,6 +376,35 @@ public:
       return failure();
     }
   }
+  t::Outcome<t::AuthorityVerifiedDelegation>
+  verify_for_authorization(t::SecretView proof, const t::VerifiedPeer& recipient,
+                           const t::SecurityClockSample& clock) override {
+    try {
+      if (!clock_ok(clock)) {
+        return failure(t::ErrorCode::UpstreamUnavailable);
+      }
+      if (!peer_valid(recipient, clock)) {
+        return failure();
+      }
+      const auto* platform = std::get_if<t::PlatformPeer>(&recipient.binding.peer);
+      if (!platform) {
+        return failure();
+      }
+      auto verified = verify_proof(proof, clock);
+      if (const auto* error = std::get_if<t::Failure>(&verified)) {
+        return *error;
+      }
+      auto& claims = std::get<t::VerifiedDelegation>(verified).claims;
+      if (claims.audience != platform->service) {
+        return failure();
+      }
+      return t::AuthorityVerifiedDelegation{std::move(claims)};
+    } catch (const std::bad_alloc&) {
+      return failure(t::ErrorCode::UpstreamUnavailable);
+    } catch (const std::exception&) {
+      return failure();
+    }
+  }
   t::Outcome<t::VerifiedDelegation>
   verify_exchange_parent(t::SecretView proof, const t::VerifiedPeer& recipient,
                          const t::SecurityClockSample& clock) override {

@@ -437,3 +437,13 @@ Identity 空库 schema7 在 session_security 保存非空 control_subject/contro
 读取缺失/损坏字段为 Internal，更新不能为旧 missing binding 隐式补值。认证、当前状态、
 证书期限与主体 gate 由 Core 检查；存储成功不代表授权。证书在同稳定 ID 下轮换不改变绑定。
 旧库仍拒绝打开，不自动升级/填默认 Control，不启用尚未接线的 Revoke/Exchange 路径。
+
+### P04 在线授权专用验签入口
+
+`DelegationCryptoPort::verify_for_authorization`返回独立的
+`AuthorityVerifiedDelegation{claims}`，只证明成熟JWT签名、issuer、有限key、封闭claims、
+时间与实际已认证平台recipient的audience一致，支持一至两跳。它不比较recipient叶与
+JWT中的上游actor指纹，不证明原业务连接的TLS possession。业务owner仍须用普通
+`verify`绑定真实来客；Identity应用另读当前recipient、所有actor及来源凭据/session/
+授权状态。此入口不授予业务权限、不访问数据库；坏proof/peer返回Unauthenticated，
+不可信时钟或资源故障返回UpstreamUnavailable，不生成新稳定错误码或wire字段。

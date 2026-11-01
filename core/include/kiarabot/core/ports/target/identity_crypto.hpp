@@ -85,6 +85,14 @@ public:
   virtual Outcome<VerifiedDelegation> verify(SecretView proof, Service audience,
                                              const VerifiedPeer& direct_peer,
                                              const SecurityClockSample& clock) = 0;
+  // Online Identity check: verify the same closed signature/issuer/finite-key/time/claims rules,
+  // with audience equal to the actual authenticated platform recipient (one or two hops).
+  // The recipient leaf is NOT the signed direct actor's leaf. No business TLS possession is
+  // established here; Core must re-read current recipient, every actor and source authority.
+  // The business owner must separately use verify with its real inbound TLS direct peer.
+  virtual Outcome<AuthorityVerifiedDelegation>
+  verify_for_authorization(SecretView proof, const VerifiedPeer& authenticated_recipient,
+                           const SecurityClockSample& clock) = 0;
   // Exchange receives a proof addressed TO this authenticated platform recipient. The parent
   // binds the previous sender's certificate, not the recipient's; do not compare those leaves
   // or pretend the recipient possesses the sender's key. Verify the same closed JWT/signature,

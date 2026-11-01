@@ -121,6 +121,14 @@ int main() try {
   assert(std::holds_alternative<t::VerifiedDelegation>(parent));
   assert(std::get<t::VerifiedDelegation>(parent).claims.client_certificate == control_fingerprint);
   assert(std::get<t::VerifiedDelegation>(parent).claims.direct_actor == t::SubjectId{"control"});
+  auto authority = port->verify_for_authorization(proof->bytes(), recipient, clock.value);
+  assert(std::holds_alternative<t::AuthorityVerifiedDelegation>(authority));
+  assert(std::get<t::AuthorityVerifiedDelegation>(authority).claims.client_certificate ==
+         control_fingerprint);
+  assert(std::get<t::AuthorityVerifiedDelegation>(authority).claims.source_session ==
+         claims.source_session);
+  assert(std::holds_alternative<t::Failure>(
+      port->verify_for_authorization(proof->bytes(), peer, clock.value)));
   auto invalid_recipient = recipient;
   invalid_recipient.binding.peer = t::AdapterPeer{{"adapter"}, {"runtime"}};
   invalid_recipient.binding.certificate.platform_service.reset();
@@ -172,6 +180,44 @@ int main() try {
   assert(std::holds_alternative<t::VerifiedDelegation>(
       port->verify(std::get<t::OwnedSecret>(second_signed)->bytes(), t::Service::Model, second_peer,
                    clock.value)));
+  auto model_recipient = recipient;
+  model_recipient.binding.peer = t::PlatformPeer{t::Service::Model, {"model"}};
+  model_recipient.binding.certificate.subject = {"model"};
+  model_recipient.binding.certificate.platform_service = t::Service::Model;
+  model_recipient.binding.certificate.fingerprint = leaf_fingerprint(key.get(), 3);
+  model_recipient.binding.certificate.registered_san = "spiffe://model";
+  model_recipient.binding.credential = {{"model-credential"}, {1}};
+  auto second_authority = port->verify_for_authorization(
+      std::get<t::OwnedSecret>(second_signed)->bytes(), model_recipient, clock.value);
+  assert(std::holds_alternative<t::AuthorityVerifiedDelegation>(second_authority));
+  const auto& second_claims = std::get<t::AuthorityVerifiedDelegation>(second_authority).claims;
+  assert(second_claims.business_hops == 2 && second_claims.actor_chain == second_hop.actor_chain);
+  assert(second_claims.client_certificate == second_hop.client_certificate);
+  // Audience verification alone must never replace the business owner's actual sender check.
+  assert(std::holds_alternative<t::Failure>(
+      port->verify(std::get<t::OwnedSecret>(second_signed)->bytes(), t::Service::Model,
+                   model_recipient, clock.value)));
+  assert(std::holds_alternative<t::Failure>(
+      port->verify_for_authorization(proof->bytes(), model_recipient, clock.value)));
+  for (int mutation = 0; mutation < 6; ++mutation) {
+    auto invalid = recipient;
+    if (mutation == 0) {
+      invalid.binding.peer = t::AdapterPeer{{"adapter"}, {"runtime"}};
+      invalid.binding.certificate.platform_service.reset();
+    } else if (mutation == 1) {
+      invalid.binding.certificate.platform_service = t::Service::Control;
+    } else if (mutation == 2) {
+      invalid.binding.credential.version.value = 0;
+    } else if (mutation == 3) {
+      invalid.verified_at -= std::chrono::seconds{3};
+    } else if (mutation == 4) {
+      invalid.binding.certificate.not_after = clock.value.utc;
+    } else {
+      invalid.binding.certificate.subject = {"other"};
+    }
+    assert(std::holds_alternative<t::Failure>(
+        port->verify_for_authorization(proof->bytes(), invalid, clock.value)));
+  }
   auto third_hop = second_hop;
   third_hop.actor_chain.push_back({"model"});
   third_hop.direct_actor = {"model"};
@@ -330,6 +376,42 @@ int main() try {
   bad_clock.maximum_known_skew = std::chrono::milliseconds{2001};
   assert(std::holds_alternative<t::Failure>(
       port->verify_exchange_parent(proof->bytes(), recipient, bad_clock)));
+  assert(std::holds_alternative<t::Failure>(port->verify_for_authorization(
+      std::as_bytes(std::span{tampered.data(), tampered.size()}), recipient, clock.value)));
+  auto authorization_signed = [&](nlohmann::json::object_t payload, const std::string& kid,
+                                  bool unsigned_token = false, bool remote_key = false) {
+    auto builder = jwt::create();
+    builder.set_type("JWT").set_key_id(kid);
+    for (const auto& [name, value] : payload) {
+      builder.set_payload_claim(name, jwt::claim(value));
+    }
+    if (remote_key) {
+      builder.set_header_claim("jku", jwt::claim(std::string{"https://untrusted.invalid/key"}));
+    }
+    const auto encoded = unsigned_token
+                             ? builder.sign(jwt::algorithm::none{})
+                             : builder.sign(jwt::algorithm::ed25519(public_pem, private_pem));
+    return port->verify_for_authorization(std::as_bytes(std::span{encoded.data(), encoded.size()}),
+                                          recipient, clock.value);
+  };
+  const auto original_payload = decoded.get_payload_json();
+  assert(std::holds_alternative<t::Failure>(authorization_signed(original_payload, "unknown")));
+  assert(std::holds_alternative<t::Failure>(authorization_signed(original_payload, "key-1", true)));
+  assert(std::holds_alternative<t::Failure>(
+      authorization_signed(original_payload, "key-1", false, true)));
+  for (const auto* field : {"iss", "aud", "exp", "nbf", "delegation"}) {
+    auto malformed = original_payload;
+    malformed[field] = nlohmann::json("invalid");
+    assert(std::holds_alternative<t::Failure>(authorization_signed(malformed, "key-1")));
+  }
+  auto untrusted_clock = clock.value;
+  untrusted_clock.trusted = false;
+  auto clock_failure = port->verify_for_authorization(proof->bytes(), recipient, untrusted_clock);
+  assert(std::get<t::Failure>(clock_failure).code == t::ErrorCode::UpstreamUnavailable);
+  untrusted_clock = clock.value;
+  untrusted_clock.maximum_known_skew = std::chrono::milliseconds{2001};
+  clock_failure = port->verify_for_authorization(proof->bytes(), recipient, untrusted_clock);
+  assert(std::get<t::Failure>(clock_failure).code == t::ErrorCode::UpstreamUnavailable);
   sodium_memzero(private_pem.data(), private_pem.size());
   auto later = clock.value;
   later.utc += std::chrono::seconds{59};
@@ -337,6 +419,11 @@ int main() try {
   changed_peer.verified_at = later.utc;
   assert(std::holds_alternative<t::Failure>(
       port->verify(proof->bytes(), t::Service::Runtime, changed_peer, later)));
+  auto fresh_recipient = recipient;
+  fresh_recipient.verified_at = later.utc;
+  assert(std::holds_alternative<t::Failure>(
+      port->verify_for_authorization(proof->bytes(), fresh_recipient, later)));
+
 } catch (...) {
   return 1;
 }

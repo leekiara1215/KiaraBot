@@ -1327,6 +1327,11 @@ public:
 };
 class IssueSignerFixture final : public t::DelegationCryptoPort {
 public:
+  t::Outcome<t::AuthorityVerifiedDelegation>
+  verify_for_authorization(t::SecretView, const t::VerifiedPeer&,
+                           const t::SecurityClockSample&) override {
+    throw std::runtime_error("unexpected authorization crypto call");
+  }
   t::Outcome<t::VerifiedDelegation> verify_exchange_parent(t::SecretView, const t::VerifiedPeer&,
                                                            const t::SecurityClockSample&) override {
     throw std::logic_error("proof issuance does not verify an exchange parent");
