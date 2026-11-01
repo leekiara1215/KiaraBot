@@ -9,7 +9,6 @@
 namespace kiarabot::core::target {
 
 // Platform service vocabulary only; also used for durable handoff sources/audiences.
-enum class Service { Identity, Runtime, Host, Scheduler, Model, Control };
 struct PlatformPeer {
   Service service;
   SubjectId subject;
@@ -26,7 +25,7 @@ struct PluginPeer {
 // Adapter/Plugin identities come from verified registration bindings, not request claims.
 using DirectPeer = std::variant<PlatformPeer, AdapterPeer, PluginPeer>;
 struct ResourceScope {
-  ResourceId resource;
+  ResourceRef resource;
   std::string permission;
 };
 // Constructed only after boundary authentication; never deserialize caller claims into this type.
@@ -45,13 +44,13 @@ struct AuthenticationContext {
 struct HandoffContext {
   Service source;
   MessageId message;
-  OperationId operation;
+  OperationRef operation;
   std::optional<MessageId> causation;
-  ResourceId resource;
+  ResourceRef resource;
   ResourceVersion version;
   SubjectId actor;
   ResourceVersion authorization_version;
-  std::string payload_hash;
+  Sha256Digest payload_hash;
   TimePoint created_at;
   TimePoint valid_until;
 };

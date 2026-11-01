@@ -371,3 +371,51 @@ Control 不创建入站业务 gRPC。生成协议及 gRPC 只存在外层，五�
 sigwait 消费，不安装执行业务的异步信号回调。HTTP 探针单线程非阻塞轮询，每连接
 读写共用500ms期限及8KiB头边界；RPC shutdown 使用2秒期限取消在途调用并 Wait，
 借用 application 生命周期覆盖所有资源销毁。未实现阶段不启动业务工作者/进程/数据库。
+
+## P03a 服务本地关系端口（接口已定义，数据库未接线）
+
+目标端口继续位于 `core/{domain,application,ports}/target`，只依赖标准库。
+ResourceRef 保存 kind+id，OperationRef 保存 owner service+operation id+完整资源引用；
+授权scope、命令、收据、交接及审计沿用该引用，不将相同字符串的不同资源种类混合。
+SHA-256以32字节内部值表达，计算/传输映射留在边界，不由数据库决定请求内容。
+
+`domain/target/service_records.hpp` 定义最小主体/会话/授予/授权水位、账号/安装/实例、
+任务/occurrence和模型意图。`persistence.hpp` 定义共享成功收据、审计与交接值类型。
+ReplayResult 是可重放的完整类型化成功快照（空结果、版本结果、operation或对应记录），
+不依赖可变业务行回查，不含请求ID或传输对象；重放先重新鉴权并使用本次请求ID。
+登录/刷新/一次性秘密交付需要P04单独加密收据接口，不可使用本普通非秘密成功收据。
+
+ReceiptRepository按(subject,method,resource kind+id,key)唯一，记录fingerprint、完整成功
+结果、created_at、retain_until；普通成功至少保留7天，默认上限10000条。相同请求返回
+原快照及duplicate，不续期/重复审计；异内容Conflict；容量满RateLimited，不淘汰有效记录。
+
+JournalRepository在同一本地UoW里组合audit/outbox/inbox。outbox键为source+message，
+保存不可变envelope/hash与带版本的不可变payload引用；义务未完成前所有者须保留载荷。
+普通队列默认10000条，控制保留1024条，inbox默认10000条，均由内部容量参数配置。
+claim显式携source、数据库UTC、批量1–100及0<lease<=30秒，保存安全唯一token/租期；
+confirm携完整source+message、token和now，旧/过期claim不能确认新领取者。100次派发后
+NeedsAttention，禁止静默删除或换ID自动重发。相同envelope/hash重复enqueue不改变原期限。
+inbox保存首次接收时间、完整成功结果，至少保留max(首次接收+7天,valid_until+7天)；
+同键异内容Conflict，同内容重放不延长保留，清理后再次收到过期消息仍拒绝新执行。
+普通outbox满不能阻止Identity撤销：AuthorizationState提供持久dirty/version合并标记；
+不能以普通队列挤占控制容量，也不能删除已受理记录来腾空间。
+
+所有UoW共有receipts/journal/operations，派生组分别为：Identity的principals/sessions/
+grants/authorizations，Runtime的accounts/installations/instances，Scheduler的tasks/
+occurrences，Model的model_intents。各自工厂返回对应unique_ptr<UoW>，begin签名不携
+框架/数据库对象；仅接收所属库，不为Identity/Model提供Runtime仓储。更复杂的注册、
+配置、事件、动作、namespace、凭据、模型配置仓储在所属阶段追加，P03不要求提前实现。
+
+Repository查询成功空optional表示不存在，故障必须Failure；save的空expected仅创建，
+更新要求当前版本匹配及下一版本。唯一约束与条件版本由实际数据库事务执行，不能将
+纯值测试当作并发验证。应用服务控制原子组，Repository不commit、不持锁调用网络。
+commit为终止操作：Committed/RolledBack/Unknown均释放资源，Unknown不能假定回滚、
+不能自动重跑，必须用原收据/交接身份新开UoW查询。析构只回滚仍活动未提交事务；
+显式rollback不能撤销Unknown。四库隔离/真实锁/容量/提交未知仍须P03数据库验收。
+
+UoW::current_time()以Outcome返回调用时的权威数据库UTC，失败不得回退本机system_clock；
+不能使用被数据库固定在事务开始时的CURRENT_TIMESTAMP冒充调用时刻。该值用于应用
+记录时间与传参，租约/到期/claim条件写仍必须由实现用写入时的数据库当前UTC原子重检。
+本地短事务预算2秒、锁等待250ms；不能跨事务/网络等待复用采样，也不能让客户端建议
+决定租约。ReceiptCapacity/JournalCapacity只来自可信应用配置，不透传客户端容量参数。
+版本继续使用uint64_t，不经double/JSON数值转换，任务/模型记录不损失高位。

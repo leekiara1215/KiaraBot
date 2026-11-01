@@ -11,12 +11,6 @@
 
 namespace kiarabot::core::target {
 
-struct ConversationKey {
-  ResourceId adapter;
-  ResourceId account;
-  std::string conversation_id;
-  enum class Kind { Unspecified, Private, Group } kind;
-};
 struct EventKey {
   ResourceId source;
   std::string event_id;
@@ -96,30 +90,12 @@ public:
                                                     const CompareCondition& expected,
                                                     const NamespaceValue& value) = 0;
 };
-struct Occurrence {
-  InstanceId owner;
-  InstallationId installation;
-  std::string task_id;
-  ResourceVersion task_version;
-  MessageId occurrence_id;
-  TimePoint due_at;
-  HandoffContext handoff;
-};
 class OccurrenceRepository {
 public:
   virtual ~OccurrenceRepository() = default;
   virtual Status prepare(const Occurrence& occurrence) = 0;
   // Only persistent Runtime acceptance permits Scheduler completion.
   virtual Status confirm_accepted(const MessageId& occurrence) = 0;
-};
-enum class ModelCallState { Started, Succeeded, Failed, Unknown };
-struct ModelIntent {
-  InstanceId owner;
-  std::string logical_call_id;
-  ResourceId model;
-  ResourceVersion config_version;
-  std::string request_hash;
-  ModelCallState state;
 };
 class ModelIntentRepository {
 public:

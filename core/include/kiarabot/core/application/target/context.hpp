@@ -9,9 +9,9 @@ struct CommandContext {
   std::string request_id;
   std::string trace_id;
   std::string method;
-  ResourceId resource;
+  ResourceRef resource;
   std::string idempotency_key;
-  std::string fingerprint;
+  Sha256Digest fingerprint;
   TimePoint deadline;
   std::optional<ResourceVersion> expected_version;
 };
