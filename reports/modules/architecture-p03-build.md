@@ -103,3 +103,21 @@ API/proto、其他模块、doc/12-ci-cd不变，冻结doc/18不改。
 文档校验为路径、末尾换行和git diff --check。
 
 相关CTest 6/6通过，总9.29秒；time0.52秒、配置1.63秒、真实PG3.03秒。
+
+## 能力六：PG公共事务源码构建接线
+
+接入父审查f33c98e（本树0655a5a），仅解决doc/08追加冲突并保留双方段落。
+库追加common_work.cpp/record_codec.cpp，PRIVATE Threads::Threads；driver追加
+common_work_checks.cpp。fixture命令/120秒超时不变，不接未提交factories.cpp。
+输入输出及失败语义由原能力实现负责，构建失败/fixture故障保持非零。
+
+文档影响仅构建来源说明，更新doc/11与本报告；schema v2/事务行为由源提交已同步
+infra/运维文档，proto/API、Core模块及doc/12-ci-cd不另改，doc/18保持只读。
+固定外部prefix/Python full-locked配置及完整构建成功；全TU覆盖/inner/六目标图通过，
+逐项确认三个新source有真实compile command；p03注册分类通过，全仓format16通过。
+P03 fixture与六TU tidy结果在提交前追加。原作者ASan/UBSan为其证据，本树不冒认亲跑；
+未重复ASan/UBSan、旧测试全仓与统一入口：父将在新一批集成后验收。
+文档检查为路径存在、末尾换行及git diff --check。
+
+P03 CTest 5/5通过，真实PG15.29秒；本树实际六TU tidy22 clang-analyzer-*、
+warnings-as-errors通过（沿精确compile DB和Apple SDK/libc++参数）。

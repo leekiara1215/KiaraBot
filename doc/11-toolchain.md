@@ -484,3 +484,8 @@ P03外层组合回归 `p03_service_composition` 使用链接service_process的�
 
 `p03_time` 注册p03/unit（10秒），验证目标UTC int64纳秒时间的精确转换与边界拒绝；
 新time头同样进入独立内层头编译，测试TU纳入全仓覆盖。
+
+PG公共事务接线后，`kiarabot_postgres` 编译database/common_work/record_codec三个TU，
+私有链接libpqxx和Threads；真实driver编译database_test和common_work_checks。
+fixture命令不变，通过唯一初始化CLI创建schema v2空库，覆盖公共收据/journal/短事务；
+不自动升级旧库，不代表四typed业务工厂已装配到daemon。
