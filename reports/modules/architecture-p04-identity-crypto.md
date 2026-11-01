@@ -259,3 +259,19 @@ size, nofollow and drift checks remain. Real owned0644 positive and0664/0666 Inv
 pass, plus all loader negatives, using the same -Werror ASan/UBSan no-recover command above.
 Secret euid/no-group-other rule unchanged. No foreign-owner/root fixture chown attempted; ownership
 predicate reviewed, not falsely claimed runtime-tested. Doc/05/08 synchronized, ports/API unchanged.
+
+## Offline bootstrap password file input
+
+Added public load_bootstrap_password_file(trusted filesystem path)->Outcome<OwnedSecret> using
+existing SecureFile/read_file (no duplicate raw reader/config). Requires currenteuid/no-group-other,
+regular/nofollow/nonblock/cloexec, before/after metadata checks and bounded physical<=1025bytes.
+One optional lastLF stripped in secure memory; logical password1..1024bytes with noCR/LF/NUL.
+RPC SecretView is unchanged. No string conversion/log/argv/password creation or bootstrap business
+logic. Input/permission/content errors InvalidArgument; system/resource failures Unavailable.
+
+Same real loader build command above with -Werror ASan/UBSan no-recover passes: exact content,
+with/withoutLF,1024+LF boundary, empty/onlyLF/doubleLF/embeddedCR/LF/NUL/1025raw/oversize,0644
+rejection, missingfileUnavailable,symlink/directory/FIFO<1s rejection. Full analyzer+bugprone source
+and test with zeroexcluded checks,format16,boundary/inner/diff pass. Existing key-loader tests also
+execute. Foreignowner/concurrentdrift injection limits remain as previously recorded. Doc/05/08
+synchronized; no Core/main/API/CMake changes, no actual offline administrator creation claimed.

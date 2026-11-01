@@ -383,3 +383,8 @@ PEM公钥与私钥文件各最多8192字节；私钥仅接受无NUL、完整消�
 可信公钥文件虽不含秘密，也必须由当前effective UID或root拥有，且无group/other写权限
 （mode&022==0）；0644允许，0664/0666拒绝。读取前后均检查，不能以公开可读为由允许
 不可信用户替换信任材料。父目录仍需部署控制，最后路径项保持nofollow。
+
+`load_bootstrap_password_file(trusted_path)`复用同一安全文件读取器，返回OwnedSecret；
+文本内容剥离至多一个末尾LF后须1..1024字节，禁止CR、其余LF和NUL。物理文件最多
+1025字节以容纳可选LF；秘密全程安全内存，不转换普通string。权限/形状/内容拒绝为
+InvalidArgument，读取/资源故障UpstreamUnavailable，不影响RPC原始SecretView语义。

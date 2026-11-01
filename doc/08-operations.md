@@ -551,3 +551,8 @@ rollback采样，不能创建第二个持锁连接。返回工厂只表示存储
 
 公钥装载文件需当前effective UID或root所有，禁止group/other写位，可用0644；0664和0666
 视为不可信配置拒绝。秘密权限规则仍更严格。不要把公开可读误解为可被任意用户修改。
+
+离线bootstrap组合根可用load_bootstrap_password_file装载受控regular秘密文件（通常0600、
+当前effective UID、无group/other权限、可信父目录）。允许一个末尾LF；实际密码1..1024
+字节且不含CR/LF/NUL。此入口只读并返回安全内存，不自行创建管理员、生成/覆盖密码，
+不把密码放进argv、日志或公开配置；CLI业务消费由另一个组合根任务负责。

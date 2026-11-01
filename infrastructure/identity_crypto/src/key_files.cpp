@@ -158,6 +158,35 @@ using Bio = std::unique_ptr<BIO, decltype(&BIO_free)>;
 using Key = std::unique_ptr<EVP_PKEY, decltype(&EVP_PKEY_free)>;
 } // namespace
 
+t::Outcome<t::OwnedSecret> load_bootstrap_password_file(const std::filesystem::path& trusted_path) {
+  try {
+    if (sodium_init() < 0) {
+      return failure(t::ErrorCode::UpstreamUnavailable);
+    }
+    auto loaded = read_file(trusted_path, true, 1025);
+    if (const auto* error = std::get_if<t::Failure>(&loaded)) {
+      return *error;
+    }
+    auto& input = std::get<std::unique_ptr<SecureFile>>(loaded);
+    auto bytes = input->bytes();
+    if (!bytes.empty() && bytes.back() == std::byte{'\n'}) {
+      bytes = bytes.first(bytes.size() - 1);
+    }
+    if (bytes.empty() || bytes.size() > 1024) {
+      return failure();
+    }
+    for (const auto value : bytes) {
+      if (value == std::byte{0} || value == std::byte{'\r'} || value == std::byte{'\n'}) {
+        return failure();
+      }
+    }
+    input->resize(bytes.size());
+    return t::OwnedSecret{std::move(input)};
+  } catch (const std::bad_alloc&) {
+    return failure(t::ErrorCode::UpstreamUnavailable);
+  }
+}
+
 t::Outcome<SymmetricKey> load_symmetric_key_file(const TrustedSymmetricKeyFile& file) {
   try {
     if (sodium_init() < 0) {

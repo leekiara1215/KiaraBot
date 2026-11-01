@@ -62,6 +62,32 @@ int main() try {
   const auto symmetric = directory.file("symmetric");
   constexpr std::string_view kHex =
       "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f";
+  const auto password_path = directory.file("bootstrap-password");
+  for (const auto& text : {std::string{"test-password"}, std::string{"test-password\n"},
+                           std::string(1024, 'x') + "\n"}) {
+    write_file(password_path, text);
+    auto password = crypto::load_bootstrap_password_file(password_path);
+    const auto bytes = std::get<t::OwnedSecret>(password)->bytes();
+    const auto length = text.back() == '\n' ? text.size() - 1 : text.size();
+    assert(bytes.size() == length);
+    for (std::size_t index = 0; index < length; ++index) {
+      assert(std::to_integer<unsigned char>(bytes[index]) ==
+             static_cast<unsigned char>(text[index]));
+    }
+  }
+  for (const auto& text : {std::string{}, std::string{"\n"}, std::string{"a\n\n"},
+                           std::string{"a\rb"}, std::string{"a\nb"}, std::string(1, '\0'),
+                           std::string(1025, 'x'), std::string(1026, 'x')}) {
+    write_file(password_path, text);
+    assert(std::get<t::Failure>(crypto::load_bootstrap_password_file(password_path)).code ==
+           t::ErrorCode::InvalidArgument);
+  }
+  write_file(password_path, "test-password", 0644);
+  assert(std::get<t::Failure>(crypto::load_bootstrap_password_file(password_path)).code ==
+         t::ErrorCode::InvalidArgument);
+  assert(
+      std::get<t::Failure>(crypto::load_bootstrap_password_file(directory.file("absent"))).code ==
+      t::ErrorCode::UpstreamUnavailable);
   write_file(symmetric, kHex);
   auto loaded = crypto::load_symmetric_key_file({{"key"}, symmetric});
   const auto& key = std::get<crypto::SymmetricKey>(loaded);
@@ -89,6 +115,15 @@ int main() try {
   assert(std::holds_alternative<t::Failure>(
       crypto::load_symmetric_key_file({{"key"}, directory.file(".")})));
   assert(mkfifo(directory.file("fifo").c_str(), 0600) == 0);
+  assert(symlink("bootstrap-password", directory.file("password-link").c_str()) == 0);
+  assert(std::get<t::Failure>(crypto::load_bootstrap_password_file(directory.file("password-link")))
+             .code == t::ErrorCode::InvalidArgument);
+  assert(std::get<t::Failure>(crypto::load_bootstrap_password_file(directory.file("."))).code ==
+         t::ErrorCode::InvalidArgument);
+  const auto password_start = std::chrono::steady_clock::now();
+  assert(std::get<t::Failure>(crypto::load_bootstrap_password_file(directory.file("fifo"))).code ==
+         t::ErrorCode::InvalidArgument);
+  assert(std::chrono::steady_clock::now() - password_start < std::chrono::seconds{1});
   const auto start = std::chrono::steady_clock::now();
   assert(std::holds_alternative<t::Failure>(
       crypto::load_symmetric_key_file({{"key"}, directory.file("fifo")})));

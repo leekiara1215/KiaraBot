@@ -17,6 +17,10 @@ struct TrustedDelegationKeyFiles {
   std::filesystem::path public_pem_file;
   std::optional<std::filesystem::path> private_pem_file;
 };
+// Text password: 1..1024 bytes after one optional trailing LF, no CR/LF/NUL.
+// Same trusted owned secret-file checks; returned plaintext stays in secure memory.
+core::target::Outcome<core::target::OwnedSecret>
+load_bootstrap_password_file(const std::filesystem::path& trusted_path);
 core::target::Outcome<SymmetricKey> load_symmetric_key_file(const TrustedSymmetricKeyFile& file);
 core::target::Outcome<DelegationKey>
 load_delegation_key_files(const TrustedDelegationKeyFiles& files);
