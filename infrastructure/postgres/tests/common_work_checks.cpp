@@ -8,6 +8,7 @@
 #include <source_location>
 #include <stdexcept>
 #include <thread>
+#include <utility>
 #include <variant>
 #include <vector>
 
@@ -567,34 +568,63 @@ void check_session_control_binding(Database& database, const DatabaseConfig& con
   // Deliberately corrupt only the owned disposable fixture through its migration role. An
   // already-open writer must reject a legacy missing field; schema_valid is never relaxed.
   pqxx::connection migration(migration_dsn(config));
+  std::vector<std::pair<std::string, std::string>> constraints;
   {
-    pqxx::work corrupt(migration);
-    corrupt.exec(
-        "ALTER TABLE kiarabot.session_security ALTER COLUMN control_subject DROP NOT NULL");
-    corrupt.exec("UPDATE kiarabot.session_security SET control_subject=NULL WHERE "
-                 "id='control-bound-session'");
-    corrupt.commit();
+    pqxx::read_transaction inspect(migration);
+    for (const auto& row :
+         inspect.exec("SELECT conname,pg_get_constraintdef(oid) FROM pg_constraint "
+                      "WHERE conrelid='kiarabot.session_security'::regclass AND "
+                      "((contype='c' AND (pg_get_constraintdef(oid) LIKE '%control_subject%' OR "
+                      "pg_get_constraintdef(oid) LIKE '%control_credential%')) OR "
+                      "(contype='f' AND confrelid='kiarabot.credential_heads'::regclass))")) {
+      constraints.emplace_back(row[0].as<std::string>(), row[1].as<std::string>());
+    }
+    check(constraints.size() == 3, "unexpected Control binding constraints");
   }
-  {
-    auto access = take(detail::DatabaseAccess::begin(database));
-    auto sessions = detail::session_security_repository(*access.sql);
-    expect(sessions->find(session.id), target::ErrorCode::Internal);
-    rejected(*access.work);
-  }
-  {
-    auto access = take(detail::DatabaseAccess::begin(database));
-    auto sessions = detail::session_security_repository(*access.sql);
-    auto changed = session;
-    changed.version = {4};
-    expect(sessions->save(changed, target::ResourceVersion{3}, 2), target::ErrorCode::Internal);
-    rejected(*access.work);
-  }
-  {
-    pqxx::work restore(migration);
-    restore.exec("UPDATE kiarabot.session_security SET control_subject='session-control' WHERE "
-                 "id='control-bound-session'");
-    restore.exec("ALTER TABLE kiarabot.session_security ALTER COLUMN control_subject SET NOT NULL");
-    restore.commit();
+  for (int corruption = 0; corruption < 3; ++corruption) {
+    {
+      pqxx::work corrupt(migration);
+      corrupt.exec(
+          "ALTER TABLE kiarabot.session_security ALTER COLUMN control_subject DROP NOT NULL");
+      for (const auto& [name, definition] : constraints) {
+        (void)definition;
+        corrupt.exec("ALTER TABLE kiarabot.session_security DROP CONSTRAINT " +
+                     corrupt.quote_name(name));
+      }
+      const auto update = corruption == 0   ? "control_subject=NULL"
+                          : corruption == 1 ? "control_subject=''"
+                                            : "control_credential=''";
+      corrupt.exec("UPDATE kiarabot.session_security SET " + std::string(update) +
+                   " WHERE id='control-bound-session'");
+      corrupt.commit();
+    }
+    {
+      auto access = take(detail::DatabaseAccess::begin(database));
+      auto sessions = detail::session_security_repository(*access.sql);
+      expect(sessions->find(session.id), target::ErrorCode::Internal);
+      rejected(*access.work);
+    }
+    {
+      auto access = take(detail::DatabaseAccess::begin(database));
+      auto sessions = detail::session_security_repository(*access.sql);
+      auto changed = session;
+      changed.version = {4};
+      expect(sessions->save(changed, target::ResourceVersion{3}, 2), target::ErrorCode::Internal);
+      rejected(*access.work);
+    }
+    {
+      pqxx::work restore(migration);
+      restore.exec(
+          "UPDATE kiarabot.session_security SET control_subject='session-control', "
+          "control_credential='session-control-credential' WHERE id='control-bound-session'");
+      restore.exec(
+          "ALTER TABLE kiarabot.session_security ALTER COLUMN control_subject SET NOT NULL");
+      for (const auto& [name, definition] : constraints) {
+        restore.exec("ALTER TABLE kiarabot.session_security ADD CONSTRAINT " +
+                     restore.quote_name(name) + " " + definition);
+      }
+      restore.commit();
+    }
   }
 }
 

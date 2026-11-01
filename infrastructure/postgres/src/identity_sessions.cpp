@@ -255,6 +255,12 @@ public:
                                         "kiarabot.session_security WHERE "
                                         "id=$1 FOR UPDATE",
                                         pqxx::params{session.id.value});
+      if (!old.empty()) {
+        const auto row = old.one_row();
+        require_stored(!row["control_subject"].is_null() && !row["control_credential"].is_null() &&
+                       valid_id(row["control_subject"].template as<std::string>()) &&
+                       valid_id(row["control_credential"].template as<std::string>()));
+      }
       if ((expected &&
            (old.empty() || time_field(old.one_row(), "created_at") != session.created_at ||
             old.one_row()["control_subject"].template as<std::string>() !=

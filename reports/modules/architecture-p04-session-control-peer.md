@@ -87,3 +87,18 @@ pqxx7.10、clang-format16、clang-tidy22。以下命令均在独立 infrastructu
 最终运行结果：normal 与 ASan+UBSan 两个 owned PG16.4 四库 fixture 完整通过，分别确认
 临时集群与私密材料已清除。UTF8/末尾换行/受保护文档无diff检查通过；最终 diff --check
 通过。所有新增绑定正向/拒绝/损坏路径均为真实 PG，不使用假成功或内存库替代。
+
+## Stored binding corruption follow-up
+
+父review发现旧字段空字符串会先走与incoming不同的CAS Conflict，未与已冻结的损坏
+Internal一致。独立fix在任何CAS比较前显式验证已存subject/credential非NULL且valid_id；
+不补值、不修复旧行，也不修改schema/version或类型。本步仅改PG session实现、真实PG测试
+与本报告。doc05/08已明确损坏Internal，因实现对齐既有契约无需再改；doc01/02/proto/API/
+其他模块与doc18无变更。新测试在owned集群migration角色暂时移除两个字段CHECK/owner FK
+及subject NOT NULL，分别注入NULL subject、空subject、空credential；每种以独立真实UoW
+验证find和save均Internal并回滚，随后恢复原值与catalog原始约束名/定义。严格生产validator
+不放宽，最终四库检查仍验证恢复后的descriptor。构建、测试命令与工具版本同上。
+
+Fix最终检查：三目标 -Werror 构建、normal+ASan/UBSan真实四库完整运行全部通过；两TU
+clang-tidy22 analyzer+braces零诊断、format16 dry-run、UTF8/换行/protected-doc/diff通过。
+未重复root CMake/CTest及App/RPC：仍由父成组验证，原因同上；无schema/外部契约新增。
