@@ -47,3 +47,21 @@ correct token, cross-purpose rejection, unknown key, changed request rotation/se
 scope/parameter variant, empty keyring. Same compiler/include/link command as password test with
 src/token_crypto.cpp and tests/token_crypto_test.cpp added. Tidy22 clang-analyzer/bugprone passed
 with the explicit SDK/libc++ include options described above. No JWT/AEAD acceptance yet.
+
+## Receipt implementation acceptance
+
+Implemented immutable trusted keyring and XChaCha20-Poly1305, full canonical AAD and strict typed
+secure-memory codec. Tests pass using real libsodium: both payload roundtrips, binding mutations,
+nonce/ciphertext/key/version tampering, maximum retention window, wrong payload variant. An
+independent test AAD encoder successfully encrypts a valid credential delivery before testing
+AEAD-authenticated truncated/unknown version/unknown variant/impossible length/trailing payloads.
+No current expiry claim: application must check authoritative DB time and live credential/rotation.
+Actual command: clang++ -std=c++20 -Wall -Wextra -Wpedantic -Werror
+-fsanitize=address,undefined -Icore/include -Iinfrastructure/identity_crypto/include
+-I<fixed-prefix>/include src/password_crypto.cpp src/receipt_crypto.cpp tests/receipt_crypto_test.cpp
+<fixed-prefix>/lib/libsodium.a -o build/identity-crypto/receipt_crypto_test (src/tests paths are under
+infrastructure/identity_crypto). The built executable passed. Fixed-prefix is the authorized shared
+kiarabot-toolchain/build/architecture-installed/arm64-osx. Format16 and tidy22 analyzer/bugprone
+with explicit SDK/libc++ flags passed. Root build/CTest remain for build task; no CMake edits here.
+Include order follows doc/12 using localized formatter guards because the existing .clang-format
+IncludeBlocks: Regroup otherwise moves the corresponding factory header behind system includes.

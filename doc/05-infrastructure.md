@@ -262,3 +262,11 @@ P04 TokenCryptoPort 已实现用途隔离 HMAC-SHA256：token purpose、密钥�
 version及秘密。编码使用域标签、8字节大端整数和长度前缀，错误variant拒绝。
 未知密钥返回 UpstreamUnavailable；认证比较使用 sodium_memcmp。keyring最多16项，
 引用非空且唯一，每项32字节，factory复制进安全内存后不可变持有。
+
+P04 SecretReceiptCryptoPort 已实现 XChaCha20-Poly1305：AAD认证完整scope、subject、
+session、credential版本、typed参数、请求commitment、结果轮次、创建和保留时间及
+加密key引用/格式版本。token pair与credential delivery采用封闭版本编解码，秘密字段
+最多16KiB、总缓冲64KiB，安全内存中编码并擦除；未知版本/variant、截断/尾随数据拒绝。
+篡改或损坏密文返回Internal，未知密钥/分配故障UpstreamUnavailable，非法seal输入
+InvalidArgument。最大保留窗24小时；当前到期及凭据/会话/轮次检查仍由应用在每次open前
+使用数据库时间完成。此适配器不查询数据库、不独立授权、不声称验证当前到期。
