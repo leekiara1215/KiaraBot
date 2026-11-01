@@ -279,3 +279,22 @@ AsyncAPI operations 频道增加 operation.updated，首帧 hello/resume 认证�
 目标 schema 的成功响应主结果、资源/操作标识与版本、完整 Fence 均明确 required，不能用 `{}` 当成功。Fence generation 与已登记资源 version 为正 uint64；配置 applied_config_version、序号与计量可为0。TargetPositiveUint64/TargetUint64 使用精确范围正则及 maxLength=20，拒绝超过18446744073709551615、负数、小数和前导零。registered=true 的状态必须有完整 fence，尚未连接状态可缺；Blocked 必须有稳定 reason 和 next_attempt_at，可选诊断/观察不会被一律设必填。
 
 创建实例与实例投影均按部署方式校验Host绑定：受管实例必须提供非空host_id，externally_managed=true的外部自管实例可省略host_id，不要求空字符串占位；显式提供空host_id仍拒绝。创建请求省略externally_managed按false处理，必须提供Host；实例投影必须明确输出externally_managed。Host存在性及授权由Runtime实现核验，schema只校验字段形状。
+
+## P02 独立 Control 组合根（构建接线中）
+
+`control/api/app/main.cpp` 是新 `kiarabot-control` 入口，装配
+`application/target/application.hpp` 的进程本地 application 与公共 platform runner。
+新 application 只依赖 Core 纯标准库 readiness 端口；不创建权威数据库，不注入旧
+`IControlApplication`/RuntimeSnapshot，也不包含 Protobuf、HTTP、JSON 或数据库对象。
+Control 具有独立服务身份，业务未实现、Identity 和业务凭据核验均阻止就绪。
+端口返回不可改变应用状态的值快照；配置或调用方修改快照不能启用假 ready。
+
+CLI、配置/TLS 校验、存活/就绪及有界关闭由外层公共 runner 提供，约定见
+[P02 实施记录](../reports/execution/2026-11-01-architecture-p02.md)。存活不表示身份服务
+或业务可用；本阶段 ready=false，REST/WS 业务入口明确拒绝。既有端点的历史 implemented
+登记不表示这个新入口已实现其六服务路由。身份委托、所有者 RPC、会话/权限、收据与
+浏览器流仍由 P04/P12 实现，不能用旧同进程调用填补。
+
+本节不改变 OpenAPI/AsyncAPI 的字段、权限或错误映射，不把 target 能力标为已实现。
+进程启动失败输出脱敏的稳定错误与退出码，不输出异常正文或秘密。实际构建/进程
+验收结果随本模块报告和主集成记录更新；入口文件存在不代表 P02 完成。
