@@ -381,3 +381,20 @@ SERVICE 只允许 identity/runtime/scheduler/model；只以迁移登录连接。
 失败且完整回滚的空库可再次显式初始化，已成功或半初始化库拒绝。
 连接配置拒绝环境中的 PGSERVICE/PGSERVICEFILE/PGHOSTADDR/PGOPTIONS/PGSSLCERT/PGSSLKEY/PGPASSFILE，
 避免环境连接配置覆盖受控策略。CLI 不检查业务就绪，不启动 daemon。
+
+### P03 数据库配置材料（装配前置）
+
+仅Identity/Runtime/Scheduler/Model的schema_version=1配置可额外包含database对象，
+键严格为host、port、name、migration_role、runtime_role、password_file、ca_file。
+port为1–65535整数；单主机DNS/IP，不接受多host、Unix socket或DSN；库名/角色为
+1–63个小写字母/数字/下划线，两角色不同。运行身份固定选runtime_role，配置不能
+覆盖TLS、channel binding或超时。Control/Host出现该对象拒绝（退出2）。
+
+密码只引用文件，不写入JSON/argv；文件归当前用户、无组/其他权限、常规非symlink，
+原始文件最多4096字节，可有一个末尾LF，内容非空且无其他CR/LF/NUL。CA同样要求
+非空常规非symlink文件，具体链/主机验证由PG连接完成。类型/值错误退出2，材料
+不可读/权限不安全/FIFO等退出1，日志不显示文件路径、密码或连接异常正文。
+
+本项只交付配置解析前置，尚未将factory装配到daemon，不表示数据库已连接或ready；
+后续组合根接线才做监听前schema/writer验证，daemon始终不自动DDL。缺database时
+目前未实现业务继续不ready，不允许以后以无数据库方式处理持久业务。

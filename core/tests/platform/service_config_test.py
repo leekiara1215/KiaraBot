@@ -6,6 +6,7 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
+import time
 
 
 def certificates(root, key_kind="rsa"):
@@ -46,11 +47,15 @@ def main(driver):
         config = certificates(root)
         path = root / "config.json"
 
-        def expect(expected, value=None, raw=None):
+        def expect(expected, value=None, raw=None, service=None):
             path.write_text(raw if raw is not None else json.dumps(value or config))
-            result = subprocess.run([driver, str(path)], capture_output=True, text=True, timeout=3)
+            command = [driver, str(path)]
+            if service is not None:
+                command.extend([str(int(time.time())), service])
+            result = subprocess.run(command, capture_output=True, text=True, timeout=3)
             assert result.returncode == expected, (expected, result.returncode, result.stderr)
             assert "PRIVATE KEY" not in result.stderr and str(root) not in result.stderr
+            assert 'never-print-database-password' not in result.stderr
 
         expect(0)
         path.write_text(json.dumps(config))
@@ -87,6 +92,40 @@ def main(driver):
         ec_root = root / "ec"
         ec_root.mkdir()
         expect(0, certificates(ec_root, "ec"))
+        password = root / 'pg-password'
+        password.write_text('never-print-database-password\n')
+        password.chmod(0o600)
+        database = {'host': 'localhost', 'port': 5432, 'name': 'private_identity',
+                    'migration_role': 'identity_migration', 'runtime_role': 'identity_runtime',
+                    'password_file': str(password), 'ca_file': str(root / 'ca.pem')}
+        database_config = {**config, 'database': database}
+        expect(0, database_config)
+        for service in ['runtime', 'scheduler', 'model']:
+            expect(0, {**database_config, 'service': service}, service=service)
+        for service, name in [('host', 'plugin-host'), ('control', 'control')]:
+            value = {**config, 'service': name}
+            if service == 'control':
+                value.pop('grpc_listen')
+            expect(0, value, service=service)
+            expect(2, {**value, 'database': database}, service=service)
+        for update in [{'port': 0}, {'port': -1}, {'port': 65536}, {'port': True},
+                       {'name': 'db name'}, {'host': '/tmp/socket'}, {'host': 'one,two'},
+                       {'host': 'bad host'}, {'runtime_role': 'identity_migration'},
+                       {'password': 'forbidden'}, {'sslmode': 'disable'}]:
+            expect(2, {**config, 'database': {**database, **update}})
+        for key in database:
+            expect(2, {**config, 'database': {k: v for k, v in database.items() if k != key}})
+        password.chmod(0o644)
+        expect(1, database_config)
+        password.chmod(0o600)
+        for secret in ['', 'two\nlines\n', 'x' * 4097, 'x' * 4096 + '\n', 'embedded\0nul']:
+            password.write_text(secret)
+            expect(1 if not secret else 2, database_config)
+        password.write_text('never-print-database-password\n')
+        (root / 'pg-password-link').symlink_to(password)
+        for key in ['password_file', 'ca_file']:
+            expect(1, {**config, 'database': {**database, key: str(root / 'fifo')}})
+        expect(1, {**config, 'database': {**database, 'password_file': str(root / 'pg-password-link')}})
         print("P02 configuration/TLS rejection checks passed")
 
 

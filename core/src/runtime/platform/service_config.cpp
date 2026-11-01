@@ -1,6 +1,8 @@
 #include "kiarabot/core/runtime/platform/service_config.hpp"
 
+#include <algorithm>
 #include <array>
+#include <cctype>
 #include <charconv>
 #include <ctime>
 #include <fcntl.h>
@@ -92,6 +94,38 @@ bool exact_keys(const nlohmann::json& object, const std::set<std::string>& keys)
     }
   }
   return true;
+}
+bool database_identifier(const std::string& value) {
+  return !value.empty() && value.size() <= 63 &&
+         std::all_of(value.begin(), value.end(), [](unsigned char character) {
+           return (character >= 'a' && character <= 'z') ||
+                  (character >= '0' && character <= '9') || character == '_';
+         });
+}
+bool database_shape(const nlohmann::json& value) {
+  if (!exact_keys(value, {"host", "port", "name", "migration_role", "runtime_role", "password_file",
+                          "ca_file"}) ||
+      !value["port"].is_number_unsigned() || value["port"].get<std::uint64_t>() == 0 ||
+      value["port"].get<std::uint64_t>() > 65535) {
+    return false;
+  }
+  for (const auto* key :
+       {"host", "name", "migration_role", "runtime_role", "password_file", "ca_file"}) {
+    if (!value[key].is_string() || value[key].get_ref<const std::string&>().empty() ||
+        value[key].get_ref<const std::string&>().find('\0') != std::string::npos) {
+      return false;
+    }
+  }
+  const auto& host = value["host"].get_ref<const std::string&>();
+  return host.size() <= 253 && host.front() != '/' &&
+         std::none_of(host.begin(), host.end(),
+                      [](unsigned char character) {
+                        return character == ',' || std::isspace(character) != 0;
+                      }) &&
+         database_identifier(value["name"].get_ref<const std::string&>()) &&
+         database_identifier(value["migration_role"].get_ref<const std::string&>()) &&
+         database_identifier(value["runtime_role"].get_ref<const std::string&>()) &&
+         value["migration_role"] != value["runtime_role"];
 }
 bool valid_time(X509* certificate, std::time_t validation_time) {
   const std::unique_ptr<ASN1_TIME, decltype(&ASN1_TIME_free)> now(
@@ -217,13 +251,21 @@ ConfigResult load_service_config(const std::string& path, target::Service servic
     if (service != target::Service::Control) {
       keys.insert("grpc_listen");
     }
+    if (document.contains("database")) {
+      if (service == target::Service::Control || service == target::Service::Host ||
+          !database_shape(document["database"])) {
+        return ConfigFailure{2, "invalid_database_config"};
+      }
+      keys.insert("database");
+    }
     if (duplicate || !exact_keys(document, keys) ||
         !document["schema_version"].is_number_integer() || document["schema_version"] != 1 ||
         document["service"] != service_name(service) || !document["probe_listen"].is_string() ||
         !exact_keys(document["tls"], {"certificate_file", "private_key_file", "ca_file"})) {
       return ConfigFailure{2, "invalid_config"};
     }
-    ProcessConfig config{service, document["probe_listen"].get<std::string>(), {}, {}};
+    ProcessConfig config{
+        service, document["probe_listen"].get<std::string>(), {}, {}, std::nullopt};
     if (service != target::Service::Control) {
       config.grpc_listen = document["grpc_listen"].get<std::string>();
     }
@@ -241,6 +283,33 @@ ConfigResult load_service_config(const std::string& path, target::Service servic
       }
     } catch (const FileFailure&) {
       return ConfigFailure{1, "tls_file_unavailable"};
+    }
+    if (document.contains("database")) {
+      const auto& database = document["database"];
+      try {
+        auto password = read_file(database["password_file"].get<std::string>(), true);
+        if (password.size() > 4096) {
+          return ConfigFailure{2, "invalid_database_password"};
+        }
+        if (!password.empty() && password.back() == '\n') {
+          password.pop_back();
+        }
+        if (password.empty() || password.find_first_of("\r\n") != std::string::npos ||
+            password.find('\0') != std::string::npos) {
+          return ConfigFailure{2, "invalid_database_password"};
+        }
+        const auto ca_file = database["ca_file"].get<std::string>();
+        (void)read_file(ca_file);
+        config.database = DatabaseMaterial{database["host"].get<std::string>(),
+                                           database["port"].get<std::uint16_t>(),
+                                           database["name"].get<std::string>(),
+                                           database["migration_role"].get<std::string>(),
+                                           database["runtime_role"].get<std::string>(),
+                                           std::move(password),
+                                           ca_file};
+      } catch (const FileFailure&) {
+        return ConfigFailure{1, "database_file_unavailable"};
+      }
     }
     return config;
   } catch (const FileFailure&) {

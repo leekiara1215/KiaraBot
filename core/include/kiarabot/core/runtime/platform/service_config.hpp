@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstdint>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <variant>
@@ -13,11 +15,23 @@ struct TlsMaterial {
   std::string private_key;
   std::string ca;
 };
+// Outer composition input only. Password is loaded from an owner-only file, never JSON/argv.
+// Connection policy (TLS verification, channel binding, timeouts) remains in the PG adapter.
+struct DatabaseMaterial {
+  std::string host;
+  std::uint16_t port;
+  std::string name;
+  std::string migration_role;
+  std::string runtime_role;
+  std::string password;
+  std::string ca_file;
+};
 struct ProcessConfig {
   target::Service service;
   std::string probe_listen;
   std::string grpc_listen;
   TlsMaterial tls;
+  std::optional<DatabaseMaterial> database;
 };
 struct ConfigFailure {
   int exit_code;
