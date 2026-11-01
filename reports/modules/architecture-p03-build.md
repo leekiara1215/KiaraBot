@@ -121,3 +121,20 @@ P03 fixture与六TU tidy结果在提交前追加。原作者ASan/UBSan为其证�
 
 P03 CTest 5/5通过，真实PG15.29秒；本树实际六TU tidy22 clang-analyzer-*、
 warnings-as-errors通过（沿精确compile DB和Apple SDK/libc++参数）。
+
+## 能力七：四typed PG工厂与关系仓储测试接线
+
+接入已审查b25b40c（本树ee4cc92）及88bfeae（本树6a05fce），保留doc/08两侧追加段落，
+版本行采用新schema v3，不改生产/测试源码。PG库增加factories.cpp，driver增加
+ typed_work_checks.cpp，libpqxx/Threads及原fixture命令/120秒超时不变。
+输入输出、Catalog枚举与schema语义由源提交负责；本轮只保证真实实现纳入构建/验收。
+
+文档影响：更新doc/11和本报告的源与测试清单；Core/infra/运维语义已由源提交同步，
+协议/API及doc/12-ci-cd不另改，doc/18保持只读。四mains/daemon测试未提交，未复制接线。
+固定外部prefix/Python full-locked配置与完整构建成功；两个新TU逐项确认实际compile
+command，全覆盖/inner/六目标图/p03注册均通过。全仓format16、新增两TU精确DB的
+ tidy22 clang-analyzer-* warnings-as-errors通过。实际P03 fixture结果在提交前追加。
+未重复原作者八TU全量tidy/ASan、旧测试统一入口，父将在下一批集成后统一验收。
+本树没有将原作者结果冒认为亲跑；文档检查为路径/末尾换行与git diff --check。
+
+本树P03 CTest 5/5通过，总19.99秒，其中真实PG15.58秒。

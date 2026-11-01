@@ -1,7 +1,7 @@
 # PostgreSQL is an outer adapter; no database dependency reaches application libraries.
 find_package(libpqxx 7.10.0 EXACT CONFIG REQUIRED)
 add_library(kiarabot_postgres STATIC
-  src/database.cpp src/common_work.cpp src/record_codec.cpp)
+  src/database.cpp src/common_work.cpp src/record_codec.cpp src/factories.cpp)
 target_include_directories(kiarabot_postgres PUBLIC
   include ${CMAKE_SOURCE_DIR}/core/include)
 target_link_libraries(kiarabot_postgres PRIVATE libpqxx::pqxx Threads::Threads)
@@ -13,7 +13,7 @@ kiarabot_platform_warnings(kiarabot-pg-initialize)
 
 if(UNIX)
   add_executable(kiarabot_postgres_database_test
-    tests/database_test.cpp tests/common_work_checks.cpp)
+    tests/database_test.cpp tests/common_work_checks.cpp tests/typed_work_checks.cpp)
   target_link_libraries(kiarabot_postgres_database_test PRIVATE kiarabot_postgres libpqxx::pqxx)
   kiarabot_platform_warnings(kiarabot_postgres_database_test)
   # One process owns setup, faults and cleanup; parallel runs have private clusters.

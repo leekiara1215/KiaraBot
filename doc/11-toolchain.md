@@ -489,3 +489,7 @@ PG公共事务接线后，`kiarabot_postgres` 编译database/common_work/record_
 私有链接libpqxx和Threads；真实driver编译database_test和common_work_checks。
 fixture命令不变，通过唯一初始化CLI创建schema v2空库，覆盖公共收据/journal/短事务；
 不自动升级旧库，不代表四typed业务工厂已装配到daemon。
+
+四typed PG工厂接线增加 `src/factories.cpp` 与driver的 `tests/typed_work_checks.cpp`，
+依赖不变。fixture通过唯一CLI初始化schema v3，按owner创建独立live表；原120秒
+超时保留。该构建/存储验证不替代后续四daemon的真实PG装配验收。
