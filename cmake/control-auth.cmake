@@ -6,7 +6,7 @@ add_library(kiarabot_control_auth STATIC
 target_include_directories(kiarabot_control_auth PUBLIC
   ${CMAKE_SOURCE_DIR}/core/include ${CMAKE_SOURCE_DIR}/control/api/include)
 target_link_libraries(kiarabot_control_auth PUBLIC kiarabot_service_process PRIVATE
-  kiarabot_proto kiarabot_core_json Boost::headers OpenSSL::SSL OpenSSL::Crypto)
+  kiarabot_target_codec kiarabot_proto kiarabot_core_json Boost::headers OpenSSL::SSL OpenSSL::Crypto)
 kiarabot_platform_warnings(kiarabot_control_auth)
 target_link_libraries(kiarabot-control PRIVATE kiarabot_control_auth)
 

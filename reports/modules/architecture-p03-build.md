@@ -388,3 +388,22 @@ p04/unit/security、10秒；无新增生产TU或外层依赖，不改源。PG va
 文档检查为路径/末尾换行及diff检查。
 
 相关CTest2/2通过，总1.59秒；新grant投影0.49秒，p04注册标签通过。
+
+## Control共享codec最终依赖接线
+
+依序同步c2ed25f/b033d96/72e4c10（本树4b5d229/9957128/445d390），doc/08保留双方新增
+段落。只在control_auth PRIVATE增加kiarabot_target_codec，原8095a6b去重仍保留。
+纯内部链接接线无新增外部行为；Control行为文档已由源提交同步doc/06/08/README，
+工具链doc/11已描述共享codec，无需重复追加；其他模块/契约/CI与doc18均不改。
+固定配置、全TU覆盖/inner/实际图、全仓format16/边界通过。生成Control链接命令中
+process/codec archive各一次；读取主树现有obj/archive按本树新顺序链接到本树
+control-codec-link-probe，实际exit0且stderr空，无重复库warning。未写主树或 suppress。
+再用本树最新HTTPS脚本、固定Python/OpenSSL和主树既有Identity fixture对重链产物
+实际运行，结果后附。此回放不是本树全源码重编；本树缺契约前置情况保持，不冒称
+完整full/tidy通过，父在完整契约集成基点正式复验。未取keyfiles或其他未授权源。
+文档检查为本报告末尾换行及git diff --check。
+
+回放HTTPS实际失败于auth_https_test.py:153（operation.resource.id/owner_service断言），
+因为使用主树既有archive/fixture并非本树最新整套源码生成的产物，不记测试通过，
+也不更改断言。链接本身成功且无重复库warning的结论独立成立；需完整契约基点
+按新源重编后真实CTest复验，不能拿该混合回放当生产验收。
