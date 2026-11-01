@@ -4,7 +4,7 @@ Only the OneBot endpoint is a local protocol fixture. No QQ account or model is 
 """
 import asyncio
 from contextlib import suppress
-import hashlib
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -16,7 +16,7 @@ import time
 
 from websockets.asyncio.server import serve
 
-from kiarabot.v1 import actions_pb2 as actions, plugins_pb2 as plugins
+from kiarabot.v1 import actions_pb2 as actions
 from kiarabot_adapter_nonebot.mapper import map_message
 from test_mapping_outbox import raw
 
@@ -42,9 +42,19 @@ async def test_real_nonebot_reference_core_fixed_reply_and_duplicate(tmp_path, m
     sdk = Path(os.environ.get('SDK_SOURCE', root / 'sdk/python/src')).resolve()
     assert sdk.is_dir(), 'SDK_SOURCE must identify the matching SDK source'
     monkeypatch.syspath_prepend(str(sdk))
-    from kiarabot_sdk import Options, Plugin, Runner
+    from kiarabot_sdk import Options, Plugin, Runner, load_manifest
 
-    reply_text = 'KiaraBot local MVP reply'
+    handler_root = root / 'plugins/local-reply'
+    spec = importlib.util.spec_from_file_location('kiarabot_mvp_local_reply_handler', handler_root / 'main.py')
+    assert spec and spec.loader, 'Published local handler is required'
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    handler = module.create()
+    manifest = load_manifest(handler_root / 'plugin.json')
+    assert isinstance(handler, Plugin) and manifest.id == 'local-reply'
+    assert manifest.entrypoint == 'main:create'
+
+    reply_text = '收到：hello'
     received = []
     completed = asyncio.Queue()
     platform_calls = []
@@ -57,24 +67,37 @@ async def test_real_nonebot_reference_core_fixed_reply_and_duplicate(tmp_path, m
     adapter_root = root / 'adapters/nonebot'
     outbox = tmp_path / 'adapter.db'
 
-    class Sender(Plugin):
+    submitted = []
+
+    class ObservedContext:
+        def __init__(self, context):
+            self.context = context
+            self.key = None
+
+        def __getattr__(self, name):
+            return getattr(self.context, name)
+
+        async def query_action(self, **kwargs):
+            self.key = kwargs['idempotency_key']
+            return await self.context.query_action(**kwargs)
+
+        async def submit_action(self, action, **kwargs):
+            self.key = action.idempotency_key
+            submitted.append(action.action_id)
+            return await self.context.submit_action(action, **kwargs)
+
+    class ObservedHandler(Plugin):
         async def on_event(self, event, context):
             if not event.HasField('message_received'):
                 return
             try:
                 received.append(event.event_id)
-                key = 'mvp-' + hashlib.sha256(event.event_id.encode()).hexdigest()
-                action = actions.ActionEnvelope(action_id=key, idempotency_key=key,
-                    trace_id=event.trace_id, requested_by='mvp-sender',
-                    target_source=event.source, target=event.subject)
-                action.deadline.seconds = int(time.time()) + 30
-                action.send_message.conversation.CopyFrom(event.message_received.conversation)
-                action.send_message.message.plain_text = reply_text
-                accepted = await context.submit_action(action)
-                assert accepted.status in (actions.ACCEPTED, actions.SUCCEEDED)
+                observed = ObservedContext(context)
+                await handler.on_event(event, observed)
+                assert observed.key, 'Published handler did not inspect or submit an Action'
                 async with asyncio.timeout(5):
                     while True:
-                        result = await context.query_action(idempotency_key=key)
+                        result = await context.query_action(idempotency_key=observed.key)
                         if result.status != actions.ACCEPTED:
                             assert result.status == actions.SUCCEEDED
                             assert result.platform_message_id in ('987', '988')
@@ -86,12 +109,8 @@ async def test_real_nonebot_reference_core_fixed_reply_and_duplicate(tmp_path, m
                     failure.set_result(error)
                 raise
 
-    manifest = plugins.PluginManifest(id='mvp-sender', name='fixed local sender', version='1',
-        api_version='kiarabot.plugin.v1', runtime='python-rpc', entrypoint='test:create',
-        isolation='process', ordered=True, capabilities=['event.message.received'],
-        permissions=['message.read', 'message.send'])
     first = raw()
-    first.update(sub_type='normal', raw_message='hello', font=0, sender={})
+    first.update(time=int(time.time()), sub_type='normal', raw_message='hello', font=0, sender={})
     second = dict(first, message_id=2)
     expected = [map_message(value, 'adapter', '123').event_id for value in (first, second)]
 
@@ -141,7 +160,7 @@ async def test_real_nonebot_reference_core_fixed_reply_and_duplicate(tmp_path, m
                            if not key.startswith(('KIARABOT_', 'PLUGIN_', 'ONEBOT_', 'CORE_'))}
             environment.update(KIARABOT_ADAPTER_ID='adapter', KIARABOT_ADAPTER_TOKEN='a' * 32,
                 KIARABOT_ADAPTER_ACCOUNTS='123', KIARABOT_RUNTIME_DB=str(tmp_path / 'core.db'),
-                KIARABOT_PLUGIN_ID='mvp-sender', KIARABOT_PLUGIN_TOKEN='p' * 32,
+                KIARABOT_PLUGIN_ID='local-reply', KIARABOT_PLUGIN_TOKEN='p' * 32,
                 KIARABOT_PLUGIN_PERMISSIONS='message.read,message.send')
             core = await asyncio.create_subprocess_exec(str(binary), '--grpc-listen', '127.0.0.1:0',
                 env=environment, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
@@ -150,7 +169,7 @@ async def test_real_nonebot_reference_core_fixed_reply_and_duplicate(tmp_path, m
             assert b'plugin_delivery_ready=true' in line and b'adapter_ingress_ready=true' in line
             endpoint = '127.0.0.1:' + re.search(rb'port=(\d+)', line)[1].decode()
             readers.append(asyncio.create_task(drain(core.stdout)))
-            runner = Runner(manifest, Sender(), Options(endpoint, 'p' * 32,
+            runner = Runner(manifest, ObservedHandler(), Options(endpoint, 'p' * 32,
                 heartbeat_interval=.05, retry_delay=.01))
             runner_task = asyncio.create_task(runner.run(stop))
             async with asyncio.timeout(5):
@@ -176,6 +195,7 @@ async def test_real_nonebot_reference_core_fixed_reply_and_duplicate(tmp_path, m
                 await socket.send(json.dumps(second))
                 assert await progress(completed.get()) == expected[1]
                 assert received == expected and len(platform_calls) == 2
+                assert len(submitted) == len(set(submitted)) == 2
                 with sqlite3.connect(outbox) as connection:
                     assert [connection.execute('SELECT status FROM outbox WHERE id=?', (event_id,)).fetchone()
                             for event_id in expected] == [('acked',), ('acked',)]

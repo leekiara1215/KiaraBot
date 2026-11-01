@@ -32,7 +32,7 @@ Action 执行日志位于 OUTBOX_PATH 加 .actions，独立 SQLite 文件，执�
 ## 单机 MVP 本地 smoke（reference 链路）
 
 `tests/test_mvp_local_smoke.py`把真实 NoneBot 子进程、真实 reference Core/SQLite、
-极小固定 SDK Sender 与本机 OneBot WebSocket 替身串为一条链路。发送同一消息三次，
+公开 `plugins/local-reply/main.py:create` SDK handler 与本机 OneBot WebSocket 替身串为一条链路。发送同一消息三次，
 再发送一条独立消息作为顺序检查，要求两条独立输入恰好产生两次固定文本平台发送，
 并确认 Core Action 成功及适配器 outbox ACK。测试失败返回非零，超时/失败也收割所启动
 的子进程。它不使用真实 QQ、NapCat 或付费模型；不代表新六服务 Runtime 已实现。
@@ -47,6 +47,7 @@ SDK_SOURCE="$PWD/sdk/python/src" \
 adapters/nonebot/.venv/bin/python -m pytest -q adapters/nonebot/tests/test_mvp_local_smoke.py
 ```
 
-SDK 来自本仓库源码，测试不建设新的插件机制。目前固定 Sender 内置在测试中；公开
-单机启动脚本由独立任务提供，再作入口集成。本地 `.venv/`、`generated/`及临时数据库
-不提交；新电脑需恢复锁定依赖并生成协议。
+SDK 来自本仓库源码，测试用 importlib 的唯一模块名加载公开 handler 工厂，使用原始
+plugin.json；观察层只记录其实际 RPC Action，不生成回复或幂等键。测试不建设新的插件
+机制；SDK Runner 在测试进程，launcher 的真实 managed child 启动仍需单独验收。
+本地 `.venv/`、`generated/`及临时数据库不提交；新电脑需恢复锁定依赖并生成协议。
