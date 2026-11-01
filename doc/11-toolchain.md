@@ -616,3 +616,7 @@ Identity 服务证书，在既有 Control gRPC 通道上验证到期拒绝并退
 `p04_verification_keys` 注册unit/security、30秒且保留assert，直接OpenSSL头取官方
 imported target，链接沿现有依赖。finite metadata同时由正式配置、clock、真实PG应用
 及daemon HTTPS回归验证；own-TLS-expiry独立变体由生产组合接线另行登记。
+
+`p04_identity_daemon_tls_cross_expiry` 在证书到期前发起实际 Argon2id 登录，确认
+请求跨过实际到期边界后失败，并在同一已验证临时 PostgreSQL 查询会话数未增加。
+它与到期后拒绝测试分开，覆盖已在途请求的提交边界，不操作系统时钟。

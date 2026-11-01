@@ -231,3 +231,12 @@ proto/API/error code, no changes to unrelated module docs; protected doc18 untou
 CMake temporary local registration is restored before delivery. Register the explicit
 cross-expiry variant in addition to normal and expired-channel variants. Parent-owned
 robust subprocess cleanup/secret coverage must be retained when merging test changes.
+
+### 主线 metadata / invocation-limit 组合验收
+
+实际整组接入有限公钥metadata、成熟crypto bundle、真实PG fixture及生产deadline注入。
+完整 full-locked 构建无 warning/error；26/26相关P04/配置/服务数据库CTest通过62.25秒。
+另将cross-expiry注册正式独立门禁，实际1/1通过10.05秒，确认到期前开始的登录
+到期后拒绝且没有新会话提交。此结果不表示其他未接线Identity方法已完成。
+文档影响只增加工具链入口及本报告；proto/API、模块责任及稳定错误没有因注册变化，
+无需另改。git diff --check通过，保护基线无改动。
