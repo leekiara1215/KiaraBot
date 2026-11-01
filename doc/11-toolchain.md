@@ -514,3 +514,7 @@ unofficial-sodium::sodium，公开仅适配器include和Core内层头。proto/fu
 `p04_password_crypto`、`p04_token_crypto` 为p04/unit/security，各30秒；测试保留assert
 （所有配置取消NDEBUG），避免Release漏检。dev不构建外层crypto，秘密收据facade
 仅有声明的能力不调用，不代表AEAD/JWT/完整认证已完成。
+
+Identity crypto库再加入receipt_crypto及 `p04_receipt_crypto`（p04/unit/security、30秒），
+测试直接使用sodium进行篡改检查，故测试目标也PRIVATE链接官方sodium；依赖不向内层传播。
+密码/Token/Receipt三测试沿用所有配置保留assert，AEAD工厂声明现已链接真实实现。

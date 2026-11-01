@@ -212,3 +212,19 @@ P04真实CTest、dev注册隔离结果在提交前追加。未重复统一入口
 
 P04 CTest 3/3通过，总1.88秒；password1.39秒、token0.49秒；dev配置与注册JSON
 确认两外层测试未注册。文档路径/末尾换行检查及diff检查通过。
+
+## 后续接线：P04秘密收据AEAD与PHC修正
+
+接入b0ffb47/195a12b（本树493b7dd/c74c3a3），不改源码/断言。库新增receipt_crypto.cpp，
+同测试循环加入receipt_crypto_test，p04/unit/security、30秒，继续所有配置保留assert。
+测试直接使用sodium，所以独立PRIVATE链接unofficial-sodium::sodium，不扩库公共依赖。
+文档影响仅doc/11与本报告的构建来源；语义已由源提交同步infra说明，其他模块/API/proto
+与doc/12-ci-cd不变，冻结doc/18只读。
+
+首次完整构建/六TU tidy检出receipt测试缺sodium头路径，补测试PRIVATE依赖后重新配置、
+完整full-locked构建成功。全TU覆盖/inner/六目标图/p04注册、全仓format16通过；
+六TU tidy重验与P04真实CTest结果后附。不重复原全仓统一入口，由父集成后负责。
+未等JWT/PeerCert堆积，不引用未提交源；文档检查为路径/末尾换行与git diff --check。
+
+实际P04 CTest 4/4通过，总2.10秒，receipt0.38秒；六TU精确compile DB tidy22
+clang-analyzer-* warnings-as-errors重验通过。
