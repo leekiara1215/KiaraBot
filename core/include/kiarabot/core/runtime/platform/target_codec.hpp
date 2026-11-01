@@ -29,12 +29,17 @@ target::Outcome<target::ErrorCode> from_wire(v1::ErrorCode value) noexcept;
 target::Outcome<int> http_status(target::ErrorCode value) noexcept;
 target::Outcome<grpc::StatusCode> grpc_status(target::ErrorCode value) noexcept;
 
-// These carry stable Error only, never flatten Failure's acceptance/recovery/operation.
-// Use RpcFailure separately when an owner response carries those additional facts.
+// Construct the stable Error member without fabricating business acceptance/recovery facts.
 target::Outcome<v1::Error> make_error(target::ErrorCode code, std::string_view request_id,
                                       std::string_view trace_id, bool retryable) noexcept;
-target::Outcome<grpc::Status> to_grpc_error(const v1::Error& error) noexcept;
-target::Outcome<v1::Error> from_grpc_error(const grpc::Status& status) noexcept;
+// The sole target unary binary detail is RpcFailure; Error-only reference Connect
+// details are deliberately rejected, with no fallback or information-losing adapter.
+target::Outcome<grpc::Status> to_grpc_failure(const v1::RpcFailure& failure) noexcept;
+target::Outcome<v1::RpcFailure> from_grpc_failure(const grpc::Status& status) noexcept;
+target::Outcome<v1::RpcFailure> from_http_failure(int status,
+                                                  const v1::RpcFailure& failure) noexcept;
+
+// Error member validation only; this does not decode a complete target failure envelope.
 target::Outcome<v1::Error> from_http_error(int status, const v1::Error& error) noexcept;
 
 } // namespace kiarabot::core::platform::target_codec

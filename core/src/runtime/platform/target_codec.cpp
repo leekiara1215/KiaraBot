@@ -183,6 +183,45 @@ bool valid_error(const v1::Error& error) {
          correlation_id(error.request_id()) && correlation_id(error.trace_id()) &&
          !error.message().empty() && error.details().empty();
 }
+bool valid_failure(const v1::RpcFailure& failure) {
+  if (!failure.has_error() || !failure.has_context() || !valid_error(failure.error())) {
+    return false;
+  }
+  const auto& context = failure.context();
+  switch (context.acceptance()) {
+  case v1::NOT_ACCEPTED:
+  case v1::DURABLY_ACCEPTED:
+  case v1::ACCEPTANCE_UNKNOWN:
+    break;
+  default:
+    return false;
+  }
+  switch (context.recovery()) {
+  case v1::CORRECT_INPUT:
+  case v1::REAUTHENTICATE:
+  case v1::DO_NOT_RETRY:
+  case v1::QUERY_SAME_INTENT:
+  case v1::RETRY_SAME_ID:
+  case v1::RESYNC_SNAPSHOT:
+  case v1::MANUAL_REVIEW:
+    break;
+  default:
+    return false;
+  }
+  if (context.has_current_version() && context.current_version() == 0) {
+    return false;
+  }
+  if (context.has_operation()) {
+    const auto& operation = context.operation();
+    if ((operation.owner_service() != "runtime" && operation.owner_service() != "scheduler" &&
+         operation.owner_service() != "model") ||
+        !uuid_v4(operation.operation_id()) || !operation.has_resource() ||
+        !std::holds_alternative<target::ResourceRef>(from_wire(operation.resource()))) {
+      return false;
+    }
+  }
+  return true;
+}
 } // namespace
 
 target::Outcome<google::protobuf::Timestamp> to_wire(target::TimePoint value) noexcept try {
@@ -344,33 +383,48 @@ target::Outcome<v1::Error> make_error(target::ErrorCode code, std::string_view r
                          target::Recovery::Diagnose, std::nullopt, std::nullopt};
 }
 
-target::Outcome<grpc::Status> to_grpc_error(const v1::Error& error) noexcept try {
-  if (!valid_error(error)) {
+target::Outcome<grpc::Status> to_grpc_failure(const v1::RpcFailure& failure) noexcept try {
+  if (!valid_failure(failure)) {
     return invalid();
   }
-  const auto code = std::get<target::ErrorCode>(from_wire(error.code()));
+  const auto code = std::get<target::ErrorCode>(from_wire(failure.error().code()));
   std::string details;
-  if (!error.SerializeToString(&details)) {
+  if (!failure.SerializeToString(&details)) {
     return invalid();
   }
   return grpc::Status{std::get<grpc::StatusCode>(grpc_status(code)),
-                      v1::ErrorCode_Name(error.code()), details};
+                      v1::ErrorCode_Name(failure.error().code()), details};
 } catch (...) {
   return target::Failure{target::ErrorCode::Internal, target::Acceptance::NotAccepted,
                          target::Recovery::Diagnose, std::nullopt, std::nullopt};
 }
 
-target::Outcome<v1::Error> from_grpc_error(const grpc::Status& status) noexcept try {
-  v1::Error error;
+target::Outcome<v1::RpcFailure> from_grpc_failure(const grpc::Status& status) noexcept try {
+  v1::RpcFailure failure;
   if (status.ok() || status.error_details().empty() ||
-      !error.ParseFromString(status.error_details()) || !valid_error(error)) {
+      !failure.ParseFromString(status.error_details()) || !valid_failure(failure)) {
     return invalid();
   }
-  const auto code = std::get<target::ErrorCode>(from_wire(error.code()));
+  const auto code = std::get<target::ErrorCode>(from_wire(failure.error().code()));
   if (status.error_code() != std::get<grpc::StatusCode>(grpc_status(code))) {
     return invalid();
   }
-  return error;
+  return failure;
+} catch (...) {
+  return target::Failure{target::ErrorCode::Internal, target::Acceptance::NotAccepted,
+                         target::Recovery::Diagnose, std::nullopt, std::nullopt};
+}
+
+target::Outcome<v1::RpcFailure> from_http_failure(int status,
+                                                  const v1::RpcFailure& failure) noexcept try {
+  if (!valid_failure(failure)) {
+    return invalid();
+  }
+  const auto code = std::get<target::ErrorCode>(from_wire(failure.error().code()));
+  if (status != std::get<int>(http_status(code))) {
+    return invalid();
+  }
+  return failure;
 } catch (...) {
   return target::Failure{target::ErrorCode::Internal, target::Acceptance::NotAccepted,
                          target::Recovery::Diagnose, std::nullopt, std::nullopt};

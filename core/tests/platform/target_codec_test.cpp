@@ -214,23 +214,32 @@ void test_errors() {
     expect(std::get<int>(codec::http_status(test.internal)) == test.http);
     const auto error =
         std::get<wire::Error>(codec::make_error(test.internal, "request-1", "trace_2", true));
-    const auto status = std::get<grpc::Status>(codec::to_grpc_error(error));
+    wire::RpcFailure failure;
+    *failure.mutable_error() = error;
+    failure.mutable_context()->set_acceptance(wire::NOT_ACCEPTED);
+    failure.mutable_context()->set_recovery(wire::CORRECT_INPUT);
+    const auto status = std::get<grpc::Status>(codec::to_grpc_failure(failure));
     expect(status.error_code() == test.grpc);
-    wire::Error detail;
+    wire::RpcFailure detail;
     expect(detail.ParseFromString(status.error_details()));
-    expect(detail.code() == test.external && detail.request_id() == "request-1" &&
-           detail.trace_id() == "trace_2" && detail.retryable());
-    expect(std::get<wire::Error>(codec::from_grpc_error(status)).SerializeAsString() ==
-           error.SerializeAsString());
+    expect(detail.error().code() == test.external && detail.error().request_id() == "request-1" &&
+           detail.error().trace_id() == "trace_2" && detail.error().retryable());
+    expect(std::get<wire::RpcFailure>(codec::from_grpc_failure(status)).SerializeAsString() ==
+           failure.SerializeAsString());
+    expect(std::get<wire::RpcFailure>(codec::from_http_failure(test.http, failure))
+               .SerializeAsString() == failure.SerializeAsString());
+    expect(rejected(codec::from_http_failure(200, failure)));
     expect(std::get<wire::Error>(codec::from_http_error(test.http, error)).code() == test.external);
     expect(rejected(codec::from_http_error(200, error)));
-    expect(rejected(codec::from_grpc_error(
-        grpc::Status{grpc::StatusCode::UNKNOWN, "free text", status.error_details()})));
-    expect(rejected(
-        codec::from_grpc_error(grpc::Status{test.grpc, "free text without stable details"})));
-    expect(rejected(codec::from_grpc_error(grpc::Status{test.grpc, "free text", "malformed"})));
-    expect(std::get<wire::Error>(codec::from_grpc_error(grpc::Status{test.grpc, "ignored text",
-                                                                     status.error_details()}))
+    expect(rejected(codec::from_grpc_failure(
+        grpc::Status{grpc::StatusCode::UNKNOWN, "text", status.error_details()})));
+    expect(rejected(codec::from_grpc_failure(grpc::Status{test.grpc, "no detail"})));
+    expect(rejected(codec::from_grpc_failure(grpc::Status{test.grpc, "text", "malformed"})));
+    expect(rejected(codec::from_grpc_failure(
+        grpc::Status{test.grpc, "reference Error-only", error.SerializeAsString()})));
+    expect(std::get<wire::RpcFailure>(
+               codec::from_grpc_failure(grpc::Status{test.grpc, "ignored", status.error_details()}))
+               .error()
                .code() == test.external);
   }
   expect(rejected(codec::from_wire(wire::ERROR_CODE_UNSPECIFIED)));
@@ -238,18 +247,104 @@ void test_errors() {
   expect(rejected(codec::to_wire(static_cast<target::ErrorCode>(unknown_value()))));
   expect(rejected(codec::http_status(static_cast<target::ErrorCode>(unknown_value()))));
   expect(rejected(codec::grpc_status(static_cast<target::ErrorCode>(unknown_value()))));
-  expect(rejected(codec::from_grpc_error(grpc::Status::OK)));
+  expect(rejected(codec::from_grpc_failure(grpc::Status::OK)));
   expect(rejected(codec::make_error(target::ErrorCode::Internal, "", "trace", false)));
   expect(
       rejected(codec::make_error(target::ErrorCode::Internal, "request", "invalid trace", false)));
   auto error = std::get<wire::Error>(
       codec::make_error(target::ErrorCode::Internal, "request", "trace", false));
   (*error.mutable_details())["private"] = "forbidden";
-  expect(rejected(codec::to_grpc_error(error)));
+  expect(rejected(codec::from_http_error(500, error)));
   error.clear_details();
   error.clear_request_id();
-  expect(rejected(codec::to_grpc_error(error)));
+  expect(rejected(codec::from_http_error(500, error)));
 }
+void test_failure_context() {
+  wire::RpcFailure failure;
+  *failure.mutable_error() = std::get<wire::Error>(
+      codec::make_error(target::ErrorCode::Timeout, "request", "trace", true));
+  auto* context = failure.mutable_context();
+  context->set_acceptance(wire::ACCEPTANCE_UNKNOWN);
+  context->set_recovery(wire::QUERY_SAME_INTENT);
+  context->set_retry_after_ms(1234);
+  context->set_current_version(std::numeric_limits<std::uint64_t>::max());
+  auto* operation = context->mutable_operation();
+  operation->set_owner_service("model");
+  operation->set_operation_id("11111111-1111-4111-8111-111111111111");
+  operation->mutable_resource()->set_kind(wire::RESOURCE_MODEL);
+  operation->mutable_resource()->set_id("22222222-2222-4222-8222-222222222222");
+  const auto verify = [](const wire::RpcFailure& input) {
+    const auto status = std::get<grpc::Status>(codec::to_grpc_failure(input));
+    expect(std::get<wire::RpcFailure>(codec::from_grpc_failure(status)).SerializeAsString() ==
+           input.SerializeAsString());
+    expect(std::get<wire::RpcFailure>(codec::from_http_failure(504, input)).SerializeAsString() ==
+           input.SerializeAsString());
+  };
+  verify(failure);
+  for (const auto acceptance :
+       {wire::NOT_ACCEPTED, wire::DURABLY_ACCEPTED, wire::ACCEPTANCE_UNKNOWN}) {
+    context->set_acceptance(acceptance);
+    for (const auto recovery :
+         {wire::CORRECT_INPUT, wire::REAUTHENTICATE, wire::DO_NOT_RETRY, wire::QUERY_SAME_INTENT,
+          wire::RETRY_SAME_ID, wire::RESYNC_SNAPSHOT, wire::MANUAL_REVIEW}) {
+      context->set_recovery(recovery);
+      verify(failure);
+    }
+  }
+  const auto reject = [](const wire::RpcFailure& input) {
+    expect(rejected(codec::to_grpc_failure(input)));
+    expect(rejected(codec::from_grpc_failure(
+        grpc::Status{grpc::StatusCode::DEADLINE_EXCEEDED, "ignored", input.SerializeAsString()})));
+    expect(rejected(codec::from_http_failure(504, input)));
+  };
+  auto bad = failure;
+  bad.clear_context();
+  reject(bad);
+  bad = failure;
+  bad.clear_error();
+  reject(bad);
+  bad = failure;
+  bad.mutable_context()->set_acceptance(wire::ACCEPTANCE_UNSPECIFIED);
+  reject(bad);
+  bad = failure;
+  bad.mutable_context()->set_acceptance(static_cast<wire::AcceptanceState>(unknown_value()));
+  reject(bad);
+  bad = failure;
+  bad.mutable_context()->set_recovery(wire::RECOVERY_UNSPECIFIED);
+  reject(bad);
+  bad = failure;
+  bad.mutable_context()->set_recovery(static_cast<wire::RecoveryAction>(unknown_value()));
+  reject(bad);
+  bad = failure;
+  bad.mutable_error()->set_code(static_cast<wire::ErrorCode>(unknown_value()));
+  reject(bad);
+  bad = failure;
+  bad.mutable_context()->set_current_version(0);
+  reject(bad);
+  bad = failure;
+  bad.mutable_context()->mutable_operation()->set_owner_service("unknown");
+  reject(bad);
+  bad = failure;
+  bad.mutable_context()->mutable_operation()->set_operation_id("not-uuid");
+  reject(bad);
+  bad = failure;
+  bad.mutable_context()->mutable_operation()->clear_resource();
+  reject(bad);
+  bad = failure;
+  bad.mutable_context()->mutable_operation()->mutable_resource()->set_kind(
+      wire::RESOURCE_KIND_UNSPECIFIED);
+  reject(bad);
+  bad = failure;
+  bad.mutable_context()->mutable_operation()->mutable_resource()->clear_id();
+  reject(bad);
+  // Login/refresh unknown outcome can legitimately have no operation reference or version.
+  failure.mutable_context()->clear_operation();
+  failure.mutable_context()->clear_current_version();
+  failure.mutable_context()->set_acceptance(wire::ACCEPTANCE_UNKNOWN);
+  failure.mutable_context()->set_recovery(wire::QUERY_SAME_INTENT);
+  verify(failure);
+}
+
 } // namespace
 int main() {
   expect(unknown_value() == 999);
@@ -257,6 +352,7 @@ int main() {
   test_resources();
   test_time();
   test_errors();
+  test_failure_context();
   if (failures != 0) {
     return 1;
   }
