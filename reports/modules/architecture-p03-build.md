@@ -69,3 +69,21 @@ p03分类检查通过。全仓format16通过，四个新TU tidy22.1.8 clang-anal
 P03三项CTest全部通过，包含既有真实PG故障fixture；未重复旧51项/全仓tidy，父正在对
 固定快照运行统一入口，本工作树未修改主树或其他对话源码。
 文档校验：路径存在、末尾换行、git diff --check通过。
+
+## 能力四：外层组合生命周期测试接线
+
+接入已审查5633bf4（本树93cee26），不修改其源码。platform.cmake在service_process
+定义后新增service_composition_driver，私有链接该外层库；对应Python测试
+p03/integration/fault、timeout30，并复用固定openssl目录的PATH设置。
+输入为driver及本次临时TLS配置，失败非零；不增加业务行为或数据库装配。
+文档影响仅doc/11及本报告；业务说明已由5633bf4更新doc/02与08，API/proto、其他
+模块文档与doc/12-ci-cd不变，doc/18只读。
+
+沿本报告固定外部prefix/Python命令配置、完整full-locked构建成功；新增TU进入compile
+DB，全覆盖/inner/六目标link与p03注册检查通过。新helper format16 dry-run、精确DB的
+tidy22 clang-analyzer-*及warnings-as-errors通过。dev配置及注册JSON确认该测试不存在。
+相关CTest选择p03全部加p02_service_config/p02_core_process，结果在提交前追加。
+未重复完整统一入口：父刚完成固定快照验收，新一批代码统一验证由父负责。
+文档路径/末尾换行及git diff --check作为本次文档校验。
+
+相关CTest 6/6通过，总22.92秒；composition2.96秒，真实PG1.96秒。

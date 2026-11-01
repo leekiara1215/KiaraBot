@@ -476,3 +476,8 @@ ctest --preset full-locked -L '^p03$' --no-tests=error --output-on-failure
 
 P03纯内层规则测试 `p03_persistence_rules` 同样注册p03/unit，覆盖收据保留、容量、
 重放和交接claim规则；不替代真实PG事务验收。
+
+P03外层组合回归 `p03_service_composition` 使用链接service_process的独立driver，
+标记p03/integration/fault、30秒超时；与p02配置/进程测试一致，将显式CA CLI所在目录
+前置PATH。仅proto/full构建注册，dev不包含该外层库。此测试验证组合保护、依赖丢失
+和资源生命周期，不表示生产数据库已装配。

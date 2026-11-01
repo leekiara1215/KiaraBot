@@ -96,6 +96,16 @@ target_include_directories(kiarabot_service_process PUBLIC ${CMAKE_SOURCE_DIR}/c
 target_link_libraries(kiarabot_service_process PRIVATE
   kiarabot_service_config kiarabot_proto Threads::Threads)
 kiarabot_platform_warnings(kiarabot_service_process)
+
+add_executable(kiarabot_service_composition_driver
+  ${CMAKE_SOURCE_DIR}/core/tests/platform/service_composition_driver.cpp)
+target_link_libraries(kiarabot_service_composition_driver PRIVATE kiarabot_service_process)
+kiarabot_platform_warnings(kiarabot_service_composition_driver)
+add_test(NAME p03_service_composition COMMAND "${KIARABOT_TARGET_PYTHON}"
+  ${CMAKE_SOURCE_DIR}/core/tests/platform/service_composition_test.py
+  $<TARGET_FILE:kiarabot_service_composition_driver>)
+set_tests_properties(p03_service_composition PROPERTIES LABELS "p03;integration;fault" TIMEOUT 30)
+
 foreach(SERVICE identity runtime plugin_host scheduler model)
   set(ENTRY "${SERVICE}")
   set(BINARY "${SERVICE}")
@@ -150,7 +160,7 @@ set_tests_properties(architecture_p02_oracle PROPERTIES LABELS "p02;unit" TIMEOU
 add_test(NAME architecture_p02_references COMMAND "${KIARABOT_TARGET_PYTHON}"
   ${CMAKE_SOURCE_DIR}/tests/architecture/check_references.py)
 set_tests_properties(architecture_p02_references PROPERTIES LABELS "p02;unit;reference" TIMEOUT 10)
-set_tests_properties(p02_service_config p02_core_process PROPERTIES
+set_tests_properties(p02_service_config p02_core_process p03_service_composition PROPERTIES
   ENVIRONMENT "PATH=${OPENSSL_BIN_DIR}:$ENV{PATH}")
 add_test(NAME p01_target_api COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/quality/check-target-api.sh)
 set_tests_properties(p01_target_api PROPERTIES LABELS "p01;unit" TIMEOUT 30)
