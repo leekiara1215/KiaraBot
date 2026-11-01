@@ -481,3 +481,20 @@ build/key-files-*而mkdtemp失败；配置在本binary目录创建专属build子
 
 最终loader两TU精确compile DB tidy22 clang-analyzer-* warnings-as-errors通过；
 文档路径/末尾换行及git diff --check通过。
+
+## 后续接线：六方法Identity安全应用基础
+
+按父授权成组同步7f9a197/0d0aa22/38055e2（本树a57a0f4/ebd360a/142e61f），
+文档保留双方新增段落，不取未提交源码。新增纯生产静态库
+kiarabot_identity_security_application和独立test，p04/unit/security、30秒，
+只PUBLIC core/include及C++20，不链接PG/crypto/proto或改生产main。
+文档影响仅doc/11与本报告构建说明；Core行为由源提交已同步doc/02与应用报告，
+其他模块/API/proto/CI和冻结doc18不改。
+固定prefix/Python配置与纯应用test定向构建成功；全TU覆盖/inner/实际图、全仓format16
+通过，P04标签/测试及两TU tidy结果后附。生产闭环必须等待父列出的四项审核修复和
+实际依赖/RPC装配，当前基础源可编译/测试不表示已完成。本树缺契约前置的full状态保持，
+未重复统一入口或raw目标脚本。新proof契约1b962d3依赖完整契约基点，暂未单取。
+文档检查为路径/末尾换行与diff检查。
+
+本树基础应用CTest1/1通过4.94秒；两TU精确compile DB tidy22
+clang-analyzer-* warnings-as-errors通过，p04标签检查通过。

@@ -568,3 +568,7 @@ PG库加入identity_sessions/identity_receipts两个真实TU，共享原PG drive
 Identity crypto库加入key_files.cpp，`p04_key_files`为unit/security、30秒；用二进制目录
 专属build/子目录运行源码已有相对临时fixture，不向源码树写测试密钥。测试获取官方
 OpenSSL::Crypto头路径，实际链接由静态适配器既有依赖提供，避免重复archive。
+
+六方法Identity安全应用独立纯库 `kiarabot_identity_security_application` 与测试
+`p04_identity_security_application`（unit/security、30秒）进入dev/full构建；
+不链接crypto/PG/proto，不替代P02 stub或声明生产就绪。审核修复需成组集成后再验收闭环。
