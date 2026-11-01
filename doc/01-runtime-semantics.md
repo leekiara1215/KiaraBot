@@ -196,3 +196,9 @@ REST 不可变分页用于一致列表；WebSocket 是资源状态刷新通知�
 每个实例 fan-out 独立 DeliveryAttempt：event_id 保持，attempt_id 每次领取改变，绑定完整 Fence；started_at/lease_until 由数据库 UTC 裁决。租期30秒，建议10秒续租，每次最多延至 now+30秒且不超过 started_at+300秒。Renew/ACK 和超时竞争同一持久记录；过期返回 DELIVERY_STALE，不修改新尝试；重复成功返回 DELIVERY_DUPLICATE。ACK 需 event_id 与 attempt.event_id 相等；错误 ACK 需稳定 Error。配置 ACK 绑定 Fence、delivery_id 与 config_version；未应用最新配置不投新事件。正常/拒绝/过期/依赖故障均可由 DeliveryReceipt 表达；ACK/Renew 是当前认证流的收尾事实，不重新检查历史用户会话。新副作用仍在线授权。
 
 内部成功命令收据至少七天；可靠交接使用 source_service/message_id/资源版本/hash/created_at/valid_until，默认有效七天。inbox 保留到 max(首次接收+七天, valid_until+七天)。已过期新消息拒绝，不盲延长有效期；重复提交不新增投递目标。断线/取消等待不回滚提交，不将未知平台/模型执行记成 FAILED。
+
+### 目标管理、存储和异步交接
+
+期望配置、Host进程事实、协议注册与配置应用分层；旧 desired_version 或 execution_generation 观察不能覆盖新状态。Host离线不是已停止证据，不允许盲跨主机接管。私有 namespace 绑定稳定实例，换连接不重建；共享写条件版本，TTL 重放不续期。默认私有/共享各1024键/1MiB、单值64KiB、安装聚合8192键/8MiB；成功收据实例10000/安装80000，七天内不淘汰。一次性任务实例1024/安装8192；COMPLETED 仅 Runtime 已持久入队，确认丢失重发同 occurrence/message ID。
+
+模型先提交意图再调用，后提交已知结果/UNKNOWN，同 logical_call_id 不再次调用供应商。首轮不承诺正文重放；Chat 响应丢失查询状态，不能自动换 call_id。Action 已派发取消冲突；终态168小时，过期 ACCEPTED 迁 EXPIRED/TIMEOUT，迟到平台证据不得覆盖。未知结果与权限依赖故障保持事实/Blocked，不把未能授权等同明确拒绝。

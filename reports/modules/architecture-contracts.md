@@ -23,3 +23,11 @@ P00 检查：`python3 -m json.tool proto/tests/target_spec.json`、`git diff --c
 新增 `platform.proto`；Adapter/Plugin 原有流增加强制目标 fence、安装和执行绑定、配置版本及投递 attempt/续租/回执。未提供第二套兼容桥；现有消费者尚未迁移。新增字段/枚举已登记 not_implemented 并同步状态表。公共消息/代次为规范约束，proto3 本身不执行必填校验，生产边界必须拒绝缺失/0；后续独立目标 fixture 验证边界映射前提。
 
 本步实际检查：protoc 全量 descriptor 生成、实现状态登记检查、枚举一致性检查、git diff --check。文档更新为 proto/README、doc/01-contracts、doc/01-runtime-semantics、doc/06-control-api；其余模块文档无生产行为改变，留给实现所有者。未运行全仓构建：P01 不是旧消费者兼容门禁；C++/Python 生成与往返将在独立入口补齐并实际运行后记录。
+
+## P01a 五服务类型化方法
+
+新增 identity/runtime/host/scheduler/model/policy.proto，独立 request/response 与封闭权限 descriptor options。修正 P00 的调用方宽泛默认：人类会话入口仅 Control；CheckAuthorization 500ms/1s；Chat 30s/30s，由 logical_call_id 防重，无普通正文重放；ACK/Renew 当前认证 fence 控制消息不再要求在线查历史用户。新增已批准白名单策略 Get/UpdateActionPolicy。Claim/Deliver 不公开给插件。全部方法状态为未实现。
+
+Python 本机默认3.9（与仓库目标3.11.18不同），临时环境 protobuf6.33.5、grpcio-tools1.76.0、grpcio1.80.0；Python生成器自带 libprotoc31.1，C++本机 protoc/runtime36.2、gRPC pkg-config 提供。不存在 Python7.35 下载版本；不绕过版本检查，改用已取得匹配生成器。根工具链任务须锁定最终统一环境，本机线格式验证不冒充目标锁验收。
+
+五服务提交实际验证：独立 `KIARABOT_TARGET_PYTHON=/tmp/kiarabot-contracts-venv/bin/python proto/tests/check_target.sh` 通过77个RPC的 request/response/权限/幂等/deadline/在线分类匹配及269种消息 Python→C++→Python 往返；C++/Python/gRPC均实际生成，C++和gRPC生成源实际编译链接。clang-format 检查 target_roundtrip.cc；全量枚举、实现状态、语义门禁均通过。生成源及本机 Abseil 宏产生 nullability extension 警告、链接重复库提示，不能据此声称无警告全构建；手写测试独立格式校验通过。新proto接线清单：platform/policy/identity/runtime/host/scheduler/model.proto，根 CMake 尚未包括，由工具链所有者接入。未运行全仓、PG、生产认证/并发测试，P01仅规格/线格式验收。

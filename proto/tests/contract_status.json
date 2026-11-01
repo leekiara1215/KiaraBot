@@ -93,7 +93,195 @@
       "DeliveryAttempt": "not_implemented",
       "DeliveryReceipt": "not_implemented",
       "VersionedResourceState": "not_implemented",
-      "SnapshotPage": "not_implemented"
+      "SnapshotPage": "not_implemented",
+      "HostPackage": "not_implemented",
+      "HostRecord": "not_implemented",
+      "ProcessSpec": "not_implemented",
+      "ExecutionRecord": "not_implemented",
+      "HostCommandReceipt": "not_implemented",
+      "HostRegisterHostRequest": "not_implemented",
+      "HostRegisterHostResponse": "not_implemented",
+      "HostReportInventoryRequest": "not_implemented",
+      "HostReportInventoryResponse": "not_implemented",
+      "HostApplyDesiredProcessRequest": "not_implemented",
+      "HostApplyDesiredProcessResponse": "not_implemented",
+      "HostStopExecutionRequest": "not_implemented",
+      "HostStopExecutionResponse": "not_implemented",
+      "HostDrainHostRequest": "not_implemented",
+      "HostDrainHostResponse": "not_implemented",
+      "HostGetExecutionRequest": "not_implemented",
+      "HostGetExecutionResponse": "not_implemented",
+      "HostWatchExecutionsRequest": "not_implemented",
+      "HostWatchExecutionsResponse": "not_implemented",
+      "HostToRuntime": "not_implemented",
+      "RuntimeToHost": "not_implemented",
+      "PrincipalRecord": "not_implemented",
+      "SessionRecord": "not_implemented",
+      "TokenPair": "not_implemented",
+      "CredentialDelivery": "not_implemented",
+      "AssignmentRecord": "not_implemented",
+      "DelegationProof": "not_implemented",
+      "AuthorizationDecision": "not_implemented",
+      "InvalidationRecord": "not_implemented",
+      "AuthorizationSnapshot": "not_implemented",
+      "VerificationKey": "not_implemented",
+      "IdentityLoginRequest": "not_implemented",
+      "IdentityLoginResponse": "not_implemented",
+      "IdentityRefreshSessionRequest": "not_implemented",
+      "IdentityRefreshSessionResponse": "not_implemented",
+      "IdentityValidateSessionRequest": "not_implemented",
+      "IdentityValidateSessionResponse": "not_implemented",
+      "IdentityGetPrincipalRequest": "not_implemented",
+      "IdentityGetPrincipalResponse": "not_implemented",
+      "IdentityListSessionsRequest": "not_implemented",
+      "IdentityListSessionsResponse": "not_implemented",
+      "IdentityRevokeSessionRequest": "not_implemented",
+      "IdentityRevokeSessionResponse": "not_implemented",
+      "IdentityRegisterPrincipalRequest": "not_implemented",
+      "IdentityRegisterPrincipalResponse": "not_implemented",
+      "IdentityRotateCredentialRequest": "not_implemented",
+      "IdentityRotateCredentialResponse": "not_implemented",
+      "IdentityRevokeCredentialRequest": "not_implemented",
+      "IdentityRevokeCredentialResponse": "not_implemented",
+      "IdentityGetPrincipalStatusRequest": "not_implemented",
+      "IdentityGetPrincipalStatusResponse": "not_implemented",
+      "IdentityIssueDelegationRequest": "not_implemented",
+      "IdentityIssueDelegationResponse": "not_implemented",
+      "IdentityExchangeDelegationRequest": "not_implemented",
+      "IdentityExchangeDelegationResponse": "not_implemented",
+      "IdentityCheckAuthorizationRequest": "not_implemented",
+      "IdentityCheckAuthorizationResponse": "not_implemented",
+      "IdentityListAssignmentsRequest": "not_implemented",
+      "IdentityListAssignmentsResponse": "not_implemented",
+      "IdentitySetAssignmentRequest": "not_implemented",
+      "IdentitySetAssignmentResponse": "not_implemented",
+      "IdentityRevokeAssignmentRequest": "not_implemented",
+      "IdentityRevokeAssignmentResponse": "not_implemented",
+      "IdentityWatchInvalidationsRequest": "not_implemented",
+      "IdentityWatchInvalidationsResponse": "not_implemented",
+      "IdentityGetAuthorizationSnapshotRequest": "not_implemented",
+      "IdentityGetAuthorizationSnapshotResponse": "not_implemented",
+      "IdentityGetVerificationKeysRequest": "not_implemented",
+      "IdentityGetVerificationKeysResponse": "not_implemented",
+      "ModelMetadata": "not_implemented",
+      "ModelConfiguration": "not_implemented",
+      "ModelCallRecord": "not_implemented",
+      "ModelGetModelMetadataRequest": "not_implemented",
+      "ModelGetModelMetadataResponse": "not_implemented",
+      "ModelListModelMetadataRequest": "not_implemented",
+      "ModelListModelMetadataResponse": "not_implemented",
+      "ModelUpdateModelRequest": "not_implemented",
+      "ModelUpdateModelResponse": "not_implemented",
+      "ModelRotateProviderSecretRequest": "not_implemented",
+      "ModelRotateProviderSecretResponse": "not_implemented",
+      "ModelGatewayChatRequest": "not_implemented",
+      "ModelGatewayChatResponse": "not_implemented",
+      "ModelGetCallStatusRequest": "not_implemented",
+      "ModelGetCallStatusResponse": "not_implemented",
+      "AccountRecord": "not_implemented",
+      "AdapterBinding": "not_implemented",
+      "InstallationRecord": "not_implemented",
+      "InstanceRecord": "not_implemented",
+      "NamespaceScope": "not_implemented",
+      "StorageEntry": "not_implemented",
+      "StorageCondition": "not_implemented",
+      "SharedMember": "not_implemented",
+      "ActionMetadata": "not_implemented",
+      "DeadLetter": "not_implemented",
+      "TimerAcceptance": "not_implemented",
+      "ActionPolicy": "not_implemented",
+      "RuntimeCreateAccountRequest": "not_implemented",
+      "RuntimeCreateAccountResponse": "not_implemented",
+      "RuntimeUpdateAccountRequest": "not_implemented",
+      "RuntimeUpdateAccountResponse": "not_implemented",
+      "RuntimeDisableAccountRequest": "not_implemented",
+      "RuntimeDisableAccountResponse": "not_implemented",
+      "RuntimeBindAdapterRequest": "not_implemented",
+      "RuntimeBindAdapterResponse": "not_implemented",
+      "RuntimeUnbindAdapterRequest": "not_implemented",
+      "RuntimeUnbindAdapterResponse": "not_implemented",
+      "RuntimeRegisterAdapterRequest": "not_implemented",
+      "RuntimeRegisterAdapterResponse": "not_implemented",
+      "RuntimeHeartbeatRequest": "not_implemented",
+      "RuntimeHeartbeatResponse": "not_implemented",
+      "RuntimePublishEventRequest": "not_implemented",
+      "RuntimePublishEventResponse": "not_implemented",
+      "RuntimeValidateManifestRequest": "not_implemented",
+      "RuntimeValidateManifestResponse": "not_implemented",
+      "RuntimeCreateInstallationRequest": "not_implemented",
+      "RuntimeCreateInstallationResponse": "not_implemented",
+      "RuntimeCreateInstanceRequest": "not_implemented",
+      "RuntimeCreateInstanceResponse": "not_implemented",
+      "RuntimeSetDesiredStateRequest": "not_implemented",
+      "RuntimeSetDesiredStateResponse": "not_implemented",
+      "RuntimeUpdateConfigRequest": "not_implemented",
+      "RuntimeUpdateConfigResponse": "not_implemented",
+      "RuntimeRegisterPluginRequest": "not_implemented",
+      "RuntimeRegisterPluginResponse": "not_implemented",
+      "RuntimeHeartbeatPluginRequest": "not_implemented",
+      "RuntimeHeartbeatPluginResponse": "not_implemented",
+      "RuntimeClaimEventRequest": "not_implemented",
+      "RuntimeClaimEventResponse": "not_implemented",
+      "RuntimeDeliverEventRequest": "not_implemented",
+      "RuntimeDeliverEventResponse": "not_implemented",
+      "RuntimeAckDeliveryRequest": "not_implemented",
+      "RuntimeAckDeliveryResponse": "not_implemented",
+      "RuntimeRenewDeliveryRequest": "not_implemented",
+      "RuntimeRenewDeliveryResponse": "not_implemented",
+      "RuntimeSubmitActionRequest": "not_implemented",
+      "RuntimeSubmitActionResponse": "not_implemented",
+      "RuntimeQueryActionRequest": "not_implemented",
+      "RuntimeQueryActionResponse": "not_implemented",
+      "RuntimeCancelActionRequest": "not_implemented",
+      "RuntimeCancelActionResponse": "not_implemented",
+      "RuntimeListActionMetadataRequest": "not_implemented",
+      "RuntimeListActionMetadataResponse": "not_implemented",
+      "RuntimeInspectActionMetadataRequest": "not_implemented",
+      "RuntimeInspectActionMetadataResponse": "not_implemented",
+      "RuntimeGetStorageRequest": "not_implemented",
+      "RuntimeGetStorageResponse": "not_implemented",
+      "RuntimeSetStorageRequest": "not_implemented",
+      "RuntimeSetStorageResponse": "not_implemented",
+      "RuntimeDeleteStorageRequest": "not_implemented",
+      "RuntimeDeleteStorageResponse": "not_implemented",
+      "RuntimeCompareAndSetStorageRequest": "not_implemented",
+      "RuntimeCompareAndSetStorageResponse": "not_implemented",
+      "RuntimeSetSharedMembersRequest": "not_implemented",
+      "RuntimeSetSharedMembersResponse": "not_implemented",
+      "RuntimeDisableSharedNamespaceRequest": "not_implemented",
+      "RuntimeDisableSharedNamespaceResponse": "not_implemented",
+      "RuntimeAcceptTimerTriggerRequest": "not_implemented",
+      "RuntimeAcceptTimerTriggerResponse": "not_implemented",
+      "RuntimeGetResourceStateRequest": "not_implemented",
+      "RuntimeGetResourceStateResponse": "not_implemented",
+      "RuntimeGetOperationRequest": "not_implemented",
+      "RuntimeGetOperationResponse": "not_implemented",
+      "RuntimeListDeadLettersRequest": "not_implemented",
+      "RuntimeListDeadLettersResponse": "not_implemented",
+      "RuntimeReplayDeliveryRequest": "not_implemented",
+      "RuntimeReplayDeliveryResponse": "not_implemented",
+      "RuntimeBeginDeleteRequest": "not_implemented",
+      "RuntimeBeginDeleteResponse": "not_implemented",
+      "RuntimeRestoreResourceRequest": "not_implemented",
+      "RuntimeRestoreResourceResponse": "not_implemented",
+      "TaskRecord": "not_implemented",
+      "OccurrenceRecord": "not_implemented",
+      "SchedulerCreateTaskRequest": "not_implemented",
+      "SchedulerCreateTaskResponse": "not_implemented",
+      "SchedulerCancelTaskRequest": "not_implemented",
+      "SchedulerCancelTaskResponse": "not_implemented",
+      "SchedulerGetTaskRequest": "not_implemented",
+      "SchedulerGetTaskResponse": "not_implemented",
+      "SchedulerListTasksRequest": "not_implemented",
+      "SchedulerListTasksResponse": "not_implemented",
+      "SchedulerGetOccurrenceRequest": "not_implemented",
+      "SchedulerGetOccurrenceResponse": "not_implemented",
+      "SchedulerGetOperationRequest": "not_implemented",
+      "SchedulerGetOperationResponse": "not_implemented",
+      "RuntimeGetActionPolicyRequest": "not_implemented",
+      "RuntimeGetActionPolicyResponse": "not_implemented",
+      "RuntimeUpdateActionPolicyRequest": "not_implemented",
+      "RuntimeUpdateActionPolicyResponse": "not_implemented"
     },
     "proto_fields": {
       "Account.account_id": "implemented",
@@ -453,7 +641,550 @@
       "PluginConfig.config_version": "not_implemented",
       "PluginConfig.fence": "not_implemented",
       "PluginConfigAck.config_version": "not_implemented",
-      "PluginConfigAck.fence": "not_implemented"
+      "PluginConfigAck.fence": "not_implemented",
+      "HostPackage.plugin_type_id": "not_implemented",
+      "HostPackage.package_sha256": "not_implemented",
+      "HostPackage.launch_profile": "not_implemented",
+      "HostPackage.allowed_argument_names": "not_implemented",
+      "HostRecord.host_id": "not_implemented",
+      "HostRecord.version": "not_implemented",
+      "HostRecord.packages": "not_implemented",
+      "HostRecord.capabilities": "not_implemented",
+      "HostRecord.observed_at": "not_implemented",
+      "ProcessSpec.instance_id": "not_implemented",
+      "ProcessSpec.installation_id": "not_implemented",
+      "ProcessSpec.execution_generation": "not_implemented",
+      "ProcessSpec.desired_version": "not_implemented",
+      "ProcessSpec.desired_state": "not_implemented",
+      "ProcessSpec.package_sha256": "not_implemented",
+      "ProcessSpec.launch_profile": "not_implemented",
+      "ProcessSpec.arguments": "not_implemented",
+      "ProcessSpec.environment_names": "not_implemented",
+      "ExecutionRecord.host_id": "not_implemented",
+      "ExecutionRecord.instance_id": "not_implemented",
+      "ExecutionRecord.execution_generation": "not_implemented",
+      "ExecutionRecord.desired_version": "not_implemented",
+      "ExecutionRecord.outcome": "not_implemented",
+      "ExecutionRecord.process_marker": "not_implemented",
+      "ExecutionRecord.observed_at": "not_implemented",
+      "ExecutionRecord.reason": "not_implemented",
+      "HostCommandReceipt.command_id": "not_implemented",
+      "HostCommandReceipt.persisted": "not_implemented",
+      "HostCommandReceipt.execution": "not_implemented",
+      "HostCommandReceipt.operation": "not_implemented",
+      "HostRegisterHostRequest.context": "not_implemented",
+      "HostRegisterHostRequest.host": "not_implemented",
+      "HostRegisterHostResponse.host": "not_implemented",
+      "HostReportInventoryRequest.context": "not_implemented",
+      "HostReportInventoryRequest.host_id": "not_implemented",
+      "HostReportInventoryRequest.packages": "not_implemented",
+      "HostReportInventoryRequest.expected_version": "not_implemented",
+      "HostReportInventoryResponse.host": "not_implemented",
+      "HostApplyDesiredProcessRequest.context": "not_implemented",
+      "HostApplyDesiredProcessRequest.handoff": "not_implemented",
+      "HostApplyDesiredProcessRequest.command_id": "not_implemented",
+      "HostApplyDesiredProcessRequest.process": "not_implemented",
+      "HostApplyDesiredProcessResponse.receipt": "not_implemented",
+      "HostStopExecutionRequest.context": "not_implemented",
+      "HostStopExecutionRequest.handoff": "not_implemented",
+      "HostStopExecutionRequest.command_id": "not_implemented",
+      "HostStopExecutionRequest.host_id": "not_implemented",
+      "HostStopExecutionRequest.instance_id": "not_implemented",
+      "HostStopExecutionRequest.execution_generation": "not_implemented",
+      "HostStopExecutionRequest.grace_ms": "not_implemented",
+      "HostStopExecutionResponse.receipt": "not_implemented",
+      "HostDrainHostRequest.context": "not_implemented",
+      "HostDrainHostRequest.handoff": "not_implemented",
+      "HostDrainHostRequest.command_id": "not_implemented",
+      "HostDrainHostRequest.host_id": "not_implemented",
+      "HostDrainHostRequest.grace_ms": "not_implemented",
+      "HostDrainHostResponse.receipt": "not_implemented",
+      "HostGetExecutionRequest.context": "not_implemented",
+      "HostGetExecutionRequest.host_id": "not_implemented",
+      "HostGetExecutionRequest.instance_id": "not_implemented",
+      "HostGetExecutionRequest.execution_generation": "not_implemented",
+      "HostGetExecutionResponse.execution": "not_implemented",
+      "HostWatchExecutionsRequest.context": "not_implemented",
+      "HostWatchExecutionsRequest.host_id": "not_implemented",
+      "HostWatchExecutionsRequest.scope": "not_implemented",
+      "HostWatchExecutionsRequest.cursor": "not_implemented",
+      "HostWatchExecutionsResponse.execution": "not_implemented",
+      "HostWatchExecutionsResponse.cursor": "not_implemented",
+      "HostWatchExecutionsResponse.resync_required": "not_implemented",
+      "HostToRuntime.context": "not_implemented",
+      "HostToRuntime.registration": "not_implemented",
+      "HostToRuntime.inventory": "not_implemented",
+      "HostToRuntime.receipt": "not_implemented",
+      "HostToRuntime.observation": "not_implemented",
+      "RuntimeToHost.apply": "not_implemented",
+      "RuntimeToHost.stop": "not_implemented",
+      "RuntimeToHost.drain": "not_implemented",
+      "RuntimeToHost.registered": "not_implemented",
+      "RuntimeToHost.failure": "not_implemented",
+      "PrincipalRecord.principal_id": "not_implemented",
+      "PrincipalRecord.binding": "not_implemented",
+      "PrincipalRecord.principal_kind": "not_implemented",
+      "PrincipalRecord.version": "not_implemented",
+      "PrincipalRecord.state": "not_implemented",
+      "PrincipalRecord.roles": "not_implemented",
+      "PrincipalRecord.scope": "not_implemented",
+      "SessionRecord.session_id": "not_implemented",
+      "SessionRecord.principal_id": "not_implemented",
+      "SessionRecord.rotation": "not_implemented",
+      "SessionRecord.expires_at": "not_implemented",
+      "SessionRecord.revoked": "not_implemented",
+      "TokenPair.session_id": "not_implemented",
+      "TokenPair.access_token": "not_implemented",
+      "TokenPair.refresh_token": "not_implemented",
+      "TokenPair.access_expires_at": "not_implemented",
+      "TokenPair.refresh_expires_at": "not_implemented",
+      "TokenPair.rotation": "not_implemented",
+      "CredentialDelivery.credential_id": "not_implemented",
+      "CredentialDelivery.version": "not_implemented",
+      "CredentialDelivery.new_secret": "not_implemented",
+      "CredentialDelivery.delivery_receipt_id": "not_implemented",
+      "CredentialDelivery.expires_at": "not_implemented",
+      "AssignmentRecord.assignment_id": "not_implemented",
+      "AssignmentRecord.principal_id": "not_implemented",
+      "AssignmentRecord.role": "not_implemented",
+      "AssignmentRecord.permissions": "not_implemented",
+      "AssignmentRecord.scope": "not_implemented",
+      "AssignmentRecord.version": "not_implemented",
+      "DelegationProof.proof": "not_implemented",
+      "DelegationProof.audience": "not_implemented",
+      "DelegationProof.expires_at": "not_implemented",
+      "DelegationProof.business_hops": "not_implemented",
+      "AuthorizationDecision.allowed": "not_implemented",
+      "AuthorizationDecision.authorization_version": "not_implemented",
+      "AuthorizationDecision.checked_at": "not_implemented",
+      "AuthorizationDecision.denial": "not_implemented",
+      "InvalidationRecord.cursor": "not_implemented",
+      "InvalidationRecord.principal_id": "not_implemented",
+      "InvalidationRecord.authorization_version": "not_implemented",
+      "InvalidationRecord.scope": "not_implemented",
+      "InvalidationRecord.resync_required": "not_implemented",
+      "AuthorizationSnapshot.cursor": "not_implemented",
+      "AuthorizationSnapshot.assignments": "not_implemented",
+      "AuthorizationSnapshot.authorization_version": "not_implemented",
+      "VerificationKey.key_id": "not_implemented",
+      "VerificationKey.ed25519_public_key": "not_implemented",
+      "VerificationKey.version": "not_implemented",
+      "VerificationKey.valid_until": "not_implemented",
+      "IdentityLoginRequest.context": "not_implemented",
+      "IdentityLoginRequest.username": "not_implemented",
+      "IdentityLoginRequest.password": "not_implemented",
+      "IdentityLoginResponse.tokens": "not_implemented",
+      "IdentityRefreshSessionRequest.context": "not_implemented",
+      "IdentityRefreshSessionRequest.refresh_token": "not_implemented",
+      "IdentityRefreshSessionResponse.tokens": "not_implemented",
+      "IdentityValidateSessionRequest.context": "not_implemented",
+      "IdentityValidateSessionRequest.access_token": "not_implemented",
+      "IdentityValidateSessionResponse.principal": "not_implemented",
+      "IdentityValidateSessionResponse.session": "not_implemented",
+      "IdentityGetPrincipalRequest.context": "not_implemented",
+      "IdentityGetPrincipalRequest.access_token": "not_implemented",
+      "IdentityGetPrincipalResponse.principal": "not_implemented",
+      "IdentityListSessionsRequest.context": "not_implemented",
+      "IdentityListSessionsRequest.principal_id": "not_implemented",
+      "IdentityListSessionsRequest.page": "not_implemented",
+      "IdentityListSessionsResponse.sessions": "not_implemented",
+      "IdentityListSessionsResponse.page": "not_implemented",
+      "IdentityRevokeSessionRequest.context": "not_implemented",
+      "IdentityRevokeSessionRequest.session_id": "not_implemented",
+      "IdentityRevokeSessionResponse.session": "not_implemented",
+      "IdentityRegisterPrincipalRequest.context": "not_implemented",
+      "IdentityRegisterPrincipalRequest.principal_kind": "not_implemented",
+      "IdentityRegisterPrincipalRequest.binding": "not_implemented",
+      "IdentityRegisterPrincipalRequest.allowed_services": "not_implemented",
+      "IdentityRegisterPrincipalResponse.principal": "not_implemented",
+      "IdentityRotateCredentialRequest.context": "not_implemented",
+      "IdentityRotateCredentialRequest.credential_id": "not_implemented",
+      "IdentityRotateCredentialRequest.expected_version": "not_implemented",
+      "IdentityRotateCredentialResponse.delivery": "not_implemented",
+      "IdentityRevokeCredentialRequest.context": "not_implemented",
+      "IdentityRevokeCredentialRequest.credential_id": "not_implemented",
+      "IdentityRevokeCredentialRequest.expected_version": "not_implemented",
+      "IdentityRevokeCredentialResponse.version": "not_implemented",
+      "IdentityGetPrincipalStatusRequest.context": "not_implemented",
+      "IdentityGetPrincipalStatusRequest.principal_id": "not_implemented",
+      "IdentityGetPrincipalStatusResponse.principal": "not_implemented",
+      "IdentityIssueDelegationRequest.context": "not_implemented",
+      "IdentityIssueDelegationRequest.subject_proof": "not_implemented",
+      "IdentityIssueDelegationRequest.audience": "not_implemented",
+      "IdentityIssueDelegationRequest.scope": "not_implemented",
+      "IdentityIssueDelegationRequest.permissions": "not_implemented",
+      "IdentityIssueDelegationRequest.client_certificate_sha256": "not_implemented",
+      "IdentityIssueDelegationResponse.delegation": "not_implemented",
+      "IdentityExchangeDelegationRequest.context": "not_implemented",
+      "IdentityExchangeDelegationRequest.parent_proof": "not_implemented",
+      "IdentityExchangeDelegationRequest.audience": "not_implemented",
+      "IdentityExchangeDelegationRequest.scope": "not_implemented",
+      "IdentityExchangeDelegationRequest.permissions": "not_implemented",
+      "IdentityExchangeDelegationRequest.client_certificate_sha256": "not_implemented",
+      "IdentityExchangeDelegationResponse.delegation": "not_implemented",
+      "IdentityCheckAuthorizationRequest.context": "not_implemented",
+      "IdentityCheckAuthorizationRequest.subject_proof": "not_implemented",
+      "IdentityCheckAuthorizationRequest.full_method": "not_implemented",
+      "IdentityCheckAuthorizationRequest.scope": "not_implemented",
+      "IdentityCheckAuthorizationRequest.known_authorization_version": "not_implemented",
+      "IdentityCheckAuthorizationResponse.decision": "not_implemented",
+      "IdentityListAssignmentsRequest.context": "not_implemented",
+      "IdentityListAssignmentsRequest.principal_id": "not_implemented",
+      "IdentityListAssignmentsRequest.scope": "not_implemented",
+      "IdentityListAssignmentsRequest.page": "not_implemented",
+      "IdentityListAssignmentsResponse.assignments": "not_implemented",
+      "IdentityListAssignmentsResponse.page": "not_implemented",
+      "IdentitySetAssignmentRequest.context": "not_implemented",
+      "IdentitySetAssignmentRequest.assignment": "not_implemented",
+      "IdentitySetAssignmentRequest.expected_version": "not_implemented",
+      "IdentitySetAssignmentResponse.assignment": "not_implemented",
+      "IdentityRevokeAssignmentRequest.context": "not_implemented",
+      "IdentityRevokeAssignmentRequest.assignment_id": "not_implemented",
+      "IdentityRevokeAssignmentRequest.expected_version": "not_implemented",
+      "IdentityRevokeAssignmentResponse.version": "not_implemented",
+      "IdentityWatchInvalidationsRequest.context": "not_implemented",
+      "IdentityWatchInvalidationsRequest.scope": "not_implemented",
+      "IdentityWatchInvalidationsRequest.cursor": "not_implemented",
+      "IdentityWatchInvalidationsResponse.invalidation": "not_implemented",
+      "IdentityGetAuthorizationSnapshotRequest.context": "not_implemented",
+      "IdentityGetAuthorizationSnapshotRequest.scope": "not_implemented",
+      "IdentityGetAuthorizationSnapshotRequest.after": "not_implemented",
+      "IdentityGetAuthorizationSnapshotResponse.snapshot": "not_implemented",
+      "IdentityGetVerificationKeysRequest.context": "not_implemented",
+      "IdentityGetVerificationKeysRequest.known_key_version": "not_implemented",
+      "IdentityGetVerificationKeysResponse.keys": "not_implemented",
+      "IdentityGetVerificationKeysResponse.version": "not_implemented",
+      "ModelMetadata.model_id": "not_implemented",
+      "ModelMetadata.alias": "not_implemented",
+      "ModelMetadata.config_version": "not_implemented",
+      "ModelMetadata.state": "not_implemented",
+      "ModelMetadata.provider_kind": "not_implemented",
+      "ModelConfiguration.model_id": "not_implemented",
+      "ModelConfiguration.alias": "not_implemented",
+      "ModelConfiguration.provider_kind": "not_implemented",
+      "ModelConfiguration.endpoint": "not_implemented",
+      "ModelConfiguration.provider_model": "not_implemented",
+      "ModelConfiguration.timeout_ms": "not_implemented",
+      "ModelConfiguration.version": "not_implemented",
+      "ModelCallRecord.logical_call_id": "not_implemented",
+      "ModelCallRecord.owner_instance_id": "not_implemented",
+      "ModelCallRecord.model_id": "not_implemented",
+      "ModelCallRecord.config_version": "not_implemented",
+      "ModelCallRecord.state": "not_implemented",
+      "ModelCallRecord.execution_outcome": "not_implemented",
+      "ModelCallRecord.input_tokens": "not_implemented",
+      "ModelCallRecord.output_tokens": "not_implemented",
+      "ModelCallRecord.observed_at": "not_implemented",
+      "ModelCallRecord.reason": "not_implemented",
+      "ModelGetModelMetadataRequest.context": "not_implemented",
+      "ModelGetModelMetadataRequest.model_id": "not_implemented",
+      "ModelGetModelMetadataRequest.scope": "not_implemented",
+      "ModelGetModelMetadataResponse.model": "not_implemented",
+      "ModelListModelMetadataRequest.context": "not_implemented",
+      "ModelListModelMetadataRequest.scope": "not_implemented",
+      "ModelListModelMetadataRequest.page": "not_implemented",
+      "ModelListModelMetadataResponse.models": "not_implemented",
+      "ModelListModelMetadataResponse.page": "not_implemented",
+      "ModelUpdateModelRequest.context": "not_implemented",
+      "ModelUpdateModelRequest.config": "not_implemented",
+      "ModelUpdateModelRequest.expected_version": "not_implemented",
+      "ModelUpdateModelResponse.model": "not_implemented",
+      "ModelUpdateModelResponse.operation": "not_implemented",
+      "ModelRotateProviderSecretRequest.context": "not_implemented",
+      "ModelRotateProviderSecretRequest.model_id": "not_implemented",
+      "ModelRotateProviderSecretRequest.new_secret": "not_implemented",
+      "ModelRotateProviderSecretRequest.expected_version": "not_implemented",
+      "ModelRotateProviderSecretResponse.version": "not_implemented",
+      "ModelRotateProviderSecretResponse.operation": "not_implemented",
+      "ModelGatewayChatRequest.context": "not_implemented",
+      "ModelGatewayChatRequest.logical_call_id": "not_implemented",
+      "ModelGatewayChatRequest.model_id": "not_implemented",
+      "ModelGatewayChatRequest.messages": "not_implemented",
+      "ModelGatewayChatResponse.result": "not_implemented",
+      "ModelGatewayChatResponse.call": "not_implemented",
+      "ModelGetCallStatusRequest.context": "not_implemented",
+      "ModelGetCallStatusRequest.logical_call_id": "not_implemented",
+      "ModelGetCallStatusRequest.scope": "not_implemented",
+      "ModelGetCallStatusResponse.call": "not_implemented",
+      "AccountRecord.account_id": "not_implemented",
+      "AccountRecord.platform": "not_implemented",
+      "AccountRecord.platform_account_id": "not_implemented",
+      "AccountRecord.display_name": "not_implemented",
+      "AccountRecord.version": "not_implemented",
+      "AccountRecord.state": "not_implemented",
+      "AdapterBinding.account_id": "not_implemented",
+      "AdapterBinding.adapter_instance_id": "not_implemented",
+      "AdapterBinding.version": "not_implemented",
+      "InstallationRecord.installation_id": "not_implemented",
+      "InstallationRecord.plugin_type_id": "not_implemented",
+      "InstallationRecord.manifest": "not_implemented",
+      "InstallationRecord.version": "not_implemented",
+      "InstallationRecord.state": "not_implemented",
+      "InstanceRecord.instance_id": "not_implemented",
+      "InstanceRecord.installation_id": "not_implemented",
+      "InstanceRecord.host_id": "not_implemented",
+      "InstanceRecord.externally_managed": "not_implemented",
+      "InstanceRecord.state": "not_implemented",
+      "NamespaceScope.instance_private": "not_implemented",
+      "NamespaceScope.installation_shared_id": "not_implemented",
+      "StorageEntry.key": "not_implemented",
+      "StorageEntry.value": "not_implemented",
+      "StorageEntry.version": "not_implemented",
+      "StorageEntry.expires_at": "not_implemented",
+      "StorageCondition.absent": "not_implemented",
+      "StorageCondition.version": "not_implemented",
+      "SharedMember.instance_id": "not_implemented",
+      "SharedMember.can_read": "not_implemented",
+      "SharedMember.can_write": "not_implemented",
+      "ActionMetadata.action_id": "not_implemented",
+      "ActionMetadata.owner_instance_id": "not_implemented",
+      "ActionMetadata.account_id": "not_implemented",
+      "ActionMetadata.status": "not_implemented",
+      "ActionMetadata.execution_outcome": "not_implemented",
+      "ActionMetadata.updated_at": "not_implemented",
+      "DeadLetter.delivery_id": "not_implemented",
+      "DeadLetter.last_attempt": "not_implemented",
+      "DeadLetter.reason": "not_implemented",
+      "TimerAcceptance.occurrence_id": "not_implemented",
+      "TimerAcceptance.event_id": "not_implemented",
+      "TimerAcceptance.duplicate": "not_implemented",
+      "TimerAcceptance.persisted_at": "not_implemented",
+      "ActionPolicy.account_id": "not_implemented",
+      "ActionPolicy.mute_enabled": "not_implemented",
+      "ActionPolicy.kick_enabled": "not_implemented",
+      "ActionPolicy.allowed_group_ids": "not_implemented",
+      "ActionPolicy.mute_daily_budget": "not_implemented",
+      "ActionPolicy.kick_daily_budget": "not_implemented",
+      "ActionPolicy.version": "not_implemented",
+      "RuntimeCreateAccountRequest.context": "not_implemented",
+      "RuntimeCreateAccountRequest.platform": "not_implemented",
+      "RuntimeCreateAccountRequest.platform_account_id": "not_implemented",
+      "RuntimeCreateAccountRequest.display_name": "not_implemented",
+      "RuntimeCreateAccountResponse.account": "not_implemented",
+      "RuntimeUpdateAccountRequest.context": "not_implemented",
+      "RuntimeUpdateAccountRequest.account_id": "not_implemented",
+      "RuntimeUpdateAccountRequest.display_name": "not_implemented",
+      "RuntimeUpdateAccountRequest.expected_version": "not_implemented",
+      "RuntimeUpdateAccountResponse.account": "not_implemented",
+      "RuntimeDisableAccountRequest.context": "not_implemented",
+      "RuntimeDisableAccountRequest.account_id": "not_implemented",
+      "RuntimeDisableAccountRequest.expected_version": "not_implemented",
+      "RuntimeDisableAccountResponse.account": "not_implemented",
+      "RuntimeDisableAccountResponse.operation": "not_implemented",
+      "RuntimeBindAdapterRequest.context": "not_implemented",
+      "RuntimeBindAdapterRequest.binding": "not_implemented",
+      "RuntimeBindAdapterRequest.expected_version": "not_implemented",
+      "RuntimeBindAdapterResponse.binding": "not_implemented",
+      "RuntimeBindAdapterResponse.operation": "not_implemented",
+      "RuntimeUnbindAdapterRequest.context": "not_implemented",
+      "RuntimeUnbindAdapterRequest.binding": "not_implemented",
+      "RuntimeUnbindAdapterRequest.expected_version": "not_implemented",
+      "RuntimeUnbindAdapterResponse.binding": "not_implemented",
+      "RuntimeUnbindAdapterResponse.operation": "not_implemented",
+      "RuntimeRegisterAdapterRequest.context": "not_implemented",
+      "RuntimeRegisterAdapterRequest.registration": "not_implemented",
+      "RuntimeRegisterAdapterResponse.registration": "not_implemented",
+      "RuntimeHeartbeatRequest.context": "not_implemented",
+      "RuntimeHeartbeatRequest.fence": "not_implemented",
+      "RuntimeHeartbeatResponse.fence": "not_implemented",
+      "RuntimeHeartbeatResponse.received_at": "not_implemented",
+      "RuntimePublishEventRequest.context": "not_implemented",
+      "RuntimePublishEventRequest.fence": "not_implemented",
+      "RuntimePublishEventRequest.event": "not_implemented",
+      "RuntimePublishEventResponse.receipt": "not_implemented",
+      "RuntimeValidateManifestRequest.context": "not_implemented",
+      "RuntimeValidateManifestRequest.manifest": "not_implemented",
+      "RuntimeValidateManifestResponse.valid": "not_implemented",
+      "RuntimeValidateManifestResponse.violations": "not_implemented",
+      "RuntimeCreateInstallationRequest.context": "not_implemented",
+      "RuntimeCreateInstallationRequest.plugin_type_id": "not_implemented",
+      "RuntimeCreateInstallationRequest.manifest": "not_implemented",
+      "RuntimeCreateInstallationResponse.installation": "not_implemented",
+      "RuntimeCreateInstanceRequest.context": "not_implemented",
+      "RuntimeCreateInstanceRequest.installation_id": "not_implemented",
+      "RuntimeCreateInstanceRequest.host_id": "not_implemented",
+      "RuntimeCreateInstanceRequest.externally_managed": "not_implemented",
+      "RuntimeCreateInstanceResponse.instance": "not_implemented",
+      "RuntimeSetDesiredStateRequest.context": "not_implemented",
+      "RuntimeSetDesiredStateRequest.instance_id": "not_implemented",
+      "RuntimeSetDesiredStateRequest.desired_state": "not_implemented",
+      "RuntimeSetDesiredStateRequest.expected_version": "not_implemented",
+      "RuntimeSetDesiredStateResponse.instance": "not_implemented",
+      "RuntimeSetDesiredStateResponse.operation": "not_implemented",
+      "RuntimeUpdateConfigRequest.context": "not_implemented",
+      "RuntimeUpdateConfigRequest.resource": "not_implemented",
+      "RuntimeUpdateConfigRequest.config": "not_implemented",
+      "RuntimeUpdateConfigRequest.expected_version": "not_implemented",
+      "RuntimeUpdateConfigResponse.state": "not_implemented",
+      "RuntimeUpdateConfigResponse.operation": "not_implemented",
+      "RuntimeRegisterPluginRequest.context": "not_implemented",
+      "RuntimeRegisterPluginRequest.registration": "not_implemented",
+      "RuntimeRegisterPluginResponse.registration": "not_implemented",
+      "RuntimeHeartbeatPluginRequest.context": "not_implemented",
+      "RuntimeHeartbeatPluginRequest.fence": "not_implemented",
+      "RuntimeHeartbeatPluginResponse.fence": "not_implemented",
+      "RuntimeHeartbeatPluginResponse.received_at": "not_implemented",
+      "RuntimeClaimEventRequest.context": "not_implemented",
+      "RuntimeClaimEventRequest.fence": "not_implemented",
+      "RuntimeClaimEventResponse.attempt": "not_implemented",
+      "RuntimeDeliverEventRequest.context": "not_implemented",
+      "RuntimeDeliverEventRequest.attempt": "not_implemented",
+      "RuntimeDeliverEventResponse.attempt": "not_implemented",
+      "RuntimeDeliverEventResponse.event": "not_implemented",
+      "RuntimeAckDeliveryRequest.context": "not_implemented",
+      "RuntimeAckDeliveryRequest.attempt": "not_implemented",
+      "RuntimeAckDeliveryRequest.accepted": "not_implemented",
+      "RuntimeAckDeliveryRequest.error": "not_implemented",
+      "RuntimeAckDeliveryResponse.receipt": "not_implemented",
+      "RuntimeRenewDeliveryRequest.context": "not_implemented",
+      "RuntimeRenewDeliveryRequest.attempt": "not_implemented",
+      "RuntimeRenewDeliveryResponse.receipt": "not_implemented",
+      "RuntimeSubmitActionRequest.context": "not_implemented",
+      "RuntimeSubmitActionRequest.fence": "not_implemented",
+      "RuntimeSubmitActionRequest.action": "not_implemented",
+      "RuntimeSubmitActionResponse.result": "not_implemented",
+      "RuntimeSubmitActionResponse.execution_outcome": "not_implemented",
+      "RuntimeQueryActionRequest.context": "not_implemented",
+      "RuntimeQueryActionRequest.fence": "not_implemented",
+      "RuntimeQueryActionRequest.action_id": "not_implemented",
+      "RuntimeQueryActionRequest.idempotency_key": "not_implemented",
+      "RuntimeQueryActionResponse.result": "not_implemented",
+      "RuntimeQueryActionResponse.execution_outcome": "not_implemented",
+      "RuntimeCancelActionRequest.context": "not_implemented",
+      "RuntimeCancelActionRequest.fence": "not_implemented",
+      "RuntimeCancelActionRequest.action_id": "not_implemented",
+      "RuntimeCancelActionResponse.result": "not_implemented",
+      "RuntimeCancelActionResponse.execution_outcome": "not_implemented",
+      "RuntimeListActionMetadataRequest.context": "not_implemented",
+      "RuntimeListActionMetadataRequest.account_scope": "not_implemented",
+      "RuntimeListActionMetadataRequest.page": "not_implemented",
+      "RuntimeListActionMetadataResponse.actions": "not_implemented",
+      "RuntimeListActionMetadataResponse.page": "not_implemented",
+      "RuntimeInspectActionMetadataRequest.context": "not_implemented",
+      "RuntimeInspectActionMetadataRequest.account_scope": "not_implemented",
+      "RuntimeInspectActionMetadataRequest.action_id": "not_implemented",
+      "RuntimeInspectActionMetadataResponse.action": "not_implemented",
+      "RuntimeGetStorageRequest.context": "not_implemented",
+      "RuntimeGetStorageRequest.fence": "not_implemented",
+      "RuntimeGetStorageRequest.scope": "not_implemented",
+      "RuntimeGetStorageRequest.key": "not_implemented",
+      "RuntimeGetStorageResponse.entry": "not_implemented",
+      "RuntimeSetStorageRequest.context": "not_implemented",
+      "RuntimeSetStorageRequest.fence": "not_implemented",
+      "RuntimeSetStorageRequest.scope": "not_implemented",
+      "RuntimeSetStorageRequest.key": "not_implemented",
+      "RuntimeSetStorageRequest.value": "not_implemented",
+      "RuntimeSetStorageRequest.expires_at": "not_implemented",
+      "RuntimeSetStorageResponse.entry": "not_implemented",
+      "RuntimeDeleteStorageRequest.context": "not_implemented",
+      "RuntimeDeleteStorageRequest.fence": "not_implemented",
+      "RuntimeDeleteStorageRequest.scope": "not_implemented",
+      "RuntimeDeleteStorageRequest.key": "not_implemented",
+      "RuntimeDeleteStorageRequest.condition": "not_implemented",
+      "RuntimeDeleteStorageResponse.deleted": "not_implemented",
+      "RuntimeDeleteStorageResponse.version": "not_implemented",
+      "RuntimeCompareAndSetStorageRequest.context": "not_implemented",
+      "RuntimeCompareAndSetStorageRequest.fence": "not_implemented",
+      "RuntimeCompareAndSetStorageRequest.scope": "not_implemented",
+      "RuntimeCompareAndSetStorageRequest.key": "not_implemented",
+      "RuntimeCompareAndSetStorageRequest.value": "not_implemented",
+      "RuntimeCompareAndSetStorageRequest.condition": "not_implemented",
+      "RuntimeCompareAndSetStorageRequest.expires_at": "not_implemented",
+      "RuntimeCompareAndSetStorageResponse.entry": "not_implemented",
+      "RuntimeSetSharedMembersRequest.context": "not_implemented",
+      "RuntimeSetSharedMembersRequest.namespace_id": "not_implemented",
+      "RuntimeSetSharedMembersRequest.installation_id": "not_implemented",
+      "RuntimeSetSharedMembersRequest.members": "not_implemented",
+      "RuntimeSetSharedMembersRequest.expected_version": "not_implemented",
+      "RuntimeSetSharedMembersResponse.version": "not_implemented",
+      "RuntimeSetSharedMembersResponse.operation": "not_implemented",
+      "RuntimeDisableSharedNamespaceRequest.context": "not_implemented",
+      "RuntimeDisableSharedNamespaceRequest.namespace_id": "not_implemented",
+      "RuntimeDisableSharedNamespaceRequest.expected_version": "not_implemented",
+      "RuntimeDisableSharedNamespaceResponse.version": "not_implemented",
+      "RuntimeDisableSharedNamespaceResponse.operation": "not_implemented",
+      "RuntimeAcceptTimerTriggerRequest.context": "not_implemented",
+      "RuntimeAcceptTimerTriggerRequest.handoff": "not_implemented",
+      "RuntimeAcceptTimerTriggerRequest.occurrence_id": "not_implemented",
+      "RuntimeAcceptTimerTriggerRequest.task_id": "not_implemented",
+      "RuntimeAcceptTimerTriggerRequest.owner_instance_id": "not_implemented",
+      "RuntimeAcceptTimerTriggerRequest.schedule_version": "not_implemented",
+      "RuntimeAcceptTimerTriggerRequest.target": "not_implemented",
+      "RuntimeAcceptTimerTriggerRequest.payload": "not_implemented",
+      "RuntimeAcceptTimerTriggerResponse.receipt": "not_implemented",
+      "RuntimeGetResourceStateRequest.context": "not_implemented",
+      "RuntimeGetResourceStateRequest.resource": "not_implemented",
+      "RuntimeGetResourceStateResponse.state": "not_implemented",
+      "RuntimeGetOperationRequest.context": "not_implemented",
+      "RuntimeGetOperationRequest.operation": "not_implemented",
+      "RuntimeGetOperationResponse.operation": "not_implemented",
+      "RuntimeListDeadLettersRequest.context": "not_implemented",
+      "RuntimeListDeadLettersRequest.scope": "not_implemented",
+      "RuntimeListDeadLettersRequest.page": "not_implemented",
+      "RuntimeListDeadLettersResponse.deliveries": "not_implemented",
+      "RuntimeListDeadLettersResponse.page": "not_implemented",
+      "RuntimeReplayDeliveryRequest.context": "not_implemented",
+      "RuntimeReplayDeliveryRequest.delivery_id": "not_implemented",
+      "RuntimeReplayDeliveryRequest.target_instance_id": "not_implemented",
+      "RuntimeReplayDeliveryRequest.expected_version": "not_implemented",
+      "RuntimeReplayDeliveryResponse.operation": "not_implemented",
+      "RuntimeBeginDeleteRequest.context": "not_implemented",
+      "RuntimeBeginDeleteRequest.resource": "not_implemented",
+      "RuntimeBeginDeleteRequest.expected_version": "not_implemented",
+      "RuntimeBeginDeleteResponse.operation": "not_implemented",
+      "RuntimeRestoreResourceRequest.context": "not_implemented",
+      "RuntimeRestoreResourceRequest.resource": "not_implemented",
+      "RuntimeRestoreResourceRequest.expected_version": "not_implemented",
+      "RuntimeRestoreResourceResponse.operation": "not_implemented",
+      "TaskRecord.task_id": "not_implemented",
+      "TaskRecord.owner_instance_id": "not_implemented",
+      "TaskRecord.installation_id": "not_implemented",
+      "TaskRecord.target": "not_implemented",
+      "TaskRecord.payload": "not_implemented",
+      "TaskRecord.run_at": "not_implemented",
+      "TaskRecord.state": "not_implemented",
+      "TaskRecord.version": "not_implemented",
+      "TaskRecord.occurrence_id": "not_implemented",
+      "OccurrenceRecord.occurrence_id": "not_implemented",
+      "OccurrenceRecord.task_id": "not_implemented",
+      "OccurrenceRecord.state": "not_implemented",
+      "OccurrenceRecord.handoff": "not_implemented",
+      "OccurrenceRecord.accepted_event_id": "not_implemented",
+      "OccurrenceRecord.acknowledged_at": "not_implemented",
+      "SchedulerCreateTaskRequest.context": "not_implemented",
+      "SchedulerCreateTaskRequest.task_id": "not_implemented",
+      "SchedulerCreateTaskRequest.target": "not_implemented",
+      "SchedulerCreateTaskRequest.payload": "not_implemented",
+      "SchedulerCreateTaskRequest.run_at": "not_implemented",
+      "SchedulerCreateTaskRequest.local_time": "not_implemented",
+      "SchedulerCreateTaskResponse.task": "not_implemented",
+      "SchedulerCancelTaskRequest.context": "not_implemented",
+      "SchedulerCancelTaskRequest.task_id": "not_implemented",
+      "SchedulerCancelTaskRequest.scope": "not_implemented",
+      "SchedulerCancelTaskResponse.task": "not_implemented",
+      "SchedulerGetTaskRequest.context": "not_implemented",
+      "SchedulerGetTaskRequest.task_id": "not_implemented",
+      "SchedulerGetTaskRequest.scope": "not_implemented",
+      "SchedulerGetTaskResponse.task": "not_implemented",
+      "SchedulerListTasksRequest.context": "not_implemented",
+      "SchedulerListTasksRequest.scope": "not_implemented",
+      "SchedulerListTasksRequest.page": "not_implemented",
+      "SchedulerListTasksResponse.tasks": "not_implemented",
+      "SchedulerListTasksResponse.page": "not_implemented",
+      "SchedulerGetOccurrenceRequest.context": "not_implemented",
+      "SchedulerGetOccurrenceRequest.occurrence_id": "not_implemented",
+      "SchedulerGetOccurrenceRequest.scope": "not_implemented",
+      "SchedulerGetOccurrenceResponse.occurrence": "not_implemented",
+      "SchedulerGetOperationRequest.context": "not_implemented",
+      "SchedulerGetOperationRequest.operation": "not_implemented",
+      "SchedulerGetOperationResponse.operation": "not_implemented",
+      "RuntimeGetActionPolicyRequest.context": "not_implemented",
+      "RuntimeGetActionPolicyRequest.account_id": "not_implemented",
+      "RuntimeGetActionPolicyResponse.policy": "not_implemented",
+      "RuntimeUpdateActionPolicyRequest.context": "not_implemented",
+      "RuntimeUpdateActionPolicyRequest.policy": "not_implemented",
+      "RuntimeUpdateActionPolicyRequest.expected_version": "not_implemented",
+      "RuntimeUpdateActionPolicyResponse.policy": "not_implemented"
     },
     "event_payloads": {
       "EventEnvelope.message_received": "implemented",
@@ -559,7 +1290,43 @@
       "DeliveryDisposition.DELIVERY_DUPLICATE": "not_implemented",
       "DeliveryDisposition.DELIVERY_STALE": "not_implemented",
       "DeliveryDisposition.DELIVERY_RENEWED": "not_implemented",
-      "DeliveryDisposition.DELIVERY_REJECTED": "not_implemented"
+      "DeliveryDisposition.DELIVERY_REJECTED": "not_implemented",
+      "Permission.PERMISSION_UNSPECIFIED": "not_implemented",
+      "Permission.PERMISSION_ACCOUNT_MANAGE": "not_implemented",
+      "Permission.PERMISSION_ACTION_EXECUTE": "not_implemented",
+      "Permission.PERMISSION_ACTION_INSPECT": "not_implemented",
+      "Permission.PERMISSION_ADAPTER_CONNECT": "not_implemented",
+      "Permission.PERMISSION_DELIVERY_MANAGE": "not_implemented",
+      "Permission.PERMISSION_DELIVERY_PROCESS": "not_implemented",
+      "Permission.PERMISSION_HOST_EXECUTE": "not_implemented",
+      "Permission.PERMISSION_HOST_READ": "not_implemented",
+      "Permission.PERMISSION_HOST_REGISTER": "not_implemented",
+      "Permission.PERMISSION_IDENTITY_ASSIGNMENT_MANAGE": "not_implemented",
+      "Permission.PERMISSION_IDENTITY_ASSIGNMENT_READ": "not_implemented",
+      "Permission.PERMISSION_IDENTITY_AUTHORIZATION_CHECK": "not_implemented",
+      "Permission.PERMISSION_IDENTITY_DELEGATION_ISSUE": "not_implemented",
+      "Permission.PERMISSION_IDENTITY_INVALIDATION_READ": "not_implemented",
+      "Permission.PERMISSION_IDENTITY_KEYS_READ": "not_implemented",
+      "Permission.PERMISSION_IDENTITY_PRINCIPAL_MANAGE": "not_implemented",
+      "Permission.PERMISSION_IDENTITY_PRINCIPAL_READ": "not_implemented",
+      "Permission.PERMISSION_IDENTITY_SESSION_CREATE": "not_implemented",
+      "Permission.PERMISSION_IDENTITY_SESSION_READ": "not_implemented",
+      "Permission.PERMISSION_IDENTITY_SESSION_REVOKE": "not_implemented",
+      "Permission.PERMISSION_MODEL_CALL_INSPECT": "not_implemented",
+      "Permission.PERMISSION_MODEL_CHAT": "not_implemented",
+      "Permission.PERMISSION_MODEL_MANAGE": "not_implemented",
+      "Permission.PERMISSION_MODEL_READ": "not_implemented",
+      "Permission.PERMISSION_NAMESPACE_MANAGE": "not_implemented",
+      "Permission.PERMISSION_PLUGIN_CONNECT": "not_implemented",
+      "Permission.PERMISSION_PLUGIN_MANAGE": "not_implemented",
+      "Permission.PERMISSION_RESOURCE_MANAGE": "not_implemented",
+      "Permission.PERMISSION_RESOURCE_READ": "not_implemented",
+      "Permission.PERMISSION_STORAGE_NAMESPACE": "not_implemented",
+      "Permission.PERMISSION_TASK_READ": "not_implemented",
+      "Permission.PERMISSION_TASK_SCHEDULE": "not_implemented",
+      "Permission.PERMISSION_TIMER_ACCEPT": "not_implemented",
+      "Permission.PERMISSION_ACCOUNT_POLICY_MANAGE": "not_implemented",
+      "Permission.PERMISSION_ACCOUNT_POLICY_READ": "not_implemented"
     },
     "channels": {
       "channels.control": "implemented",
@@ -1256,6 +2023,1743 @@
       "reports/modules/architecture-contracts.md"
     ],
     "DeliveryDisposition.DELIVERY_REJECTED": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "HostPackage.plugin_type_id": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "HostPackage.package_sha256": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "HostPackage.launch_profile": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "HostPackage.allowed_argument_names": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "HostRecord.host_id": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "HostRecord.version": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "HostRecord.packages": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "HostRecord.capabilities": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "HostRecord.observed_at": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ProcessSpec.instance_id": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ProcessSpec.installation_id": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ProcessSpec.execution_generation": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ProcessSpec.desired_version": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ProcessSpec.desired_state": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ProcessSpec.package_sha256": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ProcessSpec.launch_profile": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ProcessSpec.arguments": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ProcessSpec.environment_names": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ExecutionRecord.host_id": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ExecutionRecord.instance_id": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ExecutionRecord.execution_generation": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ExecutionRecord.desired_version": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ExecutionRecord.outcome": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ExecutionRecord.process_marker": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ExecutionRecord.observed_at": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ExecutionRecord.reason": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "HostCommandReceipt.command_id": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "HostCommandReceipt.persisted": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "HostCommandReceipt.execution": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "HostCommandReceipt.operation": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "HostRegisterHostRequest.context": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "HostRegisterHostRequest.host": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "HostRegisterHostResponse.host": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "HostReportInventoryRequest.context": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "HostReportInventoryRequest.host_id": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "HostReportInventoryRequest.packages": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "HostReportInventoryRequest.expected_version": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "HostReportInventoryResponse.host": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "HostApplyDesiredProcessRequest.context": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "HostApplyDesiredProcessRequest.handoff": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "HostApplyDesiredProcessRequest.command_id": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "HostApplyDesiredProcessRequest.process": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "HostApplyDesiredProcessResponse.receipt": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "HostStopExecutionRequest.context": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "HostStopExecutionRequest.handoff": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "HostStopExecutionRequest.command_id": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "HostStopExecutionRequest.host_id": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "HostStopExecutionRequest.instance_id": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "HostStopExecutionRequest.execution_generation": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "HostStopExecutionRequest.grace_ms": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "HostStopExecutionResponse.receipt": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "HostDrainHostRequest.context": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "HostDrainHostRequest.handoff": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "HostDrainHostRequest.command_id": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "HostDrainHostRequest.host_id": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "HostDrainHostRequest.grace_ms": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "HostDrainHostResponse.receipt": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "HostGetExecutionRequest.context": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "HostGetExecutionRequest.host_id": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "HostGetExecutionRequest.instance_id": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "HostGetExecutionRequest.execution_generation": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "HostGetExecutionResponse.execution": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "HostWatchExecutionsRequest.context": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "HostWatchExecutionsRequest.host_id": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "HostWatchExecutionsRequest.scope": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "HostWatchExecutionsRequest.cursor": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "HostWatchExecutionsResponse.execution": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "HostWatchExecutionsResponse.cursor": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "HostWatchExecutionsResponse.resync_required": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "HostToRuntime.context": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "HostToRuntime.registration": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "HostToRuntime.inventory": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "HostToRuntime.receipt": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "HostToRuntime.observation": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeToHost.apply": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeToHost.stop": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeToHost.drain": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeToHost.registered": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeToHost.failure": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "PrincipalRecord.principal_id": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "PrincipalRecord.binding": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "PrincipalRecord.principal_kind": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "PrincipalRecord.version": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "PrincipalRecord.state": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "PrincipalRecord.roles": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "PrincipalRecord.scope": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "SessionRecord.session_id": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "SessionRecord.principal_id": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "SessionRecord.rotation": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "SessionRecord.expires_at": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "SessionRecord.revoked": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "TokenPair.session_id": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "TokenPair.access_token": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "TokenPair.refresh_token": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "TokenPair.access_expires_at": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "TokenPair.refresh_expires_at": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "TokenPair.rotation": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "CredentialDelivery.credential_id": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "CredentialDelivery.version": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "CredentialDelivery.new_secret": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "CredentialDelivery.delivery_receipt_id": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "CredentialDelivery.expires_at": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "AssignmentRecord.assignment_id": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "AssignmentRecord.principal_id": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "AssignmentRecord.role": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "AssignmentRecord.permissions": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "AssignmentRecord.scope": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "AssignmentRecord.version": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "DelegationProof.proof": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "DelegationProof.audience": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "DelegationProof.expires_at": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "DelegationProof.business_hops": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "AuthorizationDecision.allowed": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "AuthorizationDecision.authorization_version": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "AuthorizationDecision.checked_at": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "AuthorizationDecision.denial": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "InvalidationRecord.cursor": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "InvalidationRecord.principal_id": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "InvalidationRecord.authorization_version": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "InvalidationRecord.scope": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "InvalidationRecord.resync_required": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "AuthorizationSnapshot.cursor": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "AuthorizationSnapshot.assignments": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "AuthorizationSnapshot.authorization_version": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "VerificationKey.key_id": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "VerificationKey.ed25519_public_key": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "VerificationKey.version": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "VerificationKey.valid_until": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "IdentityLoginRequest.context": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "IdentityLoginRequest.username": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "IdentityLoginRequest.password": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "IdentityLoginResponse.tokens": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "IdentityRefreshSessionRequest.context": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "IdentityRefreshSessionRequest.refresh_token": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "IdentityRefreshSessionResponse.tokens": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "IdentityValidateSessionRequest.context": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "IdentityValidateSessionRequest.access_token": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "IdentityValidateSessionResponse.principal": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "IdentityValidateSessionResponse.session": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "IdentityGetPrincipalRequest.context": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "IdentityGetPrincipalRequest.access_token": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "IdentityGetPrincipalResponse.principal": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "IdentityListSessionsRequest.context": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "IdentityListSessionsRequest.principal_id": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "IdentityListSessionsRequest.page": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "IdentityListSessionsResponse.sessions": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "IdentityListSessionsResponse.page": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "IdentityRevokeSessionRequest.context": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "IdentityRevokeSessionRequest.session_id": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "IdentityRevokeSessionResponse.session": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "IdentityRegisterPrincipalRequest.context": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "IdentityRegisterPrincipalRequest.principal_kind": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "IdentityRegisterPrincipalRequest.binding": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "IdentityRegisterPrincipalRequest.allowed_services": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "IdentityRegisterPrincipalResponse.principal": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "IdentityRotateCredentialRequest.context": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "IdentityRotateCredentialRequest.credential_id": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "IdentityRotateCredentialRequest.expected_version": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "IdentityRotateCredentialResponse.delivery": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "IdentityRevokeCredentialRequest.context": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "IdentityRevokeCredentialRequest.credential_id": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "IdentityRevokeCredentialRequest.expected_version": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "IdentityRevokeCredentialResponse.version": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "IdentityGetPrincipalStatusRequest.context": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "IdentityGetPrincipalStatusRequest.principal_id": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "IdentityGetPrincipalStatusResponse.principal": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "IdentityIssueDelegationRequest.context": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "IdentityIssueDelegationRequest.subject_proof": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "IdentityIssueDelegationRequest.audience": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "IdentityIssueDelegationRequest.scope": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "IdentityIssueDelegationRequest.permissions": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "IdentityIssueDelegationRequest.client_certificate_sha256": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "IdentityIssueDelegationResponse.delegation": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "IdentityExchangeDelegationRequest.context": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "IdentityExchangeDelegationRequest.parent_proof": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "IdentityExchangeDelegationRequest.audience": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "IdentityExchangeDelegationRequest.scope": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "IdentityExchangeDelegationRequest.permissions": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "IdentityExchangeDelegationRequest.client_certificate_sha256": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "IdentityExchangeDelegationResponse.delegation": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "IdentityCheckAuthorizationRequest.context": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "IdentityCheckAuthorizationRequest.subject_proof": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "IdentityCheckAuthorizationRequest.full_method": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "IdentityCheckAuthorizationRequest.scope": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "IdentityCheckAuthorizationRequest.known_authorization_version": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "IdentityCheckAuthorizationResponse.decision": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "IdentityListAssignmentsRequest.context": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "IdentityListAssignmentsRequest.principal_id": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "IdentityListAssignmentsRequest.scope": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "IdentityListAssignmentsRequest.page": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "IdentityListAssignmentsResponse.assignments": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "IdentityListAssignmentsResponse.page": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "IdentitySetAssignmentRequest.context": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "IdentitySetAssignmentRequest.assignment": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "IdentitySetAssignmentRequest.expected_version": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "IdentitySetAssignmentResponse.assignment": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "IdentityRevokeAssignmentRequest.context": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "IdentityRevokeAssignmentRequest.assignment_id": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "IdentityRevokeAssignmentRequest.expected_version": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "IdentityRevokeAssignmentResponse.version": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "IdentityWatchInvalidationsRequest.context": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "IdentityWatchInvalidationsRequest.scope": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "IdentityWatchInvalidationsRequest.cursor": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "IdentityWatchInvalidationsResponse.invalidation": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "IdentityGetAuthorizationSnapshotRequest.context": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "IdentityGetAuthorizationSnapshotRequest.scope": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "IdentityGetAuthorizationSnapshotRequest.after": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "IdentityGetAuthorizationSnapshotResponse.snapshot": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "IdentityGetVerificationKeysRequest.context": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "IdentityGetVerificationKeysRequest.known_key_version": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "IdentityGetVerificationKeysResponse.keys": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "IdentityGetVerificationKeysResponse.version": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ModelMetadata.model_id": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ModelMetadata.alias": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ModelMetadata.config_version": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ModelMetadata.state": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ModelMetadata.provider_kind": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ModelConfiguration.model_id": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ModelConfiguration.alias": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ModelConfiguration.provider_kind": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ModelConfiguration.endpoint": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ModelConfiguration.provider_model": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ModelConfiguration.timeout_ms": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ModelConfiguration.version": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ModelCallRecord.logical_call_id": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ModelCallRecord.owner_instance_id": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ModelCallRecord.model_id": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ModelCallRecord.config_version": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ModelCallRecord.state": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ModelCallRecord.execution_outcome": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ModelCallRecord.input_tokens": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ModelCallRecord.output_tokens": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ModelCallRecord.observed_at": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ModelCallRecord.reason": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ModelGetModelMetadataRequest.context": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ModelGetModelMetadataRequest.model_id": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ModelGetModelMetadataRequest.scope": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ModelGetModelMetadataResponse.model": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ModelListModelMetadataRequest.context": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ModelListModelMetadataRequest.scope": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ModelListModelMetadataRequest.page": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ModelListModelMetadataResponse.models": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ModelListModelMetadataResponse.page": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ModelUpdateModelRequest.context": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ModelUpdateModelRequest.config": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ModelUpdateModelRequest.expected_version": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ModelUpdateModelResponse.model": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ModelUpdateModelResponse.operation": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ModelRotateProviderSecretRequest.context": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ModelRotateProviderSecretRequest.model_id": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ModelRotateProviderSecretRequest.new_secret": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ModelRotateProviderSecretRequest.expected_version": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ModelRotateProviderSecretResponse.version": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ModelRotateProviderSecretResponse.operation": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ModelGatewayChatRequest.context": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ModelGatewayChatRequest.logical_call_id": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ModelGatewayChatRequest.model_id": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ModelGatewayChatRequest.messages": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ModelGatewayChatResponse.result": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ModelGatewayChatResponse.call": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ModelGetCallStatusRequest.context": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ModelGetCallStatusRequest.logical_call_id": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ModelGetCallStatusRequest.scope": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ModelGetCallStatusResponse.call": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "AccountRecord.account_id": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "AccountRecord.platform": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "AccountRecord.platform_account_id": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "AccountRecord.display_name": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "AccountRecord.version": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "AccountRecord.state": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "AdapterBinding.account_id": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "AdapterBinding.adapter_instance_id": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "AdapterBinding.version": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "InstallationRecord.installation_id": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "InstallationRecord.plugin_type_id": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "InstallationRecord.manifest": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "InstallationRecord.version": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "InstallationRecord.state": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "InstanceRecord.instance_id": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "InstanceRecord.installation_id": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "InstanceRecord.host_id": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "InstanceRecord.externally_managed": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "InstanceRecord.state": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "NamespaceScope.instance_private": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "NamespaceScope.installation_shared_id": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "StorageEntry.key": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "StorageEntry.value": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "StorageEntry.version": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "StorageEntry.expires_at": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "StorageCondition.absent": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "StorageCondition.version": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "SharedMember.instance_id": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "SharedMember.can_read": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "SharedMember.can_write": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ActionMetadata.action_id": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ActionMetadata.owner_instance_id": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ActionMetadata.account_id": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ActionMetadata.status": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ActionMetadata.execution_outcome": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ActionMetadata.updated_at": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "DeadLetter.delivery_id": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "DeadLetter.last_attempt": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "DeadLetter.reason": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "TimerAcceptance.occurrence_id": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "TimerAcceptance.event_id": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "TimerAcceptance.duplicate": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "TimerAcceptance.persisted_at": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ActionPolicy.account_id": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ActionPolicy.mute_enabled": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ActionPolicy.kick_enabled": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ActionPolicy.allowed_group_ids": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ActionPolicy.mute_daily_budget": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ActionPolicy.kick_daily_budget": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ActionPolicy.version": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeCreateAccountRequest.context": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeCreateAccountRequest.platform": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeCreateAccountRequest.platform_account_id": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeCreateAccountRequest.display_name": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeCreateAccountResponse.account": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeUpdateAccountRequest.context": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeUpdateAccountRequest.account_id": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeUpdateAccountRequest.display_name": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeUpdateAccountRequest.expected_version": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeUpdateAccountResponse.account": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeDisableAccountRequest.context": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeDisableAccountRequest.account_id": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeDisableAccountRequest.expected_version": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeDisableAccountResponse.account": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeDisableAccountResponse.operation": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeBindAdapterRequest.context": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeBindAdapterRequest.binding": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeBindAdapterRequest.expected_version": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeBindAdapterResponse.binding": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeBindAdapterResponse.operation": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeUnbindAdapterRequest.context": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeUnbindAdapterRequest.binding": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeUnbindAdapterRequest.expected_version": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeUnbindAdapterResponse.binding": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeUnbindAdapterResponse.operation": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeRegisterAdapterRequest.context": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeRegisterAdapterRequest.registration": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeRegisterAdapterResponse.registration": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeHeartbeatRequest.context": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeHeartbeatRequest.fence": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeHeartbeatResponse.fence": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeHeartbeatResponse.received_at": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimePublishEventRequest.context": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimePublishEventRequest.fence": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimePublishEventRequest.event": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimePublishEventResponse.receipt": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeValidateManifestRequest.context": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeValidateManifestRequest.manifest": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeValidateManifestResponse.valid": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeValidateManifestResponse.violations": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeCreateInstallationRequest.context": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeCreateInstallationRequest.plugin_type_id": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeCreateInstallationRequest.manifest": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeCreateInstallationResponse.installation": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeCreateInstanceRequest.context": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeCreateInstanceRequest.installation_id": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeCreateInstanceRequest.host_id": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeCreateInstanceRequest.externally_managed": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeCreateInstanceResponse.instance": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeSetDesiredStateRequest.context": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeSetDesiredStateRequest.instance_id": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeSetDesiredStateRequest.desired_state": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeSetDesiredStateRequest.expected_version": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeSetDesiredStateResponse.instance": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeSetDesiredStateResponse.operation": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeUpdateConfigRequest.context": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeUpdateConfigRequest.resource": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeUpdateConfigRequest.config": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeUpdateConfigRequest.expected_version": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeUpdateConfigResponse.state": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeUpdateConfigResponse.operation": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeRegisterPluginRequest.context": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeRegisterPluginRequest.registration": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeRegisterPluginResponse.registration": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeHeartbeatPluginRequest.context": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeHeartbeatPluginRequest.fence": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeHeartbeatPluginResponse.fence": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeHeartbeatPluginResponse.received_at": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeClaimEventRequest.context": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeClaimEventRequest.fence": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeClaimEventResponse.attempt": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeDeliverEventRequest.context": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeDeliverEventRequest.attempt": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeDeliverEventResponse.attempt": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeDeliverEventResponse.event": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeAckDeliveryRequest.context": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeAckDeliveryRequest.attempt": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeAckDeliveryRequest.accepted": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeAckDeliveryRequest.error": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeAckDeliveryResponse.receipt": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeRenewDeliveryRequest.context": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeRenewDeliveryRequest.attempt": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeRenewDeliveryResponse.receipt": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeSubmitActionRequest.context": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeSubmitActionRequest.fence": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeSubmitActionRequest.action": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeSubmitActionResponse.result": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeSubmitActionResponse.execution_outcome": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeQueryActionRequest.context": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeQueryActionRequest.fence": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeQueryActionRequest.action_id": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeQueryActionRequest.idempotency_key": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeQueryActionResponse.result": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeQueryActionResponse.execution_outcome": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeCancelActionRequest.context": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeCancelActionRequest.fence": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeCancelActionRequest.action_id": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeCancelActionResponse.result": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeCancelActionResponse.execution_outcome": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeListActionMetadataRequest.context": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeListActionMetadataRequest.account_scope": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeListActionMetadataRequest.page": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeListActionMetadataResponse.actions": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeListActionMetadataResponse.page": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeInspectActionMetadataRequest.context": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeInspectActionMetadataRequest.account_scope": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeInspectActionMetadataRequest.action_id": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeInspectActionMetadataResponse.action": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeGetStorageRequest.context": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeGetStorageRequest.fence": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeGetStorageRequest.scope": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeGetStorageRequest.key": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeGetStorageResponse.entry": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeSetStorageRequest.context": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeSetStorageRequest.fence": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeSetStorageRequest.scope": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeSetStorageRequest.key": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeSetStorageRequest.value": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeSetStorageRequest.expires_at": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeSetStorageResponse.entry": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeDeleteStorageRequest.context": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeDeleteStorageRequest.fence": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeDeleteStorageRequest.scope": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeDeleteStorageRequest.key": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeDeleteStorageRequest.condition": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeDeleteStorageResponse.deleted": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeDeleteStorageResponse.version": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeCompareAndSetStorageRequest.context": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeCompareAndSetStorageRequest.fence": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeCompareAndSetStorageRequest.scope": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeCompareAndSetStorageRequest.key": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeCompareAndSetStorageRequest.value": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeCompareAndSetStorageRequest.condition": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeCompareAndSetStorageRequest.expires_at": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeCompareAndSetStorageResponse.entry": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeSetSharedMembersRequest.context": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeSetSharedMembersRequest.namespace_id": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeSetSharedMembersRequest.installation_id": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeSetSharedMembersRequest.members": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeSetSharedMembersRequest.expected_version": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeSetSharedMembersResponse.version": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeSetSharedMembersResponse.operation": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeDisableSharedNamespaceRequest.context": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeDisableSharedNamespaceRequest.namespace_id": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeDisableSharedNamespaceRequest.expected_version": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeDisableSharedNamespaceResponse.version": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeDisableSharedNamespaceResponse.operation": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeAcceptTimerTriggerRequest.context": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeAcceptTimerTriggerRequest.handoff": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeAcceptTimerTriggerRequest.occurrence_id": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeAcceptTimerTriggerRequest.task_id": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeAcceptTimerTriggerRequest.owner_instance_id": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeAcceptTimerTriggerRequest.schedule_version": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeAcceptTimerTriggerRequest.target": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeAcceptTimerTriggerRequest.payload": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeAcceptTimerTriggerResponse.receipt": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeGetResourceStateRequest.context": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeGetResourceStateRequest.resource": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeGetResourceStateResponse.state": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeGetOperationRequest.context": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeGetOperationRequest.operation": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeGetOperationResponse.operation": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeListDeadLettersRequest.context": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeListDeadLettersRequest.scope": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeListDeadLettersRequest.page": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeListDeadLettersResponse.deliveries": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeListDeadLettersResponse.page": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeReplayDeliveryRequest.context": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeReplayDeliveryRequest.delivery_id": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeReplayDeliveryRequest.target_instance_id": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeReplayDeliveryRequest.expected_version": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeReplayDeliveryResponse.operation": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeBeginDeleteRequest.context": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeBeginDeleteRequest.resource": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeBeginDeleteRequest.expected_version": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeBeginDeleteResponse.operation": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeRestoreResourceRequest.context": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeRestoreResourceRequest.resource": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeRestoreResourceRequest.expected_version": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeRestoreResourceResponse.operation": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "TaskRecord.task_id": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "TaskRecord.owner_instance_id": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "TaskRecord.installation_id": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "TaskRecord.target": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "TaskRecord.payload": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "TaskRecord.run_at": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "TaskRecord.state": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "TaskRecord.version": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "TaskRecord.occurrence_id": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "OccurrenceRecord.occurrence_id": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "OccurrenceRecord.task_id": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "OccurrenceRecord.state": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "OccurrenceRecord.handoff": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "OccurrenceRecord.accepted_event_id": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "OccurrenceRecord.acknowledged_at": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "SchedulerCreateTaskRequest.context": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "SchedulerCreateTaskRequest.task_id": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "SchedulerCreateTaskRequest.target": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "SchedulerCreateTaskRequest.payload": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "SchedulerCreateTaskRequest.run_at": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "SchedulerCreateTaskRequest.local_time": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "SchedulerCreateTaskResponse.task": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "SchedulerCancelTaskRequest.context": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "SchedulerCancelTaskRequest.task_id": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "SchedulerCancelTaskRequest.scope": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "SchedulerCancelTaskResponse.task": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "SchedulerGetTaskRequest.context": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "SchedulerGetTaskRequest.task_id": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "SchedulerGetTaskRequest.scope": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "SchedulerGetTaskResponse.task": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "SchedulerListTasksRequest.context": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "SchedulerListTasksRequest.scope": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "SchedulerListTasksRequest.page": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "SchedulerListTasksResponse.tasks": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "SchedulerListTasksResponse.page": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "SchedulerGetOccurrenceRequest.context": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "SchedulerGetOccurrenceRequest.occurrence_id": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "SchedulerGetOccurrenceRequest.scope": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "SchedulerGetOccurrenceResponse.occurrence": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "SchedulerGetOperationRequest.context": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "SchedulerGetOperationRequest.operation": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "SchedulerGetOperationResponse.operation": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "Permission.PERMISSION_UNSPECIFIED": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "Permission.PERMISSION_ACCOUNT_MANAGE": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "Permission.PERMISSION_ACTION_EXECUTE": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "Permission.PERMISSION_ACTION_INSPECT": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "Permission.PERMISSION_ADAPTER_CONNECT": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "Permission.PERMISSION_DELIVERY_MANAGE": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "Permission.PERMISSION_DELIVERY_PROCESS": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "Permission.PERMISSION_HOST_EXECUTE": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "Permission.PERMISSION_HOST_READ": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "Permission.PERMISSION_HOST_REGISTER": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "Permission.PERMISSION_IDENTITY_ASSIGNMENT_MANAGE": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "Permission.PERMISSION_IDENTITY_ASSIGNMENT_READ": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "Permission.PERMISSION_IDENTITY_AUTHORIZATION_CHECK": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "Permission.PERMISSION_IDENTITY_DELEGATION_ISSUE": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "Permission.PERMISSION_IDENTITY_INVALIDATION_READ": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "Permission.PERMISSION_IDENTITY_KEYS_READ": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "Permission.PERMISSION_IDENTITY_PRINCIPAL_MANAGE": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "Permission.PERMISSION_IDENTITY_PRINCIPAL_READ": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "Permission.PERMISSION_IDENTITY_SESSION_CREATE": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "Permission.PERMISSION_IDENTITY_SESSION_READ": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "Permission.PERMISSION_IDENTITY_SESSION_REVOKE": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "Permission.PERMISSION_MODEL_CALL_INSPECT": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "Permission.PERMISSION_MODEL_CHAT": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "Permission.PERMISSION_MODEL_MANAGE": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "Permission.PERMISSION_MODEL_READ": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "Permission.PERMISSION_NAMESPACE_MANAGE": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "Permission.PERMISSION_PLUGIN_CONNECT": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "Permission.PERMISSION_PLUGIN_MANAGE": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "Permission.PERMISSION_RESOURCE_MANAGE": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "Permission.PERMISSION_RESOURCE_READ": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "Permission.PERMISSION_STORAGE_NAMESPACE": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "Permission.PERMISSION_TASK_READ": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "Permission.PERMISSION_TASK_SCHEDULE": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "Permission.PERMISSION_TIMER_ACCEPT": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeGetActionPolicyRequest.context": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeGetActionPolicyRequest.account_id": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeGetActionPolicyResponse.policy": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeUpdateActionPolicyRequest.context": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeUpdateActionPolicyRequest.policy": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeUpdateActionPolicyRequest.expected_version": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeUpdateActionPolicyResponse.policy": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "Permission.PERMISSION_ACCOUNT_POLICY_MANAGE": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "Permission.PERMISSION_ACCOUNT_POLICY_READ": [
       "reports/modules/architecture-contracts.md"
     ]
   },

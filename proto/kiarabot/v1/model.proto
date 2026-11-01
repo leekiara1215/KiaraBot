@@ -1,0 +1,165 @@
+syntax = "proto3";
+package kiarabot.v1;
+import "google/protobuf/timestamp.proto";
+import "kiarabot/v1/common.proto";
+import "kiarabot/v1/platform.proto";
+import "kiarabot/v1/policy.proto";
+import "kiarabot/v1/plugins.proto";
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message ModelMetadata {
+  string model_id = 1;
+  string alias = 2;
+  uint64 config_version = 3;
+  LifecycleState state = 4;
+  string provider_kind = 5;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message ModelConfiguration {
+  string model_id = 1;
+  string alias = 2;
+  string provider_kind = 3;
+  string endpoint = 4;
+  string provider_model = 5;
+  uint32 timeout_ms = 6;
+  uint64 version = 7;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message ModelCallRecord {
+  string logical_call_id = 1;
+  string owner_instance_id = 2;
+  string model_id = 3;
+  uint64 config_version = 4;
+  OperationState state = 5;
+  ExecutionOutcome execution_outcome = 6;
+  uint64 input_tokens = 7;
+  uint64 output_tokens = 8;
+  google.protobuf.Timestamp observed_at = 9;
+  Error reason = 10;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message ModelGetModelMetadataRequest {
+  RequestContext context = 1;
+  string model_id = 2;
+  ResourceScope scope = 3;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message ModelGetModelMetadataResponse {
+  ModelMetadata model = 1;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message ModelListModelMetadataRequest {
+  RequestContext context = 1;
+  ResourceScope scope = 2;
+  SnapshotPage page = 3;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message ModelListModelMetadataResponse {
+  repeated ModelMetadata models = 1;
+  SnapshotPage page = 2;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message ModelUpdateModelRequest {
+  RequestContext context = 1;
+  ModelConfiguration config = 2;
+  optional uint64 expected_version = 3;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message ModelUpdateModelResponse {
+  ModelMetadata model = 1;
+  OperationRef operation = 2;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message ModelRotateProviderSecretRequest {
+  RequestContext context = 1;
+  string model_id = 2;
+  bytes new_secret = 3;
+  optional uint64 expected_version = 4;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message ModelRotateProviderSecretResponse {
+  uint64 version = 1;
+  OperationRef operation = 2;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message ModelGatewayChatRequest {
+  RequestContext context = 1;
+  string logical_call_id = 2;
+  string model_id = 3;
+  repeated ModelMessage messages = 4;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message ModelGatewayChatResponse {
+  ModelChatResponse result = 1;
+  ModelCallRecord call = 2;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message ModelGetCallStatusRequest {
+  RequestContext context = 1;
+  string logical_call_id = 2;
+  ResourceScope scope = 3;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message ModelGetCallStatusResponse {
+  ModelCallRecord call = 1;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+service ModelService {
+  rpc GetModelMetadata(ModelGetModelMetadataRequest) returns (ModelGetModelMetadataResponse) {
+    option (required_permission) = PERMISSION_MODEL_READ;
+    option (requires_idempotency) = false;
+    option (default_deadline_ms) = 2000;
+    option (max_deadline_ms) = 5000;
+    option (requires_online_authorization) = true;
+  }
+  rpc ListModelMetadata(ModelListModelMetadataRequest) returns (ModelListModelMetadataResponse) {
+    option (required_permission) = PERMISSION_MODEL_READ;
+    option (requires_idempotency) = false;
+    option (default_deadline_ms) = 2000;
+    option (max_deadline_ms) = 5000;
+    option (requires_online_authorization) = true;
+  }
+  rpc UpdateModel(ModelUpdateModelRequest) returns (ModelUpdateModelResponse) {
+    option (required_permission) = PERMISSION_MODEL_MANAGE;
+    option (requires_idempotency) = true;
+    option (default_deadline_ms) = 5000;
+    option (max_deadline_ms) = 30000;
+    option (requires_online_authorization) = true;
+  }
+  rpc RotateProviderSecret(ModelRotateProviderSecretRequest) returns (ModelRotateProviderSecretResponse) {
+    option (required_permission) = PERMISSION_MODEL_MANAGE;
+    option (requires_idempotency) = true;
+    option (default_deadline_ms) = 5000;
+    option (max_deadline_ms) = 30000;
+    option (requires_online_authorization) = true;
+  }
+  rpc Chat(ModelGatewayChatRequest) returns (ModelGatewayChatResponse) {
+    option (required_permission) = PERMISSION_MODEL_CHAT;
+    option (requires_idempotency) = false;
+    option (default_deadline_ms) = 30000;
+    option (max_deadline_ms) = 30000;
+    option (requires_online_authorization) = true;
+  }
+  rpc GetCallStatus(ModelGetCallStatusRequest) returns (ModelGetCallStatusResponse) {
+    option (required_permission) = PERMISSION_MODEL_CALL_INSPECT;
+    option (requires_idempotency) = false;
+    option (default_deadline_ms) = 2000;
+    option (max_deadline_ms) = 5000;
+    option (requires_online_authorization) = true;
+  }
+}

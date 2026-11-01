@@ -1,0 +1,220 @@
+syntax = "proto3";
+package kiarabot.v1;
+import "google/protobuf/timestamp.proto";
+import "kiarabot/v1/common.proto";
+import "kiarabot/v1/platform.proto";
+import "kiarabot/v1/policy.proto";
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message HostPackage {
+  string plugin_type_id = 1;
+  bytes package_sha256 = 2;
+  string launch_profile = 3;
+  repeated string allowed_argument_names = 4;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message HostRecord {
+  string host_id = 1;
+  uint64 version = 2;
+  repeated HostPackage packages = 3;
+  repeated string capabilities = 4;
+  google.protobuf.Timestamp observed_at = 5;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message ProcessSpec {
+  string instance_id = 1;
+  string installation_id = 2;
+  uint64 execution_generation = 3;
+  uint64 desired_version = 4;
+  DesiredState desired_state = 5;
+  bytes package_sha256 = 6;
+  string launch_profile = 7;
+  repeated string arguments = 8;
+  repeated string environment_names = 9;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message ExecutionRecord {
+  string host_id = 1;
+  string instance_id = 2;
+  uint64 execution_generation = 3;
+  uint64 desired_version = 4;
+  ExecutionOutcome outcome = 5;
+  string process_marker = 6;
+  google.protobuf.Timestamp observed_at = 7;
+  Error reason = 8;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message HostCommandReceipt {
+  string command_id = 1;
+  bool persisted = 2;
+  ExecutionRecord execution = 3;
+  OperationRef operation = 4;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message HostRegisterHostRequest {
+  RequestContext context = 1;
+  HostRecord host = 2;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message HostRegisterHostResponse {
+  HostRecord host = 1;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message HostReportInventoryRequest {
+  RequestContext context = 1;
+  string host_id = 2;
+  repeated HostPackage packages = 3;
+  optional uint64 expected_version = 4;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message HostReportInventoryResponse {
+  HostRecord host = 1;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message HostApplyDesiredProcessRequest {
+  RequestContext context = 1;
+  HandoffContext handoff = 2;
+  string command_id = 3;
+  ProcessSpec process = 4;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message HostApplyDesiredProcessResponse {
+  HostCommandReceipt receipt = 1;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message HostStopExecutionRequest {
+  RequestContext context = 1;
+  HandoffContext handoff = 2;
+  string command_id = 3;
+  string host_id = 4;
+  string instance_id = 5;
+  uint64 execution_generation = 6;
+  uint32 grace_ms = 7;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message HostStopExecutionResponse {
+  HostCommandReceipt receipt = 1;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message HostDrainHostRequest {
+  RequestContext context = 1;
+  HandoffContext handoff = 2;
+  string command_id = 3;
+  string host_id = 4;
+  uint32 grace_ms = 5;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message HostDrainHostResponse {
+  HostCommandReceipt receipt = 1;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message HostGetExecutionRequest {
+  RequestContext context = 1;
+  string host_id = 2;
+  string instance_id = 3;
+  uint64 execution_generation = 4;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message HostGetExecutionResponse {
+  ExecutionRecord execution = 1;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message HostWatchExecutionsRequest {
+  RequestContext context = 1;
+  string host_id = 2;
+  ResourceScope scope = 3;
+  StreamCursor cursor = 4;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message HostWatchExecutionsResponse {
+  ExecutionRecord execution = 1;
+  StreamCursor cursor = 2;
+  bool resync_required = 3;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+service HostService {
+  rpc RegisterHost(HostRegisterHostRequest) returns (HostRegisterHostResponse) {
+    option (required_permission) = PERMISSION_HOST_REGISTER;
+    option (requires_idempotency) = false;
+    option (default_deadline_ms) = 2000;
+    option (max_deadline_ms) = 5000;
+    option (requires_online_authorization) = true;
+  }
+  rpc ReportInventory(HostReportInventoryRequest) returns (HostReportInventoryResponse) {
+    option (required_permission) = PERMISSION_HOST_REGISTER;
+    option (requires_idempotency) = true;
+    option (default_deadline_ms) = 5000;
+    option (max_deadline_ms) = 30000;
+    option (requires_online_authorization) = true;
+  }
+  rpc ApplyDesiredProcess(HostApplyDesiredProcessRequest) returns (HostApplyDesiredProcessResponse) {
+    option (required_permission) = PERMISSION_HOST_EXECUTE;
+    option (requires_idempotency) = true;
+    option (default_deadline_ms) = 5000;
+    option (max_deadline_ms) = 30000;
+    option (requires_online_authorization) = true;
+  }
+  rpc StopExecution(HostStopExecutionRequest) returns (HostStopExecutionResponse) {
+    option (required_permission) = PERMISSION_HOST_EXECUTE;
+    option (requires_idempotency) = true;
+    option (default_deadline_ms) = 5000;
+    option (max_deadline_ms) = 30000;
+    option (requires_online_authorization) = true;
+  }
+  rpc DrainHost(HostDrainHostRequest) returns (HostDrainHostResponse) {
+    option (required_permission) = PERMISSION_HOST_EXECUTE;
+    option (requires_idempotency) = true;
+    option (default_deadline_ms) = 5000;
+    option (max_deadline_ms) = 30000;
+    option (requires_online_authorization) = true;
+  }
+  rpc GetExecution(HostGetExecutionRequest) returns (HostGetExecutionResponse) {
+    option (required_permission) = PERMISSION_HOST_READ;
+    option (requires_idempotency) = false;
+    option (default_deadline_ms) = 2000;
+    option (max_deadline_ms) = 5000;
+    option (requires_online_authorization) = true;
+  }
+  rpc WatchExecutions(HostWatchExecutionsRequest) returns (stream HostWatchExecutionsResponse) {
+    option (required_permission) = PERMISSION_HOST_READ;
+    option (requires_idempotency) = false;
+    option (default_deadline_ms) = 2000;
+    option (max_deadline_ms) = 5000;
+    option (requires_online_authorization) = true;
+  }
+}
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message HostToRuntime {
+  RequestContext context = 1;
+  oneof body { HostRegisterHostRequest registration = 10; HostReportInventoryRequest inventory = 11; HostCommandReceipt receipt = 12; HostWatchExecutionsResponse observation = 13; }
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message RuntimeToHost {
+
+  oneof body { HostApplyDesiredProcessRequest apply = 10; HostStopExecutionRequest stop = 11; HostDrainHostRequest drain = 12; HostRegisterHostResponse registered = 13; RpcFailure failure = 14; }
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+service HostBridge {
+  rpc Connect(stream HostToRuntime) returns (stream RuntimeToHost);
+}

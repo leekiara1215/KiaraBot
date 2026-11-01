@@ -1,0 +1,884 @@
+syntax = "proto3";
+package kiarabot.v1;
+import "google/protobuf/timestamp.proto";
+import "kiarabot/v1/common.proto";
+import "kiarabot/v1/platform.proto";
+import "kiarabot/v1/policy.proto";
+import "kiarabot/v1/plugins.proto";
+import "google/protobuf/struct.proto";
+import "kiarabot/v1/adapters.proto";
+import "kiarabot/v1/events.proto";
+import "kiarabot/v1/actions.proto";
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message AccountRecord {
+  string account_id = 1;
+  string platform = 2;
+  string platform_account_id = 3;
+  string display_name = 4;
+  uint64 version = 5;
+  LifecycleState state = 6;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message AdapterBinding {
+  string account_id = 1;
+  string adapter_instance_id = 2;
+  uint64 version = 3;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message InstallationRecord {
+  string installation_id = 1;
+  string plugin_type_id = 2;
+  PluginManifest manifest = 3;
+  uint64 version = 4;
+  LifecycleState state = 5;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message InstanceRecord {
+  string instance_id = 1;
+  string installation_id = 2;
+  string host_id = 3;
+  bool externally_managed = 4;
+  VersionedResourceState state = 5;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message NamespaceScope {
+
+  oneof scope { bool instance_private = 1; string installation_shared_id = 2; }
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message StorageEntry {
+  string key = 1;
+  bytes value = 2;
+  uint64 version = 3;
+  google.protobuf.Timestamp expires_at = 4;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message StorageCondition {
+
+  oneof expected { bool absent = 1; uint64 version = 2; }
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message SharedMember {
+  string instance_id = 1;
+  bool can_read = 2;
+  bool can_write = 3;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message ActionMetadata {
+  string action_id = 1;
+  string owner_instance_id = 2;
+  string account_id = 3;
+  ActionStatus status = 4;
+  ExecutionOutcome execution_outcome = 5;
+  google.protobuf.Timestamp updated_at = 6;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message DeadLetter {
+  string delivery_id = 1;
+  DeliveryAttempt last_attempt = 2;
+  Error reason = 3;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message TimerAcceptance {
+  string occurrence_id = 1;
+  string event_id = 2;
+  bool duplicate = 3;
+  google.protobuf.Timestamp persisted_at = 4;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message ActionPolicy {
+  string account_id = 1;
+  bool mute_enabled = 2;
+  bool kick_enabled = 3;
+  repeated string allowed_group_ids = 4;
+  uint32 mute_daily_budget = 5;
+  uint32 kick_daily_budget = 6;
+  uint64 version = 7;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message RuntimeCreateAccountRequest {
+  RequestContext context = 1;
+  string platform = 2;
+  string platform_account_id = 3;
+  string display_name = 4;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message RuntimeCreateAccountResponse {
+  AccountRecord account = 1;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message RuntimeUpdateAccountRequest {
+  RequestContext context = 1;
+  string account_id = 2;
+  string display_name = 3;
+  optional uint64 expected_version = 4;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message RuntimeUpdateAccountResponse {
+  AccountRecord account = 1;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message RuntimeDisableAccountRequest {
+  RequestContext context = 1;
+  string account_id = 2;
+  optional uint64 expected_version = 3;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message RuntimeDisableAccountResponse {
+  AccountRecord account = 1;
+  OperationRef operation = 2;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message RuntimeBindAdapterRequest {
+  RequestContext context = 1;
+  AdapterBinding binding = 2;
+  optional uint64 expected_version = 3;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message RuntimeBindAdapterResponse {
+  AdapterBinding binding = 1;
+  OperationRef operation = 2;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message RuntimeUnbindAdapterRequest {
+  RequestContext context = 1;
+  AdapterBinding binding = 2;
+  optional uint64 expected_version = 3;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message RuntimeUnbindAdapterResponse {
+  AdapterBinding binding = 1;
+  OperationRef operation = 2;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message RuntimeRegisterAdapterRequest {
+  RequestContext context = 1;
+  RegisterAdapterRequest registration = 2;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message RuntimeRegisterAdapterResponse {
+  RegisterAdapterResponse registration = 1;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message RuntimeHeartbeatRequest {
+  RequestContext context = 1;
+  Fence fence = 2;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message RuntimeHeartbeatResponse {
+  Fence fence = 1;
+  google.protobuf.Timestamp received_at = 2;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message RuntimePublishEventRequest {
+  RequestContext context = 1;
+  Fence fence = 2;
+  EventEnvelope event = 3;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message RuntimePublishEventResponse {
+  AdapterEventAck receipt = 1;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message RuntimeValidateManifestRequest {
+  RequestContext context = 1;
+  PluginManifest manifest = 2;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message RuntimeValidateManifestResponse {
+  bool valid = 1;
+  repeated Error violations = 2;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message RuntimeCreateInstallationRequest {
+  RequestContext context = 1;
+  string plugin_type_id = 2;
+  PluginManifest manifest = 3;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message RuntimeCreateInstallationResponse {
+  InstallationRecord installation = 1;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message RuntimeCreateInstanceRequest {
+  RequestContext context = 1;
+  string installation_id = 2;
+  string host_id = 3;
+  bool externally_managed = 4;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message RuntimeCreateInstanceResponse {
+  InstanceRecord instance = 1;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message RuntimeSetDesiredStateRequest {
+  RequestContext context = 1;
+  string instance_id = 2;
+  DesiredState desired_state = 3;
+  optional uint64 expected_version = 4;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message RuntimeSetDesiredStateResponse {
+  InstanceRecord instance = 1;
+  OperationRef operation = 2;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message RuntimeUpdateConfigRequest {
+  RequestContext context = 1;
+  ResourceRef resource = 2;
+  google.protobuf.Struct config = 3;
+  optional uint64 expected_version = 4;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message RuntimeUpdateConfigResponse {
+  VersionedResourceState state = 1;
+  OperationRef operation = 2;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message RuntimeRegisterPluginRequest {
+  RequestContext context = 1;
+  RegisterPluginRequest registration = 2;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message RuntimeRegisterPluginResponse {
+  RegisterPluginResponse registration = 1;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message RuntimeHeartbeatPluginRequest {
+  RequestContext context = 1;
+  Fence fence = 2;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message RuntimeHeartbeatPluginResponse {
+  Fence fence = 1;
+  google.protobuf.Timestamp received_at = 2;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message RuntimeClaimEventRequest {
+  RequestContext context = 1;
+  Fence fence = 2;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message RuntimeClaimEventResponse {
+  DeliveryAttempt attempt = 1;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message RuntimeDeliverEventRequest {
+  RequestContext context = 1;
+  DeliveryAttempt attempt = 2;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message RuntimeDeliverEventResponse {
+  DeliveryAttempt attempt = 1;
+  EventEnvelope event = 2;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message RuntimeAckDeliveryRequest {
+  RequestContext context = 1;
+  DeliveryAttempt attempt = 2;
+  bool accepted = 3;
+  Error error = 4;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message RuntimeAckDeliveryResponse {
+  DeliveryReceipt receipt = 1;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message RuntimeRenewDeliveryRequest {
+  RequestContext context = 1;
+  DeliveryAttempt attempt = 2;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message RuntimeRenewDeliveryResponse {
+  DeliveryReceipt receipt = 1;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message RuntimeSubmitActionRequest {
+  RequestContext context = 1;
+  Fence fence = 2;
+  ActionEnvelope action = 3;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message RuntimeSubmitActionResponse {
+  ActionResult result = 1;
+  ExecutionOutcome execution_outcome = 2;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message RuntimeQueryActionRequest {
+  RequestContext context = 1;
+  Fence fence = 2;
+  oneof selector { string action_id = 10; string idempotency_key = 11; }
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message RuntimeQueryActionResponse {
+  ActionResult result = 1;
+  ExecutionOutcome execution_outcome = 2;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message RuntimeCancelActionRequest {
+  RequestContext context = 1;
+  Fence fence = 2;
+  string action_id = 3;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message RuntimeCancelActionResponse {
+  ActionResult result = 1;
+  ExecutionOutcome execution_outcome = 2;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message RuntimeListActionMetadataRequest {
+  RequestContext context = 1;
+  ResourceScope account_scope = 2;
+  SnapshotPage page = 3;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message RuntimeListActionMetadataResponse {
+  repeated ActionMetadata actions = 1;
+  SnapshotPage page = 2;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message RuntimeInspectActionMetadataRequest {
+  RequestContext context = 1;
+  ResourceScope account_scope = 2;
+  string action_id = 3;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message RuntimeInspectActionMetadataResponse {
+  ActionMetadata action = 1;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message RuntimeGetStorageRequest {
+  RequestContext context = 1;
+  Fence fence = 2;
+  NamespaceScope scope = 3;
+  string key = 4;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message RuntimeGetStorageResponse {
+  StorageEntry entry = 1;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message RuntimeSetStorageRequest {
+  RequestContext context = 1;
+  Fence fence = 2;
+  NamespaceScope scope = 3;
+  string key = 4;
+  bytes value = 5;
+  google.protobuf.Timestamp expires_at = 6;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message RuntimeSetStorageResponse {
+  StorageEntry entry = 1;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message RuntimeDeleteStorageRequest {
+  RequestContext context = 1;
+  Fence fence = 2;
+  NamespaceScope scope = 3;
+  string key = 4;
+  StorageCondition condition = 5;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message RuntimeDeleteStorageResponse {
+  bool deleted = 1;
+  uint64 version = 2;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message RuntimeCompareAndSetStorageRequest {
+  RequestContext context = 1;
+  Fence fence = 2;
+  NamespaceScope scope = 3;
+  string key = 4;
+  bytes value = 5;
+  StorageCondition condition = 6;
+  google.protobuf.Timestamp expires_at = 7;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message RuntimeCompareAndSetStorageResponse {
+  StorageEntry entry = 1;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message RuntimeSetSharedMembersRequest {
+  RequestContext context = 1;
+  string namespace_id = 2;
+  string installation_id = 3;
+  repeated SharedMember members = 4;
+  optional uint64 expected_version = 5;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message RuntimeSetSharedMembersResponse {
+  uint64 version = 1;
+  OperationRef operation = 2;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message RuntimeDisableSharedNamespaceRequest {
+  RequestContext context = 1;
+  string namespace_id = 2;
+  optional uint64 expected_version = 3;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message RuntimeDisableSharedNamespaceResponse {
+  uint64 version = 1;
+  OperationRef operation = 2;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message RuntimeAcceptTimerTriggerRequest {
+  RequestContext context = 1;
+  HandoffContext handoff = 2;
+  string occurrence_id = 3;
+  string task_id = 4;
+  string owner_instance_id = 5;
+  uint64 schedule_version = 6;
+  ConversationRef target = 7;
+  bytes payload = 8;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message RuntimeAcceptTimerTriggerResponse {
+  TimerAcceptance receipt = 1;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message RuntimeGetResourceStateRequest {
+  RequestContext context = 1;
+  ResourceRef resource = 2;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message RuntimeGetResourceStateResponse {
+  VersionedResourceState state = 1;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message RuntimeGetOperationRequest {
+  RequestContext context = 1;
+  OperationRef operation = 2;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message RuntimeGetOperationResponse {
+  Operation operation = 1;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message RuntimeListDeadLettersRequest {
+  RequestContext context = 1;
+  ResourceScope scope = 2;
+  SnapshotPage page = 3;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message RuntimeListDeadLettersResponse {
+  repeated DeadLetter deliveries = 1;
+  SnapshotPage page = 2;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message RuntimeReplayDeliveryRequest {
+  RequestContext context = 1;
+  string delivery_id = 2;
+  string target_instance_id = 3;
+  optional uint64 expected_version = 4;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message RuntimeReplayDeliveryResponse {
+  OperationRef operation = 1;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message RuntimeBeginDeleteRequest {
+  RequestContext context = 1;
+  ResourceRef resource = 2;
+  optional uint64 expected_version = 3;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message RuntimeBeginDeleteResponse {
+  OperationRef operation = 1;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message RuntimeRestoreResourceRequest {
+  RequestContext context = 1;
+  ResourceRef resource = 2;
+  optional uint64 expected_version = 3;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message RuntimeRestoreResourceResponse {
+  OperationRef operation = 1;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message RuntimeGetActionPolicyRequest {
+  RequestContext context = 1;
+  string account_id = 2;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message RuntimeGetActionPolicyResponse {
+  ActionPolicy policy = 1;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message RuntimeUpdateActionPolicyRequest {
+  RequestContext context = 1;
+  ActionPolicy policy = 2;
+  optional uint64 expected_version = 3;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message RuntimeUpdateActionPolicyResponse {
+  ActionPolicy policy = 1;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+service RuntimeService {
+  rpc CreateAccount(RuntimeCreateAccountRequest) returns (RuntimeCreateAccountResponse) {
+    option (required_permission) = PERMISSION_ACCOUNT_MANAGE;
+    option (requires_idempotency) = true;
+    option (default_deadline_ms) = 5000;
+    option (max_deadline_ms) = 30000;
+    option (requires_online_authorization) = true;
+  }
+  rpc UpdateAccount(RuntimeUpdateAccountRequest) returns (RuntimeUpdateAccountResponse) {
+    option (required_permission) = PERMISSION_ACCOUNT_MANAGE;
+    option (requires_idempotency) = true;
+    option (default_deadline_ms) = 5000;
+    option (max_deadline_ms) = 30000;
+    option (requires_online_authorization) = true;
+  }
+  rpc DisableAccount(RuntimeDisableAccountRequest) returns (RuntimeDisableAccountResponse) {
+    option (required_permission) = PERMISSION_ACCOUNT_MANAGE;
+    option (requires_idempotency) = true;
+    option (default_deadline_ms) = 5000;
+    option (max_deadline_ms) = 30000;
+    option (requires_online_authorization) = true;
+  }
+  rpc BindAdapter(RuntimeBindAdapterRequest) returns (RuntimeBindAdapterResponse) {
+    option (required_permission) = PERMISSION_ACCOUNT_MANAGE;
+    option (requires_idempotency) = true;
+    option (default_deadline_ms) = 5000;
+    option (max_deadline_ms) = 30000;
+    option (requires_online_authorization) = true;
+  }
+  rpc UnbindAdapter(RuntimeUnbindAdapterRequest) returns (RuntimeUnbindAdapterResponse) {
+    option (required_permission) = PERMISSION_ACCOUNT_MANAGE;
+    option (requires_idempotency) = true;
+    option (default_deadline_ms) = 5000;
+    option (max_deadline_ms) = 30000;
+    option (requires_online_authorization) = true;
+  }
+  rpc RegisterAdapter(RuntimeRegisterAdapterRequest) returns (RuntimeRegisterAdapterResponse) {
+    option (required_permission) = PERMISSION_ADAPTER_CONNECT;
+    option (requires_idempotency) = false;
+    option (default_deadline_ms) = 2000;
+    option (max_deadline_ms) = 5000;
+    option (requires_online_authorization) = true;
+  }
+  rpc Heartbeat(RuntimeHeartbeatRequest) returns (RuntimeHeartbeatResponse) {
+    option (required_permission) = PERMISSION_ADAPTER_CONNECT;
+    option (requires_idempotency) = false;
+    option (default_deadline_ms) = 2000;
+    option (max_deadline_ms) = 5000;
+    option (requires_online_authorization) = false;
+  }
+  rpc PublishEvent(RuntimePublishEventRequest) returns (RuntimePublishEventResponse) {
+    option (required_permission) = PERMISSION_ADAPTER_CONNECT;
+    option (requires_idempotency) = true;
+    option (default_deadline_ms) = 5000;
+    option (max_deadline_ms) = 30000;
+    option (requires_online_authorization) = true;
+  }
+  rpc ValidateManifest(RuntimeValidateManifestRequest) returns (RuntimeValidateManifestResponse) {
+    option (required_permission) = PERMISSION_PLUGIN_MANAGE;
+    option (requires_idempotency) = false;
+    option (default_deadline_ms) = 2000;
+    option (max_deadline_ms) = 5000;
+    option (requires_online_authorization) = true;
+  }
+  rpc CreateInstallation(RuntimeCreateInstallationRequest) returns (RuntimeCreateInstallationResponse) {
+    option (required_permission) = PERMISSION_PLUGIN_MANAGE;
+    option (requires_idempotency) = true;
+    option (default_deadline_ms) = 5000;
+    option (max_deadline_ms) = 30000;
+    option (requires_online_authorization) = true;
+  }
+  rpc CreateInstance(RuntimeCreateInstanceRequest) returns (RuntimeCreateInstanceResponse) {
+    option (required_permission) = PERMISSION_PLUGIN_MANAGE;
+    option (requires_idempotency) = true;
+    option (default_deadline_ms) = 5000;
+    option (max_deadline_ms) = 30000;
+    option (requires_online_authorization) = true;
+  }
+  rpc SetDesiredState(RuntimeSetDesiredStateRequest) returns (RuntimeSetDesiredStateResponse) {
+    option (required_permission) = PERMISSION_PLUGIN_MANAGE;
+    option (requires_idempotency) = true;
+    option (default_deadline_ms) = 5000;
+    option (max_deadline_ms) = 30000;
+    option (requires_online_authorization) = true;
+  }
+  rpc UpdateConfig(RuntimeUpdateConfigRequest) returns (RuntimeUpdateConfigResponse) {
+    option (required_permission) = PERMISSION_PLUGIN_MANAGE;
+    option (requires_idempotency) = true;
+    option (default_deadline_ms) = 5000;
+    option (max_deadline_ms) = 30000;
+    option (requires_online_authorization) = true;
+  }
+  rpc RegisterPlugin(RuntimeRegisterPluginRequest) returns (RuntimeRegisterPluginResponse) {
+    option (required_permission) = PERMISSION_PLUGIN_CONNECT;
+    option (requires_idempotency) = false;
+    option (default_deadline_ms) = 2000;
+    option (max_deadline_ms) = 5000;
+    option (requires_online_authorization) = true;
+  }
+  rpc HeartbeatPlugin(RuntimeHeartbeatPluginRequest) returns (RuntimeHeartbeatPluginResponse) {
+    option (required_permission) = PERMISSION_PLUGIN_CONNECT;
+    option (requires_idempotency) = false;
+    option (default_deadline_ms) = 2000;
+    option (max_deadline_ms) = 5000;
+    option (requires_online_authorization) = false;
+  }
+  rpc ClaimEvent(RuntimeClaimEventRequest) returns (RuntimeClaimEventResponse) {
+    option (required_permission) = PERMISSION_DELIVERY_PROCESS;
+    option (requires_idempotency) = true;
+    option (default_deadline_ms) = 5000;
+    option (max_deadline_ms) = 30000;
+    option (requires_online_authorization) = true;
+  }
+  rpc DeliverEvent(RuntimeDeliverEventRequest) returns (RuntimeDeliverEventResponse) {
+    option (required_permission) = PERMISSION_DELIVERY_PROCESS;
+    option (requires_idempotency) = false;
+    option (default_deadline_ms) = 2000;
+    option (max_deadline_ms) = 5000;
+    option (requires_online_authorization) = true;
+  }
+  rpc AckDelivery(RuntimeAckDeliveryRequest) returns (RuntimeAckDeliveryResponse) {
+    option (required_permission) = PERMISSION_DELIVERY_PROCESS;
+    option (requires_idempotency) = false;
+    option (default_deadline_ms) = 5000;
+    option (max_deadline_ms) = 30000;
+    option (requires_online_authorization) = false;
+  }
+  rpc RenewDelivery(RuntimeRenewDeliveryRequest) returns (RuntimeRenewDeliveryResponse) {
+    option (required_permission) = PERMISSION_DELIVERY_PROCESS;
+    option (requires_idempotency) = false;
+    option (default_deadline_ms) = 5000;
+    option (max_deadline_ms) = 30000;
+    option (requires_online_authorization) = false;
+  }
+  rpc SubmitAction(RuntimeSubmitActionRequest) returns (RuntimeSubmitActionResponse) {
+    option (required_permission) = PERMISSION_ACTION_EXECUTE;
+    option (requires_idempotency) = true;
+    option (default_deadline_ms) = 5000;
+    option (max_deadline_ms) = 30000;
+    option (requires_online_authorization) = true;
+  }
+  rpc QueryAction(RuntimeQueryActionRequest) returns (RuntimeQueryActionResponse) {
+    option (required_permission) = PERMISSION_ACTION_EXECUTE;
+    option (requires_idempotency) = false;
+    option (default_deadline_ms) = 2000;
+    option (max_deadline_ms) = 5000;
+    option (requires_online_authorization) = true;
+  }
+  rpc CancelAction(RuntimeCancelActionRequest) returns (RuntimeCancelActionResponse) {
+    option (required_permission) = PERMISSION_ACTION_EXECUTE;
+    option (requires_idempotency) = true;
+    option (default_deadline_ms) = 5000;
+    option (max_deadline_ms) = 30000;
+    option (requires_online_authorization) = true;
+  }
+  rpc ListActionMetadata(RuntimeListActionMetadataRequest) returns (RuntimeListActionMetadataResponse) {
+    option (required_permission) = PERMISSION_ACTION_INSPECT;
+    option (requires_idempotency) = false;
+    option (default_deadline_ms) = 2000;
+    option (max_deadline_ms) = 5000;
+    option (requires_online_authorization) = true;
+  }
+  rpc InspectActionMetadata(RuntimeInspectActionMetadataRequest) returns (RuntimeInspectActionMetadataResponse) {
+    option (required_permission) = PERMISSION_ACTION_INSPECT;
+    option (requires_idempotency) = false;
+    option (default_deadline_ms) = 2000;
+    option (max_deadline_ms) = 5000;
+    option (requires_online_authorization) = true;
+  }
+  rpc GetStorage(RuntimeGetStorageRequest) returns (RuntimeGetStorageResponse) {
+    option (required_permission) = PERMISSION_STORAGE_NAMESPACE;
+    option (requires_idempotency) = false;
+    option (default_deadline_ms) = 2000;
+    option (max_deadline_ms) = 5000;
+    option (requires_online_authorization) = true;
+  }
+  rpc SetStorage(RuntimeSetStorageRequest) returns (RuntimeSetStorageResponse) {
+    option (required_permission) = PERMISSION_STORAGE_NAMESPACE;
+    option (requires_idempotency) = true;
+    option (default_deadline_ms) = 5000;
+    option (max_deadline_ms) = 30000;
+    option (requires_online_authorization) = true;
+  }
+  rpc DeleteStorage(RuntimeDeleteStorageRequest) returns (RuntimeDeleteStorageResponse) {
+    option (required_permission) = PERMISSION_STORAGE_NAMESPACE;
+    option (requires_idempotency) = true;
+    option (default_deadline_ms) = 5000;
+    option (max_deadline_ms) = 30000;
+    option (requires_online_authorization) = true;
+  }
+  rpc CompareAndSetStorage(RuntimeCompareAndSetStorageRequest) returns (RuntimeCompareAndSetStorageResponse) {
+    option (required_permission) = PERMISSION_STORAGE_NAMESPACE;
+    option (requires_idempotency) = true;
+    option (default_deadline_ms) = 5000;
+    option (max_deadline_ms) = 30000;
+    option (requires_online_authorization) = true;
+  }
+  rpc SetSharedMembers(RuntimeSetSharedMembersRequest) returns (RuntimeSetSharedMembersResponse) {
+    option (required_permission) = PERMISSION_NAMESPACE_MANAGE;
+    option (requires_idempotency) = true;
+    option (default_deadline_ms) = 5000;
+    option (max_deadline_ms) = 30000;
+    option (requires_online_authorization) = true;
+  }
+  rpc DisableSharedNamespace(RuntimeDisableSharedNamespaceRequest) returns (RuntimeDisableSharedNamespaceResponse) {
+    option (required_permission) = PERMISSION_NAMESPACE_MANAGE;
+    option (requires_idempotency) = true;
+    option (default_deadline_ms) = 5000;
+    option (max_deadline_ms) = 30000;
+    option (requires_online_authorization) = true;
+  }
+  rpc AcceptTimerTrigger(RuntimeAcceptTimerTriggerRequest) returns (RuntimeAcceptTimerTriggerResponse) {
+    option (required_permission) = PERMISSION_TIMER_ACCEPT;
+    option (requires_idempotency) = true;
+    option (default_deadline_ms) = 5000;
+    option (max_deadline_ms) = 30000;
+    option (requires_online_authorization) = true;
+  }
+  rpc GetResourceState(RuntimeGetResourceStateRequest) returns (RuntimeGetResourceStateResponse) {
+    option (required_permission) = PERMISSION_RESOURCE_READ;
+    option (requires_idempotency) = false;
+    option (default_deadline_ms) = 2000;
+    option (max_deadline_ms) = 5000;
+    option (requires_online_authorization) = true;
+  }
+  rpc GetOperation(RuntimeGetOperationRequest) returns (RuntimeGetOperationResponse) {
+    option (required_permission) = PERMISSION_RESOURCE_READ;
+    option (requires_idempotency) = false;
+    option (default_deadline_ms) = 2000;
+    option (max_deadline_ms) = 5000;
+    option (requires_online_authorization) = true;
+  }
+  rpc ListDeadLetters(RuntimeListDeadLettersRequest) returns (RuntimeListDeadLettersResponse) {
+    option (required_permission) = PERMISSION_DELIVERY_MANAGE;
+    option (requires_idempotency) = false;
+    option (default_deadline_ms) = 2000;
+    option (max_deadline_ms) = 5000;
+    option (requires_online_authorization) = true;
+  }
+  rpc ReplayDelivery(RuntimeReplayDeliveryRequest) returns (RuntimeReplayDeliveryResponse) {
+    option (required_permission) = PERMISSION_DELIVERY_MANAGE;
+    option (requires_idempotency) = true;
+    option (default_deadline_ms) = 5000;
+    option (max_deadline_ms) = 30000;
+    option (requires_online_authorization) = true;
+  }
+  rpc BeginDelete(RuntimeBeginDeleteRequest) returns (RuntimeBeginDeleteResponse) {
+    option (required_permission) = PERMISSION_RESOURCE_MANAGE;
+    option (requires_idempotency) = true;
+    option (default_deadline_ms) = 5000;
+    option (max_deadline_ms) = 30000;
+    option (requires_online_authorization) = true;
+  }
+  rpc RestoreResource(RuntimeRestoreResourceRequest) returns (RuntimeRestoreResourceResponse) {
+    option (required_permission) = PERMISSION_RESOURCE_MANAGE;
+    option (requires_idempotency) = true;
+    option (default_deadline_ms) = 5000;
+    option (max_deadline_ms) = 30000;
+    option (requires_online_authorization) = true;
+  }
+  rpc GetActionPolicy(RuntimeGetActionPolicyRequest) returns (RuntimeGetActionPolicyResponse) {
+    option (required_permission) = PERMISSION_ACCOUNT_POLICY_READ;
+    option (requires_idempotency) = false;
+    option (default_deadline_ms) = 2000;
+    option (max_deadline_ms) = 5000;
+    option (requires_online_authorization) = true;
+  }
+  rpc UpdateActionPolicy(RuntimeUpdateActionPolicyRequest) returns (RuntimeUpdateActionPolicyResponse) {
+    option (required_permission) = PERMISSION_ACCOUNT_POLICY_MANAGE;
+    option (requires_idempotency) = true;
+    option (default_deadline_ms) = 5000;
+    option (max_deadline_ms) = 30000;
+    option (requires_online_authorization) = true;
+  }
+}

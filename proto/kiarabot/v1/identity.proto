@@ -1,0 +1,468 @@
+syntax = "proto3";
+package kiarabot.v1;
+import "google/protobuf/timestamp.proto";
+import "kiarabot/v1/common.proto";
+import "kiarabot/v1/platform.proto";
+import "kiarabot/v1/policy.proto";
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message PrincipalRecord {
+  string principal_id = 1;
+  ResourceRef binding = 2;
+  string principal_kind = 3;
+  uint64 version = 4;
+  LifecycleState state = 5;
+  repeated FixedRole roles = 6;
+  ResourceScope scope = 7;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message SessionRecord {
+  string session_id = 1;
+  string principal_id = 2;
+  uint64 rotation = 3;
+  google.protobuf.Timestamp expires_at = 4;
+  bool revoked = 5;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message TokenPair {
+  string session_id = 1;
+  string access_token = 2;
+  string refresh_token = 3;
+  google.protobuf.Timestamp access_expires_at = 4;
+  google.protobuf.Timestamp refresh_expires_at = 5;
+  uint64 rotation = 6;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message CredentialDelivery {
+  string credential_id = 1;
+  uint64 version = 2;
+  bytes new_secret = 3;
+  string delivery_receipt_id = 4;
+  google.protobuf.Timestamp expires_at = 5;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message AssignmentRecord {
+  string assignment_id = 1;
+  string principal_id = 2;
+  FixedRole role = 3;
+  repeated Permission permissions = 4;
+  ResourceScope scope = 5;
+  uint64 version = 6;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message DelegationProof {
+  string proof = 1;
+  string audience = 2;
+  google.protobuf.Timestamp expires_at = 3;
+  uint32 business_hops = 4;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message AuthorizationDecision {
+  bool allowed = 1;
+  uint64 authorization_version = 2;
+  google.protobuf.Timestamp checked_at = 3;
+  Error denial = 4;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message InvalidationRecord {
+  StreamCursor cursor = 1;
+  string principal_id = 2;
+  uint64 authorization_version = 3;
+  ResourceScope scope = 4;
+  bool resync_required = 5;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message AuthorizationSnapshot {
+  StreamCursor cursor = 1;
+  repeated AssignmentRecord assignments = 2;
+  uint64 authorization_version = 3;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message VerificationKey {
+  string key_id = 1;
+  bytes ed25519_public_key = 2;
+  uint64 version = 3;
+  google.protobuf.Timestamp valid_until = 4;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message IdentityLoginRequest {
+  RequestContext context = 1;
+  string username = 2;
+  string password = 3;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message IdentityLoginResponse {
+  TokenPair tokens = 1;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message IdentityRefreshSessionRequest {
+  RequestContext context = 1;
+  string refresh_token = 2;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message IdentityRefreshSessionResponse {
+  TokenPair tokens = 1;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message IdentityValidateSessionRequest {
+  RequestContext context = 1;
+  string access_token = 2;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message IdentityValidateSessionResponse {
+  PrincipalRecord principal = 1;
+  SessionRecord session = 2;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message IdentityGetPrincipalRequest {
+  RequestContext context = 1;
+  string access_token = 2;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message IdentityGetPrincipalResponse {
+  PrincipalRecord principal = 1;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message IdentityListSessionsRequest {
+  RequestContext context = 1;
+  string principal_id = 2;
+  SnapshotPage page = 3;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message IdentityListSessionsResponse {
+  repeated SessionRecord sessions = 1;
+  SnapshotPage page = 2;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message IdentityRevokeSessionRequest {
+  RequestContext context = 1;
+  string session_id = 2;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message IdentityRevokeSessionResponse {
+  SessionRecord session = 1;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message IdentityRegisterPrincipalRequest {
+  RequestContext context = 1;
+  string principal_kind = 2;
+  ResourceRef binding = 3;
+  repeated string allowed_services = 4;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message IdentityRegisterPrincipalResponse {
+  PrincipalRecord principal = 1;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message IdentityRotateCredentialRequest {
+  RequestContext context = 1;
+  string credential_id = 2;
+  optional uint64 expected_version = 3;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message IdentityRotateCredentialResponse {
+  CredentialDelivery delivery = 1;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message IdentityRevokeCredentialRequest {
+  RequestContext context = 1;
+  string credential_id = 2;
+  optional uint64 expected_version = 3;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message IdentityRevokeCredentialResponse {
+  uint64 version = 1;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message IdentityGetPrincipalStatusRequest {
+  RequestContext context = 1;
+  string principal_id = 2;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message IdentityGetPrincipalStatusResponse {
+  PrincipalRecord principal = 1;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message IdentityIssueDelegationRequest {
+  RequestContext context = 1;
+  string subject_proof = 2;
+  string audience = 3;
+  ResourceScope scope = 4;
+  repeated Permission permissions = 5;
+  bytes client_certificate_sha256 = 6;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message IdentityIssueDelegationResponse {
+  DelegationProof delegation = 1;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message IdentityExchangeDelegationRequest {
+  RequestContext context = 1;
+  string parent_proof = 2;
+  string audience = 3;
+  ResourceScope scope = 4;
+  repeated Permission permissions = 5;
+  bytes client_certificate_sha256 = 6;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message IdentityExchangeDelegationResponse {
+  DelegationProof delegation = 1;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message IdentityCheckAuthorizationRequest {
+  RequestContext context = 1;
+  string subject_proof = 2;
+  string full_method = 3;
+  ResourceScope scope = 4;
+  optional uint64 known_authorization_version = 5;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message IdentityCheckAuthorizationResponse {
+  AuthorizationDecision decision = 1;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message IdentityListAssignmentsRequest {
+  RequestContext context = 1;
+  string principal_id = 2;
+  ResourceScope scope = 3;
+  SnapshotPage page = 4;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message IdentityListAssignmentsResponse {
+  repeated AssignmentRecord assignments = 1;
+  SnapshotPage page = 2;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message IdentitySetAssignmentRequest {
+  RequestContext context = 1;
+  AssignmentRecord assignment = 2;
+  optional uint64 expected_version = 3;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message IdentitySetAssignmentResponse {
+  AssignmentRecord assignment = 1;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message IdentityRevokeAssignmentRequest {
+  RequestContext context = 1;
+  string assignment_id = 2;
+  optional uint64 expected_version = 3;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message IdentityRevokeAssignmentResponse {
+  uint64 version = 1;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message IdentityWatchInvalidationsRequest {
+  RequestContext context = 1;
+  ResourceScope scope = 2;
+  StreamCursor cursor = 3;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message IdentityWatchInvalidationsResponse {
+  InvalidationRecord invalidation = 1;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message IdentityGetAuthorizationSnapshotRequest {
+  RequestContext context = 1;
+  ResourceScope scope = 2;
+  StreamCursor after = 3;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message IdentityGetAuthorizationSnapshotResponse {
+  AuthorizationSnapshot snapshot = 1;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message IdentityGetVerificationKeysRequest {
+  RequestContext context = 1;
+  optional uint64 known_key_version = 2;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message IdentityGetVerificationKeysResponse {
+  repeated VerificationKey keys = 1;
+  uint64 version = 2;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+service IdentityService {
+  rpc Login(IdentityLoginRequest) returns (IdentityLoginResponse) {
+    option (required_permission) = PERMISSION_IDENTITY_SESSION_CREATE;
+    option (requires_idempotency) = true;
+    option (default_deadline_ms) = 5000;
+    option (max_deadline_ms) = 30000;
+    option (requires_online_authorization) = true;
+  }
+  rpc RefreshSession(IdentityRefreshSessionRequest) returns (IdentityRefreshSessionResponse) {
+    option (required_permission) = PERMISSION_IDENTITY_SESSION_CREATE;
+    option (requires_idempotency) = true;
+    option (default_deadline_ms) = 5000;
+    option (max_deadline_ms) = 30000;
+    option (requires_online_authorization) = true;
+  }
+  rpc ValidateSession(IdentityValidateSessionRequest) returns (IdentityValidateSessionResponse) {
+    option (required_permission) = PERMISSION_IDENTITY_SESSION_READ;
+    option (requires_idempotency) = false;
+    option (default_deadline_ms) = 2000;
+    option (max_deadline_ms) = 5000;
+    option (requires_online_authorization) = true;
+  }
+  rpc GetPrincipal(IdentityGetPrincipalRequest) returns (IdentityGetPrincipalResponse) {
+    option (required_permission) = PERMISSION_IDENTITY_SESSION_READ;
+    option (requires_idempotency) = false;
+    option (default_deadline_ms) = 2000;
+    option (max_deadline_ms) = 5000;
+    option (requires_online_authorization) = true;
+  }
+  rpc ListSessions(IdentityListSessionsRequest) returns (IdentityListSessionsResponse) {
+    option (required_permission) = PERMISSION_IDENTITY_SESSION_READ;
+    option (requires_idempotency) = false;
+    option (default_deadline_ms) = 2000;
+    option (max_deadline_ms) = 5000;
+    option (requires_online_authorization) = true;
+  }
+  rpc RevokeSession(IdentityRevokeSessionRequest) returns (IdentityRevokeSessionResponse) {
+    option (required_permission) = PERMISSION_IDENTITY_SESSION_REVOKE;
+    option (requires_idempotency) = true;
+    option (default_deadline_ms) = 5000;
+    option (max_deadline_ms) = 30000;
+    option (requires_online_authorization) = true;
+  }
+  rpc RegisterPrincipal(IdentityRegisterPrincipalRequest) returns (IdentityRegisterPrincipalResponse) {
+    option (required_permission) = PERMISSION_IDENTITY_PRINCIPAL_MANAGE;
+    option (requires_idempotency) = true;
+    option (default_deadline_ms) = 5000;
+    option (max_deadline_ms) = 30000;
+    option (requires_online_authorization) = true;
+  }
+  rpc RotateCredential(IdentityRotateCredentialRequest) returns (IdentityRotateCredentialResponse) {
+    option (required_permission) = PERMISSION_IDENTITY_PRINCIPAL_MANAGE;
+    option (requires_idempotency) = true;
+    option (default_deadline_ms) = 5000;
+    option (max_deadline_ms) = 30000;
+    option (requires_online_authorization) = true;
+  }
+  rpc RevokeCredential(IdentityRevokeCredentialRequest) returns (IdentityRevokeCredentialResponse) {
+    option (required_permission) = PERMISSION_IDENTITY_PRINCIPAL_MANAGE;
+    option (requires_idempotency) = true;
+    option (default_deadline_ms) = 5000;
+    option (max_deadline_ms) = 30000;
+    option (requires_online_authorization) = true;
+  }
+  rpc GetPrincipalStatus(IdentityGetPrincipalStatusRequest) returns (IdentityGetPrincipalStatusResponse) {
+    option (required_permission) = PERMISSION_IDENTITY_PRINCIPAL_READ;
+    option (requires_idempotency) = false;
+    option (default_deadline_ms) = 2000;
+    option (max_deadline_ms) = 5000;
+    option (requires_online_authorization) = true;
+  }
+  rpc IssueDelegation(IdentityIssueDelegationRequest) returns (IdentityIssueDelegationResponse) {
+    option (required_permission) = PERMISSION_IDENTITY_DELEGATION_ISSUE;
+    option (requires_idempotency) = true;
+    option (default_deadline_ms) = 5000;
+    option (max_deadline_ms) = 30000;
+    option (requires_online_authorization) = true;
+  }
+  rpc ExchangeDelegation(IdentityExchangeDelegationRequest) returns (IdentityExchangeDelegationResponse) {
+    option (required_permission) = PERMISSION_IDENTITY_DELEGATION_ISSUE;
+    option (requires_idempotency) = true;
+    option (default_deadline_ms) = 5000;
+    option (max_deadline_ms) = 30000;
+    option (requires_online_authorization) = true;
+  }
+  rpc CheckAuthorization(IdentityCheckAuthorizationRequest) returns (IdentityCheckAuthorizationResponse) {
+    option (required_permission) = PERMISSION_IDENTITY_AUTHORIZATION_CHECK;
+    option (requires_idempotency) = false;
+    option (default_deadline_ms) = 500;
+    option (max_deadline_ms) = 1000;
+    option (requires_online_authorization) = true;
+  }
+  rpc ListAssignments(IdentityListAssignmentsRequest) returns (IdentityListAssignmentsResponse) {
+    option (required_permission) = PERMISSION_IDENTITY_ASSIGNMENT_READ;
+    option (requires_idempotency) = false;
+    option (default_deadline_ms) = 2000;
+    option (max_deadline_ms) = 5000;
+    option (requires_online_authorization) = true;
+  }
+  rpc SetAssignment(IdentitySetAssignmentRequest) returns (IdentitySetAssignmentResponse) {
+    option (required_permission) = PERMISSION_IDENTITY_ASSIGNMENT_MANAGE;
+    option (requires_idempotency) = true;
+    option (default_deadline_ms) = 5000;
+    option (max_deadline_ms) = 30000;
+    option (requires_online_authorization) = true;
+  }
+  rpc RevokeAssignment(IdentityRevokeAssignmentRequest) returns (IdentityRevokeAssignmentResponse) {
+    option (required_permission) = PERMISSION_IDENTITY_ASSIGNMENT_MANAGE;
+    option (requires_idempotency) = true;
+    option (default_deadline_ms) = 5000;
+    option (max_deadline_ms) = 30000;
+    option (requires_online_authorization) = true;
+  }
+  rpc WatchInvalidations(IdentityWatchInvalidationsRequest) returns (stream IdentityWatchInvalidationsResponse) {
+    option (required_permission) = PERMISSION_IDENTITY_INVALIDATION_READ;
+    option (requires_idempotency) = false;
+    option (default_deadline_ms) = 2000;
+    option (max_deadline_ms) = 5000;
+    option (requires_online_authorization) = true;
+  }
+  rpc GetAuthorizationSnapshot(IdentityGetAuthorizationSnapshotRequest) returns (IdentityGetAuthorizationSnapshotResponse) {
+    option (required_permission) = PERMISSION_IDENTITY_INVALIDATION_READ;
+    option (requires_idempotency) = false;
+    option (default_deadline_ms) = 2000;
+    option (max_deadline_ms) = 5000;
+    option (requires_online_authorization) = true;
+  }
+  rpc GetVerificationKeys(IdentityGetVerificationKeysRequest) returns (IdentityGetVerificationKeysResponse) {
+    option (required_permission) = PERMISSION_IDENTITY_KEYS_READ;
+    option (requires_idempotency) = false;
+    option (default_deadline_ms) = 2000;
+    option (max_deadline_ms) = 5000;
+    option (requires_online_authorization) = true;
+  }
+}

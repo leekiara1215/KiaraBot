@@ -1,0 +1,150 @@
+syntax = "proto3";
+package kiarabot.v1;
+import "google/protobuf/timestamp.proto";
+import "kiarabot/v1/common.proto";
+import "kiarabot/v1/platform.proto";
+import "kiarabot/v1/policy.proto";
+import "kiarabot/v1/plugins.proto";
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message TaskRecord {
+  string task_id = 1;
+  string owner_instance_id = 2;
+  string installation_id = 3;
+  ConversationRef target = 4;
+  bytes payload = 5;
+  google.protobuf.Timestamp run_at = 6;
+  ScheduledTaskState state = 7;
+  uint64 version = 8;
+  string occurrence_id = 9;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message OccurrenceRecord {
+  string occurrence_id = 1;
+  string task_id = 2;
+  OperationState state = 3;
+  HandoffContext handoff = 4;
+  string accepted_event_id = 5;
+  google.protobuf.Timestamp acknowledged_at = 6;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message SchedulerCreateTaskRequest {
+  RequestContext context = 1;
+  string task_id = 2;
+  ConversationRef target = 3;
+  bytes payload = 4;
+  oneof when { google.protobuf.Timestamp run_at = 10; LocalTaskTime local_time = 11; }
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message SchedulerCreateTaskResponse {
+  TaskRecord task = 1;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message SchedulerCancelTaskRequest {
+  RequestContext context = 1;
+  string task_id = 2;
+  ResourceScope scope = 3;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message SchedulerCancelTaskResponse {
+  TaskRecord task = 1;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message SchedulerGetTaskRequest {
+  RequestContext context = 1;
+  string task_id = 2;
+  ResourceScope scope = 3;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message SchedulerGetTaskResponse {
+  TaskRecord task = 1;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message SchedulerListTasksRequest {
+  RequestContext context = 1;
+  ResourceScope scope = 2;
+  SnapshotPage page = 3;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message SchedulerListTasksResponse {
+  repeated TaskRecord tasks = 1;
+  SnapshotPage page = 2;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message SchedulerGetOccurrenceRequest {
+  RequestContext context = 1;
+  string occurrence_id = 2;
+  ResourceScope scope = 3;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message SchedulerGetOccurrenceResponse {
+  OccurrenceRecord occurrence = 1;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message SchedulerGetOperationRequest {
+  RequestContext context = 1;
+  OperationRef operation = 2;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message SchedulerGetOperationResponse {
+  Operation operation = 1;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+service SchedulerService {
+  rpc CreateTask(SchedulerCreateTaskRequest) returns (SchedulerCreateTaskResponse) {
+    option (required_permission) = PERMISSION_TASK_SCHEDULE;
+    option (requires_idempotency) = true;
+    option (default_deadline_ms) = 5000;
+    option (max_deadline_ms) = 30000;
+    option (requires_online_authorization) = true;
+  }
+  rpc CancelTask(SchedulerCancelTaskRequest) returns (SchedulerCancelTaskResponse) {
+    option (required_permission) = PERMISSION_TASK_SCHEDULE;
+    option (requires_idempotency) = true;
+    option (default_deadline_ms) = 5000;
+    option (max_deadline_ms) = 30000;
+    option (requires_online_authorization) = true;
+  }
+  rpc GetTask(SchedulerGetTaskRequest) returns (SchedulerGetTaskResponse) {
+    option (required_permission) = PERMISSION_TASK_READ;
+    option (requires_idempotency) = false;
+    option (default_deadline_ms) = 2000;
+    option (max_deadline_ms) = 5000;
+    option (requires_online_authorization) = true;
+  }
+  rpc ListTasks(SchedulerListTasksRequest) returns (SchedulerListTasksResponse) {
+    option (required_permission) = PERMISSION_TASK_READ;
+    option (requires_idempotency) = false;
+    option (default_deadline_ms) = 2000;
+    option (max_deadline_ms) = 5000;
+    option (requires_online_authorization) = true;
+  }
+  rpc GetOccurrence(SchedulerGetOccurrenceRequest) returns (SchedulerGetOccurrenceResponse) {
+    option (required_permission) = PERMISSION_TASK_READ;
+    option (requires_idempotency) = false;
+    option (default_deadline_ms) = 2000;
+    option (max_deadline_ms) = 5000;
+    option (requires_online_authorization) = true;
+  }
+  rpc GetOperation(SchedulerGetOperationRequest) returns (SchedulerGetOperationResponse) {
+    option (required_permission) = PERMISSION_TASK_READ;
+    option (requires_idempotency) = false;
+    option (default_deadline_ms) = 2000;
+    option (max_deadline_ms) = 5000;
+    option (requires_online_authorization) = true;
+  }
+}

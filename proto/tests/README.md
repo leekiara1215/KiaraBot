@@ -48,3 +48,7 @@ CI 可设置 `KIARABOT_BASELINE_DESCRIPTOR` 指向上一发布版 descriptor。`
 - 不可用的 REST 操作/WS 频道/事件由 `x-contract-status` 与状态表显式标注；
 - 所有 Protobuf 源（含 imports）可编译为 descriptor；
 - 生成的 C++ 消息以同一 oneof 判别序列化/解析。
+
+## P01 统一目标独立入口
+
+`KIARABOT_TARGET_PYTHON=<含 protobuf 和 grpcio-tools 的 Python> proto/tests/check_target.sh` 不依赖根 CMake，临时生成全部 C++/gRPC 与 Python/gRPC、descriptor，编译反射 round-trip 工具，执行目标方法/descriptor options 逐项匹配、fence presence/零值反例和 Python→C++→Python 消息往返。临时目录退出清理，不提交生成物。Python generator 使用其自带兼容运行时；禁止修改生成版本检查。`target_contract_test.py` 的校验 oracle 是规格夹具，不是生产边界实现或数据库并发证明。旧 descriptor 兼容夹具仍是旧开发快照检查，不能当作目标兼容承诺。
