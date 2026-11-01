@@ -22,7 +22,7 @@ python3 scripts/local/start.py start --ui \
 网页地址`http://127.0.0.1:5173`，账号`admin`，本机密码在`data/local/admin-password`。
 不需要网页可省略`--ui`。完整环境准备、收发CLI及停止命令见
 [单机运行说明](doc/24-single-host-mvp.md)；未完事项、分支与跨电脑恢复见
-[开发交接文档](doc/25-development-handoff.md)。本轮源码仅本地提交，未推送。
+[开发交接文档](doc/25-development-handoff.md)。主集成源码已同步远端main，未合入WIP仍须按交接文档保全。
 
 ## 目标架构
 
