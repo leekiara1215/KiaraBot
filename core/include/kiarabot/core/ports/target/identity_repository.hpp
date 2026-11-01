@@ -60,7 +60,11 @@ public:
   virtual Outcome<std::size_t> count_unexpired() = 0;
   // Null expected creates; update matches stored version AND rotation, rejects overflow.
   // created_at is immutable; changing it on update -> Conflict, not a regenerated query timestamp.
-  // Base sessions() metadata shares this transaction/version; expires_at = refresh_expires_at.
+  // save atomically creates/updates BOTH the security row and inherited sessions() metadata,
+  // with the SAME transaction, version, rotation and revoked flag; base expires_at equals
+  // refresh_expires_at. Caller MUST NOT separately save sessions() for this mutation: a second
+  // create/CAS duplicates the repository-owned write and conflicts. Failure leaves neither row
+  // partially written; unknown commit still uses the enclosing UoW recovery contract.
   virtual Status save(const SessionSecurity& record, std::optional<ResourceVersion> expected,
                       std::optional<std::uint64_t> expected_rotation) = 0;
 };

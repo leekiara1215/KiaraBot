@@ -478,11 +478,6 @@ private:
     if (const auto* error = std::get_if<Failure>(&saved_security)) {
       return *error;
     }
-    auto saved_base = work.transaction->sessions().save(
-        LoginSession{session, security.subject, {1}, 1, security.refresh_expires_at, false}, {});
-    if (const auto* error = std::get_if<Failure>(&saved_base)) {
-      return *error;
-    }
     auto inserted = work.transaction->secret_receipts().insert(receipt, options_.secret_receipts);
     if (const auto* error = std::get_if<Failure>(&inserted)) {
       return *error;
@@ -824,13 +819,6 @@ private:
     if (const auto* error = std::get_if<Failure>(&saved)) {
       return *error;
     }
-    auto base = work.transaction->sessions().save(
-        LoginSession{changed.id, changed.subject, changed.version, changed.rotation,
-                     changed.refresh_expires_at, changed.revoked},
-        authority.session.version);
-    if (const auto* error = std::get_if<Failure>(&base)) {
-      return *error;
-    }
     auto inserted = work.transaction->secret_receipts().insert(receipt, options_.secret_receipts);
     if (const auto* error = std::get_if<Failure>(&inserted)) {
       return *error;
@@ -1069,13 +1057,6 @@ private:
       auto saved =
           work.transaction->session_security().save(changed, target->version, target->rotation);
       if (const auto* error = std::get_if<Failure>(&saved)) {
-        return *error;
-      }
-      auto base = work.transaction->sessions().save(LoginSession{changed.id, changed.subject,
-                                                                 changed.version, changed.rotation,
-                                                                 changed.refresh_expires_at, true},
-                                                    target->version);
-      if (const auto* error = std::get_if<Failure>(&base)) {
         return *error;
       }
       auto target_auth = work.transaction->authorizations().find(changed.subject);

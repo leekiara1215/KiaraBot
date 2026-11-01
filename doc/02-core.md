@@ -758,3 +758,7 @@ UTC统计未撤销且refresh尚未到期会话，4096全局上限之外另保留
 ListSessions续页只需公开的opaque page_token，服务端有界索引将其定位到快照及页位置；
 调用者无需另传snapshot_id。若内部调用同时提供snapshot_id，必须与token定位值相同。
 当前actor/origin、目标scope、page size和授权版本绑定不变，过期时清理快照及token索引。
+
+IdentitySessionSecurityRepository::save负责同一UoW内security row与base sessions metadata的
+原子同步，version/rotation/revoked及refresh expiry一致。应用调用一次安全save，不再额外
+调用sessions().save重复create/CAS；登录、刷新和撤销均遵循此责任。读取仍校验两投影一致。

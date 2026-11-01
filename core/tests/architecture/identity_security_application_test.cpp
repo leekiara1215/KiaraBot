@@ -65,6 +65,8 @@ struct Store {
   bool fail_audit = false;
   bool fail_list = false;
   bool fail_count = false;
+  bool fail_metadata_sync = false;
+  int direct_base_writes = 0;
   t::CommitResult next_commit = t::CommitResult::Committed;
   std::function<void()> before_begin;
   std::function<void()> after_audit;
@@ -116,6 +118,26 @@ public:
 
 private:
   std::vector<Value>& values_;
+};
+class Metadata final : public t::Repository<t::SessionId, t::LoginSession> {
+public:
+  Metadata(State& state, Store& store) : state_(state), store_(store) {}
+  t::Outcome<std::optional<t::LoginSession>> find(const t::SessionId& id) override {
+    for (const auto& value : state_.metadata) {
+      if (value.id == id) {
+        return std::optional{value};
+      }
+    }
+    return std::optional<t::LoginSession>{};
+  }
+  t::Status save(const t::LoginSession&, std::optional<t::ResourceVersion>) override {
+    ++store_.direct_base_writes;
+    return fail(t::ErrorCode::Conflict);
+  }
+
+private:
+  State& state_;
+  Store& store_;
 };
 class Credentials final : public t::IdentityCredentialRepository {
 public:
@@ -169,7 +191,8 @@ private:
 };
 class Sessions final : public t::IdentitySessionSecurityRepository {
 public:
-  Sessions(State& state, Store& store) : state_(state), store_(store) {}
+  Sessions(State& state, Store& store, bool& failed)
+      : state_(state), store_(store), failed_(failed) {}
   t::Outcome<std::optional<t::SessionSecurity>> find(const t::SessionId& id) override {
     for (const auto& value : state_.sessions) {
       if (value.id == id) {
@@ -252,6 +275,8 @@ public:
   }
   t::Status save(const t::SessionSecurity& value, std::optional<t::ResourceVersion> expected,
                  std::optional<std::uint64_t> rotation) override {
+    auto metadata = std::find_if(state_.metadata.begin(), state_.metadata.end(),
+                                 [&](const auto& row) { return row.id == value.id; });
     for (auto& existing : state_.sessions) {
       if (existing.id != value.id) {
         continue;
@@ -261,19 +286,40 @@ public:
           value.version.value != expected->value + 1) {
         return fail(t::ErrorCode::Conflict);
       }
+      if (metadata == state_.metadata.end() || metadata->version != existing.version ||
+          metadata->rotation != existing.rotation || metadata->subject != existing.subject ||
+          metadata->expires_at != existing.refresh_expires_at ||
+          metadata->revoked != existing.revoked) {
+        failed_ = true;
+        return fail(t::ErrorCode::Internal);
+      }
       existing = value;
+      if (store_.fail_metadata_sync) {
+        failed_ = true;
+        return fail(t::ErrorCode::UpstreamUnavailable);
+      }
+      *metadata = t::LoginSession{
+          value.id,     value.subject, value.version, value.rotation, value.refresh_expires_at,
+          value.revoked};
       return std::monostate{};
     }
-    if (expected || rotation) {
+    if (expected || rotation || metadata != state_.metadata.end() || value.version.value != 1) {
       return fail(t::ErrorCode::Conflict);
     }
     state_.sessions.push_back(value);
+    if (store_.fail_metadata_sync) {
+      failed_ = true;
+      return fail(t::ErrorCode::UpstreamUnavailable);
+    }
+    state_.metadata.push_back({value.id, value.subject, value.version, value.rotation,
+                               value.refresh_expires_at, value.revoked});
     return std::monostate{};
   }
 
 private:
   State& state_;
   Store& store_;
+  bool& failed_;
 };
 class Assignments final : public t::IdentityExactAssignmentRepository {
 public:
@@ -422,9 +468,10 @@ class Work final : public t::IdentitySecurityUnitOfWork {
 public:
   explicit Work(Store& store)
       : store_(store), state_(store.state), revision_(store.revision),
-        principals_(state_.principals), metadata_(state_.metadata),
-        authorizations_(state_.authorizations), credentials_(state_), sessions_(state_, store),
-        assignments_(state_), secrets_(state_), receipts_(state_), journal_(state_, store) {
+        principals_(state_.principals), metadata_(state_, store),
+        authorizations_(state_.authorizations), credentials_(state_),
+        sessions_(state_, store, failed_), assignments_(state_), secrets_(state_),
+        receipts_(state_), journal_(state_, store) {
     ++store_.active;
   }
   ~Work() override {
@@ -474,7 +521,7 @@ public:
     ++store_.commits;
     auto result = store_.next_commit;
     store_.next_commit = t::CommitResult::Committed;
-    if (store_.revision != revision_) {
+    if (store_.revision != revision_ || failed_) {
       result = t::CommitResult::RolledBack;
     }
     if (result != t::CommitResult::RolledBack) {
@@ -496,8 +543,9 @@ private:
   State state_;
   std::uint64_t revision_;
   bool active_ = true;
+  bool failed_ = false;
   Repo<t::SubjectId, t::Principal> principals_;
-  Repo<t::SessionId, t::LoginSession> metadata_;
+  Metadata metadata_;
   std::vector<t::ResourceGrant> grant_values_;
   Repo<t::AssignmentId, t::ResourceGrant> grants_{grant_values_};
   Repo<t::SubjectId, t::AuthorizationState> authorizations_;
@@ -759,6 +807,9 @@ struct Fixture {
              {{std::string(kPeerCredential)}, {1}}},
             store.now};
     rebuild();
+  }
+  ~Fixture() {
+    assert(store.direct_base_writes == 0);
   }
   t::IdentitySecurityOptions options() const {
     return {{"token"},
@@ -1359,6 +1410,48 @@ void authoritative_global_session_capacity_preserves_replay() {
   assert(failure.store.state.sessions.empty() && failure.store.state.receipts.empty());
 }
 
+void security_repository_metadata_failure_rolls_back_both_views() {
+  Fixture login;
+  login.store.fail_metadata_sync = true;
+  const auto failed = login.app->login(login.login_request());
+  assert(std::get<t::Failure>(failed).code == t::ErrorCode::UpstreamUnavailable);
+  assert(login.store.state.sessions.empty() && login.store.state.metadata.empty());
+  Fixture refresh;
+  auto first = refresh.app->login(refresh.login_request());
+  const auto& original = std::get<t::IdentityTokenReply>(first).tokens;
+  const auto original_metadata = refresh.store.state.metadata[0];
+  refresh.store.fail_metadata_sync = true;
+  const auto rotated = refresh.app->refresh_session(
+      {refresh.context("sync-failure"), refresh.peer, original.refresh->bytes()});
+  assert(std::get<t::Failure>(rotated).code == t::ErrorCode::UpstreamUnavailable);
+  assert(refresh.store.state.sessions[0].rotation == original.rotation);
+  assert(refresh.store.state.metadata[0].version == original_metadata.version &&
+         refresh.store.state.metadata[0].rotation == original_metadata.rotation);
+  assert(refresh.store.state.consumed.empty() && refresh.store.state.receipts.size() == 1);
+  Fixture revoke;
+  auto source = revoke.app->login(revoke.login_request("source"));
+  auto target = revoke.app->login(revoke.login_request("target"));
+  const auto target_id = std::get<t::IdentityTokenReply>(target).tokens.session;
+  auto proof = actor(revoke, std::get<t::IdentityTokenReply>(source).tokens);
+  assert(revoke.delegations.claims.has_value());
+  revoke.delegations.claims->permissions = {
+      {t::Permission::IdentitySessionRevoke, {t::ResourceKind::Session, {target_id.value}}}};
+  revoke.store.fail_metadata_sync = true;
+  const auto rejected =
+      revoke.app->revoke_session({revoke.context("revoke-sync-failure"), proof, target_id});
+  assert(std::get<t::Failure>(rejected).code == t::ErrorCode::UpstreamUnavailable);
+  for (const auto& session : revoke.store.state.sessions) {
+    assert(!session.revoked);
+  }
+  for (const auto& metadata : revoke.store.state.metadata) {
+    assert(!metadata.revoked);
+  }
+  assert(!revoke.store.state.authorizations[0].invalidation_dirty &&
+         revoke.store.state.ordinary.empty());
+  assert(login.store.direct_base_writes == 0 && refresh.store.direct_base_writes == 0 &&
+         revoke.store.direct_base_writes == 0);
+}
+
 } // namespace
 int main(int argc, char** argv) try {
   const std::string_view group = argc == 2 ? argv[1] : "all";
@@ -1369,6 +1462,7 @@ int main(int argc, char** argv) try {
     dependency_deadline_and_capacities_never_fake_success();
     final_transaction_rechecks_mutations_during_password_work();
     crypto_dependency_failure_preserves_atomic_state();
+    security_repository_metadata_failure_rolls_back_both_views();
     final_database_deadline_is_checked_after_all_writes();
     login_rate_limits_use_monotonic_time_and_reset_on_restart();
     invalid_control_peer_does_not_consume_login_budget();

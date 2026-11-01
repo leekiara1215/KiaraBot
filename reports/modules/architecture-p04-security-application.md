@@ -114,3 +114,23 @@ tampered/expired/restarted token, mismatched explicit snapshot, changed valid ac
 page size and jointly updated DB/proof authorization version. Existing explicit-ID path remains
 compatible. Full analyzer/bugprone and format checks on source/helper/test pass without exclusions.
 Only application/helper/test, doc/02 and this report belong to this correction; no API change.
+
+## Repository-owned base metadata synchronization correction
+
+Real PostgreSQL review found security repository save already synchronizes base sessions row;
+initial test double omitted this contract and let the application duplicate insert/CAS. The port
+comment now explicitly assigns BOTH security and base atomic writes to session_security.save.
+Login/refresh/revoke remove their extra sessions.save calls. Strict memory fake now automatically
+synchronizes base metadata in its transactional snapshot and rejects independent application base
+writes; assertions require zero such writes. CAS/rollback/Unknown and metadata parity tests remain.
+No PG implementation is edited here; this clarifies the existing mature PG adapter responsibility
+rather than inventing independent transactions. Read parity remains an application corruption gate.
+
+Base-sync final validation: actual production+strictfake all-groups C++20-Werror ASan/UBSan
+-fno-sanitize-recover=all passed. Internal fault between security staging and base synchronization
+poisons the test UoW and rolls back both rows plus consumption/receipts/audit/invalidation; explicit
+login/refresh/revoke faults verify this. Every Fixture asserts direct base writes==0. Full test and
+production analyzer/bugprone with warnings-as-errors and zero check exclusions passed; format16,
+boundary/inner and diff passed. Parent PG author independently reproduced duplicate base writes
+as Conflict+wholetransaction RolledBack in87c0fa7; no PG implementation/constraints weakened here.
+Actual real App+crypto+PG fixture integration remains with parent/PG author, not claimed by fake.
