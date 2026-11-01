@@ -18,6 +18,7 @@ extern char** environ;
 
 #include "common_work_checks.hpp"
 #include "kiarabot/infrastructure/postgres/database.hpp"
+#include "typed_work_checks.hpp"
 
 namespace {
 namespace pg = kiarabot::infrastructure::postgres;
@@ -105,6 +106,13 @@ void run(const std::filesystem::path& root, std::uint16_t port,
   std::string password;
   std::getline(password_file, password);
   require(password.size() == 64, "invalid fixture secret");
+  const auto role_password = [&](const std::string& role) {
+    std::ifstream input(root / ("password-" + role));
+    std::string value;
+    std::getline(input, value);
+    require(value.size() == 64 && value != password, "distinct role fixture secret required");
+    return value;
+  };
   pg::DatabaseConfig admin{
       target::Service::Runtime,       "localhost", port, "postgres", "p03_admin", password,
       (root / "server.pem").string(), "",          ""};
@@ -123,7 +131,7 @@ void run(const std::filesystem::path& root, std::uint16_t port,
       deployment.exec("CREATE ROLE " + deployment.quote_name(role) +
                       " LOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION "
                       "NOBYPASSRLS PASSWORD " +
-                      deployment.quote(password));
+                      deployment.quote(role_password(role)));
     }
     deployment.exec("CREATE DATABASE " + deployment.quote_name(database) + " OWNER " +
                     deployment.quote_name(migration_role));
@@ -135,7 +143,7 @@ void run(const std::filesystem::path& root, std::uint16_t port,
                       port,
                       database,
                       migration_role,
-                      password,
+                      role_password(migration_role),
                       (root / "server.pem").string(),
                       migration_role,
                       runtime_role};
@@ -143,6 +151,8 @@ void run(const std::filesystem::path& root, std::uint16_t port,
   for (auto config : configs) {
     auto runtime = config;
     runtime.user = config.runtime_role;
+    runtime.password = role_password(config.runtime_role);
+    require(runtime.password != config.password, "runtime reused migration secret");
     expect_error(pg::Database::open(runtime), target::ErrorCode::Internal);
     {
       pqxx::connection migration(connection_string(config));
@@ -161,6 +171,7 @@ void run(const std::filesystem::path& root, std::uint16_t port,
     // Fault injection objects live in pg_catalog, owned only by the disposable test superuser.
     auto fault_admin = config;
     fault_admin.user = "p03_admin";
+    fault_admin.password = password;
     {
       pqxx::connection injector(connection_string(fault_admin));
       pqxx::work fault(injector);
@@ -182,13 +193,27 @@ void run(const std::filesystem::path& root, std::uint16_t port,
       inspect.exec("DROP FUNCTION pg_catalog.p03_fail_table()");
       inspect.commit();
     }
-    require(initialize_process(initializer, config, root / "password") == 0,
+    require(initialize_process(initializer, config, root / ("password-" + config.migration_role)) ==
+                0,
             "explicit initialization failed");
-    require(initialize_process(initializer, config, root / "password") == 1,
+    require(initialize_process(initializer, config, root / ("password-" + config.migration_role)) ==
+                1,
             "repeated CLI initialization was not rejected");
     expect_error(pg::initialize_empty(config), target::ErrorCode::Conflict);
+    {
+      pqxx::nontransaction readonly(administrator);
+      readonly.exec("ALTER DATABASE " + readonly.quote_name(config.database) +
+                    " SET default_transaction_read_only=on");
+    }
+    expect_error(pg::Database::open(runtime), target::ErrorCode::UpstreamUnavailable);
+    {
+      pqxx::nontransaction writable(administrator);
+      writable.exec("ALTER DATABASE " + writable.quote_name(config.database) +
+                    " RESET default_transaction_read_only");
+    }
+    pg::test::check_typed(runtime);
     if (config.service == target::Service::Identity) {
-      pg::test::check_unknown_commit(config, root, proxy_port);
+      pg::test::check_unknown_commit(runtime, root, proxy_port);
     }
     auto opened = pg::Database::open(runtime);
     require(std::holds_alternative<std::unique_ptr<pg::Database>>(opened),
@@ -217,6 +242,15 @@ void run(const std::filesystem::path& root, std::uint16_t port,
             "revalidation failed");
     database = std::move(std::get<std::unique_ptr<pg::Database>>(validated));
     {
+      auto impersonated = runtime;
+      impersonated.user = config.migration_role;
+      bool denied_role_switch = false;
+      try {
+        pqxx::connection forbidden(connection_string(impersonated));
+      } catch (const pqxx::broken_connection&) {
+        denied_role_switch = true;
+      }
+      require(denied_role_switch, "runtime secret authenticated as migration identity");
       pqxx::connection restricted(connection_string(runtime));
       for (const auto& sql : {"CREATE TABLE kiarabot.forbidden(id integer)",
                               "CREATE TABLE public.forbidden(id integer)",
@@ -241,6 +275,7 @@ void run(const std::filesystem::path& root, std::uint16_t port,
         auto cross = config;
         cross.database = other.database;
         cross.user = user;
+        cross.password = role_password(user);
         bool denied = false;
         try {
           pqxx::connection forbidden(connection_string(cross));
@@ -283,7 +318,7 @@ void run(const std::filesystem::path& root, std::uint16_t port,
     writer.reset();
     require(std::holds_alternative<std::unique_ptr<pg::Database>>(pg::Database::open(runtime)),
             "new writer could not recover after terminated session");
-    pg::test::check_deadline(config);
+    pg::test::check_deadline(runtime);
     {
       pqxx::connection migration(connection_string(config));
       pqxx::work altered(migration);
@@ -319,11 +354,17 @@ void run(const std::filesystem::path& root, std::uint16_t port,
   }
   auto invalid = configs[0];
   invalid.user = invalid.runtime_role;
+  invalid.password = role_password(invalid.runtime_role);
   invalid.host = "/tmp";
   expect_error(pg::Database::open(invalid), target::ErrorCode::InvalidArgument);
   invalid.host = "127.0.0.1"; // Certificate has DNS:localhost only.
   expect_error(pg::Database::open(invalid), target::ErrorCode::UpstreamUnavailable);
   invalid.host = "localhost";
+  invalid.root_certificate = (root / "password-fifo").string();
+  const auto trust_start = std::chrono::steady_clock::now();
+  expect_error(pg::Database::open(invalid), target::ErrorCode::UpstreamUnavailable);
+  require(std::chrono::steady_clock::now() - trust_start < std::chrono::seconds(1),
+          "FIFO trust store blocked connection");
   invalid.root_certificate = (root / "missing-ca.pem").string();
   expect_error(pg::Database::open(invalid), target::ErrorCode::UpstreamUnavailable);
   std::cout << "P03 storage foundation: four private databases, TLS, permissions, schema, locks, "

@@ -526,6 +526,98 @@ public:
     });
   }
 
+  target::Outcome<std::optional<target::ReplayResult>>
+  lookup_live(RecordKind kind, std::span<const std::string> key) {
+    return invoke<std::optional<target::ReplayResult>>(
+        [&]() -> target::Outcome<std::optional<target::ReplayResult>> {
+          const auto spec = record_spec(kind);
+          if (spec.owner != owner()) {
+            return error(target::ErrorCode::PermissionDenied);
+          }
+          if (key.size() != spec.keys.size() ||
+              std::any_of(key.begin(), key.end(), [](const auto& part) { return part.empty(); })) {
+            return error(target::ErrorCode::InvalidArgument);
+          }
+          return load_live(*transaction_, kind, key);
+        });
+  }
+  target::Status write_live(RecordKind kind, const target::ReplayResult& value,
+                            std::optional<target::ResourceVersion> expected) {
+    return invoke<std::monostate>([&]() -> target::Status {
+      const auto spec = record_spec(kind);
+      if (spec.owner != owner()) {
+        return error(target::ErrorCode::PermissionDenied);
+      }
+      if (static_cast<int>(kind) != static_cast<int>(value.index())) {
+        return error(target::ErrorCode::InvalidArgument);
+      }
+      const auto key = record_key(value);
+      const auto version = record_version(value);
+      if (key.size() != spec.keys.size() ||
+          std::any_of(key.begin(), key.end(), [](const auto& part) { return part.empty(); }) ||
+          (expected && (expected->value == std::numeric_limits<std::uint64_t>::max() ||
+                        version.value != expected->value + 1))) {
+        return error(target::ErrorCode::InvalidArgument);
+      }
+      if (!store_live(*transaction_, kind, value, expected)) {
+        return error(target::ErrorCode::Conflict);
+      }
+      return std::monostate{};
+    });
+  }
+  target::Outcome<std::optional<target::AuthorizationState>>
+  lookup_authorization(const target::SubjectId& subject) {
+    return invoke<std::optional<target::AuthorizationState>>([&]()
+                                                                 -> target::Outcome<std::optional<
+                                                                     target::AuthorizationState>> {
+      if (owner() != target::Service::Identity) {
+        return error(target::ErrorCode::PermissionDenied);
+      }
+      if (subject.value.empty()) {
+        return error(target::ErrorCode::InvalidArgument);
+      }
+      const auto rows = exec(
+          "SELECT subject,version,invalidation_dirty FROM kiarabot.authorizations WHERE subject=$1",
+          {subject.value});
+      if (rows.empty()) {
+        return std::optional<target::AuthorizationState>{};
+      }
+      const auto row = rows.one_row();
+      return std::optional<target::AuthorizationState>({{row["subject"].as<std::string>()},
+                                                        {row["version"].as<std::uint64_t>()},
+                                                        row["invalidation_dirty"].as<bool>()});
+    });
+  }
+  target::Status write_authorization(const target::AuthorizationState& state,
+                                     std::optional<target::ResourceVersion> expected) {
+    return invoke<std::monostate>([&]() -> target::Status {
+      if (owner() != target::Service::Identity) {
+        return error(target::ErrorCode::PermissionDenied);
+      }
+      if (state.subject.value.empty() ||
+          (expected && (expected->value == std::numeric_limits<std::uint64_t>::max() ||
+                        state.version.value != expected->value + 1))) {
+        return error(target::ErrorCode::InvalidArgument);
+      }
+      pqxx::params parameters{state.subject.value, state.version.value, state.invalidation_dirty};
+      pqxx::result rows;
+      if (!expected) {
+        rows = exec("INSERT INTO kiarabot.authorizations VALUES($1,$2,$3) ON CONFLICT DO NOTHING "
+                    "RETURNING subject",
+                    parameters);
+      } else {
+        parameters.append(expected->value);
+        rows = exec("UPDATE kiarabot.authorizations SET version=$2,invalidation_dirty=$3 WHERE "
+                    "subject=$1 AND version=$4 RETURNING subject",
+                    parameters);
+      }
+      if (rows.empty()) {
+        return error(target::ErrorCode::Conflict);
+      }
+      return std::monostate{};
+    });
+  }
+
 private:
   template <typename Value, typename Function> target::Outcome<Value> invoke(Function function) {
     if (!transaction_ || failed_ || session_->disabled) {
@@ -635,6 +727,36 @@ private:
   target::CommitResult terminal_ = target::CommitResult::RolledBack;
 };
 } // namespace
+
+target::Outcome<std::optional<target::ReplayResult>>
+find_record(target::UnitOfWork& work, RecordKind kind, std::span<const std::string> key) {
+  if (auto* common = dynamic_cast<CommonWork*>(&work)) {
+    return common->lookup_live(kind, key);
+  }
+  return error(target::ErrorCode::Internal);
+}
+target::Status save_record(target::UnitOfWork& work, RecordKind kind,
+                           const target::ReplayResult& value,
+                           std::optional<target::ResourceVersion> expected) {
+  if (auto* common = dynamic_cast<CommonWork*>(&work)) {
+    return common->write_live(kind, value, expected);
+  }
+  return error(target::ErrorCode::Internal);
+}
+target::Outcome<std::optional<target::AuthorizationState>>
+find_authorization(target::UnitOfWork& work, const target::SubjectId& subject) {
+  if (auto* common = dynamic_cast<CommonWork*>(&work)) {
+    return common->lookup_authorization(subject);
+  }
+  return error(target::ErrorCode::Internal);
+}
+target::Status save_authorization(target::UnitOfWork& work, const target::AuthorizationState& state,
+                                  std::optional<target::ResourceVersion> expected) {
+  if (auto* common = dynamic_cast<CommonWork*>(&work)) {
+    return common->write_authorization(state, expected);
+  }
+  return error(target::ErrorCode::Internal);
+}
 
 target::Outcome<std::unique_ptr<target::UnitOfWork>>
 begin_common(const std::shared_ptr<Session>& session) {

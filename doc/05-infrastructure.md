@@ -227,9 +227,19 @@ NUMERIC(20,0)无损保存uint64，禁止经double或signed bigint截断。
 首次收据/接收的创建时间和最低保留期限由数据库确定；同内容重放保留原结果/期限。
 普通队列与控制保留容量分开，满额拒绝新增，不删除已受理义务。
 
-公共schema v2保存共享收据/审计/交接/操作与12种分类型结果快照，尚不代表服务业务就绪。
+schema v3的公共部分保存共享收据/审计/交接/操作与12种分类型结果快照，尚不代表服务业务就绪。
 数据库必须为UTF8，连接强制client_encoding=UTF8；服务端notice不作为应用诊断输出。
 时间列使用与Core目标TimePoint一致的signed64 UTC epoch纳秒；数据库clock_timestamp经
 精确NUMERIC算术转换为epoch纳秒，保留外部合法亚微秒，不使用double或本机时钟tick冒充。
 启动核对固定PG16.4的全部列/default/identity、约束、索引、domain和sequence描述；
 对象计数相同但索引被替换也必须拒绝。schema版本表仅可读，业务表无DDL/触发器权限。
+
+### P03 四库typed Repository（实施中）
+
+外层 `factories.hpp` 的open_identity/runtime/scheduler/model创建对应Core工厂，
+每个工厂持有唯一已验证writer session，返回所属typed UoW；250ms有界串行，
+probe也经同factory begin/current_time/rollback，不能创建第二持锁连接。
+各权威实体使用独立关系表，按Core预期版本条件更新；Repository不决定授权或自动重试。
+Identity主体/会话/授予/授权水位、Runtime账号/安装/实例、Scheduler任务/occurrence、
+Model意图分别只在自己的库创建live表。业务行与收据结果快照分表，结果不随业务更新变化。
+本库外键/唯一约束限制无效引用与覆盖；跨库资源仅类型化引用，不创建跨库FK。

@@ -48,6 +48,11 @@ def main():
         password_file = root / 'password'
         password_file.write_text(secrets.token_hex(32) + '\n')
         password_file.chmod(0o600)
+        for service in ('identity', 'runtime', 'scheduler', 'model'):
+            for identity in ('migration', 'runtime'):
+                role_secret = root / f'password-p03_{service}_{identity}'
+                role_secret.write_text(secrets.token_hex(32) + '\n')
+                role_secret.chmod(0o600)
         initializer = str(args.initializer.resolve())
         run([initializer, '--help'])
         run([initializer], expected=2)

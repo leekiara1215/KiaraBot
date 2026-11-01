@@ -2,11 +2,14 @@
 
 #include <cstdint>
 #include <optional>
+#include <span>
 #include <string>
+#include <vector>
 
 #include <pqxx/pqxx>
 
 #include "kiarabot/core/domain/target/persistence.hpp"
+#include "record_access.hpp"
 
 namespace kiarabot::infrastructure::postgres::detail {
 
@@ -16,6 +19,19 @@ std::optional<core::target::TimePoint> optional_time(const pqxx::row& row, const
 std::string digest(const core::target::Sha256Digest& value);
 core::target::Sha256Digest read_digest(const pqxx::field& field);
 std::string time_projection(std::string_view column);
+struct RecordSpec {
+  std::string_view table;
+  std::vector<std::string_view> keys;
+  core::target::Service owner;
+};
+RecordSpec record_spec(RecordKind kind);
+std::vector<std::string> record_key(const core::target::ReplayResult& value);
+core::target::ResourceVersion record_version(const core::target::ReplayResult& value);
+bool store_live(pqxx::transaction_base& transaction, RecordKind kind,
+                const core::target::ReplayResult& value,
+                std::optional<core::target::ResourceVersion> expected);
+std::optional<core::target::ReplayResult>
+load_live(pqxx::transaction_base& transaction, RecordKind kind, std::span<const std::string> key);
 std::int64_t store_result(pqxx::transaction_base& transaction,
                           const core::target::ReplayResult& result);
 core::target::ReplayResult load_result(pqxx::transaction_base& transaction, std::int64_t id);

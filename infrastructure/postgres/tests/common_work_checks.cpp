@@ -70,7 +70,7 @@ void check_common(Database& database, const DatabaseConfig& config) {
   std::this_thread::sleep_for(std::chrono::milliseconds(10));
   check(take(work->current_time()) > now, "database clock was transaction-frozen");
   target::Operation operation{
-      {config.service, {"operation"}, {target::ResourceKind::Instance, {"resource"}}},
+      {config.service, {"operation"}, {target::ResourceKind::Catalog, {"resource"}}},
       {kHigh},
       target::OperationState::Blocked,
       target::ExecutionOutcome::Unknown,
@@ -105,7 +105,7 @@ void check_common(Database& database, const DatabaseConfig& config) {
                                  {"handoff"},
                                  {target::Service::Control,
                                   {"origin-operation"},
-                                  {target::ResourceKind::Task, {"origin-resource"}}},
+                                  {target::ResourceKind::Catalog, {"origin-resource"}}},
                                  target::MessageId{"cause"},
                                  {target::ResourceKind::Instance, {"resource"}},
                                  {kMaximum},
@@ -394,6 +394,53 @@ void check_common(Database& database, const DatabaseConfig& config) {
   take(work->journal().confirm({config.service, current_claim.entry.context.message},
                                current_claim.claim_token, now));
   committed(*work);
+
+  // The 100th durable claim is retained for attention, never discarded or auto-retried.
+  auto ceiling = outgoing;
+  ceiling.context.message = {"attempt-ceiling"};
+  work = begin(database);
+  take(work->journal().enqueue(ceiling, {1, 1, 1}, now));
+  committed(*work);
+  {
+    pqxx::connection migration(migration_dsn(config));
+    pqxx::work prepare(migration);
+    prepare.exec(
+        "UPDATE kiarabot.outbox SET attempts=99 WHERE source=$1 AND message='attempt-ceiling'",
+        pqxx::params{static_cast<int>(config.service)});
+    prepare.commit();
+  }
+  work = begin(database);
+  auto last = take(work->journal().claim(config.service, 1, now, std::chrono::seconds(30)));
+  check(last.size() == 1 && last[0].entry.attempts == 100, "100th claim not persisted");
+  committed(*work);
+  {
+    pqxx::connection migration(migration_dsn(config));
+    pqxx::work expire(migration);
+    expire.exec(
+        "UPDATE kiarabot.outbox SET lease_until=(extract(epoch FROM "
+        "clock_timestamp())*1000000000)::bigint-1000 WHERE source=$1 AND message='attempt-ceiling'",
+        pqxx::params{static_cast<int>(config.service)});
+    expire.commit();
+  }
+  work = begin(database);
+  check(take(work->journal().claim(config.service, 1, now, std::chrono::seconds(30))).empty(),
+        "100-attempt obligation automatically retried");
+  committed(*work);
+  {
+    pqxx::connection migration(migration_dsn(config));
+    pqxx::read_transaction inspect(migration);
+    check(inspect.exec("SELECT state FROM kiarabot.outbox WHERE source=$1 AND "
+                       "message='attempt-ceiling'",
+                       pqxx::params{static_cast<int>(config.service)})
+                  .one_row()[0]
+                  .as<int>() == static_cast<int>(target::OutboxState::NeedsAttention),
+          "exhausted outbox obligation disappeared");
+  }
+  work = begin(database);
+  auto blocked = outgoing;
+  blocked.context.message = {"after-ceiling"};
+  expect(work->journal().enqueue(blocked, {1, 1, 1}, now), target::ErrorCode::RateLimited);
+  rejected(*work);
 
   // Expired storage is cleaned in a bounded batch; still-valid seven-day receipts remain.
   {

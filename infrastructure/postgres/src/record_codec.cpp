@@ -29,16 +29,16 @@ std::string marks(std::size_t count, std::size_t offset = 1) {
   }
   return result;
 }
-void put(pqxx::transaction_base& transaction, std::string_view table, std::string_view columns,
-         std::int64_t id, pqxx::params values) {
+void put_snapshot(pqxx::transaction_base& transaction, std::string_view table,
+                  std::string_view columns, std::int64_t id, pqxx::params values) {
   pqxx::params parameters{id};
   parameters.append(std::move(values));
   transaction.exec("INSERT INTO kiarabot.result_" + std::string(table) + "(result_id," +
                        std::string(columns) + ") VALUES(" + marks(parameters.size()) + ")",
                    parameters);
 }
-pqxx::row get(pqxx::transaction_base& transaction, std::string_view table, std::int64_t id,
-              std::string_view projection = "*") {
+pqxx::row get_snapshot(pqxx::transaction_base& transaction, std::string_view table, std::int64_t id,
+                       std::string_view projection = "*") {
   return transaction
       .exec("SELECT " + std::string(projection) + " FROM kiarabot.result_" + std::string(table) +
                 " WHERE result_id=$1",
@@ -87,7 +87,7 @@ target::Operation read_operation(const pqxx::row& row) {
   target::Operation value;
   value.ref = {enum_field<target::Service>(row["owner"], 5),
                {row["id"].as<std::string>()},
-               {enum_field<target::ResourceKind>(row["resource_kind"], 14),
+               {enum_field<target::ResourceKind>(row["resource_kind"], 15),
                 {row["resource_id"].as<std::string>()}}};
   value.version = {row["version"].as<std::uint64_t>()};
   value.state = enum_field<target::OperationState>(row["state"], 6);
@@ -125,11 +125,11 @@ target::HandoffContext read_handoff(const pqxx::row& row) {
   target::HandoffContext value;
   value.source = enum_field<target::Service>(row["source"], 5);
   value.message = {row["message"].as<std::string>()};
-  value.resource = {enum_field<target::ResourceKind>(row["resource_kind"], 14),
+  value.resource = {enum_field<target::ResourceKind>(row["resource_kind"], 15),
                     {row["resource_id"].as<std::string>()}};
   value.operation = {enum_field<target::Service>(row["operation_owner"], 5),
                      {row["operation_id"].as<std::string>()},
-                     {enum_field<target::ResourceKind>(row["operation_resource_kind"], 14),
+                     {enum_field<target::ResourceKind>(row["operation_resource_kind"], 15),
                       {row["operation_resource_id"].as<std::string>()}}};
   if (!row["causation"].is_null()) {
     value.causation = target::MessageId{row["causation"].as<std::string>()};
@@ -143,12 +143,133 @@ target::HandoffContext read_handoff(const pqxx::row& row) {
   return value;
 }
 
-std::int64_t store_result(pqxx::transaction_base& transaction, const target::ReplayResult& result) {
-  const auto id = transaction
-                      .exec("INSERT INTO kiarabot.replay_results(kind) VALUES($1) RETURNING id",
-                            pqxx::params{static_cast<int>(result.index())})
-                      .one_row()[0]
-                      .as<std::int64_t>();
+RecordSpec record_spec(RecordKind kind) {
+  switch (kind) {
+  case RecordKind::Principal:
+    return {"principals", {"id"}, target::Service::Identity};
+  case RecordKind::Session:
+    return {"sessions", {"id"}, target::Service::Identity};
+  case RecordKind::Grant:
+    return {"grants", {"id"}, target::Service::Identity};
+  case RecordKind::Account:
+    return {"accounts", {"id"}, target::Service::Runtime};
+  case RecordKind::Installation:
+    return {"installations", {"id"}, target::Service::Runtime};
+  case RecordKind::Instance:
+    return {"instances", {"id"}, target::Service::Runtime};
+  case RecordKind::Task:
+    return {"tasks", {"owner", "task_id"}, target::Service::Scheduler};
+  case RecordKind::Occurrence:
+    return {"occurrences", {"occurrence_id"}, target::Service::Scheduler};
+  case RecordKind::ModelIntent:
+    return {"model_intents", {"owner", "logical_call_id"}, target::Service::Model};
+  }
+  throw std::runtime_error("invalid relation dispatch");
+}
+std::vector<std::string> record_key(const target::ReplayResult& value) {
+  return std::visit(
+      [](const auto& record) -> std::vector<std::string> {
+        using Value = std::decay_t<decltype(record)>;
+        if constexpr (std::is_same_v<Value, target::ScheduledTask>) {
+          return {record.key.owner.value, record.key.task_id};
+        } else if constexpr (std::is_same_v<Value, target::ModelIntent>) {
+          return {record.owner.value, record.logical_call_id};
+        } else if constexpr (std::is_same_v<Value, target::Occurrence>) {
+          return {record.occurrence_id.value};
+        } else if constexpr (requires { record.id.value; }) {
+          return {record.id.value};
+        } else {
+          return {};
+        }
+      },
+      value);
+}
+target::ResourceVersion record_version(const target::ReplayResult& value) {
+  return std::visit(
+      [](const auto& record) -> target::ResourceVersion {
+        if constexpr (requires { record.version; }) {
+          return record.version;
+        } else {
+          return {};
+        }
+      },
+      value);
+}
+namespace {
+std::string key_predicate(const RecordSpec& spec, std::size_t offset = 1) {
+  std::string predicate;
+  for (std::size_t index = 0; index < spec.keys.size(); ++index) {
+    predicate += (index ? " AND " : "") + std::string(spec.keys[index]) + "=$" +
+                 std::to_string(offset + index);
+  }
+  return predicate;
+}
+pqxx::params key_parameters(std::span<const std::string> key) {
+  pqxx::params parameters;
+  for (const auto& component : key) {
+    parameters.append(component);
+  }
+  return parameters;
+}
+bool put_live(pqxx::transaction_base& transaction, const RecordSpec& spec, std::string_view columns,
+              pqxx::params parameters, std::span<const std::string> key,
+              std::optional<target::ResourceVersion> expected) {
+  if (!expected) {
+    return !transaction
+                .exec("INSERT INTO kiarabot." + std::string(spec.table) + "(" +
+                          std::string(columns) + ") VALUES(" + marks(parameters.size()) +
+                          ") ON CONFLICT DO NOTHING RETURNING " + std::string(spec.keys[0]),
+                      parameters)
+                .empty();
+  }
+  std::string assignments;
+  std::size_t begin = 0, index = 1;
+  while (begin < columns.size()) {
+    const auto end = columns.find(',', begin);
+    const auto column =
+        columns.substr(begin, end == std::string_view::npos ? columns.size() - begin : end - begin);
+    assignments +=
+        (assignments.empty() ? "" : ",") + std::string(column) + "=$" + std::to_string(index++);
+    if (end == std::string_view::npos) {
+      break;
+    }
+    begin = end + 1;
+  }
+  const auto predicate = key_predicate(spec, parameters.size() + 1);
+  parameters.append(key_parameters(key));
+  const auto version_parameter = parameters.size() + 1;
+  parameters.append(expected->value);
+  return !transaction
+              .exec("UPDATE kiarabot." + std::string(spec.table) + " SET " + assignments +
+                        " WHERE " + predicate + " AND version=$" +
+                        std::to_string(version_parameter) + " RETURNING " +
+                        std::string(spec.keys[0]),
+                    parameters)
+              .empty();
+}
+std::int64_t write_record(pqxx::transaction_base& transaction, const target::ReplayResult& result,
+                          bool live, std::optional<target::ResourceVersion> expected) {
+  const auto id =
+      live ? std::int64_t{0}
+           : transaction
+                 .exec("INSERT INTO kiarabot.replay_results(kind) VALUES($1) RETURNING id",
+                       pqxx::params{static_cast<int>(result.index())})
+                 .one_row()[0]
+                 .as<std::int64_t>();
+  bool matched = true;
+  const auto put = [&](pqxx::transaction_base& connection, std::string_view table,
+                       std::string_view columns, std::int64_t result_id, pqxx::params parameters) {
+    if (!live) {
+      put_snapshot(connection, table, columns, result_id, std::move(parameters));
+      return;
+    }
+    const auto spec = record_spec(static_cast<RecordKind>(result.index()));
+    if (spec.table != table) {
+      throw std::runtime_error("invalid relation codec");
+    }
+    matched =
+        put_live(connection, spec, columns, std::move(parameters), record_key(result), expected);
+  };
   std::visit(
       [&](const auto& value) {
         using Value = std::decay_t<decltype(value)>;
@@ -183,11 +304,27 @@ std::int64_t store_result(pqxx::transaction_base& transaction, const target::Rep
           put(transaction, "grants", "id,subject,role,version", id,
               {value.id.value, value.subject.value, optional_enum(value.role),
                value.version.value});
+          if (!matched) {
+            return;
+          }
+          if (live) {
+            transaction.exec("DELETE FROM kiarabot.grant_scopes WHERE grant_id=$1",
+                             pqxx::params{value.id.value});
+          }
           for (std::size_t index = 0; index < value.scopes.size(); ++index) {
             const auto& scope = value.scopes[index];
-            transaction.exec("INSERT INTO kiarabot.result_grant_scopes VALUES($1,$2,$3,$4,$5)",
-                             pqxx::params{id, index, static_cast<int>(scope.resource.kind),
-                                          scope.resource.id.value, scope.permission});
+            pqxx::params parameters;
+            if (live) {
+              parameters.append(value.id.value);
+            } else {
+              parameters.append(id);
+            }
+            parameters.append(pqxx::params{index, static_cast<int>(scope.resource.kind),
+                                           scope.resource.id.value, scope.permission});
+            transaction.exec("INSERT INTO kiarabot." +
+                                 std::string(live ? "grant_scopes" : "result_grant_scopes") +
+                                 " VALUES($1,$2,$3,$4,$5)",
+                             parameters);
           }
         } else if constexpr (std::is_same_v<Value, target::BotAccount>) {
           put(transaction, "accounts", "id,platform,platform_account_id,display_name,version,state",
@@ -258,21 +395,53 @@ std::int64_t store_result(pqxx::transaction_base& transaction, const target::Rep
         }
       },
       result);
-  return id;
+  return live ? (matched ? 1 : 0) : id;
+}
+} // namespace
+std::int64_t store_result(pqxx::transaction_base& transaction, const target::ReplayResult& result) {
+  return write_record(transaction, result, false, {});
+}
+bool store_live(pqxx::transaction_base& transaction, RecordKind kind,
+                const target::ReplayResult& value,
+                std::optional<target::ResourceVersion> expected) {
+  if (static_cast<int>(kind) != static_cast<int>(value.index())) {
+    return false;
+  }
+  return write_record(transaction, value, true, expected) != 0;
 }
 
-target::ReplayResult load_result(pqxx::transaction_base& transaction, std::int64_t id) {
-  const auto kind =
-      transaction.exec("SELECT kind FROM kiarabot.replay_results WHERE id=$1", pqxx::params{id})
-          .one_row()[0]
-          .as<int>();
+namespace {
+target::ReplayResult load_record(pqxx::transaction_base& transaction, std::int64_t id,
+                                 std::optional<RecordKind> live_kind = {},
+                                 std::span<const std::string> live_key = {}) {
+  const auto kind = live_kind ? static_cast<int>(*live_kind)
+                              : transaction
+                                    .exec("SELECT kind FROM kiarabot.replay_results WHERE id=$1",
+                                          pqxx::params{id})
+                                    .one_row()[0]
+                                    .as<int>();
+  const auto get = [&](pqxx::transaction_base& connection, std::string_view table,
+                       std::int64_t result_id, std::string_view projection = "*") -> pqxx::row {
+    if (!live_kind) {
+      return get_snapshot(connection, table, result_id, projection);
+    }
+    const auto spec = record_spec(*live_kind);
+    if (spec.table != table) {
+      throw std::runtime_error("invalid relation decoder");
+    }
+    return connection
+        .exec("SELECT " + std::string(projection) + " FROM kiarabot." + std::string(table) +
+                  " WHERE " + key_predicate(spec),
+              key_parameters(live_key))
+        .one_row();
+  };
   switch (kind) {
   case 0:
     return target::EmptySuccess{};
   case 1: {
     const auto row = get(transaction, "mutations", id);
     return target::ResourceMutationResult{
-        {enum_field<target::ResourceKind>(row["resource_kind"], 14),
+        {enum_field<target::ResourceKind>(row["resource_kind"], 15),
          {row["resource_id"].as<std::string>()}},
         {row["version"].as<std::uint64_t>()}};
   }
@@ -289,7 +458,7 @@ target::ReplayResult load_result(pqxx::transaction_base& transaction, std::int64
                             {row["version"].as<std::uint64_t>()},
                             enum_field<target::LifecycleState>(row["state"], 5)};
     if (!row["binding_kind"].is_null()) {
-      value.binding = target::ResourceRef{enum_field<target::ResourceKind>(row["binding_kind"], 14),
+      value.binding = target::ResourceRef{enum_field<target::ResourceKind>(row["binding_kind"], 15),
                                           {row["binding_id"].as<std::string>()}};
     }
     return value;
@@ -312,11 +481,16 @@ target::ReplayResult load_result(pqxx::transaction_base& transaction, std::int64
     if (!row["role"].is_null()) {
       value.role = enum_field<target::FixedRole>(row["role"], 2);
     }
-    const auto scopes = transaction.exec(
-        "SELECT * FROM kiarabot.result_grant_scopes WHERE result_id=$1 ORDER BY position",
-        pqxx::params{id});
+    const auto scopes =
+        live_kind
+            ? transaction.exec(
+                  "SELECT * FROM kiarabot.grant_scopes WHERE grant_id=$1 ORDER BY position",
+                  pqxx::params{live_key[0]})
+            : transaction.exec(
+                  "SELECT * FROM kiarabot.result_grant_scopes WHERE result_id=$1 ORDER BY position",
+                  pqxx::params{id});
     for (const auto& scope : scopes) {
-      value.scopes.push_back({{enum_field<target::ResourceKind>(scope["resource_kind"], 14),
+      value.scopes.push_back({{enum_field<target::ResourceKind>(scope["resource_kind"], 15),
                                {scope["resource_id"].as<std::string>()}},
                               scope["permission"].as<std::string>()});
     }
@@ -417,5 +591,21 @@ target::ReplayResult load_result(pqxx::transaction_base& transaction, std::int64
   default:
     throw std::runtime_error("invalid stored result kind");
   }
+}
+} // namespace
+
+target::ReplayResult load_result(pqxx::transaction_base& transaction, std::int64_t id) {
+  return load_record(transaction, id);
+}
+std::optional<target::ReplayResult> load_live(pqxx::transaction_base& transaction, RecordKind kind,
+                                              std::span<const std::string> key) {
+  const auto spec = record_spec(kind);
+  const auto exists = transaction.exec("SELECT 1 FROM kiarabot." + std::string(spec.table) +
+                                           " WHERE " + key_predicate(spec),
+                                       key_parameters(key));
+  if (exists.empty()) {
+    return {};
+  }
+  return load_record(transaction, 0, kind, key);
 }
 } // namespace kiarabot::infrastructure::postgres::detail

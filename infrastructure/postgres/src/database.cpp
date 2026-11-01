@@ -4,14 +4,18 @@
 #include <array>
 #include <cstdlib>
 #include <exception>
+#include <fcntl.h>
 #include <string_view>
+#include <unistd.h>
 #include <utility>
 
 #include <pqxx/pqxx>
 #include <pqxx/version>
+#include <sys/stat.h>
 
 #include "../schema/common.hpp"
 #include "../schema/manifest.hpp"
+#include "../schema/services.hpp"
 #include "../schema/v1.hpp"
 #include "session.hpp"
 
@@ -81,13 +85,40 @@ std::string quote_option(std::string_view value) {
   return quoted;
 }
 
+class TrustFile final {
+public:
+  explicit TrustFile(const std::string& path)
+      : descriptor_(::open(path.c_str(), O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC)) {}
+  ~TrustFile() {
+    if (descriptor_ >= 0) {
+      ::close(descriptor_);
+    }
+  }
+  TrustFile(const TrustFile&) = delete;
+  TrustFile& operator=(const TrustFile&) = delete;
+  bool valid() const {
+    struct stat metadata {};
+    return descriptor_ >= 0 && ::fstat(descriptor_, &metadata) == 0 && S_ISREG(metadata.st_mode) &&
+           metadata.st_size > 0 && metadata.st_size <= 1024 * 1024;
+  }
+
+private:
+  int descriptor_;
+};
+
 std::unique_ptr<pqxx::connection> connect(const DatabaseConfig& config) {
+  // libpq's connect_timeout cannot bound opening a FIFO supplied as a trust store.
+  // Reject special files without blocking before handing a regular PEM path to libpq.
+  if (!TrustFile(config.root_certificate).valid()) {
+    throw pqxx::broken_connection("database trust material unavailable");
+  }
   auto connection = std::make_unique<pqxx::connection>(
       "host=" + quote_option(config.host) + " port=" + std::to_string(config.port) +
       " dbname=" + quote_option(config.database) + " user=" + quote_option(config.user) +
       " password=" + quote_option(config.password) +
       " sslrootcert=" + quote_option(config.root_certificate) +
-      " sslmode=verify-full channel_binding=require gssencmode=disable connect_timeout=5"
+      " sslmode=verify-full channel_binding=require gssencmode=disable connect_timeout=5 "
+      "target_session_attrs=read-write"
       " options='-c statement_timeout=3000 -c lock_timeout=1000"
       " -c idle_in_transaction_session_timeout=5000 -c search_path=pg_catalog -c timezone=UTC -c "
       "client_encoding=UTF8'"
@@ -240,8 +271,8 @@ bool schema_valid(pqxx::transaction_base& transaction, const DatabaseConfig& con
          records[0][1].as<int>() == schema::kVersion &&
          records[0][2].as<std::string>() == service_name(config.service) &&
          permissions.one_row()[0].as<bool>() && schema_permissions.one_row()[0].as<bool>() &&
-         objects.one_row()[0].as<int>() == 46 &&
-         descriptor.one_row()[0].as<std::string>() == schema::kDescriptor &&
+         objects.one_row()[0].as<int>() == schema::relation_count(config.service) &&
+         descriptor.one_row()[0].as<std::string>() == schema::descriptor(config.service) &&
          owners.one_row()[0].as<bool>() && table_access.one_row()[0].as<bool>() &&
          no_executable_objects.one_row()[0].as<int>() == 0;
 }
@@ -292,6 +323,7 @@ core::target::Status initialize_empty(const DatabaseConfig& config) {
                      transaction.quote_name(config.runtime_role));
     transaction.exec(schema::kCreate);
     transaction.exec(schema::common_sql());
+    transaction.exec(schema::service_sql(config.service));
     transaction.exec("INSERT INTO kiarabot.schema_versions VALUES(true,$1,$2)",
                      pqxx::params{schema::kVersion, service_name(config.service)});
     transaction.exec("GRANT USAGE ON SCHEMA kiarabot TO " +

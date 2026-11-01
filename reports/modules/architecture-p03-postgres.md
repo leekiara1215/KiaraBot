@@ -224,3 +224,65 @@ Python pathlib文档章节/路径/换行校验、git diff --check、与13cac3a�
 文档实际更新doc/05、doc/08及本报告，未更新proto/API/其他模块的理由同本节开头影响判断。
 根full/CTest/统一工具链仍由工具链接线后主集成执行，本分支无权修改CMake；
 typed live Repository/工厂定义与完整100次派发/进程接线等后续能力未完成，不宣称P03完成。
+
+## 能力三：四库typed Repository与可链接工厂（实施中）
+
+范围仍限本模块；允许新增src/factories.cpp、src/record_access.hpp、schema/services.hpp及测试。
+复用Core已审核typed UoW/Repository/值模型，不增加Core接口/复制类型。文档需同步doc/05
+实体关系与工厂、doc/08当前schema版本；proto/API/其他业务模块无新行为，doc/18只读。
+
+采用每域本库独立live表与PK/CAS；复用分类型字段codec，业务实体不借公共收据指针间接存储。
+Identity会话/授予/授权水位FK主体，Runtime实例FK安装/类型，Scheduler occurrence FK本地任务，
+跨服务引用不建FK；receipt/inbox仍有自己的不可变分类型结果快照，不随业务行更新。
+同一单session/2秒事务/250ms许可继续适用，factory不开放其他服务仓储。
+
+typed能力schema为v3；追加Core审核Catalog b25b40c（本地e74bbd0），内部kind15不重排0–14，
+SQL CHECK与codec均同步0–15，四库结构描述各自固定；不做目录授权继承/通配。
+当前doc/05、doc/08标记v3；v1/v2仅为前序开发能力，拒绝自动升级/补DDL或清库。
+新增权限故障检查使用8份独立随机角色密码（管理员另有秘密），运行秘密不能认证迁移用户名，
+跨库测试继续用每角色自身正确密码验证CONNECT ACL，避免错密码掩盖库隔离。
+另外信任CA在交libpq前按非阻塞/nofollow检查普通文件及1MiB界限，特殊文件依赖失败有界拒绝，
+不增加DSN覆盖或放宽TLS；对应FIFO根CA测试要求1秒内失败。
+
+### typed能力集成清单与实际结果
+
+库 `kiarabot_postgres` 在能力二3源上增加 `infrastructure/postgres/src/factories.cpp`，
+内部帮助头 `record_access.hpp`；无需新增依赖，仍libpqxx::pqxx和Threads::Threads。
+driver再增加 `infrastructure/postgres/tests/typed_work_checks.cpp` 及同名hpp。
+因此最终库4个TU，driver3个TU；CLI source/target、Python runner参数、CTest labels不变。
+四个open_*函数现有真实可链接定义，返回对应Core typed factory，未设置CapabilityNotSupported替身。
+每个live实体是独立关系表，复用字段编解码而非借收据指针间接存业务数据；
+CAS由条件UPDATE/唯一键执行，grant scopes在同事务替换，跨库只存引用。
+
+实际-Werror命令与能力二同固定路径/flags，库source列表增factories.cpp，driver增typed_work_checks.cpp；
+CLI、普通driver和加-fsanitize=address,undefined/-fno-omit-frame-pointer的driver均重新编译通过。
+本机为避免反复手输，另在忽略的build/p03/verify_build.py记录上述相同argv并实际运行三条构建；
+该临时脚本/产物不提交，不将其当作生产构建系统。
+普通及sanitizer driver分别启动各自独立真实PG16.4集群，全部fixture再次通过，无sanitizer报告。
+新增验证包括：
+
+- 四typed工厂并发begin有界，错误owner facade InvalidArgument，所有typed仓储create/find/update。
+- Identity session/grant/authorization FK，完整uint64 rotation与时间端点；grant CAS替换scope子表，
+  旧收据仍回放原scope快照；普通outbox满时authorization dirty/version仍在独立正常事务提交。
+- Runtime账号平台组合唯一，实例安装/类型FK；可选fence/host全字段保存和置空。
+  两真实并发请求携同expected_version，一次提交一次Conflict，重启保留唯一CAS胜者。
+- Scheduler owner+task_id隔离、二进制payload/137ns run_at，occurrence本地任务/安装/身份FK，
+  被引用的occurrence身份不能悄悄替换；接受事件/731ns确认时间持久化并跨重启保存。
+- Model owner+logical_call_id唯一、hash/UINT64_MAX config_version/纳秒保存，Unknown状态跨重启。
+  factory先销毁时活动UoW仍有session租用，commit后立即释放，终止UoW保留owner且新factory能打开。
+- Catalog作为receipt key、operation/ref以及typed grant scope无损持久化，同ID不同kind不混合；
+  不添加授权继承或通配。源包低位纳秒/最大最小时间和旧12种ReplayResult全部回归。
+- 实际第100次claim持久保存，租约过期后NeedsAttention，不自动重发、不删除已受理记录，
+  继续占普通队列容量并背压。旧claim token不能确认新尝试。
+- 九份独立随机秘密（管理员+8角色），runtime秘密认证迁移用户名失败；
+  私有库24组CONNECT拒绝继续用各自正确秘密，全部DDL拒绝/显式初始化/未知提交回归通过。
+- CA FIFO一秒内UpstreamUnavailable，不阻塞信任文件打开；只读数据库新连接被read-write策略
+  拒绝，恢复可写后四库typed工厂均可打开。没有关闭TLS、通道绑定或回退到SQLite。
+
+静态验证：固定tidy22对本模块8个手写TU（4库+CLI+3测试）clang-analyzer-* /
+warnings-as-errors实际通过，后续信任材料/read-write变更又重验database.cpp与database_test.cpp。
+format16所有模块C++源/头dry-run通过，Python fixture py_compile、文档P03章节/文件路径/换行、
+git diff --check及受保护doc/18与13cac3a无差异检查通过。文档本能力更新doc/05、doc/08及本报告；
+无需改proto/API/doc01或其他模块行为，Catalog唯一契约及Core类型由其已审查提交提供。
+根full/CTest/统一工具链与四daemon组合接线由父/工具链线程接入后实际验证；
+不把本机定向编译/PG测试冒充这些集成证据，不宣称P03全阶段已完成。

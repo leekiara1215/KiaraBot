@@ -7,7 +7,7 @@ namespace kiarabot::infrastructure::postgres::schema {
 
 inline constexpr std::string_view kOperationColumns = R"sql(
   id text NOT NULL, owner integer NOT NULL CHECK(owner BETWEEN 0 AND 5),
-  resource_kind integer NOT NULL CHECK(resource_kind BETWEEN 0 AND 14), resource_id text NOT NULL,
+  resource_kind integer NOT NULL CHECK(resource_kind BETWEEN 0 AND 15), resource_id text NOT NULL,
   version kiarabot.uint64 NOT NULL, state integer NOT NULL CHECK(state BETWEEN 0 AND 6),
   execution_outcome integer NOT NULL CHECK(execution_outcome BETWEEN 0 AND 3),
   blocked_reason integer CHECK(blocked_reason BETWEEN 0 AND 10), next_attempt bigint
@@ -15,9 +15,9 @@ inline constexpr std::string_view kOperationColumns = R"sql(
 inline constexpr std::string_view kHandoffColumns = R"sql(
   source integer NOT NULL CHECK(source BETWEEN 0 AND 5), message text NOT NULL,
   operation_id text NOT NULL, operation_owner integer NOT NULL CHECK(operation_owner BETWEEN 0 AND 5),
-  operation_resource_kind integer NOT NULL CHECK(operation_resource_kind BETWEEN 0 AND 14),
+  operation_resource_kind integer NOT NULL CHECK(operation_resource_kind BETWEEN 0 AND 15),
   operation_resource_id text NOT NULL, causation text,
-  resource_kind integer NOT NULL CHECK(resource_kind BETWEEN 0 AND 14), resource_id text NOT NULL,
+  resource_kind integer NOT NULL CHECK(resource_kind BETWEEN 0 AND 15), resource_id text NOT NULL,
   resource_version kiarabot.uint64 NOT NULL, actor text NOT NULL,
   authorization_version kiarabot.uint64 NOT NULL, payload_hash bytea NOT NULL CHECK(octet_length(payload_hash)=32),
   created_at bigint NOT NULL, valid_until bigint NOT NULL CHECK(valid_until>created_at)
@@ -33,7 +33,7 @@ CREATE TABLE kiarabot.replay_results (
 );
 CREATE TABLE kiarabot.result_mutations (
   result_id bigint PRIMARY KEY REFERENCES kiarabot.replay_results(id) ON DELETE CASCADE,
-  resource_kind integer NOT NULL CHECK(resource_kind BETWEEN 0 AND 14),
+  resource_kind integer NOT NULL CHECK(resource_kind BETWEEN 0 AND 15),
   resource_id text NOT NULL, version kiarabot.uint64 NOT NULL
 );
 )sql";
@@ -46,7 +46,7 @@ CREATE TABLE kiarabot.result_mutations (
   snapshot("operations", kOperationColumns);
   snapshot("principals", R"sql(
     id text NOT NULL, kind integer NOT NULL CHECK(kind BETWEEN 0 AND 3),
-    binding_kind integer CHECK(binding_kind BETWEEN 0 AND 14), binding_id text,
+    binding_kind integer CHECK(binding_kind BETWEEN 0 AND 15), binding_id text,
     version kiarabot.uint64 NOT NULL, state integer NOT NULL CHECK(state BETWEEN 0 AND 5),
     CHECK((binding_kind IS NULL)=(binding_id IS NULL))
   )sql");
@@ -61,7 +61,7 @@ CREATE TABLE kiarabot.result_mutations (
   sql += R"sql(
 CREATE TABLE kiarabot.result_grant_scopes (
   result_id bigint NOT NULL REFERENCES kiarabot.result_grants(result_id) ON DELETE CASCADE,
-  position integer NOT NULL CHECK(position>=0), resource_kind integer NOT NULL CHECK(resource_kind BETWEEN 0 AND 14),
+  position integer NOT NULL CHECK(position>=0), resource_kind integer NOT NULL CHECK(resource_kind BETWEEN 0 AND 15),
   resource_id text NOT NULL, permission text NOT NULL, PRIMARY KEY(result_id,position)
 );
 )sql";
@@ -108,7 +108,7 @@ CREATE TABLE kiarabot.result_grant_scopes (
   )sql");
   sql += R"sql(
 CREATE TABLE kiarabot.command_receipts (
-  subject text NOT NULL, method text NOT NULL, resource_kind integer NOT NULL CHECK(resource_kind BETWEEN 0 AND 14),
+  subject text NOT NULL, method text NOT NULL, resource_kind integer NOT NULL CHECK(resource_kind BETWEEN 0 AND 15),
   resource_id text NOT NULL, idempotency_key text NOT NULL,
   fingerprint bytea NOT NULL CHECK(octet_length(fingerprint)=32),
   result_id bigint NOT NULL UNIQUE REFERENCES kiarabot.replay_results(id),
@@ -118,7 +118,7 @@ CREATE TABLE kiarabot.command_receipts (
 CREATE INDEX command_receipts_expiry ON kiarabot.command_receipts(retain_until);
 CREATE TABLE kiarabot.audit_entries (
   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-  actor text NOT NULL, resource_kind integer NOT NULL CHECK(resource_kind BETWEEN 0 AND 14), resource_id text NOT NULL,
+  actor text NOT NULL, resource_kind integer NOT NULL CHECK(resource_kind BETWEEN 0 AND 15), resource_id text NOT NULL,
   request_id text NOT NULL, trace_id text NOT NULL, method text NOT NULL,
   rejection integer CHECK(rejection BETWEEN 0 AND 10), authorization_version kiarabot.uint64 NOT NULL,
   occurred_at bigint NOT NULL
@@ -127,7 +127,7 @@ CREATE TABLE kiarabot.audit_entries (
   sql +=
       "CREATE TABLE kiarabot.operations (" + std::string(kOperationColumns) + ",PRIMARY KEY(id));";
   sql += "CREATE TABLE kiarabot.outbox (" + std::string(kHandoffColumns) + R"sql(,
-    payload_kind integer NOT NULL CHECK(payload_kind BETWEEN 0 AND 14), payload_id text NOT NULL,
+    payload_kind integer NOT NULL CHECK(payload_kind BETWEEN 0 AND 15), payload_id text NOT NULL,
     payload_version kiarabot.uint64 NOT NULL, lane integer NOT NULL CHECK(lane BETWEEN 0 AND 1),
     state integer NOT NULL CHECK(state BETWEEN 0 AND 4), attempts integer NOT NULL CHECK(attempts BETWEEN 0 AND 100),
     next_attempt_at bigint NOT NULL, claim_token text, lease_until bigint,

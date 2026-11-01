@@ -4,7 +4,7 @@
 
 namespace kiarabot::infrastructure::postgres::schema {
 
-inline constexpr int kVersion = 2;
+inline constexpr int kVersion = 3;
 // Explicit empty-database schema version; no upgrade or reset of existing databases.
 inline constexpr std::string_view kCreate = R"sql(
 CREATE SCHEMA kiarabot;

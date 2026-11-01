@@ -2,6 +2,8 @@
 
 #include <string_view>
 
+#include "kiarabot/core/domain/target/foundation.hpp"
+
 namespace kiarabot::infrastructure::postgres::schema {
 // Descriptor checksum only, not a security primitive. Fixed PG16.4 catalog rendering covers
 // all relation columns/defaults/identity, constraints, indexes, sequence settings and domain.
@@ -29,5 +31,32 @@ SELECT md5(string_agg(descriptor,E'\n' ORDER BY descriptor)) FROM (
     FROM pg_sequences WHERE schemaname='kiarabot'
 ) descriptors
 )sql";
-inline constexpr std::string_view kDescriptor = "0feaaadffe80776e67c21f4e74fd5632";
+inline constexpr std::string_view descriptor(core::target::Service owner) {
+  switch (owner) {
+  case core::target::Service::Identity:
+    return "e65ddd97c6c0bbf349bc65bcdcbdfb1e";
+  case core::target::Service::Runtime:
+    return "7d31916ae3ece03e99a9d5b1b3bbaaed";
+  case core::target::Service::Scheduler:
+    return "e1fc9dd761a457cd6b9b7ea279c9e5a0";
+  case core::target::Service::Model:
+    return "1e4a6b2e0ed5e62cce290cdd6ba30ce3";
+  default:
+    return {};
+  }
+}
+inline constexpr int relation_count(core::target::Service owner) {
+  switch (owner) {
+  case core::target::Service::Identity:
+    return 56;
+  case core::target::Service::Runtime:
+    return 54;
+  case core::target::Service::Scheduler:
+    return 53;
+  case core::target::Service::Model:
+    return 48;
+  default:
+    return 0;
+  }
+}
 } // namespace kiarabot::infrastructure::postgres::schema
