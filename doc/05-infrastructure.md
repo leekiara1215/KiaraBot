@@ -459,3 +459,18 @@ InvalidArgument；缺失当前证书材料或 head/指纹错配为 Internal，�
 证书/SAN/service 和有限期限；此查询不证明 TLS possession，也不代替来源 actor 授权。
 Identity 空库 schema8 增加 credential_heads(subject,id,version) 非唯一索引；允许识别
 歧义而不以索引任意选择。其他三库未变，旧库拒绝，不自动迁移或重置。
+
+### P04 授予请求规范指纹
+
+`make_assignment_fingerprints` 实现独立 Core 端口，使用成熟 OpenSSL EVP SHA-256。
+只处理公开 Set/Revoke 请求内容，不处理密码/token，不构成授权。每次调用独占 digest
+context，工厂也执行 EVP 初始化/完成探测；失败返回 UpstreamUnavailable，无零摘要回退。
+Set 固定域后按序编码 target 存在标志/ID、subject、basis tag、role 或排序 permissions、
+排序资源、expected 存在标志/版本；Revoke 编码另一固定域、target、expected。
+所有整数与存在标志为八字节无符号大端，字符串为字节长度前缀加原字节；集合先编码
+元素数。资源按已冻结 kind 值及 ID 排序，permission 按封闭枚举值排序，role 使用封闭值。
+域名来自 Core 端口，不添加客户端可选算法。该格式有固定 golden vectors，后续不能
+静默改变已存收据内容身份。请求/trace/deadline/key 不参与内容摘要。
+ID 最长1024字节且非空无NUL，精确资源1–128，permission1–40；重复/未知枚举/通配
+及空 scope 拒绝。Set target/expected 必须同在或同缺，present版本为正。应用还须独立
+核验 owner kind、当前权限及 old/new scope，且在所有 UoW 外计算指纹。
