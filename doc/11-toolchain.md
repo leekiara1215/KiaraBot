@@ -436,3 +436,20 @@ python3 scripts/quality/check-dependency-lock.py --archive /path/to/cpython-3.11
 Linux归档的摘要同样来自该完整跨平台清单。本轮没有取得独立归档体，HTTP403不记成功，
 也不宣称Linux运行/CI/镜像digest已验收。执行证据见
 [本轮P03工具链记录](../reports/modules/architecture-p03-toolchain.md)。
+
+## P03 工具链准备：实际依赖上下文
+
+锁定统一入口不再假定当前source tree的`build/architecture-installed`。它从选定
+`build/<preset>/CMakeCache.txt`读取实际`VCPKG_INSTALLED_DIR`、内部归一化值、triplet和
+CMAKE_TOOLCHAIN_FILE，来源检查与standalone基础设施构建使用同一上下文。缺项、相对路径、
+重复/相互矛盾的路径或非法triplet直接失败；不回退系统库，不从未知环境变量猜路径。
+路径含空格或等号保持为单一参数，显式传递triplet，支持已验证prefix被其他worktree复用。
+
+```bash
+python3 scripts/quality/cmake-check-context.py --build-dir build/full-locked
+python3 scripts/quality/tests/cmake_check_context_test.py
+```
+
+独立基础设施构建缓存放在选定build目录内，以安装目录/toolchain/triplet上下文指纹区分，
+防止换prefix后仍沿用原find_package缓存。该指纹只隔离本机构建缓存，不是依赖归档digest。
+所有源码、编译/测试要求保持；未改变PG fixture、端口或业务接口。

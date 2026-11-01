@@ -122,6 +122,8 @@ while IFS= read -r -d '' script; do
 done < <(git ls-files -z '*.sh')
 python3 scripts/quality/check-dependency-lock.py
 python3 scripts/quality/tests/dependency_lock_test.py
+python3 scripts/quality/tests/python_metadata_test.py
+python3 scripts/quality/tests/cmake_check_context_test.py
 python3 scripts/quality/tests/architecture_test.py
 python3 scripts/quality/check-boundaries.py
 python3 scripts/quality/tests/boundaries_test.py
@@ -141,14 +143,21 @@ ctest --preset "$full_preset" --show-only=json-v1 > "build/$full_preset/ctest-re
 python3 scripts/quality/check-architecture.py --stage p02 \
   --ctest-json "build/$full_preset/ctest-registration.json"
 if [[ "$full_preset" == full-locked ]]; then
-  python3 scripts/quality/check-dependency-lock.py --registry "${VCPKG_ROOT:?VCPKG_ROOT required}"
-  triplet="$(sed -n 's/^VCPKG_TARGET_TRIPLET:STRING=//p' "build/$full_preset/CMakeCache.txt")"
-  python3 scripts/quality/check-dependency-lock.py --installed build/architecture-installed --triplet "$triplet"
-  cmake -S infrastructure -B build/infrastructure-locked \
-    -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" \
-    -DVCPKG_MANIFEST_MODE=OFF -DVCPKG_INSTALLED_DIR="$root/build/architecture-installed"
-  cmake --build build/infrastructure-locked
-  ctest --test-dir build/infrastructure-locked --output-on-failure --no-tests=error
+  context_value() {
+    python3 scripts/quality/cmake-check-context.py --build-dir "build/$full_preset" --get "$1"
+  }
+  installed_dir="$(context_value installed-dir)"
+  triplet="$(context_value triplet)"
+  toolchain_file="$(context_value toolchain-file)"
+  registry_root="$(context_value registry-root)"
+  standalone_build="$(context_value standalone-build-dir)"
+  python3 scripts/quality/check-dependency-lock.py --registry "$registry_root"
+  python3 scripts/quality/check-dependency-lock.py --installed "$installed_dir" --triplet "$triplet"
+  cmake -S infrastructure -B "$standalone_build" \
+    -DCMAKE_TOOLCHAIN_FILE="$toolchain_file" -DVCPKG_TARGET_TRIPLET="$triplet" \
+    -DVCPKG_MANIFEST_MODE=OFF -DVCPKG_INSTALLED_DIR="$installed_dir"
+  cmake --build "$standalone_build"
+  ctest --test-dir "$standalone_build" --output-on-failure --no-tests=error
 else
   cmake -S infrastructure -B build/infrastructure
   cmake --build build/infrastructure

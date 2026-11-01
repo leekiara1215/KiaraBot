@@ -32,3 +32,24 @@ metadata/二进制/源URL/版本/build漂移均失败。check-dependency-lock.py
 
 文档影响：doc/11同步hash来源/复验/未验边界，本报告登记执行。无需更新Core/infra业务模块、
 运行语义、协议/API：接口、状态、数据库与业务行为未变；doc18只读，CI workflow未修改。
+
+## 能力二：统一入口使用实际 CMake 依赖上下文
+
+修复实际硬编码：安装元数据检查与standalone基础设施配置均改读full-locked缓存中的
+installed-dir/triplet/toolchain，不再读取当前source默认prefix或用外部环境替换已配置图。
+新cmake-check-context.py只输出四个允许字段及派生本机构建目录，不泄露任意cache变量。
+同时检查内部/公开prefix一致；路径空格/等号保留；缺失/相对/重复/冲突/triplet拒绝。
+独立build目录按上下文隔离，避免复用旧Protobuf/SQLite find_package缓存。没有清理他人目录。
+
+实际检查：4项上下文回归通过，包含其他worktree prefix与空格/等号、上下文变更后缓存隔离、
+5类拒绝和等价归一化路径。读取现有真实full-locked缓存得到既有固定prefix；按输出真实
+配置standalone infrastructure及构建/CTest的结果在后文记录。不重复P02六进程全套。
+脚本bash -n及git diff --check通过。doc/11与本报告同步；无C++/proto/API/PG业务变化，
+不更新Core/infra模块运行语义；CI workflow留父协调，doc18未改。
+
+主对话接管补记：旧工具链对话停在历史权限审批，未继续CMake接线。主对话在同一工具链
+worktree实际运行 ctest --test-dir build/infrastructure-locked --output-on-failure
+--no-tests=error -R '^http_model_provider$'，1/1通过、0.65秒；这是主对话代跑结果，
+不是子对话亲跑。主对话审查缓存上下文补丁后移入集成树、实际4项上下文回归、锁校验、
+bash语法与真实root full-locked缓存解析通过。后续P03构建接线改由新对话接管，旧对话
+无需继续改共享构建文件；不通过处理审批按钮推进。
