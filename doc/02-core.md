@@ -886,3 +886,16 @@ RPC shutdown/Wait and exit1. Clock faults keep their separately documented behav
 当前factory为make_identity_rpc(SecurityApp&, PeerAuthenticator, Issuer*=nullptr, InvocationDeadline={})，其中InvocationDeadline是function<Outcome<TimePoint>()>，闭包由服务持有。生产composition必须注入实际选定自身TLS链有效期与当前可信clock/lifecycle gate；空回调仅为fixture/源兼容，不得作为生产默认安全策略，也不得把自身到期时间写入远端Control的CertificateBinding。
 
 run保留body/gRPC/default2秒/max5秒及取消检查，可信回调失败沿原Failure进入完整RpcFailure，异常在调用应用前转Internal/NotAccepted。返回非正时间失败关闭为UpstreamUnavailable；过期期限为Timeout/NotAccepted。有效期限取已有预算与自身limit最早者，回调之后与认证之后再次检查取消/到期；传入每个Core用例的context.deadline包含此上限，由Core final_check阻止自身TLS到期后的提交。外层不授权、不查仓储、不实现TLS链/clock判断或伪造有效期。较晚limit不能延长请求期限。
+
+### P04 GetVerificationKeys 只读应用
+
+IdentityVerificationKeysApplication以借用的同IdentitySecurityUoWFactory和材料端口构造，
+无JWT前置。真实当前登记Platform peer经过credential head、主体、证书/SAN/service及
+exact IdentityKeysRead@材料离线Catalog在线授权后，返回完整公开keyset及本次DB checked_at。
+普通role、其他Catalog或子资源均不派生该权限。known_version=0为InvalidArgument；future
+版本只在当前鉴权后拒绝，same/old/缺省仍返回完整原set，不伪造not-modified空集合。
+
+材料snapshot在所有UoW之外调用；前后当前登记/主体/授权版本复核，最终只读短UoW用DB
+UTC验证key/credential/cert期限与一秒授权窗口。材料必须可信单key、正集合/key版本、有限
+有效期及显式UUID Catalog；损坏形状Internal，到期或材料/依赖不可确认UpstreamUnavailable，
+不以空集合代表失败。应用不写库、不commit、不缓存、不联网、不签发；RPC/组合根另行接线。
