@@ -235,4 +235,3 @@ message SnapshotPage {
   string next_page_token = 4;
   google.protobuf.Timestamp expires_at = 5;
 }
-

@@ -47,3 +47,13 @@ OpenAPI 新增33个管理操作，引用类型化目标消息 schema，并增加
 全仓 `./scripts/quality/check-format.sh` 实际失败：基点现有 control/api/src/configuration.cpp、infrastructure/src/file_storage.cpp及多份core/infrastructure测试的格式与本机clang-format不一致；均不在本任务范围，不进行无关格式化。新增target_roundtrip.cc独立 `clang-format --dry-run --Werror`通过。全仓full构建/tidy/统一toolchain未运行：根CMake尚未接入新proto及target_roundtrip.cc、旧消费者尚未迁移，当前不是全仓或生产门禁。真实PG、认证拒绝/撤销SLO、租约并发、跨主机、平台及计费模型均未运行，本任务无生产实现。
 
 首轮停止P01a。后续依赖：工具链接入7个新proto、目标独立测试及API/Ajv门禁并锁定统一生成器/runtime；Core映射请求/资源/操作/Fence并实现非零/缺失校验，五服务生产者实现与文档归各模块；Control按所有者路由并实现schema/当前身份与范围授权。所有target方法/字段/频道均未实现，contract_status和target_spec明确登记。无P02/P03业务、无旧数据导入/清理、无push/merge、doc/18–23未修改。
+
+## 可审查提交索引
+
+- `112ec27`：P00 方法/错误/租约/权限规格，target_spec.json 与本报告。
+- `e4983db`：platform公共类型、Adapter/Plugin fence/attempt/续租字段、登记和四份契约说明；descriptor/枚举/登记通过。
+- `51be69b`：五服务类型化RPC及封闭权限options、独立生成/往返入口、枚举/状态/文档；77RPC/269消息、状态/语义/格式独立检查通过。
+- `baa48bb`：mutating与普通幂等收据分离、RPC集合双向核对；host/runtime.proto、target_spec、target_contract_test、运行语义说明；目标独立入口复验通过。
+- `402e42e`：33 REST操作、operations WS、严格required/uint64边界、Ajv/引用检查、登记和契约文档；正式lint/parser与全部静态检查通过。
+
+提交后对整个基点差异运行 `git diff --check 6d64b2a HEAD` 发现platform.proto新增EOF空行（此前工作区检查未覆盖已提交差异），以纯空白收尾提交修正；不改变输入输出，无新增文档行为影响，无需重新生成。最终工作树应干净。所有构建/生成产物均未提交。
