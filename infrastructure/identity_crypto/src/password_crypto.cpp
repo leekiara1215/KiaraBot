@@ -1,9 +1,13 @@
+// clang-format off
+#include "kiarabot/infrastructure/identity_crypto/factories.hpp"
+
+#include <array>
 #include <cstring>
 #include <new>
-#include <sodium.h>
 #include <string_view>
 
-#include "kiarabot/infrastructure/identity_crypto/factories.hpp"
+#include <sodium.h>
+// clang-format on
 
 namespace kiarabot::infrastructure::identity_crypto {
 namespace {
@@ -57,9 +61,24 @@ public:
   }
 };
 
+bool canonical_base64(std::string_view encoded, std::size_t expected) {
+  std::array<unsigned char, 32> decoded{};
+  std::size_t decoded_size = 0;
+  const char* end = nullptr;
+  if (sodium_base642bin(decoded.data(), decoded.size(), encoded.data(), encoded.size(), nullptr,
+                        &decoded_size, &end, sodium_base64_VARIANT_ORIGINAL_NO_PADDING) != 0 ||
+      decoded_size != expected || end != encoded.data() + encoded.size()) {
+    return false;
+  }
+  std::array<char, 45> canonical{};
+  sodium_bin2base64(canonical.data(), canonical.size(), decoded.data(), decoded_size,
+                    sodium_base64_VARIANT_ORIGINAL_NO_PADDING);
+  return encoded == canonical.data();
+}
+
 class SodiumPassword final : public target::PasswordCryptoPort {
 public:
-  target::Outcome<target::PasswordVerifier> derive(target::SecretView password) override {
+  target::Outcome<target::PasswordVerifier> derive(target::SecretView password) override try {
     if (password.empty() || password.size() > kMaximumSecret) {
       return failure(target::ErrorCode::InvalidArgument);
     }
@@ -70,6 +89,8 @@ public:
       return failure(target::ErrorCode::UpstreamUnavailable);
     }
     return target::PasswordVerifier{encoded, {1}};
+  } catch (const std::bad_alloc&) {
+    return failure(target::ErrorCode::UpstreamUnavailable);
   }
   target::Outcome<bool> verify(target::SecretView password,
                                const target::PasswordVerifier& stored) override {
@@ -90,6 +111,10 @@ public:
             (value >= '0' && value <= '9') || value == '+' || value == '/')) {
         return failure(target::ErrorCode::Internal);
       }
+    }
+    if (!canonical_base64(encoded.substr(kPrefix.size(), 22), 16) ||
+        !canonical_base64(encoded.substr(kPrefix.size() + 23), 32)) {
+      return failure(target::ErrorCode::Internal);
     }
     if (password.empty() || password.size() > kMaximumSecret) {
       return failure(target::ErrorCode::InvalidArgument);
@@ -119,16 +144,21 @@ core::target::Outcome<core::target::OwnedSecret> copy_secret(core::target::Secre
   }
 }
 
-core::target::Outcome<std::unique_ptr<core::target::RandomPort>> make_random() {
+core::target::Outcome<std::unique_ptr<core::target::RandomPort>> make_random() try {
   if (sodium_init() < 0) {
     return failure(core::target::ErrorCode::UpstreamUnavailable);
   }
   return std::unique_ptr<core::target::RandomPort>{std::make_unique<SodiumRandom>()};
+} catch (const std::bad_alloc&) {
+  return failure(core::target::ErrorCode::UpstreamUnavailable);
 }
-core::target::Outcome<std::unique_ptr<core::target::PasswordCryptoPort>> make_password_crypto() {
+core::target::Outcome<std::unique_ptr<core::target::PasswordCryptoPort>>
+make_password_crypto() try {
   if (sodium_init() < 0) {
     return failure(core::target::ErrorCode::UpstreamUnavailable);
   }
   return std::unique_ptr<core::target::PasswordCryptoPort>{std::make_unique<SodiumPassword>()};
+} catch (const std::bad_alloc&) {
+  return failure(core::target::ErrorCode::UpstreamUnavailable);
 }
 } // namespace kiarabot::infrastructure::identity_crypto

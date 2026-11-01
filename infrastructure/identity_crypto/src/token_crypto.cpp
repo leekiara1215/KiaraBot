@@ -1,9 +1,12 @@
+// clang-format off
+#include "kiarabot/infrastructure/identity_crypto/factories.hpp"
+
 #include <array>
-#include <sodium.h>
 #include <string_view>
 #include <utility>
 
-#include "kiarabot/infrastructure/identity_crypto/factories.hpp"
+#include <sodium.h>
+// clang-format on
 
 namespace kiarabot::infrastructure::identity_crypto {
 namespace {
@@ -56,7 +59,8 @@ public:
   explicit SodiumToken(std::vector<SymmetricKey> keys) : keys_(std::move(keys)) {}
   target::Outcome<target::TokenVerifier> make_verifier(target::SecretView token,
                                                        target::TokenPurpose purpose,
-                                                       const target::CryptoKeyRef& key) override {
+                                                       const target::CryptoKeyRef& key) override
+      try {
     const auto* material = find(key);
     if (material == nullptr) {
       return invalid(target::ErrorCode::UpstreamUnavailable);
@@ -72,6 +76,8 @@ public:
     mac.integer(static_cast<std::uint64_t>(purpose));
     mac.field(token);
     return target::TokenVerifier{purpose, key, mac.finish()};
+  } catch (const std::bad_alloc&) {
+    return invalid(target::ErrorCode::UpstreamUnavailable);
   }
   target::Outcome<bool> verify(target::SecretView token,
                                const target::TokenVerifier& stored) override {
@@ -85,7 +91,7 @@ public:
   target::Outcome<target::RequestCommitment>
   commit_request(const target::SecretReceiptScope& scope,
                  const target::SecretRequestParameters& parameters, target::SecretView secret,
-                 const target::CryptoKeyRef& key) override {
+                 const target::CryptoKeyRef& key) override try {
     const auto* material = find(key);
     if (material == nullptr) {
       return invalid(target::ErrorCode::UpstreamUnavailable);
@@ -136,6 +142,8 @@ public:
         parameters);
     mac.field(secret);
     return target::RequestCommitment{key, mac.finish()};
+  } catch (const std::bad_alloc&) {
+    return invalid(target::ErrorCode::UpstreamUnavailable);
   }
 
 private:
@@ -152,7 +160,7 @@ private:
 } // namespace
 
 core::target::Outcome<std::unique_ptr<core::target::TokenCryptoPort>>
-make_token_crypto(std::vector<SymmetricKey> keys) {
+make_token_crypto(std::vector<SymmetricKey> keys) try {
   if (sodium_init() < 0) {
     return invalid(core::target::ErrorCode::UpstreamUnavailable);
   }
@@ -180,5 +188,7 @@ make_token_crypto(std::vector<SymmetricKey> keys) {
   }
   return std::unique_ptr<core::target::TokenCryptoPort>{
       std::make_unique<SodiumToken>(std::move(keys))};
+} catch (const std::bad_alloc&) {
+  return invalid(core::target::ErrorCode::UpstreamUnavailable);
 }
 } // namespace kiarabot::infrastructure::identity_crypto

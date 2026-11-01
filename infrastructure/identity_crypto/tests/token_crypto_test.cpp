@@ -1,7 +1,9 @@
+// clang-format off
+#include "kiarabot/infrastructure/identity_crypto/factories.hpp"
+
 #include <cassert>
 #include <variant>
-
-#include "kiarabot/infrastructure/identity_crypto/factories.hpp"
+// clang-format on
 
 namespace crypto = kiarabot::infrastructure::identity_crypto;
 namespace target = kiarabot::core::target;

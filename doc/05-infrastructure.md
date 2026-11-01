@@ -270,3 +270,7 @@ session、credential版本、typed参数、请求commitment、结果轮次、创
 篡改或损坏密文返回Internal，未知密钥/分配故障UpstreamUnavailable，非法seal输入
 InvalidArgument。最大保留窗24小时；当前到期及凭据/会话/轮次检查仍由应用在每次open前
 使用数据库时间完成。此适配器不查询数据库、不独立授权、不声称验证当前到期。
+
+密码PHC的salt/hash在成本检查后，另经libsodium ORIGINAL_NO_PADDING严格base64解码，
+要求16/32字节并重新编码逐字一致；非canonical或损坏编码返回Internal，不误报错误密码。
+密码派生及factory/Token结果分配失败在适配边界转换UpstreamUnavailable。

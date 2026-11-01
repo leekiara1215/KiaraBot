@@ -1,8 +1,10 @@
+// clang-format off
+#include "kiarabot/infrastructure/identity_crypto/factories.hpp"
+
 #include <cassert>
 #include <string_view>
 #include <variant>
-
-#include "kiarabot/infrastructure/identity_crypto/factories.hpp"
+// clang-format on
 
 namespace crypto = kiarabot::infrastructure::identity_crypto;
 namespace target = kiarabot::core::target;
@@ -16,6 +18,15 @@ int main() {
   auto verifier = std::get<target::PasswordVerifier>(derived);
   assert(std::get<bool>(password->verify(view, verifier)));
   assert(!std::get<bool>(password->verify(view.first(3), verifier)));
+  auto malformed = verifier;
+  // A 16-byte salt has only two significant bits in its last base64 character.
+  malformed.encoded[malformed.encoded.find_last_of('$') - 1] = 'B';
+  auto rejected = password->verify(view, malformed);
+  assert(std::get<target::Failure>(rejected).code == target::ErrorCode::Internal);
+  malformed = verifier;
+  malformed.encoded.back() = 'B';
+  assert(std::get<target::Failure>(password->verify(view, malformed)).code ==
+         target::ErrorCode::Internal);
   verifier.encoded.replace(verifier.encoded.find("65536"), 5, "99999");
   assert(std::holds_alternative<target::Failure>(password->verify(view, verifier)));
   auto random_factory = crypto::make_random();

@@ -65,3 +65,15 @@ kiarabot-toolchain/build/architecture-installed/arm64-osx. Format16 and tidy22 a
 with explicit SDK/libc++ flags passed. Root build/CTest remain for build task; no CMake edits here.
 Include order follows doc/12 using localized formatter guards because the existing .clang-format
 IncludeBlocks: Regroup otherwise moves the corresponding factory header behind system includes.
+
+## Review hardening follow-up
+
+PHC salt/hash now use sodium_base642bin and sodium_bin2base64 canonical roundtrip with exact
+16/32-byte lengths. Added malformed noncanonical salt/hash last-character rejection tests;
+correct password and wrong-password false tests still pass. Allocation failure on practical
+password/factory/token result boundaries returns UpstreamUnavailable. Existing formatter conflicts
+are locally guarded for required corresponding-header/std/third-party order. Rebuilt password
+and token tests with -Werror + ASan/UBSan, executed successfully; tidy22 analyzer/bugprone and
+format16 passed. Boundary and inner architecture checks pass; attempted nonexistent legacy
+check-inner-purity.py was corrected to check-architecture.py --inner. No external interfaces,
+Core models, API/proto, PG or protected baseline changed; doc/01/02/18 require no synchronization.
