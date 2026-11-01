@@ -289,6 +289,9 @@ target::Failure translate_exception() {
     if (state == "55P03" || state == "57014") {
       return failure(target::ErrorCode::Timeout);
     }
+    if (state.starts_with("53") || state.starts_with("58") || state.starts_with("57")) {
+      return failure(target::ErrorCode::UpstreamUnavailable);
+    }
     return failure(target::ErrorCode::Internal);
   } catch (...) {
     return failure(target::ErrorCode::Internal);

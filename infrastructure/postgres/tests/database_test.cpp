@@ -118,6 +118,14 @@ void run(const std::filesystem::path& root, std::uint16_t port,
       (root / "server.pem").string(), "",          ""};
   pqxx::connection administrator(connection_string(admin));
   require(administrator.server_version() == 160004, "wrong server version");
+  {
+    pqxx::read_transaction identity(administrator);
+    const auto actual = std::filesystem::canonical(
+        identity.exec("SHOW data_directory").one_row()[0].as<std::string>());
+    require(!std::filesystem::is_symlink(root / "data") &&
+                actual == std::filesystem::canonical(root / "data") && actual.parent_path() == root,
+            "fixture backend directory mismatch");
+  }
   std::array services{target::Service::Identity, target::Service::Runtime,
                       target::Service::Scheduler, target::Service::Model};
   std::array<std::string, 4> names{"identity", "runtime", "scheduler", "model"};
@@ -318,6 +326,7 @@ void run(const std::filesystem::path& root, std::uint16_t port,
     writer.reset();
     require(std::holds_alternative<std::unique_ptr<pg::Database>>(pg::Database::open(runtime)),
             "new writer could not recover after terminated session");
+    pg::test::check_dependency_fault(config, runtime);
     pg::test::check_deadline(runtime);
     {
       pqxx::connection migration(connection_string(config));

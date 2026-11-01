@@ -40,7 +40,7 @@ Identity/Scheduler/Model 尚无 typed UoW。上述缺口交 Core 所有者，不
 - CLI `kiarabot-pg-initialize`：`infrastructure/postgres/migrate/initialize_main.cpp`，链接库。
 - driver `kiarabot_postgres_database_test`：`infrastructure/postgres/tests/database_test.cpp`，链接库与
   `libpqxx::pqxx`（测试直接以专属管理员部署/注入故障），POSIX process API，无额外业务依赖。
-- CTest 建议 `p03_postgres_database`，labels `p03;integration;fault`，timeout 60：
+- CTest 建议 `p03_postgres_database`，labels `p03;integration;fault`，timeout至少120秒（预留失败清理预算）：
   `${KIARABOT_TARGET_PYTHON} infrastructure/postgres/tests/run_database_test.py
   --pg-bin ${KIARABOT_TEST_PG_BIN} --openssl ${KIARABOT_TEST_OPENSSL}
   --test $<TARGET_FILE:kiarabot_postgres_database_test>
@@ -286,3 +286,31 @@ git diff --check及受保护doc/18与13cac3a无差异检查通过。文档本能
 无需改proto/API/doc01或其他模块行为，Catalog唯一契约及Core类型由其已审查提交提供。
 根full/CTest/统一工具链与四daemon组合接线由父/工具链线程接入后实际验证；
 不把本机定向编译/PG测试冒充这些集成证据，不宣称P03全阶段已完成。
+
+## 依赖故障分类与损坏读回归
+
+原SQL异常兜底会把PG资源/系统故障混同Internal；按已定义语义把SQLSTATE类53/58及非取消57
+映射UpstreamUnavailable，57014/55P03仍Timeout，冲突/输入错误映射保持，无法解码的存储数据Internal。
+没有新增稳定码/协议/API；同步doc/05错误说明，doc/08补既有标识/连接配置字符约束。
+其他文档无需改：本次是恢复既定absence/冲突/不可用/损坏区分，doc/18仍只读。
+
+真实PG故障fixture在本库临时受控schema中安装触发器RAISE SQLSTATE 53100，验证UoW返回
+UpstreamUnavailable、之前业务写全部回滚、旧session拒绝续用；清掉测试触发器/函数/schema后
+新实例正常打开并确认未提交。此为**SQLSTATE事务故障注入**，没有实际写满宿主磁盘，
+不冒充P13/P14真实存储耗尽/恢复演练。另仅在专属fixture删除一条typed result子行，读取原receipt
+必须Internal而非empty optional；恢复该fixture行后完整UINT64_MAX结果再可读，保留时间未变。
+
+driver在任何CREATE ROLE/DATABASE前核验服务端真实data_directory恰为当前拥有的root/data，
+拒绝数据目录symlink/外部路径。runner以相同有效TLS/管理员秘密连接但传入不匹配的受控root做
+负例，必须出现确定的backend目录拒绝原因，避免其他输入失败掩盖所有权检查。
+这不增加生产DSN入口；父组合根自有driver继续自行执行相同数据目录检查。
+
+外层CTest应预留至少120秒，内部driver45秒和停止PG20秒（子进程25秒上限）各自有界，
+不能让60秒外层先杀死fixture从而跳过finally清理；已交工具链/父集成调整，不修改本分支CMake。
+
+本小修实际检查：同固定-Werror脚本重编CLI/普通driver/sanitizer driver全部通过；
+普通与ASan/UBSan各自真实TLS PG16.4完整fixture通过，含数据目录不匹配负例、53100故障及损坏
+receipt读取/恢复；无sanitizer报告。固定tidy22对database/common_work/database_test/
+common_work_checks四个变更TU实际通过，新增backend目录核验后再对database_test定向通过。
+format16变更源/头、固定Python3.11 py_compile、文档路径/章节/换行、diff和doc18无差异检查通过。
+实际文档更新doc/05、doc/08及本报告；Root全门禁仍由父在集成SHA实际执行，无其他模块改动。

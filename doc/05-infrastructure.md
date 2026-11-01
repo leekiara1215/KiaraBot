@@ -243,3 +243,6 @@ probe也经同factory begin/current_time/rollback，不能创建第二持锁连�
 Identity主体/会话/授予/授权水位、Runtime账号/安装/实例、Scheduler任务/occurrence、
 Model意图分别只在自己的库创建live表。业务行与收据结果快照分表，结果不随业务更新变化。
 本库外键/唯一约束限制无效引用与覆盖；跨库资源仅类型化引用，不创建跨库FK。
+
+P03数据库资源/系统依赖故障（SQLSTATE类53/58及非取消类57）映射UpstreamUnavailable，
+查询取消/锁等待仍为Timeout；关系结果损坏或无法解码为Internal，不能伪装成成功空optional。

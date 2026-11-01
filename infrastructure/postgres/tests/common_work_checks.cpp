@@ -539,6 +539,91 @@ void check_common(Database& database, const DatabaseConfig& config) {
                 .as<int>() == 0,
         "timeout left partial audit");
   }
+  // A missing typed child is corruption, not an absent receipt. Restore only our fixture row.
+  std::int64_t corrupted_result = 0;
+  {
+    pqxx::connection migration(migration_dsn(config));
+    pqxx::work corrupt(migration);
+    corrupted_result = corrupt
+                           .exec("SELECT result_id FROM kiarabot.command_receipts WHERE "
+                                 "subject='actor' AND method='snapshot' AND resource_kind=$1 AND "
+                                 "resource_id='resource' AND idempotency_key='key-1'",
+                                 pqxx::params{static_cast<int>(handoff.resource.kind)})
+                           .one_row()[0]
+                           .as<std::int64_t>();
+    check(corrupt.exec("DELETE FROM kiarabot.result_mutations WHERE result_id=$1",
+                       pqxx::params{corrupted_result})
+                  .affected_rows() == 1,
+          "corruption fixture row missing");
+    corrupt.commit();
+  }
+  work = begin(database);
+  auto corrupted = overflow;
+  corrupted.key.idempotency_key = "key-1";
+  expect(work->receipts().find(corrupted.key), target::ErrorCode::Internal);
+  rejected(*work);
+  {
+    pqxx::connection migration(migration_dsn(config));
+    pqxx::work restore(migration);
+    restore.exec("INSERT INTO kiarabot.result_mutations VALUES($1,$2,$3,$4)",
+                 pqxx::params{corrupted_result, static_cast<int>(handoff.resource.kind),
+                              handoff.resource.id.value, kMaximum});
+    restore.commit();
+  }
+  work = begin(database);
+  check(std::get<target::ResourceMutationResult>(take(work->receipts().find(corrupted.key))->result)
+                .version.value == kMaximum,
+        "restored fixture result not readable");
+  work->rollback();
+}
+
+void check_dependency_fault(const DatabaseConfig& migration, const DatabaseConfig& runtime) {
+  auto database = take(Database::open(runtime));
+  {
+    pqxx::connection injector(migration_dsn(migration));
+    pqxx::work setup(injector);
+    setup.exec("CREATE SCHEMA p03_fault_owned");
+    setup.exec(
+        "CREATE FUNCTION p03_fault_owned.fail_dependency() RETURNS trigger LANGUAGE plpgsql AS $$ "
+        "BEGIN RAISE EXCEPTION USING ERRCODE='53100',MESSAGE='fixture dependency failure'; END $$");
+    setup.exec("CREATE TRIGGER p03_dependency BEFORE INSERT ON kiarabot.audit_entries FOR EACH ROW "
+               "EXECUTE FUNCTION p03_fault_owned.fail_dependency()");
+    setup.commit();
+  }
+  auto work = begin(*database);
+  const auto now = take(work->current_time());
+  target::Operation operation{
+      {runtime.service, {"dependency-failure"}, {target::ResourceKind::Instance, {"resource"}}},
+      {1},
+      target::OperationState::Accepted,
+      target::ExecutionOutcome::NotStarted,
+      {},
+      {}};
+  take(work->operations().save(operation, {}));
+  expect(work->journal().append_audit({{"actor"},
+                                       operation.ref.resource,
+                                       "dependency-failure",
+                                       "trace",
+                                       "write",
+                                       {},
+                                       {1},
+                                       now}),
+         target::ErrorCode::UpstreamUnavailable);
+  rejected(*work);
+  expect(database->begin(), target::ErrorCode::UpstreamUnavailable);
+  {
+    pqxx::connection injector(migration_dsn(migration));
+    pqxx::work cleanup(injector);
+    cleanup.exec("DROP TRIGGER p03_dependency ON kiarabot.audit_entries");
+    cleanup.exec("DROP FUNCTION p03_fault_owned.fail_dependency()");
+    cleanup.exec("DROP SCHEMA p03_fault_owned");
+    cleanup.commit();
+  }
+  auto recovered = take(Database::open(runtime));
+  auto query = begin(*recovered);
+  check(!take(query->operations().find({"dependency-failure"})),
+        "dependency failure committed partial state");
+  query->rollback();
 }
 
 void check_deadline(const DatabaseConfig& config) {

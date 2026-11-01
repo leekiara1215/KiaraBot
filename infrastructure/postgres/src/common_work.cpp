@@ -48,6 +48,10 @@ target::Failure storage_error() {
     if (exception.sqlstate() == "57014" || exception.sqlstate() == "55P03") {
       return error(target::ErrorCode::Timeout);
     }
+    if (exception.sqlstate().starts_with("53") || exception.sqlstate().starts_with("58") ||
+        exception.sqlstate().starts_with("57")) {
+      return error(target::ErrorCode::UpstreamUnavailable);
+    }
     if (exception.sqlstate() == "40001" || exception.sqlstate() == "40P01") {
       return error(target::ErrorCode::Conflict);
     }

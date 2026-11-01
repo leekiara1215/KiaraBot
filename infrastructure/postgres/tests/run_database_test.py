@@ -20,13 +20,14 @@ def main():
     parser.add_argument('--initializer', type=Path, required=True)
     args = parser.parse_args()
     pg_bin, openssl, test = args.pg_bin.resolve(), args.openssl.resolve(), args.test.resolve()
+    driver_names = ('database_test', 'database_test_sanitized', 'kiarabot_postgres_database_test')
     environment = {key: value for key, value in os.environ.items() if not key.startswith('PG')}
     environment['LC_ALL'] = 'C'
 
     def run(command, timeout=45, expected=0):
         result = subprocess.run(command, env=environment, capture_output=True, timeout=timeout)
         if result.returncode != expected:
-            if Path(command[0]).name == 'database_test':
+            if Path(command[0]).name in driver_names:
                 for line in result.stderr.decode(errors='replace').splitlines():
                     if line.startswith('P03 assertion: '):
                         print(line, flush=True)
@@ -94,6 +95,18 @@ def main():
         run([str(pg_bin / 'pg_ctl'), '-D', str(root / 'data'), '-l', str(root / 'pg.log'),
              '-w', '-t', '20', 'start'])
         with CommitReceiptProxy(port, root) as proxy:
+            if test.name in driver_names:
+                mismatch = root / 'kiarabot-p03-backend-mismatch'
+                mismatch.mkdir(mode=0o700)
+                (mismatch / 'data').mkdir()
+                (mismatch / 'p03-owned-marker').write_text('mismatched backend')
+                shutil.copyfile(password_file, mismatch / 'password')
+                (mismatch / 'password').chmod(0o600)
+                shutil.copyfile(root / 'server.pem', mismatch / 'server.pem')
+                refused = run([str(test), str(mismatch), str(port),
+                               str(args.initializer.resolve()), str(proxy.port)], expected=1)
+                if b'fixture backend directory mismatch' not in refused.stderr:
+                    raise RuntimeError('test driver did not verify backend ownership before DDL')
             output = run([str(test), str(root), str(port), str(args.initializer.resolve()),
                           str(proxy.port)])
             print(output.stdout.decode(), end='')
