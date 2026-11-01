@@ -1,0 +1,198 @@
+{
+  "schema_version": 1,
+  "status": "reference_only_not_target_pass",
+  "entries": [
+    {
+      "id": "event-dedup",
+      "target_phase": "p06",
+      "source": "core/tests/adapter_ingress_test.cpp",
+      "anchor": "void application_cases()",
+      "invariant": "同event_id同内容不重复入队，异内容拒绝，拒绝不推进水位",
+      "status": "pending_target_rebuild"
+    },
+    {
+      "id": "conversation-order",
+      "target_phase": "p06",
+      "source": "core/tests/adapter_ingress_test.cpp",
+      "anchor": "void session_identity_cases()",
+      "invariant": "来源账号/适配器/会话类型四元组隔离",
+      "status": "pending_target_rebuild"
+    },
+    {
+      "id": "adapter-reconnect",
+      "target_phase": "p06",
+      "source": "core/tests/adapter_ingress_test.cpp",
+      "anchor": "void grpc_recovery()",
+      "invariant": "断线后原事件重投，持久确认前不释放outbox",
+      "status": "pending_target_rebuild"
+    },
+    {
+      "id": "friend-request",
+      "target_phase": "p07",
+      "source": "core/tests/adapter_ingress_test.cpp",
+      "anchor": "void friend_request_cases()",
+      "invariant": "好友请求使用安全token，不能泄漏平台flag",
+      "status": "pending_target_rebuild"
+    },
+    {
+      "id": "instance-fanout-order",
+      "target_phase": "p06",
+      "source": "core/tests/plugin_delivery_test.cpp",
+      "anchor": "void independent_delivery_and_order()",
+      "invariant": "独立实例投递、有序头阻塞及不跨实例确认",
+      "status": "pending_target_rebuild"
+    },
+    {
+      "id": "retry-recovery",
+      "target_phase": "p06",
+      "source": "core/tests/plugin_delivery_test.cpp",
+      "anchor": "void recovery_disconnect_and_jitter()",
+      "invariant": "断线/退避可恢复，失败不默认为成功",
+      "status": "pending_target_rebuild"
+    },
+    {
+      "id": "capacity-atomicity",
+      "target_phase": "p06",
+      "source": "core/tests/plugin_delivery_test.cpp",
+      "anchor": "void transaction_failures_and_backpressure()",
+      "invariant": "容量拒绝和存储故障不能产生部分业务提交",
+      "status": "pending_target_rebuild"
+    },
+    {
+      "id": "dead-letter",
+      "target_phase": "p06",
+      "source": "core/tests/plugin_delivery_test.cpp",
+      "anchor": "void retry_exhaustion_and_retention()",
+      "invariant": "耗尽重试进入死信，不能淘汰未决交接",
+      "status": "pending_target_rebuild"
+    },
+    {
+      "id": "action-quota",
+      "target_phase": "p07",
+      "source": "core/tests/action_router_test.cpp",
+      "anchor": "void quota()",
+      "invariant": "重复意图不重复占额，超额拒绝无平台调用；目标改为持久限额",
+      "status": "pending_target_rebuild"
+    },
+    {
+      "id": "dangerous-budget",
+      "target_phase": "p07",
+      "source": "core/tests/action_router_test.cpp",
+      "anchor": "void budgets()",
+      "invariant": "预算/幂等受理原子；目标需显式开关与正预算",
+      "status": "pending_target_rebuild"
+    },
+    {
+      "id": "reaction",
+      "target_phase": "p07",
+      "source": "core/tests/action_router_test.cpp",
+      "anchor": "void reactions()",
+      "invariant": "平台中立回应token与能力/权限校验",
+      "status": "pending_target_rebuild"
+    },
+    {
+      "id": "own-message-delete",
+      "target_phase": "p07",
+      "source": "core/tests/action_router_test.cpp",
+      "anchor": "void deletions()",
+      "invariant": "仅本bot自己发送消息允许撤回",
+      "status": "pending_target_rebuild"
+    },
+    {
+      "id": "moderation",
+      "target_phase": "p07",
+      "source": "core/tests/action_router_test.cpp",
+      "anchor": "void moderation()",
+      "invariant": "Mute/Kick的群范围、权限和白名单拒绝",
+      "status": "pending_target_rebuild"
+    },
+    {
+      "id": "approval",
+      "target_phase": "p07",
+      "source": "core/tests/action_router_test.cpp",
+      "anchor": "void approvals()",
+      "invariant": "仅好友请求审批，未知token明确拒绝",
+      "status": "pending_target_rebuild"
+    },
+    {
+      "id": "storage-scope-ttl",
+      "target_phase": "p09",
+      "source": "core/tests/host_dispatcher_test.cpp",
+      "anchor": "void scenarios(",
+      "invariant": "私有命名空间隔离、TTL/幂等；目标补共享CAS与安装聚合限额",
+      "status": "pending_target_rebuild"
+    },
+    {
+      "id": "storage-limits",
+      "target_phase": "p09",
+      "source": "core/tests/host_dispatcher_test.cpp",
+      "anchor": "void limits()",
+      "invariant": "限额拒绝不提前淘汰有效成功收据",
+      "status": "pending_target_rebuild"
+    },
+    {
+      "id": "scheduler-dst",
+      "target_phase": "p10",
+      "source": "core/tests/task_scheduler_test.cpp",
+      "anchor": "void zones()",
+      "invariant": "IANA不存在/歧义当地时间拒绝，UTC一次性任务",
+      "status": "pending_target_rebuild"
+    },
+    {
+      "id": "scheduler-persisted-trigger",
+      "target_phase": "p10",
+      "source": "core/tests/task_scheduler_test.cpp",
+      "anchor": "void scenarios(",
+      "invariant": "COMPLETED仅代表持久入队；目标改outbox/inbox去重交接",
+      "status": "pending_target_rebuild"
+    },
+    {
+      "id": "model-unknown",
+      "target_phase": "p11",
+      "source": "core/tests/model_host_test.cpp",
+      "anchor": "int main()",
+      "invariant": "模型调用未知不盲重发、角色/正文边界、依赖失败稳定映射",
+      "status": "pending_target_rebuild"
+    },
+    {
+      "id": "sdk-unknown-action",
+      "target_phase": "p07",
+      "source": "sdk/python/tests/test_actions.py",
+      "anchor": "async def test_unknown_results_never_become_failed",
+      "invariant": "断线/缺响应/未知枚举不伪造Action FAILED",
+      "status": "pending_target_rebuild"
+    },
+    {
+      "id": "sdk-request-correlation",
+      "target_phase": "p07",
+      "source": "sdk/python/tests/test_actions.py",
+      "anchor": "async def test_action_in_event_callback_and_out_of_order_responses",
+      "invariant": "回调内调用及乱序响应按request_id关联",
+      "status": "pending_target_rebuild"
+    },
+    {
+      "id": "control-http",
+      "target_phase": "p12",
+      "source": "control/api/tests/test_http.py",
+      "anchor": "def test_",
+      "invariant": "REST认证/方法状态/分页/错误映射仍须迁到真实所有者",
+      "status": "pending_target_rebuild"
+    },
+    {
+      "id": "control-stream",
+      "target_phase": "p12",
+      "source": "control/api/tests/test_stream.py",
+      "anchor": "def test_",
+      "invariant": "WS握手/授权/resync及撤销上界仍须重建",
+      "status": "pending_target_rebuild"
+    },
+    {
+      "id": "config-ack",
+      "target_phase": "p08",
+      "source": "control/api/tests/test_config_delivery.py",
+      "anchor": "def test_",
+      "invariant": "配置保存与插件实际应用分离，旧ACK不覆盖新版本",
+      "status": "pending_target_rebuild"
+    }
+  ]
+}
