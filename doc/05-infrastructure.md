@@ -329,3 +329,8 @@ Identity 空库初始化将使用 schema v4；Runtime、Scheduler、Model 各自
 可保存撤销，轮换仅加一且不回绕。列表按可信总容量单次读取至 max+1，超额返回
 RateLimited，不返回截断集合或 query-time now。refresh 恢复以数据库当前 UTC 判定
 原输入到期与 recovery_until，原 peer/幂等键外不能解析消费历史；相同消费重存不延期。
+
+独立密文成功收据按 scope、keyed request commitment 和请求参数判定重放；相同请求返回
+原始 binding/nonce/ciphertext，改变请求返回 Conflict。可信容量按所有保留行统计（含待清理过期行），满额
+返回 RateLimited，不驱逐有效记录；仅同 scope 过期行可被新请求替换。清理每次1..1000
+且使用数据库 UTC，外部 now 不能提前删除有效收据。密文二进制零字节不按TEXT拒绝。

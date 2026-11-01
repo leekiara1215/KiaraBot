@@ -362,10 +362,157 @@ void check_identity_sessions(Database& database) {
   }
 }
 
+void check_identity_secret_receipts(Database& database) {
+  target::EncryptedSecretReceipt receipt;
+  target::SecretReceiptCapacity capacity{};
+  {
+    auto access = take(detail::DatabaseAccess::begin(database));
+    auto receipts = detail::secret_receipt_repository(*access.sql);
+    take(access.sql->run([&](pqxx::transaction_base& transaction) -> target::Status {
+      capacity.max_records = transaction.exec("SELECT count(*) FROM kiarabot.secret_receipts")
+                                 .one_row()[0]
+                                 .as<std::size_t>() +
+                             1;
+      return std::monostate{};
+    }));
+    const auto created =
+        take(access.work->current_time()) - std::chrono::seconds{1} + std::chrono::nanoseconds{137};
+    receipt = {{target::LoginReceiptScope{{"control-peer"}, "secret-login", "secret-attempt"},
+                {"credential-owner"},
+                target::SessionId{"security-live-session"},
+                {{"credential-password"}, {2}},
+                target::LoginRequestParameters{},
+                2,
+                {{"request-key"}, {}},
+                created,
+                created + std::chrono::hours{23} + std::chrono::nanoseconds{731}},
+               {{"sealed-key"}, 1, {std::byte{0}}, {std::byte{0}, std::byte{0xff}}}};
+    const auto first = take(receipts->insert(receipt, capacity));
+    check(!first.duplicate && first.receipt.binding == receipt.binding,
+          "secret receipt reset AEAD binding or times");
+    auto proposed = receipt;
+    proposed.binding.created_at += std::chrono::seconds{1};
+    proposed.binding.retain_until += std::chrono::seconds{1};
+    proposed.sealed.ciphertext = {std::byte{5}};
+    const auto duplicate = take(receipts->insert(proposed, capacity));
+    check(duplicate.duplicate && duplicate.receipt.binding == receipt.binding &&
+              duplicate.receipt.sealed.ciphertext == receipt.sealed.ciphertext,
+          "secret receipt replay renewed/replaced original AEAD result");
+    committed(*access.work);
+  }
+  {
+    auto access = take(detail::DatabaseAccess::begin(database));
+    auto receipts = detail::secret_receipt_repository(*access.sql);
+    const auto found = take(receipts->find(receipt.binding.scope));
+    check(found && found->binding == receipt.binding &&
+              found->sealed.nonce == receipt.sealed.nonce &&
+              found->sealed.ciphertext == receipt.sealed.ciphertext,
+          "secret receipt lost binary bytes or nanoseconds");
+    auto changed = receipt;
+    changed.binding.request.tag.bytes[0] = std::byte{1};
+    expect(receipts->insert(changed, capacity), target::ErrorCode::Conflict);
+    rejected(*access.work);
+  }
+  {
+    auto access = take(detail::DatabaseAccess::begin(database));
+    auto receipts = detail::secret_receipt_repository(*access.sql);
+    auto refresh = *take(receipts->find(target::RefreshReceiptScope{
+        {"control-peer"}, {"security-live-session"}, "refresh-attempt"}));
+    refresh.binding.parameters = target::RefreshRequestParameters{2};
+    refresh.binding.result_rotation = 3;
+    expect(receipts->insert(refresh, capacity), target::ErrorCode::Conflict);
+    rejected(*access.work);
+  }
+  {
+    auto access = take(detail::DatabaseAccess::begin(database));
+    auto receipts = detail::secret_receipt_repository(*access.sql);
+    auto other = receipt;
+    std::get<target::LoginReceiptScope>(other.binding.scope).idempotency_key = "new-at-capacity";
+    expect(receipts->insert(other, capacity), target::ErrorCode::RateLimited);
+    rejected(*access.work);
+  }
+  {
+    auto access = take(detail::DatabaseAccess::begin(database));
+    auto receipts = detail::secret_receipt_repository(*access.sql);
+    auto invalid = receipt;
+    std::get<target::LoginReceiptScope>(invalid.binding.scope).idempotency_key = "over-retention";
+    invalid.binding.retain_until =
+        invalid.binding.created_at + std::chrono::hours{24} + std::chrono::nanoseconds{1};
+    expect(receipts->insert(invalid, {10}), target::ErrorCode::InvalidArgument);
+    rejected(*access.work);
+  }
+  {
+    auto access = take(detail::DatabaseAccess::begin(database));
+    auto receipts = detail::secret_receipt_repository(*access.sql);
+    auto invalid = receipt;
+    std::get<target::LoginReceiptScope>(invalid.binding.scope).idempotency_key = "expired-secret";
+    invalid.binding.created_at = target::TimePoint{std::chrono::nanoseconds{137}};
+    invalid.binding.retain_until = target::TimePoint{std::chrono::nanoseconds{731}};
+    expect(receipts->insert(invalid, {10}), target::ErrorCode::InvalidArgument);
+    rejected(*access.work);
+  }
+  {
+    auto access = take(detail::DatabaseAccess::begin(database));
+    auto receipts = detail::secret_receipt_repository(*access.sql);
+    check(take(receipts->prune_expired(target::TimePoint::max(), 100)) == 0,
+          "caller now pruned a valid secret receipt");
+    auto delivery = receipt;
+    delivery.binding.scope = target::CredentialDeliveryScope{
+        {"credential-owner"}, {"credential-password"}, "secret-attempt"};
+    delivery.binding.parameters = target::CredentialDeliveryParameters{{2}};
+    delivery.binding.session.reset();
+    delivery.binding.result_rotation = 0;
+    take(receipts->insert(delivery, {capacity.max_records + 1}));
+    check(take(receipts->find(delivery.binding.scope)).has_value(),
+          "credential delivery scope collided with login scope");
+    access.work->rollback();
+  }
+  {
+    auto access = take(detail::DatabaseAccess::begin(database));
+    auto receipts = detail::secret_receipt_repository(*access.sql);
+    expect(receipts->find(target::LoginReceiptScope{
+               {"control-peer"}, std::string("secret-login\0suffix", 19), "secret-attempt"}),
+           target::ErrorCode::InvalidArgument);
+    rejected(*access.work);
+  }
+  {
+    auto access = take(detail::DatabaseAccess::begin(database));
+    auto receipts = detail::secret_receipt_repository(*access.sql);
+    take(access.sql->run([&](pqxx::transaction_base& transaction) -> target::Status {
+      transaction.exec("UPDATE kiarabot.secret_receipts SET created_at=137,retain_until=731 "
+                       "WHERE scope_kind=0 AND idempotency_key='secret-attempt'");
+      return std::monostate{};
+    }));
+    check(!take(receipts->find(receipt.binding.scope)),
+          "expired encrypted receipt remained visible");
+    check(take(receipts->prune_expired(target::TimePoint::min(), 1)) == 1,
+          "caller time prevented DB UTC expired receipt cleanup");
+    auto replacement = receipt;
+    std::get<target::LoginReceiptScope>(replacement.binding.scope).idempotency_key = "after-prune";
+    take(receipts->insert(replacement, capacity));
+    access.work->rollback();
+  }
+  {
+    auto access = take(detail::DatabaseAccess::begin(database));
+    auto receipts = detail::secret_receipt_repository(*access.sql);
+    take(access.sql->run([](pqxx::transaction_base& transaction) -> target::Status {
+      transaction.exec("UPDATE kiarabot.secret_receipts SET created_at=137,retain_until=731 "
+                       "WHERE scope_kind=0 AND idempotency_key='secret-attempt'");
+      return std::monostate{};
+    }));
+    auto replacement = receipt;
+    std::get<target::LoginReceiptScope>(replacement.binding.scope).idempotency_key =
+        "without-prune";
+    expect(receipts->insert(replacement, capacity), target::ErrorCode::RateLimited);
+    rejected(*access.work);
+  }
+}
+
 void check_common(Database& database, const DatabaseConfig& config) {
   if (config.service == target::Service::Identity) {
     check_identity_credentials(database);
     check_identity_sessions(database);
+    check_identity_secret_receipts(database);
   }
   constexpr auto kHigh = std::uint64_t{1} << 63;
   constexpr auto kMaximum = std::numeric_limits<std::uint64_t>::max();
@@ -1067,7 +1214,8 @@ void check_unknown_commit(const DatabaseConfig& config, const std::filesystem::p
   proxied.user = config.runtime_role;
   proxied.port = proxy_port;
   auto database = take(Database::open(proxied));
-  auto work = begin(*database);
+  auto access = take(detail::DatabaseAccess::begin(*database));
+  auto& work = access.work;
   const auto now = take(work->current_time());
   target::CommandReceipt receipt{
       {{"actor"}, "lost-commit", {target::ResourceKind::Instance, {"resource"}}, "original-key"},
@@ -1077,6 +1225,33 @@ void check_unknown_commit(const DatabaseConfig& config, const std::filesystem::p
       now,
       now + std::chrono::hours(168)};
   take(work->receipts().insert(receipt, {100}));
+  take(detail::save_record(
+      *work, detail::RecordKind::Principal,
+      target::Principal{{"unknown-vault-owner"}, target::PrincipalKind::Human, {}, {1}}, {}));
+  auto credentials = detail::credential_repository(*access.sql);
+  take(credentials->save({{{"unknown-vault-credential"}, {1}},
+                          {"unknown-vault-owner"},
+                          target::PasswordVerifier{"encoded-verifier-only", {1}},
+                          target::CredentialState::Active,
+                          now,
+                          {},
+                          {target::ResourceKind::Catalog, {"catalog"}},
+                          now + std::chrono::hours{24}},
+                         {}));
+  target::EncryptedSecretReceipt secret{
+      {target::CredentialDeliveryScope{
+           {"unknown-vault-owner"}, {"unknown-vault-credential"}, "original-secret-key"},
+       {"unknown-vault-owner"},
+       {},
+       {{"unknown-vault-credential"}, {1}},
+       target::CredentialDeliveryParameters{{1}},
+       0,
+       {{"request-key"}, {}},
+       now,
+       now + std::chrono::hours{23}},
+      {{"sealed-key"}, 1, {std::byte{0}}, {std::byte{0}, std::byte{0xff}}}};
+  auto secrets = detail::secret_receipt_repository(*access.sql);
+  take(secrets->insert(secret, {100}));
   std::ofstream(root / "drop-commit-arm") << "arm";
   const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(1);
   while (!std::filesystem::exists(root / "drop-commit-ready")) {
@@ -1090,11 +1265,17 @@ void check_unknown_commit(const DatabaseConfig& config, const std::filesystem::p
   auto direct = config;
   direct.user = config.runtime_role;
   auto recovered = take(Database::open(direct));
-  auto query = begin(*recovered);
+  auto recovered_access = take(detail::DatabaseAccess::begin(*recovered));
+  auto& query = recovered_access.work;
   const auto stored = take(query->receipts().find(receipt.key));
   check(stored && std::get<target::ResourceMutationResult>(stored->result).version.value ==
                       std::numeric_limits<std::uint64_t>::max(),
         "same identity could not recover committed result");
+  auto recovered_secrets = detail::secret_receipt_repository(*recovered_access.sql);
+  const auto stored_secret = take(recovered_secrets->find(secret.binding.scope));
+  check(stored_secret && stored_secret->binding == secret.binding &&
+            stored_secret->sealed.ciphertext == secret.sealed.ciphertext,
+        "Unknown commit did not recover original encrypted success receipt");
   query->rollback();
 }
 } // namespace kiarabot::infrastructure::postgres::test

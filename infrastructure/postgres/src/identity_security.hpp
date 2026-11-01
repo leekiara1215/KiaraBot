@@ -12,5 +12,7 @@ std::unique_ptr<core::target::IdentityCredentialRepository> credential_repositor
 std::unique_ptr<core::target::IdentityBootstrapRepository> bootstrap_repository(SqlWork& sql);
 std::unique_ptr<core::target::IdentitySessionSecurityRepository>
 session_security_repository(SqlWork& sql);
+std::unique_ptr<core::target::IdentitySecretReceiptRepository>
+secret_receipt_repository(SqlWork& sql);
 
 } // namespace kiarabot::infrastructure::postgres::detail

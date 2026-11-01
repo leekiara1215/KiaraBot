@@ -103,3 +103,24 @@ clang-analyzer-* 与 readability-braces-around-statements，warnings-as-errors �
 新增库源 `infrastructure/postgres/src/identity_sessions.cpp` 需由工具链任务加入；
 公共测试仍在既有 TU，无新测试源。不改 schema/manifest/API/稳定码或 doc/18。
 根完整构建/CTest留给主任务接线后的集成检查，本地不声称通过该门禁。
+
+## 加密成功收据（实施中）
+
+新增私有 `identity_receipts.cpp`，scope 三种明确分支和请求参数分别存储。查找按实际
+DB UTC 排除过期；相同 scope+keyed commitment+参数返回原始 AEAD binding/密文，
+不续期；改变承诺或参数为 Conflict。验证新的 binding 后，在独立容量锁下统计全部保留
+记录（含待清理过期行，保证物理行数/关联历史有界），满额 RateLimited、不删除有效义务。只允许复用同 scope 的过期行，显式清理
+每次1..1000，历史通过 FK 级联清理。存储不包含 token/proof/密码、不运行 crypto。
+收据创建/保留时间原样保存，以数据库 UTC 再检查 created<=now<retain 与最多24h，
+不得借用公共7日收据逻辑。nonce/ciphertext为bytea，包含NUL可无损往返。
+最终固定依赖三种 -Werror 构建及普通/ASan+UBSan 真实 PG 四库 fixture 均通过，
+2 TU clang-tidy22（分析器+强制大括号）warnings-as-errors、clang-format16、
+文档UTF8/换行/章节校验和 git diff --check 通过，保护基线无差异。
+测试覆盖原始ns/00ff、容量与过期未清理占用、相同请求重放不续期、变化承诺/参数Conflict、
+24h+1ns和过期输入拒绝、三类scope区分、caller now不影响find/prune、清理释放容量与NUL。
+真实TLS relay 丢弃 COMMIT 回执后，UoW为Unknown且旧实例停用，独立新连接按原scope
+恢复同一原始AEAD binding/密文；非仅模拟断线，也不再次生成秘密。
+开发期间ASan在增量 pqxx 参数列表扩容路径报告container-overflow；改为一次完整构造
+18参并预留最终大小后，未关闭任何sanitizer检查，最终全量fixture通过。
+新源 `infrastructure/postgres/src/identity_receipts.cpp` 需工具链接入；根完整门禁仍待
+该任务接线后运行，本地不声称已跑根CMake/CTest。schema/manifest不变。
