@@ -353,3 +353,9 @@ connection_id 由 Runtime 接受连接时分配；均不能用客户端自报 ID
 BusinessImplementation/NotImplemented 且 ready=false，不以监听成功当业务就绪。
 公共 runner 声明位于 `runtime/platform/service_process.hpp`，命名空间
 kiarabot::core::platform；借用 application 至线程、socket、RPC 全部关闭。
+
+五个独立 application 工厂为 make_identity_application、make_runtime_application、
+make_host_application、make_scheduler_application、make_model_application，头/源位于
+application/target/<name>_application.hpp/.cpp，返回 unique_ptr<ServiceReadinessPort>。
+每个实现拥有自己的服务身份、未验证依赖清单及业务未实现 gate，不装配旧 Runtime
+或 Control 对象；对应 core/app/<name>_main.cpp 只装配 application 与公共 runner。

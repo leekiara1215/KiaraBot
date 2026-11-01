@@ -18,3 +18,14 @@ name 为 identity/runtime/host/scheduler/model。Control 可独立实现相同�
 
 能力一验证：临时独立 C++20 -Wall/-Wextra/-Wpedantic/-Werror 头编译及执行、
 clang-format --dry-run --Werror、git diff --check 均通过；未运行进程测试，runner 仅声明。
+
+## 能力二：五个独立 application 与入口
+
+新增 application/target 的 identity/runtime/host/scheduler/model 工厂和五个 *_main.cpp；
+无共享可变全局/旧快照/协议依赖。依赖均 Unverified，BusinessImplementation 保持
+NotImplemented，任何配置不能令它 ready。主 CMake 接线由构建任务拥有，本轮临时
+编译五源与 service_applications_test.cpp 验证服务身份和不可绕过的未实现 gate。
+文档更新 doc/02 与本报告，运维行为未超出能力一约定；proto/API 无变更。
+
+能力二实际检查：五个 application 源和测试以 C++20 -Wall/-Wextra/-Wpedantic/-Werror
+独立编译并执行通过；clang-format、边界检查、git diff --check 通过。入口链接待 runner。
