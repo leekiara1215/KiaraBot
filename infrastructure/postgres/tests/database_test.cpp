@@ -16,6 +16,7 @@
 
 extern char** environ;
 
+#include "common_work_checks.hpp"
 #include "kiarabot/infrastructure/postgres/database.hpp"
 
 namespace {
@@ -94,52 +95,6 @@ int initialize_process(const std::filesystem::path& executable, const pg::Databa
   }
   require(WIFEXITED(status), "initializer terminated abnormally");
   return WEXITSTATUS(status);
-}
-
-void lost_commit_receipt(const pg::DatabaseConfig& config, const std::filesystem::path& root,
-                         std::uint16_t proxy_port) {
-  {
-    pqxx::connection migration(connection_string(config));
-    pqxx::work setup(migration);
-    setup.exec("CREATE TABLE kiarabot.commit_fault_probe(id integer PRIMARY KEY)");
-    setup.exec("GRANT SELECT,INSERT ON kiarabot.commit_fault_probe TO " +
-               setup.quote_name(config.runtime_role));
-    setup.commit();
-  }
-  auto proxied = config;
-  proxied.user = config.runtime_role;
-  proxied.port = proxy_port;
-  bool unknown = false;
-  {
-    pqxx::connection connection(connection_string(proxied));
-    pqxx::work transaction(connection);
-    transaction.exec("INSERT INTO kiarabot.commit_fault_probe VALUES(1)");
-    std::ofstream(root / "drop-commit-arm") << "arm";
-    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
-    while (!std::filesystem::exists(root / "drop-commit-ready")) {
-      require(std::chrono::steady_clock::now() < deadline, "relay did not arm");
-      std::this_thread::sleep_for(std::chrono::milliseconds(5));
-    }
-    try {
-      transaction.commit();
-    } catch (const pqxx::in_doubt_error&) {
-      unknown = true;
-    } catch (const pqxx::broken_connection&) {
-      unknown = true;
-    }
-  }
-  require(unknown, "lost COMMIT receipt was not uncertain");
-  require(std::filesystem::exists(root / "commit-receipt-dropped"), "relay did not drop response");
-  {
-    pqxx::connection migration(connection_string(config));
-    pqxx::work inspect(migration);
-    require(inspect.exec("SELECT count(*) FROM kiarabot.commit_fault_probe WHERE id=1")
-                    .one_row()[0]
-                    .as<int>() == 1,
-            "COMMIT did not persist before response loss");
-    inspect.exec("DROP TABLE kiarabot.commit_fault_probe");
-    inspect.commit();
-  }
 }
 
 void run(const std::filesystem::path& root, std::uint16_t port,
@@ -233,7 +188,7 @@ void run(const std::filesystem::path& root, std::uint16_t port,
             "repeated CLI initialization was not rejected");
     expect_error(pg::initialize_empty(config), target::ErrorCode::Conflict);
     if (config.service == target::Service::Identity) {
-      lost_commit_receipt(config, root, proxy_port);
+      pg::test::check_unknown_commit(config, root, proxy_port);
     }
     auto opened = pg::Database::open(runtime);
     require(std::holds_alternative<std::unique_ptr<pg::Database>>(opened),
@@ -241,6 +196,7 @@ void run(const std::filesystem::path& root, std::uint16_t port,
     auto database = std::move(std::get<std::unique_ptr<pg::Database>>(opened));
     require(std::holds_alternative<std::monostate>(database->check_writer()),
             "writer lock missing");
+    pg::test::check_common(*database, config);
     expect_error(pg::Database::open(runtime), target::ErrorCode::Conflict);
     database.reset();
     {
@@ -299,6 +255,19 @@ void run(const std::filesystem::path& root, std::uint16_t port,
     require(std::holds_alternative<std::unique_ptr<pg::Database>>(restarted),
             "restart lock not released");
     auto writer = std::move(std::get<std::unique_ptr<pg::Database>>(restarted));
+    auto active_result = writer->begin();
+    require(std::holds_alternative<std::unique_ptr<target::UnitOfWork>>(active_result),
+            "old active UoW begin failed");
+    auto active = std::move(std::get<std::unique_ptr<target::UnitOfWork>>(active_result));
+    target::Operation uncommitted{
+        {config.service, {"killed-write"}, {target::ResourceKind::Instance, {"resource"}}},
+        {1},
+        target::OperationState::Accepted,
+        target::ExecutionOutcome::NotStarted,
+        {},
+        {}};
+    require(std::holds_alternative<std::monostate>(active->operations().save(uncommitted, {})),
+            "old active write failed");
     {
       pqxx::work terminate(administrator);
       const auto killed = terminate.exec(
@@ -307,15 +276,35 @@ void run(const std::filesystem::path& root, std::uint16_t port,
       require(killed.size() == 1, "unexpected writer sessions");
       terminate.commit();
     }
+    require(active->commit() != target::CommitResult::Committed,
+            "killed writer committed old transaction");
     expect_error(writer->check_writer(), target::ErrorCode::UpstreamUnavailable);
     expect_error(writer->check_writer(), target::ErrorCode::UpstreamUnavailable);
     writer.reset();
     require(std::holds_alternative<std::unique_ptr<pg::Database>>(pg::Database::open(runtime)),
             "new writer could not recover after terminated session");
+    pg::test::check_deadline(config);
+    {
+      pqxx::connection migration(connection_string(config));
+      pqxx::work altered(migration);
+      altered.exec("DROP INDEX kiarabot.outbox_due");
+      altered.exec("CREATE INDEX outbox_due ON kiarabot.outbox(next_attempt_at)");
+      altered.commit();
+    }
+    expect_error(pg::Database::open(runtime), target::ErrorCode::Internal);
+    {
+      pqxx::connection migration(connection_string(config));
+      pqxx::work restore(migration);
+      restore.exec("DROP INDEX kiarabot.outbox_due");
+      restore.exec("CREATE INDEX outbox_due ON kiarabot.outbox(state,next_attempt_at,lease_until)");
+      restore.commit();
+    }
+    require(std::holds_alternative<std::unique_ptr<pg::Database>>(pg::Database::open(runtime)),
+            "restored schema did not validate");
     {
       pqxx::connection migration(connection_string(config));
       pqxx::work corrupt(migration);
-      corrupt.exec("UPDATE kiarabot.schema_versions SET version=2");
+      corrupt.exec("UPDATE kiarabot.schema_versions SET version=999");
       corrupt.commit();
     }
     expect_error(pg::Database::open(runtime), target::ErrorCode::Internal);
@@ -352,6 +341,9 @@ int main(int argc, char** argv) {
     run(std::filesystem::canonical(argv[1]), static_cast<std::uint16_t>(number),
         std::filesystem::canonical(argv[3]), static_cast<std::uint16_t>(proxy_number));
     return 0;
+  } catch (const pqxx::sql_error& error) {
+    std::cerr << "P03 assertion: unexpected test SQLSTATE " << error.sqlstate() << '\n';
+    return 1;
   } catch (const TestFailure& error) {
     std::cerr << "P03 assertion: " << error.what() << '\n';
     return 1;

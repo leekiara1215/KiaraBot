@@ -8,12 +8,17 @@
 #include <utility>
 
 #include <pqxx/pqxx>
+#include <pqxx/version>
 
+#include "../schema/common.hpp"
+#include "../schema/manifest.hpp"
 #include "../schema/v1.hpp"
+#include "session.hpp"
 
 namespace kiarabot::infrastructure::postgres {
 namespace {
 namespace target = core::target;
+static_assert(std::string_view(PQXX_VERSION) == "7.10.0");
 constexpr int kWriterLockClass = 1262638164;
 constexpr int kWriterLockId = 1;
 
@@ -84,11 +89,19 @@ std::unique_ptr<pqxx::connection> connect(const DatabaseConfig& config) {
       " sslrootcert=" + quote_option(config.root_certificate) +
       " sslmode=verify-full channel_binding=require gssencmode=disable connect_timeout=5"
       " options='-c statement_timeout=3000 -c lock_timeout=1000"
-      " -c idle_in_transaction_session_timeout=5000 -c search_path=pg_catalog'"
+      " -c idle_in_transaction_session_timeout=5000 -c search_path=pg_catalog -c timezone=UTC -c "
+      "client_encoding=UTF8'"
       " application_name=kiarabot");
+  // Server notices are not an application diagnostic channel and may contain arbitrary text.
+  connection->set_notice_handler([](pqxx::zview) {});
   if (connection->server_version() != 160004) {
     throw std::runtime_error("unsupported database version");
   }
+  pqxx::read_transaction metadata(*connection);
+  if (metadata.exec("SHOW server_encoding").one_row()[0].as<std::string>() != "UTF8") {
+    throw std::runtime_error("unsupported database encoding");
+  }
+  metadata.commit();
   return connection;
 }
 
@@ -170,15 +183,16 @@ bool schema_valid(pqxx::transaction_base& transaction, const DatabaseConfig& con
   }
   const auto records =
       transaction.exec("SELECT singleton,version,service FROM kiarabot.schema_versions");
-  const auto permissions =
-      transaction.exec("SELECT has_schema_privilege($1,'kiarabot','USAGE') AND "
-                       "NOT has_schema_privilege($1,'kiarabot','CREATE') AND "
-                       "NOT has_schema_privilege($1,'public','CREATE') AND "
-                       "has_table_privilege($1,'kiarabot.schema_versions','SELECT') AND "
-                       "NOT "
-                       "has_table_privilege($1,'kiarabot.schema_versions','INSERT,UPDATE,DELETE,"
-                       "TRUNCATE,REFERENCES,TRIGGER')",
-                       pqxx::params{config.runtime_role});
+  const auto permissions = transaction.exec(
+      "SELECT has_schema_privilege($1,'kiarabot','USAGE') AND "
+      "NOT has_schema_privilege($1,'kiarabot','CREATE') AND "
+      "NOT has_schema_privilege($1,'public','CREATE') AND "
+      "has_table_privilege($1,'kiarabot.schema_versions','SELECT') AND "
+      "NOT "
+      "has_table_privilege($1,'kiarabot.schema_versions','INSERT,UPDATE,DELETE,"
+      "TRUNCATE,REFERENCES,TRIGGER') AND NOT "
+      "has_any_column_privilege($1,'kiarabot.schema_versions','INSERT,UPDATE,REFERENCES')",
+      pqxx::params{config.runtime_role});
   const auto schema_permissions = transaction.exec(
       "SELECT pg_get_userbyid(nspowner)=$1 AND "
       "NOT EXISTS(SELECT 1 FROM aclexplode(COALESCE(nspacl,acldefault('n',nspowner))) a "
@@ -199,6 +213,26 @@ bool schema_valid(pqxx::transaction_base& transaction, const DatabaseConfig& con
       return false;
     }
   }
+  const auto descriptor = transaction.exec(schema::kDescriptorQuery);
+  const auto owners = transaction.exec(
+      "SELECT bool_and(pg_get_userbyid(c.relowner)=$1 AND c.relpersistence='p' AND NOT "
+      "c.relrowsecurity AND NOT c.relforcerowsecurity) "
+      "FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='kiarabot'",
+      pqxx::params{config.migration_role});
+  const auto table_access = transaction.exec(
+      "SELECT bool_and(has_table_privilege($1,c.oid,'SELECT') AND "
+      "has_table_privilege($1,c.oid,'INSERT') "
+      "AND has_table_privilege($1,c.oid,'UPDATE') AND has_table_privilege($1,c.oid,'DELETE') "
+      "AND NOT has_table_privilege($1,c.oid,'TRUNCATE,REFERENCES,TRIGGER')) "
+      "FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='kiarabot' "
+      "AND c.relkind='r' AND c.relname<>'schema_versions'",
+      pqxx::params{config.runtime_role});
+  const auto no_executable_objects =
+      transaction.exec("SELECT (SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON "
+                       "n.oid=p.pronamespace WHERE n.nspname='kiarabot') + "
+                       "(SELECT count(*) FROM pg_trigger t JOIN pg_class c ON c.oid=t.tgrelid JOIN "
+                       "pg_namespace n ON n.oid=c.relnamespace "
+                       "WHERE n.nspname='kiarabot' AND NOT t.tgisinternal)");
   const auto objects = transaction.exec(
       "SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace "
       "WHERE n.nspname='kiarabot'");
@@ -206,7 +240,10 @@ bool schema_valid(pqxx::transaction_base& transaction, const DatabaseConfig& con
          records[0][1].as<int>() == schema::kVersion &&
          records[0][2].as<std::string>() == service_name(config.service) &&
          permissions.one_row()[0].as<bool>() && schema_permissions.one_row()[0].as<bool>() &&
-         objects.one_row()[0].as<int>() == 2;
+         objects.one_row()[0].as<int>() == 46 &&
+         descriptor.one_row()[0].as<std::string>() == schema::kDescriptor &&
+         owners.one_row()[0].as<bool>() && table_access.one_row()[0].as<bool>() &&
+         no_executable_objects.one_row()[0].as<int>() == 0;
 }
 
 target::Failure translate_exception() {
@@ -229,8 +266,7 @@ target::Failure translate_exception() {
 } // namespace
 
 struct Database::Impl {
-  std::unique_ptr<pqxx::connection> connection;
-  bool disabled = false;
+  std::shared_ptr<detail::Session> session;
 };
 
 core::target::Status initialize_empty(const DatabaseConfig& config) {
@@ -255,11 +291,16 @@ core::target::Status initialize_empty(const DatabaseConfig& config) {
     transaction.exec("REVOKE ALL ON SCHEMA public FROM " +
                      transaction.quote_name(config.runtime_role));
     transaction.exec(schema::kCreate);
+    transaction.exec(schema::common_sql());
     transaction.exec("INSERT INTO kiarabot.schema_versions VALUES(true,$1,$2)",
                      pqxx::params{schema::kVersion, service_name(config.service)});
     transaction.exec("GRANT USAGE ON SCHEMA kiarabot TO " +
                      transaction.quote_name(config.runtime_role));
-    transaction.exec("GRANT SELECT ON kiarabot.schema_versions TO " +
+    transaction.exec("GRANT SELECT,INSERT,UPDATE,DELETE ON ALL TABLES IN SCHEMA kiarabot TO " +
+                     transaction.quote_name(config.runtime_role));
+    transaction.exec("REVOKE INSERT,UPDATE,DELETE ON kiarabot.schema_versions FROM " +
+                     transaction.quote_name(config.runtime_role));
+    transaction.exec("GRANT USAGE ON ALL SEQUENCES IN SCHEMA kiarabot TO " +
                      transaction.quote_name(config.runtime_role));
     if (!schema_valid(transaction, config)) {
       return failure(target::ErrorCode::Internal);
@@ -294,8 +335,10 @@ core::target::Outcome<std::unique_ptr<Database>> Database::open(const DatabaseCo
   }
   try {
     auto impl = std::make_unique<Impl>();
-    impl->connection = connect(config);
-    pqxx::work transaction(*impl->connection);
+    impl->session = std::make_shared<detail::Session>();
+    impl->session->owner = config.service;
+    impl->session->connection = connect(config);
+    pqxx::work transaction(*impl->session->connection);
     if (!roles_valid(transaction, config)) {
       return failure(target::ErrorCode::PermissionDenied);
     }
@@ -315,26 +358,21 @@ core::target::Outcome<std::unique_ptr<Database>> Database::open(const DatabaseCo
 }
 
 core::target::Status Database::check_writer() {
-  if (impl_->disabled) {
-    return failure(target::ErrorCode::UpstreamUnavailable);
+  auto begun = begin();
+  if (const auto* rejected = std::get_if<target::Failure>(&begun)) {
+    return *rejected;
   }
-  try {
-    pqxx::read_transaction transaction(*impl_->connection);
-    const auto locks = transaction.exec(
-        "SELECT count(*) FROM pg_locks WHERE locktype='advisory' AND pid=pg_backend_pid() "
-        "AND database=(SELECT oid FROM pg_database WHERE datname=current_database()) "
-        "AND classid=$1::oid AND objid=$2::oid AND objsubid=2 AND granted",
-        pqxx::params{kWriterLockClass, kWriterLockId});
-    if (locks.one_row()[0].as<int>() != 1) {
-      impl_->disabled = true;
-      return failure(target::ErrorCode::UpstreamUnavailable);
-    }
-    transaction.commit();
-    return std::monostate{};
-  } catch (...) {
-    impl_->disabled = true;
-    return translate_exception();
+  auto work = std::move(std::get<std::unique_ptr<target::UnitOfWork>>(begun));
+  auto sampled = work->current_time();
+  work->rollback();
+  if (const auto* rejected = std::get_if<target::Failure>(&sampled)) {
+    return *rejected;
   }
+  return std::monostate{};
+}
+
+core::target::Outcome<std::unique_ptr<core::target::UnitOfWork>> Database::begin() {
+  return detail::begin_common(impl_->session);
 }
 
 } // namespace kiarabot::infrastructure::postgres

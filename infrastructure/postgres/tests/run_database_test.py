@@ -26,6 +26,10 @@ def main():
     def run(command, timeout=45, expected=0):
         result = subprocess.run(command, env=environment, capture_output=True, timeout=timeout)
         if result.returncode != expected:
+            if Path(command[0]).name == 'database_test':
+                for line in result.stderr.decode(errors='replace').splitlines():
+                    if line.startswith('P03 assertion: '):
+                        print(line, flush=True)
             raise RuntimeError(f'fixture command failed: {Path(command[0]).name}; '
                                f'exit={result.returncode}; output redacted')
         return result
@@ -65,7 +69,7 @@ def main():
         multiline.chmod(0o600)
         run(cli + [str(multiline)], expected=2)
         run([str(pg_bin / 'initdb'), '-D', str(root / 'data'), '-A', 'scram-sha-256',
-             '-U', 'p03_admin', '--pwfile', str(password_file), '--no-locale'])
+             '-U', 'p03_admin', '--pwfile', str(password_file), '--no-locale', '--encoding=UTF8'])
         run([str(openssl), 'req', '-x509', '-newkey', 'ec', '-pkeyopt',
              'ec_paramgen_curve:P-256', '-nodes', '-days', '1', '-subj', '/CN=localhost',
              '-addext', 'subjectAltName=DNS:localhost', '-keyout', str(root / 'server.key'),

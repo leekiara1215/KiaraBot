@@ -4,7 +4,7 @@
 #include <memory>
 #include <string>
 
-#include "kiarabot/core/domain/target/context.hpp"
+#include "kiarabot/core/ports/target/unit_of_work.hpp"
 
 namespace kiarabot::infrastructure::postgres {
 
@@ -26,8 +26,9 @@ struct DatabaseConfig {
 // No database/role creation, old data import, destructive reset or automatic retry.
 core::target::Status initialize_empty(const DatabaseConfig& config);
 
-// Owns the sole writer session. Not thread safe. A lost session/lock permanently disables
-// this instance; a new process must validate/acquire again. No transparent reconnection.
+// Owns the sole writer session. begin/check_writer share a bounded session permit; each
+// returned UoW is single-owner. A lost session/lock permanently disables this instance;
+// a new process must validate/acquire again. No transparent reconnection.
 class Database final {
   struct Impl;
 
@@ -43,6 +44,9 @@ public:
 
   // Call before accepting work and each dispatch/lease boundary. Does not perform DDL.
   core::target::Status check_writer();
+  // Common local transaction foundation; typed service factories are added separately.
+  // At most one active UoW per writer session. Busy/disabled sessions reject without reconnecting.
+  core::target::Outcome<std::unique_ptr<core::target::UnitOfWork>> begin();
 
 private:
   std::unique_ptr<Impl> impl_;

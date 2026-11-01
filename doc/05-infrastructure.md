@@ -215,3 +215,21 @@ DDL 与版本标记同一事务；重复初始化拒绝，未知或半初始化�
 运行身份仅按 schema 授权，不能建表、建 schema、临时表或访问其他业务数据库。
 活动写入者持有库内 session advisory lock；重复启动拒绝，连接/锁丢失后该实例停止业务，
 不能自动重连后继续旧业务。当前基础能力不表示 Repository 或六进程接线已经完成。
+
+### P03 公共短事务与关系收据（实施中）
+
+Core `110cf32` typed UoW是本实现输入；公共事务与活动锁共用同一session，
+总预算2秒/锁等待250ms，仓储不单独提交。任何仓储失败使本事务不能提交部分业务。
+收据和inbox使用不可变、分类型关系快照保存ReplayResult，不回查可变业务资源；
+任务载荷可以是受限bytea，不用JSON/全量BLOB代替关系记录。版本/代次用受限
+NUMERIC(20,0)无损保存uint64，禁止经double或signed bigint截断。
+到期/领取条件以写入时数据库clock_timestamp裁决，应用now不改变租约。
+首次收据/接收的创建时间和最低保留期限由数据库确定；同内容重放保留原结果/期限。
+普通队列与控制保留容量分开，满额拒绝新增，不删除已受理义务。
+
+公共schema v2保存共享收据/审计/交接/操作与12种分类型结果快照，尚不代表服务业务就绪。
+数据库必须为UTF8，连接强制client_encoding=UTF8；服务端notice不作为应用诊断输出。
+时间列使用与Core目标TimePoint一致的signed64 UTC epoch纳秒；数据库clock_timestamp经
+精确NUMERIC算术转换为epoch纳秒，保留外部合法亚微秒，不使用double或本机时钟tick冒充。
+启动核对固定PG16.4的全部列/default/identity、约束、索引、domain和sequence描述；
+对象计数相同但索引被替换也必须拒绝。schema版本表仅可读，业务表无DDL/触发器权限。

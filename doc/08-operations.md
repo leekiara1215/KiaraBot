@@ -409,3 +409,15 @@ port为1–65535整数；单主机DNS/IP，不接受多host、Unix socket或DSN�
 socket，不继续受理。暂时忙等可恢复情况由具体组合根区分，不把忙当writer失锁。
 销毁顺序是RPC/监听→application→回调持有的依赖→恢复信号mask。内层readiness仍只读
 快照，不在探针中查询数据库；仅有这些通用钩子不表示PG或业务已经装配。
+
+### P03 common transaction limits
+
+P03公共schema当前为v2，要求UTF8数据库；旧v1或其他结构不自动升级，必须按本轮空库部署
+流程初始化新的专属库，不能清空原库或自动补表。schema结构描述/对象owner/运行权限均参与
+启动验证。当前仅存储公共能力，业务就绪仍由各服务已实现依赖决定。
+
+公共事务在同一持锁session上串行；并发begin最多等待250ms后以Conflict表示忙，不能据此
+认定失锁。事务总预算2秒，SQL锁等待250ms；RAII deadline使用复制的同session socket，
+到期只关闭该socket且等待线程收尾，避免fd重用误关闭别的连接。超时/失连接后旧实例停止
+业务，不能在后台重连。已发送COMMIT但回执丢失为Unknown，关闭旧session释放活动锁，
+通过新实例按原收据/交接身份查询，不能自动重放副作用。显式rollback不能撤销Unknown。

@@ -4,9 +4,8 @@
 
 namespace kiarabot::infrastructure::postgres::schema {
 
-inline constexpr int kVersion = 1;
-// Single source for the initial storage foundation. Business repositories are added only
-// after their Core contracts are reviewed; this marker never claims business readiness.
+inline constexpr int kVersion = 2;
+// Explicit empty-database schema version; no upgrade or reset of existing databases.
 inline constexpr std::string_view kCreate = R"sql(
 CREATE SCHEMA kiarabot;
 REVOKE ALL ON SCHEMA kiarabot FROM PUBLIC;

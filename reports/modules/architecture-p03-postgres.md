@@ -150,3 +150,77 @@ open_scheduler/open_model(const DatabaseConfig&)，返回Core Outcome<unique_ptr
 此提交仅声明，定义正在本能力实现，不把接口存在当作可链接或已完成数据库行为。
 声明按format16检查、C++20 -Werror独立头语法检查和diff检查通过；无可执行行为变化，
 本接口提交无需新增doc/08；doc/05已在能力二的同变更内说明。真实PG证据仍为上节已提交能力。
+
+### 公共能力实现与版本说明
+
+Core固定ns精度提交a7d5577已授权引入（本分支ac8405d）；代码static_assert目标duration
+为纳秒。没有把Apple原生system_clock（本机实测微秒）假定为纳秒，也未在旧定义上乘1000
+冒险截断TimePoint端点。曾评估timestamptz，但其微秒精度会破坏不可变envelope回放，
+最终统一使用Core signed64 epoch ns BIGINT，DB clock_timestamp经精确NUMERIC产生权威UTC，
+所有时间条件写在SQL重判；版本仍NUMERIC(20,0)完整uint64，与时间有符号域分开。
+
+本能力schema为v2，仅显式空库初始化，不提供旧v1自动升级/清库；公共表及12种分类型
+ReplayResult快照全部关系化（Grant scopes单独子表，Task payload受限bytea），无万能JSON/BLOB。
+指纹使用数据库catalog描述MD5校验列/默认/identity、约束/validated/deferrable、索引、
+domain和sequence，仅作固定PG16.4结构校验，非密码学安全机制。owner/RLS/表权限/禁止
+用户触发器与函数另查；版本表表级及列级写权限都拒绝。UTF8库/客户端编码均验证，notice抑制。
+
+CommonWork借同session，二进制semaphore许可持续至终止；并发begin等250ms后Conflict。
+2秒总预算包括阻塞网络/rollback：timer只shutdown由F_DUPFD_CLOEXEC持有的相同socket，
+pqxx仅在UoW所有者线程操作；复制fd防连接断开/原fd复用误关其他资源，stop/join后归还许可。
+任何仓储失败标记本UoW不能提交部分结果；Unknown保留终止结果，析构/rollback不改写，
+永久禁用且释放旧连接，不透明重连。COMMIT异常不泄漏pqxx正文，不自动重跑。
+
+复用审核Core b2761da（本分支a66bc44）check_receipt_write/check_outbox_enqueue/
+check_inbox_write/validate_claim_request，保留SQL唯一/短锁/CAS与DB实际UTC重检。
+Receipt新写由DB设置创建时间并保证至少168小时，重放返原快照/期限；普通/控制lane容量
+分开，gen_random_uuid产生claim且唯一索引兜底；lease=min(DB now+lease,valid_until)，
+confirm匹配source+message+当前token/未过期租期，重复同token确认不重复处理。
+
+### 工具链接线变更（取代能力一的最小source列表）
+
+- `kiarabot_postgres`实际库源：`src/database.cpp`、`src/common_work.cpp`、`src/record_codec.cpp`，
+  均相对于 `infrastructure/postgres/`；链接 `libpqxx::pqxx` 和 `Threads::Threads`。
+- 同一CLI source/target不变，链接上述库。
+- driver source增加 `infrastructure/postgres/tests/common_work_checks.cpp`（与database_test.cpp一起）。
+  测试header `common_work_checks.hpp`，内部header session.hpp/record_codec.hpp，schema common.hpp/
+  manifest.hpp为手写唯一实现，无生成步骤。CTest命令/labels与fixture参数保持。
+- `factories.hpp`声明对应定义及typed live Repository在下一小步；本提交只使Database::begin()
+  实现Core公共UnitOfWork，不以公共基类取代四个typed工厂。
+
+实际本地构建沿用上节固定路径、-std=c++20/-Wall/-Wextra/-Wpedantic/-Werror和传递静态库；
+两条命令分别以上述3库source+2driver source、3库source+CLI编译，不使用别人的产物代替自己。
+真实fixture沿用相同Python命令，独立测试集群/四库/TLS/SCRAM；结束安全移除自己材料。
+
+### 公共能力实际验收（2026-11-01，未关闭P03阶段）
+
+固定依赖本人两条-Werror构建与完整真实PG16.4/TLS/SCRAM fixture通过（UTF8）：
+
+- 四库operations create/absence/CAS/冲突与失败回滚，2^63/UINT64_MAX无损，更新溢出显式拒绝。
+- 12种关系快照跨UoW重放，scope子表、可选fence/host、二进制00/ff、平台前导零、Unicode；
+  完整operation owner/resource、137ns/731ns时间低位、TimePoint::min/max均精确保留。
+- 新receipt至少168小时，满容量仍可同hash原结果重放且不续期；异hash拒绝；resource kind隔离。
+- 普通/控制outbox容量隔离、同内容重复、不可信建议now不能决定领取/确认/清理。
+  claim持久token/lease，实际失效后重领换token/增加attempt，旧token无法确认新claim；
+  同token重复确认安全。inbox以source+message去重并保存完整原结果，改变hash拒绝。
+- inbox保留至少max(接收,valid_until)+168小时，未来now不能提前清理；测试迁移身份仅在
+  临时fixture把记录整体移到过去后有界清理，仍有效的7天记录保留，清理后过期新消息拒绝。
+- 同UoW业务+receipt+audit+outbox后容量失败，四者全部回滚；独立真实PG session持行锁时
+  250ms Timeout，之前audit也回滚。没有通过查空值掩盖故障。
+- 同factory并发begin250ms Conflict；2秒deadline使旧写回滚/旧实例禁用、新实例可恢复；
+  杀持锁backend后旧活动事务不能commit，新会话确认killed-write不存在。
+- TLS代理现在运行的是**实际Core UnitOfWork commit**：Unknown、rollback不能改写、旧实例
+  不重连；新实例按原receipt key读回UINT64_MAX完整原结果，证明PG确已提交而非仅断线。
+- 原四库权限/TLS/初始化/半初始化/重启用例全部重跑；同计数下替换outbox_due索引被拒绝，
+  恢复正确索引后可启动。schema descriptor最终严格启用，无跳过/回退分支。
+
+增加 `-fsanitize=address,undefined -fno-omit-frame-pointer` 重编3库源+2driver源，
+使用同一真实fixture独立再跑通过，无sanitizer报告；测试前置缺失会失败，不跳过真实PG。
+固定tidy22对database/common_work/record_codec/CLI/database_test/common_work_checks共6个TU，
+`--checks='clang-analyzer-*' --warnings-as-errors='*' --header-filter='infrastructure/postgres/.*'`
+并显式Apple SDK/C++头，实际通过；此为本能力定向分析，不冒充全仓编译覆盖/统一tidy。
+format16对所有本能力源/头dry-run通过；固定Python3.11两fixture py_compile通过；
+Python pathlib文档章节/路径/换行校验、git diff --check、与13cac3a比较受保护doc/18无差异均通过。
+文档实际更新doc/05、doc/08及本报告，未更新proto/API/其他模块的理由同本节开头影响判断。
+根full/CTest/统一工具链仍由工具链接线后主集成执行，本分支无权修改CMake；
+typed live Repository/工厂定义与完整100次派发/进程接线等后续能力未完成，不宣称P03完成。
