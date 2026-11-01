@@ -54,6 +54,59 @@ read_file 使用 O_NONBLOCK|O_NOFOLLOW 后 fstat，仅接收 regular；补配置
 测试（含4种FIFO路径）通过；五入口按相同警告门禁独立编译链接通过，格式及diff检查通过。
 网络测试属于随后runner能力，本修正不据此宣称监听已验收。
 
+## 能力四：真实探针、mTLS owner 服务与同步生命周期
+
+新增 runtime/platform/service_rpc.hpp/.cpp、service_process.cpp、platform/service_rpc_client.cpp、
+service_process_test.py。五个服务独立监听，Control可复用runner且不创建业务gRPC。
+注册生成owner Service默认方法，Runtime另注册AdapterBridge/PluginBridge/HostBridge，
+UNIMPLEMENTED零业务写入。mTLS要求验证客户端证书，禁grpc复用端口，未实现业务gate不变。
+HTTP回环非阻塞有界读写，SIGINT/TERM同步消费，RPC关闭2秒deadline并Wait，无异步业务handler。
+
+文档同步doc/02（边界/生命周期）、doc/08（配置/probe/退出/限制）和本报告；
+API/proto未改，健康体沿用既有ProcessProbe，Control业务路径仅未实现拒绝；doc/18未改。
+
+实际验证：
+- protoc对当前proto目录生成全部目标C++/gRPC到/tmp/p02-services-generated（未提交）。
+- 五application/五main/三platform源C++20 -Wall/-Wextra/-Wpedantic/-Werror编译，
+  外部头标SYSTEM；分别链接五个/tmp/p02-{identity,runtime,host,scheduler,model}。
+- 生成源不应用手写源码的-Werror/Pedantic；首次直接使用本机新Abseil头触发
+  nullability-extension警告，改临时编译外部头为SYSTEM、生成源使用生成物警告策略后通过。
+- /tmp/p02-rpc-client独立编译；
+  python3 core/tests/platform/service_process_test.py /tmp /tmp/p02-rpc-client 经权限批准运行通过。
+  覆盖五服务并行、help/参数拒绝、live/ready/404/405、五owner的UNIMPLEMENTED、
+  无客户端证书握手拒绝、Runtime三个桥接UNIMPLEMENTED、两端口冲突、慢HTTP请求期间
+  SIGTERM有界退出、其他四服务继续live及SIGINT退出0。测试使用临时CA/证书无生产秘密。
+- 沙箱首次网络测试启动失败；首次获批运行发现TLS起始相等边界失败，RSA重跑因耗时较长通过；
+  随后以独立提交修正notBefore相等边界并注入固定时刻测试，不用sleep绕过。
+
+临时工具链为本机gRPC1.84.1/Protobuf36.2/OpenSSL4.1，不能代替full-locked依赖验收。
+本worktree不修改CMake，阶段CTest注册、完整构建/编译数据库/固定依赖/格式tidy门禁由
+工具链与主对话集成后执行；没有真实PG或P03业务验证，也未声明P02整体完成。
+
+### 接线文件清单
+
+- 纯库：core/src/application/target/{identity,runtime,host,scheduler,model}_application.cpp，
+  对应include/kiarabot/core/application/target/*_application.hpp；各库只依赖纯readiness端口。
+- 公共外层：core/src/runtime/platform/{service_config,service_rpc,service_process}.cpp，
+  对应runtime/platform头；链接nlohmann_json::nlohmann_json、OpenSSL::Crypto、
+  gRPC::grpc++、全部目标协议、Threads，不链接旧runtime或Control实现。
+- 五main：core/app/{identity,runtime,host,scheduler,model}_main.cpp；最终Host文件为host_main.cpp，
+  可执行名kiarabot-plugin-host，配置service为plugin-host。
+- 单测：core/tests/architecture/service_applications_test.cpp；
+  配置driver：core/tests/platform/service_config_driver.cpp，测试脚本service_config_test.py。
+- 集成driver：core/tests/platform/service_rpc_client.cpp；测试脚本service_process_test.py
+  当前接受临时binary目录（文件p02-*）与RPC client路径；统一CTest可用适配参数/别名接入。
+- 本地可复跑临时构建脚本/tmp/p02-services-build.py保存实际编译命令，生成与对象均在/tmp；
+  永久CMake接线以本清单为准，不将临时绝对路径写进仓库构建配置。
+
+补充实际检查：clang-format --dry-run --Werror、check-boundaries.py、git diff --check通过。
+check-architecture.py --inner 实际退出1：本分支尚未接收工具链对旧源码的隔离，报告25处
+旧domain/application/ports依赖；新增target无报告，仍不能将全仓inner门禁记通过。
+python3 -m py_compile 首次因系统PYTHONPYCACHEPREFIX指向只读Library/Caches退出1，
+改为只解析AST验证测试脚本语法，不将系统缓存失败称通过。
+集成脚本另支持直接传五个服务可执行路径（identity runtime host scheduler model）及
+RPC client路径，适合CTest的TARGET_FILE接线，无需临时p02-*别名。
+
 ## TLS 起始时刻边界修正
 
 valid_time允许notBefore比较结果-1或0，仍拒绝-2解析失败和notAfter相等/到期；
@@ -64,3 +117,10 @@ CLI/配置不提供时钟覆盖。只改配置头/源、driver/配置测试、do
 
 实际检查：C++20 -Wall/-Wextra/-Wpedantic/-Werror重编译配置driver；
 配置/FIFO/TLS拒绝及固定时刻、新EC证书立即加载测试通过；格式和diff检查通过。
+
+最终EC夹具回归：修正后重新编译全部手写源，按六个显式可执行路径运行集成脚本，
+五服务/mTLS/桥接/信号/冲突全部通过。临时构建脚本最初仅按cpp时间戳缓存，头签名
+新增时刻参数后出现旧对象链接失败及缺失binary；已强制重编译全部手写源后通过，
+永久CMake必须跟踪头依赖，不能照搬此临时缓存。./scripts/check-toolchain.sh本轮实际
+运行退出1：Required tool not found: clang-tidy，其后full/生成/tidy门禁未运行。
+配置driver/测试与五应用单测另已运行通过；文档diff检查、Python AST语法检查通过。

@@ -359,3 +359,15 @@ make_host_application、make_scheduler_application、make_model_application，�
 application/target/<name>_application.hpp/.cpp，返回 unique_ptr<ServiceReadinessPort>。
 每个实现拥有自己的服务身份、未验证依赖清单及业务未实现 gate，不装配旧 Runtime
 或 Control 对象；对应 core/app/<name>_main.cpp 只装配 application 与公共 runner。
+
+### P02 实际传输边界
+
+`runtime/platform/service_rpc.cpp` 注册 IdentityService、RuntimeService、HostService、
+SchedulerService、ModelService 的生成 Service 默认实现；Runtime 另注册 AdapterBridge、
+PluginBridge、HostBridge。全部业务方法返回 UNIMPLEMENTED，不执行授权成功分支或写状态。
+Control 不创建入站业务 gRPC。生成协议及 gRPC 只存在外层，五个 application 无协议依赖。
+
+`service_process.cpp` 在创建 gRPC 工作者前阻塞 SIGINT/SIGTERM，在主线程同步检查并
+sigwait 消费，不安装执行业务的异步信号回调。HTTP 探针单线程非阻塞轮询，每连接
+读写共用500ms期限及8KiB头边界；RPC shutdown 使用2秒期限取消在途调用并 Wait，
+借用 application 生命周期覆盖所有资源销毁。未实现阶段不启动业务工作者/进程/数据库。

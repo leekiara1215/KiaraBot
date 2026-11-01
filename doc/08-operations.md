@@ -334,5 +334,26 @@ JSON 根只允许 schema_version=1、service、probe_listen、tls；非 Control 
 文件以非阻塞方式打开后检查 regular，FIFO 等特殊文件必须有界拒绝，不能在 open
 等待写端。五服务入口的工厂装配异常也返回1及脱敏 INTERNAL，不输出异常 what()。
 
+### P02 已实现监听与退出
+
+五个 Core 入口为 identity_main.cpp、runtime_main.cpp、host_main.cpp、scheduler_main.cpp、
+model_main.cpp；Plugin Host 的 CLI service 值是 plugin-host。每个入口接受相同配置规范。
+启动成功输出一行 service、实际 probe_port、grpc_port、ready=false；不会输出凭据或
+配置正文。端口冲突退出1；业务gRPC禁止共享监听端口。Control 使用同一runner但不监听gRPC。
+
+探针明文HTTP仅回环：GET /health/live 为200 `{"state":"HEALTHY"}`，GET /health/ready
+在P02为503 `{"state":"UNHEALTHY"}`，严格沿用ProcessProbe仅state结构；其他路径404，
+探针非GET返回405并含Allow: GET。Control 的 /api/v1/ 与 /ws/ 前缀返回503及
+CAPABILITY_NOT_SUPPORTED，不挂接旧业务或升级WebSocket。该探针不是远程业务服务器。
+
+所有非Control的业务gRPC使用配置CA验证客户端证书，未提供客户端证书不能到达RPC；
+正确证书连接下已注册owner方法与Runtime三个桥接流均返回UNIMPLEMENTED。CA链检查
+只证明传输证书有效，未实现P04的SAN/工作负载登记/受限委托/在线授权，不能将握手成功
+视为可执行任何业务。探针就绪状态继续取application门禁，TLS成功不修改业务依赖状态。
+
+SIGINT/SIGTERM在主线程同步消费。探针每连接500ms总预算，空闲轮询100ms，gRPC关闭
+期限2秒；正常信号退出0，运行异常脱敏退出1。线程/socket/server均在runner返回前回收。
+本阶段证书只在启动加载验证；热轮换、到期后业务连接收敛与注册授权仍待P04，ready始终false。
+
 证书时间边界为 notBefore <= 当前验证时刻 < notAfter；起始恰好相等合法，ASN1时间
 解析失败拒绝。配置校验时刻支持内部测试注入，CLI/配置不能覆盖服务器当前时间。
