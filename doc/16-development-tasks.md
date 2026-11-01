@@ -1003,3 +1003,11 @@ CI 修复（本轮只改工作流，未复跑；不能据此宣称 CI 已绿）�
 - 未运行与原因：真实 QQ/NapCat 的群/私聊同号场景未联调（T07b 无真实环境）；远端 CI 自动触发仍暂停（需手动 Run）；`clang-tidy` 本机未安装。
 - 文档影响判断：更新 `doc/01-runtime-semantics.md`（排序域四元组、四元组会话键、v6 重键迁移语义）、`doc/01-contracts.md`（`sequence` 排序域派生说明）、`doc/02-core.md`（Core 会话排序键）、`doc/05-infrastructure.md`（v6 迁移含会话键重键、迁移测试）、`doc/08-operations.md`（升级说明与一次性 DEGRADED、适配器 outbox 1→2、`EXPECTED_SCHEMA_VERSION` 默认 6、陈旧 v5 引用）、`doc/04-nonebot-adapter.md`（适配器四元组与 DB 迁移，已在 `1faa272`）、`reports/pending-confirmation.md`（Action 7 类与会话 ID 两项从待裁定改为已决策）与本台账；`proto/`、`api/`、`deploy/` 本轮未改（版本号与部署断言已在 `1faa272` 升为 6）；`doc/18` 受保护未改。
 - 后续/风险：适配器 outbox 的旧共享计数器无法区分类型，迁移对每个旧键同时生成群/私聊两个计数器；真实环境升级后同一会话首个事件可能有一次 `DEGRADED`（仅诊断，不影响接收）；遥测侧尚未把 `session_degraded`/`sequence_gap_detected` 导出到健康或指标端点，是否接线由后续任务决定。
+
+## 2026-11-01 新架构实施登记
+
+- 本轮按 [方向基线](19-architecture-direction-baseline.md)、[详细设计](20-detailed-architecture-design.md)
+  与 [P00–P14 分步计划](23-implementation-plan.md) 独立实施；以上旧执行记录保留，不改写为新架构验收。
+- 用户已授权使用现有 worktree 开多个对话并行开发，各能力独立提交，主对话逐提交审查集成。
+  分工、原提交与集成提交映射、实际检查及未验收项统一记在 [协调记录](../reports/execution/2026-11-01-architecture-parallel.md)。
+- 阶段进度以新计划和协调记录为准；本登记不表示 P00 环境、P01 完整契约、六进程或后续业务链路已经通过。

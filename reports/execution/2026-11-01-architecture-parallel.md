@@ -40,12 +40,38 @@
 
 | 对话任务 | threadId | hostId | 运行状态 |
 | --- | --- | --- | --- |
-| KiaraBot 新架构：契约与 API | 01a1951a-79a9-7130-b932-3699427f75d2 | local | 方法规格已提交 `112ec27`，协议开发中；有命令等待授权 |
-| KiaraBot 新架构：工具链与构建基线 | 01a1951a-894c-7bf2-840b-7ef0191b7d9e | local | 正在核验依赖来源，网络命令等待授权 |
-| KiaraBot 新架构：Core 内层模型与端口 | 01a1951a-93d3-7ea3-b840-cf35713eb720 | local | 基础类型 `0520cde`、上下文/端口 `2ae3b4c` 已提交，领域校验与测试开发中 |
+| KiaraBot 新架构：契约与 API | 01a1951a-79a9-7130-b932-3699427f75d2 | local | 方法规格、公共流及五服务方法已集成，浏览器契约与复验中 |
+| KiaraBot 新架构：工具链与构建基线 | 01a1951a-894c-7bf2-840b-7ef0191b7d9e | local | 首轮两个提交已审查、集成；完整锁定环境与六入口尚未验收 |
+| KiaraBot 新架构：Core 内层模型与端口 | 01a1951a-93d3-7ea3-b840-cf35713eb720 | local | 首轮四个提交已审查、集成，独立构建与测试通过；未接入生产路径 |
 
 这些是独立对话，工具默认项目目录为主检出，因此任务提示明确要求每次命令使用指定模块 worktree。主对话核对实际 git 状态，避免默认 cwd 导致串改。阶段状态依提交与实际验证更新，尚不宣称 P00–P14 完成。
 
-主对话已初审上述三个提交的文件边界；Core 与契约的 fencing 组合、Runtime 专属 UoW 命名已反馈 Core 对话核对，尚未合入业务代码。各对话的命令授权由用户在原对话处理，主对话不代批，也不通过替代工具绕过。
+主对话已审查模块文件边界；Core 与契约的 fencing 组合、Runtime 专属 UoW 以及直接 Adapter/Plugin 调用者身份已反馈并以独立提交修正。各对话的命令授权由用户在原对话处理，主对话不代批，也不通过替代工具绕过。
 
-文档影响：本轮协调只更新本记录；不改变协议、运行行为或已确认架构，不需同步其他模块文档。检查为相对链接存在性及 `git diff --check`，不以此替代模块测试。
+## 已集成的独立提交
+
+cherry-pick 保留每个开发提交的能力边界；由于集成分支已有其他提交，集成 SHA 与原分支 SHA 不同。不 squash，也不把未提交内容复制到主工作区。
+
+| 原提交 | 集成提交 | 能力 |
+| --- | --- | --- |
+| `112ec27` | `338d1bc` | 契约方法规格 |
+| `0520cde` | `ab0ddb8` | Core 强类型身份及失败基础 |
+| `2ae3b4c` | `4f36e50` | Core 上下文与本地事务端口 |
+| `eb32ae4` | `be80bf0` | fence、版本与有界租约不变量 |
+| `7d05d2c` | `9671ad2` | 直接调用者类型与可信 fence 映射约束 |
+| `5f43135` | `f1f7348` | 依赖精确锁与来源校验 |
+| `5088ed5` | `eb8df25` | 编译覆盖/内层依赖/目标/阶段门禁 |
+| `e4983db` | `dab2daa` | 公共协议与注册、投递续租帧 |
+| `51be69b` | `8026dc9` | 五服务类型化方法及跨语言验证入口 |
+
+## 主集成复验
+
+- Core：`cmake -S core/tests/architecture -B /tmp/kiarabot-rollout-integrated-core`、对应 build 与 CTest 通过（2/2）；直接调用者修正后再次 build/CTest 通过。八个新增/修改的手写 C++ 文件 `clang-format --dry-run --Werror` 通过。
+- 工具链：依赖锁离线一致性通过；`python3 -m unittest discover -s scripts/quality/tests -p '*_test.py'` 通过（13 项）；四组 `cmake --list-presets=all` 解析及改动 shell 的 `bash -n` 通过。
+- 协议：实现状态登记、枚举一致性、既有语义规则检查通过；主集成目录运行 `KIARABOT_TARGET_PYTHON=/tmp/kiarabot-contracts-venv/bin/python proto/tests/check_target.sh` 通过：77 个 RPC、269 种消息 Python→C++→Python 往返。实际生成/编译了 C++/Python/gRPC；使用本机两端各自匹配的生成器/runtime，非最终锁定环境。生成源码及本机 Abseil 产生 nullability 扩展警告、链接重复库提示，不能宣称无警告 full 构建。
+- `./scripts/check-toolchain.sh` 在前置检查明确失败：缺少 `clang-tidy`。不据此宣称 full、固定依赖环境、真实 PG/JWT 或生产链路通过。
+- `git diff --check` 通过；受保护 `doc/18-architecture-baseline.md` 无改动。协调与进度文档的链接检查随最终记录运行。
+
+当前只交付首波 P00/P01 基础。P00 全环境验收未关闭，P01 浏览器契约与最终复验未完成；六进程构建、数据库及后续业务阶段未实施。下一波必须基于已集成提交和明确验收结果下发，不能仅因协议可生成就关闭阶段。
+
+文档影响：主协调更新本记录、`doc/23-implementation-plan.md` 的实际进度；按 P00 要求给 `doc/00-boundaries.md`、`doc/12-ci-cd.md` 追加目标实施约束，并在 `doc/16-development-tasks.md` 仅登记新计划，保留旧执行历史。模块自身已在对应独立提交同步文档。主协调不改变协议、运行行为或已确认架构，无需额外改写其他模块文档；保护基线只读。链接与 diff 检查不替代模块测试。

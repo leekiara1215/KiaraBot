@@ -350,3 +350,29 @@ contracts job 在原固定 vcpkg registry 中增加 boost-beast、boost-asio、l
 - **失败工件**：`full-build` 失败时上传 `build-full.log`；密钥扫描已有 gitleaks 报告工件。
 - **自动触发仍暂停**，恢复步骤不变：先手动 Run workflow 全绿 → 取消 `pull_request`/`push` 注释 → 删除 `base_ref` fallback。在恢复并复跑前，「任意 Pull Request 都能自动编译和运行测试」仍不成立。
 - 本地验证：`ruby -ryaml` 解析通过，actionlint 1.7.12 通过；GitHub Actions 未在远端执行（需要仓库管理员手动 Run workflow）。
+
+## 2026-11-01 目标架构阶段门禁规格（P00，CI 尚未接线）
+
+本轮实施按 [P00–P14 计划](23-implementation-plan.md) 推进；旧单 Core/SQLite 验收记录
+保留为历史证据，不能证明六服务/私有 PostgreSQL/跨主机目标通过。本轮未改 workflow，
+自动触发暂停状态不变，也未发布镜像或部署。
+
+依赖精确锁位于 `dependencies/architecture/`，来源和检查见 [工具链说明](11-toolchain.md)。
+`full-locked` 选择该 manifest；离线锁校验不等于安装/链接/运行验收。最终 CI 必须使用
+一致的生成器与 runtime，实际生成 C++/Python/gRPC，验证目标 descriptor、字段/枚举/
+实现状态和跨语言往返。旧未发布开发快照不作为本轮必须兼容基线；发布后的兼容检查
+仍须有真实基准，不能用当前 descriptor 自比证明跨版本兼容。
+
+P02 起统一 full 构建应覆盖六个生产目标与全部手写翻译单元，质量门禁检查内层依赖，
+并补实际目标链接隔离。每个已实施阶段注册 `pNN` 与 `unit`/`integration`/`fault` 分类；
+缺阶段、零测试、未配置必要依赖均须失败，不接受“跳过”代替验收。
+`scripts/quality/check-architecture.py` 提供覆盖/目标/直接依赖/标签检查，
+但尚未将六入口及阶段测试实际接入，不能据脚本自测宣布 P02 完成。
+
+真实 PG fixture 由 P03 专属实现负责，仅允许显式测试白名单的临时数据库/角色；
+拒绝生产连接，初始化/并发/COMMIT 故障测试不回退到内存或 SQLite。缺服务或权限时
+报告未验收及实际原因。远端 Linux CI、跨主机故障与恢复由后续阶段分别记录，
+不以本机协议、leaf 构建或旧验收套件结果替代。
+
+当前实际集成与未通过项见 [并行协调记录](../reports/execution/2026-11-01-architecture-parallel.md)。
+这些是待接线门槛，无新增 CI 成功、远端合并或生产发布结论。

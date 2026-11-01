@@ -114,3 +114,28 @@ infrastructure → 插件业务逻辑 / 控制面板页面
 ## 代码启动句
 
 > 请只实现 `doc/` 中指定模块的公共接口和独立测试，严格遵守依赖方向，不修改其他模块的内部代码。
+
+## 2026-11-01 目标架构实施边界（P00）
+
+本轮目标以 [方向基线](19-architecture-direction-baseline.md)、[详细设计](20-detailed-architecture-design.md)
+及 [分步计划](23-implementation-plan.md) 为准。上述旧运行路径说明不代表六服务已接线；
+目标接口暂位于 `core/include/kiarabot/core/{domain,application,ports}/target/`，
+当前新增内层接口尚未替换原运行路径。`doc/18` 保持人类维护的只读原文。
+
+- Control、Identity、Runtime、Plugin Host、Scheduler、Model 是六类独立平台进程；
+  Core 仍表示领域/应用/端口代码，不等于单一进程或跨服务共享内存。
+- 内层值类型和端口只依赖内部模型；Protobuf/gRPC、HTTP/JSON、SQL/数据库连接、
+  TLS/平台 SDK 留在边界或基础设施，组合根负责装配。端口不能反向依赖 application。
+- Identity、Runtime、Scheduler、Model 各自拥有私有 PostgreSQL 逻辑库；Host/Adapter
+  的本地 SQLite 日志只保存其执行/可靠发送责任。Control 不拥有权威业务库，
+  插件只能访问 SDK。服务之间通过契约交换信息，不能直接查写他人的表。
+- 用例只能提交所属服务本地事务；收据、业务状态、审计与可靠交接按所属用例原子化。
+  Repository 借用 UoW，不自行提交。事务内不调用远端，未知提交按原身份查询恢复。
+- 安装、业务实例、执行代次、连接代次、Runtime epoch 和配置版本分别表达不同事实；
+  不以可变连接身份替代稳定所有者，也不以新代次替换缺失/陈旧的入站代次。
+- 开发阶段统一重建目标契约和空库初始化，不建设旧快照导入、协议桥或双写。
+  这不授权清除现有数据、移除仍有效的行为断言或改写保护基线。
+
+模块分工与独立提交/集成顺序见 [并行协调记录](../reports/execution/2026-11-01-architecture-parallel.md)。
+直接 include/SQL 词法检查、编译覆盖检查和六目标存在性检查已经提供，完整传递依赖、
+链接隔离及六进程生命周期仍需 P02 实现与验收；不能将门禁脚本存在当作架构已经通过。
