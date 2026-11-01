@@ -1410,6 +1410,11 @@ private:
 };
 class ExchangeCryptoFixture final : public t::DelegationCryptoPort {
 public:
+  t::Outcome<t::AuthorityVerifiedDelegation>
+  verify_for_authorization(t::SecretView, const t::VerifiedPeer&,
+                           const t::SecurityClockSample&) override {
+    throw std::logic_error("exchange does not verify authorization queries");
+  }
   explicit ExchangeCryptoFixture(RegistryFixture& registry) : registry_(registry) {}
   t::Outcome<t::VerifiedDelegation> verify_exchange_parent(t::SecretView proof,
                                                            const t::VerifiedPeer& recipient,
