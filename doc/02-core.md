@@ -968,3 +968,14 @@ Runtime，subject及source credential/session保持不变，client cert改为实
 父签验、clock/random及签名都在所有UoW之外；签前后重查两平台与来源当前authority，
 最终短事务一秒授权窗口和DB当前期限再检。NumericDate取整只缩短、不延长父exp、两平台
 证书/凭据、source期限或本次deadline；纯签发不收据、不消费command intent、不写库/commit。
+
+### P04源会话Control持久绑定
+
+`SessionSecurity.control_peer`保存`SessionControlPeer {subject, credential}`。新会话必须
+由实际已认证Control写入有效绑定；refresh/revoke保留不变，客户端不能自报或替换。
+可空仅用于表达缺失/损坏供拒绝路径处理，不允许生产创建缺值会话，也不代表任意peer。
+下游委托即使由Runtime转交，仍按该credential ID读取原Control当前head、证书有效期和
+主体gate，并与签名actor链首项核对。稳定ID允许证书轮换后原会话继续使用，但只接受
+该服务当前有效身份；不重用旧leaf认证新连接。原Control撤销/失效/禁用或缺绑定拒绝。
+本批只冻结类型/端口契约，Login写入与PG schema/repo接入由父协调，未接入不得启用
+依赖此绑定的Revoke/Exchange。只读类型测试不等于真实存储或并发验收。

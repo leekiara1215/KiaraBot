@@ -113,6 +113,16 @@ struct LoginIdentity {
   CredentialId password_credential;
   ResourceVersion version;
 };
+// Persisted at Login. Later delegation checks the current certificate head/principal gate of
+// this original Control, even when the actual forwarding caller is Runtime. No cached cert grant.
+struct SessionControlPeer {
+  SubjectId subject;
+  CredentialId credential;
+  bool operator==(const SessionControlPeer&) const = default;
+};
+inline bool valid_session_control_peer(const SessionControlPeer& peer) {
+  return !peer.subject.value.empty() && !peer.credential.value.empty();
+}
 struct SessionSecurity {
   SessionId id;
   SubjectId subject;
@@ -125,6 +135,8 @@ struct SessionSecurity {
   std::uint64_t rotation;
   ResourceVersion version;
   bool revoked = false;
+  // Login persists the verified original Control; absent never means arbitrary Control.
+  std::optional<SessionControlPeer> control_peer = std::nullopt;
 };
 struct EphemeralTokenPair {
   SessionId session;
