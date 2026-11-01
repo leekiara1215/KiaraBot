@@ -144,3 +144,35 @@ C++使用系统依赖，未冒充full-locked。实际编译覆盖已核对全部
 JSON核对解释器和pytest路径均精确匹配原tests目录，未以省略/skip套件修复。
 纯头编译file(GENERATE)避免无内容变化重写；实际configure/build及diff检查通过。
 本次更新doc/11和本报告，无业务契约/协议/API变化。该2项通过不代替全量51项结果。
+
+## 第七能力：固定环境与真实PG/JWT依赖smoke
+
+本机macOS arm64实际完成固定vcpkg77项安装（13直接ports），版本/registry树校验通过；
+libsodium首次因缺aclocal失败，新增GNU automake1.17/libtool2.5.4官方归档hash并本地构建后
+恢复成功。共享OpenSSL3.5.0及标准CLI配置、PG16.4服务端/psql已校验/编译/安装。
+Node22.14.0归档校验、uv0.13.6/Python3.11.18环境实际通过；uv纳入requirements hash锁。
+Python固定UV内嵌目录的两平台URL已锁定，独立归档下载HTTP403，hash明确null；未冒充
+完整镜像复现。该项与Linux/远端CI/OS编译器digest仍未验收。
+
+新增依赖smoke C++、CMake与只接受自建临时集群的Python夹具，全部手写TU纳入full，
+未排除src。精确runtime：PG16.4/libpqxx7.10.0、OpenSSL3.5.0、SQLite3.49.1、curl8.13.0、
+Protobuf5029003、gRPC1.71.0、Boost1.87、sodium1.0.20；JWT成熟库Ed25519实际签验并拒绝
+错误audience。首次PG连接在Ed25519 TLS证书上被通道绑定摘要错误拒绝，分离EC TLS证书
+和Ed25519JWT密钥后，verify-full+channel_binding=require实测通过，未关闭验证。
+每次失败/成功都停止自建集群，临时材料移除；没有外部DSN、生产库或P03业务DDL。
+
+`cmake --fresh --preset full-locked`、完整build、全仓80手写TU覆盖、六目标图/内层、
+`ctest --preset full-locked -j3 --output-on-failure` 51/51通过（含p00、77/269、12项p02、
+reference原断言与Control27用例）。锁自测3项、架构自测7项、旧边界7项、reference6项通过。
+API/Ajv33操作/schema检查、Redocly2.72.1与AsyncAPI3.6.6校验通过，保留2个OpenAPI warning。
+Protobuf/gRPC CMake imported工具接线避免生成器与runtime混版；配置确认SQLite等来自锁目录。
+
+原tidy19.1.0全仓失败于Boost make_unique_noinit/新版libc++调用链诊断。单独安装官方
+tidy22.1.8对相同http_server.cpp/compileDB/SDK/全部analyzer检查通过，并明确确认
+NewDeleteLeaks仍启用；遂升级精确工具锁，未改源码/断言/警告要求。全仓22分析仍单独记录。
+Python语法初次py_compile被系统外部cache写权限拒绝，已用只读ast.parse验证；无源码语法失败。
+
+本能力更新doc/11、本报告、依赖锁/验证/烟测及相关CMake；无协议/API语义变化，
+doc/00/02/06/08/12-ci-cd由各所有者维护，doc18未改。完整统一链路仍不能宣布全绿：
+旧contract_status evidence路径在reference迁移后失效，且“implemented=生产接线”的
+历史登记需要主对话协调；本任务没有擅自把reference当新生产证据或更改语义状态。

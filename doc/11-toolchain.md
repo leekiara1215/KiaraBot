@@ -344,3 +344,52 @@ P02 reference 补充：HTTP/WS CTest 的 pytest 路径规范化为实际 `contro
 保留已存在 venv 的真实套件；其27项用例已在固定依赖构建上实际通过。
 `architecture_p02_reference_manifest_test` 将清单的6个失败/路径回归自测注册为p02/unit。
 独立头翻译单元改用file(GENERATE)，重复configure不再无条件改写文件触发全量重编译。
+
+## P00 固定依赖的实际环境验证（本机 macOS arm64）
+
+固定registry的13项直接依赖及全部传递port已真实安装在忽略的
+`build/architecture-installed/arm64-osx`；`--registry`和`--installed --triplet arm64-osx`
+来源/版本检查通过。新增`build-tools.lock.json`固定实际取得的GNU automake1.17、
+GNU libtool2.5.4及官方归档SHA-256；它们解决libsodium构建缺aclocal的失败，不替换系统工具。
+OpenSSL CLI固定3.5.0的官方源码SHA-512与库锁一起记录，独立构建共享库与CLI；
+GNU/PG/OpenSSL/Node下载归档均可用`check-dependency-lock.py --archive FILE`流式验证。
+
+```bash
+python3 scripts/quality/check-dependency-lock.py --registry build/vcpkg \
+  --installed build/architecture-installed --triplet arm64-osx
+VCPKG_ROOT="$PWD/build/vcpkg" cmake --preset full-locked \
+  -DKIARABOT_TEST_OPENSSL="$PWD/build/openssl-3.5.0-install/bin/openssl" \
+  -DKIARABOT_TEST_PG_BIN="$PWD/build/pg-16.4-install/bin"
+cmake --build --preset full-locked --parallel 4
+ctest --preset full-locked --output-on-failure
+```
+
+full/full-locked包含依赖smoke手写TU，不能从编译覆盖中排除。full-locked的Python3解释器
+明确使用SDK锁定环境；Protobuf/gRPC生成器优先使用对应CMake imported executable，
+防止PATH混入系统protoc。首次完整固定构建与51项CTest均已实测通过，含27个Control
+HTTP/WS用例。仅macOS本机证据，不是Linux/CI/发布镜像验收。
+
+`p00_dependency_smoke`只创建自己的临时PG16.4集群，SCRAM密码、TLS verify-full与
+channel_binding=require，测试libpqxx7.10.0和JWT Ed25519签名/验签/错误audience拒绝；
+固定版本宏与实际runtime版本均校验，结束停止集群并删除临时私钥。没有外部DSN参数，
+不创建业务schema/角色/UoW，不代表P03 Repository与COMMIT故障矩阵通过。
+TLS使用EC证书，JWT使用独立Ed25519密钥：PG16.4对Ed25519 TLS证书的通道绑定摘要
+不支持已实际检出，未通过关闭绑定/TLS来修复。PG服务端须链接同版共享OpenSSL3.5.0；
+静态嵌入crypto导致上游libpq exit符号检查失败，保留检查并换共享库后构建通过。
+
+GNU工具从锁中官方URL下载并校验后解压于build/，分别configure到`build/gnu-tools`；
+automake使用`--prefix`，libtool另加`--program-prefix=g`（macOS提供glibtoolize）。
+重新安装port时将该bin加入PATH。OpenSSL从锁中官方归档构建`shared no-tests no-docs`，
+执行`make install_sw install_ssldirs`；PG configure设置同版共享库的CPPFLAGS/LDFLAGS、
+`--with-openssl --without-readline --without-icu --without-zlib`，再make/install到上述PG路径。
+构建前置仍需系统C/C++编译器、CMake、make、Perl、autoconf、m4；镜像级OS/编译器锁留P14。
+
+Python3.11.18已经由固定uv0.13.6实际安装并通过SDK/黑盒测试，Node22.14.0官方归档校验
+通过。Python两平台的精确20261026下载URL来自固定uv内嵌目录，已记录在锁中；其独立
+归档SHA-256尚未取得（直接官方镜像HTTP403），明确记null，不能称完整二进制镜像锁。
+uv本身则已纳入quality requirements的精确版本/归档hash。不得用安装目录hash冒充归档hash。
+
+质量工具有效锁更新为format16.0.6、tidy22.1.8、uv0.13.6。tidy19.1.0在新版libc++/Boost
+调用链报告unique_ptr泄漏，同一个http_server.cpp、编译数据库、SDK参数及全部
+clang-analyzer检查用22.1.8实测通过；没有改源码、关闭NewDeleteLeaks或降低warnings-as-errors。
+全仓22.1.8静态分析结果须以执行报告为准，不以单文件通过替代全仓。

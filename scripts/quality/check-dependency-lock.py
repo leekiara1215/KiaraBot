@@ -62,9 +62,27 @@ def verify_registry(lock, registry):
     return errors
 
 
+def verify_installed(lock, installed, triplet):
+    errors = []
+    for name, entry in lock['vcpkg']['ports'].items():
+        metadata = installed / triplet / 'share' / name / 'vcpkg.spdx.json'
+        if not metadata.is_file():
+            errors.append(f'{name}: installed metadata absent for {triplet}')
+            continue
+        packages = json.loads(metadata.read_text())['packages']
+        actual = next(package['versionInfo'] for package in packages
+                      if package['SPDXID'] == 'SPDXRef-port')
+        expected = entry['version'] + (f"#{entry['port-version']}" if entry['port-version'] else '')
+        if actual != expected:
+            errors.append(f'{name}: installed version {actual} differs from {expected}')
+    return errors
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--registry', type=Path)
+    parser.add_argument('--installed', type=Path)
+    parser.add_argument('--triplet', help='required with --installed')
     parser.add_argument('--archive', type=Path, help='verify a downloaded PG or Node archive without extracting')
     args = parser.parse_args()
     directory = ROOT / 'dependencies/architecture'
@@ -72,13 +90,24 @@ def main():
     errors = validate(lock, json.loads((directory / 'vcpkg.json').read_text()))
     if args.registry:
         errors.extend(verify_registry(lock, args.registry))
+    if args.installed:
+        if not args.triplet:
+            parser.error('--installed requires --triplet')
+        errors.extend(verify_installed(lock, args.installed, args.triplet))
+    build_tools = json.loads((directory / 'build-tools.lock.json').read_text())['tools']
+    for tool in build_tools:
+        if not re.fullmatch(r'[a-f0-9]{64}', tool['sha256']):
+            errors.append(f"{tool['name']}: invalid archive hash")
+    if lock['openssl-cli']['version'] != lock['vcpkg']['ports']['openssl']['version']:
+        errors.append('OpenSSL CLI/library versions differ')
     if args.archive:
-        if args.archive.name == lock['postgresql']['url'].rsplit('/', 1)[1]:
-            algorithm, expected = 'sha512', lock['postgresql']['sha512']
-        elif args.archive.name in lock['node']['sha256']:
-            algorithm, expected = 'sha256', lock['node']['sha256'][args.archive.name]
-        else:
+        archives = {lock['postgresql']['url'].rsplit('/', 1)[1]: ('sha512', lock['postgresql']['sha512']),
+                    lock['openssl-cli']['archive-name']: ('sha512', lock['openssl-cli']['sha512'])}
+        archives.update({name: ('sha256', digest) for name, digest in lock['node']['sha256'].items()})
+        archives.update({tool['url'].rsplit('/', 1)[1]: ('sha256', tool['sha256']) for tool in build_tools})
+        if args.archive.name not in archives:
             raise ValueError('archive is not present in lock')
+        algorithm, expected = archives[args.archive.name]
         digest = hashlib.new(algorithm)
         with args.archive.open('rb') as stream:
             for block in iter(lambda: stream.read(1024 * 1024), b''):
@@ -90,6 +119,8 @@ def main():
         return 1
     print('Architecture dependency lock consistent' + ('; registry verified' if args.registry else
           ' (offline only; installed dependencies not verified)'))
+    if args.installed:
+        print('Installed metadata matches lock; runtime/ABI requires dependency smoke')
     return 0
 
 

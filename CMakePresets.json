@@ -38,6 +38,7 @@
       "binaryDir": "${sourceDir}/build/full-locked",
       "toolchainFile": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
       "cacheVariables": {
+        "Python3_EXECUTABLE": "${sourceDir}/sdk/python/.venv/bin/python",
         "VCPKG_MANIFEST_MODE": "ON",
         "VCPKG_MANIFEST_DIR": "${sourceDir}/dependencies/architecture",
         "VCPKG_INSTALLED_DIR": "${sourceDir}/build/architecture-installed"

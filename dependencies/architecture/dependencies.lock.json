@@ -91,7 +91,20 @@
   },
   "python": {
     "version": "3.11.18",
-    "provider": "uv managed Python; uv.lock per project"
+    "provider": "uv managed Python; uv.lock per project",
+    "metadata_source": "uv 0.13.6 embedded download catalog",
+    "artifacts": {
+      "cpython-3.11.18-linux-x86_64-gnu": {
+        "url": "https://releases.astral.sh/github/python-build-standalone/releases/download/20261026/cpython-3.11.18%2B20261026-x86_64-unknown-linux-gnu-install_only_stripped.tar.gz",
+        "sha256": null,
+        "hash_status": "Direct official mirror download returned HTTP 403; managed uv installation succeeded, archive hash not separately retrieved."
+      },
+      "cpython-3.11.18-macos-aarch64-none": {
+        "url": "https://releases.astral.sh/github/python-build-standalone/releases/download/20261026/cpython-3.11.18%2B20261026-aarch64-apple-darwin-install_only_stripped.tar.gz",
+        "sha256": null,
+        "hash_status": "Direct official mirror download returned HTTP 403; managed uv installation succeeded, archive hash not separately retrieved."
+      }
+    }
   },
   "uv": {
     "version": "0.13.6"
@@ -103,5 +116,12 @@
       "node-v22.14.0-darwin-arm64.tar.gz": "e9404633bc02a5162c5c573b1e2490f5fb44648345d64a958b17e325729a5e42",
       "node-v22.14.0-linux-x64.tar.xz": "69b09dba5c8dcb05c4e4273a4340db1005abeafe3927efda2bc5b249e80437ec"
     }
+  },
+  "openssl-cli": {
+    "version": "3.5.0",
+    "url": "https://github.com/openssl/openssl/archive/openssl-3.5.0.tar.gz",
+    "archive-name": "openssl-openssl-openssl-3.5.0.tar.gz",
+    "sha512": "a1ef09ecc810b761b3adcdb79b5746ba06244a10f626a40e495a3df19411546b98d75f6c7e7c13de7c15753caf3db87af7096ed0bb835afed8cc6dbc366b542f",
+    "configure": "shared no-tests no-docs; make install_sw install_ssldirs"
   }
 }
