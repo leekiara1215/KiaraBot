@@ -1,6 +1,7 @@
 # P00/P01 收尾与 P02 并行实施
 
 用户要求按计划继续开发，沿用既有 worktree、独立对话、小步提交与主对话逐提交集成。
+随后明确要求持续完成主线至程序可用，只有重大变故再打断；阶段检查和报告不表示停止。
 上一轮最后的 schema 判别字段提交 `0b2aebc` 已独立集成为 `ab4aebd`。
 本记录属于实施协调，不修改已确认方向或受保护 `doc/18`。
 
@@ -70,3 +71,56 @@ SIGTERM/SIGINT、并行运行和单服务故障隔离。证书使用测试临时
 文档影响：各实现同步其模块和运维行为；主对话同步边界、API 运行说明、CI 与进度。
 本记录仅协调，无新增协议字段；proto/API 语义若需要变更必须先单独提交契约再实现。
 构建/生成/venv/证书产物不提交。
+
+## 本轮已集成的能力与实测
+
+生产入口为 build/<preset>/bin 下六个 kiarabot-*，各有纯应用库，Core 内层与 Control
+内层独立头编译。非 Control 为 mTLS owner RPC；所有业务尚未实现，明确 UNIMPLEMENTED，
+live=200、ready=503。42 个历史 Core 文件字节不变隔离，原行为断言保留为 reference。
+
+所有开发能力均独立提交后审查 cherry-pick，无 squash：
+
+| 能力 | 原提交 | 集成提交 |
+| --- | --- | --- |
+| 就绪端口 | 18c73bc | f8b7290 |
+| 五应用 | 8337736 | 1d37086 |
+| 严格配置/TLS | ca1cbea | 1bc72c0 |
+| FIFO 与入口异常 | 7230f30 | e6db90f |
+| 证书起始边界 | 60bd92d | 5b71fb8 |
+| 实际进程/owner RPC | edd9112 | 8c4cec1 |
+| 非GET探针错误映射 | cf2a392 | 491b84a |
+| 固定格式 | 4205e92 | 06fa2a4 |
+| Control 应用/入口 | 主工作区 | ebd05c7 |
+| PKI 与生命周期 | 71c6982、2be1d77 | c64a4fe、fa1b6d1 |
+| TLS、隔离与RPC preflight | 799d03e、54cd092、f88f09e | c8411b3、456c14b、fbeb77f |
+| reference 映射/wrapper | 97a2c46、29f717c | 9bcd68a、8d992bb |
+| 隔离规格/质量锁 | c0dbcdf、00bd566 | 10c895f、6551b72 |
+| 原样隔离42文件 | 59e1afd | 0e44f1e |
+| 内层/13proto/往返 | 3956350 | 85545ae |
+| 六入口与黑盒接线 | 3e28f1f | b4d377e |
+| 保留Control reference与映射测试 | 4d96f1b | 7a8c7b1 |
+| 固定依赖/真实PG与Ed25519 smoke | 011ea40 | 403a543 |
+| 完整静态分析及固定检查入口 | 505fa3b | 15a6a83 |
+
+主工作区实际运行：full 配置、构建，完整 CTest 最终 50/50（包含真实六进程/77 owner RPC
+与三个桥接流、mTLS正反例、生命周期和故障隔离、269个消息往返、reference全部套件）。
+第一次48/49暴露Control reference测试目录错误，修复路径后重跑通过，未跳过测试。
+实际 CMake 图/内层检查、reference manifest与42文件原始git blob逐一对比、format16、
+PKI/support/TLS/reference/wrapper自测、API lint/Ajv通过。系统依赖 full 不是固定环境。
+
+工具链工作区固定环境实际 51/51 CTest、standalone infrastructure 10/10、80手写TU的
+tidy22及format16通过；PG16.4 verify-full/SCRAM channel binding、libpqxx7.10和固定
+Ed25519 sign/verify/错误audience拒绝均真实运行。主工作区正在独立复验该固定环境。
+主工作区早先tidy出现Homebrew Boost调用链泄漏诊断，工具链对同TU用tidy22重验通过，
+没有禁用checker或删除reference；不以该单TU通过代替主工作区全仓复验。
+
+统一入口尚非全绿：历史contract evidence仍引用迁移前路径，且 implemented 的reference/
+target语义须明确，已交契约线程修复。Python发行归档独立hash获取403另交工具链继续；
+未验收远端Linux CI、真实QQ、付费模型、跨主机部署与恢复。不得将P02当可用机器人。
+
+## 文档影响与检查
+
+本次集成说明更新 README、doc/00、12-ci-cd、16、23 和本报告，纠正入口、构建、隔离及
+阶段状态。doc/02、06、08、11已在各实现提交同步行为；本汇总不再重复改变这些行为。
+proto/API无新增字段，不需以汇总为由重写；doc/18保护基线保持只读且无diff。
+V0检查为 git diff --check 与本次文档相对链接校验；后续复验结果按实际追加。

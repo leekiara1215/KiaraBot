@@ -13,15 +13,22 @@ QQ
 kiarabot-adapter-nonebot            Python NoneBot2 适配器（本仓库 adapters/）
    │ gRPC / Protobuf
    ▼
-C++20 Core                          事件、权限、插件调度、Action、持久化编排
-   ├─ PluginSDK（Python/C++）        进程外插件边界
-   ├─ 基础设施适配器                 SQLite、模型、时区、任务
-   └─ Control API                   REST / WebSocket
-       ▼
-TypeScript 控制面板                 第一个控制面板客户端
+C++20 Runtime                      事件、实例、投递、Action、namespace
+   ├─ PluginSDK（当前 Python）       进程外业务插件
+   ├─ Plugin Host                  独立受管进程与本地日志
+   ├─ Scheduler                    独立任务与可靠触发
+   └─ Model                        独立模型配置与 Provider 调用
+
+TypeScript 控制面板 ── REST/WS ── C++20 Control
+                                      │ 类型化所有者 RPC
+                             Identity / Runtime / Scheduler / Model
+
+Identity                           独立身份、会话与范围授权
+Identity/Runtime/Scheduler/Model    各自私有 PostgreSQL 逻辑库
+Host/Adapter                       各自本地 SQLite 可靠执行/发送日志
 ```
 
-协议和 API 契约是跨模块唯一来源；未来可以替换 NoneBot2 适配器、插件语言或面板客户端，而不改变公共协议。完整设计基线见 [目标架构基线（人类维护，AI 只读）](doc/18-architecture-baseline.md)。
+图示是本轮目标，完成度见下文。协议和 API 契约是跨模块唯一来源；未来可以替换 NoneBot2 适配器、插件语言或面板客户端，而不改变公共协议。本轮设计见 [方向基线](doc/19-architecture-direction-baseline.md) 和 [详细设计](doc/20-detailed-architecture-design.md)；首版 [目标架构基线（人类维护，AI 只读）](doc/18-architecture-baseline.md) 保留原文。
 
 ## 仓库组成
 
@@ -29,20 +36,29 @@ TypeScript 控制面板                 第一个控制面板客户端
 | --- | --- |
 | `proto/kiarabot/v1/` | 跨语言唯一契约：事件、Action、适配器、插件和 gRPC 服务 |
 | `api/` | OpenAPI 与 AsyncAPI 契约 |
-| `core/` | C++20 Core：Runtime、AdapterBridge/PluginBridge、插件调度、Action/Host、任务调度和控制应用端口 |
-| `infrastructure/` | Core 端口实现：SQLite RuntimeStore、HTTP 模型 Provider、时区解析、文件存储 |
+| `core/` | C++20 服务内层/端口及 platform 运行支撑；`core/reference/` 保留旧一体实现 |
+| `infrastructure/` | 旧 SQLite/Provider 等 reference 适配实现；目标私有 PG 适配留 P03 |
 | `sdk/python/` | 进程外插件 SDK（`uv.lock` 锁定依赖） |
 | `plugins/` | 示例 Python 插件：`event-observer`、`ai-reply` |
 | `adapters/` | 渠道适配器；Python NoneBot2 适配器位于 `adapters/nonebot/` |
 | `panel/` | TypeScript/React 控制面板，默认 mock，可切换 live |
-| `control/` | Control API 服务：把 Core 控制应用端口映射为 REST/WebSocket |
+| `control/` | 独立 Control application/入口及保留的旧 HTTP/WS reference；目标路由尚未接线 |
 | `deploy/` | Docker Compose 与 systemd 编排骨架 |
 | `scripts/` | 工具链、契约、格式、静态分析、CI 与运维脚本 |
 | `tests/acceptance/` | 跨模块闭环验收入口 |
+| `tests/architecture/` | 新六进程的 P02 黑盒验收与临时证书夹具 |
 | `doc/` | 架构、模块、规范与开发台账 |
 | `.github/workflows/ci.yml` | GitHub Actions 构建、契约、格式、依赖与密钥检查 |
 
 ## 当前状态
+
+**2026-11-01 架构重建**：当前开发按 [新方向基线](doc/19-architecture-direction-baseline.md)
+与 [P00–P14 计划](doc/23-implementation-plan.md) 推进。六个独立服务入口、分层构建与进程验收已接线，
+完整门禁仍在收尾，业务仍未实现，不能以存活探针替代就绪。旧 Core 源码和原断言保留为
+`core/reference/` 构建；下列旧一体化闭环记录与部署说明属于 reference 证据，
+不代表六服务已经具备这些能力。旧 `kiarabot-core` 参考产物位于构建目录的
+`reference/core/`，不作为新生产入口。实际提交、检查与未验收项见
+[P02 实施记录](reports/execution/2026-11-01-architecture-p02.md)。
 
 - **已实现并纳入自动验收**：Core 进程启停与 gRPC 身份边界；统一运行时存储（内存/SQLite）；适配器持久化接收、命令授权、幂等与审计；插件注册、订阅和逐插件投递；Python 进程外插件 SDK；Action 纯文本/表情回应/撤回/群管理/好友审批闭环（权限门禁 + 会话白名单 + 每日预算 + 审计的授权模型）；Host storage/model/tasks 与任务调度；控制 API、认证/RBAC、WebSocket 事件流与面板真实服务闭环；结构化日志、健康探针，以及配置 API 到运行中 SDK 的下发与应用确认。Python NoneBot2 适配器测试已由 CI Protocol job 以锁定环境和 `KIARABOT_ADAPTER_DIR` 接入 `tests/acceptance/run.sh`，但远端 CI 尚未复跑，不能据此宣称适配器已验证通过。
 - **跨语言闭环**：`tests/acceptance/run.sh` 使用真实 gRPC/SQLite/SDK 和协议 fake 平台验证事件→Action、权限拒绝、重复事件、断线重放和重启恢复；这是协议级验收，不代表真实 QQ/NapCat 联调。
@@ -75,13 +91,20 @@ cmake --build --preset dev
 ctest --preset dev --no-tests=error
 ```
 
-### 协议 + 基础设施构建
+### 目标 full 构建（含 reference）
 
 ```bash
-cmake --preset proto -DKIARABOT_ENABLE_INFRASTRUCTURE=ON
-cmake --build --preset proto
-ctest --preset proto --no-tests=error
+uv sync --project sdk/python --locked --python 3.11.18
+npm ci --prefix scripts/ci --ignore-scripts
+cmake --preset full-locked
+cmake --build --preset full-locked
+ctest --preset full-locked --no-tests=error
 ```
+
+预先按工具链说明安装固定 vcpkg、PG16.4 工具与 OpenSSL3.5 CLI，并设置 `VCPKG_ROOT`
+及测试工具路径。`full-locked` 使用固定 manifest，包含六服务与 reference；环境获取与
+真实版本核验见 [工具链说明](doc/11-toolchain.md)。Python 生成使用锁定的 SDK 环境，
+不能只安装 C++ 依赖就跳过协议往返。阶段门禁未关闭时仍按执行记录列出限制。
 
 ### 跨语言闭环验收
 
@@ -116,14 +139,28 @@ npm run build
 
 脚本依次检查工具版本、C++20、协议生成、dev/proto 预设的构建与 CTest、独立基础设施构建与 CTest、契约、C++ 格式、静态分析和 API lint。也可以单独运行 `./scripts/quality/check-format.sh`、`./scripts/quality/check-tidy.sh`、`./scripts/quality/check-openapi.sh`、`./scripts/quality/check-asyncapi.sh` 和 `./proto/tests/check_contracts.sh`。CI 不直接调用 `scripts/check-toolchain.sh`：各 job 分别执行构建/测试、契约兼容、格式、静态分析、API 契约、工作流、依赖审计和密钥扫描检查（在 GCC 13/Clang 16 上构建 dev，用 pinned vcpkg 构建 proto + infrastructure 并运行闭环验收），与 [开发工具链](doc/11-toolchain.md) 的说明一致。
 
-## 运行 Core
+## 运行目标服务（P02）
+
+```bash
+build/full-locked/bin/kiarabot-control --help
+build/full-locked/bin/kiarabot-identity --config /path/to/identity.json
+```
+
+其余入口为同目录的 `kiarabot-runtime`、`kiarabot-plugin-host`、`kiarabot-scheduler`、
+`kiarabot-model`，均使用 `--config`。配置包含匹配的服务名、独立回环探针、TLS 文件
+引用；五个业务 RPC 服务另有 mTLS 地址，详见 [运维说明](doc/08-operations.md)。
+本阶段业务未实现，live=200、ready=503，未实现 RPC 明确拒绝；不以这些探针宣称机器人可用。
+
+### 旧 Core reference
+
+以下入口仅用于隔离回归，其参数不适用于六个新服务：
 
 ```bash
 # 一次性自检
-build/dev/core/kiarabot-core --check
+build/dev/reference/core/kiarabot-core --check
 
 # gRPC 入口（需 proto 构建；未配置业务凭据时只提供传输监听）
-build/proto/core/kiarabot-core --grpc-listen 127.0.0.1:50051
+build/proto/reference/core/kiarabot-core --grpc-listen 127.0.0.1:50051
 ```
 
 持久化适配器接收、插件进程、模型 Provider、任务调度和完整环境变量见 [部署与可观测性](doc/08-operations.md)。传输监听不等于业务就绪：`rpc_ready` 保持 false，业务配置必须完整提供，部分配置会拒绝启动。数据库 schema 不保证向旧二进制回滚，升级前先备份。

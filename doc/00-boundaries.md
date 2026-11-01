@@ -20,7 +20,7 @@
 
 负责领域规则、事件编排、权限和插件调度。它不能导入 NoneBot2、NapCat、Python 运行时、浏览器代码或第三方模型 SDK。
 
-`core/app/` 是进程组合根：创建并连接 Core、基础设施及控制 API 的具体实现。`core/src/` 和 `core/include/` 按领域、应用、端口和运行时分组，不得依赖这些外层实现；Core 的 CMake 负责声明 Core 源码，外层通过目标链接。`scripts/quality/check-boundaries.py` 检查直接 include，不构成完整的传递依赖或运行时行为审计。
+`core/app/*_main.cpp` 和 `control/api/app/main.cpp` 是目标服务组合根，创建并连接所属服务的应用及外层实现。历史一体入口已隔离到 `core/reference/app/main.cpp`，只用于 reference 构建。`core/src/` 和 `core/include/` 按领域、应用、端口和运行时分组，内层不得依赖外层实现；Core 的 CMake 负责声明 Core 源码，外层通过目标链接。`scripts/quality/check-boundaries.py` 检查直接 include，不构成完整的传递依赖或运行时行为审计。
 
 ### 适配器模块
 
@@ -119,8 +119,10 @@ infrastructure → 插件业务逻辑 / 控制面板页面
 
 本轮目标以 [方向基线](19-architecture-direction-baseline.md)、[详细设计](20-detailed-architecture-design.md)
 及 [分步计划](23-implementation-plan.md) 为准。上述旧运行路径说明不代表六服务已接线；
-目标接口暂位于 `core/include/kiarabot/core/{domain,application,ports}/target/`，
-当前新增内层接口尚未替换原运行路径。`doc/18` 保持人类维护的只读原文。
+目标接口暂位于 `core/include/kiarabot/core/{domain,application,ports}/target/`。
+旧 Core 源码已逐字节隔离到 `core/reference/`，新服务不链接它；旧断言及 reference
+构建结果只作为后续业务重建依据。新入口与应用已接线并通过进程测试，完整门禁仍在收尾，尚未实现业务。
+`doc/18` 保持人类维护的只读原文。
 
 - Control、Identity、Runtime、Plugin Host、Scheduler、Model 是六类独立平台进程；
   Core 仍表示领域/应用/端口代码，不等于单一进程或跨服务共享内存。
@@ -137,5 +139,5 @@ infrastructure → 插件业务逻辑 / 控制面板页面
   这不授权清除现有数据、移除仍有效的行为断言或改写保护基线。
 
 模块分工与独立提交/集成顺序见 [并行协调记录](../reports/execution/2026-11-01-architecture-parallel.md)。
-直接 include/SQL 词法检查、编译覆盖检查和六目标存在性检查已经提供，完整传递依赖、
-链接隔离及六进程生命周期仍需 P02 实现与验收；不能将门禁脚本存在当作架构已经通过。
+直接 include/SQL 词法、全部手写翻译单元覆盖、实际 CMake 链接图与六进程生命周期
+已在 P02 实测；这些检查不替代后续业务语义、真实数据库事务和部署恢复验收。

@@ -366,8 +366,12 @@ contracts job 在原固定 vcpkg registry 中增加 boost-beast、boost-asio、l
 P02 起统一 full 构建应覆盖六个生产目标与全部手写翻译单元，质量门禁检查内层依赖，
 并补实际目标链接隔离。每个已实施阶段注册 `pNN` 与 `unit`/`integration`/`fault` 分类；
 缺阶段、零测试、未配置必要依赖均须失败，不接受“跳过”代替验收。
-`scripts/quality/check-architecture.py` 提供覆盖/目标/直接依赖/标签检查，
-但尚未将六入口及阶段测试实际接入，不能据脚本自测宣布 P02 完成。
+`scripts/quality/check-architecture.py` 已接入全部手写翻译单元覆盖、六入口实际链接图、
+内层头编译与阶段标签。P02 黑盒实际启动六进程，验证生命周期、mTLS、owner RPC 与
+故障隔离；reference 构建与行为清单单列，不能用历史实现登记证明目标业务完成。
+`KIARABOT_CHECK_PRESET=full-locked ./scripts/check-toolchain.sh` 是本机固定环境统一入口，
+要求先安装锁定 Python/Node/质量工具、vcpkg、PG 与 TLS 工具，以及 scripts/ci 锁定依赖。
+独立 CTest/静态分析已通过，统一入口尚有契约 evidence 登记待修复；远端 CI 未验收。
 
 真实 PG fixture 由 P03 专属实现负责，仅允许显式测试白名单的临时数据库/角色；
 拒绝生产连接，初始化/并发/COMMIT 故障测试不回退到内存或 SQLite。缺服务或权限时
