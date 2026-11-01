@@ -3,6 +3,7 @@ import asyncio
 import json
 import os
 import signal
+import sys
 from pathlib import Path
 
 from kiarabot.v1 import common_pb2 as common, plugins_pb2 as plugins
@@ -33,4 +34,9 @@ async def main():
         os.environ['PLUGIN_AUTH_TOKEN'], hook_timeout=.3, heartbeat_interval=.05, retry_delay=.02)).run(stop)
 
 
-asyncio.run(main())
+try:
+    asyncio.run(main())
+except PluginError as error:
+    # Preserve the terminal failure for the parent, including an intentional disable.
+    print(json.dumps({'terminal_error': common.ErrorCode.Name(error.code)}), file=sys.stderr)
+    raise SystemExit(1)

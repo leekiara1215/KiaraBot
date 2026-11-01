@@ -18,7 +18,7 @@ class SDK:
         self.process = subprocess.Popen([os.environ.get('KIARABOT_ACCEPTANCE_PYTHON', str(ROOT / 'sdk/python/.venv/bin/python')), Path(__file__).with_name('config_plugin.py')],
                                        env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
-    def stop(self):
+    def stop(self, expected_terminal=None):
         if self.process.poll() is None:
             self.process.terminate()
         try:
@@ -27,7 +27,15 @@ class SDK:
             self.process.kill()
             self.process.communicate()
             raise AssertionError('SDK failed to stop')
-        assert self.process.returncode == 0, stderr.decode()
+        if self.process.returncode != 0:
+            # Disable can beat SIGTERM: the real SDK correctly rejects the disabled instance.
+            # Accept only that explicitly expected terminal code; retain every other failure.
+            assert expected_terminal is not None and self.process.returncode == 1, stderr.decode()
+            try:
+                terminal = json.loads(stderr.decode().splitlines()[-1])
+            except (ValueError, IndexError):
+                raise AssertionError(stderr.decode()) from None
+            assert terminal == {'terminal_error': expected_terminal}, stderr.decode()
 
     def records(self):
         return [json.loads(line) for line in self.observations.read_text().splitlines()]
@@ -94,7 +102,8 @@ def test_config_application_rejection_reconnect_and_restart(tmp_path):
         assert [r['version'] for r in sdk.records()].count(recovered['version']) == 2
         assert server.request('/plugins/test.plugin/disable', 'POST', {}, token)[0] == 202
         wait('UNAVAILABLE')
-        sdk.stop(); sdk = None
+        assert sdk.process.wait(timeout=5) == 1, 'disabled instance must report its terminal error'
+        sdk.stop(expected_terminal='PLUGIN_UNAVAILABLE'); sdk = None
     finally:
         if sdk:
             sdk.stop()
