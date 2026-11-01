@@ -143,3 +143,41 @@ Docs synchronized: doc/05 and doc/08 plus this report. No CMake/Core/PG/proto/AP
 Not run: complete service/TLS transport integration and revocation/production composition; adapter
 unit tests are not evidence those boundaries have been connected. JWT still waits for final Core
 credential/session source fields, as requested by parent integration review.
+
+## Delegation production adapter acceptance
+
+Core source fields cherry-picked from reviewed b0949b3 as 592cf1e. New public delegation factory
+consumes immutable issuer/Ed25519 keys and borrows a signing SecurityClockPort. Source credential
+and optional source session are included in the signed closed delegation object; application
+preserves origin on exchange and checks current revocation/authorization independently. No DB
+lookup, CA framework, dynamic key URLs, arbitrary algorithms or local-wallclock substitution.
+Strict bounded full PEM parse validates Ed25519 matching keypairs; verify-only keys are supported.
+NumericDate is nonnegative integral seconds, lifetime<=56s, known skew<=2s and leeway<=2s.
+The direct peer must have a fresh verified_at, valid registration time, matching subject/service
+and fingerprint. Lists/strings are bounded; duplicate actors and exact permission/resource pairs
+are rejected. Only alg/kid/typ JWT headers and the exact expected claim set are accepted.
+
+Real jwt-cpp0.7.0/OpenSSL3.5 Ed25519 test passes roundtrip including UINT64_MAX versions and origin
+preservation. Negative paths: wrong signature/audience/issuer/key/none/jku; untrusted/too-skewed
+clock, stale/incorrect peer/cert; zero/wrong-type/overflow source; fractional/huge/wrong-type dates;
+expired proof, duplicate permissions and max/min time overflow edges. A real UBSan finding in
+upstream JWT NumericDate conversion was prevented by strict bounded type/shape parsing before
+mature signature verification; no result is trusted before signature verification succeeds.
+
+Actual command from operations worktree uses the first-stage compiler flags plus
+-fno-sanitize-recover=all, compiles src/password_crypto.cpp src/delegation_crypto.cpp and
+tests/delegation_crypto_test.cpp under infrastructure/identity_crypto, includes core/include and
+identity_crypto/include, marks fixed-prefix/include as system, links fixed-prefix/lib/libsodium.a
+and libcrypto.a, outputs build/identity-crypto/delegation_crypto_test; execution passes.
+Format16, boundary/inner and diff checks pass. Tidy22 analyzer/bugprone checks pass with explicit
+SDK/libc++ flags and header filter for identity_crypto, EXCEPT one deliberately excluded check:
+clang-analyzer-cplusplus.NewDelete reports a third-party picojson.h:233 claim-copy destructor path
+through jwt-cpp set_header_claim. Full-check attempts and named claim/builder alternatives still
+report it; ASan/UBSan real paths pass. No third-party file or broad repository check configuration
+was modified. This is a remaining static-analysis limitation, not a claim of full tidy acceptance.
+
+Updated doc/05 and doc/08 describe key provisioning, clock and origin responsibilities. Protocol,
+API, Core interfaces and protected baseline unchanged by this adapter commit. Not run: CMake/full
+CTest registration, live TLS/RPC/DB integration or deployment; build and service assembly belong
+to parent tasks. Existing four adapter tests were rebuilt against 592cf1e with ASan/UBSan/-Werror
+and all passed. No production readiness or current authorization decision is claimed here.

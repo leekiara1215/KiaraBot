@@ -504,3 +504,9 @@ The business port is reported as control_https_port when bound. Its material mus
 support server TLS plus the outbound Control client identity; Identity still requires
 that peer to be registered independently of CA trust. All test credentials/configs
 are temporary; no bootstrap secret is put in argv or committed.
+
+委托签名配置使用独立Ed25519密钥，私钥通过OwnedSecret交付并复制到安全内存，不能
+出现在数据库、日志或公开配置投影。签名clock必须由部署证据支持可信及已知skew<=2秒，
+验签sample同样受限；本适配器不实现NTP信任探测。iat/nbf/exp为整秒，调用应用须明确
+构造最多56秒的证明期限，不能将任意数据库纳秒时间静默扩展有效期。真实peer验证时间
+必须足够新鲜且登记证书仍有效；高风险操作仍在线向Identity检查当前来源与授权。

@@ -287,3 +287,13 @@ ASN.1长度比较（拒绝NUL）及登记主体/服务类型/凭据形状共同�
 所有PG TEXT入参（查询键、角色/资源引用、审计、交接及完整关系结果中的可选/嵌套文本）
 在绑定前拒绝嵌入NUL，返回InvalidArgument/NotAccepted，不能让libpq零终止参数截断成另一个键
 或内容。失败仍使整个UoW不可提交部分结果；bytea payload/摘要继续允许二进制零字节。
+
+P04 DelegationCryptoPort 使用固定 jwt-cpp0.7.0/OpenSSL3.5 Ed25519（JWS alg=EdDSA）。
+可信部署配置固定issuer与最多16个唯一key引用；公钥PEM与可选安全内存私钥PEM必须为
+匹配Ed25519，verify-only配置不持私钥。签名时注入SecurityClockPort，验签仅使用显式
+可信sample，不调用本机wallclock；未知/超2秒skew拒绝。JWT头仅alg/kid/typ三个字段，
+不支持请求指定jku/x5u/jwk/x5c。输入证明上限32KiB，权限条目最多128，至多两次业务跳转。
+标准claims为iss/aud/sub/iat/nbf/exp/jti，额外封闭delegation对象包含actor链、权限资源配对、
+直接actor、证书指纹、授权版本、来源credential/session和跳数。版本以十进制文本无损编码，
+NumericDate要求非负整秒，exp-iat最多56秒，签验容差最多2秒。调用者须保留exchange来源，
+并向Identity当前权威检查来源credential/session撤销和授权版本；crypto验证不替代授权。
