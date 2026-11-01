@@ -393,3 +393,10 @@ P04真实集成fixture仅在自有临时PG内组合公开安全工厂、实际Id
 和成熟crypto adapters，以实际TLS握手证据登记Control，不用fake crypto或内存库替代。
 它验证本地应用/存储/密码学组合，不代表HTTP/生产配置或外部平台联调已完成；实际状态
 以reports/modules/architecture-p04-identity-postgres.md检查记录为准。
+
+`DelegationCryptoPort::verify_exchange_parent`复用同一固定Ed25519、封闭JWT和可信issuer/key/
+时间校验，只区分绑定语义：输入recipient必须是真实已验证且结构一致的Runtime平台peer，
+父proof受众Runtime且为第一业务跳。父proof证书指纹属于上一跳Control，不与Runtime叶
+比较，也不把Runtime当作Control调用普通verify。该方法不授权Exchange；Core还须在线
+核对Runtime与上一跳Control当前登记、签名的原始credential/session/authversion、exact
+范围收窄与origin保留，再签hop2。普通verify原直接peer证书绑定保持严格不变。

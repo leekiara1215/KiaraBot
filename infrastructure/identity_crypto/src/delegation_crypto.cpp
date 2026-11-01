@@ -335,64 +335,49 @@ public:
                                            const t::VerifiedPeer& peer,
                                            const t::SecurityClockSample& clock) override {
     try {
-      if (proof.empty() || proof.size() > 32768 || !clock_ok(clock) ||
-          peer.verified_at > clock.utc || peer.verified_at < clock.utc - std::chrono::seconds{2} ||
-          peer.binding.certificate.not_before > clock.utc ||
-          peer.binding.certificate.not_after <= clock.utc) {
+      if (!peer_valid(peer, clock)) {
         return failure();
       }
-      TemporarySecret encoded(proof);
-      auto token = jwt::decode(encoded.value());
-      const auto header = token.get_header_json();
-      if (header.size() != 3 || token.get_algorithm() != "EdDSA" || token.get_type() != "JWT" ||
-          !text(token.get_key_id())) {
-        return failure();
+      auto verified = verify_proof(proof, clock);
+      if (const auto* error = std::get_if<t::Failure>(&verified)) {
+        return *error;
       }
-      const auto* key = find({token.get_key_id()});
-      if (!key) {
-        return failure();
-      }
-      // Bound and type-check NumericDate before jwt-cpp's date conversion; its floating-point
-      // fallback can otherwise overflow time_t on attacker-controlled numeric values.
-      auto claims = decode(token);
-      if (!shape(claims)) {
-        return failure();
-      }
-      const FixedClock fixed{
-          jwt::date{std::chrono::floor<std::chrono::seconds>(clock.utc.time_since_epoch())}};
-      jwt::verify<FixedClock, jwt::traits::nlohmann_json>(fixed)
-          .allow_algorithm(jwt::algorithm::ed25519(key->public_key_pem))
-          .with_issuer(config_.issuer)
-          .leeway(2)
-          .verify(token);
+      const auto& claims = std::get<t::VerifiedDelegation>(verified).claims;
       if (claims.audience != expected_audience ||
           claims.client_certificate != peer.binding.certificate.fingerprint ||
-          claims.direct_actor != peer.binding.certificate.subject ||
-          claims.issued_at > clock.utc + std::chrono::seconds{2} ||
-          claims.not_before > clock.utc + std::chrono::seconds{2} ||
-          claims.expires_at <= clock.utc - std::chrono::seconds{2}) {
+          claims.direct_actor != peer.binding.certificate.subject) {
         return failure();
       }
-      const bool subject_matches = std::visit(
-          [&](const auto& p) {
-            if (p.subject != claims.direct_actor) {
-              return false;
-            }
-            if constexpr (requires { p.service; }) {
-              audience(p.service);
-              return peer.binding.certificate.platform_service == p.service;
-            } else if constexpr (requires { p.adapter; }) {
-              return !peer.binding.certificate.platform_service && text(p.adapter.value);
-            } else {
-              return !peer.binding.certificate.platform_service && text(p.instance.value);
-            }
-          },
-          peer.binding.peer);
-      if (!subject_matches || !text(peer.binding.credential.id.value) ||
-          !peer.binding.credential.version.value) {
+      return verified;
+    } catch (const std::bad_alloc&) {
+      return failure(t::ErrorCode::UpstreamUnavailable);
+    } catch (const std::exception&) {
+      return failure();
+    }
+  }
+  t::Outcome<t::VerifiedDelegation>
+  verify_exchange_parent(t::SecretView proof, const t::VerifiedPeer& recipient,
+                         const t::SecurityClockSample& clock) override {
+    try {
+      if (!peer_valid(recipient, clock)) {
         return failure();
       }
-      return t::VerifiedDelegation{std::move(claims), key->reference};
+      const auto* platform = std::get_if<t::PlatformPeer>(&recipient.binding.peer);
+      if (!platform || platform->service != t::Service::Runtime) {
+        return failure();
+      }
+      auto verified = verify_proof(proof, clock);
+      if (const auto* error = std::get_if<t::Failure>(&verified)) {
+        return *error;
+      }
+      const auto& claims = std::get<t::VerifiedDelegation>(verified).claims;
+      if (claims.audience != platform->service || claims.business_hops != 1 ||
+          claims.actor_chain.size() != 1) {
+        return failure();
+      }
+      // The signed certificate/actor identify the PREVIOUS Control peer, not this Runtime TLS
+      // recipient. Core re-reads that registration plus current origin/grants before exchange.
+      return verified;
     } catch (const std::bad_alloc&) {
       return failure(t::ErrorCode::UpstreamUnavailable);
     } catch (const std::exception&) {
@@ -401,6 +386,68 @@ public:
   }
 
 private:
+  static bool peer_valid(const t::VerifiedPeer& peer, const t::SecurityClockSample& clock) {
+    if (!clock_ok(clock) || peer.verified_at > clock.utc ||
+        peer.verified_at < clock.utc - std::chrono::seconds{2} ||
+        peer.binding.certificate.not_before > clock.utc ||
+        peer.binding.certificate.not_after <= clock.utc ||
+        !text(peer.binding.certificate.subject.value) ||
+        !text(peer.binding.certificate.registered_san) || !text(peer.binding.credential.id.value) ||
+        !peer.binding.credential.version.value) {
+      return false;
+    }
+    return std::visit(
+        [&](const auto& p) {
+          if (p.subject != peer.binding.certificate.subject) {
+            return false;
+          }
+          if constexpr (requires { p.service; }) {
+            audience(p.service);
+            return peer.binding.certificate.platform_service == p.service;
+          } else if constexpr (requires { p.adapter; }) {
+            return !peer.binding.certificate.platform_service && text(p.adapter.value);
+          } else {
+            return !peer.binding.certificate.platform_service && text(p.instance.value);
+          }
+        },
+        peer.binding.peer);
+  }
+  t::Outcome<t::VerifiedDelegation> verify_proof(t::SecretView proof,
+                                                 const t::SecurityClockSample& clock) const {
+    if (proof.empty() || proof.size() > 32768 || !clock_ok(clock)) {
+      return failure();
+    }
+    TemporarySecret encoded(proof);
+    auto token = jwt::decode(encoded.value());
+    const auto header = token.get_header_json();
+    if (header.size() != 3 || token.get_algorithm() != "EdDSA" || token.get_type() != "JWT" ||
+        !text(token.get_key_id())) {
+      return failure();
+    }
+    const auto* key = find({token.get_key_id()});
+    if (!key) {
+      return failure();
+    }
+    // Strict raw NumericDate validation precedes jwt-cpp's possibly narrowing date conversion.
+    auto claims = decode(token);
+    if (!shape(claims)) {
+      return failure();
+    }
+    const FixedClock fixed{
+        jwt::date{std::chrono::floor<std::chrono::seconds>(clock.utc.time_since_epoch())}};
+    jwt::verify<FixedClock, jwt::traits::nlohmann_json>(fixed)
+        .allow_algorithm(jwt::algorithm::ed25519(key->public_key_pem))
+        .with_issuer(config_.issuer)
+        .leeway(2)
+        .verify(token);
+    if (claims.issued_at > clock.utc + std::chrono::seconds{2} ||
+        claims.not_before > clock.utc + std::chrono::seconds{2} ||
+        claims.expires_at <= clock.utc - std::chrono::seconds{2}) {
+      return failure();
+    }
+    return t::VerifiedDelegation{std::move(claims), key->reference};
+  }
+
   const DelegationKey* find(const t::CryptoKeyRef& reference) const {
     for (const auto& key : config_.keys) {
       if (key.reference == reference) {

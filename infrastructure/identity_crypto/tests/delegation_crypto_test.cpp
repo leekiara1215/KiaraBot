@@ -6,6 +6,7 @@
 
 #include <jwt-cpp/traits/nlohmann-json/defaults.h>
 #include <openssl/pem.h>
+#include <openssl/x509v3.h>
 #include <sodium.h>
 // clang-format on
 
@@ -19,6 +20,28 @@ public:
     return value;
   }
 };
+// Mature OpenSSL signed leaf objects provide distinct actual certificate fingerprints. Chain
+// verification/TLS extraction are covered by PeerCertificatePort, not by this delegated proof test.
+t::Sha256Digest leaf_fingerprint(EVP_PKEY* key, long serial) {
+  std::unique_ptr<X509, decltype(&X509_free)> certificate(X509_new(), X509_free);
+  assert(certificate && X509_set_version(certificate.get(), 2) == 1);
+  assert(ASN1_INTEGER_set(X509_get_serialNumber(certificate.get()), serial) == 1);
+  assert(ASN1_TIME_set_string(X509_getm_notBefore(certificate.get()), "19700101000000Z") == 1);
+  assert(ASN1_TIME_set_string(X509_getm_notAfter(certificate.get()), "19700102000000Z") == 1);
+  assert(X509_set_pubkey(certificate.get(), key) == 1);
+  auto* name = X509_get_subject_name(certificate.get());
+  assert(X509_NAME_add_entry_by_txt(name, "CN", MBSTRING_ASC,
+                                    reinterpret_cast<const unsigned char*>("delegation-test-leaf"),
+                                    -1, -1, 0) == 1);
+  assert(X509_set_issuer_name(certificate.get(), name) == 1);
+  assert(X509_sign(certificate.get(), key, nullptr) > 0);
+  t::Sha256Digest fingerprint;
+  unsigned size = 0;
+  assert(X509_digest(certificate.get(), EVP_sha256(),
+                     reinterpret_cast<unsigned char*>(fingerprint.bytes.data()), &size) == 1 &&
+         size == 32);
+  return fingerprint;
+}
 int main() try {
   std::unique_ptr<EVP_PKEY, decltype(&EVP_PKEY_free)> key(
       EVP_PKEY_Q_keygen(nullptr, nullptr, "ED25519"), EVP_PKEY_free);
@@ -65,6 +88,11 @@ int main() try {
                          clock.value.utc + std::chrono::hours{1}},
                         {{"control-credential"}, {1}}},
                        clock.value.utc};
+  const auto control_fingerprint = leaf_fingerprint(key.get(), 1);
+  const auto runtime_fingerprint = leaf_fingerprint(key.get(), 2);
+  assert(control_fingerprint != runtime_fingerprint);
+  claims.client_certificate = control_fingerprint;
+  peer.binding.certificate.fingerprint = control_fingerprint;
   auto signed_result = port->sign(claims, {"key-1"});
   auto& proof = std::get<t::OwnedSecret>(signed_result);
   auto verified = port->verify(proof->bytes(), t::Service::Runtime, peer, clock.value);
@@ -76,6 +104,41 @@ int main() try {
          18446744073709551615ULL);
   assert(std::holds_alternative<t::Failure>(
       port->verify(proof->bytes(), t::Service::Model, peer, clock.value)));
+  auto recipient = peer;
+  recipient.binding.peer = t::PlatformPeer{t::Service::Runtime, {"runtime"}};
+  recipient.binding.certificate.subject = {"runtime"};
+  recipient.binding.certificate.platform_service = t::Service::Runtime;
+  recipient.binding.certificate.fingerprint = runtime_fingerprint;
+  recipient.binding.certificate.registered_san = "spiffe://runtime";
+  recipient.binding.credential = {{"runtime-credential"}, {1}};
+  assert(std::holds_alternative<t::Failure>(
+      port->verify(proof->bytes(), t::Service::Runtime, recipient, clock.value)));
+  auto parent = port->verify_exchange_parent(proof->bytes(), recipient, clock.value);
+  assert(std::holds_alternative<t::VerifiedDelegation>(parent));
+  assert(std::get<t::VerifiedDelegation>(parent).claims.client_certificate == control_fingerprint);
+  assert(std::get<t::VerifiedDelegation>(parent).claims.direct_actor == t::SubjectId{"control"});
+  auto invalid_recipient = recipient;
+  invalid_recipient.binding.peer = t::AdapterPeer{{"adapter"}, {"runtime"}};
+  invalid_recipient.binding.certificate.platform_service.reset();
+  assert(std::holds_alternative<t::Failure>(
+      port->verify_exchange_parent(proof->bytes(), invalid_recipient, clock.value)));
+  invalid_recipient = recipient;
+  invalid_recipient.binding.peer = t::PlatformPeer{t::Service::Model, {"runtime"}};
+  invalid_recipient.binding.certificate.platform_service = t::Service::Model;
+  assert(std::holds_alternative<t::Failure>(
+      port->verify_exchange_parent(proof->bytes(), invalid_recipient, clock.value)));
+  invalid_recipient = recipient;
+  invalid_recipient.binding.certificate.platform_service = t::Service::Control;
+  assert(std::holds_alternative<t::Failure>(
+      port->verify_exchange_parent(proof->bytes(), invalid_recipient, clock.value)));
+  invalid_recipient = recipient;
+  invalid_recipient.binding.credential.version.value = 0;
+  assert(std::holds_alternative<t::Failure>(
+      port->verify_exchange_parent(proof->bytes(), invalid_recipient, clock.value)));
+  invalid_recipient = recipient;
+  invalid_recipient.verified_at -= std::chrono::seconds{3};
+  assert(std::holds_alternative<t::Failure>(
+      port->verify_exchange_parent(proof->bytes(), invalid_recipient, clock.value)));
   auto bad_clock = clock.value;
   bad_clock.trusted = false;
   assert(std::holds_alternative<t::Failure>(
@@ -206,6 +269,63 @@ int main() try {
   changed_peer.verified_at = t::TimePoint::min();
   assert(std::holds_alternative<t::Failure>(
       port->verify(proof->bytes(), t::Service::Runtime, changed_peer, clock.value)));
+  auto exchange_signed = [&](nlohmann::json::object_t payload, const std::string& kid,
+                             bool reuse_original_signature = false) {
+    auto builder = jwt::create();
+    builder.set_type("JWT").set_key_id(kid);
+    for (const auto& [name, value] : payload) {
+      builder.set_payload_claim(name, jwt::claim(value));
+    }
+    auto encoded = builder.sign(jwt::algorithm::ed25519(public_pem, private_pem));
+    if (reuse_original_signature) {
+      // Deliberately substitute the original proof's signature after mature-library encoding
+      // of the changed certificate claim; this is an unsigned wire mutation, not a JWT signer.
+      encoded.replace(encoded.rfind('.') + 1, std::string::npos,
+                      original.substr(original.rfind('.') + 1));
+    }
+    return port->verify_exchange_parent(std::as_bytes(std::span{encoded.data(), encoded.size()}),
+                                        recipient, clock.value);
+  };
+  auto exchange_payload = decoded.get_payload_json();
+  assert(std::holds_alternative<t::Failure>(exchange_signed(exchange_payload, "unknown")));
+  exchange_payload["aud"] = nlohmann::json("model");
+  assert(std::holds_alternative<t::Failure>(exchange_signed(exchange_payload, "key-1")));
+  exchange_payload = decoded.get_payload_json();
+  auto exchange_claims = exchange_payload.at("delegation").get<nlohmann::json::object_t>();
+  exchange_claims["business_hops"] = nlohmann::json("0");
+  exchange_payload["delegation"] = nlohmann::json(exchange_claims);
+  assert(std::holds_alternative<t::Failure>(exchange_signed(exchange_payload, "key-1")));
+  exchange_claims["business_hops"] = nlohmann::json("2");
+  exchange_claims["actor_chain"] =
+      nlohmann::json(nlohmann::json::array_t{nlohmann::json("control"), nlohmann::json("runtime")});
+  exchange_claims["direct_actor"] = nlohmann::json("runtime");
+  exchange_payload["delegation"] = nlohmann::json(exchange_claims);
+  assert(std::holds_alternative<t::Failure>(exchange_signed(exchange_payload, "key-1")));
+  exchange_payload = decoded.get_payload_json();
+  exchange_claims = exchange_payload.at("delegation").get<nlohmann::json::object_t>();
+  const std::string other_fingerprint(64, 'a');
+  exchange_claims["client_certificate"] = nlohmann::json(other_fingerprint);
+  exchange_payload["delegation"] = nlohmann::json(exchange_claims);
+  // A correctly re-signed previous-peer binding is preserved for Core's authoritative check;
+  // this adapter cannot decide which Control registration/fingerprint is current.
+  assert(std::holds_alternative<t::Failure>(exchange_signed(exchange_payload, "key-1", true)));
+  auto different_previous = exchange_signed(exchange_payload, "key-1");
+  assert(std::holds_alternative<t::VerifiedDelegation>(different_previous));
+  const auto& previous_claims = std::get<t::VerifiedDelegation>(different_previous).claims;
+  assert(previous_claims.direct_actor == t::SubjectId{"control"});
+  for (auto byte : previous_claims.client_certificate.bytes) {
+    assert(byte == std::byte{0xaa});
+  }
+  assert(std::holds_alternative<t::Failure>(port->verify_exchange_parent(
+      std::as_bytes(std::span{tampered.data(), tampered.size()}), recipient, clock.value)));
+  bad_clock = clock.value;
+  bad_clock.trusted = false;
+  assert(std::holds_alternative<t::Failure>(
+      port->verify_exchange_parent(proof->bytes(), recipient, bad_clock)));
+  bad_clock = clock.value;
+  bad_clock.maximum_known_skew = std::chrono::milliseconds{2001};
+  assert(std::holds_alternative<t::Failure>(
+      port->verify_exchange_parent(proof->bytes(), recipient, bad_clock)));
   sodium_memzero(private_pem.data(), private_pem.size());
   auto later = clock.value;
   later.utc += std::chrono::seconds{59};

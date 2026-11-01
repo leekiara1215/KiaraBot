@@ -275,3 +275,35 @@ rejection, missingfileUnavailable,symlink/directory/FIFO<1s rejection. Full anal
 and test with zeroexcluded checks,format16,boundary/inner/diff pass. Existing key-loader tests also
 execute. Foreignowner/concurrentdrift injection limits remain as previously recorded. Doc/05/08
 synchronized; no Core/main/API/CMake changes, no actual offline administrator creation claimed.
+
+## Mature crypto verification of an Exchange parent
+
+Reviewed additive pure port7849d66 cherry456e407. This worktree lacks later admin source/test;
+modify/delete cherry conflict kept that file absent instead of importing unrelated new application
+source. Existing security-app mock now aborts unintended new method calls. Doc/02 additions kept.
+New mature adapter method reuses fixed Ed25519 and exact closed issuer/key/signature/time/claims
+validation; Runtime recipient shape/freshness/current registration time checked, parent audience
+Runtime and hop1 required. Parent sender fingerprint is preserved, never compared to recipient's
+Runtime leaf. Existing direct verify remains strict certificate-bound. No Core authorization or
+parent-child narrowing is invented in crypto. A validly re-signed previous-sender fingerprint must
+be returned for Core's authoritative registration check; unsigned claim tampering must fail.
+No DB/CA/remote key URL/newcredential application/CMake/entrypoint modifications belong here.
+
+Exchange crypto final actual checks: root independently used the documented delegation build
+command (password_crypto.cpp+delegation_crypto.cpp+delegation_crypto_test.cpp, fixed libsodium.a
+and libcrypto.a), C++20-Wall-Wextra-Wpedantic-Werror-ASan/UBSan-fno-sanitize-recover=all; execution
+passed. Real OpenSSL-signed Control and Runtime leaves produce distinct fingerprints. Normal
+Runtime recipient first-hop parent succeeds while ordinary direct verify under Runtime still fails.
+Wrongaudience/kind/service/certificate-service/credentialversion/stalerecipient/hop0/hop2/unknownkey,
+clockskew/untrusted/signature and specifically unsigned changedcertificateclaim reject. A trusted
+re-signed previous fingerprint32bytes0xaa is preserved unchanged for Core authoritative lookup,
+not falsely compared with Runtime leaf. All existing direct verifier assertions remain.
+
+Full tidy22 analyzer+bugprone src/test warnings-as-errors passed with zero checker exclusions or
+NOLINT, format16/boundary/inner/diff passed. Existing six-method mock compiled and login group
+executed-Werror after pure-port integration, proving it never calls the new abort-only method.
+No root full CMake/CTest/admin/Exchange-application/PG integration is claimed. Parent owns true
+current previous-sender registration/origin/narrowing and hop2 issuance. Updated doc/05 and report;
+doc/08 key provisioning/time policy unchanged, proto/API unchanged, protected doc/18 untouched.
+Parent must integrate approved pure7849d66 together with this concrete implementation to avoid
+abstract adapter construction; local cherry456e407 is a dependency record, not required twice.
