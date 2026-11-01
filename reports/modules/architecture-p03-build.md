@@ -53,3 +53,19 @@ p03分类检查通过。全仓format16通过，四个新TU tidy22.1.8 clang-anal
 仅脚本门禁变化，无业务/协议文档影响；同步doc/11和本报告即可。
 实际执行bash -n、两阶段真实注册JSON检查、architecture自测、git diff --check。
 不重复父统一全仓入口，也不以门禁自测冒充业务测试。
+
+## 能力三：Core持久化规则测试注册
+
+接入父已审查b2761da（本树3ab1bba），同时接入e86d66a工厂facade声明（本树279aabc），
+不修改这些源码。Core CMake以同一循环为contract/rules创建独立目标，均p03/unit、10秒。
+文档影响仅工具链新增测试清单，更新doc/11和本报告；Core业务说明由原能力提交同步，
+协议/API/infra/运维与doc/12-ci-cd无需变化，doc/18只读。
+
+实际沿能力一的外部固定依赖命令重新配置并完整full-locked构建成功；
+首次仅运行preset覆盖Python3_EXECUTABLE为本树不存在的venv导致配置失败，
+显式补回工具链SDK Python与installed prefix后成功；未下载或改锁。
+编译数据库覆盖全部手写TU（包含新增rules），内层和六目标链接图通过；p03注册分类通过。
+新rules头/测试format16 dry-run通过，rules TU tidy22 clang-analyzer-*及warnings-as-errors通过。
+P03三项CTest全部通过，包含既有真实PG故障fixture；未重复旧51项/全仓tidy，父正在对
+固定快照运行统一入口，本工作树未修改主树或其他对话源码。
+文档校验：路径存在、末尾换行、git diff --check通过。

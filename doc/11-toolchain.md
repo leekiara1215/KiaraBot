@@ -473,3 +473,6 @@ ctest --preset full-locked -L '^p03$' --no-tests=error --output-on-failure
 实际命令和未验项见 [P03构建报告](../reports/modules/architecture-p03-build.md)。
 
 统一入口在完整CTest后同时检查p02与p03注册分类，缺任何阶段或分类返回非零。
+
+P03纯内层规则测试 `p03_persistence_rules` 同样注册p03/unit，覆盖收据保留、容量、
+重放和交接claim规则；不替代真实PG事务验收。
