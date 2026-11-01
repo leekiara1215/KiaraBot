@@ -83,6 +83,11 @@ Final focused clang-tidy22 re-run on changed authentication client and Identity
 fixture passed with -warnings-as-errors after the projection/error corrections;
 format16 and module-boundary checks passed. Baseline difference: this implements the
 approved independent Control -> Identity target (doc/19–23), while frozen doc/18
-remains unchanged. control/api/README.md still describes historical same-process
-SQLite/reference deployment; it was not edited under this task's restricted document
-scope and is reported to the parent for coordinated documentation cleanup.
+remains unchanged. The parent subsequently authorized a small control/api/README.md
+banner identifying the independent target and marking the preserved same-process/
+SQLite content as historical reference. Historical behavior assertions are retained.
+
+HTTP parser rejection now returns stable INVALID_ARGUMENT/400 for malformed framing,
+including conflicting Content-Length headers, rather than an unexplained close when
+TLS can still respond. Added a raw TLS regression. README now clearly separates the
+target service from all preserved historical reference deployment instructions.

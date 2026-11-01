@@ -71,10 +71,11 @@ private:
     http::async_read(
         stream_, buffer_, parser_, [self = shared_from_this()](Error error, std::size_t) {
           if (error) {
-            if (error == http::error::body_limit || error == http::error::header_limit) {
+            if (error.category() == http::make_error_code(http::error::body_limit).category() &&
+                error != http::error::end_of_stream) {
               self->write({400,
-                           "{\"code\":\"INVALID_ARGUMENT\",\"message\":\"Request limit "
-                           "exceeded\",\"request_id\":\"control-limit\"}",
+                           "{\"code\":\"INVALID_ARGUMENT\",\"message\":\"Invalid HTTP "
+                           "request\",\"request_id\":\"control-limit\"}",
                            {}});
             } else {
               self->close();

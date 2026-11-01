@@ -209,6 +209,10 @@ def main(control, fixture):
                                '\r\nAuthorization: Bearer forged\r\nConnection: close\r\n\r\n').encode())
             assert b'400' in duplicate.recv(8192).split(b'\r\n', 1)[0]
             duplicate.close()
+            malformed = context.wrap_socket(socket.create_connection(('localhost', port), timeout=5), server_hostname='localhost')
+            malformed.sendall(b'POST /api/v1/auth/login HTTP/1.1\r\nHost: localhost\r\nContent-Length: 0\r\nContent-Length: 1\r\n\r\nx')
+            assert b'400' in malformed.recv(8192).split(b'\r\n', 1)[0]
+            malformed.close()
             # Header and body limits are enforced while parsing, before reaching Identity.
             oversized = context.wrap_socket(socket.create_connection(('localhost', port), timeout=5), server_hostname='localhost')
             oversized.sendall(b'POST /api/v1/auth/login HTTP/1.1\r\nHost: localhost\r\nContent-Length: 1048577\r\n\r\n')

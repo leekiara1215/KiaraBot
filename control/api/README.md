@@ -1,5 +1,29 @@
 # C++ control service
 
+## Target independent Control process (P04)
+
+`kiarabot-control` is an independent process. It owns no authoritative business
+DB, users, password verifiers or session/authorization cache. Its HTTPS
+Login/Refresh/Me/ListSessions/Revoke endpoints call the current target IdentityService
+over verified mTLS; Identity alone decides authentication, authorization and replay.
+The public route prefix is `/api/v1`. The business HTTPS listener is separate from
+loopback health probes and does not require a browser client certificate.
+
+Start with `kiarabot-control --config <private-control.json>` using the strict service
+configuration and optional `control_api` object described in
+[operations](../../doc/08-operations.md). The current authentication mapping, error
+semantics, limits and implementation scope are documented in
+[Control API](../../doc/06-control-api.md). No local DB or fallback Identity is selected.
+Readiness remains false while the wider business implementation is incomplete.
+The generated-server transport fixture does not replace real Identity/PG/bootstrap
+acceptance; see the [P04 evidence](../../reports/modules/architecture-p04-control-evidence.md).
+
+## Historical reference implementation
+
+Everything below describes the preserved same-process/SQLite reference implementation
+and its historical behavior assertions. Its configuration, build/run commands and
+production statements are not instructions for the independent target Control process.
+
 The same Core process hosts the authenticated REST API and WebSocket service through
 `IControlApplication`. Python adapter/SDK and TypeScript panel stay separate components.
 OpenAPI and AsyncAPI in `api/` are the public contracts.

@@ -521,3 +521,7 @@ Identity 新空库版本为 4，其余三类私有库仍为 3，启动逐库严�
 主体、凭据、精确授权、水位和审计一起提交；目前 schema 与端口不代表命令已接线。
 安全成功收据与消费 refresh 索引按最多 24 小时恢复窗口清理；不能删除尚有效的收据腾
 容量。备份包含验证材料与加密收据，须按现有私有库保护；原始秘密不应写入库或日志。
+
+Malformed HTTP framing (including conflicting Content-Length headers) returns the
+same bounded INVALID_ARGUMENT/400 envelope when TLS permits a response; ordinary
+network EOF and expired handshake/read deadlines close the connection.
