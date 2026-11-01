@@ -453,3 +453,21 @@ python3 scripts/quality/tests/cmake_check_context_test.py
 独立基础设施构建缓存放在选定build目录内，以安装目录/toolchain/triplet上下文指纹区分，
 防止换prefix后仍沿用原find_package缓存。该指纹只隔离本机构建缓存，不是依赖归档digest。
 所有源码、编译/测试要求保持；未改变PG fixture、端口或业务接口。
+
+## P03 构建接线
+
+根 proto/full/full-locked 构建增加外层 `kiarabot_postgres`（固定 libpqxx7.10.0），
+显式初始化 CLI `kiarabot-pg-initialize` 和真实 PG driver。PG 不链接六个纯应用库，
+不会改变生产 daemon 的 ready 判定。Core 内层新增头继续自动独立编译。
+`p03_persistence_contract` 标记 p03/unit；`p03_postgres_database` 标记
+p03/integration/fault，120秒有界超时，使用已有显式 PG/openssl/Python cache 参数。
+fixture 单进程拥有临时集群的创建、故障和安全清理，独立测试不共享集群，因而无需跨
+CTest 的 setup/cleanup/resource lock；它不接收外部 DSN，缺少工具明确失败。
+这替代上文尚未实施的拆分 fixture 规格，不代表 Repository/UoW 或 P03 全阶段完成。
+
+```bash
+cmake --build --preset full-locked --parallel 4
+ctest --preset full-locked -L '^p03$' --no-tests=error --output-on-failure
+```
+
+实际命令和未验项见 [P03构建报告](../reports/modules/architecture-p03-build.md)。
