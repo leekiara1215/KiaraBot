@@ -67,3 +67,13 @@ kiarabot_identity_verification_keys_application. Client source is
 core/tests/platform/identity_keys_daemon_client.cpp; link only kiarabot_target_codec,
 add OpenSSL::Crypto INTERFACE_INCLUDE_DIRECTORIES as SYSTEM and normal warnings.
 CMake temporary registration is restored before delivery.
+
+## 主线正式接线结果
+
+新增客户端编译、生产CoreKeys链接及allowed/denied两独立CTest。Exchange未用在线
+验证端口以strict trap补齐，无空成功或假验证。实际full-locked完整build无warning/error，
+33/33相关P04及两组真实PG/服务数据库测试通过102.22秒；新增真实公钥允许8.42秒、
+拒绝6.44秒，正常认证与两种证书到期门禁保留通过。两个本次直接涉及TU tidy22 analyzer
+无诊断；边界、完整TU覆盖及实际链接图均通过，git diff --check通过。
+文档影响为doc11测试入口和本报告；既有接口/配置说明在源能力提交已同步，无需重复
+改proto/API/其他模块，保护doc18未变。本结果不表示剩余Identity能力已接线。

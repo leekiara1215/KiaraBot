@@ -629,3 +629,8 @@ P04 新增纯 `kiarabot_identity_exchange_application` 与独立 unit/security �
 以及 SessionControlPeer 类型契约测试。它们仅链接 Core 内层；crypto 和真实 PG
 分别验证。bootstrap CURRENT locator 新纯接口的未使用 fixture 显式拒绝意外访问，
 不能用空成功掩盖新增调用。
+
+公钥生产门禁包含真实客户端目标 `kiarabot_identity_keys_daemon_client`，正式注册
+`p04_identity_daemon_keys_allowed` 与 `p04_identity_daemon_keys_denied`；同临时 PG、
+离线 CLI、实际 Identity/Control 进程分别验证显式 Catalog 授权与拒绝，且先于登录
+获取材料，不使用 JWT 自举验证。客户端只链接目标契约/codec，未提前重复链接 Crypto。

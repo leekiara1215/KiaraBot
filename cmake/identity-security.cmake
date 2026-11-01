@@ -14,7 +14,14 @@ list(REMOVE_ITEM IDENTITY_PRODUCTION_LINKS kiarabot_service_process)
 set_property(TARGET kiarabot-identity PROPERTY LINK_LIBRARIES "${IDENTITY_PRODUCTION_LINKS}")
 target_link_libraries(kiarabot-identity PRIVATE
   kiarabot_identity_security_clock kiarabot_identity_security_application
-  kiarabot_identity_rpc kiarabot_identity_crypto)
+  kiarabot_identity_rpc kiarabot_identity_crypto kiarabot_identity_verification_keys_application)
+
+add_executable(kiarabot_identity_keys_daemon_client
+  ${CMAKE_SOURCE_DIR}/core/tests/platform/identity_keys_daemon_client.cpp)
+target_link_libraries(kiarabot_identity_keys_daemon_client PRIVATE kiarabot_target_codec)
+target_include_directories(kiarabot_identity_keys_daemon_client SYSTEM PRIVATE
+  $<TARGET_PROPERTY:OpenSSL::Crypto,INTERFACE_INCLUDE_DIRECTORIES>)
+kiarabot_platform_warnings(kiarabot_identity_keys_daemon_client)
 
 add_executable(kiarabot_identity_security_clock_test
   ${CMAKE_SOURCE_DIR}/core/tests/platform/identity_security_clock_test.cpp)
@@ -28,6 +35,27 @@ add_test(NAME p04_identity_security_clock COMMAND kiarabot_identity_security_clo
 set_tests_properties(p04_identity_security_clock PROPERTIES LABELS "p04;unit;security" TIMEOUT 10)
 
 if(UNIX)
+  foreach(KEYS_MODE allowed denied)
+    set(KEYS_DENIAL_ARGUMENT)
+    if(KEYS_MODE STREQUAL "denied")
+      set(KEYS_DENIAL_ARGUMENT --test-argument=--keys-no-grant)
+    endif()
+    add_test(NAME p04_identity_daemon_keys_${KEYS_MODE} COMMAND "${KIARABOT_TARGET_PYTHON}"
+      "${CMAKE_SOURCE_DIR}/infrastructure/postgres/tests/run_database_test.py"
+      --pg-bin "${KIARABOT_TEST_PG_BIN}" --openssl "${KIARABOT_TEST_OPENSSL}"
+      --initializer $<TARGET_FILE:kiarabot-pg-initialize>
+      --test "${CMAKE_SOURCE_DIR}/control/api/tests/architecture/identity_daemon_http_test.py"
+      --test-argument $<TARGET_FILE:kiarabot-identity-bootstrap>
+      --test-argument "${KIARABOT_TEST_PG_BIN}"
+      --test-argument $<TARGET_FILE:kiarabot-identity>
+      --test-argument $<TARGET_FILE:kiarabot-control>
+      --test-argument=--keys-client
+      --test-argument $<TARGET_FILE:kiarabot_identity_keys_daemon_client>
+      ${KEYS_DENIAL_ARGUMENT})
+    set_tests_properties(p04_identity_daemon_keys_${KEYS_MODE} PROPERTIES
+      LABELS "p04;integration;security;fault" TIMEOUT 120
+      ENVIRONMENT "PATH=${BOOTSTRAP_OPENSSL_BIN_DIR}:${BOOTSTRAP_PYTHON_BIN_DIR}:$ENV{PATH}")
+  endforeach()
   add_test(NAME p04_identity_daemon_http COMMAND "${KIARABOT_TARGET_PYTHON}"
     "${CMAKE_SOURCE_DIR}/infrastructure/postgres/tests/run_database_test.py"
     --pg-bin "${KIARABOT_TEST_PG_BIN}" --openssl "${KIARABOT_TEST_OPENSSL}"
