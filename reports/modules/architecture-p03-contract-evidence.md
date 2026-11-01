@@ -96,3 +96,21 @@ Runtime能力实际检查：check_target.sh生成C++/gRPC/Python并实际编译�
 主审指出0de1622默认diff出现1255处删除。只读对b451d35精确核对证实：旧components块在仅追加RESOURCE_CATALOG/四个Permission后逐字节一致，全部旧路径方法解析值不变；默认重复块匹配导致大量误对齐（git --minimal原为958新增/3删除）。为避免依赖reviewer切diff算法，本次只将本能力11个新增GET的parameters/responses改为紧凑表示，旧路径/旧schema未序列化重排。现在相对b451默认diff为717新增/3删除，3行是必要target固定角色capability扩展。
 
 实际将修复前完整API解析JSON与修复后逐项比较，语义完全相等；Ruby45操作映射/权限/引用、Ajv全部正反例、Redocly2.72.1与AsyncAPI parser3.6.6、git diff --check通过。无字段/约束/状态削弱，无协议语义变化，故不重复C++生成或业务测试。Identity字段的工作区改动不包含在本独立修复提交中。
+
+## 连接授权补全最小草案（待主对话审查，尚未改proto）
+
+此为doc21既定的外部Adapter/Plugin短期连接授权落地建议，不增加服务或CA体系。先完成G08/G09投影后再独立实现本契约。P02平台owner监听继续mTLS；P05/P06的外部Bridge才采用server-verified TLS+逐实例bootstrap登记。外部TLS-only客户端绝不自报/伪造mTLS绑定，内部服务委托仍为Ed25519 JWT。
+
+建议仅三类typed载荷：
+
+- ConnectionAuthorization：当前Fence、opaque connection proof（CSPRNG至少256bit）、issued_at/expires_at、同Fence受限refresh credential及refresh_generation（正数），refresh到期不晚于proof到期。Runtime仅存摘要/当前流状态，不把这些材料写入日志/公开投影/outbox。proof绑定真实已认证TLS流及Fence/instance/credential版本/Runtime epoch，不能在另一条新流凭自报Fence重用。
+- RefreshConnectionAuthorization：request_id、完整Fence、当前proof、当前refresh credential/generation。只允许当前未过期/未撤销的同一实际连接请求；Runtime在线核验Identity当前主体/凭据状态与资源gate，不能凭bootstrap或平台服务证书替代业务权限。
+- ConnectionAuthorizationResult：同request_id，恰好新ConnectionAuthorization或稳定Error。RegisterAdapter/Plugin成功响应附初始Authorization；AdapterToCore/PluginToCore的注册后帧携当前opaque proof引用，新增refresh请求帧，反向流新增对应结果帧。初始bootstrap只可登记获取受限连接证明，不直接授权Action/模型/存储等副作用。
+
+采用单一目标协议，缺这些必需字段拒绝，不做旧流降级。proof/refresh名义有效期最多56秒，保留既定跨节点2秒偏差+最多2秒容差，总预算不超过60秒；服务端单调期限和受信UTC共同约束，客户端expires仅调度用，不裁决租约。客户端建议到期前10秒单飞续期。每秒核对proof到期/撤销/credential和gate；新高风险操作仍独立在线授权，证明未过期不是免检通行证。Identity不可用不能刷新、不能无限延长旧流；返回UPSTREAM_UNAVAILABLE且停止新的副作用，不能谎称明确PERMISSION_DENIED。
+
+续期在当前连接状态上原子轮换proof+refresh_generation，旧proof/refresh不得并发再次换发；认证材料不匹配UNAUTHENTICATED（终止流），当前已认证请求的generation冲突可CONFLICT，资源明确停用/失权PERMISSION_DENIED，依赖故障UPSTREAM_UNAVAILABLE，deadline TIMEOUT。失效/过期不能通过refresh复活。为保持最小机制，**不加持久秘密续期收据**：续期响应丢失则客户端视连接授权未知并主动重连，用仍有效且未撤销的登记凭据重新bootstrap，产生新connection generation；旧refresh永不跨连接/epoch恢复。SDK必须禁止并发refresh；不同请求不能复用旧refresh。登记凭据仍只能经当前Identity校验换新受限证明，不构成无限旧业务授权。
+
+到期停止新投递/入站受理/续租及副作用，不把已有Action/Model结果改FAILED。续期不自动续Delivery租约，ACK/Renew仍绑定当前有效attempt/fence；过期旧ACK不确认新尝试。适配器已执行结果先保存在本地日志，断线后用新认证连接按同account/action ID交回，沿既有事实收尾规则，不能让失效proof授权新执行。已受理定时/操作保留，不保存人类token继续后台执行。
+
+拟验证：初始Proof缺失/空/异流/异Fence/过期拒绝，56秒与60秒边界，当前续期及旧refresh并发拒绝，响应丢失→新bootstrap代次，Identity故障/凭据撤销/gate关闭不续期，强制不降级，已有事实不伪FAILED与投递租约不随auth续期扩展。全部是契约/fixture，P05/P06真实生产验收前继续not_implemented。本草案未固定字段号或改Bridge/CMake/业务，需要主对话先审查该最小方案。
