@@ -1,0 +1,215 @@
+{
+  "base": "d20b54bcc4ea01df023acb54cd528b4a0764b3db",
+  "files": [
+    {
+      "source": "core/app/main.cpp",
+      "reference": "core/reference/app/main.cpp",
+      "blob": "2908ade1ef32e0fc29a566851863a31d8ba20916"
+    },
+    {
+      "source": "core/include/kiarabot/core/application/action_quota.hpp",
+      "reference": "core/reference/include/kiarabot/core/application/action_quota.hpp",
+      "blob": "e368c26e97d029e7f2cb0b94470828019cdc7298"
+    },
+    {
+      "source": "core/include/kiarabot/core/application/action_router.hpp",
+      "reference": "core/reference/include/kiarabot/core/application/action_router.hpp",
+      "blob": "c4ea8ef477a0576377f3d6f1040b20aecd57e961"
+    },
+    {
+      "source": "core/include/kiarabot/core/application/adapter_ingress.hpp",
+      "reference": "core/reference/include/kiarabot/core/application/adapter_ingress.hpp",
+      "blob": "5092d46ab107e67d623221ccc8a27252d2d027d2"
+    },
+    {
+      "source": "core/include/kiarabot/core/application/authorized_commands.hpp",
+      "reference": "core/reference/include/kiarabot/core/application/authorized_commands.hpp",
+      "blob": "9bd27bc538c9894e4ae3f959f8f363222f0fbead"
+    },
+    {
+      "source": "core/include/kiarabot/core/application/control_application.hpp",
+      "reference": "core/reference/include/kiarabot/core/application/control_application.hpp",
+      "blob": "78c5ff88418a5692cc52f0fc8a45960818a7aab5"
+    },
+    {
+      "source": "core/include/kiarabot/core/application/control_service.hpp",
+      "reference": "core/reference/include/kiarabot/core/application/control_service.hpp",
+      "blob": "7302fefadf4b5cb1f5cfd2fb1aaa72a91bd6a591"
+    },
+    {
+      "source": "core/include/kiarabot/core/application/host_dispatcher.hpp",
+      "reference": "core/reference/include/kiarabot/core/application/host_dispatcher.hpp",
+      "blob": "9d56d1d236080feac2f59e4139b48e517b7628d9"
+    },
+    {
+      "source": "core/include/kiarabot/core/application/host_validation.hpp",
+      "reference": "core/reference/include/kiarabot/core/application/host_validation.hpp",
+      "blob": "e538dd8051adb2fcccfe17d11222dbeb85a56bf9"
+    },
+    {
+      "source": "core/include/kiarabot/core/application/plugin_config_delivery.hpp",
+      "reference": "core/reference/include/kiarabot/core/application/plugin_config_delivery.hpp",
+      "blob": "28e7f3cab02216f3d2a5dfced2522c5abca24e95"
+    },
+    {
+      "source": "core/include/kiarabot/core/application/plugin_hub.hpp",
+      "reference": "core/reference/include/kiarabot/core/application/plugin_hub.hpp",
+      "blob": "c244d44c72affcc8a1e9889df8e7e02ad66abd05"
+    },
+    {
+      "source": "core/include/kiarabot/core/application/runtime.h",
+      "reference": "core/reference/include/kiarabot/core/application/runtime.h",
+      "blob": "55831e1ef312cd543902e1ea1a9404348cef7fb7"
+    },
+    {
+      "source": "core/include/kiarabot/core/application/runtime_maintenance.hpp",
+      "reference": "core/reference/include/kiarabot/core/application/runtime_maintenance.hpp",
+      "blob": "d94f93f95a72424f4c6bc646d1892f87a05e0d20"
+    },
+    {
+      "source": "core/include/kiarabot/core/application/task_scheduler.hpp",
+      "reference": "core/reference/include/kiarabot/core/application/task_scheduler.hpp",
+      "blob": "7a5fd9a4f38d893d33a8cb53df287ee0d4b7d1bd"
+    },
+    {
+      "source": "core/include/kiarabot/core/domain/runtime_engine.hpp",
+      "reference": "core/reference/include/kiarabot/core/domain/runtime_engine.hpp",
+      "blob": "185c728c1b3eb031961437adfe13c7cc2c32a5f2"
+    },
+    {
+      "source": "core/include/kiarabot/core/domain/runtime_state_port.hpp",
+      "reference": "core/reference/include/kiarabot/core/domain/runtime_state_port.hpp",
+      "blob": "a8087a638e255738997597c50d61d57e9658920f"
+    },
+    {
+      "source": "core/include/kiarabot/core/domain/runtime_types.hpp",
+      "reference": "core/reference/include/kiarabot/core/domain/runtime_types.hpp",
+      "blob": "d98a003d2e547100bf151c9cea115655ac8e4c51"
+    },
+    {
+      "source": "core/include/kiarabot/core/domain/session_key.hpp",
+      "reference": "core/reference/include/kiarabot/core/domain/session_key.hpp",
+      "blob": "26301387ab37754f125b9b9247b6f26dc4afadf4"
+    },
+    {
+      "source": "core/include/kiarabot/core/ports/ports.hpp",
+      "reference": "core/reference/include/kiarabot/core/ports/ports.hpp",
+      "blob": "4e19cc0c2fed597a9ee2b5ce8afd4cb526d2a5fd"
+    },
+    {
+      "source": "core/include/kiarabot/core/ports/runtime_store.hpp",
+      "reference": "core/reference/include/kiarabot/core/ports/runtime_store.hpp",
+      "blob": "6bd8eb5441fdd33b051a21e0584bd2188ea675d0"
+    },
+    {
+      "source": "core/include/kiarabot/core/runtime/bridge_server.hpp",
+      "reference": "core/reference/include/kiarabot/core/runtime/bridge_server.hpp",
+      "blob": "a9e37236b0361102cff2c2239707bce79e8979d1"
+    },
+    {
+      "source": "core/include/kiarabot/core/runtime/in_memory_runtime_store.hpp",
+      "reference": "core/reference/include/kiarabot/core/runtime/in_memory_runtime_store.hpp",
+      "blob": "0363b1974ef850ea540fce76203949dcb6fc2cc6"
+    },
+    {
+      "source": "core/include/kiarabot/core/runtime/message_projection.hpp",
+      "reference": "core/reference/include/kiarabot/core/runtime/message_projection.hpp",
+      "blob": "3289cb4838cbbd259558f8efe70fb1d0dab832c1"
+    },
+    {
+      "source": "core/include/kiarabot/core/runtime/plugin_process.hpp",
+      "reference": "core/reference/include/kiarabot/core/runtime/plugin_process.hpp",
+      "blob": "cea6692ddc853a1e27a78655613e58a7ef4bbcc4"
+    },
+    {
+      "source": "core/include/kiarabot/core/runtime/request_digest.hpp",
+      "reference": "core/reference/include/kiarabot/core/runtime/request_digest.hpp",
+      "blob": "a72fdb3efb168c4b51ab373ccba8fe3da28b8ccc"
+    },
+    {
+      "source": "core/include/kiarabot/core/runtime/runtime_log.hpp",
+      "reference": "core/reference/include/kiarabot/core/runtime/runtime_log.hpp",
+      "blob": "4a4b90da18785886739c26597bcb7fc3deebf64d"
+    },
+    {
+      "source": "core/include/kiarabot/core/runtime/runtime_state.hpp",
+      "reference": "core/reference/include/kiarabot/core/runtime/runtime_state.hpp",
+      "blob": "0643ec019507427575844ae6e122e6548edc1f9b"
+    },
+    {
+      "source": "core/src/application/action_quota.cpp",
+      "reference": "core/reference/src/application/action_quota.cpp",
+      "blob": "2dd253328fef36e020e1e5f3eaccad8c0bc34af7"
+    },
+    {
+      "source": "core/src/application/action_router.cpp",
+      "reference": "core/reference/src/application/action_router.cpp",
+      "blob": "daeecdd61128e2ca8381809a47167bbed8260efe"
+    },
+    {
+      "source": "core/src/application/adapter_ingress.cpp",
+      "reference": "core/reference/src/application/adapter_ingress.cpp",
+      "blob": "891358f55aae5f8e0f5bf387a3af388552539aa0"
+    },
+    {
+      "source": "core/src/application/control_application.cpp",
+      "reference": "core/reference/src/application/control_application.cpp",
+      "blob": "fc8bd8e7d9ae48231ea5976a3489692f8a50b443"
+    },
+    {
+      "source": "core/src/application/control_crypto.cpp",
+      "reference": "core/reference/src/application/control_crypto.cpp",
+      "blob": "9b9d53310066663559089e18b751300e979d2af6"
+    },
+    {
+      "source": "core/src/application/control_service.cpp",
+      "reference": "core/reference/src/application/control_service.cpp",
+      "blob": "930216dc422357a7bebacb34ac60823ff0618cdc"
+    },
+    {
+      "source": "core/src/application/host_dispatcher.cpp",
+      "reference": "core/reference/src/application/host_dispatcher.cpp",
+      "blob": "2c0881c14ab7f2471e9cc09fa940af39c3e983bb"
+    },
+    {
+      "source": "core/src/application/plugin_config_delivery.cpp",
+      "reference": "core/reference/src/application/plugin_config_delivery.cpp",
+      "blob": "b6bdd555f1a60388e31e08216b1b661508e8948b"
+    },
+    {
+      "source": "core/src/application/plugin_hub.cpp",
+      "reference": "core/reference/src/application/plugin_hub.cpp",
+      "blob": "6035061883ae2eb36132dfa072d0fd11e47202fd"
+    },
+    {
+      "source": "core/src/application/runtime_maintenance.cpp",
+      "reference": "core/reference/src/application/runtime_maintenance.cpp",
+      "blob": "f51c25cfe7eeab90546da39f19056fd6ad8c3322"
+    },
+    {
+      "source": "core/src/application/task_scheduler.cpp",
+      "reference": "core/reference/src/application/task_scheduler.cpp",
+      "blob": "f608cd704c7d577ac83a785c1e5183c06f48de84"
+    },
+    {
+      "source": "core/src/runtime/bridge_server.cpp",
+      "reference": "core/reference/src/runtime/bridge_server.cpp",
+      "blob": "a9d186b845ca345faa845dff112a3d6840b1515e"
+    },
+    {
+      "source": "core/src/runtime/plugin_process.cpp",
+      "reference": "core/reference/src/runtime/plugin_process.cpp",
+      "blob": "7c9e82c13394890d12b82d97a49b28d41ad721d5"
+    },
+    {
+      "source": "core/src/runtime/request_digest.cpp",
+      "reference": "core/reference/src/runtime/request_digest.cpp",
+      "blob": "55cf9728a188bf45f1a616ee25bc3c3a3c5755ea"
+    },
+    {
+      "source": "core/src/runtime/runtime_log.cpp",
+      "reference": "core/reference/src/runtime/runtime_log.cpp",
+      "blob": "b370d9824e9937d68f9c5844610f85cd6c19fdb0"
+    }
+  ]
+}

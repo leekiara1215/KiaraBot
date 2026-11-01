@@ -1,0 +1,74 @@
+include(${CMAKE_CURRENT_LIST_DIR}/../cmake/log.cmake)
+add_executable(kiarabot-reference-core app/main.cpp)
+target_compile_features(kiarabot-reference-core PRIVATE cxx_std_20)
+target_include_directories(kiarabot-reference-core PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+
+target_compile_options(kiarabot-reference-core PRIVATE
+  $<$<CXX_COMPILER_ID:AppleClang,Clang,GNU>:-Wall -Wextra -Wpedantic>
+  $<$<CXX_COMPILER_ID:MSVC>:/W4>
+)
+
+add_executable(kiarabot-reference-core-smoke ${CMAKE_CURRENT_LIST_DIR}/../tests/core_smoke.cpp)
+target_include_directories(kiarabot-reference-core-smoke PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+add_test(NAME core_smoke COMMAND kiarabot-reference-core-smoke)
+
+add_executable(kiarabot-runtime-test ${CMAKE_CURRENT_LIST_DIR}/../tests/runtime_test.cpp ${CMAKE_CURRENT_LIST_DIR}/../tests/runtime_engine_header_test.cpp src/application/runtime_maintenance.cpp)
+target_compile_features(kiarabot-runtime-test PRIVATE cxx_std_20)
+target_include_directories(kiarabot-runtime-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_compile_options(kiarabot-runtime-test PRIVATE
+  $<$<CXX_COMPILER_ID:AppleClang,Clang,GNU>:-Wall -Wextra -Wpedantic>
+  $<$<CXX_COMPILER_ID:MSVC>:/W4>
+)
+add_test(NAME core_runtime COMMAND kiarabot-runtime-test)
+
+add_executable(kiarabot-plugin-delivery-test ${CMAKE_CURRENT_LIST_DIR}/../tests/plugin_delivery_test.cpp)
+target_compile_features(kiarabot-plugin-delivery-test PRIVATE cxx_std_20)
+target_include_directories(kiarabot-plugin-delivery-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_compile_options(kiarabot-plugin-delivery-test PRIVATE
+  $<$<CXX_COMPILER_ID:AppleClang,Clang,GNU>:-Wall -Wextra -Wpedantic>
+  $<$<CXX_COMPILER_ID:MSVC>:/W4>
+)
+add_test(NAME core_plugin_delivery COMMAND kiarabot-plugin-delivery-test)
+if(KIARABOT_GENERATE_PROTO)
+  add_executable(kiarabot-host-validation-test ${CMAKE_CURRENT_LIST_DIR}/../tests/host_validation_test.cpp)
+  target_include_directories(kiarabot-host-validation-test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include ${CMAKE_BINARY_DIR}/generated/cpp)
+  target_link_libraries(kiarabot-host-validation-test PRIVATE kiarabot_proto)
+  add_test(NAME host_validation COMMAND kiarabot-host-validation-test)
+endif()
+
+if(UNIX)
+  target_sources(kiarabot-reference-core PRIVATE src/runtime/plugin_process.cpp)
+  find_package(Threads REQUIRED)
+  target_link_libraries(kiarabot-reference-core PRIVATE Threads::Threads)
+  find_package(Python3 3.9 COMPONENTS Interpreter REQUIRED)
+  add_test(NAME architecture_boundaries
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/scripts/quality/check-boundaries.py)
+  add_test(NAME architecture_boundaries_test
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/scripts/quality/tests/boundaries_test.py)
+  add_test(NAME deploy_healthcheck
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/scripts/deploy/tests/healthcheck_test.py)
+  add_test(NAME deploy_deployment
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/scripts/deploy/tests/deployment_test.py)
+  set_tests_properties(deploy_deployment PROPERTIES TIMEOUT 30)
+  add_test(NAME core_process_lifecycle
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_LIST_DIR}/../tests/process_lifecycle_test.py
+      $<TARGET_FILE:kiarabot-reference-core>)
+  set_tests_properties(core_process_lifecycle PROPERTIES TIMEOUT 30)
+endif()
+if(UNIX AND KIARABOT_GENERATE_PROTO)
+  add_test(NAME core_grpc_process
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_LIST_DIR}/../tests/grpc_process_test.py
+      $<TARGET_FILE:kiarabot-reference-core> $<$<BOOL:${KIARABOT_ENABLE_INFRASTRUCTURE}>:--sqlite>)
+  set_tests_properties(core_grpc_process PROPERTIES TIMEOUT 30)
+endif()
+
+add_executable(kiarabot-runtime-store-test ${CMAKE_CURRENT_LIST_DIR}/../tests/runtime_store_test.cpp)
+target_include_directories(kiarabot-runtime-store-test PRIVATE include)
+add_test(NAME core_runtime_store COMMAND kiarabot-runtime-store-test)
+
+set_target_properties(kiarabot-reference-core PROPERTIES OUTPUT_NAME kiarabot-core)
+get_property(REFERENCE_TESTS DIRECTORY PROPERTY TESTS)
+foreach(TEST_NAME IN LISTS REFERENCE_TESTS)
+  set_tests_properties(${TEST_NAME} PROPERTIES LABELS "reference")
+endforeach()

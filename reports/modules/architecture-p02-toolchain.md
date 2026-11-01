@@ -75,3 +75,20 @@ format 固定 16.0.6。下载先遭沙箱 DNS 拒绝，经规则请求环境授�
 3.11.17，不声称已通过目标 Python 3.11.18 环境。doc/11 同步获取及版本差异；无业务
 接口影响，不更新 proto/API/doc02–08。`git diff --check` 通过；暂未运行 tidy：新
 full/reference wiring 尚未完成，须先建立真实 compile DB。
+
+## 第三能力：reference 机械隔离及完整旧行为构建
+
+42 文件按首个规格逐字节移动，manifest 保存原路径/blob，check-reference.py 实际通过；
+没有修改旧 C++ 内容/测试断言。旧 CMake 调整路径与 reference 输出、标签；
+root 协议生成扩至全部 13 个文件，补入已存在 target_roundtrip 和两个 P01 内层测试。
+缓存 JSON 头先校验后复用，固定 manifest 环境优先用 nlohmann_json CMake 包；不再
+每次无条件重复下载。未创建新服务业务源码；未改 proto/API 语义。
+
+实际验证：dev 配置/编译成功，9 tests 仅 loopback healthcheck 首次被沙箱拒绝，经授权
+重跑通过。full 在本机 Homebrew 依赖（非固定环境）配置/编译成功，原 33 个 CTests
+经网络权限授权全部通过；新增两个 P01 内层测试通过。full 编译覆盖检查、内层门禁、
+旧边界门禁、固定 format 全通过。一次路径替换误伤 scripts/*/tests 的 CMake 路径已修正，
+对应自测已重跑。最终 full 包含全部手写 TU，reference 没有被排除。
+
+文档同步 doc/11 和本记录；新运行说明由各模块所有者更新。协议/API 无语义变化。
+未宣称六入口/链接隔离或固定 PG 环境通过：它们留下一独立能力，依赖已审查共享提交。

@@ -283,3 +283,13 @@ PATH="$PWD/.tools/quality/bin:$PATH" ./scripts/quality/check-tidy.sh
 对基点手写 C++ 全仓检查通过；之前系统 format 23 的差异不是该固定版本的失败。
 固定 vcpkg checkout 的 revision/tree/portfile 校验也已通过，依赖安装与运行能力仍需
 另行记录；不能将 checkout 校验当成 PG/JWT 验收。
+
+### Reference 机械迁移已落地
+
+42 个旧 Core 文件已迁入 `core/reference/`，迁移 manifest 保存基点和 Git blob；
+`python3 scripts/quality/check-reference.py` 验证内容逐字节保留，防止旧路径重新进入
+生产树。旧 Control fixture/credentials 与一体 Core 输出仅位于
+`build/<preset>/reference/{control/api,core}/`；既有 HTTP 测试的 build 根由 CTest 指向
+`reference/`。旧 infrastructure 目标也在 reference 输出树，仍纳入全仓 tidy。
+13 个 proto 全部进入生成/descriptor；现有 target_roundtrip 与两个纯内层断言均纳入
+full compile DB。此时六入口源尚待统一集成，不把 reference 全构建通过称为 P02 完成。
