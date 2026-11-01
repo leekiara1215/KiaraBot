@@ -297,3 +297,5 @@ P04 DelegationCryptoPort 使用固定 jwt-cpp0.7.0/OpenSSL3.5 Ed25519（JWS alg=
 直接actor、证书指纹、授权版本、来源credential/session和跳数。版本以十进制文本无损编码，
 NumericDate要求非负整秒，exp-iat最多56秒，签验容差最多2秒。调用者须保留exchange来源，
 并向Identity当前权威检查来源credential/session撤销和授权版本；crypto验证不替代授权。
+
+JWT序列化使用同一jwt-cpp官方nlohmann-json traits；严格整数NumericDate范围检查先于成熟库日期转换。

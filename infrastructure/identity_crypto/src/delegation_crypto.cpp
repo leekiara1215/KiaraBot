@@ -6,7 +6,7 @@
 #include <stdexcept>
 #include <string_view>
 
-#include <jwt-cpp/jwt.h>
+#include <jwt-cpp/traits/nlohmann-json/defaults.h>
 #include <openssl/pem.h>
 #include <sodium.h>
 
@@ -23,16 +23,26 @@ t::Failure failure(t::ErrorCode code = t::ErrorCode::Unauthenticated) {
 bool text(std::string_view value) {
   return !value.empty() && value.size() <= 1024 && value.find('\0') == std::string_view::npos;
 }
-template <typename Value> const Value& checked(const picojson::value& value) {
-  if (!value.is<Value>()) {
-    throw std::invalid_argument("claim type");
+template <typename Value> const Value& checked(const nlohmann::json& value) {
+  if constexpr (std::is_same_v<Value, std::string>) {
+    if (!value.is_string()) {
+      throw std::invalid_argument("claim type");
+    }
+  } else if constexpr (std::is_same_v<Value, nlohmann::json::array_t>) {
+    if (!value.is_array()) {
+      throw std::invalid_argument("claim type");
+    }
+  } else {
+    if (!value.is_object()) {
+      throw std::invalid_argument("claim type");
+    }
   }
-  return value.get<Value>();
+  return value.get_ref<const Value&>();
 }
 std::string number(std::uint64_t value) {
   return std::to_string(value);
 }
-std::uint64_t integer(const picojson::value& value) {
+std::uint64_t integer(const nlohmann::json& value) {
   const auto& input = checked<std::string>(value);
   std::uint64_t result = 0;
   const auto parsed = std::from_chars(input.data(), input.data() + input.size(), result);
@@ -166,59 +176,72 @@ public:
 private:
   std::string value_;
 };
-picojson::value encode(const t::DelegationClaims& c) {
-  picojson::object object;
-  object["direct_actor"] = picojson::value(c.direct_actor.value);
-  picojson::array actors;
+nlohmann::json encode(const t::DelegationClaims& c) {
+  nlohmann::json::object_t object;
+  object["direct_actor"] = nlohmann::json(c.direct_actor.value);
+  nlohmann::json::array_t actors;
   for (const auto& actor : c.actor_chain) {
     actors.emplace_back(actor.value);
   }
-  object["actor_chain"] = picojson::value(actors);
-  picojson::array permissions;
+  object["actor_chain"] = nlohmann::json(actors);
+  nlohmann::json::array_t permissions;
   for (const auto& item : c.permissions) {
-    picojson::array entry{picojson::value(number(static_cast<unsigned>(item.permission))),
-                          picojson::value(number(static_cast<unsigned>(item.resource.kind))),
-                          picojson::value(item.resource.id.value)};
+    nlohmann::json::array_t entry{nlohmann::json(number(static_cast<unsigned>(item.permission))),
+                                  nlohmann::json(number(static_cast<unsigned>(item.resource.kind))),
+                                  nlohmann::json(item.resource.id.value)};
     permissions.emplace_back(entry);
   }
-  object["permissions"] = picojson::value(permissions);
-  object["client_certificate"] = picojson::value(digest(c.client_certificate));
-  object["authorization_version"] = picojson::value(number(c.authorization_version.value));
-  object["business_hops"] = picojson::value(number(c.business_hops));
-  object["source_credential"] =
-      picojson::value(picojson::array{picojson::value(c.source_credential.id.value),
-                                      picojson::value(number(c.source_credential.version.value))});
+  object["permissions"] = nlohmann::json(permissions);
+  object["client_certificate"] = nlohmann::json(digest(c.client_certificate));
+  object["authorization_version"] = nlohmann::json(number(c.authorization_version.value));
+  object["business_hops"] = nlohmann::json(number(c.business_hops));
+  object["source_credential"] = nlohmann::json(
+      nlohmann::json::array_t{nlohmann::json(c.source_credential.id.value),
+                              nlohmann::json(number(c.source_credential.version.value))});
   object["source_session"] =
-      c.source_session ? picojson::value(c.source_session->value) : picojson::value();
-  return picojson::value(object);
+      c.source_session ? nlohmann::json(c.source_session->value) : nlohmann::json();
+  return nlohmann::json(object);
 }
-t::DelegationClaims decode(const jwt::decoded_jwt<jwt::traits::kazuho_picojson>& token) {
+t::DelegationClaims decode(const jwt::decoded_jwt<jwt::traits::nlohmann_json>& token) {
   t::DelegationClaims c;
   c.issuer = token.get_issuer();
   c.audience = audience(token.get_payload_claim("aud").as_string());
   c.subject.value = token.get_subject();
   c.proof_id.value = token.get_id();
-  c.issued_at = timestamp(token.get_payload_claim("iat").as_integer());
-  c.not_before = timestamp(token.get_payload_claim("nbf").as_integer());
-  c.expires_at = timestamp(token.get_payload_claim("exp").as_integer());
-  const auto object = checked<picojson::object>(token.get_payload_claim("delegation").to_json());
+  const auto date = [&](const char* name) {
+    const auto value = token.get_payload_claim(name).to_json();
+    if (!value.is_number_integer()) {
+      throw std::invalid_argument("date type");
+    }
+    if (value.is_number_unsigned() &&
+        value.get<std::uint64_t>() >
+            static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max())) {
+      throw std::invalid_argument("date range");
+    }
+    return timestamp(value.get<std::int64_t>());
+  };
+  c.issued_at = date("iat");
+  c.not_before = date("nbf");
+  c.expires_at = date("exp");
+  const auto object =
+      checked<nlohmann::json::object_t>(token.get_payload_claim("delegation").to_json());
   if (object.size() != 8 || token.get_payload_json().size() != 8) {
     throw std::invalid_argument("claims");
   }
   c.direct_actor.value = checked<std::string>(object.at("direct_actor"));
-  const auto& actors = checked<picojson::array>(object.at("actor_chain"));
-  if (actors.size() > 3) {
+  const auto& actors = checked<nlohmann::json::array_t>(object.at("actor_chain"));
+  if (actors.size() > 2) {
     throw std::invalid_argument("actors");
   }
   for (const auto& actor : actors) {
     c.actor_chain.push_back({checked<std::string>(actor)});
   }
-  const auto& permissions = checked<picojson::array>(object.at("permissions"));
+  const auto& permissions = checked<nlohmann::json::array_t>(object.at("permissions"));
   if (permissions.size() > 128) {
     throw std::invalid_argument("permissions");
   }
   for (const auto& item : permissions) {
-    const auto& entry = checked<picojson::array>(item);
+    const auto& entry = checked<nlohmann::json::array_t>(item);
     if (entry.size() != 3) {
       throw std::invalid_argument("permission");
     }
@@ -238,13 +261,13 @@ t::DelegationClaims decode(const jwt::decoded_jwt<jwt::traits::kazuho_picojson>&
     throw std::invalid_argument("hops");
   }
   c.business_hops = static_cast<std::uint32_t>(hops);
-  const auto& origin = checked<picojson::array>(object.at("source_credential"));
+  const auto& origin = checked<nlohmann::json::array_t>(object.at("source_credential"));
   if (origin.size() != 2) {
     throw std::invalid_argument("origin");
   }
   c.source_credential = {{checked<std::string>(origin[0])}, {integer(origin[1])}};
   const auto& session = object.at("source_session");
-  if (!session.is<picojson::null>()) {
+  if (!session.is_null()) {
     c.source_session = t::SessionId{checked<std::string>(session)};
   }
   return c;
@@ -336,7 +359,7 @@ public:
       }
       const FixedClock fixed{
           jwt::date{std::chrono::floor<std::chrono::seconds>(clock.utc.time_since_epoch())}};
-      jwt::verify<FixedClock, jwt::traits::kazuho_picojson>(fixed)
+      jwt::verify<FixedClock, jwt::traits::nlohmann_json>(fixed)
           .allow_algorithm(jwt::algorithm::ed25519(key->public_key_pem))
           .with_issuer(config_.issuer)
           .leeway(2)

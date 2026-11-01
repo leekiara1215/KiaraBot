@@ -4,7 +4,7 @@
 #include <cassert>
 #include <memory>
 
-#include <jwt-cpp/jwt.h>
+#include <jwt-cpp/traits/nlohmann-json/defaults.h>
 #include <openssl/pem.h>
 #include <sodium.h>
 // clang-format on
@@ -112,7 +112,7 @@ int main() try {
                              proof->bytes().size());
   const auto decoded = jwt::decode(original);
   std::string private_pem(private_pointer, static_cast<std::size_t>(private_size));
-  auto resigned = [&](picojson::object payload, bool unsigned_token, const std::string& kid,
+  auto resigned = [&](nlohmann::json::object_t payload, bool unsigned_token, const std::string& kid,
                       bool url) {
     auto builder = jwt::create();
     const jwt::claim type_claim(std::string{"JWT"});
@@ -133,33 +133,36 @@ int main() try {
                         t::Service::Runtime, peer, clock.value);
   };
   auto changed_payload = decoded.get_payload_json();
-  changed_payload["iss"] = picojson::value(std::string{"other"});
+  changed_payload["iss"] = nlohmann::json(std::string{"other"});
   assert(std::holds_alternative<t::Failure>(resigned(changed_payload, false, "key-1", false)));
   changed_payload = decoded.get_payload_json();
   assert(std::holds_alternative<t::Failure>(resigned(changed_payload, false, "unknown", false)));
   assert(std::holds_alternative<t::Failure>(resigned(changed_payload, true, "key-1", false)));
   assert(std::holds_alternative<t::Failure>(resigned(changed_payload, false, "key-1", true)));
-  auto delegation = changed_payload.at("delegation").get<picojson::object>();
-  delegation["source_credential"] = picojson::value(picojson::array{
-      picojson::value(std::string{"credential"}), picojson::value(std::string{"0"})});
-  changed_payload["delegation"] = picojson::value(delegation);
+  auto delegation = changed_payload.at("delegation").get<nlohmann::json::object_t>();
+  delegation["source_credential"] = nlohmann::json(nlohmann::json::array_t{
+      nlohmann::json(std::string{"credential"}), nlohmann::json(std::string{"0"})});
+  changed_payload["delegation"] = nlohmann::json(delegation);
   assert(std::holds_alternative<t::Failure>(resigned(changed_payload, false, "key-1", false)));
-  delegation["source_credential"] = picojson::value(1.0);
-  changed_payload["delegation"] = picojson::value(delegation);
+  delegation["source_credential"] = nlohmann::json(1.0);
+  changed_payload["delegation"] = nlohmann::json(delegation);
   assert(std::holds_alternative<t::Failure>(resigned(changed_payload, false, "key-1", false)));
   delegation["source_credential"] =
-      picojson::value(picojson::array{picojson::value(std::string{"credential"}),
-                                      picojson::value(std::string{"18446744073709551616"})});
-  changed_payload["delegation"] = picojson::value(delegation);
+      nlohmann::json(nlohmann::json::array_t{nlohmann::json(std::string{"credential"}),
+                                             nlohmann::json(std::string{"18446744073709551616"})});
+  changed_payload["delegation"] = nlohmann::json(delegation);
   assert(std::holds_alternative<t::Failure>(resigned(changed_payload, false, "key-1", false)));
   changed_payload = decoded.get_payload_json();
-  changed_payload["iat"] = picojson::value(1000.5);
+  changed_payload["iat"] = nlohmann::json(1000.5);
   assert(std::holds_alternative<t::Failure>(resigned(changed_payload, false, "key-1", false)));
   changed_payload = decoded.get_payload_json();
-  changed_payload["exp"] = picojson::value(1e30);
+  changed_payload["exp"] = nlohmann::json(1e30);
   assert(std::holds_alternative<t::Failure>(resigned(changed_payload, false, "key-1", false)));
   changed_payload = decoded.get_payload_json();
-  changed_payload["nbf"] = picojson::value(std::string{"1000"});
+  changed_payload["nbf"] = nlohmann::json(std::string{"1000"});
+  assert(std::holds_alternative<t::Failure>(resigned(changed_payload, false, "key-1", false)));
+  changed_payload = decoded.get_payload_json();
+  changed_payload["exp"] = nlohmann::json(std::numeric_limits<std::uint64_t>::max());
   assert(std::holds_alternative<t::Failure>(resigned(changed_payload, false, "key-1", false)));
   bad_clock = clock.value;
   bad_clock.utc = t::TimePoint::max();

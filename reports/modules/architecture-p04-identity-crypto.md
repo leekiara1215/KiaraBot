@@ -181,3 +181,14 @@ API, Core interfaces and protected baseline unchanged by this adapter commit. No
 CTest registration, live TLS/RPC/DB integration or deployment; build and service assembly belong
 to parent tasks. Existing four adapter tests were rebuilt against 592cf1e with ASan/UBSan/-Werror
 and all passed. No production readiness or current authorization decision is claimed here.
+
+## Full static-analysis and hop interoperability correction
+
+Supersedes the preceding Delegation tidy limitation: switched only the official JSON traits of
+fixed jwt-cpp0.7.0 to its nlohmann-json integration using the already locked nlohmann dependency.
+No JWT library/version, claim schema or crypto algorithm changed. Full clang-analyzer-* and
+bugprone-* with warnings-as-errors now pass for source and test WITHOUT excluding NewDelete,
+without NOLINT, and without editing unified checker configuration or third-party code. The old
+picojson lifetime-path diagnostic is therefore avoided rather than asserted to be harmless.
+Raw NumericDate requires integer type and unsigned<=INT64_MAX before conversion, then a bounded
+nanosecond timestamp; authenticated UINT64_MAX, huge float and fractional date tests reject.
