@@ -34,7 +34,8 @@ enum class ResourceKind {
   Action,
   Operation,
   Credential,
-  Assignment
+  Assignment,
+  Catalog = 15
 };
 struct Sha256Digest {
   std::array<std::byte, 32> bytes{};

@@ -179,6 +179,14 @@ void handoff_rules(target::TimePoint now) {
   check(equals(target::minimum_inbox_retention(now + 2h, now + 1h),
                now + 2h + target::kHandoffRetention),
         "retention uses later of receive time and validity time");
+  auto catalog = handoff(now);
+  catalog.resource.kind = target::ResourceKind::Catalog;
+  check(std::holds_alternative<std::monostate>(target::validate_new_handoff(catalog, now)),
+        "approved Catalog kind is structurally valid without granting child authority");
+  check(!target::same_handoff(catalog, handoff(now)),
+        "same message ID and resource ID under Catalog versus Task is distinct content");
+  check(!target::valid_resource_ref({target::ResourceKind::Catalog, {}}),
+        "Catalog still requires a nonempty exact ID");
   auto invalid = handoff(now);
   invalid.resource.kind = static_cast<target::ResourceKind>(255);
   check(failure_is(target::validate_new_handoff(invalid, now), target::ErrorCode::InvalidArgument),

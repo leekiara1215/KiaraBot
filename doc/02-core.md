@@ -477,3 +477,9 @@ PG原生timestamp的精度不能自动代表完整nano身份；需要精确保�
 实际codec/列显式保存int64 ns或秒+nanos，并另验收DB当前UTC的业务条件判断。
 证书校验的唯一to_time_t边界显式转换到native duration；此秒级证书API转换不用于
 业务收据/交接时间的持久化或精确比较。reference模型及线协议未改。
+
+已按唯一契约0de1622新增内部ResourceKind::Catalog=15，保留原0–14存储值；wire的
+RESOURCE_CATALOG=16必须在边界按名字显式映射，不能数值强转。封闭资源校验接受该kind
+及非空ID，但不授予目录内容/子资源权限；有限目录ID与操作授权由对应policy精确核验。
+相同ID下Catalog/Account/Model/Task仍是不同资源，不能共享收据scope或混淆交接内容。
+基础设施的resource_kind CHECK需要独立扩到15，现有库值不重编号；本提交不修改SQL。

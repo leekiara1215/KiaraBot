@@ -47,6 +47,7 @@ inline bool valid_resource_ref(const ResourceRef& resource) {
   case ResourceKind::Operation:
   case ResourceKind::Credential:
   case ResourceKind::Assignment:
+  case ResourceKind::Catalog:
     return true;
   }
   return false;
