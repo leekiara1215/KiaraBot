@@ -20,3 +20,22 @@ OpenSSL路径必须明确给定；记录实际版本，本机不同版本自测�
 证书或端口冲突必须1。探针live200/HEALTHY、ready503/UNHEALTHY，未知路径404。
 Control只提供回环HTTP探针且拒绝业务REST/WS；其他五服务mTLS gRPC未实现方法返回
 UNIMPLEMENTED，不产生业务状态。证书缺失客户端拒绝不能仅用RPC超时证明。
+
+真实服务入口（六路径必须分别指定，不能只提供一个旧Core）：
+
+```sh
+python3 tests/architecture/run.py --group lifecycle --openssl "$TEST_OPENSSL" \
+  --control "$CONTROL_BINARY" --identity "$IDENTITY_BINARY" --runtime "$RUNTIME_BINARY" \
+  --plugin-host "$HOST_BINARY" --scheduler "$SCHEDULER_BINARY" --model "$MODEL_BINARY"
+```
+
+也可用KIARABOT_P02_OPENSSL及KIARABOT_P02_BINARY_CONTROL/IDENTITY/RUNTIME/PLUGIN_HOST/
+SCHEDULER/MODEL逐项提供；无内置构建路径。分组lifecycle/tls/isolation/all，缺任何一个可执行
+直接CLI退出2，绝不skip。lifecycle不需要grpc Python包；tls要求明确锁定的grpc环境。
+CLI/配置失败要求退出2且诊断属于参数/配置类别；证书/绑定故障要求退出1并识别相应诊断。
+子进程继承环境会删除旧KIARABOT/CORE/ONEBOT入口及HTTP代理，配置只引用当前临时证书。
+探针检查ProcessProbe完整形状，不能将live当ready；未ready与未知路由返回正确状态码。
+
+`python3 tests/architecture/support_test.py -v` 自测验收判定器：错误退出码/无关诊断被拒绝，
+PEM/DSN泄漏被拒绝，缺依赖不skip，真实本地HTTP夹具验证状态/JSON形状及关闭探测。
+该HTTP夹具只测判定器，绝不作为六进程结果。网络受限时申请本地临时端口权限，不改测试跳过。
