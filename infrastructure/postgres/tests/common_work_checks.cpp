@@ -264,6 +264,69 @@ void check_common(Database& database, const DatabaseConfig& config) {
     }
     committed(*work);
   }
+  // Reject unrepresentable SQL TEXT in complete snapshots, including optional/nested fields.
+  std::vector<target::ReplayResult> nul_results(snapshots.begin() + 1, snapshots.end());
+  const auto nul = std::string(1, '\0') + "suffix";
+  std::get<target::ResourceMutationResult>(nul_results[0]).resource.id.value += nul;
+  std::get<target::Operation>(nul_results[1]).ref.resource.id.value += nul;
+  std::get<target::Principal>(nul_results[2]).binding->id.value += nul;
+  std::get<target::LoginSession>(nul_results[3]).subject.value += nul;
+  std::get<target::ResourceGrant>(nul_results[4]).scopes[0].permission += nul;
+  std::get<target::BotAccount>(nul_results[5]).display_name += nul;
+  std::get<target::PluginInstallation>(nul_results[6]).plugin_type.value += nul;
+  std::get<target::PluginInstance>(nul_results[7]).host->value += nul;
+  std::get<target::ScheduledTask>(nul_results[8]).target.conversation_id += nul;
+  std::get<target::Occurrence>(nul_results[9]).accepted_event_id->append(nul);
+  std::get<target::ModelIntent>(nul_results[10]).logical_call_id += nul;
+  auto nul_fence = snapshots[8];
+  std::get<target::PluginInstance>(nul_fence).current->connection.value += nul;
+  nul_results.push_back(std::move(nul_fence));
+  for (std::size_t index = 0; index < nul_results.size(); ++index) {
+    work = begin(database);
+    target::CommandReceipt invalid{
+        {{"actor"}, "nul-result", handoff.resource, "nul-" + std::to_string(index)},
+        handoff.payload_hash,
+        nul_results[index],
+        now,
+        now + std::chrono::hours(168)};
+    expect(work->receipts().insert(invalid, {100}), target::ErrorCode::InvalidArgument);
+    rejected(*work);
+  }
+  work = begin(database);
+  target::ReceiptKey nul_key{{"actor"}, "snapshot", handoff.resource, "key-1" + nul};
+  expect(work->receipts().find(nul_key), target::ErrorCode::InvalidArgument);
+  rejected(*work);
+  work = begin(database);
+  auto nul_context = handoff;
+  nul_context.causation->value += nul;
+  expect(work->journal().enqueue({nul_context,
+                                  {handoff.resource, {1}},
+                                  target::OutboxLane::Ordinary,
+                                  target::OutboxState::Pending,
+                                  0,
+                                  now,
+                                  {},
+                                  {}},
+                                 {10, 10, 10}, now),
+         target::ErrorCode::InvalidArgument);
+  rejected(*work);
+  work = begin(database);
+  expect(work->journal().received({config.service, {handoff.message.value + nul}}),
+         target::ErrorCode::InvalidArgument);
+  rejected(*work);
+  work = begin(database);
+  auto invalid_operation = operation;
+  invalid_operation.ref.id = {"nul-audit"};
+  invalid_operation.version = {1};
+  take(work->operations().save(invalid_operation, {}));
+  expect(work->journal().append_audit(
+             {{"actor"}, handoff.resource, "request", "trace" + nul, "write", {}, {1}, now}),
+         target::ErrorCode::InvalidArgument);
+  rejected(*work);
+  work = begin(database);
+  check(!take(work->operations().find({"nul-audit"})),
+        "invalid TEXT partially committed business state");
+  work->rollback();
   work = begin(database);
   target::CommandReceipt overflow{{{"actor"}, "snapshot", handoff.resource, "new-full"},
                                   handoff.payload_hash,
@@ -308,6 +371,11 @@ void check_common(Database& database, const DatabaseConfig& config) {
         "claim envelope lost");
   const auto claim = claims[0];
   committed(*work);
+  work = begin(database);
+  expect(work->journal().confirm({config.service, claim.entry.context.message},
+                                 {claim.claim_token.value + nul}, now),
+         target::ErrorCode::InvalidArgument);
+  rejected(*work);
   work = begin(database);
   expect(work->journal().confirm({config.service, claim.entry.context.message}, {"stale"}, now),
          target::ErrorCode::Conflict);

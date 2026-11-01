@@ -47,6 +47,90 @@ pqxx::row get_snapshot(pqxx::transaction_base& transaction, std::string_view tab
 }
 } // namespace
 
+bool valid_sql_text(std::string_view value) noexcept {
+  return value.find('\0') == std::string_view::npos;
+}
+bool valid_sql_text_fields(std::initializer_list<std::string_view> values) noexcept {
+  for (const auto value : values) {
+    if (!valid_sql_text(value)) {
+      return false;
+    }
+  }
+  return true;
+}
+bool valid_text(const target::Operation& value) noexcept {
+  return valid_sql_text_fields({value.ref.id.value, value.ref.resource.id.value});
+}
+bool valid_text(const target::HandoffContext& value) noexcept {
+  return valid_sql_text_fields(
+      {value.message.value, value.operation.id.value, value.operation.resource.id.value,
+       value.resource.id.value, value.actor.value,
+       value.causation ? std::string_view(value.causation->value) : std::string_view{}});
+}
+bool valid_text(const target::ReplayResult& result) noexcept {
+  if (result.valueless_by_exception()) {
+    return false;
+  }
+  return std::visit(
+      [](const auto& value) {
+        using Value = std::decay_t<decltype(value)>;
+        if constexpr (std::is_same_v<Value, target::EmptySuccess>) {
+          return true;
+        } else if constexpr (std::is_same_v<Value, target::ResourceMutationResult>) {
+          return valid_sql_text(value.resource.id.value);
+        } else if constexpr (std::is_same_v<Value, target::Operation>) {
+          return valid_text(value);
+        } else if constexpr (std::is_same_v<Value, target::Principal>) {
+          return valid_sql_text(value.id.value) &&
+                 (!value.binding || valid_sql_text(value.binding->id.value));
+        } else if constexpr (std::is_same_v<Value, target::LoginSession>) {
+          return valid_sql_text_fields({value.id.value, value.subject.value});
+        } else if constexpr (std::is_same_v<Value, target::ResourceGrant>) {
+          if (!valid_sql_text_fields({value.id.value, value.subject.value})) {
+            return false;
+          }
+          for (const auto& scope : value.scopes) {
+            if (!valid_sql_text_fields({scope.resource.id.value, scope.permission})) {
+              return false;
+            }
+          }
+          return true;
+        } else if constexpr (std::is_same_v<Value, target::BotAccount>) {
+          return valid_sql_text_fields(
+              {value.id.value, value.platform, value.platform_account_id, value.display_name});
+        } else if constexpr (std::is_same_v<Value, target::PluginInstallation>) {
+          return valid_sql_text_fields({value.id.value, value.plugin_type.value});
+        } else if constexpr (std::is_same_v<Value, target::PluginInstance>) {
+          if (!valid_sql_text_fields(
+                  {value.id.value, value.installation.value, value.plugin_type.value}) ||
+              (value.host && !valid_sql_text(value.host->value))) {
+            return false;
+          }
+          if (!value.current) {
+            return true;
+          }
+          const auto& fence = *value.current;
+          return valid_sql_text_fields({fence.instance.value, fence.runtime_epoch.value,
+                                        fence.execution.value, fence.connection.value});
+        } else if constexpr (std::is_same_v<Value, target::ScheduledTask>) {
+          return valid_sql_text_fields({value.key.owner.value, value.key.task_id,
+                                        value.installation.value, value.target.adapter.value,
+                                        value.target.account.value, value.target.conversation_id,
+                                        value.occurrence.value});
+        } else if constexpr (std::is_same_v<Value, target::Occurrence>) {
+          return valid_sql_text_fields({value.owner.value, value.installation.value, value.task_id,
+                                        value.occurrence_id.value}) &&
+                 (!value.accepted_event_id || valid_sql_text(*value.accepted_event_id)) &&
+                 valid_text(value.handoff);
+        } else {
+          static_assert(std::is_same_v<Value, target::ModelIntent>);
+          return valid_sql_text_fields(
+              {value.owner.value, value.logical_call_id, value.model.value});
+        }
+      },
+      result);
+}
+
 std::string timestamp(target::TimePoint value) {
   return std::to_string(
       std::chrono::duration_cast<std::chrono::nanoseconds>(value.time_since_epoch()).count());
@@ -96,6 +180,9 @@ target::Operation read_operation(const pqxx::row& row) {
     value.blocked_reason = enum_field<target::ErrorCode>(row["blocked_reason"], 10);
   }
   value.next_attempt = optional_time(row, "next_attempt");
+  if (!valid_text(value)) {
+    throw std::runtime_error("invalid stored operation text");
+  }
   return value;
 }
 pqxx::params handoff_params(const target::HandoffContext& value) {
@@ -140,6 +227,9 @@ target::HandoffContext read_handoff(const pqxx::row& row) {
   value.payload_hash = read_digest(row["payload_hash"]);
   value.created_at = time_field(row, "created_at");
   value.valid_until = time_field(row, "valid_until");
+  if (!valid_text(value)) {
+    throw std::runtime_error("invalid stored handoff text");
+  }
   return value;
 }
 
@@ -595,7 +685,11 @@ target::ReplayResult load_record(pqxx::transaction_base& transaction, std::int64
 } // namespace
 
 target::ReplayResult load_result(pqxx::transaction_base& transaction, std::int64_t id) {
-  return load_record(transaction, id);
+  auto value = load_record(transaction, id);
+  if (!valid_text(value)) {
+    throw std::runtime_error("invalid stored text representation");
+  }
+  return value;
 }
 std::optional<target::ReplayResult> load_live(pqxx::transaction_base& transaction, RecordKind kind,
                                               std::span<const std::string> key) {
@@ -606,6 +700,10 @@ std::optional<target::ReplayResult> load_live(pqxx::transaction_base& transactio
   if (exists.empty()) {
     return {};
   }
-  return load_record(transaction, 0, kind, key);
+  auto value = load_record(transaction, 0, kind, key);
+  if (!valid_text(value)) {
+    throw std::runtime_error("invalid stored text representation");
+  }
+  return value;
 }
 } // namespace kiarabot::infrastructure::postgres::detail

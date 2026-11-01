@@ -283,3 +283,7 @@ clientAuth EKU，时间使用调用者给定now。叶SHA256指纹、按配置选
 ASN.1长度比较（拒绝NUL）及登记主体/服务类型/凭据形状共同检查，不以CA通过替代登记。
 凭据当前有效性与now的权威数据库来源由应用负责，不从请求正文构造已验证peer。
 验证拒绝Unauthenticated，配置错误InvalidArgument，资源故障UpstreamUnavailable。
+
+所有PG TEXT入参（查询键、角色/资源引用、审计、交接及完整关系结果中的可选/嵌套文本）
+在绑定前拒绝嵌入NUL，返回InvalidArgument/NotAccepted，不能让libpq零终止参数截断成另一个键
+或内容。失败仍使整个UoW不可提交部分结果；bytea payload/摘要继续允许二进制零字节。

@@ -148,6 +148,10 @@ void identity(const DatabaseConfig& config) {
   check(take(work->principals().find(principal.id))->version.value == 1,
         "identity restart lost state");
   work->rollback();
+  work = take(factory->begin());
+  expect(work->authorizations().find({principal.id.value + '\0' + "suffix"}),
+         target::ErrorCode::InvalidArgument);
+  rollback_rejected(*work);
 }
 void runtime(const DatabaseConfig& config) {
   auto factory = take(open_runtime(config));
@@ -194,6 +198,18 @@ void runtime(const DatabaseConfig& config) {
             loaded->host->value == "live-host",
         "typed instance fence lost precision");
   work->rollback();
+
+  work = take(factory->begin());
+  const auto nul_lookup = work->accounts().find({account.id.value + '\0' + "suffix"});
+  check(std::holds_alternative<target::Failure>(nul_lookup), "NUL key aliased an existing account");
+  expect(nul_lookup, target::ErrorCode::InvalidArgument);
+  rollback_rejected(*work);
+  work = take(factory->begin());
+  auto nul_body = account;
+  nul_body.id = {"nul-body"};
+  nul_body.display_name = "prefix" + std::string(1, '\0') + "suffix";
+  expect(work->accounts().save(nul_body, {}), target::ErrorCode::InvalidArgument);
+  rollback_rejected(*work);
 
   // Two concurrent requests carry the same expected version; exactly one SQL CAS wins.
   std::latch start{1};

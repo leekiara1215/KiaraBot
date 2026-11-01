@@ -63,6 +63,10 @@ target::Failure storage_error() {
     return error(target::ErrorCode::Internal);
   }
 }
+bool valid_receipt_text(const target::ReceiptKey& key) {
+  return valid_sql_text_fields(
+      {key.subject.value, key.method, key.resource.id.value, key.idempotency_key});
+}
 pqxx::params receipt_key(const target::ReceiptKey& key) {
   return {key.subject.value, key.method, static_cast<int>(key.resource.kind), key.resource.id.value,
           key.idempotency_key};
@@ -235,14 +239,23 @@ public:
   find(const target::ReceiptKey& key) override {
     return invoke<std::optional<target::CommandReceipt>>(
         [&]() -> target::Outcome<std::optional<target::CommandReceipt>> {
+          if (!valid_receipt_text(key)) {
+            return error(target::ErrorCode::InvalidArgument);
+          }
           return find_receipt(key);
         });
   }
   target::Outcome<target::ReceiptWrite> insert(const target::CommandReceipt& receipt,
                                                target::ReceiptCapacity capacity) override {
     return invoke<target::ReceiptWrite>([&]() -> target::Outcome<target::ReceiptWrite> {
+      if (!valid_receipt_text(receipt.key)) {
+        return error(target::ErrorCode::InvalidArgument);
+      }
       lock_capacity(1);
       const auto existing = find_receipt(receipt.key);
+      if (!existing && !valid_text(receipt.result)) {
+        return error(target::ErrorCode::InvalidArgument);
+      }
       const auto used =
           exec("SELECT count(*) FROM kiarabot.command_receipts").one_row()[0].as<std::size_t>();
       const auto decision = target::check_receipt_write(existing ? &*existing : nullptr, receipt,
@@ -279,6 +292,10 @@ public:
   }
   target::Status append_audit(const target::AuditEntry& entry) override {
     return invoke<std::monostate>([&]() -> target::Status {
+      if (!valid_sql_text_fields({entry.actor.value, entry.resource.id.value, entry.request_id,
+                                  entry.trace_id, entry.method})) {
+        return error(target::ErrorCode::InvalidArgument);
+      }
       exec("INSERT INTO "
            "kiarabot.audit_entries(actor,resource_kind,resource_id,request_id,trace_id,method,"
            "rejection,authorization_version,occurred_at) "
@@ -296,6 +313,10 @@ public:
     return invoke<std::monostate>([&]() -> target::Status {
       if (entry.context.source != owner()) {
         return error(target::ErrorCode::PermissionDenied);
+      }
+      if (!valid_text(entry.context) ||
+          !valid_sql_text(entry.payload_reference.resource.id.value)) {
+        return error(target::ErrorCode::InvalidArgument);
       }
       lock_capacity(entry.lane == target::OutboxLane::Ordinary ? 2 : 3);
       const auto records =
@@ -414,6 +435,9 @@ public:
                          target::TimePoint now) override {
     (void)now;
     return invoke<std::monostate>([&]() -> target::Status {
+      if (!valid_sql_text_fields({key.message.value, token.value})) {
+        return error(target::ErrorCode::InvalidArgument);
+      }
       if (key.source != owner()) {
         return error(target::ErrorCode::InvalidArgument);
       }
@@ -431,16 +455,27 @@ public:
   target::Outcome<std::optional<target::InboxRecord>>
   received(const target::HandoffKey& key) override {
     return invoke<std::optional<target::InboxRecord>>(
-        [&]() -> target::Outcome<std::optional<target::InboxRecord>> { return find_inbox(key); });
+        [&]() -> target::Outcome<std::optional<target::InboxRecord>> {
+          if (!target::valid_service(key.source) || !valid_sql_text(key.message.value)) {
+            return error(target::ErrorCode::InvalidArgument);
+          }
+          return find_inbox(key);
+        });
   }
   target::Outcome<target::InboxWrite> record_received(const target::InboxRecord& receipt,
                                                       target::JournalCapacity capacity,
                                                       target::TimePoint now) override {
     (void)now;
     return invoke<target::InboxWrite>([&]() -> target::Outcome<target::InboxWrite> {
+      if (!valid_text(receipt.context)) {
+        return error(target::ErrorCode::InvalidArgument);
+      }
       lock_capacity(4);
       const target::HandoffKey key{receipt.context.source, receipt.context.message};
       const auto existing = find_inbox(key);
+      if (!existing && !valid_text(receipt.result)) {
+        return error(target::ErrorCode::InvalidArgument);
+      }
       const auto used = exec("SELECT count(*) FROM kiarabot.inbox").one_row()[0].as<std::size_t>();
       const auto decision = target::check_inbox_write(existing ? &*existing : nullptr, receipt,
                                                       used, capacity, db_now());
@@ -474,6 +509,9 @@ public:
   target::Outcome<std::optional<target::Operation>> find(const target::OperationId& id) override {
     return invoke<std::optional<target::Operation>>(
         [&]() -> target::Outcome<std::optional<target::Operation>> {
+          if (!valid_sql_text(id.value)) {
+            return error(target::ErrorCode::InvalidArgument);
+          }
           const auto rows = exec(
               "SELECT "
               "id,owner,resource_kind,resource_id,version,state,execution_outcome,blocked_reason," +
@@ -488,7 +526,7 @@ public:
   target::Status save(const target::Operation& value,
                       std::optional<target::ResourceVersion> expected) override {
     return invoke<std::monostate>([&]() -> target::Status {
-      if (value.ref.owner != owner() || value.ref.id.value.empty() ||
+      if (!valid_text(value) || value.ref.owner != owner() || value.ref.id.value.empty() ||
           value.ref.resource.id.value.empty() ||
           (expected && (expected->value == std::numeric_limits<std::uint64_t>::max() ||
                         value.version.value != expected->value + 1))) {
@@ -539,7 +577,8 @@ public:
             return error(target::ErrorCode::PermissionDenied);
           }
           if (key.size() != spec.keys.size() ||
-              std::any_of(key.begin(), key.end(), [](const auto& part) { return part.empty(); })) {
+              std::any_of(key.begin(), key.end(),
+                          [](const auto& part) { return part.empty() || !valid_sql_text(part); })) {
             return error(target::ErrorCode::InvalidArgument);
           }
           return load_live(*transaction_, kind, key);
@@ -555,10 +594,14 @@ public:
       if (static_cast<int>(kind) != static_cast<int>(value.index())) {
         return error(target::ErrorCode::InvalidArgument);
       }
+      if (!valid_text(value)) {
+        return error(target::ErrorCode::InvalidArgument);
+      }
       const auto key = record_key(value);
       const auto version = record_version(value);
       if (key.size() != spec.keys.size() ||
-          std::any_of(key.begin(), key.end(), [](const auto& part) { return part.empty(); }) ||
+          std::any_of(key.begin(), key.end(),
+                      [](const auto& part) { return part.empty() || !valid_sql_text(part); }) ||
           (expected && (expected->value == std::numeric_limits<std::uint64_t>::max() ||
                         version.value != expected->value + 1))) {
         return error(target::ErrorCode::InvalidArgument);
@@ -577,7 +620,7 @@ public:
       if (owner() != target::Service::Identity) {
         return error(target::ErrorCode::PermissionDenied);
       }
-      if (subject.value.empty()) {
+      if (subject.value.empty() || !valid_sql_text(subject.value)) {
         return error(target::ErrorCode::InvalidArgument);
       }
       const auto rows = exec(
@@ -598,7 +641,7 @@ public:
       if (owner() != target::Service::Identity) {
         return error(target::ErrorCode::PermissionDenied);
       }
-      if (state.subject.value.empty() ||
+      if (state.subject.value.empty() || !valid_sql_text(state.subject.value) ||
           (expected && (expected->value == std::numeric_limits<std::uint64_t>::max() ||
                         state.version.value != expected->value + 1))) {
         return error(target::ErrorCode::InvalidArgument);

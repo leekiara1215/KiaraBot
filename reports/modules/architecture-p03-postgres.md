@@ -314,3 +314,27 @@ receipt读取/恢复；无sanitizer报告。固定tidy22对database/common_work/
 common_work_checks四个变更TU实际通过，新增backend目录核验后再对database_test定向通过。
 format16变更源/头、固定Python3.11 py_compile、文档路径/章节/换行、diff和doc18无差异检查通过。
 实际文档更新doc/05、doc/08及本报告；Root全门禁仍由父在集成SHA实际执行，无其他模块改动。
+
+## SQL TEXT NUL截断修复
+
+实际红测证明：libpqxx7.10传TEXT参数给libpq，后者按零终止字符串取长，
+查询 `live-account` 后附嵌入NUL及suffix竟命中原account。红测以确定原因
+`NUL key aliased an existing account`失败，不是猜测依赖行为。
+
+在PG端口集中加入纯文本表示检查，绑定前显式InvalidArgument/NotAccepted：
+receipt所有scope键、新typed结果的所有文本（包括Principal binding、instance host/fence、
+occurrence可选event、grant scope、task会话、模型call）、operations、audit、outbox/inbox
+envelope/payload引用及confirm token、live单/组合键、authorization主体均覆盖。
+正常业务拒绝不以异常控制；无法解码/损坏的存储文本仍是Internal。重复原收据只重放原结果，
+不使用本次未持久化的结果重写已有快照。Task payload和SHA字节数组保持binary，00/ff不误拒绝。
+
+真实PG回归从红转绿：NUL查询不再别名/返回absence；11类带文本结果及额外fence可选字段、
+receipt/inbox查询、causation、claim token、审计trace均拒绝；审计拒绝回滚前序operation。
+Unicode、完整12类结果、低位ns/int64端点、bytea00/ff及原故障矩阵全部继续通过。
+同固定-Werror三目标重编通过，普通和ASan/UBSan分别真实TLS PG16.4全fixture通过、无sanitizer报告；
+四变更TU(common_work/record_codec/common_work_checks/typed_work_checks)固定tidy22通过，
+format16及文档/diff检查通过。未修改schema/CMake或产生新稳定错误码。
+
+文档影响：更新doc/05及本报告。doc/08无需变化（无启动/运维/配置变化）；proto/API无需变化，
+本轮只修内部PG端口的不可表示文本，外部业务RPC仍未接线，既有InvalidArgument映射保持。
+其他模块/冻结doc/18不改。后续P04安全仓储复用该表示检查，不能让login/key引用出现同类截断。
