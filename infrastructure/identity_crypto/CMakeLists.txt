@@ -3,14 +3,15 @@ find_package(unofficial-sodium CONFIG REQUIRED)
 find_package(jwt-cpp CONFIG REQUIRED)
 find_package(nlohmann_json 3.11.3 EXACT CONFIG REQUIRED)
 add_library(kiarabot_identity_crypto STATIC src/password_crypto.cpp src/token_crypto.cpp
-  src/receipt_crypto.cpp src/peer_certificate.cpp src/delegation_crypto.cpp src/key_files.cpp)
+  src/receipt_crypto.cpp src/peer_certificate.cpp src/delegation_crypto.cpp src/key_files.cpp
+  src/verification_keys.cpp)
 target_include_directories(kiarabot_identity_crypto PUBLIC
   include ${CMAKE_SOURCE_DIR}/core/include)
 target_link_libraries(kiarabot_identity_crypto PRIVATE unofficial-sodium::sodium
   jwt-cpp::jwt-cpp nlohmann_json::nlohmann_json)
 kiarabot_platform_warnings(kiarabot_identity_crypto)
 
-foreach(COMPONENT password_crypto token_crypto receipt_crypto peer_certificate delegation_crypto key_files)
+foreach(COMPONENT password_crypto token_crypto receipt_crypto peer_certificate delegation_crypto key_files verification_keys)
   add_executable(kiarabot_${COMPONENT}_test tests/${COMPONENT}_test.cpp)
   target_link_libraries(kiarabot_${COMPONENT}_test PRIVATE kiarabot_identity_crypto)
   kiarabot_platform_warnings(kiarabot_${COMPONENT}_test)
@@ -40,3 +41,7 @@ target_include_directories(kiarabot_key_files_test SYSTEM PRIVATE
 # The source-owned fixture creates build/key-files-* relative to its working directory.
 file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/build")
 set_tests_properties(p04_key_files PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
+
+# Verification material tests create real Ed25519 public keys with the locked OpenSSL headers.
+target_include_directories(kiarabot_verification_keys_test SYSTEM PRIVATE
+  $<TARGET_PROPERTY:OpenSSL::Crypto,INTERFACE_INCLUDE_DIRECTORIES>)

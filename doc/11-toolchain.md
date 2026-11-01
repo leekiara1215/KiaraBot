@@ -611,3 +611,8 @@ Identity RPC 接入实际 `kiarabot-identity`，内层不引入平台依赖。
 `p04_identity_daemon_tls_expiry` 为同一真实链路的到期变体：临时签发八秒有效的
 Identity 服务证书，在既有 Control gRPC 通道上验证到期拒绝并退出；不修改系统时间。
 测试始终收割全部自己启动的进程，单个退出异常不能跳过另一进程清理。
+
+公开验签材料B能力将 `verification_keys.cpp` 纳入现Identity crypto外层库，
+`p04_verification_keys` 注册unit/security、30秒且保留assert，直接OpenSSL头取官方
+imported target，链接沿现有依赖。finite metadata同时由正式配置、clock、真实PG应用
+及daemon HTTPS回归验证；own-TLS-expiry独立变体由生产组合接线另行登记。
