@@ -22,8 +22,8 @@ target::Failure failure(target::ErrorCode code) {
 
 class SodiumSecret final : public target::SecretBuffer {
 public:
-  explicit SodiumSecret(std::size_t size)
-      : allocation_(sodium_malloc(size == 0 ? 1 : size)), size_(size) {
+  explicit SodiumSecret(std::size_t size, bool trailing_nul = false)
+      : allocation_(sodium_malloc(size == 0 ? 1 : size + (trailing_nul ? 1 : 0))), size_(size) {
     if (allocation_ == nullptr) {
       throw std::bad_alloc{};
     }
@@ -47,6 +47,17 @@ private:
 
 class SodiumRandom final : public target::RandomPort {
 public:
+  target::Outcome<target::OwnedSecret> opaque_token() override {
+    try {
+      SodiumSecret entropy(32);
+      randombytes_buf(entropy.writable(), entropy.bytes().size());
+      auto token = std::make_unique<SodiumSecret>(64, true);
+      sodium_bin2hex(reinterpret_cast<char*>(token->writable()), 65, entropy.writable(), 32);
+      return target::OwnedSecret{std::move(token)};
+    } catch (const std::bad_alloc&) {
+      return failure(target::ErrorCode::UpstreamUnavailable);
+    }
+  }
   target::Outcome<target::OwnedSecret> bytes(std::size_t count) override {
     if (count == 0 || count > kMaximumSecret) {
       return failure(target::ErrorCode::InvalidArgument);

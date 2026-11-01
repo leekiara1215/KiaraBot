@@ -200,3 +200,18 @@ Zero/three hops or mismatched chain reject. Core owns exact child chain append/n
 permission narrowing and preserved origin; one signed proof cannot establish parent relation.
 Doc/05 synchronized; doc/08 key/clock behavior unchanged by this correction, proto/API/doc18
 unchanged. Real Ed25519 tests cover the first and second edges and explicit rejected extra edges.
+
+## ASCII opaque token follow-up
+
+Reviewed pure RandomPort extension ef956c6 cherry-picked as c6a2da2; doc/02 append conflict retained
+both reviewed additions. SodiumRandom::opaque_token draws32bytes CSPRNG into sodium_malloc memory,
+uses mature sodium_bin2hex into secure65-byte allocation, exposes only64lowerhex bytes with no NUL.
+Raw bytes remains for internal UUID entropy. Both entropy and output erase through sodium_free;
+no stdstring plaintext conversion or Core encoding/wiping. Allocation exceptions map to existing
+UpstreamUnavailable; no weak fallback. Deterministic allocation-fault injection was not added to
+production allocator API, so that rare branch is code-reviewed rather than runtime fault-tested.
+Real64hex/noNUL/different-output tests and existing password tests pass with -Werror ASan/UBSan
+-fno-sanitize-recover=all. Full tidy22 analyzer/bugprone on source+test passes with zero exclusions;
+test main now catches unexpected exceptions. Format16 and diff checks pass. No CMake/main/API
+changes; parent must integrate pure header and this implementation together to avoid abstract
+RandomPort subclasses. Frozen six-method application work remains separate and in progress.
