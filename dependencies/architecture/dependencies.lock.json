@@ -1,0 +1,107 @@
+{
+  "schema": 1,
+  "vcpkg": {
+    "repository": "https://github.com/microsoft/vcpkg",
+    "revision": "ce613c41372b23b1f51333815feb3edd87ef8a8b",
+    "ports": {
+      "abseil": {
+        "version": "20250127.0",
+        "port-version": 0,
+        "git-tree": "274bd7ad7d033b67d78f202b33b280904763c5c7",
+        "portfile-sha256": "b5e3de5dd661d3e93fa129c99d09dddfa7078a59334e0b457a2b73b068c72e88"
+      },
+      "boost-asio": {
+        "version": "1.87.0",
+        "port-version": 1,
+        "git-tree": "05c6ddb5e69d7b3397822f72d7b582757e0f8dd7",
+        "portfile-sha256": "2b32d1d229db61b2a4c1026ef40eb00c208eb2e42fe2660591c05b99be10a89e"
+      },
+      "boost-beast": {
+        "version": "1.87.0",
+        "port-version": 0,
+        "git-tree": "715a450277f5fddc04a828f087e47aabb61decf6",
+        "portfile-sha256": "127cba19eb9bbd3ddc35435c1a411ec9923298fd4d90dea4750d4679668045f3"
+      },
+      "curl": {
+        "version": "8.13.0",
+        "port-version": 1,
+        "git-tree": "e0b645f9e08afb96b7d7eda9489663ffa41bf7c1",
+        "portfile-sha256": "3505f20021636059d4040ac2b5063e1be687b43e78de9721b389e14f487311a0"
+      },
+      "grpc": {
+        "version": "1.71.0",
+        "port-version": 0,
+        "git-tree": "6c5319c24f882d2b64f517a1c00cac89d166f063",
+        "portfile-sha256": "db37974bf689c7ceae79083ee0d224c2d85c777c95f80f6787c0158afdeed273"
+      },
+      "jwt-cpp": {
+        "version": "0.7.0",
+        "port-version": 1,
+        "git-tree": "b0890909dce2e5ce69df737f928c152dd432a6d8",
+        "portfile-sha256": "d2d30a44bc0d0de523d06629cfc4272e8ba3548fd88c4d2ca608f027a8110a32"
+      },
+      "libpq": {
+        "version": "16.4",
+        "port-version": 0,
+        "git-tree": "dcaa1ec8552b8ef987d6d80f708b8828bcd795eb",
+        "portfile-sha256": "dd855f9f70b10a2a3ce860a4f2d592d03d5630bd11d41adc7ec70e61ecea926b"
+      },
+      "libpqxx": {
+        "version": "7.10.0",
+        "port-version": 0,
+        "git-tree": "a1e988750bfa79648a00ac3c6a211a956a8cc237",
+        "portfile-sha256": "9daedd91587f613360924baa3de9617de66e15f1ad8aa7d0f6070d2cb683166f"
+      },
+      "libsodium": {
+        "version": "1.0.20",
+        "port-version": 3,
+        "git-tree": "6dcb750702485c4dafac0b605b910b81e2c48831",
+        "portfile-sha256": "513d4d04cd34e0c362d239c8d42394f3a3c3c9999898cc8d16bb965d595c8bc8"
+      },
+      "nlohmann-json": {
+        "version": "3.11.3",
+        "port-version": 1,
+        "git-tree": "324d32ddba70bc49650d1a067ddcf3d0bfc6c9b6",
+        "portfile-sha256": "cb2fc174d9a02003edc788b53286b21e25f29515c77e8f49a3f6df64594d1592"
+      },
+      "openssl": {
+        "version": "3.5.0",
+        "port-version": 0,
+        "git-tree": "7558a3501e44a455ac8fcbe14b622503eb9574ee",
+        "portfile-sha256": "c5152ef5291ac1676f0b83de99574dce6445de5e0ea3b6960911fa0da8b63d4b"
+      },
+      "protobuf": {
+        "version": "5.29.3",
+        "port-version": 0,
+        "git-tree": "53c97b927087d1919f2a7ef6c34e4caf1a00cdf9",
+        "portfile-sha256": "af4dc55ccc60beeda0d8b64ce16cec90ed1d9836603e028613afd00b26abb477"
+      },
+      "sqlite3": {
+        "version": "3.49.1",
+        "port-version": 0,
+        "git-tree": "92c7e25e29daa51849b0f0b82bae84898ebb80d9",
+        "portfile-sha256": "cc05b4fec07b6563c01f0135bbe12a64529169fd1280ac50bffa90613ee6e2ca"
+      }
+    }
+  },
+  "postgresql": {
+    "version": "16.4",
+    "url": "https://ftp.postgresql.org/pub/source/v16.4/postgresql-16.4.tar.bz2",
+    "sha512": "f2070299f0857a270317ac984f8393374cf00d4f32a082fe3c5481e36c560595ea711fed95e40d1bc90c5089edf8f165649d443d8b9c68614e1c83fc91268e96"
+  },
+  "python": {
+    "version": "3.11.18",
+    "provider": "uv managed Python; uv.lock per project"
+  },
+  "uv": {
+    "version": "0.13.6"
+  },
+  "node": {
+    "version": "22.14.0",
+    "url": "https://nodejs.org/dist/v22.14.0/",
+    "sha256": {
+      "node-v22.14.0-darwin-arm64.tar.gz": "e9404633bc02a5162c5c573b1e2490f5fb44648345d64a958b17e325729a5e42",
+      "node-v22.14.0-linux-x64.tar.xz": "69b09dba5c8dcb05c4e4273a4340db1005abeafe3927efda2bc5b249e80437ec"
+    }
+  }
+}

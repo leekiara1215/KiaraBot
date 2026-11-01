@@ -1,0 +1,93 @@
+{
+  "name": "kiarabot-architecture",
+  "version-string": "0.1.0",
+  "builtin-baseline": "ce613c41372b23b1f51333815feb3edd87ef8a8b",
+  "dependencies": [
+    "abseil",
+    "boost-asio",
+    "boost-beast",
+    "curl",
+    "grpc",
+    "jwt-cpp",
+    {
+      "name": "libpq",
+      "features": [
+        "client",
+        "openssl"
+      ]
+    },
+    "libpqxx",
+    "libsodium",
+    "nlohmann-json",
+    "openssl",
+    "protobuf",
+    "sqlite3"
+  ],
+  "overrides": [
+    {
+      "name": "abseil",
+      "version": "20250127.0",
+      "port-version": 0
+    },
+    {
+      "name": "boost-asio",
+      "version": "1.87.0",
+      "port-version": 1
+    },
+    {
+      "name": "boost-beast",
+      "version": "1.87.0",
+      "port-version": 0
+    },
+    {
+      "name": "curl",
+      "version": "8.13.0",
+      "port-version": 1
+    },
+    {
+      "name": "grpc",
+      "version": "1.71.0",
+      "port-version": 0
+    },
+    {
+      "name": "jwt-cpp",
+      "version": "0.7.0",
+      "port-version": 1
+    },
+    {
+      "name": "libpq",
+      "version": "16.4",
+      "port-version": 0
+    },
+    {
+      "name": "libpqxx",
+      "version": "7.10.0",
+      "port-version": 0
+    },
+    {
+      "name": "libsodium",
+      "version": "1.0.20",
+      "port-version": 3
+    },
+    {
+      "name": "nlohmann-json",
+      "version": "3.11.3",
+      "port-version": 1
+    },
+    {
+      "name": "openssl",
+      "version": "3.5.0",
+      "port-version": 0
+    },
+    {
+      "name": "protobuf",
+      "version": "5.29.3",
+      "port-version": 0
+    },
+    {
+      "name": "sqlite3",
+      "version": "3.49.1",
+      "port-version": 0
+    }
+  ]
+}

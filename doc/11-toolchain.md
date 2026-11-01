@@ -98,3 +98,67 @@ gRPC Core 构建显式链接 OpenSSL Crypto 3.0+，使用 EVP SHA-256 计算适�
 控制验收环境：`uv sync --project control/api/tests --locked --python 3.11.18`，固定 pytest 8.3.5、jsonschema 4.23.0、PyYAML 6.0.2、websockets 15.0.1 与 uv.lock 全部传递依赖；网络测试只连接本机临时进程。执行 `control/api/tests/.venv/bin/python -m pytest -q control/api/tests`。环境存在且启用基础设施时注册到 CTest；统一 tests/acceptance/run.sh 始终要求此环境，缺失会失败。面板 `npm test` 也使用该 C++ fixture，需先构建 proto + infrastructure；Node 22.12+ 支持原生 WebSocket。
 
 格式脚本通过 rg 尊重 .gitignore，排除本机构建树和第三方 `.venv`、`.tools`、`.ci-vcpkg`，静态分析扩展到 control/api 与 infrastructure 手写 C++。本轮未安装 clang-tidy 时仍由统一检查明确失败，不能把格式/编译替代静态分析。
+
+## P00 目标架构依赖锁（2026-11-01）
+
+本节描述新架构的独立开发锁，不声称旧 full 构建已切换或发布镜像已验证。
+锁位于 `dependencies/architecture/vcpkg.json` 和 `dependencies.lock.json`。
+registry/tool 沿用 CI 的 `ce613c41372b23b1f51333815feb3edd87ef8a8b`；全部传递
+port 由该提交的 baseline 决定，直接依赖额外使用精确 override。每项记录官方版本数据库
+的 git-tree 和 portfile SHA-256；上游归档的 SHA-512 由固定 portfile 校验。
+
+| 用途 | 固定版本（# 为 port revision） | 获取/用途 |
+| --- | --- | --- |
+| PG 服务端 | PostgreSQL 16.4 | 官方 tar.bz2；锁内 SHA-512，独立编译 server |
+| PG 客户端 | libpq 16.4#0，client/openssl features | vcpkg，含 psql；不包含可运行 server |
+| 唯一中央 C++ PG 驱动 | libpqxx 7.10.0#0 | Repository/UoW 外层使用，不进入业务内层 |
+| JWT/JWS | jwt-cpp 0.7.0#1 | 固定 `jwt::algorithm::ed25519`，不自动允许其他算法 |
+| TLS/CA 工具 | OpenSSL 3.5.0#0 | libssl/libcrypto；同版 openssl CLI 用于离线根/受限中间 CA |
+| 密码/秘密 | libsodium 1.0.20#3 | 不自行实现密码算法 |
+| 协议 | gRPC 1.71.0#0、Protobuf 5.29.3#0 | protoc 对应 29.3，plugin 与 runtime 同源构建 |
+| 本地日志 | SQLite 3.49.1#0 | 仅 Host/Adapter；不作中央 PG 后备 |
+| HTTP/WS | Boost.Asio 1.87.0#1、Beast 1.87.0#0 | 传输边界 |
+| Provider HTTP | curl 8.13.0#1 | 基础设施 |
+| 时区/JSON | Abseil 20250127.0#0、nlohmann-json 3.11.3#1 | 仅外层适配器 |
+| Python | 3.11.18 | 与现有 CI 一致，由 uv 管理；各项目 uv.lock 锁包与归档 hash |
+| Python 管理器 | uv 0.13.6 | 与现有 CI 一致；安装包来源 PyPI |
+| Node | 22.14.0 | 官方 linux-x64 / darwin-arm64 归档，锁内官方 SHA-256 |
+
+以上沿用现有 registry 的开发基点，不表示完成发布安全审计；发布前应以协调后的新
+registry 统一升级并重验，而不能独立替换某个系统库后仍宣称同一环境。
+[官方 registry](https://github.com/microsoft/vcpkg/tree/ce613c41372b23b1f51333815feb3edd87ef8a8b)
+保存完整获取/补丁/hash 规则；[jwt-cpp 固定源码](https://github.com/Thalhammer/jwt-cpp/blob/v0.7.0/include/jwt-cpp/jwt.h)
+定义 Ed25519 接口；[Node 官方校验清单](https://nodejs.org/dist/v22.14.0/SHASUMS256.txt)
+是两个 Node 归档 hash 的来源。锁不是下载的第三方源码。
+
+获取及验证（命令从仓库根运行；网络/安装需遵守环境权限）：
+
+```bash
+# 将官方 vcpkg checkout 放到忽略的 build/，先检出上表固定提交，再 bootstrap。
+python3 scripts/quality/check-dependency-lock.py
+python3 scripts/quality/tests/dependency_lock_test.py
+python3 scripts/quality/check-dependency-lock.py --registry build/vcpkg
+build/vcpkg/bootstrap-vcpkg.sh -disableMetrics
+build/vcpkg/vcpkg install --x-manifest-root=dependencies/architecture --triplet=x64-linux --x-install-root=build/architecture-installed
+# macOS arm64 使用 arm64-osx；不能把它当作 Linux 验收。
+# 下载锁内 PG/Node URL 后，先校验，禁止未校验就解包执行。
+python3 scripts/quality/check-dependency-lock.py --archive build/postgresql-16.4.tar.bz2
+python3 scripts/quality/check-dependency-lock.py --archive build/node-v22.14.0-linux-x64.tar.xz
+uv python install 3.11.18
+uv sync --project sdk/python --locked --python 3.11.18
+uv sync --project adapters/nonebot --locked --python 3.11.18
+uv sync --project control/api/tests --locked --python 3.11.18
+```
+
+PG 服务端从已校验的同一官方源码归档独立配置编译，例如在忽略目录中执行
+`./configure --prefix="$PWD/../pg-install" --with-openssl --without-readline --without-icu`、
+`make -j2`、`make install`；构建机需 C 编译器、make、OpenSSL 开发包和 zlib。
+这不启动服务、不建库、不授予生产权限。CA CLI 也须核对 `openssl version` 为 3.5.0，
+不能默认使用 macOS PATH 的其他 OpenSSL；vcpkg 不保证提供 CLI，缺失时从固定
+openssl portfile 的同一上游源码/hash 构建 CLI。证书引导及签发自动化留 P04/P14。
+
+离线锁检查只验证清单一致性；`--registry` 额外核对提交、port tree、portfile 和工作树，
+`--archive` 流式校验指定已下载归档。三者都不证明依赖已经安装或 ABI 相容；错误非零退出。
+Python/uv 安装器本身尚无本仓库归档 hash，只有精确版本及现有项目包锁；P14 镜像锁需
+补全所选平台 Python/uv 二进制及基础 OS digest，不能把目前清单称为完整镜像复现。
+本轮不更改 CI 或根 CMake；P02 由主对话协调 toolchain/manifest 接线。
