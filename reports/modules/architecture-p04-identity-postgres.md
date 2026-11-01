@@ -185,3 +185,31 @@ Identity新空库版本5、其他三库4；新typed表保存created_at等完整�
 UpstreamUnavailable，旧写入未提交、实例停用；不以成功0代替故障。
 3 TU analyzer+braces clang-tidy22、clang-format16、文档UTF8/换行/章节与diff检查通过。
 doc18无差异；无新TU/无schema/CMake变化。根完整CMake/CTest仍由主任务集成后执行。
+
+## 精确赋权仓储与安全工厂（实施中）
+
+输入为冻结Core bdc05b9元数据helper和5a1f5eb精确校验；仅改postgres实现/公共工厂声明/
+既有测试、doc05/doc08与本报告。不改Core规则/API/SQLschema/manifest或保护基线。
+精确关系为唯一授权权威；base grant仅Core生成的有效permission/resource元数据，
+同id/subject/version CAS同步。坏形状写入InvalidArgument、坏行读取Internal、CAS Conflict。
+允许新增identity_assignments.cpp由工具链任务接线；安全工厂保持P03接口兼容，用
+同一CommonWork创建所有继承与新仓储，不向下转换旧工厂，不开第二事务。
+验收包括真实精确tuple/元数据、非product/混合/NUL/CAS/损坏拒绝、公开工厂全部端口
+同事务回滚、忙等待/生命周期/故障及既有四库回归。最终固定依赖初始化CLI/普通/ASan+UBSan三种-Werror构建、两套独立真实PG四库fixture
+全部通过。4 TU（assignments/factories/common测试/typed测试）analyzer+braces clang-tidy22
+warnings-as-errors零诊断，clang-format16、文档UTF8/换行/章节与diff检查通过，doc18无差异。
+
+精确仓储测试覆盖：三个独立Assignment保持边界，role-A与explicit-B不混配、Catalog不
+继承child、Core metadata字段一致、完整permission×scope product往返、非product/混合/
+NUL InvalidArgument、version CAS与损坏product Internal。保存逐tuple写入，不按全表展平。
+公开open_identity_security测试覆盖：同一个UoW经全部继承/安全端口写入，故意文本失败
+后principal/credential/login/security session/base session/exact/base grant/authorization/
+ordinary receipt/sealed receipt/operation与bootstrap消费整体回滚；正向共同提交并新事务
+读取，journal审计也经同一CommonWork。busy begin返回Conflict；工厂销毁后活动UoW仍可用，
+持锁期间新工厂被拒绝，UoW结束后新工厂可打开并采样。
+
+无schema/manifest改变，仍Identity5/其他4。工具链只需新增库源
+`infrastructure/postgres/src/identity_assignments.cpp`；其他均既有TU，公共头为
+`kiarabot/infrastructure/postgres/security_factory.hpp`。根完整CMake/CTest由主任务接入冻结
+提交后执行，本工作树未运行该门禁；上述真实库验证使用最终重建产物，不是mock。
+该工厂为存储依赖，认证/crypto/实际HTTP应用的联调属于主任务，不能将仓储通过等同应用就绪。

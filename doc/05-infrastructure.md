@@ -350,3 +350,12 @@ id/subject/created_at/expires_at/rotation/version/revoked，保留纳秒与uint6
 会话安全仓储 count_unexpired() 在同一SqlWork中按实际DB UTC统计全库非revoked且
 refresh_expires_at严格未来的行，无caller-now/缓存/列表推算，依赖错误返回Failure。
 4096全局上限由Core新建会话用例在同一最终事务检查，存储不另造授权或上限策略。
+
+精确赋权仓储逐Assignment保存role/resource或permission/resource关系，复用Core的
+validate_exact_assignment和to_resource_grant_metadata同步同一grant元数据头/版本。
+读取集合也由Core验证单basis、完整product与重复ID；坏行Internal，写入非法形状
+InvalidArgument。仓储不把不同Assignment的role/scope混配，不自创permission字符串。
+
+公开 security_factory.hpp 的open_identity_security验证Identity库后提供完整typed安全工厂。
+所有继承与安全仓储共用一个物理事务/失败状态/2秒总预算和250ms锁预算；UoW可晚于
+工厂销毁，终态释放许可，旧失效实例不重连。原open_identity接口保持兼容。

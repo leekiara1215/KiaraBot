@@ -6,6 +6,8 @@
 #include <variant>
 #include <vector>
 
+#include "identity_security.hpp"
+#include "kiarabot/infrastructure/postgres/security_factory.hpp"
 #include "record_access.hpp"
 
 namespace kiarabot::infrastructure::postgres {
@@ -173,6 +175,99 @@ public:
 private:
   LiveRepository<target::ModelCallKey, target::ModelIntent> intents_;
 };
+class IdentitySecurityWork final : public target::IdentitySecurityUnitOfWork {
+public:
+  explicit IdentitySecurityWork(detail::CommonWorkAccess common)
+      : common_(std::move(common)), principals_(work(), detail::RecordKind::Principal),
+        sessions_(work(), detail::RecordKind::Session), grants_(work(), detail::RecordKind::Grant),
+        authorizations_(work()), credentials_(detail::credential_repository(*common_.sql)),
+        security_(detail::session_security_repository(*common_.sql)),
+        assignments_(detail::exact_assignment_repository(*common_.sql)),
+        secrets_(detail::secret_receipt_repository(*common_.sql)),
+        bootstrap_(detail::bootstrap_repository(*common_.sql)) {}
+  target::Outcome<target::TimePoint> current_time() override {
+    return work().current_time();
+  }
+  target::ReceiptRepository& receipts() override {
+    return work().receipts();
+  }
+  target::JournalRepository& journal() override {
+    return work().journal();
+  }
+  target::Repository<target::OperationId, target::Operation>& operations() override {
+    return work().operations();
+  }
+  target::CommitResult commit() override {
+    return work().commit();
+  }
+  void rollback() noexcept override {
+    work().rollback();
+  }
+  target::Repository<target::SubjectId, target::Principal>& principals() override {
+    return principals_;
+  }
+  target::Repository<target::SessionId, target::LoginSession>& sessions() override {
+    return sessions_;
+  }
+  target::Repository<target::AssignmentId, target::ResourceGrant>& grants() override {
+    return grants_;
+  }
+  target::Repository<target::SubjectId, target::AuthorizationState>& authorizations() override {
+    return authorizations_;
+  }
+  target::IdentityCredentialRepository& credentials() override {
+    return *credentials_;
+  }
+  target::IdentitySessionSecurityRepository& session_security() override {
+    return *security_;
+  }
+  target::IdentityExactAssignmentRepository& exact_assignments() override {
+    return *assignments_;
+  }
+  target::IdentitySecretReceiptRepository& secret_receipts() override {
+    return *secrets_;
+  }
+  target::IdentityBootstrapRepository& bootstrap() override {
+    return *bootstrap_;
+  }
+
+private:
+  target::UnitOfWork& work() {
+    return *common_.work;
+  }
+  detail::CommonWorkAccess common_;
+  LiveRepository<target::SubjectId, target::Principal> principals_;
+  LiveRepository<target::SessionId, target::LoginSession> sessions_;
+  LiveRepository<target::AssignmentId, target::ResourceGrant> grants_;
+  AuthorizationRepository authorizations_;
+  std::unique_ptr<target::IdentityCredentialRepository> credentials_;
+  std::unique_ptr<target::IdentitySessionSecurityRepository> security_;
+  std::unique_ptr<target::IdentityExactAssignmentRepository> assignments_;
+  std::unique_ptr<target::IdentitySecretReceiptRepository> secrets_;
+  std::unique_ptr<target::IdentityBootstrapRepository> bootstrap_;
+};
+class IdentitySecurityFactory final : public target::IdentitySecurityUnitOfWorkFactory {
+public:
+  explicit IdentitySecurityFactory(std::unique_ptr<Database> database)
+      : database_(std::move(database)) {}
+  target::Outcome<std::unique_ptr<target::IdentitySecurityUnitOfWork>> begin() override {
+    auto begun = detail::DatabaseAccess::begin(*database_);
+    if (const auto* rejected = std::get_if<target::Failure>(&begun)) {
+      return *rejected;
+    }
+    try {
+      return std::unique_ptr<target::IdentitySecurityUnitOfWork>(
+          std::make_unique<IdentitySecurityWork>(
+              std::move(std::get<detail::CommonWorkAccess>(begun))));
+    } catch (...) {
+      return failure(target::ErrorCode::Internal);
+    }
+  }
+
+private:
+  std::unique_ptr<Database> database_;
+};
+
 template <typename Work, typename Contract>
 class Factory final : public target::LocalUnitOfWorkFactory<Contract> {
 public:
@@ -212,6 +307,24 @@ open_factory(const DatabaseConfig& config, target::Service owner) {
   }
 }
 } // namespace
+
+target::Outcome<std::unique_ptr<target::IdentitySecurityUnitOfWorkFactory>>
+open_identity_security(const DatabaseConfig& config) {
+  if (config.service != target::Service::Identity) {
+    return failure(target::ErrorCode::InvalidArgument);
+  }
+  auto opened = Database::open(config);
+  if (const auto* rejected = std::get_if<target::Failure>(&opened)) {
+    return *rejected;
+  }
+  try {
+    return std::unique_ptr<target::IdentitySecurityUnitOfWorkFactory>(
+        std::make_unique<IdentitySecurityFactory>(
+            std::move(std::get<std::unique_ptr<Database>>(opened))));
+  } catch (...) {
+    return failure(target::ErrorCode::Internal);
+  }
+}
 
 target::Outcome<std::unique_ptr<target::IdentityUnitOfWorkFactory>>
 open_identity(const DatabaseConfig& config) {

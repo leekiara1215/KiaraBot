@@ -10,6 +10,7 @@
 #include <variant>
 
 #include "kiarabot/infrastructure/postgres/factories.hpp"
+#include "kiarabot/infrastructure/postgres/security_factory.hpp"
 
 namespace kiarabot::infrastructure::postgres::test {
 namespace {
@@ -54,6 +55,142 @@ template <typename Factory> void concurrent_probe(Factory& factory) {
   check(busy, "concurrent typed begin did not serialize");
   active->rollback();
 }
+void security(const DatabaseConfig& config) {
+  auto factory = take(open_identity_security(config));
+  concurrent_probe(*factory);
+  for (int pass = 0; pass < 2; ++pass) {
+    const std::string id = pass == 0 ? "factory-rollback" : "factory-commit";
+    auto work = take(factory->begin());
+    check(work->owner() == target::Service::Identity, "security owner not Identity");
+    const auto now = take(work->current_time());
+    const target::SubjectId subject{id};
+    const target::CredentialId credential{id + "-credential"};
+    const target::SessionId session{id + "-session"};
+    const target::AssignmentId grant{id + "-grant"};
+    take(work->principals().save({subject, target::PrincipalKind::Human, {}, {1}}, {}));
+    take(work->credentials().save(
+        {{credential, {1}},
+         subject,
+         target::PendingCredentialMaterial{target::CredentialKind::Password},
+         target::CredentialState::Pending,
+         now,
+         {},
+         {target::ResourceKind::Catalog, {"catalog"}},
+         {}},
+        {}));
+    take(work->credentials().save({{credential, {2}},
+                                   subject,
+                                   target::PasswordVerifier{"encoded-verifier-only", {1}},
+                                   target::CredentialState::Active,
+                                   now,
+                                   {},
+                                   {target::ResourceKind::Catalog, {"catalog"}},
+                                   now + std::chrono::hours{24}},
+                                  target::ResourceVersion{1}));
+    take(work->credentials().save_login({id, subject, credential, {1}}, {}));
+    const target::SessionSecurity secured{session,
+                                          subject,
+                                          {credential, {2}},
+                                          {target::TokenPurpose::Access, {id + "-access"}, {}},
+                                          {target::TokenPurpose::Refresh, {id + "-refresh"}, {}},
+                                          now,
+                                          now + std::chrono::minutes{15},
+                                          now + std::chrono::hours{24},
+                                          1,
+                                          {1},
+                                          false};
+    take(work->session_security().save(secured, {}, {}));
+    take(work->exact_assignments().save(
+        {grant,
+         subject,
+         {{target::FixedRole::Admin, {target::ResourceKind::Catalog, {id}}}},
+         {},
+         {1}},
+        {}));
+    take(work->authorizations().save({subject, {1}, true}, {}));
+    const target::ReceiptKey ordinary{
+        subject, "factory-success", {target::ResourceKind::Session, {session.value}}, "original"};
+    take(work->receipts().insert(
+        {ordinary,
+         {},
+         target::SessionMetadata{session, subject, now, secured.refresh_expires_at, 1, {1}, false},
+         now,
+         now + std::chrono::hours{168}},
+        {100}));
+    const target::SecretReceiptScope scope =
+        target::LoginReceiptScope{{"control-peer"}, id, "original"};
+    take(work->secret_receipts().insert(
+        {{scope,
+          subject,
+          session,
+          {credential, {2}},
+          target::LoginRequestParameters{},
+          1,
+          {{"request-key"}, {}},
+          now,
+          now + std::chrono::hours{23}},
+         {{"sealed-key"}, 1, {std::byte{0}}, {std::byte{0}, std::byte{0xff}}}},
+        {100}));
+    take(work->journal().append_audit({subject,
+                                       {target::ResourceKind::Session, {session.value}},
+                                       id,
+                                       "trace",
+                                       "factory-write",
+                                       {},
+                                       {1},
+                                       now}));
+    take(work->operations().save(
+        {{target::Service::Identity, {id}, {target::ResourceKind::Session, {session.value}}},
+         {1},
+         target::OperationState::Blocked,
+         target::ExecutionOutcome::NotStarted,
+         {},
+         {}},
+        {}));
+    check(take(work->session_security().count_unexpired()) > 0,
+          "security factory lost current count");
+    check(take(work->sessions().find(session))->version.value == 1 &&
+              take(work->grants().find(grant))->version.value == 1 &&
+              take(work->exact_assignments().for_subject(subject)).size() == 1,
+          "security projection not shared with inherited metadata");
+    if (pass == 0) {
+      take(work->bootstrap().consume({target::BootstrapState::Consumed, {2}, subject, now}, {1}));
+      expect(work->credentials().login(std::string("invalid\0login", 13)),
+             target::ErrorCode::InvalidArgument);
+      rollback_rejected(*work);
+    } else {
+      commit(*work);
+    }
+    work = take(factory->begin());
+    const bool exists = pass == 1;
+    check(take(work->principals().find(subject)).has_value() == exists &&
+              take(work->credentials().current(credential)).has_value() == exists &&
+              take(work->credentials().login(id)).has_value() == exists &&
+              take(work->session_security().find(session)).has_value() == exists &&
+              take(work->sessions().find(session)).has_value() == exists &&
+              take(work->grants().find(grant)).has_value() == exists &&
+              take(work->authorizations().find(subject)).has_value() == exists &&
+              take(work->secret_receipts().find(scope)).has_value() == exists &&
+              take(work->receipts().find(ordinary)).has_value() == exists &&
+              take(work->operations().find({id})).has_value() == exists &&
+              take(work->exact_assignments().for_subject(subject)).size() == (exists ? 1U : 0U),
+          "security/inherited repositories did not commit or roll back together");
+    check(take(work->bootstrap().state()).state == target::BootstrapState::Required,
+          "failed security UoW consumed bootstrap");
+    work->rollback();
+  }
+  auto surviving = take(factory->begin());
+  factory.reset();
+  check(take(surviving->credentials().current({"factory-commit-credential"})).has_value(),
+        "security UoW lost connection when factory was destroyed");
+  expect(open_identity_security(config), target::ErrorCode::Conflict);
+  surviving->rollback();
+  factory = take(open_identity_security(config));
+  auto probe = take(factory->begin());
+  take(probe->current_time());
+  probe->rollback();
+}
+
 void identity(const DatabaseConfig& config) {
   auto factory = take(open_identity(config));
   concurrent_probe(*factory);
@@ -388,11 +525,13 @@ void check_typed(const DatabaseConfig& config) {
   auto mismatch = runtime_config;
   mismatch.service = target::Service::Control;
   expect(open_identity(mismatch), target::ErrorCode::InvalidArgument);
+  expect(open_identity_security(mismatch), target::ErrorCode::InvalidArgument);
   expect(open_runtime(mismatch), target::ErrorCode::InvalidArgument);
   expect(open_scheduler(mismatch), target::ErrorCode::InvalidArgument);
   expect(open_model(mismatch), target::ErrorCode::InvalidArgument);
   switch (config.service) {
   case target::Service::Identity:
+    security(runtime_config);
     identity(runtime_config);
     break;
   case target::Service::Runtime:

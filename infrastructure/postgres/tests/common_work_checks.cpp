@@ -16,6 +16,7 @@
 #include "../src/identity_security.hpp"
 #include "../src/record_access.hpp"
 #include "../src/record_codec.hpp"
+#include "kiarabot/core/domain/target/identity_policy.hpp"
 
 namespace kiarabot::infrastructure::postgres::test {
 namespace {
@@ -674,6 +675,104 @@ void check_global_session_count(Database& database) {
   }
 }
 
+void check_identity_assignments(Database& database) {
+  const target::ResourceRef account{target::ResourceKind::Account, {"scope-a"}};
+  const target::ResourceRef instance{target::ResourceKind::Instance, {"scope-b"}};
+  target::ExactAssignment role{
+      {"exact-role"}, {"credential-owner"}, {{target::FixedRole::Viewer, account}}, {}, {1}};
+  target::ExactAssignment explicit_grant{{"exact-explicit"},
+                                         {"credential-owner"},
+                                         {},
+                                         {{target::Permission::MessageRead, instance}},
+                                         {1}};
+  target::ExactAssignment product{
+      {"exact-product"},
+      {"credential-owner"},
+      {},
+      {{target::Permission::MessageRead, {target::ResourceKind::Account, {"scope-c"}}},
+       {target::Permission::ActionInspect, {target::ResourceKind::Account, {"scope-c"}}},
+       {target::Permission::MessageRead, {target::ResourceKind::Account, {"scope-d"}}},
+       {target::Permission::ActionInspect, {target::ResourceKind::Account, {"scope-d"}}}},
+      {1}};
+  {
+    auto access = take(detail::DatabaseAccess::begin(database));
+    auto assignments = detail::exact_assignment_repository(*access.sql);
+    take(assignments->save(role, {}));
+    take(assignments->save(explicit_grant, {}));
+    take(assignments->save(product, {}));
+    committed(*access.work);
+  }
+  {
+    auto access = take(detail::DatabaseAccess::begin(database));
+    auto assignments = detail::exact_assignment_repository(*access.sql);
+    const auto stored = take(assignments->for_subject(role.subject));
+    check(stored.size() == 3, "exact collection lost assignment boundaries");
+    const target::Principal actor{role.subject, target::PrincipalKind::Human, {}, {1}};
+    take(target::authorize_exact(actor, target::Permission::ResourceRead, account, stored));
+    take(target::authorize_exact(actor, target::Permission::MessageRead, instance, stored));
+    expect(target::authorize_exact(actor, target::Permission::MessageRead, account, stored),
+           target::ErrorCode::PermissionDenied);
+    expect(target::authorize_exact(actor, target::Permission::ResourceRead, instance, stored),
+           target::ErrorCode::PermissionDenied);
+    expect(target::authorize_exact(actor, target::Permission::ResourceRead,
+                                   {target::ResourceKind::Catalog, {account.id.value}}, stored),
+           target::ErrorCode::PermissionDenied);
+    const auto expected = take(target::to_resource_grant_metadata(role));
+    const auto base = take(detail::find_record(*access.work, detail::RecordKind::Grant,
+                                               std::vector<std::string>{role.id.value}));
+    const auto& metadata = std::get<target::ResourceGrant>(*base);
+    check(metadata.role == expected.role && metadata.scopes.size() == expected.scopes.size() &&
+              metadata.version == expected.version,
+          "exact base metadata not Core projection");
+    for (std::size_t index = 0; index < metadata.scopes.size(); ++index) {
+      check(metadata.scopes[index].permission == expected.scopes[index].permission &&
+                metadata.scopes[index].resource == expected.scopes[index].resource,
+            "base metadata invented permission or mixed scope");
+    }
+    access.work->rollback();
+  }
+  for (int kind = 0; kind < 3; ++kind) {
+    auto access = take(detail::DatabaseAccess::begin(database));
+    auto assignments = detail::exact_assignment_repository(*access.sql);
+    auto invalid = product;
+    invalid.id = {"invalid-exact"};
+    if (kind == 0) {
+      invalid.explicit_permissions.pop_back();
+    } else if (kind == 1) {
+      invalid.roles = {{target::FixedRole::Viewer, account}};
+    } else {
+      invalid.explicit_permissions.front().resource.id.value += std::string(1, '\0');
+    }
+    expect(assignments->save(invalid, {}), target::ErrorCode::InvalidArgument);
+    rejected(*access.work);
+  }
+  {
+    auto access = take(detail::DatabaseAccess::begin(database));
+    auto assignments = detail::exact_assignment_repository(*access.sql);
+    role.version = {2};
+    role.roles.front().resource = instance;
+    take(assignments->save(role, target::ResourceVersion{1}));
+    committed(*access.work);
+  }
+  {
+    auto access = take(detail::DatabaseAccess::begin(database));
+    auto assignments = detail::exact_assignment_repository(*access.sql);
+    expect(assignments->save(role, target::ResourceVersion{1}), target::ErrorCode::Conflict);
+    rejected(*access.work);
+  }
+  {
+    auto access = take(detail::DatabaseAccess::begin(database));
+    auto assignments = detail::exact_assignment_repository(*access.sql);
+    take(access.sql->run([](pqxx::transaction_base& transaction) -> target::Status {
+      transaction.exec("DELETE FROM kiarabot.exact_permissions WHERE assignment='exact-product' "
+                       "AND resource_id='scope-d' AND permission=40");
+      return std::monostate{};
+    }));
+    expect(assignments->for_subject(role.subject), target::ErrorCode::Internal);
+    rejected(*access.work);
+  }
+}
+
 void check_common(Database& database, const DatabaseConfig& config) {
   if (config.service == target::Service::Identity) {
     check_identity_credentials(database);
@@ -681,6 +780,7 @@ void check_common(Database& database, const DatabaseConfig& config) {
     check_identity_secret_receipts(database);
     check_session_metadata_snapshot(database);
     check_global_session_count(database);
+    check_identity_assignments(database);
   }
   constexpr auto kHigh = std::uint64_t{1} << 63;
   constexpr auto kMaximum = std::numeric_limits<std::uint64_t>::max();

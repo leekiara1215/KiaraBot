@@ -538,3 +538,7 @@ port is read before the I/O thread starts so acceptor state has one thread owner
 Identity5、Runtime/Scheduler/Model4；之前Identity4和另三库3不兼容，不自动升级、补表、
 清空或重置。必须按已有显式初始化流程为本轮部署创建新专属空库，保留原库与备份。
 新表随原事务/版本标记和授权一起创建，daemon仍不执行DDL，启动严格校验完整描述。
+
+Identity安全依赖组合使用open_identity_security，探针通过该工厂自身begin/current_time/
+rollback采样，不能创建第二个持锁连接。返回工厂只表示存储依赖已验证；业务仍需当前
+认证、crypto与应用用例接线。UoW结束后才释放本地许可；Unknown或连接丢失停用旧实例。
