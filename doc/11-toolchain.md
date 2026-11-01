@@ -589,3 +589,7 @@ PATH只由已有固定OpenSSL/Python cache导出，缺前置失败，不把预�
 `p04_identity_application`使用独立双TU真实driver，组合PG安全工厂、三个纯Identity应用
 和成熟crypto/TLS adapters；p04/integration/security/fault、120秒，runner先验证错误
 backend目录必被拒绝再运行正常临时库。它验证本地组合，不代表HTTP/生产配置已完成。
+
+第七个Issue RPC使用Core issuer，外层RPC库PRIVATE链接独立identity_delegation_application。
+p02_service_config正式测试同时传入Identity程序，验证显式安全配置缺少材料时不接触PG、
+不打开监听；不再只通过手动执行覆盖该TCP canary。固定依赖及旧role/crypto用例保持原门禁。

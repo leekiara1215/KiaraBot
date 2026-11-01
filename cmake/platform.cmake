@@ -66,7 +66,8 @@ add_executable(kiarabot_service_config_driver
 target_link_libraries(kiarabot_service_config_driver PRIVATE kiarabot_service_config)
 kiarabot_platform_warnings(kiarabot_service_config_driver)
 add_test(NAME p02_service_config COMMAND ${Python3_EXECUTABLE}
-  ${CMAKE_SOURCE_DIR}/core/tests/platform/service_config_test.py $<TARGET_FILE:kiarabot_service_config_driver>)
+  ${CMAKE_SOURCE_DIR}/core/tests/platform/service_config_test.py
+  $<TARGET_FILE:kiarabot_service_config_driver> $<TARGET_FILE:kiarabot-identity>)
 set_tests_properties(p02_service_config PROPERTIES LABELS "p02;unit" TIMEOUT 30)
 
 # Create one translation unit per new inner header: no generated/protocol/JSON includes provided.
@@ -116,7 +117,8 @@ add_library(kiarabot_identity_rpc STATIC
   ${CMAKE_SOURCE_DIR}/core/src/runtime/platform/identity_rpc.cpp)
 target_include_directories(kiarabot_identity_rpc PUBLIC ${CMAKE_SOURCE_DIR}/core/include)
 target_link_libraries(kiarabot_identity_rpc PUBLIC kiarabot_proto PRIVATE
-  kiarabot_target_codec kiarabot_service_process kiarabot_identity_admin_application OpenSSL::Crypto)
+  kiarabot_target_codec kiarabot_service_process kiarabot_identity_admin_application
+  kiarabot_identity_delegation_application OpenSSL::Crypto)
 kiarabot_platform_warnings(kiarabot_identity_rpc)
 add_executable(kiarabot_identity_rpc_test
   ${CMAKE_SOURCE_DIR}/core/tests/platform/identity_rpc_test.cpp)
