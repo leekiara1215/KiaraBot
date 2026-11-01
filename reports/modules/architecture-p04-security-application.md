@@ -182,3 +182,18 @@ actor/origin/scope changes, page size, current DB+proof version updates, expired
 Earlier stale-proof current-auth failure remains Unauthenticated; dependency errors remain explicit.
 A fresh authorization race after copying a valid page still uses Conflict/ReadCurrent rather than
 mislabeling it a malformed token. Source/helper/test full tidy, format and diff pass, no exclusions.
+
+## Missing-session revoke rejection audit correction
+
+Independent review found valid authenticated RevokeSession returning NotFound bypassed the audit
+whitelist. The rejection wrapper now includes NotFound specifically for RevokeSession, preserving
+read-method semantics and current registered direct-peer attribution. Missing target is not created
+or mutated. Append/commit dependency failures remain failures, never fake successful audit; Unknown
+acceptance remains preserved. Tests use a real current actor/origin and exact missing-target proof,
+assert one stable NotFound rejection audit and fault propagation without committed partial writes.
+
+Issue4 actual -Werror ASan/UBSan no-recover revoke group passes: missing exact target produces
+one NotFound audit with current Control authversion42 rather than represented user's1, no target,
+receipt or dirty writes. Append fault returns Unavailable with no commit; Unknown audit commit
+retains Unknown/QuerySameIdentity with one attempt; RolledBack persists no audit. Full source/test
+analyzer+bugprone, format and diff pass with zero checker exclusions.

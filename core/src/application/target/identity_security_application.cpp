@@ -84,9 +84,12 @@ private:
   Outcome<Value> audit_rejection(Outcome<Value> result, const IdentityRequestContext& context,
                                  const VerifiedPeer& peer, const std::string& method) {
     const auto* error = std::get_if<Failure>(&result);
+    const bool missing_revoke =
+        error && method == "RevokeSession" && error->code == ErrorCode::NotFound;
     if (!error || error->acceptance != Acceptance::NotAccepted ||
-        (error->code != ErrorCode::Unauthenticated && error->code != ErrorCode::PermissionDenied &&
-         error->code != ErrorCode::RateLimited && error->code != ErrorCode::Conflict)) {
+        (!missing_revoke && error->code != ErrorCode::Unauthenticated &&
+         error->code != ErrorCode::PermissionDenied && error->code != ErrorCode::RateLimited &&
+         error->code != ErrorCode::Conflict)) {
       return result;
     }
     const auto rejection = *error;

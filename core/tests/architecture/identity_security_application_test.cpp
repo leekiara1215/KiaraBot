@@ -1553,6 +1553,59 @@ void concurrent_same_key_refresh_recovers_winner_in_final_gap() {
   assert(std::get<t::Failure>(rejected).code == t::ErrorCode::Unauthenticated);
 }
 
+void authenticated_missing_revoke_is_durably_audited() {
+  for (unsigned scenario = 0; scenario < 4; ++scenario) {
+    Fixture f;
+    auto logged = f.app->login(f.login_request());
+    const auto& source = std::get<t::IdentityTokenReply>(logged).tokens;
+    auto proof = actor(f, source);
+    const t::SessionId missing{"77777777-7777-4777-8777-777777777777"};
+    assert(f.delegations.claims.has_value());
+    f.delegations.claims->permissions = {
+        {t::Permission::IdentitySessionRevoke, {t::ResourceKind::Session, {missing.value}}}};
+    f.store.state.authorizations[1].version = {42};
+    const auto before_audits = f.store.state.audits.size();
+    const auto before_commits = f.store.commits;
+    if (scenario == 1) {
+      f.store.fail_audit = true;
+    }
+    if (scenario == 2) {
+      f.store.next_commit = t::CommitResult::Unknown;
+    }
+    if (scenario == 3) {
+      f.store.next_commit = t::CommitResult::RolledBack;
+    }
+    const auto result = f.app->revoke_session({f.context("missing-revoke"), proof, missing});
+    assert(std::holds_alternative<t::Failure>(result));
+    const auto& failure = std::get<t::Failure>(result);
+    if (scenario == 0) {
+      assert(failure.code == t::ErrorCode::NotFound);
+      assert(f.store.state.audits.size() == before_audits + 1);
+      assert(f.store.commits == before_commits + 1);
+    } else if (scenario == 2) {
+      assert(failure.code == t::ErrorCode::UpstreamUnavailable);
+      assert(failure.acceptance == t::Acceptance::Unknown &&
+             failure.recovery == t::Recovery::QuerySameIdentity);
+      assert(f.store.state.audits.size() == before_audits + 1);
+      assert(f.store.commits == before_commits + 1);
+    } else {
+      assert(failure.code == t::ErrorCode::UpstreamUnavailable);
+      assert(f.store.state.audits.size() == before_audits);
+      assert(f.store.commits == before_commits + (scenario == 3 ? 1 : 0));
+    }
+    if (scenario == 0 || scenario == 2) {
+      const auto& audit = f.store.state.audits.back();
+      assert(audit.actor == f.peer.binding.certificate.subject);
+      assert(audit.authorization_version.value == 42);
+      assert(audit.method == "RevokeSession" && audit.rejection == t::ErrorCode::NotFound);
+      assert(audit.request_id == "request" && audit.trace_id == "trace");
+    }
+    assert(f.store.state.sessions.size() == 1 && f.store.state.metadata.size() == 1);
+    assert(!f.store.state.sessions[0].revoked && !f.store.state.metadata[0].revoked);
+    assert(f.store.state.ordinary.empty() && !f.store.state.authorizations[0].invalidation_dirty);
+  }
+}
+
 } // namespace
 int main(int argc, char** argv) try {
   const std::string_view group = argc == 2 ? argv[1] : "all";
@@ -1586,6 +1639,7 @@ int main(int argc, char** argv) try {
   }
   if (group == "all" || group == "revoke") {
     revoke_changes_security_metadata_and_invalidation_atomically();
+    authenticated_missing_revoke_is_durably_audited();
     revoke_authorization_budget_is_rechecked_before_commit();
   }
   if (group != "all" && group != "login" && group != "refresh" && group != "list" &&

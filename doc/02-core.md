@@ -778,3 +778,7 @@ password credential及index version），解密前后每次重放gate均重读�
 分页token不存在、篡改、过期、重启失效或快照owner/origin/scope/page-size/version绑定
 不匹配，按唯一API pagination.token_error返回InvalidArgument（HTTP400），不是Conflict。
 前置当前身份/授权拒绝仍保留其Unauthenticated/PermissionDenied语义，不由token错误掩盖。
+
+有效当前actor请求撤销不存在的精确session也属于写拒绝：返回NotFound并在短UoW记录
+拒绝审计，使用真实登记direct peer及其授权水位；审计依赖失败显式传播，不假成功。
+这一规则不将普通读取的缺失无差别计为写审计，也不重写Unknown提交语义。
