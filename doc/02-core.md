@@ -1055,3 +1055,10 @@ known旧版本不授权旧状态；返回当前source授权版本和本次DB che
 CheckAuthorization最终无UoW时钟采样后，以max(可信最终UTC, 最终DB checked_at)再次检查
 proof/source/session/全部peer的最早有效期及请求deadline；即使DB读取仍有效、版本不变且
 单调耗时小于一秒，最后采样跨期限也返回Timeout，不返回allowed或普通业务false。
+
+独立IdentityAssignmentFingerprintPort为Set(spec,optional target,optional expected)及
+Revoke(target,expected)提供服务端成熟指纹，固定SetAssignment.v1/RevokeAssignment.v1域，
+不借用登录秘密commit scope，也不信客户端hash。规范编码包含方法、target、owner、basis、
+role或permissions、exact resources、expected及可选字段存在标志；权限/资源排序等价，
+重复或无效输入拒绝。request/trace/deadline/idempotency key不属于内容，port不授权、不查DB、
+不收raw token，所有调用在UoW外。此纯端口声明不代表成熟哈希或Set/Revoke应用已启用。
