@@ -7,6 +7,7 @@ import "google/protobuf/timestamp.proto";
 import "kiarabot/v1/actions.proto";
 import "kiarabot/v1/common.proto";
 import "kiarabot/v1/events.proto";
+import "kiarabot/v1/platform.proto";
 
 message PluginManifest {
   string id = 1;
@@ -44,8 +45,14 @@ enum PluginState {
 message RegisterPluginRequest {
   PluginManifest manifest = 1;
   string instance_id = 2;
-  // Optional features this client understands. Absence means legacy event-only.
+  // Required target features; no legacy event-only admission.
   repeated string supported_features = 3;
+  // CONTRACT_STATUS: not_implemented - target authenticated installation binding.
+  string installation_id = 4;
+  // CONTRACT_STATUS: not_implemented - target execution must be positive.
+  optional uint64 execution_generation = 5;
+  // CONTRACT_STATUS: not_implemented - target P01.
+  RequestContext context = 6;
 }
 
 message RegisterPluginResponse {
@@ -55,9 +62,15 @@ message RegisterPluginResponse {
   Error error = 4;
   // Intersection of requested features and implemented server features.
   repeated string enabled_features = 5;
+  // CONTRACT_STATUS: not_implemented - target P01.
+  Fence fence = 6;
+  // CONTRACT_STATUS: not_implemented - target P01.
+  uint64 desired_config_version = 7;
 }
 
+// CONTRACT_STATUS: not_implemented - target fence required on post-registration frames.
 message PluginToCore {
+  Fence fence = 20;
   oneof body {
     RegisterPluginRequest register = 1;
     PluginEventAck event_ack = 2;
@@ -68,10 +81,14 @@ message PluginToCore {
     PluginActionCancel action_cancel = 7;
     // Requires plugin.config.v1; identity is bound to the authenticated stream.
     PluginConfigAck config_ack = 8;
+    DeliveryAttempt renew_delivery = 9;
   }
 }
 
+// CONTRACT_STATUS: not_implemented - target lease accompanies event; no bare event admission.
 message CoreToPlugin {
+  Fence fence = 20;
+  DeliveryAttempt delivery_attempt = 21;
   oneof body {
     RegisterPluginResponse register_result = 1;
     EventEnvelope event = 2;
@@ -83,10 +100,17 @@ message CoreToPlugin {
     PluginActionResponse action_response = 7;
     // CONTRACT_STATUS: not_implemented - v1 Core closes the stream without this frame.
     ShutdownNotice shutdown = 8;
+    DeliveryReceipt delivery_receipt = 9;
   }
 }
 
-message PluginEventAck { string event_id = 1; bool accepted = 2; Error error = 3; }
+// CONTRACT_STATUS: not_implemented - target attempt required; event-only ACK is invalid.
+message PluginEventAck {
+  string event_id = 1;
+  bool accepted = 2;
+  Error error = 3;
+  DeliveryAttempt attempt = 4;
+}
 // action.result.v1 must be enabled before sending any Action operation.
 // request_id correlates a call; action.idempotency_key survives reconnects.
 message PluginActionRequest {
@@ -128,10 +152,17 @@ message PluginConfig {
   google.protobuf.Struct values = 2;
   string delivery_id = 3;
   uint32 apply_timeout_ms = 4;
+  // CONTRACT_STATUS: not_implemented - target version distinct from delivery identity.
+  uint64 config_version = 5;
+  // CONTRACT_STATUS: not_implemented - target execution/connection binding.
+  Fence fence = 6;
 }
 // Success means the callback completed, not merely that bytes were received.
 // Failure requires a stable error; success forbids error. No raw exception text.
+// CONTRACT_STATUS: not_implemented - target config/fence validation pending.
 message PluginConfigAck {
+  uint64 config_version = 5;
+  Fence fence = 6;
   string version = 1;
   string delivery_id = 2;
   bool accepted = 3;

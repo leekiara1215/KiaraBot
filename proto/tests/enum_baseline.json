@@ -6,6 +6,20 @@
     "proto/tests/README.md documents the review rule; descriptor comparison is not required to catch renumbering."
   ],
   "enums": {
+    "kiarabot.v1.ActionStatus": {
+      "ACTION_STATUS_UNSPECIFIED": 0,
+      "ACCEPTED": 1,
+      "SUCCEEDED": 2,
+      "FAILED": 3,
+      "EXPIRED": 4,
+      "CANCELLED": 5
+    },
+    "kiarabot.v1.AdapterEventAck.Status": {
+      "STATUS_UNSPECIFIED": 0,
+      "PERSISTED": 1,
+      "DUPLICATE": 2,
+      "REJECTED": 3
+    },
     "kiarabot.v1.ErrorCode": {
       "ERROR_CODE_UNSPECIFIED": 0,
       "INVALID_ARGUMENT": 1,
@@ -55,19 +69,84 @@
       "PROMOTED": 3,
       "DEMOTED": 4
     },
-    "kiarabot.v1.AdapterEventAck.Status": {
-      "STATUS_UNSPECIFIED": 0,
-      "PERSISTED": 1,
-      "DUPLICATE": 2,
-      "REJECTED": 3
+    "kiarabot.v1.ResourceKind": {
+      "RESOURCE_KIND_UNSPECIFIED": 0,
+      "RESOURCE_ACCOUNT": 1,
+      "RESOURCE_ADAPTER": 2,
+      "RESOURCE_PLUGIN_TYPE": 3,
+      "RESOURCE_INSTALLATION": 4,
+      "RESOURCE_INSTANCE": 5,
+      "RESOURCE_HOST": 6,
+      "RESOURCE_NAMESPACE": 7,
+      "RESOURCE_TASK": 8,
+      "RESOURCE_MODEL": 9,
+      "RESOURCE_PRINCIPAL": 10,
+      "RESOURCE_SESSION": 11,
+      "RESOURCE_ACTION": 12,
+      "RESOURCE_OPERATION": 13,
+      "RESOURCE_CREDENTIAL": 14,
+      "RESOURCE_ASSIGNMENT": 15
     },
-    "kiarabot.v1.ActionStatus": {
-      "ACTION_STATUS_UNSPECIFIED": 0,
-      "ACCEPTED": 1,
-      "SUCCEEDED": 2,
-      "FAILED": 3,
-      "EXPIRED": 4,
-      "CANCELLED": 5
+    "kiarabot.v1.OperationState": {
+      "OPERATION_STATE_UNSPECIFIED": 0,
+      "OPERATION_ACCEPTED": 1,
+      "OPERATION_RUNNING": 2,
+      "OPERATION_BLOCKED": 3,
+      "OPERATION_SUCCEEDED": 4,
+      "OPERATION_FAILED": 5,
+      "OPERATION_CANCELLED": 6,
+      "OPERATION_EXPIRED": 7
+    },
+    "kiarabot.v1.ExecutionOutcome": {
+      "EXECUTION_OUTCOME_UNSPECIFIED": 0,
+      "EXECUTION_NOT_STARTED": 1,
+      "EXECUTION_KNOWN_SUCCEEDED": 2,
+      "EXECUTION_KNOWN_FAILED": 3,
+      "EXECUTION_UNKNOWN": 4
+    },
+    "kiarabot.v1.AcceptanceState": {
+      "ACCEPTANCE_UNSPECIFIED": 0,
+      "NOT_ACCEPTED": 1,
+      "DURABLY_ACCEPTED": 2,
+      "ACCEPTANCE_UNKNOWN": 3
+    },
+    "kiarabot.v1.RecoveryAction": {
+      "RECOVERY_UNSPECIFIED": 0,
+      "CORRECT_INPUT": 1,
+      "REAUTHENTICATE": 2,
+      "DO_NOT_RETRY": 3,
+      "QUERY_SAME_INTENT": 4,
+      "RETRY_SAME_ID": 5,
+      "RESYNC_SNAPSHOT": 6,
+      "MANUAL_REVIEW": 7
+    },
+    "kiarabot.v1.LifecycleState": {
+      "LIFECYCLE_UNSPECIFIED": 0,
+      "LIFECYCLE_ACTIVE": 1,
+      "LIFECYCLE_DISABLED": 2,
+      "LIFECYCLE_DELETING": 3,
+      "LIFECYCLE_DELETED": 4,
+      "LIFECYCLE_RESTORING": 5,
+      "LIFECYCLE_PURGED": 6
+    },
+    "kiarabot.v1.DesiredState": {
+      "DESIRED_STATE_UNSPECIFIED": 0,
+      "DESIRED_RUNNING": 1,
+      "DESIRED_STOPPED": 2
+    },
+    "kiarabot.v1.FixedRole": {
+      "FIXED_ROLE_UNSPECIFIED": 0,
+      "ROLE_ADMIN": 1,
+      "ROLE_OPERATOR": 2,
+      "ROLE_VIEWER": 3
+    },
+    "kiarabot.v1.DeliveryDisposition": {
+      "DELIVERY_DISPOSITION_UNSPECIFIED": 0,
+      "DELIVERY_ACKNOWLEDGED": 1,
+      "DELIVERY_DUPLICATE": 2,
+      "DELIVERY_STALE": 3,
+      "DELIVERY_RENEWED": 4,
+      "DELIVERY_REJECTED": 5
     },
     "kiarabot.v1.PluginState": {
       "PLUGIN_STATE_UNSPECIFIED": 0,

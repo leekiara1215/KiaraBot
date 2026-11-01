@@ -5,13 +5,12 @@ package kiarabot.v1;
 import "kiarabot/v1/adapters.proto";
 import "kiarabot/v1/plugins.proto";
 
-// Connect metadata: exactly one authorization: Bearer <token>. The host binds
-// credentials to a role and identity; self-reported IDs never grant authority.
-// Failures carry serialized kiarabot.v1.Error in grpc::Status.error_details().
-// Unimplemented business operations fail explicitly (CAPABILITY_NOT_SUPPORTED,
-// gRPC INTERNAL); reading a request is never a durable acknowledgement.
-// v1 Core closes both streams without a ShutdownNotice frame; clients must treat
-// such a close as an unknown outcome (see doc/01-runtime-semantics.md).
+// Unified target: TLS server validation and per-instance revocable bootstrap,
+// then audience-bound short proof. Post-registration frames require current
+// nonzero fence; no event-only/legacy admission. Unary failure uses the stable
+// gRPC mapping and RpcFailure in status details. Stream business failures carry
+// Error/typed receipt then close when terminal. Missing response remains unknown.
+// CONTRACT_STATUS: not_implemented - target registration/leases not wired.
 service AdapterBridge {
   rpc Connect(stream AdapterToCore) returns (stream CoreToAdapter);
 }

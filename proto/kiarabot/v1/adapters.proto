@@ -5,6 +5,7 @@ package kiarabot.v1;
 import "kiarabot/v1/actions.proto";
 import "kiarabot/v1/common.proto";
 import "kiarabot/v1/events.proto";
+import "kiarabot/v1/platform.proto";
 
 message RegisterAdapterRequest {
   string adapter_id = 1;
@@ -13,6 +14,10 @@ message RegisterAdapterRequest {
   string protocol_version = 4;
   repeated Account accounts = 5;
   repeated Capability capabilities = 6;
+  // CONTRACT_STATUS: not_implemented - required authenticated target registration.
+  string adapter_instance_id = 7;
+  // CONTRACT_STATUS: not_implemented - target P01.
+  RequestContext context = 8;
 }
 
 message Account {
@@ -28,9 +33,15 @@ message RegisterAdapterResponse {
   string required_protocol_version = 3;
   uint32 heartbeat_interval_seconds = 4;
   Error error = 5;
+  // CONTRACT_STATUS: not_implemented - target P01.
+  Fence fence = 6;
+  // CONTRACT_STATUS: not_implemented - target P01.
+  repeated Capability effective_capabilities = 7;
 }
 
+// CONTRACT_STATUS: not_implemented - mandatory target fence on every post-registration frame.
 message AdapterToCore {
+  Fence fence = 10;
   oneof body {
     RegisterAdapterRequest register = 1;
     EventEnvelope event = 2;
@@ -39,7 +50,9 @@ message AdapterToCore {
   }
 }
 
+// CONTRACT_STATUS: not_implemented - target connection fencing.
 message CoreToAdapter {
+  Fence fence = 10;
   oneof body {
     RegisterAdapterResponse register_result = 1;
     ActionEnvelope action = 2;

@@ -1,0 +1,238 @@
+syntax = "proto3";
+package kiarabot.v1;
+import "google/protobuf/timestamp.proto";
+import "kiarabot/v1/common.proto";
+
+// All target fields and enums are declarative only; no target producer exists.
+// CONTRACT_STATUS: not_implemented - target P01, producer pending.
+enum ResourceKind {
+  RESOURCE_KIND_UNSPECIFIED = 0;
+  RESOURCE_ACCOUNT = 1;
+  RESOURCE_ADAPTER = 2;
+  RESOURCE_PLUGIN_TYPE = 3;
+  RESOURCE_INSTALLATION = 4;
+  RESOURCE_INSTANCE = 5;
+  RESOURCE_HOST = 6;
+  RESOURCE_NAMESPACE = 7;
+  RESOURCE_TASK = 8;
+  RESOURCE_MODEL = 9;
+  RESOURCE_PRINCIPAL = 10;
+  RESOURCE_SESSION = 11;
+  RESOURCE_ACTION = 12;
+  RESOURCE_OPERATION = 13;
+  RESOURCE_CREDENTIAL = 14;
+  RESOURCE_ASSIGNMENT = 15;
+}
+
+// CONTRACT_STATUS: not_implemented - target P01, producer pending.
+enum OperationState {
+  OPERATION_STATE_UNSPECIFIED = 0;
+  OPERATION_ACCEPTED = 1;
+  OPERATION_RUNNING = 2;
+  OPERATION_BLOCKED = 3;
+  OPERATION_SUCCEEDED = 4;
+  OPERATION_FAILED = 5;
+  OPERATION_CANCELLED = 6;
+  OPERATION_EXPIRED = 7;
+}
+
+// CONTRACT_STATUS: not_implemented - target P01, producer pending.
+enum ExecutionOutcome {
+  EXECUTION_OUTCOME_UNSPECIFIED = 0;
+  EXECUTION_NOT_STARTED = 1;
+  EXECUTION_KNOWN_SUCCEEDED = 2;
+  EXECUTION_KNOWN_FAILED = 3;
+  EXECUTION_UNKNOWN = 4;
+}
+
+// CONTRACT_STATUS: not_implemented - target P01, producer pending.
+enum AcceptanceState {
+  ACCEPTANCE_UNSPECIFIED = 0;
+  NOT_ACCEPTED = 1;
+  DURABLY_ACCEPTED = 2;
+  ACCEPTANCE_UNKNOWN = 3;
+}
+
+// CONTRACT_STATUS: not_implemented - target P01, producer pending.
+enum RecoveryAction {
+  RECOVERY_UNSPECIFIED = 0;
+  CORRECT_INPUT = 1;
+  REAUTHENTICATE = 2;
+  DO_NOT_RETRY = 3;
+  QUERY_SAME_INTENT = 4;
+  RETRY_SAME_ID = 5;
+  RESYNC_SNAPSHOT = 6;
+  MANUAL_REVIEW = 7;
+}
+
+// CONTRACT_STATUS: not_implemented - target P01, producer pending.
+enum LifecycleState {
+  LIFECYCLE_UNSPECIFIED = 0;
+  LIFECYCLE_ACTIVE = 1;
+  LIFECYCLE_DISABLED = 2;
+  LIFECYCLE_DELETING = 3;
+  LIFECYCLE_DELETED = 4;
+  LIFECYCLE_RESTORING = 5;
+  LIFECYCLE_PURGED = 6;
+}
+
+// CONTRACT_STATUS: not_implemented - target P01, producer pending.
+enum DesiredState {
+  DESIRED_STATE_UNSPECIFIED = 0;
+  DESIRED_RUNNING = 1;
+  DESIRED_STOPPED = 2;
+}
+
+// CONTRACT_STATUS: not_implemented - target P01, producer pending.
+enum FixedRole {
+  FIXED_ROLE_UNSPECIFIED = 0;
+  ROLE_ADMIN = 1;
+  ROLE_OPERATOR = 2;
+  ROLE_VIEWER = 3;
+}
+
+// CONTRACT_STATUS: not_implemented - target P01, producer pending.
+enum DeliveryDisposition {
+  DELIVERY_DISPOSITION_UNSPECIFIED = 0;
+  DELIVERY_ACKNOWLEDGED = 1;
+  DELIVERY_DUPLICATE = 2;
+  DELIVERY_STALE = 3;
+  DELIVERY_RENEWED = 4;
+  DELIVERY_REJECTED = 5;
+}
+
+// CONTRACT_STATUS: not_implemented - target P01, producer pending.
+message RequestContext {
+  string request_id = 1;
+  string trace_id = 2;
+  google.protobuf.Timestamp deadline = 3;
+  string idempotency_key = 4;
+  // Transport validates proof/mTLS; never a trusted actor supplied by JSON.
+  string delegation = 5;
+}
+
+// CONTRACT_STATUS: not_implemented - target P01, producer pending.
+message ResourceRef {
+  ResourceKind kind = 1;
+  string id = 2;
+}
+
+// CONTRACT_STATUS: not_implemented - target P01, producer pending.
+message ResourceScope {
+  repeated ResourceRef resources = 1;
+}
+
+// CONTRACT_STATUS: not_implemented - target P01, producer pending.
+message Fence {
+  string instance_id = 1;
+  optional uint64 execution_generation = 2;
+  optional uint64 connection_generation = 3;
+  string runtime_epoch = 4;
+}
+
+// CONTRACT_STATUS: not_implemented - target P01, producer pending.
+message StreamCursor {
+  string source_service = 1;
+  string epoch = 2;
+  ResourceScope scope = 3;
+  uint64 sequence = 4;
+}
+
+// CONTRACT_STATUS: not_implemented - target P01, producer pending.
+message OperationRef {
+  string owner_service = 1;
+  string operation_id = 2;
+  ResourceRef resource = 3;
+}
+
+// CONTRACT_STATUS: not_implemented - target P01, producer pending.
+message FailureContext {
+  AcceptanceState acceptance = 1;
+  OperationRef operation = 2;
+  RecoveryAction recovery = 3;
+  uint32 retry_after_ms = 4;
+  optional uint64 current_version = 5;
+}
+
+// CONTRACT_STATUS: not_implemented - target P01, producer pending.
+message RpcFailure {
+  Error error = 1;
+  FailureContext context = 2;
+}
+
+// CONTRACT_STATUS: not_implemented - target P01, producer pending.
+message OperationProgress {
+  string participant = 1;
+  OperationState state = 2;
+  Error reason = 3;
+  google.protobuf.Timestamp next_attempt_at = 4;
+}
+
+// CONTRACT_STATUS: not_implemented - target P01, producer pending.
+message Operation {
+  OperationRef ref = 1;
+  uint64 version = 2;
+  OperationState state = 3;
+  ExecutionOutcome execution_outcome = 4;
+  repeated OperationProgress participants = 5;
+  google.protobuf.Timestamp observed_at = 6;
+  Error reason = 7;
+  google.protobuf.Timestamp next_attempt_at = 8;
+  bool stalled = 9;
+}
+
+// CONTRACT_STATUS: not_implemented - target P01, producer pending.
+message HandoffContext {
+  string source_service = 1;
+  string message_id = 2;
+  OperationRef operation = 3;
+  string causation_id = 4;
+  ResourceRef resource = 5;
+  uint64 resource_version = 6;
+  bytes payload_sha256 = 7;
+  google.protobuf.Timestamp created_at = 8;
+  google.protobuf.Timestamp valid_until = 9;
+}
+
+// CONTRACT_STATUS: not_implemented - target P01, producer pending.
+message DeliveryAttempt {
+  string event_id = 1;
+  string attempt_id = 2;
+  Fence fence = 3;
+  google.protobuf.Timestamp started_at = 4;
+  google.protobuf.Timestamp lease_until = 5;
+  uint32 attempt_number = 6;
+}
+
+// CONTRACT_STATUS: not_implemented - target P01, producer pending.
+message DeliveryReceipt {
+  DeliveryAttempt attempt = 1;
+  DeliveryDisposition disposition = 2;
+  RpcFailure failure = 3;
+}
+
+// CONTRACT_STATUS: not_implemented - target P01, producer pending.
+message VersionedResourceState {
+  ResourceRef resource = 1;
+  uint64 version = 2;
+  LifecycleState lifecycle = 3;
+  DesiredState desired = 4;
+  Fence fence = 5;
+  bool registered = 6;
+  uint64 desired_config_version = 7;
+  uint64 applied_config_version = 8;
+  ExecutionOutcome process_outcome = 9;
+  google.protobuf.Timestamp observed_at = 10;
+  string source_service = 11;
+}
+
+// CONTRACT_STATUS: not_implemented - target P01, producer pending.
+message SnapshotPage {
+  uint32 page_size = 1;
+  string page_token = 2;
+  // 10 minute immutable snapshot, bound to subject/permissions/scope/size.
+  string snapshot_id = 3;
+  string next_page_token = 4;
+  google.protobuf.Timestamp expires_at = 5;
+}
+

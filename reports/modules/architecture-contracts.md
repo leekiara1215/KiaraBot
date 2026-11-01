@@ -17,3 +17,9 @@
 文档影响：P00 只新增规格和本报告，无已生效接口变化；P01 同步 proto/README、doc/01-contracts、运行语义、doc/06。doc/02–05、07–08 由实现所有者后续同步，本任务不修改它们且不宣称新生产行为；doc/18 只读，无基线编辑。
 
 P00 检查：`python3 -m json.tool proto/tests/target_spec.json`、`git diff --check`。本机 protoc 与 grpc_cpp_plugin 可取得；系统 Python 缺 protobuf，将建立临时独立验证环境。根 CMake 接线由工具链任务负责。
+
+## P01a 公共类型与流
+
+新增 `platform.proto`；Adapter/Plugin 原有流增加强制目标 fence、安装和执行绑定、配置版本及投递 attempt/续租/回执。未提供第二套兼容桥；现有消费者尚未迁移。新增字段/枚举已登记 not_implemented 并同步状态表。公共消息/代次为规范约束，proto3 本身不执行必填校验，生产边界必须拒绝缺失/0；后续独立目标 fixture 验证边界映射前提。
+
+本步实际检查：protoc 全量 descriptor 生成、实现状态登记检查、枚举一致性检查、git diff --check。文档更新为 proto/README、doc/01-contracts、doc/01-runtime-semantics、doc/06-control-api；其余模块文档无生产行为改变，留给实现所有者。未运行全仓构建：P01 不是旧消费者兼容门禁；C++/Python 生成与往返将在独立入口补齐并实际运行后记录。

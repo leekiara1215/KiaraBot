@@ -261,3 +261,7 @@ GET 配置的 delivery 是查询时观察值，未新增 WebSocket 事件类型�
 - 事件：只产生 `message.updated`，payload 仅 `{message_id, conversation_id, direction}`，不含任何消息正文；v1 只产生 `direction="received"`，`event.message.sent` 仍为 not_implemented，`action_id` 字段保留但 v1 不产生。
 - 无 REST 消息投影：频道是自包含元数据的通知流（十分钟/4096 条有界重放、每批 32 条下发、容量或时间缺口返回 RESYNC_REQUIRED、重启 SERVER_RESTART 后不补历史），不是审计也不能当作审计；客户端不得据此重建历史。面板收到事件只触发既有快照刷新，不新增消息页面、不展示消息历史。
 - 频道不再带 `x-contract-status: not_implemented`；`health.updated` 与 `plugin.updated.health_state` 仍未实现，保持原样。
+
+## P01 目标公共结果（未实现）
+
+目标管理响应携带所有者、资源版本、观测时间及 OperationRef。期望配置已保存、Host 进程启动、插件注册、配置应用分别观测；HTTP 202 只表示持久受理。Operation 的 Blocked 和 stalled 不等于失败；execution_outcome=UNKNOWN 不自动重发。Control 不另建权威终态。目标错误映射见 proto/tests/target_spec.json，后续 API schema 同步声明；既有端点未因类型声明自动接线。

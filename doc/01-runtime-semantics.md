@@ -188,3 +188,11 @@ REST 不可变分页用于一致列表；WebSocket 是资源状态刷新通知�
 ## 配置下发闭环
 
 配置通过 plugin.config.v1 / PluginConfig / PluginConfigAck 下发并按连接确认。REST GET 的 delivery 区分持久化与运行实例应用，PUT/幂等重放只确认持久化。状态、超时、重连、错误及事件门控的完整规则见 [PluginSDK 配置下发闭环](03-plugin-sdk.md#配置下发闭环t08b-后续)。协议唯一来源为 proto/kiarabot/v1/plugins.proto，REST 为 api/openapi.yaml；无新增错误码或 HTTP/gRPC 映射。
+
+## P01 目标注册、代次和租约（未接线）
+
+目标使用一套协议，不接纳旧事件专用客户端。注册验证安装/实例/账号绑定、当前执行代次和必需特性；服务端事务分配 connection_generation 与 runtime_epoch，Fence 在每个注册后帧必填且正代次，旧连接不能执行新工作。Adapter 声明能力仅协商，不授予权限。重启更换 epoch，失效旧流。
+
+每个实例 fan-out 独立 DeliveryAttempt：event_id 保持，attempt_id 每次领取改变，绑定完整 Fence；started_at/lease_until 由数据库 UTC 裁决。租期30秒，建议10秒续租，每次最多延至 now+30秒且不超过 started_at+300秒。Renew/ACK 和超时竞争同一持久记录；过期返回 DELIVERY_STALE，不修改新尝试；重复成功返回 DELIVERY_DUPLICATE。ACK 需 event_id 与 attempt.event_id 相等；错误 ACK 需稳定 Error。配置 ACK 绑定 Fence、delivery_id 与 config_version；未应用最新配置不投新事件。正常/拒绝/过期/依赖故障均可由 DeliveryReceipt 表达；ACK/Renew 是当前认证流的收尾事实，不重新检查历史用户会话。新副作用仍在线授权。
+
+内部成功命令收据至少七天；可靠交接使用 source_service/message_id/资源版本/hash/created_at/valid_until，默认有效七天。inbox 保留到 max(首次接收+七天, valid_until+七天)。已过期新消息拒绝，不盲延长有效期；重复提交不新增投递目标。断线/取消等待不回滚提交，不将未知平台/模型执行记成 FAILED。

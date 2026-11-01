@@ -78,7 +78,22 @@
       "TaskCreateRequest": "implemented",
       "TaskGetRequest": "implemented",
       "TaskResponse": "implemented",
-      "TimerTriggered": "implemented"
+      "TimerTriggered": "implemented",
+      "RequestContext": "not_implemented",
+      "ResourceRef": "not_implemented",
+      "ResourceScope": "not_implemented",
+      "Fence": "not_implemented",
+      "StreamCursor": "not_implemented",
+      "OperationRef": "not_implemented",
+      "FailureContext": "not_implemented",
+      "RpcFailure": "not_implemented",
+      "OperationProgress": "not_implemented",
+      "Operation": "not_implemented",
+      "HandoffContext": "not_implemented",
+      "DeliveryAttempt": "not_implemented",
+      "DeliveryReceipt": "not_implemented",
+      "VersionedResourceState": "not_implemented",
+      "SnapshotPage": "not_implemented"
     },
     "proto_fields": {
       "Account.account_id": "implemented",
@@ -344,7 +359,101 @@
       "TimerTriggered.payload": "implemented",
       "TimerTriggered.scheduled_at": "implemented",
       "TimerTriggered.task_id": "implemented",
-      "FriendRequest.request_id": "implemented"
+      "FriendRequest.request_id": "implemented",
+      "RegisterAdapterRequest.adapter_instance_id": "not_implemented",
+      "RegisterAdapterRequest.context": "not_implemented",
+      "RegisterAdapterResponse.fence": "not_implemented",
+      "RegisterAdapterResponse.effective_capabilities": "not_implemented",
+      "AdapterToCore.fence": "not_implemented",
+      "CoreToAdapter.fence": "not_implemented",
+      "RequestContext.request_id": "not_implemented",
+      "RequestContext.trace_id": "not_implemented",
+      "RequestContext.deadline": "not_implemented",
+      "RequestContext.idempotency_key": "not_implemented",
+      "RequestContext.delegation": "not_implemented",
+      "ResourceRef.kind": "not_implemented",
+      "ResourceRef.id": "not_implemented",
+      "ResourceScope.resources": "not_implemented",
+      "Fence.instance_id": "not_implemented",
+      "Fence.execution_generation": "not_implemented",
+      "Fence.connection_generation": "not_implemented",
+      "Fence.runtime_epoch": "not_implemented",
+      "StreamCursor.source_service": "not_implemented",
+      "StreamCursor.epoch": "not_implemented",
+      "StreamCursor.scope": "not_implemented",
+      "StreamCursor.sequence": "not_implemented",
+      "OperationRef.owner_service": "not_implemented",
+      "OperationRef.operation_id": "not_implemented",
+      "OperationRef.resource": "not_implemented",
+      "FailureContext.acceptance": "not_implemented",
+      "FailureContext.operation": "not_implemented",
+      "FailureContext.recovery": "not_implemented",
+      "FailureContext.retry_after_ms": "not_implemented",
+      "FailureContext.current_version": "not_implemented",
+      "RpcFailure.error": "not_implemented",
+      "RpcFailure.context": "not_implemented",
+      "OperationProgress.participant": "not_implemented",
+      "OperationProgress.state": "not_implemented",
+      "OperationProgress.reason": "not_implemented",
+      "OperationProgress.next_attempt_at": "not_implemented",
+      "Operation.ref": "not_implemented",
+      "Operation.version": "not_implemented",
+      "Operation.state": "not_implemented",
+      "Operation.execution_outcome": "not_implemented",
+      "Operation.participants": "not_implemented",
+      "Operation.observed_at": "not_implemented",
+      "Operation.reason": "not_implemented",
+      "Operation.next_attempt_at": "not_implemented",
+      "Operation.stalled": "not_implemented",
+      "HandoffContext.source_service": "not_implemented",
+      "HandoffContext.message_id": "not_implemented",
+      "HandoffContext.operation": "not_implemented",
+      "HandoffContext.causation_id": "not_implemented",
+      "HandoffContext.resource": "not_implemented",
+      "HandoffContext.resource_version": "not_implemented",
+      "HandoffContext.payload_sha256": "not_implemented",
+      "HandoffContext.created_at": "not_implemented",
+      "HandoffContext.valid_until": "not_implemented",
+      "DeliveryAttempt.event_id": "not_implemented",
+      "DeliveryAttempt.attempt_id": "not_implemented",
+      "DeliveryAttempt.fence": "not_implemented",
+      "DeliveryAttempt.started_at": "not_implemented",
+      "DeliveryAttempt.lease_until": "not_implemented",
+      "DeliveryAttempt.attempt_number": "not_implemented",
+      "DeliveryReceipt.attempt": "not_implemented",
+      "DeliveryReceipt.disposition": "not_implemented",
+      "DeliveryReceipt.failure": "not_implemented",
+      "VersionedResourceState.resource": "not_implemented",
+      "VersionedResourceState.version": "not_implemented",
+      "VersionedResourceState.lifecycle": "not_implemented",
+      "VersionedResourceState.desired": "not_implemented",
+      "VersionedResourceState.fence": "not_implemented",
+      "VersionedResourceState.registered": "not_implemented",
+      "VersionedResourceState.desired_config_version": "not_implemented",
+      "VersionedResourceState.applied_config_version": "not_implemented",
+      "VersionedResourceState.process_outcome": "not_implemented",
+      "VersionedResourceState.observed_at": "not_implemented",
+      "VersionedResourceState.source_service": "not_implemented",
+      "SnapshotPage.page_size": "not_implemented",
+      "SnapshotPage.page_token": "not_implemented",
+      "SnapshotPage.snapshot_id": "not_implemented",
+      "SnapshotPage.next_page_token": "not_implemented",
+      "SnapshotPage.expires_at": "not_implemented",
+      "RegisterPluginRequest.installation_id": "not_implemented",
+      "RegisterPluginRequest.execution_generation": "not_implemented",
+      "RegisterPluginRequest.context": "not_implemented",
+      "RegisterPluginResponse.fence": "not_implemented",
+      "RegisterPluginResponse.desired_config_version": "not_implemented",
+      "PluginToCore.fence": "not_implemented",
+      "PluginToCore.renew_delivery": "not_implemented",
+      "CoreToPlugin.fence": "not_implemented",
+      "CoreToPlugin.delivery_attempt": "not_implemented",
+      "CoreToPlugin.delivery_receipt": "not_implemented",
+      "PluginEventAck.attempt": "not_implemented",
+      "PluginConfig.config_version": "not_implemented",
+      "PluginConfig.fence": "not_implemented",
+      "PluginConfigAck.config_version": "not_implemented",
+      "PluginConfigAck.fence": "not_implemented"
     },
     "event_payloads": {
       "EventEnvelope.message_received": "implemented",
@@ -389,7 +498,68 @@
       "MessageSegment.Type.LOCATION": "not_implemented",
       "ConversationRef.Type.CHANNEL": "not_implemented",
       "PluginState.PLUGIN_STATE_STARTING": "not_implemented",
-      "PluginState.PLUGIN_STATE_STOPPING": "not_implemented"
+      "PluginState.PLUGIN_STATE_STOPPING": "not_implemented",
+      "ResourceKind.RESOURCE_KIND_UNSPECIFIED": "not_implemented",
+      "ResourceKind.RESOURCE_ACCOUNT": "not_implemented",
+      "ResourceKind.RESOURCE_ADAPTER": "not_implemented",
+      "ResourceKind.RESOURCE_PLUGIN_TYPE": "not_implemented",
+      "ResourceKind.RESOURCE_INSTALLATION": "not_implemented",
+      "ResourceKind.RESOURCE_INSTANCE": "not_implemented",
+      "ResourceKind.RESOURCE_HOST": "not_implemented",
+      "ResourceKind.RESOURCE_NAMESPACE": "not_implemented",
+      "ResourceKind.RESOURCE_TASK": "not_implemented",
+      "ResourceKind.RESOURCE_MODEL": "not_implemented",
+      "ResourceKind.RESOURCE_PRINCIPAL": "not_implemented",
+      "ResourceKind.RESOURCE_SESSION": "not_implemented",
+      "ResourceKind.RESOURCE_ACTION": "not_implemented",
+      "ResourceKind.RESOURCE_OPERATION": "not_implemented",
+      "ResourceKind.RESOURCE_CREDENTIAL": "not_implemented",
+      "ResourceKind.RESOURCE_ASSIGNMENT": "not_implemented",
+      "OperationState.OPERATION_STATE_UNSPECIFIED": "not_implemented",
+      "OperationState.OPERATION_ACCEPTED": "not_implemented",
+      "OperationState.OPERATION_RUNNING": "not_implemented",
+      "OperationState.OPERATION_BLOCKED": "not_implemented",
+      "OperationState.OPERATION_SUCCEEDED": "not_implemented",
+      "OperationState.OPERATION_FAILED": "not_implemented",
+      "OperationState.OPERATION_CANCELLED": "not_implemented",
+      "OperationState.OPERATION_EXPIRED": "not_implemented",
+      "ExecutionOutcome.EXECUTION_OUTCOME_UNSPECIFIED": "not_implemented",
+      "ExecutionOutcome.EXECUTION_NOT_STARTED": "not_implemented",
+      "ExecutionOutcome.EXECUTION_KNOWN_SUCCEEDED": "not_implemented",
+      "ExecutionOutcome.EXECUTION_KNOWN_FAILED": "not_implemented",
+      "ExecutionOutcome.EXECUTION_UNKNOWN": "not_implemented",
+      "AcceptanceState.ACCEPTANCE_UNSPECIFIED": "not_implemented",
+      "AcceptanceState.NOT_ACCEPTED": "not_implemented",
+      "AcceptanceState.DURABLY_ACCEPTED": "not_implemented",
+      "AcceptanceState.ACCEPTANCE_UNKNOWN": "not_implemented",
+      "RecoveryAction.RECOVERY_UNSPECIFIED": "not_implemented",
+      "RecoveryAction.CORRECT_INPUT": "not_implemented",
+      "RecoveryAction.REAUTHENTICATE": "not_implemented",
+      "RecoveryAction.DO_NOT_RETRY": "not_implemented",
+      "RecoveryAction.QUERY_SAME_INTENT": "not_implemented",
+      "RecoveryAction.RETRY_SAME_ID": "not_implemented",
+      "RecoveryAction.RESYNC_SNAPSHOT": "not_implemented",
+      "RecoveryAction.MANUAL_REVIEW": "not_implemented",
+      "LifecycleState.LIFECYCLE_UNSPECIFIED": "not_implemented",
+      "LifecycleState.LIFECYCLE_ACTIVE": "not_implemented",
+      "LifecycleState.LIFECYCLE_DISABLED": "not_implemented",
+      "LifecycleState.LIFECYCLE_DELETING": "not_implemented",
+      "LifecycleState.LIFECYCLE_DELETED": "not_implemented",
+      "LifecycleState.LIFECYCLE_RESTORING": "not_implemented",
+      "LifecycleState.LIFECYCLE_PURGED": "not_implemented",
+      "DesiredState.DESIRED_STATE_UNSPECIFIED": "not_implemented",
+      "DesiredState.DESIRED_RUNNING": "not_implemented",
+      "DesiredState.DESIRED_STOPPED": "not_implemented",
+      "FixedRole.FIXED_ROLE_UNSPECIFIED": "not_implemented",
+      "FixedRole.ROLE_ADMIN": "not_implemented",
+      "FixedRole.ROLE_OPERATOR": "not_implemented",
+      "FixedRole.ROLE_VIEWER": "not_implemented",
+      "DeliveryDisposition.DELIVERY_DISPOSITION_UNSPECIFIED": "not_implemented",
+      "DeliveryDisposition.DELIVERY_ACKNOWLEDGED": "not_implemented",
+      "DeliveryDisposition.DELIVERY_DUPLICATE": "not_implemented",
+      "DeliveryDisposition.DELIVERY_STALE": "not_implemented",
+      "DeliveryDisposition.DELIVERY_RENEWED": "not_implemented",
+      "DeliveryDisposition.DELIVERY_REJECTED": "not_implemented"
     },
     "channels": {
       "channels.control": "implemented",
@@ -622,6 +792,471 @@
     ],
     "PluginState.PLUGIN_STATE_STOPPING": [
       "core/include/kiarabot/core/domain/runtime_engine.hpp"
+    ],
+    "RegisterAdapterRequest.adapter_instance_id": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RegisterAdapterRequest.context": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RegisterAdapterResponse.fence": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RegisterAdapterResponse.effective_capabilities": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "AdapterToCore.fence": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "CoreToAdapter.fence": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RequestContext.request_id": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RequestContext.trace_id": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RequestContext.deadline": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RequestContext.idempotency_key": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RequestContext.delegation": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ResourceRef.kind": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ResourceRef.id": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ResourceScope.resources": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "Fence.instance_id": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "Fence.execution_generation": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "Fence.connection_generation": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "Fence.runtime_epoch": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "StreamCursor.source_service": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "StreamCursor.epoch": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "StreamCursor.scope": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "StreamCursor.sequence": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "OperationRef.owner_service": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "OperationRef.operation_id": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "OperationRef.resource": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "FailureContext.acceptance": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "FailureContext.operation": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "FailureContext.recovery": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "FailureContext.retry_after_ms": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "FailureContext.current_version": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RpcFailure.error": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RpcFailure.context": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "OperationProgress.participant": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "OperationProgress.state": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "OperationProgress.reason": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "OperationProgress.next_attempt_at": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "Operation.ref": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "Operation.version": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "Operation.state": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "Operation.execution_outcome": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "Operation.participants": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "Operation.observed_at": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "Operation.reason": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "Operation.next_attempt_at": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "Operation.stalled": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "HandoffContext.source_service": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "HandoffContext.message_id": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "HandoffContext.operation": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "HandoffContext.causation_id": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "HandoffContext.resource": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "HandoffContext.resource_version": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "HandoffContext.payload_sha256": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "HandoffContext.created_at": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "HandoffContext.valid_until": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "DeliveryAttempt.event_id": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "DeliveryAttempt.attempt_id": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "DeliveryAttempt.fence": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "DeliveryAttempt.started_at": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "DeliveryAttempt.lease_until": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "DeliveryAttempt.attempt_number": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "DeliveryReceipt.attempt": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "DeliveryReceipt.disposition": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "DeliveryReceipt.failure": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "VersionedResourceState.resource": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "VersionedResourceState.version": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "VersionedResourceState.lifecycle": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "VersionedResourceState.desired": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "VersionedResourceState.fence": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "VersionedResourceState.registered": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "VersionedResourceState.desired_config_version": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "VersionedResourceState.applied_config_version": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "VersionedResourceState.process_outcome": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "VersionedResourceState.observed_at": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "VersionedResourceState.source_service": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "SnapshotPage.page_size": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "SnapshotPage.page_token": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "SnapshotPage.snapshot_id": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "SnapshotPage.next_page_token": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "SnapshotPage.expires_at": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RegisterPluginRequest.installation_id": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RegisterPluginRequest.execution_generation": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RegisterPluginRequest.context": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RegisterPluginResponse.fence": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RegisterPluginResponse.desired_config_version": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "PluginToCore.fence": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "PluginToCore.renew_delivery": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "CoreToPlugin.fence": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "CoreToPlugin.delivery_attempt": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "CoreToPlugin.delivery_receipt": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "PluginEventAck.attempt": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "PluginConfig.config_version": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "PluginConfig.fence": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "PluginConfigAck.config_version": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "PluginConfigAck.fence": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ResourceKind.RESOURCE_KIND_UNSPECIFIED": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ResourceKind.RESOURCE_ACCOUNT": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ResourceKind.RESOURCE_ADAPTER": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ResourceKind.RESOURCE_PLUGIN_TYPE": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ResourceKind.RESOURCE_INSTALLATION": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ResourceKind.RESOURCE_INSTANCE": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ResourceKind.RESOURCE_HOST": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ResourceKind.RESOURCE_NAMESPACE": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ResourceKind.RESOURCE_TASK": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ResourceKind.RESOURCE_MODEL": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ResourceKind.RESOURCE_PRINCIPAL": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ResourceKind.RESOURCE_SESSION": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ResourceKind.RESOURCE_ACTION": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ResourceKind.RESOURCE_OPERATION": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ResourceKind.RESOURCE_CREDENTIAL": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ResourceKind.RESOURCE_ASSIGNMENT": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "OperationState.OPERATION_STATE_UNSPECIFIED": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "OperationState.OPERATION_ACCEPTED": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "OperationState.OPERATION_RUNNING": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "OperationState.OPERATION_BLOCKED": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "OperationState.OPERATION_SUCCEEDED": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "OperationState.OPERATION_FAILED": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "OperationState.OPERATION_CANCELLED": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "OperationState.OPERATION_EXPIRED": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ExecutionOutcome.EXECUTION_OUTCOME_UNSPECIFIED": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ExecutionOutcome.EXECUTION_NOT_STARTED": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ExecutionOutcome.EXECUTION_KNOWN_SUCCEEDED": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ExecutionOutcome.EXECUTION_KNOWN_FAILED": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ExecutionOutcome.EXECUTION_UNKNOWN": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "AcceptanceState.ACCEPTANCE_UNSPECIFIED": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "AcceptanceState.NOT_ACCEPTED": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "AcceptanceState.DURABLY_ACCEPTED": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "AcceptanceState.ACCEPTANCE_UNKNOWN": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RecoveryAction.RECOVERY_UNSPECIFIED": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RecoveryAction.CORRECT_INPUT": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RecoveryAction.REAUTHENTICATE": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RecoveryAction.DO_NOT_RETRY": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RecoveryAction.QUERY_SAME_INTENT": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RecoveryAction.RETRY_SAME_ID": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RecoveryAction.RESYNC_SNAPSHOT": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RecoveryAction.MANUAL_REVIEW": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "LifecycleState.LIFECYCLE_UNSPECIFIED": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "LifecycleState.LIFECYCLE_ACTIVE": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "LifecycleState.LIFECYCLE_DISABLED": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "LifecycleState.LIFECYCLE_DELETING": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "LifecycleState.LIFECYCLE_DELETED": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "LifecycleState.LIFECYCLE_RESTORING": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "LifecycleState.LIFECYCLE_PURGED": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "DesiredState.DESIRED_STATE_UNSPECIFIED": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "DesiredState.DESIRED_RUNNING": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "DesiredState.DESIRED_STOPPED": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "FixedRole.FIXED_ROLE_UNSPECIFIED": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "FixedRole.ROLE_ADMIN": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "FixedRole.ROLE_OPERATOR": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "FixedRole.ROLE_VIEWER": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "DeliveryDisposition.DELIVERY_DISPOSITION_UNSPECIFIED": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "DeliveryDisposition.DELIVERY_ACKNOWLEDGED": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "DeliveryDisposition.DELIVERY_DUPLICATE": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "DeliveryDisposition.DELIVERY_STALE": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "DeliveryDisposition.DELIVERY_RENEWED": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "DeliveryDisposition.DELIVERY_REJECTED": [
+      "reports/modules/architecture-contracts.md"
     ]
   },
   "vocabulary": {
