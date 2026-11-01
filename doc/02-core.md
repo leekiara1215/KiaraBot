@@ -282,3 +282,20 @@ LoggingRuntimeStore 装饰现有 RuntimeStore，不改变事务结果；提交�
 ## 配置下发闭环
 
 配置通过 plugin.config.v1 / PluginConfig / PluginConfigAck 下发并按连接确认。REST GET 的 delivery 区分持久化与运行实例应用，PUT/幂等重放只确认持久化。状态、超时、重连、错误及事件门控的完整规则见 [PluginSDK 配置下发闭环](03-plugin-sdk.md#配置下发闭环t08b-后续)。协议唯一来源为 proto/kiarabot/v1/plugins.proto，REST 为 api/openapi.yaml；无新增错误码或 HTTP/gRPC 映射。
+
+## 目标内层规格（P00 / P01b，尚未接线）
+
+目标接口位于 `domain/target`、`application/target`、`ports/target`，命名空间为
+`kiarabot::core::target`。它们只依赖 C++20 标准库，无传输、生成协议、JSON、SQL
+或旧 RuntimeSnapshot 依赖；当前运行路径未替换，后续统一接线时移除旧接口。
+
+`domain/target/foundation.hpp` 提供强类型稳定资源/安装/实例、执行/连接身份和分离代次、
+所有者版本、operation 与失败上下文。ID 值由可信边界验证和所有者分配，本层不生成 UUID。
+`Result<Value, Error>` 保持现有 variant 约定，目标 `Outcome<Value>` 固定内部 Failure，
+通过独立命名空间避免引用旧 runtime_store.hpp；不是另一个生产存储实现。
+失败区分未受理/已受理/未知及同身份查询等恢复动作；未知提交不能当作已回滚。
+稳定业务码对应 doc/21 的目标矩阵，HTTP/gRPC 映射由后续边界实现。
+
+独立验证：`cmake -S core/tests/architecture -B /tmp/kiarabot-core-inner`，
+`cmake --build /tmp/kiarabot-core-inner`，
+`ctest --test-dir /tmp/kiarabot-core-inner --output-on-failure`。根构建尚未接入。
