@@ -183,6 +183,8 @@ bool valid_error(const v1::Error& error) {
          correlation_id(error.request_id()) && correlation_id(error.trace_id()) &&
          !error.message().empty() && error.details().empty();
 }
+// Structural wire validation only; the owner decides acceptance/recovery compatibility
+// with its command and durable facts. Known enum values do not authorize recovery.
 bool valid_failure(const v1::RpcFailure& failure) {
   if (!failure.has_error() || !failure.has_context() || !valid_error(failure.error())) {
     return false;

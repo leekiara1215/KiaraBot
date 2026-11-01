@@ -44,3 +44,14 @@ clang-tidy -p /tmp/kiarabot-p04-codec/build --checks='clang-analyzer-*' \
 父审指出初版错误地沿用了reference Connect的Error-only binary详情；96f88ce必须与本后继修正一起集成。已移除公开to_grpc_error/from_grpc_error，target unary仅to_grpc_failure/from_grpc_failure，无第二格式或自动fallback。完整容器必填error/context；acceptance/recovery为封闭非零枚举；current_version若存在为正；operation若存在要求登记runtime/scheduler/model owner、UUIDv4 ID、完整合法资源。不把可选operation强设必填，Unknown Login/Refresh保留原意图恢复事实。
 
 新增测试覆盖3种acceptance与7种recovery、Unknown/NotAccepted/Accepted完整binary/HTTP往返、最大current_version、operation/retry_after保留；缺context/error、unknown/UNSPECIFIED、零version、坏owner/ID/resource、grpc状态失配和旧Error-only详情均拒绝。没有改wire/API唯一契约。最终固定依赖-Werror rebuild和codec_check通过；clang-format16 dry-run与两TU clang-tidy22（全部analyzer、warnings-as-errors）均退出0。status文档门禁与git diff --check通过。文档仅修正doc01/doc02 codec说明及本报告，doc18未动；不声明认证业务或整体接线完成。
+
+
+## 固定Core依赖复验与恢复策略边界
+
+按父指示实际尝试cherry-pick b0949b3，因本contracts分支缺少此前Core P03/P04文件而发生modify/delete及doc02冲突，已git cherry-pick --abort完整撤销，不解决或复制其他模块内部变更。复验改用git archive b0949b3 core/include导出的不可变/tmp头文件快照（含MessageRead、canonical int64纳秒和ResourceRef），不再依赖Core未提交工作区。主集成已有Core前置提交，可直接顺序整合codec，不应为本分支重复造Core合并提交。
+
+lowercase UUIDv4依据doc21第4.1节“新平台资源/operation/message/request ID采用服务端CSPRNG UUIDv4、小写标准文本”；旧Action/Task保持来源规则，不从OpenAPI宽泛format:uuid自行推断。operation owner依据target_spec完整GetOperation方法集及doc21 Runtime/Scheduler/Model责任：Identity Session/Credential事务没有异步operation，Unknown Login/Refresh允许无operation引用；不扩充unknown owner。
+
+Failure codec只校验结构，不声称整个恢复建议在具体业务中合法。已在公共头、实现和测试明确：owner必须依据命令及持久受理事实检查acceptance/recovery组合；Unknown不能因为CorrectInput等枚举已知就获得换新key或重做外部副作用许可。3×7 fixture只验证枚举无损传输，不是业务恢复矩阵。该业务策略仍由owner实现，本codec不替代或猜测它。
+
+b0949b3不可变依赖最终复验：重新configure、固定依赖-Werror build、全部codec_check（40权限/16资源/11错误与RpcFailure完整正反例）、clang-format16 dry-run、两TU clang-tidy22全部analyzer/warnings-as-errors、状态文档门禁和git diff --check均退出0。所有生成/依赖快照在/tmp，本提交不引入Core重复文件或修改CMake；完整集成检查仍由父任务执行。

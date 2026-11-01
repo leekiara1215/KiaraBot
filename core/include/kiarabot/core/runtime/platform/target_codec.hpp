@@ -34,6 +34,9 @@ target::Outcome<v1::Error> make_error(target::ErrorCode code, std::string_view r
                                       std::string_view trace_id, bool retryable) noexcept;
 // The sole target unary binary detail is RpcFailure; Error-only reference Connect
 // details are deliberately rejected, with no fallback or information-losing adapter.
+// Validation is structural, not owner recovery policy. The owner must validate
+// acceptance/recovery against the actual command and committed facts: an Unknown
+// result must never authorize a new-key retry merely because its recovery enum is known.
 target::Outcome<grpc::Status> to_grpc_failure(const v1::RpcFailure& failure) noexcept;
 target::Outcome<v1::RpcFailure> from_grpc_failure(const grpc::Status& status) noexcept;
 target::Outcome<v1::RpcFailure> from_http_failure(int status,

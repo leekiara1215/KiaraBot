@@ -281,6 +281,8 @@ void test_failure_context() {
            input.SerializeAsString());
   };
   verify(failure);
+  // This Cartesian fixture tests enum transport coverage, not legal business combinations.
+  // In particular Unknown + CorrectInput must not be used by an owner to permit a new key.
   for (const auto acceptance :
        {wire::NOT_ACCEPTED, wire::DURABLY_ACCEPTED, wire::ACCEPTANCE_UNKNOWN}) {
     context->set_acceptance(acceptance);
