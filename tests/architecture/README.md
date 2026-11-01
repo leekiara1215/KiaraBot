@@ -39,3 +39,17 @@ CLI/配置失败要求退出2且诊断属于参数/配置类别；证书/绑定�
 `python3 tests/architecture/support_test.py -v` 自测验收判定器：错误退出码/无关诊断被拒绝，
 PEM/DSN泄漏被拒绝，缺依赖不skip，真实本地HTTP夹具验证状态/JSON形状及关闭探测。
 该HTTP夹具只测判定器，绝不作为六进程结果。网络受限时申请本地临时端口权限，不改测试跳过。
+
+TLS分组读取grpc_environment.json，必须Python3.11.18/grpcio1.85.0（现SDK锁），不匹配立即失败。
+先运行`uv sync --project sdk/python --locked --python 3.11.18`，再使用该环境执行run.py。
+泛型序列化bytes RPC不需要Protobuf生成器/runtime；不会偷偷回退grpcurl或未锁系统包。
+五个owner service的77个方法与Runtime三条桥接流逐项验证UNIMPLEMENTED；无/外CA/过期
+客户端以及错误服务端信任根必须UNAVAILABLE，前后可信mTLS RPC仍UNIMPLEMENTED且live正常，
+防止把服务崩溃/错误端点冒充认证拒绝。UNIMPLEMENTED状态本身不能证明服务已注册，owner
+注册/link图仍由Core及工具链独立检查；这不是业务授权或收据正确性的验收。
+
+`python3 tests/architecture/tls_fixture_test.py --openssl "$TEST_OPENSSL" -v` 执行真实mTLS握手，
+验证可信客户端成功，无证书、错误CA、过期客户端的具体TLS告警，服务端信任根和主机名核验。
+无证书拒绝要求PEER_DID_NOT_RETURN_A_CERTIFICATE；链错误明确verify_code19/20，过期10；
+本机LibreSSL在服务器侧可能返回含糊原因，此时必须在客户端观察UNKNOWN_CA/CERTIFICATE_EXPIRED
+对应TLS alert，任意EOF/超时不算通过。该夹具自测不能替代五服务真实grpc测试。

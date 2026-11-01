@@ -1,0 +1,9 @@
+{
+  "python": "3.11.18",
+  "grpcio": "1.85.0",
+  "source": "sdk/python/pyproject.toml and sdk/python/uv.lock",
+  "install": "uv sync --project sdk/python --locked --python 3.11.18",
+  "usage": "sdk/python/.venv/bin/python tests/architecture/run.py --group tls ...",
+  "protobuf_required": false,
+  "reason": "Generic serialized-byte calls verify transport status without generated client code."
+}
