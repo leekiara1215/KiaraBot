@@ -1062,3 +1062,21 @@ Revoke(target,expected)提供服务端成熟指纹，固定SetAssignment.v1/Revo
 role或permissions、exact resources、expected及可选字段存在标志；权限/资源排序等价，
 重复或无效输入拒绝。request/trace/deadline/idempotency key不属于内容，port不授权、不查DB、
 不收raw token，所有调用在UoW外。此纯端口声明不代表成熟哈希或Set/Revoke应用已启用。
+
+### Current original Control of browser sessions
+
+Every browser session retains its original Control subject and credential ID. Access,
+refresh and secret replay require the actual current Control to match both stable IDs;
+certificate rotation under that same ID is allowed after current TLS/registration
+verification. Another Control cannot take over or rebind old tokens. Missing binding
+fails closed. Current head, active PlatformService/Control, own Principal binding,
+registered SAN, credential/certificate validity and dependency failures are checked
+again at session authority reads; no VerifiedPeer is fabricated from stored records.
+
+For delegated source_session, the persisted original Control subject must match
+claims.actor_chain.front(). That original Control is checked from typed current
+registration independently of the actual direct Runtime's own authenticated TLS.
+Relevant final deadlines include the original Control current credential/certificate
+expiry and the existing one-second authorization checkpoint. Crypto runs outside UoW;
+fresh reads after verification/replay reject intervening invalidation or dependency
+failure. Source binding does not pin a certificate version or overwrite direct peer data.

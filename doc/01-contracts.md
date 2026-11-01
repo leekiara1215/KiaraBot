@@ -1837,3 +1837,21 @@ AuthorizationDecision.allowed=false并带PERMISSION_DENIED。依赖故障、时�
 返回当前source授权版本及DB checked_at；专用验签不证明原业务TLS possession，owner必须
 先用真实来客普通verify。详见doc/02-core的纯应用章节；RPC与生产接线仍需独立验收，
 此变更不新增proto字段、稳定错误枚举、API或映射。
+
+### Current original Control of browser sessions
+
+Every browser session retains its original Control subject and credential ID. Access,
+refresh and secret replay require the actual current Control to match both stable IDs;
+certificate rotation under that same ID is allowed after current TLS/registration
+verification. Another Control cannot take over or rebind old tokens. Missing binding
+fails closed. Current head, active PlatformService/Control, own Principal binding,
+registered SAN, credential/certificate validity and dependency failures are checked
+again at session authority reads; no VerifiedPeer is fabricated from stored records.
+
+For delegated source_session, the persisted original Control subject must match
+claims.actor_chain.front(). That original Control is checked from typed current
+registration independently of the actual direct Runtime's own authenticated TLS.
+Relevant final deadlines include the original Control current credential/certificate
+expiry and the existing one-second authorization checkpoint. Crypto runs outside UoW;
+fresh reads after verification/replay reject intervening invalidation or dependency
+failure. Source binding does not pin a certificate version or overwrite direct peer data.

@@ -293,11 +293,15 @@ private:
     } else if (login_expectation) {
       return failure(ErrorCode::Internal);
     }
-    auto current = detail::read_session(*work.transaction, *receipt.binding.session);
+    auto current = detail::read_session(*work.transaction, *receipt.binding.session, work.now);
     if (const auto* error = std::get_if<Failure>(&current)) {
       return *error;
     }
     const auto& state = std::get<detail::SessionAuthority>(current);
+    auto control_binding_gate = detail::require_session_control_peer(state.session, peer);
+    if (const auto* error = std::get_if<Failure>(&control_binding_gate)) {
+      return *error;
+    }
     auto valid =
         require_secret_replay(receipt, scope, parameters, commitment, state.subject.principal,
                               state.credential, &state.session, work.now);
@@ -308,9 +312,11 @@ private:
         work, context,
         std::min({receipt.binding.retain_until, state.session.refresh_expires_at,
                   state.credential.expires_at.value_or(TimePoint::min()),
+                  detail::session_control_valid_until(state.control),
                   peer.binding.certificate.not_after,
                   std::get<detail::PeerAuthority>(current_peer)
-                      .credential.expires_at.value_or(TimePoint::min())}));
+                      .credential.expires_at.value_or(TimePoint::min())}),
+        true);
     if (const auto* error = std::get_if<Failure>(&checkpoint)) {
       return *error;
     }
@@ -535,7 +541,8 @@ private:
                   current_credential->expires_at.value_or(TimePoint::min()),
                   request.control_peer.binding.certificate.not_after,
                   std::get<detail::PeerAuthority>(peer).credential.expires_at.value_or(
-                      TimePoint::min())}));
+                      TimePoint::min())}),
+        true);
     if (const auto* error = std::get_if<Failure>(&checkpoint)) {
       return *error;
     }
@@ -609,11 +616,16 @@ private:
     if (const auto* error = std::get_if<Failure>(&gate)) {
       return *error;
     }
-    auto current = detail::read_session(*work.transaction, selected->id);
+    auto current = detail::read_session(*work.transaction, selected->id, work.now);
     if (const auto* error = std::get_if<Failure>(&current)) {
       return *error;
     }
     auto& authority = std::get<detail::SessionAuthority>(current);
+    auto control_binding_gate =
+        detail::require_session_control_peer(authority.session, request.control_peer);
+    if (const auto* error = std::get_if<Failure>(&control_binding_gate)) {
+      return *error;
+    }
     if (authority.session.version != selected->version ||
         !same_token_verifier(authority.session.access, selected->access)) {
       return authentication_rejected();
@@ -632,9 +644,11 @@ private:
         work, request.context,
         std::min({authority.session.access_expires_at, authority.session.refresh_expires_at,
                   authority.credential.expires_at.value_or(TimePoint::min()),
+                  detail::session_control_valid_until(authority.control),
                   request.control_peer.binding.certificate.not_after,
                   std::get<detail::PeerAuthority>(peer).credential.expires_at.value_or(
-                      TimePoint::min())}));
+                      TimePoint::min())}),
+        true);
     if (const auto* error = std::get_if<Failure>(&checkpoint)) {
       return *error;
     }
@@ -696,11 +710,16 @@ private:
           }
         },
         *selected);
-    auto current = detail::read_session(*work.transaction, input.session);
+    auto current = detail::read_session(*work.transaction, input.session, work.now);
     if (const auto* error = std::get_if<Failure>(&current)) {
       return *error;
     }
     auto& authority = std::get<detail::SessionAuthority>(current);
+    auto control_binding_gate =
+        detail::require_session_control_peer(authority.session, request.control_peer);
+    if (const auto* error = std::get_if<Failure>(&control_binding_gate)) {
+      return *error;
+    }
     auto decision = check_refresh_state(authority.subject.principal, authority.credential,
                                         authority.session, *selected, lookup, work.now);
     if (const auto* error = std::get_if<Failure>(&decision)) {
@@ -816,11 +835,16 @@ private:
     if (const auto* error = std::get_if<Failure>(&gate)) {
       return *error;
     }
-    auto current = detail::read_session(*work.transaction, input.session);
+    auto current = detail::read_session(*work.transaction, input.session, work.now);
     if (const auto* error = std::get_if<Failure>(&current)) {
       return *error;
     }
     const auto& authority = std::get<detail::SessionAuthority>(current);
+    auto control_binding_gate =
+        detail::require_session_control_peer(authority.session, request.control_peer);
+    if (const auto* error = std::get_if<Failure>(&control_binding_gate)) {
+      return *error;
+    }
     RefreshRecoveryLookup lookup{request.control_peer.binding.certificate.subject,
                                  request.context.idempotency_key};
     auto resolved = work.transaction->session_security().resolve_refresh(input.input_verifier,
@@ -924,9 +948,11 @@ private:
         work, request.context,
         std::min({retain_until, pair.access_expires_at,
                   authority.credential.expires_at.value_or(TimePoint::min()),
+                  detail::session_control_valid_until(authority.control),
                   request.control_peer.binding.certificate.not_after,
                   std::get<detail::PeerAuthority>(peer).credential.expires_at.value_or(
-                      TimePoint::min())}));
+                      TimePoint::min())}),
+        true);
     if (const auto* error = std::get_if<Failure>(&checkpoint)) {
       return *error;
     }
@@ -987,12 +1013,23 @@ private:
       return authentication_rejected();
     }
     std::optional<SessionSecurity> session;
+    TimePoint original_control_until = TimePoint::max();
     if (claims.source_session) {
       auto row = work.transaction->session_security().find(*claims.source_session);
       if (const auto* error = std::get_if<Failure>(&row)) {
         return *error;
       }
       session = std::get<std::optional<SessionSecurity>>(row);
+      if (!session || !session->control_peer || claims.actor_chain.empty() ||
+          session->control_peer->subject != claims.actor_chain.front()) {
+        return authentication_rejected();
+      }
+      auto original = detail::read_session_control(*work.transaction, *session, work.now);
+      if (const auto* error = std::get_if<Failure>(&original)) {
+        return *error;
+      }
+      original_control_until =
+          detail::session_control_valid_until(std::get<detail::PeerAuthority>(original));
     }
     auto& authority = std::get<detail::SubjectAuthority>(subject);
     auto owner = detail::credential_owner_binding(authority.principal, *credential);
@@ -1019,8 +1056,9 @@ private:
     return ActorAuthority{
         std::move(authority), *credential, std::move(session),
         std::min(
-            std::get<detail::PeerAuthority>(peer).credential.expires_at.value_or(TimePoint::min()),
-            proof.direct_peer.binding.certificate.not_after)};
+            {original_control_until,
+             std::get<detail::PeerAuthority>(peer).credential.expires_at.value_or(TimePoint::min()),
+             proof.direct_peer.binding.certificate.not_after})};
   }
   Status proof_permission(const DelegationClaims& claims, Permission permission,
                           const ResourceRef& resource) {

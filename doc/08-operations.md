@@ -821,3 +821,21 @@ InvalidArgument；缺失当前证书材料或 head/指纹错配为 Internal，�
 证书/SAN/service 和有限期限；此查询不证明 TLS possession，也不代替来源 actor 授权。
 Identity 空库 schema8 增加 credential_heads(subject,id,version) 非唯一索引；允许识别
 歧义而不以索引任意选择。其他三库未变，旧库拒绝，不自动迁移或重置。
+
+### Current original Control of browser sessions
+
+Every browser session retains its original Control subject and credential ID. Access,
+refresh and secret replay require the actual current Control to match both stable IDs;
+certificate rotation under that same ID is allowed after current TLS/registration
+verification. Another Control cannot take over or rebind old tokens. Missing binding
+fails closed. Current head, active PlatformService/Control, own Principal binding,
+registered SAN, credential/certificate validity and dependency failures are checked
+again at session authority reads; no VerifiedPeer is fabricated from stored records.
+
+For delegated source_session, the persisted original Control subject must match
+claims.actor_chain.front(). That original Control is checked from typed current
+registration independently of the actual direct Runtime's own authenticated TLS.
+Relevant final deadlines include the original Control current credential/certificate
+expiry and the existing one-second authorization checkpoint. Crypto runs outside UoW;
+fresh reads after verification/replay reject intervening invalidation or dependency
+failure. Source binding does not pin a certificate version or overwrite direct peer data.

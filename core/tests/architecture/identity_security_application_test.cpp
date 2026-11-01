@@ -641,7 +641,13 @@ struct Tokens final : t::TokenCryptoPort {
   }
   t::Outcome<bool> verify(t::SecretView token, const t::TokenVerifier& stored) override {
     auto value = make_verifier(token, stored.purpose, stored.key);
-    return same(std::get<t::TokenVerifier>(value), stored);
+    const auto matches = same(std::get<t::TokenVerifier>(value), stored);
+    if (after_verify) {
+      auto hook = std::move(after_verify);
+      after_verify = {};
+      hook();
+    }
+    return matches;
   }
   t::Outcome<t::RequestCommitment> commit_request(const t::SecretReceiptScope& scope,
                                                   const t::SecretRequestParameters& params,
@@ -665,6 +671,7 @@ struct Tokens final : t::TokenCryptoPort {
     return t::RequestCommitment{key, digest};
   }
   Store& store;
+  std::function<void()> after_verify;
   std::map<std::tuple<std::string, unsigned, std::string>, t::Sha256Digest> tags;
 };
 struct Random final : t::RandomPort {
@@ -973,6 +980,156 @@ t::IdentityActorProof actor(Fixture& f, const t::EphemeralTokenPair& origin) {
       {{std::string(kPasswordCredential)}, {1}},
       origin.session};
   return {f.peer, view("proof")};
+}
+t::VerifiedPeer additional_platform(Fixture& f, t::Service service) {
+  const t::SubjectId subject{"77777777-7777-4777-8777-777777777777"};
+  const t::ResourceRef binding{t::ResourceKind::Principal, {subject.value}};
+  auto credential = f.store.state.credentials[1];
+  credential.ref.id = {"88888888-8888-4888-8888-888888888888"};
+  credential.subject = subject;
+  credential.binding = binding;
+  auto& certificate = std::get<t::CertificateBinding>(credential.material);
+  certificate.subject = subject;
+  certificate.platform_service = service;
+  certificate.registered_san = "spiffe://other-platform";
+  certificate.fingerprint.bytes[0] = std::byte{9};
+  f.store.state.principals.push_back({subject, t::PrincipalKind::PlatformService, binding, {1}});
+  f.store.state.authorizations.push_back({subject, {1}, false});
+  f.store.state.credentials.push_back(credential);
+  return {{t::PlatformPeer{service, subject}, certificate, credential.ref}, f.store.now};
+}
+void original_control_is_current_and_immutable() {
+  {
+    Fixture f;
+    auto login = f.app->login(f.login_request());
+    const auto& pair = std::get<t::IdentityTokenReply>(login).tokens;
+    const auto original = f.store.state.sessions[0].control_peer;
+    const auto other = additional_platform(f, t::Service::Control);
+    const auto access = f.app->validate_session({f.context(), other, pair.access->bytes()});
+    assert(std::get<t::Failure>(access).code == t::ErrorCode::Unauthenticated);
+    const auto refresh =
+        f.app->refresh_session({f.context("foreign"), other, pair.refresh->bytes()});
+    assert(std::get<t::Failure>(refresh).code == t::ErrorCode::Unauthenticated);
+    assert(f.store.state.sessions[0].control_peer == original &&
+           f.store.state.sessions[0].rotation == 1);
+  }
+  {
+    Fixture f;
+    auto login = f.app->login(f.login_request());
+    const auto& pair = std::get<t::IdentityTokenReply>(login).tokens;
+    const auto original = f.store.state.sessions[0].control_peer;
+    auto& credential = f.store.state.credentials[1];
+    ++credential.ref.version.value;
+    auto& certificate = std::get<t::CertificateBinding>(credential.material);
+    certificate.fingerprint.bytes[0] = std::byte{8};
+    f.peer.binding.credential = credential.ref;
+    f.peer.binding.certificate = certificate;
+    assert(std::holds_alternative<t::ValidatedSession>(
+        f.app->validate_session({f.context(), f.peer, pair.access->bytes()})));
+    assert(std::holds_alternative<t::IdentityTokenReply>(f.app->login(f.login_request())));
+    const auto refreshed =
+        f.app->refresh_session({f.context("rotation"), f.peer, pair.refresh->bytes()});
+    assert(std::holds_alternative<t::IdentityTokenReply>(refreshed));
+    assert(std::holds_alternative<t::IdentityTokenReply>(
+        f.app->refresh_session({f.context("rotation"), f.peer, pair.refresh->bytes()})));
+    assert(f.store.state.sessions[0].control_peer == original);
+  }
+  {
+    Fixture f;
+    auto login = f.app->login(f.login_request());
+    const auto& pair = std::get<t::IdentityTokenReply>(login).tokens;
+    auto replacement = f.store.state.credentials[1];
+    replacement.ref.id = {"99999999-9999-4999-8999-999999999999"};
+    std::get<t::CertificateBinding>(replacement.material).fingerprint.bytes[0] = std::byte{10};
+    f.store.state.credentials.push_back(replacement);
+    auto same_subject = f.peer;
+    same_subject.binding.credential = replacement.ref;
+    same_subject.binding.certificate = std::get<t::CertificateBinding>(replacement.material);
+    assert(std::get<t::Failure>(
+               f.app->validate_session({f.context(), same_subject, pair.access->bytes()}))
+               .code == t::ErrorCode::Unauthenticated);
+    assert(std::get<t::Failure>(f.app->refresh_session({f.context("different-id"), same_subject,
+                                                        pair.refresh->bytes()}))
+               .code == t::ErrorCode::Unauthenticated);
+    assert(f.store.state.sessions[0].rotation == 1);
+  }
+  for (int mode = 0; mode < 6; ++mode) {
+    Fixture f;
+    auto login = f.app->login(f.login_request());
+    const auto& pair = std::get<t::IdentityTokenReply>(login).tokens;
+    auto proof = actor(f, pair);
+    proof.direct_peer = additional_platform(f, t::Service::Runtime);
+    auto& claims = *f.delegations.claims;
+    claims.direct_actor = proof.direct_peer.binding.certificate.subject;
+    claims.actor_chain.push_back(claims.direct_actor);
+    claims.client_certificate = proof.direct_peer.binding.certificate.fingerprint;
+    claims.business_hops = 2;
+    const auto request = [&] {
+      return f.app->list_sessions({f.context(), proof, {std::string(kUser)}, {10, {}, {}}});
+    };
+    assert(std::holds_alternative<t::SessionPageReply>(request()));
+    if (mode == 0) {
+      f.store.state.principals[1].state = t::LifecycleState::Disabled;
+    } else if (mode == 1) {
+      auto& credential = f.store.state.credentials[1];
+      credential.expires_at = f.store.now;
+      std::get<t::CertificateBinding>(credential.material).not_after = f.store.now;
+    } else if (mode == 2) {
+      f.store.state.credentials[1].state = t::CredentialState::Revoked;
+      f.store.state.credentials[1].revoked_at = f.store.now;
+    } else if (mode == 3) {
+      f.store.state.sessions[0].control_peer.reset();
+    } else if (mode == 4) {
+      claims.actor_chain.front() = {"99999999-9999-4999-8999-999999999999"};
+    } else {
+      f.store.fail_begin = true;
+    }
+    const auto denied = request();
+    assert(std::holds_alternative<t::Failure>(denied));
+    assert(std::get<t::Failure>(denied).code ==
+           (mode == 5 ? t::ErrorCode::UpstreamUnavailable : t::ErrorCode::Unauthenticated));
+    assert(f.store.active == 0 && f.store.state.sessions[0].rotation == 1);
+  }
+  {
+    Fixture f;
+    auto login = f.app->login(f.login_request());
+    const auto& pair = std::get<t::IdentityTokenReply>(login).tokens;
+    auto proof = actor(f, pair);
+    proof.direct_peer = additional_platform(f, t::Service::Runtime);
+    auto& claims = *f.delegations.claims;
+    claims.direct_actor = proof.direct_peer.binding.certificate.subject;
+    claims.actor_chain.push_back(claims.direct_actor);
+    claims.client_certificate = proof.direct_peer.binding.certificate.fingerprint;
+    claims.business_hops = 2;
+    claims.permissions = {
+        {t::Permission::IdentitySessionRevoke, {t::ResourceKind::Session, {pair.session.value}}}};
+    const auto until = f.store.now + std::chrono::milliseconds{500};
+    f.store.state.credentials[1].expires_at = until;
+    std::get<t::CertificateBinding>(f.store.state.credentials[1].material).not_after = until;
+    f.store.after_audit = [&] { f.store.now = until; };
+    const auto result = f.app->revoke_session({f.context("original-expiry"), proof, pair.session});
+    assert(std::get<t::Failure>(result).code == t::ErrorCode::Timeout);
+    assert(!f.store.state.sessions[0].revoked && !f.store.state.metadata[0].revoked);
+    assert(f.store.active == 0);
+  }
+  for (int mode = 0; mode < 3; ++mode) {
+    Fixture f;
+    auto login = f.app->login(f.login_request());
+    const auto& pair = std::get<t::IdentityTokenReply>(login).tokens;
+    f.tokens.after_verify = [&] {
+      if (mode == 0) {
+        f.store.state.sessions[0].control_peer.reset();
+      } else if (mode == 1) {
+        f.store.state.principals[1].state = t::LifecycleState::Disabled;
+      } else {
+        f.store.fail_begin = true;
+      }
+    };
+    const auto result = f.app->validate_session({f.context(), f.peer, pair.access->bytes()});
+    assert(std::get<t::Failure>(result).code ==
+           (mode == 2 ? t::ErrorCode::UpstreamUnavailable : t::ErrorCode::Unauthenticated));
+    assert(f.store.active == 0);
+  }
 }
 void snapshots_are_immutable_and_reauthorize() {
   auto invalid_argument = [](const t::Outcome<t::SessionPageReply>& result) {
@@ -1639,6 +1796,7 @@ int main(int argc, char** argv) try {
   const std::string_view group = argc == 2 ? argv[1] : "all";
   if (group == "all" || group == "login") {
     login_and_validate();
+    original_control_is_current_and_immutable();
     login_receipt_rechecks_login_identity_at_crypto_boundaries();
     missing_and_bad_password_have_one_verify();
     failed_commit_never_returns_secret();

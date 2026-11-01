@@ -218,13 +218,29 @@ inline Outcome<PeerAuthority> read_peer(IdentitySecurityUnitOfWork& work,
 }
 inline Status credential_owner_binding(const Principal& principal,
                                        const CredentialVersionRecord& credential);
+// Reads current typed registration; never constructs TLS evidence or pins a certificate version.
+inline Outcome<PeerAuthority> read_session_control(IdentitySecurityUnitOfWork& work,
+                                                   const SessionSecurity& session, TimePoint now);
+// Stable-ID match only; the caller must separately check_peer against actual current TLS.
+inline Status require_session_control_peer(const SessionSecurity& session,
+                                           const VerifiedPeer& direct) {
+  const auto* platform = std::get_if<PlatformPeer>(&direct.binding.peer);
+  if (!session.control_peer || !valid_session_control_peer(*session.control_peer) || !platform ||
+      platform->service != Service::Control || session.control_peer->subject != platform->subject ||
+      session.control_peer->subject != direct.binding.certificate.subject ||
+      session.control_peer->credential != direct.binding.credential.id) {
+    return failure(ErrorCode::Unauthenticated, Recovery::Authenticate);
+  }
+  return std::monostate{};
+}
 struct SessionAuthority {
   SessionSecurity session;
   CredentialVersionRecord credential;
   SubjectAuthority subject;
+  PeerAuthority control;
 };
-inline Outcome<SessionAuthority> read_session(IdentitySecurityUnitOfWork& work,
-                                              const SessionId& id) {
+inline Outcome<SessionAuthority> read_session(IdentitySecurityUnitOfWork& work, const SessionId& id,
+                                              TimePoint now) {
   auto row = work.session_security().find(id);
   if (const auto* error = std::get_if<Failure>(&row)) {
     return *error;
@@ -261,7 +277,12 @@ inline Outcome<SessionAuthority> read_session(IdentitySecurityUnitOfWork& work,
   if (const auto* error = std::get_if<Failure>(&binding)) {
     return *error;
   }
-  return SessionAuthority{*session, *credential, std::move(std::get<SubjectAuthority>(subject))};
+  auto control = read_session_control(work, *session, now);
+  if (const auto* error = std::get_if<Failure>(&control)) {
+    return *error;
+  }
+  return SessionAuthority{*session, *credential, std::move(std::get<SubjectAuthority>(subject)),
+                          std::move(std::get<PeerAuthority>(control))};
 }
 
 inline Status credential_owner_binding(const Principal& principal,
@@ -305,6 +326,61 @@ inline Status check_peer(const PeerAuthority& authority, const VerifiedPeer& pee
     return failure(ErrorCode::Unauthenticated, Recovery::Authenticate);
   }
   return std::monostate{};
+}
+inline Outcome<PeerAuthority> read_session_control(IdentitySecurityUnitOfWork& work,
+                                                   const SessionSecurity& session, TimePoint now) {
+  if (!session.control_peer || !valid_session_control_peer(*session.control_peer) ||
+      !bounded_text(session.control_peer->subject.value) ||
+      !bounded_text(session.control_peer->credential.value)) {
+    return failure(ErrorCode::Unauthenticated, Recovery::Authenticate);
+  }
+  const auto& expected = *session.control_peer;
+  auto current = work.credentials().current(expected.credential);
+  if (const auto* error = std::get_if<Failure>(&current)) {
+    return *error;
+  }
+  const auto& credential = std::get<std::optional<CredentialVersionRecord>>(current);
+  if (!credential || credential->ref.id != expected.credential ||
+      credential->subject != expected.subject) {
+    return failure(ErrorCode::Unauthenticated, Recovery::Authenticate);
+  }
+  auto subject = read_subject(work, expected.subject);
+  if (const auto* error = std::get_if<Failure>(&subject)) {
+    return *error;
+  }
+  auto& authority = std::get<SubjectAuthority>(subject);
+  auto owner = credential_owner_binding(authority.principal, *credential);
+  if (const auto* error = std::get_if<Failure>(&owner)) {
+    return *error;
+  }
+  auto gate = require_current_credential(authority.principal, *credential, credential->ref, now);
+  if (const auto* error = std::get_if<Failure>(&gate)) {
+    return *error;
+  }
+  const auto* certificate = std::get_if<CertificateBinding>(&credential->material);
+  if (authority.principal.kind != PrincipalKind::PlatformService ||
+      authority.principal.binding !=
+          ResourceRef{ResourceKind::Principal, {expected.subject.value}} ||
+      !certificate || certificate->subject != expected.subject ||
+      certificate->platform_service != Service::Control ||
+      !bounded_text(certificate->registered_san)) {
+    return failure(ErrorCode::Unauthenticated, Recovery::Authenticate);
+  }
+  return PeerAuthority{*credential, std::move(authority)};
+}
+inline Outcome<SessionAuthority> read_session(IdentitySecurityUnitOfWork& work,
+                                              const SessionId& id) {
+  auto now = work.current_time();
+  if (const auto* error = std::get_if<Failure>(&now)) {
+    return *error;
+  }
+  return read_session(work, id, std::get<TimePoint>(now));
+}
+inline TimePoint session_control_valid_until(const PeerAuthority& control) {
+  const auto* certificate = std::get_if<CertificateBinding>(&control.credential.material);
+  return certificate ? std::min(control.credential.expires_at.value_or(TimePoint::min()),
+                                certificate->not_after)
+                     : TimePoint::min();
 }
 inline Outcome<std::string> normalized_login(std::string_view username) {
   if (username.empty() || username.size() > 128) {
