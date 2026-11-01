@@ -339,3 +339,8 @@ Python 必须先用固定 uv0.13.6 同步3.11.18 SDK环境（TLS黑盒同时验�
 CMake p02标签共11项，包括真实六服务lifecycle/TLS/并行故障、Core进程集成及夹具/应用
 单测；本机以固定Python/CA输入已实际全部通过。C++ runtime仍使用本机Homebrew依赖，
 此证据与完整full-locked/PG环境分开；ready=false/UNIMPLEMENTED不等于后续业务已实现。
+
+P02 reference 补充：HTTP/WS CTest 的 pytest 路径规范化为实际 `control/api/tests`，
+保留已存在 venv 的真实套件；其27项用例已在固定依赖构建上实际通过。
+`architecture_p02_reference_manifest_test` 将清单的6个失败/路径回归自测注册为p02/unit。
+独立头翻译单元改用file(GENERATE)，重复configure不再无条件改写文件触发全量重编译。

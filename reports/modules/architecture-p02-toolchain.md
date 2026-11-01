@@ -134,3 +134,13 @@ C++使用系统依赖，未冒充full-locked。实际编译覆盖已核对全部
 固定format16当前发现Core新service_config.cpp两处格式差异（stat大括号、STACK_OF宏参数），
 属于Core源所有权；本任务仅报告，未越界格式化。实际tidy仍待最终全仓覆盖后重跑。
 文档更新doc/11与本报告；没有协议/API语义变化，不改其他所有者模块文档。
+
+## 第六能力：Control reference 路径修复及清单自测接线
+
+主目录全量CTest发现pytest仍指向control/api/reference/tests；本任务独立修正为规范化
+实际control/api/tests，保留原HTTP/WS套件。固定uv0.13.6/Python3.11.18同步既有Control
+测试锁后，在full-locked实际跑control_http_websocket_acceptance通过（27 passed），
+同时新增architecture_p02_reference_manifest_test通过（6 tests）。CMake导出的CTest
+JSON核对解释器和pytest路径均精确匹配原tests目录，未以省略/skip套件修复。
+纯头编译file(GENERATE)避免无内容变化重写；实际configure/build及diff检查通过。
+本次更新doc/11和本报告，无业务契约/协议/API变化。该2项通过不代替全量51项结果。

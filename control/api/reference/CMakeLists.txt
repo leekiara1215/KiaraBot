@@ -10,9 +10,10 @@ target_link_libraries(kiarabot-reference-core PRIVATE kiarabot_control)
 add_executable(kiarabot-event-stream-test ${CMAKE_CURRENT_LIST_DIR}/../tests/event_stream_test.cpp)
 target_link_libraries(kiarabot-event-stream-test PRIVATE kiarabot_control)
 add_test(NAME control_event_stream COMMAND kiarabot-event-stream-test)
-if(KIARABOT_ENABLE_INFRASTRUCTURE AND EXISTS "${CMAKE_CURRENT_LIST_DIR}/../tests/.venv/bin/python")
+get_filename_component(REFERENCE_CONTROL_TEST_DIR "${CMAKE_CURRENT_LIST_DIR}/../tests" ABSOLUTE)
+if(KIARABOT_ENABLE_INFRASTRUCTURE AND EXISTS "${REFERENCE_CONTROL_TEST_DIR}/.venv/bin/python")
   add_test(NAME control_http_websocket_acceptance
-    COMMAND "${CMAKE_CURRENT_LIST_DIR}/../tests/.venv/bin/python" -m pytest -q "${CMAKE_CURRENT_SOURCE_DIR}/tests")
+    COMMAND "${REFERENCE_CONTROL_TEST_DIR}/.venv/bin/python" -m pytest -q "${REFERENCE_CONTROL_TEST_DIR}")
   set_tests_properties(control_http_websocket_acceptance PROPERTIES
     TIMEOUT 90 ENVIRONMENT "KIARABOT_ACCEPTANCE_BUILD=${CMAKE_BINARY_DIR}/reference")
 endif()

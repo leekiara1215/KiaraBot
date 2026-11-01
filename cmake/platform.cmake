@@ -66,7 +66,7 @@ set(HEADER_UNITS)
 foreach(HEADER IN LISTS INNER_HEADERS)
   string(SHA256 HEADER_ID "${HEADER}")
   set(HEADER_UNIT "${CMAKE_BINARY_DIR}/inner-headers/${HEADER_ID}.cpp")
-  file(WRITE "${HEADER_UNIT}" "#include \"${HEADER}\"\n")
+  file(GENERATE OUTPUT "${HEADER_UNIT}" CONTENT "#include \"${HEADER}\"\n")
   list(APPEND HEADER_UNITS "${HEADER_UNIT}")
 endforeach()
 add_library(kiarabot_inner_headers OBJECT ${HEADER_UNITS})
@@ -154,3 +154,7 @@ set_tests_properties(p02_service_config p02_core_process PROPERTIES
   ENVIRONMENT "PATH=${OPENSSL_BIN_DIR}:$ENV{PATH}")
 add_test(NAME p01_target_api COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/quality/check-target-api.sh)
 set_tests_properties(p01_target_api PROPERTIES LABELS "p01;unit" TIMEOUT 30)
+
+add_test(NAME architecture_p02_reference_manifest_test COMMAND "${KIARABOT_TARGET_PYTHON}"
+  ${CMAKE_SOURCE_DIR}/tests/architecture/reference_test.py)
+set_tests_properties(architecture_p02_reference_manifest_test PROPERTIES LABELS "p02;unit" TIMEOUT 10)
