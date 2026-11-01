@@ -314,3 +314,28 @@ python3 scripts/quality/check-architecture.py --links build/full/architecture-ta
 
 P02 纯应用/配置目前已有三项 unit 标签测试。六入口和 runner 的完整构建仍需各自已审查
 提交接线；完整链接门禁默认要求六个 EXECUTABLE，不会因为只有纯库就通过。
+
+### P02 六入口与黑盒接线已验证
+
+六个可执行文件统一输出到 `build/<preset>/bin/kiarabot-{control,identity,runtime,plugin-host,scheduler,model}`。
+Host 实际入口为 `core/app/host_main.cpp`，独立库为 `kiarabot_plugin_host_application`。
+`kiarabot_service_process`/`kiarabot_service_config` 是外层支撑，只有它们链接生成协议、
+JSON/TLS；六个 application 的实际配置图与独立头编译仍保持纯 C++。
+
+测试输入必须明确提供：
+
+```bash
+cmake --preset full \
+  -DKIARABOT_TARGET_PYTHON="$PWD/sdk/python/.venv/bin/python" \
+  -DKIARABOT_TEST_OPENSSL="$PWD/build/openssl-3.5.0-install/bin/openssl"
+cmake --build --preset full
+ctest --preset full -L '^p02$' --no-tests=error --output-on-failure
+python3 scripts/quality/check-architecture.py --inner --links build/full/architecture-targets.json
+```
+
+Python 必须先用固定 uv0.13.6 同步3.11.18 SDK环境（TLS黑盒同时验证grpcio1.85.0）。
+测试CA CLI本机已从固定OpenSSL3.5.0源码/hash构建，需执行 `make install_sw install_ssldirs`，
+缺标准 `openssl.cnf` 会使证书生成明确失败。仅执行 `openssl version` 不证明CA工具能签证书。
+CMake p02标签共11项，包括真实六服务lifecycle/TLS/并行故障、Core进程集成及夹具/应用
+单测；本机以固定Python/CA输入已实际全部通过。C++ runtime仍使用本机Homebrew依赖，
+此证据与完整full-locked/PG环境分开；ready=false/UNIMPLEMENTED不等于后续业务已实现。

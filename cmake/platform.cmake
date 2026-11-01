@@ -10,9 +10,13 @@ function(kiarabot_platform_warnings TARGET_NAME)
     $<$<CXX_COMPILER_ID:MSVC>:/W4>)
 endfunction()
 
-foreach(SERVICE identity runtime host scheduler model)
+foreach(SERVICE identity runtime plugin_host scheduler model)
+  set(APPLICATION_SOURCE "${SERVICE}")
+  if(SERVICE STREQUAL "plugin_host")
+    set(APPLICATION_SOURCE host)
+  endif()
   add_library(kiarabot_${SERVICE}_application STATIC
-    ${CMAKE_SOURCE_DIR}/core/src/application/target/${SERVICE}_application.cpp)
+    ${CMAKE_SOURCE_DIR}/core/src/application/target/${APPLICATION_SOURCE}_application.cpp)
   target_include_directories(kiarabot_${SERVICE}_application PUBLIC ${CMAKE_SOURCE_DIR}/core/include)
   kiarabot_platform_warnings(kiarabot_${SERVICE}_application)
 endforeach()
@@ -26,7 +30,7 @@ kiarabot_platform_warnings(kiarabot_control_application)
 add_executable(kiarabot_service_applications_test
   ${CMAKE_SOURCE_DIR}/core/tests/architecture/service_applications_test.cpp)
 target_link_libraries(kiarabot_service_applications_test PRIVATE
-  kiarabot_identity_application kiarabot_runtime_application kiarabot_host_application
+  kiarabot_identity_application kiarabot_runtime_application kiarabot_plugin_host_application
   kiarabot_scheduler_application kiarabot_model_application)
 kiarabot_platform_warnings(kiarabot_service_applications_test)
 add_test(NAME p02_service_applications COMMAND kiarabot_service_applications_test)
@@ -84,3 +88,69 @@ add_test(NAME p01_target_roundtrip COMMAND ${CMAKE_COMMAND} -E env
   "${KIARABOT_TARGET_PYTHON}" "${CMAKE_SOURCE_DIR}/proto/tests/target_contract_test.py"
   "${KIARABOT_DESCRIPTOR}" $<TARGET_FILE:kiarabot_target_roundtrip>)
 set_tests_properties(p01_target_roundtrip PROPERTIES LABELS "p01;integration" TIMEOUT 60)
+
+add_library(kiarabot_service_process STATIC
+  ${CMAKE_SOURCE_DIR}/core/src/runtime/platform/service_process.cpp
+  ${CMAKE_SOURCE_DIR}/core/src/runtime/platform/service_rpc.cpp)
+target_include_directories(kiarabot_service_process PUBLIC ${CMAKE_SOURCE_DIR}/core/include)
+target_link_libraries(kiarabot_service_process PRIVATE
+  kiarabot_service_config kiarabot_proto Threads::Threads)
+kiarabot_platform_warnings(kiarabot_service_process)
+foreach(SERVICE identity runtime plugin_host scheduler model)
+  set(ENTRY "${SERVICE}")
+  set(BINARY "${SERVICE}")
+  if(SERVICE STREQUAL "plugin_host")
+    set(ENTRY host)
+    set(BINARY plugin-host)
+  endif()
+  add_executable(kiarabot-${BINARY} ${CMAKE_SOURCE_DIR}/core/app/${ENTRY}_main.cpp)
+  target_link_libraries(kiarabot-${BINARY} PRIVATE
+    kiarabot_${SERVICE}_application kiarabot_service_process)
+  set_target_properties(kiarabot-${BINARY} PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+  kiarabot_platform_warnings(kiarabot-${BINARY})
+endforeach()
+add_executable(kiarabot-control ${CMAKE_SOURCE_DIR}/control/api/app/main.cpp)
+target_link_libraries(kiarabot-control PRIVATE kiarabot_control_application kiarabot_service_process)
+set_target_properties(kiarabot-control PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+kiarabot_platform_warnings(kiarabot-control)
+add_executable(kiarabot_service_rpc_client ${CMAKE_SOURCE_DIR}/core/tests/platform/service_rpc_client.cpp)
+target_link_libraries(kiarabot_service_rpc_client PRIVATE kiarabot_proto)
+kiarabot_platform_warnings(kiarabot_service_rpc_client)
+
+find_program(KIARABOT_TEST_OPENSSL openssl REQUIRED)
+get_filename_component(OPENSSL_BIN_DIR "${KIARABOT_TEST_OPENSSL}" DIRECTORY)
+set(P02_BINARY_ARGUMENTS --control $<TARGET_FILE:kiarabot-control>
+  --identity $<TARGET_FILE:kiarabot-identity> --runtime $<TARGET_FILE:kiarabot-runtime>
+  --plugin-host $<TARGET_FILE:kiarabot-plugin-host> --scheduler $<TARGET_FILE:kiarabot-scheduler>
+  --model $<TARGET_FILE:kiarabot-model>)
+add_test(NAME p02_core_process COMMAND "${KIARABOT_TARGET_PYTHON}"
+  ${CMAKE_SOURCE_DIR}/core/tests/platform/service_process_test.py
+  $<TARGET_FILE:kiarabot-identity> $<TARGET_FILE:kiarabot-runtime> $<TARGET_FILE:kiarabot-plugin-host>
+  $<TARGET_FILE:kiarabot-scheduler> $<TARGET_FILE:kiarabot-model> $<TARGET_FILE:kiarabot_service_rpc_client>)
+set_tests_properties(p02_core_process PROPERTIES LABELS "p02;integration;fault" TIMEOUT 90)
+foreach(GROUP lifecycle tls isolation)
+  add_test(NAME architecture_p02_${GROUP} COMMAND "${KIARABOT_TARGET_PYTHON}"
+    ${CMAKE_SOURCE_DIR}/tests/architecture/run.py --group ${GROUP}
+    --openssl "${KIARABOT_TEST_OPENSSL}" ${P02_BINARY_ARGUMENTS})
+  set_tests_properties(architecture_p02_${GROUP} PROPERTIES
+    LABELS "p02;integration;fault" TIMEOUT 360)
+endforeach()
+foreach(FIXTURE fixture tls_fixture)
+  add_test(NAME architecture_p02_${FIXTURE} COMMAND "${KIARABOT_TARGET_PYTHON}"
+    ${CMAKE_SOURCE_DIR}/tests/architecture/${FIXTURE}_test.py --openssl "${KIARABOT_TEST_OPENSSL}")
+  set(FIXTURE_LABELS "p02;unit")
+  if(FIXTURE STREQUAL "tls_fixture")
+    set(FIXTURE_LABELS "p02;integration")
+  endif()
+  set_tests_properties(architecture_p02_${FIXTURE} PROPERTIES LABELS "${FIXTURE_LABELS}" TIMEOUT 30)
+endforeach()
+add_test(NAME architecture_p02_oracle COMMAND "${KIARABOT_TARGET_PYTHON}"
+  ${CMAKE_SOURCE_DIR}/tests/architecture/support_test.py)
+set_tests_properties(architecture_p02_oracle PROPERTIES LABELS "p02;unit" TIMEOUT 30)
+add_test(NAME architecture_p02_references COMMAND "${KIARABOT_TARGET_PYTHON}"
+  ${CMAKE_SOURCE_DIR}/tests/architecture/check_references.py)
+set_tests_properties(architecture_p02_references PROPERTIES LABELS "p02;unit;reference" TIMEOUT 10)
+set_tests_properties(p02_service_config p02_core_process PROPERTIES
+  ENVIRONMENT "PATH=${OPENSSL_BIN_DIR}:$ENV{PATH}")
+add_test(NAME p01_target_api COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/quality/check-target-api.sh)
+set_tests_properties(p01_target_api PROPERTIES LABELS "p01;unit" TIMEOUT 30)

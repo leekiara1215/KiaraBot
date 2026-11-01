@@ -115,3 +115,22 @@ uv sync --project sdk/python --locked --python3.11.18（实际命令带空格分
 SDK生成产物/venv未提交；固定PG/gRPC依赖编译仍在进行。npm已用现有lock实际尝试，
 先遇沙箱DNS，授权后遇本机TLS CA信任问题；保持校验开启，正在使用系统公开信任根重试。
 无proto/API语义变化；doc/11同步构建/失败语义与真实检查，不更新其他所有者模块说明。
+
+## 第五能力：实际六目标与 P02 独立黑盒
+
+已授权runner提交接线为kiarabot_service_process，五Core+Control从各自入口和application
+组合，统一bin目录。Host库名固定kiarabot_plugin_host_application/入口host_main.cpp。
+门禁已扩展Control application target源码/头，允许自己的纯头但仍拒绝JSON/生成头/SQL。
+6项architecture自测及实际六目标递归链接图/内层门禁通过；没有把reference作为新业务。
+
+实际full编译六二进制成功。固定SDK Python3.11.18/grpcio1.85.0、固定CA CLI OpenSSL3.5.0
+下运行 `ctest --preset full -L '^p02$' -j2 --output-on-failure`：11/11通过，包含lifecycle、
+77owner/三桥接RPC mTLS/UNIMPLEMENTED、并行/绑定冲突/崩溃隔离、Core进程集成和夹具。
+首次7项因自编OpenSSL未安装标准openssl.cnf失败；补跑上游install_ssldirs后全部重跑通过，
+未放宽断言/TLS校验。内层独立头编译通过，P01 CMake roundtrip的77/269证据保留。
+C++使用系统依赖，未冒充full-locked。实际编译覆盖已核对全部集成P02/reference TU；
+尚未提交的P00 smoke.cpp独立收尾中，最终全仓门禁必须等该源接入后无排除重跑。
+
+固定format16当前发现Core新service_config.cpp两处格式差异（stat大括号、STACK_OF宏参数），
+属于Core源所有权；本任务仅报告，未越界格式化。实际tidy仍待最终全仓覆盖后重跑。
+文档更新doc/11与本报告；没有协议/API语义变化，不改其他所有者模块文档。

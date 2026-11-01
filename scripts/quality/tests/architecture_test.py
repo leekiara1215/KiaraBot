@@ -42,6 +42,18 @@ class ArchitectureTest(unittest.TestCase):
             source.write_text('#include <string>\n')
             self.assertEqual(list(GATE.inner_errors(root)), [])
 
+    def test_control_application_is_checked_and_can_include_its_own_header(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary).resolve()
+            inner = root / 'control/api/src/application/target'
+            inner.mkdir(parents=True)
+            source = inner / 'application.cpp'
+            source.write_text('#include "kiarabot/control/application/target/application.hpp"\n')
+            self.assertEqual(list(GATE.inner_errors(root)), [])
+            for include in ('nlohmann/json.hpp', 'kiarabot/v1/runtime.pb.h', 'pqxx/pqxx'):
+                source.write_text(f'#include <{include}>\n')
+                self.assertTrue(list(GATE.inner_errors(root)))
+
     def test_missing_service_cannot_pass(self):
         model = {'configurations': [{'targets': [{'name': f'kiarabot-{s}'}
                                                 for s in GATE.SERVICES]}]}
@@ -51,7 +63,7 @@ class ArchitectureTest(unittest.TestCase):
 
     def test_transitive_private_outer_link_is_rejected(self):
         graph = {}
-        for name in ('control', 'identity', 'runtime', 'host', 'scheduler', 'model'):
+        for name in ('control', 'identity', 'runtime', 'plugin_host', 'scheduler', 'model'):
             graph[f'kiarabot_{name}_application'] = {'TYPE': ['STATIC_LIBRARY']}
         self.assertEqual(GATE.link_errors(graph, require_services=False), [])
         graph['kiarabot_identity_application']['LINK_LIBRARIES'] = ['$<LINK_ONLY:helper>']

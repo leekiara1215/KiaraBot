@@ -42,22 +42,27 @@ def coverage_errors(root, database, scheduled):
 
 
 def inner_errors(root):
-    for base in ('core/include/kiarabot/core', 'core/src'):
-        for layer in ('domain', 'application', 'ports'):
-            directory = root / base / layer
-            for path in sorted(directory.rglob('*')):
-                if path.suffix not in {'.h', '.hpp', '.cpp', '.cc', '.cxx'}:
-                    continue
-                text = path.read_text()
-                for match in INCLUDE.finditer(text):
-                    include = match.group(1)
-                    if FORBIDDEN.search(include):
-                        line = text.count('\n', 0, match.start()) + 1
-                        yield f'{path.relative_to(root)}:{line}: inner dependency {include}'
-                # A lexical SQL guard complements include checking, not a SQL parser.
-                if re.search(r'\b(?:SELECT\s+.+?\s+FROM|INSERT\s+INTO|UPDATE\s+\w+\s+SET|'
-                             r'DELETE\s+FROM|CREATE\s+TABLE)\b', text, re.I | re.S):
-                    yield f'{path.relative_to(root)}: SQL statement in inner layer'
+    directories = [root / base / layer for base in ('core/include/kiarabot/core', 'core/src')
+                   for layer in ('domain', 'application', 'ports')]
+    directories.extend(root / base for base in (
+        'control/api/include/kiarabot/control/application/target',
+        'control/api/src/application/target'))
+    for directory in directories:
+        for path in sorted(directory.rglob('*')):
+            if path.suffix not in {'.h', '.hpp', '.cpp', '.cc', '.cxx'}:
+                continue
+            text = path.read_text()
+            for match in INCLUDE.finditer(text):
+                include = match.group(1)
+                own_control_header = ('control/api/' in directory.as_posix() and
+                                      include.startswith('kiarabot/control/application/target/'))
+                if FORBIDDEN.search(include) and not own_control_header:
+                    line = text.count('\n', 0, match.start()) + 1
+                    yield f'{path.relative_to(root)}:{line}: inner dependency {include}'
+            # A lexical SQL guard complements include checking, not a SQL parser.
+            if re.search(r'\b(?:SELECT\s+.+?\s+FROM|INSERT\s+INTO|UPDATE\s+\w+\s+SET|'
+                         r'DELETE\s+FROM|CREATE\s+TABLE)\b', text, re.I | re.S):
+                yield f'{path.relative_to(root)}: SQL statement in inner layer'
 
 
 def target_errors(codemodel):
@@ -75,7 +80,7 @@ def target_errors(codemodel):
 def link_errors(graph, require_services=True):
     errors = []
     inner = [f'kiarabot_{name}_application' for name in
-             ('control', 'identity', 'runtime', 'host', 'scheduler', 'model')]
+             ('control', 'identity', 'runtime', 'plugin_host', 'scheduler', 'model')]
     roots = ([f'kiarabot-{name}' for name in SERVICES] if require_services else []) + inner
     forbidden = re.compile(r'(?:protobuf|grpc|json|pqxx|libpq|sqlite|OpenSSL|sodium|curl|Boost)', re.I)
     def walk(name, chain, pure, seen):
