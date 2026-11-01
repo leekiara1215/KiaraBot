@@ -1106,3 +1106,8 @@ server 停止/Wait；原 issuer、InvocationDeadline 及 verification_keys 参�
 
 真实 mTLS fixture 覆盖该适配与实际 Core 编排；测试的仓储、随机和签验仍为明确替身，
 不代表生产 PostgreSQL、JWT 材料端口或组合根已接线可用。
+
+CheckAuthorization的Human来源原Control gate复用已审
+`identity_security_detail::read_session_control`与`session_control_valid_until`；签名链首项
+仍匹配持久subject，显式Issue能力及其watermark仍由Check独立复核。无session的原actor
+走by_platform，direct actor/cnf继续独立检查；共享读取不构造或替代实际TLS peer。

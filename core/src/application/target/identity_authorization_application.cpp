@@ -205,13 +205,20 @@ private:
     result.version = authority.authorization.version;
     record(result, authority, *source);
     if (session) {
-      if (!session->control_peer || !valid_session_control_peer(*session->control_peer) ||
-          session->control_peer->subject != claims.actor_chain.front()) {
+      auto original = detail::read_session_control(*work.transaction, *session, work.now);
+      if (const auto* error = std::get_if<Failure>(&original)) {
+        return *error;
+      }
+      const auto& control = std::get<detail::PeerAuthority>(original);
+      if (control.subject.principal.id != claims.actor_chain.front() ||
+          !explicit_capability(control.subject, Permission::IdentityDelegationIssue)) {
         return authentication_rejected();
       }
+      record(result, control.subject, control.credential);
       result.session_version = session->version;
       result.session_rotation = session->rotation;
-      result.valid_until = std::min(result.valid_until, session->access_expires_at);
+      result.valid_until = std::min({result.valid_until, session->access_expires_at,
+                                     detail::session_control_valid_until(control)});
     }
     auto direct = work.transaction->credentials().by_certificate(claims.client_certificate);
     if (const auto* error = std::get_if<Failure>(&direct)) {
@@ -233,11 +240,9 @@ private:
     if (const auto* error = std::get_if<Failure>(&valid)) {
       return *error;
     }
-    if (claims.business_hops == 2) {
-      Outcome<std::optional<CredentialVersionRecord>> previous =
-          session ? work.transaction->credentials().current(session->control_peer->credential)
-                  : work.transaction->credentials().by_platform(
-                        {Service::Control, claims.actor_chain.front()});
+    if (claims.business_hops == 2 && !session) {
+      auto previous = work.transaction->credentials().by_platform(
+          {Service::Control, claims.actor_chain.front()});
       if (const auto* error = std::get_if<Failure>(&previous)) {
         return *error;
       }
