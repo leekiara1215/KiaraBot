@@ -952,3 +952,19 @@ calls hold no outer UoW. Missing/wrong capability returns PermissionDenied; revo
 expired or mismatched current peer returns Unauthenticated; changed authorization
 watermark returns Conflict/ReadCurrent; dependency and deadline failures propagate.
 A signed intermediate proof is discarded on any final check failure and never returned.
+
+### P04 ExchangeDelegation 独立只读应用
+
+Exchange只接受真实当前Runtime平台mTLS，父proof由成熟verify_exchange_parent验证，
+受众Runtime且为首业务跳。应用按父签名Control叶指纹查询当前登记/current credential head，
+核对其Control service、主体、SAN、Active/期限/gate；不拿Runtime叶替代上一跳证据。
+Runtime和上一跳Control都须在自己的稳定Principal资源（id=实际platform subject）上
+具有当前显式IdentityDelegationIssue；原来源主体仍须逐条具备请求业务permission的exact
+业务资源授权。服务能力与来源业务授权互不替代，无默认role、
+通配或虚构Catalog放行。父旧签名不替代当前登记/凭据/session/authversion与赋权查询。
+
+子受众仅Model/Scheduler，请求tuples必须非空封闭去重且为父集合子集；输出hop2链追加
+Runtime，subject及source credential/session保持不变，client cert改为实际Runtime叶。
+父签验、clock/random及签名都在所有UoW之外；签前后重查两平台与来源当前authority，
+最终短事务一秒授权窗口和DB当前期限再检。NumericDate取整只缩短、不延长父exp、两平台
+证书/凭据、source期限或本次deadline；纯签发不收据、不消费command intent、不写库/commit。
