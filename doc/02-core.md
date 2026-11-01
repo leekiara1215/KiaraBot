@@ -620,3 +620,36 @@ TimePoint 使用已确定的 signed int64 epoch nanoseconds；Timestamp 规范 n
 稳定错误映射严格使用 target_spec.json.error_mapping。make_error 只构造稳定码、合法request_id/trace_id和显式retryable的Error成员，不构造受理事实。target owner unary唯一binary详情为序列化kiarabot.v1.RpcFailure：to_grpc_failure/from_grpc_failure经标准grpc-status-details-bin（Status.error_details）完整携带error和context。前文T01b的Error-only仅是历史/reference Connect格式，target unary拒绝该格式且无自动fallback。from_http_failure验证完整RpcFailure，from_http_error仅验证Error成员。解码要求稳定码和gRPC/HTTP状态一致；缺error/context、未知或UNSPECIFIED acceptance/recovery、显式current_version=0均拒绝。存在operation时须有runtime/scheduler/model登记owner、UUIDv4 operation_id和完整合法资源；Unknown允许无operation，不能为Login/Refresh虚构操作。当前operation查询只由Runtime/Scheduler/Model提供（target_spec完整方法集及doc21第2节），Identity登录/秘密收据不创建operation。这里校验的是结构；owner仍须结合命令和持久事实核验acceptance/recovery组合，不能因枚举合法就让Unknown换新键或按CorrectInput重做副作用。Error.details仍须空，retry_after/current_version/operation/acceptance/recovery完整保留，503/UNAVAILABLE歧义由Error.code消除。
 
 此工具不验证认证、当前授权、资源存在性或owner/gate，不实现owner RPC，也不改变任何能力的 target 状态。CMake/传输接线由主集成负责，独立测试和检查见 reports/modules/architecture-p04-target-codec.md；doc18只读。
+
+### P04可执行纯授权/会话/秘密恢复规则
+
+identity_policy.hpp提供40项封闭权限映射、固定角色allowlist及exact resource判断。
+viewer限Resource/Account/Plugin/Adapter/Host读取；operator另有Plugin管理、任务、投递重放、
+Account策略及Plugin配置读取；admin另有账号、身份授予/主体/会话、模型、namespace和资源
+管理。所有角色仍要求同一role/resource元组；MessageRead、ActionInspect、ModelCallInspect、
+StorageNamespace、ModelChat、ActionExecute及工作负载能力不由人类默认role派生，需要
+各自显式精确授权。插件/服务不继承人类role。Catalog与相同ID的child也不会相等或继承。
+
+授权与公开投影均校验Assignment单basis。role组必须单一role且scope去重；explicit组
+每个scope须具有完全相同的permission集合（完整product），不允许将非product的内部
+pairs展平成wire permissions[]×scope[]。损坏/混合/重复ID的当前读取返回Internal。
+Set的Spec非空、去重、human-only role或explicit XOR；更新不换主体，版本CAS并核验旧新
+scope并集。assignment_changed只提出版本+1/dirty=true候选，应用必须与实际修改同事务。
+
+本人ListSessions明确使用本人Principal UUID+IdentitySessionRead；本人Revoke使用目标
+Session UUID+IdentitySessionRevoke，由Identity读取其真实owner后授予self-session权利。
+这只是两个本人会话规则，不是Principal到Session或Catalog到child的通用继承；跨主体
+依然需要exact Principal/Session grant。Control不本地放行或发明catalog id=sessions。
+
+identity_state_rules.hpp验证当前principal、credential head/状态/有限expiry、session
+轮次/撤销/独立access-refresh期限，再考虑旧成功receipt。15分钟access精确到期即拒绝，
+仍有效的refresh可用；credential换代/过期或session撤销优先于receipt冲突检查。已消费
+refresh仅原peer+原key+原input轮次、当前轮次=input+1、原token及24小时恢复窗内可恢复。
+秘密row的24小时、method参数、轮次/版本与当前状态重新核验后，才允许调用AEAD open；
+此状态规则不代替真实密码/HMAC/AEAD验证。Login/Refresh/Rotate同scope异commitment冲突。
+
+签名来源会在线读取source credential/session，即使authorization_version未变仍拒绝
+已撤销会话/旧凭据。委托首业务边hops1/chain[Control]，第二边hops2/[Control,Runtime]；
+hops0和第三边拒绝。Identity签发/交换RPC及TLS握手不计业务边；exchange只追加当前转交
+actor，aud必须变、权限-资源只收窄、subject/origin不变且期限不延长。普通预算/密码学
+签验仍由成熟adapter及调用层执行，纯shape检查不等于JWT认证。
