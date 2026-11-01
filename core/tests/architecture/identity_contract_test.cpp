@@ -30,6 +30,10 @@ static_assert(std::is_same_v<decltype(std::declval<target::IdentitySessionSecuri
                                           .list_metadata(std::declval<const target::SubjectId&>(),
                                                          std::size_t{1})),
                              target::Outcome<std::vector<target::SessionMetadata>>>);
+static_assert(
+    std::is_same_v<decltype(std::declval<target::IdentityCredentialRepository&>().by_certificate(
+                       std::declval<const target::Sha256Digest&>())),
+                   target::Outcome<std::optional<target::CredentialVersionRecord>>>);
 static_assert(target::kAccessTokenLifetime == std::chrono::minutes{15});
 static_assert(target::kRefreshTokenLifetime == std::chrono::hours{24 * 30});
 static_assert(target::kSecretReceiptRetention == std::chrono::hours{24});
@@ -42,7 +46,8 @@ void check(bool passed, const char* scenario) {
 int main() {
   const target::TimePoint created{std::chrono::hours{1}};
   auto stub = std::get<target::CredentialVersionRecord>(target::make_pending_credential(
-      {"credential"}, {"principal"}, target::CredentialKind::Password, created));
+      {"credential"}, {"principal"}, target::CredentialKind::Password,
+      {target::ResourceKind::Principal, {"principal"}}, created));
   check(stub.state == target::CredentialState::Pending && stub.ref.version.value == 1 &&
             std::holds_alternative<target::PendingCredentialMaterial>(stub.material),
         "registration creates explicit pending version-one stub without a password verifier");
@@ -53,21 +58,62 @@ int main() {
   check(std::holds_alternative<target::Failure>(target::validate_credential_record(stub)),
         "active empty password hash is invalid");
   stub.material = target::PasswordVerifier{"mature-adapter-output", {1}};
+  check(std::holds_alternative<target::Failure>(target::validate_credential_record(stub)),
+        "active credential cannot fabricate absent expiry");
+  stub.expires_at = created + std::chrono::hours{1};
   check(std::holds_alternative<std::monostate>(target::validate_credential_record(stub)),
         "active material has structural verifier while actual crypto validation remains external");
+  check(
+      std::get<target::CredentialStatusSnapshot>(target::credential_status(stub, *stub.expires_at))
+              .state == target::CredentialStatusState::Expired,
+      "credential expires exactly at authoritative cutoff");
+  stub.state = target::CredentialState::Revoked;
+  stub.revoked_at = created;
+  check(
+      std::get<target::CredentialStatusSnapshot>(target::credential_status(stub, *stub.expires_at))
+              .state == target::CredentialStatusState::Revoked,
+      "revocation status wins over expiry projection");
+  stub.revoked_at.reset();
   stub.state = target::CredentialState::Pending;
   check(std::holds_alternative<target::Failure>(target::validate_credential_record(stub)),
         "pending state cannot conceal material that was already issued");
   for (const auto kind :
        {target::CredentialKind::WorkloadBootstrap, target::CredentialKind::CertificateBinding}) {
     const auto result =
-        target::make_pending_credential({"credential"}, {"principal"}, kind, created);
+        target::make_pending_credential({"credential"}, {"principal"}, kind,
+                                        {target::ResourceKind::Instance, {"instance"}}, created);
     check(std::holds_alternative<target::CredentialVersionRecord>(result),
           "non-password registration also has a typed no-secret pending material");
   }
   check(std::holds_alternative<target::Failure>(target::make_pending_credential(
-            {"credential"}, {"principal"}, target::CredentialKind::Unspecified, created)),
+            {"credential"}, {"principal"}, target::CredentialKind::Unspecified,
+            {target::ResourceKind::Principal, {"principal"}}, created)),
         "unspecified pending credential kind rejected");
+  auto pending = std::get<target::CredentialVersionRecord>(
+      target::make_pending_credential({"pending"}, {"principal"}, target::CredentialKind::Password,
+                                      {target::ResourceKind::Principal, {"principal"}}, created));
+  pending.expires_at = created + std::chrono::hours{1};
+  check(std::holds_alternative<target::Failure>(target::validate_credential_record(pending)),
+        "Pending cannot fabricate a credential expiry before secret issuance");
+  auto bounded = std::get<target::CredentialVersionRecord>(target::make_pending_credential(
+      {"bounded"}, {"principal"}, target::CredentialKind::WorkloadBootstrap,
+      {target::ResourceKind::Instance, {"instance"}}, created));
+  bounded.state = target::CredentialState::Active;
+  bounded.material =
+      target::WorkloadBootstrapVerifier{{target::TokenPurpose::WorkloadBootstrap, {"key"}, {}},
+                                        bounded.binding,
+                                        {target::Service::Runtime},
+                                        created + std::chrono::hours{1}};
+  bounded.expires_at = created + std::chrono::hours{2};
+  check(std::holds_alternative<target::Failure>(target::validate_credential_record(bounded)),
+        "credential expiry cannot outlive bootstrap verifier expiry");
+  bounded.material = target::CertificateBinding{{"principal"},    {},
+                                                "registered-san", target::Service::Control,
+                                                created,          created + std::chrono::hours{1}};
+  check(std::holds_alternative<target::Failure>(target::validate_credential_record(bounded)),
+        "credential expiry cannot outlive the actual certificate");
+  check(static_cast<unsigned int>(target::Permission::MessageRead) == 40,
+        "G08 explicit message.read is present without becoming a role grant");
   const target::SecretReceiptScope refresh_scope =
       target::RefreshReceiptScope{{"control"}, {"session"}, "key"};
   const target::SecretRequestParameters refresh_first = target::RefreshRequestParameters{1};
@@ -117,6 +163,24 @@ int main() {
   check(std::holds_alternative<target::Failure>(
             target::validate_secret_request_parameters(delivery_scope, refresh_first)),
         "receipt method scope and typed parameters cannot be mixed");
+  target::DelegationClaims origin{};
+  origin.subject = {"principal"};
+  check(std::holds_alternative<target::Failure>(target::validate_delegation_origin(origin)),
+        "missing source credential cannot become a valid proof origin");
+  origin.source_credential = {{"credential"}, {1}};
+  origin.source_session = target::SessionId{"source-session"};
+  auto exchanged = origin;
+  check(std::holds_alternative<std::monostate>(target::require_preserved_origin(origin, exchanged)),
+        "exchange preserves signed original source");
+  exchanged.source_session.reset();
+  check(
+      std::holds_alternative<target::Failure>(target::require_preserved_origin(origin, exchanged)),
+      "exchange cannot remove a source session and masquerade as workload origin");
+  exchanged = origin;
+  exchanged.source_credential.version.value = 2;
+  check(
+      std::holds_alternative<target::Failure>(target::require_preserved_origin(origin, exchanged)),
+      "exchange cannot replace originating credential version");
   target::SessionSecurity session{};
   session.id = {"session"};
   session.subject = {"principal"};

@@ -5,7 +5,7 @@
 namespace kiarabot::core::target {
 
 // Closed internal vocabulary mapped by NAME at the transport boundary, never by numeric cast.
-// Source: policy.proto at 0de1622. Additional G08 permissions await their unique contract commit.
+// Sources: policy.proto at 0de1622 and G08 78b09a6; additions map by name, not numeric cast.
 enum class Permission : std::uint16_t {
   Unspecified,
   AccountManage,
@@ -46,7 +46,8 @@ enum class Permission : std::uint16_t {
   AccountRead,
   PluginRead,
   AdapterRead,
-  PluginConfigRead
+  PluginConfigRead,
+  MessageRead
 };
 
 } // namespace kiarabot::core::target

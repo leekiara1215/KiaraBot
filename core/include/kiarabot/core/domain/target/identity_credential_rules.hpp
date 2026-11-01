@@ -22,23 +22,28 @@ inline bool valid_credential_kind(CredentialKind kind) {
 // mature crypto adapters; expiration is checked at authentication UTC, not a stored fake terminal.
 inline Status validate_credential_record(const CredentialVersionRecord& record) {
   if (record.ref.id.value.empty() || record.ref.version.value == 0 ||
-      record.subject.value.empty()) {
+      record.subject.value.empty() || !valid_resource_ref(record.binding)) {
     return rejected(ErrorCode::InvalidArgument, Recovery::CorrectInput);
   }
   const auto* pending = std::get_if<PendingCredentialMaterial>(&record.material);
   switch (record.state) {
   case CredentialState::Pending:
-    if (!pending || !valid_credential_kind(pending->kind) || record.revoked_at) {
+    if (!pending || !valid_credential_kind(pending->kind) || record.revoked_at ||
+        record.expires_at) {
       return rejected(ErrorCode::InvalidArgument, Recovery::CorrectInput);
     }
     return std::monostate{};
   case CredentialState::Active:
-    if (pending || record.revoked_at) {
+    if (pending || record.revoked_at || !record.expires_at ||
+        *record.expires_at <= record.created_at) {
       return rejected(ErrorCode::InvalidArgument, Recovery::CorrectInput);
     }
     break;
   case CredentialState::Revoked:
     if (!record.revoked_at || *record.revoked_at < record.created_at) {
+      return rejected(ErrorCode::InvalidArgument, Recovery::CorrectInput);
+    }
+    if (record.expires_at && *record.expires_at <= record.created_at) {
       return rejected(ErrorCode::InvalidArgument, Recovery::CorrectInput);
     }
     // Revoking an unissued stub is a real revocation, not an active empty verifier.
@@ -58,7 +63,9 @@ inline Status validate_credential_record(const CredentialVersionRecord& record) 
   } else if (const auto* bootstrap = std::get_if<WorkloadBootstrapVerifier>(&record.material)) {
     if (bootstrap->verifier.purpose != TokenPurpose::WorkloadBootstrap ||
         bootstrap->verifier.key.value.empty() || !valid_resource_ref(bootstrap->binding) ||
-        bootstrap->audiences.empty() || bootstrap->expires_at <= record.created_at) {
+        bootstrap->audiences.empty() || bootstrap->expires_at <= record.created_at ||
+        bootstrap->binding != record.binding ||
+        (record.expires_at && *record.expires_at > bootstrap->expires_at)) {
       return rejected(ErrorCode::InvalidArgument, Recovery::CorrectInput);
     }
     for (const auto audience : bootstrap->audiences) {
@@ -69,6 +76,7 @@ inline Status validate_credential_record(const CredentialVersionRecord& record) 
   } else if (const auto* certificate = std::get_if<CertificateBinding>(&record.material)) {
     if (certificate->subject != record.subject || certificate->registered_san.empty() ||
         certificate->not_after <= certificate->not_before ||
+        (record.expires_at && *record.expires_at > certificate->not_after) ||
         (certificate->platform_service && !valid_service(*certificate->platform_service))) {
       return rejected(ErrorCode::InvalidArgument, Recovery::CorrectInput);
     }
@@ -77,19 +85,40 @@ inline Status validate_credential_record(const CredentialVersionRecord& record) 
   }
   return std::monostate{};
 }
-inline Outcome<CredentialVersionRecord>
-make_pending_credential(CredentialId id, SubjectId subject, CredentialKind kind, TimePoint now) {
+inline Outcome<CredentialVersionRecord> make_pending_credential(CredentialId id, SubjectId subject,
+                                                                CredentialKind kind,
+                                                                ResourceRef binding,
+                                                                TimePoint now) {
   CredentialVersionRecord record{{std::move(id), {1}},
                                  std::move(subject),
                                  PendingCredentialMaterial{kind},
                                  CredentialState::Pending,
                                  now,
+                                 std::nullopt,
+                                 std::move(binding),
                                  std::nullopt};
   const auto validation = validate_credential_record(record);
   if (const auto* failure = std::get_if<Failure>(&validation)) {
     return *failure;
   }
   return record;
+}
+// Public status carries no material; Revoked takes precedence, Expired is not a persisted state.
+inline Outcome<CredentialStatusSnapshot> credential_status(const CredentialVersionRecord& record,
+                                                           TimePoint checked_at) {
+  const auto validation = validate_credential_record(record);
+  if (std::holds_alternative<Failure>(validation) || checked_at < record.created_at) {
+    return rejected(ErrorCode::Internal, Recovery::Diagnose);
+  }
+  CredentialStatusState state = CredentialStatusState::Pending;
+  if (record.state == CredentialState::Revoked) {
+    state = CredentialStatusState::Revoked;
+  } else if (record.state == CredentialState::Active) {
+    state = checked_at >= *record.expires_at ? CredentialStatusState::Expired
+                                             : CredentialStatusState::Active;
+  }
+  return CredentialStatusSnapshot{record.ref,        record.subject,    record.binding, state,
+                                  record.created_at, record.expires_at, checked_at};
 }
 // Scope is the stable uniqueness key. Parameters are authenticated request CONTENT, so changing
 // expected_version/input rotation under the same key cannot escape a commitment conflict.
@@ -115,6 +144,29 @@ inline Status validate_secret_request_parameters(const SecretReceiptScope& scope
     }
   }
   return rejected(ErrorCode::InvalidArgument, Recovery::CorrectInput);
+}
+inline Status validate_delegation_origin(const DelegationClaims& claims) {
+  if (claims.source_credential.id.value.empty() || claims.source_credential.version.value == 0 ||
+      (claims.source_session && claims.source_session->value.empty())) {
+    return rejected(ErrorCode::InvalidArgument, Recovery::CorrectInput);
+  }
+  return std::monostate{};
+}
+inline Status require_preserved_origin(const DelegationClaims& parent,
+                                       const DelegationClaims& child) {
+  const auto parent_origin = validate_delegation_origin(parent);
+  if (std::holds_alternative<Failure>(parent_origin)) {
+    return parent_origin;
+  }
+  const auto child_origin = validate_delegation_origin(child);
+  if (std::holds_alternative<Failure>(child_origin)) {
+    return child_origin;
+  }
+  if (parent.subject != child.subject || parent.source_credential != child.source_credential ||
+      parent.source_session != child.source_session) {
+    return rejected(ErrorCode::PermissionDenied);
+  }
+  return std::monostate{};
 }
 inline SessionMetadata session_metadata(const SessionSecurity& session) {
   return {session.id,       session.subject, session.created_at, session.refresh_expires_at,

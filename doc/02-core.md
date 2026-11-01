@@ -583,3 +583,30 @@ subject/service/SAN、凭据状态/版本与期限，再交PeerCertificatePort�
 ### 外部连接授权目标补全（未实现）
 
 platform.proto三类ConnectionAuthorization/RefreshConnectionAuthorization/Result与两Bridge的登记、proof、refresh帧定义短期外部连接授权。名义最多56秒、总预算60秒、每秒检查失效，单飞原子轮换；丢响应须关闭旧流、新bootstrap与连接代次。完整规则见doc/01-contracts及运行语义；内部JWT委托和P02 mTLS owner监听不变，P05/P06真实接线前仍not_implemented。授权材料禁止日志/公开投影/持久秘密收据，高风险业务仍在线核验，刷新不续投递租约、不改历史业务事实。浏览器REST/WS不使用这些proof，OpenAPI/AsyncAPI因此无schema变更。
+
+### G08 Identity模型兼容（唯一契约78b09a6）
+
+Permission追加MessageRead，只有显式敏感绑定可以授予，固定角色/创建资源默认策略不派生。
+ExactAssignmentSpec用RoleAssignmentSpec或ExplicitAssignmentSpec的variant表示role XOR
+显式permissions；role仅human，explicit集合须非空/去重/封闭，scope须精确非空。更新
+不换主体，并核验旧新scope并集；具体授权规则在后续纯policy能力实现。
+
+CredentialVersionRecord新增权威ResourceRef binding及optional expires_at。Pending不得有
+expiry；Active无论密码/bootstrap/证书都必须有有限expiry且晚于created_at，bootstrap/
+证书不能超过材料期限，密码期限由可信策略提供，不能用空/默认时间假装永不过期。
+make_pending_credential显式接收binding，创建version1无expiry/秘密的stub；不会根据
+缺失数据臆造资源。credential_status返回无材料的当前投影，Revoked优先，否则Active
+在checked_at>=expires_at投影Expired，Pending仍无伪造expires，不持久化Expired终态。
+公开created/binding/expiry/checked_at均来自同一权威记录/DB采样，不由Control补值。
+
+委托显式来源：DelegationClaims必须签入source_credential(id+version)及可选source_session；
+exchange保留原subject与来源，不得删session伪装workload或替换凭据版本。Identity在线
+按该来源核验当前head/active/expiry/session撤销，不依赖“authversion必随撤销增加”的假设；
+普通读预算仍不超过60秒。缺少来源的旧proof不能默认为可信，成熟JWT adapter须签验字段。
+
+真实peer登记查询使用IdentityCredentialRepository::by_certificate(leaf SHA-256)的唯一
+current-head索引，不读请求body中的credential_id/subject、不遍历全部凭据。返回行仍须
+核验主体/service/SAN、当前版本/Active/expiry与资源gate；该查询不等于认证成功。
+PeerCertificatePort输入只接受真实TLS证据转换的leaf-first连续DER X509证书串，使用
+成熟d2i_X509完整消费；总量<=64KiB、<=8张、非空，无额外前缀或尾随字节。PEM/DER/X509解析
+交成熟OpenSSL adapter，不由Core手写；peer提供的根不会因此变成受信CA。

@@ -16,6 +16,11 @@ public:
   virtual Outcome<std::optional<CredentialVersionRecord>> current(const CredentialId& id) = 0;
   virtual Outcome<std::optional<CredentialVersionRecord>>
   version(const CredentialVersionRef& ref) = 0;
+  // Real TLS leaf SHA-256 lookup: unique leaf fingerprint, CURRENT head only, never scan all rows
+  // or obtain credential_id/subject from request body. Caller checks actual subject/service/SAN,
+  // current version/Active/expiry and principal gate; this index is not authentication success.
+  virtual Outcome<std::optional<CredentialVersionRecord>>
+  by_certificate(const Sha256Digest& leaf_fingerprint) = 0;
   virtual Outcome<std::optional<LoginIdentity>> login(const std::string& normalized_login) = 0;
   virtual Status save_login(const LoginIdentity& login,
                             std::optional<ResourceVersion> expected) = 0;

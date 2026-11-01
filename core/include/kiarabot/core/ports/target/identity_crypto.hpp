@@ -57,7 +57,12 @@ public:
 class PeerCertificatePort {
 public:
   virtual ~PeerCertificatePort() = default;
-  // presented_chain is real transport DER evidence, NEVER a request-body certificate/hash.
+  // presented_chain is real transport evidence, NEVER a request-body certificate/hash.
+  // Framing: leaf-first concatenated DER X509 certificates, consumed completely by mature
+  // d2i_X509. Nonempty, <=64KiB total, <=8 certs, no custom prefix or trailing bytes.
+  // The adapter uses mature OpenSSL DER/X509 parsing; Core performs no ASN.1/certificate parsing.
+  // RPC adapter may convert AuthContext's real PEM chain with OpenSSL; no supplied cert is a CA
+  // trust anchor unless it is independently in configured trust roots.
   // Verify chain/time/SAN/service identity against the caller's authoritative expected binding.
   // Caller has read current credential/state; this crypto adapter does not query the database.
   virtual Outcome<VerifiedPeer> verify(std::span<const std::byte> presented_chain,
@@ -67,9 +72,12 @@ class DelegationCryptoPort {
 public:
   virtual ~DelegationCryptoPort() = default;
   // Fixed Ed25519 JWS; mature jwt-cpp/libsodium adapters, no algorithm choice from token input.
+  // MUST sign source_credential(id+version) and optional source_session; missing source rejects.
   virtual Outcome<OwnedSecret> sign(const DelegationClaims& claims, const CryptoKeyRef& key) = 0;
   // Reject none/downgrade/unknown key/arbitrary jku-x5u. Check iss/aud/sub/iat/nbf/exp/jti,
-  // permission/resource bindings, actor chain, certificate and 56+2+2<=60s total validity budget.
+  // permission/resource bindings, actor chain, certificate, signed source_credential/source_session
+  // and 56+2+2<=60s total validity. No implicit origin from authversion; online Identity checks the
+  // actual origin session/current credential, and exchange must retain origin without widening.
   virtual Outcome<VerifiedDelegation> verify(SecretView proof, Service audience,
                                              const VerifiedPeer& direct_peer,
                                              const SecurityClockSample& clock) = 0;

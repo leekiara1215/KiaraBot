@@ -24,6 +24,8 @@ inline constexpr auto kMaximumAuthorizationAge = std::chrono::seconds{60};
 inline constexpr auto kMaximumKnownClockSkew = std::chrono::seconds{2};
 inline constexpr auto kMaximumSignatureLeeway = std::chrono::seconds{2};
 inline constexpr std::uint32_t kMaximumBusinessHops = 2;
+inline constexpr std::size_t kMaximumPeerChainBytes = 65536;
+inline constexpr std::size_t kMaximumPeerChainCertificates = 8;
 struct CredentialTag;
 struct CryptoKeyTag;
 using CredentialId = Identifier<CredentialTag>;
@@ -87,6 +89,20 @@ struct CredentialVersionRecord {
   CredentialState state = CredentialState::Pending;
   TimePoint created_at;
   std::optional<TimePoint> revoked_at;
+  ResourceRef binding;
+  // Authoritative finite expiry for all issued credentials; Pending has none. Password expiry
+  // comes from trusted policy, not an empty/default time. Expired is only a current-UTC projection.
+  std::optional<TimePoint> expires_at;
+};
+enum class CredentialStatusState { Pending, Active, Expired, Revoked };
+struct CredentialStatusSnapshot {
+  CredentialVersionRef ref;
+  SubjectId subject;
+  ResourceRef binding;
+  CredentialStatusState state;
+  TimePoint created_at;
+  std::optional<TimePoint> expires_at;
+  TimePoint checked_at;
 };
 struct LoginIdentity {
   std::string normalized_login;
@@ -142,6 +158,20 @@ struct PermissionBinding {
   Permission permission;
   ResourceRef resource;
   bool operator==(const PermissionBinding&) const = default;
+};
+// G08 request basis: fixed human role XOR nonempty explicit permissions. The variant makes
+// mixing both bases unrepresentable; application validates human-only role and nonempty scope.
+struct RoleAssignmentSpec {
+  FixedRole role;
+  std::vector<ResourceRef> scope;
+};
+struct ExplicitAssignmentSpec {
+  std::vector<Permission> permissions;
+  std::vector<ResourceRef> scope;
+};
+struct ExactAssignmentSpec {
+  SubjectId subject;
+  std::variant<RoleAssignmentSpec, ExplicitAssignmentSpec> basis;
 };
 struct ExactAssignment {
   AssignmentId id;
@@ -266,6 +296,10 @@ struct DelegationClaims {
   TimePoint not_before;
   TimePoint expires_at;
   std::uint32_t business_hops;
+  // Signed provenance. Exchange preserves both fields exactly; authversion alone cannot prove
+  // that the original login session/current credential has not been revoked or rotated.
+  CredentialVersionRef source_credential;
+  std::optional<SessionId> source_session;
 };
 struct VerifiedDelegation {
   DelegationClaims claims;
