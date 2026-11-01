@@ -83,3 +83,22 @@ add_test(NAME p04_identity_role_catalog COMMAND "${KIARABOT_TEST_RUBY}"
   $<TARGET_FILE:kiarabot_identity_rules_test> ${CMAKE_SOURCE_DIR}/api/openapi.yaml)
 set_tests_properties(p04_identity_role_catalog PROPERTIES
   LABELS "p04;unit;security;contract" TIMEOUT 10)
+
+# Public-key lookup is a pure use case; the shared security helper is an internal header.
+add_library(kiarabot_identity_verification_keys_application STATIC
+  src/application/target/identity_verification_keys_application.cpp)
+target_include_directories(kiarabot_identity_verification_keys_application PUBLIC include)
+target_compile_features(kiarabot_identity_verification_keys_application PUBLIC cxx_std_20)
+target_compile_options(kiarabot_identity_verification_keys_application PRIVATE
+  $<$<CXX_COMPILER_ID:AppleClang,Clang,GNU>:-Wall -Wextra -Wpedantic>)
+add_executable(kiarabot_identity_verification_keys_application_test
+  tests/architecture/identity_verification_keys_application_test.cpp)
+target_link_libraries(kiarabot_identity_verification_keys_application_test PRIVATE
+  kiarabot_identity_verification_keys_application)
+target_compile_options(kiarabot_identity_verification_keys_application_test PRIVATE
+  $<$<CXX_COMPILER_ID:AppleClang,Clang,GNU>:-Wall -Wextra -Wpedantic -UNDEBUG>
+  $<$<CXX_COMPILER_ID:MSVC>:/UNDEBUG>)
+add_test(NAME p04_identity_verification_keys_application
+  COMMAND kiarabot_identity_verification_keys_application_test)
+set_tests_properties(p04_identity_verification_keys_application PROPERTIES
+  LABELS "p04;unit;security" TIMEOUT 10)

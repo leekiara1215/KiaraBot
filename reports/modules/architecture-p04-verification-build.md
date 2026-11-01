@@ -46,3 +46,21 @@ exit0；全仓format16、全部TU覆盖/inner/实际图/p04标签通过。
 来自非本次crypto库接线的直接链接；没有抑制或改作者实现，不声称无warning。
 没有重复已经通过的129TU全库静态或统一入口，不宣称Linux/远端CI/部署验收。
 父另行处理own-TLS-expiry变体，本树本轮不冒认该分支运行通过。
+
+## Core GetKeys纯应用
+
+同步父批准151f31e（本树bd78a3b），doc02冲突仅保留双方新节；不改实现、测试或配置。
+Core CMake新增独立kiarabot_identity_verification_keys_application静态库和独立test，
+库仅PUBLIC core/include/C++20；现有security helper为内部header，不额外链接其他应用。
+测试p04/unit/security、10秒，通过-UNDEBUG（MSVC /UNDEBUG）保留所有配置的assert。
+不接RPC/生产组合，父的Invocation/TLSexpiry后继源不复制，也不重复注册纯A contract。
+文档影响仅doc11与本报告构建说明；Core语义已有源提交doc02及应用报告，其他模块/
+API/proto/CI和冻结doc18不变。
+
+固定配置，full新应用test与inner_headers定向构建通过，full CTest1/1通过0.49秒；
+新生产/test两TU精确compile DB tidy22 clang-analyzer-* warnings-as-errors与format16通过。
+全TU覆盖/inner/实际图/p04标签通过，并显式核对新library的LINK_LIBRARIES和
+INTERFACE_LINK_LIBRARIES均空，确认无反向依赖。dev定向构建/测试结果后附。
+不重复已通过库的全静态分析或主树整组运行；文档路径/末尾换行与diff检查通过。
+
+dev配置/新target定向构建与CTest1/1通过0.79秒；full p04标签也已检查通过。

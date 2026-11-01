@@ -620,3 +620,7 @@ imported target，链接沿现有依赖。finite metadata同时由正式配置�
 `p04_identity_daemon_tls_cross_expiry` 在证书到期前发起实际 Argon2id 登录，确认
 请求跨过实际到期边界后失败，并在同一已验证临时 PostgreSQL 查询会话数未增加。
 它与到期后拒绝测试分开，覆盖已在途请求的提交边界，不操作系统时钟。
+
+Core GetVerificationKeys为独立纯库 `kiarabot_identity_verification_keys_application`；
+同名p04应用测试注册unit/security、10秒，dev/full均可构建，保留源码assert。
+库仅有core/include和C++20，共享security detail为内部header，不链接PG/crypto/proto。
