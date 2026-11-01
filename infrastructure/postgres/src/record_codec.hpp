@@ -21,7 +21,7 @@ bool valid_sql_text(std::string_view value) noexcept;
 bool valid_sql_text_fields(std::initializer_list<std::string_view> values) noexcept;
 bool valid_text(const core::target::Operation& value) noexcept;
 bool valid_text(const core::target::HandoffContext& value) noexcept;
-bool valid_text(const core::target::ReplayResult& value) noexcept;
+bool valid_text(const core::target::ReplayResult& value);
 std::string timestamp(core::target::TimePoint value);
 core::target::TimePoint time_field(const pqxx::row& row, const char* column);
 std::optional<core::target::TimePoint> optional_time(const pqxx::row& row, const char* column);

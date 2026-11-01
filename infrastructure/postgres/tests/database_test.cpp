@@ -343,7 +343,7 @@ void run(const std::filesystem::path& root, std::uint16_t port,
       pqxx::connection migration(connection_string(config));
       pqxx::read_transaction inspect(migration);
       require(inspect.exec("SELECT version FROM kiarabot.schema_versions").one_row()[0].as<int>() ==
-                  (config.service == target::Service::Identity ? 9 : 4),
+                  (config.service == target::Service::Identity ? 10 : 5),
               "per-service schema version incorrect");
     }
     if (config.service == target::Service::Identity) {
@@ -502,7 +502,7 @@ void run(const std::filesystem::path& root, std::uint16_t port,
     }
 
     if (config.service == target::Service::Identity) {
-      for (int path = 0; path < 2; ++path) {
+      for (int path = 0; path < 4; ++path) {
         auto state_database =
             std::move(std::get<std::unique_ptr<pg::Database>>(pg::Database::open(runtime)));
         auto state_access = std::move(std::get<pg::detail::CommonWorkAccess>(
@@ -519,7 +519,7 @@ void run(const std::filesystem::path& root, std::uint16_t port,
         if (path == 0) {
           expect_error(assignments->current({"state-assignment"}),
                        target::ErrorCode::UpstreamUnavailable);
-        } else {
+        } else if (path == 1) {
           expect_error(assignments->save_state({{{"fault-assignment"},
                                                  {"credential-owner"},
                                                  {{target::FixedRole::Viewer,
@@ -529,6 +529,15 @@ void run(const std::filesystem::path& root, std::uint16_t port,
                                                 target::AssignmentState::Active,
                                                 {}},
                                                {}),
+                       target::ErrorCode::UpstreamUnavailable);
+        } else {
+          const target::ReceiptKey key{
+              {"actor"},
+              "public-edge",
+              {path == 2 ? target::ResourceKind::Principal : target::ResourceKind::Assignment,
+               {"edge"}},
+              path == 2 ? "13" : "14"};
+          expect_error(state_access.work->receipts().find(key),
                        target::ErrorCode::UpstreamUnavailable);
         }
         require(state_access.work->commit() != target::CommitResult::Committed,

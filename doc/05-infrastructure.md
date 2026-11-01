@@ -308,7 +308,7 @@ JWT序列化使用同一jwt-cpp官方nlohmann-json traits，NumericDate先检查
 
 ### P04 Identity 安全关系存储（实施中）
 
-Identity 最新空库 schema v9；Runtime、Scheduler、Model 各自为 v4（含下文完整会话结果表）。
+Identity 最新空库 schema v10；Runtime、Scheduler、Model 各自为 v5（含下文完整会话结果表）。
 不升级已有库，不自动初始化，不改变四库隔离。新增安全仓储借用公共 UoW 的同一物理
 事务，凭据当前头/不可变历史、会话安全元数据、精确授权、加密成功收据、refresh 恢复
 索引和管理员引导标记不能单独提交。端口存在或 schema 已创建不代表业务已接线。
@@ -486,3 +486,19 @@ SQL依赖故障为 Failure。for_subject 与 inherited grants 有效读取均过
 均 Conflict，不能以物理删除/空 tuple 代替撤销。save_state 是 base metadata 同事务唯一
 同步者，重复 base 写入不作为假成功；基础 store_live 也拒绝 revoked ID。失败整 UoW 回滚，
 Unknown commit 必须重读原状态/收据，不能假定未提交。无TTL删除墓碑，旧库拒绝、不自动迁移。
+
+
+### P04 普通收据的完整原始公共结果
+
+共享 ReplayResult 保留既有0..12，追加 RegisteredPrincipalSnapshot13 和 ExactAssignment14。
+13在独立 typed 关系保存原 Principal 和 initial_credential 的全部公共字段，包含可空 binding、
+expiry 及原 created_at/checked_at 纳秒；14保存原 owner/version、role XOR explicit permission
+精确 tuple，按 position 无损保留顺序，并用声明计数检测缺失子行。没有 live authority FK，
+不通过当前 principal/credential/grant 查询或 base metadata 逆拼旧成功，不保存 token、proof、
+verifier 或 SecretReplayPayload。重复同指纹仍返回原完整快照及原 retention；Unknown commit
+重连用原键恢复原结果，即使当前凭据已轮换或授予已撤销。新输入坏形状/NUL为 InvalidArgument，
+缺快照/子行、次序或 typed shape 损坏为 Internal，依赖故障沿同 UoW Failure/回滚语义传播。
+
+共享 typed 表及 kind 范围变化后，Identity 新空库 schema10，Runtime/Scheduler/Model 均为
+schema5；四库 descriptor 全部更新。旧库拒绝打开，不自动迁移或清空。此持久化能力不代表
+尚未接线的 Register/Set/Revoke RPC 或生产状态已启用。

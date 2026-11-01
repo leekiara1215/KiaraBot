@@ -413,7 +413,7 @@ socket，不继续受理。暂时忙等可恢复情况由具体组合根区分�
 ### P03 common transaction limits
 
 
-P03 公共 schema 为 v3；P04 Identity 空库含安全关系、完整会话结果与当前 bootstrap 定位及源 Control 会话绑定和平台当前定位索引及Assignment墓碑后为 v9，另三库为 v4。要求UTF8数据库；
+P03 公共 schema 为 v3；P04 Identity 空库含安全关系、完整会话结果与当前 bootstrap 定位及源 Control 会话绑定和平台当前定位索引及Assignment墓碑与完整普通结果后为 v10，另三库为 v5。要求UTF8数据库；
 旧版本或其他结构不自动升级，必须按本轮空库部署
 流程初始化新的专属库，不能清空原库或自动补表。schema结构描述/对象owner/运行权限均参与
 启动验证。当前仅存储公共能力，业务就绪仍由各服务已实现依赖决定。
@@ -570,7 +570,7 @@ wrapper仅核对返回指纹、正verified_at、受信clock/已知偏差及与ve
 ### P04 离线管理员与 Control 登记命令
 
 `kiarabot-identity-bootstrap` 只在可信部署主机离线运行，不提供 HTTP/gRPC 初始化入口。
-先显式初始化 Identity 空库（当前 schema9），停止同库 Identity daemon，再执行：
+先显式初始化 Identity 空库（当前 schema10），停止同库 Identity daemon，再执行：
 
 ```bash
 kiarabot-identity-bootstrap --config identity.json --enrollment enrollment.json --password-file administrator-password
@@ -871,3 +871,19 @@ SQL依赖故障为 Failure。for_subject 与 inherited grants 有效读取均过
 均 Conflict，不能以物理删除/空 tuple 代替撤销。save_state 是 base metadata 同事务唯一
 同步者，重复 base 写入不作为假成功；基础 store_live 也拒绝 revoked ID。失败整 UoW 回滚，
 Unknown commit 必须重读原状态/收据，不能假定未提交。无TTL删除墓碑，旧库拒绝、不自动迁移。
+
+
+### P04 普通收据的完整原始公共结果
+
+共享 ReplayResult 保留既有0..12，追加 RegisteredPrincipalSnapshot13 和 ExactAssignment14。
+13在独立 typed 关系保存原 Principal 和 initial_credential 的全部公共字段，包含可空 binding、
+expiry 及原 created_at/checked_at 纳秒；14保存原 owner/version、role XOR explicit permission
+精确 tuple，按 position 无损保留顺序，并用声明计数检测缺失子行。没有 live authority FK，
+不通过当前 principal/credential/grant 查询或 base metadata 逆拼旧成功，不保存 token、proof、
+verifier 或 SecretReplayPayload。重复同指纹仍返回原完整快照及原 retention；Unknown commit
+重连用原键恢复原结果，即使当前凭据已轮换或授予已撤销。新输入坏形状/NUL为 InvalidArgument，
+缺快照/子行、次序或 typed shape 损坏为 Internal，依赖故障沿同 UoW Failure/回滚语义传播。
+
+共享 typed 表及 kind 范围变化后，Identity 新空库 schema10，Runtime/Scheduler/Model 均为
+schema5；四库 descriptor 全部更新。旧库拒绝打开，不自动迁移或清空。此持久化能力不代表
+尚未接线的 Register/Set/Revoke RPC 或生产状态已启用。

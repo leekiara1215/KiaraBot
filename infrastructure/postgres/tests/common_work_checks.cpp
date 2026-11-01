@@ -1137,6 +1137,17 @@ void check_assignment_tombstones(Database& database) {
        {1}},
       target::AssignmentState::Active,
       {}};
+  for (int shape = 0; shape < 2; ++shape) {
+    auto access = take(detail::DatabaseAccess::begin(database));
+    const std::vector<std::string> key =
+        shape == 0 ? std::vector<std::string>{} : std::vector<std::string>{"id", "extra"};
+    expect(access.sql->run([&](pqxx::transaction_base& transaction) -> target::Status {
+      (void)detail::load_live(transaction, detail::RecordKind::Grant, key);
+      return std::monostate{};
+    }),
+           target::ErrorCode::Internal);
+    rejected(*access.work);
+  }
   {
     auto access = take(detail::DatabaseAccess::begin(database));
     auto assignments = detail::exact_assignment_repository(*access.sql);
@@ -1274,7 +1285,105 @@ void check_assignment_tombstones(Database& database) {
   }
 }
 
+void check_public_result_codec(Database& database) {
+  const target::RegisteredPrincipalSnapshot registration{
+      {{"edge-principal"}, target::PrincipalKind::Human, {}, {7}, target::LifecycleState::Disabled},
+      {{{"edge-credential"}, {9}},
+       {"edge-principal"},
+       {target::ResourceKind::Principal, {"edge-principal"}},
+       target::CredentialStatusState::Expired,
+       target::TimePoint{std::chrono::nanoseconds{137}},
+       target::TimePoint{std::chrono::nanoseconds{731}},
+       target::TimePoint{std::chrono::nanoseconds{995}}}};
+  const target::ExactAssignment roles{
+      {"edge-assignment"},
+      {"edge-owner"},
+      {{target::FixedRole::Viewer, {target::ResourceKind::Account, {"z"}}},
+       {target::FixedRole::Viewer, {target::ResourceKind::Account, {"a"}}}},
+      {},
+      {11}};
+  const target::ReceiptKey registration_key{
+      {"actor"}, "public-edge", {target::ResourceKind::Principal, {"edge"}}, "13"};
+  const target::ReceiptKey assignment_key{
+      {"actor"}, "public-edge", {target::ResourceKind::Assignment, {"edge"}}, "14"};
+  {
+    auto work = begin(database);
+    const auto now = take(work->current_time());
+    take(work->receipts().insert(
+        {registration_key, {}, registration, now, now + std::chrono::hours{168}}, {100}));
+    take(work->receipts().insert({assignment_key, {}, roles, now, now + std::chrono::hours{168}},
+                                 {100}));
+    committed(*work);
+  }
+  {
+    auto work = begin(database);
+    const auto saved_registration = take(work->receipts().find(registration_key));
+    const auto& registered =
+        std::get<target::RegisteredPrincipalSnapshot>(saved_registration->result);
+    check(
+        !registered.principal.binding && registered.principal.kind == registration.principal.kind &&
+            registered.principal.state == registration.principal.state &&
+            registered.principal.version.value == 7 &&
+            registered.initial_credential.ref == registration.initial_credential.ref &&
+            registered.initial_credential.subject == registration.initial_credential.subject &&
+            registered.initial_credential.binding == registration.initial_credential.binding &&
+            registered.initial_credential.state == registration.initial_credential.state &&
+            registered.initial_credential.created_at ==
+                registration.initial_credential.created_at &&
+            registered.initial_credential.expires_at ==
+                registration.initial_credential.expires_at &&
+            registered.initial_credential.checked_at == registration.initial_credential.checked_at,
+        "complete registration optional fields/status/nanoseconds did not round trip");
+    const auto saved_assignment = take(work->receipts().find(assignment_key));
+    const auto& exact = std::get<target::ExactAssignment>(saved_assignment->result);
+    check(exact.id == roles.id && exact.subject == roles.subject &&
+              exact.version == roles.version && exact.roles == roles.roles &&
+              exact.explicit_permissions.empty(),
+          "role snapshot lost original tuple order or invented permission metadata");
+    work->rollback();
+  }
+  for (int kind = 0; kind < 2; ++kind) {
+    auto work = begin(database);
+    const auto now = take(work->current_time());
+    auto invalid_registration = registration;
+    invalid_registration.initial_credential.subject = {"wrong-owner"};
+    auto invalid_roles = roles;
+    invalid_roles.roles.clear();
+    expect(work->receipts().insert({{{"actor"},
+                                     "invalid-public",
+                                     {target::ResourceKind::Principal, {"edge"}},
+                                     std::to_string(kind)},
+                                    {},
+                                    kind == 0 ? target::ReplayResult{invalid_registration}
+                                              : target::ReplayResult{invalid_roles},
+                                    now,
+                                    now + std::chrono::hours{168}},
+                                   {100}),
+           target::ErrorCode::InvalidArgument);
+    rejected(*work);
+  }
+  for (int kind = 0; kind < 2; ++kind) {
+    auto access = take(detail::DatabaseAccess::begin(database));
+    take(access.sql->run([&](pqxx::transaction_base& transaction) -> target::Status {
+      if (kind == 0) {
+        transaction.exec(
+            "DELETE FROM kiarabot.result_registrations WHERE result_id=(SELECT result_id FROM "
+            "kiarabot.command_receipts WHERE method='public-edge' AND idempotency_key='13')");
+      } else {
+        transaction.exec("DELETE FROM kiarabot.result_exact_roles WHERE position=0 AND "
+                         "result_id=(SELECT result_id FROM kiarabot.command_receipts WHERE "
+                         "method='public-edge' AND idempotency_key='14')");
+      }
+      return std::monostate{};
+    }));
+    expect(access.work->receipts().find(kind == 0 ? registration_key : assignment_key),
+           target::ErrorCode::Internal);
+    rejected(*access.work);
+  }
+}
+
 void check_common(Database& database, const DatabaseConfig& config) {
+  check_public_result_codec(database);
   if (config.service == target::Service::Identity) {
     check_identity_credentials(database);
     check_bootstrap_locator(database);
@@ -1447,7 +1556,29 @@ void check_common(Database& database, const DatabaseConfig& config) {
                               target::TimePoint::max() - std::chrono::nanoseconds{731},
                               kMaximum,
                               {kMaximum},
-                              true}};
+                              true},
+      target::RegisteredPrincipalSnapshot{
+          {{"registered-original"},
+           target::PrincipalKind::Human,
+           target::ResourceRef{target::ResourceKind::Principal, {"registered-original"}},
+           {kMaximum},
+           target::LifecycleState::Active},
+          {{{"initial-original"}, {kMaximum}},
+           {"registered-original"},
+           {target::ResourceKind::Principal, {"registered-original"}},
+           target::CredentialStatusState::Pending,
+           target::TimePoint::min() + std::chrono::nanoseconds{137},
+           {},
+           target::TimePoint::max() - std::chrono::nanoseconds{731}}},
+      target::ExactAssignment{
+          {"exact-original"},
+          {"exact-original-owner"},
+          {},
+          {{target::Permission::MessageRead, {target::ResourceKind::Account, {"b"}}},
+           {target::Permission::ActionInspect, {target::ResourceKind::Account, {"b"}}},
+           {target::Permission::ActionInspect, {target::ResourceKind::Account, {"a"}}},
+           {target::Permission::MessageRead, {target::ResourceKind::Account, {"a"}}}},
+          {kMaximum}}};
   for (std::size_t index = 0; index < snapshots.size(); ++index) {
     work = begin(database);
     target::CommandReceipt receipt{
@@ -1469,6 +1600,16 @@ void check_common(Database& database, const DatabaseConfig& config) {
       changed.rotation = 1;
       changed.version = {1};
       changed.revoked = false;
+    }
+    if (index == 13) {
+      auto& changed = std::get<target::RegisteredPrincipalSnapshot>(receipt.result);
+      changed.principal.version = {1};
+      changed.initial_credential.ref.version = {1};
+      changed.initial_credential.created_at = now;
+    } else if (index == 14) {
+      auto& changed = std::get<target::ExactAssignment>(receipt.result);
+      changed.version = {1};
+      changed.explicit_permissions.clear();
     }
     const auto duplicate = take(work->receipts().insert(receipt, {0}));
     check(duplicate.duplicate && duplicate.receipt.created_at == written.receipt.created_at &&
@@ -1543,6 +1684,36 @@ void check_common(Database& database, const DatabaseConfig& config) {
             "immutable session metadata result lost creation time/version or read proposed state");
       break;
     }
+    case 13: {
+      const auto& registered = std::get<target::RegisteredPrincipalSnapshot>(replay);
+      const auto& original = std::get<target::RegisteredPrincipalSnapshot>(snapshots[index]);
+      check(registered.principal.id == original.principal.id &&
+                registered.principal.kind == original.principal.kind &&
+                registered.principal.binding == original.principal.binding &&
+                registered.principal.state == original.principal.state &&
+                registered.initial_credential.ref == original.initial_credential.ref &&
+                registered.initial_credential.subject == original.initial_credential.subject &&
+                registered.initial_credential.binding == original.initial_credential.binding &&
+                registered.principal.version.value == kMaximum && registered.principal.binding &&
+                registered.initial_credential.ref.version.value == kMaximum &&
+                registered.initial_credential.state == target::CredentialStatusState::Pending &&
+                !registered.initial_credential.expires_at &&
+                registered.initial_credential.created_at ==
+                    target::TimePoint::min() + std::chrono::nanoseconds{137} &&
+                registered.initial_credential.checked_at ==
+                    target::TimePoint::max() - std::chrono::nanoseconds{731},
+            "registration replay lost full original public state/times");
+      break;
+    }
+    case 14: {
+      const auto& exact = std::get<target::ExactAssignment>(replay);
+      const auto& original = std::get<target::ExactAssignment>(snapshots[index]);
+      check(exact.id == original.id && exact.subject == original.subject &&
+                exact.version.value == kMaximum && exact.roles.empty() &&
+                exact.explicit_permissions == original.explicit_permissions,
+            "assignment replay lost exact tuple boundaries/order or read proposed state");
+      break;
+    }
     default:
       break;
     }
@@ -1563,6 +1734,11 @@ void check_common(Database& database, const DatabaseConfig& config) {
   std::get<target::Occurrence>(nul_results[9]).accepted_event_id->append(nul);
   std::get<target::ModelIntent>(nul_results[10]).logical_call_id += nul;
   std::get<target::SessionMetadata>(nul_results[11]).subject.value += nul;
+  std::get<target::RegisteredPrincipalSnapshot>(nul_results[12])
+      .initial_credential.binding.id.value += nul;
+  std::get<target::ExactAssignment>(nul_results[13])
+      .explicit_permissions.front()
+      .resource.id.value += nul;
   auto nul_fence = snapshots[8];
   std::get<target::PluginInstance>(nul_fence).current->connection.value += nul;
   nul_results.push_back(std::move(nul_fence));
@@ -2069,6 +2245,22 @@ void check_unknown_commit(const DatabaseConfig& config, const std::filesystem::p
       {}};
   auto assignments = detail::exact_assignment_repository(*access.sql);
   take(assignments->save_state(tombstone, {}));
+  auto registration_receipt = receipt;
+  registration_receipt.key.method = "unknown-registration";
+  registration_receipt.result = target::RegisteredPrincipalSnapshot{
+      {{"unknown-vault-owner"}, target::PrincipalKind::Human, {}, {1}},
+      {{{"unknown-vault-credential"}, {1}},
+       {"unknown-vault-owner"},
+       {target::ResourceKind::Catalog, {"catalog"}},
+       target::CredentialStatusState::Pending,
+       now - std::chrono::nanoseconds{137},
+       {},
+       now + std::chrono::nanoseconds{731}}};
+  take(work->receipts().insert(registration_receipt, {100}));
+  auto assignment_receipt = receipt;
+  assignment_receipt.key.method = "unknown-exact";
+  assignment_receipt.result = tombstone.assignment;
+  take(work->receipts().insert(assignment_receipt, {100}));
   tombstone.assignment.version = {2};
   tombstone.state = target::AssignmentState::Revoked;
   tombstone.revoked_at = now;
@@ -2106,6 +2298,18 @@ void check_unknown_commit(const DatabaseConfig& config, const std::filesystem::p
             !take(detail::find_record(*query, detail::RecordKind::Grant,
                                       std::vector<std::string>{tombstone.assignment.id.value})),
         "Unknown commit lost tombstone evidence or revived effective grant");
+  const auto registration_snapshot = take(query->receipts().find(registration_receipt.key));
+  const auto& registered =
+      std::get<target::RegisteredPrincipalSnapshot>(registration_snapshot->result);
+  check(registered.initial_credential.ref.version.value == 1 &&
+            registered.initial_credential.state == target::CredentialStatusState::Pending &&
+            registered.initial_credential.created_at == now - std::chrono::nanoseconds{137} &&
+            registered.initial_credential.checked_at == now + std::chrono::nanoseconds{731},
+        "Unknown commit rebuilt registration success from live credential");
+  const auto assignment_snapshot = take(query->receipts().find(assignment_receipt.key));
+  const auto& exact = std::get<target::ExactAssignment>(assignment_snapshot->result);
+  check(exact.version.value == 1 && exact.roles == tombstone.assignment.roles,
+        "Unknown commit rebuilt assignment success from revoked live state");
   query->rollback();
 }
 } // namespace kiarabot::infrastructure::postgres::test

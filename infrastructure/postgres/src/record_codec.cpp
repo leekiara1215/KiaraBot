@@ -4,6 +4,8 @@
 #include <stdexcept>
 #include <type_traits>
 
+#include "kiarabot/core/domain/target/identity_policy.hpp"
+
 namespace kiarabot::infrastructure::postgres::detail {
 namespace target = core::target;
 static_assert(std::is_same_v<target::TimePoint::duration, std::chrono::nanoseconds>);
@@ -45,6 +47,39 @@ pqxx::row get_snapshot(pqxx::transaction_base& transaction, std::string_view tab
             pqxx::params{id})
       .one_row();
 }
+bool valid_registration(const target::RegisteredPrincipalSnapshot& value) {
+  const auto& principal = value.principal;
+  const auto& credential = value.initial_credential;
+  const auto state = static_cast<int>(principal.state);
+  const auto credential_state = static_cast<int>(credential.state);
+  return !principal.id.value.empty() && valid_sql_text(principal.id.value) &&
+         target::known_principal_kind(principal.kind) && principal.version.value > 0 &&
+         state >= 0 && state <= 5 &&
+         (!principal.binding || (target::valid_resource_ref(*principal.binding) &&
+                                 valid_sql_text(principal.binding->id.value))) &&
+         credential.subject == principal.id && !credential.ref.id.value.empty() &&
+         valid_sql_text(credential.ref.id.value) && credential.ref.version.value > 0 &&
+         target::valid_resource_ref(credential.binding) &&
+         valid_sql_text(credential.binding.id.value) && credential_state >= 0 &&
+         credential_state <= 3;
+}
+bool valid_exact_result(const target::ExactAssignment& value) {
+  if (!valid_sql_text_fields({value.id.value, value.subject.value}) ||
+      !std::holds_alternative<std::monostate>(target::validate_exact_assignment(value))) {
+    return false;
+  }
+  for (const auto& role : value.roles) {
+    if (!valid_sql_text(role.resource.id.value)) {
+      return false;
+    }
+  }
+  for (const auto& permission : value.explicit_permissions) {
+    if (!valid_sql_text(permission.resource.id.value)) {
+      return false;
+    }
+  }
+  return true;
+}
 } // namespace
 
 bool valid_sql_text(std::string_view value) noexcept {
@@ -67,7 +102,7 @@ bool valid_text(const target::HandoffContext& value) noexcept {
        value.resource.id.value, value.actor.value,
        value.causation ? std::string_view(value.causation->value) : std::string_view{}});
 }
-bool valid_text(const target::ReplayResult& result) noexcept {
+bool valid_text(const target::ReplayResult& result) {
   if (result.valueless_by_exception()) {
     return false;
   }
@@ -96,6 +131,10 @@ bool valid_text(const target::ReplayResult& result) noexcept {
             }
           }
           return true;
+        } else if constexpr (std::is_same_v<Value, target::RegisteredPrincipalSnapshot>) {
+          return valid_registration(value);
+        } else if constexpr (std::is_same_v<Value, target::ExactAssignment>) {
+          return valid_exact_result(value);
         } else if constexpr (std::is_same_v<Value, target::BotAccount>) {
           return valid_sql_text_fields(
               {value.id.value, value.platform, value.platform_account_id, value.display_name});
@@ -417,6 +456,43 @@ std::int64_t write_record(pqxx::transaction_base& transaction, const target::Rep
                                  " VALUES($1,$2,$3,$4,$5)",
                              parameters);
           }
+        } else if constexpr (std::is_same_v<Value, target::RegisteredPrincipalSnapshot>) {
+          const auto& principal = value.principal;
+          const auto& credential = value.initial_credential;
+          put(transaction, "registrations",
+              "principal_id,kind,binding_kind,binding_id,version,state,"
+              "credential_id,credential_version,credential_subject,credential_binding_kind,"
+              "credential_binding_id,credential_state,created_at,expires_at,checked_at",
+              id,
+              {principal.id.value, static_cast<int>(principal.kind),
+               principal.binding ? std::optional<int>(static_cast<int>(principal.binding->kind))
+                                 : std::nullopt,
+               principal.binding ? std::optional<std::string>(principal.binding->id.value)
+                                 : std::nullopt,
+               principal.version.value, static_cast<int>(principal.state), credential.ref.id.value,
+               credential.ref.version.value, credential.subject.value,
+               static_cast<int>(credential.binding.kind), credential.binding.id.value,
+               static_cast<int>(credential.state), timestamp(credential.created_at),
+               optional_timestamp(credential.expires_at), timestamp(credential.checked_at)});
+        } else if constexpr (std::is_same_v<Value, target::ExactAssignment>) {
+          put(transaction, "exact_assignments", "id,subject,version,role_count,permission_count",
+              id,
+              {value.id.value, value.subject.value, value.version.value, value.roles.size(),
+               value.explicit_permissions.size()});
+          for (std::size_t index = 0; index < value.roles.size(); ++index) {
+            const auto& role = value.roles[index];
+            transaction.exec("INSERT INTO kiarabot.result_exact_roles VALUES($1,$2,$3,$4,$5)",
+                             pqxx::params{id, index, static_cast<int>(role.role),
+                                          static_cast<int>(role.resource.kind),
+                                          role.resource.id.value});
+          }
+          for (std::size_t index = 0; index < value.explicit_permissions.size(); ++index) {
+            const auto& permission = value.explicit_permissions[index];
+            transaction.exec("INSERT INTO kiarabot.result_exact_permissions VALUES($1,$2,$3,$4,$5)",
+                             pqxx::params{id, index, static_cast<int>(permission.permission),
+                                          static_cast<int>(permission.resource.kind),
+                                          permission.resource.id.value});
+          }
         } else if constexpr (std::is_same_v<Value, target::BotAccount>) {
           put(transaction, "accounts", "id,platform,platform_account_id,display_name,version,state",
               id,
@@ -712,6 +788,68 @@ target::ReplayResult load_record(pqxx::transaction_base& transaction, std::int64
                                    {row["version"].as<std::uint64_t>()},
                                    row["revoked"].as<bool>()};
   }
+  case 13: {
+    const auto row = get(transaction, "registrations", id);
+    target::RegisteredPrincipalSnapshot value{
+        {{row["principal_id"].as<std::string>()},
+         enum_field<target::PrincipalKind>(row["kind"], 3),
+         {},
+         {row["version"].as<std::uint64_t>()},
+         enum_field<target::LifecycleState>(row["state"], 5)},
+        {{{row["credential_id"].as<std::string>()},
+          {row["credential_version"].as<std::uint64_t>()}},
+         {row["credential_subject"].as<std::string>()},
+         {enum_field<target::ResourceKind>(row["credential_binding_kind"], 15),
+          {row["credential_binding_id"].as<std::string>()}},
+         enum_field<target::CredentialStatusState>(row["credential_state"], 3),
+         time_field(row, "created_at"),
+         optional_time(row, "expires_at"),
+         time_field(row, "checked_at")}};
+    if (!row["binding_kind"].is_null()) {
+      value.principal.binding =
+          target::ResourceRef{enum_field<target::ResourceKind>(row["binding_kind"], 15),
+                              {row["binding_id"].as<std::string>()}};
+    }
+    if (!valid_registration(value)) {
+      throw std::runtime_error("invalid stored registration result");
+    }
+    return value;
+  }
+  case 14: {
+    const auto row = get(transaction, "exact_assignments", id);
+    target::ExactAssignment value{{row["id"].as<std::string>()},
+                                  {row["subject"].as<std::string>()},
+                                  {},
+                                  {},
+                                  {row["version"].as<std::uint64_t>()}};
+    for (const auto& role : transaction.exec(
+             "SELECT * FROM kiarabot.result_exact_roles WHERE result_id=$1 ORDER BY position",
+             pqxx::params{id})) {
+      if (role["position"].as<std::size_t>() != value.roles.size()) {
+        throw std::runtime_error("invalid stored exact result position");
+      }
+      value.roles.push_back({enum_field<target::FixedRole>(role["role"], 2),
+                             {enum_field<target::ResourceKind>(role["resource_kind"], 15),
+                              {role["resource_id"].as<std::string>()}}});
+    }
+    for (const auto& permission : transaction.exec(
+             "SELECT * FROM kiarabot.result_exact_permissions WHERE result_id=$1 ORDER BY position",
+             pqxx::params{id})) {
+      if (permission["position"].as<std::size_t>() != value.explicit_permissions.size()) {
+        throw std::runtime_error("invalid stored exact result position");
+      }
+      value.explicit_permissions.push_back(
+          {enum_field<target::Permission>(permission["permission"], 40),
+           {enum_field<target::ResourceKind>(permission["resource_kind"], 15),
+            {permission["resource_id"].as<std::string>()}}});
+    }
+    if (row["role_count"].as<std::size_t>() != value.roles.size() ||
+        row["permission_count"].as<std::size_t>() != value.explicit_permissions.size() ||
+        !valid_exact_result(value)) {
+      throw std::runtime_error("invalid stored exact assignment result");
+    }
+    return value;
+  }
   default:
     throw std::runtime_error("invalid stored result kind");
   }
@@ -727,6 +865,9 @@ target::ReplayResult load_result(pqxx::transaction_base& transaction, std::int64
 }
 std::optional<target::ReplayResult> load_live(pqxx::transaction_base& transaction, RecordKind kind,
                                               std::span<const std::string> key) {
+  if (kind == RecordKind::Grant && key.size() != 1) {
+    throw std::runtime_error("invalid grant key shape");
+  }
   if (kind == RecordKind::Grant && revoked_grant(transaction, key[0])) {
     return {};
   }

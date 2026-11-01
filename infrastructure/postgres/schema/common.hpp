@@ -3,6 +3,8 @@
 #include <string>
 #include <string_view>
 
+#include "identity_results.hpp"
+
 namespace kiarabot::infrastructure::postgres::schema {
 
 inline constexpr std::string_view kOperationColumns = R"sql(
@@ -29,7 +31,7 @@ CREATE DOMAIN kiarabot.uint64 AS numeric(20,0)
   CHECK(VALUE>=0 AND VALUE<=18446744073709551615);
 CREATE TABLE kiarabot.replay_results (
   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-  kind integer NOT NULL CHECK(kind BETWEEN 0 AND 12)
+  kind integer NOT NULL CHECK(kind BETWEEN 0 AND 14)
 );
 CREATE TABLE kiarabot.result_mutations (
   result_id bigint PRIMARY KEY REFERENCES kiarabot.replay_results(id) ON DELETE CASCADE,
@@ -110,6 +112,7 @@ CREATE TABLE kiarabot.result_grant_scopes (
     state integer NOT NULL CHECK(state BETWEEN 0 AND 3), version kiarabot.uint64 NOT NULL,
     created_at bigint NOT NULL, observed_at bigint NOT NULL
   )sql");
+  sql += kIdentityResults;
   sql += R"sql(
 CREATE TABLE kiarabot.command_receipts (
   subject text NOT NULL, method text NOT NULL, resource_kind integer NOT NULL CHECK(resource_kind BETWEEN 0 AND 15),
