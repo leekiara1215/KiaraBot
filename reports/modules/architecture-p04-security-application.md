@@ -197,3 +197,7 @@ one NotFound audit with current Control authversion42 rather than represented us
 receipt or dirty writes. Append fault returns Unavailable with no commit; Unknown audit commit
 retains Unknown/QuerySameIdentity with one attempt; RolledBack persists no audit. Full source/test
 analyzer+bugprone, format and diff pass with zero checker exclusions.
+
+After all four Control review corrections, root independently rebuilt production+stricttests with
+the documented -Werror ASan/UBSan no-recover command and executed defaultall successfully. These
+remain application tests; real App+crypto+PG integration is tracked separately by parent/PG author.
