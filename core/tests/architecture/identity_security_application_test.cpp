@@ -1509,6 +1509,48 @@ void login_receipt_rechecks_login_identity_at_crypto_boundaries() {
   }
 }
 
+void concurrent_same_key_refresh_recovers_winner_in_final_gap() {
+  Fixture f;
+  auto logged = f.app->login(f.login_request());
+  const auto& original = std::get<t::IdentityTokenReply>(logged).tokens;
+  const t::RefreshSessionRequest request{f.context("concurrent-refresh"), f.peer,
+                                         original.refresh->bytes()};
+  std::optional<t::IdentityTokenReply> winner;
+  unsigned boundaries = 0;
+  std::function<void()> before_begin;
+  before_begin = [&] {
+    assert(f.store.active == 0);
+    ++boundaries;
+    if (boundaries < 3) {
+      f.store.before_begin = before_begin;
+      return;
+    }
+    // The one-shot callback is already cleared by Transactions::begin before re-entry.
+    const auto prior_commits = f.store.commits;
+    auto competitor = f.app->refresh_session(request);
+    assert(std::holds_alternative<t::IdentityTokenReply>(competitor));
+    winner.emplace(std::move(std::get<t::IdentityTokenReply>(competitor)));
+    assert(f.store.commits == prior_commits + 1);
+  };
+  f.store.before_begin = before_begin;
+  const auto prior_commits = f.store.commits;
+  const auto outer = f.app->refresh_session(request);
+  assert(boundaries == 3 && winner.has_value());
+  assert(std::holds_alternative<t::IdentityTokenReply>(outer));
+  const auto& recovered = std::get<t::IdentityTokenReply>(outer).tokens;
+  assert(recovered.session == winner->tokens.session &&
+         recovered.rotation == winner->tokens.rotation);
+  assert(std::ranges::equal(recovered.access->bytes(), winner->tokens.access->bytes()));
+  assert(std::ranges::equal(recovered.refresh->bytes(), winner->tokens.refresh->bytes()));
+  assert(f.store.commits == prior_commits + 1);
+  assert(f.store.state.sessions[0].rotation == original.rotation + 1);
+  assert(f.store.state.metadata[0].rotation == original.rotation + 1);
+  assert(f.store.state.consumed.size() == 1 && f.store.state.receipts.size() == 2);
+  const auto rejected = f.app->refresh_session(
+      {f.context("different-refresh-key"), f.peer, original.refresh->bytes()});
+  assert(std::get<t::Failure>(rejected).code == t::ErrorCode::Unauthenticated);
+}
+
 } // namespace
 int main(int argc, char** argv) try {
   const std::string_view group = argc == 2 ? argv[1] : "all";
@@ -1533,6 +1575,7 @@ int main(int argc, char** argv) try {
   }
   if (group == "all" || group == "refresh") {
     refresh_only_recovers_original_key();
+    concurrent_same_key_refresh_recovers_winner_in_final_gap();
     refresh_unknown_is_recovered_without_second_rotation();
   }
   if (group == "all" || group == "list") {

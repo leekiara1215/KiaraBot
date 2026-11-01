@@ -152,3 +152,17 @@ adversarial cases: predecrypt after_verify and postdecrypt after_open hooks, eac
 owner+credential reassignment, version-only change and normalized-name corruption. Early paths
 perform no AEAD open; late paths perform one open but return no secret/new session. No issue2-4
 changes are mixed into this commit.
+
+## Same-key refresh final-window race correction
+
+Independent reproduction commits a same-key refresh between the last read_refresh release and
+final begin. The stale Current handle previously made the outer call reject despite an original
+successful receipt. Final UoW now re-resolves exact input/peer/key and receipt from current state;
+if consumed by that key, releases the UoW before normal replay/AEAD. No automatic second rotation,
+no new-key history lookup, and current head/session/rotation/expiry gates remain authoritative.
+
+Issue2 real deterministic before_begin third-boundary regression passes -Werror ASan/UBSan
+no-recover refresh group: a one-shot reentrant competitor commits first, outer returns byte-identical
+original access/refresh/session/rotation, exactly one consumption/receipt/commit and no second
+rotation. Old input with new key remains Unauthenticated. Every crypto call asserts no active UoW.
+Production/test full analyzer+bugprone, format16 and diff pass without checker exclusions.

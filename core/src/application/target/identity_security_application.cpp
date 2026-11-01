@@ -818,13 +818,53 @@ private:
     const auto& authority = std::get<detail::SessionAuthority>(current);
     RefreshRecoveryLookup lookup{request.control_peer.binding.certificate.subject,
                                  request.context.idempotency_key};
+    auto resolved = work.transaction->session_security().resolve_refresh(input.input_verifier,
+                                                                         lookup, work.now);
+    if (const auto* error = std::get_if<Failure>(&resolved)) {
+      return *error;
+    }
+    const auto& handle = std::get<std::optional<RefreshHandle>>(resolved);
+    if (!handle) {
+      return authentication_rejected();
+    }
+    const auto resolved_input = std::visit(
+        [](const auto& value) -> CurrentRefreshHandle {
+          if constexpr (requires { value.input; }) {
+            return value.input;
+          } else {
+            return value;
+          }
+        },
+        *handle);
+    if (!same_token_verifier(resolved_input.input_verifier, input.input_verifier)) {
+      return authentication_rejected();
+    }
+    auto original = work.transaction->secret_receipts().find(scope);
+    if (const auto* error = std::get_if<Failure>(&original)) {
+      return *error;
+    }
     auto decision = check_refresh_state(authority.subject.principal, authority.credential,
-                                        authority.session, first.handle, lookup, work.now);
+                                        authority.session, *handle, lookup, work.now);
     if (const auto* error = std::get_if<Failure>(&decision)) {
       return *error;
     }
-    if (std::get<RefreshDecision>(decision) != RefreshDecision::Rotate ||
-        authority.session.version != first.authority.session.version || work.now >= retain_until) {
+    if (const auto& existing = std::get<std::optional<EncryptedSecretReceipt>>(original)) {
+      auto saved = *existing;
+      work.transaction.reset();
+      // The competitor's immutable key reference is authenticated request metadata. Recompute
+      // outside the UoW, then the normal replay path checks current state before and after open.
+      auto recovered_commitment = dependencies_.tokens.commit_request(
+          scope, parameters, request.refresh_token, saved.binding.request.key);
+      if (const auto* error = std::get_if<Failure>(&recovered_commitment)) {
+        return *error;
+      }
+      return replay(request.context, request.control_peer, saved, scope, parameters,
+                    std::get<RequestCommitment>(recovered_commitment));
+    }
+    if (std::get<RefreshDecision>(decision) == RefreshDecision::ReplayOriginal) {
+      return failure(ErrorCode::Internal);
+    }
+    if (authority.session.version != first.authority.session.version || work.now >= retain_until) {
       return authentication_rejected();
     }
     const auto& pair = std::get<EphemeralTokenPair>(payload);
