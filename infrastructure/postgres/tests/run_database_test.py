@@ -18,6 +18,8 @@ def main():
     parser.add_argument('--openssl', type=Path, required=True)
     parser.add_argument('--test', type=Path, required=True)
     parser.add_argument('--initializer', type=Path, required=True)
+    parser.add_argument('--test-argument', action='append', default=[],
+                        help='Additional arguments for an owned local fixture driver')
     args = parser.parse_args()
     pg_bin, openssl, test = args.pg_bin.resolve(), args.openssl.resolve(), args.test.resolve()
     driver_names = ('database_test', 'database_test_sanitized', 'kiarabot_postgres_database_test')
@@ -108,7 +110,7 @@ def main():
                 if b'fixture backend directory mismatch' not in refused.stderr:
                     raise RuntimeError('test driver did not verify backend ownership before DDL')
             output = run([str(test), str(root), str(port), str(args.initializer.resolve()),
-                          str(proxy.port)])
+                          str(proxy.port), *args.test_argument])
             print(output.stdout.decode(), end='')
     finally:
         # No TemporaryDirectory auto-deletion: unknown ownership or failed bounded stop must

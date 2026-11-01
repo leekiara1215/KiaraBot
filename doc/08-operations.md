@@ -566,3 +566,60 @@ make_identity_rpc借用纯IdentitySecurityApplication和组合根注入的受审
 make_identity_peer_authenticator(IdentityAdminApplication&, SecurityClockPort&)只借用Core Admin应用和受信时钟。wrapper从真实AuthContext提取指纹/DER证据，取2秒本地与真实gRPC deadline较早者，调用Admin.authenticate_peer({leaf_fingerprint, deadline}, der_chain)。当前DB UTC、登记/凭据/主体、释放UoW后成熟crypto验证及验证后fresh recheck全部由Core负责；外层不直接读取repos、不复制业务规则。
 
 wrapper仅核对返回指纹、正verified_at、受信clock/已知偏差及与verified_at的2秒窗口，再检查取消/期限。不构造数据库/信任根/bootstrap或ready。借用应用与clock须活到服务停止/Wait，Core应用与安全应用由组合根绑定同一完整Identity工厂。9b96968旧三端口原型未获批准，必须连同后继重构整合，不作为第二条生产认证路径。wire/API不变。
+
+### P04 离线管理员与 Control 登记命令
+
+`kiarabot-identity-bootstrap` 只在可信部署主机离线运行，不提供 HTTP/gRPC 初始化入口。
+先显式初始化 Identity 空库（当前 schema5），停止同库 Identity daemon，再执行：
+
+```bash
+kiarabot-identity-bootstrap --config identity.json --enrollment enrollment.json --password-file administrator-password
+kiarabot-identity-bootstrap --config identity.json --status
+```
+
+Identity 配置沿用服务 TLS 和私有数据库配置，CLI 使用 runtime_role，通过公开安全 UoW
+提交数据，不执行 DDL。活动 daemon 持有排他 writer 锁时命令失败，不自动停止进程、重连
+绕过锁或清空旧库。`--help` 不读配置、不连接数据库；参数错误退出2，运行/引导拒绝退出1，
+确认提交或状态查询退出0。输出只有稳定操作/错误/受理状态，不打印密码、证书、路径或连接异常。
+
+密码从受控常规文件安全加载（当前用户、0600、无 symlink/FIFO），内容1..1024字节，可有
+一个末尾LF，不含其他CR/LF/NUL。使用成熟 Argon2id 派生后释放原密码安全内存；引导产生
+一年有限期的密码凭据。Control 公共 PEM 链经受信 CA、clientAuth、实际 SAN、指纹、
+时间和服务绑定检查后才写入；CLI不生成CA/证书、不接收CA私钥或打印可复用凭据。
+
+登记 JSON 是部署输入，必须为当前用户或root拥有、无group/other写权限的常规文件，
+不接受重复/额外键。Control链文件使用相同公共文件检查。示例中 UUID 必须由维护者为
+本次部署明确分配，以下仅示例；授权不含隐式全局权限：
+
+```json
+{
+  "schema_version": 1,
+  "administrator_id": "10000000-0000-4000-8000-000000000001",
+  "password_credential_id": "10000000-0000-4000-8000-000000000002",
+  "username": "administrator",
+  "control_id": "10000000-0000-4000-8000-000000000003",
+  "control_credential_id": "10000000-0000-4000-8000-000000000004",
+  "control_certificate_chain_file": "/run/kiarabot/control-chain.pem",
+  "control_san": "spiffe://kiarabot/control",
+  "administrator_assignments": [{
+    "assignment_id": "10000000-0000-4000-8000-000000000005",
+    "role": "admin",
+    "scope": [{"kind": "RESOURCE_PRINCIPAL", "id": "10000000-0000-4000-8000-000000000001"}]
+  }],
+  "control_assignments": [{
+    "assignment_id": "10000000-0000-4000-8000-000000000006",
+    "permissions": ["identity.delegation.issue"],
+    "scope": [{"kind": "RESOURCE_PRINCIPAL", "id": "10000000-0000-4000-8000-000000000001"}]
+  }]
+}
+```
+
+username 使用现有小写 ASCII 规范。每条assignment只能有role或permissions其中一种，scope
+是显式资源数组；permissions与scope展开完整product，再交Core精确规则验证。Control
+不继承人类角色，管理员至少有一条明确scoped admin角色。该示例仅授权自身Principal，
+其他目录/账号/实例的授权需明确登记，不能把示例当作所有资源通配符。
+
+Required/v1 → Consumed/v2 和所有主体、凭据、授权、水位、审计在同一本地事务提交。
+重复引导返回CONFLICT且不会生成替代管理员。提交结果Unknown时先用同配置`--status`
+查询持久marker（required/consumed与version），不要自动生成新身份重试；缺marker为损坏。
+命令未实现秘密恢复/密码找回，后续凭据轮换仍走其既定所有者契约。
