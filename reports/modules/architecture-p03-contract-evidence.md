@@ -90,3 +90,9 @@ Model能力实际检查：check_target.sh实际生成C++/gRPC/Python、编译并
 OpenAPI增加11个目标GET（Adapter采用明确adapter-instances实例目录，不激活旧reference/adapters）；全部RPC/API/字段/枚举均not_implemented。资源Get以exact Ref、List以精确有限catalog，缺/错/all/超过页上限由query-shape fixture拒绝；当前授权、owner和child grant仍需未来生产边界核验。同步proto/README、doc01/运行语义/doc02/03/04/06/doc21，未修改CMake或业务源。
 
 Runtime能力实际检查：check_target.sh生成C++/gRPC/Python并实际编译，90 RPC双向集合/策略、300消息跨语言、5个wire golden通过；typed query-shape夹具覆盖每类Get/List正确kind/UUID、缺目录/错kind/all/页>100拒绝。统一check_contracts显式legacy reader及9项scope回归、descriptor场景通过。Ruby 45目标HTTP操作映射/权限/引用、Ajv目录/在线Fence/拒绝配置原因/快照/空结果等正反例通过。正式Redocly2.72.1通过（4 unused warning）、AsyncAPI parser3.6.6通过；git diff --check通过。无业务服务、固定环境full或生产授权验收，target状态不变，代码生成物仅tmp。
+
+## Runtime API diff可审查性修复
+
+主审指出0de1622默认diff出现1255处删除。只读对b451d35精确核对证实：旧components块在仅追加RESOURCE_CATALOG/四个Permission后逐字节一致，全部旧路径方法解析值不变；默认重复块匹配导致大量误对齐（git --minimal原为958新增/3删除）。为避免依赖reviewer切diff算法，本次只将本能力11个新增GET的parameters/responses改为紧凑表示，旧路径/旧schema未序列化重排。现在相对b451默认diff为717新增/3删除，3行是必要target固定角色capability扩展。
+
+实际将修复前完整API解析JSON与修复后逐项比较，语义完全相等；Ruby45操作映射/权限/引用、Ajv全部正反例、Redocly2.72.1与AsyncAPI parser3.6.6、git diff --check通过。无字段/约束/状态削弱，无协议语义变化，故不重复C++生成或业务测试。Identity字段的工作区改动不包含在本独立修复提交中。

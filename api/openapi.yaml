@@ -672,50 +672,28 @@ paths:
               "$ref": "#/components/schemas/TargetRuntimeCreateAccountRequest"
     get:
       operationId: listAccounts
-      summary: Runtime ListAccounts
-      x-owner-service: runtime
-      x-owner-rpc: RuntimeService.ListAccounts
-      x-permission: account.read
+      summary: "Runtime ListAccounts"
+      x-owner-service: "runtime"
+      x-owner-rpc: "RuntimeService.ListAccounts"
+      x-permission: "account.read"
       x-mutating: false
-      x-contract-status: not_implemented
-      description: Exact registered catalog is required; return only the current subject
-        independently granted child resources of this method kind. Catalog permission
-        is not a grant to every child. Immutable 10 minute snapshot; no global totals
-        or empty-scope wildcard.
+      x-contract-status: "not_implemented"
+      description: "Exact registered catalog is required; return only the current subject independently granted child resources of this method kind. Catalog permission is not a grant to every child. Immutable 10 minute snapshot; no global totals or empty-scope wildcard."
       parameters:
-      - name: catalog
-        in: query
-        required: true
-        content:
-          application/json:
-            schema:
-              "$ref": "#/components/schemas/TargetCatalogRef"
-      - "$ref": "#/components/parameters/PageSize"
-      - "$ref": "#/components/parameters/PageToken"
+        - {"name":"catalog","in":"query","required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/TargetCatalogRef"}}}}
+        - {"$ref":"#/components/parameters/PageSize"}
+        - {"$ref":"#/components/parameters/PageToken"}
       responses:
-        '400':
-          "$ref": "#/components/responses/BadRequest"
-        '401':
-          "$ref": "#/components/responses/Unauthorized"
-        '403':
-          "$ref": "#/components/responses/Forbidden"
-        '404':
-          "$ref": "#/components/responses/NotFound"
-        '429':
-          "$ref": "#/components/responses/RateLimited"
-        '500':
-          "$ref": "#/components/responses/Internal"
-        '503':
-          "$ref": "#/components/responses/Unavailable"
-        '504':
-          "$ref": "#/components/responses/Timeout"
-        '200':
-          description: Authorized typed resource snapshot
-          content:
-            application/json:
-              schema:
-                "$ref": "#/components/schemas/TargetRuntimeListAccountsResponse"
-      x-catalog-child-kind: RESOURCE_ACCOUNT
+        '400': {"$ref":"#/components/responses/BadRequest"}
+        '401': {"$ref":"#/components/responses/Unauthorized"}
+        '403': {"$ref":"#/components/responses/Forbidden"}
+        '404': {"$ref":"#/components/responses/NotFound"}
+        '429': {"$ref":"#/components/responses/RateLimited"}
+        '500': {"$ref":"#/components/responses/Internal"}
+        '503': {"$ref":"#/components/responses/Unavailable"}
+        '504': {"$ref":"#/components/responses/Timeout"}
+        '200': {"description":"Authorized typed resource snapshot","content":{"application/json":{"schema":{"$ref":"#/components/schemas/TargetRuntimeListAccountsResponse"}}}}
+      x-catalog-child-kind: "RESOURCE_ACCOUNT"
   /accounts/{accountId}:
     put:
       operationId: updateAccount
@@ -771,47 +749,25 @@ paths:
               "$ref": "#/components/schemas/TargetRuntimeUpdateAccountRequest"
     get:
       operationId: getAccount
-      summary: Runtime GetAccount
-      x-owner-service: runtime
-      x-owner-rpc: RuntimeService.GetAccount
-      x-permission: account.read
+      summary: "Runtime GetAccount"
+      x-owner-service: "runtime"
+      x-owner-rpc: "RuntimeService.GetAccount"
+      x-permission: "account.read"
       x-mutating: false
-      x-contract-status: not_implemented
-      description: The path constructs an exact resource reference of this method kind.
-        Check current Identity authorization and the stored binding. Invisible or missing
-        resource is NOT_FOUND. References to related resources do not grant access to
-        those resources.
+      x-contract-status: "not_implemented"
+      description: "The path constructs an exact resource reference of this method kind. Check current Identity authorization and the stored binding. Invisible or missing resource is NOT_FOUND. References to related resources do not grant access to those resources."
       parameters:
-      - name: accountId
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
-          pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+        - {"name":"accountId","in":"path","required":true,"schema":{"type":"string","format":"uuid","pattern":"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"}}
       responses:
-        '400':
-          "$ref": "#/components/responses/BadRequest"
-        '401':
-          "$ref": "#/components/responses/Unauthorized"
-        '403':
-          "$ref": "#/components/responses/Forbidden"
-        '404':
-          "$ref": "#/components/responses/NotFound"
-        '429':
-          "$ref": "#/components/responses/RateLimited"
-        '500':
-          "$ref": "#/components/responses/Internal"
-        '503':
-          "$ref": "#/components/responses/Unavailable"
-        '504':
-          "$ref": "#/components/responses/Timeout"
-        '200':
-          description: Authorized typed resource snapshot
-          content:
-            application/json:
-              schema:
-                "$ref": "#/components/schemas/TargetRuntimeGetAccountResponse"
+        '400': {"$ref":"#/components/responses/BadRequest"}
+        '401': {"$ref":"#/components/responses/Unauthorized"}
+        '403': {"$ref":"#/components/responses/Forbidden"}
+        '404': {"$ref":"#/components/responses/NotFound"}
+        '429': {"$ref":"#/components/responses/RateLimited"}
+        '500': {"$ref":"#/components/responses/Internal"}
+        '503': {"$ref":"#/components/responses/Unavailable"}
+        '504': {"$ref":"#/components/responses/Timeout"}
+        '200': {"description":"Authorized typed resource snapshot","content":{"application/json":{"schema":{"$ref":"#/components/schemas/TargetRuntimeGetAccountResponse"}}}}
   /accounts/{accountId}/disable:
     post:
       operationId: disableAccount
@@ -1037,50 +993,28 @@ paths:
               "$ref": "#/components/schemas/TargetRuntimeCreateInstallationRequest"
     get:
       operationId: listInstallations
-      summary: Runtime ListInstallations
-      x-owner-service: runtime
-      x-owner-rpc: RuntimeService.ListInstallations
-      x-permission: plugin.read
+      summary: "Runtime ListInstallations"
+      x-owner-service: "runtime"
+      x-owner-rpc: "RuntimeService.ListInstallations"
+      x-permission: "plugin.read"
       x-mutating: false
-      x-contract-status: not_implemented
-      description: Exact registered catalog is required; return only the current subject
-        independently granted child resources of this method kind. Catalog permission
-        is not a grant to every child. Immutable 10 minute snapshot; no global totals
-        or empty-scope wildcard.
+      x-contract-status: "not_implemented"
+      description: "Exact registered catalog is required; return only the current subject independently granted child resources of this method kind. Catalog permission is not a grant to every child. Immutable 10 minute snapshot; no global totals or empty-scope wildcard."
       parameters:
-      - name: catalog
-        in: query
-        required: true
-        content:
-          application/json:
-            schema:
-              "$ref": "#/components/schemas/TargetCatalogRef"
-      - "$ref": "#/components/parameters/PageSize"
-      - "$ref": "#/components/parameters/PageToken"
+        - {"name":"catalog","in":"query","required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/TargetCatalogRef"}}}}
+        - {"$ref":"#/components/parameters/PageSize"}
+        - {"$ref":"#/components/parameters/PageToken"}
       responses:
-        '400':
-          "$ref": "#/components/responses/BadRequest"
-        '401':
-          "$ref": "#/components/responses/Unauthorized"
-        '403':
-          "$ref": "#/components/responses/Forbidden"
-        '404':
-          "$ref": "#/components/responses/NotFound"
-        '429':
-          "$ref": "#/components/responses/RateLimited"
-        '500':
-          "$ref": "#/components/responses/Internal"
-        '503':
-          "$ref": "#/components/responses/Unavailable"
-        '504':
-          "$ref": "#/components/responses/Timeout"
-        '200':
-          description: Authorized typed resource snapshot
-          content:
-            application/json:
-              schema:
-                "$ref": "#/components/schemas/TargetRuntimeListInstallationsResponse"
-      x-catalog-child-kind: RESOURCE_INSTALLATION
+        '400': {"$ref":"#/components/responses/BadRequest"}
+        '401': {"$ref":"#/components/responses/Unauthorized"}
+        '403': {"$ref":"#/components/responses/Forbidden"}
+        '404': {"$ref":"#/components/responses/NotFound"}
+        '429': {"$ref":"#/components/responses/RateLimited"}
+        '500': {"$ref":"#/components/responses/Internal"}
+        '503': {"$ref":"#/components/responses/Unavailable"}
+        '504': {"$ref":"#/components/responses/Timeout"}
+        '200': {"description":"Authorized typed resource snapshot","content":{"application/json":{"schema":{"$ref":"#/components/schemas/TargetRuntimeListInstallationsResponse"}}}}
+      x-catalog-child-kind: "RESOURCE_INSTALLATION"
   /installations/{installationId}/instances:
     post:
       operationId: createInstance
@@ -1254,46 +1188,25 @@ paths:
               "$ref": "#/components/schemas/TargetRuntimeUpdateConfigRequest"
     get:
       operationId: getInstanceConfig
-      summary: Read authorized desired and applied instance configuration
-      x-owner-service: runtime
-      x-owner-rpc: RuntimeService.GetInstanceConfig
-      x-permission: plugin.config.read
+      summary: "Read authorized desired and applied instance configuration"
+      x-owner-service: "runtime"
+      x-owner-rpc: "RuntimeService.GetInstanceConfig"
+      x-permission: "plugin.config.read"
       x-mutating: false
-      x-contract-status: not_implemented
-      description: Current exact instance authorization is required. Secret values are
-        represented only by controlled references or redaction; desired persistence is
-        distinct from applied version and delivery outcome.
+      x-contract-status: "not_implemented"
+      description: "Current exact instance authorization is required. Secret values are represented only by controlled references or redaction; desired persistence is distinct from applied version and delivery outcome."
       parameters:
-      - name: instanceId
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
-          pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+        - {"name":"instanceId","in":"path","required":true,"schema":{"type":"string","format":"uuid","pattern":"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"}}
       responses:
-        '400':
-          "$ref": "#/components/responses/BadRequest"
-        '401':
-          "$ref": "#/components/responses/Unauthorized"
-        '403':
-          "$ref": "#/components/responses/Forbidden"
-        '404':
-          "$ref": "#/components/responses/NotFound"
-        '429':
-          "$ref": "#/components/responses/RateLimited"
-        '500':
-          "$ref": "#/components/responses/Internal"
-        '503':
-          "$ref": "#/components/responses/Unavailable"
-        '504':
-          "$ref": "#/components/responses/Timeout"
-        '200':
-          description: Desired values and independent application status
-          content:
-            application/json:
-              schema:
-                "$ref": "#/components/schemas/TargetRuntimeGetInstanceConfigResponse"
+        '400': {"$ref":"#/components/responses/BadRequest"}
+        '401': {"$ref":"#/components/responses/Unauthorized"}
+        '403': {"$ref":"#/components/responses/Forbidden"}
+        '404': {"$ref":"#/components/responses/NotFound"}
+        '429': {"$ref":"#/components/responses/RateLimited"}
+        '500': {"$ref":"#/components/responses/Internal"}
+        '503': {"$ref":"#/components/responses/Unavailable"}
+        '504': {"$ref":"#/components/responses/Timeout"}
+        '200': {"description":"Desired values and independent application status","content":{"application/json":{"schema":{"$ref":"#/components/schemas/TargetRuntimeGetInstanceConfigResponse"}}}}
   /resources/{resourceKind}/{resourceId}:
     get:
       operationId: getResourceState
@@ -2668,320 +2581,166 @@ paths:
   "/installations/{installationId}":
     get:
       operationId: getInstallation
-      summary: Runtime GetInstallation
-      x-owner-service: runtime
-      x-owner-rpc: RuntimeService.GetInstallation
-      x-permission: plugin.read
+      summary: "Runtime GetInstallation"
+      x-owner-service: "runtime"
+      x-owner-rpc: "RuntimeService.GetInstallation"
+      x-permission: "plugin.read"
       x-mutating: false
-      x-contract-status: not_implemented
-      description: The path constructs an exact resource reference of this method kind.
-        Check current Identity authorization and the stored binding. Invisible or missing
-        resource is NOT_FOUND. References to related resources do not grant access to
-        those resources.
+      x-contract-status: "not_implemented"
+      description: "The path constructs an exact resource reference of this method kind. Check current Identity authorization and the stored binding. Invisible or missing resource is NOT_FOUND. References to related resources do not grant access to those resources."
       parameters:
-      - name: installationId
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
-          pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+        - {"name":"installationId","in":"path","required":true,"schema":{"type":"string","format":"uuid","pattern":"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"}}
       responses:
-        '400':
-          "$ref": "#/components/responses/BadRequest"
-        '401':
-          "$ref": "#/components/responses/Unauthorized"
-        '403':
-          "$ref": "#/components/responses/Forbidden"
-        '404':
-          "$ref": "#/components/responses/NotFound"
-        '429':
-          "$ref": "#/components/responses/RateLimited"
-        '500':
-          "$ref": "#/components/responses/Internal"
-        '503':
-          "$ref": "#/components/responses/Unavailable"
-        '504':
-          "$ref": "#/components/responses/Timeout"
-        '200':
-          description: Authorized typed resource snapshot
-          content:
-            application/json:
-              schema:
-                "$ref": "#/components/schemas/TargetRuntimeGetInstallationResponse"
+        '400': {"$ref":"#/components/responses/BadRequest"}
+        '401': {"$ref":"#/components/responses/Unauthorized"}
+        '403': {"$ref":"#/components/responses/Forbidden"}
+        '404': {"$ref":"#/components/responses/NotFound"}
+        '429': {"$ref":"#/components/responses/RateLimited"}
+        '500': {"$ref":"#/components/responses/Internal"}
+        '503': {"$ref":"#/components/responses/Unavailable"}
+        '504': {"$ref":"#/components/responses/Timeout"}
+        '200': {"description":"Authorized typed resource snapshot","content":{"application/json":{"schema":{"$ref":"#/components/schemas/TargetRuntimeGetInstallationResponse"}}}}
   "/instances/{instanceId}":
     get:
       operationId: getInstance
-      summary: Runtime GetInstance
-      x-owner-service: runtime
-      x-owner-rpc: RuntimeService.GetInstance
-      x-permission: plugin.read
+      summary: "Runtime GetInstance"
+      x-owner-service: "runtime"
+      x-owner-rpc: "RuntimeService.GetInstance"
+      x-permission: "plugin.read"
       x-mutating: false
-      x-contract-status: not_implemented
-      description: The path constructs an exact resource reference of this method kind.
-        Check current Identity authorization and the stored binding. Invisible or missing
-        resource is NOT_FOUND. References to related resources do not grant access to
-        those resources.
+      x-contract-status: "not_implemented"
+      description: "The path constructs an exact resource reference of this method kind. Check current Identity authorization and the stored binding. Invisible or missing resource is NOT_FOUND. References to related resources do not grant access to those resources."
       parameters:
-      - name: instanceId
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
-          pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+        - {"name":"instanceId","in":"path","required":true,"schema":{"type":"string","format":"uuid","pattern":"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"}}
       responses:
-        '400':
-          "$ref": "#/components/responses/BadRequest"
-        '401':
-          "$ref": "#/components/responses/Unauthorized"
-        '403':
-          "$ref": "#/components/responses/Forbidden"
-        '404':
-          "$ref": "#/components/responses/NotFound"
-        '429':
-          "$ref": "#/components/responses/RateLimited"
-        '500':
-          "$ref": "#/components/responses/Internal"
-        '503':
-          "$ref": "#/components/responses/Unavailable"
-        '504':
-          "$ref": "#/components/responses/Timeout"
-        '200':
-          description: Authorized typed resource snapshot
-          content:
-            application/json:
-              schema:
-                "$ref": "#/components/schemas/TargetRuntimeGetInstanceResponse"
+        '400': {"$ref":"#/components/responses/BadRequest"}
+        '401': {"$ref":"#/components/responses/Unauthorized"}
+        '403': {"$ref":"#/components/responses/Forbidden"}
+        '404': {"$ref":"#/components/responses/NotFound"}
+        '429': {"$ref":"#/components/responses/RateLimited"}
+        '500': {"$ref":"#/components/responses/Internal"}
+        '503': {"$ref":"#/components/responses/Unavailable"}
+        '504': {"$ref":"#/components/responses/Timeout"}
+        '200': {"description":"Authorized typed resource snapshot","content":{"application/json":{"schema":{"$ref":"#/components/schemas/TargetRuntimeGetInstanceResponse"}}}}
   "/instances":
     get:
       operationId: listInstances
-      summary: Runtime ListInstances
-      x-owner-service: runtime
-      x-owner-rpc: RuntimeService.ListInstances
-      x-permission: plugin.read
+      summary: "Runtime ListInstances"
+      x-owner-service: "runtime"
+      x-owner-rpc: "RuntimeService.ListInstances"
+      x-permission: "plugin.read"
       x-mutating: false
-      x-contract-status: not_implemented
-      description: Exact registered catalog is required; return only the current subject
-        independently granted child resources of this method kind. Catalog permission
-        is not a grant to every child. Immutable 10 minute snapshot; no global totals
-        or empty-scope wildcard.
+      x-contract-status: "not_implemented"
+      description: "Exact registered catalog is required; return only the current subject independently granted child resources of this method kind. Catalog permission is not a grant to every child. Immutable 10 minute snapshot; no global totals or empty-scope wildcard."
       parameters:
-      - name: catalog
-        in: query
-        required: true
-        content:
-          application/json:
-            schema:
-              "$ref": "#/components/schemas/TargetCatalogRef"
-      - "$ref": "#/components/parameters/PageSize"
-      - "$ref": "#/components/parameters/PageToken"
+        - {"name":"catalog","in":"query","required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/TargetCatalogRef"}}}}
+        - {"$ref":"#/components/parameters/PageSize"}
+        - {"$ref":"#/components/parameters/PageToken"}
       responses:
-        '400':
-          "$ref": "#/components/responses/BadRequest"
-        '401':
-          "$ref": "#/components/responses/Unauthorized"
-        '403':
-          "$ref": "#/components/responses/Forbidden"
-        '404':
-          "$ref": "#/components/responses/NotFound"
-        '429':
-          "$ref": "#/components/responses/RateLimited"
-        '500':
-          "$ref": "#/components/responses/Internal"
-        '503':
-          "$ref": "#/components/responses/Unavailable"
-        '504':
-          "$ref": "#/components/responses/Timeout"
-        '200':
-          description: Authorized typed resource snapshot
-          content:
-            application/json:
-              schema:
-                "$ref": "#/components/schemas/TargetRuntimeListInstancesResponse"
-      x-catalog-child-kind: RESOURCE_INSTANCE
+        '400': {"$ref":"#/components/responses/BadRequest"}
+        '401': {"$ref":"#/components/responses/Unauthorized"}
+        '403': {"$ref":"#/components/responses/Forbidden"}
+        '404': {"$ref":"#/components/responses/NotFound"}
+        '429': {"$ref":"#/components/responses/RateLimited"}
+        '500': {"$ref":"#/components/responses/Internal"}
+        '503': {"$ref":"#/components/responses/Unavailable"}
+        '504': {"$ref":"#/components/responses/Timeout"}
+        '200': {"description":"Authorized typed resource snapshot","content":{"application/json":{"schema":{"$ref":"#/components/schemas/TargetRuntimeListInstancesResponse"}}}}
+      x-catalog-child-kind: "RESOURCE_INSTANCE"
   "/adapter-instances/{adapterId}":
     get:
       operationId: getAdapterInstance
-      summary: Runtime GetAdapter
-      x-owner-service: runtime
-      x-owner-rpc: RuntimeService.GetAdapter
-      x-permission: adapter.read
+      summary: "Runtime GetAdapter"
+      x-owner-service: "runtime"
+      x-owner-rpc: "RuntimeService.GetAdapter"
+      x-permission: "adapter.read"
       x-mutating: false
-      x-contract-status: not_implemented
-      description: The path constructs an exact resource reference of this method kind.
-        Check current Identity authorization and the stored binding. Invisible or missing
-        resource is NOT_FOUND. References to related resources do not grant access to
-        those resources.
+      x-contract-status: "not_implemented"
+      description: "The path constructs an exact resource reference of this method kind. Check current Identity authorization and the stored binding. Invisible or missing resource is NOT_FOUND. References to related resources do not grant access to those resources."
       parameters:
-      - name: adapterId
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
-          pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+        - {"name":"adapterId","in":"path","required":true,"schema":{"type":"string","format":"uuid","pattern":"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"}}
       responses:
-        '400':
-          "$ref": "#/components/responses/BadRequest"
-        '401':
-          "$ref": "#/components/responses/Unauthorized"
-        '403':
-          "$ref": "#/components/responses/Forbidden"
-        '404':
-          "$ref": "#/components/responses/NotFound"
-        '429':
-          "$ref": "#/components/responses/RateLimited"
-        '500':
-          "$ref": "#/components/responses/Internal"
-        '503':
-          "$ref": "#/components/responses/Unavailable"
-        '504':
-          "$ref": "#/components/responses/Timeout"
-        '200':
-          description: Authorized typed resource snapshot
-          content:
-            application/json:
-              schema:
-                "$ref": "#/components/schemas/TargetRuntimeGetAdapterResponse"
+        '400': {"$ref":"#/components/responses/BadRequest"}
+        '401': {"$ref":"#/components/responses/Unauthorized"}
+        '403': {"$ref":"#/components/responses/Forbidden"}
+        '404': {"$ref":"#/components/responses/NotFound"}
+        '429': {"$ref":"#/components/responses/RateLimited"}
+        '500': {"$ref":"#/components/responses/Internal"}
+        '503': {"$ref":"#/components/responses/Unavailable"}
+        '504': {"$ref":"#/components/responses/Timeout"}
+        '200': {"description":"Authorized typed resource snapshot","content":{"application/json":{"schema":{"$ref":"#/components/schemas/TargetRuntimeGetAdapterResponse"}}}}
   "/adapter-instances":
     get:
       operationId: listAdapterInstances
-      summary: Runtime ListAdapters
-      x-owner-service: runtime
-      x-owner-rpc: RuntimeService.ListAdapters
-      x-permission: adapter.read
+      summary: "Runtime ListAdapters"
+      x-owner-service: "runtime"
+      x-owner-rpc: "RuntimeService.ListAdapters"
+      x-permission: "adapter.read"
       x-mutating: false
-      x-contract-status: not_implemented
-      description: Exact registered catalog is required; return only the current subject
-        independently granted child resources of this method kind. Catalog permission
-        is not a grant to every child. Immutable 10 minute snapshot; no global totals
-        or empty-scope wildcard.
+      x-contract-status: "not_implemented"
+      description: "Exact registered catalog is required; return only the current subject independently granted child resources of this method kind. Catalog permission is not a grant to every child. Immutable 10 minute snapshot; no global totals or empty-scope wildcard."
       parameters:
-      - name: catalog
-        in: query
-        required: true
-        content:
-          application/json:
-            schema:
-              "$ref": "#/components/schemas/TargetCatalogRef"
-      - "$ref": "#/components/parameters/PageSize"
-      - "$ref": "#/components/parameters/PageToken"
+        - {"name":"catalog","in":"query","required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/TargetCatalogRef"}}}}
+        - {"$ref":"#/components/parameters/PageSize"}
+        - {"$ref":"#/components/parameters/PageToken"}
       responses:
-        '400':
-          "$ref": "#/components/responses/BadRequest"
-        '401':
-          "$ref": "#/components/responses/Unauthorized"
-        '403':
-          "$ref": "#/components/responses/Forbidden"
-        '404':
-          "$ref": "#/components/responses/NotFound"
-        '429':
-          "$ref": "#/components/responses/RateLimited"
-        '500':
-          "$ref": "#/components/responses/Internal"
-        '503':
-          "$ref": "#/components/responses/Unavailable"
-        '504':
-          "$ref": "#/components/responses/Timeout"
-        '200':
-          description: Authorized typed resource snapshot
-          content:
-            application/json:
-              schema:
-                "$ref": "#/components/schemas/TargetRuntimeListAdaptersResponse"
-      x-catalog-child-kind: RESOURCE_ADAPTER
+        '400': {"$ref":"#/components/responses/BadRequest"}
+        '401': {"$ref":"#/components/responses/Unauthorized"}
+        '403': {"$ref":"#/components/responses/Forbidden"}
+        '404': {"$ref":"#/components/responses/NotFound"}
+        '429': {"$ref":"#/components/responses/RateLimited"}
+        '500': {"$ref":"#/components/responses/Internal"}
+        '503': {"$ref":"#/components/responses/Unavailable"}
+        '504': {"$ref":"#/components/responses/Timeout"}
+        '200': {"description":"Authorized typed resource snapshot","content":{"application/json":{"schema":{"$ref":"#/components/schemas/TargetRuntimeListAdaptersResponse"}}}}
+      x-catalog-child-kind: "RESOURCE_ADAPTER"
   "/hosts/{hostId}":
     get:
       operationId: getHost
-      summary: Runtime GetHost
-      x-owner-service: runtime
-      x-owner-rpc: RuntimeService.GetHost
-      x-permission: host.read
+      summary: "Runtime GetHost"
+      x-owner-service: "runtime"
+      x-owner-rpc: "RuntimeService.GetHost"
+      x-permission: "host.read"
       x-mutating: false
-      x-contract-status: not_implemented
-      description: The path constructs an exact resource reference of this method kind.
-        Check current Identity authorization and the stored binding. Invisible or missing
-        resource is NOT_FOUND. References to related resources do not grant access to
-        those resources.
+      x-contract-status: "not_implemented"
+      description: "The path constructs an exact resource reference of this method kind. Check current Identity authorization and the stored binding. Invisible or missing resource is NOT_FOUND. References to related resources do not grant access to those resources."
       parameters:
-      - name: hostId
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
-          pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+        - {"name":"hostId","in":"path","required":true,"schema":{"type":"string","format":"uuid","pattern":"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"}}
       responses:
-        '400':
-          "$ref": "#/components/responses/BadRequest"
-        '401':
-          "$ref": "#/components/responses/Unauthorized"
-        '403':
-          "$ref": "#/components/responses/Forbidden"
-        '404':
-          "$ref": "#/components/responses/NotFound"
-        '429':
-          "$ref": "#/components/responses/RateLimited"
-        '500':
-          "$ref": "#/components/responses/Internal"
-        '503':
-          "$ref": "#/components/responses/Unavailable"
-        '504':
-          "$ref": "#/components/responses/Timeout"
-        '200':
-          description: Authorized typed resource snapshot
-          content:
-            application/json:
-              schema:
-                "$ref": "#/components/schemas/TargetRuntimeGetHostResponse"
+        '400': {"$ref":"#/components/responses/BadRequest"}
+        '401': {"$ref":"#/components/responses/Unauthorized"}
+        '403': {"$ref":"#/components/responses/Forbidden"}
+        '404': {"$ref":"#/components/responses/NotFound"}
+        '429': {"$ref":"#/components/responses/RateLimited"}
+        '500': {"$ref":"#/components/responses/Internal"}
+        '503': {"$ref":"#/components/responses/Unavailable"}
+        '504': {"$ref":"#/components/responses/Timeout"}
+        '200': {"description":"Authorized typed resource snapshot","content":{"application/json":{"schema":{"$ref":"#/components/schemas/TargetRuntimeGetHostResponse"}}}}
   "/hosts":
     get:
       operationId: listHosts
-      summary: Runtime ListHosts
-      x-owner-service: runtime
-      x-owner-rpc: RuntimeService.ListHosts
-      x-permission: host.read
+      summary: "Runtime ListHosts"
+      x-owner-service: "runtime"
+      x-owner-rpc: "RuntimeService.ListHosts"
+      x-permission: "host.read"
       x-mutating: false
-      x-contract-status: not_implemented
-      description: Exact registered catalog is required; return only the current subject
-        independently granted child resources of this method kind. Catalog permission
-        is not a grant to every child. Immutable 10 minute snapshot; no global totals
-        or empty-scope wildcard.
+      x-contract-status: "not_implemented"
+      description: "Exact registered catalog is required; return only the current subject independently granted child resources of this method kind. Catalog permission is not a grant to every child. Immutable 10 minute snapshot; no global totals or empty-scope wildcard."
       parameters:
-      - name: catalog
-        in: query
-        required: true
-        content:
-          application/json:
-            schema:
-              "$ref": "#/components/schemas/TargetCatalogRef"
-      - "$ref": "#/components/parameters/PageSize"
-      - "$ref": "#/components/parameters/PageToken"
+        - {"name":"catalog","in":"query","required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/TargetCatalogRef"}}}}
+        - {"$ref":"#/components/parameters/PageSize"}
+        - {"$ref":"#/components/parameters/PageToken"}
       responses:
-        '400':
-          "$ref": "#/components/responses/BadRequest"
-        '401':
-          "$ref": "#/components/responses/Unauthorized"
-        '403':
-          "$ref": "#/components/responses/Forbidden"
-        '404':
-          "$ref": "#/components/responses/NotFound"
-        '429':
-          "$ref": "#/components/responses/RateLimited"
-        '500':
-          "$ref": "#/components/responses/Internal"
-        '503':
-          "$ref": "#/components/responses/Unavailable"
-        '504':
-          "$ref": "#/components/responses/Timeout"
-        '200':
-          description: Authorized typed resource snapshot
-          content:
-            application/json:
-              schema:
-                "$ref": "#/components/schemas/TargetRuntimeListHostsResponse"
-      x-catalog-child-kind: RESOURCE_HOST
+        '400': {"$ref":"#/components/responses/BadRequest"}
+        '401': {"$ref":"#/components/responses/Unauthorized"}
+        '403': {"$ref":"#/components/responses/Forbidden"}
+        '404': {"$ref":"#/components/responses/NotFound"}
+        '429': {"$ref":"#/components/responses/RateLimited"}
+        '500': {"$ref":"#/components/responses/Internal"}
+        '503': {"$ref":"#/components/responses/Unavailable"}
+        '504': {"$ref":"#/components/responses/Timeout"}
+        '200': {"description":"Authorized typed resource snapshot","content":{"application/json":{"schema":{"$ref":"#/components/schemas/TargetRuntimeListHostsResponse"}}}}
+      x-catalog-child-kind: "RESOURCE_HOST"
 components:
   securitySchemes:
     bearerAuth:
