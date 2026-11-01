@@ -23,7 +23,12 @@ Core 连接采用 1–30 秒退避。每次连接只发送一个待确认事件�
 
 ## 验收范围
 
-测试覆盖群/私聊映射、段降级、稳定 ID、账号拒绝、SQLite 重开/序号/容量、fake gRPC 注册能力、断线重投、确认前保留及永久拒绝。Action 测试包含执行前 deadline、账号/实例校验、重复/冲突、重启去重、平台拒绝、超时/中断未知结果和取消不重连；真实 NoneBot 子进程与 fake OneBot 验证实际发送调用。真实 NapCat/QQ 尚未验证，留待 T07b。
+测试覆盖群/私聊映射、段降级、稳定 ID、账号拒绝、SQLite 重开/序号/容量、fake gRPC 注册能力、断线重投、确认前保留及永久拒绝。Action 测试包含执行前 deadline、账号/实例校验、重复/冲突、重启去重、平台拒绝、超时/中断未知结果和取消不重连；真实 NoneBot 子进程与 fake OneBot 验证实际发送调用。
+
+2026-11-01本机真实NapCat4.18.42/QQ3.2.34-53644指定测试群的纯文本自动回复已通过，
+用户确认收到，Adapter成功终态/平台消息ID和outbox ACK已核对。实际入口及验收限制见
+[真实QQ接入](../../doc/26-real-qq-onboarding.md)。真实私聊、其他Action及故障恢复仍待T07b后续验证，
+不能以本次群聊通过宣布全部平台动作已验收。
 
 完整跨语言验收使用 `CORE_TEST_BINARY=../../build/proto/core/kiarabot-core .venv/bin/python -m pytest -q`；Action 闭环还读取本仓库的 sdk/python/src，可用 SDK_SOURCE 覆盖。测试连接真实 C++ Core、Python SDK/适配器与 fake 平台，重启 Core 后按幂等键复用终态。
 

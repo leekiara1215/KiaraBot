@@ -1,6 +1,10 @@
 # Python NoneBot2 适配器设计
 
-T07b 真实 QQ/NapCat 尚待用户配置；已核对适配器检出当前 OneBot 正向 WS 与 Core 环境变量，准备步骤见 [真实联调环境准备](../tests/acceptance/real-environment.md)。模板只运行消息观察插件，不主动发送；真实收发和回滚仍未验证。
+2026-11-01已按用户授权完成本机NapCat安装、扫码登录与指定测试群的纯文本自动回复，
+用户确认收到，Adapter执行日志与入站ACK已核对。见[实际验收](../reports/execution/2026-11-01-real-qq-onboarding.md)。
+这仅覆盖reference单机群聊闭环；真实私聊、其他Action、断线恢复和回滚仍未验收。
+早期[真实联调环境准备](../tests/acceptance/real-environment.md)只运行消息观察插件，
+当前固定回复入口和独立数据目录见[真实QQ接入](26-real-qq-onboarding.md)，不要混用两套配置。
 
 ## T04b Action 执行子集
 
