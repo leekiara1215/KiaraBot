@@ -50,6 +50,9 @@ struct ConnectionGeneration {
   std::uint64_t value = 0;
   bool operator==(const ConnectionGeneration&) const = default;
 };
+// Runtime resolves execution/connection IDs from its authenticated registration state after
+// matching wire instance, epoch and generations. Never synthesize IDs from wire generations
+// or substitute the current generation for an absent/stale one; missing bindings must reject.
 struct Fence {
   InstanceId instance;
   RuntimeEpoch runtime_epoch;

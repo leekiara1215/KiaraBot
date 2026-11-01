@@ -57,3 +57,25 @@ python3 scripts/quality/check-boundaries.py、边界检查器 7 个自测通过�
   去重持久化、时钟信任与保留期仍待实现。
 - doc/18 只读，目标 Repository/代次模型与首版快照差异遵循 doc/19–22；
   无兼容桥接、旧数据导入、双写或删除数据。
+
+## 能力四：直接非平台调用者与 fence 补全来源
+
+输入：平台服务/直接 Adapter/Plugin 的可信认证绑定；输出：可区分的 DirectPeer。
+AuthenticationContext.direct_service 改为 direct_peer，包含 PlatformPeer、AdapterPeer、
+PluginPeer 三种值；直接认证主体与被代表 subject 分开。Service 仍仅六平台服务，
+持久 HandoffContext.source 与 audience 未扩词。Fence 额外 ID 的可信来源在头文件
+及 doc/02 明确：Runtime 已验证注册状态按全部必需 wire fence 匹配后解析，不凭空构造。
+目标仅 domain/target/{context,foundation}.hpp、foundation_test.cpp、doc/02 和本报告。
+文档影响：更新 doc/02 与报告；无已接线外部接口/协议/运行方式变化，proto/API、
+doc/01、03–08 无需更新；doc/18、19–23 未修改。未推进 P02 或注册/业务实现。
+验收：Adapter/Plugin 可构造 DirectPeer，但不能构造平台 Service；source/audience
+继续为平台 Service；原有租约/fence 不变量回归通过。
+
+实际复跑：cmake -S core/tests/architecture -B /tmp/kiarabot-core-inner；
+cmake --build /tmp/kiarabot-core-inner；
+ctest --test-dir /tmp/kiarabot-core-inner --output-on-failure（2/2 通过）；
+对三个改动 C++ 文件执行 clang-format --dry-run --Werror；
+python3 scripts/quality/check-boundaries.py；git diff --check，均通过。
+文档检查：上述 diff 检查及 target 头文件引用存在性检查通过。
+完整 check-toolchain 未重复运行：上轮已确认缺 clang-tidy，本轮仍仅接口变更，
+不宣称 full/dev/协议生成/PG/传输映射验证通过。下一阶段由边界实现注册绑定解析。

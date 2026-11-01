@@ -1,13 +1,30 @@
 #pragma once
 
 #include <string>
+#include <variant>
 #include <vector>
 
 #include "kiarabot/core/domain/target/foundation.hpp"
 
 namespace kiarabot::core::target {
 
+// Platform service vocabulary only; also used for durable handoff sources/audiences.
 enum class Service { Identity, Runtime, Host, Scheduler, Model, Control };
+struct PlatformPeer {
+  Service service;
+  SubjectId subject;
+};
+struct AdapterPeer {
+  ResourceId adapter;
+  SubjectId subject;
+};
+struct PluginPeer {
+  InstanceId instance;
+  SubjectId subject;
+};
+// Immediate authenticated peer, distinct from the represented/delegated subject below.
+// Adapter/Plugin identities come from verified registration bindings, not request claims.
+using DirectPeer = std::variant<PlatformPeer, AdapterPeer, PluginPeer>;
 struct ResourceScope {
   ResourceId resource;
   std::string permission;
@@ -16,7 +33,7 @@ struct ResourceScope {
 // Permission strings must come from the closed target contract vocabulary, unknown values deny.
 struct AuthenticationContext {
   SubjectId subject;
-  Service direct_service;
+  DirectPeer direct_peer;
   Service audience;
   std::vector<SubjectId> actors;
   std::vector<ResourceScope> scopes;

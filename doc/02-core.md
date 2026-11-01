@@ -325,3 +325,23 @@ Runtime 重启更换 epoch，跨实例及旧 epoch 即使代次相同也拒绝�
 ExecutionOutcome 分 NotStarted/KnownSucceeded/KnownFailed/Unknown，与 operation
 进度分离。UnitOfWork 仅提供事务/收据/journal 公共能力，RuntimeUnitOfWork 才暴露
 实例及 operation 仓储；Identity/Scheduler/Model 应定义各自专属仓储组。
+
+### 直接调用者与 fence 映射边界
+
+AuthenticationContext.direct_peer 使用 DirectPeer（PlatformPeer / AdapterPeer /
+PluginPeer），区分直接平台服务、Adapter 和 Plugin。各分支均携带直接认证主体，
+Adapter 绑定稳定 adapter 资源，Plugin 绑定稳定 instance；这些值来自边界验证后的
+注册绑定，不能从请求自报字段直接构造。AuthenticationContext.subject 则是本次
+代表的业务主体，可与直接调用者不同；委托链继续由 actors 表达。
+Service 仅包含六类平台服务，audience 与 HandoffContext.source 继续使用 Service，
+不能把 Adapter/Plugin 伪装成 Runtime 或扩入持久 source_service 词表。
+
+Fence 的 execution/connection ID 为 Runtime 内部关联标识，线协议无需据此新增字段。
+Runtime 接收边界先验证流的认证主体及注册绑定，再将收到的 instance、runtime_epoch、
+execution_generation、connection_generation 与当前可信注册状态逐项匹配；仅在匹配后，
+从 Runtime 所有者维护的执行记录/连接登记取出对应 execution_id/connection_id。
+受管执行登记与已验证 Host 观察关联，外部自管执行由 Runtime 的获准注册流程登记，
+connection_id 由 Runtime 接受连接时分配；均不能用客户端自报 ID、代次字符串或随机
+占位补全。缺失/过期绑定必须拒绝，不能用当前代次替换入站旧值；后续 delivery 事务
+仍须重检 gate/current fence，不能只依赖边界的早先快照。此处只冻结映射要求，
+认证、注册存储与传输映射实现仍待后续阶段。
