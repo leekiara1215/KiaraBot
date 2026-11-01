@@ -440,3 +440,7 @@ RPC/探针；由运维启动新进程重新验证/取得锁，不能由旧实例
 未配置database时当前未实现业务可启动不ready，拒绝型UoW不允许持久业务回退到内存。
 数据库名及迁移/运行角色名限定1–63个小写ASCII字母、数字或下划线；单主机地址、端口
 1–65535，不接收DSN、多host或Unix socket覆盖受控策略。
+
+### 目标凭据登记与时间投影（未实现）
+
+主体登记返回 PENDING 初始凭据引用，保存其 ID/版本后经 RotateCredential 首次发放；GetCredentialStatus 只查询状态，不能恢复秘密。PENDING 无到期时间，不可用于连接；ACTIVE/EXPIRED 有权威到期，撤销保留历史状态而不再发秘密。禁止记录 token、refresh、密钥/摘要。会话 created_at 首次持久化后不变，Control 按 Identity checked_at 判定到期和剩余 TTL，不可补本机时间。以上需 P04 实现及故障验收；当前 stub 不可用于运维发放。

@@ -114,3 +114,11 @@ Runtime能力实际检查：check_target.sh生成C++/gRPC/Python并实际编译�
 到期停止新投递/入站受理/续租及副作用，不把已有Action/Model结果改FAILED。续期不自动续Delivery租约，ACK/Renew仍绑定当前有效attempt/fence；过期旧ACK不确认新尝试。适配器已执行结果先保存在本地日志，断线后用新认证连接按同account/action ID交回，沿既有事实收尾规则，不能让失效proof授权新执行。已受理定时/操作保留，不保存人类token继续后台执行。
 
 拟验证：初始Proof缺失/空/异流/异Fence/过期拒绝，56秒与60秒边界，当前续期及旧refresh并发拒绝，响应丢失→新bootstrap代次，Identity故障/凭据撤销/gate关闭不续期，强制不降级，已有事实不伪FAILED与投递租约不随auth续期扩展。全部是契约/fixture，P05/P06真实生产验收前继续not_implemented。本草案未固定字段号或改Bridge/CMake/业务，需要主对话先审查该最小方案。
+
+## 定稿能力：G08/G09 Identity 当前绑定、会话与凭据状态
+
+补充 immutable SessionRecord.created_at、Identity checked_at/authorization_version 和当前 AssignmentRecord 绑定投影。展示权限并集不能作为授权依据，固定角色与显式权限逐条互斥，message.read 新增封闭显式权限。AssignmentSpec 区分服务端生成ID的创建与条件更新，主体不变且旧、新scope都须授权；开发目标统一替换旧请求，不承诺旧开发快照兼容。RegisterPrincipal 返回无秘密 PENDING 初始凭据引用，GetCredentialStatus 只读状态；实际秘密仍由 RotateCredential 单次发放。
+
+文档影响：同步 proto/README、doc01/运行语义/doc02/doc06/doc08/doc21、tests README 及 API 唯一来源；其他模块不变，doc18保持只读。严格目标 auth 投影由 x-target-response-schema 声明，保留 reference 响应仅维持历史范围断言，不得作为 P04 目标回退。所有新能力 target not_implemented；只修改协议/API/文档/契约测试，不含业务或 CMake。
+
+实际检查：check_target.sh 生成并编译 C++/gRPC/Python，通过91 owner RPC双向集合/策略、304消息往返和10个固定wire golden；绑定不做笛卡尔积、显式敏感权限、缺checked_at/created_at、过期/撤销/TTL、AssignmentSpec创建/更新正反例通过。Ajv目标schema及Ruby46 HTTP操作/引用/owner映射通过。check_contracts.sh显式启用legacy reader，通过9项scope回归、枚举/状态/语义及6类descriptor兼容夹具。Redocly2.72.1正式lint通过（12条warning，含通过自定义目标profile扩展引用的unused组件），AsyncAPI parser3.6.6通过。git diff --check通过。临时工具版本沿前节，非锁定生产环境；第三方生成/链接warning仍有，未改生成物。未运行业务/full/tidy：没有手写C++或业务修改，未证明P04生产授权。

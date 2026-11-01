@@ -312,7 +312,11 @@
       "RuntimeListHostsRequest": "not_implemented",
       "RuntimeListHostsResponse": "not_implemented",
       "RuntimeGetInstanceConfigRequest": "not_implemented",
-      "RuntimeGetInstanceConfigResponse": "not_implemented"
+      "RuntimeGetInstanceConfigResponse": "not_implemented",
+      "CredentialStatus": "not_implemented",
+      "IdentityGetCredentialStatusRequest": "not_implemented",
+      "IdentityGetCredentialStatusResponse": "not_implemented",
+      "AssignmentSpec": "not_implemented"
     },
     "proto_fields": {
       "Account.account_id": "implemented",
@@ -1306,7 +1310,36 @@
       "RuntimeListHostsResponse.snapshot": "not_implemented",
       "RuntimeGetInstanceConfigRequest.context": "not_implemented",
       "RuntimeGetInstanceConfigRequest.resource": "not_implemented",
-      "RuntimeGetInstanceConfigResponse.config": "not_implemented"
+      "RuntimeGetInstanceConfigResponse.config": "not_implemented",
+      "PrincipalRecord.display_permissions": "not_implemented",
+      "SessionRecord.created_at": "not_implemented",
+      "IdentityLoginResponse.checked_at": "not_implemented",
+      "IdentityRefreshSessionResponse.checked_at": "not_implemented",
+      "IdentityValidateSessionResponse.assignments": "not_implemented",
+      "IdentityValidateSessionResponse.authorization_version": "not_implemented",
+      "IdentityValidateSessionResponse.checked_at": "not_implemented",
+      "IdentityGetPrincipalResponse.assignments": "not_implemented",
+      "IdentityGetPrincipalResponse.authorization_version": "not_implemented",
+      "IdentityGetPrincipalResponse.checked_at": "not_implemented",
+      "IdentityListSessionsResponse.checked_at": "not_implemented",
+      "IdentityRevokeSessionResponse.checked_at": "not_implemented",
+      "IdentityRegisterPrincipalResponse.initial_credential": "not_implemented",
+      "CredentialStatus.credential_id": "not_implemented",
+      "CredentialStatus.principal_id": "not_implemented",
+      "CredentialStatus.binding": "not_implemented",
+      "CredentialStatus.version": "not_implemented",
+      "CredentialStatus.state": "not_implemented",
+      "CredentialStatus.created_at": "not_implemented",
+      "CredentialStatus.expires_at": "not_implemented",
+      "CredentialStatus.checked_at": "not_implemented",
+      "IdentityGetCredentialStatusRequest.context": "not_implemented",
+      "IdentityGetCredentialStatusRequest.credential_id": "not_implemented",
+      "IdentityGetCredentialStatusResponse.credential": "not_implemented",
+      "AssignmentSpec.principal_id": "not_implemented",
+      "AssignmentSpec.role": "not_implemented",
+      "AssignmentSpec.permissions": "not_implemented",
+      "AssignmentSpec.scope": "not_implemented",
+      "IdentitySetAssignmentRequest.assignment_id": "not_implemented"
     },
     "event_payloads": {
       "EventEnvelope.message_received": "implemented",
@@ -1458,7 +1491,13 @@
       "ConfigApplyState.CONFIG_APPLY_PENDING": "not_implemented",
       "ConfigApplyState.CONFIG_APPLY_APPLIED": "not_implemented",
       "ConfigApplyState.CONFIG_APPLY_REJECTED": "not_implemented",
-      "ConfigApplyState.CONFIG_APPLY_UNAVAILABLE": "not_implemented"
+      "ConfigApplyState.CONFIG_APPLY_UNAVAILABLE": "not_implemented",
+      "CredentialState.CREDENTIAL_STATE_UNSPECIFIED": "not_implemented",
+      "CredentialState.CREDENTIAL_PENDING": "not_implemented",
+      "CredentialState.CREDENTIAL_ACTIVE": "not_implemented",
+      "CredentialState.CREDENTIAL_REVOKED": "not_implemented",
+      "CredentialState.CREDENTIAL_EXPIRED": "not_implemented",
+      "Permission.PERMISSION_MESSAGE_READ": "not_implemented"
     },
     "channels": {
       "channels.control": "implemented",
@@ -1549,7 +1588,8 @@
       "operations.listAdapterInstances": "not_implemented",
       "operations.getHost": "not_implemented",
       "operations.listHosts": "not_implemented",
-      "operations.getInstanceConfig": "not_implemented"
+      "operations.getInstanceConfig": "not_implemented",
+      "operations.getCredentialStatus": "not_implemented"
     },
     "semantic_rules": {
       "semantic.action.deadline_max_300s": "not_implemented",
@@ -4383,6 +4423,114 @@
       "reports/modules/architecture-p03-contract-evidence.md"
     ],
     "operations.getInstanceConfig": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "PrincipalRecord.display_permissions": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "SessionRecord.created_at": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "IdentityLoginResponse.checked_at": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "IdentityRefreshSessionResponse.checked_at": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "IdentityValidateSessionResponse.assignments": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "IdentityValidateSessionResponse.authorization_version": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "IdentityValidateSessionResponse.checked_at": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "IdentityGetPrincipalResponse.assignments": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "IdentityGetPrincipalResponse.authorization_version": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "IdentityGetPrincipalResponse.checked_at": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "IdentityListSessionsResponse.checked_at": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "IdentityRevokeSessionResponse.checked_at": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "IdentityRegisterPrincipalResponse.initial_credential": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "CredentialStatus.credential_id": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "CredentialStatus.principal_id": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "CredentialStatus.binding": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "CredentialStatus.version": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "CredentialStatus.state": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "CredentialStatus.created_at": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "CredentialStatus.expires_at": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "CredentialStatus.checked_at": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "IdentityGetCredentialStatusRequest.context": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "IdentityGetCredentialStatusRequest.credential_id": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "IdentityGetCredentialStatusResponse.credential": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "CredentialState.CREDENTIAL_STATE_UNSPECIFIED": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "CredentialState.CREDENTIAL_PENDING": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "CredentialState.CREDENTIAL_ACTIVE": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "CredentialState.CREDENTIAL_REVOKED": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "CredentialState.CREDENTIAL_EXPIRED": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "Permission.PERMISSION_MESSAGE_READ": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "operations.getCredentialStatus": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "AssignmentSpec.principal_id": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "AssignmentSpec.role": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "AssignmentSpec.permissions": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "AssignmentSpec.scope": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "IdentitySetAssignmentRequest.assignment_id": [
       "reports/modules/architecture-p03-contract-evidence.md"
     ]
   },

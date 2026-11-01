@@ -44,6 +44,8 @@ enum Permission {
   PERMISSION_PLUGIN_READ = 37;
   PERMISSION_ADAPTER_READ = 38;
   PERMISSION_PLUGIN_CONFIG_READ = 39;
+  // Explicit sensitive grant only: no fixed role or canonical creation policy derives it.
+  PERMISSION_MESSAGE_READ = 40;
 }
 
 extend google.protobuf.MethodOptions {

@@ -8,8 +8,9 @@ from pathlib import Path
 
 from google.protobuf import descriptor_pb2, message_factory
 from google.protobuf.json_format import ParseDict
-from kiarabot.v1 import platform_pb2, policy_pb2, runtime_pb2
+from kiarabot.v1 import platform_pb2, policy_pb2, runtime_pb2, identity_pb2
 from resource_query_rules import runtime_query_valid
+from identity_projection_rules import allows, validate_current_projection, session_state, access_seconds_remaining, assignment_command_valid
 
 ROOT = Path(__file__).resolve().parents[2]
 SPEC = json.loads((ROOT / 'proto/tests/target_spec.json').read_text())
@@ -102,6 +103,75 @@ def main():
     config_query.resource.kind = platform_pb2.RESOURCE_INSTANCE
     config_query.resource.id = resource_id
     assert runtime_query_valid(config_query)
+    # Role bindings stay attached to their exact resource; display unions never authorize.
+    known_permissions = set(policy_pb2.Permission.values()) - {0}
+    roles = {platform_pb2.ROLE_VIEWER: {policy_pb2.PERMISSION_RESOURCE_READ},
+             platform_pb2.ROLE_ADMIN: {policy_pb2.PERMISSION_ACCOUNT_MANAGE, policy_pb2.PERMISSION_RESOURCE_READ,
+                                      policy_pb2.PERMISSION_ACTION_INSPECT}}
+    sensitive = {policy_pb2.PERMISSION_MESSAGE_READ, policy_pb2.PERMISSION_ACTION_INSPECT}
+    projection = identity_pb2.IdentityValidateSessionResponse(authorization_version=1)
+    projection.checked_at.FromJsonString('2026-11-01T00:10:00Z')
+    projection.principal.principal_id = resource_id
+    projection.principal.version = 1
+    projection.principal.principal_kind = 'human'
+    projection.session.session_id = resource_id
+    projection.session.principal_id = resource_id
+    projection.session.rotation = 1
+    projection.session.created_at.FromJsonString('2026-11-01T00:00:00Z')
+    projection.session.expires_at.FromJsonString('2026-11-01T00:15:00Z')
+    projection.principal.roles.extend([platform_pb2.ROLE_VIEWER, platform_pb2.ROLE_ADMIN])
+    projection.principal.display_permissions.extend([policy_pb2.PERMISSION_RESOURCE_READ, policy_pb2.PERMISSION_ACCOUNT_MANAGE])
+    for role, identifier in [(platform_pb2.ROLE_VIEWER, resource_id), (platform_pb2.ROLE_ADMIN, '22222222-2222-4222-8222-222222222222')]:
+        assignment = projection.assignments.add(principal_id=resource_id, role=role, assignment_id=identifier, version=1)
+        assignment.scope.resources.add(kind=platform_pb2.RESOURCE_ACCOUNT, id=identifier)
+    validate_current_projection(projection, roles, known_permissions, sensitive)
+    first_resource = projection.assignments[0].scope.resources[0]
+    assert not allows(projection.assignments, first_resource, policy_pb2.PERMISSION_ACCOUNT_MANAGE, roles, known_permissions, sensitive)
+    assert not allows(projection.assignments, projection.assignments[1].scope.resources[0], policy_pb2.PERMISSION_ACTION_INSPECT, roles, known_permissions, sensitive)
+    explicit = projection.assignments.add(principal_id=resource_id, assignment_id='44444444-4444-4444-8444-444444444444', version=1)
+    explicit.permissions.append(policy_pb2.PERMISSION_MESSAGE_READ)
+    explicit.scope.resources.add().CopyFrom(first_resource)
+    projection.principal.display_permissions.append(policy_pb2.PERMISSION_MESSAGE_READ)
+    validate_current_projection(projection, roles, known_permissions, sensitive)
+    assert allows(projection.assignments, first_resource, policy_pb2.PERMISSION_MESSAGE_READ, roles, known_permissions, sensitive)
+    explicit.role = platform_pb2.ROLE_ADMIN
+    try: validate_current_projection(projection, roles, known_permissions, sensitive)
+    except ValueError: pass
+    else: raise AssertionError('mixed role/permission basis accepted')
+    explicit.role = 0
+    command = identity_pb2.IdentitySetAssignmentRequest()
+    command.assignment.principal_id = resource_id
+    command.assignment.role = platform_pb2.ROLE_VIEWER
+    command.assignment.scope.resources.add().CopyFrom(first_resource)
+    assert assignment_command_valid(command, roles, known_permissions, sensitive)
+    command.expected_version = 1
+    assert not assignment_command_valid(command, roles, known_permissions, sensitive)
+    command.assignment_id = resource_id
+    assert assignment_command_valid(command, roles, known_permissions, sensitive)
+    command.expected_version = 0
+    assert not assignment_command_valid(command, roles, known_permissions, sensitive)
+    projection.ClearField('checked_at')
+    try: validate_current_projection(projection, roles, known_permissions, sensitive)
+    except ValueError: pass
+    else: raise AssertionError('missing current Identity time accepted')
+    session = identity_pb2.SessionRecord(rotation=1)
+    session.created_at.FromJsonString('2026-11-01T00:00:00Z')
+    session.expires_at.FromJsonString('2026-11-01T00:15:00Z')
+    checked = session.created_at.__class__()
+    checked.FromJsonString('2026-11-01T00:10:00Z')
+    assert session_state(session, checked) == 'ACTIVE'
+    checked.FromJsonString('2026-11-01T00:15:00Z')
+    assert session_state(session, checked) == 'EXPIRED'
+    session.revoked = True
+    assert session_state(session, checked) == 'REVOKED'
+    session.ClearField('created_at')
+    try: session_state(session, checked)
+    except ValueError: pass
+    else: raise AssertionError('missing creation time accepted')
+    tokens = identity_pb2.TokenPair()
+    tokens.access_expires_at.FromJsonString('2026-11-01T00:15:00Z')
+    checked.FromJsonString('2026-11-01T00:10:00Z')
+    assert access_seconds_remaining(tokens, checked) == 300
     # Missing/zero generation cannot be silently admitted by the target fixture.
     fence = platform_pb2.Fence(instance_id='instance', runtime_epoch='epoch')
     assert not validate_fence(fence)

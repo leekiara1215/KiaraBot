@@ -27,6 +27,15 @@ walk = lambda do |node, origin|
 end
 [openapi, asyncapi].each {|data| walk.call(data, data)}
 declared_rpcs = spec['methods'].map {|m| m['service'] + '.' + m['method']}
+openapi['paths'].each do |path, methods|
+  methods.each do |verb, operation|
+    next unless operation.is_a?(Hash) && operation['x-target-owner-rpc']
+    raise 'undeclared target auth RPC' unless declared_rpcs.include?(operation['x-target-owner-rpc'])
+    raise 'auth projection missing scope marker' unless operation['x-target-contract-status'] == 'not_implemented'
+    projection = resolve.call(operation.fetch('x-target-response-schema'), openapi)
+    raise 'auth projection missing authoritative time' unless projection.fetch('required').include?('checked_at')
+  end
+end
 count = 0
 openapi['paths'].each do |path, verbs|
   verbs.each do |verb, operation|

@@ -69,3 +69,5 @@ API状态扩展与旧proto注释按原声明/reference语境核对，不批量�
 symlink拒绝，历史implemented保留且不自动传播target，target声明必须有当前生产source与target测试。
 历史逻辑路径严格按core/reference/manifest.json解析，无猜测/回退；reference代码和测试字符串
 只用于历史范围词表，不能满足target生产证据。新布局新增生产证据目录需审查TARGET_SOURCE_ROOTS。
+
+Identity 投影 fixture 校验逐条 role/scope 与显式权限依据、拒绝显示并集扩权、AssignmentSpec 创建/条件更新、权威 Session created_at/checked_at 到期和 TTL。Ajv 验证严格目标身份响应必填、PENDING 不带到期、ACTIVE 必须到期、凭据禁止秘密；wire golden 固定状态/注册初始引用/绑定响应/创建请求。它们仅是契约 oracle，不证明生产授权或并发发放。

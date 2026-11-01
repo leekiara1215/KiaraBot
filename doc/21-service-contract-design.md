@@ -248,3 +248,13 @@ Action元数据检查、日志/审计、消息元数据等额外敏感能力须�
 本节落实已批准管理范围，不修改服务/数据库边界，也不新增自定义角色或资源继承。Model增加GetOperation（OperationRef→Operation，resource.read）与GetModelConfiguration（exact model/scope→无秘密配置、secret存在性和observed_at，model.manage），默认2秒/最多5秒、在线授权；操作查询校验存储owner/resource，不由客户端重贴scope或Control代裁定结果。后续目录/Runtime/Identity字段在同节随唯一契约逐能力补齐。线协议及生产实现状态仍分别以proto/API和execution_scopes.target为准。
 
 Runtime增加五类typed Get/List（Account/Installation/Instance/Adapter/Host）及GetInstanceConfig，复用已有record并补注册metadata/配置应用投影；默认2秒/5秒上限、在线授权。Get选择exact正确kind；List的ResourceRef catalog必须封闭RESOURCE_CATALOG且为离线登记runtime/资源族UUID，无all/祖先继承，只返回当前本人另获具体child grant的集合。PageRequest输入与SnapshotInfo输出分离，10分钟快照仍逐页核验当前授权版本；目录登记/可靠创建与本人发现的Identity契约随后补齐，现均未实现。
+
+## Identity 当前投影与凭据状态（目标未实现）
+
+Identity 的 ValidateSession/GetPrincipal 返回当前主体的逐条 AssignmentRecord、authorization_version 和权威 UTC checked_at。每条绑定独立计算权限与 exact scope，不能把显示 roles/permissions 与全部 scope 做笛卡尔积授权；PrincipalRecord.roles/display_permissions 仅是当前绑定的显示并集。固定角色只用于 human；显式权限使用 role=UNSPECIFIED 加非空、去重的封闭 Permission 列表，两种授予依据不能混用。message.read/action.inspect 等敏感权限不由默认角色或创建资源自动授予。空 scope 不代表全局。
+
+SetAssignment 输入 AssignmentSpec：创建不带 assignment_id/expected_version，Identity 生成 UUID/version=1；更新二者同时提供且版本为正，主体不可更换，并核验旧、新 scope 并集上的当前授予权限。目标尚未发布，原开发快照的 AssignmentRecord 请求已统一替换为 Spec，不提供旧请求桥接。
+
+SessionRecord.created_at 是 Identity 持久保存的首次创建时间，刷新/撤销不改写。会话状态以同响应 checked_at 判定：revoked 优先 REVOKED，其次 checked_at >= expires_at 为 EXPIRED，否则 ACTIVE。Login/Refresh 的剩余 access TTL 为 max(0,floor(access_expires_at-checked_at))；Control 不用本地时间、token iat 或占位时间补齐。缺失权威字段、非当前绑定或授权依赖不可用必须拒绝，不能伪造空权限/成功。
+
+RegisterPrincipal 同事务创建无秘密的 PENDING CredentialStatus 引用（credential_id/principal_id/binding/version/created_at/checked_at）；尚未发放的 PENDING 不得伪造 expires_at。GetCredentialStatus 以 identity.principal.read 在线读取同一记录，默认2秒/最多5秒；ACTIVE/EXPIRED 必须有 expires_at，REVOKED 可保留原到期。状态查询不返回秘密、摘要或可重放材料。初次实际发放仍用 RotateCredential 单次 CredentialDelivery，未知结果不得从状态查询恢复秘密。当前未实现，不启用生产路由。

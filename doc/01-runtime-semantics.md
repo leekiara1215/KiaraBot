@@ -212,3 +212,13 @@ REST 不可变分页用于一致列表；WebSocket 是资源状态刷新通知�
 目标Model操作状态只由Model裁定；Control按owner路由，不用Runtime的投影或HTTP超时推断Model完成。GetOperation在线检查原操作绑定资源，查询超时不创建FAILED、不自动重发Provider。GetModelConfiguration是敏感读，当前Identity不可确认则503，不能用缓存或secret_configured布尔绕过授权，也不返回旧secret。
 
 Runtime目录列表是按当前主体精确child授予过滤的不可变快照，不是目录内所有资源投影。目录创建/发现权限与child读/管理权限分别检查；角色、owner服务身份、安装关联均不隐含后代授权。每页绑定当前会话、授权版本、目录、页大小/排序及快照期限，撤销后不能借10分钟快照继续敏感读。Adapter offline仅当前连接失效，保留最后合法metadata；Host offline不证明进程停止。GetInstanceConfig区分已保存期望与SDK实际应用，applied=0合法，REJECTED必须有原因。
+
+## Identity 当前投影与凭据状态（目标未实现）
+
+Identity 的 ValidateSession/GetPrincipal 返回当前主体的逐条 AssignmentRecord、authorization_version 和权威 UTC checked_at。每条绑定独立计算权限与 exact scope，不能把显示 roles/permissions 与全部 scope 做笛卡尔积授权；PrincipalRecord.roles/display_permissions 仅是当前绑定的显示并集。固定角色只用于 human；显式权限使用 role=UNSPECIFIED 加非空、去重的封闭 Permission 列表，两种授予依据不能混用。message.read/action.inspect 等敏感权限不由默认角色或创建资源自动授予。空 scope 不代表全局。
+
+SetAssignment 输入 AssignmentSpec：创建不带 assignment_id/expected_version，Identity 生成 UUID/version=1；更新二者同时提供且版本为正，主体不可更换，并核验旧、新 scope 并集上的当前授予权限。目标尚未发布，原开发快照的 AssignmentRecord 请求已统一替换为 Spec，不提供旧请求桥接。
+
+SessionRecord.created_at 是 Identity 持久保存的首次创建时间，刷新/撤销不改写。会话状态以同响应 checked_at 判定：revoked 优先 REVOKED，其次 checked_at >= expires_at 为 EXPIRED，否则 ACTIVE。Login/Refresh 的剩余 access TTL 为 max(0,floor(access_expires_at-checked_at))；Control 不用本地时间、token iat 或占位时间补齐。缺失权威字段、非当前绑定或授权依赖不可用必须拒绝，不能伪造空权限/成功。
+
+RegisterPrincipal 同事务创建无秘密的 PENDING CredentialStatus 引用（credential_id/principal_id/binding/version/created_at/checked_at）；尚未发放的 PENDING 不得伪造 expires_at。GetCredentialStatus 以 identity.principal.read 在线读取同一记录，默认2秒/最多5秒；ACTIVE/EXPIRED 必须有 expires_at，REVOKED 可保留原到期。状态查询不返回秘密、摘要或可重放材料。初次实际发放仍用 RotateCredential 单次 CredentialDelivery，未知结果不得从状态查询恢复秘密。当前未实现，不启用生产路由。

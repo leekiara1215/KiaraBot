@@ -29,6 +29,7 @@ x-contract-status:
     - getHost
     - listHosts
     - getInstanceConfig
+    - getCredentialStatus
     - getModelConfiguration
     - createAccount
     - updateAccount
@@ -173,6 +174,9 @@ paths:
   /auth/me:
     get:
       operationId: getCurrentPrincipal
+      x-target-owner-rpc: IdentityService.ValidateSession
+      x-target-response-schema: '#/components/schemas/TargetCurrentPrincipal'
+      x-target-contract-status: not_implemented
       x-permission: session.read
       summary: Return the current session and server-computed roles and permissions
       responses:
@@ -189,6 +193,9 @@ paths:
   /auth/sessions:
     get:
       operationId: listSessions
+      x-target-owner-rpc: IdentityService.ListSessions
+      x-target-response-schema: '#/components/schemas/TargetCurrentSessionPage'
+      x-target-contract-status: not_implemented
       x-permission: session.read
       summary: List visible authentication sessions
       parameters: [{ $ref: '#/components/parameters/PageSize' }, { $ref: '#/components/parameters/PageToken' }]
@@ -224,6 +231,9 @@ paths:
     post:
       security: []
       operationId: login
+      x-target-owner-rpc: IdentityService.Login
+      x-target-response-schema: '#/components/schemas/TargetCurrentTokenPair'
+      x-target-contract-status: not_implemented
       x-permission: public
       summary: Create an access and refresh token pair
       parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }]
@@ -249,6 +259,9 @@ paths:
     post:
       security: []
       operationId: refreshToken
+      x-target-owner-rpc: IdentityService.RefreshSession
+      x-target-response-schema: '#/components/schemas/TargetCurrentTokenPair'
+      x-target-contract-status: not_implemented
       x-permission: refresh.credential
       summary: Rotate an access token
       parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }]
@@ -2741,6 +2754,45 @@ paths:
         '504': {"$ref":"#/components/responses/Timeout"}
         '200': {"description":"Authorized typed resource snapshot","content":{"application/json":{"schema":{"$ref":"#/components/schemas/TargetRuntimeListHostsResponse"}}}}
       x-catalog-child-kind: "RESOURCE_HOST"
+  "/credentials/{credentialId}":
+    get:
+      operationId: getCredentialStatus
+      summary: Read current credential status without secret material
+      x-owner-service: identity
+      x-owner-rpc: IdentityService.GetCredentialStatus
+      x-permission: identity.principal.read
+      x-mutating: false
+      x-contract-status: not_implemented
+      parameters:
+      - name: credentialId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+        '404':
+          "$ref": "#/components/responses/NotFound"
+        '429':
+          "$ref": "#/components/responses/RateLimited"
+        '500':
+          "$ref": "#/components/responses/Internal"
+        '503':
+          "$ref": "#/components/responses/Unavailable"
+        '504':
+          "$ref": "#/components/responses/Timeout"
+        '200':
+          description: Current authoritative metadata; no existing secret or hash
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/TargetIdentityGetCredentialStatusResponse"
 components:
   securitySchemes:
     bearerAuth:
@@ -2830,7 +2882,10 @@ components:
         user_id: { type: string }
         session_id: { type: string }
         roles: { type: array, items: { type: string, enum: [admin, operator, viewer] } }
-        permissions: { type: array, items: { type: string } }
+        permissions: { type: array, items: { type: string }, description: Display-only union computed by current Identity assignments; never authorize from this list. }
+        assignments: {type: array, items: {$ref: '#/components/schemas/TargetAssignmentRecord'}}
+        authorization_version: {$ref: '#/components/schemas/TargetPositiveUint64'}
+        checked_at: {type: string, format: date-time}
     Session:
       type: object
       required: [session_id, user_id, created_at, expires_at, state]
@@ -4407,6 +4462,7 @@ components:
         role:
           type: string
           enum:
+          - FIXED_ROLE_UNSPECIFIED
           - ROLE_ADMIN
           - ROLE_OPERATOR
           - ROLE_VIEWER
@@ -4454,6 +4510,8 @@ components:
             - PERMISSION_PLUGIN_READ
             - PERMISSION_ADAPTER_READ
             - PERMISSION_PLUGIN_CONFIG_READ
+            - PERMISSION_MESSAGE_READ
+          uniqueItems: true
         scope:
           "$ref": "#/components/schemas/TargetResourceScope"
         version:
@@ -4462,22 +4520,58 @@ components:
       required:
       - assignment_id
       - principal_id
-      - role
-      - permissions
       - scope
       - version
+      description: 'Exactly one basis: fixed role with no explicit permission list, or
+        explicit registered permissions with no human role. Scope is an exact set and
+        never inherited. Sensitive message/action inspection requires explicit permission
+        basis.'
+      oneOf:
+      - required:
+        - role
+        properties:
+          role:
+            enum:
+            - ROLE_ADMIN
+            - ROLE_OPERATOR
+            - ROLE_VIEWER
+          permissions:
+            maxItems: 0
+      - required:
+        - permissions
+        properties:
+          permissions:
+            minItems: 1
+          role:
+            enum:
+            - FIXED_ROLE_UNSPECIFIED
+
     TargetIdentitySetAssignmentRequest:
       type: object
       additionalProperties: false
       properties:
         assignment:
-          "$ref": "#/components/schemas/TargetAssignmentRecord"
+          "$ref": "#/components/schemas/TargetAssignmentSpec"
         expected_version:
           "$ref": "#/components/schemas/TargetPositiveUint64"
+        assignment_id:
+          type: string
+          format: uuid
+          minLength: 1
       x-contract-status: not_implemented
       required:
       - assignment
-      - expected_version
+      oneOf:
+      - not:
+          anyOf:
+          - required:
+            - assignment_id
+          - required:
+            - expected_version
+      - required:
+        - assignment_id
+        - expected_version
+
     TargetIdentitySetAssignmentResponse:
       type: object
       additionalProperties: false
@@ -4532,9 +4626,13 @@ components:
       properties:
         principal:
           "$ref": "#/components/schemas/TargetPrincipalRecord"
+        initial_credential:
+          "$ref": "#/components/schemas/TargetCredentialStatus"
       x-contract-status: not_implemented
       required:
       - principal
+      - initial_credential
+
     TargetPrincipalRecord:
       type: object
       additionalProperties: false
@@ -4567,6 +4665,51 @@ components:
             - ROLE_VIEWER
         scope:
           "$ref": "#/components/schemas/TargetResourceScope"
+        display_permissions:
+          type: array
+          items:
+            type: string
+            enum:
+            - PERMISSION_ACCOUNT_MANAGE
+            - PERMISSION_ACCOUNT_POLICY_MANAGE
+            - PERMISSION_ACCOUNT_POLICY_READ
+            - PERMISSION_ACTION_EXECUTE
+            - PERMISSION_ACTION_INSPECT
+            - PERMISSION_ADAPTER_CONNECT
+            - PERMISSION_DELIVERY_MANAGE
+            - PERMISSION_DELIVERY_PROCESS
+            - PERMISSION_HOST_EXECUTE
+            - PERMISSION_HOST_READ
+            - PERMISSION_HOST_REGISTER
+            - PERMISSION_IDENTITY_ASSIGNMENT_MANAGE
+            - PERMISSION_IDENTITY_ASSIGNMENT_READ
+            - PERMISSION_IDENTITY_AUTHORIZATION_CHECK
+            - PERMISSION_IDENTITY_DELEGATION_ISSUE
+            - PERMISSION_IDENTITY_INVALIDATION_READ
+            - PERMISSION_IDENTITY_KEYS_READ
+            - PERMISSION_IDENTITY_PRINCIPAL_MANAGE
+            - PERMISSION_IDENTITY_PRINCIPAL_READ
+            - PERMISSION_IDENTITY_SESSION_CREATE
+            - PERMISSION_IDENTITY_SESSION_READ
+            - PERMISSION_IDENTITY_SESSION_REVOKE
+            - PERMISSION_MODEL_CALL_INSPECT
+            - PERMISSION_MODEL_CHAT
+            - PERMISSION_MODEL_MANAGE
+            - PERMISSION_MODEL_READ
+            - PERMISSION_NAMESPACE_MANAGE
+            - PERMISSION_PLUGIN_CONNECT
+            - PERMISSION_PLUGIN_MANAGE
+            - PERMISSION_RESOURCE_MANAGE
+            - PERMISSION_RESOURCE_READ
+            - PERMISSION_STORAGE_NAMESPACE
+            - PERMISSION_TASK_READ
+            - PERMISSION_TASK_SCHEDULE
+            - PERMISSION_TIMER_ACCEPT
+            - PERMISSION_ACCOUNT_READ
+            - PERMISSION_PLUGIN_READ
+            - PERMISSION_ADAPTER_READ
+            - PERMISSION_PLUGIN_CONFIG_READ
+            - PERMISSION_MESSAGE_READ
       x-contract-status: not_implemented
       required:
       - principal_id
@@ -4575,7 +4718,11 @@ components:
       - version
       - state
       - roles
-      - scope
+      - display_permissions
+      description: Identity display projection only. roles/scope/display_permissions cannot
+        be combined into authorization; checked assignment bindings are authoritative.
+        scope omitted when no current grant.
+
     TargetIdentityGetPrincipalStatusResponse:
       type: object
       additionalProperties: false
@@ -5202,3 +5349,283 @@ components:
           format: uuid
           pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
       x-contract-status: not_implemented
+    TargetCredentialStatus:
+      type: object
+      additionalProperties: false
+      required:
+      - credential_id
+      - principal_id
+      - binding
+      - version
+      - state
+      - created_at
+      - checked_at
+      properties:
+        credential_id:
+          type: string
+          minLength: 1
+        principal_id:
+          type: string
+          minLength: 1
+        binding:
+          "$ref": "#/components/schemas/TargetResourceRef"
+        version:
+          "$ref": "#/components/schemas/TargetPositiveUint64"
+        state:
+          type: string
+          enum:
+          - CREDENTIAL_PENDING
+          - CREDENTIAL_ACTIVE
+          - CREDENTIAL_REVOKED
+          - CREDENTIAL_EXPIRED
+        created_at:
+          type: string
+          format: date-time
+        checked_at:
+          type: string
+          format: date-time
+        expires_at:
+          type: string
+          format: date-time
+      oneOf:
+      - required:
+        - state
+        properties:
+          state:
+            enum:
+            - CREDENTIAL_PENDING
+        not:
+          required:
+          - expires_at
+      - required:
+        - state
+        - expires_at
+        properties:
+          state:
+            enum:
+            - CREDENTIAL_ACTIVE
+            - CREDENTIAL_EXPIRED
+      - required:
+        - state
+        properties:
+          state:
+            enum:
+            - CREDENTIAL_REVOKED
+      x-contract-status: not_implemented
+    TargetIdentityGetCredentialStatusResponse:
+      type: object
+      additionalProperties: false
+      required:
+      - credential
+      properties:
+        credential:
+          "$ref": "#/components/schemas/TargetCredentialStatus"
+      x-contract-status: not_implemented
+    TargetCurrentPrincipal:
+      type: object
+      required:
+      - user_id
+      - session_id
+      - roles
+      - permissions
+      - assignments
+      - authorization_version
+      - checked_at
+      properties:
+        user_id:
+          type: string
+        session_id:
+          type: string
+        roles:
+          type: array
+          items:
+            type: string
+            enum:
+            - admin
+            - operator
+            - viewer
+        permissions:
+          type: array
+          items:
+            type: string
+          description: Display-only union computed by current Identity assignments; never
+            authorize from this list.
+        assignments:
+          type: array
+          items:
+            "$ref": "#/components/schemas/TargetAssignmentRecord"
+        authorization_version:
+          "$ref": "#/components/schemas/TargetPositiveUint64"
+        checked_at:
+          type: string
+          format: date-time
+      additionalProperties: false
+      x-contract-status: not_implemented
+    TargetCurrentSession:
+      type: object
+      required:
+      - session_id
+      - user_id
+      - created_at
+      - expires_at
+      - state
+      properties:
+        session_id:
+          type: string
+        user_id:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        expires_at:
+          type: string
+          format: date-time
+        state:
+          type: string
+          enum:
+          - ACTIVE
+          - REVOKED
+          - EXPIRED
+      additionalProperties: false
+      description: created_at/expires_at from Identity. REVOKED takes precedence; EXPIRED
+        compares Identity page checked_at, never the Control local clock.
+    TargetCurrentSessionPage:
+      type: object
+      additionalProperties: false
+      required:
+      - items
+      - page
+      - checked_at
+      properties:
+        items:
+          type: array
+          items:
+            "$ref": "#/components/schemas/TargetCurrentSession"
+        page:
+          "$ref": "#/components/schemas/PageInfo"
+        checked_at:
+          type: string
+          format: date-time
+      x-contract-status: not_implemented
+    TargetCurrentTokenPair:
+      type: object
+      additionalProperties: false
+      required:
+      - access_token
+      - refresh_token
+      - expires_in
+      - checked_at
+      - access_expires_at
+      - refresh_expires_at
+      properties:
+        access_token:
+          type: string
+          minLength: 1
+        refresh_token:
+          type: string
+          minLength: 1
+        expires_in:
+          type: integer
+          minimum: 0
+        checked_at:
+          type: string
+          format: date-time
+        access_expires_at:
+          type: string
+          format: date-time
+        refresh_expires_at:
+          type: string
+          format: date-time
+      description: expires_in is floor(access_expires_at - Identity.checked_at) seconds,
+        clamped to zero. Never derived from Control wall clock. Credential bodies are
+        never logged.
+      x-contract-status: not_implemented
+    TargetAssignmentSpec:
+      type: object
+      additionalProperties: false
+      properties:
+        principal_id:
+          type: string
+          minLength: 1
+        role:
+          type: string
+          enum:
+          - FIXED_ROLE_UNSPECIFIED
+          - ROLE_ADMIN
+          - ROLE_OPERATOR
+          - ROLE_VIEWER
+        permissions:
+          type: array
+          items:
+            type: string
+            enum:
+            - PERMISSION_ACCOUNT_MANAGE
+            - PERMISSION_ACCOUNT_POLICY_MANAGE
+            - PERMISSION_ACCOUNT_POLICY_READ
+            - PERMISSION_ACTION_EXECUTE
+            - PERMISSION_ACTION_INSPECT
+            - PERMISSION_ADAPTER_CONNECT
+            - PERMISSION_DELIVERY_MANAGE
+            - PERMISSION_DELIVERY_PROCESS
+            - PERMISSION_HOST_EXECUTE
+            - PERMISSION_HOST_READ
+            - PERMISSION_HOST_REGISTER
+            - PERMISSION_IDENTITY_ASSIGNMENT_MANAGE
+            - PERMISSION_IDENTITY_ASSIGNMENT_READ
+            - PERMISSION_IDENTITY_AUTHORIZATION_CHECK
+            - PERMISSION_IDENTITY_DELEGATION_ISSUE
+            - PERMISSION_IDENTITY_INVALIDATION_READ
+            - PERMISSION_IDENTITY_KEYS_READ
+            - PERMISSION_IDENTITY_PRINCIPAL_MANAGE
+            - PERMISSION_IDENTITY_PRINCIPAL_READ
+            - PERMISSION_IDENTITY_SESSION_CREATE
+            - PERMISSION_IDENTITY_SESSION_READ
+            - PERMISSION_IDENTITY_SESSION_REVOKE
+            - PERMISSION_MODEL_CALL_INSPECT
+            - PERMISSION_MODEL_CHAT
+            - PERMISSION_MODEL_MANAGE
+            - PERMISSION_MODEL_READ
+            - PERMISSION_NAMESPACE_MANAGE
+            - PERMISSION_PLUGIN_CONNECT
+            - PERMISSION_PLUGIN_MANAGE
+            - PERMISSION_RESOURCE_MANAGE
+            - PERMISSION_RESOURCE_READ
+            - PERMISSION_STORAGE_NAMESPACE
+            - PERMISSION_TASK_READ
+            - PERMISSION_TASK_SCHEDULE
+            - PERMISSION_TIMER_ACCEPT
+            - PERMISSION_ACCOUNT_READ
+            - PERMISSION_PLUGIN_READ
+            - PERMISSION_ADAPTER_READ
+            - PERMISSION_PLUGIN_CONFIG_READ
+            - PERMISSION_MESSAGE_READ
+          uniqueItems: true
+        scope:
+          "$ref": "#/components/schemas/TargetResourceScope"
+      x-contract-status: not_implemented
+      required:
+      - principal_id
+      - scope
+      description: 'Exactly one basis: fixed role with no explicit permission list, or
+        explicit registered permissions with no human role. Scope is an exact set and
+        never inherited. Sensitive message/action inspection requires explicit permission
+        basis.'
+      oneOf:
+      - required:
+        - role
+        properties:
+          role:
+            enum:
+            - ROLE_ADMIN
+            - ROLE_OPERATOR
+            - ROLE_VIEWER
+          permissions:
+            maxItems: 0
+      - required:
+        - permissions
+        properties:
+          permissions:
+            minItems: 1
+          role:
+            enum:
+            - FIXED_ROLE_UNSPECIFIED

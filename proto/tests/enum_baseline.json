@@ -69,6 +69,13 @@
       "PROMOTED": 3,
       "DEMOTED": 4
     },
+    "kiarabot.v1.CredentialState": {
+      "CREDENTIAL_STATE_UNSPECIFIED": 0,
+      "CREDENTIAL_PENDING": 1,
+      "CREDENTIAL_ACTIVE": 2,
+      "CREDENTIAL_REVOKED": 3,
+      "CREDENTIAL_EXPIRED": 4
+    },
     "kiarabot.v1.ResourceKind": {
       "RESOURCE_KIND_UNSPECIFIED": 0,
       "RESOURCE_ACCOUNT": 1,
@@ -209,7 +216,8 @@
       "PERMISSION_ACCOUNT_READ": 36,
       "PERMISSION_PLUGIN_READ": 37,
       "PERMISSION_ADAPTER_READ": 38,
-      "PERMISSION_PLUGIN_CONFIG_READ": 39
+      "PERMISSION_PLUGIN_CONFIG_READ": 39,
+      "PERMISSION_MESSAGE_READ": 40
     },
     "kiarabot.v1.ConfigApplyState": {
       "CONFIG_APPLY_STATE_UNSPECIFIED": 0,

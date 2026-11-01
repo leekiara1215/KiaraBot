@@ -14,6 +14,8 @@ message PrincipalRecord {
   LifecycleState state = 5;
   repeated FixedRole roles = 6;
   ResourceScope scope = 7;
+  // Display-only union from current checked assignments; never an authorization basis.
+  repeated Permission display_permissions = 8;
 }
 
 // CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
@@ -23,6 +25,8 @@ message SessionRecord {
   uint64 rotation = 3;
   google.protobuf.Timestamp expires_at = 4;
   bool revoked = 5;
+  // Authoritative creation time; Control must not substitute local time or token iat.
+  google.protobuf.Timestamp created_at = 6;
 }
 
 // CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
@@ -104,6 +108,7 @@ message IdentityLoginRequest {
 // CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
 message IdentityLoginResponse {
   TokenPair tokens = 1;
+  google.protobuf.Timestamp checked_at = 2;
 }
 
 // CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
@@ -115,6 +120,7 @@ message IdentityRefreshSessionRequest {
 // CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
 message IdentityRefreshSessionResponse {
   TokenPair tokens = 1;
+  google.protobuf.Timestamp checked_at = 2;
 }
 
 // CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
@@ -127,6 +133,9 @@ message IdentityValidateSessionRequest {
 message IdentityValidateSessionResponse {
   PrincipalRecord principal = 1;
   SessionRecord session = 2;
+  repeated AssignmentRecord assignments = 3;
+  uint64 authorization_version = 4;
+  google.protobuf.Timestamp checked_at = 5;
 }
 
 // CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
@@ -138,6 +147,9 @@ message IdentityGetPrincipalRequest {
 // CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
 message IdentityGetPrincipalResponse {
   PrincipalRecord principal = 1;
+  repeated AssignmentRecord assignments = 2;
+  uint64 authorization_version = 3;
+  google.protobuf.Timestamp checked_at = 4;
 }
 
 // CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
@@ -151,6 +163,7 @@ message IdentityListSessionsRequest {
 message IdentityListSessionsResponse {
   repeated SessionRecord sessions = 1;
   SnapshotPage page = 2;
+  google.protobuf.Timestamp checked_at = 3;
 }
 
 // CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
@@ -162,6 +175,7 @@ message IdentityRevokeSessionRequest {
 // CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
 message IdentityRevokeSessionResponse {
   SessionRecord session = 1;
+  google.protobuf.Timestamp checked_at = 2;
 }
 
 // CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
@@ -175,6 +189,7 @@ message IdentityRegisterPrincipalRequest {
 // CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
 message IdentityRegisterPrincipalResponse {
   PrincipalRecord principal = 1;
+  CredentialStatus initial_credential = 2;
 }
 
 // CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
@@ -270,11 +285,23 @@ message IdentityListAssignmentsResponse {
   SnapshotPage page = 2;
 }
 
+// CONTRACT_STATUS: not_implemented - requested basis, never trusted as an authorization decision.
+message AssignmentSpec {
+  string principal_id = 1;
+  // Nonzero only for a human fixed-role grant; then permissions must be empty.
+  FixedRole role = 2;
+  // Explicit registered permissions require role=UNSPECIFIED (also for non-human principals).
+  repeated Permission permissions = 3;
+  ResourceScope scope = 4;
+}
+
 // CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
 message IdentitySetAssignmentRequest {
   RequestContext context = 1;
-  AssignmentRecord assignment = 2;
+  AssignmentSpec assignment = 2;
   optional uint64 expected_version = 3;
+  // Absent/empty on create: Identity generates UUID/version 1. Update requires both ID and version.
+  string assignment_id = 4;
 }
 
 // CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
@@ -328,6 +355,38 @@ message IdentityGetVerificationKeysRequest {
 message IdentityGetVerificationKeysResponse {
   repeated VerificationKey keys = 1;
   uint64 version = 2;
+}
+
+// CONTRACT_STATUS: not_implemented - target Identity projection, producer pending.
+enum CredentialState {
+  CREDENTIAL_STATE_UNSPECIFIED = 0;
+  CREDENTIAL_PENDING = 1;
+  CREDENTIAL_ACTIVE = 2;
+  CREDENTIAL_REVOKED = 3;
+  CREDENTIAL_EXPIRED = 4;
+}
+
+// CONTRACT_STATUS: not_implemented - target Identity projection, producer pending.
+message CredentialStatus {
+  string credential_id = 1;
+  string principal_id = 2;
+  ResourceRef binding = 3;
+  uint64 version = 4;
+  CredentialState state = 5;
+  google.protobuf.Timestamp created_at = 6;
+  google.protobuf.Timestamp expires_at = 7;
+  google.protobuf.Timestamp checked_at = 8;
+}
+
+// CONTRACT_STATUS: not_implemented - target Identity projection, producer pending.
+message IdentityGetCredentialStatusRequest {
+  RequestContext context = 1;
+  string credential_id = 2;
+}
+
+// CONTRACT_STATUS: not_implemented - target Identity projection, producer pending.
+message IdentityGetCredentialStatusResponse {
+  CredentialStatus credential = 1;
 }
 
 // CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
@@ -460,6 +519,13 @@ service IdentityService {
   }
   rpc GetVerificationKeys(IdentityGetVerificationKeysRequest) returns (IdentityGetVerificationKeysResponse) {
     option (required_permission) = PERMISSION_IDENTITY_KEYS_READ;
+    option (requires_idempotency) = false;
+    option (default_deadline_ms) = 2000;
+    option (max_deadline_ms) = 5000;
+    option (requires_online_authorization) = true;
+  }
+  rpc GetCredentialStatus(IdentityGetCredentialStatusRequest) returns (IdentityGetCredentialStatusResponse) {
+    option (required_permission) = PERMISSION_IDENTITY_PRINCIPAL_READ;
     option (requires_idempotency) = false;
     option (default_deadline_ms) = 2000;
     option (max_deadline_ms) = 5000;
