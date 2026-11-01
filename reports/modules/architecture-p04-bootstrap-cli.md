@@ -18,3 +18,17 @@ format16、Python语法、boundary和diff检查通过。尚未在本提交前运
 fixture或全仓统一门禁：新增executable/CTest由构建cap接线后立即执行，不能把语法检查
 视为可用引导。Python真实夹具已包含后端data_directory所有权校验后才DDL、错误SAN、
 不安全密码文件、重复JSON、原子引导/重复拒绝/status和秘密/路径脱敏断言。
+
+## 正式构建与真实初始化验收
+
+固定full-locked完整构建与CLI实际链接通过，clang-analyzer tidy22精确compile DB检查、
+Python语法和diff检查通过。`p04_identity_bootstrap`真实PG fixture通过1/1，1.94秒；
+验证错误SAN、不安全密码文件、重复JSON均不消费Required/v1，正常提交Consumed/v2，
+重复CONFLICT、状态重读及密码/路径脱敏均通过。后端目录验证后才执行临时库DDL，清理成功。
+
+首轮fixture初始化失败，是测试库默认PUBLIC TEMP权限未收回；修正为既有生产规则要求的
+REVOKE ALL及独立受限角色。其后真实PeerCrypto拒绝缺少严格KU/basicConstraints的测试CA，
+fixture补齐签名KU及叶nonCA/KU，未放宽生产验证或删除拒绝断言。测试失败诊断只输出
+稳定码与源行号，不打印SQL/密码/PEM/临时目录。原运行主程序未为测试修改。
+这次测试代码变化无公共文档影响；doc08只把先前loader待消费说明指向现有离线命令。
+全仓统一门禁仍待完整P04生产组合里程碑，尚不声称全部Identity RPC已实现。

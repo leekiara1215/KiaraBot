@@ -555,7 +555,7 @@ rollback采样，不能创建第二个持锁连接。返回工厂只表示存储
 离线bootstrap组合根可用load_bootstrap_password_file装载受控regular秘密文件（通常0600、
 当前effective UID、无group/other权限、可信父目录）。允许一个末尾LF；实际密码1..1024
 字节且不含CR/LF/NUL。此入口只读并返回安全内存，不自行创建管理员、生成/覆盖密码，
-不把密码放进argv、日志或公开配置；CLI业务消费由另一个组合根任务负责。
+不把密码放进argv、日志或公开配置；业务消费仅由下述受控离线组合根执行。
 
 ### P04 Identity RPC 适配器尚未启用生产监听
 

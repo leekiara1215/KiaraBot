@@ -7,6 +7,7 @@ import re
 import secrets
 import subprocess
 import sys
+import traceback
 import uuid
 
 from service_config_test import certificates
@@ -37,10 +38,11 @@ def main():
     migration = (root / 'password-p03_identity_migration').read_text().strip()
     runtime = (root / 'password-p03_identity_runtime').read_text().strip()
     assert all(re.fullmatch('[a-f0-9]{64}', value) for value in [migration, runtime])
-    sql(f"CREATE ROLE p03_identity_migration LOGIN PASSWORD '{migration}';\n"
-        f"CREATE ROLE p03_identity_runtime LOGIN PASSWORD '{runtime}';\n"
+    constraints = 'LOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS'
+    sql(f"CREATE ROLE p03_identity_migration {constraints} PASSWORD '{migration}';\n"
+        f"CREATE ROLE p03_identity_runtime {constraints} PASSWORD '{runtime}';\n"
         'CREATE DATABASE p03_identity OWNER p03_identity_migration;\n'
-        'REVOKE CONNECT ON DATABASE p03_identity FROM PUBLIC;\n'
+        'REVOKE ALL ON DATABASE p03_identity FROM PUBLIC;\n'
         'GRANT CONNECT ON DATABASE p03_identity TO p03_identity_runtime;\n')
     tls_root = root / 'bootstrap-tls'
     tls_root.mkdir(mode=0o700)
@@ -48,8 +50,14 @@ def main():
     # Use an explicit URI SAN for enrollment; the server certificate remains separate.
     extensions = tls_root / 'control.ext'
     extensions.write_text('subjectAltName=URI:spiffe://kiarabot/control-test\n'
-                          'extendedKeyUsage=clientAuth\n')
+                          'extendedKeyUsage=clientAuth\nbasicConstraints=critical,CA:FALSE\n'
+                          'keyUsage=critical,digitalSignature\nsubjectKeyIdentifier=hash\n'
+                          'authorityKeyIdentifier=keyid:always\n')
     for arguments in [
+        ['req', '-x509', '-key', 'ca.key', '-days', '1', '-subj', '/CN=P02-Test-CA',
+         '-out', 'ca.pem', '-addext', 'basicConstraints=critical,CA:TRUE',
+         '-addext', 'keyUsage=critical,keyCertSign,cRLSign',
+         '-addext', 'subjectKeyIdentifier=hash'],
         ['req', '-newkey', 'ec', '-pkeyopt', 'ec_paramgen_curve:P-256', '-nodes',
          '-subj', '/CN=Control', '-keyout', 'control.key', '-out', 'control.csr'],
         ['x509', '-req', '-in', 'control.csr', '-CA', 'ca.pem', '-CAkey', 'ca.key',
@@ -90,6 +98,10 @@ def main():
     def run(arguments, expected=0):
         reply = subprocess.run([bootstrap, *arguments], env=environment, capture_output=True,
                                text=True, timeout=8)
+        if reply.returncode != expected:
+            codes = re.findall(r'error_code=[A-Z_]+', reply.stderr)
+            print(f'P03 assertion: bootstrap exit={reply.returncode} expected={expected} '
+                  f'codes={codes}; diagnostics redacted', file=sys.stderr)
         assert reply.returncode == expected, 'bootstrap exit mismatch; diagnostics redacted'
         output = reply.stdout + reply.stderr
         for secret in [password, migration, runtime, 'PRIVATE KEY', str(root)]:
@@ -133,4 +145,10 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    try:
+        main()
+    except Exception:
+        frames = traceback.extract_tb(sys.exc_info()[2])
+        lines = ','.join(str(frame.lineno) for frame in frames[-2:])
+        print(f'P03 assertion: bootstrap fixture lines {lines}; diagnostics redacted', file=sys.stderr)
+        sys.exit(1)
