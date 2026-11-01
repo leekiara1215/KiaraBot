@@ -76,3 +76,10 @@ target_compile_options(kiarabot_identity_security_application_test PRIVATE
 add_test(NAME p04_identity_security_application COMMAND kiarabot_identity_security_application_test)
 set_tests_properties(p04_identity_security_application PROPERTIES
   LABELS "p04;unit;security" TIMEOUT 30)
+
+find_program(KIARABOT_TEST_RUBY ruby REQUIRED)
+add_test(NAME p04_identity_role_catalog COMMAND "${KIARABOT_TEST_RUBY}"
+  ${CMAKE_SOURCE_DIR}/proto/tests/identity_role_catalog_test.rb
+  $<TARGET_FILE:kiarabot_identity_rules_test> ${CMAKE_SOURCE_DIR}/api/openapi.yaml)
+set_tests_properties(p04_identity_role_catalog PROPERTIES
+  LABELS "p04;unit;security;contract" TIMEOUT 10)
