@@ -23,10 +23,10 @@
 
 ## 2. 现有实现对拆分的约束
 
-- 当前 [组合根](../core/app/main.cpp) 装配 AdapterIngress、PluginHub、ActionRouter、HostDispatcher、TaskScheduler、ControlService 和模型 Provider，不能直接按类生成同等数量的服务。
-- [Core 文档](02-core.md) 和 [入口实现](../core/src/application/adapter_ingress.cpp) 的事件、顺序水位和逐插件投递具有原子提交关系。建议保留在同一运行时事务边界内，避免再拆独立事件接入服务与投递账本服务。
-- 当前任务触发由 [TaskScheduler](../core/src/application/task_scheduler.cpp) 与 inbox 同事务提交。拆分调度后该单事务保证不能原样延续，须重新设计持久交接、去重和完成定义；COMPLETED 当前表示事件已入队，不能悄悄变成仅发送一次请求。
-- [模型调用](../core/src/application/host_dispatcher.cpp) 已区分调用前后审计与外部调用，不承诺外部原子性或自动重试。远程化不能将超时解释为未计费。
+- 当前 [组合根](../core/reference/app/main.cpp) 装配 AdapterIngress、PluginHub、ActionRouter、HostDispatcher、TaskScheduler、ControlService 和模型 Provider，不能直接按类生成同等数量的服务。
+- [Core 文档](02-core.md) 和 [入口实现](../core/reference/src/application/adapter_ingress.cpp) 的事件、顺序水位和逐插件投递具有原子提交关系。建议保留在同一运行时事务边界内，避免再拆独立事件接入服务与投递账本服务。
+- 当前任务触发由 [TaskScheduler](../core/reference/src/application/task_scheduler.cpp) 与 inbox 同事务提交。拆分调度后该单事务保证不能原样延续，须重新设计持久交接、去重和完成定义；COMPLETED 当前表示事件已入队，不能悄悄变成仅发送一次请求。
+- [模型调用](../core/reference/src/application/host_dispatcher.cpp) 已区分调用前后审计与外部调用，不承诺外部原子性或自动重试。远程化不能将超时解释为未计费。
 - [现有服务契约](../proto/kiarabot/v1/services.proto) 只有 AdapterBridge/PluginBridge 双向流；下述管理、身份、宿主、调度及模型内部契约尚未定义，不能标为现成 RPC。
 - [基础设施文档](05-infrastructure.md) 中部分端口未接线，FileStorage 无生产消费方；不将其拆成无用例的远程存储服务。
 

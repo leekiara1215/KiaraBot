@@ -35,7 +35,7 @@ C++ Core                                ← 权限、幂等、审计、Action �
 | L0 平台/协议端 | NapCatQQ 登录个人号（[README](../README.md#目标架构)、[THIRD_PARTY](../THIRD_PARTY_NOTICES.md#L27-L38)） | 第三方客户端识别、账号画像（新号、机房 IP、异常活跃）、被举报 | 无；由外部组件决定 | **高**，Core 无法消除 |
 | L1 账号/网络 | 单账号，可部署在服务器 | 公网暴露 OneBot/WebUI、token 缺失、频繁切 IP/设备、多开 | 适配器要求 token；Core gRPC 只连 `127.0.0.1`；NapCat 不进入镜像 | 中高 |
 | L2 适配器 | NoneBot2 转发、本地 outbox、Action 执行日志 | 平台限频、错误重试导致重复发送、登录态失效 | 执行日志按 `action_id` 去重；未知结果不重发；重连退避 1–30 秒（[doc/04](04-nonebot-adapter.md#L7-L8)；适配器 README（`adapters/nonebot/`）的 outbox/去重说明） | 中 |
-| L3 Core/Action | 权限、能力、幂等、审计、1 万条容量 | 高频发送、群发、危险管理动作 | 只接受 `send_message` 文本；`MuteMember`/`KickMember`/`ApproveRequest` 当前被拒绝（[action_router.cpp](../core/src/application/action_router.cpp#L110-L119)） | 中，缺速率与内容策略 |
+| L3 Core/Action | 权限、能力、幂等、审计、1 万条容量 | 高频发送、群发、危险管理动作 | 只接受 `send_message` 文本；`MuteMember`/`KickMember`/`ApproveRequest` 当前被拒绝（[action_router.cpp](../core/reference/src/application/action_router.cpp#L110-L119)） | 中，缺速率与内容策略 |
 | L4 插件/业务 | `ai-reply` 只响应 `/ai` 命令；`event-observer` 只记录 | 全量自动回复、主动推送、批量 @ | `message.send`、`model.chat` 等权限需显式配置 | 中低，取决于新增插件 |
 | L5 运营/合规 | 第三方声明、不分发 NapCat | 商用或再分发、平台投诉 | 仅 [THIRD_PARTY](../THIRD_PARTY_NOTICES.md#L36-L38) 免责声明 | 高（商业场景） |
 
@@ -57,7 +57,7 @@ C++ Core                                ← 权限、幂等、审计、Action �
 
 - **渠道可替换**：目标架构明确适配器可替换为 C++ 适配器而不改 Core（[README](../README.md#目标架构)、[doc/04](04-nonebot-adapter.md#L124-L134)）。换官方渠道时主要新增适配器实现，不改业务规则。
 - **Core 不接触平台对象**：Core 禁止导入 NoneBot2/NapCat，插件不得调用 OneBot API（[doc/00](00-boundaries.md#L21)、[doc/00](00-boundaries.md#L72-L74)）；平台字段不会写进业务分支（[doc/02](02-core.md#L186-L197)）。
-- **当前 Action 面很窄**：Core 只接受 `send_message` 纯文本、`react_message` 表情回应（W6b）与 `delete_message` 撤回本 bot 自己发送的消息（W6c）；踢人、禁言、审批等危险动作虽在契约中定义（[actions.proto](../proto/kiarabot/v1/actions.proto#L18-L26)），当前实现会拒绝（[action_router.cpp](../core/src/application/action_router.cpp#L110-L119)；适配器 `adapters/nonebot/src/kiarabot_adapter_nonebot/actions.py` 的 `validate` 同样只放行这三个 payload）。
+- **当前 Action 面很窄**：Core 只接受 `send_message` 纯文本、`react_message` 表情回应（W6b）与 `delete_message` 撤回本 bot 自己发送的消息（W6c）；踢人、禁言、审批等危险动作虽在契约中定义（[actions.proto](../proto/kiarabot/v1/actions.proto#L18-L26)），当前实现会拒绝（[action_router.cpp](../core/reference/src/application/action_router.cpp#L110-L119)；适配器 `adapters/nonebot/src/kiarabot_adapter_nonebot/actions.py` 的 `validate` 同样只放行这三个 payload）。
 - **不重复副作用**：适配器执行日志按 `action_id` 落盘占用，同键重投返回原结果；平台调用超时或未知时不重发，由 Core 按 deadline 过期（[doc/04](04-nonebot-adapter.md#L7-L8)）。
 - **账号预先授权**：账号必须由 Core 管理员授权，capabilities 只描述能力、不授予权限（[doc/04](04-nonebot-adapter.md#L153)）。
 
@@ -65,7 +65,7 @@ C++ Core                                ← 权限、幂等、审计、Action �
 
 > 2026-10-31 状态更新（W6a–W6g）：出站配额、**持久化每日预算**、会话白名单（`KIARABOT_ACTION_ALLOWED_CONVERSATIONS`）与 Action 审计目标（账号/会话）均已落地，见 [doc/01-runtime-semantics.md](01-runtime-semantics.md#action-语义) 与 [doc/08-operations.md](08-operations.md#环境变量与配置注入)。Action 面已增加 `react_message`、`delete_message`（仅限本 bot 已发送消息）、`mute_member`/`kick_member`（权限 + 白名单 + 每日预算）与 `approve_request`（好友请求审批，事件前置 `FriendRequest` 已接线）；`ScheduleTask` 已 `deprecated`（改用 `host.tasks.v1`）。第 3 项适配器 retcode 分类已由 `platform_errors.py` 部分覆盖（限频/权限/未找到），登录态失效与"需要验证"类信号仍未分类；危险 Action 默认门禁已按 §5.3 在 Core 强制，但真实平台联调（T07b）与群邀请/加群请求仍未验证/未支持。
 
-1. **没有出站速率/配额，只有容量上限。** `ActionRouter` 对每个插件只检查 Action 表是否达到 1 万条（[action_router.cpp](../core/src/application/action_router.cpp#L240-L245)），没有按账号、会话、Action 类型的发送速率限制。而设计文档声称发送会经过"限流"（[doc/02](02-core.md#L156)、[doc/03](03-plugin-sdk.md#L175)），当前实现与描述不一致。
+1. **没有出站速率/配额，只有容量上限。** `ActionRouter` 对每个插件只检查 Action 表是否达到 1 万条（[action_router.cpp](../core/reference/src/application/action_router.cpp#L240-L245)），没有按账号、会话、Action 类型的发送速率限制。而设计文档声称发送会经过"限流"（[doc/02](02-core.md#L156)、[doc/03](03-plugin-sdk.md#L175)），当前实现与描述不一致。
 2. **危险 Action 没有默认门禁设计。** `MuteMember`/`KickMember`/`ApproveRequest` 已在契约中，但尚未实现，也没有"哪些插件、哪些群、每天多少次"的授权模型。一旦后续实现，现有权限模型（仅 `message.send`）不足以约束。
 3. **风控类平台错误被统一吞掉。** 适配器把 OneBot `ActionFailed` 一律映射为 `UPSTREAM_UNAVAILABLE`（适配器 `adapters/nonebot/src/kiarabot_adapter_nonebot/__main__.py` 的 `call_platform`），无法区分"被限频/需要验证/被踢下线/群被解散"，Core 因此无法自动降级。
 4. **没有账号与暴露面运维规范。** 部署文档只描述进程与备份（[doc/08](08-operations.md#L41-L78)），没有规定小号隔离、固定出口 IP、NapCat WebUI/OneBot 只监听本机、禁止公网暴露等；2025-09 事件的主因正是公网暴露且无 token。

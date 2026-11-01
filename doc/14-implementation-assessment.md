@@ -21,8 +21,8 @@
 ## 对照实现
 
 1. **协议：部分就绪。** `proto/kiarabot/v1/`、`api/` 存在契约；`services.proto` 声明 AdapterBridge 和 PluginBridge。生成和序列化测试存在，不代表这些服务已运行。控制 API 交接文档列有会话、幂等、分页及流恢复等待确认事项，需逐项对照现行契约重新核验。
-2. **Core：状态机原型，不是完整服务。** 在此历史快照中，[runtime.h](../core/include/kiarabot/core/application/runtime.h) 包含内存存储、事件去重、重试、死信、逐插件投递、Action 及插件状态；当时入口仅做一次性检查。现行入口位于 [main.cpp](../core/app/main.cpp)，当前状态以开发台账为准。
-3. **基础设施：局部实现。** [ports.hpp](../core/include/kiarabot/core/ports/ports.hpp) 定义端口，[file_storage.cpp](../infrastructure/src/file_storage.cpp) 实现文件存储和 fake；其 POSIX 接口还需跨平台替代或封装。SQLite 持久化 RuntimeStore、迁移、模型、调度与审计等尚待实现和接线。根 CMake 未加入 infrastructure，当前需独立构建，不能推断它已用于 Core。
+2. **Core：状态机原型，不是完整服务。** 在此历史快照中，[runtime.h](../core/reference/include/kiarabot/core/application/runtime.h) 包含内存存储、事件去重、重试、死信、逐插件投递、Action 及插件状态；当时入口仅做一次性检查。现行入口位于 [main.cpp](../core/reference/app/main.cpp)，当前状态以开发台账为准。
+3. **基础设施：局部实现。** [ports.hpp](../core/reference/include/kiarabot/core/ports/ports.hpp) 定义端口，[file_storage.cpp](../infrastructure/src/file_storage.cpp) 实现文件存储和 fake；其 POSIX 接口还需跨平台替代或封装。SQLite 持久化 RuntimeStore、迁移、模型、调度与审计等尚待实现和接线。根 CMake 未加入 infrastructure，当前需独立构建，不能推断它已用于 Core。
 4. **适配器与 SDK：主要是契约和设计。** 仓库无适配器或插件实现目录，`sdk/` 为交接文档；独立 Python 组件是否存在、状态如何未核查。不能把协议声明当作 SDK、宿主或 C++ 适配器已完成。
 5. **控制面：面板原型，服务缺失。** [panel/src/main.tsx](../panel/src/main.tsx) 默认使用 mock，支持配置 live；仓库没有 `control/api/` 实现。面板测试证明 mock 场景，不证明认证、权限或实时恢复的服务端行为。
 6. **部署：配置骨架。** [Dockerfile](../Dockerfile) 构建一次性 Core 程序；Compose 的镜像摘要是占位值，健康探针依赖尚未提供的服务。详见 [运维限制](08-operations.md#当前部署配置与依赖)。不能按生产系统部署。

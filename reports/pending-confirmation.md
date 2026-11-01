@@ -15,7 +15,7 @@
 | R03 | ScheduleTask 是否继续实现 | 已 deprecated，调度走 `host.tasks.v1`；旧 Action payload 仍以 `CAPABILITY_NOT_SUPPORTED` 拒绝 | [状态登记](../proto/tests/contract_status.json)、[交接结论](../doc/13-infrastructure-integration-follow-up.md) |
 | R04 | 群/私聊同号共享排序键 | 已加入 conversation_type，排序域为带长度编码的四元组；Core schema v6 重键和适配器 outbox DB 1→2 迁移已实现。无法从保留事件归因的旧水位被丢弃，升级后可能出现一次 DEGRADED | [运行语义](../doc/01-runtime-semantics.md)、[台账 W7](../doc/16-development-tasks.md) |
 | R05 | Core 缺清理、容量配置、ACK 超时和冲突重试 | W2 已接维护循环、容量配置、ACK 超时及有界冲突重试；命令幂等固定时间保留仍未实现 | [Core 文档](../doc/02-core.md)、[台账 W2](../doc/16-development-tasks.md) |
-| R06 | message.send 无速率限制 | 已实现按 Action 类型的滑动窗口及持久化每日预算能力；窗口重启重置，预算可选。内容策略未因此完成 | [配额定义](../core/include/kiarabot/core/application/action_quota.hpp)、[运行语义](../doc/01-runtime-semantics.md) |
+| R06 | message.send 无速率限制 | 已实现按 Action 类型的滑动窗口及持久化每日预算能力；窗口重启重置，预算可选。内容策略未因此完成 | [配额定义](../core/reference/include/kiarabot/core/application/action_quota.hpp)、[运行语义](../doc/01-runtime-semantics.md) |
 | R07 | 面板没有管理动作 | W4 已接入插件、会话及 Action 相关操作；Action 查询后端仍无生产者，UI 接线不等同能力可用 | [面板文档](../doc/07-control-panel.md)、[OpenAPI](../api/openapi.yaml) |
 | R08 | SDK 校验与示例缺少补强 | W3 已补清单词表校验、示例和测试；配置应用确认链路此前已闭环。剩余平台能力见第 4 节 | [SDK 边界](../sdk/PLUGIN_SDK_DEPENDENCIES.md)、[开发台账](../doc/16-development-tasks.md) |
 | R09 | CI 从未运行 full-build、本地仅用 clang-format 23 | 已有首轮远端 CI：10 个 job 中 8 成功，含 full-build/static analysis；format 和 secret scan 失败，记录称本地已修复。W6/W7 已有 clang-format 16.0.6 和 legacy reader 通过记录；当前 HEAD 全绿仍待 V01 | [CI 首轮记录](execution/2026-10-31-ci-run1.md)、[台账 W6/W7](../doc/16-development-tasks.md) |
