@@ -576,3 +576,8 @@ OpenSSL::Crypto头路径，实际链接由静态适配器既有依赖提供，�
 六方法Identity RPC边界独立外层库 `kiarabot_identity_rpc` 链接target_codec/service_process/
 proto/OpenSSL，不使纯应用反向依赖wire。`p04_identity_rpc` 经Python生成真实mTLS材料，
 integration/security、60秒、显式OpenSSL PATH；完整契约集成后才能构建/运行。
+
+POSIX离线 `kiarabot-identity-bootstrap` 独立组合service_process/target_codec/crypto/PG/
+Core Admin，输出bin目录；`p04_identity_bootstrap`复用真实私有PG runner，重复
+--test-argument转交CLI与固定PG工具路径，integration/security/fault、120秒。
+PATH只由已有固定OpenSSL/Python cache导出，缺前置失败，不把预期fixture当通过。

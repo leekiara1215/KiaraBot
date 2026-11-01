@@ -170,6 +170,7 @@ if(KIARABOT_GENERATE_PROTO)
   add_subdirectory(dependencies/architecture/smoke)
   add_subdirectory(infrastructure/postgres)
   add_subdirectory(infrastructure/identity_crypto)
+  include(cmake/identity-bootstrap.cmake)
 endif()
 
 include(cmake/architecture-graph.cmake)

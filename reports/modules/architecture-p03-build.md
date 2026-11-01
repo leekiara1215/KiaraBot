@@ -550,3 +550,22 @@ CTest/超时不变。无额外公共行为文档影响：源已同步契约/Core
 此前RPC首部格式失败在新组源中已解决。实际定向RPC构建重试仍失败于codec依赖的
 RESOURCE_CATALOG和五权限生成枚举，未到达RPC链接；不能记mTLS运行/tidy通过，
 等待完整契约集成基点，未用旧产物替代或关闭校验。报告路径/末尾换行及diff检查通过。
+
+## 后续接线：离线Identity Bootstrap CLI
+
+同步父冻结0996cab（本树d78c060），未改CLI/driver/runner源码。
+根proto构建在PG/crypto子目录后include独立identity-bootstrap.cmake，POSIX新目标
+kiarabot-identity-bootstrap PRIVATE组合process/codec/crypto/PG/Admin/JSON；Crypto头
+从官方imported target取得，链接由既有外层依赖提供，不使内层反向依赖。
+真实PG CTest使用原runner、initializer及executable Python driver，两个重复test-argument
+依序传bootstrap和PG_BIN；p04/integration/security/fault、120秒，PATH从cache导出。
+文档影响仅doc/11与本报告构建运行说明；源提交已有doc/08 CLI契约，其他模块/API/proto/
+CI和冻结doc18不改。
+
+固定配置成功，CLI自身TU经实际CMake object target编译通过，format16与两Python语法
+检查通过；全TU覆盖/inner/实际图/p04标签通过。完整CLI target实际构建失败于codec
+依赖缺Catalog/五权限生成枚举，未形成新完整CLI，故真实PG CLI fixture未运行，不能
+以父预期或旧产物记通过；需完整契约基点正式链接及运行。CLI TU tidy结果后附。
+未重复统一入口；文档检查为路径/末尾换行/CTest参数与diff检查。
+
+CLI TU精确compile DB tidy22 clang-analyzer-* warnings-as-errors通过。
