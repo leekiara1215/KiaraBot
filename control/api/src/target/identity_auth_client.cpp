@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <map>
 #include <mutex>
+#include <optional>
 #include <set>
 #include <stdexcept>
 #include <string_view>
@@ -19,6 +20,7 @@
 #include <openssl/rand.h>
 #include <openssl/x509.h>
 
+#include "kiarabot/core/domain/target/time.hpp"
 #include "kiarabot/v1/identity.grpc.pb.h"
 
 namespace kiarabot::control::target {
@@ -31,14 +33,46 @@ struct InvalidInput {};
 struct InvalidUpstream {};
 struct RpcError {
   wire::ErrorCode code;
+  std::optional<wire::FailureContext> context = std::nullopt;
+  bool retryable = false;
 };
 
 bool safe_text(std::string_view text, std::size_t minimum, std::size_t maximum) {
   return text.size() >= minimum && text.size() <= maximum &&
          std::all_of(text.begin(), text.end(), [](unsigned char c) { return c >= 32 && c < 127; });
 }
+std::string lower_ascii(std::string value) {
+  std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) {
+    return static_cast<char>(c >= 'A' && c <= 'Z' ? c + 32 : c);
+  });
+  return value;
+}
+bool json_content_type(std::string value) {
+  value = lower_ascii(std::move(value));
+  const auto trim = [](std::string text) {
+    const auto begin = text.find_first_not_of(" \t");
+    return begin == std::string::npos
+               ? std::string{}
+               : text.substr(begin, text.find_last_not_of(" \t") - begin + 1);
+  };
+  const auto separator = value.find(';');
+  if (trim(value.substr(0, separator)) != "application/json") {
+    return false;
+  }
+  if (separator == std::string::npos) {
+    return true;
+  }
+  const auto parameter = trim(value.substr(separator + 1));
+  const auto equal = parameter.find('=');
+  if (equal == std::string::npos || trim(parameter.substr(0, equal)) != "charset") {
+    return false;
+  }
+  const auto encoding = trim(parameter.substr(equal + 1));
+  return encoding == "utf-8" || encoding == "\"utf-8\"";
+}
 bool uuid(std::string_view value) {
-  if (value.size() != 36) {
+  if (value.size() != 36 || value[14] != '4' ||
+      (value[19] != '8' && value[19] != '9' && value[19] != 'a' && value[19] != 'b')) {
     return false;
   }
   for (std::size_t i = 0; i < value.size(); ++i) {
@@ -46,8 +80,7 @@ bool uuid(std::string_view value) {
       if (value[i] != '-') {
         return false;
       }
-    } else if (!((value[i] >= '0' && value[i] <= '9') || (value[i] >= 'a' && value[i] <= 'f') ||
-                 (value[i] >= 'A' && value[i] <= 'F'))) {
+    } else if (!((value[i] >= '0' && value[i] <= '9') || (value[i] >= 'a' && value[i] <= 'f'))) {
       return false;
     }
   }
@@ -95,25 +128,108 @@ unsigned int http_status(wire::ErrorCode code) {
     return 500;
   }
 }
-AuthHttpResponse failure(wire::ErrorCode code, const std::string& id) {
+grpc::StatusCode grpc_status(wire::ErrorCode code) {
+  switch (code) {
+  case wire::INVALID_ARGUMENT:
+    return grpc::StatusCode::INVALID_ARGUMENT;
+  case wire::UNAUTHENTICATED:
+    return grpc::StatusCode::UNAUTHENTICATED;
+  case wire::PERMISSION_DENIED:
+    return grpc::StatusCode::PERMISSION_DENIED;
+  case wire::NOT_FOUND:
+    return grpc::StatusCode::NOT_FOUND;
+  case wire::CONFLICT:
+    return grpc::StatusCode::ABORTED;
+  case wire::CAPABILITY_NOT_SUPPORTED:
+    return grpc::StatusCode::UNIMPLEMENTED;
+  case wire::RATE_LIMITED:
+    return grpc::StatusCode::RESOURCE_EXHAUSTED;
+  case wire::TIMEOUT:
+    return grpc::StatusCode::DEADLINE_EXCEEDED;
+  case wire::UPSTREAM_UNAVAILABLE:
+  case wire::PLUGIN_UNAVAILABLE:
+    return grpc::StatusCode::UNAVAILABLE;
+  case wire::INTERNAL:
+    return grpc::StatusCode::INTERNAL;
+  default:
+    return grpc::StatusCode::UNKNOWN;
+  }
+}
+Json failure_context_json(const wire::FailureContext& context) {
+  if (!wire::AcceptanceState_IsValid(context.acceptance()) ||
+      context.acceptance() == wire::ACCEPTANCE_UNSPECIFIED ||
+      !wire::RecoveryAction_IsValid(context.recovery()) ||
+      context.recovery() == wire::RECOVERY_UNSPECIFIED ||
+      (context.has_current_version() && context.current_version() == 0)) {
+    throw InvalidUpstream{};
+  }
+  Json result{{"acceptance", wire::AcceptanceState_Name(context.acceptance())},
+              {"recovery", wire::RecoveryAction_Name(context.recovery())}};
+  if (context.has_operation()) {
+    const auto& operation = context.operation();
+    const std::set<std::string> services{"identity",  "runtime", "plugin-host",
+                                         "scheduler", "model",   "control"};
+    if (!services.contains(operation.owner_service()) || !uuid(operation.operation_id()) ||
+        !operation.has_resource() || !uuid(operation.resource().id()) ||
+        !wire::ResourceKind_IsValid(operation.resource().kind()) ||
+        operation.resource().kind() == wire::RESOURCE_KIND_UNSPECIFIED) {
+      throw InvalidUpstream{};
+    }
+    result["operation"] = {{"owner_service", operation.owner_service()},
+                           {"operation_id", operation.operation_id()},
+                           {"resource",
+                            {{"kind", wire::ResourceKind_Name(operation.resource().kind())},
+                             {"id", operation.resource().id()}}}};
+  }
+  if (context.retry_after_ms() > 0) {
+    result["retry_after_ms"] = context.retry_after_ms();
+  }
+  if (context.has_current_version()) {
+    result["current_version"] = std::to_string(context.current_version());
+  }
+  return result;
+}
+AuthHttpResponse failure(wire::ErrorCode code, const std::string& id,
+                         const std::optional<wire::FailureContext>& context = std::nullopt,
+                         bool retryable = false) {
   if (!wire::ErrorCode_IsValid(code) || code == wire::ERROR_CODE_UNSPECIFIED) {
     code = wire::INTERNAL;
   }
-  AuthHttpResponse response{http_status(code),
-                            Json{{"code", wire::ErrorCode_Name(code)},
-                                 {"message", wire::ErrorCode_Name(code)},
-                                 {"request_id", id}}
-                                .dump(),
-                            {}};
+  Json body{{"code", wire::ErrorCode_Name(code)},
+            {"message", wire::ErrorCode_Name(code)},
+            {"request_id", id},
+            {"trace_id", id},
+            {"retryable", retryable}};
+  if (context) {
+    body["failure_context"] = failure_context_json(*context);
+  }
+  AuthHttpResponse response{http_status(code), body.dump(), {}};
   if (code == wire::RATE_LIMITED) {
-    response.headers.emplace_back("Retry-After", "1");
+    const auto delay =
+        context ? (static_cast<std::uint64_t>(context->retry_after_ms()) + 999) / 1000 : 0;
+    response.headers.emplace_back("Retry-After", std::to_string(std::max<std::uint64_t>(1, delay)));
   }
   return response;
 }
-void checked(const grpc::Status& status) {
+void checked(const grpc::Status& status, const wire::RequestContext& context) {
   if (status.ok()) {
     return;
   }
+  if (!status.error_details().empty()) {
+    wire::RpcFailure detail;
+    if (!detail.ParseFromString(status.error_details()) || !detail.has_error() ||
+        !detail.has_context() || !wire::ErrorCode_IsValid(detail.error().code()) ||
+        detail.error().code() == wire::ERROR_CODE_UNSPECIFIED ||
+        grpc_status(detail.error().code()) != status.error_code() ||
+        detail.error().request_id() != context.request_id() ||
+        detail.error().trace_id() != context.trace_id()) {
+      throw RpcError{wire::INTERNAL};
+    }
+    (void)failure_context_json(detail.context());
+    // Stable facts survive transport categories. Free-text messages/details never cross to HTTP.
+    throw RpcError{detail.error().code(), detail.context(), detail.error().retryable()};
+  }
+  // No received business facts: preserve ambiguity, never invent NotAccepted or rollback.
   if (status.error_code() == grpc::StatusCode::UNAVAILABLE ||
       status.error_code() == grpc::StatusCode::CANCELLED) {
     throw RpcError{wire::UPSTREAM_UNAVAILABLE};
@@ -121,21 +237,12 @@ void checked(const grpc::Status& status) {
   if (status.error_code() == grpc::StatusCode::DEADLINE_EXCEEDED) {
     throw RpcError{wire::TIMEOUT};
   }
-  wire::RpcFailure detail;
-  if (!detail.ParseFromString(status.error_details()) || !detail.has_error() ||
-      !detail.has_context() || !wire::AcceptanceState_IsValid(detail.context().acceptance()) ||
-      detail.context().acceptance() == wire::ACCEPTANCE_UNSPECIFIED ||
-      !wire::RecoveryAction_IsValid(detail.context().recovery()) ||
-      detail.context().recovery() == wire::RECOVERY_UNSPECIFIED ||
-      !wire::ErrorCode_IsValid(detail.error().code()) ||
-      detail.error().code() == wire::ERROR_CODE_UNSPECIFIED) {
-    throw RpcError{wire::INTERNAL};
-  }
-  // No upstream free text or details can enter browser output or logs.
-  throw RpcError{detail.error().code()};
+  throw RpcError{wire::INTERNAL};
 }
 std::string time_text(const Timestamp& time) {
-  if (!TimeUtil::IsTimestampValid(time)) {
+  if (!TimeUtil::IsTimestampValid(time) ||
+      std::holds_alternative<core::target::Failure>(
+          core::target::time_point_from_parts({time.seconds(), time.nanos()}))) {
     throw InvalidUpstream{};
   }
   return TimeUtil::ToString(time);
@@ -147,13 +254,18 @@ int compare_time(const Timestamp& a, const Timestamp& b) {
   return (a.nanos() > b.nanos()) - (a.nanos() < b.nanos());
 }
 Json tokens_json(const wire::TokenPair& tokens, const Timestamp& checked_at) {
-  if (tokens.access_token().empty() || tokens.refresh_token().empty() ||
+  if (!uuid(tokens.session_id()) || tokens.rotation() == 0 ||
+      !safe_text(tokens.access_token(), 1, 4096) || !safe_text(tokens.refresh_token(), 1, 4096) ||
       !tokens.has_access_expires_at() || !tokens.has_refresh_expires_at()) {
     throw InvalidUpstream{};
   }
   const auto checked_text = time_text(checked_at);
   const auto access_text = time_text(tokens.access_expires_at());
   const auto refresh_text = time_text(tokens.refresh_expires_at());
+  if (compare_time(tokens.access_expires_at(), checked_at) <= 0 ||
+      compare_time(tokens.refresh_expires_at(), tokens.access_expires_at()) < 0) {
+    throw InvalidUpstream{};
+  }
   auto ttl = tokens.access_expires_at().seconds() - checked_at.seconds();
   if (tokens.access_expires_at().nanos() < checked_at.nanos()) {
     --ttl;
@@ -169,8 +281,15 @@ Json tokens_json(const wire::TokenPair& tokens, const Timestamp& checked_at) {
           {"refresh_expires_at", refresh_text}};
 }
 Json session_json(const wire::SessionRecord& session, const Timestamp& checked_at) {
-  if (!uuid(session.session_id()) || session.principal_id().empty() || !session.has_created_at() ||
-      !session.has_expires_at()) {
+  if (!uuid(session.session_id()) || !uuid(session.principal_id()) || session.rotation() == 0 ||
+      !session.has_created_at() || !session.has_expires_at()) {
+    throw InvalidUpstream{};
+  }
+  (void)time_text(checked_at);
+  (void)time_text(session.created_at());
+  (void)time_text(session.expires_at());
+  if (compare_time(session.created_at(), checked_at) > 0 ||
+      compare_time(session.expires_at(), session.created_at()) <= 0) {
     throw InvalidUpstream{};
   }
   return {{"session_id", session.session_id()},
@@ -186,9 +305,11 @@ Json scope_json(const wire::ResourceScope& scope) {
     throw InvalidUpstream{};
   }
   Json resources = Json::array();
+  std::set<std::pair<int, std::string>> seen;
   for (const auto& resource : scope.resources()) {
-    if (resource.id().empty() || resource.kind() == wire::RESOURCE_KIND_UNSPECIFIED ||
-        !wire::ResourceKind_IsValid(resource.kind())) {
+    if (!uuid(resource.id()) || resource.kind() == wire::RESOURCE_KIND_UNSPECIFIED ||
+        !wire::ResourceKind_IsValid(resource.kind()) ||
+        !seen.emplace(resource.kind(), resource.id()).second) {
       throw InvalidUpstream{};
     }
     resources.push_back(
@@ -203,8 +324,27 @@ Json principal_json(const wire::IdentityValidateSessionResponse& response) {
       response.session().principal_id() != response.principal().principal_id()) {
     throw InvalidUpstream{};
   }
+  const auto& principal = response.principal();
+  (void)session_json(response.session(), response.checked_at());
+  if (principal.state() != wire::LIFECYCLE_ACTIVE || principal.version() == 0 ||
+      principal.principal_kind().empty() || !principal.has_binding() ||
+      !uuid(principal.binding().id()) ||
+      principal.binding().kind() == wire::RESOURCE_KIND_UNSPECIFIED ||
+      !wire::ResourceKind_IsValid(principal.binding().kind()) || response.session().revoked() ||
+      compare_time(response.session().expires_at(), response.checked_at()) <= 0) {
+    throw InvalidUpstream{};
+  }
+  if (principal.has_scope()) {
+    (void)scope_json(principal.scope());
+  }
+  std::set<int> seen_roles;
+  std::set<int> seen_permissions;
+  std::set<std::string> seen_assignments;
   Json roles = Json::array();
   for (const auto role : response.principal().roles()) {
+    if (!seen_roles.insert(role).second) {
+      throw InvalidUpstream{};
+    }
     switch (role) {
     case wire::ROLE_ADMIN:
       roles.push_back("admin");
@@ -221,14 +361,16 @@ Json principal_json(const wire::IdentityValidateSessionResponse& response) {
   }
   Json permissions = Json::array();
   for (const auto permission : response.principal().display_permissions()) {
-    if (!wire::Permission_IsValid(permission) || permission == wire::PERMISSION_UNSPECIFIED) {
+    if (!wire::Permission_IsValid(permission) || permission == wire::PERMISSION_UNSPECIFIED ||
+        !seen_permissions.insert(permission).second) {
       throw InvalidUpstream{};
     }
     permissions.push_back(wire::Permission_Name(permission));
   }
   Json assignments = Json::array();
   for (const auto& assignment : response.assignments()) {
-    if (assignment.assignment_id().empty() ||
+    if (!uuid(assignment.assignment_id()) || !uuid(assignment.principal_id()) ||
+        !seen_assignments.insert(assignment.assignment_id()).second ||
         assignment.principal_id() != response.principal().principal_id() ||
         assignment.version() == 0 || !assignment.has_scope()) {
       throw InvalidUpstream{};
@@ -246,9 +388,11 @@ Json principal_json(const wire::IdentityValidateSessionResponse& response) {
       if (assignment.permissions().empty()) {
         throw InvalidUpstream{};
       }
+      std::set<int> seen_assignment_permissions;
       entry["permissions"] = Json::array();
       for (const auto permission : assignment.permissions()) {
-        if (!wire::Permission_IsValid(permission) || permission == wire::PERMISSION_UNSPECIFIED) {
+        if (!wire::Permission_IsValid(permission) || permission == wire::PERMISSION_UNSPECIFIED ||
+            !seen_assignment_permissions.insert(permission).second) {
           throw InvalidUpstream{};
         }
         entry["permissions"].push_back(wire::Permission_Name(permission));
@@ -427,7 +571,7 @@ public:
       }
       active_.insert(&rpc);
     }
-    checked((stub_.get()->*method)(&rpc, request, &response));
+    checked((stub_.get()->*method)(&rpc, request, &response), context);
   }
   void cancel() noexcept {
     const std::lock_guard lock(mutex_);
@@ -458,6 +602,7 @@ public:
       }
       wire::RequestContext context;
       context.set_request_id(id);
+      context.set_trace_id(id);
       const auto upstream_deadline =
           std::min(request.deadline, std::chrono::steady_clock::now() + std::chrono::seconds{2});
       const auto remaining = upstream_deadline - std::chrono::steady_clock::now();
@@ -500,7 +645,7 @@ public:
       }
       Json output;
       if (login || refresh) {
-        if (headers["content-type"] != "application/json") {
+        if (!json_content_type(headers["content-type"])) {
           throw InvalidInput{};
         }
         if (login) {
@@ -550,7 +695,9 @@ public:
           throw InvalidInput{};
         }
         const auto authorization = headers.find("authorization");
-        if (authorization == headers.end() || !authorization->second.starts_with("Bearer ") ||
+        if (authorization == headers.end() ||
+            (authorization->second.size() < 7 ||
+             lower_ascii(authorization->second.substr(0, 7)) != "bearer ") ||
             !safe_text(std::string_view(authorization->second).substr(7), 1, 4096)) {
           throw RpcError{wire::UNAUTHENTICATED};
         }
@@ -603,12 +750,37 @@ public:
             call(&wire::IdentityService::Stub::ListSessions, input, response, context,
                  upstream_deadline);
             if (!response.has_checked_at() || !response.has_page() ||
-                response.sessions_size() > 100) {
+                !uuid(response.page().snapshot_id()) || !response.page().has_expires_at() ||
+                response.page().page_size() != input.page().page_size() ||
+                response.page().page_size() == 0 || response.page().page_size() > 100 ||
+                static_cast<unsigned int>(response.sessions_size()) > response.page().page_size()) {
+              throw InvalidUpstream{};
+            }
+            (void)time_text(response.checked_at());
+            (void)time_text(response.page().expires_at());
+            const auto page_ttl =
+                response.page().expires_at().seconds() - response.checked_at().seconds();
+            if (compare_time(response.page().expires_at(), response.checked_at()) <= 0 ||
+                page_ttl > 600 ||
+                (page_ttl == 600 &&
+                 response.page().expires_at().nanos() > response.checked_at().nanos()) ||
+                (!response.page().next_page_token().empty() &&
+                 !safe_text(response.page().next_page_token(), 1, 4096))) {
               throw InvalidUpstream{};
             }
             Json items = Json::array();
+            std::set<std::string> seen_sessions;
+            const wire::SessionRecord* previous = nullptr;
             for (const auto& session : response.sessions()) {
+              if (!seen_sessions.insert(session.session_id()).second ||
+                  session.principal_id() != input.principal_id() ||
+                  (previous && (compare_time(previous->created_at(), session.created_at()) > 0 ||
+                                (compare_time(previous->created_at(), session.created_at()) == 0 &&
+                                 previous->session_id() >= session.session_id())))) {
+                throw InvalidUpstream{};
+              }
               items.push_back(session_json(session, response.checked_at()));
+              previous = &session;
             }
             Json page{{"page_size", response.page().page_size()}};
             if (!response.page().next_page_token().empty()) {
@@ -638,7 +810,7 @@ public:
     } catch (const Json::exception&) {
       return failure(wire::INTERNAL, id);
     } catch (const RpcError& error) {
-      return failure(error.code, id);
+      return failure(error.code, id, error.context, error.retryable);
     } catch (...) {
       return failure(wire::INTERNAL, id);
     }

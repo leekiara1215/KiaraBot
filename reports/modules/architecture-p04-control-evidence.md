@@ -53,3 +53,36 @@ clang-tidy 22 with clang-analyzer-* and warnings-as-errors on fixed full-locked
 compile DB passed client/server/config/runner/composition driver (Apple SDK args).
 Format16 applied; git diff --check passed. Full repo quality and link registration
 are coordinated by build owner, not represented as checks performed here.
+
+## Review correction: authoritative projection and failure facts
+
+Set trace_id=request_id before every RPC. Successful ValidateSession projections now
+require Active principal/version/binding, nonrevoked current session, canonical UUIDv4
+references, positive/exact versions and valid ordered persisted/checked expiry times.
+All times use the common pure time_point_from_parts range guard. Token pair order and
+page snapshot identity/expiry/page-size/uniqueness/order/subject consistency are checked.
+No local grant decision was added. Invalid successful wire data fails INTERNAL/500.
+
+RpcFailure details are decoded before UNAVAILABLE/DEADLINE categories. Code/status and
+correlation must match; full stable failure_context is projected without secret text.
+Transport-only failure carries no invented acceptance. Typed PLUGIN_UNAVAILABLE and
+TIMEOUT fixtures preserve ACCEPTANCE_UNKNOWN, operation/resource, maximum uint64 current
+version, retry delay and retryable. Bad context/status, missing metadata, stale/disabled/
+revoked current identity and malformed UUID/time/version/page/token responses are tested.
+Media type and bearer scheme case-insensitivity/UTF-8 charset are also verified.
+
+Actual revalidation: -Werror Control+fixture build and auth_https_test.py passed after
+these corrections. ctest --test-dir build/full-locked -R
+'^(p02_service_config|p03_service_composition|p02_control_application)$'
+--output-on-failure passed 3/3 after applying reviewed build dependency 3a8d3a2.
+Documentation local-link validation (doc/06, doc/08, this report), diff whitespace and
+protected doc/18 unchanged checks passed. Common target transport codec integration and
+real Identity application/PG/bootstrap remain pending external companion changes.
+
+Final focused clang-tidy22 re-run on changed authentication client and Identity
+fixture passed with -warnings-as-errors after the projection/error corrections;
+format16 and module-boundary checks passed. Baseline difference: this implements the
+approved independent Control -> Identity target (doc/19–23), while frozen doc/18
+remains unchanged. control/api/README.md still describes historical same-process
+SQLite/reference deployment; it was not edited under this task's restricted document
+scope and is reported to the parent for coordinated documentation cleanup.

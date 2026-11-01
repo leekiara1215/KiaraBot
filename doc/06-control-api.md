@@ -359,3 +359,21 @@ The generated Identity fixture verifies transport mapping only. Real Identity,
 registered Control peer and PostgreSQL bootstrap integration remain a separate gate;
 Control readiness intentionally remains false while the wider business implementation
 is incomplete. The historical same-process implementation above is reference-only.
+
+P04 response validation additionally rejects malformed successful Identity responses:
+current principal must be ACTIVE with a positive version and valid binding, current
+session must not be revoked/expired at Identity checked_at, and timestamps must fit
+the target int64-nanosecond time range. Resource/principal/session/assignment IDs are
+canonical lowercase UUIDv4; versions stay positive and exact. Token deadlines must
+follow checked_at and the refresh deadline must cover the access deadline. Session
+pages must provide a snapshot UUID and a still-valid expiry within ten minutes,
+match the requested page size, and contain unique ordered records for the requested
+principal. Missing metadata never becomes an empty successful page.
+
+RPC request_id and trace_id use the same fresh UUID correlation. Received RpcFailure
+details take precedence over broad transport categories: the stable code must match
+the gRPC status and this request's correlation; acceptance, recovery, operation,
+retry delay and current version are retained in HTTP failure_context. Invalid details
+fail INTERNAL, including unknown enums and invalid operation IDs. Only absent details
+allow the generic transport 503/504 mapping, without inventing acceptance/rollback.
+Bearer scheme/media type matching is case-insensitive; JSON permits UTF-8 charset.

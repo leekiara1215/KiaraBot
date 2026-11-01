@@ -103,6 +103,8 @@ def main(control, fixture):
             assert tokens['access_token'] == ACCESS
             # Same caller key is preserved over a repeated/lost-response attempt.
             assert login()[1] == tokens
+            assert request('POST', '/api/v1/auth/login', {'username': 'alice', 'password': 'never-print-password'},
+                           {'Content-Type': 'Application/JSON; Charset="UTF-8"', 'Idempotency-Key': KEY})[0] == 200
             refreshed = request('POST', '/api/v1/auth/refresh', {'refresh_token': tokens['refresh_token']},
                                 {'Content-Type': 'application/json', 'Idempotency-Key': KEY})
             assert refreshed[0] == 200, refreshed
@@ -111,9 +113,14 @@ def main(control, fixture):
             auth = {'Authorization': 'Bearer ' + ACCESS}
             current = request('GET', '/api/v1/auth/me', headers=auth)
             assert current[0] == 200, current
+            assert request('GET', '/api/v1/auth/me', headers={'Authorization': 'bEaReR ' + ACCESS})[0] == 200
             assert current[1]['authorization_version'] == '18446744073709551615'
             assert current[1]['assignments'][0]['version'] == '18446744073709551615'
             assert current[1]['roles'] == ['viewer']
+            for mode in ['disabled', 'revoked', 'expired', 'bad-time', 'future-created', 'bad-id',
+                         'bad-scope', 'bad-assignment', 'zero-version']:
+                invalid = request('GET', '/api/v1/auth/me', headers={'Authorization': 'Bearer fixture-' + mode})
+                assert invalid[0] == 500 and invalid[1]['code'] == 'INTERNAL', (mode, invalid)
             page = request('GET', '/api/v1/auth/sessions?page_size=3', headers=auth)
             assert page[0] == 200, page
             assert [item['state'] for item in page[1]['items']] == ['ACTIVE', 'EXPIRED', 'REVOKED']
@@ -121,17 +128,33 @@ def main(control, fixture):
             page2 = request('GET', '/api/v1/auth/sessions?page_size=3&page_token=opaque-next-token', headers=auth)
             assert page2[0] == 200 and 'next_page_token' not in page2[1]['page'], page2
             assert request('GET', '/api/v1/auth/sessions?page_token=bad', headers=auth)[0] == 400
+            for mode in ['missing_page_time', 'bad_snapshot', 'bad_page_size', 'duplicate_session',
+                         'foreign_session', 'bad_session_id', 'stale_page', 'missing_checked']:
+                invalid = request('GET', '/api/v1/auth/sessions?page_size=3&page_token=' + mode, headers=auth)
+                assert invalid[0] == 500 and invalid[1]['code'] == 'INTERNAL', (mode, invalid)
             for username, expected, code in [('denied', 403, 'PERMISSION_DENIED'),
                                              ('limited', 429, 'RATE_LIMITED'),
                                              ('unavailable', 503, 'UPSTREAM_UNAVAILABLE'),
                                              ('no_detail', 500, 'INTERNAL'),
                                              ('no_context', 500, 'INTERNAL'),
                                              ('unknown_context', 500, 'INTERNAL'),
-                                             ('missing_time', 500, 'INTERNAL')]:
+                                             ('bad_status', 500, 'INTERNAL'),
+                                             ('missing_time', 500, 'INTERNAL'),
+                                             *[(mode, 500, 'INTERNAL') for mode in ['expired_tokens', 'reverse_expiry', 'bad_token_time', 'bad_token_id', 'zero_rotation']]]:
                 result = login(username)
                 assert result[0] == expected and result[1]['code'] == code, result
                 if expected == 429:
                     assert result[2]['Retry-After'] == '1'
+            for mode, expected, code in [('plugin_failure', 503, 'PLUGIN_UNAVAILABLE'), ('typed_timeout', 504, 'TIMEOUT')]:
+                typed = login(mode)
+                assert typed[0] == expected and typed[1]['code'] == code, typed
+                facts = typed[1]['failure_context']
+                assert facts['acceptance'] == 'ACCEPTANCE_UNKNOWN' and facts['recovery'] == 'QUERY_SAME_INTENT', typed
+                assert facts['operation']['resource']['id'] == SESSION and facts['operation']['owner_service'] == 'identity'
+                assert facts['current_version'] == '18446744073709551615' and facts['retry_after_ms'] == 2500
+                assert typed[1]['retryable'] is True and typed[1]['trace_id'] == typed[1]['request_id']
+            transport = login('unavailable')
+            assert 'failure_context' not in transport[1], transport
             started = time.monotonic()
             assert login('slow')[0] == 504
             assert time.monotonic() - started < 3.5
