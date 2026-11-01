@@ -162,3 +162,97 @@ openssl portfile 的同一上游源码/hash 构建 CLI。证书引导及签发�
 Python/uv 安装器本身尚无本仓库归档 hash，只有精确版本及现有项目包锁；P14 镜像锁需
 补全所选平台 Python/uv 二进制及基础 OS digest，不能把目前清单称为完整镜像复现。
 本轮不更改 CI 或根 CMake；P02 由主对话协调 toolchain/manifest 接线。
+
+## P02 构建与测试接线规格（待 P01 集成）
+
+本节是实施规格，六入口尚未建立。主对话先集成 P01 契约/内部端口，再协调根
+`CMakeLists.txt`、`core/CMakeLists.txt`、`core/cmake/bridge.cmake`、
+`control/api/CMakeLists.txt`、`infrastructure/CMakeLists.txt` 和入口源码。不得提前
+猜 RPC 名、在入口中实现业务或用旧 `kiarabot-core` 改名冒充拆分完成。
+
+| 可执行目标 | 拟定入口 | 独立内层库 | 外层组合内容 |
+| --- | --- | --- | --- |
+| kiarabot-control | control/api/app/main.cpp | kiarabot_control_application | HTTP/WS、所有者 RPC 客户端，不链接 PG Repository |
+| kiarabot-identity | core/app/identity_main.cpp | kiarabot_identity_application | 身份传输、PG 身份库、JWT/mTLS |
+| kiarabot-runtime | core/app/runtime_main.cpp | kiarabot_runtime_application | 注册/业务传输、Runtime PG、远程服务端口 |
+| kiarabot-plugin-host | core/app/plugin_host_main.cpp | kiarabot_plugin_host_application | 受控进程组、本地 SQLite、Runtime 客户端 |
+| kiarabot-scheduler | core/app/scheduler_main.cpp | kiarabot_scheduler_application | Scheduler PG、时区、Runtime 交接客户端 |
+| kiarabot-model | core/app/model_main.cpp | kiarabot_model_application | Model PG、HTTP Provider、秘密适配 |
+
+库名和入口路径是本轮构建规格；P01 接口的实际名称和 namespace 以契约提交为准。
+各内层库只包含所属 domain/application/ports，C++20、无生成头/JSON/SQL/HTTP 类型，
+不通过 PUBLIC/INTERFACE 链接向内层传播 grpc/protobuf、数据库/JSON/TLS 库。协议生成
+目标只链接传输适配器；外层基础设施通过 Core ports 依赖内层，组合根连接二者。
+目标级 link 图审计及独立头编译需在 P02 接线时补齐；现有静态 include 检查不证明
+任意间接依赖/预处理宏/运行时 SQL 都已被禁止。
+
+生产旧目标待替换清单：`kiarabot-core` 的一体组合、`kiarabot_bridge` 同进程业务聚合、
+控制进程直连旧内存对象/快照接线及中央 SQLite 生产链接。按能力迁移旧行为用例后移除
+失效 wiring，不在本轮工具链提交删除旧源码/测试；`kiarabot-migrate` 的旧快照入口不能
+自动成为新四库初始化入口。保留 FileStorage 独立实现也不代表批准文件服务。
+
+输入：明确服务配置、受信证书/密钥引用、所属 schema 版本和依赖地址；输出：独立
+进程、结构化诊断、live/ready/停止结果。配置或证书无效非零退出；未初始化/依赖
+不可验证 ready=false，未实现方法稳定拒绝。进程活着不意味着业务 ready。初始化为
+单独显式入口，生产 daemon 不自动建库；本轮不定义任何新 proto/HTTP 字段或状态码。
+六入口生命周期测试需覆盖配置拒绝、依赖未就绪、独立崩溃隔离、优雅关闭；缺任一个
+可执行/测试不能宣布 P02 完成。
+
+`full` 保留现有配置行为并导出编译数据库。新增 `full-locked` 仅选择独立 manifest 与
+固定 registry checkout，需先设置 `VCPKG_ROOT` 并验证；尚未执行该环境的配置构建。
+它不改变默认 full、不自动下载 registry、不代表六目标已接线：
+
+```bash
+python3 scripts/quality/check-dependency-lock.py --registry "$VCPKG_ROOT"
+cmake --preset full-locked
+cmake --build --preset full-locked
+ctest --preset full-locked
+```
+
+所有 test preset 均将无测试视为错误。`check-tidy.sh` 改用全仓 `rg --files` 手写 C++
+清单（含新目录和 .cxx，尊重 .gitignore，排除 `.pb.cc`），先逐一验证 compile command，
+再分析；header-filter 覆盖整个仓库路径。不能以只有 dev 的编译数据库冒充 full 覆盖。
+若某个平台有真正不可构建的源文件，需单独协调有依据的目标/平台策略，不能随意忽略。
+
+新增可独立执行的门禁：
+
+```bash
+python3 scripts/quality/tests/architecture_test.py
+python3 scripts/quality/check-architecture.py --database build/full/compile_commands.json
+# 以下是目标架构门禁：当前旧实现预期失败，P02 后必须接入统一检查/CI。
+python3 scripts/quality/check-architecture.py --inner
+# 先在 build/full/.cmake/api/v1/query/ 下创建 codemodel-v2 查询，再重新 configure。
+python3 scripts/quality/check-architecture.py --codemodel build/full/.cmake/api/v1/reply/codemodel-v2-REPLACE.json
+ctest --preset full --show-only=json-v1 > build/full/ctest-registration.json
+python3 scripts/quality/check-architecture.py --stage p03 --ctest-json build/full/ctest-registration.json
+ctest --preset full -L '^p03$' --no-tests=error
+```
+
+`--codemodel` 检查每个 configuration 的六个目标名，不证明它们已构建、是可运行进程
+或有正确依赖。`--inner` 是内层直接 include/SQL 语句词法门禁，报告现有架构差异；
+完整传递 link 图、头编译和运行验证仍是 P02 验收。不得只跑自测就报告业务门禁通过。
+P02–P14 每个测试必须同时标记对应 `pNN` 与 `unit`/`integration`/`fault`；阶段检查
+在 label 没有注册或缺测试分类时失败。已有旧 CTest 不在本轮擅自贴 pNN 标签。
+
+### P03 真实 PostgreSQL fixture 接口规格
+
+归属 `infrastructure/tests/` 及 CI/验收协调分支，本轮仅规格，未实现 fixture。
+fixture 的 setup/cleanup 与每个测试使用 CTest `FIXTURES_SETUP`/`FIXTURES_REQUIRED`/
+`FIXTURES_CLEANUP` 关联，另以 `RESOURCE_LOCK` 隔离共享测试实例；`TIMEOUT` 必填。
+
+- 输入：专用临时 PG 实例（精确 server 版本、loopback/显式测试 host 白名单）、测试
+  run UUID、受限建库管理员的秘密文件路径、CA 和客户端证书路径。不可从默认
+  PGDATABASE/PGHOST 或生产应用配置推断目标，不在命令行/日志输出 DSN 或密码。
+- 安全门禁：连接前核对显式测试 enable、host 白名单与 run 前缀；连接后验证测试
+  实例 marker、server_version_num=160004 和管理员权限范围。任一不符停止，不能自动
+  drop 一个已有同名库。远端测试环境须明确列白名单和 TLS verify-full。
+- 输出：四个 `kiarabot_test_<run>_{identity,runtime,scheduler,model}` 私有逻辑库，
+  各自运行/迁移账户、最小权限和仅属本 run 的 0600 fixture 清单。Control 不发 PG 凭据。
+  清单含版本、run ID、资源所有权证明、秘密文件引用；测试从文件读，不写入构建日志。
+- setup：创建空库、角色和权限隔离，调用各服务唯一初始化实现，再断言 schema 版本。
+  非空/半初始化失败必须可诊断；不给运行账户 DDL/superuser/cross-db 权限。
+- cleanup：只清理由本 fixture 创建且 marker/所有权/run ID 全部匹配的资源；收尾失败
+  非零并报告脱敏资源 ID，不以大范围 DROP/删除本机数据修复。setup 中途失败同样收尾。
+- 验证：p03 integration/fault 覆盖真实 PG 唯一约束、锁/并发、COMMIT 结果不明、断线、
+  schema 拒绝、运行账户 DDL 拒绝和跨库拒绝。缺 PG、驱动、证书或秘密文件直接失败，
+  不 skip、不回退内存或 SQLite。内存单元测试另标 unit。

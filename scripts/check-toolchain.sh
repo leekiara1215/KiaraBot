@@ -106,6 +106,9 @@ echo "C++20 compile and Protobuf/gRPC generation passed"
 while IFS= read -r -d '' script; do
   bash -n "$script"
 done < <(git ls-files -z '*.sh')
+python3 scripts/quality/check-dependency-lock.py
+python3 scripts/quality/tests/dependency_lock_test.py
+python3 scripts/quality/tests/architecture_test.py
 python3 scripts/quality/check-boundaries.py
 python3 scripts/quality/tests/boundaries_test.py
 cmake --preset dev

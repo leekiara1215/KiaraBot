@@ -14,35 +14,10 @@ if [[ ! -f "$database" ]]; then
 fi
 files="$(mktemp "${TMPDIR:-/tmp}/kiarabot-tidy.XXXXXXXX")"
 trap 'rm -f "$files"' EXIT
-find core proto/tests control/api infrastructure/src infrastructure/tests -type f \( -name '*.cpp' -o -name '*.cc' \) \
-  -print0 > "$files"
-python3 - "$files" "$database" <<'PY'
-"""Fail when a file scheduled for analysis has no compile-command entry."""
-import json
-import os
-import sys
-
-database_path = sys.argv[2]
-with open(database_path, encoding='utf-8') as stream:
-    database = json.load(stream)
-compiled = set()
-for entry in database:
-    path = entry['file']
-    if not os.path.isabs(path):
-        path = os.path.join(entry['directory'], path)
-    compiled.add(os.path.realpath(path))
-with open(sys.argv[1], 'rb') as stream:
-    scheduled = [os.path.realpath(os.fsdecode(raw))
-                 for raw in stream.read().split(b'\0') if raw]
-missing = [path for path in scheduled if path not in compiled]
-if missing:
-    print(f'{database_path} has no compile command for:', file=sys.stderr)
-    for path in missing:
-        print('  ' + os.path.relpath(path), file=sys.stderr)
-    print('Reconfigure the full preset so every file above is built.', file=sys.stderr)
-    sys.exit(1)
-PY
-set -- -p "$build_dir" --checks='clang-analyzer-*' --warnings-as-errors='*' --header-filter="^${root}/(core|proto|control|infrastructure)/"
+# Enumerate every non-ignored handwritten translation unit, including future modules.
+python3 scripts/quality/check-architecture.py --list-sources0 > "$files"
+python3 scripts/quality/check-architecture.py --database "$database"
+set -- -p "$build_dir" --checks='clang-analyzer-*' --warnings-as-errors='*' --header-filter="^${root}/"
 if [[ "$(uname -s)" == Darwin ]]; then
   compiler="$(sed -n 's/^CMAKE_CXX_COMPILER:FILEPATH=//p' "$build_dir/CMakeCache.txt")"
   if [[ -z "$compiler" ]]; then

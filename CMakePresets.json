@@ -30,16 +30,30 @@
         "KIARABOT_ENABLE_INFRASTRUCTURE": "ON",
         "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
       }
+    },
+    {
+      "name": "full-locked",
+      "inherits": "full",
+      "displayName": "Architecture dependencies (requires pinned VCPKG_ROOT)",
+      "binaryDir": "${sourceDir}/build/full-locked",
+      "toolchainFile": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
+      "cacheVariables": {
+        "VCPKG_MANIFEST_MODE": "ON",
+        "VCPKG_MANIFEST_DIR": "${sourceDir}/dependencies/architecture",
+        "VCPKG_INSTALLED_DIR": "${sourceDir}/build/architecture-installed"
+      }
     }
   ],
   "buildPresets": [
     { "name": "dev", "configurePreset": "dev" },
     { "name": "proto", "configurePreset": "proto" },
-    { "name": "full", "configurePreset": "full" }
+    { "name": "full", "configurePreset": "full" },
+    { "name": "full-locked", "configurePreset": "full-locked" }
   ],
   "testPresets": [
-    { "name": "dev", "configurePreset": "dev", "output": { "outputOnFailure": true } },
-    { "name": "proto", "configurePreset": "proto", "output": { "outputOnFailure": true } },
-    { "name": "full", "configurePreset": "full", "output": { "outputOnFailure": true } }
+    { "name": "dev", "configurePreset": "dev", "output": { "outputOnFailure": true }, "execution": { "noTestsAction": "error" } },
+    { "name": "proto", "configurePreset": "proto", "output": { "outputOnFailure": true }, "execution": { "noTestsAction": "error" } },
+    { "name": "full", "configurePreset": "full", "output": { "outputOnFailure": true }, "execution": { "noTestsAction": "error" } },
+    { "name": "full-locked", "configurePreset": "full-locked", "output": { "outputOnFailure": true }, "execution": { "noTestsAction": "error" } }
   ]
 }
