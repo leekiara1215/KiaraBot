@@ -5,6 +5,7 @@
 
 #include <grpcpp/server_context.h>
 
+#include "kiarabot/core/application/target/identity_admin_application.hpp"
 #include "kiarabot/core/application/target/identity_security_application.hpp"
 #include "kiarabot/v1/identity.grpc.pb.h"
 
@@ -16,13 +17,10 @@ namespace kiarabot::core::platform {
 using PeerAuthenticator =
     std::function<target::Outcome<target::VerifiedPeer>(grpc::ServerContext&)>;
 
-// Production peer callback: real TLS evidence -> CURRENT fingerprint index/principal/credential
-// -> release read UoW -> mature certificate verification -> fresh current-state recheck.
-// Borrows all ports until every service using the returned closure has stopped/Wait'ed.
-// The factory does not grant business permissions or construct a database/crypto implementation.
+// Transport-only wrapper over the single authoritative Core authentication use case.
+// Borrows application/clock until every service using the closure has stopped/Wait'ed.
 target::Outcome<PeerAuthenticator>
-make_identity_peer_authenticator(target::IdentitySecurityUnitOfWorkFactory& transactions,
-                                 target::PeerCertificatePort& certificates,
+make_identity_peer_authenticator(target::IdentityAdminApplication& application,
                                  target::SecurityClockPort& clock);
 
 // Borrows application for the service lifetime; owns the verifier closure. No readiness or

@@ -646,17 +646,6 @@ TimePoint 使用已确定的 signed int64 epoch nanoseconds；Timestamp 规范 n
 此工具不验证认证、当前授权、资源存在性或owner/gate，不实现owner RPC，也不改变任何能力的 target 状态。CMake/传输接线由主集成负责，独立测试和检查见 reports/modules/architecture-p04-target-codec.md；doc18只读。
 
 
-## P04 Identity RPC 边界（未接生产组合根）
-
-`runtime/platform/identity_rpc.hpp/.cpp` 的 make_identity_rpc 借用 IdentitySecurityApplication 并持有组合根注入 PeerAuthenticator；只适配 Login/RefreshSession/ValidateSession/GetPrincipal/RevokeSession/ListSessions。其余Identity方法明确返回完整RpcFailure/CAPABILITY_NOT_SUPPORTED（含流式方法），不挂接reference实现；本工具存在不代表目标业务ready或implemented。
-
-每次从真实ServerContext.auth_context提取受限叶证据，再调用必须核对当前登记/凭据/SAN的可信认证回调，并核对回调的主体、证书指纹、平台角色和凭据版本。六方法要求Control peer；不相信body actor/peer、不把CA有效当业务授权。纯应用仍须复核当前Identity状态、self Principal列表和exact Session撤销权限。认证回调为同步借用契约，生产者须有自身有界I/O并遵守实际取消/deadline；边界在其前后检查预算，不声称能抢占任意阻塞回调。
-
-请求context需小写UUIDv4 request_id/trace_id（doc21§4.1），畸形关联生成新CSPRNG错误ID；幂等键至多128字节封闭字符且写方法非空。取body期限、真实gRPC期限与5秒上限最早者；未给传输期限时默认2秒。该边界预算比通用owner descriptor上限更紧，不允许正文延长。密码/token/委托正文只借用SecretView到同步应用返回，不记录秘密/异常正文。回调/应用异常分别保留未调用或Unknown语义，CSPRNG或分配故障无法形成安全关联时仅返回脱敏传输INTERNAL，不伪造ID或业务结果。
-
-成功必须是应用已提交结果，局部完整投影后才返回；checked_at/created_at/expiry/version来自应用，不补本机时间或token iat。缺持久binding、时间、版本或不合法token结果返回Internal，不造占位。Assignment投影调用Core project_assignment，固定角色显示权限调用default_role_allows；不跨assignment拼scope，角色行必须同role无explicit，explicit行各资源权限集合必须相同，无法无损表达则Internal。角色与权限仅显示并集，真正授权仍依赖逐条exact绑定。List输入拒绝expires_at/next_page_token等输出字段，opaque page_token可单独续页，显式snapshot_id须合法且与cursor绑定，当前权限/快照恢复由应用裁定。
-
-Core Failure无损映射RpcFailure的acceptance/recovery/operation/retry_after，未持有的current_version不伪造。ReadCurrent→RESYNC_SNAPSHOT、Backoff→RETRY_SAME_ID、QuerySameIdentity→QUERY_SAME_INTENT、Diagnose→MANUAL_REVIEW；Unknown保留Unknown，不得携带换新身份/修正输入重做副作用建议。畸形应用失败或投影保守返回Internal/Unknown及原身份查询，决不假称NotAccepted。标准grpc-status-details-bin仅RpcFailure，无Error-only回退。
 ### P04 继承 grant 的元数据投影
 
 to_resource_grant_metadata只把完整且可表示的ExactAssignment转成继承ResourceGrant
@@ -813,8 +802,9 @@ Core Failure无损映射RpcFailure的acceptance/recovery/operation/retry_after�
 
 六方法RPC恢复补正：同键Login/Refresh恢复已提交的原TokenPair时，access已过期但refresh仍有效可原样返回（checked_at可能已超过access期限，Control剩余TTL clamp至0），不重新签发或延长任何期限。ListSessions接受仅opaque page_token的续页，不要求浏览器另传snapshot_id；输出字段仍禁止作为输入。
 
-### P04 当前登记 PeerAuthenticator（可注入，尚未装配监听）
+### P04 当前登记 PeerAuthenticator（Core持有权威编排）
 
-make_identity_peer_authenticator借用同一IdentitySecurityUnitOfWorkFactory、PeerCertificatePort和SecurityClockPort，返回可注入make_identity_rpc的认证回调。从实际AuthContext取指纹，经by_certificate CURRENT索引、current凭据、principals主体与DB UTC核验，调用Core require_current_credential；无登记、撤销、禁用、版本/绑定不一致一律拒绝，不从body取得注册身份。事务在任何时钟/证书端口调用前rollback并释放；再以受信、已知偏差至多2秒且与DB UTC相符的时刻调用成熟证书验证器，最后新事务重查登记，拒绝验证期间撤销或轮换。应用仍须在自身授权/提交事务复核。
+make_identity_peer_authenticator(IdentityAdminApplication&, SecurityClockPort&)只借用Core Admin应用和受信时钟。wrapper从真实AuthContext提取指纹/DER证据，取2秒本地与真实gRPC deadline较早者，调用Admin.authenticate_peer({leaf_fingerprint, deadline}, der_chain)。当前DB UTC、登记/凭据/主体、释放UoW后成熟crypto验证及验证后fresh recheck全部由Core负责；外层不直接读取repos、不复制业务规则。
 
 该回调仅认证当前平台peer，不授予业务权限；必须与纯应用使用同一Identity权威工厂。2秒本地预算和真实gRPC取消/deadline在各阶段检查，I/O自身有界由受审端口实现保证，不声称抢占任意阻塞端口。库中不构造PG连接、信任根、bootstrap或ready；组合根仍须注入37f7a62等已审完整typed工厂、成熟crypto及受信时钟并完成真实PG链验收。无wire/API字段变化。
+wrapper仅核对返回指纹、正verified_at、受信clock/已知偏差及与verified_at的2秒窗口，再检查取消/期限。不构造数据库/信任根/bootstrap或ready。借用应用与clock须活到服务停止/Wait，Core应用与安全应用由组合根绑定同一完整Identity工厂。wire/API不变。

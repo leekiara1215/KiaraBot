@@ -561,8 +561,8 @@ rollback采样，不能创建第二个持锁连接。返回工厂只表示存储
 
 make_identity_rpc借用纯IdentitySecurityApplication和组合根注入的受审PeerAuthenticator。必须同时有真实mTLS证据及当前登记/凭据/SAN核验，不能用CA握手成功或fixture替代。未接纯应用/PG/认证回调时保持not ready，不激活旧reference Identity。适配器不读本机密钥或改配置/主入口；测试只在临时目录生成证书/私钥，密码/token和异常正文不入日志。认证回调须有界并遵守取消，服务寿命覆盖application和回调捕获端口直至RPC Wait结束。实际生产PG/当前凭据/撤销故障闭环由后续组合根验收；本轮只证明RPC边界。
 
-### P04 当前登记 PeerAuthenticator（可注入，尚未装配监听）
+### P04 当前登记 PeerAuthenticator（Core持有权威编排）
 
-make_identity_peer_authenticator借用同一IdentitySecurityUnitOfWorkFactory、PeerCertificatePort和SecurityClockPort，返回可注入make_identity_rpc的认证回调。从实际AuthContext取指纹，经by_certificate CURRENT索引、current凭据、principals主体与DB UTC核验，调用Core require_current_credential；无登记、撤销、禁用、版本/绑定不一致一律拒绝，不从body取得注册身份。事务在任何时钟/证书端口调用前rollback并释放；再以受信、已知偏差至多2秒且与DB UTC相符的时刻调用成熟证书验证器，最后新事务重查登记，拒绝验证期间撤销或轮换。应用仍须在自身授权/提交事务复核。
+make_identity_peer_authenticator(IdentityAdminApplication&, SecurityClockPort&)只借用Core Admin应用和受信时钟。wrapper从真实AuthContext提取指纹/DER证据，取2秒本地与真实gRPC deadline较早者，调用Admin.authenticate_peer({leaf_fingerprint, deadline}, der_chain)。当前DB UTC、登记/凭据/主体、释放UoW后成熟crypto验证及验证后fresh recheck全部由Core负责；外层不直接读取repos、不复制业务规则。
 
-该回调仅认证当前平台peer，不授予业务权限；必须与纯应用使用同一Identity权威工厂。2秒本地预算和真实gRPC取消/deadline在各阶段检查，I/O自身有界由受审端口实现保证，不声称抢占任意阻塞端口。库中不构造PG连接、信任根、bootstrap或ready；组合根仍须注入37f7a62等已审完整typed工厂、成熟crypto及受信时钟并完成真实PG链验收。无wire/API字段变化。
+wrapper仅核对返回指纹、正verified_at、受信clock/已知偏差及与verified_at的2秒窗口，再检查取消/期限。不构造数据库/信任根/bootstrap或ready。借用应用与clock须活到服务停止/Wait，Core应用与安全应用由组合根绑定同一完整Identity工厂。9b96968旧三端口原型未获批准，必须连同后继重构整合，不作为第二条生产认证路径。wire/API不变。

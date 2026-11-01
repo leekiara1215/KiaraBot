@@ -1087,8 +1087,9 @@ void exercise_registered_peer(const std::string& leaf, const std::string& ca,
   auto actual = std::get<std::unique_ptr<t::PeerCertificatePort>>(
       crypto::make_peer_certificate_crypto({{ca}, crypto::PeerSanKind::Dns}));
   CertificateSpy verified_certificates{registry, *actual};
-  auto authenticator = std::get<p::PeerAuthenticator>(
-      p::make_identity_peer_authenticator(transactions, verified_certificates, clock));
+  t::IdentityAdminApplication administrator{transactions, verified_certificates};
+  auto authenticator =
+      std::get<p::PeerAuthenticator>(p::make_identity_peer_authenticator(administrator, clock));
   ApplicationFixture app;
   auto service = std::get<std::unique_ptr<w::IdentityService::Service>>(
       p::make_identity_rpc(app, authenticator));
