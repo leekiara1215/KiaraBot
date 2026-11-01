@@ -110,3 +110,15 @@ arguments as p04_identity_bootstrap plus Identity and Control binary paths. No C
 changes are committed. This validates seven implemented RPC methods through five
 HTTP operations, not the entire Identity API. Own server TLS lifetime enforcement is
 a separately identified follow-up and this evidence does not claim it is complete.
+
+## 主线生产接线验收
+
+目标为组合根及构建接线；只更新根 CMake、独立 identity-security.cmake、
+工具链文档和本报告。生产协议/错误及配置语义沿用上述独立实现，不改 proto/API
+或保护基线。文档影响：doc/11-toolchain.md 需要说明新增实际门禁并已同步；
+doc/02-core.md、doc/08-operations.md 已随生产实现说明行为，无需重复修改。
+
+实际执行 cmake configure、完整 full-locked build，以及上述两个 CTest，2/2 通过
+（真实 daemon HTTPS 5.18 秒，时钟小于 0.01 秒）。构建日志无 warning/error。
+未在本接线提交重复运行全工具链：P04 其他独立能力仍在集成，待一致检查点统一运行。
+文档检查使用 git diff --check；未提交构建产物、生成物或密钥。

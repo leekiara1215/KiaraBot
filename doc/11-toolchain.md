@@ -596,3 +596,14 @@ p02_service_config正式测试同时传入Identity程序，验证显式安全配
 
 公开验签材料的纯类型/端口声明由`p04_identity_verification_keys_contract`注册，沿现有
 无第三方依赖的Core contract循环构建，p04/unit、10秒；它不代表GetVerificationKeys已接线。
+
+### P04 Identity 生产组合与真实 HTTPS 门禁
+
+`cmake/identity-security.cmake` 将外层可信时钟、成熟 crypto、Core 安全应用与
+Identity RPC 接入实际 `kiarabot-identity`，内层不引入平台依赖。
+`p04_identity_security_clock` 覆盖时钟故障与期限；`p04_identity_daemon_http`
+使用所属临时 PostgreSQL、离线 bootstrap CLI、实际 Identity/Control 进程和 HTTPS，
+验证登录重放、当前用户、会话列表、刷新重放及撤销。它不调用外部服务。
+执行 `cmake --build build/full-locked` 后，运行
+`ctest --test-dir build/full-locked -R 'p04_identity_security_clock|p04_identity_daemon_http' --output-on-failure`。
+局部通过不表示剩余凭据、授权、失效流或整个 P04 已完成。
