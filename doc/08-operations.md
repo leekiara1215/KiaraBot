@@ -456,3 +456,11 @@ UNIMPLEMENTED；平台监听继续强制mTLS，不能因换入handler改为无�
 ### 外部连接授权目标补全（未实现）
 
 platform.proto三类ConnectionAuthorization/RefreshConnectionAuthorization/Result与两Bridge的登记、proof、refresh帧定义短期外部连接授权。名义最多56秒、总预算60秒、每秒检查失效，单飞原子轮换；丢响应须关闭旧流、新bootstrap与连接代次。完整规则见doc/01-contracts及运行语义；内部JWT委托和P02 mTLS owner监听不变，P05/P06真实接线前仍not_implemented。授权材料禁止日志/公开投影/持久秘密收据，高风险业务仍在线核验，刷新不续投递租约、不改历史业务事实。浏览器REST/WS不使用这些proof，OpenAPI/AsyncAPI因此无schema变更。
+
+### P04 密码学适配器运行约束（部分实施）
+
+Identity 密码适配器依赖固定 libsodium 1.0.20，需预算每次密码操作64MiB及相应CPU，
+应用在事务外限频并控制并发。秘密内存由 sodium_malloc/free 管理，不能记录密码或令牌。
+后续对称密钥由可信组合根传入，32字节、独立用途、不可变受限keyring，与数据库分离；
+不得从请求、JSON令牌头或远端key URL获取。收据当前到期由应用使用数据库时间检查，
+适配器不得以本机wallclock替代数据库时间。尚未接入生产组合根或宣称服务ready。

@@ -246,3 +246,13 @@ Model意图分别只在自己的库创建live表。业务行与收据结果快�
 
 P03数据库资源/系统依赖故障（SQLSTATE类53/58及非取消类57）映射UpstreamUnavailable，
 查询取消/锁等待仍为Timeout；关系结果损坏或无法解码为Internal，不能伪装成成功空optional。
+
+### P04 Identity 密码与随机适配器（部分实施）
+
+`infrastructure/identity_crypto/` 的密码和随机 factory 返回 Core crypto ports。
+libsodium 1.0.20 提供 sodium_malloc/free 安全秘密内存、CSPRNG 和 Argon2id13。
+密码策略版本1固定 opslimit=2、memlimit=64MiB；只接受对应版本和成本的有界 PHC，
+损坏验证材料返回 Internal，错误密码返回 false，资源失败返回 UpstreamUnavailable。
+秘密和随机请求最多64KiB，随机长度必须非零；不提供弱随机降级。
+这些操作不访问数据库、不作授权判断，调用者不得在持有事务时执行密码计算。
+当前 factory 头中的 Token/Receipt 声明不表示收据或完整认证服务已实现。
