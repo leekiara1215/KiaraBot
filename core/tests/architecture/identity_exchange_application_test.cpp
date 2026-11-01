@@ -85,7 +85,8 @@ struct State {
                now + std::chrono::hours{24},
                1,
                {1},
-               false};
+               false,
+               t::SessionControlPeer{control, credentials[0].ref.id}};
     metadata = {{session.id, human, {1}, 1, session.refresh_expires_at, false}};
     assignments = {
         {{"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"},
@@ -215,6 +216,13 @@ private:
 class Assignments final : public t::IdentityExactAssignmentRepository {
 public:
   explicit Assignments(State& state) : state_(state) {}
+  t::Outcome<std::optional<t::AssignmentStateRecord>> current(const t::AssignmentId&) override {
+    throw std::logic_error("unexpected assignment state lookup");
+  }
+  t::Status save_state(const t::AssignmentStateRecord&,
+                       std::optional<t::ResourceVersion>) override {
+    throw std::logic_error("unexpected assignment state write");
+  }
   t::Outcome<std::vector<t::ExactAssignment>> for_subject(const t::SubjectId& subject) override {
     if (state_.fail_read) {
       return failure(t::ErrorCode::UpstreamUnavailable);

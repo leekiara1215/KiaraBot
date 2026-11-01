@@ -22,7 +22,9 @@ foreach(COMPONENT persistence_contract persistence_rules time)
   set_tests_properties(p03_${COMPONENT} PROPERTIES LABELS "p03;unit" TIMEOUT 10)
 endforeach()
 
-foreach(COMPONENT identity_contract identity_application_contract identity_verification_keys_contract session_control_peer_contract)
+foreach(COMPONENT identity_contract identity_application_contract identity_verification_keys_contract
+    session_control_peer_contract identity_assignment_repository_contract
+    identity_assignment_fingerprint_contract identity_registration_snapshot identity_assignment_snapshot)
   add_executable(kiarabot_${COMPONENT}_test tests/architecture/${COMPONENT}_test.cpp)
   target_include_directories(kiarabot_${COMPONENT}_test PRIVATE include)
   target_compile_features(kiarabot_${COMPONENT}_test PRIVATE cxx_std_20)

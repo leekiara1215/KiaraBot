@@ -118,7 +118,7 @@ add_library(kiarabot_identity_rpc STATIC
 target_include_directories(kiarabot_identity_rpc PUBLIC ${CMAKE_SOURCE_DIR}/core/include)
 target_link_libraries(kiarabot_identity_rpc PUBLIC kiarabot_proto PRIVATE
   kiarabot_target_codec kiarabot_service_process kiarabot_identity_admin_application
-  kiarabot_identity_delegation_application OpenSSL::Crypto)
+  kiarabot_identity_delegation_application kiarabot_identity_exchange_application OpenSSL::Crypto)
 kiarabot_platform_warnings(kiarabot_identity_rpc)
 add_executable(kiarabot_identity_rpc_test
   ${CMAKE_SOURCE_DIR}/core/tests/platform/identity_rpc_test.cpp)

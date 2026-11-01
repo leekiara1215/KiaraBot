@@ -1498,17 +1498,19 @@ void exercise_exchange(const std::string& leaf, const std::string& ca, const std
                                                  std::nullopt,
                                                  {t::ResourceKind::Principal, {kSubject}},
                                                  current + std::chrono::hours{24}};
-  registry.session = t::SessionSecurity{{kSession},
-                                        {kSubject},
-                                        registry.password->ref,
-                                        {t::TokenPurpose::Access, {"fixture-key"}, {}},
-                                        {t::TokenPurpose::Refresh, {"fixture-key"}, {}},
-                                        current - std::chrono::minutes{1},
-                                        current + std::chrono::minutes{15},
-                                        current + std::chrono::hours{24},
-                                        1,
-                                        {1},
-                                        false};
+  registry.session =
+      t::SessionSecurity{{kSession},
+                         {kSubject},
+                         registry.password->ref,
+                         {t::TokenPurpose::Access, {"fixture-key"}, {}},
+                         {t::TokenPurpose::Refresh, {"fixture-key"}, {}},
+                         current - std::chrono::minutes{1},
+                         current + std::chrono::minutes{15},
+                         current + std::chrono::hours{24},
+                         1,
+                         {1},
+                         false,
+                         t::SessionControlPeer{registry.principal.id, registry.credential.ref.id}};
   const t::ResourceRef first{t::ResourceKind::Account, {kSubject}};
   const t::ResourceRef second{t::ResourceKind::Account, {kOther}};
   registry.grants = {t::ExactAssignment{{kOther},
@@ -1756,17 +1758,19 @@ void exercise_issue(const std::string& leaf, const std::string& ca, const std::s
                                                  std::nullopt,
                                                  {t::ResourceKind::Principal, {kSubject}},
                                                  current + std::chrono::hours{24}};
-  registry.session = t::SessionSecurity{{kSession},
-                                        {kSubject},
-                                        registry.password->ref,
-                                        {t::TokenPurpose::Access, {"fixture-key"}, {}},
-                                        {t::TokenPurpose::Refresh, {"fixture-key"}, {}},
-                                        current - std::chrono::minutes{1},
-                                        current + std::chrono::minutes{15},
-                                        current + std::chrono::hours{24},
-                                        1,
-                                        {1},
-                                        false};
+  registry.session =
+      t::SessionSecurity{{kSession},
+                         {kSubject},
+                         registry.password->ref,
+                         {t::TokenPurpose::Access, {"fixture-key"}, {}},
+                         {t::TokenPurpose::Refresh, {"fixture-key"}, {}},
+                         current - std::chrono::minutes{1},
+                         current + std::chrono::minutes{15},
+                         current + std::chrono::hours{24},
+                         1,
+                         {1},
+                         false,
+                         t::SessionControlPeer{registry.principal.id, registry.credential.ref.id}};
   const t::ResourceRef first{t::ResourceKind::Account, {kSubject}};
   const t::ResourceRef second{t::ResourceKind::Account, {kOther}};
   registry.grants = {t::ExactAssignment{{kOther},

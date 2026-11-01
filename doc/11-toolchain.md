@@ -654,3 +654,12 @@ Principal的Issue能力和Model自身Check能力，验证普通verify只接受�
 Check允许、proof范围不足/当前业务grant不足的正常拒绝、旧source授权版本拒绝、consumer
 撤权及原Control禁用。测试用受信signer构造两跳证明，不替代Issue/Exchange RPC验收；
 仅修改一次性fixture记录，不改PG SQL、生产路由或readiness。
+
+### 2026-11-01 晚间单机MVP优先
+
+按用户最新范围，先交付既有 reference 单机消息链路的一键运行与固定回复；
+插件机制、完整账号管理、多主机部署及 P04 其余扩展暂停新增。新方向与已有独立
+提交保留，不能把 reference 验收或已通过的 Identity 子能力算作六服务业务完成。
+P04 已集成的新增契约测试及普通成功快照索引13/14继续参与构建，避免留下坏构建。
+晚间验收入口和换机续开发说明以 doc/24-single-host-mvp.md、doc/25-development-handoff.md
+为准；原完整工具链仍是以后恢复目标架构时的检查入口。
