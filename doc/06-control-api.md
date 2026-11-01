@@ -327,3 +327,35 @@ Login/Refresh/Me/ListSessions/Revoke map to IdentityService; Identity owns all
 session, authorization and receipt decisions. Control owns no business database
 and never derives permissions by multiplying roles and scopes. Configuration and
 endpoint shutdown are specified in doc/08; this does not change the REST contract.
+
+P04 authentication boundary now maps `/api/v1/auth/login`, `/auth/refresh`,
+`/auth/me`, `/auth/sessions` and `/auth/sessions/{sessionId}/revoke` to the target
+IdentityService over verified mTLS. Login/Refresh/Revoke preserve the browser's
+Idempotency-Key unchanged; Control has no success cache and makes no automatic
+retry. Every protected request calls ValidateSession. ListSessions requests an
+Identity-issued delegation for exactly RESOURCE_PRINCIPAL=current subject UUID,
+IDENTITY_SESSION_READ and explicitly passes that principal_id. Revoke requests
+exactly RESOURCE_SESSION=target UUID and IDENTITY_SESSION_REVOKE. The original
+access proof and SHA-256 of the actual outbound Control leaf certificate bind the
+delegation; audience is identity. Only Identity decides self-service/other-resource
+visibility and grants. Browser actor/context/fingerprint fields are rejected.
+
+JSON accepts only the declared flat string fields, rejects duplicate/unknown keys,
+wrong types, nested objects/arrays and invalid bounds. Pagination accepts only
+page_size (1–100, default 20) and opaque page_token, rejects duplicates and invalid
+percent encoding. Authorization is never logged. Required token fields and remaining
+TTL come from Identity checked_at and expiry; session state uses persisted created_at
+and Identity's checked_at, with REVOKED before EXPIRED. uint64 versions serialize as
+exact decimal strings. Display permissions and assignments are projections only.
+
+The whole HTTP operation, including worker queue time and all upstream calls, shares
+a two-second budget. Dependency or TLS failures return UPSTREAM_UNAVAILABLE/503,
+deadline expiry TIMEOUT/504. Typed upstream stable errors retain the documented HTTP
+mapping; a rejection without valid stable details fails INTERNAL/500. Free-text
+upstream messages/details never reach logs or browser errors. Responses are no-store;
+no CORS origin is enabled. Unknown routes return 404; wrong methods return 405/Allow.
+
+The generated Identity fixture verifies transport mapping only. Real Identity,
+registered Control peer and PostgreSQL bootstrap integration remain a separate gate;
+Control readiness intentionally remains false while the wider business implementation
+is incomplete. The historical same-process implementation above is reference-only.
