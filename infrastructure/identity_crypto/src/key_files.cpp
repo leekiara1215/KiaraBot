@@ -229,7 +229,8 @@ t::Outcome<DelegationKey> load_delegation_key_files(const TrustedDelegationKeyFi
     if (sodium_init() < 0) {
       return failure(t::ErrorCode::UpstreamUnavailable);
     }
-    if (!valid_ref(files.reference)) {
+    if (!valid_ref(files.reference) || files.version.value == 0 ||
+        files.valid_until <= t::TimePoint{} || files.valid_until == t::TimePoint::max()) {
       return failure();
     }
     auto public_result = read_file(files.public_pem_file, false, 8192);
@@ -279,7 +280,7 @@ t::Outcome<DelegationKey> load_delegation_key_files(const TrustedDelegationKeyFi
     return DelegationKey{files.reference,
                          std::string(reinterpret_cast<const char*>(public_file->bytes().data()),
                                      public_file->bytes().size()),
-                         std::move(private_material)};
+                         std::move(private_material), files.version, files.valid_until};
   } catch (const std::bad_alloc&) {
     return failure(t::ErrorCode::UpstreamUnavailable);
   }

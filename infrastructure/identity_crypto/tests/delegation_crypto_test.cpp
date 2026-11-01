@@ -61,6 +61,10 @@ int main() try {
   Clock clock;
   crypto::DelegationConfig config{"kiarabot-identity", {}};
   config.keys.push_back({{"key-1"}, public_pem, std::move(std::get<t::OwnedSecret>(private_copy))});
+  config.keys.front().version = {1};
+  config.keys.front().valid_until = clock.value.utc + std::chrono::hours{1};
+  config.version = {1};
+  config.keyset_resource = {t::ResourceKind::Catalog, {"55555555-5555-4555-8555-555555555555"}};
   auto factory = crypto::make_delegation_crypto(std::move(config), clock);
   auto& port = std::get<std::unique_ptr<t::DelegationCryptoPort>>(factory);
   t::DelegationClaims claims{

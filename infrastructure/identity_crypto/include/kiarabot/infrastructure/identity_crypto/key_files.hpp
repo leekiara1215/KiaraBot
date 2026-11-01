@@ -16,6 +16,8 @@ struct TrustedDelegationKeyFiles {
   core::target::CryptoKeyRef reference;
   std::filesystem::path public_pem_file;
   std::optional<std::filesystem::path> private_pem_file;
+  core::target::ResourceVersion version;
+  core::target::TimePoint valid_until;
 };
 // Text password: 1..1024 bytes after one optional trailing LF, no CR/LF/NUL.
 // Same trusted owned secret-file checks; returned plaintext stays in secure memory.

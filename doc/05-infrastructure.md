@@ -289,7 +289,7 @@ ASN.1长度比较（拒绝NUL）及登记主体/服务类型/凭据形状共同�
 或内容。失败仍使整个UoW不可提交部分结果；bytea payload/摘要继续允许二进制零字节。
 
 P04 DelegationCryptoPort 使用固定 jwt-cpp0.7.0/OpenSSL3.5 Ed25519（JWS alg=EdDSA）。
-可信部署配置固定issuer与最多16个唯一key引用；公钥PEM与可选安全内存私钥PEM必须为
+可信部署配置固定issuer与单个active key引用；公钥PEM与可选安全内存私钥PEM必须为
 匹配Ed25519，verify-only配置不持私钥。签名时注入SecurityClockPort，验签仅使用显式
 可信sample，不调用本机wallclock；未知/超2秒skew拒绝。JWT头仅alg/kid/typ三个字段，
 不支持请求指定jku/x5u/jwk/x5c。输入证明上限32KiB，权限条目最多128，至多两次业务跳转。
@@ -400,3 +400,13 @@ P04真实集成fixture仅在自有临时PG内组合公开安全工厂、实际Id
 比较，也不把Runtime当作Control调用普通verify。该方法不授权Exchange；Core还须在线
 核对Runtime与上一跳Control当前登记、签名的原始credential/session/authversion、exact
 范围收窄与origin保留，再签hop2。普通verify原直接peer证书绑定保持严格不变。
+
+P04公开验签材料使用`make_delegation_crypto_bundle`：同一份可信DelegationConfig同时构造
+成熟签验adapter与不可变VerificationKeyMaterialPort，避免另建不一致的keyset。首版仅一个
+active Ed25519 key；每key显式正版本与有限valid_until，集合另有正版本及离线UUID Catalog
+resource。缺字段、0版本、无限期限或非法Catalog拒绝，不用默认无限期兼容旧调用。
+OpenSSL EVP_PKEY_get_raw_public_key导出准确32字节，snapshot仅公钥投影，无私钥/PEM。
+snapshot采样同一注入可信clock，过期或时间不可信UpstreamUnavailable，不返回空成功。
+sign要求当前key未到期且claims.exp不超过key.valid_until，普通与Exchange验签同样拒绝
+已到期可信key。此cap不管理轮换、不联网、不决定identity.keys.read授权。
+密钥文件metadata相应显式携带version/valid_until，loader只校验与保留，不生成版本或期限。

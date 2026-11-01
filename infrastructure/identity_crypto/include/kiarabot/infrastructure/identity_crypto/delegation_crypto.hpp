@@ -11,10 +11,14 @@ struct DelegationKey {
   core::target::CryptoKeyRef reference;
   std::string public_key_pem;
   core::target::OwnedSecret private_key_pem;
+  core::target::ResourceVersion version{};
+  core::target::TimePoint valid_until{};
 };
 struct DelegationConfig {
   std::string issuer;
   std::vector<DelegationKey> keys;
+  core::target::ResourceVersion version{};
+  core::target::ResourceRef keyset_resource{};
 };
 // Trusted immutable deployment keys only. Clock outlives the adapter; signing rejects untrusted
 // samples. Verification never substitutes local wall clock for its explicit trusted sample.

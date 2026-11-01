@@ -39,6 +39,24 @@ template <typename Value> const Value& checked(const nlohmann::json& value) {
   }
   return value.get_ref<const Value&>();
 }
+bool catalog_uuid(const t::ResourceRef& resource) {
+  if (resource.kind != t::ResourceKind::Catalog || resource.id.value.size() != 36 ||
+      resource.id.value[14] != '4' ||
+      std::string_view{"89ab"}.find(resource.id.value[19]) == std::string_view::npos) {
+    return false;
+  }
+  for (std::size_t index = 0; index < 36; ++index) {
+    const char value = resource.id.value[index];
+    if (index == 8 || index == 13 || index == 18 || index == 23) {
+      if (value != '-') {
+        return false;
+      }
+    } else if (!((value >= '0' && value <= '9') || (value >= 'a' && value <= 'f'))) {
+      return false;
+    }
+  }
+  return true;
+}
 std::string number(std::uint64_t value) {
   return std::to_string(value);
 }
@@ -302,8 +320,11 @@ public:
         return *error;
       }
       const auto& now = std::get<t::SecurityClockSample>(sample);
-      if (!clock_ok(now) || claims.issuer != config_.issuer || !shape(claims) ||
-          claims.issued_at > now.utc || now.utc >= claims.expires_at ||
+      if (!clock_ok(now) || now.utc >= key->valid_until) {
+        return failure(t::ErrorCode::UpstreamUnavailable);
+      }
+      if (claims.expires_at > key->valid_until || claims.issuer != config_.issuer ||
+          !shape(claims) || claims.issued_at > now.utc || now.utc >= claims.expires_at ||
           now.utc - claims.issued_at > std::chrono::seconds{2}) {
         return failure(t::ErrorCode::InvalidArgument);
       }
@@ -425,12 +446,12 @@ private:
       return failure();
     }
     const auto* key = find({token.get_key_id()});
-    if (!key) {
+    if (!key || clock.utc >= key->valid_until) {
       return failure();
     }
     // Strict raw NumericDate validation precedes jwt-cpp's possibly narrowing date conversion.
     auto claims = decode(token);
-    if (!shape(claims)) {
+    if (!shape(claims) || claims.expires_at > key->valid_until) {
       return failure();
     }
     const FixedClock fixed{
@@ -466,11 +487,27 @@ make_delegation_crypto(DelegationConfig config, core::target::SecurityClockPort&
     if (sodium_init() < 0) {
       return failure(t::ErrorCode::UpstreamUnavailable);
     }
-    if (!text(config.issuer) || config.keys.empty() || config.keys.size() > 16) {
+    if (!text(config.issuer) || config.keys.size() != 1 || config.version.value == 0 ||
+        !catalog_uuid(config.keyset_resource)) {
       return failure(t::ErrorCode::InvalidArgument);
+    }
+    auto sampled = clock.sample();
+    if (const auto* error = std::get_if<t::Failure>(&sampled)) {
+      return *error;
+    }
+    const auto& now = std::get<t::SecurityClockSample>(sampled);
+    if (!clock_ok(now)) {
+      return failure(t::ErrorCode::UpstreamUnavailable);
     }
     std::set<std::string> references;
     for (auto& key : config.keys) {
+      if (key.version.value == 0 || key.valid_until <= t::TimePoint{} ||
+          key.valid_until == t::TimePoint::max()) {
+        return failure(t::ErrorCode::InvalidArgument);
+      }
+      if (now.utc >= key.valid_until) {
+        return failure(t::ErrorCode::UpstreamUnavailable);
+      }
       if (!text(key.reference.value) || !references.insert(key.reference.value).second ||
           !key.public_key_pem.starts_with("-----BEGIN PUBLIC KEY-----\n") ||
           key.public_key_pem.find('\0') != std::string::npos || key.public_key_pem.size() > 8192) {

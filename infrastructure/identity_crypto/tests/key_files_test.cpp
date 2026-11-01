@@ -54,7 +54,8 @@ void write_pem(const std::filesystem::path& file, BIO* pem) {
 class Clock final : public t::SecurityClockPort {
 public:
   t::Outcome<t::SecurityClockSample> sample() override {
-    return t::SecurityClockSample{};
+    return t::SecurityClockSample{
+        t::TimePoint{std::chrono::seconds{1000}}, {}, std::chrono::milliseconds{0}, true};
   }
 };
 int main() try {
@@ -145,43 +146,85 @@ int main() try {
   assert(PEM_write_bio_PUBKEY(other.get(), second.get()) == 1);
   write_pem(directory.file("public"), pub.get());
   write_pem(directory.file("private"), priv.get());
-  auto delegation = crypto::load_delegation_key_files(
-      {{"sign"}, directory.file("public"), directory.file("private")});
+  for (const auto version : {std::uint64_t{0}, std::uint64_t{1}}) {
+    const auto expiry =
+        version == 0 ? t::TimePoint{std::chrono::seconds{10000}} : t::TimePoint::max();
+    assert(
+        std::get<t::Failure>(
+            crypto::load_delegation_key_files(
+                {{"sign"}, directory.file("public"), directory.file("private"), {version}, expiry}))
+            .code == t::ErrorCode::InvalidArgument);
+  }
+  assert(std::get<t::Failure>(
+             crypto::load_delegation_key_files(
+                 {{"sign"}, directory.file("public"), directory.file("private"), {1}, {}}))
+             .code == t::ErrorCode::InvalidArgument);
+  auto delegation = crypto::load_delegation_key_files({{"sign"},
+                                                       directory.file("public"),
+                                                       directory.file("private"),
+                                                       {1},
+                                                       t::TimePoint{std::chrono::seconds{10000}}});
   assert(std::get<crypto::DelegationKey>(delegation).private_key_pem);
+  assert(std::get<crypto::DelegationKey>(delegation).version.value == 1);
+  assert(std::get<crypto::DelegationKey>(delegation).valid_until ==
+         t::TimePoint{std::chrono::seconds{10000}});
   assert(chmod(directory.file("public").c_str(), 0644) == 0);
-  assert(std::holds_alternative<crypto::DelegationKey>(
-      crypto::load_delegation_key_files({{"verify"}, directory.file("public"), {}})));
+  assert(std::holds_alternative<crypto::DelegationKey>(crypto::load_delegation_key_files(
+      {{"verify"}, directory.file("public"), {}, {1}, t::TimePoint{std::chrono::seconds{10000}}})));
   for (const auto mode : {0664, 0666}) {
     assert(chmod(directory.file("public").c_str(), static_cast<mode_t>(mode)) == 0);
-    auto rejected = crypto::load_delegation_key_files({{"verify"}, directory.file("public"), {}});
+    auto rejected = crypto::load_delegation_key_files(
+        {{"verify"}, directory.file("public"), {}, {1}, t::TimePoint{std::chrono::seconds{10000}}});
     assert(std::get<t::Failure>(rejected).code == t::ErrorCode::InvalidArgument);
   }
   assert(chmod(directory.file("public").c_str(), 0644) == 0);
-  auto verification = crypto::load_delegation_key_files({{"verify"}, directory.file("public"), {}});
+  auto verification = crypto::load_delegation_key_files(
+      {{"verify"}, directory.file("public"), {}, {1}, t::TimePoint{std::chrono::seconds{10000}}});
   assert(!std::get<crypto::DelegationKey>(verification).private_key_pem);
   assert(chmod(directory.file("private").c_str(), 0640) == 0);
-  assert(std::holds_alternative<t::Failure>(crypto::load_delegation_key_files(
-      {{"sign"}, directory.file("public"), directory.file("private")})));
+  assert(std::holds_alternative<t::Failure>(
+      crypto::load_delegation_key_files({{"sign"},
+                                         directory.file("public"),
+                                         directory.file("private"),
+                                         {1},
+                                         t::TimePoint{std::chrono::seconds{10000}}})));
   assert(chmod(directory.file("private").c_str(), 0600) == 0);
   write_file(directory.file("private"), std::string(8193, 'a'));
-  assert(std::holds_alternative<t::Failure>(crypto::load_delegation_key_files(
-      {{"sign"}, directory.file("public"), directory.file("private")})));
+  assert(std::holds_alternative<t::Failure>(
+      crypto::load_delegation_key_files({{"sign"},
+                                         directory.file("public"),
+                                         directory.file("private"),
+                                         {1},
+                                         t::TimePoint{std::chrono::seconds{10000}}})));
   write_file(directory.file("private"), std::string(64, '\0'));
-  assert(std::holds_alternative<t::Failure>(crypto::load_delegation_key_files(
-      {{"sign"}, directory.file("public"), directory.file("private")})));
+  assert(std::holds_alternative<t::Failure>(
+      crypto::load_delegation_key_files({{"sign"},
+                                         directory.file("public"),
+                                         directory.file("private"),
+                                         {1},
+                                         t::TimePoint{std::chrono::seconds{10000}}})));
   write_pem(directory.file("private"), priv.get());
   assert(symlink("public", directory.file("public-link").c_str()) == 0);
   assert(std::holds_alternative<t::Failure>(
-      crypto::load_delegation_key_files({{"verify"}, directory.file("public-link"), {}})));
+      crypto::load_delegation_key_files({{"verify"},
+                                         directory.file("public-link"),
+                                         {},
+                                         {1},
+                                         t::TimePoint{std::chrono::seconds{10000}}})));
   write_pem(directory.file("public"), other.get());
-  assert(std::holds_alternative<t::Failure>(crypto::load_delegation_key_files(
-      {{"sign"}, directory.file("public"), directory.file("private")})));
+  assert(std::holds_alternative<t::Failure>(
+      crypto::load_delegation_key_files({{"sign"},
+                                         directory.file("public"),
+                                         directory.file("private"),
+                                         {1},
+                                         t::TimePoint{std::chrono::seconds{10000}}})));
   // Existing factory independently rejects a mismatched pair even when file validation is bypassed.
   char* public_bytes = nullptr;
   const auto public_size = BIO_get_mem_data(other.get(), &public_bytes);
   auto mismatched = std::move(std::get<crypto::DelegationKey>(delegation));
   mismatched.public_key_pem.assign(public_bytes, static_cast<std::size_t>(public_size));
-  crypto::DelegationConfig config{"issuer", {}};
+  crypto::DelegationConfig config{
+      "issuer", {}, {1}, {t::ResourceKind::Catalog, {"00000000-0000-4000-8000-000000000001"}}};
   config.keys.push_back(std::move(mismatched));
   Clock clock;
   assert(
