@@ -307,3 +307,10 @@ proto + infrastructure 构建可通过 `KIARABOT_CONTROL_CONFIG` 指定私有 JS
 ## 配置应用确认
 
 启用私有 KIARABOT_CONTROL_CONFIG 且配置插件桥接身份/权限后，支持 plugin.config.v1 的 SDK 自动接收配置。PUT 成功后轮询 GET /plugins/{plugin_id}/config 的 delivery；APPLIED 才表示当前运行连接完成回调。REJECTED 需修复配置提交新版本或重连，UNAVAILABLE 需检查插件连接/停用/能力协商。Core 重启后重新确认，不能用旧进程的 applied_version 作健康证明。不新增配置项、SQLite schema 或真实环境验收要求。
+
+## P02 六进程入口约定（实现中）
+
+公共 runner 支持 --help（退出0、不监听）与 --config PATH；CLI/配置形状错误退出2，
+证书/绑定/运行故障退出1，正常 SIGINT/SIGTERM 关闭退出0。P02 业务未实现，
+ready 必须保持 false；live 仅表明进程能响应探针。具体配置和传输实现随本阶段补齐，
+此接口提交不表示进程已经可以运行。

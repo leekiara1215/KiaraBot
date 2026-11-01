@@ -345,3 +345,11 @@ connection_id 由 Runtime 接受连接时分配；均不能用客户端自报 ID
 占位补全。缺失/过期绑定必须拒绝，不能用当前代次替换入站旧值；后续 delivery 事务
 仍须重检 gate/current fence，不能只依赖边界的早先快照。此处只冻结映射要求，
 认证、注册存储与传输映射实现仍待后续阶段。
+
+## P02 独立服务就绪端口
+
+`ports/target/service_readiness.hpp` 定义纯标准库 ServiceReadinessPort，服务类型沿用
+六平台 Service；依赖状态与 ready 同时表达。P02 application 业务未实现，始终包含
+BusinessImplementation/NotImplemented 且 ready=false，不以监听成功当业务就绪。
+公共 runner 声明位于 `runtime/platform/service_process.hpp`，命名空间
+kiarabot::core::platform；借用 application 至线程、socket、RPC 全部关闭。
