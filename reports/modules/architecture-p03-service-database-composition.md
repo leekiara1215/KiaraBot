@@ -28,3 +28,17 @@ format16、Python编译与diff通过。原TLS时间/链/key/权限/FIFO用例保
 
 文档实际同步doc/02和doc/08。未更新proto/API/doc01：无线协议或业务错误变化；
 doc18无diff。未运行全仓：组合钩子/工厂接线另提交，最终集成统一检查由主树执行。
+
+## 能力二：外层配置后组合与生命周期
+
+新增ServiceComposition与run_service(service,composer,...)外层重载，原借用入口委托
+同一路径。先CLI/材料校验及信号屏蔽再组装，空/错owner/显式失败/任意异常拒绝，依赖
+检查监听前一次、运行后每秒，失败停止进程；RPC/socket先销毁，application再销毁，
+最后释放回调持有依赖。实际启动行反映application当前readiness，本阶段仍false。
+
+实际固定依赖-Werror构建kiarabot-identity通过；composition helper独立-Werror编译并
+使用该目标精确link参数链接，真实证书/监听测试覆盖help/非法输入不调用工厂、信号先
+屏蔽、空/错owner/两类异常脱敏、正常SIGTERM、依赖失效退出与析构依赖仍存活，均通过。
+helper只是外层生命周期替身，不伪造PG或Identity业务。runner的真实compile DB tidy22、
+helper显式C++20/SDK参数tidy22、format16/Python编译/diff通过。新TU/Ctest待构建线程
+独立接线；未以人工链接替代最终全仓覆盖。doc02/08已同步，无proto/API变化或doc18变更。

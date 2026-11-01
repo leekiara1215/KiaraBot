@@ -73,6 +73,21 @@ private:
   sigset_t signals_{};
   sigset_t previous_{};
 };
+
+class BorrowedApplication final : public target::ServiceReadinessPort {
+public:
+  explicit BorrowedApplication(const target::ServiceReadinessPort& application)
+      : application_(application) {}
+  target::Service service() const noexcept override {
+    return application_.service();
+  }
+  target::ServiceReadiness readiness() const override {
+    return application_.readiness();
+  }
+
+private:
+  const target::ServiceReadinessPort& application_;
+};
 bool nonblocking(int descriptor) {
   const auto flags = fcntl(descriptor, F_GETFL, 0);
   return flags >= 0 && fcntl(descriptor, F_SETFL, flags | O_NONBLOCK) == 0;
@@ -190,9 +205,9 @@ void serve_probe(int listener, const target::ServiceReadinessPort& application) 
 
 } // namespace
 
-int run_service(const target::ServiceReadinessPort& application, int argc, char* argv[]) {
+int run_service(target::Service service, const ServiceComposer& compose, int argc, char* argv[]) {
   if (argc == 2 && std::string_view(argv[1]) == "--help") {
-    std::cout << "Usage: kiarabot-" << service_name(application.service()) << " --config PATH\n";
+    std::cout << "Usage: kiarabot-" << service_name(service) << " --config PATH\n";
     return 0;
   }
   if (argc != 3 || std::string_view(argv[1]) != "--config" || std::string_view(argv[2]).empty()) {
@@ -200,7 +215,7 @@ int run_service(const target::ServiceReadinessPort& application, int argc, char*
     return 2;
   }
   try {
-    const auto loaded = load_service_config(argv[2], application.service());
+    const auto loaded = load_service_config(argv[2], service);
     if (const auto* failure = std::get_if<ConfigFailure>(&loaded)) {
       std::cerr << "operation=start outcome=rejected reason=" << failure->reason << '\n';
       return failure->exit_code;
@@ -208,6 +223,22 @@ int run_service(const target::ServiceReadinessPort& application, int argc, char*
     const auto& config = std::get<ProcessConfig>(loaded);
     // Created before gRPC workers; they inherit blocked stop signals. No async handler callbacks.
     const StopSignals signals;
+    auto composed = compose(config);
+    if (std::holds_alternative<target::Failure>(composed)) {
+      std::cerr << "operation=start outcome=failed reason=dependency_initialization_failed\n";
+      return 1;
+    }
+    auto& composition = std::get<ServiceComposition>(composed);
+    if (!composition.application || composition.application->service() != service) {
+      std::cerr << "operation=start outcome=failed reason=invalid_composition\n";
+      return 1;
+    }
+    if (composition.check_dependencies &&
+        std::holds_alternative<target::Failure>(composition.check_dependencies())) {
+      std::cerr << "operation=start outcome=failed reason=dependency_initialization_failed\n";
+      return 1;
+    }
+    const auto& application = *composition.application;
     const Socket listener(socket(AF_INET, SOCK_STREAM, 0));
     const int probe_port =
         listener.get() < 0 ? 0 : listen_probe(listener.get(), config.probe_listen);
@@ -221,9 +252,19 @@ int run_service(const target::ServiceReadinessPort& application, int argc, char*
       return 1;
     }
     std::cout << "service=" << service_name(application.service()) << " probe_port=" << probe_port
-              << " grpc_port=" << rpc.port() << " ready=false\n"
+              << " grpc_port=" << rpc.port()
+              << " ready=" << (application.readiness().ready ? "true" : "false") << '\n'
               << std::flush;
+    auto next_dependency_check = std::chrono::steady_clock::now() + std::chrono::seconds{1};
     while (!signals.requested()) {
+      if (composition.check_dependencies &&
+          std::chrono::steady_clock::now() >= next_dependency_check) {
+        if (std::holds_alternative<target::Failure>(composition.check_dependencies())) {
+          std::cerr << "operation=run outcome=failed reason=dependency_lost\n";
+          return 1;
+        }
+        next_dependency_check = std::chrono::steady_clock::now() + std::chrono::seconds{1};
+      }
       pollfd readable{listener.get(), POLLIN, 0};
       const auto count = poll(&readable, 1, 100);
       if (count < 0 && errno != EINTR) {
@@ -234,10 +275,19 @@ int run_service(const target::ServiceReadinessPort& application, int argc, char*
       }
     }
     return 0;
-  } catch (const std::exception&) {
+  } catch (...) {
     std::cerr << "operation=start outcome=failed reason=process_failure\n";
     return 1;
   }
+}
+
+int run_service(const target::ServiceReadinessPort& application, int argc, char* argv[]) {
+  return run_service(
+      application.service(),
+      [&](const ProcessConfig&) -> target::Outcome<ServiceComposition> {
+        return ServiceComposition{std::make_unique<BorrowedApplication>(application), {}};
+      },
+      argc, argv);
 }
 
 } // namespace kiarabot::core::platform

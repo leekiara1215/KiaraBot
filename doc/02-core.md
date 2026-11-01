@@ -449,3 +449,10 @@ Model应用负责GetOperation的权威operation/resource绑定与当前授权，
 数据库材料留在platform的ProcessConfig，包含已安全读取的密码和独立PG CA引用，
 不进入domain/application/ports。仅四个PG所有者可配置，Control和Host拒绝；此提交
 仅加载材料，连接与writer校验待组合根通过基础设施工厂装配，不因存在配置变为ready。
+
+### P03 配置后组合钩子
+
+ServiceComposition/ServiceComposer属于外层platform，承接已验证ProcessConfig，创建
+纯application并持有具体依赖维护回调。领域/应用/端口不引用该配置或框架对象。
+原借用application入口继续使用同一实现；组合器先于监听、后于信号屏蔽，资源覆盖RPC
+退出且比application更晚销毁。明确依赖失效会有界结束进程；不自动升级schema或改ready。
