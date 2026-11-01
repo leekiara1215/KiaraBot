@@ -593,3 +593,6 @@ backend目录必被拒绝再运行正常临时库。它验证本地组合，不�
 第七个Issue RPC使用Core issuer，外层RPC库PRIVATE链接独立identity_delegation_application。
 p02_service_config正式测试同时传入Identity程序，验证显式安全配置缺少材料时不接触PG、
 不打开监听；不再只通过手动执行覆盖该TCP canary。固定依赖及旧role/crypto用例保持原门禁。
+
+公开验签材料的纯类型/端口声明由`p04_identity_verification_keys_contract`注册，沿现有
+无第三方依赖的Core contract循环构建，p04/unit、10秒；它不代表GetVerificationKeys已接线。

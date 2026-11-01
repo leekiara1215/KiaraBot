@@ -25,3 +25,10 @@ TCP canary。只改cmake/platform.cmake、doc11和本报告，不改业务/唯�
 全TU编译覆盖、inner、六服务配置链接图、模块边界和diff检查通过。纯内部构建依赖整理，
 无公共文档影响，doc11/协议/API/模块行为及运维配置无需重写；本报告记录实际修复。
 未因链接顺序变化重复全仓静态分析，C++源和编译选项未改。
+
+## 公钥材料纯接口测试注册
+
+Core contract循环加入identity_verification_keys_contract，源为已审47c23d8；没有把成熟
+crypto/PG引入内层。实际固定重新配置/完整build成功，相关RPC+新contract2/2通过3.55秒；
+128 product新RPC用例仍通过。文档影响仅doc11及本报告，类型/端口责任已由源doc02同步，
+其他模块和保护基线不变。没有把类型声明当作真实GetKeys服务。
