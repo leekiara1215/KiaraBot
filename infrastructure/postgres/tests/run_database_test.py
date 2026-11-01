@@ -1,0 +1,76 @@
+#!/usr/bin/env python3
+"""Disposable PG16.4 TLS fixture. No external DSN or production connection accepted."""
+import argparse
+import os
+from pathlib import Path
+import secrets
+import socket
+import subprocess
+import tempfile
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--pg-bin', type=Path, required=True)
+    parser.add_argument('--openssl', type=Path, required=True)
+    parser.add_argument('--test', type=Path, required=True)
+    parser.add_argument('--initializer', type=Path, required=True)
+    args = parser.parse_args()
+    pg_bin, openssl, test = args.pg_bin.resolve(), args.openssl.resolve(), args.test.resolve()
+    environment = {key: value for key, value in os.environ.items() if not key.startswith('PG')}
+    environment['LC_ALL'] = 'C'
+
+    def run(command, timeout=45):
+        result = subprocess.run(command, env=environment, capture_output=True, timeout=timeout)
+        if result.returncode:
+            raise RuntimeError(f'fixture command failed: {Path(command[0]).name}; '
+                               f'exit={result.returncode}; output redacted')
+        return result
+
+    version = run([str(pg_bin / 'postgres'), '--version']).stdout.decode().strip()
+    if version != 'postgres (PostgreSQL) 16.4':
+        raise RuntimeError('PG16.4 required')
+    with tempfile.TemporaryDirectory(prefix='kiarabot-p03-') as temporary:
+        root = Path(temporary).resolve()
+        root.chmod(0o700)
+        marker = root / 'p03-owned-marker'
+        token = secrets.token_hex(32)
+        marker.write_text(token)
+        password_file = root / 'password'
+        password_file.write_text(secrets.token_hex(32) + '\n')
+        password_file.chmod(0o600)
+        run([str(pg_bin / 'initdb'), '-D', str(root / 'data'), '-A', 'scram-sha-256',
+             '-U', 'p03_admin', '--pwfile', str(password_file), '--no-locale'])
+        run([str(openssl), 'req', '-x509', '-newkey', 'ec', '-pkeyopt',
+             'ec_paramgen_curve:P-256', '-nodes', '-days', '1', '-subj', '/CN=localhost',
+             '-addext', 'subjectAltName=DNS:localhost', '-keyout', str(root / 'server.key'),
+             '-out', str(root / 'server.pem')])
+        (root / 'server.key').chmod(0o600)
+        # No trust/plain TCP authentication route, including fixture administrator.
+        (root / 'data/pg_hba.conf').write_text(
+            'hostssl all all 127.0.0.1/32 scram-sha-256\n'
+            'hostnossl all all 127.0.0.1/32 reject\n')
+        with socket.socket() as reservation:
+            reservation.bind(('127.0.0.1', 0))
+            port = reservation.getsockname()[1]
+        with (root / 'data/postgresql.conf').open('a') as stream:
+            stream.write(f"\nlisten_addresses='127.0.0.1'\nport={port}\nssl=on\n"
+                         f"ssl_cert_file='{root}/server.pem'\nssl_key_file='{root}/server.key'\n"
+                         f"unix_socket_directories='{root}'\n")
+        try:
+            run([str(pg_bin / 'pg_ctl'), '-D', str(root / 'data'), '-l', str(root / 'pg.log'),
+                 '-w', '-t', '20', 'start'])
+            output = run([str(test), str(root), str(port), str(args.initializer.resolve())])
+            print(output.stdout.decode(), end='')
+        finally:
+            # Only this invocation's marker + fixed owned data path authorize cleanup.
+            if marker.read_text() != token:
+                raise RuntimeError('fixture ownership marker changed; refusing cluster control')
+            if (root / 'data/postmaster.pid').exists():
+                run([str(pg_bin / 'pg_ctl'), '-D', str(root / 'data'), '-m', 'immediate',
+                     '-w', '-t', '20', 'stop'], timeout=25)
+    print('Owned temporary PG cluster and private material removed')
+
+
+if __name__ == '__main__':
+    main()

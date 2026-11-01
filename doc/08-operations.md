@@ -357,3 +357,27 @@ SIGINT/SIGTERM在主线程同步消费。探针每连接500ms总预算，空闲�
 
 证书时间边界为 notBefore <= 当前验证时刻 < notAfter；起始恰好相等合法，ASN1时间
 解析失败拒绝。配置校验时刻支持内部测试注入，CLI/配置不能覆盖服务器当前时间。
+
+## P03 PostgreSQL 显式初始化（实施中）
+
+四个私有逻辑库分别部署 Identity/Runtime/Scheduler/Model。集群管理员先创建独立的
+无超级权限迁移/运行登录、收紧 pg_hba 并撤销数据库 PUBLIC CONNECT/CREATE/TEMP，
+只授予本库两种身份 CONNECT；迁移身份拥有本库，运行身份不得加入迁移角色。
+再以迁移身份执行显式空库初始化。数据库/角色部署不是 schema 初始化的一部分。
+禁止对已有开发数据清库、导入旧快照或建立双写。
+
+初始化在单库事务中创建受限 schema 和版本标记，失败回滚；跨四库不是原子事务，
+部分库成功时必须分别检查，不能宣称全套成功。重复、非空、半初始化、版本不匹配拒绝。
+运行服务只验证版本/对象/权限并获取库内活动写入锁，不执行 DDL；数据库锁或连接失效时
+停止受理/派发/续租。所有连接强制 verify-full/channel_binding=require，超时有界；
+错误不打印数据库配置和秘密。新命令/组合根接线的实际状态以 P03b 模块报告为准。
+
+初始化 CLI：`kiarabot-pg-initialize --initialize-empty SERVICE HOST PORT DATABASE MIGRATION_ROLE RUNTIME_ROLE CA_FILE PASSWORD_FILE`。
+SERVICE 只允许 identity/runtime/scheduler/model；只以迁移登录连接。
+密码文件必须是当前用户所有、无组/其他权限、1–4096字节的普通文件，拒绝符号链接/FIFO；
+末尾允许一个换行，不允许多行、NUL。密码不进入命令行。`--help`退出0；
+参数/密码文件错误退出2，存储/权限/版本/非空拒绝退出1，初始化成功退出0。
+提交回执丢失输出 `INITIALIZATION_UNKNOWN` 并退出1，须先检查原库状态，不自动重跑；
+失败且完整回滚的空库可再次显式初始化，已成功或半初始化库拒绝。
+连接配置拒绝环境中的 PGSERVICE/PGSERVICEFILE/PGHOSTADDR/PGOPTIONS/PGSSLCERT/PGSSLKEY/PGPASSFILE，
+避免环境连接配置覆盖受控策略。CLI 不检查业务就绪，不启动 daemon。

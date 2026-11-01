@@ -203,3 +203,15 @@ BufferedRuntimeLogSink 实现 Core 的 IRuntimeLogSink，互斥保护有界环�
 
 
 T11a `kiarabot-migrate` 复用 SqliteRuntimeStore::open 的同事务迁移，SQLite BEGIN IMMEDIATE 为迁移锁；不重复维护 schema 或手写第二套迁移 SQL。进程级测试 `infrastructure/tests/migrate_cli_test.cpp`（CTest `migrate_cli`，2026-10-31 新增）直接调用构建产物覆盖：缺参数/`:memory:`/`file:` 退出 2、首次迁移与重复迁移退出 0、v1 旧库迁移、未知 schema 与损坏载荷退出 1 且不改写数据库、持有写锁 1.5 秒后释放时 CLI 重试成功、两个实例并发启动都成功、父目录缺失退出 1。`doc/08` 的“非法路径退出 2”仅指参数形态非法；路径不存在属于依赖故障，退出 1。
+
+## P03 PostgreSQL 存储基础（实施中）
+
+目标实现位于 `infrastructure/postgres/`，依赖固定 libpqxx7.10.0/PG16.4。
+Identity、Runtime、Scheduler、Model 各自独立逻辑库、迁移登录和运行登录。
+连接强制 TLS verify-full、SCRAM channel binding，连接/SQL/锁等待均有界；
+配置使用离散字段，诊断不得回显 DSN、凭据或 pqxx 异常正文。
+部署创建数据库/角色与显式空库 schema 初始化分开。初始化只接受无用户对象的数据库，
+DDL 与版本标记同一事务；重复初始化拒绝，未知或半初始化状态拒绝，daemon 不自动 DDL。
+运行身份仅按 schema 授权，不能建表、建 schema、临时表或访问其他业务数据库。
+活动写入者持有库内 session advisory lock；重复启动拒绝，连接/锁丢失后该实例停止业务，
+不能自动重连后继续旧业务。当前基础能力不表示 Repository 或六进程接线已经完成。
