@@ -2,6 +2,7 @@
 #include <array>
 #include <atomic>
 #include <chrono>
+#include <ctime>
 #include <fstream>
 #include <iostream>
 #include <iterator>
@@ -13,10 +14,13 @@
 #include <vector>
 
 #include <grpcpp/grpcpp.h>
+#include <openssl/pem.h>
+#include <openssl/x509.h>
 
 #include "kiarabot/core/runtime/platform/identity_rpc.hpp"
 #include "kiarabot/core/runtime/platform/peer_certificate.hpp"
 #include "kiarabot/core/runtime/platform/target_codec.hpp"
+#include "kiarabot/infrastructure/identity_crypto/peer_certificate.hpp"
 
 namespace {
 namespace t = kiarabot::core::target;
@@ -844,6 +848,290 @@ void exercise(w::IdentityService::Stub& stub, ApplicationFixture& app,
            w::CAPABILITY_NOT_SUPPORTED);
   require(app.calls.load() == before_unsupported);
 }
+// Read-only repository fixture for the production authenticator. Certificate parsing/verification
+// below uses the real OpenSSL adapter; this fixture does not claim PostgreSQL persistence proof.
+struct RegistryFixture {
+  t::Principal principal;
+  t::CredentialVersionRecord credential;
+  std::atomic<int> mode{0};
+  std::atomic<int> active{0};
+  std::atomic<int> reads{0};
+};
+t::Failure registry_unavailable() {
+  return {
+      t::ErrorCode::UpstreamUnavailable, t::Acceptance::NotAccepted, t::Recovery::Diagnose, {}, {}};
+}
+class PrincipalRepositoryFixture final : public t::Repository<t::SubjectId, t::Principal> {
+public:
+  explicit PrincipalRepositoryFixture(RegistryFixture& registry) : registry_(registry) {}
+  t::Outcome<std::optional<t::Principal>> find(const t::SubjectId& subject) override {
+    if (subject != registry_.principal.id) {
+      return std::optional<t::Principal>{};
+    }
+    auto principal = registry_.principal;
+    if (registry_.mode.load() == 3) {
+      principal.state = t::LifecycleState::Disabled;
+    }
+    return std::optional<t::Principal>{principal};
+  }
+  t::Status save(const t::Principal&, std::optional<t::ResourceVersion>) override {
+    throw std::logic_error("unused write");
+  }
+
+private:
+  RegistryFixture& registry_;
+};
+class CredentialRepositoryFixture final : public t::IdentityCredentialRepository {
+public:
+  explicit CredentialRepositoryFixture(RegistryFixture& registry) : registry_(registry) {}
+  t::Outcome<std::optional<t::CredentialVersionRecord>>
+  current(const t::CredentialId& id) override {
+    if (id != registry_.credential.ref.id) {
+      return std::optional<t::CredentialVersionRecord>{};
+    }
+    auto credential = registry_.credential;
+    if (registry_.mode.load() == 4) {
+      ++credential.ref.version.value;
+    }
+    return std::optional<t::CredentialVersionRecord>{credential};
+  }
+  t::Outcome<std::optional<t::CredentialVersionRecord>>
+  version(const t::CredentialVersionRef&) override {
+    throw std::logic_error("unused historical lookup");
+  }
+  t::Outcome<std::optional<t::CredentialVersionRecord>>
+  by_certificate(const t::Sha256Digest& fingerprint) override {
+    ++registry_.reads;
+    if (registry_.mode.load() == 1) {
+      return registry_unavailable();
+    }
+    const auto& cert = std::get<t::CertificateBinding>(registry_.credential.material);
+    if (registry_.mode.load() == 2 || fingerprint != cert.fingerprint) {
+      return std::optional<t::CredentialVersionRecord>{};
+    }
+    auto credential = registry_.credential;
+    if (registry_.mode.load() == 5) {
+      std::get<t::CertificateBinding>(credential.material).registered_san = "wrong.test";
+    }
+    return std::optional<t::CredentialVersionRecord>{credential};
+  }
+  t::Outcome<std::optional<t::LoginIdentity>> login(const std::string&) override {
+    throw std::logic_error("unused login lookup");
+  }
+  t::Status save_login(const t::LoginIdentity&, std::optional<t::ResourceVersion>) override {
+    throw std::logic_error("unused login write");
+  }
+  t::Status save(const t::CredentialVersionRecord&, std::optional<t::ResourceVersion>) override {
+    throw std::logic_error("unused credential write");
+  }
+
+private:
+  RegistryFixture& registry_;
+};
+class RegistryWorkFixture final : public t::IdentitySecurityUnitOfWork {
+public:
+  explicit RegistryWorkFixture(RegistryFixture& registry)
+      : registry_(registry), principals_(registry), credentials_(registry) {
+    ++registry_.active;
+  }
+  ~RegistryWorkFixture() override {
+    rollback();
+  }
+  t::Outcome<t::TimePoint> current_time() override {
+    return t::TimePoint{std::chrono::duration_cast<std::chrono::nanoseconds>(
+        std::chrono::system_clock::now().time_since_epoch())};
+  }
+  t::Repository<t::SubjectId, t::Principal>& principals() override {
+    return principals_;
+  }
+  t::IdentityCredentialRepository& credentials() override {
+    return credentials_;
+  }
+  t::CommitResult commit() override {
+    throw std::logic_error("authentication must not write");
+  }
+  void rollback() noexcept override {
+    if (active_) {
+      --registry_.active;
+      active_ = false;
+    }
+  }
+  t::ReceiptRepository& receipts() override {
+    throw std::logic_error("unused receipt");
+  }
+  t::JournalRepository& journal() override {
+    throw std::logic_error("unused journal");
+  }
+  t::Repository<t::OperationId, t::Operation>& operations() override {
+    throw std::logic_error("unused operation");
+  }
+  t::Repository<t::SessionId, t::LoginSession>& sessions() override {
+    throw std::logic_error("unused session");
+  }
+  t::Repository<t::AssignmentId, t::ResourceGrant>& grants() override {
+    throw std::logic_error("authentication must not grant");
+  }
+  t::Repository<t::SubjectId, t::AuthorizationState>& authorizations() override {
+    throw std::logic_error("unused grants");
+  }
+  t::IdentitySessionSecurityRepository& session_security() override {
+    throw std::logic_error("unused secret session");
+  }
+  t::IdentityExactAssignmentRepository& exact_assignments() override {
+    throw std::logic_error("unused authorization");
+  }
+  t::IdentitySecretReceiptRepository& secret_receipts() override {
+    throw std::logic_error("unused secret receipt");
+  }
+  t::IdentityBootstrapRepository& bootstrap() override {
+    throw std::logic_error("unused bootstrap");
+  }
+
+private:
+  RegistryFixture& registry_;
+  PrincipalRepositoryFixture principals_;
+  CredentialRepositoryFixture credentials_;
+  bool active_ = true;
+};
+class RegistryFactoryFixture final : public t::IdentitySecurityUnitOfWorkFactory {
+public:
+  explicit RegistryFactoryFixture(RegistryFixture& registry) : registry_(registry) {}
+  t::Outcome<std::unique_ptr<t::IdentitySecurityUnitOfWork>> begin() override {
+    std::unique_ptr<t::IdentitySecurityUnitOfWork> result =
+        std::make_unique<RegistryWorkFixture>(registry_);
+    return result;
+  }
+
+private:
+  RegistryFixture& registry_;
+};
+class ClockFixture final : public t::SecurityClockPort {
+public:
+  explicit ClockFixture(RegistryFixture& registry) : registry_(registry) {}
+  t::Outcome<t::SecurityClockSample> sample() override {
+    require(registry_.active.load() == 0);
+    auto utc = t::TimePoint{std::chrono::duration_cast<std::chrono::nanoseconds>(
+        std::chrono::system_clock::now().time_since_epoch())};
+    if (registry_.mode.load() == 8) {
+      utc += std::chrono::seconds{3};
+    }
+    return t::SecurityClockSample{utc, std::chrono::steady_clock::now(),
+                                  std::chrono::milliseconds{0}, registry_.mode.load() != 7};
+  }
+
+private:
+  RegistryFixture& registry_;
+};
+t::TimePoint cert_time(const ASN1_TIME* value) {
+  std::tm decoded{};
+  require(ASN1_TIME_to_tm(value, &decoded) == 1);
+  google::protobuf::Timestamp timestamp;
+  timestamp.set_seconds(timegm(&decoded));
+  return std::get<t::TimePoint>(p::target_codec::from_wire(timestamp));
+}
+t::CertificateBinding certificate_binding(const std::string& leaf) {
+  std::unique_ptr<BIO, decltype(&BIO_free)> input(
+      BIO_new_mem_buf(leaf.data(), static_cast<int>(leaf.size())), BIO_free);
+  std::unique_ptr<X509, decltype(&X509_free)> certificate(
+      PEM_read_bio_X509(input.get(), nullptr, nullptr, nullptr), X509_free);
+  require(certificate != nullptr);
+  t::Sha256Digest digest;
+  unsigned int size = 0;
+  require(X509_digest(certificate.get(), EVP_sha256(),
+                      reinterpret_cast<unsigned char*>(digest.bytes.data()), &size) == 1 &&
+          size == 32);
+  return {{kPeer},
+          digest,
+          "localhost",
+          t::Service::Control,
+          cert_time(X509_get0_notBefore(certificate.get())),
+          cert_time(X509_get0_notAfter(certificate.get()))};
+}
+class CertificateSpy final : public t::PeerCertificatePort {
+public:
+  CertificateSpy(RegistryFixture& registry, t::PeerCertificatePort& actual)
+      : registry_(registry), actual_(actual) {}
+  t::Outcome<t::VerifiedPeer> verify(std::span<const std::byte> chain,
+                                     const t::RegisteredPeer& expected, t::TimePoint now) override {
+    require(registry_.active.load() == 0);
+    auto result = actual_.verify(chain, expected, now);
+    if (registry_.mode.load() == 6) {
+      registry_.credential.state = t::CredentialState::Revoked;
+      registry_.credential.revoked_at = now;
+    }
+    return result;
+  }
+
+private:
+  RegistryFixture& registry_;
+  t::PeerCertificatePort& actual_;
+};
+void exercise_registered_peer(const std::string& leaf, const std::string& ca,
+                              const std::string& key) {
+  auto certificate = certificate_binding(leaf);
+  const t::ResourceRef resource{t::ResourceKind::Principal, {kPeer}};
+  RegistryFixture registry{
+      t::Principal{
+          {kPeer}, t::PrincipalKind::PlatformService, resource, {1}, t::LifecycleState::Active},
+      t::CredentialVersionRecord{{{kCredential}, {1}},
+                                 {kPeer},
+                                 certificate,
+                                 t::CredentialState::Active,
+                                 certificate.not_before,
+                                 std::nullopt,
+                                 resource,
+                                 certificate.not_after}};
+  RegistryFactoryFixture transactions{registry};
+  ClockFixture clock{registry};
+  namespace crypto = kiarabot::infrastructure::identity_crypto;
+  auto actual = std::get<std::unique_ptr<t::PeerCertificatePort>>(
+      crypto::make_peer_certificate_crypto({{ca}, crypto::PeerSanKind::Dns}));
+  CertificateSpy verified_certificates{registry, *actual};
+  auto authenticator = std::get<p::PeerAuthenticator>(
+      p::make_identity_peer_authenticator(transactions, verified_certificates, clock));
+  ApplicationFixture app;
+  auto service = std::get<std::unique_ptr<w::IdentityService::Service>>(
+      p::make_identity_rpc(app, authenticator));
+  grpc::SslServerCredentialsOptions options;
+  options.pem_root_certs = ca;
+  options.pem_key_cert_pairs.push_back({key, leaf});
+  options.client_certificate_request = GRPC_SSL_REQUEST_AND_REQUIRE_CLIENT_CERTIFICATE_AND_VERIFY;
+  grpc::ServerBuilder builder;
+  int port = 0;
+  builder.RegisterService(service.get());
+  builder.AddListeningPort("127.0.0.1:0", grpc::SslServerCredentials(options), &port);
+  auto server = builder.BuildAndStart();
+  require(server && port > 0);
+  grpc::SslCredentialsOptions client;
+  client.pem_root_certs = ca;
+  client.pem_cert_chain = leaf;
+  client.pem_private_key = key;
+  auto stub = w::IdentityService::NewStub(
+      grpc::CreateChannel("localhost:" + std::to_string(port), grpc::SslCredentials(client)));
+  w::IdentityLoginRequest request;
+  request_context(request.mutable_context());
+  request.set_username("human");
+  request.set_password("password-fixture-secret");
+  w::IdentityLoginResponse response;
+  require(call(*stub, &w::IdentityService::Stub::Login, request, &response).ok());
+  require(registry.reads.load() == 2 && registry.active.load() == 0 && app.calls.load() == 1);
+  const auto before = app.calls.load();
+  for (const auto mode : {1, 2, 3, 4, 7, 8, 6}) {
+    registry.mode.store(mode);
+    rejected(call(*stub, &w::IdentityService::Stub::Login, request, &response),
+             mode == 1 || mode == 7 || mode == 8 ? w::UPSTREAM_UNAVAILABLE : w::UNAUTHENTICATED);
+    require(app.calls.load() == before && registry.active.load() == 0);
+  }
+  registry.mode.store(0);
+  registry.credential.state = t::CredentialState::Active;
+  registry.credential.revoked_at.reset();
+  std::get<t::CertificateBinding>(registry.credential.material).registered_san = "wrong.test";
+  rejected(call(*stub, &w::IdentityService::Stub::Login, request, &response), w::UNAUTHENTICATED);
+  std::get<t::CertificateBinding>(registry.credential.material).registered_san = "localhost";
+  require(call(*stub, &w::IdentityService::Stub::Login, request, &response).ok());
+  server->Shutdown();
+  server->Wait();
+}
 struct GrpcLifetime {
   GrpcLifetime() {
     grpc_init();
@@ -938,6 +1226,7 @@ int main(int argc, char* argv[]) {
     require(auth_calls.load() == before);
     server->Shutdown();
     server->Wait();
+    exercise_registered_peer(leaf, ca, key);
     std::cout << "Six Identity RPCs over real mTLS: boundary projections, stable failures, unknown "
                  "commit, peer/deadline rejection passed (fixture app only)\n";
     return 0;

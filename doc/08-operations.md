@@ -560,3 +560,9 @@ rollback采样，不能创建第二个持锁连接。返回工厂只表示存储
 ### P04 Identity RPC 适配器尚未启用生产监听
 
 make_identity_rpc借用纯IdentitySecurityApplication和组合根注入的受审PeerAuthenticator。必须同时有真实mTLS证据及当前登记/凭据/SAN核验，不能用CA握手成功或fixture替代。未接纯应用/PG/认证回调时保持not ready，不激活旧reference Identity。适配器不读本机密钥或改配置/主入口；测试只在临时目录生成证书/私钥，密码/token和异常正文不入日志。认证回调须有界并遵守取消，服务寿命覆盖application和回调捕获端口直至RPC Wait结束。实际生产PG/当前凭据/撤销故障闭环由后续组合根验收；本轮只证明RPC边界。
+
+### P04 当前登记 PeerAuthenticator（可注入，尚未装配监听）
+
+make_identity_peer_authenticator借用同一IdentitySecurityUnitOfWorkFactory、PeerCertificatePort和SecurityClockPort，返回可注入make_identity_rpc的认证回调。从实际AuthContext取指纹，经by_certificate CURRENT索引、current凭据、principals主体与DB UTC核验，调用Core require_current_credential；无登记、撤销、禁用、版本/绑定不一致一律拒绝，不从body取得注册身份。事务在任何时钟/证书端口调用前rollback并释放；再以受信、已知偏差至多2秒且与DB UTC相符的时刻调用成熟证书验证器，最后新事务重查登记，拒绝验证期间撤销或轮换。应用仍须在自身授权/提交事务复核。
+
+该回调仅认证当前平台peer，不授予业务权限；必须与纯应用使用同一Identity权威工厂。2秒本地预算和真实gRPC取消/deadline在各阶段检查，I/O自身有界由受审端口实现保证，不声称抢占任意阻塞端口。库中不构造PG连接、信任根、bootstrap或ready；组合根仍须注入37f7a62等已审完整typed工厂、成熟crypto及受信时钟并完成真实PG链验收。无wire/API字段变化。

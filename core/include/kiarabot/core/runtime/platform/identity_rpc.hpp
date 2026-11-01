@@ -16,6 +16,15 @@ namespace kiarabot::core::platform {
 using PeerAuthenticator =
     std::function<target::Outcome<target::VerifiedPeer>(grpc::ServerContext&)>;
 
+// Production peer callback: real TLS evidence -> CURRENT fingerprint index/principal/credential
+// -> release read UoW -> mature certificate verification -> fresh current-state recheck.
+// Borrows all ports until every service using the returned closure has stopped/Wait'ed.
+// The factory does not grant business permissions or construct a database/crypto implementation.
+target::Outcome<PeerAuthenticator>
+make_identity_peer_authenticator(target::IdentitySecurityUnitOfWorkFactory& transactions,
+                                 target::PeerCertificatePort& certificates,
+                                 target::SecurityClockPort& clock);
+
 // Borrows application for the service lifetime; owns the verifier closure. No readiness or
 // listener is enabled here. Six security RPCs call the pure application; other owner RPCs
 // return a stable RpcFailure/CAPABILITY_NOT_SUPPORTED, never the legacy reference service.

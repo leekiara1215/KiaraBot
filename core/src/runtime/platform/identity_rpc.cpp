@@ -1,3 +1,5 @@
+#include "kiarabot/core/runtime/platform/identity_rpc.hpp"
+
 #include <algorithm>
 #include <array>
 #include <chrono>
@@ -12,7 +14,7 @@
 #include <openssl/rand.h>
 
 #include "kiarabot/core/domain/target/identity_policy.hpp"
-#include "kiarabot/core/runtime/platform/identity_rpc.hpp"
+#include "kiarabot/core/domain/target/identity_state_rules.hpp"
 #include "kiarabot/core/runtime/platform/peer_certificate.hpp"
 #include "kiarabot/core/runtime/platform/target_codec.hpp"
 
@@ -320,6 +322,86 @@ principal(const t::Principal& input, const std::vector<t::ExactAssignment>& assi
     }
   }
   return result;
+}
+bool same_registration(const t::RegisteredPeer& left, const t::RegisteredPeer& right) {
+  const auto* first = std::get_if<t::PlatformPeer>(&left.peer);
+  const auto* second = std::get_if<t::PlatformPeer>(&right.peer);
+  const auto& a = left.certificate;
+  const auto& b = right.certificate;
+  return first && second && first->service == second->service &&
+         first->subject == second->subject && left.credential == right.credential &&
+         a.subject == b.subject && a.fingerprint == b.fingerprint &&
+         a.registered_san == b.registered_san && a.platform_service == b.platform_service &&
+         a.not_before == b.not_before && a.not_after == b.not_after;
+}
+// Current authority is a read-only snapshot. No external certificate/clock operation may run
+// until its UoW has rolled back/released. The application independently rechecks before effects.
+struct PeerRegistration {
+  t::RegisteredPeer peer;
+  t::TimePoint checked_at;
+};
+t::Outcome<PeerRegistration> read_registration(t::IdentitySecurityUnitOfWorkFactory& transactions,
+                                               const t::Sha256Digest& fingerprint) {
+  auto opened = transactions.begin();
+  if (const auto* error = std::get_if<t::Failure>(&opened)) {
+    return *error;
+  }
+  auto work = std::get<std::unique_ptr<t::IdentitySecurityUnitOfWork>>(std::move(opened));
+  if (!work) {
+    return failure(t::ErrorCode::Internal);
+  }
+  struct Rollback {
+    t::IdentitySecurityUnitOfWork& work;
+    ~Rollback() {
+      work.rollback();
+    }
+  } rollback{*work};
+  auto indexed = work->credentials().by_certificate(fingerprint);
+  if (const auto* error = std::get_if<t::Failure>(&indexed)) {
+    return *error;
+  }
+  const auto& index = std::get<std::optional<t::CredentialVersionRecord>>(indexed);
+  if (!index) {
+    return failure(t::ErrorCode::Unauthenticated, t::Recovery::Authenticate);
+  }
+  auto credential_result = work->credentials().current(index->ref.id);
+  if (const auto* error = std::get_if<t::Failure>(&credential_result)) {
+    return *error;
+  }
+  const auto& credential = std::get<std::optional<t::CredentialVersionRecord>>(credential_result);
+  if (!credential || credential->ref != index->ref) {
+    return failure(t::ErrorCode::Unauthenticated, t::Recovery::Authenticate);
+  }
+  auto principal_result = work->principals().find(credential->subject);
+  if (const auto* error = std::get_if<t::Failure>(&principal_result)) {
+    return *error;
+  }
+  const auto& principal = std::get<std::optional<t::Principal>>(principal_result);
+  if (!principal) {
+    return failure(t::ErrorCode::Unauthenticated, t::Recovery::Authenticate);
+  }
+  auto database_time = work->current_time();
+  if (const auto* error = std::get_if<t::Failure>(&database_time)) {
+    return *error;
+  }
+  const auto current = t::require_current_credential(*principal, *credential, index->ref,
+                                                     std::get<t::TimePoint>(database_time));
+  if (const auto* error = std::get_if<t::Failure>(&current)) {
+    return *error;
+  }
+  const auto* certificate = std::get_if<t::CertificateBinding>(&credential->material);
+  if (!certificate || !certificate->platform_service ||
+      !t::valid_service(*certificate->platform_service) ||
+      certificate->fingerprint != fingerprint || certificate->subject != principal->id ||
+      principal->kind != t::PrincipalKind::PlatformService || !principal->binding ||
+      credential->binding != *principal->binding || !uuid(principal->id.value) ||
+      !uuid(credential->ref.id.value)) {
+    return failure(t::ErrorCode::Unauthenticated, t::Recovery::Authenticate);
+  }
+  return PeerRegistration{
+      t::RegisteredPeer{t::PlatformPeer{*certificate->platform_service, principal->id},
+                        *certificate, credential->ref},
+      std::get<t::TimePoint>(database_time)};
 }
 class IdentityRpc final : public v1::IdentityService::Service {
 public:
@@ -797,6 +879,87 @@ private:
   PeerAuthenticator authenticate_;
 };
 } // namespace
+
+target::Outcome<PeerAuthenticator>
+make_identity_peer_authenticator(target::IdentitySecurityUnitOfWorkFactory& transactions,
+                                 target::PeerCertificatePort& certificates,
+                                 target::SecurityClockPort& clock) {
+  try {
+    PeerAuthenticator result =
+        [&transactions, &certificates,
+         &clock](grpc::ServerContext& context) -> target::Outcome<target::VerifiedPeer> {
+      try {
+        const auto started = std::chrono::steady_clock::now();
+        const auto expired = [&] {
+          return context.IsCancelled() || context.deadline() <= std::chrono::system_clock::now() ||
+                 std::chrono::steady_clock::now() - started >= std::chrono::seconds{2};
+        };
+        if (expired()) {
+          return failure(target::ErrorCode::Timeout, target::Recovery::QuerySameIdentity);
+        }
+        const auto auth = context.auth_context();
+        if (!auth) {
+          return failure(target::ErrorCode::Unauthenticated, target::Recovery::Authenticate);
+        }
+        auto extracted = extract_peer_certificate(*auth);
+        if (const auto* error = std::get_if<target::Failure>(&extracted)) {
+          return *error;
+        }
+        const auto& evidence = std::get<PeerCertificateEvidence>(extracted);
+        auto registration = read_registration(transactions, evidence.leaf_fingerprint);
+        if (const auto* error = std::get_if<target::Failure>(&registration)) {
+          return *error;
+        }
+        if (expired()) {
+          return failure(target::ErrorCode::Timeout, target::Recovery::QuerySameIdentity);
+        }
+        auto sample = clock.sample();
+        if (const auto* error = std::get_if<target::Failure>(&sample)) {
+          return *error;
+        }
+        const auto& instant = std::get<target::SecurityClockSample>(sample);
+        if (!instant.trusted || instant.maximum_known_skew < std::chrono::milliseconds::zero() ||
+            instant.maximum_known_skew > target::kMaximumKnownClockSkew || !positive(instant.utc)) {
+          return failure(target::ErrorCode::UpstreamUnavailable);
+        }
+        const auto& snapshot = std::get<PeerRegistration>(registration);
+        if (!positive(snapshot.checked_at) ||
+            std::chrono::abs(instant.utc - snapshot.checked_at) > target::kMaximumKnownClockSkew) {
+          return failure(target::ErrorCode::UpstreamUnavailable);
+        }
+        const auto& registered = snapshot.peer;
+        // All read transactions have been released before this mature crypto call.
+        auto verified = certificates.verify(evidence.der_chain, registered, instant.utc);
+        if (const auto* error = std::get_if<target::Failure>(&verified)) {
+          return *error;
+        }
+        const auto& peer = std::get<target::VerifiedPeer>(verified);
+        if (!same_registration(peer.binding, registered) || peer.verified_at != instant.utc) {
+          return failure(target::ErrorCode::Unauthenticated, target::Recovery::Authenticate);
+        }
+        if (expired()) {
+          return failure(target::ErrorCode::Timeout, target::Recovery::QuerySameIdentity);
+        }
+        auto current = read_registration(transactions, evidence.leaf_fingerprint);
+        if (const auto* error = std::get_if<target::Failure>(&current)) {
+          return *error;
+        }
+        if (!same_registration(registered, std::get<PeerRegistration>(current).peer)) {
+          return failure(target::ErrorCode::Unauthenticated, target::Recovery::Authenticate);
+        }
+        if (expired()) {
+          return failure(target::ErrorCode::Timeout, target::Recovery::QuerySameIdentity);
+        }
+        return peer;
+      } catch (...) {
+        return failure(target::ErrorCode::Internal);
+      }
+    };
+    return result;
+  } catch (...) {
+    return failure(target::ErrorCode::Internal);
+  }
+}
 
 target::Outcome<std::unique_ptr<v1::IdentityService::Service>>
 make_identity_rpc(target::IdentitySecurityApplication& application,
