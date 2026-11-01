@@ -74,7 +74,8 @@ def daemon_http(root):
                                  capture_output=True, timeout=5)
         assert refused.returncode == 1 and b'probe_port=' not in refused.stdout
         assert not select.select([trap], [], [], 0)[0], 'expired key contacted PG'
-    short_lifetime = '--own-tls-expiry' in sys.argv[9:]
+    cross_expiry = '--own-tls-cross-expiry' in sys.argv[9:]
+    short_lifetime = '--own-tls-expiry' in sys.argv[9:] or cross_expiry
     expires = None
     if short_lifetime:
         tls = root / 'bootstrap-tls'
@@ -137,7 +138,9 @@ def daemon_http(root):
             return reply[1]
         login = {'username': 'administrator', 'password': sensitive[0]}
         key = 'login-' + str(uuid.uuid4())
+        login_started = time.monotonic()
         tokens = expect(request('POST', '/api/v1/auth/login', login, key=key), 200)
+        login_elapsed = time.monotonic() - login_started
         sensitive.extend([tokens['access_token'], tokens['refresh_token']])
         replay = expect(request('POST', '/api/v1/auth/login', login, key=key), 200)
         for name in ['access_token', 'refresh_token', 'access_expires_at', 'refresh_expires_at']:
@@ -153,6 +156,41 @@ def daemon_http(root):
         replay = expect(request('POST', '/api/v1/auth/refresh', {'refresh_token': tokens['refresh_token']}, key=refreshkey), 200)
         assert replay['refresh_token'] == refreshed['refresh_token']
         expect(request('GET', '/api/v1/auth/me', token=refreshed['access_token']), 200)
+        if cross_expiry:
+            # Read-only inspection of the same verified owned backend after daemon exit.
+            def session_count():
+                environment = {key: value for key, value in os.environ.items()
+                               if not key.startswith('PG')}
+                environment.update(
+                    PGHOST='localhost', PGPORT=sys.argv[2], PGUSER='p03_admin',
+                    PGDATABASE='p03_identity',
+                    PGPASSWORD=(root / 'password').read_text().strip(),
+                    PGSSLMODE='verify-full', PGSSLROOTCERT=str(root / 'server.pem'),
+                    PGCHANNELBINDING='require', PGCONNECT_TIMEOUT='2')
+                result = subprocess.run(
+                    [str(Path(sys.argv[6]) / 'psql'), '-X', '-qAt', '-v', 'ON_ERROR_STOP=1'],
+                    input='SHOW data_directory; SELECT count(*) FROM kiarabot.sessions;',
+                    text=True, env=environment, capture_output=True, timeout=5)
+                assert result.returncode == 0, 'owned backend inspection failed'
+                directory, count = result.stdout.strip().splitlines()
+                assert Path(directory).resolve() == root / 'data', 'owned backend changed'
+                return int(count)
+
+            before = session_count()
+            # Start a fresh password-verified login while credentials are still valid,
+            # then verify the in-flight operation finishes after their absolute expiry.
+            margin = max(0.01, min(0.1, login_elapsed / 3))
+            while time.time() < expires - margin:
+                time.sleep(min(0.005, expires - margin - time.time()))
+            assert time.time() < expires and daemon.poll() is None
+            crossed = request('POST', '/api/v1/auth/login', login,
+                              key='cross-expiry-' + str(uuid.uuid4()))
+            assert time.time() >= expires, 'login did not cross the real expiry boundary'
+            assert crossed[0] in (503, 504), 'cross-expiry login was accepted'
+            assert daemon.wait(timeout=4) == 1
+            assert session_count() == before, 'cross-expiry request committed a new session'
+            print('Real in-flight login crossed own TLS expiry without a new PG session commit')
+            return
         if short_lifetime:
             # Existing Control IdentityAuthClient retains its established gRPC channel.
             # No system clock manipulation or replacement peer is used.

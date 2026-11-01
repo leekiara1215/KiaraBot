@@ -49,6 +49,9 @@ public:
   // Snapshot only: never samples clocks, locks or accesses a database from readiness.
   bool healthy() const noexcept;
   bool credentials_expired() const noexcept;
+  // Current lifecycle gate plus the actual selected own-chain absolute expiry. Production
+  // injects this limit into RPC so Core final_check bounds work spanning authentication.
+  target::Outcome<target::TimePoint> invocation_deadline() noexcept;
 
 private:
   std::mutex mutex_;

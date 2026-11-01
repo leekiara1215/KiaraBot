@@ -98,11 +98,25 @@ int main() {
   c::SystemSecurityClock expired({true, 2000}, validity);
   assert(std::holds_alternative<t::Failure>(expired.sample()));
   assert(expired.credentials_expired() && !expired.healthy());
+  assert(std::get<t::Failure>(expired.invocation_deadline()).code ==
+         t::ErrorCode::UpstreamUnavailable);
   assert(std::holds_alternative<t::Failure>(expired.sample()));
 
   c::SystemSecurityClock untrusted({false, 0});
   assert(!untrusted.healthy());
   assert(std::holds_alternative<t::Failure>(untrusted.sample()));
+  c::SystemSecurityClock clock_only({true, 2000});
+  assert(std::get<t::Failure>(clock_only.invocation_deadline()).code ==
+         t::ErrorCode::UpstreamUnavailable);
+  const auto actual = std::chrono::time_point_cast<Ns>(std::chrono::system_clock::now());
+  const kiarabot::core::platform::TlsValidity current_validity{actual - std::chrono::hours{1},
+                                                               actual + std::chrono::hours{1}};
+  c::SystemSecurityClock bounded({true, 2000}, current_validity);
+  assert(std::get<t::TimePoint>(bounded.invocation_deadline()) == current_validity.not_after);
+  c::SystemSecurityClock not_trusted({false, 2000}, current_validity);
+  assert(std::get<t::Failure>(not_trusted.invocation_deadline()).code ==
+         t::ErrorCode::UpstreamUnavailable);
+
   c::SystemSecurityClock native({true, 2000});
   assert(!native.healthy());
   auto first = native.sample();

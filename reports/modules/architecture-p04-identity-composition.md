@@ -200,3 +200,34 @@ Python compilation, locked format16/tidy22, module boundaries, document links an
 whitespace checks passed. No external provider or real platform calls occurred.
 The PG application fixture adaptations to B are owned by the PG task and are not
 claimed here; A+B+this configuration and that fixture must be integrated together.
+
+## Production InvocationDeadline injection
+
+Reviewed dependency: contracts commit052fea1 (local aa0c638), four-argument RPC factory.
+This separate cap edits only the private clock/composition and their tests plus
+operational/module documentation. SystemSecurityClock::invocation_deadline samples
+its real trusted/lifecycle gate and returns the actual saved selected-chain not_after.
+Production make_identity_rpc always injects this closure. No body/remote peer field,
+inner port, mature crypto or business implementation is changed. The RPC adapter
+combines this absolute limit with its existing budgets; Core's existing final_check
+therefore receives the own-TLS bound across multi-phase work.
+
+Checks actually run: Werror Identity/clock/RPC fixture builds; clock unit tests including
+no-own-metadata refusal, expired/untrusted refusal and exact original not_after return;
+actual mTLS p04_identity_rpc (past/zero/failure/exception callback, earlier/later cap,
+body/transport minimum and unchanged remote peer expiry); ASan/UBSan clock tests;
+format16 and tidy22 three TUs; Python compilation, boundaries, links and diff check.
+All passed. The owned-PG production test's --own-tls-cross-expiry case starts a fresh
+password login while the daemon/certificate are valid and observes completion after
+real expiry; it requires503/504, Identity exit1, and unchanged actual PG sessions count
+before/after. The read-only inspection verifies backend data_directory against the
+owned fixture directory. Actual cross-expiry test passed; cluster/private materials
+were removed. No real system clock adjustment or fake peer was used. This evidence
+checks no new session commit, not only a later client reconnect failure.
+
+Document impact: doc02/08 and this report updated for production injection; the
+public RPC factory and budget semantics are already documented by052fea1. No new
+proto/API/error code, no changes to unrelated module docs; protected doc18 untouched.
+CMake temporary local registration is restored before delivery. Register the explicit
+cross-expiry variant in addition to normal and expired-channel variants. Parent-owned
+robust subprocess cleanup/secret coverage must be retained when merging test changes.

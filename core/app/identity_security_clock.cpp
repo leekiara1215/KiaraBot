@@ -196,4 +196,15 @@ bool SystemSecurityClock::credentials_expired() const noexcept {
   return credentials_expired_.load();
 }
 
+target::Outcome<target::TimePoint> SystemSecurityClock::invocation_deadline() noexcept {
+  if (!own_credentials_) {
+    return unavailable();
+  }
+  const auto current = sample();
+  if (const auto* error = std::get_if<target::Failure>(&current)) {
+    return *error;
+  }
+  return own_credentials_->not_after;
+}
+
 } // namespace kiarabot::core::composition

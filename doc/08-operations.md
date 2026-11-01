@@ -726,3 +726,13 @@ DelegationConfig constructs signing/verification and the public verification por
 composition retains both with their clock and validates a current snapshot before
 PG. No second keyset/configuration is built. This enables material ownership only;
 GetVerificationKeys authorization and its RPC require their own reviewed capability.
+
+### Production Identity invocation limit injection
+
+The configured production factory now always supplies InvocationDeadline. Its owned
+clock first validates the current trusted sample and own-chain lifecycle, then returns
+exactly the retained selected-chain not_after. Missing own metadata, untrusted clock
+or expired credentials fail closed. RPC takes the minimum with request/transport
+budgets and passes that deadline into Core final_check, including work that starts
+before own TLS expiry and finishes later. The remote Control certificate metadata
+is never replaced. Empty callback compatibility remains confined to fixtures.

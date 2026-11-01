@@ -909,3 +909,13 @@ builds both ports from the same configuration, and composition owns them until a
 all application/RPC borrowers stop. A current public-material snapshot is validated
 before opening PG. No public material endpoint or authorization bypass is introduced;
 the retained port awaits the independently reviewed Keys application/RPC integration.
+
+### Production Identity invocation limit injection
+
+The configured production factory now always supplies InvocationDeadline. Its owned
+clock first validates the current trusted sample and own-chain lifecycle, then returns
+exactly the retained selected-chain not_after. Missing own metadata, untrusted clock
+or expired credentials fail closed. RPC takes the minimum with request/transport
+budgets and passes that deadline into Core final_check, including work that starts
+before own TLS expiry and finishes later. The remote Control certificate metadata
+is never replaced. Empty callback compatibility remains confined to fixtures.

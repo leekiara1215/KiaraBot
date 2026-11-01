@@ -316,8 +316,9 @@ target::Outcome<platform::ServiceComposition> configured(const platform::Process
           // applications borrow it for their own security/commit phase checks.
           return current_peer(context);
         };
-        auto adapter = platform::make_identity_rpc(observed->sessions(), std::move(gated),
-                                                   &observed->issuer());
+        auto adapter = platform::make_identity_rpc(
+            observed->sessions(), std::move(gated), &observed->issuer(),
+            [dependencies] { return dependencies->clock.invocation_deadline(); });
         if (const auto* error = std::get_if<target::Failure>(&adapter)) {
           return *error;
         }
