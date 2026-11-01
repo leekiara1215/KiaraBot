@@ -357,8 +357,9 @@ t::Outcome<t::Service> audience(std::string_view value) {
 class IdentityRpc final : public v1::IdentityService::Service {
 public:
   IdentityRpc(t::IdentitySecurityApplication& application, PeerAuthenticator authenticate,
-              t::IdentityDelegationApplication* issuer)
-      : application_(application), authenticate_(std::move(authenticate)), issuer_(issuer) {}
+              t::IdentityDelegationApplication* issuer, InvocationDeadline invocation_deadline)
+      : application_(application), authenticate_(std::move(authenticate)), issuer_(issuer),
+        invocation_deadline_(std::move(invocation_deadline)) {}
 
   grpc::Status Login(grpc::ServerContext* transport, const v1::IdentityLoginRequest* request,
                      v1::IdentityLoginResponse* response) override {
@@ -866,7 +867,21 @@ private:
           return fail(failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput));
         }
       }
-      if (effective <= started || transport->IsCancelled()) {
+      if (effective <= now() || transport->IsCancelled()) {
+        return fail(failure(t::ErrorCode::Timeout, t::Recovery::QuerySameIdentity));
+      }
+      if (invocation_deadline_) {
+        auto own_limit = invocation_deadline_();
+        if (const auto* error = std::get_if<t::Failure>(&own_limit)) {
+          return fail(*error);
+        }
+        const auto limit = std::get<t::TimePoint>(own_limit);
+        if (!positive(limit)) {
+          return fail(failure(t::ErrorCode::UpstreamUnavailable));
+        }
+        effective = std::min(effective, limit);
+      }
+      if (effective <= now() || transport->IsCancelled()) {
         return fail(failure(t::ErrorCode::Timeout, t::Recovery::QuerySameIdentity));
       }
       const auto auth = transport->auth_context();
@@ -920,6 +935,7 @@ private:
   t::IdentitySecurityApplication& application_;
   PeerAuthenticator authenticate_;
   t::IdentityDelegationApplication* issuer_;
+  InvocationDeadline invocation_deadline_;
 };
 } // namespace
 
@@ -993,13 +1009,14 @@ make_identity_peer_authenticator(target::IdentityAdminApplication& application,
 
 target::Outcome<std::unique_ptr<v1::IdentityService::Service>>
 make_identity_rpc(target::IdentitySecurityApplication& application, PeerAuthenticator authenticate,
-                  target::IdentityDelegationApplication* issuer) {
+                  target::IdentityDelegationApplication* issuer,
+                  InvocationDeadline invocation_deadline) {
   try {
     if (!authenticate) {
       return failure(target::ErrorCode::InvalidArgument, target::Recovery::CorrectInput);
     }
-    std::unique_ptr<v1::IdentityService::Service> result =
-        std::make_unique<IdentityRpc>(application, std::move(authenticate), issuer);
+    std::unique_ptr<v1::IdentityService::Service> result = std::make_unique<IdentityRpc>(
+        application, std::move(authenticate), issuer, std::move(invocation_deadline));
     return result;
   } catch (...) {
     return failure(target::ErrorCode::Internal);

@@ -1774,10 +1774,16 @@ wrapper仅核对返回指纹、正verified_at、受信clock/已知偏差及与ve
 
 ### P04 IssueDelegation RPC（第七方法，可选依赖）
 
-make_identity_rpc(IdentitySecurityApplication&, PeerAuthenticator, IdentityDelegationApplication* issuer=nullptr)仍注册一个IdentityService，借用issuer到停止/Wait；两参旧调用可编译，缺issuer时Issue返回RpcFailure/CAPABILITY_NOT_SUPPORTED。Exchange与其他未接方法仍明确未实现，不降级到reference。Peer factory当前签名为make_identity_peer_authenticator(IdentityAdminApplication&, SecurityClockPort&)。
+make_identity_rpc(IdentitySecurityApplication&, PeerAuthenticator, IdentityDelegationApplication* issuer=nullptr, InvocationDeadline={})仍注册一个IdentityService，借用issuer到停止/Wait；两参旧调用可编译，缺issuer时Issue返回RpcFailure/CAPABILITY_NOT_SUPPORTED。Exchange与其他未接方法仍明确未实现，不降级到reference。Peer factory当前签名为make_identity_peer_authenticator(IdentityAdminApplication&, SecurityClockPort&)。
 
 Issue只接受当前Control peer，subject_proof按原始AccessSession token借用，不剥Bearer或接收现成委托替代。audience显式映射封闭六服务；scope/permissions非空、去重、已知枚举与合法exact资源，client_certificate_sha256必须恰好32字节并等于真实transport peer。wire声明的permission×scope product只转换一次为exact tuples，由Core issuer逐tuple复核当前来源与权限，外层不授予或拼接其他assignment。
 
 按父定稿1b962d3，Issue/Exchange requires_idempotency=false：签发不消费配额或一次性材料、无业务意图/普通七天秘密收据，重复请求重新授权并可产生新proof ID。Login/Refresh/Revoke/Rotate仍要求原幂等键。返回只复制应用实际签出的proof及原audience/expiry/一跳信息，核对claim与请求tuple、真实证书及来源上下文一致，不补签名/期限/来源；crypto和权威查询均由Core持有。真实JWT生产签名/PG/HTTPS组合根闭环由父继续验收，本RPC fixture不据此标target implemented。
 
 Issue RPC在解码/展开前同步成熟JWT的128 exact bindings上限：资源1..128、权限1..40且封闭去重，permission_count <=128/resource_count，以除法规避溢出。超限沿既有INVALID_ARGUMENT返回，不调用Core issuer的来源验证/签名；不先构建大型product再等crypto晚拒。Core自身的同一上限由Core能力维护，传输层不改其实现。
+
+### Identity 自身 TLS 调用期限
+
+当前factory为make_identity_rpc(SecurityApp&, PeerAuthenticator, Issuer*=nullptr, InvocationDeadline={})，其中InvocationDeadline是function<Outcome<TimePoint>()>，闭包由服务持有。生产composition必须注入实际选定自身TLS链有效期与当前可信clock/lifecycle gate；空回调仅为fixture/源兼容，不得作为生产默认安全策略，也不得把自身到期时间写入远端Control的CertificateBinding。
+
+run保留body/gRPC/default2秒/max5秒及取消检查，可信回调失败沿原Failure进入完整RpcFailure，异常在调用应用前转Internal/NotAccepted。返回非正时间失败关闭为UpstreamUnavailable；过期期限为Timeout/NotAccepted。有效期限取已有预算与自身limit最早者，回调之后与认证之后再次检查取消/到期；传入每个Core用例的context.deadline包含此上限，由Core final_check阻止自身TLS到期后的提交。外层不授权、不查仓储、不实现TLS链/clock判断或伪造有效期。较晚limit不能延长请求期限。

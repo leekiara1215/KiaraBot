@@ -106,6 +106,7 @@ public:
   std::atomic<int> mode{0};
   std::atomic<int> calls{0};
   std::atomic<std::int64_t> last_deadline{0};
+  std::atomic<std::int64_t> last_peer_expiry{0};
   std::atomic<int> code_index{0};
   std::atomic<int> recovery_index{5};
   t::ServiceReadiness readiness() const override {
@@ -133,6 +134,10 @@ public:
   }
   template <typename Request> void observed(const Request& request) {
     ++calls;
+    if constexpr (requires { request.control_peer; }) {
+      last_peer_expiry.store(
+          request.control_peer.binding.certificate.not_after.time_since_epoch().count());
+    }
     last_deadline.store(request.context.deadline.time_since_epoch().count());
     require(request.context.request_id == kSubject && request.context.trace_id == kOther);
     if (mode.load() == 12) {
@@ -871,6 +876,61 @@ void exercise(w::IdentityService::Stub& stub, ApplicationFixture& app,
 }
 // Read-only repository fixture for the production authenticator. Certificate parsing/verification
 // below uses the real OpenSSL adapter; this fixture does not claim PostgreSQL persistence proof.
+void exercise_invocation_deadline(w::IdentityService::Stub& stub, ApplicationFixture& app,
+                                  std::atomic<int>& mode,
+                                  std::atomic<std::int64_t>& supplied_limit) {
+  w::IdentityLoginRequest request;
+  request_context(request.mutable_context());
+  request.set_username("human");
+  request.set_password("password-fixture-secret");
+  w::IdentityLoginResponse response;
+  const auto before = app.calls.load();
+  mode.store(1);
+  const auto expired =
+      rejected(call(stub, &w::IdentityService::Stub::Login, request, &response), w::TIMEOUT);
+  require(expired.context().acceptance() == w::NOT_ACCEPTED);
+  mode.store(3);
+  const auto unavailable = rejected(
+      call(stub, &w::IdentityService::Stub::Login, request, &response), w::UPSTREAM_UNAVAILABLE);
+  require(std::get<int>(p::target_codec::http_status(t::ErrorCode::UpstreamUnavailable)) == 503);
+  require(unavailable.context().acceptance() == w::NOT_ACCEPTED &&
+          unavailable.context().retry_after_ms() == 123);
+  mode.store(4);
+  const auto exception =
+      rejected(call(stub, &w::IdentityService::Stub::Login, request, &response), w::INTERNAL);
+  require(exception.context().acceptance() == w::NOT_ACCEPTED);
+  mode.store(5);
+  rejected(call(stub, &w::IdentityService::Stub::Login, request, &response),
+           w::UPSTREAM_UNAVAILABLE);
+  require(app.calls.load() == before);
+  const auto now = std::chrono::system_clock::now();
+  const auto cap = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                       (now + std::chrono::seconds{1}).time_since_epoch())
+                       .count();
+  supplied_limit.store(cap);
+  mode.store(2);
+  require(call(stub, &w::IdentityService::Stub::Login, request, &response).ok());
+  require(app.last_deadline.load() == cap);
+  require(app.last_peer_expiry.load() ==
+          (kChecked + std::chrono::hours{24}).time_since_epoch().count());
+  // A future own-TLS limit cannot extend a shorter body or transport budget.
+  mode.store(0);
+  auto shorter = request;
+  const t::TimePoint body_cap{std::chrono::duration_cast<std::chrono::nanoseconds>(
+      (std::chrono::system_clock::now() + std::chrono::seconds{1}).time_since_epoch())};
+  *shorter.mutable_context()->mutable_deadline() =
+      std::get<google::protobuf::Timestamp>(p::target_codec::to_wire(body_cap));
+  require(call(stub, &w::IdentityService::Stub::Login, shorter, &response).ok());
+  require(app.last_deadline.load() == body_cap.time_since_epoch().count());
+  const auto transport_start = std::chrono::system_clock::now();
+  require(call(stub, &w::IdentityService::Stub::Login, request, &response,
+               std::chrono::milliseconds{300})
+              .ok());
+  require(app.last_deadline.load() <=
+          std::chrono::duration_cast<std::chrono::nanoseconds>(
+              (transport_start + std::chrono::milliseconds{400}).time_since_epoch())
+              .count());
+}
 struct RegistryFixture {
   t::Principal principal;
   t::CredentialVersionRecord credential;
@@ -1594,8 +1654,34 @@ int main(int argc, char* argv[]) {
       }
       return peer;
     };
-    auto service =
-        std::get<std::unique_ptr<w::IdentityService::Service>>(p::make_identity_rpc(app, verifier));
+    std::atomic<int> lifecycle_mode{0};
+    std::atomic<std::int64_t> lifecycle_limit{0};
+    // Lifecycle deadline TEST callback, not a certificate-expiry implementation/production clock.
+    p::InvocationDeadline lifecycle = [&]() -> t::Outcome<t::TimePoint> {
+      if (lifecycle_mode.load() == 1) {
+        return t::TimePoint{std::chrono::duration_cast<std::chrono::nanoseconds>(
+            (std::chrono::system_clock::now() - std::chrono::seconds{1}).time_since_epoch())};
+      }
+      if (lifecycle_mode.load() == 2) {
+        return t::TimePoint{std::chrono::nanoseconds{lifecycle_limit.load()}};
+      }
+      if (lifecycle_mode.load() == 3) {
+        return t::Failure{t::ErrorCode::UpstreamUnavailable,
+                          t::Acceptance::NotAccepted,
+                          t::Recovery::Diagnose,
+                          {},
+                          std::chrono::milliseconds{123}};
+      }
+      if (lifecycle_mode.load() == 4) {
+        throw std::runtime_error("never-return-own-TLS-secret");
+      }
+      if (lifecycle_mode.load() == 5) {
+        return t::TimePoint{};
+      }
+      return t::TimePoint::max();
+    };
+    auto service = std::get<std::unique_ptr<w::IdentityService::Service>>(
+        p::make_identity_rpc(app, verifier, nullptr, lifecycle));
     // A fabricated callback cannot bypass a missing real AuthContext.
     grpc::ServerContext no_peer;
     w::IdentityLoginRequest no_peer_request;
@@ -1620,6 +1706,7 @@ int main(int argc, char* argv[]) {
     auto stub = w::IdentityService::NewStub(
         grpc::CreateChannel("localhost:" + std::to_string(port), grpc::SslCredentials(client)));
     exercise(*stub, app, auth_mode);
+    exercise_invocation_deadline(*stub, app, lifecycle_mode, lifecycle_limit);
     const auto before = auth_calls.load();
     grpc::SslCredentialsOptions missing;
     missing.pem_root_certs = ca;

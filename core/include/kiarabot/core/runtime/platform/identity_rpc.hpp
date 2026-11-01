@@ -18,6 +18,11 @@ namespace kiarabot::core::platform {
 using PeerAuthenticator =
     std::function<target::Outcome<target::VerifiedPeer>(grpc::ServerContext&)>;
 
+// Trusted composition callback for this server's selected TLS-chain validity and current
+// clock/lifecycle gate, never the remote Control peer certificate. Production must inject it;
+// an empty callback is retained only for fixtures/source compatibility, never production.
+using InvocationDeadline = std::function<target::Outcome<target::TimePoint>()>;
+
 // Transport-only wrapper over the single authoritative Core authentication use case.
 // Borrows application/clock until every service using the closure has stopped/Wait'ed.
 target::Outcome<PeerAuthenticator>
@@ -30,6 +35,7 @@ make_identity_peer_authenticator(target::IdentityAdminApplication& application,
 // return a stable RpcFailure/CAPABILITY_NOT_SUPPORTED, never the legacy reference service.
 target::Outcome<std::unique_ptr<v1::IdentityService::Service>>
 make_identity_rpc(target::IdentitySecurityApplication& application, PeerAuthenticator authenticate,
-                  target::IdentityDelegationApplication* issuer = nullptr);
+                  target::IdentityDelegationApplication* issuer = nullptr,
+                  InvocationDeadline invocation_deadline = {});
 
 } // namespace kiarabot::core::platform
