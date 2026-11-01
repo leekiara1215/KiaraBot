@@ -10,6 +10,19 @@ function(kiarabot_platform_warnings TARGET_NAME)
     $<$<CXX_COMPILER_ID:MSVC>:/W4>)
 endfunction()
 
+# Wire conversion belongs to the outer layer; pure application libraries never link it.
+add_library(kiarabot_target_codec STATIC
+  ${CMAKE_SOURCE_DIR}/core/src/runtime/platform/target_codec.cpp)
+target_include_directories(kiarabot_target_codec PUBLIC ${CMAKE_SOURCE_DIR}/core/include)
+target_link_libraries(kiarabot_target_codec PUBLIC kiarabot_proto)
+kiarabot_platform_warnings(kiarabot_target_codec)
+add_executable(kiarabot_target_codec_test
+  ${CMAKE_SOURCE_DIR}/core/tests/platform/target_codec_test.cpp)
+target_link_libraries(kiarabot_target_codec_test PRIVATE kiarabot_target_codec)
+kiarabot_platform_warnings(kiarabot_target_codec_test)
+add_test(NAME p04_target_codec COMMAND kiarabot_target_codec_test)
+set_tests_properties(p04_target_codec PROPERTIES LABELS "p04;unit;security" TIMEOUT 10)
+
 foreach(SERVICE identity runtime plugin_host scheduler model)
   set(APPLICATION_SOURCE "${SERVICE}")
   if(SERVICE STREQUAL "plugin_host")

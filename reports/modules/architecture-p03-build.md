@@ -275,3 +275,17 @@ identity_application_contract_test为p04/unit、10秒。无生产或测试源码
 未取JWT或放宽tidy，未重复全仓统一入口；文档检查为路径/末尾换行与diff检查。
 
 实际P04 CTest 7/7通过，总2.74秒；新应用声明测试0.48秒，p04注册标签通过。
+
+## 后续接线：独立target codec
+
+同步完整已审源96f88ce/c39f999/41413f3（本树b077805/fa0ff4f/980ad7b），
+文档冲突保留本树内容，仅追加真正codec章节，不复制缺失契约链说明。
+新增外层kiarabot_target_codec与p04_target_codec（unit/security、10秒），PUBLIC core/include
+及生成proto，仅外层使用，未改源码/契约。文档影响同步doc/11及本报告，源提交已同步
+契约/Core codec说明，其他模块/CI/冻结doc18不改。
+
+固定full-locked配置成功，实际完整构建失败：本树尚未同步Model/Runtime/Identity契约链，
+生成协议缺RESOURCE_CATALOG及PERMISSION_ACCOUNT_READ/PLUGIN_READ/ADAPTER_READ/
+PLUGIN_CONFIG_READ/MESSAGE_READ。先前两末端契约直接cherry已有大量冲突且中止，
+本轮不编造枚举或关闭校验。此构建失败不能记通过；codec运行/tidy暂不能验证，
+需完整已审契约基点复验。全TU覆盖/内层/实际图/标签及文档检查将在提交前执行。

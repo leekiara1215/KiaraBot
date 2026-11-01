@@ -530,3 +530,7 @@ Core外层service_process编译独立AuthContext证据提取源；`p04_peer_cert
 
 `p04_identity_application_contract` 注册p04/unit、10秒，独立编译Identity可注入应用声明；
 测试不调用尚未实现factory，不能作为认证业务完成证据。该头同时自动独立编译。
+
+独立外层 `kiarabot_target_codec` PUBLIC链接生成proto，仅供外层消费者使用；
+`p04_target_codec` 注册p04/unit/security、10秒。完整构建须同步包含Catalog与所有40个
+封闭权限的已审查目标契约，不能在构建层补造wire枚举；纯application不链接codec。
