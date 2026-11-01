@@ -407,3 +407,20 @@ control-codec-link-probe，实际exit0且stderr空，无重复库warning。未�
 因为使用主树既有archive/fixture并非本树最新整套源码生成的产物，不记测试通过，
 也不更改断言。链接本身成功且无重复库warning的结论独立成立；需完整契约基点
 按新源重编后真实CTest复验，不能拿该混合回放当生产验收。
+
+## 后续接线：Identity Session/Receipt与完整普通结果、全局计数
+
+依序只取已授权源f12ee47/7227f58/3bcad42、Core a7d5d72+b45241d和PG0cd1f10、
+Core ba8e56c和PG95bc328；后两接口均与对应实现成组，不复制未提交增量或未审安全工厂。
+文档追加冲突保留双方真正新增章节，去掉重复秘密规则/报告节，版本行采用Identity5/其他4。
+PG库追加identity_sessions.cpp/identity_receipts.cpp，原公共测试TU和fixture已共同引用
+两新实现，因此作为一个构建接线提交；不新增依赖或变动原120秒上限，不改源码/断言。
+文档影响仅doc/11与本报告构建清单；Core/infra/运维行为已由源提交同步，其他模块/
+API/proto/CI及冻结doc18不改。
+固定prefix/Python配置与PG driver/initializer定向构建成功；全TU覆盖/inner/六目标图、
+全仓format16通过；两新源和更新codec/公共检查共四TU tidy及真实PG结果后附。
+未重复已知缺契约外层full或统一入口，父负责完整集成验收。文档检查为路径/末尾换行/
+无冲突标记和git diff --check。
+
+本树真实PG CTest1/1通过，17.08秒；四TU精确compile DB tidy22
+clang-analyzer-* warnings-as-errors通过。

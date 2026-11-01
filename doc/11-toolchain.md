@@ -553,3 +553,7 @@ PG库加入Identity凭据/Bootstrap安全仓储 `src/identity_security.cpp`，�
 
 `p04_identity_grant_projection` 独立注册p04/unit/security、10秒，验证精确授予到继承
 元数据的一致投影；只包含纯header，不增加库或外层依赖。
+
+PG库加入identity_sessions/identity_receipts两个真实TU，共享原PG driver/fixture；
+须成组同步Core SessionMetadata/index12、全局count接口及对应PG schema/codec实现。
+本轮新空库Identity5、其余三库4，初始化仍唯一显式入口，不自动迁移已有库。
