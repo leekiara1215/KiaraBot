@@ -94,6 +94,14 @@ public:
 };
 class Assignments : public t::IdentityExactAssignmentRepository {
 public:
+  t::Outcome<std::optional<t::AssignmentStateRecord>> current(const t::AssignmentId&) override {
+    std::abort();
+  }
+  t::Status save_state(const t::AssignmentStateRecord&,
+                       std::optional<t::ResourceVersion>) override {
+    std::abort();
+  }
+
   std::function<t::Status(const t::ExactAssignment&)> write;
   std::function<t::Outcome<std::vector<t::ExactAssignment>>()> read;
   std::function<t::Outcome<std::vector<t::ExactAssignment>>(const t::SubjectId&)> read_subject;

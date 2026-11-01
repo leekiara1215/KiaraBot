@@ -1111,3 +1111,13 @@ CheckAuthorization的Human来源原Control gate复用已审
 `identity_security_detail::read_session_control`与`session_control_valid_until`；签名链首项
 仍匹配持久subject，显式Issue能力及其watermark仍由Check独立复核。无session的原actor
 走by_platform，direct actor/cnf继续独立检查；共享读取不构造或替代实际TLS peer。
+
+### P04 Assignment 墓碑仓储契约
+
+IdentityExactAssignmentRepository::current(id)按ID返回Active或Revoked完整记录，供管理
+旧scope核验；for_subject和base grants metadata仅投影Active。save_state同UoW原子同步
+该唯一授权事实与base metadata：只允许Active v1创建、同owner Active CAS v+1更新及
+Active→Revoked v+1；Revoked永久保留owner/旧exact scope/终版本/有限撤销时间，不恢复、
+不复用ID、不删除owner。旧save(ExactAssignment)等同Active save，不能绕墓碑复活；旧base
+save也不能复活Revoked。空optional仅不存在，依赖失败必须Failure，不能伪造空查询。
+此接口与PG适配需成组接入，不将纯声明测试称为持久化或Set/Revoke应用完成。

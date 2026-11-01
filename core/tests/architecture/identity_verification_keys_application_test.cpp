@@ -1,6 +1,7 @@
 // clang-format off
 #include "kiarabot/core/application/target/identity_verification_keys_application.hpp"
 
+#include <cstdlib>
 #include <cassert>
 #include <functional>
 #include <stdexcept>
@@ -132,6 +133,14 @@ private:
 };
 class Assignments final : public t::IdentityExactAssignmentRepository {
 public:
+  t::Outcome<std::optional<t::AssignmentStateRecord>> current(const t::AssignmentId&) override {
+    std::abort();
+  }
+  t::Status save_state(const t::AssignmentStateRecord&,
+                       std::optional<t::ResourceVersion>) override {
+    std::abort();
+  }
+
   explicit Assignments(State& state) : state_(state) {}
   t::Outcome<std::vector<t::ExactAssignment>> for_subject(const t::SubjectId& subject) override {
     if (state_.fail_read) {

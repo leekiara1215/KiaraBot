@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 
+#include "kiarabot/core/domain/target/identity_assignment_state.hpp"
 #include "kiarabot/core/domain/target/identity_types.hpp"
 #include "kiarabot/core/ports/target/unit_of_work.hpp"
 
@@ -86,10 +87,22 @@ public:
 class IdentityExactAssignmentRepository {
 public:
   virtual ~IdentityExactAssignmentRepository() = default;
-  // Typed view of the same Identity grant authority/versions, not a second grant database.
-  // P04 authorization reads this exact projection; inherited grants() is metadata, not a bypass.
-  // Return same-subject exact tuples, not independently flattened role/scope projections.
+  // Typed view of the SAME authoritative grant rows/versions, not a second grant database.
+  // Return Active same-subject exact tuples only, never revoked evidence or flattened scope.
+  // Inherited grants() metadata also filters revoked rows and cannot bypass this authority.
   virtual Outcome<std::vector<ExactAssignment>> for_subject(const SubjectId& subject) = 0;
+  // Current administrative evidence includes Revoked IDs, preserving their permanent owner,
+  // final version and former exact scope. Empty optional is absence; faults remain Failure.
+  virtual Outcome<std::optional<AssignmentStateRecord>> current(const AssignmentId& id) = 0;
+  // Null expected creates Active version1 only. Updates match expected and advance exactly one
+  // version with the SAME owner. Active->Revoked advances version and records finite DB UTC
+  // revoked_at atomically; Revoked IDs never restore, reuse or erase owner/scope evidence.
+  // This write atomically synchronizes inherited grant metadata in the SAME physical UoW.
+  // Legacy base-grant writes cannot revive or replace a revoked ID.
+  virtual Status save_state(const AssignmentStateRecord& record,
+                            std::optional<ResourceVersion> expected) = 0;
+  // Existing compatibility entry: exactly save_state(Active, no revoked_at), with identical
+  // create/update owner/version CAS and atomic base synchronization. Never revives Revoked.
   virtual Status save(const ExactAssignment& assignment,
                       std::optional<ResourceVersion> expected) = 0;
 };

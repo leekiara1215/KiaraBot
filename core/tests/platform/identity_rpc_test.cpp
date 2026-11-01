@@ -2,6 +2,7 @@
 #include <array>
 #include <atomic>
 #include <chrono>
+#include <cstdlib>
 #include <ctime>
 #include <fstream>
 #include <iostream>
@@ -1099,6 +1100,14 @@ private:
 };
 class IssueGrantsFixture final : public t::IdentityExactAssignmentRepository {
 public:
+  t::Outcome<std::optional<t::AssignmentStateRecord>> current(const t::AssignmentId&) override {
+    std::abort();
+  }
+  t::Status save_state(const t::AssignmentStateRecord&,
+                       std::optional<t::ResourceVersion>) override {
+    std::abort();
+  }
+
   explicit IssueGrantsFixture(RegistryFixture& registry) : registry_(registry) {}
   t::Outcome<std::vector<t::ExactAssignment>> for_subject(const t::SubjectId& id) override {
     if (registry_.runtime && id == registry_.runtime->id && !registry_.runtime_capability) {
