@@ -82,3 +82,24 @@ PG 四库 fixture，以及新仓储/公共测试两 TU 的 clang-tidy22。clang-
 引导条件消费/回滚/错误版本/标记缺失Internal。
 开发中真实测试捕获 bytea 重复hex解码，已修正为复用既有摘要bytea编码并重跑全部检查。
 根构建未在本工作树运行：CMake源接线由工具链任务负责；新增源需完成该接线再跑根门禁。
+
+## 会话与 refresh 索引（实施中）
+
+新增私有 `identity_sessions.cpp`，公共私有 typed query/失败封装移入 `identity_access.hpp`。
+会话查询分别使用 access/refresh 验证索引，列表仅查询元数据且以 trusted max+1 单次
+有界读取检测溢出，返回 RateLimited 而不截断。更新匹配 expected version 和 rotation，
+created_at 不可改变；撤销可保留 rotation，轮换只前进一步，禁止整数回绕。
+安全 save 同步基础 sessions 的相同版本/rotation/expiry/revoked；若调用方已在同一事务
+写入完全一致的基础元数据可复用，但不接受不同内容。
+refresh 恢复只返回当前或原 control peer/幂等键消费记录，期限按实际 DB UTC 裁决，
+不信任外部 now；相同消费内容不延长窗口，改变内容 Conflict。
+所有路径仍借用一个 CommonWork。已执行并通过最终固定依赖三种 -Werror 构建、
+普通及 ASan+UBSan 两套真实 PG 四库 fixture；3 TU clang-tidy22 同时启用
+clang-analyzer-* 与 readability-braces-around-statements，warnings-as-errors 零诊断。
+修复当前任务凭据文件原有单行分支缺少大括号的问题，并复查格式/差异与文档。
+新增测试验证 inherited session 元数据同步、current verifier、原peer/key消费恢复、
+重复消费不延期、caller now不能复活过期输入、列表max+1拒绝、不变created_at、
+错误rotation CAS与uint64回绕拒绝。所有检查用最终重建产物运行。
+新增库源 `infrastructure/postgres/src/identity_sessions.cpp` 需由工具链任务加入；
+公共测试仍在既有 TU，无新测试源。不改 schema/manifest/API/稳定码或 doc/18。
+根完整构建/CTest留给主任务接线后的集成检查，本地不声称通过该门禁。

@@ -14,6 +14,7 @@
 
 #include "../src/identity_security.hpp"
 #include "../src/record_access.hpp"
+#include "../src/record_codec.hpp"
 
 namespace kiarabot::infrastructure::postgres::test {
 namespace {
@@ -224,9 +225,147 @@ void check_identity_credentials(Database& database) {
   }
 }
 
+void check_identity_sessions(Database& database) {
+  target::SessionSecurity session;
+  {
+    auto access = take(detail::DatabaseAccess::begin(database));
+    const auto now = take(access.work->current_time());
+    const auto created = now - std::chrono::seconds{1} + std::chrono::nanoseconds{137};
+    session = {{"security-live-session"},
+               {"credential-owner"},
+               {{"credential-password"}, {2}},
+               {target::TokenPurpose::Access, {"access-key"}, {}},
+               {target::TokenPurpose::Refresh, {"refresh-key"}, {}},
+               created,
+               created + std::chrono::minutes{15},
+               created + std::chrono::hours{24 * 30},
+               1,
+               {1},
+               false};
+    auto sessions = detail::session_security_repository(*access.sql);
+    take(sessions->save(session, {}, {}));
+    auto other = session;
+    other.id = {"security-live-session-2"};
+    other.access.tag.bytes[0] = std::byte{2};
+    other.refresh.tag.bytes[0] = std::byte{3};
+    take(sessions->save(other, {}, {}));
+    const auto base = take(detail::find_record(*access.work, detail::RecordKind::Session,
+                                               std::vector<std::string>{session.id.value}));
+    check(std::get<target::LoginSession>(*base).expires_at == session.refresh_expires_at,
+          "security create did not synchronize base session metadata");
+    committed(*access.work);
+  }
+  const auto input = session.refresh;
+  {
+    auto access = take(detail::DatabaseAccess::begin(database));
+    auto sessions = detail::session_security_repository(*access.sql);
+    check(take(sessions->find(session.id))->created_at == session.created_at,
+          "session created_at regenerated on read");
+    check(take(sessions->by_access(session.access))->id == session.id,
+          "access verifier index failed");
+    check(take(sessions->by_refresh(input))->id == session.id, "refresh verifier index failed");
+    const auto now = take(access.work->current_time());
+    target::ConsumedRefreshHandle consumed{
+        {session.id, session.subject, session.credential, input, 1, session.refresh_expires_at},
+        {{"control-peer"}, session.id, "refresh-attempt"},
+        now,
+        now + std::chrono::hours{23}};
+    session.version = {2};
+    session.rotation = 2;
+    session.access.tag.bytes[0] = std::byte{4};
+    session.refresh.tag.bytes[0] = std::byte{5};
+    take(sessions->save(session, target::ResourceVersion{1}, 1));
+    take(sessions->record_refresh_consumption(consumed));
+    take(access.sql->run([&](pqxx::transaction_base& transaction) -> target::Status {
+      transaction.exec(
+          "INSERT INTO kiarabot.secret_receipts VALUES(1,'control-peer',$1,"
+          "'refresh-attempt','credential-owner',$1,'credential-password',2,1,2,'request',"
+          "decode(repeat('00',32),'hex'),$2,$3,'sealed',1,decode('00','hex'),decode('00ff','hex'))",
+          pqxx::params{session.id.value, detail::timestamp(now),
+                       detail::timestamp(consumed.recovery_until)});
+      return std::monostate{};
+    }));
+    take(sessions->record_refresh_consumption(consumed));
+    check(!take(sessions->by_refresh(input)), "old refresh remained current after rotation");
+    auto recovered = take(sessions->resolve_refresh(input, {{"control-peer"}, "refresh-attempt"},
+                                                    target::TimePoint::max()));
+    check(recovered && std::holds_alternative<target::ConsumedRefreshHandle>(*recovered),
+          "consumed refresh did not resolve original attempt");
+    check(!take(sessions->resolve_refresh(input, {{"other-peer"}, "refresh-attempt"}, now)),
+          "consumed refresh resolved different peer");
+    check(!take(sessions->resolve_refresh(input, {{"control-peer"}, "other-key"}, now)),
+          "consumed refresh resolved different idempotency key");
+    committed(*access.work);
+  }
+  {
+    auto access = take(detail::DatabaseAccess::begin(database));
+    auto sessions = detail::session_security_repository(*access.sql);
+    const auto metadata = take(sessions->list_metadata(session.subject, 2));
+    check(metadata.size() == 2 && metadata[0].created_at == session.created_at &&
+              metadata[0].rotation == 2 && metadata[0].version.value == 2,
+          "bounded session metadata lost immutable fields/current version");
+    access.work->rollback();
+  }
+  {
+    auto access = take(detail::DatabaseAccess::begin(database));
+    auto sessions = detail::session_security_repository(*access.sql);
+    expect(sessions->list_metadata(session.subject, 1), target::ErrorCode::RateLimited);
+    rejected(*access.work);
+  }
+  {
+    auto access = take(detail::DatabaseAccess::begin(database));
+    auto sessions = detail::session_security_repository(*access.sql);
+    auto changed = session;
+    changed.version = {3};
+    changed.created_at += std::chrono::nanoseconds{1};
+    expect(sessions->save(changed, target::ResourceVersion{2}, 2), target::ErrorCode::Conflict);
+    rejected(*access.work);
+  }
+  {
+    auto access = take(detail::DatabaseAccess::begin(database));
+    auto sessions = detail::session_security_repository(*access.sql);
+    auto changed = session;
+    changed.version = {3};
+    changed.rotation = 999;
+    expect(sessions->save(changed, target::ResourceVersion{2}, 998), target::ErrorCode::Conflict);
+    rejected(*access.work);
+  }
+  {
+    auto access = take(detail::DatabaseAccess::begin(database));
+    auto sessions = detail::session_security_repository(*access.sql);
+    auto changed = session;
+    changed.version = {3};
+    changed.rotation = 0;
+    expect(sessions->save(changed, target::ResourceVersion{2},
+                          std::numeric_limits<std::uint64_t>::max()),
+           target::ErrorCode::InvalidArgument);
+    rejected(*access.work);
+  }
+  {
+    auto access = take(detail::DatabaseAccess::begin(database));
+    auto sessions = detail::session_security_repository(*access.sql);
+    const auto now = take(access.work->current_time());
+    auto expired = session;
+    expired.id = {"expired-security-session"};
+    expired.version = {1};
+    expired.rotation = 1;
+    expired.created_at = now - std::chrono::hours{2};
+    expired.access_expires_at = now - std::chrono::minutes{90};
+    expired.refresh_expires_at = now - std::chrono::hours{1};
+    expired.access.tag.bytes[0] = std::byte{10};
+    expired.refresh.tag.bytes[0] = std::byte{11};
+    take(sessions->save(expired, {}, {}));
+    check(!take(sessions->resolve_refresh(expired.refresh, {{"control-peer"}, "expired"},
+                                          target::TimePoint::min())),
+          "caller time revived an expired refresh");
+    access.work->rollback();
+  }
+}
+
 void check_common(Database& database, const DatabaseConfig& config) {
   if (config.service == target::Service::Identity) {
     check_identity_credentials(database);
+    check_identity_sessions(database);
   }
   constexpr auto kHigh = std::uint64_t{1} << 63;
   constexpr auto kMaximum = std::numeric_limits<std::uint64_t>::max();

@@ -324,3 +324,8 @@ Identity 空库初始化将使用 schema v4；Runtime、Scheduler、Model 各自
 凭据仓储按 expected 当前版本推进 head，同时追加验证材料历史；login 索引使用同一
 主体绑定和 CAS。材料 audience 的顺序/内容在带 position 的关系子表无损保留。
 引导仓储只条件消费现存 Required 标记，仓储故障不返回隐式允许引导的默认值。
+
+会话安全更新匹配 expected version 与 rotation，created_at 修改返回 Conflict；同 rotation
+可保存撤销，轮换仅加一且不回绕。列表按可信总容量单次读取至 max+1，超额返回
+RateLimited，不返回截断集合或 query-time now。refresh 恢复以数据库当前 UTC 判定
+原输入到期与 recovery_until，原 peer/幂等键外不能解析消费历史；相同消费重存不延期。

@@ -4,6 +4,7 @@
 #include <stdexcept>
 #include <utility>
 
+#include "identity_access.hpp"
 #include "kiarabot/core/domain/target/identity_credential_rules.hpp"
 #include "record_codec.hpp"
 
@@ -11,39 +12,13 @@ namespace kiarabot::infrastructure::postgres::detail {
 namespace {
 namespace target = core::target;
 
-target::Failure invalid() {
-  return target::rejected(target::ErrorCode::InvalidArgument, target::Recovery::CorrectInput);
-}
-target::Failure conflict() {
-  return target::rejected(target::ErrorCode::Conflict, target::Recovery::ReadCurrent);
-}
-// A typed result is captured only inside CommonWork::invoke, so SQL/decode exceptions and
-// explicit validation failures poison the same transaction as inherited repositories.
-template <typename Value, typename Function>
-target::Outcome<Value> query(SqlWork& sql, Function function) {
-  std::optional<Value> value;
-  auto status = sql.run([&](pqxx::transaction_base& transaction) -> target::Status {
-    auto result = function(transaction);
-    if (const auto* failure = std::get_if<target::Failure>(&result)) {
-      return *failure;
-    }
-    value.emplace(std::move(std::get<Value>(result)));
-    return std::monostate{};
-  });
-  if (const auto* failure = std::get_if<target::Failure>(&status)) {
-    return *failure;
-  }
-  return std::move(value.value());
-}
-bool valid_id(std::string_view id) {
-  return !id.empty() && valid_sql_text(id);
-}
-bool valid_next_version(target::ResourceVersion version,
-                        std::optional<target::ResourceVersion> expected) {
-  return version.value > 0 &&
-         (!expected || (expected->value < std::numeric_limits<std::uint64_t>::max() &&
-                        version.value == expected->value + 1));
-}
+using identity::conflict;
+using identity::invalid;
+using identity::query;
+using identity::require_stored;
+using identity::valid_id;
+using identity::valid_next_version;
+
 bool text_valid(const target::CredentialVersionRecord& record) {
   if (!valid_sql_text_fields(
           {record.ref.id.value, record.subject.value, record.binding.id.value}) ||
@@ -60,11 +35,6 @@ bool text_valid(const target::CredentialVersionRecord& record) {
     return valid_sql_text_fields({certificate->subject.value, certificate->registered_san});
   }
   return true;
-}
-void require_stored(bool condition) {
-  if (!condition) {
-    throw std::runtime_error("invalid stored Identity security relation");
-  }
 }
 std::optional<target::CredentialVersionRecord>
 load_credential(pqxx::transaction_base& transaction, const target::CredentialVersionRef& ref) {
@@ -200,12 +170,14 @@ public:
     return query<std::optional<target::CredentialVersionRecord>>(
         sql_,
         [&](auto& transaction) -> target::Outcome<std::optional<target::CredentialVersionRecord>> {
-          if (!valid_id(id.value))
+          if (!valid_id(id.value)) {
             return invalid();
+          }
           const auto heads = transaction.exec(
               "SELECT version FROM kiarabot.credential_heads WHERE id=$1", pqxx::params{id.value});
-          if (heads.empty())
+          if (heads.empty()) {
             return std::optional<target::CredentialVersionRecord>{};
+          }
           auto record =
               load_credential(transaction, {id, {heads.one_row()[0].template as<std::uint64_t>()}});
           require_stored(record.has_value());
@@ -217,8 +189,9 @@ public:
     return query<std::optional<target::CredentialVersionRecord>>(
         sql_,
         [&](auto& transaction) -> target::Outcome<std::optional<target::CredentialVersionRecord>> {
-          if (!valid_id(ref.id.value) || ref.version.value == 0)
+          if (!valid_id(ref.id.value) || ref.version.value == 0) {
             return invalid();
+          }
           return load_credential(transaction, ref);
         });
   }
@@ -231,8 +204,9 @@ public:
               transaction.exec("SELECT id,version FROM kiarabot.credential_heads WHERE "
                                "leaf_fingerprint=$1::bytea",
                                pqxx::params{digest(fingerprint)});
-          if (heads.empty())
+          if (heads.empty()) {
             return std::optional<target::CredentialVersionRecord>{};
+          }
           const auto head = heads.one_row();
           auto record =
               load_credential(transaction, {{head["id"].template as<std::string>()},
@@ -247,13 +221,15 @@ public:
   login(const std::string& normalized_login) override {
     return query<std::optional<target::LoginIdentity>>(
         sql_, [&](auto& transaction) -> target::Outcome<std::optional<target::LoginIdentity>> {
-          if (!valid_id(normalized_login))
+          if (!valid_id(normalized_login)) {
             return invalid();
+          }
           const auto rows = transaction.exec("SELECT * FROM kiarabot.login_identities WHERE "
                                              "normalized_login=$1",
                                              pqxx::params{normalized_login});
-          if (rows.empty())
+          if (rows.empty()) {
             return std::optional<target::LoginIdentity>{};
+          }
           const auto row = rows.one_row();
           target::LoginIdentity result{row["normalized_login"].template as<std::string>(),
                                        {row["subject"].template as<std::string>()},
@@ -269,8 +245,9 @@ public:
     return sql_.run([&](pqxx::transaction_base& transaction) -> target::Status {
       if (!valid_id(login.normalized_login) || !valid_id(login.subject.value) ||
           !valid_id(login.password_credential.value) ||
-          !valid_next_version(login.version, expected))
+          !valid_next_version(login.version, expected)) {
         return invalid();
+      }
       pqxx::params parameters{login.normalized_login, login.subject.value,
                               login.password_credential.value, login.version.value};
       pqxx::result rows;
@@ -292,11 +269,13 @@ public:
   target::Status save(const target::CredentialVersionRecord& record,
                       std::optional<target::ResourceVersion> expected) override {
     return sql_.run([&](pqxx::transaction_base& transaction) -> target::Status {
-      if (!text_valid(record) || !valid_next_version(record.ref.version, expected))
+      if (!text_valid(record) || !valid_next_version(record.ref.version, expected)) {
         return invalid();
+      }
       auto validation = target::validate_credential_record(record);
-      if (std::holds_alternative<target::Failure>(validation))
+      if (std::holds_alternative<target::Failure>(validation)) {
         return validation;
+      }
       std::optional<std::string> fingerprint;
       if (const auto* certificate = std::get_if<target::CertificateBinding>(&record.material)) {
         fingerprint = digest(certificate->fingerprint);
@@ -315,8 +294,9 @@ public:
                                 "$4::bytea) ON CONFLICT DO NOTHING RETURNING id",
                                 parameters);
       }
-      if (rows.empty())
+      if (rows.empty()) {
         return conflict();
+      }
       transaction.exec(
           "INSERT INTO kiarabot.credential_versions VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)",
           pqxx::params{record.ref.id.value, record.ref.version.value, record.subject.value,
@@ -362,8 +342,9 @@ public:
     return sql_.run([&](pqxx::transaction_base& transaction) -> target::Status {
       if (consumed.state != target::BootstrapState::Consumed || !consumed.administrator ||
           !valid_id(consumed.administrator->value) || !consumed.consumed_at ||
-          expected.value == 0 || !valid_next_version(consumed.version, expected))
+          expected.value == 0 || !valid_next_version(consumed.version, expected)) {
         return invalid();
+      }
       const auto exists = transaction.exec("SELECT singleton FROM kiarabot.administrator_bootstrap "
                                            "WHERE singleton");
       require_stored(!exists.empty());
