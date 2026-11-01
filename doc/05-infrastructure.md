@@ -308,7 +308,7 @@ JWT序列化使用同一jwt-cpp官方nlohmann-json traits，NumericDate先检查
 
 ### P04 Identity 安全关系存储（实施中）
 
-Identity 最新空库 schema v5；Runtime、Scheduler、Model 各自为 v4（含下文完整会话结果表）。
+Identity 最新空库 schema v6；Runtime、Scheduler、Model 各自为 v4（含下文完整会话结果表）。
 不升级已有库，不自动初始化，不改变四库隔离。新增安全仓储借用公共 UoW 的同一物理
 事务，凭据当前头/不可变历史、会话安全元数据、精确授权、加密成功收据、refresh 恢复
 索引和管理员引导标记不能单独提交。端口存在或 schema 已创建不代表业务已接线。
@@ -410,3 +410,18 @@ snapshot采样同一注入可信clock，过期或时间不可信UpstreamUnavaila
 sign要求当前key未到期且claims.exp不超过key.valid_until，普通与Exchange验签同样拒绝
 已到期可信key。此cap不管理轮换、不联网、不决定identity.keys.read授权。
 密钥文件metadata相应显式携带version/valid_until，loader只校验与保留，不生成版本或期限。
+
+
+### P04 CURRENT bootstrap verifier 定位
+
+IdentityCredentialRepository::by_bootstrap 只接受 WorkloadBootstrap purpose、可信 key 引用和
+固定 32 字节 tag；不接受原始 proof 或请求主体。只查询 credential_heads 当前定位，不用
+LIMIT 1 掩盖歧义。无匹配返回成功空 optional，非法输入为 InvalidArgument，结构损坏为
+Internal，数据库连接失败为 UpstreamUnavailable；失败沿用同一 UoW 的回滚语义。
+返回记录仍可为 Revoked 或已过期，Core 必须检查主体、状态、期限、binding 和 audience。
+
+Identity 空库 schema6 的 head 显式保存 material；CHECK 要求 bootstrap 必有 key/tag、
+certificate 必有 leaf_fingerprint，其他材料必须清空对应定位。CURRENT key/tag 唯一，
+复合延迟外键绑定当前版本、材料种类及实际 verifier；save 在同一事务中维护全部定位。
+历史版本可保留相同 tag（例如撤销），轮换或更换材料后旧 tag 不再定位 CURRENT。
+仅显式初始化空库；旧 schema 拒绝打开，不提供自动迁移、删除或重置。

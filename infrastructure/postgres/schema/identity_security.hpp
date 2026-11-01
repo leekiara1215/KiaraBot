@@ -10,6 +10,13 @@ CREATE TABLE kiarabot.credential_heads (
   id text PRIMARY KEY CHECK(id<>''), subject text NOT NULL REFERENCES kiarabot.principals(id),
   version kiarabot.uint64 NOT NULL CHECK(version>0),
   leaf_fingerprint bytea UNIQUE CHECK(octet_length(leaf_fingerprint)=32),
+  material integer NOT NULL CHECK(material BETWEEN 0 AND 3),
+  bootstrap_key text CHECK(bootstrap_key<>''),
+  bootstrap_tag bytea CHECK(octet_length(bootstrap_tag)=32),
+  UNIQUE(bootstrap_key,bootstrap_tag),
+  CHECK((material IN (0,1) AND leaf_fingerprint IS NULL AND bootstrap_key IS NULL AND bootstrap_tag IS NULL) OR
+        (material=2 AND leaf_fingerprint IS NULL AND bootstrap_key IS NOT NULL AND bootstrap_tag IS NOT NULL) OR
+        (material=3 AND leaf_fingerprint IS NOT NULL AND bootstrap_key IS NULL AND bootstrap_tag IS NULL)),
   UNIQUE(id,subject)
 );
 CREATE TABLE kiarabot.credential_versions (
@@ -28,6 +35,8 @@ CREATE TABLE kiarabot.credential_versions (
 );
 ALTER TABLE kiarabot.credential_heads ADD FOREIGN KEY(id,version)
   REFERENCES kiarabot.credential_versions(id,version) DEFERRABLE INITIALLY DEFERRED;
+ALTER TABLE kiarabot.credential_heads ADD FOREIGN KEY(id,version,material)
+  REFERENCES kiarabot.credential_versions(id,version,material) DEFERRABLE INITIALLY DEFERRED;
 CREATE TABLE kiarabot.credential_pending (
   id text NOT NULL, version kiarabot.uint64 NOT NULL, material integer NOT NULL CHECK(material=0),
   kind integer NOT NULL CHECK(kind BETWEEN 1 AND 3), PRIMARY KEY(id,version),
@@ -45,8 +54,12 @@ CREATE TABLE kiarabot.credential_bootstraps (
     CHECK(octet_length(verifier_tag)=32),
   binding_kind integer NOT NULL CHECK(binding_kind BETWEEN 0 AND 15), binding_id text NOT NULL,
   expires_at bigint NOT NULL, PRIMARY KEY(id,version),
+  UNIQUE(id,version,verifier_key,verifier_tag),
   FOREIGN KEY(id,version,material) REFERENCES kiarabot.credential_versions(id,version,material)
 );
+ALTER TABLE kiarabot.credential_heads ADD FOREIGN KEY(id,version,bootstrap_key,bootstrap_tag)
+  REFERENCES kiarabot.credential_bootstraps(id,version,verifier_key,verifier_tag)
+    DEFERRABLE INITIALLY DEFERRED;
 CREATE TABLE kiarabot.credential_audiences (
   id text NOT NULL, version kiarabot.uint64 NOT NULL,
   position integer NOT NULL CHECK(position>=0),

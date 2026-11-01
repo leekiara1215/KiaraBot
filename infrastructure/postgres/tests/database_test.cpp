@@ -124,11 +124,19 @@ void check_identity_security_schema(const pg::DatabaseConfig& config) {
           "explicit initial bootstrap marker incorrect");
   transaction.exec("INSERT INTO kiarabot.principals VALUES('security-owner',0,NULL,NULL,1,0)");
   transaction.exec("INSERT INTO kiarabot.credential_heads VALUES('security-credential',"
-                   "'security-owner',1,NULL)");
+                   "'security-owner',1,NULL,0,NULL,NULL)");
   transaction.exec("INSERT INTO kiarabot.credential_versions VALUES('security-credential',1,"
                    "'security-owner',0,0,137,NULL,NULL,15,'catalog')");
   transaction.exec("INSERT INTO kiarabot.credential_pending VALUES('security-credential',1,0,1)");
   transaction.exec("SET CONSTRAINTS ALL IMMEDIATE; SET CONSTRAINTS ALL DEFERRED");
+  rejects("UPDATE kiarabot.credential_heads SET material=2 WHERE id='security-credential'",
+          "23514");
+  rejects("UPDATE kiarabot.credential_heads SET material=3 WHERE id='security-credential'",
+          "23514");
+  rejects("UPDATE kiarabot.credential_heads SET bootstrap_key='key' WHERE id='security-credential'",
+          "23514");
+  rejects("UPDATE kiarabot.credential_heads SET material=1 WHERE id='security-credential'",
+          "23503");
   rejects("UPDATE kiarabot.credential_heads SET version=2 WHERE id='security-credential'", "23503");
   rejects("UPDATE kiarabot.credential_versions SET expires_at=731 WHERE "
           "id='security-credential'",
@@ -136,7 +144,7 @@ void check_identity_security_schema(const pg::DatabaseConfig& config) {
   rejects("INSERT INTO kiarabot.credential_passwords VALUES('security-credential',1,1,'phc',1)",
           "23503");
   transaction.exec("INSERT INTO kiarabot.credential_heads VALUES('security-certificate',"
-                   "'security-owner',1,NULL)");
+                   "'security-owner',1,decode(repeat('ab',32),'hex'),3,NULL,NULL)");
   transaction.exec("INSERT INTO kiarabot.credential_versions VALUES('security-certificate',1,"
                    "'security-owner',3,1,137,NULL,731,15,'catalog')");
   transaction.exec(
@@ -322,7 +330,7 @@ void run(const std::filesystem::path& root, std::uint16_t port,
       pqxx::connection migration(connection_string(config));
       pqxx::read_transaction inspect(migration);
       require(inspect.exec("SELECT version FROM kiarabot.schema_versions").one_row()[0].as<int>() ==
-                  (config.service == target::Service::Identity ? 5 : 4),
+                  (config.service == target::Service::Identity ? 6 : 4),
               "per-service schema version incorrect");
     }
     if (config.service == target::Service::Identity) {
@@ -440,6 +448,26 @@ void run(const std::filesystem::path& root, std::uint16_t port,
     writer.reset();
     require(std::holds_alternative<std::unique_ptr<pg::Database>>(pg::Database::open(runtime)),
             "new writer could not recover after terminated session");
+    if (config.service == target::Service::Identity) {
+      auto locator_database =
+          std::move(std::get<std::unique_ptr<pg::Database>>(pg::Database::open(runtime)));
+      auto locator_access = std::move(std::get<pg::detail::CommonWorkAccess>(
+          pg::detail::DatabaseAccess::begin(*locator_database)));
+      {
+        pqxx::work terminate(administrator);
+        const auto killed = terminate.exec("SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
+                                           "WHERE datname=$1 AND usename=$2",
+                                           pqxx::params{config.database, config.runtime_role});
+        require(killed.size() == 1, "unexpected bootstrap writer sessions");
+        terminate.commit();
+      }
+      auto credentials = pg::detail::credential_repository(*locator_access.sql);
+      expect_error(credentials->by_bootstrap(
+                       {target::TokenPurpose::WorkloadBootstrap, {"bootstrap-key"}, {}}),
+                   target::ErrorCode::UpstreamUnavailable);
+      require(locator_access.work->commit() != target::CommitResult::Committed,
+              "bootstrap lookup dependency failure committed");
+    }
     pg::test::check_dependency_fault(config, runtime);
     pg::test::check_deadline(runtime);
     {

@@ -110,6 +110,10 @@ void check_identity_credentials(Database& database) {
         {target::Service::Control, target::Service::Identity, target::Service::Control},
         expires};
     take(credentials->save(workload, {}));
+    check(take(credentials->by_bootstrap(
+                   std::get<target::WorkloadBootstrapVerifier>(workload.material).verifier))
+                  ->state == target::CredentialState::Active,
+          "active bootstrap did not resolve");
     workload.ref.version = {2};
     workload.state = target::CredentialState::Revoked;
     workload.revoked_at = expires;
@@ -224,6 +228,95 @@ void check_identity_credentials(Database& database) {
     }));
     expect(bootstrap->state(), target::ErrorCode::Internal);
     rejected(*access.work);
+  }
+}
+
+void check_bootstrap_locator(Database& database) {
+  target::TokenVerifier old{target::TokenPurpose::WorkloadBootstrap, {"bootstrap-key"}, {}};
+  auto next = old;
+  next.tag.bytes[0] = std::byte{42};
+  target::CredentialVersionRecord record;
+  {
+    auto access = take(detail::DatabaseAccess::begin(database));
+    auto credentials = detail::credential_repository(*access.sql);
+    record = *take(credentials->by_bootstrap(old));
+    check(record.ref.id.value == "credential-workload" && record.ref.version.value == 2 &&
+              record.state == target::CredentialState::Revoked,
+          "bootstrap lookup must return current revoked record without authorizing it");
+    check(take(credentials->version({record.ref.id, {1}}))->state ==
+              target::CredentialState::Active,
+          "same-tag revoked history lost");
+    record.ref.version = {3};
+    std::get<target::WorkloadBootstrapVerifier>(record.material).verifier = next;
+    take(credentials->save(record, target::ResourceVersion{2}));
+    check(!take(credentials->by_bootstrap(old)), "historical bootstrap tag remained current");
+    check(take(credentials->by_bootstrap(next))->ref.version.value == 3,
+          "rotated bootstrap locator missing");
+    auto missing = next;
+    missing.key.value = "missing-key";
+    check(!take(credentials->by_bootstrap(missing)), "unknown key matched bootstrap");
+    committed(*access.work);
+  }
+  {
+    auto access = take(detail::DatabaseAccess::begin(database));
+    auto credentials = detail::credential_repository(*access.sql);
+    auto duplicate = record;
+    duplicate.ref = {{"duplicate-bootstrap"}, {1}};
+    expect(credentials->save(duplicate, {}), target::ErrorCode::Conflict);
+    rejected(*access.work);
+  }
+  for (int shape = 0; shape < 3; ++shape) {
+    auto access = take(detail::DatabaseAccess::begin(database));
+    auto credentials = detail::credential_repository(*access.sql);
+    auto malformed = next;
+    if (shape == 0) {
+      malformed.purpose = target::TokenPurpose::Access;
+    } else if (shape == 1) {
+      malformed.key.value.clear();
+    } else {
+      malformed.key.value = std::string("key\0suffix", 10);
+    }
+    expect(credentials->by_bootstrap(malformed), target::ErrorCode::InvalidArgument);
+    rejected(*access.work);
+  }
+  {
+    auto access = take(detail::DatabaseAccess::begin(database));
+    auto credentials = detail::credential_repository(*access.sql);
+    auto wrong = next;
+    wrong.tag.bytes[0] = std::byte{43};
+    take(access.sql->run([&](pqxx::transaction_base& transaction) -> target::Status {
+      transaction.exec("UPDATE kiarabot.credential_heads SET bootstrap_tag=$1::bytea WHERE "
+                       "id='credential-workload'",
+                       pqxx::params{detail::digest(wrong.tag)});
+      return std::monostate{};
+    }));
+    expect(credentials->by_bootstrap(wrong), target::ErrorCode::Internal);
+    rejected(*access.work);
+  }
+  {
+    auto access = take(detail::DatabaseAccess::begin(database));
+    auto credentials = detail::credential_repository(*access.sql);
+    check(!take(credentials->current({"duplicate-bootstrap"})),
+          "duplicate save partially persisted");
+    take(access.sql->run([](pqxx::transaction_base& transaction) -> target::Status {
+      transaction.exec(
+          "DELETE FROM kiarabot.credential_audiences WHERE id='credential-workload' AND version=3");
+      transaction.exec("DELETE FROM kiarabot.credential_bootstraps WHERE id='credential-workload' "
+                       "AND version=3");
+      return std::monostate{};
+    }));
+    expect(credentials->by_bootstrap(next), target::ErrorCode::Internal);
+    rejected(*access.work);
+  }
+  {
+    auto access = take(detail::DatabaseAccess::begin(database));
+    auto credentials = detail::credential_repository(*access.sql);
+    record.ref.version = {4};
+    record.material = target::PasswordVerifier{"encoded-only", {1}};
+    take(credentials->save(record, target::ResourceVersion{3}));
+    check(!take(credentials->by_bootstrap(next)),
+          "material replacement retained bootstrap locator");
+    committed(*access.work);
   }
 }
 
@@ -776,6 +869,7 @@ void check_identity_assignments(Database& database) {
 void check_common(Database& database, const DatabaseConfig& config) {
   if (config.service == target::Service::Identity) {
     check_identity_credentials(database);
+    check_bootstrap_locator(database);
     check_identity_sessions(database);
     check_identity_secret_receipts(database);
     check_session_metadata_snapshot(database);

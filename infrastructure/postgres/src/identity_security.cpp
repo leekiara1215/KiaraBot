@@ -217,6 +217,34 @@ public:
           return record;
         });
   }
+  target::Outcome<std::optional<target::CredentialVersionRecord>>
+  by_bootstrap(const target::TokenVerifier& verifier) override {
+    return query<std::optional<target::CredentialVersionRecord>>(
+        sql_,
+        [&](auto& transaction) -> target::Outcome<std::optional<target::CredentialVersionRecord>> {
+          if (verifier.purpose != target::TokenPurpose::WorkloadBootstrap ||
+              !valid_id(verifier.key.value)) {
+            return invalid();
+          }
+          const auto heads =
+              transaction.exec("SELECT id,version,material FROM kiarabot.credential_heads WHERE "
+                               "bootstrap_key=$1 AND bootstrap_tag=$2::bytea",
+                               pqxx::params{verifier.key.value, digest(verifier.tag)});
+          if (heads.empty()) {
+            return std::optional<target::CredentialVersionRecord>{};
+          }
+          const auto head = heads.one_row();
+          auto record =
+              load_credential(transaction, {{head["id"].template as<std::string>()},
+                                            {head["version"].template as<std::uint64_t>()}});
+          require_stored(record.has_value());
+          require_stored(head["material"].template as<int>() == 2);
+          const auto* bootstrap = std::get_if<target::WorkloadBootstrapVerifier>(&record->material);
+          require_stored(bootstrap && bootstrap->verifier.key == verifier.key &&
+                         bootstrap->verifier.tag == verifier.tag);
+          return record;
+        });
+  }
   target::Outcome<std::optional<target::LoginIdentity>>
   login(const std::string& normalized_login) override {
     return query<std::optional<target::LoginIdentity>>(
@@ -280,18 +308,33 @@ public:
       if (const auto* certificate = std::get_if<target::CertificateBinding>(&record.material)) {
         fingerprint = digest(certificate->fingerprint);
       }
-      pqxx::params parameters{record.ref.id.value, record.subject.value, record.ref.version.value,
-                              fingerprint};
+      std::optional<std::string> bootstrap_key;
+      std::optional<std::string> bootstrap_tag;
+      if (const auto* bootstrap =
+              std::get_if<target::WorkloadBootstrapVerifier>(&record.material)) {
+        bootstrap_key = bootstrap->verifier.key.value;
+        bootstrap_tag = digest(bootstrap->verifier.tag);
+      }
+      pqxx::params parameters{record.ref.id.value,
+                              record.subject.value,
+                              record.ref.version.value,
+                              fingerprint,
+                              static_cast<int>(record.material.index()),
+                              bootstrap_key,
+                              bootstrap_tag};
       pqxx::result rows;
       if (expected) {
         parameters.append(expected->value);
-        rows = transaction.exec("UPDATE kiarabot.credential_heads SET version=$3,"
-                                "leaf_fingerprint=$4::bytea WHERE id=$1 AND subject=$2 AND "
-                                "version=$5 RETURNING id",
-                                parameters);
+        rows = transaction.exec(
+            "UPDATE kiarabot.credential_heads SET version=$3,"
+            "leaf_fingerprint=$4::bytea,material=$5,bootstrap_key=$6,bootstrap_tag=$7::bytea "
+            "WHERE id=$1 AND subject=$2 AND version=$8 RETURNING id",
+            parameters);
       } else {
-        rows = transaction.exec("INSERT INTO kiarabot.credential_heads VALUES($1,$2,$3,"
-                                "$4::bytea) ON CONFLICT DO NOTHING RETURNING id",
+        rows = transaction.exec("INSERT INTO kiarabot.credential_heads "
+                                "(id,subject,version,leaf_fingerprint,material,bootstrap_key,"
+                                "bootstrap_tag) VALUES($1,$2,$3,"
+                                "$4::bytea,$5,$6,$7::bytea) ON CONFLICT DO NOTHING RETURNING id",
                                 parameters);
       }
       if (rows.empty()) {

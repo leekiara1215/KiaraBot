@@ -413,7 +413,7 @@ socket，不继续受理。暂时忙等可恢复情况由具体组合根区分�
 ### P03 common transaction limits
 
 
-P03 公共 schema 为 v3；P04 Identity 空库含安全关系与完整会话结果后为 v5，另三库为 v4。要求UTF8数据库；
+P03 公共 schema 为 v3；P04 Identity 空库含安全关系、完整会话结果与当前 bootstrap 定位后为 v6，另三库为 v4。要求UTF8数据库；
 旧版本或其他结构不自动升级，必须按本轮空库部署
 流程初始化新的专属库，不能清空原库或自动补表。schema结构描述/对象owner/运行权限均参与
 启动验证。当前仅存储公共能力，业务就绪仍由各服务已实现依赖决定。
@@ -570,7 +570,7 @@ wrapper仅核对返回指纹、正verified_at、受信clock/已知偏差及与ve
 ### P04 离线管理员与 Control 登记命令
 
 `kiarabot-identity-bootstrap` 只在可信部署主机离线运行，不提供 HTTP/gRPC 初始化入口。
-先显式初始化 Identity 空库（当前 schema5），停止同库 Identity daemon，再执行：
+先显式初始化 Identity 空库（当前 schema6），停止同库 Identity daemon，再执行：
 
 ```bash
 kiarabot-identity-bootstrap --config identity.json --enrollment enrollment.json --password-file administrator-password
@@ -759,3 +759,18 @@ calls hold no outer UoW. Missing/wrong capability returns PermissionDenied; revo
 expired or mismatched current peer returns Unauthenticated; changed authorization
 watermark returns Conflict/ReadCurrent; dependency and deadline failures propagate.
 A signed intermediate proof is discarded on any final check failure and never returned.
+
+
+### P04 CURRENT bootstrap verifier 定位
+
+IdentityCredentialRepository::by_bootstrap 只接受 WorkloadBootstrap purpose、可信 key 引用和
+固定 32 字节 tag；不接受原始 proof 或请求主体。只查询 credential_heads 当前定位，不用
+LIMIT 1 掩盖歧义。无匹配返回成功空 optional，非法输入为 InvalidArgument，结构损坏为
+Internal，数据库连接失败为 UpstreamUnavailable；失败沿用同一 UoW 的回滚语义。
+返回记录仍可为 Revoked 或已过期，Core 必须检查主体、状态、期限、binding 和 audience。
+
+Identity 空库 schema6 的 head 显式保存 material；CHECK 要求 bootstrap 必有 key/tag、
+certificate 必有 leaf_fingerprint，其他材料必须清空对应定位。CURRENT key/tag 唯一，
+复合延迟外键绑定当前版本、材料种类及实际 verifier；save 在同一事务中维护全部定位。
+历史版本可保留相同 tag（例如撤销），轮换或更换材料后旧 tag 不再定位 CURRENT。
+仅显式初始化空库；旧 schema 拒绝打开，不提供自动迁移、删除或重置。
