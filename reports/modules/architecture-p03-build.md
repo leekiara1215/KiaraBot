@@ -453,3 +453,31 @@ kiarabot_identity_admin_application/kiarabot_identity_delegation_application纯�
 opaque_token/count_unexpired override，正在由父补小提交；按要求等待该提交，不改测试。
 这不是测试通过或完整业务验收。未重复已知缺契约外层full/统一入口。
 文档检查为路径/末尾换行及git diff --check。
+
+### Admin严格替身补齐后的实际验收
+
+仅取父提交f9a3ed6（本树198a6fe），不从root脏区复制。现有CMake无需再改；
+定向构建kiarabot_identity_admin_application_test成功，真实CTest1/1通过0.38秒；
+测试TU精确compile DB tidy22 clang-analyzer-* warnings-as-errors和format16通过。
+这补齐上节“等待替身”的未运行项，不改变既有其他全仓/契约未验状态。
+无新增公共文档影响：仅本报告补执行证据，doc11及模块/契约/运维无需额外更新。
+本报告末尾换行与git diff --check通过，未重复统一入口。
+
+## 后续接线：可信密钥文件装载器
+
+成组同步6000920/b538adc（本树61d86a9/9908705），公开key owner euid/root且禁止022
+修正完整保留；追加文档冲突保留双方真正章节，不取应用未提交源。现crypto库增加
+key_files.cpp，原安全测试循环加入key_files，unit/security、30秒、所有配置保留assert。
+测试只取得OpenSSL::Crypto官方头路径，静态适配器私有依赖已提供实际Crypto链接。
+文档影响仅doc/11及本报告运行说明；infra/运维已由源同步，其他模块/API/proto/CI/
+冻结doc18不改。
+
+固定配置/loader target构建成功；首次直接测试OpenSSL链接引起重复crypto/ssl archive，
+改为头路径+既有库传递链接后真实重链无warning，无抑制选项。首次CTest因源码固定相对
+build/key-files-*而mkdtemp失败；配置在本binary目录创建专属build子目录并明确工作目录，
+不改源码/断言，实际CTest1/1通过0.33秒。全TU覆盖/inner/实际图/p04标签、全仓format16
+通过，最终两TU精确DB tidy结果后附。未重复完整统一入口或声明应用生产闭环。
+文档校验为路径/末尾换行/无冲突标记及diff检查。
+
+最终loader两TU精确compile DB tidy22 clang-analyzer-* warnings-as-errors通过；
+文档路径/末尾换行及git diff --check通过。

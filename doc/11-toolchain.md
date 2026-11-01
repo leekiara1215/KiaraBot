@@ -564,3 +564,7 @@ PG库加入identity_sessions/identity_receipts两个真实TU，共享原PG drive
 纯Core Admin/Delegation用例各自形成独立静态库，不依赖PG/crypto/proto；
 `p04_identity_admin_application` 链接两库，注册unit/security、10秒。
 该测试通过不代表生产Bootstrap/RPC已接线；Random/SessionRepo替身须匹配当前接口。
+
+Identity crypto库加入key_files.cpp，`p04_key_files`为unit/security、30秒；用二进制目录
+专属build/子目录运行源码已有相对临时fixture，不向源码树写测试密钥。测试获取官方
+OpenSSL::Crypto头路径，实际链接由静态适配器既有依赖提供，避免重复archive。
