@@ -16,6 +16,7 @@
 
 extern char** environ;
 
+#include "../src/identity_security.hpp"
 #include "common_work_checks.hpp"
 #include "kiarabot/infrastructure/postgres/database.hpp"
 #include "typed_work_checks.hpp"
@@ -406,10 +407,11 @@ void run(const std::filesystem::path& root, std::uint16_t port,
     require(std::holds_alternative<std::unique_ptr<pg::Database>>(restarted),
             "restart lock not released");
     auto writer = std::move(std::get<std::unique_ptr<pg::Database>>(restarted));
-    auto active_result = writer->begin();
-    require(std::holds_alternative<std::unique_ptr<target::UnitOfWork>>(active_result),
+    auto active_result = pg::detail::DatabaseAccess::begin(*writer);
+    require(std::holds_alternative<pg::detail::CommonWorkAccess>(active_result),
             "old active UoW begin failed");
-    auto active = std::move(std::get<std::unique_ptr<target::UnitOfWork>>(active_result));
+    auto active_access = std::move(std::get<pg::detail::CommonWorkAccess>(active_result));
+    auto& active = active_access.work;
     target::Operation uncommitted{
         {config.service, {"killed-write"}, {target::ResourceKind::Instance, {"resource"}}},
         {1},
@@ -426,6 +428,10 @@ void run(const std::filesystem::path& root, std::uint16_t port,
           pqxx::params{config.database, config.runtime_role});
       require(killed.size() == 1, "unexpected writer sessions");
       terminate.commit();
+    }
+    if (config.service == target::Service::Identity) {
+      auto sessions = pg::detail::session_security_repository(*active_access.sql);
+      expect_error(sessions->count_unexpired(), target::ErrorCode::UpstreamUnavailable);
     }
     require(active->commit() != target::CommitResult::Committed,
             "killed writer committed old transaction");

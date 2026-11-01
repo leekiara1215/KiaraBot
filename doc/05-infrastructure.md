@@ -346,3 +346,7 @@ Core SessionMetadata 作为普通 ReplayResult 的末尾 index12，无 verifier/
 id/subject/created_at/expires_at/rotation/version/revoked，保留纳秒与uint64，不回查live会话。
 为此新空库 Identity 版本5、Runtime/Scheduler/Model版本4，逐库严格核对全部descriptor；
 已有库不自动迁移或清空。普通收据仍至少7日，秘密收据仍独立且最多24h。
+
+会话安全仓储 count_unexpired() 在同一SqlWork中按实际DB UTC统计全库非revoked且
+refresh_expires_at严格未来的行，无caller-now/缓存/列表推算，依赖错误返回Failure。
+4096全局上限由Core新建会话用例在同一最终事务检查，存储不另造授权或上限策略。

@@ -1,5 +1,6 @@
 #include "common_work_checks.hpp"
 
+#include <array>
 #include <chrono>
 #include <fstream>
 #include <iostream>
@@ -585,12 +586,101 @@ void check_session_metadata_snapshot(Database& database) {
   }
 }
 
+void check_global_session_count(Database& database) {
+  std::size_t baseline = 0;
+  std::array<target::SessionSecurity, 2> live;
+  {
+    auto access = take(detail::DatabaseAccess::begin(database));
+    auto sessions = detail::session_security_repository(*access.sql);
+    baseline = take(sessions->count_unexpired());
+    const auto now = take(access.work->current_time());
+    take(detail::save_record(
+        *access.work, detail::RecordKind::Principal,
+        target::Principal{{"count-owner"}, target::PrincipalKind::Human, {}, {1}}, {}));
+    auto credentials = detail::credential_repository(*access.sql);
+    take(credentials->save({{{"count-credential"}, {1}},
+                            {"count-owner"},
+                            target::PasswordVerifier{"encoded-verifier-only", {1}},
+                            target::CredentialState::Active,
+                            now - std::chrono::hours{2},
+                            {},
+                            {target::ResourceKind::Catalog, {"catalog"}},
+                            now + std::chrono::hours{24}},
+                           {}));
+    for (std::size_t index = 0; index < 4; ++index) {
+      const auto id = "count-session-" + std::to_string(index);
+      target::SessionSecurity entry{{id},
+                                    {"credential-owner"},
+                                    {{"credential-password"}, {2}},
+                                    {target::TokenPurpose::Access, {id + "-access"}, {}},
+                                    {target::TokenPurpose::Refresh, {id + "-refresh"}, {}},
+                                    now - std::chrono::hours{2},
+                                    now + std::chrono::minutes{15},
+                                    now + std::chrono::hours{24},
+                                    1,
+                                    {1},
+                                    false};
+      if (index == 1) {
+        entry.subject = {"count-owner"};
+        entry.credential = {{"count-credential"}, {1}};
+      } else if (index == 2) {
+        entry.access_expires_at = now - std::chrono::minutes{90};
+        entry.refresh_expires_at = now - std::chrono::hours{1};
+      } else if (index == 3) {
+        entry.revoked = true;
+      }
+      take(sessions->save(entry, {}, {}));
+      if (index < 2) {
+        live[index] = entry;
+      }
+    }
+    check(take(sessions->count_unexpired()) == baseline + 2,
+          "global count missed same-transaction other subject or included expired/revoked");
+    committed(*access.work);
+  }
+  {
+    auto access = take(detail::DatabaseAccess::begin(database));
+    auto sessions = detail::session_security_repository(*access.sql);
+    check(take(sessions->count_unexpired()) == baseline + 2, "new transaction used stale count");
+    auto revoked = live[0];
+    revoked.version = {2};
+    revoked.revoked = true;
+    take(sessions->save(revoked, target::ResourceVersion{1}, 1));
+    check(take(sessions->count_unexpired()) == baseline + 1,
+          "same transaction revocation not counted");
+    access.work->rollback();
+  }
+  {
+    auto access = take(detail::DatabaseAccess::begin(database));
+    auto sessions = detail::session_security_repository(*access.sql);
+    check(take(sessions->count_unexpired()) == baseline + 2,
+          "rolled back count mutation persisted");
+    live[0].version = {2};
+    live[0].revoked = true;
+    take(sessions->save(live[0], target::ResourceVersion{1}, 1));
+    const auto now = take(access.work->current_time());
+    live[1].version = {2};
+    live[1].access_expires_at = now - std::chrono::minutes{90};
+    live[1].refresh_expires_at = now - std::chrono::hours{1};
+    take(sessions->save(live[1], target::ResourceVersion{1}, 1));
+    committed(*access.work);
+  }
+  {
+    auto access = take(detail::DatabaseAccess::begin(database));
+    auto sessions = detail::session_security_repository(*access.sql);
+    check(take(sessions->count_unexpired()) == baseline,
+          "new transaction counted expired/revoked state");
+    access.work->rollback();
+  }
+}
+
 void check_common(Database& database, const DatabaseConfig& config) {
   if (config.service == target::Service::Identity) {
     check_identity_credentials(database);
     check_identity_sessions(database);
     check_identity_secret_receipts(database);
     check_session_metadata_snapshot(database);
+    check_global_session_count(database);
   }
   constexpr auto kHigh = std::uint64_t{1} << 63;
   constexpr auto kMaximum = std::numeric_limits<std::uint64_t>::max();

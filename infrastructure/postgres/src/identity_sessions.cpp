@@ -222,6 +222,17 @@ public:
           return metadata;
         });
   }
+  target::Outcome<std::size_t> count_unexpired() override {
+    return query<std::size_t>(
+        sql_, [&](pqxx::transaction_base& transaction) -> target::Outcome<std::size_t> {
+          return transaction
+              .exec("SELECT count(*) FROM kiarabot.session_security WHERE NOT revoked "
+                    "AND refresh_expires_at>" +
+                    std::string(kDbNow))
+              .one_row()[0]
+              .as<std::size_t>();
+        });
+  }
   target::Status save(const target::SessionSecurity& session,
                       std::optional<target::ResourceVersion> expected,
                       std::optional<std::uint64_t> expected_rotation) override {

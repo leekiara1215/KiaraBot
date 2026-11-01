@@ -166,3 +166,22 @@ Identity新空库版本5、其他三库4；新typed表保存created_at等完整�
 全部指纹由自有临时PG创建真实DDL获取，正式启动仍严格等值验证，未放宽门禁。
 文档检查验证doc05/doc08/本报告UTF8、换行、当前版本/13种结果章节，doc18无差异。
 无新增TU、不改CMake；根完整构建/CTest由主任务接入冻结提交后执行，本工作树未运行。
+
+## 全局有效会话计数（实施中）
+
+输入为冻结Core ba8e56c的count_unexpired()端口及既有唯一4096上限；输出为同一SqlWork
+实际DB UTC、全库非撤销且refresh未来的size_t计数，失败沿用Failure、不返回假0。
+只允许修改identity_sessions实现、既有PG测试、doc05/本报告；不改SQLschema、密文行为、
+公共API/稳定码或CMake。Core负责最终新建事务的上限决策，不把授权规则放进存储。
+文档影响为doc05仓储查询；doc08初始化/运行方式和其他契约未改变，无须同步，doc18只读。
+验收为真实同事务/新事务计数、跨主体、过期/撤销排除、回滚，以及断后端故障不伪0。
+
+### 全局计数实际检查
+
+固定依赖三种-Werror构建、普通/ASan+UBSan真实PG四库fixture全通过；新增计数测试在
+同一真实UoW写入两个主体的未来有效会话、过期/撤销会话，确认只增加2，之后新事务重读、
+撤销的即时可见/回滚、新事务提交后过期和撤销排除均通过。
+独立fixture管理员真实pg_terminate_backend断开持锁连接后，count_unexpired明确
+UpstreamUnavailable，旧写入未提交、实例停用；不以成功0代替故障。
+3 TU analyzer+braces clang-tidy22、clang-format16、文档UTF8/换行/章节与diff检查通过。
+doc18无差异；无新TU/无schema/CMake变化。根完整CMake/CTest仍由主任务集成后执行。
