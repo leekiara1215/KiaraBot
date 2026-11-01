@@ -47,6 +47,16 @@ void record(Authority& result, const detail::SubjectAuthority& subject,
   result.valid_until =
       std::min(result.valid_until, credential.expires_at.value_or(TimePoint::min()));
 }
+bool explicit_capability(const detail::SubjectAuthority& authority, Permission permission) {
+  const PermissionBinding capability{permission,
+                                     {ResourceKind::Principal, {authority.principal.id.value}}};
+  return std::any_of(authority.assignments.begin(), authority.assignments.end(),
+                     [&](const ExactAssignment& assignment) {
+                       return std::find(assignment.explicit_permissions.begin(),
+                                        assignment.explicit_permissions.end(),
+                                        capability) != assignment.explicit_permissions.end();
+                     });
+}
 // This is current registration evidence for a SIGNED actor, never a synthesized VerifiedPeer.
 Status registered_actor(IdentitySecurityUnitOfWork& work, const CredentialVersionRecord& row,
                         const SubjectId& subject, Service service, TimePoint now,
@@ -79,6 +89,9 @@ Status registered_actor(IdentitySecurityUnitOfWork& work, const CredentialVersio
   valid = detail::credential_owner_binding(authority.principal, *head);
   if (const auto* error = std::get_if<Failure>(&valid)) {
     return *error;
+  }
+  if (!explicit_capability(authority, Permission::IdentityDelegationIssue)) {
+    return authentication_rejected();
   }
   record(snapshot, authority, *head);
   return std::monostate{};
@@ -116,15 +129,7 @@ private:
       return *error;
     }
     // Fixed service capability: explicit tuple only, never business scope or role expansion.
-    const PermissionBinding capability{Permission::IdentityAuthorizationCheck,
-                                       {ResourceKind::Principal, {platform->subject.value}}};
-    bool allowed = false;
-    for (const auto& assignment : authority.subject.assignments) {
-      allowed = allowed || std::find(assignment.explicit_permissions.begin(),
-                                     assignment.explicit_permissions.end(),
-                                     capability) != assignment.explicit_permissions.end();
-    }
-    if (!allowed) {
+    if (!explicit_capability(authority.subject, Permission::IdentityAuthorizationCheck)) {
       return failure(ErrorCode::PermissionDenied);
     }
     if (snapshot) {

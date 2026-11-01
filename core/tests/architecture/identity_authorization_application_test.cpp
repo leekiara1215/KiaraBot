@@ -83,6 +83,14 @@ struct State {
          {},
          {{t::Permission::ModelChat, {t::ResourceKind::Model, {"model-resource"}}}},
          {1}}};
+    for (const auto* name : {"control", "runtime"}) {
+      assignments.insert(assignments.end() - 1, {{std::string{name} + "-issue-cap"},
+                                                 {name},
+                                                 {},
+                                                 {{t::Permission::IdentityDelegationIssue,
+                                                   {t::ResourceKind::Principal, {name}}}},
+                                                 {1}});
+    }
   }
 };
 template <class Key, class Value> class ReadOne final : public t::Repository<Key, Value> {
@@ -640,6 +648,47 @@ void invalid_inputs() {
     assert(f.crypto.calls == 0);
   }
 }
+void every_signed_actor_requires_current_explicit_delegator_capability() {
+  for (unsigned hops : {1U, 2U}) {
+    for (unsigned actor = 1; actor <= hops; ++actor) {
+      for (unsigned mutation = 0; mutation < 5; ++mutation) {
+        Fixture f;
+        if (hops == 1) {
+          f.crypto.claims.business_hops = 1;
+          f.crypto.claims.actor_chain = {{"control"}};
+          f.crypto.claims.direct_actor = {"control"};
+          f.crypto.claims.client_certificate =
+              std::get<t::CertificateBinding>(f.state.credentials[1].material).fingerprint;
+        }
+        const auto revoke = [&] {
+          auto& assignment = f.state.assignments[actor];
+          if (mutation == 1) {
+            assignment.explicit_permissions[0].resource.id.value = "another-principal";
+          } else if (mutation == 2) {
+            assignment.explicit_permissions.clear();
+            assignment.roles = {
+                {t::FixedRole::Admin, {t::ResourceKind::Principal, {assignment.subject.value}}}};
+          } else {
+            assignment.explicit_permissions[0].permission = t::Permission::IdentityKeysRead;
+          }
+          ++f.state.authorizations[actor].version.value;
+        };
+        if (mutation == 3) {
+          f.crypto.hook = revoke; // Signature finishes after the actor loses its capability.
+        } else if (mutation == 4) {
+          f.state.before_begin = [&] {
+            if (f.state.begins == 3) {
+              revoke();
+            }
+          };
+        } else {
+          revoke();
+        }
+        expect(f.app->check_authorization(f.request()), t::ErrorCode::Unauthenticated);
+      }
+    }
+  }
+}
 void source_and_actor_rejections() {
   for (unsigned mutation = 0; mutation < 13; ++mutation) {
     Fixture f;
@@ -855,6 +904,7 @@ int main() {
   consumer_capability_and_method_boundary();
   invalid_inputs();
   source_and_actor_rejections();
+  every_signed_actor_requires_current_explicit_delegator_capability();
   failures_and_time_window();
   final_reread_rejects_current_authority_changes();
   workload_and_single_hop();

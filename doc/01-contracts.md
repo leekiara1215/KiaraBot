@@ -1855,3 +1855,7 @@ Relevant final deadlines include the original Control current credential/certifi
 expiry and the existing one-second authorization checkpoint. Crypto runs outside UoW;
 fresh reads after verification/replay reject intervening invalidation or dependency
 failure. Source binding does not pin a certificate version or overwrite direct peer data.
+
+CheckAuthorization的actor当前有效性包含每个Control/Runtime当前显式
+identity.delegation.issue@其自身Principal；撤去、错Principal或role-only均为
+RpcFailure/UNAUTHENTICATED，不作为source业务PERMISSION_DENIED decision。

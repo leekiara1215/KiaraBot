@@ -1080,3 +1080,9 @@ Relevant final deadlines include the original Control current credential/certifi
 expiry and the existing one-second authorization checkpoint. Crypto runs outside UoW;
 fresh reads after verification/replay reject intervening invalidation or dependency
 failure. Source binding does not pin a certificate version or overwrite direct peer data.
+
+CheckAuthorization还要求每个签名actor（首Control、第二Runtime）当前具有显式
+IdentityDelegationIssue@自身Principal，role-only、其他Principal或撤去该能力都使actor
+当前无效并返回Unauthenticated。来源业务授权版本不能代替actor能力水位；签名后或最终
+重读时撤权同样拒绝。consumer自身Check能力仍独立PermissionDenied，source业务grant
+不足仍正常allowed=false；source/session/actor验证不因业务已拒绝而跳过。
