@@ -53,7 +53,7 @@ int main() try {
       clock.value.utc,
       clock.value.utc,
       clock.value.utc + std::chrono::seconds{56},
-      0,
+      1,
       {{"credential"}, {18446744073709551615ULL}},
       t::SessionId{"session"}};
   t::VerifiedPeer peer{{t::PlatformPeer{t::Service::Control, {"control"}},
@@ -92,6 +92,30 @@ int main() try {
   changed_peer.verified_at -= std::chrono::seconds{3};
   assert(std::holds_alternative<t::Failure>(
       port->verify(proof->bytes(), t::Service::Runtime, changed_peer, clock.value)));
+  auto second_hop = claims;
+  second_hop.audience = t::Service::Model;
+  second_hop.direct_actor = {"runtime"};
+  second_hop.actor_chain.push_back({"runtime"});
+  second_hop.business_hops = 2;
+  auto second_signed = port->sign(second_hop, {"key-1"});
+  auto second_peer = peer;
+  second_peer.binding.peer = t::PlatformPeer{t::Service::Runtime, {"runtime"}};
+  second_peer.binding.certificate.subject = {"runtime"};
+  second_peer.binding.certificate.platform_service = t::Service::Runtime;
+  assert(std::holds_alternative<t::VerifiedDelegation>(
+      port->verify(std::get<t::OwnedSecret>(second_signed)->bytes(), t::Service::Model, second_peer,
+                   clock.value)));
+  auto third_hop = second_hop;
+  third_hop.actor_chain.push_back({"model"});
+  third_hop.direct_actor = {"model"};
+  third_hop.business_hops = 3;
+  assert(std::holds_alternative<t::Failure>(port->sign(third_hop, {"key-1"})));
+  auto zero_hop = claims;
+  zero_hop.business_hops = 0;
+  assert(std::holds_alternative<t::Failure>(port->sign(zero_hop, {"key-1"})));
+  auto mismatch_hop = claims;
+  mismatch_hop.business_hops = 2;
+  assert(std::holds_alternative<t::Failure>(port->sign(mismatch_hop, {"key-1"})));
   auto invalid = claims;
   invalid.source_credential.version.value = 0;
   assert(std::holds_alternative<t::Failure>(port->sign(invalid, {"key-1"})));
@@ -140,6 +164,16 @@ int main() try {
   assert(std::holds_alternative<t::Failure>(resigned(changed_payload, true, "key-1", false)));
   assert(std::holds_alternative<t::Failure>(resigned(changed_payload, false, "key-1", true)));
   auto delegation = changed_payload.at("delegation").get<nlohmann::json::object_t>();
+  auto malformed_hops = delegation;
+  malformed_hops["business_hops"] = nlohmann::json(std::string{"3"});
+  auto malicious_payload = changed_payload;
+  malicious_payload["delegation"] = nlohmann::json(malformed_hops);
+  assert(std::holds_alternative<t::Failure>(resigned(malicious_payload, false, "key-1", false)));
+  malformed_hops = delegation;
+  malformed_hops["actor_chain"] = nlohmann::json(nlohmann::json::array_t{
+      nlohmann::json("control"), nlohmann::json("runtime"), nlohmann::json("model")});
+  malicious_payload["delegation"] = nlohmann::json(malformed_hops);
+  assert(std::holds_alternative<t::Failure>(resigned(malicious_payload, false, "key-1", false)));
   delegation["source_credential"] = nlohmann::json(nlohmann::json::array_t{
       nlohmann::json(std::string{"credential"}), nlohmann::json(std::string{"0"})});
   changed_payload["delegation"] = nlohmann::json(delegation);

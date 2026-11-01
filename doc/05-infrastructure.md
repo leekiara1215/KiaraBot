@@ -298,4 +298,10 @@ P04 DelegationCryptoPort 使用固定 jwt-cpp0.7.0/OpenSSL3.5 Ed25519（JWS alg=
 NumericDate要求非负整秒，exp-iat最多56秒，签验容差最多2秒。调用者须保留exchange来源，
 并向Identity当前权威检查来源credential/session撤销和授权版本；crypto验证不替代授权。
 
-JWT序列化使用同一jwt-cpp官方nlohmann-json traits；严格整数NumericDate范围检查先于成熟库日期转换。
+委托业务跳数从第一条业务边开始计数：Issue Control→Runtime 为hops=1、actor_chain仅
+包含Control主体；Exchange Runtime→Model/Host为hops=2、链为[Control,Runtime]，最后
+actor必须是direct_actor。hops=0/3、链长度不等于hops或重复actor均拒绝。Identity签发/
+交换RPC本身不另加业务边；第三次转交拒绝。父子证明的精确链追加、audience变化、权限
+收窄和来源保留由Core交换规则检查，单份proof验签不声称证明父子关系。
+JWT序列化使用同一jwt-cpp官方nlohmann-json traits，NumericDate先检查原始整数类型及
+有界范围，拒绝分数、超大和unsigned窄化输入，再进入成熟库日期/签名验证。

@@ -123,9 +123,10 @@ bool shape(const t::DelegationClaims& c) {
   if (!text(c.issuer) || !text(c.subject.value) || !text(c.direct_actor.value) ||
       !text(c.proof_id.value) || !text(c.source_credential.id.value) ||
       !c.authorization_version.value || (c.source_session && !text(c.source_session->value)) ||
-      std::holds_alternative<t::Failure>(t::validate_delegation_origin(c)) || c.business_hops > 2 ||
-      c.actor_chain.empty() || c.actor_chain.size() > 3 ||
-      c.actor_chain.size() != static_cast<std::size_t>(c.business_hops) + 1 ||
+      std::holds_alternative<t::Failure>(t::validate_delegation_origin(c)) ||
+      (c.business_hops == 0 || c.business_hops > 2) || c.actor_chain.empty() ||
+      c.actor_chain.size() > 2 ||
+      c.actor_chain.size() != static_cast<std::size_t>(c.business_hops) ||
       c.actor_chain.back() != c.direct_actor || c.permissions.empty() ||
       c.permissions.size() > 128) {
     return false;

@@ -192,3 +192,11 @@ without NOLINT, and without editing unified checker configuration or third-party
 picojson lifetime-path diagnostic is therefore avoided rather than asserted to be harmless.
 Raw NumericDate requires integer type and unsigned<=INT64_MAX before conversion, then a bounded
 nanosecond timestamp; authenticated UINT64_MAX, huge float and fractional date tests reject.
+
+Parent/Core confirmed business edges: Issue Control→Runtime is hops1/chain[Control], Exchange
+Runtime→Model or Host is hops2/chain[Control,Runtime]; Identity RPC calls themselves do not count.
+Adapter now requires hops1..2, chain.size()==hops, last actor==direct_actor and no duplicates.
+Zero/three hops or mismatched chain reject. Core owns exact child chain append/new audience,
+permission narrowing and preserved origin; one signed proof cannot establish parent relation.
+Doc/05 synchronized; doc/08 key/clock behavior unchanged by this correction, proto/API/doc18
+unchanged. Real Ed25519 tests cover the first and second edges and explicit rejected extra edges.
