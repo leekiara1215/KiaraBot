@@ -359,6 +359,9 @@ IdentityExchangeApplication::exchange_delegation(const ExchangeIdentityDelegatio
       return *error;
     }
     const auto& current = std::get<ExchangeAuthority>(final);
+    if (current.checked_at < authority.checked_at) {
+      return failure(ErrorCode::UpstreamUnavailable);
+    }
     if (!same_authority(authority, current) || current.checked_at >= child.expires_at ||
         child.expires_at > current.latest_expiry) {
       return authentication_rejected();

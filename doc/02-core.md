@@ -983,3 +983,7 @@ Runtime，subject及source credential/session保持不变，client cert改为实
 Login 的新 SessionSecurity 现在从最终核验的实际 Control peer 写入上述稳定主体与
 credential ID；客户端请求不提供此绑定。登录原收据重放及 refresh 保持原绑定。
 对应 PG 保存与不可变约束仍由独立 schema 能力实现，缺失字段不得现场补默认值。
+
+Exchange签后最终DB checked_at不得早于签前authority.checked_at；即使版本及期限仍表面
+有效，跨UoW数据库UTC回退也返回UpstreamUnavailable并丢弃已签proof，不靠NumericDate
+取整掩盖。每个单独UoW内的时间检查之外，还保持这一跨阶段单调证据约束。

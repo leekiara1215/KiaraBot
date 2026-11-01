@@ -72,3 +72,18 @@ assembly belong to parent/build/platform. Testcrypto is strict orchestration-onl
 production signature acceptance claim. No service readiness enabled. Changed files limited to new
 header/source/test, doc02 and this report; protocols/API/doc05/08/protected18 unchanged. Parent
 owns corresponding Issue service-cap hardening and older detailed-design audience example wording.
+
+## Cross-UoW database UTC regression correction
+
+Parent review found final successful authority timestamp was not compared to the initial phase.
+Even with all versions unchanged and each individual UoW internally monotonic, DB UTC could regress
+between signing phases. Added explicit final.checked_at < initial.checked_at ->UpstreamUnavailable
+before any proof response. Does not change existing Issue code or rely on NumericDate flooring.
+Strict regression keeps parent/certificate/source valid and final per-UoW time consistent, signs
+once, then moves DB time backwards across phases; no signed proof is returned and no writes occur.
+
+Backward-UTC actual regression passes full Exchange -Werror ASan/UBSan no-recover executable:
+250ms and1s cross-phase regressions, including initial1000.5/final1000.25/parentnbf1000; each UoW
+is internally constant, all authority versions and expiries remain valid, sign1/parentverify1 yet
+Failure UpstreamUnavailable and no result proof. Full source/test analyzer+bugprone with no
+exclusions, format and diff pass. Root independently rebuilt/executed same test0 before commit.

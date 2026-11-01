@@ -849,6 +849,26 @@ void signed_lifetime_is_capped_by_every_authoritative_bound() {
   }
 }
 
+void backwards_database_time_across_authorization_uows_is_unavailable() {
+  for (const auto rollback : {std::chrono::milliseconds{250}, std::chrono::milliseconds{1000}}) {
+    Fixture f;
+    const auto not_before = f.state.now;
+    f.state.now += rollback + std::chrono::milliseconds{250};
+    f.state.parent.issued_at = not_before;
+    f.state.parent.not_before = not_before;
+    const auto initial_time = f.state.now;
+    f.crypto.after_sign = [&] { f.state.now -= rollback; };
+    const auto result = f.app.exchange_delegation(f.request());
+    assert(f.crypto.signs == 1 && f.crypto.verifies == 1);
+    assert(f.crypto.signed_claims.has_value());
+    assert(f.state.now < initial_time && f.state.now >= not_before);
+    assert(f.state.now < f.state.parent.expires_at);
+    assert(std::holds_alternative<t::Failure>(result));
+    assert(std::get<t::Failure>(result).code == t::ErrorCode::UpstreamUnavailable);
+    assert(f.state.writes == 0 && f.state.commits == 0);
+  }
+}
+
 } // namespace
 int main() try {
   valid_second_hop_preserves_origin_and_binds_runtime();
@@ -857,6 +877,7 @@ int main() try {
   parent_shape_and_narrowing_are_closed();
   dependency_clock_and_random_failures();
   final_time_floor_and_authorization_budget();
+  backwards_database_time_across_authorization_uows_is_unavailable();
   workload_source_keeps_credential_origin_without_human_session();
   signed_lifetime_is_capped_by_every_authoritative_bound();
 } catch (...) {
