@@ -826,9 +826,14 @@ ProcessConfig may carry Identity-only identity_security file references and an e
 trusted-clock declaration. It is an outer platform input, never a domain/application
 or repository dependency. It requires database/TLS; strict validation and limits are
 specified in doc/08. No cryptographic key bytes are loaded into this JSON structure.
-Until the real production bundle is connected, Identity rejects an explicit declaration
-before listeners instead of ignoring it. An absent declaration keeps the existing
-not-ready placeholder. This configuration capability does not make any RPC ready.
+The Identity entrypoint now builds the real security application, Admin and issuer
+with the same complete PostgreSQL security factory, mature crypto and explicit
+SystemSecurityClock. One IdentityService borrows all three applications; actual
+transport evidence is authenticated through Admin, never through CA validity alone.
+Keys, clock and a CSPRNG-derived dummy password PHC are validated before opening PG.
+RPC shutdown/Wait precedes applications, crypto/factory and clock destruction.
+An absent declaration keeps the existing not-ready placeholder. Overall Identity
+readiness remains false while other Identity methods are incomplete.
 
 ### P04 IssueDelegation RPC（第七方法，可选依赖）
 

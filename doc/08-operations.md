@@ -656,11 +656,22 @@ The parser holds file references only. The production composition must load all 
 before listeners through the mature secure key-file loaders, including rejection of
 symlinks/special files, insecure permissions, invalid hex/PEM and mismatched Ed25519
 keys. It must not read key bytes through ordinary JSON/string configuration storage.
-During this declaration-only capability, an explicit security object is rejected at
-composition before database contact/listening, rather than silently using the old
-placeholder. The next composition capability replaces that rejection with real
-factories. Absent security retains the existing not-ready placeholder path; no weak
-keys, local business store or automatic bootstrap are selected.
+The configured Identity entrypoint securely loads these files, constructs mature
+crypto, validates its clock and derives a dummy password PHC from 32 CSPRNG bytes
+before opening the complete PostgreSQL security factory or listeners. Failures stop
+startup; no configured failure falls back to the placeholder. All session, Admin and
+issuer applications share that factory. Bootstrap remains an explicit offline action.
+Absent security retains the existing not-ready placeholder path.
+
+The native security clock samples UTC between steady reads and compares drift with
+its original baseline, accounting for measurement interval and clock resolution.
+A measurement wider than 1ms is temporarily unavailable; drift beyond the declared
+bound, steady regression or invalid range latches unavailable until process restart.
+No rolling recalibration or NTP check is performed. Faults reject authentication and
+keep readiness false. Fixed finite application limits are 4096 sessions per subject,
+10000 secret receipts, 1024 snapshots and 4096 total snapshot records; password lifetime
+is 365 days. These do not remove lower global/domain limits. Overall readiness remains
+false because the complete Identity API has not yet been implemented.
 
 ### P04 IssueDelegation RPC（第七方法，可选依赖）
 

@@ -41,3 +41,51 @@ Declaration checks actually run:
 No full PG/bootstrap/production RPC test is claimed for this declaration-only cap.
 The bundle will use parent-directory-trusted file references and secure loaders for
 final-component/file permissions and contents, never treat a path as a command/URL.
+
+## Configured production bundle
+
+The subsequent composition cap replaces the declaration-only startup rejection.
+Allowed source scope is core/app/identity_main.cpp and new private composition/clock
+helpers plus core/tests/platform/identity_security_clock_test.cpp; no App, PG, crypto,
+wire/API or protected baseline changes. Input/output and error schema remain the
+existing strict configuration and RPC contracts. Missing/invalid security material
+fails startup before PG; configured failures never fall back. Missing declaration
+retains the P02 not-ready daemon.
+
+The owned bundle loads three symmetric keys and matching Ed25519 files through secure
+loaders, validates explicit clock trust, derives a dummy PHC from 32 random secret
+bytes, builds mature crypto, then opens exactly one full security UoW factory.
+Session/Admin/issuer applications share that factory. The actual auth_context wrapper
+calls Admin.authenticate_peer and all seven implemented RPCs use that same authority.
+RPC stops/Wait before application destruction; issuer/Admin/session applications die
+before factory/crypto, which die before the borrowed clock. No online bootstrap,
+provider call, local store or synthetic peer/binding is introduced.
+
+Clock tests inject pure UTC/steady observations: exact skew boundaries, forward/back
+and cumulative drift, permanent fault, overflow, preempted measurement recovery and
+regression; native smoke also exercises concurrent sampling. Drift uses the original
+baseline and latches. Sampling uncertainty above 1ms is temporarily unavailable without
+recalibration. This validates a deployment declaration, not NTP accuracy. Overall
+readiness stays false. Fixed finite capacities and lifetime are documented in doc/08.
+
+Document impact: doc/02 and doc/08 updated; proto/API/doc01/doc06 need no changes
+because no wire/error schema changed. doc18 is read-only and untouched. No claim of
+complete Identity implementation or full production daemon HTTP closure is made by
+this source capability. Follow-up verification catalog metadata is a separate cap.
+
+Checks actually run for the bundle:
+- Werror build: kiarabot-identity and kiarabot_identity_security_clock_test passed.
+- identity_security_clock_test passed; standalone ASan/UBSan clock test passed.
+- service_config_test.py with real Identity binary passed, including no-PG missing-key canary.
+- Locked format16 dry-run and tidy22 clang-analyzer warnings-as-errors over main,
+  composition, clock and clock test passed; module boundary and changed document local
+  link checks and git diff --check passed.
+- CTest p02_service_config and p03_service_composition passed. p04_identity_rpc could
+  not run: the cherry-picked RPC fixture fails Werror compilation because its
+  IssueSessionRepositoryFixture lacks count_unexpired and IssueRandomFixture lacks
+  opaque_token on this reviewed base. Reported to the parent/author; production
+  Identity and RPC library builds passed. This is not treated as a passing RPC test.
+- Build registration was temporary and restored before commit. Integrator must add
+  the clock static library/include core/app, clock test (Threads and assertions on),
+  identity_composition.cpp to Identity, and link Identity with clock/security/admin/
+  delegation/RPC/crypto; the new RPC library also links delegation application.
