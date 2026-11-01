@@ -125,7 +125,25 @@ bool roles_valid(pqxx::transaction_base& transaction, const DatabaseConfig& conf
          database.one_row()["restricted"].as<bool>() && grants.one_row()[0].as<int>() == 0;
 }
 
+bool layout_valid(pqxx::transaction_base& transaction, bool initialized) {
+  const auto namespaces = transaction.exec(
+      "SELECT nspname FROM pg_namespace WHERE nspname NOT IN ('public','information_schema') "
+      "AND left(nspname,3)<>'pg_'");
+  if (initialized ? namespaces.size() != 1 || namespaces[0][0].as<std::string>() != "kiarabot"
+                  : !namespaces.empty()) {
+    return false;
+  }
+  const auto public_objects = transaction.exec(
+      "SELECT (SELECT count(*) FROM pg_class WHERE relnamespace='public'::regnamespace) + "
+      "(SELECT count(*) FROM pg_proc WHERE pronamespace='public'::regnamespace) + "
+      "(SELECT count(*) FROM pg_type WHERE typnamespace='public'::regnamespace)");
+  return public_objects.one_row()[0].as<int>() == 0;
+}
+
 bool schema_valid(pqxx::transaction_base& transaction, const DatabaseConfig& config) {
+  if (!layout_valid(transaction, true)) {
+    return false;
+  }
   const auto object =
       transaction.exec("SELECT c.relkind='r' AND pg_get_userbyid(c.relowner)=$1 AS owned "
                        "FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace "
@@ -230,14 +248,7 @@ core::target::Status initialize_empty(const DatabaseConfig& config) {
     if (!locked.one_row()[0].as<bool>()) {
       return failure(target::ErrorCode::Conflict);
     }
-    const auto existing = transaction.exec(
-        "SELECT count(*) FROM pg_namespace WHERE nspname NOT IN ('public','information_schema') "
-        "AND nspname NOT LIKE 'pg_%'");
-    const auto public_objects = transaction.exec(
-        "SELECT (SELECT count(*) FROM pg_class WHERE relnamespace='public'::regnamespace) + "
-        "(SELECT count(*) FROM pg_proc WHERE pronamespace='public'::regnamespace) + "
-        "(SELECT count(*) FROM pg_type WHERE typnamespace='public'::regnamespace)");
-    if (existing.one_row()[0].as<int>() != 0 || public_objects.one_row()[0].as<int>() != 0) {
+    if (!layout_valid(transaction, false)) {
       return failure(target::ErrorCode::Conflict);
     }
     transaction.exec("REVOKE ALL ON SCHEMA public FROM PUBLIC");

@@ -143,6 +143,19 @@ void run(const std::filesystem::path& root, std::uint16_t port,
     auto runtime = config;
     runtime.user = config.runtime_role;
     expect_error(pg::Database::open(runtime), target::ErrorCode::Internal);
+    {
+      pqxx::connection migration(connection_string(config));
+      pqxx::work nonempty(migration);
+      nonempty.exec("CREATE SCHEMA pga"); // SQL LIKE 'pg_%' would incorrectly hide this schema.
+      nonempty.commit();
+    }
+    expect_error(pg::initialize_empty(config), target::ErrorCode::Conflict);
+    {
+      pqxx::connection migration(connection_string(config));
+      pqxx::work cleanup(migration);
+      cleanup.exec("DROP SCHEMA pga");
+      cleanup.commit();
+    }
     // Real PostgreSQL DDL failure after CREATE SCHEMA must roll the entire initializer back.
     // Fault injection objects live in pg_catalog, owned only by the disposable test superuser.
     auto fault_admin = config;
@@ -180,6 +193,24 @@ void run(const std::filesystem::path& root, std::uint16_t port,
     require(std::holds_alternative<std::monostate>(database->check_writer()),
             "writer lock missing");
     expect_error(pg::Database::open(runtime), target::ErrorCode::Conflict);
+    database.reset();
+    {
+      pqxx::connection migration(connection_string(config));
+      pqxx::work extra(migration);
+      extra.exec("CREATE SCHEMA pga");
+      extra.commit();
+    }
+    expect_error(pg::Database::open(runtime), target::ErrorCode::Internal);
+    {
+      pqxx::connection migration(connection_string(config));
+      pqxx::work cleanup(migration);
+      cleanup.exec("DROP SCHEMA pga");
+      cleanup.commit();
+    }
+    auto validated = pg::Database::open(runtime);
+    require(std::holds_alternative<std::unique_ptr<pg::Database>>(validated),
+            "revalidation failed");
+    database = std::move(std::get<std::unique_ptr<pg::Database>>(validated));
     {
       pqxx::connection restricted(connection_string(runtime));
       for (const auto& sql : {"CREATE TABLE kiarabot.forbidden(id integer)",
