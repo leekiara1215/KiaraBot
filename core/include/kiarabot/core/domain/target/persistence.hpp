@@ -24,10 +24,10 @@ struct ResourceMutationResult {
 // Immutable complete success snapshot, not a live-resource lookup. No transport bytes or secrets.
 // Login/refresh/credential secret replay needs a separate encrypted P04 contract; not supported
 // here.
-using ReplayResult = std::variant<EmptySuccess, ResourceMutationResult, Operation, Principal,
-                                  LoginSession, ResourceGrant, BotAccount, PluginInstallation,
-                                  PluginInstance, ScheduledTask, Occurrence, ModelIntent,
-                                  SessionMetadata>;
+using ReplayResult =
+    std::variant<EmptySuccess, ResourceMutationResult, Operation, Principal, LoginSession,
+                 ResourceGrant, BotAccount, PluginInstallation, PluginInstance, ScheduledTask,
+                 Occurrence, ModelIntent, SessionMetadata>;
 struct ReceiptKey {
   SubjectId subject;
   std::string method;
