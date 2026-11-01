@@ -37,7 +37,7 @@ def main(driver):
         if result.returncode:
             location = re.search(r'Identity RPC fixture assertion line [0-9]+; diagnostics redacted', result.stderr)
             raise RuntimeError(location.group(0) if location else 'Identity RPC fixture failed; diagnostics redacted')
-        assert 'fixture app only' in result.stdout
+        assert 'fixtures only' in result.stdout
         print(result.stdout.strip())
 
 
