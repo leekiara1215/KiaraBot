@@ -1600,6 +1600,205 @@ void exercise_issue(const std::string& leaf, const std::string& ca, const std::s
   server->Shutdown();
   server->Wait();
 }
+// Complete Core application TEST double: the real 151f31e application owns current
+// platform/Catalog authorization. The transport must neither cache nor JWT-precheck it.
+class VerificationKeysApplicationFixture final : public t::IdentityVerificationKeysApplication {
+public:
+  std::atomic<int> mode{0};
+  std::atomic<int> calls{0};
+  std::atomic<std::uint64_t> current_version{std::numeric_limits<std::uint64_t>::max()};
+  std::atomic<std::uint64_t> last_known{0};
+  t::Outcome<t::GetVerificationKeysReply>
+  get_verification_keys(const t::GetVerificationKeysRequest& request) override {
+    ++calls;
+    const auto* platform = std::get_if<t::PlatformPeer>(&request.caller.binding.peer);
+    require(platform && platform->service == t::Service::Runtime &&
+            platform->subject.value == kPeer);
+    require(request.context.request_id == kSubject && request.context.trace_id == kOther);
+    last_known.store(request.known_version ? request.known_version->value : 0);
+    // Explicit fake current-authority denial precedes the known-version comparison.
+    if (mode.load() == 1) {
+      return t::Failure{t::ErrorCode::PermissionDenied,
+                        t::Acceptance::NotAccepted,
+                        t::Recovery::Diagnose,
+                        {},
+                        {}};
+    }
+    if (mode.load() == 2 || mode.load() == 3) {
+      return registry_unavailable();
+    }
+    if (mode.load() == 12) {
+      throw std::runtime_error("never-export-private-key-path-or-exception");
+    }
+    if (request.known_version && request.known_version->value > current_version.load()) {
+      return t::Failure{t::ErrorCode::InvalidArgument,
+                        t::Acceptance::NotAccepted,
+                        t::Recovery::CorrectInput,
+                        {},
+                        {}};
+    }
+    const auto seconds = std::chrono::duration_cast<std::chrono::seconds>(
+        std::chrono::system_clock::now().time_since_epoch());
+    const auto checked =
+        t::TimePoint{std::chrono::duration_cast<std::chrono::nanoseconds>(seconds) +
+                     std::chrono::nanoseconds{123456789}};
+    t::PublicVerificationKey key{{"active-public-key"},
+                                 {},
+                                 {std::numeric_limits<std::uint64_t>::max() - 1},
+                                 checked + std::chrono::hours{1}};
+    for (std::size_t i = 0; i < key.ed25519_public_key.size(); ++i) {
+      key.ed25519_public_key[i] = static_cast<std::byte>(i);
+    }
+    t::GetVerificationKeysReply result{
+        {{key}, {current_version.load()}, {t::ResourceKind::Catalog, {kOther}}}, checked};
+    if (mode.load() == 4) {
+      result.keys.keys[0].version.value = 0;
+    }
+    if (mode.load() == 5) {
+      result.keys.version.value = 0;
+    }
+    if (mode.load() == 6) {
+      result.keys.keys[0].valid_until = t::TimePoint::max();
+    }
+    if (mode.load() == 7) {
+      result.keys.keys.clear();
+    }
+    if (mode.load() == 8) {
+      result.checked_at = {};
+    }
+    if (mode.load() == 9) {
+      result.keys.keys[0].valid_until = checked;
+    }
+    if (mode.load() == 10) {
+      result.keys.keys[0].reference.value.clear();
+    }
+    if (mode.load() == 11) {
+      result.keys.keyset_resource.kind = t::ResourceKind::Account;
+    }
+    if (mode.load() == 13) {
+      result.keys.keys.push_back(key);
+    }
+    return result;
+  }
+};
+void exercise_verification_keys(const std::string& leaf, const std::string& ca,
+                                const std::string& key,
+                                p::PeerAuthenticator authenticated_fixture) {
+  ApplicationFixture sessions;
+  VerificationKeysApplicationFixture application;
+  std::atomic<bool> lifecycle_unavailable{false};
+  p::InvocationDeadline lifecycle = [&]() -> t::Outcome<t::TimePoint> {
+    if (lifecycle_unavailable.load()) {
+      return registry_unavailable();
+    }
+    return t::TimePoint::max();
+  };
+  // This explicit registry fixture binds Runtime to the real TLS leaf; it is not production
+  // enrollment/SAN authority. It demonstrates this endpoint does not require a Control role/JWT.
+  p::PeerAuthenticator runtime_fixture =
+      [&](grpc::ServerContext& context) -> t::Outcome<t::VerifiedPeer> {
+    auto verified = authenticated_fixture(context);
+    if (const auto* error = std::get_if<t::Failure>(&verified)) {
+      return *error;
+    }
+    auto peer = std::get<t::VerifiedPeer>(std::move(verified));
+    std::get<t::PlatformPeer>(peer.binding.peer).service = t::Service::Runtime;
+    peer.binding.certificate.platform_service = t::Service::Runtime;
+    return peer;
+  };
+  auto service = std::get<std::unique_ptr<w::IdentityService::Service>>(
+      p::make_identity_rpc(sessions, runtime_fixture, nullptr, lifecycle,
+                           p::IdentityRpcOptions{.verification_keys = &application}));
+  grpc::SslServerCredentialsOptions options;
+  options.pem_root_certs = ca;
+  options.pem_key_cert_pairs.push_back({key, leaf});
+  options.client_certificate_request = GRPC_SSL_REQUEST_AND_REQUIRE_CLIENT_CERTIFICATE_AND_VERIFY;
+  grpc::ServerBuilder builder;
+  int port = 0;
+  builder.RegisterService(service.get());
+  builder.AddListeningPort("127.0.0.1:0", grpc::SslServerCredentials(options), &port);
+  auto server = builder.BuildAndStart();
+  require(server && port > 0);
+  grpc::SslCredentialsOptions client;
+  client.pem_root_certs = ca;
+  client.pem_cert_chain = leaf;
+  client.pem_private_key = key;
+  auto stub = w::IdentityService::NewStub(
+      grpc::CreateChannel("localhost:" + std::to_string(port), grpc::SslCredentials(client)));
+  w::IdentityGetVerificationKeysRequest request;
+  request_context(request.mutable_context());
+  request.mutable_context()->clear_idempotency_key();
+  request.mutable_context()->clear_delegation();
+  w::IdentityGetVerificationKeysResponse response;
+  require(call(*stub, &w::IdentityService::Stub::GetVerificationKeys, request, &response).ok());
+  require(application.last_known.load() == 0 &&
+          response.version() == std::numeric_limits<std::uint64_t>::max());
+  require(response.keys_size() == 1 &&
+          response.keys(0).version() == std::numeric_limits<std::uint64_t>::max() - 1);
+  require(response.keys(0).key_id() == "active-public-key" &&
+          response.keys(0).ed25519_public_key().size() == 32);
+  for (int i = 0; i < 32; ++i) {
+    require(response.keys(0).ed25519_public_key()[i] == static_cast<char>(i));
+  }
+  require(response.keys(0).valid_until().nanos() == 123456789);
+  request.set_known_key_version(std::numeric_limits<std::uint64_t>::max());
+  // Unknown-kid proof must not trigger a JWT bootstrap loop in the transport.
+  request.mutable_context()->set_delegation("unverifiable.unknown-kid.signature");
+  require(call(*stub, &w::IdentityService::Stub::GetVerificationKeys, request, &response).ok());
+  require(application.last_known.load() == std::numeric_limits<std::uint64_t>::max() &&
+          response.keys_size() == 1);
+  application.current_version.store(9);
+  for (const std::uint64_t known : {8, 9}) {
+    request.set_known_key_version(known);
+    require(call(*stub, &w::IdentityService::Stub::GetVerificationKeys, request, &response).ok());
+    require(response.version() == 9 && response.keys_size() == 1);
+  }
+  request.set_known_key_version(10);
+  application.mode.store(1);
+  rejected(call(*stub, &w::IdentityService::Stub::GetVerificationKeys, request, &response),
+           w::PERMISSION_DENIED);
+  application.mode.store(0);
+  rejected(call(*stub, &w::IdentityService::Stub::GetVerificationKeys, request, &response),
+           w::INVALID_ARGUMENT);
+  const auto before_zero = application.calls.load();
+  request.set_known_key_version(0);
+  rejected(call(*stub, &w::IdentityService::Stub::GetVerificationKeys, request, &response),
+           w::INVALID_ARGUMENT);
+  require(application.calls.load() == before_zero);
+  request.clear_known_key_version();
+  for (int mode : {2, 3}) {
+    application.mode.store(mode);
+    const auto unavailable =
+        rejected(call(*stub, &w::IdentityService::Stub::GetVerificationKeys, request, &response),
+                 w::UPSTREAM_UNAVAILABLE);
+    require(unavailable.context().acceptance() == w::NOT_ACCEPTED);
+  }
+  for (int mode : {4, 5, 6, 7, 8, 9, 10, 11, 12, 13}) {
+    application.mode.store(mode);
+    rejected(call(*stub, &w::IdentityService::Stub::GetVerificationKeys, request, &response),
+             w::INTERNAL);
+  }
+  application.mode.store(0);
+  const auto before_lifecycle = application.calls.load();
+  lifecycle_unavailable.store(true);
+  const auto unavailable =
+      rejected(call(*stub, &w::IdentityService::Stub::GetVerificationKeys, request, &response),
+               w::UPSTREAM_UNAVAILABLE);
+  require(unavailable.context().acceptance() == w::NOT_ACCEPTED &&
+          application.calls.load() == before_lifecycle);
+  const auto before_missing_peer = application.calls.load();
+  grpc::SslCredentialsOptions missing;
+  missing.pem_root_certs = ca;
+  auto missing_stub = w::IdentityService::NewStub(
+      grpc::CreateChannel("localhost:" + std::to_string(port), grpc::SslCredentials(missing)));
+  grpc::ClientContext missing_context;
+  missing_context.set_deadline(std::chrono::system_clock::now() + std::chrono::milliseconds{200});
+  require(!missing_stub->GetVerificationKeys(&missing_context, request, &response).ok());
+  require(application.calls.load() == before_missing_peer);
+  require(sessions.calls.load() == 0); // no JWT/session or unused issuer preflight.
+  server->Shutdown();
+  server->Wait();
+}
 struct GrpcLifetime {
   GrpcLifetime() {
     grpc_init();
@@ -1735,6 +1934,7 @@ int main(int argc, char* argv[]) {
     server->Wait();
     exercise_registered_peer(leaf, ca, key);
     exercise_issue(leaf, ca, key);
+    exercise_verification_keys(leaf, ca, key, verifier);
     std::cout << "Six Identity RPCs over real mTLS: boundary projections, stable failures, unknown "
                  "commit, peer/deadline rejection and Core Issue passed (session/signing fixtures "
                  "only)\n";

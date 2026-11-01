@@ -8,6 +8,7 @@
 #include "kiarabot/core/application/target/identity_admin_application.hpp"
 #include "kiarabot/core/application/target/identity_delegation_application.hpp"
 #include "kiarabot/core/application/target/identity_security_application.hpp"
+#include "kiarabot/core/application/target/identity_verification_keys_application.hpp"
 #include "kiarabot/v1/identity.grpc.pb.h"
 
 namespace kiarabot::core::platform {
@@ -29,6 +30,11 @@ target::Outcome<PeerAuthenticator>
 make_identity_peer_authenticator(target::IdentityAdminApplication& application,
                                  target::SecurityClockPort& clock);
 
+// Borrowed optional Core capabilities, never a replacement keyring/material loader.
+struct IdentityRpcOptions {
+  target::IdentityVerificationKeysApplication* verification_keys = nullptr;
+};
+
 // Borrows application for the service lifetime; owns the verifier closure. No readiness or
 // listener is enabled here. Optional issuer is borrowed for the same lifetime; absent means
 // typed Unsupported for Issue. Six security RPCs call the pure application; other owner RPCs
@@ -36,6 +42,6 @@ make_identity_peer_authenticator(target::IdentityAdminApplication& application,
 target::Outcome<std::unique_ptr<v1::IdentityService::Service>>
 make_identity_rpc(target::IdentitySecurityApplication& application, PeerAuthenticator authenticate,
                   target::IdentityDelegationApplication* issuer = nullptr,
-                  InvocationDeadline invocation_deadline = {});
+                  InvocationDeadline invocation_deadline = {}, IdentityRpcOptions options = {});
 
 } // namespace kiarabot::core::platform

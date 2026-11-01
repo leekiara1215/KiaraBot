@@ -357,9 +357,11 @@ t::Outcome<t::Service> audience(std::string_view value) {
 class IdentityRpc final : public v1::IdentityService::Service {
 public:
   IdentityRpc(t::IdentitySecurityApplication& application, PeerAuthenticator authenticate,
-              t::IdentityDelegationApplication* issuer, InvocationDeadline invocation_deadline)
+              t::IdentityDelegationApplication* issuer, InvocationDeadline invocation_deadline,
+              IdentityRpcOptions options)
       : application_(application), authenticate_(std::move(authenticate)), issuer_(issuer),
-        invocation_deadline_(std::move(invocation_deadline)) {}
+        invocation_deadline_(std::move(invocation_deadline)),
+        verification_keys_(options.verification_keys) {}
 
   grpc::Status Login(grpc::ServerContext* transport, const v1::IdentityLoginRequest* request,
                      v1::IdentityLoginResponse* response) override {
@@ -800,13 +802,55 @@ public:
   }
   grpc::Status GetVerificationKeys(grpc::ServerContext* transport,
                                    const v1::IdentityGetVerificationKeysRequest* request,
-                                   v1::IdentityGetVerificationKeysResponse*) override {
-    v1::IdentityGetVerificationKeysResponse unused;
+                                   v1::IdentityGetVerificationKeysResponse* response) override {
     return run(
-        transport, request->has_context(), request->context(), &unused,
-        [](const t::VerifiedPeer&, const t::IdentityRequestContext&)
+        transport, request->has_context(), request->context(), response,
+        [&](const t::VerifiedPeer& peer, const t::IdentityRequestContext& context)
             -> t::Outcome<v1::IdentityGetVerificationKeysResponse> {
-          return failure(t::ErrorCode::CapabilityNotSupported);
+          if (!verification_keys_) {
+            return failure(t::ErrorCode::CapabilityNotSupported);
+          }
+          if (request->has_known_key_version() && request->known_key_version() == 0) {
+            return failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput);
+          }
+          std::optional<t::ResourceVersion> known;
+          if (request->has_known_key_version()) {
+            known = t::ResourceVersion{request->known_key_version()};
+          }
+          // No delegation/JWT precheck: the Core use case authenticates the CURRENT platform
+          // and its explicit trusted-Catalog grant before comparing the caller's known version.
+          auto queried = verification_keys_->get_verification_keys({context, peer, known});
+          if (const auto* error = std::get_if<t::Failure>(&queried)) {
+            return *error;
+          }
+          const auto& reply = std::get<t::GetVerificationKeysReply>(queried);
+          if (!positive(reply.checked_at) || reply.keys.version.value == 0 ||
+              reply.keys.keys.size() != 1 ||
+              reply.keys.keyset_resource.kind != t::ResourceKind::Catalog ||
+              !std::holds_alternative<v1::ResourceRef>(
+                  codec::to_wire(reply.keys.keyset_resource))) {
+            return invalid_result();
+          }
+          v1::IdentityGetVerificationKeysResponse output;
+          output.set_version(reply.keys.version.value);
+          for (const auto& public_key : reply.keys.keys) {
+            if (public_key.reference.value.empty() || public_key.reference.value.size() > 1024 ||
+                public_key.reference.value.find('\0') != std::string::npos ||
+                public_key.version.value == 0 || public_key.valid_until == t::TimePoint::max() ||
+                public_key.valid_until <= reply.checked_at) {
+              return invalid_result();
+            }
+            auto* key = output.add_keys();
+            key->set_key_id(public_key.reference.value);
+            key->set_ed25519_public_key(
+                std::string(reinterpret_cast<const char*>(public_key.ed25519_public_key.data()),
+                            public_key.ed25519_public_key.size()));
+            key->set_version(public_key.version.value);
+            if (!timestamp(public_key.valid_until, key->mutable_valid_until())) {
+              return invalid_result();
+            }
+          }
+          return output;
         },
         false);
   }
@@ -936,6 +980,7 @@ private:
   PeerAuthenticator authenticate_;
   t::IdentityDelegationApplication* issuer_;
   InvocationDeadline invocation_deadline_;
+  t::IdentityVerificationKeysApplication* verification_keys_;
 };
 } // namespace
 
@@ -1010,13 +1055,13 @@ make_identity_peer_authenticator(target::IdentityAdminApplication& application,
 target::Outcome<std::unique_ptr<v1::IdentityService::Service>>
 make_identity_rpc(target::IdentitySecurityApplication& application, PeerAuthenticator authenticate,
                   target::IdentityDelegationApplication* issuer,
-                  InvocationDeadline invocation_deadline) {
+                  InvocationDeadline invocation_deadline, IdentityRpcOptions options) {
   try {
     if (!authenticate) {
       return failure(target::ErrorCode::InvalidArgument, target::Recovery::CorrectInput);
     }
     std::unique_ptr<v1::IdentityService::Service> result = std::make_unique<IdentityRpc>(
-        application, std::move(authenticate), issuer, std::move(invocation_deadline));
+        application, std::move(authenticate), issuer, std::move(invocation_deadline), options);
     return result;
   } catch (...) {
     return failure(target::ErrorCode::Internal);
