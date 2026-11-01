@@ -113,6 +113,15 @@ int main() try {
   auto delegation = crypto::load_delegation_key_files(
       {{"sign"}, directory.file("public"), directory.file("private")});
   assert(std::get<crypto::DelegationKey>(delegation).private_key_pem);
+  assert(chmod(directory.file("public").c_str(), 0644) == 0);
+  assert(std::holds_alternative<crypto::DelegationKey>(
+      crypto::load_delegation_key_files({{"verify"}, directory.file("public"), {}})));
+  for (const auto mode : {0664, 0666}) {
+    assert(chmod(directory.file("public").c_str(), static_cast<mode_t>(mode)) == 0);
+    auto rejected = crypto::load_delegation_key_files({{"verify"}, directory.file("public"), {}});
+    assert(std::get<t::Failure>(rejected).code == t::ErrorCode::InvalidArgument);
+  }
+  assert(chmod(directory.file("public").c_str(), 0644) == 0);
   auto verification = crypto::load_delegation_key_files({{"verify"}, directory.file("public"), {}});
   assert(!std::get<crypto::DelegationKey>(verification).private_key_pem);
   assert(chmod(directory.file("private").c_str(), 0640) == 0);

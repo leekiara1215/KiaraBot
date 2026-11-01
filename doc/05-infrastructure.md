@@ -379,3 +379,7 @@ POSIX打开使用O_NOFOLLOW|O_NONBLOCK|O_CLOEXEC，随后fstat验证regular再�
 PEM公钥与私钥文件各最多8192字节；私钥仅接受无NUL、完整消费的PKCS#8 PRIVATE KEY，
 公钥仅接受PUBLIC KEY，成熟OpenSSL验证Ed25519及公私钥匹配。文件变化复核包含大小、
 类型/权限、UID、device/inode及mtime/ctime；不能替代可信父目录及部署写权限控制。
+
+可信公钥文件虽不含秘密，也必须由当前effective UID或root拥有，且无group/other写权限
+（mode&022==0）；0644允许，0664/0666拒绝。读取前后均检查，不能以公开可读为由允许
+不可信用户替换信任材料。父目录仍需部署控制，最后路径项保持nofollow。

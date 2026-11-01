@@ -250,3 +250,12 @@ concurrent file-drift injection (no production hooks), Linux runtime, full CMake
 Those limits do not remove implemented metadata checks. Doc/05/08 synchronized; doc/01/02 and
 proto/API unchanged because this is outer trusted loading with existing port semantics. Protected
 doc/18 remains untouched; root build registration and composition remain with parent/build task.
+
+## Public key trust-file permission correction
+
+Review found secret=false file metadata previously allowed writable/unowned trust material. Now
+public PEM requires owner effective UID or root and mode&022==0 before AND after read; regular,
+size, nofollow and drift checks remain. Real owned0644 positive and0664/0666 InvalidArgument tests
+pass, plus all loader negatives, using the same -Werror ASan/UBSan no-recover command above.
+Secret euid/no-group-other rule unchanged. No foreign-owner/root fixture chown attempted; ownership
+predicate reviewed, not falsely claimed runtime-tested. Doc/05/08 synchronized, ports/API unchanged.

@@ -72,7 +72,9 @@ private:
 bool metadata(const struct stat& status, bool secret, std::size_t maximum) {
   return S_ISREG(status.st_mode) && status.st_size > 0 &&
          static_cast<std::uintmax_t>(status.st_size) <= maximum &&
-         (!secret || (status.st_uid == geteuid() && (status.st_mode & 077) == 0));
+         (secret ? (status.st_uid == geteuid() && (status.st_mode & 077) == 0)
+                 : ((status.st_uid == geteuid() || status.st_uid == 0) &&
+                    (status.st_mode & 022) == 0));
 }
 t::Outcome<std::unique_ptr<SecureFile>> read_file(const std::filesystem::path& path, bool secret,
                                                   std::size_t maximum) {
