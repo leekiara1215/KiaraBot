@@ -265,3 +265,21 @@ P01 已集成，P02 的旧实现隔离与构建规格见
 断言，所有 reference TU 继续进入 full compile DB/tidy。六个新进程只能链接新内层及
 自己的外层装配，不能通过旧桥接库复用快照业务。构建的 reference 通过不代表目标
 业务实现。具体实施/命令和未验项在上述记录随独立提交更新。
+
+### P00 固定质量工具环境收尾
+
+`dependencies/quality/requirements.txt` 记录 PyPI 归档 SHA-256，固定 clang-format 16.0.6
+及 clang-tidy Python 包 19.1.0.1（其二进制报告 LLVM 19.1.0）。PyPI 不存在 tidy 16.0.6，
+因此不虚构同版本包；现有 CI clang-tidy 16 与此本机分析版本差异需在交付中保留。
+
+```bash
+uv --cache-dir build/uv-cache venv .tools/quality
+uv --cache-dir build/uv-cache pip install --python .tools/quality/bin/python --require-hashes -r dependencies/quality/requirements.txt
+PATH="$PWD/.tools/quality/bin:$PATH" ./scripts/quality/check-format.sh
+PATH="$PWD/.tools/quality/bin:$PATH" ./scripts/quality/check-tidy.sh
+```
+
+工具环境/缓存均忽略，不提交。macOS arm64 已实际安装上述包并验证版本，固定 format
+对基点手写 C++ 全仓检查通过；之前系统 format 23 的差异不是该固定版本的失败。
+固定 vcpkg checkout 的 revision/tree/portfile 校验也已通过，依赖安装与运行能力仍需
+另行记录；不能将 checkout 校验当成 PG/JWT 验收。

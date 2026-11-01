@@ -61,3 +61,17 @@ doc/18 只读。本规格未实施迁移，因此尚未运行构建/格式/tidy�
 
 验收：机械迁移 blob 相同；13 契约生成与往返；full 全 TU 覆盖；实际链接隔离；新内层
 头编译；reference 原断言；独立 p02 生命周期验收；固定环境与 PG/JWT 另有真实证据。
+
+## 第二能力：固定质量工具与 registry 来源实证
+
+新增 `dependencies/quality/requirements.in` / `requirements.txt`，精确格式/静态分析工具
+及所有匹配 PyPI 归档 hashes。实际安装在本 worktree `.tools/quality`；未提交二进制。
+PyPI tidy 16.0.6 不存在（实际解析失败），改锁可取得的 19.1.0.1，二进制 LLVM 19.1.0；
+format 固定 16.0.6。下载先遭沙箱 DNS 拒绝，经规则请求环境授权后成功。
+
+实际检查：两工具 --version 通过；固定 format 全仓检查通过。官方 vcpkg checkout
+`ce613c41372b23b1f51333815feb3edd87ef8a8b` 的 --registry 校验通过；bootstrap/install
+正在单独执行，尚不能宣布 PG/JWT/TLS 安装成功。质量工具 venv 使用已存在的 Python
+3.11.17，不声称已通过目标 Python 3.11.18 环境。doc/11 同步获取及版本差异；无业务
+接口影响，不更新 proto/API/doc02–08。`git diff --check` 通过；暂未运行 tidy：新
+full/reference wiring 尚未完成，须先建立真实 compile DB。
