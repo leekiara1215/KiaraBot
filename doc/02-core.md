@@ -430,6 +430,16 @@ Identity/Runtime/Scheduler/Model入口通过基础设施公开工厂打开自己
 readiness只读取缓存观测，数据库成功不放行尚未实现的业务依赖。缺database配置时
 注入明确返回UpstreamUnavailable的端口，不创建内存/SQLite业务备用库。
 
+### P04 业务 RPC 的外层装配
+
+ServiceComposition可提供configure_rpc回调，在配置、依赖验证之后且任何监听之前，
+向本进程ServiceRpc登记受审的外层gRPC适配器。generated服务类型只出现在runtime/
+platform、组合根与传输测试中；application/ports仍使用独立typed内部模型。
+ServiceRpc拥有适配器并先停止/等待server，再销毁适配器，最后才释放application与
+依赖。登记空适配器、owner不符或启动后登记拒绝；组合失败/异常脱敏退出1。
+无自定义适配器时保留所属owner的generated UNIMPLEMENTED表；注册适配器本身不能
+跳过mTLS、业务授权或提升readiness，未覆盖方法仍由generated默认拒绝。
+
 ### P03a 公共持久规则的纯验证
 
 `domain/target/persistence_rules.hpp` 提供无状态校验与决策，不维护内存数据库。

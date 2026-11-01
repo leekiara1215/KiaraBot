@@ -16,6 +16,7 @@ namespace kiarabot::core::platform {
 
 class ServiceRpc::Impl {
 public:
+  explicit Impl(target::Service value) : owner(value) {}
   ~Impl() {
     if (server) {
       server->Shutdown(std::chrono::system_clock::now() + std::chrono::seconds{2});
@@ -24,40 +25,58 @@ public:
   }
   std::vector<std::unique_ptr<grpc::Service>> services;
   std::unique_ptr<grpc::Server> server;
+  target::Service owner;
+  bool start_attempted = false;
   int port = 0;
 };
-ServiceRpc::ServiceRpc() : impl_(std::make_unique<Impl>()) {}
+ServiceRpc::ServiceRpc(target::Service owner) : impl_(std::make_unique<Impl>(owner)) {}
 ServiceRpc::~ServiceRpc() = default;
 int ServiceRpc::port() const noexcept {
   return impl_->port;
 }
+target::Status ServiceRpc::add_service(target::Service owner,
+                                       std::unique_ptr<grpc::Service> service) {
+  if (impl_->start_attempted || !service || owner != impl_->owner ||
+      owner == target::Service::Control) {
+    return target::Failure{target::ErrorCode::InvalidArgument,
+                           target::Acceptance::NotAccepted,
+                           target::Recovery::CorrectInput,
+                           {},
+                           {}};
+  }
+  impl_->services.push_back(std::move(service));
+  return std::monostate{};
+}
 bool ServiceRpc::start(const ProcessConfig& config) {
-  if (impl_->server || !impl_->services.empty()) {
+  if (impl_->start_attempted || config.service != impl_->owner) {
     return false;
   }
+  impl_->start_attempted = true;
   // Generated Service defaults explicitly return UNIMPLEMENTED. Register actual owner method
   // tables rather than an unrelated server or a generic responder that accepts every method.
-  switch (config.service) {
-  case target::Service::Identity:
-    impl_->services.push_back(std::make_unique<v1::IdentityService::Service>());
-    break;
-  case target::Service::Runtime:
-    impl_->services.push_back(std::make_unique<v1::RuntimeService::Service>());
-    impl_->services.push_back(std::make_unique<v1::AdapterBridge::Service>());
-    impl_->services.push_back(std::make_unique<v1::PluginBridge::Service>());
-    impl_->services.push_back(std::make_unique<v1::HostBridge::Service>());
-    break;
-  case target::Service::Host:
-    impl_->services.push_back(std::make_unique<v1::HostService::Service>());
-    break;
-  case target::Service::Scheduler:
-    impl_->services.push_back(std::make_unique<v1::SchedulerService::Service>());
-    break;
-  case target::Service::Model:
-    impl_->services.push_back(std::make_unique<v1::ModelService::Service>());
-    break;
-  case target::Service::Control:
-    return false;
+  if (impl_->services.empty()) {
+    switch (config.service) {
+    case target::Service::Identity:
+      impl_->services.push_back(std::make_unique<v1::IdentityService::Service>());
+      break;
+    case target::Service::Runtime:
+      impl_->services.push_back(std::make_unique<v1::RuntimeService::Service>());
+      impl_->services.push_back(std::make_unique<v1::AdapterBridge::Service>());
+      impl_->services.push_back(std::make_unique<v1::PluginBridge::Service>());
+      impl_->services.push_back(std::make_unique<v1::HostBridge::Service>());
+      break;
+    case target::Service::Host:
+      impl_->services.push_back(std::make_unique<v1::HostService::Service>());
+      break;
+    case target::Service::Scheduler:
+      impl_->services.push_back(std::make_unique<v1::SchedulerService::Service>());
+      break;
+    case target::Service::Model:
+      impl_->services.push_back(std::make_unique<v1::ModelService::Service>());
+      break;
+    case target::Service::Control:
+      return false;
+    }
   }
   grpc::SslServerCredentialsOptions options;
   options.pem_root_certs = config.tls.ca;

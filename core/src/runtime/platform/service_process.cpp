@@ -239,6 +239,13 @@ int run_service(target::Service service, const ServiceComposer& compose, int arg
       return 1;
     }
     const auto& application = *composition.application;
+    ServiceRpc rpc{service};
+    if (composition.configure_rpc &&
+        (service == target::Service::Control ||
+         std::holds_alternative<target::Failure>(composition.configure_rpc(rpc)))) {
+      std::cerr << "operation=start outcome=failed reason=rpc_composition_failed\n";
+      return 1;
+    }
     const Socket listener(socket(AF_INET, SOCK_STREAM, 0));
     const int probe_port =
         listener.get() < 0 ? 0 : listen_probe(listener.get(), config.probe_listen);
@@ -246,7 +253,6 @@ int run_service(target::Service service, const ServiceComposer& compose, int arg
       std::cerr << "operation=start outcome=failed reason=probe_bind_failed\n";
       return 1;
     }
-    ServiceRpc rpc;
     if (application.service() != target::Service::Control && !rpc.start(config)) {
       std::cerr << "operation=start outcome=failed reason=grpc_bind_failed\n";
       return 1;

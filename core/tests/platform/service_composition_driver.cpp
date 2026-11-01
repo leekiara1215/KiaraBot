@@ -5,7 +5,11 @@
 #include <stdexcept>
 #include <string>
 
+#include <grpcpp/grpcpp.h>
+
 #include "kiarabot/core/runtime/platform/service_process.hpp"
+#include "kiarabot/core/runtime/platform/service_rpc.hpp"
+#include "kiarabot/v1/identity.grpc.pb.h"
 
 namespace {
 namespace target = kiarabot::core::target;
@@ -14,8 +18,9 @@ namespace platform = kiarabot::core::platform;
 struct Dependency {};
 class Application final : public target::ServiceReadinessPort {
 public:
-  Application(target::Service service, const std::shared_ptr<Dependency>& dependency)
-      : service_(service), dependency_(dependency) {}
+  Application(target::Service service, const std::shared_ptr<Dependency>& dependency,
+              std::shared_ptr<Dependency> lifetime)
+      : service_(service), dependency_(dependency), lifetime_(std::move(lifetime)) {}
   ~Application() override {
     std::cerr << "application_destroyed dependencies_alive=" << !dependency_.expired() << '\n';
   }
@@ -31,6 +36,23 @@ public:
 private:
   target::Service service_;
   std::weak_ptr<Dependency> dependency_;
+  std::shared_ptr<Dependency> lifetime_;
+};
+class RejectingIdentity final : public kiarabot::v1::IdentityService::Service {
+public:
+  explicit RejectingIdentity(std::weak_ptr<Dependency> application)
+      : application_(std::move(application)) {}
+  ~RejectingIdentity() override {
+    std::cerr << "rpc_destroyed application_alive=" << !application_.expired() << '\n';
+  }
+  grpc::Status Login(grpc::ServerContext*, const kiarabot::v1::IdentityLoginRequest*,
+                     kiarabot::v1::IdentityLoginResponse*) override {
+    // Lifecycle-only fixture. A registered handler is deliberately a denial, not fake login.
+    return {grpc::StatusCode::PERMISSION_DENIED, "fixture denial"};
+  }
+
+private:
+  std::weak_ptr<Dependency> application_;
 };
 } // namespace
 
@@ -65,11 +87,28 @@ int main(int argc, char* argv[]) {
           return platform::ServiceComposition{nullptr};
         }
         auto dependency = std::make_shared<Dependency>();
+        auto lifetime = std::make_shared<Dependency>();
         auto application = std::make_unique<Application>(
             mode == "wrong-owner" ? target::Service::Control : target::Service::Identity,
-            dependency);
+            dependency, lifetime);
+        std::function<target::Status(platform::ServiceRpc&)> configure;
+        if (mode.starts_with("rpc-")) {
+          configure = [mode, observed = std::weak_ptr<Dependency>{lifetime}](
+                          platform::ServiceRpc& rpc) -> target::Status {
+            if (mode == "rpc-throw") {
+              throw std::runtime_error("never-print-composition-secret");
+            }
+            if (mode == "rpc-null") {
+              return rpc.add_service(target::Service::Identity, nullptr);
+            }
+            return rpc.add_service(mode == "rpc-wrong-owner" ? target::Service::Runtime
+                                                             : target::Service::Identity,
+                                   std::make_unique<RejectingIdentity>(observed));
+          };
+        }
         return platform::ServiceComposition{
-            std::move(application), [dependency, mode, calls = 0]() mutable -> target::Status {
+            std::move(application),
+            [dependency, mode, calls = 0]() mutable -> target::Status {
               (void)
                   dependency; // Keep the composition dependency alive through application teardown.
               if (++calls >= 2 && mode == "lost") {
@@ -80,7 +119,8 @@ int main(int argc, char* argv[]) {
                                        {}};
               }
               return std::monostate{};
-            }};
+            },
+            std::move(configure)};
       },
       argc - 1, argv + 1);
 }

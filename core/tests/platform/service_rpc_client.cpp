@@ -51,7 +51,7 @@ int main(int argc, char* argv[]) {
   grpc::ClientContext context;
   context.set_deadline(std::chrono::system_clock::now() + std::chrono::seconds{3});
   grpc::Status result;
-  if (service == "identity") {
+  if (service == "identity" || service == "identity-custom-denial") {
     kiarabot::v1::IdentityLoginRequest request;
     kiarabot::v1::IdentityLoginResponse response;
     result = kiarabot::v1::IdentityService::NewStub(channel)->Login(&context, request, &response);
@@ -89,7 +89,12 @@ int main(int argc, char* argv[]) {
   } else {
     return 2;
   }
-  if (authenticated && result.error_code() == grpc::StatusCode::UNIMPLEMENTED) {
+  if (authenticated && service == "identity-custom-denial" &&
+      result.error_code() == grpc::StatusCode::PERMISSION_DENIED) {
+    return 0;
+  }
+  if (authenticated && service != "identity-custom-denial" &&
+      result.error_code() == grpc::StatusCode::UNIMPLEMENTED) {
     return 0;
   }
   if (!authenticated && (result.error_code() == grpc::StatusCode::UNAVAILABLE ||

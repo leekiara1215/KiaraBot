@@ -9,14 +9,20 @@
 namespace kiarabot::core::platform {
 
 struct ProcessConfig;
+class ServiceRpc;
 struct ServiceComposition {
   ServiceComposition(std::unique_ptr<target::ServiceReadinessPort> application_value,
-                     std::function<target::Status()> dependencies = {})
-      : check_dependencies(std::move(dependencies)), application(std::move(application_value)) {}
+                     std::function<target::Status()> dependencies = {},
+                     std::function<target::Status(ServiceRpc&)> rpc_configuration = {})
+      : check_dependencies(std::move(dependencies)), configure_rpc(std::move(rpc_configuration)),
+        application(std::move(application_value)) {}
   // Outer-only maintenance. Own captured resources until RPC/socket shutdown completes.
   // Called before listening and once per second on the process thread; must be bounded.
   // Failure ends this process (1); handle transient busy separately in the composition root.
   std::function<target::Status()> check_dependencies;
+  // Outer adapters only; never an RPC type in an application/port. Called once before listening.
+  // RPC owns registered adapters and destroys them before application/captured dependencies.
+  std::function<target::Status(ServiceRpc&)> configure_rpc;
   // Destroy the application before releasing dependencies captured by the callback.
   std::unique_ptr<target::ServiceReadinessPort> application;
 };
