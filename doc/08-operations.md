@@ -492,3 +492,15 @@ after dependency validation and RPC registration, before startup announcement;
 failure exits 1. Its local health is checked once per second. Destruction cancels
 and joins within a bound, before application destruction and after RPC shutdown.
 Identity request failures do not require terminating Control.
+
+The target HTTPS endpoint uses asynchronous Boost.Asio/Beast TLS/read/write with
+five-second deadlines (TLS close one second), 64 concurrent connections, an 8KiB
+header limit, 64 parsed fields and a 1MiB request body limit. Oversized requests
+return INVALID_ARGUMENT/400 when a TLS response is possible. Four fixed upstream
+workers share each operation's two-second deadline including queue time; shutdown
+cancels contexts and closes sockets before joining workers. No detached threads,
+local auth fallback, remote TLS bypass or browser client-certificate requirement.
+The business port is reported as control_https_port when bound. Its material must
+support server TLS plus the outbound Control client identity; Identity still requires
+that peer to be registered independently of CA trust. All test credentials/configs
+are temporary; no bootstrap secret is put in argv or committed.
