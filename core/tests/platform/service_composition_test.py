@@ -22,14 +22,14 @@ def main(driver, rpc_client):
             ('okay', ['--config', str(root / 'missing')], 2, False),
             *[(mode, ['--config', str(path)], 1, True)
               for mode in ['null', 'error', 'wrong-owner', 'throw', 'unknown-throw',
-                           'rpc-null', 'rpc-wrong-owner', 'rpc-throw']]
+                           'rpc-null', 'rpc-wrong-owner', 'rpc-throw', 'endpoint-start-failure']]
         ]:
             result = subprocess.run([driver, mode, *arguments], capture_output=True, text=True, timeout=5)
             assert result.returncode == expected, (mode, result)
             assert ('composer_called' in result.stderr) == called, result.stderr
             assert 'never-print-composition-secret' not in result.stderr
             assert 'probe_port=' not in result.stdout
-        for mode in ['okay', 'lost', 'rpc-custom']:
+        for mode in ['okay', 'lost', 'rpc-custom', 'endpoint-okay', 'endpoint-lost']:
             child = subprocess.Popen([driver, mode, '--config', str(path)],
                                      stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
             try:
@@ -53,11 +53,14 @@ def main(driver, rpc_client):
                         result = subprocess.run([*arguments, authentication], capture_output=True,
                                                 text=True, timeout=5)
                         assert result.returncode == 0, result.stderr
-                if mode != 'lost':
+                if mode not in ['lost', 'endpoint-lost']:
                     child.send_signal(signal.SIGTERM)
                 stdout, stderr = child.communicate(timeout=5)
-                assert child.returncode == (1 if mode == 'lost' else 0), stderr
+                assert child.returncode == (1 if mode in ['lost', 'endpoint-lost'] else 0), stderr
                 assert 'application_destroyed dependencies_alive=1' in stderr, stderr
+                if mode.startswith('endpoint-'):
+                    assert 'endpoint_destroyed application_alive=1' in stderr, stderr
+                    assert stderr.index('endpoint_destroyed') < stderr.index('application_destroyed'), stderr
                 if mode == 'rpc-custom':
                     assert 'rpc_destroyed application_alive=1' in stderr, stderr
                     assert stderr.index('rpc_destroyed') < stderr.index('application_destroyed'), stderr

@@ -10,12 +10,20 @@ namespace kiarabot::core::platform {
 
 struct ProcessConfig;
 class ServiceRpc;
+// Outer listener with exclusive ownership. Destructor must cancel and join within a bound.
+class ServiceEndpoint {
+public:
+  virtual ~ServiceEndpoint() = default;
+  virtual target::Status start() = 0;
+  virtual target::Status check() const = 0;
+};
 struct ServiceComposition {
   ServiceComposition(std::unique_ptr<target::ServiceReadinessPort> application_value,
                      std::function<target::Status()> dependencies = {},
-                     std::function<target::Status(ServiceRpc&)> rpc_configuration = {})
+                     std::function<target::Status(ServiceRpc&)> rpc_configuration = {},
+                     std::unique_ptr<ServiceEndpoint> endpoint_value = {})
       : check_dependencies(std::move(dependencies)), configure_rpc(std::move(rpc_configuration)),
-        application(std::move(application_value)) {}
+        application(std::move(application_value)), endpoint(std::move(endpoint_value)) {}
   // Outer-only maintenance. Own captured resources until RPC/socket shutdown completes.
   // Called before listening and once per second on the process thread; must be bounded.
   // Failure ends this process (1); handle transient busy separately in the composition root.
@@ -25,6 +33,8 @@ struct ServiceComposition {
   std::function<target::Status(ServiceRpc&)> configure_rpc;
   // Destroy the application before releasing dependencies captured by the callback.
   std::unique_ptr<target::ServiceReadinessPort> application;
+  // Declared last: endpoint stops before the application and captured dependencies die.
+  std::unique_ptr<ServiceEndpoint> endpoint;
 };
 using ServiceComposer = std::function<target::Outcome<ServiceComposition>(const ProcessConfig&)>;
 

@@ -38,6 +38,34 @@ private:
   std::weak_ptr<Dependency> dependency_;
   std::shared_ptr<Dependency> lifetime_;
 };
+class Endpoint final : public platform::ServiceEndpoint {
+public:
+  Endpoint(std::weak_ptr<Dependency> application, std::string mode)
+      : application_(std::move(application)), mode_(std::move(mode)) {}
+  ~Endpoint() override {
+    std::cerr << "endpoint_destroyed application_alive=" << !application_.expired() << '\n';
+  }
+  target::Status start() override {
+    if (mode_ == "endpoint-start-failure") {
+      return failure();
+    }
+    return std::monostate{};
+  }
+  target::Status check() const override {
+    return mode_ == "endpoint-lost" ? failure() : target::Status{std::monostate{}};
+  }
+
+private:
+  static target::Failure failure() {
+    return {target::ErrorCode::UpstreamUnavailable,
+            target::Acceptance::NotAccepted,
+            target::Recovery::Diagnose,
+            {},
+            {}};
+  }
+  std::weak_ptr<Dependency> application_;
+  std::string mode_;
+};
 class RejectingIdentity final : public kiarabot::v1::IdentityService::Service {
 public:
   explicit RejectingIdentity(std::weak_ptr<Dependency> application)
@@ -106,6 +134,8 @@ int main(int argc, char* argv[]) {
                                    std::make_unique<RejectingIdentity>(observed));
           };
         }
+        auto endpoint =
+            mode.starts_with("endpoint-") ? std::make_unique<Endpoint>(lifetime, mode) : nullptr;
         return platform::ServiceComposition{
             std::move(application),
             [dependency, mode, calls = 0]() mutable -> target::Status {
@@ -120,7 +150,7 @@ int main(int argc, char* argv[]) {
               }
               return std::monostate{};
             },
-            std::move(configure)};
+            std::move(configure), std::move(endpoint)};
       },
       argc - 1, argv + 1);
 }

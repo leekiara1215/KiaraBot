@@ -318,3 +318,12 @@ RegisterPrincipal 同事务创建无秘密的 PENDING CredentialStatus 引用（
 ### 外部连接授权目标补全（未实现）
 
 platform.proto三类ConnectionAuthorization/RefreshConnectionAuthorization/Result与两Bridge的登记、proof、refresh帧定义短期外部连接授权。名义最多56秒、总预算60秒、每秒检查失效，单飞原子轮换；丢响应须关闭旧流、新bootstrap与连接代次。完整规则见doc/01-contracts及运行语义；内部JWT委托和P02 mTLS owner监听不变，P05/P06真实接线前仍not_implemented。授权材料禁止日志/公开投影/持久秘密收据，高风险业务仍在线核验，刷新不续投递租约、不改历史业务事实。浏览器REST/WS不使用这些proof，OpenAPI/AsyncAPI因此无schema变更。
+
+### P04 minimal HTTPS boundary
+
+The independent Control composition owns its HTTPS endpoint and destroys it before
+the application. The business listener is separate from the loopback probe.
+Login/Refresh/Me/ListSessions/Revoke map to IdentityService; Identity owns all
+session, authorization and receipt decisions. Control owns no business database
+and never derives permissions by multiplying roles and scopes. Configuration and
+endpoint shutdown are specified in doc/08; this does not change the REST contract.

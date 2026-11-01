@@ -246,6 +246,11 @@ int run_service(target::Service service, const ServiceComposer& compose, int arg
       std::cerr << "operation=start outcome=failed reason=rpc_composition_failed\n";
       return 1;
     }
+    if (composition.endpoint &&
+        std::holds_alternative<target::Failure>(composition.endpoint->start())) {
+      std::cerr << "operation=start outcome=failed reason=endpoint_start_failed\n";
+      return 1;
+    }
     const Socket listener(socket(AF_INET, SOCK_STREAM, 0));
     const int probe_port =
         listener.get() < 0 ? 0 : listen_probe(listener.get(), config.probe_listen);
@@ -263,9 +268,14 @@ int run_service(target::Service service, const ServiceComposer& compose, int arg
               << std::flush;
     auto next_dependency_check = std::chrono::steady_clock::now() + std::chrono::seconds{1};
     while (!signals.requested()) {
-      if (composition.check_dependencies &&
-          std::chrono::steady_clock::now() >= next_dependency_check) {
-        if (std::holds_alternative<target::Failure>(composition.check_dependencies())) {
+      if (std::chrono::steady_clock::now() >= next_dependency_check) {
+        if (composition.endpoint &&
+            std::holds_alternative<target::Failure>(composition.endpoint->check())) {
+          std::cerr << "operation=run outcome=failed reason=endpoint_lost\n";
+          return 1;
+        }
+        if (composition.check_dependencies &&
+            std::holds_alternative<target::Failure>(composition.check_dependencies())) {
           std::cerr << "operation=run outcome=failed reason=dependency_lost\n";
           return 1;
         }

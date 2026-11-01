@@ -469,3 +469,19 @@ PeerCertificatePort信任根由部署配置传入公共PEM，最多16根，每�
 由可信部署配置固定为URI（默认）或DNS，登记字符串精确匹配，不使用通配hostname授权。
 证书必须包含clientAuth EKU并符合适配器固定算法白名单；本适配器不签发CA或提供在线
 证书撤销查询。调用者仍须读取当前登记/凭据状态，并以真实TLS认证证据构造叶在前DER链。
+
+### P04 Control HTTPS configuration and endpoint lifetime
+
+Control alone accepts optional `control_api` with exactly `listen` and
+`identity_endpoint` strings. Listen is IPv4:port (port zero is allowed for isolated
+tests), independent of the loopback probe. Identity is a single ASCII DNS/IPv4
+host:port, port 1–65535; URLs, DSNs, scripts and TLS verification overrides are
+rejected. Unknown/duplicate keys and wrong types exit 2. Validated `tls` material
+is reused for browser HTTPS and outbound Identity mTLS. Without this object no
+business listener is started and readiness remains false; no local fallback exists.
+
+ServiceComposition may exclusively own an outer ServiceEndpoint. Its start runs
+after dependency validation and RPC registration, before startup announcement;
+failure exits 1. Its local health is checked once per second. Destruction cancels
+and joins within a bound, before application destruction and after RPC shutdown.
+Identity request failures do not require terminating Control.

@@ -108,6 +108,20 @@ def main(driver):
                 value.pop('grpc_listen')
             expect(0, value, service=service)
             expect(2, {**value, 'database': database}, service=service)
+        control = {**config, 'service': 'control'}
+        control.pop('grpc_listen')
+        endpoint = {'listen': '0.0.0.0:8443', 'identity_endpoint': 'identity.internal:7443'}
+        expect(0, {**control, 'control_api': endpoint}, service='control')
+        expect(2, {**config, 'control_api': endpoint})
+        for update in [{'identity_endpoint': 'https://identity:443'},
+                       {'identity_endpoint': 'identity:0'}, {'identity_endpoint': 'identity:65536'},
+                       {'identity_endpoint': 'one,two:443'}, {'identity_endpoint': 'x:443/path'},
+                       {'identity_endpoint': 'x:443?verify=false'}, {'identity_endpoint': ':443'},
+                       {'identity_endpoint': 'x:443\u0000'}, {'listen': 'localhost:443'},
+                       {'listen': True}, {'identity_endpoint': 443}, {'extra': True}]:
+            expect(2, {**control, 'control_api': {**endpoint, **update}}, service='control')
+        expect(2, raw=json.dumps({**control, 'control_api': endpoint})[:-1] +
+               ',"control_api":' + json.dumps(endpoint) + '}', service='control')
         for update in [{'port': 0}, {'port': -1}, {'port': 65536}, {'port': True},
                        {'name': 'db name'}, {'host': '/tmp/socket'}, {'host': 'one,two'},
                        {'host': 'bad host'}, {'runtime_role': 'identity_migration'},

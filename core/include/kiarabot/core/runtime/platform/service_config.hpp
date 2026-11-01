@@ -26,12 +26,17 @@ struct DatabaseMaterial {
   std::string password;
   std::string ca_file;
 };
+struct ControlApiMaterial {
+  std::string listen;
+  std::string identity_endpoint;
+};
 struct ProcessConfig {
   target::Service service;
   std::string probe_listen;
   std::string grpc_listen;
   TlsMaterial tls;
   std::optional<DatabaseMaterial> database;
+  std::optional<ControlApiMaterial> control_api = std::nullopt;
 };
 struct ConfigFailure {
   int exit_code;

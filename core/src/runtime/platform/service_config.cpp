@@ -127,6 +127,28 @@ bool database_shape(const nlohmann::json& value) {
          database_identifier(value["runtime_role"].get_ref<const std::string&>()) &&
          value["migration_role"] != value["runtime_role"];
 }
+bool control_api_shape(const nlohmann::json& value) {
+  if (!exact_keys(value, {"listen", "identity_endpoint"}) || !value["listen"].is_string() ||
+      !value["identity_endpoint"].is_string() ||
+      !address_valid(value["listen"].get<std::string>(), false)) {
+    return false;
+  }
+  const auto endpoint = value["identity_endpoint"].get<std::string>();
+  const auto colon = endpoint.find(':');
+  if (colon == std::string::npos || colon == 0 || colon > 253) {
+    return false;
+  }
+  const auto host = endpoint.substr(0, colon);
+  const auto port = endpoint.substr(colon + 1);
+  unsigned int number = 0;
+  const auto parsed = std::from_chars(port.data(), port.data() + port.size(), number);
+  return !port.empty() && parsed.ec == std::errc{} && parsed.ptr == port.data() + port.size() &&
+         number > 0 && number <= 65535 && host.front() != '.' && host.back() != '.' &&
+         std::all_of(host.begin(), host.end(), [](unsigned char c) {
+           return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') ||
+                  c == '-' || c == '.';
+         });
+}
 bool valid_time(X509* certificate, std::time_t validation_time) {
   const std::unique_ptr<ASN1_TIME, decltype(&ASN1_TIME_free)> now(
       ASN1_TIME_set(nullptr, validation_time), ASN1_TIME_free);
@@ -251,6 +273,12 @@ ConfigResult load_service_config(const std::string& path, target::Service servic
     if (service != target::Service::Control) {
       keys.insert("grpc_listen");
     }
+    if (document.contains("control_api")) {
+      if (service != target::Service::Control || !control_api_shape(document["control_api"])) {
+        return ConfigFailure{2, "invalid_control_api_config"};
+      }
+      keys.insert("control_api");
+    }
     if (document.contains("database")) {
       if (service == target::Service::Control || service == target::Service::Host ||
           !database_shape(document["database"])) {
@@ -272,6 +300,11 @@ ConfigResult load_service_config(const std::string& path, target::Service servic
     if (!address_valid(config.probe_listen, true) ||
         (service != target::Service::Control && !address_valid(config.grpc_listen, false))) {
       return ConfigFailure{2, "invalid_address"};
+    }
+    if (document.contains("control_api")) {
+      config.control_api =
+          ControlApiMaterial{document["control_api"]["listen"].get<std::string>(),
+                             document["control_api"]["identity_endpoint"].get<std::string>()};
     }
     const auto certificate_path = document["tls"]["certificate_file"].get<std::string>();
     const auto key_path = document["tls"]["private_key_file"].get<std::string>();
