@@ -1,0 +1,12 @@
+{
+  "id": "local-reply",
+  "name": "Local fixed reply",
+  "version": "0.1.0",
+  "api_version": "kiarabot.plugin.v1",
+  "runtime": "python-rpc",
+  "entrypoint": "main:create",
+  "capabilities": ["event.message.received"],
+  "permissions": ["message.read", "message.send"],
+  "isolation": "process",
+  "ordered": true
+}
