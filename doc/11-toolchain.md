@@ -522,3 +522,8 @@ Identity crypto库再加入receipt_crypto及 `p04_receipt_crypto`（p04/unit/sec
 Identity crypto库加入PeerCertificate实现，PRIVATE链接固定OpenSSL::Crypto。
 `p04_peer_certificate` 注册p04/unit/security、30秒，直接生成真实X509证据，测试目标
 也PRIVATE链接Crypto，保留assert；公开工厂头与Core端口仍不暴露OpenSSL类型。
+
+Core外层service_process编译独立AuthContext证据提取源；`p04_peer_certificate_evidence`
+链接service_process/proto/OpenSSL::Crypto，经Python生成真实mTLS材料并比对叶指纹，
+标签p04/integration/security、30秒，PATH沿用显式OpenSSL CLI目录。此测试与infra
+`p04_peer_certificate`分开，不把TLS证据提取当作当前身份登记或业务授权。

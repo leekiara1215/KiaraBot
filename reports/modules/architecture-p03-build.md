@@ -244,3 +244,21 @@ peer_certificate_test（p04/unit/security、30秒），真实X509测试同样PRI
 
 实际P04 CTest 5/5通过，总2.60秒；PeerCertificate0.43秒；新增两TU精确compile DB
 tidy22 clang-analyzer-* warnings-as-errors通过。
+
+## 后续接线：P04 Core AuthContext证据
+
+接入Core b0949b3（本树4bbef3a）及3a15bdd（本树5dc9c72）；追加文档冲突保留已有段落
+与真正新增P04证据节，不复制未同步契约链内容。源码不改。
+service_process新增runtime/platform/peer_certificate.cpp；独立evidence driver链接
+service_process/proto/OpenSSL::Crypto。CTest通过Python脚本和driver验证真实mTLS，
+标签p04/integration/security、30秒，固定OpenSSL目录前置PATH，同infra证书测试独立。
+文档影响：doc/11及本报告的构建说明，源提交已有Core/运维语义，其他模块/API/proto与
+ doc/12-ci-cd不另改，冻结doc/18保持只读。
+
+固定full-locked配置/完整构建成功；全TU覆盖/inner/六目标链接图、全仓format16通过。
+新增两TU及更新Identity契约TU精确DB tidy22 clang-analyzer-* warnings-as-errors通过。
+P04全部真实CTest和注册标签结果后附；未重复统一入口，父负责最终集成验收。
+文档校验为路径/末尾换行/无冲突标记及git diff --check。
+
+本树P04 CTest 6/6通过，总6.18秒；真实AuthContext证据2.35秒，更新Identity契约0.50秒；
+p04注册标签通过。
