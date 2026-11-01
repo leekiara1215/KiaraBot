@@ -55,6 +55,11 @@ public:
     return lookup();
   }
   t::Outcome<std::optional<t::CredentialVersionRecord>>
+  by_bootstrap(const t::TokenVerifier&) override {
+    check(false, "unexpected bootstrap lookup");
+    return unavailable();
+  }
+  t::Outcome<std::optional<t::CredentialVersionRecord>>
   by_certificate(const t::Sha256Digest&) override {
     if (lookup_certificate) {
       return lookup_certificate();

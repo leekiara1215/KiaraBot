@@ -1810,3 +1810,11 @@ calls hold no outer UoW. Missing/wrong capability returns PermissionDenied; revo
 expired or mismatched current peer returns Unauthenticated; changed authorization
 watermark returns Conflict/ReadCurrent; dependency and deadline failures propagate.
 A signed intermediate proof is discarded on any final check failure and never returned.
+
+### P04 bootstrap当前材料定位端口
+
+Identity内部by_bootstrap仅接可信key引用、WorkloadBootstrap用途和固定32字节tag，
+不接raw证明或body身份。只定位当前credential版本，旧历史材料不能通过当前查询认证；
+save原子维护唯一current locator，其他材料无该locator。空optional仅未匹配；错误shape
+InvalidArgument，SQL/损坏/歧义为Failure，不LIMIT1任选身份。定位不是认证或业务授权，
+Core继续检查当前主体、状态、期限、绑定和audience；crypto在UoW外。无wire/API字段变化。

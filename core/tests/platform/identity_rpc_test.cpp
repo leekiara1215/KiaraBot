@@ -991,6 +991,10 @@ public:
     throw std::logic_error("unused historical lookup");
   }
   t::Outcome<std::optional<t::CredentialVersionRecord>>
+  by_bootstrap(const t::TokenVerifier&) override {
+    throw std::logic_error("unused bootstrap proof lookup");
+  }
+  t::Outcome<std::optional<t::CredentialVersionRecord>>
   by_certificate(const t::Sha256Digest& fingerprint) override {
     ++registry_.reads;
     if (registry_.mode.load() == 1) {

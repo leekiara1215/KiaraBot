@@ -163,6 +163,10 @@ public:
     return std::optional<t::CredentialVersionRecord>{};
   }
   t::Outcome<std::optional<t::CredentialVersionRecord>>
+  by_bootstrap(const t::TokenVerifier&) override {
+    std::abort();
+  }
+  t::Outcome<std::optional<t::CredentialVersionRecord>>
   by_certificate(const t::Sha256Digest& tag) override {
     for (const auto& value : state_.credentials) {
       const auto* cert = std::get_if<t::CertificateBinding>(&value.material);

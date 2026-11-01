@@ -21,6 +21,13 @@ public:
   // current version/Active/expiry and principal gate; this index is not authentication success.
   virtual Outcome<std::optional<CredentialVersionRecord>>
   by_certificate(const Sha256Digest& leaf_fingerprint) = 0;
+  // CURRENT bootstrap material only, located by a trusted keyed verifier, never body identity.
+  // Accept only WorkloadBootstrap purpose, nonempty valid key and the fixed32 tag. Raw proof and
+  // HMAC/key-provider work stay outside the UoW. save owns every current locator atomically.
+  // No match -> empty; bad input -> InvalidArgument; ambiguous/corrupt stored state -> Failure.
+  // Caller still checks current principal/state/expiry/binding/audiences; lookup is not a grant.
+  virtual Outcome<std::optional<CredentialVersionRecord>>
+  by_bootstrap(const TokenVerifier& verifier) = 0;
   virtual Outcome<std::optional<LoginIdentity>> login(const std::string& normalized_login) = 0;
   virtual Status save_login(const LoginIdentity& login,
                             std::optional<ResourceVersion> expected) = 0;
