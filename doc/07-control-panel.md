@@ -87,6 +87,10 @@ panel/
 
 `panel/` 使用 React、TypeScript 和 Vite。`npm ci` 根据锁文件安装依赖，并从 `api/openapi.yaml`、`api/asyncapi.yaml` 生成类型；生成目录、`node_modules/` 和 `dist/` 均不提交。默认 `npm run dev` 使用内存 mock API 和 mock WebSocket，输入任意非空用户名和密码可登录。仅在连接真实控制 API 时设置 `VITE_API_MODE=live`，可使用 `VITE_API_BASE` 和 `VITE_WS_URL` 指定端点；生产环境必须使用 HTTPS/WSS。
 
+单机 reference MVP 可用 `python3 scripts/local/start.py start --ui` 启动 live 页面，详见
+[单机运行说明](24-single-host-mvp.md)。原生 fetch 在注入 API 客户端时绑定浏览器全局上下文，
+避免作为类成员调用时出现 Illegal invocation；HTTP 错误仍按现有契约展示，不切换为 mock。
+
 access token、refresh token 和流会话仅保存在内存；到期前调用 refresh 接口轮换，刷新页面后需要重新登录。列表显示服务端快照，已知资源事件（log/adapter/plugin/task/message.updated；message 事件只触发既有刷新）与重连/重同步触发快照刷新；面板不计算权限。列表支持 `page_size`（20/50/100）与 `page_token` 翻页。检查命令（在 `panel/` 下执行）：`npm ci`、`npm run check:contracts`、`npm run lint`、`npm test`、`npm run build`。
 
 `npm test` 包含 mock 集成测试与真实服务测试。真实服务测试需要 C++ 构建产物（默认 `build/proto`，可用 `KIARABOT_ACCEPTANCE_BUILD=build/full` 指向 full 预设）与 `control/api/tests/.venv`（`uv sync --project control/api/tests`）；缺少前置时该套件以原因信息跳过（`console.warn` 输出缺失项），不会让 mock 测试失败。

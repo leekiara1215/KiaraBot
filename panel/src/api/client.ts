@@ -87,7 +87,7 @@ export class ApiClient {
   principal() { return this.call<Schemas['Principal']>(endpoints.principal); }
   sessions(token?: string, pageSize?: number) { return this.list<Session>(endpoints.sessions, { token, pageSize }); }
   revokeSession(sessionId: string) { return this.call<void>(endpoints.revokeSession, { param: sessionId }); }
-  constructor(private readonly fetcher: Fetcher = fetch, private readonly base = '/api/v1') {}
+  constructor(private readonly fetcher: Fetcher = fetch.bind(globalThis), private readonly base = '/api/v1') {}
   setToken(token?: string) { this.accessToken = token; }
   async login(input: LoginRequest): Promise<TokenPair> {
     const tokens = await this.call<TokenPair>(endpoints.login, { body: input, auth: false });
