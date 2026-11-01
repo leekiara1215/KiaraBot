@@ -117,3 +117,13 @@ RegisterPrincipal 同事务创建无秘密的 PENDING CredentialStatus 引用（
 ### 外部连接授权目标补全（未实现）
 
 platform.proto三类ConnectionAuthorization/RefreshConnectionAuthorization/Result与两Bridge的登记、proof、refresh帧定义短期外部连接授权。名义最多56秒、总预算60秒、每秒检查失效，单飞原子轮换；丢响应须关闭旧流、新bootstrap与连接代次。完整规则见doc/01-contracts及运行语义；内部JWT委托和P02 mTLS owner监听不变，P05/P06真实接线前仍not_implemented。授权材料禁止日志/公开投影/持久秘密收据，高风险业务仍在线核验，刷新不续投递租约、不改历史业务事实。浏览器REST/WS不使用这些proof，OpenAPI/AsyncAPI因此无schema变更。
+
+## P04 短期委托证明的重试边界
+
+Identity IssueDelegation / ExchangeDelegation 的唯一线契约 requires_idempotency=false。
+两者只检查当前来源凭据、会话、调用服务和精确权限，然后签发短期证明；不受理业务命令、
+不扣减配额、不消费一次性凭据，也不产生 Action/Model 等业务副作用。重试必须重新授权，
+可以返回新 proof ID/签名/期限；不承诺返回同一 JWT，不把 JWT 写入普通七日收据或伪装成
+CredentialDelivery。证明仍最多 56 秒正文期限与 2 秒时钟容差，业务跳数最多两跳。
+Login、RefreshSession、RotateCredential、RevokeSession 等既有幂等/恢复要求保持原契约。
+未来若引入配额扣减或一次性消费，必须先建立独立的幂等命令契约及事务收据。

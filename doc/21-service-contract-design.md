@@ -270,3 +270,10 @@ issued_at/expires_at 为受信UTC，名义寿命最多56秒；含既定2秒节�
 refresh只接受当前实际流、未过期未撤销的proof/refresh及正refresh_generation，在线验证当前Identity主体/凭据状态与gate后原子轮换二者和generation；旧材料不可再次换发。材料/流/Fence失配或过期UNAUTHENTICATED并关闭流，已认证请求generation冲突CONFLICT，明确失权PERMISSION_DENIED，依赖故障UPSTREAM_UNAVAILABLE，期限TIMEOUT。失败不轮换、不复活失效授权。refresh无持久秘密收据；响应丢失视授权未知，关闭旧流，经仍有效的登记凭据重新bootstrap产生新connection_generation，禁止重放旧refresh猜测结果。
 
 授权过期停止新投递、入站受理、续租和副作用，不把已有Action/Model事实变FAILED。auth刷新不续Delivery租约；ACK/Renew仍核验有效attempt、完整Fence及现有事实规则。适配器本地已执行结果在断线后通过新认证连接按原account/action ID交回，不能据失效proof新执行。所有新增字段/帧target均not_implemented，oracle和wire往返不证明生产授权或并发正确性。
+
+## P04 短期委托证明的重试边界
+
+IssueDelegation / ExchangeDelegation 只在线重验权威并签名，不产生业务意图或消费配额；
+requires_idempotency=false，重试可返回新的短期证明。不得将 JWT 写入普通命令收据。
+完整失败/重试与未来副作用边界见 [运行语义](01-runtime-semantics.md#p04-短期委托证明的重试边界)；
+线契约以 `proto/kiarabot/v1/identity.proto` 为准，其他命令的幂等恢复要求未改变。

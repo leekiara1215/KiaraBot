@@ -714,3 +714,10 @@ Control证书有效期，签入明确source credential/session。签名后再次
 Issue/Exchange线协议幂等选项由协议拥有者单独确认同步；本实现未修改该选项。
 Exchange和Check尚未在此类暴露；父证明的上一跳证书绑定验证，不得使用下一跳mTLS
 证书替代或跳过，须先与成熟crypto端口确定验证契约。
+
+## P04 短期委托证明的重试边界
+
+IssueDelegation / ExchangeDelegation 只在线重验权威并签名，不产生业务意图或消费配额；
+requires_idempotency=false，重试可返回新的短期证明。不得将 JWT 写入普通命令收据。
+完整失败/重试与未来副作用边界见 [运行语义](01-runtime-semantics.md#p04-短期委托证明的重试边界)；
+线契约以 `proto/kiarabot/v1/identity.proto` 为准，其他命令的幂等恢复要求未改变。

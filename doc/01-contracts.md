@@ -1740,3 +1740,13 @@ TimePoint 使用已确定的 signed int64 epoch nanoseconds；Timestamp 规范 n
 稳定错误映射严格使用 target_spec.json.error_mapping。make_error 只构造稳定码、合法request_id/trace_id和显式retryable的Error成员，不构造受理事实。target owner unary唯一binary详情为序列化kiarabot.v1.RpcFailure：to_grpc_failure/from_grpc_failure经标准grpc-status-details-bin（Status.error_details）完整携带error和context。前文T01b的Error-only仅是历史/reference Connect格式，target unary拒绝该格式且无自动fallback。from_http_failure验证完整RpcFailure，from_http_error仅验证Error成员。解码要求稳定码和gRPC/HTTP状态一致；缺error/context、未知或UNSPECIFIED acceptance/recovery、显式current_version=0均拒绝。存在operation时须有runtime/scheduler/model登记owner、UUIDv4 operation_id和完整合法资源；Unknown允许无operation，不能为Login/Refresh虚构操作。当前operation查询只由Runtime/Scheduler/Model提供（target_spec完整方法集及doc21第2节），Identity登录/秘密收据不创建operation。这里校验的是结构；owner仍须结合命令和持久事实核验acceptance/recovery组合，不能因枚举合法就让Unknown换新键或按CorrectInput重做副作用。Error.details仍须空，retry_after/current_version/operation/acceptance/recovery完整保留，503/UNAVAILABLE歧义由Error.code消除。
 
 此工具不验证认证、当前授权、资源存在性或owner/gate，不实现owner RPC，也不改变任何能力的 target 状态。CMake/传输接线由主集成负责，独立测试和检查见 reports/modules/architecture-p04-target-codec.md；doc18只读。
+
+## P04 短期委托证明的重试边界
+
+Identity IssueDelegation / ExchangeDelegation 的唯一线契约 requires_idempotency=false。
+两者只检查当前来源凭据、会话、调用服务和精确权限，然后签发短期证明；不受理业务命令、
+不扣减配额、不消费一次性凭据，也不产生 Action/Model 等业务副作用。重试必须重新授权，
+可以返回新 proof ID/签名/期限；不承诺返回同一 JWT，不把 JWT 写入普通七日收据或伪装成
+CredentialDelivery。证明仍最多 56 秒正文期限与 2 秒时钟容差，业务跳数最多两跳。
+Login、RefreshSession、RotateCredential、RevokeSession 等既有幂等/恢复要求保持原契约。
+未来若引入配额扣减或一次性消费，必须先建立独立的幂等命令契约及事务收据。

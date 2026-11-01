@@ -181,13 +181,13 @@
       "caller": "authorized mTLS platform service or scoped Control administrator",
       "permission": "identity.delegation.issue",
       "risk": "online",
-      "mutating": true,
-      "idempotency": "required",
+      "mutating": false,
+      "idempotency": "none",
       "deadline_ms": 5000,
       "server_streaming": false,
       "status": "not_implemented",
       "max_deadline_ms": 30000,
-      "requires_idempotency_key": true
+      "requires_idempotency_key": false
     },
     {
       "service": "IdentityService",
@@ -198,13 +198,13 @@
       "caller": "authorized mTLS platform service or scoped Control administrator",
       "permission": "identity.delegation.issue",
       "risk": "online",
-      "mutating": true,
-      "idempotency": "required",
+      "mutating": false,
+      "idempotency": "none",
       "deadline_ms": 5000,
       "server_streaming": false,
       "status": "not_implemented",
       "max_deadline_ms": 30000,
-      "requires_idempotency_key": true
+      "requires_idempotency_key": false
     },
     {
       "service": "IdentityService",

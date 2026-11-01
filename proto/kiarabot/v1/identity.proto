@@ -461,16 +461,18 @@ service IdentityService {
     option (max_deadline_ms) = 5000;
     option (requires_online_authorization) = true;
   }
+  // Pure current-authority checks and short-lived signing. Retries reauthorize and may
+  // return a fresh proof; no business command, quota or one-time credential is consumed.
   rpc IssueDelegation(IdentityIssueDelegationRequest) returns (IdentityIssueDelegationResponse) {
     option (required_permission) = PERMISSION_IDENTITY_DELEGATION_ISSUE;
-    option (requires_idempotency) = true;
+    option (requires_idempotency) = false;
     option (default_deadline_ms) = 5000;
     option (max_deadline_ms) = 30000;
     option (requires_online_authorization) = true;
   }
   rpc ExchangeDelegation(IdentityExchangeDelegationRequest) returns (IdentityExchangeDelegationResponse) {
     option (required_permission) = PERMISSION_IDENTITY_DELEGATION_ISSUE;
-    option (requires_idempotency) = true;
+    option (requires_idempotency) = false;
     option (default_deadline_ms) = 5000;
     option (max_deadline_ms) = 30000;
     option (requires_online_authorization) = true;

@@ -234,3 +234,13 @@ issued_at/expires_at 为受信UTC，名义寿命最多56秒；含既定2秒节�
 refresh只接受当前实际流、未过期未撤销的proof/refresh及正refresh_generation，在线验证当前Identity主体/凭据状态与gate后原子轮换二者和generation；旧材料不可再次换发。材料/流/Fence失配或过期UNAUTHENTICATED并关闭流，已认证请求generation冲突CONFLICT，明确失权PERMISSION_DENIED，依赖故障UPSTREAM_UNAVAILABLE，期限TIMEOUT。失败不轮换、不复活失效授权。refresh无持久秘密收据；响应丢失视授权未知，关闭旧流，经仍有效的登记凭据重新bootstrap产生新connection_generation，禁止重放旧refresh猜测结果。
 
 授权过期停止新投递、入站受理、续租和副作用，不把已有Action/Model事实变FAILED。auth刷新不续Delivery租约；ACK/Renew仍核验有效attempt、完整Fence及现有事实规则。适配器本地已执行结果在断线后通过新认证连接按原account/action ID交回，不能据失效proof新执行。所有新增字段/帧target均not_implemented，oracle和wire往返不证明生产授权或并发正确性。
+
+## P04 短期委托证明的重试边界
+
+Identity IssueDelegation / ExchangeDelegation 的唯一线契约 requires_idempotency=false。
+两者只检查当前来源凭据、会话、调用服务和精确权限，然后签发短期证明；不受理业务命令、
+不扣减配额、不消费一次性凭据，也不产生 Action/Model 等业务副作用。重试必须重新授权，
+可以返回新 proof ID/签名/期限；不承诺返回同一 JWT，不把 JWT 写入普通七日收据或伪装成
+CredentialDelivery。证明仍最多 56 秒正文期限与 2 秒时钟容差，业务跳数最多两跳。
+Login、RefreshSession、RotateCredential、RevokeSession 等既有幂等/恢复要求保持原契约。
+未来若引入配额扣减或一次性消费，必须先建立独立的幂等命令契约及事务收据。

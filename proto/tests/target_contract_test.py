@@ -44,6 +44,17 @@ def populate(message, depth=0):
 
 
 def main():
+    # Short-lived signing is reauthorized on every retry; it is not a durable command receipt.
+    proof_methods = [method for method in SPEC['methods']
+                     if method['service'] == 'IdentityService'
+                     and method['method'] in {'IssueDelegation', 'ExchangeDelegation'}]
+    assert len(proof_methods) == 2
+    assert all(not method['mutating'] and method['idempotency'] == 'none'
+               and not method['requires_idempotency_key'] for method in proof_methods)
+    assert all(method['requires_idempotency_key'] for method in SPEC['methods']
+               if method['service'] == 'IdentityService'
+               and method['method'] in {'Login', 'RefreshSession', 'RevokeSession',
+                                        'RotateCredential'})
     descriptor = descriptor_pb2.FileDescriptorSet.FromString(Path(sys.argv[1]).read_bytes())
     cpp = sys.argv[2]
     files = {f.name: f for f in descriptor.file if f.package == 'kiarabot.v1'}
