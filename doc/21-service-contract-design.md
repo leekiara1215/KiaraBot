@@ -277,3 +277,13 @@ IssueDelegation / ExchangeDelegation 只在线重验权威并签名，不产生�
 requires_idempotency=false，重试可返回新的短期证明。不得将 JWT 写入普通命令收据。
 完整失败/重试与未来副作用边界见 [运行语义](01-runtime-semantics.md#p04-短期委托证明的重试边界)；
 线契约以 `proto/kiarabot/v1/identity.proto` 为准，其他命令的幂等恢复要求未改变。
+
+### P04 CheckAuthorization 第一版接收者限制
+
+Check纯应用只允许Runtime/Host/Scheduler/Model以显式identity.authorization.check@自身
+Principal检查自身owner方法；audience必须与真实已认证recipient一致。不支持Control
+管理员拿其他consumer证明跨服务查询，Identity本地管理直接读取本地权威。method规则
+由外层契约metadata映射为受信typed policy，Core不依赖proto或接受客户端自报权限。
+业务owner仍须普通verify绑定真实上游TLS；Identity专用返回类型只证明签名和受众，
+在线复查当前来源与全部actor。精确拒绝/失败语义见doc/01-contracts的同名实现边界，
+一秒窗口同时检查DB UTC及可信单调时间；纯应用无写入、缓存或secret receipt。

@@ -634,3 +634,15 @@ P04 新增纯 `kiarabot_identity_exchange_application` 与独立 unit/security �
 `p04_identity_daemon_keys_allowed` 与 `p04_identity_daemon_keys_denied`；同临时 PG、
 离线 CLI、实际 Identity/Control 进程分别验证显式 Catalog 授权与拒绝，且先于登录
 获取材料，不使用 JWT 自举验证。客户端只链接目标契约/codec，未提前重复链接 Crypto。
+
+### P04 在线授权纯应用目标
+
+`kiarabot_identity_authorization_application`与同名`_test`仅链接Core内部模型/端口，
+不链接proto/RPC、成熟crypto实现或PG。dev preset同样可独立构建。
+
+```bash
+cmake --build --preset full-locked --target kiarabot_identity_authorization_application_test
+ctest --test-dir build/full-locked -R '^p04_identity_authorization_application$' --output-on-failure
+```
+
+测试仅验证typed应用编排，不代表method descriptor resolver、RPC、真实JWT/TLS/PG生产闭环。

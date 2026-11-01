@@ -112,3 +112,20 @@ add_test(NAME p04_identity_verification_keys_application
   COMMAND kiarabot_identity_verification_keys_application_test)
 set_tests_properties(p04_identity_verification_keys_application PROPERTIES
   LABELS "p04;unit;security" TIMEOUT 10)
+
+# Online authority checking remains independent of proto, RPC, crypto implementations and SQL.
+add_library(kiarabot_identity_authorization_application STATIC
+  src/application/target/identity_authorization_application.cpp)
+target_include_directories(kiarabot_identity_authorization_application PUBLIC include)
+target_compile_features(kiarabot_identity_authorization_application PUBLIC cxx_std_20)
+target_compile_options(kiarabot_identity_authorization_application PRIVATE
+  $<$<CXX_COMPILER_ID:AppleClang,Clang,GNU>:-Wall -Wextra -Wpedantic>)
+add_executable(kiarabot_identity_authorization_application_test
+  tests/architecture/identity_authorization_application_test.cpp)
+target_link_libraries(kiarabot_identity_authorization_application_test PRIVATE
+  kiarabot_identity_authorization_application)
+target_compile_options(kiarabot_identity_authorization_application_test PRIVATE
+  $<$<CXX_COMPILER_ID:AppleClang,Clang,GNU>:-Wall -Wextra -Wpedantic -UNDEBUG>
+  $<$<CXX_COMPILER_ID:MSVC>:/UNDEBUG>)
+add_test(NAME p04_identity_authorization_application COMMAND kiarabot_identity_authorization_application_test)
+set_tests_properties(p04_identity_authorization_application PROPERTIES LABELS "p04;unit;security" TIMEOUT 10)

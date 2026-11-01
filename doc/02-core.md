@@ -1026,3 +1026,28 @@ service+subject定位CURRENT平台证书head；零条为空，多条返回Intern
 内存扫描。这只是权威定位，不是TLS验证；Core另核验current head、owner、主体状态、
 证书SAN/service及有限期限。供无session来源的早期actor在线检查使用；PG实现另行集成，
 缺实现不得启用依赖它的用例。现有未使用fixture直接失败，不提供伪成功fallback。
+
+### P04 CheckAuthorization 纯应用（未接RPC）
+
+`IdentityAuthorizationApplication`只允许真实当前Runtime/Host/Scheduler/Model recipient，
+必须显式授予IdentityAuthorizationCheck@自身Principal，不能由普通role或业务scope替代。
+受信AuthorizationMethodPolicyPort从外层唯一契约metadata解析canonical full_method到
+封闭owner/permission/可用scope kinds；请求不能自报权限。method owner、真实recipient
+服务、签名audience必须一致，Control管理员不能跨consumer询问；Identity本地管理直接
+读取本地权威，不远程自查。scope为1..128个合法去重exact资源，逐资源同时检查proof绑定
+和source当前精确授权，不把显示权限与范围做笛卡尔积。
+
+应用先只读核验recipient与能力，释放事务再用专用crypto入口验签；随后两个独立短只读
+事务读取source当前principal/credential/session、authorization/exact以及所有actor当前
+登记，最后复核水位和DB UTC。首actor为Control，第二actor为Runtime；direct_actor/cnf
+经by_certificate/current核验，Human来源原Control按SessionControlPeer稳定凭据ID读取；
+无session的两跳来源经by_platform定位原Control。不存在伪VerifiedPeer或原业务TLS证据。
+业务owner仍须普通verify真实来客，并遵守高风险检查到业务提交/dispatch最多一秒。
+
+unknown method/scope、known version=0/future为InvalidArgument；缺consumer自身cap为
+Failure PermissionDenied。坏proof/audience/source/session/actor当前状态或陈旧proof授权
+版本为Failure Unauthenticated；业务proof或source当前缺grant为成功decision allowed=false，
+denial为稳定PermissionDenied。DB/clock故障与Timeout保留Failure，不能转业务false。
+known旧版本不授权旧状态；返回当前source授权版本和本次DB checked_at。前后权威水位
+变化拒绝，DB UTC回退UpstreamUnavailable，总应用窗口及最终权威读取窗口均不超过一秒。
+应用不写库、不commit、不缓存，不新增wire字段或错误枚举；外层resolver/RPC/PG接线另验收。

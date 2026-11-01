@@ -1824,3 +1824,16 @@ Core继续检查当前主体、状态、期限、绑定和audience；crypto在Uo
 factory保留原issuer与InvocationDeadline位置，末尾新增IdentityRpcOptions={.verification_keys=&app}第五参；app借用至server停止/Wait，缺省typed Unsupported。当前mTLS认证及自身TLS InvocationDeadline在查询前照常执行。GetKeys不读/验证context.delegation或JWT，不对unknown kid先做JWT预检，避免获取验证材料的自举循环；Core151f31e负责当前平台身份、显式IdentityKeysRead@可信Catalog与授权后future-version拒绝。
 
 known_key_version显式0无效；正值原样交Core，none/same/old均返回完整current set，不做空delta或成功cache。只映射Core的public-only DTO：key_id、raw32 Ed25519公钥、正uint64键/集合版本与精确纳秒有限valid_until；空集合/零版本/不合法Catalog/零checked_at/过期或无限期限等畸形成功结果Internal。实际依赖/材料过期失败保持完整RpcFailure。外层不访问private/config路径，不加载材料、不重建keyring、不使用token选择远程key源。当前Core契约仅一个active key，生产PG及成熟材料端口闭环由组合根验收。
+
+### P04 CheckAuthorization 当前实现边界
+
+纯Core应用仅支持Runtime/Host/Scheduler/Model检查自身方法和签名audience，调用者需
+显式IdentityAuthorizationCheck@自身Principal。外层从唯一method metadata提供受信
+owner/permission/scope规则，不能从请求注入权限。Control管理员跨consumer查询尚不支持。
+查询者自身缺能力为RpcFailure/PERMISSION_DENIED；bad proof/audience及来源或actor当前
+状态失效为RpcFailure/UNAUTHENTICATED；业务proof范围或source当前grant不足为正常
+AuthorizationDecision.allowed=false并带PERMISSION_DENIED。依赖故障、时钟故障和TIMEOUT
+保留失败，不伪装业务拒绝。known版本为零/future拒绝INVALID_ARGUMENT，旧值仍查当前。
+返回当前source授权版本及DB checked_at；专用验签不证明原业务TLS possession，owner必须
+先用真实来客普通verify。详见doc/02-core的纯应用章节；RPC与生产接线仍需独立验收，
+此变更不新增proto字段、稳定错误枚举、API或映射。
