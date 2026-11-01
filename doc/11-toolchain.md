@@ -471,3 +471,5 @@ ctest --preset full-locked -L '^p03$' --no-tests=error --output-on-failure
 ```
 
 实际命令和未验项见 [P03构建报告](../reports/modules/architecture-p03-build.md)。
+
+统一入口在完整CTest后同时检查p02与p03注册分类，缺任何阶段或分类返回非零。

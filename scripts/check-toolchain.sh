@@ -140,8 +140,10 @@ python3 scripts/quality/check-architecture.py --inner \
   --database "build/$full_preset/compile_commands.json" \
   --links "build/$full_preset/architecture-targets.json"
 ctest --preset "$full_preset" --show-only=json-v1 > "build/$full_preset/ctest-registration.json"
-python3 scripts/quality/check-architecture.py --stage p02 \
-  --ctest-json "build/$full_preset/ctest-registration.json"
+for stage in p02 p03; do
+  python3 scripts/quality/check-architecture.py --stage "$stage" \
+    --ctest-json "build/$full_preset/ctest-registration.json"
+done
 if [[ "$full_preset" == full-locked ]]; then
   context_value() {
     python3 scripts/quality/cmake-check-context.py --build-dir "build/$full_preset" --get "$1"

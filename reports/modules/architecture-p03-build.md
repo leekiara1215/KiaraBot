@@ -46,3 +46,10 @@ p03分类检查通过。全仓format16通过，四个新TU tidy22.1.8 clang-anal
 远端CI/Linux/部署未执行，本机macOS不能替代。文档校验为路径/链接存在与git diff --check。
 
 完整full-locked构建成功（含reference、六服务、PG、自动内层头）。
+
+## 能力二：统一入口阶段注册门禁
+
+统一入口在既有完整CTest后同时验证p02/p03分类，防止漏接PG测试后剩余旧测试仍全绿。
+仅脚本门禁变化，无业务/协议文档影响；同步doc/11和本报告即可。
+实际执行bash -n、两阶段真实注册JSON检查、architecture自测、git diff --check。
+不重复父统一全仓入口，也不以门禁自测冒充业务测试。
