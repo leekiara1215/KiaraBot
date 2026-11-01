@@ -28,3 +28,25 @@ Core 连接采用 1–30 秒退避。每次连接只发送一个待确认事件�
 完整跨语言验收使用 `CORE_TEST_BINARY=../../build/proto/core/kiarabot-core .venv/bin/python -m pytest -q`；Action 闭环还读取本仓库的 sdk/python/src，可用 SDK_SOURCE 覆盖。测试连接真实 C++ Core、Python SDK/适配器与 fake 平台，重启 Core 后按幂等键复用终态。
 
 Action 执行日志位于 OUTBOX_PATH 加 .actions，独立 SQLite 文件，执行前落盘占用；每个 action_id 只调用一次平台，重投返回已知结果。同 ID 不同内容返回 CONFLICT。群/私聊文本使用 OneBot text segment，CQ 字符串不会解释为代码。超时/断线/进程崩溃可能发生在副作用之后，此时保留 ACCEPTED/未知，不重新调用平台；Core 到 deadline 后标记 EXPIRED，不能撤销已发生的副作用。最多一万条记录、64 MiB，终态保留七天，未终态不自动清理。备份需同时保存事件 outbox 与 .actions；这不是平台不支持的 exactly-once 保证。
+
+## 单机 MVP 本地 smoke（reference 链路）
+
+`tests/test_mvp_local_smoke.py`把真实 NoneBot 子进程、真实 reference Core/SQLite、
+极小固定 SDK Sender 与本机 OneBot WebSocket 替身串为一条链路。发送同一消息三次，
+再发送一条独立消息作为顺序检查，要求两条独立输入恰好产生两次固定文本平台发送，
+并确认 Core Action 成功及适配器 outbox ACK。测试失败返回非零，超时/失败也收割所启动
+的子进程。它不使用真实 QQ、NapCat 或付费模型；不代表新六服务 Runtime 已实现。
+
+从仓库根目录执行（`CORE_TEST_BINARY`必须指向启用协议和 SQLite 的 reference Core）：
+
+```sh
+uv sync --locked --python 3.11.18 --project adapters/nonebot
+adapters/nonebot/.venv/bin/python adapters/nonebot/tools/generate_proto.py proto
+CORE_TEST_BINARY="$PWD/build/full-locked/reference/core/kiarabot-core" \
+SDK_SOURCE="$PWD/sdk/python/src" \
+adapters/nonebot/.venv/bin/python -m pytest -q adapters/nonebot/tests/test_mvp_local_smoke.py
+```
+
+SDK 来自本仓库源码，测试不建设新的插件机制。目前固定 Sender 内置在测试中；公开
+单机启动脚本由独立任务提供，再作入口集成。本地 `.venv/`、`generated/`及临时数据库
+不提交；新电脑需恢复锁定依赖并生成协议。
