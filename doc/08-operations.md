@@ -413,7 +413,7 @@ socket，不继续受理。暂时忙等可恢复情况由具体组合根区分�
 ### P03 common transaction limits
 
 
-P03 公共 schema 为 v3；P04 Identity 空库含安全关系、完整会话结果与当前 bootstrap 定位及源 Control 会话绑定和平台当前定位索引后为 v8，另三库为 v4。要求UTF8数据库；
+P03 公共 schema 为 v3；P04 Identity 空库含安全关系、完整会话结果与当前 bootstrap 定位及源 Control 会话绑定和平台当前定位索引及Assignment墓碑后为 v9，另三库为 v4。要求UTF8数据库；
 旧版本或其他结构不自动升级，必须按本轮空库部署
 流程初始化新的专属库，不能清空原库或自动补表。schema结构描述/对象owner/运行权限均参与
 启动验证。当前仅存储公共能力，业务就绪仍由各服务已实现依赖决定。
@@ -570,7 +570,7 @@ wrapper仅核对返回指纹、正verified_at、受信clock/已知偏差及与ve
 ### P04 离线管理员与 Control 登记命令
 
 `kiarabot-identity-bootstrap` 只在可信部署主机离线运行，不提供 HTTP/gRPC 初始化入口。
-先显式初始化 Identity 空库（当前 schema8），停止同库 Identity daemon，再执行：
+先显式初始化 Identity 空库（当前 schema9），停止同库 Identity daemon，再执行：
 
 ```bash
 kiarabot-identity-bootstrap --config identity.json --enrollment enrollment.json --password-file administrator-password
@@ -859,3 +859,15 @@ server 停止/Wait；原 issuer、InvocationDeadline 及 verification_keys 参�
 
 真实 mTLS fixture 覆盖该适配与实际 Core 编排；测试的仓储、随机和签验仍为明确替身，
 不代表生产 PostgreSQL、JWT 材料端口或组合根已接线可用。
+
+
+### P04 Assignment 当前墓碑
+
+Identity 空库 schema9 的 exact_assignments 保存 Active/Revoked 与有限正 revoked_at。
+current(id) 包括永久墓碑的 owner、最终版本和旧精确 tuple；不存在为空，损坏为 Internal，
+SQL依赖故障为 Failure。for_subject 与 inherited grants 有效读取均过滤 Revoked，不能用
+墓碑授予权限。原 save 等同 Active save_state；仅 Active v1 创建、同 owner CAS v+1 更新
+或撤销。撤销不改旧 scope，时间不得晚于实际 DB UTC；已撤销 ID 再写、复用或换 owner
+均 Conflict，不能以物理删除/空 tuple 代替撤销。save_state 是 base metadata 同事务唯一
+同步者，重复 base 写入不作为假成功；基础 store_live 也拒绝 revoked ID。失败整 UoW 回滚，
+Unknown commit 必须重读原状态/收据，不能假定未提交。无TTL删除墓碑，旧库拒绝、不自动迁移。

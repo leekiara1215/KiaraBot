@@ -497,10 +497,28 @@ std::int64_t write_record(pqxx::transaction_base& transaction, const target::Rep
 std::int64_t store_result(pqxx::transaction_base& transaction, const target::ReplayResult& result) {
   return write_record(transaction, result, false, {});
 }
+namespace {
+bool revoked_grant(pqxx::transaction_base& transaction, const std::string& id) {
+  const auto rows = transaction.exec("SELECT state FROM kiarabot.exact_assignments WHERE id=$1",
+                                     pqxx::params{id});
+  if (rows.empty()) {
+    return false;
+  }
+  const auto state = rows.one_row()[0].as<int>();
+  if (state != 0 && state != 1) {
+    throw std::runtime_error("invalid stored assignment state");
+  }
+  return state == 1;
+}
+} // namespace
 bool store_live(pqxx::transaction_base& transaction, RecordKind kind,
                 const target::ReplayResult& value,
                 std::optional<target::ResourceVersion> expected) {
   if (static_cast<int>(kind) != static_cast<int>(value.index())) {
+    return false;
+  }
+  if (kind == RecordKind::Grant &&
+      revoked_grant(transaction, std::get<target::ResourceGrant>(value).id.value)) {
     return false;
   }
   return write_record(transaction, value, true, expected) != 0;
@@ -709,6 +727,9 @@ target::ReplayResult load_result(pqxx::transaction_base& transaction, std::int64
 }
 std::optional<target::ReplayResult> load_live(pqxx::transaction_base& transaction, RecordKind kind,
                                               std::span<const std::string> key) {
+  if (kind == RecordKind::Grant && revoked_grant(transaction, key[0])) {
+    return {};
+  }
   const auto spec = record_spec(kind);
   const auto exists = transaction.exec("SELECT 1 FROM kiarabot." + std::string(spec.table) +
                                            " WHERE " + key_predicate(spec),

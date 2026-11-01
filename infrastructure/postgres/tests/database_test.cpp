@@ -178,11 +178,16 @@ void check_identity_security_schema(const pg::DatabaseConfig& config) {
   rejects("UPDATE kiarabot.session_security SET version=2 WHERE id='security-session'", "23503");
   transaction.exec("INSERT INTO kiarabot.grants VALUES('security-grant','security-owner',NULL,1)");
   transaction.exec("INSERT INTO kiarabot.exact_assignments VALUES('security-grant',"
-                   "'security-owner',1)");
+                   "'security-owner',1,0,NULL)");
   transaction.exec(
       "INSERT INTO kiarabot.exact_permissions VALUES('security-grant',40,15,'catalog')");
   transaction.exec("SET CONSTRAINTS ALL IMMEDIATE; SET CONSTRAINTS ALL DEFERRED");
   rejects("UPDATE kiarabot.grants SET version=2 WHERE id='security-grant'", "23503");
+  rejects("UPDATE kiarabot.exact_assignments SET state=1 WHERE id='security-grant'", "23514");
+  rejects("UPDATE kiarabot.exact_assignments SET revoked_at=137 WHERE id='security-grant'",
+          "23514");
+  rejects("UPDATE kiarabot.exact_assignments SET state=1,revoked_at=0 WHERE id='security-grant'",
+          "23514");
   rejects("INSERT INTO kiarabot.exact_permissions VALUES('security-grant',41,15,'catalog')",
           "23514");
   transaction.exec(
@@ -338,7 +343,7 @@ void run(const std::filesystem::path& root, std::uint16_t port,
       pqxx::connection migration(connection_string(config));
       pqxx::read_transaction inspect(migration);
       require(inspect.exec("SELECT version FROM kiarabot.schema_versions").one_row()[0].as<int>() ==
-                  (config.service == target::Service::Identity ? 8 : 4),
+                  (config.service == target::Service::Identity ? 9 : 4),
               "per-service schema version incorrect");
     }
     if (config.service == target::Service::Identity) {
@@ -496,6 +501,40 @@ void run(const std::filesystem::path& root, std::uint16_t port,
               "platform lookup dependency failure committed");
     }
 
+    if (config.service == target::Service::Identity) {
+      for (int path = 0; path < 2; ++path) {
+        auto state_database =
+            std::move(std::get<std::unique_ptr<pg::Database>>(pg::Database::open(runtime)));
+        auto state_access = std::move(std::get<pg::detail::CommonWorkAccess>(
+            pg::detail::DatabaseAccess::begin(*state_database)));
+        {
+          pqxx::work terminate(administrator);
+          const auto killed = terminate.exec("SELECT pg_terminate_backend(pid) FROM "
+                                             "pg_stat_activity WHERE datname=$1 AND usename=$2",
+                                             pqxx::params{config.database, config.runtime_role});
+          require(killed.size() == 1, "unexpected assignment writer sessions");
+          terminate.commit();
+        }
+        auto assignments = pg::detail::exact_assignment_repository(*state_access.sql);
+        if (path == 0) {
+          expect_error(assignments->current({"state-assignment"}),
+                       target::ErrorCode::UpstreamUnavailable);
+        } else {
+          expect_error(assignments->save_state({{{"fault-assignment"},
+                                                 {"credential-owner"},
+                                                 {{target::FixedRole::Viewer,
+                                                   {target::ResourceKind::Account, {"scope"}}}},
+                                                 {},
+                                                 {1}},
+                                                target::AssignmentState::Active,
+                                                {}},
+                                               {}),
+                       target::ErrorCode::UpstreamUnavailable);
+        }
+        require(state_access.work->commit() != target::CommitResult::Committed,
+                "assignment dependency failure committed");
+      }
+    }
     pg::test::check_dependency_fault(config, runtime);
     pg::test::check_deadline(runtime);
     {

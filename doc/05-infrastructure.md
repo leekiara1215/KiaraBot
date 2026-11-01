@@ -308,7 +308,7 @@ JWT序列化使用同一jwt-cpp官方nlohmann-json traits，NumericDate先检查
 
 ### P04 Identity 安全关系存储（实施中）
 
-Identity 最新空库 schema v8；Runtime、Scheduler、Model 各自为 v4（含下文完整会话结果表）。
+Identity 最新空库 schema v9；Runtime、Scheduler、Model 各自为 v4（含下文完整会话结果表）。
 不升级已有库，不自动初始化，不改变四库隔离。新增安全仓储借用公共 UoW 的同一物理
 事务，凭据当前头/不可变历史、会话安全元数据、精确授权、加密成功收据、refresh 恢复
 索引和管理员引导标记不能单独提交。端口存在或 schema 已创建不代表业务已接线。
@@ -474,3 +474,15 @@ Set 固定域后按序编码 target 存在标志/ID、subject、basis tag、role
 ID 最长1024字节且非空无NUL，精确资源1–128，permission1–40；重复/未知枚举/通配
 及空 scope 拒绝。Set target/expected 必须同在或同缺，present版本为正。应用还须独立
 核验 owner kind、当前权限及 old/new scope，且在所有 UoW 外计算指纹。
+
+
+### P04 Assignment 当前墓碑
+
+Identity 空库 schema9 的 exact_assignments 保存 Active/Revoked 与有限正 revoked_at。
+current(id) 包括永久墓碑的 owner、最终版本和旧精确 tuple；不存在为空，损坏为 Internal，
+SQL依赖故障为 Failure。for_subject 与 inherited grants 有效读取均过滤 Revoked，不能用
+墓碑授予权限。原 save 等同 Active save_state；仅 Active v1 创建、同 owner CAS v+1 更新
+或撤销。撤销不改旧 scope，时间不得晚于实际 DB UTC；已撤销 ID 再写、复用或换 owner
+均 Conflict，不能以物理删除/空 tuple 代替撤销。save_state 是 base metadata 同事务唯一
+同步者，重复 base 写入不作为假成功；基础 store_live 也拒绝 revoked ID。失败整 UoW 回滚，
+Unknown commit 必须重读原状态/收据，不能假定未提交。无TTL删除墓碑，旧库拒绝、不自动迁移。

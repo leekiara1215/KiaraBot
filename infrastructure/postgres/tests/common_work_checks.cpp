@@ -1128,6 +1128,152 @@ void check_identity_assignments(Database& database) {
   }
 }
 
+void check_assignment_tombstones(Database& database) {
+  target::AssignmentStateRecord record{
+      {{"state-assignment"},
+       {"credential-owner"},
+       {},
+       {{target::Permission::MessageRead, {target::ResourceKind::Account, {"state-scope"}}}},
+       {1}},
+      target::AssignmentState::Active,
+      {}};
+  {
+    auto access = take(detail::DatabaseAccess::begin(database));
+    auto assignments = detail::exact_assignment_repository(*access.sql);
+    check(!take(assignments->current({"absent-state"})), "missing assignment state not optional");
+    take(assignments->save_state(record, {}));
+    committed(*access.work);
+  }
+  {
+    auto access = take(detail::DatabaseAccess::begin(database));
+    auto assignments = detail::exact_assignment_repository(*access.sql);
+    auto changed = record;
+    changed.assignment.version = {2};
+    changed.assignment.explicit_permissions.front().resource.id = {"new-state-scope"};
+    take(assignments->save_state(changed, target::ResourceVersion{1}));
+    record = changed;
+    committed(*access.work);
+  }
+  for (int attempt = 0; attempt < 4; ++attempt) {
+    auto access = take(detail::DatabaseAccess::begin(database));
+    auto assignments = detail::exact_assignment_repository(*access.sql);
+    auto invalid = record;
+    invalid.assignment.version = {3};
+    invalid.state = target::AssignmentState::Revoked;
+    invalid.revoked_at = take(access.work->current_time());
+    if (attempt == 0) {
+      invalid.assignment.subject = {"count-owner"};
+    } else if (attempt == 1) {
+      invalid.assignment.explicit_permissions.front().resource.id = {"changed-on-revoke"};
+    } else if (attempt == 2) {
+      invalid.revoked_at = *invalid.revoked_at + std::chrono::hours{24};
+    } else {
+      invalid.assignment.version = {2};
+    }
+    expect(assignments->save_state(invalid, target::ResourceVersion{attempt == 3 ? 1U : 2U}),
+           attempt == 2 ? target::ErrorCode::InvalidArgument : target::ErrorCode::Conflict);
+    rejected(*access.work);
+  }
+  {
+    auto access = take(detail::DatabaseAccess::begin(database));
+    auto assignments = detail::exact_assignment_repository(*access.sql);
+    auto tentative = record;
+    tentative.assignment.version = {3};
+    tentative.state = target::AssignmentState::Revoked;
+    tentative.revoked_at = take(access.work->current_time());
+    take(assignments->save_state(tentative, target::ResourceVersion{2}));
+    const auto duplicate_base = take(target::to_resource_grant_metadata(tentative.assignment));
+    expect(detail::save_record(*access.work, detail::RecordKind::Grant, duplicate_base,
+                               target::ResourceVersion{2}),
+           target::ErrorCode::Conflict);
+    rejected(*access.work);
+  }
+  {
+    auto access = take(detail::DatabaseAccess::begin(database));
+    auto assignments = detail::exact_assignment_repository(*access.sql);
+    const auto current = *take(assignments->current(record.assignment.id));
+    const auto base =
+        take(detail::find_record(*access.work, detail::RecordKind::Grant,
+                                 std::vector<std::string>{record.assignment.id.value}));
+    check(current.state == target::AssignmentState::Active &&
+              current.assignment.version.value == 2 && base &&
+              std::get<target::ResourceGrant>(*base).version.value == 2,
+          "failed revoke partially committed exact/base state");
+    access.work->rollback();
+  }
+  {
+    auto access = take(detail::DatabaseAccess::begin(database));
+    auto assignments = detail::exact_assignment_repository(*access.sql);
+    record.assignment.version = {3};
+    record.state = target::AssignmentState::Revoked;
+    record.revoked_at = take(access.work->current_time());
+    take(assignments->save_state(record, target::ResourceVersion{2}));
+    const auto current = *take(assignments->current(record.assignment.id));
+    check(current.state == target::AssignmentState::Revoked &&
+              current.revoked_at == record.revoked_at &&
+              current.assignment.explicit_permissions == record.assignment.explicit_permissions,
+          "revocation discarded time/old exact scope");
+    check(!take(detail::find_record(*access.work, detail::RecordKind::Grant,
+                                    std::vector<std::string>{record.assignment.id.value})),
+          "base metadata exposed revoked grant");
+    const auto active = take(assignments->for_subject(record.assignment.subject));
+    check(std::none_of(active.begin(), active.end(),
+                       [&](const auto& item) { return item.id == record.assignment.id; }),
+          "effective exact query returned tombstone");
+    committed(*access.work);
+  }
+  for (int attempt = 0; attempt < 4; ++attempt) {
+    auto access = take(detail::DatabaseAccess::begin(database));
+    auto assignments = detail::exact_assignment_repository(*access.sql);
+    auto changed = record;
+    changed.assignment.version = {4};
+    if (attempt == 0) {
+      changed.state = target::AssignmentState::Active;
+      changed.revoked_at.reset();
+      expect(assignments->save_state(changed, target::ResourceVersion{3}),
+             target::ErrorCode::Conflict);
+    } else if (attempt == 1) {
+      changed.assignment.subject = {"count-owner"};
+      expect(assignments->save_state(changed, target::ResourceVersion{3}),
+             target::ErrorCode::Conflict);
+    } else if (attempt == 2) {
+      changed.assignment.version = {1};
+      expect(assignments->save(changed.assignment, {}), target::ErrorCode::Conflict);
+    } else {
+      const auto base = take(target::to_resource_grant_metadata(changed.assignment));
+      expect(detail::save_record(*access.work, detail::RecordKind::Grant, base,
+                                 target::ResourceVersion{3}),
+             target::ErrorCode::Conflict);
+    }
+    rejected(*access.work);
+  }
+  {
+    auto access = take(detail::DatabaseAccess::begin(database));
+    auto assignments = detail::exact_assignment_repository(*access.sql);
+    const auto current = *take(assignments->current(record.assignment.id));
+    check(current.assignment.version.value == 3 &&
+              current.assignment.subject == record.assignment.subject &&
+              current.revoked_at == record.revoked_at,
+          "revoked ID reused or mutated");
+    take(access.sql->run([](pqxx::transaction_base& transaction) -> target::Status {
+      transaction.exec(
+          "DELETE FROM kiarabot.exact_permissions WHERE assignment='state-assignment'");
+      return std::monostate{};
+    }));
+    expect(assignments->current(record.assignment.id), target::ErrorCode::Internal);
+    rejected(*access.work);
+  }
+  {
+    auto access = take(detail::DatabaseAccess::begin(database));
+    auto assignments = detail::exact_assignment_repository(*access.sql);
+    auto invalid = record;
+    invalid.assignment.id = {"create-revoked"};
+    invalid.assignment.version = {1};
+    expect(assignments->save_state(invalid, {}), target::ErrorCode::InvalidArgument);
+    rejected(*access.work);
+  }
+}
+
 void check_common(Database& database, const DatabaseConfig& config) {
   if (config.service == target::Service::Identity) {
     check_identity_credentials(database);
@@ -1138,6 +1284,7 @@ void check_common(Database& database, const DatabaseConfig& config) {
     check_session_metadata_snapshot(database);
     check_global_session_count(database);
     check_identity_assignments(database);
+    check_assignment_tombstones(database);
     check_platform_locator(database);
   }
   constexpr auto kHigh = std::uint64_t{1} << 63;
@@ -1912,6 +2059,20 @@ void check_unknown_commit(const DatabaseConfig& config, const std::filesystem::p
       {{"sealed-key"}, 1, {std::byte{0}}, {std::byte{0}, std::byte{0xff}}}};
   auto secrets = detail::secret_receipt_repository(*access.sql);
   take(secrets->insert(secret, {100}));
+  target::AssignmentStateRecord tombstone{
+      {{"unknown-assignment"},
+       {"unknown-vault-owner"},
+       {{target::FixedRole::Viewer, {target::ResourceKind::Account, {"unknown-old-scope"}}}},
+       {},
+       {1}},
+      target::AssignmentState::Active,
+      {}};
+  auto assignments = detail::exact_assignment_repository(*access.sql);
+  take(assignments->save_state(tombstone, {}));
+  tombstone.assignment.version = {2};
+  tombstone.state = target::AssignmentState::Revoked;
+  tombstone.revoked_at = now;
+  take(assignments->save_state(tombstone, target::ResourceVersion{1}));
   std::ofstream(root / "drop-commit-arm") << "arm";
   const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(1);
   while (!std::filesystem::exists(root / "drop-commit-ready")) {
@@ -1936,6 +2097,15 @@ void check_unknown_commit(const DatabaseConfig& config, const std::filesystem::p
   check(stored_secret && stored_secret->binding == secret.binding &&
             stored_secret->sealed.ciphertext == secret.sealed.ciphertext,
         "Unknown commit did not recover original encrypted success receipt");
+  auto recovered_assignments = detail::exact_assignment_repository(*recovered_access.sql);
+  const auto recovered_state = *take(recovered_assignments->current(tombstone.assignment.id));
+  check(recovered_state.state == target::AssignmentState::Revoked &&
+            recovered_state.assignment.version == tombstone.assignment.version &&
+            recovered_state.assignment.roles == tombstone.assignment.roles &&
+            recovered_state.revoked_at == tombstone.revoked_at &&
+            !take(detail::find_record(*query, detail::RecordKind::Grant,
+                                      std::vector<std::string>{tombstone.assignment.id.value})),
+        "Unknown commit lost tombstone evidence or revived effective grant");
   query->rollback();
 }
 } // namespace kiarabot::infrastructure::postgres::test

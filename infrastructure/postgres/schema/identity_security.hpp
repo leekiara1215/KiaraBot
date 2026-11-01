@@ -110,6 +110,9 @@ CREATE INDEX session_security_subject ON kiarabot.session_security(subject,id);
 ALTER TABLE kiarabot.grants ADD UNIQUE(id,subject,version);
 CREATE TABLE kiarabot.exact_assignments (
   id text PRIMARY KEY, subject text NOT NULL, version kiarabot.uint64 NOT NULL CHECK(version>0),
+  state integer NOT NULL CHECK(state IN (0,1)), revoked_at bigint,
+  CHECK((state=0 AND revoked_at IS NULL) OR
+        (state=1 AND revoked_at IS NOT NULL AND revoked_at>0 AND revoked_at<9223372036854775807)),
   FOREIGN KEY(id,subject,version) REFERENCES kiarabot.grants(id,subject,version)
     DEFERRABLE INITIALLY DEFERRED
 );
