@@ -420,6 +420,16 @@ UoW::current_time()以Outcome返回调用时的权威数据库UTC，失败不得
 决定租约。ReceiptCapacity/JournalCapacity只来自可信应用配置，不透传客户端容量参数。
 版本继续使用uint64_t，不经double/JSON数值转换，任务/模型记录不损失高位。
 
+### P03 四个进程的实际数据库装配
+
+Identity/Runtime/Scheduler/Model入口通过基础设施公开工厂打开自己的typed UoW，
+只持本库runtime_role凭据；连接、schema和唯一writer校验完成后才允许监听。
+组合根持有工厂的生命周期长于application；内层不接收ProcessConfig、SQL或PG连接。
+依赖维护通过同一工厂begin/current_time/rollback探测，避免绕过其同步或另建writer连接。
+250ms忙返回Conflict不认定依赖丢失；其他依赖故障使进程停止，不能自动重连续跑。
+readiness只读取缓存观测，数据库成功不放行尚未实现的业务依赖。缺database配置时
+注入明确返回UpstreamUnavailable的端口，不创建内存/SQLite业务备用库。
+
 ### P03a 公共持久规则的纯验证
 
 `domain/target/persistence_rules.hpp` 提供无状态校验与决策，不维护内存数据库。

@@ -42,3 +42,25 @@ doc18无diff。未运行全仓：组合钩子/工厂接线另提交，最终集�
 helper只是外层生命周期替身，不伪造PG或Identity业务。runner的真实compile DB tidy22、
 helper显式C++20/SDK参数tidy22、format16/Python编译/diff通过。新TU/Ctest待构建线程
 独立接线；未以人工链接替代最终全仓覆盖。doc02/08已同步，无proto/API变化或doc18变更。
+
+## 能力三：四库真实进程装配
+
+四入口使用postgres公开facade及对应纯factory，组合辅助只位于core/app；共享factory
+覆盖application生命周期，不向domain/application/ports传递配置/数据库类型。
+监听前验证writer/schema，每秒维护使用同factory短UoW，不调用无同步旁路连接。
+忙Conflict不误判失锁，其他故障停止旧进程；探针仅读观测。无配置注入拒绝型工厂，
+不会创建备用存储；当前业务未实现，DB成功仍不ready。
+
+实际检查使用固定PG16.4/OpenSSL3.5/Python3.11及固定vcpkg前缀，full-locked -Werror
+构建四服务和初始化CLI通过。新service_database_test.py通过拥有者私有临时TLS集群
+运行四个实际daemon：九个不同秘密、迁移/runtime密码隔离、初始化后启动/live与不ready、
+并发writer监听前拒绝、停掉合法writer后错误CA/密码/跨库拒绝、精确终止一个Runtime
+数据库session后退出1/其他三进程隔离、全新Runtime重启、错误schema拒绝、恢复版本后
+重启、四进程SIGTERM0，均通过。测试先核对实际data_directory再执行测试DDL，最终
+回收集群和私有材料；不接外部DSN。日志/tmp/kiarabot-four-daemon-pg.log为本机证据，
+不提交本机路径/证书/配置。未进行生产部署、真实QQ或模型调用。
+
+五文件format16、Python编译、模块边界/inner检查通过；四入口同compile DB tidy22
+结果在提交前确认。CMake临时接线只用于本树验证，提交前恢复；最终目标链接和CTest
+注册由构建线程单独提交，再由主树验证。doc02/08同步；proto/API/doc01无线协议变化，
+无需更新；doc18保持只读。完整统一入口在最终集成后运行，不重复宣称局部测试覆盖全仓。

@@ -2,11 +2,22 @@
 
 #include "kiarabot/core/application/target/model_application.hpp"
 #include "kiarabot/core/runtime/platform/service_process.hpp"
+#include "postgres_service.hpp"
+
+namespace target = kiarabot::core::target;
+namespace platform = kiarabot::core::platform;
+namespace composition = kiarabot::core::composition;
 
 int main(int argc, char* argv[]) {
   try {
-    const auto application = kiarabot::core::target::make_model_application();
-    return kiarabot::core::platform::run_service(*application, argc, argv);
+    return platform::run_service(
+        target::Service::Model,
+        [](const platform::ProcessConfig& config) {
+          return composition::compose_database_service<target::ModelUnitOfWork>(
+              config, kiarabot::infrastructure::postgres::open_model,
+              [](auto&) { return target::make_model_application(); });
+        },
+        argc, argv);
   } catch (...) {
     std::cerr << "operation=start outcome=failed error_code=INTERNAL\n";
     return 1;

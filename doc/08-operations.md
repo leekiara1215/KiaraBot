@@ -427,5 +427,16 @@ daemon只持运行密码。PG CA路径必须是可读、非符号链接、1字�
 拒绝FIFO等特殊文件，避免libpq打开信任材料时越过连接超时。仍由TLS完成链与主机名验证。
 数据库连接强制target_session_attrs=read-write，拒绝只读会话/只读副本，不能仅凭版本及
 SELECT可用就当作具有业务写入能力；本轮不提供只读副本或自动故障切换路径。
+
+### P03 daemon 数据库接线
+
+四个数据库服务入口现在实际调用各自typed factory，在监听前完成TLS/schema/writer
+校验。daemon始终使用runtime_role，迁移密码不进入其配置；连接/锁/版本拒绝退出1，
+不输出监听成功行，不执行DDL。Control和Plugin Host不创建这些数据库连接。
+运行后每秒以同工厂短事务检查数据库当前UTC；忙等待最多250ms不当作失锁，事务故障
+按2秒总预算终止旧session。永久依赖失效记录reason=dependency_lost并退出1，关闭
+RPC/探针；由运维启动新进程重新验证/取得锁，不能由旧实例静默恢复继续业务。
+本项只证明持久依赖已接入，当前业务仍未完成，/health/ready继续503；普通SIGTERM退出0。
+未配置database时当前未实现业务可启动不ready，拒绝型UoW不允许持久业务回退到内存。
 数据库名及迁移/运行角色名限定1–63个小写ASCII字母、数字或下划线；单主机地址、端口
 1–65535，不接收DSN、多host或Unix socket覆盖受控策略。
