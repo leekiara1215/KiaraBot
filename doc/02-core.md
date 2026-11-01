@@ -1003,3 +1003,18 @@ JWT中的上游actor指纹，不证明原业务连接的TLS possession。业务o
 `verify`绑定真实来客；Identity应用另读当前recipient、所有actor及来源凭据/session/
 授权状态。此入口不授予业务权限、不访问数据库；坏proof/peer返回Unauthenticated，
 不可信时钟或资源故障返回UpstreamUnavailable，不生成新稳定错误码或wire字段。
+
+### Production GetVerificationKeys composition
+
+Configured Identity owns IdentityVerificationKeysApplication alongside its session,
+Admin and issuer applications. It borrows the same full security UoW factory and
+public-material port returned with mature delegation crypto from the single trusted
+bundle. RPC borrows this application until shutdown/Wait; the application is destroyed
+before its material/factory/clock dependencies. No independent keyset configuration
+or fixture Service replaces the production path.
+
+Key bootstrap requires actual currently registered platform mTLS and explicit
+IdentityKeysRead at the trusted offline Catalog anchor. JWT is not required or used
+as the trust bootstrap. Known version absent/equal/older yields the full current set;
+a future version is rejected after current authorization. Overall Identity readiness
+is still false while remaining Identity operations are incomplete.

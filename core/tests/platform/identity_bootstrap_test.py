@@ -13,7 +13,8 @@ import uuid
 from service_config_test import certificates
 
 
-def main(*, control_server_certificate=False, after_bootstrap=None):
+def main(*, control_server_certificate=False, after_bootstrap=None,
+         verification_catalog=None):
     root = Path(sys.argv[1]).resolve()
     port, initializer = sys.argv[2:4]
     bootstrap = str(Path(sys.argv[5]).resolve())
@@ -91,6 +92,11 @@ def main(*, control_server_certificate=False, after_bootstrap=None):
                 'control_assignments': [
                     {'assignment_id': str(uuid.uuid4()), 'permissions': ['identity.delegation.issue'],
                      'scope': [{'kind': 'RESOURCE_PRINCIPAL', 'id': control}]}]}
+    if verification_catalog is not None:
+        enrolled['control_assignments'].append({
+            'assignment_id': str(uuid.uuid4()), 'permissions': ['identity.keys.read'],
+            'scope': [{'kind': 'RESOURCE_CATALOG', 'id': verification_catalog}],
+        })
     enrollment_file = root / 'enrollment.json'
 
     def write(value):

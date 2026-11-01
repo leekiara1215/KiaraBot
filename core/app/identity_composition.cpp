@@ -12,6 +12,7 @@
 #include "kiarabot/core/application/target/identity_application.hpp"
 #include "kiarabot/core/application/target/identity_delegation_application.hpp"
 #include "kiarabot/core/application/target/identity_security_application.hpp"
+#include "kiarabot/core/application/target/identity_verification_keys_application.hpp"
 #include "kiarabot/core/domain/target/time.hpp"
 #include "kiarabot/core/runtime/platform/identity_rpc.hpp"
 #include "kiarabot/core/runtime/platform/service_rpc.hpp"
@@ -54,8 +55,10 @@ class Applications final : public target::ServiceReadinessPort {
 public:
   Applications(std::shared_ptr<Dependencies> dependencies,
                std::unique_ptr<target::IdentitySecurityApplication> sessions,
+               std::unique_ptr<target::IdentityVerificationKeysApplication> verification_keys,
                const platform::IdentitySecurityMaterial& material)
       : dependencies_(std::move(dependencies)), sessions_(std::move(sessions)),
+        verification_keys_(std::move(verification_keys)),
         admin_(*dependencies_->transactions, *dependencies_->certificates),
         issuer_(*sessions_, *dependencies_->transactions, *dependencies_->delegations,
                 *dependencies_->random, dependencies_->clock,
@@ -84,6 +87,9 @@ public:
   target::IdentitySecurityApplication& sessions() {
     return *sessions_;
   }
+  target::IdentityVerificationKeysApplication& verification_keys() {
+    return *verification_keys_;
+  }
   target::IdentityAdminApplication& admin() {
     return admin_;
   }
@@ -92,9 +98,10 @@ public:
   }
 
 private:
-  // Reverse destruction releases issuer -> admin -> sessions -> shared dependencies.
+  // Reverse destruction releases issuer -> admin -> keys -> sessions -> shared dependencies.
   std::shared_ptr<Dependencies> dependencies_;
   std::unique_ptr<target::IdentitySecurityApplication> sessions_;
+  std::unique_ptr<target::IdentityVerificationKeysApplication> verification_keys_;
   target::IdentityAdminApplication admin_;
   target::IdentityDelegationApplication issuer_;
 };
@@ -288,8 +295,18 @@ target::Outcome<platform::ServiceComposition> configured(const platform::Process
   if (!session_application) {
     return detail::database_unavailable();
   }
-  auto applications =
-      std::make_unique<Applications>(dependencies, std::move(session_application), material);
+  auto keys = target::make_identity_verification_keys_application(*dependencies->transactions,
+                                                                  *dependencies->verification_keys);
+  if (const auto* error = std::get_if<target::Failure>(&keys)) {
+    return *error;
+  }
+  auto key_application =
+      std::move(std::get<std::unique_ptr<target::IdentityVerificationKeysApplication>>(keys));
+  if (!key_application) {
+    return detail::database_unavailable();
+  }
+  auto applications = std::make_unique<Applications>(dependencies, std::move(session_application),
+                                                     std::move(key_application), material);
   auto* observed = applications.get(); // Composition owns it until after RPC shutdown/Wait.
   auto final_clock = dependencies->clock.sample();
   if (const auto* error = std::get_if<target::Failure>(&final_clock)) {
@@ -318,7 +335,8 @@ target::Outcome<platform::ServiceComposition> configured(const platform::Process
         };
         auto adapter = platform::make_identity_rpc(
             observed->sessions(), std::move(gated), &observed->issuer(),
-            [dependencies] { return dependencies->clock.invocation_deadline(); });
+            [dependencies] { return dependencies->clock.invocation_deadline(); },
+            {.verification_keys = &observed->verification_keys()});
         if (const auto* error = std::get_if<target::Failure>(&adapter)) {
           return *error;
         }

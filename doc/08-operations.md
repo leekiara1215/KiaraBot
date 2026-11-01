@@ -792,3 +792,20 @@ Identity 空库 schema7 在 session_security 保存非空 control_subject/contro
 factory保留原issuer与InvocationDeadline位置，末尾新增IdentityRpcOptions={.verification_keys=&app}第五参；app借用至server停止/Wait，缺省typed Unsupported。当前mTLS认证及自身TLS InvocationDeadline在查询前照常执行。GetKeys不读/验证context.delegation或JWT，不对unknown kid先做JWT预检，避免获取验证材料的自举循环；Core151f31e负责当前平台身份、显式IdentityKeysRead@可信Catalog与授权后future-version拒绝。
 
 known_key_version显式0无效；正值原样交Core，none/same/old均返回完整current set，不做空delta或成功cache。只映射Core的public-only DTO：key_id、raw32 Ed25519公钥、正uint64键/集合版本与精确纳秒有限valid_until；空集合/零版本/不合法Catalog/零checked_at/过期或无限期限等畸形成功结果Internal。实际依赖/材料过期失败保持完整RpcFailure。外层不访问private/config路径，不加载材料、不重建keyring、不使用token选择远程key源。当前Core契约仅一个active key，生产PG及成熟材料端口闭环由组合根验收。
+
+### Production public-key bootstrap enrollment
+
+The production GetVerificationKeys path uses the same identity_security.verification
+Catalog UUID and single crypto bundle as signing. An operator must explicitly include
+identity.keys.read at that exact RESOURCE_CATALOG UUID in the registered platform
+service's offline assignments if it should fetch verification material. A trusted CA,
+registered certificate, default role, delegation-issue capability or grant at another
+resource does not imply this permission. The CLI does not automatically create it.
+No JWT is required to bootstrap the verification keys; no unauthenticated HTTP route
+or token-selected key URL is introduced.
+
+The real owned-PG daemon regression accepts --keys-client <compiled-client> to enroll
+this explicit test grant and verify raw32/key-ID/set-version/key-version/absolute-
+expiry over mTLS. --keys-no-grant omits it and requires registered-caller denial,
+including the future-version request; a CA-valid but unregistered leaf is also denied.
+Default bootstrap and daemon tests do not automatically gain Catalog privileges.

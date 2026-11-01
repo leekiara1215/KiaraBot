@@ -24,6 +24,20 @@ REPO = Path(__file__).resolve().parents[4]
 sys.path.insert(0, str(REPO / 'core/tests/platform'))
 import identity_bootstrap_test as bootstrap_fixture
 
+KEYS_CATALOG = str(uuid.uuid4())
+
+
+def keys_client_path():
+    tail = sys.argv[9:]
+    if '--keys-client' not in tail:
+        return None
+    assert tail.count('--keys-client') == 1, 'duplicate Keys client argument'
+    index = tail.index('--keys-client')
+    assert index + 1 < len(tail), 'Keys client argument missing'
+    path = Path(tail[index + 1]).resolve()
+    assert path.is_file(), 'compiled production Keys client required'
+    return str(path)
+
 def line(child):
     end = time.monotonic() + 12
     value = b''
@@ -54,8 +68,10 @@ def daemon_http(root):
     openssl('pkey', '-in', str(private), '-pubout', '-out', str(public))
     public.chmod(0o600)
     material.update(delegation_key={'id': 'delegation-v1', 'public_key_file': str(public), 'private_key_file': str(private)}, issuer='identity-owned-test', clock={'trusted': True, 'maximum_known_skew_ms': 2000})
-    material['verification'] = {'catalog_id': str(uuid.uuid4()), 'version': 1,
-                                'key_version': 1,
+    keys_client = keys_client_path()
+    material['verification'] = {'catalog_id': KEYS_CATALOG if keys_client else str(uuid.uuid4()),
+                                'version': 7 if keys_client else 1,
+                                'key_version': 11 if keys_client else 1,
                                 'valid_until_epoch_seconds': int(time.time()) + 3600}
     config['identity_security'] = material
     (root / 'identity.json').write_text(json.dumps(config))
@@ -101,6 +117,22 @@ def daemon_http(root):
         state = dict((item.split('=', 1) for item in line(daemon).split()))
         assert state['ready'] == 'false' and int(state['grpc_port']) > 0, 'Identity readiness/startup mismatch'
         tls = root / 'bootstrap-tls'
+        if keys_client:
+            allowed = 'denied' if '--keys-no-grant' in sys.argv[9:] else 'allowed'
+            modes = [('control.pem', 'control.key', allowed),
+                     ('server.pem', 'server.key', 'unregistered')]
+            for certificate, key_file, mode in modes:
+                metadata = material['verification']
+                result = subprocess.run(
+                    [keys_client, 'localhost:' + state['grpc_port'], str(tls / 'ca.pem'),
+                     str(tls / certificate), str(tls / key_file), str(public),
+                     material['delegation_key']['id'], str(metadata['version']),
+                     str(metadata['key_version']), str(metadata['valid_until_epoch_seconds']), mode],
+                    capture_output=True, text=True, timeout=12)
+                assert result.returncode == 0, 'real production Keys client failed; diagnostics redacted'
+                log += result.stdout + result.stderr
+                assert all(secret not in log for secret in sensitive), 'Keys client leaked material'
+            print('Real Identity daemon Keys client verified no-JWT bootstrap, actual material and grant rejection')
         config = {'schema_version': 1, 'service': 'control', 'probe_listen': '127.0.0.1:0', 'tls': {'certificate_file': str(tls / 'control.pem'), 'private_key_file': str(tls / 'control.key'), 'ca_file': str(tls / 'ca.pem')}, 'control_api': {'listen': '127.0.0.1:0', 'identity_endpoint': 'localhost:' + state['grpc_port']}}
         (tls / 'control.key').chmod(0o600)
         path = root / 'control.json'
@@ -228,7 +260,9 @@ def daemon_http(root):
         assert not shutdown_failures, '; '.join(shutdown_failures)
 if __name__ == '__main__':
     try:
-        bootstrap_fixture.main(control_server_certificate=True, after_bootstrap=daemon_http)
+        catalog = KEYS_CATALOG if keys_client_path() and '--keys-no-grant' not in sys.argv[9:] else None
+        bootstrap_fixture.main(control_server_certificate=True, after_bootstrap=daemon_http,
+                               verification_catalog=catalog)
     except Exception:
         import traceback
         frames = traceback.extract_tb(sys.exc_info()[2])
