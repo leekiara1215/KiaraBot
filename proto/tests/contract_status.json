@@ -316,7 +316,10 @@
       "CredentialStatus": "not_implemented",
       "IdentityGetCredentialStatusRequest": "not_implemented",
       "IdentityGetCredentialStatusResponse": "not_implemented",
-      "AssignmentSpec": "not_implemented"
+      "AssignmentSpec": "not_implemented",
+      "ConnectionAuthorization": "not_implemented",
+      "RefreshConnectionAuthorization": "not_implemented",
+      "ConnectionAuthorizationResult": "not_implemented"
     },
     "proto_fields": {
       "Account.account_id": "implemented",
@@ -1339,7 +1342,32 @@
       "AssignmentSpec.role": "not_implemented",
       "AssignmentSpec.permissions": "not_implemented",
       "AssignmentSpec.scope": "not_implemented",
-      "IdentitySetAssignmentRequest.assignment_id": "not_implemented"
+      "IdentitySetAssignmentRequest.assignment_id": "not_implemented",
+      "RegisterAdapterResponse.authorization": "not_implemented",
+      "AdapterToCore.connection_proof": "not_implemented",
+      "AdapterToCore.refresh_authorization": "not_implemented",
+      "CoreToAdapter.authorization_result": "not_implemented",
+      "ConnectionAuthorization.fence": "not_implemented",
+      "ConnectionAuthorization.proof": "not_implemented",
+      "ConnectionAuthorization.issued_at": "not_implemented",
+      "ConnectionAuthorization.expires_at": "not_implemented",
+      "ConnectionAuthorization.refresh_credential": "not_implemented",
+      "ConnectionAuthorization.refresh_generation": "not_implemented",
+      "ConnectionAuthorization.principal_id": "not_implemented",
+      "ConnectionAuthorization.credential_version": "not_implemented",
+      "ConnectionAuthorization.authorization_version": "not_implemented",
+      "RefreshConnectionAuthorization.request_id": "not_implemented",
+      "RefreshConnectionAuthorization.fence": "not_implemented",
+      "RefreshConnectionAuthorization.proof": "not_implemented",
+      "RefreshConnectionAuthorization.refresh_credential": "not_implemented",
+      "RefreshConnectionAuthorization.refresh_generation": "not_implemented",
+      "ConnectionAuthorizationResult.request_id": "not_implemented",
+      "ConnectionAuthorizationResult.authorization": "not_implemented",
+      "ConnectionAuthorizationResult.error": "not_implemented",
+      "RegisterPluginResponse.authorization": "not_implemented",
+      "PluginToCore.connection_proof": "not_implemented",
+      "PluginToCore.refresh_authorization": "not_implemented",
+      "CoreToPlugin.authorization_result": "not_implemented"
     },
     "event_payloads": {
       "EventEnvelope.message_received": "implemented",
@@ -4531,6 +4559,81 @@
       "reports/modules/architecture-p03-contract-evidence.md"
     ],
     "IdentitySetAssignmentRequest.assignment_id": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "RegisterAdapterResponse.authorization": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "AdapterToCore.connection_proof": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "AdapterToCore.refresh_authorization": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "CoreToAdapter.authorization_result": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "ConnectionAuthorization.fence": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "ConnectionAuthorization.proof": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "ConnectionAuthorization.issued_at": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "ConnectionAuthorization.expires_at": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "ConnectionAuthorization.refresh_credential": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "ConnectionAuthorization.refresh_generation": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "ConnectionAuthorization.principal_id": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "ConnectionAuthorization.credential_version": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "ConnectionAuthorization.authorization_version": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "RefreshConnectionAuthorization.request_id": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "RefreshConnectionAuthorization.fence": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "RefreshConnectionAuthorization.proof": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "RefreshConnectionAuthorization.refresh_credential": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "RefreshConnectionAuthorization.refresh_generation": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "ConnectionAuthorizationResult.request_id": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "ConnectionAuthorizationResult.authorization": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "ConnectionAuthorizationResult.error": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "RegisterPluginResponse.authorization": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "PluginToCore.connection_proof": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "PluginToCore.refresh_authorization": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "CoreToPlugin.authorization_result": [
       "reports/modules/architecture-p03-contract-evidence.md"
     ]
   },

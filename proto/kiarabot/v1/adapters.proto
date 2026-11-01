@@ -37,16 +37,22 @@ message RegisterAdapterResponse {
   Fence fence = 6;
   // CONTRACT_STATUS: not_implemented - target P01.
   repeated Capability effective_capabilities = 7;
+  // CONTRACT_STATUS: not_implemented - required on successful target registration.
+  ConnectionAuthorization authorization = 8;
 }
 
 // CONTRACT_STATUS: not_implemented - mandatory target fence on every post-registration frame.
 message AdapterToCore {
   Fence fence = 10;
+  // CONTRACT_STATUS: not_implemented - mandatory current proof after registration.
+  bytes connection_proof = 11;
   oneof body {
     RegisterAdapterRequest register = 1;
     EventEnvelope event = 2;
     Heartbeat heartbeat = 3;
     ActionResult action_result = 4;
+    // CONTRACT_STATUS: not_implemented - same TLS stream only.
+    RefreshConnectionAuthorization refresh_authorization = 5;
   }
 }
 
@@ -60,6 +66,8 @@ message CoreToAdapter {
     AdapterEventAck event_ack = 4;
     // CONTRACT_STATUS: not_implemented - v1 Core closes the stream without this frame.
     ShutdownNotice shutdown = 5;
+    // CONTRACT_STATUS: not_implemented - rotates connection secrets, not delivery leases.
+    ConnectionAuthorizationResult authorization_result = 6;
   }
 }
 

@@ -71,3 +71,5 @@ symlink拒绝，历史implemented保留且不自动传播target，target声明�
 只用于历史范围词表，不能满足target生产证据。新布局新增生产证据目录需审查TARGET_SOURCE_ROOTS。
 
 Identity 投影 fixture 校验逐条 role/scope 与显式权限依据、拒绝显示并集扩权、AssignmentSpec 创建/条件更新、权威 Session created_at/checked_at 到期和 TTL。Ajv 验证严格目标身份响应必填、PENDING 不带到期、ACTIVE 必须到期、凭据禁止秘密；wire golden 固定状态/注册初始引用/绑定响应/创建请求。它们仅是契约 oracle，不证明生产授权或并发发放。
+
+外部连接授权fixture覆盖缺/短proof、异TLS流/异Fence、56秒名义/60秒总预算边界、UTC和单调到期、撤销/凭据版本/gate、Identity故障、原子轮换后旧refresh拒绝、丢响应的新代次重连、auth不扩展lease。三类载荷及双向Bridge帧固定wire golden；这是规格oracle，不证明TLS绑定、CSPRNG或生产原子性实现。

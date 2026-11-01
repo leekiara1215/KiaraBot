@@ -314,3 +314,7 @@ SessionRecord.created_at 是 Identity 持久保存的首次创建时间，刷新
 RegisterPrincipal 同事务创建无秘密的 PENDING CredentialStatus 引用（credential_id/principal_id/binding/version/created_at/checked_at）；尚未发放的 PENDING 不得伪造 expires_at。GetCredentialStatus 以 identity.principal.read 在线读取同一记录，默认2秒/最多5秒；ACTIVE/EXPIRED 必须有 expires_at，REVOKED 可保留原到期。状态查询不返回秘密、摘要或可重放材料。初次实际发放仍用 RotateCredential 单次 CredentialDelivery，未知结果不得从状态查询恢复秘密。当前未实现，不启用生产路由。
 
 目标 /auth/me、/auth/sessions、/auth/login、/auth/refresh 使用 x-target-owner-rpc 和 x-target-response-schema 指定严格目标响应，P04 必须验证 TargetCurrentPrincipal/SessionPage/TokenPair；不能降级为缺少绑定、checked_at 或 created_at 的 reference 响应。GET /credentials/{credentialId} 映射 Identity.GetCredentialStatus，响应不含秘密。既有 reference 标准响应保留历史断言，不构成目标兼容入口；目标状态均 not_implemented。
+
+### 外部连接授权目标补全（未实现）
+
+platform.proto三类ConnectionAuthorization/RefreshConnectionAuthorization/Result与两Bridge的登记、proof、refresh帧定义短期外部连接授权。名义最多56秒、总预算60秒、每秒检查失效，单飞原子轮换；丢响应须关闭旧流、新bootstrap与连接代次。完整规则见doc/01-contracts及运行语义；内部JWT委托和P02 mTLS owner监听不变，P05/P06真实接线前仍not_implemented。授权材料禁止日志/公开投影/持久秘密收据，高风险业务仍在线核验，刷新不续投递租约、不改历史业务事实。浏览器REST/WS不使用这些proof，OpenAPI/AsyncAPI因此无schema变更。

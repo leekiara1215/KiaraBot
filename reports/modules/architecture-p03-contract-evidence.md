@@ -122,3 +122,11 @@ Runtime能力实际检查：check_target.sh生成C++/gRPC/Python并实际编译�
 文档影响：同步 proto/README、doc01/运行语义/doc02/doc06/doc08/doc21、tests README 及 API 唯一来源；其他模块不变，doc18保持只读。严格目标 auth 投影由 x-target-response-schema 声明，保留 reference 响应仅维持历史范围断言，不得作为 P04 目标回退。所有新能力 target not_implemented；只修改协议/API/文档/契约测试，不含业务或 CMake。
 
 实际检查：check_target.sh 生成并编译 C++/gRPC/Python，通过91 owner RPC双向集合/策略、304消息往返和10个固定wire golden；绑定不做笛卡尔积、显式敏感权限、缺checked_at/created_at、过期/撤销/TTL、AssignmentSpec创建/更新正反例通过。Ajv目标schema及Ruby46 HTTP操作/引用/owner映射通过。check_contracts.sh显式启用legacy reader，通过9项scope回归、枚举/状态/语义及6类descriptor兼容夹具。Redocly2.72.1正式lint通过（12条warning，含通过自定义目标profile扩展引用的unused组件），AsyncAPI parser3.6.6通过。git diff --check通过。临时工具版本沿前节，非锁定生产环境；第三方生成/链接warning仍有，未改生成物。未运行业务/full/tidy：没有手写C++或业务修改，未证明P04生产授权。
+
+## 定稿能力：外部 Bridge 短期连接授权 wire
+
+主对话已批准2368ed3最小草案；本节将其落入唯一proto，不再是待裁定项。platform.proto追加三类载荷及明确字段号；Adapter/Plugin登记成功附完整ConnectionAuthorization，注册后入站必须有connection_proof，双向增加refresh请求/结果oneof。完整Fence/实际TLS流绑定、独立>=256位opaque秘密、56秒名义与60秒总预算、每秒失效检查、单飞原子轮换、丢响应关闭重连、在线高风险核验和既有事实/attempt规则见doc01及运行语义。没有新增RPC、持久秘密收据或泛化认证服务，P02 owner mTLS与内部JWT不改；全部新字段/帧target not_implemented。
+
+文档影响：同步proto README、doc01/运行语义/doc02/03/04/06/08/doc21及测试README。OpenAPI/AsyncAPI不改：这些是外部gRPC Bridge载荷，浏览器REST/WS不使用；Model/Host/Scheduler模块无行为变化。doc18只读。实现仍在P05/P06；本提交仅契约和fixture，不含CMake/业务/生成物。另修复Identity fixture局部时间变量覆盖RPC计数的输出问题，原断言与方法覆盖均保留。
+
+实际检查：最终check_target.sh重新生成/编译C++/gRPC/Python，通过91 owner RPC完整集合/策略、307消息往返、13 wire golden；连接fixture覆盖成功登记必带授权、帧proof/Fence一致、空/短材料、异流/异Fence、到期/撤销/版本/gate、56秒寿命限制、Identity故障不轮换、generation冲突、单飞轮换后旧材料拒绝及丢响应新代次。统一check_contracts显式legacy reader、9项scope回归、descriptor六场景、enum/status/semantic均通过；Ruby46目标HTTP映射/引用通过。git diff --check通过。API文件本次无改动，沿用前提交实际通过的正式Redocly/AsyncAPI lint，不重复。未跑业务/full/tidy：无手写C++/业务修改；fixture不证明真实TLS/CSPRNG/数据库原子性或失效时限，仍需P04–P06验收。临时工具版本与第三方生成/链接warning同前，生成物仅tmp。

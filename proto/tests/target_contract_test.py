@@ -157,21 +157,21 @@ def main():
     session = identity_pb2.SessionRecord(rotation=1)
     session.created_at.FromJsonString('2026-11-01T00:00:00Z')
     session.expires_at.FromJsonString('2026-11-01T00:15:00Z')
-    checked = session.created_at.__class__()
-    checked.FromJsonString('2026-11-01T00:10:00Z')
-    assert session_state(session, checked) == 'ACTIVE'
-    checked.FromJsonString('2026-11-01T00:15:00Z')
-    assert session_state(session, checked) == 'EXPIRED'
+    identity_checked_at = session.created_at.__class__()
+    identity_checked_at.FromJsonString('2026-11-01T00:10:00Z')
+    assert session_state(session, identity_checked_at) == 'ACTIVE'
+    identity_checked_at.FromJsonString('2026-11-01T00:15:00Z')
+    assert session_state(session, identity_checked_at) == 'EXPIRED'
     session.revoked = True
-    assert session_state(session, checked) == 'REVOKED'
+    assert session_state(session, identity_checked_at) == 'REVOKED'
     session.ClearField('created_at')
-    try: session_state(session, checked)
+    try: session_state(session, identity_checked_at)
     except ValueError: pass
     else: raise AssertionError('missing creation time accepted')
     tokens = identity_pb2.TokenPair()
     tokens.access_expires_at.FromJsonString('2026-11-01T00:15:00Z')
-    checked.FromJsonString('2026-11-01T00:10:00Z')
-    assert access_seconds_remaining(tokens, checked) == 300
+    identity_checked_at.FromJsonString('2026-11-01T00:10:00Z')
+    assert access_seconds_remaining(tokens, identity_checked_at) == 300
     # Missing/zero generation cannot be silently admitted by the target fixture.
     fence = platform_pb2.Fence(instance_id='instance', runtime_epoch='epoch')
     assert not validate_fence(fence)
@@ -193,6 +193,88 @@ def main():
         failure.context.acceptance = acceptance
         failure.context.recovery = recovery
         assert platform_pb2.RpcFailure.FromString(failure.SerializeToString()) == failure
+    connection_fence = platform_pb2.Fence(instance_id='instance', execution_generation=1, connection_generation=1, runtime_epoch='epoch')
+    # Connection proof secrets and stream/fence binding are mandatory, with no fallback.
+    from connection_authorization_rules import valid_bundle, frame_allowed, refresh, registration_valid, refresh_frame_consistent
+    from kiarabot.v1 import adapters_pb2, plugins_pb2
+    from copy import deepcopy
+    connection = platform_pb2.ConnectionAuthorization(
+        proof=b'p' * 32, refresh_credential=b'r' * 32, refresh_generation=1,
+        principal_id='principal', credential_version=1, authorization_version=1)
+    connection.fence.CopyFrom(connection_fence)
+    connection.issued_at.FromJsonString('2026-11-01T00:00:00Z')
+    connection.expires_at.FromJsonString('2026-11-01T00:00:56Z')
+    assert valid_bundle(connection)
+    too_long = deepcopy(connection)
+    too_long.expires_at.seconds += 1
+    assert not valid_bundle(too_long)
+    too_long.expires_at.seconds += 3
+    assert not valid_bundle(too_long)  # 60 seconds is the total budget, never nominal lifetime.
+    empty_proof = deepcopy(connection)
+    empty_proof.proof = b''
+    assert not valid_bundle(empty_proof)
+    args = dict(stream='trusted-stream', trusted_stream='trusted-stream', utc_ns=connection.issued_at.ToNanoseconds()+1,
+                monotonic_ns=1, monotonic_deadline=56_000_000_000, credential_version=1)
+    assert frame_allowed(connection, connection_fence, connection.proof, **args)
+    for override in [dict(stream='another-stream'), dict(revoked=True), dict(gate=False), dict(credential_version=2),
+                     dict(utc_ns=connection.expires_at.ToNanoseconds()), dict(monotonic_ns=56_000_000_000)]:
+        assert not frame_allowed(connection, connection_fence, connection.proof, **dict(args, **override))
+    assert not frame_allowed(connection, connection_fence, b'', **args)
+    stale_fence = deepcopy(connection_fence)
+    stale_fence.connection_generation += 1
+    assert not frame_allowed(connection, stale_fence, connection.proof, **args)
+    renewal = platform_pb2.RefreshConnectionAuthorization(request_id='refresh', proof=connection.proof,
+        refresh_credential=connection.refresh_credential, refresh_generation=1)
+    renewal.fence.CopyFrom(connection_fence)
+    replacement = deepcopy(connection)
+    replacement.proof = b'q' * 32
+    replacement.refresh_credential = b's' * 32
+    replacement.refresh_generation = 2
+    replacement.authorization_version = 2
+    wrong_generation = deepcopy(renewal)
+    wrong_generation.refresh_generation = 2
+    assert refresh(connection, wrong_generation, replacement, online=True, allowed=True, **args) == 'CONFLICT'
+    assert refresh(connection, renewal, replacement, online=False, allowed=True, **args) == 'UPSTREAM_UNAVAILABLE'
+    assert connection.refresh_generation == 1
+    assert refresh(connection, renewal, replacement, online=True, allowed=False, **args) == 'PERMISSION_DENIED'
+    assert refresh(connection, renewal, replacement, online=True, allowed=True,
+                   **dict(args, utc_ns=connection.expires_at.ToNanoseconds())) == 'UNAUTHENTICATED'
+    lease = platform_pb2.DeliveryAttempt()
+    lease.lease_until.FromJsonString('2026-11-01T00:00:30Z')
+    previous_lease = lease.SerializeToString()
+    assert refresh(connection, renewal, replacement, online=True, allowed=True, **args) == 'OK'
+    assert refresh(connection, renewal, replacement, online=True, allowed=True, **args) == 'UNAUTHENTICATED'
+    assert not frame_allowed(connection, connection_fence, renewal.proof, **args)
+    assert lease.SerializeToString() == previous_lease
+    # Lost refresh response: close old stream, bootstrap anew with a new connection generation.
+    new_connection = deepcopy(replacement)
+    new_connection.fence.connection_generation += 1
+    new_connection.proof = b'n' * 32
+    assert not frame_allowed(new_connection, connection_fence, replacement.proof, **dict(args, stream='new', trusted_stream='new'))
+    for incoming in [adapters_pb2.AdapterToCore, plugins_pb2.PluginToCore]:
+        frame = incoming(connection_proof=connection.proof)
+        frame.fence.CopyFrom(connection_fence)
+        frame.refresh_authorization.CopyFrom(renewal)
+        assert frame.WhichOneof('body') == 'refresh_authorization'
+        frame.refresh_authorization.proof = connection.proof
+        assert refresh_frame_consistent(frame)
+        frame.connection_proof = b''
+        assert not refresh_frame_consistent(frame)
+    for response_type in [adapters_pb2.RegisterAdapterResponse, plugins_pb2.RegisterPluginResponse]:
+        response = response_type(accepted=True)
+        assert not registration_valid(response)
+        response.fence.CopyFrom(connection.fence)
+        response.authorization.CopyFrom(connection)
+        assert registration_valid(response)
+        response.fence.connection_generation += 1
+        assert not registration_valid(response)
+    for outgoing in [adapters_pb2.CoreToAdapter, plugins_pb2.CoreToPlugin]:
+        frame = outgoing()
+        frame.authorization_result.request_id = 'refresh'
+        frame.authorization_result.authorization.CopyFrom(connection)
+        assert frame.WhichOneof('body') == 'authorization_result'
+        frame.authorization_result.error.code = 1
+        assert frame.authorization_result.WhichOneof('outcome') == 'error'
     goldens = json.loads((ROOT / 'proto/tests/target_wire_goldens.json').read_text())
     assert goldens['schema_version'] == 1
     for fixture in goldens['fixtures']:

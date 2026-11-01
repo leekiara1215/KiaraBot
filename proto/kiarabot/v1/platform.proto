@@ -245,3 +245,35 @@ message SnapshotInfo {
   string owner_service = 5;
   PageInfo page = 6;
 }
+
+// CONTRACT_STATUS: not_implemented - external Bridge authorization, never an internal delegation JWT.
+// Opaque secrets are CSPRNG >=256 bits, bound to the actual TLS stream and complete Fence.
+message ConnectionAuthorization {
+  Fence fence = 1;
+  bytes proof = 2;
+  google.protobuf.Timestamp issued_at = 3;
+  google.protobuf.Timestamp expires_at = 4;
+  bytes refresh_credential = 5;
+  uint64 refresh_generation = 6;
+  string principal_id = 7;
+  uint64 credential_version = 8;
+  uint64 authorization_version = 9;
+}
+
+// CONTRACT_STATUS: not_implemented - same-stream single-flight atomic proof/refresh rotation.
+message RefreshConnectionAuthorization {
+  string request_id = 1;
+  Fence fence = 2;
+  bytes proof = 3;
+  bytes refresh_credential = 4;
+  uint64 refresh_generation = 5;
+}
+
+// CONTRACT_STATUS: not_implemented - lost response requires new bootstrap/connection generation, no secret receipt.
+message ConnectionAuthorizationResult {
+  string request_id = 1;
+  oneof outcome {
+    ConnectionAuthorization authorization = 2;
+    Error error = 3;
+  }
+}

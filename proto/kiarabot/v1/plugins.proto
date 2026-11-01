@@ -66,11 +66,15 @@ message RegisterPluginResponse {
   Fence fence = 6;
   // CONTRACT_STATUS: not_implemented - target P01.
   uint64 desired_config_version = 7;
+  // CONTRACT_STATUS: not_implemented - required on successful target registration.
+  ConnectionAuthorization authorization = 8;
 }
 
 // CONTRACT_STATUS: not_implemented - target fence required on post-registration frames.
 message PluginToCore {
   Fence fence = 20;
+  // CONTRACT_STATUS: not_implemented - mandatory current proof after registration.
+  bytes connection_proof = 21;
   oneof body {
     RegisterPluginRequest register = 1;
     PluginEventAck event_ack = 2;
@@ -82,6 +86,8 @@ message PluginToCore {
     // Requires plugin.config.v1; identity is bound to the authenticated stream.
     PluginConfigAck config_ack = 8;
     DeliveryAttempt renew_delivery = 9;
+    // CONTRACT_STATUS: not_implemented - same TLS stream only.
+    RefreshConnectionAuthorization refresh_authorization = 10;
   }
 }
 
@@ -101,6 +107,8 @@ message CoreToPlugin {
     // CONTRACT_STATUS: not_implemented - v1 Core closes the stream without this frame.
     ShutdownNotice shutdown = 8;
     DeliveryReceipt delivery_receipt = 9;
+    // CONTRACT_STATUS: not_implemented - rotates connection secrets, not delivery leases.
+    ConnectionAuthorizationResult authorization_result = 10;
   }
 }
 
