@@ -32,5 +32,7 @@ int main(int argc, char* argv[]) {
     std::cerr << failure->reason << '\n';
     return failure->exit_code;
   }
+  const auto& config = std::get<kiarabot::core::platform::ProcessConfig>(result);
+  std::cout << "identity_security=" << (config.identity_security ? "true" : "false") << '\n';
   return 0;
 }

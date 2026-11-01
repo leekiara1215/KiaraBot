@@ -819,3 +819,13 @@ action.inspect、message.read不属于任何默认角色，必须显式授予；
 account.read/plugin.read/adapter.read/host.read保留三角色，plugin.config.read保留admin/operator。
 `identity_rules_test --role-catalog`输出实际函数结果，Ruby回归直接读取OpenAPI并逐角色
 比较精确集合，不维护第二份预期权限表；未知枚举/名称继续拒绝。
+
+### P04 Identity trusted composition inputs
+
+ProcessConfig may carry Identity-only identity_security file references and an explicit
+trusted-clock declaration. It is an outer platform input, never a domain/application
+or repository dependency. It requires database/TLS; strict validation and limits are
+specified in doc/08. No cryptographic key bytes are loaded into this JSON structure.
+Until the real production bundle is connected, Identity rejects an explicit declaration
+before listeners instead of ignoring it. An absent declaration keeps the existing
+not-ready placeholder. This configuration capability does not make any RPC ready.

@@ -149,6 +149,55 @@ bool control_api_shape(const nlohmann::json& value) {
                   c == '-' || c == '.';
          });
 }
+bool bounded_config_string(const nlohmann::json& value, std::size_t maximum) {
+  if (!value.is_string()) {
+    return false;
+  }
+  const auto& text = value.get_ref<const std::string&>();
+  return !text.empty() && text.size() <= maximum && text.find('\0') == std::string::npos;
+}
+bool symmetric_key_file_shape(const nlohmann::json& value) {
+  return exact_keys(value, {"id", "file"}) && bounded_config_string(value["id"], 1024) &&
+         bounded_config_string(value["file"], 4096);
+}
+bool identity_security_shape(const nlohmann::json& value) {
+  if (!exact_keys(value, {"token_key", "request_key", "receipt_key", "delegation_key", "issuer",
+                          "clock"}) ||
+      !symmetric_key_file_shape(value["token_key"]) ||
+      !symmetric_key_file_shape(value["request_key"]) ||
+      !symmetric_key_file_shape(value["receipt_key"]) ||
+      !bounded_config_string(value["issuer"], 1024) ||
+      !exact_keys(value["delegation_key"], {"id", "public_key_file", "private_key_file"}) ||
+      !bounded_config_string(value["delegation_key"]["id"], 1024) ||
+      !bounded_config_string(value["delegation_key"]["public_key_file"], 4096) ||
+      !bounded_config_string(value["delegation_key"]["private_key_file"], 4096) ||
+      !exact_keys(value["clock"], {"trusted", "maximum_known_skew_ms"}) ||
+      !value["clock"]["trusted"].is_boolean() || !value["clock"]["trusted"].get<bool>()) {
+    return false;
+  }
+  const auto& skew = value["clock"]["maximum_known_skew_ms"];
+  if (!skew.is_number_integer()) {
+    return false;
+  }
+  if (skew.is_number_unsigned()) {
+    return skew.get<std::uint64_t>() <= 2000;
+  }
+  return skew.get<std::int64_t>() >= 0 && skew.get<std::int64_t>() <= 2000;
+}
+IdentitySymmetricKeyFile symmetric_key_file(const nlohmann::json& value) {
+  return {value["id"].get<std::string>(), value["file"].get<std::string>()};
+}
+IdentitySecurityMaterial identity_security_material(const nlohmann::json& value) {
+  const auto& delegation = value["delegation_key"];
+  return {symmetric_key_file(value["token_key"]),
+          symmetric_key_file(value["request_key"]),
+          symmetric_key_file(value["receipt_key"]),
+          {delegation["id"].get<std::string>(), delegation["public_key_file"].get<std::string>(),
+           delegation["private_key_file"].get<std::string>()},
+          value["issuer"].get<std::string>(),
+          {value["clock"]["trusted"].get<bool>(),
+           value["clock"]["maximum_known_skew_ms"].get<std::uint32_t>()}};
+}
 bool valid_time(X509* certificate, std::time_t validation_time) {
   const std::unique_ptr<ASN1_TIME, decltype(&ASN1_TIME_free)> now(
       ASN1_TIME_set(nullptr, validation_time), ASN1_TIME_free);
@@ -279,6 +328,13 @@ ConfigResult load_service_config(const std::string& path, target::Service servic
       }
       keys.insert("control_api");
     }
+    if (document.contains("identity_security")) {
+      if (service != target::Service::Identity || !document.contains("database") ||
+          !identity_security_shape(document["identity_security"])) {
+        return ConfigFailure{2, "invalid_identity_security_config"};
+      }
+      keys.insert("identity_security");
+    }
     if (document.contains("database")) {
       if (service == target::Service::Control || service == target::Service::Host ||
           !database_shape(document["database"])) {
@@ -305,6 +361,9 @@ ConfigResult load_service_config(const std::string& path, target::Service servic
       config.control_api =
           ControlApiMaterial{document["control_api"]["listen"].get<std::string>(),
                              document["control_api"]["identity_endpoint"].get<std::string>()};
+    }
+    if (document.contains("identity_security")) {
+      config.identity_security = identity_security_material(document["identity_security"]);
     }
     const auto certificate_path = document["tls"]["certificate_file"].get<std::string>();
     const auto key_path = document["tls"]["private_key_file"].get<std::string>();

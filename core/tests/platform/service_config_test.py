@@ -1,7 +1,10 @@
 """Configuration/TLS contract checks; all certificate material lives in a temporary directory."""
+import copy
 import json
 from datetime import datetime, timezone
 import os
+import select
+import socket
 from pathlib import Path
 import subprocess
 import sys
@@ -41,7 +44,7 @@ def certificates(root, key_kind="rsa"):
     }
 
 
-def main(driver):
+def main(driver, identity=None):
     with tempfile.TemporaryDirectory(prefix="p02-config-") as directory:
         root = Path(directory)
         config = certificates(root)
@@ -54,6 +57,9 @@ def main(driver):
                 command.extend([str(int(time.time())), service])
             result = subprocess.run(command, capture_output=True, text=True, timeout=3)
             assert result.returncode == expected, (expected, result.returncode, result.stderr)
+            if expected == 0:
+                encoded_security = json.loads(path.read_text()).get('identity_security') is not None
+                assert result.stdout.strip() == f'identity_security={str(encoded_security).lower()}', result.stdout
             assert "PRIVATE KEY" not in result.stderr and str(root) not in result.stderr
             assert 'never-print-database-password' not in result.stderr
 
@@ -140,8 +146,83 @@ def main(driver):
         for key in ['password_file', 'ca_file']:
             expect(1, {**config, 'database': {**database, key: str(root / 'fifo')}})
         expect(1, {**config, 'database': {**database, 'password_file': str(root / 'pg-password-link')}})
-        print("P02 configuration/TLS rejection checks passed")
+        security = {
+            'token_key': {'id': 'token-v1', 'file': str(root / 'token.hex')},
+            'request_key': {'id': 'request-v1', 'file': str(root / 'request.hex')},
+            'receipt_key': {'id': 'receipt-v1', 'file': str(root / 'receipt.hex')},
+            'delegation_key': {'id': 'delegation-v1', 'public_key_file': str(root / 'public.pem'),
+                               'private_key_file': str(root / 'private.pem')},
+            'issuer': 'kiarabot-identity',
+            'clock': {'trusted': True, 'maximum_known_skew_ms': 2000},
+        }
+        secured = {**database_config, 'identity_security': security}
+        # Only trusted references are parsed here; the production composition loads keys securely.
+        expect(0, secured)
+        zero_skew = copy.deepcopy(secured)
+        zero_skew['identity_security']['clock']['maximum_known_skew_ms'] = 0
+        expect(0, zero_skew)
+        expect(0, raw=json.dumps(secured).replace('"maximum_known_skew_ms": 2000', '"maximum_known_skew_ms": -0'))
+        expect(2, {**config, 'identity_security': security})
+        for service, name in [('runtime', 'runtime'), ('scheduler', 'scheduler'), ('model', 'model'),
+                              ('host', 'plugin-host'), ('control', 'control')]:
+            wrong_owner = {**secured, 'service': name}
+            if service == 'control':
+                wrong_owner.pop('grpc_listen')
+            expect(2, wrong_owner, service=service)
+        for section in security:
+            missing = copy.deepcopy(secured)
+            missing['identity_security'].pop(section)
+            expect(2, missing)
+        expect(2, {**database_config, 'identity_security': {**security, 'unexpected': True}})
+        expect(2, {**database_config, 'identity_security': True})
+        for section in ['token_key', 'request_key', 'receipt_key', 'delegation_key', 'clock']:
+            for key in security[section]:
+                missing = copy.deepcopy(secured)
+                missing['identity_security'][section].pop(key)
+                expect(2, missing)
+            unknown = copy.deepcopy(secured)
+            unknown['identity_security'][section]['unexpected'] = True
+            expect(2, unknown)
+        for field in ['token_key', 'request_key', 'receipt_key']:
+            for update in [{'id': ''}, {'id': 'x' * 1025}, {'id': 'bad\0key'}, {'id': True},
+                           {'file': ''}, {'file': 'x' * 4097}, {'file': 'bad\0path'}, {'file': 123}]:
+                malformed = copy.deepcopy(secured)
+                malformed['identity_security'][field].update(update)
+                expect(2, malformed)
+        for update in [{'trusted': False}, {'trusted': 1}, {'trusted': 'true'},
+                       {'maximum_known_skew_ms': -1}, {'maximum_known_skew_ms': 2001},
+                       {'maximum_known_skew_ms': True}, {'maximum_known_skew_ms': 0.0},
+                       {'maximum_known_skew_ms': 18446744073709551615}]:
+            malformed = copy.deepcopy(secured)
+            malformed['identity_security']['clock'].update(update)
+            expect(2, malformed)
+        for issuer in ['', True, 'x' * 1025, 'bad\0issuer']:
+            malformed = copy.deepcopy(secured)
+            malformed['identity_security']['issuer'] = issuer
+            expect(2, malformed)
+        for field in ['id', 'public_key_file', 'private_key_file']:
+            for value in ['', True, 'bad\0path']:
+                malformed = copy.deepcopy(secured)
+                malformed['identity_security']['delegation_key'][field] = value
+                expect(2, malformed)
+        expect(2, raw=json.dumps(secured).replace('"id": "token-v1"', '"id": "token-v1", "id": "other"'))
+        expect(2, raw=json.dumps(secured).replace('"trusted": true', '"trusted": false, "trusted": true'))
+        if identity is not None:
+            # Missing crypto material must fail before touching the database or announcing a listener.
+            with socket.socket() as trap:
+                trap.bind(('127.0.0.1', 0))
+                trap.listen(1)
+                unavailable_keys = copy.deepcopy(secured)
+                unavailable_keys['database']['host'] = '127.0.0.1'
+                unavailable_keys['database']['port'] = trap.getsockname()[1]
+                path.write_text(json.dumps(unavailable_keys))
+                refused = subprocess.run([identity, '--config', str(path)], capture_output=True, text=True, timeout=3)
+                assert refused.returncode == 1, refused
+                assert 'probe_port=' not in refused.stdout and 'grpc_port=' not in refused.stdout, refused.stdout
+                assert not select.select([trap], [], [], 0)[0], 'unsafe configuration contacted the database'
+                assert 'never-print-database-password' not in refused.stderr and str(root) not in refused.stderr
+        print("Service configuration/TLS and Identity security schema checks passed")
 
 
 if __name__ == "__main__":
-    main(sys.argv[1])
+    main(*sys.argv[1:])

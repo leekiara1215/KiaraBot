@@ -30,6 +30,28 @@ struct ControlApiMaterial {
   std::string listen;
   std::string identity_endpoint;
 };
+// Trusted file references only; mature crypto loaders own secret allocation and key validation.
+struct IdentitySymmetricKeyFile {
+  std::string id;
+  std::string file;
+};
+struct IdentityDelegationKeyFiles {
+  std::string id;
+  std::string public_key_file;
+  std::string private_key_file;
+};
+struct IdentityClockDeclaration {
+  bool trusted = false;
+  std::uint32_t maximum_known_skew_ms = 0;
+};
+struct IdentitySecurityMaterial {
+  IdentitySymmetricKeyFile token_key;
+  IdentitySymmetricKeyFile request_key;
+  IdentitySymmetricKeyFile receipt_key;
+  IdentityDelegationKeyFiles delegation_key;
+  std::string issuer;
+  IdentityClockDeclaration clock;
+};
 struct ProcessConfig {
   target::Service service;
   std::string probe_listen;
@@ -37,6 +59,7 @@ struct ProcessConfig {
   TlsMaterial tls;
   std::optional<DatabaseMaterial> database;
   std::optional<ControlApiMaterial> control_api = std::nullopt;
+  std::optional<IdentitySecurityMaterial> identity_security = std::nullopt;
 };
 struct ConfigFailure {
   int exit_code;

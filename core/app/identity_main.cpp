@@ -12,7 +12,16 @@ int main(int argc, char* argv[]) {
   try {
     return platform::run_service(
         target::Service::Identity,
-        [](const platform::ProcessConfig& config) {
+        [](const platform::ProcessConfig& config) -> target::Outcome<platform::ServiceComposition> {
+          // Until the production security composition is connected, never ignore an explicit
+          // security declaration and start the placeholder with unvalidated key material.
+          if (config.identity_security) {
+            return target::Failure{target::ErrorCode::CapabilityNotSupported,
+                                   target::Acceptance::NotAccepted,
+                                   target::Recovery::Diagnose,
+                                   {},
+                                   {}};
+          }
           return composition::compose_database_service<target::IdentityUnitOfWork>(
               config, kiarabot::infrastructure::postgres::open_identity,
               [](auto&) { return target::make_identity_application(); });

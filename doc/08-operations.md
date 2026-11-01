@@ -565,7 +565,7 @@ make_identity_rpc借用纯IdentitySecurityApplication和组合根注入的受审
 
 make_identity_peer_authenticator(IdentityAdminApplication&, SecurityClockPort&)只借用Core Admin应用和受信时钟。wrapper从真实AuthContext提取指纹/DER证据，取2秒本地与真实gRPC deadline较早者，调用Admin.authenticate_peer({leaf_fingerprint, deadline}, der_chain)。当前DB UTC、登记/凭据/主体、释放UoW后成熟crypto验证及验证后fresh recheck全部由Core负责；外层不直接读取repos、不复制业务规则。
 
-wrapper仅核对返回指纹、正verified_at、受信clock/已知偏差及与verified_at的2秒窗口，再检查取消/期限。不构造数据库/信任根/bootstrap或ready。借用应用与clock须活到服务停止/Wait，Core应用与安全应用由组合根绑定同一完整Identity工厂。9b96968旧三端口原型未获批准，必须连同后继重构整合，不作为第二条生产认证路径。wire/API不变。
+wrapper仅核对返回指纹、正verified_at、受信clock/已知偏差及与verified_at的2秒窗口，再检查取消/期限。不构造数据库/信任根/bootstrap或ready。借用应用与clock须活到服务停止/Wait，Core应用与安全应用由组合根绑定同一完整Identity工厂。wire/API不变。
 
 ### P04 离线管理员与 Control 登记命令
 
@@ -623,3 +623,41 @@ Required/v1 → Consumed/v2 和所有主体、凭据、授权、水位、审计�
 重复引导返回CONFLICT且不会生成替代管理员。提交结果Unknown时先用同配置`--status`
 查询持久marker（required/consumed与version），不要自动生成新身份重试；缺marker为损坏。
 命令未实现秘密恢复/密码找回，后续凭据轮换仍走其既定所有者契约。
+
+### Identity security configuration declaration (P04)
+
+Identity alone accepts optional `identity_security`, with exactly these keys:
+
+```json
+{
+  "token_key": {"id": "token-v1", "file": "/run/kiarabot/identity/token.hex"},
+  "request_key": {"id": "request-v1", "file": "/run/kiarabot/identity/request.hex"},
+  "receipt_key": {"id": "receipt-v1", "file": "/run/kiarabot/identity/receipt.hex"},
+  "delegation_key": {
+    "id": "delegation-v1",
+    "public_key_file": "/run/kiarabot/identity/delegation-public.pem",
+    "private_key_file": "/run/kiarabot/identity/delegation-private.pem"
+  },
+  "issuer": "kiarabot-identity",
+  "clock": {"trusted": true, "maximum_known_skew_ms": 2000}
+}
+```
+
+This object requires the existing database and TLS configuration. Every object uses
+exact keys; duplicate/unknown keys, wrong types, empty/NUL strings and missing fields
+exit2. Key IDs and issuer are1–1024 bytes, file references1–4096 bytes. Clock trusted
+must explicitly be the JSON boolean true; skew is an integer0–2000 inclusive, never a
+boolean/float or inferred default. This is a trusted deployment clock declaration,
+not an NTP measurement. Production composition must monitor wall/steady drift and
+fail closed when it exceeds the declared bound; it may not turn an untrusted sample
+into a successful authorization.
+
+The parser holds file references only. The production composition must load all keys
+before listeners through the mature secure key-file loaders, including rejection of
+symlinks/special files, insecure permissions, invalid hex/PEM and mismatched Ed25519
+keys. It must not read key bytes through ordinary JSON/string configuration storage.
+During this declaration-only capability, an explicit security object is rejected at
+composition before database contact/listening, rather than silently using the old
+placeholder. The next composition capability replaces that rejection with real
+factories. Absent security retains the existing not-ready placeholder path; no weak
+keys, local business store or automatic bootstrap are selected.
