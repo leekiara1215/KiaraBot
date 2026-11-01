@@ -22,6 +22,7 @@
 #include "kiarabot/infrastructure/identity_crypto/delegation_crypto.hpp"
 #include "kiarabot/infrastructure/identity_crypto/factories.hpp"
 #include "kiarabot/infrastructure/identity_crypto/peer_certificate.hpp"
+#include "kiarabot/infrastructure/identity_crypto/verification_keys.hpp"
 #include "kiarabot/infrastructure/postgres/security_factory.hpp"
 
 namespace {
@@ -118,7 +119,7 @@ t::IdentityRequestContext context(FixtureClock& clock, const std::string& key) {
   return {"10000000-0000-4000-8000-000000000001", "10000000-0000-4000-8000-000000000002", key,
           take(clock.sample()).utc + std::chrono::seconds{30}};
 }
-crypto::DelegationConfig signing_config() {
+crypto::DelegationConfig signing_config(t::TimePoint valid_until) {
   std::unique_ptr<EVP_PKEY, decltype(&EVP_PKEY_free)> key(
       EVP_PKEY_Q_keygen(nullptr, nullptr, "ED25519"), EVP_PKEY_free);
   std::unique_ptr<BIO, decltype(&BIO_free)> public_bio(BIO_new(BIO_s_mem()), BIO_free);
@@ -136,10 +137,16 @@ crypto::DelegationConfig signing_config() {
   auto secured = crypto::copy_secret(
       std::as_bytes(std::span{private_data, static_cast<std::size_t>(private_size)}));
   OPENSSL_cleanse(private_data, static_cast<std::size_t>(private_size));
-  crypto::DelegationConfig config{"kiarabot-identity", {}};
+  crypto::DelegationConfig config{
+      "kiarabot-identity",
+      {},
+      {1},
+      {t::ResourceKind::Catalog, {"60000000-0000-4000-8000-000000000001"}}};
   config.keys.push_back({{"delegation-key"},
                          std::string(public_data, static_cast<std::size_t>(public_size)),
-                         take(std::move(secured))});
+                         take(std::move(secured)),
+                         {1},
+                         valid_until});
   return config;
 }
 void application_flow(const pg::DatabaseConfig& config) {
@@ -162,7 +169,18 @@ void application_flow(const pg::DatabaseConfig& config) {
   const auto before = take(clock.sample()).utc;
   const auto now = database_time(*factory);
   clock.attest_local_database(now, before, take(clock.sample()).utc);
-  auto delegations = take(crypto::make_delegation_crypto(signing_config(), clock));
+  const auto signing_key_valid_until = take(clock.sample()).utc + std::chrono::hours{1};
+  auto delegation_bundle =
+      take(crypto::make_delegation_crypto_bundle(signing_config(signing_key_valid_until), clock));
+  auto& delegations = delegation_bundle.crypto;
+  const auto material = take(delegation_bundle.verification_keys->snapshot());
+  check(material.version.value == 1 && material.keys.size() == 1 &&
+            material.keys.front().reference == t::CryptoKeyRef{"delegation-key"} &&
+            material.keys.front().version.value == 1 &&
+            material.keys.front().valid_until == signing_key_valid_until &&
+            material.keyset_resource ==
+                t::ResourceRef{t::ResourceKind::Catalog, {"60000000-0000-4000-8000-000000000001"}},
+        "trusted signing/public material metadata diverged");
   const t::SubjectId user{"20000000-0000-4000-8000-000000000001"};
   const t::SubjectId control{"20000000-0000-4000-8000-000000000002"};
   const t::CredentialId user_credential{"30000000-0000-4000-8000-000000000001"};
@@ -249,12 +267,15 @@ void application_flow(const pg::DatabaseConfig& config) {
               .principal.id == user,
       "current principal mismatch");
   auto issue = [&](t::SecretView access) {
-    return take(
+    auto issued = take(
         issuer->issue_delegation({{context(clock, "issue"), peer(), access},
                                   t::Service::Identity,
                                   {{t::Permission::IdentitySessionRead, own_principal},
                                    {t::Permission::IdentitySessionRevoke,
                                     {t::ResourceKind::Session, {second.tokens.session.value}}}}}));
+    check(issued.claims.expires_at <= signing_key_valid_until,
+          "real issued proof exceeds finite signing key validity");
+    return issued;
   };
   phase = "real IssueDelegation";
   auto proof = issue(first.tokens.access->bytes());

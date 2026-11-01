@@ -309,3 +309,29 @@ Admin/Delegation/Security应用及OpenSSL::SSL/OpenSSL::Crypto/libpqxx::pqxx。
 已登记安全backend mismatch负测；建议外层CTest TIMEOUT120。
 本任务未改根或模块CMake，因其归工具链任务；因此未运行根CMake/CTest/全工具链，
 不将上述直接编译的真实组合实测声称为根门禁通过。也未声称HTTP/部署配置/外部平台集成。
+
+## 真实fixture显式签名材料metadata（独立test-only增量已实测）
+
+从授权干净root c83078f建立codex/p04-identity-key-metadata-fixture；它已含冻结A47c23d8
+及Exchange/loader前置，再取冻结B9cf880f。保留9393061只读缺口报告分支，不reset或复制
+其他工作树未提交源。本能力只修改identity_application_test.cpp与本报告；不改任何
+production/App/crypto/config/main/schema/CMake。doc05/08现有行为说明不变，无需另改，
+保护基线只读。
+
+原三字段DelegationKey和两字段Config在B后会因缺失真实metadata拒绝构造，测试不绕过。
+fixture明确设置key.version=1、config.version=1、有限valid_until=实际受信clock now+1小时、
+自有固定UUIDv4 Catalog锚点60000000-0000-4000-8000-000000000001；仍只有一个临时active
+Ed25519私钥。使用make_delegation_crypto_bundle的同一配置构造成熟签名/验签与public
+material端口，实际snapshot核对reference/version/finite expiry/Catalog一致。
+每次真实Issue返回的proof还校验expires_at不超过签名key实际到期，未伪造clock或crypto。
+
+忽略构建脚本在此前完整真实命令中加入identity_crypto/src/verification_keys.cpp，根CMake
+由父/工具链成组接线。固定依赖普通和ASan+UBSan两次C++20 -Werror完整编译均通过；两个产物各自运行
+run_database_test.py真实自有PG/TLS/crypto/App完整链，包含backend mismatch安全负测，
+均通过并安全清理。已有bootstrap/Login/Refresh/Validate/GetPrincipal/Issue/分页/Revoke/
+真实密文和普通快照重放链保持通过，签名和public snapshot确实来自同一成熟bundle。
+changed TU analyzer+braces clang-tidy22零诊断、clang-format16 dry-run、文档UTF8/换行/
+metadata章节与diff检查通过，doc18无差异。无secret/key/生成物提交。
+本cap依赖冻结A47c23d8+B9cf880f（本地B为e22b5c5）；只交test/report差异，CMake未改，
+根CMake/CTest由父成组接线后检查，本地不声称已跑。GetVerificationKeys RPC不在本测试
+通过范围，也不以此次正常组合通过关闭P04。
