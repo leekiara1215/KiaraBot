@@ -132,6 +132,9 @@ public:
                  std::optional<std::uint64_t>) override {
     std::abort();
   }
+  t::Outcome<std::size_t> count_unexpired() override {
+    std::abort();
+  }
 };
 struct Script {
   ScriptRepository<t::SubjectId, t::Principal> principals;
@@ -462,6 +465,9 @@ public:
   t::Outcome<t::OwnedSecret> bytes(std::size_t count) override {
     check(script_.active == 0, "random outside UoW");
     return t::OwnedSecret{std::make_unique<TestSecret>(count)};
+  }
+  t::Outcome<t::OwnedSecret> opaque_token() override {
+    std::abort();
   }
 
 private:
