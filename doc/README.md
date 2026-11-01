@@ -80,6 +80,11 @@ Python NoneBot2 适配器由本仓库 `adapters/nonebot/` 维护，不把实现�
 - [跨层未完成事项清单（历史快照）](15-cross-layer-gaps.md)
 - [账号封禁风险评估与分层控制建议](17-account-ban-risk.md)
 - [目标架构基线（人类维护，AI 只读）](18-architecture-baseline.md)
+- [本轮架构方向基线（含开发阶段补充，尚未实施）](19-architecture-direction-baseline.md)
+- [详细架构设计总览（已定稿，未实施）](20-detailed-architecture-design.md)
+- [服务通信与方法设计（已定稿，未实施）](21-service-contract-design.md)
+- [事务、数据模型与初始化设计（已定稿，未实施）](22-transactions-and-migration-design.md)
+- [新架构分步实施计划（P00–P14，未开始）](23-implementation-plan.md)
 
 ## 依赖方向
 
