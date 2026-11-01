@@ -937,5 +937,6 @@ python3 scripts/local/start.py stop
 真实平台仅在用户显式传入 `--onebot-url ws://HOST:PORT --onebot-token-file PRIVATE_FILE`
 时启用；token文件必须属于当前用户、0600，不把 token 写入参数或日志。`--demo-url` 仅供
 显式 loopback 测试替身。`--core-only` 是标明无收发的诊断模式，不作为 MVP 收发验收。
-本次实际验收覆盖默认群消息、登录、WS首帧、REST、持久重启及停止；连续群聊／私聊同一
-数字会话的额外探针私聊曾超时，未放宽现有规则，不能据此宣称私聊完整验收。
+本次使用当前重建的 reference 二进制，实际验收覆盖连续群聊456／私聊456回复、登录、WS
+首帧、REST、持久重启及停止。先前旧 `build/full/core/kiarabot-core` 遗留产物的私聊超时
+未在最新 reference 复核中重现；须使用当前源码构建的产物，不混用旧 checkout 二进制。

@@ -31,8 +31,13 @@ Ownership tests3/3 passed (symlink directory/insecure secret, forged foreign PID
 signalled, symlink lock victim unchanged). Python compile/diff/document links and
 boundary checks are recorded with final delivery. No full repository suite repeated;
 parent owns aggregate MVP/UI acceptance. Optional live UI was not locally installed
-or tested here. Additional sequential group/private probe at numeric456 returned a
-private reply timeout; left as explicit limitation, not hidden by weaker policies.
+or tested here. An initial sequential group/private probe at numeric456 with an older legacy build
+returned private reply timeout. Follow-up with the current rebuilt reference binary
+and its matching credentials tool in a fresh short private state passed group456
+then private456, both exact 收到：hello replies, real managed SDK/NoneBot/demo, login
+and WS SESSION_READY/REST, persistent restart and complete stop. No C++/handler,
+auth, rate-limit or allowlist change was needed; no current private-path defect is
+claimed from that old-artifact result. Operators must use current-source builds.
 
 Document impact: doc08 directly updated. No new wire/API/error schema or module
 boundary, so proto/API and unrelated docs need no sync; protected doc18 untouched.
