@@ -508,3 +508,9 @@ PG可用仍不等于业务ready。
 RPC装配回归复用 `p03_service_composition`：driver显式链接生成proto，CTest追加真实
 service_rpc_client参数。固定拒绝handler必须返回PERMISSION_DENIED，generated默认
 UNIMPLEMENTED不能通过该断言；测试标签/超时不变，不表示Identity认证已实现。
+
+外层 `kiarabot_identity_crypto` 编译password_crypto/token_crypto，PRIVATE链接固定
+unofficial-sodium::sodium，公开仅适配器include和Core内层头。proto/full注册
+`p04_password_crypto`、`p04_token_crypto` 为p04/unit/security，各30秒；测试保留assert
+（所有配置取消NDEBUG），避免Release漏检。dev不构建外层crypto，秘密收据facade
+仅有声明的能力不调用，不代表AEAD/JWT/完整认证已完成。

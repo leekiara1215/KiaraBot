@@ -193,3 +193,22 @@ proto/API、其他模块或doc/12-ci-cd，doc/18只读。未补取不完整Model
 完整full-locked构建成功；相关CTest 3/3通过，总33.62秒：composition8.21秒、
 原p02进程18.63秒、真实四PG daemon6.77秒。四TU精确compile DB的tidy22
 clang-analyzer-* warnings-as-errors通过，p03实际注册标签检查通过。
+
+## 后续接线：P04 Password/Random与Token HMAC外层适配器
+
+接入02955e3/c6a11f8（本树c5f83d2/c1956ff），不改实现/测试源码。
+根GENERATE_PROTO外层添加identity_crypto子目录；新库kiarabot_identity_crypto编译两生产TU，
+PUBLIC适配器include与core/include，PRIVATE官方unofficial-sodium::sodium。
+两真实测试均p04/unit/security、30秒；通过-UNDEBUG（MSVC /UNDEBUG）保持源码assert在
+Release也生效。无PG/协议/crypto依赖进入纯application，不调用尚未实现的receipt工厂。
+文档影响：doc/11和本报告增加工具链说明；infra/运维已由源提交同步，其他模块/API/proto
+与doc/12-ci-cd无需变化，doc/18保持只读。
+
+固定prefix/Python full-locked配置与完整构建成功；全TU覆盖/inner/六目标图/p04注册通过；
+全仓format16及四新增TU精确DB tidy22 clang-analyzer-* warnings-as-errors通过。
+P04真实CTest、dev注册隔离结果在提交前追加。未重复统一入口（父固定快照运行中），
+未运行后续AEAD/JWT/PHC修订，不复制未提交源，不宣称完整P04或生产认证完成。
+文档检查为源/链接路径存在、末尾换行与git diff --check。
+
+P04 CTest 3/3通过，总1.88秒；password1.39秒、token0.49秒；dev配置与注册JSON
+确认两外层测试未注册。文档路径/末尾换行检查及diff检查通过。
