@@ -63,3 +63,11 @@ PID独立、live/ready；依次对每个服务的直接子进程注入SIGKILL，
 工具链接线建议见test_manifest.json：七个独立入口及p02/unit/integration/fault/reference标签、
 明确timeout。tests/architecture不提供CMake、不创建或猜测构建目录；工具链传入各target的实际
 路径。证书夹具/oracle通过与真实lifecycle/tls/isolation通过必须分开报告，不能只跑unit就关闭P02。
+
+reference_behaviors.json保留逻辑source与原锚点。check_references.py优先按
+core/reference/manifest.json的明确source→reference映射读取，逐项核对Git blob ID，
+不得猜测目录或跳过失踪断言。迁移前无manifest时读取原路径；有manifest但逻辑源未映射
+则只能读原路径，原路径缺失即失败。拒绝未知字段/来源、错目的地、重复映射、缺文件、
+字节变更、原文件重新引入及symlink/越界路径。映射本身不改变pending_target_rebuild状态。
+`python3 tests/architecture/reference_test.py -v`在tmp验证迁移前/后及上述失败路径；
+工具链接线清单增加architecture_p02_reference_resolution，当前共八项入口。

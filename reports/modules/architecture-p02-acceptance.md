@@ -43,3 +43,9 @@
 最终再次实际运行fixture_test.py（6项）、support_test.py（5项）、tls_fixture_test.py（4项），共15项通过；网络自测按已授权的127.0.0.1临时端口权限执行。check_references.py的24项、AST及manifest入口/标签检查通过，整个基点差异git diff --check需在交付时复核。run.py显式提供OpenSSL但缺六二进制时实测退出2并标明missing executable for control，无skip/通过消息；当前非锁定Python被grpc预检明确拒绝。根CMake/生产/API/proto无修改，无生成物/密钥提交。
 
 待主对话/工具链运行：将六个target实际路径、OpenSSL3.5.0及锁定Python3.11.18/grpcio1.85.0输入manifest三组真实黑盒验收，并注册p02 labels/timeout；六进程生命周期、真实RPC、绑定及崩溃隔离均尚未实测通过。固定依赖全量安装/full/tidy/统一toolchain不在本工作区执行；P00/P01/P02门禁未由夹具自测关闭，不推进P03。文档影响仅本任务README/本报告与reference清单，无外部契约变更，因此其他模块文档无需由本任务同步。
+
+## reference迁移映射收尾
+
+主对话要求兼容已审查59e1afd隔离后的路径。重构check_references.py为可自测函数，仅使用core/reference/manifest.json的明确映射：保持行为JSON的logical source/anchor原样，验证manifest/base/字段、限定Core来源与精确core/reference目的地、Git blob ID和无符号链接；拒绝缺失/错误/重复/未知映射、字节漂移、重新引入旧源及逃逸。无manifest迁移前仍读取原源；未登记且原源失踪绝不自动搜寻。未复制或合入工具链实现，无生产/契约更改。
+
+实际验证：reference_test.py六项自测通过，覆盖迁移前/后、缺manifest/缺映射、缺目标、字节与锚点变化、错/未知/重复/逃逸映射、重新引入和symlink；现工作树24条逻辑行为检查通过。只读核对59e1afd的真实manifest全部路径/结构与Git blob；没有改变reference_behaviors.json以掩盖断言缺失。test_manifest新增p02/unit/reference自测入口（现8项）。文档影响仅tests/architecture/README和本报告，其他模块文档/协议无需同步。六二进制仍未实测，无P03推进。
