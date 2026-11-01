@@ -308,7 +308,7 @@ JWT序列化使用同一jwt-cpp官方nlohmann-json traits，NumericDate先检查
 
 ### P04 Identity 安全关系存储（实施中）
 
-Identity 最新空库 schema v6；Runtime、Scheduler、Model 各自为 v4（含下文完整会话结果表）。
+Identity 最新空库 schema v7；Runtime、Scheduler、Model 各自为 v4（含下文完整会话结果表）。
 不升级已有库，不自动初始化，不改变四库隔离。新增安全仓储借用公共 UoW 的同一物理
 事务，凭据当前头/不可变历史、会话安全元数据、精确授权、加密成功收据、refresh 恢复
 索引和管理员引导标记不能单独提交。端口存在或 schema 已创建不代表业务已接线。
@@ -425,3 +425,15 @@ certificate 必有 leaf_fingerprint，其他材料必须清空对应定位。CUR
 复合延迟外键绑定当前版本、材料种类及实际 verifier；save 在同一事务中维护全部定位。
 历史版本可保留相同 tag（例如撤销），轮换或更换材料后旧 tag 不再定位 CURRENT。
 仅显式初始化空库；旧 schema 拒绝打开，不提供自动迁移、删除或重置。
+
+
+### P04 会话的原始 Control 持久绑定
+
+Identity 空库 schema7 在 session_security 保存非空 control_subject/control_credential。
+复合外键指向 credential_heads(id,subject)，避免把另一主体凭据冒作原始 Control；不保存
+旧证书版本或叶指纹作为后续认证依据。只有同事务已登记的 PlatformService/Control 证书
+凭据可用于新建。缺值、空值、NUL 或错误身份形状为 InvalidArgument，整个 UoW 回滚。
+已有会话更新必须与原 binding 完全一致，否则 Conflict；refresh/revoke 均保留稳定 ID。
+读取缺失/损坏字段为 Internal，更新不能为旧 missing binding 隐式补值。认证、当前状态、
+证书期限与主体 gate 由 Core 检查；存储成功不代表授权。证书在同稳定 ID 下轮换不改变绑定。
+旧库仍拒绝打开，不自动升级/填默认 Control，不启用尚未接线的 Revoke/Exchange 路径。

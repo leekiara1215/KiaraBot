@@ -25,7 +25,10 @@ bool valid_session(const target::SessionSecurity& session) {
          valid_verifier(session.access, target::TokenPurpose::Access) &&
          valid_verifier(session.refresh, target::TokenPurpose::Refresh) && session.rotation > 0 &&
          session.version.value > 0 && session.access_expires_at > session.created_at &&
-         session.refresh_expires_at >= session.access_expires_at;
+         session.refresh_expires_at >= session.access_expires_at && session.control_peer &&
+         target::valid_session_control_peer(*session.control_peer) &&
+         valid_id(session.control_peer->subject.value) &&
+         valid_id(session.control_peer->credential.value);
 }
 target::SessionSecurity read_session(const pqxx::row& row) {
   target::SessionSecurity session{
@@ -43,7 +46,9 @@ target::SessionSecurity read_session(const pqxx::row& row) {
       time_field(row, "refresh_expires_at"),
       row["rotation"].as<std::uint64_t>(),
       {row["version"].as<std::uint64_t>()},
-      row["revoked"].as<bool>()};
+      row["revoked"].as<bool>(),
+      target::SessionControlPeer{{row["control_subject"].as<std::string>()},
+                                 {row["control_credential"].as<std::string>()}}};
   require_stored(valid_session(session));
   return session;
 }
@@ -199,7 +204,8 @@ public:
           // One bounded read, no count/query race, no verifier columns or query-time timestamps.
           const auto rows =
               transaction.exec("SELECT id,subject,created_at,refresh_expires_at,rotation,"
-                               "version,revoked FROM kiarabot.session_security WHERE subject=$1 "
+                               "version,revoked,control_subject,control_credential FROM "
+                               "kiarabot.session_security WHERE subject=$1 "
                                "ORDER BY id LIMIT $2",
                                pqxx::params{subject.value, max_records + 1});
           if (static_cast<std::size_t>(rows.size()) > max_records) {
@@ -214,7 +220,9 @@ public:
                                           row["rotation"].template as<std::uint64_t>(),
                                           {row["version"].template as<std::uint64_t>()},
                                           row["revoked"].template as<bool>()};
-            require_stored(valid_id(entry.id.value) && entry.subject == subject &&
+            require_stored(valid_id(row["control_subject"].template as<std::string>()) &&
+                           valid_id(row["control_credential"].template as<std::string>()) &&
+                           valid_id(entry.id.value) && entry.subject == subject &&
                            entry.expires_at > entry.created_at && entry.rotation > 0 &&
                            entry.version.value > 0);
             metadata.push_back(std::move(entry));
@@ -243,13 +251,35 @@ public:
                                  session.rotation - *expected_rotation > 1))) {
         return invalid();
       }
-      const auto old = transaction.exec("SELECT created_at FROM kiarabot.session_security WHERE "
+      const auto old = transaction.exec("SELECT created_at,control_subject,control_credential FROM "
+                                        "kiarabot.session_security WHERE "
                                         "id=$1 FOR UPDATE",
                                         pqxx::params{session.id.value});
       if ((expected &&
-           (old.empty() || time_field(old.one_row(), "created_at") != session.created_at)) ||
+           (old.empty() || time_field(old.one_row(), "created_at") != session.created_at ||
+            old.one_row()["control_subject"].template as<std::string>() !=
+                session.control_peer->subject.value ||
+            old.one_row()["control_credential"].template as<std::string>() !=
+                session.control_peer->credential.value)) ||
           (!expected && !old.empty())) {
         return conflict();
+      }
+      if (!expected) {
+        const auto control = transaction.exec(
+            "SELECT p.kind,c.platform_service FROM kiarabot.credential_heads h "
+            "JOIN kiarabot.principals p ON p.id=h.subject "
+            "JOIN kiarabot.credential_certificates c ON c.id=h.id AND c.version=h.version "
+            "WHERE h.id=$1 AND h.subject=$2",
+            pqxx::params{session.control_peer->credential.value,
+                         session.control_peer->subject.value});
+        if (control.empty() ||
+            control.one_row()["kind"].template as<int>() !=
+                static_cast<int>(target::PrincipalKind::PlatformService) ||
+            control.one_row()["platform_service"].is_null() ||
+            control.one_row()["platform_service"].template as<int>() !=
+                static_cast<int>(target::Service::Control)) {
+          return invalid();
+        }
       }
       const target::LoginSession base{session.id,
                                       session.subject,
@@ -280,7 +310,9 @@ public:
                               timestamp(session.refresh_expires_at),
                               session.rotation,
                               session.version.value,
-                              session.revoked};
+                              session.revoked,
+                              session.control_peer->subject.value,
+                              session.control_peer->credential.value};
       pqxx::result rows;
       if (expected) {
         parameters.append(expected->value);
@@ -289,13 +321,13 @@ public:
             "UPDATE kiarabot.session_security SET credential_id=$3,"
             "credential_version=$4,access_key=$5,access_tag=$6::bytea,refresh_key=$7,"
             "refresh_tag=$8::bytea,access_expires_at=$10,refresh_expires_at=$11,rotation=$12,"
-            "version=$13,revoked=$14 WHERE id=$1 AND subject=$2 AND created_at=$9 AND version=$15 "
-            "AND rotation=$16 RETURNING id",
+            "version=$13,revoked=$14 WHERE id=$1 AND subject=$2 AND created_at=$9 AND version=$17 "
+            "AND rotation=$18 AND control_subject=$15 AND control_credential=$16 RETURNING id",
             parameters);
       } else {
         rows = transaction.exec(
             "INSERT INTO kiarabot.session_security VALUES($1,$2,$3,$4,$5,$6::bytea,"
-            "$7,$8::bytea,$9,$10,$11,$12,$13,$14) ON CONFLICT DO NOTHING RETURNING id",
+            "$7,$8::bytea,$9,$10,$11,$12,$13,$14,$15,$16) ON CONFLICT DO NOTHING RETURNING id",
             parameters);
       }
       return rows.empty() ? target::Status{conflict()} : target::Status{std::monostate{}};

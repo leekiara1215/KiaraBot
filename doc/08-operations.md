@@ -413,7 +413,7 @@ socket，不继续受理。暂时忙等可恢复情况由具体组合根区分�
 ### P03 common transaction limits
 
 
-P03 公共 schema 为 v3；P04 Identity 空库含安全关系、完整会话结果与当前 bootstrap 定位后为 v6，另三库为 v4。要求UTF8数据库；
+P03 公共 schema 为 v3；P04 Identity 空库含安全关系、完整会话结果与当前 bootstrap 定位及源 Control 会话绑定后为 v7，另三库为 v4。要求UTF8数据库；
 旧版本或其他结构不自动升级，必须按本轮空库部署
 流程初始化新的专属库，不能清空原库或自动补表。schema结构描述/对象owner/运行权限均参与
 启动验证。当前仅存储公共能力，业务就绪仍由各服务已实现依赖决定。
@@ -570,7 +570,7 @@ wrapper仅核对返回指纹、正verified_at、受信clock/已知偏差及与ve
 ### P04 离线管理员与 Control 登记命令
 
 `kiarabot-identity-bootstrap` 只在可信部署主机离线运行，不提供 HTTP/gRPC 初始化入口。
-先显式初始化 Identity 空库（当前 schema6），停止同库 Identity daemon，再执行：
+先显式初始化 Identity 空库（当前 schema7），停止同库 Identity daemon，再执行：
 
 ```bash
 kiarabot-identity-bootstrap --config identity.json --enrollment enrollment.json --password-file administrator-password
@@ -774,3 +774,15 @@ certificate 必有 leaf_fingerprint，其他材料必须清空对应定位。CUR
 复合延迟外键绑定当前版本、材料种类及实际 verifier；save 在同一事务中维护全部定位。
 历史版本可保留相同 tag（例如撤销），轮换或更换材料后旧 tag 不再定位 CURRENT。
 仅显式初始化空库；旧 schema 拒绝打开，不提供自动迁移、删除或重置。
+
+
+### P04 会话的原始 Control 持久绑定
+
+Identity 空库 schema7 在 session_security 保存非空 control_subject/control_credential。
+复合外键指向 credential_heads(id,subject)，避免把另一主体凭据冒作原始 Control；不保存
+旧证书版本或叶指纹作为后续认证依据。只有同事务已登记的 PlatformService/Control 证书
+凭据可用于新建。缺值、空值、NUL 或错误身份形状为 InvalidArgument，整个 UoW 回滚。
+已有会话更新必须与原 binding 完全一致，否则 Conflict；refresh/revoke 均保留稳定 ID。
+读取缺失/损坏字段为 Internal，更新不能为旧 missing binding 隐式补值。认证、当前状态、
+证书期限与主体 gate 由 Core 检查；存储成功不代表授权。证书在同稳定 ID 下轮换不改变绑定。
+旧库仍拒绝打开，不自动升级/填默认 Control，不启用尚未接线的 Revoke/Exchange 路径。

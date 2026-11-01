@@ -95,6 +95,9 @@ CREATE TABLE kiarabot.session_security (
   created_at bigint NOT NULL, access_expires_at bigint NOT NULL, refresh_expires_at bigint NOT NULL,
   rotation kiarabot.uint64 NOT NULL CHECK(rotation>0),
   version kiarabot.uint64 NOT NULL CHECK(version>0), revoked boolean NOT NULL,
+  control_subject text NOT NULL CHECK(control_subject<>''),
+  control_credential text NOT NULL CHECK(control_credential<>''),
+  FOREIGN KEY(control_credential,control_subject) REFERENCES kiarabot.credential_heads(id,subject),
   CHECK(access_expires_at>created_at AND refresh_expires_at>=access_expires_at),
   UNIQUE(access_key,access_tag), UNIQUE(refresh_key,refresh_tag),
   FOREIGN KEY(credential_id,credential_version,subject)

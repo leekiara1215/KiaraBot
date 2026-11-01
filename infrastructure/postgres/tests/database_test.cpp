@@ -122,7 +122,8 @@ void check_identity_security_schema(const pg::DatabaseConfig& config) {
               .one_row()[0]
               .as<bool>(),
           "explicit initial bootstrap marker incorrect");
-  transaction.exec("INSERT INTO kiarabot.principals VALUES('security-owner',0,NULL,NULL,1,0)");
+  transaction.exec(
+      "INSERT INTO kiarabot.principals VALUES('security-owner',1,9,'security-owner',1,0)");
   transaction.exec("INSERT INTO kiarabot.credential_heads VALUES('security-credential',"
                    "'security-owner',1,NULL,0,NULL,NULL)");
   transaction.exec("INSERT INTO kiarabot.credential_versions VALUES('security-credential',1,"
@@ -149,7 +150,7 @@ void check_identity_security_schema(const pg::DatabaseConfig& config) {
                    "'security-owner',3,1,137,NULL,731,15,'catalog')");
   transaction.exec(
       "INSERT INTO kiarabot.credential_certificates VALUES('security-certificate',"
-      "1,3,'security-owner',decode(repeat('ab',32),'hex'),'registered-san',0,100,1000)");
+      "1,3,'security-owner',decode(repeat('ab',32),'hex'),'registered-san',5,100,1000)");
   transaction.exec("UPDATE kiarabot.credential_heads SET leaf_fingerprint=decode(repeat('ab',32),"
                    "'hex') WHERE id='security-certificate'");
   transaction.exec("SET CONSTRAINTS ALL IMMEDIATE; SET CONSTRAINTS ALL DEFERRED");
@@ -162,8 +163,15 @@ void check_identity_security_schema(const pg::DatabaseConfig& config) {
       "INSERT INTO kiarabot.session_security VALUES('security-session',"
       "'security-owner','security-credential',1,'access',decode(repeat('00',32),'hex'),"
       "'refresh',decode(repeat('ff',32),'hex'),137,731,1000000,"
-      "18446744073709551615,1,false)");
+      "18446744073709551615,1,false,'security-owner','security-certificate')");
   transaction.exec("SET CONSTRAINTS ALL IMMEDIATE; SET CONSTRAINTS ALL DEFERRED");
+  rejects("UPDATE kiarabot.session_security SET control_subject=NULL WHERE id='security-session'",
+          "23502");
+  rejects("UPDATE kiarabot.session_security SET control_credential='' WHERE id='security-session'",
+          "23514");
+  rejects("UPDATE kiarabot.session_security SET control_subject='missing-owner' WHERE "
+          "id='security-session'",
+          "23503");
   rejects("UPDATE kiarabot.sessions SET rotation=1 WHERE id='security-session'", "23503");
   rejects("UPDATE kiarabot.sessions SET expires_at=1000001 WHERE id='security-session'", "23503");
   rejects("UPDATE kiarabot.sessions SET revoked=true WHERE id='security-session'", "23503");
@@ -330,7 +338,7 @@ void run(const std::filesystem::path& root, std::uint16_t port,
       pqxx::connection migration(connection_string(config));
       pqxx::read_transaction inspect(migration);
       require(inspect.exec("SELECT version FROM kiarabot.schema_versions").one_row()[0].as<int>() ==
-                  (config.service == target::Service::Identity ? 6 : 4),
+                  (config.service == target::Service::Identity ? 7 : 4),
               "per-service schema version incorrect");
     }
     if (config.service == target::Service::Identity) {

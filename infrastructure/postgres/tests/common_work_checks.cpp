@@ -97,7 +97,28 @@ void check_identity_credentials(Database& database) {
     take(detail::save_record(
         *access.work, detail::RecordKind::Principal,
         target::Principal{{"credential-owner"}, target::PrincipalKind::Human, {}, {1}}, {}));
+    take(detail::save_record(
+        *access.work, detail::RecordKind::Principal,
+        target::Principal{{"session-control"},
+                          target::PrincipalKind::PlatformService,
+                          target::ResourceRef{target::ResourceKind::Principal, {"session-control"}},
+                          {1}},
+        {}));
     auto credentials = detail::credential_repository(*access.sql);
+    const auto now = take(access.work->current_time());
+    auto control = certificate;
+    control.ref.id = {"session-control-credential"};
+    control.subject = {"session-control"};
+    control.binding = {target::ResourceKind::Principal, {"session-control"}};
+    control.created_at = now - std::chrono::hours{1};
+    control.expires_at = now + std::chrono::hours{24};
+    auto& control_material = std::get<target::CertificateBinding>(control.material);
+    control_material.subject = control.subject;
+    control_material.platform_service = target::Service::Control;
+    control_material.fingerprint.bytes[0] = std::byte{0x91};
+    control_material.not_before = control.created_at;
+    control_material.not_after = *control.expires_at;
+    take(credentials->save(control, {}));
     take(credentials->save(password, {}));
     take(credentials->save(certificate, {}));
     auto workload = password;
@@ -336,7 +357,8 @@ void check_identity_sessions(Database& database) {
                created + std::chrono::hours{24 * 30},
                1,
                {1},
-               false};
+               false,
+               target::SessionControlPeer{{"session-control"}, {"session-control-credential"}}};
     auto sessions = detail::session_security_repository(*access.sql);
     take(sessions->save(session, {}, {}));
     auto other = session;
@@ -454,6 +476,125 @@ void check_identity_sessions(Database& database) {
                                           target::TimePoint::min())),
           "caller time revived an expired refresh");
     access.work->rollback();
+  }
+}
+
+void check_session_control_binding(Database& database, const DatabaseConfig& config) {
+  target::SessionSecurity session;
+  {
+    auto access = take(detail::DatabaseAccess::begin(database));
+    auto sessions = detail::session_security_repository(*access.sql);
+    session = *take(sessions->find({"security-live-session"}));
+    session.id = {"control-bound-session"};
+    session.version = {1};
+    session.rotation = 1;
+    session.access.key.value = "bound-access";
+    session.refresh.key.value = "bound-refresh";
+    take(sessions->save(session, {}, {}));
+    committed(*access.work);
+  }
+  for (int change = 0; change < 5; ++change) {
+    auto access = take(detail::DatabaseAccess::begin(database));
+    auto sessions = detail::session_security_repository(*access.sql);
+    auto changed = session;
+    changed.version = {2};
+    if (change == 0) {
+      changed.control_peer.reset();
+    } else if (change == 1) {
+      changed.control_peer->subject.value.clear();
+    } else if (change == 2) {
+      changed.control_peer->credential.value = std::string("control\0suffix", 14);
+    } else if (change == 3) {
+      changed.control_peer->subject = {"other-control"};
+    } else {
+      changed.control_peer->credential = {"other-control-credential"};
+    }
+    expect(sessions->save(changed, target::ResourceVersion{1}, 1),
+           change < 3 ? target::ErrorCode::InvalidArgument : target::ErrorCode::Conflict);
+    rejected(*access.work);
+  }
+  for (int shape = 0; shape < 3; ++shape) {
+    auto access = take(detail::DatabaseAccess::begin(database));
+    auto sessions = detail::session_security_repository(*access.sql);
+    auto wrong = session;
+    wrong.id = {"invalid-control-session"};
+    if (shape == 0) {
+      wrong.control_peer.reset();
+    } else if (shape == 1) {
+      wrong.control_peer->subject = {"credential-owner"};
+    } else {
+      wrong.control_peer =
+          target::SessionControlPeer{{"credential-owner"}, {"credential-certificate"}};
+    }
+    expect(sessions->save(wrong, {}, {}), target::ErrorCode::InvalidArgument);
+    rejected(*access.work);
+  }
+  {
+    auto access = take(detail::DatabaseAccess::begin(database));
+    auto credentials = detail::credential_repository(*access.sql);
+    auto control = *take(credentials->current(session.control_peer->credential));
+    control.ref.version = {2};
+    std::get<target::CertificateBinding>(control.material).fingerprint.bytes[0] = std::byte{0x94};
+    take(credentials->save(control, target::ResourceVersion{1}));
+    auto sessions = detail::session_security_repository(*access.sql);
+    session.version = {2};
+    session.rotation = 2;
+    session.refresh.tag.bytes[0] = std::byte{66};
+    take(sessions->save(session, target::ResourceVersion{1}, 1));
+    committed(*access.work);
+  }
+  {
+    auto access = take(detail::DatabaseAccess::begin(database));
+    auto sessions = detail::session_security_repository(*access.sql);
+    const auto stored = *take(sessions->find(session.id));
+    check(take(sessions->by_access(session.access))->control_peer == session.control_peer &&
+              take(sessions->by_refresh(session.refresh))->control_peer == session.control_peer,
+          "verifier lookup lost original Control binding");
+    check(stored.control_peer == session.control_peer && stored.rotation == 2,
+          "refresh after Control certificate rotation changed original stable binding");
+    session.version = {3};
+    session.revoked = true;
+    take(sessions->save(session, target::ResourceVersion{2}, 2));
+    committed(*access.work);
+  }
+  {
+    auto access = take(detail::DatabaseAccess::begin(database));
+    auto sessions = detail::session_security_repository(*access.sql);
+    check(take(sessions->find(session.id))->control_peer == session.control_peer,
+          "revoke did not preserve original Control");
+    access.work->rollback();
+  }
+  // Deliberately corrupt only the owned disposable fixture through its migration role. An
+  // already-open writer must reject a legacy missing field; schema_valid is never relaxed.
+  pqxx::connection migration(migration_dsn(config));
+  {
+    pqxx::work corrupt(migration);
+    corrupt.exec(
+        "ALTER TABLE kiarabot.session_security ALTER COLUMN control_subject DROP NOT NULL");
+    corrupt.exec("UPDATE kiarabot.session_security SET control_subject=NULL WHERE "
+                 "id='control-bound-session'");
+    corrupt.commit();
+  }
+  {
+    auto access = take(detail::DatabaseAccess::begin(database));
+    auto sessions = detail::session_security_repository(*access.sql);
+    expect(sessions->find(session.id), target::ErrorCode::Internal);
+    rejected(*access.work);
+  }
+  {
+    auto access = take(detail::DatabaseAccess::begin(database));
+    auto sessions = detail::session_security_repository(*access.sql);
+    auto changed = session;
+    changed.version = {4};
+    expect(sessions->save(changed, target::ResourceVersion{3}, 2), target::ErrorCode::Internal);
+    rejected(*access.work);
+  }
+  {
+    pqxx::work restore(migration);
+    restore.exec("UPDATE kiarabot.session_security SET control_subject='session-control' WHERE "
+                 "id='control-bound-session'");
+    restore.exec("ALTER TABLE kiarabot.session_security ALTER COLUMN control_subject SET NOT NULL");
+    restore.commit();
   }
 }
 
@@ -642,7 +783,8 @@ void check_session_metadata_snapshot(Database& database) {
                now + std::chrono::hours{24},
                1,
                {1},
-               false};
+               false,
+               target::SessionControlPeer{{"session-control"}, {"session-control-credential"}}};
     auto sessions = detail::session_security_repository(*access.sql);
     take(sessions->save(session, {}, {}));
     const target::SessionMetadata snapshot{
@@ -703,17 +845,19 @@ void check_global_session_count(Database& database) {
                            {}));
     for (std::size_t index = 0; index < 4; ++index) {
       const auto id = "count-session-" + std::to_string(index);
-      target::SessionSecurity entry{{id},
-                                    {"credential-owner"},
-                                    {{"credential-password"}, {2}},
-                                    {target::TokenPurpose::Access, {id + "-access"}, {}},
-                                    {target::TokenPurpose::Refresh, {id + "-refresh"}, {}},
-                                    now - std::chrono::hours{2},
-                                    now + std::chrono::minutes{15},
-                                    now + std::chrono::hours{24},
-                                    1,
-                                    {1},
-                                    false};
+      target::SessionSecurity entry{
+          {id},
+          {"credential-owner"},
+          {{"credential-password"}, {2}},
+          {target::TokenPurpose::Access, {id + "-access"}, {}},
+          {target::TokenPurpose::Refresh, {id + "-refresh"}, {}},
+          now - std::chrono::hours{2},
+          now + std::chrono::minutes{15},
+          now + std::chrono::hours{24},
+          1,
+          {1},
+          false,
+          target::SessionControlPeer{{"session-control"}, {"session-control-credential"}}};
       if (index == 1) {
         entry.subject = {"count-owner"};
         entry.credential = {{"count-credential"}, {1}};
@@ -871,6 +1015,7 @@ void check_common(Database& database, const DatabaseConfig& config) {
     check_identity_credentials(database);
     check_bootstrap_locator(database);
     check_identity_sessions(database);
+    check_session_control_binding(database, config);
     check_identity_secret_receipts(database);
     check_session_metadata_snapshot(database);
     check_global_session_count(database);

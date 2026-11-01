@@ -29,3 +29,61 @@ Login必须从实际已认证Control构造，PG需同事务保存并在更新时
 实际运行：`c++ -std=c++20 -Wall -Wextra -Wpedantic -Werror -Icore/include`编译上述
 contract test并执行通过；固定clang-format16 dry-run通过；check-boundaries.py、
 check-architecture.py --inner与git diff --check通过。未运行PG/Login/RPC，原因同上。
+
+## PostgreSQL capability
+
+目标 Identity PG，基线 root dc37210（a0b7f90 + bootstrap 两cap）；878dfc1 独立类型
+cherry 为本分支 a70e891，端口注释和 doc02 追加冲突只合并已有说明，未移除 root 内容。
+本步允许 postgres/src/identity_sessions.cpp、Identity schema/version/manifest、三个 PG
+fixture、doc05/08 与本报告。没有修改 Login/Core 应用、CMake、旧 Revoke、assignment 或
+收据 variant/index；父任务负责生产 Login 写入和 Core strict fixtures。
+
+输入 SessionSecurity 必须含合法 control_peer；新建仅接受 owner 匹配的当前登记
+PlatformService/Control 证书材料，缺值/空值/NUL/错误身份为 InvalidArgument。读取返回
+同一 subject + stable CredentialId，不固化 credential version 或 leaf。更新 created_at 和
+Control binding 均不可变，更换非空绑定为 Conflict；missing 旧字段读取/更新为 Internal，
+不补默认值。任何失败沿原同物理 UoW 回滚；数据库故障映射没有变化。
+认证、证书期限、主体 gate、授权仍由 Core 决定，存储不以写入成功替代当前权限检查。
+
+Identity 空库 schema7：session_security control_subject/control_credential NOT NULL、非空
+CHECK，复合 owner FK 到 credential_heads(id,subject)。稳定 ID 允许 head 证书版本轮换。
+PG16.4 owned rollback descriptor 探测为 4ba90cba5394f41fe1d474c3607dfdd9，104 relations；
+Runtime56/Scheduler55/Model50 的版本4与 descriptor 不变。严格 schema_valid 未放宽，旧库
+拒绝，不自动迁移、补值、清空或 reset。
+
+PG fixtures 创建实际 PlatformService/Control principal 和 certificate rows，覆盖新建/查询
+及 by_access/by_refresh 保留绑定、缺值/空值/NUL、换 subject/credential 拒绝、错误 owner/
+非 Control 登记拒绝、同稳定 ID 证书轮换后的 refresh、revoke 保留绑定。原普通 session
+snapshot、count、CAS/双写回滚、bootstrap current 等测试继续运行。SQLSTATE23502/23514/
+23503 验证新字段 NOT NULL/CHECK/复合 FK。缺值故障仅在 owned 临时集群用 migration role
+刻意去掉 NOT NULL 并提交 NULL，已打开真实 writer 分别以 find 和 save 返回 Internal；
+随后恢复值/NOT NULL。没有通过生产 open/validator 接受损坏 schema。
+
+文档影响：本cap同步 doc05（PG行为）、doc08（当前schema/旧库拒绝）、本报告；doc02与
+类型已由878dfc1冻结。doc01/proto/API/运行语义无字段、错误码、wire/HTTP/投递改变，
+无需更新；其他模块职责与配置不变，doc18只读未改。测试不写生产TLS或本机配置。
+
+### Verification
+
+工具根 `/Users/leekiara/Workspace/KiaraBot.worktrees/kiarabot-toolchain`，固定 PG16.4、
+pqxx7.10、clang-format16、clang-tidy22。以下命令均在独立 infrastructure worktree 执行：
+
+- `sdk/python/.venv/bin/python build/p03/verify_build.py`：C++20 Wall/Wextra/Wpedantic/
+  Werror 三目标 initializer、database_test、database_test_sanitized 构建通过。
+- 同一 Python：`infrastructure/postgres/tests/run_database_test.py --pg-bin
+  <工具根>/build/pg-16.4-install/bin --openssl <工具根>/build/openssl-3.5.0-install/bin/openssl
+  --test build/p03/database_test --initializer build/p03/kiarabot-pg-initialize`，另以
+  database_test_sanitized 替换 --test。真实 TLS verify-full/channel binding 四库测试结果
+  在下方最终记录，不把静态编译当作运行通过。
+- 四个改动 cpp TU：clang-tidy22 `--checks=clang-analyzer-*,readability-braces-around-statements
+  --warnings-as-errors=*` 配合固定依赖和 macOS SDK，零诊断通过。
+- 七个改动 C++/schema：clang-format16 `--dry-run --Werror` 通过；git diff --check 通过。
+- `c++ -std=c++20 -Wall -Wextra -Wpedantic -Werror -Icore/include
+  core/tests/architecture/session_control_peer_contract_test.cpp` 编译执行通过。
+- 未运行 root CMake/CTest、全App/crypto/RPC fixture：Login 实际构造及其他 strictfixture
+  由父并行实现，当前未接入该父cap；PG不修改 Core 应用以伪造默认绑定或启用新 Revoke。
+  父需成组运行最终门禁。本cap不声称整个 P04 完成。
+
+最终运行结果：normal 与 ASan+UBSan 两个 owned PG16.4 四库 fixture 完整通过，分别确认
+临时集群与私密材料已清除。UTF8/末尾换行/受保护文档无diff检查通过；最终 diff --check
+通过。所有新增绑定正向/拒绝/损坏路径均为真实 PG，不使用假成功或内存库替代。

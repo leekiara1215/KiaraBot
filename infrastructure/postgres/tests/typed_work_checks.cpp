@@ -88,6 +88,27 @@ void security(const DatabaseConfig& config) {
                                    now + std::chrono::hours{24}},
                                   target::ResourceVersion{1}));
     take(work->credentials().save_login({id, subject, credential, {1}}, {}));
+    const target::SubjectId control{id + "-control"};
+    const target::CredentialId control_credential{id + "-control-credential"};
+    take(work->principals().save(
+        {control,
+         target::PrincipalKind::PlatformService,
+         target::ResourceRef{target::ResourceKind::Principal, {control.value}},
+         {1}},
+        {}));
+    target::Sha256Digest control_fingerprint{};
+    control_fingerprint.bytes[0] = static_cast<std::byte>(0x92 + pass);
+    take(work->credentials().save(
+        {{control_credential, {1}},
+         control,
+         target::CertificateBinding{control, control_fingerprint, "registered-control-san",
+                                    target::Service::Control, now, now + std::chrono::hours{24}},
+         target::CredentialState::Active,
+         now,
+         {},
+         {target::ResourceKind::Principal, {control.value}},
+         now + std::chrono::hours{24}},
+        {}));
     const target::SessionSecurity secured{session,
                                           subject,
                                           {credential, {2}},
@@ -98,7 +119,8 @@ void security(const DatabaseConfig& config) {
                                           now + std::chrono::hours{24},
                                           1,
                                           {1},
-                                          false};
+                                          false,
+                                          target::SessionControlPeer{control, control_credential}};
     take(work->session_security().save(secured, {}, {}));
     take(work->exact_assignments().save(
         {grant,
