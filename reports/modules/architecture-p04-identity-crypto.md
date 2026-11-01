@@ -215,3 +215,38 @@ Real64hex/noNUL/different-output tests and existing password tests pass with -We
 test main now catches unexpected exceptions. Format16 and diff checks pass. No CMake/main/API
 changes; parent must integrate pure header and this implementation together to avoid abstract
 RandomPort subclasses. Frozen six-method application work remains separate and in progress.
+
+## Trusted key file loader acceptance
+
+Scope: new key_files.hpp/src/key_files.cpp/tests/key_files_test.cpp plus doc/05/08 and this report.
+Inputs are trusted path/reference metadata; outputs existing SymmetricKey/DelegationKey, including
+verify-only public key loading. No ServiceConfig/Core/composition-root/API/proto/PG changes.
+Symmetric input exactly64 lowercase hex plus optional single LF -> sodium_hex2bin -> secure32bytes.
+PEM input at most8192bytes each, strict full parse/type/Ed25519/pair equality. Secret source bytes,
+hex source/decoded result/private PEM use sodium_malloc/free storage; no secret content logging.
+O_NOFOLLOW|O_NONBLOCK|O_CLOEXEC precedes fstat regular validation/read. Secrets require effective
+UID and no group/other bits. Before/after metadata compares size/type/owner/mode/device/inode and
+mtime/ctime; extra-byte read detects growth. Parent directories must be trusted. No write/create,
+permission repair, generation, rotation, CA or database behavior. Invalid input/material/perms/types
+return InvalidArgument; syscall/resource failures UpstreamUnavailable; no diagnostic path/content.
+
+Actual operations-worktree command: clang++ -std=c++20 -Wall -Wextra -Wpedantic -Werror
+-fsanitize=address,undefined -fno-sanitize-recover=all -Icore/include
+-Iinfrastructure/identity_crypto/include -isystem <fixed-prefix>/include compiles
+infrastructure/identity_crypto/src/{password_crypto,delegation_crypto,key_files}.cpp and
+infrastructure/identity_crypto/tests/key_files_test.cpp, links <fixed-prefix>/lib/libsodium.a and
+libcrypto.a, writes build/identity-crypto/key_files_test; executable passes. Fixed-prefix remains
+the authorized shared toolchain architecture-installed/arm64-osx location above. Full tidy22
+--checks='-*,clang-analyzer-*,bugprone-*' --warnings-as-errors='*' on loader source/test, explicit
+SDK/libc++ includes and own adapter header filter passes without individual exclusions/NOLINT.
+Format16, boundary/inner and diff checks pass. Temporary fixtures stay under ignored build paths
+and are cleaned by tests, never committed. No secrets/generated artifacts/local config committed.
+
+Real tests: owned0600 valid hex/rawLF, exact bytes32, malformed hex/uppercase/NUL/extra newline,
+empty/oversize/mode0640/FIFO<=1second/symlink/directory/missing/NUL path, actual OpenSSL Ed25519
+PEM pair/verify-only, private permissions/oversize/NUL/public symlink, mismatched pair rejected by
+both loader and existing factory. Not tested: foreign-owner chown (no privilege modification),
+concurrent file-drift injection (no production hooks), Linux runtime, full CMake/service/deployment.
+Those limits do not remove implemented metadata checks. Doc/05/08 synchronized; doc/01/02 and
+proto/API unchanged because this is outer trusted loading with existing port semantics. Protected
+doc/18 remains untouched; root build registration and composition remain with parent/build task.

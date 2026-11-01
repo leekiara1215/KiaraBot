@@ -542,3 +542,9 @@ Identity5、Runtime/Scheduler/Model4；之前Identity4和另三库3不兼容，�
 Identity安全依赖组合使用open_identity_security，探针通过该工厂自身begin/current_time/
 rollback采样，不能创建第二个持锁连接。返回工厂只表示存储依赖已验证；业务仍需当前
 认证、crypto与应用用例接线。UoW结束后才释放本地许可；Unknown或连接丢失停用旧实例。
+
+组合根可用 `identity_crypto/key_files.hpp` 显式装载密钥；对称文件为64小写hex加可选LF，
+秘密文件须regular、当前effective UID所有、禁止group/other权限（通常0600）。路径及父
+目录由可信部署配置提供并受控；O_NOFOLLOW约束最后路径项，不宣称防止不可信父目录替换。
+公钥文件也必须regular且有界、非symlink。装载器只读，不创建、覆盖、轮换或修正权限，
+失败时调用者拒绝启动且仅记录稳定码，不记录路径、PEM、hex内容或系统异常正文。

@@ -363,3 +363,19 @@ InvalidArgument。仓储不把不同Assignment的role/scope混配，不自创per
 安全应用写入会话时只调用session_security.save：它已原子同步sessions基础元数据。
 随后再以相同create-only/旧expected调用sessions.save会Conflict并使整笔UoW回滚；
 Login、Refresh、Revoke均不能重复写基础行，也不能放宽base CAS迁就重复调用。
+
+### P04 可信组合根密钥文件装载
+
+`identity_crypto/key_files.hpp` 接收可信路径与key引用metadata，返回既有SymmetricKey或
+DelegationKey；不读取请求JSON/URL、不生成或覆盖密钥。对称文件固定64个小写hex字符，
+可选唯一末尾LF，用sodium_hex2bin解码为32字节。hex原文、私钥PEM及读取暂态仅存在
+安全内存中；公钥PEM可使用普通有界字符串，verify-only模式不读取私钥文件。
+POSIX打开使用O_NOFOLLOW|O_NONBLOCK|O_CLOEXEC，随后fstat验证regular再读取；秘密必须
+归当前effective UID且无group/other权限。文件非空有界，读取前后复核metadata与大小，
+拒绝最终路径symlink、FIFO、目录、NUL路径和超限内容，不用ifstream先读后验。
+材料/格式/类型/权限拒绝InvalidArgument；系统读取/资源故障UpstreamUnavailable，
+不返回路径、内容或errno异常正文。Ed25519 PEM严格解析与keypair匹配后交既有factory。
+
+PEM公钥与私钥文件各最多8192字节；私钥仅接受无NUL、完整消费的PKCS#8 PRIVATE KEY，
+公钥仅接受PUBLIC KEY，成熟OpenSSL验证Ed25519及公私钥匹配。文件变化复核包含大小、
+类型/权限、UID、device/inode及mtime/ctime；不能替代可信父目录及部署写权限控制。
