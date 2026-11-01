@@ -4,6 +4,7 @@
 #include <fstream>
 #include <iostream>
 #include <limits>
+#include <source_location>
 #include <stdexcept>
 #include <thread>
 #include <variant>
@@ -11,6 +12,7 @@
 
 #include <pqxx/pqxx>
 
+#include "../src/identity_security.hpp"
 #include "../src/record_access.hpp"
 
 namespace kiarabot::infrastructure::postgres::test {
@@ -22,10 +24,12 @@ void check(bool condition, const char* reason) {
     throw std::runtime_error("common storage test rejected");
   }
 }
-template <typename Value> Value take(target::Outcome<Value> result) {
+template <typename Value>
+Value take(target::Outcome<Value> result,
+           const std::source_location location = std::source_location::current()) {
   if (const auto* failure = std::get_if<target::Failure>(&result)) {
     std::cerr << "P03 assertion: unexpected stable storage code " << static_cast<int>(failure->code)
-              << '\n';
+              << " at line " << location.line() << '\n';
   }
   check(std::holds_alternative<Value>(result), "unexpected storage failure");
   return std::move(std::get<Value>(result));
@@ -64,7 +68,166 @@ void rejected(target::UnitOfWork& work) {
 }
 } // namespace
 
+void check_identity_credentials(Database& database) {
+  const auto created = target::TimePoint{std::chrono::nanoseconds{137}};
+  const auto expires = target::TimePoint{std::chrono::nanoseconds{731}};
+  target::CredentialVersionRecord password{
+      {{"credential-password"}, {1}},
+      {"credential-owner"},
+      target::PendingCredentialMaterial{target::CredentialKind::Password},
+      target::CredentialState::Pending,
+      created,
+      {},
+      {target::ResourceKind::Catalog, {"catalog"}},
+      {}};
+  target::Sha256Digest old_fingerprint{};
+  old_fingerprint.bytes[0] = std::byte{0xab};
+  auto certificate = password;
+  certificate.ref.id = {"credential-certificate"};
+  certificate.state = target::CredentialState::Active;
+  certificate.expires_at = expires;
+  certificate.material =
+      target::CertificateBinding{{"credential-owner"},      old_fingerprint, "registered-san",
+                                 target::Service::Identity, created,         expires};
+  {
+    auto access = take(detail::DatabaseAccess::begin(database));
+    take(detail::save_record(
+        *access.work, detail::RecordKind::Principal,
+        target::Principal{{"credential-owner"}, target::PrincipalKind::Human, {}, {1}}, {}));
+    auto credentials = detail::credential_repository(*access.sql);
+    take(credentials->save(password, {}));
+    take(credentials->save(certificate, {}));
+    auto workload = password;
+    workload.ref.id = {"credential-workload"};
+    workload.state = target::CredentialState::Active;
+    workload.expires_at = expires;
+    workload.material = target::WorkloadBootstrapVerifier{
+        {target::TokenPurpose::WorkloadBootstrap, {"bootstrap-key"}, {}},
+        workload.binding,
+        {target::Service::Control, target::Service::Identity, target::Service::Control},
+        expires};
+    take(credentials->save(workload, {}));
+    workload.ref.version = {2};
+    workload.state = target::CredentialState::Revoked;
+    workload.revoked_at = expires;
+    take(credentials->save(workload, target::ResourceVersion{1}));
+    check(std::get<target::WorkloadBootstrapVerifier>(
+              take(credentials->current(workload.ref.id))->material)
+                  .audiences ==
+              std::get<target::WorkloadBootstrapVerifier>(workload.material).audiences,
+          "workload credential audience ordering/content changed");
+    take(credentials->save_login(
+        {"normalized-login", {"credential-owner"}, {"credential-password"}, {1}}, {}));
+    committed(*access.work);
+  }
+  {
+    auto access = take(detail::DatabaseAccess::begin(database));
+    auto credentials = detail::credential_repository(*access.sql);
+    check(take(credentials->current(password.ref.id))->created_at == created,
+          "credential nanoseconds changed");
+    check(take(credentials->login("normalized-login"))->password_credential == password.ref.id,
+          "login index did not resolve credential");
+    check(!take(credentials->current({"missing"})), "missing credential not optional");
+    password.ref.version = {2};
+    password.state = target::CredentialState::Active;
+    password.expires_at = expires;
+    password.material = target::PasswordVerifier{"encoded-verifier-only", {1}};
+    take(credentials->save(password, target::ResourceVersion{1}));
+    take(credentials->save_login(
+        {"normalized-login", {"credential-owner"}, {"credential-password"}, {2}},
+        target::ResourceVersion{1}));
+    check(std::holds_alternative<target::PendingCredentialMaterial>(
+              take(credentials->version({password.ref.id, {1}}))->material),
+          "credential update rewrote immutable history");
+    certificate.ref.version = {2};
+    auto new_fingerprint = old_fingerprint;
+    new_fingerprint.bytes[0] = std::byte{0xac};
+    std::get<target::CertificateBinding>(certificate.material).fingerprint = new_fingerprint;
+    take(credentials->save(certificate, target::ResourceVersion{1}));
+    check(!take(credentials->by_certificate(old_fingerprint)),
+          "historical certificate resolved a different current head");
+    check(take(credentials->by_certificate(new_fingerprint))->ref.version.value == 2,
+          "current certificate index failed");
+    check(std::get<target::CertificateBinding>(
+              take(credentials->version({certificate.ref.id, {1}}))->material)
+                  .fingerprint == old_fingerprint,
+          "certificate history changed");
+    committed(*access.work);
+  }
+  {
+    auto access = take(detail::DatabaseAccess::begin(database));
+    auto credentials = detail::credential_repository(*access.sql);
+    expect(credentials->save(password, target::ResourceVersion{1}), target::ErrorCode::Conflict);
+    rejected(*access.work);
+  }
+  {
+    auto access = take(detail::DatabaseAccess::begin(database));
+    auto credentials = detail::credential_repository(*access.sql);
+    expect(credentials->login(std::string("normalized-login\0suffix", 23)),
+           target::ErrorCode::InvalidArgument);
+    rejected(*access.work);
+  }
+  {
+    auto access = take(detail::DatabaseAccess::begin(database));
+    auto credentials = detail::credential_repository(*access.sql);
+    auto malformed = password;
+    malformed.ref.version = {3};
+    std::get<target::PasswordVerifier>(malformed.material).encoded = std::string("phc\0suffix", 10);
+    expect(credentials->save(malformed, target::ResourceVersion{2}),
+           target::ErrorCode::InvalidArgument);
+    rejected(*access.work);
+  }
+  {
+    auto access = take(detail::DatabaseAccess::begin(database));
+    auto credentials = detail::credential_repository(*access.sql);
+    take(access.sql->run([](pqxx::transaction_base& transaction) -> target::Status {
+      transaction.exec("DELETE FROM kiarabot.credential_passwords WHERE id='credential-password' "
+                       "AND version=2");
+      return std::monostate{};
+    }));
+    expect(credentials->current(password.ref.id), target::ErrorCode::Internal);
+    rejected(*access.work);
+  }
+  {
+    auto access = take(detail::DatabaseAccess::begin(database));
+    auto bootstrap = detail::bootstrap_repository(*access.sql);
+    check(take(bootstrap->state()).state == target::BootstrapState::Required,
+          "bootstrap marker not explicit Required");
+    take(bootstrap->consume(
+        {target::BootstrapState::Consumed, {2}, target::SubjectId{"credential-owner"}, created},
+        {1}));
+    check(take(bootstrap->state()).state == target::BootstrapState::Consumed,
+          "bootstrap consume not visible in same transaction");
+    access.work->rollback();
+  }
+  {
+    auto access = take(detail::DatabaseAccess::begin(database));
+    auto bootstrap = detail::bootstrap_repository(*access.sql);
+    check(take(bootstrap->state()).state == target::BootstrapState::Required,
+          "rollback consumed bootstrap");
+    expect(
+        bootstrap->consume(
+            {target::BootstrapState::Consumed, {3}, target::SubjectId{"credential-owner"}, created},
+            {2}),
+        target::ErrorCode::Conflict);
+    rejected(*access.work);
+  }
+  {
+    auto access = take(detail::DatabaseAccess::begin(database));
+    auto bootstrap = detail::bootstrap_repository(*access.sql);
+    take(access.sql->run([](pqxx::transaction_base& transaction) -> target::Status {
+      transaction.exec("DELETE FROM kiarabot.administrator_bootstrap");
+      return std::monostate{};
+    }));
+    expect(bootstrap->state(), target::ErrorCode::Internal);
+    rejected(*access.work);
+  }
+}
+
 void check_common(Database& database, const DatabaseConfig& config) {
+  if (config.service == target::Service::Identity) {
+    check_identity_credentials(database);
+  }
   constexpr auto kHigh = std::uint64_t{1} << 63;
   constexpr auto kMaximum = std::numeric_limits<std::uint64_t>::max();
   {

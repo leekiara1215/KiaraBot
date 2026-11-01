@@ -320,3 +320,7 @@ Identity 空库初始化将使用 schema v4；Runtime、Scheduler、Model 各自
 重写时间；有效收据满额时拒绝新增。refresh 历史只能关联原 control peer/会话/幂等键，
 恢复窗口不超过原 token 到期或消费后 24 小时。明确初始化 Required 引导标记，缺失标记
 为 Internal；重启不能重新开放引导。授权规则、当前认证和解密前检查仍由 Core 决定。
+
+凭据仓储按 expected 当前版本推进 head，同时追加验证材料历史；login 索引使用同一
+主体绑定和 CAS。材料 audience 的顺序/内容在带 position 的关系子表无损保留。
+引导仓储只条件消费现存 Required 标记，仓储故障不返回隐式允许引导的默认值。

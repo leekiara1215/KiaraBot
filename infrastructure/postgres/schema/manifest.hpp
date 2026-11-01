@@ -34,7 +34,7 @@ SELECT md5(string_agg(descriptor,E'\n' ORDER BY descriptor)) FROM (
 inline constexpr std::string_view descriptor(core::target::Service owner) {
   switch (owner) {
   case core::target::Service::Identity:
-    return "d1aa0822c7286c329a60802278aaf62c";
+    return "d74a1a8ae6ec77c1178dfae43d904edc";
   case core::target::Service::Runtime:
     return "7d31916ae3ece03e99a9d5b1b3bbaaed";
   case core::target::Service::Scheduler:

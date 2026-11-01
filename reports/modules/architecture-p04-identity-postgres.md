@@ -60,3 +60,25 @@ clang-tidy22 对 database.cpp/database_test.cpp、clang-format16、git diff --ch
 文档校验检查三个已更新 Markdown 的 UTF8/换行与 P04 说明；保护基线无差异。
 本步无新增翻译单元、不改 CMake；根完整集成仍由主任务/工具链任务执行。
 安全仓储与生产接线仍在实施，schema 通过不代表 P04 用例已完成。
+
+## 凭据与引导仓储（实施中）
+
+新增私有 `src/identity_security.cpp` 和 `.hpp`，由 SqlWork 借用同一事务；尚未提供
+完整的安全工厂，不能声称安全应用已接线。凭据写入先校验 Core 纯规则/文本表示，再以
+expected head version 条件推进并追加独立类型历史，登录索引也使用 CAS。证书查找仅
+通过唯一 current-head fingerprint，随后核对当前版本实际材料；历史证书仍可按明确版本
+读取但不能解析为新的当前头。引导查询缺失标记为 Internal，消费仅 Required+expected
+条件更新；继承仓储和 audit 同一原子提交边界不变。
+
+Audience 使用 position 关系列无损保留 Core vector 的顺序与内容，避免仓储擅自重排或
+去重验证材料；相应 Identity v4 descriptor 更新为 `d74a1a8ae6ec77c1178dfae43d904edc`，
+对象数仍为100。本变更仍为新空库 schema，无既有库自动升级。
+需同步工具链库源清单加入 `infrastructure/postgres/src/identity_security.cpp`；本任务不改 CMake。
+已执行并通过固定依赖初始化 CLI/普通/ASan+UBSan 三种 -Werror 构建、两套独立真实
+PG 四库 fixture，以及新仓储/公共测试两 TU 的 clang-tidy22。clang-format16 与
+文档 UTF8/换行/章节检查、git diff --check 通过；保护基线无差异。
+测试覆盖三种已发行材料与 Pending、纳秒、audience顺序/重复内容、同材料撤销追加、
+版本历史保留、证书轮换新旧指纹、登录CAS、错误CAS、文本NUL、材料损坏Internal、
+引导条件消费/回滚/错误版本/标记缺失Internal。
+开发中真实测试捕获 bytea 重复hex解码，已修正为复用既有摘要bytea编码并重跑全部检查。
+根构建未在本工作树运行：CMake源接线由工具链任务负责；新增源需完成该接线再跑根门禁。

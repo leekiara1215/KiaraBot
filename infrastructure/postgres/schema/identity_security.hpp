@@ -49,7 +49,8 @@ CREATE TABLE kiarabot.credential_bootstraps (
 );
 CREATE TABLE kiarabot.credential_audiences (
   id text NOT NULL, version kiarabot.uint64 NOT NULL,
-  audience integer NOT NULL CHECK(audience BETWEEN 0 AND 5), PRIMARY KEY(id,version,audience),
+  position integer NOT NULL CHECK(position>=0),
+  audience integer NOT NULL CHECK(audience BETWEEN 0 AND 5), PRIMARY KEY(id,version,position),
   FOREIGN KEY(id,version) REFERENCES kiarabot.credential_bootstraps(id,version)
 );
 CREATE TABLE kiarabot.credential_certificates (
