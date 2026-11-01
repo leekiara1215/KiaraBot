@@ -53,3 +53,13 @@ TLS分组读取grpc_environment.json，必须Python3.11.18/grpcio1.85.0（现SDK
 无证书拒绝要求PEER_DID_NOT_RETURN_A_CERTIFICATE；链错误明确verify_code19/20，过期10；
 本机LibreSSL在服务器侧可能返回含糊原因，此时必须在客户端观察UNKNOWN_CA/CERTIFICATE_EXPIRED
 对应TLS alert，任意EOF/超时不算通过。该夹具自测不能替代五服务真实grpc测试。
+
+isolation分组先持有内核分配的loopback监听，分别验证六服务probe端口冲突及五服务gRPC端口
+冲突的精确退出1和绑定类诊断，检查另一个已启动的监听也被关闭。随后同时启动六进程，确认
+PID独立、live/ready；依次对每个服务的直接子进程注入SIGKILL，必须精确-9回收、释放监听，
+其余五个进程连续三轮仍live200/ready503。只重启被注入的服务，重新检查六进程，再统一TERM。
+故障注入只作用于本脚本自己启动的子进程；finally回收进程组和所有socket/临时文件。
+
+工具链接线建议见test_manifest.json：七个独立入口及p02/unit/integration/fault/reference标签、
+明确timeout。tests/architecture不提供CMake、不创建或猜测构建目录；工具链传入各target的实际
+路径。证书夹具/oracle通过与真实lifecycle/tls/isolation通过必须分开报告，不能只跑unit就关闭P02。

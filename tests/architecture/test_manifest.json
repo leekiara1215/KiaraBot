@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "binary_arguments": ["--control", "--identity", "--runtime", "--plugin-host", "--scheduler", "--model"],
+  "required_external_arguments": ["--openssl"],
+  "tests": [
+    {"name": "architecture_p02_fixture", "entry": "fixture_test.py", "labels": ["p02", "unit"], "timeout_seconds": 30},
+    {"name": "architecture_p02_oracle", "entry": "support_test.py", "labels": ["p02", "unit"], "timeout_seconds": 30},
+    {"name": "architecture_p02_tls_fixture", "entry": "tls_fixture_test.py", "labels": ["p02", "integration"], "timeout_seconds": 30},
+    {"name": "architecture_p02_references", "entry": "check_references.py", "labels": ["p02", "unit", "reference"], "timeout_seconds": 10},
+    {"name": "architecture_p02_lifecycle", "entry": "run.py", "group": "lifecycle", "labels": ["p02", "integration", "fault"], "timeout_seconds": 180},
+    {"name": "architecture_p02_tls", "entry": "run.py", "group": "tls", "labels": ["p02", "integration", "fault"], "timeout_seconds": 360, "python_environment": "grpc_environment.json"},
+    {"name": "architecture_p02_isolation", "entry": "run.py", "group": "isolation", "labels": ["p02", "integration", "fault"], "timeout_seconds": 180}
+  ]
+}

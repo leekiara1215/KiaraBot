@@ -24,3 +24,9 @@
 实际验证：真实本地mTLS夹具4项通过；首次sandbox拒绝bind后经授权重跑。平台实际Python3.9/LibreSSL2.8.3、签发OpenSSL4.1.0；初版断言暴露LibreSSL服务器端错误分类差异，修正为仍严格核对客户端UNKNOWN_CA/CERTIFICATE_EXPIRED具体TLS告警（或OpenSSL服务器精确verify_code），无关闭验证。服务端错误CA verify_code允许19自签链/20未知签发链，hostname必须62。可信双向TLS有认证peer与应用响应，缺客户端必须PEER_DID_NOT_RETURN_A_CERTIFICATE。
 
 真实grpc环境明确锁Python3.11.18/grpcio1.85.0，与SDK pyproject/uv.lock对齐；缺版本即失败。本工作区未提供该环境及P02六二进制，真实服务TLS分组未运行，不能报通过。未运行full/tidy/C++生成：本次只有Python验收与文档，无生产/协议变化；文档同步本目录README/本报告，其他模块/契约无需更新。
+
+## 并行、端口与崩溃隔离能力
+
+新增isolation_acceptance.py，所有端口内核随机分配，不触碰生产监听。持有probe/grpc端口注入冲突，要求精确1与bind/listen/address/port诊断及无其他监听泄漏；随后六进程同时live、ready保持503，逐一SIGKILL，必须-9回收、受害者监听释放，余五连续三轮健康，再单独重启受害者。只向本脚本拥有的子进程/组发信号，finally回收资源。test_manifest.json向工具链提供7项入口、p02分类及timeout，不修改CMake。
+
+实际验证：support_test.py扩至5项并通过，新增用真实自建Python子进程验证精确SIGKILL/兄弟存活与重复kill拒绝，属于故障注入判定器自测，不是六服务隔离通过。Python AST、24条reference检查及git diff --check通过。真实六进程isolation仍未运行：本工作区没有P02六二进制路径输入；不能使用临时HTTP夹具冒充服务。文档仅本目录README与报告；未改生产源、API/proto/模块文档，不运行full/tidy。

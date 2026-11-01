@@ -36,6 +36,22 @@ class OracleTest(unittest.TestCase):
         self.assertNotIn(b'passed', result.stdout)
         self.assertNotIn(b'skip', result.stdout.lower())
 
+    def test_fault_injection_checks_exact_sigkill_and_independent_child(self):
+        from isolation_acceptance import kill_child
+        children = [subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(30)'],
+                                     start_new_session=True) for _ in range(2)]
+        try:
+            kill_child(children[0])
+            self.assertEqual(children[0].returncode, -signal.SIGKILL)
+            self.assertIsNone(children[1].poll())
+            with self.assertRaises(AcceptanceFailure):
+                kill_child(children[0])
+        finally:
+            for child in children:
+                if child.poll() is None:
+                    child.kill()
+                child.wait(timeout=5)
+
     def test_http_oracle_checks_status_and_complete_probe_shape(self):
         class Handler(http.server.BaseHTTPRequestHandler):
             def do_GET(self):
