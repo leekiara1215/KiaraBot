@@ -7,6 +7,7 @@
 #include <string>
 #include <variant>
 
+#include "kiarabot/core/domain/target/identity_registration_snapshot.hpp"
 #include "kiarabot/core/domain/target/service_records.hpp"
 
 namespace kiarabot::core::target {
@@ -27,7 +28,7 @@ struct ResourceMutationResult {
 using ReplayResult =
     std::variant<EmptySuccess, ResourceMutationResult, Operation, Principal, LoginSession,
                  ResourceGrant, BotAccount, PluginInstallation, PluginInstance, ScheduledTask,
-                 Occurrence, ModelIntent, SessionMetadata>;
+                 Occurrence, ModelIntent, SessionMetadata, RegisteredPrincipalSnapshot>;
 struct ReceiptKey {
   SubjectId subject;
   std::string method;

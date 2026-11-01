@@ -1,0 +1,15 @@
+# Identity登记成功快照（P04类型能力）
+
+`RegisteredPrincipalSnapshot`保存RegisterPrincipal原提交返回的完整`Principal`与
+`CredentialStatusSnapshot initial_credential`，作为普通非秘密`ReplayResult`的末尾类型。
+所有原字段、版本、PENDING状态、created_at及checked_at均在同一Identity事务的普通
+成功收据中保存。重放先校验当前调用方授权，再返回这份原快照；不得查询当前主体或
+凭据状态来拼接历史成功，也不把CredentialDelivery/秘密存入普通收据。
+
+ReplayResult既有0..12保持不变：SessionMetadata为12，RegisteredPrincipalSnapshot为13。
+后续ExactAssignment应在其后追加14，不占用或移动既有索引。PG需完整序列化和校验，
+不能用ResourceGrant、单Principal或ResourceMutationResult替代该复合结果。
+
+本能力只定义类型及普通成功结果接口，RegisterPrincipal实际应用/PG接线尚未完成，
+类型测试不代表可启用路由。PENDING allowed_services、秘密delivery_receipt_id与实际
+peer/represented actor双重绑定属于后续独立类型能力，不在此批修改。
