@@ -929,3 +929,26 @@ is never replaced. Empty callback compatibility remains confined to fixtures.
 不能作为权限依据。同幂等键重放由应用在当前鉴权后返回原成功，新键重复撤销为 Conflict。
 纯规则沿现有版本错误语义：错预期版本 Conflict，uint64 耗尽 Internal，不回绕。
 本节只冻结领域模型；仓储按 ID 读取、撤销 CAS、base metadata 过滤及生产接线仍须独立验收。
+
+### IssueDelegation platform capability and represented permissions
+
+An authenticated Control service must currently hold an explicit
+identity.delegation.issue binding at its own stable Principal resource
+(ResourceKind::Principal, id=the actual registered platform subject). Certificate
+validity/registration and default roles do not grant this capability; a grant at a
+represented human Principal, Catalog or other service Principal cannot substitute.
+This service capability is checked independently of every represented subject's
+exact requested business permission/resource. It therefore supports dynamic Session
+resources without turning the service capability into blanket business authority.
+Offline enrollment must explicitly provide the own-Principal grant; no CLI or daemon
+automatically creates it.
+
+Issue reads the current Control registration, credential, Principal, authorization
+watermark and exact grants before signing and again after signing. Source access
+and business grants are also revalidated. Each short authority transaction uses the
+existing current-time/final-check gate with at most one second authorization window
+and the request/certificate/credential deadlines. Crypto/random/session-application
+calls hold no outer UoW. Missing/wrong capability returns PermissionDenied; revoked,
+expired or mismatched current peer returns Unauthenticated; changed authorization
+watermark returns Conflict/ReadCurrent; dependency and deadline failures propagate.
+A signed intermediate proof is discarded on any final check failure and never returned.

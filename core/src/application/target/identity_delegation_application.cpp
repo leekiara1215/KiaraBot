@@ -5,10 +5,12 @@
 #include <set>
 #include <utility>
 
+#include "identity_security_application_detail.hpp"
 #include "kiarabot/core/domain/target/identity_state_rules.hpp"
 
 namespace kiarabot::core::target {
 namespace {
+namespace detail = identity_security_detail;
 Failure delegation_internal() {
   return rejected(ErrorCode::Internal, Recovery::Diagnose);
 }
@@ -16,6 +18,8 @@ struct IssuanceAuthority {
   CredentialVersionRef credential;
   TimePoint checked_at;
   TimePoint latest_expiry;
+  CredentialVersionRef control_credential;
+  ResourceVersion control_authorization_version;
 };
 Outcome<MessageId> proof_id(RandomPort& random) {
   auto generated = random.bytes(16);
@@ -45,16 +49,27 @@ Outcome<MessageId> proof_id(RandomPort& random) {
   }
   return MessageId{std::move(identifier)};
 }
-Outcome<IssuanceAuthority> authorize_issue(IdentitySecurityUnitOfWork& work,
+Outcome<IssuanceAuthority> authorize_issue(detail::Work& checkpoint,
                                            const IssueIdentityDelegationRequest& request,
                                            const ValidatedSession& validated) {
-  const auto sample = work.current_time();
-  if (const auto* failure = std::get_if<Failure>(&sample)) {
+  auto& work = *checkpoint.transaction;
+  const auto now = checkpoint.now;
+  auto control_row = detail::read_peer(work, request.source.control_peer);
+  if (const auto* failure = std::get_if<Failure>(&control_row)) {
     return *failure;
   }
-  const auto now = std::get<TimePoint>(sample);
-  if (now >= request.source.context.deadline) {
-    return rejected(ErrorCode::Timeout, Recovery::Backoff);
+  const auto& control = std::get<detail::PeerAuthority>(control_row);
+  const auto peer_gate = detail::check_peer(control, request.source.control_peer, now);
+  if (const auto* failure = std::get_if<Failure>(&peer_gate)) {
+    return *failure;
+  }
+  // Platform delegation capability is separate from the represented subject's business
+  // permissions. Its only anchor is this actual registered service's stable own Principal.
+  const auto capability = authorize_exact(
+      control.subject.principal, Permission::IdentityDelegationIssue,
+      {ResourceKind::Principal, {control.subject.principal.id.value}}, control.subject.assignments);
+  if (const auto* failure = std::get_if<Failure>(&capability)) {
+    return *failure;
   }
   auto found = work.session_security().find(validated.session.id);
   if (const auto* failure = std::get_if<Failure>(&found)) {
@@ -66,17 +81,18 @@ Outcome<IssuanceAuthority> authorize_issue(IdentitySecurityUnitOfWork& work,
       session->subject != validated.principal.id) {
     return authentication_rejected();
   }
-  auto principal_row = work.principals().find(session->subject);
-  if (const auto* failure = std::get_if<Failure>(&principal_row)) {
+  auto source = detail::read_subject(work, session->subject);
+  if (const auto* failure = std::get_if<Failure>(&source)) {
     return *failure;
   }
-  const auto& principal = std::get<std::optional<Principal>>(principal_row);
+  const auto& source_authority = std::get<detail::SubjectAuthority>(source);
+  const auto* principal = &source_authority.principal;
   auto credential_row = work.credentials().current(session->credential.id);
   if (const auto* failure = std::get_if<Failure>(&credential_row)) {
     return *failure;
   }
   const auto& credential = std::get<std::optional<CredentialVersionRecord>>(credential_row);
-  if (!principal || !credential) {
+  if (!credential) {
     return authentication_rejected();
   }
   const auto current =
@@ -102,15 +118,7 @@ Outcome<IssuanceAuthority> authorize_issue(IdentitySecurityUnitOfWork& work,
   if (const auto* failure = std::get_if<Failure>(&before)) {
     return *failure;
   }
-  const auto grants = work.exact_assignments().for_subject(principal->id);
-  if (const auto* failure = std::get_if<Failure>(&grants)) {
-    return *failure;
-  }
-  const auto& assignments = std::get<std::vector<ExactAssignment>>(grants);
-  const auto valid = validate_assignment_collection(assignments, principal->id);
-  if (const auto* failure = std::get_if<Failure>(&valid)) {
-    return *failure;
-  }
+  const auto& assignments = source_authority.assignments;
   for (const auto& binding : request.permissions) {
     Status allowed;
     if (binding.permission == Permission::IdentitySessionRead &&
@@ -139,8 +147,15 @@ Outcome<IssuanceAuthority> authorize_issue(IdentitySecurityUnitOfWork& work,
   if (const auto* failure = std::get_if<Failure>(&after)) {
     return *failure;
   }
-  return IssuanceAuthority{session->credential, now,
-                           std::min(session->access_expires_at, *credential->expires_at)};
+  const auto latest = std::min({session->access_expires_at, *credential->expires_at,
+                                control.credential.expires_at.value_or(TimePoint::min()),
+                                request.source.control_peer.binding.certificate.not_after});
+  const auto final = detail::final_check(checkpoint, request.source.context, latest, true);
+  if (const auto* failure = std::get_if<Failure>(&final)) {
+    return *failure;
+  }
+  return IssuanceAuthority{session->credential, checkpoint.now, latest, control.credential.ref,
+                           control.subject.authorization.version};
 }
 } // namespace
 
@@ -180,17 +195,15 @@ IdentityDelegationApplication::issue_delegation(const IssueIdentityDelegationReq
     if (const auto* failure = std::get_if<Failure>(&validated)) {
       return *failure;
     }
-    const auto authority = [&]() -> Outcome<IssuanceAuthority> {
-      auto begun = transactions_.begin();
+    const auto read_authority = [&](const ValidatedSession& source) -> Outcome<IssuanceAuthority> {
+      auto begun = detail::begin(transactions_, request.source.context);
       if (const auto* failure = std::get_if<Failure>(&begun)) {
         return *failure;
       }
-      auto work = std::move(std::get<std::unique_ptr<IdentitySecurityUnitOfWork>>(begun));
-      if (!work) {
-        return delegation_internal();
-      }
-      return authorize_issue(*work, request, std::get<ValidatedSession>(validated));
-    }();
+      auto& work = std::get<detail::Work>(begun);
+      return authorize_issue(work, request, source);
+    };
+    const auto authority = read_authority(std::get<ValidatedSession>(validated));
     if (const auto* failure = std::get_if<Failure>(&authority)) {
       return *failure;
     }
@@ -261,8 +274,23 @@ IdentityDelegationApplication::issue_delegation(const IssueIdentityDelegationReq
         checked.checked_at >= expires_at || checked.checked_at >= request.source.context.deadline) {
       return authentication_rejected();
     }
+    const auto final_authority = read_authority(checked);
+    if (const auto* failure = std::get_if<Failure>(&final_authority)) {
+      return *failure;
+    }
+    const auto& final = std::get<IssuanceAuthority>(final_authority);
+    if (final.control_credential != state.control_credential ||
+        final.control_authorization_version != state.control_authorization_version) {
+      return rejected(ErrorCode::Conflict, Recovery::ReadCurrent);
+    }
+    if (final.checked_at < state.checked_at) {
+      return rejected(ErrorCode::UpstreamUnavailable, Recovery::Diagnose);
+    }
+    if (final.checked_at >= expires_at) {
+      return authentication_rejected();
+    }
     return IdentityDelegationReply{std::move(std::get<OwnedSecret>(signed_proof)),
-                                   std::move(claims), checked.checked_at};
+                                   std::move(claims), final.checked_at};
   } catch (...) {
     return delegation_internal();
   }

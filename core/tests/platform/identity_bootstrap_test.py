@@ -90,7 +90,7 @@ def main(*, control_server_certificate=False, after_bootstrap=None):
                      'scope': [{'kind': 'RESOURCE_PRINCIPAL', 'id': admin}]}],
                 'control_assignments': [
                     {'assignment_id': str(uuid.uuid4()), 'permissions': ['identity.delegation.issue'],
-                     'scope': [{'kind': 'RESOURCE_PRINCIPAL', 'id': admin}]}]}
+                     'scope': [{'kind': 'RESOURCE_PRINCIPAL', 'id': control}]}]}
     enrollment_file = root / 'enrollment.json'
 
     def write(value):

@@ -41,14 +41,24 @@ public:
 class Credentials : public t::IdentityCredentialRepository {
 public:
   std::function<t::Outcome<std::optional<t::CredentialVersionRecord>>()> lookup;
+  std::function<t::Outcome<std::optional<t::CredentialVersionRecord>>(const t::CredentialId&)>
+      lookup_id;
+  std::function<t::Outcome<std::optional<t::CredentialVersionRecord>>()> lookup_certificate;
   std::function<t::Status(const t::CredentialVersionRecord&)> write;
   std::function<t::Status(const t::LoginIdentity&)> login_write;
-  t::Outcome<std::optional<t::CredentialVersionRecord>> current(const t::CredentialId&) override {
+  t::Outcome<std::optional<t::CredentialVersionRecord>>
+  current(const t::CredentialId& id) override {
+    if (lookup_id) {
+      return lookup_id(id);
+    }
     check(static_cast<bool>(lookup), "unexpected credential current");
     return lookup();
   }
   t::Outcome<std::optional<t::CredentialVersionRecord>>
   by_certificate(const t::Sha256Digest&) override {
+    if (lookup_certificate) {
+      return lookup_certificate();
+    }
     check(static_cast<bool>(lookup), "unexpected certificate lookup");
     return lookup();
   }
@@ -76,7 +86,11 @@ class Assignments : public t::IdentityExactAssignmentRepository {
 public:
   std::function<t::Status(const t::ExactAssignment&)> write;
   std::function<t::Outcome<std::vector<t::ExactAssignment>>()> read;
-  t::Outcome<std::vector<t::ExactAssignment>> for_subject(const t::SubjectId&) override {
+  std::function<t::Outcome<std::vector<t::ExactAssignment>>(const t::SubjectId&)> read_subject;
+  t::Outcome<std::vector<t::ExactAssignment>> for_subject(const t::SubjectId& id) override {
+    if (read_subject) {
+      return read_subject(id);
+    }
     check(static_cast<bool>(read), "unexpected grants query");
     return read();
   }
@@ -145,6 +159,7 @@ struct Script {
   Bootstrap bootstrap;
   t::CommitResult commit = t::CommitResult::Committed;
   t::TimePoint now{100s};
+  std::function<t::Outcome<t::TimePoint>()> sample_time;
   int active = 0;
   int commits = 0;
   std::function<t::Status(const t::AuditEntry&)> audit;
@@ -191,6 +206,9 @@ public:
     }
   }
   t::Outcome<t::TimePoint> current_time() override {
+    if (script_.sample_time) {
+      return script_.sample_time();
+    }
     return script_.now;
   }
   t::Repository<t::SubjectId, t::Principal>& principals() override {
@@ -604,6 +622,42 @@ void delegation_tests() {
       {{"request", "trace", "", now + 10s}, peer, {}},
       t::Service::Identity,
       {{t::Permission::IdentitySessionRead, {t::ResourceKind::Principal, {"human"}}}}};
+  auto control_principal = t::Principal{{"control"},
+                                        t::PrincipalKind::PlatformService,
+                                        t::ResourceRef{t::ResourceKind::Principal, {"control"}},
+                                        {1},
+                                        t::LifecycleState::Active};
+  auto control_credential = certificate(now);
+  t::ResourceVersion control_version{1};
+  std::vector<t::ExactAssignment> control_grants{
+      {{"control-delegation"},
+       control_principal.id,
+       {},
+       {{t::Permission::IdentityDelegationIssue,
+         {t::ResourceKind::Principal, {control_principal.id.value}}}},
+       {1}}};
+  const auto expected_control_grants = control_grants;
+  factory.script.principals.read = [&](const auto& id) -> t::Outcome<std::optional<t::Principal>> {
+    return std::optional{id == control_principal.id ? control_principal : principal};
+  };
+  factory.script.credentials.lookup_id =
+      [&](const auto& id) -> t::Outcome<std::optional<t::CredentialVersionRecord>> {
+    return std::optional{id == control_credential.ref.id ? control_credential : credential};
+  };
+  factory.script.credentials.lookup_certificate =
+      [&]() -> t::Outcome<std::optional<t::CredentialVersionRecord>> {
+    return std::optional{control_credential};
+  };
+  factory.script.authorizations.read =
+      [&](const auto& id) -> t::Outcome<std::optional<t::AuthorizationState>> {
+    return std::optional{t::AuthorizationState{
+        id, id == control_principal.id ? control_version : t::ResourceVersion{1}, false}};
+  };
+  factory.script.assignments.read_subject =
+      [&](const auto& id) -> t::Outcome<std::vector<t::ExactAssignment>> {
+    return id == control_principal.id ? t::Outcome<std::vector<t::ExactAssignment>>{control_grants}
+                                      : factory.script.assignments.read();
+  };
   auto result = app.issue_delegation(request);
   check(std::holds_alternative<t::IdentityDelegationReply>(result), "self list delegation signs");
   const auto& reply = std::get<t::IdentityDelegationReply>(result);
@@ -658,6 +712,83 @@ void delegation_tests() {
   factory.script.assignments.read = []() -> t::Outcome<std::vector<t::ExactAssignment>> {
     return std::vector<t::ExactAssignment>{};
   };
+  const auto never_signs = [&](t::ErrorCode code, std::string_view reason) {
+    const auto signed_before = crypto.calls;
+    check(error(app.issue_delegation(request), code) && crypto.calls == signed_before &&
+              factory.script.active == 0,
+          reason);
+  };
+  control_grants.clear();
+  never_signs(t::ErrorCode::PermissionDenied, "registered Control needs explicit delegation cap");
+  control_grants = {{{"role-only"},
+                     control_principal.id,
+                     {{t::FixedRole::Admin, {t::ResourceKind::Principal, {"control"}}}},
+                     {},
+                     {1}}};
+  never_signs(t::ErrorCode::PermissionDenied, "admin role cannot imply delegation cap");
+  control_grants = expected_control_grants;
+  control_grants.front().explicit_permissions.front().resource.id.value = "human";
+  never_signs(t::ErrorCode::PermissionDenied, "wrong Principal cannot grant Control self cap");
+  control_grants.front().explicit_permissions.front().resource = {t::ResourceKind::Catalog,
+                                                                  {"control"}};
+  never_signs(t::ErrorCode::PermissionDenied, "Catalog cannot substitute own Principal capability");
+  control_grants = expected_control_grants;
+  control_credential.state = t::CredentialState::Revoked;
+  control_credential.revoked_at = now;
+  never_signs(t::ErrorCode::Unauthenticated, "revoked current Control credential never signs");
+  control_credential = certificate(now);
+  auto changed_after_sign = [&](auto change, t::ErrorCode code, std::string_view reason) {
+    const auto signed_before = crypto.calls;
+    crypto.while_signing = change;
+    check(error(app.issue_delegation(request), code) && crypto.calls == signed_before + 1 &&
+              factory.script.active == 0,
+          reason);
+    crypto.while_signing = {};
+    control_grants = expected_control_grants;
+    control_version = {1};
+    control_credential = certificate(now);
+    control_principal.state = t::LifecycleState::Active;
+  };
+  changed_after_sign([&] { control_grants.clear(); }, t::ErrorCode::PermissionDenied,
+                     "Control grant revoked while signing rejects generated proof");
+  changed_after_sign([&] { ++control_version.value; }, t::ErrorCode::Conflict,
+                     "Control grant version changed while signing rejects generated proof");
+  changed_after_sign([&] { ++control_credential.ref.version.value; }, t::ErrorCode::Unauthenticated,
+                     "Control credential rotated while signing rejects generated proof");
+  changed_after_sign([&] { control_principal.state = t::LifecycleState::Disabled; },
+                     t::ErrorCode::Unauthenticated,
+                     "Control disabled while signing rejects generated proof");
+  changed_after_sign([&] { control_credential.expires_at = now; }, t::ErrorCode::Unauthenticated,
+                     "Control expires while signing rejects generated proof");
+  changed_after_sign(
+      [&] {
+        std::get<t::CertificateBinding>(control_credential.material).registered_san = "other";
+      },
+      t::ErrorCode::Unauthenticated, "Control SAN binding changes while signing rejects proof");
+  int time_reads = 0;
+  factory.script.sample_time = [&]() -> t::Outcome<t::TimePoint> {
+    return now + (++time_reads == 1 ? 0s : 2s);
+  };
+  never_signs(t::ErrorCode::Timeout, "pre-sign authority checkpoint exceeding one second rejects");
+  factory.script.sample_time = {};
+  time_reads = 0;
+  factory.script.sample_time = [&]() -> t::Outcome<t::TimePoint> {
+    return now + (++time_reads == 4 ? 2s : 0s);
+  };
+  const auto post_checkpoint_signs = crypto.calls;
+  check(error(app.issue_delegation(request), t::ErrorCode::Timeout) &&
+            crypto.calls == post_checkpoint_signs + 1 && factory.script.active == 0,
+        "post-sign authority checkpoint exceeding one second rejects generated proof");
+  factory.script.sample_time = {};
+  time_reads = 0;
+  factory.script.sample_time = [&]() -> t::Outcome<t::TimePoint> {
+    return now - (++time_reads > 2 ? 1s : 0s);
+  };
+  const auto backwards_signs = crypto.calls;
+  check(error(app.issue_delegation(request), t::ErrorCode::UpstreamUnavailable) &&
+            crypto.calls == backwards_signs + 1 && factory.script.active == 0,
+        "backwards authoritative post-sign time cannot return a proof");
+  factory.script.sample_time = {};
   crypto.while_signing = [&] { sessions.rejected = true; };
   check(error(app.issue_delegation(request), t::ErrorCode::Unauthenticated),
         "source revoked during signing rejects proof");

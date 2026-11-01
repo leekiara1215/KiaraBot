@@ -215,7 +215,7 @@ void application_flow(const pg::DatabaseConfig& config) {
       {{{"40000000-0000-4000-8000-000000000002"},
         control,
         {},
-        {{t::Permission::IdentityDelegationIssue, own_principal}},
+        {{t::Permission::IdentityDelegationIssue, {t::ResourceKind::Principal, {control.value}}}},
         {1}}}};
   check(take(admin->bootstrap_offline(bootstrap)).marker.state == t::BootstrapState::Consumed,
         "offline bootstrap did not consume durable marker");

@@ -1787,3 +1787,26 @@ Issue RPC在解码/展开前同步成熟JWT的128 exact bindings上限：资源1
 当前factory为make_identity_rpc(SecurityApp&, PeerAuthenticator, Issuer*=nullptr, InvocationDeadline={})，其中InvocationDeadline是function<Outcome<TimePoint>()>，闭包由服务持有。生产composition必须注入实际选定自身TLS链有效期与当前可信clock/lifecycle gate；空回调仅为fixture/源兼容，不得作为生产默认安全策略，也不得把自身到期时间写入远端Control的CertificateBinding。
 
 run保留body/gRPC/default2秒/max5秒及取消检查，可信回调失败沿原Failure进入完整RpcFailure，异常在调用应用前转Internal/NotAccepted。返回非正时间失败关闭为UpstreamUnavailable；过期期限为Timeout/NotAccepted。有效期限取已有预算与自身limit最早者，回调之后与认证之后再次检查取消/到期；传入每个Core用例的context.deadline包含此上限，由Core final_check阻止自身TLS到期后的提交。外层不授权、不查仓储、不实现TLS链/clock判断或伪造有效期。较晚limit不能延长请求期限。
+
+### IssueDelegation platform capability and represented permissions
+
+An authenticated Control service must currently hold an explicit
+identity.delegation.issue binding at its own stable Principal resource
+(ResourceKind::Principal, id=the actual registered platform subject). Certificate
+validity/registration and default roles do not grant this capability; a grant at a
+represented human Principal, Catalog or other service Principal cannot substitute.
+This service capability is checked independently of every represented subject's
+exact requested business permission/resource. It therefore supports dynamic Session
+resources without turning the service capability into blanket business authority.
+Offline enrollment must explicitly provide the own-Principal grant; no CLI or daemon
+automatically creates it.
+
+Issue reads the current Control registration, credential, Principal, authorization
+watermark and exact grants before signing and again after signing. Source access
+and business grants are also revalidated. Each short authority transaction uses the
+existing current-time/final-check gate with at most one second authorization window
+and the request/certificate/credential deadlines. Crypto/random/session-application
+calls hold no outer UoW. Missing/wrong capability returns PermissionDenied; revoked,
+expired or mismatched current peer returns Unauthenticated; changed authorization
+watermark returns Conflict/ReadCurrent; dependency and deadline failures propagate.
+A signed intermediate proof is discarded on any final check failure and never returned.
