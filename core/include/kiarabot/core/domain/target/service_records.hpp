@@ -27,6 +27,17 @@ struct LoginSession {
   TimePoint expires_at;
   bool revoked = false;
 };
+// Immutable public projection, including creation time. Safe in an ordinary success receipt;
+// contains neither token verifiers nor secret key references.
+struct SessionMetadata {
+  SessionId id;
+  SubjectId subject;
+  TimePoint created_at;
+  TimePoint expires_at;
+  std::uint64_t rotation;
+  ResourceVersion version;
+  bool revoked;
+};
 struct ResourceGrant {
   AssignmentId id;
   SubjectId subject;

@@ -570,6 +570,15 @@ SessionRecord.created_at 是 Identity 持久保存的首次创建时间，刷新
 
 RegisterPrincipal 同事务创建无秘密的 PENDING CredentialStatus 引用（credential_id/principal_id/binding/version/created_at/checked_at）；尚未发放的 PENDING 不得伪造 expires_at。GetCredentialStatus 以 identity.principal.read 在线读取同一记录，默认2秒/最多5秒；ACTIVE/EXPIRED 必须有 expires_at，REVOKED 可保留原到期。状态查询不返回秘密、摘要或可重放材料。初次实际发放仍用 RotateCredential 单次 CredentialDelivery，未知结果不得从状态查询恢复秘密。当前未实现，不启用生产路由。
 
+### P04 撤销会话的完整成功收据
+
+SessionMetadata原样移至共享service_records（同一类型/布局），普通ReplayResult末尾
+追加该无秘密快照，旧0–11类型序号不变。RevokeSession成功收据因此完整保存created_at、
+主体、轮次、版本、到期和revoked事实，不能仅存旧LoginSession再从可变行补创建时间。
+重放仍先当前鉴权/可见性，返回原快照；checked_at是本次权威DB验证时间。Raw token、
+verifier、密钥引用和SecretReplayPayload仍不允许进入普通七天收据。基础设施必须
+同步typed关系结果编解码/版本与实际持久化测试后，才接入该新variant。
+
 ### P04 文本凭据的安全随机端口
 
 RandomPort::opaque_token返回安全内存中的64位小写hex文本，含32字节CSPRNG熵且不带

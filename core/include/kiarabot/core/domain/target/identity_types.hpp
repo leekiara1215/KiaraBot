@@ -123,17 +123,6 @@ struct SessionSecurity {
   ResourceVersion version;
   bool revoked = false;
 };
-// Authoritative projection from the security row, never populated with query-time now().
-// No token hashes/key refs/verifier material are returned by the ListSessions query port.
-struct SessionMetadata {
-  SessionId id;
-  SubjectId subject;
-  TimePoint created_at;
-  TimePoint expires_at;
-  std::uint64_t rotation;
-  ResourceVersion version;
-  bool revoked;
-};
 struct EphemeralTokenPair {
   SessionId session;
   OwnedSecret access;

@@ -26,7 +26,8 @@ struct ResourceMutationResult {
 // here.
 using ReplayResult = std::variant<EmptySuccess, ResourceMutationResult, Operation, Principal,
                                   LoginSession, ResourceGrant, BotAccount, PluginInstallation,
-                                  PluginInstance, ScheduledTask, Occurrence, ModelIntent>;
+                                  PluginInstance, ScheduledTask, Occurrence, ModelIntent,
+                                  SessionMetadata>;
 struct ReceiptKey {
   SubjectId subject;
   std::string method;
