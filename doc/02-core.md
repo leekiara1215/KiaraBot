@@ -774,3 +774,7 @@ password credential及index version），解密前后每次重放gate均重读�
 刷新最终短UoW会重新按精确输入verifier及原peer/key解析refresh handle并读取成功收据，
 不能沿用前一个已释放读取中的Current handle。若同键竞争者已成功提交，则释放事务后
 按原结果受限重放；不同键仍不能查询旧输入历史，不把正常同键恢复误报为认证失败。
+
+分页token不存在、篡改、过期、重启失效或快照owner/origin/scope/page-size/version绑定
+不匹配，按唯一API pagination.token_error返回InvalidArgument（HTTP400），不是Conflict。
+前置当前身份/授权拒绝仍保留其Unauthenticated/PermissionDenied语义，不由token错误掩盖。

@@ -947,6 +947,11 @@ t::IdentityActorProof actor(Fixture& f, const t::EphemeralTokenPair& origin) {
   return {f.peer, view("proof")};
 }
 void snapshots_are_immutable_and_reauthorize() {
+  auto invalid_argument = [](const t::Outcome<t::SessionPageReply>& result) {
+    assert(std::holds_alternative<t::Failure>(result));
+    assert(std::get<t::Failure>(result).code == t::ErrorCode::InvalidArgument);
+    assert(std::get<t::Failure>(result).recovery == t::Recovery::CorrectInput);
+  };
   Fixture f;
   auto first = f.app->login(f.login_request("first"));
   auto second = f.app->login(f.login_request("second"));
@@ -970,23 +975,22 @@ void snapshots_are_immutable_and_reauthorize() {
   assert(std::holds_alternative<t::SessionPageReply>(next));
   assert(std::get<t::SessionPageReply>(next).sessions.size() == 1);
   assert(std::get<t::SessionPageReply>(next).next_page_token.empty());
+  invalid_argument(
+      f.app->list_sessions({f.context(), proof, subject, {1, std::string(64, 'f'), {}}}));
   const auto bound_claims = f.delegations.claims;
   assert(bound_claims.has_value());
   auto tampered = continuation;
   tampered.page_token.back() = tampered.page_token.back() == 'a' ? 'b' : 'a';
-  assert(std::holds_alternative<t::Failure>(
-      f.app->list_sessions({f.context(), proof, subject, tampered})));
+  invalid_argument(f.app->list_sessions({f.context(), proof, subject, tampered}));
   auto explicit_snapshot = continuation;
   explicit_snapshot.snapshot_id = first_page.snapshot_id;
   assert(std::holds_alternative<t::SessionPageReply>(
       f.app->list_sessions({f.context(), proof, subject, explicit_snapshot})));
   explicit_snapshot.snapshot_id.back() = explicit_snapshot.snapshot_id.back() == 'a' ? 'b' : 'a';
-  assert(std::holds_alternative<t::Failure>(
-      f.app->list_sessions({f.context(), proof, subject, explicit_snapshot})));
+  invalid_argument(f.app->list_sessions({f.context(), proof, subject, explicit_snapshot}));
   assert(f.delegations.claims.has_value());
   f.delegations.claims->source_session = std::get<t::IdentityTokenReply>(second).tokens.session;
-  assert(std::holds_alternative<t::Failure>(
-      f.app->list_sessions({f.context(), proof, subject, continuation})));
+  invalid_argument(f.app->list_sessions({f.context(), proof, subject, continuation}));
   f.delegations.claims = bound_claims;
 
   const t::SubjectId other_subject{"77777777-7777-4777-8777-777777777777"};
@@ -1023,39 +1027,37 @@ void snapshots_are_immutable_and_reauthorize() {
   f.delegations.claims->source_credential = other_credential;
   assert(f.delegations.claims.has_value());
   f.delegations.claims->source_session = other_session;
-  assert(std::holds_alternative<t::Failure>(
-      f.app->list_sessions({f.context(), proof, subject, continuation})));
+  invalid_argument(f.app->list_sessions({f.context(), proof, subject, continuation}));
   f.delegations.claims = bound_claims;
   f.store.state.assignments[0].explicit_permissions.push_back(
       {t::Permission::IdentitySessionRead, other_binding});
   assert(f.delegations.claims.has_value());
   f.delegations.claims->permissions = {{t::Permission::IdentitySessionRead, other_binding}};
-  assert(std::holds_alternative<t::Failure>(
-      f.app->list_sessions({f.context(), proof, other_subject, continuation})));
+  invalid_argument(f.app->list_sessions({f.context(), proof, other_subject, continuation}));
   f.delegations.claims = bound_claims;
   auto changed_size = continuation;
   changed_size.page_size = 2;
-  assert(std::holds_alternative<t::Failure>(
-      f.app->list_sessions({f.context(), proof, subject, changed_size})));
+  invalid_argument(f.app->list_sessions({f.context(), proof, subject, changed_size}));
   f.store.state.authorizations[0].version.value = 2;
+  const auto stale_authorization =
+      f.app->list_sessions({f.context(), proof, subject, continuation});
+  assert(std::get<t::Failure>(stale_authorization).code == t::ErrorCode::Unauthenticated);
   assert(f.delegations.claims.has_value());
   f.delegations.claims->authorization_version = {2};
-  assert(std::holds_alternative<t::Failure>(
-      f.app->list_sessions({f.context(), proof, subject, continuation})));
+  invalid_argument(f.app->list_sessions({f.context(), proof, subject, continuation}));
   f.store.state.authorizations[0].version.value = 1;
   f.delegations.claims = bound_claims;
   f.store.now += std::chrono::seconds{601};
   f.store.monotonic += std::chrono::seconds{601};
   f.peer.verified_at = f.store.now;
   proof = actor(f, std::get<t::IdentityTokenReply>(first).tokens);
-  assert(std::holds_alternative<t::Failure>(
-      f.app->list_sessions({f.context(), proof, subject, continuation})));
+  invalid_argument(f.app->list_sessions({f.context(), proof, subject, continuation}));
   auto fresh = f.app->list_sessions({f.context(), proof, subject, {1, {}, {}}});
   assert(std::holds_alternative<t::SessionPageReply>(fresh));
   const auto fresh_page = std::get<t::SessionPageReply>(fresh);
   f.rebuild();
-  assert(std::holds_alternative<t::Failure>(
-      f.app->list_sessions({f.context(), proof, subject, {1, fresh_page.next_page_token, {}}})));
+  invalid_argument(
+      f.app->list_sessions({f.context(), proof, subject, {1, fresh_page.next_page_token, {}}}));
 }
 void revoke_changes_security_metadata_and_invalidation_atomically() {
   Fixture f;

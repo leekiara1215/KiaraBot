@@ -166,3 +166,19 @@ no-recover refresh group: a one-shot reentrant competitor commits first, outer r
 original access/refresh/session/rotation, exactly one consumption/receipt/commit and no second
 rotation. Old input with new key remains Unauthenticated. Every crypto call asserts no active UoW.
 Production/test full analyzer+bugprone, format16 and diff pass without checker exclusions.
+
+## Pagination token stable-error correction
+
+Independent review found cache missing/restart/owner/expiry failures mapped Conflict contrary to
+API pagination.token_error. Snapshot/token lookup and immutable binding mismatch now return
+InvalidArgument; permission/current-origin refusals before token lookup retain their real auth
+codes. Tests require exact stable codes for token-only tamper/expiry/restart/explicit-ID mismatch,
+changed valid actor/origin/scope/page size and current DB+proof authversion changed together.
+No API file is modified: this implements the already published contract, not a new wire behavior.
+
+Issue3 checks: actual -Werror ASan/UBSan no-recover list group passes exact InvalidArgument plus
+CorrectInput assertions for well-shaped unknown cursor, tamper, mismatched explicit ID, valid
+actor/origin/scope changes, page size, current DB+proof version updates, expired/restarted cursor.
+Earlier stale-proof current-auth failure remains Unauthenticated; dependency errors remain explicit.
+A fresh authorization race after copying a valid page still uses Conflict/ReadCurrent rather than
+mislabeling it a malformed token. Source/helper/test full tidy, format and diff pass, no exclusions.

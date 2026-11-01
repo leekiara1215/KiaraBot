@@ -553,7 +553,7 @@ public:
     }
     const auto found = snapshots_.find(id);
     if (found == snapshots_.end() || found->second.owner != owner) {
-      return failure(ErrorCode::Conflict, Recovery::ReadCurrent);
+      return failure(ErrorCode::InvalidArgument, Recovery::CorrectInput);
     }
     return page(found->second, index, now);
   }
