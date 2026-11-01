@@ -245,6 +245,37 @@ public:
           return record;
         });
   }
+  target::Outcome<std::optional<target::CredentialVersionRecord>>
+  by_platform(const target::PlatformPeer& peer) override {
+    return query<std::optional<target::CredentialVersionRecord>>(
+        sql_,
+        [&](auto& transaction) -> target::Outcome<std::optional<target::CredentialVersionRecord>> {
+          if (!valid_id(peer.subject.value) || !target::valid_service(peer.service)) {
+            return invalid();
+          }
+          const auto heads = transaction.exec(
+              "SELECT h.id,h.version,h.material,h.leaf_fingerprint FROM kiarabot.credential_heads "
+              "h "
+              "LEFT JOIN kiarabot.credential_certificates c ON c.id=h.id AND c.version=h.version "
+              "WHERE h.subject=$1 AND (c.platform_service=$2 OR (h.material=3 AND c.id IS NULL))",
+              pqxx::params{peer.subject.value, static_cast<int>(peer.service)});
+          if (heads.empty()) {
+            return std::optional<target::CredentialVersionRecord>{};
+          }
+          require_stored(heads.size() == 1);
+          const auto head = heads.one_row();
+          auto record =
+              load_credential(transaction, {{head["id"].template as<std::string>()},
+                                            {head["version"].template as<std::uint64_t>()}});
+          require_stored(record.has_value() && head["material"].template as<int>() == 3);
+          const auto* certificate = std::get_if<target::CertificateBinding>(&record->material);
+          require_stored(certificate && record->subject == peer.subject &&
+                         certificate->subject == peer.subject &&
+                         certificate->platform_service == peer.service &&
+                         certificate->fingerprint == read_digest(head["leaf_fingerprint"]));
+          return record;
+        });
+  }
   target::Outcome<std::optional<target::LoginIdentity>>
   login(const std::string& normalized_login) override {
     return query<std::optional<target::LoginIdentity>>(

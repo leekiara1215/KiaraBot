@@ -308,7 +308,7 @@ JWT序列化使用同一jwt-cpp官方nlohmann-json traits，NumericDate先检查
 
 ### P04 Identity 安全关系存储（实施中）
 
-Identity 最新空库 schema v7；Runtime、Scheduler、Model 各自为 v4（含下文完整会话结果表）。
+Identity 最新空库 schema v8；Runtime、Scheduler、Model 各自为 v4（含下文完整会话结果表）。
 不升级已有库，不自动初始化，不改变四库隔离。新增安全仓储借用公共 UoW 的同一物理
 事务，凭据当前头/不可变历史、会话安全元数据、精确授权、加密成功收据、refresh 恢复
 索引和管理员引导标记不能单独提交。端口存在或 schema 已创建不代表业务已接线。
@@ -447,3 +447,15 @@ JWT中的上游actor指纹，不证明原业务连接的TLS possession。业务o
 `verify`绑定真实来客；Identity应用另读当前recipient、所有actor及来源凭据/session/
 授权状态。此入口不授予业务权限、不访问数据库；坏proof/peer返回Unauthenticated，
 不可信时钟或资源故障返回UpstreamUnavailable，不生成新稳定错误码或wire字段。
+
+
+### P04 CURRENT 平台 actor 定位
+
+by_platform(PlatformPeer) 在同一 UoW 用 subject/current-head 索引与当前 certificate 关系
+按 platform service 精确定位。仅当前 head 参与，历史证书不参与；零条为空，多个当前匹配
+为 Internal，不任选，不将全部主体载入内存。未知 service、空/NUL subject 为
+InvalidArgument；缺失当前证书材料或 head/指纹错配为 Internal，依赖故障沿原 Failure
+映射传播并使 UoW 回滚。返回可为 Revoked/过期记录，Core 仍验证 owner、主体状态、当前
+证书/SAN/service 和有限期限；此查询不证明 TLS possession，也不代替来源 actor 授权。
+Identity 空库 schema8 增加 credential_heads(subject,id,version) 非唯一索引；允许识别
+歧义而不以索引任意选择。其他三库未变，旧库拒绝，不自动迁移或重置。

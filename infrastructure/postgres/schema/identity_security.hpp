@@ -19,6 +19,7 @@ CREATE TABLE kiarabot.credential_heads (
         (material=3 AND leaf_fingerprint IS NOT NULL AND bootstrap_key IS NULL AND bootstrap_tag IS NULL)),
   UNIQUE(id,subject)
 );
+CREATE INDEX credential_heads_subject ON kiarabot.credential_heads(subject,id,version);
 CREATE TABLE kiarabot.credential_versions (
   id text NOT NULL, version kiarabot.uint64 NOT NULL CHECK(version>0), subject text NOT NULL,
   material integer NOT NULL CHECK(material BETWEEN 0 AND 3),

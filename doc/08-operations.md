@@ -413,7 +413,7 @@ socket，不继续受理。暂时忙等可恢复情况由具体组合根区分�
 ### P03 common transaction limits
 
 
-P03 公共 schema 为 v3；P04 Identity 空库含安全关系、完整会话结果与当前 bootstrap 定位及源 Control 会话绑定后为 v7，另三库为 v4。要求UTF8数据库；
+P03 公共 schema 为 v3；P04 Identity 空库含安全关系、完整会话结果与当前 bootstrap 定位及源 Control 会话绑定和平台当前定位索引后为 v8，另三库为 v4。要求UTF8数据库；
 旧版本或其他结构不自动升级，必须按本轮空库部署
 流程初始化新的专属库，不能清空原库或自动补表。schema结构描述/对象owner/运行权限均参与
 启动验证。当前仅存储公共能力，业务就绪仍由各服务已实现依赖决定。
@@ -570,7 +570,7 @@ wrapper仅核对返回指纹、正verified_at、受信clock/已知偏差及与ve
 ### P04 离线管理员与 Control 登记命令
 
 `kiarabot-identity-bootstrap` 只在可信部署主机离线运行，不提供 HTTP/gRPC 初始化入口。
-先显式初始化 Identity 空库（当前 schema7），停止同库 Identity daemon，再执行：
+先显式初始化 Identity 空库（当前 schema8），停止同库 Identity daemon，再执行：
 
 ```bash
 kiarabot-identity-bootstrap --config identity.json --enrollment enrollment.json --password-file administrator-password
@@ -809,3 +809,15 @@ this explicit test grant and verify raw32/key-ID/set-version/key-version/absolut
 expiry over mTLS. --keys-no-grant omits it and requires registered-caller denial,
 including the future-version request; a CA-valid but unregistered leaf is also denied.
 Default bootstrap and daemon tests do not automatically gain Catalog privileges.
+
+
+### P04 CURRENT 平台 actor 定位
+
+by_platform(PlatformPeer) 在同一 UoW 用 subject/current-head 索引与当前 certificate 关系
+按 platform service 精确定位。仅当前 head 参与，历史证书不参与；零条为空，多个当前匹配
+为 Internal，不任选，不将全部主体载入内存。未知 service、空/NUL subject 为
+InvalidArgument；缺失当前证书材料或 head/指纹错配为 Internal，依赖故障沿原 Failure
+映射传播并使 UoW 回滚。返回可为 Revoked/过期记录，Core 仍验证 owner、主体状态、当前
+证书/SAN/service 和有限期限；此查询不证明 TLS possession，也不代替来源 actor 授权。
+Identity 空库 schema8 增加 credential_heads(subject,id,version) 非唯一索引；允许识别
+歧义而不以索引任意选择。其他三库未变，旧库拒绝，不自动迁移或重置。

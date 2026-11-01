@@ -7,7 +7,7 @@
 namespace kiarabot::infrastructure::postgres::schema {
 
 inline constexpr int version(core::target::Service owner) {
-  return owner == core::target::Service::Identity ? 7 : 4;
+  return owner == core::target::Service::Identity ? 8 : 4;
 }
 // Explicit empty-database schema version; no upgrade or reset of existing databases.
 inline constexpr std::string_view kCreate = R"sql(

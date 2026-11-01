@@ -628,6 +628,94 @@ void check_session_control_binding(Database& database, const DatabaseConfig& con
   }
 }
 
+void check_platform_locator(Database& database) {
+  const target::PlatformPeer peer{target::Service::Control, {"session-control"}};
+  target::CredentialVersionRecord control;
+  {
+    auto access = take(detail::DatabaseAccess::begin(database));
+    auto credentials = detail::credential_repository(*access.sql);
+    control = *take(credentials->by_platform(peer));
+    check(control.ref.id.value == "session-control-credential" && control.ref.version.value == 2 &&
+              control.subject == peer.subject,
+          "platform lookup did not return authoritative current owner/head");
+    check(!take(credentials->by_platform({target::Service::Identity, peer.subject})),
+          "platform lookup ignored service");
+    check(!take(credentials->by_platform({peer.service, {"missing-platform"}})),
+          "missing platform actor was not optional");
+    const auto old = std::get<target::CertificateBinding>(control.material).fingerprint;
+    control.ref.version = {3};
+    std::get<target::CertificateBinding>(control.material).fingerprint.bytes[0] = std::byte{0x95};
+    take(credentials->save(control, target::ResourceVersion{2}));
+    check(take(credentials->by_platform(peer))->ref.version.value == 3 &&
+              !take(credentials->by_certificate(old)),
+          "platform lookup retained historical certificate head");
+    control.ref.version = {4};
+    control.state = target::CredentialState::Revoked;
+    control.revoked_at = take(access.work->current_time());
+    take(credentials->save(control, target::ResourceVersion{3}));
+    check(take(credentials->by_platform(peer))->state == target::CredentialState::Revoked,
+          "platform locator applied authorization instead of returning current state");
+    committed(*access.work);
+  }
+  for (int shape = 0; shape < 3; ++shape) {
+    auto access = take(detail::DatabaseAccess::begin(database));
+    auto credentials = detail::credential_repository(*access.sql);
+    auto invalid = peer;
+    if (shape == 0) {
+      // Deliberate malformed boundary input; production must reject unknown enum values.
+      // NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange)
+      invalid.service = static_cast<target::Service>(6);
+    } else if (shape == 1) {
+      invalid.subject.value.clear();
+    } else {
+      invalid.subject.value = std::string("platform\0suffix", 15);
+    }
+    expect(credentials->by_platform(invalid), target::ErrorCode::InvalidArgument);
+    rejected(*access.work);
+  }
+  {
+    auto access = take(detail::DatabaseAccess::begin(database));
+    auto credentials = detail::credential_repository(*access.sql);
+    auto duplicate = control;
+    duplicate.ref = {{"ambiguous-platform"}, {1}};
+    std::get<target::CertificateBinding>(duplicate.material).fingerprint.bytes[0] = std::byte{0x96};
+    take(credentials->save(duplicate, {}));
+    expect(credentials->by_platform(peer), target::ErrorCode::Internal);
+    rejected(*access.work);
+  }
+  {
+    auto access = take(detail::DatabaseAccess::begin(database));
+    auto credentials = detail::credential_repository(*access.sql);
+    take(access.sql->run([](pqxx::transaction_base& transaction) -> target::Status {
+      transaction.exec("DELETE FROM kiarabot.credential_certificates WHERE "
+                       "id='session-control-credential' AND version=4");
+      return std::monostate{};
+    }));
+    expect(credentials->by_platform(peer), target::ErrorCode::Internal);
+    rejected(*access.work);
+  }
+  {
+    auto access = take(detail::DatabaseAccess::begin(database));
+    auto credentials = detail::credential_repository(*access.sql);
+    take(access.sql->run([](pqxx::transaction_base& transaction) -> target::Status {
+      transaction.exec(
+          "UPDATE kiarabot.credential_heads SET leaf_fingerprint=decode(repeat('ff',32),'hex') "
+          "WHERE id='session-control-credential'");
+      return std::monostate{};
+    }));
+    expect(credentials->by_platform(peer), target::ErrorCode::Internal);
+    rejected(*access.work);
+  }
+  {
+    auto access = take(detail::DatabaseAccess::begin(database));
+    auto credentials = detail::credential_repository(*access.sql);
+    check(take(credentials->by_platform(peer))->ref.version.value == 4 &&
+              !take(credentials->current({"ambiguous-platform"})),
+          "platform lookup failure left partial corruption or ambiguous row");
+    access.work->rollback();
+  }
+}
+
 void check_identity_secret_receipts(Database& database) {
   target::EncryptedSecretReceipt receipt;
   target::SecretReceiptCapacity capacity{};
@@ -1050,6 +1138,7 @@ void check_common(Database& database, const DatabaseConfig& config) {
     check_session_metadata_snapshot(database);
     check_global_session_count(database);
     check_identity_assignments(database);
+    check_platform_locator(database);
   }
   constexpr auto kHigh = std::uint64_t{1} << 63;
   constexpr auto kMaximum = std::numeric_limits<std::uint64_t>::max();

@@ -338,7 +338,7 @@ void run(const std::filesystem::path& root, std::uint16_t port,
       pqxx::connection migration(connection_string(config));
       pqxx::read_transaction inspect(migration);
       require(inspect.exec("SELECT version FROM kiarabot.schema_versions").one_row()[0].as<int>() ==
-                  (config.service == target::Service::Identity ? 7 : 4),
+                  (config.service == target::Service::Identity ? 8 : 4),
               "per-service schema version incorrect");
     }
     if (config.service == target::Service::Identity) {
@@ -476,6 +476,26 @@ void run(const std::filesystem::path& root, std::uint16_t port,
       require(locator_access.work->commit() != target::CommitResult::Committed,
               "bootstrap lookup dependency failure committed");
     }
+    if (config.service == target::Service::Identity) {
+      auto platform_database =
+          std::move(std::get<std::unique_ptr<pg::Database>>(pg::Database::open(runtime)));
+      auto platform_access = std::move(std::get<pg::detail::CommonWorkAccess>(
+          pg::detail::DatabaseAccess::begin(*platform_database)));
+      {
+        pqxx::work terminate(administrator);
+        const auto killed = terminate.exec("SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
+                                           "WHERE datname=$1 AND usename=$2",
+                                           pqxx::params{config.database, config.runtime_role});
+        require(killed.size() == 1, "unexpected platform writer sessions");
+        terminate.commit();
+      }
+      auto credentials = pg::detail::credential_repository(*platform_access.sql);
+      expect_error(credentials->by_platform({target::Service::Control, {"session-control"}}),
+                   target::ErrorCode::UpstreamUnavailable);
+      require(platform_access.work->commit() != target::CommitResult::Committed,
+              "platform lookup dependency failure committed");
+    }
+
     pg::test::check_dependency_fault(config, runtime);
     pg::test::check_deadline(runtime);
     {
