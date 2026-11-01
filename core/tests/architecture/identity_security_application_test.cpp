@@ -907,19 +907,85 @@ void snapshots_are_immutable_and_reauthorize() {
   assert(first_page.expires_at <= f.store.now + std::chrono::minutes{10});
   auto third = f.app->login(f.login_request("third"));
   assert(std::holds_alternative<t::IdentityTokenReply>(third));
-  auto continuation = t::SessionPageRequest{1, first_page.next_page_token, first_page.snapshot_id};
+  auto continuation = t::SessionPageRequest{1, first_page.next_page_token, {}};
   auto next = f.app->list_sessions({f.context(), proof, subject, continuation});
   assert(std::holds_alternative<t::SessionPageReply>(next));
   assert(std::get<t::SessionPageReply>(next).sessions.size() == 1);
   assert(std::get<t::SessionPageReply>(next).next_page_token.empty());
+  const auto bound_claims = f.delegations.claims;
+  assert(bound_claims.has_value());
+  auto tampered = continuation;
+  tampered.page_token.back() = tampered.page_token.back() == 'a' ? 'b' : 'a';
+  assert(std::holds_alternative<t::Failure>(
+      f.app->list_sessions({f.context(), proof, subject, tampered})));
+  auto explicit_snapshot = continuation;
+  explicit_snapshot.snapshot_id = first_page.snapshot_id;
+  assert(std::holds_alternative<t::SessionPageReply>(
+      f.app->list_sessions({f.context(), proof, subject, explicit_snapshot})));
+  explicit_snapshot.snapshot_id.back() = explicit_snapshot.snapshot_id.back() == 'a' ? 'b' : 'a';
+  assert(std::holds_alternative<t::Failure>(
+      f.app->list_sessions({f.context(), proof, subject, explicit_snapshot})));
+  assert(f.delegations.claims.has_value());
+  f.delegations.claims->source_session = std::get<t::IdentityTokenReply>(second).tokens.session;
+  assert(std::holds_alternative<t::Failure>(
+      f.app->list_sessions({f.context(), proof, subject, continuation})));
+  f.delegations.claims = bound_claims;
+
+  const t::SubjectId other_subject{"77777777-7777-4777-8777-777777777777"};
+  const t::CredentialVersionRef other_credential{{"88888888-8888-4888-8888-888888888888"}, {1}};
+  const t::ResourceRef other_binding{t::ResourceKind::Principal, {other_subject.value}};
+  const t::SessionId other_session{"99999999-9999-4999-8999-999999999999"};
+  f.store.state.principals.push_back({other_subject, t::PrincipalKind::Human, {}, {1}});
+  f.store.state.authorizations.push_back({other_subject, {1}, false});
+  f.store.state.credentials.push_back({other_credential,
+                                       other_subject,
+                                       t::PasswordVerifier{"password", {1}},
+                                       t::CredentialState::Active,
+                                       f.store.now - std::chrono::hours{1},
+                                       {},
+                                       other_binding,
+                                       f.store.now + std::chrono::hours{24}});
+  auto other_session_row = f.store.state.sessions[0];
+  other_session_row.id = other_session;
+  other_session_row.subject = other_subject;
+  other_session_row.credential = other_credential;
+  f.store.state.sessions.push_back(other_session_row);
+  f.store.state.metadata.push_back({other_session, other_subject, other_session_row.version,
+                                    other_session_row.rotation,
+                                    other_session_row.refresh_expires_at, false});
+  f.store.state.assignments.push_back(
+      {{"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"},
+       other_subject,
+       {},
+       {{t::Permission::IdentitySessionRead, {t::ResourceKind::Principal, {std::string(kUser)}}}},
+       {1}});
+  assert(f.delegations.claims.has_value());
+  f.delegations.claims->subject = other_subject;
+  assert(f.delegations.claims.has_value());
+  f.delegations.claims->source_credential = other_credential;
+  assert(f.delegations.claims.has_value());
+  f.delegations.claims->source_session = other_session;
+  assert(std::holds_alternative<t::Failure>(
+      f.app->list_sessions({f.context(), proof, subject, continuation})));
+  f.delegations.claims = bound_claims;
+  f.store.state.assignments[0].explicit_permissions.push_back(
+      {t::Permission::IdentitySessionRead, other_binding});
+  assert(f.delegations.claims.has_value());
+  f.delegations.claims->permissions = {{t::Permission::IdentitySessionRead, other_binding}};
+  assert(std::holds_alternative<t::Failure>(
+      f.app->list_sessions({f.context(), proof, other_subject, continuation})));
+  f.delegations.claims = bound_claims;
   auto changed_size = continuation;
   changed_size.page_size = 2;
   assert(std::holds_alternative<t::Failure>(
       f.app->list_sessions({f.context(), proof, subject, changed_size})));
   f.store.state.authorizations[0].version.value = 2;
+  assert(f.delegations.claims.has_value());
+  f.delegations.claims->authorization_version = {2};
   assert(std::holds_alternative<t::Failure>(
       f.app->list_sessions({f.context(), proof, subject, continuation})));
   f.store.state.authorizations[0].version.value = 1;
+  f.delegations.claims = bound_claims;
   f.store.now += std::chrono::seconds{601};
   f.store.monotonic += std::chrono::seconds{601};
   f.peer.verified_at = f.store.now;
@@ -930,8 +996,8 @@ void snapshots_are_immutable_and_reauthorize() {
   assert(std::holds_alternative<t::SessionPageReply>(fresh));
   const auto fresh_page = std::get<t::SessionPageReply>(fresh);
   f.rebuild();
-  assert(std::holds_alternative<t::Failure>(f.app->list_sessions(
-      {f.context(), proof, subject, {1, fresh_page.next_page_token, fresh_page.snapshot_id}})));
+  assert(std::holds_alternative<t::Failure>(
+      f.app->list_sessions({f.context(), proof, subject, {1, fresh_page.next_page_token, {}}})));
 }
 void revoke_changes_security_metadata_and_invalidation_atomically() {
   Fixture f;
@@ -939,6 +1005,7 @@ void revoke_changes_security_metadata_and_invalidation_atomically() {
   auto target = f.app->login(f.login_request("target"));
   const auto target_id = std::get<t::IdentityTokenReply>(target).tokens.session;
   auto proof = actor(f, std::get<t::IdentityTokenReply>(source).tokens);
+  assert(f.delegations.claims.has_value());
   assert(f.delegations.claims.has_value());
   f.delegations.claims->permissions = {
       {t::Permission::IdentitySessionRevoke, {t::ResourceKind::Session, {target_id.value}}}};
@@ -971,6 +1038,7 @@ void revoke_changes_security_metadata_and_invalidation_atomically() {
       metadata.expires_at += std::chrono::hours{1};
     }
   }
+  assert(f.delegations.claims.has_value());
   assert(f.delegations.claims.has_value());
   f.delegations.claims->authorization_version = f.store.state.authorizations[0].version;
   const auto replayed = f.app->revoke_session({f.context("revoke"), proof, target_id});
@@ -1227,6 +1295,7 @@ void revoke_authorization_budget_is_rechecked_before_commit() {
   auto second = f.app->login(f.login_request("target"));
   const auto target = std::get<t::IdentityTokenReply>(second).tokens.session;
   auto proof = actor(f, std::get<t::IdentityTokenReply>(first).tokens);
+  assert(f.delegations.claims.has_value());
   assert(f.delegations.claims.has_value());
   f.delegations.claims->permissions = {
       {t::Permission::IdentitySessionRevoke, {t::ResourceKind::Session, {target.value}}}};

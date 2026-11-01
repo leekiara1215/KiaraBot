@@ -99,3 +99,18 @@ Documentation checklist: doc/02 updated for inputs/outputs/error/replay/limits/t
 this new report records actual checks. doc/01/proto/API and doc/05/08 need no inner-interface change
 because frozen protocols/ports and existing API30username+4096sessions are preserved. Parent owns
 unique contract clarification for additional local peer60CPU protection. doc/18 is untouched.
+
+## REST-compatible opaque continuation correction
+
+Review identified frozen REST returns/passes only page_token while initial application required an
+additional snapshot_id. Continuations now use a bounded server-side token->{snapshot,page} index,
+not an untrusted client offset or full snapshot scan. Optional explicit snapshot_id is checked
+against the indexed snapshot; no new public REST fields. Snapshot prune removes token index too,
+and insertion exception rollback preserves bounded counts. Current authorization and complete
+SnapshotOwner bindings still apply before and after cached page copy.
+
+Real linked list-group -Werror ASan/UBSan test now continues using ONLY the returned token; rejects
+tampered/expired/restarted token, mismatched explicit snapshot, changed valid actor/origin/scope,
+page size and jointly updated DB/proof authorization version. Existing explicit-ID path remains
+compatible. Full analyzer/bugprone and format checks on source/helper/test pass without exclusions.
+Only application/helper/test, doc/02 and this report belong to this correction; no API change.

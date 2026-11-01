@@ -754,3 +754,7 @@ UTC统计未撤销且refresh尚未到期会话，4096全局上限之外另保留
 高风险操作提交前重新采样DB时间，超过一秒授权窗口或deadline/proof/credential/session
 期限则回滚；拒绝审计只归因真实当前登记的direct peer，不用未验证represented actor，
 不记录密码/用户名/token，Unknown不另当拒绝重试或补写审计。
+
+ListSessions续页只需公开的opaque page_token，服务端有界索引将其定位到快照及页位置；
+调用者无需另传snapshot_id。若内部调用同时提供snapshot_id，必须与token定位值相同。
+当前actor/origin、目标scope、page size和授权版本绑定不变，过期时清理快照及token索引。

@@ -1145,8 +1145,7 @@ private:
     }
     const auto page_size = request.page.page_size == 0 ? 20U : request.page.page_size;
     if (page_size > 100 || !detail::bounded_text(request.subject.value) ||
-        request.page.page_token.size() > 1024 || request.page.snapshot_id.size() > 1024 ||
-        (request.page.snapshot_id.empty() && !request.page.page_token.empty())) {
+        request.page.page_token.size() > 1024 || request.page.snapshot_id.size() > 1024) {
       return failure(ErrorCode::InvalidArgument, Recovery::CorrectInput);
     }
     auto verified = verify_actor(request.actor);
@@ -1190,7 +1189,7 @@ private:
         return *error;
       }
       checked_at = work.now;
-      if (request.page.snapshot_id.empty()) {
+      if (request.page.snapshot_id.empty() && request.page.page_token.empty()) {
         auto found = work.transaction->session_security().list_metadata(
             request.subject, options_.maximum_snapshot_records);
         if (const auto* error = std::get_if<Failure>(&found)) {
@@ -1202,7 +1201,7 @@ private:
     detail::SnapshotOwner owner{claims.subject,           request.subject,
                                 claims.source_credential, claims.source_session,
                                 authorization_version,    page_size};
-    if (!request.page.snapshot_id.empty()) {
+    if (!request.page.snapshot_id.empty() || !request.page.page_token.empty()) {
       return finish_page(request, claims, owner, snapshots_.read(owner, request.page, checked_at));
     }
     auto id = detail::random_uuid(dependencies_.random);

@@ -511,10 +511,26 @@ public:
     if (snapshots_.contains(snapshot.id)) {
       return failure(ErrorCode::Conflict, Recovery::ReadCurrent);
     }
+    for (std::size_t index = 1; index < snapshot.cursors.size(); ++index) {
+      if (cursor_index_.contains(snapshot.cursors[index])) {
+        return failure(ErrorCode::Conflict, Recovery::ReadCurrent);
+      }
+    }
     auto result = page(snapshot, 0, now);
     const auto count = snapshot.records.size();
     const auto id = snapshot.id;
-    snapshots_.emplace(id, std::move(snapshot));
+    auto stored = snapshots_.emplace(id, std::move(snapshot)).first;
+    try {
+      for (std::size_t index = 1; index < stored->second.cursors.size(); ++index) {
+        cursor_index_.emplace(stored->second.cursors[index], std::make_pair(id, index));
+      }
+    } catch (...) {
+      for (std::size_t index = 1; index < stored->second.cursors.size(); ++index) {
+        cursor_index_.erase(stored->second.cursors[index]);
+      }
+      snapshots_.erase(stored);
+      throw;
+    }
     records_ += count;
     return result;
   }
@@ -522,17 +538,24 @@ public:
                                  TimePoint now) {
     std::lock_guard lock(mutex_);
     prune(now);
-    const auto found = snapshots_.find(requested.snapshot_id);
+    std::string id = requested.snapshot_id;
+    std::size_t index = 0;
+    if (!requested.page_token.empty()) {
+      const auto cursor = cursor_index_.find(requested.page_token);
+      if (cursor == cursor_index_.end()) {
+        return failure(ErrorCode::InvalidArgument, Recovery::CorrectInput);
+      }
+      if (!id.empty() && id != cursor->second.first) {
+        return failure(ErrorCode::InvalidArgument, Recovery::CorrectInput);
+      }
+      id = cursor->second.first;
+      index = cursor->second.second;
+    }
+    const auto found = snapshots_.find(id);
     if (found == snapshots_.end() || found->second.owner != owner) {
       return failure(ErrorCode::Conflict, Recovery::ReadCurrent);
     }
-    const auto& snapshot = found->second;
-    const auto cursor =
-        std::find(snapshot.cursors.begin(), snapshot.cursors.end(), requested.page_token);
-    if (cursor == snapshot.cursors.end()) {
-      return failure(ErrorCode::InvalidArgument, Recovery::CorrectInput);
-    }
-    return page(snapshot, static_cast<std::size_t>(cursor - snapshot.cursors.begin()), now);
+    return page(found->second, index, now);
   }
 
 private:
@@ -552,6 +575,9 @@ private:
   void prune(TimePoint now) {
     for (auto iterator = snapshots_.begin(); iterator != snapshots_.end();) {
       if (iterator->second.expires_at <= now) {
+        for (std::size_t index = 1; index < iterator->second.cursors.size(); ++index) {
+          cursor_index_.erase(iterator->second.cursors[index]);
+        }
         records_ -= iterator->second.records.size();
         iterator = snapshots_.erase(iterator);
       } else {
@@ -563,6 +589,8 @@ private:
   const std::size_t maximum_records_;
   std::mutex mutex_;
   std::map<std::string, Snapshot> snapshots_;
+  // At most one entry per continuation page, globally bounded by maximum_records_.
+  std::map<std::string, std::pair<std::string, std::size_t>> cursor_index_;
   std::size_t records_ = 0;
 };
 
