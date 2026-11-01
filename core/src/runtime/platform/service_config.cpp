@@ -45,7 +45,7 @@ std::string read_file(const std::string& path, bool private_key = false) {
     throw FileFailure{};
   }
   const File file(path);
-  struct stat status{};
+  struct stat status {};
   if (file.get() < 0 || fstat(file.get(), &status) != 0 || !S_ISREG(status.st_mode) ||
       status.st_size <= 0 || static_cast<std::uintmax_t>(status.st_size) > kMaxFileBytes ||
       (private_key && ((status.st_mode & 0077) != 0 || status.st_uid != geteuid()))) {
@@ -147,7 +147,7 @@ bool validate_tls(const TlsMaterial& material, std::time_t validation_time) {
     return false;
   }
   // Keep chain ownership separate: stack only borrows certificates held by this vector.
-  const auto free_stack = [](STACK_OF(X509)* stack) { sk_X509_free(stack); };
+  const auto free_stack = [](STACK_OF(X509) * stack) { sk_X509_free(stack); };
   const std::unique_ptr<STACK_OF(X509), decltype(free_stack)> chain(sk_X509_new_null(), free_stack);
   std::vector<Certificate> intermediates;
   if (!chain) {

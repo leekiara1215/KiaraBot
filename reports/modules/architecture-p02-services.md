@@ -138,3 +138,12 @@ Error含必需code/message/request_id，不回显请求/秘密；不新增HTTP�
 覆盖30个非GET探针请求及原mTLS/UNIMPLEMENTED/冲突/信号隔离回归。
 clang-format --dry-run --Werror、check-boundaries.py、Python AST解析、git diff --check
 均通过。完整工具链未重跑：仍缺clang-tidy，固定依赖/六目标门禁等待主集成，未冒充通过。
+
+## 固定 clang-format 16 格式一致性
+
+使用只读工具链路径 .tools/quality/bin/clang-format 16.0.6核对本任务新增C++，
+仅service_config.cpp的stat聚合与STACK_OF宏间距有两处差异，已按16修正；
+全部本轮新增P02头/源/入口/测试的16版dry-run --Werror通过。
+这是纯局部格式修正，无文档/协议/状态/配置/输入输出影响，doc/02、08无需同步；
+仅本报告记录检查。实际重新编译全部手写源并独立链接五服务通过，git diff --check通过。
+未重复网络回归：只有两个空白差异，已有功能回归结果见前文，不扩大修改reference旧代码。
