@@ -3,7 +3,7 @@
 
 #include "identity_access.hpp"
 #include "identity_security.hpp"
-#include "kiarabot/core/domain/target/identity_credential_rules.hpp"
+#include "kiarabot/core/domain/target/identity_state_rules.hpp"
 #include "session.hpp"
 
 namespace kiarabot::infrastructure::postgres::detail {
@@ -49,33 +49,16 @@ std::optional<ScopeKey> scope_key(const target::SecretReceiptScope& scope) {
 pqxx::params scope_params(const ScopeKey& key) {
   return {key.kind, key.actor, key.target, key.key};
 }
-bool valid_binding(const target::SecretReceiptBinding& binding) {
+bool valid_receipt(const target::EncryptedSecretReceipt& receipt) {
+  const auto& binding = receipt.binding;
   if (!scope_key(binding.scope) || binding.parameters.valueless_by_exception() ||
-      !std::holds_alternative<std::monostate>(
-          target::validate_secret_request_parameters(binding.scope, binding.parameters)) ||
       !valid_id(binding.subject.value) || !valid_id(binding.credential.id.value) ||
-      binding.credential.version.value == 0 || !valid_id(binding.request.key.value) ||
+      !valid_id(binding.request.key.value) ||
       (binding.session && !valid_id(binding.session->value)) ||
-      binding.retain_until <= binding.created_at) {
+      !valid_id(receipt.sealed.key.value)) {
     return false;
   }
-  // Unsigned subtraction is exact for the ordered signed64 endpoints, including opposite signs.
-  const auto interval =
-      static_cast<std::uint64_t>(binding.retain_until.time_since_epoch().count()) -
-      static_cast<std::uint64_t>(binding.created_at.time_since_epoch().count());
-  if (interval > 86400000000000ULL) {
-    return false;
-  }
-  if (const auto* refresh = std::get_if<target::RefreshReceiptScope>(&binding.scope)) {
-    return binding.session && *binding.session == refresh->session &&
-           binding.result_rotation >
-               std::get<target::RefreshRequestParameters>(binding.parameters).input_rotation;
-  }
-  if (const auto* delivery = std::get_if<target::CredentialDeliveryScope>(&binding.scope)) {
-    return !binding.session && binding.credential.id == delivery->credential &&
-           binding.result_rotation == 0;
-  }
-  return binding.session.has_value() && binding.result_rotation > 0;
+  return std::holds_alternative<std::monostate>(target::validate_secret_receipt(receipt));
 }
 std::vector<std::byte> binary(const pqxx::field& field) {
   const auto input = field.as<pqxx::bytes>();
@@ -123,9 +106,7 @@ target::EncryptedSecretReceipt read_receipt(const pqxx::row& row) {
        row["format_version"].as<std::uint32_t>(),
        binary(row["nonce"]),
        binary(row["ciphertext"])}};
-  require_stored(valid_binding(result.binding) && valid_id(result.sealed.key.value) &&
-                 result.sealed.format_version > 0 && !result.sealed.nonce.empty() &&
-                 !result.sealed.ciphertext.empty());
+  require_stored(valid_receipt(result));
   return result;
 }
 std::optional<target::EncryptedSecretReceipt> find_receipt(pqxx::transaction_base& transaction,
@@ -176,9 +157,7 @@ public:
             }
             return target::SecretReceiptWrite{std::move(*existing), true};
           }
-          if (!valid_binding(binding) || !valid_id(receipt.sealed.key.value) ||
-              receipt.sealed.format_version == 0 || receipt.sealed.nonce.empty() ||
-              receipt.sealed.ciphertext.empty()) {
+          if (!valid_receipt(receipt)) {
             return invalid();
           }
           // Only the same expired scope is removed. All remaining retained rows consume capacity,

@@ -124,3 +124,15 @@ DB UTC 排除过期；相同 scope+keyed commitment+参数返回原始 AEAD bind
 18参并预留最终大小后，未关闭任何sanitizer检查，最终全量fixture通过。
 新源 `infrastructure/postgres/src/identity_receipts.cpp` 需工具链接入；根完整门禁仍待
 该任务接线后运行，本地不声称已跑根CMake/CTest。schema/manifest不变。
+
+## 收据结构复用冻结Core规则（实施中）
+
+5a1f5eb新增validate_secret_receipt后，本模块用同一纯规则取代较宽的本地结构判断，
+保留PG TEXT/NUL表示检查和数据库UTC条件。Login rotation=1、Refresh input+1、
+Delivery expected version+1由Core确定，正常/三个非法分支及真实Unknown恢复一起验证。
+只改receipt实现/测试/doc05/本报告，无schema/API/稳定码/CMake变化；doc08现有保留与
+清理说明不变，无须同步，doc18只读。最终固定依赖三种-Werror构建、普通/ASan+UBSan真实PG四库fixture、2 TU
+analyzer+braces clang-tidy22和clang-format16全部通过；真实Unknown提交恢复仍通过。
+三个新请求的错误Login轮次/Refresh跨轮次/Delivery结果版本均InvalidArgument且整体回滚。
+文档UTF8/末尾换行/新增规则章节与diff检查通过，保护基线无差异。
+无新TU；根完整CMake/CTest仍由主任务集成接线后运行，不声称本地已跑。

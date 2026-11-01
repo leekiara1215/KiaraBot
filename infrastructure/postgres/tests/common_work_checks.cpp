@@ -382,7 +382,7 @@ void check_identity_secret_receipts(Database& database) {
                 target::SessionId{"security-live-session"},
                 {{"credential-password"}, {2}},
                 target::LoginRequestParameters{},
-                2,
+                1,
                 {{"request-key"}, {}},
                 created,
                 created + std::chrono::hours{23} + std::chrono::nanoseconds{731}},
@@ -459,7 +459,7 @@ void check_identity_secret_receipts(Database& database) {
     auto delivery = receipt;
     delivery.binding.scope = target::CredentialDeliveryScope{
         {"credential-owner"}, {"credential-password"}, "secret-attempt"};
-    delivery.binding.parameters = target::CredentialDeliveryParameters{{2}};
+    delivery.binding.parameters = target::CredentialDeliveryParameters{{1}};
     delivery.binding.session.reset();
     delivery.binding.result_rotation = 0;
     take(receipts->insert(delivery, {capacity.max_records + 1}));
@@ -504,6 +504,29 @@ void check_identity_secret_receipts(Database& database) {
     std::get<target::LoginReceiptScope>(replacement.binding.scope).idempotency_key =
         "without-prune";
     expect(receipts->insert(replacement, capacity), target::ErrorCode::RateLimited);
+    rejected(*access.work);
+  }
+  for (int kind = 0; kind < 3; ++kind) {
+    auto access = take(detail::DatabaseAccess::begin(database));
+    auto receipts = detail::secret_receipt_repository(*access.sql);
+    auto malformed = receipt;
+    if (kind == 0) {
+      std::get<target::LoginReceiptScope>(malformed.binding.scope).idempotency_key =
+          "bad-login-rotation";
+      malformed.binding.result_rotation = 2;
+    } else if (kind == 1) {
+      malformed.binding.scope = target::RefreshReceiptScope{
+          {"control-peer"}, {"security-live-session"}, "bad-refresh-rotation"};
+      malformed.binding.parameters = target::RefreshRequestParameters{1};
+      malformed.binding.result_rotation = 3;
+    } else {
+      malformed.binding.scope = target::CredentialDeliveryScope{
+          {"credential-owner"}, {"credential-password"}, "bad-delivery-version"};
+      malformed.binding.parameters = target::CredentialDeliveryParameters{{2}};
+      malformed.binding.session.reset();
+      malformed.binding.result_rotation = 0;
+    }
+    expect(receipts->insert(malformed, {100}), target::ErrorCode::InvalidArgument);
     rejected(*access.work);
   }
 }
@@ -1231,19 +1254,28 @@ void check_unknown_commit(const DatabaseConfig& config, const std::filesystem::p
   auto credentials = detail::credential_repository(*access.sql);
   take(credentials->save({{{"unknown-vault-credential"}, {1}},
                           {"unknown-vault-owner"},
+                          target::PendingCredentialMaterial{target::CredentialKind::Password},
+                          target::CredentialState::Pending,
+                          now,
+                          {},
+                          {target::ResourceKind::Catalog, {"catalog"}},
+                          {}},
+                         {}));
+  take(credentials->save({{{"unknown-vault-credential"}, {2}},
+                          {"unknown-vault-owner"},
                           target::PasswordVerifier{"encoded-verifier-only", {1}},
                           target::CredentialState::Active,
                           now,
                           {},
                           {target::ResourceKind::Catalog, {"catalog"}},
                           now + std::chrono::hours{24}},
-                         {}));
+                         target::ResourceVersion{1}));
   target::EncryptedSecretReceipt secret{
       {target::CredentialDeliveryScope{
            {"unknown-vault-owner"}, {"unknown-vault-credential"}, "original-secret-key"},
        {"unknown-vault-owner"},
        {},
-       {{"unknown-vault-credential"}, {1}},
+       {{"unknown-vault-credential"}, {2}},
        target::CredentialDeliveryParameters{{1}},
        0,
        {{"request-key"}, {}},

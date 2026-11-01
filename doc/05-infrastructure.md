@@ -334,3 +334,7 @@ RateLimited，不返回截断集合或 query-time now。refresh 恢复以数据�
 原始 binding/nonce/ciphertext，改变请求返回 Conflict。可信容量按所有保留行统计（含待清理过期行），满额
 返回 RateLimited，不驱逐有效记录；仅同 scope 过期行可被新请求替换。清理每次1..1000
 且使用数据库 UTC，外部 now 不能提前删除有效收据。密文二进制零字节不按TEXT拒绝。
+
+秘密收据结构复用 Core validate_secret_receipt：Login结果rotation必须1，Refresh结果为
+input_rotation+1，凭据交付结果版本为expected_version+1，均拒绝回绕；不在PG重复
+发明状态规则。存储坏行无法满足这些已确认规则时返回Internal，而不是成功/不存在。
