@@ -570,6 +570,14 @@ SessionRecord.created_at 是 Identity 持久保存的首次创建时间，刷新
 
 RegisterPrincipal 同事务创建无秘密的 PENDING CredentialStatus 引用（credential_id/principal_id/binding/version/created_at/checked_at）；尚未发放的 PENDING 不得伪造 expires_at。GetCredentialStatus 以 identity.principal.read 在线读取同一记录，默认2秒/最多5秒；ACTIVE/EXPIRED 必须有 expires_at，REVOKED 可保留原到期。状态查询不返回秘密、摘要或可重放材料。初次实际发放仍用 RotateCredential 单次 CredentialDelivery，未知结果不得从状态查询恢复秘密。当前未实现，不启用生产路由。
 
+### P04 全局会话容量
+
+既有API上限为4096个未过期认证会话，不能用每主体上限替代。SessionSecurity仓储新增
+count_unexpired：同一UoW按实际数据库UTC统计全库未撤销且refresh尚未到期的会话，
+失败返回Failure、不假设0。应用仅在创建新会话时按kMaximumUnexpiredSessions检查，
+原成功收据重放先于容量判断；读取计数与插入同事务，并保留更小的可信每主体限额。
+不会向无授权用户列出其他主体、泄漏会话或创建新的HTTP统计端点。
+
 ### P04 撤销会话的完整成功收据
 
 SessionMetadata原样移至共享service_records（同一类型/布局），普通ReplayResult末尾

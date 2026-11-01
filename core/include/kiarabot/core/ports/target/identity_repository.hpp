@@ -53,6 +53,11 @@ public:
   // caps retention at 10min, and invalidates snapshots on restart; no live offset pagination.
   virtual Outcome<std::vector<SessionMetadata>> list_metadata(const SubjectId& subject,
                                                               std::size_t max_records) = 0;
+  // Authority for the existing global 4096-session ceiling: count all non-revoked sessions with
+  // refresh_expires_at strictly after actual DB UTC, in THIS UoW. No caller-provided now, cached
+  // count, unauthorized list or assumed zero on dependency failure. Application checks this only
+  // for a new session, after original-receipt replay, and inserts in the same short transaction.
+  virtual Outcome<std::size_t> count_unexpired() = 0;
   // Null expected creates; update matches stored version AND rotation, rejects overflow.
   // created_at is immutable; changing it on update -> Conflict, not a regenerated query timestamp.
   // Base sessions() metadata shares this transaction/version; expires_at = refresh_expires_at.

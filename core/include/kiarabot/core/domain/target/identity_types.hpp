@@ -18,6 +18,8 @@ namespace kiarabot::core::target {
 inline constexpr auto kAccessTokenLifetime = std::chrono::minutes{15};
 inline constexpr auto kRefreshTokenLifetime = std::chrono::hours{24 * 30};
 inline constexpr auto kSessionSnapshotLifetime = std::chrono::minutes{10};
+// Existing public API global ceiling; per-subject limits do not replace this bound.
+inline constexpr std::size_t kMaximumUnexpiredSessions = 4096;
 inline constexpr auto kSecretReceiptRetention = std::chrono::hours{24};
 inline constexpr auto kDelegationBodyLifetime = std::chrono::seconds{56};
 inline constexpr auto kMaximumAuthorizationAge = std::chrono::seconds{60};
