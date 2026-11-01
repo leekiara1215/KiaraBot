@@ -21,3 +21,11 @@ foreach(COMPONENT persistence_contract persistence_rules time)
   add_test(NAME p03_${COMPONENT} COMMAND kiarabot_${COMPONENT}_test)
   set_tests_properties(p03_${COMPONENT} PROPERTIES LABELS "p03;unit" TIMEOUT 10)
 endforeach()
+
+add_executable(kiarabot_identity_contract_test tests/architecture/identity_contract_test.cpp)
+target_include_directories(kiarabot_identity_contract_test PRIVATE include)
+target_compile_features(kiarabot_identity_contract_test PRIVATE cxx_std_20)
+target_compile_options(kiarabot_identity_contract_test PRIVATE
+  $<$<CXX_COMPILER_ID:AppleClang,Clang,GNU>:-Wall -Wextra -Wpedantic>)
+add_test(NAME p04_identity_contract COMMAND kiarabot_identity_contract_test)
+set_tests_properties(p04_identity_contract PROPERTIES LABELS "p04;unit" TIMEOUT 10)

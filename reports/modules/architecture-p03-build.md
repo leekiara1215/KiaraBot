@@ -138,3 +138,20 @@ command，全覆盖/inner/六目标图/p03注册均通过。全仓format16、新
 本树没有将原作者结果冒认为亲跑；文档检查为路径/末尾换行与git diff --check。
 
 本树P03 CTest 5/5通过，总19.99秒，其中真实PG15.58秒。
+
+## 后续接线：P04 Identity契约测试
+
+接入父已审查PG补强79f8f2a（本树4668b83）和Core d1ba916（本树8b2f010），
+未修改生产/测试源码。Core CMake独立注册identity_contract_test为p04/unit，10秒。
+输入为内层安全契约及纯规则，失败非零，不依赖实际认证/PG业务。
+文档影响仅doc/11和本报告新增构建说明，Core与PG语义由原提交已有模块文档同步；
+API/proto及doc/12-ci-cd不另改，doc/18只读。尚不把p04加为统一入口强制阶段，
+其完整业务尚未实现；本次使用实际注册JSON单独检查p04。
+
+固定外部prefix/Python配置与完整full-locked构建成功；新身份头独立编译、全部TU覆盖、
+inner/六目标图/p04注册检查通过；全仓format16、新契约TU精确DB的tidy22
+clang-analyzer-* warnings-as-errors通过。相关CTest选择p03全部及p04契约，结果后附。
+未重复全仓统一入口（父负责最终）；未验证密码/JWS或生产认证，不宣称P04完成。
+文档路径/末尾换行与git diff --check为本次文档检查。
+
+本树相关CTest 6/6通过，总18.82秒；Identity契约0.42秒、真实PG16.14秒。

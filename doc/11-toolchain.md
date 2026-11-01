@@ -493,3 +493,7 @@ fixture命令不变，通过唯一初始化CLI创建schema v2空库，覆盖公�
 四typed PG工厂接线增加 `src/factories.cpp` 与driver的 `tests/typed_work_checks.cpp`，
 依赖不变。fixture通过唯一CLI初始化schema v3，按owner创建独立live表；原120秒
 超时保留。该构建/存储验证不替代后续四daemon的真实PG装配验收。
+
+P04首个内层契约测试 `p04_identity_contract` 注册p04/unit（10秒），可在dev及full构建
+运行；新增身份内层头自动进入独立头编译。该测试验证接口及纯凭据规则，不表示
+Identity生产认证链路、密码/JWS实现或真实身份库已完成。
