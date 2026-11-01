@@ -24,7 +24,8 @@ constexpr std::size_t kMaxFileBytes = 1024 * 1024;
 struct FileFailure {};
 class File {
 public:
-  explicit File(const std::string& path) : descriptor_(open(path.c_str(), O_RDONLY | O_NOFOLLOW)) {}
+  explicit File(const std::string& path)
+      : descriptor_(open(path.c_str(), O_RDONLY | O_NOFOLLOW | O_NONBLOCK)) {}
   ~File() {
     if (descriptor_ >= 0) {
       close(descriptor_);

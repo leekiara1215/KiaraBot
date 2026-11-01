@@ -330,3 +330,6 @@ JSON 根只允许 schema_version=1、service、probe_listen、tls；非 Control 
  CA bundle均须在有效期；密钥不允许交互密码提示。诊断仅稳定原因，不回显路径、配置
  正文或PEM。此校验在任何监听前完成，不能关闭；业务身份/SAN登记与授权仍待P04，
  不能将链有效视为业务授权成功。
+
+文件以非阻塞方式打开后检查 regular，FIFO 等特殊文件必须有界拒绝，不能在 open
+等待写端。五服务入口的工厂装配异常也返回1及脱敏 INTERNAL，不输出异常 what()。

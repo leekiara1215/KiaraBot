@@ -46,7 +46,7 @@ def main(driver):
 
         def expect(expected, value=None, raw=None):
             path.write_text(raw if raw is not None else json.dumps(value or config))
-            result = subprocess.run([driver, str(path)], capture_output=True, text=True)
+            result = subprocess.run([driver, str(path)], capture_output=True, text=True, timeout=3)
             assert result.returncode == expected, (expected, result.returncode, result.stderr)
             assert "PRIVATE KEY" not in result.stderr and str(root) not in result.stderr
 
@@ -67,6 +67,11 @@ def main(driver):
         (root / "link.key").symlink_to(root / "server.key")
         expect(1, {**config, "tls": {**config["tls"], "private_key_file": str(root / "link.key")}})
         expect(2, raw="{invalid secret-config}")
+        os.mkfifo(root / "fifo")
+        for field in ["certificate_file", "private_key_file", "ca_file"]:
+            expect(1, {**config, "tls": {**config["tls"], field: str(root / "fifo")}})
+        fifo_result = subprocess.run([driver, str(root / "fifo")], capture_output=True, timeout=3)
+        assert fifo_result.returncode == 2, fifo_result.returncode
         print("P02 configuration/TLS rejection checks passed")
 
 

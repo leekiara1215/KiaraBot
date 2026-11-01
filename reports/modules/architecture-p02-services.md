@@ -43,3 +43,13 @@ python3 core/tests/platform/service_config_test.py /tmp/p02-service-config-test 
 本机 OpenSSL4 报旧时间API废弃，已改用兼容3/4的 ASN1_TIME_compare 后无警告编译。
 测试证书先用系统CLI构造负days失败，改用显式历史起止日期签发后重跑通过。
 TLS源需接线 OpenSSL::Crypto、nlohmann_json::nlohmann_json；尚未创建网络监听。
+
+## 启动边界修正：FIFO 与工厂异常
+
+read_file 使用 O_NONBLOCK|O_NOFOLLOW 后 fstat，仅接收 regular；补配置与全部TLS
+字段的 FIFO 测试（各3秒超时，预期分别2/1）。五main工厂调用纳入 catch-all，
+脱敏 INTERNAL退出1。仅更新上述源、配置测试、doc/08与本报告，无协议影响。
+
+修正验证：配置driver以 C++20 -Wall/-Wextra/-Wpedantic/-Werror重编译，配置/TLS
+测试（含4种FIFO路径）通过；五入口按相同警告门禁独立编译链接通过，格式及diff检查通过。
+网络测试属于随后runner能力，本修正不据此宣称监听已验收。
