@@ -300,7 +300,8 @@ LoggingRuntimeStore 装饰现有 RuntimeStore，不改变事务结果；提交�
 `cmake --build /tmp/kiarabot-core-inner`，
 `ctest --test-dir /tmp/kiarabot-core-inner --output-on-failure`。根构建尚未接入。
 
-`application/target/context.hpp` 区分认证、命令和持久交接上下文，不携带 JWT、证书、
+`domain/target/context.hpp` 定义认证/持久交接上下文，
+`application/target/context.hpp` 定义命令上下文，不携带 JWT、证书、
 秘密或浏览器 token；认证上下文只能由可信边界构造，权限字符串须匹配目标封闭词表。
 `ports/target/unit_of_work.hpp` 的 Repository 查询用成功空 optional 表示不存在，
 写入 null expected 仅创建，更新必须条件版本。Repository 借用 UoW 生命周期，
@@ -310,3 +311,17 @@ commit 明确返回 Committed/RolledBack/Unknown，Unknown 只能按原身份查
 `business_ports.hpp` 为事件/投递、Action 配额、namespace CAS、occurrence、模型意图
 保留类型化端口；方法只参与所属服务本地事务，无实现、无跨库访问。后续业务阶段
 需添加服务专属 UoW 组及真实数据库测试，当前不是完整业务/存储端口验收。
+
+`domain/target/invariants.hpp` 提供条件版本递增（拒绝缺省、冲突与溢出）、完整
+execution/connection fence 校验及单 attempt 租约规则。租期初始 30 秒，续租到
+min(now+30s, start+300s)，到期相等边界拒绝，取消/到期不复活。ACK 先成功后
+timeout 不覆盖；同 attempt/current fence 重复成功 ACK 返回 Duplicate；旧 attempt
+或代次返回 Conflict。时间早于首次领取拒绝。所有时间由调用方注入权威数据库 UTC，
+这些纯值操作无持久化/锁；竞争时须在同一 delivery 行事务内检查并保存。
+
+Fence 同时绑定稳定 instance、runtime_epoch、execution/connection 身份及两种代次；
+Runtime 重启更换 epoch，跨实例及旧 epoch 即使代次相同也拒绝。与契约规格
+112ec27 的 required_fence 一致；额外执行/连接 ID 不是替代必需字段。
+ExecutionOutcome 分 NotStarted/KnownSucceeded/KnownFailed/Unknown，与 operation
+进度分离。UnitOfWork 仅提供事务/收据/journal 公共能力，RuntimeUnitOfWork 才暴露
+实例及 operation 仓储；Identity/Scheduler/Model 应定义各自专属仓储组。

@@ -1,5 +1,6 @@
 #include <type_traits>
 
+#include "kiarabot/core/application/target/context.hpp"
 #include "kiarabot/core/domain/target/foundation.hpp"
 #include "kiarabot/core/ports/target/business_ports.hpp"
 

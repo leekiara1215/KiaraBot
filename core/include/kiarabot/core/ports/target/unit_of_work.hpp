@@ -6,7 +6,7 @@
 #include <string>
 #include <vector>
 
-#include "kiarabot/core/application/target/context.hpp"
+#include "kiarabot/core/domain/target/context.hpp"
 
 namespace kiarabot::core::target {
 
@@ -74,8 +74,6 @@ enum class CommitResult { Committed, RolledBack, Unknown };
 class UnitOfWork {
 public:
   virtual ~UnitOfWork() = default;
-  virtual Repository<InstanceId, PluginInstance>& instances() = 0;
-  virtual Repository<OperationId, Operation>& operations() = 0;
   virtual ReceiptRepository& receipts() = 0;
   virtual JournalRepository& journal() = 0;
   // Terminal call. Unknown forbids rollback/re-execution assumptions: query original identity.
@@ -84,10 +82,15 @@ public:
   virtual void rollback() noexcept = 0;
   // Destruction of an active, uncommitted UoW rolls back. Not thread safe; one use case owns it.
 };
-class UnitOfWorkFactory {
+class RuntimeUnitOfWork : public UnitOfWork {
 public:
-  virtual ~UnitOfWorkFactory() = default;
-  virtual Outcome<std::unique_ptr<UnitOfWork>> begin() = 0;
+  virtual Repository<InstanceId, PluginInstance>& instances() = 0;
+  virtual Repository<OperationId, Operation>& operations() = 0;
+};
+class RuntimeUnitOfWorkFactory {
+public:
+  virtual ~RuntimeUnitOfWorkFactory() = default;
+  virtual Outcome<std::unique_ptr<RuntimeUnitOfWork>> begin() = 0;
 };
 
 } // namespace kiarabot::core::target

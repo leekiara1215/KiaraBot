@@ -22,3 +22,38 @@ foundation.hpp 定义稳定身份、代次、版本与恢复上下文。验收�
 
 已运行叶子 build/CTest（1/1）、clang-format、git diff --check，通过。尚无 UoW 实现，
 不声称验证数据库隔离、提交故障或恢复。
+
+## 能力三：版本、代次与租约不变量
+
+新增 domain/target/invariants.hpp 和 invariants_test.cpp；无外部传输错误码变更，
+内部到期/旧尝试以 Conflict 表达，边界后续映射具体恢复上下文。文档同步 doc/02。
+验收覆盖正常续租/ACK、旧连接/执行/尝试、缺省代次、到期、取消、版本冲突/溢出、
+ACK 与 timeout 的两种顺序及总时长封顶；不把串行值测试称为数据库竞争验证。
+
+边界检查发现 ports → application include，已将共享认证/交接值类型移到
+domain/target/context.hpp，application 仅保留 CommandContext；无外层反向依赖。
+
+对照主对话指定 112ec27:proto/tests/target_spec.json，补齐 instance/runtime_epoch fence，
+测试跨实例与旧 epoch 拒绝；execution_outcome 对齐 KnownSucceeded/KnownFailed。
+UoW 公共事务与 RuntimeUnitOfWork 仓储分离，其他私有服务不提供 Runtime 仓储。
+
+实际检查：叶子 configure/build（AppleClang21、C++20、Wall/Wextra/Wpedantic/Werror）
+与 CTest 2/2 通过；clang-format --dry-run --Werror、git diff --check、
+python3 scripts/quality/check-boundaries.py、边界检查器 7 个自测通过。
+./scripts/check-toolchain.sh 实际运行但退出 1：Required tool not found: clang-tidy，
+因此其后 full/dev/协议/API/全仓 tidy 门禁未运行；根构建属于后续集成范围，
+本轮只以叶子结果证明本模块。未引入新第三方依赖，不需下载依赖。
+文档校验为 git diff --check 及新增引用路径存在性检查，通过。
+
+## 下一阶段依赖与限制
+
+- P01a 目标契约完成后，边界映射逐项核对内部 ErrorCode/状态/权限词表；
+  当前没有生成协议映射，不承诺缺省字段线级拒绝已实现。
+- P02 由主对话接入叶子目标与质量门禁，统一旧接口移除；
+  本轮不修改现有 CMake、runtime_store、runtime、组合根。
+- P03 按服务具体化 UoW：真实 PG 验证锁、唯一、隔离、提交未知，
+  本轮仅有端口，没有 PG、网络、业务链路或六进程就绪声明。
+- P06 等后续在服务 UoW 中暴露业务 Repository；权限在线验证、claim/容量/
+  去重持久化、时钟信任与保留期仍待实现。
+- doc/18 只读，目标 Repository/代次模型与首版快照差异遵循 doc/19–22；
+  无兼容桥接、旧数据导入、双写或删除数据。

@@ -25,6 +25,7 @@ struct ConnectionTag;
 struct OperationTag;
 struct MessageTag;
 struct AttemptTag;
+struct RuntimeEpochTag;
 struct SubjectTag;
 using ResourceId = Identifier<ResourceTag>;
 using InstallationId = Identifier<InstallationTag>;
@@ -34,6 +35,7 @@ using ConnectionId = Identifier<ConnectionTag>;
 using OperationId = Identifier<OperationTag>;
 using MessageId = Identifier<MessageTag>;
 using AttemptId = Identifier<AttemptTag>;
+using RuntimeEpoch = Identifier<RuntimeEpochTag>;
 using SubjectId = Identifier<SubjectTag>;
 
 struct ResourceVersion {
@@ -49,6 +51,8 @@ struct ConnectionGeneration {
   bool operator==(const ConnectionGeneration&) const = default;
 };
 struct Fence {
+  InstanceId instance;
+  RuntimeEpoch runtime_epoch;
   ExecutionId execution;
   ExecutionGeneration execution_generation;
   ConnectionId connection;
@@ -89,7 +93,7 @@ template <typename Value> using Outcome = Result<Value, Failure>;
 using Status = Outcome<std::monostate>;
 
 enum class OperationState { Accepted, Running, Blocked, Succeeded, Failed, Cancelled, Expired };
-enum class ExecutionOutcome { NotStarted, Known, Unknown };
+enum class ExecutionOutcome { NotStarted, KnownSucceeded, KnownFailed, Unknown };
 struct Operation {
   OperationId id;
   ResourceId resource;
