@@ -13,5 +13,7 @@ struct ControlTlsEvidence {
 };
 // Ephemeral CA/leaf keys and a real two-sided TLS1.3 handshake over an OpenSSL BIO pair.
 // Evidence comes from SSL_get1_peer_certificate on the authenticated server endpoint.
+ControlTlsEvidence platform_tls_evidence(const core::target::SubjectId& subject,
+                                         core::target::Service service);
 ControlTlsEvidence control_tls_evidence(const core::target::SubjectId& subject);
 } // namespace kiarabot::infrastructure::postgres::test

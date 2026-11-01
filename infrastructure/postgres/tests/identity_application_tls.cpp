@@ -34,7 +34,8 @@ void extension(X509* certificate, X509* issuer, int nid, const char* value) {
   ensure(item && X509_add_ext(certificate, item.get(), -1) == 1);
 }
 Certificate certificate(EVP_PKEY* public_key, X509* issuer, EVP_PKEY* signer, long serial,
-                        bool root, bool client) {
+                        bool root, bool client,
+                        const char* client_san = "URI:spiffe://kiarabot/control") {
   Certificate result(X509_new(), X509_free);
   ensure(result && X509_set_version(result.get(), 2) == 1 &&
          ASN1_INTEGER_set(X509_get_serialNumber(result.get()), serial) == 1 &&
@@ -56,8 +57,7 @@ Certificate certificate(EVP_PKEY* public_key, X509* issuer, EVP_PKEY* signer, lo
   extension(result.get(), authority, NID_authority_key_identifier, "keyid:always");
   if (!root) {
     extension(result.get(), authority, NID_ext_key_usage, client ? "clientAuth" : "serverAuth");
-    extension(result.get(), authority, NID_subject_alt_name,
-              client ? "URI:spiffe://kiarabot/control" : "DNS:localhost");
+    extension(result.get(), authority, NID_subject_alt_name, client ? client_san : "DNS:localhost");
   }
   ensure(X509_sign(result.get(), signer, nullptr) > 0);
   return result;
@@ -81,11 +81,20 @@ target::TimePoint timestamp(const ASN1_TIME* time) {
   return target::TimePoint{std::chrono::seconds{seconds}};
 }
 } // namespace
-ControlTlsEvidence control_tls_evidence(const target::SubjectId& subject) {
+ControlTlsEvidence platform_tls_evidence(const target::SubjectId& subject,
+                                         target::Service service) {
+  const char* name = service == target::Service::Control   ? "control"
+                     : service == target::Service::Runtime ? "runtime"
+                     : service == target::Service::Model   ? "model"
+                                                           : nullptr;
+  ensure(name != nullptr);
+  const std::string registered_san = std::string{"spiffe://kiarabot/"} + name;
+  const auto extension_san = "URI:" + registered_san;
   auto root_key = key();
   auto root = certificate(root_key.get(), nullptr, root_key.get(), 1, true, false);
   auto control_key = key();
-  auto control = certificate(control_key.get(), root.get(), root_key.get(), 2, false, true);
+  auto control = certificate(control_key.get(), root.get(), root_key.get(), 2, false, true,
+                             extension_san.c_str());
   auto server_key = key();
   auto server = certificate(server_key.get(), root.get(), root_key.get(), 3, false, false);
   auto client_context = context(TLS_client_method(), control.get(), control_key.get(), root.get());
@@ -139,8 +148,12 @@ ControlTlsEvidence control_tls_evidence(const target::SubjectId& subject) {
   ensure(public_size > 0);
   return {std::string(public_data, static_cast<std::size_t>(public_size)),
           std::move(evidence),
-          {subject, fingerprint, "spiffe://kiarabot/control", target::Service::Control,
+          {subject, fingerprint, registered_san, service,
            timestamp(X509_get0_notBefore(actual.get())),
            timestamp(X509_get0_notAfter(actual.get()))}};
 }
+ControlTlsEvidence control_tls_evidence(const target::SubjectId& subject) {
+  return platform_tls_evidence(subject, target::Service::Control);
+}
+
 } // namespace kiarabot::infrastructure::postgres::test

@@ -646,3 +646,11 @@ ctest --test-dir build/full-locked -R '^p04_identity_authorization_application$'
 ```
 
 测试仅验证typed应用编排，不代表method descriptor resolver、RPC、真实JWT/TLS/PG生产闭环。
+
+P04 Check组合回归复用受控临时PG的`p04_identity_application`，新增独立
+`identity_authorization_checks.cpp`，以实际双端TLS1.3握手导出的Runtime/Model不同叶证据、
+Admin当前登记认证、成熟JWT签验及schema8权威查询串联验证。显式给Control/Runtime各自
+Principal的Issue能力和Model自身Check能力，验证普通verify只接受真正Runtime证书、
+Check允许、proof范围不足/当前业务grant不足的正常拒绝、旧source授权版本拒绝、consumer
+撤权及原Control禁用。测试用受信signer构造两跳证明，不替代Issue/Exchange RPC验收；
+仅修改一次性fixture记录，不改PG SQL、生产路由或readiness。

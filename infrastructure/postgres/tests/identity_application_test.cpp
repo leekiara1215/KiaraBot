@@ -17,6 +17,7 @@
 #include <sys/stat.h>
 
 #include "identity_application_tls.hpp"
+#include "identity_authorization_checks.hpp"
 #include "kiarabot/core/application/target/identity_admin_application.hpp"
 #include "kiarabot/core/application/target/identity_delegation_application.hpp"
 #include "kiarabot/infrastructure/identity_crypto/delegation_crypto.hpp"
@@ -352,6 +353,9 @@ void application_flow(const pg::DatabaseConfig& config) {
             take(work->bootstrap().state()).state == t::BootstrapState::Consumed,
         "new factory lost committed application state");
   work->rollback();
+  phase = "real online authorization";
+  pg::test::identity_authorization_checks(*factory, *delegations, clock, user, user_credential,
+                                          refreshed.tokens.session, control);
 }
 void run(const std::filesystem::path& supplied, std::uint16_t port) {
   check(!std::filesystem::is_symlink(supplied), "unsafe fixture root");
