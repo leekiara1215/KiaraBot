@@ -246,3 +246,5 @@ Action元数据检查、日志/审计、消息元数据等额外敏感能力须�
 ## 9. 目标查询与精确管理目录补全（实施定稿，仍未实现）
 
 本节落实已批准管理范围，不修改服务/数据库边界，也不新增自定义角色或资源继承。Model增加GetOperation（OperationRef→Operation，resource.read）与GetModelConfiguration（exact model/scope→无秘密配置、secret存在性和observed_at，model.manage），默认2秒/最多5秒、在线授权；操作查询校验存储owner/resource，不由客户端重贴scope或Control代裁定结果。后续目录/Runtime/Identity字段在同节随唯一契约逐能力补齐。线协议及生产实现状态仍分别以proto/API和execution_scopes.target为准。
+
+Runtime增加五类typed Get/List（Account/Installation/Instance/Adapter/Host）及GetInstanceConfig，复用已有record并补注册metadata/配置应用投影；默认2秒/5秒上限、在线授权。Get选择exact正确kind；List的ResourceRef catalog必须封闭RESOURCE_CATALOG且为离线登记runtime/资源族UUID，无all/祖先继承，只返回当前本人另获具体child grant的集合。PageRequest输入与SnapshotInfo输出分离，10分钟快照仍逐页核验当前授权版本；目录登记/可靠创建与本人发现的Identity契约随后补齐，现均未实现。

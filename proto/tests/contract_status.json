@@ -285,7 +285,34 @@
       "ModelGetOperationRequest": "not_implemented",
       "ModelGetOperationResponse": "not_implemented",
       "ModelGetModelConfigurationRequest": "not_implemented",
-      "ModelGetModelConfigurationResponse": "not_implemented"
+      "ModelGetModelConfigurationResponse": "not_implemented",
+      "SnapshotInfo": "not_implemented",
+      "AdapterRegistrationMetadata": "not_implemented",
+      "AdapterRecord": "not_implemented",
+      "HostRegistrationRecord": "not_implemented",
+      "InstanceConfiguration": "not_implemented",
+      "RuntimeGetAccountRequest": "not_implemented",
+      "RuntimeGetAccountResponse": "not_implemented",
+      "RuntimeListAccountsRequest": "not_implemented",
+      "RuntimeListAccountsResponse": "not_implemented",
+      "RuntimeGetInstallationRequest": "not_implemented",
+      "RuntimeGetInstallationResponse": "not_implemented",
+      "RuntimeListInstallationsRequest": "not_implemented",
+      "RuntimeListInstallationsResponse": "not_implemented",
+      "RuntimeGetInstanceRequest": "not_implemented",
+      "RuntimeGetInstanceResponse": "not_implemented",
+      "RuntimeListInstancesRequest": "not_implemented",
+      "RuntimeListInstancesResponse": "not_implemented",
+      "RuntimeGetAdapterRequest": "not_implemented",
+      "RuntimeGetAdapterResponse": "not_implemented",
+      "RuntimeListAdaptersRequest": "not_implemented",
+      "RuntimeListAdaptersResponse": "not_implemented",
+      "RuntimeGetHostRequest": "not_implemented",
+      "RuntimeGetHostResponse": "not_implemented",
+      "RuntimeListHostsRequest": "not_implemented",
+      "RuntimeListHostsResponse": "not_implemented",
+      "RuntimeGetInstanceConfigRequest": "not_implemented",
+      "RuntimeGetInstanceConfigResponse": "not_implemented"
     },
     "proto_fields": {
       "Account.account_id": "implemented",
@@ -1197,7 +1224,89 @@
       "ModelGetModelConfigurationRequest.scope": "not_implemented",
       "ModelGetModelConfigurationResponse.config": "not_implemented",
       "ModelGetModelConfigurationResponse.secret_configured": "not_implemented",
-      "ModelGetModelConfigurationResponse.observed_at": "not_implemented"
+      "ModelGetModelConfigurationResponse.observed_at": "not_implemented",
+      "SnapshotInfo.snapshot_id": "not_implemented",
+      "SnapshotInfo.observed_at": "not_implemented",
+      "SnapshotInfo.expires_at": "not_implemented",
+      "SnapshotInfo.authorization_version": "not_implemented",
+      "SnapshotInfo.owner_service": "not_implemented",
+      "SnapshotInfo.page": "not_implemented",
+      "AdapterRegistrationMetadata.implementation": "not_implemented",
+      "AdapterRegistrationMetadata.implementation_version": "not_implemented",
+      "AdapterRegistrationMetadata.protocol_version": "not_implemented",
+      "AdapterRegistrationMetadata.declared_capabilities": "not_implemented",
+      "AdapterRegistrationMetadata.effective_capabilities": "not_implemented",
+      "AdapterRecord.resource": "not_implemented",
+      "AdapterRecord.version": "not_implemented",
+      "AdapterRecord.last_registration": "not_implemented",
+      "AdapterRecord.bindings": "not_implemented",
+      "AdapterRecord.online": "not_implemented",
+      "AdapterRecord.last_registered_at": "not_implemented",
+      "AdapterRecord.observed_at": "not_implemented",
+      "AdapterRecord.current_fence": "not_implemented",
+      "AdapterRecord.lifecycle": "not_implemented",
+      "HostRegistrationRecord.host": "not_implemented",
+      "HostRegistrationRecord.lifecycle": "not_implemented",
+      "HostRegistrationRecord.online": "not_implemented",
+      "HostRegistrationRecord.last_heartbeat_at": "not_implemented",
+      "HostRegistrationRecord.observed_at": "not_implemented",
+      "InstanceConfiguration.instance": "not_implemented",
+      "InstanceConfiguration.desired_version": "not_implemented",
+      "InstanceConfiguration.values": "not_implemented",
+      "InstanceConfiguration.applied_version": "not_implemented",
+      "InstanceConfiguration.apply_state": "not_implemented",
+      "InstanceConfiguration.delivery_id": "not_implemented",
+      "InstanceConfiguration.fence": "not_implemented",
+      "InstanceConfiguration.error": "not_implemented",
+      "InstanceConfiguration.observed_at": "not_implemented",
+      "RuntimeGetAccountRequest.context": "not_implemented",
+      "RuntimeGetAccountRequest.resource": "not_implemented",
+      "RuntimeGetAccountResponse.account": "not_implemented",
+      "RuntimeGetAccountResponse.observed_at": "not_implemented",
+      "RuntimeListAccountsRequest.context": "not_implemented",
+      "RuntimeListAccountsRequest.catalog": "not_implemented",
+      "RuntimeListAccountsRequest.page": "not_implemented",
+      "RuntimeListAccountsResponse.accounts": "not_implemented",
+      "RuntimeListAccountsResponse.snapshot": "not_implemented",
+      "RuntimeGetInstallationRequest.context": "not_implemented",
+      "RuntimeGetInstallationRequest.resource": "not_implemented",
+      "RuntimeGetInstallationResponse.installation": "not_implemented",
+      "RuntimeGetInstallationResponse.observed_at": "not_implemented",
+      "RuntimeListInstallationsRequest.context": "not_implemented",
+      "RuntimeListInstallationsRequest.catalog": "not_implemented",
+      "RuntimeListInstallationsRequest.page": "not_implemented",
+      "RuntimeListInstallationsResponse.installations": "not_implemented",
+      "RuntimeListInstallationsResponse.snapshot": "not_implemented",
+      "RuntimeGetInstanceRequest.context": "not_implemented",
+      "RuntimeGetInstanceRequest.resource": "not_implemented",
+      "RuntimeGetInstanceResponse.instance": "not_implemented",
+      "RuntimeGetInstanceResponse.observed_at": "not_implemented",
+      "RuntimeListInstancesRequest.context": "not_implemented",
+      "RuntimeListInstancesRequest.catalog": "not_implemented",
+      "RuntimeListInstancesRequest.page": "not_implemented",
+      "RuntimeListInstancesResponse.instances": "not_implemented",
+      "RuntimeListInstancesResponse.snapshot": "not_implemented",
+      "RuntimeGetAdapterRequest.context": "not_implemented",
+      "RuntimeGetAdapterRequest.resource": "not_implemented",
+      "RuntimeGetAdapterResponse.adapter": "not_implemented",
+      "RuntimeGetAdapterResponse.observed_at": "not_implemented",
+      "RuntimeListAdaptersRequest.context": "not_implemented",
+      "RuntimeListAdaptersRequest.catalog": "not_implemented",
+      "RuntimeListAdaptersRequest.page": "not_implemented",
+      "RuntimeListAdaptersResponse.adapters": "not_implemented",
+      "RuntimeListAdaptersResponse.snapshot": "not_implemented",
+      "RuntimeGetHostRequest.context": "not_implemented",
+      "RuntimeGetHostRequest.resource": "not_implemented",
+      "RuntimeGetHostResponse.host": "not_implemented",
+      "RuntimeGetHostResponse.observed_at": "not_implemented",
+      "RuntimeListHostsRequest.context": "not_implemented",
+      "RuntimeListHostsRequest.catalog": "not_implemented",
+      "RuntimeListHostsRequest.page": "not_implemented",
+      "RuntimeListHostsResponse.hosts": "not_implemented",
+      "RuntimeListHostsResponse.snapshot": "not_implemented",
+      "RuntimeGetInstanceConfigRequest.context": "not_implemented",
+      "RuntimeGetInstanceConfigRequest.resource": "not_implemented",
+      "RuntimeGetInstanceConfigResponse.config": "not_implemented"
     },
     "event_payloads": {
       "EventEnvelope.message_received": "implemented",
@@ -1339,7 +1448,17 @@
       "Permission.PERMISSION_TASK_SCHEDULE": "not_implemented",
       "Permission.PERMISSION_TIMER_ACCEPT": "not_implemented",
       "Permission.PERMISSION_ACCOUNT_POLICY_MANAGE": "not_implemented",
-      "Permission.PERMISSION_ACCOUNT_POLICY_READ": "not_implemented"
+      "Permission.PERMISSION_ACCOUNT_POLICY_READ": "not_implemented",
+      "ResourceKind.RESOURCE_CATALOG": "not_implemented",
+      "Permission.PERMISSION_ACCOUNT_READ": "not_implemented",
+      "Permission.PERMISSION_PLUGIN_READ": "not_implemented",
+      "Permission.PERMISSION_ADAPTER_READ": "not_implemented",
+      "Permission.PERMISSION_PLUGIN_CONFIG_READ": "not_implemented",
+      "ConfigApplyState.CONFIG_APPLY_STATE_UNSPECIFIED": "not_implemented",
+      "ConfigApplyState.CONFIG_APPLY_PENDING": "not_implemented",
+      "ConfigApplyState.CONFIG_APPLY_APPLIED": "not_implemented",
+      "ConfigApplyState.CONFIG_APPLY_REJECTED": "not_implemented",
+      "ConfigApplyState.CONFIG_APPLY_UNAVAILABLE": "not_implemented"
     },
     "channels": {
       "channels.control": "implemented",
@@ -1419,7 +1538,18 @@
       "operations.getPrincipalStatus": "not_implemented",
       "operations.rotateCredential": "not_implemented",
       "operations.revokeCredential": "not_implemented",
-      "operations.getModelConfiguration": "not_implemented"
+      "operations.getModelConfiguration": "not_implemented",
+      "operations.getAccount": "not_implemented",
+      "operations.listAccounts": "not_implemented",
+      "operations.getInstallation": "not_implemented",
+      "operations.listInstallations": "not_implemented",
+      "operations.getInstance": "not_implemented",
+      "operations.listInstances": "not_implemented",
+      "operations.getAdapterInstance": "not_implemented",
+      "operations.listAdapterInstances": "not_implemented",
+      "operations.getHost": "not_implemented",
+      "operations.listHosts": "not_implemented",
+      "operations.getInstanceConfig": "not_implemented"
     },
     "semantic_rules": {
       "semantic.action.deadline_max_300s": "not_implemented",
@@ -3944,6 +4074,315 @@
       "reports/modules/architecture-p03-contract-evidence.md"
     ],
     "operations.getModelConfiguration": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "SnapshotInfo.snapshot_id": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "SnapshotInfo.observed_at": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "SnapshotInfo.expires_at": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "SnapshotInfo.authorization_version": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "SnapshotInfo.owner_service": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "SnapshotInfo.page": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "AdapterRegistrationMetadata.implementation": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "AdapterRegistrationMetadata.implementation_version": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "AdapterRegistrationMetadata.protocol_version": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "AdapterRegistrationMetadata.declared_capabilities": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "AdapterRegistrationMetadata.effective_capabilities": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "AdapterRecord.resource": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "AdapterRecord.version": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "AdapterRecord.last_registration": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "AdapterRecord.bindings": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "AdapterRecord.online": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "AdapterRecord.last_registered_at": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "AdapterRecord.observed_at": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "AdapterRecord.current_fence": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "AdapterRecord.lifecycle": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "HostRegistrationRecord.host": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "HostRegistrationRecord.lifecycle": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "HostRegistrationRecord.online": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "HostRegistrationRecord.last_heartbeat_at": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "HostRegistrationRecord.observed_at": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "InstanceConfiguration.instance": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "InstanceConfiguration.desired_version": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "InstanceConfiguration.values": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "InstanceConfiguration.applied_version": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "InstanceConfiguration.apply_state": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "InstanceConfiguration.delivery_id": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "InstanceConfiguration.fence": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "InstanceConfiguration.error": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "InstanceConfiguration.observed_at": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "RuntimeGetAccountRequest.context": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "RuntimeGetAccountRequest.resource": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "RuntimeGetAccountResponse.account": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "RuntimeGetAccountResponse.observed_at": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "RuntimeListAccountsRequest.context": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "RuntimeListAccountsRequest.catalog": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "RuntimeListAccountsRequest.page": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "RuntimeListAccountsResponse.accounts": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "RuntimeListAccountsResponse.snapshot": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "RuntimeGetInstallationRequest.context": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "RuntimeGetInstallationRequest.resource": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "RuntimeGetInstallationResponse.installation": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "RuntimeGetInstallationResponse.observed_at": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "RuntimeListInstallationsRequest.context": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "RuntimeListInstallationsRequest.catalog": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "RuntimeListInstallationsRequest.page": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "RuntimeListInstallationsResponse.installations": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "RuntimeListInstallationsResponse.snapshot": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "RuntimeGetInstanceRequest.context": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "RuntimeGetInstanceRequest.resource": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "RuntimeGetInstanceResponse.instance": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "RuntimeGetInstanceResponse.observed_at": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "RuntimeListInstancesRequest.context": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "RuntimeListInstancesRequest.catalog": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "RuntimeListInstancesRequest.page": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "RuntimeListInstancesResponse.instances": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "RuntimeListInstancesResponse.snapshot": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "RuntimeGetAdapterRequest.context": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "RuntimeGetAdapterRequest.resource": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "RuntimeGetAdapterResponse.adapter": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "RuntimeGetAdapterResponse.observed_at": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "RuntimeListAdaptersRequest.context": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "RuntimeListAdaptersRequest.catalog": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "RuntimeListAdaptersRequest.page": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "RuntimeListAdaptersResponse.adapters": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "RuntimeListAdaptersResponse.snapshot": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "RuntimeGetHostRequest.context": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "RuntimeGetHostRequest.resource": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "RuntimeGetHostResponse.host": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "RuntimeGetHostResponse.observed_at": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "RuntimeListHostsRequest.context": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "RuntimeListHostsRequest.catalog": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "RuntimeListHostsRequest.page": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "RuntimeListHostsResponse.hosts": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "RuntimeListHostsResponse.snapshot": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "RuntimeGetInstanceConfigRequest.context": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "RuntimeGetInstanceConfigRequest.resource": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "RuntimeGetInstanceConfigResponse.config": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "ResourceKind.RESOURCE_CATALOG": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "Permission.PERMISSION_ACCOUNT_READ": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "Permission.PERMISSION_PLUGIN_READ": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "Permission.PERMISSION_ADAPTER_READ": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "Permission.PERMISSION_PLUGIN_CONFIG_READ": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "ConfigApplyState.CONFIG_APPLY_STATE_UNSPECIFIED": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "ConfigApplyState.CONFIG_APPLY_PENDING": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "ConfigApplyState.CONFIG_APPLY_APPLIED": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "ConfigApplyState.CONFIG_APPLY_REJECTED": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "ConfigApplyState.CONFIG_APPLY_UNAVAILABLE": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "operations.getAccount": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "operations.listAccounts": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "operations.getInstallation": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "operations.listInstallations": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "operations.getInstance": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "operations.listInstances": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "operations.getAdapterInstance": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "operations.listAdapterInstances": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "operations.getHost": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "operations.listHosts": [
+      "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "operations.getInstanceConfig": [
       "reports/modules/architecture-p03-contract-evidence.md"
     ]
   },

@@ -210,3 +210,5 @@ REST 不可变分页用于一致列表；WebSocket 是资源状态刷新通知�
 `target_spec.json.mutating` 表示会改变持久/观测状态，不能为了复用普通收据开关而标成只读。Chat、ACK/Renew、心跳、注册、事件/Timer/Host交接均可变更状态，但分别以 logical_call_id、attempt/fence、registration/fence、event_id+source+hash、message_id/occurrence_id、command_id+hash 防重，不等同普通 idempotency_key 响应收据。descriptor 的 requires_idempotency 只表示必需普通业务幂等键；状态变更和此开关独立。断线未收到回执仍保留原稳定业务身份恢复。所有者RPC集合必须与规格双向相等，不能有未登记额外方法。
 
 目标Model操作状态只由Model裁定；Control按owner路由，不用Runtime的投影或HTTP超时推断Model完成。GetOperation在线检查原操作绑定资源，查询超时不创建FAILED、不自动重发Provider。GetModelConfiguration是敏感读，当前Identity不可确认则503，不能用缓存或secret_configured布尔绕过授权，也不返回旧secret。
+
+Runtime目录列表是按当前主体精确child授予过滤的不可变快照，不是目录内所有资源投影。目录创建/发现权限与child读/管理权限分别检查；角色、owner服务身份、安装关联均不隐含后代授权。每页绑定当前会话、授权版本、目录、页大小/排序及快照期限，撤销后不能借10分钟快照继续敏感读。Adapter offline仅当前连接失效，保留最后合法metadata；Host offline不证明进程停止。GetInstanceConfig区分已保存期望与SDK实际应用，applied=0合法，REJECTED必须有原因。

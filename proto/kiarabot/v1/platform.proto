@@ -22,6 +22,7 @@ enum ResourceKind {
   RESOURCE_OPERATION = 13;
   RESOURCE_CREDENTIAL = 14;
   RESOURCE_ASSIGNMENT = 15;
+  RESOURCE_CATALOG = 16;
 }
 
 // CONTRACT_STATUS: not_implemented - target P01, producer pending.
@@ -234,4 +235,13 @@ message SnapshotPage {
   string snapshot_id = 3;
   string next_page_token = 4;
   google.protobuf.Timestamp expires_at = 5;
+}
+// CONTRACT_STATUS: not_implemented - target typed resource query, producer pending.
+message SnapshotInfo {
+  string snapshot_id = 1;
+  google.protobuf.Timestamp observed_at = 2;
+  google.protobuf.Timestamp expires_at = 3;
+  uint64 authorization_version = 4;
+  string owner_service = 5;
+  PageInfo page = 6;
 }

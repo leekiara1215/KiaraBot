@@ -82,3 +82,11 @@ G02–G05共10个typed Get/List，不用一个operation_name+Struct顶替；Get�
 新增Model.GetOperation与GetModelConfiguration，复用resource.read/model.manage与Operation/ModelConfiguration；补唯一OpenAPI配置查询、按owner的操作权限映射和中立结果schema。同步proto/README、doc01/运行语义/doc02/doc06/doc21最小目标说明。新方法/字段/API均not_implemented；不改Model配置业务范围，不调用Provider。Schema正反例检查必填与秘密字段拒绝；goldens固定两种Model查询的字段编号/序列化，往返仍逐所有owner方法双向集合核对。三条stub桥接保留；活跃说明改为动态计数，历史已执行计数不重写。
 
 Model能力实际检查：check_target.sh实际生成C++/gRPC/Python、编译并通过79 owner RPC策略/集合、273消息跨语言往返及2个固定wire golden。统一check_contracts（显式legacy reader）/9项scope回归/enum/semantic/descriptor兼容场景通过；Ruby 34目标HTTP操作的引用、RPC存在及owner权限映射通过；Ajv新增配置必填、秘密/URL凭据拒绝与中立operation响应正反例通过。Redocly2.72.1通过（3条unused warning，保留旧Runtime结果schema及WS跨文件组件），AsyncAPI parser3.6.6通过，无TLS关闭。版本沿前述临时环境，不冒充固定环境；生成物仅tmp。未跑生产服务/全量full/tidy：无业务或C++手写改动，target状态不变。
+
+## 定稿能力：Runtime typed资源/配置读取
+
+增加五类Get/List及GetInstanceConfig共11方法，ResourceKind追加封闭RESOURCE_CATALOG供必要的精确列表输入，目录登记/Identity可靠注册在下一独立能力完成。增加Adapter最后合法metadata/当前online与Fence分离、Host登记投影、InstanceConfiguration与SnapshotInfo；分页输入不允许server快照字段。Permission只追加四个读枚举、Host复用host.read；target固定角色只增加明确读能力仍逐资源授权，不含message.read。
+
+OpenAPI增加11个目标GET（Adapter采用明确adapter-instances实例目录，不激活旧reference/adapters）；全部RPC/API/字段/枚举均not_implemented。资源Get以exact Ref、List以精确有限catalog，缺/错/all/超过页上限由query-shape fixture拒绝；当前授权、owner和child grant仍需未来生产边界核验。同步proto/README、doc01/运行语义/doc02/03/04/06/doc21，未修改CMake或业务源。
+
+Runtime能力实际检查：check_target.sh生成C++/gRPC/Python并实际编译，90 RPC双向集合/策略、300消息跨语言、5个wire golden通过；typed query-shape夹具覆盖每类Get/List正确kind/UUID、缺目录/错kind/all/页>100拒绝。统一check_contracts显式legacy reader及9项scope回归、descriptor场景通过。Ruby 45目标HTTP操作映射/权限/引用、Ajv目录/在线Fence/拒绝配置原因/快照/空结果等正反例通过。正式Redocly2.72.1通过（4 unused warning）、AsyncAPI parser3.6.6通过；git diff --check通过。无业务服务、固定环境full或生产授权验收，target状态不变，代码生成物仅tmp。

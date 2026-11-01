@@ -18,6 +18,17 @@ x-contract-status:
     - getActionByIdempotencyKey
     - getActionResult
     - listGroups
+    - getAccount
+    - listAccounts
+    - getInstallation
+    - listInstallations
+    - getInstance
+    - listInstances
+    - getAdapterInstance
+    - listAdapterInstances
+    - getHost
+    - listHosts
+    - getInstanceConfig
     - getModelConfiguration
     - createAccount
     - updateAccount
@@ -58,9 +69,9 @@ x-control-policy:
   resource_scope: Fixed role capabilities intersect explicit owner-validated resource grants; sensitive reads require separate grants.
   target_status: not_implemented
   target_role_capabilities:
-    admin: [identity.session.read, identity.session.revoke, identity.principal.manage, identity.principal.read, identity.assignment.read, identity.assignment.manage, account.manage, account.policy.read, account.policy.manage, plugin.manage, namespace.manage, resource.read, resource.manage, delivery.manage, task.read, task.schedule, model.read, model.manage, action.inspect]
-    operator: [identity.session.read, identity.session.revoke, plugin.manage, resource.read, account.policy.read, account.policy.manage, task.read, task.schedule, delivery.manage]
-    viewer: [resource.read, model.read]
+    admin: [identity.session.read, identity.session.revoke, identity.principal.manage, identity.principal.read, identity.assignment.read, identity.assignment.manage, account.manage, account.policy.read, account.policy.manage, plugin.manage, namespace.manage, resource.read, resource.manage, delivery.manage, task.read, task.schedule, model.read, model.manage, action.inspect, account.read, plugin.read, adapter.read, host.read, plugin.config.read]
+    operator: [identity.session.read, identity.session.revoke, plugin.manage, resource.read, account.policy.read, account.policy.manage, task.read, task.schedule, delivery.manage, account.read, plugin.read, adapter.read, host.read, plugin.config.read]
+    viewer: [resource.read, model.read, account.read, plugin.read, adapter.read, host.read]
   target_role_notes: Capabilities alone never grant all resources. Intersect current fixed role capabilities with explicit owner-validated resource grants. Sensitive action.inspect, logs/audit and message metadata require separate explicit grants; no default role has message.read. The roles block below describes existing development behavior until target handlers replace it.
   target_error_mapping:
     INVALID_ARGUMENT: {grpc: INVALID_ARGUMENT, http: 400}
@@ -659,6 +670,52 @@ paths:
           application/json:
             schema:
               "$ref": "#/components/schemas/TargetRuntimeCreateAccountRequest"
+    get:
+      operationId: listAccounts
+      summary: Runtime ListAccounts
+      x-owner-service: runtime
+      x-owner-rpc: RuntimeService.ListAccounts
+      x-permission: account.read
+      x-mutating: false
+      x-contract-status: not_implemented
+      description: Exact registered catalog is required; return only the current subject
+        independently granted child resources of this method kind. Catalog permission
+        is not a grant to every child. Immutable 10 minute snapshot; no global totals
+        or empty-scope wildcard.
+      parameters:
+      - name: catalog
+        in: query
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/TargetCatalogRef"
+      - "$ref": "#/components/parameters/PageSize"
+      - "$ref": "#/components/parameters/PageToken"
+      responses:
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+        '404':
+          "$ref": "#/components/responses/NotFound"
+        '429':
+          "$ref": "#/components/responses/RateLimited"
+        '500':
+          "$ref": "#/components/responses/Internal"
+        '503':
+          "$ref": "#/components/responses/Unavailable"
+        '504':
+          "$ref": "#/components/responses/Timeout"
+        '200':
+          description: Authorized typed resource snapshot
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/TargetRuntimeListAccountsResponse"
+      x-catalog-child-kind: RESOURCE_ACCOUNT
   /accounts/{accountId}:
     put:
       operationId: updateAccount
@@ -712,6 +769,49 @@ paths:
           application/json:
             schema:
               "$ref": "#/components/schemas/TargetRuntimeUpdateAccountRequest"
+    get:
+      operationId: getAccount
+      summary: Runtime GetAccount
+      x-owner-service: runtime
+      x-owner-rpc: RuntimeService.GetAccount
+      x-permission: account.read
+      x-mutating: false
+      x-contract-status: not_implemented
+      description: The path constructs an exact resource reference of this method kind.
+        Check current Identity authorization and the stored binding. Invisible or missing
+        resource is NOT_FOUND. References to related resources do not grant access to
+        those resources.
+      parameters:
+      - name: accountId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+      responses:
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+        '404':
+          "$ref": "#/components/responses/NotFound"
+        '429':
+          "$ref": "#/components/responses/RateLimited"
+        '500':
+          "$ref": "#/components/responses/Internal"
+        '503':
+          "$ref": "#/components/responses/Unavailable"
+        '504':
+          "$ref": "#/components/responses/Timeout"
+        '200':
+          description: Authorized typed resource snapshot
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/TargetRuntimeGetAccountResponse"
   /accounts/{accountId}/disable:
     post:
       operationId: disableAccount
@@ -935,6 +1035,52 @@ paths:
           application/json:
             schema:
               "$ref": "#/components/schemas/TargetRuntimeCreateInstallationRequest"
+    get:
+      operationId: listInstallations
+      summary: Runtime ListInstallations
+      x-owner-service: runtime
+      x-owner-rpc: RuntimeService.ListInstallations
+      x-permission: plugin.read
+      x-mutating: false
+      x-contract-status: not_implemented
+      description: Exact registered catalog is required; return only the current subject
+        independently granted child resources of this method kind. Catalog permission
+        is not a grant to every child. Immutable 10 minute snapshot; no global totals
+        or empty-scope wildcard.
+      parameters:
+      - name: catalog
+        in: query
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/TargetCatalogRef"
+      - "$ref": "#/components/parameters/PageSize"
+      - "$ref": "#/components/parameters/PageToken"
+      responses:
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+        '404':
+          "$ref": "#/components/responses/NotFound"
+        '429':
+          "$ref": "#/components/responses/RateLimited"
+        '500':
+          "$ref": "#/components/responses/Internal"
+        '503':
+          "$ref": "#/components/responses/Unavailable"
+        '504':
+          "$ref": "#/components/responses/Timeout"
+        '200':
+          description: Authorized typed resource snapshot
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/TargetRuntimeListInstallationsResponse"
+      x-catalog-child-kind: RESOURCE_INSTALLATION
   /installations/{installationId}/instances:
     post:
       operationId: createInstance
@@ -1106,6 +1252,48 @@ paths:
           application/json:
             schema:
               "$ref": "#/components/schemas/TargetRuntimeUpdateConfigRequest"
+    get:
+      operationId: getInstanceConfig
+      summary: Read authorized desired and applied instance configuration
+      x-owner-service: runtime
+      x-owner-rpc: RuntimeService.GetInstanceConfig
+      x-permission: plugin.config.read
+      x-mutating: false
+      x-contract-status: not_implemented
+      description: Current exact instance authorization is required. Secret values are
+        represented only by controlled references or redaction; desired persistence is
+        distinct from applied version and delivery outcome.
+      parameters:
+      - name: instanceId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+      responses:
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+        '404':
+          "$ref": "#/components/responses/NotFound"
+        '429':
+          "$ref": "#/components/responses/RateLimited"
+        '500':
+          "$ref": "#/components/responses/Internal"
+        '503':
+          "$ref": "#/components/responses/Unavailable"
+        '504':
+          "$ref": "#/components/responses/Timeout"
+        '200':
+          description: Desired values and independent application status
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/TargetRuntimeGetInstanceConfigResponse"
   /resources/{resourceKind}/{resourceId}:
     get:
       operationId: getResourceState
@@ -2477,6 +2665,323 @@ paths:
             application/json:
               schema:
                 "$ref": "#/components/schemas/TargetModelGetModelConfigurationResponse"
+  "/installations/{installationId}":
+    get:
+      operationId: getInstallation
+      summary: Runtime GetInstallation
+      x-owner-service: runtime
+      x-owner-rpc: RuntimeService.GetInstallation
+      x-permission: plugin.read
+      x-mutating: false
+      x-contract-status: not_implemented
+      description: The path constructs an exact resource reference of this method kind.
+        Check current Identity authorization and the stored binding. Invisible or missing
+        resource is NOT_FOUND. References to related resources do not grant access to
+        those resources.
+      parameters:
+      - name: installationId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+      responses:
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+        '404':
+          "$ref": "#/components/responses/NotFound"
+        '429':
+          "$ref": "#/components/responses/RateLimited"
+        '500':
+          "$ref": "#/components/responses/Internal"
+        '503':
+          "$ref": "#/components/responses/Unavailable"
+        '504':
+          "$ref": "#/components/responses/Timeout"
+        '200':
+          description: Authorized typed resource snapshot
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/TargetRuntimeGetInstallationResponse"
+  "/instances/{instanceId}":
+    get:
+      operationId: getInstance
+      summary: Runtime GetInstance
+      x-owner-service: runtime
+      x-owner-rpc: RuntimeService.GetInstance
+      x-permission: plugin.read
+      x-mutating: false
+      x-contract-status: not_implemented
+      description: The path constructs an exact resource reference of this method kind.
+        Check current Identity authorization and the stored binding. Invisible or missing
+        resource is NOT_FOUND. References to related resources do not grant access to
+        those resources.
+      parameters:
+      - name: instanceId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+      responses:
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+        '404':
+          "$ref": "#/components/responses/NotFound"
+        '429':
+          "$ref": "#/components/responses/RateLimited"
+        '500':
+          "$ref": "#/components/responses/Internal"
+        '503':
+          "$ref": "#/components/responses/Unavailable"
+        '504':
+          "$ref": "#/components/responses/Timeout"
+        '200':
+          description: Authorized typed resource snapshot
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/TargetRuntimeGetInstanceResponse"
+  "/instances":
+    get:
+      operationId: listInstances
+      summary: Runtime ListInstances
+      x-owner-service: runtime
+      x-owner-rpc: RuntimeService.ListInstances
+      x-permission: plugin.read
+      x-mutating: false
+      x-contract-status: not_implemented
+      description: Exact registered catalog is required; return only the current subject
+        independently granted child resources of this method kind. Catalog permission
+        is not a grant to every child. Immutable 10 minute snapshot; no global totals
+        or empty-scope wildcard.
+      parameters:
+      - name: catalog
+        in: query
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/TargetCatalogRef"
+      - "$ref": "#/components/parameters/PageSize"
+      - "$ref": "#/components/parameters/PageToken"
+      responses:
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+        '404':
+          "$ref": "#/components/responses/NotFound"
+        '429':
+          "$ref": "#/components/responses/RateLimited"
+        '500':
+          "$ref": "#/components/responses/Internal"
+        '503':
+          "$ref": "#/components/responses/Unavailable"
+        '504':
+          "$ref": "#/components/responses/Timeout"
+        '200':
+          description: Authorized typed resource snapshot
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/TargetRuntimeListInstancesResponse"
+      x-catalog-child-kind: RESOURCE_INSTANCE
+  "/adapter-instances/{adapterId}":
+    get:
+      operationId: getAdapterInstance
+      summary: Runtime GetAdapter
+      x-owner-service: runtime
+      x-owner-rpc: RuntimeService.GetAdapter
+      x-permission: adapter.read
+      x-mutating: false
+      x-contract-status: not_implemented
+      description: The path constructs an exact resource reference of this method kind.
+        Check current Identity authorization and the stored binding. Invisible or missing
+        resource is NOT_FOUND. References to related resources do not grant access to
+        those resources.
+      parameters:
+      - name: adapterId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+      responses:
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+        '404':
+          "$ref": "#/components/responses/NotFound"
+        '429':
+          "$ref": "#/components/responses/RateLimited"
+        '500':
+          "$ref": "#/components/responses/Internal"
+        '503':
+          "$ref": "#/components/responses/Unavailable"
+        '504':
+          "$ref": "#/components/responses/Timeout"
+        '200':
+          description: Authorized typed resource snapshot
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/TargetRuntimeGetAdapterResponse"
+  "/adapter-instances":
+    get:
+      operationId: listAdapterInstances
+      summary: Runtime ListAdapters
+      x-owner-service: runtime
+      x-owner-rpc: RuntimeService.ListAdapters
+      x-permission: adapter.read
+      x-mutating: false
+      x-contract-status: not_implemented
+      description: Exact registered catalog is required; return only the current subject
+        independently granted child resources of this method kind. Catalog permission
+        is not a grant to every child. Immutable 10 minute snapshot; no global totals
+        or empty-scope wildcard.
+      parameters:
+      - name: catalog
+        in: query
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/TargetCatalogRef"
+      - "$ref": "#/components/parameters/PageSize"
+      - "$ref": "#/components/parameters/PageToken"
+      responses:
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+        '404':
+          "$ref": "#/components/responses/NotFound"
+        '429':
+          "$ref": "#/components/responses/RateLimited"
+        '500':
+          "$ref": "#/components/responses/Internal"
+        '503':
+          "$ref": "#/components/responses/Unavailable"
+        '504':
+          "$ref": "#/components/responses/Timeout"
+        '200':
+          description: Authorized typed resource snapshot
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/TargetRuntimeListAdaptersResponse"
+      x-catalog-child-kind: RESOURCE_ADAPTER
+  "/hosts/{hostId}":
+    get:
+      operationId: getHost
+      summary: Runtime GetHost
+      x-owner-service: runtime
+      x-owner-rpc: RuntimeService.GetHost
+      x-permission: host.read
+      x-mutating: false
+      x-contract-status: not_implemented
+      description: The path constructs an exact resource reference of this method kind.
+        Check current Identity authorization and the stored binding. Invisible or missing
+        resource is NOT_FOUND. References to related resources do not grant access to
+        those resources.
+      parameters:
+      - name: hostId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+      responses:
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+        '404':
+          "$ref": "#/components/responses/NotFound"
+        '429':
+          "$ref": "#/components/responses/RateLimited"
+        '500':
+          "$ref": "#/components/responses/Internal"
+        '503':
+          "$ref": "#/components/responses/Unavailable"
+        '504':
+          "$ref": "#/components/responses/Timeout"
+        '200':
+          description: Authorized typed resource snapshot
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/TargetRuntimeGetHostResponse"
+  "/hosts":
+    get:
+      operationId: listHosts
+      summary: Runtime ListHosts
+      x-owner-service: runtime
+      x-owner-rpc: RuntimeService.ListHosts
+      x-permission: host.read
+      x-mutating: false
+      x-contract-status: not_implemented
+      description: Exact registered catalog is required; return only the current subject
+        independently granted child resources of this method kind. Catalog permission
+        is not a grant to every child. Immutable 10 minute snapshot; no global totals
+        or empty-scope wildcard.
+      parameters:
+      - name: catalog
+        in: query
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/TargetCatalogRef"
+      - "$ref": "#/components/parameters/PageSize"
+      - "$ref": "#/components/parameters/PageToken"
+      responses:
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+        '404':
+          "$ref": "#/components/responses/NotFound"
+        '429':
+          "$ref": "#/components/responses/RateLimited"
+        '500':
+          "$ref": "#/components/responses/Internal"
+        '503':
+          "$ref": "#/components/responses/Unavailable"
+        '504':
+          "$ref": "#/components/responses/Timeout"
+        '200':
+          description: Authorized typed resource snapshot
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/TargetRuntimeListHostsResponse"
+      x-catalog-child-kind: RESOURCE_HOST
 components:
   securitySchemes:
     bearerAuth:
@@ -2994,6 +3499,7 @@ components:
           - RESOURCE_OPERATION
           - RESOURCE_CREDENTIAL
           - RESOURCE_ASSIGNMENT
+          - RESOURCE_CATALOG
         id:
           type: string
           minLength: 1
@@ -4185,6 +4691,10 @@ components:
             - PERMISSION_TASK_READ
             - PERMISSION_TASK_SCHEDULE
             - PERMISSION_TIMER_ACCEPT
+            - PERMISSION_ACCOUNT_READ
+            - PERMISSION_PLUGIN_READ
+            - PERMISSION_ADAPTER_READ
+            - PERMISSION_PLUGIN_CONFIG_READ
         scope:
           "$ref": "#/components/schemas/TargetResourceScope"
         version:
@@ -4487,4 +4997,449 @@ components:
         observed_at:
           type: string
           format: date-time
+      x-contract-status: not_implemented
+    TargetRuntimeGetAccountResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        account:
+          "$ref": "#/components/schemas/TargetAccountRecord"
+        observed_at:
+          type: string
+          format: date-time
+      required:
+      - account
+      - observed_at
+      x-contract-status: not_implemented
+    TargetRuntimeListAccountsResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        accounts:
+          type: array
+          items:
+            "$ref": "#/components/schemas/TargetAccountRecord"
+        snapshot:
+          "$ref": "#/components/schemas/TargetSnapshotInfo"
+      required:
+      - accounts
+      - snapshot
+      x-contract-status: not_implemented
+    TargetSnapshotInfo:
+      type: object
+      additionalProperties: false
+      properties:
+        snapshot_id:
+          type: string
+          minLength: 1
+        observed_at:
+          type: string
+          format: date-time
+        expires_at:
+          type: string
+          format: date-time
+        authorization_version:
+          "$ref": "#/components/schemas/TargetPositiveUint64"
+        owner_service:
+          type: string
+          minLength: 1
+        page:
+          "$ref": "#/components/schemas/TargetPageInfo"
+      required:
+      - snapshot_id
+      - observed_at
+      - expires_at
+      - authorization_version
+      - owner_service
+      - page
+      x-contract-status: not_implemented
+    TargetPageInfo:
+      type: object
+      additionalProperties: false
+      properties:
+        next_page_token:
+          type: string
+        page_size:
+          type: integer
+          minimum: 1
+          maximum: 100
+      required:
+      - page_size
+      x-contract-status: not_implemented
+    TargetRuntimeGetInstallationResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        installation:
+          "$ref": "#/components/schemas/TargetInstallationRecord"
+        observed_at:
+          type: string
+          format: date-time
+      required:
+      - installation
+      - observed_at
+      x-contract-status: not_implemented
+    TargetRuntimeListInstallationsResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        installations:
+          type: array
+          items:
+            "$ref": "#/components/schemas/TargetInstallationRecord"
+        snapshot:
+          "$ref": "#/components/schemas/TargetSnapshotInfo"
+      required:
+      - installations
+      - snapshot
+      x-contract-status: not_implemented
+    TargetRuntimeGetInstanceResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        instance:
+          "$ref": "#/components/schemas/TargetInstanceRecord"
+        observed_at:
+          type: string
+          format: date-time
+      required:
+      - instance
+      - observed_at
+      x-contract-status: not_implemented
+    TargetRuntimeListInstancesResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        instances:
+          type: array
+          items:
+            "$ref": "#/components/schemas/TargetInstanceRecord"
+        snapshot:
+          "$ref": "#/components/schemas/TargetSnapshotInfo"
+      required:
+      - instances
+      - snapshot
+      x-contract-status: not_implemented
+    TargetRuntimeGetAdapterResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        adapter:
+          "$ref": "#/components/schemas/TargetAdapterRecord"
+        observed_at:
+          type: string
+          format: date-time
+      required:
+      - adapter
+      - observed_at
+      x-contract-status: not_implemented
+    TargetAdapterRecord:
+      type: object
+      additionalProperties: false
+      properties:
+        resource:
+          allOf:
+          - "$ref": "#/components/schemas/TargetResourceRef"
+          - properties:
+              kind:
+                type: string
+                enum:
+                - RESOURCE_ADAPTER
+        version:
+          "$ref": "#/components/schemas/TargetPositiveUint64"
+        last_registration:
+          "$ref": "#/components/schemas/TargetAdapterRegistrationMetadata"
+        bindings:
+          type: array
+          items:
+            "$ref": "#/components/schemas/TargetAdapterBinding"
+        online:
+          type: boolean
+        last_registered_at:
+          type: string
+          format: date-time
+        observed_at:
+          type: string
+          format: date-time
+        current_fence:
+          "$ref": "#/components/schemas/TargetFence"
+        lifecycle:
+          type: string
+          enum:
+          - LIFECYCLE_ACTIVE
+          - LIFECYCLE_DISABLED
+          - LIFECYCLE_DELETING
+          - LIFECYCLE_DELETED
+          - LIFECYCLE_RESTORING
+          - LIFECYCLE_PURGED
+      required:
+      - resource
+      - version
+      - online
+      - observed_at
+      - lifecycle
+      x-contract-status: not_implemented
+      oneOf:
+      - required:
+        - online
+        - current_fence
+        properties:
+          online:
+            enum:
+            - true
+      - required:
+        - online
+        properties:
+          online:
+            enum:
+            - false
+        not:
+          required:
+          - current_fence
+    TargetAdapterRegistrationMetadata:
+      type: object
+      additionalProperties: false
+      properties:
+        implementation:
+          type: string
+          minLength: 1
+        implementation_version:
+          type: string
+          minLength: 1
+        protocol_version:
+          type: string
+          minLength: 1
+        declared_capabilities:
+          type: array
+          items:
+            "$ref": "#/components/schemas/TargetCapability"
+        effective_capabilities:
+          type: array
+          items:
+            "$ref": "#/components/schemas/TargetCapability"
+      required:
+      - implementation
+      - implementation_version
+      - protocol_version
+      - declared_capabilities
+      - effective_capabilities
+      x-contract-status: not_implemented
+    TargetCapability:
+      type: object
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+          minLength: 1
+        version:
+          type: string
+        supported:
+          type: boolean
+      required:
+      - name
+      - version
+      - supported
+      x-contract-status: not_implemented
+    TargetRuntimeListAdaptersResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        adapters:
+          type: array
+          items:
+            "$ref": "#/components/schemas/TargetAdapterRecord"
+        snapshot:
+          "$ref": "#/components/schemas/TargetSnapshotInfo"
+      required:
+      - adapters
+      - snapshot
+      x-contract-status: not_implemented
+    TargetRuntimeGetHostResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        host:
+          "$ref": "#/components/schemas/TargetHostRegistrationRecord"
+        observed_at:
+          type: string
+          format: date-time
+      required:
+      - host
+      - observed_at
+      x-contract-status: not_implemented
+    TargetHostRegistrationRecord:
+      type: object
+      additionalProperties: false
+      properties:
+        host:
+          "$ref": "#/components/schemas/TargetHostRecord"
+        lifecycle:
+          type: string
+          enum:
+          - LIFECYCLE_ACTIVE
+          - LIFECYCLE_DISABLED
+          - LIFECYCLE_DELETING
+          - LIFECYCLE_DELETED
+          - LIFECYCLE_RESTORING
+          - LIFECYCLE_PURGED
+        online:
+          type: boolean
+        last_heartbeat_at:
+          type: string
+          format: date-time
+        observed_at:
+          type: string
+          format: date-time
+      required:
+      - host
+      - lifecycle
+      - online
+      - observed_at
+      x-contract-status: not_implemented
+    TargetHostRecord:
+      type: object
+      additionalProperties: false
+      properties:
+        host_id:
+          type: string
+          minLength: 1
+        version:
+          "$ref": "#/components/schemas/TargetPositiveUint64"
+        packages:
+          type: array
+          items:
+            "$ref": "#/components/schemas/TargetHostPackage"
+        capabilities:
+          type: array
+          items:
+            type: string
+        observed_at:
+          type: string
+          format: date-time
+      required:
+      - host_id
+      - version
+      - packages
+      - capabilities
+      x-contract-status: not_implemented
+    TargetHostPackage:
+      type: object
+      additionalProperties: false
+      properties:
+        plugin_type_id:
+          type: string
+          minLength: 1
+        package_sha256:
+          type: string
+          format: byte
+        launch_profile:
+          type: string
+        allowed_argument_names:
+          type: array
+          items:
+            type: string
+      required:
+      - plugin_type_id
+      - package_sha256
+      - launch_profile
+      - allowed_argument_names
+      x-contract-status: not_implemented
+    TargetRuntimeListHostsResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        hosts:
+          type: array
+          items:
+            "$ref": "#/components/schemas/TargetHostRegistrationRecord"
+        snapshot:
+          "$ref": "#/components/schemas/TargetSnapshotInfo"
+      required:
+      - hosts
+      - snapshot
+      x-contract-status: not_implemented
+    TargetRuntimeGetInstanceConfigResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        config:
+          "$ref": "#/components/schemas/TargetInstanceConfiguration"
+      required:
+      - config
+      x-contract-status: not_implemented
+    TargetInstanceConfiguration:
+      type: object
+      additionalProperties: false
+      properties:
+        instance:
+          allOf:
+          - "$ref": "#/components/schemas/TargetResourceRef"
+          - properties:
+              kind:
+                type: string
+                enum:
+                - RESOURCE_INSTANCE
+        desired_version:
+          "$ref": "#/components/schemas/TargetPositiveUint64"
+        values:
+          type: object
+          additionalProperties: true
+        applied_version:
+          "$ref": "#/components/schemas/TargetUint64"
+        apply_state:
+          type: string
+          enum:
+          - CONFIG_APPLY_PENDING
+          - CONFIG_APPLY_APPLIED
+          - CONFIG_APPLY_REJECTED
+          - CONFIG_APPLY_UNAVAILABLE
+        delivery_id:
+          type: string
+          minLength: 1
+        fence:
+          "$ref": "#/components/schemas/TargetFence"
+        error:
+          "$ref": "#/components/schemas/TargetError"
+        observed_at:
+          type: string
+          format: date-time
+      required:
+      - instance
+      - desired_version
+      - values
+      - applied_version
+      - apply_state
+      - observed_at
+      x-contract-status: not_implemented
+      oneOf:
+      - required:
+        - apply_state
+        - error
+        properties:
+          apply_state:
+            enum:
+            - CONFIG_APPLY_REJECTED
+      - required:
+        - apply_state
+        properties:
+          apply_state:
+            enum:
+            - CONFIG_APPLY_PENDING
+            - CONFIG_APPLY_APPLIED
+            - CONFIG_APPLY_UNAVAILABLE
+    TargetCatalogRef:
+      type: object
+      additionalProperties: false
+      required:
+      - kind
+      - id
+      properties:
+        kind:
+          type: string
+          enum:
+          - RESOURCE_CATALOG
+        id:
+          type: string
+          format: uuid
+          pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
       x-contract-status: not_implemented

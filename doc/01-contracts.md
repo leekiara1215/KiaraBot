@@ -1113,6 +1113,136 @@ T03a 新增 CoreToPlugin.error（oneof 字段 6），承载注册之后的终止
 | `ModelGetModelConfigurationResponse.secret_configured` | not_implemented | 目标契约补全声明，尚无生产实现。 |
 | `ModelGetModelConfigurationResponse.observed_at` | not_implemented | 目标契约补全声明，尚无生产实现。 |
 | `operations.getModelConfiguration` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `SnapshotInfo` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `AdapterRegistrationMetadata` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `AdapterRecord` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `HostRegistrationRecord` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `InstanceConfiguration` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `RuntimeGetAccountRequest` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `RuntimeGetAccountResponse` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `RuntimeListAccountsRequest` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `RuntimeListAccountsResponse` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `RuntimeGetInstallationRequest` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `RuntimeGetInstallationResponse` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `RuntimeListInstallationsRequest` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `RuntimeListInstallationsResponse` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `RuntimeGetInstanceRequest` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `RuntimeGetInstanceResponse` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `RuntimeListInstancesRequest` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `RuntimeListInstancesResponse` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `RuntimeGetAdapterRequest` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `RuntimeGetAdapterResponse` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `RuntimeListAdaptersRequest` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `RuntimeListAdaptersResponse` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `RuntimeGetHostRequest` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `RuntimeGetHostResponse` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `RuntimeListHostsRequest` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `RuntimeListHostsResponse` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `RuntimeGetInstanceConfigRequest` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `RuntimeGetInstanceConfigResponse` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `SnapshotInfo.snapshot_id` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `SnapshotInfo.observed_at` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `SnapshotInfo.expires_at` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `SnapshotInfo.authorization_version` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `SnapshotInfo.owner_service` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `SnapshotInfo.page` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `AdapterRegistrationMetadata.implementation` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `AdapterRegistrationMetadata.implementation_version` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `AdapterRegistrationMetadata.protocol_version` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `AdapterRegistrationMetadata.declared_capabilities` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `AdapterRegistrationMetadata.effective_capabilities` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `AdapterRecord.resource` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `AdapterRecord.version` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `AdapterRecord.last_registration` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `AdapterRecord.bindings` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `AdapterRecord.online` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `AdapterRecord.last_registered_at` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `AdapterRecord.observed_at` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `AdapterRecord.current_fence` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `AdapterRecord.lifecycle` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `HostRegistrationRecord.host` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `HostRegistrationRecord.lifecycle` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `HostRegistrationRecord.online` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `HostRegistrationRecord.last_heartbeat_at` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `HostRegistrationRecord.observed_at` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `InstanceConfiguration.instance` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `InstanceConfiguration.desired_version` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `InstanceConfiguration.values` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `InstanceConfiguration.applied_version` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `InstanceConfiguration.apply_state` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `InstanceConfiguration.delivery_id` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `InstanceConfiguration.fence` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `InstanceConfiguration.error` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `InstanceConfiguration.observed_at` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `RuntimeGetAccountRequest.context` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `RuntimeGetAccountRequest.resource` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `RuntimeGetAccountResponse.account` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `RuntimeGetAccountResponse.observed_at` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `RuntimeListAccountsRequest.context` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `RuntimeListAccountsRequest.catalog` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `RuntimeListAccountsRequest.page` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `RuntimeListAccountsResponse.accounts` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `RuntimeListAccountsResponse.snapshot` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `RuntimeGetInstallationRequest.context` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `RuntimeGetInstallationRequest.resource` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `RuntimeGetInstallationResponse.installation` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `RuntimeGetInstallationResponse.observed_at` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `RuntimeListInstallationsRequest.context` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `RuntimeListInstallationsRequest.catalog` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `RuntimeListInstallationsRequest.page` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `RuntimeListInstallationsResponse.installations` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `RuntimeListInstallationsResponse.snapshot` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `RuntimeGetInstanceRequest.context` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `RuntimeGetInstanceRequest.resource` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `RuntimeGetInstanceResponse.instance` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `RuntimeGetInstanceResponse.observed_at` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `RuntimeListInstancesRequest.context` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `RuntimeListInstancesRequest.catalog` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `RuntimeListInstancesRequest.page` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `RuntimeListInstancesResponse.instances` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `RuntimeListInstancesResponse.snapshot` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `RuntimeGetAdapterRequest.context` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `RuntimeGetAdapterRequest.resource` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `RuntimeGetAdapterResponse.adapter` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `RuntimeGetAdapterResponse.observed_at` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `RuntimeListAdaptersRequest.context` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `RuntimeListAdaptersRequest.catalog` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `RuntimeListAdaptersRequest.page` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `RuntimeListAdaptersResponse.adapters` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `RuntimeListAdaptersResponse.snapshot` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `RuntimeGetHostRequest.context` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `RuntimeGetHostRequest.resource` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `RuntimeGetHostResponse.host` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `RuntimeGetHostResponse.observed_at` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `RuntimeListHostsRequest.context` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `RuntimeListHostsRequest.catalog` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `RuntimeListHostsRequest.page` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `RuntimeListHostsResponse.hosts` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `RuntimeListHostsResponse.snapshot` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `RuntimeGetInstanceConfigRequest.context` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `RuntimeGetInstanceConfigRequest.resource` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `RuntimeGetInstanceConfigResponse.config` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `ResourceKind.RESOURCE_CATALOG` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `Permission.PERMISSION_ACCOUNT_READ` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `Permission.PERMISSION_PLUGIN_READ` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `Permission.PERMISSION_ADAPTER_READ` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `Permission.PERMISSION_PLUGIN_CONFIG_READ` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `ConfigApplyState.CONFIG_APPLY_STATE_UNSPECIFIED` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `ConfigApplyState.CONFIG_APPLY_PENDING` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `ConfigApplyState.CONFIG_APPLY_APPLIED` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `ConfigApplyState.CONFIG_APPLY_REJECTED` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `ConfigApplyState.CONFIG_APPLY_UNAVAILABLE` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `operations.getAccount` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `operations.listAccounts` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `operations.getInstallation` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `operations.listInstallations` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `operations.getInstance` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `operations.listInstances` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `operations.getAdapterInstance` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `operations.listAdapterInstances` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `operations.getHost` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `operations.listHosts` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `operations.getInstanceConfig` | not_implemented | 目标契约补全声明，尚无生产实现。 |
 <!-- contract-status:end -->
 
 `/ws/messages` 自 2026-10-31（W5）起为 `implemented`：只有被私有控制配置显式授予 `message.read` 的用户可订阅，事件 `message.updated` 仅含消息元数据（`message_id`、`conversation_id`、`direction`；v1 只产生 `received`），不推送正文、没有 REST 消息投影、也不构成审计；任何默认角色（含 admin）都不持有 `message.read`。授权模型见 `doc/08-operations.md`。
@@ -1502,3 +1632,11 @@ CoreToAdapter.event_ack 使用新编号 4。AdapterEventAck 包含 event_id、tr
 ### Model owner查询补全（目标未实现）
 
 Model.GetOperation补齐UpdateModel/RotateProviderSecret返回operation后的权威查询链，owner_service必须model；服务端对照已存operation的resource，不信客户端以另一scope重贴标签。GetModelConfiguration需model.manage在exact Model资源上在线核验，返回无凭据的ModelConfiguration、secret_configured和权威observed_at。endpoint不可承载/回显URL凭据；供应商secret只走已有机密更新入口。未知/不可见统一NOT_FOUND，依赖故障UPSTREAM_UNAVAILABLE，超时TIMEOUT且不改业务状态。两方法是typed RPC，尚无生产实现；对应HTTP配置读取与多owner操作路由以OpenAPI为唯一来源。
+
+### Runtime typed资源读取（目标未实现）
+
+Runtime增加Account/Installation/Instance/Adapter/Host五类Get/List和GetInstanceConfig，不用通用state或Struct代替资源record。Get必须exact正确kind与server UUID；List的catalog.kind只能RESOURCE_CATALOG，目录必须离线登记为runtime及该资源族，空目录/all/错kind一律INVALID_ARGUMENT或当前授权拒绝，不表示全资源。目录许可不授予任何child；owner按当前本人具体授权资源相交，其他人的资源/总量不泄漏。新增Permission只追加account.read/plugin.read/adapter.read/plugin.config.read，Host复用host.read；固定角色的能力仍需逐资源grant，不默认message.read。
+
+新列表以PageRequest输入，0页大小取20、最多100，token最多1024；返回SnapshotInfo含owner、权威observed_at、authorization_version、UUID快照和不晚于10分钟的expires_at/PageInfo。每页当前检查，scope/权限版本/页大小改变使cursor失效。新AdapterRecord把最后有效注册metadata与当前online/Fence分开，offline不带current_fence，未知实现不伪装NoneBot2；HostRegistrationRecord只是Runtime登记投影，不宣称OS进程已停。关联Ref不授予访问关联对象。
+
+InstanceConfiguration返回desired/applied独立版本、值和应用状态；applied_version可0，REJECTED必须稳定Error，秘密只引用/脱敏，不回显token。未ACK最新配置不变成已应用；离线记录历史版本并非当前执行事实。所有读取默认2秒/最多5秒且在线授权；不存在/不可见NOT_FOUND，Identity/owner依赖不可用UPSTREAM_UNAVAILABLE，不返回成功空页。

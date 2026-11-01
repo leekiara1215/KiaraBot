@@ -456,3 +456,7 @@ ServiceComposition/ServiceComposer属于外层platform，承接已验证ProcessC
 纯application并持有具体依赖维护回调。领域/应用/端口不引用该配置或框架对象。
 原借用application入口继续使用同一实现；组合器先于监听、后于信号屏蔽，资源覆盖RPC
 退出且比application更晚销毁。明确依赖失效会有界结束进程；不自动升级schema或改ready。
+
+### Runtime typed读取目标接口（未实现）
+
+Account/Installation/Instance/Adapter/Host各有Get/List，另有GetInstanceConfig；Runtime拥有资源配置/注册目录投影，Host实际进程事实仍归Host。输入exact资源或有限登记目录、PageRequest，输出typed record/SnapshotInfo或完整配置应用投影，默认2秒/最多5秒。当前Identity授权与child独立grant决定结果，不跨库读取身份表；错误/不可见与依赖失败分别NOT_FOUND/UPSTREAM_UNAVAILABLE。目录不继承child授权、未完成配置不算ready；target尚无生产实现。

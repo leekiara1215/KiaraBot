@@ -9,6 +9,7 @@ from pathlib import Path
 from google.protobuf import descriptor_pb2, message_factory
 from google.protobuf.json_format import ParseDict
 from kiarabot.v1 import platform_pb2, policy_pb2, runtime_pb2
+from resource_query_rules import runtime_query_valid
 
 ROOT = Path(__file__).resolve().parents[2]
 SPEC = json.loads((ROOT / 'proto/tests/target_spec.json').read_text())
@@ -70,6 +71,37 @@ def main():
         assert request.DESCRIPTOR.fields_by_name['context'].message_type.full_name == 'kiarabot.v1.RequestContext'
         assert 'operation_name' not in request.DESCRIPTOR.fields_by_name
         checked += 1
+    # Typed Runtime reads never treat an absent/empty/wrong-kind catalog as global scope.
+    resource_id = '11111111-1111-4111-8111-111111111111'
+    kinds = {'Account': platform_pb2.RESOURCE_ACCOUNT, 'Installation': platform_pb2.RESOURCE_INSTALLATION,
+             'Instance': platform_pb2.RESOURCE_INSTANCE, 'Adapter': platform_pb2.RESOURCE_ADAPTER,
+             'Host': platform_pb2.RESOURCE_HOST}
+    for noun, kind in kinds.items():
+        request = getattr(runtime_pb2, 'RuntimeGet' + noun + 'Request')()
+        assert not runtime_query_valid(request)
+        request.resource.kind = kind
+        request.resource.id = resource_id
+        assert runtime_query_valid(request)
+        request.resource.kind = platform_pb2.RESOURCE_CATALOG
+        assert not runtime_query_valid(request)
+        listed = getattr(runtime_pb2, 'RuntimeList' + noun + 'sRequest')()
+        assert not runtime_query_valid(listed)
+        listed.catalog.kind = platform_pb2.RESOURCE_CATALOG
+        listed.catalog.id = resource_id
+        listed.page.page_size = 20
+        assert runtime_query_valid(listed)
+        listed.catalog.id = 'all'
+        assert not runtime_query_valid(listed)
+        listed.catalog.id = resource_id
+        listed.catalog.kind = kind
+        assert not runtime_query_valid(listed)
+        listed.catalog.kind = platform_pb2.RESOURCE_CATALOG
+        listed.page.page_size = 101
+        assert not runtime_query_valid(listed)
+    config_query = runtime_pb2.RuntimeGetInstanceConfigRequest()
+    config_query.resource.kind = platform_pb2.RESOURCE_INSTANCE
+    config_query.resource.id = resource_id
+    assert runtime_query_valid(config_query)
     # Missing/zero generation cannot be silently admitted by the target fixture.
     fence = platform_pb2.Fence(instance_id='instance', runtime_epoch='epoch')
     assert not validate_fence(fence)

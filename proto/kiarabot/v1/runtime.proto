@@ -9,6 +9,7 @@ import "google/protobuf/struct.proto";
 import "kiarabot/v1/adapters.proto";
 import "kiarabot/v1/events.proto";
 import "kiarabot/v1/actions.proto";
+import "kiarabot/v1/host.proto";
 
 // CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
 message AccountRecord {
@@ -606,6 +607,195 @@ message RuntimeUpdateActionPolicyResponse {
   ActionPolicy policy = 1;
 }
 
+// CONTRACT_STATUS: not_implemented - target typed resource query, producer pending.
+message AdapterRegistrationMetadata {
+  string implementation = 1;
+  string implementation_version = 2;
+  string protocol_version = 3;
+  repeated Capability declared_capabilities = 4;
+  repeated Capability effective_capabilities = 5;
+}
+
+// CONTRACT_STATUS: not_implemented - target typed resource query, producer pending.
+message AdapterRecord {
+  ResourceRef resource = 1;
+  uint64 version = 2;
+  AdapterRegistrationMetadata last_registration = 3;
+  repeated AdapterBinding bindings = 4;
+  bool online = 5;
+  google.protobuf.Timestamp last_registered_at = 6;
+  google.protobuf.Timestamp observed_at = 7;
+  Fence current_fence = 8;
+  LifecycleState lifecycle = 9;
+}
+
+// CONTRACT_STATUS: not_implemented - target typed resource query, producer pending.
+message HostRegistrationRecord {
+  HostRecord host = 1;
+  LifecycleState lifecycle = 2;
+  bool online = 3;
+  google.protobuf.Timestamp last_heartbeat_at = 4;
+  google.protobuf.Timestamp observed_at = 5;
+}
+
+// CONTRACT_STATUS: not_implemented - target typed resource query, producer pending.
+enum ConfigApplyState {
+  CONFIG_APPLY_STATE_UNSPECIFIED = 0;
+  CONFIG_APPLY_PENDING = 1;
+  CONFIG_APPLY_APPLIED = 2;
+  CONFIG_APPLY_REJECTED = 3;
+  CONFIG_APPLY_UNAVAILABLE = 4;
+}
+
+// CONTRACT_STATUS: not_implemented - target typed resource query, producer pending.
+message InstanceConfiguration {
+  ResourceRef instance = 1;
+  uint64 desired_version = 2;
+  google.protobuf.Struct values = 3;
+  uint64 applied_version = 4;
+  ConfigApplyState apply_state = 5;
+  string delivery_id = 6;
+  Fence fence = 7;
+  Error error = 8;
+  google.protobuf.Timestamp observed_at = 9;
+}
+
+// CONTRACT_STATUS: not_implemented - target typed resource query, producer pending.
+message RuntimeGetAccountRequest {
+  RequestContext context = 1;
+  ResourceRef resource = 2;
+}
+
+// CONTRACT_STATUS: not_implemented - target typed resource query, producer pending.
+message RuntimeGetAccountResponse {
+  AccountRecord account = 1;
+  google.protobuf.Timestamp observed_at = 2;
+}
+
+// CONTRACT_STATUS: not_implemented - target typed resource query, producer pending.
+message RuntimeListAccountsRequest {
+  RequestContext context = 1;
+  ResourceRef catalog = 2;
+  PageRequest page = 3;
+}
+
+// CONTRACT_STATUS: not_implemented - target typed resource query, producer pending.
+message RuntimeListAccountsResponse {
+  repeated AccountRecord accounts = 1;
+  SnapshotInfo snapshot = 2;
+}
+
+// CONTRACT_STATUS: not_implemented - target typed resource query, producer pending.
+message RuntimeGetInstallationRequest {
+  RequestContext context = 1;
+  ResourceRef resource = 2;
+}
+
+// CONTRACT_STATUS: not_implemented - target typed resource query, producer pending.
+message RuntimeGetInstallationResponse {
+  InstallationRecord installation = 1;
+  google.protobuf.Timestamp observed_at = 2;
+}
+
+// CONTRACT_STATUS: not_implemented - target typed resource query, producer pending.
+message RuntimeListInstallationsRequest {
+  RequestContext context = 1;
+  ResourceRef catalog = 2;
+  PageRequest page = 3;
+}
+
+// CONTRACT_STATUS: not_implemented - target typed resource query, producer pending.
+message RuntimeListInstallationsResponse {
+  repeated InstallationRecord installations = 1;
+  SnapshotInfo snapshot = 2;
+}
+
+// CONTRACT_STATUS: not_implemented - target typed resource query, producer pending.
+message RuntimeGetInstanceRequest {
+  RequestContext context = 1;
+  ResourceRef resource = 2;
+}
+
+// CONTRACT_STATUS: not_implemented - target typed resource query, producer pending.
+message RuntimeGetInstanceResponse {
+  InstanceRecord instance = 1;
+  google.protobuf.Timestamp observed_at = 2;
+}
+
+// CONTRACT_STATUS: not_implemented - target typed resource query, producer pending.
+message RuntimeListInstancesRequest {
+  RequestContext context = 1;
+  ResourceRef catalog = 2;
+  PageRequest page = 3;
+}
+
+// CONTRACT_STATUS: not_implemented - target typed resource query, producer pending.
+message RuntimeListInstancesResponse {
+  repeated InstanceRecord instances = 1;
+  SnapshotInfo snapshot = 2;
+}
+
+// CONTRACT_STATUS: not_implemented - target typed resource query, producer pending.
+message RuntimeGetAdapterRequest {
+  RequestContext context = 1;
+  ResourceRef resource = 2;
+}
+
+// CONTRACT_STATUS: not_implemented - target typed resource query, producer pending.
+message RuntimeGetAdapterResponse {
+  AdapterRecord adapter = 1;
+  google.protobuf.Timestamp observed_at = 2;
+}
+
+// CONTRACT_STATUS: not_implemented - target typed resource query, producer pending.
+message RuntimeListAdaptersRequest {
+  RequestContext context = 1;
+  ResourceRef catalog = 2;
+  PageRequest page = 3;
+}
+
+// CONTRACT_STATUS: not_implemented - target typed resource query, producer pending.
+message RuntimeListAdaptersResponse {
+  repeated AdapterRecord adapters = 1;
+  SnapshotInfo snapshot = 2;
+}
+
+// CONTRACT_STATUS: not_implemented - target typed resource query, producer pending.
+message RuntimeGetHostRequest {
+  RequestContext context = 1;
+  ResourceRef resource = 2;
+}
+
+// CONTRACT_STATUS: not_implemented - target typed resource query, producer pending.
+message RuntimeGetHostResponse {
+  HostRegistrationRecord host = 1;
+  google.protobuf.Timestamp observed_at = 2;
+}
+
+// CONTRACT_STATUS: not_implemented - target typed resource query, producer pending.
+message RuntimeListHostsRequest {
+  RequestContext context = 1;
+  ResourceRef catalog = 2;
+  PageRequest page = 3;
+}
+
+// CONTRACT_STATUS: not_implemented - target typed resource query, producer pending.
+message RuntimeListHostsResponse {
+  repeated HostRegistrationRecord hosts = 1;
+  SnapshotInfo snapshot = 2;
+}
+
+// CONTRACT_STATUS: not_implemented - target typed resource query, producer pending.
+message RuntimeGetInstanceConfigRequest {
+  RequestContext context = 1;
+  ResourceRef resource = 2;
+}
+
+// CONTRACT_STATUS: not_implemented - target typed resource query, producer pending.
+message RuntimeGetInstanceConfigResponse {
+  InstanceConfiguration config = 1;
+}
+
 // CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
 service RuntimeService {
   rpc CreateAccount(RuntimeCreateAccountRequest) returns (RuntimeCreateAccountResponse) {
@@ -879,6 +1069,83 @@ service RuntimeService {
     option (requires_idempotency) = true;
     option (default_deadline_ms) = 5000;
     option (max_deadline_ms) = 30000;
+    option (requires_online_authorization) = true;
+  }
+  rpc GetAccount(RuntimeGetAccountRequest) returns (RuntimeGetAccountResponse) {
+    option (required_permission) = PERMISSION_ACCOUNT_READ;
+    option (requires_idempotency) = false;
+    option (default_deadline_ms) = 2000;
+    option (max_deadline_ms) = 5000;
+    option (requires_online_authorization) = true;
+  }
+  rpc ListAccounts(RuntimeListAccountsRequest) returns (RuntimeListAccountsResponse) {
+    option (required_permission) = PERMISSION_ACCOUNT_READ;
+    option (requires_idempotency) = false;
+    option (default_deadline_ms) = 2000;
+    option (max_deadline_ms) = 5000;
+    option (requires_online_authorization) = true;
+  }
+  rpc GetInstallation(RuntimeGetInstallationRequest) returns (RuntimeGetInstallationResponse) {
+    option (required_permission) = PERMISSION_PLUGIN_READ;
+    option (requires_idempotency) = false;
+    option (default_deadline_ms) = 2000;
+    option (max_deadline_ms) = 5000;
+    option (requires_online_authorization) = true;
+  }
+  rpc ListInstallations(RuntimeListInstallationsRequest) returns (RuntimeListInstallationsResponse) {
+    option (required_permission) = PERMISSION_PLUGIN_READ;
+    option (requires_idempotency) = false;
+    option (default_deadline_ms) = 2000;
+    option (max_deadline_ms) = 5000;
+    option (requires_online_authorization) = true;
+  }
+  rpc GetInstance(RuntimeGetInstanceRequest) returns (RuntimeGetInstanceResponse) {
+    option (required_permission) = PERMISSION_PLUGIN_READ;
+    option (requires_idempotency) = false;
+    option (default_deadline_ms) = 2000;
+    option (max_deadline_ms) = 5000;
+    option (requires_online_authorization) = true;
+  }
+  rpc ListInstances(RuntimeListInstancesRequest) returns (RuntimeListInstancesResponse) {
+    option (required_permission) = PERMISSION_PLUGIN_READ;
+    option (requires_idempotency) = false;
+    option (default_deadline_ms) = 2000;
+    option (max_deadline_ms) = 5000;
+    option (requires_online_authorization) = true;
+  }
+  rpc GetAdapter(RuntimeGetAdapterRequest) returns (RuntimeGetAdapterResponse) {
+    option (required_permission) = PERMISSION_ADAPTER_READ;
+    option (requires_idempotency) = false;
+    option (default_deadline_ms) = 2000;
+    option (max_deadline_ms) = 5000;
+    option (requires_online_authorization) = true;
+  }
+  rpc ListAdapters(RuntimeListAdaptersRequest) returns (RuntimeListAdaptersResponse) {
+    option (required_permission) = PERMISSION_ADAPTER_READ;
+    option (requires_idempotency) = false;
+    option (default_deadline_ms) = 2000;
+    option (max_deadline_ms) = 5000;
+    option (requires_online_authorization) = true;
+  }
+  rpc GetHost(RuntimeGetHostRequest) returns (RuntimeGetHostResponse) {
+    option (required_permission) = PERMISSION_HOST_READ;
+    option (requires_idempotency) = false;
+    option (default_deadline_ms) = 2000;
+    option (max_deadline_ms) = 5000;
+    option (requires_online_authorization) = true;
+  }
+  rpc ListHosts(RuntimeListHostsRequest) returns (RuntimeListHostsResponse) {
+    option (required_permission) = PERMISSION_HOST_READ;
+    option (requires_idempotency) = false;
+    option (default_deadline_ms) = 2000;
+    option (max_deadline_ms) = 5000;
+    option (requires_online_authorization) = true;
+  }
+  rpc GetInstanceConfig(RuntimeGetInstanceConfigRequest) returns (RuntimeGetInstanceConfigResponse) {
+    option (required_permission) = PERMISSION_PLUGIN_CONFIG_READ;
+    option (requires_idempotency) = false;
+    option (default_deadline_ms) = 2000;
+    option (max_deadline_ms) = 5000;
     option (requires_online_authorization) = true;
   }
 }

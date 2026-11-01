@@ -317,3 +317,7 @@ PluginBridge 协商 `plugin.config.v1`，注册后下发最新完整 PluginConfi
 Core 等待 ACK 最多十秒，SDK 回调上限为 min(hook_timeout, apply_timeout_ms/1000)，宿主下发 5000 ms。当前版本被拒绝或超时后不在同连接自动重试；提交新版本或重连恢复。Core 发现新版本后暂停新的事件投递，直到该 desired version 应用成功；已经执行的事件不撤销。失败不是回滚插件自有副作用的承诺，回调应先校验后原子替换本地状态。拒绝取消的回调沿用进程隔离退出机制。
 
 更新期间保留在途帧，随后合并到最新 desired version，允许跳过中间版本。旧版本 ACK 不会让新版本显示 APPLIED；重复当前 delivery ACK 幂等，超时后的 ACK 不改变结果；错误 delivery/version 为 INVALID_ARGUMENT 并关闭流，旧连接 PERMISSION_DENIED。关闭/重启可能发生“已应用但 ACK 丢失”，重连重新应用最新快照，插件应使配置回调幂等。旧客户端不请求该能力时仍可收事件；API 不宣称其已应用配置。存储读取失败沿用 UPSTREAM_UNAVAILABLE/INTERNAL，关闭流后等待恢复，不回退到空配置。
+
+### 目标管理读取补全（未实现，非插件越权入口）
+
+Runtime typed Installation/Instance查询及GetInstanceConfig供获准管理者/受限服务使用，明确安装/稳定实例/Host绑定与期望、已应用版本；SDK仍从认证配置投递接收自身配置并ACK，不因方法声明获得任意实例读取权。新目录scope不继承子实例权限，plugin.config.read是独立敏感权限，秘密不以明文配置查询回显。离线/applied_version历史与当前注册、Fence分开；typed方法尚未生产接线。
