@@ -438,3 +438,18 @@ PG库添加identity_assignments.cpp；公开security_factory.hpp已在原PUBLIC 
 
 本树真实PG CTest1/1通过，16.40秒；四TU精确compile DB tidy22
 clang-analyzer-* warnings-as-errors通过。
+
+## 后续接线：纯Admin/Delegation用例
+
+同步父精确审查f2e8500（本树09b74e9），两个生产cpp分别作为
+kiarabot_identity_admin_application/kiarabot_identity_delegation_application纯静态库，
+仅PUBLIC core/include和C++20；独立Admin测试链接两库，p04/unit/security、10秒。
+未复制未提交应用源，不自行修旧Random/SessionRepo替身。
+文档影响仅doc/11和本报告构建说明；源提交已同步doc/02，其他模块/API/proto/CI及
+冻结doc18不改。
+固定prefix/Python重新配置，两个纯生产库各自定向构建成功；两个生产TU精确compile DB
+ tidy22 clang-analyzer-* warnings-as-errors通过，全TU覆盖/inner/实际图/p04标签、
+全仓format16与diff检查通过。Admin测试编译/运行尚未执行：父已明确其旧替身缺
+opaque_token/count_unexpired override，正在由父补小提交；按要求等待该提交，不改测试。
+这不是测试通过或完整业务验收。未重复已知缺契约外层full/统一入口。
+文档检查为路径/末尾换行及git diff --check。

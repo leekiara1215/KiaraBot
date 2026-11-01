@@ -560,3 +560,7 @@ PG库加入identity_sessions/identity_receipts两个真实TU，共享原PG drive
 
 完整Identity安全工厂接线在PG库增加identity_assignments.cpp，公开security_factory.hpp
 沿用适配器include根；工厂/测试仍借用原同一UoW，真实PG driver覆盖新增能力，无新CTest。
+
+纯Core Admin/Delegation用例各自形成独立静态库，不依赖PG/crypto/proto；
+`p04_identity_admin_application` 链接两库，注册unit/security、10秒。
+该测试通过不代表生产Bootstrap/RPC已接线；Random/SessionRepo替身须匹配当前接口。
