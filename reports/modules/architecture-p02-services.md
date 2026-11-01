@@ -29,3 +29,17 @@ NotImplemented，任何配置不能令它 ready。主 CMake 接线由构建任�
 
 能力二实际检查：五个 application 源和测试以 C++20 -Wall/-Wextra/-Wpedantic/-Werror
 独立编译并执行通过；clang-format、边界检查、git diff --check 通过。入口链接待 runner。
+
+## 能力三：严格配置与 TLS 材料验证
+
+新增 runtime/platform/service_config.hpp/.cpp、platform/service_config_driver.cpp 和
+service_config_test.py；使用 nlohmann JSON 与 OpenSSL，仅外层依赖。配置未知/重复/
+类型/服务/地址错误退出2，TLS时间/链/密钥/文件权限故障退出1，无内容诊断。
+文档更新 doc/08 与本报告；无协议变化，doc/02无需重复配置细节，其他判断同上。
+实际编译：C++20 -Wall/-Wextra/-Wpedantic/-Werror，头路径 core/include、已有只读
+build/full/dependencies/include 和 pkg-config openssl；运行
+python3 core/tests/platform/service_config_test.py /tmp/p02-service-config-test 通过，
+含正常、过期、错钥、错CA、缺文件、私钥权限、符号链接、未知/重复字段等14种输入。
+本机 OpenSSL4 报旧时间API废弃，已改用兼容3/4的 ASN1_TIME_compare 后无警告编译。
+测试证书先用系统CLI构造负days失败，改用显式历史起止日期签发后重跑通过。
+TLS源需接线 OpenSSL::Crypto、nlohmann_json::nlohmann_json；尚未创建网络监听。

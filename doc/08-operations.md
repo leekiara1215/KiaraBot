@@ -314,3 +314,19 @@ proto + infrastructure 构建可通过 `KIARABOT_CONTROL_CONFIG` 指定私有 JS
 证书/绑定/运行故障退出1，正常 SIGINT/SIGTERM 关闭退出0。P02 业务未实现，
 ready 必须保持 false；live 仅表明进程能响应探针。具体配置和传输实现随本阶段补齐，
 此接口提交不表示进程已经可以运行。
+
+### P02 严格配置与 TLS 文件
+
+JSON 根只允许 schema_version=1、service、probe_listen、tls；非 Control 另必需
+ grpc_listen。service 使用 control/identity/runtime/plugin-host/scheduler/model；
+ tls 只含 certificate_file/private_key_file/ca_file 三个字符串路径。未知/重复字段、
+ 类型/版本/服务不匹配、缺字段拒绝（退出2）。地址使用 IPv4 字面量及0–65535端口；
+ probe_listen 必须为127.0.0.1，业务 grpc_listen 可绑定指定跨主机接口。端口0允许
+ OS分配。路径按进程工作目录解析，建议部署配置用绝对路径。
+
+配置/材料必须为非空常规文件，每文件最多1MiB，拒绝符号链接；私钥必须归运行用户
+ 所有且无组/其他用户权限（0600或更严）。配置不可读退出2；TLS文件不可读、PEM错误、
+ 证书未生效/过期、链验证失败、非CA根或私钥不匹配退出1。验证支持叶证书后附中间链，
+ CA bundle均须在有效期；密钥不允许交互密码提示。诊断仅稳定原因，不回显路径、配置
+ 正文或PEM。此校验在任何监听前完成，不能关闭；业务身份/SAN登记与授权仍待P04，
+ 不能将链有效视为业务授权成功。
