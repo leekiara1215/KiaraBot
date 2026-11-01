@@ -10,6 +10,7 @@
     {"name": "architecture_p02_lifecycle", "entry": "run.py", "group": "lifecycle", "labels": ["p02", "integration", "fault"], "timeout_seconds": 180},
     {"name": "architecture_p02_tls", "entry": "run.py", "group": "tls", "labels": ["p02", "integration", "fault"], "timeout_seconds": 360, "python_environment": "grpc_environment.json"},
     {"name": "architecture_p02_isolation", "entry": "run.py", "group": "isolation", "labels": ["p02", "integration", "fault"], "timeout_seconds": 180},
-    {"name": "architecture_p02_reference_resolution", "entry": "reference_test.py", "labels": ["p02", "unit", "reference"], "timeout_seconds": 10}
+    {"name": "architecture_p02_reference_resolution", "entry": "reference_test.py", "labels": ["p02", "unit", "reference"], "timeout_seconds": 10},
+    {"name": "architecture_p02_acceptance_wrapper", "entry": "acceptance_wrapper_test.py", "labels": ["p02", "unit", "reference"], "timeout_seconds": 60}
   ]
 }

@@ -49,3 +49,15 @@
 主对话要求兼容已审查59e1afd隔离后的路径。重构check_references.py为可自测函数，仅使用core/reference/manifest.json的明确映射：保持行为JSON的logical source/anchor原样，验证manifest/base/字段、限定Core来源与精确core/reference目的地、Git blob ID和无符号链接；拒绝缺失/错误/重复/未知映射、字节漂移、重新引入旧源及逃逸。无manifest迁移前仍读取原源；未登记且原源失踪绝不自动搜寻。未复制或合入工具链实现，无生产/契约更改。
 
 实际验证：reference_test.py六项自测通过，覆盖迁移前/后、缺manifest/缺映射、缺目标、字节与锚点变化、错/未知/重复/逃逸映射、重新引入和symlink；现工作树24条逻辑行为检查通过。只读核对59e1afd的真实manifest全部路径/结构与Git blob；没有改变reference_behaviors.json以掩盖断言缺失。test_manifest新增p02/unit/reference自测入口（现8项）。文档影响仅tests/architecture/README和本报告，其他模块文档/协议无需同步。六二进制仍未实测，无P03推进。
+
+## 独立任务：旧参考闭环wrapper路径修复
+
+本任务获准增加tests/acceptance/run.sh及README范围，仍禁止生产/CMake/proto/API。修复构建根与reference目录混淆：CORE_TEST_BINARY固定构建根/reference/core/kiarabot-core且不回退旧位置；仅Control pytest子进程将KIARABOT_ACCEPTANCE_BUILD设为reference；CTest从构建根按reference标签运行且--no-tests=error；Ruby CONTROL_POLICY_BINARY仍为构建根/kiarabot-control-application-test；SDK和显式启用Adapter继承已导出的reference Core。保留全部原SDK/Control/Adapter测试调用及既有Adapter opt-in，没有新增skip或删除断言。成功文字明确旧参考闭环，不冒充六服务业务验收。
+
+新增acceptance_wrapper_test.py六项自测（含多子场景），以tmp副本/命令记录夹具检查成功路由、带空格路径、原SDK/Control Python覆盖、缺环境、旧Core残留及policy错误位置不回退、SDK生成/Control/CTest/Ruby/SDK/Adapter生成与测试每阶段非零精确传播。首轮仅暴露macOS /var与/private/var路径别名差异，自测临时根改为canonical路径后通过，无生产逻辑放宽。manifest新增p02/unit/reference入口，现9项；根CMake不修改。
+
+文档影响判断：更新tests/acceptance/README、tests/architecture/README及本报告；仅验收路由和闭环性质说明，没有生产公共I/O、状态或协议变化，所以doc/01/06/08/11及proto/API无需同步，确认基线未改。实际检查：bash -n tests/acceptance/run.sh、Python AST/manifest入口检查、acceptance_wrapper_test.py、check_references.py、git diff --check；真实SDK/Control/Adapter/reference CTest未在本任务运行，缺集成reference二进制/锁定环境，不能把命令夹具通过当业务通过。主对话报告的full/P02结果不作为本次本地执行证据。
+
+补齐Adapter生成失败的负例后发现原`cd && generate && pytest`组合会使ERR阶段诊断遗漏（退出7仍保留）。改为同一隔离子shell内顺序执行，沿用set -Eeuo pipefail；生成失败仍不执行pytest，并恢复明确adapter tests阶段诊断。不是删除负面断言或忽略失败。
+
+本任务最终实际结果：wrapper路由自测7项（含构建根误传reference、7个阶段失败子场景）全部通过；bash -n、24条行为引用、Python AST/9入口manifest和git diff --check通过。临时命令夹具全在tmp并清理。真实参考业务闭环/full/tidy未运行，原因仍为本任务无集成reference构建/锁定环境且无C++改动；仅交付路径修复和可审查路由验证。

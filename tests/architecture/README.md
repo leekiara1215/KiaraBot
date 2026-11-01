@@ -71,3 +71,10 @@ core/reference/manifest.json的明确source→reference映射读取，逐项核�
 字节变更、原文件重新引入及symlink/越界路径。映射本身不改变pending_target_rebuild状态。
 `python3 tests/architecture/reference_test.py -v`在tmp验证迁移前/后及上述失败路径；
 工具链接线清单增加architecture_p02_reference_resolution，当前共八项入口。
+
+旧参考闭环wrapper的路由自测为`python3 tests/architecture/acceptance_wrapper_test.py -v`，
+manifest增列architecture_p02_acceptance_wrapper（当前9项入口）。只在tmp复制shell入口并
+记录命令argv/env/cwd：构建根与reference分开，Control子进程用reference目录，CTest仍在根
+选择reference标签，Ruby policy binary仍在根，SDK/已启用Adapter沿CORE_TEST_BINARY使用
+reference Core。覆盖带空格路径、旧位置陈旧产物不回退、缺锁定环境失败与每阶段失败传播。
+此命令路由夹具不执行真实业务断言，不属于六服务验收通过证据。
