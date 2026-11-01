@@ -112,7 +112,7 @@ class ServiceProcess:
         self._log = tempfile.TemporaryFile()
         try:
             self.process = subprocess.Popen([str(self.binary), '--config', str(path)], cwd=self.directory,
-                                        env=child_environment(), stdout=self._log, stderr=self._log,
+                                            env=child_environment(), stdout=self._log, stderr=self._log,
                                             start_new_session=True)
         except BaseException:
             self._log.close()

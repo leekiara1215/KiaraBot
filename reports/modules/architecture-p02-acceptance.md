@@ -30,3 +30,16 @@
 新增isolation_acceptance.py，所有端口内核随机分配，不触碰生产监听。持有probe/grpc端口注入冲突，要求精确1与bind/listen/address/port诊断及无其他监听泄漏；随后六进程同时live、ready保持503，逐一SIGKILL，必须-9回收、受害者监听释放，余五连续三轮健康，再单独重启受害者。只向本脚本拥有的子进程/组发信号，finally回收资源。test_manifest.json向工具链提供7项入口、p02分类及timeout，不修改CMake。
 
 实际验证：support_test.py扩至5项并通过，新增用真实自建Python子进程验证精确SIGKILL/兄弟存活与重复kill拒绝，属于故障注入判定器自测，不是六服务隔离通过。Python AST、24条reference检查及git diff --check通过。真实六进程isolation仍未运行：本工作区没有P02六二进制路径输入；不能使用临时HTTP夹具冒充服务。文档仅本目录README与报告；未改生产源、API/proto/模块文档，不运行full/tidy。
+
+收尾只读核对已提交公共接口/配置实现（30eadfe、0b56cdf），没有合入或改写他分支：接口退出码与配置字段一致；invalid_address稳定诊断纳入配置负例类别。TLS/all在任何服务启动前预检锁定grpc环境；OpenSSL路径也必须可执行。上述改动仍是验收判定，无生产行为/契约影响。
+
+## 首轮交付与复验
+
+- 71c6982：临时PKI、6项证书自测、README、24条reference行为清单/检查及本报告。
+- 2be1d77：run.py/process_support.py的配置/探针/TERM/INT黑盒分组、support_test判定器自测及说明。
+- 799d03e：锁定grpc环境说明、TLS配置负例/77 owner RPC与3桥接状态、真实mTLS夹具4项自测及说明。
+- 54cd092：端口冲突/六进程并行/逐服务崩溃及单独重启验收、故障判定器自测、7项接线manifest及说明。
+
+最终再次实际运行fixture_test.py（6项）、support_test.py（5项）、tls_fixture_test.py（4项），共15项通过；网络自测按已授权的127.0.0.1临时端口权限执行。check_references.py的24项、AST及manifest入口/标签检查通过，整个基点差异git diff --check需在交付时复核。run.py显式提供OpenSSL但缺六二进制时实测退出2并标明missing executable for control，无skip/通过消息；当前非锁定Python被grpc预检明确拒绝。根CMake/生产/API/proto无修改，无生成物/密钥提交。
+
+待主对话/工具链运行：将六个target实际路径、OpenSSL3.5.0及锁定Python3.11.18/grpcio1.85.0输入manifest三组真实黑盒验收，并注册p02 labels/timeout；六进程生命周期、真实RPC、绑定及崩溃隔离均尚未实测通过。固定依赖全量安装/full/tidy/统一toolchain不在本工作区执行；P00/P01/P02门禁未由夹具自测关闭，不推进P03。文档影响仅本任务README/本报告与reference清单，无外部契约变更，因此其他模块文档无需由本任务同步。

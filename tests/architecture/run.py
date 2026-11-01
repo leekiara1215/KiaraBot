@@ -13,7 +13,7 @@ from process_support import (AcceptanceFailure, ServiceProcess, assert_closed, a
 
 
 def lifecycle(binaries, pki, directory):
-    config_error = r'config|argument|usage|schema|json|parse|INVALID_ARGUMENT'
+    config_error = r'config|argument|usage|schema|json|parse|address|INVALID_ARGUMENT'
     for service, binary in binaries.items():
         before_help = set(Path(directory).iterdir())
         help_result = run_once(binary, ['--help'], directory)
@@ -78,7 +78,7 @@ def arguments():
         parser.add_argument('--' + service, default=os.environ.get(
             'KIARABOT_P02_BINARY_' + service.upper().replace('-', '_')), type=Path)
     options = parser.parse_args()
-    if options.openssl is None or not options.openssl.is_file():
+    if options.openssl is None or not options.openssl.is_file() or not os.access(options.openssl, os.X_OK):
         parser.error('an explicit executable --openssl / KIARABOT_P02_OPENSSL is required')
     for service in SERVICES:
         path = getattr(options, service.replace('-', '_'))
@@ -93,6 +93,9 @@ def arguments():
 def main():
     options, binaries = arguments()
     try:
+        if options.group in ('all', 'tls'):
+            from tls_acceptance import load_grpc
+            load_grpc()
         with TestPki(options.openssl) as pki, tempfile.TemporaryDirectory(prefix='kiarabot-p02-run-') as directory:
             print('Test certificate generator: ' + pki.version, flush=True)
             if options.group in ('all', 'lifecycle'):
