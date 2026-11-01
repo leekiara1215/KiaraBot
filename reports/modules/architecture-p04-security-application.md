@@ -134,3 +134,21 @@ production analyzer/bugprone with warnings-as-errors and zero check exclusions p
 boundary/inner and diff passed. Parent PG author independently reproduced duplicate base writes
 as Conflict+wholetransaction RolledBack in87c0fa7; no PG implementation/constraints weakened here.
 Actual real App+crypto+PG fixture integration remains with parent/PG author, not claimed by fake.
+
+## Login index reassignment replay correction
+
+Independent Control reproduction found that a username index reassigned after password verify
+could still replay the prior subject's valid receipt. Login now carries its initially authenticated
+LoginIdentity expectation into EVERY replay gate and re-reads exact normalized login, subject,
+password credential and index version before and after AEAD. Receipt/session validity alone is
+insufficient. Refresh recovery does not invent a username binding. Regression hooks reassign to a
+real other Human/current credential after password verify and during AEAD open; no old-subject
+secret may be returned and the first case must reject before decryption. No secret/username audit
+fields are introduced. Current proof/token expiry is not extended by this correction.
+
+Issue1 checks: production Werror object, source/helper and test full analyzer/bugprone with zero
+exclusions, format16 and diff pass. Actual linked login group ASan/UBSan no-recover passes six
+adversarial cases: predecrypt after_verify and postdecrypt after_open hooks, each with real other
+owner+credential reassignment, version-only change and normalized-name corruption. Early paths
+perform no AEAD open; late paths perform one open but return no secret/new session. No issue2-4
+changes are mixed into this commit.

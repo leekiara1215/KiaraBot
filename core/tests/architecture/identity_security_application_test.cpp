@@ -728,9 +728,16 @@ struct CryptoReceipts final : t::SecretReceiptCryptoPort {
     if (index >= values.size() || values[index].first != binding) {
       return fail();
     }
-    return clone(values[index].second);
+    auto result = clone(values[index].second);
+    if (after_open) {
+      auto hook = std::move(after_open);
+      after_open = {};
+      hook();
+    }
+    return result;
   }
   Store& store;
+  std::function<void()> after_open;
   int opens = 0;
   bool fail_seal = false;
   bool fail_open = false;
@@ -1452,11 +1459,62 @@ void security_repository_metadata_failure_rolls_back_both_views() {
          revoke.store.direct_base_writes == 0);
 }
 
+void login_receipt_rechecks_login_identity_at_crypto_boundaries() {
+  for (unsigned scenario = 0; scenario < 6; ++scenario) {
+    const auto boundary = scenario / 3;
+    const auto mutation = scenario % 3;
+    Fixture f;
+    const auto first = f.app->login(f.login_request());
+    assert(std::holds_alternative<t::IdentityTokenReply>(first));
+    const t::SubjectId replacement_subject{"77777777-7777-4777-8777-777777777777"};
+    const t::CredentialVersionRef replacement_credential{{"88888888-8888-4888-8888-888888888888"},
+                                                         {1}};
+    const t::ResourceRef replacement_binding{t::ResourceKind::Principal,
+                                             {replacement_subject.value}};
+    f.store.state.principals.push_back({replacement_subject, t::PrincipalKind::Human, {}, {1}});
+    f.store.state.authorizations.push_back({replacement_subject, {1}, false});
+    f.store.state.credentials.push_back({replacement_credential,
+                                         replacement_subject,
+                                         t::PasswordVerifier{"password", {1}},
+                                         t::CredentialState::Active,
+                                         f.store.now - std::chrono::hours{1},
+                                         {},
+                                         replacement_binding,
+                                         f.store.now + std::chrono::hours{24}});
+    auto rebind = [&] {
+      auto& index = f.store.state.logins[0];
+      if (mutation == 0) {
+        index.subject = replacement_subject;
+        index.password_credential = replacement_credential.id;
+      } else if (mutation == 2) {
+        index.normalized_login = "renamed";
+      }
+      ++index.version.value;
+      ++f.store.revision;
+    };
+    if (boundary == 0) {
+      f.passwords.after_verify = rebind;
+    } else {
+      f.receipts.after_open = rebind;
+    }
+    const auto before = f.receipts.opens;
+    const auto replay = f.app->login(f.login_request());
+    assert(std::holds_alternative<t::Failure>(replay));
+    assert(f.store.state.sessions.size() == 1);
+    if (boundary == 0) {
+      assert(f.receipts.opens == before);
+    } else {
+      assert(f.receipts.opens == before + 1);
+    }
+  }
+}
+
 } // namespace
 int main(int argc, char** argv) try {
   const std::string_view group = argc == 2 ? argv[1] : "all";
   if (group == "all" || group == "login") {
     login_and_validate();
+    login_receipt_rechecks_login_identity_at_crypto_boundaries();
     missing_and_bad_password_have_one_verify();
     failed_commit_never_returns_secret();
     dependency_deadline_and_capacities_never_fake_success();

@@ -762,3 +762,7 @@ ListSessions续页只需公开的opaque page_token，服务端有界索引将其
 IdentitySessionSecurityRepository::save负责同一UoW内security row与base sessions metadata的
 原子同步，version/rotation/revoked及refresh expiry一致。应用调用一次安全save，不再额外
 调用sessions().save重复create/CAS；登录、刷新和撤销均遵循此责任。读取仍校验两投影一致。
+
+Login秘密收据重放还绑定最初密码验证所对应的当前LoginIdentity（normalized_login、subject、
+password credential及index version），解密前后每次重放gate均重读。用户名重新分配到另一
+主体/凭据或索引版本变化时拒绝旧结果，不能仅因旧session仍有效返回原主体token。

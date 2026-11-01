@@ -197,11 +197,13 @@ private:
   Outcome<IdentityTokenReply>
   replay(const IdentityRequestContext& context, const VerifiedPeer& peer,
          const EncryptedSecretReceipt& receipt, const SecretReceiptScope& scope,
-         const SecretRequestParameters& parameters, const RequestCommitment& commitment) {
+         const SecretRequestParameters& parameters, const RequestCommitment& commitment,
+         const LoginIdentity* login_expectation = nullptr) {
     if (!receipt.binding.session) {
       return failure(ErrorCode::Internal);
     }
-    auto current = replay_gate(context, peer, receipt, scope, parameters, commitment);
+    auto current =
+        replay_gate(context, peer, receipt, scope, parameters, commitment, login_expectation);
     if (const auto* error = std::get_if<Failure>(&current)) {
       return *error;
     }
@@ -231,7 +233,8 @@ private:
     if (!std::get<bool>(access) || !std::get<bool>(refresh)) {
       return failure(ErrorCode::Internal);
     }
-    auto checked = replay_gate(context, peer, receipt, scope, parameters, commitment);
+    auto checked =
+        replay_gate(context, peer, receipt, scope, parameters, commitment, login_expectation);
     if (const auto* error = std::get_if<Failure>(&checked)) {
       return *error;
     }
@@ -247,7 +250,8 @@ private:
                                   const EncryptedSecretReceipt& receipt,
                                   const SecretReceiptScope& scope,
                                   const SecretRequestParameters& parameters,
-                                  const RequestCommitment& commitment) {
+                                  const RequestCommitment& commitment,
+                                  const LoginIdentity* login_expectation) {
     if (!receipt.binding.session) {
       return failure(ErrorCode::Internal);
     }
@@ -264,6 +268,27 @@ private:
         detail::check_peer(std::get<detail::PeerAuthority>(current_peer), peer, work.now);
     if (const auto* error = std::get_if<Failure>(&peer_gate)) {
       return *error;
+    }
+    if (const auto* login_scope = std::get_if<LoginReceiptScope>(&scope)) {
+      if (!login_expectation ||
+          login_expectation->normalized_login != login_scope->normalized_login ||
+          login_expectation->subject != receipt.binding.subject ||
+          login_expectation->password_credential != receipt.binding.credential.id) {
+        return authentication_rejected();
+      }
+      auto identity = work.transaction->credentials().login(login_scope->normalized_login);
+      if (const auto* error = std::get_if<Failure>(&identity)) {
+        return *error;
+      }
+      const auto& row = std::get<std::optional<LoginIdentity>>(identity);
+      if (!row || row->normalized_login != login_expectation->normalized_login ||
+          row->subject != login_expectation->subject ||
+          row->password_credential != login_expectation->password_credential ||
+          row->version != login_expectation->version) {
+        return authentication_rejected();
+      }
+    } else if (login_expectation) {
+      return failure(ErrorCode::Internal);
     }
     auto current = detail::read_session(*work.transaction, *receipt.binding.session);
     if (const auto* error = std::get_if<Failure>(&current)) {
@@ -352,7 +377,7 @@ private:
         return authentication_rejected();
       }
       return replay(request.context, request.control_peer, *first.receipt, scope, parameters,
-                    commitment);
+                    commitment, &initial_login);
     }
     auto id = detail::random_uuid(dependencies_.random);
     if (const auto* error = std::get_if<Failure>(&id)) {
@@ -397,7 +422,8 @@ private:
       return *error;
     }
     const auto& login_row = std::get<std::optional<LoginIdentity>>(login);
-    if (!login_row || login_row->subject != initial_login.subject ||
+    if (!login_row || login_row->normalized_login != username ||
+        login_row->subject != initial_login.subject ||
         login_row->password_credential != initial_login.password_credential ||
         login_row->version != initial_login.version) {
       return authentication_rejected();
@@ -444,7 +470,8 @@ private:
       }
       auto saved = *original;
       work.transaction.reset();
-      return replay(request.context, request.control_peer, saved, scope, parameters, commitment);
+      return replay(request.context, request.control_peer, saved, scope, parameters, commitment,
+                    &initial_login);
     }
     auto count = work.transaction->session_security().count_unexpired();
     if (const auto* error = std::get_if<Failure>(&count)) {
