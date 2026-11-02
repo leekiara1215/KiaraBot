@@ -128,6 +128,130 @@ struct Gateway {
   FakeRuntime runtime;
   target::OwnerGateway gateway{delegation, runtime};
 };
+struct FakeResources final : target::RuntimeResourcesPort {
+  std::optional<target::OwnerFailure> failure;
+  int calls = 0;
+  wire::RuntimeBindAdapterRequest last_bind;
+  wire::RuntimeSetDesiredStateRequest last_state;
+  wire::RuntimeUpdateActionPolicyRequest last_policy;
+  template <typename Response> target::OwnerOutcome<Response> ok(Response response) const {
+    if (failure) {
+      return *failure;
+    }
+    return response;
+  }
+  target::OwnerOutcome<wire::RuntimeBindAdapterResponse>
+  bind_adapter(const wire::RuntimeBindAdapterRequest& input, std::string_view) override {
+    ++calls;
+    last_bind = input;
+    wire::RuntimeBindAdapterResponse response;
+    *response.mutable_binding() = input.binding();
+    response.mutable_operation()->set_operation_id("operation-1");
+    response.set_bootstrap_credential("must-not-leak");
+    return ok(response);
+  }
+  target::OwnerOutcome<wire::RuntimeUnbindAdapterResponse>
+  unbind_adapter(const wire::RuntimeUnbindAdapterRequest& input, std::string_view) override {
+    ++calls;
+    wire::RuntimeUnbindAdapterResponse response;
+    response.mutable_operation()->set_operation_id("operation-2");
+    return ok(response);
+  }
+  target::OwnerOutcome<wire::RuntimeCreateInstallationResponse>
+  create_installation(const wire::RuntimeCreateInstallationRequest& input,
+                      std::string_view) override {
+    ++calls;
+    wire::RuntimeCreateInstallationResponse response;
+    response.mutable_installation()->set_installation_id("installation-1");
+    return ok(response);
+  }
+  target::OwnerOutcome<wire::RuntimeCreateInstanceResponse>
+  create_instance(const wire::RuntimeCreateInstanceRequest& input, std::string_view) override {
+    ++calls;
+    wire::RuntimeCreateInstanceResponse response;
+    response.mutable_instance()->set_instance_id("instance-1");
+    response.set_bootstrap_credential("must-not-leak");
+    return ok(response);
+  }
+  target::OwnerOutcome<wire::RuntimeSetDesiredStateResponse>
+  set_desired_state(const wire::RuntimeSetDesiredStateRequest& input, std::string_view) override {
+    ++calls;
+    last_state = input;
+    wire::RuntimeSetDesiredStateResponse response;
+    response.mutable_instance()->set_instance_id(input.instance_id());
+    response.mutable_operation()->set_operation_id("operation-3");
+    return ok(response);
+  }
+  target::OwnerOutcome<wire::RuntimeUpdateConfigResponse>
+  update_config(const wire::RuntimeUpdateConfigRequest& input, std::string_view) override {
+    ++calls;
+    return ok(wire::RuntimeUpdateConfigResponse{});
+  }
+  target::OwnerOutcome<wire::RuntimeGetInstanceConfigResponse>
+  get_instance_config(const wire::RuntimeGetInstanceConfigRequest& input,
+                      std::string_view) override {
+    ++calls;
+    return ok(wire::RuntimeGetInstanceConfigResponse{});
+  }
+  target::OwnerOutcome<wire::RuntimeGetActionPolicyResponse>
+  get_action_policy(const wire::RuntimeGetActionPolicyRequest& input, std::string_view) override {
+    ++calls;
+    wire::RuntimeGetActionPolicyResponse response;
+    response.mutable_policy()->set_account_id(input.account_id());
+    response.mutable_policy()->set_version(4);
+    return ok(response);
+  }
+  target::OwnerOutcome<wire::RuntimeUpdateActionPolicyResponse>
+  update_action_policy(const wire::RuntimeUpdateActionPolicyRequest& input,
+                       std::string_view) override {
+    ++calls;
+    last_policy = input;
+    wire::RuntimeUpdateActionPolicyResponse response;
+    *response.mutable_policy() = input.policy();
+    return ok(response);
+  }
+};
+struct FakeTasks final : target::SchedulerTasksPort {
+  std::optional<target::OwnerFailure> failure;
+  int calls = 0;
+  target::OwnerOutcome<wire::SchedulerListTasksResponse>
+  list_tasks(const wire::SchedulerListTasksRequest& input, std::string_view) override {
+    ++calls;
+    if (failure)
+      return *failure;
+    wire::SchedulerListTasksResponse response;
+    response.add_tasks()->set_task_id("task-1");
+    response.mutable_page()->set_page_size(input.page().page_size());
+    return response;
+  }
+  target::OwnerOutcome<wire::SchedulerCancelTaskResponse>
+  cancel_task(const wire::SchedulerCancelTaskRequest& input, std::string_view) override {
+    ++calls;
+    if (failure)
+      return *failure;
+    wire::SchedulerCancelTaskResponse response;
+    response.mutable_task()->set_task_id(input.task_id());
+    return response;
+  }
+  target::OwnerOutcome<wire::SchedulerGetTaskResponse>
+  get_task(const wire::SchedulerGetTaskRequest& input, std::string_view) override {
+    ++calls;
+    if (failure)
+      return *failure;
+    wire::SchedulerGetTaskResponse response;
+    response.mutable_task()->set_task_id(input.task_id());
+    return response;
+  }
+};
+struct OwnerCommands {
+  FakeDelegation delegation;
+  FakeRuntime runtime;
+  FakePrincipals principals;
+  FakeHealth health;
+  FakeResources resources;
+  FakeTasks tasks;
+  target::OwnerGateway gateway{delegation, runtime, &principals, &health, &resources, &tasks};
+};
 struct ExtendedGateway {
   FakeDelegation delegation;
   FakeRuntime runtime;
@@ -217,7 +341,7 @@ void unavailable_sources_and_health() {
           "sensitive reads obtain a delegation but never call the action owner");
   const auto live = fixture.gateway.handle(request("GET", "/health/live"));
   require(live && live->status == 200, "health live");
-  const auto unknown = fixture.gateway.handle(request("GET", "/api/v1/tasks"));
+  const auto unknown = fixture.gateway.handle(request("GET", "/api/v1/unknown"));
   require(!unknown, "non-owner paths are left to other handlers");
 }
 
@@ -267,6 +391,62 @@ void principals_catalog() {
   require(denied && denied->status == 403, "principal catalog denied");
 }
 
+void owner_commands() {
+  OwnerCommands fixture;
+  auto bind = request("PUT", "/api/v1/adapter-bindings/321d4c70-5c3d-4ac5-b7f6-2b871e21b1a1");
+  bind.body =
+      R"({"binding":{"account_id":"321d4c70-5c3d-4ac5-b7f6-2b871e21b1a1","adapter_instance_id":"adapter-1"},"expected_version":"2"})";
+  auto bound = fixture.gateway.handle(bind);
+  require(bound && bound->status == 200, "bind adapter response");
+  require(bound->body.find("bootstrap_credential") == std::string::npos,
+          "one-time bootstrap credential is never returned by REST");
+  require(fixture.delegation.permission == wire::PERMISSION_ACCOUNT_MANAGE &&
+              fixture.resources.last_bind.expected_version() == 2,
+          "bind delegation/version");
+  auto mismatch = bind;
+  mismatch.body = R"({"binding":{"account_id":"another-account"},"expected_version":"2"})";
+  require(fixture.gateway.handle(mismatch)->status == 400, "path/body account mismatch rejected");
+  auto conflict_bind = bind;
+  fixture.resources.failure = target::OwnerFailure{wire::CONFLICT, false};
+  require(fixture.gateway.handle(conflict_bind)->status == 409, "version conflict maps 409");
+  fixture.resources.failure.reset();
+
+  auto state = request("PUT", "/api/v1/instances/inst-1/desired-state");
+  state.body =
+      R"({"instance_id":"inst-1","desired_state":"DESIRED_RUNNING","expected_version":"3"})";
+  auto started = fixture.gateway.handle(state);
+  require(started && started->status == 200 &&
+              started->body.find("operation-3") != std::string::npos,
+          "desired state returns persisted operation reference");
+  require(fixture.delegation.permission == wire::PERMISSION_PLUGIN_MANAGE,
+          "desired state plugin.manage delegation");
+  auto policy = request("PUT", "/api/v1/accounts/account-1/action-policy");
+  policy.body =
+      R"({"policy":{"account_id":"account-1","mute_enabled":true,"kick_enabled":false,"allowed_group_ids":["group-1"],"mute_daily_budget":2,"kick_daily_budget":1,"version":"0"},"expected_version":"4"})";
+  auto updated = fixture.gateway.handle(policy);
+  require(updated && updated->status == 200 && updated->body.find("group-1") != std::string::npos,
+          "action policy update forwards expected_version");
+  require(fixture.resources.last_policy.policy().mute_enabled() &&
+              fixture.resources.last_policy.expected_version() == 4 &&
+              fixture.delegation.permission == wire::PERMISSION_ACCOUNT_POLICY_MANAGE,
+          "action policy request/delegation");
+  auto tasks = request("GET", "/api/v1/tasks?scope=" + scope_json() + "&page_size=5");
+  auto listed = fixture.gateway.handle(tasks);
+  require(listed && listed->status == 200 && listed->body.find("task-1") != std::string::npos,
+          "task list forwards scope/page");
+  auto cancel = request("POST", "/api/v1/tasks/task-1/cancel?scope=" + scope_json());
+  auto cancelled = fixture.gateway.handle(cancel);
+  require(cancelled && cancelled->status == 200 &&
+              cancelled->body.find("task-1") != std::string::npos,
+          "task cancel forwards owner");
+  require(fixture.delegation.permission == wire::PERMISSION_TASK_SCHEDULE,
+          "task cancel delegation");
+  auto unavailable =
+      request("GET", "/api/v1/tasks/" + std::string{"task-1"} + "?scope=" + scope_json());
+  fixture.tasks.failure = target::OwnerFailure{wire::UPSTREAM_UNAVAILABLE, true};
+  require(fixture.gateway.handle(unavailable)->status == 503, "task owner unavailable maps 503");
+}
+
 void sensitive_read_permissions() {
   Gateway fixture;
   fixture.delegation.failure = target::OwnerFailure{wire::PERMISSION_DENIED, false};
@@ -310,6 +490,7 @@ int main() {
     health_aggregation();
     principals_catalog();
     sensitive_read_permissions();
+    owner_commands();
     validation_rules();
   } catch (const std::exception& error) {
     std::cerr << error.what() << '\n';

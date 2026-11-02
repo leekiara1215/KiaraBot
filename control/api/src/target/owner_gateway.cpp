@@ -191,6 +191,58 @@ std::string health_body(const HealthObservation& observation) {
                                      component("model", observation.model_ready)});
   return value.dump();
 }
+template <typename Message> bool json_request(const std::string& body, Message& value) {
+  return !body.empty() && google::protobuf::util::JsonStringToMessage(body, &value).ok();
+}
+template <typename Message> std::string json_response(const Message& value) {
+  google::protobuf::util::JsonPrintOptions options;
+  options.preserve_proto_field_names = true;
+  std::string body;
+  if (!google::protobuf::util::MessageToJsonString(value, &body, options).ok()) {
+    return "{}";
+  }
+  return body;
+}
+Json json_request_value(const std::string& body) {
+  auto parsed = Json::parse(body, nullptr, false);
+  return parsed.is_object() ? parsed : Json::object();
+}
+wire::ResourceScope account_scope(std::string_view id) {
+  wire::ResourceScope scope;
+  auto* resource = scope.add_resources();
+  resource->set_kind(wire::RESOURCE_ACCOUNT);
+  resource->set_id(std::string{id});
+  return scope;
+}
+wire::ResourceScope instance_scope(std::string_view id) {
+  wire::ResourceScope scope;
+  auto* resource = scope.add_resources();
+  resource->set_kind(wire::RESOURCE_INSTANCE);
+  resource->set_id(std::string{id});
+  return scope;
+}
+bool fill_context(wire::RequestContext* context, std::string_view request_id,
+                  std::string_view trace_id, const OwnerHttpRequest& request) {
+  context->set_request_id(std::string{request_id});
+  context->set_trace_id(std::string{trace_id});
+  const auto deadline = codec::to_wire(request.deadline);
+  if (const auto* timestamp = std::get_if<google::protobuf::Timestamp>(&deadline)) {
+    *context->mutable_deadline() = *timestamp;
+    return true;
+  }
+  return false;
+}
+std::optional<wire::ResourceScope> optional_scope(const std::map<std::string, std::string>& query) {
+  const auto found = query.find("scope");
+  if (found == query.end()) {
+    return wire::ResourceScope{};
+  }
+  wire::ResourceScope scope;
+  if (!google::protobuf::util::JsonStringToMessage(found->second, &scope).ok()) {
+    return std::nullopt;
+  }
+  return scope;
+}
 } // namespace
 
 unsigned int owner_http_status(wire::ErrorCode code) {
@@ -330,6 +382,337 @@ std::optional<OwnerHttpResult> OwnerGateway::handle(const OwnerHttpRequest& requ
         return OwnerHttpResult{500, owner_error_body(wire::INTERNAL, request_id, trace_id, false)};
       }
       return OwnerHttpResult{200, body};
+    }
+    // P12c-3: owner commands under the same one-use-delegation gateway. Owner schemas mirror the
+    // protobuf messages; Control forwards persisted operation references and never claims work
+    // completed (202 semantics stay at the HTTP layer, operation progress is owner-owned).
+    {
+      constexpr std::string_view kBind = "/api/v1/adapter-bindings/";
+      constexpr std::string_view kInstallations = "/api/v1/installations";
+      constexpr std::string_view kInstances = "/api/v1/instances/";
+      constexpr std::string_view kPolicy = "/api/v1/accounts/";
+      constexpr std::string_view kTasks = "/api/v1/tasks";
+      const auto method = request.method == "HEAD" ? std::string{"GET"} : request.method;
+      const auto missing = [&](wire::ErrorCode code) {
+        return OwnerHttpResult{owner_http_status(code),
+                               owner_error_body(code, request_id, trace_id, false)};
+      };
+      if (!resources_ && (path.starts_with(kBind) || path == kInstallations ||
+                          path.starts_with(kInstances) || path.starts_with(kPolicy))) {
+        return missing(wire::UPSTREAM_UNAVAILABLE);
+      }
+      if (!tasks_ && path.starts_with(kTasks)) {
+        return missing(wire::UPSTREAM_UNAVAILABLE);
+      }
+      if (path.starts_with(kBind)) {
+        const auto account = std::string{path.substr(kBind.size())};
+        if (account.empty() || account.find('/') != std::string::npos) {
+          return missing(wire::NOT_FOUND);
+        }
+        if (method == "PUT") {
+          wire::RuntimeBindAdapterRequest input;
+          if (!json_request(request.body, input) || !input.has_binding() ||
+              input.binding().account_id() != account || !input.has_expected_version()) {
+            return missing(wire::INVALID_ARGUMENT);
+          }
+          if (!fill_context(input.mutable_context(), request_id, trace_id, request)) {
+            return missing(wire::INVALID_ARGUMENT);
+          }
+          auto delegation =
+              delegation_.issue("runtime", wire::PERMISSION_ACCOUNT_MANAGE, account_scope(account),
+                                request.access_token, request.deadline);
+          if (const auto* failure = std::get_if<OwnerFailure>(&delegation)) {
+            return missing(failure->code);
+          }
+          auto result = resources_->bind_adapter(input, std::get<std::string>(delegation));
+          if (const auto* failure = std::get_if<OwnerFailure>(&result)) {
+            return missing(failure->code);
+          }
+          auto value =
+              json_request_value(json_response(std::get<wire::RuntimeBindAdapterResponse>(result)));
+          value.erase("bootstrap_credential");
+          return OwnerHttpResult{200, value.dump()};
+        }
+        if (method == "DELETE") {
+          wire::RuntimeUnbindAdapterRequest input;
+          if (!json_request(request.body, input) || !input.has_binding() ||
+              input.binding().account_id() != account || !input.has_expected_version()) {
+            return missing(wire::INVALID_ARGUMENT);
+          }
+          if (!fill_context(input.mutable_context(), request_id, trace_id, request)) {
+            return missing(wire::INVALID_ARGUMENT);
+          }
+          auto delegation =
+              delegation_.issue("runtime", wire::PERMISSION_ACCOUNT_MANAGE, account_scope(account),
+                                request.access_token, request.deadline);
+          if (const auto* failure = std::get_if<OwnerFailure>(&delegation)) {
+            return missing(failure->code);
+          }
+          auto result = resources_->unbind_adapter(input, std::get<std::string>(delegation));
+          if (const auto* failure = std::get_if<OwnerFailure>(&result)) {
+            return missing(failure->code);
+          }
+          return OwnerHttpResult{
+              200, json_response(std::get<wire::RuntimeUnbindAdapterResponse>(result))};
+        }
+        return missing(wire::INVALID_ARGUMENT);
+      }
+      if (path == kInstallations && method == "POST") {
+        wire::RuntimeCreateInstallationRequest input;
+        if (!json_request(request.body, input) ||
+            !fill_context(input.mutable_context(), request_id, trace_id, request)) {
+          return missing(wire::INVALID_ARGUMENT);
+        }
+        auto delegation =
+            delegation_.issue("runtime", wire::PERMISSION_PLUGIN_MANAGE, wire::ResourceScope{},
+                              request.access_token, request.deadline);
+        if (const auto* failure = std::get_if<OwnerFailure>(&delegation)) {
+          return missing(failure->code);
+        }
+        auto result = resources_->create_installation(input, std::get<std::string>(delegation));
+        if (const auto* failure = std::get_if<OwnerFailure>(&result)) {
+          return missing(failure->code);
+        }
+        return OwnerHttpResult{
+            200, json_response(std::get<wire::RuntimeCreateInstallationResponse>(result))};
+      }
+      if (path.starts_with("/api/v1/installations/") && path.ends_with("/instances") &&
+          method == "POST") {
+        const auto prefix = std::string{"/api/v1/installations/"};
+        const auto installation = std::string{path.substr(
+            prefix.size(), path.size() - prefix.size() - std::string{"/instances"}.size())};
+        wire::RuntimeCreateInstanceRequest input;
+        if (installation.empty() || installation.find('/') != std::string::npos ||
+            !json_request(request.body, input) || input.installation_id() != installation ||
+            !fill_context(input.mutable_context(), request_id, trace_id, request)) {
+          return missing(wire::INVALID_ARGUMENT);
+        }
+        auto delegation =
+            delegation_.issue("runtime", wire::PERMISSION_PLUGIN_MANAGE, wire::ResourceScope{},
+                              request.access_token, request.deadline);
+        if (const auto* failure = std::get_if<OwnerFailure>(&delegation)) {
+          return missing(failure->code);
+        }
+        auto result = resources_->create_instance(input, std::get<std::string>(delegation));
+        if (const auto* failure = std::get_if<OwnerFailure>(&result)) {
+          return missing(failure->code);
+        }
+        auto value = json_request_value(
+            json_response(std::get<wire::RuntimeCreateInstanceResponse>(result)));
+        value.erase("bootstrap_credential");
+        return OwnerHttpResult{200, value.dump()};
+      }
+      if (path.starts_with(kInstances)) {
+        const auto tail = path.substr(kInstances.size());
+        const auto slash = tail.find('/');
+        if (slash == std::string_view::npos) {
+          return missing(wire::NOT_FOUND);
+        }
+        const auto instance = std::string{tail.substr(0, slash)};
+        const auto action = tail.substr(slash);
+        if (instance.empty() || action == "/desired-state" || action == "/config") {
+          const auto scope = instance_scope(instance);
+          if (action == "/desired-state" && method == "PUT") {
+            wire::RuntimeSetDesiredStateRequest input;
+            if (!json_request(request.body, input) || input.instance_id() != instance ||
+                !input.has_expected_version() ||
+                !fill_context(input.mutable_context(), request_id, trace_id, request)) {
+              return missing(wire::INVALID_ARGUMENT);
+            }
+            auto delegation = delegation_.issue("runtime", wire::PERMISSION_PLUGIN_MANAGE, scope,
+                                                request.access_token, request.deadline);
+            if (const auto* failure = std::get_if<OwnerFailure>(&delegation)) {
+              return missing(failure->code);
+            }
+            auto result = resources_->set_desired_state(input, std::get<std::string>(delegation));
+            if (const auto* failure = std::get_if<OwnerFailure>(&result)) {
+              return missing(failure->code);
+            }
+            return OwnerHttpResult{
+                200, json_response(std::get<wire::RuntimeSetDesiredStateResponse>(result))};
+          }
+          if (action == "/config" && method == "PUT") {
+            wire::RuntimeUpdateConfigRequest input;
+            if (!json_request(request.body, input) || !input.has_resource() ||
+                input.resource().id() != instance || !input.has_expected_version() ||
+                !fill_context(input.mutable_context(), request_id, trace_id, request)) {
+              return missing(wire::INVALID_ARGUMENT);
+            }
+            auto delegation = delegation_.issue("runtime", wire::PERMISSION_PLUGIN_MANAGE, scope,
+                                                request.access_token, request.deadline);
+            if (const auto* failure = std::get_if<OwnerFailure>(&delegation)) {
+              return missing(failure->code);
+            }
+            auto result = resources_->update_config(input, std::get<std::string>(delegation));
+            if (const auto* failure = std::get_if<OwnerFailure>(&result)) {
+              return missing(failure->code);
+            }
+            return OwnerHttpResult{
+                200, json_response(std::get<wire::RuntimeUpdateConfigResponse>(result))};
+          }
+          if (action == "/config" && method == "GET") {
+            wire::RuntimeGetInstanceConfigRequest input;
+            input.mutable_resource()->set_kind(wire::RESOURCE_INSTANCE);
+            input.mutable_resource()->set_id(instance);
+            if (!fill_context(input.mutable_context(), request_id, trace_id, request)) {
+              return missing(wire::INVALID_ARGUMENT);
+            }
+            auto delegation = delegation_.issue("runtime", wire::PERMISSION_PLUGIN_CONFIG_READ,
+                                                scope, request.access_token, request.deadline);
+            if (const auto* failure = std::get_if<OwnerFailure>(&delegation)) {
+              return missing(failure->code);
+            }
+            auto result = resources_->get_instance_config(input, std::get<std::string>(delegation));
+            if (const auto* failure = std::get_if<OwnerFailure>(&result)) {
+              return missing(failure->code);
+            }
+            return OwnerHttpResult{
+                200, json_response(std::get<wire::RuntimeGetInstanceConfigResponse>(result))};
+          }
+        }
+        return missing(wire::NOT_FOUND);
+      }
+      if (path.starts_with(kPolicy) && path.ends_with("/action-policy")) {
+        const auto prefix = std::string{kPolicy};
+        const auto account = std::string{path.substr(
+            prefix.size(), path.size() - prefix.size() - std::string{"/action-policy"}.size())};
+        if (account.empty() || account.find('/') != std::string::npos) {
+          return missing(wire::NOT_FOUND);
+        }
+        const auto scope = account_scope(account);
+        if (method == "GET") {
+          wire::RuntimeGetActionPolicyRequest input;
+          input.set_account_id(account);
+          if (!fill_context(input.mutable_context(), request_id, trace_id, request)) {
+            return missing(wire::INVALID_ARGUMENT);
+          }
+          auto delegation = delegation_.issue("runtime", wire::PERMISSION_ACCOUNT_POLICY_READ,
+                                              scope, request.access_token, request.deadline);
+          if (const auto* failure = std::get_if<OwnerFailure>(&delegation)) {
+            return missing(failure->code);
+          }
+          auto result = resources_->get_action_policy(input, std::get<std::string>(delegation));
+          if (const auto* failure = std::get_if<OwnerFailure>(&result)) {
+            return missing(failure->code);
+          }
+          return OwnerHttpResult{
+              200, json_response(std::get<wire::RuntimeGetActionPolicyResponse>(result))};
+        }
+        if (method == "PUT") {
+          wire::RuntimeUpdateActionPolicyRequest input;
+          if (!json_request(request.body, input) || !input.has_policy() ||
+              input.policy().account_id() != account || !input.has_expected_version() ||
+              !fill_context(input.mutable_context(), request_id, trace_id, request)) {
+            return missing(wire::INVALID_ARGUMENT);
+          }
+          auto delegation = delegation_.issue("runtime", wire::PERMISSION_ACCOUNT_POLICY_MANAGE,
+                                              scope, request.access_token, request.deadline);
+          if (const auto* failure = std::get_if<OwnerFailure>(&delegation)) {
+            return missing(failure->code);
+          }
+          auto result = resources_->update_action_policy(input, std::get<std::string>(delegation));
+          if (const auto* failure = std::get_if<OwnerFailure>(&result)) {
+            return missing(failure->code);
+          }
+          return OwnerHttpResult{
+              200, json_response(std::get<wire::RuntimeUpdateActionPolicyResponse>(result))};
+        }
+        return missing(wire::INVALID_ARGUMENT);
+      }
+      if (path == kTasks && method == "GET") {
+        wire::SchedulerListTasksRequest input;
+        auto query = parse_query(request.target);
+        if (!query || !fill_context(input.mutable_context(), request_id, trace_id, request)) {
+          return missing(wire::INVALID_ARGUMENT);
+        }
+        auto scope = optional_scope(*query);
+        if (!scope) {
+          return missing(wire::INVALID_ARGUMENT);
+        }
+        *input.mutable_scope() = std::move(*scope);
+        if (const auto size = query->find("page_size"); size != query->end()) {
+          std::uint32_t value = 0;
+          const auto parsed = std::from_chars(size->second.data(),
+                                              size->second.data() + size->second.size(), value);
+          if (parsed.ec != std::errc{} || parsed.ptr != size->second.data() + size->second.size()) {
+            return missing(wire::INVALID_ARGUMENT);
+          }
+          input.mutable_page()->set_page_size(value);
+        }
+        if (const auto token = query->find("page_token"); token != query->end()) {
+          input.mutable_page()->set_page_token(token->second);
+        }
+        auto delegation = delegation_.issue("scheduler", wire::PERMISSION_TASK_READ, input.scope(),
+                                            request.access_token, request.deadline);
+        if (const auto* failure = std::get_if<OwnerFailure>(&delegation)) {
+          return missing(failure->code);
+        }
+        auto result = tasks_->list_tasks(input, std::get<std::string>(delegation));
+        if (const auto* failure = std::get_if<OwnerFailure>(&result)) {
+          return missing(failure->code);
+        }
+        return OwnerHttpResult{200,
+                               json_response(std::get<wire::SchedulerListTasksResponse>(result))};
+      }
+      if (path.starts_with(kTasks) && path.ends_with("/cancel") && method == "POST") {
+        const auto prefix = std::string{kTasks} + "/";
+        const auto task = std::string{path.substr(
+            prefix.size(), path.size() - prefix.size() - std::string{"/cancel"}.size())};
+        auto query = parse_query(request.target);
+        if (task.empty() || task.find('/') != std::string::npos || !query) {
+          return missing(wire::INVALID_ARGUMENT);
+        }
+        auto scope = optional_scope(*query);
+        if (!scope) {
+          return missing(wire::INVALID_ARGUMENT);
+        }
+        wire::SchedulerCancelTaskRequest input;
+        input.set_task_id(task);
+        *input.mutable_scope() = std::move(*scope);
+        if (!fill_context(input.mutable_context(), request_id, trace_id, request)) {
+          return missing(wire::INVALID_ARGUMENT);
+        }
+        auto delegation = delegation_.issue("scheduler", wire::PERMISSION_TASK_SCHEDULE,
+                                            input.scope(), request.access_token, request.deadline);
+        if (const auto* failure = std::get_if<OwnerFailure>(&delegation)) {
+          return missing(failure->code);
+        }
+        auto result = tasks_->cancel_task(input, std::get<std::string>(delegation));
+        if (const auto* failure = std::get_if<OwnerFailure>(&result)) {
+          return missing(failure->code);
+        }
+        return OwnerHttpResult{200,
+                               json_response(std::get<wire::SchedulerCancelTaskResponse>(result))};
+      }
+      if (path.starts_with(kTasks) && method == "GET") {
+        const auto prefix = std::string{kTasks} + "/";
+        const auto task = std::string{path.substr(prefix.size())};
+        auto query = parse_query(request.target);
+        if (task.empty() || task.find('/') != std::string::npos || !query) {
+          return missing(wire::NOT_FOUND);
+        }
+        auto scope = optional_scope(*query);
+        if (!scope) {
+          return missing(wire::INVALID_ARGUMENT);
+        }
+        wire::SchedulerGetTaskRequest input;
+        input.set_task_id(task);
+        *input.mutable_scope() = std::move(*scope);
+        if (!fill_context(input.mutable_context(), request_id, trace_id, request)) {
+          return missing(wire::INVALID_ARGUMENT);
+        }
+        auto delegation = delegation_.issue("scheduler", wire::PERMISSION_TASK_READ, input.scope(),
+                                            request.access_token, request.deadline);
+        if (const auto* failure = std::get_if<OwnerFailure>(&delegation)) {
+          return missing(failure->code);
+        }
+        auto result = tasks_->get_task(input, std::get<std::string>(delegation));
+        if (const auto* failure = std::get_if<OwnerFailure>(&result)) {
+          return missing(failure->code);
+        }
+        return OwnerHttpResult{200,
+                               json_response(std::get<wire::SchedulerGetTaskResponse>(result))};
+      }
     }
     // P12c: authoritative log/audit sources are not registered yet. A successful empty page would
     // claim "no events" without evidence; but first enforce the separate sensitive grants.

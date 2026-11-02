@@ -21,6 +21,7 @@
 #include "kiarabot/core/runtime/platform/target_codec.hpp"
 #include "kiarabot/v1/identity.grpc.pb.h"
 #include "kiarabot/v1/runtime.grpc.pb.h"
+#include "kiarabot/v1/scheduler.grpc.pb.h"
 
 namespace kiarabot::control::target {
 namespace {
@@ -81,7 +82,9 @@ std::optional<wire::ErrorCode> extract_error_code(const grpc::Status& status) {
 class OwnerClients::Impl final : private DelegationPort,
                                  private RuntimeActionsPort,
                                  private IdentityPrincipalsPort,
-                                 private HealthPort {
+                                 private HealthPort,
+                                 private RuntimeResourcesPort,
+                                 private SchedulerTasksPort {
 public:
   Impl(const std::string& identity_endpoint, const std::string& runtime_endpoint,
        const std::string& scheduler_endpoint, const std::string& model_endpoint,
@@ -99,6 +102,7 @@ public:
     }
     if (!scheduler_endpoint.empty()) {
       scheduler_channel_ = grpc::CreateChannel(scheduler_endpoint, credentials);
+      scheduler_ = wire::SchedulerService::NewStub(scheduler_channel_);
     }
     if (!model_endpoint.empty()) {
       model_channel_ = grpc::CreateChannel(model_endpoint, credentials);
@@ -109,7 +113,8 @@ public:
     fingerprint_ = certificate_fingerprint(tls.certificate);
     gateway_ = std::make_unique<OwnerGateway>(
         static_cast<DelegationPort&>(*this), static_cast<RuntimeActionsPort&>(*this),
-        static_cast<IdentityPrincipalsPort*>(this), static_cast<HealthPort*>(this));
+        static_cast<IdentityPrincipalsPort*>(this), static_cast<HealthPort*>(this),
+        static_cast<RuntimeResourcesPort*>(this), static_cast<SchedulerTasksPort*>(this));
   }
 
   std::optional<AuthHttpResponse> handle(const AuthHttpRequest& request) {
@@ -217,6 +222,125 @@ private:
     return output;
   }
 
+  template <typename Request, typename Response>
+  OwnerOutcome<Response>
+  unary(grpc::Status (wire::RuntimeService::Stub::*method)(grpc::ClientContext*, const Request&,
+                                                           Response*),
+        Request input, std::string_view delegation) {
+    if (!runtime_) {
+      return OwnerFailure{wire::UPSTREAM_UNAVAILABLE, true};
+    }
+    input.mutable_context()->set_delegation(std::string{delegation});
+    Response output;
+    grpc::ClientContext call;
+    const auto deadline = codec::from_wire(input.context().deadline());
+    if (const auto* timestamp = std::get_if<core::target::TimePoint>(&deadline)) {
+      const auto now =
+          core::target::TimePoint{std::chrono::duration_cast<core::target::TimePoint::duration>(
+              std::chrono::system_clock::now().time_since_epoch())};
+      if (*timestamp > now) {
+        call.set_deadline(std::chrono::system_clock::time_point{
+            std::chrono::duration_cast<std::chrono::system_clock::duration>(
+                (std::chrono::system_clock::now() +
+                 core::target::TimePoint::duration{*timestamp - now})
+                    .time_since_epoch())});
+      }
+    }
+    const auto status = (runtime_.get()->*method)(&call, input, &output);
+    if (!status.ok()) {
+      const auto code = extract_error_code(status);
+      return OwnerFailure{code.value_or(wire::UPSTREAM_UNAVAILABLE), false};
+    }
+    return output;
+  }
+  template <typename Request, typename Response>
+  OwnerOutcome<Response>
+  unary_task(grpc::Status (wire::SchedulerService::Stub::*method)(grpc::ClientContext*,
+                                                                  const Request&, Response*),
+             Request input, std::string_view delegation) {
+    if (!scheduler_) {
+      return OwnerFailure{wire::UPSTREAM_UNAVAILABLE, true};
+    }
+    input.mutable_context()->set_delegation(std::string{delegation});
+    Response output;
+    grpc::ClientContext call;
+    const auto deadline = codec::from_wire(input.context().deadline());
+    if (const auto* timestamp = std::get_if<core::target::TimePoint>(&deadline)) {
+      const auto now =
+          core::target::TimePoint{std::chrono::duration_cast<core::target::TimePoint::duration>(
+              std::chrono::system_clock::now().time_since_epoch())};
+      if (*timestamp > now) {
+        call.set_deadline(std::chrono::system_clock::time_point{
+            std::chrono::duration_cast<std::chrono::system_clock::duration>(
+                (std::chrono::system_clock::now() +
+                 core::target::TimePoint::duration{*timestamp - now})
+                    .time_since_epoch())});
+      }
+    }
+    const auto status = (scheduler_.get()->*method)(&call, input, &output);
+    if (!status.ok()) {
+      const auto code = extract_error_code(status);
+      return OwnerFailure{code.value_or(wire::UPSTREAM_UNAVAILABLE), false};
+    }
+    return output;
+  }
+  OwnerOutcome<wire::RuntimeBindAdapterResponse>
+  bind_adapter(const wire::RuntimeBindAdapterRequest& input, std::string_view delegation) override {
+    return unary(&wire::RuntimeService::Stub::BindAdapter, input, delegation);
+  }
+  OwnerOutcome<wire::RuntimeUnbindAdapterResponse>
+  unbind_adapter(const wire::RuntimeUnbindAdapterRequest& input,
+                 std::string_view delegation) override {
+    return unary(&wire::RuntimeService::Stub::UnbindAdapter, input, delegation);
+  }
+  OwnerOutcome<wire::RuntimeCreateInstallationResponse>
+  create_installation(const wire::RuntimeCreateInstallationRequest& input,
+                      std::string_view delegation) override {
+    return unary(&wire::RuntimeService::Stub::CreateInstallation, input, delegation);
+  }
+  OwnerOutcome<wire::RuntimeCreateInstanceResponse>
+  create_instance(const wire::RuntimeCreateInstanceRequest& input,
+                  std::string_view delegation) override {
+    return unary(&wire::RuntimeService::Stub::CreateInstance, input, delegation);
+  }
+  OwnerOutcome<wire::RuntimeSetDesiredStateResponse>
+  set_desired_state(const wire::RuntimeSetDesiredStateRequest& input,
+                    std::string_view delegation) override {
+    return unary(&wire::RuntimeService::Stub::SetDesiredState, input, delegation);
+  }
+  OwnerOutcome<wire::RuntimeUpdateConfigResponse>
+  update_config(const wire::RuntimeUpdateConfigRequest& input,
+                std::string_view delegation) override {
+    return unary(&wire::RuntimeService::Stub::UpdateConfig, input, delegation);
+  }
+  OwnerOutcome<wire::RuntimeGetInstanceConfigResponse>
+  get_instance_config(const wire::RuntimeGetInstanceConfigRequest& input,
+                      std::string_view delegation) override {
+    return unary(&wire::RuntimeService::Stub::GetInstanceConfig, input, delegation);
+  }
+  OwnerOutcome<wire::RuntimeGetActionPolicyResponse>
+  get_action_policy(const wire::RuntimeGetActionPolicyRequest& input,
+                    std::string_view delegation) override {
+    return unary(&wire::RuntimeService::Stub::GetActionPolicy, input, delegation);
+  }
+  OwnerOutcome<wire::RuntimeUpdateActionPolicyResponse>
+  update_action_policy(const wire::RuntimeUpdateActionPolicyRequest& input,
+                       std::string_view delegation) override {
+    return unary(&wire::RuntimeService::Stub::UpdateActionPolicy, input, delegation);
+  }
+  OwnerOutcome<wire::SchedulerListTasksResponse>
+  list_tasks(const wire::SchedulerListTasksRequest& input, std::string_view delegation) override {
+    return unary_task(&wire::SchedulerService::Stub::ListTasks, input, delegation);
+  }
+  OwnerOutcome<wire::SchedulerCancelTaskResponse>
+  cancel_task(const wire::SchedulerCancelTaskRequest& input, std::string_view delegation) override {
+    return unary_task(&wire::SchedulerService::Stub::CancelTask, input, delegation);
+  }
+  OwnerOutcome<wire::SchedulerGetTaskResponse> get_task(const wire::SchedulerGetTaskRequest& input,
+                                                        std::string_view delegation) override {
+    return unary_task(&wire::SchedulerService::Stub::GetTask, input, delegation);
+  }
+
   OwnerOutcome<wire::IdentityListPrincipalsResponse>
   list_principals(const wire::IdentityListPrincipalsRequest& request,
                   std::string_view delegation) override {
@@ -273,6 +397,7 @@ private:
   std::shared_ptr<grpc::Channel> runtime_channel_;
   std::unique_ptr<wire::RuntimeService::Stub> runtime_;
   std::shared_ptr<grpc::Channel> scheduler_channel_;
+  std::unique_ptr<wire::SchedulerService::Stub> scheduler_;
   std::shared_ptr<grpc::Channel> model_channel_;
   std::shared_ptr<grpc::Channel> host_channel_;
   std::optional<std::array<unsigned char, SHA256_DIGEST_LENGTH>> fingerprint_;

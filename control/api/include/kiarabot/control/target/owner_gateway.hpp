@@ -10,6 +10,7 @@
 #include "kiarabot/v1/identity.pb.h"
 #include "kiarabot/v1/policy.pb.h"
 #include "kiarabot/v1/runtime.pb.h"
+#include "kiarabot/v1/scheduler.pb.h"
 
 namespace kiarabot::control::target {
 
@@ -76,6 +77,40 @@ public:
   virtual HealthObservation observe() = 0;
 };
 
+// Remaining P12 owner RPCs exposed through the same one-use-delegation gateway.
+class RuntimeResourcesPort {
+public:
+  virtual ~RuntimeResourcesPort() = default;
+  virtual OwnerOutcome<kiarabot::v1::RuntimeBindAdapterResponse>
+  bind_adapter(const kiarabot::v1::RuntimeBindAdapterRequest&, std::string_view) = 0;
+  virtual OwnerOutcome<kiarabot::v1::RuntimeUnbindAdapterResponse>
+  unbind_adapter(const kiarabot::v1::RuntimeUnbindAdapterRequest&, std::string_view) = 0;
+  virtual OwnerOutcome<kiarabot::v1::RuntimeCreateInstallationResponse>
+  create_installation(const kiarabot::v1::RuntimeCreateInstallationRequest&, std::string_view) = 0;
+  virtual OwnerOutcome<kiarabot::v1::RuntimeCreateInstanceResponse>
+  create_instance(const kiarabot::v1::RuntimeCreateInstanceRequest&, std::string_view) = 0;
+  virtual OwnerOutcome<kiarabot::v1::RuntimeSetDesiredStateResponse>
+  set_desired_state(const kiarabot::v1::RuntimeSetDesiredStateRequest&, std::string_view) = 0;
+  virtual OwnerOutcome<kiarabot::v1::RuntimeUpdateConfigResponse>
+  update_config(const kiarabot::v1::RuntimeUpdateConfigRequest&, std::string_view) = 0;
+  virtual OwnerOutcome<kiarabot::v1::RuntimeGetInstanceConfigResponse>
+  get_instance_config(const kiarabot::v1::RuntimeGetInstanceConfigRequest&, std::string_view) = 0;
+  virtual OwnerOutcome<kiarabot::v1::RuntimeGetActionPolicyResponse>
+  get_action_policy(const kiarabot::v1::RuntimeGetActionPolicyRequest&, std::string_view) = 0;
+  virtual OwnerOutcome<kiarabot::v1::RuntimeUpdateActionPolicyResponse>
+  update_action_policy(const kiarabot::v1::RuntimeUpdateActionPolicyRequest&, std::string_view) = 0;
+};
+class SchedulerTasksPort {
+public:
+  virtual ~SchedulerTasksPort() = default;
+  virtual OwnerOutcome<kiarabot::v1::SchedulerListTasksResponse>
+  list_tasks(const kiarabot::v1::SchedulerListTasksRequest&, std::string_view) = 0;
+  virtual OwnerOutcome<kiarabot::v1::SchedulerCancelTaskResponse>
+  cancel_task(const kiarabot::v1::SchedulerCancelTaskRequest&, std::string_view) = 0;
+  virtual OwnerOutcome<kiarabot::v1::SchedulerGetTaskResponse>
+  get_task(const kiarabot::v1::SchedulerGetTaskRequest&, std::string_view) = 0;
+};
+
 class RuntimeActionsPort {
 public:
   virtual ~RuntimeActionsPort() = default;
@@ -98,8 +133,10 @@ std::string owner_error_body(kiarabot::v1::ErrorCode code, std::string_view requ
 class OwnerGateway {
 public:
   OwnerGateway(DelegationPort& delegation, RuntimeActionsPort& runtime,
-               IdentityPrincipalsPort* principals = nullptr, HealthPort* health = nullptr)
-      : delegation_(delegation), runtime_(runtime), principals_(principals), health_(health) {}
+               IdentityPrincipalsPort* principals = nullptr, HealthPort* health = nullptr,
+               RuntimeResourcesPort* resources = nullptr, SchedulerTasksPort* tasks = nullptr)
+      : delegation_(delegation), runtime_(runtime), principals_(principals), health_(health),
+        resources_(resources), tasks_(tasks) {}
   std::optional<OwnerHttpResult> handle(const OwnerHttpRequest& request);
   // Health probes are local process facts plus the composition-provided readiness answer.
   static OwnerHttpResult live();
@@ -110,6 +147,8 @@ private:
   RuntimeActionsPort& runtime_;
   IdentityPrincipalsPort* principals_;
   HealthPort* health_;
+  RuntimeResourcesPort* resources_;
+  SchedulerTasksPort* tasks_;
 };
 
 } // namespace kiarabot::control::target
