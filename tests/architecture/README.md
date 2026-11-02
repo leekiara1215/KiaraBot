@@ -64,7 +64,9 @@ PID独立、live/ready；依次对每个服务的直接子进程注入SIGKILL，
 明确timeout。tests/architecture不提供CMake、不创建或猜测构建目录；工具链传入各target的实际
 路径。证书夹具/oracle通过与真实lifecycle/tls/isolation通过必须分开报告，不能只跑unit就关闭P02。
 
-reference_behaviors.json保留逻辑source与原锚点。check_references.py优先按
+reference_behaviors.json保留逻辑source（测试文件路径），anchor是当前测试中可搜索的顶层入口
+（函数/用例名，不使用易漂移的行号）；P07b等测试迁移重命名断言时，同一提交更新anchor并保留
+原invariant语义，不删除仍有效的覆盖。check_references.py优先按
 core/reference/manifest.json的明确source→reference映射读取，逐项核对Git blob ID，
 不得猜测目录或跳过失踪断言。迁移前无manifest时读取原路径；有manifest但逻辑源未映射
 则只能读原路径，原路径缺失即失败。拒绝未知字段/来源、错目的地、重复映射、缺文件、

@@ -158,8 +158,16 @@
       "id": "sdk-unknown-action",
       "target_phase": "p07",
       "source": "sdk/python/tests/test_actions.py",
-      "anchor": "async def test_unknown_results_never_become_failed",
-      "invariant": "断线/缺响应/未知枚举不伪造Action FAILED",
+      "anchor": "async def test_malformed_results_stay_unknown_never_failed",
+      "invariant": "畸形/未知枚举/矛盾结果不伪造Action FAILED，保持可重试未知",
+      "status": "pending_target_rebuild"
+    },
+    {
+      "id": "sdk-disconnect-unknown-action",
+      "target_phase": "p07",
+      "source": "sdk/python/tests/test_actions.py",
+      "anchor": "async def test_disconnect_before_submit_response_then_query_does_not_replay",
+      "invariant": "断线后Action结果未知，不自动重发，用同幂等键查询恢复",
       "status": "pending_target_rebuild"
     },
     {
