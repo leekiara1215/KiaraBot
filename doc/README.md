@@ -58,7 +58,9 @@ Python NoneBot2 适配器由本仓库 `adapters/nonebot/` 维护，不把实现�
 
 2026-11-01晚间的优先运行入口为[单机最小可运行版](24-single-host-mvp.md)，
 未完工作、未合并/WIP提交与换机恢复见[开发交接](25-development-handoff.md)。
-本机reference闭环已验收，新架构后续业务阶段仍按各自退出条件确认。
+本机reference闭环已验收；目标架构 P00–P14 实现主体已合入 main，但单机 Compose、两主机演练、
+远端 CI 与正式发布尚未验收，阶段状态与证据见[P14d 矩阵](27-phase-exit-evidence.md)与
+[发布清单](28-p14d-release-checklist.md)。
 
 当前实施与验收状态见 [开发台账](16-development-tasks.md) 和源码；[实现现状与纯 C++ 演进评估](14-implementation-assessment.md)、[跨层未完成事项清单](15-cross-layer-gaps.md) 以及两份 13-* 交接文档均为历史快照，不是现行清单。下列模块文档同时包含目标设计和阶段记录。
 
@@ -88,7 +90,9 @@ Python NoneBot2 适配器由本仓库 `adapters/nonebot/` 维护，不把实现�
 - [详细架构设计总览（已定稿，未实施）](20-detailed-architecture-design.md)
 - [服务通信与方法设计（已定稿，未实施）](21-service-contract-design.md)
 - [事务、数据模型与初始化设计（已定稿，未实施）](22-transactions-and-migration-design.md)
-- [新架构分步实施计划（P00–P14，未开始）](23-implementation-plan.md)
+- [新架构分步实施计划（P00–P14，实现状态见 P14d 矩阵）](23-implementation-plan.md)
+- [P04–P14 阶段退出证据矩阵（P14d）](27-phase-exit-evidence.md)
+- [P14d 发布清单与发布门禁](28-p14d-release-checklist.md)
 
 ## 依赖方向
 

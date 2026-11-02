@@ -125,3 +125,18 @@
 6. **`HEALTH_PORT` 的设计意图**：全仓无代码读取（已核实），但它是“预留给适配器/面板未来健康服务”还是“本应由 Core 读取”，需 core/adapters/panel 模块确认；compose 端口 8080/8081/8082 与实际监听端口的一致性因此无法定论。
 7. **速率/封禁风控的接口归属**：`doc/17:125-129` 的指标/演练是否应由运维配置承担、还是由 Core/Action 提供数据源，属于跨模块决策；本报告只判定“运维侧无配置”，不判定风控逻辑本身是否实现（见 core/adapter 报告）。
 8. **`MIGRATION_COMMAND` 的生产取值**：文档只说“通过受控环境变量提供命令”，未给出唯一权威值；`kiarabot-migrate` 与 Core 自动迁移并存时哪一个是权威迁移路径，需 infrastructure/运维共同确认（本报告已把两者时点错位列为 P0-6/P1-16 风险）。
+
+## 9. P14d 更新（2026-11-02，取代本报告部署相关旧结论）
+
+本报告此前的“镜像/Compose/GHCR/staging 全部未实现、自动触发暂停”等结论是 2026-10-31 快照，已被后续
+P14a/P14a-2/P14b/P14b-2/P14c 更新部分取代；阅读时以本节与 [阶段退出证据](../../doc/27-phase-exit-evidence.md)、
+[发布清单](../../doc/28-p14d-release-checklist.md)、[CI/CD](../../doc/12-ci-cd.md)、[运维 runbook](../../doc/08-operations.md) 为准。
+
+- P14a/P14a-2：单主机 Docker Compose 文件、target init/migrate/smoke/rotate 脚本、官方 PG16 默认镜像与
+  release digest 规则已合入；**本机无 Docker，未执行 image build / compose config/up / 官方镜像初始化**。
+- P14b/P14b-2：本地 CI 入口、锁定 Node、GitHub Actions 手动/门控自动触发、JSON 证据 artifact、GHCR
+  发布骨架（SBOM+cosign 签名门槛、受保护 `release-gated` 环境）已合入；**远端 CI 未运行、未推送签名镜像**。
+- P14c：真实 PG16.4+SQLite 本地备份/恢复/故障演练 PASS（RPO=0s、RTO≈4.6–12.1s，小数据量），
+  两主机/离站复制/生产数据量未验证；runbook 示例中的 schema 期望已随 P14d 修正为
+  Identity14/Runtime15/Scheduler9/Model8。
+- P14d：新增阶段退出证据矩阵与发布清单；不改变本报告历史技术结论，只更新“当前状态”索引。

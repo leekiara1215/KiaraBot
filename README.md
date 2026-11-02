@@ -78,22 +78,44 @@ Host/Adapter                       各自本地 SQLite 可靠执行/发送日志
 
 ## 当前状态
 
-**2026-11-01 架构重建**：当前开发按 [新方向基线](doc/19-architecture-direction-baseline.md)
-与 [P00–P14 计划](doc/23-implementation-plan.md) 推进。六个独立服务入口、分层构建与进程验收已接线，
-P00–P03本机固定环境统一门禁已通过，P04认证链开发中，目标业务仍未完成，不能以存活探针替代就绪。P06 的外部 Bridge 监听、bootstrap→`ConnectionAuthorization` 与投递 attempt/ACK 契约已冻结并登记（`contract_status.bridge_methods` / `semantic.bridge.*`），实现尚未开始。P07 的 Action 桥流帧/执行证据/回执、Control `QueryActionResult`（显式账号 scope + `action.inspect`）与每-kind 权限 41–46 已在 target Runtime 实现，并由真实 PG16.4/TLS/Runtime 桥帧验收覆盖（受理/派发/结果/证据/取消/过期/配额/重连补报）；Control REST 转发（P12）与 ActionPolicy RPC 仍未完成，对应项保持 not_implemented。P08 的 HostBridge 内部 mTLS 帧（Fence/心跳/执行观察 command_id）、受管执行四层状态与 Host 部署凭据契约也已冻结登记（`semantic.host.*` / `HostService exposure=host_bridge`），实现尚未开始。P09/P10 的 storage scope/CAS 帧、共享 namespace 管理 RPC、Scheduler 观测字段与 TimerTriggered occurrence_id、Permission 47 契约也已冻结登记（`semantic.storage.*` / `semantic.namespace.*` / `semantic.scheduler.*`），实现尚未开始。P11 的 Model 两次事务/UNKNOWN/`logical_call_id` 防重与 Disable/Enable/ResolveModelCall 契约也已冻结登记（`semantic.model.*`），实现尚未开始。旧 Core 源码和原断言保留为
-`core/reference/` 构建；下列旧一体化闭环记录与部署说明属于 reference 证据，
-不代表六服务已经具备这些能力。旧 `kiarabot-core` 参考产物位于构建目录的
-`reference/core/`，不作为新生产入口。实际提交、检查与未验收项见
-[P02 实施记录](reports/execution/2026-11-01-architecture-p02.md)。
+**2026-11-02 目标架构状态**：P00–P14 的实现已基本合入 main（当前基线 `b4adf9c`），
+但“实现合入”“已实测”“待验收/未验证”“正式发布”必须分开看。统一证据矩阵与发布门禁见
+[阶段退出证据](doc/27-phase-exit-evidence.md)、[P14d 发布清单](doc/28-p14d-release-checklist.md)；
+CI/发布流水线配置见 [CI/CD 文档](doc/12-ci-cd.md)。
 
-- **已实现并纳入自动验收**：Core 进程启停与 gRPC 身份边界；统一运行时存储（内存/SQLite）；适配器持久化接收、命令授权、幂等与审计；插件注册、订阅和逐插件投递；Python 进程外插件 SDK；Action 纯文本/表情回应/撤回/群管理/好友审批闭环（权限门禁 + 会话白名单 + 每日预算 + 审计的授权模型）；Host storage/model/tasks 与任务调度；控制 API、认证/RBAC、WebSocket 事件流与面板真实服务闭环；结构化日志、健康探针，以及配置 API 到运行中 SDK 的下发与应用确认。Python NoneBot2 适配器测试已由 CI Protocol job 以锁定环境和 `KIARABOT_ADAPTER_DIR` 接入 `tests/acceptance/run.sh`，但远端 CI 尚未复跑，不能据此宣称适配器已验证通过。
-- **跨语言闭环**：`tests/acceptance/run.sh` 使用真实 gRPC/SQLite/SDK 和协议 fake 平台验证事件→Action、权限拒绝、重复事件、断线重放和重启恢复；这是协议级验收，不代表真实 QQ/NapCat 联调。
-- **尚未完成或未验收**：生产部署、备份恢复和发布镜像（T11b，依赖真实环境）；真实 QQ、真实模型联调（T07b，等待真实环境）；纯 C++ 替换是延期选项（T12）。
-- 面板默认使用 mock 数据，`VITE_API_MODE=live` 时才连接实际控制 API。
-- Python NoneBot2 适配器由本仓库 `adapters/nonebot/` 维护；后续可再考虑拆成单独插件。
-- **远端 CI 与自动触发**：GitHub Actions 历史上 5 次运行均未通过（4 次失败、1 次取消；HEAD `e70de83` 仍有 4 个 job 失败）；自 2026-10-30（`16191cb`）起 `.github/workflows/ci.yml` 已暂停自动触发，只支持手动 `workflow_dispatch`。恢复自动触发前需先让手动运行变绿。
-- **2026-10-31 十模块集成（W1–W4）**：contracts、toolchain、ci-cd、core、infrastructure、adapter、plugin-sdk、control-api、control-panel、operations 十个模块分支的 P0 + 阻断主线 P1 已完成并合并；本机验收：`full` 构建 CTest **32/32**、contracts 门禁 17/17、adapter 46、SDK 82、plugin 14、control-api 27、panel 17（live 2 项需 C++/venv 前置）、deploy 11/11；新增 `full` CMake 预设、契约状态登记/枚举基线、CI full-build 与依赖审计、Core 维护循环与可配置容量、SQLite 容量/崩溃/迁移测试、适配器健康与会话 ID 统一、插件示例、控制面生产传输、面板管理动作、可运行化的 Docker/compose 骨架。**仍未验证**：远端 CI 手动运行、Docker/T11b、真实 QQ/NapCat/模型 T07b；环境差异（Python 3.11.18、clang-format 16、vcpkg 版本）需 CI 复跑确认。待确认事项见 [`reports/pending-confirmation.md`](reports/pending-confirmation.md)，执行记录见 [`reports/execution/`](reports/execution/)。
-- 实时任务状态和交付记录以 [开发台账](doc/16-development-tasks.md) 为准；[跨层未完成事项清单](doc/15-cross-layer-gaps.md) 是历史快照、不是现行清单，[实现现状评估](doc/14-implementation-assessment.md) 是早期快照。
+| 交付类别 | 当前状态 |
+|---|---|
+| 单机部署（默认目标） | **未验收**：单主机 Compose/脚本已完成离线检查，本机无 Docker，未执行 compose 启动、官方 PG16 镜像初始化/迁移/恢复 |
+| 跨主机演练 | **延期/未验证**（用户确认两主机为可选项，网络分区/TLS/撤销/重连未演练） |
+| 远端 CI | **未运行**：GitHub Actions workflow/本地静态检查已就绪，自动触发默认由 `CI_AUTO_ENABLED` 门控；需先手动 workflow_dispatch 跑绿 full-locked |
+| 正式发布 | **未就绪**：GHCR/SBOM/cosign 骨架已合入但未推送签名镜像，需完成 release 环境/凭据/审批与发布清单 |
+
+已实现并有自动测试覆盖的主要链路（证据与测试名见矩阵）：Identity/Control 认证；Runtime 资源/授权链；
+PluginBridge/AdapterBridge 真实 TLS 事件→插件→Action；Scheduler 定时交接；Namespace/Storage CAS；
+Model 两次事务/Provider/UNKNOWN 边界；Host 期望状态与进程桥；Control owner REST/健康/operation 快照；
+P13 生命周期清理与 Host/SDK drain。P05b 深链路（Runtime 获取下游实例委托）与 P14 Docker/两主机/远端
+CI/正式发布仍未验收；真实 QQ/NapCat、真实模型 Provider 只在用户环境单独验证，不能用 fake 结果替代。
+旧 `core/reference/` 一体化闭环与部署说明保留为 reference 证据，不代表六服务生产可用。
+
+- **已实现并纳入本机/定向门禁**：P02 六进程启停与身份边界；P03 PG 私有库/初始化/桌面 fixture；
+  P04 Identity/Control 认证与委托；P05 Runtime 资源/授权链；P06 真实 TLS Bridge/投递/SDK/Adapter；
+  P07 Action/配额/执行闭环；P08 Host/期望状态/配置 ACK；P09 Storage/namespace；P10 Scheduler/定时交接；
+  P11 Model 网关/Provider/调用者校验/PluginBridge model.chat；P12 Control REST 与 Panel 骨架；
+  P13 生命周期清理/drain；P14 部署文件/CI/备份恢复 runbook。
+- **已实测（本机真实依赖/loopback 假服务）**：真实 PG16.4 的事务/投递/存储/调度/Action 测试；
+  真实 TLS gRPC Bridge/Control 认证验收；P14c 本地备份/恢复故障矩阵（`scripts/ops/target-drill.sh`，
+  RPO=0s、RTO≈4.6–12.1s，小数据量）；P14b-2 workflow 本地 YAML/门禁静态检查。远端 Actions、
+  Docker/Compose、两主机、真实 QQ/模型未运行。
+- **尚未完成或未验收**：单机 Docker Compose 实际启动/healthcheck/官方 PG digest；两主机与跨主机
+  断网恢复；远端 CI 手动/自动运行；GHCR 推送+cosign 签名+SBOM 发布、签名验签；P05b 委托深链路；
+  真实 QQ/NapCat 与真实模型 Provider 联调；生产规模 RTO、备份离站/KMS、指标/告警/集中日志。
+- **远端 CI 与发布**：GitHub Actions 触发器已恢复但默认由仓库变量 `CI_AUTO_ENABLED` 门控；
+  `release.yml` 仅允许受保护 `release-gated` 环境 + `RELEASE_PUSH_ENABLED`/`RELEASE_COSIGN_KEYLESS`
+  时推送自建镜像到 `ghcr.io/leekiara1215`，SBOM+签名是发布门槛；release dry-run 与正式发布均未运行。
+- 面板仍有 mock/`VITE_API_MODE=live` 两种模式；Python NoneBot2 适配器由本仓库维护。
+- 实时任务状态以 [开发台账](doc/16-development-tasks.md) 为准；P14d 证据缺口与建议顺序见
+  [`doc/27`](doc/27-phase-exit-evidence.md)；历史快照（doc/14/15、reports/modules/operations.md 旧段）
+  不作为当前完成度结论。
 
 ## 构建与测试
 

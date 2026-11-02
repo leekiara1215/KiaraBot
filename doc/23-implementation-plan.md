@@ -1,10 +1,26 @@
 # KiaraBot 新架构分步实施计划
 
-- 版本：v1.2
-- 日期：2026-11-01
-- 状态：P00–P03 本机门禁通过；P04 部分实现后暂停新增；reference单机真实QQ群聊已验收，当前按用户要求停止运行
+- 版本：v1.3
+- 日期：2026-11-02
+- 状态：P00–P14 实现主体已合入 main（基线 `b4adf9c`）；阶段退出/发布证据矩阵见 [P14d 矩阵](27-phase-exit-evidence.md)，发布门禁见 [P14d 发布清单](28-p14d-release-checklist.md)。单机 Docker Compose、两主机演练、远端 CI 与正式发布仍未验收，不能标记阶段“已退出”。
 - 依据：[方向基线](19-architecture-direction-baseline.md)、[设计总览](20-detailed-architecture-design.md)、[通信方法](21-service-contract-design.md)、[事务与初始化](22-transactions-and-migration-design.md)
 - 当前授权：单机真实QQ群聊首轮已通过，用户要求关闭运行、记录已确认接入方向并推送；本次不继续开发。下一轮按[接入设计](26-real-qq-onboarding.md)独立推进，插件机制、完整账号管理、多主机等非核心内容继续后移。保留独立提交、主对话审查及换机交接；本文件保留后续目标架构迁移路线，未达到退出条件的阶段不能标为完成。
+
+## 0. 2026-11-02 P14d 阶段状态汇总
+
+按用户要求把“完成/未完成/延期”分开记录；本计划此前“P04 部分实现后暂停”的历史状态不再代表当前实现进度。
+完整证据、命令、测试名与缺口见 [P04–P14 阶段退出证据矩阵](27-phase-exit-evidence.md)；发布操作见
+[P14d 发布清单](28-p14d-release-checklist.md)。
+
+| 分类 | 覆盖 |
+|---|---|
+| 已完成实现（合入 main，按阶段退出矩阵有测试/报告支撑） | P00–P14 主体：工具链/契约/PG/UoW；Identity/Control 认证；Runtime 资源与授权链；Bridge/投递/SDK/Adapter；Action/配额；Host 期望状态与进程桥；Storage/namespace；Scheduler；Model 网关/Provider/调用者校验；Control owner REST/健康/operation 快照；P13 生命周期清理与 drain；P14 部署文件/CI/备份恢复 runbook |
+| 已实测（真实依赖/本机真实进程） | 真实 PG16.4 事务/投递/存储/调度/Action；真实 TLS Bridge/Control 认证；P14c 本地备份/恢复故障矩阵（RPO=0s、RTO≈4.6–12.1s，小数据量）；P14b-2 workflow 本地静态检查 |
+| 待验收（实现有，验收环境/链路未满足） | 单机 Docker Compose 启动/healthcheck/官方 PG 镜像；P14c 生产数据量 RTO；Control/Panel live 全批准入口与断流恢复；Host/插件 ACK 与三类事实的真实 Compose 链；P05b Runtime 下游实例委托深链路（P11 单链路 e2e 受阻） |
+| 延期/未验证（用户已确认或明确排除） | 两主机/跨主机断网演练（默认单主机，延期）；target Control WS（P12a-2 延期，REST operation 快照为 resync 源）；streaming Model（明确不做）；真实模型/真实 QQ 联调（环境/授权单独执行） |
+| 未运行/未就绪 | 远端 GitHub Actions（`gh` 未认证，未 workflow_dispatch）；GHCR 推送/签名/SBOM 发布；正式 release（Environment/凭据/审批未配置）；真实生产部署 |
+
+本轮 P14d 只做文档/证据整合，不修改实现、契约或部署脚本；`doc/18` 冻结基线保持只读。阶段是否“完成”以矩阵中的“已实测”证据与退出条件为准，不以提交/文档存在为准。
 
 ## 2026-11-01晚间优先级调整
 
