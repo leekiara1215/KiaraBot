@@ -13,6 +13,7 @@
 #include <openssl/rand.h>
 #include <openssl/sha.h>
 
+#include "kiarabot/core/application/target/runtime_action_application.hpp"
 #include "kiarabot/core/application/target/runtime_application.hpp"
 #include "kiarabot/core/application/target/runtime_bridge_application.hpp"
 #include "kiarabot/core/application/target/runtime_readiness.hpp"
@@ -174,6 +175,8 @@ struct State {
   target::RuntimeAuthorizationPort* authorization = nullptr;
   target::RuntimeResourceApplication* application = nullptr;
   std::unique_ptr<target::RuntimeStorageApplication> storage;
+  std::unique_ptr<target::RuntimeActionApplication> actions;
+  target::RuntimeActionApplication* action_application = nullptr;
   std::unique_ptr<target::RuntimeBridgeApplication> bridge;
 };
 // Readiness merges the composition-observed database state with the authorization-chain observation
@@ -266,9 +269,23 @@ compose_runtime_service(const platform::ProcessConfig& config) {
           auto application =
               std::move(std::get<std::unique_ptr<target::RuntimeResourceApplication>>(built));
           state->application = application.get();
+          auto action = target::make_runtime_action_application(
+              {factory, *state->ids, *state->secrets, state->authorization,
+               target::ActionCapacity{}, target::ActionQuotaLimits{}});
+          if (const auto* failure = std::get_if<target::Failure>(&action)) {
+            return {};
+          }
+          state->actions =
+              std::move(std::get<std::unique_ptr<target::RuntimeActionApplication>>(action));
+          state->action_application = state->actions.get();
           if (config.bridge_listen) {
-            auto bridge = target::make_runtime_bridge_application(
-                {factory, *state->ids, *state->secrets, *state->application, {}});
+            auto bridge =
+                target::make_runtime_bridge_application({factory,
+                                                         *state->ids,
+                                                         *state->secrets,
+                                                         *state->application,
+                                                         state->action_application,
+                                                         {"plugin.config.v1", "action.result.v1"}});
             if (const auto* failure = std::get_if<target::Failure>(&bridge)) {
               return {};
             }
@@ -295,10 +312,20 @@ compose_runtime_service(const platform::ProcessConfig& config) {
             return checked;
           }
         }
-        if (!state->bridge) {
+        if (state->bridge) {
+          auto maintained = state->bridge->maintenance();
+          if (std::holds_alternative<target::Failure>(maintained)) {
+            return maintained;
+          }
+        }
+        if (!state->action_application) {
           return std::monostate{};
         }
-        return state->bridge->maintenance();
+        auto swept = state->action_application->maintenance();
+        if (std::holds_alternative<target::Failure>(swept)) {
+          return std::get<target::Failure>(swept);
+        }
+        return std::monostate{};
       };
     }
     auto* application = state->application;
@@ -313,6 +340,7 @@ compose_runtime_service(const platform::ProcessConfig& config) {
       }
       platform::RuntimeRpcOptions options;
       options.storage = state->storage.get();
+      options.actions = state->action_application;
       if (state->identity_client) {
         auto* client = state->identity_client.get();
         options.authorize = [client](grpc::ServerContext& transport,

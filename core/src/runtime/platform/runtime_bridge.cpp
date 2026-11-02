@@ -129,6 +129,193 @@ template <typename Ack> void fill_heartbeat_ack(Ack* ack) {
                                      .count()));
 }
 
+bool action_status_to_wire(target::ActionState state, v1::ActionStatus* wire) {
+  switch (state) {
+  case target::ActionState::Accepted:
+    *wire = v1::ACCEPTED;
+    return true;
+  case target::ActionState::Succeeded:
+    *wire = v1::SUCCEEDED;
+    return true;
+  case target::ActionState::Failed:
+    *wire = v1::FAILED;
+    return true;
+  case target::ActionState::Expired:
+    *wire = v1::EXPIRED;
+    return true;
+  case target::ActionState::Cancelled:
+    *wire = v1::CANCELLED;
+    return true;
+  }
+  return false;
+}
+bool action_outcome_to_wire(target::ExecutionOutcome outcome, v1::ExecutionOutcome* wire) {
+  switch (outcome) {
+  case target::ExecutionOutcome::NotStarted:
+    *wire = v1::EXECUTION_NOT_STARTED;
+    return true;
+  case target::ExecutionOutcome::KnownSucceeded:
+    *wire = v1::EXECUTION_KNOWN_SUCCEEDED;
+    return true;
+  case target::ExecutionOutcome::KnownFailed:
+    *wire = v1::EXECUTION_KNOWN_FAILED;
+    return true;
+  case target::ExecutionOutcome::Unknown:
+    *wire = v1::EXECUTION_UNKNOWN;
+    return true;
+  }
+  return false;
+}
+bool action_outcome_from_wire(v1::ExecutionOutcome wire, target::ExecutionOutcome* outcome) {
+  switch (wire) {
+  case v1::EXECUTION_NOT_STARTED:
+    *outcome = target::ExecutionOutcome::NotStarted;
+    return true;
+  case v1::EXECUTION_KNOWN_SUCCEEDED:
+    *outcome = target::ExecutionOutcome::KnownSucceeded;
+    return true;
+  case v1::EXECUTION_KNOWN_FAILED:
+    *outcome = target::ExecutionOutcome::KnownFailed;
+    return true;
+  case v1::EXECUTION_UNKNOWN:
+    *outcome = target::ExecutionOutcome::Unknown;
+    return true;
+  default:
+    return false;
+  }
+}
+bool action_result_to_wire(const target::ActionRecord& record, v1::ActionResult* wire) {
+  const auto snapshot = target::action_wire_snapshot(record);
+  if (!snapshot) {
+    return false;
+  }
+  wire->set_action_id(record.action_id.value);
+  v1::ActionStatus status = v1::ACTION_STATUS_UNSPECIFIED;
+  if (!action_status_to_wire(snapshot->first, &status)) {
+    return false;
+  }
+  wire->set_status(status);
+  v1::ExecutionOutcome outcome = v1::EXECUTION_OUTCOME_UNSPECIFIED;
+  if (!action_outcome_to_wire(snapshot->second, &outcome)) {
+    return false;
+  }
+  wire->set_execution_outcome(outcome);
+  if (record.platform_message_id) {
+    wire->set_platform_message_id(*record.platform_message_id);
+  }
+  if (record.error_code) {
+    auto encoded = codec::to_wire(*record.error_code);
+    if (const auto* value = std::get_if<v1::ErrorCode>(&encoded)) {
+      wire->mutable_error()->set_code(*value);
+    }
+  }
+  if (record.dispatch_attempt_id) {
+    wire->set_dispatch_attempt_id(record.dispatch_attempt_id->value);
+  }
+  if (record.completed_at) {
+    auto completed = codec::to_wire(*record.completed_at);
+    if (const auto* value = std::get_if<google::protobuf::Timestamp>(&completed)) {
+      wire->mutable_completed_at()->CopyFrom(*value);
+    }
+  }
+  return true;
+}
+v1::ActionReceiptDisposition receipt_disposition_to_wire(target::ActionReceiptDisposition value) {
+  switch (value) {
+  case target::ActionReceiptDisposition::Recorded:
+    return v1::ACTION_RECEIPT_RECORDED;
+  case target::ActionReceiptDisposition::Duplicate:
+    return v1::ACTION_RECEIPT_DUPLICATE;
+  case target::ActionReceiptDisposition::EvidenceOnly:
+    return v1::ACTION_RECEIPT_EVIDENCE_ONLY;
+  case target::ActionReceiptDisposition::Conflict:
+    return v1::ACTION_RECEIPT_CONFLICT;
+  }
+  return v1::ACTION_RECEIPT_DISPOSITION_UNSPECIFIED;
+}
+bool decode_plugin_action(const v1::ActionEnvelope& wire, const std::string& serialized,
+                          target::BridgeActionSubmit* out) {
+  if (wire.action_id().empty() || wire.idempotency_key().empty() ||
+      wire.dispatch_attempt_id().size() != 0 || wire.dispatch_sequence() != 0 ||
+      wire.target_source().adapter_id().empty() || wire.target_source().account_id().empty() ||
+      !wire.has_deadline()) {
+    return false;
+  }
+  auto deadline = codec::from_wire(wire.deadline());
+  if (!std::holds_alternative<target::TimePoint>(deadline)) {
+    return false;
+  }
+  std::string conversation = wire.target().conversation_id();
+  uint8_t conversation_kind = 2;
+  switch (wire.payload_case()) {
+  case v1::ActionEnvelope::kSendMessage: {
+    const auto& payload = wire.send_message();
+    if (conversation.empty()) {
+      conversation = payload.conversation().id();
+    }
+    if (payload.conversation().type() == v1::ConversationRef::GROUP) {
+      conversation_kind = 1;
+    } else if (payload.conversation().type() == v1::ConversationRef::PRIVATE) {
+      conversation_kind = 0;
+    }
+    out->kind = target::ActionKind::SendMessage;
+    break;
+  }
+  case v1::ActionEnvelope::kReactMessage: {
+    const auto& payload = wire.react_message();
+    if (conversation.empty()) {
+      conversation = payload.conversation().id();
+    }
+    if (payload.conversation().type() == v1::ConversationRef::GROUP) {
+      conversation_kind = 1;
+    } else if (payload.conversation().type() == v1::ConversationRef::PRIVATE) {
+      conversation_kind = 0;
+    }
+    out->kind = target::ActionKind::ReactMessage;
+    break;
+  }
+  case v1::ActionEnvelope::kDeleteMessage: {
+    const auto& payload = wire.delete_message();
+    if (conversation.empty()) {
+      conversation = payload.conversation().id();
+    }
+    if (payload.conversation().type() == v1::ConversationRef::GROUP) {
+      conversation_kind = 1;
+    } else if (payload.conversation().type() == v1::ConversationRef::PRIVATE) {
+      conversation_kind = 0;
+    }
+    out->kind = target::ActionKind::DeleteMessage;
+    break;
+  }
+  case v1::ActionEnvelope::kMuteMember:
+    conversation = wire.mute_member().group_id();
+    conversation_kind = 1;
+    out->kind = target::ActionKind::MuteMember;
+    break;
+  case v1::ActionEnvelope::kKickMember:
+    conversation = wire.kick_member().group_id();
+    conversation_kind = 1;
+    out->kind = target::ActionKind::KickMember;
+    break;
+  case v1::ActionEnvelope::kApproveRequest:
+    out->kind = target::ActionKind::ApproveRequest;
+    break;
+  default:
+    return false;
+  }
+  out->request_id = wire.action_id();
+  out->trace_id = wire.trace_id().empty() ? wire.action_id() : wire.trace_id();
+  out->action_id = target::ActionId{wire.action_id()};
+  out->account_id = target::ResourceId{wire.target_source().account_id()};
+  out->adapter_id = target::ResourceId{wire.target_source().adapter_id()};
+  out->idempotency_key = wire.idempotency_key();
+  out->serialized_envelope = serialized;
+  out->target_conversation = std::move(conversation);
+  out->target_conversation_kind = conversation_kind;
+  out->deadline = std::get<target::TimePoint>(deadline);
+  return true;
+}
+
 // Shared post-registration loop state for one accepted stream.
 struct StreamState {
   target::BridgePeerKind kind = target::BridgePeerKind::Adapter;
@@ -499,20 +686,26 @@ public:
     const auto stream_instance = result.authorization.fence.instance;
     const auto stream_generation = result.authorization.fence.connection_generation;
     bool shutdown_attached = false;
+    bool action_attached = false;
     struct Exit {
       target::RuntimeBridgeApplication& application;
       std::shared_ptr<StreamGuard<v1::CoreToAdapter, v1::AdapterToCore>> guard;
       target::InstanceId instance;
       target::ConnectionGeneration generation;
-      bool* attached;
+      bool* shutdown_attached;
+      bool* action_attached;
       ~Exit() {
-        if (*attached) {
+        if (*action_attached) {
+          application.detach_adapter_action_sink(instance, generation);
+        }
+        if (*shutdown_attached) {
           application.detach_shutdown_sink(target::BridgePeerKind::Adapter, instance, generation);
         }
         guard->close();
         application.disconnect(target::BridgePeerKind::Adapter, instance, generation);
       }
-    } exit_guard{application_, guard_, stream_instance, stream_generation, &shutdown_attached};
+    } exit_guard{application_,       guard_,          stream_instance, stream_generation,
+                 &shutdown_attached, &action_attached};
     {
       v1::CoreToAdapter response;
       auto* registered_response = response.mutable_register_result();
@@ -549,6 +742,35 @@ public:
             return std::monostate{};
           });
       shutdown_attached = true;
+    }
+    {
+      std::weak_ptr<StreamGuard<v1::CoreToAdapter, v1::AdapterToCore>> weak = guard_;
+      const auto dispatch_fence = state.authorization.fence;
+      auto attached = application_.attach_adapter_action_sink(
+          stream_instance, stream_generation,
+          [weak, dispatch_fence](const target::ActionDispatchFrame& frame) -> target::Status {
+            auto guard = weak.lock();
+            if (!guard) {
+              return retryable_failure(target::ErrorCode::UpstreamUnavailable);
+            }
+            v1::ActionEnvelope envelope;
+            if (!envelope.ParseFromString(frame.serialized_envelope)) {
+              return failure(target::ErrorCode::Internal);
+            }
+            envelope.set_dispatch_attempt_id(frame.dispatch_attempt_id.value);
+            envelope.set_dispatch_sequence(frame.dispatch_sequence);
+            v1::CoreToAdapter response;
+            fence_to_wire(dispatch_fence, response.mutable_fence());
+            *response.mutable_action() = std::move(envelope);
+            if (!guard->write(response)) {
+              return retryable_failure(target::ErrorCode::UpstreamUnavailable);
+            }
+            return std::monostate{};
+          });
+      if (const auto* rejected = std::get_if<target::Failure>(&attached)) {
+        return rejected_status(*rejected);
+      }
+      action_attached = true;
     }
     grpc::Status status = grpc::Status::OK;
     while (!context->IsCancelled()) {
@@ -657,6 +879,115 @@ public:
         }
         if (ack_result.close_stream) {
           return grpc::Status::OK;
+        }
+      } else if (body == v1::AdapterToCore::kActionResult) {
+        const auto& result = frame.action_result();
+        auto dispatch_attempt_id =
+            result.dispatch_attempt_id().empty()
+                ? std::optional<target::AttemptId>{}
+                : std::optional<target::AttemptId>{target::AttemptId{result.dispatch_attempt_id()}};
+        target::BridgeActionReport report;
+        report.action_id = target::ActionId{result.action_id()};
+        report.dispatch_attempt_id = dispatch_attempt_id;
+        report.trace_id = result.action_id();
+        if (result.status() == v1::SUCCEEDED) {
+          report.result.state = target::ActionState::Succeeded;
+          report.result.execution_outcome = target::ExecutionOutcome::KnownSucceeded;
+        } else if (result.status() == v1::FAILED) {
+          report.result.state = target::ActionState::Failed;
+          report.result.execution_outcome = target::ExecutionOutcome::KnownFailed;
+          if (!result.has_error()) {
+            status = {grpc::StatusCode::INVALID_ARGUMENT, "failed result requires an error"};
+            break;
+          }
+          auto code = codec::from_wire(result.error().code());
+          if (!std::holds_alternative<target::ErrorCode>(code)) {
+            status = {grpc::StatusCode::INVALID_ARGUMENT, "invalid result error code"};
+            break;
+          }
+          report.result.error_code = std::get<target::ErrorCode>(code);
+        } else {
+          status = {grpc::StatusCode::INVALID_ARGUMENT, "adapter result must be terminal"};
+          break;
+        }
+        if (!result.platform_message_id().empty()) {
+          report.result.platform_message_id = result.platform_message_id();
+        }
+        auto recorded =
+            application_.record_adapter_result(state.authorization.fence.instance, report);
+        v1::CoreToAdapter response;
+        fence_to_wire(state.authorization.fence, response.mutable_fence());
+        auto* receipt = response.mutable_action_receipt();
+        receipt->set_action_id(result.action_id());
+        if (!result.dispatch_attempt_id().empty()) {
+          receipt->set_dispatch_attempt_id(result.dispatch_attempt_id());
+        }
+        if (const auto* rejected = std::get_if<target::Failure>(&recorded)) {
+          receipt->set_disposition(v1::ACTION_RECEIPT_CONFLICT);
+          *receipt->mutable_error() = wire_error(rejected->code, result.action_id(), {});
+        } else {
+          const auto& accepted = std::get<target::ActionReportReceipt>(recorded);
+          receipt->set_disposition(receipt_disposition_to_wire(accepted.disposition));
+          if (accepted.record) {
+            (void)action_result_to_wire(*accepted.record, receipt->mutable_result());
+          }
+          if (accepted.failure) {
+            *receipt->mutable_error() = wire_error(accepted.failure->code, result.action_id(), {});
+          }
+        }
+        if (!write(*stream, response)) {
+          break;
+        }
+      } else if (body == v1::AdapterToCore::kActionEvidence) {
+        const auto& evidence = frame.action_evidence();
+        target::BridgeEvidenceReport report;
+        report.action_id = target::ActionId{evidence.action_id()};
+        report.dispatch_attempt_id = target::AttemptId{evidence.dispatch_attempt_id()};
+        report.trace_id = evidence.action_id();
+        if (!action_outcome_from_wire(evidence.execution_outcome(), &report.execution_outcome)) {
+          status = {grpc::StatusCode::INVALID_ARGUMENT, "invalid evidence outcome"};
+          break;
+        }
+        if (evidence.has_last_error()) {
+          auto code = codec::from_wire(evidence.last_error().code());
+          if (!std::holds_alternative<target::ErrorCode>(code)) {
+            status = {grpc::StatusCode::INVALID_ARGUMENT, "invalid evidence error code"};
+            break;
+          }
+          report.error_code = std::get<target::ErrorCode>(code);
+        }
+        if (!evidence.platform_reference().empty()) {
+          report.platform_reference = evidence.platform_reference();
+        }
+        if (evidence.has_observed_at()) {
+          auto observed = codec::from_wire(evidence.observed_at());
+          if (std::holds_alternative<target::TimePoint>(observed)) {
+            report.observed_at = std::get<target::TimePoint>(observed);
+          }
+        }
+        if (report.observed_at.time_since_epoch().count() <= 0) {
+          status = {grpc::StatusCode::INVALID_ARGUMENT, "evidence observed_at required"};
+          break;
+        }
+        auto recorded =
+            application_.record_adapter_evidence(state.authorization.fence.instance, report);
+        v1::CoreToAdapter response;
+        fence_to_wire(state.authorization.fence, response.mutable_fence());
+        auto* receipt = response.mutable_action_receipt();
+        receipt->set_action_id(evidence.action_id());
+        receipt->set_dispatch_attempt_id(evidence.dispatch_attempt_id());
+        if (const auto* rejected = std::get_if<target::Failure>(&recorded)) {
+          receipt->set_disposition(v1::ACTION_RECEIPT_CONFLICT);
+          *receipt->mutable_error() = wire_error(rejected->code, evidence.action_id(), {});
+        } else {
+          const auto& accepted = std::get<target::ActionReportReceipt>(recorded);
+          receipt->set_disposition(receipt_disposition_to_wire(accepted.disposition));
+          if (accepted.record) {
+            (void)action_result_to_wire(*accepted.record, receipt->mutable_result());
+          }
+        }
+        if (!write(*stream, response)) {
+          break;
         }
       } else {
         status = {grpc::StatusCode::INVALID_ARGUMENT, "unsupported bridge frame"};
@@ -948,6 +1279,95 @@ public:
       } else if (body == v1::PluginToCore::kRegister) {
         status = {grpc::StatusCode::INVALID_ARGUMENT, "duplicate registration frame"};
         break;
+      } else if (body == v1::PluginToCore::kAction) {
+        const auto& request = frame.action();
+        v1::CoreToPlugin response;
+        fence_to_wire(state.authorization.fence, response.mutable_fence());
+        auto* action_response = response.mutable_action_response();
+        action_response->set_request_id(request.request_id());
+        std::string serialized;
+        const bool serialized_ok = request.action().SerializeToString(&serialized);
+        target::BridgeActionSubmit submit;
+        if (!decode_plugin_action(request.action(), serialized, &submit)) {
+          *action_response->mutable_error() =
+              wire_error(target::ErrorCode::InvalidArgument, request.request_id(),
+                         request.action().trace_id(), false);
+          if (!write(*stream, response)) {
+            break;
+          }
+          continue;
+        }
+        auto submitted =
+            application_.submit_plugin_action(state.authorization.fence.instance, submit);
+        if (const auto* rejected = std::get_if<target::Failure>(&submitted)) {
+          *action_response->mutable_error() =
+              wire_error(rejected->code, request.request_id(), request.action().trace_id(),
+                         rejected->recovery == target::Recovery::Backoff);
+        } else {
+          (void)action_result_to_wire(std::get<target::ActionRecord>(submitted),
+                                      action_response->mutable_result());
+        }
+        if (!write(*stream, response)) {
+          break;
+        }
+      } else if (body == v1::PluginToCore::kActionQuery) {
+        const auto& query = frame.action_query();
+        v1::CoreToPlugin response;
+        fence_to_wire(state.authorization.fence, response.mutable_fence());
+        auto* action_response = response.mutable_action_response();
+        action_response->set_request_id(query.request_id());
+        std::optional<target::ActionId> action_id;
+        std::optional<std::string> idempotency_key;
+        if (query.selector_case() == v1::PluginActionQuery::kActionId) {
+          action_id = target::ActionId{query.action_id()};
+        } else if (query.selector_case() == v1::PluginActionQuery::kIdempotencyKey) {
+          idempotency_key = query.idempotency_key();
+        } else {
+          *action_response->mutable_error() = wire_error(
+              target::ErrorCode::InvalidArgument, query.request_id(), query.trace_id(), false);
+          if (!write(*stream, response)) {
+            break;
+          }
+          continue;
+        }
+        auto found = application_.query_plugin_action(
+            state.authorization.fence.instance, std::move(action_id), std::move(idempotency_key));
+        if (const auto* rejected = std::get_if<target::Failure>(&found)) {
+          *action_response->mutable_error() =
+              wire_error(rejected->code, query.request_id(), query.trace_id(), false);
+        } else {
+          (void)action_result_to_wire(std::get<target::ActionRecord>(found),
+                                      action_response->mutable_result());
+        }
+        if (!write(*stream, response)) {
+          break;
+        }
+      } else if (body == v1::PluginToCore::kActionCancel) {
+        const auto& cancel = frame.action_cancel();
+        v1::CoreToPlugin response;
+        fence_to_wire(state.authorization.fence, response.mutable_fence());
+        auto* action_response = response.mutable_action_response();
+        action_response->set_request_id(cancel.request_id());
+        if (cancel.action_id().empty()) {
+          *action_response->mutable_error() = wire_error(
+              target::ErrorCode::InvalidArgument, cancel.request_id(), cancel.trace_id(), false);
+          if (!write(*stream, response)) {
+            break;
+          }
+          continue;
+        }
+        auto cancelled = application_.cancel_plugin_action(state.authorization.fence.instance,
+                                                           target::ActionId{cancel.action_id()});
+        if (const auto* rejected = std::get_if<target::Failure>(&cancelled)) {
+          *action_response->mutable_error() =
+              wire_error(rejected->code, cancel.request_id(), cancel.trace_id(), false);
+        } else {
+          (void)action_result_to_wire(std::get<target::ActionRecord>(cancelled),
+                                      action_response->mutable_result());
+        }
+        if (!write(*stream, response)) {
+          break;
+        }
       } else {
         v1::CoreToPlugin response;
         fence_to_wire(state.authorization.fence, response.mutable_fence());

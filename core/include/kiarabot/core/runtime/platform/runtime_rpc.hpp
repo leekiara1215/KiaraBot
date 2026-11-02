@@ -5,6 +5,7 @@
 
 #include <grpcpp/grpcpp.h>
 
+#include "kiarabot/core/application/target/runtime_action_application.hpp"
 #include "kiarabot/core/application/target/runtime_resource_application.hpp"
 #include "kiarabot/core/application/target/runtime_storage_application.hpp"
 #include "kiarabot/v1/runtime.grpc.pb.h"
@@ -27,6 +28,9 @@ struct RuntimeRpcOptions {
   // accident). The owner mTLS transport still authenticates the peer and the application performs
   // the current online authorization/member gates for every call.
   target::RuntimeStorageApplication* storage = nullptr;
+  // Optional P07 Action application. When absent the Control QueryActionResult method (and the
+  // dispatcher-only Action methods) remain generated UNIMPLEMENTED.
+  target::RuntimeActionApplication* actions = nullptr;
   // Optional process-level deadline bound (shared shutdown budget); expired -> TIMEOUT.
   std::function<target::Outcome<target::TimePoint>()> invocation_deadline;
 };

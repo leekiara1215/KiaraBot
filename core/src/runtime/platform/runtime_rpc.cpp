@@ -525,6 +525,134 @@ template <typename Output>
 grpc::Status success(Output* context, const Prepared&, const t::Outcome<Output>& result,
                      v1::RuntimeService::Service* = nullptr) = delete;
 
+bool action_status(target::ActionState value, v1::ActionStatus* out) {
+  switch (value) {
+  case target::ActionState::Accepted:
+    *out = v1::ACCEPTED;
+    return true;
+  case target::ActionState::Succeeded:
+    *out = v1::SUCCEEDED;
+    return true;
+  case target::ActionState::Failed:
+    *out = v1::FAILED;
+    return true;
+  case target::ActionState::Expired:
+    *out = v1::EXPIRED;
+    return true;
+  case target::ActionState::Cancelled:
+    *out = v1::CANCELLED;
+    return true;
+  }
+  return false;
+}
+bool action_outcome(target::ExecutionOutcome value, v1::ExecutionOutcome* out) {
+  switch (value) {
+  case target::ExecutionOutcome::NotStarted:
+    *out = v1::EXECUTION_NOT_STARTED;
+    return true;
+  case target::ExecutionOutcome::KnownSucceeded:
+    *out = v1::EXECUTION_KNOWN_SUCCEEDED;
+    return true;
+  case target::ExecutionOutcome::KnownFailed:
+    *out = v1::EXECUTION_KNOWN_FAILED;
+    return true;
+  case target::ExecutionOutcome::Unknown:
+    *out = v1::EXECUTION_UNKNOWN;
+    return true;
+  }
+  return false;
+}
+bool action_result(const target::ActionRecord& value, v1::ActionResult* out) {
+  const auto snapshot = target::action_wire_snapshot(value);
+  if (!snapshot) {
+    return false;
+  }
+  out->set_action_id(value.action_id.value);
+  v1::ActionStatus status = v1::ACTION_STATUS_UNSPECIFIED;
+  v1::ExecutionOutcome outcome = v1::EXECUTION_OUTCOME_UNSPECIFIED;
+  if (!action_status(snapshot->first, &status) || !action_outcome(snapshot->second, &outcome)) {
+    return false;
+  }
+  out->set_status(status);
+  out->set_execution_outcome(outcome);
+  if (value.platform_message_id) {
+    out->set_platform_message_id(*value.platform_message_id);
+  }
+  if (value.error_code) {
+    auto encoded = codec::to_wire(*value.error_code);
+    if (const auto* code = std::get_if<v1::ErrorCode>(&encoded)) {
+      out->mutable_error()->set_code(*code);
+    }
+  }
+  if (value.dispatch_attempt_id) {
+    out->set_dispatch_attempt_id(value.dispatch_attempt_id->value);
+  }
+  if (value.completed_at) {
+    auto completed = codec::to_wire(*value.completed_at);
+    if (const auto* stamp = std::get_if<google::protobuf::Timestamp>(&completed)) {
+      out->mutable_completed_at()->CopyFrom(*stamp);
+    }
+  }
+  return true;
+}
+bool action_metadata(const target::ActionRecord& value, v1::ActionMetadata* out) {
+  out->set_action_id(value.action_id.value);
+  out->set_owner_instance_id(value.owner_instance.value);
+  out->set_account_id(value.account_id.value);
+  v1::ActionStatus status = v1::ACTION_STATUS_UNSPECIFIED;
+  v1::ExecutionOutcome outcome = v1::EXECUTION_OUTCOME_UNSPECIFIED;
+  if (!action_status(value.state, &status) || !action_outcome(value.execution_outcome, &outcome)) {
+    return false;
+  }
+  out->set_status(status);
+  out->set_execution_outcome(outcome);
+  auto updated = codec::to_wire(value.updated_at);
+  if (const auto* stamp = std::get_if<google::protobuf::Timestamp>(&updated)) {
+    out->mutable_updated_at()->CopyFrom(*stamp);
+  }
+  if (value.kind == target::ActionKind::SendMessage) {
+    out->set_kind(v1::ACTION_KIND_SEND_MESSAGE);
+  } else if (value.kind == target::ActionKind::ReactMessage) {
+    out->set_kind(v1::ACTION_KIND_REACT_MESSAGE);
+  } else if (value.kind == target::ActionKind::DeleteMessage) {
+    out->set_kind(v1::ACTION_KIND_DELETE_MESSAGE);
+  } else if (value.kind == target::ActionKind::MuteMember) {
+    out->set_kind(v1::ACTION_KIND_MUTE_MEMBER);
+  } else if (value.kind == target::ActionKind::KickMember) {
+    out->set_kind(v1::ACTION_KIND_KICK_MEMBER);
+  } else if (value.kind == target::ActionKind::ApproveRequest) {
+    out->set_kind(v1::ACTION_KIND_APPROVE_REQUEST);
+  }
+  out->set_target_account_id(value.account_id.value);
+  out->set_target_conversation_id(value.target_conversation);
+  auto created = codec::to_wire(value.created_at);
+  if (const auto* stamp = std::get_if<google::protobuf::Timestamp>(&created)) {
+    out->mutable_created_at()->CopyFrom(*stamp);
+  }
+  auto deadline = codec::to_wire(value.deadline);
+  if (const auto* stamp = std::get_if<google::protobuf::Timestamp>(&deadline)) {
+    out->mutable_deadline()->CopyFrom(*stamp);
+  }
+  auto retain = codec::to_wire(value.retain_until);
+  if (const auto* stamp = std::get_if<google::protobuf::Timestamp>(&retain)) {
+    out->mutable_retain_until()->CopyFrom(*stamp);
+  }
+  out->set_idempotency_key(value.idempotency_key);
+  if (value.platform_message_id) {
+    out->set_platform_message_id(*value.platform_message_id);
+  }
+  if (value.dispatch_attempt_id) {
+    out->set_dispatch_attempt_id(value.dispatch_attempt_id->value);
+  }
+  if (value.error_code) {
+    auto encoded = codec::to_wire(*value.error_code);
+    if (const auto* code = std::get_if<v1::ErrorCode>(&encoded)) {
+      out->mutable_error()->set_code(*code);
+    }
+  }
+  return true;
+}
+
 // P10b timer handoff conversion. The frozen wire HandoffContext omits actor/authorization_version;
 // Runtime binds the actor to the request owner instance and treats the Scheduler authorization
 // version as 1 (Scheduler-side evidence stays in the Scheduler journal).
@@ -1589,6 +1717,69 @@ public:
                                response->mutable_receipt())) {
       return error_status(internal_failure(), context.request, context.trace);
     }
+    return grpc::Status::OK;
+  }
+
+  grpc::Status QueryActionResult(grpc::ServerContext* transport,
+                                 const v1::RuntimeQueryActionResultRequest* request,
+                                 v1::RuntimeQueryActionResultResponse* response) override {
+    auto prepared =
+        prepare(*transport, request->context(), "kiarabot.v1.RuntimeService/QueryActionResult",
+                *request, false, options_);
+    if (const auto* rejected = std::get_if<t::Failure>(&prepared)) {
+      return error_status(*rejected, request->context().request_id(),
+                          request->context().trace_id());
+    }
+    auto& context = std::get<Prepared>(prepared);
+    if (options_.actions == nullptr) {
+      return error_status(failure(t::ErrorCode::CapabilityNotSupported), context.request,
+                          context.trace);
+    }
+    const auto& account_scope = request->account_scope();
+    if (account_scope.resources_size() != 1 ||
+        account_scope.resources(0).kind() != v1::RESOURCE_ACCOUNT ||
+        account_scope.resources(0).id().empty()) {
+      return error_status(failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput),
+                          context.request, context.trace);
+    }
+    t::ActionControlResultQuery query;
+    query.authentication = context.command.authentication;
+    query.request_id = context.command.request_id;
+    query.trace_id = context.command.trace_id;
+    query.method = context.command.method;
+    query.deadline = context.command.deadline;
+    query.account_id = t::ResourceId{account_scope.resources(0).id()};
+    if (request->selector_case() == v1::RuntimeQueryActionResultRequest::kActionId) {
+      if (request->action_id().empty()) {
+        return error_status(failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput),
+                            context.request, context.trace);
+      }
+      query.action_id = t::ActionId{request->action_id()};
+    } else if (request->selector_case() == v1::RuntimeQueryActionResultRequest::kIdempotencyKey) {
+      if (request->idempotency_key().empty() || request->owner_instance_id().empty()) {
+        return error_status(failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput),
+                            context.request, context.trace);
+      }
+      query.idempotency_key = request->idempotency_key();
+      query.owner_instance = t::InstanceId{request->owner_instance_id()};
+    } else {
+      return error_status(failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput),
+                          context.request, context.trace);
+    }
+    auto found = options_.actions->query_control_action(query);
+    if (const auto* rejected = std::get_if<t::Failure>(&found)) {
+      return error_status(*rejected, context.request, context.trace);
+    }
+    const auto& record = std::get<t::ActionRecord>(found);
+    if (!action_result(record, response->mutable_result()) ||
+        !action_metadata(record, response->mutable_metadata())) {
+      return error_status(failure(t::ErrorCode::Internal), context.request, context.trace);
+    }
+    v1::ExecutionOutcome outcome = v1::EXECUTION_OUTCOME_UNSPECIFIED;
+    if (!action_outcome(record.execution_outcome, &outcome)) {
+      return error_status(failure(t::ErrorCode::Internal), context.request, context.trace);
+    }
+    response->set_execution_outcome(outcome);
     return grpc::Status::OK;
   }
 
