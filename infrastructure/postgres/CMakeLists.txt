@@ -76,7 +76,7 @@ if(UNIX)
       --pg-bin "${KIARABOT_TEST_PG_BIN}"
       --repo-source "${CMAKE_SOURCE_DIR}")
     set_tests_properties(p07_adapter_e2e PROPERTIES
-      LABELS "p07;integration;fault" TIMEOUT 300)
+      LABELS "p06;p07;integration;fault" TIMEOUT 300)
   endif()
   add_test(NAME p08_host_bridge_e2e COMMAND "${KIARABOT_TARGET_PYTHON}"
     "${CMAKE_SOURCE_DIR}/tests/architecture/p08_host_bridge_e2e.py"

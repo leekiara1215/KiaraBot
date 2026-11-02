@@ -56,7 +56,7 @@ def load_repo(repo: Path):
     return p06
 
 
-def message_event(message_id: str, text: str) -> dict:
+def message_event(message_id: int, text: str) -> dict:
     return {
         'time': int(time.time()), 'self_id': 10001, 'post_type': 'message',
         'message_type': 'group', 'sub_type': 'normal', 'message_id': message_id,
@@ -123,12 +123,12 @@ class FakeOneBot:
                 self._sockets.remove(socket)
 
 
-def write_manifest(path: Path) -> None:
+def write_manifest(path: Path, capabilities=None) -> None:
     path.write_text(json.dumps({
         'id': 'p07d.e2e.plugin', 'name': 'P07d E2E Plugin', 'version': '1.0.0',
         'api_version': 'kiarabot.plugin.v1', 'runtime': 'python-rpc',
         'entrypoint': 'p07d_subject:create', 'isolation': 'process', 'ordered': False,
-        'capabilities': ['event.message.received'],
+        'capabilities': ['event.message.received'] if capabilities is None else capabilities,
         'permissions': ['message.read', 'message.send'],
     }))
 
@@ -224,8 +224,6 @@ async def async_main(args) -> int:
                 raise AcceptanceFailure(f'action {action_id} did not reach terminal state')
 
             plugin_events, plugin_actions, cancel_errors = [], [], []
-            write_manifest(root / 'plugin.json')
-            manifest = sdk_runtime.load_manifest(root / 'plugin.json')
 
             class Subject(sdk_runtime.Plugin):
                 def __init__(self):
@@ -271,15 +269,30 @@ async def async_main(args) -> int:
                             cancel_errors.append(error.code)
                     return result.action_id
 
-            subject = Subject()
-            options = sdk_runtime.Options(
-                endpoint, PLUGIN_BOOTSTRAP, tls_root_cert=ca_bytes,
-                instance_id=PLUGIN_INSTANCE, io_timeout=5.0, hook_timeout=5.0,
-                heartbeat_interval=0.2, retry_delay=0.1, lease_renew_interval=0.2)
-            runner = sdk_runtime.Runner(manifest, subject, options)
-            sdk_stop = asyncio.Event()
-            sdk_task = asyncio.create_task(runner.run(sdk_stop))
-            tasks.append((sdk_task, sdk_stop))
+            def start_plugin(capabilities=None):
+                write_manifest(root / 'plugin.json', capabilities)
+                loaded = sdk_runtime.load_manifest(root / 'plugin.json')
+                new_subject = Subject()
+                new_options = sdk_runtime.Options(
+                    endpoint, PLUGIN_BOOTSTRAP, tls_root_cert=ca_bytes,
+                    instance_id=PLUGIN_INSTANCE, io_timeout=5.0, hook_timeout=5.0,
+                    heartbeat_interval=0.2, retry_delay=0.1, lease_renew_interval=0.2)
+                new_runner = sdk_runtime.Runner(loaded, new_subject, new_options)
+                stop_event = asyncio.Event()
+                task = asyncio.create_task(new_runner.run(stop_event))
+                tasks.append((task, stop_event))
+                return new_subject, stop_event, task
+
+            async def stop_plugin(stop_event, task):
+                stop_event.set()
+                await asyncio.wait_for(task, 15)
+
+            def plugin_generation():
+                text = psql('SELECT connection_generation FROM kiarabot.instances WHERE id=' +
+                            fixture.quote_sql(PLUGIN_INSTANCE)).stdout.decode().strip()
+                return int(text or '0')
+
+            subject, sdk_stop, sdk_task = start_plugin(['event.message.received'])
 
             # Event fan-out only snapshots currently connected plugin instances; wait for the
             # real SDK plugin registration before injecting the platform event.
@@ -318,10 +331,33 @@ async def async_main(args) -> int:
                                  ).stdout.strip() not in (b'',),
                     'adapter bridge registration', 30)
                 await asyncio.sleep(0.3)
-                # The adapter event ingress still runs separately: one mapped platform message
-                # must be durably ACKed by Runtime even if plugin delivery is observed below.
-                await onebot.send_event(message_event('msg-p07d', 'hello'))
+                # The adapter event ingress runs separately: one mapped platform message must be
+                # durably ACKed by Runtime and fan out to the subscribed plugin below.
+                first_frame = message_event(70001, 'hello')
+                await onebot.send_event(first_frame)
                 await asyncio.sleep(1.0)
+
+                # ---- P06f: real adapter message must fan out to the subscribed plugin ----
+                def message_event_ids():
+                    text = psql('SELECT event_id FROM kiarabot.events WHERE payload_kind=0 '
+                                'ORDER BY received_at').stdout.decode().strip()
+                    return [line for line in text.splitlines() if line]
+                await p06.wait_until(lambda: len(message_event_ids()) >= 1,
+                                     'adapter MessageReceived event accepted', 20)
+                fanned_event = message_event_ids()[-1]
+
+                def target_states(event_id):
+                    text = psql('SELECT state FROM kiarabot.delivery_targets WHERE event_id=' +
+                                fixture.quote_sql(event_id)).stdout.decode().strip()
+                    return [line for line in text.splitlines() if line]
+                await p06.wait_until(lambda: len(target_states(fanned_event)) >= 1,
+                                     'delivery target for subscribed plugin', 20)
+                await p06.wait_until(lambda: fanned_event in plugin_events,
+                                     'SDK plugin received adapter message', 20)
+                await p06.wait_until(lambda: target_states(fanned_event) == ['3'],
+                                     'SDK plugin delivery ACK/terminal target', 20)
+                require(len(target_states(fanned_event)) == 1,
+                        f'expected exactly one fan-out target: {target_states(fanned_event)}')
                 first = await subject.submit()
                 await p06.wait_until(lambda: action_state(first) is not None, 'Action accepted', 20)
                 await p06.wait_until(lambda: onebot.calls, 'adapter called fake OneBot', 30)
@@ -332,8 +368,8 @@ async def async_main(args) -> int:
                         f'success Action not KNOWN_SUCCEEDED: {success}')
                 require(success[3] not in ('', '\\N'),
                         f'platform message id missing: {success}')
-                # The adapter outbox proves the platform event was durably accepted by Runtime
-                # before Action dispatch; plugin event fan-out is asserted separately in P07c.
+                # The adapter outbox proves the platform event was durably accepted by Runtime;
+                # the fan-out to the subscribed plugin is asserted before this point.
                 import sqlite3
                 with sqlite3.connect(root / 'adapter-outbox.db') as db:
                     require(db.execute("SELECT count(*) FROM outbox WHERE status='acked'"
@@ -353,7 +389,7 @@ async def async_main(args) -> int:
                 onebot.mode = 'success'
                 events_before = int(psql('SELECT count(*) FROM kiarabot.events'
                                          ).stdout.decode().strip() or '0')
-                await onebot.send_event(message_event('msg-p07d', 'hello'))
+                await onebot.send_event(first_frame)
                 await asyncio.sleep(1.0)
                 events_after = int(psql('SELECT count(*) FROM kiarabot.events'
                                         ).stdout.decode().strip() or '0')
@@ -389,6 +425,49 @@ async def async_main(args) -> int:
                         f'Action after adapter platform reconnect failed: {reconnected}')
                 require(len(onebot.calls) == before + 1,
                         'reconnect duplicated a platform call')
+
+                # ---- P06f subscription/offline matrix with the real adapter + SDK plugin ----
+                await stop_plugin(sdk_stop, sdk_task)
+                await asyncio.sleep(0.3)
+                # Mismatched subscription: connected plugin without event.message.received must
+                # not create a delivery target for the message event.
+                generation_before = plugin_generation()
+                _, mismatch_stop, mismatch_task = start_plugin([])
+                await p06.wait_until(lambda: plugin_generation() > generation_before,
+                                     'mismatched plugin registration', 20, interval=0.1)
+                events_at_mismatch = len(plugin_events)
+                await onebot.send_event(message_event(70002, 'mismatch'))
+                await p06.wait_until(lambda: len(message_event_ids()) >= 2,
+                                     'mismatched-subscription event accepted', 20)
+                mismatch_event = message_event_ids()[-1]
+                await asyncio.sleep(0.5)
+                require(not target_states(mismatch_event),
+                        'non-subscribed plugin received a delivery target')
+                require(len(plugin_events) == events_at_mismatch,
+                        'non-subscribed plugin received the event')
+                await stop_plugin(mismatch_stop, mismatch_task)
+                await asyncio.sleep(0.3)
+                # Offline plugin: event is accepted but no target is fabricated for a disconnected
+                # instance; a later reconnect delivers only events accepted after re-registration.
+                await onebot.send_event(message_event(70003, 'offline'))
+                await p06.wait_until(lambda: len(message_event_ids()) >= 3,
+                                     'offline-plugin event accepted', 20)
+                offline_event = message_event_ids()[-1]
+                await asyncio.sleep(0.3)
+                require(not target_states(offline_event),
+                        'offline plugin received a fabricated delivery target')
+                generation_before = plugin_generation()
+                _, sdk_stop, sdk_task = start_plugin(['event.message.received'])
+                await p06.wait_until(lambda: plugin_generation() > generation_before,
+                                     'subscribed plugin reconnect registration', 20, interval=0.1)
+                await onebot.send_event(message_event(70004, 'after-reconnect'))
+                await p06.wait_until(lambda: len(message_event_ids()) >= 4,
+                                     'post-reconnect event accepted', 20)
+                reconnect_event = message_event_ids()[-1]
+                await p06.wait_until(lambda: len(target_states(reconnect_event)) >= 1,
+                                     'post-reconnect delivery target', 20)
+                await p06.wait_until(lambda: reconnect_event in plugin_events,
+                                     'post-reconnect SDK plugin delivery', 20)
             finally:
                 adapter_output = b''
                 if adapter_process.returncode is None:
