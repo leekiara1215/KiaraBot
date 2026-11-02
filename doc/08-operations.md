@@ -1158,6 +1158,26 @@ probe_listen/grpc_listen/tls），并额外要求 Host-only 的 `host` 对象（
   恢复/标记 UNKNOWN，不因重启重复 spawn 同一执行代次。
 - Runtime 部署侧 `hosts[]` 预注册 `host_id` 与证书指纹/SAN、包摘要/profile 白名单；Host 配置的
   `host_id` 必须与之一致。HostBridge 只在 Runtime 内部 mTLS 监听，不注册外部 Bridge 监听。
+
+- **P08b-2b Runtime HostBridge 服务端（2026-11-02 传输层实现）**：Runtime 配置新增
+  `hosts` 数组，每项恰好 `host_id`（安全字符集）与 `certificate_sha256`（64 位小写 hex），
+  对应部署签发的 Host 客户端叶证书；其它 service 出现该键、重复 host/cert、非法字符均退出 2。
+  空数组或缺省表示**拒绝所有 Host 注册**（fail closed），不是“不启用校验”：
+  ```json
+  {
+    "service": "runtime", "probe_listen": "127.0.0.1:18080",
+    "grpc_listen": "127.0.0.1:15081", "bridge_listen": "127.0.0.1:15082",
+    "tls": {"certificate_file": "...", "private_key_file": "...", "ca_file": "..."},
+    "hosts": [{"host_id": "host-a", "certificate_sha256": "<64 lowercase hex>"}]
+  }
+  ```
+  服务端在 owner mTLS `grpc_listen` 注册真实 `HostBridge.Connect`：首帧 registration 的
+  `host.host_id` 必须与 peer 证书指纹 allowlist 绑定一致，回 `registered{host,fence}`；后续
+  inventory/receipt/observation/heartbeat 必须携带当前 fence，旧 generation 以 `CONFLICT`
+  拒绝。heartbeat_ack 的 `received_at`/`interval_seconds=5`/`resync_required` 由 P08b-1 应用
+  计算；observation/inventory 的持久投影与 Host 命令 outbox 仍属 P08b-3。**未完成**：PG
+  `host_connections` 持久化尚未接到该 server（当前 composition 用进程内 store，Runtime 重启
+  后注册/代次不保留），真实 Host 二进制/PG 端到端验收属 P08b-2c；不得据此宣称 T11b 通过。
 - 当前验证范围：P08a 用 in-process fake Runtime bridge 与 fake supervisor 覆盖注册/fence/心跳/
   resync/命令回执/观察/恢复；真实 Runtime Bridge 监听（P06a-2）与 Host 受管配置的端到端验收
   尚未执行，不能据此宣称 T11b 或真实部署通过。
