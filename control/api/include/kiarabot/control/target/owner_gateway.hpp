@@ -102,6 +102,10 @@ public:
   get_action_policy(const kiarabot::v1::RuntimeGetActionPolicyRequest&, std::string_view) = 0;
   virtual OwnerOutcome<kiarabot::v1::RuntimeUpdateActionPolicyResponse>
   update_action_policy(const kiarabot::v1::RuntimeUpdateActionPolicyRequest&, std::string_view) = 0;
+  virtual OwnerOutcome<kiarabot::v1::RuntimeBeginDeleteResponse>
+  begin_delete(const kiarabot::v1::RuntimeBeginDeleteRequest&, std::string_view) = 0;
+  virtual OwnerOutcome<kiarabot::v1::RuntimeRestoreResourceResponse>
+  restore_resource(const kiarabot::v1::RuntimeRestoreResourceRequest&, std::string_view) = 0;
 };
 class SchedulerTasksPort {
 public:

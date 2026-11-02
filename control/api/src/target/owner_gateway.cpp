@@ -1563,6 +1563,139 @@ std::optional<OwnerHttpResult> OwnerGateway::handle(const OwnerHttpRequest& requ
                        : audit_page_json(rows, filter.page_size, next_token);
       return OwnerHttpResult{200, body.dump()};
     }
+    constexpr std::string_view kResources = "/api/v1/resources/";
+    if (path.starts_with(kResources)) {
+      if (request.method != "POST") {
+        return OwnerHttpResult{
+            405, owner_error_body(wire::INVALID_ARGUMENT, request_id, trace_id, false)};
+      }
+      const auto tail = path.substr(kResources.size());
+      const auto first = tail.find('/');
+      const auto second =
+          first == std::string_view::npos ? std::string_view::npos : tail.find('/', first + 1);
+      if (first == std::string_view::npos || second == std::string_view::npos) {
+        return OwnerHttpResult{404, owner_error_body(wire::NOT_FOUND, request_id, trace_id, false)};
+      }
+      const auto kind_name = tail.substr(0, first);
+      const auto resource_id = std::string{tail.substr(first + 1, second - first - 1)};
+      const auto action = tail.substr(second + 1);
+      if (!action.empty() && action.find('/') != std::string_view::npos) {
+        return OwnerHttpResult{404, owner_error_body(wire::NOT_FOUND, request_id, trace_id, false)};
+      }
+      wire::ResourceKind kind = wire::RESOURCE_KIND_UNSPECIFIED;
+      if (!wire::ResourceKind_Parse(std::string{kind_name}, &kind) ||
+          kind == wire::RESOURCE_KIND_UNSPECIFIED || resource_id.empty() ||
+          (action != "delete" && action != "restore")) {
+        return OwnerHttpResult{
+            400, owner_error_body(wire::INVALID_ARGUMENT, request_id, trace_id, false)};
+      }
+      if (!resources_) {
+        return OwnerHttpResult{
+            503, owner_error_body(wire::UPSTREAM_UNAVAILABLE, request_id, trace_id, true)};
+      }
+      if (request.access_token.empty()) {
+        return OwnerHttpResult{
+            401, owner_error_body(wire::UNAUTHENTICATED, request_id, trace_id, false)};
+      }
+      auto query = parse_query(request.target);
+      if (!query || !query->empty()) {
+        return OwnerHttpResult{
+            400, owner_error_body(wire::INVALID_ARGUMENT, request_id, trace_id, false)};
+      }
+      const auto parsed = Json::parse(request.body, nullptr, false);
+      if (parsed.is_discarded() || !parsed.is_object() || !parsed.contains("resource") ||
+          !parsed["resource"].is_object() || !parsed.contains("expected_version") ||
+          !parsed["expected_version"].is_string()) {
+        return OwnerHttpResult{
+            400, owner_error_body(wire::INVALID_ARGUMENT, request_id, trace_id, false)};
+      }
+      wire::ResourceRef resource;
+      if (!google::protobuf::util::JsonStringToMessage(parsed["resource"].dump(), &resource).ok() ||
+          resource.kind() != kind || resource.id() != resource_id) {
+        return OwnerHttpResult{
+            400, owner_error_body(wire::INVALID_ARGUMENT, request_id, trace_id, false)};
+      }
+      std::uint64_t expected_version = 0;
+      const auto& version_text = parsed["expected_version"].get_ref<const std::string&>();
+      const auto converted = std::from_chars(
+          version_text.data(), version_text.data() + version_text.size(), expected_version);
+      if (converted.ec != std::errc{} ||
+          converted.ptr != version_text.data() + version_text.size() || expected_version == 0) {
+        return OwnerHttpResult{
+            400, owner_error_body(wire::INVALID_ARGUMENT, request_id, trace_id, false)};
+      }
+      const auto idempotency = header(request, "idempotency-key");
+      if (!idempotency || idempotency->size() < 16 || idempotency->size() > 128) {
+        return OwnerHttpResult{
+            400, owner_error_body(wire::INVALID_ARGUMENT, request_id, trace_id, false)};
+      }
+      wire::ResourceScope scope;
+      *scope.add_resources() = resource;
+      const auto permission = kind == wire::RESOURCE_ACCOUNT ? wire::PERMISSION_ACCOUNT_MANAGE
+                                                             : wire::PERMISSION_RESOURCE_MANAGE;
+      auto delegation =
+          delegation_.issue("runtime", permission, scope, request.access_token, request.deadline);
+      if (const auto* failure = std::get_if<OwnerFailure>(&delegation)) {
+        return OwnerHttpResult{
+            owner_http_status(failure->code),
+            owner_error_body(failure->code, request_id, trace_id, failure->retryable)};
+      }
+      const auto wire_deadline = codec::to_wire(request.deadline);
+      const auto* deadline = std::get_if<google::protobuf::Timestamp>(&wire_deadline);
+      if (deadline == nullptr) {
+        return OwnerHttpResult{
+            400, owner_error_body(wire::INVALID_ARGUMENT, request_id, trace_id, false)};
+      }
+      wire::OperationRef operation;
+      if (action == "delete") {
+        wire::RuntimeBeginDeleteRequest input;
+        auto* context = input.mutable_context();
+        context->set_request_id(request_id);
+        context->set_trace_id(trace_id);
+        context->set_idempotency_key(*idempotency);
+        *context->mutable_deadline() = *deadline;
+        *input.mutable_resource() = resource;
+        input.set_expected_version(expected_version);
+        auto result = resources_->begin_delete(input, std::get<std::string>(delegation));
+        if (const auto* failure = std::get_if<OwnerFailure>(&result)) {
+          return OwnerHttpResult{
+              owner_http_status(failure->code),
+              owner_error_body(failure->code, request_id, trace_id, failure->retryable)};
+        }
+        operation = std::get<wire::RuntimeBeginDeleteResponse>(result).operation();
+      } else {
+        wire::RuntimeRestoreResourceRequest input;
+        auto* context = input.mutable_context();
+        context->set_request_id(request_id);
+        context->set_trace_id(trace_id);
+        context->set_idempotency_key(*idempotency);
+        *context->mutable_deadline() = *deadline;
+        *input.mutable_resource() = resource;
+        input.set_expected_version(expected_version);
+        auto result = resources_->restore_resource(input, std::get<std::string>(delegation));
+        if (const auto* failure = std::get_if<OwnerFailure>(&result)) {
+          return OwnerHttpResult{
+              owner_http_status(failure->code),
+              owner_error_body(failure->code, request_id, trace_id, failure->retryable)};
+        }
+        operation = std::get<wire::RuntimeRestoreResourceResponse>(result).operation();
+      }
+      if (operation.operation_id().empty()) {
+        return OwnerHttpResult{500, owner_error_body(wire::INTERNAL, request_id, trace_id, false)};
+      }
+      // 202 means durably accepted; a BLOCKED participant is an accepted operation, not a failed
+      // command. Clients poll GET /api/v1/operations/runtime/{operation_id} for progress.
+      Json body{{"operation",
+                 {{"owner_service",
+                   operation.owner_service().empty() ? "runtime" : operation.owner_service()},
+                  {"operation_id", operation.operation_id()}}}};
+      if (operation.has_resource()) {
+        body["operation"]["resource"] = {
+            {"kind", wire::ResourceKind_Name(operation.resource().kind())},
+            {"id", operation.resource().id()}};
+      }
+      return OwnerHttpResult{202, body.dump()};
+    }
     if (path == "/api/v1/models") {
       if (!model_) {
         return OwnerHttpResult{

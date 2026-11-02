@@ -176,6 +176,29 @@ def main(control, fixture, model_fixture=None):
             assert status in (400, 403, 404, 503), (status, body)
             assert body['code'] in ('INVALID_ARGUMENT', 'PERMISSION_DENIED', 'NOT_FOUND',
                                     'UPSTREAM_UNAVAILABLE'), body
+            lifecycle_resource = 'bbbbbbbb-1111-4111-8111-bbbbbbbbbbbb'
+            lifecycle_base = f'/api/v1/resources/RESOURCE_INSTANCE/{lifecycle_resource}'
+            lifecycle_body = {'resource': {'kind': 'RESOURCE_INSTANCE',
+                                           'id': lifecycle_resource},
+                              'expected_version': '1'}
+            for lifecycle_action in ('delete', 'restore'):
+                status, body, _ = request(
+                    'POST', f'{lifecycle_base}/{lifecycle_action}', lifecycle_body,
+                    headers={'Authorization': 'Bearer ' + ACCESS,
+                             'Idempotency-Key': KEY})
+                assert status in (403, 503), (lifecycle_action, status, body)
+                assert body['code'] in ('PERMISSION_DENIED', 'UPSTREAM_UNAVAILABLE'), body
+            status, body, _ = request(
+                'POST', lifecycle_base + '/delete',
+                {'resource': {'kind': 'RESOURCE_INSTANCE', 'id': lifecycle_resource}},
+                headers={'Authorization': 'Bearer ' + ACCESS, 'Idempotency-Key': KEY})
+            assert status == 400 and body['code'] == 'INVALID_ARGUMENT', (status, body)
+            status, body, _ = request(
+                'POST', lifecycle_base + '/delete', lifecycle_body,
+                headers={'Authorization': 'Bearer ' + ACCESS})
+            assert status == 400 and body['code'] == 'INVALID_ARGUMENT', (status, body)
+            status, body, _ = request('POST', lifecycle_base + '/delete', lifecycle_body)
+            assert status == 401 and body['code'] == 'UNAUTHENTICATED', (status, body)
             status, body, _ = request('GET', '/api/v1/principals',
                                       headers={'Authorization': 'Bearer ' + ACCESS})
             assert status in (403, 503), (status, body)

@@ -380,6 +380,15 @@ private:
                       std::string_view delegation) override {
     return unary(&wire::RuntimeService::Stub::GetInstanceConfig, input, delegation);
   }
+  OwnerOutcome<wire::RuntimeBeginDeleteResponse>
+  begin_delete(const wire::RuntimeBeginDeleteRequest& input, std::string_view delegation) override {
+    return unary(&wire::RuntimeService::Stub::BeginDelete, input, delegation);
+  }
+  OwnerOutcome<wire::RuntimeRestoreResourceResponse>
+  restore_resource(const wire::RuntimeRestoreResourceRequest& input,
+                   std::string_view delegation) override {
+    return unary(&wire::RuntimeService::Stub::RestoreResource, input, delegation);
+  }
   OwnerOutcome<wire::RuntimeGetActionPolicyResponse>
   get_action_policy(const wire::RuntimeGetActionPolicyRequest& input,
                     std::string_view delegation) override {

@@ -231,6 +231,34 @@ struct FakeResources final : target::RuntimeResourcesPort {
     config->set_delivery_id("delivery-1");
     return ok(response);
   }
+  wire::RuntimeBeginDeleteRequest last_delete;
+  wire::RuntimeRestoreResourceRequest last_restore;
+  target::OwnerOutcome<wire::RuntimeBeginDeleteResponse>
+  begin_delete(const wire::RuntimeBeginDeleteRequest& input, std::string_view) override {
+    ++calls;
+    last_delete = input;
+    if (failure) {
+      return *failure;
+    }
+    wire::RuntimeBeginDeleteResponse response;
+    response.mutable_operation()->set_owner_service("runtime");
+    response.mutable_operation()->set_operation_id("delete-operation");
+    *response.mutable_operation()->mutable_resource() = input.resource();
+    return response;
+  }
+  target::OwnerOutcome<wire::RuntimeRestoreResourceResponse>
+  restore_resource(const wire::RuntimeRestoreResourceRequest& input, std::string_view) override {
+    ++calls;
+    last_restore = input;
+    if (failure) {
+      return *failure;
+    }
+    wire::RuntimeRestoreResourceResponse response;
+    response.mutable_operation()->set_owner_service("runtime");
+    response.mutable_operation()->set_operation_id("restore-operation");
+    *response.mutable_operation()->mutable_resource() = input.resource();
+    return response;
+  }
   target::OwnerOutcome<wire::RuntimeGetActionPolicyResponse>
   get_action_policy(const wire::RuntimeGetActionPolicyRequest& input, std::string_view) override {
     ++calls;
@@ -252,6 +280,7 @@ struct FakeResources final : target::RuntimeResourcesPort {
 struct FakeOperations final : target::OperationPort {
   std::optional<target::OwnerFailure> failure;
   bool empty = false;
+  wire::OperationState state = wire::OPERATION_RUNNING;
   int calls = 0;
   std::string owner;
   target::OwnerOutcome<wire::Operation> get(std::string_view owner_value,
@@ -268,7 +297,7 @@ struct FakeOperations final : target::OperationPort {
       operation.mutable_ref()->set_owner_service(std::string{owner_value});
       operation.mutable_ref()->set_operation_id(input.operation_id());
       operation.set_version(7);
-      operation.set_state(wire::OPERATION_RUNNING);
+      operation.set_state(state);
       operation.set_execution_outcome(wire::EXECUTION_UNKNOWN);
       auto* participant = operation.add_participants();
       participant->set_participant("runtime");
@@ -607,6 +636,14 @@ void operation_snapshots() {
   auto model =
       fixture.gateway.handle(request("GET", "/api/v1/operations/model/op-3?scope=" + scope_json()));
   require(model && model->status == 200, "model operation snapshot");
+  // BLOCKED is a successful authoritative snapshot, never a failed operation command.
+  fixture.operations.state = wire::OPERATION_BLOCKED;
+  auto blocked = fixture.gateway.handle(
+      request("GET", "/api/v1/operations/runtime/op-blocked?scope=" + scope_json()));
+  require(blocked && blocked->status == 200 &&
+              blocked->body.find("\"state\":\"OPERATION_BLOCKED\"") != std::string::npos,
+          "blocked operation is a 200 snapshot, not a failure");
+  fixture.operations.state = wire::OPERATION_RUNNING;
   auto bad_owner = fixture.gateway.handle(
       request("GET", "/api/v1/operations/identity/op-4?scope=" + scope_json()));
   require(bad_owner && bad_owner->status == 400, "unknown owner rejected");
@@ -682,6 +719,67 @@ void instance_plugin_state_and_configuration() {
   auto unknown = request("PUT", base + "/unknown");
   require(fixture.gateway.handle(unknown)->status == 404, "unknown instance action");
 }
+void lifecycle_delete_restore() {
+  OwnerCommands fixture;
+  const std::string resource_id = "bbbbbbbb-1111-4111-8111-bbbbbbbbbbbb";
+  const std::string base = "/api/v1/resources/RESOURCE_INSTANCE/" + resource_id;
+  auto remove = request("POST", base + "/delete");
+  remove.headers["idempotency-key"] = "delete-idempotency-0001";
+  remove.body =
+      R"({"resource":{"kind":"RESOURCE_INSTANCE","id":"bbbbbbbb-1111-4111-8111-bbbbbbbbbbbb"},"expected_version":"3"})";
+  auto deleted = fixture.gateway.handle(remove);
+  require(deleted && deleted->status == 202, "begin-delete accepted 202");
+  require(deleted->body.find("delete-operation") != std::string::npos &&
+              deleted->body.find("owner_service") != std::string::npos,
+          "delete returns owner operation ref");
+  require(fixture.delegation.permission == wire::PERMISSION_RESOURCE_MANAGE &&
+              fixture.resources.last_delete.expected_version() == 3 &&
+              fixture.resources.last_delete.resource().id() == resource_id,
+          "delete delegation/permission/expected_version");
+  auto restore = request("POST", base + "/restore");
+  restore.headers["idempotency-key"] = "restore-idempotency-0001";
+  restore.body =
+      R"({"resource":{"kind":"RESOURCE_INSTANCE","id":"bbbbbbbb-1111-4111-8111-bbbbbbbbbbbb"},"expected_version":"1"})";
+  auto restored = fixture.gateway.handle(restore);
+  require(restored && restored->status == 202 &&
+              restored->body.find("restore-operation") != std::string::npos,
+          "restore accepted 202 with operation");
+  // Account resources use account.manage rather than resource.manage.
+  auto account_delete = remove;
+  account_delete.target = "/api/v1/resources/RESOURCE_ACCOUNT/" + resource_id + "/delete";
+  account_delete.body =
+      R"({"resource":{"kind":"RESOURCE_ACCOUNT","id":"bbbbbbbb-1111-4111-8111-bbbbbbbbbbbb"},"expected_version":"2"})";
+  require(fixture.gateway.handle(account_delete)->status == 202 &&
+              fixture.delegation.permission == wire::PERMISSION_ACCOUNT_MANAGE,
+          "account delete uses account.manage");
+  // Path/body mismatch, missing version/idempotency and unknown kind are invalid.
+  auto mismatch = remove;
+  mismatch.body =
+      R"({"resource":{"kind":"RESOURCE_INSTANCE","id":"cccccccc-1111-4111-8111-cccccccccccc"},"expected_version":"3"})";
+  require(fixture.gateway.handle(mismatch)->status == 400, "path/body resource mismatch 400");
+  auto missing_version = remove;
+  missing_version.body =
+      R"({"resource":{"kind":"RESOURCE_INSTANCE","id":"bbbbbbbb-1111-4111-8111-bbbbbbbbbbbb"}})";
+  require(fixture.gateway.handle(missing_version)->status == 400, "expected_version required 400");
+  auto missing_idempotency = remove;
+  missing_idempotency.headers.erase("idempotency-key");
+  require(fixture.gateway.handle(missing_idempotency)->status == 400,
+          "idempotency key required 400");
+  auto missing_token = remove;
+  missing_token.access_token.clear();
+  require(fixture.gateway.handle(missing_token)->status == 401, "lifecycle requires auth");
+  auto unsupported_kind = remove;
+  unsupported_kind.target = "/api/v1/resources/RESOURCE_UNKNOWN/" + resource_id + "/delete";
+  require(fixture.gateway.handle(unsupported_kind)->status == 400, "unknown kind 400");
+  fixture.resources.failure = target::OwnerFailure{wire::CONFLICT, false};
+  require(fixture.gateway.handle(remove)->status == 409, "delete conflict maps 409");
+  fixture.resources.failure = target::OwnerFailure{wire::NOT_FOUND, false};
+  require(fixture.gateway.handle(remove)->status == 404, "delete not-found maps 404");
+  fixture.resources.failure = target::OwnerFailure{wire::UPSTREAM_UNAVAILABLE, true};
+  require(fixture.gateway.handle(remove)->status == 503, "delete owner unavailable maps 503");
+  fixture.resources.failure.reset();
+}
+
 void audit_logs_aggregation() {
   OwnerCommands fixture;
   auto logs = request("GET", "/api/v1/logs?page_size=20&occurred_from=2026-11-02T00:00:00Z");
@@ -1103,6 +1201,7 @@ int main() {
     owner_commands();
     operation_snapshots();
     audit_logs_aggregation();
+    lifecycle_delete_restore();
     instance_plugin_state_and_configuration();
     validation_rules();
     model_management_surface();
