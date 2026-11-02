@@ -204,9 +204,10 @@ def main(driver, identity=None):
                 value.pop('grpc_listen')
             expect(2, {**value, 'runtime_endpoint': 'runtime.internal:7444'},
                    service=service)
-        # identity_endpoint is Runtime/Scheduler-only; other owner services must reject it.
-        for service, name in [('identity', 'identity'), ('model', 'model'),
-                              ('host', 'plugin-host'), ('control', 'control')]:
+        # identity_endpoint belongs to Runtime/Scheduler/Model owner clients; other processes
+        # (identity itself, host, control) must reject it.
+        for service, name in [('identity', 'identity'), ('host', 'plugin-host'),
+                              ('control', 'control')]:
             value = {**config, 'service': name}
             if service == 'control':
                 value.pop('grpc_listen')
