@@ -6,6 +6,7 @@
 
 #include "kiarabot/core/application/target/runtime_bridge_application.hpp"
 #include "kiarabot/core/application/target/runtime_storage_application.hpp"
+#include "kiarabot/core/application/target/runtime_task_application.hpp"
 #include "kiarabot/core/ports/target/runtime_model.hpp"
 #include "kiarabot/v1/services.grpc.pb.h"
 
@@ -28,6 +29,10 @@ struct PluginBridgeOptions {
   // P11c: optional Runtime->Model chat port for PluginToCore.host_request model_chat frames. When
   // null model_chat stays CAPABILITY_NOT_SUPPORTED; other host operations are unaffected.
   target::RuntimeModelPort* model = nullptr;
+  // P10k: optional Runtime task application for HostRequest.task_create/task_get/task_cancel.
+  // When null those frames stay CAPABILITY_NOT_SUPPORTED; the application itself fails closed when
+  // its SchedulerTaskPort is absent/unavailable.
+  target::RuntimeTaskApplication* tasks = nullptr;
 };
 target::Outcome<std::unique_ptr<v1::PluginBridge::Service>>
 make_plugin_bridge(target::RuntimeBridgeApplication& application, PluginBridgeOptions options = {});

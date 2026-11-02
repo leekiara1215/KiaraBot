@@ -615,6 +615,13 @@ ConfigResult load_service_config(const std::string& path, target::Service servic
       }
       keys.insert("model_endpoint");
     }
+    if (document.contains("scheduler_endpoint")) {
+      if (service != target::Service::Runtime || !document["scheduler_endpoint"].is_string() ||
+          !endpoint_valid(document["scheduler_endpoint"].get<std::string>())) {
+        return ConfigFailure{2, "invalid_scheduler_endpoint_config"};
+      }
+      keys.insert("scheduler_endpoint");
+    }
     if (document.contains("runtime_endpoint")) {
       if (service != target::Service::Scheduler || !document["runtime_endpoint"].is_string() ||
           !endpoint_valid(document["runtime_endpoint"].get<std::string>())) {
@@ -720,6 +727,9 @@ ConfigResult load_service_config(const std::string& path, target::Service servic
     }
     if (document.contains("model_endpoint")) {
       config.model_endpoint = document["model_endpoint"].get<std::string>();
+    }
+    if (document.contains("scheduler_endpoint")) {
+      config.scheduler_endpoint = document["scheduler_endpoint"].get<std::string>();
     }
     if (document.contains("model_endpoint")) {
       if (service != target::Service::Runtime || !document["model_endpoint"].is_string() ||

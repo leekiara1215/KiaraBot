@@ -16,18 +16,20 @@
 
 #include "kiarabot/core/application/target/runtime_action_application.hpp"
 #include "kiarabot/core/application/target/runtime_application.hpp"
+#include "kiarabot/core/application/target/runtime_audit_application.hpp"
 #include "kiarabot/core/application/target/runtime_bridge_application.hpp"
 #include "kiarabot/core/application/target/runtime_lifecycle_participants.hpp"
 #include "kiarabot/core/application/target/runtime_readiness.hpp"
 #include "kiarabot/core/application/target/runtime_resource_application.hpp"
-#include "kiarabot/core/application/target/runtime_audit_application.hpp"
 #include "kiarabot/core/application/target/runtime_storage_application.hpp"
+#include "kiarabot/core/application/target/runtime_task_application.hpp"
 #include "kiarabot/core/runtime/platform/host_bridge_server.hpp"
 #include "kiarabot/core/runtime/platform/peer_certificate.hpp"
 #include "kiarabot/core/runtime/platform/runtime_bridge.hpp"
 #include "kiarabot/core/runtime/platform/runtime_identity_client.hpp"
 #include "kiarabot/core/runtime/platform/runtime_model_client.hpp"
 #include "kiarabot/core/runtime/platform/runtime_rpc.hpp"
+#include "kiarabot/core/runtime/platform/scheduler_task_client.hpp"
 #include "kiarabot/core/runtime/platform/service_rpc.hpp"
 #include "kiarabot/infrastructure/postgres/factories.hpp"
 #include "postgres_service.hpp"
@@ -187,6 +189,8 @@ struct State {
   std::unique_ptr<target::RuntimeBridgeApplication> bridge;
   std::unique_ptr<target::HostLifecycleParticipantPort> host_lifecycle;
   std::unique_ptr<platform::RuntimeModelClient> model_client;
+  std::unique_ptr<target::SchedulerTaskPort> scheduler_tasks;
+  std::unique_ptr<target::RuntimeTaskApplication> task_application;
 };
 // Readiness merges the composition-observed database state with the authorization-chain observation
 // and the assembled business implementation. Unobserved inputs remain Unverified and never ready.
@@ -308,14 +312,31 @@ compose_runtime_service(const platform::ProcessConfig& config) {
           }
           state->storage =
               std::move(std::get<std::unique_ptr<target::RuntimeStorageApplication>>(storage));
+          if (config.scheduler_endpoint) {
+            grpc::SslCredentialsOptions ssl;
+            ssl.pem_root_certs = config.tls.ca;
+            ssl.pem_cert_chain = config.tls.certificate;
+            ssl.pem_private_key = config.tls.private_key;
+            auto client = platform::SchedulerTaskClient::create(
+                {*config.scheduler_endpoint, grpc::SslCredentials(ssl),
+                 platform::unavailable_scheduler_task_delegation(),
+                 std::chrono::milliseconds{5000}});
+            if (const auto* failure = std::get_if<target::Failure>(&client)) {
+              return {};
+            }
+            state->scheduler_tasks =
+                std::move(std::get<std::unique_ptr<platform::SchedulerTaskClient>>(client));
+          }
+          state->task_application = std::make_unique<target::RuntimeTaskApplication>(
+              target::RuntimeTaskApplicationDependencies{state->scheduler_tasks.get()});
           if (config.bridge_listen) {
-            auto bridge =
-                target::make_runtime_bridge_application({factory,
-                                                         *state->ids,
-                                                         *state->secrets,
-                                                         *state->application,
-                                                         state->action_application,
-                                                         {"plugin.config.v1", "action.result.v1"}});
+            auto bridge = target::make_runtime_bridge_application(
+                {factory,
+                 *state->ids,
+                 *state->secrets,
+                 *state->application,
+                 state->action_application,
+                 {"plugin.config.v1", "action.result.v1", "host.tasks.v1"}});
             if (const auto* failure = std::get_if<target::Failure>(&bridge)) {
               return {};
             }
@@ -461,11 +482,10 @@ compose_runtime_service(const platform::ProcessConfig& config) {
                                                     std::string_view runtime_epoch) {
           return application->host_command_dispatched(command_id, generation, runtime_epoch);
         };
-        host_persistence.receipt = [application](
-                                       const std::string& command_id, std::uint64_t generation,
-                                       bool persisted,
-                                       std::optional<target::ExecutionOutcome> outcome,
-                                       std::optional<std::string> marker) {
+        host_persistence.receipt = [application](const std::string& command_id,
+                                                 std::uint64_t generation, bool persisted,
+                                                 std::optional<target::ExecutionOutcome> outcome,
+                                                 std::optional<std::string> marker) {
           return application->host_command_receipt(command_id, generation, persisted, outcome,
                                                    std::move(marker));
         };
@@ -503,7 +523,8 @@ compose_runtime_service(const platform::ProcessConfig& config) {
         return *failure;
       }
       auto plugin_bridge = platform::make_plugin_bridge(
-          *state->bridge, {state->storage.get(), state->model_client.get()});
+          *state->bridge,
+          {state->storage.get(), state->model_client.get(), state->task_application.get()});
       if (const auto* failure = std::get_if<target::Failure>(&plugin_bridge)) {
         return *failure;
       }

@@ -128,6 +128,9 @@ struct ProcessConfig {
   std::optional<std::string> identity_endpoint = std::nullopt;
   // Runtime-only: Model owner mTLS endpoint used for plugin host_request.model_chat ingress.
   std::optional<std::string> model_endpoint = std::nullopt;
+  // Runtime-only P10k: Scheduler owner mTLS endpoint for plugin task frames. Absent keeps task
+  // frames fail-closed (CapabilityNotSupported/UPSTREAM_UNAVAILABLE, never fabricated results).
+  std::optional<std::string> scheduler_endpoint = std::nullopt;
   // Scheduler-only: Runtime internal mTLS endpoint used to deliver TimerTriggered handoffs.
   std::optional<std::string> runtime_endpoint = std::nullopt;
   // Host-only: deployment identity, package/profile allowlists and local journal path.

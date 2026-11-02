@@ -1457,6 +1457,200 @@ public:
               wire_error(code, host.request_id(), host.trace_id(), retryable);
           return write(*stream, response);
         };
+        const bool task_operation = host.operation_case() == v1::HostRequest::kTaskCreate ||
+                                    host.operation_case() == v1::HostRequest::kTaskGet ||
+                                    host.operation_case() == v1::HostRequest::kTaskCancel;
+        if (task_operation) {
+          if (!options_.tasks) {
+            if (!reject(target::ErrorCode::CapabilityNotSupported)) {
+              break;
+            }
+            continue;
+          }
+          if (!bridge_uuid(host.request_id()) || !bridge_uuid(host.trace_id())) {
+            if (!reject(target::ErrorCode::InvalidArgument)) {
+              break;
+            }
+            continue;
+          }
+          const auto installed = application_.plugin_profile(state.authorization.fence.instance);
+          if (const auto* rejected = std::get_if<target::Failure>(&installed)) {
+            if (!reject(rejected->code, rejected->recovery == target::Recovery::Backoff)) {
+              break;
+            }
+            continue;
+          }
+          const auto& profile =
+              std::get<target::RuntimeBridgeApplication::BridgePluginProfile>(installed);
+          if (!profile.installation) {
+            if (!reject(target::ErrorCode::PermissionDenied)) {
+              break;
+            }
+            continue;
+          }
+          if (std::find(profile.features.begin(), profile.features.end(), "host.tasks.v1") ==
+              profile.features.end()) {
+            if (!reject(target::ErrorCode::CapabilityNotSupported)) {
+              break;
+            }
+            continue;
+          }
+          const auto has_permission = [&](std::string_view permission) {
+            return std::find(profile.permissions.begin(), profile.permissions.end(), permission) !=
+                   profile.permissions.end();
+          };
+          const bool create = host.operation_case() == v1::HostRequest::kTaskCreate;
+          const bool read = host.operation_case() == v1::HostRequest::kTaskGet;
+          if ((create && !has_permission("task.schedule")) ||
+              (!create && read && !has_permission("task.read")) ||
+              (!create && !read && !has_permission("task.schedule"))) {
+            if (!reject(target::ErrorCode::PermissionDenied)) {
+              break;
+            }
+            continue;
+          }
+          if (create && std::find(profile.subscriptions.begin(), profile.subscriptions.end(),
+                                  "event.timer.triggered") == profile.subscriptions.end()) {
+            if (!reject(target::ErrorCode::PermissionDenied)) {
+              break;
+            }
+            continue;
+          }
+          if (!host.idempotency_key().empty() && host.idempotency_key().size() > 256) {
+            if (!reject(target::ErrorCode::InvalidArgument)) {
+              break;
+            }
+            continue;
+          }
+          auto sampled = application_.current_time();
+          if (const auto* rejected = std::get_if<target::Failure>(&sampled)) {
+            if (!reject(rejected->code, rejected->recovery == target::Recovery::Backoff)) {
+              break;
+            }
+            continue;
+          }
+          const auto now = std::get<target::TimePoint>(sampled);
+          target::TimePoint deadline = now + std::chrono::seconds{5};
+          if (host.has_deadline()) {
+            const auto decoded = codec::from_wire(host.deadline());
+            const auto* value = std::get_if<target::TimePoint>(&decoded);
+            if (!value || *value <= now) {
+              if (!reject(target::ErrorCode::InvalidArgument)) {
+                break;
+              }
+              continue;
+            }
+            deadline = *value;
+          }
+          target::SchedulerTaskContext context{state.authorization.fence.instance,
+                                               *profile.installation,
+                                               host.request_id(),
+                                               host.trace_id(),
+                                               deadline,
+                                               host.idempotency_key()};
+          const auto finish = [&](const auto& result) {
+            if (const auto* rejected = std::get_if<target::Failure>(&result)) {
+              const bool retryable = rejected->recovery == target::Recovery::Backoff ||
+                                     rejected->recovery == target::Recovery::QuerySameIdentity;
+              return reject(rejected->code, retryable);
+            }
+            const auto& task = std::get<target::ScheduledTask>(result);
+            v1::TaskResponse* wire = nullptr;
+            switch (host.operation_case()) {
+            case v1::HostRequest::kTaskCreate:
+              wire = host_response->mutable_task_create();
+              break;
+            case v1::HostRequest::kTaskGet:
+              wire = host_response->mutable_task_get();
+              break;
+            case v1::HostRequest::kTaskCancel:
+              wire = host_response->mutable_task_cancel();
+              break;
+            default:
+              return reject(target::ErrorCode::Internal);
+            }
+            wire->set_task_id(task.key.task_id);
+            switch (task.state) {
+            case target::TaskState::Pending:
+              wire->set_state(v1::SCHEDULED_TASK_PENDING);
+              break;
+            case target::TaskState::Running:
+              wire->set_state(v1::SCHEDULED_TASK_RUNNING);
+              break;
+            case target::TaskState::Retrying:
+              wire->set_state(v1::SCHEDULED_TASK_RETRYING);
+              break;
+            case target::TaskState::Completed:
+              wire->set_state(v1::SCHEDULED_TASK_COMPLETED);
+              break;
+            case target::TaskState::Failed:
+              wire->set_state(v1::SCHEDULED_TASK_FAILED);
+              break;
+            case target::TaskState::Cancelled:
+              wire->set_state(v1::SCHEDULED_TASK_CANCELLED);
+              break;
+            }
+            if (!time_to_wire(task.run_at, wire->mutable_next_run_at())) {
+              return reject(target::ErrorCode::Internal);
+            }
+            wire->set_version(task.version.value);
+            if (!task.occurrence.value.empty()) {
+              wire->set_occurrence_id(task.occurrence.value);
+            }
+            return write(*stream, response);
+          };
+          if (create) {
+            if (host.task_create().task_id().empty() || host.idempotency_key().empty() ||
+                host.task_create().target_conversation().empty()) {
+              if (!reject(target::ErrorCode::InvalidArgument)) {
+                break;
+              }
+              continue;
+            }
+            target::TaskCreationInput input;
+            input.task_id = host.task_create().task_id();
+            input.target = target::ConversationKey{{},
+                                                   {},
+                                                   host.task_create().target_conversation(),
+                                                   target::ConversationKey::Kind::Group};
+            const auto& payload = host.task_create().payload();
+            input.payload.resize(static_cast<std::size_t>(payload.size()));
+            std::memcpy(input.payload.data(), payload.data(), input.payload.size());
+            if (host.task_create().when_case() == v1::TaskCreateRequest::kRunAt) {
+              const auto decoded = codec::from_wire(host.task_create().run_at());
+              const auto* value = std::get_if<target::TimePoint>(&decoded);
+              if (!value) {
+                if (!reject(target::ErrorCode::InvalidArgument)) {
+                  break;
+                }
+                continue;
+              }
+              input.run_at = *value;
+            } else if (host.task_create().when_case() == v1::TaskCreateRequest::kLocalTime) {
+              const auto& local = host.task_create().local_time();
+              input.local_time = target::LocalCivilTime{
+                  local.year(),   local.month(),  local.day(),      local.hour(),
+                  local.minute(), local.second(), local.time_zone()};
+            } else {
+              if (!reject(target::ErrorCode::InvalidArgument)) {
+                break;
+              }
+              continue;
+            }
+            if (!finish(options_.tasks->create_task(context, std::move(input)))) {
+              break;
+            }
+          } else if (read) {
+            if (!finish(options_.tasks->get_task(context, host.task_get().task_id()))) {
+              break;
+            }
+          } else {
+            if (!finish(options_.tasks->cancel_task(context, host.task_cancel().task_id()))) {
+              break;
+            }
+          }
+          continue;
+        }
         if (options_.storage && host.operation_case() != v1::HostRequest::kModelChat) {
           if (!bridge_uuid(host.request_id()) || !bridge_uuid(host.trace_id())) {
             if (!reject(target::ErrorCode::InvalidArgument)) {

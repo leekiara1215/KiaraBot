@@ -218,6 +218,10 @@ public:
   struct BridgePluginProfile {
     std::vector<std::string> permissions;
     std::optional<InstallationId> installation;
+    // P10k: negotiated bridge features (host.tasks.v1) and declared event capabilities
+    // (event.timer.triggered). Derived from the registered session's manifest, never client frames.
+    std::vector<std::string> features;
+    std::vector<std::string> subscriptions;
   };
   virtual Outcome<BridgePluginProfile> plugin_profile(const InstanceId& instance) = 0;
   // P07 plugin Action surface (action.result.v1): submit/query/cancel scoped to the authenticated

@@ -690,6 +690,9 @@ public:
     BridgePluginProfile snapshot;
     snapshot.permissions = profile->second.permissions;
     snapshot.installation = profile->second.installation;
+    snapshot.features = profile->second.enabled_features;
+    snapshot.subscriptions.assign(profile->second.subscriptions.begin(),
+                                  profile->second.subscriptions.end());
     return snapshot;
   }
 
