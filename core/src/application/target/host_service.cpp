@@ -163,6 +163,10 @@ void HostService::stop() {
     }
   }
   flush_pending_locked();
+  // Host-local retention is bounded and only runs during shutdown here (the full periodic Host
+  // maintenance loop is P13b/P14 work); prune after the final observations are flushed so a
+  // terminal row needed for crash diagnosis is not removed before close.
+  (void)dependencies_.journal.prune(now_of(dependencies_.clock), 1000);
   dependencies_.bridge.stop();
   if (journal_open_) {
     dependencies_.journal.close();

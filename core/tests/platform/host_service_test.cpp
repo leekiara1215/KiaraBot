@@ -54,7 +54,9 @@ public:
     return std::monostate{};
   }
   void close() override {
+    close_without_prune = prune_calls == 0;
     opened = false;
+    closed = true;
   }
   t::Outcome<t::PersistedCommand> persist_command(const t::HostCommandRecord& record) override {
     const auto found = commands.find(record.command_id);
@@ -150,7 +152,9 @@ public:
     return last;
   }
   t::Outcome<std::size_t> prune(t::TimePoint, std::size_t) override {
-    return std::size_t{0};
+    ++prune_calls;
+    pruned_before_close = !closed;
+    return std::size_t{1};
   }
 
   std::map<std::string, t::HostCommandRecord> commands;
@@ -158,6 +162,10 @@ public:
   std::vector<t::ExecutionObservation> observations;
   std::uint64_t sequence = 0;
   bool opened = false;
+  bool closed = false;
+  bool close_without_prune = false;
+  bool pruned_before_close = false;
+  std::size_t prune_calls = 0;
 };
 
 class FakeSupervisor final : public t::ProcessSupervisor {
@@ -400,6 +408,43 @@ void test_stop_known_and_unknown_outcomes() {
   require(execution.outcome == t::ExecutionOutcome::Unknown);
 }
 
+void test_stop_is_bounded_and_flushes_before_journal_close() {
+  Harness harness;
+  require(std::holds_alternative<std::monostate>(harness.service->start()));
+  auto second = spec(kInstance2);
+  second.execution_generation = 2;
+  second.desired_version = 2;
+  harness.write_credential(kInstance2, "bootstrap-secret-value-0123456789abcdef");
+  require(std::holds_alternative<t::HostReceipt>(
+      harness.service->apply_desired_process(spec(), "command-1", sha("b"))));
+  require(std::holds_alternative<t::HostReceipt>(
+      harness.service->apply_desired_process(second, "command-2", sha("c"))));
+  harness.service->stop();
+  // Bounded TERM: every active managed execution is asked to stop exactly once.
+  require(harness.supervisor.terminate_calls.size() == 2);
+  // Final observations are flushed before the local journal is pruned and closed.
+  require(harness.journal.prune_calls == 1 && harness.journal.pruned_before_close);
+  require(!harness.journal.close_without_prune && harness.journal.closed);
+  require(!harness.journal.opened);
+  for (const auto& observation : harness.journal.observations) {
+    require(observation.reported);
+  }
+}
+
+void test_stop_unconfirmed_termination_is_unknown_not_stopped() {
+  Harness harness;
+  require(std::holds_alternative<std::monostate>(harness.service->start()));
+  require(std::holds_alternative<t::HostReceipt>(
+      harness.service->apply_desired_process(spec(), "command-1", sha("b"))));
+  harness.supervisor.terminate_failure = t::ErrorCode::UpstreamUnavailable;
+  harness.service->stop();
+  const auto execution = harness.journal.executions.at(std::string(kInstance) + "#1");
+  // Host never fabricates a stopped/succeeded outcome just because shutdown ran.
+  require(execution.state == t::ManagedExecutionState::Unknown);
+  require(execution.outcome == t::ExecutionOutcome::Unknown);
+  require(harness.journal.prune_calls == 1);
+}
+
 void test_same_generation_never_respawns() {
   Harness harness;
   require(std::holds_alternative<std::monostate>(harness.service->start()));
@@ -503,6 +548,8 @@ void run() {
   test_stop_known_and_unknown_outcomes();
   test_same_generation_never_respawns();
   test_drain_stops_all_and_reports_accepted_only();
+  test_stop_is_bounded_and_flushes_before_journal_close();
+  test_stop_unconfirmed_termination_is_unknown_not_stopped();
   test_recovery_never_respawns();
   test_observation_replay_after_bridge_ready();
   test_disconnect_readiness_and_validation();

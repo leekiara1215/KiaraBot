@@ -290,6 +290,12 @@ add_test(NAME p05_runtime_resource_application
 set_tests_properties(p05_runtime_resource_application PROPERTIES
   LABELS "p05;unit" TIMEOUT 30)
 
+# P13a/P13b lifecycle drain/recovery application matrix label; the same binary also carries the
+# historical p05 label so existing phase gates keep their registration.
+add_test(NAME p13_runtime_lifecycle COMMAND kiarabot_runtime_resource_application_test)
+set_tests_properties(p13_runtime_lifecycle PROPERTIES
+  LABELS "p13;unit;fault" TIMEOUT 30)
+
 # P09a Runtime storage/shared-namespace domain+application (phase 1: no PG; ports fail closed
 # until the P07a-A-based PG phase lands). Pure application owns authorization, CAS/condition,
 # quota, receipt replay and audit ordering.

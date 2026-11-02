@@ -78,9 +78,18 @@ int run_host_service(int argc, char* argv[]) {
         if (const auto* failed = std::get_if<t::Failure>(&started)) {
           return *failed;
         }
+        auto* host_service = state->service.get();
         auto service = std::unique_ptr<t::ServiceReadinessPort>(std::move(state->service));
         state->service.reset();
-        return platform::ServiceComposition{std::move(service), {}, {}, {}};
+        platform::ServiceComposition composition{std::move(service), {}, {}, {}};
+        // SIGTERM/SIGINT: finish the bounded Host drain (plugin TERM->KILL, observation flush,
+        // SQLite journal close) before the gRPC listeners are released. An unconfirmed process
+        // termination stays UNKNOWN; this hook never rewrites it to stopped/succeeded.
+        composition.before_stop = [host_service]() -> t::Status {
+          host_service->stop();
+          return std::monostate{};
+        };
+        return composition;
       },
       argc, argv);
 }
