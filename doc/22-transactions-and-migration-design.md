@@ -301,3 +301,7 @@ P13a 的 Host 参与者端口现接到 P08b-3 Runtime host_command outbox：维�
 StopExecution 快照（command_id 确定性、installation/package/desired state、Pending），
 receipt/observation 仍由 HostBridge 后续事务推进；Runtime 重启只重放同一快照，不新增命令，
 无已知 receipt 时保持 BLOCKED/UNKNOWN，绝不把文件清理或命令缺失当作 stopped。
+
+## P13d 清理批次失败与观测边界（2026-11-02）
+
+60 秒保留批次在同一次 owner UoW 内执行多个 prune（receipts、journal、outbox、audit、host_commands、operations、storage receipts）：任一 prune 返回错误只置 `LifecycleMaintenance.cleanup_failed=true` 并让整轮提交（计数/其他 prune 成功项保留），不删除未决/未终态记录；Runtime dependency hook 不因单次清理失败退出，仅在日志写 `operation=lifecycle_maintenance outcome=degraded cleanup_failed=true` 供告警检索。operation 的 blocked/UNKNOWN 仍以 GetOperation participants 为准，清理失败不会把 operation 改成成功；真实满盘/长时积压需 P14c 环境手动注入验证，应用测试用故障 prune 覆盖代码路径。

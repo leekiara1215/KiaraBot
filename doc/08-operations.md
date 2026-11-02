@@ -1479,3 +1479,16 @@ P07d（2026-11-02）：新增真实 NoneBot adapter + fake OneBot WS + 真实 Ru
 过滤逐源转发；审计只回 `audit.read` 源。任一 owner 不可用仍 503 且不返回部分页。真 PG16.4
 测试补充相同 `occurred_at` 的 id DESC 顺序与跨页唯一性。运维仍按 P12c-6 口径：`/logs` 7 天、
 `/audit` 180 天，Control 不缓存、不扩保留期；无源时面板显示“数据源暂不可用”，不得显示为空。
+P13d（2026-11-02）：生命周期可观测最小面（不新增 API/权限/RPC/metrics）。Runtime maintenance 有进展/异常时在 owner stderr 写结构化行：
+`operation=lifecycle_maintenance outcome=degraded reconciled=... completed=... blocked=... purged=... pruned=... cleanup_failed=true|false`（`outcome=ok` 为无 blocked/cleanup 失败）。`cleanup_failed=true` 表示当轮 60 秒保留批次某个 prune 返回错误，属于非致命降级：不伪完成 operation、不提前删除未决记录，继续下一轮；dependency hook 整体失败才会退出进程。P13 排障步骤如下（仅用现有权限 `log.read`/`audit.read` 和 owner 只读库）：
+
+1. **operation 卡住/BLOCKED/UNKNOWN**：`GET /api/v1/operations/runtime/{operationId}`，检查 `state`、`blocked_reason`、`next_attempt`、`participants[].state/reason/next_attempt_at`；participants 中出现 `BLOCKED` 表示 Host/Scheduler 依赖未回执，`UNKNOWN` 表示结果未确认，均不得手工改成成功。审计侧 `GET /api/v1/audit?resource=...` 查 begin_delete/restore 的受理与拒绝记录。
+2. **清理批次失败/满盘**：owner 日志检索 `operation=lifecycle_maintenance` 且 `cleanup_failed=true`，结合容器日志写满/退出码判断；`pruned=0` 持续且 operation 留驻时查看 owner `operations`/`outbox` 表容量。不要手工删除未决行；按 P14c 备份/恢复 runbook 停机处置。
+3. **后台积压/租约**（owner 只读 SQL，需 Runtime 私有角色）：
+   `SELECT state,count(*) FROM kiarabot.operations GROUP BY state;`
+   `SELECT state,count(*),min(next_attempt_at) FROM kiarabot.outbox GROUP BY state;`
+   `SELECT state,count(*),min(lease_until) FROM kiarabot.host_commands GROUP BY state;`
+   `SELECT state,count(*),min(next_attempt_at) FROM kiarabot.delivery_targets GROUP BY state;`
+   容量上限和清理保留期见 P13a schema；UNKNOWN/Pending 行不会被容量淘汰。
+4. **保留期/配额**：operation/tombstone 180 天、非秘密恢复 30 天、delivery 24h/7 天、receipts 与 outbox 各自期限由 maintenance pruned 计数反映；Action 配额拒绝是稳定 RATE_LIMITED，不自动重试成成功。
+5. **交叉引用**：停机/恢复、满盘、备份演练见 P14c runbook（本文件“P14c 本地真实备份/恢复与故障 runbook”）；P13 只保证清理/租约语义，不替代 P14c 的部署级恢复。

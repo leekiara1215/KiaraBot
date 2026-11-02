@@ -1515,3 +1515,14 @@ SDK `ShutdownNotice` 收尾：停止接收新事件，但 reader 在 drain 窗�
 Runtime 生命周期 maintenance 的 Host 参与者不再使用 fake 端口：`RuntimeHostLifecycleParticipant` 在维护线程外开启短 UoW，按与实例 desired-state 一致的确定性 command identity 向 P08b-3 `host_command` outbox 写 `StopExecution` 快照（host/instance/execution_generation/desired_version/package hash/payload hash），同 command_id 重放幂等。只有 outbox 出现持久 receipt 且 `receipt_outcome` 为 `KnownSucceeded/KnownFailed` 时才返回 Done；`Pending/Dispatched/Unknown` 持续 BLOCKED（UNKNOWN 不伪 stopped），Host 明确拒绝（persisted=false）返回可观测 BLOCKED(Conflict)，等待 P08b-3b 的 HostBridge 命令下发/回执与 P13b Host drain 语义完成。Scheduler 参与者仍按 P10 契约的 `ListTasks/CancelTask` 实例委托接口预留：Runtime→Scheduler 的真实 delegation 签发/endpoint 配置未在 composition 中提供前保持 BLOCKED，测试用 fake 端口验证“离线不完成、恢复后收敛”。Control 的 operation 快照（participants/blocked/reason）与 P12c 路由已就绪，本阶段只补 target 登记，不重复实现 REST。
 
 P13 target 翻转（证据：P13a 应用/PG/RPC + 真实 Runtime↔Identity e2e + P13b Host drain 矩阵）：`RuntimeGetOperationRequest/Response`、`RuntimeBeginDeleteRequest/Response`、`RuntimeRestoreResourceRequest/Response`、`Operation`、`OperationRef`、`OperationProgress` 及字段、`OperationState.*`、`operations.getOperation`。`RuntimeService.BeginDelete/RestoreResource/GetOperation` 的 target_spec 状态同步为 implemented；REST 的 beginDelete/restore 操作仍 not_implemented（Control 未接线），getOperation 以 P12c owner gateway 实现并保留 REST 规则的 unavailable marker。
+
+### P13d 生命周期可观测性最小面（2026-11-02）
+
+不新增 API、权限、RPC 或 metrics 通道。Runtime 的 once-per-second dependency hook 在 lifecycle maintenance 有实际进展或异常时向 owner 结构化日志写一行（doc/08 键值格式，仅计数/稳定码）：
+
+`operation=lifecycle_maintenance outcome=ok|degraded reconciled=N completed=N blocked=N purged=N pruned=N cleanup_failed=true|false`
+
+- `blocked>0` 或 `cleanup_failed=true` 时 `outcome=degraded`，用于日志告警/检索；`pruned` 仅在 60 秒保留批次非零时出现；cleanup 失败是**非致命**的（dependency hook 本身失败才会退出进程），不会伪完成 operation，也不清理未决记录。
+- operation/participant 进度仍只由现有 `GetOperation`（participants schema 含 state/reason/next_attempt_at）投影；BLOCKED/UNKNOWN 不映射成全局成功。
+- begin_delete/restore 等命令仍写现有 owner 审计（`ListAudit` 可按 resource/时间过滤）；`ListLogs` 是审计的脱敏投影，不新增业务日志表。
+- 容量/租约/积压通过现有 owner 表只读 SQL 核对（见 doc/08 P13d 排障步骤）；Metrics/告警、集中日志和真实生产规模仍是 P14/环境项。
