@@ -566,13 +566,13 @@ claim/confirm/确认丢失重放、过期 FAILED(TIMEOUT)、重启持久化、�
 
 Runtime 私有库 schema 从 v12 升至 v13（`infrastructure/postgres/schema/v1.hpp`；合并 main 的 P08b-2c/UoW `host_registration()` 后再次用真 PG16.4 实测：host_connections 已在 v12 计入，P08b-2c 未新增 relation，故 Runtime 保持 v13）：`operations` 增加 `created_at/updated_at/retain_until` 与 `(state,retain_until)` 索引；新增 `operation_participants(operation_id,participant,state,reason,next_attempt)`（FK 到 operations，级联删除）和 `lifecycle_tombstones(resource_kind,resource_id,operation_id,state,deleted_at,restore_until,purge_after)`；共享 audit/outbox/operations 表增加 180 天清理索引。四个逻辑库的 descriptor 与 relation_count 用真实 PG16.4 实测同步，rebase 到 main@8f3bfd3 后复测一致：Identity 135/`3caa2e6995fdd42d88f45d01f34017ac`、Runtime 145/`8a4aba6dc6cbc2b555a1fd8053a38cee`、Scheduler 83/`4ec3a4dd616f66e5529d2edc8e67f5f4`、Model 77/`ccee8cca142d137ac2726c48ce8ab8a7`。
 
-**P08b-3/3a（2026-11-02）**：Runtime schema 升至 **v15**（P08b-3 的 host_commands/host_observations
+**P08b-3/3a（2026-11-02）**：Runtime schema 升至 **v16**（P08b-3 的 host_commands/host_observations
 加 P08b-3a 的 `installation_id` 快照列），新增 `host_commands`（command_id 主键、host/instance/
 installation/kind、execution_generation、desired_version/state、package_sha256/launch_profile
 快照、payload_sha256、delivery state、connection_generation/runtime_epoch、receipt 列）与
 `host_observations`（`(host_id,connection_generation,sequence)` 主键去重）；索引
 `host_commands_pending/instance`、`host_observations_instance`。真 PG16.4 实测 Runtime descriptor
-`d46d5778e97f72eab73d46ef5112016b`、relation_count **152**；其它三库不变。HostBridge server 已接
+`ec12933ab8bff61620db24ebcb05ef44`、relation_count **152**；其它三库不变。HostBridge server 已接
 PG 回调：注册/心跳时按当前 generation 从 outbox 下发，receipt 条件更新（旧 generation 拒绝），
 observation 按序去重写入；30s 未回执转 Unknown、7d/30d 保留清理挂在 P13a 60s 清理批次。
 

@@ -1,8 +1,9 @@
 # P08 Host 受管执行与 HostBridge（P08a–P08b-3 进展）
 
-状态（2026-11-02）：**P08 未退出**。传输层（P08b-2b）、Runtime 命令/观察持久化（P08b-3）
-与 HostBridge 下发/receipt/observation PG 接线（P08b-3a）已完成；真实 Host 二进制 e2e 与受管
-bootstrap 自动写入 Host credential_directory 属 3b，仍未完成。
+状态（2026-11-02）：**P08 未退出**。传输层（P08b-2b）、Runtime 命令/观察持久化（P08b-3）、
+HostBridge 下发/receipt/observation PG 接线（P08b-3a）与真 PG16.4+真 Runtime+fake Host 的
+e2e（P08b-3b）已完成；真实 `kiarabot-plugin-host`+受管 SDK 插件进程联测、以及受管 bootstrap
+自动写入 Host credential_directory 仍未完成。
 
 ## 已实现
 

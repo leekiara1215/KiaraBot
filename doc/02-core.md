@@ -495,6 +495,23 @@ P08b 在 Runtime application 内新增 HostBridge 入站应用：内部 mTLS 注
 Runtime 只存 SHA-256、明文仅出现在部署方 CreateInstance 响应。**未完成**：HostBridge server
 从 outbox 下发 apply/stop/drain、receipt/observation 帧写回 PG、重连重放/resync、restart/delete
 命令与 Host 凭据目录自动预置；因此 command 的发送/确认仍没有端到端证据。
+**P08b-3/3a（已实现传输闭环，3b 真实 Host/凭据待完成）**：Runtime UoW 新增 `host_commands()`
+（默认 fail-closed），PG 实现 outbox 与 observation inbox（schema v16，含 installation 快照）；
+P05 `CreateInstance`（带 host）与 `SetDesiredState` 在同 UoW 写确定性 `hc-<payload sha256>`
+快照，重复幂等/异 payload CONFLICT。HostBridge server 在注册和每次 heartbeat 后按当前
+connection_generation 读取 pending，下发 apply/stop/drain（含 command_id/generation/
+installation/desired version/package/launch profile/args/env 与 payload hash），写入成功后标记
+Dispatched；receipt 帧按 (command_id, connection_generation) 条件更新，旧 generation/不一致
+receipt 返回 FAILURE，重复相同 receipt 幂等；observation 帧按
+(host,connection_generation,cursor.sequence) 去重写入，校验 cursor epoch/generation，重复帧与
+resync 重放幂等；新 connection 重放未 receipt 的同一 command_id。30s 未回执转 Unknown（不写
+stopped），P13a 60s 清理批次执行 7d/30d 保留。**P08b-3b（部分）**：新增 `p08_host_bridge_e2e`，用真 PG16.4+真 mTLS Runtime+fake Host
+客户端覆盖注册→apply 下发→receipt/observation 落 PG→重复 observation 去重→重连 generation→
+旧 fence 拒绝；修复 host_commands kind CHECK 与 domain 枚举不一致（1..3）及 installation_id
+读取缺失，Runtime schema v16（descriptor `ec12933ab8bff61620db24ebcb05ef44`/152）。
+**未完成**：真实 `kiarabot-plugin-host`+受管 SDK 插件进程联测；受管 bootstrap 自动写入 Host
+credential_directory 受冻结协议约束（无凭据交付帧，Runtime 不应直接写 Host 文件系统），
+需部署侧 helper 或契约/用户确认；restart/Delete 专门命令快照仍未接。
 
 ## P09/P10 目标 Storage/Scheduler 应用与端口（未实现）
 
