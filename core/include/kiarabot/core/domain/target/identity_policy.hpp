@@ -13,7 +13,7 @@
 
 namespace kiarabot::core::target {
 
-inline constexpr std::array<std::pair<std::string_view, Permission>, 40> kPermissionNames{
+inline constexpr std::array<std::pair<std::string_view, Permission>, 50> kPermissionNames{
     {{"account.manage", Permission::AccountManage},
      {"account.policy.manage", Permission::AccountPolicyManage},
      {"account.policy.read", Permission::AccountPolicyRead},
@@ -53,7 +53,17 @@ inline constexpr std::array<std::pair<std::string_view, Permission>, 40> kPermis
      {"plugin.read", Permission::PluginRead},
      {"adapter.read", Permission::AdapterRead},
      {"plugin.config.read", Permission::PluginConfigRead},
-     {"message.read", Permission::MessageRead}}};
+     {"message.read", Permission::MessageRead},
+     {"message.send", Permission::MessageSend},
+     {"message.react", Permission::MessageReact},
+     {"message.delete", Permission::MessageDelete},
+     {"member.mute", Permission::MemberMute},
+     {"member.kick", Permission::MemberKick},
+     {"request.approve", Permission::RequestApprove},
+     {"namespace.read", Permission::NamespaceRead},
+     {"log.read", Permission::LogRead},
+     {"audit.read", Permission::AuditRead},
+     {"health.read", Permission::HealthRead}}};
 inline bool known_permission(Permission permission) {
   for (const auto& entry : kPermissionNames) {
     if (entry.second == permission) {

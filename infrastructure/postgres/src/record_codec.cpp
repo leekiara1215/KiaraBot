@@ -1028,7 +1028,7 @@ target::ReplayResult load_record(pqxx::transaction_base& transaction, std::int64
         throw std::runtime_error("invalid stored exact result position");
       }
       value.explicit_permissions.push_back(
-          {enum_field<target::Permission>(permission["permission"], 40),
+          {enum_field<target::Permission>(permission["permission"], 50),
            {enum_field<target::ResourceKind>(permission["resource_kind"], 15),
             {permission["resource_id"].as<std::string>()}}});
     }

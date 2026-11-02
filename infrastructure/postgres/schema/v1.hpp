@@ -9,7 +9,8 @@ namespace kiarabot::infrastructure::postgres::schema {
 inline constexpr int version(core::target::Service owner) {
   switch (owner) {
   case core::target::Service::Identity:
-    return 14;
+    // P14h aligns exact_permissions/result_exact_permissions CHECK with wire Permission 1..50.
+    return 15;
   case core::target::Service::Runtime:
     // P05 adds Runtime relations/columns, shared replay-result relations and the private
     // bridge_credentials relation; P06 adds the five event/delivery relations and A1's
@@ -20,18 +21,20 @@ inline constexpr int version(core::target::Service owner) {
     // and P08b-3 host_commands outbox + host_observations inbox (P08b-3a adds the
     // installation snapshot column; P08b-3b fixes the command-kind CHECK range); P13a adds
     // operation retention/participants, audit/outbox cleanup indexes and the lifecycle tombstone
-    // relation.
-    return 16;
+    // relation; P14h aligns the shared result_exact_permissions CHECK with wire Permission 1..50.
+    return 17;
   case core::target::Service::Scheduler:
     // P10a adds task/occurrence observation columns, the quota counter relation and due/owner
     // indexes; P07 adds the shared nullable audit target columns to every service schema. The
-    // merged schema keeps version 9 (both prior increments were measured at Scheduler v8).
-    return 9;
+    // merged schema keeps version 9 (both prior increments were measured at Scheduler v8);
+    // P14h aligns the shared result_exact_permissions CHECK with wire Permission 1..50.
+    return 10;
   case core::target::Service::Model:
     // P11a adds model_configs + encrypted_provider_secrets and extends model_intents with the
     // durable call facts (disposition/UNKNOWN resolution/usage); P07 adds the shared nullable
-    // audit target columns to every service schema.
-    return 8;
+    // audit target columns to every service schema; P14h aligns the shared
+    // result_exact_permissions CHECK with wire Permission 1..50.
+    return 9;
   }
   return 0;
 }

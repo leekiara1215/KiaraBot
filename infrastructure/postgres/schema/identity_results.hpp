@@ -4,6 +4,8 @@
 
 namespace kiarabot::infrastructure::postgres::schema {
 // Immutable public success snapshots, available in every owner's ordinary receipt store.
+// Permission CHECK is aligned with the frozen wire Permission range (1..50); this is a common
+// result table, so the constraint change is reflected in all four owner schemas/descriptors.
 // No foreign key to mutable live authority and no secret/verifier columns.
 inline constexpr std::string_view kIdentityResults = R"sql(
 CREATE TABLE kiarabot.result_registrations (
@@ -34,7 +36,7 @@ CREATE TABLE kiarabot.result_exact_roles (
 );
 CREATE TABLE kiarabot.result_exact_permissions (
   result_id bigint NOT NULL REFERENCES kiarabot.result_exact_assignments(result_id) ON DELETE CASCADE,
-  position bigint NOT NULL CHECK(position>=0), permission integer NOT NULL CHECK(permission BETWEEN 1 AND 40),
+  position bigint NOT NULL CHECK(position>=0), permission integer NOT NULL CHECK(permission BETWEEN 1 AND 50),
   resource_kind integer NOT NULL CHECK(resource_kind BETWEEN 0 AND 15), resource_id text NOT NULL CHECK(resource_id<>''),
   PRIMARY KEY(result_id,position)
 );

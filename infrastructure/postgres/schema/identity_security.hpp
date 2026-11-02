@@ -126,7 +126,7 @@ CREATE TABLE kiarabot.exact_roles (
 );
 CREATE TABLE kiarabot.exact_permissions (
   assignment text NOT NULL REFERENCES kiarabot.exact_assignments(id) ON DELETE CASCADE,
-  permission integer NOT NULL CHECK(permission BETWEEN 1 AND 40),
+  permission integer NOT NULL CHECK(permission BETWEEN 1 AND 50),
   resource_kind integer NOT NULL CHECK(resource_kind BETWEEN 0 AND 15), resource_id text NOT NULL,
   PRIMARY KEY(assignment,permission,resource_kind,resource_id)
 );
