@@ -1558,3 +1558,10 @@ P07g（2026-11-02）：P07 Action 退出证据已按当前 HEAD 复核：`p07_ac
 - **与 Compose 单机差异**：无镜像构建/Compose/healthcheck/restart/非 root/只读/秘密挂载/
   官方 PG 镜像；无 Host/Adapter/Bridge、真实 QQ/Provider、两主机与备份演练。详见
   [architecture-p14f-native-single-host.md](../reports/modules/architecture-p14f-native-single-host.md)。
+
+## P14g Control 委派 scope、occurrence 与 readiness 运维口径（2026-11-02）
+
+- Control owner-backed 调用不再发送空 ResourceScope：health/principals/安装实例创建使用显式 `RESOURCE_CATALOG id=control`，其余按 exact resource scope；原生栈若 Identity 拒绝该 scope/assignment 应显式 403/400 并 fail-closed，禁止伪成功。角色/assignment 需在离线 bootstrap 中授予对应 catalog 权限（health.read/log.read/audit.read 等敏感权限仍受 PG 迁移现状约束，见 P14f 缺口）。
+- `/health/ready` 语义：Control probe 只有自身 HTTPS 组合就绪 **且** Control→Identity 校验/撤销 channel READY 才 HEALTHY；Identity 不可达返回 503（UNHEALTHY），运维应先检查 Identity readiness/证书/网络，而非重启 Control 或伪造 probe。
+- `GET /api/v1/occurrences/{id}` 仅作 owner 投影查询（task.read + explicit scope），不是调度触发入口；404/409/503 按 owner 语义处理，不得据 occurrence 状态反推任务执行成功。
+- 原生栈重跑：P14f harness 现有断言改为等待 Control probe HEALTHY；若仍 UNHEALTHY，先核对 Identity readiness 与 Control 配置 identity_endpoint/TLS CA。

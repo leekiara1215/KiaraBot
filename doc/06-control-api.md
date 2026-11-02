@@ -689,3 +689,9 @@ P07d 真实 adapter e2e 的事件 fan-out 断言现已覆盖：真实 adapter �
 - Runtime 的 owner 路径由 `p05_runtime_*` 4 项覆盖，其中 `p05_runtime_identity_e2e` 为真实双进程 mTLS/委托/PG16.4、允许与撤销后拒绝；这仍是本机证据，不代表目标六服务栈 live。
 - target 状态：Identity 7/23 方法、Runtime 10/55 方法已登记 implemented；P04 认证链、P05 核心资源方法、ListPrincipals 等未翻项、`bootstrap_credential` 字段级与 P05b 委托缺口见 [P04 报告](../reports/modules/architecture-p04-identity.md)/[P05 报告](../reports/modules/architecture-p05-runtime.md) 的 P05f 段。
 - Control 消费说明：P04 认证/撤销语义不变；P05 的 `runtime_endpoint` 必须配置且 Identity 的 Runtime/Scheduler/Model platform peers 已离线登记，否则 fail-closed/503；P05b 实例委托未确认前，Model 深链路不宣称完成。
+
+## P10i/P14g Execution（2026-11-02，main@4e88fb4）
+
+- `GET /api/v1/occurrences/{occurrenceId}` 已接线 Scheduler `GetOccurrence`：required `scope` 查询必须恰含一个资源（通常 `RESOURCE_ACCOUNT`），Control 以该 scope 发 `task.read` 一次性委托；成功返回 owner occurrence 投影（occurrence_id/task_id/state/handoff/accepted_event_id/attempts/last_error/时间戳），缺 scope/未登录/非法→400/401，owner 拒绝→403/404/409，owner 不可用→503。目标执行范围已翻转，REST OpenAPI marker 按 owner-RPC 规则保持 not_implemented。
+- **Control 委派 scope 修复**：所有 owner-backed 请求禁止空 `ResourceScope`；`/health`（health.read）、`/principals`（identity.principal.read）、安装/实例创建（plugin.manage）改为显式 `RESOURCE_CATALOG id=control`，其余绑定/配置/策略/任务/模型/operation/delete-restore 使用契约要求的 exact resource scope。Identity owner 校验该显式 catalog/resource scope；P04/P12 真实 TLS/fixture 成功链已覆盖。
+- **`/health/ready` 语义**：Control 进程 probe readiness 由组合根观测驱动——TLS 材料已加载、Control HTTPS 组合完成、Control→Identity 校验/撤销 channel READY 才 HEALTHY；Identity 不可达时返回 503 UNHEALTHY，而不是固定占位 false。受权 `/api/v1/health` 的四依赖聚合语义不变（Identity 故障整体未就绪，Runtime/Scheduler/Model 单点降级）。
