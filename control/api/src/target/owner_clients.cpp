@@ -20,6 +20,7 @@
 #include "kiarabot/control/target/owner_gateway.hpp"
 #include "kiarabot/core/runtime/platform/target_codec.hpp"
 #include "kiarabot/v1/identity.grpc.pb.h"
+#include "kiarabot/v1/model.grpc.pb.h"
 #include "kiarabot/v1/runtime.grpc.pb.h"
 #include "kiarabot/v1/scheduler.grpc.pb.h"
 
@@ -84,7 +85,8 @@ class OwnerClients::Impl final : private DelegationPort,
                                  private IdentityPrincipalsPort,
                                  private HealthPort,
                                  private RuntimeResourcesPort,
-                                 private SchedulerTasksPort {
+                                 private SchedulerTasksPort,
+                                 private OperationPort {
 public:
   Impl(const std::string& identity_endpoint, const std::string& runtime_endpoint,
        const std::string& scheduler_endpoint, const std::string& model_endpoint,
@@ -106,6 +108,7 @@ public:
     }
     if (!model_endpoint.empty()) {
       model_channel_ = grpc::CreateChannel(model_endpoint, credentials);
+      model_ = wire::ModelService::NewStub(model_channel_);
     }
     if (!host_endpoint.empty()) {
       host_channel_ = grpc::CreateChannel(host_endpoint, credentials);
@@ -114,7 +117,8 @@ public:
     gateway_ = std::make_unique<OwnerGateway>(
         static_cast<DelegationPort&>(*this), static_cast<RuntimeActionsPort&>(*this),
         static_cast<IdentityPrincipalsPort*>(this), static_cast<HealthPort*>(this),
-        static_cast<RuntimeResourcesPort*>(this), static_cast<SchedulerTasksPort*>(this));
+        static_cast<RuntimeResourcesPort*>(this), static_cast<SchedulerTasksPort*>(this),
+        static_cast<OperationPort*>(this));
   }
 
   std::optional<AuthHttpResponse> handle(const AuthHttpRequest& request) {
@@ -341,6 +345,72 @@ private:
     return unary_task(&wire::SchedulerService::Stub::GetTask, input, delegation);
   }
 
+  OwnerOutcome<wire::Operation> get(std::string_view owner_service,
+                                    const wire::OperationRef& operation,
+                                    std::string_view delegation) override {
+    auto set_context = [&](wire::RequestContext* context,
+                           const google::protobuf::Timestamp& deadline_from) {
+      context->set_request_id(random_identifier());
+      context->set_trace_id(random_identifier());
+      *context->mutable_deadline() = deadline_from;
+      context->set_delegation(std::string{delegation});
+    };
+    google::protobuf::Timestamp deadline;
+    deadline.set_seconds(std::chrono::duration_cast<std::chrono::seconds>(
+                             std::chrono::system_clock::now().time_since_epoch())
+                             .count() +
+                         5);
+    if (owner_service == "runtime") {
+      if (!runtime_) {
+        return OwnerFailure{wire::UPSTREAM_UNAVAILABLE, true};
+      }
+      wire::RuntimeGetOperationRequest input;
+      set_context(input.mutable_context(), deadline);
+      *input.mutable_operation() = operation;
+      wire::RuntimeGetOperationResponse output;
+      grpc::ClientContext call;
+      call.set_deadline(std::chrono::system_clock::now() + std::chrono::seconds{5});
+      const auto status = runtime_->GetOperation(&call, input, &output);
+      if (!status.ok()) {
+        return OwnerFailure{extract_error_code(status).value_or(wire::UPSTREAM_UNAVAILABLE), false};
+      }
+      return output.operation();
+    }
+    if (owner_service == "scheduler") {
+      if (!scheduler_) {
+        return OwnerFailure{wire::UPSTREAM_UNAVAILABLE, true};
+      }
+      wire::SchedulerGetOperationRequest input;
+      set_context(input.mutable_context(), deadline);
+      *input.mutable_operation() = operation;
+      wire::SchedulerGetOperationResponse output;
+      grpc::ClientContext call;
+      call.set_deadline(std::chrono::system_clock::now() + std::chrono::seconds{5});
+      const auto status = scheduler_->GetOperation(&call, input, &output);
+      if (!status.ok()) {
+        return OwnerFailure{extract_error_code(status).value_or(wire::UPSTREAM_UNAVAILABLE), false};
+      }
+      return output.operation();
+    }
+    if (owner_service == "model") {
+      if (!model_) {
+        return OwnerFailure{wire::UPSTREAM_UNAVAILABLE, true};
+      }
+      wire::ModelGetOperationRequest input;
+      set_context(input.mutable_context(), deadline);
+      *input.mutable_operation() = operation;
+      wire::ModelGetOperationResponse output;
+      grpc::ClientContext call;
+      call.set_deadline(std::chrono::system_clock::now() + std::chrono::seconds{5});
+      const auto status = model_->GetOperation(&call, input, &output);
+      if (!status.ok()) {
+        return OwnerFailure{extract_error_code(status).value_or(wire::UPSTREAM_UNAVAILABLE), false};
+      }
+      return output.operation();
+    }
+    return OwnerFailure{wire::INVALID_ARGUMENT, false};
+  }
+
   OwnerOutcome<wire::IdentityListPrincipalsResponse>
   list_principals(const wire::IdentityListPrincipalsRequest& request,
                   std::string_view delegation) override {
@@ -399,6 +469,7 @@ private:
   std::shared_ptr<grpc::Channel> scheduler_channel_;
   std::unique_ptr<wire::SchedulerService::Stub> scheduler_;
   std::shared_ptr<grpc::Channel> model_channel_;
+  std::unique_ptr<wire::ModelService::Stub> model_;
   std::shared_ptr<grpc::Channel> host_channel_;
   std::optional<std::array<unsigned char, SHA256_DIGEST_LENGTH>> fingerprint_;
 };

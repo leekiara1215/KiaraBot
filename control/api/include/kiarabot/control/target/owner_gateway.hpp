@@ -8,6 +8,7 @@
 
 #include "kiarabot/core/domain/target/foundation.hpp"
 #include "kiarabot/v1/identity.pb.h"
+#include "kiarabot/v1/model.pb.h"
 #include "kiarabot/v1/policy.pb.h"
 #include "kiarabot/v1/runtime.pb.h"
 #include "kiarabot/v1/scheduler.pb.h"
@@ -111,6 +112,16 @@ public:
   get_task(const kiarabot::v1::SchedulerGetTaskRequest&, std::string_view) = 0;
 };
 
+// Authoritative owner operation snapshot. Each owner stores its own operation; Control only
+// routes to the named owner and never synthesizes progress.
+class OperationPort {
+public:
+  virtual ~OperationPort() = default;
+  virtual OwnerOutcome<kiarabot::v1::Operation> get(std::string_view owner_service,
+                                                    const kiarabot::v1::OperationRef& operation,
+                                                    std::string_view delegation) = 0;
+};
+
 class RuntimeActionsPort {
 public:
   virtual ~RuntimeActionsPort() = default;
@@ -134,9 +145,10 @@ class OwnerGateway {
 public:
   OwnerGateway(DelegationPort& delegation, RuntimeActionsPort& runtime,
                IdentityPrincipalsPort* principals = nullptr, HealthPort* health = nullptr,
-               RuntimeResourcesPort* resources = nullptr, SchedulerTasksPort* tasks = nullptr)
+               RuntimeResourcesPort* resources = nullptr, SchedulerTasksPort* tasks = nullptr,
+               OperationPort* operations = nullptr)
       : delegation_(delegation), runtime_(runtime), principals_(principals), health_(health),
-        resources_(resources), tasks_(tasks) {}
+        resources_(resources), tasks_(tasks), operations_(operations) {}
   std::optional<OwnerHttpResult> handle(const OwnerHttpRequest& request);
   // Health probes are local process facts plus the composition-provided readiness answer.
   static OwnerHttpResult live();
@@ -149,6 +161,7 @@ private:
   HealthPort* health_;
   RuntimeResourcesPort* resources_;
   SchedulerTasksPort* tasks_;
+  OperationPort* operations_;
 };
 
 } // namespace kiarabot::control::target

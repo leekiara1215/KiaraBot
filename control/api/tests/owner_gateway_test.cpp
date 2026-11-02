@@ -211,6 +211,37 @@ struct FakeResources final : target::RuntimeResourcesPort {
     return ok(response);
   }
 };
+struct FakeOperations final : target::OperationPort {
+  std::optional<target::OwnerFailure> failure;
+  bool empty = false;
+  int calls = 0;
+  std::string owner;
+  target::OwnerOutcome<wire::Operation> get(std::string_view owner_value,
+                                            const wire::OperationRef& input,
+                                            std::string_view delegation) override {
+    ++calls;
+    owner = std::string{owner_value};
+    require(delegation == "delegation-proof", "operation receives delegation");
+    if (failure) {
+      return *failure;
+    }
+    wire::Operation operation;
+    if (!empty) {
+      operation.mutable_ref()->set_owner_service(std::string{owner_value});
+      operation.mutable_ref()->set_operation_id(input.operation_id());
+      operation.set_version(7);
+      operation.set_state(wire::OPERATION_RUNNING);
+      operation.set_execution_outcome(wire::EXECUTION_UNKNOWN);
+      auto* participant = operation.add_participants();
+      participant->set_participant("runtime");
+      participant->set_state(wire::OPERATION_RUNNING);
+      operation.mutable_observed_at()->set_seconds(1'700'000'000);
+      operation.mutable_next_attempt_at()->set_seconds(1'700'000'030);
+      operation.set_stalled(true);
+    }
+    return operation;
+  }
+};
 struct FakeTasks final : target::SchedulerTasksPort {
   std::optional<target::OwnerFailure> failure;
   int calls = 0;
@@ -250,7 +281,9 @@ struct OwnerCommands {
   FakeHealth health;
   FakeResources resources;
   FakeTasks tasks;
-  target::OwnerGateway gateway{delegation, runtime, &principals, &health, &resources, &tasks};
+  FakeOperations operations;
+  target::OwnerGateway gateway{delegation, runtime, &principals, &health,
+                               &resources, &tasks,  &operations};
 };
 struct ExtendedGateway {
   FakeDelegation delegation;
@@ -434,6 +467,9 @@ void owner_commands() {
   auto listed = fixture.gateway.handle(tasks);
   require(listed && listed->status == 200 && listed->body.find("task-1") != std::string::npos,
           "task list forwards scope/page");
+  require(listed->body.find("\"items\"") != std::string::npos &&
+              listed->body.find("\"page\"") != std::string::npos,
+          "task list uses OpenAPI TaskPage shape");
   auto cancel = request("POST", "/api/v1/tasks/task-1/cancel?scope=" + scope_json());
   auto cancelled = fixture.gateway.handle(cancel);
   require(cancelled && cancelled->status == 200 &&
@@ -445,6 +481,46 @@ void owner_commands() {
       request("GET", "/api/v1/tasks/" + std::string{"task-1"} + "?scope=" + scope_json());
   fixture.tasks.failure = target::OwnerFailure{wire::UPSTREAM_UNAVAILABLE, true};
   require(fixture.gateway.handle(unavailable)->status == 503, "task owner unavailable maps 503");
+}
+
+void operation_snapshots() {
+  OwnerCommands fixture;
+  auto runtime = request("GET", "/api/v1/operations/runtime/operation-1?scope=" + scope_json());
+  auto snapshot = fixture.gateway.handle(runtime);
+  require(snapshot && snapshot->status == 200, "runtime operation snapshot");
+  require(snapshot->body.find("\"state\":\"OPERATION_RUNNING\"") != std::string::npos &&
+              snapshot->body.find("\"execution_outcome\":\"EXECUTION_UNKNOWN\"") !=
+                  std::string::npos &&
+              snapshot->body.find("\"participants\"") != std::string::npos &&
+              snapshot->body.find("\"stalled\":true") != std::string::npos,
+          "operation progress/unknown/stalled fields");
+  require(snapshot->body.find("\"version\":\"7\"") != std::string::npos,
+          "version is a JSON string");
+  require(fixture.operations.owner == "runtime" &&
+              fixture.delegation.permission == wire::PERMISSION_RESOURCE_READ,
+          "runtime operation delegation");
+  auto scheduler = fixture.gateway.handle(
+      request("GET", "/api/v1/operations/scheduler/op-2?scope=" + scope_json()));
+  require(scheduler && scheduler->status == 200 &&
+              fixture.delegation.permission == wire::PERMISSION_TASK_READ,
+          "scheduler operation uses task.read");
+  auto model =
+      fixture.gateway.handle(request("GET", "/api/v1/operations/model/op-3?scope=" + scope_json()));
+  require(model && model->status == 200, "model operation snapshot");
+  auto bad_owner = fixture.gateway.handle(
+      request("GET", "/api/v1/operations/identity/op-4?scope=" + scope_json()));
+  require(bad_owner && bad_owner->status == 400, "unknown owner rejected");
+  auto no_scope = fixture.gateway.handle(request("GET", "/api/v1/operations/runtime/op-1"));
+  require(no_scope && no_scope->status == 400, "operation query requires scope");
+  fixture.operations.empty = true;
+  auto missing = fixture.gateway.handle(
+      request("GET", "/api/v1/operations/runtime/missing?scope=" + scope_json()));
+  require(missing && missing->status == 404, "missing operation is NOT_FOUND, not completion");
+  fixture.operations.empty = false;
+  fixture.operations.failure = target::OwnerFailure{wire::CONFLICT, false};
+  auto conflict = fixture.gateway.handle(
+      request("GET", "/api/v1/operations/runtime/op-1?scope=" + scope_json()));
+  require(conflict && conflict->status == 409, "owner conflict maps 409");
 }
 
 void sensitive_read_permissions() {
@@ -491,6 +567,7 @@ int main() {
     principals_catalog();
     sensitive_read_permissions();
     owner_commands();
+    operation_snapshots();
     validation_rules();
   } catch (const std::exception& error) {
     std::cerr << error.what() << '\n';
