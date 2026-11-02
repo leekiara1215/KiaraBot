@@ -32,6 +32,8 @@ PLUGIN_INSTANCE = '44444444-4444-4444-8444-444444444444'
 INSTALLATION = '55555555-5555-4555-8555-555555555555'
 SHUTDOWN_INSTANCE = 'a1a1a1a1-a1a1-4a1a-8a1a-a1a1a1a1a1a1'
 SHUTDOWN_BOOTSTRAP = 'c' * 64
+OTHER_INSTANCE = '99999999-9999-4999-8999-999999999999'
+OTHER_INSTALLATION = 'abababab-abab-4bab-8bab-abababababab'
 UNBOUND_ACCOUNT = '22222222-2222-4222-8222-222222222222'
 ADAPTER_ID = '88888888-8888-4888-8888-888888888888'
 ADAPTER_BOOTSTRAP = 'a' * 64
@@ -999,6 +1001,62 @@ async def async_main(args) -> None:
                     condition=common.StorageCondition(absent=True)))
             require(not shared_set.HasField('error') and shared_set.storage_set.version == 1,
                     'shared storage set mismatch')
+            # P13e: deleting one member/namespace must not delete another member's or the
+            # owner's private data. Seeds a second member on the shared namespace, a second
+            # installation's shared namespace/value, and a private value; then removes the
+            # current plugin's membership row and proves access is denied while all rows remain.
+            other_namespace = str(__import__('uuid').uuid4())
+            private_keep = await storage_frame(
+                'storage private keep set',
+                idempotency_key='p09-private-keep-' + str(__import__('uuid').uuid4()),
+                storage_set=plugins.StorageSetRequest(
+                    key='p09/keep', value=b'private-keep', scope=private_scope))
+            require(not private_keep.HasField('error'), 'private keep set failed')
+            psql(pg_bin, root, port, runtime_password,
+                 "INSERT INTO kiarabot.namespace_members(namespace_id,instance_id,can_read,"
+                 "can_write,version,joined_at) VALUES (" + quote_sql(shared_namespace) + "," +
+                 quote_sql(OTHER_INSTANCE) + ",true,true,1,1);"
+                 "INSERT INTO kiarabot.namespace_values(namespace_id,key,value,version,"
+                 "expires_at,updated_at) VALUES (" + quote_sql(shared_namespace) +
+                 ",'shared/other-member','other',1,NULL,1);"
+                 "INSERT INTO kiarabot.namespaces(namespace_id,installation_id,kind,"
+                 "owner_instance,disabled,version,created_at,updated_at) VALUES (" +
+                 quote_sql(other_namespace) + "," + quote_sql(OTHER_INSTALLATION) +
+                 ",1,NULL,false,1,1,1);"
+                 "INSERT INTO kiarabot.namespace_members(namespace_id,instance_id,can_read,"
+                 "can_write,version,joined_at) VALUES (" + quote_sql(other_namespace) + "," +
+                 quote_sql(OTHER_INSTANCE) + ",true,true,1,1);"
+                 "INSERT INTO kiarabot.namespace_values(namespace_id,key,value,version,"
+                 "expires_at,updated_at) VALUES (" + quote_sql(other_namespace) +
+                 ",'other/keep','other-namespace',1,NULL,1)")
+            psql(pg_bin, root, port, runtime_password,
+                 "DELETE FROM kiarabot.namespace_members WHERE namespace_id=" +
+                 quote_sql(shared_namespace) + " AND instance_id=" +
+                 quote_sql(PLUGIN_INSTANCE))
+            require_storage_error(await storage_frame(
+                'storage revoked member denial',
+                storage_get=plugins.StorageGetRequest(key='shared/seed', scope=shared_scope)),
+                'revoked member access', common.PERMISSION_DENIED)
+            first_values = int(psql(pg_bin, root, port, runtime_password,
+                                     "SELECT count(*) FROM kiarabot.namespace_values WHERE "
+                                     "namespace_id=" + quote_sql(shared_namespace)).stdout.strip())
+            require(first_values == 3,
+                    f'revoked member deletion removed shared values: {first_values}')
+            other_values = int(psql(pg_bin, root, port, runtime_password,
+                                     "SELECT count(*) FROM kiarabot.namespace_values WHERE "
+                                     "namespace_id=" + quote_sql(other_namespace)).stdout.strip())
+            require(other_values == 1, 'member revocation touched another namespace')
+            other_member = int(psql(pg_bin, root, port, runtime_password,
+                                     "SELECT count(*) FROM kiarabot.namespace_members WHERE "
+                                     "namespace_id=" + quote_sql(shared_namespace) +
+                                     " AND instance_id=" + quote_sql(OTHER_INSTANCE)).stdout.strip())
+            require(other_member == 1, 'member revocation removed another member')
+            psql(pg_bin, root, port, runtime_password,
+                 "INSERT INTO kiarabot.namespace_members(namespace_id,instance_id,can_read,"
+                 "can_write,version,joined_at) VALUES (" + quote_sql(shared_namespace) + "," +
+                 quote_sql(PLUGIN_INSTANCE) + ",true,true,3,1) ON CONFLICT "
+                 "(namespace_id,instance_id) DO UPDATE SET can_read=true,can_write=true,"
+                 "version=3")
             psql(pg_bin, root, port, runtime_password,
                  "UPDATE kiarabot.namespace_members SET can_read=true,can_write=false "
                  "WHERE namespace_id=" + quote_sql(shared_namespace))
@@ -1025,6 +1083,21 @@ async def async_main(args) -> None:
                     key='shared/seed',
                     scope=common.NamespaceScope(installation_shared_id=shared_namespace))),
                 'plugin explicit shared namespace id', common.CAPABILITY_NOT_SUPPORTED)
+            # Deleting the whole shared namespace must not touch another installation's
+            # namespace or the current instance's private namespace.
+            psql(pg_bin, root, port, runtime_password,
+                 "DELETE FROM kiarabot.namespaces WHERE namespace_id=" +
+                 quote_sql(shared_namespace))
+            remaining = int(psql(pg_bin, root, port, runtime_password,
+                                 "SELECT count(*) FROM kiarabot.namespace_values WHERE "
+                                 "namespace_id=" + quote_sql(other_namespace)).stdout.strip())
+            require(remaining == 1, 'shared namespace deletion cascaded into another namespace')
+            private_after = await storage_frame(
+                'storage private after shared delete',
+                storage_get=plugins.StorageGetRequest(key='p09/keep', scope=private_scope))
+            require(not private_after.HasField('error') and
+                    private_after.storage_get.value == b'private-keep',
+                    'shared namespace deletion removed private data')
 
             event_id = str(__import__('uuid').uuid4())
             envelope = events.EventEnvelope(
