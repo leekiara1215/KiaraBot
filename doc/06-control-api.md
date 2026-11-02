@@ -588,3 +588,28 @@ P12 v1 target **不提供** Control WebSocket 服务端；`api/asyncapi.yaml` �
 
 - P12c/P11d 的 REST 转发层与 Owner RPC 的 target 状态是两层事实：REST 操作可先实现转发，但 owner RPC 未 target 验收时该操作仍标 `not_implemented`；已实现 target override 的 REST 操作在后续证据齐备时再翻转，不以转发成功冒充 owner 完成。
 - `/tasks` 列表行使用显式 `TaskSummary`（id/name/state/created_at），不再复用泛型 `GenericResource`；`TargetOperationRef.resource` 为可选：owner 快照没有资源时必须省略，不得补造占位资源。实例/操作目标响应继续以 OpenAPI typed schema 为唯一来源，P12c/P11d 原始 proto JSON 直出属待修实现差异，不得反向放宽契约。
+
+### P12c-5 已实现（2026-11-02，P12a-2 契约）
+
+- `PUT /api/v1/installations/{installationId}/instances/{instanceId}/plugin-state` → Runtime
+  `SetDesiredState`：body `installation_id`/`instance_id` 必须与 path 一致（否则 400），`desired`
+  仅 `DESIRED_RUNNING|DESIRED_STOPPED`，`expected_version` 可带且必须为正十进制字符串；Control 经
+  一次性委托（plugin.manage、instance scope）+ Idempotency-Key 转发，返回三类事实：
+  - `runtime`：Runtime 保存的 desired/version/observed_at/desired_config_version；
+  - `host`：host_id/registered/process_outcome/observed_at（来自 Runtime 状态投影，Host 未确认时为
+    `EXECUTION_UNKNOWN`，绝不声称进程已启动/停止）；
+  - `plugin`：apply_state/applied_config_version/observed_at；仅当 applied≥desired 且非零时才是
+    `CONFIG_APPLY_APPLIED`，否则明确 `CONFIG_APPLY_PENDING`/`CONFIG_APPLY_UNAVAILABLE`。
+  成功响应含 owner operation 引用；409 版本冲突原样映射。**不使用旧 `/plugins/{id}/enable`**。
+- `GET/PUT /api/v1/installations/{installationId}/instances/{instanceId}/configuration` → Runtime
+  `GetInstanceConfig`/`UpdateConfig`：GET 需 plugin.config.read，返回 runtime.configuration/
+  desired_config_version/delivery_id/apply_state/observed_at + host/plugin 事实；PUT 需 plugin.manage、
+  必带 expected_version（正十进制字符串），body 的 `configuration` 只写 Runtime 期望值（秘密 write-only
+  不回显），响应明确 `CONFIG_APPLY_PENDING` 并附 operation；Host/插件未确认的应用状态不会被写成
+  APPLIED。
+- `GET /api/v1/health` 现在要求 `health.read`（Permission 50）委托校验：缺 token →401，Identity
+  拒绝/不可用 →403/503；匿名 `/health/live`、`/health/ready` 保持不变。
+- 写操作返回的 operation ref 可由 `GET /api/v1/operations/runtime/{operationId}?scope=...` 轮询
+  （P12c-4）；202/200 都只代表已受理/当前快照，不代表完成。
+- 未实现/延期：WS 目标承载（P12a-2 已批准延期，REST operation 快照为 resync 源）；Host/插件 ACK
+  的持久证据来源仍由 P08a/b/c 继续补齐；模型管理 REST 归 P11d。

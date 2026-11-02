@@ -137,11 +137,32 @@ def main(control, fixture, model_fixture=None):
                 assert body['code'] in ('PERMISSION_DENIED', 'UPSTREAM_UNAVAILABLE'), body
             status, body, _ = request('GET', '/api/v1/health',
                                       headers={'Authorization': 'Bearer ' + ACCESS})
-            assert status in (200, 503), (status, body)
+            assert status in (200, 403, 503), (status, body)
             if status == 200:
                 assert body['state'] in ('HEALTHY', 'DEGRADED'), body
                 assert {item['component'] for item in body['components']} == {
                     'identity', 'runtime', 'scheduler', 'model'}, body
+            else:
+                assert body['code'] in ('PERMISSION_DENIED', 'UPSTREAM_UNAVAILABLE'), body
+            status, body, _ = request('GET', '/api/v1/health')
+            assert status == 401, (status, body)
+            installation = '11111111-1111-4111-8111-111111111111'
+            instance = '22222222-2222-4222-8222-222222222222'
+            instance_base = f'/api/v1/installations/{installation}/instances/{instance}'
+            status, body, _ = request(
+                'PUT', instance_base + '/plugin-state',
+                {'installation_id': installation, 'instance_id': instance,
+                 'desired': 'DESIRED_RUNNING', 'expected_version': '1'},
+                headers={'Authorization': 'Bearer ' + ACCESS, 'Idempotency-Key': KEY})
+            assert status in (400, 403, 409, 503), (status, body)
+            assert body['code'] in ('INVALID_ARGUMENT', 'PERMISSION_DENIED', 'CONFLICT',
+                                    'UPSTREAM_UNAVAILABLE'), body
+            status, body, _ = request(
+                'GET', instance_base + '/configuration',
+                headers={'Authorization': 'Bearer ' + ACCESS})
+            assert status in (400, 403, 404, 503), (status, body)
+            assert body['code'] in ('INVALID_ARGUMENT', 'PERMISSION_DENIED', 'NOT_FOUND',
+                                    'UPSTREAM_UNAVAILABLE'), body
             status, body, _ = request('GET', '/api/v1/principals',
                                       headers={'Authorization': 'Bearer ' + ACCESS})
             assert status in (403, 503), (status, body)
