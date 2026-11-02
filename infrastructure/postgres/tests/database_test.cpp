@@ -16,6 +16,7 @@
 
 extern char** environ;
 
+#include "../schema/v1.hpp"
 #include "../src/identity_security.hpp"
 #include "common_work_checks.hpp"
 #include "kiarabot/infrastructure/postgres/database.hpp"
@@ -343,9 +344,7 @@ void run(const std::filesystem::path& root, std::uint16_t port,
       pqxx::connection migration(connection_string(config));
       pqxx::read_transaction inspect(migration);
       require(inspect.exec("SELECT version FROM kiarabot.schema_versions").one_row()[0].as<int>() ==
-                  (config.service == target::Service::Identity
-                       ? 13
-                       : (config.service == target::Service::Runtime ? 7 : 6)),
+                  kiarabot::infrastructure::postgres::schema::version(config.service),
               "per-service schema version incorrect");
     }
     if (config.service == target::Service::Identity) {

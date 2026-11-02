@@ -5,6 +5,7 @@
 
 #include "identity_security.hpp"
 #include "kiarabot/core/domain/target/foundation.hpp"
+#include "runtime_events.hpp"
 
 namespace kiarabot::infrastructure::postgres::schema {
 
@@ -70,6 +71,7 @@ CREATE TABLE kiarabot.bridge_credentials (
 CREATE UNIQUE INDEX bridge_credentials_active ON kiarabot.bridge_credentials(resource_id)
   WHERE NOT revoked;
 )sql";
+    sql += kRuntimeEvents;
     break;
   case core::target::Service::Scheduler:
     relation("tasks", "owner,task_id");
