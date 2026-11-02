@@ -515,3 +515,14 @@ if(TARGET kiarabot-plugin-host)
     WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
     ENVIRONMENT "KIARABOT_TEST_HOST_BINARY=$<TARGET_FILE:kiarabot-plugin-host>;PYTHONPATH=${CMAKE_SOURCE_DIR}/sdk/python/src:${CMAKE_SOURCE_DIR}/sdk/python/build/generated:${CMAKE_SOURCE_DIR}/sdk/python/tests;PATH=${RUNTIME_E2E_OPENSSL_BIN_DIR}:${RUNTIME_E2E_PYTHON_BIN_DIR}:$ENV{PATH}")
 endif()
+
+# P10j SDK task methods over the real-TLS PluginBridge protocol fixture with a fake Scheduler.
+# Production Runtime task-frame ingress is not implemented yet; this test is SDK/bridge evidence.
+if(EXISTS "${CMAKE_SOURCE_DIR}/sdk/python/.venv/bin/python")
+  add_test(NAME p10_sdk_tasks_e2e COMMAND
+    "${KIARABOT_TARGET_PYTHON}" "${CMAKE_SOURCE_DIR}/tests/architecture/p10_sdk_tasks_e2e.py")
+  set_tests_properties(p10_sdk_tasks_e2e PROPERTIES
+    LABELS "p10;sdk;integration;fault" TIMEOUT 90
+    WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+    ENVIRONMENT "PYTHONPATH=${CMAKE_SOURCE_DIR}/sdk/python/src:${CMAKE_SOURCE_DIR}/sdk/python/build/generated;PATH=${RUNTIME_E2E_OPENSSL_BIN_DIR}:$ENV{PATH}")
+endif()
