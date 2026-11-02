@@ -1,5 +1,19 @@
 # PluginSDK 与插件运行时设计
 
+## 目标 Bridge 传输与投递（P06b SDK 第一阶段）
+
+目标 SDK 只连接 Runtime 的可选外部 Bridge 监听（server-verified TLS，不请求客户端证书），没有 insecure 回退：`Options` 必须提供 CA（或 `PLUGIN_TLS_ROOT`），bootstrap credential 作为唯一 `authorization: Bearer ...` metadata 完成首连。注册成功后必须解析 `RegisterPluginResponse.fence` 与 `connection_authorization`：fence 至少包含 instance_id、正 runtime_epoch、正 connection_generation 与 execution_generation；proof/refresh_credential 为 32 字节且有效期不超过 56 秒。此后每一帧都带当前完整 Fence 与 `connection_proof`，fence/proof 失配立即关闭连接并用 bootstrap 重连（新的 connection_generation）；旧材料不重放。
+
+单飞 refresh 在到期前 10 秒通过 `PluginToCore.refresh_authorization` 发起，服务端只接受当前 proof/refresh/generation，返回新 `ConnectionAuthorization` 后本地原子轮换；失配/拒绝/过期视为连接授权失败，关闭旧流后重新 bootstrap，不伪造 PERMISSION_DENIED 或缓存旧 proof。
+
+事件投递以 `CoreToPlugin.delivery_attempt` 为准：event_id 必须与 `EventEnvelope.event_id` 一致，attempt 绑定完整 Fence；SDK 30 秒租约、10 秒续租、单次 attempt 最多 300 秒，续租与 hook 并行但仅一条在途。ACK 必须回带当前 attempt，并等待 `delivery_receipt` 的 ACKNOWLEDGED/DUPLICATE/STALE/REJECTED；STALE 不视为成功、不确认新尝试也不重放旧副作用；REJECTED 只表示本次 hook 拒绝，重试由 Runtime 决定。receipt 丢失视为结果未知，不伪造成功。
+
+`ShutdownNotice` 表示 Runtime 正常收敛：SDK 停止接收新工作，在 `drain_timeout_ms` 内完成并确认在途事件后结束，不自动重连；只有未收到该帧的流结束才按未知结果重连并重新注册。
+
+配置帧必须同时校验 envelope fence 与 `PluginConfig.fence/config_version`；ACK 携带 `config_version`+`fence`+`delivery_id`。低于已应用 `config_version` 的投递只做幂等确认、不回退已应用证据；同一 delivery 重放返回原 ACK 且不重复调用 `on_config`。`applied_version` 的跨重启持久语义属于 Runtime（P08/P13），SDK 只负责当前连接证据。
+
+仍未实现（deferred）：Runtime 的 Bridge handler（P06a）与 Host 受管启动/最小环境/PID 与 stop 超时（P08）；真实 Core/Adapter 端到端夹具在二者落地后替换 `FakeTargetRuntime` 的本机验收，不用旧 reference 桥接兼容层。
+
 ## T06c 任务客户端
 
 Context.task_create(task_id, target_conversation, payload, idempotency_key, run_at=UTC datetime 或 local_time=LocalTaskTime 字段字典)、task_get(task_id)、task_cancel(task_id, idempotency_key) 使用 host.tasks.v1，默认五秒 deadline。必须获授 task.schedule；创建还需 event.timer.triggered 订阅。返回生成的 TaskResponse；本地时间不猜测 DST，详见 doc/05-infrastructure.md。任务身份来自注册会话，不接受自报 owner；事件仅交给创建插件。COMPLETED 代表 TimerTriggered 已入队，回调仍可能重复，消费者按 task_id 幂等。
