@@ -115,6 +115,32 @@ async def test_confirmation_and_reconnect(tmp_path, caplog, mode):
             store.close()
 
 
+def test_registration_declares_capabilities_of_executed_actions(tmp_path):
+    store = Outbox(tmp_path / 'registration.db')
+    try:
+        config = ClientConfig('127.0.0.1:50051', 'x' * 32, 'adapter', '123')
+        # Without an executor the adapter only consumes events.
+        assert [(item.name, item.version, item.supported)
+                for item in CoreClient(config, store).registration().register.capabilities] == [
+            ('event.message_received', '1', True)]
+        capabilities = CoreClient(config, store, executor=object()).registration().register.capabilities
+        # Every Action implemented by ActionExecutor must be negotiated, otherwise Core's
+        # capability gate rejects dispatched Actions.
+        assert [(item.name, item.version, item.supported) for item in capabilities] == [
+            ('event.message_received', '1', True),
+            ('action.send_message.text.v1', '1', True),
+            ('action.react_message.v1', '1', True),
+            ('action.delete_message.v1', '1', True),
+            ('action.mute_member.v1', '1', True),
+            ('action.kick_member.v1', '1', True),
+            ('action.approve_request.v1', '1', True),
+        ]
+        names = [item.name for item in capabilities]
+        assert len(names) == len(set(names))
+    finally:
+        store.close()
+
+
 def test_invalid_config_and_no_token_repr():
     with pytest.raises(AdapterError):
         ClientConfig('external.example:50051', 'x' * 32, 'adapter', '123')

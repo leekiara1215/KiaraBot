@@ -72,6 +72,7 @@ class CoreClient:
             request.capabilities.add(name='action.delete_message.v1', version='1', supported=True)
             request.capabilities.add(name='action.mute_member.v1', version='1', supported=True)
             request.capabilities.add(name='action.kick_member.v1', version='1', supported=True)
+            request.capabilities.add(name='action.approve_request.v1', version='1', supported=True)
         return adapters.AdapterToCore(register=request)
 
     async def write(self, call, request):
