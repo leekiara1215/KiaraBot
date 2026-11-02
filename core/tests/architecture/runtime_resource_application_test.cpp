@@ -413,6 +413,73 @@ public:
     return failure(t::ErrorCode::CapabilityNotSupported);
   }
 };
+// P07 Action ports are not exercised by this P05/P06 application fixture. They stay fail-closed
+// exactly like a missing PG relation so an accidental call is visible instead of looking absent.
+class MemoryActionPorts final : public t::ActionRepository,
+                                public t::ActionQuotaRepository,
+                                public t::ActionPolicyRepository,
+                                public t::ActionEvidenceRepository {
+public:
+  t::Outcome<std::optional<t::ActionRecord>> find_by_id(const t::ActionId&) override {
+    return failure(t::ErrorCode::UpstreamUnavailable);
+  }
+  t::Outcome<std::optional<t::ActionRecord>> find_by_owner_key(const t::InstanceId&,
+                                                               std::string_view) override {
+    return failure(t::ErrorCode::UpstreamUnavailable);
+  }
+  t::Outcome<t::ActionRecord> insert(const t::ActionRecord&, t::ActionCapacity) override {
+    return failure(t::ErrorCode::UpstreamUnavailable);
+  }
+  t::Status mark_dispatched(const t::ActionId&, const t::AttemptId&, const t::InstanceId&,
+                            t::TimePoint) override {
+    return failure(t::ErrorCode::UpstreamUnavailable);
+  }
+  t::Outcome<t::ActionTerminalReceipt> record_terminal(const t::ActionRecord&,
+                                                       const t::ActionTerminalResult&,
+                                                       std::optional<t::AttemptId>,
+                                                       std::optional<t::InstanceId>,
+                                                       t::TimePoint) override {
+    return failure(t::ErrorCode::UpstreamUnavailable);
+  }
+  t::Status cancel(const t::ActionId&, t::TimePoint) override {
+    return failure(t::ErrorCode::UpstreamUnavailable);
+  }
+  t::Outcome<std::vector<t::ActionRecord>> expire_due(std::size_t, t::TimePoint) override {
+    return failure(t::ErrorCode::UpstreamUnavailable);
+  }
+  t::Outcome<std::vector<t::ActionRecord>> list_owner(const t::InstanceId&,
+                                                      const t::ActionPageRequest&) override {
+    return failure(t::ErrorCode::UpstreamUnavailable);
+  }
+  t::Outcome<std::vector<t::ActionRecord>> list_control(const t::ActionControlQuery&) override {
+    return failure(t::ErrorCode::UpstreamUnavailable);
+  }
+  t::Outcome<std::size_t> prune_terminal(t::TimePoint, std::size_t) override {
+    return failure(t::ErrorCode::UpstreamUnavailable);
+  }
+  t::Status admit(const t::ActionId&, t::ActionKind, std::span<const t::ActionScope>,
+                  const t::ActionQuotaLimits&, t::TimePoint) override {
+    return failure(t::ErrorCode::UpstreamUnavailable);
+  }
+  t::Outcome<std::size_t> prune_windows(t::TimePoint, std::size_t) override {
+    return failure(t::ErrorCode::UpstreamUnavailable);
+  }
+  t::Outcome<std::optional<t::ActionPolicy>> get(const t::ResourceId&) override {
+    return failure(t::ErrorCode::UpstreamUnavailable);
+  }
+  t::Status upsert(const t::ActionPolicy&, std::optional<t::ResourceVersion>) override {
+    return failure(t::ErrorCode::UpstreamUnavailable);
+  }
+  t::Status append(const t::ActionEvidenceRecord&) override {
+    return failure(t::ErrorCode::UpstreamUnavailable);
+  }
+  t::Outcome<std::vector<t::ActionEvidenceRecord>> list(const t::ActionId&) override {
+    return failure(t::ErrorCode::UpstreamUnavailable);
+  }
+  t::Outcome<std::size_t> prune(t::TimePoint, std::size_t) override {
+    return failure(t::ErrorCode::UpstreamUnavailable);
+  }
+};
 class MemoryWork final : public t::RuntimeUnitOfWork {
 public:
   explicit MemoryWork(Store& store)
@@ -455,6 +522,18 @@ public:
   }
   t::BridgeCredentialRepository& bridge_credentials() override {
     return credentials_;
+  }
+  t::ActionRepository& actions() override {
+    return memory_actions_;
+  }
+  t::ActionQuotaRepository& action_quota() override {
+    return memory_actions_;
+  }
+  t::ActionPolicyRepository& action_policies() override {
+    return memory_actions_;
+  }
+  t::ActionEvidenceRepository& action_evidence() override {
+    return memory_actions_;
   }
   t::Outcome<std::size_t> active_bindings(const t::InstanceId& adapter_instance) override {
     if (store_.fail_reads) {
@@ -580,6 +659,7 @@ private:
   MemoryCredentials credentials_;
   MemoryReceipts receipts_;
   MemoryJournal journal_;
+  MemoryActionPorts memory_actions_;
 };
 class MemoryFactory final : public t::RuntimeUnitOfWorkFactory {
 public:
