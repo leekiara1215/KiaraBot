@@ -495,12 +495,21 @@ void run(std::uint16_t port, const std::filesystem::path& root,
     require(std::holds_alternative<target::TimerTriggerAcceptance>(duplicate) &&
                 std::get<target::TimerTriggerAcceptance>(duplicate).duplicate,
             "same occurrence/event id is duplicate without a second enqueue");
+    // Transport-only envelope differences do not change the handoff idempotency identity.
+    auto same_content = request;
+    same_content.serialized_envelope = "different-envelope";
+    auto duplicate_envelope = application->accept_timer_trigger(same_content);
+    require(std::holds_alternative<target::TimerTriggerAcceptance>(duplicate_envelope) &&
+                std::get<target::TimerTriggerAcceptance>(duplicate_envelope).duplicate,
+            "envelope-only change remains a duplicate");
     auto changed = request;
-    changed.serialized_envelope = "different-envelope";
+    changed.task_id = "task-2";
+    changed.handoff.operation.resource = {target::ResourceKind::Task, {"task-2"}};
+    changed.handoff.resource = {target::ResourceKind::Task, {"task-2"}};
     auto conflict = application->accept_timer_trigger(changed);
     require(std::holds_alternative<target::Failure>(conflict) &&
                 std::get<target::Failure>(conflict).code == target::ErrorCode::Conflict,
-            "changed handoff for the same event id is Conflict");
+            "changed handoff content for the same event id is Conflict");
     auto expired = request;
     expired.occurrence_id = target::MessageId{uuid_like('5')};
     expired.handoff.message = expired.occurrence_id;

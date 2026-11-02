@@ -1,6 +1,7 @@
 #include "kiarabot/core/runtime/platform/scheduler_identity_client.hpp"
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <mutex>
 #include <optional>
@@ -60,30 +61,29 @@ bool timestamp(t::TimePoint value, google::protobuf::Timestamp* output) {
 }
 std::string random_uuid() {
   static std::mutex mutex;
-  static std::mt19937_64 generator{std::random_device{}()};
-  std::uint64_t high = 0;
-  std::uint64_t low = 0;
+  static std::mt19937 generator{std::random_device{}()};
+  std::array<unsigned char, 16> bytes{};
   {
     std::lock_guard lock(mutex);
-    high = generator();
-    low = generator();
-  }
-  high = (high & 0xffffffffffff0fffULL) | 0x0000000000004000ULL;
-  low = (low & 0x3fffffffffffffffULL) | 0x8000000000000000ULL;
-  static constexpr char kHex[] = "0123456789abcdef";
-  std::string text(36, '-');
-  const std::uint64_t parts[2] = {high, low};
-  std::size_t output = 0;
-  for (int index = 15; index >= 0; --index) {
-    const auto byte = static_cast<unsigned char>((parts[index / 8] >> ((index % 8) * 8)) & 0xff);
-    if (output == 8 || output == 13 || output == 18 || output == 23) {
-      ++output;
+    for (auto& byte : bytes) {
+      byte = static_cast<unsigned char>(generator() & 0xffU);
     }
-    text[output++] = kHex[byte >> 4];
-    text[output++] = kHex[byte & 0x0f];
+  }
+  bytes[6] = static_cast<unsigned char>((bytes[6] & 0x0fU) | 0x40U);
+  bytes[8] = static_cast<unsigned char>((bytes[8] & 0x3fU) | 0x80U);
+  static constexpr char kHex[] = "0123456789abcdef";
+  std::string text;
+  text.reserve(36);
+  for (std::size_t index = 0; index < bytes.size(); ++index) {
+    if (index == 4 || index == 6 || index == 8 || index == 10) {
+      text.push_back('-');
+    }
+    text.push_back(kHex[bytes[index] >> 4U]);
+    text.push_back(kHex[bytes[index] & 0x0fU]);
   }
   return text;
 }
+
 t::Failure grpc_failure(const grpc::Status& status) {
   switch (status.error_code()) {
   case grpc::StatusCode::UNAUTHENTICATED:
@@ -190,13 +190,21 @@ SchedulerIdentityClient::verify(std::string_view proof, const t::Sha256Digest& l
     auto* context = input.mutable_context();
     context->set_request_id(random_uuid());
     context->set_trace_id(random_uuid());
+    context->set_idempotency_key(random_uuid());
     if (!timestamp(deadline, context->mutable_deadline())) {
       return failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput);
     }
     input.set_subject_proof(std::string(proof));
     input.set_full_method(std::string(method));
-    if (scope != nullptr) {
+    if (scope != nullptr && scope->resources_size() > 0) {
       *input.mutable_scope() = *scope;
+    } else {
+      // Identity requires a non-empty exact scope for current-authorization. CreateTask/ListTasks
+      // requests carry no ResourceScope; bind the owner instance derived from the delegated
+      // subject.
+      auto* resource = input.mutable_scope()->add_resources();
+      resource->set_kind(v1::RESOURCE_INSTANCE);
+      resource->set_id(authentication.subject.value);
     }
     input.set_known_authorization_version(authentication.authorization_version.value);
     v1::IdentityCheckAuthorizationResponse output;

@@ -312,32 +312,43 @@ target::Outcome<platform::ServiceComposition> compose(const platform::ProcessCon
     if (!database_observation->available.load()) {
       return std::monostate{};
     }
-    auto work = factory->begin();
-    if (const auto* rejected = std::get_if<target::Failure>(&work)) {
+    // Read the authoritative clock in a short UoW; never hold the writer while calling
+    // application methods that open their own transactions (that would surface as busy Conflict).
+    auto time_work = factory->begin();
+    if (const auto* rejected = std::get_if<target::Failure>(&time_work)) {
       if (rejected->code == target::ErrorCode::Conflict) {
         return std::monostate{};
       }
       return *rejected;
     }
-    auto uow = std::move(std::get<std::unique_ptr<target::SchedulerUnitOfWork>>(work));
-    auto sample = uow->current_time();
+    auto time_uow = std::move(std::get<std::unique_ptr<target::SchedulerUnitOfWork>>(time_work));
+    auto sample = time_uow->current_time();
     if (const auto* rejected = std::get_if<target::Failure>(&sample)) {
-      uow->rollback();
+      time_uow->rollback();
       if (rejected->code == target::ErrorCode::Conflict) {
         return std::monostate{};
       }
       return *rejected;
     }
     const auto now = std::get<target::TimePoint>(sample);
+    time_uow->rollback();
     (void)service->due_sweep(now, 10);
     (void)service->expire_stale_triggers(now, 10);
-    (void)uow->receipts().prune_expired(now, 100);
-    (void)uow->journal().prune_received(now, 100);
-    if (uow->commit() != target::CommitResult::Committed) {
-      return failure(target::ErrorCode::UpstreamUnavailable, target::Recovery::Backoff);
-    }
     if (runtime_client) {
       (void)service->deliver_triggers(now, 5);
+    }
+    auto prune_work = factory->begin();
+    if (const auto* rejected = std::get_if<target::Failure>(&prune_work)) {
+      if (rejected->code == target::ErrorCode::Conflict) {
+        return std::monostate{};
+      }
+      return *rejected;
+    }
+    auto prune_uow = std::move(std::get<std::unique_ptr<target::SchedulerUnitOfWork>>(prune_work));
+    (void)prune_uow->receipts().prune_expired(now, 100);
+    (void)prune_uow->journal().prune_received(now, 100);
+    if (prune_uow->commit() != target::CommitResult::Committed) {
+      return failure(target::ErrorCode::UpstreamUnavailable, target::Recovery::Backoff);
     }
     return std::monostate{};
   };

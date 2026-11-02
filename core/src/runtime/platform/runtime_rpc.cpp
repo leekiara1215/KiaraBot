@@ -518,6 +518,31 @@ t::Outcome<Prepared> prepare(grpc::ServerContext& transport, const v1::RequestCo
   prepared.command.deadline = effective;
   return prepared;
 }
+t::Outcome<Prepared> prepare_platform_peer(const v1::RequestContext& input) {
+  if (!canonical_uuid(input.request_id()) || !canonical_uuid(input.trace_id()) ||
+      !input.has_deadline()) {
+    return failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput);
+  }
+  const auto decoded = codec::from_wire(input.deadline());
+  const auto* requested = std::get_if<t::TimePoint>(&decoded);
+  if (!requested) {
+    return failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput);
+  }
+  auto effective = std::min(*requested, now() + std::chrono::seconds{30});
+  if (effective <= now()) {
+    return failure(t::ErrorCode::Timeout, t::Recovery::QuerySameIdentity);
+  }
+  Prepared prepared;
+  prepared.request = input.request_id();
+  prepared.trace = input.trace_id();
+  prepared.command.request_id = prepared.request;
+  prepared.command.trace_id = prepared.trace;
+  prepared.command.method = "kiarabot.v1.RuntimeService/AcceptTimerTrigger";
+  prepared.command.deadline = effective;
+  prepared.command.authentication.audience = t::Service::Runtime;
+  return prepared;
+}
+
 grpc::Status fail(const Prepared& prepared, const t::Failure& error) {
   return error_status(error, prepared.request, prepared.trace);
 }
@@ -1672,14 +1697,39 @@ public:
   grpc::Status AcceptTimerTrigger(grpc::ServerContext* transport,
                                   const v1::RuntimeAcceptTimerTriggerRequest* request,
                                   v1::RuntimeAcceptTimerTriggerResponse* response) override {
-    auto prepared =
-        prepare(*transport, request->context(), "kiarabot.v1.RuntimeService/AcceptTimerTrigger",
-                *request, false, options_);
-    if (const auto* rejected = std::get_if<t::Failure>(&prepared)) {
-      return error_status(*rejected, request->context().request_id(),
-                          request->context().trace_id());
+    bool platform_peer_authorized = false;
+    std::optional<Prepared> platform_prepared;
+    if (options_.platform_peer) {
+      auto peer = options_.platform_peer(*transport);
+      if (const auto* rejected = std::get_if<t::Failure>(&peer)) {
+        return error_status(*rejected, request->context().request_id(),
+                            request->context().trace_id());
+      }
+      if (std::get<RuntimePlatformPeer>(peer).service != t::Service::Scheduler) {
+        return error_status(failure(t::ErrorCode::Unauthenticated, t::Recovery::Authenticate),
+                            request->context().request_id(), request->context().trace_id());
+      }
+      auto prepared = prepare_platform_peer(request->context());
+      if (const auto* rejected = std::get_if<t::Failure>(&prepared)) {
+        return error_status(*rejected, request->context().request_id(),
+                            request->context().trace_id());
+      }
+      platform_prepared = std::get<Prepared>(std::move(prepared));
+      platform_peer_authorized = true;
     }
-    auto& context = std::get<Prepared>(prepared);
+    std::optional<Prepared> user_prepared;
+    if (!platform_peer_authorized) {
+      auto prepared =
+          prepare(*transport, request->context(), "kiarabot.v1.RuntimeService/AcceptTimerTrigger",
+                  *request, false, options_);
+      if (const auto* rejected = std::get_if<t::Failure>(&prepared)) {
+        return error_status(*rejected, request->context().request_id(),
+                            request->context().trace_id());
+      }
+      user_prepared = std::get<Prepared>(std::move(prepared));
+    }
+    Prepared context =
+        platform_peer_authorized ? std::move(*platform_prepared) : std::move(*user_prepared);
     t::HandoffContext handoff;
     if (!handoff_from_wire(request->handoff(), &handoff)) {
       return error_status(failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput),
@@ -1697,6 +1747,7 @@ public:
     }
     t::AcceptTimerTriggerRequest application_request;
     application_request.context = context.command;
+    application_request.platform_peer_authorized = platform_peer_authorized;
     application_request.handoff = handoff;
     application_request.occurrence_id = t::MessageId{request->occurrence_id()};
     application_request.task_id = request->task_id();

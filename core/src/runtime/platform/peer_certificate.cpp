@@ -10,6 +10,7 @@
 #include <openssl/evp.h>
 #include <openssl/pem.h>
 #include <openssl/x509.h>
+#include <openssl/x509v3.h>
 
 namespace kiarabot::core::platform {
 namespace {
@@ -120,6 +121,28 @@ extract_peer_certificate(const grpc::AuthContext& context) {
                     &digest_size) != 1 ||
         digest_size != result.leaf_fingerprint.bytes.size()) {
       return denied();
+    }
+    if (GENERAL_NAMES* names = static_cast<GENERAL_NAMES*>(
+            X509_get_ext_d2i(certificates.front().get(), NID_subject_alt_name, nullptr, nullptr))) {
+      const auto count = sk_GENERAL_NAME_num(names);
+      for (int index = 0; index < count && result.uri_sans.size() < 64; ++index) {
+        const auto* name = sk_GENERAL_NAME_value(names, index);
+        if (name == nullptr || name->type != GEN_URI ||
+            name->d.uniformResourceIdentifier == nullptr) {
+          continue;
+        }
+        unsigned char* text = nullptr;
+        const auto length = ASN1_STRING_to_UTF8(&text, name->d.uniformResourceIdentifier);
+        if (length < 0 || text == nullptr) {
+          continue;
+        }
+        if (length > 0 && length <= 512) {
+          result.uri_sans.emplace_back(reinterpret_cast<const char*>(text),
+                                       static_cast<std::size_t>(length));
+        }
+        OPENSSL_free(text);
+      }
+      GENERAL_NAMES_free(names);
     }
     for (const auto& certificate : certificates) {
       const auto length = i2d_X509(certificate.get(), nullptr);

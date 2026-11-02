@@ -21,8 +21,21 @@ namespace target = kiarabot::core::target;
 using RuntimePeerAuthorizer = std::function<target::Outcome<target::AuthenticationContext>(
     grpc::ServerContext& transport, const v1::RequestContext& request)>;
 
+// Platform service principal verified from the actual inbound mTLS leaf SAN. Used only by internal
+// platform handoffs (Scheduler -> Runtime.AcceptTimerTrigger) where the frozen design authorizes
+// service peer + handoff integrity instead of a delegated user. Identity enrollment/assignment for
+// this principal is an offline bootstrap prerequisite, not inferred from request fields.
+struct RuntimePlatformPeer {
+  target::Service service = target::Service::Scheduler;
+  std::string san;
+};
+using RuntimePlatformPeerAuthorizer =
+    std::function<target::Outcome<RuntimePlatformPeer>(grpc::ServerContext& transport)>;
+
 struct RuntimeRpcOptions {
   RuntimePeerAuthorizer authorize;
+  // Optional platform-peer path for AcceptTimerTrigger; absent keeps the method delegation-only.
+  RuntimePlatformPeerAuthorizer platform_peer;
   // P09 internal-dispatcher storage/shared-namespace application. Null keeps the unary storage
   // methods at CAPABILITY_NOT_SUPPORTED (the external surface never gains these handlers by
   // accident). The owner mTLS transport still authenticates the peer and the application performs

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <string>
 #include <vector>
 
 #include <grpcpp/security/auth_context.h>
@@ -12,6 +13,9 @@ struct PeerCertificateEvidence {
   target::Sha256Digest leaf_fingerprint;
   // Leaf first, concatenated DER X509, at most 8 certificates / 64 KiB.
   std::vector<std::byte> der_chain;
+  // Leaf URI SANs only; used by platform-peer composition to match the registered service SAN
+  // (never a replacement for Identity registration/assignment checks where those are required).
+  std::vector<std::string> uri_sans;
 };
 
 // Only use the real ServerContext::auth_context(), never caller-supplied metadata or JSON.

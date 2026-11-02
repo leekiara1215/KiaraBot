@@ -19,6 +19,7 @@
 #include "kiarabot/core/application/target/runtime_readiness.hpp"
 #include "kiarabot/core/application/target/runtime_resource_application.hpp"
 #include "kiarabot/core/application/target/runtime_storage_application.hpp"
+#include "kiarabot/core/runtime/platform/peer_certificate.hpp"
 #include "kiarabot/core/runtime/platform/runtime_bridge.hpp"
 #include "kiarabot/core/runtime/platform/runtime_identity_client.hpp"
 #include "kiarabot/core/runtime/platform/runtime_model_client.hpp"
@@ -373,6 +374,25 @@ compose_runtime_service(const platform::ProcessConfig& config) {
       } else {
         options.authorize = fail_closed_authorizer();
       }
+      // Platform service principal path for the internal Scheduler->Runtime timer handoff. The
+      // leaf SAN is matched against the deployment-enrolled Scheduler platform peer; its explicit
+      // timer.accept assignment is an offline bootstrap prerequisite (P05 platform_peers), and the
+      // application still validates every handoff integrity field. No delegated user is involved.
+      options.platform_peer =
+          [](grpc::ServerContext& transport) -> target::Outcome<platform::RuntimePlatformPeer> {
+        auto evidence = platform::extract_peer_certificate(*transport.auth_context());
+        if (const auto* rejected = std::get_if<target::Failure>(&evidence)) {
+          return *rejected;
+        }
+        const auto& certificate = std::get<platform::PeerCertificateEvidence>(evidence);
+        for (const auto& san : certificate.uri_sans) {
+          if (san.starts_with("spiffe://kiarabot/scheduler")) {
+            return platform::RuntimePlatformPeer{target::Service::Scheduler, san};
+          }
+        }
+        return target::Failure{target::ErrorCode::Unauthenticated, target::Acceptance::NotAccepted,
+                               target::Recovery::Authenticate, std::nullopt, std::nullopt};
+      };
       auto adapter = platform::make_runtime_rpc(*application, std::move(options));
       if (const auto* failure = std::get_if<target::Failure>(&adapter)) {
         return *failure;
@@ -396,7 +416,8 @@ compose_runtime_service(const platform::ProcessConfig& config) {
       if (const auto* failure = std::get_if<target::Failure>(&registered)) {
         return *failure;
       }
-      auto plugin_bridge = platform::make_plugin_bridge(*state->bridge, {state->storage.get(), state->model_client.get()});
+      auto plugin_bridge = platform::make_plugin_bridge(
+          *state->bridge, {state->storage.get(), state->model_client.get()});
       if (const auto* failure = std::get_if<target::Failure>(&plugin_bridge)) {
         return *failure;
       }

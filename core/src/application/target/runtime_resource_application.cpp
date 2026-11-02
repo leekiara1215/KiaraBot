@@ -1542,7 +1542,17 @@ public:
   // (duplicate=true) instead of creating a second event or fan-out target.
   Outcome<TimerTriggerAcceptance>
   accept_timer_trigger(const AcceptTimerTriggerRequest& request) override {
-    if (const auto failure = status_failure(validate_command_context(request.context, false))) {
+    if (request.platform_peer_authorized) {
+      // Platform service peer (Scheduler) verified by the mTLS boundary. The frozen design
+      // authorizes service peer + handoff integrity, not a delegated user; only request identity
+      // fields are required here.
+      if (!canonical(request.context.request_id) || !canonical(request.context.trace_id) ||
+          request.context.method != "kiarabot.v1.RuntimeService/AcceptTimerTrigger" ||
+          request.context.deadline.time_since_epoch().count() <= 0) {
+        return invalid_runtime_input();
+      }
+    } else if (const auto failure =
+                   status_failure(validate_command_context(request.context, false))) {
       return *failure;
     }
     const auto safe_text = [](std::string_view value, std::size_t maximum) {
@@ -1572,16 +1582,15 @@ public:
     if (payload_digest != request.handoff.payload_hash) {
       return failure(ErrorCode::Conflict, Recovery::ReadCurrent);
     }
-    auto checked =
-        authorize(authorization_, request.context.authentication, Permission::TimerAccept,
-                  request.context.method, {ResourceRef{ResourceKind::Task, request.task_id}},
-                  request.context.deadline);
-    if (const auto* failure = std::get_if<Failure>(&checked)) {
-      return *failure;
+    if (!request.platform_peer_authorized) {
+      auto checked =
+          authorize(authorization_, request.context.authentication, Permission::TimerAccept,
+                    request.context.method, {ResourceRef{ResourceKind::Task, request.task_id}},
+                    request.context.deadline);
+      if (const auto* failure = std::get_if<Failure>(&checked)) {
+        return *failure;
+      }
     }
-    const auto authorization_version =
-        std::get<RuntimeAuthorizationDecision>(checked).authorization_version;
-    (void)authorization_version;
     auto begun = transactions_.begin();
     if (const auto* failure = std::get_if<Failure>(&begun)) {
       return *failure;
@@ -1615,7 +1624,10 @@ public:
     append(std::to_string(static_cast<int>(request.conversation_kind)));
     append(std::string_view(reinterpret_cast<const char*>(request.payload.data()),
                             request.payload.size()));
-    append(request.serialized_envelope);
+    // The serialized envelope carries boundary-generated trace/time fields; it must not change the
+    // handoff idempotency fingerprint. Semantic content is covered above. A changed envelope for
+    // the same occurrence is therefore still a duplicate, while changed task/payload/version
+    // conflicts.
     Sha256Digest fingerprint;
     SHA256(reinterpret_cast<const unsigned char*>(canonical.data()), canonical.size(),
            reinterpret_cast<unsigned char*>(fingerprint.bytes.data()));

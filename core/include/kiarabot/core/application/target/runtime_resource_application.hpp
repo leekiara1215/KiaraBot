@@ -233,6 +233,10 @@ struct AcceptTimerTriggerRequest {
   // Serialized EventEnvelope carrying the TimerTriggered payload; built by the boundary so the
   // application stays independent of protobuf.
   std::string serialized_envelope;
+  // Set only by the boundary after it verified an enrolled platform service peer (Scheduler) from
+  // the real mTLS leaf + SAN. No delegated user check applies; handoff integrity is still enforced
+  // below, and no other Runtime method accepts this flag.
+  bool platform_peer_authorized = false;
 };
 struct TimerTriggerAcceptance {
   MessageId occurrence_id;
