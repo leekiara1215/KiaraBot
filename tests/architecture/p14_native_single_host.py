@@ -591,7 +591,7 @@ def run_checks(root, https_port, configs, binaries, children, endpoints):
 
     status, body = request('GET', '/api/v1/models?page_size=10&scope=' +
                            urllib.parse.quote(scope_model), token=token)
-    success = status == 200 and isinstance(body.get('items', body.get('models')), list)
+    success = status == 200 and isinstance(body.get('items', body.get('models', [])), list)
     record('models', status, body,
            'success' if success else
            classify(status, False, ('INVALID_ARGUMENT',), stable_ok_codes=('NOT_FOUND',)))
