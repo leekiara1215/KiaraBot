@@ -57,3 +57,13 @@ add_test(NAME p12_audit_logs_rest COMMAND "${KIARABOT_TARGET_PYTHON}"
 set_tests_properties(p12_audit_logs_rest PROPERTIES
   LABELS "p12;control;integration;fault" TIMEOUT 90 RESOURCE_LOCK control_https RUN_SERIAL TRUE
   ENVIRONMENT "PATH=${OPENSSL_BIN_DIR}:$ENV{PATH}")
+
+# P10h: Scheduler task REST target evidence through the real Control HTTPS boundary and
+# real-TLS owner fixtures (list/get/cancel success chain, repeat cancel, CONFLICT/NOT_FOUND).
+add_test(NAME p10_scheduler_rest COMMAND "${KIARABOT_TARGET_PYTHON}"
+  ${CMAKE_SOURCE_DIR}/tests/architecture/p10_scheduler_rest.py
+  $<TARGET_FILE:kiarabot-control> $<TARGET_FILE:kiarabot_control_identity_fixture>
+  $<TARGET_FILE:kiarabot_control_model_fixture> $<TARGET_FILE:kiarabot_control_owner_fixture>)
+set_tests_properties(p10_scheduler_rest PROPERTIES
+  LABELS "p10;control;scheduler;integration;fault" TIMEOUT 90 RESOURCE_LOCK control_https
+  RUN_SERIAL TRUE ENVIRONMENT "PATH=${OPENSSL_BIN_DIR}:$ENV{PATH}")
