@@ -28,7 +28,7 @@ T03a 新增 CoreToPlugin.error（oneof 字段 6），承载注册之后的终止
 <!-- contract-status:start -->
 | 契约项 | 状态 | 说明 |
 | --- | --- | --- |
-| `EventEnvelope.message_sent`、`EventEnvelope.group_member_changed`、`EventEnvelope.adapter_status_changed`、`EventEnvelope.plugin_status_changed` | not_implemented | 唯一适配器只产生 `MessageReceived` 与 `FriendRequest`；Core 对其余事件只有接收/订阅映射。插件订阅这些事件收不到数据。 |
+| `EventEnvelope.message_sent`、`EventEnvelope.group_member_changed`、`EventEnvelope.plugin_status_changed` | not_implemented | 唯一适配器只产生 `MessageReceived`、`FriendRequest` 与 `AdapterStatusChanged`；Core 对其余事件只有接收/订阅映射。插件订阅这些事件收不到数据。 |
 | `ActionEnvelope.schedule_task`、`ScheduleTask.task_id`、`ScheduleTask.schedule`、`ScheduleTask.payload` | deprecated | 旧 Action 调度与 `host.tasks.v1` 重复且语义不等价（见 `doc/13`），v1 继续以 `CAPABILITY_NOT_SUPPORTED` 拒绝；调度只走 `host.tasks.v1`。 |
 | `SendMessage.reply`、`SendMessage.reply_to_message_id` | not_implemented | Core 与适配器都显式拒绝；v1 的 Action 面包含 `send_message`、`react_message`、`delete_message`、`mute_member`、`kick_member` 与 `approve_request`。 |
 | `MessageSegment.Type.AUDIO`、`MessageSegment.Type.VIDEO`、`MessageSegment.Type.FILE`、`MessageSegment.Type.LOCATION`、`ConversationRef.Type.CHANNEL`、`PluginState.PLUGIN_STATE_STARTING`、`PluginState.PLUGIN_STATE_STOPPING` | not_implemented | 适配器把非 text/image/at/reply 段降级为 `UNKNOWN`；CHANNEL 会话被拒绝；运行时状态机不产生 STARTING/STOPPING。 |
@@ -45,13 +45,9 @@ T03a 新增 CoreToPlugin.error（oneof 字段 6），承载注册之后的终止
 | `semantic.rest.action_query_terminal_retention`、`semantic.rest.action_query_deadline_expired` | not_implemented | REST 查询未实现 168 小时终态保留与到期 `EXPIRED` 迁移；语义已冻结，待 control-api 接线。 |
 | `semantic.grpc.business_error_mapping` | deprecated | 旧文档的 `CONFLICT→ALREADY_EXISTS/ABORTED` 等业务错误映射已废止；业务错误以 in-band `Error` 帧为准，见“错误模型”。 |
 | `semantic.rest.admin_role_wildcard` | deprecated | 旧 `admin: ['*']` 通配授权已废止；角色改为显式权限列表，任何默认角色都不含 `message.read`。 |
-| `AdapterStatusChanged` | not_implemented | P01 目标声明；无生产实现，见模块报告。 |
 | `GroupMemberChanged` | not_implemented | P01 目标声明；无生产实现，见模块报告。 |
 | `MessageSent` | not_implemented | P01 目标声明；无生产实现，见模块报告。 |
 | `PluginStatusChanged` | not_implemented | P01 目标声明；无生产实现，见模块报告。 |
-| `AdapterStatusChanged.adapter_id` | not_implemented | P01 目标声明；无生产实现，见模块报告。 |
-| `AdapterStatusChanged.reason` | not_implemented | P01 目标声明；无生产实现，见模块报告。 |
-| `AdapterStatusChanged.state` | not_implemented | P01 目标声明；无生产实现，见模块报告。 |
 | `GroupMemberChanged.change_type` | not_implemented | P01 目标声明；无生产实现，见模块报告。 |
 | `GroupMemberChanged.group_id` | not_implemented | P01 目标声明；无生产实现，见模块报告。 |
 | `GroupMemberChanged.user_id` | not_implemented | P01 目标声明；无生产实现，见模块报告。 |
@@ -1372,7 +1368,9 @@ AdapterStatusChanged
 PluginStatusChanged
 ```
 
-上表是事件词表，不是实现承诺：v1 端到端闭环 `MessageReceived`、`TimerTriggered` 与 `FriendRequest`；其余四种见“契约实现状态”中的 `not_implemented` 行。客户端/插件不得订阅尚未实现的事件并假定能收到数据；Core 保留订阅映射只为后续接线。
+上表是事件词表，不是实现承诺：v1 端到端闭环 `MessageReceived`、`TimerTriggered`、`FriendRequest` 与 `AdapterStatusChanged`；其余三种见“契约实现状态”中的 `not_implemented` 行。客户端/插件不得订阅尚未实现的事件并假定能收到数据；Core 保留订阅映射只为后续接线。
+
+`AdapterStatusChanged` 自 2026-11-02 起由 NoneBot 适配器产生：适配器在 Core 连接、平台连接/断开和平台动作失败的状态迁移时通过本机 outbox 上报 `adapter_id`、`state` 与 `reason`，状态不变不重复上报；Core 在 `core/src/application/adapter_ingress.cpp` 校验来源 `adapter_id` 与 `HealthState` 范围后持久化，插件须订阅能力 `event.adapter.status.changed` 且获授 `adapter.read`。`AdapterStatusChanged` 没有会话载荷，排序域使用 `TYPE_UNSPECIFIED`（见上文）。
 
 `FriendRequest` 自 2026-10-31（W6f）起由 NoneBot 适配器产生：`user_id`、`comment`、`request_id`（适配器作用域的安全 token，不是平台 `flag`）；插件必须订阅能力 `event.friend.request` 且获授 `request.read`。审批使用 ApproveRequest Action 并回填同一 `request_id`；适配器在本机解析原始 `flag` 后调用 OneBot `set_friend_add_request`。v1 只映射好友请求，群邀请/加群请求没有契约事件，仍不支持。
 

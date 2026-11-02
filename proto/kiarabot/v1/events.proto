@@ -24,7 +24,7 @@ message EventEnvelope {
     // CONTRACT_STATUS: implemented - the NoneBot adapter emits friend requests from OneBot V11.
     FriendRequest friend_request = 23;
     TimerTriggered timer_triggered = 24;
-    // CONTRACT_STATUS: not_implemented - no adapter emits AdapterStatusChanged in v1.
+    // CONTRACT_STATUS: implemented - the NoneBot adapter reports Core/platform state transitions.
     AdapterStatusChanged adapter_status_changed = 25;
     // CONTRACT_STATUS: not_implemented - Core has no producer and plugins cannot subscribe.
     PluginStatusChanged plugin_status_changed = 26;
@@ -77,7 +77,6 @@ message TimerTriggered {
   bytes payload = 4;
 }
 
-// CONTRACT_STATUS: not_implemented - no adapter emits AdapterStatusChanged in v1.
 message AdapterStatusChanged {
   string adapter_id = 1;
   HealthState state = 2;

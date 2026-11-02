@@ -17,7 +17,7 @@
       "ActionEnvelope": "implemented",
       "ActionResult": "implemented",
       "AdapterEventAck": "implemented",
-      "AdapterStatusChanged": "not_implemented",
+      "AdapterStatusChanged": "implemented",
       "AdapterToCore": "implemented",
       "ApproveRequest": "implemented",
       "Capability": "implemented",
@@ -349,9 +349,9 @@
       "AdapterEventAck.retry_after_ms": "implemented",
       "AdapterEventAck.status": "implemented",
       "AdapterEventAck.trace_id": "implemented",
-      "AdapterStatusChanged.adapter_id": "not_implemented",
-      "AdapterStatusChanged.reason": "not_implemented",
-      "AdapterStatusChanged.state": "not_implemented",
+      "AdapterStatusChanged.adapter_id": "implemented",
+      "AdapterStatusChanged.reason": "implemented",
+      "AdapterStatusChanged.state": "implemented",
       "AdapterToCore.action_result": "implemented",
       "AdapterToCore.event": "implemented",
       "AdapterToCore.heartbeat": "implemented",
@@ -386,7 +386,7 @@
       "Error.request_id": "implemented",
       "Error.retryable": "implemented",
       "Error.trace_id": "implemented",
-      "EventEnvelope.adapter_status_changed": "not_implemented",
+      "EventEnvelope.adapter_status_changed": "implemented",
       "EventEnvelope.delivery_mode": "implemented",
       "EventEnvelope.event_id": "implemented",
       "EventEnvelope.friend_request": "implemented",
@@ -1375,7 +1375,7 @@
       "EventEnvelope.group_member_changed": "not_implemented",
       "EventEnvelope.friend_request": "implemented",
       "EventEnvelope.timer_triggered": "implemented",
-      "EventEnvelope.adapter_status_changed": "not_implemented",
+      "EventEnvelope.adapter_status_changed": "implemented",
       "EventEnvelope.plugin_status_changed": "not_implemented"
     },
     "action_payloads": {
@@ -1642,7 +1642,10 @@
       "adapters/nonebot/src/kiarabot_adapter_nonebot/client.py"
     ],
     "EventEnvelope.adapter_status_changed": [
-      "adapters/nonebot/src/kiarabot_adapter_nonebot/client.py"
+      "adapters/nonebot/src/kiarabot_adapter_nonebot/status.py",
+      "adapters/nonebot/src/kiarabot_adapter_nonebot/client.py",
+      "core/src/application/adapter_ingress.cpp",
+      "core/src/application/plugin_hub.cpp"
     ],
     "EventEnvelope.plugin_status_changed": [
       "core/src/application/plugin_hub.cpp",
