@@ -69,7 +69,7 @@ P00–P02 在同一集成工作分支形成目标构建基线；P01 的契约生
 | P10 | Scheduler 一次性任务及可靠触发 | P06、P03、P04 | 已实现 P10a–P10c、本地实测（ctest p10 5/5、p03_postgres 1/1、SDK tasks pytest 43 passed）并完成 P10g target 登记（6 方法/14 消息/52 字段/4 semantic）；3 个 Control REST 任务 operation 因无限定目录 target 测试未翻；真实环境项见 [architecture-p10-scheduler.md](../reports/modules/architecture-p10-scheduler.md) |
 | P11 | Model 配置/密钥及调用前后记账 | P05、P03、P04 | 未开始 |
 | P12 | Control 与 Panel 核心运行管理全部接线 | P07–P11 | 未开始 |
-| P13 | 生命周期协调、分类清理与容量观测 | P07–P12 | 已实现 P13a–P13d；可观测最小面/验收矩阵见 doc/08 P13d 与 reports/modules/architecture-p13-lifecycle.md，真实满盘/跨主机待 P14 环境 |
+| P13 | 生命周期协调、分类清理与容量观测 | P07–P12 | 已实现 P13a–P13e（含 HostBridge live stop/drain 与共享删除隔离）；Scheduler participant 生产委托与 BeginDelete→真实 Host 单链未验收，决策见 reports/modules/architecture-p13f-exit-decision.md；真实满盘/跨主机待 P14 环境 |
 | P14 | 跨主机部署、故障矩阵、恢复及统一发布验收 | P13 | 未开始 |
 
 推荐单人执行顺序为表中顺序。多人实施时，P08/P09/P10/P11 可在公共契约与相应前置通过后分别推进；P12 页面骨架可提前开发，但真实能力完成必须等待业务所有者。并行对话与工作区分配见 [执行记录](../reports/execution/2026-11-01-architecture-parallel.md)；按依赖逐波启动，不让业务线程自行发明共享协议。
@@ -325,6 +325,32 @@ PG Repository/COMMIT/锁/并发测试缺少真实 PG 时失败并报告原因，
 - **错误/状态**：依赖离线Blocked不伪全局完成；恢复不复活旧凭据/任务；过期TTL不续期；已受理/未决记录不被容量淘汰；备份中历史不自动激活资源。
 - **文档**：运行语义、全部直接受影响模块与`doc/08`；日志仅标识/状态，告警含操作引用不含秘密。
 - **验证/退出**：V0/V1/V2/V3/V4/V5(p13)，重复删除/恢复并发、共享成员删除不清其他人数据、满盘/清理失败、失效outbox满、未决副作用、保留期与配额；达到M3。
+
+### P13f 退出决策与证据刷新（2026-11-03，main=d28020e）
+
+完整决策包/证据矩阵见 `reports/modules/architecture-p13f-exit-decision.md` 与
+`reports/modules/architecture-p13-lifecycle.md`；本任务只读，不改代码/契约。
+
+**P13 退出判定：未通过。** 已实测：重复删除/恢复（`p13_runtime_lifecycle`、
+`p05_runtime_identity_e2e`）、共享 namespace/member 删除隔离（`p06_bridge_acceptance` P13e）、
+Host/SDK drain 与 UNKNOWN 不伪 stopped（`p13_host_sdk_drain`）、清理 fault（缺真实满盘）、
+未决记录保留、30/180 天与 60s 批次、HostBridge live stop/drain 帧（`p08_host_bridge_e2e`）。
+部分/未验收：Host participant 与 BeginDelete 的单一联合 e2e；Scheduler participant 生产
+ListTasks/CancelTask（当前仅注入 fake 端口 BLOCKED→Done）；跨主机/生产规模；集中 metrics/告警。
+
+**Runtime→Scheduler 委托备选（结论）**：
+- **A（推荐，需用户确认）**：Scheduler `ListTasks`/`CancelTask` 接纳 Runtime 平台 peer 内部
+  授权，对称 P10b-2 `AcceptTimerTrigger`；无 proto/权限/RPC 变更，但改变冻结 caller/authz
+  语义，必须收窄到两方法并严格校验 instance scope/task owner。
+- **B（不推荐）**：Control 签发实例委托；冻结 Identity 委托 subject 是 Control 会话主体，
+  Scheduler 派生 owner instance 会错位；要可行需与 P05b 同类的 Identity authz 语义变更，风险
+  和范围最大，必须先获用户确认。
+- **C（可立即做 test-only）**：保持生产 fail-closed，用现有可注入 `scheduler_lifecycle` fake
+  端口跑 real PG/HostBridge 联合 e2e；不改变语义，但不能作为生产退出证据。
+
+**需用户确认**：①是否批准 A 的冻结 caller 语义修订（及平台 peer 授权锚）；②是否接受 C 作为
+确认前的 test-only 联合证据（P13 仍标生产未通过）；③是否同步解决 P05b 的 instance-delegation
+语义（B 的前置，A 不依赖）。
 
 ### P14：部署、故障与统一交付
 
