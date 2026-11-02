@@ -3,7 +3,9 @@
 # reverse-proxies /api/ and /ws/ to the loopback-bound control API.
 #   docker build -f deploy/docker/panel.Dockerfile \
 #     --build-arg VITE_API_MODE=live -t kiarabot-panel .
-FROM node:22-bookworm-slim AS build
+# P14b: the panel build uses the locked Node 22.14.0. Release images must pin the
+# manifest digest (target-smoke --release rejects unpinned image refs).
+FROM node:22.14-bookworm-slim AS build
 
 WORKDIR /src
 COPY api/ /src/api/

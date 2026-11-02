@@ -72,21 +72,20 @@ fi
 require_version protoc "$(protoc --version | version_from_output)" 25
 require_version Python "$(python3 --version | version_from_output)" 3.9
 node_version="$(node --version | version_from_output)"
-require_version Node "$node_version" 20.19
-node_major="${node_version%%.*}"
-if [[ "$node_major" -eq 21 ]]; then
-  echo 'Redocly 2.72.1 requires Node 20.19+ below 21, or Node 22.12+' >&2
+# P14b: local/CI toolchain is exactly the lock's Node 22.14.0 (install with
+# scripts/toolchain/install-node.sh). Do not accept a newer Homebrew/system Node
+# for locked CI; a floating major would change npm lock/Redocly behavior.
+if [[ "$node_version" != 22.14.0 ]]; then
+  echo "Locked checks require Node 22.14.0 (found: ${node_version:-unknown}); run scripts/toolchain/install-node.sh and add build/toolchain/node-v22.14.0/bin to PATH" >&2
   exit 1
-elif [[ "$node_major" -eq 22 ]]; then
-  require_version Node "$node_version" 22.12
 fi
+require_version Node "$node_version" 22.14.0
 require_version npm "$(npm --version | version_from_output)" 10
 require_version clang-format "$(clang-format --version | version_from_output)" 16
 require_version clang-tidy "$(clang-tidy --version | version_from_output)" 16
 
 if [[ "$full_preset" == full-locked ]]; then
   [[ "$(python3 --version | version_from_output)" == 3.11.18 ]] || { echo 'Locked checks require Python 3.11.18' >&2; exit 1; }
-  [[ "$node_version" == 22.14.0 ]] || { echo 'Locked checks require Node 22.14.0' >&2; exit 1; }
   [[ "$(clang-format --version | version_from_output)" == 16.0.6 ]] || { echo 'Locked checks require clang-format 16.0.6' >&2; exit 1; }
   [[ "$(clang-tidy --version | version_from_output)" == 22.1.8 ]] || { echo 'Locked checks require clang-tidy LLVM 22.1.8' >&2; exit 1; }
   protoc_version="$(protoc --version | version_from_output)"
