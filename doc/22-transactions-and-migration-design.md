@@ -292,3 +292,12 @@ keyset 查询，提交/回滚不产生写、审计或 outbox；查询失败不�
 ## P13c 生命周期 participant 与 target 登记（实现记录，2026-11-02）
 
 P13a 的 Host 参与者端口现接到 P08b-3 Runtime host_command outbox：维护轮次在 UoW 外调用 participant，participant 自己开短 UoW 写/读取 StopExecution 命令（确定性 command_id，重放幂等），只把 `receipt_persisted && receipt_outcome∈{KnownSucceeded,KnownFailed}` 当 Done；Pending/Dispatched/Unknown/拒绝保持 blocked，避免把 Host 未确认状态写成 stopped。P08b-3b 下发/回执接通后无需改 Runtime 应用层即可收敛。Scheduler 参与者仍通过实例委托的 ListTasks/CancelTask 端口预留，真实 delegation/endpoint 未配置时 BLOCKED。target 登记按证据翻转 Runtime 生命周期 RPC 与 Operation/OperationProgress/OperationState；未覆盖的 Host/Scheduler 真实完成、Control REST delete/restore 保持 not_implemented。
+
+## P08d bootstrap 凭据文件与 Delete 命令快照（2026-11-02）
+
+受管 bootstrap 明文只出现在 Runtime CreateInstance/BindAdapter 的一次性响应；部署 helper
+在 Host 侧原子写 `credential_directory/<instance_id>.bootstrap`（0600），不属于数据库事务，
+也不进入 Runtime 存储/outbox/audit。Delete 生命周期参与者在同一 UoW 写 host_command
+StopExecution 快照（command_id 确定性、installation/package/desired state、Pending），
+receipt/observation 仍由 HostBridge 后续事务推进；Runtime 重启只重放同一快照，不新增命令，
+无已知 receipt 时保持 BLOCKED/UNKNOWN，绝不把文件清理或命令缺失当作 stopped。

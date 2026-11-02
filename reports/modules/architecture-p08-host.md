@@ -1,9 +1,9 @@
 # P08 Host 受管执行与 HostBridge（P08a–P08b-3 进展）
 
 状态（2026-11-02）：**P08 未退出**。传输层（P08b-2b）、Runtime 命令/观察持久化（P08b-3）、
-HostBridge 下发/receipt/observation PG 接线（P08b-3a）与真 PG16.4+真 Runtime+fake Host 的
-e2e（P08b-3b）已完成；真实 `kiarabot-plugin-host`+受管 SDK 插件进程联测、以及受管 bootstrap
-自动写入 Host credential_directory 仍未完成。
+HostBridge 下发/receipt/observation PG 接线（P08b-3a）、真 PG16.4+真 Runtime+fake Host 的
+e2e（P08b-3b）与 P08d 部署 helper/Delete 快照已完成；真实 `kiarabot-plugin-host`+受管 SDK 插件
+进程联测仍未完成。
 
 ## 已实现
 
@@ -39,3 +39,29 @@ e2e（P08b-3b）已完成；真实 `kiarabot-plugin-host`+受管 SDK 插件进�
   host 映射补齐；restart/Delete 参与者的命令快照尚未接线。
 - 受管 bootstrap 尚未自动预置到 Host credential_directory；restart/Delete 专门命令未接；
   P08 退出判定：**未通过（3b 待完成）**。
+
+
+## P08d：部署 helper + Delete 命令快照（2026-11-02）
+
+已实现：
+
+- `scripts/deploy/target_host_credential.py`：从 CreateInstance/BindAdapter 的一次性
+  `bootstrap_credential` 响应生成 Host `credential_directory/<instance_id>.bootstrap`；原子写、
+  严格 0600/regular/非符号链接，支持相同凭据幂等、`--replace` 显式轮换、`prune` 清理非活跃
+  实例与遗留临时文件、`verify` 启动前权限/owner 检查；明文只从 stdin/0600 response 文件读取，
+  不进入 stdout/stderr/argv/日志。
+- 单元测试 `scripts/deploy/tests/host_credential_test.py`（6 用例：存储/幂等/轮换拒绝与替换/
+  bind adapter 响应/清理/不安全输入与符号链接/verify），CTest `deploy_host_credential`。
+- P13c Delete Host 参与者的 StopExecution 快照补齐 `installation_id`、`package_sha256`、
+  `desired_version`、`desired_state=Stopped`（launch_profile/arguments/env 保持部署映射事实，
+  StopExecution 帧不需要）；现有测试扩展覆盖快照字段与 Runtime 重启后同 command_id 重放
+  幂等、无 receipt 仍 BLOCKED（UNKNOWN 不伪 stopped）。
+
+未完成/边界：
+
+- 真实 `kiarabot-plugin-host` + 受管 SDK 插件进程 e2e 仍属 P08b-3b/P08 退出关键路径。
+- 未新增 Restart RPC（proto 冻结）；Host 重启走 P13b drain/恢复，实例 restart 由
+  stop/start desired-state 组合，host_command 快照复用既有 Apply/Stop 命令。
+- Runtime 不解析 manifest，launch_profile/arguments/environment 仍由部署 host 配置映射；
+  这些字段在 Stop 快照中为空、在 Apply 快照中来自当前 Core 可用的安装事实。
+- P08 退出判定：**未通过**（真实 Host+SDK 进程联测与端到端凭据注入仍待 P08b-3b/后续）。

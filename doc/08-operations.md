@@ -1421,3 +1421,37 @@ P13c（2026-11-02）：Runtime BeginDelete 对受管实例的 Host 参与者已�
 - 故障处置：单源不可用时 Control 返回 503（不返回另一源部分页）；先检查对应 owner 健康与
   `log.read`/`audit.read` assignment/委托，再重试同一 cursor；无效/过期 cursor 需从第一页重新拉取。
 - 该查询为只读运维审计面，不改变业务事务/保留策略；需要长期留存须按备份/日志基础设施另行实现。
+## P08d 受管 bootstrap 凭据部署 helper（2026-11-02）
+
+P14 决定秘密以只读文件挂载为主；冻结协议没有 HostBridge 凭据交付帧，Runtime 不写 Host
+文件系统、也不持久明文。部署流程在 CreateInstance/BindAdapter 返回一次性
+`bootstrap_credential` 后，用 `scripts/deploy/target_host_credential.py` 生成 Host
+`credential_directory/<instance_id>.bootstrap`：
+
+```bash
+# 以 Host 运行用户执行（或 root + --owner hostuser:hostgroup）
+grpcurl ... RuntimeService/CreateInstance > /run/kiarabot/create-instance.json
+chmod 600 /run/kiarabot/create-instance.json
+scripts/deploy/target_host_credential.py store \
+  --directory /etc/kiarabot-host/credentials \
+  --response /run/kiarabot/create-instance.json \
+  --owner kiarabot-host:kiarabot-host
+rm -f /run/kiarabot/create-instance.json
+
+# 删除/缩容后清理不再活跃的凭据（active 文件为 JSON 数组或每行一个 instance id）
+scripts/deploy/target_host_credential.py prune \
+  --directory /etc/kiarabot-host/credentials --active /run/kiarabot/active-instances.txt
+# 只验权限/owner/无符号链接，不读取秘密输出
+scripts/deploy/target_host_credential.py verify --directory /etc/kiarabot-host/credentials
+```
+
+- 写入原子（同目录 0600 临时文件→fsync→rename→目录 fsync），文件严格 `0600`、regular、
+  非符号链接；stdin 或 0600 response 文件读取明文，绝不出现在 argv/日志；输出只有
+  `STORED/UNCHANGED/ROTATED/REMOVED/PRUNED/VERIFIED` 与 instance id。
+- 幂等：相同凭据重复 `store` 为 `UNCHANGED`；不同凭据必须显式 `--replace`，否则退出码 3
+  `REFUSED_ROTATION`（先停实例再轮换，见 P14 文件轮换顺序）。
+- `prune` 删除不在 active 列表的 `*.bootstrap` 和遗留临时文件；`verify` 在启动前检查目录，
+  发现符号链接/非 0600/owner 不符则 fail closed。
+- Host 仍按 P08a 约定在 spawn 时从 `credential_directory/<instance_id>.bootstrap` 读取并只
+  注入 launch profile 的 `credential_environment`；SDK 的 P06 首帧使用不变，Runtime 仍只存
+  SHA-256。该 helper 不新增协议、不自动改 Host 配置；Host 配置/白名单仍由部署维护。

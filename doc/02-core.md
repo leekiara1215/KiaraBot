@@ -509,9 +509,14 @@ stopped），P13a 60s 清理批次执行 7d/30d 保留。**P08b-3b（部分）**
 客户端覆盖注册→apply 下发→receipt/observation 落 PG→重复 observation 去重→重连 generation→
 旧 fence 拒绝；修复 host_commands kind CHECK 与 domain 枚举不一致（1..3）及 installation_id
 读取缺失，Runtime schema v16（descriptor `ec12933ab8bff61620db24ebcb05ef44`/152）。
-**未完成**：真实 `kiarabot-plugin-host`+受管 SDK 插件进程联测；受管 bootstrap 自动写入 Host
-credential_directory 受冻结协议约束（无凭据交付帧，Runtime 不应直接写 Host 文件系统），
-需部署侧 helper 或契约/用户确认；restart/Delete 专门命令快照仍未接。
+**P08d（部署 helper + Delete 快照）**：新增 `scripts/deploy/target_host_credential.py`，从
+CreateInstance/BindAdapter 一次性响应生成 Host `credential_directory/<instance_id>.bootstrap`
+（0600/atomic/幂等/显式轮换/清理/verify，不落日志/argv，见 doc/08），补上“自动预置”的部署
+约定而不改协议；P13c 的 Delete Host 参与者 StopExecution 快照补齐 installation/package/
+desired state 字段，Runtime 重启后同一 command_id 重放幂等、无已知 receipt 仍 BLOCKED
+（UNKNOWN 不伪 stopped）。**未完成**：真实 `kiarabot-plugin-host`+受管 SDK 插件进程联测；
+没有新增 Restart RPC（proto 冻结），Host restart 走 P13b drain、实例 restart 由 stop/start
+desired-state 组合；launch_profile/arguments 仍来自部署映射（Runtime 不解析 manifest）。
 
 **合并回归（2026-11-02）**：P13c 合入时重解 runtime_composition 冲突丢失 HostBridge
 Persistence 回调，HostBridge 只注册不派发，main 的 `p08_host_bridge_e2e` apply 超时；已恢复四路

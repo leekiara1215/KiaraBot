@@ -592,6 +592,25 @@ void runtime(const DatabaseConfig& config) {
                                             std::string{"live-marker"}, now));
   check(take(work->host_commands().pending("live-host", 2, 10)).empty(),
         "receipted host command replayed");
+  // P08d Delete participant snapshot: the same schema accepts a StopExecution row with the full
+  // installation/package/desired-state snapshot; an UNKNOWN receipt stays Unknown, never stopped.
+  target::HostCommandOutboxRecord stop = command;
+  stop.command_id = {"live-host-stop"};
+  stop.kind = target::HostCommandKind::StopExecution;
+  stop.desired_state = target::DesiredState::Stopped;
+  stop.payload_sha256 = std::string(64, 'c');
+  stop.created_at = now;
+  stop.updated_at = now;
+  take(work->host_commands().insert(stop));
+  take(work->host_commands().record_receipt(stop.command_id, true,
+                                            target::ExecutionOutcome::Unknown, std::string{}, now));
+  const auto stopped_receipt = take(work->host_commands().find(stop.command_id));
+  check(stopped_receipt && stopped_receipt->kind == target::HostCommandKind::StopExecution &&
+            stopped_receipt->installation_id == "live-installation" &&
+            stopped_receipt->desired_state == target::DesiredState::Stopped &&
+            stopped_receipt->receipt_persisted.value_or(false) &&
+            stopped_receipt->receipt_outcome == target::ExecutionOutcome::Unknown,
+        "Delete stop snapshot/UNKNOWN receipt projection incorrect");
   const auto receipted = take(work->host_commands().find(command.command_id));
   check(receipted && receipted->state == target::HostCommandDeliveryState::Receipted &&
             receipted->receipt_persisted.value_or(false) &&
@@ -638,7 +657,7 @@ void runtime(const DatabaseConfig& config) {
   const auto pruned = take(work->host_commands().prune(now + std::chrono::hours{24 * 40},
                                                        std::chrono::hours{24 * 7},
                                                        std::chrono::hours{24 * 30}, 100));
-  check(pruned == 2, "expired/receipted commands not pruned by retention");
+  check(pruned == 3, "expired/receipted/Delete commands not pruned by retention");
   check(!take(work->host_commands().find(timeout_command.command_id)),
         "pruned command still present");
   commit(*work);
