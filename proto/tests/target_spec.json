@@ -1557,6 +1557,24 @@
       "server_streaming": false,
       "status": "not_implemented",
       "requires_idempotency_key": false
+    },
+    {
+      "service": "RuntimeService",
+      "method": "QueryActionResult",
+      "file": "runtime.proto",
+      "request": "RuntimeQueryActionResultRequest",
+      "response": "RuntimeQueryActionResultResponse",
+      "caller": "scoped Control",
+      "permission": "action.inspect",
+      "risk": "online",
+      "mutating": false,
+      "idempotency": "none",
+      "deadline_ms": 2000,
+      "server_streaming": false,
+      "status": "not_implemented",
+      "max_deadline_ms": 5000,
+      "requires_idempotency_key": false,
+      "exposure": "wire"
     }
   ],
   "bridges": [

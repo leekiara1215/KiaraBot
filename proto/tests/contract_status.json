@@ -319,7 +319,11 @@
       "AssignmentSpec": "not_implemented",
       "ConnectionAuthorization": "not_implemented",
       "RefreshConnectionAuthorization": "not_implemented",
-      "ConnectionAuthorizationResult": "not_implemented"
+      "ConnectionAuthorizationResult": "not_implemented",
+      "ActionExecutionEvidence": "not_implemented",
+      "ActionReceipt": "not_implemented",
+      "RuntimeQueryActionResultRequest": "not_implemented",
+      "RuntimeQueryActionResultResponse": "not_implemented"
     },
     "proto_fields": {
       "Account.account_id": "implemented",
@@ -1369,7 +1373,44 @@
       "RegisterPluginResponse.authorization": "not_implemented",
       "PluginToCore.connection_proof": "not_implemented",
       "PluginToCore.refresh_authorization": "not_implemented",
-      "CoreToPlugin.authorization_result": "not_implemented"
+      "CoreToPlugin.authorization_result": "not_implemented",
+      "ActionEnvelope.dispatch_attempt_id": "not_implemented",
+      "ActionEnvelope.dispatch_sequence": "not_implemented",
+      "ActionResult.execution_outcome": "not_implemented",
+      "ActionResult.dispatch_attempt_id": "not_implemented",
+      "AdapterToCore.action_evidence": "not_implemented",
+      "CoreToAdapter.action_receipt": "not_implemented",
+      "ActionExecutionEvidence.action_id": "not_implemented",
+      "ActionExecutionEvidence.dispatch_attempt_id": "not_implemented",
+      "ActionExecutionEvidence.execution_outcome": "not_implemented",
+      "ActionExecutionEvidence.observed_at": "not_implemented",
+      "ActionExecutionEvidence.last_error": "not_implemented",
+      "ActionExecutionEvidence.platform_reference": "not_implemented",
+      "ActionReceipt.action_id": "not_implemented",
+      "ActionReceipt.dispatch_attempt_id": "not_implemented",
+      "ActionReceipt.disposition": "not_implemented",
+      "ActionReceipt.error": "not_implemented",
+      "ActionReceipt.result": "not_implemented",
+      "ActionMetadata.kind": "not_implemented",
+      "ActionMetadata.target_account_id": "not_implemented",
+      "ActionMetadata.target_conversation_id": "not_implemented",
+      "ActionMetadata.created_at": "not_implemented",
+      "ActionMetadata.deadline": "not_implemented",
+      "ActionMetadata.retain_until": "not_implemented",
+      "ActionMetadata.idempotency_key": "not_implemented",
+      "ActionMetadata.platform_message_id": "not_implemented",
+      "ActionMetadata.dispatch_attempt_id": "not_implemented",
+      "ActionMetadata.error": "not_implemented",
+      "RuntimeListActionMetadataRequest.status": "not_implemented",
+      "RuntimeListActionMetadataRequest.kind": "not_implemented",
+      "RuntimeQueryActionResultRequest.context": "not_implemented",
+      "RuntimeQueryActionResultRequest.account_scope": "not_implemented",
+      "RuntimeQueryActionResultRequest.action_id": "not_implemented",
+      "RuntimeQueryActionResultRequest.idempotency_key": "not_implemented",
+      "RuntimeQueryActionResultRequest.owner_instance_id": "not_implemented",
+      "RuntimeQueryActionResultResponse.result": "not_implemented",
+      "RuntimeQueryActionResultResponse.execution_outcome": "not_implemented",
+      "RuntimeQueryActionResultResponse.metadata": "not_implemented"
     },
     "event_payloads": {
       "EventEnvelope.message_received": "implemented",
@@ -1531,7 +1572,19 @@
       "CredentialState.CREDENTIAL_ACTIVE": "not_implemented",
       "CredentialState.CREDENTIAL_REVOKED": "not_implemented",
       "CredentialState.CREDENTIAL_EXPIRED": "not_implemented",
-      "Permission.PERMISSION_MESSAGE_READ": "not_implemented"
+      "Permission.PERMISSION_MESSAGE_READ": "not_implemented",
+      "ActionKind.ACTION_KIND_UNSPECIFIED": "not_implemented",
+      "ActionKind.ACTION_KIND_SEND_MESSAGE": "not_implemented",
+      "ActionKind.ACTION_KIND_REACT_MESSAGE": "not_implemented",
+      "ActionKind.ACTION_KIND_DELETE_MESSAGE": "not_implemented",
+      "ActionKind.ACTION_KIND_MUTE_MEMBER": "not_implemented",
+      "ActionKind.ACTION_KIND_KICK_MEMBER": "not_implemented",
+      "ActionKind.ACTION_KIND_APPROVE_REQUEST": "not_implemented",
+      "ActionReceiptDisposition.ACTION_RECEIPT_DISPOSITION_UNSPECIFIED": "not_implemented",
+      "ActionReceiptDisposition.ACTION_RECEIPT_RECORDED": "not_implemented",
+      "ActionReceiptDisposition.ACTION_RECEIPT_DUPLICATE": "not_implemented",
+      "ActionReceiptDisposition.ACTION_RECEIPT_EVIDENCE_ONLY": "not_implemented",
+      "ActionReceiptDisposition.ACTION_RECEIPT_CONFLICT": "not_implemented"
     },
     "channels": {
       "channels.control": "implemented",
@@ -4662,6 +4715,165 @@
     ],
     "semantic.bridge.plugin_delivery_lease": [
       "core/src/application/target/runtime_application.cpp"
+    ],
+    "ActionExecutionEvidence": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ActionReceipt": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeQueryActionResultRequest": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeQueryActionResultResponse": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ActionEnvelope.dispatch_attempt_id": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ActionEnvelope.dispatch_sequence": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ActionResult.execution_outcome": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ActionResult.dispatch_attempt_id": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "AdapterToCore.action_evidence": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "CoreToAdapter.action_receipt": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ActionExecutionEvidence.action_id": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ActionExecutionEvidence.dispatch_attempt_id": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ActionExecutionEvidence.execution_outcome": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ActionExecutionEvidence.observed_at": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ActionExecutionEvidence.last_error": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ActionExecutionEvidence.platform_reference": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ActionReceipt.action_id": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ActionReceipt.dispatch_attempt_id": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ActionReceipt.disposition": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ActionReceipt.error": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ActionReceipt.result": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ActionMetadata.kind": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ActionMetadata.target_account_id": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ActionMetadata.target_conversation_id": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ActionMetadata.created_at": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ActionMetadata.deadline": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ActionMetadata.retain_until": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ActionMetadata.idempotency_key": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ActionMetadata.platform_message_id": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ActionMetadata.dispatch_attempt_id": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ActionMetadata.error": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeListActionMetadataRequest.status": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeListActionMetadataRequest.kind": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeQueryActionResultRequest.context": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeQueryActionResultRequest.account_scope": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeQueryActionResultRequest.action_id": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeQueryActionResultRequest.idempotency_key": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeQueryActionResultRequest.owner_instance_id": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeQueryActionResultResponse.result": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeQueryActionResultResponse.execution_outcome": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeQueryActionResultResponse.metadata": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ActionKind.ACTION_KIND_UNSPECIFIED": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ActionKind.ACTION_KIND_SEND_MESSAGE": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ActionKind.ACTION_KIND_REACT_MESSAGE": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ActionKind.ACTION_KIND_DELETE_MESSAGE": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ActionKind.ACTION_KIND_MUTE_MEMBER": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ActionKind.ACTION_KIND_KICK_MEMBER": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ActionKind.ACTION_KIND_APPROVE_REQUEST": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ActionReceiptDisposition.ACTION_RECEIPT_DISPOSITION_UNSPECIFIED": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ActionReceiptDisposition.ACTION_RECEIPT_RECORDED": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ActionReceiptDisposition.ACTION_RECEIPT_DUPLICATE": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ActionReceiptDisposition.ACTION_RECEIPT_EVIDENCE_ONLY": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "ActionReceiptDisposition.ACTION_RECEIPT_CONFLICT": [
+      "reports/modules/architecture-contracts.md"
     ]
   },
   "vocabulary": {

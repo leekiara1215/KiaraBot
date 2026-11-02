@@ -4,6 +4,7 @@ package kiarabot.v1;
 
 import "google/protobuf/timestamp.proto";
 import "kiarabot/v1/common.proto";
+import "kiarabot/v1/platform.proto";
 
 message ActionEnvelope {
   string action_id = 1;
@@ -16,6 +17,13 @@ message ActionEnvelope {
   SourceRef target_source = 6;
   // Only target.conversation_id is consumed in v1; target.user_id/group_id are unused.
   Subject target = 7;
+  // CONTRACT_STATUS: not_implemented - P07 target dispatch correlation; runtime-assigned.
+  // Empty in plugin submissions (non-empty is INVALID_ARGUMENT); Runtime fills it before
+  // sending the Action to the adapter so execution evidence can reference this attempt.
+  string dispatch_attempt_id = 8;
+  // CONTRACT_STATUS: not_implemented - P07 target dispatch sequence; runtime-assigned.
+  // 1-based per Action and incremented on re-dispatch; plugin submissions must leave it 0.
+  uint32 dispatch_sequence = 9;
 
   oneof payload {
     SendMessage send_message = 20;
@@ -102,4 +110,64 @@ message ActionResult {
   string platform_message_id = 3;
   Error error = 4;
   google.protobuf.Timestamp completed_at = 5;
+  // CONTRACT_STATUS: not_implemented - P07 target execution-knownness.
+  // Pairs with status: ACCEPTED is NOT_STARTED or UNKNOWN, SUCCEEDED is KNOWN_SUCCEEDED,
+  // FAILED is KNOWN_FAILED, EXPIRED is NOT_STARTED (never dispatched) or UNKNOWN (may have
+  // executed), CANCELLED is NOT_STARTED. See doc/01-runtime-semantics.md.
+  ExecutionOutcome execution_outcome = 6;
+  // CONTRACT_STATUS: not_implemented - P07 target adapter result correlation.
+  // Adapter results echo the dispatch attempt they belong to; plugin queries may observe it.
+  string dispatch_attempt_id = 7;
+}
+
+// P07 target Action kind used for metadata/policy/audit projections; the payload oneof in
+// ActionEnvelope remains the wire discriminator.
+// CONTRACT_STATUS: not_implemented - P07 target declaration, producer pending.
+enum ActionKind {
+  ACTION_KIND_UNSPECIFIED = 0;
+  ACTION_KIND_SEND_MESSAGE = 1;
+  ACTION_KIND_REACT_MESSAGE = 2;
+  ACTION_KIND_DELETE_MESSAGE = 3;
+  ACTION_KIND_MUTE_MEMBER = 4;
+  ACTION_KIND_KICK_MEMBER = 5;
+  ACTION_KIND_APPROVE_REQUEST = 6;
+}
+
+// P07 target non-terminal evidence an adapter reports after a dispatch attempt. Terminal
+// results still use ActionResult; evidence never makes an Action terminal by itself.
+// CONTRACT_STATUS: not_implemented - P07 target declaration, producer pending.
+message ActionExecutionEvidence {
+  string action_id = 1;
+  string dispatch_attempt_id = 2;
+  // Only NOT_STARTED (received but not executed) and UNKNOWN (platform call attempted, no
+  // known result) are valid here; KNOWN_* outcomes belong to ActionResult.
+  ExecutionOutcome execution_outcome = 3;
+  google.protobuf.Timestamp observed_at = 4;
+  // Optional stable reason for the last failed platform attempt.
+  Error last_error = 5;
+  // Opaque adapter-local platform reference; never credentials or secrets, at most 256 bytes.
+  string platform_reference = 6;
+}
+
+// P07 target acknowledgement of an adapter result/evidence report. The adapter marks its
+// local action journal reported only after RECORDED/DUPLICATE/EVIDENCE_ONLY; without a
+// receipt the report remains unreported and is resent after reconnect.
+// CONTRACT_STATUS: not_implemented - P07 target declaration, producer pending.
+enum ActionReceiptDisposition {
+  ACTION_RECEIPT_DISPOSITION_UNSPECIFIED = 0;
+  ACTION_RECEIPT_RECORDED = 1;
+  ACTION_RECEIPT_DUPLICATE = 2;
+  ACTION_RECEIPT_EVIDENCE_ONLY = 3;
+  ACTION_RECEIPT_CONFLICT = 4;
+}
+
+// CONTRACT_STATUS: not_implemented - P07 target declaration, producer pending.
+message ActionReceipt {
+  string action_id = 1;
+  string dispatch_attempt_id = 2;
+  ActionReceiptDisposition disposition = 3;
+  // Stable reason when disposition is CONFLICT.
+  Error error = 4;
+  // Authoritative record after the report (terminal or ACCEPTED with execution_outcome).
+  ActionResult result = 5;
 }

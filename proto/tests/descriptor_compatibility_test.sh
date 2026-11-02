@@ -53,7 +53,7 @@ if source.count(old) == 0:
     raise SystemExit(f"fixture text missing: {scenario}")
 source = source.replace(old, new, 1)
 if scenario == "additions":
-    source = source.replace("  oneof payload {", "  string new_field = 8;\n\n  oneof payload {", 1)
+    source = source.replace("  oneof payload {", "  string new_field = 100;\n\n  oneof payload {", 1)
 path.write_text(source)
 PY
   make_descriptor "$tmp_dir/$scenario" "$tmp_dir/$scenario.pb"

@@ -53,6 +53,10 @@ message AdapterToCore {
     ActionResult action_result = 4;
     // CONTRACT_STATUS: not_implemented - same TLS stream only.
     RefreshConnectionAuthorization refresh_authorization = 5;
+    // CONTRACT_STATUS: not_implemented - P07 target non-terminal execution evidence.
+    // Reports that a dispatched Action was received but not executed, or was attempted with
+    // no known platform result. Never terminal by itself; terminal results use action_result.
+    ActionExecutionEvidence action_evidence = 6;
   }
 }
 
@@ -61,6 +65,7 @@ message CoreToAdapter {
   Fence fence = 10;
   oneof body {
     RegisterAdapterResponse register_result = 1;
+    // P07 target: Runtime fills dispatch_attempt_id/dispatch_sequence before sending.
     ActionEnvelope action = 2;
     HeartbeatAck heartbeat_ack = 3;
     AdapterEventAck event_ack = 4;
@@ -68,6 +73,8 @@ message CoreToAdapter {
     ShutdownNotice shutdown = 5;
     // CONTRACT_STATUS: not_implemented - rotates connection secrets, not delivery leases.
     ConnectionAuthorizationResult authorization_result = 6;
+    // CONTRACT_STATUS: not_implemented - P07 target acknowledgement of result/evidence reports.
+    ActionReceipt action_receipt = 7;
   }
 }
 

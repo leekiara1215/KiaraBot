@@ -81,6 +81,17 @@ message ActionMetadata {
   ActionStatus status = 4;
   ExecutionOutcome execution_outcome = 5;
   google.protobuf.Timestamp updated_at = 6;
+  // P07 target observation fields (metadata only; never message bodies or platform secrets).
+  ActionKind kind = 7;
+  string target_account_id = 8;
+  string target_conversation_id = 9;
+  google.protobuf.Timestamp created_at = 10;
+  google.protobuf.Timestamp deadline = 11;
+  google.protobuf.Timestamp retain_until = 12;
+  string idempotency_key = 13;
+  string platform_message_id = 14;
+  string dispatch_attempt_id = 15;
+  Error error = 16;
 }
 
 // CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
@@ -355,6 +366,7 @@ message RuntimeRenewDeliveryResponse {
 }
 
 // CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+// P07: runtime internal dispatcher/test only; external plugins use PluginBridge.Connect.
 message RuntimeSubmitActionRequest {
   RequestContext context = 1;
   Fence fence = 2;
@@ -362,12 +374,14 @@ message RuntimeSubmitActionRequest {
 }
 
 // CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+// P07: runtime internal dispatcher/test only; external plugins use PluginBridge.Connect.
 message RuntimeSubmitActionResponse {
   ActionResult result = 1;
   ExecutionOutcome execution_outcome = 2;
 }
 
 // CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+// P07: runtime internal dispatcher/test only; external plugins use PluginBridge.Connect.
 message RuntimeQueryActionRequest {
   RequestContext context = 1;
   Fence fence = 2;
@@ -375,12 +389,14 @@ message RuntimeQueryActionRequest {
 }
 
 // CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+// P07: runtime internal dispatcher/test only; external plugins use PluginBridge.Connect.
 message RuntimeQueryActionResponse {
   ActionResult result = 1;
   ExecutionOutcome execution_outcome = 2;
 }
 
 // CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+// P07: runtime internal dispatcher/test only; external plugins use PluginBridge.Connect.
 message RuntimeCancelActionRequest {
   RequestContext context = 1;
   Fence fence = 2;
@@ -388,6 +404,7 @@ message RuntimeCancelActionRequest {
 }
 
 // CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+// P07: runtime internal dispatcher/test only; external plugins use PluginBridge.Connect.
 message RuntimeCancelActionResponse {
   ActionResult result = 1;
   ExecutionOutcome execution_outcome = 2;
@@ -398,6 +415,9 @@ message RuntimeListActionMetadataRequest {
   RequestContext context = 1;
   ResourceScope account_scope = 2;
   SnapshotPage page = 3;
+  // P07 target optional filters; absent means no filter.
+  optional ActionStatus status = 4;
+  optional ActionKind kind = 5;
 }
 
 // CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
@@ -416,6 +436,27 @@ message RuntimeInspectActionMetadataRequest {
 // CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
 message RuntimeInspectActionMetadataResponse {
   ActionMetadata action = 1;
+}
+
+// CONTRACT_STATUS: not_implemented - P07 target control-scoped result query, producer pending.
+// Caller is a scoped Control principal; permission is action.inspect and account_scope must
+// contain exactly one RESOURCE_ACCOUNT. Querying by idempotency_key additionally requires
+// owner_instance_id because business idempotency is scoped to the owning plugin instance.
+message RuntimeQueryActionResultRequest {
+  RequestContext context = 1;
+  ResourceScope account_scope = 2;
+  oneof selector {
+    string action_id = 10;
+    string idempotency_key = 11;
+  }
+  string owner_instance_id = 12;
+}
+
+// CONTRACT_STATUS: not_implemented - P07 target control-scoped result query, producer pending.
+message RuntimeQueryActionResultResponse {
+  ActionResult result = 1;
+  ExecutionOutcome execution_outcome = 2;
+  ActionMetadata metadata = 3;
 }
 
 // CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
@@ -941,6 +982,7 @@ service RuntimeService {
     option (max_deadline_ms) = 30000;
     option (requires_online_authorization) = false;
   }
+  // P07: runtime internal dispatcher/test only; external plugins use PluginBridge.Connect.
   rpc SubmitAction(RuntimeSubmitActionRequest) returns (RuntimeSubmitActionResponse) {
     option (required_permission) = PERMISSION_ACTION_EXECUTE;
     option (requires_idempotency) = true;
@@ -948,6 +990,7 @@ service RuntimeService {
     option (max_deadline_ms) = 30000;
     option (requires_online_authorization) = true;
   }
+  // P07: runtime internal dispatcher/test only; external plugins use PluginBridge.Connect.
   rpc QueryAction(RuntimeQueryActionRequest) returns (RuntimeQueryActionResponse) {
     option (required_permission) = PERMISSION_ACTION_EXECUTE;
     option (requires_idempotency) = false;
@@ -955,6 +998,7 @@ service RuntimeService {
     option (max_deadline_ms) = 5000;
     option (requires_online_authorization) = true;
   }
+  // P07: runtime internal dispatcher/test only; external plugins use PluginBridge.Connect.
   rpc CancelAction(RuntimeCancelActionRequest) returns (RuntimeCancelActionResponse) {
     option (required_permission) = PERMISSION_ACTION_EXECUTE;
     option (requires_idempotency) = true;
@@ -970,6 +1014,14 @@ service RuntimeService {
     option (requires_online_authorization) = true;
   }
   rpc InspectActionMetadata(RuntimeInspectActionMetadataRequest) returns (RuntimeInspectActionMetadataResponse) {
+    option (required_permission) = PERMISSION_ACTION_INSPECT;
+    option (requires_idempotency) = false;
+    option (default_deadline_ms) = 2000;
+    option (max_deadline_ms) = 5000;
+    option (requires_online_authorization) = true;
+  }
+  // P07 target: Control-scoped result query over the same authoritative Action record.
+  rpc QueryActionResult(RuntimeQueryActionResultRequest) returns (RuntimeQueryActionResultResponse) {
     option (required_permission) = PERMISSION_ACTION_INSPECT;
     option (requires_idempotency) = false;
     option (default_deadline_ms) = 2000;

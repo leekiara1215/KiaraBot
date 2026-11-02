@@ -78,6 +78,8 @@ message PluginToCore {
   oneof body {
     RegisterPluginRequest register = 1;
     PluginEventAck event_ack = 2;
+    // P07: the only external plugin Action path (action.result.v1); Runtime unary
+    // Action methods are runtime internal dispatcher/test only.
     PluginActionRequest action = 3;
     PluginHeartbeat heartbeat = 4;
     HostRequest host_request = 5;
@@ -103,6 +105,7 @@ message CoreToPlugin {
     HostResponse host_response = 5;
     // Terminal stream failure; absent frame on disconnect remains unknown outcome.
     Error error = 6;
+    // P07: one-question-one-answer response for PluginToCore.action/action_query/action_cancel.
     PluginActionResponse action_response = 7;
     // CONTRACT_STATUS: not_implemented - v1 Core closes the stream without this frame.
     ShutdownNotice shutdown = 8;
@@ -121,6 +124,8 @@ message PluginEventAck {
 }
 // action.result.v1 must be enabled before sending any Action operation.
 // request_id correlates a call; action.idempotency_key survives reconnects.
+// P07 target: the only external plugin Action surface. ActionResult carries execution_outcome;
+// Runtime fills action.dispatch_attempt_id/dispatch_sequence when dispatching to adapters.
 message PluginActionRequest {
   ActionEnvelope action = 1;
   string request_id = 2;
