@@ -36,6 +36,10 @@ CREATE TABLE kiarabot.authorizations (
   subject text PRIMARY KEY REFERENCES kiarabot.principals(id), version kiarabot.uint64 NOT NULL,
   invalidation_dirty boolean NOT NULL
 );
+-- P04-A v1 Identity rule: one Principal per exact resource binding, independent of request
+-- idempotency keys. Principals without a binding are not part of this uniqueness domain.
+CREATE UNIQUE INDEX principals_binding_unique ON kiarabot.principals(binding_kind,binding_id)
+  WHERE binding_kind IS NOT NULL AND binding_id IS NOT NULL;
 )sql";
     sql += kIdentitySecurity;
     break;

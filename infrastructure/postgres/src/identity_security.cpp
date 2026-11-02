@@ -63,8 +63,15 @@ load_credential(pqxx::transaction_base& transaction, const target::CredentialVer
                                     "id=$1 AND version=$2",
                                     key)
                               .one_row();
+    std::vector<target::Service> audiences;
+    for (const auto& audience :
+         transaction.exec("SELECT audience FROM kiarabot.credential_audiences "
+                          "WHERE id=$1 AND version=$2 AND material=0 ORDER BY position",
+                          key)) {
+      audiences.push_back(static_cast<target::Service>(audience[0].as<int>()));
+    }
     record.material = target::PendingCredentialMaterial{
-        static_cast<target::CredentialKind>(material["kind"].as<int>())};
+        static_cast<target::CredentialKind>(material["kind"].as<int>()), std::move(audiences)};
     break;
   }
   case 1: {
@@ -87,7 +94,7 @@ load_credential(pqxx::transaction_base& transaction, const target::CredentialVer
     std::vector<target::Service> audiences;
     for (const auto& audience :
          transaction.exec("SELECT audience FROM kiarabot.credential_audiences "
-                          "WHERE id=$1 AND version=$2 ORDER BY position",
+                          "WHERE id=$1 AND version=$2 AND material=2 ORDER BY position",
                           key)) {
       audiences.push_back(static_cast<target::Service>(audience[0].as<int>()));
     }
@@ -131,6 +138,12 @@ void insert_material(pqxx::transaction_base& transaction,
     transaction.exec(
         "INSERT INTO kiarabot.credential_pending VALUES($1,$2,0,$3)",
         pqxx::params{ref.id.value, ref.version.value, static_cast<int>(pending->kind)});
+    std::size_t position = 0;
+    for (const auto audience : pending->audiences) {
+      transaction.exec(
+          "INSERT INTO kiarabot.credential_audiences VALUES($1,$2,0,$3,$4)",
+          pqxx::params{ref.id.value, ref.version.value, position++, static_cast<int>(audience)});
+    }
   } else if (const auto* password = std::get_if<target::PasswordVerifier>(&record.material)) {
     transaction.exec("INSERT INTO kiarabot.credential_passwords VALUES($1,$2,1,$3,$4)",
                      pqxx::params{ref.id.value, ref.version.value, password->encoded,
@@ -146,7 +159,7 @@ void insert_material(pqxx::transaction_base& transaction,
     std::size_t position = 0;
     for (const auto audience : bootstrap->audiences) {
       transaction.exec(
-          "INSERT INTO kiarabot.credential_audiences VALUES($1,$2,$3,$4)",
+          "INSERT INTO kiarabot.credential_audiences VALUES($1,$2,2,$3,$4)",
           pqxx::params{ref.id.value, ref.version.value, position++, static_cast<int>(audience)});
     }
   } else {

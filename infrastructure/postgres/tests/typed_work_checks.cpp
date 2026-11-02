@@ -71,7 +71,7 @@ void security(const DatabaseConfig& config) {
     take(work->credentials().save(
         {{credential, {1}},
          subject,
-         target::PendingCredentialMaterial{target::CredentialKind::Password},
+         target::PendingCredentialMaterial{target::CredentialKind::Password, {}},
          target::CredentialState::Pending,
          now,
          {},

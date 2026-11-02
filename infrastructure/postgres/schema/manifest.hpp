@@ -34,7 +34,7 @@ SELECT md5(string_agg(descriptor,E'\n' ORDER BY descriptor)) FROM (
 inline constexpr std::string_view descriptor(core::target::Service owner) {
   switch (owner) {
   case core::target::Service::Identity:
-    return "abe04dcae86c5b5ace3cdd1408098ae5";
+    return "2f1e003acaf28de3990f3dc8ebe49cf5";
   case core::target::Service::Runtime:
     return "22b898cd0ec7332932b7ed82e9e23411";
   case core::target::Service::Scheduler:
@@ -48,7 +48,7 @@ inline constexpr std::string_view descriptor(core::target::Service owner) {
 inline constexpr int relation_count(core::target::Service owner) {
   switch (owner) {
   case core::target::Service::Identity:
-    return 113;
+    return 114;
   case core::target::Service::Runtime:
     return 64;
   case core::target::Service::Scheduler:

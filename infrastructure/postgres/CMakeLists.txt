@@ -25,7 +25,7 @@ if(UNIX)
   target_link_libraries(kiarabot_identity_application_test PRIVATE
     kiarabot_postgres kiarabot_identity_crypto kiarabot_identity_admin_application
     kiarabot_identity_delegation_application kiarabot_identity_security_application
-    kiarabot_identity_authorization_application
+    kiarabot_identity_principal_application kiarabot_identity_authorization_application
     libpqxx::pqxx)
   # Static PG/crypto adapters already supply SSL/Crypto linkage; these headers are used directly.
   target_include_directories(kiarabot_identity_application_test SYSTEM PRIVATE

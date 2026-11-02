@@ -20,9 +20,12 @@
 #include "identity_authorization_checks.hpp"
 #include "kiarabot/core/application/target/identity_admin_application.hpp"
 #include "kiarabot/core/application/target/identity_delegation_application.hpp"
+#include "kiarabot/core/application/target/identity_principal_application.hpp"
+#include "kiarabot/core/domain/target/identity_state_rules.hpp"
 #include "kiarabot/infrastructure/identity_crypto/delegation_crypto.hpp"
 #include "kiarabot/infrastructure/identity_crypto/factories.hpp"
 #include "kiarabot/infrastructure/identity_crypto/peer_certificate.hpp"
+#include "kiarabot/infrastructure/identity_crypto/principal_fingerprint.hpp"
 #include "kiarabot/infrastructure/identity_crypto/verification_keys.hpp"
 #include "kiarabot/infrastructure/postgres/security_factory.hpp"
 
@@ -217,6 +220,22 @@ void application_flow(const pg::DatabaseConfig& config) {
         control,
         {},
         {{t::Permission::IdentityDelegationIssue, {t::ResourceKind::Principal, {control.value}}}},
+        {1}},
+       {{"40000000-0000-4000-8000-000000000003"},
+        control,
+        {},
+        {{t::Permission::IdentityPrincipalManage,
+          t::ResourceRef{t::ResourceKind::Adapter, {"60000000-0000-4000-8000-000000000003"}}},
+         {t::Permission::IdentityPrincipalRead,
+          t::ResourceRef{t::ResourceKind::Adapter, {"60000000-0000-4000-8000-000000000003"}}}},
+        {1}},
+       {{"40000000-0000-4000-8000-000000000004"},
+        control,
+        {},
+        {{t::Permission::IdentityPrincipalManage,
+          t::ResourceRef{t::ResourceKind::Principal, {user.value}}},
+         {t::Permission::IdentityPrincipalRead,
+          t::ResourceRef{t::ResourceKind::Principal, {user.value}}}},
         {1}}}};
   check(take(admin->bootstrap_offline(bootstrap)).marker.state == t::BootstrapState::Consumed,
         "offline bootstrap did not consume durable marker");
@@ -356,6 +375,113 @@ void application_flow(const pg::DatabaseConfig& config) {
   phase = "real online authorization";
   pg::test::identity_authorization_checks(*factory, *delegations, clock, user, user_credential,
                                           refreshed.tokens.session, control);
+  phase = "principal credential management";
+  {
+    // The online-authorization fixture deliberately disables Control at its end; this capability
+    // runs as the same real Control peer, so the test restores that authoritative principal.
+    auto work = take(factory->begin());
+    auto restored = take(work->principals().find(control));
+    check(restored.has_value(), "fixture Control principal missing");
+    const auto previous = restored->version;
+    ++restored->version.value;
+    restored->state = t::LifecycleState::Active;
+    take(work->principals().save(*restored, previous));
+    check(work->commit() == t::CommitResult::Committed, "fixture Control reactivation failed");
+  }
+  admin = std::make_unique<t::IdentityAdminApplication>(*factory, *certificates);
+  const t::IdentitySecurityOptions replay_options{{"token-key"},
+                                                  {{"token-key"}},
+                                                  {"request-key"},
+                                                  {"receipt-key"},
+                                                  dummy,
+                                                  std::chrono::hours{24},
+                                                  {100},
+                                                  10,
+                                                  10,
+                                                  100};
+  app = take(t::make_identity_security_application(
+      {*factory, *passwords, *tokens, *receipts, *random, clock, *delegations}, replay_options));
+  auto fingerprints = take(crypto::make_principal_fingerprints());
+  auto principal_app = take(t::make_identity_principal_application(
+      {*factory, *tokens, *passwords, *receipts, *random, *fingerprints},
+      {.token_key = {"token-key"},
+       .request_commitment_key = {"request-key"},
+       .receipt_encryption_key = {"receipt-key"},
+       .bootstrap_credential_lifetime = std::chrono::hours{24},
+       .password_credential_lifetime = std::chrono::hours{365 * 24},
+       .secret_receipts = {100},
+       .maximum_allowed_services = 16}));
+  const t::ResourceRef workload_binding{t::ResourceKind::Adapter,
+                                        {"60000000-0000-4000-8000-000000000003"}};
+  auto registered = take(principal_app->register_principal({context(clock, "principal-register"),
+                                                            peer(),
+                                                            t::PrincipalKind::Adapter,
+                                                            workload_binding,
+                                                            {t::Service::Runtime}}));
+  check(registered.principal.state == t::LifecycleState::Disabled &&
+            registered.initial_credential.state == t::CredentialStatusState::Pending &&
+            !registered.initial_credential.expires_at,
+        "registration did not create a disabled/pending principal");
+  {
+    // Pending allowed_services must survive a real PG round trip before issuance.
+    auto work = take(factory->begin());
+    auto stored = take(work->credentials().current(registered.initial_credential.ref.id));
+    check(stored.has_value(), "registered pending credential disappeared");
+    const auto* pending = std::get_if<t::PendingCredentialMaterial>(&stored->material);
+    check(pending && pending->audiences == std::vector<t::Service>{t::Service::Runtime},
+          "pending credential audiences did not round trip");
+    work->rollback();
+  }
+  auto workload_delivery = take(principal_app->rotate_credential(
+      {context(clock, "principal-rotate"), peer(), registered.initial_credential.ref.id, {1}}));
+  check(workload_delivery.credential.version.value == 2 && workload_delivery.secret &&
+            !workload_delivery.secret->bytes().empty(),
+        "workload credential rotation failed");
+  auto workload_replay = take(principal_app->rotate_credential(
+      {context(clock, "principal-rotate"), peer(), registered.initial_credential.ref.id, {1}}));
+  check(workload_replay.secret &&
+            std::ranges::equal(workload_delivery.secret->bytes(), workload_replay.secret->bytes()),
+        "workload delivery replay did not decrypt original secret");
+  {
+    auto work = take(factory->begin());
+    auto principal_row = take(work->principals().find(registered.principal.id));
+    check(principal_row.has_value() && principal_row->state == t::LifecycleState::Active &&
+              principal_row->version.value == 2,
+          "first rotation did not activate the principal");
+    work->rollback();
+  }
+  take(principal_app->revoke_credential(
+      {context(clock, "principal-revoke"), peer(), registered.initial_credential.ref.id, {2}}));
+  {
+    auto work = take(factory->begin());
+    auto revoked = take(work->credentials().current(registered.initial_credential.ref.id));
+    check(revoked.has_value() && revoked->state == t::CredentialState::Revoked,
+          "workload credential revoke did not persist");
+    auto owner = take(work->principals().find(registered.principal.id));
+    check(owner.has_value(), "workload principal disappeared");
+    const auto gate =
+        t::require_current_credential(*owner, *revoked, revoked->ref, take(work->current_time()));
+    check(std::holds_alternative<t::Failure>(gate) &&
+              std::get<t::Failure>(gate).code == t::ErrorCode::Unauthenticated,
+          "revoked workload credential still passes current-credential gate");
+    work->rollback();
+  }
+  phase = "human password rotation and revoke";
+  auto human_delivery = take(principal_app->rotate_credential(
+      {context(clock, "principal-rotate-human"), peer(), user_credential, {1}}));
+  check(human_delivery.credential.version.value == 2 && human_delivery.secret &&
+            human_delivery.secret->bytes().size() >= 32,
+        "human password rotation did not return a one-time server password");
+  auto rotated_login = take(app->login(
+      {context(clock, "login-rotated-password"), peer(), "alice", human_delivery.secret->bytes()}));
+  check(rotated_login.tokens.session.value.size() > 0, "login with rotated human password failed");
+  expect(app->login({context(clock, "login-old-password"), peer(), "alice", password->bytes()}),
+         t::ErrorCode::Unauthenticated);
+  take(principal_app->revoke_credential(
+      {context(clock, "principal-revoke-human"), peer(), user_credential, {2}}));
+  expect(app->login({context(clock, "login-revoked-password"), peer(), "alice",
+                     human_delivery.secret->bytes()}),
+         t::ErrorCode::Unauthenticated);
 }
 void run(const std::filesystem::path& supplied, std::uint16_t port) {
   check(!std::filesystem::is_symlink(supplied), "unsafe fixture root");

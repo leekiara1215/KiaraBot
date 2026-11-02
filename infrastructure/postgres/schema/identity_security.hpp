@@ -63,9 +63,10 @@ ALTER TABLE kiarabot.credential_heads ADD FOREIGN KEY(id,version,bootstrap_key,b
     DEFERRABLE INITIALLY DEFERRED;
 CREATE TABLE kiarabot.credential_audiences (
   id text NOT NULL, version kiarabot.uint64 NOT NULL,
+  material integer NOT NULL CHECK(material IN (0,2)),
   position integer NOT NULL CHECK(position>=0),
   audience integer NOT NULL CHECK(audience BETWEEN 0 AND 5), PRIMARY KEY(id,version,position),
-  FOREIGN KEY(id,version) REFERENCES kiarabot.credential_bootstraps(id,version)
+  FOREIGN KEY(id,version,material) REFERENCES kiarabot.credential_versions(id,version,material)
 );
 CREATE TABLE kiarabot.credential_certificates (
   id text NOT NULL, version kiarabot.uint64 NOT NULL, material integer NOT NULL CHECK(material=3),

@@ -78,7 +78,7 @@ void check_identity_credentials(Database& database) {
   target::CredentialVersionRecord password{
       {{"credential-password"}, {1}},
       {"credential-owner"},
-      target::PendingCredentialMaterial{target::CredentialKind::Password},
+      target::PendingCredentialMaterial{target::CredentialKind::Password, {}},
       target::CredentialState::Pending,
       created,
       {},
@@ -2205,7 +2205,7 @@ void check_unknown_commit(const DatabaseConfig& config, const std::filesystem::p
   auto credentials = detail::credential_repository(*access.sql);
   take(credentials->save({{{"unknown-vault-credential"}, {1}},
                           {"unknown-vault-owner"},
-                          target::PendingCredentialMaterial{target::CredentialKind::Password},
+                          target::PendingCredentialMaterial{target::CredentialKind::Password, {}},
                           target::CredentialState::Pending,
                           now,
                           {},
