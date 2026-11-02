@@ -15,6 +15,7 @@
 
 #include "kiarabot/core/application/target/scheduler_service.hpp"
 #include "kiarabot/core/runtime/platform/scheduler_rpc.hpp"
+#include "kiarabot/core/runtime/platform/scheduler_runtime_client.hpp"
 #include "kiarabot/core/runtime/platform/service_rpc.hpp"
 #include "kiarabot/infrastructure/postgres/factories.hpp"
 #include "postgres_service.hpp"
@@ -213,15 +214,29 @@ target::Outcome<platform::ServiceComposition> compose(const platform::ProcessCon
   }
   auto zones = std::make_shared<SchedulerZones>();
   auto ids = std::make_shared<SchedulerIds>();
+  std::shared_ptr<platform::SchedulerRuntimeClient> runtime_client;
+  if (configured && config.runtime_endpoint) {
+    grpc::SslCredentialsOptions ssl;
+    ssl.pem_root_certs = config.tls.ca;
+    ssl.pem_cert_chain = config.tls.certificate;
+    ssl.pem_private_key = config.tls.private_key;
+    auto client = platform::SchedulerRuntimeClient::create(
+        {*config.runtime_endpoint, grpc::SslCredentials(ssl), std::chrono::milliseconds{5000}});
+    if (const auto* rejected = std::get_if<target::Failure>(&client)) {
+      return *rejected;
+    }
+    runtime_client = std::move(std::get<std::unique_ptr<platform::SchedulerRuntimeClient>>(client));
+  }
   struct KeepAlive {
     std::shared_ptr<target::SchedulerUnitOfWorkFactory> factory;
     std::shared_ptr<SchedulerZones> zones;
     std::shared_ptr<SchedulerIds> ids;
+    std::shared_ptr<platform::SchedulerRuntimeClient> runtime_client;
   };
-  auto keep_alive = std::make_shared<KeepAlive>(KeepAlive{factory, zones, ids});
+  auto keep_alive = std::make_shared<KeepAlive>(KeepAlive{factory, zones, ids, runtime_client});
   auto service = std::make_shared<target::SchedulerService>(target::SchedulerServiceDependencies{
       *factory, *ids, *zones, target::kTaskHorizon, target::kInstanceTaskCapacity,
-      target::kInstallationTaskCapacity, keep_alive});
+      target::kInstallationTaskCapacity, runtime_client.get(), keep_alive});
 
   platform::SchedulerRpcOptions rpc_options;
   rpc_options.authorize =
@@ -237,7 +252,7 @@ target::Outcome<platform::ServiceComposition> compose(const platform::ProcessCon
   auto database_observation = std::make_shared<detail::DatabaseObservation>();
   database_observation->available.store(configured);
 
-  auto maintain = [factory, service, database_observation]() -> target::Status {
+  auto maintain = [factory, service, database_observation, runtime_client]() -> target::Status {
     if (!database_observation->available.load()) {
       return std::monostate{};
     }
@@ -264,6 +279,9 @@ target::Outcome<platform::ServiceComposition> compose(const platform::ProcessCon
     (void)uow->journal().prune_received(now, 100);
     if (uow->commit() != target::CommitResult::Committed) {
       return failure(target::ErrorCode::UpstreamUnavailable, target::Recovery::Backoff);
+    }
+    if (runtime_client) {
+      (void)service->deliver_triggers(now, 5);
     }
     return std::monostate{};
   };

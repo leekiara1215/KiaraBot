@@ -69,7 +69,8 @@ ReceiptKey receipt_key(const SchedulerCommandContext& context, std::string_view 
 }
 Failure commit_failure(CommitResult result) {
   if (result == CommitResult::Unknown) {
-    return failure(ErrorCode::UpstreamUnavailable, Recovery::QuerySameIdentity, Acceptance::Unknown);
+    return failure(ErrorCode::UpstreamUnavailable, Recovery::QuerySameIdentity,
+                   Acceptance::Unknown);
   }
   return unavailable();
 }
@@ -91,10 +92,12 @@ Service SchedulerService::service() const noexcept {
 
 ServiceReadiness SchedulerService::readiness() const {
   const bool zones = dependencies_.timezone.available();
-  return {zones,
-          {{Dependency::BusinessImplementation, DependencyState::Available},
-           {Dependency::DatabaseSchema, DependencyState::Unverified},
-           {Dependency::Runtime, DependencyState::Unverified}}};
+  const bool runtime = dependencies_.delivery != nullptr && dependencies_.delivery->available();
+  return {
+      zones && runtime,
+      {{Dependency::BusinessImplementation, DependencyState::Available},
+       {Dependency::DatabaseSchema, DependencyState::Unverified},
+       {Dependency::Runtime, runtime ? DependencyState::Available : DependencyState::Unavailable}}};
 }
 
 Outcome<ScheduledTask> SchedulerService::create_task(const SchedulerCommandContext& context,
@@ -137,7 +140,8 @@ Outcome<ScheduledTask> SchedulerService::create_task(const SchedulerCommandConte
     uow->rollback();
     return *failed;
   }
-  const auto [instance_tasks, installation_tasks] = std::get<std::pair<std::size_t, std::size_t>>(counts);
+  const auto [instance_tasks, installation_tasks] =
+      std::get<std::pair<std::size_t, std::size_t>>(counts);
   if (instance_tasks >= dependencies_.instance_capacity ||
       installation_tasks >= dependencies_.installation_capacity) {
     uow->rollback();
@@ -251,8 +255,10 @@ Outcome<ScheduledTask> SchedulerService::cancel_task(const SchedulerCommandConte
     uow->rollback();
     return *failed;
   }
-  CommandReceipt written{receipt, creation_fingerprint(TaskCreationInput{std::string(task_id), {}, {}, std::nullopt, {}}),
-                         task, now, now + kTriggerValidFor};
+  CommandReceipt written{
+      receipt,
+      creation_fingerprint(TaskCreationInput{std::string(task_id), {}, {}, std::nullopt, {}}), task,
+      now, now + kTriggerValidFor};
   const auto stored = uow->receipts().insert(written, ReceiptCapacity{});
   if (const auto* failed = outcome_failure(stored)) {
     uow->rollback();
@@ -485,8 +491,8 @@ Outcome<std::size_t> SchedulerService::due_sweep(TimePoint now, std::size_t limi
   return activated;
 }
 
-Outcome<std::vector<SchedulerTriggerClaim>> SchedulerService::claim_triggers(
-    TimePoint now, std::size_t limit, std::chrono::seconds lease) {
+Outcome<std::vector<SchedulerTriggerClaim>>
+SchedulerService::claim_triggers(TimePoint now, std::size_t limit, std::chrono::seconds lease) {
   if (limit == 0 || limit > 100 || lease <= std::chrono::seconds{0} ||
       lease > std::chrono::seconds{30}) {
     return scheduler_invalid();
@@ -685,6 +691,158 @@ Outcome<std::size_t> SchedulerService::expire_stale_triggers(TimePoint now, std:
     return commit_failure(committed);
   }
   return expired;
+}
+
+Outcome<SchedulerDeliverySummary> SchedulerService::deliver_triggers(TimePoint now,
+                                                                     std::size_t limit) {
+  if (dependencies_.delivery == nullptr) {
+    return failure(ErrorCode::CapabilityNotSupported, Recovery::Diagnose);
+  }
+  if (limit == 0 || limit > 20) {
+    return scheduler_invalid();
+  }
+  auto claimed = claim_triggers(now, limit, std::chrono::seconds{20});
+  if (const auto* rejected = outcome_failure(claimed)) {
+    return *rejected;
+  }
+  SchedulerDeliverySummary summary;
+  for (const auto& trigger : std::get<std::vector<SchedulerTriggerClaim>>(claimed)) {
+    TimerDeliveryRequest request;
+    request.occurrence_id = trigger.occurrence.occurrence_id;
+    request.task_id = trigger.occurrence.task_id;
+    request.owner_instance_id = trigger.occurrence.owner;
+    request.schedule_version = trigger.occurrence.task_version;
+    request.handoff = trigger.occurrence.handoff;
+    request.trace_id = trigger.claim.entry.context.actor.value;
+    auto work = dependencies_.transactions.begin();
+    if (const auto* rejected = std::get_if<Failure>(&work)) {
+      ++summary.retried;
+      continue;
+    }
+    auto uow = std::move(std::get<std::unique_ptr<SchedulerUnitOfWork>>(work));
+    const auto task_found =
+        uow->tasks().find(TaskKey{trigger.occurrence.owner, trigger.occurrence.task_id});
+    if (const auto* rejected = outcome_failure(task_found)) {
+      uow->rollback();
+      (void)rejected;
+      ++summary.retried;
+      continue;
+    }
+    const auto& task = std::get<std::optional<ScheduledTask>>(task_found);
+    if (!task) {
+      uow->rollback();
+      ++summary.retried;
+      continue;
+    }
+    request.target = task->target;
+    request.payload = task->payload;
+    uow->rollback();
+    const auto delivered = dependencies_.delivery->accept(request);
+    if (const auto* rejected = std::get_if<Failure>(&delivered)) {
+      const bool permanent = rejected->code == ErrorCode::InvalidArgument ||
+                             rejected->code == ErrorCode::PermissionDenied ||
+                             rejected->code == ErrorCode::Conflict ||
+                             rejected->code == ErrorCode::CapabilityNotSupported;
+      if (permanent) {
+        const auto failed = fail_trigger(trigger.claim, rejected->code, now);
+        if (const auto* failure = outcome_failure(failed)) {
+          (void)failure;
+          ++summary.retried;
+        } else {
+          ++summary.rejected;
+        }
+      } else {
+        ++summary.retried; // Leave the claim; Runtime deduplicates the same occurrence/event id.
+      }
+      continue;
+    }
+    const auto& receipt = std::get<TimerDeliveryReceipt>(delivered);
+    if (receipt.event_id.value.empty()) {
+      ++summary.retried;
+      continue;
+    }
+    const auto confirmed = confirm_trigger_accepted(trigger.claim, receipt.event_id.value, now);
+    if (const auto* rejected = std::get_if<Failure>(&confirmed)) {
+      (void)rejected;
+      ++summary.retried;
+      continue;
+    }
+    if (receipt.duplicate) {
+      ++summary.duplicates;
+    } else {
+      ++summary.accepted;
+    }
+  }
+  return summary;
+}
+
+Outcome<Occurrence> SchedulerService::fail_trigger(const OutboxClaim& claim, ErrorCode reason,
+                                                   TimePoint now) {
+  auto work = dependencies_.transactions.begin();
+  if (const auto* rejected = std::get_if<Failure>(&work)) {
+    return *rejected;
+  }
+  auto uow = std::move(std::get<std::unique_ptr<SchedulerUnitOfWork>>(work));
+  const auto stamp_result = uow->current_time();
+  if (const auto* rejected = std::get_if<Failure>(&stamp_result)) {
+    uow->rollback();
+    return *rejected;
+  }
+  const auto stamp = std::get<TimePoint>(stamp_result);
+  const auto found = uow->occurrences().find(claim.entry.context.message);
+  if (const auto* rejected = outcome_failure(found)) {
+    uow->rollback();
+    return *rejected;
+  }
+  const auto& stored = std::get<std::optional<Occurrence>>(found);
+  if (!stored) {
+    uow->rollback();
+    return not_found();
+  }
+  if (stored->state != OperationState::Accepted) {
+    uow->rollback();
+    return *stored;
+  }
+  auto occurrence = *stored;
+  const auto expected_occurrence = occurrence.version;
+  occurrence.state = OperationState::Failed;
+  occurrence.last_error = reason;
+  occurrence.updated_at = stamp;
+  occurrence.version = ResourceVersion{occurrence.version.value + 1};
+  const auto saved_occurrence = uow->occurrences().save(occurrence, expected_occurrence);
+  if (const auto* rejected = outcome_failure(saved_occurrence)) {
+    uow->rollback();
+    return *rejected;
+  }
+  const auto task_found = uow->tasks().find(TaskKey{occurrence.owner, occurrence.task_id});
+  if (const auto* rejected = outcome_failure(task_found)) {
+    uow->rollback();
+    return *rejected;
+  }
+  if (const auto& task = std::get<std::optional<ScheduledTask>>(task_found)) {
+    auto updated = *task;
+    const auto expected_task = updated.version;
+    updated.state = TaskState::Failed;
+    updated.reason = reason;
+    updated.updated_at = stamp;
+    updated.version = ResourceVersion{updated.version.value + 1};
+    const auto saved_task = uow->tasks().save(updated, expected_task);
+    if (const auto* rejected = outcome_failure(saved_task)) {
+      uow->rollback();
+      return *rejected;
+    }
+  }
+  const auto confirmed = uow->journal().confirm(
+      HandoffKey{Service::Scheduler, occurrence.occurrence_id}, claim.claim_token, stamp);
+  if (const auto* rejected = status_failure(confirmed)) {
+    uow->rollback();
+    return *rejected;
+  }
+  const auto committed = uow->commit();
+  if (committed != CommitResult::Committed) {
+    return commit_failure(committed);
+  }
+  return occurrence;
 }
 
 } // namespace kiarabot::core::target

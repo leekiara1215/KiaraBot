@@ -41,6 +41,37 @@ struct SchedulerTriggerClaim {
   Occurrence occurrence;
 };
 
+struct TimerDeliveryRequest {
+  MessageId occurrence_id;
+  std::string task_id;
+  InstanceId owner_instance_id;
+  ResourceVersion schedule_version;
+  ConversationKey target;
+  std::vector<std::byte> payload;
+  HandoffContext handoff;
+  std::string trace_id;
+};
+struct TimerDeliveryReceipt {
+  MessageId event_id;
+  bool duplicate = false;
+  TimePoint persisted_at;
+};
+// Outer transport/authorization adapter that calls Runtime.AcceptTimerTrigger. Implementations must
+// perform network I/O only outside a Scheduler UoW; failures are stable and retryable unless
+// terminal (InvalidArgument/PermissionDenied/Conflict). Availability feeds Scheduler readiness.
+class TimerDeliveryPort {
+public:
+  virtual ~TimerDeliveryPort() = default;
+  virtual bool available() const = 0;
+  virtual Outcome<TimerDeliveryReceipt> accept(const TimerDeliveryRequest& request) = 0;
+};
+struct SchedulerDeliverySummary {
+  std::size_t accepted = 0;
+  std::size_t duplicates = 0;
+  std::size_t rejected = 0;
+  std::size_t retried = 0;
+};
+
 struct SchedulerServiceDependencies {
   SchedulerUnitOfWorkFactory& transactions;
   SchedulerIdPort& ids;
@@ -48,6 +79,9 @@ struct SchedulerServiceDependencies {
   std::chrono::hours horizon{kTaskHorizon};
   std::size_t instance_capacity{kInstanceTaskCapacity};
   std::size_t installation_capacity{kInstallationTaskCapacity};
+  // Optional Runtime handoff port. Null keeps the service startable (P02/readiness=false) and
+  // makes trigger delivery fail closed with CapabilityNotSupported.
+  TimerDeliveryPort* delivery = nullptr;
   // Composition-root owned bundle (factory/ids/zones). The application stores it so the borrowed
   // references above stay valid for the whole service lifetime.
   std::shared_ptr<void> keep_alive;
@@ -86,8 +120,13 @@ public:
   Outcome<Occurrence> confirm_trigger_accepted(const OutboxClaim& claim,
                                                std::string_view accepted_event_id, TimePoint now);
   Outcome<std::size_t> expire_stale_triggers(TimePoint now, std::size_t limit);
+  // Maintenance handoff: claim trigger outbox, call Runtime.AcceptTimerTrigger outside a UoW, then
+  // confirm the acceptance (same occurrence idempotent) or permanently reject the occurrence.
+  // Retryable Runtime failures leave the claim to expire and retry with the same occurrence/event.
+  Outcome<SchedulerDeliverySummary> deliver_triggers(TimePoint now, std::size_t limit);
 
 private:
+  Outcome<Occurrence> fail_trigger(const OutboxClaim& claim, ErrorCode reason, TimePoint now);
   SchedulerServiceDependencies dependencies_;
 };
 

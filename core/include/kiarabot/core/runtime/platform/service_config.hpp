@@ -111,9 +111,11 @@ struct ProcessConfig {
   std::optional<ControlApiMaterial> control_api = std::nullopt;
   std::optional<IdentitySecurityMaterial> identity_security = std::nullopt;
   std::optional<ModelSecurityMaterial> model_security = std::nullopt;
-  // Runtime-only: Identity owner gRPC endpoint for online authorization and delegation checks.
+  // Runtime/Scheduler: Identity owner gRPC endpoint for online authorization and delegation checks.
   // The validated service TLS material is reused as the outbound mTLS client identity.
   std::optional<std::string> identity_endpoint = std::nullopt;
+  // Scheduler-only: Runtime internal mTLS endpoint used to deliver TimerTriggered handoffs.
+  std::optional<std::string> runtime_endpoint = std::nullopt;
   // Host-only: deployment identity, package/profile allowlists and local journal path.
   std::optional<HostMaterial> host = std::nullopt;
   // Runtime-only, optional: external Adapter/Plugin bridge listener. Server-verified TLS only (no

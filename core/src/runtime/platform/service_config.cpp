@@ -555,11 +555,19 @@ ConfigResult load_service_config(const std::string& path, target::Service servic
       keys.insert("identity_security");
     }
     if (document.contains("identity_endpoint")) {
-      if (service != target::Service::Runtime || !document["identity_endpoint"].is_string() ||
+      if ((service != target::Service::Runtime && service != target::Service::Scheduler) ||
+          !document["identity_endpoint"].is_string() ||
           !endpoint_valid(document["identity_endpoint"].get<std::string>())) {
         return ConfigFailure{2, "invalid_identity_endpoint_config"};
       }
       keys.insert("identity_endpoint");
+    }
+    if (document.contains("runtime_endpoint")) {
+      if (service != target::Service::Scheduler || !document["runtime_endpoint"].is_string() ||
+          !endpoint_valid(document["runtime_endpoint"].get<std::string>())) {
+        return ConfigFailure{2, "invalid_runtime_endpoint_config"};
+      }
+      keys.insert("runtime_endpoint");
     }
     if (document.contains("host")) {
       if (service != target::Service::Host || !host_material_shape(document["host"])) {
@@ -629,6 +637,9 @@ ConfigResult load_service_config(const std::string& path, target::Service servic
     }
     if (document.contains("identity_endpoint")) {
       config.identity_endpoint = document["identity_endpoint"].get<std::string>();
+    }
+    if (document.contains("runtime_endpoint")) {
+      config.runtime_endpoint = document["runtime_endpoint"].get<std::string>();
     }
     if (document.contains("host")) {
       config.host = host_material(document["host"]);

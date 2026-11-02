@@ -51,6 +51,14 @@ foreach(SERVICE identity runtime plugin_host scheduler model)
   kiarabot_platform_warnings(kiarabot_${SERVICE}_application)
 endforeach()
 
+add_library(kiarabot_scheduler_runtime_client STATIC
+  ${CMAKE_SOURCE_DIR}/core/src/runtime/platform/scheduler_runtime_client.cpp)
+target_include_directories(kiarabot_scheduler_runtime_client PUBLIC
+  ${CMAKE_SOURCE_DIR}/core/include)
+target_link_libraries(kiarabot_scheduler_runtime_client PUBLIC
+  kiarabot_scheduler_service kiarabot_proto kiarabot_target_codec)
+kiarabot_platform_warnings(kiarabot_scheduler_runtime_client)
+
 add_library(kiarabot_scheduler_rpc STATIC
   ${CMAKE_SOURCE_DIR}/core/src/runtime/platform/scheduler_rpc.cpp)
 target_include_directories(kiarabot_scheduler_rpc PUBLIC ${CMAKE_SOURCE_DIR}/core/include)

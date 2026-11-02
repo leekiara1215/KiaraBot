@@ -58,8 +58,7 @@ std::string occurrence_key(const t::MessageId& id) {
   return id.value;
 }
 
-template <typename Value>
-class MapRepository final : public t::Repository<Value, Value> {
+template <typename Value> class MapRepository final : public t::Repository<Value, Value> {
 public:
   using Key = Value;
   // Not used directly; concrete repositories below adapt typed keys.
@@ -125,9 +124,8 @@ public:
   t::Repository<t::MessageId, t::Occurrence>& occurrences() override {
     return occurrences_;
   }
-  t::Outcome<std::vector<t::ScheduledTask>> list_tasks(const t::InstanceId& owner,
-                                                       std::size_t limit,
-                                                       const std::string& after) override {
+  t::Outcome<std::vector<t::ScheduledTask>>
+  list_tasks(const t::InstanceId& owner, std::size_t limit, const std::string& after) override {
     std::vector<t::ScheduledTask> result;
     for (const auto& [key, task] : store_.tasks) {
       if (task.key.owner != owner || (!after.empty() && task.key.task_id <= after)) {
@@ -143,8 +141,8 @@ public:
     }
     return result;
   }
-  t::Outcome<std::pair<std::size_t, std::size_t>> count_tasks(
-      const t::InstanceId& owner, const t::InstallationId& installation) override {
+  t::Outcome<std::pair<std::size_t, std::size_t>>
+  count_tasks(const t::InstanceId& owner, const t::InstallationId& installation) override {
     std::size_t instance = 0;
     std::size_t install = 0;
     for (const auto& [key, task] : store_.tasks) {
@@ -168,9 +166,8 @@ public:
         result.push_back(task);
       }
     }
-    std::sort(result.begin(), result.end(), [](const auto& left, const auto& right) {
-      return left.run_at < right.run_at;
-    });
+    std::sort(result.begin(), result.end(),
+              [](const auto& left, const auto& right) { return left.run_at < right.run_at; });
     if (result.size() > limit) {
       result.resize(limit);
     }
@@ -244,8 +241,7 @@ private:
       return std::monostate{};
     }
     t::Outcome<std::vector<t::OutboxClaim>> claim(t::Service source, std::size_t limit,
-                                                  t::TimePoint now,
-                                                  std::chrono::seconds) override {
+                                                  t::TimePoint now, std::chrono::seconds) override {
       std::vector<t::OutboxClaim> claims;
       for (auto& entry : store_.outbox) {
         if (entry.context.source == source && entry.state != t::OutboxState::Confirmed &&
@@ -263,8 +259,7 @@ private:
       }
       return claims;
     }
-    t::Status confirm(const t::HandoffKey& key, const t::ClaimToken& token,
-                      t::TimePoint) override {
+    t::Status confirm(const t::HandoffKey& key, const t::ClaimToken& token, t::TimePoint) override {
       for (auto& entry : store_.outbox) {
         if (entry.context.source == key.source && entry.context.message == key.message) {
           if (entry.state == t::OutboxState::Confirmed && entry.claim_token &&
@@ -285,8 +280,8 @@ private:
     t::Outcome<std::optional<t::InboxRecord>> received(const t::HandoffKey&) override {
       return std::optional<t::InboxRecord>{};
     }
-    t::Outcome<t::InboxWrite> record_received(const t::InboxRecord& receipt,
-                                              t::JournalCapacity, t::TimePoint) override {
+    t::Outcome<t::InboxWrite> record_received(const t::InboxRecord& receipt, t::JournalCapacity,
+                                              t::TimePoint) override {
       return t::InboxWrite{receipt, false};
     }
     t::Outcome<std::size_t> prune_received(t::TimePoint, std::size_t) override {
@@ -306,7 +301,8 @@ private:
       }
       return std::optional<t::Operation>{found->second};
     }
-    t::Status save(const t::Operation& operation, std::optional<t::ResourceVersion> expected) override {
+    t::Status save(const t::Operation& operation,
+                   std::optional<t::ResourceVersion> expected) override {
       const auto found = store_.operations.find(operation.ref.id.value);
       if (expected) {
         if (found == store_.operations.end() || found->second.version != *expected) {
@@ -372,12 +368,35 @@ public:
   int counter = 0;
 };
 
+class FakeDelivery final : public t::TimerDeliveryPort {
+public:
+  bool ok = true;
+  bool available() const override {
+    return ok;
+  }
+  t::Outcome<t::TimerDeliveryReceipt> accept(const t::TimerDeliveryRequest& request) override {
+    accepted += 1;
+    last_request = request;
+    if (scripted) {
+      return *scripted;
+    }
+    return t::TimerDeliveryReceipt{request.occurrence_id, duplicate, at(1300)};
+  }
+  int accepted = 0;
+  bool duplicate = false;
+  std::optional<t::Outcome<t::TimerDeliveryReceipt>> scripted;
+  t::TimerDeliveryRequest last_request;
+};
+
 struct Harness {
   std::shared_ptr<Store> store = std::make_shared<Store>();
   Factory factory{store};
   FakeZones zones;
   FakeIds ids;
-  t::SchedulerService service{t::SchedulerServiceDependencies{factory, ids, zones}};
+  FakeDelivery delivery;
+  t::SchedulerService service{t::SchedulerServiceDependencies{
+      factory, ids, zones, t::kTaskHorizon, t::kInstanceTaskCapacity, t::kInstallationTaskCapacity,
+      &delivery}};
 
   t::SchedulerCommandContext context() const {
     return t::SchedulerCommandContext{
@@ -387,8 +406,8 @@ struct Harness {
   t::TaskCreationInput input(std::string task_id, t::TimePoint run_at) {
     t::TaskCreationInput value;
     value.task_id = std::move(task_id);
-    value.target = t::ConversationKey{t::ResourceId{uuid(5)}, t::ResourceId{uuid(6)}, "conversation",
-                                      t::ConversationKey::Kind::Private};
+    value.target = t::ConversationKey{t::ResourceId{uuid(5)}, t::ResourceId{uuid(6)},
+                                      "conversation", t::ConversationKey::Kind::Private};
     value.payload = {std::byte{1}, std::byte{2}};
     value.run_at = run_at;
     return value;
@@ -438,8 +457,8 @@ void test_local_time_gap_fold_and_missing_zone_data() {
   auto accepted = harness.service.create_task(harness.context(), local);
   require(std::holds_alternative<t::ScheduledTask>(accepted));
   harness.zones.zone_data = false;
-  auto unavailable = harness.service.create_task(harness.context(),
-                                                 harness.input("task-missing-zone", at(1700)));
+  auto unavailable =
+      harness.service.create_task(harness.context(), harness.input("task-missing-zone", at(1700)));
   require(std::holds_alternative<t::ScheduledTask>(unavailable));
   auto missing_local = harness.input("task-missing-zone-2", at(0));
   missing_local.run_at.reset();
@@ -486,13 +505,15 @@ void test_claim_confirm_and_confirmation_loss() {
   require(std::holds_alternative<std::vector<t::SchedulerTriggerClaim>>(claimed));
   const auto claims = std::get<std::vector<t::SchedulerTriggerClaim>>(claimed);
   require(claims.size() == 1 && claims.front().occurrence.attempts == 1);
-  auto occurrence = harness.service.confirm_trigger_accepted(claims.front().claim, "event-1", at(1301));
+  auto occurrence =
+      harness.service.confirm_trigger_accepted(claims.front().claim, "event-1", at(1301));
   require(std::holds_alternative<t::Occurrence>(occurrence));
   require(std::get<t::Occurrence>(occurrence).state == t::OperationState::Succeeded);
   const auto& task = harness.store->tasks[task_key(t::TaskKey{context.owner, "task-confirm"})];
   require(task.state == t::TaskState::Completed);
   // Confirmation loss: retry with the same occurrence/token is idempotent.
-  auto retried = harness.service.confirm_trigger_accepted(claims.front().claim, "event-1", at(1302));
+  auto retried =
+      harness.service.confirm_trigger_accepted(claims.front().claim, "event-1", at(1302));
   require(std::holds_alternative<t::Occurrence>(retried));
   require(harness.store->outbox.front().state == t::OutboxState::Confirmed);
 }
@@ -532,8 +553,8 @@ void test_list_get_and_operation_scope() {
   auto isolated = harness.service.get_task(other, "task-list-0");
   require(std::holds_alternative<t::Failure>(isolated));
   require(std::get<t::Failure>(isolated).code == t::ErrorCode::NotFound);
-  require(std::holds_alternative<t::ScheduledTask>(
-      harness.service.get_task(context, "task-list-0")));
+  require(
+      std::holds_alternative<t::ScheduledTask>(harness.service.get_task(context, "task-list-0")));
   require(std::holds_alternative<t::ScheduledTask>(
       harness.service.create_task(context, harness.input("task-op", at(1200)))));
   require(std::get<std::size_t>(harness.service.due_sweep(at(1300), 10)) == 1);
@@ -545,6 +566,75 @@ void test_list_get_and_operation_scope() {
   require(std::holds_alternative<t::Failure>(harness.service.get_operation(context, wrong_kind)));
 }
 
+void test_deliver_trigger_success_rejection_and_retry() {
+  Harness harness;
+  const auto context = harness.context();
+  require(std::holds_alternative<t::ScheduledTask>(
+      harness.service.create_task(context, harness.input("task-deliver", at(1200)))));
+  require(std::get<std::size_t>(harness.service.due_sweep(at(1300), 10)) == 1);
+  auto delivered = harness.service.deliver_triggers(at(1300), 5);
+  require(std::holds_alternative<t::SchedulerDeliverySummary>(delivered));
+  require(std::get<t::SchedulerDeliverySummary>(delivered).accepted == 1);
+  require(harness.delivery.accepted == 1);
+  require(harness.delivery.last_request.occurrence_id.value ==
+          harness.store->occurrences.begin()->first);
+  require(harness.delivery.last_request.payload.size() == 2);
+  const auto& completed = harness.store->tasks[task_key(t::TaskKey{context.owner, "task-deliver"})];
+  require(completed.state == t::TaskState::Completed);
+  require(harness.store->occurrences.begin()->second.state == t::OperationState::Succeeded);
+
+  // Duplicate Runtime acceptance (lost Scheduler receipt) confirms exactly once.
+  Harness duplicate_harness;
+  const auto duplicate_context = duplicate_harness.context();
+  require(std::holds_alternative<t::ScheduledTask>(duplicate_harness.service.create_task(
+      duplicate_context, duplicate_harness.input("task-dup", at(1200)))));
+  require(std::get<std::size_t>(duplicate_harness.service.due_sweep(at(1300), 10)) == 1);
+  duplicate_harness.delivery.duplicate = true;
+  const auto duplicate_result = duplicate_harness.service.deliver_triggers(at(1300), 5);
+  require(std::holds_alternative<t::SchedulerDeliverySummary>(duplicate_result));
+  require(std::get<t::SchedulerDeliverySummary>(duplicate_result).duplicates == 1);
+  require(duplicate_harness.store->tasks[task_key(t::TaskKey{duplicate_context.owner, "task-dup"})]
+              .state == t::TaskState::Completed);
+
+  // Permanent Runtime rejection marks the occurrence/task FAILED and concludes the outbox handoff.
+  Harness rejected_harness;
+  const auto rejected_context = rejected_harness.context();
+  require(std::holds_alternative<t::ScheduledTask>(rejected_harness.service.create_task(
+      rejected_context, rejected_harness.input("task-rejected", at(1200)))));
+  require(std::get<std::size_t>(rejected_harness.service.due_sweep(at(1300), 10)) == 1);
+  rejected_harness.delivery.scripted = failure(t::ErrorCode::InvalidArgument);
+  const auto rejected_result = rejected_harness.service.deliver_triggers(at(1300), 5);
+  require(std::holds_alternative<t::SchedulerDeliverySummary>(rejected_result));
+  require(std::get<t::SchedulerDeliverySummary>(rejected_result).rejected == 1);
+  const auto rejected_task =
+      rejected_harness.store->tasks[task_key(t::TaskKey{rejected_context.owner, "task-rejected"})];
+  require(rejected_task.state == t::TaskState::Failed &&
+          rejected_task.reason == t::ErrorCode::InvalidArgument);
+  require(rejected_harness.store->occurrences.begin()->second.state == t::OperationState::Failed);
+
+  // Retryable Runtime failure leaves the occurrence ACCEPTED and a later claim retries the same
+  // occurrence/event id (never a COMPLETED state and never a duplicated event identity).
+  Harness retry_harness;
+  const auto retry_context = retry_harness.context();
+  require(std::holds_alternative<t::ScheduledTask>(retry_harness.service.create_task(
+      retry_context, retry_harness.input("task-retry", at(1200)))));
+  require(std::get<std::size_t>(retry_harness.service.due_sweep(at(1300), 10)) == 1);
+  retry_harness.delivery.scripted = failure(t::ErrorCode::UpstreamUnavailable);
+  const auto retried = retry_harness.service.deliver_triggers(at(1300), 5);
+  require(std::holds_alternative<t::SchedulerDeliverySummary>(retried));
+  require(std::get<t::SchedulerDeliverySummary>(retried).retried == 1);
+  require(retry_harness.store->occurrences.begin()->second.state == t::OperationState::Accepted);
+  require(
+      retry_harness.store->tasks[task_key(t::TaskKey{retry_context.owner, "task-retry"})].state ==
+      t::TaskState::Running);
+  retry_harness.delivery.scripted.reset();
+  const auto retried_again = retry_harness.service.deliver_triggers(at(1300), 5);
+  require(std::holds_alternative<t::SchedulerDeliverySummary>(retried_again));
+  require(std::get<t::SchedulerDeliverySummary>(retried_again).accepted == 1);
+  require(retry_harness.delivery.last_request.occurrence_id ==
+          retry_harness.store->occurrences.begin()->second.occurrence_id);
+}
+
 void run() {
   test_create_replay_capacity_and_invalid_time();
   test_local_time_gap_fold_and_missing_zone_data();
@@ -552,6 +642,7 @@ void run() {
   test_claim_confirm_and_confirmation_loss();
   test_expiry_marks_task_failed_timeout();
   test_list_get_and_operation_scope();
+  test_deliver_trigger_success_rejection_and_retry();
 }
 
 } // namespace
