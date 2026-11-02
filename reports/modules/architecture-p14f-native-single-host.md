@@ -115,3 +115,33 @@ identity_endpoint/runtime_endpoint/model_endpoint）、同一 PKI/离线 bootstr
   `deploy/README.md` 无需变化（Compose 文件未动）。
 - 校验：全量构建 + `ctest -R '^p14_native_single_host$'` 实跑通过；无 C++/proto 变更，
   clang-format 无适用文件。
+
+## 7. P14i Control owner-backed 成功链矩阵（2026-11-02，修复前基线）
+
+P14i 把本 harness 扩展为逐端点成功链矩阵，用于 P14g/P14h 修复前后复验（同一测试、不伪造）：
+
+矩阵项：`health`（受权聚合依赖）、`principals`、`logs`、`audit`（`page_size=1&actor=administrator`）、
+`tasks_list`（`task_get_cancel` 因未播种任务标 `skipped:no-seeded-task`）、`models`、`action_policy`、
+`action_query`、`delete`、`restore`。分类：
+- `success`：真实 2xx 且 owner 投影形状正确（audit/logs 分页、principals 非空等）；
+- `stable-ok`：owner 明确返回 `NOT_FOUND`/`CONFLICT`（证明链已到真实 owner，不伪造成功）；
+- `pre-fix-skip`：P14f 已报告的缺陷导致的稳定 4xx（待 P14g/P14h 修复）；
+- `grant-missing`：修复后仍 `PERMISSION_DENIED`（视为复验失败）。
+- fixture 能力检测：仅当 checkout 的 Identity 权限名目录与 PG `exact_permissions` CHECK 已允许
+  wire Permission 41–50 时，才在离线 enrollment 中给 Control 授予 `log.read/audit.read/health.read`
+  （Control catalog scope），因此同一 harness 可在修复前后运行且不会 bootstrap 失败。
+- 修复后判定：一旦受权 `/api/v1/health` 返回 200 HEALTHY 且四组件 ready，任何
+  `pre-fix-skip`/`grant-missing` 行都会使测试失败；故障重启断言同时接受修复后的
+  `DEGRADED/HEALTHY` 语义。
+
+**修复前实测（main `4e88fb4`，P14g/P14h 尚未合入）**：
+`ctest --preset full-locked -R '^p14_native_single_host$'` → **Passed 13.7s**，
+`fix_ready=False`，矩阵为：health/principals/logs/audit/tasks_list/models/action_policy/
+action_query/delete/restore 全部 `pre-fix-skip`（稳定 400 INVALID_ARGUMENT），
+`task_get_cancel`=`skipped:no-seeded-task`；进程拓扑、登录、probe、故障重启与 fail-closed
+仍全部通过。
+
+**修复后复跑状态**：截至本 commit 检查，main 仍未包含 P14g/P14h 修复（Identity
+`exact_permissions` 仍为 CHECK 1..40，Control 仍以空 scope 发 health 委派，权限名目录仍无
+log/audit/health）。因此本任务**尚未获得修复后 success 结果**；修复合入 main 后只需
+`git rebase main` 并重跑同一条命令，矩阵会自动切换为 success/失败断言，无需改测试逻辑。

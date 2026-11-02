@@ -1575,3 +1575,11 @@ P10j（2026-11-02）：SDK 任务方法（create/get/cancel）已有 `p10_sdk_ta
 Action 到达平台、receipt/终态、重复帧/重连去重、离线/非订阅不投递、post-dispatch cancel
 CONFLICT，并检查 adapter/plugin 日志不泄露 bootstrap/平台 token。真实 QQ/NapCat 与
 UNKNOWN/EXPIRED 单链迟到证据属剩余环境/验收项。
+- **P14i 成功链矩阵（2026-11-02，修复前基线）**：native smoke 已扩展为逐端点矩阵
+  （health/principals/logs/audit/tasks list/models/action policy/action query/delete/restore），
+  分类为 success / stable-ok（owner NOT_FOUND/CONFLICT）/ pre-fix-skip / grant-missing；
+  仅在 Identity 权限目录与 PG CHECK 允许 Permission 41–50 时才 enrollment 敏感授权，修复后
+  若受权 `/api/v1/health` 仍非 200 HEALTHY 或出现 grant-missing 则测试失败。当前 main
+  `4e88fb4`（P14g/P14h 未合入）实测 Passed 13.7s、矩阵全部 `pre-fix-skip`（稳定 400），
+  `task_get_cancel` 因未播种任务跳过；修复合入后 rebase main 重跑同一命令即可得到
+  修复后 success 矩阵（无需改测试）。
