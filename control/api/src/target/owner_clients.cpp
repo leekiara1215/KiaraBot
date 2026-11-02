@@ -86,7 +86,8 @@ class OwnerClients::Impl final : private DelegationPort,
                                  private HealthPort,
                                  private RuntimeResourcesPort,
                                  private SchedulerTasksPort,
-                                 private OperationPort {
+                                 private OperationPort,
+                                 private ModelManagementPort {
 public:
   Impl(const std::string& identity_endpoint, const std::string& runtime_endpoint,
        const std::string& scheduler_endpoint, const std::string& model_endpoint,
@@ -118,7 +119,7 @@ public:
         static_cast<DelegationPort&>(*this), static_cast<RuntimeActionsPort&>(*this),
         static_cast<IdentityPrincipalsPort*>(this), static_cast<HealthPort*>(this),
         static_cast<RuntimeResourcesPort*>(this), static_cast<SchedulerTasksPort*>(this),
-        static_cast<OperationPort*>(this));
+        static_cast<OperationPort*>(this), static_cast<ModelManagementPort*>(this));
   }
 
   std::optional<AuthHttpResponse> handle(const AuthHttpRequest& request) {
@@ -440,6 +441,83 @@ private:
       return OwnerFailure{code.value_or(wire::UPSTREAM_UNAVAILABLE), false};
     }
     return output;
+  }
+
+  template <typename Request, typename Response, typename Method>
+  OwnerOutcome<Response> model_call(Method method, Request request, std::string_view delegation) {
+    if (!model_) {
+      return OwnerFailure{wire::UPSTREAM_UNAVAILABLE, true};
+    }
+    request.mutable_context()->set_delegation(std::string{delegation});
+    Response output;
+    grpc::ClientContext call;
+    const auto remaining = codec::from_wire(request.context().deadline());
+    if (const auto* timestamp = std::get_if<core::target::TimePoint>(&remaining)) {
+      const auto now =
+          core::target::TimePoint{std::chrono::duration_cast<core::target::TimePoint::duration>(
+              std::chrono::system_clock::now().time_since_epoch())};
+      if (*timestamp > now) {
+        call.set_deadline(std::chrono::system_clock::time_point{
+            std::chrono::duration_cast<std::chrono::system_clock::duration>(
+                (std::chrono::system_clock::now() +
+                 core::target::TimePoint::duration{*timestamp - now})
+                    .time_since_epoch())});
+      }
+    }
+    const auto status = ((*model_).*method)(&call, request, &output);
+    if (!status.ok()) {
+      const auto code = extract_error_code(status);
+      return OwnerFailure{code.value_or(wire::UPSTREAM_UNAVAILABLE), false};
+    }
+    return output;
+  }
+
+  OwnerOutcome<wire::ModelUpdateModelResponse>
+  update(const wire::ModelUpdateModelRequest& request, std::string_view delegation) override {
+    return model_call<wire::ModelUpdateModelRequest, wire::ModelUpdateModelResponse>(
+        &wire::ModelService::Stub::UpdateModel, request, delegation);
+  }
+  OwnerOutcome<wire::ModelDisableModelResponse>
+  disable(const wire::ModelDisableModelRequest& request, std::string_view delegation) override {
+    return model_call<wire::ModelDisableModelRequest, wire::ModelDisableModelResponse>(
+        &wire::ModelService::Stub::DisableModel, request, delegation);
+  }
+  OwnerOutcome<wire::ModelEnableModelResponse>
+  enable(const wire::ModelEnableModelRequest& request, std::string_view delegation) override {
+    return model_call<wire::ModelEnableModelRequest, wire::ModelEnableModelResponse>(
+        &wire::ModelService::Stub::EnableModel, request, delegation);
+  }
+  OwnerOutcome<wire::ModelRotateProviderSecretResponse>
+  rotate_secret(const wire::ModelRotateProviderSecretRequest& request,
+                std::string_view delegation) override {
+    return model_call<wire::ModelRotateProviderSecretRequest,
+                      wire::ModelRotateProviderSecretResponse>(
+        &wire::ModelService::Stub::RotateProviderSecret, request, delegation);
+  }
+  OwnerOutcome<wire::ModelGetModelConfigurationResponse>
+  configuration(const wire::ModelGetModelConfigurationRequest& request,
+                std::string_view delegation) override {
+    return model_call<wire::ModelGetModelConfigurationRequest,
+                      wire::ModelGetModelConfigurationResponse>(
+        &wire::ModelService::Stub::GetModelConfiguration, request, delegation);
+  }
+  OwnerOutcome<wire::ModelGetCallStatusResponse>
+  call_status(const wire::ModelGetCallStatusRequest& request,
+              std::string_view delegation) override {
+    return model_call<wire::ModelGetCallStatusRequest, wire::ModelGetCallStatusResponse>(
+        &wire::ModelService::Stub::GetCallStatus, request, delegation);
+  }
+  OwnerOutcome<wire::ModelResolveModelCallResponse>
+  resolve(const wire::ModelResolveModelCallRequest& request,
+          std::string_view delegation) override {
+    return model_call<wire::ModelResolveModelCallRequest, wire::ModelResolveModelCallResponse>(
+        &wire::ModelService::Stub::ResolveModelCall, request, delegation);
+  }
+  OwnerOutcome<wire::ModelGetOperationResponse>
+  operation(const wire::ModelGetOperationRequest& request,
+            std::string_view delegation) override {
+    return model_call<wire::ModelGetOperationRequest, wire::ModelGetOperationResponse>(
+        &wire::ModelService::Stub::GetOperation, request, delegation);
   }
 
   HealthObservation observe() override {
