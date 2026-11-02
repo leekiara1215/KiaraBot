@@ -160,6 +160,7 @@ class ScopeTest(unittest.TestCase):
                     ('operations', 'operations.listLogs'),
                     ('operations', 'operations.beginDeleteResource'),
                     ('operations', 'operations.restoreResource'),
+                    ('operations', 'operations.getOccurrence'),
                     ('proto_messages', 'CredentialDelivery'),
                     ('proto_messages', 'CredentialStatus'),
                     ('proto_messages', 'IdentityGetCredentialStatusRequest'),

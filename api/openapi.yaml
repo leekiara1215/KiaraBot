@@ -2424,11 +2424,14 @@ paths:
       x-owner-rpc: SchedulerService.GetOccurrence
       x-permission: task.read
       x-mutating: false
-      description: Target P01 declaration; production handler is not implemented. Current
-        Identity session and explicit resource grant are required. Path IDs must equal
-        any repeated body IDs; mismatch is INVALID_ARGUMENT. Versions are positive decimal
-        uint64 strings; writes reject missing expected_version except creation. An accepted
-        operation is not completed work.
+      description: >-
+        P10i implemented Control -> Scheduler GetOccurrence with an explicit single-resource
+        task.read delegation scope from the required scope query (runtime-independent owner RPC).
+        The response is the owner occurrence projection (occurrence/task id, state, handoff
+        accepted event, attempts/last_error, created/updated/acknowledged timestamps); unknown or
+        invisible occurrences are NOT_FOUND and unavailable owners 503. The REST
+        x-contract-status marker stays not_implemented per the owner-RPC target_api rule even
+        though the target forwarding/evidence is implemented.
       parameters:
       - name: occurrenceId
         in: path

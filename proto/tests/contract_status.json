@@ -5792,7 +5792,8 @@
           "operations.getTask": "implemented",
           "operations.cancelTask": "implemented",
           "operations.getActionPolicy": "implemented",
-          "operations.updateActionPolicy": "implemented"
+          "operations.updateActionPolicy": "implemented",
+          "operations.getOccurrence": "implemented"
         },
         "proto_messages": {
           "IdentityAuditFilter": "implemented",
@@ -11353,6 +11354,13 @@
           "core/src/runtime/platform/runtime_rpc.cpp",
           "core/src/application/target/runtime_action_application.cpp",
           "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "operations:operations.getOccurrence": [
+          "core/src/application/target/scheduler_application.cpp",
+          "core/src/runtime/platform/scheduler_rpc.cpp",
+          "control/api/src/target/owner_gateway.cpp",
+          "tests/architecture/p10_scheduler_rest.py",
+          "control/api/tests/owner_gateway_test.cpp"
         ]
       }
     }
