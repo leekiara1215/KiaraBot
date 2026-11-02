@@ -400,8 +400,8 @@ struct Prepared {
   std::string trace;
 };
 t::Outcome<Prepared> prepare(grpc::ServerContext& transport, const v1::RequestContext& input,
-                             const v1::ResourceScope* scope, bool idempotent,
-                             const SchedulerRpcOptions& options) {
+                             std::string_view method, const v1::ResourceScope* scope,
+                             bool idempotent, const SchedulerRpcOptions& options) {
   if (!canonical_uuid(input.request_id()) || !canonical_uuid(input.trace_id()) ||
       !input.has_deadline()) {
     return invalid();
@@ -439,7 +439,7 @@ t::Outcome<Prepared> prepare(grpc::ServerContext& transport, const v1::RequestCo
   if (!options.authorize) {
     return unauthenticated();
   }
-  auto authenticated = options.authorize(transport, input, scope);
+  auto authenticated = options.authorize(transport, input, method, scope);
   if (const auto* rejected = std::get_if<t::Failure>(&authenticated)) {
     return *rejected;
   }
@@ -468,7 +468,9 @@ public:
   grpc::Status CreateTask(grpc::ServerContext* context_,
                           const v1::SchedulerCreateTaskRequest* request,
                           v1::SchedulerCreateTaskResponse* response) override {
-    const auto prepared = prepare(*context_, request->context(), nullptr, true, options_);
+    const auto prepared =
+        prepare(*context_, request->context(), "kiarabot.v1.SchedulerService/CreateTask", nullptr,
+                true, options_);
     if (const auto* rejected = std::get_if<t::Failure>(&prepared)) {
       return error_status(*rejected, request->context().request_id(),
                           request->context().trace_id());
@@ -513,7 +515,9 @@ public:
   grpc::Status CancelTask(grpc::ServerContext* context_,
                           const v1::SchedulerCancelTaskRequest* request,
                           v1::SchedulerCancelTaskResponse* response) override {
-    const auto prepared = prepare(*context_, request->context(), &request->scope(), true, options_);
+    const auto prepared =
+        prepare(*context_, request->context(), "kiarabot.v1.SchedulerService/CancelTask",
+                &request->scope(), true, options_);
     if (const auto* rejected = std::get_if<t::Failure>(&prepared)) {
       return error_status(*rejected, request->context().request_id(),
                           request->context().trace_id());
@@ -533,7 +537,8 @@ public:
   grpc::Status GetTask(grpc::ServerContext* context_, const v1::SchedulerGetTaskRequest* request,
                        v1::SchedulerGetTaskResponse* response) override {
     const auto prepared =
-        prepare(*context_, request->context(), &request->scope(), false, options_);
+        prepare(*context_, request->context(), "kiarabot.v1.SchedulerService/GetTask",
+                &request->scope(), false, options_);
     if (const auto* rejected = std::get_if<t::Failure>(&prepared)) {
       return error_status(*rejected, request->context().request_id(),
                           request->context().trace_id());
@@ -554,7 +559,8 @@ public:
                          const v1::SchedulerListTasksRequest* request,
                          v1::SchedulerListTasksResponse* response) override {
     const auto prepared =
-        prepare(*context_, request->context(), &request->scope(), false, options_);
+        prepare(*context_, request->context(), "kiarabot.v1.SchedulerService/ListTasks",
+                &request->scope(), false, options_);
     if (const auto* rejected = std::get_if<t::Failure>(&prepared)) {
       return error_status(*rejected, request->context().request_id(),
                           request->context().trace_id());
@@ -592,7 +598,8 @@ public:
                              const v1::SchedulerGetOccurrenceRequest* request,
                              v1::SchedulerGetOccurrenceResponse* response) override {
     const auto prepared =
-        prepare(*context_, request->context(), &request->scope(), false, options_);
+        prepare(*context_, request->context(), "kiarabot.v1.SchedulerService/GetTask",
+                &request->scope(), false, options_);
     if (const auto* rejected = std::get_if<t::Failure>(&prepared)) {
       return error_status(*rejected, request->context().request_id(),
                           request->context().trace_id());
@@ -612,7 +619,9 @@ public:
   grpc::Status GetOperation(grpc::ServerContext* context_,
                             const v1::SchedulerGetOperationRequest* request,
                             v1::SchedulerGetOperationResponse* response) override {
-    const auto prepared = prepare(*context_, request->context(), nullptr, false, options_);
+    const auto prepared =
+        prepare(*context_, request->context(), "kiarabot.v1.SchedulerService/GetOperation", nullptr,
+                false, options_);
     if (const auto* rejected = std::get_if<t::Failure>(&prepared)) {
       return error_status(*rejected, request->context().request_id(),
                           request->context().trace_id());

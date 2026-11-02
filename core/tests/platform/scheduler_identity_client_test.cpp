@@ -1,0 +1,263 @@
+#include <array>
+#include <chrono>
+#include <cstdint>
+#include <cstdlib>
+#include <iostream>
+#include <memory>
+#include <string>
+#include <string_view>
+#include <vector>
+
+#include <grpcpp/grpcpp.h>
+#include <nlohmann/json.hpp>
+
+#include "kiarabot/core/runtime/platform/scheduler_identity_client.hpp"
+#include "kiarabot/core/runtime/platform/target_codec.hpp"
+#include "kiarabot/v1/identity.grpc.pb.h"
+
+namespace {
+namespace t = kiarabot::core::target;
+namespace v1 = kiarabot::v1;
+using Json = nlohmann::json;
+
+void check(bool passed, const char* scenario) {
+  if (!passed) {
+    std::cerr << scenario << '\n';
+    std::exit(1);
+  }
+}
+class GrpcLifetime {
+public:
+  GrpcLifetime() {
+    grpc_init();
+  }
+  ~GrpcLifetime() {
+    grpc_shutdown();
+  }
+};
+constexpr auto kSubject = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+constexpr auto kInstallation = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+constexpr auto kActor = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+constexpr auto kToken = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
+constexpr auto kResource = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
+std::string base64url(std::string_view input) {
+  static constexpr char kAlphabet[] =
+      "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+  std::string output;
+  std::uint32_t buffer = 0;
+  int bits = 0;
+  for (const char character : input) {
+    buffer = (buffer << 8U) | static_cast<unsigned char>(character);
+    bits += 8;
+    while (bits >= 6) {
+      bits -= 6;
+      output += kAlphabet[(buffer >> static_cast<unsigned>(bits)) & 0x3fU];
+    }
+  }
+  if (bits > 0) {
+    output += kAlphabet[(buffer << static_cast<unsigned>(6 - bits)) & 0x3fU];
+  }
+  return output;
+}
+t::TimePoint now() {
+  return t::TimePoint{std::chrono::duration_cast<std::chrono::nanoseconds>(
+      std::chrono::system_clock::now().time_since_epoch())};
+}
+std::int64_t seconds(t::TimePoint value) {
+  return std::chrono::duration_cast<std::chrono::seconds>(value.time_since_epoch()).count();
+}
+t::Sha256Digest digest() {
+  t::Sha256Digest value;
+  for (std::size_t index = 0; index < value.bytes.size(); ++index) {
+    value.bytes[index] = static_cast<std::byte>(index);
+  }
+  return value;
+}
+std::string hex(const t::Sha256Digest& value) {
+  constexpr char kDigits[] = "0123456789abcdef";
+  std::string result;
+  for (const auto byte : value.bytes) {
+    result += kDigits[std::to_integer<unsigned>(byte) >> 4U];
+    result += kDigits[std::to_integer<unsigned>(byte) & 0x0fU];
+  }
+  return result;
+}
+Json permission_entry(t::Permission permission, t::ResourceKind kind, std::string id) {
+  return Json::array({std::to_string(static_cast<int>(permission)),
+                      std::to_string(static_cast<int>(kind)), std::move(id)});
+}
+std::string token(t::TimePoint moment, std::string_view audience, std::string certificate,
+                  bool include_installation = true) {
+  Json permissions = Json::array();
+  permissions.push_back(
+      permission_entry(t::Permission::TimerAccept, t::ResourceKind::Task, kResource));
+  if (include_installation) {
+    permissions.push_back(
+        permission_entry(t::Permission::TimerAccept, t::ResourceKind::Installation, kInstallation));
+  }
+  Json delegation{{"direct_actor", kActor},
+                  {"actor_chain", Json::array({kActor})},
+                  {"permissions", permissions},
+                  {"client_certificate", std::move(certificate)},
+                  {"authorization_version", "7"},
+                  {"business_hops", "0"},
+                  {"source_credential", Json::array({"ffffffff-ffff-4fff-8fff-ffffffffffff", "1"})},
+                  {"source_session", nullptr}};
+  Json payload{{"iss", "identity"},
+               {"sub", kSubject},
+               {"aud", audience},
+               {"iat", seconds(moment)},
+               {"nbf", seconds(moment) - 1},
+               {"exp", seconds(moment) + 30},
+               {"jti", kToken},
+               {"delegation", delegation}};
+  return base64url(Json{{"alg", "EdDSA"}, {"typ", "JWT"}}.dump()) + "." +
+         base64url(payload.dump()) + ".c2ln";
+}
+class FakeIdentity final : public v1::IdentityService::Service {
+public:
+  explicit FakeIdentity(bool allow) : allow_(allow) {}
+  grpc::Status CheckAuthorization(grpc::ServerContext*,
+                                  const v1::IdentityCheckAuthorizationRequest* request,
+                                  v1::IdentityCheckAuthorizationResponse* response) override {
+    ++calls;
+    last_proof = request->subject_proof();
+    last_method = request->full_method();
+    last_known_version = request->known_authorization_version();
+    last_scope_count = request->scope().resources_size();
+    auto* decision = response->mutable_decision();
+    decision->set_allowed(allow_);
+    decision->set_authorization_version(9);
+    const auto encoded = kiarabot::core::platform::target_codec::to_wire(now());
+    if (const auto* wire = std::get_if<google::protobuf::Timestamp>(&encoded)) {
+      *decision->mutable_checked_at() = *wire;
+    }
+    if (!allow_) {
+      auto* denial = decision->mutable_denial();
+      denial->set_code(v1::PERMISSION_DENIED);
+      denial->set_request_id(request->context().request_id());
+      denial->set_trace_id(request->context().trace_id());
+      denial->set_message("denied");
+    }
+    return grpc::Status::OK;
+  }
+  int calls = 0;
+  std::string last_proof;
+  std::string last_method;
+  std::uint64_t last_known_version = 0;
+  int last_scope_count = 0;
+
+private:
+  bool allow_;
+};
+struct Server {
+  explicit Server(bool allow) : service(allow) {
+    grpc::ServerBuilder builder;
+    builder.AddListeningPort("127.0.0.1:0", grpc::InsecureServerCredentials(), &port);
+    builder.RegisterService(&service);
+    server = builder.BuildAndStart();
+    check(server != nullptr && port > 0, "fake identity server failed");
+  }
+  ~Server() {
+    if (server) {
+      server->Shutdown();
+    }
+  }
+  FakeIdentity service;
+  int port = 0;
+  std::unique_ptr<grpc::Server> server;
+};
+std::unique_ptr<kiarabot::core::platform::SchedulerIdentityClient> client(int port) {
+  auto created = kiarabot::core::platform::SchedulerIdentityClient::create(
+      {"127.0.0.1:" + std::to_string(port), grpc::InsecureChannelCredentials(),
+       std::chrono::milliseconds{500}, std::chrono::milliseconds{1000}});
+  check(std::holds_alternative<std::unique_ptr<kiarabot::core::platform::SchedulerIdentityClient>>(
+            created),
+        "scheduler identity client construction failed");
+  return std::move(
+      std::get<std::unique_ptr<kiarabot::core::platform::SchedulerIdentityClient>>(created));
+}
+v1::RequestContext request(std::string proof, t::TimePoint deadline) {
+  v1::RequestContext context;
+  context.set_request_id(kToken);
+  context.set_trace_id(kActor);
+  const auto encoded = kiarabot::core::platform::target_codec::to_wire(deadline);
+  if (const auto* wire = std::get_if<google::protobuf::Timestamp>(&encoded)) {
+    *context.mutable_deadline() = *wire;
+  }
+  context.set_delegation(std::move(proof));
+  context.set_idempotency_key(std::string(16, 'k'));
+  return context;
+}
+void run() {
+  {
+    Server server(true);
+    auto identity = client(server.port);
+    const auto leaf = digest();
+    const auto proof = token(now(), "scheduler", hex(leaf));
+    v1::ResourceScope scope;
+    auto* resource = scope.add_resources();
+    resource->set_kind(v1::RESOURCE_INSTALLATION);
+    resource->set_id(kInstallation);
+    auto verified = identity->verify(proof, leaf, request(proof, now() + std::chrono::seconds{2}),
+                                     "kiarabot.v1.SchedulerService/CreateTask", &scope);
+    check(std::holds_alternative<t::SchedulerCommandContext>(verified),
+          "allowed scheduler delegation rejected");
+    const auto& command = std::get<t::SchedulerCommandContext>(verified);
+    check(command.owner.value == kSubject && command.installation.value == kInstallation &&
+              command.request_id == kToken && command.idempotency_key == std::string(16, 'k'),
+          "owner/installation/request projection lost");
+    check(server.service.calls == 1 &&
+              server.service.last_method == "kiarabot.v1.SchedulerService/CreateTask" &&
+              server.service.last_known_version == 7 && server.service.last_scope_count == 1,
+          "identity check did not receive proof/method/scope/version");
+  }
+  {
+    Server server(false);
+    auto identity = client(server.port);
+    const auto leaf = digest();
+    const auto proof = token(now(), "scheduler", hex(leaf));
+    auto denied = identity->verify(proof, leaf, request(proof, now() + std::chrono::seconds{2}),
+                                   "kiarabot.v1.SchedulerService/CreateTask", nullptr);
+    check(std::holds_alternative<t::Failure>(denied) &&
+              std::get<t::Failure>(denied).code == t::ErrorCode::PermissionDenied,
+          "identity denial was treated as a grant");
+  }
+  {
+    Server server(true);
+    auto identity = client(server.port);
+    const auto leaf = digest();
+    // Missing installation binding: fail closed instead of guessing installation ownership.
+    const auto no_installation = token(now(), "scheduler", hex(leaf), false);
+    auto rejected = identity->verify(no_installation, leaf,
+                                     request(no_installation, now() + std::chrono::seconds{2}),
+                                     "kiarabot.v1.SchedulerService/CreateTask", nullptr);
+    check(std::holds_alternative<t::Failure>(rejected) &&
+              std::get<t::Failure>(rejected).code == t::ErrorCode::Unauthenticated,
+          "missing installation delegation binding accepted");
+    // Foreign audience (Runtime) proof must not authorize a Scheduler command.
+    const auto foreign = token(now(), "runtime", hex(leaf));
+    auto wrong_audience =
+        identity->verify(foreign, leaf, request(foreign, now() + std::chrono::seconds{2}),
+                         "kiarabot.v1.SchedulerService/CreateTask", nullptr);
+    check(std::holds_alternative<t::Failure>(wrong_audience),
+          "foreign-audience delegation accepted");
+    // Expired request deadline fails closed.
+    const auto valid = token(now(), "scheduler", hex(leaf));
+    auto expired_request = request(valid, now() - std::chrono::seconds{1});
+    auto expired = identity->verify(valid, leaf, expired_request,
+                                    "kiarabot.v1.SchedulerService/CreateTask", nullptr);
+    check(std::holds_alternative<t::Failure>(expired) &&
+              std::get<t::Failure>(expired).code == t::ErrorCode::Timeout,
+          "expired authorizer deadline accepted");
+  }
+}
+
+} // namespace
+
+int main() {
+  const GrpcLifetime lifetime;
+  run();
+  std::cout << "scheduler identity authorizer fixtures only\n";
+  return 0;
+}

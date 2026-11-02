@@ -142,6 +142,6 @@ if(TARGET kiarabot-scheduler AND TARGET kiarabot_scheduler_rpc)
   target_sources(kiarabot-scheduler PRIVATE
     ${CMAKE_SOURCE_DIR}/core/app/scheduler_composition.cpp)
   target_link_libraries(kiarabot-scheduler PRIVATE
-    kiarabot_scheduler_rpc kiarabot_scheduler_runtime_client kiarabot_scheduler_service
-    kiarabot_postgres OpenSSL::Crypto)
+    kiarabot_scheduler_rpc kiarabot_scheduler_runtime_client kiarabot_scheduler_identity_client
+    kiarabot_scheduler_service kiarabot_postgres OpenSSL::Crypto)
 endif()

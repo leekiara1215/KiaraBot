@@ -51,6 +51,14 @@ foreach(SERVICE identity runtime plugin_host scheduler model)
   kiarabot_platform_warnings(kiarabot_${SERVICE}_application)
 endforeach()
 
+add_library(kiarabot_scheduler_identity_client STATIC
+  ${CMAKE_SOURCE_DIR}/core/src/runtime/platform/scheduler_identity_client.cpp)
+target_include_directories(kiarabot_scheduler_identity_client PUBLIC
+  ${CMAKE_SOURCE_DIR}/core/include)
+target_link_libraries(kiarabot_scheduler_identity_client PUBLIC kiarabot_proto
+  kiarabot_target_codec PRIVATE kiarabot_runtime_identity_client OpenSSL::Crypto)
+kiarabot_platform_warnings(kiarabot_scheduler_identity_client)
+
 add_library(kiarabot_scheduler_runtime_client STATIC
   ${CMAKE_SOURCE_DIR}/core/src/runtime/platform/scheduler_runtime_client.cpp)
 target_include_directories(kiarabot_scheduler_runtime_client PUBLIC
@@ -115,6 +123,14 @@ if(UNIX)
   add_test(NAME p08_host_process COMMAND kiarabot_host_process_test)
   set_tests_properties(p08_host_process PROPERTIES LABELS "p08;unit;fault" TIMEOUT 30)
 endif()
+
+add_executable(kiarabot_scheduler_identity_client_test
+  ${CMAKE_SOURCE_DIR}/core/tests/platform/scheduler_identity_client_test.cpp)
+target_link_libraries(kiarabot_scheduler_identity_client_test PRIVATE
+  kiarabot_scheduler_identity_client nlohmann_json::nlohmann_json)
+kiarabot_platform_warnings(kiarabot_scheduler_identity_client_test)
+add_test(NAME p10_scheduler_identity COMMAND kiarabot_scheduler_identity_client_test)
+set_tests_properties(p10_scheduler_identity PROPERTIES LABELS "p10;unit;security" TIMEOUT 30)
 
 add_executable(kiarabot_scheduler_rpc_test
   ${CMAKE_SOURCE_DIR}/core/tests/platform/scheduler_rpc_test.cpp)

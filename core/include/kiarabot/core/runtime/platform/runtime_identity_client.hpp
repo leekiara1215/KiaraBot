@@ -28,9 +28,12 @@ struct RuntimeIdentityClientOptions {
 // Identity.CheckAuthorization, called for every command before any effect. Structural validation
 // here rejects malformed/expired/foreign-audience proofs and a client-certificate binding that does
 // not match the actual inbound TLS leaf, so self-reported identity never authorizes anything.
+// audience defaults to Runtime (P05/P06); the Scheduler authorizer passes Scheduler so the same
+// structural/binding validation applies to task delegation proofs.
 target::Outcome<target::AuthenticationContext>
 decode_delegation_claims(std::string_view proof, const target::Sha256Digest& leaf_fingerprint,
-                         target::TimePoint now);
+                         target::TimePoint now,
+                         target::Service audience = target::Service::Runtime);
 
 // Real Identity owner client for Runtime. Used by the production composition as both the
 // RuntimeAuthorizationPort (online current authority) and the PeerAuthorizer (verified delegation

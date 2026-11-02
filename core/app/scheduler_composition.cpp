@@ -14,6 +14,7 @@
 #include <openssl/rand.h>
 
 #include "kiarabot/core/application/target/scheduler_service.hpp"
+#include "kiarabot/core/runtime/platform/scheduler_identity_client.hpp"
 #include "kiarabot/core/runtime/platform/scheduler_rpc.hpp"
 #include "kiarabot/core/runtime/platform/scheduler_runtime_client.hpp"
 #include "kiarabot/core/runtime/platform/service_rpc.hpp"
@@ -194,6 +195,39 @@ private:
   std::unique_ptr<target::ServiceReadinessPort> inner_;
 };
 
+class IdentityObservedApplication final : public target::ServiceReadinessPort {
+public:
+  IdentityObservedApplication(std::unique_ptr<target::ServiceReadinessPort> inner,
+                              std::shared_ptr<platform::SchedulerIdentityClient> identity)
+      : inner_(std::move(inner)), identity_(std::move(identity)) {}
+  target::Service service() const noexcept override {
+    return inner_->service();
+  }
+  target::ServiceReadiness readiness() const override {
+    auto result = inner_->readiness();
+    const bool available = identity_ && identity_->available();
+    bool found = false;
+    for (auto& dependency : result.dependencies) {
+      if (dependency.dependency == target::Dependency::Identity) {
+        dependency.state =
+            available ? target::DependencyState::Available : target::DependencyState::Unavailable;
+        found = true;
+      }
+    }
+    if (!found) {
+      result.dependencies.push_back(
+          {target::Dependency::Identity,
+           available ? target::DependencyState::Available : target::DependencyState::Unavailable});
+    }
+    result.ready = result.ready && available;
+    return result;
+  }
+
+private:
+  std::unique_ptr<target::ServiceReadinessPort> inner_;
+  std::shared_ptr<platform::SchedulerIdentityClient> identity_;
+};
+
 target::Outcome<platform::ServiceComposition> compose(const platform::ProcessConfig& config) {
   std::shared_ptr<target::SchedulerUnitOfWorkFactory> factory;
   const bool configured = config.database.has_value();
@@ -227,23 +261,45 @@ target::Outcome<platform::ServiceComposition> compose(const platform::ProcessCon
     }
     runtime_client = std::move(std::get<std::unique_ptr<platform::SchedulerRuntimeClient>>(client));
   }
+  std::shared_ptr<platform::SchedulerIdentityClient> identity_client;
+  if (configured && config.identity_endpoint) {
+    grpc::SslCredentialsOptions ssl;
+    ssl.pem_root_certs = config.tls.ca;
+    ssl.pem_cert_chain = config.tls.certificate;
+    ssl.pem_private_key = config.tls.private_key;
+    auto client = platform::SchedulerIdentityClient::create(
+        {*config.identity_endpoint, grpc::SslCredentials(ssl), std::chrono::milliseconds{500},
+         std::chrono::milliseconds{1000}});
+    if (const auto* rejected = std::get_if<target::Failure>(&client)) {
+      return *rejected;
+    }
+    identity_client =
+        std::move(std::get<std::unique_ptr<platform::SchedulerIdentityClient>>(client));
+  }
   struct KeepAlive {
     std::shared_ptr<target::SchedulerUnitOfWorkFactory> factory;
     std::shared_ptr<SchedulerZones> zones;
     std::shared_ptr<SchedulerIds> ids;
     std::shared_ptr<platform::SchedulerRuntimeClient> runtime_client;
+    std::shared_ptr<platform::SchedulerIdentityClient> identity_client;
   };
-  auto keep_alive = std::make_shared<KeepAlive>(KeepAlive{factory, zones, ids, runtime_client});
+  auto keep_alive =
+      std::make_shared<KeepAlive>(KeepAlive{factory, zones, ids, runtime_client, identity_client});
   auto service = std::make_shared<target::SchedulerService>(target::SchedulerServiceDependencies{
       *factory, *ids, *zones, target::kTaskHorizon, target::kInstanceTaskCapacity,
       target::kInstallationTaskCapacity, runtime_client.get(), keep_alive});
 
   platform::SchedulerRpcOptions rpc_options;
   rpc_options.authorize =
-      [](grpc::ServerContext&, const v1::RequestContext&,
-         const v1::ResourceScope*) -> target::Outcome<target::SchedulerCommandContext> {
-    // Fail closed until Identity delegation/current-authorization is wired for Scheduler.
-    return failure(target::ErrorCode::Unauthenticated, target::Recovery::Authenticate);
+      [identity_client](
+          grpc::ServerContext& transport, const v1::RequestContext& request,
+          std::string_view method,
+          const v1::ResourceScope* scope) -> target::Outcome<target::SchedulerCommandContext> {
+    if (!identity_client) {
+      // No Identity endpoint configured: fail closed, never allow a task command.
+      return failure(target::ErrorCode::Unauthenticated, target::Recovery::Authenticate);
+    }
+    return identity_client->authenticate(transport, request, method, scope);
   };
   auto rpc = platform::make_scheduler_rpc(*service, std::move(rpc_options));
   if (const auto* rejected = std::get_if<target::Failure>(&rpc)) {
@@ -286,9 +342,15 @@ target::Outcome<platform::ServiceComposition> compose(const platform::ProcessCon
     return std::monostate{};
   };
   auto check = [maintain]() -> target::Status { return maintain(); };
+  std::unique_ptr<target::ServiceReadinessPort> observed =
+      std::make_unique<detail::ObservedApplication>(std::make_unique<ApplicationHolder>(service),
+                                                    database_observation);
   std::unique_ptr<target::ServiceReadinessPort> application =
-      std::make_unique<FailClosedApplication>(std::make_unique<detail::ObservedApplication>(
-          std::make_unique<ApplicationHolder>(service), database_observation));
+      identity_client
+          ? std::unique_ptr<target::ServiceReadinessPort>(
+                std::make_unique<IdentityObservedApplication>(std::move(observed), identity_client))
+          : std::unique_ptr<target::ServiceReadinessPort>(
+                std::make_unique<FailClosedApplication>(std::move(observed)));
   auto rpc_holder = std::make_shared<std::unique_ptr<v1::SchedulerService::Service>>(
       std::move(std::get<std::unique_ptr<v1::SchedulerService::Service>>(rpc)));
   return platform::ServiceComposition{std::move(application),

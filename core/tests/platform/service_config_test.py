@@ -188,6 +188,29 @@ def main(driver, identity=None):
             expect(2, {**model, 'model_security': invalid}, service='model')
         expect(2, {**config, 'model_security': model_security})
 
+        scheduler = {**config, 'service': 'scheduler'}
+        expect(0, {**scheduler, 'runtime_endpoint': 'runtime.internal:7444',
+                   'identity_endpoint': identity_endpoint}, service='scheduler')
+        expect(0, {**scheduler, 'runtime_endpoint': '127.0.0.1:1'}, service='scheduler')
+        for invalid in ['https://runtime:443', 'runtime:0', 'runtime:65536',
+                        'one,two:7444', 'x:7444/path', ':7444', 7444, True]:
+            expect(2, {**scheduler, 'runtime_endpoint': invalid}, service='scheduler')
+        expect(2, {**config, 'runtime_endpoint': 'runtime.internal:7444'})
+        expect(2, {**runtime, 'runtime_endpoint': 'runtime.internal:7444'}, service='runtime')
+        for service, name in [('identity', 'identity'), ('model', 'model'),
+                              ('host', 'plugin-host'), ('control', 'control')]:
+            value = {**config, 'service': name}
+            if service == 'control':
+                value.pop('grpc_listen')
+            expect(2, {**value, 'runtime_endpoint': 'runtime.internal:7444'},
+                   service=service)
+        # identity_endpoint is Runtime/Scheduler-only; other owner services must reject it.
+        for service, name in [('identity', 'identity'), ('model', 'model'),
+                              ('host', 'plugin-host'), ('control', 'control')]:
+            value = {**config, 'service': name}
+            if service == 'control':
+                value.pop('grpc_listen')
+            expect(2, {**value, 'identity_endpoint': identity_endpoint}, service=service)
         for update in [{'port': 0}, {'port': -1}, {'port': 65536}, {'port': True},
                        {'name': 'db name'}, {'host': '/tmp/socket'}, {'host': 'one,two'},
                        {'host': 'bad host'}, {'runtime_role': 'identity_migration'},

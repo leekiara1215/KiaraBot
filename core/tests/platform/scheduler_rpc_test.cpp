@@ -178,7 +178,9 @@ public:
 class FakeAuthorizer {
 public:
   t::Outcome<t::SchedulerCommandContext> operator()(grpc::ServerContext&, const v1::RequestContext&,
+                                                    std::string_view method,
                                                     const v1::ResourceScope* scope) {
+    last_method = std::string(method);
     ++calls;
     last_scope_resource =
         scope != nullptr && scope->resources_size() > 0 ? scope->resources(0).id() : std::string{};
@@ -192,6 +194,7 @@ public:
   }
   int calls = 0;
   std::string last_scope_resource;
+  std::string last_method;
 };
 
 bool fill_context(v1::RequestContext* context, std::string key = std::string(16, 'k')) {
@@ -280,8 +283,8 @@ void run() {
   FakeAuthorizer authorizer;
   kiarabot::core::platform::SchedulerRpcOptions options;
   options.authorize = [&](grpc::ServerContext& server, const v1::RequestContext& request,
-                          const v1::ResourceScope* scope) {
-    return authorizer(server, request, scope);
+                          std::string_view method, const v1::ResourceScope* scope) {
+    return authorizer(server, request, method, scope);
   };
   auto adapter = kiarabot::core::platform::make_scheduler_rpc(handler, std::move(options));
   require(std::holds_alternative<std::unique_ptr<v1::SchedulerService::Service>>(adapter));

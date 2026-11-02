@@ -169,7 +169,11 @@ bool timestamp(const t::TimePoint& value, google::protobuf::Timestamp* output) {
 
 target::Outcome<target::AuthenticationContext>
 decode_delegation_claims(std::string_view proof, const target::Sha256Digest& leaf_fingerprint,
-                         target::TimePoint now) {
+                         target::TimePoint now, target::Service expected_audience) {
+  const std::string_view audience_text = expected_audience == target::Service::Runtime ? "runtime"
+                                         : expected_audience == target::Service::Scheduler
+                                             ? "scheduler"
+                                             : "";
   try {
     if (proof.empty() || proof.size() > 32768) {
       return unauthenticated();
@@ -205,8 +209,8 @@ decode_delegation_claims(std::string_view proof, const target::Sha256Digest& lea
     const auto audience = text("aud");
     const auto token_id = text("jti");
     const auto issuer = text("iss");
-    if (!subject || !canonical_uuid(*subject) || !token_id || !canonical_uuid(*token_id) ||
-        !issuer || !audience || *audience != "runtime") {
+    if (audience_text.empty() || !subject || !canonical_uuid(*subject) || !token_id ||
+        !canonical_uuid(*token_id) || !issuer || !audience || *audience != audience_text) {
       return unauthenticated();
     }
     const auto integer = [&](const Json& value) -> std::optional<std::int64_t> {
@@ -331,8 +335,10 @@ decode_delegation_claims(std::string_view proof, const target::Sha256Digest& lea
     }
     t::AuthenticationContext context;
     context.subject = {*subject};
-    context.direct_peer = t::PlatformPeer{t::Service::Control, {actor}};
-    context.audience = t::Service::Runtime;
+    context.direct_peer = t::PlatformPeer{
+        expected_audience == t::Service::Scheduler ? t::Service::Runtime : t::Service::Control,
+        {actor}};
+    context.audience = expected_audience;
     context.actors = std::move(actors);
     context.scopes = std::move(scopes);
     context.authorization_version = {static_cast<std::uint64_t>(*authorization_version)};

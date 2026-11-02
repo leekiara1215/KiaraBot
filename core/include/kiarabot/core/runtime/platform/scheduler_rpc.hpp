@@ -18,7 +18,7 @@ namespace target = kiarabot::core::target;
 // fail-closed implementation until the Identity delegation client is wired for Scheduler; test
 // fixtures inject a fake authorizer. A denial must return Unauthenticated/UpstreamUnavailable.
 using SchedulerPeerAuthorizer = std::function<target::Outcome<target::SchedulerCommandContext>(
-    grpc::ServerContext& transport, const v1::RequestContext& request,
+    grpc::ServerContext& transport, const v1::RequestContext& request, std::string_view method,
     const v1::ResourceScope* scope)>;
 
 struct SchedulerRpcOptions {
