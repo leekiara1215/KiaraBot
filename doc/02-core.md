@@ -1334,3 +1334,33 @@ HostBridge client 的注册改为后台有界重试：`HostService::start()` 在
 进入注册循环，不伪造 registered/stopped；仅配置非法（缺失/格式错误 host 材料、无 host_id/
 凭据）才让启动失败。P02 生命周期测试使用不可达 `runtime_endpoint` 验证“离线进程存活 +
 readiness=false + 可恢复注册”。
+
+### P10a Scheduler RPC 与组合根（第二阶段）
+
+`core/src/runtime/platform/scheduler_rpc.cpp` 是冻结的 SchedulerService 六方法 unary 适配器
+（CreateTask/CancelTask/GetTask/ListTasks/GetOccurrence/GetOperation）：只做
+RequestContext 校验（UUID/必填 deadline/30s 上限/幂等键 17–128 字符）、
+scope 透传给 authorizer、wire⇄domain 转换（TaskRecord 的 target 仅 conversation id/type，
+消息列适配器/账号在 TaskRecord 中不出现，内部 ConversationKey 的 adapter/account 留空、
+由 P10b 按 owner 实例 Runtime 绑定解析）、以及稳定 gRPC 错误映射（v1::RpcFailure，
+CONFLICT→ABORTED 等）。业务规则/收据/交接仍全部在 `SchedulerCommandHandler` 应用层；
+RPC 依赖接口而非具体仓储，便于 fake handler fixture。
+
+组合根 `core/app/scheduler_composition.cpp`：严格 `database` 配置存在时打开 Scheduler 私有
+PG 库并装配 `SchedulerService`（CSPRNG occurrence/operation id、IANA POSIX zoneinfo 适配器）；
+未配置数据库时使用 fail-closed 工厂，进程仍启动但 readiness=false（P02 无库生命周期）。
+readiness 依赖库/时区数据，且由于 Identity delegation/current-authorization 链路尚未接入，
+authorizer 当前 fail-closed，`FailClosedApplication` 强制 ready=false、Identity=Unavailable；
+RPC 请求返回 UNAUTHENTICATED/INVALID_ARGUMENT（P02 探针接受该拒绝作为监听存活证据）。
+维护循环由 `ServiceComposition::check_dependencies` 每秒执行（有界）：读取数据库权威时间后
+due sweep（最多 10 个）、过期 trigger（最多 10 个）、command_receipts 与 inbox 保留期清理；
+busy/Conflict 不终止进程，其它数据库故障按服务生命周期退出。
+
+注意：`infrastructure::TimeZoneResolver` 链接 reference protobuf 生成物，与 owner 服务使用的
+主 protobuf 库不能同进程混链（ODR/duplicate symbol），因此组合根实现了同错误语义的 POSIX
+zoneinfo 适配器（`/usr/share/zoneinfo` + `mktime/localtime_r` 往返检测 DST gap/fold，1970–2100、
+非法/不存在 zone→INVALID_ARGUMENT，zoneinfo 缺失→UPSTREAM_UNAVAILABLE）。该适配器尚未有独立
+单测（应用层 fake port 已覆盖 gap/fold 拒绝），需在 P10b 真实运行环境补 zoneinfo/宿主缺失矩阵；
+后续若统一 protobuf 生成物，应切回基础设施 resolver。容量计数仍为 SQL 聚合扫描（quota counter
+关系保留给后续事务化缓存），RPC List 的分页 token 为 owner keyset task_id（非 10 分钟不可变
+snapshot，P10b/后续补齐）。
