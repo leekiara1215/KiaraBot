@@ -71,6 +71,7 @@ struct Store {
   std::vector<t::AuditEntry> audits;
   bool fail_reads = false;
   bool fail_writes = false;
+  bool fail_cleanup = false;
   bool fail_commit = false;
   bool unknown_commit = false;
   int commits = 0;
@@ -320,6 +321,9 @@ public:
     return failure(t::ErrorCode::CapabilityNotSupported);
   }
   t::Outcome<std::size_t> prune_received(t::TimePoint, std::size_t) override {
+    if (store_.fail_cleanup) {
+      return failure(t::ErrorCode::UpstreamUnavailable);
+    }
     return std::size_t{0};
   }
 
@@ -1720,6 +1724,25 @@ void lifecycle_participant_flow(Harness& harness) {
   check(std::holds_alternative<t::Operation>(operation_blocked) &&
             std::get<t::Operation>(operation_blocked).state == t::OperationState::Blocked,
         "blocked participant operation was not observable");
+  {
+    const auto& observable = std::get<t::Operation>(operation_blocked);
+    check(observable.blocked_reason.has_value() &&
+              *observable.blocked_reason == t::ErrorCode::UpstreamUnavailable &&
+              observable.next_attempt.has_value(),
+          "blocked operation snapshot omits reason/next_attempt");
+    bool host_blocked = false;
+    bool scheduler_blocked = false;
+    for (const auto& participant : observable.participants) {
+      if (participant.state != t::OperationState::Blocked || !participant.reason.has_value() ||
+          *participant.reason != t::ErrorCode::UpstreamUnavailable) {
+        continue;
+      }
+      host_blocked |= participant.participant == "host";
+      scheduler_blocked |= participant.participant == "scheduler";
+    }
+    check(host_blocked && scheduler_blocked,
+          "offline host/scheduler participants are not observable as BLOCKED");
+  }
   // Dependencies recover: the next maintenance round completes exactly once.
   harness.host_lifecycle.done = true;
   harness.scheduler_lifecycle.done = true;
@@ -1763,6 +1786,31 @@ void lifecycle_cleanup_flow(Harness& harness) {
   }
   check(last.pruned == 3 && !last.cleanup_failed,
         "60s retention batch did not prune stubbed outbox/audit/operations exactly once");
+}
+
+void lifecycle_cleanup_failure_observability() {
+  Harness harness;
+  harness.store.fail_cleanup = true;
+  t::LifecycleMaintenance last;
+  for (int round = 0; round < 60; ++round) {
+    auto maintained = harness.application->lifecycle_maintenance();
+    check(std::holds_alternative<t::LifecycleMaintenance>(maintained),
+          "cleanup failure round returned a failure instead of a degraded result");
+    last = std::get<t::LifecycleMaintenance>(maintained);
+  }
+  check(last.cleanup_failed, "cleanup failure was not reported in maintenance counters");
+  const auto line = t::format_lifecycle_maintenance_log(last);
+  check(line.find("operation=lifecycle_maintenance") != std::string::npos &&
+            line.find("outcome=degraded") != std::string::npos &&
+            line.find("cleanup_failed=true") != std::string::npos,
+        "cleanup failure structured line missing stable fields");
+  t::LifecycleMaintenance blocked;
+  blocked.blocked = 2;
+  const auto blocked_line = t::format_lifecycle_maintenance_log(blocked);
+  check(blocked_line.find("outcome=degraded") != std::string::npos &&
+            blocked_line.find("blocked=2") != std::string::npos &&
+            blocked_line.find("cleanup_failed=false") != std::string::npos,
+        "blocked participants are not visible in the maintenance log line");
 }
 
 void lifecycle_host_participant_flow() {
@@ -1871,6 +1919,7 @@ int main() {
     Harness harness;
     lifecycle_cleanup_flow(harness);
   }
+  lifecycle_cleanup_failure_observability();
   lifecycle_host_participant_flow();
   return 0;
 }

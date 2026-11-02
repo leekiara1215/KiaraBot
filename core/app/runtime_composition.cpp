@@ -3,6 +3,7 @@
 #include <array>
 #include <chrono>
 #include <cstddef>
+#include <iostream>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -368,11 +369,20 @@ compose_runtime_service(const platform::ProcessConfig& config) {
           }
         }
         // P13a: bounded lifecycle reconciliation and the ad-hoc 60s retention batch run on the
-        // same dependency hook. A cleanup failure is reported through readiness, never by
-        // silently revoking the lifecycle gate.
+        // same dependency hook. A per-operation cleanup failure is non-fatal (the hook itself is
+        // process-fatal); P13d surfaces it as a counts-only structured maintenance line so the
+        // degraded batch and blocked participants are greppable without a new API/permission.
         auto lifecycle = state->application->lifecycle_maintenance();
         if (std::holds_alternative<target::Failure>(lifecycle)) {
           return std::get<target::Failure>(lifecycle);
+        }
+        // P13d: counts-only structured line on every non-idle/attention maintenance round. A
+        // cleanup failure is also returned to readiness by the maintenance call's own failure path;
+        // this line makes the degraded batch and blocked participants greppable in owner logs.
+        const auto& maintained = std::get<target::LifecycleMaintenance>(lifecycle);
+        if (maintained.reconciled != 0 || maintained.completed != 0 || maintained.blocked != 0 ||
+            maintained.purged != 0 || maintained.pruned != 0 || maintained.cleanup_failed) {
+          std::cerr << target::format_lifecycle_maintenance_log(maintained) << '\n';
         }
         return std::monostate{};
       };

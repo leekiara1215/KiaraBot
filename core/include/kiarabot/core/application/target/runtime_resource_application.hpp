@@ -259,6 +259,20 @@ struct LifecycleMaintenance {
   std::size_t pruned = 0;
   bool cleanup_failed = false;
 };
+// P13d structured observability line for the once-per-second Runtime dependency hook. It uses the
+// stable key=value shape from doc/08 and contains counts only (never secret/resource content);
+// blocked/cleanup_failed are the two signals an operator must alert on. Pipeline errors that make
+// the whole round fail are surfaced through readiness instead of this line.
+inline std::string format_lifecycle_maintenance_log(const LifecycleMaintenance& maintenance) {
+  const bool degraded = maintenance.cleanup_failed || maintenance.blocked > 0;
+  return "operation=lifecycle_maintenance outcome=" + std::string{degraded ? "degraded" : "ok"} +
+         " reconciled=" + std::to_string(maintenance.reconciled) +
+         " completed=" + std::to_string(maintenance.completed) +
+         " blocked=" + std::to_string(maintenance.blocked) +
+         " purged=" + std::to_string(maintenance.purged) +
+         " pruned=" + std::to_string(maintenance.pruned) +
+         " cleanup_failed=" + (maintenance.cleanup_failed ? "true" : "false");
+}
 inline constexpr auto kLifecycleRestoreWindow =
     std::chrono::duration_cast<TimePoint::duration>(std::chrono::days{30});
 inline constexpr auto kLifecycleTombstoneRetention =
