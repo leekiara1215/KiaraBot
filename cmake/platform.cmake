@@ -497,3 +497,15 @@ set_tests_properties(p01_target_api PROPERTIES LABELS "p01;unit" TIMEOUT 30)
 add_test(NAME architecture_p02_reference_manifest_test COMMAND "${KIARABOT_TARGET_PYTHON}"
   ${CMAKE_SOURCE_DIR}/tests/architecture/reference_test.py)
 set_tests_properties(architecture_p02_reference_manifest_test PROPERTIES LABELS "p02;unit" TIMEOUT 10)
+
+# P13b Host/SDK/Adapter drain + crash/restart matrix. The test spawns the built P08a Host binary
+# and a real managed SDK plugin process against fake Runtime bridges, then exercises SIGTERM,
+# SIGKILL/restart recovery and journal durability. It is skipped when the Host binary is absent.
+if(TARGET kiarabot-plugin-host)
+  add_test(NAME p13_host_sdk_drain
+    COMMAND "${KIARABOT_TARGET_PYTHON}" -m pytest -q tests/test_host_managed.py)
+  set_tests_properties(p13_host_sdk_drain PROPERTIES
+    LABELS "p13;p08;integration;fault" TIMEOUT 240
+    WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}/sdk/python"
+    ENVIRONMENT "KIARABOT_TEST_HOST_BINARY=$<TARGET_FILE:kiarabot-plugin-host>;PYTHONPATH=${CMAKE_SOURCE_DIR}/sdk/python/src:${CMAKE_SOURCE_DIR}/sdk/python/build/generated;PATH=${RUNTIME_E2E_OPENSSL_BIN_DIR}:${RUNTIME_E2E_PYTHON_BIN_DIR}:$ENV{PATH}")
+endif()

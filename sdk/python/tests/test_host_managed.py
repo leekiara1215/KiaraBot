@@ -356,3 +356,124 @@ async def test_real_host_spawns_managed_sdk_and_applies_config(tmp_path):
                     await host_process.communicate()
     finally:
         await bridge.stop()
+
+
+async def _start_managed_host(tmp_path, *, name):
+    """Start P08a Host + fake bridges with one managed SDK plugin; return fixture data."""
+    generate_pki(tmp_path / 'tls')
+    host_id = str(uuid.uuid4())
+    package_sha = bytes.fromhex('a' * 64)
+    bridge = FakeHostBridge(tmp_path / 'tls/server.pem', tmp_path / 'tls/server.key',
+                            tmp_path / 'tls/ca.pem', host_id)
+    await bridge.start()
+    runtime = FakeTargetRuntime(features=['plugin.config.v1'], desired_config_version=1)
+    await runtime.__aenter__()
+    package, manifest, applied = write_plugin_package(tmp_path)
+    config_path, instance_id, installation_id, token = write_host_config(
+        tmp_path, host_id=host_id, bridge_endpoint=bridge.endpoint,
+        plugin_env={'PLUGIN_CORE_ENDPOINT': runtime.endpoint},
+        package=package, runtime_ca=tmp_path / 'tls' / 'ca.pem', token=runtime.token)
+    (tmp_path / 'runtime-ca.pem').write_bytes(runtime.root_cert)
+    config = json.loads(config_path.read_text())
+    config['host']['environment']['PLUGIN_TLS_ROOT'] = str(tmp_path / 'runtime-ca.pem')
+    config['host']['environment']['PLUGIN_CORE_ENDPOINT'] = runtime.endpoint
+    config_path.write_text(json.dumps(config))
+    host_process = await asyncio.create_subprocess_exec(
+        HOST_BINARY, '--config', str(config_path), cwd=str(tmp_path),
+        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+    await asyncio.wait_for(bridge.registrations.get(), 10)
+    await bridge.send(apply_request(
+        host_id=host_id, instance_id=instance_id, installation_id=installation_id,
+        generation=1, desired_version=1, package_sha256=package_sha, manifest=manifest,
+        command_id='command-1'))
+    receipt = await asyncio.wait_for(bridge.receipts.get(), 10)
+    assert receipt.persisted
+    registration = await asyncio.wait_for(runtime.registrations.get(), 10)
+    assert registration.instance_id == instance_id
+    return {
+        'name': name, 'host_id': host_id, 'instance_id': instance_id, 'bridge': bridge,
+        'runtime': runtime, 'host_process': host_process, 'database': tmp_path / 'host.sqlite',
+    }
+
+
+async def _stop_fixture(fixture):
+    process = fixture['host_process']
+    if process.returncode is None:
+        process.kill()
+        await process.communicate()
+    await fixture['bridge'].stop()
+    await fixture['runtime'].__aexit__(None, None, None)
+
+
+def _journal_snapshot(path, instance_id):
+    database = sqlite3.connect(path)
+    try:
+        integrity = database.execute('PRAGMA integrity_check').fetchone()[0]
+        execution = database.execute(
+            'SELECT desired_version,state,outcome,pid FROM managed_executions WHERE instance_id=?',
+            (instance_id,)).fetchone()
+        rows = database.execute('SELECT count(*) FROM managed_executions').fetchone()[0]
+        observations = database.execute('SELECT count(*) FROM execution_observations').fetchone()[0]
+        commands = database.execute('SELECT count(*) FROM command_journal').fetchone()[0]
+        return integrity, execution, rows, observations, commands
+    finally:
+        database.close()
+
+
+async def test_host_sigterm_drains_managed_plugin_and_closes_journal(tmp_path):
+    fixture = await _start_managed_host(tmp_path, name='drain')
+    try:
+        process = fixture['host_process']
+        process.terminate()
+        assert await asyncio.wait_for(process.wait(), 15) == 0
+        integrity, execution, _, observations, commands = _journal_snapshot(
+            fixture['database'], fixture['instance_id'])
+        assert integrity == 'ok'
+        assert execution is not None and commands >= 1 and observations >= 1
+        # Process facts remain truthful: shutdown never fabricates "never started".
+        state, outcome = execution[1], execution[2]
+        # SQLite stores enums as integers: state Exited=3/Unknown=4, outcome 1/2/3.
+        assert state in (3, 4)
+        assert outcome in (1, 2, 3)
+    finally:
+        await _stop_fixture(fixture)
+
+
+async def test_host_crash_restart_recovers_without_duplicate_spawn_or_fake_success(tmp_path):
+    fixture = await _start_managed_host(tmp_path, name='crash')
+    try:
+        process = fixture['host_process']
+        process.kill()  # Host crash: SIGKILL, no graceful drain hook.
+        await asyncio.wait_for(process.wait(), 10)
+        _, crashed, rows, _, _ = _journal_snapshot(fixture['database'], fixture['instance_id'])
+        assert crashed is not None and rows == 1
+        # The crash left a durable unfinished execution; it must not be rewritten to success.
+        assert crashed[1] in (0, 1, 2, 4)
+        assert crashed[2] != 1
+        crashed_pid = crashed[3]
+        # Restart the Host on the same journal. Recovery must not re-spawn this execution and must
+        # not rewrite it to known success merely because the Host restarted.
+        restarted = await asyncio.create_subprocess_exec(
+            HOST_BINARY, '--config', str(tmp_path / 'host.json'), cwd=str(tmp_path),
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+        try:
+            await asyncio.wait_for(fixture['bridge'].registrations.get(), 10)
+            _, recovered, rows, _, _ = _journal_snapshot(
+                fixture['database'], fixture['instance_id'])
+            assert rows == 1 and recovered is not None and recovered[3] == crashed_pid
+            assert recovered[2] != 1
+            restarted.terminate()
+            assert await asyncio.wait_for(restarted.wait(), 15) == 0
+            integrity, execution, rows, _, _ = _journal_snapshot(
+                fixture['database'], fixture['instance_id'])
+            assert integrity == 'ok'
+            assert rows == 1
+            # A graceful stop of the still-running recovered child may legitimately record known
+            # success; the crash/restart window itself must not have done so.
+            assert execution is not None
+        finally:
+            if restarted.returncode is None:
+                restarted.kill()
+                await restarted.communicate()
+    finally:
+        await _stop_fixture(fixture)
