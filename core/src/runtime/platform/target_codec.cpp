@@ -179,7 +179,10 @@ bool resource_id(target::ResourceKind kind, std::string_view value) {
   if (kind == target::ResourceKind::Action) {
     return correlation_id(value);
   }
-  if (kind == target::ResourceKind::Task) {
+  // Catalog identifiers are offline-registered opaque labels (for example the Control
+  // authorization catalog "control"), not per-record UUIDs; bound them like Task ids instead of
+  // applying the UUID default. This also lets Identity exact grants target the Control catalog.
+  if (kind == target::ResourceKind::Task || kind == target::ResourceKind::Catalog) {
     if (value.empty() || value.size() > 256) {
       return false;
     }

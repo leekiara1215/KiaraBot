@@ -159,7 +159,7 @@ bool shape(const t::DelegationClaims& c) {
   for (const auto& permission : c.permissions) {
     const auto p = static_cast<unsigned>(permission.permission);
     const auto r = static_cast<unsigned>(permission.resource.kind);
-    if (p == 0 || p > static_cast<unsigned>(t::Permission::MessageRead) ||
+    if (p == 0 || p > static_cast<unsigned>(t::Permission::HealthRead) ||
         r > static_cast<unsigned>(t::ResourceKind::Catalog) ||
         !text(permission.resource.id.value) ||
         !permissions.emplace(p, r, permission.resource.id.value).second) {
@@ -266,7 +266,7 @@ t::DelegationClaims decode(const jwt::decoded_jwt<jwt::traits::nlohmann_json>& t
     }
     const auto p = integer(entry[0]);
     const auto r = integer(entry[1]);
-    if (p == 0 || p > static_cast<unsigned>(t::Permission::MessageRead) ||
+    if (p == 0 || p > static_cast<unsigned>(t::Permission::HealthRead) ||
         r > static_cast<unsigned>(t::ResourceKind::Catalog)) {
       throw std::invalid_argument("permission");
     }

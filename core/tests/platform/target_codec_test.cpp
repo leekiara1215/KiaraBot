@@ -141,12 +141,18 @@ void test_resources() {
   expect(rejected(codec::from_wire(static_cast<wire::ResourceKind>(unknown_value()))));
   expect(rejected(codec::to_wire(static_cast<target::ResourceKind>(unknown_value()))));
   expect(rejected(codec::from_wire(wire::ResourceRef{})));
-  for (const auto* bad :
-       {"all", "11111111-1111-1111-8111-111111111111", "11111111-1111-4111-7111-111111111111",
-        "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA", "11111111-1111-4111-8111-11111111111Z"}) {
-    expect(rejected(codec::to_wire(
-        target::ResourceRef{target::ResourceKind::Catalog, target::ResourceId{bad}})));
-  }
+  // Catalog identifiers are opaque offline-registered labels such as the Control catalog
+  // "control"; they use the bounded printable rule, not the UUID default.
+  expect(!rejected(codec::to_wire(
+      target::ResourceRef{target::ResourceKind::Catalog, target::ResourceId{"control"}})));
+  expect(!rejected(codec::to_wire(
+      target::ResourceRef{target::ResourceKind::Catalog, target::ResourceId{"catalog:ai/1"}})));
+  expect(rejected(codec::to_wire(
+      target::ResourceRef{target::ResourceKind::Catalog, target::ResourceId{"catalog space"}})));
+  expect(rejected(codec::to_wire(target::ResourceRef{
+      target::ResourceKind::Catalog, target::ResourceId{std::string(257, 'a')}})));
+  expect(rejected(codec::to_wire(
+      target::ResourceRef{target::ResourceKind::Catalog, target::ResourceId{""}})));
   expect(!rejected(codec::to_wire(
       target::ResourceRef{target::ResourceKind::Action, target::ResourceId{"action_1-2.3"}})));
   expect(rejected(codec::to_wire(

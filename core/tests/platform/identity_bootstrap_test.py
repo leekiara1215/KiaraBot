@@ -204,8 +204,8 @@ def main(*, control_server_certificate=False, after_bootstrap=None,
     assert sql(f"SELECT count(*) FROM kiarabot.principals WHERE id='{runtime_principal}';", 'p03_identity') == '1'
     assert sql(f"SELECT count(*) FROM kiarabot.credential_heads WHERE id='{runtime_credential}';", 'p03_identity') == '1'
     assert sql(f"SELECT count(*) FROM kiarabot.exact_assignments WHERE subject='{runtime_principal}';", 'p03_identity') == '1'
-    assert sql("SELECT count(*) FROM kiarabot.exact_permissions WHERE permission BETWEEN 41 AND 50;",
-               'p03_identity') == '10'
+    assert sql("SELECT count(DISTINCT permission) FROM kiarabot.exact_permissions "
+               "WHERE permission BETWEEN 41 AND 50;", 'p03_identity') == '10'
     assert 'CONFLICT' in run(command, 1)
     assert 'state=consumed version=2' in run(status_arguments)
     print('Real owned PG offline bootstrap, rejected enrollment, once-only state and redaction passed')

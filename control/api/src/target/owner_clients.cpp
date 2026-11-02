@@ -32,13 +32,21 @@ namespace codec = core::platform::target_codec;
 std::string random_identifier() {
   unsigned char bytes[16]{};
   if (RAND_bytes(bytes, sizeof(bytes)) != 1) {
-    return "control-request";
+    return "00000000-0000-4000-8000-000000000000";
   }
+  // Owner RPC request/trace ids are canonical UUIDv4 strings at the Identity boundary; a raw
+  // 32-hex token is rejected with INVALID_ARGUMENT before the delegation handler runs.
+  bytes[6] = static_cast<unsigned char>((bytes[6] & 0x0fU) | 0x40U);
+  bytes[8] = static_cast<unsigned char>((bytes[8] & 0x3fU) | 0x80U);
   static constexpr char kHex[] = "0123456789abcdef";
   std::string value;
-  for (const auto byte : bytes) {
-    value.push_back(kHex[byte >> 4U]);
-    value.push_back(kHex[byte & 0x0fU]);
+  value.reserve(36);
+  for (std::size_t index = 0; index < sizeof(bytes); ++index) {
+    if (index == 4 || index == 6 || index == 8 || index == 10) {
+      value.push_back('-');
+    }
+    value.push_back(kHex[bytes[index] >> 4U]);
+    value.push_back(kHex[bytes[index] & 0x0fU]);
   }
   return value;
 }
@@ -231,6 +239,10 @@ private:
     auto* context = input.mutable_context();
     context->set_request_id(random_identifier());
     context->set_trace_id(random_identifier());
+    // IdentityIssueDelegation is an idempotent owner RPC: the production Identity boundary rejects
+    // an empty/invalid idempotency key with INVALID_ARGUMENT. Control issues a fresh one-off
+    // delegation per owner call, so derive a unique key rather than forwarding caller headers.
+    context->set_idempotency_key(random_identifier());
     const auto wire_deadline = codec::to_wire(deadline);
     if (const auto* timestamp = std::get_if<google::protobuf::Timestamp>(&wire_deadline)) {
       *context->mutable_deadline() = *timestamp;
