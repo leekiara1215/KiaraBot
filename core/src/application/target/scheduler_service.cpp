@@ -386,6 +386,12 @@ Outcome<std::size_t> SchedulerService::due_sweep(TimePoint now, std::size_t limi
       return *failed;
     }
     auto task_uow = std::move(std::get<std::unique_ptr<SchedulerUnitOfWork>>(task_work));
+    const auto stamp_result = task_uow->current_time();
+    if (const auto* failed = std::get_if<Failure>(&stamp_result)) {
+      task_uow->rollback();
+      return *failed;
+    }
+    const auto stamp = std::get<TimePoint>(stamp_result);
     const auto found = task_uow->tasks().find(candidate.key);
     if (const auto* failed = outcome_failure(found)) {
       task_uow->rollback();
@@ -430,8 +436,8 @@ Outcome<std::size_t> SchedulerService::due_sweep(TimePoint now, std::size_t limi
     handoff.actor = SubjectId{current->key.owner.value};
     handoff.authorization_version = ResourceVersion{0};
     handoff.payload_hash = payload_digest(current->payload);
-    handoff.created_at = now;
-    handoff.valid_until = now + kTriggerValidFor;
+    handoff.created_at = stamp;
+    handoff.valid_until = stamp + kTriggerValidFor;
     Occurrence occurrence;
     occurrence.owner = current->key.owner;
     occurrence.installation = current->installation;
@@ -442,8 +448,8 @@ Outcome<std::size_t> SchedulerService::due_sweep(TimePoint now, std::size_t limi
     occurrence.handoff = handoff;
     occurrence.version = ResourceVersion{1};
     occurrence.state = OperationState::Accepted;
-    occurrence.created_at = now;
-    occurrence.updated_at = now;
+    occurrence.created_at = stamp;
+    occurrence.updated_at = stamp;
     const auto saved_occurrence = task_uow->occurrences().save(occurrence, std::nullopt);
     if (const auto* failed = outcome_failure(saved_occurrence)) {
       task_uow->rollback();
@@ -454,7 +460,7 @@ Outcome<std::size_t> SchedulerService::due_sweep(TimePoint now, std::size_t limi
     entry.payload_reference = ImmutablePayloadRef{resource, current->version};
     entry.lane = OutboxLane::Ordinary;
     entry.state = OutboxState::Pending;
-    entry.next_attempt_at = now;
+    entry.next_attempt_at = stamp;
     const auto enqueued = task_uow->journal().enqueue(entry, JournalCapacity{}, now);
     if (const auto* failed = status_failure(enqueued)) {
       task_uow->rollback();
@@ -464,7 +470,7 @@ Outcome<std::size_t> SchedulerService::due_sweep(TimePoint now, std::size_t limi
     auto updated = *current;
     updated.state = TaskState::Running;
     updated.version = ResourceVersion{current->version.value + 1};
-    updated.updated_at = now;
+    updated.updated_at = stamp;
     const auto saved_task = task_uow->tasks().save(updated, expected);
     if (const auto* failed = outcome_failure(saved_task)) {
       task_uow->rollback();
@@ -490,6 +496,12 @@ Outcome<std::vector<SchedulerTriggerClaim>> SchedulerService::claim_triggers(
     return *failed;
   }
   auto uow = std::move(std::get<std::unique_ptr<SchedulerUnitOfWork>>(work));
+  const auto stamp_result = uow->current_time();
+  if (const auto* failed = std::get_if<Failure>(&stamp_result)) {
+    uow->rollback();
+    return *failed;
+  }
+  const auto stamp = std::get<TimePoint>(stamp_result);
   const auto claimed = uow->journal().claim(Service::Scheduler, limit, now, lease);
   if (const auto* failed = outcome_failure(claimed)) {
     uow->rollback();
@@ -509,7 +521,7 @@ Outcome<std::vector<SchedulerTriggerClaim>> SchedulerService::claim_triggers(
     auto updated = *occurrence;
     const auto expected = updated.version;
     updated.attempts += 1;
-    updated.updated_at = now;
+    updated.updated_at = stamp;
     updated.version = ResourceVersion{updated.version.value + 1};
     const auto saved = uow->occurrences().save(updated, expected);
     if (const auto* failed = outcome_failure(saved)) {
@@ -537,6 +549,12 @@ Outcome<Occurrence> SchedulerService::confirm_trigger_accepted(const OutboxClaim
     return *failed;
   }
   auto uow = std::move(std::get<std::unique_ptr<SchedulerUnitOfWork>>(work));
+  const auto stamp_result = uow->current_time();
+  if (const auto* failed = std::get_if<Failure>(&stamp_result)) {
+    uow->rollback();
+    return *failed;
+  }
+  const auto stamp = std::get<TimePoint>(stamp_result);
   const auto found = uow->occurrences().find(claim.entry.context.message);
   if (const auto* failed = outcome_failure(found)) {
     uow->rollback();
@@ -556,7 +574,7 @@ Outcome<Occurrence> SchedulerService::confirm_trigger_accepted(const OutboxClaim
     return conflict();
   }
   const auto confirmed = uow->journal().confirm(
-      HandoffKey{Service::Scheduler, claim.entry.context.message}, claim.claim_token, now);
+      HandoffKey{Service::Scheduler, claim.entry.context.message}, claim.claim_token, stamp);
   if (const auto* failed = status_failure(confirmed)) {
     uow->rollback();
     return *failed;
@@ -565,8 +583,8 @@ Outcome<Occurrence> SchedulerService::confirm_trigger_accepted(const OutboxClaim
   const auto expected_occurrence = occurrence.version;
   occurrence.state = OperationState::Succeeded;
   occurrence.accepted_event_id = std::string(accepted_event_id);
-  occurrence.acknowledged_at = now;
-  occurrence.updated_at = now;
+  occurrence.acknowledged_at = stamp;
+  occurrence.updated_at = stamp;
   occurrence.version = ResourceVersion{occurrence.version.value + 1};
   const auto saved_occurrence = uow->occurrences().save(occurrence, expected_occurrence);
   if (const auto* failed = outcome_failure(saved_occurrence)) {
@@ -582,7 +600,7 @@ Outcome<Occurrence> SchedulerService::confirm_trigger_accepted(const OutboxClaim
     auto updated = *task;
     const auto expected_task = updated.version;
     updated.state = TaskState::Completed;
-    updated.updated_at = now;
+    updated.updated_at = stamp;
     updated.version = ResourceVersion{updated.version.value + 1};
     const auto saved_task = uow->tasks().save(updated, expected_task);
     if (const auto* failed = outcome_failure(saved_task)) {
@@ -606,6 +624,12 @@ Outcome<std::size_t> SchedulerService::expire_stale_triggers(TimePoint now, std:
     return *failed;
   }
   auto uow = std::move(std::get<std::unique_ptr<SchedulerUnitOfWork>>(work));
+  const auto stamp_result = uow->current_time();
+  if (const auto* failed = std::get_if<Failure>(&stamp_result)) {
+    uow->rollback();
+    return *failed;
+  }
+  const auto stamp = std::get<TimePoint>(stamp_result);
   const auto listed = uow->inflight_occurrences(limit);
   if (const auto* failed = outcome_failure(listed)) {
     uow->rollback();
@@ -629,7 +653,7 @@ Outcome<std::size_t> SchedulerService::expire_stale_triggers(TimePoint now, std:
     const auto expected_occurrence = occurrence.version;
     occurrence.state = OperationState::Expired;
     occurrence.last_error = ErrorCode::Timeout;
-    occurrence.updated_at = now;
+    occurrence.updated_at = stamp;
     occurrence.version = ResourceVersion{occurrence.version.value + 1};
     const auto saved_occurrence = uow->occurrences().save(occurrence, expected_occurrence);
     if (const auto* failed = outcome_failure(saved_occurrence)) {
@@ -646,7 +670,7 @@ Outcome<std::size_t> SchedulerService::expire_stale_triggers(TimePoint now, std:
       const auto expected_task = updated.version;
       updated.state = TaskState::Failed;
       updated.reason = ErrorCode::Timeout;
-      updated.updated_at = now;
+      updated.updated_at = stamp;
       updated.version = ResourceVersion{updated.version.value + 1};
       const auto saved_task = uow->tasks().save(updated, expected_task);
       if (const auto* failed = outcome_failure(saved_task)) {

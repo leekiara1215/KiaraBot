@@ -24,7 +24,8 @@ def main():
     pg_bin, openssl, test = args.pg_bin.resolve(), args.openssl.resolve(), args.test.resolve()
     driver_names = ('database_test', 'database_test_sanitized', 'kiarabot_postgres_database_test',
                     'kiarabot_identity_application_test',
-                    'kiarabot_identity_application_test_sanitized')
+                    'kiarabot_identity_application_test_sanitized',
+                    'kiarabot_postgres_scheduler_test')
     environment = {key: value for key, value in os.environ.items() if not key.startswith('PG')}
     environment['LC_ALL'] = 'C'
 
@@ -33,7 +34,7 @@ def main():
         if result.returncode != expected:
             if Path(command[0]).name in (*driver_names, 'identity_bootstrap_test.py', 'identity_daemon_http_test.py'):
                 for line in result.stderr.decode(errors='replace').splitlines():
-                    if line.startswith('P03 assertion: '):
+                    if line.startswith(('P03 assertion: ', 'P10 ')):
                         print(line, flush=True)
             raise RuntimeError(f'fixture command failed: {Path(command[0]).name}; '
                                f'exit={result.returncode}; output redacted')

@@ -16,6 +16,8 @@ inline constexpr int version(core::target::Service owner) {
     // binding-before-registration constraint.
     return 9;
   case core::target::Service::Scheduler:
+    // P10a adds the one-shot task/occurrence trigger-observation columns and due/owner indexes.
+    return 7;
   case core::target::Service::Model:
     return 6;
   }
