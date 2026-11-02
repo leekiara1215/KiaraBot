@@ -1391,3 +1391,25 @@ trigger outbox → 在 UoW 外调用 Runtime.AcceptTimerTrigger（生产 `Schedu
 时装配真实客户端，否则保持可启动但 Runtime 依赖不可用。Scheduler RPC authorizer 仍为
 fail-closed 占位（真实 Identity delegation/current-authorization 接线与多进程 e2e 未在本次完成，
 见 doc/08 未完成项）。
+
+### P10b Scheduler 真实授权（第二阶段）
+
+Scheduler RPC authorizer 不再是 fail-closed 占位：`SchedulerIdentityClient` 在
+`runtime_endpoint`/`identity_endpoint` 配置存在时接入。authorizer 从真实 gRPC
+`ServerContext` 提取入站 mTLS 叶证书指纹，用 `decode_delegation_claims(..., audience=Scheduler)`
+校验委托结构/audience/客户端证书绑定，再要求委托权限绑定中存在 **Installation** resource
+scope（冻结 delegation claim 无独立 installation 字段，按“Runtime/Identity 签发委托时必须绑定
+Installation scope”的约定派生），owner instance 由委托 subject 派生；随后向 Identity
+`CheckAuthorization`（full_method + 请求 ResourceScope + known_authorization_version）做在线
+current-authorization 校验。缺 proof/installation 绑定、aud 不符、过期 deadline、Identity 拒绝
+或依赖故障一律 fail-closed（Unauthenticated/PermissionDenied/UpstreamUnavailable）。组合根在
+identity_endpoint 存在时把 Identity 可用性接入 readiness：库+时区+Runtime delivery+Identity
+全部 available 才 ready=true，任一依赖故障 readiness=false。
+
+未完成/阻塞：**真 PG+多进程 e2e 尚未实现**，原因是 Scheduler→Runtime 的
+`AcceptTimerTrigger` 调用没有委托凭据来源：Runtime 的 owner 方法 authorizer 只接受
+Identity 签发的 delegation proof，而 Scheduler 组合根/契约没有配置 Scheduler 服务主体的
+delegation（或 cert SAN→平台服务主体的映射约定）；同时 Runtime→Scheduler 的 delegation
+issuer 必须按上述约定绑定 Installation scope，否则真实调用会被 fail-closed 拒绝。需要
+Identity/Runtime 约定：平台服务主体免委托的 internal peer 授权，或为 Scheduler 预置
+delegation 配置字段；在缺失字段补齐前不能宣称三进程交接通过。上述阻断项已按 lead 要求上报。

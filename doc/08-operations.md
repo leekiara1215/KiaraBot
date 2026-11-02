@@ -1201,3 +1201,19 @@ event id+fingerprint 去重，不会重复入队或 fan-out）。COMPLETED 仅�
 不代表插件已执行。当前 Scheduler RPC authorizer 与多进程 e2e 仍在收尾：authorizer 仍 fail-closed，
 readiness 不会因真实 Identity 授权链而转 true；部署前需等待后续增量完成 Identity delegation
 接线与真 PG+多进程验收。
+
+## P10b Scheduler 授权与多进程验收状态（第二阶段）
+
+Scheduler 配置：`runtime_endpoint` 与 `identity_endpoint` 均为可选顶层键（仅 Scheduler；
+host:port）；Runtime 的入站 owner 方法 authorizer 仍由 `identity_endpoint` 激活。Scheduler
+authorizer 需要 Identity 签发、`aud=scheduler`、客户端证书绑定到调用方 mTLS 叶证书、且权限
+绑定中包含 Installation resource scope 的 delegation proof；owner instance 取 proof subject。
+缺任一字段/依赖故障均 fail-closed。readiness 需 DB、zoneinfo、Runtime delivery、Identity
+全部可用才为 true；未配置 `identity_endpoint` 时保持 fail-closed readiness=false。
+
+**部署/验收阻塞**：Scheduler→Runtime AcceptTimerTrigger 目前没有可用的平台服务主体凭据来源
+（Runtime owner authorizer 要求 Identity delegation proof；契约/配置未定义 Scheduler 服务主体
+的免委托 internal 授权或预置 delegation 字段）。因此多进程 e2e 未执行；在补齐
+Identity/Runtime 服务主体约定前，不能把 Scheduler 交接标记为多进程验收通过。单进程/真实 PG
+覆盖见 p10_scheduler_identity、p10_scheduler_rpc、p06_postgres_runtime_events 与
+p10_postgres_scheduler。
