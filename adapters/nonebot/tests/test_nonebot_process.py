@@ -18,6 +18,7 @@ import uuid
 
 from websockets.asyncio.server import serve
 from kiarabot.v1 import actions_pb2 as actions, common_pb2 as common
+from kiarabot.v1 import platform_pb2 as platform_schema
 from kiarabot_adapter_nonebot.mapper import map_message
 from fake_target_runtime import FakeTargetRuntime, until
 from test_mapping_outbox import raw
@@ -154,11 +155,17 @@ async def test_nonebot_process_target_bridge_and_platform_action(tmp_path, serve
                 assert message.event_id == expected
                 await until(lambda: outbox.exists() and outbox_acked(outbox, expected), 10,
                             interval=0.02)
-                await runtime.push_action(action_request(entry.instance_id, entry.instance_id))
+                envelope = await runtime.dispatch_action(
+                    action_request(entry.instance_id, entry.instance_id))
                 await until(lambda: runtime.connections[0].action_results, 10)
                 result = runtime.connections[0].action_results[0]
+                assert result.dispatch_attempt_id == envelope.dispatch_attempt_id
                 assert result.status == actions.SUCCEEDED
+                assert result.execution_outcome == platform_schema.EXECUTION_KNOWN_SUCCEEDED
                 assert result.platform_message_id == '987'
+                await until(lambda: runtime.connections[0].receipts, 10)
+                assert runtime.connections[0].receipts[0].dispatch_attempt_id == \
+                    envelope.dispatch_attempt_id
                 await until(lambda: platform_calls, 10, interval=0.02)
                 assert not failure, failure
                 ready = await wait_probe(health_port, 200)
