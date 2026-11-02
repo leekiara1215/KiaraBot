@@ -275,6 +275,8 @@ GET 配置的 delivery 是查询时观察值，未新增 WebSocket 事件类型�
 
 ### P01 目标管理 REST/WS（未接线）
 
+target Model REST 端点（元数据/配置/密钥/Action 策略等）在本页保持 `not_implemented`；P11 新增的 `DisableModel`/`EnableModel`/`ResolveModelCall` 只冻结 owner RPC 与权限（`model.manage`、scoped Control、幂等、版本 CAS），REST/Panel 映射留 P12，不新增或改动 OpenAPI 路径。
+
 OpenAPI 增加35个类型化管理操作：账号/适配器绑定、安装/实例期望和配置、资源删除恢复及 operation、Action元数据、账号危险动作策略、共享成员、共享 namespace 创建/读取（P09：`POST/GET /installations/{installationId}/shared-namespace`，POST 需 `Idempotency-Key` 与 `namespace.manage`，GET 需 `namespace.read` 与 exact installation scope；保持 not_implemented 至 P12）、死信重放、任务查询取消和occurrence、模型配置/密钥、固定角色授予及主体/凭据。路径 ID 与重复正文 ID 必须相等；未知 kind/owner、空 scope、缺少修改版本一律 INVALID_ARGUMENT。版本使用正十进制 uint64 字符串，防止浏览器精度丢失；创建不要求 expected_version。Control 从当前会话和路径构造内部上下文，不允许浏览器提交 delegation 或自报 actor。权限为每方法 x-permission 与明确资源授予的交集，未知权限拒绝；未实现方法须显式503/CAPABILITY_NOT_SUPPORTED，不返回假资源或假成功。
 
 管理写要求 Idempotency-Key；成功 Control 收据24小时，下游业务命令收据至少七天，同键恢复前重新授权。202 响应只包含持久受理引用/版本；200 为本地已提交结果或当前查询，不证明跨服务全局完成。`/operations/{ownerService}/{operationId}` 按 runtime/scheduler/model 所有者路由并核验 ref.resource；资源类型仅接受 ResourceKind 已登记项。查询必须显式 scope，Action敏感读不靠admin默认越权。错误增加可选 failure_context，包含受理是否已知、operation、恢复动作、retry_after/current_version；Error.details 保持既有空对象语义，不返回供应商正文或秘密。

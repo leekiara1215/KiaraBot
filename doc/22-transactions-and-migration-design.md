@@ -144,6 +144,8 @@ P08 目标把该规则细化为（契约冻结，未实现）：Runtime PG 保�
 
 P09/P10 目标表口径（契约冻结，未实现）：Runtime PG 新增 namespaces/namespace_members/namespace_values/namespace_quota_counters 四表，锁序 namespace 行→成员/版本→namespace 配额→installation 聚合配额→key 行，READ COMMITTED 下用条件写/行锁；写收据复用通用 command_receipts（*storage_receipts* 在 doc/22:31 为逻辑别名，不建新表），容量同事务计数。Scheduler 既有 tasks/occurrences 关系表增列（tasks：created_at/updated_at/cancel_requested；occurrences：attempts/last_error_code/created_at/updated_at）并新增 scheduler_quota_counters 与 occurrences_due/tasks_owner_state 索引；trigger_outbox/trigger_receipts 为通用 outbox/inbox/command_receipts 的逻辑别名，Scheduler 用 source=scheduler,message=occurrence_id enqueue，Runtime inbox 同键去重。各阶段独立 commit 顺序 bump schema/descriptor（P03→P05→P06→P07→P09→P10），common.hpp snapshot 列定义同步更新。
 
+P11 目标（契约冻结，未实现）：Model 调用为两次事务——txn1 在线授权/解析 model/并发 admission/服务端 request_hash，写 `model_calls`(owner,logical_call_id,state=STARTED,secret/config 版本,request_hash,may_have_billed=false,retain≥7d)+audit 后 commit；txn2 在 Provider 调用后写 SUCCEEDED/KNOWN 或 FAILED+明确 4xx/429，5xx/TLS/超时/畸形响应写 BLOCKED+UNKNOWN+may_have_billed=true，不得写成未调用/未计费。commit=Unknown 不回滚 txn1；未决 UNKNOWN 30 天内不得清理，只能经 `ResolveModelCall`（expected_version CAS、幂等）转 FAILED 终态，处置后保留 ≥7 天防重窗口。Model 私有表 `model_calls`/`model_configs`/`encrypted_provider_secrets`（替代 P03 model_intents，schema v6/descriptor 由 P11a 实测）；根密钥不入库、秘密 AEAD 只在 Model 进程解密；管理命令复用 command_receipts/operations/audit，Chat 不造 operation。
+
 执行报告由 Runtime 事务比较实例 desired_version/execution_generation 后应用；旧状态只作历史证据，不将最新状态回退。Host 接收 newer stop 时先持久期望再停止进程，10s 宽限后 TERM/KILL 按现有平台能力回收；无法确认终止不显示成功。不因 Host 离线自动在别机启动同一逻辑实例。
 
 插件配置携完整版本、delivery_id 和应用期限，SDK 回调完成才 ACK。Runtime 只接受当前连接/执行代次和 delivery_id；旧 ACK 不盖新版本。配置保存、进程启动、协议注册、配置应用是独立字段。新配置未 ACK 的实例不接新事件；失败保留原实际版本并报告错误，不悄悄将旧配置标为新版本。

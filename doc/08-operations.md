@@ -941,6 +941,13 @@ verifier 或 SecretReplayPayload。重复同指纹仍返回原完整快照及原
 - **交接过期/人工恢复**：trigger outbox valid_until 默认 7 天、attempts 上限 100；超窗 occurrence EXPIRED、task FAILED(TIMEOUT) 且不自动重建；运维通过 GetTask/GetOccurrence 观察后用新 task 显式恢复，禁止自动重放。COMPLETED 仅表示事件已持久入队，不是插件执行成功。
 - **审计/幂等**：storage 审计以 namespace/key 为 resource，任务审计以 task 为 resource，复用共享 audit_entries 扩列；幂等 scope=认证主体+方法+有效 namespace/key（或 owner+task_id）；跨实例不串响应。
 
+## P11 Model 密钥/Provider 运维口径（契约冻结，未实现）
+
+- **根密钥**：`KIARABOT_MODEL_ROOT_KEY_FILE`（32 字节 hex、0600、`O_NOFOLLOW` 可信文件）与 `KIARABOT_MODEL_ROOT_KEY_VERSION`（正 uint64）由部署注入；进程启动加载，缺失/长度错/权限错→不 ready。根密钥不入库、不进 argv/日志/环境 dump、不与密文同表；轮换走部署流程，旧版本在无在途引用前保留。
+- **Provider secret**：AEAD 解密只在 Model 调用 Provider 前、内存用完擦除；`GetModelConfiguration` 只回 secret_configured/secret_version；解密失败/根密钥版本不匹配→该模型 readiness Credentials Unavailable、Chat 不写记录返回 UPSTREAM_UNAVAILABLE（not accepted），不启动 Provider。
+- **依赖/超时**：Model 需 Identity `GetVerificationKeys` 缓存与自身 `identity.authorization.check` 部署授权；Provider 超时 1..30s、per-model max_concurrency 1..64；5xx/TLS/超时/畸形响应按 UNKNOWN 处理，不得当作未计费/未调用。
+- **UNKNOWN 处置**：未决 UNKNOWN 30 天内不得清理；运维用 `ResolveModelCall`（expected_version CAS）选择 NOT_EXECUTED/EXECUTED_NOT_BILLED/EXECUTED_BILLED/ABANDONED；处置后终态保留 ≥7 天防重窗口，归档后同 logical_call_id 可重新调用（边界文档明示）。Provider 账单需外部对账；不引入价格/预算/扣费模型。
+
 ## 今晚单机 MVP：reference 本地收发入口
 
 `scripts/local/start.py` 使用现成 reference Core、Control HTTP、SQLite、固定

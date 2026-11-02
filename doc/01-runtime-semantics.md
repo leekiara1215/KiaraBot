@@ -222,6 +222,10 @@ HostBridge 只走 Runtime 内部 mTLS（Host 证书→预注册 host_id，无 bo
 
 任务 owner_instance/installation 由 Runtime→Scheduler 实例委托 claims 派生，插件不可自报；task_id 为 owner 内业务身份，HostRequest.idempotency_key 为命令幂等。run_at 必须严格未来且在配置 horizon 内；local_time 用 IANA 时区、拒绝 DST gap/fold 与未知/路径型 zone，tzdata 不可用返回 UPSTREAM_UNAVAILABLE。每实例 1024/安装 8192 未终态任务，超限 RATE_LIMITED（明确未受理）。Create 返回 PENDING；到期 claim 生成 occurrence 并持久 enqueue TimerTriggered 后 occurrence SUCCEEDED、task COMPLETED，COMPLETED 仅表示事件已持久入队，不代表插件回调成功/ACK。取消仅在没有触发意图时成功，交接开始后/终态 CONFLICT。交接 valid_until 7 天、attempts 上限 100，超窗 occurrence EXPIRED、task FAILED(TIMEOUT) 不自动重建。TimerTriggered 只由 Runtime 产生，occurrence_id 由 Scheduler 生成持久且 event_id := occurrence_id，Runtime 以 inbox(source=scheduler, message=occurrence_id) 去重；AcceptTimerTrigger 仍是内部 mTLS owner 方法（非 Bridge）。详见 `doc/01-contracts.md` 的 P09/P10 契约节。
 
+### P11 目标 Model 调用（已冻结，未实现）
+
+Model 调用是“先意图→Provider→已知/UNKNOWN”两次事务：txn1 在线授权、解析 model/alias、per-model 并发 admission（满则 RATE_LIMITED 且不写记录）、服务端计算 request_hash、写 model_calls(STARTED)+审计并提交后才调用 Provider；txn2 根据 Provider 结果写 SUCCEEDED/KNOWN 或 FAILED+明确 4xx/429 证据，5xx/TLS/超时/畸形响应/无法确认一律 BLOCKED+UNKNOWN+may_have_billed=true，不得写成未调用/未计费。同 subject+logical_call_id 不重复调用/不重复计费：hash 相同回放（IN_PROGRESS/TERMINAL，无正文不重调），hash 不同 CONFLICT；只有 ResolveModelCall 能把未决 UNKNOWN 转 FAILED 终态。在途固定 config/secret 版本，轮换只影响后续；根密钥部署注入、秘密 AEAD 只在 Model 进程解密且不入库；错误映射不新增 ErrorCode，用既有 code+acceptance/recovery/retry_after_ms；不流式、不工具调用、不自动重试。详细 wire 形状/错误矩阵/密钥边界见 `doc/01-contracts.md` 的 P11 目标 Model 契约节。
+
 ### 目标管理、存储和异步交接
 
 期望配置、Host进程事实、协议注册与配置应用分层；旧 desired_version 或 execution_generation 观察不能覆盖新状态。Host离线不是已停止证据，不允许盲跨主机接管。私有 namespace 绑定稳定实例，换连接不重建；共享写条件版本，TTL 重放不续期。默认私有/共享各1024键/1MiB、单值64KiB、安装聚合8192键/8MiB；成功收据实例10000/安装80000，七天内不淘汰。一次性任务实例1024/安装8192；COMPLETED 仅 Runtime 已持久入队，确认丢失重发同 occurrence/message ID。

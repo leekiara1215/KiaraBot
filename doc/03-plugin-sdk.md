@@ -324,6 +324,10 @@ Storage（P09c）：SDK 的 storage_get/set/delete 帧增加 scope/condition 与
 
 Task（P10c）：沿用 task_create/task_get/task_cancel 的 Host 通道，TaskResponse 增加 version/occurrence_id；task_id 是业务身份、HostRequest.idempotency_key 是命令幂等，同 task_id 异内容 CONFLICT、同内容返回当前状态。Create 返回 PENDING；COMPLETED 只表示 TimerTriggered 已持久入队，不代表插件回调成功/ACK；SDK 检查到 COMPLETED 后仍需等待事件投递。取消仅在未产生触发意图前成功，交接开始/终态返回 CONFLICT。时间规则同 Runtime/Scheduler（DST gap/fold 与未知时区 INVALID_ARGUMENT，tzdata 不可用 UPSTREAM_UNAVAILABLE）。插件不感知 occurrence 内部状态，可通过 GetTask 的 TaskRecord/occurrence_id 观察。
 
+## P11 Model 调用客户端（目标，未实现）
+
+插件仍经 PluginBridge `HostRequest.model_chat` 请求模型，新增稳定 `logical_call_id`（UUIDv4；≠ HostRequest.request_id 与 idempotency_key）：重试/查询必须复用同一 logical_call_id，Runtime 用它做业务防重并作为 Model 的 `ModelGatewayChatRequest.logical_call_id`。同步返回 `ModelGatewayChatResponse.disposition`：FRESH_RESULT 带 result；REPLAY_IN_PROGRESS/REPLAY_TERMINAL 只带 call 元数据、无正文，**不得据此重发或换 key 重试**，应查 GetCallStatus/等待；同 id 异内容返回 CONFLICT。超时/断线后结果未知：不自动重试、不伪造失败，按同 logical_call_id 查询/处置。模型权限 `model.chat` explicit-only；Provider 错误映射不新增 ErrorCode，SDK 只保留稳定码+acceptance/recovery/retryable，不落 Provider 正文/秘密。
+
 ## 测试能力
 
 当前 SDK 只提供 `kiarabot_sdk.testing.FakeHost`（真实 gRPC + 生成类型）：注册/事件/心跳、Action 请求与响应、Host 请求与响应、配置帧与 ACK 队列；`FakeHost(heartbeat_acks=False)` 可模拟心跳不返回以验证 `io_timeout` 重连。早期列出的 `FakeEvent`/`FakeMessageService`/`FakeModelService`/`FakeStorage`/`FakeScheduler` 尚未实现（交接项），插件测试直接构造生成消息或使用 FakeHost。

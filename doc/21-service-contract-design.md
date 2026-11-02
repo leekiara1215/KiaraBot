@@ -311,6 +311,10 @@ HostBridge 只注册在 Runtime 内部 mTLS `grpc_listen`（与 `RuntimeService`
 
 Runtime storage 4 个 unary 方法（Get/Set/Delete/CompareAndSetStorage）标记 `exposure=internal_dispatcher`，外部插件只走 PluginBridge HostRequest.storage_* 帧；`CreateSharedNamespace`（namespace.manage、幂等、每安装一个共享 namespace，已存在 CONFLICT 后用 Get 读）与 `GetSharedNamespace`（namespace.read、exact installation scope、返回版本/禁用/成员/配额用量、不回键值）为既有 Runtime owner 方法族新增，wire 暴露。`SetSharedMembers`/`DisableSharedNamespace` 保持 namespace.manage。Scheduler 6 方法 caller/permission/idempotency/deadline 不变，本次补 TaskRecord/OccurrenceRecord 观测字段、ListTasks 状态过滤与语义（owner 派生、时间/horizon、容量、PENDING/COMPLETED=已入队、取消窗口、交接 7 天/100 attempts 到期人工恢复）；`AcceptTimerTrigger` 保持 wire（内部 mTLS RuntimeService，Scheduler 服务主体调用，不是 Bridge），不新增 exposure 枚举值。类型 relocation（NamespaceScope/StorageEntry/StorageCondition/SharedMember、LocalTaskTime/ScheduledTaskState→common.proto）FQN 不变，见 proto/README。
 
+### P11 Model 方法族冻结（未实现）
+
+Model 全部方法 `exposure=wire`（内部 mTLS owner RPC），外部插件只走 PluginBridge `HostRequest.model_chat`；无新增 Bridge/监听/exposure 值。新增 `DisableModel`/`EnableModel`/`ResolveModelCall`（scoped Control、`model.manage`、幂等、5s/30s、版本 CAS）；`UpdateModel`/`RotateProviderSecret`/`GetModelConfiguration` caller 收紧为 scoped Control；`Chat` 为 Runtime with instance delegation（`logical_call_id` 业务防重，不用 idempotency_key）；`GetCallStatus` 为同 subject Runtime 委托或 scoped Control；`GetOperation` 为 scoped Control。权限复用现有 `model.read/model.manage/model.chat/model.call.inspect`（不占 Permission 48）；错误码 0 新增，用 acceptance/recovery/retry_after_ms 表达两次事务/UNKNOWN/上游 429 与本地 RATE_LIMITED 的差异。详见 `doc/01-contracts.md` 的 P11 目标 Model 契约节。
+
 ## P04 短期委托证明的重试边界
 
 IssueDelegation / ExchangeDelegation 只在线重验权威并签名，不产生业务意图或消费配额；

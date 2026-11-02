@@ -485,6 +485,10 @@ P08b 在 Runtime application 内新增 HostBridge 入站应用：内部 mTLS 注
 
 P09a/P09b：Runtime application 提供 storage 应用（scope 解析、成员/禁用 gate、Get/Set/Delete/CAS、TTL、幂等/收据、配额预留）；`NamespaceRepository` 扩 resolve/get/create_shared/set_members/disable/get_entry/put/erase/quota_admit/receipt_insert，`RuntimeUnitOfWork` 在 P06/P07 访问器后追加 `namespaces()`。共享 namespace 写按固定锁序 namespace 行→成员/版本→namespace 配额→installation 聚合配额→key 行；审计复用 P07 共享 `audit_entries`（resource=namespace/key）。P10a：Scheduler application 实现任务/occurrence 状态机、create/get/list/cancel、到期 claim、receipts/审计、容量计数与 due 索引；`SchedulerUnitOfWork` 增 `tasks()/occurrences()/task_quota()`，occurrence claim 用条件写。P10b：Runtime AcceptTimerTrigger 应用以 inbox(source=scheduler,message=occurrence_id) 去重后持久产生 TimerTriggered，不新增 Runtime 表。Runtime/Scheduler 不新增进程/端口；SDK 的外部 storage/task 路径仍是 PluginBridge host_request。租约/事务细节见 doc/22。
 
+## P11 目标 Model 应用与端口（未实现）
+
+P11a 在 Model application 内实现 Chat 两次事务、GetCallStatus、GetOperation、Model 配置只读与 Resolve；端口新增 ModelCall/ModelConfig/ProviderSecret 仓储并替换 P03 `model_intents`→`model_calls`（与 P03 owner 协调 RecordKind/codec/schema v6/descriptor）；txn1 只写意图/审计并提交，Provider 调用在 UoW 外，txn2 用新 UoW 写已终态或 UNKNOWN；commit=Unknown 不回滚成“未调用”。P11b 提供 HTTP Provider 与 secret AEAD 适配（根密钥部署注入、不入库）；P11c Runtime Model typed client/委托透传与 PluginBridge `HostRequest.model_chat` 适配；P11d 管理命令接线。Model 不新增进程/端口；审计复用 P07 共享 audit 列（Model 留空 target_account/conversation），秘密/Provider 正文/错误文本不进审计/日志/outbox。实现前 readiness 仍为占位，REST 仍 not_implemented。
+
 ## 目标Model查询契约补全（未实现）
 
 Model应用负责GetOperation的权威operation/resource绑定与当前授权，以及GetModelConfiguration的精确资源授权与秘密隔离；边界使用model.proto typed请求/结果，内层仍独立值类型。读取不启动Provider、不写新业务操作；缺失/不可见NOT_FOUND，授权依赖不可用UPSTREAM_UNAVAILABLE，2秒默认/5秒上限。metadata与可编辑配置读取分开，配置只返回secret存在性，不返回密钥。P02 stub/参考实现不能作为上述生产者。
