@@ -24,8 +24,22 @@ foreach(COMPONENT password_crypto token_crypto receipt_crypto peer_certificate d
   set_tests_properties(p04_${COMPONENT} PROPERTIES LABELS "p04;unit;security" TIMEOUT 30)
 endforeach()
 
+# P11b Model provider-secret AEAD adapter (XChaCha20-Poly1305, deployment root key).
+add_executable(kiarabot_model_secret_crypto_test tests/model_secret_crypto_test.cpp)
+target_link_libraries(kiarabot_model_secret_crypto_test PRIVATE kiarabot_identity_crypto)
+kiarabot_platform_warnings(kiarabot_model_secret_crypto_test)
+target_compile_options(kiarabot_model_secret_crypto_test PRIVATE
+  $<$<CXX_COMPILER_ID:AppleClang,Clang,GNU>:-UNDEBUG>
+  $<$<CXX_COMPILER_ID:MSVC>:/UNDEBUG>)
+add_test(NAME p11_model_secret_crypto COMMAND kiarabot_model_secret_crypto_test)
+set_tests_properties(p11_model_secret_crypto PROPERTIES LABELS "p11;unit;security" TIMEOUT 30)
+
 # Receipt tamper checks use sodium directly; keep this dependency private to the test.
 target_link_libraries(kiarabot_receipt_crypto_test PRIVATE unofficial-sodium::sodium)
+
+if(TARGET kiarabot_model_gateway_application_test)
+  target_link_libraries(kiarabot_model_gateway_application_test PRIVATE kiarabot_identity_crypto)
+endif()
 
 # The adapter's jwt-cpp dependency supplies SSL then Crypto linkage once, in dependency order.
 # Direct X509 tests need official headers without another earlier Crypto archive in the link line.

@@ -16,6 +16,7 @@
 #include "kiarabot/core/runtime/platform/service_rpc.hpp"
 #include "kiarabot/infrastructure/identity_crypto/key_files.hpp"
 #include "kiarabot/infrastructure/identity_crypto/model_secret_crypto.hpp"
+#include "kiarabot/infrastructure/model_http_provider.hpp"
 #include "postgres_service.hpp"
 
 namespace kiarabot::core::composition {
@@ -23,36 +24,6 @@ namespace {
 namespace target = kiarabot::core::target;
 namespace platform = kiarabot::core::platform;
 namespace crypto = kiarabot::infrastructure::identity_crypto;
-
-// Development-only provider until P11b installs the reviewed HTTP adapter. It never touches the
-// network, echoes bounded text and reports no authoritative usage; production ProcessConfig is
-// rejected unless the root key file is present, and readiness stays false until P11b/P11c.
-class DevelopmentModelProvider final : public target::ModelProviderPort {
-public:
-  target::ModelProviderResult chat(const target::ModelProviderRequest& request) override {
-    target::ModelProviderResult result;
-    try {
-      result.outcome = target::ModelProviderOutcome::Succeeded;
-      std::string text = "model-dev:";
-      for (const auto& message : request.messages) {
-        if (text.size() >= target::kModelMaximumResultBytes) {
-          break;
-        }
-        text += message.text.substr(0, 256);
-      }
-      result.reply.text = text.substr(0, target::kModelMaximumResultBytes);
-      result.reply.usage = {false, 0, 0};
-    } catch (...) {
-      result.outcome = target::ModelProviderOutcome::Unknown;
-      result.failure = {target::ErrorCode::Internal,
-                        target::Acceptance::NotAccepted,
-                        target::Recovery::Diagnose,
-                        {},
-                        {}};
-    }
-    return result;
-  }
-};
 
 class FailClosedModelAuthorization final : public target::ModelAuthorizationPort {
 public:
@@ -95,7 +66,7 @@ public:
 };
 
 struct State {
-  std::unique_ptr<DevelopmentModelProvider> provider;
+  std::unique_ptr<target::ModelProviderPort> provider;
   std::unique_ptr<target::ModelSecretCryptoPort> crypto;
   std::unique_ptr<target::ModelDigestPort> digest;
   std::unique_ptr<RandomModelIds> ids;
@@ -110,7 +81,8 @@ public:
     return target::Service::Model;
   }
   target::ServiceReadiness readiness() const override {
-    // P11a is not production-ready: caller verification and the HTTP provider are P11c/P11b.
+    // P11b installed the reviewed HTTP provider and deployment root key; authoritative caller
+    // verification remains P11c, so the daemon still reports not-ready.
     return {false,
             {{target::Dependency::BusinessImplementation, target::DependencyState::Available},
              {target::Dependency::DatabaseSchema, target::DependencyState::Unverified},
@@ -124,7 +96,8 @@ private:
 
 target::Outcome<std::unique_ptr<target::ServiceReadinessPort>>
 build_application(const platform::ProcessConfig& config, target::ModelUnitOfWorkFactory& factory,
-                  std::shared_ptr<State>& state) {
+                  std::shared_ptr<State>& state,
+                  std::unique_ptr<target::ModelProviderPort> provider_override) {
   if (!config.model_security) {
     return target::Failure{target::ErrorCode::InvalidArgument,
                            target::Acceptance::NotAccepted,
@@ -149,7 +122,22 @@ build_application(const platform::ProcessConfig& config, target::ModelUnitOfWork
     return *failure;
   }
   state->digest = std::move(std::get<std::unique_ptr<target::ModelDigestPort>>(digest));
-  state->provider = std::make_unique<DevelopmentModelProvider>();
+  if (provider_override) {
+    state->provider = std::move(provider_override);
+  } else {
+    auto provider = kiarabot::infrastructure::make_model_http_provider();
+    if (const auto* failure = std::get_if<target::Failure>(&provider)) {
+      return *failure;
+    }
+    state->provider = std::move(std::get<std::unique_ptr<target::ModelProviderPort>>(provider));
+  }
+  if (!state->provider) {
+    return target::Failure{target::ErrorCode::UpstreamUnavailable,
+                           target::Acceptance::NotAccepted,
+                           target::Recovery::Backoff,
+                           {},
+                           {}};
+  }
   state->ids = std::make_unique<RandomModelIds>();
   state->authorization = std::make_unique<FailClosedModelAuthorization>();
   state->application = target::make_model_gateway_application(
@@ -173,7 +161,7 @@ target::Outcome<platform::ModelPeerAuthenticator> fail_closed_authenticator() {
 } // namespace
 
 target::Outcome<platform::ServiceComposition>
-compose_model_service(const platform::ProcessConfig& config) {
+compose_model_service(const platform::ProcessConfig& config, ModelCompositionOptions options) {
   try {
     if (config.service != target::Service::Model) {
       return target::Failure{target::ErrorCode::InvalidArgument};
@@ -188,8 +176,10 @@ compose_model_service(const platform::ProcessConfig& config) {
     auto state = std::make_shared<State>();
     auto composed = compose_database_service<target::ModelUnitOfWork>(
         config, kiarabot::infrastructure::postgres::open_model,
-        [&config, &state](auto& factory) -> std::unique_ptr<target::ServiceReadinessPort> {
-          auto built = build_application(config, factory, state);
+        [&config, &state,
+         &options](auto& factory) -> std::unique_ptr<target::ServiceReadinessPort> {
+          auto built =
+              build_application(config, factory, state, std::move(options.provider_override));
           if (const auto* failure = std::get_if<target::Failure>(&built)) {
             return {};
           }

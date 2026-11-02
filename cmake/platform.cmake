@@ -294,6 +294,12 @@ kiarabot_platform_warnings(kiarabot_model_rpc)
 target_link_libraries(kiarabot_model_rpc PUBLIC kiarabot_proto kiarabot_target_codec
   kiarabot_model_gateway_application)
 
+# P11b integration additions use the real HTTP provider in the application fixture.
+if(TARGET kiarabot_model_gateway_application_test)
+  target_link_libraries(kiarabot_model_gateway_application_test PRIVATE
+    kiarabot_model_http_provider)
+endif()
+
 add_executable(kiarabot_model_http_provider_test
   ${CMAKE_SOURCE_DIR}/infrastructure/tests/model_http_provider_test.cpp)
 target_link_libraries(kiarabot_model_http_provider_test PRIVATE
@@ -337,7 +343,8 @@ foreach(SERVICE identity runtime plugin_host scheduler model)
     target_sources(kiarabot-model PRIVATE
       ${CMAKE_SOURCE_DIR}/core/app/model_composition.cpp)
     target_link_libraries(kiarabot-model PRIVATE
-      kiarabot_model_rpc kiarabot_postgres kiarabot_identity_crypto OpenSSL::Crypto)
+      kiarabot_model_rpc kiarabot_model_http_provider kiarabot_postgres
+      kiarabot_identity_crypto OpenSSL::Crypto)
   endif()
   if(SERVICE STREQUAL "runtime")
     # The independent Runtime composition owns the typed PG factory, application and unary RPC
