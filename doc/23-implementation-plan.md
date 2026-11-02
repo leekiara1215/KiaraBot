@@ -273,7 +273,7 @@ PG Repository/COMMIT/锁/并发测试缺少真实 PG 时失败并报告原因，
 - **错误/状态**：意图提交失败不调用；上游429/超时/畸形响应稳定映射；同call_id不重复调用；已调用但响应/第二次提交丢失保持未知，不自动换供应商/重计费。
 - **文档**：运行语义、`doc/02`、`doc/03`、`doc/05`、`doc/06`、`doc/08`；密钥根与密文分离、正文不记日志、30秒上限及当前纯文本限制。
 - **验证/退出**：V0/V1/V2/V3/V5(p11)，仅本地HTTP假服务验证计费次数、第一/第二事务故障、配置轮换固定版本、断线、未知恢复、敏感查询授权；真实模型不是该阶段前置。
-- **契约前置（2026-11-02 已冻结）**：P11 wire（2 enum+6 message+3 owner RPC+11 既有字段+plugins `logical_call_id`）、`semantic.model.*`、target_spec caller 收紧与文档已登记，全部 not_implemented；实现前 reference 行为仍是唯一生产语义，target override 在 P11a–d 验收后按既有登记机制翻转（Model schema v6/descriptor 由 P11a 与 P03 owner 协同实测）。
+- **契约前置（2026-11-02 已冻结）**：P11 wire（2 enum+6 message+3 owner RPC+11 既有字段+plugins `logical_call_id`）、`semantic.model.*`、target_spec caller 收紧与文档已登记，全部 not_implemented；实现前 reference 行为仍是唯一生产语义，target override 在 P11a–d 验收后按既有登记机制翻转（Model schema v8/descriptor 由 P11a 与 P03 owner 在合并 P07 schema 后协同实测）。
 
 ### P12：Control 与 Panel 核心运行管理
 

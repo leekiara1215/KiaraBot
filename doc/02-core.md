@@ -494,7 +494,7 @@ P09a/P09b：Runtime application 提供 storage 应用（scope 解析、成员/�
 
 P11a 已实现：domain `model_gateway.hpp`、端口 `model_ports.hpp`/`Model*Repository`、PostgreSQL v7 私有表、`ModelGatewayApplication` 与 `ModelService` RPC 组合根（开发 fake Provider、部署根密钥 AEAD、故障即关闭的调用者校验占位）。契约文本如下；HTTP Provider/Identity 委派/REST 仍由 P11b–P11d 完成，readiness 在 P11a 保持 false。
 
-P11a 在 Model application 内实现 Chat 两次事务、GetCallStatus、GetOperation、Model 配置只读与 Resolve；端口新增 ModelCall/ModelConfig/ProviderSecret 仓储并替换 P03 `model_intents`→`model_calls`（与 P03 owner 协调 RecordKind/codec/schema v6/descriptor）；txn1 只写意图/审计并提交，Provider 调用在 UoW 外，txn2 用新 UoW 写已终态或 UNKNOWN；commit=Unknown 不回滚成“未调用”。P11b 提供 HTTP Provider 与 secret AEAD 适配（根密钥部署注入、不入库）；P11c Runtime Model typed client/委托透传与 PluginBridge `HostRequest.model_chat` 适配；P11d 管理命令接线。Model 不新增进程/端口；审计复用 P07 共享 audit 列（Model 留空 target_account/conversation），秘密/Provider 正文/错误文本不进审计/日志/outbox。实现前 readiness 仍为占位，REST 仍 not_implemented。
+P11a 在 Model application 内实现 Chat 两次事务、GetCallStatus、GetOperation、Model 配置只读与 Resolve；端口新增 ModelCall/ModelConfig/ProviderSecret 仓储并替换 P03 `model_intents`→`model_calls`（与 P03 owner 协调 RecordKind/codec/schema v8/descriptor（P07 v7 合并后由真 PG16.4 实测））；txn1 只写意图/审计并提交，Provider 调用在 UoW 外，txn2 用新 UoW 写已终态或 UNKNOWN；commit=Unknown 不回滚成“未调用”。P11b 提供 HTTP Provider 与 secret AEAD 适配（根密钥部署注入、不入库）；P11c Runtime Model typed client/委托透传与 PluginBridge `HostRequest.model_chat` 适配；P11d 管理命令接线。Model 不新增进程/端口；审计复用 P07 共享 audit 列（Model 留空 target_account/conversation），秘密/Provider 正文/错误文本不进审计/日志/outbox。实现前 readiness 仍为占位，REST 仍 not_implemented。
 
 ## 目标Model查询契约补全（未实现）
 
