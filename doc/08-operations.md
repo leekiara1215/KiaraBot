@@ -1582,3 +1582,9 @@ UNKNOWN/EXPIRED 单链迟到证据属剩余环境/验收项。
   action-policy/action-query/delete-restore=known-gap（稳定 4xx/5xx，原因与 P14k 候选见
   [architecture-p14f-native-single-host.md](../reports/modules/architecture-p14f-native-single-host.md)
   第 9 节），不伪造成功；故障/重启/fail-closed 矩阵保留。
+  第 8 节；故障/重启/fail-closed 矩阵保留。
+
+
+## P10k Runtime task 帧与 Scheduler 端口（2026-11-03）
+
+Runtime 可选配置 `scheduler_endpoint`（host:port，仅 Runtime，mTLS 复用服务证书/CA）用于插件 task 帧调用 SchedulerService.Create/Get/CancelTask。配置缺失时 PluginBridge task 帧稳定 `CAPABILITY_NOT_SUPPORTED`；配置存在但委托获取未确认时调用返回 `UNAUTHENTICATED`/`UPSTREAM_UNAVAILABLE`，不做本地假成功。readiness 不因该可选端点缺失而整体 false，但 task 能力不可用；Owner/installation 由已认证 PluginBridge 会话派生。真实委托来源待用户确认，见 P10 报告。

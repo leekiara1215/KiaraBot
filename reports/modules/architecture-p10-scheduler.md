@@ -206,6 +206,16 @@ P14f 原生单机栈本身通过（真实五进程 + 临时 CA/叶子证书 + ow
 - 未知/跨实例 task_get→NOT_FOUND；
 - 断言 COMPLETED 只代表 TimerTriggered 已入队（SDK doc 语义），不代表插件回调成功。
 
-### 真实宿主阻塞（必须报告）
-生产 Runtime 的 PluginBridge `HostRequest` 处理 **没有 task_create/task_get/task_cancel 分支**（`core/src/runtime/platform/runtime_bridge.cpp` 的 `HostRequest.operation_case()` 只处理 storage/model；core 全仓库无 task 帧消费），因此 SDK→真实 Runtime→真实 Scheduler 的链路在当前 main 不存在，无法用 P14f/native 或三进程 harness 完成真实验收；Scheduler owner RPC 本身（P10a/g）和 Control REST（P10h）已通。P10j 的协议夹具测试只证明 SDK 端帧/错误映射；**P10 真实宿主 task 帧 ingress + Runtime→Scheduler 生产委托来源仍待实现/环境**（P10i/P10 后续）。本任务未改 core/契约（写范围不含 core），未伪称原生栈通过。
+### P10k 宿主 task 帧 ingress（已实现，委托仍 fail-closed）
+P10j 报告的“Runtime 无 task 帧消费”已由 P10k 修复：`runtime_bridge.cpp` 现在处理
+task_create/get/cancel，校验认证 instance/owner/installation、`host.tasks.v1`、
+`task.schedule`/`task.read`、`event.timer.triggered` 与幂等/输入上限，经新增
+`RuntimeTaskApplication` 调用 `SchedulerTaskPort`；`SchedulerTaskClient` typed client 与可选
+`scheduler_endpoint` 已接线。**真实 Runtime→Scheduler delegation 来源尚未确认（P05b 同类）**，
+生产 composition 注入 fail-closed provider，调用稳定返回 `UNAUTHENTICATED`/`UPSTREAM_UNAVAILABLE`，
+不会伪造成功。真实 TLS PluginBridge 夹具（P10k 扩展 `p11_model_bridge`，labels p10/p06/p11）
+验证 ingress→application→fake port 的成功/权限/幂等/取消/CONFLICT/超时/provider fail-closed。
+因此 SDK→真实 Runtime→真实 Scheduler 的成功链仍待“委托来源确认 + 真 Scheduler 联测”，
+不能宣称 P10 原生成功链验收通过。另：冻结 `TaskCreateRequest` 只带 `target_conversation` 字符串、
+无会话类型；P10k 暂以 GROUP 构造 Scheduler `ConversationKey`，私聊任务类型需用户确认/后续契约澄清。
 另：tzdata 缺失稳定错误（UPSTREAM_UNAVAILABLE）由真实 Scheduler readiness 决定，fake owner 未模拟；真实 qq/平台触发仍需环境。

@@ -327,3 +327,6 @@ HostBridge StopExecution/DrainHost 命令仍是 Runtime outbox 的持久快照�
 “已持久接受/执行观察”，不改变 Runtime 生命周期终态；未回执/Unknown/离线保持 Blocked，不能
 凭命令存在推断进程已停止。共享 namespace 删除只级联本 namespace 的成员/值，私有 namespace 与
 其他 installation 的 namespace 行不受影响；成员撤销只删 membership，不删共享值或其他成员数据。
+
+
+**P10k（2026-11-03）**：PluginBridge task_create/get/cancel ingress 只做认证/能力/输入校验后调用 `RuntimeTaskApplication`→`SchedulerTaskPort`，Runtime 不写本地任务表；Scheduler owner 在自身 UoW 内持久化并返回 TaskRecord，Runtime 不把远程结果当本地事务。生产 composition 的 Scheduler delegation provider 当前 fail-closed（`UNAUTHENTICATED`/`UPSTREAM_UNAVAILABLE`），缺失 `scheduler_endpoint` 时 `CAPABILITY_NOT_SUPPORTED`；不伪造 task 成功。真实 Runtime→Scheduler 委托来源仍是待确认项。

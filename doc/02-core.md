@@ -1576,3 +1576,10 @@ mute（真 PG action_policies），Runtime 派发 adapter 执行平台 API，res
 Runtime，plugin 查询终态。重复平台帧不产生第二事件/Action，adapter 断线重连不重复执行；
 非订阅/离线插件不伪造 delivery target；post-dispatch cancel 为 CONFLICT。真实 QQ/NapCat 与
 单链 UNKNOWN/EXPIRED 迟到证据仍是未验收项（后者已有手工 wire fixture 证据）。
+
+
+### P10k PluginBridge task 帧 ingress 与 SchedulerTaskPort（2026-11-03）
+
+Runtime `PluginBridge` 现在消费 `HostRequest.task_create/task_get/task_cancel`：从已认证 P06 会话派生 instance/installation，校验注册 profile 的 `host.tasks.v1`、`task.schedule`/`task.read` 权限及 `event.timer.triggered` 订阅，校验 request/trace/idempotency、task_id/目标对话/payload 上限，稳定映射 `HostResponse.task_*` 与 wire 错误码；客户端自报 owner/installation 一律不采纳。
+
+新增 `RuntimeTaskApplication`（`core/src/application/target/runtime_task_application.cpp`）和 `SchedulerTaskPort`（`core/include/kiarabot/core/ports/target/scheduler_task.hpp`）；组合根可选配置 `scheduler_endpoint` 并装配 `SchedulerTaskClient` typed client（参考 RuntimeModelClient）。**真实 Runtime→Scheduler 委托来源尚未确认（P05b 同类语义）**，生产 composition 注入 `unavailable_scheduler_task_delegation()`：delegation 为空时稳定返回 `UNAUTHENTICATED/UPSTREAM_UNAVAILABLE`，端口缺失时返回 `UPSTREAM_UNAVAILABLE`，绝不伪造任务成功；测试注入 fake `SchedulerTaskPort` 验证成功/拒绝/幂等/取消/CONFLICT/超时。未改 proto、权限或 RPC。**待确认**：冻结的 `TaskCreateRequest` 只带 `target_conversation` 字符串、不带会话类型；P10k 暂按 GROUP 构造 Scheduler `ConversationKey`，需用户确认任务目标是否允许私聊或如何在 wire 上表达类型（否则私聊任务的事件 target 类型可能不准确）。另真实 Runtime→Scheduler delegation 来源仍需用户确认。
