@@ -2,7 +2,7 @@
 
 - 版本：v1.3
 - 日期：2026-11-02
-- 状态：P00–P14 实现主体已合入 main（基线 `439fb9e`（P14e QA；QA 期间 main 已推进至 `937acb8`/`25e24ce`，以 release SHA 为准））；阶段退出/发布证据矩阵见 [P14d 矩阵](27-phase-exit-evidence.md)，发布门禁见 [P14d 发布清单](28-p14d-release-checklist.md)。单机 Docker Compose、两主机演练、远端 CI 与正式发布仍未验收，不能标记阶段“已退出”。
+- 状态：P00–P14 实现主体已合入 main（P14n 最终基线 `e83a988`，final gate **147/147**；P10m 修复优雅停机 SIGSEGV；原生单机栈矩阵 **9 success+1 stable-ok+0 known-gap**）；阶段退出/发布证据矩阵见 [P14n 矩阵](27-phase-exit-evidence.md)，发布门禁见 [P14n 发布清单](28-p14d-release-checklist.md)，最终状态索引见 [P14n 交付状态](../reports/modules/architecture-delivery-status.md)。单机 Docker Compose、两主机演练、远端 CI 与正式发布仍未验收；P13 退出未通过、P05b/P12 host operation/bootstrap_credential 待用户决策，不能标记阶段全部“已退出”。
 - 依据：[方向基线](19-architecture-direction-baseline.md)、[设计总览](20-detailed-architecture-design.md)、[通信方法](21-service-contract-design.md)、[事务与初始化](22-transactions-and-migration-design.md)
 - 当前授权：单机真实QQ群聊首轮已通过，用户要求关闭运行、记录已确认接入方向并推送；本次不继续开发。下一轮按[接入设计](26-real-qq-onboarding.md)独立推进，插件机制、完整账号管理、多主机等非核心内容继续后移。保留独立提交、主对话审查及换机交接；本文件保留后续目标架构迁移路线，未达到退出条件的阶段不能标为完成。
 
@@ -10,7 +10,7 @@
 
 按用户要求把“完成/未完成/延期”分开记录；本计划此前“P04 部分实现后暂停”的历史状态不再代表当前实现进度。
 完整证据、命令、测试名与缺口见 [P04–P14 阶段退出证据矩阵](27-phase-exit-evidence.md)；发布操作见
-[P14d 发布清单](28-p14d-release-checklist.md)。
+[P14n 发布清单](28-p14d-release-checklist.md)。
 
 | 分类 | 覆盖 |
 |---|---|
@@ -382,3 +382,17 @@ ListTasks/CancelTask（当前仅注入 fake 端口 BLOCKED→Done）；跨主机
 ## P11f Model 退出判定（2026-11-02）
 
 证据矩阵见 `reports/modules/architecture-p11-model.md` P11f 段：p11 9/9、p03 真 PG 2/2、SDK 141 passed/23 skipped（Model target e2e deferred）、契约状态 gate PASS。P11 owner/应用/Provider/管理 REST 证据齐备；未验收：真实外部 Provider（T07b）、真实插件→Runtime→Model→Provider 单链路（P05b 待用户确认委托）、readiness composition 真实 TLS harness、目标栈 live。另有 OpenAPI Model REST 状态与 p01_target_roundtrip 的 ListAudit scope_kinds 契约不一致，需 Lead/契约 owner 复核；本任务不改实现/契约。
+
+
+## P14n 最终交付状态（2026-11-03，main=e83a988）
+
+本任务只刷新证据矩阵/交付口径，不改实现或契约。完整状态与未验收清单见
+[`reports/modules/architecture-delivery-status.md`](../reports/modules/architecture-delivery-status.md)、
+[doc/27](27-phase-exit-evidence.md)、[doc/28](28-p14d-release-checklist.md)。
+
+- **final gate**：`build/env/recheck-full-locked.sh` 在 `e83a988` 实跑 full-locked build + **147/147 CTest passed**（`build/logs/recheck-ctest-035852.log`，2026-11-03）。
+- **P10m**：修复优雅停机 OpenSSL atexit RAND 竞态 SIGSEGV；连续 5 次完整 `p10_timer_e2e`（50 次停机）exit 0，final gate 以此为基础。
+- **原生单机矩阵（P14f/i/j/k/l/m）**：真实五进程 + PG16.4 + mTLS，最终 **success 9 + stable-ok 1 + known-gap 0**；P14m 修复 Runtime 审计源委派 claim 校验（permission 上限/ Catalog id）。
+- **阶段状态**：P07/P08/P10 退出通过；P12 范围完成；P11 分层证据退出（P05b 单链待决策）；P13 **未通过**（决策包 A/C）；P04–P06/P09 主体已实现/本机实测，残余环境项保留。
+- **待用户决策**：P13 方案 A/C、P05b 委托语义、P12 host operation/bootstrap_credential 字段级。
+- **环境/未验收**：单机 Docker Compose、两主机/跨主机、远端 CI、正式发布、真实 QQ/NapCat、真实外部 Model Provider、生产 CA/密钥托管、备份保留/离站。

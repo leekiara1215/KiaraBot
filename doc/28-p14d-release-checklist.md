@@ -90,7 +90,7 @@ scripts/ops/tests/ops_scripts_test.sh
 - [ ] 两主机/跨主机演练是否在本次发布范围外；若在外，发布说明必须明确“未验证”。
 - [ ] `release-gated` Environment required reviewers 名单与 tag 保护规则。
 
-## 7. 当前结论（P14e QA：2026-11-02，基线 HEAD 439fb9e；QA 期间 main 已推进至 937acb8/25e24ce，release 必须以 release SHA 重跑）
+## 7. 当前结论（P14n 最终刷新：2026-11-03，基线 HEAD e83a988，final gate 147/147）
 
 | 交付类别 | 状态 |
 |---|---|
@@ -98,5 +98,8 @@ scripts/ops/tests/ops_scripts_test.sh
 | 跨主机演练 | **延期/未验证**（用户确认可选） |
 | 远端 CI | **未运行**：workflow/本地静态检查已合入，`gh` 未认证，未触发 GitHub Actions |
 | 正式发布 | **未就绪**：无推送/签名镜像、无 release artifact，需先完成本清单第 2–4 节 |
+
+最终证据：`build/env/recheck-full-locked.sh` 在 `e83a988` 真实跑 full-locked build + **147/147 CTest passed**（`build/logs/recheck-ctest-035852.log`）；原生五进程+PG16.4 矩阵最终 **9 success + 1 stable-ok + 0 known-gap**。P10m 修复了优雅停机 SIGSEGV（OpenSSL atexit 竞态），final gate 以此为基础。
+待用户决策仍为：P13 方案 A/C、P05b 委托语义、P12 host operation/bootstrap_credential 字段级；环境项为 QQ/外部 Provider/生产 CA/密钥托管/备份离站/Docker/两主机/远端 CI/正式发布。详见 [P14n 交付状态](../reports/modules/architecture-delivery-status.md) 与 [阶段矩阵](27-phase-exit-evidence.md)。
 
 本清单不能由 AI/文档提交替代真实环境验收；任何一项未完成时发布说明必须保留对应“未验证/延期/缺口”。
