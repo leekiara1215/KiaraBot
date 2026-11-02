@@ -788,6 +788,8 @@ class ScopeTest(unittest.TestCase):
             ('operations', 'operations.listLogs'),
             ('operations', 'operations.beginDeleteResource'),
             ('operations', 'operations.restoreResource'),
+            ('operations', 'operations.getTask'),
+            ('operations', 'operations.cancelTask'),
         }
         self.assertEqual(available, expected)
         self.assertEqual(effective_status(registry, 'reference', 'action_payloads', 'ActionEnvelope.send_message'), 'implemented')

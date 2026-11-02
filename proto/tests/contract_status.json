@@ -5788,7 +5788,9 @@
           "operations.listAuditEntries": "implemented",
           "operations.listLogs": "implemented",
           "operations.beginDeleteResource": "implemented",
-          "operations.restoreResource": "implemented"
+          "operations.restoreResource": "implemented",
+          "operations.getTask": "implemented",
+          "operations.cancelTask": "implemented"
         },
         "proto_messages": {
           "IdentityAuditFilter": "implemented",
@@ -11069,6 +11071,18 @@
           "core/tests/platform/scheduler_rpc_test.cpp",
           "core/tests/platform/scheduler_identity_client_test.cpp",
           "core/tests/platform/p10_timer_e2e_test.py"
+        ],
+        "operations:operations.getTask": [
+          "control/api/src/target/owner_gateway.cpp",
+          "control/api/app/main.cpp",
+          "tests/architecture/p10_scheduler_rest.py",
+          "control/api/tests/owner_gateway_test.cpp"
+        ],
+        "operations:operations.cancelTask": [
+          "control/api/src/target/owner_gateway.cpp",
+          "control/api/app/main.cpp",
+          "tests/architecture/p10_scheduler_rest.py",
+          "control/api/tests/owner_gateway_test.cpp"
         ]
       }
     }
