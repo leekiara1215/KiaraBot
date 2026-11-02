@@ -18,6 +18,11 @@ defaultContentType: application/json
 x-control-session-policy:
   authorization: Current roles and permissions follow openapi.yaml x-control-policy; control contains the union of allowed channels, never unfiltered data.
   permissions: {operations: resource.read, health: health.read, logs: log.read, adapters: adapter.read, plugins: plugin.read, tasks: task.read, messages: message.read}
+  logs_default: >-
+    The logs channel requires an explicit log.read grant (P12 permission 48); no default role
+    derives it. audit.read (49) is a separate sensitive read and never grants this channel, and
+    there is no audit WebSocket channel: audit data is REST-only at /audit with audit.read.
+
   messages_default: >-
     No default role grants message.read, including admins. The messages channel
     requires an explicit per-user grant (`users[].permissions` in the private

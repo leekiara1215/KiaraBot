@@ -57,6 +57,12 @@ enum Permission {
   PERMISSION_REQUEST_APPROVE = 46;
   // P09 target shared-namespace management read; explicit installation-scope grant only.
   PERMISSION_NAMESPACE_READ = 47;
+  // P12 target Control log/audit read. Sensitive explicit grants only: no fixed role or canonical
+  // creation policy derives them, and log.read never grants audit data (and vice versa).
+  // CONTRACT_STATUS: not_implemented - target permission declaration, no producer.
+  PERMISSION_LOG_READ = 48;
+  // CONTRACT_STATUS: not_implemented - target permission declaration, no producer.
+  PERMISSION_AUDIT_READ = 49;
 }
 
 extend google.protobuf.MethodOptions {

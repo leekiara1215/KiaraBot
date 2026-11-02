@@ -100,6 +100,8 @@ control/api/
 
 `GET /groups` 返回群组标识、角色和有效权限标识；`GET /users` 返回用户所属群组、有效角色和有效权限标识。权限由服务端计算并执行，客户端只展示结果。`GET /logs` 返回脱敏后的日志时间、级别、组件、消息及可选 trace ID；日志不得包含凭据。
 
+P12 目标权限补充：`PERMISSION_LOG_READ = 48`（`log.read`）与 `PERMISSION_AUDIT_READ = 49`（`audit.read`）是分开的敏感读权限，固定角色和创建策略都不派生；`/logs` 只要求 `log.read`，`/audit` 只要求 `audit.read`，二者不能互相替代。Control 只做只读聚合，数据归属各业务服务；缺少权威查询来源时返回 `UNAVAILABLE`（HTTP 503），不得返回成功空页。日志/审计分页按 `occurred_at` + 稳定 ID，响应不含凭据、消息正文或模型密钥。
+
 ## 插件管理接口
 
 至少提供：
@@ -122,7 +124,7 @@ T09a 已实现同一监听提供以下频道；各频道状态如下：
 
 ```text
 /ws/health      # health.updated 仍标 x-contract-status: not_implemented（频道可建但无可推送事件）
-/ws/logs
+/ws/logs        # 需显式 log.read（P12 权限 48），任何默认角色都不派生
 /ws/adapters
 /ws/plugins
 /ws/tasks
@@ -131,7 +133,7 @@ T09a 已实现同一监听提供以下频道；各频道状态如下：
 
 WebSocket 只推送经过权限过滤的数据。普通面板用户不能订阅全部私聊消息或完整模型上下文。
 
-WebSocket 服务端使用 WSS；首帧必须是携带 access token 的 `hello` 或同时携带 access token 与已有会话 ID 的 `resume`，不能要求浏览器在握手时设置自定义 Authorization 头。成功后服务端发送 `SESSION_READY`，包含 `session_id` 和确认的 `last_sequence`；会话 ID 是绑定认证主体和频道的不可预测秘密，必须保护、过期和撤销，不能记录或放入 URL。断线后客户端携带会话 ID 和最后处理的序号重连。服务端保留 10 分钟事件，无法补齐时返回 `RESYNC_REQUIRED`：客户端丢弃旧会话、重新以 `hello` 建立会话，并重新拉取 REST 快照。客户端忽略未知事件及字段，已知事件触发对应快照刷新；日志事件 `log.updated` 的 payload 使用 OpenAPI `LogEntry`。`message.updated` 是自包含元数据通知，没有可刷新的 REST 消息投影：客户端只触发既有刷新，不得据此重建历史，也不应期待消息正文；订阅需显式 `message.read`，未授予仍以 4403 关闭。每个消息组件都有唯一 `messageId`。
+WebSocket 服务端使用 WSS；首帧必须是携带 access token 的 `hello` 或同时携带 access token 与已有会话 ID 的 `resume`，不能要求浏览器在握手时设置自定义 Authorization 头。成功后服务端发送 `SESSION_READY`，包含 `session_id` 和确认的 `last_sequence`；会话 ID 是绑定认证主体和频道的不可预测秘密，必须保护、过期和撤销，不能记录或放入 URL。断线后客户端携带会话 ID 和最后处理的序号重连。服务端保留 10 分钟事件，无法补齐时返回 `RESYNC_REQUIRED`：客户端丢弃旧会话、重新以 `hello` 建立会话，并重新拉取 REST 快照。客户端忽略未知事件及字段，已知事件触发对应快照刷新；日志事件 `log.updated` 的 payload 使用 OpenAPI `LogEntry`；订阅该频道要求显式 `log.read`。审计没有 WebSocket 频道，`/audit` 仅经 `audit.read` 的 REST 读取，二者不得复用同一权限。`message.updated` 是自包含元数据通知，没有可刷新的 REST 消息投影：客户端只触发既有刷新，不得据此重建历史，也不应期待消息正文；订阅需显式 `message.read`，未授予仍以 4403 关闭。每个消息组件都有唯一 `messageId`。
 
 所有事件使用 `schema_version`、`event_type`、`sequence`、UTC `occurred_at` 和 `payload` envelope。`/ws/control` 汇聚事件；独立频道与它使用相同事件类型和 payload：
 

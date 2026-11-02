@@ -1713,7 +1713,9 @@
       "ModelCallDisposition.NOT_EXECUTED": "not_implemented",
       "ModelCallDisposition.EXECUTED_NOT_BILLED": "not_implemented",
       "ModelCallDisposition.EXECUTED_BILLED": "not_implemented",
-      "ModelCallDisposition.ABANDONED": "not_implemented"
+      "ModelCallDisposition.ABANDONED": "not_implemented",
+      "Permission.PERMISSION_LOG_READ": "not_implemented",
+      "Permission.PERMISSION_AUDIT_READ": "not_implemented"
     },
     "channels": {
       "channels.control": "implemented",
@@ -5508,6 +5510,14 @@
     ],
     "semantic.model.instance_delegation": [
       "core/src/application/target/model_application.cpp"
+    ],
+    "Permission.PERMISSION_LOG_READ": [
+      "doc/06-control-api.md",
+      "api/openapi.yaml"
+    ],
+    "Permission.PERMISSION_AUDIT_READ": [
+      "doc/06-control-api.md",
+      "api/openapi.yaml"
     ]
   },
   "vocabulary": {
