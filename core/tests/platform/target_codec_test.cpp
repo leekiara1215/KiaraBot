@@ -89,7 +89,8 @@ void test_permissions() {
       std::pair{target::Permission::MessageDelete, wire::PERMISSION_MESSAGE_DELETE},
       std::pair{target::Permission::MemberMute, wire::PERMISSION_MEMBER_MUTE},
       std::pair{target::Permission::MemberKick, wire::PERMISSION_MEMBER_KICK},
-      std::pair{target::Permission::RequestApprove, wire::PERMISSION_REQUEST_APPROVE}};
+      std::pair{target::Permission::RequestApprove, wire::PERMISSION_REQUEST_APPROVE},
+      std::pair{target::Permission::NamespaceRead, wire::PERMISSION_NAMESPACE_READ}};
   expect(permissions.size() ==
          static_cast<std::size_t>(wire::Permission_descriptor()->value_count() - 1));
   for (const auto& [internal, external] : permissions) {

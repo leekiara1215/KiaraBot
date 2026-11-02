@@ -55,7 +55,9 @@ enum class Permission : std::uint16_t {
   MessageDelete,
   MemberMute,
   MemberKick,
-  RequestApprove
+  RequestApprove,
+  // P09 shared-namespace read (wire 47); only the boundary conversion is added for now.
+  NamespaceRead
 };
 
 } // namespace kiarabot::core::target

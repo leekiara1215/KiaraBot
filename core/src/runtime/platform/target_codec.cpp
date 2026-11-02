@@ -107,7 +107,9 @@ constexpr std::array kPermissions{
     std::pair{target::Permission::MessageDelete, v1::PERMISSION_MESSAGE_DELETE},
     std::pair{target::Permission::MemberMute, v1::PERMISSION_MEMBER_MUTE},
     std::pair{target::Permission::MemberKick, v1::PERMISSION_MEMBER_KICK},
-    std::pair{target::Permission::RequestApprove, v1::PERMISSION_REQUEST_APPROVE}};
+    std::pair{target::Permission::RequestApprove, v1::PERMISSION_REQUEST_APPROVE},
+    // P09 shared-namespace read (wire 47); no other P09 wire type has an internal consumer yet.
+    std::pair{target::Permission::NamespaceRead, v1::PERMISSION_NAMESPACE_READ}};
 
 struct ErrorMapping {
   target::ErrorCode internal;
