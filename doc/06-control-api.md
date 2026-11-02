@@ -665,3 +665,17 @@ P12 v1 target **不提供** Control WebSocket 服务端；`api/asyncapi.yaml` �
 ## P06f/P07 adapter 观测补充（2026-11-02）
 
 P07d 真实 adapter e2e 的事件 fan-out 断言现已覆盖：真实 adapter 入站消息 → Runtime `events(MessageReceived)` → 订阅 SDK plugin 的 `delivery_targets`（终态 ACK）→ 未订阅不投递、离线不伪造 target、重连后新事件投递。adapter 配置 `ONEBOT_SELF_ID` 只用于平台 bot 标识/入站来源校验，Runtime REST/WS 契约不变。
+
+## P12f 退出验收矩阵（2026-11-02，main@3ac3761）
+
+真实 `kiarabot-control` 进程 + 真实浏览器 TLS + fake Identity/Model/Runtime/Scheduler owner 的逐端点
+验收已完成，详见 [P12f 报告](../reports/modules/architecture-control-panel.md)。结论：
+- 已实测成功链：健康、Action 单条查询、principals、logs/audit 双 owner 合并、绑定/解绑、安装/实例创建、
+  plugin-state/config、action-policy、tasks list/get/cancel、模型全管理（含 Disable/Enable）、runtime/
+  scheduler/model operation、delete/restore 202+operation。
+- 已实测错误语义：401/400/403/409/503；runtime operation 的 BLOCKED 以 200 快照返回，不当作失败；
+  无源/不可用 503 不伪造空页；旧 `/plugins/{id}/*` 不复用返回 404。
+- 未验收：目标六服务真实栈（owner 为 fake）、Panel 浏览器真实 HTTP、Host 参与者真实停止/插件 ACK、
+  WS 频道（延期）、`listActionMetadata`（契约未声明）、operation host owner（未声明）。
+- P12f 修复真实缺陷：owner gRPC `ABORTED/NOT_FOUND/RESOURCE_EXHAUSTED/UNIMPLEMENTED/INTERNAL`
+  未映射，CONFLICT 曾被降级为 503；现已映射为 409/404/429/503/500。

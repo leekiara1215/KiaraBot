@@ -310,6 +310,12 @@ PG Repository/COMMIT/锁/并发测试缺少真实 PG 时失败并报告原因，
 - **验证/退出**：V0/V1/V2/V4/V5(p12)，真实服务HTTP/WS+Panel live测试覆盖所有批准写入口、拒绝、版本冲突、状态进度、断流补快照。消息历史/上下文编辑/市场/自定义角色不加入本轮。
 
 - **P12a-2 契约补充（2026-11-02）**：Q6 实例级启停/配置显式 REST 路径（三类事实+operation，禁用旧 plugin enable 映射）、`health.read`=Permission 50、target Control v1 无 WS（REST operation 快照为唯一 resync 源，WS 帧整体 not_implemented）、`/logs`+`/audit` owner 聚合/分页/脱敏/保留/无源 503 语义、REST 与 owner target 分层状态及 TaskSummary/OperationRef 字段统一。均只登记契约，不实现业务；P12c/P12d 后续消费见 doc/06。
+- **P12f 退出验收（2026-11-02，main@3ac3761）**：真实 Control 进程+浏览器 TLS+fake owner 矩阵覆盖
+  健康/Action 单条/principals/logs-audit/绑定/安装实例/config-desired/action-policy/tasks/模型管理/
+  operation/delete-restore 的 200/202 与 401/400/403/409/503；修复 owner gRPC ABORTED 等未映射导致
+  CONFLICT 降级 503 的真实缺陷。未验收：目标六服务真实栈、Panel 浏览器真实 HTTP、WebSocket 频道（延期）、
+  `listActionMetadata`/operation host owner 契约缺口；详见 [P12f 报告](../reports/modules/architecture-control-panel.md)。
+
 
 
 ### P13：生命周期协调、清理与可观测性

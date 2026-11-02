@@ -263,3 +263,17 @@ mock 覆盖：登录/刷新、`/auth/me`、会话列表与撤销、9 个资源�
 | 旧 /plugins enable/config、WS 目标/health.updated | 不复用/延期 | P12a/后续 |
 
 - 未接线清单：真实目标六服务 Control live 验收（本机无目标栈）；P12c-7 生命周期 REST；模型 Disable/Enable；旧 `/plugins` 启停/配置不复用；WS 目标/`health.updated` 延期；模型密钥轮换提交（仅标记已配置/版本）。
+
+## P12f 验收更新（2026-11-02，覆盖上文旧 Q8 状态）
+
+真实 Control 进程的 P12f 矩阵（真 TLS + fake owners）显示：Control 侧首批写/读端点已可成功返回，
+Panel 侧仍只到“已接线路由+mock transport 单测”，尚未做真实浏览器 HTTP live。逐项最新状态以
+[P12f 报告](../reports/modules/architecture-control-panel.md) 为准：
+- 已实测（Control+fake owner）：会话撤销、绑定/解绑、安装/实例/plugin-state/config、action-policy、
+  任务查询/取消、模型全管理（Disable/Enable 已有 REST）、principals、logs/audit、健康、operation、
+  delete/restore 202+operation。
+- 仅路径/未接线：`listActionMetadata`（契约 not_implemented）；operation host owner（未声明）；旧
+  `/plugins/{id}/*` 不复用；WS logs/health.updated 延期。
+- 未验收：真实目标栈（六服务/PG16.4）、Panel 浏览器真实 HTTP live、真实 QQ/模型 Provider、Host 真实
+  participant 停止/插件 ACK。
+- Q8 中“模型 Disable/Enable 无契约”在 main@3ac3761 已不成立：REST 已由 P11d 接线并有真 TLS 200 证据。
