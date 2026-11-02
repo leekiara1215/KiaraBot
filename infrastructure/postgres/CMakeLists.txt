@@ -4,7 +4,8 @@ add_library(kiarabot_postgres STATIC
   src/database.cpp src/common_work.cpp src/record_codec.cpp src/factories.cpp
   src/identity_security.cpp src/identity_sessions.cpp src/identity_receipts.cpp
   src/identity_assignments.cpp src/identity_invalidations.cpp src/runtime_events.cpp
-  src/model_store.cpp src/action_records.cpp src/storage_records.cpp)
+  src/model_store.cpp src/action_records.cpp src/storage_records.cpp
+  src/host_registration.cpp)
 target_include_directories(kiarabot_postgres PUBLIC
   include ${CMAKE_SOURCE_DIR}/core/include)
 target_link_libraries(kiarabot_postgres PRIVATE libpqxx::pqxx Threads::Threads)

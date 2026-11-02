@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "action_records.hpp"
+#include "host_registration.hpp"
 #include "identity_security.hpp"
 #include "kiarabot/core/domain/target/scheduler_rules.hpp"
 #include "kiarabot/core/ports/target/business_ports.hpp"
