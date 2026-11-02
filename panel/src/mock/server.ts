@@ -20,6 +20,12 @@ const base = {
   '/tasks': { items: [{ id: 'task-01', name: 'Daily digest', state: 'SCHEDULED' }], page: {} } satisfies Schemas['TaskPage'],
   '/audit': { items: [{ id: 'audit-01', occurred_at: '2026-10-30T02:00:00Z', actor: 'admin', action: 'login', resource: 'control-panel' }], page: {} } satisfies Schemas['AuditPage'],
 };
+const principalItems: Schemas['TargetIdentityPrincipalSummary'][] = [
+  { principal_id: '11111111-1111-4111-8111-111111111111', principal_kind: 'human',
+    version: '1', state: 'LIFECYCLE_ACTIVE', roles: ['ROLE_ADMIN'] },
+  { principal_id: '22222222-2222-4222-8222-222222222222', principal_kind: 'human',
+    version: '3', state: 'LIFECYCLE_DISABLED', roles: ['ROLE_VIEWER'] },
+];
 const logItems = Array.from({ length: 25 }, (_, index) => ({
   id: `log-${String(index + 1).padStart(2, '0')}`,
   name: `Core event ${index + 1}`,
@@ -45,6 +51,8 @@ function paginate<T>(items: T[], url: URL, token: string, page: 'LogPage' | 'Ses
 export class MockServer {
   denied = new Set<string>();
   failures = new Map<string, { status: number; code?: string; retryAfter?: number }>();
+  /** Tests may set an aggregate health snapshot (for DEGRADED / 503 semantics). */
+  healthOverride?: Schemas['Health'];
   /** Mock principal permissions; tests may narrow this to exercise panel gates. */
   permissions = ['health.read', 'bot.read', 'adapter.read', 'plugin.read', 'plugin.manage',
     'plugin.config.read', 'plugin.config.write', 'model.read', 'group.read', 'user.read',
@@ -102,6 +110,7 @@ export class MockServer {
     const snapshot = { snapshot_id: 'mock-snapshot-01', observed_at: new Date().toISOString(),
       expires_at: new Date(Date.now() + 60_000).toISOString(), authorization_version: '1',
       owner_service: 'runtime', page: { page_size: 20 } };
+    if (path === '/health' && this.healthOverride) return json(this.healthOverride);
     if (path === '/health/live') return json({ state: 'HEALTHY' } satisfies Schemas['ProcessProbe']);
     if (path === '/health/ready') return json({ state: 'HEALTHY' } satisfies Schemas['ProcessProbe']);
     if (path === '/accounts' && String(init?.method ?? 'GET').toUpperCase() === 'GET') {
@@ -156,6 +165,41 @@ export class MockServer {
     }
     if (path === '/actions/metadata') {
       return json({ actions: [], page: { page_size: 20 } } satisfies Schemas['TargetRuntimeListActionMetadataResponse']);
+    }
+    if (path === '/principals') {
+      return json({ principals: principalItems, page: { page_size: 20 },
+        checked_at: new Date().toISOString() } satisfies Schemas['TargetIdentityListPrincipalsResponse']);
+    }
+    if (path === '/tasks' && url.searchParams.has('scope')) {
+      return json({ items: [{ id: 'task-mock-01', name: '定时摘要', state: 'PENDING' }],
+        page: { page_size: 20 } } satisfies Schemas['TaskPage']);
+    }
+    if (path === '/installations' && String(init?.method ?? 'GET').toUpperCase() === 'POST') {
+      const body = JSON.parse(String(init?.body ?? '{}')) as Schemas['TargetRuntimeCreateInstallationRequest'];
+      return json({ installation: { installation_id: 'installation-mock-created',
+        plugin_type_id: body.plugin_type_id, manifest: body.manifest, version: '1',
+        state: 'LIFECYCLE_ACTIVE' } } satisfies Schemas['TargetRuntimeCreateInstallationResponse']);
+    }
+    const createInstanceMatch = /^\/installations\/([^/]+)\/instances$/.exec(path);
+    if (createInstanceMatch && String(init?.method ?? 'GET').toUpperCase() === 'POST') {
+      const body = JSON.parse(String(init?.body ?? '{}')) as { host_id?: string; externally_managed?: boolean };
+      return json({ instance: { instance_id: 'instance-mock-created',
+        installation_id: createInstanceMatch[1], host_id: body.host_id,
+        externally_managed: body.externally_managed === true,
+        state: { resource: { kind: 'RESOURCE_INSTANCE', id: 'instance-mock-created' },
+          version: '1', lifecycle: 'LIFECYCLE_ACTIVE', desired: 'DESIRED_RUNNING', registered: false,
+          desired_config_version: '1', applied_config_version: '0',
+          process_outcome: 'EXECUTION_NOT_STARTED', observed_at: new Date().toISOString(),
+          source_service: 'runtime' } } } satisfies Schemas['TargetRuntimeCreateInstanceResponse']);
+    }
+    const modelSecretMatch = /^\/models\/([^/]+)\/secret$/.exec(path);
+    if (modelSecretMatch && String(init?.method ?? 'GET').toUpperCase() === 'PUT') {
+      return json({ version: '4' } satisfies Schemas['TargetModelRotateProviderSecretResponse']);
+    }
+    if (/^\/models\/[^/]+$/.test(path) && String(init?.method ?? 'GET').toUpperCase() === 'PUT') {
+      const body = JSON.parse(String(init?.body ?? '{}')) as Schemas['TargetModelUpdateModelRequest'];
+      return json({ model: { model_id: body.config.model_id, alias: body.config.alias,
+        provider_kind: body.config.provider_kind, config_version: '5', state: 'LIFECYCLE_ACTIVE' } } as Schemas['TargetModelUpdateModelResponse']);
     }
     if (path === '/plugins/validate') {
       const manifest = JSON.parse(String(init?.body ?? '{}')) as Partial<Schemas['PluginManifest']>;

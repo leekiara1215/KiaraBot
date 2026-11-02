@@ -77,6 +77,11 @@ export const endpoints = {
   // P12d live management surface for the P12a contract operations.
   bindAdapter: operation('/adapter-bindings/{accountId}', 'put'),
   unbindAdapter: operation('/adapter-bindings/{accountId}', 'delete'),
+  principals: operation('/principals', 'get'),
+  createInstallation: operation('/installations', 'post'),
+  createInstance: operation('/installations/{installationId}/instances', 'post'),
+  modelUpdate: operation('/models/{modelId}', 'put'),
+  modelSecret: operation('/models/{modelId}/secret', 'put'),
   actionMetadata: operation('/actions/metadata', 'get'),
   actionPolicy: operation('/accounts/{accountId}/action-policy', 'get'),
   actionPolicyUpdate: operation('/accounts/{accountId}/action-policy', 'put'),
@@ -114,6 +119,25 @@ export type TargetInstanceConfigUpdateRequest = Schemas['TargetRuntimeUpdateConf
 export type TargetInstanceConfigResponse = Schemas['TargetRuntimeGetInstanceConfigResponse'];
 export type TargetCancelTaskRequest = Schemas['TargetSchedulerCancelTaskRequest'];
 export type TargetActionPolicyUpdateRequest = Schemas['TargetRuntimeUpdateActionPolicyRequest'];
+export type TargetResourceScope = Schemas['TargetResourceScope'];
+export type TargetCatalogRef = Schemas['TargetCatalogRef'];
+export type TargetTaskPage = Schemas['TaskPage'];
+export type TargetPrincipalPage = Schemas['TargetIdentityListPrincipalsResponse'];
+export type TargetPrincipalSummary = Schemas['TargetIdentityPrincipalSummary'];
+export type TargetCreateInstallationRequest = Schemas['TargetRuntimeCreateInstallationRequest'];
+export type TargetCreateInstallationResponse = Schemas['TargetRuntimeCreateInstallationResponse'];
+export type TargetCreateInstanceRequest = Schemas['TargetRuntimeCreateInstanceRequest'];
+export type TargetCreateInstanceResponse = Schemas['TargetRuntimeCreateInstanceResponse'];
+export type TargetModelUpdateRequest = Schemas['TargetModelUpdateModelRequest'];
+export type TargetModelUpdateResponse = Schemas['TargetModelUpdateModelResponse'];
+export type TargetModelRotateSecretRequest = Schemas['TargetModelRotateProviderSecretRequest'];
+export type TargetModelRotateSecretResponse = Schemas['TargetModelRotateProviderSecretResponse'];
+export type TargetOperationRef = Schemas['TargetOperationRef'];
+
+/** Query encoding for JSON object parameters (`scope`, `catalog`) used by P12c owner gateways. */
+export function queryJson(value: unknown): string | undefined {
+  return value === undefined || value === null ? undefined : JSON.stringify(value);
+}
 
 export class ApiError extends Error {
   constructor(
@@ -159,8 +183,9 @@ export class ApiClient {
   health() { return this.call<Health>(endpoints.health); }
   healthLive() { return this.callRoot<ProcessProbe>(endpoints.healthLive); }
   healthReady() { return this.callRoot<ProcessProbe>(endpoints.healthReady); }
-  accountPage(token?: string, pageSize?: number) {
-    return this.call<TargetAccountPage>(endpoints.accounts, { query: { page_token: token, page_size: pageSize } });
+  accountPage(catalog?: TargetCatalogRef, token?: string, pageSize?: number) {
+    return this.call<TargetAccountPage>(endpoints.accounts, {
+      query: { catalog: queryJson(catalog), page_token: token, page_size: pageSize } });
   }
   account(accountId: string) { return this.call<Schemas['TargetRuntimeGetAccountResponse']>(endpoints.account, { param: accountId }); }
   disableAccount(accountId: string, expectedVersion: string) {
@@ -173,18 +198,48 @@ export class ApiClient {
   unbindAdapter(accountId: string, input: TargetUnbindAdapterRequest) {
     return this.call<Schemas['TargetRuntimeUnbindAdapterResponse']>(endpoints.unbindAdapter, { param: accountId, body: input });
   }
-  installationPage(token?: string, pageSize?: number) {
-    return this.call<TargetInstallationPage>(endpoints.installations, { query: { page_token: token, page_size: pageSize } });
+  installationPage(catalog?: TargetCatalogRef, token?: string, pageSize?: number) {
+    return this.call<TargetInstallationPage>(endpoints.installations, {
+      query: { catalog: queryJson(catalog), page_token: token, page_size: pageSize } });
   }
-  operation(ownerService: string, operationId: string) {
-    return this.call<TargetOperationResponse>(endpoints.operation, { params: { ownerService, operationId } });
+  createInstallation(input: TargetCreateInstallationRequest) {
+    return this.call<TargetCreateInstallationResponse>(endpoints.createInstallation, { body: input });
   }
-  targetTask(taskId: string) { return this.call<TargetTaskResponse>(endpoints.targetTask, { param: taskId }); }
-  cancelTask(taskId: string, input: TargetCancelTaskRequest) {
-    return this.call<Schemas['TargetSchedulerCancelTaskResponse']>(endpoints.cancelTask, { param: taskId, body: input });
+  createInstance(installationId: string, input: TargetCreateInstanceRequest) {
+    return this.call<TargetCreateInstanceResponse>(endpoints.createInstance, {
+      param: installationId, body: input });
   }
-  modelMetadata(modelId: string) { return this.call<TargetModelMetadataResponse>(endpoints.modelMetadata, { param: modelId }); }
-  modelConfiguration(modelId: string) { return this.call<TargetModelConfigurationResponse>(endpoints.modelConfiguration, { param: modelId }); }
+  principalPage(token?: string, pageSize?: number, state?: string) {
+    return this.call<TargetPrincipalPage>(endpoints.principals, {
+      query: { page_token: token, page_size: pageSize, state } });
+  }
+  taskPage(scope?: TargetResourceScope, token?: string, pageSize?: number) {
+    return this.call<TargetTaskPage>(endpoints.tasks, {
+      query: { scope: queryJson(scope), page_token: token, page_size: pageSize } });
+  }
+  operation(ownerService: string, operationId: string, scope?: TargetResourceScope) {
+    return this.call<TargetOperationResponse>(endpoints.operation, {
+      params: { ownerService, operationId }, query: { scope: queryJson(scope) } });
+  }
+  targetTask(taskId: string, scope?: TargetResourceScope) {
+    return this.call<TargetTaskResponse>(endpoints.targetTask, { param: taskId, query: { scope: queryJson(scope) } });
+  }
+  cancelTask(taskId: string, input: TargetCancelTaskRequest, scope?: TargetResourceScope) {
+    return this.call<Schemas['TargetSchedulerCancelTaskResponse']>(endpoints.cancelTask, {
+      param: taskId, body: input, query: { scope: queryJson(scope) } });
+  }
+  modelMetadata(modelId: string, scope?: TargetResourceScope) {
+    return this.call<TargetModelMetadataResponse>(endpoints.modelMetadata, { param: modelId, query: { scope: queryJson(scope) } });
+  }
+  modelConfiguration(modelId: string, scope?: TargetResourceScope) {
+    return this.call<TargetModelConfigurationResponse>(endpoints.modelConfiguration, { param: modelId, query: { scope: queryJson(scope) } });
+  }
+  updateModel(modelId: string, input: TargetModelUpdateRequest) {
+    return this.call<TargetModelUpdateResponse>(endpoints.modelUpdate, { param: modelId, body: input });
+  }
+  rotateModelSecret(modelId: string, input: TargetModelRotateSecretRequest) {
+    return this.call<TargetModelRotateSecretResponse>(endpoints.modelSecret, { param: modelId, body: input });
+  }
   actionMetadata(filters: { accountId: string; pageSize?: number; pageToken?: string; state?: string; kind?: string }) {
     return this.call<TargetActionMetadataResponse>(endpoints.actionMetadata, {
       query: { account_id: filters.accountId, page_size: filters.pageSize, page_token: filters.pageToken, state: filters.state, kind: filters.kind } });
@@ -193,7 +248,9 @@ export class ApiClient {
   updateActionPolicy(accountId: string, input: TargetActionPolicyUpdateRequest) {
     return this.call<Schemas['TargetRuntimeUpdateActionPolicyResponse']>(endpoints.actionPolicyUpdate, { param: accountId, body: input });
   }
-  instanceConfig(instanceId: string) { return this.call<TargetInstanceConfigResponse>(endpoints.instanceConfig, { param: instanceId }); }
+  instanceConfig(instanceId: string, scope?: TargetResourceScope) {
+    return this.call<TargetInstanceConfigResponse>(endpoints.instanceConfig, { param: instanceId, query: { scope: queryJson(scope) } });
+  }
   updateInstanceConfig(instanceId: string, input: TargetInstanceConfigUpdateRequest) {
     return this.call<Schemas['TargetRuntimeUpdateConfigResponse']>(endpoints.instanceConfigUpdate, { param: instanceId, body: input });
   }
