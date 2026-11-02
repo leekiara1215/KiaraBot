@@ -94,8 +94,8 @@ public:
       argv.push_back(const_cast<char*>(argument.c_str()));
     }
     for (const auto& variable : process.environment) {
-      if (variable.find('\0') != std::string::npos ||
-          variable.find('=') == std::string::npos || variable.find('=') == 0) {
+      if (variable.find('\0') != std::string::npos || variable.find('=') == std::string::npos ||
+          variable.find('=') == 0) {
         return process_failure(ErrorCode::InvalidArgument, Recovery::CorrectInput);
       }
       envp.push_back(const_cast<char*>(variable.c_str()));
@@ -150,6 +150,10 @@ public:
     if (pid <= 0 || marker.empty()) {
       return false;
     }
+    // Reap a child that exited spontaneously before deciding liveness. Without this, a zombie
+    // keeps its pid/marker visible and a later stop marks the execution exited but leaves an
+    // unreaped child (and the client process tree never fully disappears).
+    reap(pid);
     const std::string current = marker_for(pid);
     return !current.empty() && current == marker;
   }
