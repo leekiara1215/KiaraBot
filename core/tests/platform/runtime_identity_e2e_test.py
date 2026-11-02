@@ -75,7 +75,7 @@ def prepare(root, enrolled):
     account_id, admin = str(uuid.uuid4()), enrolled['administrator_id']
     enrolled['administrator_assignments'].append({
         'assignment_id': str(uuid.uuid4()),
-        'permissions': ['account.read', 'account.manage'],
+        'permissions': ['account.read', 'account.manage', 'resource.manage', 'resource.read'],
         'scope': [{'kind': 'RESOURCE_ACCOUNT', 'id': account_id}]})
     enrolled['control_assignments'].extend([
         {'assignment_id': str(uuid.uuid4()), 'permissions': ['identity.assignment.manage'],
@@ -248,7 +248,9 @@ def scenario(root, port, pg_bin, binaries):
             access = tokens.tokens.access_token
             require(bool(access), 'login access token')
 
-            def issue_delegation():
+            def issue_delegation(permissions=None):
+                if permissions is None:
+                    permissions = [policy_pb2.PERMISSION_ACCOUNT_READ]
                 return identity_stub.IssueDelegation(identity_pb2.IdentityIssueDelegationRequest(
                     context=context(),
                     subject_proof=access,
@@ -256,7 +258,7 @@ def scenario(root, port, pg_bin, binaries):
                     scope=platform_pb2.ResourceScope(resources=[
                         platform_pb2.ResourceRef(kind=platform_pb2.RESOURCE_ACCOUNT,
                                                  id=account_id)]),
-                    permissions=[policy_pb2.PERMISSION_ACCOUNT_READ],
+                    permissions=permissions,
                     client_certificate_sha256=leaf_fingerprint(tls)), timeout=10)
 
             proof = issue_delegation().delegation.proof
@@ -272,6 +274,39 @@ def scenario(root, port, pg_bin, binaries):
             require(response.account.account_id == account_id and
                     response.account.display_name == 'Alice',
                     'real mTLS runtime query allowed by current Identity authority')
+
+            # P13a lifecycle RPCs: the same real Identity delegation now carries resource.manage.
+            manage_proof = issue_delegation([
+                policy_pb2.PERMISSION_RESOURCE_READ,
+                policy_pb2.PERMISSION_RESOURCE_MANAGE]).delegation.proof
+            require(bool(manage_proof), 'resource.manage delegation proof')
+            deleted = runtime_stub.BeginDelete(runtime_pb2.RuntimeBeginDeleteRequest(
+                context=context(delegation=manage_proof),
+                resource=platform_pb2.ResourceRef(kind=platform_pb2.RESOURCE_ACCOUNT,
+                                                  id=account_id),
+                expected_version=1), timeout=10)
+            operation_ref = deleted.operation
+            require(bool(operation_ref.operation_id), 'BeginDelete accepted operation')
+            operation = runtime_stub.GetOperation(runtime_pb2.RuntimeGetOperationRequest(
+                context=context(delegation=manage_proof), operation=operation_ref), timeout=10)
+            require(operation.operation.state == platform_pb2.OPERATION_SUCCEEDED,
+                    'runtime-only deletion completed operation')
+            require(len(operation.operation.participants) == 1 and
+                    operation.operation.participants[0].participant == 'runtime',
+                    'deletion participant progress projected')
+            restored = runtime_stub.RestoreResource(runtime_pb2.RuntimeRestoreResourceRequest(
+                context=context(delegation=manage_proof),
+                resource=platform_pb2.ResourceRef(kind=platform_pb2.RESOURCE_ACCOUNT,
+                                                  id=account_id),
+                expected_version=2), timeout=10)
+            restored_operation = runtime_stub.GetOperation(
+                runtime_pb2.RuntimeGetOperationRequest(
+                    context=context(delegation=manage_proof),
+                    operation=restored.operation), timeout=10)
+            require(restored_operation.operation.state == platform_pb2.OPERATION_SUCCEEDED,
+                    'restore completed operation')
+            require(get_account().account.account_id == account_id,
+                    'restored account remains readable')
 
             identity_stub.RevokeAssignment(identity_pb2.IdentityRevokeAssignmentRequest(
                 context=context(), assignment_id=STATE['account_read_assignment'],

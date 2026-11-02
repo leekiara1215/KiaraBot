@@ -61,6 +61,8 @@ struct Store {
   std::map<std::string, t::PluginInstance> instances;
   std::map<std::string, t::InstanceConfiguration> configs;
   std::map<std::string, t::Operation> operations;
+  std::map<std::string, std::vector<t::OperationParticipant>> operation_participants;
+  std::map<std::pair<int, std::string>, t::LifecycleTombstone> tombstones;
   std::vector<t::BridgeCredentialRecord> bridge_credentials;
   std::vector<std::pair<t::ReceiptKey, t::CommandReceipt>> receipts;
   std::vector<t::AuditEntry> audits;
@@ -315,7 +317,7 @@ public:
     return failure(t::ErrorCode::CapabilityNotSupported);
   }
   t::Outcome<std::size_t> prune_received(t::TimePoint, std::size_t) override {
-    return failure(t::ErrorCode::CapabilityNotSupported);
+    return std::size_t{0};
   }
 
 private:
@@ -649,6 +651,84 @@ public:
     return result;
   }
 
+  t::Outcome<std::vector<t::OperationParticipant>>
+  operation_participants(const t::OperationId& id) override {
+    if (store_.fail_reads) {
+      return failure(t::ErrorCode::UpstreamUnavailable);
+    }
+    return store_.operation_participants[id.value];
+  }
+  t::Status
+  save_operation_participants(const t::OperationId& id,
+                              const std::vector<t::OperationParticipant>& participants) override {
+    if (store_.fail_writes) {
+      return failure(t::ErrorCode::UpstreamUnavailable);
+    }
+    store_.operation_participants[id.value] = participants;
+    return std::monostate{};
+  }
+  t::Outcome<std::size_t> prune_outbox(t::TimePoint, std::size_t) override {
+    return std::size_t{1};
+  }
+  t::Outcome<std::size_t> prune_audit(t::TimePoint, std::size_t) override {
+    return std::size_t{1};
+  }
+  t::Outcome<std::size_t> prune_operations(t::TimePoint, std::size_t) override {
+    return std::size_t{1};
+  }
+  t::Outcome<std::optional<t::LifecycleTombstone>>
+  find_lifecycle_tombstone(const t::ResourceRef& resource) override {
+    if (store_.fail_reads) {
+      return failure(t::ErrorCode::UpstreamUnavailable);
+    }
+    const auto found = store_.tombstones.find({static_cast<int>(resource.kind), resource.id.value});
+    return found == store_.tombstones.end() ? std::optional<t::LifecycleTombstone>{}
+                                            : std::optional<t::LifecycleTombstone>{found->second};
+  }
+  t::Status save_lifecycle_tombstone(const t::LifecycleTombstone& value) override {
+    if (store_.fail_writes) {
+      return failure(t::ErrorCode::UpstreamUnavailable);
+    }
+    store_.tombstones[{static_cast<int>(value.resource.kind), value.resource.id.value}] = value;
+    return std::monostate{};
+  }
+  t::Status delete_lifecycle_tombstone(const t::ResourceRef& resource) override {
+    store_.tombstones.erase({static_cast<int>(resource.kind), resource.id.value});
+    return std::monostate{};
+  }
+  t::Outcome<std::vector<t::LifecycleTombstone>>
+  list_lifecycle_tombstones(std::size_t limit, const std::string& after) override {
+    std::vector<t::LifecycleTombstone> result;
+    for (const auto& [key, value] : store_.tombstones) {
+      if (value.resource.id.value > after) {
+        result.push_back(value);
+      }
+      if (result.size() >= limit) {
+        break;
+      }
+    }
+    std::sort(result.begin(), result.end(), [](const auto& left, const auto& right) {
+      return left.resource.id.value < right.resource.id.value;
+    });
+    return result;
+  }
+  t::StorageReceiptRepository& storage_receipts() override {
+    return storage_receipts_;
+  }
+  class MemoryStorageReceipts final : public t::StorageReceiptRepository {
+  public:
+    t::Outcome<std::optional<t::NamespaceReceipt>> find(const t::ReceiptKey&) override {
+      return std::optional<t::NamespaceReceipt>{};
+    }
+    t::Outcome<t::NamespaceReceiptWrite> insert(const t::NamespaceReceipt&,
+                                                t::NamespaceReceiptCapacity) override {
+      return failure(t::ErrorCode::UpstreamUnavailable);
+    }
+    t::Outcome<std::size_t> prune_expired(t::TimePoint, std::size_t) override {
+      return std::size_t{0};
+    }
+  };
+
 private:
   Store& store_;
   MemoryRepository<t::ResourceId, t::BotAccount> accounts_;
@@ -664,6 +744,7 @@ private:
   MemoryReceipts receipts_;
   MemoryJournal journal_;
   MemoryActionPorts memory_actions_;
+  MemoryStorageReceipts storage_receipts_;
 };
 class MemoryFactory final : public t::RuntimeUnitOfWorkFactory {
 public:
@@ -771,6 +852,36 @@ public:
     return decision;
   }
 };
+class LifecycleHost final : public t::HostLifecycleParticipantPort {
+public:
+  int calls = 0;
+  bool done = true;
+  bool unknown = false;
+  t::LifecycleParticipantResult stop_instance(const t::ResourceRef&) override {
+    ++calls;
+    if (unknown) {
+      return {t::LifecycleParticipantDisposition::Unknown, std::nullopt, std::nullopt};
+    }
+    if (!done) {
+      return {t::LifecycleParticipantDisposition::Blocked, t::ErrorCode::UpstreamUnavailable,
+              std::nullopt};
+    }
+    return {t::LifecycleParticipantDisposition::Done, std::nullopt, std::nullopt};
+  }
+};
+class LifecycleScheduler final : public t::SchedulerLifecycleParticipantPort {
+public:
+  int calls = 0;
+  bool done = true;
+  t::LifecycleParticipantResult cancel_tasks(const t::ResourceRef&) override {
+    ++calls;
+    if (!done) {
+      return {t::LifecycleParticipantDisposition::Blocked, t::ErrorCode::UpstreamUnavailable,
+              std::nullopt};
+    }
+    return {t::LifecycleParticipantDisposition::Done, std::nullopt, std::nullopt};
+  }
+};
 t::AuthenticationContext authentication() {
   return {t::SubjectId{kSubject},
           t::PlatformPeer{t::Service::Control, t::SubjectId{kPeer}},
@@ -823,10 +934,17 @@ struct Harness {
   Ids ids;
   Secrets secrets;
   Authorization authorization;
+  LifecycleHost host_lifecycle;
+  LifecycleScheduler scheduler_lifecycle;
   std::unique_ptr<t::RuntimeResourceApplication> application;
   Harness() {
-    auto built = t::make_runtime_resource_application(
-        {factory, ids, secrets, authorization, {"action.send_message.text.v1"}});
+    auto built = t::make_runtime_resource_application({factory,
+                                                       ids,
+                                                       secrets,
+                                                       authorization,
+                                                       {"action.send_message.text.v1"},
+                                                       &host_lifecycle,
+                                                       &scheduler_lifecycle});
     check(std::holds_alternative<std::unique_ptr<t::RuntimeResourceApplication>>(built),
           "application construction failed");
     application = std::move(std::get<std::unique_ptr<t::RuntimeResourceApplication>>(built));
@@ -1432,6 +1550,130 @@ void bridge_flow() {
         "old plugin connection accepted after reconnect");
 }
 
+void lifecycle_flow(Harness& harness) {
+  t::BotAccount account;
+  create_account(harness, &account);
+  const t::ResourceRef resource{t::ResourceKind::Account, account.id};
+  t::BeginDeleteRequest begin{context("runtime.begin_delete", digest(40)), resource};
+  begin.context.expected_version = t::ResourceVersion{1};
+  auto removed = harness.application->begin_delete(begin);
+  check(std::holds_alternative<t::Operation>(removed), "begin delete failed");
+  const auto operation = std::get<t::Operation>(removed);
+  check(operation.state == t::OperationState::Succeeded &&
+            operation.execution_outcome == t::ExecutionOutcome::KnownSucceeded,
+        "runtime-only deletion did not complete");
+  check(operation.participants.size() == 1 &&
+            operation.participants.front().participant == "runtime",
+        "runtime-only deletion participants incorrect");
+  check(harness.store.accounts[account.id.value].state == t::LifecycleState::Deleted &&
+            harness.store.accounts[account.id.value].version.value == 2,
+        "runtime-only deletion did not mark the resource deleted");
+  check(harness.store.tombstones.size() == 1, "deletion did not record a tombstone");
+  // Duplicate delete is a state conflict, not a second tombstone.
+  auto duplicate = begin;
+  duplicate.context = context("runtime.begin_delete", digest(41));
+  duplicate.context.expected_version = t::ResourceVersion{2};
+  check(failure_is(harness.application->begin_delete(duplicate), t::ErrorCode::Conflict),
+        "duplicate deletion was accepted");
+  // Restore within the 30-day window re-activates the record without reviving other state.
+  t::RestoreResourceRequest restore{context("runtime.restore_resource", digest(42)), resource};
+  restore.context.expected_version = t::ResourceVersion{2};
+  auto restored = harness.application->restore_resource(restore);
+  check(std::holds_alternative<t::Operation>(restored), "restore failed");
+  check(harness.store.accounts[account.id.value].state == t::LifecycleState::Active &&
+            harness.store.accounts[account.id.value].version.value == 3,
+        "restore did not re-activate the resource version");
+  check(harness.store.tombstones.empty(), "restore left the tombstone behind");
+  auto second_restore = restore;
+  second_restore.context = context("runtime.restore_resource", digest(43));
+  second_restore.context.expected_version = t::ResourceVersion{3};
+  check(failure_is(harness.application->restore_resource(second_restore), t::ErrorCode::Conflict),
+        "restore of a non-deleted resource was accepted");
+}
+
+void lifecycle_participant_flow(Harness& harness) {
+  constexpr auto kInstance = "33333333-3333-4333-8333-333333333333";
+  constexpr auto kInstallation = "44444444-4444-4444-8444-444444444444";
+  t::PluginInstance instance;
+  instance.id = {kInstance};
+  instance.installation = {kInstallation};
+  instance.plugin_type = {kHost};
+  instance.version = t::ResourceVersion{1};
+  instance.state = t::LifecycleState::Active;
+  instance.host = t::ResourceId{kHost};
+  instance.desired = t::DesiredState::Running;
+  harness.store.instances[kInstance] = instance;
+  harness.host_lifecycle.done = false;
+  harness.scheduler_lifecycle.done = false;
+  const t::ResourceRef resource{t::ResourceKind::Instance, {kInstance}};
+  t::BeginDeleteRequest begin{context("runtime.begin_delete", digest(44)), resource};
+  begin.context.expected_version = t::ResourceVersion{1};
+  auto started = harness.application->begin_delete(begin);
+  check(std::holds_alternative<t::Operation>(started), "participant deletion begin failed");
+  auto operation = std::get<t::Operation>(started);
+  check(operation.state == t::OperationState::Accepted && operation.participants.size() == 3,
+        "participant deletion did not stay accepted with host/scheduler rows");
+  check(harness.store.instances[kInstance].state == t::LifecycleState::Deleting &&
+            harness.store.instances[kInstance].desired == t::DesiredState::Stopped,
+        "deletion did not close the instance gate/desired state");
+  // Dependency offline: blocked, never falsely completed.
+  auto blocked = harness.application->lifecycle_maintenance();
+  check(std::holds_alternative<t::LifecycleMaintenance>(blocked) &&
+            harness.store.instances[kInstance].state == t::LifecycleState::Deleting,
+        "offline participants completed the deletion");
+  check(harness.host_lifecycle.calls == 1 && harness.scheduler_lifecycle.calls == 1,
+        "participant ports were not consulted exactly once");
+  auto operation_blocked = harness.application->get_operation(
+      {context("runtime.get_operation", digest(45)),
+       {t::Service::Runtime, t::OperationId{operation.ref.id.value}, resource}});
+  check(std::holds_alternative<t::Operation>(operation_blocked) &&
+            std::get<t::Operation>(operation_blocked).state == t::OperationState::Blocked,
+        "blocked participant operation was not observable");
+  // Dependencies recover: the next maintenance round completes exactly once.
+  harness.host_lifecycle.done = true;
+  harness.scheduler_lifecycle.done = true;
+  harness.store.now += std::chrono::seconds{10};
+  auto completed = harness.application->lifecycle_maintenance();
+  check(std::holds_alternative<t::LifecycleMaintenance>(completed),
+        "participant maintenance failed");
+  check(harness.store.instances[kInstance].state == t::LifecycleState::Deleted,
+        "recovered participants did not complete deletion");
+  auto after = harness.application->get_operation(
+      {context("runtime.get_operation", digest(46)),
+       {t::Service::Runtime, t::OperationId{operation.ref.id.value}, resource}});
+  check(std::holds_alternative<t::Operation>(after) &&
+            std::get<t::Operation>(after).state == t::OperationState::Succeeded,
+        "completed participant operation not observable as succeeded");
+  // Restore after the 30-day window is refused; the resource stays deleted.
+  harness.store.now += std::chrono::days{31};
+  t::RestoreResourceRequest restore{context("runtime.restore_resource", digest(47)), resource};
+  restore.context.expected_version = t::ResourceVersion{2};
+  restore.context.deadline = harness.store.now + std::chrono::seconds{100};
+  check(failure_is(harness.application->restore_resource(restore), t::ErrorCode::Conflict),
+        "expired restore window was accepted");
+  check(harness.store.instances[kInstance].state == t::LifecycleState::Deleted,
+        "refused restore changed the resource state");
+  // Purge after the 180-day tombstone retention removes the tombstone and marks PURGED.
+  harness.store.now += std::chrono::days{150};
+  auto purged = harness.application->lifecycle_maintenance();
+  check(std::holds_alternative<t::LifecycleMaintenance>(purged), "purge maintenance failed");
+  check(harness.store.instances[kInstance].state == t::LifecycleState::Purged &&
+            harness.store.tombstones.empty(),
+        "purge did not transition the resource or clear the tombstone");
+}
+
+void lifecycle_cleanup_flow(Harness& harness) {
+  t::LifecycleMaintenance last;
+  for (int round = 0; round < 60; ++round) {
+    auto maintained = harness.application->lifecycle_maintenance();
+    check(std::holds_alternative<t::LifecycleMaintenance>(maintained),
+          "cleanup maintenance failed");
+    last = std::get<t::LifecycleMaintenance>(maintained);
+  }
+  check(last.pruned == 3 && !last.cleanup_failed,
+        "60s retention batch did not prune stubbed outbox/audit/operations exactly once");
+}
+
 } // namespace
 
 int main() {
@@ -1456,5 +1698,17 @@ int main() {
     pagination_flow(harness);
   }
   readiness_flow();
+  {
+    Harness harness;
+    lifecycle_flow(harness);
+  }
+  {
+    Harness harness;
+    lifecycle_participant_flow(harness);
+  }
+  {
+    Harness harness;
+    lifecycle_cleanup_flow(harness);
+  }
   return 0;
 }

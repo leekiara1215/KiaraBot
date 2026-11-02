@@ -218,6 +218,55 @@ struct OperationQuery {
   CommandContext context;
   OperationRef operation;
 };
+// P13a reversible lifecycle commands. The owner marks a disabling gate, records an Operation with
+// participant progress and a tombstone, and returns the accepted operation. External participants
+// (Host stop/drain, Scheduler task cancellation) are advanced by lifecycle_maintenance outside
+// every UoW; a missing participant port keeps the operation BLOCKED instead of faking completion.
+struct BeginDeleteRequest {
+  CommandContext context;
+  ResourceRef resource;
+};
+struct RestoreResourceRequest {
+  CommandContext context;
+  ResourceRef resource;
+};
+struct LifecycleMutation {
+  Operation operation;
+};
+enum class LifecycleParticipantDisposition { Done, Blocked, Unknown };
+struct LifecycleParticipantResult {
+  LifecycleParticipantDisposition disposition = LifecycleParticipantDisposition::Blocked;
+  std::optional<ErrorCode> reason;
+  std::optional<TimePoint> next_attempt;
+};
+// Ports are deliberately owner-local and network-free inside a UoW: the application samples state
+// in one read UoW, calls these outside the transaction, then applies results in a second UoW.
+class HostLifecycleParticipantPort {
+public:
+  virtual ~HostLifecycleParticipantPort() = default;
+  virtual LifecycleParticipantResult stop_instance(const ResourceRef& resource) = 0;
+};
+class SchedulerLifecycleParticipantPort {
+public:
+  virtual ~SchedulerLifecycleParticipantPort() = default;
+  virtual LifecycleParticipantResult cancel_tasks(const ResourceRef& resource) = 0;
+};
+struct LifecycleMaintenance {
+  std::size_t reconciled = 0;
+  std::size_t completed = 0;
+  std::size_t blocked = 0;
+  std::size_t purged = 0;
+  std::size_t pruned = 0;
+  bool cleanup_failed = false;
+};
+inline constexpr auto kLifecycleRestoreWindow =
+    std::chrono::duration_cast<TimePoint::duration>(std::chrono::days{30});
+inline constexpr auto kLifecycleTombstoneRetention =
+    std::chrono::duration_cast<TimePoint::duration>(std::chrono::days{180});
+inline constexpr auto kLifecycleOperationRetention =
+    std::chrono::duration_cast<TimePoint::duration>(std::chrono::days{180});
+inline constexpr auto kLifecycleParticipantRetry =
+    std::chrono::duration_cast<TimePoint::duration>(std::chrono::seconds{5});
 // P10b Runtime-side timer trigger acceptance. The Scheduler owns the occurrence identity; Runtime
 // only validates the handoff and durably enqueues the TimerTriggered event exactly once.
 struct AcceptTimerTriggerRequest {
@@ -287,6 +336,13 @@ public:
   virtual Outcome<TimerTriggerAcceptance>
   accept_timer_trigger(const AcceptTimerTriggerRequest& request) = 0;
   virtual Outcome<Operation> get_operation(const OperationQuery& request) = 0;
+
+  // P13a lifecycle coordination. BeginDelete/Restore are owner-local durable commands; the
+  // maintenance pass is called from the Runtime once-per-second dependency hook and performs one
+  // bounded participant reconciliation plus the 60s retention batch.
+  virtual Outcome<Operation> begin_delete(const BeginDeleteRequest& request) = 0;
+  virtual Outcome<Operation> restore_resource(const RestoreResourceRequest& request) = 0;
+  virtual Outcome<LifecycleMaintenance> lifecycle_maintenance() = 0;
 };
 
 struct RuntimeResourceDependencies {
@@ -297,6 +353,10 @@ struct RuntimeResourceDependencies {
   RuntimeAuthorizationPort& authorization;
   // Trusted capability catalog this build actually supports; never request-controlled.
   std::vector<std::string> supported_capabilities;
+  // P13a participant clients are wired by the composition when P08b-3/P10b clients exist. A null
+  // pointer is fail-closed (participant BLOCKED/retryable), never a fake successful stop/cancel.
+  HostLifecycleParticipantPort* host_lifecycle = nullptr;
+  SchedulerLifecycleParticipantPort* scheduler_lifecycle = nullptr;
 };
 
 // Borrowed dependencies outlive every call; each call owns separate short UoWs.

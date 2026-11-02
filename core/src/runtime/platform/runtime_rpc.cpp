@@ -433,6 +433,21 @@ bool operation(const t::Operation& value, v1::Operation* output, t::TimePoint ob
   if (value.next_attempt && !timestamp(*value.next_attempt, output->mutable_next_attempt_at())) {
     return false;
   }
+  for (const auto& participant : value.participants) {
+    auto* progress = output->add_participants();
+    progress->set_participant(participant.participant);
+    progress->set_state(operation_state(participant.state));
+    if (participant.reason) {
+      const auto encoded = codec::make_error(*participant.reason, "", "", false);
+      if (const auto* stable = std::get_if<v1::Error>(&encoded)) {
+        *progress->mutable_reason() = *stable;
+      }
+    }
+    if (participant.next_attempt &&
+        !timestamp(*participant.next_attempt, progress->mutable_next_attempt_at())) {
+      return false;
+    }
+  }
   output->set_stalled(false);
   return timestamp(observed, output->mutable_observed_at());
 }
@@ -1297,6 +1312,64 @@ public:
       return fail(context, *rejected);
     }
     if (!state(std::get<t::ResourceState>(found), response->mutable_state())) {
+      return error_status(internal_failure(), context.request, context.trace);
+    }
+    return grpc::Status::OK;
+  }
+  grpc::Status BeginDelete(grpc::ServerContext* transport,
+                           const v1::RuntimeBeginDeleteRequest* request,
+                           v1::RuntimeBeginDeleteResponse* response) override {
+    auto prepared = prepare(*transport, request->context(),
+                            "kiarabot.v1.RuntimeService/BeginDelete", *request, true, options_);
+    if (const auto* rejected = std::get_if<t::Failure>(&prepared)) {
+      return error_status(*rejected, request->context().request_id(),
+                          request->context().trace_id());
+    }
+    auto& context = std::get<Prepared>(prepared);
+    const auto reference = codec::from_wire(request->resource());
+    const auto* decoded = std::get_if<t::ResourceRef>(&reference);
+    if (!decoded) {
+      return error_status(failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput),
+                          context.request, context.trace);
+    }
+    context.command.expected_version =
+        request->has_expected_version()
+            ? std::optional<t::ResourceVersion>{t::ResourceVersion{request->expected_version()}}
+            : std::nullopt;
+    auto deleted = application_.begin_delete({context.command, *decoded});
+    if (const auto* rejected = std::get_if<t::Failure>(&deleted)) {
+      return fail(context, *rejected);
+    }
+    if (!operation_ref(std::get<t::Operation>(deleted).ref, response->mutable_operation())) {
+      return error_status(internal_failure(), context.request, context.trace);
+    }
+    return grpc::Status::OK;
+  }
+  grpc::Status RestoreResource(grpc::ServerContext* transport,
+                               const v1::RuntimeRestoreResourceRequest* request,
+                               v1::RuntimeRestoreResourceResponse* response) override {
+    auto prepared = prepare(*transport, request->context(),
+                            "kiarabot.v1.RuntimeService/RestoreResource", *request, true, options_);
+    if (const auto* rejected = std::get_if<t::Failure>(&prepared)) {
+      return error_status(*rejected, request->context().request_id(),
+                          request->context().trace_id());
+    }
+    auto& context = std::get<Prepared>(prepared);
+    const auto reference = codec::from_wire(request->resource());
+    const auto* decoded = std::get_if<t::ResourceRef>(&reference);
+    if (!decoded) {
+      return error_status(failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput),
+                          context.request, context.trace);
+    }
+    context.command.expected_version =
+        request->has_expected_version()
+            ? std::optional<t::ResourceVersion>{t::ResourceVersion{request->expected_version()}}
+            : std::nullopt;
+    auto restored = application_.restore_resource({context.command, *decoded});
+    if (const auto* rejected = std::get_if<t::Failure>(&restored)) {
+      return fail(context, *rejected);
+    }
+    if (!operation_ref(std::get<t::Operation>(restored).ref, response->mutable_operation())) {
       return error_status(internal_failure(), context.request, context.trace);
     }
     return grpc::Status::OK;

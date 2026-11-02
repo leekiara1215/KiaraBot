@@ -342,12 +342,18 @@ compose_runtime_service(const platform::ProcessConfig& config) {
             return maintained;
           }
         }
-        if (!state->action_application) {
-          return std::monostate{};
+        if (state->action_application) {
+          auto swept = state->action_application->maintenance();
+          if (std::holds_alternative<target::Failure>(swept)) {
+            return std::get<target::Failure>(swept);
+          }
         }
-        auto swept = state->action_application->maintenance();
-        if (std::holds_alternative<target::Failure>(swept)) {
-          return std::get<target::Failure>(swept);
+        // P13a: bounded lifecycle reconciliation and the ad-hoc 60s retention batch run on the
+        // same dependency hook. A cleanup failure is reported through readiness, never by
+        // silently revoking the lifecycle gate.
+        auto lifecycle = state->application->lifecycle_maintenance();
+        if (std::holds_alternative<target::Failure>(lifecycle)) {
+          return std::get<target::Failure>(lifecycle);
         }
         return std::monostate{};
       };
