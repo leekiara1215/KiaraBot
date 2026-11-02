@@ -193,6 +193,7 @@ describe('pagination, filters and stream events', () => {
     expect(screen.getByText(/约 7 秒/)).toBeInTheDocument();
     navigate('审计');
     expect(await screen.findByText(/数据源暂不可用（503）/)).toBeInTheDocument();
+    expect(screen.getByText(/P12e 未合入/)).toBeInTheDocument();
   });
 });
 

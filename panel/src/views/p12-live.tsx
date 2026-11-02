@@ -31,6 +31,10 @@ import type {
   TargetTaskPage,
   TargetCreateInstallationRequest,
   TargetCreateInstanceRequest,
+  TargetInstanceConfigurationResponse,
+  TargetInstanceFactHost,
+  TargetInstanceFactPlugin,
+  TargetInstanceFactRuntime,
 } from '../api/client';
 import { ApiError } from '../api/client';
 import { describeError, FailureNotice, formatTime, label, type Failure } from '../ui';
@@ -326,14 +330,16 @@ function InstallationsPage({ api, revision }: { api: ApiClient; revision: number
   const [hostId, setHostId] = useState('');
   const [externallyManaged, setExternallyManaged] = useState(false);
   const [instanceId, setInstanceId] = useState('');
-  const [scope, setScope] = useState(() => scopeText(defaultScope()));
-  const parsedScope = useMemo(() => parseScopeText(scope), [scope]);
   const [expectedVersion, setExpectedVersion] = useState('1');
   const [configText, setConfigText] = useState('{}');
-  const [config, setConfig] = useState<TargetInstanceConfigResponse>();
+  const [configuration, setConfiguration] = useState<TargetInstanceConfigurationResponse>();
+  const [facts, setFacts] = useState<{
+    runtime?: TargetInstanceFactRuntime; host?: TargetInstanceFactHost; plugin?: TargetInstanceFactPlugin;
+  }>({});
   const [operation, setOperation] = useState<TargetOperationRef>();
   const [failure, setFailure] = useState<Failure>();
   const [notice, setNotice] = useState('');
+  const trackerScope = useMemo(() => defaultScope(instanceId), [instanceId]);
   const createInstallation = async () => {
     setFailure(undefined); setNotice('');
     let manifest: Record<string, unknown>;
@@ -358,47 +364,96 @@ function InstallationsPage({ api, revision }: { api: ApiClient; revision: number
       setInstanceId(created.instance_id);
     } catch (error) { setFailure(describeError(error)); }
   };
+  const requireInstance = () => {
+    if (!installationId || !instanceId) {
+      setFailure({ kind: 'invalid', title: '缺少安装或实例 ID', detail: '实例配置/plugin-state 使用显式安装+实例对象路径。' });
+      return false;
+    }
+    return true;
+  };
   const loadConfig = async () => {
     setFailure(undefined); setNotice('');
-    if (!parsedScope) { setFailure({ kind: 'invalid', title: 'scope 无效', detail: 'scope 必须是含 resources 的 JSON 对象。' }); return; }
+    if (!requireInstance()) return;
     try {
-      const reply = await api.instanceConfig(instanceId, parsedScope);
-      setConfig(reply); setExpectedVersion(reply.config.desired_version);
-      setConfigText(JSON.stringify(reply.config.values, null, 2));
-    } catch (error) { setFailure(describeError(error)); setConfig(undefined); }
+      const reply = await api.instanceConfiguration(installationId, instanceId);
+      setConfiguration(reply);
+      setFacts({ host: reply.host, plugin: reply.plugin });
+      setOperation(operationFrom(reply));
+      setExpectedVersion(String(reply.runtime.desired_config_version));
+      setConfigText(JSON.stringify(reply.runtime.configuration ?? {}, null, 2));
+    } catch (error) { setFailure(describeError(error)); setConfiguration(undefined); }
   };
   const setDesired = async (desired: 'DESIRED_RUNNING' | 'DESIRED_STOPPED') => {
     setFailure(undefined); setNotice('');
+    if (!requireInstance()) return;
     try {
-      const reply = await api.setInstanceDesiredState(instanceId, {
-        instance_id: instanceId, desired_state: desired, expected_version: expectedVersion,
-      } as never);
-      setOperation(operationFrom(reply as { operation?: TargetOperationRef }));
-      setNotice('期望状态命令已受理；HTTP 200/202 不代表进程已切换，请轮询 operation/state');
+      const reply = await api.setInstancePluginState(installationId, instanceId, {
+        installation_id: installationId, instance_id: instanceId, desired,
+        expected_version: expectedVersion,
+      });
+      setFacts({ runtime: reply.runtime, host: reply.host, plugin: reply.plugin });
+      setOperation(operationFrom(reply));
+      setNotice('期望状态命令已受理；runtime 期望、host 进程事实与 plugin 确认是三类独立事实，HTTP 200/202 不代表已就绪');
     } catch (error) { setFailure(describeError(error)); }
   };
   const updateConfig = async () => {
     setFailure(undefined); setNotice('');
+    if (!requireInstance()) return;
     let values: Record<string, unknown>;
     try { values = JSON.parse(configText) as Record<string, unknown>; }
-    catch { setFailure({ kind: 'invalid', title: '配置值不是合法 JSON', detail: 'values 必须是 JSON 对象。' }); return; }
+    catch { setFailure({ kind: 'invalid', title: '配置值不是合法 JSON', detail: 'configuration 必须是 JSON 对象。' }); return; }
     try {
-      const reply = await api.updateInstanceConfig(instanceId, {
-        resource: { kind: 'RESOURCE_INSTANCE', id: instanceId }, config: values,
-        expected_version: expectedVersion,
-      } as never);
-      setOperation(operationFrom(reply as { operation?: TargetOperationRef }));
-      setNotice('配置更新已受理；HTTP 200/202 不代表已应用，apply_state/applied_version 由 Runtime 独立上报');
-      await loadConfig();
+      const reply = await api.updateInstanceConfiguration(installationId, instanceId, {
+        configuration: values, expected_version: expectedVersion,
+      });
+      setConfiguration(reply);
+      setFacts({ host: reply.host, plugin: reply.plugin });
+      setOperation(operationFrom(reply));
+      setExpectedVersion(String(reply.runtime.desired_config_version));
+      setNotice('配置更新已受理；apply_state 不是 APPLIED 时只显示处理中/未确认，不显示完成');
     } catch (error) { setFailure(describeError(error)); }
   };
+  const outcomeText: Record<string, string> = {
+    EXECUTION_NOT_STARTED: '未开始', EXECUTION_KNOWN_SUCCEEDED: '已确认成功',
+    EXECUTION_KNOWN_FAILED: '已确认失败', EXECUTION_UNKNOWN: '结果未知（不等于已停止）',
+  };
+  const applyText: Record<string, string> = {
+    CONFIG_APPLY_UNSPECIFIED: '未确认', CONFIG_APPLY_PENDING: '处理中（未确认）',
+    CONFIG_APPLY_APPLIED: '已确认应用', CONFIG_APPLY_REJECTED: '已拒绝（未应用）',
+    CONFIG_APPLY_UNAVAILABLE: '不可用（未确认）',
+  };
+  const factTables = (facts.runtime || facts.host || facts.plugin) && <div className="stack">
+    {facts.runtime && <TableCard title="Runtime 事实（期望）" eyebrow="FACT 1 · RUNTIME DESIRED"
+      columns={['字段', '值']} rows={[
+        ['desired', pretty(facts.runtime.desired)],
+        ['desired_config_version', String(facts.runtime.desired_config_version ?? '—')],
+        ['version', facts.runtime.version],
+        ['observed_at', formatTime(facts.runtime.observed_at)],
+        ['说明', 'Runtime 保存的期望值，不代表 Host/插件已执行'],
+      ]} />}
+    {facts.host && <TableCard title="Host 事实（观察）" eyebrow="FACT 2 · HOST OBSERVED"
+      columns={['字段', '值']} rows={[
+        ['host_id', text(facts.host.host_id)], ['registered', facts.host.registered ? '已注册' : '未注册'],
+        ['process_outcome', outcomeText[facts.host.process_outcome] ?? facts.host.process_outcome],
+        ['observed_at', formatTime(facts.host.observed_at)],
+        ['说明', 'UNKNOWN 不等于已停止；未注册/未知时不得显示完成'],
+      ]} />}
+    {facts.plugin && <TableCard title="Plugin 事实（确认）" eyebrow="FACT 3 · PLUGIN ACK"
+      columns={['字段', '值']} rows={[
+        ['applied_config_version', String(facts.plugin.applied_config_version ?? '—')],
+        ['apply_state', `${pretty(facts.plugin.apply_state)} · ${applyText[facts.plugin.apply_state] ?? '未确认'}`],
+        ['observed_at', formatTime(facts.plugin.observed_at)],
+        ['说明', facts.plugin.apply_state === 'CONFIG_APPLY_APPLIED'
+          ? '仅 APPLIED 显示已确认完成' : '非 APPLIED：处理中/未确认，不显示完成'],
+      ]} />}
+  </div>;
   return <div className="stack">
     <BackendBanner pending={installations.pendingBackend} />
     {installations.failure && !installations.pendingBackend && <FailureNotice failure={installations.failure} />}
     <section className="table-card"><div className="table-head"><div><p className="eyebrow">LIVE · CATALOG LIST</p><h2>插件安装（目标 Runtime）</h2></div>
       <span className="count">{installations.value?.installations.length ?? 0} 条</span></div>
       <div className="row-actions"><CatalogField id={catalogId} onChange={(value) => { setCatalogId(value); setPageToken(undefined); }} /></div>
-      <p className="muted">ListInstallations 要求显式 catalog（RESOURCE_CATALOG）；缺少 catalog 时后端返回 400。安装级插件 enable/config 路径未冻结，保持待 P12a，不自造端点。</p>
+      <p className="muted">ListInstallations 要求显式 catalog（RESOURCE_CATALOG）；缺少 catalog 时后端返回 400。实例 plugin-state/configuration 使用 P12c-5 对象路径；旧 /plugins enable|config 不复用（未冻结），保持待 P12a。</p>
       <TableCard title="安装列表" eyebrow="LIVE · LIST INSTALLATIONS" columns={['安装 ID', '插件类型', '版本', '生命周期']}
         rows={(installations.value?.installations ?? []).map((item) => [item.installation_id, item.plugin_type_id, item.version, pretty(item.state)])} />
       <div className="pagination">{pageToken && <button className="secondary" onClick={() => setPageToken(undefined)}>返回首页</button>}
@@ -421,29 +476,31 @@ function InstallationsPage({ api, revision }: { api: ApiClient; revision: number
       {notice && <p className="success">{notice}</p>}{failure && <FailureNotice failure={failure} />}
     </section>
 
-    <section className="table-card"><div className="table-head"><div><p className="eyebrow">INSTANCE CONFIG · Q6</p><h2>实例配置、期望状态与版本</h2></div></div>
-      <p className="muted">配置形状为 config.instance / config.desired_version / config.values / config.applied_version / config.apply_state / config.fence / config.error / config.observed_at；版本是十进制字符串，desired 与 applied 独立，不能把 desired_version 当作已应用。</p>
-      <div className="row-actions"><label>实例 ID<input aria-label="实例 ID" value={instanceId} onChange={(event) => setInstanceId(event.target.value)} /></label>
-        <ScopeField value={scope} onChange={setScope} />
+    <section className="table-card"><div className="table-head"><div><p className="eyebrow">INSTANCE FACTS · P12c-5</p><h2>实例 plugin-state 与 configuration（三类事实）</h2></div></div>
+      <p className="muted">对象路径为 /installations/&lt;安装&gt;/instances/&lt;实例&gt;；Runtime 期望（runtime）、Host 观察（host）、Plugin 确认（plugin）是三类独立事实，非 APPLIED 只显示处理中/未确认，不能显示完成。configuration 的值由服务端脱敏，秘密永不回显；版本为十进制字符串。写操作返回 200/202 只是受理，必须轮询 operation。</p>
+      <div className="row-actions">
+        <label>安装 ID<input aria-label="实例所属安装 ID" value={installationId} onChange={(event) => setInstallationId(event.target.value)} /></label>
+        <label>实例 ID<input aria-label="实例 ID" value={instanceId} onChange={(event) => setInstanceId(event.target.value)} /></label>
         <label>expected_version<input aria-label="instance expected_version" value={expectedVersion} onChange={(event) => setExpectedVersion(event.target.value)} /></label>
-        <button className="secondary" onClick={() => void loadConfig()} disabled={!instanceId}>读取配置</button>
-        <button className="secondary" onClick={() => void setDesired('DESIRED_RUNNING')} disabled={!instanceId}>设为运行</button>
-        <button className="secondary" onClick={() => void setDesired('DESIRED_STOPPED')} disabled={!instanceId}>设为停止</button></div>
-      {config && <div className="table-wrap"><table><tbody>
-        <tr><th>instance</th><td>{config.config.instance.id}</td></tr>
-        <tr><th>desired_version</th><td>{config.config.desired_version}</td></tr>
-        <tr><th>applied_version</th><td>{String(config.config.applied_version)}</td></tr>
-        <tr><th>apply_state</th><td>{pretty(config.config.apply_state)}</td></tr>
-        <tr><th>delivery_id</th><td>{text(config.config.delivery_id)}</td></tr>
-        <tr><th>fence</th><td>{config.config.fence ? JSON.stringify(config.config.fence) : '—'}</td></tr>
-        <tr><th>values</th><td><pre className="json-preview">{JSON.stringify(config.config.values, null, 2)}</pre></td></tr>
-        <tr><th>error</th><td>{config.config.error ? `${config.config.error.code}: ${config.config.error.message}` : '—'}</td></tr>
-        <tr><th>observed_at</th><td>{formatTime(config.config.observed_at)}</td></tr>
-      </tbody></table></div>}
-      <div className="row-actions"><label>values（JSON）<textarea aria-label="实例配置值" rows={4} value={configText} spellCheck={false} onChange={(event) => setConfigText(event.target.value)} /></label>
-        <button className="secondary" onClick={() => void updateConfig()} disabled={!instanceId}>更新配置</button></div>
+        <button className="secondary" onClick={() => void loadConfig()} disabled={!installationId || !instanceId}>读取 configuration</button>
+        <button className="secondary" onClick={() => void setDesired('DESIRED_RUNNING')} disabled={!installationId || !instanceId}>设为运行</button>
+        <button className="secondary" onClick={() => void setDesired('DESIRED_STOPPED')} disabled={!installationId || !instanceId}>设为停止</button>
+      </div>
+      {notice && <p className="success">{notice}</p>}{failure && <FailureNotice failure={failure} />}
+      {configuration && <TableCard title="Runtime configuration（只读脱敏）" eyebrow="GET CONFIGURATION · NO SECRETS"
+        columns={['字段', '值']} rows={[
+          ['desired_config_version', String(configuration.runtime.desired_config_version)],
+          ['delivery_id', text(configuration.runtime.delivery_id)],
+          ['apply_state', pretty(configuration.runtime.apply_state)],
+          ['configuration（脱敏）', JSON.stringify(configuration.runtime.configuration ?? {}, null, 2)],
+          ['observed_at', formatTime(configuration.runtime.observed_at)],
+          ['说明', '密文/秘密不返回；版本变化不等于 Host/plugin 已应用'],
+        ]} />}
+      {factTables}
+      <div className="row-actions"><label>configuration（JSON 对象）<textarea aria-label="实例配置值" rows={4} value={configText} spellCheck={false} onChange={(event) => setConfigText(event.target.value)} /></label>
+        <button className="secondary" onClick={() => void updateConfig()} disabled={!installationId || !instanceId}>更新 configuration</button></div>
     </section>
-    <OperationTracker api={api} operation={operation} scope={parsedScope} />
+    <OperationTracker api={api} operation={operation} scope={trackerScope} />
   </div>;
 }
 
@@ -531,9 +588,9 @@ function TasksPage({ api, revision }: { api: ApiClient; revision: number }) {
       <div className="row-actions"><ScopeField value={scope} onChange={(value) => { setScope(value); setListToken(undefined); }} />
         <button className="secondary" onClick={() => void loadList()} disabled={!parsedScope}>刷新列表</button></div>
       {listFailure && <FailureNotice failure={listFailure} />}
-      <div className="table-wrap"><table><thead><tr><th>task ID</th><th>名称</th><th>状态</th></tr></thead><tbody>
+      <div className="table-wrap"><table><thead><tr><th>task ID</th><th>名称</th><th>状态</th><th>created_at</th></tr></thead><tbody>
         {(list?.items ?? []).map((item) => <tr key={item.id} className="clickable" onClick={() => { setTaskId(item.id); void load(item.id); }}>
-          <td>{item.id}</td><td>{text(item.name)}</td><td>{text(item.state)}</td></tr>)}
+          <td>{item.id}</td><td>{text(item.name)}</td><td>{text(item.state)}</td><td>{formatTime(item.created_at)}</td></tr>)}
       </tbody></table></div>
       {(!list || list.items.length === 0) && <p className="empty">暂无任务；查询失败时不会显示为空数据。</p>}
       <div className="pagination">{listToken && <button className="secondary" onClick={() => setListToken(undefined)}>返回首页</button>}
@@ -634,14 +691,23 @@ function HealthBoard({ api, revision }: { api: ApiClient; revision: number }) {
   const [aggregate, setAggregate] = useState<Failure>();
   const [health, setHealth] = useState<Awaited<ReturnType<ApiClient['health']>>>();
   const [identityUnavailable, setIdentityUnavailable] = useState(false);
+  const [healthConsent, setHealthConsent] = useState<Failure>();
+  const [unimplemented, setUnimplemented] = useState(false);
   const [probes, setProbes] = useState<{ live?: string; ready?: string; readyFailure?: Failure }>();
   useEffect(() => {
     let active = true;
     setHealth(undefined); setAggregate(undefined); setIdentityUnavailable(false);
+    setHealthConsent(undefined); setUnimplemented(false);
     api.health().then((value) => { if (active) setHealth(value); }).catch((error: unknown) => {
       if (!active) return;
+      const failure = describeError(error);
+      if (failure.status === 401 || failure.status === 403) { setHealthConsent(failure); return; }
+      if (error instanceof ApiError && error.status === 503 &&
+          (error.code === 'CAPABILITY_NOT_SUPPORTED' || error.code === 'UNIMPLEMENTED')) {
+        setUnimplemented(true); return;
+      }
       if (isUnavailable(error)) { setIdentityUnavailable(true); return; }
-      setAggregate(describeError(error));
+      setAggregate(failure);
     });
     Promise.allSettled([api.healthLive(), api.healthReady()]).then(([live, ready]) => {
       if (!active) return;
@@ -655,6 +721,14 @@ function HealthBoard({ api, revision }: { api: ApiClient; revision: number }) {
   }, [api, revision]);
   const components = new Map((health?.components ?? []).map((item) => [item.component.toLowerCase(), item]));
   return <div className="stack">
+    {healthConsent && <div role="alert" className="failure forbidden">
+      <strong>未授权：/api/v1/health 需要 health.read</strong>
+      <p>{healthConsent.title}。这是权限/会话问题，不代表服务不健康；匿名 /health/live 与 /health/ready 探针仍可单独查看。</p>
+    </div>}
+    {unimplemented && <div role="alert" className="failure unavailable">
+      <strong>健康聚合暂未实现（HTTP 503 CAPABILITY_NOT_SUPPORTED）</strong>
+      <p>受权 /api/v1/health 仍未实现或该能力不可用；匿名 live/ready 探针继续显示。不能把它当作 Identity UNHEALTHY，也不能伪造四个依赖状态。</p>
+    </div>}
     {identityUnavailable && <div role="alert" className="failure unavailable">
       <strong>Identity 未就绪：受权健康聚合返回 503</strong>
       <p>健康聚合的 503 表示 Identity/凭证链异常；不得显示为空依赖或正常状态。Runtime/Scheduler/Model 当前状态未知，需待 Identity 恢复后重新聚合。</p>
@@ -691,11 +765,11 @@ function OverviewPage({ api, permissions, revision }: { api: ApiClient; permissi
     <HealthBoard api={api} revision={revision} />
     <TableCard title="Q1–Q8 口径落地" eyebrow="DECISIONS" columns={['决策', '落地']} rows={[
       ['Q1 Action', 'QueryActionResult → 动作页；NOT_FOUND 显示未找到，不推断失败'],
-      ['Q2 日志/审计', '权威源未接线时 503 显示「数据源暂不可用」，不显示空数据'],
+      ['Q2 日志/审计', 'P12e 未合入前 503 显示「数据源暂不可用」；合入后按 occurred_at+ID 分页令牌消费'],
       ['Q3 groups', '不使用旧 /groups；群白名单走 ActionPolicy'],
       ['Q4 主体', 'ListPrincipals 人类主体目录已接线（权限/503 显式）'],
       ['Q5 健康', 'live/ready 探针 + 四依赖聚合；DEGRADED(200) 与 Identity 异常(503) 区分'],
-      ['Q6 安装实例', '实例 desired-state/config；创建安装/实例；不复用 /plugins enable'],
+      ['Q6 安装实例', '实例 plugin-state/configuration 三类事实；创建安装/实例；不复用 /plugins enable'],
       ['Q7 模型', 'model.read 元数据，model.manage 配置/更新；密钥只显示已配置与版本'],
       ['Q8 验收', '异步 operation 轮询；WS 断流后 REST 快照重拉，不当作最新'],
     ]} />

@@ -128,16 +128,24 @@ describe('P12d-2 live expansion', () => {
     render(<P12LiveView page="p12-installations" api={api} permissions={['plugin.read', 'plugin.manage']} revision={0} />);
     fireEvent.change(await screen.findByLabelText('plugin type ID'), { target: { value: 'welcome' } });
     fireEvent.click(screen.getByRole('button', { name: '创建安装' }));
-    expect(await screen.findByText(/installation-mock-created/)).toBeInTheDocument();
+    expect((await screen.findAllByText(/installation-mock-created/)).length).toBeGreaterThan(0);
     fireEvent.change(screen.getByLabelText('创建实例的安装 ID'), { target: { value: 'installation-mock-created' } });
     fireEvent.change(screen.getByLabelText('host ID'), { target: { value: 'host-1' } });
     fireEvent.click(screen.getByRole('button', { name: '创建实例' }));
-    expect(await screen.findByText(/instance-mock-created/)).toBeInTheDocument();
+    expect((await screen.findAllByText(/instance-mock-created/)).length).toBeGreaterThan(0);
     fireEvent.change(screen.getByLabelText('实例 ID'), { target: { value: 'instance-mock-created' } });
-    fireEvent.click(screen.getByRole('button', { name: '读取配置' }));
-    expect(await screen.findByText('desired_version')).toBeInTheDocument();
-    expect(screen.getByText('applied_version')).toBeInTheDocument();
-    expect(server.requests).toContain('/instances/instance-mock-created/config');
+    fireEvent.click(screen.getByRole('button', { name: '读取 configuration' }));
+    expect(await screen.findByText('Runtime configuration（只读脱敏）')).toBeInTheDocument();
+    expect(screen.getByText('Host 事实（观察）')).toBeInTheDocument();
+    expect(screen.getByText('Plugin 事实（确认）')).toBeInTheDocument();
+    expect(screen.getAllByText('desired_config_version').length).toBeGreaterThan(0);
+    expect(server.requests).toContain('/installations/installation-mock-created/instances/instance-mock-created/configuration');
+    fireEvent.click(screen.getByRole('button', { name: '设为运行' }));
+    expect(await screen.findByText('Runtime 事实（期望）')).toBeInTheDocument();
+    expect(screen.getByText('Plugin 事实（确认）')).toBeInTheDocument();
+    expect(screen.getAllByText(/处理中（未确认）/).length).toBeGreaterThan(0);
+    expect(screen.queryByText('已确认应用')).not.toBeInTheDocument();
+    expect(server.requests).toContain('/installations/installation-mock-created/instances/instance-mock-created/plugin-state');
   });
 
   it('shows operation state instead of inferring completion from HTTP 200', async () => {
@@ -191,5 +199,58 @@ describe('P12d-2 live expansion', () => {
     fireEvent.click(within(screen.getByRole('navigation')).getByRole('button', { name: '账号（P12）' }));
     expect(await screen.findByText('account-qq-10001')).toBeInTheDocument();
     expect(server.requests).toContain('/accounts');
+  });
+});
+
+
+describe('P12d-3 instance facts, health auth, TaskSummary', () => {
+  it('shows three facts and never marks non-APPLIED plugin state as complete', async () => {
+    const server = new MockServer();
+    const api = new ApiClient(server.fetch);
+    api.setToken('mock-access-token-0123456789');
+    render(<P12LiveView page="p12-installations" api={api} permissions={['plugin.read', 'plugin.manage']} revision={0} />);
+    fireEvent.change(screen.getByLabelText('实例所属安装 ID'), { target: { value: 'installation-welcome-01' } });
+    fireEvent.change(screen.getByLabelText('实例 ID'), { target: { value: 'instance-welcome-01' } });
+    fireEvent.change(screen.getByLabelText('instance expected_version'), { target: { value: '1' } });
+    fireEvent.click(screen.getByRole('button', { name: '设为运行' }));
+    expect(await screen.findByText('Runtime 事实（期望）')).toBeInTheDocument();
+    expect(screen.getByText('Host 事实（观察）')).toBeInTheDocument();
+    expect(screen.getByText('Plugin 事实（确认）')).toBeInTheDocument();
+    expect(screen.getByText(/结果未知（不等于已停止）/)).toBeInTheDocument();
+    expect(screen.getAllByText(/处理中（未确认）/).length).toBeGreaterThan(0);
+    expect(screen.queryByText('已确认应用')).not.toBeInTheDocument();
+  });
+
+  it('renders health.read 401 as unauthorized, not unhealthy', async () => {
+    const server = new MockServer();
+    server.failures.set('/health', { status: 401, code: 'UNAUTHENTICATED' });
+    const api = new ApiClient(server.fetch);
+    api.setToken('mock-access-token-0123456789');
+    render(<P12LiveView page="p12-health" api={api} permissions={['health.read']} revision={0} />);
+    expect(await screen.findByText(/未授权：\/api\/v1\/health 需要 health.read/)).toBeInTheDocument();
+    expect(screen.queryByText(/Identity 未就绪：受权健康聚合返回 503/)).not.toBeInTheDocument();
+    expect(server.requests).toContain('/health/live');
+    expect(server.requests).toContain('/health/ready');
+  });
+
+  it('distinguishes an unimplemented aggregate 503 from Identity unhealthy', async () => {
+    const server = new MockServer();
+    server.failures.set('/health', { status: 503, code: 'CAPABILITY_NOT_SUPPORTED' });
+    const api = new ApiClient(server.fetch);
+    api.setToken('mock-access-token-0123456789');
+    render(<P12LiveView page="p12-health" api={api} permissions={['health.read']} revision={0} />);
+    expect(await screen.findByText(/健康聚合暂未实现（HTTP 503 CAPABILITY_NOT_SUPPORTED）/)).toBeInTheDocument();
+    expect(screen.queryByText(/Identity 未就绪：受权健康聚合返回 503/)).not.toBeInTheDocument();
+  });
+
+  it('renders TaskSummary rows with name/state/created_at', async () => {
+    const server = new MockServer();
+    const api = new ApiClient(server.fetch);
+    api.setToken('mock-access-token-0123456789');
+    render(<P12LiveView page="p12-tasks" api={api} permissions={['task.read']} revision={0} />);
+    expect(await screen.findByText('task-mock-01')).toBeInTheDocument();
+    expect(screen.getByText('定时摘要')).toBeInTheDocument();
+    expect(screen.getByText('SCHEDULED_TASK_PENDING')).toBeInTheDocument();
+    expect(screen.getByText('created_at')).toBeInTheDocument();
   });
 });
