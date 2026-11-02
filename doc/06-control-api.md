@@ -66,6 +66,7 @@ control/api/
 /api/v1/models
 /api/v1/groups
 /api/v1/users
+/api/v1/principals
 /api/v1/tasks
 /api/v1/actions
 /api/v1/logs
@@ -98,7 +99,7 @@ control/api/
 
 分页规范：使用不透明 `page_token`；默认 20 条、最大 100 条；token 绑定当前用户、资源、权限、页大小和十分钟不可变快照；排序及无过滤参数规则以 T08a 和 OpenAPI x-control-policy 为准。
 
-`GET /groups` 返回群组标识、角色和有效权限标识；`GET /users` 返回用户所属群组、有效角色和有效权限标识。权限由服务端计算并执行，客户端只展示结果。`GET /logs` 返回脱敏后的日志时间、级别、组件、消息及可选 trace ID；日志不得包含凭据。
+`GET /groups` 返回群组标识、角色和有效权限标识；`GET /users` 返回用户所属群组、有效角色和有效权限标识。P12 目标目录改用只读 `GET /api/v1/principals`：Identity `ListPrincipals` 按调用者 `identity.principal.read` 与实际获授资源范围返回人类主体的分页快照，Control 只透出最小展示字段（principal_id、binding、state、version、roles），不混入服务/Host/插件身份，也不返回凭据；普通用户查看自己仍用 `/auth/me`。权限由服务端计算并执行，客户端只展示结果。`GET /logs` 返回脱敏后的日志时间、级别、组件、消息及可选 trace ID；日志不得包含凭据。
 
 P12 目标权限补充：`PERMISSION_LOG_READ = 48`（`log.read`）与 `PERMISSION_AUDIT_READ = 49`（`audit.read`）是分开的敏感读权限，固定角色和创建策略都不派生；`/logs` 只要求 `log.read`，`/audit` 只要求 `audit.read`，二者不能互相替代。Control 只做只读聚合，数据归属各业务服务；缺少权威查询来源时返回 `UNAVAILABLE`（HTTP 503），不得返回成功空页。日志/审计分页按 `occurred_at` + 稳定 ID，响应不含凭据、消息正文或模型密钥。
 

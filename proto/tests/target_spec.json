@@ -178,6 +178,23 @@
     },
     {
       "service": "IdentityService",
+      "method": "ListPrincipals",
+      "file": "identity.proto",
+      "request": "IdentityListPrincipalsRequest",
+      "response": "IdentityListPrincipalsResponse",
+      "caller": "scoped Control administrator (identity.principal.read + currently granted resource scope)",
+      "permission": "identity.principal.read",
+      "risk": "online",
+      "mutating": false,
+      "idempotency": "none",
+      "deadline_ms": 2000,
+      "server_streaming": false,
+      "status": "not_implemented",
+      "max_deadline_ms": 5000,
+      "requires_idempotency_key": false
+    },
+    {
+      "service": "IdentityService",
       "method": "IssueDelegation",
       "file": "identity.proto",
       "request": "IdentityIssueDelegationRequest",

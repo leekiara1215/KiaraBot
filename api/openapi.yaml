@@ -59,6 +59,7 @@ x-contract-status:
     - getModelMetadata
     - updateModel
     - rotateProviderSecret
+    - listPrincipals
     - listAssignments
     - setAssignment
     - revokeAssignment
@@ -144,6 +145,16 @@ x-control-policy:
       intended semantics above are frozen for the control-api implementation;
       until then both query paths return NOT_FOUND and clients must not treat
       that as proof of failure (use the plugin bridge query while connected).
+  principal_directory:
+    operation: listPrincipals
+    target_rpc: IdentityService.ListPrincipals
+    projection: >-
+      Human principals only. Service, Host and plugin-instance identities are excluded, and the
+      response never contains credentials, secret material or authorization assignments.
+    fields: [principal_id, binding, principal_kind, state, version, roles]
+    scope: The caller must hold identity.principal.read and the page is filtered by its currently
+      granted resource scope; no role wildcard and no cross-scope rows.
+    status: not_implemented in the v1 Control path; the contract is frozen for P12c/P12d.
   plugin_commands: 202 means durably accepted, not completed. Enable/disable controls registration and new delivery, without claiming process start or cancellation of existing external effects. Query plugin status/health for completion.
   plugin_configuration: Config writes compare expected_version before commit and persist non-secret control values. Successful writes confirm persistence only. GET includes live delivery status; APPLIED requires a matching plugin.config.v1 acknowledgement.
   limits: Login is limited to 30 attempts per normalized username per minute. At most 4096 unexpired authentication sessions, 10000 retained successful receipts and 1024 in-memory page cursors. Exceeding a limit returns RATE_LIMITED.
@@ -2477,6 +2488,45 @@ paths:
             schema:
               "$ref": "#/components/schemas/TargetIdentityRevokeAssignmentRequest"
   /principals:
+    get:
+      operationId: listPrincipals
+      x-target-owner-rpc: IdentityService.ListPrincipals
+      x-target-response-schema: '#/components/schemas/TargetIdentityListPrincipalsResponse'
+      x-target-contract-status: not_implemented
+      x-permission: identity.principal.read
+      summary: List human principals visible to the caller
+      description: >-
+        Target P12 read-only principal directory. Only human principals are listed; service, Host
+        and plugin-instance identities are excluded. The caller must hold identity.principal.read
+        and the page is filtered by its currently granted resource scope. Results are an immutable
+        snapshot with the Identity checked_at/version facts; deleted/purged principals are never
+        returned. The projection is display-only and never includes credentials or assignments.
+        v1 Control wiring is not_implemented; until then this path returns UNAVAILABLE rather than
+        an empty success page.
+      parameters:
+      - $ref: '#/components/parameters/PageSize'
+      - $ref: '#/components/parameters/PageToken'
+      - name: state
+        in: query
+        required: false
+        description: Optional current lifecycle filter; absent returns all non-deleted visible humans.
+        schema:
+          type: string
+          enum: [LIFECYCLE_ACTIVE, LIFECYCLE_DISABLED, LIFECYCLE_DELETING, LIFECYCLE_RESTORING]
+      responses:
+        '200':
+          description: Principal page from the Identity snapshot
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TargetIdentityListPrincipalsResponse'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/Internal' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+        '504': { $ref: '#/components/responses/Timeout' }
     post:
       operationId: registerPrincipal
       summary: Identity RegisterPrincipal
@@ -5789,6 +5839,54 @@ components:
         checked_at:
           type: string
           format: date-time
+      x-contract-status: not_implemented
+    TargetIdentityPrincipalSummary:
+      type: object
+      additionalProperties: false
+      required:
+      - principal_id
+      - principal_kind
+      - state
+      - version
+      properties:
+        principal_id:
+          type: string
+          minLength: 1
+        binding:
+          "$ref": "#/components/schemas/TargetResourceRef"
+        principal_kind:
+          type: string
+          enum: [human]
+        version:
+          "$ref": "#/components/schemas/TargetPositiveUint64"
+        state:
+          type: string
+          enum: [LIFECYCLE_ACTIVE, LIFECYCLE_DISABLED, LIFECYCLE_DELETING, LIFECYCLE_RESTORING]
+        roles:
+          type: array
+          items:
+            type: string
+            enum: [ROLE_ADMIN, ROLE_OPERATOR, ROLE_VIEWER]
+      description: Display-only human principal projection; no credentials or assignments.
+      x-contract-status: not_implemented
+    TargetIdentityListPrincipalsResponse:
+      type: object
+      additionalProperties: false
+      required:
+      - principals
+      - page
+      - checked_at
+      properties:
+        principals:
+          type: array
+          items:
+            "$ref": "#/components/schemas/TargetIdentityPrincipalSummary"
+        page:
+          "$ref": "#/components/schemas/TargetSnapshotPage"
+        checked_at:
+          type: string
+          format: date-time
+      description: Identity snapshot page; checked_at is the authoritative Identity observation.
       x-contract-status: not_implemented
     TargetCurrentTokenPair:
       type: object

@@ -339,7 +339,10 @@
       "ModelEnableModelRequest": "not_implemented",
       "ModelEnableModelResponse": "not_implemented",
       "ModelResolveModelCallRequest": "not_implemented",
-      "ModelResolveModelCallResponse": "not_implemented"
+      "ModelResolveModelCallResponse": "not_implemented",
+      "IdentityPrincipalSummary": "not_implemented",
+      "IdentityListPrincipalsRequest": "not_implemented",
+      "IdentityListPrincipalsResponse": "not_implemented"
     },
     "proto_fields": {
       "Account.account_id": "implemented",
@@ -1520,7 +1523,19 @@
       "ModelResolveModelCallRequest.logical_call_id": "not_implemented",
       "ModelResolveModelCallRequest.expected_version": "not_implemented",
       "ModelResolveModelCallRequest.disposition": "not_implemented",
-      "ModelResolveModelCallResponse.call": "not_implemented"
+      "ModelResolveModelCallResponse.call": "not_implemented",
+      "IdentityPrincipalSummary.principal_id": "not_implemented",
+      "IdentityPrincipalSummary.binding": "not_implemented",
+      "IdentityPrincipalSummary.principal_kind": "not_implemented",
+      "IdentityPrincipalSummary.version": "not_implemented",
+      "IdentityPrincipalSummary.state": "not_implemented",
+      "IdentityPrincipalSummary.roles": "not_implemented",
+      "IdentityListPrincipalsRequest.context": "not_implemented",
+      "IdentityListPrincipalsRequest.page": "not_implemented",
+      "IdentityListPrincipalsRequest.state_filter": "not_implemented",
+      "IdentityListPrincipalsResponse.principals": "not_implemented",
+      "IdentityListPrincipalsResponse.page": "not_implemented",
+      "IdentityListPrincipalsResponse.checked_at": "not_implemented"
     },
     "event_payloads": {
       "EventEnvelope.message_received": "implemented",
@@ -1809,7 +1824,8 @@
       "operations.getInstanceConfig": "not_implemented",
       "operations.getCredentialStatus": "not_implemented",
       "operations.createSharedNamespace": "not_implemented",
-      "operations.getSharedNamespace": "not_implemented"
+      "operations.getSharedNamespace": "not_implemented",
+      "operations.listPrincipals": "not_implemented"
     },
     "semantic_rules": {
       "semantic.action.deadline_max_300s": "not_implemented",
@@ -5517,6 +5533,57 @@
     ],
     "Permission.PERMISSION_AUDIT_READ": [
       "doc/06-control-api.md",
+      "api/openapi.yaml"
+    ],
+    "IdentityPrincipalSummary.principal_id": [
+      "api/openapi.yaml",
+      "proto/kiarabot/v1/identity.proto"
+    ],
+    "IdentityPrincipalSummary.binding": [
+      "api/openapi.yaml",
+      "proto/kiarabot/v1/identity.proto"
+    ],
+    "IdentityPrincipalSummary.principal_kind": [
+      "api/openapi.yaml",
+      "proto/kiarabot/v1/identity.proto"
+    ],
+    "IdentityPrincipalSummary.version": [
+      "api/openapi.yaml",
+      "proto/kiarabot/v1/identity.proto"
+    ],
+    "IdentityPrincipalSummary.state": [
+      "api/openapi.yaml",
+      "proto/kiarabot/v1/identity.proto"
+    ],
+    "IdentityPrincipalSummary.roles": [
+      "api/openapi.yaml",
+      "proto/kiarabot/v1/identity.proto"
+    ],
+    "IdentityListPrincipalsRequest.context": [
+      "api/openapi.yaml",
+      "proto/kiarabot/v1/identity.proto"
+    ],
+    "IdentityListPrincipalsRequest.page": [
+      "api/openapi.yaml",
+      "proto/kiarabot/v1/identity.proto"
+    ],
+    "IdentityListPrincipalsRequest.state_filter": [
+      "api/openapi.yaml",
+      "proto/kiarabot/v1/identity.proto"
+    ],
+    "IdentityListPrincipalsResponse.principals": [
+      "api/openapi.yaml",
+      "proto/kiarabot/v1/identity.proto"
+    ],
+    "IdentityListPrincipalsResponse.page": [
+      "api/openapi.yaml",
+      "proto/kiarabot/v1/identity.proto"
+    ],
+    "IdentityListPrincipalsResponse.checked_at": [
+      "api/openapi.yaml",
+      "proto/kiarabot/v1/identity.proto"
+    ],
+    "operations.listPrincipals": [
       "api/openapi.yaml"
     ]
   },

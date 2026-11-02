@@ -227,6 +227,36 @@ message IdentityGetPrincipalStatusResponse {
   PrincipalRecord principal = 1;
 }
 
+// P12 target read-only Control principal directory. Only human principals are returned; service,
+// Host and plugin instance identities never appear here. This is a display projection, not an
+// authorization basis, and it never carries credentials or secret material.
+// CONTRACT_STATUS: not_implemented - P12 target declaration, no producer.
+message IdentityPrincipalSummary {
+  string principal_id = 1;
+  ResourceRef binding = 2;
+  // Always "human" for this projection; non-human principals are excluded server-side.
+  string principal_kind = 3;
+  uint64 version = 4;
+  LifecycleState state = 5;
+  repeated FixedRole roles = 6;
+}
+
+// CONTRACT_STATUS: not_implemented - P12 target declaration, no producer.
+message IdentityListPrincipalsRequest {
+  RequestContext context = 1;
+  SnapshotPage page = 2;
+  // LIFECYCLE_UNSPECIFIED returns every non-deleted visible human principal; other values filter
+  // by current lifecycle state. Deleted/purged principals are never returned.
+  LifecycleState state_filter = 3;
+}
+
+// CONTRACT_STATUS: not_implemented - P12 target declaration, no producer.
+message IdentityListPrincipalsResponse {
+  repeated IdentityPrincipalSummary principals = 1;
+  SnapshotPage page = 2;
+  google.protobuf.Timestamp checked_at = 3;
+}
+
 // CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
 message IdentityIssueDelegationRequest {
   RequestContext context = 1;
@@ -462,6 +492,16 @@ service IdentityService {
     option (requires_online_authorization) = true;
   }
   rpc GetPrincipalStatus(IdentityGetPrincipalStatusRequest) returns (IdentityGetPrincipalStatusResponse) {
+    option (required_permission) = PERMISSION_IDENTITY_PRINCIPAL_READ;
+    option (requires_idempotency) = false;
+    option (default_deadline_ms) = 2000;
+    option (max_deadline_ms) = 5000;
+    option (requires_online_authorization) = true;
+  }
+  // P12 target: scoped Control directory query. The caller must hold identity.principal.read and
+  // the returned page is filtered by the caller's currently granted resource scope. Read-only;
+  // no idempotency key and no operation/credential material.
+  rpc ListPrincipals(IdentityListPrincipalsRequest) returns (IdentityListPrincipalsResponse) {
     option (required_permission) = PERMISSION_IDENTITY_PRINCIPAL_READ;
     option (requires_idempotency) = false;
     option (default_deadline_ms) = 2000;
