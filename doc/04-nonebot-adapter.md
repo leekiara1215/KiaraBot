@@ -10,11 +10,11 @@
 
 适配器支持 action.send_message.text.v1、action.react_message.v1、action.delete_message.v1、action.mute_member.v1、action.kick_member.v1 与 action.approve_request.v1：SendMessage 的纯文本群/私聊转换为 OneBot send_group_msg/send_private_msg；ReactMessage 的群/私聊转换为 NapCat 扩展 API set_msg_emoji_like（reaction token → emoji ID 的映射见适配器 `REACTIONS`；该 API 不属于 OneBot V11 标准动作集，真实平台行为待 T07b 验证）；DeleteMessage 转换为 delete_msg，只允许撤回本适配器记录过的已发送消息；MuteMember 转换为 set_group_ban（duration 1–2592000 秒）；KickMember 转换为 set_group_kick（`reason` 只作为 Core 审计元数据，不下发平台）；ApproveRequest 用 `request_id` 解析本机保存的好友请求 `flag` 后调用 set_friend_add_request（`reason` 不同样下发）。会话 ID 使用与事件一致的原生数字 ID（见「会话 ID 规范」）；只使用注册账号的 Bot。执行前核验目标身份、消息格式、能力和 deadline。其他操作/消息段拒绝 CAPABILITY_NOT_SUPPORTED，不降级丢字段。Core 负责业务授权，适配器不接受插件直接调用。
 
-Action 执行日志使用独立本机 SQLite 文件（默认 OUTBOX_PATH 加 .actions），按 action_id 和内容 fingerprint 去重；执行前持久化占用，终态保存后才回传。正常重投返回原结果。平台调用超时、取消或进程在调用后退出时保留 ACCEPTED/未知，不重复调用平台；Core 可查询并最终按 deadline 过期。此策略避免重复副作用，但不能提供平台不支持的端到端 exactly-once。无已知平台结果时不伪造 FAILED。日志容量有上限，终态保留七天，未终态不自动删除。
+Action 执行日志使用独立本机 SQLite 文件（默认 OUTBOX_PATH 加 .actions），P07c 起为带 dispatch attempt 的 journal：执行前先持久登记（action_id+内容 fingerprint+attempt），只有平台明确成功/拒绝才写终态；平台调用超时、取消、断线或进程在调用中退出都保持 **UNKNOWN 证据**并永不自动重放平台调用。journal 按 action_id+fingerprint 去重，同内容重投返回已知结果/UNKNOWN、不同内容回 `CONFLICT`。结果/证据必须等 Runtime `action_receipt` 才标记已上报，否则重连（含崩溃重启）按原 attempt 重发。此策略避免重复副作用，但不能提供平台不支持的端到端 exactly-once；日志容量有上限，终态保留七天。
 
-## P07 Adapter Action 日志与回执（目标，未实现）
+## P07 Adapter Action 日志与回执（P07c 适配器侧已实现，2026-11-02）
 
-P07 目标适配器在既有 action journal 上补 `dispatch_attempt_id/dispatch_sequence` 关联：收到 `CoreToAdapter.action` 先持久登记（action_id+内容 hash+attempt）再调平台；终态用 `action_result`（`ActionResult.execution_outcome`+attempt）上报，平台调用后结果未知用 `action_evidence`（`UNKNOWN`）上报，收到 `CoreToAdapter.action_receipt` 的 `RECORDED/DUPLICATE/EVIDENCE_ONLY` 才标记已上报，`CONFLICT` 保留证据等待人工/下次校验。迟到结果在 Runtime 已 EXPIRED 时只作证据，不重发平台；同一 action_id 重投先返回已知结果/未知，绝不重复执行。已完成但结果丢失后重连仍按原 action_id 上报；旧 adapter 实例未知执行不跨实例接管。以上为契约冻结，实现随 P07c。
+目标 Action 帧实现：`CoreToAdapter.action` 必带 Runtime 生成的 `dispatch_attempt_id`（UUIDv4）与 `dispatch_sequence`（≥1）；缺失/非法时不执行并断开重连（无法关联的报告不伪造）。执行前先在本地 journal 持久 attempt+内容 hash，再调平台。上报分两类：终态 `AdapterToCore.action_result` 只允许 `SUCCEEDED`/`FAILED`，分别带 `EXECUTION_KNOWN_SUCCEEDED`/`EXECUTION_KNOWN_FAILED` 并回带 attempt；非终态 `AdapterToCore.action_evidence` 用于 `NOT_STARTED`（deadline 已过/未执行，`last_error=TIMEOUT`）与 `UNKNOWN`（平台调用后结果未知）。`CoreToAdapter.action_receipt` 的 `RECORDED`/`DUPLICATE`/`EVIDENCE_ONLY` 把报告标记已上报；`CONFLICT` 停止重发该 attempt 并保留回执审计（避免无限重发；与契约“否则重发”的字面差异待 P07a 对齐），迟到结果由 Runtime 按 EXPIRED 记为 `EVIDENCE_ONLY`，不覆盖适配器已观测终态。崩溃重启会把 `claimed` 未完成 attempt 恢复为 UNKNOWN 证据并按原 attempt 补报；已完成结果丢失后重连仍重发；重复派发（同 attempt 或新 attempt）只回放已知结果/UNKNOWN，绝不重复调平台；旧 adapter 实例未知执行不跨实例接管。P07a Runtime 侧与 P06a-2 合入前，以上行为由 `FakeTargetRuntime` 验证；真实目标端到端属 P07 验收。
 
 ## 责任
 
@@ -217,6 +217,7 @@ refresh只接受当前实际流、未过期未撤销的proof/refresh及正refres
 外部适配器在 P06 只连 Runtime 的外部 Bridge 监听（`bridge_listen`，server-verified TLS，不要求客户端证书）：部署一次交付的 `bootstrap_credential`（来自 `RuntimeBindAdapterResponse.bootstrap_credential`）经 gRPC metadata `authorization: Bearer <credential>` 提交，首帧 `RegisterAdapterRequest.adapter_instance_id` 必须与凭据解析出的 adapter 资源一致；成功响应带 `Fence`+`ConnectionAuthorization`，之后事件/心跳/refresh 帧都带完整 `Fence` 与当前 `connection_proof`。事件仍须先在本地 SQLite 持久 event+sequence 再上报；只有 `PERSISTED`/`DUPLICATE` 才释放 outbox 项，`REJECTED` 中 `retryable=true` 保留重投，容量背压 `RATE_LIMITED` 可重试并关闭本次流（适配器保留未确认事件）。bootstrap/proof/refresh 明文不得写入 outbox、日志或错误信息；不实现自报客户端证书或旧 proof 回退。适配器的 TLS/bootstrap/帧改造属 P06c：**第一阶段已实现**（server-verified TLS、bootstrap metadata 注册、
 `Fence`+`connection_proof` 每帧、单飞 refresh、事件 ACK/背压、`ShutdownNotice`、能力协商与
 `/health/ready` 授权门禁；测试见 `adapters/nonebot/tests/{test_bridge,test_client,test_nonebot_process}.py`
-与 `FakeTargetRuntime`）。未完成项：P07 Action `action_evidence`/`action_receipt` 回执与
-dispatch attempt 关联（P07c）、真实 QQ/NapCat 回归（P07/M2）、P06a Runtime Bridge handler 就绪后
-的真实目标服务端到端验收。unary RuntimeService 注册/事件方法不供适配器使用。
+与 `FakeTargetRuntime`；P07c Action dispatch/evidence/receipt/journal 已在该夹具验证）。未完成项：
+真实 QQ/NapCat 回归（P07/M2）、P07a Runtime 侧与 P06a-2 Bridge handler 就绪后的真实目标端到端
+验收（含 receipt CONFLICT 字面语义与真实 Runtime 核对）。unary RuntimeService 注册/事件方法不供
+适配器使用。

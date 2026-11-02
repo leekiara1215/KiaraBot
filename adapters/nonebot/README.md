@@ -53,10 +53,19 @@ gRPC/token 兼容模式：连接使用 server-verified TLS，注册使用部署�
   只有 `PERSISTED`/`DUPLICATE` 才释放 outbox 项。`REJECTED` 中 `retryable=true`（含
   `RATE_LIMITED` 背压）保留未确认事件并按 `retry_after_ms` 退避重连重投；永久拒绝记录
   `failed` 与稳定码。相同 event_id 不同内容在 Runtime 侧为 `CONFLICT`，适配器不覆盖本地记录。
-- Action 仅执行注册协商后 `effective_capabilities` 内的种类；未协商的 payload 以
-  `CAPABILITY_NOT_SUPPORTED` 终态回传，不调用平台。Action 执行日志保留既有
-  action_id+fingerprint 去重与“未知结果不重放”语义；目标 Action 回执（`action_evidence`/
-  `action_receipt`）属 P07c，本阶段仅以 `action_result` 帧上报。
+- Action（P07c 目标帧）：仅执行注册协商后 `effective_capabilities` 内的种类；未协商或
+  参数/权限前置检查失败以 `FAILED`+`KNOWN_FAILED` 终态回传，不调用平台。Runtime 下发的
+  `dispatch_attempt_id/dispatch_sequence` 缺失或非法时**不执行**并断开重连（无法关联的报告
+  不伪造）；正常执行先把 attempt+内容 fingerprint 写入本地 journal 再调平台。
+- 上报：平台明确成功/拒绝用 `action_result`（`SUCCEEDED`/`FAILED` + `execution_outcome`
+  `KNOWN_SUCCEEDED`/`KNOWN_FAILED`，回带 attempt）；deadline 已过、未执行用
+  `action_evidence`（`NOT_STARTED`+`TIMEOUT`）；平台调用超时/断线/未知结果用
+  `action_evidence`（`UNKNOWN`）且**永不自动重放平台调用**。同一 action_id+内容重派发只回放
+  已知结果/UNKNOWN（新 attempt 原样关联），不同内容回 `CONFLICT`。
+- 确认：Runtime `action_receipt` 的 `RECORDED`/`DUPLICATE`/`EVIDENCE_ONLY` 才把 journal 标记
+  已上报；`CONFLICT` 停止重发该 attempt 并把回执留作审计；无回执的结果/证据在重连（含进程
+  重启恢复 `UNKNOWN`）后按原 attempt 重发。迟到结果由 Runtime 按 EXPIRED 处理为
+  `EVIDENCE_ONLY`，适配器本地已观测的终态不被覆盖。
 - OneBot 消息段/映射规则与 reference 相同：text/image/at/reply 映射，其它段 `UNKNOWN`；
   群/私聊由 `ConversationRef.type` 区分，会话 ID 为原生数字。适配器只使用注册账号的 Bot。
 
@@ -79,9 +88,10 @@ cd adapters/nonebot && ./.venv/bin/python -m pytest -q
 协议故障）与 disposable 测试证书；`python -c ...` 需要 `openssl` 生成临时自签证书。覆盖：
 注册协商与帧 fencing、bootstrap/CA/秘密文件错误、事件 ACK 三态与背压重投、refresh 轮换/
 冲突/丢响应/失权、`ShutdownNotice` drain、协议违规/响应 fence 失配重连、能力协商与 Action
-执行、真实 NoneBot 子进程 + loopback OneBot 平台全链路、秘密不落日志。**真实 QQ/NapCat
-验收与 P07 Action 回执留 P07/M2**；`scripts/local/*` 单机 reference MVP 冻结在 reference
-分支，不随目标适配器工作。
+执行、P07 action 结果/证据/receipt/重连补报/进程崩溃恢复/重复派发/迟到回执、真实 NoneBot
+子进程 + loopback OneBot 平台全链路、秘密不落日志。**真实 QQ/NapCat 验收留 P07/M2**；
+Runtime 侧 P07a handler 与 P06a-2 合入后需复跑真实目标端到端；`scripts/local/*` 单机
+reference MVP 冻结在 reference 分支，不随目标适配器工作。
 
 ## 初始化与生产注意
 
