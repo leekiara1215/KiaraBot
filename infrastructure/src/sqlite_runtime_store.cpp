@@ -159,6 +159,12 @@ SqliteRuntimeStore::open(const std::string& path) {
                       nullptr) != SQLITE_OK) {
     return core::StorageError::Unavailable;
   }
+  // Concurrent compare-and-swap commits from separate connections can both acquire a read
+  // snapshot and then contend for the write lock. Without a busy timeout SQLite returns
+  // SQLITE_BUSY to both losers and the contract's "exactly one commit wins" liveness
+  // property is lost. Wait briefly for the peer writer instead of mapping lock contention to a
+  // spurious Conflict; the WHERE revision=? check still decides the conflict.
+  sqlite3_busy_timeout(state->database, 50);
   sqlite3_limit(state->database, SQLITE_LIMIT_LENGTH,
                 static_cast<int>(kMaximumSnapshotBytes) + 1024);
   if (sqlite3_exec(state->database, "PRAGMA synchronous=FULL; BEGIN IMMEDIATE", nullptr, nullptr,

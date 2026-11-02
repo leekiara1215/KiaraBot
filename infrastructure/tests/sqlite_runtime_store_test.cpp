@@ -279,14 +279,18 @@ int main() {
     concurrent_a->snapshot().delivery_order = 11;
     concurrent_b->snapshot().delivery_order = 12;
     std::latch launch(1);
+    std::latch ready(2);
     auto result_a = std::async(std::launch::async, [&] {
+      ready.count_down();
       launch.wait();
       return concurrent_a->commit();
     });
     auto result_b = std::async(std::launch::async, [&] {
+      ready.count_down();
       launch.wait();
       return concurrent_b->commit();
     });
+    ready.wait();
     launch.count_down();
     const auto a = result_a.get();
     const auto b = result_b.get();
