@@ -87,6 +87,19 @@ if(UNIX)
     --repo-source "${CMAKE_SOURCE_DIR}")
   set_tests_properties(p08_host_bridge_e2e PROPERTIES
     LABELS "p08;integration;fault" TIMEOUT 240)
+  # P13g test-only joint delete/restore e2e: real PG16.4 + real mTLS Runtime (test composition
+  # binary) + fake HostBridge client + injected fake Scheduler participant. Not production evidence.
+  if(TARGET kiarabot-runtime-p13g)
+    add_test(NAME p13_joint_delete_e2e COMMAND "${KIARABOT_TARGET_PYTHON}"
+      "${CMAKE_SOURCE_DIR}/tests/architecture/p13_joint_delete_e2e.py"
+      --runtime $<TARGET_FILE:kiarabot-runtime-p13g>
+      --initializer $<TARGET_FILE:kiarabot-pg-initialize>
+      --openssl "${KIARABOT_TEST_OPENSSL}"
+      --pg-bin "${KIARABOT_TEST_PG_BIN}"
+      --repo-source "${CMAKE_SOURCE_DIR}")
+    set_tests_properties(p13_joint_delete_e2e PROPERTIES
+      LABELS "p13;test-only;integration;fault" TIMEOUT 240)
+  endif()
   add_test(NAME p08_managed_host_e2e COMMAND "${KIARABOT_TARGET_PYTHON}"
     "${CMAKE_SOURCE_DIR}/tests/architecture/p08_managed_host_e2e.py"
     --runtime $<TARGET_FILE:kiarabot-runtime>

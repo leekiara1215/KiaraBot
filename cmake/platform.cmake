@@ -455,6 +455,25 @@ foreach(SERVICE identity runtime plugin_host scheduler model)
   set_target_properties(kiarabot-${BINARY} PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
   kiarabot_platform_warnings(kiarabot-${BINARY})
 endforeach()
+# P13g test-only Runtime composition: real Runtime/PG/HostBridge with an injected fake Scheduler
+# participant. The production binary above remains fail-closed; this binary is only used by the
+# P13g joint e2e and is never a production exit artifact.
+add_executable(kiarabot-runtime-p13g
+  ${CMAKE_SOURCE_DIR}/core/app/runtime_main.cpp)
+target_sources(kiarabot-runtime-p13g PRIVATE
+  ${CMAKE_SOURCE_DIR}/core/app/runtime_composition.cpp)
+target_compile_definitions(kiarabot-runtime-p13g PRIVATE KIARABOT_P13G_TEST_COMPOSITION=1)
+target_link_libraries(kiarabot-runtime-p13g PRIVATE
+  kiarabot_runtime_application kiarabot_service_process
+  kiarabot_runtime_model_client kiarabot_scheduler_task_client kiarabot_host_bridge
+  kiarabot_runtime_rpc kiarabot_runtime_identity_client kiarabot_runtime_storage_application
+  kiarabot_runtime_audit_application kiarabot_postgres OpenSSL::Crypto)
+target_include_directories(kiarabot-runtime-p13g PRIVATE
+  ${CMAKE_SOURCE_DIR}/core/app)
+set_target_properties(kiarabot-runtime-p13g PROPERTIES
+  RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+kiarabot_platform_warnings(kiarabot-runtime-p13g)
+
 add_executable(kiarabot-control ${CMAKE_SOURCE_DIR}/control/api/app/main.cpp)
 # control_auth supplies the service_process dependency after its own archive.
 target_link_libraries(kiarabot-control PRIVATE kiarabot_control_application)

@@ -3,6 +3,8 @@
 #include <array>
 #include <chrono>
 #include <cstddef>
+#include <cstdlib>
+#include <fstream>
 #include <iostream>
 #include <memory>
 #include <string>
@@ -175,6 +177,79 @@ platform::RuntimePeerAuthorizer fail_closed_authorizer() {
                            {}};
   };
 }
+#ifdef KIARABOT_P13G_TEST_COMPOSITION
+// Test-only P13g composition: the production Scheduler participant and Identity authorizer are
+// intentionally not wired (P13f option C). This process is built as a separate binary and must
+// never be used as production evidence; the fake scheduler mode is supplied by the test harness.
+target::TimePoint p13g_now() {
+  return target::TimePoint{std::chrono::duration_cast<std::chrono::nanoseconds>(
+      std::chrono::system_clock::now().time_since_epoch())};
+}
+class P13gAuthorization final : public target::RuntimeAuthorizationPort {
+public:
+  bool available() const noexcept override {
+    return true;
+  }
+  target::Outcome<target::RuntimeAuthorizationDecision>
+  check(const target::RuntimeAuthorizationRequest& request) override {
+    target::RuntimeAuthorizationDecision decision;
+    decision.allowed = true;
+    decision.subject = request.authentication.subject;
+    decision.permission = request.permission;
+    decision.scope = request.scope;
+    decision.authorization_version = {1};
+    decision.checked_at = p13g_now();
+    return decision;
+  }
+};
+class P13gSchedulerLifecycle final : public target::SchedulerLifecycleParticipantPort {
+public:
+  P13gSchedulerLifecycle() {
+    if (const char* value = std::getenv("KIARABOT_P13G_SCHEDULER_MODE")) {
+      mode_ = value;
+    }
+    if (const char* value = std::getenv("KIARABOT_P13G_SCHEDULER_STATE")) {
+      state_path_ = value;
+    }
+    if (const char* value = std::getenv("KIARABOT_P13G_SCHEDULER_MODE_FILE")) {
+      mode_path_ = value;
+    }
+  }
+  target::LifecycleParticipantResult
+  cancel_tasks(const target::ResourceRef& resource) override {
+    record("cancel " + resource.id.value);
+    if (!mode_path_.empty()) {
+      std::ifstream mode_input(mode_path_);
+      std::string current;
+      if (std::getline(mode_input, current) && !current.empty()) {
+        mode_ = current;
+      }
+    }
+    if (mode_ == "offline") {
+      return {target::LifecycleParticipantDisposition::Blocked,
+              target::ErrorCode::UpstreamUnavailable, p13g_now() + std::chrono::seconds{5}};
+    }
+    if (mode_ == "unknown") {
+      return {target::LifecycleParticipantDisposition::Blocked,
+              target::ErrorCode::UpstreamUnavailable, p13g_now() + std::chrono::seconds{5}};
+    }
+    return {target::LifecycleParticipantDisposition::Done, std::nullopt, std::nullopt};
+  }
+
+private:
+  void record(std::string_view line) {
+    if (state_path_.empty()) {
+      return;
+    }
+    std::ofstream output(state_path_, std::ios::app);
+    output << line << '\n';
+  }
+  std::string mode_ = "done";
+  std::string state_path_;
+  std::string mode_path_;
+};
+#endif
+
 struct State {
   std::unique_ptr<target::RuntimeIdPort> ids;
   std::unique_ptr<target::RuntimeSecretPort> secrets;
@@ -191,6 +266,10 @@ struct State {
   std::unique_ptr<platform::RuntimeModelClient> model_client;
   std::unique_ptr<target::SchedulerTaskPort> scheduler_tasks;
   std::unique_ptr<target::RuntimeTaskApplication> task_application;
+#ifdef KIARABOT_P13G_TEST_COMPOSITION
+  std::unique_ptr<P13gAuthorization> p13g_authorization;
+  std::unique_ptr<P13gSchedulerLifecycle> p13g_scheduler;
+#endif
 };
 // Readiness merges the composition-observed database state with the authorization-chain observation
 // and the assembled business implementation. Unobserved inputs remain Unverified and never ready.
@@ -268,6 +347,11 @@ compose_runtime_service(const platform::ProcessConfig& config) {
               state->identity_client
                   ? static_cast<target::RuntimeAuthorizationPort*>(state->identity_client.get())
                   : state->fail_closed_authorization.get();
+#ifdef KIARABOT_P13G_TEST_COMPOSITION
+          state->p13g_authorization = std::make_unique<P13gAuthorization>();
+          state->authorization = state->p13g_authorization.get();
+          state->p13g_scheduler = std::make_unique<P13gSchedulerLifecycle>();
+#endif
           auto host_lifecycle =
               target::make_runtime_host_lifecycle_participant(factory, *state->secrets);
           if (const auto* failure = std::get_if<target::Failure>(&host_lifecycle)) {
@@ -283,7 +367,13 @@ compose_runtime_service(const platform::ProcessConfig& config) {
                {"action.send_message.text.v1", "action.react_message.v1",
                 "action.delete_message.v1", "action.mute_member.v1", "action.kick_member.v1",
                 "action.approve_request.v1"},
-               state->host_lifecycle.get()});
+               state->host_lifecycle.get(),
+#ifdef KIARABOT_P13G_TEST_COMPOSITION
+               state->p13g_scheduler.get()
+#else
+               nullptr
+#endif
+           });
           if (const auto* failure = std::get_if<target::Failure>(&built)) {
             return {};
           }
@@ -438,6 +528,22 @@ compose_runtime_service(const platform::ProcessConfig& config) {
       } else {
         options.authorize = fail_closed_authorizer();
       }
+#ifdef KIARABOT_P13G_TEST_COMPOSITION
+      options.authorize = [](grpc::ServerContext&, const v1::RequestContext&)
+          -> target::Outcome<target::AuthenticationContext> {
+        const auto now = p13g_now();
+        return target::AuthenticationContext{
+            target::SubjectId{"77777777-7777-4777-8777-777777777777"},
+            {},
+            target::Service::Runtime,
+            {},
+            {},
+            target::ResourceVersion{1},
+            now,
+            now + std::chrono::seconds{300},
+            {}};
+      };
+#endif
       // Platform service principal path for the internal Scheduler->Runtime timer handoff. The
       // leaf SAN is matched against the deployment-enrolled Scheduler platform peer; its explicit
       // timer.accept assignment is an offline bootstrap prerequisite (P05 platform_peers), and the
