@@ -141,11 +141,23 @@ CREATE TABLE kiarabot.result_grant_scopes (
            "version kiarabot.uint64 NOT NULL,state integer NOT NULL CHECK(state BETWEEN 0 AND 6),"
            "accepted_event_id text, acknowledged_at bigint," +
                std::string(kHandoffColumns));
+  // P11 extends the original P03 declaration-level relation in place. The dedicated P11 repository
+  // always writes every fact below; columns stay nullable (except disposition, which defaults 0) so
+  // the P03 generic ModelIntent repository remains source/insert compatible.
   snapshot("model_intents", R"sql(
     owner text NOT NULL, logical_call_id text NOT NULL, model text NOT NULL,
     config_version kiarabot.uint64 NOT NULL, request_hash bytea NOT NULL CHECK(octet_length(request_hash)=32),
     state integer NOT NULL CHECK(state BETWEEN 0 AND 3), version kiarabot.uint64 NOT NULL,
-    created_at bigint NOT NULL, observed_at bigint NOT NULL
+    created_at bigint NOT NULL, observed_at bigint NOT NULL,
+    secret_version kiarabot.uint64,
+    input_tokens kiarabot.uint64, output_tokens kiarabot.uint64,
+    usage_known boolean, may_have_billed boolean,
+    provider_request_id text CHECK(provider_request_id IS NULL OR octet_length(provider_request_id)<=128),
+    latency_ms integer CHECK(latency_ms IS NULL OR (latency_ms>=0 AND latency_ms<=300000)),
+    error integer CHECK(error IS NULL OR (error BETWEEN 1 AND 10)),
+    disposition integer CHECK(disposition IS NULL OR disposition BETWEEN 0 AND 4),
+    resolved_at bigint, resolved_by text,
+    retain_until bigint
   )sql");
   sql += kIdentityResults;
   sql += R"sql(

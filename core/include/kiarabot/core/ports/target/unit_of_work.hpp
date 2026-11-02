@@ -5,6 +5,7 @@
 #include <optional>
 #include <vector>
 
+#include "kiarabot/core/domain/target/model_gateway.hpp"
 #include "kiarabot/core/domain/target/persistence.hpp"
 #include "kiarabot/core/ports/target/namespace_ports.hpp"
 
@@ -223,9 +224,60 @@ public:
                    std::nullopt, std::nullopt};
   }
 };
+// P11 Model-private configuration. The configuration version is the CAS/watermark; the provider
+// secret version is a separate relation and rotates without changing this row's version.
+class ModelConfigurationRepository {
+public:
+  virtual ~ModelConfigurationRepository() = default;
+  virtual Outcome<std::optional<ModelConfiguration>> find(const ResourceId& model_id) = 0;
+  // Alias lookup participates in global uniqueness; an ambiguous/invalid stored alias is Internal.
+  virtual Outcome<std::optional<ModelConfiguration>> find_by_alias(const std::string& alias) = 0;
+  // Keyset read ordered by model_id, strictly greater than `after`; trusted limit only.
+  virtual Outcome<std::vector<ModelConfiguration>> list(std::size_t limit,
+                                                        const std::string& after) = 0;
+  // null expected = create only; otherwise match version and store version+1.
+  virtual Status save(const ModelConfiguration& value, std::optional<ResourceVersion> expected) = 0;
+};
+
+// Sealed provider credential versions. Old versions are retained for in-flight calls; plaintext is
+// never stored, returned by configuration queries or written to audit/logs.
+class ProviderSecretRepository {
+public:
+  virtual ~ProviderSecretRepository() = default;
+  virtual Outcome<std::optional<ProviderSecretRecord>> current(const ResourceId& model_id) = 0;
+  virtual Outcome<std::optional<ProviderSecretRecord>> find(const ResourceId& model_id,
+                                                            const ResourceVersion& version) = 0;
+  // UNIQUE(model_id, secret_version); a concurrent rotation of the same version is Conflict.
+  virtual Status insert(const ProviderSecretRecord& value) = 0;
+};
+
+// Durable Model call log. The (owner, logical_call_id) key plus request_hash is the invocation
+// dedupe authority: a stored row means the provider has already been (or may have been) invoked.
+class ModelCallRepository {
+public:
+  virtual ~ModelCallRepository() = default;
+  virtual Outcome<std::optional<ModelIntent>> find(const ModelCallKey& key) = 0;
+  // Control-side lookup by logical_call_id only. Multiple owners with the same call id is
+  // ambiguous -> Conflict (never an arbitrary row).
+  virtual Outcome<std::optional<ModelIntent>>
+  find_by_call_id(const std::string& logical_call_id) = 0;
+  // Bounded maintenance projection of unresolved UNKNOWN rows whose 30-day window elapsed.
+  virtual Outcome<std::vector<ModelIntent>> list_unresolved_unknown(TimePoint now,
+                                                                    std::size_t limit) = 0;
+  virtual Status insert(const ModelIntent& value) = 0;
+  // Current-version CAS; the stored owner version advances by one.
+  virtual Status save(const ModelIntent& value, std::optional<ResourceVersion> expected) = 0;
+  // Delete terminal rows older than their retention horizon; unresolved UNKNOWN is never pruned.
+  virtual Outcome<std::size_t> prune_terminal(TimePoint now, std::size_t limit) = 0;
+};
+
 class ModelUnitOfWork : public UnitOfWork {
 public:
+  // P03 declaration-level intent relation kept source-compatible for the existing typed checks.
   virtual Repository<ModelCallKey, ModelIntent>& model_intents() = 0;
+  virtual ModelConfigurationRepository& model_configs() = 0;
+  virtual ProviderSecretRepository& provider_secrets() = 0;
+  virtual ModelCallRepository& model_calls() = 0;
 };
 template <typename Work> class LocalUnitOfWorkFactory {
 public:

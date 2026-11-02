@@ -11,6 +11,7 @@
 #include "identity_security.hpp"
 #include "kiarabot/core/ports/target/business_ports.hpp"
 #include "kiarabot/infrastructure/postgres/security_factory.hpp"
+#include "model_store.hpp"
 #include "record_access.hpp"
 #include "runtime_events.hpp"
 
@@ -570,16 +571,77 @@ private:
   LiveRepository<target::TaskKey, target::ScheduledTask> tasks_;
   LiveRepository<target::MessageId, target::Occurrence> occurrences_;
 };
-class ModelWork final : public WorkDelegate<target::ModelUnitOfWork> {
+// P11 Model UoW borrows one physical transaction for its dedicated configuration/secret/call
+// repositories and the P03 declaration-level generic relation.
+class ModelWork final : public target::ModelUnitOfWork {
 public:
-  explicit ModelWork(std::unique_ptr<target::UnitOfWork> common)
-      : WorkDelegate(std::move(common)), intents_(work(), detail::RecordKind::ModelIntent) {}
+  explicit ModelWork(detail::CommonWorkAccess common)
+      : common_(std::move(common)), intents_(work(), detail::RecordKind::ModelIntent),
+        configs_(detail::model_configuration_repository(*common_.sql)),
+        secrets_(detail::provider_secret_repository(*common_.sql)),
+        calls_(detail::model_call_repository(*common_.sql)) {}
+  target::Service owner() const noexcept override {
+    return common_.work->owner();
+  }
+  target::Outcome<target::TimePoint> current_time() override {
+    return work().current_time();
+  }
+  target::ReceiptRepository& receipts() override {
+    return work().receipts();
+  }
+  target::JournalRepository& journal() override {
+    return work().journal();
+  }
+  target::Repository<target::OperationId, target::Operation>& operations() override {
+    return work().operations();
+  }
+  target::CommitResult commit() override {
+    return work().commit();
+  }
+  void rollback() noexcept override {
+    work().rollback();
+  }
   target::Repository<target::ModelCallKey, target::ModelIntent>& model_intents() override {
     return intents_;
   }
+  target::ModelConfigurationRepository& model_configs() override {
+    return *configs_;
+  }
+  target::ProviderSecretRepository& provider_secrets() override {
+    return *secrets_;
+  }
+  target::ModelCallRepository& model_calls() override {
+    return *calls_;
+  }
 
 private:
+  target::UnitOfWork& work() {
+    return *common_.work;
+  }
+  detail::CommonWorkAccess common_;
   LiveRepository<target::ModelCallKey, target::ModelIntent> intents_;
+  std::unique_ptr<target::ModelConfigurationRepository> configs_;
+  std::unique_ptr<target::ProviderSecretRepository> secrets_;
+  std::unique_ptr<target::ModelCallRepository> calls_;
+};
+class ModelFactory final : public target::ModelUnitOfWorkFactory {
+public:
+  explicit ModelFactory(std::unique_ptr<Database> database) : database_(std::move(database)) {}
+  target::Outcome<std::unique_ptr<target::ModelUnitOfWork>> begin() override {
+    auto begun = detail::DatabaseAccess::begin(*database_);
+    if (const auto* rejected = std::get_if<target::Failure>(&begun)) {
+      return *rejected;
+    }
+    try {
+      return std::unique_ptr<target::ModelUnitOfWork>(
+          std::make_unique<ModelWork>(std::move(std::get<detail::CommonWorkAccess>(begun))));
+    } catch (...) {
+      return failure(target::ErrorCode::Internal);
+    }
+  }
+
+private:
+  std::unique_ptr<Database> database_;
 };
 class IdentitySecurityWork final : public target::IdentitySecurityUnitOfWork {
 public:
@@ -764,6 +826,18 @@ open_scheduler(const DatabaseConfig& config) {
 }
 target::Outcome<std::unique_ptr<target::ModelUnitOfWorkFactory>>
 open_model(const DatabaseConfig& config) {
-  return open_factory<ModelWork, target::ModelUnitOfWork>(config, target::Service::Model);
+  if (config.service != target::Service::Model) {
+    return failure(target::ErrorCode::InvalidArgument);
+  }
+  auto opened = Database::open(config);
+  if (const auto* rejected = std::get_if<target::Failure>(&opened)) {
+    return *rejected;
+  }
+  try {
+    return std::unique_ptr<target::ModelUnitOfWorkFactory>(
+        std::make_unique<ModelFactory>(std::move(std::get<std::unique_ptr<Database>>(opened))));
+  } catch (...) {
+    return failure(target::ErrorCode::Internal);
+  }
 }
 } // namespace kiarabot::infrastructure::postgres

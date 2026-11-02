@@ -1,5 +1,6 @@
 #include "typed_work_checks.hpp"
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <iostream>
@@ -687,6 +688,152 @@ void model(const DatabaseConfig& config) {
   check(take(work->model_intents().find(key))->state == target::ModelCallState::Unknown,
         "model restart lost Unknown");
   work->rollback();
+
+  // P11 dedicated Model repositories: configuration CAS/alias, sealed secret version pinning and
+  // the durable call/UNKNOWN projection on the same physical writer transaction.
+  target::ModelConfiguration model_config;
+  model_config.model_id = {"11111111-1111-4111-8111-111111111111"};
+  model_config.alias = "default";
+  model_config.provider_kind = target::ModelProviderKind::OpenAiChatCompletions;
+  model_config.endpoint = "https://api.example.com/v1/chat/completions";
+  model_config.provider_model = "gpt-test";
+  model_config.timeout_ms = 5000;
+  model_config.max_concurrency = 2;
+  model_config.state = target::LifecycleState::Disabled;
+  model_config.version = {1};
+  work = take(factory->begin());
+  const auto config_now = take(work->current_time());
+  model_config.created_at = config_now;
+  model_config.observed_at = config_now;
+  take(work->model_configs().save(model_config, {}));
+  commit(*work);
+  work = take(factory->begin());
+  expect(work->model_configs().save(model_config, {}), target::ErrorCode::Conflict);
+  rollback_rejected(*work);
+
+  work = take(factory->begin());
+  const auto stored_config = take(work->model_configs().find(model_config.model_id));
+  check(stored_config && stored_config->alias == "default" &&
+            stored_config->provider_kind == target::ModelProviderKind::OpenAiChatCompletions &&
+            stored_config->timeout_ms == 5000 && stored_config->version.value == 1,
+        "P11 model configuration round trip failed");
+  const auto by_alias = take(work->model_configs().find_by_alias("default"));
+  check(by_alias && by_alias->model_id.value == model_config.model_id.value,
+        "P11 model alias lookup failed");
+  const auto listed = take(work->model_configs().list(10, ""));
+  check(listed.size() == 1 && listed.front().model_id.value == model_config.model_id.value,
+        "P11 model configuration page failed");
+  auto updated_config = *stored_config;
+  updated_config.timeout_ms = 6000;
+  updated_config.version = {2};
+  take(work->model_configs().save(updated_config, target::ResourceVersion{1}));
+  commit(*work);
+  work = take(factory->begin());
+  expect(work->model_configs().save(updated_config, target::ResourceVersion{1}),
+         target::ErrorCode::Conflict);
+  rollback_rejected(*work);
+
+  target::ProviderSecretRecord provider_secret;
+  provider_secret.model_id = model_config.model_id;
+  provider_secret.secret_version = {1};
+  provider_secret.root_key_version = 7;
+  provider_secret.aead = 1;
+  provider_secret.nonce.fill(std::byte{0x11});
+  provider_secret.sealed_secret.assign(20, std::byte{0x22});
+  work = take(factory->begin());
+  const auto secret_now = take(work->current_time());
+  provider_secret.created_at = secret_now;
+  take(work->provider_secrets().insert(provider_secret));
+  commit(*work);
+  work = take(factory->begin());
+  const auto current_secret = take(work->provider_secrets().current(model_config.model_id));
+  check(current_secret && current_secret->secret_version.value == 1 &&
+            current_secret->root_key_version == 7 &&
+            current_secret->sealed_secret == provider_secret.sealed_secret,
+        "P11 provider secret round trip failed");
+  const auto pinned =
+      take(work->provider_secrets().find(model_config.model_id, target::ResourceVersion{1}));
+  check(pinned && pinned->sealed_secret.size() == 20, "P11 pinned provider secret lost");
+  work->rollback();
+
+  target::ModelIntent call;
+  call.owner = {"p11-call-owner"};
+  call.logical_call_id = "p11-logical-call";
+  call.model = model_config.model_id;
+  call.config_version = {2};
+  call.request_hash.bytes[0] = std::byte{0x9a};
+  call.state = target::ModelCallState::Started;
+  call.version = {1};
+  work = take(factory->begin());
+  const auto call_now = take(work->current_time());
+  call.created_at = call_now;
+  call.observed_at = call_now;
+  call.secret_version = {1};
+  call.usage_known = true;
+  call.may_have_billed = false;
+  call.provider_request_id = "req-1";
+  call.latency_ms = 12;
+  take(work->model_calls().insert(call));
+  commit(*work);
+  work = take(factory->begin());
+  expect(work->model_calls().insert(call), target::ErrorCode::Conflict);
+  rollback_rejected(*work);
+
+  work = take(factory->begin());
+  const auto loaded_call = take(work->model_calls().find({call.owner, call.logical_call_id}));
+  check(loaded_call && loaded_call->secret_version.value == 1 && loaded_call->usage_known &&
+            !loaded_call->may_have_billed && loaded_call->provider_request_id == "req-1" &&
+            loaded_call->latency_ms == 12,
+        "P11 durable call facts lost");
+  auto unknown_call = *loaded_call;
+  unknown_call.logical_call_id = "p11-unknown-call";
+  unknown_call.state = target::ModelCallState::Unknown;
+  unknown_call.may_have_billed = true;
+  unknown_call.created_at = call_now - std::chrono::hours{24 * 31};
+  unknown_call.observed_at = unknown_call.created_at;
+  take(work->model_calls().insert(unknown_call));
+  commit(*work);
+
+  work = take(factory->begin());
+  const auto unresolved = take(work->model_calls().list_unresolved_unknown(call_now, 10));
+  check(std::any_of(unresolved.begin(), unresolved.end(),
+                    [](const target::ModelIntent& value) {
+                      return value.logical_call_id == "p11-unknown-call";
+                    }),
+        "P11 stale UNKNOWN projection failed");
+  const auto stale_call =
+      take(work->model_calls().find({unknown_call.owner, unknown_call.logical_call_id}));
+  const auto abandoned = target::model_abandon_unknown(*stale_call, call_now, "p11-maintenance");
+  take(work->model_calls().save(abandoned, stale_call->version));
+  commit(*work);
+
+  work = take(factory->begin());
+  const auto resolved_call =
+      take(work->model_calls().find({unknown_call.owner, unknown_call.logical_call_id}));
+  check(resolved_call && resolved_call->state == target::ModelCallState::Failed &&
+            resolved_call->disposition == target::ModelCallDisposition::Abandoned &&
+            resolved_call->resolved_by == "p11-maintenance",
+        "P11 UNKNOWN resolution did not persist");
+  const auto pruned = take(work->model_calls().prune_terminal(
+      call_now + target::kModelCallRetention + std::chrono::hours{1}, 10));
+  check(pruned >= 1, "P11 terminal call retention sweep did nothing");
+  commit(*work);
+
+  work = take(factory->begin());
+  check(take(work->model_calls().find({call.owner, call.logical_call_id}))->state ==
+            target::ModelCallState::Started,
+        "P11 retention sweep deleted an in-flight call");
+  work->rollback();
+  // A control-side lookup by call id alone must reject cross-owner ambiguity instead of returning
+  // an arbitrary instance's call.
+  work = take(factory->begin());
+  auto ambiguous = call;
+  ambiguous.owner = {"p11-other-owner"};
+  take(work->model_calls().insert(ambiguous));
+  commit(*work);
+  work = take(factory->begin());
+  expect(work->model_calls().find_by_call_id(call.logical_call_id), target::ErrorCode::Conflict);
+  rollback_rejected(*work);
 }
 } // namespace
 

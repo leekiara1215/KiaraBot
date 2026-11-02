@@ -116,6 +116,15 @@ struct Occurrence {
   TimePoint updated_at;
 };
 enum class ModelCallState { Started, Succeeded, Failed, Unknown };
+// P11 UNKNOWN resolution outcome. Unspecified while the call is unresolved; only the terminal
+// resolutions below are accepted by ResolveModelCall. Stored as an integer column.
+enum class ModelCallDisposition {
+  Unspecified,
+  NotExecuted,
+  ExecutedNotBilled,
+  ExecutedBilled,
+  Abandoned
+};
 struct ModelIntent {
   InstanceId owner;
   std::string logical_call_id;
@@ -126,6 +135,19 @@ struct ModelIntent {
   ResourceVersion version;
   TimePoint created_at;
   TimePoint observed_at;
+  // P11a durable call facts. Defaulted so P03 aggregate initialization stays source-compatible;
+  // the P11 dedicated repository always writes every field.
+  ResourceVersion secret_version{0};
+  std::uint64_t input_tokens = 0;
+  std::uint64_t output_tokens = 0;
+  bool usage_known = false;
+  bool may_have_billed = false;
+  std::string provider_request_id;
+  std::uint32_t latency_ms = 0;
+  std::optional<ErrorCode> error;
+  ModelCallDisposition disposition = ModelCallDisposition::Unspecified;
+  std::optional<TimePoint> resolved_at;
+  std::string resolved_by;
 };
 
 struct ModelCallKey {

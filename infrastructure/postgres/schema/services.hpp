@@ -90,7 +90,38 @@ ALTER TABLE kiarabot.occurrences ADD FOREIGN KEY(owner,task_id,installation,occu
 )sql";
     break;
   case core::target::Service::Model:
+    // P03 declaration-level intent relation extended in place by P11; see common.hpp.
     relation("model_intents", "owner,logical_call_id");
+    sql += R"sql(
+-- P11 Model-private configuration. Configuration version is the CAS/watermark; the provider
+-- secret version lives in a separate relation so a rotation never rewrites this row.
+CREATE TABLE kiarabot.model_configs (
+  model_id text PRIMARY KEY CHECK(model_id<>''),
+  alias text NOT NULL CHECK(alias<>'' AND octet_length(alias)<=128),
+  provider_kind text NOT NULL CHECK(provider_kind='openai_chat_completions'),
+  endpoint text NOT NULL CHECK(endpoint<>'' AND octet_length(endpoint)<=2048),
+  provider_model text NOT NULL CHECK(provider_model<>'' AND octet_length(provider_model)<=256),
+  timeout_ms integer NOT NULL CHECK(timeout_ms BETWEEN 1000 AND 30000),
+  max_concurrency integer NOT NULL CHECK(max_concurrency BETWEEN 1 AND 64),
+  lifecycle_state integer NOT NULL CHECK(lifecycle_state BETWEEN 0 AND 5),
+  config_version kiarabot.uint64 NOT NULL CHECK(config_version>0),
+  created_at bigint NOT NULL,
+  observed_at bigint NOT NULL
+);
+ALTER TABLE kiarabot.model_configs ADD UNIQUE(alias);
+-- Provider credential versions: XChaCha20-Poly1305 sealed with a deployment-injected root key.
+-- Root key material is never stored in this database; old versions are retained for in-flight calls.
+CREATE TABLE kiarabot.encrypted_provider_secrets (
+  model_id text NOT NULL REFERENCES kiarabot.model_configs(model_id),
+  secret_version kiarabot.uint64 NOT NULL CHECK(secret_version>0),
+  root_key_version kiarabot.uint64 NOT NULL CHECK(root_key_version>0),
+  aead integer NOT NULL CHECK(aead=1),
+  nonce bytea NOT NULL CHECK(octet_length(nonce)=24),
+  sealed_secret bytea NOT NULL CHECK(octet_length(sealed_secret) BETWEEN 17 AND 8192),
+  created_at bigint NOT NULL,
+  PRIMARY KEY(model_id,secret_version)
+);
+)sql";
     break;
   default:
     break;
