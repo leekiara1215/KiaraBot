@@ -1,0 +1,166 @@
+name: ${COMPOSE_PROJECT_NAME:-kiarabot-target}
+
+# Target deployment infrastructure (P14a): PostgreSQL 16.4 cluster hosting the four
+# private logical databases (identity/runtime/scheduler/model). This file does NOT
+# create roles/databases or run schema DDL automatically:
+#   1) provision roles/databases once with deploy/target/postgres-bootstrap.sql.example
+#      (or an external DBA/PostgreSQL service);
+#   2) run the explicit `init` profile (docker compose ... run --rm init-*).
+# The service never falls back to SQLite and never auto-migrates at startup.
+#
+# PostgreSQL TLS material and password files are deployment mounts; nothing in this
+# directory is baked into an image. See deploy/README.md and doc/08-operations.md.
+services:
+  postgres:
+    image: ${POSTGRES_IMAGE:-postgres:16.4-bookworm}
+    restart: unless-stopped
+    user: "999:999"
+    environment:
+      POSTGRES_USER: ${KIARABOT_PG_SUPERUSER:-kiarabot_dba}
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres-superuser
+      POSTGRES_DB: postgres
+      # ssl is mandatory for the target services; the certificate is mounted below.
+      POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256 --auth-local=peer"
+    command:
+      - postgres
+      - -c
+      - ssl=on
+      - -c
+      - ssl_cert_file=/etc/postgresql/tls/server.crt
+      - -c
+      - ssl_key_file=/etc/postgresql/tls/server.key
+      - -c
+      - ssl_ca_file=/etc/postgresql/tls/ca.crt
+      - -c
+      - listen_addresses=0.0.0.0
+    secrets:
+      - postgres-superuser
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ${KIARABOT_PG_TLS_DIR:-./target/tls/postgres}:/etc/postgresql/tls:ro
+      - ${KIARABOT_PG_BACKUP_DIR:-./target/backups/postgres}:/backups
+    ports:
+      # Dev single-host convenience only; in the two-host topology keep this on the
+      # private network and do not publish it on a public interface.
+      - "127.0.0.1:${KIARABOT_PG_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER:-kiarabot_dba}\" -d postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    network_mode: bridge
+    logging: &default-logging
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+    security_opt: [no-new-privileges:true]
+
+  # Explicit empty-database initialization. One service per logical database keeps
+  # the non-atomic cross-database boundary visible: a failure in one database never
+  # reports the whole set as complete. Run with:
+  #   docker compose -f deploy/compose.infra.yml run --rm init-identity
+  init-identity:
+    profiles: ["init"]
+    image: ${KIARABOT_TOOLS_IMAGE:-ghcr.io/leekiara1215/kiarabot/tools:dev}
+    build: &tools-build
+      context: ..
+      dockerfile: deploy/docker/suite.Dockerfile
+      target: tools
+      args:
+        UBUNTU_BASE: ${UBUNTU_BASE:-ubuntu:24.04}
+    user: "10001:10001"
+    command: ["/usr/local/bin/deploy-scripts/target-initialize.sh", "identity"]
+    environment:
+      PG_HOST: postgres
+      PG_PORT: "5432"
+      PG_CA_FILE: /etc/kiarabot/tls/pg-ca.pem
+      KIARABOT_DB_NAME: identity
+      KIARABOT_RUNTIME_ROLE: ${KIARABOT_IDENTITY_RUNTIME_ROLE:-identity_runtime}
+      KIARABOT_MIGRATION_ROLE: ${KIARABOT_IDENTITY_MIGRATION_ROLE:-identity_migration}
+      KIARABOT_MIGRATION_PASSWORD_FILE: /etc/kiarabot/secrets/identity-migration.pass
+    volumes:
+      - ${KIARABOT_TLS_DIR:-./target/tls}:/etc/kiarabot/tls:ro
+      - ${KIARABOT_SECRETS_DIR:-./target/secrets}:/etc/kiarabot/secrets:ro
+    network_mode: bridge
+
+  init-runtime:
+    profiles: ["init"]
+    image: ${KIARABOT_TOOLS_IMAGE:-ghcr.io/leekiara1215/kiarabot/tools:dev}
+    build: *tools-build
+    user: "10001:10001"
+    command: ["/usr/local/bin/deploy-scripts/target-initialize.sh", "runtime"]
+    environment:
+      PG_HOST: postgres
+      PG_PORT: "5432"
+      PG_CA_FILE: /etc/kiarabot/tls/pg-ca.pem
+      KIARABOT_DB_NAME: runtime
+      KIARABOT_RUNTIME_ROLE: ${KIARABOT_RUNTIME_RUNTIME_ROLE:-runtime_runtime}
+      KIARABOT_MIGRATION_ROLE: ${KIARABOT_RUNTIME_MIGRATION_ROLE:-runtime_migration}
+      KIARABOT_MIGRATION_PASSWORD_FILE: /etc/kiarabot/secrets/runtime-migration.pass
+    volumes:
+      - ${KIARABOT_TLS_DIR:-./target/tls}:/etc/kiarabot/tls:ro
+      - ${KIARABOT_SECRETS_DIR:-./target/secrets}:/etc/kiarabot/secrets:ro
+    network_mode: bridge
+
+  init-scheduler:
+    profiles: ["init"]
+    image: ${KIARABOT_TOOLS_IMAGE:-ghcr.io/leekiara1215/kiarabot/tools:dev}
+    build: *tools-build
+    user: "10001:10001"
+    command: ["/usr/local/bin/deploy-scripts/target-initialize.sh", "scheduler"]
+    environment:
+      PG_HOST: postgres
+      PG_PORT: "5432"
+      PG_CA_FILE: /etc/kiarabot/tls/pg-ca.pem
+      KIARABOT_DB_NAME: scheduler
+      KIARABOT_RUNTIME_ROLE: ${KIARABOT_SCHEDULER_RUNTIME_ROLE:-scheduler_runtime}
+      KIARABOT_MIGRATION_ROLE: ${KIARABOT_SCHEDULER_MIGRATION_ROLE:-scheduler_migration}
+      KIARABOT_MIGRATION_PASSWORD_FILE: /etc/kiarabot/secrets/scheduler-migration.pass
+    volumes:
+      - ${KIARABOT_TLS_DIR:-./target/tls}:/etc/kiarabot/tls:ro
+      - ${KIARABOT_SECRETS_DIR:-./target/secrets}:/etc/kiarabot/secrets:ro
+    network_mode: bridge
+
+  init-model:
+    profiles: ["init"]
+    image: ${KIARABOT_TOOLS_IMAGE:-ghcr.io/leekiara1215/kiarabot/tools:dev}
+    build: *tools-build
+    user: "10001:10001"
+    command: ["/usr/local/bin/deploy-scripts/target-initialize.sh", "model"]
+    environment:
+      PG_HOST: postgres
+      PG_PORT: "5432"
+      PG_CA_FILE: /etc/kiarabot/tls/pg-ca.pem
+      KIARABOT_DB_NAME: model
+      KIARABOT_RUNTIME_ROLE: ${KIARABOT_MODEL_RUNTIME_ROLE:-model_runtime}
+      KIARABOT_MIGRATION_ROLE: ${KIARABOT_MODEL_MIGRATION_ROLE:-model_migration}
+      KIARABOT_MIGRATION_PASSWORD_FILE: /etc/kiarabot/secrets/model-migration.pass
+    volumes:
+      - ${KIARABOT_TLS_DIR:-./target/tls}:/etc/kiarabot/tls:ro
+      - ${KIARABOT_SECRETS_DIR:-./target/secrets}:/etc/kiarabot/secrets:ro
+    network_mode: bridge
+
+  # Offline Identity bootstrap (admin principal/session/verification material).
+  # Run after the identity database is initialized and before starting Control:
+  #   docker compose -f deploy/compose.infra.yml run --rm identity-bootstrap
+  identity-bootstrap:
+    profiles: ["init"]
+    image: ${KIARABOT_TOOLS_IMAGE:-ghcr.io/leekiara1215/kiarabot/tools:dev}
+    build: *tools-build
+    user: "10001:10001"
+    command: ["/usr/local/bin/kiarabot-identity-bootstrap", "--config", "/etc/kiarabot/identity.json", "--enrollment", "/etc/kiarabot/enrollment.json", "--password-file", "/etc/kiarabot/secrets/admin.pass"]
+    volumes:
+      - ${KIARABOT_CONFIG_DIR:-./target/config}:/etc/kiarabot:ro
+      - ${KIARABOT_TLS_DIR:-./target/tls}:/etc/kiarabot/tls:ro
+      - ${KIARABOT_SECRETS_DIR:-./target/secrets}:/etc/kiarabot/secrets:ro
+    network_mode: bridge
+
+secrets:
+  postgres-superuser:
+    file: ${KIARABOT_PG_SUPERUSER_PASSWORD_FILE:-./target/secrets/postgres-superuser.pass}
+
+volumes:
+  postgres-data:
+    name: ${KIARABOT_PG_DATA_VOLUME:-kiarabot-target-postgres}

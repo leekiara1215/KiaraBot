@@ -66,3 +66,8 @@ reports/analysis/
 
 # ---- 仓库内 AI 并行开发 worktree（不入库）----
 .worktrees/
+
+# ---- P14a target deployment material (operator-owned, never committed) ----
+deploy/target.env
+deploy/target/*
+!deploy/target/README.md

@@ -1,0 +1,96 @@
+name: ${COMPOSE_PROJECT_NAME:-kiarabot-target}
+
+# Target execution plane (P14a): Plugin Host and the NoneBot Adapter. In the
+# two-host topology this file runs on host-B; host-A service names (runtime) must be
+# reachable via deployment DNS. Host/Adapter store local SQLite journals; they never
+# receive a private PostgreSQL credential.
+services:
+  plugin-host:
+    image: ${KIARABOT_PLUGIN_HOST_IMAGE:-ghcr.io/leekiara1215/kiarabot/plugin-host:dev}
+    build:
+      context: ..
+      dockerfile: deploy/docker/suite.Dockerfile
+      target: plugin-host
+      args:
+        UBUNTU_BASE: ${UBUNTU_BASE:-ubuntu:24.04}
+    command: ["--config", "/etc/kiarabot/plugin-host.json"]
+    user: "10001:10001"
+    read_only: true
+    tmpfs: ["/tmp"]
+    ports:
+      - "127.0.0.1:${KIARABOT_HOST_GRPC_PORT:-7446}:7446"
+      - "127.0.0.1:${KIARABOT_HOST_PROBE_PORT:-9085}:9085"
+    volumes:
+      - ${KIARABOT_CONFIG_DIR:-./target/config}/plugin-host.json:/etc/kiarabot/plugin-host.json:ro
+      - ${KIARABOT_TLS_DIR:-./target/tls}:/etc/kiarabot/tls:ro
+      - ${KIARABOT_SECRETS_DIR:-./target/secrets}:/etc/kiarabot/secrets:ro
+      - ${KIARABOT_HOST_PACKAGES_DIR:-./target/packages}:/var/lib/kiarabot-host/packages:ro
+      - ${KIARABOT_HOST_DATA_DIR:-./target/data/host}:/var/lib/kiarabot-host
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:9085/health/ready >/dev/null"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 45s
+    stop_grace_period: 45s
+    restart: unless-stopped
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    logging: &default-logging
+      driver: json-file
+      options: { max-size: "10m", max-file: "5" }
+    deploy:
+      resources: { limits: { cpus: "1.0", memory: 512M } }
+
+  adapter:
+    image: ${KIARABOT_ADAPTER_IMAGE:-ghcr.io/leekiara1215/kiarabot/adapter-nonebot:dev}
+    build:
+      context: ..
+      dockerfile: deploy/docker/adapter.Dockerfile
+    user: "10001:10001"
+    read_only: true
+    tmpfs: ["/tmp"]
+    environment:
+      # P06c target bridge configuration. The bootstrap file and CA are read-only
+      # deployment mounts; the outbox is the only writable state.
+      BRIDGE_ENDPOINT: ${KIARABOT_BRIDGE_ENDPOINT:-runtime:7443}
+      BRIDGE_CA_FILE: /etc/kiarabot/tls/bridge-ca.pem
+      BRIDGE_SERVER_NAME: ${KIARABOT_BRIDGE_SERVER_NAME:-runtime}
+      BRIDGE_BOOTSTRAP_CREDENTIAL_FILE: /run/secrets/adapter-bootstrap
+      ADAPTER_INSTANCE_ID: ${KIARABOT_ADAPTER_INSTANCE_ID:?set ADAPTER_INSTANCE_ID}
+      ACCOUNT_ID: ${KIARABOT_ADAPTER_ACCOUNT_ID:?set ADAPTER_ACCOUNT_ID}
+      OUTBOX_PATH: /var/lib/kiarabot-adapter/outbox.db
+      HEALTH_PORT: "8081"
+      ONEBOT_WS_URL: ${ONEBOT_WS_URL:-ws://127.0.0.1:3001/}
+      ONEBOT_ACCESS_TOKEN_FILE: /run/secrets/onebot-access-token
+    secrets:
+      - adapter-bootstrap
+      - onebot-access-token
+    ports:
+      - "127.0.0.1:${KIARABOT_ADAPTER_HEALTH_PORT:-8081}:8081"
+    volumes:
+      - ${KIARABOT_TLS_DIR:-./target/tls}:/etc/kiarabot/tls:ro
+      - kiarabot-adapter-outbox:/var/lib/kiarabot-adapter
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8081/health/ready >/dev/null"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 30s
+    stop_grace_period: 20s
+    restart: unless-stopped
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    logging: *default-logging
+    deploy:
+      resources: { limits: { cpus: "1.0", memory: 512M } }
+
+secrets:
+  adapter-bootstrap:
+    file: ${KIARABOT_ADAPTER_BOOTSTRAP_FILE:-./target/secrets/adapter.bootstrap}
+  onebot-access-token:
+    file: ${KIARABOT_ONEBOT_TOKEN_FILE:-./target/secrets/onebot-access-token}
+
+volumes:
+  kiarabot-adapter-outbox:
+    name: ${KIARABOT_ADAPTER_OUTBOX_VOLUME:-kiarabot-target-adapter-outbox}

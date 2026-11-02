@@ -1,0 +1,206 @@
+name: ${COMPOSE_PROJECT_NAME:-kiarabot-target}
+
+# Target control/data plane (P14a): Identity, Runtime, Scheduler, Model, Control and
+# Panel. It assumes PostgreSQL was started by deploy/compose.infra.yml (or an external
+# PostgreSQL service) and the databases were explicitly initialized. No container in
+# this file runs DDL or auto-migration.
+#
+# Run on the data/control host:
+#   docker compose -f deploy/compose.infra.yml -f deploy/compose.core.yml up -d
+# For the two-host topology place compose.infra.yml + compose.core.yml on host-A and
+# compose.exec.yml on host-B; cross-host hostnames are deployment DNS/service names.
+services:
+  identity:
+    image: ${KIARABOT_IDENTITY_IMAGE:-ghcr.io/leekiara1215/kiarabot/identity:dev}
+    build: &suite-build
+      context: ..
+      dockerfile: deploy/docker/suite.Dockerfile
+      target: identity
+      args:
+        UBUNTU_BASE: ${UBUNTU_BASE:-ubuntu:24.04}
+    command: ["--config", "/etc/kiarabot/identity.json"]
+    user: "10001:10001"
+    read_only: true
+    tmpfs: ["/tmp"]
+    ports:
+      - "127.0.0.1:${KIARABOT_IDENTITY_GRPC_PORT:-7441}:7441"
+      - "127.0.0.1:${KIARABOT_IDENTITY_PROBE_PORT:-9081}:9081"
+    volumes:
+      - ${KIARABOT_CONFIG_DIR:-./target/config}/identity.json:/etc/kiarabot/identity.json:ro
+      - ${KIARABOT_TLS_DIR:-./target/tls}:/etc/kiarabot/tls:ro
+      - ${KIARABOT_SECRETS_DIR:-./target/secrets}:/etc/kiarabot/secrets:ro
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:9081/health/ready >/dev/null"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 30s
+    stop_grace_period: 30s
+    restart: unless-stopped
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    logging: &default-logging
+      driver: json-file
+      options: { max-size: "10m", max-file: "5" }
+    deploy:
+      resources: { limits: { cpus: "1.0", memory: 512M }, reservations: { memory: 128M } }
+
+  runtime:
+    image: ${KIARABOT_RUNTIME_IMAGE:-ghcr.io/leekiara1215/kiarabot/runtime:dev}
+    build: { <<: *suite-build, target: runtime }
+    command: ["--config", "/etc/kiarabot/runtime.json"]
+    user: "10001:10001"
+    read_only: true
+    tmpfs: ["/tmp"]
+    ports:
+      - "127.0.0.1:${KIARABOT_RUNTIME_GRPC_PORT:-7442}:7442"
+      - "127.0.0.1:${KIARABOT_RUNTIME_BRIDGE_PORT:-7443}:7443"
+      - "127.0.0.1:${KIARABOT_RUNTIME_PROBE_PORT:-9082}:9082"
+    volumes:
+      - ${KIARABOT_CONFIG_DIR:-./target/config}/runtime.json:/etc/kiarabot/runtime.json:ro
+      - ${KIARABOT_TLS_DIR:-./target/tls}:/etc/kiarabot/tls:ro
+      - ${KIARABOT_SECRETS_DIR:-./target/secrets}:/etc/kiarabot/secrets:ro
+    depends_on:
+      identity: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:9082/health/ready >/dev/null"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 45s
+    stop_grace_period: 45s
+    restart: unless-stopped
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    logging: *default-logging
+    deploy:
+      resources: { limits: { cpus: "2.0", memory: 1G }, reservations: { memory: 256M } }
+
+  scheduler:
+    image: ${KIARABOT_SCHEDULER_IMAGE:-ghcr.io/leekiara1215/kiarabot/scheduler:dev}
+    build: { <<: *suite-build, target: scheduler }
+    command: ["--config", "/etc/kiarabot/scheduler.json"]
+    user: "10001:10001"
+    read_only: true
+    tmpfs: ["/tmp"]
+    ports:
+      - "127.0.0.1:${KIARABOT_SCHEDULER_GRPC_PORT:-7444}:7444"
+      - "127.0.0.1:${KIARABOT_SCHEDULER_PROBE_PORT:-9083}:9083"
+    volumes:
+      - ${KIARABOT_CONFIG_DIR:-./target/config}/scheduler.json:/etc/kiarabot/scheduler.json:ro
+      - ${KIARABOT_TLS_DIR:-./target/tls}:/etc/kiarabot/tls:ro
+      - ${KIARABOT_SECRETS_DIR:-./target/secrets}:/etc/kiarabot/secrets:ro
+    depends_on:
+      identity: { condition: service_healthy }
+      runtime: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:9083/health/ready >/dev/null"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 30s
+    stop_grace_period: 30s
+    restart: unless-stopped
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    logging: *default-logging
+    deploy:
+      resources: { limits: { cpus: "1.0", memory: 512M } }
+
+  model:
+    image: ${KIARABOT_MODEL_IMAGE:-ghcr.io/leekiara1215/kiarabot/model:dev}
+    build: { <<: *suite-build, target: model }
+    command: ["--config", "/etc/kiarabot/model.json"]
+    user: "10001:10001"
+    read_only: true
+    tmpfs: ["/tmp"]
+    ports:
+      - "127.0.0.1:${KIARABOT_MODEL_GRPC_PORT:-7445}:7445"
+      - "127.0.0.1:${KIARABOT_MODEL_PROBE_PORT:-9084}:9084"
+    volumes:
+      - ${KIARABOT_CONFIG_DIR:-./target/config}/model.json:/etc/kiarabot/model.json:ro
+      - ${KIARABOT_TLS_DIR:-./target/tls}:/etc/kiarabot/tls:ro
+      - ${KIARABOT_SECRETS_DIR:-./target/secrets}:/etc/kiarabot/secrets:ro
+    depends_on:
+      identity: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:9084/health/ready >/dev/null"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 30s
+    stop_grace_period: 30s
+    restart: unless-stopped
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    logging: *default-logging
+    deploy:
+      resources: { limits: { cpus: "1.0", memory: 512M } }
+
+  control:
+    image: ${KIARABOT_CONTROL_IMAGE:-ghcr.io/leekiara1215/kiarabot/control:dev}
+    build: { <<: *suite-build, target: control }
+    command: ["--config", "/etc/kiarabot/control.json"]
+    user: "10001:10001"
+    read_only: true
+    tmpfs: ["/tmp"]
+    ports:
+      - "127.0.0.1:${KIARABOT_CONTROL_PORT:-8080}:8080"
+      - "127.0.0.1:${KIARABOT_CONTROL_PROBE_PORT:-9080}:9080"
+    volumes:
+      - ${KIARABOT_CONFIG_DIR:-./target/config}/control.json:/etc/kiarabot/control.json:ro
+      - ${KIARABOT_TLS_DIR:-./target/tls}:/etc/kiarabot/tls:ro
+      - ${KIARABOT_SECRETS_DIR:-./target/secrets}:/etc/kiarabot/secrets:ro
+    depends_on:
+      identity: { condition: service_healthy }
+      runtime: { condition: service_healthy }
+      scheduler: { condition: service_healthy }
+      model: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8080/health/ready >/dev/null"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 30s
+    stop_grace_period: 20s
+    restart: unless-stopped
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    logging: *default-logging
+    deploy:
+      resources: { limits: { cpus: "1.0", memory: 512M } }
+
+  panel:
+    image: ${KIARABOT_PANEL_IMAGE:-ghcr.io/leekiara1215/kiarabot/panel:dev}
+    build:
+      context: ..
+      dockerfile: deploy/docker/panel.Dockerfile
+      args:
+        VITE_API_MODE: live
+    user: "101:101"
+    environment:
+      KIARABOT_CONTROL_HOST: control
+      KIARABOT_CONTROL_PORT: "8080"
+      KIARABOT_PANEL_PORT: "8082"
+    ports:
+      - "127.0.0.1:${KIARABOT_PANEL_PORT:-8082}:8082"
+    depends_on:
+      control: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8082/health/ready >/dev/null"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 20s
+    stop_grace_period: 10s
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /var/cache/nginx
+      - /var/run
+      - /var/log/nginx
+      - /etc/nginx/conf.d
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    logging: *default-logging
