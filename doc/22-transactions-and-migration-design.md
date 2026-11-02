@@ -263,3 +263,7 @@ RPC 授权要求 delegation 的权限绑定包含 Installation resource scope（
 CheckAuthorization 通过 `scope_kinds` 注释确定方法 scope 种类（Scheduler 方法声明 TASK+
 INSTANCE，无新权限）。多进程 e2e 验证了创建→到期→交接→COMPLETED、重复交接、过期 TIMEOUT
 与撤销授权拒绝；容量/EXPIRED/崩溃恢复矩阵未覆盖。
+
+## P13a 生命周期事务与保留清理（实现记录，2026-11-02）
+
+删除/恢复沿用“所有者驱动、本地事务、无跨库级联”：`BeginDelete` 的资源状态/operation/participants/tombstone/receipt/audit 同 Runtime UoW 提交，跨服务参与者（Host 停止、Scheduler 任务取消）不在 UoW 内调用，由维护循环在提交后按 command/receipt 幂等推进；依赖离线记 `BLOCKED` 并可重试，不把超时当 stopped。恢复只允许 30 天窗口内的 `DELETED` 资源，不复活凭据/任务/租约；超过 180 天转 `PURGED` 并清墓碑。清理使用索引化有界扫描（`state,retain_until`、`occurred_at`、`valid_until`），每 60 秒一批；receipts/inbox/outbox/audit/operations/storage receipts 各自保留期，未决义务不清理，清理失败仅 `cleanup_failed` 告警不撤销删除 gate。COMMIT 结果未知仍按原幂等键读取，不假定回滚。P08b-3/P10b 真实参与者客户端接入前，Host/Scheduler 参与者在真实环境保持 BLOCKED（fake 端口单测覆盖成功/阻塞/恢复路径）。

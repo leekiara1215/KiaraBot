@@ -1437,3 +1437,9 @@ Scheduler 三进程 mTLS；Control 签发 Scheduler-audience delegation 创建�
 Runtime 入队+唯一 owner fan-out→confirm→COMPLETED；重复平台交接 duplicate、过期 handoff
 TIMEOUT、撤销授权后创建任务 PERMISSION_DENIED。容量/EXPIRED/确认丢失/崩溃恢复矩阵仍需后续
 阶段补齐；P10c SDK 任务方法不在本阶段。
+
+### P13a Runtime 生命周期协调与清理（2026-11-02 已实现应用/PG/RPC）
+
+`RuntimeResourceApplication` 新增 `begin_delete`/`restore_resource`/`lifecycle_maintenance`，接在冻结的 `RuntimeService.BeginDelete/RestoreResource/GetOperation` 上，**不新增 proto 消息、字段、RPC 或权限**。`BeginDelete` 在单个 Runtime UoW 内提交：校验 `resource.manage`、资源存在与预期版本，置 `DELETING`（实例同时 desired=STOPPED），撤销 Runtime 本地 `bridge_credentials`，创建 operation 与 `runtime/host/scheduler` 参与者，写 `lifecycle_tombstones`（删除时间、30 天恢复截止、180 天清理截止），返回 `OperationRef`。没有外部参与者的资源（账号/适配器/主机）同事务直接进入 `DELETED`；实例/安装保持 `DELETING`，由每秒维护钩子通过 fail-closed 端口推进 Host stop/drain 与 Scheduler 任务取消。P08b-3/P10b 客户端未接线时端口缺失，参与者记 `BLOCKED`/可重试，**绝不伪造 stopped 或全局完成**；operation 的 `participants` 通过既有 `OperationProgress` 投影给 Control。
+
+`RestoreResource` 只接受 `DELETED` 且未过 30 天恢复窗、版本匹配的资源，回到 `ACTIVE` 并删除墓碑；不复活已撤销凭据、已取消任务、过期租约或旧 token。超过窗口返回 `CONFLICT`。`lifecycle_maintenance` 每轮有界扫描墓碑：依赖恢复后完成 `DELETED`，超过 180 天转 `PURGED` 并移除墓碑；每 60 轮执行一次有界保留清理（receipts/inbox/outbox/audit/operations/storage receipts，单项失败只置 `cleanup_failed`，不撤销删除 gate）。Runtime schema 升至 v13：operations 增 `created_at/updated_at/retain_until` 与保留索引，新增 `operation_participants`、`lifecycle_tombstones`；Identity/Runtime/Scheduler/Model 的实测 descriptor/relation_count 已同步。`BeginDelete/RestoreResource` 的 proto `scope_kinds` 元数据补齐五个 Runtime 资源种类（无新字段/RPC/权限）。真实双进程 Runtime↔Identity e2e 已覆盖 BeginDelete→GetOperation(participants)→Restore，P08b-3/P10b 接线后的真实 Host/Scheduler 参与者验收仍待补。
