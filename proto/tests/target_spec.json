@@ -1330,7 +1330,10 @@
       "status": "implemented",
       "max_deadline_ms": 5000,
       "requires_idempotency_key": false,
-      "status_note": "P11a/b/c Model service production RPC + P11d Control REST forwarding evidence; REST Control operation status remains separately registered"
+      "status_note": "P11a/b/c Model service production RPC + P11d Control REST forwarding evidence; REST Control operation status remains separately registered",
+      "scope_kinds": [
+        "RESOURCE_MODEL"
+      ]
     },
     {
       "service": "ModelService",
@@ -1423,7 +1426,10 @@
       "server_streaming": false,
       "status": "implemented",
       "requires_idempotency_key": false,
-      "status_note": "P07f-1 Runtime owner RPC wired + P07f policy gate/payload evidence; Control REST forwarding remains not_implemented"
+      "status_note": "P07f-1 Runtime owner RPC wired + P07f policy gate/payload evidence; Control REST forwarding remains not_implemented",
+      "scope_kinds": [
+        "RESOURCE_ACCOUNT"
+      ]
     },
     {
       "service": "RuntimeService",
@@ -1441,7 +1447,10 @@
       "server_streaming": false,
       "status": "implemented",
       "requires_idempotency_key": true,
-      "status_note": "P07f-1 Runtime owner RPC wired + P07f policy gate/payload evidence; Control REST forwarding remains not_implemented"
+      "status_note": "P07f-1 Runtime owner RPC wired + P07f policy gate/payload evidence; Control REST forwarding remains not_implemented",
+      "scope_kinds": [
+        "RESOURCE_ACCOUNT"
+      ]
     },
     {
       "service": "ModelService",
@@ -1715,7 +1724,10 @@
       "status": "implemented",
       "max_deadline_ms": 5000,
       "requires_idempotency_key": false,
-      "exposure": "wire"
+      "exposure": "wire",
+      "scope_kinds": [
+        "RESOURCE_ACCOUNT"
+      ]
     },
     {
       "service": "RuntimeService",

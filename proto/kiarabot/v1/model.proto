@@ -243,6 +243,8 @@ service ModelService {
     option (default_deadline_ms) = 2000;
     option (max_deadline_ms) = 5000;
     option (requires_online_authorization) = true;
+    // P12m: list metadata is scoped to the requested Model resource family; no wildcard.
+    option (scope_kinds) = RESOURCE_MODEL;
   }
   rpc UpdateModel(ModelUpdateModelRequest) returns (ModelUpdateModelResponse) {
     option (required_permission) = PERMISSION_MODEL_MANAGE;

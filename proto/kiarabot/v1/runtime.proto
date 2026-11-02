@@ -1124,6 +1124,9 @@ service RuntimeService {
     option (default_deadline_ms) = 2000;
     option (max_deadline_ms) = 5000;
     option (requires_online_authorization) = true;
+    // P12m: P07 action-inspect query is scoped to exactly one RESOURCE_ACCOUNT; the request
+    // carries account_scope and the owner still checks the current exact assignment.
+    option (scope_kinds) = RESOURCE_ACCOUNT;
   }
   rpc GetStorage(RuntimeGetStorageRequest) returns (RuntimeGetStorageResponse) {
     option (required_permission) = PERMISSION_STORAGE_NAMESPACE;
@@ -1251,6 +1254,8 @@ service RuntimeService {
     option (default_deadline_ms) = 2000;
     option (max_deadline_ms) = 5000;
     option (requires_online_authorization) = true;
+    // P12m: ActionPolicy is account-owned; exact RESOURCE_ACCOUNT scope only.
+    option (scope_kinds) = RESOURCE_ACCOUNT;
   }
   rpc UpdateActionPolicy(RuntimeUpdateActionPolicyRequest) returns (RuntimeUpdateActionPolicyResponse) {
     option (required_permission) = PERMISSION_ACCOUNT_POLICY_MANAGE;
@@ -1258,6 +1263,8 @@ service RuntimeService {
     option (default_deadline_ms) = 5000;
     option (max_deadline_ms) = 30000;
     option (requires_online_authorization) = true;
+    // P12m: ActionPolicy is account-owned; exact RESOURCE_ACCOUNT scope only.
+    option (scope_kinds) = RESOURCE_ACCOUNT;
   }
   rpc GetAccount(RuntimeGetAccountRequest) returns (RuntimeGetAccountResponse) {
     option (required_permission) = PERMISSION_ACCOUNT_READ;
