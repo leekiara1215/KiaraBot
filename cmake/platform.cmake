@@ -74,6 +74,19 @@ kiarabot_platform_warnings(kiarabot_control_application_target_test)
 add_test(NAME p02_control_application COMMAND kiarabot_control_application_target_test)
 set_tests_properties(p02_control_application PROPERTIES LABELS "p02;unit" TIMEOUT 10)
 
+add_library(kiarabot_host_process STATIC
+  ${CMAKE_SOURCE_DIR}/core/src/runtime/platform/host_process.cpp)
+target_include_directories(kiarabot_host_process PUBLIC ${CMAKE_SOURCE_DIR}/core/include)
+kiarabot_platform_warnings(kiarabot_host_process)
+if(UNIX)
+  add_executable(kiarabot_host_process_test
+    ${CMAKE_SOURCE_DIR}/core/tests/platform/host_process_test.cpp)
+  target_link_libraries(kiarabot_host_process_test PRIVATE kiarabot_host_process)
+  kiarabot_platform_warnings(kiarabot_host_process_test)
+  add_test(NAME p08_host_process COMMAND kiarabot_host_process_test)
+  set_tests_properties(p08_host_process PROPERTIES LABELS "p08;unit;fault" TIMEOUT 30)
+endif()
+
 add_library(kiarabot_service_config STATIC
   ${CMAKE_SOURCE_DIR}/core/src/runtime/platform/service_config.cpp)
 target_include_directories(kiarabot_service_config PUBLIC ${CMAKE_SOURCE_DIR}/core/include)
