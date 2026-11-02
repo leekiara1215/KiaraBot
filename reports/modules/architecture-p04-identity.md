@@ -101,3 +101,54 @@ P03 unit_of_work.hpp的git diff为空。未执行PG/生产crypto/JWT/TLS/RPC验�
 语法编译、固定format16、边界、inner、diff通过。identity_contract新增结构/scope测试
 另以ASan/UBSan编译执行通过。P03 UoW差异仍为空。生产MAC/AEAD/刷新历史PG查询和
 快照缓存尚无实现，本测试不冒充这些能力验收；G08 wire映射继续等唯一提交SHA。
+
+## P05f 退出证据矩阵（2026-11-02，main@439fb9e）
+
+本节只补退出证据与 target 状态核对，不推翻上面历史实现记录；也不修改实现/契约。
+
+### 1. 本机验证（worktree `codex/p05f`，HEAD `439fb9e`）
+
+命令（full-locked preset，PG16.4/OpenSSL3.5/vcpkg 锁定环境）：
+
+```bash
+cmake --preset full-locked   # 本机完整 configure
+cmake --build --preset full-locked --parallel 6
+ctest --test-dir build/full-locked \
+  -R 'p04_identity|p04_control_auth_https|p05_runtime|p03_postgres|p02|architecture_p02' \
+  --output-on-failure -j 1
+```
+
+结果：**46/46 passed**（0 failed，全量构建 0 error）。分组：
+
+| 组 | 数量 | 代表测试 |
+|---|---|---|
+| `p04_identity_*` | 28 | `p04_identity_rpc`、`p04_identity_application`、`p04_identity_contract`、`p04_identity_bootstrap`、`p04_identity_security_clock`、`p04_identity_daemon_http`、`p04_identity_daemon_tls_expiry`、`p04_identity_exchange_application`、`p04_identity_assignment_application`、`p04_identity_invalidation_application`、`p04_identity_authorization_application`、`p04_identity_verification_keys_application` |
+| `p04_control_auth_https` | 1 | 真实 Control↔Identity mTLS 认证边界（含严格输入/撤销/依赖/停机） |
+| `p05_runtime_*` | 4 | `p05_runtime_rules`、`p05_runtime_resource_application`、`p05_runtime_identity_client`、`p05_runtime_identity_e2e` |
+| `p03_postgres_database` | 1 | 真实 PG16.4 四库 schema/事务矩阵 |
+| `p02_*` / `architecture_p02_*` | 12 | `p02_core_process`、`p02_service_config`、`p02_service_applications`、`p02_control_application`、`architecture_p02_lifecycle/tls/isolation/...` |
+
+`p05_runtime_identity_e2e`（15.04s）是真实 Identity/Runtime 双进程、真实 mTLS/委托/PG16.4 的允许与撤销后拒绝链路，覆盖 P04 的 IssueDelegation/CheckAuthorization 消费面；它不替代真实目标栈部署验收。
+
+### 2. Identity target 状态核对（契约只读）
+
+- `IdentityService` 方法 target_spec 标 implemented：**7/23** — RegisterPrincipal、RotateCredential、RevokeCredential、GetPrincipalStatus、GetCredentialStatus、ListAudit、ListLogs。
+- target override 已登记：**17 个 Identity proto message、59 个 Identity 字段** implemented（P04-A 主体/凭据管理面 + P12e ListAudit/ListLogs）。
+- 未翻但已有本机实现/测试证据的方法（本次不改契约，仅记录）：
+  - Login/RefreshSession/ValidateSession/GetPrincipal/ListSessions/RevokeSession：`p04_identity_rpc`、`p04_identity_daemon_*`、`p04_control_auth_https`（真实 TLS）；target_spec 仍 not_implemented。
+  - IssueDelegation/CheckAuthorization：`p05_runtime_identity_e2e`（真实双进程 mTLS）；target_spec 仍 not_implemented。
+  - ExchangeDelegation、ListAssignments/SetAssignment/RevokeAssignment、WatchInvalidations/GetAuthorizationSnapshot、GetVerificationKeys：分别有 `p04_identity_exchange_application`、`p04_identity_assignment_application`、`p04_identity_invalidation_application`、`p04_identity_verification_keys_application` 应用/RPC 测试；target evidence 未逐项登记。
+  - ListPrincipals：`p12_audit_logs_rest`/P12f 矩阵的 fake Identity owner 成功返回；target message/field 仍未翻转。
+- 未翻原因（统一口径）：`proto/tests/contract_status.json` 的 target 状态要求独立 target evidence 登记且逐项评审；P04 的 RPC/应用/PG/TLS 证据属于本机退出证据，不自动等于生产部署/远端环境证据，因此不批量翻转。未翻项清单和证据见本节，不伪造 implemented。
+
+### 3. 与 P05/部署相关的未验收项
+
+- **bootstrap_credential 字段级**：`RuntimeBindAdapterResponse.bootstrap_credential`/`RuntimeCreateInstanceResponse.bootstrap_credential` 仍 not_implemented；P06 外部 Bridge 消费/端到端证据未完成，字段级 target 不翻转。
+- **P05b Runtime 实例委托**：Runtime 获取下游实例委托的生产来源仍未实现/未确认；Identity IssueDelegation/ExchangeDelegation 虽有本机测试，P11 单链路仍以分层证据退出。需用户确认委托语义。
+- **真实目标栈 live**：本次所有测试在本机固定环境；六服务目标栈、Docker/Compose、远端 CI 未验证（见 P14d 矩阵）。
+- **Host peer 生产部署证书轮换**：P05 platform_peers 只覆盖离线登记与本地双进程；生产证书签发/轮换/吊销流程未验收。
+- **跨主机**：网络分区、跨主机 TLS/撤销/重连未演练（两主机延期）。
+
+### 4. 门禁（HEAD `439fb9e`）
+
+`check_implementation_status.py`、`target_api_test.rb`、`evidence_scopes_test.py`、`check_contracts.sh`（含 descriptor compatibility）全部 PASS；本次未修改 proto/OpenAPI/contract_status，因此 P05f 不产生契约漂移。

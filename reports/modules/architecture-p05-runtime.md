@@ -123,3 +123,46 @@ decoder 误要求 JSON integer）与 Assignment 收据 24h<7 天最小保留期�
 `reports/modules/architecture-p05-peer-provisioning.md`。可关闭 P05“Identity 真实授权链路未接线”
 与“RPC 传输测试未验”两项；Create/List/GetResourceState/GetOperation 的 scope 与应用输入、
 P06 bootstrap_credential 消费、生产部署编排仍在后续任务。
+
+## P05f 退出证据矩阵（2026-11-02，main@439fb9e）
+
+本节补退出证据与 Runtime target 状态核对，不改变实现/契约；历史段仍作为当时实现记录。
+
+### 1. 本机验证（worktree `codex/p05f`，HEAD `439fb9e`）
+
+```bash
+cmake --preset full-locked && cmake --build --preset full-locked --parallel 6
+ctest --test-dir build/full-locked \
+  -R 'p04_identity|p04_control_auth_https|p05_runtime|p03_postgres|p02|architecture_p02' \
+  --output-on-failure -j 1
+```
+
+结果：**46/46 passed**，全量构建 0 error。Runtime 直接相关：
+- `p05_runtime_rules`（1.46s）：应用规则/幂等/版本/授权失败传播。
+- `p05_runtime_resource_application`（0.74s）：资源/绑定/安装实例/配置 applied。
+- `p05_runtime_identity_client`（2.12s）：Runtime→Identity 在线授权/委托 claims/不可达 fail-closed。
+- `p05_runtime_identity_e2e`（15.04s）：真实 Identity/Runtime 双进程 mTLS/PG16.4，允许、撤销后拒绝、身份不可达 readiness、缺配置 fail-closed。
+- 关联：`p03_postgres_database`（真实 PG16.4）、`p02_core_process`/`p02_service_config`、`p04_identity_*` 28 项。
+
+### 2. Runtime target 状态核对（契约只读）
+
+- `RuntimeService` 方法 target_spec 标 implemented：**10/55** — SetSharedMembers、DisableSharedNamespace、CreateSharedNamespace、GetSharedNamespace、GetOperation、BeginDelete、RestoreResource、QueryActionResult、ListAudit、ListLogs（P09a-2/P13a/P12e + P12c-7）。
+- target override 已登记：**23 个 Runtime proto message、77 个 Runtime 字段** implemented。
+- 未翻的 P05 核心资源方法（实现/本机测试已存在，target 仍未 flip）：CreateAccount/UpdateAccount/DisableAccount、BindAdapter/UnbindAdapter、ValidateManifest、CreateInstallation/CreateInstance、SetDesiredState/UpdateConfig、GetResourceState、Get/UpdateActionPolicy、GetAccount/ListAccounts、GetInstallation/ListInstallations、GetInstance/ListInstances、GetAdapter/ListAdapters、GetHost/ListHosts、GetInstanceConfig。
+  - 原因：P05 报告已记录“未翻 target implemented，须按方法逐项验收后登记”；这些方法依赖真实目标栈/HTTP 操作面与逐方法 evidence，不在 P05f 批量翻转；本机 e2e 证据不自动等于生产 target。
+- P06 内部 dispatcher 方法（RegisterAdapter/Heartbeat/PublishEvent、RegisterPlugin/HeartbeatPlugin/ClaimEvent/DeliverEvent/AckDelivery/RenewDelivery）target 不翻转：`exposure=internal_dispatcher`，只走同进程 Bridge，不对外客户端。
+- P07/P09/P10/P11 范围方法（SubmitAction/QueryAction/CancelAction/ListActionMetadata/InspectActionMetadata、unary storage 方法、AcceptTimerTrigger、ListDeadLetters/ReplayDelivery 等）中部分为 internal/未实现或由后续阶段单独登记，本表不把它们计入 P05 出口。
+- `HostRequest.storage_compare_and_set` 仍 not_implemented（Host operation 契约项）；Control operation `host` owner 未在 OpenAPI 枚举声明，P12f 已记录为 400 而非伪造。
+
+### 3. 未翻/延期项与原因
+
+- **bootstrap_credential 字段级**：`RuntimeBindAdapterResponse.bootstrap_credential`/`RuntimeCreateInstanceResponse.bootstrap_credential` 在 P05 生成（仅 externally_managed/新绑定一次），但 target 字段仍 not_implemented；P06 外部 Bridge 消费与端到端证据未完成，字段语义不翻。
+- **P05b Runtime 实例委托**：Runtime 获取下游实例委托的生产来源未接线；P11 单链路仍分层证据。**需用户确认委托语义**后再排期。
+- **P05 目标方法未翻**：实现+本机测试≠生产 target；翻转须逐方法登记 evidence 与真实环境，非 P05f 范围（本次不改契约）。
+- **真实目标栈 live**：本机固定环境 46/46，不代表六服务/PG16.4 生产部署；Docker/Compose/远端 CI/两主机未验。
+- **Host peer 生产证书轮换**：platform_peers 离线登记与本地 e2e 通过；生产签发/轮换/吊销未验。
+- **跨主机**：网络分区、TLS/撤销/重连未演练（两主机延期）。
+
+### 4. 门禁（HEAD `439fb9e`）
+
+`check_implementation_status.py`、`target_api_test.rb`、`evidence_scopes_test.py`、`check_contracts.sh`（descriptor compatibility）全部 PASS；本次未改 proto/OpenAPI/contract_status，无新增契约漂移。
