@@ -336,7 +336,7 @@ PROD_KNOWN_HOSTS
 
 ## 当前运维配置的部署限制
 
-当前仓库已提供 Compose、非 root 的 Core 镜像构建、迁移前 SQLite 快照、健康探针和按指定 Core digest 回滚的脚本；用法与故障处理见 [部署与可观测性](08-operations.md)。生产 Compose 的全零 digest 是占位值，发布系统必须注入实际镜像 digest。Core 的本机 RPC、持久化、迁移命令、控制 API 和进程健康端点已实现；默认镜像和 Compose 尚未接线这些能力，适配器和面板镜像、生产 TLS 与隔离部署恢复仍待验收。当前配置不能支持真实的 staging 或 production 自动发布，也不能将 Compose 配置解析成功当作上线验收。`/api/v1/health` 是认证详情接口，`/health/live` 和 `/health/ready` 是独立的无认证进程探针。镜像回滚不自动恢复数据库，发布流程必须验证 schema 向后兼容或按运维流程显式恢复迁移前备份。
+当前仓库已提供 Compose、非 root 的 Core 镜像构建、迁移前 SQLite 快照、健康探针和按指定 Core digest 回滚的脚本；用法与故障处理见 [部署与可观测性](08-operations.md)。生产 Compose 的全零 digest 是占位值，发布系统必须注入实际镜像 digest。Core 的本机 RPC、持久化、迁移命令、控制 API 和进程健康端点已实现；默认镜像和 Compose 尚未接线这些能力（Dockerfile 的构建 target、产物路径与依赖安装已于 2026-11-02 静态修正，但仍未真实构建），适配器和面板镜像、生产 TLS 与隔离部署恢复仍待验收。当前配置不能支持真实的 staging 或 production 自动发布，也不能将 Compose 配置解析成功当作上线验收。`/api/v1/health` 是认证详情接口，`/health/live` 和 `/health/ready` 是独立的无认证进程探针。镜像回滚不自动恢复数据库，发布流程必须验证 schema 向后兼容或按运维流程显式恢复迁移前备份。
 
 ## 控制面持续验收（T08b–T11a）
 
@@ -350,6 +350,18 @@ contracts job 在原固定 vcpkg registry 中增加 boost-beast、boost-asio、l
 - **失败工件**：`full-build` 失败时上传 `build-full.log`；密钥扫描已有 gitleaks 报告工件。
 - **自动触发仍暂停**，恢复步骤不变：先手动 Run workflow 全绿 → 取消 `pull_request`/`push` 注释 → 删除 `base_ref` fallback。在恢复并复跑前，「任意 Pull Request 都能自动编译和运行测试」仍不成立。
 - 本地验证：`ruby -ryaml` 解析通过，actionlint 1.7.12 通过；GitHub Actions 未在远端执行（需要仓库管理员手动 Run workflow）。
+
+## 2026-11-02 更新：锁定依赖安装、descriptor 自比与 full-build 阻塞
+
+- **C++ 依赖安装改为锁定 manifest**：`contracts` 与 `full-build` 不再使用经典 `vcpkg install <port>` 列表，统一先运行 `python3 scripts/quality/check-dependency-lock.py --registry "$VCPKG_ROOT"` 校验固定 registry，再从 `dependencies/architecture` 用 `--x-manifest-root` 安装 x64-linux 依赖。原因是 `KIARABOT_GENERATE_PROTO=ON` 现在总会构建 `dependencies/architecture/smoke`、`infrastructure/postgres` 与 `infrastructure/identity_crypto`，需要 OpenSSL 3.5.0 EXACT、nlohmann_json 3.11.3 EXACT、libpqxx 7.10.0、jwt-cpp、libpq 等锁定版本，经典包列表无法表达这些 override。构建前置补充 bison/flex/perl（libpq port）与 ruby（configure 期 `find_program` 探测）；proto/full 预设构建 ALL 目标且包含 `kiarabot_python_proto_generate`，因此 SDK venv 安装步骤移到 proto 构建之前。
+- **full-build 的 full CTest 仍未接线（已知阻塞，不假装验收）**：测试需要 P00 fixture 环境：PostgreSQL 16.4 server 工具（`KIARABOT_TEST_PG_BIN`）、OpenSSL 3.5.0 CLI（`KIARABOT_TEST_OPENSSL`）、锁定 Python 3.11.18 venv 与 TLS 证书夹具。workflow 注释保留该缺口，测试步骤继续 fail-closed，不用 `-E`/标签过滤制造假绿。最小接线方案如下（留到 P14/有固定环境后实现，本轮未验收）：
+  1. `python3 scripts/quality/check-dependency-lock.py --archive postgresql-16.4.tar.bz2` 校验锁内 PG 源码 sha512 后解包，在忽略目录执行 `./configure --prefix="$PWD/../pg-16.4-install" --with-openssl --without-readline --without-icu`、`make -j2`、`make install`；
+  2. 从锁内 OpenSSL 3.5.0 同源 archive/hash 构建 CLI（或使用已验证 3.5.0 的构建产物），导出 `KIARABOT_TEST_OPENSSL`；
+  3. 用 uv 安装锁定 Python 3.11.18 与各项目 `.venv`（`KIARABOT_TARGET_PYTHON` 默认 `sdk/python/.venv/bin/python`），并导出 `KIARABOT_TEST_PG_BIN`；
+  4. 之后运行 `ctest --preset full`；`full-locked` 预置与 `KIARABOT_CHECK_PRESET=full-locked ./scripts/check-toolchain.sh` 的统一门禁接线也留到同一阶段（`TODO(P14)` 已写在 `ci.yml`）。
+- **Dockerfile 仅静态核对（未运行 docker build）**：修复构建 target 名、产物路径与锁定依赖安装；本机无 Docker，镜像内容、健康检查与 Compose 不在本轮验证范围，见 [部署与可观测性](08-operations.md)。
+- **descriptor 自比假绿**：`scripts/ci/check-descriptor.sh` 现在拒绝 baseline 解析为 HEAD 的自比（退出 1），`test-descriptor-gate.sh` 增加回归；说明见上文「已实现的 CI 与协议门禁」与 2026-10-31 更新条目。
+- 本轮所有 CI 修改只做本机静态验证（YAML 解析、`bash -n`、descriptor 门禁自测、依赖锁校验），未触发远端 GitHub Actions，不声称 CI 已绿。
 
 ## 2026-11-01 目标架构阶段门禁规格（P00，CI 尚未接线）
 

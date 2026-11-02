@@ -191,11 +191,12 @@ error_code
 
 ## 当前实现状态与未验证事项（2026-10-31 W4）
 
-- 本分支把部署骨架从“不可运行”推进为“可解释地接近可运行”：镜像构建启用 proto+infrastructure 并包含 `kiarabot-migrate`；Compose 补齐 `--grpc-listen`、持久化环境变量、控制配置挂载、host 网络与回环约束、adapter/panel 镜像、健康检查、日志驱动、独立备份卷与迁移权威命令。
+- 本分支把部署骨架从“不可运行”推进为“可解释地接近可运行”：Dockerfile 静态配置启用 proto+infrastructure 并复制 `kiarabot-core`/`kiarabot-migrate`（构建路径 2026-11-02 才与本仓库 CMake 布局对齐，见本节最后一目）；Compose 补齐 `--grpc-listen`、持久化环境变量、控制配置挂载、host 网络与回环约束、adapter/panel 镜像、健康检查、日志驱动、独立备份卷与迁移权威命令。
 - 宿主机依赖：Docker Engine + Docker Compose v2（`env_file.path/required`、`--wait` 需要较新版本）、`curl`（探针/smoke）、`sqlite3`（回滚前 schema 检查、备份校验）、bash；systemd 单元还需 `docker compose` 在 PATH 中。
 - **本机没有 Docker**：`docker build`、`docker compose config/up` 均未运行；镜像构建、host 网络行为、健康检查与 Compose 依赖链的真实结果必须在有 Docker 的 Linux 环境或 CI 中验证，本分支不声称部署已验收（T11b 继续未完成）。
 - 仍需外部环境验证：真实 NapCat/QQ 联调（T07b）、TLS 反代、集中日志、指标/告警、备份/恢复与回滚演练、真实 digest 发布、CI 镜像构建与推送。
 - 生产 Compose 的全零 digest 是“不可拉取”的占位符；发布系统必须注入真实 digest。staging Compose 的镜像引用是 `:staging` 标签，且可通过 `build:` 从仓库构建。
+- **2026-11-02 静态核对与修正（未运行 Docker）**：原 Dockerfile 与本仓库 CMake 布局不一致，镜像无法构建——`--target kiarabot-core` 不存在（实际 target 是 `kiarabot-reference-core`，`kiarabot-core` 只是 `OUTPUT_NAME`，产物在 `build/reference/core/`），`kiarabot-migrate` 在 `build/reference/infrastructure/`；builder stage 的经典 vcpkg 包列表也缺少 `dependencies/architecture` manifest 要求的 libpqxx/jwt-cpp/nlohmann_json/OpenSSL 3.5.0 EXACT 等版本。现已改为固定 registry checkout + `vcpkg install --x-manifest-root=dependencies/architecture`，并补齐 ruby、openssl CLI、bison/flex/perl 构建前置，`.dockerignore` 允许 manifest 目录进入上下文。本轮只做静态路径/参数核对，**未运行 `docker build` 或 `docker compose`**；镜像内二进制、健康检查与 Compose 依赖链仍未验证，T11b 仍未完成。
 
 ## 其他模块需要完成的依赖
 
@@ -205,7 +206,7 @@ error_code
 2. **协议和控制 API**：根路径探针与认证 `/api/v1/health` 已在 OpenAPI 冻结；控制配置的 `cors_origins`/`limits` 字段由 W3 实现，运维模板已同步。
 3. **基础设施/数据库**：独立迁移程序已随镜像发布；Core 打开数据库时仍会自动迁移 v1–v5→v6，因此运维必须保证先运行 migrate 服务（Compose 依赖已强制）；备份/恢复演练仍待 T11b。
 4. **适配器与面板**：适配器健康接口与 `HEALTH_PORT` 已实现并有测试；outbox 容量/失败记录清理仍需适配器负责人给出运维导出/清理工具；面板是静态站点，运行形态由 `panel.Dockerfile` 固定为 nginx 回环反代，若要求公网 TLS 需另加反向代理。
-5. **CI/CD**：镜像构建、GHCR 发布、staging 部署与部署记录尚未接入流水线（CI 自动触发暂停中）；本分支只提供 Dockerfile/Compose/脚本和本地单测，不声称 CI 已绿。
+5. **CI/CD**：镜像构建、GHCR 发布、staging 部署与部署记录尚未接入流水线（CI 自动触发暂停中）；2026-11-02 只把 contracts/full-build 的 C++ 依赖安装改为锁定 `dependencies/architecture` manifest，full CTest 仍缺 P00 fixture 环境（PG16.4/OpenSSL3.5/Python venv），且未在远端 CI 验证；本分支不声称 CI 已绿。
 6. **发布验收**：依赖完成后必须用真实 digest 镜像与隔离数据重新验证迁移失败阻断、live/ready/details、启动顺序、备份恢复、指定 digest 回滚和旧版本 schema 兼容性。
 
 ## 代码启动句

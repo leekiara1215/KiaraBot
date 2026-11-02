@@ -166,6 +166,8 @@ Python/uv 安装器本身尚无本仓库归档 hash，只有精确版本及现�
 补全所选平台 Python/uv 二进制及基础 OS digest，不能把目前清单称为完整镜像复现。
 本轮不更改 CI 或根 CMake；P02 由主对话协调 toolchain/manifest 接线。
 
+2026-11-02 更新：`Dockerfile` 与 `.github/workflows/ci.yml` 的 contracts/full-build 已改为先校验固定 registry、再用 `--x-manifest-root=dependencies/architecture` 安装本节锁；`full-locked` 预置、P00 dependency smoke 的运行门禁与统一 `check-toolchain.sh` 接线仍未完成（TODO 与最小接线方案见 [CI/CD 流程方案](12-ci-cd.md)），且 CI 尚未在远端验证；这是依赖安装接线，不是发布镜像可复现性验收。
+
 ## P02 构建与测试接线规格（待 P01 集成）
 
 本节是实施规格，六入口尚未建立。主对话先集成 P01 契约/内部端口，再协调根
