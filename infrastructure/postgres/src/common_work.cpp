@@ -650,6 +650,56 @@ public:
           return result;
         });
   }
+  target::Outcome<std::size_t> active_binding_count(const std::string& adapter_instance) {
+    return invoke<std::size_t>([&]() -> target::Outcome<std::size_t> {
+      if (owner() != target::Service::Runtime || adapter_instance.empty() ||
+          !valid_sql_text(adapter_instance)) {
+        return error(target::ErrorCode::InvalidArgument);
+      }
+      return exec("SELECT count(*) FROM kiarabot.adapter_bindings "
+                  "WHERE adapter_instance=$1 AND state=0",
+                  {adapter_instance})
+          .one_row()[0]
+          .as<std::size_t>();
+    });
+  }
+  target::Outcome<bool> bridge_credential_active(const std::string& resource_id) {
+    return invoke<bool>([&]() -> target::Outcome<bool> {
+      if (owner() != target::Service::Runtime || resource_id.empty() ||
+          !valid_sql_text(resource_id)) {
+        return error(target::ErrorCode::InvalidArgument);
+      }
+      return !exec("SELECT 1 FROM kiarabot.bridge_credentials WHERE resource_id=$1 AND NOT revoked",
+                   {resource_id})
+                  .empty();
+    });
+  }
+  target::Status insert_bridge_credential(const target::BridgeCredentialRecord& record) {
+    return invoke<std::monostate>([&]() -> target::Status {
+      if (owner() != target::Service::Runtime || record.id.empty() ||
+          !valid_sql_text_fields({record.id, record.resource_id}) ||
+          !valid_sql_text(record.resource_id) || record.revoked) {
+        return error(target::ErrorCode::InvalidArgument);
+      }
+      exec("INSERT INTO kiarabot.bridge_credentials(id,resource_id,digest,created_at,revoked) "
+           "VALUES($1,$2,$3,$4,false)",
+           {record.id, record.resource_id, digest(record.digest), timestamp(record.created_at)});
+      return std::monostate{};
+    });
+  }
+  target::Status revoke_bridge_credentials(const std::string& resource_id, target::TimePoint now) {
+    return invoke<std::monostate>([&]() -> target::Status {
+      (void)now;
+      if (owner() != target::Service::Runtime || resource_id.empty() ||
+          !valid_sql_text(resource_id)) {
+        return error(target::ErrorCode::InvalidArgument);
+      }
+      exec("UPDATE kiarabot.bridge_credentials SET revoked=true "
+           "WHERE resource_id=$1 AND NOT revoked",
+           {resource_id});
+      return std::monostate{};
+    });
+  }
   target::Outcome<std::optional<target::ResourceId>>
   adapter_id_by_instance(const target::InstanceId& instance) {
     return invoke<std::optional<target::ResourceId>>(
@@ -862,6 +912,34 @@ target::Outcome<std::vector<target::ReplayResult>> list_records(target::UnitOfWo
                                                                 const std::string& after) {
   if (auto* common = dynamic_cast<CommonWork*>(&work)) {
     return common->list_live(kind, limit, after);
+  }
+  return error(target::ErrorCode::Internal);
+}
+target::Outcome<std::size_t> active_binding_count(target::UnitOfWork& work,
+                                                  const std::string& adapter_instance) {
+  if (auto* common = dynamic_cast<CommonWork*>(&work)) {
+    return common->active_binding_count(adapter_instance);
+  }
+  return error(target::ErrorCode::Internal);
+}
+target::Outcome<bool> bridge_credential_active(target::UnitOfWork& work,
+                                               const std::string& resource_id) {
+  if (auto* common = dynamic_cast<CommonWork*>(&work)) {
+    return common->bridge_credential_active(resource_id);
+  }
+  return error(target::ErrorCode::Internal);
+}
+target::Status insert_bridge_credential(target::UnitOfWork& work,
+                                        const target::BridgeCredentialRecord& record) {
+  if (auto* common = dynamic_cast<CommonWork*>(&work)) {
+    return common->insert_bridge_credential(record);
+  }
+  return error(target::ErrorCode::Internal);
+}
+target::Status revoke_bridge_credentials(target::UnitOfWork& work, const std::string& resource_id,
+                                         target::TimePoint now) {
+  if (auto* common = dynamic_cast<CommonWork*>(&work)) {
+    return common->revoke_bridge_credentials(resource_id, now);
   }
   return error(target::ErrorCode::Internal);
 }

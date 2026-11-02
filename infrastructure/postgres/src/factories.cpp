@@ -117,6 +117,23 @@ public:
 private:
   target::UnitOfWork& work_;
 };
+// One-time external-bridge bootstrap credential persistence; plaintext is never stored.
+class BridgeCredentials final : public target::BridgeCredentialRepository {
+public:
+  explicit BridgeCredentials(target::UnitOfWork& work) : work_(work) {}
+  target::Outcome<bool> active(const std::string& resource_id) override {
+    return detail::bridge_credential_active(work_, resource_id);
+  }
+  target::Status insert(const target::BridgeCredentialRecord& record) override {
+    return detail::insert_bridge_credential(work_, record);
+  }
+  target::Status revoke(const std::string& resource_id, target::TimePoint now) override {
+    return detail::revoke_bridge_credentials(work_, resource_id, now);
+  }
+
+private:
+  target::UnitOfWork& work_;
+};
 class AuthorizationRepository final
     : public target::Repository<target::SubjectId, target::AuthorizationState> {
 public:
@@ -196,7 +213,7 @@ public:
   explicit RuntimeWork(std::unique_ptr<target::UnitOfWork> common)
       : WorkDelegate(std::move(common)), accounts_(work(), detail::RecordKind::Account),
         bindings_(work(), detail::RecordKind::AdapterBinding), adapters_(work()),
-        hosts_(work(), detail::RecordKind::Host),
+        credentials_(work()), hosts_(work(), detail::RecordKind::Host),
         installations_(work(), detail::RecordKind::Installation),
         instances_(work(), detail::RecordKind::Instance),
         instance_configs_(work(), detail::RecordKind::InstanceConfig) {}
@@ -209,6 +226,13 @@ public:
   }
   target::AdapterRegistryRepository& adapters() override {
     return adapters_;
+  }
+  target::BridgeCredentialRepository& bridge_credentials() override {
+    return credentials_;
+  }
+  target::Outcome<std::size_t>
+  active_bindings(const target::InstanceId& adapter_instance) override {
+    return detail::active_binding_count(work(), adapter_instance.value);
   }
   target::Repository<target::ResourceId, target::HostRegistration>& hosts() override {
     return hosts_;
@@ -249,6 +273,7 @@ private:
   LiveRepository<target::ResourceId, target::BotAccount> accounts_;
   LiveRepository<target::ResourceId, target::AdapterBindingRecord> bindings_;
   AdapterRegistry adapters_;
+  BridgeCredentials credentials_;
   LiveRepository<target::ResourceId, target::HostRegistration> hosts_;
   LiveRepository<target::InstallationId, target::PluginInstallation> installations_;
   LiveRepository<target::InstanceId, target::PluginInstance> instances_;

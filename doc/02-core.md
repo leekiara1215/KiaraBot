@@ -1179,7 +1179,17 @@ CONFLICT（正确输入恢复），读依赖故障返回失败而不是空页/�
 业务应用已装配 + Runtime 私有库/schema writer 可用 + Identity 授权链路可用才 ready=true；
 未观测或不可用保持 false，测试 fake 只验证判定逻辑，不能使组合进程报 ready。
 
-**持久化说明**：新增 adapters/adapter_bindings/hosts/instance_configs 关系与
+**P06 外部 Bridge bootstrap（Runtime 侧已实现，消费端 P06 未实现）**：BindAdapter 创建新绑定时
+由 Runtime 为 adapter instance 生成一次 32 字节 CSPRNG opaque bootstrap（64 位十六进制文本），
+externally_managed 实例在 CreateInstance 时同样生成；Runtime 私有库
+`bridge_credentials` 只保存 SHA-256 摘要，明文只在对应 RPC 响应中出现一次，不进入收据、
+审计、日志或面板。已存在 active 凭据时不重复发放；解绑最后一个绑定会撤销 adapter 凭据。
+`RuntimeBindAdapterResponse.bootstrap_credential`（字段3）/
+`RuntimeCreateInstanceResponse.bootstrap_credential`（字段2）由 P05 RPC 返回；外部客户端以
+Bearer 连接 bridge 的消费/换取 ConnectionAuthorization 仍属 P06，契约 target 状态继续
+not_implemented，本增量不宣称 P06 完成。
+
+**持久化说明**：新增 adapters/adapter_bindings/hosts/instance_configs/bridge_credentials 关系与
 installations.manifest、instances.desired 列在同一 Runtime 库 v1 初始化 schema 内创建。
 该版本没有增量迁移机制，因此结构变更只在初始化 schema 中表达；不修改既有列语义，不重排
 `ReplayResult` 既有索引（新增记录追加在末尾，RecordKind 使用相同索引值）。

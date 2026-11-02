@@ -531,8 +531,8 @@ public:
   grpc::Status CreateAccount(grpc::ServerContext* transport,
                              const v1::RuntimeCreateAccountRequest* request,
                              v1::RuntimeCreateAccountResponse* response) override {
-    auto prepared = prepare(*transport, request->context(), "RuntimeService.CreateAccount",
-                            *request, true, options_);
+    auto prepared = prepare(*transport, request->context(),
+                            "kiarabot.v1.RuntimeService/CreateAccount", *request, true, options_);
     if (const auto* rejected = std::get_if<t::Failure>(&prepared)) {
       std::string id = canonical_uuid(request->context().request_id())
                            ? request->context().request_id()
@@ -554,8 +554,8 @@ public:
   grpc::Status UpdateAccount(grpc::ServerContext* transport,
                              const v1::RuntimeUpdateAccountRequest* request,
                              v1::RuntimeUpdateAccountResponse* response) override {
-    auto prepared = prepare(*transport, request->context(), "RuntimeService.UpdateAccount",
-                            *request, true, options_);
+    auto prepared = prepare(*transport, request->context(),
+                            "kiarabot.v1.RuntimeService/UpdateAccount", *request, true, options_);
     if (const auto* rejected = std::get_if<t::Failure>(&prepared)) {
       return error_status(*rejected, request->context().request_id(),
                           request->context().trace_id());
@@ -579,8 +579,8 @@ public:
   grpc::Status DisableAccount(grpc::ServerContext* transport,
                               const v1::RuntimeDisableAccountRequest* request,
                               v1::RuntimeDisableAccountResponse* response) override {
-    auto prepared = prepare(*transport, request->context(), "RuntimeService.DisableAccount",
-                            *request, true, options_);
+    auto prepared = prepare(*transport, request->context(),
+                            "kiarabot.v1.RuntimeService/DisableAccount", *request, true, options_);
     if (const auto* rejected = std::get_if<t::Failure>(&prepared)) {
       return error_status(*rejected, request->context().request_id(),
                           request->context().trace_id());
@@ -606,8 +606,8 @@ public:
   grpc::Status GetAccount(grpc::ServerContext* transport,
                           const v1::RuntimeGetAccountRequest* request,
                           v1::RuntimeGetAccountResponse* response) override {
-    auto query = prepare(*transport, request->context(), "RuntimeService.GetAccount", *request,
-                         false, options_);
+    auto query = prepare(*transport, request->context(), "kiarabot.v1.RuntimeService/GetAccount",
+                         *request, false, options_);
     if (const auto* rejected = std::get_if<t::Failure>(&query)) {
       return error_status(*rejected, request->context().request_id(),
                           request->context().trace_id());
@@ -631,8 +631,8 @@ public:
   grpc::Status ListAccounts(grpc::ServerContext* transport,
                             const v1::RuntimeListAccountsRequest* request,
                             v1::RuntimeListAccountsResponse* response) override {
-    auto query = prepare(*transport, request->context(), "RuntimeService.ListAccounts", *request,
-                         false, options_);
+    auto query = prepare(*transport, request->context(), "kiarabot.v1.RuntimeService/ListAccounts",
+                         *request, false, options_);
     if (const auto* rejected = std::get_if<t::Failure>(&query)) {
       return error_status(*rejected, request->context().request_id(),
                           request->context().trace_id());
@@ -661,8 +661,8 @@ public:
   grpc::Status BindAdapter(grpc::ServerContext* transport,
                            const v1::RuntimeBindAdapterRequest* request,
                            v1::RuntimeBindAdapterResponse* response) override {
-    auto prepared = prepare(*transport, request->context(), "RuntimeService.BindAdapter", *request,
-                            true, options_);
+    auto prepared = prepare(*transport, request->context(),
+                            "kiarabot.v1.RuntimeService/BindAdapter", *request, true, options_);
     if (const auto* rejected = std::get_if<t::Failure>(&prepared)) {
       return error_status(*rejected, request->context().request_id(),
                           request->context().trace_id());
@@ -683,6 +683,9 @@ public:
     wire->set_account_id(mutation.binding.account.value);
     wire->set_adapter_instance_id(mutation.binding.adapter_instance.value);
     wire->set_version(mutation.binding.version.value);
+    if (mutation.bootstrap_credential) {
+      response->set_bootstrap_credential(*mutation.bootstrap_credential);
+    }
     if (mutation.operation &&
         !operation_ref(mutation.operation->operation, response->mutable_operation())) {
       return error_status(internal_failure(), context.request, context.trace);
@@ -692,8 +695,8 @@ public:
   grpc::Status UnbindAdapter(grpc::ServerContext* transport,
                              const v1::RuntimeUnbindAdapterRequest* request,
                              v1::RuntimeUnbindAdapterResponse* response) override {
-    auto prepared = prepare(*transport, request->context(), "RuntimeService.UnbindAdapter",
-                            *request, true, options_);
+    auto prepared = prepare(*transport, request->context(),
+                            "kiarabot.v1.RuntimeService/UnbindAdapter", *request, true, options_);
     if (const auto* rejected = std::get_if<t::Failure>(&prepared)) {
       return error_status(*rejected, request->context().request_id(),
                           request->context().trace_id());
@@ -722,8 +725,9 @@ public:
   grpc::Status ValidateManifest(grpc::ServerContext* transport,
                                 const v1::RuntimeValidateManifestRequest* request,
                                 v1::RuntimeValidateManifestResponse* response) override {
-    auto prepared = prepare(*transport, request->context(), "RuntimeService.ValidateManifest",
-                            *request, false, options_);
+    auto prepared =
+        prepare(*transport, request->context(), "kiarabot.v1.RuntimeService/ValidateManifest",
+                *request, false, options_);
     if (const auto* rejected = std::get_if<t::Failure>(&prepared)) {
       return error_status(*rejected, request->context().request_id(),
                           request->context().trace_id());
@@ -753,8 +757,9 @@ public:
   grpc::Status CreateInstallation(grpc::ServerContext* transport,
                                   const v1::RuntimeCreateInstallationRequest* request,
                                   v1::RuntimeCreateInstallationResponse* response) override {
-    auto prepared = prepare(*transport, request->context(), "RuntimeService.CreateInstallation",
-                            *request, true, options_);
+    auto prepared =
+        prepare(*transport, request->context(), "kiarabot.v1.RuntimeService/CreateInstallation",
+                *request, true, options_);
     if (const auto* rejected = std::get_if<t::Failure>(&prepared)) {
       return error_status(*rejected, request->context().request_id(),
                           request->context().trace_id());
@@ -779,8 +784,8 @@ public:
   grpc::Status GetInstallation(grpc::ServerContext* transport,
                                const v1::RuntimeGetInstallationRequest* request,
                                v1::RuntimeGetInstallationResponse* response) override {
-    auto query = prepare(*transport, request->context(), "RuntimeService.GetInstallation", *request,
-                         false, options_);
+    auto query = prepare(*transport, request->context(),
+                         "kiarabot.v1.RuntimeService/GetInstallation", *request, false, options_);
     if (const auto* rejected = std::get_if<t::Failure>(&query)) {
       return error_status(*rejected, request->context().request_id(),
                           request->context().trace_id());
@@ -806,8 +811,8 @@ public:
   grpc::Status ListInstallations(grpc::ServerContext* transport,
                                  const v1::RuntimeListInstallationsRequest* request,
                                  v1::RuntimeListInstallationsResponse* response) override {
-    auto query = prepare(*transport, request->context(), "RuntimeService.ListInstallations",
-                         *request, false, options_);
+    auto query = prepare(*transport, request->context(),
+                         "kiarabot.v1.RuntimeService/ListInstallations", *request, false, options_);
     if (const auto* rejected = std::get_if<t::Failure>(&query)) {
       return error_status(*rejected, request->context().request_id(),
                           request->context().trace_id());
@@ -836,8 +841,8 @@ public:
   grpc::Status CreateInstance(grpc::ServerContext* transport,
                               const v1::RuntimeCreateInstanceRequest* request,
                               v1::RuntimeCreateInstanceResponse* response) override {
-    auto prepared = prepare(*transport, request->context(), "RuntimeService.CreateInstance",
-                            *request, true, options_);
+    auto prepared = prepare(*transport, request->context(),
+                            "kiarabot.v1.RuntimeService/CreateInstance", *request, true, options_);
     if (const auto* rejected = std::get_if<t::Failure>(&prepared)) {
       return error_status(*rejected, request->context().request_id(),
                           request->context().trace_id());
@@ -854,16 +859,20 @@ public:
     if (const auto* rejected = std::get_if<t::Failure>(&created)) {
       return fail(context, *rejected);
     }
-    if (!instance(std::get<t::PluginInstance>(created), response->mutable_instance(), now())) {
+    const auto& creation = std::get<t::InstanceCreation>(created);
+    if (!instance(creation.instance, response->mutable_instance(), now())) {
       return error_status(internal_failure(), context.request, context.trace);
+    }
+    if (creation.bootstrap_credential) {
+      response->set_bootstrap_credential(*creation.bootstrap_credential);
     }
     return grpc::Status::OK;
   }
   grpc::Status GetInstance(grpc::ServerContext* transport,
                            const v1::RuntimeGetInstanceRequest* request,
                            v1::RuntimeGetInstanceResponse* response) override {
-    auto query = prepare(*transport, request->context(), "RuntimeService.GetInstance", *request,
-                         false, options_);
+    auto query = prepare(*transport, request->context(), "kiarabot.v1.RuntimeService/GetInstance",
+                         *request, false, options_);
     if (const auto* rejected = std::get_if<t::Failure>(&query)) {
       return error_status(*rejected, request->context().request_id(),
                           request->context().trace_id());
@@ -888,8 +897,8 @@ public:
   grpc::Status ListInstances(grpc::ServerContext* transport,
                              const v1::RuntimeListInstancesRequest* request,
                              v1::RuntimeListInstancesResponse* response) override {
-    auto query = prepare(*transport, request->context(), "RuntimeService.ListInstances", *request,
-                         false, options_);
+    auto query = prepare(*transport, request->context(), "kiarabot.v1.RuntimeService/ListInstances",
+                         *request, false, options_);
     if (const auto* rejected = std::get_if<t::Failure>(&query)) {
       return error_status(*rejected, request->context().request_id(),
                           request->context().trace_id());
@@ -921,8 +930,8 @@ public:
   grpc::Status GetInstanceConfig(grpc::ServerContext* transport,
                                  const v1::RuntimeGetInstanceConfigRequest* request,
                                  v1::RuntimeGetInstanceConfigResponse* response) override {
-    auto query = prepare(*transport, request->context(), "RuntimeService.GetInstanceConfig",
-                         *request, false, options_);
+    auto query = prepare(*transport, request->context(),
+                         "kiarabot.v1.RuntimeService/GetInstanceConfig", *request, false, options_);
     if (const auto* rejected = std::get_if<t::Failure>(&query)) {
       return error_status(*rejected, request->context().request_id(),
                           request->context().trace_id());
@@ -946,8 +955,8 @@ public:
   grpc::Status SetDesiredState(grpc::ServerContext* transport,
                                const v1::RuntimeSetDesiredStateRequest* request,
                                v1::RuntimeSetDesiredStateResponse* response) override {
-    auto prepared = prepare(*transport, request->context(), "RuntimeService.SetDesiredState",
-                            *request, true, options_);
+    auto prepared = prepare(*transport, request->context(),
+                            "kiarabot.v1.RuntimeService/SetDesiredState", *request, true, options_);
     if (const auto* rejected = std::get_if<t::Failure>(&prepared)) {
       return error_status(*rejected, request->context().request_id(),
                           request->context().trace_id());
@@ -981,8 +990,8 @@ public:
   grpc::Status UpdateConfig(grpc::ServerContext* transport,
                             const v1::RuntimeUpdateConfigRequest* request,
                             v1::RuntimeUpdateConfigResponse* response) override {
-    auto prepared = prepare(*transport, request->context(), "RuntimeService.UpdateConfig", *request,
-                            true, options_);
+    auto prepared = prepare(*transport, request->context(),
+                            "kiarabot.v1.RuntimeService/UpdateConfig", *request, true, options_);
     if (const auto* rejected = std::get_if<t::Failure>(&prepared)) {
       return error_status(*rejected, request->context().request_id(),
                           request->context().trace_id());
@@ -1033,8 +1042,8 @@ public:
   grpc::Status GetResourceState(grpc::ServerContext* transport,
                                 const v1::RuntimeGetResourceStateRequest* request,
                                 v1::RuntimeGetResourceStateResponse* response) override {
-    auto query = prepare(*transport, request->context(), "RuntimeService.GetResourceState",
-                         *request, false, options_);
+    auto query = prepare(*transport, request->context(),
+                         "kiarabot.v1.RuntimeService/GetResourceState", *request, false, options_);
     if (const auto* rejected = std::get_if<t::Failure>(&query)) {
       return error_status(*rejected, request->context().request_id(),
                           request->context().trace_id());
@@ -1058,8 +1067,8 @@ public:
   grpc::Status GetOperation(grpc::ServerContext* transport,
                             const v1::RuntimeGetOperationRequest* request,
                             v1::RuntimeGetOperationResponse* response) override {
-    auto query = prepare(*transport, request->context(), "RuntimeService.GetOperation", *request,
-                         false, options_);
+    auto query = prepare(*transport, request->context(), "kiarabot.v1.RuntimeService/GetOperation",
+                         *request, false, options_);
     if (const auto* rejected = std::get_if<t::Failure>(&query)) {
       return error_status(*rejected, request->context().request_id(),
                           request->context().trace_id());
@@ -1089,8 +1098,8 @@ public:
   grpc::Status GetAdapter(grpc::ServerContext* transport,
                           const v1::RuntimeGetAdapterRequest* request,
                           v1::RuntimeGetAdapterResponse* response) override {
-    auto query = prepare(*transport, request->context(), "RuntimeService.GetAdapter", *request,
-                         false, options_);
+    auto query = prepare(*transport, request->context(), "kiarabot.v1.RuntimeService/GetAdapter",
+                         *request, false, options_);
     if (const auto* rejected = std::get_if<t::Failure>(&query)) {
       return error_status(*rejected, request->context().request_id(),
                           request->context().trace_id());
@@ -1117,8 +1126,8 @@ public:
   grpc::Status ListAdapters(grpc::ServerContext* transport,
                             const v1::RuntimeListAdaptersRequest* request,
                             v1::RuntimeListAdaptersResponse* response) override {
-    auto query = prepare(*transport, request->context(), "RuntimeService.ListAdapters", *request,
-                         false, options_);
+    auto query = prepare(*transport, request->context(), "kiarabot.v1.RuntimeService/ListAdapters",
+                         *request, false, options_);
     if (const auto* rejected = std::get_if<t::Failure>(&query)) {
       return error_status(*rejected, request->context().request_id(),
                           request->context().trace_id());

@@ -67,6 +67,18 @@ identity/scheduler/model 因共享 schema 变更同步更新 descriptor 与 rela
 - clang-format 16.0.6 对所有改动 C++ 文件执行；`git diff --check` 通过；未运行 tidy/boundaries
   全量脚本。
 
+## 集成收尾 A：P06 外部 Bridge bootstrap 凭据（Runtime 侧）
+
+rebase 到含 P04/P06 契约的 main 后新增：`RuntimeSecretPort`（32 字节 CSPRNG opaque + SHA-256）、
+Runtime 私有 `bridge_credentials` 表（只有摘要、active 唯一索引、撤销标记）、
+`BridgeCredentialRepository`/`active_bindings` 仓储。BindAdapter 创建新绑定且该 adapter
+instance 无 active 凭据时生成一次并放入 `RuntimeBindAdapterResponse.bootstrap_credential`；
+CreateInstance 仅 externally_managed 生成并放入 `RuntimeCreateInstanceResponse.bootstrap_credential`；
+明文只在响应中出现一次，解绑最后一个绑定撤销凭据。运行时应用测试覆盖“摘要存储/不重复发放/
+撤销”，PG typed 测试覆盖 active/insert-conflict/revoke；schema 重新在 PG16.4 空库实测：
+Identity descriptor `0d9975965aa851b433887e949f782167`/129/v13，Runtime
+`f3c187c4cb886d70e6ae5f627ffaede6`/84/v7，Scheduler/Model 保持 71/66/v6。
+
 ## 未完成 / 降级项
 
 1. **Identity 真实授权链路未接线**：组合根当前注入 fail-closed `PeerAuthorizer` 与

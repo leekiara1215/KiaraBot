@@ -349,7 +349,7 @@ class RuntimeResourceApplicationImpl final : public RuntimeResourceApplication {
 public:
   explicit RuntimeResourceApplicationImpl(RuntimeResourceDependencies dependencies)
       : transactions_(dependencies.transactions), ids_(dependencies.ids),
-        authorization_(dependencies.authorization),
+        secrets_(dependencies.secrets), authorization_(dependencies.authorization),
         supported_capabilities_(std::move(dependencies.supported_capabilities)) {}
 
   Service service() const noexcept override {
@@ -595,6 +595,7 @@ public:
     }
     const auto authorization_version =
         std::get<RuntimeAuthorizationDecision>(checked).authorization_version;
+    std::optional<std::string> bootstrap_credential;
     auto result = mutate<AdapterBindingRecord>(
         transactions_, request.context, resource, authorization_version,
         [&](RuntimeUnitOfWork& work, TimePoint now) -> Outcome<AdapterBindingRecord> {
@@ -637,6 +638,11 @@ public:
           if (const auto* failure = std::get_if<Failure>(&operation)) {
             return *failure;
           }
+          auto issued = issue_bootstrap_credential(work, request.adapter_instance.value, now);
+          if (const auto* failure = std::get_if<Failure>(&issued)) {
+            return *failure;
+          }
+          bootstrap_credential = std::move(std::get<std::optional<std::string>>(issued));
           return binding;
         },
         [](const AdapterBindingRecord& value) {
@@ -647,7 +653,8 @@ public:
       return *failure;
     }
     auto mutation = std::move(std::get<Mutation<AdapterBindingRecord>>(result));
-    return BindingMutation{std::move(mutation.value), accepted(std::move(mutation.operation))};
+    return BindingMutation{std::move(mutation.value), accepted(std::move(mutation.operation)),
+                           std::move(bootstrap_credential)};
   }
 
   Outcome<BindingMutation> unbind_adapter(const UnbindAdapterRequest& request) override {
@@ -689,6 +696,17 @@ public:
           if (const auto* failure = std::get_if<Failure>(&operation)) {
             return *failure;
           }
+          const auto remaining = work.active_bindings(binding->adapter_instance);
+          if (const auto* failure = std::get_if<Failure>(&remaining)) {
+            return *failure;
+          }
+          if (std::get<std::size_t>(remaining) == 0) {
+            const auto revoked =
+                work.bridge_credentials().revoke(binding->adapter_instance.value, now);
+            if (const auto* failure = std::get_if<Failure>(&revoked)) {
+              return *failure;
+            }
+          }
           return *binding;
         },
         [](const AdapterBindingRecord& value) {
@@ -699,7 +717,8 @@ public:
       return *failure;
     }
     auto mutation = std::move(std::get<Mutation<AdapterBindingRecord>>(result));
-    return BindingMutation{std::move(mutation.value), accepted(std::move(mutation.operation))};
+    return BindingMutation{std::move(mutation.value), accepted(std::move(mutation.operation)),
+                           std::nullopt};
   }
 
   Outcome<AdapterRegistrationResult>
@@ -1123,7 +1142,7 @@ public:
         });
   }
 
-  Outcome<PluginInstance> create_instance(const CreateInstanceRequest& request) override {
+  Outcome<InstanceCreation> create_instance(const CreateInstanceRequest& request) override {
     if (const auto failure = status_failure(validate_command_context(request.context, true))) {
       return *failure;
     }
@@ -1141,9 +1160,10 @@ public:
     }
     const auto id = std::get<InstanceId>(allocated);
     const ResourceRef receipt_scope{ResourceKind::Catalog, {"runtime-create-instance"}};
+    std::optional<std::string> bootstrap_credential;
     auto result = mutate<PluginInstance>(
         transactions_, request.context, receipt_scope, authorization_version,
-        [&](RuntimeUnitOfWork& work, TimePoint) -> Outcome<PluginInstance> {
+        [&](RuntimeUnitOfWork& work, TimePoint now) -> Outcome<PluginInstance> {
           auto installation = work.installations().find(request.installation);
           if (const auto* failure = std::get_if<Failure>(&installation)) {
             return *failure;
@@ -1170,6 +1190,13 @@ public:
           if (const auto* failure = std::get_if<Failure>(&saved)) {
             return *failure;
           }
+          if (request.externally_managed) {
+            auto issued = issue_bootstrap_credential(work, id.value, now);
+            if (const auto* failure = std::get_if<Failure>(&issued)) {
+              return *failure;
+            }
+            bootstrap_credential = std::move(std::get<std::optional<std::string>>(issued));
+          }
           return instance;
         },
         [](const PluginInstance& value) {
@@ -1179,7 +1206,8 @@ public:
     if (const auto* failure = std::get_if<Failure>(&result)) {
       return *failure;
     }
-    return std::move(std::get<Mutation<PluginInstance>>(result).value);
+    auto mutation = std::move(std::get<Mutation<PluginInstance>>(result));
+    return InstanceCreation{std::move(mutation.value), std::move(bootstrap_credential)};
   }
 
   Outcome<PluginInstance> get_instance(const InstanceQuery& request) override {
@@ -1686,8 +1714,43 @@ private:
     return operation;
   }
 
+  // Issues a one-time external-bridge bootstrap credential for the resource unless an active
+  // credential already exists. Only the SHA-256 digest is persisted; plaintext is returned exactly
+  // once through the RPC response and is never written to receipts, audit or logs.
+  Outcome<std::optional<std::string>> issue_bootstrap_credential(RuntimeUnitOfWork& work,
+                                                                 const std::string& resource_id,
+                                                                 TimePoint now) {
+    auto active = work.bridge_credentials().active(resource_id);
+    if (const auto* failure = std::get_if<Failure>(&active)) {
+      return *failure;
+    }
+    if (std::get<bool>(active)) {
+      return std::nullopt;
+    }
+    auto text = secrets_.bootstrap_credential();
+    if (const auto* failure = std::get_if<Failure>(&text)) {
+      return *failure;
+    }
+    auto digest = secrets_.sha256(std::get<std::string>(text));
+    if (const auto* failure = std::get_if<Failure>(&digest)) {
+      return *failure;
+    }
+    auto id = ids_.snapshot_id();
+    if (const auto* failure = std::get_if<Failure>(&id)) {
+      return *failure;
+    }
+    BridgeCredentialRecord record{std::get<std::string>(id), resource_id,
+                                  std::get<Sha256Digest>(digest), now, false};
+    const auto saved = work.bridge_credentials().insert(record);
+    if (const auto* failure = std::get_if<Failure>(&saved)) {
+      return *failure;
+    }
+    return std::optional<std::string>{std::get<std::string>(text)};
+  }
+
   RuntimeUnitOfWorkFactory& transactions_;
   RuntimeIdPort& ids_;
+  RuntimeSecretPort& secrets_;
   std::mutex cursors_mutex_;
   std::unordered_map<std::string, PageCursor> cursors_;
   RuntimeAuthorizationPort& authorization_;

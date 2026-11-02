@@ -9,12 +9,13 @@ namespace kiarabot::infrastructure::postgres::schema {
 inline constexpr int version(core::target::Service owner) {
   switch (owner) {
   case core::target::Service::Identity:
-    return 12;
+    return 13;
   case core::target::Service::Runtime:
+    // P05 adds Runtime relations/columns, shared replay-result relations and the private
+    // bridge_credentials relation in the same v1 initialization schema.
+    return 7;
   case core::target::Service::Scheduler:
   case core::target::Service::Model:
-    // P05 adds Runtime relations/columns and shared replay-result relations in the same v1
-    // initialization schema. There is no incremental migration in this version.
     return 6;
   }
   return 0;

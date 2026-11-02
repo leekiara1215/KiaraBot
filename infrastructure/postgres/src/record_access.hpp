@@ -59,6 +59,17 @@ core::target::Status save_record(core::target::UnitOfWork& work, RecordKind kind
 core::target::Outcome<std::vector<core::target::ReplayResult>>
 list_records(core::target::UnitOfWork& work, RecordKind kind, std::size_t limit,
              const std::string& after);
+// One-time external-bridge bootstrap credential persistence. Runtime stores only the SHA-256
+// digest; unsalted/short digests are rejected by the table CHECK and by these helpers.
+core::target::Outcome<std::size_t> active_binding_count(core::target::UnitOfWork& work,
+                                                        const std::string& adapter_instance);
+core::target::Outcome<bool> bridge_credential_active(core::target::UnitOfWork& work,
+                                                     const std::string& resource_id);
+core::target::Status insert_bridge_credential(core::target::UnitOfWork& work,
+                                              const core::target::BridgeCredentialRecord& record);
+core::target::Status revoke_bridge_credentials(core::target::UnitOfWork& work,
+                                               const std::string& resource_id,
+                                               core::target::TimePoint now);
 // Resolve the stable adapter resource id from an assigned adapter instance identity (unique key).
 core::target::Outcome<std::optional<core::target::ResourceId>>
 find_adapter_id(core::target::UnitOfWork& work, const core::target::InstanceId& instance);

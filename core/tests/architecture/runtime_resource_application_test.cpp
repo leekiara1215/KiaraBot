@@ -59,6 +59,7 @@ struct Store {
   std::map<std::string, t::PluginInstance> instances;
   std::map<std::string, t::InstanceConfiguration> configs;
   std::map<std::string, t::Operation> operations;
+  std::vector<t::BridgeCredentialRecord> bridge_credentials;
   std::vector<std::pair<t::ReceiptKey, t::CommandReceipt>> receipts;
   std::vector<t::AuditEntry> audits;
   bool fail_reads = false;
@@ -318,12 +319,53 @@ public:
 private:
   Store& store_;
 };
+class MemoryCredentials final : public t::BridgeCredentialRepository {
+public:
+  explicit MemoryCredentials(Store& store) : store_(store) {}
+  t::Outcome<bool> active(const std::string& resource_id) override {
+    if (store_.fail_reads) {
+      return failure(t::ErrorCode::UpstreamUnavailable);
+    }
+    for (const auto& record : store_.bridge_credentials) {
+      if (record.resource_id == resource_id && !record.revoked) {
+        return true;
+      }
+    }
+    return false;
+  }
+  t::Status insert(const t::BridgeCredentialRecord& record) override {
+    if (store_.fail_writes) {
+      return failure(t::ErrorCode::UpstreamUnavailable);
+    }
+    for (const auto& existing : store_.bridge_credentials) {
+      if (existing.resource_id == record.resource_id && !existing.revoked) {
+        return failure(t::ErrorCode::Conflict);
+      }
+    }
+    store_.bridge_credentials.push_back(record);
+    return std::monostate{};
+  }
+  t::Status revoke(const std::string& resource_id, t::TimePoint) override {
+    if (store_.fail_writes) {
+      return failure(t::ErrorCode::UpstreamUnavailable);
+    }
+    for (auto& record : store_.bridge_credentials) {
+      if (record.resource_id == resource_id) {
+        record.revoked = true;
+      }
+    }
+    return std::monostate{};
+  }
+
+private:
+  Store& store_;
+};
 class MemoryWork final : public t::RuntimeUnitOfWork {
 public:
   explicit MemoryWork(Store& store)
       : store_(store), accounts_(store), bindings_(store), adapters_(store), hosts_(store),
         installations_(store), instances_(store), configs_(store), operations_(store),
-        receipts_(store), journal_(store) {}
+        credentials_(store), receipts_(store), journal_(store) {}
   t::Service owner() const noexcept override {
     return t::Service::Runtime;
   }
@@ -357,6 +399,23 @@ public:
   }
   t::AdapterRegistryRepository& adapters() override {
     return adapters_;
+  }
+  t::BridgeCredentialRepository& bridge_credentials() override {
+    return credentials_;
+  }
+  t::Outcome<std::size_t> active_bindings(const t::InstanceId& adapter_instance) override {
+    if (store_.fail_reads) {
+      return failure(t::ErrorCode::UpstreamUnavailable);
+    }
+    std::size_t count = 0;
+    for (const auto& [key, binding] : store_.bindings) {
+      (void)key;
+      if (binding.adapter_instance == adapter_instance &&
+          binding.state == t::LifecycleState::Active) {
+        ++count;
+      }
+    }
+    return count;
   }
   t::Repository<t::ResourceId, t::HostRegistration>& hosts() override {
     return hosts_;
@@ -461,6 +520,7 @@ private:
   MemoryRepository<t::InstanceId, t::PluginInstance> instances_;
   MemoryRepository<t::InstanceId, t::InstanceConfiguration> configs_;
   MemoryRepository<t::OperationId, t::Operation> operations_;
+  MemoryCredentials credentials_;
   MemoryReceipts receipts_;
   MemoryJournal journal_;
 };
@@ -507,6 +567,23 @@ public:
 private:
   std::string next() {
     return id_text(++counter_, 0x9000);
+  }
+  std::uint64_t counter_ = 0;
+};
+class Secrets final : public t::RuntimeSecretPort {
+public:
+  t::Outcome<std::string> bootstrap_credential() override {
+    char value[65] = {};
+    std::snprintf(value, sizeof(value), "%064llx", static_cast<unsigned long long>(++counter_));
+    return std::string{value};
+  }
+  t::Outcome<t::Sha256Digest> sha256(std::string_view value) override {
+    t::Sha256Digest digest;
+    for (std::size_t index = 0; index < digest.bytes.size(); ++index) {
+      digest.bytes[index] = static_cast<std::byte>(
+          ~(index < value.size() ? static_cast<unsigned char>(value[index]) : 0U));
+    }
+    return digest;
   }
   std::uint64_t counter_ = 0;
 };
@@ -595,11 +672,12 @@ struct Harness {
   Store store;
   MemoryFactory factory{store};
   Ids ids;
+  Secrets secrets;
   Authorization authorization;
   std::unique_ptr<t::RuntimeResourceApplication> application;
   Harness() {
     auto built = t::make_runtime_resource_application(
-        {factory, ids, authorization, {"action.send_message.text.v1"}});
+        {factory, ids, secrets, authorization, {"action.send_message.text.v1"}});
     check(std::holds_alternative<std::unique_ptr<t::RuntimeResourceApplication>>(built),
           "application construction failed");
     application = std::move(std::get<std::unique_ptr<t::RuntimeResourceApplication>>(built));
@@ -715,8 +793,23 @@ void adapter_flow(Harness& harness) {
   t::BindAdapterRequest bind{context("runtime.bind_adapter", digest(7)), account.id,
                              result.adapter.current.instance};
   bind.context.expected_version = std::nullopt;
-  check(std::holds_alternative<t::BindingMutation>(harness.application->bind_adapter(bind)),
+  auto bound_result = harness.application->bind_adapter(bind);
+  check(std::holds_alternative<t::BindingMutation>(bound_result),
         "bind adapter after registration failed");
+  const auto& bound_mutation = std::get<t::BindingMutation>(bound_result);
+  check(bound_mutation.bootstrap_credential.has_value() &&
+            bound_mutation.bootstrap_credential->size() == 64,
+        "bind did not issue a one-time external-bridge bootstrap credential");
+  check(harness.store.bridge_credentials.size() == 1 &&
+            !harness.store.bridge_credentials.front().revoked,
+        "bind did not persist the active credential record");
+  bool plaintext_stored = false;
+  for (const auto& record : harness.store.bridge_credentials) {
+    plaintext_stored = plaintext_stored ||
+                       record.resource_id == *bound_mutation.bootstrap_credential ||
+                       record.id == *bound_mutation.bootstrap_credential;
+  }
+  check(!plaintext_stored, "bootstrap plaintext was persisted instead of only its digest");
   auto duplicate = bind;
   duplicate.context.idempotency_key = "idempotency-key-0010";
   duplicate.context.fingerprint = digest(8);
@@ -734,6 +827,15 @@ void adapter_flow(Harness& harness) {
   second.context.fingerprint = digest(10);
   auto disabled_bind = harness.application->bind_adapter(second);
   check(std::holds_alternative<t::Failure>(disabled_bind), "bind accepted a disabled account");
+  // Unbinding the last binding revokes the adapter bootstrap credential.
+  harness.store.accounts[account.id.value].state = t::LifecycleState::Active;
+  t::UnbindAdapterRequest unbind{context("runtime.unbind_adapter", digest(11)), account.id};
+  unbind.context.expected_version = t::ResourceVersion{1};
+  check(std::holds_alternative<t::BindingMutation>(harness.application->unbind_adapter(unbind)),
+        "unbind failed");
+  check(!harness.store.bridge_credentials.empty() &&
+            harness.store.bridge_credentials.front().revoked,
+        "unbind did not revoke the last adapter bootstrap credential");
 }
 void authorization_negative_flow() {
   Harness harness;
@@ -837,8 +939,11 @@ void installation_instance_flow(Harness& harness) {
   t::CreateInstanceRequest create{context("runtime.create_instance", digest(21)), installation.id,
                                   t::ResourceId{kHost}, false};
   auto instance = harness.application->create_instance(create);
-  check(std::holds_alternative<t::PluginInstance>(instance), "instance creation failed");
-  const auto id = std::get<t::PluginInstance>(instance).id;
+  check(std::holds_alternative<t::InstanceCreation>(instance), "instance creation failed");
+  const auto creation = std::get<t::InstanceCreation>(instance);
+  check(!creation.bootstrap_credential.has_value(),
+        "managed instance unexpectedly received an external-bridge bootstrap credential");
+  const auto id = creation.instance.id;
   t::SetDesiredStateRequest desired{context("runtime.set_desired_state", digest(22)), id,
                                     t::DesiredState::Stopped};
   desired.context.expected_version = t::ResourceVersion{1};
@@ -864,6 +969,26 @@ void installation_instance_flow(Harness& harness) {
   check(std::holds_alternative<t::ResourceState>(resource) &&
             std::get<t::ResourceState>(resource).desired == t::DesiredState::Stopped,
         "resource state lost desired run state");
+  // Externally-managed instances receive a one-time bootstrap credential; Runtime stores only the
+  // digest and a second creation cannot reuse the plaintext.
+  t::CreateInstanceRequest external{context("runtime.create_instance", digest(26)), installation.id,
+                                    std::nullopt, true};
+  auto external_result = harness.application->create_instance(external);
+  check(std::holds_alternative<t::InstanceCreation>(external_result),
+        "external instance creation failed");
+  const auto& external_creation = std::get<t::InstanceCreation>(external_result);
+  check(external_creation.bootstrap_credential.has_value() &&
+            external_creation.bootstrap_credential->size() == 64,
+        "externally-managed instance did not receive a bootstrap credential");
+  check(harness.store.bridge_credentials.size() == 1,
+        "external instance credential was not persisted exactly once");
+  bool plaintext_stored = false;
+  for (const auto& record : harness.store.bridge_credentials) {
+    plaintext_stored = plaintext_stored ||
+                       record.resource_id == *external_creation.bootstrap_credential ||
+                       record.id == *external_creation.bootstrap_credential;
+  }
+  check(!plaintext_stored, "external instance bootstrap plaintext was persisted");
 }
 void authorization_flow() {
   Harness denied;

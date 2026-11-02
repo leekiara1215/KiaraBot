@@ -83,6 +83,25 @@ public:
   virtual Repository<AssignmentId, ResourceGrant>& grants() = 0;
   virtual Repository<SubjectId, AuthorizationState>& authorizations() = 0;
 };
+// One-time P06 external-bridge bootstrap credentials. Runtime persists only the SHA-256 digest of
+// the opaque credential; plaintext never appears in storage, receipts or audit. Activation is
+// per-resource (adapter instance or externally-managed plugin instance).
+struct BridgeCredentialRecord {
+  std::string id;
+  std::string resource_id;
+  Sha256Digest digest;
+  TimePoint created_at;
+  bool revoked = false;
+};
+class BridgeCredentialRepository {
+public:
+  virtual ~BridgeCredentialRepository() = default;
+  // True when a non-revoked credential already exists for the resource; callers then do not issue a
+  // second plaintext (it would be unrecoverable anyway).
+  virtual Outcome<bool> active(const std::string& resource_id) = 0;
+  virtual Status insert(const BridgeCredentialRecord& record) = 0;
+  virtual Status revoke(const std::string& resource_id, TimePoint now) = 0;
+};
 // Adapter instances are looked up by their stable adapter resource id or by the assigned instance
 // identity that the wire registration/heartbeat frames carry. Both reads belong to the same owner
 // UoW; the registry never decides authorization.
@@ -100,6 +119,10 @@ public:
   // adapter serves many accounts.
   virtual Repository<ResourceId, AdapterBindingRecord>& adapter_bindings() = 0;
   virtual AdapterRegistryRepository& adapters() = 0;
+  virtual BridgeCredentialRepository& bridge_credentials() = 0;
+  // Count active account bindings that still reference this adapter instance; used to revoke the
+  // adapter bootstrap credential only when the last binding is removed.
+  virtual Outcome<std::size_t> active_bindings(const InstanceId& adapter_instance) = 0;
   virtual Repository<ResourceId, HostRegistration>& hosts() = 0;
   virtual Repository<InstallationId, PluginInstallation>& installations() = 0;
   virtual Repository<InstanceId, PluginInstance>& instances() = 0;

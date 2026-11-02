@@ -520,8 +520,37 @@ void runtime(const DatabaseConfig& config) {
   check(!take(configs_missing), "unknown instance config found");
   work->rollback();
 
-  // Conditional version still rejects a stale expected version for the new records.
+  // One-time external-bridge bootstrap credentials: only the SHA-256 digest is stored, an active
+  // credential blocks a second plaintext, and unbind-driven revocation flips the flag.
   work = take(factory->begin());
+  check(!take(work->bridge_credentials().active("live-adapter-instance")),
+        "unknown resource unexpectedly had an active bootstrap credential");
+  const target::BridgeCredentialRecord credential{{"live-credential-id"},
+                                                  "live-adapter-instance",
+                                                  {std::byte{1}, std::byte{2}},
+                                                  take(work->current_time()),
+                                                  false};
+  take(work->bridge_credentials().insert(credential));
+  commit(*work);
+  work = take(factory->begin());
+  check(take(work->bridge_credentials().active("live-adapter-instance")),
+        "active bootstrap credential not visible");
+  const target::BridgeCredentialRecord credential_two{{"live-credential-id-2"},
+                                                      "live-adapter-instance",
+                                                      {std::byte{3}, std::byte{4}},
+                                                      take(work->current_time()),
+                                                      false};
+  expect(work->bridge_credentials().insert(credential_two), target::ErrorCode::Conflict);
+  rollback_rejected(*work);
+  work = take(factory->begin());
+  take(work->bridge_credentials().revoke("live-adapter-instance", take(work->current_time())));
+  commit(*work);
+  work = take(factory->begin());
+  check(!take(work->bridge_credentials().active("live-adapter-instance")),
+        "revoked bootstrap credential still active");
+  work->rollback();
+  work = take(factory->begin());
+  // Conditional version still rejects a stale expected version for the new records.
   auto changed_adapter = *stored_adapter;
   changed_adapter.version = {2};
   changed_adapter.last_heartbeat_at += std::chrono::seconds{30};

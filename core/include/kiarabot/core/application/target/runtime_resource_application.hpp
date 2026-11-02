@@ -11,6 +11,7 @@
 #include "kiarabot/core/domain/target/runtime_rules.hpp"
 #include "kiarabot/core/ports/target/runtime_authorization.hpp"
 #include "kiarabot/core/ports/target/runtime_ids.hpp"
+#include "kiarabot/core/ports/target/runtime_secrets.hpp"
 #include "kiarabot/core/ports/target/service_readiness.hpp"
 #include "kiarabot/core/ports/target/unit_of_work.hpp"
 
@@ -43,6 +44,10 @@ struct AccountMutation {
 struct BindingMutation {
   AdapterBindingRecord binding;
   std::optional<OperationAccepted> operation;
+  // One-time P06 external-bridge bootstrap credential for the adapter instance. Plaintext exists
+  // only in this response; Runtime stores only its SHA-256 digest. Empty when no new credential was
+  // issued (already active) or for managed plugin instances.
+  std::optional<std::string> bootstrap_credential;
 };
 struct AdapterRegistrationResult {
   AdapterRecord adapter;
@@ -57,6 +62,10 @@ struct HeartbeatResult {
 struct InstanceMutation {
   PluginInstance instance;
   std::optional<OperationAccepted> operation;
+};
+struct InstanceCreation {
+  PluginInstance instance;
+  std::optional<std::string> bootstrap_credential;
 };
 struct ConfigMutation {
   InstanceConfiguration config;
@@ -227,7 +236,7 @@ public:
   virtual Outcome<ListResult<PluginInstallation>>
   list_installations(const InstallationListQuery& request) = 0;
 
-  virtual Outcome<PluginInstance> create_instance(const CreateInstanceRequest& request) = 0;
+  virtual Outcome<InstanceCreation> create_instance(const CreateInstanceRequest& request) = 0;
   virtual Outcome<PluginInstance> get_instance(const InstanceQuery& request) = 0;
   virtual Outcome<ListResult<PluginInstance>> list_instances(const InstanceListQuery& request) = 0;
   virtual Outcome<InstanceConfiguration>
@@ -242,6 +251,7 @@ public:
 struct RuntimeResourceDependencies {
   RuntimeUnitOfWorkFactory& transactions;
   RuntimeIdPort& ids;
+  RuntimeSecretPort& secrets;
   // Fail-closed composition adapter until the Identity current-authorization client is wired.
   RuntimeAuthorizationPort& authorization;
   // Trusted capability catalog this build actually supports; never request-controlled.

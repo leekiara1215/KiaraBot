@@ -60,6 +60,15 @@ ALTER TABLE kiarabot.adapters ADD UNIQUE(instance);
 ALTER TABLE kiarabot.adapter_bindings ADD FOREIGN KEY(account) REFERENCES kiarabot.accounts(id);
 ALTER TABLE kiarabot.adapter_bindings ADD FOREIGN KEY(adapter_instance) REFERENCES kiarabot.adapters(instance);
 ALTER TABLE kiarabot.instance_configs ADD FOREIGN KEY(instance) REFERENCES kiarabot.instances(id);
+CREATE TABLE kiarabot.bridge_credentials (
+  id text PRIMARY KEY CHECK(id<>''),
+  resource_id text NOT NULL CHECK(resource_id<>''),
+  digest bytea NOT NULL CHECK(octet_length(digest)=32),
+  created_at bigint NOT NULL,
+  revoked boolean NOT NULL DEFAULT false
+);
+CREATE UNIQUE INDEX bridge_credentials_active ON kiarabot.bridge_credentials(resource_id)
+  WHERE NOT revoked;
 )sql";
     break;
   case core::target::Service::Scheduler:

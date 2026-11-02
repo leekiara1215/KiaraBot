@@ -9,6 +9,7 @@
 #include <vector>
 
 #include <openssl/rand.h>
+#include <openssl/sha.h>
 
 #include "kiarabot/core/application/target/runtime_application.hpp"
 #include "kiarabot/core/application/target/runtime_readiness.hpp"
@@ -99,6 +100,31 @@ private:
     return result;
   }
 };
+// Composition-owned CSPRNG bootstrap credential and one-way digest. Plaintext is returned once and
+// never persisted; only the SHA-256 digest reaches the Runtime database.
+class RandomSecrets final : public target::RuntimeSecretPort {
+public:
+  target::Outcome<std::string> bootstrap_credential() override {
+    std::array<unsigned char, 32> bytes{};
+    if (RAND_bytes(bytes.data(), static_cast<int>(bytes.size())) != 1) {
+      return unavailable();
+    }
+    constexpr char kDigits[] = "0123456789abcdef";
+    std::string result;
+    result.reserve(64);
+    for (const auto byte : bytes) {
+      result += kDigits[byte >> 4U];
+      result += kDigits[byte & 0x0fU];
+    }
+    return result;
+  }
+  target::Outcome<target::Sha256Digest> sha256(std::string_view value) override {
+    target::Sha256Digest digest;
+    SHA256(reinterpret_cast<const unsigned char*>(value.data()), value.size(),
+           reinterpret_cast<unsigned char*>(digest.bytes.data()));
+    return digest;
+  }
+};
 // Fail-closed until the real Identity current-authorization/delegation client is wired. It never
 // allows a request, and its availability observation is false so readiness stays false.
 class FailClosedAuthorization final : public target::RuntimeAuthorizationPort {
@@ -128,6 +154,7 @@ platform::RuntimePeerAuthorizer fail_closed_authorizer() {
 }
 struct State {
   std::unique_ptr<target::RuntimeIdPort> ids;
+  std::unique_ptr<target::RuntimeSecretPort> secrets;
   std::unique_ptr<target::RuntimeAuthorizationPort> authorization;
   target::RuntimeResourceApplication* application = nullptr;
 };
@@ -186,10 +213,12 @@ compose_runtime_service(const platform::ProcessConfig& config) {
         config, postgres::open_runtime,
         [state](auto& factory) -> std::unique_ptr<target::ServiceReadinessPort> {
           state->ids = std::make_unique<RandomIds>();
+          state->secrets = std::make_unique<RandomSecrets>();
           state->authorization = std::make_unique<FailClosedAuthorization>();
           auto built = target::make_runtime_resource_application(
               {factory,
                *state->ids,
+               *state->secrets,
                *state->authorization,
                {"action.send_message.text.v1", "action.react_message.v1",
                 "action.delete_message.v1", "action.mute_member.v1", "action.kick_member.v1",
