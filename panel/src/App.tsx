@@ -5,9 +5,13 @@ import { describeError, FailureNotice, formatTime, label, StateTag, type Failure
 import { PluginsView } from './views/plugins';
 import { SessionsPanel } from './views/sessions';
 import { ActionsView } from './views/actions';
+import { P12_PAGES, P12_PAGE_KEYS, P12_NAV, type P12PageKey } from './p12/catalog';
+import { P12PreviewView } from './views/p12-preview';
 import './styles.css';
 
-type Page = 'overview' | 'bots' | 'adapters' | 'plugins' | 'models' | 'permissions' | 'tasks' | 'logs' | 'audit' | 'actions';
+type P12Page = P12PageKey;
+type Page = 'overview' | 'bots' | 'adapters' | 'plugins' | 'models' | 'permissions' | 'tasks' | 'logs' | 'audit' | 'actions' | P12Page;
+type LegacyPage = Exclude<Page, 'overview' | 'plugins' | 'permissions' | 'actions' | P12Page>;
 type Row = { id: string; cells: string[] };
 type ViewData = { columns: string[]; rows: Row[]; next?: string };
 const nav: { key: Page; label: string; icon: string }[] = [
@@ -15,6 +19,9 @@ const nav: { key: Page; label: string; icon: string }[] = [
   { key: 'plugins', label: '插件', icon: '◇' }, { key: 'models', label: '模型', icon: '✦' }, { key: 'permissions', label: '权限', icon: '♙' },
   { key: 'tasks', label: '任务', icon: '◷' }, { key: 'logs', label: '日志', icon: '≡' }, { key: 'audit', label: '审计', icon: '▤' }, { key: 'actions', label: '动作', icon: '⚡' },
 ];
+// P12 preview pages are grouped separately: they are contract skeletons and are
+// rendered without any API call (target handlers stay not_implemented).
+const p12Nav = P12_NAV.map((item) => ({ ...item, p12: true as const }));
 const statusText: Record<StreamStatus, string> = {
   connecting: '正在连接', connected: '实时连接正常', disconnected: '连接已断开，正在重试', resync: '正在重新同步',
   forbidden: '无权访问该数据流，已停止重连', throttled: '连接被服务端限流（1013），已停止重连', protocol: '数据流协议错误（4400），已停止重连',
@@ -33,7 +40,7 @@ async function allPages<T>(load: (token?: string) => Promise<ApiPage<T>>): Promi
   return items;
 }
 
-async function loadView(api: ApiClient, page: Exclude<Page, 'overview' | 'plugins' | 'permissions' | 'actions'>, token?: string, pageSize?: number): Promise<ViewData> {
+async function loadView(api: ApiClient, page: LegacyPage, token?: string, pageSize?: number): Promise<ViewData> {
   switch (page) {
     case 'bots': return pageRows(await api.bots(token, pageSize), ['名称', '标识', '状态'], (x) => ({ id: x.id, cells: [x.name, x.id, text(x.state)] }));
     case 'adapters': return pageRows(await api.adapters(token, pageSize), ['标识', '实现', '状态', '能力'], (x) => ({ id: x.id, cells: [x.id, x.implementation, x.state, joined(x.capabilities ?? [])] }));
@@ -83,7 +90,7 @@ function Overview({ api, revision }: { api: ApiClient; revision: number }) {
   const stateLabel = health ? (health.state === 'HEALTHY' ? '一切运行正常' : health.state === 'DEGRADED' ? '部分服务受影响' : health.state === 'UNHEALTHY' ? '服务不可用' : '状态未知') : '正在获取状态…';
   return <>{failure && <FailureNotice failure={failure} />}<section className="hero"><div><p className="eyebrow">SYSTEM STATUS</p><h2>{stateLabel}</h2><p>来自 Control API 的健康快照（契约标记 health.updated 未实现，面板轮询 REST）</p></div><div className="hero-orbit"><span>✦</span></div></section><div className="section-heading"><div><p className="eyebrow">COMPONENTS</p><h2>服务组件</h2></div><span className="muted">{health?.components.length ?? 0} 个组件</span></div><div className="cards">{health?.components.map((component) => <article className="card" key={component.component}><span className="card-icon">◈</span><div><h3>{component.component}</h3><p className="muted">{component.reason || '暂无详情'}</p></div><span className="tag">{label('health', component.state)}</span></article>)}</div></>;
 }
-function ResourceView({ api, page, revision }: { api: ApiClient; page: Exclude<Page, 'overview' | 'plugins' | 'permissions' | 'actions'>; revision: number }) {
+function ResourceView({ api, page, revision }: { api: ApiClient; page: LegacyPage; revision: number }) {
   const [data, setData] = useState<ViewData>(); const [failure, setFailure] = useState<Failure>(); const [loading, setLoading] = useState(true);
   const [token, setToken] = useState<string>(); const [pageSize, setPageSize] = useState(20);
   useEffect(() => { setToken(undefined); }, [revision]);
@@ -130,13 +137,20 @@ export function App({ api, socketFactory, streamUrl = '/ws/control', mock = fals
     return () => { active = false; clearTimeout(timer); };
   }, [api, tokens]);
   if (!tokens) return <Login api={api} mock={mock} initialError={authError} onLogin={(next) => { setAuthError(''); setTokens(next); }} />;
+  const p12Permission = Object.fromEntries(
+    P12_NAV.map((item) => [item.key, P12_PAGES[item.key].permission]),
+  ) as Record<P12Page, string>;
   const pagePermission: Record<Page, string> = {
     overview: 'health.read', bots: 'bot.read', adapters: 'adapter.read', plugins: 'plugin.read', models: 'model.read',
     permissions: 'user.read', tasks: 'task.read', logs: 'log.read', audit: 'audit.read', actions: 'action.read',
+    ...p12Permission,
   };
   const visibleNav = nav.filter((item) => principal?.permissions.includes(pagePermission[item.key]));
+  const visibleP12Nav = p12Nav.filter((item) => principal?.permissions.includes(pagePermission[item.key]));
+  const pageLabel = page === 'p12-overview' ? 'P12 预研' : nav.find((item) => item.key === page)?.label ?? P12_PAGES[page as P12Page]?.label;
+  const isP12 = P12_PAGE_KEYS.includes(page as P12PageKey);
   const permissions = principal?.permissions ?? [];
-  return <div className="shell"><aside className="sidebar"><div className="brand"><span className="brand-icon">K</span><div><strong>KiaraBot</strong><small>CONTROL PLANE</small></div></div><div className="nav-label">工作空间</div><nav aria-label="主导航">{visibleNav.map((item) => <button key={item.key} className={page === item.key ? 'nav-item selected' : 'nav-item'} onClick={() => setPage(item.key)}><span aria-hidden="true">{item.icon}</span>{item.label}</button>)}</nav><div className="sidebar-bottom"><span className={`dot ${status}`} /> <span>{statusText[status]}</span></div></aside><main><header className="topbar"><div><span className="crumb">工作空间 / </span><strong>{nav.find((item) => item.key === page)?.label}</strong></div><div className="top-actions"><span>{principal?.roles.join('、')}</span>{mock && <span className="mock-badge">MOCK 环境</span>}<button className="text-button" onClick={async () => { try { if (principal) await api.revokeSession(principal.session_id); } finally { api.setToken(); setTokens(undefined); setPrincipal(undefined); setStreamReady(false); setPage('overview'); } }}>退出登录</button></div></header><div className="content"><div className="page-title"><div><p className="eyebrow">KIARABOT CONTROL</p><h1>{nav.find((item) => item.key === page)?.label}</h1><p className="muted">{page === 'overview' ? '系统运行状态与服务概览' : '来自控制 API 的最新数据；服务端仍独立鉴权与校验'}</p></div><button className="secondary" onClick={() => setRevision((n) => n + 1)}>↻ 刷新</button></div><div role="status" className={`connection ${status}`}><span className={`dot ${status}`} />{statusText[status]}</div>{terminal.has(status) ? <div role="alert" className="failure forbidden"><strong>实时连接不可用</strong><p>{statusText[status]}。REST 视图需要先建立事件流；请检查权限、限流或服务端状态后刷新重试。</p></div> : !streamReady || !principal ? <p className="empty">正在建立会话…（首个 SESSION_READY 之前不装载 REST 视图）</p> : page === 'overview' ? <Overview api={api} revision={revision} /> : page === 'plugins' ? <PluginsView api={api} permissions={permissions} revision={revision} /> : page === 'permissions' ? <PermissionsView api={api} revision={revision} permissions={permissions} /> : page === 'actions' ? <ActionsView api={api} permissions={permissions} /> : <ResourceView key={page} api={api} page={page} revision={revision} />}</div></main></div>;
+  return <div className="shell"><aside className="sidebar"><div className="brand"><span className="brand-icon">K</span><div><strong>KiaraBot</strong><small>CONTROL PLANE</small></div></div><div className="nav-label">工作空间</div><nav aria-label="主导航">{visibleNav.map((item) => <button key={item.key} className={page === item.key ? 'nav-item selected' : 'nav-item'} onClick={() => setPage(item.key)}><span aria-hidden="true">{item.icon}</span>{item.label}</button>)}{visibleP12Nav.length > 0 && <><div className="nav-label">P12 预览（未接线）</div>{visibleP12Nav.map((item) => <button key={item.key} className={page === item.key ? 'nav-item selected' : 'nav-item'} onClick={() => setPage(item.key)}><span aria-hidden="true">{item.icon}</span>{item.label}</button>)}</>}</nav><div className="sidebar-bottom"><span className={`dot ${status}`} /> <span>{statusText[status]}</span></div></aside><main><header className="topbar"><div><span className="crumb">工作空间 / </span><strong>{pageLabel}</strong></div><div className="top-actions"><span>{principal?.roles.join('、')}</span>{mock && <span className="mock-badge">MOCK 环境</span>}<button className="text-button" onClick={async () => { try { if (principal) await api.revokeSession(principal.session_id); } finally { api.setToken(); setTokens(undefined); setPrincipal(undefined); setStreamReady(false); setPage('overview'); } }}>退出登录</button></div></header><div className="content"><div className="page-title"><div><p className="eyebrow">KIARABOT CONTROL</p><h1>{pageLabel}</h1><p className="muted">{page === 'overview' ? '系统运行状态与服务概览' : isP12 ? 'P12 预研骨架：仅契约与 mock 预览，不发起真实请求' : '来自控制 API 的最新数据；服务端仍独立鉴权与校验'}</p></div><button className="secondary" onClick={() => setRevision((n) => n + 1)}>↻ 刷新</button></div><div role="status" className={`connection ${status}`}><span className={`dot ${status}`} />{statusText[status]}</div>{terminal.has(status) ? <div role="alert" className="failure forbidden"><strong>实时连接不可用</strong><p>{statusText[status]}。REST 视图需要先建立事件流；请检查权限、限流或服务端状态后刷新重试。</p></div> : !streamReady || !principal ? <p className="empty">正在建立会话…（首个 SESSION_READY 之前不装载 REST 视图）</p> : page === 'overview' ? <Overview api={api} revision={revision} /> : page === 'plugins' ? <PluginsView api={api} permissions={permissions} revision={revision} /> : page === 'permissions' ? <PermissionsView api={api} revision={revision} permissions={permissions} /> : page === 'actions' ? <ActionsView api={api} permissions={permissions} /> : isP12 ? <P12PreviewView key={page} page={page as P12PageKey} mock={mock} /> : <ResourceView key={page} api={api} page={page as LegacyPage} revision={revision} />}</div></main></div>;
 }
 function Login({ api, onLogin, mock, initialError }: { api: ApiClient; onLogin: (tokens: TokenPair) => void; mock: boolean; initialError: string }) {
   const [username, setUsername] = useState(''); const [password, setPassword] = useState(''); const [error, setError] = useState(initialError); const [busy, setBusy] = useState(false);

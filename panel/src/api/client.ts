@@ -58,7 +58,33 @@ export const endpoints = {
   pluginHealth: operation('/plugins/{pluginId}/health', 'get'),
   actionById: operation('/actions/{actionId}', 'get'),
   actionByKey: operation('/actions/by-idempotency-key', 'get'),
+  // P12 target management preview. These descriptors are declared so
+  // `scripts/check-contracts.mjs` and the generated `paths` type keep the
+  // preview honest, but the skeleton pages never call them: the target
+  // handlers stay not_implemented until P12 wiring.
+  healthLive: operation('/health/live', 'get'),
+  healthReady: operation('/health/ready', 'get'),
+  accounts: operation('/accounts', 'get'),
+  installations: operation('/installations', 'get'),
+  installation: operation('/installations/{installationId}', 'get'),
+  instances: operation('/instances', 'get'),
+  instance: operation('/instances/{instanceId}', 'get'),
+  operation: operation('/operations/{ownerService}/{operationId}', 'get'),
+  targetTask: operation('/tasks/{taskId}', 'get'),
+  modelMetadata: operation('/models/{modelId}', 'get'),
+  modelConfiguration: operation('/models/{modelId}/configuration', 'get'),
 } as const;
+
+// Target projection types used by the P12 preview fixtures. They come from the
+// same generated OpenAPI document as every other panel type.
+export type TargetAccountRecord = Schemas['TargetAccountRecord'];
+export type TargetInstallationRecord = Schemas['TargetInstallationRecord'];
+export type TargetInstanceRecord = Schemas['TargetInstanceRecord'];
+export type TargetOperation = Schemas['TargetOperation'];
+export type TargetTaskRecord = Schemas['TargetTaskRecord'];
+export type TargetModelConfiguration = Schemas['TargetModelConfiguration'];
+export type TargetModelMetadata = Schemas['TargetModelMetadata'];
+export type TargetResourceRef = Schemas['TargetResourceRef'];
 
 export class ApiError extends Error {
   constructor(

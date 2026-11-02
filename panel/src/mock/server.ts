@@ -44,6 +44,12 @@ function paginate<T>(items: T[], url: URL, token: string, page: 'LogPage' | 'Ses
 export class MockServer {
   denied = new Set<string>();
   failures = new Map<string, { status: number; code?: string; retryAfter?: number }>();
+  /** Mock principal permissions; tests may narrow this to exercise panel gates. */
+  permissions = ['health.read', 'bot.read', 'adapter.read', 'plugin.read', 'plugin.manage',
+    'plugin.config.read', 'plugin.config.write', 'model.read', 'group.read', 'user.read',
+    'task.read', 'log.read', 'audit.read', 'action.read', 'session.read', 'session.revoke',
+    // P12 target management preview permissions (mock principal only).
+    'account.read', 'resource.read', 'model.manage'];
   requests: string[] = [];
   queries: string[] = [];
   sockets: MockSocket[] = [];
@@ -88,9 +94,7 @@ export class MockServer {
     if (path === '/auth/me') {
       return json({
         user_id: 'mock-user', session_id: 'session-current-0123456789', roles: ['admin'],
-        permissions: ['health.read', 'bot.read', 'adapter.read', 'plugin.read', 'plugin.manage',
-          'plugin.config.read', 'plugin.config.write', 'model.read', 'group.read', 'user.read',
-          'task.read', 'log.read', 'audit.read', 'action.read', 'session.read', 'session.revoke'],
+        permissions: this.permissions,
       } satisfies Schemas['Principal']);
     }
     if (path === '/auth/sessions') return json(paginate(this.sessions, url, 'sessions-page-2', 'SessionPage'));
