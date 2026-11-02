@@ -187,6 +187,16 @@ def main(driver, identity=None):
                         {'model_endpoint': 443}]:
             expect(2, {**runtime, **invalid}, service='runtime')
         expect(2, {**config, 'model_endpoint': model_endpoint})
+        scheduler_endpoint = 'scheduler.internal:7443'
+        expect(0, {**runtime, 'scheduler_endpoint': scheduler_endpoint}, service='runtime')
+        for invalid in [{'scheduler_endpoint': 'https://scheduler:443'},
+                        {'scheduler_endpoint': 'scheduler:0'},
+                        {'scheduler_endpoint': 'scheduler:65536'},
+                        {'scheduler_endpoint': 'one,two:443'},
+                        {'scheduler_endpoint': 'x:443/path'},
+                        {'scheduler_endpoint': 443}]:
+            expect(2, {**runtime, **invalid}, service='runtime')
+        expect(2, {**config, 'scheduler_endpoint': scheduler_endpoint})
 
         model = {**config, 'service': 'model'}
         expect(0, {**model, 'identity_endpoint': identity_endpoint}, service='model')

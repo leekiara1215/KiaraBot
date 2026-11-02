@@ -6,10 +6,9 @@ The shipped SDK Runner connects to the real-TLS P06 ``PluginBridge`` fixture
 ``task_cancel`` end to end; a fake scheduler owner implements the P10 task state machine,
 capacity/DST/ownership errors. This proves the SDK-to-bridge methods and error mapping.
 
-Production ``Runtime`` does not yet consume ``HostRequest.task_create/task_get/task_cancel``
-(no P10 task bridge ingress exists on main); the real Runtime/Scheduler path is therefore
-reported as a blocker in the P10j report, and this test must not be presented as native-stack
-acceptance.
+Production ``Runtime`` now consumes the three task frames (P10k), but its Runtime->Scheduler
+delegation provider is intentionally fail-closed until the delegation source is confirmed. This
+SDK-level fixture therefore remains the SDK/bridge evidence and is not native-stack acceptance.
 """
 from __future__ import annotations
 
