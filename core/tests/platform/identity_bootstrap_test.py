@@ -14,7 +14,7 @@ from service_config_test import certificates
 
 
 def main(*, control_server_certificate=False, after_bootstrap=None,
-         verification_catalog=None):
+         verification_catalog=None, prepare=None):
     root = Path(sys.argv[1]).resolve()
     port, initializer = sys.argv[2:4]
     bootstrap = str(Path(sys.argv[5]).resolve())
@@ -27,9 +27,19 @@ def main(*, control_server_certificate=False, after_bootstrap=None,
                        PGSSLROOTCERT=str(root / 'server.pem'), PGCHANNELBINDING='require',
                        PGCONNECT_TIMEOUT='2')
 
-    def sql(statement):
+    # Bootstrap drops ambient PG overrides before invoking the production adapter; keep a private
+    # query environment so post-commit assertions still reach the owned cluster explicitly.
+    query_environment = {
+        'PGHOST': 'localhost', 'PGPORT': str(port), 'PGUSER': 'p03_admin',
+        'PGDATABASE': 'postgres', 'PGPASSWORD': (root / 'password').read_text().strip(),
+        'PGSSLMODE': 'verify-full', 'PGSSLROOTCERT': str(root / 'server.pem'),
+        'PGCHANNELBINDING': 'require', 'PGCONNECT_TIMEOUT': '2'}
+
+    def sql(statement, database='postgres'):
+        environment_for_query = dict(query_environment)
+        environment_for_query['PGDATABASE'] = database
         reply = subprocess.run([str(pg_bin / 'psql'), '-X', '-qAt', '-v', 'ON_ERROR_STOP=1'],
-                               input=statement, text=True, env=environment,
+                               input=statement, text=True, env=environment_for_query,
                                capture_output=True, timeout=8)
         assert reply.returncode == 0, 'owned fixture SQL failed; diagnostics redacted'
         return reply.stdout.strip()
@@ -68,6 +78,21 @@ def main(*, control_server_certificate=False, after_bootstrap=None,
     ]:
         reply = subprocess.run(['openssl', *arguments], cwd=tls_root, capture_output=True, timeout=5)
         assert reply.returncode == 0, 'fixture certificate generation failed'
+    # Runtime is both the Runtime gRPC server and the outbound mTLS Identity consumer.
+    (tls_root / 'runtime.ext').write_text(
+        'subjectAltName=URI:spiffe://kiarabot/runtime-test,DNS:localhost,IP:127.0.0.1\n'
+        'extendedKeyUsage=clientAuth,serverAuth\nbasicConstraints=critical,CA:FALSE\n'
+        'keyUsage=critical,digitalSignature\nsubjectKeyIdentifier=hash\n'
+        'authorityKeyIdentifier=keyid:always\n')
+    for arguments in [
+        ['req', '-newkey', 'ec', '-pkeyopt', 'ec_paramgen_curve:P-256', '-nodes',
+         '-subj', '/CN=Runtime', '-keyout', 'runtime.key', '-out', 'runtime.csr'],
+        ['x509', '-req', '-in', 'runtime.csr', '-CA', 'ca.pem', '-CAkey', 'ca.key',
+         '-CAcreateserial', '-days', '1', '-extfile', 'runtime.ext', '-out', 'runtime.pem'],
+    ]:
+        reply = subprocess.run(['openssl', *arguments], cwd=tls_root, capture_output=True, timeout=5)
+        assert reply.returncode == 0, 'fixture runtime certificate generation failed'
+    (tls_root / 'runtime.key').chmod(0o600)
     database = {'host': 'localhost', 'port': int(port), 'name': 'p03_identity',
                 'migration_role': 'p03_identity_migration', 'runtime_role': 'p03_identity_runtime',
                 'password_file': str(root / 'password-p03_identity_runtime'),
@@ -92,6 +117,18 @@ def main(*, control_server_certificate=False, after_bootstrap=None,
                 'control_assignments': [
                     {'assignment_id': str(uuid.uuid4()), 'permissions': ['identity.delegation.issue'],
                      'scope': [{'kind': 'RESOURCE_PRINCIPAL', 'id': control}]}]}
+    runtime_principal, runtime_credential = str(uuid.uuid4()), str(uuid.uuid4())
+    enrolled['platform_peers'] = [{
+        'service': 'runtime', 'principal_id': runtime_principal,
+        'credential_id': runtime_credential,
+        'certificate_chain_file': str(tls_root / 'runtime.pem'),
+        'san': 'spiffe://kiarabot/runtime-test',
+        'assignments': [
+            {'assignment_id': str(uuid.uuid4()),
+             'permissions': ['identity.authorization.check'],
+             'scope': [{'kind': 'RESOURCE_PRINCIPAL', 'id': runtime_principal}]}]}]
+    if prepare is not None:
+        prepare(root, enrolled)
     if verification_catalog is not None:
         enrolled['control_assignments'].append({
             'assignment_id': str(uuid.uuid4()), 'permissions': ['identity.keys.read'],
@@ -144,9 +181,17 @@ def main(*, control_server_certificate=False, after_bootstrap=None,
     enrollment_file.write_text(json.dumps(enrolled)[:-1] + ',"schema_version":1}')
     run(command, 1)
     assert 'state=required version=1' in run(status_arguments)
+    tampered = json.loads(json.dumps(enrolled))
+    tampered['platform_peers'][0]['san'] = 'spiffe://kiarabot/wrong-runtime'
+    write(tampered)
+    run(command, 1)
+    assert 'state=required version=1' in run(status_arguments)
     write(enrolled)
     assert 'outcome=committed state=consumed' in run(command)
     assert 'state=consumed version=2' in run(status_arguments)
+    assert sql(f"SELECT count(*) FROM kiarabot.principals WHERE id='{runtime_principal}';", 'p03_identity') == '1'
+    assert sql(f"SELECT count(*) FROM kiarabot.credential_heads WHERE id='{runtime_credential}';", 'p03_identity') == '1'
+    assert sql(f"SELECT count(*) FROM kiarabot.exact_assignments WHERE subject='{runtime_principal}';", 'p03_identity') == '1'
     assert 'CONFLICT' in run(command, 1)
     assert 'state=consumed version=2' in run(status_arguments)
     print('Real owned PG offline bootstrap, rejected enrollment, once-only state and redaction passed')

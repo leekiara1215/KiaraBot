@@ -148,10 +148,17 @@ Json enrollment(const std::string& path) {
     return true;
   };
   auto result = Json::parse(read_metadata(path, 64 * 1024), callback);
-  require(!duplicate &&
-          exact(result, {"schema_version", "administrator_id", "password_credential_id", "username",
-                         "control_id", "control_credential_id", "control_certificate_chain_file",
-                         "control_san", "administrator_assignments", "control_assignments"}));
+  const auto known =
+      result.contains("platform_peers")
+          ? exact(result, {"schema_version", "administrator_id", "password_credential_id",
+                           "username", "control_id", "control_credential_id",
+                           "control_certificate_chain_file", "control_san",
+                           "administrator_assignments", "control_assignments", "platform_peers"})
+          : exact(result,
+                  {"schema_version", "administrator_id", "password_credential_id", "username",
+                   "control_id", "control_credential_id", "control_certificate_chain_file",
+                   "control_san", "administrator_assignments", "control_assignments"});
+  require(!duplicate && known);
   require(result["schema_version"].is_number_integer() && result["schema_version"] == 1);
   return result;
 }
@@ -229,12 +236,20 @@ struct EnrollmentCertificate {
   t::CertificateBinding binding;
   std::vector<std::byte> chain;
 };
-EnrollmentCertificate certificate(const Json& document, const t::SubjectId& control) {
-  const auto input = read_metadata(text(document, "control_certificate_chain_file"), 64 * 1024);
+struct ParsedChain {
+  t::Sha256Digest leaf_fingerprint;
+  t::TimePoint not_before;
+  t::TimePoint not_after;
+  std::vector<std::byte> chain;
+};
+// Strict PEM chain parsing shared by the Control and platform-peer enrollments: CA verification
+// stays with the mature PeerCertificateCryptoPort; this adapter only extracts public metadata.
+ParsedChain parse_chain(const std::string& path) {
+  const auto input = read_metadata(path, 64 * 1024);
   std::unique_ptr<BIO, decltype(&BIO_free)> bio(
       BIO_new_mem_buf(input.data(), static_cast<int>(input.size())), BIO_free);
   require(static_cast<bool>(bio));
-  EnrollmentCertificate result;
+  ParsedChain result;
   std::size_t certificates = 0;
   while (BIO_ctrl_pending(bio.get()) != 0) {
     char* remaining = nullptr;
@@ -253,16 +268,11 @@ EnrollmentCertificate certificate(const Json& document, const t::SubjectId& cont
       unsigned int length = 0;
       require(X509_digest(leaf.get(), EVP_sha256(), fingerprint.data(), &length) == 1 &&
               length == 32);
-      t::Sha256Digest digest;
       for (std::size_t index = 0; index < fingerprint.size(); ++index) {
-        digest.bytes[index] = static_cast<std::byte>(fingerprint[index]);
+        result.leaf_fingerprint.bytes[index] = static_cast<std::byte>(fingerprint[index]);
       }
-      result.binding = {control,
-                        digest,
-                        text(document, "control_san"),
-                        t::Service::Control,
-                        certificate_time(X509_get0_notBefore(leaf.get())),
-                        certificate_time(X509_get0_notAfter(leaf.get()))};
+      result.not_before = certificate_time(X509_get0_notBefore(leaf.get()));
+      result.not_after = certificate_time(X509_get0_notAfter(leaf.get()));
     }
     const auto length = i2d_X509(leaf.get(), nullptr);
     require(length > 0 && result.chain.size() + static_cast<std::size_t>(length) <= 64 * 1024);
@@ -276,6 +286,41 @@ EnrollmentCertificate certificate(const Json& document, const t::SubjectId& cont
   }
   require(certificates > 0);
   ERR_clear_error();
+  return result;
+}
+EnrollmentCertificate certificate(const Json& document, const t::SubjectId& control) {
+  auto parsed = parse_chain(text(document, "control_certificate_chain_file"));
+  EnrollmentCertificate result;
+  result.binding = {control,
+                    parsed.leaf_fingerprint,
+                    text(document, "control_san"),
+                    t::Service::Control,
+                    parsed.not_before,
+                    parsed.not_after};
+  result.chain = std::move(parsed.chain);
+  return result;
+}
+t::Service platform_service(const Json& peer) {
+  const auto name = text(peer, "service");
+  if (name == "runtime") {
+    return t::Service::Runtime;
+  }
+  if (name == "scheduler") {
+    return t::Service::Scheduler;
+  }
+  if (name == "model") {
+    return t::Service::Model;
+  }
+  require(false);
+  return t::Service::Runtime;
+}
+EnrollmentCertificate platform_certificate(const Json& peer, const t::SubjectId& principal,
+                                           t::Service service) {
+  auto parsed = parse_chain(text(peer, "certificate_chain_file"));
+  EnrollmentCertificate result;
+  result.binding = {principal, parsed.leaf_fingerprint, text(peer, "san"),
+                    service,   parsed.not_before,       parsed.not_after};
+  result.chain = std::move(parsed.chain);
   return result;
 }
 std::string random_id(t::RandomPort& random) {
@@ -295,6 +340,33 @@ std::string random_id(t::RandomPort& random) {
     }
     result.push_back(kHex[value >> 4U]);
     result.push_back(kHex[value & 15U]);
+  }
+  return result;
+}
+struct PlatformEnrollment {
+  t::PlatformPeerEnrollment enrollment;
+  std::vector<std::byte> chain;
+};
+// Optional trusted offline enrollment of platform service peers. Absent key preserves the
+// historical administrator+Control-only enrollment; malformed input fails before any write.
+std::vector<PlatformEnrollment> platform_peers(const Json& document) {
+  std::vector<PlatformEnrollment> result;
+  if (!document.contains("platform_peers")) {
+    return result;
+  }
+  const auto& rows = document["platform_peers"];
+  require(rows.is_array() && rows.size() <= 16);
+  for (const auto& peer : rows) {
+    require(exact(peer, {"service", "principal_id", "credential_id", "certificate_chain_file",
+                         "san", "assignments"}));
+    const auto service = platform_service(peer);
+    const t::SubjectId principal{identifier(peer, "principal_id")};
+    const t::CredentialId credential{identifier(peer, "credential_id")};
+    auto enrolled = platform_certificate(peer, principal, service);
+    result.push_back(
+        PlatformEnrollment{{service, principal, credential, std::move(enrolled.binding),
+                            assignments(peer["assignments"], principal)},
+                           std::move(enrolled.chain)});
   }
   return result;
 }
@@ -361,6 +433,19 @@ int execute(int argc, char* argv[]) {
       enrolled.chain,
       {t::PlatformPeer{t::Service::Control, control}, enrolled.binding, {control_credential, {1}}},
       now));
+  auto peers = platform_peers(document);
+  for (const auto& peer : peers) {
+    take(peer_crypto->verify(peer.chain,
+                             {t::PlatformPeer{peer.enrollment.service, peer.enrollment.principal},
+                              peer.enrollment.certificate,
+                              {peer.enrollment.credential, {1}}},
+                             now));
+  }
+  std::vector<t::PlatformPeerEnrollment> peer_enrollments;
+  peer_enrollments.reserve(peers.size());
+  for (auto& peer : peers) {
+    peer_enrollments.push_back(std::move(peer.enrollment));
+  }
   auto password = take(crypto::load_bootstrap_password_file(password_path));
   auto passwords = take(crypto::make_password_crypto());
   auto verifier = take(passwords->derive(password->bytes()));
@@ -380,7 +465,8 @@ int execute(int argc, char* argv[]) {
       control_credential,
       std::move(enrolled.binding),
       assignments(document["administrator_assignments"], administrator),
-      assignments(document["control_assignments"], control)};
+      assignments(document["control_assignments"], control),
+      std::move(peer_enrollments)};
   t::IdentityAdminApplication application(*factory, *peer_crypto);
   auto outcome = application.bootstrap_offline(request);
   if (const auto* error = std::get_if<t::Failure>(&outcome)) {

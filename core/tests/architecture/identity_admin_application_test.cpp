@@ -375,6 +375,27 @@ void peer_tests() {
   factory.fail = true;
   check(error(app.registered_peer(request), t::ErrorCode::UpstreamUnavailable), "begin failure");
 }
+t::Sha256Digest digest(unsigned char seed) {
+  t::Sha256Digest value;
+  value.bytes[0] = std::byte{seed};
+  return value;
+}
+t::CertificateBinding peer_certificate(t::Service service, const t::SubjectId& subject,
+                                       t::TimePoint now) {
+  return {subject, digest(2), "spiffe://kiarabot/" + subject.value, service, now, now + 24h};
+}
+t::PlatformPeerEnrollment runtime_peer(t::TimePoint now) {
+  return {
+      t::Service::Runtime,
+      {"runtime"},
+      {"runtime-certificate"},
+      peer_certificate(t::Service::Runtime, {"runtime"}, now),
+      {{{"runtime-assignment"},
+        {"runtime"},
+        {},
+        {{t::Permission::IdentityAuthorizationCheck, {t::ResourceKind::Principal, {"runtime"}}}},
+        {1}}}};
+}
 t::OfflineIdentityBootstrap bootstrap_request(t::TimePoint now) {
   return {{"request", "trace", "", now + 10s},
           {1},
@@ -395,7 +416,8 @@ t::OfflineIdentityBootstrap bootstrap_request(t::TimePoint now) {
             {"control"},
             {},
             {{t::Permission::IdentitySessionRead, {t::ResourceKind::Principal, {"administrator"}}}},
-            {1}}}};
+            {1}}},
+          {runtime_peer(now)}};
 }
 void bootstrap_tests() {
   Factory factory;
@@ -413,8 +435,9 @@ void bootstrap_tests() {
     check(row.binding == t::ResourceRef{t::ResourceKind::Principal, {row.id.value}},
           "bootstrap persists explicit self binding for both initial principals");
     check((row.id == request.administrator && row.kind == t::PrincipalKind::Human) ||
-              (row.id == request.control && row.kind == t::PrincipalKind::PlatformService),
-          "bootstrap binds each initial subject with its actual kind");
+              ((row.id == request.control || row.id == request.platform_peers.front().principal) &&
+               row.kind == t::PrincipalKind::PlatformService),
+          "bootstrap binds each enrolled subject with its actual kind");
     ++principals;
     return std::monostate{};
   };
@@ -442,8 +465,14 @@ void bootstrap_tests() {
   };
   factory.script.audit = [&](const auto& row) -> t::Status {
     ++audits;
-    check(row.actor == request.administrator && row.method == "BootstrapAdministrator",
+    check(row.actor == request.administrator &&
+              (row.method == "BootstrapAdministrator" || row.method == "BootstrapPlatformPeer"),
           "audit identity");
+    if (row.method == "BootstrapPlatformPeer") {
+      check(row.resource == t::ResourceRef{t::ResourceKind::Principal,
+                                           {request.platform_peers.front().principal.value}},
+            "platform peer audit target");
+    }
     if (fail_audit) {
       return unavailable();
     }
@@ -451,14 +480,14 @@ void bootstrap_tests() {
   };
   check(std::holds_alternative<t::IdentityBootstrapReply>(app.bootstrap_offline(request)),
         "bootstrap committed");
-  check(principals == 2 && credentials == 2 && assignments == 2 && watermarks == 2 && audits == 1 &&
+  check(principals == 3 && credentials == 3 && assignments == 3 && watermarks == 3 && audits == 2 &&
             factory.script.bootstrap.consumed == 1 && factory.script.commits == 1 &&
             factory.script.active == 0,
         "all bootstrap writes share one commit");
   factory.script.bootstrap.marker.state = t::BootstrapState::Consumed;
   check(error(app.bootstrap_offline(request), t::ErrorCode::Conflict),
         "restart cannot reopen marker");
-  check(principals == 2 && factory.script.commits == 1, "consumed marker no writes");
+  check(principals == 3 && factory.script.commits == 1, "consumed marker no writes");
   factory.script.bootstrap.marker.state = t::BootstrapState::Required;
   fail_audit = true;
   check(error(app.bootstrap_offline(request), t::ErrorCode::UpstreamUnavailable),
@@ -481,6 +510,31 @@ void bootstrap_tests() {
   request.control_assignments.front().roles = request.administrator_assignments.front().roles;
   check(error(app.bootstrap_offline(request), t::ErrorCode::InvalidArgument),
         "Control cannot inherit human role");
+  request = bootstrap_request(factory.script.now);
+  request.platform_peers.front().principal = request.control;
+  check(error(app.bootstrap_offline(request), t::ErrorCode::InvalidArgument),
+        "platform peer cannot reuse Control identity");
+  request = bootstrap_request(factory.script.now);
+  request.platform_peers.front().certificate.subject = {"other"};
+  check(error(app.bootstrap_offline(request), t::ErrorCode::InvalidArgument),
+        "platform certificate subject must match principal");
+  request = bootstrap_request(factory.script.now);
+  request.platform_peers.front().certificate.platform_service = t::Service::Control;
+  check(error(app.bootstrap_offline(request), t::ErrorCode::InvalidArgument),
+        "platform certificate service must match enrollment");
+  request = bootstrap_request(factory.script.now);
+  request.platform_peers.front().assignments.front().roles =
+      request.administrator_assignments.front().roles;
+  check(error(app.bootstrap_offline(request), t::ErrorCode::InvalidArgument),
+        "platform peers cannot inherit human roles");
+  request = bootstrap_request(factory.script.now);
+  request.platform_peers.front().assignments.clear();
+  check(error(app.bootstrap_offline(request), t::ErrorCode::InvalidArgument),
+        "platform peer enrollment requires assignments");
+  request = bootstrap_request(factory.script.now);
+  request.platform_peers.front().service = t::Service::Host;
+  check(error(app.bootstrap_offline(request), t::ErrorCode::InvalidArgument),
+        "only Runtime/Scheduler/Model platform peers enroll offline");
 }
 void delegation_tests();
 int main() {

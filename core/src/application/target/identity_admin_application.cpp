@@ -1,14 +1,23 @@
 #include "kiarabot/core/application/target/identity_admin_application.hpp"
 
 #include <exception>
+#include <set>
+#include <span>
+#include <string>
 #include <utility>
 
 #include "kiarabot/core/domain/target/identity_state_rules.hpp"
 
 namespace kiarabot::core::target {
 namespace {
+constexpr std::size_t kMaximumPlatformPeers = 16;
 Failure internal_failure() {
   return rejected(ErrorCode::Internal, Recovery::Diagnose);
+}
+// Only the target platform services that must call Identity as an mTLS consumer/mutator peer.
+// Control keeps its dedicated enrollment shape and Identity is never a client of itself here.
+bool service_peer(Service service) {
+  return service == Service::Runtime || service == Service::Scheduler || service == Service::Model;
 }
 Status check_deadline(TimePoint now, TimePoint deadline) {
   if (now >= deadline) {
@@ -233,6 +242,44 @@ IdentityAdminApplication::bootstrap_offline(const OfflineIdentityBootstrap& requ
     if (!administrator_role) {
       return rejected(ErrorCode::InvalidArgument, Recovery::CorrectInput);
     }
+    // Platform service peers are optional, but a supplied enrollment must be a genuine registered
+    // service identity with its own certificate binding and explicit scoped assignments. Roles are
+    // human-only; never synthesize a capability or reuse the administrator/Control identities.
+    if (request.platform_peers.size() > kMaximumPlatformPeers) {
+      return rejected(ErrorCode::InvalidArgument, Recovery::CorrectInput);
+    }
+    std::set<std::string> subject_ids{request.administrator.value, request.control.value};
+    std::set<std::string> credential_ids{request.password_credential.value,
+                                         request.control_credential.value};
+    std::set<std::string> assignment_ids;
+    for (const auto& assignment : request.administrator_assignments) {
+      assignment_ids.insert(assignment.id.value);
+    }
+    for (const auto& assignment : request.control_assignments) {
+      assignment_ids.insert(assignment.id.value);
+    }
+    for (const auto& peer : request.platform_peers) {
+      if (peer.principal.value.empty() || peer.credential.value.empty() ||
+          !service_peer(peer.service) || peer.certificate.subject != peer.principal ||
+          peer.certificate.platform_service != peer.service ||
+          peer.certificate.not_after <= peer.certificate.not_before || peer.assignments.empty() ||
+          peer.certificate.fingerprint == Sha256Digest{}) {
+        return rejected(ErrorCode::InvalidArgument, Recovery::CorrectInput);
+      }
+      if (!subject_ids.insert(peer.principal.value).second ||
+          !credential_ids.insert(peer.credential.value).second) {
+        return rejected(ErrorCode::InvalidArgument, Recovery::CorrectInput);
+      }
+      if (std::holds_alternative<Failure>(
+              validate_assignment_collection(peer.assignments, peer.principal))) {
+        return rejected(ErrorCode::InvalidArgument, Recovery::CorrectInput);
+      }
+      for (const auto& assignment : peer.assignments) {
+        if (!assignment.roles.empty() || !assignment_ids.insert(assignment.id.value).second) {
+          return rejected(ErrorCode::InvalidArgument, Recovery::CorrectInput);
+        }
+      }
+    }
     auto begun = transactions_.begin();
     if (const auto* failure = std::get_if<Failure>(&begun)) {
       return *failure;
@@ -295,6 +342,11 @@ IdentityAdminApplication::bootstrap_offline(const OfflineIdentityBootstrap& requ
     if (request.control_certificate.not_before > now) {
       return rejected(ErrorCode::InvalidArgument, Recovery::CorrectInput);
     }
+    for (const auto& peer : request.platform_peers) {
+      if (peer.certificate.not_before > now || peer.certificate.not_after <= now) {
+        return rejected(ErrorCode::InvalidArgument, Recovery::CorrectInput);
+      }
+    }
     // Lambdas execute sequentially: stop at the first failing port, never issue further writes.
     const auto apply = [&](const auto& action) -> std::optional<Failure> {
       const auto result = action();
@@ -339,6 +391,58 @@ IdentityAdminApplication::bootstrap_offline(const OfflineIdentityBootstrap& requ
       if (auto failure = apply([&] {
             return work->authorizations().save(AuthorizationState{subject, {1}, true},
                                                std::nullopt);
+          })) {
+        return *failure;
+      }
+    }
+    // Optional platform service peers share the same once-only transaction: each gets an
+    // explicit self binding, certificate credential, authorization watermark and offline audit.
+    for (const auto& peer : request.platform_peers) {
+      const ResourceRef peer_resource{ResourceKind::Principal, ResourceId{peer.principal.value}};
+      const Principal platform_principal{peer.principal,
+                                         PrincipalKind::PlatformService,
+                                         peer_resource,
+                                         {1},
+                                         LifecycleState::Active};
+      const CredentialVersionRecord certificate{{peer.credential, {1}},
+                                                peer.principal,
+                                                peer.certificate,
+                                                CredentialState::Active,
+                                                now,
+                                                std::nullopt,
+                                                peer_resource,
+                                                peer.certificate.not_after};
+      const auto valid = validate_credential_record(certificate);
+      if (const auto* failure = std::get_if<Failure>(&valid)) {
+        return *failure;
+      }
+      if (auto failure =
+              apply([&] { return work->principals().save(platform_principal, std::nullopt); })) {
+        return *failure;
+      }
+      if (auto failure =
+              apply([&] { return work->credentials().save(certificate, std::nullopt); })) {
+        return *failure;
+      }
+      if (auto failure =
+              apply([&] { return save_assignments(*work, peer.principal, peer.assignments); })) {
+        return *failure;
+      }
+      if (auto failure = apply([&] {
+            return work->authorizations().save(AuthorizationState{peer.principal, {1}, true},
+                                               std::nullopt);
+          })) {
+        return *failure;
+      }
+      if (auto failure = apply([&] {
+            return work->journal().append_audit(AuditEntry{request.administrator,
+                                                           peer_resource,
+                                                           request.context.request_id,
+                                                           request.context.trace_id,
+                                                           "BootstrapPlatformPeer",
+                                                           std::nullopt,
+                                                           {1},
+                                                           now});
           })) {
         return *failure;
       }
