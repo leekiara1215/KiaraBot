@@ -630,12 +630,20 @@ void runtime(const DatabaseConfig& config) {
         "first observation marked duplicate");
   check(take(work->host_commands().record_observation(observation)),
         "observation dedup key not enforced");
+  auto later = observation;
+  later.sequence = 44;
+  later.command_id = "live-host-command-later";
+  auto earlier = observation;
+  earlier.sequence = 43;
+  check(!take(work->host_commands().record_observation(later)), "later observation rejected");
+  check(!take(work->host_commands().record_observation(earlier)), "earlier observation rejected");
   const auto observations = take(work->host_commands().observations("live-host", 1, 10));
-  check(observations.size() == 1 && observations[0].sequence == 42,
-        "observation projection not durable/deduplicated");
+  check(observations.size() == 3 && observations[0].sequence == 42 &&
+            observations[1].sequence == 43 && observations[2].sequence == 44,
+        "observation projection not durable/deduplicated/ordered");
   commit(*work);
   work = take(factory->begin());
-  check(take(work->host_commands().observations("live-host", 1, 10)).size() == 1,
+  check(take(work->host_commands().observations("live-host", 1, 10)).size() == 3,
         "observation lost after restart");
   work->rollback();
 

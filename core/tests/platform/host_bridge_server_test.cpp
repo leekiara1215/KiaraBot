@@ -335,6 +335,7 @@ void test_dispatch_receipt_observation_and_replay() {
   int dispatch_marks = 0;
   int receipts = 0;
   int observations = 0;
+  std::vector<std::uint64_t> observed_sequences;
   std::string last_command;
   std::uint64_t last_mark_generation = 0;
   t::HostCommandOutboxRecord command;
@@ -379,8 +380,9 @@ void test_dispatch_receipt_observation_and_replay() {
     }
     return std::monostate{};
   };
-  persistence.observation = [&](const t::HostObservationRecord&) {
+  persistence.observation = [&](const t::HostObservationRecord& record) {
     ++observations;
+    observed_sequences.push_back(record.sequence);
     return t::Status{std::monostate{}};
   };
   Fixture fixture(allowlist_for("host-a", "aa"), "aa", std::move(persistence));
@@ -408,10 +410,11 @@ void test_dispatch_receipt_observation_and_replay() {
   receipt_frame.mutable_receipt()->set_persisted(true);
   require(stream->Write(receipt_frame), "write receipt");
   auto heartbeat = heartbeat_frame(fence, clock_now());
-  require(stream->Write(heartbeat), "write heartbeat after receipt");
+  require(stream->Write(receipt_frame), "write duplicate receipt");
+  require(stream->Write(heartbeat), "write heartbeat after duplicate receipt");
   const auto ack = read_frame(stream.get());
-  require(ack.body_case() == v1::RuntimeToHost::kHeartbeatAck && receipts == 1,
-          "receipt did not leave the stream healthy");
+  require(ack.body_case() == v1::RuntimeToHost::kHeartbeatAck && receipts == 2,
+          "duplicate receipt did not leave the stream healthy");
 
   auto observation = v1::HostToRuntime{};
   observation.mutable_fence()->CopyFrom(fence);
@@ -426,12 +429,46 @@ void test_dispatch_receipt_observation_and_replay() {
   cursor->set_epoch(fence.runtime_epoch());
   cursor->set_sequence(9);
   require(stream->Write(observation), "write observation");
-  require(stream->Write(heartbeat), "write heartbeat after observation");
+  // Duplicate and out-of-order observations are transport-accepted; the application inbox keeps
+  // the dedupe/order semantics. The bridge must not drop or reorder frames silently.
+  require(stream->Write(observation), "write duplicate observation");
+  auto out_of_order = observation;
+  out_of_order.mutable_observation()->mutable_cursor()->set_sequence(7);
+  require(stream->Write(out_of_order), "write out-of-order observation");
+  require(stream->Write(observation), "write repeated observation");
+  require(stream->Write(heartbeat), "write heartbeat after observations");
   require(read_frame(stream.get()).body_case() == v1::RuntimeToHost::kHeartbeatAck &&
-              observations == 1,
-          "observation did not persist");
+              observations == 4,
+          "observations did not reach the persistence adapter");
+  require(observed_sequences == std::vector<std::uint64_t>({9, 9, 7, 9}),
+          "observation sequences were dropped or reordered by the bridge");
   require(stream->WritesDone(), "writes done");
   require(stream->Finish().ok(), "finish");
+}
+
+void test_stale_receipt_rejected() {
+  Fixture fixture(allowlist_for("host-a", "aa"), "aa");
+  grpc::ClientContext first_context;
+  auto first = fixture.stub()->Connect(&first_context);
+  require(first->Write(registration_frame("host-a", {})), "write first registration");
+  const auto first_registered = read_frame(first.get());
+  const auto stale = first_registered.registered().fence();
+  grpc::ClientContext second_context;
+  auto second = fixture.stub()->Connect(&second_context);
+  require(second->Write(registration_frame("host-a", {})), "write replacement registration");
+  const auto second_registered = read_frame(second.get());
+  require(second_registered.registered().fence().connection_generation() == 2,
+          "replacement generation");
+  auto receipt = v1::HostToRuntime{};
+  receipt.mutable_fence()->CopyFrom(stale);
+  receipt.mutable_receipt()->set_command_id("hc-dispatch");
+  receipt.mutable_receipt()->set_persisted(true);
+  require(second->Write(receipt), "write stale receipt");
+  const auto failure = read_frame(second.get());
+  require(failure.body_case() == v1::RuntimeToHost::kFailure &&
+              failure.failure().error().code() == v1::CONFLICT,
+          "stale-generation receipt was not rejected");
+  require(second->Finish().ok(), "stale receipt finish");
 }
 
 void test_reconnect_replays_unconfirmed_command() {
@@ -489,6 +526,7 @@ int main() {
     test_stale_generation_rejected();
     test_peer_certificate_binding();
     test_dispatch_receipt_observation_and_replay();
+    test_stale_receipt_rejected();
     test_reconnect_replays_unconfirmed_command();
     test_missing_registration_rejected();
     std::cout << "P08b HostBridge server conformance passed\n";

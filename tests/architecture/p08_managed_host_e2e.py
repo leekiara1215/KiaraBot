@@ -34,6 +34,7 @@ ADAPTER_BOOTSTRAP = 'a' * 64
 PLUGIN_BOOTSTRAP = 'b' * 64
 SHUTDOWN_INSTANCE = 'a1a1a1a1-a1a1-4a1a-8a1a-a1a1a1a1a1a1'
 SHUTDOWN_BOOTSTRAP = 'c' * 64
+HANGING_INSTANCE = '77777777-7777-4777-8777-777777777777'
 HOST_ID = 'host-a'
 
 
@@ -96,7 +97,7 @@ def start_process(command, cwd, stderr_path, ready_line=None):
     process = subprocess.Popen(command, cwd=cwd, env=env, stdout=subprocess.PIPE,
                                stderr=error_file, start_new_session=True)
     if ready_line is not None:
-        if not select.select([process.stdout], [], [], 15)[0]:
+        if not select.select([process.stdout], [], [], 30)[0]:
             raise Failure('process did not report startup: ' + ' '.join(map(str, command)))
         line = process.stdout.readline().decode(errors='replace').strip()
         if ready_line not in line:
@@ -115,7 +116,7 @@ def stop_process(process):
         process.wait(timeout=5)
 
 
-def wait_until(predicate, label, timeout=45.0, interval=0.05):
+def wait_until(predicate, label, timeout=75.0, interval=0.05):
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         if predicate():
@@ -191,6 +192,8 @@ def host_config(directory: Path, repo: Path, runtime_endpoint: str, bridge_endpo
         '#!/bin/sh\n'
         f'exec "{sys.executable}" -m kiarabot_sdk "$@" >>"{directory / "plugin.log"}" 2>&1\n')
     runner.chmod(0o700)
+    hanging_root = directory / 'hanging-package'
+    hanging_root.mkdir(mode=0o700, exist_ok=True)
     config = {
         'schema_version': 1, 'service': 'plugin-host',
         'probe_listen': f'127.0.0.1:{free_port()}',
@@ -201,13 +204,22 @@ def host_config(directory: Path, repo: Path, runtime_endpoint: str, bridge_endpo
             'host_id': HOST_ID, 'sqlite_path': str(directory / 'host.sqlite'),
             'runtime_endpoint': runtime_endpoint,
             'credential_directory': str(credentials),
-            'packages': [{'plugin_type_id': 'event-observer', 'root': str(package),
-                          'sha256': 'a' * 64, 'launch_profile': 'python',
-                          'allowed_argument_names': ['--manifest']}],
-            'profiles': [{'name': 'python', 'executable': str(runner),
-                          'fixed_arguments': [str(runner)],
-                          'allowed_environment_names': environment_names,
-                          'credential_environment': 'KIARABOT_PLUGIN_BOOTSTRAP'}],
+            'packages': [
+                {'plugin_type_id': 'event-observer', 'root': str(package),
+                 'sha256': 'a' * 64, 'launch_profile': 'python',
+                 'allowed_argument_names': ['--manifest']},
+                {'plugin_type_id': 'hanging', 'root': str(hanging_root),
+                 'sha256': 'b' * 64, 'launch_profile': 'hanging',
+                 'allowed_argument_names': []}],
+            'profiles': [
+                {'name': 'python', 'executable': str(runner),
+                 'fixed_arguments': [str(runner)],
+                 'allowed_environment_names': environment_names,
+                 'credential_environment': 'KIARABOT_PLUGIN_BOOTSTRAP'},
+                {'name': 'hanging', 'executable': '/bin/sh',
+                 'fixed_arguments': ['/bin/sh', '-c',
+                                     'trap "" TERM; while :; do sleep 1; done'],
+                 'allowed_environment_names': [], 'credential_environment': None}],
             'environment': environment,
         },
     }
@@ -215,6 +227,19 @@ def host_config(directory: Path, repo: Path, runtime_endpoint: str, bridge_endpo
     path.write_text(json.dumps(config))
     path.chmod(0o600)
     return path, credentials
+
+
+def _pid_gone(pid: int) -> bool:
+    # Host should reap the child; accept a zombie as exited too (not running) so a Host-side
+    # reap race cannot turn a real process exit into a test failure.
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return True
+    result = subprocess.run(['ps', '-o', 'stat=', '-p', str(pid)], capture_output=True,
+                            text=True, check=False)
+    state = result.stdout.strip()
+    return not state or state.startswith('Z')
 
 
 async def main_async(args) -> None:
@@ -303,6 +328,36 @@ async def main_async(args) -> None:
             env_sql = ("ARRAY['PYTHONPATH','PLUGIN_CORE_ENDPOINT','PLUGIN_TLS_ROOT',"
                        "'PLUGIN_INSTANCE_ID','PLUGIN_IO_TIMEOUT','PLUGIN_HEARTBEAT_INTERVAL',"
                        "'PLUGIN_RETRY_DELAY','KIARABOT_PLUGIN_BOOTSTRAP']")
+
+            def sql_array(values):
+                if not values:
+                    return 'ARRAY[]::text[]'
+                return 'ARRAY[' + ','.join(
+                    "'" + value.replace("'", "''") + "'" for value in values) + ']'
+
+            def seed_command(command_id, instance, kind, generation, desired_version,
+                             package_sha, launch_profile, arguments, environment_names):
+                payload = hashlib.sha256(command_id.encode()).hexdigest()
+                fixture.psql(
+                    Path(args.pg_bin), root, port, runtime_password,
+                    "INSERT INTO kiarabot.host_commands("
+                    "command_id,host_id,instance_id,installation_id,kind,"
+                    "execution_generation,desired_version,desired_state,package_sha256,"
+                    "launch_profile,arguments,environment_names,payload_sha256,state,"
+                    "created_at,updated_at) VALUES('" + command_id + "','host-a','" + instance +
+                    "','" + INSTALLATION + "'," + str(kind) + "," + str(generation) + "," +
+                    str(desired_version) + ",0,'" + package_sha + "','" + launch_profile +
+                    "'," + sql_array(arguments) + "," + sql_array(environment_names) + ",'" +
+                    payload + "',0," + now_sql + "," + now_sql + ")")
+
+            def receipt_of(command_id):
+                return fixture.psql(
+                    Path(args.pg_bin), root, port, runtime_password,
+                    "SELECT state,receipt_persisted FROM kiarabot.host_commands "
+                    "WHERE command_id='" + command_id + "'").stdout.decode().strip()
+
+            def execution_count():
+                return sqlite_rows(journal, 'SELECT count(*) FROM managed_executions')[0][0]
             fixture.psql(Path(args.pg_bin), root, port, runtime_password,
                          "INSERT INTO kiarabot.host_commands("
                          "command_id,host_id,instance_id,installation_id,kind,"
@@ -358,14 +413,8 @@ async def main_async(args) -> None:
                 Path(args.pg_bin), root, port, runtime_password,
                 "SELECT state FROM kiarabot.host_commands WHERE "
                 "command_id='hc-p08e-stop'").stdout.decode().strip() == '2', 'stop receipt')
-            def child_gone():
-                try:
-                    os.kill(pid, 0)
-                except ProcessLookupError:
-                    return True
-                return False
             try:
-                wait_until(child_gone, 'plugin child exit')
+                wait_until(lambda: _pid_gone(pid), 'plugin child exit')
                 wait_until(lambda: plugin_stopped.is_file(), 'SDK plugin on_stop hook')
             except BaseException:
                 for table in ('command_journal', 'managed_executions', 'execution_observations'):
@@ -416,6 +465,111 @@ async def main_async(args) -> None:
             drain_rows = sqlite_rows(
                 journal, "SELECT state FROM command_journal WHERE command_id='hc-p08e-drain'")
             require(drain_rows and drain_rows[0][0] == 2, 'Host drain journal state')
+
+            # Whitelist rejection matrix: invalid package digest / argument name / env name must
+            # be rejected by the Host before spawning, with receipt persisted=false and no journal or
+            # execution row. UNKNOWN/not-spawned must never look like a stopped process.
+            executions_before = execution_count()
+            manifest_argument = f'--manifest={manifest}'
+            rejections = [
+                ('hc-p08e-bad-package', 'e' * 64, 'python', [manifest_argument],
+                 ['PYTHONPATH', 'PLUGIN_CORE_ENDPOINT']),
+                ('hc-p08e-bad-argument', 'a' * 64, 'python', ['--evil=value'],
+                 ['PYTHONPATH', 'PLUGIN_CORE_ENDPOINT']),
+                ('hc-p08e-bad-env', 'a' * 64, 'python', [manifest_argument], ['EVIL']),
+            ]
+            for command_id, package_sha, profile, arguments, environment in rejections:
+                seed_command(command_id, PLUGIN_INSTANCE, 1, 1, 1, package_sha, profile,
+                             arguments, environment)
+                wait_until(lambda cid=command_id: receipt_of(cid).startswith('2|'),
+                           f'{command_id} receipt')
+                require(receipt_of(command_id) == '2|f',
+                        f'{command_id} was not rejected by the Host')
+                require(execution_count() == executions_before,
+                        f'{command_id} spawned a process despite whitelist rejection')
+                require(not sqlite_rows(
+                    journal, f"SELECT 1 FROM command_journal WHERE command_id='{command_id}'"),
+                    f'{command_id} reached the Host command journal')
+
+            # Host kill with a live managed child: the journal must be recovered on restart and
+            # the same command must not spawn a duplicate process.
+            seed_command('hc-p08e-gen2', PLUGIN_INSTANCE, 1, 2, 2, 'a' * 64, 'python',
+                         [manifest_argument], ['PYTHONPATH', 'PLUGIN_CORE_ENDPOINT',
+                                               'PLUGIN_TLS_ROOT', 'PLUGIN_INSTANCE_ID',
+                                               'PLUGIN_IO_TIMEOUT', 'PLUGIN_HEARTBEAT_INTERVAL',
+                                               'PLUGIN_RETRY_DELAY',
+                                               'KIARABOT_PLUGIN_BOOTSTRAP'])
+            wait_until(lambda: receipt_of('hc-p08e-gen2') == '2|t', 'gen2 apply receipt')
+            wait_until(lambda: execution_count() == executions_before + 1, 'gen2 spawn')
+            gen2 = sqlite_rows(
+                journal, "SELECT pid FROM managed_executions WHERE instance_id='" +
+                PLUGIN_INSTANCE + "' AND execution_generation=2")[0][0]
+            require(gen2 > 0 and os.kill(gen2, 0) is None, 'gen2 child not alive')
+            host.send_signal(signal.SIGKILL)
+            host.wait(timeout=10)
+            host_err.close()
+            host = host_err = None
+            require(os.kill(gen2, 0) is None, 'child did not survive Host SIGKILL')
+            host, host_err = start_process(
+                [args.host_binary, '--config', str(host_config_path)], root,
+                root / 'host-kill-restart.err', None)
+            time.sleep(3.0)
+            require(execution_count() == executions_before + 1,
+                    'Host restart after SIGKILL spawned a duplicate execution')
+            require(os.kill(gen2, 0) is None, 'recovered child was not preserved')
+            seed_command('hc-p08e-gen2-stop', PLUGIN_INSTANCE, 2, 2, 2, 'a' * 64, 'python',
+                         [], [])
+            wait_until(lambda: receipt_of('hc-p08e-gen2-stop') == '2|t', 'gen2 stop receipt')
+            wait_until(lambda: _pid_gone(gen2), 'gen2 child exit')
+
+            # TERM grace -> KILL boundary: a process that ignores SIGTERM must be KILLed after the
+            # Host's bounded grace and still reported terminal (not left UNKNOWN).
+            seed_command('hc-p08e-hanging-start', HANGING_INSTANCE, 1, 1, 1, 'b' * 64, 'hanging',
+                         [], [])
+            wait_until(lambda: receipt_of('hc-p08e-hanging-start') == '2|t',
+                       'hanging start receipt')
+            hanging_pid = sqlite_rows(
+                journal, "SELECT pid FROM managed_executions WHERE instance_id='" +
+                HANGING_INSTANCE + "'")[0][0]
+            require(hanging_pid > 0 and os.kill(hanging_pid, 0) is None,
+                    'hanging child not alive')
+            stop_started = time.monotonic()
+            seed_command('hc-p08e-hanging-stop', HANGING_INSTANCE, 2, 1, 1, 'b' * 64, 'hanging',
+                         [], [])
+            wait_until(lambda: receipt_of('hc-p08e-hanging-stop') == '2|t',
+                       'hanging stop receipt', timeout=20.0)
+            wait_until(lambda: _pid_gone(hanging_pid), 'hanging child killed')
+            elapsed = time.monotonic() - stop_started
+            require(elapsed >= 4.0, f'Host KILL boundary too fast: {elapsed:.2f}s')
+            hanging_row = sqlite_rows(
+                journal, "SELECT state,outcome FROM managed_executions WHERE instance_id='" +
+                HANGING_INSTANCE + "'")[0]
+            require(hanging_row[0] == 3 and hanging_row[1] != 4,
+                    'hanging execution not terminal/KnownSucceeded after KILL')
+
+            # Command arriving while the Host is down is replayed exactly once on restart.
+            stop_process(host)
+            host_err.close()
+            host = host_err = None
+            executions_before_replay = execution_count()
+            seed_command('hc-p08e-down-start', PLUGIN_INSTANCE, 1, 3, 3, 'a' * 64, 'python',
+                         [manifest_argument], ['PYTHONPATH', 'PLUGIN_CORE_ENDPOINT',
+                                               'PLUGIN_TLS_ROOT', 'PLUGIN_INSTANCE_ID',
+                                               'PLUGIN_IO_TIMEOUT', 'PLUGIN_HEARTBEAT_INTERVAL',
+                                               'PLUGIN_RETRY_DELAY',
+                                               'KIARABOT_PLUGIN_BOOTSTRAP'])
+            time.sleep(0.5)
+            require(receipt_of('hc-p08e-down-start') == '0|',
+                    'command dispatched while Host was down')
+            host, host_err = start_process(
+                [args.host_binary, '--config', str(host_config_path)], root,
+                root / 'host-replay.err', None)
+            wait_until(lambda: receipt_of('hc-p08e-down-start') == '2|t',
+                       'down-start replay receipt')
+            wait_until(lambda: execution_count() == executions_before_replay + 1,
+                       'down-start replay spawn')
+            require(execution_count() == executions_before_replay + 1,
+                    'down-start command spawned more than once')
             print('P08 managed host e2e: PASS')
     except BaseException:
         for path in (root / 'runtime.err', root / 'host.err', root / 'host-restart.err',

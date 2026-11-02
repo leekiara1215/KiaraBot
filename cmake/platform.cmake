@@ -508,4 +508,10 @@ if(TARGET kiarabot-plugin-host)
     LABELS "p13;p08;integration;fault" TIMEOUT 240
     WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}/sdk/python"
     ENVIRONMENT "KIARABOT_TEST_HOST_BINARY=$<TARGET_FILE:kiarabot-plugin-host>;PYTHONPATH=${CMAKE_SOURCE_DIR}/sdk/python/src:${CMAKE_SOURCE_DIR}/sdk/python/build/generated;PATH=${RUNTIME_E2E_OPENSSL_BIN_DIR}:${RUNTIME_E2E_PYTHON_BIN_DIR}:$ENV{PATH}")
+  add_test(NAME p08_config_conflict COMMAND "${KIARABOT_TARGET_PYTHON}"
+    "${CMAKE_SOURCE_DIR}/tests/architecture/p08_config_conflict.py")
+  set_tests_properties(p08_config_conflict PROPERTIES
+    LABELS "p08;integration;fault" TIMEOUT 120
+    WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+    ENVIRONMENT "KIARABOT_TEST_HOST_BINARY=$<TARGET_FILE:kiarabot-plugin-host>;PYTHONPATH=${CMAKE_SOURCE_DIR}/sdk/python/src:${CMAKE_SOURCE_DIR}/sdk/python/build/generated:${CMAKE_SOURCE_DIR}/sdk/python/tests;PATH=${RUNTIME_E2E_OPENSSL_BIN_DIR}:${RUNTIME_E2E_PYTHON_BIN_DIR}:$ENV{PATH}")
 endif()
