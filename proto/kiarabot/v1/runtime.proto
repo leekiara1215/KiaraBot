@@ -1133,6 +1133,11 @@ service RuntimeService {
   }
   rpc GetOperation(RuntimeGetOperationRequest) returns (RuntimeGetOperationResponse) {
     option (required_permission) = PERMISSION_RESOURCE_READ;
+    option (scope_kinds) = RESOURCE_ACCOUNT;
+    option (scope_kinds) = RESOURCE_ADAPTER;
+    option (scope_kinds) = RESOURCE_INSTALLATION;
+    option (scope_kinds) = RESOURCE_INSTANCE;
+    option (scope_kinds) = RESOURCE_HOST;
     option (requires_idempotency) = false;
     option (default_deadline_ms) = 2000;
     option (max_deadline_ms) = 5000;
@@ -1154,6 +1159,11 @@ service RuntimeService {
   }
   rpc BeginDelete(RuntimeBeginDeleteRequest) returns (RuntimeBeginDeleteResponse) {
     option (required_permission) = PERMISSION_RESOURCE_MANAGE;
+    option (scope_kinds) = RESOURCE_ACCOUNT;
+    option (scope_kinds) = RESOURCE_ADAPTER;
+    option (scope_kinds) = RESOURCE_INSTALLATION;
+    option (scope_kinds) = RESOURCE_INSTANCE;
+    option (scope_kinds) = RESOURCE_HOST;
     option (requires_idempotency) = true;
     option (default_deadline_ms) = 5000;
     option (max_deadline_ms) = 30000;
@@ -1161,6 +1171,11 @@ service RuntimeService {
   }
   rpc RestoreResource(RuntimeRestoreResourceRequest) returns (RuntimeRestoreResourceResponse) {
     option (required_permission) = PERMISSION_RESOURCE_MANAGE;
+    option (scope_kinds) = RESOURCE_ACCOUNT;
+    option (scope_kinds) = RESOURCE_ADAPTER;
+    option (scope_kinds) = RESOURCE_INSTALLATION;
+    option (scope_kinds) = RESOURCE_INSTANCE;
+    option (scope_kinds) = RESOURCE_HOST;
     option (requires_idempotency) = true;
     option (default_deadline_ms) = 5000;
     option (max_deadline_ms) = 30000;
