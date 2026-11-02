@@ -115,6 +115,19 @@ if(UNIX)
   set_tests_properties(p10_postgres_scheduler PROPERTIES
     LABELS "p10;integration;fault" TIMEOUT 180)
 
+  add_executable(kiarabot_postgres_host_registration_test
+    tests/host_registration_test.cpp)
+  target_link_libraries(kiarabot_postgres_host_registration_test PRIVATE
+    kiarabot_postgres libpqxx::pqxx)
+  kiarabot_platform_warnings(kiarabot_postgres_host_registration_test)
+  add_test(NAME p08_postgres_host_registration COMMAND "${KIARABOT_TARGET_PYTHON}"
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_database_test.py"
+    --pg-bin "${KIARABOT_TEST_PG_BIN}" --openssl "${KIARABOT_TEST_OPENSSL}"
+    --test $<TARGET_FILE:kiarabot_postgres_host_registration_test>
+    --initializer $<TARGET_FILE:kiarabot-pg-initialize>)
+  set_tests_properties(p08_postgres_host_registration PROPERTIES
+    LABELS "p08;integration;fault" TIMEOUT 120)
+
   add_executable(kiarabot_postgres_database_test
     tests/database_test.cpp tests/common_work_checks.cpp tests/typed_work_checks.cpp)
   target_link_libraries(kiarabot_postgres_database_test PRIVATE kiarabot_postgres libpqxx::pqxx)
