@@ -49,12 +49,12 @@ Core 受管启动器当前只传递最小 PATH、endpoint、token 与可选 PYTH
 
 | 插件 | 使用能力 | 权限 | 说明 |
 | --- | --- | --- | --- |
-| `plugins/group_admin` | `event.message.received`、`send_message` 纯文本、storage | `message.read`、`message.send`、`storage.namespace` | `/group help/info/rules/rule add/welcome`；`Mute/Kick/Approve` 在 v1 契约中未实现，本示例从不构造这些 payload |
+| `plugins/group_admin` | `event.message.received`、`send_message` 纯文本、storage | `message.read`、`message.send`、`storage.namespace` | `/group help/info/rules/rule add/welcome`；`Mute/Kick/Approve` 已是 v1 implemented Action（权限 `member.mute`/`member.kick`/`request.approve`），但本示例未申请这些权限，也从不构造这些 payload |
 | `plugins/reminder` | `event.message.received`、`event.timer.triggered`、`task_create/get/cancel` | `message.read`、`message.send`、`task.schedule` | `/remind <秒> <文本>`、`status`、`cancel`；定时到点由 TimerTriggered 回投递回复，task_id 与 Action 幂等键确定，重复 timer 不重复副作用 |
 | `plugins/ai-reply` | `event.message.received`、非流式 `model_chat`、storage、`send_message` | `message.read`、`message.send`、`model.chat`、`storage.namespace` | `/ai` 前缀单轮回复；先记录调用意图再调模型，避免重放重复计费 |
 | `plugins/event-observer` | `event.message.received` | `message.read` | 最小收事件示例 |
 
-基线要求的三类示例插件中，`ai_chat` 由 `ai-reply` 对应；`group_admin`、`reminder` 现在以 v1 现有协议能力补齐（不含任何未实现 payload）。两个新示例的配置样例为 `plugins/<name>/config.example.json`，经 `plugin.config.v1` 下发（当前只支持空 schema，插件在 `on_config` 中自行校验）。插件测试：`sdk/python/.venv/bin/python -m pytest -q -c sdk/python/pyproject.toml plugins/group_admin/tests plugins/reminder/tests`。
+基线要求的三类示例插件中，`ai_chat` 由 `ai-reply` 对应；`group_admin`、`reminder` 现在以 v1 现有协议能力补齐，示例不构造未使用的 Action payload（`group_admin` 的 Mute/Kick/Approve 虽已实现，却不在本示例权限内）。两个新示例的配置样例为 `plugins/<name>/config.example.json`，经 `plugin.config.v1` 下发（当前只支持空 schema，插件在 `on_config` 中自行校验）。插件测试：`sdk/python/.venv/bin/python -m pytest -q -c sdk/python/pyproject.toml plugins/group_admin/tests plugins/reminder/tests`。
 
 ## T03a 当前桥接子集
 

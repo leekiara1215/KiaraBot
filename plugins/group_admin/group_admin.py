@@ -2,9 +2,9 @@
 
 Reads ``event.message.received``, keeps per-group rules in the plugin namespace
 storage and answers with the plain-text ``send_message`` Action. Moderation
-payloads (MuteMember / KickMember / ApproveRequest) are marked
-``CONTRACT_STATUS: not_implemented`` in ``proto/kiarabot/v1/actions.proto``; this
-example never constructs them and says so in its replies.
+payloads (MuteMember / KickMember / ApproveRequest) are implemented v1 Actions,
+but this example does not request their permissions; it never constructs them
+and says so in its replies.
 """
 import hashlib
 import json
@@ -21,7 +21,7 @@ HELP = (
     '/group rules — list stored rules\n'
     '/group rule add <text> — append a rule for this group\n'
     '/group welcome — show the welcome setting\n'
-    'Mute/Kick/Approve are not implemented by the v1 contract and are never sent.'
+    'Mute/Kick/Approve are implemented v1 Actions, but this example never sends them.'
 )
 
 
@@ -62,8 +62,8 @@ class GroupAdmin(Plugin):
         if name == 'help':
             return HELP
         if name in ('mute', 'kick', 'approve'):
-            return ('Mute/Kick/Approve are not implemented by the v1 contract; '
-                    'this example never sends those Action payloads.')
+            return ('Mute/Kick/Approve are implemented v1 Actions, but this example does not '
+                    'request their permissions and never sends those Action payloads.')
         if name == 'info':
             rules = await self._load(context, conversation.id)
             return (f'conversation={conversation.id} rules={len(rules)} '

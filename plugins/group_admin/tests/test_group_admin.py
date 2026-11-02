@@ -79,12 +79,13 @@ def test_help_and_deterministic_reply_key():
     assert action.target.conversation_id == 'group-1'
 
 
-def test_moderation_commands_are_explicitly_not_implemented():
+def test_moderation_commands_decline_without_constructing_actions():
     for command in ('mute 42 60', 'kick 42', 'approve 7 yes'):
         context = Context()
         run(create_plugin(), event('/group ' + command), context)
         action = reply(context)
-        assert 'not implemented' in action.send_message.message.plain_text
+        assert 'implemented v1 Actions' in action.send_message.message.plain_text
+        assert 'never sends' in action.send_message.message.plain_text
 
 
 def test_info_uses_applied_config_and_rules():
