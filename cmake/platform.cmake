@@ -67,6 +67,14 @@ target_link_libraries(kiarabot_scheduler_runtime_client PUBLIC
   kiarabot_scheduler_service kiarabot_proto kiarabot_target_codec)
 kiarabot_platform_warnings(kiarabot_scheduler_runtime_client)
 
+add_library(kiarabot_scheduler_task_client STATIC
+  ${CMAKE_SOURCE_DIR}/core/src/runtime/platform/scheduler_task_client.cpp)
+target_include_directories(kiarabot_scheduler_task_client PUBLIC
+  ${CMAKE_SOURCE_DIR}/core/include)
+target_link_libraries(kiarabot_scheduler_task_client PUBLIC
+  kiarabot_proto kiarabot_target_codec)
+kiarabot_platform_warnings(kiarabot_scheduler_task_client)
+
 add_library(kiarabot_scheduler_rpc STATIC
   ${CMAKE_SOURCE_DIR}/core/src/runtime/platform/scheduler_rpc.cpp)
 target_include_directories(kiarabot_scheduler_rpc PUBLIC ${CMAKE_SOURCE_DIR}/core/include)
@@ -399,7 +407,7 @@ target_link_libraries(kiarabot_model_bridge_test PRIVATE
   kiarabot_runtime_rpc OpenSSL::SSL OpenSSL::Crypto)
 kiarabot_platform_warnings(kiarabot_model_bridge_test)
 add_test(NAME p11_model_bridge COMMAND kiarabot_model_bridge_test)
-set_tests_properties(p11_model_bridge PROPERTIES LABELS "p11;integration;bridge" TIMEOUT 60)
+set_tests_properties(p11_model_bridge PROPERTIES LABELS "p10;p11;p06;integration;bridge" TIMEOUT 60)
 
 add_test(NAME p11_model_rpc COMMAND kiarabot_model_rpc_test)
 set_tests_properties(p11_model_rpc PROPERTIES LABELS "p11;integration" TIMEOUT 30)
@@ -440,7 +448,7 @@ foreach(SERVICE identity runtime plugin_host scheduler model)
     target_sources(kiarabot-runtime PRIVATE
       ${CMAKE_SOURCE_DIR}/core/app/runtime_composition.cpp)
     target_link_libraries(kiarabot-runtime PRIVATE
-      kiarabot_runtime_model_client kiarabot_host_bridge
+      kiarabot_runtime_model_client kiarabot_scheduler_task_client kiarabot_host_bridge
       kiarabot_runtime_rpc kiarabot_runtime_identity_client kiarabot_runtime_storage_application
       kiarabot_runtime_audit_application kiarabot_postgres OpenSSL::Crypto)
   endif()
