@@ -22,6 +22,16 @@ foreach(COMPONENT runtime_event_delivery)
   set_tests_properties(p06_${COMPONENT} PROPERTIES LABELS "p06;unit" TIMEOUT 10)
 endforeach()
 
+foreach(COMPONENT action_rules)
+  add_executable(kiarabot_${COMPONENT}_test tests/architecture/${COMPONENT}_test.cpp)
+  target_include_directories(kiarabot_${COMPONENT}_test PRIVATE include)
+  target_compile_features(kiarabot_${COMPONENT}_test PRIVATE cxx_std_20)
+  target_compile_options(kiarabot_${COMPONENT}_test PRIVATE
+    $<$<CXX_COMPILER_ID:AppleClang,Clang,GNU>:-Wall -Wextra -Wpedantic>)
+  add_test(NAME p07_${COMPONENT} COMMAND kiarabot_${COMPONENT}_test)
+  set_tests_properties(p07_${COMPONENT} PROPERTIES LABELS "p07;unit" TIMEOUT 10)
+endforeach()
+
 foreach(COMPONENT persistence_contract persistence_rules time)
   add_executable(kiarabot_${COMPONENT}_test tests/architecture/${COMPONENT}_test.cpp)
   target_include_directories(kiarabot_${COMPONENT}_test PRIVATE include)
