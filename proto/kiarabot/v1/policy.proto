@@ -63,6 +63,10 @@ enum Permission {
   PERMISSION_LOG_READ = 48;
   // CONTRACT_STATUS: not_implemented - target permission declaration, no producer.
   PERMISSION_AUDIT_READ = 49;
+  // P12 target authorized per-component health read. The anonymous /health/live and
+  // /health/ready probes never need it; the aggregate /api/v1/health requires this explicit
+  // grant. CONTRACT_STATUS: not_implemented - target permission declaration, no producer.
+  PERMISSION_HEALTH_READ = 50;
 }
 
 extend google.protobuf.MethodOptions {

@@ -15,6 +15,15 @@ tags:
   - name: control-plane
     description: Authenticated control-panel streaming channels.
 defaultContentType: application/json
+x-target-transport: not_implemented
+x-target-transport-note: >-
+  P12 v1 target Control has no WebSocket server binding. REST operation snapshots
+  (GET /api/v1/operations/{ownerService}/{operationId}) are the only authoritative progress
+  and resync source; clients must recover from stream loss by full REST refresh, never by
+  assuming missed events. This AsyncAPI document describes the frozen channel/message contract
+  and remains registered not_implemented for target execution; a future Control WS server may
+  implement it without changing the frames. Listed future channels include operations +
+  operation.updated (durable progress), health.updated, and plugin.updated.health_state.
 x-control-session-policy:
   authorization: Current roles and permissions follow openapi.yaml x-control-policy; control contains the union of allowed channels, never unfiltered data.
   permissions: {operations: resource.read, health: health.read, logs: log.read, adapters: adapter.read, plugins: plugin.read, tasks: task.read, messages: message.read}
@@ -25,9 +34,11 @@ x-control-session-policy:
     features only. The health.updated stream stays not_implemented until a real producer exists;
     clients use authorized GET /api/v1/health and never infer component states from this channel.
   logs_default: >-
-    The logs channel requires an explicit log.read grant (P12 permission 48); no default role
-    derives it. audit.read (49) is a separate sensitive read and never grants this channel, and
-    there is no audit WebSocket channel: audit data is REST-only at /audit with audit.read.
+    Target P12 v1 has no Control WebSocket server. Log/audit data is REST-only at /logs and
+    /audit with distinct explicit log.read (48) / audit.read (49) grants; no default role derives
+    either and neither implies the other. If no authoritative owner source is registered,
+    Control returns 503 UNAVAILABLE, never a successful empty page. The logs channel below is a
+    deferred target frame contract (not_implemented), not a v1 transport claim.
 
   messages_default: >-
     No default role grants message.read, including admins. The messages channel

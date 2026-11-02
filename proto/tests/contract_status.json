@@ -1730,7 +1730,8 @@
       "ModelCallDisposition.EXECUTED_BILLED": "not_implemented",
       "ModelCallDisposition.ABANDONED": "not_implemented",
       "Permission.PERMISSION_LOG_READ": "not_implemented",
-      "Permission.PERMISSION_AUDIT_READ": "not_implemented"
+      "Permission.PERMISSION_AUDIT_READ": "not_implemented",
+      "Permission.PERMISSION_HEALTH_READ": "not_implemented"
     },
     "channels": {
       "channels.control": "implemented",
@@ -1825,7 +1826,10 @@
       "operations.getCredentialStatus": "not_implemented",
       "operations.createSharedNamespace": "not_implemented",
       "operations.getSharedNamespace": "not_implemented",
-      "operations.listPrincipals": "not_implemented"
+      "operations.listPrincipals": "not_implemented",
+      "operations.setInstancePluginState": "not_implemented",
+      "operations.getInstanceConfiguration": "not_implemented",
+      "operations.updateInstanceConfiguration": "not_implemented"
     },
     "semantic_rules": {
       "semantic.action.deadline_max_300s": "not_implemented",
@@ -5585,6 +5589,27 @@
     ],
     "operations.listPrincipals": [
       "api/openapi.yaml"
+    ],
+    "Permission.PERMISSION_HEALTH_READ": [
+      "proto/kiarabot/v1/policy.proto",
+      "api/openapi.yaml",
+      "doc/06-control-api.md",
+      "doc/01-contracts.md"
+    ],
+    "operations.setInstancePluginState": [
+      "api/openapi.yaml",
+      "doc/06-control-api.md",
+      "doc/01-contracts.md"
+    ],
+    "operations.getInstanceConfiguration": [
+      "api/openapi.yaml",
+      "doc/06-control-api.md",
+      "doc/01-contracts.md"
+    ],
+    "operations.updateInstanceConfiguration": [
+      "api/openapi.yaml",
+      "doc/06-control-api.md",
+      "doc/01-contracts.md"
     ]
   },
   "vocabulary": {

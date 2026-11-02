@@ -67,6 +67,9 @@ x-contract-status:
     - getPrincipalStatus
     - rotateCredential
     - revokeCredential
+    - setInstancePluginState
+    - getInstanceConfiguration
+    - updateInstanceConfiguration
   deprecated: []
 x-control-policy:
   application_port: typed-owner-rpc-v1
@@ -193,6 +196,7 @@ paths:
       operationId: getProcessLiveness
       x-permission: public
       x-process-probe: true
+      x-contract-status: implemented
       security: []
       summary: Process liveness without database access
       responses:
@@ -207,6 +211,7 @@ paths:
       operationId: getProcessReadiness
       x-permission: public
       x-process-probe: true
+      x-contract-status: implemented
       security: []
       summary: Readiness after migration and a successful storage write probe
       description: >-
@@ -230,6 +235,7 @@ paths:
       x-target-response-schema: '#/components/schemas/TargetCurrentPrincipal'
       x-target-contract-status: not_implemented
       x-permission: session.read
+      x-contract-status: not_implemented
       summary: Return the current session and server-computed roles and permissions
       responses:
         '200':
@@ -249,6 +255,7 @@ paths:
       x-target-response-schema: '#/components/schemas/TargetCurrentSessionPage'
       x-target-contract-status: not_implemented
       x-permission: session.read
+      x-contract-status: not_implemented
       summary: List visible authentication sessions
       parameters: [{ $ref: '#/components/parameters/PageSize' }, { $ref: '#/components/parameters/PageToken' }]
       responses:
@@ -266,6 +273,7 @@ paths:
     post:
       operationId: revokeSession
       x-permission: session.revoke
+      x-contract-status: not_implemented
       summary: Revoke a visible session and its credentials
       parameters: [{ $ref: '#/components/parameters/SessionId' }, { $ref: '#/components/parameters/IdempotencyKey' }]
       responses:
@@ -287,6 +295,7 @@ paths:
       x-target-response-schema: '#/components/schemas/TargetCurrentTokenPair'
       x-target-contract-status: not_implemented
       x-permission: public
+      x-contract-status: not_implemented
       summary: Create an access and refresh token pair
       parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }]
       requestBody:
@@ -315,6 +324,7 @@ paths:
       x-target-response-schema: '#/components/schemas/TargetCurrentTokenPair'
       x-target-contract-status: not_implemented
       x-permission: refresh.credential
+      x-contract-status: not_implemented
       summary: Rotate an access token
       parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }]
       requestBody:
@@ -341,7 +351,8 @@ paths:
       x-permission: health.read
       summary: Return aggregate readiness and dependency state
       description: >-
-        Requires health.read. Returns aggregate HealthState plus per-component detail for the four
+        Requires health.read (P12 Permission 50; anonymous /health/live and /health/ready never
+        need it). Returns aggregate HealthState plus per-component detail for the four
         direct business dependencies identity, runtime, scheduler and model, observed by Control.
         Identity/credential-chain/revocation failure is UNHEALTHY (HTTP 503); a Runtime, Scheduler
         or Model single-point failure is DEGRADED (HTTP 200) with the affected setup returning
@@ -518,15 +529,19 @@ paths:
     get:
       operationId: listAuditEntries
       x-permission: audit.read
+      x-contract-status: not_implemented
       summary: Query audit entries
       description: >-
         Control read-only aggregate of owner-service audit facts; requires the distinct audit.read
         permission and never substitutes log.read. Data ownership stays with each business service
         (audit committed in its business transaction); Control projects only authorized, redacted
         rows and never credentials, message bodies or model secrets. Pagination uses occurred_at
-        plus stable ID. If no authoritative owner source is reachable, return UNAVAILABLE (503),
-        never a successful empty page. Audit/log permissions are separate and neither implies the
-        other.
+        plus stable ID; no free-form filters are accepted in v1. Necessary audit facts are retained
+        for 180 days in their owner service (doc/22) and Control must not extend that retention by
+        caching; response rows carry the owner service identity so clients can open the exact owner
+        operation. No owner audit-list RPC is declared yet (adding one requires confirmation); until
+        an authoritative source is registered, return UNAVAILABLE (503), never a successful empty
+        page. Audit/log permissions are separate and neither implies the other.
       parameters: [{ $ref: '#/components/parameters/PageSize' }, { $ref: '#/components/parameters/PageToken' }]
       responses:
         '200':
@@ -619,6 +634,7 @@ paths:
     get:
       operationId: listTasks
       x-permission: task.read
+      x-contract-status: not_implemented
       summary: List scheduled tasks
       parameters: [{ $ref: '#/components/parameters/PageSize' }, { $ref: '#/components/parameters/PageToken' }]
       responses:
@@ -716,13 +732,17 @@ paths:
     get:
       operationId: listLogs
       x-permission: log.read
+      x-contract-status: not_implemented
       summary: Query redacted structured logs
       description: >-
         Control read-only aggregate of redacted structured logs; requires the distinct log.read
         permission (P12 permission 48) and never substitutes audit.read. Only operational log
         categories are returned; credential, message-body and model-secret material is removed
-        before projection. Pagination uses occurred_at plus stable ID. If no authoritative log
-        source is reachable, return UNAVAILABLE (503), never a successful empty page.
+        before projection. Pagination uses occurred_at plus stable ID; no free-form filters are
+        accepted in v1. Operational logs are retained for 7 days; Control must not silently widen
+        that window. No owner log-list RPC is declared yet (adding one requires confirmation); until
+        an authoritative source is registered, return UNAVAILABLE (503), never a successful empty
+        page.
       parameters: [{ $ref: '#/components/parameters/PageSize' }, { $ref: '#/components/parameters/PageToken' }]
       responses:
         '200':
@@ -1320,6 +1340,143 @@ paths:
         '503': {"$ref":"#/components/responses/Unavailable"}
         '504': {"$ref":"#/components/responses/Timeout"}
         '200': {"description":"Desired values and independent application status","content":{"application/json":{"schema":{"$ref":"#/components/schemas/TargetRuntimeGetInstanceConfigResponse"}}}}
+  /installations/{installationId}/instances/{instanceId}/plugin-state:
+    put:
+      operationId: setInstancePluginState
+      summary: Set one instance plugin desired state (Q6)
+      x-contract-status: not_implemented
+      x-owner-service: runtime
+      x-owner-rpc: RuntimeService.SetDesiredState
+      x-permission: plugin.manage
+      x-mutating: true
+      description: >-
+        Q6 explicit instance object path. Never maps to the legacy /plugins/{id}/enable. Target
+        P12 declaration; production handler is not implemented. The body must name the same
+        installation/instance as the path. Control forwards the idempotent command with
+        expected_version; 202 means durably accepted, not completed. Runtime desired state (saved
+        intent), Host observed process facts and plugin ACK/config-application facts are returned
+        as three separate projections plus an operation reference. A Host-offline dependency is
+        BLOCKED/UNAVAILABLE; Control never claims the process started/stopped.
+      parameters:
+      - name: installationId
+        in: path
+        required: true
+        schema: {type: string, minLength: 1}
+      - name: instanceId
+        in: path
+        required: true
+        schema: {type: string, minLength: 1}
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/TargetInstancePluginStateRequest'}
+      responses:
+        '200':
+          description: Current accepted/observed projection
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TargetInstancePluginStateResponse'}
+        '202':
+          description: Durably accepted; inspect operation at its owner
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TargetInstancePluginStateResponse'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+        '500': {$ref: '#/components/responses/Internal'}
+        '503': {$ref: '#/components/responses/Unavailable'}
+        '504': {$ref: '#/components/responses/Timeout'}
+  /installations/{installationId}/instances/{instanceId}/configuration:
+    get:
+      operationId: getInstanceConfiguration
+      summary: Read one instance configuration facts (Q6)
+      x-contract-status: not_implemented
+      x-owner-service: runtime
+      x-owner-rpc: RuntimeService.GetInstanceConfig
+      x-permission: plugin.config.read
+      x-mutating: false
+      description: >-
+        Q6 explicit instance object path. Returns Runtime-saved desired configuration/version,
+        Host observation facts and plugin ACK/application facts separately. Secrets are never
+        returned; sensitive values are represented only by controlled references or redaction.
+        Current exact instance authorization is required; unknown/invisible instances are NOT_FOUND.
+      parameters:
+      - name: installationId
+        in: path
+        required: true
+        schema: {type: string, minLength: 1}
+      - name: instanceId
+        in: path
+        required: true
+        schema: {type: string, minLength: 1}
+      responses:
+        '200':
+          description: Separate desired/observed/ack facts
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TargetInstanceConfigurationResponse'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+        '500': {$ref: '#/components/responses/Internal'}
+        '503': {$ref: '#/components/responses/Unavailable'}
+        '504': {$ref: '#/components/responses/Timeout'}
+    put:
+      operationId: updateInstanceConfiguration
+      summary: Update one instance configuration (Q6)
+      x-contract-status: not_implemented
+      x-owner-service: runtime
+      x-owner-rpc: RuntimeService.UpdateConfig
+      x-permission: plugin.manage
+      x-mutating: true
+      description: >-
+        Q6 explicit instance object path. Never maps to /plugins/{id}/config. Persists only the
+        Runtime desired configuration as an idempotent command with expected_version; 202 means
+        accepted. Whether the Host/plugin has applied it stays a separate observed/ACK fact and may
+        remain pending/rejected after the response. Secrets are write-only and never echoed.
+      parameters:
+      - name: installationId
+        in: path
+        required: true
+        schema: {type: string, minLength: 1}
+      - name: instanceId
+        in: path
+        required: true
+        schema: {type: string, minLength: 1}
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/TargetInstanceConfigurationRequest'}
+      responses:
+        '200':
+          description: Current accepted/observed projection
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TargetInstanceConfigurationResponse'}
+        '202':
+          description: Durably accepted; inspect operation at its owner
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TargetInstanceConfigurationResponse'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+        '500': {$ref: '#/components/responses/Internal'}
+        '503': {$ref: '#/components/responses/Unavailable'}
+        '504': {$ref: '#/components/responses/Timeout'}
   /resources/{resourceKind}/{resourceId}:
     get:
       operationId: getResourceState
@@ -2549,6 +2706,7 @@ paths:
       x-target-response-schema: '#/components/schemas/TargetIdentityListPrincipalsResponse'
       x-target-contract-status: not_implemented
       x-permission: identity.principal.read
+      x-contract-status: not_implemented
       summary: List human principals visible to the caller
       description: >-
         Target P12 read-only principal directory. Only human principals are listed; service, Host
@@ -3416,11 +3574,37 @@ components:
       properties:
         items: { type: array, items: { $ref: '#/components/schemas/User' } }
         page: { $ref: '#/components/schemas/PageInfo' }
+    TaskSummary:
+      type: object
+      additionalProperties: false
+      description: >-
+        Control TaskPage row. Only the listed fields are produced by the P12c owner gateway;
+        raw Scheduler TaskRecord fields are exposed by the owner API, not by this control list.
+      required: [id, name, state]
+      properties:
+        id:
+          type: string
+          minLength: 1
+          description: Scheduler task_id (stable business identity).
+        name:
+          type: string
+          description: Display label derived from the target conversation; equals id when absent.
+        state:
+          type: string
+          enum:
+          - SCHEDULED_TASK_STATE_UNSPECIFIED
+          - SCHEDULED_TASK_PENDING
+          - SCHEDULED_TASK_RUNNING
+          - SCHEDULED_TASK_RETRYING
+          - SCHEDULED_TASK_COMPLETED
+          - SCHEDULED_TASK_FAILED
+          - SCHEDULED_TASK_CANCELLED
+        created_at: { type: string, format: date-time }
     TaskPage:
       type: object
       required: [items, page]
       properties:
-        items: { type: array, items: { $ref: '#/components/schemas/GenericResource' } }
+        items: { type: array, items: { $ref: '#/components/schemas/TaskSummary' } }
         page: { $ref: '#/components/schemas/PageInfo' }
     LogPage:
       type: object
@@ -3548,7 +3732,10 @@ components:
       required:
       - owner_service
       - operation_id
-      - resource
+      description: >-
+        Resource is present when the owner operation names a resource; it is omitted for owner
+        operations without one. Owner snapshot responses are authoritative and must not invent a
+        placeholder resource.
     TargetResourceRef:
       type: object
       additionalProperties: false
@@ -3762,6 +3949,108 @@ components:
       x-contract-status: not_implemented
       required:
       - instance
+    TargetInstanceFactRuntime:
+      type: object
+      additionalProperties: false
+      properties:
+        desired:
+          type: string
+          enum: [DESIRED_RUNNING, DESIRED_STOPPED]
+        desired_config_version:
+          $ref: '#/components/schemas/TargetUint64'
+        version:
+          $ref: '#/components/schemas/TargetPositiveUint64'
+        observed_at: {type: string, format: date-time}
+      x-contract-status: not_implemented
+      required: [desired, version, observed_at]
+    TargetInstanceFactHost:
+      type: object
+      additionalProperties: false
+      properties:
+        host_id: {type: string, minLength: 1}
+        registered: {type: boolean}
+        process_outcome:
+          type: string
+          enum: [EXECUTION_NOT_STARTED, EXECUTION_KNOWN_SUCCEEDED, EXECUTION_KNOWN_FAILED, EXECUTION_UNKNOWN]
+        observed_at: {type: string, format: date-time}
+      x-contract-status: not_implemented
+      required: [registered, process_outcome, observed_at]
+    TargetInstanceFactPlugin:
+      type: object
+      additionalProperties: false
+      properties:
+        applied_config_version:
+          $ref: '#/components/schemas/TargetUint64'
+        apply_state:
+          type: string
+          enum: [CONFIG_APPLY_UNSPECIFIED, CONFIG_APPLY_PENDING, CONFIG_APPLY_APPLIED, CONFIG_APPLY_REJECTED, CONFIG_APPLY_UNAVAILABLE]
+        observed_at: {type: string, format: date-time}
+      x-contract-status: not_implemented
+      required: [apply_state, observed_at]
+    TargetInstancePluginStateRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        installation_id: {type: string, minLength: 1}
+        instance_id: {type: string, minLength: 1}
+        desired:
+          type: string
+          enum: [DESIRED_RUNNING, DESIRED_STOPPED]
+        expected_version:
+          $ref: '#/components/schemas/TargetPositiveUint64'
+      x-contract-status: not_implemented
+      required: [installation_id, instance_id, desired]
+    TargetInstancePluginStateResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        instance:
+          $ref: '#/components/schemas/TargetInstanceRecord'
+        runtime:
+          $ref: '#/components/schemas/TargetInstanceFactRuntime'
+        host:
+          $ref: '#/components/schemas/TargetInstanceFactHost'
+        plugin:
+          $ref: '#/components/schemas/TargetInstanceFactPlugin'
+        operation:
+          $ref: '#/components/schemas/TargetOperationRef'
+      x-contract-status: not_implemented
+      required: [instance, runtime, host, plugin]
+      description: Three facts stay separate. host.process_outcome UNKNOWN does not mean stopped; operation is present when the command has a durable progress record.
+    TargetInstanceConfigurationRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        configuration:
+          type: object
+          additionalProperties: true
+          description: Desired values only; secrets write-only and never echoed.
+        expected_version:
+          $ref: '#/components/schemas/TargetPositiveUint64'
+      x-contract-status: not_implemented
+      required: [configuration]
+    TargetInstanceConfigurationResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        runtime:
+          type: object
+          additionalProperties: false
+          properties:
+            configuration: {type: object, additionalProperties: true}
+            desired_config_version: {$ref: '#/components/schemas/TargetUint64'}
+            delivery_id: {type: string}
+            apply_state: {type: string, enum: [CONFIG_APPLY_UNSPECIFIED, CONFIG_APPLY_PENDING, CONFIG_APPLY_APPLIED, CONFIG_APPLY_REJECTED, CONFIG_APPLY_UNAVAILABLE]}
+            observed_at: {type: string, format: date-time}
+          required: [desired_config_version, apply_state, observed_at]
+        host:
+          $ref: '#/components/schemas/TargetInstanceFactHost'
+        plugin:
+          $ref: '#/components/schemas/TargetInstanceFactPlugin'
+        operation:
+          $ref: '#/components/schemas/TargetOperationRef'
+      x-contract-status: not_implemented
+      required: [runtime, host, plugin]
     TargetInstanceRecord:
       type: object
       additionalProperties: false
