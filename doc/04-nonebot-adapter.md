@@ -200,3 +200,7 @@ issued_at/expires_at 为受信UTC，名义寿命最多56秒；含既定2秒节�
 refresh只接受当前实际流、未过期未撤销的proof/refresh及正refresh_generation，在线验证当前Identity主体/凭据状态与gate后原子轮换二者和generation；旧材料不可再次换发。材料/流/Fence失配或过期UNAUTHENTICATED并关闭流，已认证请求generation冲突CONFLICT，明确失权PERMISSION_DENIED，依赖故障UPSTREAM_UNAVAILABLE，期限TIMEOUT。失败不轮换、不复活失效授权。refresh无持久秘密收据；响应丢失视授权未知，关闭旧流，经仍有效的登记凭据重新bootstrap产生新connection_generation，禁止重放旧refresh猜测结果。
 
 授权过期停止新投递、入站受理、续租和副作用，不把已有Action/Model事实变FAILED。auth刷新不续Delivery租约；ACK/Renew仍核验有效attempt、完整Fence及现有事实规则。适配器本地已执行结果在断线后通过新认证连接按原account/action ID交回，不能据失效proof新执行。所有新增字段/帧target均not_implemented，oracle和wire往返不证明生产授权或并发正确性。
+
+### P06 适配器侧冻结（未实现）
+
+外部适配器在 P06 只连 Runtime 的外部 Bridge 监听（`bridge_listen`，server-verified TLS，不要求客户端证书）：部署一次交付的 `bootstrap_credential`（来自 `RuntimeBindAdapterResponse.bootstrap_credential`）经 gRPC metadata `authorization: Bearer <credential>` 提交，首帧 `RegisterAdapterRequest.adapter_instance_id` 必须与凭据解析出的 adapter 资源一致；成功响应带 `Fence`+`ConnectionAuthorization`，之后事件/心跳/refresh 帧都带完整 `Fence` 与当前 `connection_proof`。事件仍须先在本地 SQLite 持久 event+sequence 再上报；只有 `PERSISTED`/`DUPLICATE` 才释放 outbox 项，`REJECTED` 中 `retryable=true` 保留重投，容量背压 `RATE_LIMITED` 可重试并关闭本次流（适配器保留未确认事件）。bootstrap/proof/refresh 明文不得写入 outbox、日志或错误信息；不实现自报客户端证书或旧 proof 回退。适配器的 TLS/bootstrap/帧改造属 P06c，unary RuntimeService 注册/事件方法不供适配器使用。

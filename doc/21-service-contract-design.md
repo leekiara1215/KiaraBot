@@ -271,6 +271,21 @@ refresh只接受当前实际流、未过期未撤销的proof/refresh及正refres
 
 授权过期停止新投递、入站受理、续租和副作用，不把已有Action/Model事实变FAILED。auth刷新不续Delivery租约；ACK/Renew仍核验有效attempt、完整Fence及现有事实规则。适配器本地已执行结果在断线后通过新认证连接按原account/action ID交回，不能据失效proof新执行。所有新增字段/帧target均not_implemented，oracle和wire往返不证明生产授权或并发正确性。
 
+### P06 传输拓扑与 bootstrap 冻结
+
+外部 Adapter/Plugin 入站只走 Runtime 同一进程内新增的可选外部 Bridge 监听
+（`bridge_listen`，server-verified TLS，不请求客户端证书；平台 owner `grpc_listen`
+保持 mTLS）。`RuntimeService` 的注册/事件/ACK/续租 unary 方法仅 internal dispatcher/
+测试使用（`target_spec.json` 的 `exposure=internal_dispatcher`），P06 不实现、不暴露
+给外部客户端；`target_spec.json` 的 `bridges` 单独登记两条 `Connect` 流。bootstrap
+凭据由 Runtime 逐实例生成并只存 SHA-256，经一次响应返回：Adapter 用
+`RuntimeBindAdapterResponse.bootstrap_credential=3`，externally_managed 插件实例用
+`RuntimeCreateInstanceResponse.bootstrap_credential=2`；外部客户端用该凭据在监听
+metadata 登记换取 `ConnectionAuthorization`，之后每帧 fence+proof、60 秒内单飞 refresh。
+Identity 仍是业务授权权威：连接证明只表达连接事实，高风险操作仍逐次在线授权；在线
+refresh 的 Identity gate 在 P04/P12 绑定落地后补。该拓扑不新增服务/进程/权限，REST/
+WS 契约不变。
+
 ## P04 短期委托证明的重试边界
 
 IssueDelegation / ExchangeDelegation 只在线重验权威并签名，不产生业务意图或消费配额；

@@ -325,6 +325,17 @@ JSON 根只允许 schema_version=1、service、probe_listen、tls；非 Control 
  probe_listen 必须为127.0.0.1，业务 grpc_listen 可绑定指定跨主机接口。端口0允许
  OS分配。路径按进程工作目录解析，建议部署配置用绝对路径。
 
+P06 起 runtime 配置允许可选的 `bridge_listen`（IPv4 字面量:端口，仅 runtime 服务；
+其他服务携带即退出2）：用于外部 Adapter/Plugin 的 Bridge 长连接。它必须与
+grpc_listen 不同（相同则退出2），复用同一 tls 证书/私钥/CA 材料，但**不要求也不验证
+客户端证书**（server-verified TLS；外部客户端用部署 CA 校验服务端证书和 SAN）。
+grpc_listen 的平台 owner mTLS 监听保持强制客户端证书，两个监听在同一进程、同一
+application 上并存；bridge_listen 缺省时不启动外部监听，且 Runtime 已注册 Bridge
+服务时必须配置该项（否则组合失败退出1）。bridge 端口不得作为匿名公网入口发布，
+部署须由防火墙/反向代理/受控网络限制，并确保服务端证书 SAN 覆盖客户端使用的主机名。
+对外监听状态写入启动日志的端口信息（不输出凭据/配置正文），探针就绪仍由 application
+门禁决定，不因外部监听启动而变 ready。
+
 配置/材料必须为非空常规文件，每文件最多1MiB，拒绝符号链接；私钥必须归运行用户
  所有且无组/其他用户权限（0600或更严）。配置不可读退出2；TLS文件不可读、PEM错误、
  证书未生效/过期、链验证失败、非CA根或私钥不匹配退出1。验证支持叶证书后附中间链，
@@ -466,6 +477,14 @@ gRPC TLS证书证据由真实AuthContext读取，受8张/64KiB上限约束，指
 ### 外部连接授权目标补全（未实现）
 
 platform.proto三类ConnectionAuthorization/RefreshConnectionAuthorization/Result与两Bridge的登记、proof、refresh帧定义短期外部连接授权。名义最多56秒、总预算60秒、每秒检查失效，单飞原子轮换；丢响应须关闭旧流、新bootstrap与连接代次。完整规则见doc/01-contracts及运行语义；内部JWT委托和P02 mTLS owner监听不变，P05/P06真实接线前仍not_implemented。授权材料禁止日志/公开投影/持久秘密收据，高风险业务仍在线核验，刷新不续投递租约、不改历史业务事实。浏览器REST/WS不使用这些proof，OpenAPI/AsyncAPI因此无schema变更。
+
+P06 bootstrap 的运维约定（未实现）：登记凭据由 Runtime 逐实例生成，只经一次响应
+（`RuntimeBindAdapterResponse.bootstrap_credential` / 仅 externally_managed 实例的
+`RuntimeCreateInstanceResponse.bootstrap_credential`）交付给 Control/部署流程；Runtime
+只保存 SHA-256，明文必须放入 adapter/plugin 的部署秘密（环境/文件 0600），不得进入
+日志、面板回显、备份明文或 outbox。外部客户端以 `authorization: Bearer <credential>`
+连 `bridge_listen`；撤销随实例停用/解绑生效，proof/refresh 到期或依赖故障时停止新副作用
+并让客户端重新 bootstrap。禁止把 bootstrap 当作长期业务授权或绕过逐操作在线授权。
 
 ### P04 密码学适配器运行约束（部分实施）
 

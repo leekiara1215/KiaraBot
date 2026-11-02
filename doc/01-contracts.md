@@ -1723,13 +1723,21 @@ RegisterPrincipal 同事务创建无秘密的 PENDING CredentialStatus 引用（
 
 采用已批准的最小三载荷 ConnectionAuthorization / RefreshConnectionAuthorization / ConnectionAuthorizationResult，唯一来源 platform.proto 与 adapters.proto/plugins.proto。Adapter/Plugin 成功登记必须带 authorization，且与响应 Fence 一致；注册后入站帧必须带完整 Fence 和当前 connection_proof（续期正文 proof/Fence 也须与帧一致）。反向 refresh 结果按 request_id 返回恰好一个新 authorization 或稳定 Error，不能空成功。缺少 proof/授权不允许旧流回退。
 
-proof/refresh_credential 是独立 CSPRNG 至少256位 opaque秘密，绑定实际已认证 TLS 流、principal、完整 Fence、Runtime epoch、credential_version；不能把客户端自报证书/Fence 当绑定。Runtime只保存摘要和当前受信连接状态，不把秘密写入公开投影、日志或outbox。bootstrap仅登记换取受限证明，不授权Action/Model/存储等业务。内部受限委托仍是Ed25519 JWT，平台owner监听仍mTLS；TLS-only外部Bridge传输接线属于P05/P06，不修改P02监听行为。
+proof/refresh_credential 是独立 CSPRNG 至少256位 opaque秘密，绑定实际已认证 TLS 流、principal、完整 Fence、Runtime epoch、credential_version；不能把客户端自报证书/Fence 当绑定。Runtime只保存摘要和当前受信连接状态，不把秘密写入公开投影、日志或outbox。bootstrap仅登记换取受限证明，不授权Action/Model/存储等业务。内部受限委托仍是Ed25519 JWT，平台owner监听仍mTLS；外部Bridge在Runtime进程内使用独立可选监听（见下节），不修改P02 owner mTLS监听。
 
 issued_at/expires_at 为受信UTC，名义寿命最多56秒；含既定2秒节点偏差和最多2秒处理容差总预算不超过60秒。服务端同时以单调期限和受信UTC约束，每秒检查到期、撤销、凭据版本和资源gate；客户端到期前10秒单飞续期。高风险操作仍逐次在线授权。Identity不可用不能刷新或无限延长旧流，停止新副作用并返回UPSTREAM_UNAVAILABLE；不伪造PERMISSION_DENIED。
 
 refresh只接受当前实际流、未过期未撤销的proof/refresh及正refresh_generation，在线验证当前Identity主体/凭据状态与gate后原子轮换二者和generation；旧材料不可再次换发。材料/流/Fence失配或过期UNAUTHENTICATED并关闭流，已认证请求generation冲突CONFLICT，明确失权PERMISSION_DENIED，依赖故障UPSTREAM_UNAVAILABLE，期限TIMEOUT。失败不轮换、不复活失效授权。refresh无持久秘密收据；响应丢失视授权未知，关闭旧流，经仍有效的登记凭据重新bootstrap产生新connection_generation，禁止重放旧refresh猜测结果。
 
 授权过期停止新投递、入站受理、续租和副作用，不把已有Action/Model事实变FAILED。auth刷新不续Delivery租约；ACK/Renew仍核验有效attempt、完整Fence及现有事实规则。适配器本地已执行结果在断线后通过新认证连接按原account/action ID交回，不能据失效proof新执行。所有新增字段/帧target均not_implemented，oracle和wire往返不证明生产授权或并发正确性。
+
+### P06 外部 Bridge 监听与 bootstrap（已冻结，未实现）
+
+P06 的拓扑冻结为：外部 Adapter/Plugin 的注册/事件/ACK/续租只走 `AdapterBridge.Connect` / `PluginBridge.Connect` 双流；`RuntimeService` 的 `RegisterAdapter`、`Heartbeat`、`PublishEvent`、`RegisterPlugin`、`HeartbeatPlugin`、`ClaimEvent`、`DeliverEvent`、`AckDelivery`、`RenewDelivery` 是内部 dispatcher/测试面（`target_spec.json` 标 `exposure=internal_dispatcher`），不暴露给外部客户端，P06 不实现。外部监听是同进程内新增的可选 `bridge_listen`（server-verified TLS，不请求客户端证书）；`grpc_listen` 的平台 owner mTLS 监听与既有服务不变。监听配置、fail-closed 规则和运维要求见 `doc/08`。
+
+bootstrap 凭据由 Runtime 逐实例生成（32字节 CSPRNG opaque 文本，Runtime 只存 SHA-256），经一次响应返回给 Control/部署：Adapter 用 `RuntimeBindAdapterResponse.bootstrap_credential`（字段3），externally_managed 插件实例用 `RuntimeCreateInstanceResponse.bootstrap_credential`（字段2）；Host 受管实例不带该字段。外部客户端以 gRPC metadata `authorization: Bearer <bootstrap_credential>`（恰好一个，T01b 语义）连外部监听，首帧 `RegisterAdapterRequest`/`RegisterPluginRequest` 必须与凭据解析出的资源/代次一致，成功响应返回 `Fence` + `ConnectionAuthorization`。此后每帧必须带当前 `Fence` 与 `connection_proof`；失配/过期/撤销走 gRPC `UNAUTHENTICATED`（终止流）或 `PERMISSION_DENIED`（明确失权），业务拒绝仍用 in-band `Error`。refresh 只允许同一实际流单飞轮换 proof/refresh_generation；失败/丢响应不重放旧材料，客户端关闭旧流并用仍有效的 bootstrap 重连，产生新 connection_generation。Runtime 重启换 runtime_epoch，旧流/fence 全部失效。
+
+投递语义：`delivery_id` 定义为 `event_id`，实例由 `target_instance_id`（ReplayDelivery）或 `last_attempt.fence.instance_id`（DeadLetter）限定，不新增字段；`ReplayDelivery.expected_version` 在 P06 必须未设置或 0。ACK/Renew 与 attempt 过期/重复竞争的结果以 `DeliveryReceipt.disposition` 表达：当前 active attempt 首次成功 ACK=`DELIVERY_ACKNOWLEDGED`、同 attempt 重复成功=`DELIVERY_DUPLICATE`、旧/过期 attempt=`DELIVERY_STALE`（不改新尝试）、插件拒绝=`DELIVERY_REJECTED`（按 error.retryable 决定退避或死信）、续租成功/重复=`DELIVERY_RENEWED`。死信与重放语义见运行时语义 P01/P06 节。以上字段/语义在 P06 实现前均为 target not_implemented。
 
 ## P04 target transport codec（独立边界工具）
 

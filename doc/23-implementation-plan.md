@@ -227,7 +227,8 @@ PG Repository/COMMIT/锁/并发测试缺少真实 PG 时失败并报告原因，
 - **输入→输出**：平台事件→Adapter 持久上报→Runtime PG 同事务入库/目标→插件 SDK→ACK/续租；先用外部自管插件验证，不假装已实现 Host。
 - **错误/状态**：同 ID 异内容冲突、旧 sequence 拒绝、跳号 degraded、容量不足背压；30秒租约/总300秒续租、旧ACK不确认新尝试、5次重试与死信；fan-out 到每个获准活动实例。
 - **文档**：`doc/01-contracts`、运行语义、`doc/02`、`doc/03`、`doc/04`、SDK/Adapter README和验收文档。
-- **验证/退出**：V0/V1/V2/V3/V5(p06)，PG/SQLite及真实 gRPC 混合进程验证重复事件不增目标、有序头、ACK/续租与超时竞争、确认丢失重投、重启。得到首条可恢复事件链路。
+- **契约前提（已冻结，2026-11-02）**：外部 Adapter/Plugin 入站走 Runtime 外部 Bridge 监听（`bridge_listen`，server-verified TLS，不请求客户端证书；owner 监听保持 mTLS）；bootstrap 凭据经 `RuntimeBindAdapterResponse.bootstrap_credential=3` / `RuntimeCreateInstanceResponse.bootstrap_credential=2` 一次性交付，换取 `ConnectionAuthorization`；unary RuntimeService 注册/事件/ACK/续租方法标 `internal_dispatcher`、不对外；`contract_status.categories.bridge_methods` + `semantic.bridge.*` 登记，target 状态待本阶段实现后翻转。P06a 领域/端口可先行，Bridge 监听与 bootstrap 必须先于集成夹具。
+- **验证/退出**：V0/V1/V2/V3/V5(p06)，PG/SQLite及真实 gRPC 混合进程验证重复事件不增目标、有序头、ACK/续租与超时竞争、确认丢失重投、重启；另验证外部监听只暴露两家 Bridge、owner 监听拒绝无客户端证书、bootstrap 撤销/过期/refresh 丢响应重连。得到首条可恢复事件链路。
 
 ### P07：Action、配额与平台执行闭环
 

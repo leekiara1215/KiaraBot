@@ -333,3 +333,7 @@ issued_at/expires_at 为受信UTC，名义寿命最多56秒；含既定2秒节�
 refresh只接受当前实际流、未过期未撤销的proof/refresh及正refresh_generation，在线验证当前Identity主体/凭据状态与gate后原子轮换二者和generation；旧材料不可再次换发。材料/流/Fence失配或过期UNAUTHENTICATED并关闭流，已认证请求generation冲突CONFLICT，明确失权PERMISSION_DENIED，依赖故障UPSTREAM_UNAVAILABLE，期限TIMEOUT。失败不轮换、不复活失效授权。refresh无持久秘密收据；响应丢失视授权未知，关闭旧流，经仍有效的登记凭据重新bootstrap产生新connection_generation，禁止重放旧refresh猜测结果。
 
 授权过期停止新投递、入站受理、续租和副作用，不把已有Action/Model事实变FAILED。auth刷新不续Delivery租约；ACK/Renew仍核验有效attempt、完整Fence及现有事实规则。适配器本地已执行结果在断线后通过新认证连接按原account/action ID交回，不能据失效proof新执行。所有新增字段/帧target均not_implemented，oracle和wire往返不证明生产授权或并发正确性。
+
+### P06 插件侧冻结（未实现）
+
+外部自管插件在 P06 只连 Runtime 的外部 Bridge 监听：部署一次交付的 `bootstrap_credential`（来自 `RuntimeCreateInstanceResponse.bootstrap_credential`，创建时 `externally_managed=true`）经 gRPC metadata `authorization: Bearer <credential>` 提交；首帧 `RegisterPluginRequest` 的 `instance_id`/`installation_id`/`execution_generation` 必须与凭据解析出的实例一致，成功响应带 `Fence`+`ConnectionAuthorization`，之后每帧带完整 `Fence` 与当前 `connection_proof`。SDK 处理事件时从 `CoreToPlugin.delivery_attempt` 取 attempt，ACK 必须回带该 attempt；租约 30 秒、10 秒单飞续租、总上限 300 秒，旧/过期 attempt 的 ACK 得到 `DELIVERY_STALE` 不确认新尝试。配置 ACK 必须带 `config_version` 与 `Fence`；未应用最新配置的实例不接收新事件。bootstrap/proof/refresh 明文不写日志/持久化，refresh 失败或丢响应时关闭旧流并用仍有效 bootstrap 重连。SDK 的 Options/传输改造属 P06b，当前 target 仍 not_implemented。

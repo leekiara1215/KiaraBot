@@ -366,6 +366,10 @@ application/target/<name>_application.hpp/.cpp，返回 unique_ptr<ServiceReadin
 SchedulerService、ModelService 的生成 Service 默认实现；Runtime 另注册 AdapterBridge、
 PluginBridge、HostBridge。全部业务方法返回 UNIMPLEMENTED，不执行授权成功分支或写状态。
 Control 不创建入站业务 gRPC。生成协议及 gRPC 只存在外层，五个 application 无协议依赖。
+P06 已冻结的扩展（未实现）：Runtime 在同一进程内增加可选外部 `bridge_listen`
+（server-verified TLS，不请求客户端证书），只注册 AdapterBridge/PluginBridge；
+`grpc_listen` 的 owner mTLS 监听、HostBridge 与既有服务不变。外部监听器由
+`ProcessConfig.bridge_listen` 开关，缺 `bridge_listen` 而注册 bridge 服务时组合失败。
 
 `service_process.cpp` 在创建 gRPC 工作者前阻塞 SIGINT/SIGTERM，在主线程同步检查并
 sigwait 消费，不安装执行业务的异步信号回调。HTTP 探针单线程非阻塞轮询，每连接
@@ -607,6 +611,8 @@ subject/service/SAN、凭据状态/版本与期限，再交PeerCertificatePort�
 ### 外部连接授权目标补全（未实现）
 
 platform.proto三类ConnectionAuthorization/RefreshConnectionAuthorization/Result与两Bridge的登记、proof、refresh帧定义短期外部连接授权。名义最多56秒、总预算60秒、每秒检查失效，单飞原子轮换；丢响应须关闭旧流、新bootstrap与连接代次。完整规则见doc/01-contracts及运行语义；内部JWT委托和P02 mTLS owner监听不变，P05/P06真实接线前仍not_implemented。授权材料禁止日志/公开投影/持久秘密收据，高风险业务仍在线核验，刷新不续投递租约、不改历史业务事实。浏览器REST/WS不使用这些proof，OpenAPI/AsyncAPI因此无schema变更。
+
+P06 冻结的 bootstrap 归属（未实现）：登记凭据由 Runtime 逐实例生成并只保存 SHA-256，`RuntimeBindAdapterResponse.bootstrap_credential`（Adapter）与 `RuntimeCreateInstanceResponse.bootstrap_credential`（仅 externally_managed 插件实例）一次性返回给 Control/部署；外部客户端在 `bridge_listen` 的 gRPC metadata 用 `authorization: Bearer <credential>` 换取 `ConnectionAuthorization`。Identity 仍是业务授权权威：ConnectionAuthorization 只表达连接事实，`principal_id` 取 Runtime 直接 peer 资源（adapter_instance_id / instance_id），`credential_version` 取 bootstrap 版本，`authorization_version` 取 Runtime 该 peer 的授权水位；Identity 在线 refresh gate 在 P04/P12 绑定落地后补，P06 先以 Runtime 本地 gate（实例/绑定/config/凭证未撤销）验收。`bridge_credentials` 是 Runtime 私有库的计划内新表，不新增服务/权限。
 
 ### G08 Identity模型兼容（唯一契约78b09a6）
 
