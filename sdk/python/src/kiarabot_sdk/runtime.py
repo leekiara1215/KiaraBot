@@ -11,16 +11,13 @@ from pathlib import Path
 
 import grpc
 from google.protobuf.json_format import Parse, ParseError
-from kiarabot.v1 import common_pb2 as common, plugins_pb2 as plugins, services_pb2_grpc as services
+from kiarabot.v1 import common_pb2 as common, platform_pb2 as platform, plugins_pb2 as plugins
+from kiarabot.v1 import services_pb2_grpc as services
+
+from . import delivery, transport
+from .errors import PluginError
 
 logger = logging.getLogger(__name__)
-
-
-class PluginError(Exception):
-    def __init__(self, code: int, retryable: bool = False):
-        self.code = code if code in common.ErrorCode.values() and code else common.INTERNAL
-        self.retryable = retryable
-        super().__init__(common.ErrorCode.Name(self.code))
 
 
 class UncooperativeHook(PluginError):
@@ -161,6 +158,7 @@ CAPABILITY_PERMISSIONS = {
 }
 MANIFEST_IDENTIFIER = re.compile(r'[A-Za-z0-9_.-]{1,128}\Z')
 MANIFEST_ENTRYPOINT = re.compile(r'[A-Za-z_][\w.]*:[A-Za-z_]\w*\Z')
+INSTANCE_ID = re.compile(r'[A-Za-z0-9][A-Za-z0-9._:-]{0,127}\Z')
 
 
 def validate_manifest(manifest: plugins.PluginManifest) -> None:
@@ -208,16 +206,35 @@ def load_manifest(path: str | Path) -> plugins.PluginManifest:
 class Options:
     endpoint: str
     token: str = field(repr=False)
+    #: PEM CA bundle (bytes) or a path to it. Required: the target Bridge is
+    #: reachable only over server-verified TLS; there is no insecure fallback.
+    tls_root_cert: bytes | str | Path | None = field(default=None, repr=False)
+    tls_server_name: str | None = None
+    #: Deployment-provided stable instance identity. When unset the SDK uses
+    #: the instance id returned in the registration fence (development only).
+    instance_id: str | None = None
     io_timeout: float = 5.0
     hook_timeout: float = 5.0
-    heartbeat_interval: float = 1.0
+    heartbeat_interval: float = 5.0
     retry_delay: float = 1.0
+    lease_renew_interval: float = delivery.RENEW_AFTER_SECONDS
 
     def __post_init__(self):
-        address = re.fullmatch(r'127\.0\.0\.1:(\d+)', self.endpoint)
-        if (not address or not 1 <= int(address[1]) <= 65535 or not 32 <= len(self.token) <= 4096
+        transport.validate_endpoint(self.endpoint)
+        if (not 32 <= len(self.token) <= 4096
                 or not all(33 <= ord(ch) <= 126 for ch in self.token)
-                or min(self.io_timeout, self.hook_timeout, self.heartbeat_interval, self.retry_delay) <= 0):
+                or min(self.io_timeout, self.hook_timeout, self.heartbeat_interval,
+                       self.retry_delay, self.lease_renew_interval) <= 0):
+            raise PluginError(common.INVALID_ARGUMENT)
+        root = transport.load_root_certificate(self.tls_root_cert)
+        if not root:
+            # Missing CA must fail closed before any connection is attempted.
+            raise PluginError(common.INVALID_ARGUMENT)
+        object.__setattr__(self, 'tls_root_certificate', root)
+        if self.instance_id is not None and not INSTANCE_ID.fullmatch(self.instance_id):
+            raise PluginError(common.INVALID_ARGUMENT)
+        if self.tls_server_name is not None and (
+                not self.tls_server_name or len(self.tls_server_name) > 253):
             raise PluginError(common.INVALID_ARGUMENT)
 
 
@@ -244,6 +261,37 @@ async def invoke(hook, timeout):
         raise
 
 
+class _Rpc:
+    """Callable closure used by :class:`Context` to multiplex stream RPC frames."""
+
+    def __init__(self, write, pending, expected):
+        self._write, self._pending, self._expected = write, pending, expected
+
+    async def __call__(self, frame, timeout):
+        if len(self._pending) >= 64:
+            raise PluginError(common.RATE_LIMITED, True)
+        request_id = getattr(frame, frame.WhichOneof('body')).request_id
+        future = asyncio.get_running_loop().create_future()
+        self._pending[request_id] = future
+        self._expected[request_id] = (frame.host_request.WhichOneof('operation')
+                                      if frame.HasField('host_request') else None)
+        try:
+            async with asyncio.timeout(timeout):
+                await self._write(frame)
+                return await future
+        except asyncio.TimeoutError:
+            raise PluginError(common.TIMEOUT, True) from None
+        except grpc.RpcError:
+            raise PluginError(common.UPSTREAM_UNAVAILABLE, True) from None
+        finally:
+            self._pending.pop(request_id, None)
+            self._expected.pop(request_id, None)
+            if not future.done():
+                future.cancel()
+            elif not future.cancelled():
+                future.exception()  # Consume a disconnect racing with write failure.
+
+
 class Runner:
     def __init__(self, manifest, plugin: Plugin, options: Options):
         validate_manifest(manifest)
@@ -251,136 +299,264 @@ class Runner:
         self.manifest.CopyFrom(manifest)
         self.plugin, self.options = plugin, options
         self.context = Context()
+        # A plugin instance keeps its identity across TLS reconnects; only the
+        # connection generation changes. Deployment may pin it explicitly.
+        self._instance_id = options.instance_id or str(uuid.uuid4())
+        #: Last delivery dispositions observed, for tests/observability.
+        self.last_dispositions: list[int] = []
+        self._config_seen = {}
+        self._applied_config_version = 0
+        self._draining = False
 
     async def _write(self, call, request):
-        await asyncio.wait_for(call.write(request), self.options.io_timeout)
+        try:
+            await asyncio.wait_for(call.write(request), self.options.io_timeout)
+        except (grpc.RpcError, asyncio.InvalidStateError):
+            raise PluginError(common.UPSTREAM_UNAVAILABLE, True) from None
+
+    async def _configure(self, config, state, write):
+        if not config.HasField('fence') or config.fence != state.fence:
+            raise PluginError(common.INVALID_ARGUMENT)
+        if (not config.config_version or not config.version or len(config.version) > 128
+                or not config.delivery_id or len(config.delivery_id) > 128
+                or not 1 <= config.apply_timeout_ms <= 5000):
+            raise PluginError(common.INVALID_ARGUMENT)
+        fingerprint = config.SerializeToString(deterministic=True)
+        previous = self._config_seen.get(config.delivery_id)
+        if previous:
+            if previous[0] != fingerprint:
+                raise PluginError(common.INVALID_ARGUMENT)
+            await write(plugins.PluginToCore(config_ack=previous[1]))
+            return
+        ack = plugins.PluginConfigAck(version=config.version, delivery_id=config.delivery_id,
+                                      config_version=config.config_version)
+        ack.fence.CopyFrom(state.fence)
+        snapshot = plugins.PluginConfig()
+        snapshot.CopyFrom(config)
+        stale = config.config_version < self._applied_config_version
+        try:
+            if stale:
+                # A lower config version never replaces applied evidence.
+                ack.accepted = True
+            else:
+                await invoke(self.plugin.on_config(config, self.context),
+                             min(self.options.hook_timeout, config.apply_timeout_ms / 1000))
+                self.context._config = snapshot
+                self._applied_config_version = config.config_version
+                ack.accepted = True
+        except UncooperativeHook:
+            raise
+        except Exception as failure:
+            code = failure.code if isinstance(failure, PluginError) else common.INTERNAL
+            retryable = failure.retryable if isinstance(failure, PluginError) else False
+            if not code or code not in common.ErrorCode.values():
+                code, retryable = common.INTERNAL, False
+            ack.error.CopyFrom(common.Error(code=code, message=common.ErrorCode.Name(code),
+                                            request_id=ack.delivery_id, retryable=retryable))
+        self._config_seen[ack.delivery_id] = (fingerprint, ack)
+        if len(self._config_seen) > 32:
+            del self._config_seen[next(iter(self._config_seen))]
+        await write(plugins.PluginToCore(config_ack=ack))
 
     async def _session(self):
         self.context._permissions = frozenset()
         self.context._config = None
-        instance = str(uuid.uuid4())
+        instance = self._instance_id
         pending = {}
         expected = {}
+        receipt_waiters = {}
+        refresh_waiters = {}
         write_lock = asyncio.Lock()
         event_queue = asyncio.Queue(maxsize=2)
-        config_seen = {}
-        worker = read_task = None
-        async with grpc.aio.insecure_channel(self.options.endpoint, options=[
-            ('grpc.max_receive_message_length', 1024 * 1024),
-            ('grpc.max_send_message_length', 1024 * 1024),
-        ]) as channel:
+        incoming = asyncio.Queue()
+        failure_future = asyncio.get_running_loop().create_future()
+        reader = worker = refresh_task = None
+        connection = None
+        channel = transport.open_channel(self.options.endpoint,
+                                         self.options.tls_root_certificate,
+                                         self.options.tls_server_name)
+        async with channel:
             call = services.PluginBridgeStub(channel).Connect(
                 metadata=(('authorization', 'Bearer ' + self.options.token),))
 
-            async def write(request):
+            async def write(frame):
                 async with write_lock:
-                    await self._write(call, request)
+                    if connection is not None:
+                        connection.attach(frame)
+                    await self._write(call, frame)
 
-            async def rpc(request, timeout):
-                if len(pending) >= 64:
-                    raise PluginError(common.RATE_LIMITED, True)
-                request_id = getattr(request, request.WhichOneof('body')).request_id
-                future = asyncio.get_running_loop().create_future()
-                pending[request_id] = future
-                expected[request_id] = request.host_request.WhichOneof('operation') if request.HasField('host_request') else None
+            async def reader_loop():
+                while True:
+                    try:
+                        frame = await call.read()
+                    except (grpc.aio.EOF, grpc.RpcError):
+                        await incoming.put(None)
+                        return
+                    if frame is grpc.aio.EOF:
+                        await incoming.put(None)
+                        return
+                    await incoming.put(frame)
+
+            async def refresh_loop():
+                nonlocal connection
+                while True:
+                    state = connection
+                    if state is None:
+                        await asyncio.sleep(0.5)
+                        continue
+                    delay = max(0.5, state.seconds_until_expiry(transport.monotonic_seconds())
+                                - transport.REFRESH_LEAD_SECONDS)
+                    await asyncio.sleep(delay)
+                    state = connection
+                    if state is None:
+                        continue
+                    request_id = str(uuid.uuid4())
+                    future = asyncio.get_running_loop().create_future()
+                    refresh_waiters[request_id] = future
+                    try:
+                        await write(plugins.PluginToCore(
+                            refresh_authorization=transport.build_refresh(state, request_id)))
+                        result = await asyncio.wait_for(future, self.options.io_timeout)
+                        connection = transport.accept_refresh(
+                            state, request_id, result, transport.monotonic_seconds())
+                    finally:
+                        refresh_waiters.pop(request_id, None)
+                        if not future.done():
+                            future.cancel()
+
+            async def renew(lease, stop):
+                while not stop.is_set():
+                    try:
+                        await asyncio.wait_for(stop.wait(), self.options.lease_renew_interval)
+                        return
+                    except asyncio.TimeoutError:
+                        pass
+                    if lease.total_exhausted(transport.monotonic_seconds()):
+                        return
+                    await write(plugins.PluginToCore(renew_delivery=lease.attempt))
+
+            async def deliver(frame):
+                state = connection
+                if state is None:
+                    raise PluginError(common.UNAUTHENTICATED, retryable=True)
+                event = frame.event
+                lease = delivery.DeliveryLease.validate(
+                    frame.delivery_attempt, event.event_id, state.fence,
+                    transport.monotonic_seconds())
+                waiter = asyncio.get_running_loop().create_future()
+                receipt_waiters[(lease.event_id, lease.attempt_id)] = waiter
+                stop_renew = asyncio.Event()
+                renew_task = asyncio.create_task(renew(lease, stop_renew))
+                ack = plugins.PluginEventAck(event_id=event.event_id)
                 try:
-                    async with asyncio.timeout(timeout):
-                        await write(request)
-                        return await future
-                except asyncio.TimeoutError:
-                    raise PluginError(common.TIMEOUT, True) from None
-                except grpc.RpcError:
-                    raise PluginError(common.UPSTREAM_UNAVAILABLE, True) from None
+                    await invoke(self.plugin.on_event(event, self.context), self.options.hook_timeout)
+                    ack.accepted = True
+                except UncooperativeHook:
+                    raise
+                except Exception as failure:
+                    code = failure.code if isinstance(failure, PluginError) else common.INTERNAL
+                    retryable = failure.retryable if isinstance(failure, PluginError) else False
+                    ack.error.CopyFrom(common.Error(code=code, message=common.ErrorCode.Name(code),
+                                                   request_id=event.event_id,
+                                                   trace_id=event.trace_id, retryable=retryable))
                 finally:
-                    pending.pop(request_id, None)
-                    expected.pop(request_id, None)
-                    if not future.done():
-                        future.cancel()
-                    elif not future.cancelled():
-                        future.exception()  # Consume a disconnect racing with write failure.
+                    stop_renew.set()
+                    renew_task.cancel()
+                    with suppress(asyncio.CancelledError):
+                        await renew_task
+                ack.attempt.CopyFrom(lease.attempt)
+                await write(plugins.PluginToCore(event_ack=ack))
+                try:
+                    receipt = await asyncio.wait_for(waiter, self.options.io_timeout)
+                except asyncio.TimeoutError:
+                    # Receipt loss leaves the outcome unknown; the runtime will
+                    # redeliver or keep the event unacknowledged.
+                    logger.warning('operation=plugin_delivery outcome=unknown attempt_id=%s',
+                                   lease.attempt_id)
+                    return
+                finally:
+                    receipt_waiters.pop((lease.event_id, lease.attempt_id), None)
+                self.last_dispositions.append(
+                    delivery.validate_receipt(receipt, lease, ack.accepted))
 
             async def events():
-                while True:
-                    frame = await event_queue.get()
-                    if frame.HasField('config'):
-                        config = frame.config
-                        fingerprint = config.SerializeToString(deterministic=True)
-                        previous = config_seen.get(config.delivery_id)
-                        if previous:
-                            if previous[0] != fingerprint:
-                                raise PluginError(common.INVALID_ARGUMENT)
-                            await write(plugins.PluginToCore(config_ack=previous[1]))
-                            continue
-                        ack = plugins.PluginConfigAck(version=config.version, delivery_id=config.delivery_id)
-                        snapshot = plugins.PluginConfig()
-                        snapshot.CopyFrom(config)
+                try:
+                    while True:
+                        frame = await event_queue.get()
                         try:
-                            await invoke(self.plugin.on_config(config, self.context),
-                                         min(self.options.hook_timeout, config.apply_timeout_ms / 1000))
-                            self.context._config = snapshot
-                            ack.accepted = True
-                        except UncooperativeHook:
-                            raise
-                        except Exception as failure:
-                            code = failure.code if isinstance(failure, PluginError) else common.INTERNAL
-                            retryable = failure.retryable if isinstance(failure, PluginError) else False
-                            if not code or code not in common.ErrorCode.values():
-                                code, retryable = common.INTERNAL, False
-                            ack.error.CopyFrom(common.Error(code=code, message=common.ErrorCode.Name(code),
-                                request_id=ack.delivery_id, retryable=retryable))
-                        config_seen[ack.delivery_id] = (fingerprint, ack)
-                        if len(config_seen) > 32:
-                            del config_seen[next(iter(config_seen))]
-                        await write(plugins.PluginToCore(config_ack=ack))
-                        continue
-                    event = frame.event
-                    event_id, trace_id = event.event_id, event.trace_id
-                    ack = plugins.PluginEventAck(event_id=event_id)
-                    try:
-                        await invoke(self.plugin.on_event(event, self.context), self.options.hook_timeout)
-                        ack.accepted = True
-                    except UncooperativeHook:
-                        raise
-                    except Exception as failure:
-                        code = failure.code if isinstance(failure, PluginError) else common.INTERNAL
-                        retryable = failure.retryable if isinstance(failure, PluginError) else False
-                        ack.error.CopyFrom(common.Error(code=code, message=common.ErrorCode.Name(code),
-                            request_id=event_id, trace_id=trace_id, retryable=retryable))
-                    await write(plugins.PluginToCore(event_ack=ack))
+                            if frame.WhichOneof('body') == 'config':
+                                await self._configure(frame.config, connection, write)
+                            else:
+                                await deliver(frame)
+                        finally:
+                            event_queue.task_done()
+                except Exception as failure:  # noqa: BLE001 - surfaced to the session loop
+                    if not failure_future.done():
+                        failure_future.set_exception(failure)
+                    incoming.put_nowait(None)
 
             try:
-                await write(plugins.PluginToCore(register=plugins.RegisterPluginRequest(
-                    manifest=self.manifest, instance_id=instance, supported_features=['action.result.v1', 'host.storage.v1', 'host.model.v1', 'host.tasks.v1', 'plugin.config.v1'])))
+                # First frame is the pre-registration frame: no fence/proof yet.
+                await self._write(call, plugins.PluginToCore(register=plugins.RegisterPluginRequest(
+                    manifest=self.manifest, instance_id=instance,
+                    supported_features=list(transport.TARGET_FEATURES))))
                 response = await asyncio.wait_for(call.read(), self.options.io_timeout)
                 if response is grpc.aio.EOF or response.WhichOneof('body') != 'register_result':
                     raise PluginError(common.UPSTREAM_UNAVAILABLE, True)
                 registered = response.register_result
-                if not registered.accepted:
-                    raise PluginError(registered.error.code, registered.error.retryable)
+                expected_instance = self.options.instance_id or registered.fence.instance_id
+                connection = transport.validate_registration_response(
+                    registered, expected_instance, transport.monotonic_seconds())
                 if (registered.required_api_version != self.manifest.api_version
                         or set(registered.granted_permissions) != set(self.manifest.permissions)
                         or len(registered.granted_permissions) != len(set(registered.granted_permissions))
                         or registered.HasField('error')
-                        or not set(registered.enabled_features).issubset({'action.result.v1', 'host.storage.v1', 'host.model.v1', 'host.tasks.v1', 'plugin.config.v1'})):
+                        or not set(registered.enabled_features).issubset(set(transport.TARGET_FEATURES))):
                     raise PluginError(common.PERMISSION_DENIED)
                 self.context._permissions = frozenset(registered.granted_permissions)
                 self.context._features = frozenset(registered.enabled_features)
-                self.context._rpc = rpc
+                self.context._rpc = _Rpc(write, pending, expected)
                 worker = asyncio.create_task(events())
+                refresh_task = asyncio.create_task(refresh_loop())
+                reader = asyncio.create_task(reader_loop())
                 while True:
-                    read_task = asyncio.create_task(call.read())
-                    done, _ = await asyncio.wait({read_task, worker}, timeout=self.options.heartbeat_interval,
-                                                return_when=asyncio.FIRST_COMPLETED)
-                    if worker in done:
-                        await worker
-                    if not done:
-                        await write(plugins.PluginToCore(heartbeat=plugins.PluginHeartbeat(instance_id=instance)))
-                    response = await asyncio.wait_for(read_task, self.options.io_timeout)
-                    read_task = None
-                    if response is grpc.aio.EOF:
+                    try:
+                        response = await asyncio.wait_for(incoming.get(),
+                                                          self.options.heartbeat_interval)
+                    except asyncio.TimeoutError:
+                        await write(plugins.PluginToCore(
+                            heartbeat=plugins.PluginHeartbeat(
+                                instance_id=connection.fence.instance_id)))
+                        continue
+                    if response is None:
+                        if failure_future.done():
+                            raise failure_future.exception()
                         raise PluginError(common.UPSTREAM_UNAVAILABLE, True)
                     kind = response.WhichOneof('body')
+                    if kind is None:
+                        raise PluginError(common.INVALID_ARGUMENT)
+                    if kind == 'shutdown':
+                        self._draining = True
+                        break
+                    transport.validate_frame_authorization(response, connection)
                     if kind == 'heartbeat_ack':
+                        continue
+                    if kind == 'authorization_result':
+                        result = response.authorization_result
+                        waiter = refresh_waiters.get(result.request_id)
+                        if waiter is not None and not waiter.done():
+                            waiter.set_result(result)
+                        continue
+                    if kind == 'delivery_receipt':
+                        receipt = response.delivery_receipt
+                        disposition = receipt.disposition
+                        if disposition in (platform.DELIVERY_RENEWED, platform.DELIVERY_STALE):
+                            self.last_dispositions.append(disposition)
+                            continue
+                        attempt = receipt.attempt
+                        waiter = receipt_waiters.get((attempt.event_id, attempt.attempt_id))
+                        if waiter is not None and not waiter.done():
+                            waiter.set_result(receipt)
                         continue
                     if kind == 'error':
                         raise PluginError(response.error.code, response.error.retryable)
@@ -416,19 +592,17 @@ class Runner:
                             future.set_exception(PluginError(common.UPSTREAM_UNAVAILABLE, True))
                         continue
                     if kind == 'config':
-                        config = response.config
                         if 'plugin.config.v1' not in self.context._features:
                             raise PluginError(common.CAPABILITY_NOT_SUPPORTED)
-                        if (not config.version
-                                or len(config.version) > 128 or not config.delivery_id
-                                or len(config.delivery_id) > 128 or not 1 <= config.apply_timeout_ms <= 5000):
-                            raise PluginError(common.INVALID_ARGUMENT)
                     elif kind != 'event':
                         raise PluginError(common.CAPABILITY_NOT_SUPPORTED)
                     try:
                         event_queue.put_nowait(response)
                     except asyncio.QueueFull:
                         raise PluginError(common.RATE_LIMITED, True) from None
+                if self._draining:
+                    with suppress(asyncio.TimeoutError):
+                        await asyncio.wait_for(event_queue.join(), self.options.io_timeout)
             finally:
                 self.context._permissions = frozenset()
                 self.context._features = frozenset()
@@ -438,10 +612,13 @@ class Runner:
                 for future in pending.values():
                     if not future.done():
                         future.set_exception(PluginError(common.UPSTREAM_UNAVAILABLE, True))
-                for task in (read_task, worker):
+                for future in refresh_waiters.values():
+                    if not future.done():
+                        future.set_exception(PluginError(common.UPSTREAM_UNAVAILABLE, True))
+                for task in (reader, worker, refresh_task):
                     if task:
                         task.cancel()
-                        with suppress(asyncio.CancelledError):
+                        with suppress(asyncio.CancelledError, Exception):
                             await task
 
     async def run(self, stop: asyncio.Event):
@@ -475,6 +652,10 @@ class Runner:
                         await stopper
                 if asyncio.current_task().cancelling():
                     raise asyncio.CancelledError()
+                if self._draining:
+                    # A graceful ShutdownNotice asks the client to stop; do not
+                    # reconnect after the in-flight work is acknowledged.
+                    return
                 if not stop.is_set():
                     with suppress(asyncio.TimeoutError):
                         await asyncio.wait_for(stop.wait(), self.options.retry_delay)
@@ -484,3 +665,4 @@ class Runner:
                 with suppress(asyncio.CancelledError):
                     await session
             await invoke(self.plugin.on_stop('shutdown'), self.options.hook_timeout)
+

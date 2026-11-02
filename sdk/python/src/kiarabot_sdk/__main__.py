@@ -15,6 +15,7 @@ def options_from_environment(environ=None):
     try:
         endpoint = values['PLUGIN_CORE_ENDPOINT']
         token = values['PLUGIN_AUTH_TOKEN']
+        tls_root = values['PLUGIN_TLS_ROOT']
     except KeyError:
         raise PluginError(common.INVALID_ARGUMENT) from None
 
@@ -30,11 +31,14 @@ def options_from_environment(environ=None):
             raise PluginError(common.INVALID_ARGUMENT)
         return value
 
-    return Options(endpoint, token,
+    return Options(endpoint, token, tls_root_cert=tls_root,
+                   tls_server_name=values.get('PLUGIN_TLS_SERVER_NAME') or None,
+                   instance_id=values.get('PLUGIN_INSTANCE_ID') or None,
                    io_timeout=seconds('PLUGIN_IO_TIMEOUT', 5.0),
                    hook_timeout=seconds('PLUGIN_HOOK_TIMEOUT', 5.0),
-                   heartbeat_interval=seconds('PLUGIN_HEARTBEAT_INTERVAL', 1.0),
-                   retry_delay=seconds('PLUGIN_RETRY_DELAY', 1.0))
+                   heartbeat_interval=seconds('PLUGIN_HEARTBEAT_INTERVAL', 5.0),
+                   retry_delay=seconds('PLUGIN_RETRY_DELAY', 1.0),
+                   lease_renew_interval=seconds('PLUGIN_LEASE_RENEW_INTERVAL', 10.0))
 
 
 async def run(manifest_path):
