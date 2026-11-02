@@ -40,6 +40,9 @@ inline constexpr auto kModelUnknownResolutionWindow = std::chrono::hours{24 * 30
 inline constexpr std::string_view kModelProviderKindOpenAiChatCompletions =
     "openai_chat_completions";
 
+// Wire replay shape for a duplicate logical_call_id (mirrors the P11 contract enum).
+enum class ModelChatDisposition { Unspecified, FreshResult, ReplayInProgress, ReplayTerminal };
+
 enum class ModelProviderKind { OpenAiChatCompletions };
 
 inline std::optional<ModelProviderKind> model_provider_kind(std::string_view value) noexcept {
@@ -317,6 +320,33 @@ inline std::vector<std::byte> model_request_canonical(const std::string& model,
     append_bytes(result, message.role);
     append_bytes(result, message.text);
   }
+  return result;
+}
+
+// AEAD associated data binding a sealed provider secret to its exact version and root key. The
+// adapter and the application both build it with this single helper.
+inline std::vector<std::byte> model_secret_aad(const ResourceId& model_id,
+                                               const ResourceVersion& secret_version,
+                                               std::uint64_t root_key_version) {
+  std::vector<std::byte> result;
+  static constexpr std::string_view kDomain = "kiarabot.model.provider-secret.v1";
+  for (const char character : kDomain) {
+    result.push_back(static_cast<std::byte>(static_cast<unsigned char>(character)));
+  }
+  const auto append_u64 = [&](std::uint64_t value) {
+    for (int shift = 56; shift >= 0; shift -= 8) {
+      result.push_back(static_cast<std::byte>((value >> static_cast<unsigned>(shift)) & 0xffU));
+    }
+  };
+  const auto append_text = [&](std::string_view value) {
+    append_u64(value.size());
+    for (const char character : value) {
+      result.push_back(static_cast<std::byte>(static_cast<unsigned char>(character)));
+    }
+  };
+  append_text(model_id.value);
+  append_u64(secret_version.value);
+  append_u64(root_key_version);
   return result;
 }
 

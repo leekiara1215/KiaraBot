@@ -42,6 +42,26 @@ foreach(COMPONENT model_gateway)
   set_tests_properties(p11_${COMPONENT} PROPERTIES LABELS "p11;unit" TIMEOUT 10)
 endforeach()
 
+# P11 Model gateway application stays pure: injected provider/crypto/authorization ports and a
+# typed Model UoW; no SQL, protobuf, HTTP or logging dependency.
+add_library(kiarabot_model_gateway_application STATIC
+  src/application/target/model_gateway_application.cpp)
+target_include_directories(kiarabot_model_gateway_application PUBLIC include)
+target_compile_features(kiarabot_model_gateway_application PUBLIC cxx_std_20)
+target_compile_options(kiarabot_model_gateway_application PRIVATE
+  $<$<CXX_COMPILER_ID:AppleClang,Clang,GNU>:-Wall -Wextra -Wpedantic>)
+add_executable(kiarabot_model_gateway_application_test
+  tests/architecture/model_gateway_application_test.cpp)
+target_link_libraries(kiarabot_model_gateway_application_test PRIVATE
+  kiarabot_model_gateway_application)
+target_compile_options(kiarabot_model_gateway_application_test PRIVATE
+  $<$<CXX_COMPILER_ID:AppleClang,Clang,GNU>:-Wall -Wextra -Wpedantic -UNDEBUG>
+  $<$<CXX_COMPILER_ID:MSVC>:/UNDEBUG>)
+add_test(NAME p11_model_gateway_application
+  COMMAND kiarabot_model_gateway_application_test)
+set_tests_properties(p11_model_gateway_application PROPERTIES
+  LABELS "p11;unit" TIMEOUT 30)
+
 foreach(COMPONENT persistence_contract persistence_rules time)
   add_executable(kiarabot_${COMPONENT}_test tests/architecture/${COMPONENT}_test.cpp)
   target_include_directories(kiarabot_${COMPONENT}_test PRIVATE include)
