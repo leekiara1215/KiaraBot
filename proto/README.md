@@ -130,3 +130,5 @@ Identity IssueDelegation / ExchangeDelegation 的唯一线契约 requires_idempo
 CredentialDelivery。证明仍最多 56 秒正文期限与 2 秒时钟容差，业务跳数最多两跳。
 Login、RefreshSession、RotateCredential、RevokeSession 等既有幂等/恢复要求保持原契约。
 未来若引入配额扣减或一次性消费，必须先建立独立的幂等命令契约及事务收据。
+
+P12a-2（2026-11-02）：`policy.proto` 追加 `Permission.PERMISSION_HEALTH_READ = 50`（0–49 不变，内联 CONTRACT_STATUS not_implemented；匿名 live/ready 不使用，受权 `/api/v1/health` 使用）。target Control v1 的 WebSocket 帧整体保持 not_implemented，REST operation 快照是唯一 resync 权威；Instance 级启停/配置 REST 路径与 `/logs`、`/audit` 聚合语义登记在 `api/openapi.yaml`/`api/asyncapi.yaml` 与 doc/06。REST 转发实现与 owner RPC target 验收分层登记，不得用 REST 响应冒充 owner 完成。

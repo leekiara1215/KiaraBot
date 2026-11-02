@@ -292,6 +292,9 @@ PG Repository/COMMIT/锁/并发测试缺少真实 PG 时失败并报告原因，
 - **文档**：`api/`、`doc/06`、`doc/07`、`doc/08`及面板/控制README，API类型和权限词表不能手抄漂移。
 - **验证/退出**：V0/V1/V2/V4/V5(p12)，真实服务HTTP/WS+Panel live测试覆盖所有批准写入口、拒绝、版本冲突、状态进度、断流补快照。消息历史/上下文编辑/市场/自定义角色不加入本轮。
 
+- **P12a-2 契约补充（2026-11-02）**：Q6 实例级启停/配置显式 REST 路径（三类事实+operation，禁用旧 plugin enable 映射）、`health.read`=Permission 50、target Control v1 无 WS（REST operation 快照为唯一 resync 源，WS 帧整体 not_implemented）、`/logs`+`/audit` owner 聚合/分页/脱敏/保留/无源 503 语义、REST 与 owner target 分层状态及 TaskSummary/OperationRef 字段统一。均只登记契约，不实现业务；P12c/P12d 后续消费见 doc/06。
+
+
 ### P13：生命周期协调、清理与可观测性
 
 - **目标/范围**：各业务所有者内的删除/恢复/清理用例、Identity失效收敛、Host/Adapter收尾、Control进度展示、运维指标。分子任务在各自模块实现，禁止跨库级联。
