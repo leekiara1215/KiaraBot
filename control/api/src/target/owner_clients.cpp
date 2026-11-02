@@ -472,8 +472,21 @@ private:
     return output;
   }
 
-  OwnerOutcome<wire::ModelUpdateModelResponse>
-  update(const wire::ModelUpdateModelRequest& request, std::string_view delegation) override {
+  OwnerOutcome<wire::ModelGetModelMetadataResponse>
+  metadata(const wire::ModelGetModelMetadataRequest& request,
+           std::string_view delegation) override {
+    return model_call<wire::ModelGetModelMetadataRequest, wire::ModelGetModelMetadataResponse>(
+        &wire::ModelService::Stub::GetModelMetadata, request, delegation);
+  }
+  OwnerOutcome<wire::ModelListModelMetadataResponse>
+  list_metadata(const wire::ModelListModelMetadataRequest& request,
+                std::string_view delegation) override {
+    return model_call<wire::ModelListModelMetadataRequest, wire::ModelListModelMetadataResponse>(
+        &wire::ModelService::Stub::ListModelMetadata, request, delegation);
+  }
+
+  OwnerOutcome<wire::ModelUpdateModelResponse> update(const wire::ModelUpdateModelRequest& request,
+                                                      std::string_view delegation) override {
     return model_call<wire::ModelUpdateModelRequest, wire::ModelUpdateModelResponse>(
         &wire::ModelService::Stub::UpdateModel, request, delegation);
   }

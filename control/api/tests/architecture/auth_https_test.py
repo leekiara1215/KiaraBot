@@ -45,13 +45,14 @@ def stop(child):
     return child.communicate(timeout=5)
 
 
-def main(control, fixture):
+def main(control, fixture, model_fixture=None):
     with tempfile.TemporaryDirectory(prefix='p04-control-') as folder:
         root = Path(folder)
         config = certificates(root, 'ec')
         tls = config['tls']
         identity = subprocess.Popen([fixture, tls['ca_file'], tls['certificate_file'], tls['private_key_file']],
                                     stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        model = None
         child = None
         secrets = ['never-print-password', 'never-print-upstream-secret', ACCESS,
                    'secret-refresh-credential-login', 'secret-access-credential-refresh',
@@ -59,9 +60,16 @@ def main(control, fixture):
         logs = ''
         try:
             identity_port = int(line(identity))
+            model_port = None
+            if model_fixture:
+                model = subprocess.Popen([model_fixture, tls['ca_file'], tls['certificate_file'], tls['private_key_file']],
+                                         stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                model_port = int(line(model))
             config['service'] = 'control'
             config.pop('grpc_listen')
             config['control_api'] = {'listen': '127.0.0.1:0', 'identity_endpoint': f'localhost:{identity_port}'}
+            if model_port is not None:
+                config['control_api']['model_endpoint'] = f'localhost:{model_port}'
             path = root / 'control.json'
             path.write_text(json.dumps(config))
             child = subprocess.Popen([control, '--config', str(path)],
@@ -153,13 +161,70 @@ def main(control, fixture):
             assert body['code'] in ('PERMISSION_DENIED', 'UPSTREAM_UNAVAILABLE'), body
             operation_scope = urllib.parse.quote(json.dumps({'resources': [
                 {'kind': 'RESOURCE_ACCOUNT', 'id': SESSION}]}))
-            for owner in ('runtime', 'scheduler', 'model'):
+            operation_owners = ('runtime', 'scheduler') if model_port is not None else (
+                'runtime', 'scheduler', 'model')
+            for owner in operation_owners:
                 status, body, _ = request(
                     'GET', f'/api/v1/operations/{owner}/{SESSION}?scope={operation_scope}',
                     headers={'Authorization': 'Bearer ' + ACCESS})
                 assert status in (400, 403, 503), (owner, status, body)
                 assert body['code'] in ('INVALID_ARGUMENT', 'PERMISSION_DENIED',
                                         'UPSTREAM_UNAVAILABLE'), (owner, body)
+            model_id = '11111111-1111-4111-8111-111111111111'
+            model_scope = urllib.parse.quote(json.dumps({'resources': [
+                {'kind': 'RESOURCE_MODEL', 'id': model_id}]}))
+            if model_port is not None:
+                auth_header = {'Authorization': 'Bearer ' + ACCESS}
+                status, body, _ = request('GET', '/api/v1/models/' + model_id + '?scope=' + model_scope,
+                                          headers=auth_header)
+                assert status == 200 and body['model']['model_id'] == model_id, (status, body)
+                status, body, _ = request('GET', '/api/v1/models?scope=' + model_scope,
+                                          headers=auth_header)
+                assert status == 200 and body['models'][0]['model_id'] == model_id, (status, body)
+                update = {'config': {
+                    'model_id': model_id, 'alias': 'default', 'provider_kind': 'openai_chat_completions',
+                    'endpoint': 'https://api.example.invalid/v1', 'provider_model': 'fixture-model',
+                    'timeout_ms': 30000, 'version': '3'}, 'expected_version': '3'}
+                status, body, _ = request('PUT', '/api/v1/models/' + model_id, update,
+                                          {**auth_header, 'Content-Type': 'application/json',
+                                           'Idempotency-Key': 'model-update-key-1'})
+                assert status == 200 and body['model']['model_id'] == model_id, (status, body)
+                status, body, _ = request('POST', '/api/v1/models/' + model_id + '/disable',
+                                          {'expected_version': '3'},
+                                          {**auth_header, 'Content-Type': 'application/json',
+                                           'Idempotency-Key': 'model-disable-key-1'})
+                assert status == 200 and body['model']['state'] == 'LIFECYCLE_DISABLED', (status, body)
+                status, body, _ = request('POST', '/api/v1/models/' + model_id + '/enable',
+                                          {'expected_version': '3'},
+                                          {**auth_header, 'Content-Type': 'application/json',
+                                           'Idempotency-Key': 'model-enable-key-1'})
+                assert status == 200 and body['model']['state'] == 'LIFECYCLE_ACTIVE', (status, body)
+                secret = __import__('base64').b64encode(b'fixture-provider-secret').decode()
+                status, body, _ = request('PUT', '/api/v1/models/' + model_id + '/secret',
+                                          {'model_id': model_id, 'new_secret': secret,
+                                           'expected_version': '3'},
+                                          {**auth_header, 'Content-Type': 'application/json',
+                                           'Idempotency-Key': 'model-secret-key-1'})
+                assert status == 200 and body == {'version': '9'}, (status, body)
+                assert 'fixture-provider-secret' not in json.dumps(body)
+                status, body, _ = request('GET', '/api/v1/models/' + model_id +
+                                          '/configuration?scope=' + model_scope, headers=auth_header)
+                assert status == 200 and body['secret_configured'] is True and \
+                    body['secret_version'] == '9' and body['observed_at'], (status, body)
+                assert 'fixture-provider-secret' not in json.dumps(body), body
+                status, body, _ = request('GET', '/api/v1/models/' + model_id +
+                                          '/calls/call-1?scope=' + model_scope, headers=auth_header)
+                assert status == 200 and body['call']['execution_outcome'] == 'EXECUTION_UNKNOWN' and \
+                    body['call']['may_have_billed'] is True, (status, body)
+                status, body, _ = request('POST', '/api/v1/models/' + model_id +
+                                          '/calls/call-1/resolve',
+                                          {'disposition': 'EXECUTED_BILLED', 'expected_version': '3'},
+                                          {**auth_header, 'Content-Type': 'application/json',
+                                           'Idempotency-Key': 'model-resolve-key-1'})
+                assert status == 200 and body['call']['disposition'] == 'EXECUTED_BILLED', (status, body)
+                status, body, _ = request('GET', '/api/v1/operations/model/operation-1?scope=' +
+                                          model_scope, headers=auth_header)
+                assert status == 200 and body['operation']['state'] == 'OPERATION_SUCCEEDED', (status, body)
             scope = urllib.parse.quote(json.dumps({'resources': [
                 {'kind': 'RESOURCE_ACCOUNT', 'id': SESSION}]}))
             status, body, _ = request(
@@ -367,6 +432,8 @@ def main(control, fixture):
         finally:
             if child is not None and child.poll() is None:
                 stop(child)
+            if model is not None and model.poll() is None:
+                stop(model)
             if identity.poll() is None:
                 stop(identity)
 

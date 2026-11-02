@@ -136,6 +136,12 @@ public:
 class ModelManagementPort {
 public:
   virtual ~ModelManagementPort() = default;
+  virtual OwnerOutcome<kiarabot::v1::ModelGetModelMetadataResponse>
+  metadata(const kiarabot::v1::ModelGetModelMetadataRequest& request,
+           std::string_view delegation) = 0;
+  virtual OwnerOutcome<kiarabot::v1::ModelListModelMetadataResponse>
+  list_metadata(const kiarabot::v1::ModelListModelMetadataRequest& request,
+                std::string_view delegation) = 0;
   virtual OwnerOutcome<kiarabot::v1::ModelUpdateModelResponse>
   update(const kiarabot::v1::ModelUpdateModelRequest& request, std::string_view delegation) = 0;
   virtual OwnerOutcome<kiarabot::v1::ModelDisableModelResponse>

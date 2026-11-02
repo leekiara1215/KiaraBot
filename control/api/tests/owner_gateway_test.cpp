@@ -559,6 +559,8 @@ struct FakeModel final : target::ModelManagementPort {
   std::optional<target::OwnerFailure> failure;
   std::string permission;
   int calls = 0;
+  wire::ModelGetModelMetadataRequest metadata_request;
+  wire::ModelListModelMetadataRequest list_request;
   wire::ModelUpdateModelRequest update_request;
   wire::ModelDisableModelRequest disable_request;
   wire::ModelEnableModelRequest enable_request;
@@ -575,6 +577,31 @@ struct FakeModel final : target::ModelManagementPort {
     value.set_state(wire::LIFECYCLE_ACTIVE);
     value.set_provider_kind("openai_chat_completions");
     return value;
+  }
+  target::OwnerOutcome<wire::ModelGetModelMetadataResponse>
+  metadata(const wire::ModelGetModelMetadataRequest& request, std::string_view proof) override {
+    ++calls;
+    metadata_request = request;
+    permission = proof;
+    if (failure) {
+      return *failure;
+    }
+    wire::ModelGetModelMetadataResponse response;
+    *response.mutable_model() = metadata();
+    return response;
+  }
+  target::OwnerOutcome<wire::ModelListModelMetadataResponse>
+  list_metadata(const wire::ModelListModelMetadataRequest& request,
+                std::string_view proof) override {
+    ++calls;
+    list_request = request;
+    permission = proof;
+    if (failure) {
+      return *failure;
+    }
+    wire::ModelListModelMetadataResponse response;
+    *response.add_models() = metadata();
+    return response;
   }
   target::OwnerOutcome<wire::ModelUpdateModelResponse>
   update(const wire::ModelUpdateModelRequest& request, std::string_view proof) override {
@@ -742,6 +769,27 @@ void model_management_surface() {
           "update delegation is model.manage + single scope");
   require(model.update_request.config().model_id() == "model-1",
           "model id forwarded from path/body");
+
+  auto metadata = request("GET", model_path());
+  auto metadata_result = gateway.handle(metadata);
+  require(metadata_result && metadata_result->status == 200 &&
+              metadata_result->body.find("\"model_id\":\"model-1\"") != std::string::npos &&
+              metadata_result->body.find("\"provider_kind\":\"openai_chat_completions\"") !=
+                  std::string::npos,
+          "model metadata forwarded");
+  require(delegation.permission == wire::PERMISSION_MODEL_READ,
+          "metadata delegation is model.read");
+  auto listed =
+      gateway.handle(request("GET", "/api/v1/models" + model_scope_query() + "&page_size=1"));
+  require(listed && listed->status == 200 && listed->body.find("\"models\"") != std::string::npos &&
+              model.list_request.scope().resources_size() == 1,
+          "model metadata list forwarded");
+  auto unsupported_operation = gateway.handle(
+      request("GET", "/api/v1/operations/runtime/operation-1?scope=" + model_scope_json()));
+  require(unsupported_operation && unsupported_operation->status == 503 &&
+              unsupported_operation->body.find("\"code\":\"CAPABILITY_NOT_SUPPORTED\"") !=
+                  std::string::npos,
+          "unified operation owner branch fails closed for unwired owners");
 
   auto disable = request("POST", "/api/v1/models/model-1/disable");
   disable.headers["idempotency-key"] = "model-idem-2";

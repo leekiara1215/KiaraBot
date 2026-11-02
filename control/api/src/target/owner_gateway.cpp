@@ -974,6 +974,71 @@ std::optional<OwnerHttpResult> OwnerGateway::handle(const OwnerHttpRequest& requ
       return OwnerHttpResult{
           503, owner_error_body(wire::UPSTREAM_UNAVAILABLE, request_id, trace_id, true)};
     }
+    if (path == "/api/v1/models") {
+      if (!model_) {
+        return OwnerHttpResult{
+            503, owner_error_body(wire::CAPABILITY_NOT_SUPPORTED, request_id, trace_id, false)};
+      }
+      if (request.method != "GET" && request.method != "HEAD") {
+        return OwnerHttpResult{
+            405, owner_error_body(wire::INVALID_ARGUMENT, request_id, trace_id, false)};
+      }
+      if (request.access_token.empty()) {
+        return OwnerHttpResult{
+            401, owner_error_body(wire::UNAUTHENTICATED, request_id, trace_id, false)};
+      }
+      auto query = parse_query(request.target);
+      auto scope = query ? parse_scope(*query) : std::nullopt;
+      if (!query || !scope || scope->resources_size() < 1) {
+        return OwnerHttpResult{
+            400, owner_error_body(wire::INVALID_ARGUMENT, request_id, trace_id, false)};
+      }
+      for (const auto& resource : scope->resources()) {
+        if (resource.kind() != wire::RESOURCE_MODEL || resource.id().empty()) {
+          return OwnerHttpResult{
+              400, owner_error_body(wire::INVALID_ARGUMENT, request_id, trace_id, false)};
+        }
+      }
+      wire::ModelListModelMetadataRequest input;
+      fill_context(input.mutable_context(), request, request_id, trace_id);
+      *input.mutable_scope() = *scope;
+      if (const auto size = query->find("page_size"); size != query->end()) {
+        std::uint32_t value = 0;
+        const auto parsed =
+            std::from_chars(size->second.data(), size->second.data() + size->second.size(), value);
+        if (parsed.ec != std::errc{} || parsed.ptr != size->second.data() + size->second.size() ||
+            value == 0 || value > 100) {
+          return OwnerHttpResult{
+              400, owner_error_body(wire::INVALID_ARGUMENT, request_id, trace_id, false)};
+        }
+        input.mutable_page()->set_page_size(value);
+      }
+      if (const auto token = query->find("page_token"); token != query->end()) {
+        input.mutable_page()->set_page_token(token->second);
+      }
+      auto delegation = delegation_.issue("model", wire::PERMISSION_MODEL_READ, *scope,
+                                          request.access_token, request.deadline);
+      if (const auto* failure = std::get_if<OwnerFailure>(&delegation)) {
+        return OwnerHttpResult{
+            owner_http_status(failure->code),
+            owner_error_body(failure->code, request_id, trace_id, failure->retryable)};
+      }
+      auto result = model_->list_metadata(input, std::get<std::string>(delegation));
+      if (const auto* failure = std::get_if<OwnerFailure>(&result)) {
+        return OwnerHttpResult{
+            owner_http_status(failure->code),
+            owner_error_body(failure->code, request_id, trace_id, failure->retryable)};
+      }
+      google::protobuf::util::JsonPrintOptions options;
+      options.preserve_proto_field_names = true;
+      std::string body;
+      if (!google::protobuf::util::MessageToJsonString(
+               std::get<wire::ModelListModelMetadataResponse>(result), &body, options)
+               .ok()) {
+        return OwnerHttpResult{500, owner_error_body(wire::INTERNAL, request_id, trace_id, false)};
+      }
+      return OwnerHttpResult{200, body};
+    }
     constexpr std::string_view kModels = "/api/v1/models/";
     if (path.starts_with(kModels)) {
       if (!model_) {
@@ -1022,6 +1087,40 @@ std::optional<OwnerHttpResult> OwnerGateway::handle(const OwnerHttpRequest& requ
         return OwnerHttpResult{
             400, owner_error_body(wire::INVALID_ARGUMENT, request_id, trace_id, false)};
       };
+      if (tail.empty() && (request.method == "GET" || request.method == "HEAD")) {
+        auto scope = single_model_scope(*query, model_id, true);
+        if (!scope) {
+          return OwnerHttpResult{
+              400, owner_error_body(wire::INVALID_ARGUMENT, request_id, trace_id, false)};
+        }
+        auto delegation = dispatch(wire::PERMISSION_MODEL_READ, *scope);
+        if (const auto* failure = std::get_if<OwnerFailure>(&delegation)) {
+          return fail(*failure);
+        }
+        wire::ModelGetModelMetadataRequest input;
+        fill_context(input.mutable_context(), request, request_id, trace_id);
+        input.set_model_id(std::string{model_id});
+        *input.mutable_scope() = *scope;
+        auto result = model_->metadata(input, std::get<std::string>(delegation));
+        if (const auto* failure = std::get_if<OwnerFailure>(&result)) {
+          return fail(*failure);
+        }
+        const auto& response = std::get<wire::ModelGetModelMetadataResponse>(result);
+        if (!response.has_model()) {
+          return OwnerHttpResult{404,
+                                 owner_error_body(wire::NOT_FOUND, request_id, trace_id, false)};
+        }
+        google::protobuf::util::JsonPrintOptions options;
+        options.preserve_proto_field_names = true;
+        wire::ModelGetModelMetadataResponse body;
+        *body.mutable_model() = response.model();
+        std::string encoded;
+        if (!google::protobuf::util::MessageToJsonString(body, &encoded, options).ok()) {
+          return OwnerHttpResult{500,
+                                 owner_error_body(wire::INTERNAL, request_id, trace_id, false)};
+        }
+        return OwnerHttpResult{200, encoded};
+      }
       if (tail.empty() && request.method == "PUT") {
         if (const auto missing = require_idempotency()) {
           return *missing;

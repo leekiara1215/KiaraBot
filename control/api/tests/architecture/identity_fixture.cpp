@@ -245,20 +245,31 @@ public:
         input->client_certificate_sha256() !=
             std::string(reinterpret_cast<const char*>(digest), length) ||
         input->subject_proof() != "secret-access-credential-login" ||
-        input->audience() != "identity" || input->scope().resources_size() != 1 ||
-        input->permissions_size() != 1 || input->context().idempotency_key().empty()) {
+        (input->audience() != "identity" && input->audience() != "model") ||
+        input->scope().resources_size() != 1 || input->permissions_size() != 1) {
       return error(wire::PERMISSION_DENIED, grpc::StatusCode::PERMISSION_DENIED, input->context());
     }
     const auto& resource = input->scope().resources(0);
-    if ((resource.kind() != wire::RESOURCE_PRINCIPAL ||
-         resource.id() != "33333333-3333-4333-8333-333333333333" ||
-         input->permissions(0) != wire::PERMISSION_IDENTITY_SESSION_READ) &&
-        (resource.kind() != wire::RESOURCE_SESSION ||
-         (resource.id() != kSession && resource.id() != kOther) ||
-         input->permissions(0) != wire::PERMISSION_IDENTITY_SESSION_REVOKE)) {
+    const bool identity_delegation =
+        input->audience() == "identity" &&
+        ((resource.kind() == wire::RESOURCE_PRINCIPAL &&
+          resource.id() == "33333333-3333-4333-8333-333333333333" &&
+          input->permissions(0) == wire::PERMISSION_IDENTITY_SESSION_READ) ||
+         (resource.kind() == wire::RESOURCE_SESSION &&
+          (resource.id() == kSession || resource.id() == kOther) &&
+          input->permissions(0) == wire::PERMISSION_IDENTITY_SESSION_REVOKE));
+    const bool model_delegation = input->audience() == "model" &&
+                                  resource.kind() == wire::RESOURCE_MODEL &&
+                                  !resource.id().empty() &&
+                                  (input->permissions(0) == wire::PERMISSION_MODEL_MANAGE ||
+                                   input->permissions(0) == wire::PERMISSION_MODEL_READ ||
+                                   input->permissions(0) == wire::PERMISSION_MODEL_CALL_INSPECT ||
+                                   input->permissions(0) == wire::PERMISSION_RESOURCE_READ);
+    if (!identity_delegation && !model_delegation) {
       return error(wire::PERMISSION_DENIED, grpc::StatusCode::PERMISSION_DENIED, input->context());
     }
-    output->mutable_delegation()->set_proof("fixture-proof:" + resource.id());
+    output->mutable_delegation()->set_proof(
+        std::string{model_delegation ? "fixture-model-proof:" : "fixture-proof:"} + resource.id());
     output->mutable_delegation()->set_audience("identity");
     output->mutable_delegation()->mutable_expires_at()->set_seconds(kChecked + 30);
     return grpc::Status::OK;
