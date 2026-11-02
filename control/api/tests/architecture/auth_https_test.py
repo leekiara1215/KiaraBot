@@ -135,6 +135,19 @@ def main(control, fixture, model_fixture=None):
                                           headers={'Authorization': 'Bearer ' + ACCESS})
                 assert status in (403, 503), (sensitive_path, status, body)
                 assert body['code'] in ('PERMISSION_DENIED', 'UPSTREAM_UNAVAILABLE'), body
+            for anonymous_path in ('/api/v1/logs', '/api/v1/audit'):
+                status, body, _ = request('GET', anonymous_path)
+                assert status == 401 and body['code'] == 'UNAUTHENTICATED', (anonymous_path, body)
+            for invalid_target in (
+                    '/api/v1/logs?page_token=not-a-cursor',
+                    '/api/v1/logs?occurred_from=not-a-time',
+                    '/api/v1/audit?occurred_until=not-a-time',
+                    '/api/v1/audit?actor=' + 'a' * 300,
+                    '/api/v1/logs?unexpected=1'):
+                status, body, _ = request('GET', invalid_target,
+                                          headers={'Authorization': 'Bearer ' + ACCESS})
+                assert status == 400 and body['code'] == 'INVALID_ARGUMENT', (
+                    invalid_target, status, body)
             status, body, _ = request('GET', '/api/v1/health',
                                       headers={'Authorization': 'Bearer ' + ACCESS})
             assert status in (200, 403, 503), (status, body)

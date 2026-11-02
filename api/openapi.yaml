@@ -551,7 +551,7 @@ paths:
       x-permission: audit.read
       x-owner-rpc: { identity: IdentityService.ListAudit, runtime: RuntimeService.ListAudit }
       x-owner-permissions: { identity: audit.read, runtime: audit.read }
-      x-contract-status: not_implemented
+      x-contract-status: implemented
       summary: Query audit entries
       description: >-
         Control read-only aggregate of owner-service audit facts; requires the distinct audit.read
@@ -561,11 +561,33 @@ paths:
         plus stable ID; no free-form filters are accepted in v1. Necessary audit facts are retained
         for 180 days in their owner service (doc/22) and Control must not extend that retention by
         caching; response rows carry the owner service identity so clients can open the exact owner
-        operation. P12e declares read-only owner RPCs (IdentityService.ListAudit /
-        RuntimeService.ListAudit, audit.read on the Control catalog scope); Control aggregation
-        wiring is P12c, so this REST operation stays UNAVAILABLE (503) until that route is
-        implemented. Audit/log permissions are separate and neither implies the other.
-      parameters: [{ $ref: '#/components/parameters/PageSize' }, { $ref: '#/components/parameters/PageToken' }]
+        operation. P12e declares the read-only owner RPCs (IdentityService.ListAudit /
+        RuntimeService.ListAudit, audit.read on the Control catalog scope); P12c-6 wires Control
+        aggregation: Identity is called directly as the platform peer, Runtime gets a one-use
+        delegation for the same permission/scope, rows are merged by occurred_at+owner+id with the
+        owner annotated and keyset tokens passed to both owners. Any missing/unavailable
+        authoritative source yields 503 (never a fabricated empty page). Audit/log permissions are
+        separate and neither implies the other. Time/actor/resource filters are server-validated
+        (invalid values are 400).
+      parameters:
+      - { $ref: '#/components/parameters/PageSize' }
+      - { $ref: '#/components/parameters/PageToken' }
+      - name: occurred_from
+        in: query
+        required: false
+        schema: { type: string, format: date-time }
+      - name: occurred_until
+        in: query
+        required: false
+        schema: { type: string, format: date-time }
+      - name: actor
+        in: query
+        required: false
+        schema: { type: string, minLength: 1, maxLength: 256 }
+      - name: resource
+        in: query
+        required: false
+        content: { application/json: { schema: { $ref: '#/components/schemas/TargetResourceRef' } } }
       responses:
         '200':
           description: Audit page
@@ -773,7 +795,7 @@ paths:
       x-permission: log.read
       x-owner-rpc: { identity: IdentityService.ListLogs, runtime: RuntimeService.ListLogs }
       x-owner-permissions: { identity: log.read, runtime: log.read }
-      x-contract-status: not_implemented
+      x-contract-status: implemented
       summary: Query redacted structured logs
       description: >-
         Control read-only aggregate of redacted structured logs; requires the distinct log.read
@@ -784,7 +806,25 @@ paths:
         that window. P12e declares read-only owner RPCs (IdentityService.ListLogs /
         RuntimeService.ListLogs, log.read on the Control catalog scope); Control aggregation wiring
         is P12c, so this REST operation stays UNAVAILABLE (503) until that route is implemented.
-      parameters: [{ $ref: '#/components/parameters/PageSize' }, { $ref: '#/components/parameters/PageToken' }]
+      parameters:
+      - { $ref: '#/components/parameters/PageSize' }
+      - { $ref: '#/components/parameters/PageToken' }
+      - name: occurred_from
+        in: query
+        required: false
+        schema: { type: string, format: date-time }
+      - name: occurred_until
+        in: query
+        required: false
+        schema: { type: string, format: date-time }
+      - name: actor
+        in: query
+        required: false
+        schema: { type: string, minLength: 1, maxLength: 256 }
+      - name: resource
+        in: query
+        required: false
+        content: { application/json: { schema: { $ref: '#/components/schemas/TargetResourceRef' } } }
       responses:
         '200':
           description: Log page
@@ -3717,6 +3757,13 @@ components:
         action: { type: string }
         resource: { type: string }
         request_id: { type: string }
+        owner:
+          type: string
+          enum: [identity, runtime]
+          description: Owner service holding the authoritative audit fact; clients use it to open the owner operation.
+        rejection:
+          type: string
+          description: Stable ErrorCode name for a rejected operation, when present.
         # Action audits only; other audit entries omit these fields.
         account_id: { type: string }
         conversation_id: { type: string }
@@ -3774,6 +3821,10 @@ components:
             component: { type: string }
             message: { type: string, description: Redacted log message }
             trace_id: { type: string }
+            owner:
+              type: string
+              enum: [identity, runtime]
+              description: Owner service holding the authoritative log fact. Audit and logs never substitute each other.
     BotPage:
       type: object
       required: [items, page]

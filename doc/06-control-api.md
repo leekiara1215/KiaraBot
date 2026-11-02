@@ -614,3 +614,23 @@ P12 v1 target **不提供** Control WebSocket 服务端；`api/asyncapi.yaml` �
   （P12c-4）；202/200 都只代表已受理/当前快照，不代表完成。
 - 未实现/延期：WS 目标承载（P12a-2 已批准延期，REST operation 快照为 resync 源）；Host/插件 ACK
   的持久证据来源仍由 P08a/b/c 继续补齐；模型管理 REST 归 P11d。
+
+### P12c-6 已实现：/logs、/audit 聚合（2026-11-02）
+
+- `GET /api/v1/logs` 仅使用 `log.read`(48)，`GET /api/v1/audit` 仅使用 `audit.read`(49)；两者互不
+  替代，缺 token→401，权限拒绝→403，非法参数/cursor/时间窗→400。
+- 数据源：Identity 由 Control 以平台 peer 直连 `IdentityService.ListLogs/ListAudit`；Runtime 由
+  Control 每请求执行一次 `IssueDelegation(audience=runtime, permission=48/49, scope=Catalog/control)`
+  后调用 `RuntimeService.ListLogs/ListAudit`。任一权威源不可用/未配置→503 `UPSTREAM_UNAVAILABLE`，
+  不返回部分页或成功空页；两源均可用但无数据时返回 200 空页（合法空结果）。
+- 合并与游标：两源按 `occurred_at DESC, owner ASC, id DESC` 合并；每行标注 `owner`
+  （identity/runtime）；分页 token 使用 owner 的 `occurred_at:id` keyset 语义透传到两源；默认
+  page_size=20，最大 100；`occurred_from`/`occurred_until`（含端点，RFC3339）、`actor`、`resource`
+  （JSON TargetResourceRef）为服务端校验过滤；不引入自由文本/任意字段查询。
+- 投影/脱敏：仅按契约字段投影；日志 `level` 由 owner severity 闭集映射（INFO/WARN/DEBUG/ERROR），
+  `message` 只来自 owner 已脱敏闭集；审计含 `id/occurred_at/owner/actor/action(method)/resource/
+  request_id/rejection/account_id/conversation_id`；绝不返回凭据、消息正文、模型密钥、上游正文或
+  自由错误文本。Control 不缓存审计/日志，不扩大 owner 保留期（audit 180 天、日志 7 天，见 doc/22）。
+- 与 P12d：REST 分页 `page.next_page_token` 直接回传；`owner`/`rejection` 可用于跳转 owner 操作；
+  503 必须显示"数据源暂不可用"，不得渲染为"暂无日志/审计"；WS `logs` 频道仍为 P12a-2 延期项，
+  REST 聚合不改变该状态。

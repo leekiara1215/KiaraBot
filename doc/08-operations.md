@@ -1407,3 +1407,17 @@ Identity 与 Runtime 各新增两个只读 owner RPC（不新增服务、权限�
   Control 受权调用。验证：`p03_postgres_database`（真 PG16.4 分页/过滤/脱敏）与
   `p12e_audit_query`（游标契约）以及 `proto/tests/check_target.sh` 契约门禁。
 P13c（2026-11-02）：Runtime BeginDelete 对受管实例的 Host 参与者已改为写 durable StopExecution host_command outbox，按确定性 command_id 幂等；只有 Host receipt 的已知终态才算完成，Pending/Unknown/拒绝保持 blocked，UNKNOWN 不伪 stopped。P08b-3b 完成 HostBridge 命令下发/回执后自动收敛，无需改 SDK/Control；Scheduler 参与者需 Runtime→Scheduler 实例委托配置（P10b-2），未配置时删除实例保持 BLOCKED。`/operations/...` 参与者进度已在 Control owner gateway 投影。
+
+## P12c-6 日志/审计查询运维口径（2026-11-02）
+
+- Control `GET /api/v1/logs`（`log.read`=48）与 `GET /api/v1/audit`（`audit.read`=49）只读聚合
+  Identity+Runtime 的权威记录；两类权限相互独立，不能用一个代替另一个。缺失 token→401、
+  权限拒绝→403、非法 cursor/时间窗/过滤值→400、任一源未配置/不可用→503，绝不返回成功空页。
+- 过滤：`occurred_from`/`occurred_until`（RFC3339，含端点）、`actor`、`resource`（JSON ResourceRef）、
+  `page_size`（1..100，默认 20）、`page_token`（owner keyset `occurred_at:id`）。Control 只做合并排序
+  （occurred_at DESC, owner ASC, id DESC）与 owner 标注，不提供任意字段查询。
+- 保留与脱敏归 owner：审计 180 天、运维日志 7 天（doc/22），Control 不缓存/不延长；返回仅契约字段，
+  已由 owner 脱敏，禁止把 503 当空页、把 audit 当 logs、或在日志中记录凭据/正文/模型密钥。
+- 故障处置：单源不可用时 Control 返回 503（不返回另一源部分页）；先检查对应 owner 健康与
+  `log.read`/`audit.read` assignment/委托，再重试同一 cursor；无效/过期 cursor 需从第一页重新拉取。
+- 该查询为只读运维审计面，不改变业务事务/保留策略；需要长期留存须按备份/日志基础设施另行实现。

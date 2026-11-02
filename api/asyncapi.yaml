@@ -36,9 +36,12 @@ x-control-session-policy:
   logs_default: >-
     Target P12 v1 has no Control WebSocket server. Log/audit data is REST-only at /logs and
     /audit with distinct explicit log.read (48) / audit.read (49) grants; no default role derives
-    either and neither implies the other. If no authoritative owner source is registered,
-    Control returns 503 UNAVAILABLE, never a successful empty page. The logs channel below is a
-    deferred target frame contract (not_implemented), not a v1 transport claim.
+    either and neither implies the other. P12c-6 wires the REST aggregation over
+    IdentityService/RuntimeService ListLogs|ListAudit: rows are merged by occurred_at+owner+id with
+    the owner annotated, keyset tokens pass through to both owners, and if any authoritative owner
+    source is unavailable Control returns 503 UNAVAILABLE, never a successful empty page. The logs
+    channel below remains a deferred target frame contract (not_implemented), not a v1 transport
+    claim.
 
   messages_default: >-
     No default role grants message.read, including admins. The messages channel
