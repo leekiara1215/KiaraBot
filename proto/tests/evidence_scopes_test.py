@@ -154,8 +154,32 @@ class ScopeTest(unittest.TestCase):
         validate_scopes(registry, EvidenceResolver(root))
         available = {(category, key) for category, values in registry['categories'].items() for key in values
                      if effective_status(registry, 'target', category, key) == 'implemented'}
-        self.assertEqual(available, {('operations', 'operations.getProcessLiveness'),
-                                     ('operations', 'operations.getProcessReadiness')})
+        expected = {('operations', 'operations.getProcessLiveness'),
+                    ('operations', 'operations.getProcessReadiness'),
+                    ('proto_messages', 'CredentialDelivery'),
+                    ('proto_messages', 'CredentialStatus'),
+                    ('proto_messages', 'IdentityGetCredentialStatusRequest'),
+                    ('proto_messages', 'IdentityGetCredentialStatusResponse'),
+                    ('proto_messages', 'IdentityGetPrincipalStatusRequest'),
+                    ('proto_messages', 'IdentityGetPrincipalStatusResponse'),
+                    ('proto_messages', 'IdentityRegisterPrincipalRequest'),
+                    ('proto_messages', 'IdentityRegisterPrincipalResponse'),
+                    ('proto_messages', 'IdentityRevokeCredentialRequest'),
+                    ('proto_messages', 'IdentityRevokeCredentialResponse'),
+                    ('proto_messages', 'IdentityRotateCredentialRequest'),
+                    ('proto_messages', 'IdentityRotateCredentialResponse')}
+        expected |= {('proto_fields', 'CredentialDelivery.credential_id'), ('proto_fields', 'CredentialDelivery.version'), ('proto_fields', 'CredentialDelivery.new_secret')}
+        expected |= {('proto_fields', 'CredentialDelivery.delivery_receipt_id'), ('proto_fields', 'CredentialDelivery.expires_at'), ('proto_fields', 'CredentialStatus.credential_id')}
+        expected |= {('proto_fields', 'CredentialStatus.principal_id'), ('proto_fields', 'CredentialStatus.binding'), ('proto_fields', 'CredentialStatus.version')}
+        expected |= {('proto_fields', 'CredentialStatus.state'), ('proto_fields', 'CredentialStatus.created_at'), ('proto_fields', 'CredentialStatus.expires_at')}
+        expected |= {('proto_fields', 'CredentialStatus.checked_at'), ('proto_fields', 'IdentityGetCredentialStatusRequest.context'), ('proto_fields', 'IdentityGetCredentialStatusRequest.credential_id')}
+        expected |= {('proto_fields', 'IdentityGetCredentialStatusResponse.credential'), ('proto_fields', 'IdentityGetPrincipalStatusRequest.context'), ('proto_fields', 'IdentityGetPrincipalStatusRequest.principal_id')}
+        expected |= {('proto_fields', 'IdentityGetPrincipalStatusResponse.principal'), ('proto_fields', 'IdentityRegisterPrincipalRequest.context'), ('proto_fields', 'IdentityRegisterPrincipalRequest.principal_kind')}
+        expected |= {('proto_fields', 'IdentityRegisterPrincipalRequest.binding'), ('proto_fields', 'IdentityRegisterPrincipalRequest.allowed_services'), ('proto_fields', 'IdentityRegisterPrincipalResponse.principal')}
+        expected |= {('proto_fields', 'IdentityRegisterPrincipalResponse.initial_credential'), ('proto_fields', 'IdentityRevokeCredentialRequest.context'), ('proto_fields', 'IdentityRevokeCredentialRequest.credential_id')}
+        expected |= {('proto_fields', 'IdentityRevokeCredentialRequest.expected_version'), ('proto_fields', 'IdentityRevokeCredentialResponse.version'), ('proto_fields', 'IdentityRotateCredentialRequest.context')}
+        expected |= {('proto_fields', 'IdentityRotateCredentialRequest.credential_id'), ('proto_fields', 'IdentityRotateCredentialRequest.expected_version'), ('proto_fields', 'IdentityRotateCredentialResponse.delivery')}
+        self.assertEqual(available, expected)
         self.assertEqual(effective_status(registry, 'reference', 'action_payloads', 'ActionEnvelope.send_message'), 'implemented')
         self.assertEqual(effective_status(registry, 'target', 'action_payloads', 'ActionEnvelope.send_message'), 'not_implemented')
 
