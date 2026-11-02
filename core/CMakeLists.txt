@@ -198,6 +198,12 @@ set_tests_properties(p04_identity_invalidation_application PROPERTIES
   LABELS "p04;unit;security" TIMEOUT 10)
 # P05 Runtime resources, bindings and current generations. The application owns business rules over
 # the pure Runtime UoW ports; RPC/transport mapping and PG adapters stay in outer layers.
+add_library(kiarabot_runtime_resource_application STATIC
+  src/application/target/runtime_resource_application.cpp)
+target_include_directories(kiarabot_runtime_resource_application PUBLIC include)
+target_compile_features(kiarabot_runtime_resource_application PUBLIC cxx_std_20)
+target_compile_options(kiarabot_runtime_resource_application PRIVATE
+  $<$<CXX_COMPILER_ID:AppleClang,Clang,GNU>:-Wall -Wextra -Wpedantic>)
 add_executable(kiarabot_runtime_rules_test tests/architecture/runtime_rules_test.cpp)
 target_include_directories(kiarabot_runtime_rules_test PRIVATE include)
 target_compile_features(kiarabot_runtime_rules_test PRIVATE cxx_std_20)
@@ -206,3 +212,14 @@ target_compile_options(kiarabot_runtime_rules_test PRIVATE
   $<$<CXX_COMPILER_ID:MSVC>:/UNDEBUG>)
 add_test(NAME p05_runtime_rules COMMAND kiarabot_runtime_rules_test)
 set_tests_properties(p05_runtime_rules PROPERTIES LABELS "p05;unit" TIMEOUT 10)
+add_executable(kiarabot_runtime_resource_application_test
+  tests/architecture/runtime_resource_application_test.cpp)
+target_link_libraries(kiarabot_runtime_resource_application_test PRIVATE
+  kiarabot_runtime_resource_application)
+target_compile_options(kiarabot_runtime_resource_application_test PRIVATE
+  $<$<CXX_COMPILER_ID:AppleClang,Clang,GNU>:-Wall -Wextra -Wpedantic -UNDEBUG>
+  $<$<CXX_COMPILER_ID:MSVC>:/UNDEBUG>)
+add_test(NAME p05_runtime_resource_application
+  COMMAND kiarabot_runtime_resource_application_test)
+set_tests_properties(p05_runtime_resource_application PROPERTIES
+  LABELS "p05;unit" TIMEOUT 30)
