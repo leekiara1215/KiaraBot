@@ -36,7 +36,7 @@ inline constexpr std::string_view descriptor(core::target::Service owner) {
   case core::target::Service::Identity:
     return "0d9975965aa851b433887e949f782167";
   case core::target::Service::Runtime:
-    return "023209aea1c6e59067b65779b5178927";
+    return "2eae4bf68d863c9ceec9d3a186a7e53e";
   case core::target::Service::Scheduler:
     return "345627a781dfc6923503effe628360db";
   case core::target::Service::Model:

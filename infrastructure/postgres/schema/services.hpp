@@ -59,7 +59,11 @@ ALTER TABLE kiarabot.instances ADD FOREIGN KEY(installation,plugin_type) REFEREN
 ALTER TABLE kiarabot.instances ADD CHECK(fence_instance IS NULL OR fence_instance=id);
 ALTER TABLE kiarabot.adapters ADD UNIQUE(instance);
 ALTER TABLE kiarabot.adapter_bindings ADD FOREIGN KEY(account) REFERENCES kiarabot.accounts(id);
-ALTER TABLE kiarabot.adapter_bindings ADD FOREIGN KEY(adapter_instance) REFERENCES kiarabot.adapters(instance);
+-- A1: the external self-managed adapter binding is authoritative before its first bridge
+-- registration creates the adapters row, so adapter_instance is a stable external identity rather
+-- than a FK to a pre-existing registration. The registration handler verifies the binding owns the
+-- bootstrap identity and that every declared account binding references this instance.
+ALTER TABLE kiarabot.adapter_bindings ADD CHECK(btrim(adapter_instance)<>'');
 ALTER TABLE kiarabot.instance_configs ADD FOREIGN KEY(instance) REFERENCES kiarabot.instances(id);
 CREATE TABLE kiarabot.bridge_credentials (
   id text PRIMARY KEY CHECK(id<>''),

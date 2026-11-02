@@ -12,8 +12,9 @@ inline constexpr int version(core::target::Service owner) {
     return 13;
   case core::target::Service::Runtime:
     // P05 adds Runtime relations/columns, shared replay-result relations and the private
-    // bridge_credentials relation; P06 adds the five event/delivery relations.
-    return 8;
+    // bridge_credentials relation; P06 adds the five event/delivery relations and A1's
+    // binding-before-registration constraint.
+    return 9;
   case core::target::Service::Scheduler:
   case core::target::Service::Model:
     return 6;
