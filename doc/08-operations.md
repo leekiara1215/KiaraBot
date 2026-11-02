@@ -1146,6 +1146,17 @@ probe_listen/grpc_listen/tls），并额外要求 Host-only 的 `host` 对象（
 - 当前验证范围：P08a 用 in-process fake Runtime bridge 与 fake supervisor 覆盖注册/fence/心跳/
   resync/命令回执/观察/恢复；真实 Runtime Bridge 监听（P06a-2）与 Host 受管配置的端到端验收
   尚未执行，不能据此宣称 T11b 或真实部署通过。
+- P08c SDK 配置应用（2026-11-02 已实现 Python/SDK 侧）：Host 按 launch profile 注入
+  `KIARABOT_PLUGIN_BOOTSTRAP`，SDK 读取后走 P06 `PluginBridge` 首帧认证；配置 ACK 回带当前
+  fence 与收到的 `config_version`/`delivery_id`，只有 Runtime 判定 `config_version ==
+  desired_version` 才推进持久 `applied_version`。SDK 对高于注册响应的 durable desired 的投递
+  以 `INVALID_ARGUMENT` 拒绝且不应用；apply 失败/超时保留上一成功配置快照与本地 applied，
+  重连/进程重启后按新 delivery 幂等重放并重新 ACK。Host 只持久进程/命令/观察证据（L2），
+  `applied_version`/`apply_state` 仍归 Runtime（L4），HostBridge 不承载配置应用证据。
+- P08c 验证：`sdk/python/tests/test_host_managed.py` 用真实 `kiarabot-plugin-host`（P08a 二进制，
+  无构建产物时 skip）+ 临时 mTLS 证书 + fake HostBridge/PluginBridge + 真实 SDK 受管子进程，
+  覆盖 HostBridge 注册/命令回执/观察/停止/新一代重放与配置 apply→ACK→重启重放；真实 Runtime
+  HostBridge（P08b）与真实 PG 配置证据 e2e 仍待 P08b/P08d 合入后联调。
 
 ### Host 离线启动与注册重试（P08a 回归修复，2026-11-02）
 

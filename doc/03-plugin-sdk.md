@@ -12,7 +12,7 @@
 
 配置帧必须同时校验 envelope fence 与 `PluginConfig.fence/config_version`；ACK 携带 `config_version`+`fence`+`delivery_id`。低于已应用 `config_version` 的投递只做幂等确认、不回退已应用证据；同一 delivery 重放返回原 ACK 且不重复调用 `on_config`。`applied_version` 的跨重启持久语义属于 Runtime（P08/P13），SDK 只负责当前连接证据。
 
-仍未实现（deferred）：Runtime 的 Bridge handler（P06a）与 Host 受管启动/最小环境/PID 与 stop 超时（P08）；真实 Core/Adapter 端到端夹具在二者落地后替换 `FakeTargetRuntime` 的本机验收，不用旧 reference 桥接兼容层。
+仍未实现（deferred）：真实 Runtime HostBridge（P08b）与 P08 全链路 CTest 夹具/证据登记（P08d）；真实 Core/Adapter 端到端夹具在二者落地后替换 `FakeTargetRuntime` 的本机验收，不用旧 reference 桥接兼容层。
 
 P08a Host 实现边界（2026-11-02）：受管实例的 bootstrap 凭据由部署以 0600 文件放在 Host 的 `credential_directory/<instance_id>.bootstrap`，Host 按 launch profile 的 `credential_environment` 只注入该环境变量（值不持久化/不入日志/不入观察），SDK 从该变量读取后仍按 P06 首帧使用；Host 的本地 SQLite 日志、POSIX 受管进程与 HostBridge 客户端已实现并用 fake Runtime 验证，真实 Runtime Bridge 监听与配置 ACK 链路仍属 P06a-2/P08c。
 
@@ -351,7 +351,7 @@ REST PUT 配置成功只确认 desired version/value 已加密持久化；GET �
 
 PluginBridge 协商 `plugin.config.v1`，注册后下发最新完整 PluginConfig（初始 version=0、values={}）。每连接最多一条在途配置，delivery_id 随机且绑定会话；SDK 的 `on_config(config, context)` 成功后才发送 PluginConfigAck。SDK 保存配置副本为 `context.config`；该属性返回副本，失败保留上一成功快照。配置回调与事件回调串行，但 RPC 响应继续独立接收，因此回调可调用 Host API。回调异常 INTERNAL、协作超时 TIMEOUT；PluginError 保留稳定码和 retryable，无原始异常文本。
 
-P08 目标补充（契约冻结，未实现）：受管实例的 P06 bootstrap 凭据由部署以 `0600` 文件预置到 Host，Host 按部署 profile 的允许列表注入环境变量（部署配置登记该名字；Runtime 不存明文、HostBridge 不传输秘密），SDK 从该环境变量读取后仍按 P06 在 `PluginBridge` 首帧以 `authorization: Bearer` 使用；`externally_managed` 实例继续走 P06 `CreateInstanceResponse.bootstrap_credential`。配置 ACK 必须回带当前 fence 与收到的 `config_version`，只有匹配当前 `desired_version` 的 ACK 推进持久 `applied_version`；旧 ACK 幂等无副作用。心跳 5s/15s 判疑似离线只影响在线投影，不证明进程停止；SDK 不得据离线推断插件失败。
+P08 受管配置应用（P08c SDK 侧已实现，2026-11-02）：受管实例的 P06 bootstrap 凭据由部署以 `0600` 文件预置到 Host，Host 按部署 profile 的允许列表把它注入环境变量 `KIARABOT_PLUGIN_BOOTSTRAP`（Runtime 不存明文、HostBridge 不传输秘密）；SDK 从该变量（或外部自管部署的 `PLUGIN_AUTH_TOKEN` 别名）读取，仍按 P06 在 `PluginBridge` 首帧以 `authorization: Bearer` 使用，值不进入日志/持久化。SDK 记录注册响应的 `desired_config_version`；配置投递的 `config_version` 高于该 durable desired 时以 `accepted=false`+`INVALID_ARGUMENT` ACK 且绝不应用；apply 回调失败只回稳定码、保留上一成功 `context.config` 与本地 applied 版本，不伪造 applied；成功后 ACK 必须回带当前 fence、收到的 `config_version`/`delivery_id`。同一 delivery 重放返回缓存 ACK 且不重复回调；断线/进程重启后由 Runtime 重投最新快照（新 delivery id），SDK 幂等重放并重新 ACK。`applied_version` 的持久证据仍归 Runtime，SDK 只维护当前连接/进程内证据。`externally_managed` 实例继续走 P06 `CreateInstanceResponse.bootstrap_credential`。心跳 5s/15s 判疑似离线只影响在线投影，不证明进程停止；SDK 不得据离线推断插件失败。验证边界：`sdk/python/tests/test_host_managed.py` 用真 P08a Host 进程 + fake HostBridge/PluginBridge TLS + 真 SDK 受管子进程验证 apply/ACK/证据/重启重放；真实 Runtime HostBridge 配置证据属 P08b，真实 PG 证据与 CTest 夹具属 P08b/P08d。
 
 Core 等待 ACK 最多十秒，SDK 回调上限为 min(hook_timeout, apply_timeout_ms/1000)，宿主下发 5000 ms。当前版本被拒绝或超时后不在同连接自动重试；提交新版本或重连恢复。Core 发现新版本后暂停新的事件投递，直到该 desired version 应用成功；已经执行的事件不撤销。失败不是回滚插件自有副作用的承诺，回调应先校验后原子替换本地状态。拒绝取消的回调沿用进程隔离退出机制。
 
