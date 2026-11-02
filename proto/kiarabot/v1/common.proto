@@ -170,3 +170,27 @@ message SharedMember {
   bool can_read = 2;
   bool can_write = 3;
 }
+
+// P10 relocation from plugins.proto (FQN unchanged): scheduler.proto uses these types and must
+// not import plugins.proto.
+// A one-shot local civil time in an IANA time zone. Ambiguous and nonexistent
+// civil times are rejected; callers must select a different local time.
+message LocalTaskTime {
+  int32 year = 1;
+  int32 month = 2;
+  int32 day = 3;
+  int32 hour = 4;
+  int32 minute = 5;
+  int32 second = 6;
+  string time_zone = 7;
+}
+
+enum ScheduledTaskState {
+  SCHEDULED_TASK_STATE_UNSPECIFIED = 0;
+  SCHEDULED_TASK_PENDING = 1;
+  SCHEDULED_TASK_RUNNING = 2;
+  SCHEDULED_TASK_RETRYING = 3;
+  SCHEDULED_TASK_COMPLETED = 4;
+  SCHEDULED_TASK_FAILED = 5;
+  SCHEDULED_TASK_CANCELLED = 6;
+}

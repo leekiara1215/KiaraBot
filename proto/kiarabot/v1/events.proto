@@ -75,6 +75,10 @@ message TimerTriggered {
   string owner_plugin_id = 2;
   google.protobuf.Timestamp scheduled_at = 3;
   bytes payload = 4;
+  // CONTRACT_STATUS: not_implemented - P10 target declaration, no producer.
+  // occurrence identity generated and persisted by Scheduler; event_id is
+  // defined to equal occurrence_id so a resend can be correlated/deduplicated.
+  string occurrence_id = 5;
 }
 
 message AdapterStatusChanged {

@@ -1478,7 +1478,19 @@
       "StorageDeleteResponse.deleted": "not_implemented",
       "StorageDeleteResponse.version": "not_implemented",
       "HostRequest.storage_compare_and_set": "not_implemented",
-      "HostResponse.storage_compare_and_set": "not_implemented"
+      "HostResponse.storage_compare_and_set": "not_implemented",
+      "TaskRecord.created_at": "not_implemented",
+      "TaskRecord.updated_at": "not_implemented",
+      "TaskRecord.cancel_requested": "not_implemented",
+      "TaskRecord.reason": "not_implemented",
+      "OccurrenceRecord.attempts": "not_implemented",
+      "OccurrenceRecord.last_error": "not_implemented",
+      "OccurrenceRecord.created_at": "not_implemented",
+      "OccurrenceRecord.updated_at": "not_implemented",
+      "SchedulerListTasksRequest.state": "not_implemented",
+      "TaskResponse.version": "not_implemented",
+      "TaskResponse.occurrence_id": "not_implemented",
+      "TimerTriggered.occurrence_id": "not_implemented"
     },
     "event_payloads": {
       "EventEnvelope.message_received": "implemented",
@@ -5231,6 +5243,42 @@
       "core/src/application/target/runtime_application.cpp"
     ],
     "HostResponse.storage_compare_and_set": [
+      "core/src/application/target/runtime_application.cpp"
+    ],
+    "TaskRecord.created_at": [
+      "core/src/application/target/scheduler_application.cpp"
+    ],
+    "TaskRecord.updated_at": [
+      "core/src/application/target/scheduler_application.cpp"
+    ],
+    "TaskRecord.cancel_requested": [
+      "core/src/application/target/scheduler_application.cpp"
+    ],
+    "TaskRecord.reason": [
+      "core/src/application/target/scheduler_application.cpp"
+    ],
+    "OccurrenceRecord.attempts": [
+      "core/src/application/target/scheduler_application.cpp"
+    ],
+    "OccurrenceRecord.last_error": [
+      "core/src/application/target/scheduler_application.cpp"
+    ],
+    "OccurrenceRecord.created_at": [
+      "core/src/application/target/scheduler_application.cpp"
+    ],
+    "OccurrenceRecord.updated_at": [
+      "core/src/application/target/scheduler_application.cpp"
+    ],
+    "SchedulerListTasksRequest.state": [
+      "core/src/application/target/scheduler_application.cpp"
+    ],
+    "TaskResponse.version": [
+      "core/src/application/target/scheduler_application.cpp"
+    ],
+    "TaskResponse.occurrence_id": [
+      "core/src/application/target/scheduler_application.cpp"
+    ],
+    "TimerTriggered.occurrence_id": [
       "core/src/application/target/runtime_application.cpp"
     ]
   },
