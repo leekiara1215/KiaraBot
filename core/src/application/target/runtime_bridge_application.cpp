@@ -365,6 +365,7 @@ public:
         std::lock_guard<std::mutex> lock(mutex_);
         PluginProfile profile;
         profile.ordered = request.manifest.ordered;
+        profile.installation = request.installation_id;
         profile.permissions = request.manifest.permissions;
         profile.enabled_features = bridge.enabled_features;
         for (const auto& capability : request.manifest.capabilities) {
@@ -680,6 +681,18 @@ public:
     }
   }
 
+  Outcome<BridgePluginProfile> plugin_profile(const InstanceId& instance) override {
+    std::lock_guard<std::mutex> lock(mutex_);
+    const auto profile = plugin_profiles_.find(instance.value);
+    if (profile == plugin_profiles_.end()) {
+      return unauthenticated();
+    }
+    BridgePluginProfile snapshot;
+    snapshot.permissions = profile->second.permissions;
+    snapshot.installation = profile->second.installation;
+    return snapshot;
+  }
+
   Outcome<ActionRecord> submit_plugin_action(const InstanceId& instance,
                                              const BridgeActionSubmit& request) override {
     if (!actions_) {
@@ -934,8 +947,7 @@ public:
         std::lock_guard<std::mutex> lock(mutex_);
         adapter_instances.reserve(action_sinks_.size());
         for (const auto& [instance_value, entry] : action_sinks_) {
-          adapter_instances.emplace_back(InstanceId{instance_value},
-                                         entry.connection_generation);
+          adapter_instances.emplace_back(InstanceId{instance_value}, entry.connection_generation);
         }
       }
       for (const auto& [instance, generation] : adapter_instances) {
@@ -1292,6 +1304,7 @@ private:
     std::vector<std::string> permissions;
     std::vector<std::string> enabled_features;
     std::set<std::string> subscriptions;
+    std::optional<InstallationId> installation;
   };
   struct ActionSinkEntry {
     ActionDispatchSink sink;

@@ -410,7 +410,8 @@ foreach(SERVICE identity runtime plugin_host scheduler model)
       ${CMAKE_SOURCE_DIR}/core/app/runtime_composition.cpp)
     target_link_libraries(kiarabot-runtime PRIVATE
       kiarabot_runtime_model_client
-      kiarabot_runtime_rpc kiarabot_runtime_identity_client kiarabot_postgres OpenSSL::Crypto)
+      kiarabot_runtime_rpc kiarabot_runtime_identity_client kiarabot_runtime_storage_application
+      kiarabot_postgres OpenSSL::Crypto)
   endif()
   set_target_properties(kiarabot-${BINARY} PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
   kiarabot_platform_warnings(kiarabot-${BINARY})

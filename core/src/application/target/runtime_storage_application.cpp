@@ -785,6 +785,19 @@ private:
   Outcome<RuntimeAuthorizationDecision> authorize_service(const StorageCommandContext& context,
                                                           const NamespaceScope& scope,
                                                           Permission permission) {
+    if (context.bridge_authorization) {
+      const std::vector<ResourceRef> expected_scope{authorization_scope(scope)};
+      const auto& bridge = *context.bridge_authorization;
+      const auto sampled = app_now();
+      if (!bridge.allowed || bridge.subject != context.authentication.subject ||
+          bridge.permission != permission || bridge.scope != expected_scope ||
+          bridge.authorization_version.value == 0 || !positive_time(bridge.checked_at) ||
+          bridge.checked_at > sampled + std::chrono::seconds{2} ||
+          sampled - bridge.checked_at > std::chrono::seconds{60}) {
+        return internal_failure();
+      }
+      return bridge;
+    }
     auto decision = authorize(authorization_, context.authentication, permission, context.method,
                               {authorization_scope(scope)}, context.deadline);
     if (const auto* error = std::get_if<Failure>(&decision)) {
@@ -852,11 +865,13 @@ private:
       return *error;
     }
     auto& plan_value = std::get<WritePlan>(plan);
-    auto admitted = work->namespace_quota().admit(std::get<ResolvedScope>(resolved).scope,
-                                                  std::get<ResolvedScope>(resolved).installation,
-                                                  plan_value.quota);
-    if (const auto* error = std::get_if<Failure>(&admitted)) {
-      return *error;
+    if (plan_value.quota.keys != 0 || plan_value.quota.bytes != 0) {
+      auto admitted = work->namespace_quota().admit(std::get<ResolvedScope>(resolved).scope,
+                                                    std::get<ResolvedScope>(resolved).installation,
+                                                    plan_value.quota);
+      if (const auto* error = std::get_if<Failure>(&admitted)) {
+        return *error;
+      }
     }
     auto written = work->namespaces().compare_exchange(std::get<ResolvedScope>(resolved).scope, key,
                                                        plan_value.expected, plan_value.value,

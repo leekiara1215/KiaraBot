@@ -213,6 +213,13 @@ public:
                                         const DeliverySink& sink) = 0;
   virtual void detach_plugin_delivery(const InstanceId& instance,
                                       ConnectionGeneration connection_generation) = 0;
+  // P09b: registered plugin profile facts needed by the storage frame ingress. Read-only and
+  // keyed by the authenticated instance; absent for unregistered/stale instances.
+  struct BridgePluginProfile {
+    std::vector<std::string> permissions;
+    std::optional<InstallationId> installation;
+  };
+  virtual Outcome<BridgePluginProfile> plugin_profile(const InstanceId& instance) = 0;
   // P07 plugin Action surface (action.result.v1): submit/query/cancel scoped to the authenticated
   // plugin instance. The bridge resolves manifest permissions/features from the registered profile.
   virtual Outcome<ActionRecord> submit_plugin_action(const InstanceId& instance,
@@ -226,8 +233,9 @@ public:
   // Action dispatch; report receipts are returned for the ActionReceipt frame.
   virtual Outcome<ActionReportReceipt> record_adapter_result(const InstanceId& adapter_instance,
                                                              const BridgeActionReport& report) = 0;
-  virtual Outcome<ActionReportReceipt> record_adapter_evidence(const InstanceId& adapter_instance,
-                                                               const BridgeEvidenceReport& report) = 0;
+  virtual Outcome<ActionReportReceipt>
+  record_adapter_evidence(const InstanceId& adapter_instance,
+                          const BridgeEvidenceReport& report) = 0;
   // Register/remove the adapter Action push sink for one accepted connection generation. The
   // maintenance hook claims due Actions and pushes them through this sink outside the transaction.
   virtual Status attach_adapter_action_sink(const InstanceId& instance,

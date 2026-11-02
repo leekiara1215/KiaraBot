@@ -280,6 +280,13 @@ compose_runtime_service(const platform::ProcessConfig& config) {
           state->actions =
               std::move(std::get<std::unique_ptr<target::RuntimeActionApplication>>(action));
           state->action_application = state->actions.get();
+          auto storage = target::make_runtime_storage_application(
+              {factory, *state->ids, *state->authorization});
+          if (const auto* failure = std::get_if<target::Failure>(&storage)) {
+            return {};
+          }
+          state->storage =
+              std::move(std::get<std::unique_ptr<target::RuntimeStorageApplication>>(storage));
           if (config.bridge_listen) {
             auto bridge =
                 target::make_runtime_bridge_application({factory,
@@ -389,7 +396,7 @@ compose_runtime_service(const platform::ProcessConfig& config) {
       if (const auto* failure = std::get_if<target::Failure>(&registered)) {
         return *failure;
       }
-      auto plugin_bridge = platform::make_plugin_bridge(*state->bridge, state->model_client.get());
+      auto plugin_bridge = platform::make_plugin_bridge(*state->bridge, {state->storage.get(), state->model_client.get()});
       if (const auto* failure = std::get_if<target::Failure>(&plugin_bridge)) {
         return *failure;
       }
