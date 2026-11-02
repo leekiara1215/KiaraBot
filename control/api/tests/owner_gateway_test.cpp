@@ -1,13 +1,19 @@
 // P12c Control owner-gateway boundary tests: Action query forwarding rules, stable error mapping
 // and UNAVAILABLE (never a fabricated empty page) for log/audit sources not yet registered.
+#include <algorithm>
+#include <charconv>
 #include <chrono>
+#include <cstdint>
 #include <iostream>
 #include <map>
 #include <optional>
 #include <stdexcept>
 #include <string>
 #include <string_view>
-#include <variant>
+#include <utility>
+#include <vector>
+
+#include <nlohmann/json.hpp>
 
 #include "kiarabot/control/target/owner_gateway.hpp"
 #include "kiarabot/v1/actions.pb.h"
@@ -318,6 +324,77 @@ struct FakeAuditLogs final : target::AuditLogSourcePort {
   target::AuditLogFilter last_identity_filter;
   target::AuditLogFilter last_runtime_filter;
   std::string last_runtime_delegation;
+  bool paged = false;
+  std::vector<target::AuditLogRow> paged_identity;
+  std::vector<target::AuditLogRow> paged_runtime;
+  static std::optional<std::pair<std::int64_t, std::string>> cursor(std::string_view token) {
+    const auto colon = token.find(':');
+    if (colon == std::string_view::npos) {
+      return std::nullopt;
+    }
+    std::int64_t nanos = 0;
+    const auto parsed =
+        std::from_chars(token.data(), token.data() + colon, nanos);
+    if (parsed.ec != std::errc{} || parsed.ptr != token.data() + colon) {
+      return std::nullopt;
+    }
+    return std::pair{nanos, std::string{token.substr(colon + 1)}};
+  }
+  static std::string token(const target::AuditLogRow& row) {
+    return std::to_string(std::chrono::duration_cast<std::chrono::nanoseconds>(
+                              row.occurred_at.time_since_epoch())
+                              .count()) +
+           ":" + row.entry_id;
+  }
+  static target::AuditLogSourcePage slice(const std::vector<target::AuditLogRow>& rows,
+                                          const target::AuditLogFilter& filter) {
+    target::AuditLogSourcePage page;
+    auto before = [](const target::AuditLogRow& row, const target::AuditLogRow& other) {
+      if (row.occurred_at != other.occurred_at) {
+        return row.occurred_at > other.occurred_at;
+      }
+      return row.entry_id > other.entry_id;
+    };
+    std::vector<const target::AuditLogRow*> filtered;
+    for (const auto& row : rows) {
+      if (filter.actor.empty() == false && row.actor != filter.actor) {
+        continue;
+      }
+      if (filter.resource && row.resource_id != filter.resource->id()) {
+        continue;
+      }
+      if (filter.occurred_from && row.occurred_at < *filter.occurred_from) {
+        continue;
+      }
+      if (filter.occurred_until && row.occurred_at >= *filter.occurred_until) {
+        continue;
+      }
+      if (!filter.page_token.empty()) {
+        auto cursor_value = cursor(filter.page_token);
+        if (!cursor_value) {
+          continue;
+        }
+        const auto& [nanos, id] = *cursor_value;
+        const auto row_nanos = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                    row.occurred_at.time_since_epoch())
+                                    .count();
+        if (row_nanos > nanos || (row_nanos == nanos && row.entry_id >= id)) {
+          continue;
+        }
+      }
+      filtered.push_back(&row);
+    }
+    std::sort(filtered.begin(), filtered.end(),
+              [&](const auto* left, const auto* right) { return before(*left, *right); });
+    const size_t take = std::min<std::size_t>(filtered.size(), filter.page_size);
+    for (size_t index = 0; index < take; ++index) {
+      page.rows.push_back(*filtered[index]);
+    }
+    if (filtered.size() > take) {
+      page.next_token = token(page.rows.back());
+    }
+    return page;
+  }
   target::OwnerOutcome<target::AuditLogSourcePage>
   identity(target::AuditLogKind kind, const target::AuditLogFilter& filter) override {
     ++identity_calls;
@@ -325,6 +402,9 @@ struct FakeAuditLogs final : target::AuditLogSourcePort {
     logs = kind == target::AuditLogKind::Logs;
     if (identity_failure) {
       return *identity_failure;
+    }
+    if (paged) {
+      return slice(paged_identity, filter);
     }
     target::AuditLogSourcePage page;
     target::AuditLogRow row;
@@ -349,6 +429,9 @@ struct FakeAuditLogs final : target::AuditLogSourcePort {
     logs = kind == target::AuditLogKind::Logs;
     if (runtime_failure) {
       return *runtime_failure;
+    }
+    if (paged) {
+      return slice(paged_runtime, filter);
     }
     target::AuditLogSourcePage page;
     target::AuditLogRow row;
@@ -836,6 +919,85 @@ void audit_logs_aggregation() {
           "keyset token passed through to owners");
 }
 
+void audit_logs_cross_owner_keyset() {
+  OwnerCommands fixture;
+  fixture.audit_logs.paged = true;
+  const auto row = [](std::string owner, std::string id, std::int64_t nanos,
+                      std::string actor) {
+    target::AuditLogRow value;
+    value.owner = std::move(owner);
+    value.entry_id = std::move(id);
+    value.occurred_at = timepoint(nanos);
+    value.actor = std::move(actor);
+    value.component = value.owner;
+    value.method = "List";
+    value.message = "request.recorded";
+    value.severity = "info";
+    value.resource_id = "catalog";
+    value.resource_kind = wire::RESOURCE_CATALOG;
+    return value;
+  };
+  // Ties at 4s and 3s prove owner ASC + numeric id DESC ordering; interleaving proves no
+  // cross-owner row is skipped or repeated when a merged page contains a prefix of one source.
+  fixture.audit_logs.paged_identity = {
+      row("identity", "10", 5'000'000'000, "alice"),
+      row("identity", "9", 4'000'000'000, "alice"),
+      row("identity", "30", 3'000'000'000, "alice"),
+      row("identity", "8", 1'000'000'000, "alice"),
+  };
+  fixture.audit_logs.paged_runtime = {
+      row("runtime", "20", 4'500'000'000, "bob"),
+      row("runtime", "40", 3'000'000'000, "bob"),
+      row("runtime", "19", 2'000'000'000, "bob"),
+  };
+  std::vector<std::string> ids;
+  std::vector<std::string> pages;
+  std::string token;
+  for (int page = 0; page < 10; ++page) {
+    auto query = request("GET", "/api/v1/logs?page_size=2" +
+                                   (token.empty() ? std::string{}
+                                                  : "&page_token=" + token));
+    auto result = fixture.gateway.handle(query);
+    require(result && result->status == 200, "paged logs 200");
+    const auto body = nlohmann::json::parse(result->body);
+    pages.push_back(result->body);
+    for (const auto& item : body["items"]) {
+      ids.push_back(item["id"].get<std::string>());
+      require(item.contains("owner") && !item["owner"].get<std::string>().empty(),
+              "paged log row owner label");
+    }
+    token = body["page"].value("next_page_token", "");
+    if (token.empty()) {
+      break;
+    }
+  }
+  const std::vector<std::string> expected{"10", "20", "9", "30", "40", "19", "8"};
+  require(ids == expected, "cross-owner keyset order/duplicates/loss");
+  require(pages.size() == 4, "cross-owner two-row pages");
+  // A same-timestamp tie resolves owner ASC: identity row 30 precedes runtime row 40.
+  const auto identity_tie = std::find(ids.begin(), ids.end(), "30") - ids.begin();
+  const auto runtime_tie = std::find(ids.begin(), ids.end(), "40") - ids.begin();
+  require(identity_tie < runtime_tie, "same-timestamp owner ordering");
+  // Filters are forwarded to both owner sources; the composite token is decoded per owner.
+  auto filtered = fixture.gateway.handle(
+      request("GET", "/api/v1/audit?page_size=2&actor=alice&resource=" +
+                      std::string{"{\"kind\":\"RESOURCE_CATALOG\",\"id\":\"catalog\"}"}));
+  require(filtered && filtered->status == 200, "filtered audit 200");
+  require(fixture.audit_logs.last_identity_filter.actor == "alice" &&
+              fixture.audit_logs.last_runtime_filter.actor == "alice" &&
+              fixture.audit_logs.last_runtime_filter.resource.has_value(),
+          "filters forwarded to both owners");
+  // Legacy cursor remains accepted and forwarded to both owners.
+  auto legacy = fixture.gateway.handle(
+      request("GET", "/api/v1/logs?page_token=1000000000:aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa"));
+  require(legacy && legacy->status == 200 &&
+              fixture.audit_logs.last_identity_filter.page_token ==
+                  "1000000000:aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa" &&
+              fixture.audit_logs.last_runtime_filter.page_token ==
+                  "1000000000:aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa",
+          "legacy cursor forwarded to both owners");
+}
+
 void sensitive_read_permissions() {
   Gateway fixture;
   require(fixture.gateway.handle(request("GET", "/api/v1/logs"))->status == 503,
@@ -1202,6 +1364,7 @@ int main() {
     operation_snapshots();
     audit_logs_aggregation();
     lifecycle_delete_restore();
+  audit_logs_cross_owner_keyset();
     instance_plugin_state_and_configuration();
     validation_rules();
     model_management_surface();
