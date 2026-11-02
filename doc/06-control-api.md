@@ -757,3 +757,26 @@ P14m 修正 Runtime 结构校验（不扩 proto、不改权限/接口）：权�
 （上限 health.read=50），Catalog scope 允许契约 id `control`，其他资源仍 UUID；最终授权仍由
 `Identity.CheckAuthorization` 在线逐命令执行。授权成功且无数据时为 **200 空页**，权限拒绝/
 过期/篡改分别稳定 PERMISSION_DENIED/UNAUTHENTICATED，不伪造成功。
+
+## P12n：Control list 端点序列化与 OpenAPI 对齐（2026-11-03）
+
+修复 `GET /api/v1/models`：handler 曾直接 `MessageToJsonString(ModelListModelMetadataResponse)` 输出
+`{"models":[...],"page":{...}}`，而 OpenAPI `ModelPage` 要求
+`{"items":[GenericResource{id,name,state,created_at?}],"page":PageInfo}`。现按 `task_page_json` 同类风格
+显式映射：`id=model_id`，`name=alias`（空则 model_id），`state=LifecycleState`，page_size/next_page_token
+来自 SnapshotPage；不再透出 raw proto 字段（如 config_version/provider_kind）到 list 投影。单条
+metadata/config/call/operation 响应仍按各自 OpenAPI target schema 返回。
+
+**全 Control list/查询端点序列化审计**（现有 yaml 为准，不修改契约意图）：
+- `/tasks`：自定义 TaskPage `items/page`；`/tasks/{id}`、`/occurrences/{id}` 返回各自 target schema 的
+  `task`/`occurrence` 对象；`/operations/{owner}/{id}` 为目标 Operation 投影。
+- `/principals`：返回 `TargetIdentityListPrincipalsResponse`（principals/page/checked_at），与 OpenAPI
+  target schema 一致，不是 raw-proto 泄露。
+- `/logs`、`/audit`：自定义 `items/page`（LogPage/AuditPage），owner 标注与分页为显式映射。
+- `/health`、`/auth/*`、绑定/安装实例/config/desired-state/action-policy/models 单条：均按各自
+  OpenAPI schema 的显式或 target 投影返回；未实现的 list 端点（如 installations/instances/hosts/
+  bindings 列表）无 handler，保持稳定 404/503，不伪造空页。
+- 本次未发现其它 `{rawProtoRepeatedField:[...]}` 形式的 list 泄露；`ModelPage.items` 是唯一确定性
+  shape 缺陷（P14k 修复 owner 链后真实 200 暴露），p12j_panel_live 现通过。
+
+OpenAPI `ModelPage`/`GenericResource` 契约本身与意图一致，无需改 P12a；仅修实现映射。
