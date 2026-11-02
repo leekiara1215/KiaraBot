@@ -115,15 +115,23 @@ public:
         work->rollback();
         return blocked(failure->code, now);
       }
+      // Full Delete participant snapshot: the same installation/package fields as the apply
+      // snapshot, with the desired state fixed to stopped. launch_profile/arguments/environment
+      // stay deployment facts (Runtime does not parse the manifest); the StopExecution frame only
+      // needs host/instance/generation, so an empty profile is honest rather than invented.
       HostCommandOutboxRecord command;
       command.command_id = command_id;
       command.host_id = instance->host->value;
       command.instance_id = instance->id.value;
+      command.installation_id = instance->installation.value;
       command.kind = HostCommandKind::StopExecution;
       command.execution_generation = generation == 0 ? 1 : generation;
       command.desired_version = instance->desired_version.value;
       command.desired_state = DesiredState::Stopped;
       command.package_sha256 = hex_digest(std::get<Sha256Digest>(package_digest));
+      command.launch_profile = "";
+      command.arguments = {};
+      command.environment_names = {};
       command.payload_sha256 = hex_digest(std::get<Sha256Digest>(digest));
       command.state = HostCommandDeliveryState::Pending;
       command.created_at = now;

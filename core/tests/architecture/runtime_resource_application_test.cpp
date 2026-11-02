@@ -1799,8 +1799,23 @@ void lifecycle_host_participant_flow() {
   const auto& command = harness.store.host_commands.begin()->second;
   check(command.kind == t::HostCommandKind::StopExecution && command.host_id == kHost &&
             command.instance_id == kLifecycleInstance &&
-            command.desired_state == t::DesiredState::Stopped,
+            command.installation_id == installation.id.value &&
+            command.execution_generation == 1 &&
+            command.desired_version == instance.desired_version.value &&
+            command.desired_state == t::DesiredState::Stopped &&
+            command.package_sha256.size() == 64 && command.launch_profile.empty() &&
+            command.arguments.empty() && command.environment_names.empty(),
         "host stop command snapshot incorrect");
+  // Runtime restart/retry: a fresh participant reads the same durable snapshot instead of
+  // enqueuing a second command, and still stays blocked until a known receipt arrives.
+  auto restarted = t::make_runtime_host_lifecycle_participant(harness.factory, harness.secrets);
+  check(std::holds_alternative<std::unique_ptr<t::HostLifecycleParticipantPort>>(restarted),
+        "restarted host lifecycle participant construction failed");
+  auto retry = std::get<std::unique_ptr<t::HostLifecycleParticipantPort>>(restarted)->stop_instance(
+      resource);
+  check(retry.disposition == t::LifecycleParticipantDisposition::Blocked &&
+            harness.store.host_commands.size() == 1,
+        "restart/retry duplicated or completed the stop command");
   auto& stored = harness.store.host_commands.begin()->second;
   stored.state = t::HostCommandDeliveryState::Receipted;
   stored.receipt_persisted = true;
