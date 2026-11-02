@@ -197,7 +197,21 @@ SchedulerIdentityClient::verify(std::string_view proof, const t::Sha256Digest& l
     input.set_subject_proof(std::string(proof));
     input.set_full_method(std::string(method));
     if (scope != nullptr && scope->resources_size() > 0) {
-      *input.mutable_scope() = *scope;
+      // Scheduler authorization policy accepts Instance/Task scopes only. Installation resources
+      // are the owner-derivation anchor from the delegation bindings (installation_from above),
+      // not an authorization scope kind: forwarding them makes Identity method policy reject the
+      // whole CheckAuthorization with INVALID_ARGUMENT (P14k native single-host finding).
+      for (const auto& resource : scope->resources()) {
+        if (resource.kind() == v1::RESOURCE_INSTALLATION) {
+          continue;
+        }
+        *input.mutable_scope()->add_resources() = resource;
+      }
+      if (input.scope().resources_size() == 0) {
+        auto* resource = input.mutable_scope()->add_resources();
+        resource->set_kind(v1::RESOURCE_INSTANCE);
+        resource->set_id(authentication.subject.value);
+      }
     } else {
       // Identity requires a non-empty exact scope for current-authorization. CreateTask/ListTasks
       // requests carry no ResourceScope; bind the owner instance derived from the delegated

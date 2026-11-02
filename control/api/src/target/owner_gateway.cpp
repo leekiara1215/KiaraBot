@@ -29,14 +29,22 @@ using Json = nlohmann::json;
 std::string random_identifier() {
   std::array<unsigned char, 16> bytes{};
   if (RAND_bytes(bytes.data(), static_cast<int>(bytes.size())) != 1) {
-    return "control-request";
+    return "00000000-0000-4000-8000-000000000000";
   }
+  // Response request/trace ids are forwarded into owner RPC RequestContexts; every owner RPC
+  // boundary requires canonical UUIDv4 and rejects raw 32-hex tokens with INVALID_ARGUMENT
+  // before the owner use case runs (P14k native single-host finding).
+  bytes[6] = static_cast<unsigned char>((bytes[6] & 0x0fU) | 0x40U);
+  bytes[8] = static_cast<unsigned char>((bytes[8] & 0x3fU) | 0x80U);
   constexpr char kHex[] = "0123456789abcdef";
   std::string value;
-  value.reserve(32);
-  for (const auto byte : bytes) {
-    value.push_back(kHex[byte >> 4U]);
-    value.push_back(kHex[byte & 0x0fU]);
+  value.reserve(36);
+  for (std::size_t index = 0; index < bytes.size(); ++index) {
+    if (index == 4 || index == 6 || index == 8 || index == 10) {
+      value.push_back('-');
+    }
+    value.push_back(kHex[bytes[index] >> 4U]);
+    value.push_back(kHex[bytes[index] & 0x0fU]);
   }
   return value;
 }
