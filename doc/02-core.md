@@ -788,7 +788,9 @@ password credential及index version），解密前后每次重放gate均重读�
 拒绝审计，使用真实登记direct peer及其授权水位；审计依赖失败显式传播，不假成功。
 这一规则不将普通读取的缺失无差别计为写审计，也不重写Unknown提交语义。
 
-## P04 Identity RPC 边界（未接生产组合根）
+## P04 Identity RPC 边界（由 core/app/identity_composition.cpp 装配）
+
+2026-11-02 更新：`core/app/identity_main.cpp` 通过 `identity_composition.cpp` 的 `compose_identity_service` 装配 IdentityService；组合根注入 PostgreSQL security factory、成熟 crypto ports、受信 `SystemSecurityClock` 和基于 Core Admin 的 PeerAuthenticator，并在 RPC shutdown/Wait 之后才释放应用、crypto/factory 与时钟。该装配只代表 RPC 边界可组合：Identity 的 target readiness 仍按应用只读结果返回 false，未据此翻转为 ready/implemented，真实 PostgreSQL/HTTPS 生产链验收仍属后续任务。详见 `reports/modules/architecture-p04-identity-composition.md`。
 
 `runtime/platform/identity_rpc.hpp/.cpp` 的 make_identity_rpc 借用 IdentitySecurityApplication 并持有组合根注入 PeerAuthenticator；只适配 Login/RefreshSession/ValidateSession/GetPrincipal/RevokeSession/ListSessions。其余Identity方法明确返回完整RpcFailure/CAPABILITY_NOT_SUPPORTED（含流式方法），不挂接reference实现；本工具存在不代表目标业务ready或implemented。
 
@@ -806,7 +808,7 @@ Core Failure无损映射RpcFailure的acceptance/recovery/operation/retry_after�
 
 make_identity_peer_authenticator(IdentityAdminApplication&, SecurityClockPort&)只借用Core Admin应用和受信时钟。wrapper从真实AuthContext提取指纹/DER证据，取2秒本地与真实gRPC deadline较早者，调用Admin.authenticate_peer({leaf_fingerprint, deadline}, der_chain)。当前DB UTC、登记/凭据/主体、释放UoW后成熟crypto验证及验证后fresh recheck全部由Core负责；外层不直接读取repos、不复制业务规则。
 
-该回调仅认证当前平台peer，不授予业务权限；必须与纯应用使用同一Identity权威工厂。2秒本地预算和真实gRPC取消/deadline在各阶段检查，I/O自身有界由受审端口实现保证，不声称抢占任意阻塞端口。库中不构造PG连接、信任根、bootstrap或ready；组合根仍须注入37f7a62等已审完整typed工厂、成熟crypto及受信时钟并完成真实PG链验收。无wire/API字段变化。
+该回调仅认证当前平台peer，不授予业务权限；必须与纯应用使用同一Identity权威工厂。2秒本地预算和真实gRPC取消/deadline在各阶段检查，I/O自身有界由受审端口实现保证，不声称抢占任意阻塞端口。库中不构造PG连接、信任根、bootstrap或ready；生产组合根（`core/app/identity_composition.cpp`，2026-11-02）注入已审完整typed工厂、成熟crypto及受信时钟，真实 PostgreSQL/HTTPS 生产链验收仍属后续任务。无wire/API字段变化。
 wrapper仅核对返回指纹、正verified_at、受信clock/已知偏差及与verified_at的2秒窗口，再检查取消/期限。不构造数据库/信任根/bootstrap或ready。借用应用与clock须活到服务停止/Wait，Core应用与安全应用由组合根绑定同一完整Identity工厂。wire/API不变。
 
 ### P04默认角色目录跨契约一致性

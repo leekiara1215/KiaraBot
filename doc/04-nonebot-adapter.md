@@ -31,19 +31,25 @@ Python 适配器是第一种渠道适配器，负责连接 NapCatQQ，并把 One
 
 ## 目录
 
-该适配器由本仓库维护，位置为 `adapters/nonebot/`。下图为目标结构；当前具体文件和运行命令见 [适配器 README](../adapters/nonebot/README.md)：
+该适配器由本仓库维护，位置为 `adapters/nonebot/`。下图为当前结构（2026-11-02 核对）：`src/kiarabot_adapter_nonebot/` 是 9 个平铺模块，不是按子目录分层的目标结构；`generated/` 为本机生成物、不入库，运行命令见 [适配器 README](../adapters/nonebot/README.md)。
 
 ```text
 adapters/nonebot/
+  README.md
   pyproject.toml
+  uv.lock
   src/kiarabot_adapter_nonebot/
-    onebot/
-    event_mapper/
-    action_executor/
-    grpc_client/
-    health/
-    main.py
+    __init__.py
+    __main__.py
+    actions.py
+    client.py
+    health.py
+    mapper.py
+    outbox.py
+    platform_errors.py
+    status.py
   tests/
+  tools/
 ```
 
 适配器实现只放在 `adapters/`，不放入 `core/`、`plugins/` 或 `panel/`；后续可再考虑拆成单独插件。
