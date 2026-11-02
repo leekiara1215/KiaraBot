@@ -8,6 +8,7 @@
 #include "kiarabot/core/domain/target/invariants.hpp"
 #include "kiarabot/core/domain/target/model_gateway.hpp"
 #include "kiarabot/core/domain/target/persistence.hpp"
+#include "kiarabot/core/ports/target/host_command_ports.hpp"
 #include "kiarabot/core/ports/target/host_registration_ports.hpp"
 #include "kiarabot/core/ports/target/namespace_ports.hpp"
 
@@ -36,6 +37,40 @@ public:
 };
 inline HostRegistrationPort& unsupported_host_registration() {
   static UnsupportedHostRegistration instance;
+  return instance;
+}
+class UnsupportedHostCommandOutbox final : public HostCommandOutbox {
+public:
+  Outcome<PersistedHostCommand> insert(const HostCommandOutboxRecord&) override {
+    return rejected(ErrorCode::UpstreamUnavailable);
+  }
+  Outcome<std::vector<HostCommandOutboxRecord>> pending(const std::string&, std::uint64_t,
+                                                        std::size_t) override {
+    return rejected(ErrorCode::UpstreamUnavailable);
+  }
+  Outcome<std::optional<HostCommandOutboxRecord>> find(const std::string&) override {
+    return rejected(ErrorCode::UpstreamUnavailable);
+  }
+  Status mark_dispatched(const std::string&, std::uint64_t, std::string_view, TimePoint) override {
+    return rejected(ErrorCode::UpstreamUnavailable);
+  }
+  Status record_receipt(const std::string&, bool, std::optional<ExecutionOutcome>,
+                        std::optional<std::string>, TimePoint) override {
+    return rejected(ErrorCode::UpstreamUnavailable);
+  }
+  Status mark_unknown(const std::string&, TimePoint) override {
+    return rejected(ErrorCode::UpstreamUnavailable);
+  }
+  Outcome<bool> record_observation(const HostObservationRecord&) override {
+    return rejected(ErrorCode::UpstreamUnavailable);
+  }
+  Outcome<std::vector<HostObservationRecord>> observations(const std::string&, std::uint64_t,
+                                                           std::size_t) override {
+    return rejected(ErrorCode::UpstreamUnavailable);
+  }
+};
+inline HostCommandOutbox& unsupported_host_commands() {
+  static UnsupportedHostCommandOutbox instance;
   return instance;
 }
 } // namespace host_ports_detail
@@ -242,6 +277,11 @@ public:
   // has not implemented P08b never reports a fake successful registration.
   virtual HostRegistrationPort& host_registration() {
     return host_ports_detail::unsupported_host_registration();
+  }
+  // P08b-3 durable Host command/observation outbox. Defaults fail closed so a partial adapter
+  // never reports a fake successful command enqueue/delivery.
+  virtual HostCommandOutbox& host_commands() {
+    return host_ports_detail::unsupported_host_commands();
   }
   // P09 storage/shared-namespace groups. Phase-1 defaults fail closed so an adapter that has not
   // implemented P09 never reports a fake empty namespace; P09 phase 2 overrides them with PG

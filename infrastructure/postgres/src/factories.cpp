@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "action_records.hpp"
+#include "host_command_outbox.hpp"
 #include "host_registration.hpp"
 #include "identity_security.hpp"
 #include "kiarabot/core/domain/target/scheduler_rules.hpp"
@@ -290,7 +291,8 @@ public:
         actions_(*common.sql), action_quota_(*common.sql), action_policies_(*common.sql),
         action_evidence_(*common.sql), namespaces_(*common.sql), shared_namespaces_(*common.sql),
         namespace_quota_(*common.sql), storage_receipts_(*common.sql),
-        host_registration_(work(), *common.sql, std::move(host_allowlist)) {}
+        host_registration_(work(), *common.sql, std::move(host_allowlist)),
+        host_commands_(*common.sql) {}
   target::Repository<target::ResourceId, target::BotAccount>& accounts() override {
     return accounts_;
   }
@@ -360,6 +362,9 @@ public:
   target::HostRegistrationPort& host_registration() override {
     return host_registration_;
   }
+  target::HostCommandOutbox& host_commands() override {
+    return host_commands_;
+  }
   target::NamespaceRepository& namespaces() override {
     return namespaces_;
   }
@@ -392,6 +397,7 @@ private:
   detail::NamespaceQuotaRecords namespace_quota_;
   detail::StorageReceiptRecords storage_receipts_;
   detail::HostRegistration host_registration_;
+  detail::HostCommandOutbox host_commands_;
 };
 class RuntimeFactory final : public target::RuntimeUnitOfWorkFactory {
 public:

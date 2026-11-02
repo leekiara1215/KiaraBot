@@ -562,6 +562,69 @@ void runtime(const DatabaseConfig& config) {
   duplicate_adapter.adapter = {"duplicate-adapter"};
   expect(work->adapters().save(duplicate_adapter, {}), target::ErrorCode::Conflict);
   rollback_rejected(*work);
+  // P08b-3 Host command outbox and observation inbox.
+  work = take(factory->begin());
+  const auto now = take(work->current_time());
+  target::HostCommandOutboxRecord command;
+  command.command_id = {"live-host-command"};
+  command.host_id = "live-host";
+  command.instance_id = "live-instance";
+  command.kind = target::HostCommandKind::ApplyDesiredProcess;
+  command.execution_generation = 7;
+  command.desired_version = 3;
+  command.desired_state = target::DesiredState::Running;
+  command.package_sha256 = std::string(64, 'a');
+  command.payload_sha256 = std::string(64, 'b');
+  command.state = target::HostCommandDeliveryState::Pending;
+  command.created_at = now;
+  command.updated_at = now;
+  const auto inserted = take(work->host_commands().insert(command));
+  check(!inserted.duplicate, "new host command marked duplicate");
+  const auto repeated = take(work->host_commands().insert(command));
+  check(repeated.duplicate, "same host command payload was not idempotent");
+  auto pending = take(work->host_commands().pending("live-host", 1, 10));
+  check(pending.size() == 1 && pending[0].command_id == "live-host-command",
+        "pending host command not listed");
+  take(work->host_commands().mark_dispatched(command.command_id, 1, "live-epoch", now));
+  take(work->host_commands().record_receipt(command.command_id, true,
+                                            target::ExecutionOutcome::KnownSucceeded,
+                                            std::string{"live-marker"}, now));
+  check(take(work->host_commands().pending("live-host", 2, 10)).empty(),
+        "receipted host command replayed");
+  const auto receipted = take(work->host_commands().find(command.command_id));
+  check(receipted && receipted->state == target::HostCommandDeliveryState::Receipted &&
+            receipted->receipt_persisted.value_or(false) &&
+            receipted->receipt_outcome == target::ExecutionOutcome::KnownSucceeded,
+        "host receipt not persisted");
+  target::HostObservationRecord observation;
+  observation.host_id = "live-host";
+  observation.connection_generation = 1;
+  observation.sequence = 42;
+  observation.instance_id = "live-instance";
+  observation.execution_generation = 7;
+  observation.outcome = target::ExecutionOutcome::KnownSucceeded;
+  observation.process_marker = "live-marker";
+  observation.command_id = command.command_id;
+  observation.observed_at = now;
+  check(!take(work->host_commands().record_observation(observation)),
+        "first observation marked duplicate");
+  check(take(work->host_commands().record_observation(observation)),
+        "observation dedup key not enforced");
+  const auto observations = take(work->host_commands().observations("live-host", 1, 10));
+  check(observations.size() == 1 && observations[0].sequence == 42,
+        "observation projection not durable/deduplicated");
+  commit(*work);
+  work = take(factory->begin());
+  check(take(work->host_commands().observations("live-host", 1, 10)).size() == 1,
+        "observation lost after restart");
+  work->rollback();
+
+  // Same command_id with a different payload is a conflict, and that failure poisons its UoW.
+  work = take(factory->begin());
+  auto conflicting = command;
+  conflicting.payload_sha256 = std::string(64, 'c');
+  expect(work->host_commands().insert(conflicting), target::ErrorCode::Conflict);
+  rollback_rejected(*work);
 }
 void scheduler(const DatabaseConfig& config) {
   auto factory = take(open_scheduler(config));

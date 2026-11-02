@@ -36,7 +36,7 @@ inline constexpr std::string_view descriptor(core::target::Service owner) {
   case core::target::Service::Identity:
     return "3caa2e6995fdd42d88f45d01f34017ac";
   case core::target::Service::Runtime:
-    return "8a4aba6dc6cbc2b555a1fd8053a38cee";
+    return "7620002f564f2db02e83bd77d89e78fe";
   case core::target::Service::Scheduler:
     return "4ec3a4dd616f66e5529d2edc8e67f5f4";
   case core::target::Service::Model:
@@ -50,7 +50,7 @@ inline constexpr int relation_count(core::target::Service owner) {
   case core::target::Service::Identity:
     return 135;
   case core::target::Service::Runtime:
-    return 145;
+    return 152;
   case core::target::Service::Scheduler:
     return 83;
   case core::target::Service::Model:

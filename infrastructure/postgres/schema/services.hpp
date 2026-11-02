@@ -7,6 +7,7 @@
 #include "kiarabot/core/domain/target/foundation.hpp"
 #include "runtime_actions.hpp"
 #include "runtime_events.hpp"
+#include "runtime_host_commands.hpp"
 #include "runtime_host_connections.hpp"
 #include "runtime_storage.hpp"
 
@@ -97,6 +98,7 @@ CREATE INDEX lifecycle_tombstones_purge ON kiarabot.lifecycle_tombstones(state,p
     sql += kRuntimeEvents;
     sql += kRuntimeActions;
     sql += kRuntimeHostConnections;
+    sql += kRuntimeHostCommands;
     sql += kRuntimeStorage;
     break;
   case core::target::Service::Scheduler:
