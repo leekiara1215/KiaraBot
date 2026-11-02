@@ -1411,8 +1411,8 @@
       "RuntimeQueryActionResultResponse.result": "not_implemented",
       "RuntimeQueryActionResultResponse.execution_outcome": "not_implemented",
       "RuntimeQueryActionResultResponse.metadata": "not_implemented",
-      "IdentityWatchInvalidationsResponse.resync_required": "not_implemented",
-      "IdentityWatchInvalidationsResponse.cursor": "not_implemented"
+      "IdentityWatchInvalidationsResponse.resync_required": "implemented",
+      "IdentityWatchInvalidationsResponse.cursor": "implemented"
     },
     "event_payloads": {
       "EventEnvelope.message_received": "implemented",
@@ -5043,7 +5043,9 @@
           "CredentialStatus.checked_at": "implemented",
           "IdentityGetCredentialStatusRequest.context": "implemented",
           "IdentityGetCredentialStatusRequest.credential_id": "implemented",
-          "IdentityGetCredentialStatusResponse.credential": "implemented"
+          "IdentityGetCredentialStatusResponse.credential": "implemented",
+          "IdentityWatchInvalidationsResponse.resync_required": "implemented",
+          "IdentityWatchInvalidationsResponse.cursor": "implemented"
         }
       },
       "evidence": {
@@ -5281,6 +5283,16 @@
           "core/src/runtime/platform/identity_rpc.cpp",
           "core/tests/platform/identity_rpc_test.cpp",
           "core/tests/architecture/identity_principal_application_test.cpp"
+        ],
+        "proto_fields:IdentityWatchInvalidationsResponse.resync_required": [
+          "core/src/application/target/identity_invalidation_application.cpp",
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/architecture/identity_invalidation_application_test.cpp"
+        ],
+        "proto_fields:IdentityWatchInvalidationsResponse.cursor": [
+          "core/src/application/target/identity_invalidation_application.cpp",
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/architecture/identity_invalidation_application_test.cpp"
         ]
       }
     }

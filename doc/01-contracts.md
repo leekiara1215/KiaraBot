@@ -21,6 +21,8 @@ T03a 新增 CoreToPlugin.error（oneof 字段 6），承载注册之后的终止
 | `operations.getProcessReadiness` | implemented | 进程HTTP ready，P02固定503/UNHEALTHY，不伪造ready |
 | `IdentityRegisterPrincipalRequest`、`IdentityRegisterPrincipalResponse`、`IdentityRotateCredentialRequest`、`IdentityRotateCredentialResponse`、`IdentityRevokeCredentialRequest`、`IdentityRevokeCredentialResponse`、`IdentityGetPrincipalStatusRequest`、`IdentityGetPrincipalStatusResponse`、`IdentityGetCredentialStatusRequest`、`IdentityGetCredentialStatusResponse`、`CredentialStatus`、`CredentialDelivery` | implemented | P04-A：Identity daemon gRPC 五个主体/凭据管理方法；应用/仓储/RPC已接线并经真实PG/TLS测试，仍不代表生产部署或HTTP操作已完成 |
 | `IdentityRegisterPrincipalRequest.context`、`IdentityRegisterPrincipalRequest.principal_kind`、`IdentityRegisterPrincipalRequest.binding`、`IdentityRegisterPrincipalRequest.allowed_services`、`IdentityRegisterPrincipalResponse.principal`、`IdentityRegisterPrincipalResponse.initial_credential`、`IdentityRotateCredentialRequest.context`、`IdentityRotateCredentialRequest.credential_id`、`IdentityRotateCredentialRequest.expected_version`、`IdentityRotateCredentialResponse.delivery`、`IdentityRevokeCredentialRequest.context`、`IdentityRevokeCredentialRequest.credential_id`、`IdentityRevokeCredentialRequest.expected_version`、`IdentityRevokeCredentialResponse.version`、`IdentityGetPrincipalStatusRequest.context`、`IdentityGetPrincipalStatusRequest.principal_id`、`IdentityGetPrincipalStatusResponse.principal`、`IdentityGetCredentialStatusRequest.context`、`IdentityGetCredentialStatusRequest.credential_id`、`IdentityGetCredentialStatusResponse.credential`、`CredentialDelivery.credential_id`、`CredentialDelivery.version`、`CredentialDelivery.new_secret`、`CredentialDelivery.delivery_receipt_id`、`CredentialDelivery.expires_at`、`CredentialStatus.credential_id`、`CredentialStatus.principal_id`、`CredentialStatus.binding`、`CredentialStatus.version`、`CredentialStatus.state`、`CredentialStatus.created_at`、`CredentialStatus.expires_at`、`CredentialStatus.checked_at` | implemented | P04-A target-scope字段：gRPC边界转换、持久化与投影均由Identity实现；HTTP操作面仍标not_implemented |
+| `IdentityWatchInvalidationsResponse.resync_required` | implemented | P04 失效流断档必须显式要求全量快照；生产 Identity RPC 投影，见 P04-B 记录 |
+| `IdentityWatchInvalidationsResponse.cursor` | implemented | resync 信号携带持久 epoch/sequence 水位；生产 Identity RPC 投影，见 P04-B 记录 |
 
 除上述明确override外，target所有非废弃业务声明均为not_implemented，包括旧reference已有的Action/Host/认证/WS能力及其余目标owner RPC（按target_spec动态计数）；mTLS监听返回UNIMPLEMENTED不算业务实现。API已有x-contract-status列表与下表、proto内联CONTRACT_STATUS保留声明/历史reference语境；不可据其单独判断target可用性。客户端与面板须依据target执行范围及真实生产者验收，不得用历史测试通过自动启用。
 <!-- execution-scopes:end -->
@@ -664,8 +666,6 @@ T03a 新增 CoreToPlugin.error（oneof 字段 6），承载注册之后的终止
 | `IdentityWatchInvalidationsRequest.scope` | not_implemented | P01 目标声明；无生产实现，见模块报告。 |
 | `IdentityWatchInvalidationsRequest.cursor` | not_implemented | P01 目标声明；无生产实现，见模块报告。 |
 | `IdentityWatchInvalidationsResponse.invalidation` | not_implemented | P01 目标声明；无生产实现，见模块报告。 |
-| `IdentityWatchInvalidationsResponse.resync_required` | not_implemented | P04 失效流扩展：游标断档时必须先取全量授权快照；写入/实现随 P04-B 提交。 |
-| `IdentityWatchInvalidationsResponse.cursor` | not_implemented | P04 失效流扩展：resync 信号携带的 durable stream watermark；实现随 P04-B 提交。 |
 | `IdentityGetAuthorizationSnapshotRequest.context` | not_implemented | P01 目标声明；无生产实现，见模块报告。 |
 | `IdentityGetAuthorizationSnapshotRequest.scope` | not_implemented | P01 目标声明；无生产实现，见模块报告。 |
 | `IdentityGetAuthorizationSnapshotRequest.after` | not_implemented | P01 目标声明；无生产实现，见模块报告。 |

@@ -932,7 +932,7 @@ budgets and passes that deadline into Core final_check, including work that star
 before own TLS expiry and finishes later. The remote Control certificate metadata
 is never replaced. Empty callback compatibility remains confined to fixtures.
 
-### P04-B 失效流与授权快照（目标语义，实现中）
+### P04-B 失效流与授权快照（本分支已实现，待与 P04-A 集成后统一验收）
 
 Identity 持久失效日志（epoch/sequence 单行状态 + 失效记录 + 精确作用域）与 SetAssignment/RevokeAssignment（以及凭据撤销等授权变更）同事务写入；`WatchInvalidations` 以 ServerWriter 从持久游标续发并按上述连续性规则返回 `resync_required`，`GetAuthorizationSnapshot` 返回带 epoch/sequence 绑定的当前权威快照。订阅授权使用每资源显式 `identity.invalidation.read`，每次调用/续发重新校验当前 peer 与当前授权；缺失存储或依赖故障 fail closed，不返回空流/空快照。方法语义、保留窗口与 resync 规则以 [`doc/21-service-contract-design.md`](21-service-contract-design.md) 的“Identity 失效流与授权快照（P04-B 最小冻结）”为准；契约状态以 `doc/01-contracts.md` 与 `proto/tests/contract_status.json` 为准（验证通过后才翻转）。
 
