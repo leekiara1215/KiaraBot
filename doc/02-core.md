@@ -1538,3 +1538,7 @@ P09 storage 退出证据以现有测试为准：`p09a_runtime_storage_applicatio
 ## P06f Runtime 事件 fan-out 根因记录（2026-11-02）
 
 真实 adapter→Runtime 事件链路的 fan-out 只在事件以 `MessageReceived` 进入且插件 profile 在线时生成 `delivery_targets`；`AdapterStatusChanged` 等状态事件不匹配消息订阅。P07d 复现发现：fake OneBot 的字符串 `message_id` 使 NoneBot 解析为通用 Event（matcher 不执行），同时 adapter mapper 误把平台 `self_id` 与 Runtime account UUID 比较，导致消息在 outbox 前被拒绝；只有状态事件到达 Runtime，故 `delivery_targets` 为空。修复采用独立 `platform_self_id` 校验、e2e 使用整数 `message_id`，并新增真实订阅/不匹配/离线/重连断言；Runtime fan-out/lease/ACK 实现本身无需改动。
+
+### P07g Action 退出证据（2026-11-02）
+
+P07 Action 退出证据：领域规则 `p07_action_rules`、真 PG16.4 `p07_postgres_action_records`、真 TLS/PG/Runtime `p06_bridge_acceptance` P07 段（submit/dispatch/terminal/evidence/receipt 幂等、配额窗口、取消、EXPIRED 迟到证据、断线重连回带旧 attempt）、真实 adapter 进程 `p07_adapter_e2e`、SDK `test_actions.py` 28 项、Control REST `p12_control_owner_gateway` 均通过。target 仅翻转有这些证据的 Action 帧/状态/字段/权限/语义；ActionPolicy、react/delete/mute/kick/approve payload、plugin 权限过滤独立项与 ListActionMetadata 未翻，待 P07f-1/2 wire 证据或接线。真实 QQ/NapCat 平台副作用、reaction API、EXPIRED 迟到故障注入与跨主机仍待环境。

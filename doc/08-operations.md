@@ -1500,3 +1500,5 @@ P13d（2026-11-02）：生命周期可观测最小面（不新增 API/权限/RPC
 - 根因：fake OneBot `message_id` 字符串导致 NoneBot 解析为通用 Event（matcher 不执行）；另 adapter mapper 将 OneBot 平台 `self_id` 与 Runtime account UUID 比较，真实平台消息在入队前被 PERMISSION_DENIED。
 - 修复：mapper 增加独立 `platform_self_id`（`ONEBOT_SELF_ID`，缺省 account UUID）用于来源校验；e2e 使用整数 message_id 并断言 fan-out/ACK；无 proto/Runtime 契约修改。
 - 运维排障：先看 adapter outbox 是否有 `message_received` event（而非仅 AdapterStatusChanged），再看 Runtime `events.payload_kind=0` 与 `delivery_targets`/`delivery_attempts`；插件必须在线且 manifest capabilities 含 `event.message.received`。离线插件不补投旧事件，重连后仅投递新事件。
+
+P07g（2026-11-02）：P07 Action 退出证据已按当前 HEAD 复核：`p07_action_rules`、`p07_postgres_action_records`（真 PG16.4）、`p06_bridge_acceptance` P07 段（真 TLS/PG/Runtime）、`p07_adapter_e2e`（真实 adapter/fake OneBot）、SDK `test_actions.py` 28 passed、`p12_control_owner_gateway` 全部通过。排障仍按 action_id/idempotency_key + Control `GET /api/v1/actions/...`（action.inspect、显式账号 scope）；ActionPolicy RPC 与 listActionMetadata 尚未作为 target 对外。真实 QQ/NapCat、平台延迟/EXPIRED 迟到故障注入、UNKNOWN 崩溃补报窗口、跨主机与 reaction API 未验收，不得用 fake 平台结果替代真实平台验收。
