@@ -1,4 +1,5 @@
 import type { Fetcher, Schemas } from '../api/client';
+import * as fixtures from '../p12/fixtures';
 import type { SocketFactory, SocketLike } from '../stream/control-stream';
 
 const health = (state: Schemas['Health']['state'], component: string): Schemas['Health'] => ({
@@ -49,7 +50,7 @@ export class MockServer {
     'plugin.config.read', 'plugin.config.write', 'model.read', 'group.read', 'user.read',
     'task.read', 'log.read', 'audit.read', 'action.read', 'session.read', 'session.revoke',
     // P12 target management preview permissions (mock principal only).
-    'account.read', 'resource.read', 'model.manage'];
+    'account.read', 'resource.read', 'model.manage', 'action.inspect', 'account.policy.read', 'account.policy.manage'];
   requests: string[] = [];
   queries: string[] = [];
   sockets: MockSocket[] = [];
@@ -98,6 +99,64 @@ export class MockServer {
       } satisfies Schemas['Principal']);
     }
     if (path === '/auth/sessions') return json(paginate(this.sessions, url, 'sessions-page-2', 'SessionPage'));
+    const snapshot = { snapshot_id: 'mock-snapshot-01', observed_at: new Date().toISOString(),
+      expires_at: new Date(Date.now() + 60_000).toISOString(), authorization_version: '1',
+      owner_service: 'runtime', page: { page_size: 20 } };
+    if (path === '/health/live') return json({ state: 'HEALTHY' } satisfies Schemas['ProcessProbe']);
+    if (path === '/health/ready') return json({ state: 'HEALTHY' } satisfies Schemas['ProcessProbe']);
+    if (path === '/accounts' && String(init?.method ?? 'GET').toUpperCase() === 'GET') {
+      return json({ accounts: fixtures.accounts, snapshot } satisfies Schemas['TargetRuntimeListAccountsResponse']);
+    }
+    if (path === '/installations' && String(init?.method ?? 'GET').toUpperCase() === 'GET') {
+      return json({ installations: fixtures.installations, snapshot } satisfies Schemas['TargetRuntimeListInstallationsResponse']);
+    }
+    const policyMatch = /^\/accounts\/([^/]+)\/action-policy$/.exec(path);
+    if (policyMatch) {
+      const method = String(init?.method ?? 'GET').toUpperCase();
+      const policy = {
+        account_id: policyMatch[1], mute_enabled: true, kick_enabled: false,
+        allowed_group_ids: ['group-01'], mute_daily_budget: 20, kick_daily_budget: 5, version: '3',
+      } satisfies Schemas['TargetActionPolicy'];
+      if (method === 'GET') return json({ policy } satisfies Schemas['TargetRuntimeGetActionPolicyResponse']);
+      const body = JSON.parse(String(init?.body ?? '{}')) as { policy: Schemas['TargetActionPolicy'] };
+      return json({ policy: body.policy } satisfies Schemas['TargetRuntimeUpdateActionPolicyResponse']);
+    }
+    if (/^\/adapter-bindings\/[^/]+$/.test(path)) {
+      const accountId = path.split('/')[2];
+      const body = JSON.parse(String(init?.body ?? '{}')) as Partial<Schemas['TargetRuntimeBindAdapterRequest']>;
+      return json({ binding: { account_id: accountId,
+        adapter_instance_id: body.binding?.adapter_instance_id ?? 'instance-mock', version: '1' } } as never);
+    }
+    const instanceConfigMatch = /^\/instances\/([^/]+)\/config$/.exec(path);
+    if (instanceConfigMatch) {
+      const config = {
+        instance: { kind: 'RESOURCE_INSTANCE', id: instanceConfigMatch[1] },
+        desired_version: '2', applied_version: '1', apply_state: 'APPLY_STATE_APPLIED',
+        values: { greeting: '你好' }, observed_at: new Date().toISOString(),
+      };
+      return json({ config } as never);
+    }
+    if (/^\/instances\/[^/]+\/desired-state$/.test(path)) {
+      return json({ instance: fixtures.instances[0] } satisfies Schemas['TargetRuntimeSetDesiredStateResponse']);
+    }
+    if (/^\/operations\/[^/]+\/[^/]+$/.test(path)) {
+      return json({ operation: fixtures.operations[0] } satisfies Schemas['TargetOwnerOperationResponse']);
+    }
+    if (/^\/tasks\/[^/]+\/cancel$/.test(path)) {
+      return json({ task: fixtures.tasks[0] } satisfies Schemas['TargetSchedulerCancelTaskResponse']);
+    }
+    if (/^\/tasks\/[^/]+$/.test(path)) {
+      return json({ task: fixtures.tasks[0] } satisfies Schemas['TargetSchedulerGetTaskResponse']);
+    }
+    if (/^\/models\/[^/]+\/configuration$/.test(path)) {
+      return json({ config: fixtures.modelConfiguration, secret_configured: true, observed_at: new Date().toISOString() } as never);
+    }
+    if (/^\/models\/[^/]+$/.test(path)) {
+      return json({ model: fixtures.modelMetadata } satisfies Schemas['TargetModelGetModelMetadataResponse']);
+    }
+    if (path === '/actions/metadata') {
+      return json({ actions: [], page: { page_size: 20 } } satisfies Schemas['TargetRuntimeListActionMetadataResponse']);
+    }
     if (path === '/plugins/validate') {
       const manifest = JSON.parse(String(init?.body ?? '{}')) as Partial<Schemas['PluginManifest']>;
       const errors: string[] = [];

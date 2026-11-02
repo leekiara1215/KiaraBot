@@ -58,13 +58,14 @@ export const endpoints = {
   pluginHealth: operation('/plugins/{pluginId}/health', 'get'),
   actionById: operation('/actions/{actionId}', 'get'),
   actionByKey: operation('/actions/by-idempotency-key', 'get'),
-  // P12 target management preview. These descriptors are declared so
-  // `scripts/check-contracts.mjs` and the generated `paths` type keep the
-  // preview honest, but the skeleton pages never call them: the target
-  // handlers stay not_implemented until P12 wiring.
+  // P12 target management surface. These descriptors are declared so
+  // `scripts/check-contracts.mjs` and the generated `paths` type keep the panel
+  // honest; the live pages consume them through the ApiClient methods below.
   healthLive: operation('/health/live', 'get'),
   healthReady: operation('/health/ready', 'get'),
   accounts: operation('/accounts', 'get'),
+  account: operation('/accounts/{accountId}', 'get'),
+  disableAccount: operation('/accounts/{accountId}/disable', 'post'),
   installations: operation('/installations', 'get'),
   installation: operation('/installations/{installationId}', 'get'),
   instances: operation('/instances', 'get'),
@@ -73,6 +74,16 @@ export const endpoints = {
   targetTask: operation('/tasks/{taskId}', 'get'),
   modelMetadata: operation('/models/{modelId}', 'get'),
   modelConfiguration: operation('/models/{modelId}/configuration', 'get'),
+  // P12d live management surface for the P12a contract operations.
+  bindAdapter: operation('/adapter-bindings/{accountId}', 'put'),
+  unbindAdapter: operation('/adapter-bindings/{accountId}', 'delete'),
+  actionMetadata: operation('/actions/metadata', 'get'),
+  actionPolicy: operation('/accounts/{accountId}/action-policy', 'get'),
+  actionPolicyUpdate: operation('/accounts/{accountId}/action-policy', 'put'),
+  instanceConfig: operation('/instances/{instanceId}/config', 'get'),
+  instanceConfigUpdate: operation('/instances/{instanceId}/config', 'put'),
+  instanceDesiredState: operation('/instances/{instanceId}/desired-state', 'put'),
+  cancelTask: operation('/tasks/{taskId}/cancel', 'post'),
 } as const;
 
 // Target projection types used by the P12 preview fixtures. They come from the
@@ -80,11 +91,29 @@ export const endpoints = {
 export type TargetAccountRecord = Schemas['TargetAccountRecord'];
 export type TargetInstallationRecord = Schemas['TargetInstallationRecord'];
 export type TargetInstanceRecord = Schemas['TargetInstanceRecord'];
-export type TargetOperation = Schemas['TargetOperation'];
-export type TargetTaskRecord = Schemas['TargetTaskRecord'];
 export type TargetModelConfiguration = Schemas['TargetModelConfiguration'];
 export type TargetModelMetadata = Schemas['TargetModelMetadata'];
 export type TargetResourceRef = Schemas['TargetResourceRef'];
+export type TargetActionMetadata = Schemas['TargetActionMetadata'];
+export type TargetActionPolicy = Schemas['TargetActionPolicy'];
+export type TargetOperation = Schemas['TargetOperation'];
+export type TargetTaskRecord = Schemas['TargetTaskRecord'];
+export type ProcessProbe = Schemas['ProcessProbe'];
+export type TargetAccountPage = Schemas['TargetRuntimeListAccountsResponse'];
+export type TargetInstallationPage = Schemas['TargetRuntimeListInstallationsResponse'];
+export type TargetOperationResponse = Schemas['TargetOwnerOperationResponse'];
+export type TargetTaskResponse = Schemas['TargetSchedulerGetTaskResponse'];
+export type TargetModelMetadataResponse = Schemas['TargetModelGetModelMetadataResponse'];
+export type TargetModelConfigurationResponse = Schemas['TargetModelGetModelConfigurationResponse'];
+export type TargetActionMetadataResponse = Schemas['TargetRuntimeListActionMetadataResponse'];
+export type TargetAdapterBindingRequest = Schemas['TargetRuntimeBindAdapterRequest'];
+export type TargetAdapterBindingResponse = Schemas['TargetRuntimeBindAdapterResponse'];
+export type TargetUnbindAdapterRequest = Schemas['TargetRuntimeUnbindAdapterRequest'];
+export type TargetInstanceDesiredStateRequest = Schemas['TargetRuntimeSetDesiredStateRequest'];
+export type TargetInstanceConfigUpdateRequest = Schemas['TargetRuntimeUpdateConfigRequest'];
+export type TargetInstanceConfigResponse = Schemas['TargetRuntimeGetInstanceConfigResponse'];
+export type TargetCancelTaskRequest = Schemas['TargetSchedulerCancelTaskRequest'];
+export type TargetActionPolicyUpdateRequest = Schemas['TargetRuntimeUpdateActionPolicyRequest'];
 
 export class ApiError extends Error {
   constructor(
@@ -104,6 +133,7 @@ interface RequestOptions {
   auth?: boolean;
   headers?: Record<string, string>;
   query?: Record<string, string | number | undefined>;
+  params?: Record<string, string>;
 }
 
 export class ApiClient {
@@ -127,6 +157,49 @@ export class ApiClient {
     return tokens;
   }
   health() { return this.call<Health>(endpoints.health); }
+  healthLive() { return this.callRoot<ProcessProbe>(endpoints.healthLive); }
+  healthReady() { return this.callRoot<ProcessProbe>(endpoints.healthReady); }
+  accountPage(token?: string, pageSize?: number) {
+    return this.call<TargetAccountPage>(endpoints.accounts, { query: { page_token: token, page_size: pageSize } });
+  }
+  account(accountId: string) { return this.call<Schemas['TargetRuntimeGetAccountResponse']>(endpoints.account, { param: accountId }); }
+  disableAccount(accountId: string, expectedVersion: string) {
+    return this.call<Schemas['TargetRuntimeDisableAccountResponse']>(endpoints.disableAccount, {
+      param: accountId, body: { account_id: accountId, expected_version: expectedVersion } });
+  }
+  bindAdapter(accountId: string, input: TargetAdapterBindingRequest) {
+    return this.call<TargetAdapterBindingResponse>(endpoints.bindAdapter, { param: accountId, body: input });
+  }
+  unbindAdapter(accountId: string, input: TargetUnbindAdapterRequest) {
+    return this.call<Schemas['TargetRuntimeUnbindAdapterResponse']>(endpoints.unbindAdapter, { param: accountId, body: input });
+  }
+  installationPage(token?: string, pageSize?: number) {
+    return this.call<TargetInstallationPage>(endpoints.installations, { query: { page_token: token, page_size: pageSize } });
+  }
+  operation(ownerService: string, operationId: string) {
+    return this.call<TargetOperationResponse>(endpoints.operation, { params: { ownerService, operationId } });
+  }
+  targetTask(taskId: string) { return this.call<TargetTaskResponse>(endpoints.targetTask, { param: taskId }); }
+  cancelTask(taskId: string, input: TargetCancelTaskRequest) {
+    return this.call<Schemas['TargetSchedulerCancelTaskResponse']>(endpoints.cancelTask, { param: taskId, body: input });
+  }
+  modelMetadata(modelId: string) { return this.call<TargetModelMetadataResponse>(endpoints.modelMetadata, { param: modelId }); }
+  modelConfiguration(modelId: string) { return this.call<TargetModelConfigurationResponse>(endpoints.modelConfiguration, { param: modelId }); }
+  actionMetadata(filters: { accountId: string; pageSize?: number; pageToken?: string; state?: string; kind?: string }) {
+    return this.call<TargetActionMetadataResponse>(endpoints.actionMetadata, {
+      query: { account_id: filters.accountId, page_size: filters.pageSize, page_token: filters.pageToken, state: filters.state, kind: filters.kind } });
+  }
+  actionPolicy(accountId: string) { return this.call<Schemas['TargetRuntimeGetActionPolicyResponse']>(endpoints.actionPolicy, { param: accountId }); }
+  updateActionPolicy(accountId: string, input: TargetActionPolicyUpdateRequest) {
+    return this.call<Schemas['TargetRuntimeUpdateActionPolicyResponse']>(endpoints.actionPolicyUpdate, { param: accountId, body: input });
+  }
+  instanceConfig(instanceId: string) { return this.call<TargetInstanceConfigResponse>(endpoints.instanceConfig, { param: instanceId }); }
+  updateInstanceConfig(instanceId: string, input: TargetInstanceConfigUpdateRequest) {
+    return this.call<Schemas['TargetRuntimeUpdateConfigResponse']>(endpoints.instanceConfigUpdate, { param: instanceId, body: input });
+  }
+  setInstanceDesiredState(instanceId: string, input: TargetInstanceDesiredStateRequest) {
+    return this.call<Schemas['TargetRuntimeSetDesiredStateResponse']>(endpoints.instanceDesiredState, { param: instanceId, body: input });
+  }
   bots(token?: string, pageSize?: number) { return this.list<GenericResource>(endpoints.bots, { token, pageSize }); }
   adapters(token?: string, pageSize?: number) { return this.list<Adapter>(endpoints.adapters, { token, pageSize }); }
   plugins(token?: string, pageSize?: number) { return this.list<Plugin>(endpoints.plugins, { token, pageSize }); }
@@ -158,29 +231,41 @@ export class ApiClient {
   }
 
   /** Substitute `{name}` placeholders; the descriptor table above is typed against `paths`. */
-  private url(endpoint: Endpoint, param?: string): string {
-    if (!param) return endpoint.path;
-    if (!endpoint.path.includes('{')) throw new Error(`endpoint ${endpoint.path} takes no path parameter`);
-    return endpoint.path.replace(/\{[^}]+\}/, encodeURIComponent(param));
+  private url(endpoint: Endpoint, param?: string, params: Record<string, string> = {}): string {
+    let path = endpoint.path;
+    if (param !== undefined) {
+      if (!path.includes('{')) throw new Error(`endpoint ${path} takes no path parameter`);
+      path = path.replace(/\{[^}]+\}/, encodeURIComponent(param));
+    }
+    for (const [name, value] of Object.entries(params)) path = path.replace(`{${name}}`, encodeURIComponent(value));
+    if (path.includes('{')) throw new Error(`endpoint ${endpoint.path} has an unsubstituted parameter`);
+    return path;
   }
 
   private async call<T>(endpoint: Endpoint, options: RequestOptions & { param?: string } = {}): Promise<T> {
+    return this.dispatch<T>(endpoint, options, this.base);
+  }
+  /** Process probes are served at the root, not under /api/v1. */
+  private async callRoot<T>(endpoint: Endpoint, options: RequestOptions = {}): Promise<T> {
+    return this.dispatch<T>(endpoint, options, '');
+  }
+  private async dispatch<T>(endpoint: Endpoint, options: RequestOptions & { param?: string }, base: string): Promise<T> {
     const query = Object.entries(options.query ?? {})
       .filter(([, value]) => value !== undefined && value !== '')
       .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(String(value))}`)
       .join('&');
-    const path = this.url(endpoint, options.param) + (query ? `?${query}` : '');
-    return this.request<T>(path, endpoint.method, options);
+    const path = this.url(endpoint, options.param, options.params) + (query ? `?${query}` : '');
+    return this.request<T>(path, endpoint.method, options, base);
   }
 
-  private async request<T>(path: string, method: string, options: RequestOptions): Promise<T> {
+  private async request<T>(path: string, method: string, options: RequestOptions, base = this.base): Promise<T> {
     const requestToken = this.accessToken;
     const headers = new Headers({ Accept: 'application/json' });
     if (options.body !== undefined) headers.set('Content-Type', 'application/json');
     if (method !== 'GET') headers.set('Idempotency-Key', crypto.randomUUID());
     for (const [name, value] of Object.entries(options.headers ?? {})) headers.set(name, value);
     if (options.auth !== false && this.accessToken) headers.set('Authorization', `Bearer ${this.accessToken}`);
-    const response = await this.fetcher(`${this.base}${path}`, {
+    const response = await this.fetcher(`${base}${path}`, {
       method,
       headers,
       body: options.body === undefined ? undefined : JSON.stringify(options.body),
