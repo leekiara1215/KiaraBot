@@ -72,6 +72,16 @@ std::optional<wire::ErrorCode> extract_error_code(const grpc::Status& status) {
     return wire::INVALID_ARGUMENT;
   case grpc::StatusCode::DEADLINE_EXCEEDED:
     return wire::TIMEOUT;
+  case grpc::StatusCode::NOT_FOUND:
+    return wire::NOT_FOUND;
+  case grpc::StatusCode::ABORTED:
+    return wire::CONFLICT;
+  case grpc::StatusCode::RESOURCE_EXHAUSTED:
+    return wire::RATE_LIMITED;
+  case grpc::StatusCode::UNIMPLEMENTED:
+    return wire::CAPABILITY_NOT_SUPPORTED;
+  case grpc::StatusCode::INTERNAL:
+    return wire::INTERNAL;
   case grpc::StatusCode::UNAVAILABLE:
     return wire::UPSTREAM_UNAVAILABLE;
   default:

@@ -343,9 +343,37 @@ public:
         input->client_certificate_sha256() !=
             std::string(reinterpret_cast<const char*>(digest), length) ||
         input->subject_proof() != "secret-access-credential-login" ||
-        (input->audience() != "identity" && input->audience() != "runtime" &&
-         input->audience() != "model") ||
-        input->scope().resources_size() != 1 || input->permissions_size() != 1) {
+        input->permissions_size() != 1) {
+      return error(wire::PERMISSION_DENIED, grpc::StatusCode::PERMISSION_DENIED, input->context());
+    }
+    const auto empty_scope_proof = [&](std::string_view proof) {
+      output->mutable_delegation()->set_proof(std::string{proof});
+      output->mutable_delegation()->set_audience("identity");
+      output->mutable_delegation()->mutable_expires_at()->set_seconds(kChecked + 30);
+      return grpc::Status::OK;
+    };
+    // P12c: Control reads health over an empty catalog scope, principals over an empty scope and
+    // creates installations over the catalog plugin scope; these are authority checks at Identity,
+    // not wildcard grants.
+    if (input->audience() == "control" &&
+        input->permissions(0) == wire::PERMISSION_HEALTH_READ &&
+        input->scope().resources_size() == 0) {
+      return empty_scope_proof("fixture-health-proof");
+    }
+    const bool principal_delegation =
+        input->audience() == "identity" &&
+        input->permissions(0) == wire::PERMISSION_IDENTITY_PRINCIPAL_READ &&
+        input->scope().resources_size() == 0;
+    const bool catalog_plugin_delegation =
+        input->audience() == "runtime" &&
+        input->permissions(0) == wire::PERMISSION_PLUGIN_MANAGE &&
+        input->scope().resources_size() == 0;
+    if (principal_delegation || catalog_plugin_delegation) {
+      return empty_scope_proof("fixture-principal-proof");
+    }
+    if ((input->audience() != "identity" && input->audience() != "runtime" &&
+         input->audience() != "model" && input->audience() != "scheduler") ||
+        input->scope().resources_size() != 1) {
       return error(wire::PERMISSION_DENIED, grpc::StatusCode::PERMISSION_DENIED, input->context());
     }
     const auto& resource = input->scope().resources(0);
@@ -369,16 +397,47 @@ public:
         resource.id() == "control" &&
         (input->permissions(0) == wire::PERMISSION_LOG_READ ||
          input->permissions(0) == wire::PERMISSION_AUDIT_READ);
-    if (!identity_delegation && !model_delegation && !audit_log_delegation) {
+    // P12f matrix: the Runtime/Scheduler owners are reached with a Control-issued delegation for
+    // the same sensitive permission and the explicit resource scope; Identity still rechecks it.
+    const bool runtime_delegation =
+        input->audience() == "runtime" &&
+        (input->permissions(0) == wire::PERMISSION_RESOURCE_MANAGE ||
+         input->permissions(0) == wire::PERMISSION_ACCOUNT_MANAGE ||
+         input->permissions(0) == wire::PERMISSION_PLUGIN_MANAGE ||
+         input->permissions(0) == wire::PERMISSION_PLUGIN_CONFIG_READ ||
+         input->permissions(0) == wire::PERMISSION_ACCOUNT_POLICY_READ ||
+         input->permissions(0) == wire::PERMISSION_ACCOUNT_POLICY_MANAGE ||
+         input->permissions(0) == wire::PERMISSION_TASK_READ ||
+         input->permissions(0) == wire::PERMISSION_ACTION_INSPECT ||
+         input->permissions(0) == wire::PERMISSION_RESOURCE_READ);
+    const bool scheduler_delegation =
+        input->audience() == "scheduler" &&
+        (input->permissions(0) == wire::PERMISSION_TASK_READ ||
+         input->permissions(0) == wire::PERMISSION_TASK_SCHEDULE);
+    if (!identity_delegation && !model_delegation && !audit_log_delegation &&
+        !runtime_delegation && !scheduler_delegation) {
       return error(wire::PERMISSION_DENIED, grpc::StatusCode::PERMISSION_DENIED, input->context());
     }
     output->mutable_delegation()->set_proof(
         std::string{model_delegation ? "fixture-model-proof:"
-                    : audit_log_delegation ? "fixture-runtime-proof:"
-                                           : "fixture-proof:"} +
+                    : (audit_log_delegation || runtime_delegation || scheduler_delegation)
+                          ? "fixture-runtime-proof:"
+                          : "fixture-proof:"} +
         resource.id());
     output->mutable_delegation()->set_audience("identity");
     output->mutable_delegation()->mutable_expires_at()->set_seconds(kChecked + 30);
+    return grpc::Status::OK;
+  }
+  grpc::Status ListPrincipals(grpc::ServerContext*,
+                              const wire::IdentityListPrincipalsRequest* input,
+                              wire::IdentityListPrincipalsResponse* output) override {
+    auto* principal = output->add_principals();
+    principal->set_principal_id("33333333-3333-4333-8333-333333333333");
+    principal->set_principal_kind("human");
+    principal->set_version(1);
+    principal->set_state(wire::LIFECYCLE_ACTIVE);
+    output->mutable_page()->set_page_size(input->page().page_size());
+    output->mutable_checked_at()->set_seconds(kChecked);
     return grpc::Status::OK;
   }
   grpc::Status ListAudit(grpc::ServerContext*,

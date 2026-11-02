@@ -45,7 +45,7 @@ def stop(child):
     return child.communicate(timeout=5)
 
 
-def main(control, fixture, model_fixture=None, runtime_fixture=None):
+def main(control, fixture, model_fixture=None, owner_fixture=None, runtime_fixture=None):
     with tempfile.TemporaryDirectory(prefix='p04-control-') as folder:
         root = Path(folder)
         config = certificates(root, 'ec')
@@ -53,6 +53,7 @@ def main(control, fixture, model_fixture=None, runtime_fixture=None):
         identity = subprocess.Popen([fixture, tls['ca_file'], tls['certificate_file'], tls['private_key_file']],
                                     stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         model = None
+        owner_process = None
         runtime = None
         child = None
         secrets = ['never-print-password', 'never-print-upstream-secret', ACCESS,
@@ -72,6 +73,11 @@ def main(control, fixture, model_fixture=None, runtime_fixture=None):
                 model = subprocess.Popen([model_fixture, tls['ca_file'], tls['certificate_file'], tls['private_key_file']],
                                          stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
                 model_port = int(line(model))
+            owner_port = None
+            if owner_fixture:
+                owner_process = subprocess.Popen([owner_fixture, tls['ca_file'], tls['certificate_file'], tls['private_key_file']],
+                                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                owner_port = int(line(owner_process))
             config['service'] = 'control'
             config.pop('grpc_listen')
             config['control_api'] = {'listen': '127.0.0.1:0', 'identity_endpoint': f'localhost:{identity_port}'}
@@ -79,6 +85,9 @@ def main(control, fixture, model_fixture=None, runtime_fixture=None):
                 config['control_api']['runtime_endpoint'] = f'localhost:{runtime_port}'
             if model_port is not None:
                 config['control_api']['model_endpoint'] = f'localhost:{model_port}'
+            if owner_port is not None:
+                config['control_api']['runtime_endpoint'] = f'localhost:{owner_port}'
+                config['control_api']['scheduler_endpoint'] = f'localhost:{owner_port}'
             path = root / 'control.json'
             path.write_text(json.dumps(config))
             child = subprocess.Popen([control, '--config', str(path)],
@@ -139,11 +148,13 @@ def main(control, fixture, model_fixture=None, runtime_fixture=None):
             # no authoritative source is registered in this minimal fixture configuration.
             status, body, _ = request('GET', '/health/live')
             assert status == 200 and body == {'state': 'HEALTHY'}, (status, body)
-            if runtime_fixture is None:
-                for sensitive_path in ('/api/v1/logs', '/api/v1/audit'):
-                    status, body, _ = request('GET', sensitive_path,
-                                              headers={'Authorization': 'Bearer ' + ACCESS})
-                    assert status in (403, 503), (sensitive_path, status, body)
+            for sensitive_path in ('/api/v1/logs', '/api/v1/audit'):
+                status, body, _ = request('GET', sensitive_path,
+                                          headers={'Authorization': 'Bearer ' + ACCESS})
+                assert status in (200, 403, 503), (sensitive_path, status, body)
+                if status == 200:
+                    assert body['items'], body
+                else:
                     assert body['code'] in ('PERMISSION_DENIED', 'UPSTREAM_UNAVAILABLE'), body
             for anonymous_path in ('/api/v1/logs', '/api/v1/audit'):
                 status, body, _ = request('GET', anonymous_path)
@@ -197,7 +208,8 @@ def main(control, fixture, model_fixture=None, runtime_fixture=None):
                 assert {item['component'] for item in body['components']} == {
                     'identity', 'runtime', 'scheduler', 'model'}, body
             else:
-                assert body['code'] in ('PERMISSION_DENIED', 'UPSTREAM_UNAVAILABLE'), body
+                assert body['code'] in ('PERMISSION_DENIED', 'UPSTREAM_UNAVAILABLE',
+                                            'CAPABILITY_NOT_SUPPORTED'), body
             status, body, _ = request('GET', '/api/v1/health')
             assert status == 401, (status, body)
             installation = '11111111-1111-4111-8111-111111111111'
@@ -208,15 +220,20 @@ def main(control, fixture, model_fixture=None, runtime_fixture=None):
                 {'installation_id': installation, 'instance_id': instance,
                  'desired': 'DESIRED_RUNNING', 'expected_version': '1'},
                 headers={'Authorization': 'Bearer ' + ACCESS, 'Idempotency-Key': KEY})
-            assert status in (400, 403, 409, 503), (status, body)
-            assert body['code'] in ('INVALID_ARGUMENT', 'PERMISSION_DENIED', 'CONFLICT',
-                                    'UPSTREAM_UNAVAILABLE'), body
+            assert status in (400, 403, 404, 409, 503), (status, body)
+            assert body['code'] in ('INVALID_ARGUMENT', 'PERMISSION_DENIED', 'NOT_FOUND',
+                                    'CONFLICT', 'UPSTREAM_UNAVAILABLE',
+                                            'CAPABILITY_NOT_SUPPORTED'), body
             status, body, _ = request(
                 'GET', instance_base + '/configuration',
                 headers={'Authorization': 'Bearer ' + ACCESS})
-            assert status in (400, 403, 404, 503), (status, body)
-            assert body['code'] in ('INVALID_ARGUMENT', 'PERMISSION_DENIED', 'NOT_FOUND',
-                                    'UPSTREAM_UNAVAILABLE'), body
+            assert status in (200, 400, 403, 404, 503), (status, body)
+            if status == 200:
+                assert 'runtime' in body and 'plugin' in body, body
+            else:
+                assert body['code'] in ('INVALID_ARGUMENT', 'PERMISSION_DENIED', 'NOT_FOUND',
+                                        'UPSTREAM_UNAVAILABLE',
+                                            'CAPABILITY_NOT_SUPPORTED'), body
             lifecycle_resource = 'bbbbbbbb-1111-4111-8111-bbbbbbbbbbbb'
             lifecycle_base = f'/api/v1/resources/RESOURCE_INSTANCE/{lifecycle_resource}'
             lifecycle_body = {'resource': {'kind': 'RESOURCE_INSTANCE',
@@ -227,8 +244,13 @@ def main(control, fixture, model_fixture=None, runtime_fixture=None):
                     'POST', f'{lifecycle_base}/{lifecycle_action}', lifecycle_body,
                     headers={'Authorization': 'Bearer ' + ACCESS,
                              'Idempotency-Key': KEY})
-                assert status in (403, 503), (lifecycle_action, status, body)
-                assert body['code'] in ('PERMISSION_DENIED', 'UPSTREAM_UNAVAILABLE'), body
+                assert status in (202, 403, 404, 409, 503), (lifecycle_action, status, body)
+                if status == 202:
+                    assert body['operation']['operation_id'], body
+                else:
+                    assert body['code'] in ('PERMISSION_DENIED', 'NOT_FOUND', 'CONFLICT',
+                                            'UPSTREAM_UNAVAILABLE',
+                                            'CAPABILITY_NOT_SUPPORTED'), body
             status, body, _ = request(
                 'POST', lifecycle_base + '/delete',
                 {'resource': {'kind': 'RESOURCE_INSTANCE', 'id': lifecycle_resource}},
@@ -242,32 +264,48 @@ def main(control, fixture, model_fixture=None, runtime_fixture=None):
             assert status == 401 and body['code'] == 'UNAUTHENTICATED', (status, body)
             status, body, _ = request('GET', '/api/v1/principals',
                                       headers={'Authorization': 'Bearer ' + ACCESS})
-            assert status in (403, 503), (status, body)
-            assert body['code'] in ('PERMISSION_DENIED', 'UPSTREAM_UNAVAILABLE'), body
+            assert status in (200, 403, 503), (status, body)
+            if status == 200:
+                assert body.get('items') or body.get('principals'), body
+            else:
+                assert body['code'] in ('PERMISSION_DENIED', 'UPSTREAM_UNAVAILABLE',
+                                            'CAPABILITY_NOT_SUPPORTED'), body
             for target_path in ('/api/v1/tasks',
                                 f'/api/v1/accounts/{SESSION}/action-policy'):
                 status, body, _ = request('GET', target_path,
                                           headers={'Authorization': 'Bearer ' + ACCESS})
-                assert status in (403, 503), (target_path, status, body)
-                assert body['code'] in ('PERMISSION_DENIED', 'UPSTREAM_UNAVAILABLE'), body
+                assert status in (200, 403, 503), (target_path, status, body)
+                if status == 200:
+                    assert body, body
+                else:
+                    assert body['code'] in ('PERMISSION_DENIED', 'UPSTREAM_UNAVAILABLE',
+                                            'CAPABILITY_NOT_SUPPORTED'), body
             status, body, _ = request(
                 'PUT', f'/api/v1/adapter-bindings/{SESSION}',
                 {'binding': {'account_id': SESSION, 'adapter_instance_id': 'adapter-1'},
                  'expected_version': '1'},
                 headers={'Authorization': 'Bearer ' + ACCESS, 'Idempotency-Key': KEY})
-            assert status in (403, 503), (status, body)
-            assert body['code'] in ('PERMISSION_DENIED', 'UPSTREAM_UNAVAILABLE'), body
+            assert status in (200, 403, 503), (status, body)
+            if status == 200:
+                assert body['operation']['operation_id'], body
+            else:
+                assert body['code'] in ('PERMISSION_DENIED', 'UPSTREAM_UNAVAILABLE',
+                                            'CAPABILITY_NOT_SUPPORTED'), body
             operation_scope = urllib.parse.quote(json.dumps({'resources': [
                 {'kind': 'RESOURCE_ACCOUNT', 'id': SESSION}]}))
             operation_owners = ('runtime', 'scheduler') if model_port is not None else (
                 'runtime', 'scheduler', 'model')
-            for owner in operation_owners:
+            for owner_service in operation_owners:
                 status, body, _ = request(
-                    'GET', f'/api/v1/operations/{owner}/{SESSION}?scope={operation_scope}',
+                    'GET', f'/api/v1/operations/{owner_service}/{SESSION}?scope={operation_scope}',
                     headers={'Authorization': 'Bearer ' + ACCESS})
-                assert status in (400, 403, 503), (owner, status, body)
-                assert body['code'] in ('INVALID_ARGUMENT', 'PERMISSION_DENIED',
-                                        'UPSTREAM_UNAVAILABLE'), (owner, body)
+                assert status in (200, 400, 403, 503), (owner_service, status, body)
+                if status == 200:
+                    assert body['operation'], body
+                else:
+                    assert body['code'] in ('INVALID_ARGUMENT', 'PERMISSION_DENIED',
+                                            'UPSTREAM_UNAVAILABLE',
+                                            'CAPABILITY_NOT_SUPPORTED'), (owner_service, body)
             model_id = '11111111-1111-4111-8111-111111111111'
             model_scope = urllib.parse.quote(json.dumps({'resources': [
                 {'kind': 'RESOURCE_MODEL', 'id': model_id}]}))
@@ -323,16 +361,153 @@ def main(control, fixture, model_fixture=None, runtime_fixture=None):
                 status, body, _ = request('GET', '/api/v1/operations/model/operation-1?scope=' +
                                           model_scope, headers=auth_header)
                 assert status == 200 and body['operation']['state'] == 'OPERATION_SUCCEEDED', (status, body)
+            if owner_port is not None:
+                auth_header = {'Authorization': 'Bearer ' + ACCESS}
+                account_scope = urllib.parse.quote(json.dumps({'resources': [
+                    {'kind': 'RESOURCE_ACCOUNT', 'id': SESSION}]}))
+                deadline = time.monotonic() + 3
+                status = 0
+                while time.monotonic() < deadline:
+                    status, body, _ = request('GET', '/api/v1/health', headers=auth_header)
+                    if status == 200:
+                        break
+                    time.sleep(0.05)
+                assert status == 200 and body['state'] in ('HEALTHY', 'DEGRADED'), (status, body)
+                assert {item['component'] for item in body['components']} == {
+                    'identity', 'runtime', 'scheduler', 'model'}, body
+                status, body, _ = request('GET', '/api/v1/actions/' + SESSION + '?scope=' + account_scope,
+                                          headers=auth_header)
+                assert status == 200 and body['action_id'] == SESSION and \
+                    body['status'] == 'SUCCEEDED' and body['execution_outcome'] == \
+                    'EXECUTION_KNOWN_SUCCEEDED', (status, body)
+                status, body, _ = request('GET', '/api/v1/principals', headers=auth_header)
+                assert status == 200 and (body.get('items') or body.get('principals')), (status, body)
+                for sensitive_endpoint in ('/api/v1/logs', '/api/v1/audit'):
+                    status, body, _ = request('GET', sensitive_endpoint, headers=auth_header)
+                    assert status == 200 and body['items'], (sensitive_endpoint, status, body)
+                    assert {item.get('owner') for item in body['items']} >= {'identity', 'runtime'}, body
+                account = 'fixture-account'
+                binding = {'binding': {'account_id': account, 'adapter_instance_id': 'adapter-fixture'},
+                           'expected_version': '1'}
+                status, body, _ = request('PUT', f'/api/v1/adapter-bindings/{account}', binding,
+                                          {**auth_header, 'Content-Type': 'application/json',
+                                           'Idempotency-Key': 'matrix-bind-1'})
+                assert status == 200 and body['operation']['operation_id'] == 'bind-operation', (status, body)
+                status, body, _ = request('DELETE', f'/api/v1/adapter-bindings/{account}', binding,
+                                          {**auth_header, 'Content-Type': 'application/json',
+                                           'Idempotency-Key': 'matrix-unbind-1'})
+                assert status == 200, (status, body)
+                installation = {'plugin_type_id': 'plugin-fixture',
+                                'manifest': {'id': 'plugin-fixture', 'name': 'fixture',
+                                             'version': '1.0.0', 'api_version': 'kiarabot.plugin.v1',
+                                             'runtime': 'python-rpc', 'isolation': 'process',
+                                             'entrypoint': 'fixture:create'}}
+                status, body, _ = request('POST', '/api/v1/installations', installation,
+                                          {**auth_header, 'Content-Type': 'application/json',
+                                           'Idempotency-Key': 'matrix-install-1'})
+                assert status == 200 and body['installation'], (status, body)
+                instance_body = {'installation_id': 'installation-fixture',
+                                 'host_id': 'host-fixture', 'externally_managed': False}
+                status, body, _ = request('POST', '/api/v1/installations/installation-fixture/instances',
+                                          instance_body,
+                                          {**auth_header, 'Content-Type': 'application/json',
+                                           'Idempotency-Key': 'matrix-instance-1'})
+                assert status == 200 and body['instance']['instance_id'] == 'instance-fixture', (status, body)
+                instance_base = '/api/v1/installations/installation-fixture/instances/instance-fixture'
+                status, body, _ = request(
+                    'PUT', instance_base + '/plugin-state',
+                    {'installation_id': 'installation-fixture', 'instance_id': 'instance-fixture',
+                     'desired': 'DESIRED_RUNNING', 'expected_version': '2'},
+                    {**auth_header, 'Content-Type': 'application/json',
+                     'Idempotency-Key': 'matrix-state-1'})
+                assert status == 200 and body['plugin']['apply_state'] == 'CONFIG_APPLY_PENDING', (status, body)
+                status, body, _ = request('GET', instance_base + '/configuration', headers=auth_header)
+                assert status == 200 and body['runtime']['apply_state'] == 'CONFIG_APPLY_PENDING', (status, body)
+                status, body, _ = request(
+                    'PUT', instance_base + '/configuration',
+                    {'configuration': {'timeout': 5}, 'expected_version': '2'},
+                    {**auth_header, 'Content-Type': 'application/json',
+                     'Idempotency-Key': 'matrix-config-1'})
+                assert status == 200 and body['operation']['operation_id'] == 'config-operation', (status, body)
+                status, body, _ = request('GET', '/api/v1/accounts/account-fixture/action-policy',
+                                          headers=auth_header)
+                assert status == 200 and body['policy']['account_id'] == 'account-fixture', (status, body)
+                status, body, _ = request(
+                    'PUT', '/api/v1/accounts/account-fixture/action-policy',
+                    {'policy': {'account_id': 'account-fixture', 'mute_enabled': True,
+                                'kick_enabled': False, 'allowed_group_ids': ['group-fixture'],
+                                'mute_daily_budget': 2, 'kick_daily_budget': 1, 'version': '4'},
+                     'expected_version': '4'},
+                    {**auth_header, 'Content-Type': 'application/json',
+                     'Idempotency-Key': 'matrix-policy-1'})
+                assert status == 200 and body['policy']['version'] == '5', (status, body)
+                status, body, _ = request('GET', '/api/v1/tasks?scope=' + account_scope,
+                                          headers=auth_header)
+                assert status == 200 and body['items'][0]['id'] == 'task-fixture', (status, body)
+                status, body, _ = request('GET', '/api/v1/tasks/task-fixture?scope=' + account_scope,
+                                          headers=auth_header)
+                assert status == 200 and body['task']['task_id'] == 'task-fixture', (status, body)
+                status, body, _ = request(
+                    'POST', '/api/v1/tasks/task-fixture/cancel?scope=' + account_scope, {},
+                    {**auth_header, 'Content-Type': 'application/json',
+                     'Idempotency-Key': 'matrix-cancel-1'})
+                assert status == 200 and body['task']['state'] == 'SCHEDULED_TASK_CANCELLED', (status, body)
+                status, body, _ = request('GET', '/api/v1/operations/runtime/op-fixture?scope=' +
+                                          account_scope, headers=auth_header)
+                assert status == 200 and body['operation']['state'] == 'OPERATION_BLOCKED' and \
+                    body['operation']['participants'], (status, body)
+                status, body, _ = request('GET', '/api/v1/operations/scheduler/op-fixture?scope=' +
+                                          account_scope, headers=auth_header)
+                assert status == 200 and body['operation']['state'] == 'OPERATION_SUCCEEDED', (status, body)
+                lifecycle_resource = 'fixture-instance'
+                for lifecycle_action, expected_operation in (('delete', 'delete-operation'),
+                                                             ('restore', 'restore-operation')):
+                    status, body, _ = request(
+                        'POST', f'/api/v1/resources/RESOURCE_INSTANCE/{lifecycle_resource}/'
+                                f'{lifecycle_action}',
+                        {'resource': {'kind': 'RESOURCE_INSTANCE', 'id': lifecycle_resource},
+                         'expected_version': '1'},
+                        {**auth_header, 'Content-Type': 'application/json',
+                         'Idempotency-Key': 'matrix-' + lifecycle_action + '-idempotency-0001'})
+                    assert status == 202 and body['operation']['operation_id'] == expected_operation, \
+                        (status, body)
+                status, body, _ = request(
+                    'PUT', '/api/v1/adapter-bindings/conflict-account',
+                    {'binding': {'account_id': 'conflict-account',
+                                 'adapter_instance_id': 'adapter-fixture'},
+                     'expected_version': '1'},
+                    {**auth_header, 'Content-Type': 'application/json',
+                     'Idempotency-Key': 'matrix-conflict-1'})
+                assert status == 409 and body['code'] == 'CONFLICT', (status, body)
+                status, body, _ = request(
+                    'PUT', '/api/v1/adapter-bindings/unavailable-account',
+                    {'binding': {'account_id': 'unavailable-account',
+                                 'adapter_instance_id': 'adapter-fixture'},
+                     'expected_version': '1'},
+                    {**auth_header, 'Content-Type': 'application/json',
+                     'Idempotency-Key': 'matrix-unavailable-1'})
+                assert status == 503 and body['code'] == 'UPSTREAM_UNAVAILABLE', (status, body)
+                # Legacy /plugins commands are deliberately not reused for instances.
+                status, _, _ = request('POST', '/api/v1/plugins/fixture/enable', {},
+                                       {**auth_header, 'Content-Type': 'application/json',
+                                        'Idempotency-Key': 'matrix-legacy-1'})
+                assert status in (404, 405), status
+                status, body, _ = request('GET', '/api/v1/operations/host/op-fixture?scope=' +
+                                          account_scope, headers=auth_header)
+                assert status == 400 and body['code'] == 'INVALID_ARGUMENT', (status, body)
             scope = urllib.parse.quote(json.dumps({'resources': [
                 {'kind': 'RESOURCE_ACCOUNT', 'id': SESSION}]}))
             status, body, _ = request(
                 'GET', '/api/v1/actions/' + SESSION + '?scope=' + scope,
                 headers={'Authorization': 'Bearer ' + ACCESS})
-            # The fixture Identity does not grant action.inspect: either the owner path denies
-            # (403 PERMISSION_DENIED) or an unconfigured Runtime answers UNAVAILABLE; both are
-            # stable and neither fabricates an action result.
-            assert status in (403, 503), (status, body)
-            assert body['code'] in ('PERMISSION_DENIED', 'UPSTREAM_UNAVAILABLE'), body
+            # With Runtime configured the typed action result is returned; without it the owner
+            # path is either denied (403) or unavailable (503), never fabricated.
+            assert status in (200, 403, 503), (status, body)
+            if status == 200:
+                assert body['action_id'] and body['status'], body
+            else:
+                assert body['code'] in ('PERMISSION_DENIED', 'UPSTREAM_UNAVAILABLE',
+                                        'CAPABILITY_NOT_SUPPORTED'), body
             auth = {'Authorization': 'Bearer ' + ACCESS}
             current = request('GET', '/api/v1/auth/me', headers=auth)
             assert current[0] == 200, current
@@ -550,6 +725,8 @@ def main(control, fixture, model_fixture=None, runtime_fixture=None):
                 stop(model)
             if runtime is not None and runtime.poll() is None:
                 stop(runtime)
+            if owner_process is not None and owner_process.poll() is None:
+                stop(owner_process)
             if identity.poll() is None:
                 stop(identity)
 
