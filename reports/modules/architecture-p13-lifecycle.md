@@ -45,3 +45,29 @@
   恢复/超时），生产 Runtime 未接 ListTasks/CancelTask 客户端与委托。
 - 未完成：BeginDelete/Restore 与真实 Host 的单一联合 e2e（需 Scheduler participant 生产路径或
   用户确认的测试注入方式）；P13 退出判定：**未通过**（上述两项为剩余缺口）。
+
+## P13g test-only 联合 e2e（2026-11-03，test-only，非生产证据）
+
+新增 `tests/architecture/p13_joint_delete_e2e.py`（CTest `p13_joint_delete_e2e`，label
+`p13;test-only`）与独立测试二进制 `kiarabot-runtime-p13g`（生产 `kiarabot-runtime` 不变）：
+真 PG16.4 + 真 mTLS Runtime + fake HostBridge 客户端 + 注入 fake Scheduler participant
+（P13f 方案 C；生产 Scheduler 委派仍 fail-closed，待用户确认 A/B）。
+
+矩阵（全部 test-only）：
+- 实例 BeginDelete→初始 participants（runtime Succeeded、host/scheduler Accepted）→Host 待
+  StopExecution receipt/Scheduler 待取消→Blocked；Host receipt Receipted + fake Scheduler
+  Done→participants 全 Done→operation Succeeded、instance DELETED。
+- 同幂等键重复 BeginDelete 返回同一 operation。
+- Host 离线时操作保持 Blocked/DELETING，绝不到 DELETED；重连后 receipt 完成。
+- Host receipt=UNKNOWN 时保持 Blocked，不伪 stopped/完成。
+- fake Scheduler done/unknown/offline 矩阵：unknown/offline 保持 Blocked，切回 done 后完成。
+- Restore：instance 恢复 Active；bridge_credentials 仍 revoked（PG 断言）；fake Scheduler
+  任务/租约不被重建；Restore operation 只有 runtime participant；再次 BeginDelete 重新调度
+  host+scheduler participants 并完成。
+- 修复暴露缺陷：Host command identity 增加 instance version，避免 Restore 后再次删除复用旧
+  StopExecution receipt 误判 Done（生产运行时行为修复，无 proto/权限变更）。
+
+边界：fake Scheduler 任务的“ListTasks”仅由 fake 端口内部建模（生产 participant 端口只有
+cancel_tasks；未新增方法）；任务/租约的 PG 断言在 Scheduler 私有库未包含于本 harness，当前以
+fake Scheduler 状态文件断言未重建；生产 Scheduler 委托、真实 Host 回执单链仍未验收。
+P13 退出判定：test-only 联合链路通过；**生产退出仍未通过**（P13f A/B 待用户确认）。

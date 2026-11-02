@@ -330,3 +330,11 @@ HostBridge StopExecution/DrainHost 命令仍是 Runtime outbox 的持久快照�
 
 
 **P10k（2026-11-03）**：PluginBridge task_create/get/cancel ingress 只做认证/能力/输入校验后调用 `RuntimeTaskApplication`→`SchedulerTaskPort`，Runtime 不写本地任务表；Scheduler owner 在自身 UoW 内持久化并返回 TaskRecord，Runtime 不把远程结果当本地事务。生产 composition 的 Scheduler delegation provider 当前 fail-closed（`UNAUTHENTICATED`/`UPSTREAM_UNAVAILABLE`），缺失 `scheduler_endpoint` 时 `CAPABILITY_NOT_SUPPORTED`；不伪造 task 成功。真实 Runtime→Scheduler 委托来源仍是待确认项。
+
+## P13g 生命周期命令快照与重删（2026-11-03）
+
+Host command 的确定性 identity 除 instance/host/generation/desired_version/desired 外还包含
+当前 instance version；每次生命周期状态迁移（删除/恢复）都会推进 version，因此 Restore 后的
+再次 BeginDelete 会生成新的 StopExecution 命令，不会复用上一轮已 receipt 的旧命令并误判
+Host participant 已完成。旧命令仍保留用于审计/清理；UNKNOWN/未回执命令保持 Blocked。
+P13g 的 fake Scheduler participant 只在 test-only Runtime 构建中注入，生产委托/授权语义不变。

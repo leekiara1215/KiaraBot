@@ -1606,3 +1606,17 @@ P10 退出前发现 `p10_timer_e2e` 在高负载（8192 tasks/expiry 及后续 c
 `KIARABOT_CRASH_DIAGNOSTICS=1` 可在 SIGSEGV/SIGABRT 时输出 backtrace 到 stderr（无秘密）；
 `p10_timer_e2e` 的 stop 失败时打印子进程 stdout/stderr，并新增 10 次
 “高负载 filler 插入/删除 → SIGTERM → 重启 Runtime”循环作为回归。
+
+### P13g test-only 联合生命周期 e2e（2026-11-03）
+
+新增独立 test-only Runtime 二进制 `kiarabot-runtime-p13g`（编译定义
+`KIARABOT_P13G_TEST_COMPOSITION`，生产 `kiarabot-runtime` 不变）与
+`tests/architecture/p13_joint_delete_e2e.py`：真 PG16.4 + 真 mTLS Runtime + fake HostBridge
+客户端 + **注入 fake Scheduler participant**（P13f 方案 C；生产 Scheduler 委派仍未接线、
+fail-closed）。覆盖实例 BeginDelete→participants（Host 待 StopExecution receipt、Scheduler
+待取消）→Host receipt Receipted + fake Scheduler Done→全 Done→operation Succeeded/DELETED；
+Host 离线/UNKNOWN receipt 保持 Blocked 不伪完成；Scheduler done/unknown/offline 矩阵；重复
+BeginDelete 同幂等键幂等；Restore 不复活 bridge credential/（test fake 的）任务与租约，且
+再次 BeginDelete 会重新调度 participants。命令快照 identity 现包含实例 version，避免恢复后
+复用上一轮 StopExecution receipt 误判 Done。该 e2e 明确 non-production，不能作为 P13 生产
+退出证据。

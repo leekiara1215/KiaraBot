@@ -1621,3 +1621,12 @@ Control `/logs` `/audit` 的 Runtime 源使用 `audit.read`(49)/`log.read`(48) �
   `p10_timer_e2e` 停机失败会输出子进程 stdio。
 - 回归：`p10_timer_e2e` 新增 10 次高负载 task churn + SIGTERM + Runtime 重启循环；
   实测 5 次完整 e2e（50 次停机）均为 exit 0。
+
+## P13g test-only 联合生命周期 e2e（2026-11-03）
+
+`ctest -R p13_joint_delete_e2e`（label `p13;test-only`）使用独立测试二进制
+`kiarabot-runtime-p13g`：真 PG16.4、真 mTLS Runtime、fake HostBridge 客户端，以及仅测试
+构建注入的 fake Scheduler participant（done/unknown/offline 模式文件）。它验证
+BeginDelete→Host/Scheduler participants 收敛到 DELETED、Restore 不复活凭据、Host 离线/
+UNKNOWN 不伪完成、重复 BeginDelete 幂等。生产 `kiarabot-runtime` 不包含该注入，Scheduler
+委派仍 fail-closed；P13 生产退出仍需用户确认 P13f 方案 A/B，不能引用本 e2e 作生产证据。
