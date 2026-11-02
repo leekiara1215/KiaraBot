@@ -323,6 +323,17 @@ proto + infrastructure 构建可通过 `KIARABOT_CONTROL_CONFIG` 指定私有 JS
 
 启用私有 KIARABOT_CONTROL_CONFIG 且配置插件桥接身份/权限后，支持 plugin.config.v1 的 SDK 自动接收配置。PUT 成功后轮询 GET /plugins/{plugin_id}/config 的 delivery；APPLIED 才表示当前运行连接完成回调。REJECTED 需修复配置提交新版本或重连，UNAVAILABLE 需检查插件连接/停用/能力协商。Core 重启后重新确认，不能用旧进程的 applied_version 作健康证明。不新增配置项、SQLite schema 或真实环境验收要求。
 
+## P14a 目标部署面（Docker/Compose，未验证）
+
+- 状态：**已实现 P14a 交付文件；本机无 Docker，镜像构建/Compose 启动/healthcheck/初始化/两主机行为均未执行、未验证**。不得把下文当作已验收部署。两主机拓扑（Host-A 数据/控制面 + Host-B 执行面）按 P14 提案文档化，**待用户确认**；P13 的 drain/生命周期设计未合入，启停顺序只是临时口径。
+- 交付物：`deploy/docker/suite.Dockerfile`（Ubuntu24.04 + 固定 vcpkg registry/manifest + Python3.11.18/uv0.13.6 生成 proto，构建 `kiarabot-control/-identity/-runtime/-plugin-host/-scheduler/-model` + `kiarabot-pg-initialize` + `kiarabot-identity-bootstrap`，共享 runtime base 与六个薄镜像 + tools）；`deploy/compose.infra.yml`（PG16.4/四私有库、TLS/数据/备份卷、显式 init profile）；`deploy/compose.core.yml`（六服务、只读 rootfs/非 root/资源限制/healthcheck/只读 config-TLS-secrets 挂载）；`deploy/compose.exec.yml`（Plugin Host + Adapter，Adapter 使用 P06c `BRIDGE_*`/`ONEBOT_*_FILE` 与 bootstrap 秘密）；`deploy/target.env.example`、`deploy/target/README.md`、`scripts/deploy/target-initialize.sh`、`scripts/deploy/target-smoke.sh`、`deploy/README.md`。
+- 拓扑/端口（提案默认，待确认）：Host-A 的 PG 5432（不公网）+ Identity 7441/probe 9081、Runtime 7442/ bridge 7443/probe 9082、Scheduler 7444/9083、Model 7445/9084、Control 8080/9080、Panel 8082；Host-B 的 Plugin Host 7446/9085、Adapter health 8081；所有 owner gRPC 用 mTLS，Runtime bridge 用 server-verified TLS + Bearer bootstrap，Panel 仅经反代/隧道对外。端口可在 `deploy/target.env` 覆盖并按防火墙收敛。
+- TLS/秘密：部署自建 CA/leaf（SAN 精确覆盖连接名）、PG server CA、四库迁移/运行双密码、Identity enrollment/admin密码、model root key（32B hex/0600）、Control encryption key、Adapter/插件 bootstrap 与 OneBot token 均以只读文件挂载；不进入镜像、argv、日志或 git。当前只有启动校验，无热轮换；P14 采用“新文件 + 按顺序重启”的手动轮换。
+- 初始化/迁移：`compose.infra.yml` 的 `init-{identity,runtime,scheduler,model}` 与 `identity-bootstrap` 是显式 profile/一次性命令；daemon 不执行 DDL、不清库、不自动迁移。角色/数据库创建属 DBA/部署前置；四库非原子，必须逐库检查，失败/半初始化拒绝重跑（P03 规则）。
+- 健康/依赖：Compose healthcheck 使用各服务 `/health/live`/`/health/ready`（P02 语义）；readiness 覆盖 schema/版本/锁/TLS/依赖；Control 聚合与降级口径待 P12c/P13（Q5），不把 live 当业务 ready。启动顺序为 PG→显式初始化→Identity→Runtime→Scheduler/Model→Host→Control→Panel，停止反向；P13 合入后替换为正式 drain。
+- 单机 dev 与生产差异：dev 用 loopback 发布端口 + 单机三套 compose；生产两主机 + 私有网络/防火墙 + 镜像 digest + 只读挂载 + 资源限制，且不发布 PG/owner/bridge 到公网。reference `compose.{prod,staging}.yml`/根 Dockerfile 仍是单 Core+SQLite，不可用于目标部署。
+- 检查/未运行：`./scripts/deploy/target-smoke.sh` 已在本机离线通过（Compose YAML 解析、服务集合、非 root/只读/no-new-privileges、Dockerfile 目标/二进制、shell 语法、JSON 模板存在时校验）；Docker 缺失时脚本输出 UNVERIFIED 并以 0 退出（`--require-docker` 可强制失败）。`docker build`、`docker compose config/up`、PG 初始化、healthcheck、两主机故障矩阵、真实 QQ/Model 均**未运行**；hadolint 未安装。与 P14 提案差异：P13 drain 未定、两主机/镜像仓库/秘密方式仍待用户确认、Ubuntu base 默认 tag 仅本地构建（release 需 digest，smoke --release 强制校验）。
+
 ## P02 六进程入口约定（实现中）
 
 公共 runner 支持 --help（退出0、不监听）与 --config PATH；CLI/配置形状错误退出2，
