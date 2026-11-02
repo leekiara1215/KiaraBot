@@ -167,3 +167,28 @@ mock 覆盖：登录/刷新、`/auth/me`、会话列表与撤销、9 个资源�
 - 未实现（交接项）：账号详情/停用/绑定，安装与实例启停/配置交互，operation 轮询与进度推送，任务详情/取消，模型配置读取与密钥轮换，健康组件聚合，以及 Q1–Q8 相关的动作查询、审计/日志归属、群白名单、主体目录、权限词表、v1 plugins 迁移与 P12 完成度口径——全部等待用户决策后接线。
 - Q1–Q8 依赖：Q1 动作查询授权；Q2 审计/日志查询归属；Q3 groups/群白名单语义；Q4 ListPrincipals 主体目录；Q5 健康聚合契约；Q6 v1 `/plugins*` 迁移；Q7 新权限词表与固定角色；Q8 P12 完成度口径。页面与决策的映射见 `panel/src/p12/catalog.ts` 的 `DECISIONS`，预览页直接展示。
 - 检查（本机实际运行）：`npm test -- --run` 27 passed / 2 skipped；`npm run lint` 通过；`npm run check:contracts` 通过（34 个 panel 端点、5 个 known events，含 P12 端点状态/目录引用/fixture target 类型断言）；`npm run build` 通过。真实服务/真实 Host 未运行。
+
+## P12d-2 Panel live 扩展（2026-11-02）
+
+- 状态：**P12c-2/3/4 已合入的 owner 端点已在 Panel 接线；mock 测试、lint、build 与契约漂移检查在本机实际运行**。真实 Control/REST/WS 联调需 P12c 的 C++ 构建与测试 venv（本 worktree 未构建，`live.test.ts` 按既有条件跳过）。
+- 范围：仅 `panel/` 与本文档（及新增 `panel/README.md`）；未改 `api/`、`proto/`、`control/`、`core/`。需要契约变化的事项登记在下方“需 P12a 契约点”，Panel 不自造端点。
+- 已接线：
+  - 主体目录：`GET /api/v1/principals` 人类主体分页（`principals/page/checked_at`），在“权限”页展示；401 由全局会话处理，403 显式权限不足，503 显示“数据源暂不可用”而非空目录。
+  - 操作进度：`GET /api/v1/operations/{ownerService}/{operationId}?scope=...` 带 scope 轮询，展示 state/execution_outcome/participants/stalled/observed_at/reason/next_attempt_at；HTTP 200 只表示快照读取成功，**不表示完成**；`EXECUTION_UNKNOWN` 明确标注不得推断完成，轮询只在终态停止。
+  - TaskPage：`/tasks` 列表按 `items/page` 分页并提供 `scope`；详情/取消也带 scope。取消返回“已受理”，不伪称任务已停止。
+  - 账号：`/accounts` 列表支持显式 `catalog` 查询；适配器绑定/解绑使用绑定 `expected_version`，成功响应中的 `operation` 进入统一轮询组件；409 由既有 `describeError` 提示冲突。
+  - 安装与实例：`/installations`（catalog + 分页）与安装/实例创建（`POST /installations`、`POST /installations/{id}/instances`）；实例 config 按 `config.instance/desired_version/values/applied_version/apply_state/delivery_id/fence/error/observed_at` 展示，版本按字符串显示；desired-state/config 更新带 `expected_version` 并把返回的 operation 交给轮询组件；创建响应不展示 bootstrap 密钥。
+  - 模型：`/models` 列表 + `/models/{id}` 元数据 + `/models/{id}/configuration`（model.manage）；展示 `secret_configured` 与版本，密钥内容和版本号不回显；更新使用 `expected_version` 并轮询 operation。
+  - 健康：`/health/live`、`/health/ready` 探针与受权 `/api/v1/health` 四依赖（identity/runtime/scheduler/model）；HTTP 200+DEGRADED 显示“部分依赖降级”，Identity/凭证链异常 HTTP 503 显示“Identity 未就绪”，不把缺失组件或 503 展示为正常/空数据。
+  - 日志/审计：权威源未接线返回 503 时显示“数据源暂不可用（503）”，不显示“暂无数据”。
+  - 断流：WS 不可用（无服务端/断流）时允许装载 REST 快照并标注“非最新”；重连收到 SESSION_READY 后再次重拉快照。未知事件/旧流不用于推断完成。
+- 未接线/保持待 P12a：
+  - Model `DisableModel`/`EnableModel` 未在 OpenAPI 声明，Panel 不发明端点，只显示待契约说明。
+  - 实例级插件 enable/config 路径未冻结（Q6），Panel 仅展示实例 config/desired-state，不复用 `/plugins enable`。
+  - WS 目标/事件定义未新增；`health.updated` 仍为 not_implemented，健康仍靠受权 REST 聚合。
+  - 模型 provider secret 轮换不进入本页提交（仅显示已配置/版本），需要受控轮换流程与审批口径。
+- 需 P12a 契约点：
+  1. `/tasks` 的 Control owner gateway 实际要求 `scope` query（见 control/api/tests/owner_gateway_test.cpp），但 `api/openapi.yaml` 的 `listTasks` 只声明 page 参数；Panel 已按 owner 语义附 scope，建议契约补参数。
+  2. `/accounts`、`/installations` 列表要求 `catalog`（TargetCatalogRef）但没有 catalog 发现端点；Panel 只能手工输入 catalog ID，需要 P12a/Control 给出 catalog 选择来源。
+  3. TaskPage/operation 的 200/202 “受理 ≠ 完成”已由各自 owner operation 表达；若后续增加统一 operation 推送事件，需要 AsyncAPI 目标/事件冻结。
+- 检查（本机实际运行）：`npm test -- --run` **41 passed / 2 skipped**（live.test.ts 真后端套件按缺陷构建产物跳过）；`npm run lint` 通过；`npm run check:contracts` 通过（50 个 panel 端点、5 个 known events）；`npm run build` 通过。
