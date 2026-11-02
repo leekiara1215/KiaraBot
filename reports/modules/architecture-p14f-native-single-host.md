@@ -145,3 +145,40 @@ action_query/delete/restore 全部 `pre-fix-skip`（稳定 400 INVALID_ARGUMENT�
 `exact_permissions` 仍为 CHECK 1..40，Control 仍以空 scope 发 health 委派，权限名目录仍无
 log/audit/health）。因此本任务**尚未获得修复后 success 结果**；修复合入 main 后只需
 `git rebase main` 并重跑同一条命令，矩阵会自动切换为 success/失败断言，无需改测试逻辑。
+
+## 8. P14i 修复后复验（2026-11-03，P14g/P14h + Control/Identity 修复）
+
+P14i 在修复分支上定位并修复了 4 个真实缺陷（见 commit `fix(p14i)`）：
+
+1. **Control 委派请求 id 非 UUID**：`owner_clients.cpp` 的 `random_identifier()` 返回 32 位 hex，
+   Identity `run` 边界要求 UUIDv4，直接以 INVALID_ARGUMENT 拒绝（未进入 handler）。
+2. **Control 委派缺 idempotency key**：IdentityIssueDelegation 是幂等 RPC，空 key 会被边界拒绝；
+   Control 现生成一次性 key。
+3. **Catalog 资源 id 校验过严**：`target_codec` 对 `RESOURCE_CATALOG` 套用 UUID 默认规则，拒绝
+   文档规定的 Control catalog id `control`；改为与 Task 相同的 bounded printable 规则，
+   并补 `p04_target_codec` 正/反例。
+4. **委派加密权限上限仍为 MessageRead(40)**：`delegation_crypto.cpp` 的 shape/decode 硬编码
+   `<= Permission::MessageRead`，带 41–50 权限（log/audit/health.read 等）的委派签名失败
+   INVALID_ARGUMENT；改为 `Permission::HealthRead(50)`。
+   同时 `identity_bootstrap_test` 的敏感权限断言改为 `COUNT(DISTINCT permission)=10`，允许
+   扩展 enrollment 追加同权限的 Catalog-scope 精确授权（原生栈/P12j 需要）。
+
+**修复后实测**（`ctest --preset full-locked -R '^p14_native_single_host$'`，`KIARABOT_P14F_DEBUG_GRANTS=full`）：
+Passed ~13–16s，`fix_ready=True`，矩阵：
+- `health` = **success**（200 HEALTHY，identity/runtime/scheduler/model 四组件真实 HEALTHY；
+  Control probe `/health/ready` 也随 P14g 修复变为 HEALTHY）
+- `principals` = `capability-gap`（Identity `ListPrincipals` 仍是 target `not_implemented`，
+  Control 返回稳定 CAPABILITY_NOT_SUPPORTED，非伪造）
+- `logs`/`audit`/`tasks_list`/`models`/`action_policy`/`action_query`/`delete`/`restore` =
+  `known-gap`（稳定 4xx：Control owner 请求/查询参数或委派 scope 仍与 owner 期望不一致，
+  例如 audit actor 过滤需 principal UUID、tasks/models scope 编码需进一步对齐）。
+- 故障/重启/fail-closed 全部保留通过。
+
+**修复前/后对照**：修复前 P14f 实测 `/api/v1/health` 400 INVALID_ARGUMENT、所有 owner-backed
+读取只能稳定错误；修复后 `health` 首次形成真实四依赖成功链，`principals` 明确为契约未实现
+（capability-gap），其余 owner 读取仍有稳定 known-gap，不再阻塞 smoke 通过但**不计入成功**。
+
+**剩余缺口（P14j 候选）**：Control owner 请求参数/委派 scope 对齐（logs/audit actor 过滤、
+tasks scope、models scope、action/lifecycle 请求体）；Identity ListPrincipals/ListSessions/
+ListAssignments 的 target 实现（当前 not_implemented）；真实 Host/Adapter、真实 QQ/Provider、
+Docker Compose 单机与两主机项仍按 P14f 文档保留。
