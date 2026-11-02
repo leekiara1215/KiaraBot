@@ -27,8 +27,9 @@ walk = lambda do |node, origin|
 end
 [openapi, asyncapi].each {|data| walk.call(data, data)}
 declared_rpcs = spec['methods'].map {|m| m['service'] + '.' + m['method']}
-# Internal dispatcher methods are never a client-visible API: no REST operation may bind them.
-internal_rpcs = spec['methods'].select {|m| m['exposure'] == 'internal_dispatcher'}
+# Internal dispatcher and HostBridge-only methods are never a client-visible API:
+# no REST operation may bind them.
+internal_rpcs = spec['methods'].select {|m| %w[internal_dispatcher host_bridge].include?(m['exposure']) }
                               .map {|m| m['service'] + '.' + m['method']}
 openapi['paths'].each do |path, methods|
   methods.each do |verb, operation|

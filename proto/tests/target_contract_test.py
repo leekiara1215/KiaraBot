@@ -69,7 +69,7 @@ def main():
     bridge_specs = SPEC['bridges']
     expected_bridges = {(bridge['service'], bridge['method']) for bridge in bridge_specs}
     actual_bridges = {(service.name, rpc.name) for file in files.values()
-                      for service in file.service if service.name in {'AdapterBridge', 'PluginBridge'}
+                      for service in file.service if service.name in {'AdapterBridge', 'PluginBridge', 'HostBridge'}
                       for rpc in service.method}
     assert actual_bridges == expected_bridges, (actual_bridges - expected_bridges,
                                                 expected_bridges - actual_bridges)
@@ -82,10 +82,23 @@ def main():
         assert rpc.client_streaming == bridge['client_streaming']
         assert rpc.server_streaming == bridge['server_streaming']
         assert bridge['status'] in {'implemented', 'not_implemented', 'deprecated'}
-        assert bridge.get('exposure', 'wire') in {'wire', 'internal_dispatcher'}
+        assert bridge.get('exposure', 'wire') in {'wire', 'internal_mtls'}
+        # The P06 external bridges are the only wire listeners; HostBridge is the P08
+        # internal mTLS stream, so a transport mix-up must fail rather than pass as a
+        # generic allowed value.
+        if bridge['service'] == 'HostBridge':
+            assert bridge.get('exposure') == 'internal_mtls', bridge
+        else:
+            assert bridge.get('exposure', 'wire') == 'wire', bridge
     checked = 0
     for method in SPEC['methods']:
-        assert method.get('exposure', 'wire') in {'wire', 'internal_dispatcher'}
+        assert method.get('exposure', 'wire') in {'wire', 'internal_dispatcher', 'host_bridge'}
+        # HostService unary methods are only reachable over the internal mTLS HostBridge;
+        # host_bridge is reserved for exactly that service (P08).
+        if method['service'] == 'HostService':
+            assert method.get('exposure') == 'host_bridge', method
+        else:
+            assert method.get('exposure') != 'host_bridge', method
         file = files['kiarabot/v1/' + method['file']]
         service = next(s for s in file.service if s.name == method['service'])
         rpc = next(m for m in service.method if m.name == method['method'])

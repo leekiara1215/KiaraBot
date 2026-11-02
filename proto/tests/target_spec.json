@@ -976,7 +976,7 @@
       "file": "host.proto",
       "request": "HostRegisterHostRequest",
       "response": "HostRegisterHostResponse",
-      "caller": "Host (registration/report/observations via HostBridge)",
+      "caller": "Host on the internal mTLS HostBridge; certificate SAN/fingerprint maps to a pre-registered host_id",
       "permission": "host.register",
       "risk": "online",
       "mutating": true,
@@ -985,7 +985,8 @@
       "server_streaming": false,
       "status": "not_implemented",
       "max_deadline_ms": 5000,
-      "requires_idempotency_key": false
+      "requires_idempotency_key": false,
+      "exposure": "host_bridge"
     },
     {
       "service": "HostService",
@@ -993,7 +994,7 @@
       "file": "host.proto",
       "request": "HostReportInventoryRequest",
       "response": "HostReportInventoryResponse",
-      "caller": "Host (registration/report/observations via HostBridge)",
+      "caller": "Host on the internal mTLS HostBridge (inventory CAS; host heartbeat uses HostHeartbeat)",
       "permission": "host.register",
       "risk": "online",
       "mutating": true,
@@ -1002,7 +1003,8 @@
       "server_streaming": false,
       "status": "not_implemented",
       "max_deadline_ms": 30000,
-      "requires_idempotency_key": true
+      "requires_idempotency_key": true,
+      "exposure": "host_bridge"
     },
     {
       "service": "HostService",
@@ -1010,7 +1012,7 @@
       "file": "host.proto",
       "request": "HostApplyDesiredProcessRequest",
       "response": "HostApplyDesiredProcessResponse",
-      "caller": "Runtime via HostBridge",
+      "caller": "Runtime dispatcher over the internal mTLS HostBridge to a pre-registered Host",
       "permission": "host.execute",
       "risk": "online",
       "mutating": true,
@@ -1019,7 +1021,8 @@
       "server_streaming": false,
       "status": "not_implemented",
       "max_deadline_ms": 30000,
-      "requires_idempotency_key": false
+      "requires_idempotency_key": false,
+      "exposure": "host_bridge"
     },
     {
       "service": "HostService",
@@ -1027,7 +1030,7 @@
       "file": "host.proto",
       "request": "HostStopExecutionRequest",
       "response": "HostStopExecutionResponse",
-      "caller": "Runtime via HostBridge",
+      "caller": "Runtime dispatcher over the internal mTLS HostBridge to a pre-registered Host",
       "permission": "host.execute",
       "risk": "online",
       "mutating": true,
@@ -1036,7 +1039,8 @@
       "server_streaming": false,
       "status": "not_implemented",
       "max_deadline_ms": 30000,
-      "requires_idempotency_key": false
+      "requires_idempotency_key": false,
+      "exposure": "host_bridge"
     },
     {
       "service": "HostService",
@@ -1044,7 +1048,7 @@
       "file": "host.proto",
       "request": "HostDrainHostRequest",
       "response": "HostDrainHostResponse",
-      "caller": "Runtime via HostBridge",
+      "caller": "Runtime dispatcher over the internal mTLS HostBridge to a pre-registered Host",
       "permission": "host.execute",
       "risk": "online",
       "mutating": true,
@@ -1053,7 +1057,8 @@
       "server_streaming": false,
       "status": "not_implemented",
       "max_deadline_ms": 30000,
-      "requires_idempotency_key": false
+      "requires_idempotency_key": false,
+      "exposure": "host_bridge"
     },
     {
       "service": "HostService",
@@ -1061,7 +1066,7 @@
       "file": "host.proto",
       "request": "HostGetExecutionRequest",
       "response": "HostGetExecutionResponse",
-      "caller": "Runtime via HostBridge",
+      "caller": "Runtime dispatcher over the internal mTLS HostBridge to a pre-registered Host",
       "permission": "host.read",
       "risk": "online",
       "mutating": false,
@@ -1070,7 +1075,8 @@
       "server_streaming": false,
       "status": "not_implemented",
       "max_deadline_ms": 5000,
-      "requires_idempotency_key": false
+      "requires_idempotency_key": false,
+      "exposure": "host_bridge"
     },
     {
       "service": "HostService",
@@ -1078,7 +1084,7 @@
       "file": "host.proto",
       "request": "HostWatchExecutionsRequest",
       "response": "HostWatchExecutionsResponse",
-      "caller": "Host (registration/report/observations via HostBridge)",
+      "caller": "Host on the internal mTLS HostBridge (observation stream)",
       "permission": "host.read",
       "risk": "online",
       "mutating": false,
@@ -1087,7 +1093,8 @@
       "server_streaming": true,
       "status": "not_implemented",
       "max_deadline_ms": 5000,
-      "requires_idempotency_key": false
+      "requires_idempotency_key": false,
+      "exposure": "host_bridge"
     },
     {
       "service": "SchedulerService",
@@ -1611,6 +1618,18 @@
       "server_streaming": true,
       "caller": "external plugin instance authenticated by per-instance bootstrap credential and ConnectionAuthorization",
       "exposure": "wire",
+      "status": "not_implemented"
+    },
+    {
+      "service": "HostBridge",
+      "method": "Connect",
+      "file": "host.proto",
+      "request": "HostToRuntime",
+      "response": "RuntimeToHost",
+      "client_streaming": true,
+      "server_streaming": true,
+      "caller": "pre-registered Host platform service on the Runtime internal mTLS listener; deployment-issued client certificate maps to host_id; no bootstrap credential, connection_proof or ConnectionAuthorization",
+      "exposure": "internal_mtls",
       "status": "not_implemented"
     }
   ],
