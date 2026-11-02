@@ -63,7 +63,7 @@ def _timestamp(seconds: float) -> Timestamp:
 
 class FakeTargetRuntime(services.PluginBridgeServicer):
     def __init__(self, token='t' * 32, *, grants=None, features=(), heartbeat_acks=True,
-                 authorization_lifetime=56.0, refusal=None):
+                 authorization_lifetime=56.0, refusal=None, desired_config_version=0):
         root, certificate, key = _tls_material()
         self.root_cert = root
         self.token = token
@@ -72,6 +72,7 @@ class FakeTargetRuntime(services.PluginBridgeServicer):
         self.heartbeat_acks = heartbeat_acks
         self.authorization_lifetime = authorization_lifetime
         self.refusal = refusal
+        self.desired_config_version = desired_config_version
         self.registrations = asyncio.Queue()
         self.acknowledgements = asyncio.Queue()
         self.config_acknowledgements = asyncio.Queue()
@@ -217,7 +218,7 @@ class FakeTargetRuntime(services.PluginBridgeServicer):
         yield plugins.CoreToPlugin(register_result=plugins.RegisterPluginResponse(
             accepted=True, required_api_version='kiarabot.plugin.v1',
             granted_permissions=granted, enabled_features=self.features,
-            fence=self.fence, desired_config_version=0,
+            fence=self.fence, desired_config_version=self.desired_config_version,
             authorization=self._authorization()))
         self._connection_active = True
         responses: asyncio.Queue = asyncio.Queue()

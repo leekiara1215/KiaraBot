@@ -58,3 +58,30 @@ def test_missing_required_variables_are_invalid(tmp_path):
         with pytest.raises(PluginError) as failure:
             options_from_environment(environ)
         assert failure.value.code == common.INVALID_ARGUMENT
+
+
+def test_managed_host_bootstrap_credential_environment(tmp_path):
+    """P08c: the Host injects KIARABOT_PLUGIN_BOOTSTRAP instead of PLUGIN_AUTH_TOKEN."""
+    environ = base(tmp_path)
+    environ.pop('PLUGIN_AUTH_TOKEN')
+    environ['KIARABOT_PLUGIN_BOOTSTRAP'] = 'bootstrap-' + 'b' * 40
+    options = options_from_environment(environ)
+    assert options.token == 'bootstrap-' + 'b' * 40
+
+    # An explicitly provided bootstrap credential wins over the externally-managed alias.
+    both = dict(environ, PLUGIN_AUTH_TOKEN='t' * 32)
+    assert options_from_environment(both).token == 'bootstrap-' + 'b' * 40
+
+    # Neither source means the deployment contract is not satisfied.
+    missing = base(tmp_path)
+    missing.pop('PLUGIN_AUTH_TOKEN')
+    with pytest.raises(PluginError) as failure:
+        options_from_environment(missing)
+    assert failure.value.code == common.INVALID_ARGUMENT
+
+    # Short/invalid bootstrap credentials fail closed with the same stable code.
+    environ['KIARABOT_PLUGIN_BOOTSTRAP'] = 'short'
+    environ.pop('PLUGIN_AUTH_TOKEN', None)
+    with pytest.raises(PluginError) as failure:
+        options_from_environment(environ)
+    assert failure.value.code == common.INVALID_ARGUMENT

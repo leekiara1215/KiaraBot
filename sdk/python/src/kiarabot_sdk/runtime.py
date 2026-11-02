@@ -330,6 +330,9 @@ class Runner:
         self.last_dispositions: list[int] = []
         self._config_seen = {}
         self._applied_config_version = 0
+        # P08 registration fact: the Runtime's durable desired config version for this
+        # instance. The SDK only observes it; applied evidence stays Runtime-owned.
+        self._desired_config_version = 0
         self._draining = False
 
     async def _write(self, call, request):
@@ -357,6 +360,16 @@ class Runner:
         ack.fence.CopyFrom(state.fence)
         snapshot = plugins.PluginConfig()
         snapshot.CopyFrom(config)
+        if (self._desired_config_version
+                and config.config_version > self._desired_config_version):
+            # P08: a delivery above the Runtime's durable desired version is malformed and
+            # must never be applied or advance local applied evidence. Report it in-band.
+            ack.error.CopyFrom(common.Error(code=common.INVALID_ARGUMENT,
+                                            message=common.ErrorCode.Name(common.INVALID_ARGUMENT),
+                                            request_id=config.delivery_id))
+            self._remember_config_ack(config, fingerprint, ack)
+            await write(plugins.PluginToCore(config_ack=ack))
+            return
         stale = config.config_version < self._applied_config_version
         try:
             if stale:
@@ -377,10 +390,14 @@ class Runner:
                 code, retryable = common.INTERNAL, False
             ack.error.CopyFrom(common.Error(code=code, message=common.ErrorCode.Name(code),
                                             request_id=ack.delivery_id, retryable=retryable))
+        self._remember_config_ack(config, fingerprint, ack)
+        await write(plugins.PluginToCore(config_ack=ack))
+
+    def _remember_config_ack(self, config, fingerprint, ack):
+        """Cache the ACK per delivery so a replayed delivery never repeats the callback."""
         self._config_seen[ack.delivery_id] = (fingerprint, ack)
         if len(self._config_seen) > 32:
             del self._config_seen[next(iter(self._config_seen))]
-        await write(plugins.PluginToCore(config_ack=ack))
 
     async def _session(self):
         self.context._permissions = frozenset()
@@ -537,6 +554,7 @@ class Runner:
                         or registered.HasField('error')
                         or not set(registered.enabled_features).issubset(set(transport.TARGET_FEATURES))):
                     raise PluginError(common.PERMISSION_DENIED)
+                self._desired_config_version = registered.desired_config_version
                 self.context._permissions = frozenset(registered.granted_permissions)
                 self.context._features = frozenset(registered.enabled_features)
                 self.context._rpc = _Rpc(write, pending, expected)

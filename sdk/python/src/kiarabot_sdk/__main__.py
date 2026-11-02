@@ -14,10 +14,16 @@ def options_from_environment(environ=None):
     values = os.environ if environ is None else environ
     try:
         endpoint = values['PLUGIN_CORE_ENDPOINT']
-        token = values['PLUGIN_AUTH_TOKEN']
         tls_root = values['PLUGIN_TLS_ROOT']
     except KeyError:
         raise PluginError(common.INVALID_ARGUMENT) from None
+    # P08c managed instances: the Host injects the deployment-provisioned bootstrap
+    # credential through its launch profile (KIARABOT_PLUGIN_BOOTSTRAP). Externally
+    # managed deployments keep the P06 PLUGIN_AUTH_TOKEN name. The credential is the
+    # same opaque P06 bootstrap token and is never logged or persisted by the SDK.
+    token = values.get('KIARABOT_PLUGIN_BOOTSTRAP') or values.get('PLUGIN_AUTH_TOKEN')
+    if not token:
+        raise PluginError(common.INVALID_ARGUMENT)
 
     def seconds(name, default):
         raw = values.get(name)

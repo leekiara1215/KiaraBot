@@ -165,3 +165,145 @@ async def test_config_requires_negotiation_and_valid_deadline(enabled):
             stop.set()
             if not running.done():
                 await asyncio.wait_for(running, 2)
+
+
+async def test_registration_desired_version_gates_malformed_delivery():
+    plugin, stop = Configurable(), asyncio.Event()
+    async with FakeTargetRuntime(features=['plugin.config.v1'],
+                                 desired_config_version=3) as host:
+        runner = Runner(policy(), plugin, options(host))
+        running = asyncio.create_task(runner.run(stop))
+        try:
+            await get(host.registrations)
+            async with asyncio.timeout(2):
+                while runner._desired_config_version != 3:
+                    await asyncio.sleep(.01)
+            # A delivery above the durable desired version is rejected, not applied.
+            await host.send_config('ahead', config_version=5, delivery_id='ahead-delivery')
+            ack = await get(host.config_acknowledgements)
+            assert not ack.accepted and ack.error.code == common.INVALID_ARGUMENT
+            assert ack.config_version == 5 and ack.delivery_id == 'ahead-delivery'
+            assert ack.HasField('fence') and ack.fence == host.fence
+            assert runner.context.config is None
+            await host.send_config('current', config_version=3)
+            assert (await get(host.config_acknowledgements)).accepted
+            assert runner.context.config.version == 'current'
+            assert runner._applied_config_version == 3
+        finally:
+            stop.set()
+            await asyncio.wait_for(running, 2)
+
+
+async def test_failed_apply_keeps_previous_snapshot_and_applied_version():
+    plugin, stop = Configurable(), asyncio.Event()
+    async with FakeTargetRuntime(features=['plugin.config.v1']) as host:
+        runner = Runner(policy(), plugin, options(host))
+        running = asyncio.create_task(runner.run(stop))
+        try:
+            await get(host.registrations)
+            await host.send_config('good-v2', {'n': 2}, config_version=2)
+            assert (await get(host.config_acknowledgements)).accepted
+            assert runner.context.config.version == 'good-v2'
+            assert runner._applied_config_version == 2
+
+            await host.send_config('bad', {'n': 3}, config_version=3,
+                                   delivery_id='failed-delivery')
+            failed = await get(host.config_acknowledgements)
+            assert not failed.accepted and failed.error.code == common.INVALID_ARGUMENT
+            # Failure must not advance applied evidence nor replace the last good snapshot.
+            assert runner.context.config.version == 'good-v2'
+            assert runner._applied_config_version == 2
+
+            await host.send_config('good-v4', {'n': 4}, config_version=4)
+            assert (await get(host.config_acknowledgements)).accepted
+            assert runner.context.config.version == 'good-v4'
+            assert runner._applied_config_version == 4
+        finally:
+            stop.set()
+            await asyncio.wait_for(running, 2)
+
+
+async def test_reconnect_redelivers_and_reapplies_latest_snapshot():
+    plugin, stop = Configurable(), asyncio.Event()
+    async with FakeTargetRuntime(features=['plugin.config.v1'], desired_config_version=2) as host:
+        runner = Runner(policy(), plugin, options(host))
+        running = asyncio.create_task(runner.run(stop))
+        try:
+            await get(host.registrations)
+            await host.send_config('v2', {'n': 2}, config_version=2, delivery_id='first')
+            assert (await get(host.config_acknowledgements)).accepted
+            assert plugin.calls == [('v2', 2)]
+
+            # Reconnect: delivery is volatile; the latest snapshot is re-delivered with a new
+            # delivery id and the (idempotent) callback is invoked again before the new ACK.
+            await host.outgoing.put(None)
+            await get(host.registrations)
+            await host.send_config('v2', {'n': 2}, config_version=2, delivery_id='second')
+            replayed = await get(host.config_acknowledgements)
+            assert replayed.accepted and replayed.delivery_id == 'second'
+            assert replay_check(replayed) == 2
+            assert plugin.calls == [('v2', 2), ('v2', 2)]
+            assert runner.context.config.version == 'v2'
+            assert runner._applied_config_version == 2
+        finally:
+            stop.set()
+            await asyncio.wait_for(running, 2)
+
+
+def replay_check(ack):
+    assert ack.HasField('fence')
+    return ack.config_version
+
+
+async def test_new_delivery_retries_same_version_after_failure():
+    plugin, stop = Configurable(), asyncio.Event()
+    async with FakeTargetRuntime(features=['plugin.config.v1']) as host:
+        runner = Runner(policy(), plugin, options(host))
+        running = asyncio.create_task(runner.run(stop))
+        try:
+            await get(host.registrations)
+            await host.send_config('bad', config_version=2, delivery_id='failed')
+            failed = await get(host.config_acknowledgements)
+            assert not failed.accepted and failed.error.code == common.INVALID_ARGUMENT
+            assert runner.context.config is None
+            # A new delivery attempt for the same desired version may retry the callback.
+            await host.send_config('recovered', config_version=2, delivery_id='retry')
+            ack = await get(host.config_acknowledgements)
+            assert ack.accepted and ack.delivery_id == 'retry'
+            assert runner.context.config.version == 'recovered'
+            assert runner._applied_config_version == 2
+            assert plugin.calls == [('bad', 2), ('recovered', 2)]
+        finally:
+            stop.set()
+            await asyncio.wait_for(running, 2)
+
+
+async def test_process_restart_reapplies_persisted_desired_config():
+    """A new plugin process has no applied evidence; the durable desired snapshot is replayed."""
+    first_plugin, stop = Configurable(), asyncio.Event()
+    async with FakeTargetRuntime(features=['plugin.config.v1'], desired_config_version=2) as host:
+        runner = Runner(policy(), first_plugin, options(host))
+        running = asyncio.create_task(runner.run(stop))
+        try:
+            await get(host.registrations)
+            await host.send_config('v2', {'n': 2}, config_version=2, delivery_id='before-restart')
+            assert (await get(host.config_acknowledgements)).accepted
+        finally:
+            stop.set()
+            await asyncio.wait_for(running, 2)
+
+        second_plugin, stop = Configurable(), asyncio.Event()
+        runner = Runner(policy(), second_plugin, options(host))
+        running = asyncio.create_task(runner.run(stop))
+        try:
+            await get(host.registrations)
+            assert runner._applied_config_version == 0
+            await host.send_config('v2', {'n': 2}, config_version=2, delivery_id='after-restart')
+            ack = await get(host.config_acknowledgements)
+            assert ack.accepted and ack.config_version == 2
+            assert runner.context.config.version == 'v2'
+            assert runner._applied_config_version == 2
+            assert second_plugin.calls == [('v2', 2)]
+        finally:
+            stop.set()
+            await asyncio.wait_for(running, 2)
