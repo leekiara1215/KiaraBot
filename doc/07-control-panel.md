@@ -277,3 +277,10 @@ Panel 侧仍只到“已接线路由+mock transport 单测”，尚未做真实�
 - 未验收：真实目标栈（六服务/PG16.4）、Panel 浏览器真实 HTTP live、真实 QQ/模型 Provider、Host 真实
   participant 停止/插件 ACK。
 - Q8 中“模型 Disable/Enable 无契约”在 main@3ac3761 已不成立：REST 已由 P11d 接线并有真 TLS 200 证据。
+
+## P12j Panel API client 对原生目标栈 live 验证（2026-11-03，fc454bc）
+
+- 复用 P14f/P14i 原生单机栈（真实五进程 + PG16.4 + 临时 PKI + Control HTTPS），Panel client HTTP 矩阵严格模式 PASS。
+- 真实结果：登录/refresh 200；`/health/live|ready` 200 HEALTHY；受权 `/api/v1/health` **200 HEALTHY**（四个真实 owner 组件）；未认证/bad token 401；非法 filter 400。
+- 已知 gap：principals 503 CAPABILITY_NOT_SUPPORTED（P12l ListPrincipals 待实现）；logs/audit/tasks/models/action/delete-restore 仍为 stable known-gap（P14j 对齐 scope/参数中），严格模式按 Lead 口径记录为 known-gap，不伪造成功；依赖故障 503。
+- 复现命令/CTest `p12j_panel_live`、完整矩阵见 [P12j 报告](../reports/modules/architecture-p12j-panel-live.md)。pre-fix 4e88fb4 全部 owner 400 的对照也保留在报告。
