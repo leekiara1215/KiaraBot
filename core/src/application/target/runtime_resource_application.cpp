@@ -58,6 +58,7 @@ Status enqueue_host_command(RuntimeUnitOfWork& work, RuntimeSecretPort& secrets,
   const std::string canonical = instance.id.value + "|" + instance.host->value + "|" +
                                 std::to_string(generation) + "|" +
                                 std::to_string(instance.desired_version.value) + "|" +
+                                std::to_string(instance.version.value) + "|" +
                                 std::to_string(static_cast<int>(instance.desired));
   auto payload = secrets.sha256(canonical);
   if (const auto* failure = std::get_if<Failure>(&payload)) {
