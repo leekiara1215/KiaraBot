@@ -20,6 +20,7 @@
 #include "identity_authorization_checks.hpp"
 #include "kiarabot/core/application/target/identity_admin_application.hpp"
 #include "kiarabot/core/application/target/identity_delegation_application.hpp"
+#include "kiarabot/core/application/target/identity_invalidation_application.hpp"
 #include "kiarabot/core/application/target/identity_principal_application.hpp"
 #include "kiarabot/core/domain/target/identity_state_rules.hpp"
 #include "kiarabot/infrastructure/identity_crypto/delegation_crypto.hpp"
@@ -372,6 +373,74 @@ void application_flow(const pg::DatabaseConfig& config) {
             take(work->bootstrap().state()).state == t::BootstrapState::Consumed,
         "new factory lost committed application state");
   work->rollback();
+  phase = "durable invalidation stream";
+  auto restarted_admin = std::make_unique<t::IdentityAdminApplication>(*factory, *certificates);
+  const auto restarted_peer = take(restarted_admin->authenticate_peer(
+      {tls.registration.fingerprint, context(clock, "peer-invalidation").deadline}, tls.leaf_der));
+  const t::ResourceRef invalidation_scope{t::ResourceKind::Model,
+                                          {"70000000-0000-4000-8000-000000000001"}};
+  const t::AssignmentId invalidation_grant{"70000000-0000-4000-8000-000000000002"};
+  {
+    auto work = take(factory->begin());
+    t::AssignmentStateRecord grant;
+    grant.assignment.id = invalidation_grant;
+    grant.assignment.subject = control;
+    grant.assignment.version = {1};
+    grant.assignment.explicit_permissions.push_back(
+        {t::Permission::IdentityInvalidationRead, invalidation_scope});
+    grant.state = t::AssignmentState::Active;
+    take(work->exact_assignments().save_state(grant, std::nullopt));
+    check(take(work->authorizations().find(control)).has_value(),
+          "missing authorization state for invalidation grant");
+    take(work->authorizations().save({control, {2}, true}, std::optional<t::ResourceVersion>{1}));
+    take(t::append_identity_invalidation(
+        *work, *random, {control, {2}, {invalidation_scope}, false}, take(work->current_time())));
+    check(work->commit() == t::CommitResult::Committed,
+          "invalidation/grant transaction did not commit");
+  }
+  auto invalidations_app =
+      take(t::make_identity_invalidation_application(*factory, *random, {.batch = 8}));
+  const auto snapshot = take(invalidations_app->snapshot(
+      {context(clock, "snapshot-invalidation"), restarted_peer, {invalidation_scope}, {}}));
+  check(snapshot.assignments.size() == 1 && snapshot.authorization_version.value == 2 &&
+            snapshot.cursor.source_service == t::kInvalidationSourceService &&
+            !snapshot.cursor.epoch.empty() && snapshot.cursor.sequence == 1,
+        "real snapshot lost committed cursor/authorization evidence");
+  const auto initial_watch = take(invalidations_app->open_watch(
+      {context(clock, "watch-invalidation"), restarted_peer, {invalidation_scope}, {}}));
+  check(initial_watch.resync_required && initial_watch.watermark.epoch == snapshot.cursor.epoch,
+        "initial watch did not request a full resync");
+  {
+    auto work = take(factory->begin());
+    take(work->authorizations().save({control, {3}, true}, std::optional<t::ResourceVersion>{2}));
+    take(t::append_identity_invalidation(
+        *work, *random, {control, {3}, {invalidation_scope}, false}, take(work->current_time())));
+    check(work->commit() == t::CommitResult::Committed, "second invalidation did not commit");
+  }
+  const auto polled = take(invalidations_app->poll({context(clock, "poll-invalidation"),
+                                                    restarted_peer,
+                                                    {invalidation_scope},
+                                                    snapshot.cursor.epoch,
+                                                    snapshot.cursor.sequence,
+                                                    8}));
+  check(!polled.resync_required && polled.records.size() == 1 &&
+            polled.records.front().sequence == 2 &&
+            polled.records.front().event.authorization_version.value == 3,
+        "ordered committed invalidation was not streamed after the cursor");
+  // Durable restart keeps the SAME epoch and sequence: continuity is real, not fabricated.
+  invalidations_app.reset();
+  restarted_admin.reset();
+  factory.reset();
+  factory = take(pg::open_identity_security(config));
+  auto restarted_work = take(factory->begin());
+  const auto state = take(restarted_work->invalidations()->state());
+  check(state.has_value() && state->epoch == snapshot.cursor.epoch && state->next_sequence == 2,
+        "invalidation epoch/sequence did not survive a real restart");
+  const auto retained =
+      take(restarted_work->invalidations()->read_after(snapshot.cursor.epoch, 0, 8));
+  check(retained.size() == 2 && retained.front().sequence == 1 && retained.back().sequence == 2,
+        "durable invalidation log lost ordered records across restart");
+  restarted_work->rollback();
   phase = "real online authorization";
   pg::test::identity_authorization_checks(*factory, *delegations, clock, user, user_credential,
                                           refreshed.tokens.session, control);
