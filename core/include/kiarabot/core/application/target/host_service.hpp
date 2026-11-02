@@ -26,6 +26,9 @@ struct HostServiceDependencies {
   std::string credential_directory;
   std::chrono::milliseconds stop_grace{std::chrono::seconds{10}};
   std::size_t observation_batch{64};
+  // Composition-root owned dependency bundle (journal/supervisor/bridge/clock). The application
+  // stores it so the borrowed references stay valid for the whole service lifetime.
+  std::shared_ptr<void> keep_alive;
 };
 
 // P08a Plugin Host application. Owns process reality and the Host-local journal only; desired

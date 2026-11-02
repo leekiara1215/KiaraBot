@@ -87,6 +87,21 @@ if(UNIX)
   set_tests_properties(p08_host_process PROPERTIES LABELS "p08;unit;fault" TIMEOUT 30)
 endif()
 
+add_library(kiarabot_host_bridge STATIC
+  ${CMAKE_SOURCE_DIR}/core/src/runtime/platform/host_bridge_client.cpp)
+target_include_directories(kiarabot_host_bridge PUBLIC ${CMAKE_SOURCE_DIR}/core/include)
+target_link_libraries(kiarabot_host_bridge PUBLIC kiarabot_proto)
+kiarabot_platform_warnings(kiarabot_host_bridge)
+
+if(UNIX)
+  add_executable(kiarabot_host_bridge_test
+    ${CMAKE_SOURCE_DIR}/core/tests/platform/host_bridge_test.cpp)
+  target_link_libraries(kiarabot_host_bridge_test PRIVATE kiarabot_host_bridge)
+  kiarabot_platform_warnings(kiarabot_host_bridge_test)
+  add_test(NAME p08_host_bridge COMMAND kiarabot_host_bridge_test)
+  set_tests_properties(p08_host_bridge PROPERTIES LABELS "p08;integration;fault" TIMEOUT 60)
+endif()
+
 add_library(kiarabot_host_service STATIC
   ${CMAKE_SOURCE_DIR}/core/src/application/target/host_service.cpp)
 target_include_directories(kiarabot_host_service PUBLIC ${CMAKE_SOURCE_DIR}/core/include)
@@ -236,6 +251,16 @@ foreach(SERVICE identity runtime plugin_host scheduler model)
   add_executable(kiarabot-${BINARY} ${CMAKE_SOURCE_DIR}/core/app/${ENTRY}_main.cpp)
   target_link_libraries(kiarabot-${BINARY} PRIVATE
     kiarabot_${SERVICE}_application kiarabot_service_process)
+  if(SERVICE STREQUAL "plugin_host" AND TARGET kiarabot_host_journal AND
+     TARGET kiarabot_host_service AND TARGET kiarabot_host_bridge)
+    # Full builds compose the real Host service; dev builds keep the P02 readiness stub.
+    target_sources(kiarabot-${BINARY} PRIVATE
+      ${CMAKE_SOURCE_DIR}/core/app/host_composition.cpp)
+    target_link_libraries(kiarabot-${BINARY} PRIVATE
+      kiarabot_host_service kiarabot_host_bridge kiarabot_host_process kiarabot_host_journal
+      OpenSSL::Crypto)
+    target_compile_definitions(kiarabot-${BINARY} PRIVATE KIARABOT_HOST_COMPOSITION=1)
+  endif()
   if(SERVICE STREQUAL "runtime")
     # The independent Runtime composition owns the typed PG factory, application and unary RPC
     # registration; keep the Identity/control composition out of this process.

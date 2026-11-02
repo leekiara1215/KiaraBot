@@ -97,6 +97,7 @@ bool exact_keys(const nlohmann::json& object, const std::set<std::string>& keys)
   }
   return true;
 }
+bool bounded_config_string(const nlohmann::json& value, std::size_t maximum);
 bool host_absolute_path(const nlohmann::json& value) {
   if (!bounded_config_string(value, 4096)) {
     return false;
