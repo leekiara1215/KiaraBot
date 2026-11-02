@@ -67,3 +67,45 @@ python3 proto/tests/check_implementation_status.py
 python3 proto/tests/evidence_scopes_test.py
 bash proto/tests/check_contracts.sh
 ```
+
+## P07g 退出证据与 target 状态核对（2026-11-02，HEAD 95495c2）
+
+工作树 `.worktrees/p07g`，分支 `codex/p07g`，基于 main@95495c2；本阶段只做证据/文档，不改实现/契约。
+
+### 实际运行（命令+结果）
+```text
+cmake --build --preset full-locked --parallel 8   # build=0
+ctest --preset full-locked -R \
+  'p07_action_rules|p07_postgres_action_records|p07_adapter_e2e|p06_bridge_acceptance|p12_control_owner_gateway'
+# 5/5 passed, 49.27s
+# p07_action_rules 0.45s; p07_postgres_action_records 3.79s (真 PG16.4)
+# p06_bridge_acceptance 24.48s (真 TLS/PG/Runtime，P07 帧段)
+# p07_adapter_e2e 18.91s (真实 NoneBot adapter + fake OneBot + 真实 Runtime)
+# p12_control_owner_gateway 1.63s
+PYTHONPATH=src:build/generated .venv/bin/python -m pytest -q tests/test_actions.py
+# 28 passed, 0.66s
+```
+- `p06_bridge_acceptance` P07 段：插件 submit→ACCEPTED/NOT_STARTED、Runtime 派发 attempt/sequence、adapter terminal→RECORDED、重发→DUPLICATE、evidence UNKNOWN→EVIDENCE_ONLY、result/evidence 同 attempt 竞争顺序、已派发取消→CONFLICT、同 action/idempotency 重复提交回放不二次派发、3 群/分钟配额第 4 个 RATE_LIMITED、adapter 断线重连旧 attempt terminal→RECORDED、deadline EXPIRED+迟到 SUCCEEDED→EVIDENCE_ONLY 不改终态。
+- `p07_adapter_e2e`：真实进程链路 send_message 成功、平台 retcode→KNOWN_FAILED、重复平台帧不新增 Runtime event/Action、dispatch 后取消 CONFLICT、平台 WS 断线重连后继续且无重复平台调用。
+- `p07_postgres_action_records`：真 PG16.4 Action 行/evidence/receipt/配额窗口/过期/重启持久。
+- `action_rules_test`：kind/权限/policy/deadline/状态×执行已知性/取消/EXPIRED 纯规则。
+- SDK `tests/test_actions.py`：Action preflight/status×outcome 解释/Query 回放/UNKNOWN 不误判失败。
+
+### target/契约核对
+- 已 implemented 且有上述证据：`ActionEnvelope`、`ActionResult`、`ActionExecutionEvidence`、`ActionReceipt`、`ActionMetadata`、`PluginActionRequest/Query/Cancel/Response`、`RuntimeQueryActionResult*`；`ActionResult.status/execution_outcome`、evidence/receipt 全字段、dispatch attempt/sequence、send_message payload、权限枚举 41–46、5 条 action semantic rule；target_spec `QueryActionResult=implemented`（wire + Control caller）。
+- 未翻转项及理由：
+  - `RuntimeService.GetActionPolicy/UpdateActionPolicy`（及 ActionPolicy message/fields）：应用层已实现，target_spec 仍 not_implemented；P07f-1 正在补 wire/client 证据，翻转由 P07f-2 按证据进行（本任务不预翻）。
+  - `ActionEnvelope.react_message/delete_message/mute_member/kick_member/approve_request` target payload 项：适配器/领域已有实现与单测，但 target 翻转待 P07f-1/2 的跨服务 wire 证据；仅 `send_message` 已翻。
+  - plugin 权限过滤（manifest 权限 × kind × policy）target 语义未单列翻转：现有 41–46 枚举已翻，但“插件侧权限过滤”作为独立 target 项需 P07f-1 wire 证据后再登记。
+  - `ListActionMetadata`/`InspectActionMetadata`：target_spec 仍 not_implemented（Control 查询走 QueryActionResult；list 未接线）。
+- 契约门禁：`check_implementation_status.py` 通过；`target_api_test.rb`/`evidence_scopes_test.py` 在 main@95495c2 仍失败（listAuditEntries/listLogs/beginDeleteResource/restoreResource 带 owner-RPC 却标 implemented + 冻结集缺这 4 项），属 P12c-7/P12e/P13c 登记漂移，Lead 已安排 core-target 在 P12c-8 修，P07g 未扩改。
+
+### 剩余缺口
+| 缺口 | 状态 |
+| --- | --- |
+| 真实 QQ/NapCat 平台（登录、真实撤回/禁言/踢出/审批凭证、副作用） | 待用户环境（M2/T07b） |
+| 平台延迟/EXPIRED 迟到证据故障注入 | 部分实测：bridge fake adapter 的 deadline+迟到 SUCCEEDED 已覆盖；真实 adapter 进程下延迟/迟到矩阵未注入（待补） |
+| UNKNOWN 重连补报窗口（adapter 崩溃/断线后 action journal 补报） | 部分实测：bridge acceptance 覆盖 adapter 重连旧 attempt；P07d 覆盖平台断线重连，但进程崩溃恢复窗口未专项 |
+| Host/Adapter 跨主机 | 待环境 |
+| 真实平台 reaction API（NapCat set_msg_emoji_like） | 待环境/未验收（T07b） |
+| Control listActionMetadata REST | 未接线；现有 QueryActionResult REST 已测 |

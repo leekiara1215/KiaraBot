@@ -2097,3 +2097,5 @@ P09f（2026-11-02，HEAD d508d67）：上述 P09 target 状态经真 PG16.4 fixt
 ## P06f adapter 事件映射与 fan-out 语义补充（2026-11-02）
 
 OneBot adapter 的 `EventEnvelope.source.account_id` 始终是 Runtime account UUID；平台 `self_id`（OneBot bot id，可能是数字 QQ 号）不是账号资源 id，只能用于平台 bot 查找与来源校验。adapter mapper 以独立的 `platform_self_id`（部署 `ONEBOT_SELF_ID`，缺省 account id）校验入站帧，不得把平台 self id 与 account UUID 比较。事件进入 Runtime 后，fan-out 仍按已连接 plugin 的 manifest capability 订阅（`event.message.received` 等）生成 `delivery_targets`；未连接/未订阅插件不产生 target，重复事件按 event id/content 去重。P07d e2e 的 fake OneBot 消息帧必须使用 OneBot v11 整数 `message_id`，否则 NoneBot 退化为通用 Event、matcher 不执行。
+
+P07g（2026-11-02，HEAD 95495c2）：Action target 已翻项经 `p07_action_rules`、`p07_postgres_action_records`（真 PG16.4）、`p06_bridge_acceptance` P07 段（真 TLS/PG/Runtime）、`p07_adapter_e2e`、SDK `test_actions.py` 28 passed、`p12_control_owner_gateway` 复核；5/5 P07 相关 CTest 通过。未翻转：`Get/UpdateActionPolicy`（应用实现，待 P07f-1 wire 证据，P07f-2 翻）、react/delete/mute/kick/approve payload targets（待 P07f-1/2）、plugin 权限过滤独立项、`ListActionMetadata/InspectActionMetadata`（未接线）；理由见 `reports/modules/architecture-p07-action.md` P07g 节。真实 QQ/NapCat、真实 reaction API、平台延迟/EXPIRED 故障注入和跨主机仍标未验收。
