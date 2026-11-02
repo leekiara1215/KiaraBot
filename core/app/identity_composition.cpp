@@ -10,13 +10,18 @@
 #include "identity_security_clock.hpp"
 #include "kiarabot/core/application/target/identity_admin_application.hpp"
 #include "kiarabot/core/application/target/identity_application.hpp"
+#include "kiarabot/core/application/target/identity_assignment_application.hpp"
+#include "kiarabot/core/application/target/identity_authorization_application.hpp"
+#include "kiarabot/core/application/target/identity_invalidation_application.hpp"
 #include "kiarabot/core/application/target/identity_delegation_application.hpp"
 #include "kiarabot/core/application/target/identity_principal_application.hpp"
 #include "kiarabot/core/application/target/identity_security_application.hpp"
 #include "kiarabot/core/application/target/identity_verification_keys_application.hpp"
 #include "kiarabot/core/domain/target/time.hpp"
+#include "kiarabot/core/runtime/platform/authorization_method_policy.hpp"
 #include "kiarabot/core/runtime/platform/identity_rpc.hpp"
 #include "kiarabot/core/runtime/platform/service_rpc.hpp"
+#include "kiarabot/infrastructure/identity_crypto/assignment_fingerprint.hpp"
 #include "kiarabot/infrastructure/identity_crypto/key_files.hpp"
 #include "kiarabot/infrastructure/identity_crypto/peer_certificate.hpp"
 #include "kiarabot/infrastructure/identity_crypto/principal_fingerprint.hpp"
@@ -50,6 +55,8 @@ struct Dependencies {
   std::unique_ptr<target::DelegationCryptoPort> delegations;
   std::unique_ptr<target::VerificationKeyMaterialPort> verification_keys;
   std::unique_ptr<target::IdentityPrincipalFingerprintPort> principal_fingerprints;
+  std::unique_ptr<target::IdentityAssignmentFingerprintPort> assignment_fingerprints;
+  std::unique_ptr<target::AuthorizationMethodPolicyPort> authorization_methods;
   std::unique_ptr<target::IdentitySecurityUnitOfWorkFactory> transactions;
   std::atomic<bool> database_available{false};
   std::atomic<bool> credentials_loaded{false};
@@ -62,9 +69,14 @@ public:
                std::unique_ptr<target::IdentitySecurityApplication> sessions,
                std::unique_ptr<target::IdentityPrincipalApplication> principal,
                std::unique_ptr<target::IdentityVerificationKeysApplication> verification_keys,
+               std::unique_ptr<target::IdentityAssignmentApplication> assignments,
+               std::unique_ptr<target::IdentityAuthorizationApplication> authorization,
+               std::unique_ptr<target::IdentityInvalidationApplication> invalidation,
                const platform::IdentitySecurityMaterial& material)
       : dependencies_(std::move(dependencies)), sessions_(std::move(sessions)),
         principal_(std::move(principal)), verification_keys_(std::move(verification_keys)),
+        assignments_(std::move(assignments)), authorization_(std::move(authorization)),
+        invalidation_(std::move(invalidation)),
         admin_(*dependencies_->transactions, *dependencies_->certificates),
         issuer_(*sessions_, *dependencies_->transactions, *dependencies_->delegations,
                 *dependencies_->random, dependencies_->clock,
@@ -102,6 +114,15 @@ public:
   target::IdentityVerificationKeysApplication& verification_keys() {
     return *verification_keys_;
   }
+  target::IdentityAssignmentApplication& assignments() {
+    return *assignments_;
+  }
+  target::IdentityAuthorizationApplication& authorization() {
+    return *authorization_;
+  }
+  target::IdentityInvalidationApplication& invalidation() {
+    return *invalidation_;
+  }
   target::IdentityAdminApplication& admin() {
     return admin_;
   }
@@ -115,6 +136,9 @@ private:
   std::unique_ptr<target::IdentitySecurityApplication> sessions_;
   std::unique_ptr<target::IdentityPrincipalApplication> principal_;
   std::unique_ptr<target::IdentityVerificationKeysApplication> verification_keys_;
+  std::unique_ptr<target::IdentityAssignmentApplication> assignments_;
+  std::unique_ptr<target::IdentityAuthorizationApplication> authorization_;
+  std::unique_ptr<target::IdentityInvalidationApplication> invalidation_;
   target::IdentityAdminApplication admin_;
   target::IdentityDelegationApplication issuer_;
 };
@@ -160,11 +184,34 @@ target::Status maintain(const std::shared_ptr<Dependencies>& dependencies) {
     return *error;
   }
   auto marker = work->bootstrap().state();
-  work->rollback();
   if (const auto* error = std::get_if<target::Failure>(&marker)) {
+    work->rollback();
     dependencies->database_available.store(true);
     dependencies->identity_initialized.store(false);
     return *error;
+  }
+  // Bounded cleanup of the 10min/4096 invalidation replay window uses this same short UoW.
+  if (auto* invalidations = work->invalidations()) {
+    const auto pruned = invalidations->prune(std::get<target::TimePoint>(now), 256);
+    if (const auto* error = std::get_if<target::Failure>(&pruned)) {
+      work->rollback();
+      dependencies->database_available.store(false);
+      return *error;
+    }
+  }
+  switch (work->commit()) {
+  case target::CommitResult::Committed:
+    break;
+  case target::CommitResult::RolledBack:
+    dependencies->database_available.store(false);
+    return detail::database_unavailable();
+  case target::CommitResult::Unknown:
+    dependencies->database_available.store(false);
+    return target::Failure{target::ErrorCode::UpstreamUnavailable,
+                           target::Acceptance::Unknown,
+                           target::Recovery::QuerySameIdentity,
+                           {},
+                           {}};
   }
   dependencies->database_available.store(true);
   dependencies->identity_initialized.store(std::get<target::AdministratorBootstrap>(marker).state ==
@@ -282,8 +329,27 @@ target::Outcome<platform::ServiceComposition> configured(const platform::Process
   }
   dependencies->principal_fingerprints = std::move(
       std::get<std::unique_ptr<target::IdentityPrincipalFingerprintPort>>(principal_fingerprints));
+  // Trusted descriptor-driven method metadata is a startup dependency: without it the online
+  // authorization use case cannot fail closed correctly, so Identity does not start.
+  auto methods = platform::make_descriptor_authorization_method_policy();
+  if (const auto* error = std::get_if<target::Failure>(&methods)) {
+    return *error;
+  }
+  dependencies->authorization_methods = std::move(
+      std::get<std::unique_ptr<target::AuthorizationMethodPolicyPort>>(methods));
+  if (!dependencies->authorization_methods) {
+    return detail::database_unavailable();
+  }
+  auto assignment_fingerprints = crypto::make_assignment_fingerprints();
+  if (const auto* error = std::get_if<target::Failure>(&assignment_fingerprints)) {
+    return *error;
+  }
+  dependencies->assignment_fingerprints = std::move(
+      std::get<std::unique_ptr<target::IdentityAssignmentFingerprintPort>>(
+          assignment_fingerprints));
   if (!dependencies->tokens || !dependencies->receipts || !dependencies->delegations ||
-      !dependencies->certificates || !dependencies->principal_fingerprints) {
+      !dependencies->certificates || !dependencies->principal_fingerprints ||
+      !dependencies->authorization_methods || !dependencies->assignment_fingerprints) {
     return detail::database_unavailable();
   }
   // All key/clock/dummy/crypto preparation is complete before acquiring a PG writer.
@@ -352,9 +418,49 @@ target::Outcome<platform::ServiceComposition> configured(const platform::Process
   if (!key_application) {
     return detail::database_unavailable();
   }
-  auto applications = std::make_unique<Applications>(dependencies, std::move(session_application),
-                                                     std::move(principal_application),
-                                                     std::move(key_application), material);
+  // Management use cases borrow the SAME factory, random source and mature fingerprint adapter;
+  // no independent Identity database/keyset or second writer is constructed here.
+  auto assignments = target::make_identity_assignment_application(
+      *dependencies->transactions, *dependencies->assignment_fingerprints, *dependencies->random,
+      {.maximum_snapshots = 4096, .maximum_snapshot_records = 10000});
+  if (const auto* error = std::get_if<target::Failure>(&assignments)) {
+    return *error;
+  }
+  auto assignment_application =
+      std::move(std::get<std::unique_ptr<target::IdentityAssignmentApplication>>(assignments));
+  if (!assignment_application) {
+    return detail::database_unavailable();
+  }
+  // Online current-authority checks borrow the SAME factory, mature delegation crypto/clock and
+  // trusted descriptor metadata. Missing dependencies reject construction; nothing is degraded.
+  auto authorization = target::make_identity_authorization_application(
+      *dependencies->transactions, *dependencies->delegations, dependencies->clock,
+      *dependencies->authorization_methods);
+  if (const auto* error = std::get_if<target::Failure>(&authorization)) {
+    return *error;
+  }
+  auto authorization_application =
+      std::move(std::get<std::unique_ptr<target::IdentityAuthorizationApplication>>(authorization));
+  if (!authorization_application) {
+    return detail::database_unavailable();
+  }
+  // Invalidation stream/snapshot read the SAME security factory and durable log; a missing store
+  // fails every call instead of fabricating an empty stream or snapshot.
+  auto invalidation =
+      target::make_identity_invalidation_application(*dependencies->transactions,
+                                                     *dependencies->random, {.batch = 32});
+  if (const auto* error = std::get_if<target::Failure>(&invalidation)) {
+    return *error;
+  }
+  auto invalidation_application =
+      std::move(std::get<std::unique_ptr<target::IdentityInvalidationApplication>>(invalidation));
+  if (!invalidation_application) {
+    return detail::database_unavailable();
+  }
+  auto applications = std::make_unique<Applications>(
+      dependencies, std::move(session_application), std::move(principal_application),
+      std::move(key_application), std::move(assignment_application),
+      std::move(authorization_application), std::move(invalidation_application), material);
   auto* observed = applications.get(); // Composition owns it until after RPC shutdown/Wait.
   auto final_clock = dependencies->clock.sample();
   if (const auto* error = std::get_if<target::Failure>(&final_clock)) {
@@ -386,7 +492,10 @@ target::Outcome<platform::ServiceComposition> configured(const platform::Process
             [dependencies] { return dependencies->clock.invocation_deadline(); },
             {.verification_keys = &observed->verification_keys(),
              .exchange = nullptr,
-             .principal = &observed->principal()});
+             .principal = &observed->principal(),
+             .authorization = &observed->authorization(),
+             .assignments = &observed->assignments(),
+             .invalidation = &observed->invalidation()});
         if (const auto* error = std::get_if<target::Failure>(&adapter)) {
           return *error;
         }

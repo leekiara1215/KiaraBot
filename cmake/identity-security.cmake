@@ -15,7 +15,9 @@ set_property(TARGET kiarabot-identity PROPERTY LINK_LIBRARIES "${IDENTITY_PRODUC
 target_link_libraries(kiarabot-identity PRIVATE
   kiarabot_identity_security_clock kiarabot_identity_security_application
   kiarabot_identity_principal_application kiarabot_identity_rpc kiarabot_identity_crypto
-  kiarabot_identity_verification_keys_application)
+  kiarabot_identity_verification_keys_application
+  kiarabot_identity_authorization_application kiarabot_identity_assignment_application
+  kiarabot_authorization_method_policy kiarabot_identity_invalidation_application)
 
 add_executable(kiarabot_identity_keys_daemon_client
   ${CMAKE_SOURCE_DIR}/core/tests/platform/identity_keys_daemon_client.cpp)
