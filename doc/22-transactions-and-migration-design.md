@@ -231,10 +231,11 @@ Model 本地第一次事务：在线授权通过后，检查 owner+logical_call_
 
 ## P10a Scheduler schema 版本（2026-11-02）
 
-Scheduler 私有库 schema 版本为 8（P10a 第一阶段曾以 v7 仅做版本标记）。v8 增加 tasks/
-occurrences 观察列、scheduler_quota_counters 关系与 due/owner 索引，record codec 同步新增
-字段映射。由于 `result_*` snapshot 表由 `common_sql()` 为所有服务创建，这些列变更会改变
-Identity/Runtime/Scheduler/Model 的 schema descriptor；四者 descriptor 均在真实 PG16.4 上
-重新实测写回 `manifest.hpp`，Scheduler relation count 由 71 更新为 77，其余服务关系数不变。
-`database_test`/initializer 对 descriptor、关系计数和权限的校验已通过。后续任何关系变更仍
-必须同时更新 descriptor、relation_count、record codec 与测试，不得只改代码或版本号。
+Scheduler 私有库 schema 在合并 P07a/P11a 后版本为 9（P10a 第一阶段曾以 v7/v8 做增量标记）。
+合并 schema 同时含 P07a 共享 audit 目标列、P11a Model 表/扩展与 P10a tasks/occurrences 观察列、
+scheduler_quota_counters 关系及 due/owner 索引；record codec 同步 P10a 字段映射。由于
+`result_*` snapshot 表由 `common_sql()` 为所有服务创建，四服务的 schema descriptor 都随合并
+变化；Identity/Runtime/Scheduler/Model descriptor 与 relation_count（129/120/77/71）均在真实
+PG16.4 上重新实测写回 `manifest.hpp`，不预写猜测值。`database_test`/initializer 对 descriptor、
+关系计数和权限的校验已通过。后续任何关系变更仍必须同时更新 descriptor、relation_count、
+record codec 与测试，不得只改代码或版本号。

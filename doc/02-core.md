@@ -1320,11 +1320,12 @@ P10a 的 outbox claim 只暴露给维护/P10b 交接代码；Runtime AcceptTimer
 与 Host 执行链路属于 P10b/c。
 
 PG 适配器为 Scheduler 私有库提供 owner/due SQL 投影（list_tasks、容量计数、due 扫描、
-occurrence owner/in-flight 扫描），并把 Scheduler schema 版本提升到 v7。P10a 尚未增加
-tasks/occurrences 的观察列、quota counter 表和 due/owner 索引（需要重新生成 schema descriptor
-并与 database_test/manifest 同步，留待下一增量）；当前 v7 与 v6 的关系集合一致。RPC 组合根
-与 SchedulerService 监听（P02 当前仍为 readiness 桩）尚未接线，真实 Runtime 调用/授权链路
-（Identity delegation）同样留待后续阶段。
+occurrence owner/in-flight 扫描），并在合并 P07a/P11a 后的 schema 上落地观察列、quota counter
+关系与 due/owner 索引（Scheduler 私有库 v9）。四服务 descriptor/relation_count 在合并 schema
+上用真实 PG16.4 重新实测并写回 manifest：Identity 129 / Runtime 120 / Scheduler 77 / Model 71
+（Scheduler relation count 含 P10a 新增 quota 表与四个索引；其余与 main 一致）。RPC 组合根与
+SchedulerService unary 监听见下一节；真实 Runtime AcceptTimerTrigger 交接与 Identity
+delegation 授权链路仍属 P10b/后续集成。
 
 ### P08a 离线启动补充（2026-11-02 回归修复）
 

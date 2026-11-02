@@ -109,16 +109,19 @@ public:
 };
 
 target::SchedulerCommandContext context() {
-  return target::SchedulerCommandContext{
-      target::InstanceId{uuid(1)}, target::InstallationId{uuid(2)}, uuid(3), uuid(4),
-      target::TimePoint{std::chrono::seconds{100000}}, std::string(16, 'k')};
+  return target::SchedulerCommandContext{target::InstanceId{uuid(1)},
+                                         target::InstallationId{uuid(2)},
+                                         uuid(3),
+                                         uuid(4),
+                                         target::TimePoint{std::chrono::seconds{100000}},
+                                         std::string(16, 'k')};
 }
 
 target::TaskCreationInput input(std::string task_id, target::TimePoint run_at) {
   target::TaskCreationInput value;
   value.task_id = std::move(task_id);
   value.target = target::ConversationKey{target::ResourceId{uuid(5)}, target::ResourceId{uuid(6)},
-                                          "conversation", target::ConversationKey::Kind::Private};
+                                         "conversation", target::ConversationKey::Kind::Private};
   value.payload = {std::byte{1}};
   value.run_at = run_at;
   return value;
@@ -194,9 +197,8 @@ void run(std::uint16_t port, const std::filesystem::path& root,
   auto created = service.create_task(ctx, input("task-1", now + std::chrono::seconds{60}));
   if (!std::holds_alternative<target::ScheduledTask>(created)) {
     const auto* rejected = std::get_if<target::Failure>(&created);
-    std::cerr << "P10 assertion: create code="
-              << (rejected ? static_cast<int>(rejected->code) : -1) << " acceptance="
-              << (rejected ? static_cast<int>(rejected->acceptance) : -1) << '\n';
+    std::cerr << "P10 assertion: create code=" << (rejected ? static_cast<int>(rejected->code) : -1)
+              << " acceptance=" << (rejected ? static_cast<int>(rejected->acceptance) : -1) << '\n';
     throw TestFailure("create task failed");
   }
   auto replay = service.create_task(ctx, input("task-1", now + std::chrono::seconds{60}));
@@ -219,8 +221,8 @@ void run(std::uint16_t port, const std::filesystem::path& root,
   require(std::holds_alternative<target::Failure>(cancelled) &&
               std::get<target::Failure>(cancelled).code == target::ErrorCode::Conflict,
           "cancel after handoff intent is CONFLICT");
-  auto claims = service.claim_triggers(now + std::chrono::seconds{61}, 10,
-                                       std::chrono::seconds{30});
+  auto claims =
+      service.claim_triggers(now + std::chrono::seconds{61}, 10, std::chrono::seconds{30});
   require(std::holds_alternative<std::vector<target::SchedulerTriggerClaim>>(claims),
           "outbox claim failed");
   const auto claimed = std::get<std::vector<target::SchedulerTriggerClaim>>(claims);
@@ -259,11 +261,12 @@ void run(std::uint16_t port, const std::filesystem::path& root,
   require(std::holds_alternative<target::ScheduledTask>(second), "second create failed");
   require(std::get<std::size_t>(service.due_sweep(now + std::chrono::seconds{61}, 10)) == 1,
           "second due activation");
-  auto second_claim = service.claim_triggers(now + std::chrono::seconds{61}, 10,
-                                             std::chrono::seconds{30});
+  auto second_claim =
+      service.claim_triggers(now + std::chrono::seconds{61}, 10, std::chrono::seconds{30});
   require(std::get<std::vector<target::SchedulerTriggerClaim>>(second_claim).size() == 1,
           "second claim");
-  auto expired = service.expire_stale_triggers(now + std::chrono::seconds{61} + std::chrono::hours{24 * 7 + 1}, 10);
+  auto expired = service.expire_stale_triggers(
+      now + std::chrono::seconds{61} + std::chrono::hours{24 * 7 + 1}, 10);
   require(std::holds_alternative<std::size_t>(expired) && std::get<std::size_t>(expired) == 1,
           "stale trigger expires exactly once");
   auto failed = service.get_task(ctx, "task-expire");
@@ -283,24 +286,23 @@ void run(std::uint16_t port, const std::filesystem::path& root,
               std::get<target::ScheduledTask>(persisted).state == target::TaskState::Completed,
           "completed task survives restart");
   // Schema version is bumped for the Scheduler private database.
-  pqxx::connection inspection(
-      "host=localhost port=" + std::to_string(port) + " dbname=p03_scheduler user=p03_scheduler_runtime password=" +
-      quote(role_password("p03_scheduler_runtime")) +
-      " sslmode=verify-full channel_binding=require sslrootcert=" +
-      quote((root / "server.pem").string()));
+  pqxx::connection inspection("host=localhost port=" + std::to_string(port) +
+                              " dbname=p03_scheduler user=p03_scheduler_runtime password=" +
+                              quote(role_password("p03_scheduler_runtime")) +
+                              " sslmode=verify-full channel_binding=require sslrootcert=" +
+                              quote((root / "server.pem").string()));
   pqxx::nontransaction schema_check(inspection);
-  const auto version = schema_check.exec("SELECT version FROM kiarabot.schema_versions")
-                           .one_row()[0]
-                           .as<int>();
-  require(version == 8, "scheduler schema version must be 8");
+  const auto version =
+      schema_check.exec("SELECT version FROM kiarabot.schema_versions").one_row()[0].as<int>();
+  require(version == 9, "scheduler schema version must be 9");
   const auto columns = schema_check.exec(
       "SELECT count(*) FROM information_schema.columns WHERE table_schema='kiarabot' AND "
       "((table_name='tasks' AND column_name IN ('cancel_requested','reason','created_at','"
       "updated_at')) OR (table_name='occurrences' AND column_name IN ('attempts','last_error',"
       "'updated_at')))");
   require(columns.one_row()[0].as<int>() == 7, "v8 observation columns present");
-  const auto quota = schema_check.exec(
-      "SELECT to_regclass('kiarabot.scheduler_quota_counters') IS NOT NULL");
+  const auto quota =
+      schema_check.exec("SELECT to_regclass('kiarabot.scheduler_quota_counters') IS NOT NULL");
   require(quota.one_row()[0].as<bool>(), "scheduler quote counters relation present");
   const auto indexes = schema_check.exec(
       "SELECT count(*) FROM pg_indexes WHERE schemaname='kiarabot' AND indexname IN "

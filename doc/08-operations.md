@@ -1171,6 +1171,6 @@ P02 生命周期 fixture 因此为 host 提供合法 `host` 材料（临时 `sql
 IANA zoneinfo；Identity delegation/current-authorization 尚未接线（authorizer fail-closed），
 因此当前真实部署 readiness 始终为 false、RPC 返回 UNAUTHENTICATED，不能作为任务功能可用性
 证据。维护循环每秒在进程线程执行有界 due sweep/过期 trigger/保留期清理，busy 不退出，其它
-数据库故障终止服务。数据库 schema 为 Scheduler v8（观察列/quota counter/索引/descriptor 已
-在真 PG16.4 验证）。生产环境需确认 `/usr/share/zoneinfo` 存在且包含所需 IANA zone；非法或不
+数据库故障终止服务。数据库 schema 为合并 P07a/P11a 后的 Scheduler v9（观察列/quota counter/索引/descriptor
+已在真 PG16.4 重测验证）。生产环境需确认 `/usr/share/zoneinfo` 存在且包含所需 IANA zone；非法或不
 存在的 zone、DST gap/fold 返回 INVALID_ARGUMENT，缺失 zoneinfo 返回 UPSTREAM_UNAVAILABLE。

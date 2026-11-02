@@ -94,9 +94,14 @@ def tls_acceptance(binaries, pki, directory):
                     grpc.channel_ready_future(channel).result(timeout=3)
                 except grpc.FutureTimeoutError as error:
                     raise AcceptanceFailure('trusted mTLS channel did not become ready') from error
+                # P10a registered the real SchedulerService adapter; an empty probe message is
+                # rejected by RequestContext validation instead of the generated-stub UNIMPLEMENTED.
+                implemented_rejection = (grpc.StatusCode.INVALID_ARGUMENT
+                                         if service == 'scheduler'
+                                         else grpc.StatusCode.UNIMPLEMENTED)
                 for method in owner_methods:
                     path = '/kiarabot.v1.' + method['service'] + '/' + method['method']
-                    expected_rpc_error(grpc, channel, path, grpc.StatusCode.UNIMPLEMENTED,
+                    expected_rpc_error(grpc, channel, path, implemented_rejection,
                                        streaming=method['server_streaming'])
                 if service == 'runtime':
                     for bridge in ('AdapterBridge', 'PluginBridge', 'HostBridge'):
@@ -108,7 +113,7 @@ def tls_acceptance(binaries, pki, directory):
                         expected_rpc_error(grpc, denied, first, grpc.StatusCode.UNAVAILABLE,
                                            streaming=owner_methods[0]['server_streaming'])
                     # A broken service cannot masquerade as a successful authentication rejection.
-                    expected_rpc_error(grpc, channel, first, grpc.StatusCode.UNIMPLEMENTED,
+                    expected_rpc_error(grpc, channel, first, implemented_rejection,
                                        streaming=owner_methods[0]['server_streaming'])
                     assert_probe(config['probe_listen'], '/health/live', 200, 'HEALTHY')
             child.stop()

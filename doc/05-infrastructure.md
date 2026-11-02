@@ -550,12 +550,14 @@ Scheduler 的 `SchedulerUnitOfWork` 适配器实现 P10a 应用所需的只读�
 keyset 列表、非终态任务的实例/安装容量计数、到期 Pending 扫描、occurrence owner 列表与
 Accepted in-flight 扫描；均为 Scheduler 私有库内 SQL，经 `SqlWork::run` 在所属事务内执行，
 并用与 Find/Save 相同的 live-record 解码回领域对象。授权/可见性不在仓储层判断。Scheduler
-schema 版本为 8：tasks 增加 cancel_requested/reason/created_at/updated_at，occurrences 增加
-attempts/last_error/updated_at（occurrence.created_at 由交接 handoff created_at 提供），新增
-scheduler_quota_counters 关系与 tasks_due/tasks_owner/occurrences_owner/occurrences_inflight
-索引；record codec 同步映射这些观察字段。由于 result_* snapshot 关系由各服务共享，Identity/
-Runtime/Scheduler/Model 的 manifest descriptor 均按真实 PG16.4 重新计算（Scheduler relation
-count 71→77，其余服务关系计数不变）。真实 PG16.4 fixture 覆盖创建幂等、到期交接、取消窗口、
+合并 P07a/P11a 后 Scheduler 私有库 schema 版本为 9：tasks 增加
+cancel_requested/reason/created_at/updated_at，occurrences 增加 attempts/last_error/updated_at
+（occurrence.created_at 由交接 handoff created_at 提供），新增 scheduler_quota_counters 关系与
+tasks_due/tasks_owner/occurrences_owner/occurrences_inflight 索引；record codec 同步映射这些
+观察字段。由于 result_* snapshot 关系由各服务共享且 main 已叠加 P07a 共享 audit 列与 P11a
+Model 扩展，四服务 manifest descriptor/relation_count 在合并 schema 上用真实 PG16.4 重新实测
+并写回：Identity 129、Runtime 120、Scheduler 77、Model 71（Scheduler 77 含 P10a 新增 quota 表
+与索引；其余与 main 值一致）。真实 PG16.4 fixture 覆盖创建幂等、到期交接、取消窗口、
 claim/confirm/确认丢失重放、过期 FAILED(TIMEOUT)、重启持久化、观察列/索引/quota 关系存在性
-与 v8 版本。容量计数目前仍为 owner/installation 的 SQL 聚合扫描（quota counter 关系保留给
+与 v9 版本。容量计数目前仍为 owner/installation 的 SQL 聚合扫描（quota counter 关系保留给
 后续事务化计数缓存，当前不以其为权威）。
