@@ -1252,3 +1252,5 @@ authorizer 需要 Identity 签发、`aud=scheduler`、客户端证书绑定到�
 Identity/Runtime 服务主体约定前，不能把 Scheduler 交接标记为多进程验收通过。单进程/真实 PG
 覆盖见 p10_scheduler_identity、p10_scheduler_rpc、p06_postgres_runtime_events 与
 p10_postgres_scheduler。
+
+P12a-2（2026-11-02，契约登记）：受权 `GET /api/v1/health` 使用显式 `health.read`（Permission 50），匿名 live/ready 探针不暴露组件；target Control v1 无 WebSocket 服务端，运维排障/面板恢复以 `/api/v1/operations/...` REST 快照为准。`/logs` 与 `/audit` 是 Control 只读聚合，分别需 `log.read`/`audit.read`（48/49），日志默认 7 天、必要审计最小 180 天；无 owner 权威来源时返回 503，不返回空页冒充无事件。旧 `/plugins/{id}/enable|disable|config` 不映射到实例级启停/配置，实例路径见 doc/06。

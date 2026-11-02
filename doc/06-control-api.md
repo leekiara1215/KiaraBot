@@ -529,3 +529,36 @@ P12c 在独立 Control 进程的 HTTPS 边界新增 owner-backed 转发层（`co
   应用状态投影（Runtime 期望 / Host 观察 / 插件 ACK 三类事实分离）。旧 `/plugins` 路径保持非目标语义。
 - 测试：gateway 单测覆盖三 owner 分支/权限映射/404/409/scope 必填/participants+stalled 字段/TaskPage
   形状；p04 真实 TLS 验收新增三个 owner operation 查询的稳定拒绝/不可用断言。
+
+## P12a-2 契约补充（2026-11-02，target 登记，尚未实现业务）
+
+本节记录 P12 实施暴露、由用户 Q1–Q8 确认范围补齐的契约面。除特别说明外，下列 REST/target 操作均为 `x-contract-status: not_implemented`，不表示当前 Control 已有生产 handler。
+
+### 实例级插件启停/配置（Q6）
+
+旧 `/plugins/{id}/enable|disable|config` 只描述单插件（reference）开关，**不得**机械映射到安装/实例；一个安装可有多个实例，操作对象必须明确。目标显式实例对象路径为：
+
+- `PUT /api/v1/installations/{installationId}/instances/{instanceId}/plugin-state`：请求体含相同 installation/instance id、desired `RUNNING|STOPPED`、可选 `expected_version`；owner `RuntimeService.SetDesiredState`。202 是持久受理，不是进程已启动/停止。
+- `GET /api/v1/installations/{installationId}/instances/{instanceId}/configuration`：owner `RuntimeService.GetInstanceConfig`；返回 Runtime 已保存期望配置/版本、Host 观察事实、插件 ACK/应用事实三组投影；密钥不返回。
+- `PUT /api/v1/installations/{installationId}/instances/{instanceId}/configuration`：owner `RuntimeService.UpdateConfig`；幂等键 + `expected_version`；只持久化 Runtime 期望配置，Host/插件是否应用是独立事实。
+
+响应必须把 **Runtime 期望状态/配置版本、Host 观察到的受管进程启动/退出、插件确认配置已应用** 三类事实分开，并带 `operation` 引用供查询进度；Host 离线/UNKNOWN 只表达 blocked/unknown，不伪造 stopped 或成功。Control 不得复用旧 plugin enable 路径。
+
+### health.read 权限 50
+
+`policy.proto` 新增 `PERMISSION_HEALTH_READ = 50`（0–49 不变）。匿名 `/health/live` 与 `/health/ready` 保持匿名；受权 `GET /api/v1/health` 要求显式 `health.read`（P12 permission 50），返回四依赖聚合与逐组件详情，不向匿名探针泄漏组件信息。
+
+### target Control WebSocket：P12 v1 无 WS
+
+P12 v1 target **不提供** Control WebSocket 服务端；`api/asyncapi.yaml` 的频道/帧是冻结目标契约并整体登记靶向 `not_implemented`（P12 v1 无 WS transport）。断流恢复以 REST operation 快照 `GET /api/v1/operations/{ownerService}/{operationId}` 为唯一权威 resync 源：客户端恢复后必须全量刷新，不得假设错过事件；未来若实现 WS，优先复用已登记的 `operations`/`operation.updated`、`health.updated` 等频道名与帧语义，不新增传输级私有协议。
+
+### /logs 与 /audit 聚合契约
+
+- 权威事实归各业务所有者；Control 只做只读聚合，不跨库读取、不复制事实。当前**没有** owner 日志/审计 list RPC，新增此类 RPC 需用户确认并登记；无权威来源时必须返回 `503 UNAVAILABLE`，不得返回成功空页。
+- `/logs` 需显式 `log.read`（48），只返回运维分类、脱敏后的结构化日志，默认保留 7 天；`/audit` 需显式 `audit.read`（49），返回业务事务内提交的必要审计事实，最小保留 180 天；二者互不蕴含，每行携带 owner 归属，分页按 `occurred_at`+稳定 ID，v1 不接受自由过滤条件。
+- 凭据、消息正文、模型秘密和平台原始内容不得进入日志/审计投影；Control 不缓存延长保留期。
+
+### 状态与字段统一
+
+- P12c/P11d 的 REST 转发层与 Owner RPC 的 target 状态是两层事实：REST 操作可先实现转发，但 owner RPC 未 target 验收时该操作仍标 `not_implemented`；已实现 target override 的 REST 操作在后续证据齐备时再翻转，不以转发成功冒充 owner 完成。
+- `/tasks` 列表行使用显式 `TaskSummary`（id/name/state/created_at），不再复用泛型 `GenericResource`；`TargetOperationRef.resource` 为可选：owner 快照没有资源时必须省略，不得补造占位资源。实例/操作目标响应继续以 OpenAPI typed schema 为唯一来源，P12c/P11d 原始 proto JSON 直出属待修实现差异，不得反向放宽契约。
