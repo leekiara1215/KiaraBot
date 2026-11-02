@@ -37,7 +37,50 @@ for (const { path, method } of operations) {
   assert.ok(entry[method], `panel endpoint ${method.toUpperCase()} ${path} is missing from api/openapi.yaml`);
 }
 
-// 2. The panel's known-event whitelist must match the AsyncAPI event types whose message is
+// 2. P12 preview pages are contract skeletons. Their descriptors are covered by
+//    the loop above; also pin the target contract status so wiring or an
+//    annotation change cannot silently make a preview look implemented.
+const p12Targets = [
+  ['/accounts', 'get', 'not_implemented'],
+  ['/installations', 'get', 'not_implemented'],
+  ['/installations/{installationId}', 'get', 'not_implemented'],
+  ['/instances', 'get', 'not_implemented'],
+  ['/instances/{instanceId}', 'get', 'not_implemented'],
+  ['/operations/{ownerService}/{operationId}', 'get', 'not_implemented'],
+  ['/tasks/{taskId}', 'get', 'not_implemented'],
+  ['/models/{modelId}', 'get', 'not_implemented'],
+  ['/models/{modelId}/configuration', 'get', 'not_implemented'],
+  ['/health/live', 'get', 'implemented'],
+  ['/health/ready', 'get', 'implemented'],
+  ['/health', 'get', 'reference'],
+];
+for (const [path, method, expected] of p12Targets) {
+  const entry = openapi.paths[path];
+  assert.ok(entry, `P12 preview endpoint ${path} is missing from api/openapi.yaml`);
+  assert.ok(entry[method], `P12 preview endpoint ${method.toUpperCase()} ${path} is missing from api/openapi.yaml`);
+  const status = entry[method]['x-contract-status'];
+  if (expected === 'not_implemented') {
+    assert.equal(status, 'not_implemented', `P12 preview ${path} must stay not_implemented until wiring`);
+  } else {
+    assert.notEqual(status, 'not_implemented', `P12 preview ${path} is expected ${expected} but is not implemented`);
+  }
+}
+const declaredEndpoints = new Set([...clientSource.matchAll(/\n  (\w+): operation\(/g)].map((match) => match[1]));
+const catalogSource = await readFile(new URL('../src/p12/catalog.ts', import.meta.url), 'utf8');
+const referencedEndpoints = [...new Set([...catalogSource.matchAll(/endpoints\.(\w+)/g)].map((match) => match[1]))];
+assert.ok(referencedEndpoints.length >= 10, `P12 catalog must reference its target operations (found ${referencedEndpoints.length})`);
+for (const key of referencedEndpoints) {
+  assert.ok(declaredEndpoints.has(key), `P12 catalog references undeclared endpoint ${key}`);
+}
+assert.ok((catalogSource.match(/key: 'p12-/g) ?? []).length >= 6, 'P12 catalog pages are missing');
+const fixturesSource = await readFile(new URL('../src/p12/fixtures.ts', import.meta.url), 'utf8');
+assert.ok((fixturesSource.match(/Schemas\['Target/g) ?? []).length >= 8,
+  'P12 fixtures must be typed against target schemas');
+const previewSource = await readFile(new URL('../src/views/p12-preview.tsx', import.meta.url), 'utf8');
+assert.ok(previewSource.includes('未接线') && previewSource.includes('待 P12'),
+  'P12 preview must surface the unwired/待 P12 state');
+
+// 3. The panel's known-event whitelist must match the AsyncAPI event types whose message is
 //    not marked x-contract-status: not_implemented (health.updated is not produced in v1 and
 //    must not be treated as a live refresh signal).
 const streamSource = await readFile(new URL('../src/stream/control-stream.ts', import.meta.url), 'utf8');
