@@ -1535,3 +1535,6 @@ P13 target 翻转（证据：P13a 应用/PG/RPC + 真实 Runtime↔Identity e2e 
 ### P09f Storage/Namespace 退出证据（2026-11-02）
 
 P09 storage 退出证据以现有测试为准：`p09a_runtime_storage_application`（application 层 scope/condition/TTL/quota/receipt/成员 gate/管理 operation）、`p09_postgres_storage_records`（owned PG16.4 四表/CAS/收据重放/成员/配额/禁用/重启持久）、`p06_bridge_acceptance` P09b 段（真 TLS PluginBridge `HostRequest.storage_*` 帧：私有/共享 scope、CAS/stale、TTL/重放不续 TTL、过期、配额 RATE_LIMITED、显式 installation_shared_id 拒绝、共享成员/禁用）。target 仅翻转有上述证据的 message/field/semantic；unary `Runtime*Storage*` 为 internal_dispatcher，PluginBridge 帧是插件唯一对外 storage 面。quota 多连接横压、storage 断线重连专项和共享成员删除不误删他人数据的直接断言仍待补；真实生产规模/长时保留待 P14 环境。
+## P06f Runtime 事件 fan-out 根因记录（2026-11-02）
+
+真实 adapter→Runtime 事件链路的 fan-out 只在事件以 `MessageReceived` 进入且插件 profile 在线时生成 `delivery_targets`；`AdapterStatusChanged` 等状态事件不匹配消息订阅。P07d 复现发现：fake OneBot 的字符串 `message_id` 使 NoneBot 解析为通用 Event（matcher 不执行），同时 adapter mapper 误把平台 `self_id` 与 Runtime account UUID 比较，导致消息在 outbox 前被拒绝；只有状态事件到达 Runtime，故 `delivery_targets` 为空。修复采用独立 `platform_self_id` 校验、e2e 使用整数 `message_id`，并新增真实订阅/不匹配/离线/重连断言；Runtime fan-out/lease/ACK 实现本身无需改动。

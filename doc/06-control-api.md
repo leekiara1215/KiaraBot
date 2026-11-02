@@ -661,3 +661,7 @@ P12 v1 target **不提供** Control WebSocket 服务端；`api/asyncapi.yaml` �
   已实现转发；`host` 不在 OpenAPI `/operations/{ownerService}` 枚举/owner RPC 映射内（P12a 未声明），
   Control 按非法 owner 返回 400，不伪造 host operation；participants/blocked/reason/next_attempt_at 由
   `/operations` 权威快照透出（P12c-4）。
+
+## P06f/P07 adapter 观测补充（2026-11-02）
+
+P07d 真实 adapter e2e 的事件 fan-out 断言现已覆盖：真实 adapter 入站消息 → Runtime `events(MessageReceived)` → 订阅 SDK plugin 的 `delivery_targets`（终态 ACK）→ 未订阅不投递、离线不伪造 target、重连后新事件投递。adapter 配置 `ONEBOT_SELF_ID` 只用于平台 bot 标识/入站来源校验，Runtime REST/WS 契约不变。

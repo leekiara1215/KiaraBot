@@ -1494,3 +1494,9 @@ P13d（2026-11-02）：生命周期可观测最小面（不新增 API/权限/RPC
    容量上限和清理保留期见 P13a schema；UNKNOWN/Pending 行不会被容量淘汰。
 4. **保留期/配额**：operation/tombstone 180 天、非秘密恢复 30 天、delivery 24h/7 天、receipts 与 outbox 各自期限由 maintenance pruned 计数反映；Action 配额拒绝是稳定 RATE_LIMITED，不自动重试成成功。
 5. **交叉引用**：停机/恢复、满盘、备份演练见 P14c runbook（本文件“P14c 本地真实备份/恢复与故障 runbook”）；P13 只保证清理/租约语义，不替代 P14c 的部署级恢复。
+## P06f 真实 adapter 事件 fan-out 修复与运维说明（2026-11-02）
+
+- 症状：真实 adapter outbox ACK、Runtime events 有行但 `delivery_targets` 空、订阅插件收不到消息；P07d 只验证 Action 链路。
+- 根因：fake OneBot `message_id` 字符串导致 NoneBot 解析为通用 Event（matcher 不执行）；另 adapter mapper 将 OneBot 平台 `self_id` 与 Runtime account UUID 比较，真实平台消息在入队前被 PERMISSION_DENIED。
+- 修复：mapper 增加独立 `platform_self_id`（`ONEBOT_SELF_ID`，缺省 account UUID）用于来源校验；e2e 使用整数 message_id 并断言 fan-out/ACK；无 proto/Runtime 契约修改。
+- 运维排障：先看 adapter outbox 是否有 `message_received` event（而非仅 AdapterStatusChanged），再看 Runtime `events.payload_kind=0` 与 `delivery_targets`/`delivery_attempts`；插件必须在线且 manifest capabilities 含 `event.message.received`。离线插件不补投旧事件，重连后仅投递新事件。
