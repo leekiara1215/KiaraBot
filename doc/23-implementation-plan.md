@@ -352,3 +352,7 @@ PG Repository/COMMIT/锁/并发测试缺少真实 PG 时失败并报告原因，
 本轮仅新增本计划并更新 `doc/README.md` 导航；已有设计、裁定及历史执行记录保持。代码、proto/API、SQL、依赖、测试和部署均未修改，不执行数据库/文件清理。
 
 契约与模块文档无需因计划本身改变运行说明；后续实施每步按本计划同步。文档验证为格式差异、相对链接/锚点、阶段编号/依赖图、每步范围与I/O/错误/检查/验收字段完整性。构建与测试未运行：当前仅整理计划，不能把以上命令列为实际检查结果。
+
+## P11f Model 退出判定（2026-11-02）
+
+证据矩阵见 `reports/modules/architecture-p11-model.md` P11f 段：p11 9/9、p03 真 PG 2/2、SDK 141 passed/23 skipped（Model target e2e deferred）、契约状态 gate PASS。P11 owner/应用/Provider/管理 REST 证据齐备；未验收：真实外部 Provider（T07b）、真实插件→Runtime→Model→Provider 单链路（P05b 待用户确认委托）、readiness composition 真实 TLS harness、目标栈 live。另有 OpenAPI Model REST 状态与 p01_target_roundtrip 的 ListAudit scope_kinds 契约不一致，需 Lead/契约 owner 复核；本任务不改实现/契约。

@@ -313,3 +313,6 @@ Runtime storage 以 owner 私有 PG 四表与 `command_receipts` 同 UoW 实现�
 ## P07g Action 事务/证据边界（2026-11-02）
 
 P07 退出证据覆盖 Action 行与配额/证据/回执的 owner 事务、派发 attempt 关联、终态/UNKNOWN/EXPIRED 迟到证据和断线重连旧 attempt 回带（真 PG16.4 + 真 TLS bridge + 真实 adapter e2e）。边界：ActionPolicy Get/Update 应用已实现但 RPC target 未翻（待 P07f-1 wire 证据）；react/delete/mute/kick/approve payload target 未翻（待 P07f-1/2）；真实平台延迟/EXPIRED 与 UNKNOWN 崩溃补报窗口未做专项故障注入；真实 QQ/NapCat 平台凭证与 reaction API 待环境。
+## P11f Model 事务/存储证据补充（2026-11-02）
+
+P11 全套测试通过（9/9）覆盖 Model 两事务意图/结果、UNKNOWN 保守计费、replay、AEAD provider secret 版本固定与轮换、per-model 配置条件版本；p03 真 PG16.4 fixture 2/2。无 schema/事务实现改动；Provider 外部真实调用与目标栈 live 未验收（T07b/环境）。

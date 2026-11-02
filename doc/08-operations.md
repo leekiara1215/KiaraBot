@@ -1502,3 +1502,8 @@ P13d（2026-11-02）：生命周期可观测最小面（不新增 API/权限/RPC
 - 运维排障：先看 adapter outbox 是否有 `message_received` event（而非仅 AdapterStatusChanged），再看 Runtime `events.payload_kind=0` 与 `delivery_targets`/`delivery_attempts`；插件必须在线且 manifest capabilities 含 `event.message.received`。离线插件不补投旧事件，重连后仅投递新事件。
 
 P07g（2026-11-02）：P07 Action 退出证据已按当前 HEAD 复核：`p07_action_rules`、`p07_postgres_action_records`（真 PG16.4）、`p06_bridge_acceptance` P07 段（真 TLS/PG/Runtime）、`p07_adapter_e2e`（真实 adapter/fake OneBot）、SDK `test_actions.py` 28 passed、`p12_control_owner_gateway` 全部通过。排障仍按 action_id/idempotency_key + Control `GET /api/v1/actions/...`（action.inspect、显式账号 scope）；ActionPolicy RPC 与 listActionMetadata 尚未作为 target 对外。真实 QQ/NapCat、平台延迟/EXPIRED 迟到故障注入、UNKNOWN 崩溃补报窗口、跨主机与 reaction API 未验收，不得用 fake 平台结果替代真实平台验收。
+## P11f Model 验收/运维状态（2026-11-02）
+
+- 已实测：Model owner RPC 全套（9/9）、真 PG16.4 p03（2/2）、Control Model REST e2e；模型密钥只在 owner 内解密、日志/管理投影不回显。
+- 未验收：真实外部 Provider 付费联调（T07b）、真实插件→Runtime→Model→Provider 单链路（P05b）、readiness composition 级真实 TLS harness、目标栈 live。运维启用 Provider 前需完成外部 provider 环境验收；本期不把 fixture provider 当生产 Provider。
+- 契约核对发现：OpenAPI Model REST 仍 inline not_implemented（与 p11_control_model_rest 证据不一致）；p01_target_roundtrip 因 ListAudit scope_kinds 镜像不一致失败，均上报 Lead，本任务不改契约。
