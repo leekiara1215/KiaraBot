@@ -1,7 +1,9 @@
 #pragma once
 
 #include <memory>
+#include <vector>
 
+#include "kiarabot/core/application/target/runtime_host_application.hpp"
 #include "kiarabot/core/ports/target/unit_of_work.hpp"
 #include "kiarabot/infrastructure/postgres/database.hpp"
 
@@ -18,6 +20,10 @@ core::target::Outcome<std::unique_ptr<core::target::IdentityUnitOfWorkFactory>>
 open_identity(const DatabaseConfig& config);
 core::target::Outcome<std::unique_ptr<core::target::RuntimeUnitOfWorkFactory>>
 open_runtime(const DatabaseConfig& config);
+// Deployment-injected Host certificate allowlist (empty denies every registration).
+core::target::Outcome<std::unique_ptr<core::target::RuntimeUnitOfWorkFactory>>
+open_runtime_with_host_allowlist(const DatabaseConfig& config,
+                                 std::vector<core::target::HostCertificateBinding> host_allowlist);
 core::target::Outcome<std::unique_ptr<core::target::SchedulerUnitOfWorkFactory>>
 open_scheduler(const DatabaseConfig& config);
 core::target::Outcome<std::unique_ptr<core::target::ModelUnitOfWorkFactory>>

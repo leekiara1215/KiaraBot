@@ -247,7 +247,8 @@ private:
 
 class RuntimeWork final : public WorkDelegate<target::RuntimeUnitOfWork> {
 public:
-  explicit RuntimeWork(detail::CommonWorkAccess common)
+  RuntimeWork(detail::CommonWorkAccess common,
+              std::vector<target::HostCertificateBinding> host_allowlist)
       : WorkDelegate(std::move(common.work)), accounts_(work(), detail::RecordKind::Account),
         bindings_(work(), detail::RecordKind::AdapterBinding), adapters_(work()),
         credentials_(work()), hosts_(work(), detail::RecordKind::Host),
@@ -256,7 +257,8 @@ public:
         instance_configs_(work(), detail::RecordKind::InstanceConfig), events_(*common.sql),
         actions_(*common.sql), action_quota_(*common.sql), action_policies_(*common.sql),
         action_evidence_(*common.sql), namespaces_(*common.sql), shared_namespaces_(*common.sql),
-        namespace_quota_(*common.sql), storage_receipts_(*common.sql) {}
+        namespace_quota_(*common.sql), storage_receipts_(*common.sql),
+        host_registration_(work(), *common.sql, std::move(host_allowlist)) {}
   target::Repository<target::ResourceId, target::BotAccount>& accounts() override {
     return accounts_;
   }
@@ -323,6 +325,9 @@ public:
   target::ActionEvidenceRepository& action_evidence() override {
     return action_evidence_;
   }
+  target::HostRegistrationPort& host_registration() override {
+    return host_registration_;
+  }
   target::NamespaceRepository& namespaces() override {
     return namespaces_;
   }
@@ -354,18 +359,21 @@ private:
   detail::SharedNamespaceRecords shared_namespaces_;
   detail::NamespaceQuotaRecords namespace_quota_;
   detail::StorageReceiptRecords storage_receipts_;
+  detail::HostRegistration host_registration_;
 };
 class RuntimeFactory final : public target::RuntimeUnitOfWorkFactory {
 public:
-  explicit RuntimeFactory(std::unique_ptr<Database> database) : database_(std::move(database)) {}
+  explicit RuntimeFactory(std::unique_ptr<Database> database,
+                          std::vector<target::HostCertificateBinding> host_allowlist = {})
+      : database_(std::move(database)), host_allowlist_(std::move(host_allowlist)) {}
   target::Outcome<std::unique_ptr<target::RuntimeUnitOfWork>> begin() override {
     auto begun = detail::DatabaseAccess::begin(*database_);
     if (const auto* rejected = std::get_if<target::Failure>(&begun)) {
       return *rejected;
     }
     try {
-      return std::unique_ptr<target::RuntimeUnitOfWork>(
-          std::make_unique<RuntimeWork>(std::move(std::get<detail::CommonWorkAccess>(begun))));
+      return std::unique_ptr<target::RuntimeUnitOfWork>(std::make_unique<RuntimeWork>(
+          std::move(std::get<detail::CommonWorkAccess>(begun)), host_allowlist_));
     } catch (...) {
       return failure(target::ErrorCode::Internal);
     }
@@ -373,6 +381,7 @@ public:
 
 private:
   std::unique_ptr<Database> database_;
+  std::vector<target::HostCertificateBinding> host_allowlist_;
 };
 class SchedulerWork final : public WorkDelegate<target::SchedulerUnitOfWork> {
 public:
@@ -577,6 +586,7 @@ public:
 
 private:
   std::unique_ptr<Database> database_;
+  std::vector<target::HostCertificateBinding> host_allowlist_;
 };
 class IdentitySecurityWork final : public target::IdentitySecurityUnitOfWork {
 public:
@@ -739,7 +749,8 @@ open_identity(const DatabaseConfig& config) {
   return open_factory<IdentityWork, target::IdentityUnitOfWork>(config, target::Service::Identity);
 }
 target::Outcome<std::unique_ptr<target::RuntimeUnitOfWorkFactory>>
-open_runtime(const DatabaseConfig& config) {
+open_runtime_with_host_allowlist(const DatabaseConfig& config,
+                                 std::vector<target::HostCertificateBinding> host_allowlist) {
   if (config.service != target::Service::Runtime) {
     return failure(target::ErrorCode::InvalidArgument);
   }
@@ -748,8 +759,8 @@ open_runtime(const DatabaseConfig& config) {
     return *rejected;
   }
   try {
-    return std::unique_ptr<target::RuntimeUnitOfWorkFactory>(
-        std::make_unique<RuntimeFactory>(std::move(std::get<std::unique_ptr<Database>>(opened))));
+    return std::unique_ptr<target::RuntimeUnitOfWorkFactory>(std::make_unique<RuntimeFactory>(
+        std::move(std::get<std::unique_ptr<Database>>(opened)), std::move(host_allowlist)));
   } catch (...) {
     return failure(target::ErrorCode::Internal);
   }
@@ -775,4 +786,9 @@ open_model(const DatabaseConfig& config) {
     return failure(target::ErrorCode::Internal);
   }
 }
+core::target::Outcome<std::unique_ptr<target::RuntimeUnitOfWorkFactory>>
+open_runtime(const DatabaseConfig& config) {
+  return open_runtime_with_host_allowlist(config, {});
+}
+
 } // namespace kiarabot::infrastructure::postgres

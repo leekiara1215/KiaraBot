@@ -5,17 +5,46 @@
 #include <optional>
 #include <vector>
 
+#include "kiarabot/core/application/target/runtime_host_application.hpp"
 #include "kiarabot/core/domain/target/model_gateway.hpp"
 #include "kiarabot/core/domain/target/persistence.hpp"
 #include "kiarabot/core/ports/target/namespace_ports.hpp"
 
 namespace kiarabot::core::target {
+namespace host_ports_detail {
+class UnsupportedHostRegistration final : public HostRegistrationPort {
+public:
+  Outcome<std::optional<HostCertificateBinding>> certificate_binding(std::string_view) override {
+    return rejected(ErrorCode::UpstreamUnavailable);
+  }
+  Outcome<std::optional<HostRegistration>> find_host(const ResourceId&) override {
+    return rejected(ErrorCode::UpstreamUnavailable);
+  }
+  Status save_host(const HostRegistration&, std::optional<ResourceVersion>) override {
+    return rejected(ErrorCode::UpstreamUnavailable);
+  }
+  Outcome<std::optional<HostConnectionState>> connection(const ResourceId&) override {
+    return rejected(ErrorCode::UpstreamUnavailable);
+  }
+  Outcome<HostConnectionState> activate_connection(const HostConnectionState&) override {
+    return rejected(ErrorCode::UpstreamUnavailable);
+  }
+  Status save_connection(const HostConnectionState&, std::uint64_t) override {
+    return rejected(ErrorCode::UpstreamUnavailable);
+  }
+};
+inline HostRegistrationPort& unsupported_host_registration() {
+  static UnsupportedHostRegistration instance;
+  return instance;
+}
+} // namespace host_ports_detail
 
 class EventRepository;
 class ActionRepository;
 class ActionQuotaRepository;
 class ActionPolicyRepository;
 class ActionEvidenceRepository;
+class HostRegistrationPort;
 
 // Repositories borrow their UoW lifetime, never commit and use its authoritative database UTC.
 // Empty optional means absent; faults are Failure (Unavailable/Conflict/Internal), never absence.
@@ -165,6 +194,11 @@ public:
   virtual ActionQuotaRepository& action_quota() = 0;
   virtual ActionPolicyRepository& action_policies() = 0;
   virtual ActionEvidenceRepository& action_evidence() = 0;
+  // P08 Runtime-side Host registration/heartbeat port. Defaults fail closed so an adapter that
+  // has not implemented P08b never reports a fake successful registration.
+  virtual HostRegistrationPort& host_registration() {
+    return host_ports_detail::unsupported_host_registration();
+  }
   // P09 storage/shared-namespace groups. Phase-1 defaults fail closed so an adapter that has not
   // implemented P09 never reports a fake empty namespace; P09 phase 2 overrides them with PG
   // implementations after P07a-A lands. They borrow this same UoW, never commit.
