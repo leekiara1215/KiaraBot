@@ -1146,3 +1146,40 @@ SetAssignment普通成功收据追加完整ExactAssignment快照到ReplayResult 
 及RegisteredPrincipalSnapshot13保持不变。原成功的owner、版本、role/permission与exact
 scope原样保存，重放不回查可变grant或逆拼base metadata；秘密payload仍不可进入普通收据。
 此类型追加必须与PG typed codec/schema成组接入，不等于Set/Revoke应用已启用。
+
+## P05 Runtime 资源、绑定和当前代次（实现中）
+
+Runtime 资源层按 P05 拆分：账号与适配器绑定、适配器注册/当前连接代次、插件安装/实例、
+期望状态/配置版本、typed Get/List/GetInstanceConfig 与 operation 查询。业务规则在
+`core/include/kiarabot/core/domain/target/runtime_rules.hpp` 与
+`runtime_resource_application.cpp`，只依赖内层端口；PG 仓储在
+`infrastructure/postgres`，RPC 只做协议转换与稳定错误映射。
+
+**身份层次与代次**：外部 Adapter 不是 Runtime 监督的进程，因此 RegisterAdapter 只分配/
+递增 `connection_generation`（重连换代）并携带当前 `runtime_epoch`；Runtime 重启换 epoch，
+旧 epoch 或旧 connection_generation 的后续帧拒绝（保留稳定错误映射）。P05 的 adapter
+Fence 不填 `execution_generation`：execution 表示一次由 Host 启动建立的实际进程执行，
+外部自管实例的可信绑定属于 P08；不得为字段完整伪造该值。心跳/注册后帧的 wire Fence 只带
+instance/runtime_epoch/connection_generation，内部 connection/execution ID 由所有者维护，
+边界匹配 wire 值后从权威注册记录解析，不能用客户端自报 ID 或当前代次替换旧值。
+
+**管理顺序**：先 RegisterAdapter 取得 assigned_instance_id，之后才允许 BindAdapter；
+注册只校验声明账号存在、可用且未绑定其他 adapter，不自动创建绑定。绑定/解绑是显式管理
+命令并保留 owner 版本；禁用账号或已删除资源 fail closed；同资源 expected_version 不匹配
+返回 CONFLICT，不覆盖。
+
+**List 语义**：Runtime List 是一次当前权威读取，跨页不冻结行集（与 Identity session
+snapshot 不同）。page token 由 Runtime 分配的不透明 id 表达，绑定查询条件、认证主体、
+授权版本与页大小，并带十分钟窗口；非法、跨主体、跨查询/授权版本或过期 token 返回
+CONFLICT（正确输入恢复），读依赖故障返回失败而不是空页/部分页。不新增 snapshot 表。
+
+**授权与就绪**：应用通过 `RuntimeAuthorizationPort` 取得当前 Identity 授权决定；组合根注入
+真实实现（mTLS peer + 当前 Identity 授权/委托验证），在接线完成前必须 fail-closed，单测
+才允许 allow-fake；禁止从请求自报身份推断调用者。readiness 由组合根按真实观测判定：
+业务应用已装配 + Runtime 私有库/schema writer 可用 + Identity 授权链路可用才 ready=true；
+未观测或不可用保持 false，测试 fake 只验证判定逻辑，不能使组合进程报 ready。
+
+**持久化说明**：新增 adapters/adapter_bindings/hosts/instance_configs 关系与
+installations.manifest、instances.desired 列在同一 Runtime 库 v1 初始化 schema 内创建。
+该版本没有增量迁移机制，因此结构变更只在初始化 schema 中表达；不修改既有列语义，不重排
+`ReplayResult` 既有索引（新增记录追加在末尾，RecordKind 使用相同索引值）。
