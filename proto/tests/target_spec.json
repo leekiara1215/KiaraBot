@@ -1152,7 +1152,11 @@
       "server_streaming": false,
       "status": "not_implemented",
       "max_deadline_ms": 30000,
-      "requires_idempotency_key": true
+      "requires_idempotency_key": true,
+      "scope_kinds": [
+        "RESOURCE_TASK",
+        "RESOURCE_INSTANCE"
+      ]
     },
     {
       "service": "SchedulerService",
@@ -1169,7 +1173,11 @@
       "server_streaming": false,
       "status": "not_implemented",
       "max_deadline_ms": 30000,
-      "requires_idempotency_key": true
+      "requires_idempotency_key": true,
+      "scope_kinds": [
+        "RESOURCE_TASK",
+        "RESOURCE_INSTANCE"
+      ]
     },
     {
       "service": "SchedulerService",
@@ -1186,7 +1194,11 @@
       "server_streaming": false,
       "status": "not_implemented",
       "max_deadline_ms": 5000,
-      "requires_idempotency_key": false
+      "requires_idempotency_key": false,
+      "scope_kinds": [
+        "RESOURCE_TASK",
+        "RESOURCE_INSTANCE"
+      ]
     },
     {
       "service": "SchedulerService",
@@ -1203,7 +1215,11 @@
       "server_streaming": false,
       "status": "not_implemented",
       "max_deadline_ms": 5000,
-      "requires_idempotency_key": false
+      "requires_idempotency_key": false,
+      "scope_kinds": [
+        "RESOURCE_TASK",
+        "RESOURCE_INSTANCE"
+      ]
     },
     {
       "service": "SchedulerService",
@@ -1220,7 +1236,11 @@
       "server_streaming": false,
       "status": "not_implemented",
       "max_deadline_ms": 5000,
-      "requires_idempotency_key": false
+      "requires_idempotency_key": false,
+      "scope_kinds": [
+        "RESOURCE_TASK",
+        "RESOURCE_INSTANCE"
+      ]
     },
     {
       "service": "SchedulerService",
@@ -1237,7 +1257,11 @@
       "server_streaming": false,
       "status": "not_implemented",
       "max_deadline_ms": 5000,
-      "requires_idempotency_key": false
+      "requires_idempotency_key": false,
+      "scope_kinds": [
+        "RESOURCE_TASK",
+        "RESOURCE_INSTANCE"
+      ]
     },
     {
       "service": "ModelService",

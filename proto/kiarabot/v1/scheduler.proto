@@ -137,6 +137,8 @@ message SchedulerGetOperationResponse {
 service SchedulerService {
   rpc CreateTask(SchedulerCreateTaskRequest) returns (SchedulerCreateTaskResponse) {
     option (required_permission) = PERMISSION_TASK_SCHEDULE;
+    option (scope_kinds) = RESOURCE_TASK;
+    option (scope_kinds) = RESOURCE_INSTANCE;
     option (requires_idempotency) = true;
     option (default_deadline_ms) = 5000;
     option (max_deadline_ms) = 30000;
@@ -144,6 +146,8 @@ service SchedulerService {
   }
   rpc CancelTask(SchedulerCancelTaskRequest) returns (SchedulerCancelTaskResponse) {
     option (required_permission) = PERMISSION_TASK_SCHEDULE;
+    option (scope_kinds) = RESOURCE_TASK;
+    option (scope_kinds) = RESOURCE_INSTANCE;
     option (requires_idempotency) = true;
     option (default_deadline_ms) = 5000;
     option (max_deadline_ms) = 30000;
@@ -151,6 +155,8 @@ service SchedulerService {
   }
   rpc GetTask(SchedulerGetTaskRequest) returns (SchedulerGetTaskResponse) {
     option (required_permission) = PERMISSION_TASK_READ;
+    option (scope_kinds) = RESOURCE_TASK;
+    option (scope_kinds) = RESOURCE_INSTANCE;
     option (requires_idempotency) = false;
     option (default_deadline_ms) = 2000;
     option (max_deadline_ms) = 5000;
@@ -158,6 +164,8 @@ service SchedulerService {
   }
   rpc ListTasks(SchedulerListTasksRequest) returns (SchedulerListTasksResponse) {
     option (required_permission) = PERMISSION_TASK_READ;
+    option (scope_kinds) = RESOURCE_TASK;
+    option (scope_kinds) = RESOURCE_INSTANCE;
     option (requires_idempotency) = false;
     option (default_deadline_ms) = 2000;
     option (max_deadline_ms) = 5000;
@@ -165,6 +173,8 @@ service SchedulerService {
   }
   rpc GetOccurrence(SchedulerGetOccurrenceRequest) returns (SchedulerGetOccurrenceResponse) {
     option (required_permission) = PERMISSION_TASK_READ;
+    option (scope_kinds) = RESOURCE_TASK;
+    option (scope_kinds) = RESOURCE_INSTANCE;
     option (requires_idempotency) = false;
     option (default_deadline_ms) = 2000;
     option (max_deadline_ms) = 5000;
@@ -172,6 +182,8 @@ service SchedulerService {
   }
   rpc GetOperation(SchedulerGetOperationRequest) returns (SchedulerGetOperationResponse) {
     option (required_permission) = PERMISSION_TASK_READ;
+    option (scope_kinds) = RESOURCE_TASK;
+    option (scope_kinds) = RESOURCE_INSTANCE;
     option (requires_idempotency) = false;
     option (default_deadline_ms) = 2000;
     option (max_deadline_ms) = 5000;
