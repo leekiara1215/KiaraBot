@@ -12,7 +12,11 @@ inline constexpr std::string_view kOperationColumns = R"sql(
   resource_kind integer NOT NULL CHECK(resource_kind BETWEEN 0 AND 15), resource_id text NOT NULL,
   version kiarabot.uint64 NOT NULL, state integer NOT NULL CHECK(state BETWEEN 0 AND 6),
   execution_outcome integer NOT NULL CHECK(execution_outcome BETWEEN 0 AND 3),
-  blocked_reason integer CHECK(blocked_reason BETWEEN 0 AND 10), next_attempt bigint
+  blocked_reason integer CHECK(blocked_reason BETWEEN 0 AND 10), next_attempt bigint,
+  -- P13a owner-local retention metadata; P05 operations keep the 0/NULL defaults and are never
+  -- pruned until a durable lifecycle operation sets an explicit retain_until.
+  created_at bigint NOT NULL DEFAULT 0, updated_at bigint NOT NULL DEFAULT 0,
+  retain_until bigint
 )sql";
 inline constexpr std::string_view kHandoffColumns = R"sql(
   source integer NOT NULL CHECK(source BETWEEN 0 AND 5), message text NOT NULL,
@@ -184,9 +188,23 @@ CREATE TABLE kiarabot.audit_entries (
   target_account_id text,
   target_conversation_id text
 );
+CREATE INDEX audit_entries_retention ON kiarabot.audit_entries(occurred_at);
 )sql";
   sql +=
       "CREATE TABLE kiarabot.operations (" + std::string(kOperationColumns) + ",PRIMARY KEY(id));";
+  sql += R"sql(
+CREATE INDEX operations_retention ON kiarabot.operations(state,retain_until);
+-- P13a participant progress is owner-private because the generic operations row cannot repeat.
+CREATE TABLE kiarabot.operation_participants (
+  operation_id text NOT NULL REFERENCES kiarabot.operations(id) ON DELETE CASCADE,
+  participant text NOT NULL CHECK(participant<>''),
+  state integer NOT NULL CHECK(state BETWEEN 0 AND 6),
+  reason integer CHECK(reason BETWEEN 0 AND 10),
+  next_attempt bigint,
+  PRIMARY KEY(operation_id,participant)
+);
+CREATE INDEX operation_participants_due ON kiarabot.operation_participants(state,next_attempt);
+)sql";
   sql += "CREATE TABLE kiarabot.outbox (" + std::string(kHandoffColumns) + R"sql(,
     payload_kind integer NOT NULL CHECK(payload_kind BETWEEN 0 AND 15), payload_id text NOT NULL,
     payload_version kiarabot.uint64 NOT NULL, lane integer NOT NULL CHECK(lane BETWEEN 0 AND 1),
@@ -197,6 +215,7 @@ CREATE TABLE kiarabot.audit_entries (
   );
 CREATE INDEX outbox_due ON kiarabot.outbox(state,next_attempt_at,lease_until);
 CREATE UNIQUE INDEX outbox_claim_tokens ON kiarabot.outbox(claim_token) WHERE claim_token IS NOT NULL;
+CREATE INDEX outbox_retention ON kiarabot.outbox(state,valid_until);
 )sql";
   sql += "CREATE TABLE kiarabot.inbox (" + std::string(kHandoffColumns) + R"sql(,
     received_at bigint NOT NULL, retain_until bigint NOT NULL,

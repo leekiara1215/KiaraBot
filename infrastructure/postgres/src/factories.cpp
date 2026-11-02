@@ -204,6 +204,38 @@ public:
   target::Repository<target::OperationId, target::Operation>& operations() override {
     return common_->operations();
   }
+  target::Outcome<std::vector<target::OperationParticipant>>
+  operation_participants(const target::OperationId& id) override {
+    return common_->operation_participants(id);
+  }
+  target::Status save_operation_participants(
+      const target::OperationId& id,
+      const std::vector<target::OperationParticipant>& participants) override {
+    return common_->save_operation_participants(id, participants);
+  }
+  target::Outcome<std::size_t> prune_outbox(target::TimePoint now, std::size_t limit) override {
+    return common_->prune_outbox(now, limit);
+  }
+  target::Outcome<std::size_t> prune_audit(target::TimePoint cutoff, std::size_t limit) override {
+    return common_->prune_audit(cutoff, limit);
+  }
+  target::Outcome<std::size_t> prune_operations(target::TimePoint now, std::size_t limit) override {
+    return common_->prune_operations(now, limit);
+  }
+  target::Outcome<std::optional<target::LifecycleTombstone>>
+  find_lifecycle_tombstone(const target::ResourceRef& resource) override {
+    return common_->find_lifecycle_tombstone(resource);
+  }
+  target::Status save_lifecycle_tombstone(const target::LifecycleTombstone& value) override {
+    return common_->save_lifecycle_tombstone(value);
+  }
+  target::Status delete_lifecycle_tombstone(const target::ResourceRef& resource) override {
+    return common_->delete_lifecycle_tombstone(resource);
+  }
+  target::Outcome<std::vector<target::LifecycleTombstone>>
+  list_lifecycle_tombstones(std::size_t limit, const std::string& after) override {
+    return common_->list_lifecycle_tombstones(limit, after);
+  }
   target::CommitResult commit() override {
     return common_->commit();
   }

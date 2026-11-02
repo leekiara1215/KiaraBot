@@ -324,6 +324,9 @@ target::Operation read_operation(const pqxx::row& row) {
     value.blocked_reason = enum_field<target::ErrorCode>(row["blocked_reason"], 10);
   }
   value.next_attempt = optional_time(row, "next_attempt");
+  value.created_at = time_field(row, "created_at");
+  value.updated_at = time_field(row, "updated_at");
+  value.retain_until = optional_time(row, "retain_until");
   if (!valid_text(value)) {
     throw std::runtime_error("invalid stored operation text");
   }
@@ -532,13 +535,14 @@ std::int64_t write_record(pqxx::transaction_base& transaction, const target::Rep
         } else if constexpr (std::is_same_v<Value, target::Operation>) {
           put(transaction, "operations",
               "id,owner,resource_kind,resource_id,version,state,execution_outcome,blocked_reason,"
-              "next_attempt",
+              "next_attempt,created_at,updated_at,retain_until",
               id,
               {value.ref.id.value, static_cast<int>(value.ref.owner),
                static_cast<int>(value.ref.resource.kind), value.ref.resource.id.value,
                value.version.value, static_cast<int>(value.state),
                static_cast<int>(value.execution_outcome), optional_enum(value.blocked_reason),
-               optional_timestamp(value.next_attempt)});
+               optional_timestamp(value.next_attempt), timestamp(value.created_at),
+               timestamp(value.updated_at), optional_timestamp(value.retain_until)});
         } else if constexpr (std::is_same_v<Value, target::Principal>) {
           put(transaction, "principals", "id,kind,binding_kind,binding_id,version,state", id,
               {value.id.value, static_cast<int>(value.kind),
@@ -807,7 +811,8 @@ target::ReplayResult load_record(pqxx::transaction_base& transaction, std::int64
     return read_operation(
         get(transaction, "operations", id,
             "id,owner,resource_kind,resource_id,version,state,execution_outcome,blocked_reason," +
-                time_projection("next_attempt")));
+                time_projection("next_attempt") + "," + time_projection("created_at") + "," +
+                time_projection("updated_at") + "," + time_projection("retain_until")));
   case 3: {
     const auto row = get(transaction, "principals", id);
     target::Principal value{{row["id"].as<std::string>()},

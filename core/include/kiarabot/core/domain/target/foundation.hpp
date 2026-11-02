@@ -9,6 +9,7 @@
 #include <string>
 #include <utility>
 #include <variant>
+#include <vector>
 
 namespace kiarabot::core::target {
 
@@ -143,6 +144,15 @@ using Status = Outcome<std::monostate>;
 
 enum class OperationState { Accepted, Running, Blocked, Succeeded, Failed, Cancelled, Expired };
 enum class ExecutionOutcome { NotStarted, KnownSucceeded, KnownFailed, Unknown };
+// P13a owner-local participant progress. Participants never claim a global completion they cannot
+// observe: a pending/unknown participant keeps the operation non-terminal and P13a maps it to the
+// frozen OperationProgress wire projection (participant/state/reason/next_attempt_at only).
+struct OperationParticipant {
+  std::string participant;
+  OperationState state = OperationState::Accepted;
+  std::optional<ErrorCode> reason;
+  std::optional<TimePoint> next_attempt;
+};
 struct Operation {
   OperationRef ref;
   ResourceVersion version;
@@ -150,8 +160,25 @@ struct Operation {
   ExecutionOutcome execution_outcome = ExecutionOutcome::NotStarted;
   std::optional<ErrorCode> blocked_reason;
   std::optional<TimePoint> next_attempt;
+  // P13a progress rows and retention metadata. These fields are owner-internal and deliberately
+  // absent from the wire Operation; the boundary renders only the frozen participant projection.
+  std::vector<OperationParticipant> participants;
+  TimePoint created_at{};
+  TimePoint updated_at{};
+  std::optional<TimePoint> retain_until;
 };
 enum class LifecycleState { Active, Disabled, Deleting, Deleted, Restoring, Purged };
+// P13a durable deletion intent/tombstone. The resource row keeps the stable id and state; this
+// relation records when the reversible delete happened, when restore stops being allowed and when
+// the minimal tombstone may be purged. All time values are database-UTC samples.
+struct LifecycleTombstone {
+  ResourceRef resource;
+  std::string operation_id;
+  LifecycleState state = LifecycleState::Deleting;
+  TimePoint deleted_at{};
+  TimePoint restore_until{};
+  TimePoint purge_after{};
+};
 // Durable management intent, distinct from lifecycle and observed process state. A stopped plugin
 // can remain registered/connected; an offline host never proves its process was stopped.
 enum class DesiredState { Running, Stopped };

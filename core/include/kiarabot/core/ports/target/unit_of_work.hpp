@@ -93,6 +93,13 @@ public:
   virtual Outcome<std::size_t> prune_received(TimePoint now, std::size_t limit) = 0;
 };
 enum class CommitResult { Committed, RolledBack, Unknown };
+// P13 owner-local operations that are not part of the P01-P12 owner contract surface. Defaults
+// fail closed so every partial adapter/UoW test double keeps compiling and can never silently
+// report an empty participant list, empty tombstone scan, or a fake cleanup success.
+inline Failure unsupported_lifecycle_read() {
+  return {ErrorCode::CapabilityNotSupported, Acceptance::NotAccepted, Recovery::Diagnose,
+          std::nullopt, std::nullopt};
+}
 class UnitOfWork {
 public:
   virtual ~UnitOfWork() = default;
@@ -106,6 +113,42 @@ public:
   virtual ReceiptRepository& receipts() = 0;
   virtual JournalRepository& journal() = 0;
   virtual Repository<OperationId, Operation>& operations() = 0;
+  // P13a owner-local participant projection for an operation row. The frozen wire Operation
+  // already carries participants; storage keeps them in an owner-private relation so the generic
+  // Operation repository row stays unchanged.
+  virtual Outcome<std::vector<OperationParticipant>> operation_participants(const OperationId&) {
+    return unsupported_lifecycle_read();
+  }
+  virtual Status save_operation_participants(const OperationId&,
+                                             const std::vector<OperationParticipant>&) {
+    return unsupported_lifecycle_read();
+  }
+  // P13a bounded retention passes. Each implementation adjudicates retention against actual
+  // database UTC in the same conditional write; the application-owned 60s cadence is advisory.
+  virtual Outcome<std::size_t> prune_outbox(TimePoint, std::size_t) {
+    return unsupported_lifecycle_read();
+  }
+  virtual Outcome<std::size_t> prune_audit(TimePoint, std::size_t) {
+    return unsupported_lifecycle_read();
+  }
+  virtual Outcome<std::size_t> prune_operations(TimePoint, std::size_t) {
+    return unsupported_lifecycle_read();
+  }
+  // P13a tombstone registry for reversible deletes. A missing tombstone is absence, a storage
+  // fault is Failure; the list is a bounded owner-local scan ordered by resource id.
+  virtual Outcome<std::optional<LifecycleTombstone>> find_lifecycle_tombstone(const ResourceRef&) {
+    return unsupported_lifecycle_read();
+  }
+  virtual Status save_lifecycle_tombstone(const LifecycleTombstone&) {
+    return unsupported_lifecycle_read();
+  }
+  virtual Status delete_lifecycle_tombstone(const ResourceRef&) {
+    return unsupported_lifecycle_read();
+  }
+  virtual Outcome<std::vector<LifecycleTombstone>> list_lifecycle_tombstones(std::size_t,
+                                                                             const std::string&) {
+    return unsupported_lifecycle_read();
+  }
   // Terminal, releases resources. Unknown MUST NOT be treated as RolledBack or automatically
   // retried: query original receipt/handoff identity in a fresh UoW. No external calls in a UoW.
   virtual CommitResult commit() = 0;

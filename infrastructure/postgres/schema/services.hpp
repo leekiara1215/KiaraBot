@@ -78,6 +78,22 @@ CREATE TABLE kiarabot.bridge_credentials (
 CREATE UNIQUE INDEX bridge_credentials_active ON kiarabot.bridge_credentials(resource_id)
   WHERE NOT revoked;
 )sql";
+    sql += R"sql(
+-- P13a reversible-delete tombstone. The resource relation keeps the stable id/state; this row
+-- records the operation identity and the restore/purge deadlines. The generic operations row cannot
+-- hold repeated participants, so participant progress lives in kiarabot.operation_participants.
+CREATE TABLE kiarabot.lifecycle_tombstones (
+  resource_kind integer NOT NULL CHECK(resource_kind BETWEEN 0 AND 15),
+  resource_id text NOT NULL CHECK(resource_id<>''),
+  operation_id text NOT NULL CHECK(operation_id<>''),
+  state integer NOT NULL CHECK(state BETWEEN 0 AND 5),
+  deleted_at bigint NOT NULL,
+  restore_until bigint NOT NULL CHECK(restore_until>deleted_at),
+  purge_after bigint NOT NULL CHECK(purge_after>restore_until),
+  PRIMARY KEY(resource_kind,resource_id)
+);
+CREATE INDEX lifecycle_tombstones_purge ON kiarabot.lifecycle_tombstones(state,purge_after);
+)sql";
     sql += kRuntimeEvents;
     sql += kRuntimeActions;
     sql += kRuntimeHostConnections;

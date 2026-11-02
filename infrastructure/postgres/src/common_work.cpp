@@ -76,6 +76,24 @@ constexpr std::string_view kReceiptWhere =
 std::string handoff_marks() {
   return "$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15";
 }
+template <typename Enum> Enum enum_value(const pqxx::field& field, int maximum) {
+  const auto value = field.as<int>();
+  if (value < 0 || value > maximum) {
+    throw std::runtime_error("invalid stored enum");
+  }
+  return static_cast<Enum>(value);
+}
+target::LifecycleTombstone read_tombstone(const pqxx::row& row) {
+  target::LifecycleTombstone value;
+  value.resource = {enum_value<target::ResourceKind>(row["resource_kind"], 15),
+                    {row["resource_id"].as<std::string>()}};
+  value.operation_id = row["operation_id"].as<std::string>();
+  value.state = enum_value<target::LifecycleState>(row["state"], 5);
+  value.deleted_at = time_field(row, "deleted_at");
+  value.restore_until = time_field(row, "restore_until");
+  value.purge_after = time_field(row, "purge_after");
+  return value;
+}
 class BudgetExpired {};
 
 // The watchdog owns a duplicate descriptor, so a pqxx disconnect cannot recycle the watched
@@ -507,6 +525,179 @@ public:
     (void)now;
     return prune("inbox", "retain_until", limit);
   }
+
+  // --- P13a owner-local lifecycle/retention extensions -------------------------------------
+  target::Outcome<std::vector<target::OperationParticipant>>
+  operation_participants(const target::OperationId& id) override {
+    return invoke<std::vector<target::OperationParticipant>>(
+        [&]() -> target::Outcome<std::vector<target::OperationParticipant>> {
+          if (!valid_sql_text(id.value)) {
+            return error(target::ErrorCode::InvalidArgument);
+          }
+          const auto rows =
+              exec("SELECT participant,state,reason," + time_projection("next_attempt") +
+                       " FROM kiarabot.operation_participants WHERE operation_id=$1 "
+                       "ORDER BY participant",
+                   {id.value});
+          std::vector<target::OperationParticipant> result;
+          result.reserve(rows.size());
+          for (const auto& row : rows) {
+            target::OperationParticipant participant;
+            participant.participant = row["participant"].as<std::string>();
+            participant.state = enum_value<target::OperationState>(row["state"], 6);
+            if (!row["reason"].is_null()) {
+              participant.reason = enum_value<target::ErrorCode>(row["reason"], 10);
+            }
+            participant.next_attempt = optional_time(row, "next_attempt");
+            if (!valid_sql_text(participant.participant)) {
+              return error(target::ErrorCode::Internal);
+            }
+            result.push_back(std::move(participant));
+          }
+          return result;
+        });
+  }
+  target::Status save_operation_participants(
+      const target::OperationId& id,
+      const std::vector<target::OperationParticipant>& participants) override {
+    return invoke<std::monostate>([&]() -> target::Status {
+      if (!valid_sql_text(id.value) || participants.size() > 16) {
+        return error(target::ErrorCode::InvalidArgument);
+      }
+      exec("DELETE FROM kiarabot.operation_participants WHERE operation_id=$1", {id.value});
+      for (const auto& participant : participants) {
+        if (!valid_sql_text(participant.participant)) {
+          return error(target::ErrorCode::InvalidArgument);
+        }
+        exec("INSERT INTO kiarabot.operation_participants"
+             "(operation_id,participant,state,reason,next_attempt) VALUES($1,$2,$3,$4,$5)",
+             {id.value, participant.participant, static_cast<int>(participant.state),
+              participant.reason ? std::optional<int>(static_cast<int>(*participant.reason))
+                                 : std::nullopt,
+              participant.next_attempt
+                  ? std::optional<std::string>(timestamp(*participant.next_attempt))
+                  : std::nullopt});
+      }
+      return std::monostate{};
+    });
+  }
+  target::Outcome<std::size_t> prune_outbox(target::TimePoint now, std::size_t limit) override {
+    (void)now;
+    return invoke<std::size_t>([&]() -> target::Outcome<std::size_t> {
+      if (limit < 1 || limit > 1000) {
+        return error(target::ErrorCode::InvalidArgument);
+      }
+      // Only confirmed/expired/needs-attention handoffs are removable, and only after all
+      // handoff obligations' 7-day receipt window elapsed. Pending/claimed obligations are never
+      // deleted by retention.
+      const auto rows =
+          exec("DELETE FROM kiarabot.outbox WHERE ctid IN (SELECT ctid FROM kiarabot.outbox WHERE "
+               "state IN (2,3,4) AND valid_until+604800000000000<="
+               "(extract(epoch FROM clock_timestamp())*1000000000)::bigint "
+               "ORDER BY valid_until LIMIT $1 FOR UPDATE SKIP LOCKED) RETURNING 1",
+               {limit});
+      return static_cast<std::size_t>(rows.size());
+    });
+  }
+  target::Outcome<std::size_t> prune_audit(target::TimePoint cutoff, std::size_t limit) override {
+    return invoke<std::size_t>([&]() -> target::Outcome<std::size_t> {
+      if (limit < 1 || limit > 1000) {
+        return error(target::ErrorCode::InvalidArgument);
+      }
+      const auto rows =
+          exec("DELETE FROM kiarabot.audit_entries WHERE ctid IN (SELECT ctid FROM "
+               "kiarabot.audit_entries WHERE occurred_at<=$2 ORDER BY occurred_at LIMIT $1 "
+               "FOR UPDATE SKIP LOCKED) RETURNING 1",
+               {limit, timestamp(cutoff)});
+      return static_cast<std::size_t>(rows.size());
+    });
+  }
+  target::Outcome<std::size_t> prune_operations(target::TimePoint now, std::size_t limit) override {
+    (void)now;
+    return invoke<std::size_t>([&]() -> target::Outcome<std::size_t> {
+      if (limit < 1 || limit > 1000) {
+        return error(target::ErrorCode::InvalidArgument);
+      }
+      // Operations without an explicit retention deadline are P05 records and are never pruned
+      // by P13a retention. Participants cascade with the operation row.
+      const auto rows =
+          exec("DELETE FROM kiarabot.operations WHERE ctid IN (SELECT ctid FROM "
+               "kiarabot.operations WHERE retain_until IS NOT NULL AND retain_until<="
+               "(extract(epoch FROM clock_timestamp())*1000000000)::bigint ORDER BY retain_until "
+               "LIMIT $1 FOR UPDATE SKIP LOCKED) RETURNING 1",
+               {limit});
+      return static_cast<std::size_t>(rows.size());
+    });
+  }
+  target::Outcome<std::optional<target::LifecycleTombstone>>
+  find_lifecycle_tombstone(const target::ResourceRef& resource) override {
+    return invoke<std::optional<target::LifecycleTombstone>>(
+        [&]() -> target::Outcome<std::optional<target::LifecycleTombstone>> {
+          if (!valid_sql_text(resource.id.value)) {
+            return error(target::ErrorCode::InvalidArgument);
+          }
+          const auto rows = exec(
+              "SELECT resource_kind,resource_id,operation_id,state," +
+                  time_projection("deleted_at") + "," + time_projection("restore_until") + "," +
+                  time_projection("purge_after") +
+                  " FROM kiarabot.lifecycle_tombstones WHERE resource_kind=$1 AND resource_id=$2",
+              {static_cast<int>(resource.kind), resource.id.value});
+          if (rows.empty()) {
+            return std::optional<target::LifecycleTombstone>{};
+          }
+          return std::optional<target::LifecycleTombstone>(read_tombstone(rows.one_row()));
+        });
+  }
+  target::Status save_lifecycle_tombstone(const target::LifecycleTombstone& value) override {
+    return invoke<std::monostate>([&]() -> target::Status {
+      if (!valid_sql_text(value.resource.id.value) || !valid_sql_text(value.operation_id) ||
+          value.deleted_at <= target::TimePoint{} || value.restore_until <= value.deleted_at ||
+          value.purge_after <= value.restore_until) {
+        return error(target::ErrorCode::InvalidArgument);
+      }
+      exec("INSERT INTO kiarabot.lifecycle_tombstones"
+           "(resource_kind,resource_id,operation_id,state,deleted_at,restore_until,purge_after) "
+           "VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(resource_kind,resource_id) DO UPDATE SET "
+           "operation_id=EXCLUDED.operation_id,state=EXCLUDED.state,deleted_at=EXCLUDED.deleted_at,"
+           "restore_until=EXCLUDED.restore_until,purge_after=EXCLUDED.purge_after",
+           {static_cast<int>(value.resource.kind), value.resource.id.value, value.operation_id,
+            static_cast<int>(value.state), timestamp(value.deleted_at),
+            timestamp(value.restore_until), timestamp(value.purge_after)});
+      return std::monostate{};
+    });
+  }
+  target::Status delete_lifecycle_tombstone(const target::ResourceRef& resource) override {
+    return invoke<std::monostate>([&]() -> target::Status {
+      if (!valid_sql_text(resource.id.value)) {
+        return error(target::ErrorCode::InvalidArgument);
+      }
+      exec("DELETE FROM kiarabot.lifecycle_tombstones WHERE resource_kind=$1 AND resource_id=$2",
+           {static_cast<int>(resource.kind), resource.id.value});
+      return std::monostate{};
+    });
+  }
+  target::Outcome<std::vector<target::LifecycleTombstone>>
+  list_lifecycle_tombstones(std::size_t limit, const std::string& after) override {
+    return invoke<std::vector<target::LifecycleTombstone>>(
+        [&]() -> target::Outcome<std::vector<target::LifecycleTombstone>> {
+          if (limit < 1 || limit > 100) {
+            return error(target::ErrorCode::InvalidArgument);
+          }
+          const auto rows =
+              exec("SELECT resource_kind,resource_id,operation_id,state," +
+                       time_projection("deleted_at") + "," + time_projection("restore_until") +
+                       "," + time_projection("purge_after") +
+                       " FROM kiarabot.lifecycle_tombstones WHERE resource_id>$1 "
+                       "ORDER BY resource_id LIMIT $2",
+                   {after, limit});
+          std::vector<target::LifecycleTombstone> result;
+          result.reserve(rows.size());
+          for (const auto& row : rows) {
+            result.push_back(read_tombstone(row));
+          }
+          return result;
+        });
+  }
   target::Outcome<std::optional<target::Operation>> find(const target::OperationId& id) override {
     return invoke<std::optional<target::Operation>>(
         [&]() -> target::Outcome<std::optional<target::Operation>> {
@@ -516,7 +707,9 @@ public:
           const auto rows = exec(
               "SELECT "
               "id,owner,resource_kind,resource_id,version,state,execution_outcome,blocked_reason," +
-                  time_projection("next_attempt") + " FROM kiarabot.operations WHERE id=$1",
+                  time_projection("next_attempt") + "," + time_projection("created_at") + "," +
+                  time_projection("updated_at") + "," + time_projection("retain_until") +
+                  " FROM kiarabot.operations WHERE id=$1",
               {id.value});
           if (rows.empty()) {
             return std::optional<target::Operation>{};
@@ -545,20 +738,32 @@ public:
                                : std::nullopt,
           value.next_attempt ? std::optional<std::string>(timestamp(*value.next_attempt))
                              : std::nullopt};
+      const auto retain = value.retain_until
+                              ? std::optional<std::string>(timestamp(*value.retain_until))
+                              : std::nullopt;
       if (!expected) {
+        parameters.append(timestamp(value.created_at));
+        parameters.append(timestamp(value.updated_at));
+        parameters.append(retain);
         const auto inserted =
-            exec("INSERT INTO kiarabot.operations VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT "
-                 "DO NOTHING RETURNING id",
+            exec("INSERT INTO kiarabot.operations("
+                 "id,owner,resource_kind,resource_id,version,state,execution_outcome,"
+                 "blocked_reason,next_attempt,created_at,updated_at,retain_until) "
+                 "VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) ON CONFLICT DO NOTHING "
+                 "RETURNING id",
                  parameters);
         if (inserted.empty()) {
           return error(target::ErrorCode::Conflict);
         }
       } else {
+        parameters.append(timestamp(value.updated_at));
+        parameters.append(retain);
         parameters.append(expected->value);
         const auto changed =
             exec("UPDATE kiarabot.operations SET "
-                 "version=$5,state=$6,execution_outcome=$7,blocked_reason=$8,next_attempt=$9 "
-                 "WHERE id=$1 AND owner=$2 AND resource_kind=$3 AND resource_id=$4 AND version=$10 "
+                 "version=$5,state=$6,execution_outcome=$7,blocked_reason=$8,next_attempt=$9,"
+                 "updated_at=$10,retain_until=$11 "
+                 "WHERE id=$1 AND owner=$2 AND resource_kind=$3 AND resource_id=$4 AND version=$12 "
                  "RETURNING id",
                  parameters);
         if (changed.empty()) {
