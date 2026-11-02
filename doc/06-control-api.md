@@ -463,3 +463,21 @@ P12c 在独立 Control 进程的 HTTPS 边界新增 owner-backed 转发层（`co
 `log.read`/`audit.read`（权限 48/49）、健康三端点聚合完整规则、日志/审计数据源、WS 断流恢复与异步 operation
 快照。上述端点占用现有 OpenAPI 路径但服务端 owner RPC/权限/配置端点仍待 P12a 契约与 P11d 管理 RPC 完整接线；
 在其落地前仍按未实现处理（不得返回假资源/成功空页）。`
+
+### P12c-2 已实现（2026-11-02）
+
+- `GET /api/v1/principals`：转发 Identity `ListPrincipals`；要求登录态，经 `IssueDelegation`
+  （audience=identity、`identity.principal.read`）在线授权；仅人类主体、`page_size`/`page_token`
+  分页快照；owner 不可用返回 503 `UPSTREAM_UNAVAILABLE`（不返回空页），拒绝映射 401/403。
+- `/health/live`：仅进程存活；匿名 `/health/ready`：仅当 Identity 会话校验/撤销链当前可达时 200，
+  否则 503，且不暴露组件细节；受权 `GET /api/v1/health`：返回 `state` + `identity/runtime/
+  scheduler/model` 四组件与 `checked_at`。Identity 不可用 → 503 `UNHEALTHY`；Runtime/Scheduler/Model
+  单点不可用 → 200 `DEGRADED`（不整体摘流，对应 owner 功能 503），单项故障不产生 `HEALTHY`。
+- `/logs`、`/audit`：先按 `log.read`(48)/`audit.read`(49) 分别取得一次性委托（缺失/拒绝 → 401/403），
+  因尚无权威日志/审计聚合来源，授权通过后仍返回 503 `UPSTREAM_UNAVAILABLE`，绝不返回成功空页。
+- `control_api` owner 端点统一：`identity_endpoint`（必填）+ 可选 `runtime_endpoint`、
+  `scheduler_endpoint`、`model_endpoint`、`host_endpoint`（host:port，逐项校验）；缺省端点使对应
+  owner 读取稳定失败而不伪造数据。健康聚合用这些 mTLS 通道的当前状态观测。
+- 尚未实现（P12d/P11d 依赖或后续批次）：账号/适配器绑定、安装/实例启停配置、插件配置、
+  ActionPolicy REST、任务查询/取消、模型管理 REST（P11d 负责专有端点，通用 owner 委托层本任务提供）、
+  WS 断流恢复/异步 operation 快照。以上不得返回假资源。

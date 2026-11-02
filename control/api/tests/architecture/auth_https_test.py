@@ -122,12 +122,22 @@ def main(control, fixture):
             # no authoritative source is registered in this minimal fixture configuration.
             status, body, _ = request('GET', '/health/live')
             assert status == 200 and body == {'state': 'HEALTHY'}, (status, body)
-            status, body, _ = request('GET', '/api/v1/logs',
+            for sensitive_path in ('/api/v1/logs', '/api/v1/audit'):
+                status, body, _ = request('GET', sensitive_path,
+                                          headers={'Authorization': 'Bearer ' + ACCESS})
+                assert status in (403, 503), (sensitive_path, status, body)
+                assert body['code'] in ('PERMISSION_DENIED', 'UPSTREAM_UNAVAILABLE'), body
+            status, body, _ = request('GET', '/api/v1/health',
                                       headers={'Authorization': 'Bearer ' + ACCESS})
-            assert status == 503 and body['code'] == 'UPSTREAM_UNAVAILABLE', (status, body)
-            status, body, _ = request('GET', '/api/v1/audit',
+            assert status in (200, 503), (status, body)
+            if status == 200:
+                assert body['state'] in ('HEALTHY', 'DEGRADED'), body
+                assert {item['component'] for item in body['components']} == {
+                    'identity', 'runtime', 'scheduler', 'model'}, body
+            status, body, _ = request('GET', '/api/v1/principals',
                                       headers={'Authorization': 'Bearer ' + ACCESS})
-            assert status == 503 and body['code'] == 'UPSTREAM_UNAVAILABLE', (status, body)
+            assert status in (403, 503), (status, body)
+            assert body['code'] in ('PERMISSION_DENIED', 'UPSTREAM_UNAVAILABLE'), body
             scope = urllib.parse.quote(json.dumps({'resources': [
                 {'kind': 'RESOURCE_ACCOUNT', 'id': SESSION}]}))
             status, body, _ = request(

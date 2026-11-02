@@ -530,7 +530,9 @@ PeerCertificatePort信任根由部署配置传入公共PEM，最多16根，每�
 
 ### P04 Control HTTPS configuration and endpoint lifetime
 
-Control alone accepts optional `control_api` with exactly `listen` and `identity_endpoint` strings, plus optional `runtime_endpoint` (Runtime owner mTLS endpoint for P12c Action result queries; absent keeps those routes stable-failing rather than serving fabricated data). Listen is IPv4:port (port zero is allowed for isolated
+Control alone accepts optional `control_api` with exactly `listen` and `identity_endpoint` strings, plus optional `runtime_endpoint`, `scheduler_endpoint`, `model_endpoint`
+and `host_endpoint` owner mTLS endpoints for P12c owner-backed REST/health aggregation (absent endpoints
+keep the corresponding routes stable-failing rather than serving fabricated data). Listen is IPv4:port (port zero is allowed for isolated
 tests), independent of the loopback probe. Identity is a single ASCII DNS/IPv4
 host:port, port 1–65535; URLs, DSNs, scripts and TLS verification overrides are
 rejected. Unknown/duplicate keys and wrong types exit 2. Validated `tls` material
