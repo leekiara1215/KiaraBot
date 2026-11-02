@@ -12,7 +12,7 @@ cmake --build --preset proto
 sdk/python/.venv/bin/python -m pytest -q sdk/python/tests
 ```
 
-默认测试使用 Python 内的 `FakeTargetRuntime`（真实 gRPC + server-verified TLS）验证 SDK 目标协议，不依赖 C++ 二进制、数据库或真实平台。真实 Core 的 Bridge handler（P06）与受管 Host（P08）已由仓库级实现/验收覆盖；SDK 单测继续用 FakeTargetRuntime 保持可重复，不使用旧 reference 桥接作为兼容层。生成目录、虚拟环境均不提交。
+默认测试使用 Python 内的 `FakeTargetRuntime`（真实 gRPC + server-verified TLS）验证 SDK 目标协议，不依赖 C++ 二进制、数据库或真实平台。真实 Core 的 Bridge handler（P06a）已实现，受管 Host 启动（P08）也已有 Host 侧实现；真实 `kiarabot-plugin-host` + 受管 SDK 插件的进程联测仍未完成，相关端到端与 start/stop 超时用例标记 deferred，不使用旧 reference 桥接作为兼容层。生成目录、虚拟环境均不提交。
 
 插件继承 `kiarabot_sdk.Plugin`，提供异步 `on_start(context)`、`on_event(event, context)`、`on_config(config, context)` 和 `on_stop(reason)`。event 为生成的 EventEnvelope；成功返回后发送正 ACK；`PluginError` 保留稳定码与 retryable，其他异常转为脱敏 INTERNAL，协作超时转为 TIMEOUT。ACK 不表示 Action 成功；至少一次投递可能重复，插件需要使自身副作用幂等。
 
@@ -22,7 +22,7 @@ sdk/python/.venv/bin/python -m pytest -q sdk/python/tests
 sdk/python/.venv/bin/python -m kiarabot_sdk --manifest /absolute/path/to/plugin.json
 ```
 
-由 Host 管理时的受控启动、最小环境白名单与 start/stop 超时由 P08 Runtime Host 负责（已实现并由 P08/P13 drain 验收覆盖）；SDK 只按部署注入的 `PLUGIN_CORE_ENDPOINT`/`PLUGIN_AUTH_TOKEN`/`PLUGIN_TLS_ROOT`/`PLUGIN_INSTANCE_ID` 运行，不读取 Core 配置或秘密。SDK 进程可另选 `PLUGIN_TLS_SERVER_NAME`、`PLUGIN_IO_TIMEOUT`、`PLUGIN_HOOK_TIMEOUT`、`PLUGIN_HEARTBEAT_INTERVAL`、`PLUGIN_RETRY_DELAY`、`PLUGIN_LEASE_RENEW_INTERVAL`（默认 5/5/5/1/10 秒，非法值 `INVALID_ARGUMENT`）。插件日志目前丢弃，后续统一日志任务再接入。进程隔离不是操作系统安全沙箱，仅用于可信插件的生命周期和故障隔离。
+由 Host 管理时的受控启动、最小环境白名单与 start/stop 超时属于 P08 Runtime Host，Host 侧已有实现（P08a/P08d），但真实 plugin-host 进程联测未完成、仍按 deferred 记录；本阶段 SDK 只按部署注入的 `PLUGIN_CORE_ENDPOINT`/`PLUGIN_AUTH_TOKEN`/`PLUGIN_TLS_ROOT`/`PLUGIN_INSTANCE_ID` 运行，不读取 Core 配置或秘密。SDK 进程可另选 `PLUGIN_TLS_SERVER_NAME`、`PLUGIN_IO_TIMEOUT`、`PLUGIN_HOOK_TIMEOUT`、`PLUGIN_HEARTBEAT_INTERVAL`、`PLUGIN_RETRY_DELAY`、`PLUGIN_LEASE_RENEW_INTERVAL`（默认 5/5/5/1/10 秒，非法值 `INVALID_ARGUMENT`）。插件日志目前丢弃，后续统一日志任务再接入。进程隔离不是操作系统安全沙箱，仅用于可信插件的生命周期和故障隔离。
 
 Context.granted_permissions 在注册协商完成后可用，断开后清空。重连重新注册并核对全部权限；SDK 不缓存授权决定。已提供 P07 Action 客户端 submit_action/query_action/cancel_action（action.result.v1）：submit 前校验 action_id/idempotency_key/trace_id/deadline(≤300s)/payload 并拒绝 schedule_task；结果按 execution_outcome 矩阵校验，未知/EXPIRED 不转 FAILED，断线后不自动重发、用原幂等键查询；辅助函数 action_kind/is_action_terminal/is_action_unknown/may_have_executed以及 storage_get/storage_set/storage_delete（host.storage.v1）；必须协商后使用。storage_set/delete 的幂等键由插件提供，详情见 [SDK 设计](../../doc/03-plugin-sdk.md)。模型客户端 model_chat(model, messages, timeout=5.0) 已提供，需 host.model.v1 和 model.chat；返回 ModelChatResponse，超时/断线不可自动重试。调度客户端 task_create/task_get/task_cancel 已提供（P10c：冻结 PluginBridge 只有这三个 task 帧，无 list_tasks），需 host.tasks.v1、task.schedule；创建还需 event.timer.triggered，支持 UTC datetime 和 local_time 字段字典（SDK 只校验日历/时区语法，DST/未来时限由 Scheduler 判定）；超时/断线不自动重试，用同一幂等键重试或查询。示例：AI 见 ../../plugins/ai-reply（default 别名由 Core 映射到 KIARABOT_MODEL_NAME，只通过 SDK，不读取密钥）；群管理命令见 ../../plugins/group_admin；定时提醒见 ../../plugins/reminder。示例配置值见各目录 `config.example.json`（当前只支持空 schema，插件在 on_config 中自行校验）。
 

@@ -2128,3 +2128,23 @@ P07g（2026-11-02，HEAD 95495c2）：Action target 已翻项经 `p07_action_rul
 ## P11f Model 证据核对（2026-11-02）
 
 P11f 实测 p11 套件 9/9、p03 真 PG 2/2、SDK pytest 141 passed/23 skipped、`check_implementation_status.py` PASS；HEAD `95495c2`。ModelService 11 个 owner RPC 为 target implemented；ModelChat 消息/HostRequest.model_chat 由 P11e bridge fixture 证据支持。未翻/延期项：ModelChatDisposition/ModelCallDisposition 无线上消费暴露证据（仅 owner 内部/管理投影，不据此翻客户端能力）；streaming 明确不做（HTTP provider `stream=false`，无流式字段）；GetOperation 仅 model owner 分支，Runtime/Scheduler owner 未接线；插件→Runtime→Model→Provider 单链路需 P05b 委托语义确认。当前 OpenAPI Model 9 个 REST operation 仍 inline `not_implemented`，与 p11_control_model_rest e2e 不一致，属契约清理复核项，本任务不改契约。另 `p01_target_roundtrip` 因 ListAudit `scope_kinds`（P12c-6）镜像不一致失败，与 P11 无关，已上报 Lead。
+
+## P00p 注释/契约状态复核（2026-11-03，只读）
+
+P00p 只核对注释与本文 target 状态，不翻转任何契约。已实现但仍写“未实现”的注释已修正：
+`host_bridge_server.hpp` 的 deployment helper 注释（P08b-3/3a/3b persistence 已接线；PG
+`HostRegistrationPort` 已存在但组合根仍用 in-memory 注册 store）、`runtime_rpc.hpp` 的
+`QueryActionResult`/P06 internal-dispatcher 注释、`sdk/python/README.md` 的 P06a/P08 文案。
+下列仍按本文 target 表 / `proto/tests/target_spec.json` 保持 **not_implemented**，相关注释保留并
+注明依据，不得因注释清理推断为已实现：
+
+- `operations.listActionMetadata` 及 `RuntimeListActionMetadata*`：target 表未翻，Runtime/Control
+  无生产 handler；P07g/P12f 记录未接线。
+- `HostService` 7 个方法及 `host_operations`：P08 内部 HostBridge 面，target 仍 not_implemented；
+  P13f 记录 host operation owner 待用户决策。
+- `RuntimeBindAdapterResponse.bootstrap_credential` / `RuntimeCreateInstanceResponse.bootstrap_credential`
+  字段级：target 状态未翻（P06 消费路径有实现/测试，字段级翻转仍缺单独证据）。
+- Control WebSocket channels：AsyncAPI/P12a-2 延期，target channels 全 not_implemented；REST
+  operation 快照是当前唯一 resync 源。
+
+证据与缺口以对应模块报告为准；本注记不改变任何契约状态。
