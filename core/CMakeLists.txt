@@ -62,6 +62,16 @@ add_test(NAME p11_model_gateway_application
 set_tests_properties(p11_model_gateway_application PROPERTIES
   LABELS "p11;unit" TIMEOUT 30)
 
+foreach(COMPONENT runtime_host_application)
+  add_executable(kiarabot_${COMPONENT}_test tests/architecture/${COMPONENT}_test.cpp)
+  target_include_directories(kiarabot_${COMPONENT}_test PRIVATE include)
+  target_compile_features(kiarabot_${COMPONENT}_test PRIVATE cxx_std_20)
+  target_compile_options(kiarabot_${COMPONENT}_test PRIVATE
+    $<$<CXX_COMPILER_ID:AppleClang,Clang,GNU>:-Wall -Wextra -Wpedantic>)
+  add_test(NAME p08_${COMPONENT} COMMAND kiarabot_${COMPONENT}_test)
+  set_tests_properties(p08_${COMPONENT} PROPERTIES LABELS "p08;unit" TIMEOUT 10)
+endforeach()
+
 foreach(COMPONENT persistence_contract persistence_rules time)
   add_executable(kiarabot_${COMPONENT}_test tests/architecture/${COMPONENT}_test.cpp)
   target_include_directories(kiarabot_${COMPONENT}_test PRIVATE include)
