@@ -70,11 +70,11 @@ async def test_registration_negotiation_and_event_ack(tmp_path, server_tls):
             assert registration.context.request_id and registration.context.trace_id
             assert registration.context.deadline.seconds > 0
             assert registration.accounts[0].account_id == '123' and registration.accounts[0].enabled
-            assert [item.name for item in registration.capabilities] == ['event.message_received']
+            assert [item.name for item in registration.capabilities] == []
             assert connection.events[0].event_id == event.event_id
             assert connection.events[0].source.adapter_instance_id == entry.instance_id
             assert client.authorized and client.instance == entry.instance_id
-            assert client.effective_capabilities == frozenset({'event.message_received'})
+            assert client.effective_capabilities == frozenset()
             assert client.fatal == 0 and not client.shutdown_seen
         finally:
             await finish(store, task, stop)

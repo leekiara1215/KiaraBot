@@ -61,8 +61,7 @@ def registration_response(instance, *, protocol='kiarabot.v1', heartbeat=5, life
         accepted=True, assigned_instance_id=instance, required_protocol_version=protocol,
         heartbeat_interval_seconds=heartbeat, fence=fence,
         authorization=authorization_proto(fence, lifetime=lifetime),
-        effective_capabilities=[common.Capability(name='event.message_received', version='1',
-                                                  supported=True)])
+        effective_capabilities=[])
 
 
 def test_deployment_files_and_environment(tmp_path, monkeypatch):
@@ -179,7 +178,7 @@ def test_registration_validation():
                                               expected_instance=instance)
     assert registration.instance_id == instance
     assert registration.heartbeat_interval == 5.0
-    assert registration.effective_capabilities == frozenset({'event.message_received'})
+    assert registration.effective_capabilities == frozenset()
     assert registration.authorization.fence == registration.fence
     with pytest.raises(BridgeFailure):
         Registration.from_response(registration_response(instance, protocol='kiarabot.v0'),
@@ -257,11 +256,11 @@ def test_tls_channel_options_and_registration_request(tmp_path):
     assert options['grpc.ssl_target_name_override'] == 'runtime.internal'
     credentials = value.tls_credentials()
     assert isinstance(credentials, grpc.ChannelCredentials)
-    request = value.registration_request(['event.message_received'])
+    request = value.registration_request(['action.send_message.text.v1'])
     assert request.adapter_instance_id == value.adapter_instance_id
     assert request.protocol_version == 'kiarabot.v1'
     assert request.context.request_id
     assert request.accounts[0].account_id == '123456'
-    assert [item.name for item in request.capabilities] == ['event.message_received']
+    assert [item.name for item in request.capabilities] == ['action.send_message.text.v1']
     default_options = dict(config(tmp_path).channel_options())
     assert 'grpc.ssl_target_name_override' not in default_options

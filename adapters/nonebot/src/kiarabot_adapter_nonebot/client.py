@@ -30,7 +30,6 @@ from .outbox import Outbox
 
 logger = logging.getLogger(__name__)
 
-EVENT_CAPABILITY = 'event.message_received'
 # Rejections that must keep the event pending even if the Runtime omits retryable=true.
 ALWAYS_RETRYABLE_REJECTIONS = frozenset({common.RATE_LIMITED})
 KNOWN_RECEIPTS = frozenset({actions.ACTION_RECEIPT_RECORDED, actions.ACTION_RECEIPT_DUPLICATE,
@@ -122,10 +121,13 @@ class BridgeClient:
             logger.warning('operation=status_report error_code=%s', common.ErrorCode.Name(failure.code))
 
     def declared_capabilities(self):
-        capabilities = [EVENT_CAPABILITY]
+        # P06 target adapter capabilities are the executed Action vocabulary only. Event
+        # reporting (MessageReceived/FriendRequest/...) is not a negotiated capability: the
+        # Runtime event inbox accepts it from the authenticated adapter channel without a
+        # capability grant, while fan-out subscriptions are a plugin-side concern.
         if self.executor:
-            capabilities.extend(ACTION_CAPABILITIES)
-        return tuple(capabilities)
+            return ACTION_CAPABILITIES
+        return ()
 
     def registration_request(self):
         return self.config.registration_request(self.declared_capabilities())
@@ -173,8 +175,6 @@ class BridgeClient:
 
     # ---- registration and authorization lifecycle --------------------------------------
     def _apply_registration(self, registration: Registration) -> None:
-        if EVENT_CAPABILITY not in registration.effective_capabilities:
-            raise BridgeFailure(common.CAPABILITY_NOT_SUPPORTED, fatal=True)
         self._authorization = registration.authorization
         self._fence = registration.fence
         self._instance = registration.instance_id

@@ -22,7 +22,6 @@ from kiarabot.v1 import services_pb2_grpc as services
 from kiarabot_adapter_nonebot.bridge import (PROTOCOL_VERSION, BridgeConfig, Fence, timestamp)
 
 UUID4 = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\Z')
-ADAPTER_EVENT_CAPABILITY = 'event.message_received'
 
 
 class _Close:
@@ -226,7 +225,7 @@ class FakeTargetRuntime(services.AdapterBridgeServicer):
             if not account.account_id or not account.enabled:
                 return 'invalid_account'
         names = [item.name for item in registration.capabilities]
-        if len(names) != len(set(names)) or ADAPTER_EVENT_CAPABILITY not in names:
+        if len(names) != len(set(names)):
             return 'invalid_capability'
         return None
 
