@@ -1,0 +1,229 @@
+name: Release images
+
+# P14b-2 / P14d release skeleton.
+#
+# Safety model:
+#  - Manual workflow_dispatch or a v* tag only.
+#  - Nothing is pushed unless repository variable RELEASE_PUSH_ENABLED=true AND the gated
+#    "release-gated" environment (required reviewers, protected branches, environment secrets)
+#    is approved by the protected release process.
+#  - Push requires image signature to succeed: keyless cosign needs RELEASE_COSIGN_KEYLESS=true
+#    (job permission id-token: write). Without signing credentials the run is a documented dry-run:
+#    images/SBOMs are built, push is skipped, release-evidence.json records the blockers.
+#  - Only KiaraBot self-built images are published, under ghcr.io/leekiara1215/<image>.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release image tag/version (e.g. v1.2.3); must not be latest'
+        required: true
+        default: 'v0.0.0-dev'
+        type: string
+      push:
+        description: 'Push and sign images (still requires RELEASE_PUSH_ENABLED=true + environment approval)'
+        required: true
+        default: 'false'
+        type: choice
+        options: ['false', 'true']
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  REGISTRY: ghcr.io
+  REGISTRY_OWNER: leekiara1215
+  VERSION: ${{ inputs.version || github.ref_name }}
+  RELEASE_PUSH_ENABLED: ${{ vars.RELEASE_PUSH_ENABLED || 'false' }}
+  RELEASE_COSIGN_KEYLESS: ${{ vars.RELEASE_COSIGN_KEYLESS || 'false' }}
+  SYFT_IMAGE: anchore/syft:v1.20.0
+  TRIVY_IMAGE: aquasec/trivy:0.58.1
+  COSIGN_IMAGE: gcr.io/projectsigstore/cosign:v2.4.3
+
+jobs:
+  publish:
+    name: Build, SBOM, sign and push release images
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    # Protected environment: configure required reviewers, deployment branch rules and any
+    # environment secrets in repository settings before enabling RELEASE_PUSH_ENABLED.
+    environment: release-gated
+    # Write permissions exist only in this release job; package write is needed for GHCR, and
+    # id-token is used only for keyless cosign when RELEASE_COSIGN_KEYLESS=true.
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Validate release request
+        run: |
+          set -euo pipefail
+          if [[ ! "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.]+)?$ ]]; then
+            echo "release version must look like vMAJOR.MINOR.PATCH: $VERSION" >&2
+            exit 2
+          fi
+          if [[ "$VERSION" == "latest" ]]; then
+            echo "latest is a moving alias and cannot be a release version" >&2
+            exit 2
+          fi
+          echo "release_version=$VERSION" >> "$GITHUB_OUTPUT"
+      - name: Write release evidence skeleton
+        run: |
+          mkdir -p release-evidence sbom
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          evidence = {
+              'schema_version': 1,
+              'phase': 'build',
+              'version': os.environ['VERSION'],
+              'sha': os.environ['GITHUB_SHA'],
+              'ref': os.environ['GITHUB_REF'],
+              'registry': os.environ['REGISTRY'],
+              'registry_owner': os.environ['REGISTRY_OWNER'],
+              'push_requested': os.environ.get('INPUT_PUSH', 'false') == 'true',
+              'push_enabled_variable': os.environ['RELEASE_PUSH_ENABLED'] == 'true',
+              'cosign_keyless_variable': os.environ['RELEASE_COSIGN_KEYLESS'] == 'true',
+              'images': {},
+              'pushed': False,
+              'signed': False,
+              'blockers': [],
+          }
+          if os.environ.get('INPUT_PUSH', 'false') != 'true':
+              evidence['blockers'].append('push input is false (dry-run)')
+          if os.environ['RELEASE_PUSH_ENABLED'] != 'true':
+              evidence['blockers'].append('repository variable RELEASE_PUSH_ENABLED is not true')
+          Path('release-evidence/release-evidence.json').write_text(
+              json.dumps(evidence, indent=2) + '\n')
+          PY
+        env:
+          INPUT_PUSH: ${{ inputs.push || 'false' }}
+      - name: Build self-built suite images
+        run: |
+          set -euo pipefail
+          for target in identity runtime scheduler model plugin-host control tools; do
+            docker build -f deploy/docker/suite.Dockerfile --target "$target" \
+              --build-arg UBUNTU_BASE="${UBUNTU_BASE:-ubuntu:24.04}" \
+              -t "local/kiarabot-$target:$VERSION" .
+          done
+      - name: Build panel and adapter images
+        run: |
+          set -euo pipefail
+          docker build -f deploy/docker/panel.Dockerfile \
+            --build-arg VITE_API_MODE=live -t "local/kiarabot-panel:$VERSION" .
+          docker build -f deploy/docker/adapter.Dockerfile \
+            -t "local/kiarabot-adapter:$VERSION" .
+      - name: Generate SBOMs (release gate input)
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          path = Path('release-evidence/release-evidence.json')
+          evidence = json.loads(path.read_text())
+          evidence['phase'] = 'sbom'
+          path.write_text(json.dumps(evidence, indent=2) + '\n')
+          PY
+          for image in identity runtime scheduler model plugin-host control tools panel adapter; do
+            docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+              "$SYFT_IMAGE" "local/kiarabot-$image:$VERSION" \
+              -o "spdx-json=sbom/$image.spdx.json"
+            test -s "sbom/$image.spdx.json"
+          done
+      - name: Scan SBOMs with Trivy (report-only)
+        # Vulnerabilities must be triaged; this step never silently claims a clean release.
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          for image in identity runtime scheduler model plugin-host control tools panel adapter; do
+            docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+              "$TRIVY_IMAGE" image --scanners vuln --format json \
+              -o "sbom/trivy-$image.json" "local/kiarabot-$image:$VERSION"
+          done
+      - name: Record SBOM hashes
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+          evidence_path = Path('release-evidence/release-evidence.json')
+          evidence = json.loads(evidence_path.read_text())
+          for path in sorted(Path('sbom').glob('*.spdx.json')):
+              image = path.name.split('.spdx.json', 1)[0]
+              evidence['images'].setdefault(image, {})['sbom_sha256'] = hashlib.sha256(
+                  path.read_bytes()).hexdigest()
+          evidence['phase'] = 'sign-and-push'
+          evidence_path.write_text(json.dumps(evidence, indent=2) + '\n')
+          PY
+      - name: Push and sign images (protected release only)
+        id: publish
+        if: >-
+          inputs.push == 'true' && vars.RELEASE_PUSH_ENABLED == 'true' &&
+          vars.RELEASE_COSIGN_KEYLESS == 'true'
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          echo "$GHCR_TOKEN" | docker login "$REGISTRY" -u "${{ github.actor }}" --password-stdin
+          for image in identity runtime scheduler model plugin-host control tools panel adapter; do
+            local_image="local/kiarabot-$image:$VERSION"
+            remote_image="$REGISTRY/$REGISTRY_OWNER/kiarabot-$image:$VERSION"
+            docker tag "$local_image" "$remote_image"
+            docker push "$remote_image"
+            digest="$(docker image inspect "$remote_image" --format '{{index .RepoDigests 0}}')"
+            echo "$image $digest" >> release-evidence/digests.txt
+            docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+              -e COSIGN_EXPERIMENTAL=1 "$COSIGN_IMAGE" sign --yes "$digest"
+          done
+      - name: Record signing/push outcome
+        if: always()
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          path = Path('release-evidence/release-evidence.json')
+          evidence = json.loads(path.read_text())
+          published = (os.environ.get('INPUT_PUSH') == 'true'
+                       and os.environ['RELEASE_PUSH_ENABLED'] == 'true'
+                       and os.environ['RELEASE_COSIGN_KEYLESS'] == 'true'
+                       and os.environ.get('PUBLISH_OUTCOME') == 'success')
+          evidence['pushed'] = published
+          evidence['signed'] = published
+          if not published:
+              if os.environ.get('INPUT_PUSH') != 'true':
+                  evidence['blockers'].append('dry-run: push input is false')
+              if os.environ['RELEASE_PUSH_ENABLED'] != 'true':
+                  evidence['blockers'].append('repository variable RELEASE_PUSH_ENABLED is not true')
+              if os.environ['RELEASE_COSIGN_KEYLESS'] != 'true':
+                  evidence['blockers'].append(
+                      'cosign signing credentials/keyless OIDC are not configured; '
+                      'signed images are a release gate, so nothing was pushed')
+              if os.environ.get('PUBLISH_OUTCOME') != 'success':
+                  evidence['blockers'].append('publish/sign step did not report success')
+          path.write_text(json.dumps(evidence, indent=2) + '\n')
+          print(json.dumps(evidence, indent=2))
+          PY
+        env:
+          INPUT_PUSH: ${{ inputs.push || 'false' }}
+          PUBLISH_OUTCOME: ${{ steps.publish.outcome }}
+      - name: Upload release evidence and SBOM artifacts
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-evidence-${{ env.VERSION }}-${{ github.sha }}
+          path: |
+            release-evidence/
+            sbom/
+          if-no-files-found: error
+          retention-days: 30
