@@ -334,3 +334,20 @@ Principal检查自身owner方法；audience必须与真实已认证recipient一�
 业务owner仍须普通verify绑定真实上游TLS；Identity专用返回类型只证明签名和受众，
 在线复查当前来源与全部actor。精确拒绝/失败语义见doc/01-contracts的同名实现边界，
 一秒窗口同时检查DB UTC及可信单调时间；纯应用无写入、缓存或secret receipt。
+
+## P10b platform-peer 交接裁决（实施定稿）
+
+Scheduler→Runtime 的 `AcceptTimerTrigger` 采用 P05 platform_peers 平台服务主体授权：Scheduler
+的 clientAuth 证书由 Identity 离线 bootstrap 登记为 platform principal 并授予显式 assignment；
+Runtime 在其 internal mTLS owner 监听上按叶证书 URI SAN 认证平台 peer（`spiffe://kiarabot/
+scheduler` 约定），只对 `AcceptTimerTrigger` 接受平台 peer + handoff 完整性校验（source/
+operation owner/occurrence/event id/payload hash/valid_until/schedule version），**不要求用户
+delegation**，也不把该豁免扩散到其他 Runtime owner 方法。Scheduler→Runtime 请求不携带
+delegation；Runtime→Scheduler 的用户/实例委托仍按 P05 delegation 链在线校验。
+
+Identity 侧签发约定（不扩展 claim/契约）：对 Runtime 受管实例的 delegation，签发方必须在
+scope/permission bindings 中包含 Installation resource scope，owner instance 由 delegation
+subject 派生；缺失 installation binding 时接收方必须 fail-closed。Scheduler 六方法在
+scheduler.proto 增加既有 `scope_kinds` 注释（TASK/INSTANCE），供 Identity.CheckAuthorization
+解析方法策略；未新增 proto 字段、权限或 wire 语义。Identity 侧签发需要同时包含 Installation
+与 Instance scope（Runtime/Scheduler 的精确 scope 校验依赖该组合）。

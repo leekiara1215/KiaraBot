@@ -252,3 +252,14 @@ claim 到期后以同一 occurrence/event id 重发，Runtime 返回 duplicate�
 不会产生第二个事件或 target。Runtime 永久拒绝时 Scheduler 将 occurrence/task 置 FAILED 并
 confirm outbox 以结束该交接；UNAVAILABLE/超时/限流保留 claim 重试。Scheduler→Runtime 请求由
 部署配置 `runtime_endpoint` 提供，使用服务 TLS mTLS；授权链/真实 e2e 仍需后续增量验证。
+
+## P10b-2 平台交接与 Scheduler 授权事务补充（2026-11-02）
+
+Scheduler→Runtime `AcceptTimerTrigger` 的平台服务主体路径不写 Runtime 授权事务以外的资源：
+Runtime 在一个 UoW 内持久化 TimerTriggered 事件与 owner target，平台 peer 身份只由边界
+mTLS 叶证书 SAN 建立（Identity platform_peers 登记/assignment 是部署前置条件），handoff
+完整性字段仍由应用校验；该路径不消耗用户 delegation，也不写入用户授权版本。Scheduler 的
+RPC 授权要求 delegation 的权限绑定包含 Installation resource scope（发放方契约），
+CheckAuthorization 通过 `scope_kinds` 注释确定方法 scope 种类（Scheduler 方法声明 TASK+
+INSTANCE，无新权限）。多进程 e2e 验证了创建→到期→交接→COMPLETED、重复交接、过期 TIMEOUT
+与撤销授权拒绝；容量/EXPIRED/崩溃恢复矩阵未覆盖。

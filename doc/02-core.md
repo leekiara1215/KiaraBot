@@ -1413,3 +1413,27 @@ delegation（或 cert SAN→平台服务主体的映射约定）；同时 Runtim
 issuer 必须按上述约定绑定 Installation scope，否则真实调用会被 fail-closed 拒绝。需要
 Identity/Runtime 约定：平台服务主体免委托的 internal peer 授权，或为 Scheduler 预置
 delegation 配置字段；在缺失字段补齐前不能宣称三进程交接通过。上述阻断项已按 lead 要求上报。
+
+### P10b-2 平台服务主体交接与 Scheduler 授权闭环
+
+Scheduler→Runtime `AcceptTimerTrigger` 按 P05 platform-peer 语义授权：Scheduler 以部署注册的
+平台 peer 身份（服务 TLS 叶证书 URI SAN `spiffe://kiarabot/scheduler…`；Identity
+`platform_peers` 离线登记 principal/certificate/assignment）调用 Runtime internal mTLS owner
+方法；Runtime 侧只认证平台 peer 身份并校验 handoff 完整性字段（source_service=Scheduler、
+operation owner=Scheduler、occurrence_id/event_id、payload_sha256、valid_until、
+schedule_version），**不要求用户 delegation**。Scheduler 对 Runtime 的 RPC 调用也不再携带
+delegation；Runtime 其他 owner 方法仍走原有用户委托/在线授权，不共享该豁免。该豁免由边界在
+验证真实 mTLS 叶证书后设置 `platform_peer_authorized`，应用层仍执行全部 handoff 校验。
+
+Scheduler RPC 侧真实授权：入站 mТLS 叶证书 + `aud=scheduler` delegation 结构/证书绑定校验，
+owner instance 由委托 subject 派生，installation 由委托权限绑定中的 Installation resource
+scope 派生（Identity 签发约定：Runtime 受管实例的 delegation 必须包含 Installation scope，
+否则 fail-closed），再调用 Identity.CheckAuthorization；因此 Scheduler 六个方法在
+`proto/kiarabot/v1/scheduler.proto` 中使用既有 `scope_kinds` 注释声明 TASK/INSTANCE 精确
+scope（复用 P05 扩展，无新增字段/权限/wire 变更）。
+
+真 PG16.4 多进程 e2e（`p10_timer_e2e`）覆盖：真实 Identity(bootstrap platform peers)+Runtime+
+Scheduler 三进程 mTLS；Control 签发 Scheduler-audience delegation 创建任务→到期→outbox→
+Runtime 入队+唯一 owner fan-out→confirm→COMPLETED；重复平台交接 duplicate、过期 handoff
+TIMEOUT、撤销授权后创建任务 PERMISSION_DENIED。容量/EXPIRED/确认丢失/崩溃恢复矩阵仍需后续
+阶段补齐；P10c SDK 任务方法不在本阶段。
