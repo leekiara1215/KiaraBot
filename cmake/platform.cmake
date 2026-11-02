@@ -294,6 +294,14 @@ kiarabot_platform_warnings(kiarabot_model_rpc)
 target_link_libraries(kiarabot_model_rpc PUBLIC kiarabot_proto kiarabot_target_codec
   kiarabot_model_gateway_application)
 
+add_executable(kiarabot_model_http_provider_test
+  ${CMAKE_SOURCE_DIR}/infrastructure/tests/model_http_provider_test.cpp)
+target_link_libraries(kiarabot_model_http_provider_test PRIVATE
+  kiarabot_model_http_provider)
+kiarabot_platform_warnings(kiarabot_model_http_provider_test)
+add_test(NAME p11_model_http_provider COMMAND kiarabot_model_http_provider_test)
+set_tests_properties(p11_model_http_provider PROPERTIES LABELS "p11;integration" TIMEOUT 60)
+
 add_executable(kiarabot_model_rpc_test
   ${CMAKE_SOURCE_DIR}/core/tests/platform/model_rpc_test.cpp)
 target_link_libraries(kiarabot_model_rpc_test PRIVATE

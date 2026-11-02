@@ -46,6 +46,15 @@ target_include_directories(kiarabot_model PUBLIC include ../core/reference/inclu
 target_link_libraries(kiarabot_model PUBLIC infrastructure_proto PRIVATE CURL::libcurl)
 target_compile_options(kiarabot_model PRIVATE
   $<$<CXX_COMPILER_ID:AppleClang,Clang,GNU>:-Wall -Wextra -Wpedantic>)
+# P11b target Model provider: reviewed libcurl Chat Completions adapter implementing the Core
+# ModelProviderPort. It depends only on the protobuf JSON helpers and libcurl; no reference stack.
+add_library(kiarabot_model_http_provider STATIC src/model_http_provider.cpp)
+target_include_directories(kiarabot_model_http_provider PUBLIC
+  include ${CMAKE_CURRENT_SOURCE_DIR}/../core/include)
+target_link_libraries(kiarabot_model_http_provider PUBLIC infrastructure_proto
+  PRIVATE CURL::libcurl)
+target_compile_options(kiarabot_model_http_provider PRIVATE
+  $<$<CXX_COMPILER_ID:AppleClang,Clang,GNU>:-Wall -Wextra -Wpedantic>)
 add_library(kiarabot_infrastructure STATIC src/file_storage.cpp)
 target_include_directories(kiarabot_infrastructure PUBLIC include ../core/reference/include)
 target_link_libraries(kiarabot_infrastructure PUBLIC infrastructure_proto)

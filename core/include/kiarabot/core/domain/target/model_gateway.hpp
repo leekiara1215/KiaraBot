@@ -136,6 +136,9 @@ struct ModelCallMutation {
   std::string provider_request_id;
   std::uint32_t latency_ms = 0;
   std::optional<ErrorCode> error;
+  // Upstream RATE_LIMITED hint (bounded); surfaced on the durable-failure RpcFailure only, never
+  // persisted as a billing fact.
+  std::optional<std::chrono::milliseconds> retry_after;
 };
 
 inline bool valid_model_identifier(std::string_view value) noexcept {

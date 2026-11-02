@@ -31,8 +31,11 @@ Failure unavailable() {
 Failure unknown_result(ErrorCode code) {
   return fail(code, Recovery::QuerySameIdentity, Acceptance::Unknown);
 }
-Failure accepted_failure(ErrorCode code) {
-  return fail(code, Recovery::Diagnose, Acceptance::Accepted);
+Failure accepted_failure(ErrorCode code,
+                         std::optional<std::chrono::milliseconds> retry_after = std::nullopt) {
+  auto failure = fail(code, Recovery::Diagnose, Acceptance::Accepted);
+  failure.retry_after = retry_after;
+  return failure;
 }
 Failure internal() {
   return fail(ErrorCode::Internal);
@@ -431,6 +434,7 @@ Outcome<ModelChatReply> ModelGatewayApplication::chat(const ModelChatCommand& co
           break;
         case ModelProviderOutcome::DefiniteFailure:
           mutation = model_definite_failure_mutation(provider.failure.code);
+          mutation.retry_after = provider.failure.retry_after;
           break;
         case ModelProviderOutcome::Unknown:
         default:
@@ -498,7 +502,7 @@ Outcome<ModelChatReply> ModelGatewayApplication::chat(const ModelChatCommand& co
     return unknown_result(mutation.error.value_or(ErrorCode::UpstreamUnavailable));
   }
   if (mutation.state == ModelCallState::Failed) {
-    return accepted_failure(mutation.error.value_or(ErrorCode::Internal));
+    return accepted_failure(mutation.error.value_or(ErrorCode::Internal), mutation.retry_after);
   }
   return ModelChatReply{ModelChatDisposition::FreshResult, committed_call, std::move(result_text)};
 }
