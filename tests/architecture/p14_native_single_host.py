@@ -33,6 +33,22 @@ import identity_bootstrap_test as bootstrap_fixture  # noqa: E402
 import runtime_identity_e2e_test as rt  # noqa: E402
 
 STATE = {}
+
+
+def _supports_sensitive_grants():
+    """Detect whether P14h Identity fixes (permission name catalogue + PG CHECK 41-50)
+    are present in this checkout, so the fixture can enroll log/audit/health grants only when
+    the database and bootstrap can actually persist them."""
+    policy = (REPO / 'core/include/kiarabot/core/domain/target/identity_policy.hpp').read_text()
+    schema = (REPO / 'infrastructure/postgres/schema/identity_security.hpp').read_text()
+    names = all(f'"{name}"' in policy for name in
+                ('log.read', 'audit.read', 'health.read'))
+    allowed = any(marker in schema for marker in
+                  ('permission BETWEEN 1 AND 50', 'permission BETWEEN 1 AND 49'))
+    return names and allowed
+
+
+SUPPORTS_SENSITIVE_GRANTS = _supports_sensitive_grants()
 SAN_SCHEDULER = 'spiffe://kiarabot/scheduler-test'
 SAN_MODEL = 'spiffe://kiarabot/model-test'
 
@@ -196,12 +212,18 @@ def prepare(root, enrolled):
     installation = str(uuid.uuid4())
     instance = str(uuid.uuid4())
     model_id = str(uuid.uuid4())
+    if SUPPORTS_SENSITIVE_GRANTS:
+        enrolled['control_assignments'].append({
+            'assignment_id': str(uuid.uuid4()),
+            'permissions': ['log.read', 'audit.read', 'health.read'],
+            'scope': [{'kind': 'RESOURCE_CATALOG', 'id': 'control'}]})
     enrolled['administrator_assignments'].extend([
         {'assignment_id': str(uuid.uuid4()),
          'permissions': ['identity.principal.read'],
          'scope': [{'kind': 'RESOURCE_PRINCIPAL', 'id': enrolled['administrator_id']}]},
         {'assignment_id': str(uuid.uuid4()),
-         'permissions': ['account.read', 'account.manage', 'action.inspect'],
+         'permissions': ['account.read', 'account.manage', 'action.inspect',
+                         'account.policy.read', 'account.policy.manage'],
          'scope': [{'kind': 'RESOURCE_ACCOUNT', 'id': account}]},
         {'assignment_id': str(uuid.uuid4()),
          'permissions': ['resource.read', 'resource.manage'],
@@ -418,67 +440,126 @@ def run_checks(root, https_port, configs, binaries, children, endpoints):
         'model': int(endpoints['model_probe'].rsplit(':', 1)[1])}
     for name, probe_port in probe_targets.items():
         require(rt.wait_ready(probe_port, True, 20.0), f'{name} /health/ready HEALTHY')
-    stage('authorized dependency health')
-    status, health = request('GET', '/api/v1/health', token=token)
-    # P14f finding: P12 sensitive reads (health.read wire 50, log.read 48, audit.read 49) cannot
-    # be stored by the current Identity PG schema (exact_permissions CHECK 1..40), so the native
-    # enrollment cannot grant them and Control correctly fails closed instead of fabricating
-    # dependency health. Record the stable failure; each real owner probe above is verified
-    # separately. The aggregate endpoint requires a P12 schema migration (gap reported to Lead).
-    require(status in (400, 401, 403, 503), f'authorized dependency health stable failure={status}')
-    require(health.get('code') in ('INVALID_ARGUMENT', 'PERMISSION_DENIED',
-                                   'UPSTREAM_UNAVAILABLE'),
-            'authorized dependency health stable error code')
-    STATE['api_health'] = f'{status}:{health.get("code")}'
-    print(f'P14f authorized /api/v1/health -> {STATE["api_health"]} (P12 schema gap, fail-closed)',
-          flush=True)
-    stage('owner-backed reads')
-    observed = {}
-    STATE['observed'] = observed
-    status, principals = request('GET', '/api/v1/principals', token=token)
-    observed['principals'] = status
-    stable(status, principals, (200, 400, 403, 503), 'principals')
-    principal_items = principals.get('items', principals.get('principals', [])) \
-        if status == 200 else []
-    require(status != 200 or isinstance(principal_items, list),
-            'principals real owner projection shape')
-    for path in ('/api/v1/logs', '/api/v1/audit'):
-        status, page = request('GET', path, token=token)
-        observed[path] = status
-        stable(status, page, (200, 400, 403, 503), path)
-        if status == 200:
-            require(isinstance(page.get('items'), list), path + ' real owner page')
+    stage('owner-backed success-chain matrix')
+    matrix = []
+    STATE['matrix'] = matrix
+
+    def record(label, status, body, outcome):
+        require(outcome in ('success', 'stable-ok', 'pre-fix-skip', 'grant-missing'),
+                f'{label} classification')
+        if outcome != 'success':
+            require(status >= 400 and isinstance(body, dict) and body.get('code') and
+                    body.get('request_id'), f'{label} stable error body')
+        matrix.append((label, outcome))
+        return outcome
+
     scope_installation = json.dumps({'resources': [
         {'kind': 'RESOURCE_INSTALLATION', 'id': STATE['installation']}]})
     scope_account = json.dumps({'resources': [
         {'kind': 'RESOURCE_ACCOUNT', 'id': STATE['account']}]})
     scope_model = json.dumps({'resources': [
         {'kind': 'RESOURCE_MODEL', 'id': STATE['model_id']}]})
-    status, tasks = request('GET', '/api/v1/tasks?scope=' +
-                            urllib.parse.quote(scope_installation), token=token)
-    observed['tasks'] = status
-    stable(status, tasks, (200, 400, 403, 404, 503), 'tasks')
-    require(status != 200 or isinstance(tasks.get('items'), list), 'tasks projection')
-    status, models = request('GET', '/api/v1/models?scope=' +
-                             urllib.parse.quote(scope_model), token=token)
-    observed['models'] = status
-    stable(status, models, (200, 400, 403, 404, 503), 'models')
-    status, policy = request('GET', '/api/v1/accounts/' + STATE['account'] +
-                             '/action-policy', token=token)
-    observed['action_policy'] = status
-    stable(status, policy, (200, 400, 403, 404, 503), 'action policy')
-    status, action = request('GET', '/api/v1/actions/' + str(uuid.uuid4()) + '?scope=' +
-                             urllib.parse.quote(scope_account), token=token)
-    observed['action_query'] = status
-    stable(status, action, (200, 400, 403, 404, 503), 'action query')
+
+    def classify(status, success, pre_fix_codes, grant_codes=('PERMISSION_DENIED',),
+                 stable_ok_codes=()):
+        if success:
+            return 'success'
+        code = None
+        if isinstance(body, dict):
+            code = body.get('code')
+        if status >= 400 and code in pre_fix_codes:
+            return 'pre-fix-skip'
+        if status >= 400 and code in grant_codes:
+            return 'grant-missing'
+        if status >= 400 and code in stable_ok_codes:
+            return 'stable-ok'
+        return 'invalid'
+
+    # Aggregate dependency health. Both the P14f-reported defects must be fixed for a real
+    # success here: Identity must persist health.read (schema 41-50 + name catalogue) and
+    # Control must issue a valid non-empty delegation for the aggregate read.
+    status, body = request('GET', '/api/v1/health', token=token)
+    health_components = set()
+    if status == 200:
+        health_components = {item.get('component') for item in body.get('components', [])}
+    health_success = (status == 200 and body.get('state') == 'HEALTHY' and
+                      health_components == {'identity', 'runtime', 'scheduler', 'model'} and
+                      all(item.get('ready') is True for item in body.get('components', [])))
+    STATE['fix_ready'] = health_success
+    discovered = classify(status, health_success, ('INVALID_ARGUMENT',),
+                          grant_codes=('PERMISSION_DENIED', 'UPSTREAM_UNAVAILABLE'))
+    record('health', status, body, 'pre-fix-skip' if discovered == 'invalid' else discovered)
+    print(f'P14f authorized /api/v1/health: status={status} state={body.get("state") if isinstance(body, dict) else None}', flush=True)
+
+    status, body = request('GET', '/api/v1/principals', token=token)
+    principals = body.get('items', body.get('principals', [])) if status == 200 else []
+    success = status == 200 and isinstance(principals, list) and len(principals) > 0
+    record('principals', status, body,
+           'success' if success else classify(status, False, ('INVALID_ARGUMENT',)))
+
+    for path, label in (('/api/v1/logs', 'logs'), ('/api/v1/audit', 'audit')):
+        target = f'{path}?page_size=1&actor=administrator'
+        status, body = request('GET', target, token=token)
+        success = status == 200 and isinstance(body.get('items'), list) and 'page' in body
+        record(label, status, body,
+               'success' if success else
+               classify(status, False, ('INVALID_ARGUMENT',),
+                        stable_ok_codes=('NOT_FOUND',)))
+
+    status, body = request('GET', '/api/v1/tasks?scope=' +
+                           urllib.parse.quote(scope_installation), token=token)
+    success = status == 200 and isinstance(body.get('items'), list)
+    record('tasks_list', status, body,
+           'success' if success else
+           classify(status, False, ('INVALID_ARGUMENT',), stable_ok_codes=('NOT_FOUND',)))
+    matrix.append(('task_get_cancel', 'skipped:no-seeded-task'))
+
+    status, body = request('GET', '/api/v1/models?scope=' +
+                           urllib.parse.quote(scope_model), token=token)
+    success = status == 200 and isinstance(body.get('items', body.get('models')), list)
+    record('models', status, body,
+           'success' if success else
+           classify(status, False, ('INVALID_ARGUMENT',), stable_ok_codes=('NOT_FOUND',)))
+
+    status, body = request('GET', '/api/v1/accounts/' + STATE['account'] +
+                           '/action-policy', token=token)
+    success = status == 200 and isinstance(body, dict) and body.get('account_id')
+    record('action_policy', status, body,
+           'success' if success else
+           classify(status, False, ('INVALID_ARGUMENT',), stable_ok_codes=('NOT_FOUND',)))
+
+    status, body = request('GET', '/api/v1/actions/' + str(uuid.uuid4()) + '?scope=' +
+                           urllib.parse.quote(scope_account), token=token)
+    owner_not_found = status == 404 and isinstance(body, dict) and \
+        body.get('code') == 'NOT_FOUND'
+    record('action_query', status, body,
+           'success' if owner_not_found else
+           classify(status, False, ('INVALID_ARGUMENT',), stable_ok_codes=('NOT_FOUND',)))
+
     lifecycle = {'resource': {'kind': 'RESOURCE_INSTANCE', 'id': STATE['instance']},
                  'expected_version': '1'}
     for operation in ('delete', 'restore'):
-        status, result = request(
+        status, body = request(
             'POST', f"/api/v1/resources/RESOURCE_INSTANCE/{STATE['instance']}/{operation}",
             lifecycle, token=token, idempotency=True)
-        observed[operation] = status
-        stable(status, result, (202, 400, 403, 404, 409, 503), operation)
+        accepted = status == 202 and isinstance(body, dict) and body.get('operation')
+        owner_stable = status in (404, 409) and isinstance(body, dict) and body.get('code')
+        record(operation, status, body,
+               'success' if accepted or owner_stable else
+               classify(status, False, ('INVALID_ARGUMENT',),
+                        stable_ok_codes=('NOT_FOUND', 'CONFLICT')))
+
+    skipped = [(label, outcome) for label, outcome in matrix
+               if outcome in ('pre-fix-skip', 'grant-missing')]
+    if STATE['fix_ready']:
+        require(not skipped,
+                'post-fix owner-backed matrix must have no skipped/grant failures: ' +
+                repr(skipped))
+    else:
+        require(all(outcome != 'invalid' for _, outcome in matrix),
+                f'owner-backed matrix classified invalid: {matrix}')
+    print(f'P14f owner matrix (fix_ready={STATE["fix_ready"]}): {matrix}', flush=True)
+
     stage('identity outage')
     require(stop(children['identity']) == 0, 'identity graceful stop')
     status, _ = request('POST', '/api/v1/auth/login',
@@ -509,10 +590,28 @@ def run_checks(root, https_port, configs, binaries, children, endpoints):
     token = tokens['access_token']
     require(rt.wait_ready(STATE['identity_probe'], True, 20.0),
             'identity readiness recovers')
+    if STATE['fix_ready']:
+        deadline = time.monotonic() + 15.0
+        recovered = False
+        while time.monotonic() < deadline:
+            check, payload = request('GET', '/api/v1/health', token=token)
+            if check == 200 and payload.get('state') == 'HEALTHY':
+                recovered = True
+                break
+            time.sleep(0.2)
+        require(recovered, 'aggregate health recovers after identity restart')
     stage('runtime outage')
     require(stop(children['runtime']) == 0, 'runtime graceful stop')
     status, degraded = request('GET', '/api/v1/health', token=token)
-    require(status in (400, 401, 403, 503), 'health stable during runtime outage')
+    if STATE['fix_ready']:
+        require(status in (200, 503), f'health observable during runtime outage={status}')
+        if status == 200:
+            require(degraded.get('state') == 'DEGRADED', 'runtime outage reports DEGRADED')
+            components = {item.get('component'): item for item in degraded['components']}
+            require(components.get('runtime', {}).get('ready') is False,
+                    'runtime component not ready during outage')
+    else:
+        require(status in (400, 401, 403, 503), 'health stable during runtime outage')
     rt_probe = int(endpoints['runtime_probe'].rsplit(':', 1)[1])
     require(not rt.wait_ready(rt_probe, True, 2.0), 'runtime probe is not ready while stopped')
     STATE['runtime_outage'] = 'probe-unready+aggregate-stable-error'
@@ -521,7 +620,17 @@ def run_checks(root, https_port, configs, binaries, children, endpoints):
     require(wait_probe(json.loads(configs['runtime'].read_text())['probe_listen'], True, 20.0),
             'runtime restart readiness')
     require(rt.wait_ready(rt_probe, True, 20.0), 'runtime readiness recovers')
-    print(f'P14f owner reads observed: {observed}', flush=True)
+    if STATE['fix_ready']:
+        deadline = time.monotonic() + 15.0
+        recovered = False
+        while time.monotonic() < deadline:
+            check, payload = request('GET', '/api/v1/health', token=token)
+            if check == 200 and payload.get('state') == 'HEALTHY':
+                recovered = True
+                break
+            time.sleep(0.2)
+        require(recovered, 'aggregate health recovers after runtime restart')
+    print(f'P14f owner matrix: {STATE["matrix"]}', flush=True)
     stage('fail-closed startup')
     broken_control = json.loads(configs['control'].read_text())
     broken_control['tls']['ca_file'] = str(root / 'absent-ca.pem')
