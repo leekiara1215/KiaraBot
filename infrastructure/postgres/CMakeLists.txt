@@ -60,6 +60,24 @@ if(UNIX)
     --repo-source "${CMAKE_SOURCE_DIR}")
   set_tests_properties(p06_client_e2e PROPERTIES
     LABELS "p06;integration;fault" TIMEOUT 240)
+
+  # P07d: real NoneBot adapter process + fake loopback OneBot WS + real Runtime bridge. The
+  # adapter test environment (nonebot2[websockets]) is installed by CI into adapters/nonebot/.venv;
+  # the script drives the real adapter child with that interpreter while the Runtime and seed are
+  # the same production binaries as p06_client_e2e.
+  if(EXISTS "${CMAKE_SOURCE_DIR}/adapters/nonebot/.venv/bin/python")
+    add_test(NAME p07_adapter_e2e COMMAND
+      "${CMAKE_SOURCE_DIR}/adapters/nonebot/.venv/bin/python"
+      "${CMAKE_SOURCE_DIR}/tests/architecture/p07_adapter_e2e.py"
+      --runtime $<TARGET_FILE:kiarabot-runtime>
+      --seed $<TARGET_FILE:kiarabot_postgres_runtime_bridge_seed>
+      --initializer $<TARGET_FILE:kiarabot-pg-initialize>
+      --openssl "${KIARABOT_TEST_OPENSSL}"
+      --pg-bin "${KIARABOT_TEST_PG_BIN}"
+      --repo-source "${CMAKE_SOURCE_DIR}")
+    set_tests_properties(p07_adapter_e2e PROPERTIES
+      LABELS "p07;integration;fault" TIMEOUT 300)
+  endif()
   add_test(NAME p08_host_bridge_e2e COMMAND "${KIARABOT_TARGET_PYTHON}"
     "${CMAKE_SOURCE_DIR}/tests/architecture/p08_host_bridge_e2e.py"
     --runtime $<TARGET_FILE:kiarabot-runtime>
