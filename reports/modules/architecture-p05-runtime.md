@@ -79,6 +79,20 @@ CreateInstance 仅 externally_managed 生成并放入 `RuntimeCreateInstanceResp
 Identity descriptor `0d9975965aa851b433887e949f782167`/129/v13，Runtime
 `f3c187c4cb886d70e6ae5f627ffaede6`/84/v7，Scheduler/Model 保持 71/66/v6。
 
+## 集成收尾 B：Runtime 在线授权接入真实 Identity
+
+新增 `RuntimeIdentityClient`（`core/src/runtime/platform/runtime_identity_client.cpp`）：
+Runtime→Identity 的 mTLS unary 客户端，实现 `RuntimeAuthorizationPort`（`CheckAuthorization`，
+500ms/1s 预算、命令 deadline 取更早、失败 fail-closed）与 PeerAuthorizer（真实 inbound 证书叶
+指纹 + 委托公开 claims 结构校验，audience=runtime、有效期≤60s、client_certificate 与叶指纹
+一致；公开 claims 只作请求元数据，业务授权仍由在线 CheckAuthorization 决定）。组合根新增
+Runtime-only `identity_endpoint` 配置（复用服务 TLS 作为出站 mTLS；缺失时保持 fail-closed 与
+ready=false），readiness 依据 channel READY + DB/schema + 应用装配判定。delegation proof 只
+驻留请求内存，不进入收据/审计/日志/operation。
+
+测试：`p05_runtime_identity_client` C++ 单测（JWT claims 解码正/负例、fake Identity gRPC server
+允许/拒绝/不可达 fail-closed）；`p02_service_config` 覆盖 identity_endpoint 正/负配置。
+
 ## 未完成 / 降级项
 
 1. **Identity 真实授权链路未接线**：组合根当前注入 fail-closed `PeerAuthorizer` 与

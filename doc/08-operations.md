@@ -515,6 +515,14 @@ failure exits 1. Its local health is checked once per second. Destruction cancel
 and joins within a bound, before application destruction and after RPC shutdown.
 Identity request failures do not require terminating Control.
 
+Runtime alone additionally accepts an optional top-level `identity_endpoint` string
+(ASCII DNS/IPv4 host:port, port 1–65535; URLs/DSNs/scripts and TLS verification
+overrides are rejected). It is the Identity owner gRPC endpoint used by Runtime's
+online `CheckAuthorization` client and delegation-metadata verification; the
+validated Runtime `tls` material is reused as the outbound mTLS client identity.
+Without it Runtime keeps a fail-closed authorization placeholder and reports
+readiness false; no local authorization fallback exists.
+
 The target HTTPS endpoint uses asynchronous Boost.Asio/Beast TLS/read/write with
 five-second deadlines (TLS close one second), 64 concurrent connections, an 8KiB
 header limit, 64 parsed fields and a 1MiB request body limit. Oversized requests

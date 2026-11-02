@@ -78,6 +78,9 @@ struct ProcessConfig {
   std::optional<DatabaseMaterial> database;
   std::optional<ControlApiMaterial> control_api = std::nullopt;
   std::optional<IdentitySecurityMaterial> identity_security = std::nullopt;
+  // Runtime-only: Identity owner gRPC endpoint for online authorization and delegation checks.
+  // The validated service TLS material is reused as the outbound mTLS client identity.
+  std::optional<std::string> identity_endpoint = std::nullopt;
 };
 struct ConfigFailure {
   int exit_code;

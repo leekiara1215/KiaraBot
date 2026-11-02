@@ -39,6 +39,9 @@ struct AuthenticationContext {
   ResourceVersion authorization_version;
   TimePoint verified_at;
   TimePoint expires_at;
+  // Request-scoped opaque Identity delegation proof. Runtime verifies it online through
+  // Identity.CheckAuthorization for every command; it is never persisted, audited or logged.
+  std::string proof{};
 };
 // Durable audit/execution evidence only; contains no reusable credentials.
 struct HandoffContext {

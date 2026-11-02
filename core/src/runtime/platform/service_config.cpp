@@ -129,13 +129,7 @@ bool database_shape(const nlohmann::json& value) {
          database_identifier(value["runtime_role"].get_ref<const std::string&>()) &&
          value["migration_role"] != value["runtime_role"];
 }
-bool control_api_shape(const nlohmann::json& value) {
-  if (!exact_keys(value, {"listen", "identity_endpoint"}) || !value["listen"].is_string() ||
-      !value["identity_endpoint"].is_string() ||
-      !address_valid(value["listen"].get<std::string>(), false)) {
-    return false;
-  }
-  const auto endpoint = value["identity_endpoint"].get<std::string>();
+bool endpoint_valid(const std::string& endpoint) {
   const auto colon = endpoint.find(':');
   if (colon == std::string::npos || colon == 0 || colon > 253) {
     return false;
@@ -150,6 +144,12 @@ bool control_api_shape(const nlohmann::json& value) {
            return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') ||
                   c == '-' || c == '.';
          });
+}
+bool control_api_shape(const nlohmann::json& value) {
+  return exact_keys(value, {"listen", "identity_endpoint"}) && value["listen"].is_string() &&
+         value["identity_endpoint"].is_string() &&
+         address_valid(value["listen"].get<std::string>(), false) &&
+         endpoint_valid(value["identity_endpoint"].get<std::string>());
 }
 bool bounded_config_string(const nlohmann::json& value, std::size_t maximum) {
   if (!value.is_string()) {
@@ -415,6 +415,13 @@ ConfigResult load_service_config(const std::string& path, target::Service servic
       }
       keys.insert("identity_security");
     }
+    if (document.contains("identity_endpoint")) {
+      if (service != target::Service::Runtime || !document["identity_endpoint"].is_string() ||
+          !endpoint_valid(document["identity_endpoint"].get<std::string>())) {
+        return ConfigFailure{2, "invalid_identity_endpoint_config"};
+      }
+      keys.insert("identity_endpoint");
+    }
     if (document.contains("database")) {
       if (service == target::Service::Control || service == target::Service::Host ||
           !database_shape(document["database"])) {
@@ -444,6 +451,9 @@ ConfigResult load_service_config(const std::string& path, target::Service servic
     }
     if (document.contains("identity_security")) {
       config.identity_security = identity_security_material(document["identity_security"]);
+    }
+    if (document.contains("identity_endpoint")) {
+      config.identity_endpoint = document["identity_endpoint"].get<std::string>();
     }
     const auto certificate_path = document["tls"]["certificate_file"].get<std::string>();
     const auto key_path = document["tls"]["private_key_file"].get<std::string>();

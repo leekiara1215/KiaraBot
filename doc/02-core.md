@@ -1189,6 +1189,22 @@ externally_managed 实例在 CreateInstance 时同样生成；Runtime 私有库
 Bearer 连接 bridge 的消费/换取 ConnectionAuthorization 仍属 P06，契约 target 状态继续
 not_implemented，本增量不宣称 P06 完成。
 
+**Identity 在线授权接线（P04 就绪后）**：Runtime 组合根在存在 `identity_endpoint` 配置时创建
+真实 Identity owner gRPC 客户端，复用 Runtime 服务 TLS 材料作为出站 mTLS 身份：
+- PeerAuthorizer 从 gRPC `ServerContext::auth_context()` 提取真实 inbound 证书叶指纹，解析
+  Control 委托 JWT 的公开 claims（aud=runtime、有效期≤60s、client_certificate 与叶指纹一致、
+  actor/permission 结构合法）构造请求级 AuthenticationContext；公开 claims 只作为请求元数据，
+  不单独授权任何业务操作。
+- 每条业务操作调用 `IdentityService.CheckAuthorization`（500ms 预算、上限 1s、与命令 deadline
+  取更早者）；Identity 是唯一权威：验证 JWT 签名、issuer、audience、origin/current credential、
+  当前 assignment 与 recipient peer，返回 allowed/authorization_version/checked_at/denial。
+  任何失败（UNAVAILABLE/UNAUTHENTICATED/PERMISSION_DENIED/DEADLINE_EXCEEDED/畸形响应）
+  fail closed，不缓存授权、不接受请求自报身份。
+- availability 观测 mTLS channel 是否 READY；readiness 要求应用已装配 + Runtime 私有库/schema
+  可用 + 该 channel 可用。`identity_endpoint` 缺失时组合根保持 fail-closed 占位与 ready=false。
+- 明文 delegation proof 只存在于请求内存（AuthenticationContext.proof），不写入收据、审计、
+  operation 或日志。
+
 **持久化说明**：新增 adapters/adapter_bindings/hosts/instance_configs/bridge_credentials 关系与
 installations.manifest、instances.desired 列在同一 Runtime 库 v1 初始化 schema 内创建。
 该版本没有增量迁移机制，因此结构变更只在初始化 schema 中表达；不修改既有列语义，不重排

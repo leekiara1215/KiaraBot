@@ -166,6 +166,15 @@ add_executable(kiarabot_service_composition_driver
   ${CMAKE_SOURCE_DIR}/core/tests/platform/service_composition_driver.cpp)
 target_link_libraries(kiarabot_service_composition_driver PRIVATE kiarabot_service_process kiarabot_proto)
 kiarabot_platform_warnings(kiarabot_service_composition_driver)
+add_executable(kiarabot_runtime_identity_client_test
+  ${CMAKE_SOURCE_DIR}/core/tests/platform/runtime_identity_client_test.cpp)
+target_link_libraries(kiarabot_runtime_identity_client_test PRIVATE
+  kiarabot_runtime_identity_client nlohmann_json::nlohmann_json)
+kiarabot_platform_warnings(kiarabot_runtime_identity_client_test)
+add_test(NAME p05_runtime_identity_client COMMAND kiarabot_runtime_identity_client_test)
+set_tests_properties(p05_runtime_identity_client PROPERTIES
+  LABELS "p05;unit;security" TIMEOUT 30)
+
 add_test(NAME p03_service_composition COMMAND "${KIARABOT_TARGET_PYTHON}"
   ${CMAKE_SOURCE_DIR}/core/tests/platform/service_composition_test.py
   $<TARGET_FILE:kiarabot_service_composition_driver> $<TARGET_FILE:kiarabot_service_rpc_client>)
@@ -174,6 +183,18 @@ set_tests_properties(p03_service_composition PROPERTIES LABELS "p03;integration;
 # P05 Runtime production unary transport. Only conversion and stable error mapping; all business
 # rules stay in kiarabot_runtime_resource_application. Nine P06 internal_dispatcher methods are
 # intentionally not overridden and keep generated UNIMPLEMENTED until P06 Bridge wiring.
+# Runtime -> Identity owner client: online CheckAuthorization and delegation-metadata binding to the
+# actual inbound TLS leaf. Production composition injects it; tests use a fake Identity server.
+find_package(nlohmann_json 3.11.3 EXACT CONFIG REQUIRED)
+add_library(kiarabot_runtime_identity_client STATIC
+  ${CMAKE_SOURCE_DIR}/core/src/runtime/platform/runtime_identity_client.cpp)
+target_include_directories(kiarabot_runtime_identity_client PUBLIC
+  ${CMAKE_SOURCE_DIR}/core/include)
+kiarabot_platform_warnings(kiarabot_runtime_identity_client)
+target_link_libraries(kiarabot_runtime_identity_client PUBLIC kiarabot_proto
+  PRIVATE kiarabot_target_codec kiarabot_service_process nlohmann_json::nlohmann_json
+          OpenSSL::Crypto)
+
 add_library(kiarabot_runtime_rpc STATIC
   ${CMAKE_SOURCE_DIR}/core/src/runtime/platform/runtime_rpc.cpp)
 target_include_directories(kiarabot_runtime_rpc PUBLIC ${CMAKE_SOURCE_DIR}/core/include)
@@ -197,7 +218,7 @@ foreach(SERVICE identity runtime plugin_host scheduler model)
     target_sources(kiarabot-runtime PRIVATE
       ${CMAKE_SOURCE_DIR}/core/app/runtime_composition.cpp)
     target_link_libraries(kiarabot-runtime PRIVATE
-      kiarabot_runtime_rpc kiarabot_postgres OpenSSL::Crypto)
+      kiarabot_runtime_rpc kiarabot_runtime_identity_client kiarabot_postgres OpenSSL::Crypto)
   endif()
   set_target_properties(kiarabot-${BINARY} PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
   kiarabot_platform_warnings(kiarabot-${BINARY})

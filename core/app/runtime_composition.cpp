@@ -14,6 +14,7 @@
 #include "kiarabot/core/application/target/runtime_application.hpp"
 #include "kiarabot/core/application/target/runtime_readiness.hpp"
 #include "kiarabot/core/application/target/runtime_resource_application.hpp"
+#include "kiarabot/core/runtime/platform/runtime_identity_client.hpp"
 #include "kiarabot/core/runtime/platform/runtime_rpc.hpp"
 #include "kiarabot/core/runtime/platform/service_rpc.hpp"
 #include "kiarabot/infrastructure/postgres/factories.hpp"
@@ -155,7 +156,9 @@ platform::RuntimePeerAuthorizer fail_closed_authorizer() {
 struct State {
   std::unique_ptr<target::RuntimeIdPort> ids;
   std::unique_ptr<target::RuntimeSecretPort> secrets;
-  std::unique_ptr<target::RuntimeAuthorizationPort> authorization;
+  std::unique_ptr<platform::RuntimeIdentityClient> identity_client;
+  std::unique_ptr<target::RuntimeAuthorizationPort> fail_closed_authorization;
+  target::RuntimeAuthorizationPort* authorization = nullptr;
   target::RuntimeResourceApplication* application = nullptr;
 };
 // Readiness merges the composition-observed database state with the authorization-chain observation
@@ -211,10 +214,29 @@ compose_runtime_service(const platform::ProcessConfig& config) {
     auto state = std::make_shared<State>();
     auto composition = compose_database_service<target::RuntimeUnitOfWork>(
         config, postgres::open_runtime,
-        [state](auto& factory) -> std::unique_ptr<target::ServiceReadinessPort> {
+        [state, &config](auto& factory) -> std::unique_ptr<target::ServiceReadinessPort> {
           state->ids = std::make_unique<RandomIds>();
           state->secrets = std::make_unique<RandomSecrets>();
-          state->authorization = std::make_unique<FailClosedAuthorization>();
+          if (config.identity_endpoint) {
+            grpc::SslCredentialsOptions ssl;
+            ssl.pem_root_certs = config.tls.ca;
+            ssl.pem_cert_chain = config.tls.certificate;
+            ssl.pem_private_key = config.tls.private_key;
+            auto client = platform::RuntimeIdentityClient::create(
+                {*config.identity_endpoint, grpc::SslCredentials(ssl),
+                 std::chrono::milliseconds{500}, std::chrono::milliseconds{1000}});
+            if (const auto* failure = std::get_if<target::Failure>(&client)) {
+              return {};
+            }
+            state->identity_client =
+                std::move(std::get<std::unique_ptr<platform::RuntimeIdentityClient>>(client));
+          } else {
+            state->fail_closed_authorization = std::make_unique<FailClosedAuthorization>();
+          }
+          state->authorization =
+              state->identity_client
+                  ? static_cast<target::RuntimeAuthorizationPort*>(state->identity_client.get())
+                  : state->fail_closed_authorization.get();
           auto built = target::make_runtime_resource_application(
               {factory,
                *state->ids,
@@ -240,9 +262,8 @@ compose_runtime_service(const platform::ProcessConfig& config) {
     }
     auto* application = state->application;
     auto configure = std::move(result.configure_rpc);
-    result.configure_rpc = [configure = std::move(configure), state, application,
-                            authorizer = fail_closed_authorizer()](
-                               platform::ServiceRpc& rpc) mutable -> target::Status {
+    result.configure_rpc = [configure = std::move(configure), state,
+                            application](platform::ServiceRpc& rpc) mutable -> target::Status {
       if (configure) {
         auto configured = configure(rpc);
         if (const auto* failure = std::get_if<target::Failure>(&configured)) {
@@ -250,7 +271,15 @@ compose_runtime_service(const platform::ProcessConfig& config) {
         }
       }
       platform::RuntimeRpcOptions options;
-      options.authorize = authorizer;
+      if (state->identity_client) {
+        auto* client = state->identity_client.get();
+        options.authorize = [client](grpc::ServerContext& transport,
+                                     const v1::RequestContext& request) {
+          return client->authenticate(transport, request);
+        };
+      } else {
+        options.authorize = fail_closed_authorizer();
+      }
       auto adapter = platform::make_runtime_rpc(*application, std::move(options));
       if (const auto* failure = std::get_if<target::Failure>(&adapter)) {
         return *failure;

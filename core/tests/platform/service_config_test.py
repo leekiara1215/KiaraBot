@@ -128,6 +128,20 @@ def main(driver, identity=None):
             expect(2, {**control, 'control_api': {**endpoint, **update}}, service='control')
         expect(2, raw=json.dumps({**control, 'control_api': endpoint})[:-1] +
                ',"control_api":' + json.dumps(endpoint) + '}', service='control')
+        runtime = {**config, 'service': 'runtime'}
+        identity_endpoint = 'identity.internal:7443'
+        expect(0, {**runtime, 'identity_endpoint': identity_endpoint}, service='runtime')
+        for invalid in [{'identity_endpoint': 'https://identity:443'},
+                        {'identity_endpoint': 'identity:0'},
+                        {'identity_endpoint': 'identity:65536'},
+                        {'identity_endpoint': 'one,two:443'},
+                        {'identity_endpoint': 'x:443/path'},
+                        {'identity_endpoint': ':443'},
+                        {'identity_endpoint': 443}]:
+            expect(2, {**runtime, **invalid}, service='runtime')
+        expect(2, {**config, 'identity_endpoint': identity_endpoint})
+        expect(2, {**runtime, 'identity_endpoint': identity_endpoint, 'extra': True},
+               service='runtime')
         for update in [{'port': 0}, {'port': -1}, {'port': 65536}, {'port': True},
                        {'name': 'db name'}, {'host': '/tmp/socket'}, {'host': 'one,two'},
                        {'host': 'bad host'}, {'runtime_role': 'identity_migration'},
