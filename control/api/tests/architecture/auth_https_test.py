@@ -452,6 +452,15 @@ def main(control, fixture, model_fixture=None, owner_fixture=None, runtime_fixtu
                     {**auth_header, 'Content-Type': 'application/json',
                      'Idempotency-Key': 'matrix-cancel-1'})
                 assert status == 200 and body['task']['state'] == 'SCHEDULED_TASK_CANCELLED', (status, body)
+                status, body, _ = request('GET', '/api/v1/occurrences/occurrence-fixture?scope=' +
+                                          account_scope, headers=auth_header)
+                assert status == 200 and body['occurrence']['occurrence_id'] == \
+                    'occurrence-fixture', (status, body)
+                assert body['occurrence']['task_id'] == 'task-fixture' and \
+                    body['occurrence']['state'] == 'OPERATION_SUCCEEDED', body
+                status, body, _ = request('GET', '/api/v1/occurrences/occurrence-fixture?scope=' +
+                                          account_scope, headers=auth_header)
+                assert status == 200, (status, body)
                 status, body, _ = request('GET', '/api/v1/operations/runtime/op-fixture?scope=' +
                                           account_scope, headers=auth_header)
                 assert status == 200 and body['operation']['state'] == 'OPERATION_BLOCKED' and \

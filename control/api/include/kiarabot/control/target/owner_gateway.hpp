@@ -116,6 +116,8 @@ public:
   cancel_task(const kiarabot::v1::SchedulerCancelTaskRequest&, std::string_view) = 0;
   virtual OwnerOutcome<kiarabot::v1::SchedulerGetTaskResponse>
   get_task(const kiarabot::v1::SchedulerGetTaskRequest&, std::string_view) = 0;
+  virtual OwnerOutcome<kiarabot::v1::SchedulerGetOccurrenceResponse>
+  get_occurrence(const kiarabot::v1::SchedulerGetOccurrenceRequest&, std::string_view) = 0;
 };
 
 // P12e read-only audit/log projections aggregated across Identity and Runtime. Each source keeps

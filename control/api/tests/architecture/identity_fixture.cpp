@@ -350,20 +350,23 @@ public:
       output->mutable_delegation()->mutable_expires_at()->set_seconds(kChecked + 30);
       return grpc::Status::OK;
     };
-    // P12c: Control reads health over an empty catalog scope, principals over an empty scope and
-    // creates installations over the catalog plugin scope; these are authority checks at Identity,
-    // not wildcard grants.
+    // P12i: Control must never send an empty ResourceScope; Control-scoped reads use exactly the
+    // Control catalog resource (id=control), which the owner rechecks as an explicit grant.
+    const auto is_control_catalog = [&](const wire::ResourceScope& scope) {
+      return scope.resources_size() == 1 && scope.resources(0).kind() == wire::RESOURCE_CATALOG &&
+             scope.resources(0).id() == "control";
+    };
     if (input->audience() == "control" && input->permissions(0) == wire::PERMISSION_HEALTH_READ &&
-        input->scope().resources_size() == 0) {
+        is_control_catalog(input->scope())) {
       return empty_scope_proof("fixture-health-proof");
     }
     const bool principal_delegation =
         input->audience() == "identity" &&
         input->permissions(0) == wire::PERMISSION_IDENTITY_PRINCIPAL_READ &&
-        input->scope().resources_size() == 0;
+        is_control_catalog(input->scope());
     const bool catalog_plugin_delegation =
         input->audience() == "runtime" && input->permissions(0) == wire::PERMISSION_PLUGIN_MANAGE &&
-        input->scope().resources_size() == 0;
+        is_control_catalog(input->scope());
     if (principal_delegation || catalog_plugin_delegation) {
       return empty_scope_proof("fixture-principal-proof");
     }

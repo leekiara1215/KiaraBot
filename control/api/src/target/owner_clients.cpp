@@ -421,6 +421,11 @@ private:
                                                         std::string_view delegation) override {
     return unary_task(&wire::SchedulerService::Stub::GetTask, input, delegation);
   }
+  OwnerOutcome<wire::SchedulerGetOccurrenceResponse>
+  get_occurrence(const wire::SchedulerGetOccurrenceRequest& input,
+                 std::string_view delegation) override {
+    return unary_task(&wire::SchedulerService::Stub::GetOccurrence, input, delegation);
+  }
 
   OwnerOutcome<AuditLogSourcePage> identity(AuditLogKind kind,
                                             const AuditLogFilter& filter) override {

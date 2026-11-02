@@ -333,8 +333,7 @@ struct FakeAuditLogs final : target::AuditLogSourcePort {
       return std::nullopt;
     }
     std::int64_t nanos = 0;
-    const auto parsed =
-        std::from_chars(token.data(), token.data() + colon, nanos);
+    const auto parsed = std::from_chars(token.data(), token.data() + colon, nanos);
     if (parsed.ec != std::errc{} || parsed.ptr != token.data() + colon) {
       return std::nullopt;
     }
@@ -375,9 +374,9 @@ struct FakeAuditLogs final : target::AuditLogSourcePort {
           continue;
         }
         const auto& [nanos, id] = *cursor_value;
-        const auto row_nanos = std::chrono::duration_cast<std::chrono::nanoseconds>(
-                                    row.occurred_at.time_since_epoch())
-                                    .count();
+        const auto row_nanos =
+            std::chrono::duration_cast<std::chrono::nanoseconds>(row.occurred_at.time_since_epoch())
+                .count();
         if (row_nanos > nanos || (row_nanos == nanos && row.entry_id >= id)) {
           continue;
         }
@@ -476,6 +475,20 @@ struct FakeTasks final : target::SchedulerTasksPort {
       return *failure;
     wire::SchedulerGetTaskResponse response;
     response.mutable_task()->set_task_id(input.task_id());
+    return response;
+  }
+  target::OwnerOutcome<wire::SchedulerGetOccurrenceResponse>
+  get_occurrence(const wire::SchedulerGetOccurrenceRequest& input, std::string_view) override {
+    ++calls;
+    if (failure)
+      return *failure;
+    wire::SchedulerGetOccurrenceResponse response;
+    auto* occurrence = response.mutable_occurrence();
+    occurrence->set_occurrence_id(input.occurrence_id());
+    occurrence->set_task_id("task-1");
+    occurrence->set_state(wire::OPERATION_SUCCEEDED);
+    occurrence->set_accepted_event_id("event-1");
+    occurrence->mutable_updated_at()->set_seconds(1);
     return response;
   }
 };
@@ -693,6 +706,42 @@ void owner_commands() {
       request("GET", "/api/v1/tasks/" + std::string{"task-1"} + "?scope=" + scope_json());
   fixture.tasks.failure = target::OwnerFailure{wire::UPSTREAM_UNAVAILABLE, true};
   require(fixture.gateway.handle(unavailable)->status == 503, "task owner unavailable maps 503");
+}
+
+std::string occurrence_scope() {
+  return "?scope=" + scope_json();
+}
+
+void occurrence_snapshot() {
+  OwnerCommands fixture;
+  const auto scope = occurrence_scope();
+  auto result = fixture.gateway.handle(request("GET", "/api/v1/occurrences/occurrence-1" + scope));
+  require(result && result->status == 200, "occurrence snapshot 200");
+  require(result->body.find("occurrence-1") != std::string::npos &&
+              result->body.find("task-1") != std::string::npos,
+          "occurrence projection returns owner occurrence");
+  auto missing_scope = fixture.gateway.handle(request("GET", "/api/v1/occurrences/occurrence-1"));
+  require(missing_scope && missing_scope->status == 400, "occurrence requires explicit scope");
+  auto invalid =
+      fixture.gateway.handle(request("GET", "/api/v1/occurrences/occurrence-1?scope=not-json"));
+  require(invalid && invalid->status == 400, "occurrence invalid scope 400");
+  auto missing_token = request("GET", "/api/v1/occurrences/occurrence-1" + scope);
+  missing_token.access_token.clear();
+  require(fixture.gateway.handle(missing_token)->status == 401,
+          "occurrence requires authentication");
+  fixture.tasks.failure = target::OwnerFailure{wire::NOT_FOUND, false};
+  require(fixture.gateway.handle(request("GET", "/api/v1/occurrences/missing-1" + scope))->status ==
+              404,
+          "occurrence not-found maps 404");
+  fixture.tasks.failure = target::OwnerFailure{wire::UPSTREAM_UNAVAILABLE, true};
+  require(
+      fixture.gateway.handle(request("GET", "/api/v1/occurrences/occurrence-1" + scope))->status ==
+          503,
+      "occurrence unavailable maps 503");
+  fixture.tasks.failure.reset();
+  require(fixture.delegation.permission == wire::PERMISSION_TASK_READ &&
+              fixture.delegation.audience == "scheduler",
+          "occurrence uses scheduler task.read delegation");
 }
 
 void operation_snapshots() {
@@ -922,8 +971,7 @@ void audit_logs_aggregation() {
 void audit_logs_cross_owner_keyset() {
   OwnerCommands fixture;
   fixture.audit_logs.paged = true;
-  const auto row = [](std::string owner, std::string id, std::int64_t nanos,
-                      std::string actor) {
+  const auto row = [](std::string owner, std::string id, std::int64_t nanos, std::string actor) {
     target::AuditLogRow value;
     value.owner = std::move(owner);
     value.entry_id = std::move(id);
@@ -955,8 +1003,7 @@ void audit_logs_cross_owner_keyset() {
   std::string token;
   for (int page = 0; page < 10; ++page) {
     auto query = request("GET", "/api/v1/logs?page_size=2" +
-                                   (token.empty() ? std::string{}
-                                                  : "&page_token=" + token));
+                                    (token.empty() ? std::string{} : "&page_token=" + token));
     auto result = fixture.gateway.handle(query);
     require(result && result->status == 200, "paged logs 200");
     const auto body = nlohmann::json::parse(result->body);
@@ -981,7 +1028,7 @@ void audit_logs_cross_owner_keyset() {
   // Filters are forwarded to both owner sources; the composite token is decoded per owner.
   auto filtered = fixture.gateway.handle(
       request("GET", "/api/v1/audit?page_size=2&actor=alice&resource=" +
-                      std::string{"{\"kind\":\"RESOURCE_CATALOG\",\"id\":\"catalog\"}"}));
+                         std::string{"{\"kind\":\"RESOURCE_CATALOG\",\"id\":\"catalog\"}"}));
   require(filtered && filtered->status == 200, "filtered audit 200");
   require(fixture.audit_logs.last_identity_filter.actor == "alice" &&
               fixture.audit_logs.last_runtime_filter.actor == "alice" &&
@@ -1364,7 +1411,8 @@ int main() {
     operation_snapshots();
     audit_logs_aggregation();
     lifecycle_delete_restore();
-  audit_logs_cross_owner_keyset();
+    occurrence_snapshot();
+    audit_logs_cross_owner_keyset();
     instance_plugin_state_and_configuration();
     validation_rules();
     model_management_surface();

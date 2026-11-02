@@ -372,9 +372,10 @@ std::string encode_audit_page_cursor(const AuditPageCursor& cursor) {
   };
   return "v1." + encode(cursor.identity) + "." + encode(cursor.runtime);
 }
-std::optional<OwnerAuditCursor>
-next_owner_cursor(const AuditLogSourcePage& page, const std::vector<const AuditLogRow*>& included,
-                  std::string_view owner, std::string_view previous_token) {
+std::optional<OwnerAuditCursor> next_owner_cursor(const AuditLogSourcePage& page,
+                                                  const std::vector<const AuditLogRow*>& included,
+                                                  std::string_view owner,
+                                                  std::string_view previous_token) {
   if (page.rows.empty()) {
     return OwnerAuditCursor{true, {}};
   }
@@ -868,7 +869,7 @@ std::optional<OwnerHttpResult> OwnerGateway::handle(const OwnerHttpRequest& requ
       // health.read (Permission 50) is a sensitive read: validate the caller through the same
       // one-use Identity delegation as every other owner call before exposing component detail.
       auto delegation =
-          delegation_.issue("control", wire::PERMISSION_HEALTH_READ, wire::ResourceScope{},
+          delegation_.issue("control", wire::PERMISSION_HEALTH_READ, control_catalog_scope(),
                             request.access_token, request.deadline);
       if (const auto* failure = std::get_if<OwnerFailure>(&delegation)) {
         return OwnerHttpResult{
@@ -924,7 +925,7 @@ std::optional<OwnerHttpResult> OwnerGateway::handle(const OwnerHttpRequest& requ
       }
       auto delegation =
           delegation_.issue("identity", wire::PERMISSION_IDENTITY_PRINCIPAL_READ,
-                            wire::ResourceScope{}, request.access_token, request.deadline);
+                            control_catalog_scope(), request.access_token, request.deadline);
       if (const auto* failure = std::get_if<OwnerFailure>(&delegation)) {
         return OwnerHttpResult{
             owner_http_status(failure->code),
@@ -1084,7 +1085,7 @@ std::optional<OwnerHttpResult> OwnerGateway::handle(const OwnerHttpRequest& requ
           return missing(wire::INVALID_ARGUMENT);
         }
         auto delegation =
-            delegation_.issue("runtime", wire::PERMISSION_PLUGIN_MANAGE, wire::ResourceScope{},
+            delegation_.issue("runtime", wire::PERMISSION_PLUGIN_MANAGE, control_catalog_scope(),
                               request.access_token, request.deadline);
         if (const auto* failure = std::get_if<OwnerFailure>(&delegation)) {
           return missing(failure->code);
@@ -1108,7 +1109,7 @@ std::optional<OwnerHttpResult> OwnerGateway::handle(const OwnerHttpRequest& requ
           return missing(wire::INVALID_ARGUMENT);
         }
         auto delegation =
-            delegation_.issue("runtime", wire::PERMISSION_PLUGIN_MANAGE, wire::ResourceScope{},
+            delegation_.issue("runtime", wire::PERMISSION_PLUGIN_MANAGE, control_catalog_scope(),
                               request.access_token, request.deadline);
         if (const auto* failure = std::get_if<OwnerFailure>(&delegation)) {
           return missing(failure->code);
@@ -1553,6 +1554,54 @@ std::optional<OwnerHttpResult> OwnerGateway::handle(const OwnerHttpRequest& requ
                                json_response(std::get<wire::SchedulerGetTaskResponse>(result))};
       }
     }
+    constexpr std::string_view kOccurrences = "/api/v1/occurrences/";
+    if (path.starts_with(kOccurrences)) {
+      if (request.method != "GET" && request.method != "HEAD") {
+        return OwnerHttpResult{
+            405, owner_error_body(wire::INVALID_ARGUMENT, request_id, trace_id, false)};
+      }
+      if (request.access_token.empty()) {
+        return OwnerHttpResult{
+            401, owner_error_body(wire::UNAUTHENTICATED, request_id, trace_id, false)};
+      }
+      if (!tasks_) {
+        return OwnerHttpResult{
+            503, owner_error_body(wire::UPSTREAM_UNAVAILABLE, request_id, trace_id, true)};
+      }
+      const auto occurrence = std::string{path.substr(kOccurrences.size())};
+      auto query = parse_query(request.target);
+      if (occurrence.empty() || occurrence.find('/') != std::string::npos || !query) {
+        return OwnerHttpResult{
+            400, owner_error_body(wire::INVALID_ARGUMENT, request_id, trace_id, false)};
+      }
+      auto scope = parse_scope(*query);
+      if (!scope) {
+        return OwnerHttpResult{
+            400, owner_error_body(wire::INVALID_ARGUMENT, request_id, trace_id, false)};
+      }
+      wire::SchedulerGetOccurrenceRequest input;
+      input.set_occurrence_id(occurrence);
+      *input.mutable_scope() = std::move(*scope);
+      if (!fill_context(input.mutable_context(), request_id, trace_id, request)) {
+        return OwnerHttpResult{
+            400, owner_error_body(wire::INVALID_ARGUMENT, request_id, trace_id, false)};
+      }
+      auto delegation = delegation_.issue("scheduler", wire::PERMISSION_TASK_READ, input.scope(),
+                                          request.access_token, request.deadline);
+      if (const auto* failure = std::get_if<OwnerFailure>(&delegation)) {
+        return OwnerHttpResult{
+            owner_http_status(failure->code),
+            owner_error_body(failure->code, request_id, trace_id, failure->retryable)};
+      }
+      auto result = tasks_->get_occurrence(input, std::get<std::string>(delegation));
+      if (const auto* failure = std::get_if<OwnerFailure>(&result)) {
+        return OwnerHttpResult{
+            owner_http_status(failure->code),
+            owner_error_body(failure->code, request_id, trace_id, failure->retryable)};
+      }
+      return OwnerHttpResult{200,
+                             json_response(std::get<wire::SchedulerGetOccurrenceResponse>(result))};
+    }
     if (path == "/api/v1/logs" || path == "/api/v1/audit") {
       if (request.method != "GET" && request.method != "HEAD") {
         return OwnerHttpResult{
@@ -1678,8 +1727,8 @@ std::optional<OwnerHttpResult> OwnerGateway::handle(const OwnerHttpRequest& requ
               owner_http_status(failure->code),
               owner_error_body(failure->code, request_id, trace_id, failure->retryable)};
         }
-        auto runtime_page = audit_logs_->runtime(kind, runtime_filter,
-                                                 std::get<std::string>(delegation));
+        auto runtime_page =
+            audit_logs_->runtime(kind, runtime_filter, std::get<std::string>(delegation));
         if (const auto* failure = std::get_if<OwnerFailure>(&runtime_page)) {
           return OwnerHttpResult{
               owner_http_status(failure->code),
@@ -1705,10 +1754,10 @@ std::optional<OwnerHttpResult> OwnerGateway::handle(const OwnerHttpRequest& requ
                                  ? std::optional<OwnerAuditCursor>{OwnerAuditCursor{true, {}}}
                                  : next_owner_cursor(identity_source, included, "identity",
                                                      identity_filter.page_token);
-      auto runtime_cursor = page_cursor.runtime.exhausted
-                                ? std::optional<OwnerAuditCursor>{OwnerAuditCursor{true, {}}}
-                                : next_owner_cursor(runtime_source, included, "runtime",
-                                                    runtime_filter.page_token);
+      auto runtime_cursor =
+          page_cursor.runtime.exhausted
+              ? std::optional<OwnerAuditCursor>{OwnerAuditCursor{true, {}}}
+              : next_owner_cursor(runtime_source, included, "runtime", runtime_filter.page_token);
       if (!identity_cursor || !runtime_cursor) {
         return OwnerHttpResult{500, owner_error_body(wire::INTERNAL, request_id, trace_id, false)};
       }

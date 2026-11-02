@@ -139,11 +139,25 @@ def main(control, identity_fixture, model_fixture, owner_fixture):
             missing = request('GET', '/api/v1/tasks/?scope=' + scope, token=token)
             assert missing[0] == 404 and missing[1]['code'] == 'NOT_FOUND', missing
 
-            # 5) GetOccurrence has no Control handler on this target; the route must not fake a
-            # success projection (documented follow-up for the target flip).
-            occurrence = request(
+            # 5) GET /occurrences/{id}: owner GetOccurrence projection through Scheduler task.read.
+            status, body = request(
                 'GET', '/api/v1/occurrences/occ-fixture?scope=' + scope, token=token)
-            assert occurrence[0] == 404, occurrence
+            assert status == 200, (status, body)
+            occurrence = body['occurrence']
+            assert occurrence['occurrence_id'] == 'occ-fixture', body
+            assert occurrence['task_id'] == 'task-fixture', body
+            assert occurrence['state'] == 'OPERATION_SUCCEEDED', body
+            assert occurrence['accepted_event_id'] == 'event-fixture', body
+            assert occurrence['attempts'] == 1, body
+            # Explicit scope and authentication are mandatory; owner CONFLICT maps 409.
+            no_scope = request('GET', '/api/v1/occurrences/occ-fixture', token=token)
+            assert no_scope[0] == 400 and no_scope[1]['code'] == 'INVALID_ARGUMENT', no_scope
+            anonymous = request('GET', '/api/v1/occurrences/occ-fixture?scope=' + scope)
+            assert anonymous[0] == 401 and anonymous[1]['code'] == 'UNAUTHENTICATED', anonymous
+            conflict_occurrence = request(
+                'GET', '/api/v1/occurrences/conflict-occ?scope=' + scope, token=token)
+            assert conflict_occurrence[0] == 409 and \
+                conflict_occurrence[1]['code'] == 'CONFLICT', conflict_occurrence
         except BaseException:
             logs = ''
             if child is not None:

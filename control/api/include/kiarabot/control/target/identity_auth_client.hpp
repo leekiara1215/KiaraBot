@@ -36,6 +36,8 @@ public:
   IdentityAuthClient(const IdentityAuthClient&) = delete;
   IdentityAuthClient& operator=(const IdentityAuthClient&) = delete;
   AuthHttpResponse handle(const AuthHttpRequest& request);
+  // Read-only readiness observation of the Control->Identity channel (no RPC, bounded).
+  bool identity_ready() const;
   void cancel() noexcept;
 
 private:

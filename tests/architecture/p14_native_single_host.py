@@ -392,10 +392,22 @@ def run_checks(root, https_port, configs, binaries, children, endpoints):
     status, payload = probe_http(probe, '/health/live')
     require(status == 200 and json.loads(payload) == {'state': 'HEALTHY'},
             'control probe /health/live')
+    # Control has no business database: readiness requires its loaded TLS material and a reachable
+    # Identity validation/revocation channel. Identity was started and probed healthy above, so the
+    # composed Control probe must converge to HEALTHY instead of the old placeholder false.
+    deadline = time.monotonic() + 20.0
+    while time.monotonic() < deadline:
+        status, payload = probe_http(probe, '/health/ready')
+        if status == 200 and json.loads(payload).get('state') == 'HEALTHY':
+            break
+        time.sleep(0.1)
+    else:
+        raise RuntimeError(f'control probe /health/ready expected HEALTHY, status={status} '
+                           f'body={payload}')
     status, payload = probe_http(probe, '/health/ready')
     ready = json.loads(payload)
-    require(status in (200, 503) and ready.get('state') in ('HEALTHY', 'UNHEALTHY'),
-            f'control probe /health/ready stable process readiness body={ready}')
+    require(status == 200 and ready.get('state') == 'HEALTHY',
+            f'control probe /health/ready HEALTHY expected, body={ready}')
     STATE['control_ready'] = ready.get('state')
     print(f'P14f control probe: live=HEALTHY ready={ready.get("state")}', flush=True)
     stage('owner process readiness')

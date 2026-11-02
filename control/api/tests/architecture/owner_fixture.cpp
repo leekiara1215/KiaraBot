@@ -311,6 +311,22 @@ public:
     output->mutable_task()->set_state(wire::SCHEDULED_TASK_CANCELLED);
     return grpc::Status::OK;
   }
+  grpc::Status GetOccurrence(grpc::ServerContext*, const wire::SchedulerGetOccurrenceRequest* input,
+                             wire::SchedulerGetOccurrenceResponse* output) override {
+    bool handled = false;
+    auto status = marker_status(input->occurrence_id(), input->context(), &handled);
+    if (handled)
+      return status;
+    auto* occurrence = output->mutable_occurrence();
+    occurrence->set_occurrence_id(input->occurrence_id());
+    occurrence->set_task_id("task-fixture");
+    occurrence->set_state(wire::OPERATION_SUCCEEDED);
+    occurrence->set_accepted_event_id("event-fixture");
+    occurrence->set_attempts(1);
+    occurrence->mutable_created_at()->set_seconds(kNow);
+    occurrence->mutable_updated_at()->set_seconds(kNow);
+    return grpc::Status::OK;
+  }
   grpc::Status GetOperation(grpc::ServerContext*, const wire::SchedulerGetOperationRequest* input,
                             wire::SchedulerGetOperationResponse* output) override {
     auto* operation_out = output->mutable_operation();

@@ -2,6 +2,7 @@
 
 #include <memory>
 
+#include "kiarabot/control/target/readiness.hpp"
 #include "kiarabot/core/runtime/platform/service_config.hpp"
 #include "kiarabot/core/runtime/platform/service_process.hpp"
 
@@ -11,6 +12,7 @@ namespace kiarabot::control::target {
 // 8KiB headers and 1MiB body. Four bounded upstream workers; shutdown cancels RPC and joins.
 // Construction validates local resources; start reports bind failure without throwing secrets.
 std::unique_ptr<core::platform::ServiceEndpoint>
-make_https_endpoint(const core::platform::ProcessConfig& config);
+make_https_endpoint(const core::platform::ProcessConfig& config,
+                    std::shared_ptr<ControlReadiness> readiness = {});
 
 } // namespace kiarabot::control::target

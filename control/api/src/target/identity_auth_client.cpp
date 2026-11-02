@@ -465,8 +465,8 @@ public:
     grpc::ChannelArguments arguments;
     arguments.SetMaxReceiveMessageSize(1024 * 1024);
     arguments.SetMaxSendMessageSize(1024 * 1024);
-    stub_ = wire::IdentityService::NewStub(
-        grpc::CreateCustomChannel(endpoint, grpc::SslCredentials(options), arguments));
+    channel_ = grpc::CreateCustomChannel(endpoint, grpc::SslCredentials(options), arguments);
+    stub_ = wire::IdentityService::NewStub(channel_);
     const std::unique_ptr<BIO, decltype(&BIO_free)> bio(
         BIO_new_mem_buf(tls.certificate.data(), static_cast<int>(tls.certificate.size())),
         BIO_free);
@@ -762,7 +762,12 @@ public:
     }
   }
 
+  bool identity_ready() const {
+    return channel_ && channel_->GetState(true) == GRPC_CHANNEL_READY;
+  }
+
 private:
+  std::shared_ptr<grpc::Channel> channel_;
   std::unique_ptr<wire::IdentityService::Stub> stub_;
   std::string fingerprint_;
   std::unique_ptr<OwnerClients> owners_;
@@ -784,6 +789,10 @@ IdentityAuthClient::~IdentityAuthClient() {
 AuthHttpResponse IdentityAuthClient::handle(const AuthHttpRequest& request) {
   return impl_->handle(request);
 }
+bool IdentityAuthClient::identity_ready() const {
+  return impl_->identity_ready();
+}
+
 void IdentityAuthClient::cancel() noexcept {
   impl_->cancel();
 }

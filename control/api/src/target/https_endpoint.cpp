@@ -137,8 +137,10 @@ private:
 };
 class HttpsEndpoint final : public core::platform::ServiceEndpoint {
 public:
-  explicit HttpsEndpoint(const core::platform::ProcessConfig& config)
+  HttpsEndpoint(const core::platform::ProcessConfig& config,
+                std::shared_ptr<ControlReadiness> readiness)
       : tls_(asio::ssl::context::tls_server), acceptor_(io_), workers_(4),
+        readiness_(std::move(readiness)),
         client_(std::make_shared<IdentityAuthClient>(
             config.control_api->identity_endpoint,
             config.control_api->runtime_endpoint.value_or(""),
@@ -193,6 +195,10 @@ public:
       const auto port = acceptor_.local_endpoint().port();
       accept();
       running_.store(true);
+      if (readiness_) {
+        readiness_->business.store(true, std::memory_order_release);
+        readiness_->credentials.store(true, std::memory_order_release);
+      }
       thread_ = std::thread([this] {
         try {
           io_.run();
@@ -207,6 +213,9 @@ public:
     }
   }
   core::target::Status check() const override {
+    if (readiness_) {
+      readiness_->identity.store(client_->identity_ready(), std::memory_order_release);
+    }
     return running_.load() ? core::target::Status{std::monostate{}}
                            : core::target::Status{unavailable()};
   }
@@ -244,6 +253,7 @@ private:
   Tcp::acceptor acceptor_;
   asio::thread_pool workers_;
   std::shared_ptr<IdentityAuthClient> client_;
+  std::shared_ptr<ControlReadiness> readiness_;
   std::string listen_;
   std::set<std::shared_ptr<Session>> sessions_;
   std::atomic<bool> running_{false};
@@ -252,10 +262,11 @@ private:
 };
 } // namespace
 std::unique_ptr<core::platform::ServiceEndpoint>
-make_https_endpoint(const core::platform::ProcessConfig& config) {
+make_https_endpoint(const core::platform::ProcessConfig& config,
+                    std::shared_ptr<ControlReadiness> readiness) {
   if (!config.control_api || config.service != core::target::Service::Control) {
     return {};
   }
-  return std::make_unique<HttpsEndpoint>(config);
+  return std::make_unique<HttpsEndpoint>(config, std::move(readiness));
 }
 } // namespace kiarabot::control::target
