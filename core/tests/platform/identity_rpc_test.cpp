@@ -101,6 +101,89 @@ std::vector<t::ExactAssignment> assignments(int mode) {
   }
   return {role, explicit_grant};
 }
+class PrincipalApplicationFixture final : public t::IdentityPrincipalApplication {
+public:
+  t::Failure configured_failure{t::ErrorCode::PermissionDenied, t::Acceptance::NotAccepted,
+                                t::Recovery::Authenticate, std::nullopt, std::nullopt};
+  std::atomic<int> mode{0}; // 0 = successes, 1 = configured failure, 2 = malformed result.
+  std::atomic<int> calls{0};
+  t::PrincipalKind last_kind = t::PrincipalKind::Human;
+  std::optional<t::ResourceRef> last_binding;
+  std::vector<t::Service> last_services;
+  const t::ResourceRef binding{t::ResourceKind::Adapter, {kOther}};
+  t::Outcome<t::RegisteredPrincipalSnapshot>
+  register_principal(const t::RegisterPrincipalCommand& command) override {
+    ++calls;
+    last_kind = command.kind;
+    last_binding = command.binding;
+    last_services = command.allowed_services;
+    if (mode.load() == 1) {
+      return configured_failure;
+    }
+    return t::RegisteredPrincipalSnapshot{
+        t::Principal{
+            {kSubject}, t::PrincipalKind::Adapter, binding, {1}, t::LifecycleState::Disabled},
+        t::CredentialStatusSnapshot{{{kCredential}, {1}},
+                                    {kSubject},
+                                    binding,
+                                    t::CredentialStatusState::Pending,
+                                    kChecked,
+                                    std::nullopt,
+                                    kChecked}};
+  }
+  t::Outcome<t::CredentialDeliveryReply>
+  rotate_credential(const t::RotateCredentialCommand& command) override {
+    ++calls;
+    if (mode.load() == 1) {
+      return configured_failure;
+    }
+    if (mode.load() == 2) {
+      return t::CredentialDeliveryReply{{}, t::OwnedSecret{}, "receipt", kChecked, kChecked};
+    }
+    return t::CredentialDeliveryReply{
+        {command.credential, {2}},
+        t::OwnedSecret{std::make_unique<FixtureSecret>("generated-token")},
+        "delivery-fixture",
+        kChecked + std::chrono::hours{1},
+        kChecked};
+  }
+  t::Outcome<t::RevokeCredentialReply>
+  revoke_credential(const t::RevokeCredentialCommand&) override {
+    ++calls;
+    if (mode.load() == 1) {
+      return configured_failure;
+    }
+    return t::RevokeCredentialReply{{2}, kChecked};
+  }
+  t::Outcome<t::PrincipalStatusReply>
+  get_principal_status(const t::GetPrincipalStatusQuery&) override {
+    ++calls;
+    if (mode.load() == 1) {
+      return configured_failure;
+    }
+    return t::PrincipalStatusReply{
+        t::Principal{
+            {kSubject}, t::PrincipalKind::Adapter, binding, {2}, t::LifecycleState::Active},
+        kChecked};
+  }
+  t::Outcome<t::CredentialStatusReply>
+  get_credential_status(const t::GetCredentialStatusQuery&) override {
+    ++calls;
+    if (mode.load() == 1) {
+      return configured_failure;
+    }
+    if (mode.load() == 2) {
+      return t::CredentialStatusSnapshot{};
+    }
+    return t::CredentialStatusSnapshot{{{kCredential}, {1}},
+                                       {kSubject},
+                                       binding,
+                                       t::CredentialStatusState::Active,
+                                       kChecked,
+                                       kChecked + std::chrono::hours{1},
+                                       kChecked};
+  }
+};
 class ApplicationFixture final : public t::IdentitySecurityApplication {
 public:
   std::optional<t::ValidatedSession> issued_source{};
@@ -2167,6 +2250,103 @@ void exercise_verification_keys(const std::string& leaf, const std::string& ca,
   server->Shutdown();
   server->Wait();
 }
+void exercise_principal(w::IdentityService::Stub& stub, PrincipalApplicationFixture& app) {
+  w::IdentityRegisterPrincipalRequest registration;
+  request_context(registration.mutable_context());
+  registration.set_principal_kind("adapter");
+  const auto binding = p::target_codec::to_wire(t::ResourceRef{t::ResourceKind::Adapter, {kOther}});
+  *registration.mutable_binding() = std::get<w::ResourceRef>(binding);
+  registration.add_allowed_services("runtime");
+  w::IdentityRegisterPrincipalResponse registered;
+  require(call(stub, &w::IdentityService::Stub::RegisterPrincipal, registration, &registered).ok());
+  require(registered.principal().principal_kind() == "adapter" &&
+          registered.principal().state() == w::LIFECYCLE_DISABLED &&
+          registered.principal().binding().id() == kOther &&
+          registered.initial_credential().state() == w::CREDENTIAL_PENDING &&
+          !registered.initial_credential().has_expires_at() &&
+          registered.initial_credential().credential_id() == kCredential &&
+          app.last_kind == t::PrincipalKind::Adapter &&
+          app.last_services == std::vector<t::Service>{t::Service::Runtime} && app.last_binding &&
+          app.last_binding->id.value == kOther);
+  app.mode.store(1);
+  rejected(call(stub, &w::IdentityService::Stub::RegisterPrincipal, registration, &registered),
+           w::PERMISSION_DENIED);
+  app.mode.store(0);
+  auto invalid = registration;
+  invalid.clear_binding();
+  rejected(call(stub, &w::IdentityService::Stub::RegisterPrincipal, invalid, &registered),
+           w::INVALID_ARGUMENT);
+
+  w::IdentityRotateCredentialRequest rotate;
+  request_context(rotate.mutable_context());
+  rotate.set_credential_id(kCredential);
+  rotate.set_expected_version(1);
+  w::IdentityRotateCredentialResponse delivery;
+  require(call(stub, &w::IdentityService::Stub::RotateCredential, rotate, &delivery).ok());
+  require(delivery.delivery().credential_id() == kCredential &&
+          delivery.delivery().version() == 2 &&
+          delivery.delivery().new_secret() == "generated-token" &&
+          delivery.delivery().delivery_receipt_id() == "delivery-fixture" &&
+          delivery.delivery().has_expires_at());
+  auto missing_version = rotate;
+  missing_version.clear_expected_version();
+  rejected(call(stub, &w::IdentityService::Stub::RotateCredential, missing_version, &delivery),
+           w::INVALID_ARGUMENT);
+  app.mode.store(2);
+  const auto malformed = rejected(
+      call(stub, &w::IdentityService::Stub::RotateCredential, rotate, &delivery), w::INTERNAL);
+  require(malformed.context().acceptance() == w::ACCEPTANCE_UNKNOWN);
+  app.mode.store(1);
+  rejected(call(stub, &w::IdentityService::Stub::RotateCredential, rotate, &delivery),
+           w::PERMISSION_DENIED);
+  app.mode.store(0);
+
+  w::IdentityRevokeCredentialRequest revoke;
+  request_context(revoke.mutable_context());
+  revoke.set_credential_id(kCredential);
+  revoke.set_expected_version(1);
+  w::IdentityRevokeCredentialResponse revoked;
+  require(call(stub, &w::IdentityService::Stub::RevokeCredential, revoke, &revoked).ok());
+  require(revoked.version() == 2);
+  auto revoke_missing_version = revoke;
+  revoke_missing_version.clear_expected_version();
+  rejected(
+      call(stub, &w::IdentityService::Stub::RevokeCredential, revoke_missing_version, &revoked),
+      w::INVALID_ARGUMENT);
+
+  w::IdentityGetPrincipalStatusRequest principal;
+  request_context(principal.mutable_context());
+  principal.set_principal_id(kSubject);
+  w::IdentityGetPrincipalStatusResponse principal_reply;
+  require(
+      call(stub, &w::IdentityService::Stub::GetPrincipalStatus, principal, &principal_reply).ok());
+  require(principal_reply.principal().principal_kind() == "adapter" &&
+          principal_reply.principal().state() == w::LIFECYCLE_ACTIVE &&
+          principal_reply.principal().version() == 2);
+  w::IdentityGetPrincipalStatusRequest invalid_principal;
+  request_context(invalid_principal.mutable_context());
+  rejected(call(stub, &w::IdentityService::Stub::GetPrincipalStatus, invalid_principal,
+                &principal_reply),
+           w::INVALID_ARGUMENT);
+
+  w::IdentityGetCredentialStatusRequest credential;
+  request_context(credential.mutable_context());
+  credential.set_credential_id(kCredential);
+  w::IdentityGetCredentialStatusResponse credential_reply;
+  require(call(stub, &w::IdentityService::Stub::GetCredentialStatus, credential, &credential_reply)
+              .ok());
+  require(credential_reply.credential().state() == w::CREDENTIAL_ACTIVE &&
+          credential_reply.credential().has_expires_at() &&
+          credential_reply.credential().credential_id() == kCredential);
+  app.mode.store(2);
+  const auto malformed_status = rejected(
+      call(stub, &w::IdentityService::Stub::GetCredentialStatus, credential, &credential_reply),
+      w::INTERNAL);
+  require(malformed_status.context().acceptance() == w::ACCEPTANCE_UNKNOWN);
+  app.mode.store(0);
+  std::cout << "Five Identity principal/credential RPCs: projections, invalid input, typed "
+               "failure and malformed-result rejection passed (application fixture only)\n";
+}
 struct GrpcLifetime {
   GrpcLifetime() {
     grpc_init();
@@ -2198,6 +2378,7 @@ int main(int argc, char* argv[]) {
     const auto ca = read(argv[2]);
     const auto key = read(argv[3]);
     ApplicationFixture app;
+    PrincipalApplicationFixture principal_app;
     require(std::holds_alternative<t::Failure>(p::make_identity_rpc(app, {})));
     std::atomic<int> auth_mode{0};
     std::atomic<int> auth_calls{0};
@@ -2300,6 +2481,21 @@ int main(int argc, char* argv[]) {
     require(auth_calls.load() == before);
     server->Shutdown();
     server->Wait();
+    auto principal_service =
+        std::get<std::unique_ptr<w::IdentityService::Service>>(p::make_identity_rpc(
+            app, verifier, nullptr, lifecycle, p::IdentityRpcOptions{.principal = &principal_app}));
+    grpc::ServerBuilder principal_builder;
+    int principal_port = 0;
+    principal_builder.RegisterService(principal_service.get());
+    principal_builder.AddListeningPort("127.0.0.1:0", grpc::SslServerCredentials(options),
+                                       &principal_port);
+    auto principal_server = principal_builder.BuildAndStart();
+    require(principal_server && principal_port > 0);
+    auto principal_stub = w::IdentityService::NewStub(grpc::CreateChannel(
+        "localhost:" + std::to_string(principal_port), grpc::SslCredentials(client)));
+    exercise_principal(*principal_stub, principal_app);
+    principal_server->Shutdown();
+    principal_server->Wait();
     exercise_registered_peer(leaf, ca, key);
     exercise_issue(leaf, ca, key);
     exercise_exchange(leaf, ca, key);

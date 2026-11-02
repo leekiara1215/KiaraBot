@@ -32,7 +32,10 @@ public:
   Application(IdentitySecurityDependencies dependencies, IdentitySecurityOptions options)
       : dependencies_(dependencies), options_(std::move(options)), snapshots_(options_) {}
   ServiceReadiness readiness() const override {
-    return {false,
+    // The session/principal/credential application is implemented; the composition root owns the
+    // live DatabaseSchema/initialized/loaded-credential observations and never promotes this
+    // result by itself. The remaining Identity owner methods are separate capabilities.
+    return {true,
             {{Dependency::BusinessImplementation, DependencyState::Available},
              {Dependency::DatabaseSchema, DependencyState::Unverified},
              {Dependency::Credentials, DependencyState::Unverified}}};

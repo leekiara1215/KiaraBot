@@ -10,6 +10,7 @@
 #include <string>
 #include <string_view>
 #include <utility>
+#include <vector>
 
 #include <openssl/rand.h>
 
@@ -323,6 +324,140 @@ principal(const t::Principal& input, const std::vector<t::ExactAssignment>& assi
   }
   return result;
 }
+// Principal/credential management projections. They never invent roles, scope, expiry or a
+// secret; every field comes from a committed application result.
+t::Outcome<t::PrincipalKind> principal_kind(std::string_view value) {
+  if (value == "human") {
+    return t::PrincipalKind::Human;
+  }
+  if (value == "platform_service") {
+    return t::PrincipalKind::PlatformService;
+  }
+  if (value == "adapter") {
+    return t::PrincipalKind::Adapter;
+  }
+  if (value == "plugin") {
+    return t::PrincipalKind::Plugin;
+  }
+  return failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput);
+}
+const char* principal_kind_name(t::PrincipalKind kind) {
+  switch (kind) {
+  case t::PrincipalKind::Human:
+    return "human";
+  case t::PrincipalKind::PlatformService:
+    return "platform_service";
+  case t::PrincipalKind::Adapter:
+    return "adapter";
+  case t::PrincipalKind::Plugin:
+    return "plugin";
+  }
+  return nullptr;
+}
+std::optional<v1::LifecycleState> lifecycle(t::LifecycleState state) {
+  switch (state) {
+  case t::LifecycleState::Active:
+    return v1::LIFECYCLE_ACTIVE;
+  case t::LifecycleState::Disabled:
+    return v1::LIFECYCLE_DISABLED;
+  case t::LifecycleState::Deleting:
+    return v1::LIFECYCLE_DELETING;
+  case t::LifecycleState::Deleted:
+    return v1::LIFECYCLE_DELETED;
+  case t::LifecycleState::Restoring:
+    return v1::LIFECYCLE_RESTORING;
+  case t::LifecycleState::Purged:
+    return v1::LIFECYCLE_PURGED;
+  }
+  return std::nullopt;
+}
+std::optional<v1::CredentialState> credential_state(t::CredentialStatusState state) {
+  switch (state) {
+  case t::CredentialStatusState::Pending:
+    return v1::CREDENTIAL_PENDING;
+  case t::CredentialStatusState::Active:
+    return v1::CREDENTIAL_ACTIVE;
+  case t::CredentialStatusState::Expired:
+    return v1::CREDENTIAL_EXPIRED;
+  case t::CredentialStatusState::Revoked:
+    return v1::CREDENTIAL_REVOKED;
+  }
+  return std::nullopt;
+}
+t::Outcome<v1::PrincipalRecord> principal_status(const t::Principal& input) {
+  if (!uuid(input.id.value) || input.version.value == 0 || !input.binding ||
+      !t::valid_resource_ref(*input.binding) || !t::known_principal_kind(input.kind)) {
+    return invalid_result();
+  }
+  const auto* kind = principal_kind_name(input.kind);
+  const auto encoded = codec::to_wire(*input.binding);
+  const auto* binding = std::get_if<v1::ResourceRef>(&encoded);
+  if (!kind || !binding) {
+    return invalid_result();
+  }
+  v1::PrincipalRecord result;
+  result.set_principal_id(input.id.value);
+  result.set_principal_kind(kind);
+  result.set_version(input.version.value);
+  *result.mutable_binding() = *binding;
+  const auto wire_state = lifecycle(input.state);
+  if (!wire_state) {
+    return invalid_result();
+  }
+  result.set_state(*wire_state);
+  return result;
+}
+t::Outcome<v1::CredentialStatus> credential_status(const t::CredentialStatusSnapshot& input) {
+  if (!uuid(input.ref.id.value) || input.ref.version.value == 0 || !uuid(input.subject.value) ||
+      !t::valid_resource_ref(input.binding) || !positive(input.created_at) ||
+      input.checked_at < input.created_at) {
+    return invalid_result();
+  }
+  v1::CredentialStatus result;
+  const auto encoded = codec::to_wire(input.binding);
+  const auto* binding = std::get_if<v1::ResourceRef>(&encoded);
+  const auto wire_state = credential_state(input.state);
+  if (!binding || !wire_state) {
+    return invalid_result();
+  }
+  result.set_state(*wire_state);
+  result.set_credential_id(input.ref.id.value);
+  result.set_principal_id(input.subject.value);
+  *result.mutable_binding() = *binding;
+  result.set_version(input.ref.version.value);
+  if (input.expires_at) {
+    if (input.state == t::CredentialStatusState::Pending || *input.expires_at <= input.created_at ||
+        !timestamp(*input.expires_at, result.mutable_expires_at())) {
+      return invalid_result();
+    }
+  } else if (input.state == t::CredentialStatusState::Active ||
+             input.state == t::CredentialStatusState::Expired) {
+    return invalid_result();
+  }
+  if (!timestamp(input.created_at, result.mutable_created_at()) ||
+      !timestamp(input.checked_at, result.mutable_checked_at())) {
+    return invalid_result();
+  }
+  return result;
+}
+t::Outcome<v1::CredentialDelivery> credential_delivery(const t::CredentialDeliveryReply& input) {
+  if (!uuid(input.credential.id.value) || input.credential.version.value == 0 || !input.secret ||
+      input.secret->bytes().empty() || input.delivery_receipt_id.empty() ||
+      input.delivery_receipt_id.size() > 256 || !positive(input.expires_at) ||
+      !positive(input.checked_at)) {
+    return invalid_result();
+  }
+  v1::CredentialDelivery result;
+  result.set_credential_id(input.credential.id.value);
+  result.set_version(input.credential.version.value);
+  result.set_new_secret(reinterpret_cast<const char*>(input.secret->bytes().data()),
+                        input.secret->bytes().size());
+  result.set_delivery_receipt_id(input.delivery_receipt_id);
+  if (!timestamp(input.expires_at, result.mutable_expires_at())) {
+    return invalid_result();
+  }
+  return result;
+}
 // Match the mature proof encoder's budget before decoding or expanding a wire product.
 template <typename Request> bool within_delegation_budget(const Request& request) {
   if (request.scope().resources_size() < 1 || request.scope().resources_size() > 128 ||
@@ -361,7 +496,8 @@ public:
               IdentityRpcOptions options)
       : application_(application), authenticate_(std::move(authenticate)), issuer_(issuer),
         invocation_deadline_(std::move(invocation_deadline)),
-        verification_keys_(options.verification_keys), exchange_(options.exchange) {}
+        verification_keys_(options.verification_keys), exchange_(options.exchange),
+        principal_(options.principal) {}
 
   grpc::Status Login(grpc::ServerContext* transport, const v1::IdentityLoginRequest* request,
                      v1::IdentityLoginResponse* response) override {
@@ -567,49 +703,150 @@ public:
   }
   grpc::Status RegisterPrincipal(grpc::ServerContext* transport,
                                  const v1::IdentityRegisterPrincipalRequest* request,
-                                 v1::IdentityRegisterPrincipalResponse*) override {
-    v1::IdentityRegisterPrincipalResponse unused;
+                                 v1::IdentityRegisterPrincipalResponse* response) override {
     return run(
-        transport, request->has_context(), request->context(), &unused,
-        [](const t::VerifiedPeer&,
-           const t::IdentityRequestContext&) -> t::Outcome<v1::IdentityRegisterPrincipalResponse> {
-          return failure(t::ErrorCode::CapabilityNotSupported);
+        transport, request->has_context(), request->context(), response,
+        [&](const t::VerifiedPeer& peer, const t::IdentityRequestContext& context)
+            -> t::Outcome<v1::IdentityRegisterPrincipalResponse> {
+          if (!principal_) {
+            return failure(t::ErrorCode::CapabilityNotSupported);
+          }
+          if (request->principal_kind().empty() || !request->has_binding() ||
+              request->allowed_services_size() == 0 || request->allowed_services_size() > 16 ||
+              context.idempotency_key.empty()) {
+            return failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput);
+          }
+          auto kind = principal_kind(request->principal_kind());
+          if (const auto* error = std::get_if<t::Failure>(&kind)) {
+            return *error;
+          }
+          const auto encoded = codec::from_wire(request->binding());
+          const auto* binding = std::get_if<t::ResourceRef>(&encoded);
+          if (!binding) {
+            return failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput);
+          }
+          std::vector<t::Service> services;
+          for (const auto& name : request->allowed_services()) {
+            auto service = audience(name);
+            if (const auto* error = std::get_if<t::Failure>(&service)) {
+              return *error;
+            }
+            if (std::get<t::Service>(service) == t::Service::Control ||
+                std::find(services.begin(), services.end(), std::get<t::Service>(service)) !=
+                    services.end()) {
+              return failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput);
+            }
+            services.push_back(std::get<t::Service>(service));
+          }
+          auto reply = principal_->register_principal(t::RegisterPrincipalCommand{
+              context, peer, std::get<t::PrincipalKind>(kind), *binding, std::move(services)});
+          if (const auto* error = std::get_if<t::Failure>(&reply)) {
+            return *error;
+          }
+          const auto& snapshot = std::get<t::RegisteredPrincipalSnapshot>(reply);
+          auto projected = principal_status(snapshot.principal);
+          if (const auto* error = std::get_if<t::Failure>(&projected)) {
+            return *error;
+          }
+          auto initial = credential_status(snapshot.initial_credential);
+          if (const auto* error = std::get_if<t::Failure>(&initial)) {
+            return *error;
+          }
+          v1::IdentityRegisterPrincipalResponse output;
+          *output.mutable_principal() = std::get<v1::PrincipalRecord>(std::move(projected));
+          *output.mutable_initial_credential() = std::get<v1::CredentialStatus>(std::move(initial));
+          return output;
         },
         false);
   }
   grpc::Status RotateCredential(grpc::ServerContext* transport,
                                 const v1::IdentityRotateCredentialRequest* request,
-                                v1::IdentityRotateCredentialResponse*) override {
-    v1::IdentityRotateCredentialResponse unused;
+                                v1::IdentityRotateCredentialResponse* response) override {
     return run(
-        transport, request->has_context(), request->context(), &unused,
-        [](const t::VerifiedPeer&,
-           const t::IdentityRequestContext&) -> t::Outcome<v1::IdentityRotateCredentialResponse> {
-          return failure(t::ErrorCode::CapabilityNotSupported);
+        transport, request->has_context(), request->context(), response,
+        [&](const t::VerifiedPeer& peer, const t::IdentityRequestContext& context)
+            -> t::Outcome<v1::IdentityRotateCredentialResponse> {
+          if (!principal_) {
+            return failure(t::ErrorCode::CapabilityNotSupported);
+          }
+          if (!uuid(request->credential_id()) || !request->has_expected_version() ||
+              request->expected_version() == 0 || context.idempotency_key.empty()) {
+            return failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput);
+          }
+          auto reply = principal_->rotate_credential(t::RotateCredentialCommand{
+              context, peer, {request->credential_id()}, {request->expected_version()}});
+          if (const auto* error = std::get_if<t::Failure>(&reply)) {
+            return *error;
+          }
+          auto delivery = credential_delivery(std::get<t::CredentialDeliveryReply>(reply));
+          if (const auto* error = std::get_if<t::Failure>(&delivery)) {
+            return *error;
+          }
+          v1::IdentityRotateCredentialResponse output;
+          *output.mutable_delivery() = std::get<v1::CredentialDelivery>(std::move(delivery));
+          return output;
         },
         false);
   }
   grpc::Status RevokeCredential(grpc::ServerContext* transport,
                                 const v1::IdentityRevokeCredentialRequest* request,
-                                v1::IdentityRevokeCredentialResponse*) override {
-    v1::IdentityRevokeCredentialResponse unused;
+                                v1::IdentityRevokeCredentialResponse* response) override {
     return run(
-        transport, request->has_context(), request->context(), &unused,
-        [](const t::VerifiedPeer&,
-           const t::IdentityRequestContext&) -> t::Outcome<v1::IdentityRevokeCredentialResponse> {
-          return failure(t::ErrorCode::CapabilityNotSupported);
+        transport, request->has_context(), request->context(), response,
+        [&](const t::VerifiedPeer& peer, const t::IdentityRequestContext& context)
+            -> t::Outcome<v1::IdentityRevokeCredentialResponse> {
+          if (!principal_) {
+            return failure(t::ErrorCode::CapabilityNotSupported);
+          }
+          if (!uuid(request->credential_id()) || !request->has_expected_version() ||
+              request->expected_version() == 0 || context.idempotency_key.empty()) {
+            return failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput);
+          }
+          auto reply = principal_->revoke_credential(t::RevokeCredentialCommand{
+              context, peer, {request->credential_id()}, {request->expected_version()}});
+          if (const auto* error = std::get_if<t::Failure>(&reply)) {
+            return *error;
+          }
+          const auto& result = std::get<t::RevokeCredentialReply>(reply);
+          if (result.version.value == 0 || !positive(result.checked_at)) {
+            return invalid_result();
+          }
+          v1::IdentityRevokeCredentialResponse output;
+          output.set_version(result.version.value);
+          return output;
         },
         false);
   }
   grpc::Status GetPrincipalStatus(grpc::ServerContext* transport,
                                   const v1::IdentityGetPrincipalStatusRequest* request,
-                                  v1::IdentityGetPrincipalStatusResponse*) override {
-    v1::IdentityGetPrincipalStatusResponse unused;
+                                  v1::IdentityGetPrincipalStatusResponse* response) override {
     return run(
-        transport, request->has_context(), request->context(), &unused,
-        [](const t::VerifiedPeer&,
-           const t::IdentityRequestContext&) -> t::Outcome<v1::IdentityGetPrincipalStatusResponse> {
-          return failure(t::ErrorCode::CapabilityNotSupported);
+        transport, request->has_context(), request->context(), response,
+        [&](const t::VerifiedPeer& peer, const t::IdentityRequestContext& context)
+            -> t::Outcome<v1::IdentityGetPrincipalStatusResponse> {
+          if (!principal_) {
+            return failure(t::ErrorCode::CapabilityNotSupported);
+          }
+          if (!uuid(request->principal_id())) {
+            return failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput);
+          }
+          auto reply = principal_->get_principal_status(
+              t::GetPrincipalStatusQuery{context, peer, {request->principal_id()}});
+          if (const auto* error = std::get_if<t::Failure>(&reply)) {
+            return *error;
+          }
+          const auto& result = std::get<t::PrincipalStatusReply>(reply);
+          if (result.principal.id.value != request->principal_id() ||
+              !positive(result.checked_at)) {
+            return invalid_result();
+          }
+          auto projected = principal_status(result.principal);
+          if (const auto* error = std::get_if<t::Failure>(&projected)) {
+            return *error;
+          }
+          v1::IdentityGetPrincipalStatusResponse output;
+          *output.mutable_principal() = std::get<v1::PrincipalRecord>(std::move(projected));
+          return output;
         },
         false);
   }
@@ -951,13 +1188,33 @@ public:
   }
   grpc::Status GetCredentialStatus(grpc::ServerContext* transport,
                                    const v1::IdentityGetCredentialStatusRequest* request,
-                                   v1::IdentityGetCredentialStatusResponse*) override {
-    v1::IdentityGetCredentialStatusResponse unused;
+                                   v1::IdentityGetCredentialStatusResponse* response) override {
     return run(
-        transport, request->has_context(), request->context(), &unused,
-        [](const t::VerifiedPeer&, const t::IdentityRequestContext&)
+        transport, request->has_context(), request->context(), response,
+        [&](const t::VerifiedPeer& peer, const t::IdentityRequestContext& context)
             -> t::Outcome<v1::IdentityGetCredentialStatusResponse> {
-          return failure(t::ErrorCode::CapabilityNotSupported);
+          if (!principal_) {
+            return failure(t::ErrorCode::CapabilityNotSupported);
+          }
+          if (!uuid(request->credential_id())) {
+            return failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput);
+          }
+          auto reply = principal_->get_credential_status(
+              t::GetCredentialStatusQuery{context, peer, {request->credential_id()}});
+          if (const auto* error = std::get_if<t::Failure>(&reply)) {
+            return *error;
+          }
+          const auto& status = std::get<t::CredentialStatusSnapshot>(reply);
+          if (status.ref.id.value != request->credential_id()) {
+            return invalid_result();
+          }
+          auto projected = credential_status(status);
+          if (const auto* error = std::get_if<t::Failure>(&projected)) {
+            return *error;
+          }
+          v1::IdentityGetCredentialStatusResponse output;
+          *output.mutable_credential() = std::get<v1::CredentialStatus>(std::move(projected));
+          return output;
         },
         false);
   }
@@ -1077,6 +1334,7 @@ private:
   InvocationDeadline invocation_deadline_;
   t::IdentityVerificationKeysApplication* verification_keys_;
   t::IdentityExchangeApplication* exchange_;
+  t::IdentityPrincipalApplication* principal_;
 };
 } // namespace
 

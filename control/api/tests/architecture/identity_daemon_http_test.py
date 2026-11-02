@@ -115,7 +115,7 @@ def daemon_http(root):
         daemon = subprocess.Popen([identity, '--config', str(root / 'identity.json')], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         children.append(daemon)
         state = dict((item.split('=', 1) for item in line(daemon).split()))
-        assert state['ready'] == 'false' and int(state['grpc_port']) > 0, 'Identity readiness/startup mismatch'
+        assert state['ready'] == 'true' and int(state['grpc_port']) > 0, 'Identity readiness/startup mismatch'
         tls = root / 'bootstrap-tls'
         if keys_client:
             allowed = 'denied' if '--keys-no-grant' in sys.argv[9:] else 'allowed'

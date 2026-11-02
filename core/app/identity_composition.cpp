@@ -11,6 +11,7 @@
 #include "kiarabot/core/application/target/identity_admin_application.hpp"
 #include "kiarabot/core/application/target/identity_application.hpp"
 #include "kiarabot/core/application/target/identity_delegation_application.hpp"
+#include "kiarabot/core/application/target/identity_principal_application.hpp"
 #include "kiarabot/core/application/target/identity_security_application.hpp"
 #include "kiarabot/core/application/target/identity_verification_keys_application.hpp"
 #include "kiarabot/core/domain/target/time.hpp"
@@ -18,6 +19,7 @@
 #include "kiarabot/core/runtime/platform/service_rpc.hpp"
 #include "kiarabot/infrastructure/identity_crypto/key_files.hpp"
 #include "kiarabot/infrastructure/identity_crypto/peer_certificate.hpp"
+#include "kiarabot/infrastructure/identity_crypto/principal_fingerprint.hpp"
 #include "kiarabot/infrastructure/identity_crypto/verification_keys.hpp"
 #include "kiarabot/infrastructure/postgres/security_factory.hpp"
 #include "postgres_service.hpp"
@@ -47,18 +49,22 @@ struct Dependencies {
   std::unique_ptr<target::PeerCertificatePort> certificates;
   std::unique_ptr<target::DelegationCryptoPort> delegations;
   std::unique_ptr<target::VerificationKeyMaterialPort> verification_keys;
+  std::unique_ptr<target::IdentityPrincipalFingerprintPort> principal_fingerprints;
   std::unique_ptr<target::IdentitySecurityUnitOfWorkFactory> transactions;
   std::atomic<bool> database_available{false};
+  std::atomic<bool> credentials_loaded{false};
+  std::atomic<bool> identity_initialized{false};
   std::atomic<bool> clock_reported{false};
 };
 class Applications final : public target::ServiceReadinessPort {
 public:
   Applications(std::shared_ptr<Dependencies> dependencies,
                std::unique_ptr<target::IdentitySecurityApplication> sessions,
+               std::unique_ptr<target::IdentityPrincipalApplication> principal,
                std::unique_ptr<target::IdentityVerificationKeysApplication> verification_keys,
                const platform::IdentitySecurityMaterial& material)
       : dependencies_(std::move(dependencies)), sessions_(std::move(sessions)),
-        verification_keys_(std::move(verification_keys)),
+        principal_(std::move(principal)), verification_keys_(std::move(verification_keys)),
         admin_(*dependencies_->transactions, *dependencies_->certificates),
         issuer_(*sessions_, *dependencies_->transactions, *dependencies_->delegations,
                 *dependencies_->random, dependencies_->clock,
@@ -69,6 +75,8 @@ public:
   target::ServiceReadiness readiness() const override {
     auto result = sessions_->readiness();
     const bool database = dependencies_->database_available.load();
+    const bool credentials = dependencies_->credentials_loaded.load();
+    const bool initialized = dependencies_->identity_initialized.load();
     const bool clock = dependencies_->clock.healthy();
     for (auto& entry : result.dependencies) {
       if (entry.dependency == target::Dependency::DatabaseSchema) {
@@ -76,16 +84,20 @@ public:
             database ? target::DependencyState::Available : target::DependencyState::Unavailable;
       }
       if (entry.dependency == target::Dependency::Credentials) {
-        entry.state =
-            clock ? target::DependencyState::Available : target::DependencyState::Unavailable;
+        entry.state = credentials && clock ? target::DependencyState::Available
+                                           : target::DependencyState::Unavailable;
       }
     }
-    // The pure application still declares incomplete Identity-wide readiness. Never upgrade it.
-    result.ready = result.ready && database && clock;
+    // Identity is ready only after the offline bootstrap initialized this schema and every
+    // required dependency (writer session, loaded key material, trusted clock) is available.
+    result.ready = result.ready && database && credentials && initialized && clock;
     return result;
   }
   target::IdentitySecurityApplication& sessions() {
     return *sessions_;
+  }
+  target::IdentityPrincipalApplication& principal() {
+    return *principal_;
   }
   target::IdentityVerificationKeysApplication& verification_keys() {
     return *verification_keys_;
@@ -98,9 +110,10 @@ public:
   }
 
 private:
-  // Reverse destruction releases issuer -> admin -> keys -> sessions -> shared dependencies.
+  // Reverse destruction releases issuer -> admin -> keys -> principal -> sessions -> dependencies.
   std::shared_ptr<Dependencies> dependencies_;
   std::unique_ptr<target::IdentitySecurityApplication> sessions_;
+  std::unique_ptr<target::IdentityPrincipalApplication> principal_;
   std::unique_ptr<target::IdentityVerificationKeysApplication> verification_keys_;
   target::IdentityAdminApplication admin_;
   target::IdentityDelegationApplication issuer_;
@@ -141,12 +154,21 @@ target::Status maintain(const std::shared_ptr<Dependencies>& dependencies) {
     return detail::database_unavailable();
   }
   const auto now = work->current_time();
-  work->rollback();
   if (const auto* error = std::get_if<target::Failure>(&now)) {
+    work->rollback();
     dependencies->database_available.store(false);
     return *error;
   }
+  auto marker = work->bootstrap().state();
+  work->rollback();
+  if (const auto* error = std::get_if<target::Failure>(&marker)) {
+    dependencies->database_available.store(true);
+    dependencies->identity_initialized.store(false);
+    return *error;
+  }
   dependencies->database_available.store(true);
+  dependencies->identity_initialized.store(std::get<target::AdministratorBootstrap>(marker).state ==
+                                           target::BootstrapState::Consumed);
   // A clock fault stays alive but not-ready; every RPC's real peer authenticator samples it and
   // rejects with dependency failure. No restart/recalibration or cached authorization is used.
   return std::monostate{};
@@ -254,8 +276,14 @@ target::Outcome<platform::ServiceComposition> configured(const platform::Process
   }
   dependencies->certificates =
       std::move(std::get<std::unique_ptr<target::PeerCertificatePort>>(certificates));
+  auto principal_fingerprints = crypto::make_principal_fingerprints();
+  if (const auto* error = std::get_if<target::Failure>(&principal_fingerprints)) {
+    return *error;
+  }
+  dependencies->principal_fingerprints = std::move(
+      std::get<std::unique_ptr<target::IdentityPrincipalFingerprintPort>>(principal_fingerprints));
   if (!dependencies->tokens || !dependencies->receipts || !dependencies->delegations ||
-      !dependencies->certificates) {
+      !dependencies->certificates || !dependencies->principal_fingerprints) {
     return detail::database_unavailable();
   }
   // All key/clock/dummy/crypto preparation is complete before acquiring a PG writer.
@@ -295,6 +323,25 @@ target::Outcome<platform::ServiceComposition> configured(const platform::Process
   if (!session_application) {
     return detail::database_unavailable();
   }
+  auto principal = target::make_identity_principal_application(
+      {*dependencies->transactions, *dependencies->tokens, *dependencies->passwords,
+       *dependencies->receipts, *dependencies->random, *dependencies->principal_fingerprints},
+      {.token_key = {material.token_key.id},
+       .request_commitment_key = {material.request_key.id},
+       .receipt_encryption_key = {material.receipt_key.id},
+       .bootstrap_credential_lifetime = std::chrono::hours{24},
+       .password_credential_lifetime = std::chrono::hours{365 * 24},
+       .secret_receipts = {10000},
+       .maximum_allowed_services = 16});
+  if (const auto* error = std::get_if<target::Failure>(&principal)) {
+    return *error;
+  }
+  auto principal_application =
+      std::move(std::get<std::unique_ptr<target::IdentityPrincipalApplication>>(principal));
+  if (!principal_application) {
+    return detail::database_unavailable();
+  }
+  dependencies->credentials_loaded.store(true);
   auto keys = target::make_identity_verification_keys_application(*dependencies->transactions,
                                                                   *dependencies->verification_keys);
   if (const auto* error = std::get_if<target::Failure>(&keys)) {
@@ -306,6 +353,7 @@ target::Outcome<platform::ServiceComposition> configured(const platform::Process
     return detail::database_unavailable();
   }
   auto applications = std::make_unique<Applications>(dependencies, std::move(session_application),
+                                                     std::move(principal_application),
                                                      std::move(key_application), material);
   auto* observed = applications.get(); // Composition owns it until after RPC shutdown/Wait.
   auto final_clock = dependencies->clock.sample();
@@ -336,7 +384,9 @@ target::Outcome<platform::ServiceComposition> configured(const platform::Process
         auto adapter = platform::make_identity_rpc(
             observed->sessions(), std::move(gated), &observed->issuer(),
             [dependencies] { return dependencies->clock.invocation_deadline(); },
-            {.verification_keys = &observed->verification_keys()});
+            {.verification_keys = &observed->verification_keys(),
+             .exchange = nullptr,
+             .principal = &observed->principal()});
         if (const auto* error = std::get_if<target::Failure>(&adapter)) {
           return *error;
         }

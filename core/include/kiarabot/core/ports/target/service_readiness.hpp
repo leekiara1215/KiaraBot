@@ -17,8 +17,11 @@ struct ServiceReadiness {
   std::vector<DependencyStatus> dependencies;
 };
 // Immutable/thread-safe query; borrows no transport objects and performs no network I/O.
-// P02 implementations always report BusinessImplementation/NotImplemented and ready=false.
-// Listening/live is a process property and must never be inferred from this result.
+// P02 placeholder applications report BusinessImplementation/NotImplemented and ready=false.
+// A configured application may report its own business dependency as available; its composition
+// root still owns the live database/initialization/credential observations and is the only place
+// that can turn the overall result ready. Listening/live is a process property and must never be
+// inferred from this result.
 class ServiceReadinessPort {
 public:
   virtual ~ServiceReadinessPort() = default;

@@ -8,6 +8,7 @@
 #include "kiarabot/core/application/target/identity_admin_application.hpp"
 #include "kiarabot/core/application/target/identity_delegation_application.hpp"
 #include "kiarabot/core/application/target/identity_exchange_application.hpp"
+#include "kiarabot/core/application/target/identity_principal_application.hpp"
 #include "kiarabot/core/application/target/identity_security_application.hpp"
 #include "kiarabot/core/application/target/identity_verification_keys_application.hpp"
 #include "kiarabot/v1/identity.grpc.pb.h"
@@ -35,6 +36,9 @@ make_identity_peer_authenticator(target::IdentityAdminApplication& application,
 struct IdentityRpcOptions {
   target::IdentityVerificationKeysApplication* verification_keys = nullptr;
   target::IdentityExchangeApplication* exchange = nullptr;
+  // Borrowed five principal/credential management use cases. Absent keeps the methods a typed
+  // CapabilityNotSupported rejection; the transport never fabricates a success.
+  target::IdentityPrincipalApplication* principal = nullptr;
 };
 
 // Borrows application for the service lifetime; owns the verifier closure. No readiness or
