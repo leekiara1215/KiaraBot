@@ -14,6 +14,8 @@
 
 仍未实现（deferred）：Runtime 的 Bridge handler（P06a）与 Host 受管启动/最小环境/PID 与 stop 超时（P08）；真实 Core/Adapter 端到端夹具在二者落地后替换 `FakeTargetRuntime` 的本机验收，不用旧 reference 桥接兼容层。
 
+P08a Host 实现边界（2026-11-02）：受管实例的 bootstrap 凭据由部署以 0600 文件放在 Host 的 `credential_directory/<instance_id>.bootstrap`，Host 按 launch profile 的 `credential_environment` 只注入该环境变量（值不持久化/不入日志/不入观察），SDK 从该变量读取后仍按 P06 首帧使用；Host 的本地 SQLite 日志、POSIX 受管进程与 HostBridge 客户端已实现并用 fake Runtime 验证，真实 Runtime Bridge 监听与配置 ACK 链路仍属 P06a-2/P08c。
+
 reference 冻结轨说明：`control/api/tests/test_config_delivery.py` 中启动真实 SDK Runner 的配置下发 e2e 已随本次 SDK 迁移失效——reference 单机 Core 仍只提供旧 plugin RPC 端点，target-only SDK 在其上无法完成注册与配置协商，故该单个用例显式 skip 且保留在套件中（其余 reference 用例继续真实运行）；目标等价覆盖由 P06a-2（Runtime Bridge handler）与 P08c（配置下发闭环）承担。
 
 ## T06c 任务客户端

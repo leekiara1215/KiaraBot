@@ -1046,3 +1046,47 @@ python3 scripts/local/napcat.py stop
 不能停止不属于本程序的共享VM。先停止业务实例、再停NapCat、最后停专用VM。
 
 当前安装/扫码/真实收发的实际进度见doc26及对应执行报告，不能把本节命令当作全项已通过。
+
+## P08 Host 部署配置与凭据（P08a 实现，第一阶段）
+
+`kiarabot-plugin-host` 使用与其它服务相同的严格 `service` 配置（schema_version/service/
+probe_listen/grpc_listen/tls），并额外要求 Host-only 的 `host` 对象（其它服务出现该对象即拒绝，
+退出 2）：
+
+```json
+{
+  "schema_version": 1,
+  "service": "plugin-host",
+  "probe_listen": "127.0.0.1:18081",
+  "grpc_listen": "127.0.0.1:15082",
+  "tls": {"certificate_file": "...", "private_key_file": "...", "ca_file": "..."},
+  "host": {
+    "host_id": "host-a",
+    "sqlite_path": "/var/lib/kiarabot-host/host.sqlite",
+    "runtime_endpoint": "127.0.0.1:50051",
+    "credential_directory": "/etc/kiarabot-host/credentials",
+    "packages": [{"plugin_type_id": "event-observer", "root": "/opt/kiarabot/packages/event-observer",
+                  "sha256": "<64 lowercase hex>", "launch_profile": "python",
+                  "allowed_argument_names": ["instance"]}],
+    "profiles": {"python": {"name": "python", "executable": "/opt/kiarabot/.venv/bin/python",
+                 "fixed_arguments": ["-m", "kiarabot_sdk"], "allowed_environment_names":
+                 ["PYTHONUNBUFFERED", "KIARABOT_PLUGIN_BOOTSTRAP"],
+                 "credential_environment": "KIARABOT_PLUGIN_BOOTSTRAP"}},
+    "environment": {"PYTHONUNBUFFERED": "1"}
+  }
+}
+```
+
+- 路径必须是绝对路径；TLS 材料同时用于 Host 对外探针/进程 TLS 与到 Runtime 内部 `grpc_listen`
+  的 mTLS 客户端身份（部署须给 Host 叶证书 clientAuth）。
+- 每个受管实例的 bootstrap 凭据由部署生成，写成 `credential_directory/<instance_id>.bootstrap`，
+  权限必须 `0600` 且属主为 Host 运行用户；值只注入 profile 的 `credential_environment`，
+  不进入 Runtime 存储/outbox/日志/观察。SDK 从该环境变量读取后仍按 P06 在 PluginBridge 首帧使用。
+- 本地 SQLite（`sqlite_path`）是 Host 唯一权威：`command_journal`/`managed_executions`/
+  `execution_observations`；已解决收据 7 天、未知/未决 30 天后人工处置。Host 启动时按 marker
+  恢复/标记 UNKNOWN，不因重启重复 spawn 同一执行代次。
+- Runtime 部署侧 `hosts[]` 预注册 `host_id` 与证书指纹/SAN、包摘要/profile 白名单；Host 配置的
+  `host_id` 必须与之一致。HostBridge 只在 Runtime 内部 mTLS 监听，不注册外部 Bridge 监听。
+- 当前验证范围：P08a 用 in-process fake Runtime bridge 与 fake supervisor 覆盖注册/fence/心跳/
+  resync/命令回执/观察/恢复；真实 Runtime Bridge 监听（P06a-2）与 Host 受管配置的端到端验收
+  尚未执行，不能据此宣称 T11b 或真实部署通过。

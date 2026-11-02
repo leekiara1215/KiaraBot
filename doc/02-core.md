@@ -1226,3 +1226,33 @@ not_implemented，本增量不宣称 P06 完成。
 installations.manifest、instances.desired 列在同一 Runtime 库 v1 初始化 schema 内创建。
 该版本没有增量迁移机制，因此结构变更只在初始化 schema 中表达；不修改既有列语义，不重排
 `ReplayResult` 既有索引（新增记录追加在末尾，RecordKind 使用相同索引值）。
+
+## P08a Plugin Host 服务实现（2026-11-02，第一阶段）
+
+P08a 把 `kiarabot-plugin-host` 从 readiness 桩推进为可运行服务：
+`core/src/application/target/host_service.cpp` 在纯端口
+（`HostJournal`/`ProcessSupervisor`/`HostClock`/`HostBridgeTransport`）之上实现受管执行，
+`core/src/runtime/platform/host_bridge_client.cpp` 是 Runtime 内部 mTLS `HostBridge` 的客户端，
+`core/app/host_composition.cpp` 由严格 host 配置装配 SQLite journal、POSIX supervisor、
+mTLS bridge client 与 Host 服务。命令只从已认证 HostBridge 流进入（不暴露 unary HostService
+监听）；Host 不读取 desired/注册/配置应用权威，只上报本地执行事实。
+
+本地可靠日志（`infrastructure/src/host_journal.cpp`，SQLite WAL、单写入者）使用
+`command_journal`/`managed_executions`/`execution_observations` 三表：命令在 spawn 前持久化并
+按 command_id+payload hash 幂等重放；执行以 instance_id+execution_generation 唯一并记录
+pid+进程启动时间 marker；观察以 Host 本地单调 sequence 持久化，未上报项在 HostBridge 重新
+注册/resync 后补发。已解决命令保留 7 天，未知/未决项保留 30 天后进入人工处置，不静默删除。
+
+执行语义：包摘要必须匹配部署 allowlist（`package_sha256` + `launch_profile`），参数为
+`name=value` 且 name 受 HostPackage 白名单约束，环境变量只接受 profile 白名单中的名字，值来自
+部署配置；受管实例 bootstrap 凭据由部署以 0600 文件放在 `credential_directory`
+（`<instance_id>.bootstrap`，uid=运行用户），只注入 profile 的 `credential_environment`，
+不持久化、不写日志、不进入观察。停止使用 TERM→10s 宽限→KILL；无法确认终止时 outcome 保持
+UNKNOWN 而不是“已停止”。Host 启动时恢复：marker 仍存活则认领 Running 并补观察；进程已消失但
+无已确认退出则上报 UNKNOWN；同一 execution_generation 永不重复 spawn。心跳 5s，Runtime 15s
+无心跳只影响在线投影，不改变 process_outcome 为 FAILED。
+
+边界与未完成：Runtime 侧 desired/outbox 与真实 HostBridge 监听属 P06a-2；SDK 配置 ACK 属 P08c；
+P08a 的 bridge 客户端在连接丢失后不自动重连（readiness 转 false，需进程重启或后续阶段补齐）；
+HostCommandReceipt 契约没有 error 字段，命令拒绝暂以 `persisted=false` 回执表达；包摘要为部署
+登记值比较，不做目录内容重算；SQLite schema 无增量迁移（初始化时创建三表）。
