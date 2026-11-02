@@ -731,3 +731,19 @@ P07d 真实 adapter e2e 的事件 fan-out 断言现已覆盖：真实 adapter �
   implemented；`target_spec` 同步；OpenAPI REST `x-contract-status` 翻 implemented，而
   `x-target-contract-status` 按 target_api 认证投影规则保持 not_implemented（不是 owner-rpc REST
   marker 场景，规则不同）。仍不暴露凭据/assignment 内部。
+
+## P12m：owner RPC scope_kinds 元数据补全（2026-11-03）
+
+P14k 原生栈发现 Identity `CheckAuthorization` 对 4 个 owner 方法返回 INVALID_ARGUMENT：这些方法
+缺少 `option (scope_kinds)`，descriptor-driven 方法策略无法接受任何精确 scope，Control 无法合法
+委派。P12m 只补既有方法元数据（不新增字段/权限/RPC）：
+
+- `RuntimeService.GetActionPolicy`、`UpdateActionPolicy` → `RESOURCE_ACCOUNT`（ActionPolicy 归账号）。
+- `RuntimeService.QueryActionResult` → `RESOURCE_ACCOUNT`（P07 契约：`action.inspect` + 恰含一个
+  `RESOURCE_ACCOUNT` 的显式 account scope；target_spec 原有 caller/permission 未定义 scope_kinds）。
+- `ModelService.ListModelMetadata` → `RESOURCE_MODEL`（对照 `Chat`；列表请求的 scope 是一个或多个
+  RESOURCE_MODEL）。
+- `proto/tests/target_spec.json` 镜像以上 4 项，`p01_target_roundtrip`/`target_contract_test.py`
+  校验 descriptor 与 target_spec 一致。
+- 解锁：P14l 可复跑原生 models/action_policy/action_query owner 链；本项不改变任何 wire 字段、
+  权限或 RPC，上一层的 Control REST marker/错误映射不变。
