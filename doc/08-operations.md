@@ -1607,3 +1607,17 @@ Control `/logs` `/audit` 的 Runtime 源使用 `audit.read`(49)/`log.read`(48) �
 会拒绝 control catalog scope）；确认版本后再检查 Identity `CheckAuthorization` 的 assignment/
 在线授权，而不是把 401 当“无数据”。授权成功但无记录必须表现为 **200 空页**；权限不匹配为
 403/PERMISSION_DENIED，过期/篡改 proof 为 401。禁止放宽 owner 查询或伪造空页来掩盖委派失败。
+
+
+## P10m 优雅停机崩溃修复（2026-11-03）
+
+- 现象：高负载后 SIGTERM，Runtime/Scheduler 偶发 exit code -11（SIGSEGV），约 1/3；正常应 exit 0。
+- 根因：OpenSSL atexit 全局清理与进程 teardown 期间退出的服务 worker 线程竞态，线程 RAND
+  thread-local 析构访问已释放状态（backtrace: `EVP_RAND_CTX_free → rand_delete_thread_state`）。
+- 修复：所有服务共用 `run_service` 在启动早期调用
+  `OPENSSL_init_crypto(OPENSSL_INIT_NO_ATEXIT, nullptr)`，取消退出期 OpenSSL 全局清理；不改变
+  RPC/数据库/停机状态机语义。
+- 诊断：`KIARABOT_CRASH_DIAGNOSTICS=1` 打开 SIGSEGV/SIGABRT backtrace（stderr，无秘密）；
+  `p10_timer_e2e` 停机失败会输出子进程 stdio。
+- 回归：`p10_timer_e2e` 新增 10 次高负载 task churn + SIGTERM + Runtime 重启循环；
+  实测 5 次完整 e2e（50 次停机）均为 exit 0。

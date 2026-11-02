@@ -219,3 +219,28 @@ task_create/get/cancel，校验认证 instance/owner/installation、`host.tasks.
 不能宣称 P10 原生成功链验收通过。另：冻结 `TaskCreateRequest` 只带 `target_conversation` 字符串、
 无会话类型；P10k 暂以 GROUP 构造 Scheduler `ConversationKey`，私聊任务类型需用户确认/后续契约澄清。
 另：tzdata 缺失稳定错误（UPSTREAM_UNAVAILABLE）由真实 Scheduler readiness 决定，fake owner 未模拟；真实 qq/平台触发仍需环境。
+
+
+### P10m 优雅停机间歇 SIGSEGV（2026-11-03，已修复）
+
+P10 退出前 `p10_timer_e2e` 在 8192 tasks/expiry 及后续 churn 后 SIGTERM Runtime 偶发失败（约
+1/3，失败时 17–18s；正常 44–50s）。受控诊断（`KIARABOT_CRASH_DIAGNOSTICS=1`）捕获失败退出码
+-11 及 backtrace：
+
+```
+EVP_RAND_CTX_free
+rand_delete_thread_state
+init_thread_stop
+init_thread_destructor
+pthread_tsd_cleanup
+_pthread_exit
+```
+
+根因：OpenSSL 3 的全局 `OPENSSL_cleanup` 在 atexit 阶段释放 RAND 状态，而 gRPC/服务 worker
+线程在进程 teardown 后段才退出，线程局部 RAND 析构访问已释放状态。修复为所有服务共用的
+`run_service` 早期调用 `OPENSSL_init_crypto(OPENSSL_INIT_NO_ATEXIT, nullptr)`，不再注册退出期
+OpenSSL 全局清理；停机状态机/信号路径/RPC/DB 语义未改。`p10_timer_e2e` 增加 10 次
+“8192 filler 插入/删除 → SIGTERM → Runtime 重启”回归循环，并保留停机失败的 stdio 打印。
+实测：修复前 4 次循环中 1 次 `runtime before expiry` SIGSEGV；修复后 12 次完整 e2e 无此崩溃，
+新增循环测试连续 5 次完整 e2e（50 次停机）全 exit 0。另观察到与本缺陷无关的既有测试时序
+flaky（lost-confirm 完成等待、runtime 重启后一次 UNAUTHENTICATED），未在本任务修改。

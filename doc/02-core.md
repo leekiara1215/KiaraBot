@@ -1591,3 +1591,18 @@ Runtime 的 `decode_delegation_claims` 只做结构 fail-closed 校验，最终�
 scope id `control` 曾因旧的 permission 上限 46 和 UUID-only scope 校验被误拒（UNAUTHENTICATED）；
 P14m 修正为 known permission（至 `health.read`=50）及 `valid_policy_resource`（Catalog 允许
 契约 id，其他 kind 仍要求 canonical UUID）。不放松在线授权，不改变空页/错误码语义。
+
+
+### P10m Runtime 优雅停机稳定性（2026-11-03）
+
+P10 退出前发现 `p10_timer_e2e` 在高负载（8192 tasks/expiry 及后续 churn）后发送 SIGTERM 时，Runtime 间歇以 SIGSEGV（exit code -11）退出而非 0。受控 backtrace（`KIARABOT_CRASH_DIAGNOSTICS=1`）显示崩溃发生在 OpenSSL 3 的线程析构链：
+`pthread_tsd_cleanup → init_thread_destructor → rand_delete_thread_state → EVP_RAND_CTX_free`。
+根因是 OpenSSL 在 atexit 阶段执行全局 `OPENSSL_cleanup`，而 gRPC/服务 worker 线程在进程 teardown 期间才退出，其 RAND thread-local 析构访问已释放的全局 RAND 状态。
+
+修复：Runtime/Scheduler/Identity/Model/Host 共用的 `run_service` 在任何密码学使用前调用
+`OPENSSL_init_crypto(OPENSSL_INIT_NO_ATEXIT, nullptr)`，不再注册退出期全局清理；进程退出由 OS
+回收内存，线程析构只访问仍存活的 RAND 全局状态。停机仍走原有信号阻塞/`sigwait`/`before_stop`
+路径，不丢未决状态、不改变 RPC/数据库语义。另保留受控诊断：设置
+`KIARABOT_CRASH_DIAGNOSTICS=1` 可在 SIGSEGV/SIGABRT 时输出 backtrace 到 stderr（无秘密）；
+`p10_timer_e2e` 的 stop 失败时打印子进程 stdout/stderr，并新增 10 次
+“高负载 filler 插入/删除 → SIGTERM → 重启 Runtime”循环作为回归。
