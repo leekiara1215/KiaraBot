@@ -1575,14 +1575,14 @@ P10j（2026-11-02）：SDK 任务方法（create/get/cancel）已有 `p10_sdk_ta
 Action 到达平台、receipt/终态、重复帧/重连去重、离线/非订阅不投递、post-dispatch cancel
 CONFLICT，并检查 adapter/plugin 日志不泄露 bootstrap/平台 token。真实 QQ/NapCat 与
 UNKNOWN/EXPIRED 单链迟到证据属剩余环境/验收项。
-- **P14i–P14k 成功链矩阵与复验（2026-11-03）**：P14i 修复 4 个 Control/Identity 边界缺陷、
-  P14k 再修复 Control owner request/trace id 非 UUID 与 Scheduler Installation scope 混入授权；
-  当前 strict matrix：health/principals/tasks_list/delete/restore = success（delete=404、
-  restore=409 owner 语义），logs/audit=稳定 503，models=稳定 403，action_policy/action_query=
-  稳定 400 known-gap。其中 Get/UpdateActionPolicy、QueryActionResult、ListModelMetadata 缺少
-  proto `scope_kinds` 属契约缺口（已上报，未改 proto）；详见
+- **P14i–P14l 成功链矩阵与复验（2026-11-03）**：P14i 修复 4 个 Control/Identity 边界缺陷、
+  P14k 修复 Control owner request/trace id 非 UUID 与 Scheduler Installation scope 混入授权、
+  P14l 修复 IdentitySecurityWork 缺失 audit/log 只读投影（Identity 审计源 503→401，进入 peer
+  授权阶段）。strict matrix：health/principals/tasks_list/delete/restore=success（delete=404、
+  restore=409 owner 语义）；logs/audit=401、models=403、action_policy/action_query=400
+  为 known-gap；后三者等待 P12m 补 proto scope_kinds 后 rebase 复跑。详见
   [architecture-p14f-native-single-host.md](../reports/modules/architecture-p14f-native-single-host.md)
-  第 9–10 节。故障/重启/fail-closed 保留。
+  第 9–11 节。故障/重启/fail-closed 保留。
   第 8 节；故障/重启/fail-closed 矩阵保留。
 
 

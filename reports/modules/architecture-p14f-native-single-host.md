@@ -262,3 +262,27 @@ log.read/audit.read 精确授权（fixture 已镜像授权，bootstrap 通过）
 **修复前/后对照**：P14j 时仅 health success、principals 503、tasks/models/action 400/403、
 delete/restore 400；P14k 后 health/principals/tasks/delete/restore 共 5 项 success，
 其余 5 项为稳定 known-gap，其中 4 项是明确的契约 scope_kinds 缺口。
+
+## 11. P14l Identity audit source 诊断（2026-11-03）
+
+**根因（已修）**：Control `/logs` `/audit` 通过 P12e 的 owner UoW 只读投影 `query_audit`/
+`query_logs` 聚合事实。`RuntimeWork` 实现了这两个端口，但 Identity 审计应用使用的
+`IdentitySecurityWork` 没有 override，退回 `UnitOfWork` 的 fail-closed 默认
+（UPSTREAM_UNAVAILABLE），因此 Control 永远收不到 Identity 审计/日志源（native smoke 503）。
+修复：`IdentitySecurityWork` 与 `query_principals` 相同方式委托共享 UoW 的
+`query_audit`/`query_logs`（同连接/事务、只读应用用途）。
+
+修复后 native smoke：logs/audit 从 **503 UPSTREAM_UNAVAILABLE → 401 UNAUTHENTICATED**
+（审计应用已进入 peer 授权阶段），矩阵记为 known-gap；不再缺能力。剩余 401 需继续定位
+Identity 审计应用对 Control peer 的 `current_actor`/`authorize_exact(log/audit.read on
+catalog "control")` 语义或 fixture 的 Control catalog 精确授权是否在 bootstrap 后可见
+（P12l/P12e 交叉核对），本次未根因。
+
+P14l 实测（strict matrix）：health/principals/tasks_list/delete/restore = **success**；
+logs/audit=401 known-gap；models=403、action_policy/action_query=400 known-gap——后三者等待
+P12m（4 个 owner 方法补 proto `scope_kinds`）合入后 rebase main 复跑，预期可 success 或稳定
+owner 语义。故障/重启/fail-closed 保留通过。
+
+**P12m 状态**：截至本 commit 检查，main=`6189445` 中 GetActionPolicy/UpdateActionPolicy/
+QueryActionResult/ListModelMetadata 仍无 `scope_kinds`；P12m 合入后只需 rebase 并重跑
+`p14_native_single_host`，无需改测试。
