@@ -496,7 +496,7 @@ def run_checks(root, https_port, configs, binaries, children, endpoints):
 
         if outcome != 'success' and os.environ.get('KIARABOT_P14F_DUMP_LOGS'):
             import select as select_module
-            for name in ('identity', 'control'):
+            for name in ('identity', 'control', 'scheduler', 'model', 'runtime'):
                 child = children.get(name)
                 if child is None or child.stderr is None:
                     continue
@@ -506,7 +506,7 @@ def run_checks(root, https_port, configs, binaries, children, endpoints):
                     if not chunk:
                         break
                     for entry in chunk.splitlines():
-                        print(f'P14 native single-host (log {name}): {entry}', file=sys.stderr)
+                        print(f'P14 native single-host (log {name}): {entry}', flush=True)
         require(outcome in ('success', 'stable-ok', 'pre-fix-skip', 'grant-missing',
                             'capability-gap', 'known-gap'),
                 f'{label} classification status={status} body={str(body)[:300]}')
@@ -577,8 +577,11 @@ def run_checks(root, https_port, configs, binaries, children, endpoints):
                classify(status, False, ('INVALID_ARGUMENT',),
                         stable_ok_codes=('NOT_FOUND',)))
 
+    scope_task = json.dumps({'resources': [
+        {'kind': 'RESOURCE_INSTALLATION', 'id': STATE['installation']},
+        {'kind': 'RESOURCE_INSTANCE', 'id': STATE['instance']}]})
     status, body = request('GET', '/api/v1/tasks?page_size=10&scope=' +
-                           urllib.parse.quote(scope_installation), token=token)
+                           urllib.parse.quote(scope_task), token=token)
     success = status == 200 and isinstance(body.get('items'), list)
     record('tasks_list', status, body,
            'success' if success else
