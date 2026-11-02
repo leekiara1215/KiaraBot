@@ -35,7 +35,7 @@ Python 适配器是第一种渠道适配器，负责连接 NapCatQQ，并把 One
 
 ## 目录
 
-该适配器由本仓库维护，位置为 `adapters/nonebot/`。下图为当前结构（2026-11-02 核对）：`src/kiarabot_adapter_nonebot/` 是 9 个平铺模块，不是按子目录分层的目标结构；`generated/` 为本机生成物、不入库，运行命令见 [适配器 README](../adapters/nonebot/README.md)。
+该适配器由本仓库维护，位置为 `adapters/nonebot/`。下图为当前结构（2026-11-02 核对）：`src/kiarabot_adapter_nonebot/` 是 10 个平铺模块（P06c 新增 `bridge.py`），不是按子目录分层的目标结构；`generated/` 为本机生成物、不入库，运行命令见 [适配器 README](../adapters/nonebot/README.md)。
 
 ```text
 adapters/nonebot/
@@ -126,17 +126,16 @@ ApproveRequest
 
 ## 配置
 
-适配器所需配置：
+P06c 起目标适配器配置为：`BRIDGE_ENDPOINT`、`BRIDGE_CA_FILE`、
+`BRIDGE_BOOTSTRAP_CREDENTIAL_FILE`（0600 部署秘密，只读一次）、`ADAPTER_INSTANCE_ID`、
+`ACCOUNT_ID`、`OUTBOX_PATH`、`HEALTH_PORT`，可选 `ADAPTER_ID`/`BRIDGE_SERVER_NAME` 与
+`BRIDGE_TIMEOUT`/`BRIDGE_RETRY_BASE`/`BRIDGE_IDLE_INTERVAL`，平台侧仍是
+`ONEBOT_WS_URL`/`ONEBOT_ACCESS_TOKEN`；完整语义见适配器 README。缺失/非法/权限不符一律稳定
+`INVALID_ARGUMENT` 失败，不提供 insecure 或匿名明文降级。
 
-```text
-CORE_GRPC_ENDPOINT
-CORE_AUTH_TOKEN
-ONEBOT_WS_URL
-ONEBOT_ACCESS_TOKEN
-ACCOUNT_ID
-```
-
-NapCat 的 WebUI 密码、OneBot Token 和 Core Token 必须分开管理。
+reference 时代的环境变量 `CORE_GRPC_ENDPOINT`/`CORE_AUTH_TOKEN` 仅存在于冻结的 reference
+分支/tag，不再被目标适配器读取；NapCat WebUI 密码、OneBot Token 与 bootstrap 凭据必须分开
+管理，三者都不进入日志或 outbox。
 
 ## 故障处理
 
@@ -150,7 +149,7 @@ NapCat 的 WebUI 密码、OneBot Token 和 Core Token 必须分开管理。
 
 ## 健康检查
 
-适配器在 `127.0.0.1:HEALTH_PORT`（默认 `8081`，`HEALTH_PORT` 可配置）提供本地 HTTP 探针：`/health/live` 只表示进程存活（恒 200）；`/health/ready` 以 Core 注册连接为就绪条件（未注册返回 503），响应体 `components` 分别返回 `core` 与 `platform` 状态，平台未连接时为 `DEGRADED` 但不阻止就绪。注册响应的 `heartbeat_interval_seconds` 决定空闲心跳间隔；适配器空闲时持续读取 Core 推送的 Action，不等待下一次心跳。探针绑定回环地址，供同机 compose/systemd 使用。
+适配器在 `127.0.0.1:HEALTH_PORT`（默认 `8081`，`HEALTH_PORT` 可配置）提供本地 HTTP 探针：`/health/live` 只表示进程存活（恒 200）；目标 Bridge 的 `/health/ready` 要求**Runtime 注册成功且当前 `ConnectionAuthorization` 未过期（fence 当前）**且**平台 Bot 已连接**，否则 503/NOT_READY。响应体 `components` 返回 `core`（目标桥授权）、`authorization`（proof/refresh 有效）与 `platform`（OneBot 连接）；桥断线/refresh 失败时 ready 立即转 503，重新注册并取得有效授权后自动转回 200。`heartbeat_interval_seconds` 来自注册响应（目标为 5 秒）；适配器空闲时持续读取 Runtime 推送的 Action/回执，不等待下一次心跳。探针绑定回环地址，供同机 compose/systemd 使用。以上为目标行为；reference bridge 的旧就绪语义（仅 Core 注册）随 P06c 移除。
 
 ## 替换标准
 
@@ -166,6 +165,8 @@ NapCat 的 WebUI 密码、OneBot Token 和 Core Token 必须分开管理。
 
 ## 验收标准
 
+当前目标阶段以 `FakeTargetRuntime`（真实 gRPC + 测试 TLS）验证；真实 QQ/NapCat 验收留 P07/M2。
+
 - 能接收 NapCat 的文本、图片和 @ 消息；
 - 能把统一 Action 发送回群聊和私聊；
 - 断线可以自动重连；
@@ -178,6 +179,12 @@ NapCat 的 WebUI 密码、OneBot Token 和 Core Token 必须分开管理。
 > 请只实现 Python NoneBot2 / OneBot V11 适配器进程（本仓库 `adapters/`），把 NapCat 事件转换为 `kiarabot.v1` 事件并执行 Core Action，使用模拟 gRPC Core 完成断线、重连、能力和消息段测试，不实现任何业务插件。
 
 ## T02a 持久化确认客户端要求
+
+> 目标 P06c 起认证、注册帧与帧 fencing 以本文「P06 适配器侧冻结」为准：外部监听
+> （`bridge_listen`）、bootstrap metadata、`Fence`+`connection_proof`、refresh 与
+> `ShutdownNotice`；本节其余投递/ACK 语义（先持久 event+sequence、只有 PERSISTED/DUPLICATE
+> 释放、RATE_LIMITED 背压保留）在目标下继续有效，但不再使用 reference 的 Bearer/token
+> metadata 或 insecure loopback 连接。
 
 连接后先发送协议版本 kiarabot.v1 的注册请求，等待 accepted=true 并保存 assigned_instance_id；每次重连重新注册。发送事件前重绑 source.adapter_instance_id，event_id/trace_id/sequence/正文保持不变。等待匹配 event_id 的 event_ack：PERSISTED 或 DUPLICATE 才删除本地待发记录。REJECTED 的 retryable=true 或连接中断时保留事件，按 retry_after_ms 和退避重连；不可重试拒绝进入本地失败记录，不得当作投递成功。队列满会回复 RATE_LIMITED 并关闭流，所有尚未确认事件必须重投。适配器对 RATE_LIMITED 一律按可重试处理（即使 Core 返回 retryable=false 也不标 failed、不丢弃），保留 pending 并退避重投；其余不可重试拒绝才进入失败记录。心跳只确认连接，不确认事件。
 
@@ -207,4 +214,9 @@ refresh只接受当前实际流、未过期未撤销的proof/refresh及正refres
 
 ### P06 适配器侧冻结（未实现）
 
-外部适配器在 P06 只连 Runtime 的外部 Bridge 监听（`bridge_listen`，server-verified TLS，不要求客户端证书）：部署一次交付的 `bootstrap_credential`（来自 `RuntimeBindAdapterResponse.bootstrap_credential`）经 gRPC metadata `authorization: Bearer <credential>` 提交，首帧 `RegisterAdapterRequest.adapter_instance_id` 必须与凭据解析出的 adapter 资源一致；成功响应带 `Fence`+`ConnectionAuthorization`，之后事件/心跳/refresh 帧都带完整 `Fence` 与当前 `connection_proof`。事件仍须先在本地 SQLite 持久 event+sequence 再上报；只有 `PERSISTED`/`DUPLICATE` 才释放 outbox 项，`REJECTED` 中 `retryable=true` 保留重投，容量背压 `RATE_LIMITED` 可重试并关闭本次流（适配器保留未确认事件）。bootstrap/proof/refresh 明文不得写入 outbox、日志或错误信息；不实现自报客户端证书或旧 proof 回退。适配器的 TLS/bootstrap/帧改造属 P06c，unary RuntimeService 注册/事件方法不供适配器使用。
+外部适配器在 P06 只连 Runtime 的外部 Bridge 监听（`bridge_listen`，server-verified TLS，不要求客户端证书）：部署一次交付的 `bootstrap_credential`（来自 `RuntimeBindAdapterResponse.bootstrap_credential`）经 gRPC metadata `authorization: Bearer <credential>` 提交，首帧 `RegisterAdapterRequest.adapter_instance_id` 必须与凭据解析出的 adapter 资源一致；成功响应带 `Fence`+`ConnectionAuthorization`，之后事件/心跳/refresh 帧都带完整 `Fence` 与当前 `connection_proof`。事件仍须先在本地 SQLite 持久 event+sequence 再上报；只有 `PERSISTED`/`DUPLICATE` 才释放 outbox 项，`REJECTED` 中 `retryable=true` 保留重投，容量背压 `RATE_LIMITED` 可重试并关闭本次流（适配器保留未确认事件）。bootstrap/proof/refresh 明文不得写入 outbox、日志或错误信息；不实现自报客户端证书或旧 proof 回退。适配器的 TLS/bootstrap/帧改造属 P06c：**第一阶段已实现**（server-verified TLS、bootstrap metadata 注册、
+`Fence`+`connection_proof` 每帧、单飞 refresh、事件 ACK/背压、`ShutdownNotice`、能力协商与
+`/health/ready` 授权门禁；测试见 `adapters/nonebot/tests/{test_bridge,test_client,test_nonebot_process}.py`
+与 `FakeTargetRuntime`）。未完成项：P07 Action `action_evidence`/`action_receipt` 回执与
+dispatch attempt 关联（P07c）、真实 QQ/NapCat 回归（P07/M2）、P06a Runtime Bridge handler 就绪后
+的真实目标服务端到端验收。unary RuntimeService 注册/事件方法不供适配器使用。

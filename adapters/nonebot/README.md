@@ -1,58 +1,93 @@
-# KiaraBot NoneBot2 适配器
+# KiaraBot NoneBot2 适配器（目标 Runtime Bridge）
 
-T02b 的接收链路：NoneBot2 / OneBot V11 → 统一 EventEnvelope → 本地有界 outbox → Core AdapterBridge。Python 3.11–3.12；依赖以 uv.lock 为准。代码不访问 Core 数据库，不包含业务插件。T04b 已接线纯文本 send_message、react_message（NapCat 扩展 `set_msg_emoji_like`，真实平台行为待 T07b 验证）、delete_message（仅限本适配器已发送消息）、mute_member/kick_member（set_group_ban/set_group_kick；reason 不进平台）与 approve_request（好友请求，request_id 解析本机 flag），声明 action.send_message.text.v1、action.react_message.v1、action.delete_message.v1、action.mute_member.v1、action.kick_member.v1 与 action.approve_request.v1；入站另映射 OneBot friend request 为 FriendRequest；其他 Action/消息段显式拒绝。
+`NoneBot2 / OneBot V11` → 统一 `EventEnvelope` → 本地有界 SQLite outbox → 目标 Runtime 外部
+`AdapterBridge.Connect` 双流。Python 3.11.18；依赖以 `uv.lock` 为准。代码不访问 Runtime 数据库，
+不包含业务插件。
 
-## 初始化与验收
+P06c（2026-11-02）起适配器只实现**目标 Bridge**，不再提供 reference 的 loopback insecure
+gRPC/token 兼容模式：连接使用 server-verified TLS，注册使用部署交付的一次性 bootstrap 凭据，
+注册成功后每帧携带完整 `Fence` 与当前 `connection_proof`，并在授权到期前单飞 refresh。契约
+唯一来源为 `proto/kiarabot/v1/`（docs 01/04 目标章节已冻结）。
 
-```sh
-uv sync --locked --python 3.11
-uv run python tools/generate_proto.py ../../proto
-uv run pytest
-PYTHONPATH=generated:src uv run python -m kiarabot_adapter_nonebot
-```
+## 连接与认证（目标契约）
 
-协议唯一来源是 本仓库 proto/；generated/ 为本机生成物，不提交。修改协议后重新生成。环境配置：CORE_GRPC_ENDPOINT（仅本机 127.0.0.1:端口）、CORE_AUTH_TOKEN、ADAPTER_ID、ACCOUNT_ID、ONEBOT_WS_URL（NapCat 正向 WebSocket URL）、ONEBOT_ACCESS_TOKEN、OUTBOX_PATH（本地 outbox 文件路径）、HEALTH_PORT（探针端口，默认 8081）。Core 预先授权对应账号且启用 T02a 持久化入口。正向 WebSocket 由 NoneBot websockets driver 建立，适配器名称及配置遵循 [NoneBot OneBot 文档](https://onebot.adapters.nonebot.dev/docs/guide/setup/)。不会启动生产账号测试。
+1. 适配器用部署 CA 校验 Runtime `bridge_listen` 的 TLS 服务端证书（证书 SAN 必须覆盖
+   `BRIDGE_ENDPOINT` 主机名；本机验收可用 `127.0.0.1`/`localhost`）。适配器**不提供客户端
+   证书**，身份由 bootstrap 凭据与随后的 `ConnectionAuthorization` 表达。
+2. gRPC metadata 恰好一个 `authorization: Bearer <bootstrap_credential>`；首帧必须是
+   `RegisterAdapterRequest`（含 `adapter_instance_id` 与 `RequestContext`）。
+3. 成功响应返回 `Fence` + `ConnectionAuthorization` + `effective_capabilities` +
+   `heartbeat_interval_seconds`；适配器校验四要素代次、60 秒授权预算、实例一致性与协商能力，
+   任一项缺失/非法即失败，不回退到旧 proof 或旧行为。
+4. 之后的事件、心跳、Action 结果与 refresh 帧都带完整 `Fence` 和当前 `connection_proof`。
+   授权到期前（`min(10s, 生命周期/2)`）启动一次单飞
+   `RefreshConnectionAuthorization`；轮换在途时不再用旧材料发送其他帧。成功则原子替换
+   proof/refresh 代次；`CONFLICT`/超时/响应丢失即关闭旧流并用仍有效的 bootstrap 重连，
+   产生新的 `connection_generation`；`PERMISSION_DENIED`/`UNAUTHENTICATED`（凭据撤销/失权）
+   终止进程并返回非零。
+5. `ShutdownNotice`：停止发送新帧，在 `drain_timeout_ms` 内等待在途事件确认，随后关闭并按
+   退避重连；未确认事件保留在 outbox。未收到通知的流关闭/取消都按“未知结果”处理。
 
-## 输入、输出与失败
+## 配置（全部为环境变量）
 
-只接收 OneBot V11 群聊/私聊 message，稳定 event_id 由适配器/账号/会话/message_id/时间派生；会话 sequence 在本地 SQLite 入队时原子递增。会话 ID 使用平台原生数字 ID（正整数字符串，≤20 位），群/私聊由 `ConversationRef.type` 区分，不再使用 `group:`/`private:` 前缀；入站事件与出站 `send_message` 使用同一个 conversation 值，插件可直接把事件会话用于回复。消息段支持 text/image/at/reply；其它段转换为 UNKNOWN 且不携带原始 OneBot 对象。原始 JSON 不越过协议边界。缺少字段或非法数据返回 INVALID_ARGUMENT，账号不符 PERMISSION_DENIED，未支持事件 CAPABILITY_NOT_SUPPORTED，容量不足 RATE_LIMITED，本地存储失败 UPSTREAM_UNAVAILABLE。
+| 变量 | 必填 | 说明 |
+| --- | --- | --- |
+| `BRIDGE_ENDPOINT` | 是 | Runtime `bridge_listen`，`host:port`（TLS 服务端名默认即 host） |
+| `BRIDGE_CA_FILE` | 是 | 部署 CA PEM（校验服务端证书；普通常规文件、非符号链接、≤1MiB） |
+| `BRIDGE_BOOTSTRAP_CREDENTIAL_FILE` | 是 | 逐实例 bootstrap 凭据文件：常规非符号链接文件、权限必须 0600 或更严、≤4KiB；只读一次、不进日志/outbox |
+| `ADAPTER_INSTANCE_ID` | 是 | Runtime 已绑定的 adapter 实例资源 ID（小写 UUIDv4；bootstrap 凭据解析出的资源必须与之一致） |
+| `ACCOUNT_ID` | 是 | 该实例承载的平台账号 ID（首帧 `Account`，必须已在 Runtime 绑定/启用） |
+| `ADAPTER_ID` | 否 | 注册帧 `adapter_id`；缺省等于 `ADAPTER_INSTANCE_ID` |
+| `BRIDGE_SERVER_NAME` | 否 | TLS 服务端名覆盖（证书 SAN 与 endpoint host 不同时使用） |
+| `BRIDGE_TIMEOUT` / `BRIDGE_RETRY_BASE` / `BRIDGE_IDLE_INTERVAL` | 否 | 秒；默认 5 / 1 / 1，非法即 `INVALID_ARGUMENT` |
+| `OUTBOX_PATH` | 是 | 本地 outbox SQLite 路径；Action 执行日志为同路径 + `.actions` |
+| `HEALTH_PORT` | 否 | 本机 `/health/live`、`/health/ready` 探针端口（默认 8081） |
+| `ONEBOT_WS_URL` / `ONEBOT_ACCESS_TOKEN` | 是 | OneBot V11 正向 WS 与平台 token（平台侧，不属于 Bridge 契约） |
 
-outbox 使用自己的数据库保存待确认统一事件、顺序水位和失败码。PERSISTED/DUPLICATE 才将事件标为 acked；确认丢失、超时、断线或 retryable 拒绝保留 pending。RATE_LIMITED（Core 入口背压）一律按可重试处理，即使 Core 返回 retryable=false 也保留 pending 并退避重投，不标 failed、不丢弃。其余永久拒绝标为 failed，保留稳定码供排查，不当作成功。重连重新注册、重绑 instance，保留其余事件字段。相同 ID 不同内容 CONFLICT。会话 sequence 键包含 conversation_type（群/私聊同号各自独立计数）；本地 outbox DB 由 user_version 1 迁移到 2，旧共享计数器保守复制到群/私聊两类，空会话归入 type 0。单个事件最多 1 MB，pending 最多 10000 条；acked/failed 记录不占 pending 上限、7 天后清理（总量有上限），sequence 不回退。达到上限会明确拒绝入队；OneBot 本身不提供可靠消费 ACK，平台到本地 outbox 的投递保证需在真实联调确认，不能宣称端到端零丢失。
+配置缺失、文件不可读/权限不符、endpoint/ID 非法一律以稳定码 `INVALID_ARGUMENT` 失败退 1，
+不静默降级到不安全的 loopback 或匿名明文连接。
 
-Core 连接采用 1–30 秒退避。每次连接只发送一个待确认事件；空闲按注册响应 `heartbeat_interval_seconds` 发心跳，并持续读取 Core 推送的 Action（不等待下一次心跳）。`/health/live` / `/health/ready` 的语义见 doc/04「健康检查」；连接/平台状态迁移通过 `AdapterStatusChanged` 上报；OneBot `ActionFailed` 的 `retcode` 分类为 RATE_LIMITED/PERMISSION_DENIED/NOT_FOUND/UPSTREAM_UNAVAILABLE 后回传 ActionResult。响应不匹配时保留待发项并重连。日志只输出稳定错误码，不输出载荷、token、URL 或上游异常正文。关闭取消连接任务并关闭本地存储。
+## 入站事件与 Action
 
-## 验收范围
+- 消息/好友请求仍先映射为 `EventEnvelope` 并在本地 SQLite 持久（含会话 sequence）后才上报；
+  只有 `PERSISTED`/`DUPLICATE` 才释放 outbox 项。`REJECTED` 中 `retryable=true`（含
+  `RATE_LIMITED` 背压）保留未确认事件并按 `retry_after_ms` 退避重连重投；永久拒绝记录
+  `failed` 与稳定码。相同 event_id 不同内容在 Runtime 侧为 `CONFLICT`，适配器不覆盖本地记录。
+- Action 仅执行注册协商后 `effective_capabilities` 内的种类；未协商的 payload 以
+  `CAPABILITY_NOT_SUPPORTED` 终态回传，不调用平台。Action 执行日志保留既有
+  action_id+fingerprint 去重与“未知结果不重放”语义；目标 Action 回执（`action_evidence`/
+  `action_receipt`）属 P07c，本阶段仅以 `action_result` 帧上报。
+- OneBot 消息段/映射规则与 reference 相同：text/image/at/reply 映射，其它段 `UNKNOWN`；
+  群/私聊由 `ConversationRef.type` 区分，会话 ID 为原生数字。适配器只使用注册账号的 Bot。
 
-测试覆盖群/私聊映射、段降级、稳定 ID、账号拒绝、SQLite 重开/序号/容量、fake gRPC 注册能力、断线重投、确认前保留及永久拒绝。Action 测试包含执行前 deadline、账号/实例校验、重复/冲突、重启去重、平台拒绝、超时/中断未知结果和取消不重连；真实 NoneBot 子进程与 fake OneBot 验证实际发送调用。
+## 健康检查
 
-2026-11-01本机真实NapCat4.18.42/QQ3.2.34-53644指定测试群的纯文本自动回复已通过，
-用户确认收到，Adapter成功终态/平台消息ID和outbox ACK已核对。实际入口及验收限制见
-[真实QQ接入](../../doc/26-real-qq-onboarding.md)。真实私聊、其他Action及故障恢复仍待T07b后续验证，
-不能以本次群聊通过宣布全部平台动作已验收。
+`/health/live` 仅报告进程存活；`/health/ready` 在 **Runtime 注册成功且当前授权未过期（fence
+当前）** 且 **平台 Bot 已连接** 时返回 200/READY，否则 503/NOT_READY。组件为
+`core`（目标桥授权）、`authorization`（proof/refresh 有效）与 `platform`（OneBot 连接）。
+桥断线/授权轮换失败时 ready 立即转 503，恢复注册后自动转回 200。
 
-完整跨语言验收使用 `CORE_TEST_BINARY=../../build/proto/core/kiarabot-core .venv/bin/python -m pytest -q`；Action 闭环还读取本仓库的 sdk/python/src，可用 SDK_SOURCE 覆盖。测试连接真实 C++ Core、Python SDK/适配器与 fake 平台，重启 Core 后按幂等键复用终态。
-
-Action 执行日志位于 OUTBOX_PATH 加 .actions，独立 SQLite 文件，执行前落盘占用；每个 action_id 只调用一次平台，重投返回已知结果。同 ID 不同内容返回 CONFLICT。群/私聊文本使用 OneBot text segment，CQ 字符串不会解释为代码。超时/断线/进程崩溃可能发生在副作用之后，此时保留 ACCEPTED/未知，不重新调用平台；Core 到 deadline 后标记 EXPIRED，不能撤销已发生的副作用。最多一万条记录、64 MiB，终态保留七天，未终态不自动清理。备份需同时保存事件 outbox 与 .actions；这不是平台不支持的 exactly-once 保证。
-
-## 单机 MVP 本地 smoke（reference 链路）
-
-`tests/test_mvp_local_smoke.py`把真实 NoneBot 子进程、真实 reference Core/SQLite、
-公开 `plugins/local-reply/main.py:create` SDK handler 与本机 OneBot WebSocket 替身串为一条链路。发送同一消息三次，
-再发送一条独立消息作为顺序检查，要求两条独立输入恰好产生两次固定文本平台发送，
-并确认 Core Action 成功及适配器 outbox ACK。测试失败返回非零，超时/失败也收割所启动
-的子进程。它不使用真实 QQ、NapCat 或付费模型；不代表新六服务 Runtime 已实现。
-
-从仓库根目录执行（`CORE_TEST_BINARY`必须指向启用协议和 SQLite 的 reference Core）：
+## 开发、测试与验收
 
 ```sh
 uv sync --locked --python 3.11.18 --project adapters/nonebot
 adapters/nonebot/.venv/bin/python adapters/nonebot/tools/generate_proto.py proto
-CORE_TEST_BINARY="$PWD/build/full-locked/reference/core/kiarabot-core" \
-SDK_SOURCE="$PWD/sdk/python/src" \
-adapters/nonebot/.venv/bin/python -m pytest -q adapters/nonebot/tests/test_mvp_local_smoke.py
+cd adapters/nonebot && ./.venv/bin/python -m pytest -q
 ```
 
-SDK 来自本仓库源码，测试用 importlib 的唯一模块名加载公开 handler 工厂，使用原始
-plugin.json；观察层只记录其实际 RPC Action，不生成回复或幂等键。测试不建设新的插件
-机制；SDK Runner 在测试进程，launcher 的真实 managed child 启动仍需单独验收。
-本地 `.venv/`、`generated/`及临时数据库不提交；新电脑需恢复锁定依赖并生成协议。
+测试使用本机 `FakeTargetRuntime`（真实 gRPC + server-verified TLS + 可注入 ack/refresh/关闭/
+协议故障）与 disposable 测试证书；`python -c ...` 需要 `openssl` 生成临时自签证书。覆盖：
+注册协商与帧 fencing、bootstrap/CA/秘密文件错误、事件 ACK 三态与背压重投、refresh 轮换/
+冲突/丢响应/失权、`ShutdownNotice` drain、协议违规/响应 fence 失配重连、能力协商与 Action
+执行、真实 NoneBot 子进程 + loopback OneBot 平台全链路、秘密不落日志。**真实 QQ/NapCat
+验收与 P07 Action 回执留 P07/M2**；`scripts/local/*` 单机 reference MVP 冻结在 reference
+分支，不随目标适配器工作。
+
+## 初始化与生产注意
+
+- Runtime 侧需先经 Control/bind 流程取得 `bridge_listen` 地址、CA 与一次性
+  `bootstrap_credential`，并按实例资源 ID 配置本适配器；bootstrap 只在部署秘密中出现一次，
+  撤销随实例停用/解绑生效。
+- 证书 SAN 必须覆盖客户端实际连接的主机名；`bridge_listen` 只能部署在受控网络/防火墙后，
+  不得作为匿名公网入口。
+- 本机 `.venv/`、`generated/` 与临时数据库/凭据不提交；新电脑恢复锁定依赖并重新生成协议。

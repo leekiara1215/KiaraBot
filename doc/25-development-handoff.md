@@ -257,6 +257,11 @@ PYTHONPATH="$PWD/sdk/python/src:$PWD/sdk/python/build/generated:$PWD/adapters/no
   adapters/nonebot/.venv/bin/python -m pytest -q adapters/nonebot/tests/test_mvp_local_smoke.py
 ```
 
+以上 reference 闭环命令只适用于冻结的 reference 分支/tag；P06c 起 `adapters/nonebot` 只实现
+目标 Runtime Bridge（server-verified TLS + bootstrap + fence/proof），reference 专用
+`test_mvp_local_smoke.py`/`test_action_pipeline.py`/`test_cpp_core.py` 已在该迁移中移除，
+目标测试见 `adapters/nonebot/README.md` 与 `doc/04`。
+
 reference 基线与完整阶段门禁分开执行，缺失二进制/依赖应失败而非跳过：
 
 ```bash
