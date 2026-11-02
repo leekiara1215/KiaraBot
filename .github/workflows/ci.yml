@@ -20,9 +20,12 @@ on:
         required: false
         default: ''
         type: string
-  # pull_request:
-  # push:
-  #   branches: [main]
+  # 自动触发已接入但默认门控：仓库变量 CI_AUTO_ENABLED=true 后才执行 job。
+  # 首次启用前先手动 Run workflow 跑绿 full-build（doc/12-ci-cd.md「恢复自动触发」）。
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  push:
+    branches: [main]
 
 permissions:
   contents: read
@@ -33,6 +36,7 @@ concurrency:
 
 jobs:
   build-test:
+    if: github.event_name == 'workflow_dispatch' || vars.CI_AUTO_ENABLED == 'true'
     name: Build and test (${{ matrix.name }})
     runs-on: ubuntu-24.04
     strategy:
@@ -64,6 +68,7 @@ jobs:
         run: ctest --preset dev --no-tests=error
 
   contracts:
+    if: github.event_name == 'workflow_dispatch' || vars.CI_AUTO_ENABLED == 'true'
     name: Protocol compatibility
     runs-on: ubuntu-24.04
     timeout-minutes: 120
@@ -176,6 +181,7 @@ jobs:
           retention-days: 14
 
   workflow-lint:
+    if: github.event_name == 'workflow_dispatch' || vars.CI_AUTO_ENABLED == 'true'
     name: Workflow lint
     runs-on: ubuntu-24.04
     steps:
@@ -206,6 +212,7 @@ jobs:
           "$(go env GOPATH)/bin/actionlint"
 
   format:
+    if: github.event_name == 'workflow_dispatch' || vars.CI_AUTO_ENABLED == 'true'
     name: C++ format
     runs-on: ubuntu-24.04
     steps:
@@ -215,6 +222,7 @@ jobs:
         run: git ls-files -z 'core/*.cpp' 'core/*.h' 'core/*.hpp' 'proto/tests/*.cc' 'control/*.cpp' 'control/*.hpp' 'infrastructure/*.cpp' 'infrastructure/*.hpp' | xargs -0 -r clang-format-16 --dry-run --Werror
 
   clang-tidy:
+    if: github.event_name == 'workflow_dispatch' || vars.CI_AUTO_ENABLED == 'true'
     name: C++ static analysis
     runs-on: ubuntu-24.04
     steps:
@@ -240,6 +248,7 @@ jobs:
             "${files[@]}"
 
   api-contracts:
+    if: github.event_name == 'workflow_dispatch' || vars.CI_AUTO_ENABLED == 'true'
     name: API contracts
     runs-on: ubuntu-24.04
     steps:
@@ -268,6 +277,7 @@ jobs:
         run: node scripts/ci/validate-asyncapi.cjs api/asyncapi.yaml
 
   dependency-scan:
+    if: github.event_name == 'workflow_dispatch' || vars.CI_AUTO_ENABLED == 'true'
     name: Dependency scan
     runs-on: ubuntu-24.04
     steps:
@@ -293,6 +303,7 @@ jobs:
           /tmp/kiarabot-audit/bin/pip-audit -r /tmp/control-req.txt
 
   secret-scan:
+    if: github.event_name == 'workflow_dispatch' || vars.CI_AUTO_ENABLED == 'true'
     name: Secret scan
     runs-on: ubuntu-24.04
     steps:
@@ -318,6 +329,7 @@ jobs:
           retention-days: 7
 
   boundaries:
+    if: github.event_name == 'workflow_dispatch' || vars.CI_AUTO_ENABLED == 'true'
     name: Boundaries and static quality
     runs-on: ubuntu-24.04
     steps:
@@ -330,6 +342,7 @@ jobs:
         run: git ls-files -z '*.sh' | xargs -0 -r bash -n
 
   python-panel:
+    if: github.event_name == 'workflow_dispatch' || vars.CI_AUTO_ENABLED == 'true'
     name: SDK/adapter/control pytest and panel gates
     runs-on: ubuntu-24.04
     steps:
@@ -364,6 +377,7 @@ jobs:
           npm run build --prefix panel
 
   images-dry-run:
+    if: github.event_name == 'workflow_dispatch' || vars.CI_AUTO_ENABLED == 'true'
     name: Target images and compose config (no registry credentials)
     runs-on: ubuntu-24.04
     timeout-minutes: 60
@@ -389,6 +403,7 @@ jobs:
           done
 
   full-build:
+    if: github.event_name == 'workflow_dispatch' || vars.CI_AUTO_ENABLED == 'true'
     name: Full build and static analysis (Clang 16)
     runs-on: ubuntu-24.04
     timeout-minutes: 120
@@ -509,3 +524,79 @@ jobs:
             build/full-locked/Testing/Temporary/
           if-no-files-found: ignore
           retention-days: 7
+  ci-evidence:
+    name: Unified CI evidence summary
+    runs-on: ubuntu-24.04
+    if: always() && (github.event_name == 'workflow_dispatch' || vars.CI_AUTO_ENABLED == 'true')
+    needs:
+      - build-test
+      - contracts
+      - workflow-lint
+      - format
+      - clang-tidy
+      - api-contracts
+      - dependency-scan
+      - secret-scan
+      - boundaries
+      - python-panel
+      - images-dry-run
+      - full-build
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Download unified local CI evidence
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: ci-local-evidence-*
+          path: build/ci-local
+          merge-multiple: true
+      - name: Write machine-readable CI summary
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+          WORKFLOW: ${{ github.workflow }}
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+          SHA: ${{ github.sha }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          root = Path(os.environ['GITHUB_WORKSPACE'])
+          workspace = root
+          needs = json.loads(os.environ['NEEDS'])
+          jobs = {name: {'result': value.get('result'), 'outputs': value.get('outputs', {})}
+                  for name, value in needs.items()}
+          failed = [name for name, value in jobs.items()
+                    if value['result'] not in ('success', 'skipped')]
+          summary = {
+              'schema_version': 1,
+              'workflow': os.environ['WORKFLOW'],
+              'event': os.environ['EVENT'],
+              'ref': os.environ['REF'],
+              'sha': os.environ['SHA'],
+              'run_id': os.environ['RUN_ID'],
+              'run_attempt': os.environ['RUN_ATTEMPT'],
+              'jobs': jobs,
+              'failed_jobs': failed,
+              'status': 'success' if not failed else 'failure',
+              'note': 'Full-locked build/test evidence is inside build/ci-local/*.json; '
+                      'this summary only aggregates job results.',
+          }
+          evidence_dir = workspace / 'build' / 'ci-evidence'
+          evidence_dir.mkdir(parents=True, exist_ok=True)
+          (evidence_dir / 'ci-evidence.json').write_text(json.dumps(summary, indent=2) + '\n')
+          print(json.dumps(summary, indent=2))
+          if failed:
+              raise SystemExit('failed jobs: ' + ', '.join(failed))
+          PY
+      - name: Upload CI evidence artifact
+        if: success() || failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ci-evidence-${{ github.sha }}
+          path: build/ci-evidence/
+          if-no-files-found: error
+          retention-days: 30

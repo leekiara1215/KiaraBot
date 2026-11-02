@@ -1,5 +1,9 @@
 # KiaraBot
 
+[![CI](https://github.com/leekiara1215/KiaraBot/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/leekiara1215/KiaraBot/actions/workflows/ci.yml) [![Release images](https://github.com/leekiara1215/KiaraBot/actions/workflows/release.yml/badge.svg)](https://github.com/leekiara1215/KiaraBot/actions/workflows/release.yml)
+
+自动 CI 默认由仓库变量 `CI_AUTO_ENABLED=true` 门控；首次启用前先手动运行 CI 的 full-build 并跑绿 full-locked，发布流程与权限门禁见 [doc/12-ci-cd.md](doc/12-ci-cd.md)。本地可先执行 `scripts/ci/check-workflows.sh` 做 workflow 静态检查。
+
 KiaraBot 是一个面向 QQ 的可扩展机器人平台：C++20 Core 负责事件、权限、插件调度和业务编排，Protobuf/gRPC 契约隔离各进程，Python PluginSDK 支持进程外插件，TypeScript 控制面板通过 Control API 管理运行时。QQ 协议端 NapCatQQ 是独立组件；Python NoneBot2 适配器由本仓库 `adapters/nonebot/` 维护，二者都只通过公共协议接入。后续可再考虑把适配器拆成单独插件。
 
 ## 当前先运行这一版
