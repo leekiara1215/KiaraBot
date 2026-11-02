@@ -82,8 +82,15 @@ def prepare(root, enrolled):
          'scope': [{'kind': 'RESOURCE_ACCOUNT', 'id': account_id}]},
         {'assignment_id': str(uuid.uuid4()), 'permissions': ['identity.principal.manage'],
          'scope': [{'kind': 'RESOURCE_PRINCIPAL', 'id': admin}]}])
+    # P14m: the delegated subject must hold the exact catalog-scope sensitive reads so a real
+    # Control-issued runtime delegation for ListAudit/ListLogs is authorized by Identity.
+    enrolled['administrator_assignments'].append({
+        'assignment_id': str(uuid.uuid4()),
+        'permissions': ['log.read', 'audit.read'],
+        'scope': [{'kind': 'RESOURCE_CATALOG', 'id': 'control'}]})
     STATE.update(account_id=account_id,
-                 account_read_assignment=enrolled['administrator_assignments'][-1]['assignment_id'])
+                 account_read_assignment=enrolled['administrator_assignments'][1]['assignment_id'])
+
 
 
 def identity_security_material(root):
@@ -234,6 +241,7 @@ def scenario(root, port, pg_bin, binaries):
         require(wait_ready(probe_port, True), 'runtime readiness never became true')
 
         import grpc
+        from google.protobuf import timestamp_pb2
         from kiarabot.v1 import (identity_pb2, identity_pb2_grpc, platform_pb2, policy_pb2,
                                  runtime_pb2, runtime_pb2_grpc)
         identity_channel = channel(identity_endpoint, tls)
@@ -248,16 +256,17 @@ def scenario(root, port, pg_bin, binaries):
             access = tokens.tokens.access_token
             require(bool(access), 'login access token')
 
-            def issue_delegation(permissions=None):
+            def issue_delegation(permissions=None, scope=None):
                 if permissions is None:
                     permissions = [policy_pb2.PERMISSION_ACCOUNT_READ]
+                if scope is None:
+                    scope = [platform_pb2.ResourceRef(kind=platform_pb2.RESOURCE_ACCOUNT,
+                                                      id=account_id)]
                 return identity_stub.IssueDelegation(identity_pb2.IdentityIssueDelegationRequest(
                     context=context(),
                     subject_proof=access,
                     audience='runtime',
-                    scope=platform_pb2.ResourceScope(resources=[
-                        platform_pb2.ResourceRef(kind=platform_pb2.RESOURCE_ACCOUNT,
-                                                 id=account_id)]),
+                    scope=platform_pb2.ResourceScope(resources=scope),
                     permissions=permissions,
                     client_certificate_sha256=leaf_fingerprint(tls)), timeout=10)
 
@@ -328,6 +337,71 @@ def scenario(root, port, pg_bin, binaries):
                                         grpc.StatusCode.UNAUTHENTICATED),
                     'revoked assignment cannot mint new delegation')
 
+            # P14m: Control-issued runtime delegation for the catalog-scope sensitive reads.
+            catalog = [platform_pb2.ResourceRef(kind=platform_pb2.RESOURCE_CATALOG,
+                                                id='control')]
+            audit_proof = issue_delegation([policy_pb2.PERMISSION_AUDIT_READ],
+                                           catalog).delegation.proof
+            require(bool(audit_proof), 'audit delegation proof')
+
+            def audit_filter(page_size=20, occurred_from=None):
+                value = runtime_pb2.RuntimeAuditFilter(
+                    scope=platform_pb2.ResourceScope(resources=catalog),
+                    page=platform_pb2.SnapshotPage(page_size=page_size))
+                if occurred_from is not None:
+                    value.occurred_from.CopyFrom(occurred_from)
+                return value
+
+            # Success with real data: earlier account reads/deletes/restores wrote runtime audit.
+            data_page = runtime_stub.ListAudit(runtime_pb2.RuntimeListAuditRequest(
+                context=context(delegation=audit_proof), filter=audit_filter()), timeout=10)
+            require(len(data_page.entries) >= 1 and data_page.HasField('checked_at') and
+                    all(entry.entry_id and entry.method for entry in data_page.entries),
+                    'runtime audit data page through real delegation')
+            future = timestamp_pb2.Timestamp(seconds=int(time.time()) + 3600)
+            empty_page = runtime_stub.ListAudit(runtime_pb2.RuntimeListAuditRequest(
+                context=context(delegation=audit_proof),
+                filter=audit_filter(occurred_from=future)), timeout=10)
+            require(len(empty_page.entries) == 0 and empty_page.HasField('checked_at') and
+                    empty_page.page.page_size == 0,
+                    'authorized empty runtime audit page stays a success, not 401')
+            audit_proof_for_logs = issue_delegation([policy_pb2.PERMISSION_LOG_READ],
+                                                    catalog).delegation.proof
+            logs_page = runtime_stub.ListLogs(runtime_pb2.RuntimeListLogsRequest(
+                context=context(delegation=audit_proof_for_logs),
+                filter=runtime_pb2.RuntimeAuditFilter(
+                    scope=platform_pb2.ResourceScope(resources=catalog),
+                    page=platform_pb2.SnapshotPage(page_size=20))), timeout=10)
+            require(logs_page.HasField('checked_at'), 'runtime log page through real delegation')
+            # Permission mismatch: a log.read delegation cannot read audit.
+            audit_denied = None
+            try:
+                runtime_stub.ListAudit(runtime_pb2.RuntimeListAuditRequest(
+                    context=context(delegation=audit_proof_for_logs),
+                    filter=audit_filter()), timeout=10)
+            except grpc.RpcError as error:
+                audit_denied = error.code()
+            require(audit_denied == grpc.StatusCode.PERMISSION_DENIED,
+                    'runtime audit requires audit.read, not log.read')
+            # Structural expiry: tamper the unverified claims expiry; Runtime must reject before
+            # any query (real cryptographic verification remains Identity CheckAuthorization).
+            import base64
+            header, payload, signature = audit_proof.split('.')
+            claims = json.loads(base64.urlsafe_b64decode(
+                payload + '=' * (-len(payload) % 4)))
+            claims['iat'] = claims['nbf'] = claims['exp'] = 1
+            expired_payload = base64.urlsafe_b64encode(
+                json.dumps(claims, separators=(',', ':')).encode()).rstrip(b'=').decode()
+            expired_proof = header + '.' + expired_payload + '.' + signature
+            expired_denied = None
+            try:
+                runtime_stub.ListAudit(runtime_pb2.RuntimeListAuditRequest(
+                    context=context(delegation=expired_proof), filter=audit_filter()),
+                    timeout=10)
+            except grpc.RpcError as error:
+                expired_denied = error.code()
+            require(expired_denied == grpc.StatusCode.UNAUTHENTICATED,
+                    'expired/tampered delegation rejected before query')
             admin_credential = json.loads((root / 'enrollment.json').read_text())[
                 'password_credential_id']
             identity_stub.RevokeCredential(identity_pb2.IdentityRevokeCredentialRequest(
