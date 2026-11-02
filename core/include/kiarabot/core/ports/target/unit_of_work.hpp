@@ -5,9 +5,10 @@
 #include <optional>
 #include <vector>
 
-#include "kiarabot/core/application/target/runtime_host_application.hpp"
+#include "kiarabot/core/domain/target/invariants.hpp"
 #include "kiarabot/core/domain/target/model_gateway.hpp"
 #include "kiarabot/core/domain/target/persistence.hpp"
+#include "kiarabot/core/ports/target/host_registration_ports.hpp"
 #include "kiarabot/core/ports/target/namespace_ports.hpp"
 
 namespace kiarabot::core::target {

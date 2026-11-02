@@ -3,7 +3,7 @@
 #include <memory>
 #include <vector>
 
-#include "kiarabot/core/application/target/runtime_host_application.hpp"
+#include "kiarabot/core/ports/target/host_registration_ports.hpp"
 #include "kiarabot/core/ports/target/unit_of_work.hpp"
 #include "kiarabot/infrastructure/postgres/database.hpp"
 
