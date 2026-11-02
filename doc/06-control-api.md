@@ -439,3 +439,27 @@ account.policy.manage属于admin/operator。action.inspect与message.read必须�
 G08的account.read/plugin.read/adapter.read/host.read保留三角色，plugin.config.read保留
 admin/operator。本人会话规则不变。`proto/tests/identity_role_catalog_test.rb`调用`--role-catalog`输出并
 与API各角色精确集合比较，阻止文档表与实际授权函数漂移。
+
+## P12c 首批 REST/WS 实现状态（2026-11-02）
+
+P12c 在独立 Control 进程的 HTTPS 边界新增 owner-backed 转发层（`control/api/src/target/owner_gateway.cpp`），
+只做传输/映射，不含本地权威数据：
+
+- `GET /api/v1/actions/{actionId}` 与 `GET /api/v1/actions/by-idempotency-key`：要求显式 `scope`（恰含一个
+  `RESOURCE_ACCOUNT` 的 `ResourceScope` JSON），按幂等键查询还要求 `owner_instance` + `Idempotency-Key`；
+  Control 用调用者 Bearer 会话向 Identity `IssueDelegation`（audience=runtime、action.inspect、精确 scope），
+  再原样转发 `RuntimeService.QueryActionResult`。不存在/不可见/过保留返回 404 `NOT_FOUND`，不推断动作执行失败；
+  身份/权限/超时/不可用分别映射 401/403/504/503；Control 不缓存授权、不重试副作用。
+- `GET /api/v1/logs`、`GET /api/v1/audit`：P12c 尚无权威日志/审计查询来源（`log.read`/`audit.read` 权限与
+  ListPrincipals 等由 P12a 契约补充），边界返回 503 `UPSTREAM_UNAVAILABLE`，不返回成功空页；待来源与权限
+  落地后按脱敏/分页规则替换。
+- `/health/live` 仅进程存活；`/health/ready` 由进程 readiness 决定；受权 `/api/v1/health` 组件详情待 P12a
+  健康契约与四依赖端点配置对齐后接入。
+- 配置：`control_api` 新增可选 `runtime_endpoint`（Runtime owner mTLS 地址）；缺省时 Action 查询在委托/owner
+  调用阶段稳定失败，不伪造结果。
+
+**与 P12a 的接口缺口（首批未实现）**：账号/适配器绑定、安装/实例启停与配置（202+operation）、插件启停/配置、
+群白名单（Runtime `ActionPolicy` 版本化）、任务查询/取消、模型配置/更新/密钥、主体目录 ListPrincipals 与
+`log.read`/`audit.read`（权限 48/49）、健康三端点聚合完整规则、日志/审计数据源、WS 断流恢复与异步 operation
+快照。上述端点占用现有 OpenAPI 路径但服务端 owner RPC/权限/配置端点仍待 P12a 契约与 P11d 管理 RPC 完整接线；
+在其落地前仍按未实现处理（不得返回假资源/成功空页）。`
