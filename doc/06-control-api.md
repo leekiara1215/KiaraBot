@@ -130,6 +130,24 @@ GET  /plugins/{id}/health
   - 单项故障绝不产生 `HEALTHY`。
 - `health.updated` WS 事件当前仍标 not_implemented；组件详情以受权 REST 为准，客户端不得从 WS 缺席推断组件状态。
 
+## P12 契约口径（Q1–Q8）
+
+**Q1 Action 查询**：Control 只能调用 Runtime `QueryActionResult`，由 Runtime 在线核验 `action.inspect` 与恰好一个 account scope；按幂等键查询必须同时传 `owner_instance_id`（同一账号不同插件实例可有相同键）。插件继续经 PluginBridge 查询自身业务实例。管理员角色不自动获得 inspect 权限。`NOT_FOUND` 只表示不可见/已过期/不存在，不得据此推断平台动作失败；查询超时也不改变 Action 状态。
+
+**Q2 审计与日志**：Control 提供只读 API，数据归属仍属各业务服务（业务变更事务内提交审计），Control 只经所有者授权接口聚合。`log.read`（48）与 `audit.read`（49）是分开的敏感读权限，固定角色不派生；对应 REST `/logs`、`/audit`，WS `logs`/`log.updated` 只映射 `log.read`。`app.logs` 只是运维日志分类，不是插件可访问存储、公共权限名或 WS 频道。缺少权威来源必须 `UNAVAILABLE`，不得返回成功空页。日志/审计按 `occurred_at`+稳定 ID 分页，服务端脱敏，绝不返回凭据、消息正文或模型密钥。
+
+**Q3 groups 与账号策略**：弃用 `/groups`（无条件空页，不得作为群目录或白名单数据源）。Identity 管“谁有权修改哪个账号”；Runtime 管“该账号允许执行哪些动作”。禁言/踢出开关、允许群 ID、两类每日预算与版本保留在 Runtime `ActionPolicy`，Panel 直接管理这份带版本策略（`/accounts/{id}/action-policy`）。不把危险动作判定拆到 Identity；把白名单扩大为“群内所有消息是否接入”属新能力，v1 不定义。
+
+**Q4 主体目录**：普通用户查看自己继续用 `/auth/me`；管理目录使用 `GET /api/v1/principals`（Identity `ListPrincipals`），只列人类主体、分页快照、最小展示字段，不混入服务/Host/插件身份，不引入自定义角色管理。见“健康与组件聚合”前的 principal_directory 契约。
+
+**Q5 健康**：见“健康与组件聚合（P12）”一节；匿名 ready 只回答接流量条件，组件详情只走受权 `/api/v1/health`；Identity/凭据链/撤销失败整体未就绪，Runtime/Scheduler/Model 单点故障只降级对应功能。
+
+**Q6 安装/实例/配置**：Panel 分开展示三类事实——Runtime 已保存的期望状态/配置版本、Host 观察到的受管进程启动/退出、插件确认配置已应用。Control 转发带幂等键+预期版本的命令，返回 202 仅表示已受理；进度按 operation 查询。禁止把旧 `/plugins/{id}/enable` 机械映射到单个实例：一个安装可多实例，操作对象必须明确（`/installations*`、`/instances/*/desired-state|config`）。Host 负责执行/恢复/上报进程事实，配置是否应用由插件确认。
+
+**Q7 模型权限**：保留 `model.read`/`model.manage`；`get_configuration` 要求精确模型的 `model.manage`。普通只读页用 `model.read` 展示脱敏元数据；管理页凭 `model.manage` 读取完整配置/修改/轮换。密钥写入后只显示是否已配置及版本，任何管理员都不能读回原值。
+
+**Q8 P12 v1 验收**：分批交付；首批“基础写操作”验收项：会话撤销、账号与适配器绑定、插件启停与配置、模型配置与密钥更新、群白名单更新、任务查询与取消、Action 元数据查询。异步操作必须区分已受理/已完成/受阻/结果未知；WS 断流后从权威快照恢复，不得用本地/旧流推断成功。日志/审计查询 UI 可后置，但必须记录为阶段性延期（冻结基线与 P12 计划将日志/审计列入面板能力）。P12b 只是 mock 预览；完整 P12 需真实 HTTP/WS + Panel live 覆盖批准入口、拒绝、版本冲突、断流恢复。
+
 ## WebSocket 频道
 
 T09a 已实现同一监听提供以下频道；各频道状态如下：

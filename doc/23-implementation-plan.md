@@ -277,7 +277,16 @@ PG Repository/COMMIT/锁/并发测试缺少真实 PG 时失败并报告原因，
 
 ### P12：Control 与 Panel 核心运行管理
 
-- **目标/范围**：P12a Control所有者RPC适配/分页/WS；P12b Panel类型与功能页；P12c全链路夹具。不允许Control跨库查询或复刻授权规则。
+- **P12 已确认口径（Q1–Q8，2026-11-02）**：
+  - Q1 Action 查询：Control 调 Runtime `QueryActionResult`，在线核验 `action.inspect` + 恰好一个 account scope；按幂等键查询必须带 `owner_instance_id`；admin 不自动获得 inspect；`NOT_FOUND`/查询超时不等于执行失败。
+  - Q2 审计/日志：Control 只读聚合 owner 数据；`log.read`(48)/`audit.read`(49) 分开且需显式授予；`app.logs` 不是插件权限/存储/WS 名；无权威来源返回 UNAVAILABLE，不能空页。
+  - Q3 groups/ActionPolicy：弃用 `/groups`；Identity 管账号修改权，Runtime `ActionPolicy` 管禁言/踢出开关、群白名单、每日预算与版本；白名单扩大为“群内所有消息接入”是新能力，v1 不做。
+  - Q4 主体目录：Identity `ListPrincipals` + Control `GET /api/v1/principals`，只列人类主体、分页、最小字段；普通用户自查走 `/auth/me`。
+  - Q5 健康：`/health/live` 仅进程存活；匿名 `/health/ready` 只回答接流量条件；受权 `/api/v1/health` 报 identity/runtime/scheduler/model 四依赖。Identity/凭据链/撤销失败→整体未就绪；Runtime/Scheduler/Model 单点故障→对应功能降级、Control 不整体摘流；单项故障绝不 HEALTHY。
+  - Q6 安装/实例/配置：三类事实分离（Runtime 期望/配置版本、Host 进程启动退出、插件确认已应用）；命令带幂等键+预期版本，202 仅受理，进度按 operation 查询；旧 `/plugins/{id}/enable` 不得映射到单实例，操作对象必须明确。
+  - Q7 模型权限：保留 `model.read`/`model.manage`；完整配置读取要求精确模型 `model.manage`；普通页只展示脱敏元数据；密钥写入后任何管理员都不能读回原值。
+  - Q8 验收：首批基础写操作清单（会话撤销、账号/适配器绑定、插件启停与配置、模型配置与密钥更新、群白名单更新、任务查询与取消、Action 元数据查询）；异步区分已受理/已完成/受阻/未知，WS 断流从权威快照恢复；日志/审计 UI 可后置但须记录延期；P12b 仅 mock，完整 P12 需真实 HTTP/WS+live 覆盖批准/拒绝/版本冲突/断流恢复。
+- **目标/范围**：P12a Contract/Control 契约与实现（权限 48/49、ListPrincipals、健康/REST 口径）；P12c Control 所有者 RPC/分页/WS 接线；P12d Panel 真实页面与 live 验收。不允许 Control 跨库查询或复刻授权规则。
 - **输入→输出**：登录/会话、账号绑定、插件启停/配置、模型密钥更新、白名单、任务查询取消、Action元数据、日志审计/健康管理；来自真实权威服务，默认live目标环境。
 - **错误/状态**：区分受理/实际完成/未知，部分依赖不可用可表达；operation按scope查询，密钥不回显；WS授权/resync、REST会话撤销、CORS/405/Allow与目标契约一致。
 - **文档**：`api/`、`doc/06`、`doc/07`、`doc/08`及面板/控制README，API类型和权限词表不能手抄漂移。
