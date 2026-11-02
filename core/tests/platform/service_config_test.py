@@ -111,6 +111,28 @@ def main(driver, identity=None):
         runtime = {**config, 'service': 'runtime'}
         expect(0, {**runtime, 'bridge_listen': '127.0.0.1:1'}, service='runtime')
         expect(0, {**runtime, 'bridge_listen': '127.0.0.1:0'}, service='runtime')
+        host_peer = {'host_id': 'host-a',
+                     'certificate_sha256': 'ab' * 32}
+        expect(0, {**runtime, 'hosts': [host_peer]}, service='runtime')
+        expect(0, {**runtime, 'hosts': []}, service='runtime')
+        expect(0, {**runtime, 'hosts': [host_peer, {**host_peer, 'host_id': 'host-b',
+                                                  'certificate_sha256': 'cd' * 32}]},
+               service='runtime')
+        for invalid_hosts in [
+                'not-an-array', [{}], [{'host_id': 'host-a'}],
+                [{**host_peer, 'certificate_sha256': 'ab'}],
+                [{**host_peer, 'certificate_sha256': 'AB' * 32}],
+                [{**host_peer, 'certificate_sha256': 'zz' * 32}],
+                [{**host_peer, 'host_id': ''}],
+                [{**host_peer, 'host_id': 'host a'}],
+                [{**host_peer, 'extra': True}],
+                [host_peer, host_peer],
+                [host_peer, {**host_peer, 'certificate_sha256': 'cd' * 32}]]:
+            expect(2, {**runtime, 'hosts': invalid_hosts}, service='runtime')
+        for service, name in [('identity', 'identity'), ('scheduler', 'scheduler'),
+                              ('model', 'model'), ('host', 'plugin-host')]:
+            expect(2, {**config, 'service': name, 'hosts': [host_peer]}, service=service)
+        expect(2, {**config, 'hosts': [host_peer]})
         bounded = {**runtime, 'probe_listen': '127.0.0.1:4444',
                    'grpc_listen': '127.0.0.1:4445'}
         for invalid in ['localhost:70001', '127.0.0.1', 'bridge.local:7443',

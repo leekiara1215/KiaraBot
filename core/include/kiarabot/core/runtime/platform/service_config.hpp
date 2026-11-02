@@ -99,6 +99,12 @@ struct HostLaunchProfileMaterial {
   std::vector<std::string> allowed_environment_names;
   std::string credential_environment;
 };
+// Runtime-only deployment allowlist for HostBridge internal-mTLS peers: exactly one
+// lowercase SHA-256 of the deployment-issued client certificate maps to one host_id.
+struct HostPeerMaterial {
+  std::string host_id;
+  std::string certificate_sha256;
+};
 struct HostMaterial {
   std::string host_id;
   std::string sqlite_path;
@@ -130,6 +136,9 @@ struct ProcessConfig {
   // client certificate request), same certificate material as grpc_listen. Absent means no external
   // bridge listener; disabling the listener never falls back to the internal mTLS owner listener.
   std::optional<std::string> bridge_listen = std::nullopt;
+  // Runtime-only P08 HostBridge certificate allowlist. Empty means no Host may register
+  // (fail closed); entries are deployment configuration, never wire input.
+  std::vector<HostPeerMaterial> hosts;
 };
 struct ConfigFailure {
   int exit_code;
