@@ -78,11 +78,14 @@ std::optional<wire::ErrorCode> extract_error_code(const grpc::Status& status) {
 }
 } // namespace
 
-class OwnerClients::Impl final : private DelegationPort, private RuntimeActionsPort {
+class OwnerClients::Impl final : private DelegationPort,
+                                 private RuntimeActionsPort,
+                                 private IdentityPrincipalsPort,
+                                 private HealthPort {
 public:
   Impl(const std::string& identity_endpoint, const std::string& runtime_endpoint,
-       const core::platform::TlsMaterial& tls)
-      : gateway_(*this, *this) {
+       const std::string& scheduler_endpoint, const std::string& model_endpoint,
+       const std::string& host_endpoint, const core::platform::TlsMaterial& tls) {
     grpc::SslCredentialsOptions ssl;
     ssl.pem_root_certs = tls.ca;
     ssl.pem_cert_chain = tls.certificate;
@@ -94,7 +97,19 @@ public:
       runtime_channel_ = grpc::CreateChannel(runtime_endpoint, credentials);
       runtime_ = wire::RuntimeService::NewStub(runtime_channel_);
     }
+    if (!scheduler_endpoint.empty()) {
+      scheduler_channel_ = grpc::CreateChannel(scheduler_endpoint, credentials);
+    }
+    if (!model_endpoint.empty()) {
+      model_channel_ = grpc::CreateChannel(model_endpoint, credentials);
+    }
+    if (!host_endpoint.empty()) {
+      host_channel_ = grpc::CreateChannel(host_endpoint, credentials);
+    }
     fingerprint_ = certificate_fingerprint(tls.certificate);
+    gateway_ = std::make_unique<OwnerGateway>(
+        static_cast<DelegationPort&>(*this), static_cast<RuntimeActionsPort&>(*this),
+        static_cast<IdentityPrincipalsPort*>(this), static_cast<HealthPort*>(this));
   }
 
   std::optional<AuthHttpResponse> handle(const AuthHttpRequest& request) {
@@ -121,7 +136,7 @@ public:
         input.access_token = value.substr(7);
       }
     }
-    auto result = gateway_.handle(input);
+    auto result = gateway_->handle(input);
     if (!result) {
       return std::nullopt;
     }
@@ -202,18 +217,73 @@ private:
     return output;
   }
 
-  OwnerGateway gateway_;
+  OwnerOutcome<wire::IdentityListPrincipalsResponse>
+  list_principals(const wire::IdentityListPrincipalsRequest& request,
+                  std::string_view delegation) override {
+    if (!identity_) {
+      return OwnerFailure{wire::UPSTREAM_UNAVAILABLE, true};
+    }
+    wire::IdentityListPrincipalsRequest input = request;
+    input.mutable_context()->set_delegation(std::string{delegation});
+    wire::IdentityListPrincipalsResponse output;
+    grpc::ClientContext call;
+    const auto deadline = codec::from_wire(request.context().deadline());
+    if (const auto* timestamp = std::get_if<core::target::TimePoint>(&deadline)) {
+      const auto now =
+          core::target::TimePoint{std::chrono::duration_cast<core::target::TimePoint::duration>(
+              std::chrono::system_clock::now().time_since_epoch())};
+      if (*timestamp > now) {
+        call.set_deadline(std::chrono::system_clock::time_point{
+            std::chrono::duration_cast<std::chrono::system_clock::duration>(
+                (std::chrono::system_clock::now() +
+                 core::target::TimePoint::duration{*timestamp - now})
+                    .time_since_epoch())});
+      }
+    }
+    const auto status = identity_->ListPrincipals(&call, input, &output);
+    if (!status.ok()) {
+      const auto code = extract_error_code(status);
+      return OwnerFailure{code.value_or(wire::UPSTREAM_UNAVAILABLE), false};
+    }
+    return output;
+  }
+
+  HealthObservation observe() override {
+    HealthObservation observation;
+    observation.identity_ready =
+        identity_channel_ && identity_channel_->GetState(true) == GRPC_CHANNEL_READY;
+    observation.runtime_configured = static_cast<bool>(runtime_channel_);
+    observation.scheduler_configured = static_cast<bool>(scheduler_channel_);
+    observation.model_configured = static_cast<bool>(model_channel_);
+    observation.runtime_ready =
+        runtime_channel_ && runtime_channel_->GetState(true) == GRPC_CHANNEL_READY;
+    observation.scheduler_ready =
+        scheduler_channel_ && scheduler_channel_->GetState(true) == GRPC_CHANNEL_READY;
+    observation.model_ready =
+        model_channel_ && model_channel_->GetState(true) == GRPC_CHANNEL_READY;
+    observation.checked_at =
+        core::target::TimePoint{std::chrono::duration_cast<core::target::TimePoint::duration>(
+            std::chrono::system_clock::now().time_since_epoch())};
+    return observation;
+  }
+
+  std::unique_ptr<OwnerGateway> gateway_;
   std::shared_ptr<grpc::Channel> identity_channel_;
   std::unique_ptr<wire::IdentityService::Stub> identity_;
   std::shared_ptr<grpc::Channel> runtime_channel_;
   std::unique_ptr<wire::RuntimeService::Stub> runtime_;
+  std::shared_ptr<grpc::Channel> scheduler_channel_;
+  std::shared_ptr<grpc::Channel> model_channel_;
+  std::shared_ptr<grpc::Channel> host_channel_;
   std::optional<std::array<unsigned char, SHA256_DIGEST_LENGTH>> fingerprint_;
 };
 
 OwnerClients::OwnerClients(const std::string& identity_endpoint,
                            const std::string& runtime_endpoint,
-                           const core::platform::TlsMaterial& tls)
-    : impl_(std::make_unique<Impl>(identity_endpoint, runtime_endpoint, tls)) {}
+                           const std::string& scheduler_endpoint, const std::string& model_endpoint,
+                           const std::string& host_endpoint, const core::platform::TlsMaterial& tls)
+    : impl_(std::make_unique<Impl>(identity_endpoint, runtime_endpoint, scheduler_endpoint,
+                                   model_endpoint, host_endpoint, tls)) {}
 OwnerClients::~OwnerClients() = default;
 
 std::optional<AuthHttpResponse> OwnerClients::handle(const AuthHttpRequest& request) {

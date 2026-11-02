@@ -30,7 +30,8 @@ struct AuthHttpResponse {
 class IdentityAuthClient {
 public:
   IdentityAuthClient(const std::string& endpoint, const std::string& runtime_endpoint,
-                     const core::platform::TlsMaterial& tls);
+                     const std::string& scheduler_endpoint, const std::string& model_endpoint,
+                     const std::string& host_endpoint, const core::platform::TlsMaterial& tls);
   ~IdentityAuthClient();
   IdentityAuthClient(const IdentityAuthClient&) = delete;
   IdentityAuthClient& operator=(const IdentityAuthClient&) = delete;

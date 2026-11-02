@@ -268,11 +268,25 @@ bool endpoint_valid(const std::string& endpoint) {
          });
 }
 bool control_api_shape(const nlohmann::json& value) {
-  return (exact_keys(value, {"listen", "identity_endpoint"}) ||
-          exact_keys(value, {"listen", "identity_endpoint", "runtime_endpoint"})) &&
-         value["listen"].is_string() && value["identity_endpoint"].is_string() &&
-         address_valid(value["listen"].get<std::string>(), false) &&
-         endpoint_valid(value["identity_endpoint"].get<std::string>());
+  if (!value.is_object() || !value.contains("listen") || !value.contains("identity_endpoint") ||
+      !value["listen"].is_string() || !value["identity_endpoint"].is_string() ||
+      !address_valid(value["listen"].get<std::string>(), false) ||
+      !endpoint_valid(value["identity_endpoint"].get<std::string>())) {
+    return false;
+  }
+  for (const auto& [key, entry] : value.items()) {
+    if (key == "listen" || key == "identity_endpoint") {
+      continue;
+    }
+    if (key != "runtime_endpoint" && key != "scheduler_endpoint" && key != "model_endpoint" &&
+        key != "host_endpoint") {
+      return false;
+    }
+    if (!entry.is_string() || !endpoint_valid(entry.get<std::string>())) {
+      return false;
+    }
+  }
+  return true;
 }
 bool bounded_config_string(const nlohmann::json& value, std::size_t maximum) {
   if (!value.is_string()) {
@@ -628,10 +642,20 @@ ConfigResult load_service_config(const std::string& path, target::Service servic
     if (document.contains("control_api")) {
       ControlApiMaterial control_material{
           document["control_api"]["listen"].get<std::string>(),
-          document["control_api"]["identity_endpoint"].get<std::string>(), std::nullopt};
-      if (document["control_api"].contains("runtime_endpoint")) {
-        control_material.runtime_endpoint =
-            document["control_api"]["runtime_endpoint"].get<std::string>();
+          document["control_api"]["identity_endpoint"].get<std::string>(),
+          std::nullopt,
+          std::nullopt,
+          std::nullopt,
+          std::nullopt};
+      for (const auto& [key, field] :
+           std::initializer_list<std::pair<const char*, std::optional<std::string>*>>{
+               {"runtime_endpoint", &control_material.runtime_endpoint},
+               {"scheduler_endpoint", &control_material.scheduler_endpoint},
+               {"model_endpoint", &control_material.model_endpoint},
+               {"host_endpoint", &control_material.host_endpoint}}) {
+        if (document["control_api"].contains(key)) {
+          *field = document["control_api"][key].get<std::string>();
+        }
       }
       config.control_api = std::move(control_material);
     }

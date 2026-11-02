@@ -7,6 +7,7 @@
 #include <variant>
 
 #include "kiarabot/core/domain/target/foundation.hpp"
+#include "kiarabot/v1/identity.pb.h"
 #include "kiarabot/v1/policy.pb.h"
 #include "kiarabot/v1/runtime.pb.h"
 
@@ -47,6 +48,34 @@ public:
 
 // Runtime owner port: forwards exactly the frozen QueryActionResult RPC. Control does not infer
 // action success/failure from transport errors.
+// Identity principal catalog: human principals only, snapshot page. Identity filters by the
+// caller's currently granted scope; Control only forwards.
+class IdentityPrincipalsPort {
+public:
+  virtual ~IdentityPrincipalsPort() = default;
+  virtual OwnerOutcome<kiarabot::v1::IdentityListPrincipalsResponse>
+  list_principals(const kiarabot::v1::IdentityListPrincipalsRequest& request,
+                  std::string_view delegation) = 0;
+};
+
+// Control-owned observation of the four direct business dependencies. healthy() means the
+// dependency is usable right now; configured distinguishes "endpoint not set" from "unavailable".
+struct HealthObservation {
+  bool identity_ready = false;
+  bool runtime_ready = false;
+  bool scheduler_ready = false;
+  bool model_ready = false;
+  bool runtime_configured = false;
+  bool scheduler_configured = false;
+  bool model_configured = false;
+  core::target::TimePoint checked_at;
+};
+class HealthPort {
+public:
+  virtual ~HealthPort() = default;
+  virtual HealthObservation observe() = 0;
+};
+
 class RuntimeActionsPort {
 public:
   virtual ~RuntimeActionsPort() = default;
@@ -68,8 +97,9 @@ std::string owner_error_body(kiarabot::v1::ErrorCode code, std::string_view requ
 // Returns nullopt for paths owned by another handler (auth, health, model, tasks).
 class OwnerGateway {
 public:
-  OwnerGateway(DelegationPort& delegation, RuntimeActionsPort& runtime)
-      : delegation_(delegation), runtime_(runtime) {}
+  OwnerGateway(DelegationPort& delegation, RuntimeActionsPort& runtime,
+               IdentityPrincipalsPort* principals = nullptr, HealthPort* health = nullptr)
+      : delegation_(delegation), runtime_(runtime), principals_(principals), health_(health) {}
   std::optional<OwnerHttpResult> handle(const OwnerHttpRequest& request);
   // Health probes are local process facts plus the composition-provided readiness answer.
   static OwnerHttpResult live();
@@ -78,6 +108,8 @@ public:
 private:
   DelegationPort& delegation_;
   RuntimeActionsPort& runtime_;
+  IdentityPrincipalsPort* principals_;
+  HealthPort* health_;
 };
 
 } // namespace kiarabot::control::target

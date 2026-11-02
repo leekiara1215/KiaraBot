@@ -82,10 +82,58 @@ struct FakeRuntime final : target::RuntimeActionsPort {
     return response;
   }
 };
+struct FakePrincipals final : target::IdentityPrincipalsPort {
+  std::optional<target::OwnerFailure> failure;
+  int calls = 0;
+  wire::IdentityListPrincipalsRequest last_request;
+  target::OwnerOutcome<wire::IdentityListPrincipalsResponse>
+  list_principals(const wire::IdentityListPrincipalsRequest& value,
+                  std::string_view delegation) override {
+    ++calls;
+    last_request = value;
+    require(delegation == "delegation-proof", "principals receives issued delegation");
+    if (failure) {
+      return *failure;
+    }
+    wire::IdentityListPrincipalsResponse response;
+    auto* principal = response.add_principals();
+    principal->set_principal_id("11111111-1111-4111-8111-111111111111");
+    principal->set_principal_kind("human");
+    response.mutable_page()->set_page_size(value.page().page_size());
+    return response;
+  }
+};
+struct FakeHealth final : target::HealthPort {
+  bool identity_ready = true;
+  bool runtime_ready = true;
+  bool scheduler_ready = true;
+  bool model_ready = true;
+  target::HealthObservation observe() override {
+    target::HealthObservation value;
+    value.identity_ready = identity_ready;
+    value.runtime_ready = runtime_ready;
+    value.scheduler_ready = scheduler_ready;
+    value.model_ready = model_ready;
+    value.runtime_configured = true;
+    value.scheduler_configured = true;
+    value.model_configured = true;
+    value.checked_at =
+        core::target::TimePoint{std::chrono::duration_cast<core::target::TimePoint::duration>(
+            std::chrono::system_clock::now().time_since_epoch())};
+    return value;
+  }
+};
 struct Gateway {
   FakeDelegation delegation;
   FakeRuntime runtime;
   target::OwnerGateway gateway{delegation, runtime};
+};
+struct ExtendedGateway {
+  FakeDelegation delegation;
+  FakeRuntime runtime;
+  FakePrincipals principals;
+  FakeHealth health;
+  target::OwnerGateway gateway{delegation, runtime, &principals, &health};
 };
 
 std::string action_scope_path(std::string_view action = "action-1") {
@@ -165,12 +213,72 @@ void unavailable_sources_and_health() {
           "logs return UNAVAILABLE instead of an empty page");
   const auto audit = fixture.gateway.handle(request("GET", "/api/v1/audit?page_size=20"));
   require(audit && audit->status == 503, "audit returns UNAVAILABLE");
-  require(fixture.delegation.calls == 0 && fixture.runtime.calls == 0,
-          "unavailable sources never call owners");
+  require(fixture.delegation.calls >= 1 && fixture.runtime.calls == 0,
+          "sensitive reads obtain a delegation but never call the action owner");
   const auto live = fixture.gateway.handle(request("GET", "/health/live"));
   require(live && live->status == 200, "health live");
   const auto unknown = fixture.gateway.handle(request("GET", "/api/v1/tasks"));
   require(!unknown, "non-owner paths are left to other handlers");
+}
+
+void health_aggregation() {
+  ExtendedGateway fixture;
+  auto ready = fixture.gateway.handle(request("GET", "/health/ready"));
+  require(ready && ready->status == 200, "anonymous ready when Identity is reachable");
+  auto healthy = fixture.gateway.handle(request("GET", "/api/v1/health"));
+  require(healthy && healthy->status == 200 &&
+              healthy->body.find("\"state\":\"HEALTHY\"") != std::string::npos,
+          "authorized health healthy");
+  fixture.health.runtime_ready = false;
+  auto degraded = fixture.gateway.handle(request("GET", "/api/v1/health"));
+  require(degraded && degraded->status == 200 &&
+              degraded->body.find("\"state\":\"DEGRADED\"") != std::string::npos,
+          "single owner outage degrades but keeps serving");
+  fixture.health.identity_ready = false;
+  auto unready = fixture.gateway.handle(request("GET", "/api/v1/health"));
+  require(unready && unready->status == 503 &&
+              unready->body.find("\"state\":\"UNHEALTHY\"") != std::string::npos,
+          "Identity failure makes Control unready");
+  auto anonymous = request("GET", "/api/v1/health");
+  anonymous.access_token.clear();
+  auto unauthorized = fixture.gateway.handle(anonymous);
+  require(unauthorized && unauthorized->status == 401, "authorized health requires a caller");
+}
+
+void principals_catalog() {
+  ExtendedGateway fixture;
+  auto page =
+      fixture.gateway.handle(request("GET", "/api/v1/principals?page_size=5&page_token=cursor-1"));
+  require(page && page->status == 200, "principals page");
+  require(page->body.find("\"principal_id\"") != std::string::npos &&
+              page->body.find("human") != std::string::npos,
+          "principal projection");
+  require(fixture.principals.calls == 1 &&
+              fixture.principals.last_request.page().page_size() == 5 &&
+              fixture.principals.last_request.page().page_token() == "cursor-1" &&
+              fixture.delegation.permission == wire::PERMISSION_IDENTITY_PRINCIPAL_READ,
+          "page + identity.principal.read delegation");
+  fixture.principals.failure = target::OwnerFailure{wire::UPSTREAM_UNAVAILABLE, true};
+  auto unavailable = fixture.gateway.handle(request("GET", "/api/v1/principals"));
+  require(unavailable && unavailable->status == 503,
+          "principal source unavailable is not an empty page");
+  fixture.principals.failure = target::OwnerFailure{wire::PERMISSION_DENIED, false};
+  auto denied = fixture.gateway.handle(request("GET", "/api/v1/principals"));
+  require(denied && denied->status == 403, "principal catalog denied");
+}
+
+void sensitive_read_permissions() {
+  Gateway fixture;
+  fixture.delegation.failure = target::OwnerFailure{wire::PERMISSION_DENIED, false};
+  auto denied = fixture.gateway.handle(request("GET", "/api/v1/logs"));
+  require(denied && denied->status == 403, "missing log.read denied");
+  fixture.delegation.failure.reset();
+  require(fixture.gateway.handle(request("GET", "/api/v1/logs"))->status == 503,
+          "granted log.read still UNAVAILABLE without source");
+  auto missing_token = request("GET", "/api/v1/audit");
+  missing_token.access_token.clear();
+  auto unauthorized = fixture.gateway.handle(missing_token);
+  require(unauthorized && unauthorized->status == 401, "audit requires authentication");
 }
 
 void validation_rules() {
@@ -199,6 +307,9 @@ int main() {
     idempotency_rules();
     error_mapping();
     unavailable_sources_and_health();
+    health_aggregation();
+    principals_catalog();
+    sensitive_read_permissions();
     validation_rules();
   } catch (const std::exception& error) {
     std::cerr << error.what() << '\n';

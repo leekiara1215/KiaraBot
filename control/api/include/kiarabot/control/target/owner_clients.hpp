@@ -15,7 +15,8 @@ namespace kiarabot::control::target {
 class OwnerClients {
 public:
   OwnerClients(const std::string& identity_endpoint, const std::string& runtime_endpoint,
-               const core::platform::TlsMaterial& tls);
+               const std::string& scheduler_endpoint, const std::string& model_endpoint,
+               const std::string& host_endpoint, const core::platform::TlsMaterial& tls);
   ~OwnerClients();
   OwnerClients(const OwnerClients&) = delete;
   OwnerClients& operator=(const OwnerClients&) = delete;

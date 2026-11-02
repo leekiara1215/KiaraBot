@@ -141,7 +141,10 @@ public:
       : tls_(asio::ssl::context::tls_server), acceptor_(io_), workers_(4),
         client_(std::make_shared<IdentityAuthClient>(
             config.control_api->identity_endpoint,
-            config.control_api->runtime_endpoint.value_or(""), config.tls)),
+            config.control_api->runtime_endpoint.value_or(""),
+            config.control_api->scheduler_endpoint.value_or(""),
+            config.control_api->model_endpoint.value_or(""),
+            config.control_api->host_endpoint.value_or(""), config.tls)),
         listen_(config.control_api->listen) {
     tls_.set_options(asio::ssl::context::default_workarounds | asio::ssl::context::no_sslv2 |
                      asio::ssl::context::no_sslv3 | asio::ssl::context::no_tlsv1 |

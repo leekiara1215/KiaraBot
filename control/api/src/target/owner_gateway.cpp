@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <charconv>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <map>
@@ -164,6 +165,32 @@ std::string trace_identifier(const OwnerHttpRequest& request) {
   }
   return random_identifier();
 }
+std::string now_iso() {
+  const auto now = std::chrono::system_clock::now();
+  const auto seconds = std::chrono::duration_cast<std::chrono::seconds>(now.time_since_epoch());
+  google::protobuf::Timestamp stamp;
+  stamp.set_seconds(seconds.count());
+  stamp.set_nanos(static_cast<std::int32_t>(
+      std::chrono::duration_cast<std::chrono::nanoseconds>(now.time_since_epoch() - seconds)
+          .count()));
+  return json_time(stamp);
+}
+Json component(std::string_view name, bool ready) {
+  return {{"component", std::string{name}},
+          {"state", ready ? "HEALTHY" : "DEGRADED"},
+          {"checked_at", now_iso()}};
+}
+std::string health_body(const HealthObservation& observation) {
+  const bool degraded =
+      !observation.runtime_ready || !observation.scheduler_ready || !observation.model_ready;
+  Json value;
+  value["state"] = observation.identity_ready ? (degraded ? "DEGRADED" : "HEALTHY") : "UNHEALTHY";
+  value["components"] = Json::array({component("identity", observation.identity_ready),
+                                     component("runtime", observation.runtime_ready),
+                                     component("scheduler", observation.scheduler_ready),
+                                     component("model", observation.model_ready)});
+  return value.dump();
+}
 } // namespace
 
 unsigned int owner_http_status(wire::ErrorCode code) {
@@ -218,14 +245,111 @@ std::optional<OwnerHttpResult> OwnerGateway::handle(const OwnerHttpRequest& requ
         return OwnerHttpResult{
             405, owner_error_body(wire::INVALID_ARGUMENT, request_id, trace_id, false)};
       }
-      return path == "/health/live" ? live() : ready(true, request_id);
+      if (path == "/health/live") {
+        return live();
+      }
+      const auto ready_state = health_ ? health_->observe().identity_ready : false;
+      return ready(ready_state, request_id);
+    }
+    if (path == "/api/v1/health") {
+      if (request.method != "GET" && request.method != "HEAD") {
+        return OwnerHttpResult{
+            405, owner_error_body(wire::INVALID_ARGUMENT, request_id, trace_id, false)};
+      }
+      if (request.access_token.empty()) {
+        return OwnerHttpResult{
+            401, owner_error_body(wire::UNAUTHENTICATED, request_id, trace_id, false)};
+      }
+      if (!health_) {
+        return OwnerHttpResult{503, health_body(HealthObservation{})};
+      }
+      const auto observation = health_->observe();
+      return OwnerHttpResult{static_cast<unsigned int>(observation.identity_ready ? 200 : 503),
+                             health_body(observation)};
+    }
+    if (path == "/api/v1/principals") {
+      if (request.method != "GET" && request.method != "HEAD") {
+        return OwnerHttpResult{
+            405, owner_error_body(wire::INVALID_ARGUMENT, request_id, trace_id, false)};
+      }
+      if (request.access_token.empty()) {
+        return OwnerHttpResult{
+            401, owner_error_body(wire::UNAUTHENTICATED, request_id, trace_id, false)};
+      }
+      if (!principals_) {
+        return OwnerHttpResult{
+            503, owner_error_body(wire::UPSTREAM_UNAVAILABLE, request_id, trace_id, true)};
+      }
+      auto query = parse_query(request.target);
+      if (!query) {
+        return OwnerHttpResult{
+            400, owner_error_body(wire::INVALID_ARGUMENT, request_id, trace_id, false)};
+      }
+      wire::IdentityListPrincipalsRequest input;
+      auto* context = input.mutable_context();
+      context->set_request_id(request_id);
+      context->set_trace_id(trace_id);
+      const auto deadline = codec::to_wire(request.deadline);
+      if (const auto* wire_deadline = std::get_if<google::protobuf::Timestamp>(&deadline)) {
+        *context->mutable_deadline() = *wire_deadline;
+      }
+      if (const auto size = query->find("page_size"); size != query->end()) {
+        std::uint32_t value = 0;
+        const auto parsed =
+            std::from_chars(size->second.data(), size->second.data() + size->second.size(), value);
+        if (parsed.ec != std::errc{} || parsed.ptr != size->second.data() + size->second.size() ||
+            value == 0) {
+          return OwnerHttpResult{
+              400, owner_error_body(wire::INVALID_ARGUMENT, request_id, trace_id, false)};
+        }
+        input.mutable_page()->set_page_size(value);
+      }
+      if (const auto token = query->find("page_token"); token != query->end()) {
+        input.mutable_page()->set_page_token(token->second);
+      }
+      auto delegation =
+          delegation_.issue("identity", wire::PERMISSION_IDENTITY_PRINCIPAL_READ,
+                            wire::ResourceScope{}, request.access_token, request.deadline);
+      if (const auto* failure = std::get_if<OwnerFailure>(&delegation)) {
+        return OwnerHttpResult{
+            owner_http_status(failure->code),
+            owner_error_body(failure->code, request_id, trace_id, failure->retryable)};
+      }
+      auto result = principals_->list_principals(input, std::get<std::string>(delegation));
+      if (const auto* failure = std::get_if<OwnerFailure>(&result)) {
+        return OwnerHttpResult{
+            owner_http_status(failure->code),
+            owner_error_body(failure->code, request_id, trace_id, failure->retryable)};
+      }
+      google::protobuf::util::JsonPrintOptions options;
+      options.preserve_proto_field_names = true;
+      std::string body;
+      if (!google::protobuf::util::MessageToJsonString(
+               std::get<wire::IdentityListPrincipalsResponse>(result), &body, options)
+               .ok()) {
+        return OwnerHttpResult{500, owner_error_body(wire::INTERNAL, request_id, trace_id, false)};
+      }
+      return OwnerHttpResult{200, body};
     }
     // P12c: authoritative log/audit sources are not registered yet. A successful empty page would
-    // claim "no events" without evidence, so the boundary answers UNAVAILABLE instead.
+    // claim "no events" without evidence; but first enforce the separate sensitive grants.
     if (path == "/api/v1/logs" || path == "/api/v1/audit") {
       if (request.method != "GET" && request.method != "HEAD") {
         return OwnerHttpResult{
             405, owner_error_body(wire::INVALID_ARGUMENT, request_id, trace_id, false)};
+      }
+      if (request.access_token.empty()) {
+        return OwnerHttpResult{
+            401, owner_error_body(wire::UNAUTHENTICATED, request_id, trace_id, false)};
+      }
+      const auto permission =
+          path == "/api/v1/logs" ? wire::PERMISSION_LOG_READ : wire::PERMISSION_AUDIT_READ;
+      auto delegation = delegation_.issue("control", permission, wire::ResourceScope{},
+                                          request.access_token, request.deadline);
+      if (const auto* failure = std::get_if<OwnerFailure>(&delegation)) {
+        return OwnerHttpResult{
+            owner_http_status(failure->code),
+            owner_error_body(failure->code, request_id, trace_id, failure->retryable)};
       }
       return OwnerHttpResult{
           503, owner_error_body(wire::UPSTREAM_UNAVAILABLE, request_id, trace_id, true)};
