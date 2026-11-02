@@ -11,6 +11,7 @@
 #include "kiarabot/core/application/target/identity_admin_application.hpp"
 #include "kiarabot/core/application/target/identity_application.hpp"
 #include "kiarabot/core/application/target/identity_assignment_application.hpp"
+#include "kiarabot/core/application/target/identity_audit_application.hpp"
 #include "kiarabot/core/application/target/identity_authorization_application.hpp"
 #include "kiarabot/core/application/target/identity_delegation_application.hpp"
 #include "kiarabot/core/application/target/identity_invalidation_application.hpp"
@@ -77,6 +78,8 @@ public:
         principal_(std::move(principal)), verification_keys_(std::move(verification_keys)),
         assignments_(std::move(assignments)), authorization_(std::move(authorization)),
         invalidation_(std::move(invalidation)),
+        audit_(std::move(std::get<std::unique_ptr<target::IdentityAuditApplication>>(
+            target::make_identity_audit_application(*dependencies_->transactions)))),
         admin_(*dependencies_->transactions, *dependencies_->certificates),
         issuer_(*sessions_, *dependencies_->transactions, *dependencies_->delegations,
                 *dependencies_->random, dependencies_->clock,
@@ -123,6 +126,9 @@ public:
   target::IdentityInvalidationApplication& invalidation() {
     return *invalidation_;
   }
+  target::IdentityAuditApplication& audit() {
+    return *audit_;
+  }
   target::IdentityAdminApplication& admin() {
     return admin_;
   }
@@ -139,6 +145,7 @@ private:
   std::unique_ptr<target::IdentityAssignmentApplication> assignments_;
   std::unique_ptr<target::IdentityAuthorizationApplication> authorization_;
   std::unique_ptr<target::IdentityInvalidationApplication> invalidation_;
+  std::unique_ptr<target::IdentityAuditApplication> audit_;
   target::IdentityAdminApplication admin_;
   target::IdentityDelegationApplication issuer_;
 };
@@ -494,7 +501,8 @@ target::Outcome<platform::ServiceComposition> configured(const platform::Process
              .principal = &observed->principal(),
              .authorization = &observed->authorization(),
              .assignments = &observed->assignments(),
-             .invalidation = &observed->invalidation()});
+             .invalidation = &observed->invalidation(),
+             .audit = &observed->audit()});
         if (const auto* error = std::get_if<target::Failure>(&adapter)) {
           return *error;
         }

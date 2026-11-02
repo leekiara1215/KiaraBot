@@ -7,6 +7,7 @@
 
 #include "kiarabot/core/application/target/identity_admin_application.hpp"
 #include "kiarabot/core/application/target/identity_assignment_application.hpp"
+#include "kiarabot/core/application/target/identity_audit_application.hpp"
 #include "kiarabot/core/application/target/identity_authorization_application.hpp"
 #include "kiarabot/core/application/target/identity_delegation_application.hpp"
 #include "kiarabot/core/application/target/identity_exchange_application.hpp"
@@ -45,6 +46,8 @@ struct IdentityRpcOptions {
   // Appended P04-B capabilities. Absent means a stable typed Unsupported reply, never a fake
   // decision, empty snapshot or partially projected assignment.
   target::IdentityAuthorizationApplication* authorization = nullptr;
+  // P12e read-only Control audit/log aggregation projection over this Identity database.
+  target::IdentityAuditApplication* audit = nullptr;
   target::IdentityAssignmentApplication* assignments = nullptr;
   target::IdentityInvalidationApplication* invalidation = nullptr;
 };

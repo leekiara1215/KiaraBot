@@ -18,6 +18,7 @@
 #include "kiarabot/core/application/target/runtime_bridge_application.hpp"
 #include "kiarabot/core/application/target/runtime_readiness.hpp"
 #include "kiarabot/core/application/target/runtime_resource_application.hpp"
+#include "kiarabot/core/application/target/runtime_audit_application.hpp"
 #include "kiarabot/core/application/target/runtime_storage_application.hpp"
 #include "kiarabot/core/runtime/platform/host_bridge_server.hpp"
 #include "kiarabot/core/runtime/platform/peer_certificate.hpp"
@@ -179,6 +180,7 @@ struct State {
   target::RuntimeResourceApplication* application = nullptr;
   std::unique_ptr<target::RuntimeStorageApplication> storage;
   std::unique_ptr<target::RuntimeActionApplication> actions;
+  std::unique_ptr<target::RuntimeAuditApplication> audit;
   target::RuntimeActionApplication* action_application = nullptr;
   std::unique_ptr<target::RuntimeBridgeApplication> bridge;
   std::unique_ptr<platform::RuntimeModelClient> model_client;
@@ -273,6 +275,12 @@ compose_runtime_service(const platform::ProcessConfig& config) {
           auto application =
               std::move(std::get<std::unique_ptr<target::RuntimeResourceApplication>>(built));
           state->application = application.get();
+          auto audit = target::make_runtime_audit_application({factory, *state->authorization});
+          if (const auto* failure = std::get_if<target::Failure>(&audit)) {
+            return {};
+          }
+          state->audit =
+              std::move(std::get<std::unique_ptr<target::RuntimeAuditApplication>>(audit));
           auto action = target::make_runtime_action_application(
               {factory, *state->ids, *state->secrets, state->authorization,
                target::ActionCapacity{}, target::ActionQuotaLimits{}});
@@ -379,6 +387,7 @@ compose_runtime_service(const platform::ProcessConfig& config) {
       platform::RuntimeRpcOptions options;
       options.storage = state->storage.get();
       options.actions = state->action_application;
+      options.audit = state->audit.get();
       if (state->identity_client) {
         auto* client = state->identity_client.get();
         options.authorize = [client](grpc::ServerContext& transport,

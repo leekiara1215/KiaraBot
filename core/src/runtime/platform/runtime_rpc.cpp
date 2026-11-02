@@ -49,6 +49,64 @@ bool canonical_uuid(std::string_view value) {
   }
   return true;
 }
+
+struct RuntimeAuditCommandInput {
+  t::ResourceRef scope;
+  t::AuditQuery query;
+};
+t::Outcome<RuntimeAuditCommandInput> runtime_audit_command(const v1::RuntimeAuditFilter& filter) {
+  if (!filter.has_scope() || filter.scope().resources_size() != 1) {
+    return failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput);
+  }
+  const auto decoded_scope = codec::from_wire(filter.scope().resources(0));
+  const auto* scope = std::get_if<t::ResourceRef>(&decoded_scope);
+  if (!scope) {
+    return failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput);
+  }
+  t::AuditQuery query;
+  query.limit = filter.has_page() && filter.page().page_size() != 0
+                    ? std::min<std::size_t>(filter.page().page_size(), 100)
+                    : 20;
+  if (filter.has_page() && !filter.page().page_token().empty()) {
+    auto cursor = t::decode_audit_cursor(filter.page().page_token());
+    if (!cursor) {
+      return failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput);
+    }
+    query.cursor = *cursor;
+  }
+  if (filter.has_occurred_from()) {
+    const auto decoded = codec::from_wire(filter.occurred_from());
+    if (const auto* value = std::get_if<t::TimePoint>(&decoded)) {
+      query.filter.occurred_from = *value;
+    } else {
+      return failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput);
+    }
+  }
+  if (filter.has_occurred_until()) {
+    const auto decoded = codec::from_wire(filter.occurred_until());
+    if (const auto* value = std::get_if<t::TimePoint>(&decoded)) {
+      query.filter.occurred_until = *value;
+    } else {
+      return failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput);
+    }
+  }
+  if (!filter.actor().empty()) {
+    if (!canonical_uuid(filter.actor())) {
+      return failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput);
+    }
+    query.filter.actor = t::SubjectId{filter.actor()};
+  }
+  if (filter.has_resource()) {
+    const auto decoded = codec::from_wire(filter.resource());
+    const auto* resource = std::get_if<t::ResourceRef>(&decoded);
+    if (!resource) {
+      return failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput);
+    }
+    query.filter.resource = *resource;
+  }
+  return RuntimeAuditCommandInput{*scope, std::move(query)};
+}
+
 std::string random_uuid() {
   std::array<unsigned char, 16> bytes{};
   if (RAND_bytes(bytes.data(), static_cast<int>(bytes.size())) != 1) {
@@ -853,6 +911,141 @@ public:
          !operation_ref(mutation.operation->operation, response->mutable_operation()))) {
       return error_status(internal_failure(), context.request, context.trace);
     }
+    return grpc::Status::OK;
+  }
+
+  grpc::Status ListAudit(grpc::ServerContext* transport,
+                         const v1::RuntimeListAuditRequest* request,
+                         v1::RuntimeListAuditResponse* response) override {
+    auto prepared = prepare(*transport, request->context(), "kiarabot.v1.RuntimeService/ListAudit",
+                            *request, false, options_);
+    if (const auto* rejected = std::get_if<t::Failure>(&prepared)) {
+      return error_status(*rejected, request->context().request_id(),
+                          request->context().trace_id());
+    }
+    auto& context = std::get<Prepared>(prepared);
+    if (!options_.audit || !request->has_filter()) {
+      return fail(context, failure(t::ErrorCode::CapabilityNotSupported));
+    }
+    auto converted = runtime_audit_command(request->filter());
+    if (const auto* rejected = std::get_if<t::Failure>(&converted)) {
+      return fail(context, *rejected);
+    }
+    const auto& input = std::get<RuntimeAuditCommandInput>(converted);
+    auto command = context.command;
+    command.resource = input.scope;
+    auto result = options_.audit->list_audit({command, input.scope, input.query});
+    if (const auto* rejected = std::get_if<t::Failure>(&result)) {
+      return fail(context, *rejected);
+    }
+    const auto& page = std::get<t::AuditPage>(result);
+    for (const auto& record : page.records) {
+      auto* entry = response->add_entries();
+      entry->set_entry_id(std::to_string(record.id));
+      entry->set_actor(record.actor.value);
+      auto resource = codec::to_wire(record.resource);
+      const auto* wire = std::get_if<v1::ResourceRef>(&resource);
+      if (!wire) {
+        return error_status(internal_failure(), context.request, context.trace);
+      }
+      *entry->mutable_resource() = *wire;
+      entry->set_request_id(record.request_id);
+      entry->set_trace_id(record.trace_id);
+      entry->set_method(record.method);
+      if (record.rejection) {
+        auto code = codec::to_wire(*record.rejection);
+        const auto* wire_code = std::get_if<v1::ErrorCode>(&code);
+        if (!wire_code) {
+          return error_status(internal_failure(), context.request, context.trace);
+        }
+        entry->set_rejection(*wire_code);
+      } else {
+        entry->set_rejection(v1::ERROR_CODE_UNSPECIFIED);
+      }
+      entry->set_authorization_version(record.authorization_version.value);
+      auto occurred = codec::to_wire(record.occurred_at);
+      const auto* stamp = std::get_if<google::protobuf::Timestamp>(&occurred);
+      if (!stamp) {
+        return error_status(internal_failure(), context.request, context.trace);
+      }
+      *entry->mutable_occurred_at() = *stamp;
+      if (record.target_account_id) {
+        entry->set_target_account_id(*record.target_account_id);
+      }
+      if (record.target_conversation_id) {
+        entry->set_target_conversation_id(*record.target_conversation_id);
+      }
+    }
+    response->mutable_page()->set_next_page_token(page.next_cursor);
+    response->mutable_page()->set_page_size(static_cast<std::uint32_t>(page.records.size()));
+    auto checked = codec::to_wire(page.checked_at);
+    const auto* stamp = std::get_if<google::protobuf::Timestamp>(&checked);
+    if (!stamp) {
+      return error_status(internal_failure(), context.request, context.trace);
+    }
+    *response->mutable_checked_at() = *stamp;
+    return grpc::Status::OK;
+  }
+  grpc::Status ListLogs(grpc::ServerContext* transport,
+                        const v1::RuntimeListLogsRequest* request,
+                        v1::RuntimeListLogsResponse* response) override {
+    auto prepared = prepare(*transport, request->context(), "kiarabot.v1.RuntimeService/ListLogs",
+                            *request, false, options_);
+    if (const auto* rejected = std::get_if<t::Failure>(&prepared)) {
+      return error_status(*rejected, request->context().request_id(),
+                          request->context().trace_id());
+    }
+    auto& context = std::get<Prepared>(prepared);
+    if (!options_.audit || !request->has_filter()) {
+      return fail(context, failure(t::ErrorCode::CapabilityNotSupported));
+    }
+    auto converted = runtime_audit_command(request->filter());
+    if (const auto* rejected = std::get_if<t::Failure>(&converted)) {
+      return fail(context, *rejected);
+    }
+    const auto& input = std::get<RuntimeAuditCommandInput>(converted);
+    auto command = context.command;
+    command.resource = input.scope;
+    auto result = options_.audit->list_logs({command, input.scope, input.query});
+    if (const auto* rejected = std::get_if<t::Failure>(&result)) {
+      return fail(context, *rejected);
+    }
+    const auto& page = std::get<t::LogPage>(result);
+    for (const auto& record : page.records) {
+      auto* entry = response->add_entries();
+      entry->set_entry_id(std::to_string(record.id));
+      entry->set_severity(record.severity);
+      entry->set_component(record.component);
+      entry->set_method(record.method);
+      if (record.actor) {
+        entry->set_actor(record.actor->value);
+      }
+      if (record.resource) {
+        auto resource = codec::to_wire(*record.resource);
+        const auto* wire = std::get_if<v1::ResourceRef>(&resource);
+        if (!wire) {
+          return error_status(internal_failure(), context.request, context.trace);
+        }
+        *entry->mutable_resource() = *wire;
+      }
+      entry->set_request_id(record.request_id);
+      entry->set_trace_id(record.trace_id);
+      entry->set_message(record.message);
+      auto occurred = codec::to_wire(record.occurred_at);
+      const auto* stamp = std::get_if<google::protobuf::Timestamp>(&occurred);
+      if (!stamp) {
+        return error_status(internal_failure(), context.request, context.trace);
+      }
+      *entry->mutable_occurred_at() = *stamp;
+    }
+    response->mutable_page()->set_next_page_token(page.next_cursor);
+    response->mutable_page()->set_page_size(static_cast<std::uint32_t>(page.records.size()));
+    auto checked = codec::to_wire(page.checked_at);
+    const auto* stamp = std::get_if<google::protobuf::Timestamp>(&checked);
+    if (!stamp) {
+      return error_status(internal_failure(), context.request, context.trace);
+    }
+    *response->mutable_checked_at() = *stamp;
     return grpc::Status::OK;
   }
   grpc::Status GetAccount(grpc::ServerContext* transport,

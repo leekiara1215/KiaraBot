@@ -674,6 +674,68 @@ t::Outcome<t::Service> audience(std::string_view value) {
   }
   return failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput);
 }
+struct AuditCommandInput {
+  t::ResourceRef scope;
+  t::AuditQuery query;
+};
+t::Outcome<AuditCommandInput> audit_command(const v1::IdentityAuditFilter& filter) {
+  if (!filter.has_scope() || filter.scope().resources_size() != 1) {
+    return failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput);
+  }
+  const auto decoded_scope = codec::from_wire(filter.scope().resources(0));
+  const auto* scope = std::get_if<t::ResourceRef>(&decoded_scope);
+  if (!scope) {
+    return failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput);
+  }
+  t::AuditQuery query;
+  query.limit = filter.has_page() && filter.page().page_size() != 0
+                    ? std::min<std::size_t>(filter.page().page_size(), 100)
+                    : 20;
+  if (filter.has_page() && !filter.page().page_token().empty()) {
+    auto cursor = t::decode_audit_cursor(filter.page().page_token());
+    if (!cursor) {
+      return failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput);
+    }
+    query.cursor = *cursor;
+  }
+  if (filter.has_occurred_from()) {
+    const auto decoded = codec::from_wire(filter.occurred_from());
+    if (const auto* value = std::get_if<t::TimePoint>(&decoded)) {
+      query.filter.occurred_from = *value;
+    } else {
+      return failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput);
+    }
+  }
+  if (filter.has_occurred_until()) {
+    const auto decoded = codec::from_wire(filter.occurred_until());
+    if (const auto* value = std::get_if<t::TimePoint>(&decoded)) {
+      query.filter.occurred_until = *value;
+    } else {
+      return failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput);
+    }
+  }
+  if (!filter.actor().empty()) {
+    if (!uuid(filter.actor())) {
+      return failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput);
+    }
+    query.filter.actor = t::SubjectId{filter.actor()};
+  }
+  if (filter.has_resource()) {
+    const auto decoded = codec::from_wire(filter.resource());
+    const auto* resource = std::get_if<t::ResourceRef>(&decoded);
+    if (!resource) {
+      return failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput);
+    }
+    query.filter.resource = *resource;
+  }
+  return AuditCommandInput{*scope, std::move(query)};
+}
+
+t::IdentityAuditCommand audit_command_for(const t::IdentityRequestContext& context,
+                                          const t::VerifiedPeer& peer,
+                                          const AuditCommandInput& input) {
+  return {context, peer, input.scope, input.query};
+}
 class IdentityRpc final : public v1::IdentityService::Service {
 public:
   IdentityRpc(t::IdentitySecurityApplication& application, PeerAuthenticator authenticate,
@@ -683,7 +745,8 @@ public:
         invocation_deadline_(std::move(invocation_deadline)),
         verification_keys_(options.verification_keys), exchange_(options.exchange),
         principal_(options.principal), authorization_(options.authorization),
-        assignments_(options.assignments), invalidation_(options.invalidation) {}
+        assignments_(options.assignments), invalidation_(options.invalidation),
+        audit_(options.audit) {}
 
   grpc::Status Login(grpc::ServerContext* transport, const v1::IdentityLoginRequest* request,
                      v1::IdentityLoginResponse* response) override {
@@ -1032,6 +1095,136 @@ public:
           }
           v1::IdentityGetPrincipalStatusResponse output;
           *output.mutable_principal() = std::get<v1::PrincipalRecord>(std::move(projected));
+          return output;
+        },
+        false);
+  }
+  grpc::Status ListAudit(grpc::ServerContext* transport,
+                         const v1::IdentityListAuditRequest* request,
+                         v1::IdentityListAuditResponse* response) override {
+    return run(
+        transport, request->has_context(), request->context(), response,
+        [&](const t::VerifiedPeer& peer,
+            const t::IdentityRequestContext& context) -> t::Outcome<v1::IdentityListAuditResponse> {
+          if (!audit_ || !request->has_filter()) {
+            return failure(t::ErrorCode::CapabilityNotSupported);
+          }
+          auto converted = audit_command(request->filter());
+          if (const auto* error = std::get_if<t::Failure>(&converted)) {
+            return *error;
+          }
+          auto result =
+              audit_->list_audit(audit_command_for(context, peer, std::get<AuditCommandInput>(converted)));
+          if (const auto* error = std::get_if<t::Failure>(&result)) {
+            return *error;
+          }
+          const auto& page = std::get<t::AuditPage>(result);
+          v1::IdentityListAuditResponse output;
+          for (const auto& record : page.records) {
+            auto* entry = output.add_entries();
+            entry->set_entry_id(std::to_string(record.id));
+            entry->set_actor(record.actor.value);
+            auto resource = codec::to_wire(record.resource);
+            if (const auto* wire = std::get_if<v1::ResourceRef>(&resource)) {
+              *entry->mutable_resource() = *wire;
+            } else {
+              return failure(t::ErrorCode::Internal);
+            }
+            entry->set_request_id(record.request_id);
+            entry->set_trace_id(record.trace_id);
+            entry->set_method(record.method);
+            if (record.rejection) {
+              auto code = codec::to_wire(*record.rejection);
+              if (const auto* wire = std::get_if<v1::ErrorCode>(&code)) {
+                entry->set_rejection(*wire);
+              } else {
+                return failure(t::ErrorCode::Internal);
+              }
+            } else {
+              entry->set_rejection(v1::ERROR_CODE_UNSPECIFIED);
+            }
+            entry->set_authorization_version(record.authorization_version.value);
+            auto occurred = codec::to_wire(record.occurred_at);
+            if (const auto* stamp = std::get_if<google::protobuf::Timestamp>(&occurred)) {
+              *entry->mutable_occurred_at() = *stamp;
+            } else {
+              return failure(t::ErrorCode::Internal);
+            }
+            if (record.target_account_id) {
+              entry->set_target_account_id(*record.target_account_id);
+            }
+            if (record.target_conversation_id) {
+              entry->set_target_conversation_id(*record.target_conversation_id);
+            }
+          }
+          output.mutable_page()->set_next_page_token(page.next_cursor);
+          output.mutable_page()->set_page_size(static_cast<std::uint32_t>(page.records.size()));
+          auto checked = codec::to_wire(page.checked_at);
+          if (const auto* stamp = std::get_if<google::protobuf::Timestamp>(&checked)) {
+            *output.mutable_checked_at() = *stamp;
+          } else {
+            return failure(t::ErrorCode::Internal);
+          }
+          return output;
+        },
+        false);
+  }
+  grpc::Status ListLogs(grpc::ServerContext* transport,
+                        const v1::IdentityListLogsRequest* request,
+                        v1::IdentityListLogsResponse* response) override {
+    return run(
+        transport, request->has_context(), request->context(), response,
+        [&](const t::VerifiedPeer& peer,
+            const t::IdentityRequestContext& context) -> t::Outcome<v1::IdentityListLogsResponse> {
+          if (!audit_ || !request->has_filter()) {
+            return failure(t::ErrorCode::CapabilityNotSupported);
+          }
+          auto converted = audit_command(request->filter());
+          if (const auto* error = std::get_if<t::Failure>(&converted)) {
+            return *error;
+          }
+          auto result =
+              audit_->list_logs(audit_command_for(context, peer, std::get<AuditCommandInput>(converted)));
+          if (const auto* error = std::get_if<t::Failure>(&result)) {
+            return *error;
+          }
+          const auto& page = std::get<t::LogPage>(result);
+          v1::IdentityListLogsResponse output;
+          for (const auto& record : page.records) {
+            auto* entry = output.add_entries();
+            entry->set_entry_id(std::to_string(record.id));
+            entry->set_severity(record.severity);
+            entry->set_component(record.component);
+            entry->set_method(record.method);
+            if (record.actor) {
+              entry->set_actor(record.actor->value);
+            }
+            if (record.resource) {
+              auto resource = codec::to_wire(*record.resource);
+              if (const auto* wire = std::get_if<v1::ResourceRef>(&resource)) {
+                *entry->mutable_resource() = *wire;
+              } else {
+                return failure(t::ErrorCode::Internal);
+              }
+            }
+            entry->set_request_id(record.request_id);
+            entry->set_trace_id(record.trace_id);
+            entry->set_message(record.message);
+            auto occurred = codec::to_wire(record.occurred_at);
+            if (const auto* stamp = std::get_if<google::protobuf::Timestamp>(&occurred)) {
+              *entry->mutable_occurred_at() = *stamp;
+            } else {
+              return failure(t::ErrorCode::Internal);
+            }
+          }
+          output.mutable_page()->set_next_page_token(page.next_cursor);
+          output.mutable_page()->set_page_size(static_cast<std::uint32_t>(page.records.size()));
+          auto checked = codec::to_wire(page.checked_at);
+          if (const auto* stamp = std::get_if<google::protobuf::Timestamp>(&checked)) {
+            *output.mutable_checked_at() = *stamp;
+          } else {
+            return failure(t::ErrorCode::Internal);
+          }
           return output;
         },
         false);
@@ -1902,6 +2095,7 @@ private:
   t::IdentityAuthorizationApplication* authorization_;
   t::IdentityAssignmentApplication* assignments_;
   t::IdentityInvalidationApplication* invalidation_;
+  t::IdentityAuditApplication* audit_;
 };
 } // namespace
 

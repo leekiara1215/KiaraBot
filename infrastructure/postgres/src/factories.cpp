@@ -223,6 +223,12 @@ public:
   target::Outcome<std::size_t> prune_operations(target::TimePoint now, std::size_t limit) override {
     return common_->prune_operations(now, limit);
   }
+  target::Outcome<target::AuditPage> query_audit(const target::AuditQuery& query) override {
+    return common_->query_audit(query);
+  }
+  target::Outcome<target::LogPage> query_logs(const target::LogQuery& query) override {
+    return common_->query_logs(query);
+  }
   target::Outcome<std::optional<target::LifecycleTombstone>>
   find_lifecycle_tombstone(const target::ResourceRef& resource) override {
     return common_->find_lifecycle_tombstone(resource);

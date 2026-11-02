@@ -7,6 +7,7 @@
 
 #include "kiarabot/core/domain/target/invariants.hpp"
 #include "kiarabot/core/domain/target/model_gateway.hpp"
+#include "kiarabot/core/domain/target/audit_query.hpp"
 #include "kiarabot/core/domain/target/persistence.hpp"
 #include "kiarabot/core/ports/target/host_command_ports.hpp"
 #include "kiarabot/core/ports/target/host_registration_ports.hpp"
@@ -172,6 +173,15 @@ public:
     return unsupported_lifecycle_read();
   }
   virtual Outcome<std::size_t> prune_audit(TimePoint, std::size_t) {
+    return unsupported_lifecycle_read();
+  }
+  // P12e read-only Control aggregation projections over this owner's audit facts. The default is
+  // fail-closed: only Identity/Runtime PG implementations expose a source; everything else returns
+  // a stable unavailable/capability failure instead of an empty page.
+  virtual Outcome<AuditPage> query_audit(const AuditQuery&) {
+    return unsupported_lifecycle_read();
+  }
+  virtual Outcome<LogPage> query_logs(const LogQuery&) {
     return unsupported_lifecycle_read();
   }
   virtual Outcome<std::size_t> prune_operations(TimePoint, std::size_t) {

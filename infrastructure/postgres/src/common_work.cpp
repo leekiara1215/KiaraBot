@@ -629,6 +629,127 @@ public:
       return static_cast<std::size_t>(rows.size());
     });
   }
+  target::Outcome<target::AuditPage> query_audit(const target::AuditQuery& query) override {
+    return invoke<target::AuditPage>([&]() -> target::Outcome<target::AuditPage> {
+      if (query.limit == 0 || query.limit > 100 ||
+          (query.filter.occurred_from && query.filter.occurred_until &&
+           *query.filter.occurred_from >= *query.filter.occurred_until) ||
+          (query.filter.actor && !valid_sql_text(query.filter.actor->value)) ||
+          (query.filter.resource && !valid_sql_text(query.filter.resource->id.value)) ||
+          (query.cursor && (query.cursor->id <= 0 || query.cursor->occurred_at <= target::TimePoint{}))) {
+        return error(target::ErrorCode::InvalidArgument);
+      }
+      pqxx::params parameters;
+      std::string where{" WHERE true"};
+      const auto add_time = [&](const char* column, const char* op, target::TimePoint value) {
+        parameters.append(timestamp(value));
+        where += std::string{" AND "} + column + op + "$" + std::to_string(parameters.size()) +
+                 "::bigint";
+      };
+      if (query.filter.occurred_from) {
+        add_time("occurred_at", ">=", *query.filter.occurred_from);
+      }
+      if (query.filter.occurred_until) {
+        add_time("occurred_at", "<", *query.filter.occurred_until);
+      }
+      if (query.filter.actor) {
+        parameters.append(query.filter.actor->value);
+        where += " AND actor=$" + std::to_string(parameters.size());
+      }
+      if (query.filter.resource) {
+        parameters.append(static_cast<int>(query.filter.resource->kind));
+        where += " AND resource_kind=$" + std::to_string(parameters.size()) + "::int";
+        parameters.append(query.filter.resource->id.value);
+        where += " AND resource_id=$" + std::to_string(parameters.size());
+      }
+      if (query.cursor) {
+        parameters.append(timestamp(query.cursor->occurred_at));
+        const auto first = std::to_string(parameters.size());
+        parameters.append(query.cursor->id);
+        where += " AND (occurred_at,id)<($" + first + "::bigint,$" +
+                 std::to_string(parameters.size()) + "::bigint)";
+      }
+      parameters.append(static_cast<int>(query.limit) + 1);
+      const auto rows = exec(
+          "SELECT id,actor,resource_kind,resource_id,request_id,trace_id,method,rejection,"
+          "authorization_version," +
+              time_projection("occurred_at") +
+              ",target_account_id,target_conversation_id FROM kiarabot.audit_entries" + where +
+              " ORDER BY occurred_at DESC,id DESC LIMIT $" + std::to_string(parameters.size()) +
+              "::int",
+          parameters);
+      target::AuditPage page;
+      page.checked_at = db_now();
+      for (const auto& row : rows) {
+        target::AuditRecord record;
+        record.id = row["id"].as<std::int64_t>();
+        record.actor = {row["actor"].as<std::string>()};
+        record.resource = {static_cast<target::ResourceKind>(row["resource_kind"].as<int>()),
+                           {row["resource_id"].as<std::string>()}};
+        record.request_id = row["request_id"].as<std::string>();
+        record.trace_id = row["trace_id"].as<std::string>();
+        record.method = row["method"].as<std::string>();
+        if (!row["rejection"].is_null()) {
+          record.rejection = static_cast<target::ErrorCode>(row["rejection"].as<int>());
+        }
+        record.authorization_version = {row["authorization_version"].as<std::uint64_t>()};
+        record.occurred_at = time_field(row, "occurred_at");
+        if (!row["target_account_id"].is_null()) {
+          record.target_account_id = row["target_account_id"].as<std::string>();
+        }
+        if (!row["target_conversation_id"].is_null()) {
+          record.target_conversation_id = row["target_conversation_id"].as<std::string>();
+        }
+        if (page.records.size() == query.limit) {
+          page.next_cursor =
+              target::encode_audit_cursor({page.records.back().occurred_at, page.records.back().id});
+          break;
+        }
+        page.records.push_back(std::move(record));
+      }
+      return page;
+    });
+  }
+  target::Outcome<target::LogPage> query_logs(const target::LogQuery& query) override {
+    return invoke<target::LogPage>([&]() -> target::Outcome<target::LogPage> {
+      if (query.limit == 0 || query.limit > 100) {
+        return error(target::ErrorCode::InvalidArgument);
+      }
+      auto audit = query_audit(query);
+      if (const auto* failure = std::get_if<target::Failure>(&audit)) {
+        return *failure;
+      }
+      const auto& page = std::get<target::AuditPage>(audit);
+      target::LogPage logs;
+      logs.next_cursor = page.next_cursor;
+      logs.checked_at = page.checked_at;
+      for (const auto& record : page.records) {
+        target::LogRecord entry;
+        entry.id = record.id;
+        entry.occurred_at = record.occurred_at;
+        entry.severity = record.rejection ? "rejected" : "info";
+        switch (owner_) {
+        case target::Service::Identity:
+          entry.component = "identity";
+          break;
+        case target::Service::Runtime:
+          entry.component = "runtime";
+          break;
+        default:
+          entry.component = "owner";
+          break;
+        }
+        entry.method = record.method;
+        entry.actor = record.actor;
+        entry.resource = record.resource;
+        entry.request_id = record.request_id;
+        entry.trace_id = record.trace_id;
+        entry.message = record.rejection ? "request.rejected" : "request.recorded";
+        logs.records.push_back(std::move(entry));
+      }
+      return logs;
+    });
+  }
   target::Outcome<std::optional<target::LifecycleTombstone>>
   find_lifecycle_tombstone(const target::ResourceRef& resource) override {
     return invoke<std::optional<target::LifecycleTombstone>>(
