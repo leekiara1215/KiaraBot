@@ -1157,7 +1157,392 @@ public:
     return grpc::Status::OK;
   }
 
+  grpc::Status GetStorage(grpc::ServerContext* transport,
+                          const v1::RuntimeGetStorageRequest* request,
+                          v1::RuntimeGetStorageResponse* response) override {
+    auto query = prepare(*transport, request->context(), "kiarabot.v1.RuntimeService/GetStorage",
+                         *request, false, options_);
+    if (const auto* rejected = std::get_if<t::Failure>(&query)) {
+      return error_status(*rejected, request->context().request_id(),
+                          request->context().trace_id());
+    }
+    auto& context = std::get<Prepared>(query);
+    if (!options_.storage) {
+      return fail(context, failure(t::ErrorCode::CapabilityNotSupported));
+    }
+    t::StorageCommandContext command;
+    if (!storage_command(context, *request, command) || request->key().empty()) {
+      return fail(context, failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput));
+    }
+    auto found = options_.storage->get_storage({command, request->key()});
+    if (const auto* rejected = std::get_if<t::Failure>(&found)) {
+      return fail(context, *rejected);
+    }
+    if (!storage_entry(std::get<t::StorageEntryResult>(found), request->key(),
+                       response->mutable_entry())) {
+      return error_status(internal_failure(), context.request, context.trace);
+    }
+    return grpc::Status::OK;
+  }
+  grpc::Status SetStorage(grpc::ServerContext* transport,
+                          const v1::RuntimeSetStorageRequest* request,
+                          v1::RuntimeSetStorageResponse* response) override {
+    auto query = prepare(*transport, request->context(), "kiarabot.v1.RuntimeService/SetStorage",
+                         *request, true, options_);
+    if (const auto* rejected = std::get_if<t::Failure>(&query)) {
+      return error_status(*rejected, request->context().request_id(),
+                          request->context().trace_id());
+    }
+    auto& context = std::get<Prepared>(query);
+    if (!options_.storage) {
+      return fail(context, failure(t::ErrorCode::CapabilityNotSupported));
+    }
+    t::StorageCommandContext command;
+    if (!storage_command(context, *request, command) || request->key().empty()) {
+      return fail(context, failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput));
+    }
+    std::optional<t::TimePoint> expires;
+    if (request->has_expires_at()) {
+      const auto decoded = codec::from_wire(request->expires_at());
+      const auto* value = std::get_if<t::TimePoint>(&decoded);
+      if (!value) {
+        return fail(context, failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput));
+      }
+      expires = *value;
+    }
+    std::vector<std::byte> bytes(request->value().size());
+    std::memcpy(bytes.data(), request->value().data(), request->value().size());
+    // The unary internal Set has no condition field; shared writes require one and therefore stay
+    // rejected (the bridge frame path carries it). Private Set must omit it by contract.
+    auto written = options_.storage->set_storage(
+        {command, request->key(), std::move(bytes), expires, std::nullopt});
+    if (const auto* rejected = std::get_if<t::Failure>(&written)) {
+      return fail(context, *rejected);
+    }
+    if (!storage_entry(std::get<t::StorageEntryResult>(written), request->key(),
+                       response->mutable_entry())) {
+      return error_status(internal_failure(), context.request, context.trace);
+    }
+    return grpc::Status::OK;
+  }
+  grpc::Status DeleteStorage(grpc::ServerContext* transport,
+                             const v1::RuntimeDeleteStorageRequest* request,
+                             v1::RuntimeDeleteStorageResponse* response) override {
+    auto query = prepare(*transport, request->context(), "kiarabot.v1.RuntimeService/DeleteStorage",
+                         *request, true, options_);
+    if (const auto* rejected = std::get_if<t::Failure>(&query)) {
+      return error_status(*rejected, request->context().request_id(),
+                          request->context().trace_id());
+    }
+    auto& context = std::get<Prepared>(query);
+    if (!options_.storage) {
+      return fail(context, failure(t::ErrorCode::CapabilityNotSupported));
+    }
+    t::StorageCommandContext command;
+    if (!storage_command(context, *request, command) || request->key().empty()) {
+      return fail(context, failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput));
+    }
+    std::optional<t::CompareCondition> condition;
+    if (request->has_condition()) {
+      auto decoded = storage_condition(request->condition());
+      if (!decoded) {
+        return fail(context, failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput));
+      }
+      condition = *decoded;
+    }
+    auto removed = options_.storage->delete_storage({command, request->key(), condition});
+    if (const auto* rejected = std::get_if<t::Failure>(&removed)) {
+      return fail(context, *rejected);
+    }
+    const auto& result = std::get<t::StorageDeleteResult>(removed);
+    response->set_deleted(result.deleted);
+    if (result.version) {
+      response->set_version(result.version->value);
+    }
+    return grpc::Status::OK;
+  }
+  grpc::Status CompareAndSetStorage(grpc::ServerContext* transport,
+                                    const v1::RuntimeCompareAndSetStorageRequest* request,
+                                    v1::RuntimeCompareAndSetStorageResponse* response) override {
+    auto query =
+        prepare(*transport, request->context(), "kiarabot.v1.RuntimeService/CompareAndSetStorage",
+                *request, true, options_);
+    if (const auto* rejected = std::get_if<t::Failure>(&query)) {
+      return error_status(*rejected, request->context().request_id(),
+                          request->context().trace_id());
+    }
+    auto& context = std::get<Prepared>(query);
+    if (!options_.storage) {
+      return fail(context, failure(t::ErrorCode::CapabilityNotSupported));
+    }
+    t::StorageCommandContext command;
+    if (!storage_command(context, *request, command) || request->key().empty() ||
+        !request->has_condition()) {
+      return fail(context, failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput));
+    }
+    auto decoded = storage_condition(request->condition());
+    if (!decoded) {
+      return fail(context, failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput));
+    }
+    std::optional<t::TimePoint> expires;
+    if (request->has_expires_at()) {
+      const auto typed = codec::from_wire(request->expires_at());
+      const auto* value = std::get_if<t::TimePoint>(&typed);
+      if (!value) {
+        return fail(context, failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput));
+      }
+      expires = *value;
+    }
+    std::vector<std::byte> bytes(request->value().size());
+    std::memcpy(bytes.data(), request->value().data(), request->value().size());
+    auto written = options_.storage->compare_and_set_storage(
+        {command, request->key(), std::move(bytes), *decoded, expires});
+    if (const auto* rejected = std::get_if<t::Failure>(&written)) {
+      return fail(context, *rejected);
+    }
+    if (!storage_entry(std::get<t::StorageEntryResult>(written), request->key(),
+                       response->mutable_entry())) {
+      return error_status(internal_failure(), context.request, context.trace);
+    }
+    return grpc::Status::OK;
+  }
+  grpc::Status CreateSharedNamespace(grpc::ServerContext* transport,
+                                     const v1::RuntimeCreateSharedNamespaceRequest* request,
+                                     v1::RuntimeCreateSharedNamespaceResponse* response) override {
+    auto query =
+        prepare(*transport, request->context(), "kiarabot.v1.RuntimeService/CreateSharedNamespace",
+                *request, true, options_);
+    if (const auto* rejected = std::get_if<t::Failure>(&query)) {
+      return error_status(*rejected, request->context().request_id(),
+                          request->context().trace_id());
+    }
+    auto& context = std::get<Prepared>(query);
+    if (!options_.storage) {
+      return fail(context, failure(t::ErrorCode::CapabilityNotSupported));
+    }
+    if (!canonical_uuid(request->installation_id()) ||
+        (request->has_expected_version() && request->expected_version() == 0)) {
+      return fail(context, failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput));
+    }
+    std::optional<t::ResourceVersion> expected;
+    if (request->has_expected_version()) {
+      expected = t::ResourceVersion{request->expected_version()};
+    }
+    auto created = options_.storage->create_shared_namespace(
+        {context.command, {request->installation_id()}, expected});
+    if (const auto* rejected = std::get_if<t::Failure>(&created)) {
+      return fail(context, *rejected);
+    }
+    if (!namespace_record(std::get<t::NamespaceMutation>(created).namespace_record,
+                          response->mutable_namespace_())) {
+      return error_status(internal_failure(), context.request, context.trace);
+    }
+    return grpc::Status::OK;
+  }
+  grpc::Status GetSharedNamespace(grpc::ServerContext* transport,
+                                  const v1::RuntimeGetSharedNamespaceRequest* request,
+                                  v1::RuntimeGetSharedNamespaceResponse* response) override {
+    auto query =
+        prepare(*transport, request->context(), "kiarabot.v1.RuntimeService/GetSharedNamespace",
+                *request, false, options_);
+    if (const auto* rejected = std::get_if<t::Failure>(&query)) {
+      return error_status(*rejected, request->context().request_id(),
+                          request->context().trace_id());
+    }
+    auto& context = std::get<Prepared>(query);
+    if (!options_.storage) {
+      return fail(context, failure(t::ErrorCode::CapabilityNotSupported));
+    }
+    if (!canonical_uuid(request->namespace_id())) {
+      return fail(context, failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput));
+    }
+    auto found =
+        options_.storage->get_shared_namespace({context.command, {request->namespace_id()}});
+    if (const auto* rejected = std::get_if<t::Failure>(&found)) {
+      return fail(context, *rejected);
+    }
+    const auto& view = std::get<t::NamespaceView>(found);
+    if (!namespace_record(view.namespace_record, response->mutable_namespace_())) {
+      return error_status(internal_failure(), context.request, context.trace);
+    }
+    for (const auto& member : view.members) {
+      auto* output = response->add_members();
+      output->set_instance_id(member.instance.value);
+      output->set_can_read(member.can_read);
+      output->set_can_write(member.can_write);
+    }
+    auto* quota = response->mutable_quota();
+    quota->set_namespace_keys_used(view.quota.namespace_keys_used);
+    quota->set_namespace_keys_limit(t::kMaximumNamespaceKeys);
+    quota->set_namespace_bytes_used(view.quota.namespace_bytes_used);
+    quota->set_namespace_bytes_limit(t::kMaximumNamespaceBytes);
+    quota->set_installation_keys_used(view.quota.installation_keys_used);
+    quota->set_installation_keys_limit(t::kMaximumInstallationKeys);
+    quota->set_installation_bytes_used(view.quota.installation_bytes_used);
+    quota->set_installation_bytes_limit(t::kMaximumInstallationBytes);
+    return grpc::Status::OK;
+  }
+  grpc::Status SetSharedMembers(grpc::ServerContext* transport,
+                                const v1::RuntimeSetSharedMembersRequest* request,
+                                v1::RuntimeSetSharedMembersResponse* response) override {
+    auto query = prepare(*transport, request->context(),
+                         "kiarabot.v1.RuntimeService/SetSharedMembers", *request, true, options_);
+    if (const auto* rejected = std::get_if<t::Failure>(&query)) {
+      return error_status(*rejected, request->context().request_id(),
+                          request->context().trace_id());
+    }
+    auto& context = std::get<Prepared>(query);
+    if (!options_.storage) {
+      return fail(context, failure(t::ErrorCode::CapabilityNotSupported));
+    }
+    if (!canonical_uuid(request->namespace_id()) || !canonical_uuid(request->installation_id()) ||
+        request->members_size() > 1024 ||
+        (request->has_expected_version() && request->expected_version() == 0)) {
+      return fail(context, failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput));
+    }
+    std::vector<t::SharedMember> members;
+    for (const auto& member : request->members()) {
+      if (!canonical_uuid(member.instance_id())) {
+        return fail(context, failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput));
+      }
+      members.push_back({{member.instance_id()}, member.can_read(), member.can_write()});
+    }
+    std::optional<t::ResourceVersion> expected;
+    if (request->has_expected_version()) {
+      expected = t::ResourceVersion{request->expected_version()};
+    }
+    auto updated = options_.storage->set_shared_members({context.command,
+                                                         {request->namespace_id()},
+                                                         {request->installation_id()},
+                                                         std::move(members),
+                                                         expected});
+    if (const auto* rejected = std::get_if<t::Failure>(&updated)) {
+      return fail(context, *rejected);
+    }
+    const auto& result = std::get<t::SharedMembersMutation>(updated);
+    response->set_version(result.version.value);
+    operation_ref(result.operation, response->mutable_operation());
+    return grpc::Status::OK;
+  }
+  grpc::Status
+  DisableSharedNamespace(grpc::ServerContext* transport,
+                         const v1::RuntimeDisableSharedNamespaceRequest* request,
+                         v1::RuntimeDisableSharedNamespaceResponse* response) override {
+    auto query =
+        prepare(*transport, request->context(), "kiarabot.v1.RuntimeService/DisableSharedNamespace",
+                *request, true, options_);
+    if (const auto* rejected = std::get_if<t::Failure>(&query)) {
+      return error_status(*rejected, request->context().request_id(),
+                          request->context().trace_id());
+    }
+    auto& context = std::get<Prepared>(query);
+    if (!options_.storage) {
+      return fail(context, failure(t::ErrorCode::CapabilityNotSupported));
+    }
+    if (!canonical_uuid(request->namespace_id()) ||
+        (request->has_expected_version() && request->expected_version() == 0)) {
+      return fail(context, failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput));
+    }
+    std::optional<t::ResourceVersion> expected;
+    if (request->has_expected_version()) {
+      expected = t::ResourceVersion{request->expected_version()};
+    }
+    auto disabled = options_.storage->disable_shared_namespace(
+        {context.command, {request->namespace_id()}, expected});
+    if (const auto* rejected = std::get_if<t::Failure>(&disabled)) {
+      return fail(context, *rejected);
+    }
+    const auto& result = std::get<t::SharedMembersMutation>(disabled);
+    response->set_version(result.version.value);
+    operation_ref(result.operation, response->mutable_operation());
+    return grpc::Status::OK;
+  }
+
 private:
+  template <typename Request>
+  bool storage_command(const Prepared& prepared, const Request& request,
+                       t::StorageCommandContext& command) {
+    const auto& fence = request.fence();
+    if (!canonical_uuid(fence.instance_id())) {
+      return false;
+    }
+    command.authentication = prepared.command.authentication;
+    command.request_id = prepared.command.request_id;
+    command.trace_id = prepared.command.trace_id;
+    command.method = prepared.command.method;
+    command.idempotency_key = prepared.command.idempotency_key;
+    command.fingerprint = prepared.command.fingerprint;
+    command.deadline = prepared.command.deadline;
+    command.instance = {fence.instance_id()};
+    if (request.has_scope()) {
+      switch (request.scope().scope_case()) {
+      case v1::NamespaceScope::SCOPE_NOT_SET:
+        command.requested = t::RequestedScopeKind::DefaultPrivate;
+        break;
+      case v1::NamespaceScope::kInstancePrivate:
+        if (!request.scope().instance_private()) {
+          return false;
+        }
+        command.requested = t::RequestedScopeKind::DefaultPrivate;
+        break;
+      case v1::NamespaceScope::kInstallationShared:
+        if (!request.scope().installation_shared()) {
+          return false;
+        }
+        command.requested = t::RequestedScopeKind::InstallationShared;
+        break;
+      case v1::NamespaceScope::kInstallationSharedId:
+        if (!canonical_uuid(request.scope().installation_shared_id())) {
+          return false;
+        }
+        command.requested = t::RequestedScopeKind::InstallationSharedId;
+        command.shared_namespace_id = {request.scope().installation_shared_id()};
+        break;
+      }
+    }
+    return true;
+  }
+  static std::optional<t::CompareCondition> storage_condition(const v1::StorageCondition& wire) {
+    switch (wire.expected_case()) {
+    case v1::StorageCondition::EXPECTED_NOT_SET:
+      return std::nullopt;
+    case v1::StorageCondition::kAbsent:
+      if (!wire.absent()) {
+        return std::nullopt;
+      }
+      return t::CompareCondition{t::ExpectedAbsent{}};
+    case v1::StorageCondition::kVersion:
+      if (wire.version() == 0) {
+        return std::nullopt;
+      }
+      return t::CompareCondition{t::ResourceVersion{wire.version()}};
+    }
+    return std::nullopt;
+  }
+  static bool storage_entry(const t::StorageEntryResult& value, const std::string& key,
+                            v1::StorageEntry* output) {
+    if (!output) {
+      return false;
+    }
+    output->set_key(key);
+    output->set_value(value.value.bytes.data(), value.value.bytes.size());
+    output->set_version(value.value.version.value);
+    if (value.value.expires_at) {
+      return timestamp(*value.value.expires_at, output->mutable_expires_at());
+    }
+    return true;
+  }
+  static bool namespace_record(const t::SharedNamespaceRecord& value, v1::NamespaceRecord* output) {
+    if (!output) {
+      return false;
+    }
+    output->set_namespace_id(value.namespace_id.value);
+    output->set_installation_id(value.installation.value);
+    output->set_version(value.version.value);
+    output->set_disabled(value.disabled);
+    return timestamp(value.created_at, output->mutable_created_at()) &&
+           timestamp(value.updated_at, output->mutable_updated_at());
+  }
   std::optional<t::Failure> catalog(const v1::ResourceRef& input) const {
     const auto decoded = codec::from_wire(input);
     if (const auto* failure = std::get_if<t::Failure>(&decoded)) {

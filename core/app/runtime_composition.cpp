@@ -17,6 +17,7 @@
 #include "kiarabot/core/application/target/runtime_bridge_application.hpp"
 #include "kiarabot/core/application/target/runtime_readiness.hpp"
 #include "kiarabot/core/application/target/runtime_resource_application.hpp"
+#include "kiarabot/core/application/target/runtime_storage_application.hpp"
 #include "kiarabot/core/runtime/platform/runtime_bridge.hpp"
 #include "kiarabot/core/runtime/platform/runtime_identity_client.hpp"
 #include "kiarabot/core/runtime/platform/runtime_rpc.hpp"
@@ -172,6 +173,7 @@ struct State {
   std::unique_ptr<target::RuntimeAuthorizationPort> fail_closed_authorization;
   target::RuntimeAuthorizationPort* authorization = nullptr;
   target::RuntimeResourceApplication* application = nullptr;
+  std::unique_ptr<target::RuntimeStorageApplication> storage;
   std::unique_ptr<target::RuntimeBridgeApplication> bridge;
 };
 // Readiness merges the composition-observed database state with the authorization-chain observation
@@ -310,6 +312,7 @@ compose_runtime_service(const platform::ProcessConfig& config) {
         }
       }
       platform::RuntimeRpcOptions options;
+      options.storage = state->storage.get();
       if (state->identity_client) {
         auto* client = state->identity_client.get();
         options.authorize = [client](grpc::ServerContext& transport,

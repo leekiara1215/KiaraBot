@@ -6,6 +6,7 @@
 #include <grpcpp/grpcpp.h>
 
 #include "kiarabot/core/application/target/runtime_resource_application.hpp"
+#include "kiarabot/core/application/target/runtime_storage_application.hpp"
 #include "kiarabot/v1/runtime.grpc.pb.h"
 
 namespace kiarabot::core::platform {
@@ -21,6 +22,11 @@ using RuntimePeerAuthorizer = std::function<target::Outcome<target::Authenticati
 
 struct RuntimeRpcOptions {
   RuntimePeerAuthorizer authorize;
+  // P09 internal-dispatcher storage/shared-namespace application. Null keeps the unary storage
+  // methods at CAPABILITY_NOT_SUPPORTED (the external surface never gains these handlers by
+  // accident). The owner mTLS transport still authenticates the peer and the application performs
+  // the current online authorization/member gates for every call.
+  target::RuntimeStorageApplication* storage = nullptr;
   // Optional process-level deadline bound (shared shutdown budget); expired -> TIMEOUT.
   std::function<target::Outcome<target::TimePoint>()> invocation_deadline;
 };
