@@ -102,7 +102,10 @@ add_test(NAME p01_target_roundtrip COMMAND ${CMAKE_COMMAND} -E env
   "PYTHONPATH=${CMAKE_SOURCE_DIR}/sdk/python/build/generated"
   "${KIARABOT_TARGET_PYTHON}" "${CMAKE_SOURCE_DIR}/proto/tests/target_contract_test.py"
   "${KIARABOT_DESCRIPTOR}" $<TARGET_FILE:kiarabot_target_roundtrip>)
-set_tests_properties(p01_target_roundtrip PROPERTIES LABELS "p01;integration" TIMEOUT 60)
+# 311 spawned Python/C++ message round-trips plus descriptor/policy checks. Green runs
+# measured 57.72-60.21s on the P00 macOS host, so the previous 60s limit failed under
+# ordinary build/CI load. Keep headroom; this is a budget change, not a behavior change.
+set_tests_properties(p01_target_roundtrip PROPERTIES LABELS "p01;integration" TIMEOUT 180)
 
 add_library(kiarabot_service_process STATIC
   ${CMAKE_SOURCE_DIR}/core/src/runtime/platform/service_process.cpp
