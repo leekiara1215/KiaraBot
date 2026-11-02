@@ -1315,6 +1315,7 @@ T03a 新增 CoreToPlugin.error（oneof 字段 6），承载注册之后的终止
 | `RuntimeQueryActionResultRequest.context`、`RuntimeQueryActionResultRequest.account_scope`、`RuntimeQueryActionResultRequest.action_id`、`RuntimeQueryActionResultRequest.idempotency_key`、`RuntimeQueryActionResultRequest.owner_instance_id`、`RuntimeQueryActionResultResponse.result`、`RuntimeQueryActionResultResponse.execution_outcome`、`RuntimeQueryActionResultResponse.metadata` | not_implemented | P07 目标 Control 查询：caller=scoped Control、permission=`action.inspect`、`account_scope` 恰含一个 `RESOURCE_ACCOUNT`；按幂等键查询必须同时给 `owner_instance_id`（业务幂等按插件实例隔离）。插件查询仍走 `PluginBridge`。 |
 | `ActionKind.ACTION_KIND_UNSPECIFIED`、`ActionKind.ACTION_KIND_SEND_MESSAGE`、`ActionKind.ACTION_KIND_REACT_MESSAGE`、`ActionKind.ACTION_KIND_DELETE_MESSAGE`、`ActionKind.ACTION_KIND_MUTE_MEMBER`、`ActionKind.ACTION_KIND_KICK_MEMBER`、`ActionKind.ACTION_KIND_APPROVE_REQUEST` | not_implemented | P07 目标 Action 类型投影词表（wire 判别仍为 `ActionEnvelope.payload` oneof；`schedule_task` 不产生类型值）。 |
 | `ActionReceiptDisposition.ACTION_RECEIPT_DISPOSITION_UNSPECIFIED`、`ActionReceiptDisposition.ACTION_RECEIPT_RECORDED`、`ActionReceiptDisposition.ACTION_RECEIPT_DUPLICATE`、`ActionReceiptDisposition.ACTION_RECEIPT_EVIDENCE_ONLY`、`ActionReceiptDisposition.ACTION_RECEIPT_CONFLICT` | not_implemented | P07 目标结果/证据回执处置：迟到结果在 Action 已 EXPIRED 时只记证据（EVIDENCE_ONLY），不改变终态。 |
+| `Permission.PERMISSION_MESSAGE_SEND`、`Permission.PERMISSION_MESSAGE_REACT`、`Permission.PERMISSION_MESSAGE_DELETE`、`Permission.PERMISSION_MEMBER_MUTE`、`Permission.PERMISSION_MEMBER_KICK`、`Permission.PERMISSION_REQUEST_APPROVE` | not_implemented | P07 目标每-kind Action 权限：把已冻结的 `message.send/react/delete`、`member.mute/kick`、`request.approve` 字符串词表映射为封闭 `Permission` 枚举值（41–46），供 Identity 显式资源授予与 Runtime 校验；不改变现有 manifest 字符串词表，P07 实现前不授予/不校验。 |
 <!-- contract-status:end -->
 
 `/ws/messages` 自 2026-10-31（W5）起为 `implemented`：只有被私有控制配置显式授予 `message.read` 的用户可订阅，事件 `message.updated` 仅含消息元数据（`message_id`、`conversation_id`、`direction`；v1 只产生 `received`），不推送正文、没有 REST 消息投影、也不构成审计；任何默认角色（含 admin）都不持有 `message.read`。授权模型见 `doc/08-operations.md`。
@@ -1551,6 +1552,21 @@ action.approve_request.v1
 <!-- vocabulary:end -->
 
 v1 不存在其他功能/权限名；`doc/03-plugin-sdk.md` 中更宽的规划词表不构成本契约承诺。`message.send`、`message.react`、`message.delete`、`member.mute`、`member.kick`、`request.approve` 只对 Action 生效且互不隐含；`message.read` 不授予任何控制面默认角色。
+
+### P07 目标 Action 权限与能力映射（未实现）
+
+P06 之后外部插件 Action 只走 `PluginBridge`；P07 目标的每-kind 授权把现有冻结字符串词表映射为封闭 `Permission` 枚举值（41–46），并要求 exact account/resource scope。P07 实现前该映射不生效，reference 路径仍按插件 manifest 权限字符串校验。
+
+| Action kind | 权限字符串（manifest） | Permission 枚举值 | 适配器 capability |
+| --- | --- | --- | --- |
+| send_message（纯文本） | `message.send` | `PERMISSION_MESSAGE_SEND=41` | `action.send_message.text.v1` |
+| react_message | `message.react` | `PERMISSION_MESSAGE_REACT=42` | `action.react_message.v1` |
+| delete_message（bot 自撤回） | `message.delete` | `PERMISSION_MESSAGE_DELETE=43` | `action.delete_message.v1` |
+| mute_member | `member.mute` | `PERMISSION_MEMBER_MUTE=44` | `action.mute_member.v1` |
+| kick_member | `member.kick` | `PERMISSION_MEMBER_KICK=45` | `action.kick_member.v1` |
+| approve_request | `request.approve` | `PERMISSION_REQUEST_APPROVE=46` | `action.approve_request.v1` |
+
+`PERMISSION_ACTION_EXECUTE`/`PERMISSION_ACTION_INSPECT` 保留为方法级权限：unary `Submit/Query/CancelAction` 仅内部 dispatcher 使用（需要 `action.execute`），Control 查询需要 `action.inspect`。以上敏感权限不由默认角色派生，必须显式资源授予；Mute/Kick 另受账号 ActionPolicy 门禁。`schedule_task` 已 deprecated，不产生 kind/权限。
 
 ## 错误模型
 

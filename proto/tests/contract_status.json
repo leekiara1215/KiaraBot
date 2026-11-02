@@ -1584,7 +1584,13 @@
       "ActionReceiptDisposition.ACTION_RECEIPT_RECORDED": "not_implemented",
       "ActionReceiptDisposition.ACTION_RECEIPT_DUPLICATE": "not_implemented",
       "ActionReceiptDisposition.ACTION_RECEIPT_EVIDENCE_ONLY": "not_implemented",
-      "ActionReceiptDisposition.ACTION_RECEIPT_CONFLICT": "not_implemented"
+      "ActionReceiptDisposition.ACTION_RECEIPT_CONFLICT": "not_implemented",
+      "Permission.PERMISSION_MESSAGE_SEND": "not_implemented",
+      "Permission.PERMISSION_MESSAGE_REACT": "not_implemented",
+      "Permission.PERMISSION_MESSAGE_DELETE": "not_implemented",
+      "Permission.PERMISSION_MEMBER_MUTE": "not_implemented",
+      "Permission.PERMISSION_MEMBER_KICK": "not_implemented",
+      "Permission.PERMISSION_REQUEST_APPROVE": "not_implemented"
     },
     "channels": {
       "channels.control": "implemented",
@@ -4873,6 +4879,24 @@
       "reports/modules/architecture-contracts.md"
     ],
     "ActionReceiptDisposition.ACTION_RECEIPT_CONFLICT": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "Permission.PERMISSION_MESSAGE_SEND": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "Permission.PERMISSION_MESSAGE_REACT": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "Permission.PERMISSION_MESSAGE_DELETE": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "Permission.PERMISSION_MEMBER_MUTE": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "Permission.PERMISSION_MEMBER_KICK": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "Permission.PERMISSION_REQUEST_APPROVE": [
       "reports/modules/architecture-contracts.md"
     ]
   },
