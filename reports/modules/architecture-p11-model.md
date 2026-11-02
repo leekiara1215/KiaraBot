@@ -59,3 +59,41 @@ owner gateway/委托/错误映射沿用 P12c；本任务只新增 Model owner �
 - 未翻转：插件 `HostRequest.model_chat` 的 target 消息（ModelChatRequest/Response/ModelMessage）仍
   not_implemented——当前无真实 PluginBridge+Model+Identity target fixture 覆盖该 ingress，P11c 的插件
   chat 证据来自 reference 测试，不足以按 P06 规则认证 target；待后续 bridge fixture。
+
+## P11f Model 退出证据矩阵（2026-11-02）
+
+- 基线：worktree `.worktrees/p11f`，branch `codex/p11f`，HEAD `95495c2`（本地 main；origin/main 记录为 `a056942`，本次未切换基线）。**不修改实现/契约**；本段只记录实测、状态核对与缺口。
+- 构建：main build `build/full-locked` 增量重建成功（`cmake --build build/full-locked --parallel 3`，exit 0）；无 C++ 源码改动。
+
+### 已实测命令与结果
+
+| 命令 | 结果 |
+|---|---|
+| `ctest -R 'p11' -j1 --output-on-failure`（p11_model_gateway、p11_model_gateway_application、p11_model_http_provider、p11_model_secret_crypto、p11_model_identity_client、p11_runtime_model_client、p11_model_bridge、p11_model_rpc、p11_control_model_rest） | **9/9 passed**（总 29.7s；control_model_rest 15.3s，bridge 3.5s，其余 0.01–2.8s） |
+| `ctest -R 'p03_postgres|p03_service_database' -j1 --output-on-failure` | **2/2 passed**（p03_postgres_database 25.0s、p03_service_database 19.2s；真 PG16.4 fixture） |
+| `sdk/python/.venv/bin/python -m pytest -q sdk/python/tests` | **141 passed, 23 skipped**（12.2s） |
+| `... pytest -q sdk/python/tests/test_model.py sdk/python/tests/test_model_sdk.py -rs` | **7 passed, 19 skipped**；skip 原因 `deferred: target Model e2e needs P06a Bridge handler + P08 managed Host`（test_model.py 的 target Model/Provider e2e 参数化用例） |
+| `python3 proto/tests/check_implementation_status.py` | **PASS**（target production 状态/字段/枚举/operation 与 doc/01/证据核对一致） |
+| `ctest -R p01_target_roundtrip` | **FAIL（与本任务无关的契约镜像缺陷）**：`AssertionError: ('ListAudit', ['RESOURCE_CATALOG'], [])`，当前 main 的 P12c-6 ListAudit scope_kinds 与 target_spec 不一致；未修改 proto/target_spec，已上报 Lead。 |
+
+### target/evidence 状态核对
+
+- ModelService 11 个 owner RPC 在 target_spec 中为 `implemented`；P11 全套测试覆盖 gateway/application/http provider/secret crypto/identity client/runtime client/bridge/rpc/control REST。
+- `ModelChatRequest/Response/Message`、`HostRequest.model_chat`、`HostResponse.model_chat` 及字段级证据由 P11e bridge fixture 覆盖（doc/01 既有行）。
+- Model 管理消息/字段（metadata、configuration、call record、disable/enable、resolve、getOperation 等）在 **target production effective status** 中为 implemented（`check_implementation_status.py` PASS），但 proto 内联 `CONTRACT_STATUS` 仍保留历史 `not_implemented` 注释；这是 registry/doc override 与源注释的历史差异，不改变本次验收结论。
+- **OpenAPI Model REST 不一致**：`operations.{getModelMetadata, updateModel, rotateProviderSecret, getModelConfiguration, disableModel, enableModel, getModelCallStatus, resolveModelCall, listModels}` 在 `api/openapi.yaml` 仍标 `x-contract-status: not_implemented`，而 P11d-2 e2e 已证明 Control 转发可用（`p11_control_model_rest` 通过）。本次不修改契约；列为需 P12c/P11 契约清理复核项，不能据 REST inline 状态判定 owner 实现不存在。
+- `operations.getOperation`：Control 只接线 `owner=model` 分支；runtime/scheduler 未接线（稳定 CAPABILITY_NOT_SUPPORTED/503）。OpenAPI 仍 not_implemented；多 owner 统一 operation 未验收。
+
+### 未翻项/不验收项与理由
+
+- **ModelChatDisposition/ModelCallDisposition 无线上暴露**：disposition 目前是 owner 内部/管理投影事实，**没有插件/SDK 可消费的线上字段或真实 Provider 场景证据**；不把枚举值翻为客户端可见能力，也不以单元枚举断言替代线上暴露验收。
+- **streaming 明确不做**：HTTP provider 固定 `stream=false`，proto/model API 无流式字段；流式 Provider、增量响应、取消/背压均未实现，列 P11 外。
+- **GetOperation 多 owner**：只完成 `owner=model`；Runtime/Scheduler operation 路由未接线，`CAPABILITY_NOT_SUPPORTED` 不是完整 GetOperation 能力。
+- **插件 `HostRequest.model_chat` target 证据**：P11e fixture 已覆盖 bridge ingress；但真实插件→Runtime→Model→Provider 的**单链路**未合入（P05b 委托语义待用户确认），不能把分段证据当作单链路验收。
+- **模型管理 REST inline 状态**：见上，OpenAPI 标记与 e2e 不一致，待契约清理，不在本任务改契约。
+
+### 剩余缺口（已实测/待环境）
+
+- 已实测：Model owner RPC/应用/PG/HTTP provider/secret AEAD/Identity caller/Runtime client/PluginBridge fixture/Control Model REST；真 PG16.4 p03 fixture；SDK 非 target model 单测。
+- 待环境：真实外部 Provider 付费联调（T07b/用户环境，未执行每次调用与计费核对）；真实插件→Runtime→Model→Provider 单链路 e2e（P05b 委托审批/用户确认）；readiness composition 级真实 TLS harness（当前为组件/单进程 fixture）；目标六服务栈真实 live（本机未启动全目标栈）。
+- 需 Lead/契约 owner 复核：P12c-6 ListAudit target_spec 与 proto scope_kinds 不一致导致 p01_target_roundtrip 红；OpenAPI Model REST 的 inline not_implemented 与 P11d-2 e2e 证据不一致。

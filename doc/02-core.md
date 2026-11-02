@@ -1542,3 +1542,6 @@ P09 storage 退出证据以现有测试为准：`p09a_runtime_storage_applicatio
 ### P07g Action 退出证据（2026-11-02）
 
 P07 Action 退出证据：领域规则 `p07_action_rules`、真 PG16.4 `p07_postgres_action_records`、真 TLS/PG/Runtime `p06_bridge_acceptance` P07 段（submit/dispatch/terminal/evidence/receipt 幂等、配额窗口、取消、EXPIRED 迟到证据、断线重连回带旧 attempt）、真实 adapter 进程 `p07_adapter_e2e`、SDK `test_actions.py` 28 项、Control REST `p12_control_owner_gateway` 均通过。target 仅翻转有这些证据的 Action 帧/状态/字段/权限/语义；ActionPolicy、react/delete/mute/kick/approve payload、plugin 权限过滤独立项与 ListActionMetadata 未翻，待 P07f-1/2 wire 证据或接线。真实 QQ/NapCat 平台副作用、reaction API、EXPIRED 迟到故障注入与跨主机仍待环境。
+## P11f Model 退出证据（2026-11-02）
+
+Model owner 的 11 个 RPC（GatewayChat/GetCallStatus/Resolve/元数据/配置/Disable/Enable/GetOperation 等）由 P11 全套测试实测（9/9），应用层两事务/UNKNOWN 保守计费/AEAD secret/HTTP provider 映射/Identity 调用者校验均有覆盖；插件入口仅 HostRequest.model_chat 的 bridge fixture 证据，真实插件→Runtime→Model→Provider 单链路待 P05b 委托语义确认。ModelChatDisposition/ModelCallDisposition 不作为线上客户端能力验收（无暴露消费证据），streaming 明确不做，GetOperation 仅 model owner 分支。详见 `reports/modules/architecture-p11-model.md` P11f 段。

@@ -376,3 +376,7 @@ refresh只接受当前实际流、未过期未撤销的proof/refresh及正refres
 ### P06 插件侧冻结（未实现）
 
 外部自管插件在 P06 只连 Runtime 的外部 Bridge 监听：部署一次交付的 `bootstrap_credential`（来自 `RuntimeCreateInstanceResponse.bootstrap_credential`，创建时 `externally_managed=true`）经 gRPC metadata `authorization: Bearer <credential>` 提交；首帧 `RegisterPluginRequest` 的 `instance_id`/`installation_id`/`execution_generation` 必须与凭据解析出的实例一致，成功响应带 `Fence`+`ConnectionAuthorization`，之后每帧带完整 `Fence` 与当前 `connection_proof`。SDK 处理事件时从 `CoreToPlugin.delivery_attempt` 取 attempt，ACK 必须回带该 attempt；租约 30 秒、10 秒单飞续租、总上限 300 秒，旧/过期 attempt 的 ACK 得到 `DELIVERY_STALE` 不确认新尝试。配置 ACK 必须带 `config_version` 与 `Fence`；未应用最新配置的实例不接收新事件。bootstrap/proof/refresh 明文不写日志/持久化，refresh 失败或丢响应时关闭旧流并用仍有效 bootstrap 重连。SDK 的 Options/传输改造属 P06b，当前 target 仍 not_implemented。
+
+## P11f Model SDK 状态（2026-11-02）
+
+SDK `model.chat` 的 target Model e2e 用例当前标记 deferred（依赖 P06a Bridge handler + P08 managed Host：`7 passed, 19 skipped`），不能作为 Model 单链路已验收证据。SDK model.chat 的普通单测 7 passed；目标 HostRequest.model_chat 的 wire 证据来自 P11e bridge fixture。dispositions 不暴露给插件/SDK，streaming 不做。
