@@ -286,3 +286,34 @@ owner 语义。故障/重启/fail-closed 保留通过。
 **P12m 状态**：截至本 commit 检查，main=`6189445` 中 GetActionPolicy/UpdateActionPolicy/
 QueryActionResult/ListModelMetadata 仍无 `scope_kinds`；P12m 合入后只需 rebase 并重跑
 `p14_native_single_host`，无需改测试。
+
+## 12. P14l 收尾：P12m 后矩阵与剩余项（2026-11-03）
+
+P12m（GetActionPolicy/UpdateActionPolicy/QueryActionResult/ListModelMetadata 补
+`scope_kinds`）合入并 rebase 后复跑 strict native smoke，另发现并修复一个真实 Model 缺陷：
+
+**Model 403 根因（已修）**：`ModelIdentityClient::authorize` 对非 runtime_origin 的
+Control 调用仅放行 `management_method()` 白名单；白名单只有写/配置方法，缺少
+GetModelMetadata/ListModelMetadata/GetCallStatus/GetOperation。于是 Control `/api/v1/models`
+（Control 委派 ListModelMetadata）在 P12m 补 scope_kinds 后仍返回 PERMISSION_DENIED。修复：
+把这四个 Control REST 管理读方法加入 management_method（Runtime 只发 Chat）。
+
+**最终 strict 矩阵**（`ctest -R '^p14_native_single_host$'` Passed ~14s）：
+- **success**：health（200 HEALTHY 四真实组件）、principals（P12l 真实页）、tasks_list
+  （200 空页）、models（200 空页，空页序列化为 {}）、action_query（404 NOT_FOUND owner
+  语义）、delete（404 NOT_FOUND）、restore（409 CONFLICT）。
+- **stable-ok**：action_policy GET（404 NOT_FOUND——fixture 未播种 account action policy，
+  属稳定 owner 业务语义）。
+- **known-gap**：logs/audit 稳定 401 UNAUTHENTICATED。
+
+**logs/audit 401 进一步定位（未根因，P14m 候选）**：P14l 已修 Identity 审计源
+（IdentitySecurityWork 增加 query_audit/query_logs 委托；Identity 源现在调用成功）。剩余 401
+来自 **Runtime 审计源**：Control `audit_logs_->runtime(...)` 以一次性 delegation 调用
+RuntimeService.ListAudit/ListLogs，Runtime 返回 UNAUTHENTICATED（Control 侧 owner failure
+code=2），不是 Identity 或数据为空的问题。下一步需核对 Runtime 侧 delegation 验证/审计应用
+对 Control 委派（audience runtime、permission log.read/audit.read on RESOURCE_CATALOG
+"control"）的 origin/assignment 语义；空数据应返回 200 空页。
+
+**未覆盖项**：action_policy PUT（update）未在 native matrix 触发（需先播种 policy/
+expected_version fixture）；真实 Host/Adapter、真实 QQ/Provider、Docker Compose 单机、两主机/
+断网、生产 CA/密钥/release 仍为环境项。

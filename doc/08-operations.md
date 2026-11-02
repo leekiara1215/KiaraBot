@@ -1576,13 +1576,13 @@ Action 到达平台、receipt/终态、重复帧/重连去重、离线/非订阅
 CONFLICT，并检查 adapter/plugin 日志不泄露 bootstrap/平台 token。真实 QQ/NapCat 与
 UNKNOWN/EXPIRED 单链迟到证据属剩余环境/验收项。
 - **P14i–P14l 成功链矩阵与复验（2026-11-03）**：P14i 修复 4 个 Control/Identity 边界缺陷、
-  P14k 修复 Control owner request/trace id 非 UUID 与 Scheduler Installation scope 混入授权、
-  P14l 修复 IdentitySecurityWork 缺失 audit/log 只读投影（Identity 审计源 503→401，进入 peer
-  授权阶段）。strict matrix：health/principals/tasks_list/delete/restore=success（delete=404、
-  restore=409 owner 语义）；logs/audit=401、models=403、action_policy/action_query=400
-  为 known-gap；后三者等待 P12m 补 proto scope_kinds 后 rebase 复跑。详见
+  P14k 修复 Control owner request/trace id 与 Scheduler Installation scope、P14l 修复 Identity
+  审计源缺失的 audit/log 只读投影并补 Model 管理读方法分类。P12m 合入后 strict matrix：
+  health/principals/tasks_list/models/action_query/delete/restore=success（delete/action_query
+  404、restore 409 owner 语义），action_policy=stable-ok 404（未播种 policy），logs/audit=401
+  known-gap（Identity 源已通，剩余 Runtime 审计源委派验证，P14m 候选）。详见
   [architecture-p14f-native-single-host.md](../reports/modules/architecture-p14f-native-single-host.md)
-  第 9–11 节。故障/重启/fail-closed 保留。
+  第 9–12 节。故障/重启/fail-closed 保留。
   第 8 节；故障/重启/fail-closed 矩阵保留。
 
 
