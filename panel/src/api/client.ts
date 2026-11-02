@@ -83,6 +83,8 @@ export const endpoints = {
   instancePluginState: operation('/installations/{installationId}/instances/{instanceId}/plugin-state', 'put'),
   instanceConfiguration: operation('/installations/{installationId}/instances/{instanceId}/configuration', 'get'),
   instanceConfigurationUpdate: operation('/installations/{installationId}/instances/{instanceId}/configuration', 'put'),
+  beginDeleteResource: operation('/resources/{resourceKind}/{resourceId}/delete', 'post'),
+  restoreResource: operation('/resources/{resourceKind}/{resourceId}/restore', 'post'),
   modelUpdate: operation('/models/{modelId}', 'put'),
   modelSecret: operation('/models/{modelId}/secret', 'put'),
   actionMetadata: operation('/actions/metadata', 'get'),
@@ -133,6 +135,10 @@ export type TargetInstanceConfigurationResponse = Schemas['TargetInstanceConfigu
 export type TargetInstanceFactRuntime = Schemas['TargetInstanceFactRuntime'];
 export type TargetInstanceFactHost = Schemas['TargetInstanceFactHost'];
 export type TargetInstanceFactPlugin = Schemas['TargetInstanceFactPlugin'];
+export type TargetBeginDeleteRequest = Schemas['TargetRuntimeBeginDeleteRequest'];
+export type TargetBeginDeleteResponse = Schemas['TargetRuntimeBeginDeleteResponse'];
+export type TargetRestoreResourceRequest = Schemas['TargetRuntimeRestoreResourceRequest'];
+export type TargetRestoreResourceResponse = Schemas['TargetRuntimeRestoreResourceResponse'];
 export type TargetPrincipalPage = Schemas['TargetIdentityListPrincipalsResponse'];
 export type TargetPrincipalSummary = Schemas['TargetIdentityPrincipalSummary'];
 export type TargetCreateInstallationRequest = Schemas['TargetRuntimeCreateInstallationRequest'];
@@ -153,11 +159,11 @@ export function queryJson(value: unknown): string | undefined {
 export interface LogQuery {
   pageToken?: string;
   pageSize?: number;
-  occurredAfter?: string;
-  occurredBefore?: string;
+  /** P12c-6 frozen filter names. `resource` is the JSON encoding of a TargetResourceRef. */
+  occurredFrom?: string;
+  occurredUntil?: string;
   actor?: string;
   resource?: string;
-  owner?: string;
 }
 export interface AuditQuery extends LogQuery {}
 
@@ -289,6 +295,14 @@ export class ApiClient {
     return this.call<TargetInstanceConfigurationResponse>(endpoints.instanceConfigurationUpdate, {
       params: { installationId, instanceId }, body: input });
   }
+  beginDeleteResource(resourceKind: string, resourceId: string, input: TargetBeginDeleteRequest) {
+    return this.call<TargetBeginDeleteResponse>(endpoints.beginDeleteResource, {
+      params: { resourceKind, resourceId }, body: input });
+  }
+  restoreResource(resourceKind: string, resourceId: string, input: TargetRestoreResourceRequest) {
+    return this.call<TargetRestoreResourceResponse>(endpoints.restoreResource, {
+      params: { resourceKind, resourceId }, body: input });
+  }
   setInstanceDesiredState(instanceId: string, input: TargetInstanceDesiredStateRequest) {
     return this.call<Schemas['TargetRuntimeSetDesiredStateResponse']>(endpoints.instanceDesiredState, { param: instanceId, body: input });
   }
@@ -304,22 +318,21 @@ export class ApiClient {
   // merge pages locally; live Control still returns 503 until P12e's authoritative source lands.
   logs(token?: string, pageSize?: number) { return this.list<LogEntry>(endpoints.logs, { token, pageSize }); }
   audit(token?: string, pageSize?: number) { return this.list<AuditEntry>(endpoints.audit, { token, pageSize }); }
-  // P12c-6 (pending wiring) exposes the same /logs /audit paths with server-side
-  // occurred_at+stable-ID keyset page tokens. Filter parameter names are the frontend mapping
-  // requested by P12d-4; they must be re-confirmed against P12c-6's frozen contract before live
-  // use. Live Control currently returns 503 for both paths.
+  // P12c-6 is now wired. Control validates exactly these filter names (occurred_from,
+  // occurred_until, actor, resource as JSON TargetResourceRef) and merges both owner sources by
+  // occurred_at DESC / owner ASC / id DESC, returning an opaque keyset token.
   logPage(query: LogQuery = {}) {
     return this.call<Schemas['LogPage']>(endpoints.logs, { query: {
       page_token: query.pageToken, page_size: query.pageSize,
-      occurred_after: query.occurredAfter, occurred_before: query.occurredBefore,
-      actor: query.actor, resource: query.resource, owner: query.owner,
+      occurred_from: query.occurredFrom, occurred_until: query.occurredUntil,
+      actor: query.actor, resource: query.resource,
     } });
   }
   auditPage(query: AuditQuery = {}) {
     return this.call<Schemas['AuditPage']>(endpoints.audit, { query: {
       page_token: query.pageToken, page_size: query.pageSize,
-      occurred_after: query.occurredAfter, occurred_before: query.occurredBefore,
-      actor: query.actor, resource: query.resource, owner: query.owner,
+      occurred_from: query.occurredFrom, occurred_until: query.occurredUntil,
+      actor: query.actor, resource: query.resource,
     } });
   }
   validatePlugin(manifest: PluginManifest) {

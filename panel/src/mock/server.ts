@@ -26,37 +26,43 @@ const principalItems: Schemas['TargetIdentityPrincipalSummary'][] = [
   { principal_id: '22222222-2222-4222-8222-222222222222', principal_kind: 'human',
     version: '3', state: 'LIFECYCLE_DISABLED', roles: ['ROLE_VIEWER'] },
 ];
-type OwnerLog = Schemas['LogEntry'] & { owner_service: string };
-type OwnerAudit = Schemas['AuditEntry'] & { owner_service: string };
+type OwnerLog = Schemas['LogEntry'] & { owner: string };
+type OwnerAudit = Schemas['AuditEntry'] & { owner: string };
 const logItems: OwnerLog[] = Array.from({ length: 25 }, (_, index) => ({
   id: `log-${String(index + 1).padStart(2, '0')}`,
   name: `Core event ${index + 1}`,
   occurred_at: new Date(Date.UTC(2026, 9, 30, 2, index)).toISOString(),
   level: index % 7 === 0 ? 'WARN' : 'INFO',
   component: 'Core',
-  owner_service: index % 2 === 0 ? 'identity' : 'runtime',
+  owner: index % 2 === 0 ? 'identity' : 'runtime',
   message: index === 0 ? '服务已启动' : `第 ${index + 1} 条运行日志`,
 }));
 const auditItems: OwnerAudit[] = [
   { id: 'audit-01', occurred_at: '2026-10-30T02:00:00Z', actor: 'admin', action: 'login',
-    resource: 'control-panel', request_id: 'request-audit-01', owner_service: 'identity' },
+    resource: 'control-panel', request_id: 'request-audit-01', owner: 'identity' },
   { id: 'audit-02', occurred_at: '2026-10-30T02:01:00Z', actor: 'runtime', action: 'timer.accept',
-    resource: 'task-01', request_id: 'request-audit-02', owner_service: 'runtime' },
+    resource: 'task-01', request_id: 'request-audit-02', owner: 'runtime' },
   { id: 'audit-03', occurred_at: '2026-10-30T02:02:00Z', actor: 'admin', action: 'account.disable',
-    resource: 'account-qq-10001', request_id: 'request-audit-03', owner_service: 'runtime' },
+    resource: 'account-qq-10001', request_id: 'request-audit-03', owner: 'runtime' },
 ];
-function filterLogAudit<T extends { occurred_at: string; owner_service: string; actor?: string; resource?: string }>(
+function filterLogAudit<T extends { occurred_at: string; owner: string; actor?: string; resource?: string }>(
   items: T[], url: URL,
 ): T[] {
-  const after = url.searchParams.get('occurred_after') ?? '';
-  const before = url.searchParams.get('occurred_before') ?? '';
-  const owner = url.searchParams.get('owner') ?? '';
+  const from = url.searchParams.get('occurred_from') ?? '';
+  const until = url.searchParams.get('occurred_until') ?? '';
   const actor = url.searchParams.get('actor') ?? '';
-  const resource = url.searchParams.get('resource') ?? '';
+  const resourceText = url.searchParams.get('resource') ?? '';
+  let resource = '';
+  if (resourceText) {
+    try {
+      const parsed = JSON.parse(resourceText) as { kind?: string; id?: string };
+      resource = parsed.id ? `${parsed.kind ?? ''}:${parsed.id}` : '';
+    } catch { resource = ''; }
+  }
   return items.filter((item) =>
-    (!after || item.occurred_at >= after) && (!before || item.occurred_at <= before) &&
-    (!owner || item.owner_service === owner) && (!actor || item.actor === actor) &&
-    (!resource || item.resource === resource));
+    (!from || item.occurred_at >= from) && (!until || item.occurred_at <= until) &&
+    (!actor || item.actor === actor) &&
+    (!resource || item.resource === resource || item.resource?.endsWith(`:${resource.split(':').pop()}`)));
 }
 const json = (body: unknown, status = 200, headers: Record<string, string> = {}) =>
   new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json', ...headers } });
@@ -200,7 +206,9 @@ export class MockServer {
       return json({ instance: fixtures.instances[0] } satisfies Schemas['TargetRuntimeSetDesiredStateResponse']);
     }
     if (/^\/operations\/[^/]+\/[^/]+$/.test(path)) {
-      return json({ operation: fixtures.operations[0] } satisfies Schemas['TargetOwnerOperationResponse']);
+      const operationId = path.split('/').pop();
+      return json({ operation: operationId === 'operation-lifecycle-01'
+        ? fixtures.operations[1] : fixtures.operations[0] } satisfies Schemas['TargetOwnerOperationResponse']);
     }
     if (/^\/tasks\/[^/]+\/cancel$/.test(path)) {
       return json({ task: fixtures.tasks[0] } satisfies Schemas['TargetSchedulerCancelTaskResponse']);
@@ -242,6 +250,10 @@ export class MockServer {
           desired_config_version: '1', applied_config_version: '0',
           process_outcome: 'EXECUTION_NOT_STARTED', observed_at: new Date().toISOString(),
           source_service: 'runtime' } } } satisfies Schemas['TargetRuntimeCreateInstanceResponse']);
+    }
+    const lifecycleMatch = /^\/resources\/([^/]+)\/([^/]+)\/(delete|restore)$/.exec(path);
+    if (lifecycleMatch && String(init?.method ?? 'GET').toUpperCase() === 'POST') {
+      return json({ operation: { owner_service: 'runtime', operation_id: 'operation-lifecycle-01' } });
     }
     const modelSecretMatch = /^\/models\/([^/]+)\/secret$/.exec(path);
     if (modelSecretMatch && String(init?.method ?? 'GET').toUpperCase() === 'PUT') {
@@ -301,11 +313,14 @@ export class MockServer {
       const items = [...this.pluginStates].map(([id, state]) => pluginItem(id, id === 'welcome' ? 'Welcome' : id, state));
       return json({ items, page: {} } satisfies Schemas['PluginPage']);
     }
-    if (path === '/logs') {
-      return json(paginate(filterLogAudit(logItems, url), url, 'logs-page-2', 'LogPage'));
-    }
-    if (path === '/audit') {
-      return json(paginate(filterLogAudit(auditItems, url), url, 'audit-page-2', 'AuditPage'));
+    if (path === '/logs' || path === '/audit') {
+      // P12c-6 rejects unknown filter names; keep the mock strict so stale mappings fail tests.
+      for (const name of ['occurred_after', 'occurred_before', 'owner']) {
+        if (url.searchParams.has(name)) return error(400, 'INVALID_ARGUMENT', 'unknown filter');
+      }
+      return path === '/logs'
+        ? json(paginate(filterLogAudit(logItems, url), url, 'logs-page-2', 'LogPage'))
+        : json(paginate(filterLogAudit(auditItems, url), url, 'audit-page-2', 'AuditPage'));
     }
     const value = base[path as keyof typeof base];
     return value ? json(value) : error(404, 'NOT_FOUND', '资源不存在');
