@@ -425,7 +425,7 @@ socket，不继续受理。暂时忙等可恢复情况由具体组合根区分�
 ### P03 common transaction limits
 
 
-P03 公共 schema 为 v3；P04 Identity 空库含安全关系、完整会话结果与当前 bootstrap 定位及源 Control 会话绑定和平台当前定位索引及Assignment墓碑与完整普通结果后为 v10，另三库为 v5。要求UTF8数据库；
+P03 公共 schema 为 v3；P04 Identity 空库含安全关系、完整会话结果、当前 bootstrap 定位、源 Control 会话绑定、平台当前定位索引、Assignment墓碑、完整普通结果、Pending 凭据受众关系及一个 binding 只对应一个 Principal 的唯一索引后为 v11，另三库为 v5。要求UTF8数据库；
 旧版本或其他结构不自动升级，必须按本轮空库部署
 流程初始化新的专属库，不能清空原库或自动补表。schema结构描述/对象owner/运行权限均参与
 启动验证。当前仅存储公共能力，业务就绪仍由各服务已实现依赖决定。
@@ -463,9 +463,9 @@ UNIMPLEMENTED；平台监听继续强制mTLS，不能因换入handler改为无�
 数据库名及迁移/运行角色名限定1–63个小写ASCII字母、数字或下划线；单主机地址、端口
 1–65535，不接收DSN、多host或Unix socket覆盖受控策略。
 
-### 目标凭据登记与时间投影（未实现）
+### 凭据登记、轮换与时间投影（实现中，待完整验收）
 
-主体登记返回 PENDING 初始凭据引用，保存其 ID/版本后经 RotateCredential 首次发放；GetCredentialStatus 只查询状态，不能恢复秘密。PENDING 无到期时间，不可用于连接；ACTIVE/EXPIRED 有权威到期，撤销保留历史状态而不再发秘密。禁止记录 token、refresh、密钥/摘要。会话 created_at 首次持久化后不变，Control 按 Identity checked_at 判定到期和剩余 TTL，不可补本机时间。以上需 P04 实现及故障验收；当前 stub 不可用于运维发放。
+主体登记返回 Disabled Principal 与 PENDING 初始凭据引用（allowed_services 持久化为 Pending audiences），保存其 ID/版本后经 RotateCredential 首次发放；首轮成功轮换在同一事务激活 principal，WorkloadBootstrap 轮换交付一次 opaque token（24h，可信策略），human Password 轮换交付一次服务端生成的临时密码，两者都受可信策略期限约束；CertificateBinding 轮换由证书登记流程负责，该 RPC 明确返回 CAPABILITY_NOT_SUPPORTED。GetCredentialStatus 只查询状态，不能恢复秘密。PENDING 无到期时间，不可用于连接；ACTIVE/EXPIRED 有权威到期，撤销保留历史状态而不再发秘密；撤销后该凭据的 Login/Validate 必须失败。加密交付收据用 keyed request commitment（含 expected_version），同键异版本 CONFLICT；未授权与不存在统一 NOT_FOUND；v1 一个精确 binding 只对应一个 Principal。禁止记录 token、refresh、密钥/摘要。会话 created_at 首次持久化后不变，Control 按 Identity checked_at 判定到期和剩余 TTL，不可补本机时间。应用/仓储/RPC 已接线，readiness 以 bootstrap Consumed、DB writer、凭据装载与可信时钟为门禁。
 
 ### P04 peer 证据与登记
 
@@ -590,7 +590,7 @@ wrapper仅核对返回指纹、正verified_at、受信clock/已知偏差及与ve
 ### P04 离线管理员与 Control 登记命令
 
 `kiarabot-identity-bootstrap` 只在可信部署主机离线运行，不提供 HTTP/gRPC 初始化入口。
-先显式初始化 Identity 空库（当前 schema10），停止同库 Identity daemon，再执行：
+先显式初始化 Identity 空库（当前 schema11），停止同库 Identity daemon，再执行：
 
 ```bash
 kiarabot-identity-bootstrap --config identity.json --enrollment enrollment.json --password-file administrator-password
@@ -904,9 +904,11 @@ verifier 或 SecretReplayPayload。重复同指纹仍返回原完整快照及原
 重连用原键恢复原结果，即使当前凭据已轮换或授予已撤销。新输入坏形状/NUL为 InvalidArgument，
 缺快照/子行、次序或 typed shape 损坏为 Internal，依赖故障沿同 UoW Failure/回滚语义传播。
 
-共享 typed 表及 kind 范围变化后，Identity 新空库 schema10，Runtime/Scheduler/Model 均为
-schema5；四库 descriptor 全部更新。旧库拒绝打开，不自动迁移或清空。此持久化能力不代表
-尚未接线的 Register/Set/Revoke RPC 或生产状态已启用。
+共享 typed 表及 kind 范围变化后，Identity 新空库 schema11（含 Pending 凭据受众关系与
+一 binding 一 Principal 唯一索引），Runtime/Scheduler/Model 均为 schema5；四库 descriptor
+全部更新。旧库拒绝打开，不自动迁移或清空。Register/Rotate/Revoke/GetStatus 五个 RPC 的
+应用/PG/传输已接线（实现中），仍待完整门禁与真实 PG/TLS 验收。
+
 ## P07 Action 配额、保留与运维口径（契约冻结，未实现）
 
 - **配额/预算**：出站滑动窗口占用持久化（单账号 10/分钟、单群 3/分钟、私聊 1/10 秒为默认起点，部署可配），跨进程重启不重置；危险 Action 的 UTC 日预算按 `(kind, account, UTC day)` 持久化。超限返回可重试 `RATE_LIMITED`，取消/明确失败不自动退额（保守取舍）。

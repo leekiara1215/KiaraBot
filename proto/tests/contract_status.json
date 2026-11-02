@@ -4987,6 +4987,55 @@
         "operations": {
           "operations.getProcessLiveness": "implemented",
           "operations.getProcessReadiness": "implemented"
+        },
+        "proto_messages": {
+          "CredentialDelivery": "implemented",
+          "CredentialStatus": "implemented",
+          "IdentityRegisterPrincipalRequest": "implemented",
+          "IdentityRegisterPrincipalResponse": "implemented",
+          "IdentityRotateCredentialRequest": "implemented",
+          "IdentityRotateCredentialResponse": "implemented",
+          "IdentityRevokeCredentialRequest": "implemented",
+          "IdentityRevokeCredentialResponse": "implemented",
+          "IdentityGetPrincipalStatusRequest": "implemented",
+          "IdentityGetPrincipalStatusResponse": "implemented",
+          "IdentityGetCredentialStatusRequest": "implemented",
+          "IdentityGetCredentialStatusResponse": "implemented"
+        },
+        "proto_fields": {
+          "CredentialDelivery.credential_id": "implemented",
+          "CredentialDelivery.version": "implemented",
+          "CredentialDelivery.new_secret": "implemented",
+          "CredentialDelivery.delivery_receipt_id": "implemented",
+          "CredentialDelivery.expires_at": "implemented",
+          "IdentityRegisterPrincipalRequest.context": "implemented",
+          "IdentityRegisterPrincipalRequest.principal_kind": "implemented",
+          "IdentityRegisterPrincipalRequest.binding": "implemented",
+          "IdentityRegisterPrincipalRequest.allowed_services": "implemented",
+          "IdentityRegisterPrincipalResponse.principal": "implemented",
+          "IdentityRotateCredentialRequest.context": "implemented",
+          "IdentityRotateCredentialRequest.credential_id": "implemented",
+          "IdentityRotateCredentialRequest.expected_version": "implemented",
+          "IdentityRotateCredentialResponse.delivery": "implemented",
+          "IdentityRevokeCredentialRequest.context": "implemented",
+          "IdentityRevokeCredentialRequest.credential_id": "implemented",
+          "IdentityRevokeCredentialRequest.expected_version": "implemented",
+          "IdentityRevokeCredentialResponse.version": "implemented",
+          "IdentityGetPrincipalStatusRequest.context": "implemented",
+          "IdentityGetPrincipalStatusRequest.principal_id": "implemented",
+          "IdentityGetPrincipalStatusResponse.principal": "implemented",
+          "IdentityRegisterPrincipalResponse.initial_credential": "implemented",
+          "CredentialStatus.credential_id": "implemented",
+          "CredentialStatus.principal_id": "implemented",
+          "CredentialStatus.binding": "implemented",
+          "CredentialStatus.version": "implemented",
+          "CredentialStatus.state": "implemented",
+          "CredentialStatus.created_at": "implemented",
+          "CredentialStatus.expires_at": "implemented",
+          "CredentialStatus.checked_at": "implemented",
+          "IdentityGetCredentialStatusRequest.context": "implemented",
+          "IdentityGetCredentialStatusRequest.credential_id": "implemented",
+          "IdentityGetCredentialStatusResponse.credential": "implemented"
         }
       },
       "evidence": {
@@ -4999,6 +5048,231 @@
           "core/src/runtime/platform/service_process.cpp",
           "core/tests/platform/service_process_test.py",
           "tests/architecture/run.py"
+        ],
+        "proto_messages:CredentialDelivery": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/identity_rpc_test.cpp",
+          "core/tests/architecture/identity_principal_application_test.cpp"
+        ],
+        "proto_messages:CredentialStatus": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/identity_rpc_test.cpp",
+          "core/tests/architecture/identity_principal_application_test.cpp"
+        ],
+        "proto_messages:IdentityRegisterPrincipalRequest": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/identity_rpc_test.cpp",
+          "core/tests/architecture/identity_principal_application_test.cpp"
+        ],
+        "proto_messages:IdentityRegisterPrincipalResponse": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/identity_rpc_test.cpp",
+          "core/tests/architecture/identity_principal_application_test.cpp"
+        ],
+        "proto_messages:IdentityRotateCredentialRequest": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/identity_rpc_test.cpp",
+          "core/tests/architecture/identity_principal_application_test.cpp"
+        ],
+        "proto_messages:IdentityRotateCredentialResponse": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/identity_rpc_test.cpp",
+          "core/tests/architecture/identity_principal_application_test.cpp"
+        ],
+        "proto_messages:IdentityRevokeCredentialRequest": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/identity_rpc_test.cpp",
+          "core/tests/architecture/identity_principal_application_test.cpp"
+        ],
+        "proto_messages:IdentityRevokeCredentialResponse": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/identity_rpc_test.cpp",
+          "core/tests/architecture/identity_principal_application_test.cpp"
+        ],
+        "proto_messages:IdentityGetPrincipalStatusRequest": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/identity_rpc_test.cpp",
+          "core/tests/architecture/identity_principal_application_test.cpp"
+        ],
+        "proto_messages:IdentityGetPrincipalStatusResponse": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/identity_rpc_test.cpp",
+          "core/tests/architecture/identity_principal_application_test.cpp"
+        ],
+        "proto_messages:IdentityGetCredentialStatusRequest": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/identity_rpc_test.cpp",
+          "core/tests/architecture/identity_principal_application_test.cpp"
+        ],
+        "proto_messages:IdentityGetCredentialStatusResponse": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/identity_rpc_test.cpp",
+          "core/tests/architecture/identity_principal_application_test.cpp"
+        ],
+        "proto_fields:CredentialDelivery.credential_id": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/identity_rpc_test.cpp",
+          "core/tests/architecture/identity_principal_application_test.cpp"
+        ],
+        "proto_fields:CredentialDelivery.version": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/identity_rpc_test.cpp",
+          "core/tests/architecture/identity_principal_application_test.cpp"
+        ],
+        "proto_fields:CredentialDelivery.new_secret": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/identity_rpc_test.cpp",
+          "core/tests/architecture/identity_principal_application_test.cpp"
+        ],
+        "proto_fields:CredentialDelivery.delivery_receipt_id": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/identity_rpc_test.cpp",
+          "core/tests/architecture/identity_principal_application_test.cpp"
+        ],
+        "proto_fields:CredentialDelivery.expires_at": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/identity_rpc_test.cpp",
+          "core/tests/architecture/identity_principal_application_test.cpp"
+        ],
+        "proto_fields:IdentityRegisterPrincipalRequest.context": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/identity_rpc_test.cpp",
+          "core/tests/architecture/identity_principal_application_test.cpp"
+        ],
+        "proto_fields:IdentityRegisterPrincipalRequest.principal_kind": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/identity_rpc_test.cpp",
+          "core/tests/architecture/identity_principal_application_test.cpp"
+        ],
+        "proto_fields:IdentityRegisterPrincipalRequest.binding": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/identity_rpc_test.cpp",
+          "core/tests/architecture/identity_principal_application_test.cpp"
+        ],
+        "proto_fields:IdentityRegisterPrincipalRequest.allowed_services": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/identity_rpc_test.cpp",
+          "core/tests/architecture/identity_principal_application_test.cpp"
+        ],
+        "proto_fields:IdentityRegisterPrincipalResponse.principal": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/identity_rpc_test.cpp",
+          "core/tests/architecture/identity_principal_application_test.cpp"
+        ],
+        "proto_fields:IdentityRotateCredentialRequest.context": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/identity_rpc_test.cpp",
+          "core/tests/architecture/identity_principal_application_test.cpp"
+        ],
+        "proto_fields:IdentityRotateCredentialRequest.credential_id": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/identity_rpc_test.cpp",
+          "core/tests/architecture/identity_principal_application_test.cpp"
+        ],
+        "proto_fields:IdentityRotateCredentialRequest.expected_version": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/identity_rpc_test.cpp",
+          "core/tests/architecture/identity_principal_application_test.cpp"
+        ],
+        "proto_fields:IdentityRotateCredentialResponse.delivery": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/identity_rpc_test.cpp",
+          "core/tests/architecture/identity_principal_application_test.cpp"
+        ],
+        "proto_fields:IdentityRevokeCredentialRequest.context": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/identity_rpc_test.cpp",
+          "core/tests/architecture/identity_principal_application_test.cpp"
+        ],
+        "proto_fields:IdentityRevokeCredentialRequest.credential_id": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/identity_rpc_test.cpp",
+          "core/tests/architecture/identity_principal_application_test.cpp"
+        ],
+        "proto_fields:IdentityRevokeCredentialRequest.expected_version": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/identity_rpc_test.cpp",
+          "core/tests/architecture/identity_principal_application_test.cpp"
+        ],
+        "proto_fields:IdentityRevokeCredentialResponse.version": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/identity_rpc_test.cpp",
+          "core/tests/architecture/identity_principal_application_test.cpp"
+        ],
+        "proto_fields:IdentityGetPrincipalStatusRequest.context": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/identity_rpc_test.cpp",
+          "core/tests/architecture/identity_principal_application_test.cpp"
+        ],
+        "proto_fields:IdentityGetPrincipalStatusRequest.principal_id": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/identity_rpc_test.cpp",
+          "core/tests/architecture/identity_principal_application_test.cpp"
+        ],
+        "proto_fields:IdentityGetPrincipalStatusResponse.principal": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/identity_rpc_test.cpp",
+          "core/tests/architecture/identity_principal_application_test.cpp"
+        ],
+        "proto_fields:IdentityRegisterPrincipalResponse.initial_credential": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/identity_rpc_test.cpp",
+          "core/tests/architecture/identity_principal_application_test.cpp"
+        ],
+        "proto_fields:CredentialStatus.credential_id": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/identity_rpc_test.cpp",
+          "core/tests/architecture/identity_principal_application_test.cpp"
+        ],
+        "proto_fields:CredentialStatus.principal_id": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/identity_rpc_test.cpp",
+          "core/tests/architecture/identity_principal_application_test.cpp"
+        ],
+        "proto_fields:CredentialStatus.binding": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/identity_rpc_test.cpp",
+          "core/tests/architecture/identity_principal_application_test.cpp"
+        ],
+        "proto_fields:CredentialStatus.version": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/identity_rpc_test.cpp",
+          "core/tests/architecture/identity_principal_application_test.cpp"
+        ],
+        "proto_fields:CredentialStatus.state": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/identity_rpc_test.cpp",
+          "core/tests/architecture/identity_principal_application_test.cpp"
+        ],
+        "proto_fields:CredentialStatus.created_at": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/identity_rpc_test.cpp",
+          "core/tests/architecture/identity_principal_application_test.cpp"
+        ],
+        "proto_fields:CredentialStatus.expires_at": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/identity_rpc_test.cpp",
+          "core/tests/architecture/identity_principal_application_test.cpp"
+        ],
+        "proto_fields:CredentialStatus.checked_at": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/identity_rpc_test.cpp",
+          "core/tests/architecture/identity_principal_application_test.cpp"
+        ],
+        "proto_fields:IdentityGetCredentialStatusRequest.context": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/identity_rpc_test.cpp",
+          "core/tests/architecture/identity_principal_application_test.cpp"
+        ],
+        "proto_fields:IdentityGetCredentialStatusRequest.credential_id": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/identity_rpc_test.cpp",
+          "core/tests/architecture/identity_principal_application_test.cpp"
+        ],
+        "proto_fields:IdentityGetCredentialStatusResponse.credential": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/identity_rpc_test.cpp",
+          "core/tests/architecture/identity_principal_application_test.cpp"
         ]
       }
     }

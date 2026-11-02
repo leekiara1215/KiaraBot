@@ -308,7 +308,11 @@ JWT序列化使用同一jwt-cpp官方nlohmann-json traits，NumericDate先检查
 
 ### P04 Identity 安全关系存储（实施中）
 
-Identity 最新空库 schema v10；Runtime、Scheduler、Model 各自为 v5（含下文完整会话结果表）。
+Identity 最新空库 schema v11；Runtime、Scheduler、Model 各自为 v5（含下文完整会话结果表）。
+v11（P04-A）为未发放 WorkloadBootstrap 的 Pending 凭据增加 `allowed_services` 受众关系
+（`credential_audiences.material` 区分 Pending/已发放），并以 Identity 私有唯一索引
+`principals_binding_unique` 强制 v1「一个精确 binding 只对应一个 Principal」；两者都是
+Identity 私有库内的 P04 计划内 schema 细节，不是跨服务存储模型变更。
 不升级已有库，不自动初始化，不改变四库隔离。新增安全仓储借用公共 UoW 的同一物理
 事务，凭据当前头/不可变历史、会话安全元数据、精确授权、加密成功收据、refresh 恢复
 索引和管理员引导标记不能单独提交。端口存在或 schema 已创建不代表业务已接线。
@@ -499,6 +503,7 @@ verifier 或 SecretReplayPayload。重复同指纹仍返回原完整快照及原
 重连用原键恢复原结果，即使当前凭据已轮换或授予已撤销。新输入坏形状/NUL为 InvalidArgument，
 缺快照/子行、次序或 typed shape 损坏为 Internal，依赖故障沿同 UoW Failure/回滚语义传播。
 
-共享 typed 表及 kind 范围变化后，Identity 新空库 schema10，Runtime/Scheduler/Model 均为
-schema5；四库 descriptor 全部更新。旧库拒绝打开，不自动迁移或清空。此持久化能力不代表
-尚未接线的 Register/Set/Revoke RPC 或生产状态已启用。
+共享 typed 表及 kind 范围变化后，Identity 新空库 schema11（含 Pending 凭据受众关系与
+一 binding 一 Principal 唯一索引），Runtime/Scheduler/Model 均为 schema5；四库 descriptor
+全部更新。旧库拒绝打开，不自动迁移或清空。Register/Rotate/Revoke/GetStatus 五个 RPC 的
+应用/PG/传输已接线（实现中），仍待完整门禁与真实 PG/TLS 验收。

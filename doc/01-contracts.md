@@ -13,14 +13,16 @@ T03a 新增 CoreToPlugin.error（oneof 字段 6），承载注册之后的终止
 `proto/tests/contract_status.json` 的 schema v2 明确区分执行范围：`categories` 保留开发版本的历史/reference 状态与现有声明，**其中的 implemented 不代表六服务 target 生产能力**；`execution_scopes.target` 是当前目标生产可用性，默认 not_implemented，只有经独立证据登记的 override 才可标 implemented，deprecated 不会被复活。所有历史 categories 状态保持，不能通过迁移或改名删除旧断言。
 
 <!-- execution-scopes:start -->
-当前 target 可用项仅为P02进程探针：
+当前 target 可用项为P02进程探针与P04-A Identity主体/凭据管理gRPC面：
 
 | target 契约项 | 状态 | 范围 |
 | --- | --- | --- |
 | `operations.getProcessLiveness` | implemented | 进程HTTP live，200/HEALTHY，不代表业务可用 |
 | `operations.getProcessReadiness` | implemented | 进程HTTP ready，P02固定503/UNHEALTHY，不伪造ready |
+| `IdentityRegisterPrincipalRequest`、`IdentityRegisterPrincipalResponse`、`IdentityRotateCredentialRequest`、`IdentityRotateCredentialResponse`、`IdentityRevokeCredentialRequest`、`IdentityRevokeCredentialResponse`、`IdentityGetPrincipalStatusRequest`、`IdentityGetPrincipalStatusResponse`、`IdentityGetCredentialStatusRequest`、`IdentityGetCredentialStatusResponse`、`CredentialStatus`、`CredentialDelivery` | implemented | P04-A：Identity daemon gRPC 五个主体/凭据管理方法；应用/仓储/RPC已接线并经真实PG/TLS测试，仍不代表生产部署或HTTP操作已完成 |
+| `IdentityRegisterPrincipalRequest.context`、`IdentityRegisterPrincipalRequest.principal_kind`、`IdentityRegisterPrincipalRequest.binding`、`IdentityRegisterPrincipalRequest.allowed_services`、`IdentityRegisterPrincipalResponse.principal`、`IdentityRegisterPrincipalResponse.initial_credential`、`IdentityRotateCredentialRequest.context`、`IdentityRotateCredentialRequest.credential_id`、`IdentityRotateCredentialRequest.expected_version`、`IdentityRotateCredentialResponse.delivery`、`IdentityRevokeCredentialRequest.context`、`IdentityRevokeCredentialRequest.credential_id`、`IdentityRevokeCredentialRequest.expected_version`、`IdentityRevokeCredentialResponse.version`、`IdentityGetPrincipalStatusRequest.context`、`IdentityGetPrincipalStatusRequest.principal_id`、`IdentityGetPrincipalStatusResponse.principal`、`IdentityGetCredentialStatusRequest.context`、`IdentityGetCredentialStatusRequest.credential_id`、`IdentityGetCredentialStatusResponse.credential`、`CredentialDelivery.credential_id`、`CredentialDelivery.version`、`CredentialDelivery.new_secret`、`CredentialDelivery.delivery_receipt_id`、`CredentialDelivery.expires_at`、`CredentialStatus.credential_id`、`CredentialStatus.principal_id`、`CredentialStatus.binding`、`CredentialStatus.version`、`CredentialStatus.state`、`CredentialStatus.created_at`、`CredentialStatus.expires_at`、`CredentialStatus.checked_at` | implemented | P04-A target-scope字段：gRPC边界转换、持久化与投影均由Identity实现；HTTP操作面仍标not_implemented |
 
-除上述明确override外，target所有非废弃业务声明均为not_implemented，包括旧reference已有的Action/Host/认证/WS能力及全部目标owner RPC（按target_spec动态计数）；mTLS监听返回UNIMPLEMENTED不算业务实现。API已有x-contract-status列表与下表、proto内联CONTRACT_STATUS保留声明/历史reference语境；不可据其单独判断target可用性。客户端与面板须依据target执行范围及真实生产者验收，不得用历史测试通过自动启用。
+除上述明确override外，target所有非废弃业务声明均为not_implemented，包括旧reference已有的Action/Host/认证/WS能力及其余目标owner RPC（按target_spec动态计数）；mTLS监听返回UNIMPLEMENTED不算业务实现。API已有x-contract-status列表与下表、proto内联CONTRACT_STATUS保留声明/历史reference语境；不可据其单独判断target可用性。客户端与面板须依据target执行范围及真实生产者验收，不得用历史测试通过自动启用。
 <!-- execution-scopes:end -->
 
 检查器继续核对每个Proto字段/oneof、枚举、频道/事件、OpenAPI操作及原未实现项的内联注释、API列表、文档行和证据，不删除原门禁。历史Core逻辑证据路径只通过`core/reference/manifest.json`的明确source→reference映射解析并核对Git blob，未登记/缺失/字节变化/重引入/路径逃逸或符号链接均失败。target已实现项另需当前生产source及target测试，reference、旧客户端或测试内字符串不能证明target生产能力。
@@ -317,14 +319,14 @@ T03a 新增 CoreToPlugin.error（oneof 字段 6），承载注册之后的终止
 | `IdentityListSessionsResponse` | not_implemented | P01 目标声明；无生产实现，见模块报告。 |
 | `IdentityRevokeSessionRequest` | not_implemented | P01 目标声明；无生产实现，见模块报告。 |
 | `IdentityRevokeSessionResponse` | not_implemented | P01 目标声明；无生产实现，见模块报告。 |
-| `IdentityRegisterPrincipalRequest` | not_implemented | P01 目标声明；无生产实现，见模块报告。 |
-| `IdentityRegisterPrincipalResponse` | not_implemented | P01 目标声明；无生产实现，见模块报告。 |
-| `IdentityRotateCredentialRequest` | not_implemented | P01 目标声明；无生产实现，见模块报告。 |
-| `IdentityRotateCredentialResponse` | not_implemented | P01 目标声明；无生产实现，见模块报告。 |
-| `IdentityRevokeCredentialRequest` | not_implemented | P01 目标声明；无生产实现，见模块报告。 |
-| `IdentityRevokeCredentialResponse` | not_implemented | P01 目标声明；无生产实现，见模块报告。 |
-| `IdentityGetPrincipalStatusRequest` | not_implemented | P01 目标声明；无生产实现，见模块报告。 |
-| `IdentityGetPrincipalStatusResponse` | not_implemented | P01 目标声明；无生产实现，见模块报告。 |
+| `IdentityRegisterPrincipalRequest` | not_implemented | P04-A 应用/PG/RPC 已接线（实现中），待完整门禁与真实 PG/TLS 验收后翻转；见 doc/02 P04 章节与模块报告。 |
+| `IdentityRegisterPrincipalResponse` | not_implemented | P04-A 应用/PG/RPC 已接线（实现中），待完整门禁与真实 PG/TLS 验收后翻转；见 doc/02 P04 章节与模块报告。 |
+| `IdentityRotateCredentialRequest` | not_implemented | P04-A 应用/PG/RPC 已接线（实现中），待完整门禁与真实 PG/TLS 验收后翻转；见 doc/02 P04 章节与模块报告。 |
+| `IdentityRotateCredentialResponse` | not_implemented | P04-A 应用/PG/RPC 已接线（实现中），待完整门禁与真实 PG/TLS 验收后翻转；见 doc/02 P04 章节与模块报告。 |
+| `IdentityRevokeCredentialRequest` | not_implemented | P04-A 应用/PG/RPC 已接线（实现中），待完整门禁与真实 PG/TLS 验收后翻转；见 doc/02 P04 章节与模块报告。 |
+| `IdentityRevokeCredentialResponse` | not_implemented | P04-A 应用/PG/RPC 已接线（实现中），待完整门禁与真实 PG/TLS 验收后翻转；见 doc/02 P04 章节与模块报告。 |
+| `IdentityGetPrincipalStatusRequest` | not_implemented | P04-A 应用/PG/RPC 已接线（实现中），待完整门禁与真实 PG/TLS 验收后翻转；见 doc/02 P04 章节与模块报告。 |
+| `IdentityGetPrincipalStatusResponse` | not_implemented | P04-A 应用/PG/RPC 已接线（实现中），待完整门禁与真实 PG/TLS 验收后翻转；见 doc/02 P04 章节与模块报告。 |
 | `IdentityIssueDelegationRequest` | not_implemented | P01 目标声明；无生产实现，见模块报告。 |
 | `IdentityIssueDelegationResponse` | not_implemented | P01 目标声明；无生产实现，见模块报告。 |
 | `IdentityExchangeDelegationRequest` | not_implemented | P01 目标声明；无生产实现，见模块报告。 |
@@ -1242,8 +1244,8 @@ T03a 新增 CoreToPlugin.error（oneof 字段 6），承载注册之后的终止
 | `operations.listHosts` | not_implemented | 目标契约补全声明，尚无生产实现。 |
 | `operations.getInstanceConfig` | not_implemented | 目标契约补全声明，尚无生产实现。 |
 | `CredentialStatus` | not_implemented | 目标契约补全声明，尚无生产实现。 |
-| `IdentityGetCredentialStatusRequest` | not_implemented | 目标契约补全声明，尚无生产实现。 |
-| `IdentityGetCredentialStatusResponse` | not_implemented | 目标契约补全声明，尚无生产实现。 |
+| `IdentityGetCredentialStatusRequest` | not_implemented | P04-A 应用/PG/RPC 已接线（实现中），待完整门禁与真实 PG/TLS 验收后翻转；见 doc/02 P04 章节与模块报告。 |
+| `IdentityGetCredentialStatusResponse` | not_implemented | P04-A 应用/PG/RPC 已接线（实现中），待完整门禁与真实 PG/TLS 验收后翻转；见 doc/02 P04 章节与模块报告。 |
 | `PrincipalRecord.display_permissions` | not_implemented | 目标契约补全声明，尚无生产实现。 |
 | `SessionRecord.created_at` | not_implemented | 目标契约补全声明，尚无生产实现。 |
 | `IdentityLoginResponse.checked_at` | not_implemented | 目标契约补全声明，尚无生产实现。 |
@@ -1752,7 +1754,7 @@ SetAssignment 输入 AssignmentSpec：创建不带 assignment_id/expected_versio
 
 SessionRecord.created_at 是 Identity 持久保存的首次创建时间，刷新/撤销不改写。会话状态以同响应 checked_at 判定：revoked 优先 REVOKED，其次 checked_at >= expires_at 为 EXPIRED，否则 ACTIVE。Login/Refresh 的剩余 access TTL 为 max(0,floor(access_expires_at-checked_at))；Control 不用本地时间、token iat 或占位时间补齐。缺失权威字段、非当前绑定或授权依赖不可用必须拒绝，不能伪造空权限/成功。
 
-RegisterPrincipal 同事务创建无秘密的 PENDING CredentialStatus 引用（credential_id/principal_id/binding/version/created_at/checked_at）；尚未发放的 PENDING 不得伪造 expires_at。GetCredentialStatus 以 identity.principal.read 在线读取同一记录，默认2秒/最多5秒；ACTIVE/EXPIRED 必须有 expires_at，REVOKED 可保留原到期。状态查询不返回秘密、摘要或可重放材料。初次实际发放仍用 RotateCredential 单次 CredentialDelivery，未知结果不得从状态查询恢复秘密。当前未实现，不启用生产路由。
+RegisterPrincipal 同事务创建 Disabled Principal 与无秘密 PENDING 凭据引用（allowed_services 作为 Pending audiences 持久化）；尚未发放的 PENDING 不得伪造 expires_at。首轮成功的 RotateCredential（WorkloadBootstrap 或 human Password）在同一事务激活 principal；RevokeCredential 撤销后该凭据的 Login/Validate 当前凭据门禁失败。WorkloadBootstrap 交付一次 opaque token（24h），human Password 交付一次服务端临时密码并重新派生 verifier，CertificateBinding 轮换明确 CAPABILITY_NOT_SUPPORTED。expected_version 进入 keyed request commitment，同键异版本 CONFLICT；未授权与不存在统一 NOT_FOUND，一个精确 binding 只对应一个 Principal。P04-A 应用/仓储/RPC 已接线（实现中），待完整门禁与真实 PG/TLS 验收后翻转。
 
 ## 外部 Bridge 连接授权（目标未实现）
 
@@ -1794,9 +1796,9 @@ CredentialDelivery。证明仍最多 56 秒正文期限与 2 秒时钟容差，�
 Login、RefreshSession、RotateCredential、RevokeSession 等既有幂等/恢复要求保持原契约。
 未来若引入配额扣减或一次性消费，必须先建立独立的幂等命令契约及事务收据。
 
-## P04 Identity RPC 边界（未接生产组合根）
+## P04 Identity RPC 边界（应用已接生产组合根，实现中）
 
-`runtime/platform/identity_rpc.hpp/.cpp` 的 make_identity_rpc 借用 IdentitySecurityApplication 并持有组合根注入 PeerAuthenticator；只适配 Login/RefreshSession/ValidateSession/GetPrincipal/RevokeSession/ListSessions。其余Identity方法明确返回完整RpcFailure/CAPABILITY_NOT_SUPPORTED（含流式方法），不挂接reference实现；本工具存在不代表目标业务ready或implemented。
+`runtime/platform/identity_rpc.hpp/.cpp` 的 make_identity_rpc 借用 IdentitySecurityApplication 并持有组合根注入 PeerAuthenticator；适配 Login/RefreshSession/ValidateSession/GetPrincipal/RevokeSession/ListSessions，并通过可选 `IdentityRpcOptions{.principal=&app}` 追加 RegisterPrincipal/RotateCredential/RevokeCredential/GetPrincipalStatus/GetCredentialStatus 五个主体/凭据管理方法。RPC 层只做字段转换与稳定错误映射，业务与事务在 `IdentityPrincipalApplication`；未注入 principal 能力时五个方法返回 typed CAPABILITY_NOT_SUPPORTED，其余 Identity 方法继续稳定拒绝。应用已接生产组合根（Identity daemon），但仍为实现中，待完整 P04 门禁与真实 PG/TLS 验收后翻转契约状态。
 
 每次从真实ServerContext.auth_context提取受限叶证据，再调用必须核对当前登记/凭据/SAN的可信认证回调，并核对回调的主体、证书指纹、平台角色和凭据版本。六方法要求Control peer；不相信body actor/peer、不把CA有效当业务授权。纯应用仍须复核当前Identity状态、self Principal列表和exact Session撤销权限。认证回调为同步借用契约，生产者须有自身有界I/O并遵守实际取消/deadline；边界在其前后检查预算，不声称能抢占任意阻塞回调。
 

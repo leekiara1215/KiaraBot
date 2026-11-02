@@ -117,9 +117,10 @@
       "idempotency": "required",
       "deadline_ms": 5000,
       "server_streaming": false,
-      "status": "not_implemented",
+      "status": "implemented",
       "max_deadline_ms": 30000,
-      "requires_idempotency_key": true
+      "requires_idempotency_key": true,
+      "status_note": "P04-A target-scope gRPC implemented with real PG/TLS tests; HTTP/Control operation remains not_implemented"
     },
     {
       "service": "IdentityService",
@@ -134,9 +135,10 @@
       "idempotency": "required",
       "deadline_ms": 5000,
       "server_streaming": false,
-      "status": "not_implemented",
+      "status": "implemented",
       "max_deadline_ms": 30000,
-      "requires_idempotency_key": true
+      "requires_idempotency_key": true,
+      "status_note": "P04-A target-scope gRPC implemented with real PG/TLS tests; HTTP/Control operation remains not_implemented"
     },
     {
       "service": "IdentityService",
@@ -151,9 +153,10 @@
       "idempotency": "required",
       "deadline_ms": 5000,
       "server_streaming": false,
-      "status": "not_implemented",
+      "status": "implemented",
       "max_deadline_ms": 30000,
-      "requires_idempotency_key": true
+      "requires_idempotency_key": true,
+      "status_note": "P04-A target-scope gRPC implemented with real PG/TLS tests; HTTP/Control operation remains not_implemented"
     },
     {
       "service": "IdentityService",
@@ -168,9 +171,10 @@
       "idempotency": "none",
       "deadline_ms": 2000,
       "server_streaming": false,
-      "status": "not_implemented",
+      "status": "implemented",
       "max_deadline_ms": 5000,
-      "requires_idempotency_key": false
+      "requires_idempotency_key": false,
+      "status_note": "P04-A target-scope gRPC implemented with real PG/TLS tests; HTTP/Control operation remains not_implemented"
     },
     {
       "service": "IdentityService",
@@ -1558,8 +1562,9 @@
       "deadline_ms": 2000,
       "max_deadline_ms": 5000,
       "server_streaming": false,
-      "status": "not_implemented",
-      "requires_idempotency_key": false
+      "status": "implemented",
+      "requires_idempotency_key": false,
+      "status_note": "P04-A target-scope gRPC implemented with real PG/TLS tests; HTTP/Control operation remains not_implemented"
     },
     {
       "service": "RuntimeService",
