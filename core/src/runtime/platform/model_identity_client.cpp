@@ -154,8 +154,14 @@ t::Failure grpc_failure(const grpc::Status& status) {
   }
 }
 bool management_method(std::string_view method) {
-  return method == "/kiarabot.v1.ModelService/UpdateModel" ||
+  // Control REST management surface. Runtime (plugin model_chat) only calls Chat; all metadata,
+  // call-status, operation and configuration reads are Control-origin delegations.
+  return method == "/kiarabot.v1.ModelService/GetModelMetadata" ||
+         method == "/kiarabot.v1.ModelService/ListModelMetadata" ||
+         method == "/kiarabot.v1.ModelService/UpdateModel" ||
          method == "/kiarabot.v1.ModelService/RotateProviderSecret" ||
+         method == "/kiarabot.v1.ModelService/GetCallStatus" ||
+         method == "/kiarabot.v1.ModelService/GetOperation" ||
          method == "/kiarabot.v1.ModelService/DisableModel" ||
          method == "/kiarabot.v1.ModelService/EnableModel" ||
          method == "/kiarabot.v1.ModelService/ResolveModelCall" ||
