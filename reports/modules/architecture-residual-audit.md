@@ -37,13 +37,15 @@
 ## 3. 残余缺口与建议
 
 1. **host bridge 头文件旧注释（D，建议后续清理）**：`core/include/kiarabot/core/runtime/platform/host_bridge_server.hpp:25`
-   仍写“P08b-3 command/receipt/observation pipelines are not implemented yet”，P08b-3/P08b-3a/
+   曾写“P08b-3 command/receipt/observation pipelines are not implemented yet”，P08b-3/P08b-3a/
    P08b-3b 已合入并接线（runtime_composition 设置 HostBridgePersistence）；属过期注释，不是功能
-   遗漏。同一文件 line 65 的 `until P08b-2c PG wiring lands` 也需按实际实现核对措辞。
+   遗漏。**P14p 已更新该注释**；同一文件 line 65 的 `until P08b-2c PG wiring lands` 仍需按实际
+   实现核对措辞。
 2. **Panel 历史文案（D）**：`panel/src/views/p12-live.tsx`/`actions.tsx`/`App.tsx` 仍有
    “P12c 后端未实现/action 查询尚未接线”等旧句；其中 action REST OpenAPI marker 仍按 owner-rpc
    规则 not_implemented，但后端转发已实现。属 UI 文案与契约 marker 分层，建议由 Panel 任务
-   统一核对，不属本审计的 A 类实现遗漏（且 panel 不在本任务 write scope）。
+   统一核对，不属本审计的 A 类实现遗漏。**P14p 已清理 `App.tsx` 的 `P12e 未合入` 历史句与
+   `p12-live.tsx` 顶部“后端未实现”注释**；其余 Panel/SDK 历史文案仍建议相关任务复核。
 3. **SDK 文档历史声明（D/C）**：`sdk/python/README.md`/`sdk/PLUGIN_SDK_DEPENDENCIES.md` 列出的
    Host 受控启动、native/wasm、SDK 动态订阅等仍是未实现能力；对应阶段/决策已记录，保持 C。
 4. 建议后续任务：清理上述 D 类过期注释/文案；B 类按契约任务逐项翻转；C 类等待用户环境/决策。
@@ -63,8 +65,8 @@
 | 6 | P09 PG CAS/配额/TTL/共享 namespace | p09_postgres_storage_records | CTest 存在；报告存在 | 一致 |
 | 7 | P10 timer 崩溃/丢确认/取消/DST/重复恢复 | p10_timer_e2e | CTest 存在；报告存在 | 一致 |
 | 8 | P11 Model 两事务/UNKNOWN/密钥/本地 HTTP provider | p11_model_*、p11_control_model_rest | CTest 存在；报告列 P05b 单链路缺口 | 一致（单链路缺口已声明） |
-| 9 | P12 真实服务 HTTP/**WS** + Panel live 覆盖所有批准写入口/断流 | p12j_panel_live、P12f 矩阵 | `p12j_panel_live` 存在且通过；但 target Control v1 **无 WS**（P12a-2 延期）、Panel live 为 native HTTP matrix 非浏览器 WS；`listActionMetadata`/部分写入口仍 not_implemented | **部分夸大/遗漏**：doc/23 P12 验证句需限定 REST/HTTP，WS 与“所有批准写入口”不成立 |
-| 10 | P14 两独立 Linux 主机网络分区/TLS/撤销/重连 + RPO24h/RTO4h 实测 | P14f native、P14c 演练 | `p14_native_single_host` 存在；P14f/P14d/P14c 明确两主机延期、P14c 仅本地小数据（RPO=0s/RTO≈4.6–12.1s）；final 148/148 是 CTest | **遗漏/未达成**：doc/23 P14 退出条件与 §6 “跨主机及协调备份恢复演练有实测证据”仍不成立，需继续记录为环境项 |
+| 9 | P12 真实服务 HTTP/**WS** + Panel live 覆盖所有批准写入口/断流 | p12j_panel_live、P12f 矩阵 | `p12j_panel_live` 存在且通过；但 target Control v1 **无 WS**（P12a-2 延期）、Panel live 为 native HTTP matrix 非浏览器 WS；`listActionMetadata`/部分写入口仍 not_implemented | **部分夸大/遗漏**：doc/23 P12 验证句需限定 REST/HTTP，WS 与“所有批准写入口”不成立；**P14p 已修正验证句** |
+| 10 | P14 两独立 Linux 主机网络分区/TLS/撤销/重连 + RPO24h/RTO4h 实测 | P14f native、P14c 演练 | `p14_native_single_host` 存在；P14f/P14d/P14c 明确两主机延期、P14c 仅本地小数据（RPO=0s/RTO≈4.6–12.1s）；final 148/148 是 CTest | **遗漏/未达成**：doc/23 P14 退出条件与 §6 “跨主机及协调备份恢复演练有实测证据”仍不成立，需继续记录为环境项；**P14p 已把退出句/§6 改为未验收环境项并标注门禁分层** |
 
 补充：§6 最终验收清单中 “tidy/边界/API 等完整覆盖” 与 “跨主机/协调备份” 未在本机 148/148
 CTest 中全部覆盖；本报告只记录差异，不改 doc/23/其它人文档。P13 退出在 P13f 已明确“未通过”并
@@ -77,3 +79,19 @@ CTest 中全部覆盖；本报告只记录差异，不改 doc/23/其它人文档
 - P12 host operation owner、`bootstrap_credential` 字段级是否继续保持 not_implemented。
 - doc/23 P12/P14 验证口径是否修订为“REST/HTTP + 本地 CTest”并保留 WS/两主机为环境项。
 - 是否安排 D 类过期注释/Panel/SDK 文案清理任务。
+
+## 6. P14p 修正同步（2026-11-03）
+
+按本报告结论，P14p 已完成文档/注释修正（未改实现语义/契约）：
+
+- doc/23 P12 验证句：改为 REST/HTTP + native CTest 口径，WS 明确延期/未验收，“所有批准写入口”
+  改为已接线集合（listActionMetadata/accounts/installations 列表等仍 not_implemented）。
+- doc/23 P14 验证句：单机 native harness 与 P14c 本地小数据演练为已实测（RPO=0s、
+  RTO≈4.6–12.1s，最近一次 4.6s）；Docker Compose/两主机/网络分区/TLS/撤销/重连/协调恢复/
+  生产数据量 RPO24h/RTO4h 列为未验收环境项；明确 148/148 CTest 不等于阶段退出。
+- doc/23 §6：增加门禁分层说明，并给 checklist 标注 `[CTest]`/`[CTest+独立门禁]`/`[人工/环境]`。
+- D 类清理：`host_bridge_server.hpp:25` 的 P08b-3 过期注释、`panel/src/App.tsx` logs 历史句、
+  `panel/src/views/p12-live.tsx` 顶部注释；不动机器可读契约/行为。
+
+仍未复核/保留：panel 其它历史文案与 SDK README 的未实现能力清单；两主机/RPO24h/RTO4h 实测证据
+仍属环境项；`host_bridge_server.hpp:65` 的 P08b-2c 措辞待实现核对。
