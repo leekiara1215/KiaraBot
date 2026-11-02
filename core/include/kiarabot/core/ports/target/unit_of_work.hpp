@@ -9,6 +9,8 @@
 
 namespace kiarabot::core::target {
 
+class EventRepository;
+
 // Repositories borrow their UoW lifetime, never commit and use its authoritative database UTC.
 // Empty optional means absent; faults are Failure (Unavailable/Conflict/Internal), never absence.
 // Expected-version/unique-key failures: Conflict; capacity: RateLimited, not accepted.
@@ -144,6 +146,9 @@ public:
                                                                       const std::string& after) = 0;
   virtual Outcome<std::vector<PluginInstance>> list_instances(std::size_t limit,
                                                               const std::string& after) = 0;
+  // Event inbox, watermark and per-instance delivery ledger share this UoW so acceptance,
+  // claim, ACK and retry state commit atomically (P06). Injected by the PG adapter.
+  virtual EventRepository& events() = 0;
 };
 class SchedulerUnitOfWork : public UnitOfWork {
 public:

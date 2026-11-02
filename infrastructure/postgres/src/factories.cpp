@@ -9,6 +9,7 @@
 #include "identity_security.hpp"
 #include "kiarabot/infrastructure/postgres/security_factory.hpp"
 #include "record_access.hpp"
+#include "runtime_events.hpp"
 
 namespace kiarabot::infrastructure::postgres {
 namespace {
@@ -210,13 +211,14 @@ private:
 };
 class RuntimeWork final : public WorkDelegate<target::RuntimeUnitOfWork> {
 public:
-  explicit RuntimeWork(std::unique_ptr<target::UnitOfWork> common)
-      : WorkDelegate(std::move(common)), accounts_(work(), detail::RecordKind::Account),
+  explicit RuntimeWork(detail::CommonWorkAccess common)
+      : WorkDelegate(std::move(common.work)), accounts_(work(), detail::RecordKind::Account),
         bindings_(work(), detail::RecordKind::AdapterBinding), adapters_(work()),
         credentials_(work()), hosts_(work(), detail::RecordKind::Host),
         installations_(work(), detail::RecordKind::Installation),
         instances_(work(), detail::RecordKind::Instance),
-        instance_configs_(work(), detail::RecordKind::InstanceConfig) {}
+        instance_configs_(work(), detail::RecordKind::InstanceConfig),
+        events_(*common.sql) {}
   target::Repository<target::ResourceId, target::BotAccount>& accounts() override {
     return accounts_;
   }
@@ -268,8 +270,15 @@ public:
   list_instances(std::size_t limit, const std::string& after) override {
     return listed<target::PluginInstance>(work(), detail::RecordKind::Instance, limit, after);
   }
+  target::EventRepository& events() override {
+    return events_;
+  }
 
 private:
+  target::UnitOfWork& work() const {
+    return *common_.work;
+  }
+  detail::CommonWorkAccess common_;
   LiveRepository<target::ResourceId, target::BotAccount> accounts_;
   LiveRepository<target::ResourceId, target::AdapterBindingRecord> bindings_;
   AdapterRegistry adapters_;
@@ -278,6 +287,26 @@ private:
   LiveRepository<target::InstallationId, target::PluginInstallation> installations_;
   LiveRepository<target::InstanceId, target::PluginInstance> instances_;
   LiveRepository<target::InstanceId, target::InstanceConfiguration> instance_configs_;
+  detail::RuntimeEvents events_;
+};
+class RuntimeFactory final : public target::RuntimeUnitOfWorkFactory {
+public:
+  explicit RuntimeFactory(std::unique_ptr<Database> database) : database_(std::move(database)) {}
+  target::Outcome<std::unique_ptr<target::RuntimeUnitOfWork>> begin() override {
+    auto begun = detail::DatabaseAccess::begin(*database_);
+    if (const auto* rejected = std::get_if<target::Failure>(&begun)) {
+      return *rejected;
+    }
+    try {
+      return std::unique_ptr<target::RuntimeUnitOfWork>(
+          std::make_unique<RuntimeWork>(std::move(std::get<detail::CommonWorkAccess>(begun))));
+    } catch (...) {
+      return failure(target::ErrorCode::Internal);
+    }
+  }
+
+private:
+  std::unique_ptr<Database> database_;
 };
 class SchedulerWork final : public WorkDelegate<target::SchedulerUnitOfWork> {
 public:
@@ -468,7 +497,19 @@ open_identity(const DatabaseConfig& config) {
 }
 target::Outcome<std::unique_ptr<target::RuntimeUnitOfWorkFactory>>
 open_runtime(const DatabaseConfig& config) {
-  return open_factory<RuntimeWork, target::RuntimeUnitOfWork>(config, target::Service::Runtime);
+  if (config.service != target::Service::Runtime) {
+    return failure(target::ErrorCode::InvalidArgument);
+  }
+  auto opened = Database::open(config);
+  if (const auto* rejected = std::get_if<target::Failure>(&opened)) {
+    return *rejected;
+  }
+  try {
+    return std::unique_ptr<target::RuntimeUnitOfWorkFactory>(
+        std::make_unique<RuntimeFactory>(std::move(std::get<std::unique_ptr<Database>>(opened))));
+  } catch (...) {
+    return failure(target::ErrorCode::Internal);
+  }
 }
 target::Outcome<std::unique_ptr<target::SchedulerUnitOfWorkFactory>>
 open_scheduler(const DatabaseConfig& config) {

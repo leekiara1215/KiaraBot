@@ -3,7 +3,7 @@ find_package(libpqxx 7.10.0 EXACT CONFIG REQUIRED)
 add_library(kiarabot_postgres STATIC
   src/database.cpp src/common_work.cpp src/record_codec.cpp src/factories.cpp
   src/identity_security.cpp src/identity_sessions.cpp src/identity_receipts.cpp
-  src/identity_assignments.cpp src/identity_invalidations.cpp)
+  src/identity_assignments.cpp src/identity_invalidations.cpp src/runtime_events.cpp)
 target_include_directories(kiarabot_postgres PUBLIC
   include ${CMAKE_SOURCE_DIR}/core/include)
 target_link_libraries(kiarabot_postgres PRIVATE libpqxx::pqxx Threads::Threads)
@@ -39,6 +39,18 @@ if(UNIX)
     --initializer $<TARGET_FILE:kiarabot-pg-initialize>)
   set_tests_properties(p04_identity_application PROPERTIES
     LABELS "p04;integration;security;fault" TIMEOUT 120)
+
+  add_executable(kiarabot_postgres_runtime_events_test tests/runtime_events_test.cpp)
+  target_link_libraries(kiarabot_postgres_runtime_events_test PRIVATE
+    kiarabot_postgres libpqxx::pqxx)
+  kiarabot_platform_warnings(kiarabot_postgres_runtime_events_test)
+  add_test(NAME p06_postgres_runtime_events COMMAND "${KIARABOT_TARGET_PYTHON}"
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_database_test.py"
+    --pg-bin "${KIARABOT_TEST_PG_BIN}" --openssl "${KIARABOT_TEST_OPENSSL}"
+    --test $<TARGET_FILE:kiarabot_postgres_runtime_events_test>
+    --initializer $<TARGET_FILE:kiarabot-pg-initialize>)
+  set_tests_properties(p06_postgres_runtime_events PROPERTIES
+    LABELS "p06;integration;fault" TIMEOUT 180)
 
   add_executable(kiarabot_postgres_database_test
     tests/database_test.cpp tests/common_work_checks.cpp tests/typed_work_checks.cpp)

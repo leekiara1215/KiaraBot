@@ -73,6 +73,7 @@ struct ConversationKey {
   ResourceId account;
   std::string conversation_id;
   enum class Kind { Unspecified, Private, Group } kind;
+  bool operator==(const ConversationKey&) const = default;
 };
 
 struct TaskKey {
