@@ -333,7 +333,13 @@
       "RuntimeGetSharedNamespaceRequest": "not_implemented",
       "RuntimeGetSharedNamespaceResponse": "not_implemented",
       "StorageCompareAndSetRequest": "not_implemented",
-      "StorageCompareAndSetResponse": "not_implemented"
+      "StorageCompareAndSetResponse": "not_implemented",
+      "ModelDisableModelRequest": "not_implemented",
+      "ModelDisableModelResponse": "not_implemented",
+      "ModelEnableModelRequest": "not_implemented",
+      "ModelEnableModelResponse": "not_implemented",
+      "ModelResolveModelCallRequest": "not_implemented",
+      "ModelResolveModelCallResponse": "not_implemented"
     },
     "proto_fields": {
       "Account.account_id": "implemented",
@@ -1490,7 +1496,31 @@
       "SchedulerListTasksRequest.state": "not_implemented",
       "TaskResponse.version": "not_implemented",
       "TaskResponse.occurrence_id": "not_implemented",
-      "TimerTriggered.occurrence_id": "not_implemented"
+      "TimerTriggered.occurrence_id": "not_implemented",
+      "ModelConfiguration.state": "not_implemented",
+      "ModelConfiguration.max_concurrency": "not_implemented",
+      "ModelCallRecord.secret_version": "not_implemented",
+      "ModelCallRecord.usage_known": "not_implemented",
+      "ModelCallRecord.may_have_billed": "not_implemented",
+      "ModelCallRecord.provider_request_id": "not_implemented",
+      "ModelCallRecord.latency_ms": "not_implemented",
+      "ModelCallRecord.disposition": "not_implemented",
+      "ModelGatewayChatResponse.disposition": "not_implemented",
+      "ModelGetModelConfigurationResponse.secret_version": "not_implemented",
+      "ModelChatRequest.logical_call_id": "not_implemented",
+      "ModelDisableModelRequest.context": "not_implemented",
+      "ModelDisableModelRequest.model_id": "not_implemented",
+      "ModelDisableModelRequest.expected_version": "not_implemented",
+      "ModelDisableModelResponse.model": "not_implemented",
+      "ModelEnableModelRequest.context": "not_implemented",
+      "ModelEnableModelRequest.model_id": "not_implemented",
+      "ModelEnableModelRequest.expected_version": "not_implemented",
+      "ModelEnableModelResponse.model": "not_implemented",
+      "ModelResolveModelCallRequest.context": "not_implemented",
+      "ModelResolveModelCallRequest.logical_call_id": "not_implemented",
+      "ModelResolveModelCallRequest.expected_version": "not_implemented",
+      "ModelResolveModelCallRequest.disposition": "not_implemented",
+      "ModelResolveModelCallResponse.call": "not_implemented"
     },
     "event_payloads": {
       "EventEnvelope.message_received": "implemented",
@@ -1674,7 +1704,16 @@
       "Permission.PERMISSION_MEMBER_MUTE": "not_implemented",
       "Permission.PERMISSION_MEMBER_KICK": "not_implemented",
       "Permission.PERMISSION_REQUEST_APPROVE": "not_implemented",
-      "Permission.PERMISSION_NAMESPACE_READ": "not_implemented"
+      "Permission.PERMISSION_NAMESPACE_READ": "not_implemented",
+      "ModelChatDisposition.MODEL_CHAT_DISPOSITION_UNSPECIFIED": "not_implemented",
+      "ModelChatDisposition.FRESH_RESULT": "not_implemented",
+      "ModelChatDisposition.REPLAY_IN_PROGRESS": "not_implemented",
+      "ModelChatDisposition.REPLAY_TERMINAL": "not_implemented",
+      "ModelCallDisposition.MODEL_CALL_DISPOSITION_UNSPECIFIED": "not_implemented",
+      "ModelCallDisposition.NOT_EXECUTED": "not_implemented",
+      "ModelCallDisposition.EXECUTED_NOT_BILLED": "not_implemented",
+      "ModelCallDisposition.EXECUTED_BILLED": "not_implemented",
+      "ModelCallDisposition.ABANDONED": "not_implemented"
     },
     "channels": {
       "channels.control": "implemented",
@@ -5324,6 +5363,123 @@
     ],
     "semantic.scheduler.timer_occurrence_identity": [
       "core/src/application/target/scheduler_application.cpp"
+    ],
+    "ModelDisableModelRequest": [
+      "core/src/application/target/model_application.cpp"
+    ],
+    "ModelDisableModelResponse": [
+      "core/src/application/target/model_application.cpp"
+    ],
+    "ModelEnableModelRequest": [
+      "core/src/application/target/model_application.cpp"
+    ],
+    "ModelEnableModelResponse": [
+      "core/src/application/target/model_application.cpp"
+    ],
+    "ModelResolveModelCallRequest": [
+      "core/src/application/target/model_application.cpp"
+    ],
+    "ModelResolveModelCallResponse": [
+      "core/src/application/target/model_application.cpp"
+    ],
+    "ModelConfiguration.state": [
+      "core/src/application/target/model_application.cpp"
+    ],
+    "ModelConfiguration.max_concurrency": [
+      "core/src/application/target/model_application.cpp"
+    ],
+    "ModelCallRecord.secret_version": [
+      "core/src/application/target/model_application.cpp"
+    ],
+    "ModelCallRecord.usage_known": [
+      "core/src/application/target/model_application.cpp"
+    ],
+    "ModelCallRecord.may_have_billed": [
+      "core/src/application/target/model_application.cpp"
+    ],
+    "ModelCallRecord.provider_request_id": [
+      "core/src/application/target/model_application.cpp"
+    ],
+    "ModelCallRecord.latency_ms": [
+      "core/src/application/target/model_application.cpp"
+    ],
+    "ModelCallRecord.disposition": [
+      "core/src/application/target/model_application.cpp"
+    ],
+    "ModelGatewayChatResponse.disposition": [
+      "core/src/application/target/model_application.cpp"
+    ],
+    "ModelGetModelConfigurationResponse.secret_version": [
+      "core/src/application/target/model_application.cpp"
+    ],
+    "ModelChatRequest.logical_call_id": [
+      "core/src/application/target/model_application.cpp"
+    ],
+    "ModelDisableModelRequest.context": [
+      "core/src/application/target/model_application.cpp"
+    ],
+    "ModelDisableModelRequest.model_id": [
+      "core/src/application/target/model_application.cpp"
+    ],
+    "ModelDisableModelRequest.expected_version": [
+      "core/src/application/target/model_application.cpp"
+    ],
+    "ModelDisableModelResponse.model": [
+      "core/src/application/target/model_application.cpp"
+    ],
+    "ModelEnableModelRequest.context": [
+      "core/src/application/target/model_application.cpp"
+    ],
+    "ModelEnableModelRequest.model_id": [
+      "core/src/application/target/model_application.cpp"
+    ],
+    "ModelEnableModelRequest.expected_version": [
+      "core/src/application/target/model_application.cpp"
+    ],
+    "ModelEnableModelResponse.model": [
+      "core/src/application/target/model_application.cpp"
+    ],
+    "ModelResolveModelCallRequest.context": [
+      "core/src/application/target/model_application.cpp"
+    ],
+    "ModelResolveModelCallRequest.logical_call_id": [
+      "core/src/application/target/model_application.cpp"
+    ],
+    "ModelResolveModelCallRequest.expected_version": [
+      "core/src/application/target/model_application.cpp"
+    ],
+    "ModelResolveModelCallRequest.disposition": [
+      "core/src/application/target/model_application.cpp"
+    ],
+    "ModelResolveModelCallResponse.call": [
+      "core/src/application/target/model_application.cpp"
+    ],
+    "ModelChatDisposition.MODEL_CHAT_DISPOSITION_UNSPECIFIED": [
+      "core/src/application/target/model_application.cpp"
+    ],
+    "ModelChatDisposition.FRESH_RESULT": [
+      "core/src/application/target/model_application.cpp"
+    ],
+    "ModelChatDisposition.REPLAY_IN_PROGRESS": [
+      "core/src/application/target/model_application.cpp"
+    ],
+    "ModelChatDisposition.REPLAY_TERMINAL": [
+      "core/src/application/target/model_application.cpp"
+    ],
+    "ModelCallDisposition.MODEL_CALL_DISPOSITION_UNSPECIFIED": [
+      "core/src/application/target/model_application.cpp"
+    ],
+    "ModelCallDisposition.NOT_EXECUTED": [
+      "core/src/application/target/model_application.cpp"
+    ],
+    "ModelCallDisposition.EXECUTED_NOT_BILLED": [
+      "core/src/application/target/model_application.cpp"
+    ],
+    "ModelCallDisposition.EXECUTED_BILLED": [
+      "core/src/application/target/model_application.cpp"
+    ],
+    "ModelCallDisposition.ABANDONED": [
+      "core/src/application/target/model_application.cpp"
     ]
   },
   "vocabulary": {

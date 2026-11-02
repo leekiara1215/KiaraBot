@@ -248,6 +248,19 @@
       "ACTION_RECEIPT_DUPLICATE": 2,
       "ACTION_RECEIPT_EVIDENCE_ONLY": 3,
       "ACTION_RECEIPT_CONFLICT": 4
+    },
+    "kiarabot.v1.ModelChatDisposition": {
+      "MODEL_CHAT_DISPOSITION_UNSPECIFIED": 0,
+      "FRESH_RESULT": 1,
+      "REPLAY_IN_PROGRESS": 2,
+      "REPLAY_TERMINAL": 3
+    },
+    "kiarabot.v1.ModelCallDisposition": {
+      "MODEL_CALL_DISPOSITION_UNSPECIFIED": 0,
+      "NOT_EXECUTED": 1,
+      "EXECUTED_NOT_BILLED": 2,
+      "EXECUTED_BILLED": 3,
+      "ABANDONED": 4
     }
   }
 }

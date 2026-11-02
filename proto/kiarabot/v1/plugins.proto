@@ -225,6 +225,10 @@ message ModelChatRequest {
   // no automatic retry or idempotent replay after timeout/disconnection.
   string model = 1;
   repeated ModelMessage messages = 2;
+  // CONTRACT_STATUS: not_implemented - P11 target declaration, no producer.
+  // Stable plugin-side UUIDv4 call identity; distinct from HostRequest.request_id (per attempt)
+  // and idempotency_key (command idempotency). Retries reuse the same logical_call_id.
+  string logical_call_id = 3;
 }
 message ModelMessage { string role = 1; string text = 2; }
 message ModelChatResponse {

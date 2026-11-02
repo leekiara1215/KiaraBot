@@ -25,6 +25,10 @@ message ModelConfiguration {
   string provider_model = 5;
   uint32 timeout_ms = 6;
   uint64 version = 7;
+  // CONTRACT_STATUS: not_implemented - P11 target read-only projection, no producer.
+  LifecycleState state = 8;
+  // CONTRACT_STATUS: not_implemented - P11 target trusted per-model admission cap (1..64).
+  uint32 max_concurrency = 9;
 }
 
 // CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
@@ -39,6 +43,43 @@ message ModelCallRecord {
   uint64 output_tokens = 8;
   google.protobuf.Timestamp observed_at = 9;
   Error reason = 10;
+  // CONTRACT_STATUS: not_implemented - P11 target declaration, no producer.
+  uint64 secret_version = 11;
+  // CONTRACT_STATUS: not_implemented - P11 target usage provenance (false: token fields are
+  // not authoritative provider usage).
+  bool usage_known = 12;
+  // CONTRACT_STATUS: not_implemented - P11 target conservative billing fact (unknown/timeout/5xx
+  // recovery is true; explicit 4xx/429 rejection is false).
+  bool may_have_billed = 13;
+  // CONTRACT_STATUS: not_implemented - P11 target sanitized upstream request id (<=128, never a
+  // secret); empty when absent.
+  string provider_request_id = 14;
+  // CONTRACT_STATUS: not_implemented - P11 target provider HTTP round-trip in milliseconds; 0
+  // when unknown.
+  uint32 latency_ms = 15;
+  // CONTRACT_STATUS: not_implemented - P11 target UNKNOWN resolution disposition; UNSPECIFIED
+  // until ResolveModelCall is applied.
+  ModelCallDisposition disposition = 16;
+}
+
+// P11 target replay shape for a duplicate logical_call_id. Only FRESH_RESULT carries a result;
+// replay dispositions return call metadata and never invoke the provider again.
+// CONTRACT_STATUS: not_implemented - P11 target declaration, no producer.
+enum ModelChatDisposition {
+  MODEL_CHAT_DISPOSITION_UNSPECIFIED = 0;
+  FRESH_RESULT = 1;
+  REPLAY_IN_PROGRESS = 2;
+  REPLAY_TERMINAL = 3;
+}
+
+// P11 target UNKNOWN resolution outcome; UNSPECIFIED while the call is unresolved.
+// CONTRACT_STATUS: not_implemented - P11 target declaration, no producer.
+enum ModelCallDisposition {
+  MODEL_CALL_DISPOSITION_UNSPECIFIED = 0;
+  NOT_EXECUTED = 1;
+  EXECUTED_NOT_BILLED = 2;
+  EXECUTED_BILLED = 3;
+  ABANDONED = 4;
 }
 
 // CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
@@ -105,6 +146,9 @@ message ModelGatewayChatRequest {
 message ModelGatewayChatResponse {
   ModelChatResponse result = 1;
   ModelCallRecord call = 2;
+  // CONTRACT_STATUS: not_implemented - P11 target replay shape; only FRESH_RESULT carries
+  // result, replay dispositions carry call metadata only and never re-call the provider.
+  ModelChatDisposition disposition = 3;
 }
 
 // CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
@@ -142,6 +186,46 @@ message ModelGetModelConfigurationResponse {
   ModelConfiguration config = 1;
   bool secret_configured = 2;
   google.protobuf.Timestamp observed_at = 3;
+  // CONTRACT_STATUS: not_implemented - P11 target current secret version projection; never
+  // returns the secret or derived material.
+  uint64 secret_version = 4;
+}
+
+// CONTRACT_STATUS: not_implemented - P11 target declaration, no producer.
+message ModelDisableModelRequest {
+  RequestContext context = 1;
+  string model_id = 2;
+  optional uint64 expected_version = 3;
+}
+
+// CONTRACT_STATUS: not_implemented - P11 target declaration, no producer.
+message ModelDisableModelResponse {
+  ModelMetadata model = 1;
+}
+
+// CONTRACT_STATUS: not_implemented - P11 target declaration, no producer.
+message ModelEnableModelRequest {
+  RequestContext context = 1;
+  string model_id = 2;
+  optional uint64 expected_version = 3;
+}
+
+// CONTRACT_STATUS: not_implemented - P11 target declaration, no producer.
+message ModelEnableModelResponse {
+  ModelMetadata model = 1;
+}
+
+// CONTRACT_STATUS: not_implemented - P11 target declaration, no producer.
+message ModelResolveModelCallRequest {
+  RequestContext context = 1;
+  string logical_call_id = 2;
+  optional uint64 expected_version = 3;
+  ModelCallDisposition disposition = 4;
+}
+
+// CONTRACT_STATUS: not_implemented - P11 target declaration, no producer.
+message ModelResolveModelCallResponse {
+  ModelCallRecord call = 1;
 }
 
 // CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
@@ -202,6 +286,27 @@ service ModelService {
     option (requires_idempotency) = false;
     option (default_deadline_ms) = 2000;
     option (max_deadline_ms) = 5000;
+    option (requires_online_authorization) = true;
+  }
+  rpc DisableModel(ModelDisableModelRequest) returns (ModelDisableModelResponse) {
+    option (required_permission) = PERMISSION_MODEL_MANAGE;
+    option (requires_idempotency) = true;
+    option (default_deadline_ms) = 5000;
+    option (max_deadline_ms) = 30000;
+    option (requires_online_authorization) = true;
+  }
+  rpc EnableModel(ModelEnableModelRequest) returns (ModelEnableModelResponse) {
+    option (required_permission) = PERMISSION_MODEL_MANAGE;
+    option (requires_idempotency) = true;
+    option (default_deadline_ms) = 5000;
+    option (max_deadline_ms) = 30000;
+    option (requires_online_authorization) = true;
+  }
+  rpc ResolveModelCall(ModelResolveModelCallRequest) returns (ModelResolveModelCallResponse) {
+    option (required_permission) = PERMISSION_MODEL_MANAGE;
+    option (requires_idempotency) = true;
+    option (default_deadline_ms) = 5000;
+    option (max_deadline_ms) = 30000;
     option (requires_online_authorization) = true;
   }
 }
