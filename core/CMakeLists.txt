@@ -244,3 +244,26 @@ add_test(NAME p05_runtime_resource_application
   COMMAND kiarabot_runtime_resource_application_test)
 set_tests_properties(p05_runtime_resource_application PROPERTIES
   LABELS "p05;unit" TIMEOUT 30)
+
+# P09a Runtime storage/shared-namespace domain+application (phase 1: no PG; ports fail closed
+# until the P07a-A-based PG phase lands). Pure application owns authorization, CAS/condition,
+# quota, receipt replay and audit ordering.
+add_library(kiarabot_runtime_storage_application STATIC
+  src/application/target/runtime_storage_application.cpp)
+target_include_directories(kiarabot_runtime_storage_application PUBLIC include)
+target_compile_features(kiarabot_runtime_storage_application PUBLIC cxx_std_20)
+target_compile_options(kiarabot_runtime_storage_application PRIVATE
+  $<$<CXX_COMPILER_ID:AppleClang,Clang,GNU>:-Wall -Wextra -Wpedantic>)
+add_executable(kiarabot_runtime_storage_application_test
+  tests/architecture/runtime_storage_application_test.cpp)
+target_include_directories(kiarabot_runtime_storage_application_test PRIVATE include)
+target_link_libraries(kiarabot_runtime_storage_application_test PRIVATE
+  kiarabot_runtime_storage_application)
+target_compile_features(kiarabot_runtime_storage_application_test PRIVATE cxx_std_20)
+target_compile_options(kiarabot_runtime_storage_application_test PRIVATE
+  $<$<CXX_COMPILER_ID:AppleClang,Clang,GNU>:-Wall -Wextra -Wpedantic -UNDEBUG>
+  $<$<CXX_COMPILER_ID:MSVC>:/UNDEBUG>)
+add_test(NAME p09a_runtime_storage_application
+  COMMAND kiarabot_runtime_storage_application_test)
+set_tests_properties(p09a_runtime_storage_application PROPERTIES
+  LABELS "p09;unit" TIMEOUT 30)
