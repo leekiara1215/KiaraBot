@@ -32,10 +32,12 @@ RUN apt-get update \
 
 WORKDIR /app
 COPY --from=build /app /app
+COPY deploy/docker/adapter-entrypoint.sh /usr/local/bin/adapter-entrypoint
+RUN chmod 0755 /usr/local/bin/adapter-entrypoint
 ENV PYTHONPATH=/app/src:/app/generated \
     PATH=/app/.venv/bin:$PATH \
     PYTHONUNBUFFERED=1 \
     OUTBOX_PATH=/var/lib/kiarabot-adapter/outbox.db
 
 USER 10001:10001
-CMD ["python", "-m", "kiarabot_adapter_nonebot"]
+ENTRYPOINT ["/usr/local/bin/adapter-entrypoint"]
