@@ -228,3 +228,11 @@ Model 本地第一次事务：在线授权通过后，检查 owner+logical_call_
 锁和隔离机制参考 [PostgreSQL 隔离](https://www.postgresql.org/docs/18/transaction-iso.html)、[显式锁](https://www.postgresql.org/docs/18/explicit-locking.html)、[SELECT 领取语法](https://www.postgresql.org/docs/18/sql-select.html)。READ COMMITTED不能替代显式业务约束，SKIP LOCKED仅用于队列领取，不用于证明任意业务查询一致性。
 
 本项目参数与业务原子组为设计决策；本文无可执行DDL或代码。检查只覆盖文档链接、锚点、状态/选择一致性、边界与故障路径审查；未执行构建、协议生成、数据库测试或压测，不能将故障矩阵写作已通过。
+
+## P10a Scheduler schema 版本（2026-11-02）
+
+Scheduler 私有库 schema 版本由 6 提升为 7，作为 P10a 触发生命周期落地的版本标记。本增量只
+新增 SchedulerUnitOfWork 的 SQL 投影和应用层状态机，未新增/修改关系、列或索引，因此
+`manifest.hpp` 的 descriptor 与关系计数无需变化，`database_test` 在真实 PG16.4 上通过。下一
+增量若增加 tasks/occurrences 观察列、quota counter 或 due/owner 索引，必须同时更新
+descriptor、关系计数、record codec 与 database_test，不得只改代码或只改版本号。

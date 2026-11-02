@@ -1281,3 +1281,32 @@ UNKNOWN 而不是“已停止”。Host 启动时恢复：marker 仍存活则认
 P08a 的 bridge 客户端在连接丢失后不自动重连（readiness 转 false，需进程重启或后续阶段补齐）；
 HostCommandReceipt 契约没有 error 字段，命令拒绝暂以 `persisted=false` 回执表达；包摘要为部署
 登记值比较，不做目录内容重算；SQLite schema 无增量迁移（初始化时创建三表）。
+
+## P10a Scheduler 应用与 PG 落地（2026-11-02，第一阶段）
+
+P10a 在 `core/src/application/target/scheduler_service.cpp` 实现一次性任务应用：
+`CreateTask` 同时支持 UTC `run_at` 与 IANA `local_time`（严格二选一，`LocalCivilTime` 只经
+`SchedulerTimeZonePort` 解析；DST gap/fold、非法时区为 INVALID_ARGUMENT，时区数据缺失为
+UPSTREAM_UNAVAILABLE，绝不猜测 UTC 偏移），时间必须晚于数据库当前时间且不超过 366 天
+horizon，payload ≤64 KiB；创建命令按 idempotency key+请求指纹复用 command_receipts，重复
+创建返回原任务；活跃任务容量为实例 1024、安装 8192。`CancelTask` 仅在任务 PENDING 且
+occurrence 尚未创建时可取消（交接意图建立后返回 CONFLICT），取消/创建均先持久化再提交。
+`GetTask`/`ListTasks`（owner keyset 分页 + 可选状态过滤）严格按认证上下文派生的 owner
+隔离；`GetOccurrence`/`GetOperation` 做 owner/resource 校验。
+
+触发生命周期（P10a 不调用 Runtime）：维护扫描 `due_tasks` → 每个到期任务独立事务内创建
+occurrence（ACCEPTED）、Scheduler 所属 Operation、持久化 trigger outbox 交接意图，并把任务
+置为 RUNNING；重复扫描不重复建 occurrence/outbox。`ClaimTriggers` 使用通用 outbox claim；
+`ConfirmTriggerAccepted` 在 Runtime 确认后把 occurrence 置为 SUCCEEDED（记录
+accepted_event_id/acknowledged_at）、任务置 COMPLETED——COMPLETED 语义严格为“Runtime 已持久
+入队”，不是插件已执行。确认丢失重试同一 occurrence 幂等；outbox 未确认且超过 7 天有效期时
+`ExpireStaleTriggers` 将 occurrence 置 EXPIRED、任务置 FAILED(TIMEOUT)，不自动重放。
+P10a 的 outbox claim 只暴露给维护/P10b 交接代码；Runtime AcceptTimerTrigger 调用、SDK 任务方法
+与 Host 执行链路属于 P10b/c。
+
+PG 适配器为 Scheduler 私有库提供 owner/due SQL 投影（list_tasks、容量计数、due 扫描、
+occurrence owner/in-flight 扫描），并把 Scheduler schema 版本提升到 v7。P10a 尚未增加
+tasks/occurrences 的观察列、quota counter 表和 due/owner 索引（需要重新生成 schema descriptor
+并与 database_test/manifest 同步，留待下一增量）；当前 v7 与 v6 的关系集合一致。RPC 组合根
+与 SchedulerService 监听（P02 当前仍为 readiness 桩）尚未接线，真实 Runtime 调用/授权链路
+（Identity delegation）同样留待后续阶段。

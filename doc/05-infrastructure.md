@@ -535,3 +535,14 @@ P09（Runtime 私有 PG）：新增 `kiarabot.namespaces`（namespace_id PK、in
 ## P11 目标 Model 表、密钥与 Provider（契约冻结，未实现）
 
 Model 私有 PG（现 v5，P11a 升 v6，空库初始化无迁移）：`model_calls`（由 `model_intents` 扩为 PK(owner,logical_call_id)、model_id、config_version/secret_version>0、request_hash bytea(32)、state 0..3、execution_outcome、usage_known、input/output_tokens、may_have_billed、provider_request_id ≤128、latency_ms、error_code、disposition 0..4、created/observed_at、retain_until、version；未决 UNKNOWN 30 天内不得清理、终态保留 ≥7 天）、`model_configs`（PK(model_id)、UNIQUE(alias)、provider_kind CHECK 仅 openai_chat_completions、endpoint、provider_model、timeout_ms 1000..30000、max_concurrency 1..64、lifecycle_state、config_version、created/updated_at）、`encrypted_provider_secrets`（PK(model_id,secret_version)、root_key_version、aead=1、nonce 24B、ciphertext ≤8192、created_at；FK model_id）。根密钥只由部署注入（file 0600/O_NOFOLLOW + version），不入库/不与密文同表；XChaCha20-Poly1305，AAD 绑定 model_id|secret_version|root_key_version|aead；轮换只影响后续、在途固定版本。Provider 只允许批准 HTTP 范围（HTTPS 或 http 仅 127.0.0.1；无 userinfo/query/fragment/代理/重定向；Bearer；stream=false；单 choice；结果/messages ≤64KiB、body ≤1MiB、timeout 1..30s）；错误只用既有 ErrorCode。descriptor/relation_count 由 P11a 用真 PG16.4 实测更新，不预写数字。
+
+## Scheduler PostgreSQL 投影（P10a）
+
+Scheduler 的 `SchedulerUnitOfWork` 适配器实现 P10a 应用所需的只读投影：按 owner 的 tasks
+keyset 列表、非终态任务的实例/安装容量计数、到期 Pending 扫描、occurrence owner 列表与
+Accepted in-flight 扫描；均为 Scheduler 私有库内 SQL，经 `SqlWork::run` 在所属事务内执行，
+并用与 Find/Save 相同的 live-record 解码回领域对象。授权/可见性不在仓储层判断。Scheduler
+schema 版本为 7；P10a 未改变关系集合（tasks/occurrences 观察列、quota counter、due/owner
+索引与 descriptor 更新留待后续），因此 manifest descriptor 与 `database_test` 关系计数保持
+不变。真实 PG16.4 fixture 覆盖创建幂等、到期交接、取消窗口、claim/confirm/确认丢失重放、
+过期 FAILED(TIMEOUT)、重启持久化与 v7 版本。
