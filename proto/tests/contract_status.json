@@ -5790,7 +5790,9 @@
           "operations.beginDeleteResource": "implemented",
           "operations.restoreResource": "implemented",
           "operations.getTask": "implemented",
-          "operations.cancelTask": "implemented"
+          "operations.cancelTask": "implemented",
+          "operations.getActionPolicy": "implemented",
+          "operations.updateActionPolicy": "implemented"
         },
         "proto_messages": {
           "IdentityAuditFilter": "implemented",
@@ -5895,7 +5897,17 @@
           "SchedulerGetOccurrenceRequest": "implemented",
           "SchedulerGetOccurrenceResponse": "implemented",
           "SchedulerGetOperationRequest": "implemented",
-          "SchedulerGetOperationResponse": "implemented"
+          "SchedulerGetOperationResponse": "implemented",
+          "ReactMessage": "implemented",
+          "DeleteMessage": "implemented",
+          "MuteMember": "implemented",
+          "KickMember": "implemented",
+          "ApproveRequest": "implemented",
+          "ActionPolicy": "implemented",
+          "RuntimeGetActionPolicyRequest": "implemented",
+          "RuntimeGetActionPolicyResponse": "implemented",
+          "RuntimeUpdateActionPolicyRequest": "implemented",
+          "RuntimeUpdateActionPolicyResponse": "implemented"
         },
         "proto_fields": {
           "IdentityAuditFilter.scope": "implemented",
@@ -6369,7 +6381,35 @@
           "OccurrenceRecord.created_at": "implemented",
           "OccurrenceRecord.updated_at": "implemented",
           "SchedulerListTasksRequest.state": "implemented",
-          "TimerTriggered.occurrence_id": "implemented"
+          "TimerTriggered.occurrence_id": "implemented",
+          "ApproveRequest.approve": "implemented",
+          "ApproveRequest.reason": "implemented",
+          "ApproveRequest.request_id": "implemented",
+          "DeleteMessage.conversation": "implemented",
+          "DeleteMessage.message_id": "implemented",
+          "KickMember.group_id": "implemented",
+          "KickMember.reason": "implemented",
+          "KickMember.user_id": "implemented",
+          "MuteMember.duration_seconds": "implemented",
+          "MuteMember.group_id": "implemented",
+          "MuteMember.user_id": "implemented",
+          "ReactMessage.conversation": "implemented",
+          "ReactMessage.message_id": "implemented",
+          "ReactMessage.reaction": "implemented",
+          "ActionPolicy.account_id": "implemented",
+          "ActionPolicy.mute_enabled": "implemented",
+          "ActionPolicy.kick_enabled": "implemented",
+          "ActionPolicy.allowed_group_ids": "implemented",
+          "ActionPolicy.mute_daily_budget": "implemented",
+          "ActionPolicy.kick_daily_budget": "implemented",
+          "ActionPolicy.version": "implemented",
+          "RuntimeGetActionPolicyRequest.context": "implemented",
+          "RuntimeGetActionPolicyRequest.account_id": "implemented",
+          "RuntimeGetActionPolicyResponse.policy": "implemented",
+          "RuntimeUpdateActionPolicyRequest.context": "implemented",
+          "RuntimeUpdateActionPolicyRequest.policy": "implemented",
+          "RuntimeUpdateActionPolicyRequest.expected_version": "implemented",
+          "RuntimeUpdateActionPolicyResponse.policy": "implemented"
         },
         "bridge_methods": {
           "AdapterBridge.Connect": "implemented",
@@ -6444,7 +6484,12 @@
           "EventEnvelope.message_received": "implemented"
         },
         "action_payloads": {
-          "ActionEnvelope.send_message": "implemented"
+          "ActionEnvelope.send_message": "implemented",
+          "ActionEnvelope.react_message": "implemented",
+          "ActionEnvelope.delete_message": "implemented",
+          "ActionEnvelope.mute_member": "implemented",
+          "ActionEnvelope.kick_member": "implemented",
+          "ActionEnvelope.approve_request": "implemented"
         },
         "host_operations": {
           "HostRequest.model_chat": "implemented"
@@ -11083,6 +11128,231 @@
           "control/api/app/main.cpp",
           "tests/architecture/p10_scheduler_rest.py",
           "control/api/tests/owner_gateway_test.cpp"
+        ],
+        "proto_messages:ReactMessage": [
+          "core/src/application/target/runtime_action_application.cpp",
+          "core/tests/architecture/action_rules_test.cpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_messages:DeleteMessage": [
+          "core/src/application/target/runtime_action_application.cpp",
+          "core/tests/architecture/action_rules_test.cpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_messages:MuteMember": [
+          "core/src/application/target/runtime_action_application.cpp",
+          "core/tests/architecture/action_rules_test.cpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_messages:KickMember": [
+          "core/src/application/target/runtime_action_application.cpp",
+          "core/tests/architecture/action_rules_test.cpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_messages:ApproveRequest": [
+          "core/src/application/target/runtime_action_application.cpp",
+          "core/tests/architecture/action_rules_test.cpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_messages:ActionPolicy": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_action_application.cpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_messages:RuntimeGetActionPolicyRequest": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_action_application.cpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_messages:RuntimeGetActionPolicyResponse": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_action_application.cpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_messages:RuntimeUpdateActionPolicyRequest": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_action_application.cpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_messages:RuntimeUpdateActionPolicyResponse": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_action_application.cpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:ApproveRequest.approve": [
+          "core/src/application/target/runtime_action_application.cpp",
+          "core/tests/architecture/action_rules_test.cpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:ApproveRequest.reason": [
+          "core/src/application/target/runtime_action_application.cpp",
+          "core/tests/architecture/action_rules_test.cpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:ApproveRequest.request_id": [
+          "core/src/application/target/runtime_action_application.cpp",
+          "core/tests/architecture/action_rules_test.cpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:DeleteMessage.conversation": [
+          "core/src/application/target/runtime_action_application.cpp",
+          "core/tests/architecture/action_rules_test.cpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:DeleteMessage.message_id": [
+          "core/src/application/target/runtime_action_application.cpp",
+          "core/tests/architecture/action_rules_test.cpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:KickMember.group_id": [
+          "core/src/application/target/runtime_action_application.cpp",
+          "core/tests/architecture/action_rules_test.cpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:KickMember.reason": [
+          "core/src/application/target/runtime_action_application.cpp",
+          "core/tests/architecture/action_rules_test.cpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:KickMember.user_id": [
+          "core/src/application/target/runtime_action_application.cpp",
+          "core/tests/architecture/action_rules_test.cpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:MuteMember.duration_seconds": [
+          "core/src/application/target/runtime_action_application.cpp",
+          "core/tests/architecture/action_rules_test.cpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:MuteMember.group_id": [
+          "core/src/application/target/runtime_action_application.cpp",
+          "core/tests/architecture/action_rules_test.cpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:MuteMember.user_id": [
+          "core/src/application/target/runtime_action_application.cpp",
+          "core/tests/architecture/action_rules_test.cpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:ReactMessage.conversation": [
+          "core/src/application/target/runtime_action_application.cpp",
+          "core/tests/architecture/action_rules_test.cpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:ReactMessage.message_id": [
+          "core/src/application/target/runtime_action_application.cpp",
+          "core/tests/architecture/action_rules_test.cpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:ReactMessage.reaction": [
+          "core/src/application/target/runtime_action_application.cpp",
+          "core/tests/architecture/action_rules_test.cpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:ActionPolicy.account_id": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_action_application.cpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:ActionPolicy.mute_enabled": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_action_application.cpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:ActionPolicy.kick_enabled": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_action_application.cpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:ActionPolicy.allowed_group_ids": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_action_application.cpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:ActionPolicy.mute_daily_budget": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_action_application.cpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:ActionPolicy.kick_daily_budget": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_action_application.cpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:ActionPolicy.version": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_action_application.cpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:RuntimeGetActionPolicyRequest.context": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_action_application.cpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:RuntimeGetActionPolicyRequest.account_id": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_action_application.cpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:RuntimeGetActionPolicyResponse.policy": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_action_application.cpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:RuntimeUpdateActionPolicyRequest.context": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_action_application.cpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:RuntimeUpdateActionPolicyRequest.policy": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_action_application.cpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:RuntimeUpdateActionPolicyRequest.expected_version": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_action_application.cpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:RuntimeUpdateActionPolicyResponse.policy": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_action_application.cpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "action_payloads:ActionEnvelope.react_message": [
+          "core/src/application/target/runtime_action_application.cpp",
+          "core/tests/architecture/action_rules_test.cpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "action_payloads:ActionEnvelope.delete_message": [
+          "core/src/application/target/runtime_action_application.cpp",
+          "core/tests/architecture/action_rules_test.cpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "action_payloads:ActionEnvelope.mute_member": [
+          "core/src/application/target/runtime_action_application.cpp",
+          "core/tests/architecture/action_rules_test.cpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "action_payloads:ActionEnvelope.kick_member": [
+          "core/src/application/target/runtime_action_application.cpp",
+          "core/tests/architecture/action_rules_test.cpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "action_payloads:ActionEnvelope.approve_request": [
+          "core/src/application/target/runtime_action_application.cpp",
+          "core/tests/architecture/action_rules_test.cpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "operations:operations.getActionPolicy": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_action_application.cpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "operations:operations.updateActionPolicy": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_action_application.cpp",
+          "tests/architecture/p06_bridge_acceptance.py"
         ]
       }
     }

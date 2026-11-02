@@ -1421,8 +1421,9 @@
       "deadline_ms": 2000,
       "max_deadline_ms": 5000,
       "server_streaming": false,
-      "status": "not_implemented",
-      "requires_idempotency_key": false
+      "status": "implemented",
+      "requires_idempotency_key": false,
+      "status_note": "P07f-1 Runtime owner RPC wired + P07f policy gate/payload evidence; Control REST forwarding remains not_implemented"
     },
     {
       "service": "RuntimeService",
@@ -1438,8 +1439,9 @@
       "deadline_ms": 5000,
       "max_deadline_ms": 30000,
       "server_streaming": false,
-      "status": "not_implemented",
-      "requires_idempotency_key": true
+      "status": "implemented",
+      "requires_idempotency_key": true,
+      "status_note": "P07f-1 Runtime owner RPC wired + P07f policy gate/payload evidence; Control REST forwarding remains not_implemented"
     },
     {
       "service": "ModelService",
