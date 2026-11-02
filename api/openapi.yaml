@@ -549,6 +549,8 @@ paths:
     get:
       operationId: listAuditEntries
       x-permission: audit.read
+      x-owner-rpc: { identity: IdentityService.ListAudit, runtime: RuntimeService.ListAudit }
+      x-owner-permissions: { identity: audit.read, runtime: audit.read }
       x-contract-status: not_implemented
       summary: Query audit entries
       description: >-
@@ -559,9 +561,10 @@ paths:
         plus stable ID; no free-form filters are accepted in v1. Necessary audit facts are retained
         for 180 days in their owner service (doc/22) and Control must not extend that retention by
         caching; response rows carry the owner service identity so clients can open the exact owner
-        operation. No owner audit-list RPC is declared yet (adding one requires confirmation); until
-        an authoritative source is registered, return UNAVAILABLE (503), never a successful empty
-        page. Audit/log permissions are separate and neither implies the other.
+        operation. P12e declares read-only owner RPCs (IdentityService.ListAudit /
+        RuntimeService.ListAudit, audit.read on the Control catalog scope); Control aggregation
+        wiring is P12c, so this REST operation stays UNAVAILABLE (503) until that route is
+        implemented. Audit/log permissions are separate and neither implies the other.
       parameters: [{ $ref: '#/components/parameters/PageSize' }, { $ref: '#/components/parameters/PageToken' }]
       responses:
         '200':
@@ -768,6 +771,8 @@ paths:
     get:
       operationId: listLogs
       x-permission: log.read
+      x-owner-rpc: { identity: IdentityService.ListLogs, runtime: RuntimeService.ListLogs }
+      x-owner-permissions: { identity: log.read, runtime: log.read }
       x-contract-status: not_implemented
       summary: Query redacted structured logs
       description: >-
@@ -776,9 +781,9 @@ paths:
         categories are returned; credential, message-body and model-secret material is removed
         before projection. Pagination uses occurred_at plus stable ID; no free-form filters are
         accepted in v1. Operational logs are retained for 7 days; Control must not silently widen
-        that window. No owner log-list RPC is declared yet (adding one requires confirmation); until
-        an authoritative source is registered, return UNAVAILABLE (503), never a successful empty
-        page.
+        that window. P12e declares read-only owner RPCs (IdentityService.ListLogs /
+        RuntimeService.ListLogs, log.read on the Control catalog scope); Control aggregation wiring
+        is P12c, so this REST operation stays UNAVAILABLE (503) until that route is implemented.
       parameters: [{ $ref: '#/components/parameters/PageSize' }, { $ref: '#/components/parameters/PageToken' }]
       responses:
         '200':

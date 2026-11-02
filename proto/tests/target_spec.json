@@ -1798,6 +1798,82 @@
       "exposure": "wire",
       "status_note": "P11a/b/c Model service production RPC + P11d Control REST forwarding evidence; REST Control operation status remains separately registered"
     }
+    ,
+    {
+      "service": "IdentityService",
+      "method": "ListAudit",
+      "file": "identity.proto",
+      "request": "IdentityListAuditRequest",
+      "response": "IdentityListAuditResponse",
+      "caller": "Control platform peer with explicit audit.read assignment on the Control catalog resource",
+      "permission": "audit.read",
+      "risk": "online",
+      "mutating": false,
+      "idempotency": "none",
+      "deadline_ms": 2000,
+      "server_streaming": false,
+      "status": "implemented",
+      "max_deadline_ms": 5000,
+      "requires_idempotency_key": false,
+      "status_note": "P12e read-only owner audit/log projection: pure application + real PG16.4 keyset pagination/filter/redaction tests + owner RPC adapter; Control REST aggregation remains not_implemented (P12c)"
+    }
+,
+    {
+      "service": "IdentityService",
+      "method": "ListLogs",
+      "file": "identity.proto",
+      "request": "IdentityListLogsRequest",
+      "response": "IdentityListLogsResponse",
+      "caller": "Control platform peer with explicit log.read assignment on the Control catalog resource",
+      "permission": "log.read",
+      "risk": "online",
+      "mutating": false,
+      "idempotency": "none",
+      "deadline_ms": 2000,
+      "server_streaming": false,
+      "status": "implemented",
+      "max_deadline_ms": 5000,
+      "requires_idempotency_key": false,
+      "status_note": "P12e read-only owner audit/log projection: pure application + real PG16.4 keyset pagination/filter/redaction tests + owner RPC adapter; Control REST aggregation remains not_implemented (P12c)"
+    }
+,
+    {
+      "service": "RuntimeService",
+      "method": "ListAudit",
+      "file": "runtime.proto",
+      "request": "RuntimeListAuditRequest",
+      "response": "RuntimeListAuditResponse",
+      "caller": "Control with a current online delegation for the Control catalog scope",
+      "permission": "audit.read",
+      "risk": "online",
+      "mutating": false,
+      "idempotency": "none",
+      "deadline_ms": 2000,
+      "server_streaming": false,
+      "status": "implemented",
+      "max_deadline_ms": 5000,
+      "requires_idempotency_key": false,
+      "status_note": "P12e read-only owner audit/log projection: pure application + real PG16.4 keyset pagination/filter/redaction tests + owner RPC adapter; Control REST aggregation remains not_implemented (P12c)"
+    }
+,
+    {
+      "service": "RuntimeService",
+      "method": "ListLogs",
+      "file": "runtime.proto",
+      "request": "RuntimeListLogsRequest",
+      "response": "RuntimeListLogsResponse",
+      "caller": "Control with a current online delegation for the Control catalog scope",
+      "permission": "log.read",
+      "risk": "online",
+      "mutating": false,
+      "idempotency": "none",
+      "deadline_ms": 2000,
+      "server_streaming": false,
+      "status": "implemented",
+      "max_deadline_ms": 5000,
+      "requires_idempotency_key": false,
+      "status_note": "P12e read-only owner audit/log projection: pure application + real PG16.4 keyset pagination/filter/redaction tests + owner RPC adapter; Control REST aggregation remains not_implemented (P12c)"
+    }
   ],
   "bridges": [
     {

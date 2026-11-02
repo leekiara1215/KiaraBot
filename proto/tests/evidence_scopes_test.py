@@ -179,6 +179,44 @@ class ScopeTest(unittest.TestCase):
         expected |= {('proto_fields', 'IdentityRegisterPrincipalResponse.initial_credential'), ('proto_fields', 'IdentityRevokeCredentialRequest.context'), ('proto_fields', 'IdentityRevokeCredentialRequest.credential_id')}
         expected |= {('proto_fields', 'IdentityRevokeCredentialRequest.expected_version'), ('proto_fields', 'IdentityRevokeCredentialResponse.version'), ('proto_fields', 'IdentityRotateCredentialRequest.context')}
         expected |= {('proto_fields', 'IdentityRotateCredentialRequest.credential_id'), ('proto_fields', 'IdentityRotateCredentialRequest.expected_version'), ('proto_fields', 'IdentityRotateCredentialResponse.delivery')}
+        expected |= {('proto_messages', 'IdentityAuditFilter'), ('proto_messages', 'IdentityAuditRecord'), ('proto_messages', 'IdentityListAuditRequest')}
+        expected |= {('proto_messages', 'IdentityListAuditResponse'), ('proto_messages', 'IdentityListLogsRequest'), ('proto_messages', 'IdentityListLogsResponse')}
+        expected |= {('proto_messages', 'IdentityLogRecord'), ('proto_messages', 'RuntimeAuditFilter'), ('proto_messages', 'RuntimeAuditRecord')}
+        expected |= {('proto_messages', 'RuntimeListAuditRequest'), ('proto_messages', 'RuntimeListAuditResponse'), ('proto_messages', 'RuntimeListLogsRequest')}
+        expected |= {('proto_messages', 'RuntimeListLogsResponse'), ('proto_messages', 'RuntimeLogRecord'), ('proto_fields', 'IdentityAuditFilter.scope')}
+        expected |= {('proto_fields', 'IdentityAuditFilter.occurred_from'), ('proto_fields', 'IdentityAuditFilter.occurred_until'), ('proto_fields', 'IdentityAuditFilter.actor')}
+        expected |= {('proto_fields', 'IdentityAuditFilter.resource'), ('proto_fields', 'IdentityAuditFilter.page'), ('proto_fields', 'IdentityAuditRecord.entry_id')}
+        expected |= {('proto_fields', 'IdentityAuditRecord.actor'), ('proto_fields', 'IdentityAuditRecord.resource'), ('proto_fields', 'IdentityAuditRecord.request_id')}
+        expected |= {('proto_fields', 'IdentityAuditRecord.trace_id'), ('proto_fields', 'IdentityAuditRecord.method'), ('proto_fields', 'IdentityAuditRecord.rejection')}
+        expected |= {('proto_fields', 'IdentityAuditRecord.authorization_version'), ('proto_fields', 'IdentityAuditRecord.occurred_at'), ('proto_fields', 'IdentityAuditRecord.target_account_id')}
+        expected |= {('proto_fields', 'IdentityAuditRecord.target_conversation_id'), ('proto_fields', 'IdentityListAuditRequest.context'), ('proto_fields', 'IdentityListAuditRequest.filter')}
+        expected |= {('proto_fields', 'IdentityListAuditResponse.entries'), ('proto_fields', 'IdentityListAuditResponse.page'), ('proto_fields', 'IdentityListAuditResponse.checked_at')}
+        expected |= {('proto_fields', 'IdentityListLogsRequest.context'), ('proto_fields', 'IdentityListLogsRequest.filter'), ('proto_fields', 'IdentityListLogsResponse.entries')}
+        expected |= {('proto_fields', 'IdentityListLogsResponse.page'), ('proto_fields', 'IdentityListLogsResponse.checked_at'), ('proto_fields', 'IdentityLogRecord.entry_id')}
+        expected |= {('proto_fields', 'IdentityLogRecord.severity'), ('proto_fields', 'IdentityLogRecord.component'), ('proto_fields', 'IdentityLogRecord.method')}
+        expected |= {('proto_fields', 'IdentityLogRecord.actor'), ('proto_fields', 'IdentityLogRecord.resource'), ('proto_fields', 'IdentityLogRecord.request_id')}
+        expected |= {('proto_fields', 'IdentityLogRecord.trace_id'), ('proto_fields', 'IdentityLogRecord.occurred_at'), ('proto_fields', 'IdentityLogRecord.message')}
+        expected |= {('proto_fields', 'RuntimeAuditFilter.scope'), ('proto_fields', 'RuntimeAuditFilter.occurred_from'), ('proto_fields', 'RuntimeAuditFilter.occurred_until')}
+        expected |= {('proto_fields', 'RuntimeAuditFilter.actor'), ('proto_fields', 'RuntimeAuditFilter.resource'), ('proto_fields', 'RuntimeAuditFilter.page')}
+        expected |= {('proto_fields', 'RuntimeAuditRecord.entry_id'), ('proto_fields', 'RuntimeAuditRecord.actor'), ('proto_fields', 'RuntimeAuditRecord.resource')}
+        expected |= {('proto_fields', 'RuntimeAuditRecord.request_id'), ('proto_fields', 'RuntimeAuditRecord.trace_id'), ('proto_fields', 'RuntimeAuditRecord.method')}
+        expected |= {('proto_fields', 'RuntimeAuditRecord.rejection'), ('proto_fields', 'RuntimeAuditRecord.authorization_version'), ('proto_fields', 'RuntimeAuditRecord.occurred_at')}
+        expected |= {('proto_fields', 'RuntimeAuditRecord.target_account_id'), ('proto_fields', 'RuntimeAuditRecord.target_conversation_id'), ('proto_fields', 'RuntimeListAuditRequest.context')}
+        expected |= {('proto_fields', 'RuntimeListAuditRequest.filter'), ('proto_fields', 'RuntimeListAuditResponse.entries'), ('proto_fields', 'RuntimeListAuditResponse.page')}
+        expected |= {('proto_fields', 'RuntimeListAuditResponse.checked_at'), ('proto_fields', 'RuntimeListLogsRequest.context'), ('proto_fields', 'RuntimeListLogsRequest.filter')}
+        expected |= {('proto_fields', 'RuntimeListLogsResponse.entries'), ('proto_fields', 'RuntimeListLogsResponse.page'), ('proto_fields', 'RuntimeListLogsResponse.checked_at')}
+        expected |= {('proto_fields', 'RuntimeLogRecord.entry_id'), ('proto_fields', 'RuntimeLogRecord.severity'), ('proto_fields', 'RuntimeLogRecord.component')}
+        expected |= {('proto_fields', 'RuntimeLogRecord.method'), ('proto_fields', 'RuntimeLogRecord.actor'), ('proto_fields', 'RuntimeLogRecord.resource')}
+        expected |= {('proto_fields', 'RuntimeLogRecord.request_id'), ('proto_fields', 'RuntimeLogRecord.trace_id'), ('proto_fields', 'RuntimeLogRecord.occurred_at')}
+        expected |= {('proto_fields', 'RuntimeLogRecord.message')}
+        expected |= {('proto_messages', 'ModelChatRequest'), ('proto_messages', 'ModelChatResponse'),
+                    ('proto_messages', 'ModelMessage'), ('proto_fields', 'HostRequest.model_chat'),
+                    ('proto_fields', 'HostResponse.model_chat'), ('proto_fields', 'ModelChatRequest.model'),
+                    ('proto_fields', 'ModelChatRequest.logical_call_id'), ('proto_fields', 'ModelChatRequest.messages'),
+                    ('proto_fields', 'ModelChatResponse.text'), ('proto_fields', 'ModelMessage.role'),
+                    ('proto_fields', 'ModelMessage.text'), ('proto_fields', 'ModelChatResponse.output_tokens'),
+                    ('proto_fields', 'ModelChatResponse.input_tokens'), ('host_operations', 'HostRequest.model_chat'),
+                    ('host_results', 'HostResponse.model_chat')}
         expected |= {('proto_fields', 'IdentityWatchInvalidationsResponse.resync_required'),
                     ('proto_fields', 'IdentityWatchInvalidationsResponse.cursor')}
         # Merged P07/P09 target flips: reviewed in their module gates and evidence registry.

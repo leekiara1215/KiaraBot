@@ -215,6 +215,30 @@ set_tests_properties(p04_identity_authorization_application PROPERTIES LABELS "p
 
 # Durable bounded invalidation stream/snapshot use cases: read-only online authority, no cached
 # subscription grants. Production PostgreSQL supplies the log; a missing store fails closed.
+add_executable(kiarabot_p12e_audit_query_test tests/architecture/p12e_audit_query_test.cpp)
+target_include_directories(kiarabot_p12e_audit_query_test PRIVATE include)
+target_compile_features(kiarabot_p12e_audit_query_test PRIVATE cxx_std_20)
+target_compile_options(kiarabot_p12e_audit_query_test PRIVATE
+  $<$<CXX_COMPILER_ID:AppleClang,Clang,GNU>:-Wall -Wextra -Wpedantic -UNDEBUG>
+  $<$<CXX_COMPILER_ID:MSVC>:/UNDEBUG>)
+add_test(NAME p12e_audit_query COMMAND kiarabot_p12e_audit_query_test)
+set_tests_properties(p12e_audit_query PROPERTIES LABELS "p12;unit" TIMEOUT 10)
+
+# P12e: read-only Identity/Runtime audit-log aggregation projections. Pure applications; the
+# transport/composition owns RPC wiring and the real PG source remains owner-local.
+add_library(kiarabot_identity_audit_application STATIC
+  src/application/target/identity_audit_application.cpp)
+target_include_directories(kiarabot_identity_audit_application PUBLIC include)
+target_compile_features(kiarabot_identity_audit_application PUBLIC cxx_std_20)
+target_compile_options(kiarabot_identity_audit_application PRIVATE
+  $<$<CXX_COMPILER_ID:AppleClang,Clang,GNU>:-Wall -Wextra -Wpedantic>)
+add_library(kiarabot_runtime_audit_application STATIC
+  src/application/target/runtime_audit_application.cpp)
+target_include_directories(kiarabot_runtime_audit_application PUBLIC include)
+target_compile_features(kiarabot_runtime_audit_application PUBLIC cxx_std_20)
+target_compile_options(kiarabot_runtime_audit_application PRIVATE
+  $<$<CXX_COMPILER_ID:AppleClang,Clang,GNU>:-Wall -Wextra -Wpedantic>)
+
 add_library(kiarabot_identity_invalidation_application STATIC
   src/application/target/identity_invalidation_application.cpp)
 target_include_directories(kiarabot_identity_invalidation_application PUBLIC include)

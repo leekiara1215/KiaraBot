@@ -427,6 +427,70 @@ message IdentityGetCredentialStatusResponse {
 }
 
 // CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+
+// P12e read-only owner audit/log projection for Control aggregation. The query is bounded,
+// keyset-paginated by occurred_at + stable entry id (newest first) and never returns credentials,
+// message bodies, upstream text or secret material. scope must be exactly the Control catalog
+// resource; the owner still rechecks current authority online.
+// CONTRACT_STATUS: implemented - P12e read-only owner audit/log projection (real PG + RPC).
+message IdentityAuditFilter {
+  ResourceScope scope = 1;
+  google.protobuf.Timestamp occurred_from = 2;
+  google.protobuf.Timestamp occurred_until = 3;
+  string actor = 4;
+  ResourceRef resource = 5;
+  SnapshotPage page = 6;
+}
+// CONTRACT_STATUS: implemented - P12e read-only owner audit/log projection (real PG + RPC).
+message IdentityAuditRecord {
+  string entry_id = 1;
+  string actor = 2;
+  ResourceRef resource = 3;
+  string request_id = 4;
+  string trace_id = 5;
+  string method = 6;
+  ErrorCode rejection = 7;
+  uint64 authorization_version = 8;
+  google.protobuf.Timestamp occurred_at = 9;
+  string target_account_id = 10;
+  string target_conversation_id = 11;
+}
+// CONTRACT_STATUS: implemented - P12e read-only owner audit/log projection (real PG + RPC).
+message IdentityListAuditRequest {
+  RequestContext context = 1;
+  IdentityAuditFilter filter = 2;
+}
+// CONTRACT_STATUS: implemented - P12e read-only owner audit/log projection (real PG + RPC).
+message IdentityListAuditResponse {
+  repeated IdentityAuditRecord entries = 1;
+  SnapshotPage page = 2;
+  google.protobuf.Timestamp checked_at = 3;
+}
+// CONTRACT_STATUS: implemented - P12e read-only owner audit/log projection (real PG + RPC).
+message IdentityLogRecord {
+  string entry_id = 1;
+  string severity = 2;
+  string component = 3;
+  string method = 4;
+  string actor = 5;
+  ResourceRef resource = 6;
+  string request_id = 7;
+  string trace_id = 8;
+  google.protobuf.Timestamp occurred_at = 9;
+  string message = 10;
+}
+// CONTRACT_STATUS: implemented - P12e read-only owner audit/log projection (real PG + RPC).
+message IdentityListLogsRequest {
+  RequestContext context = 1;
+  IdentityAuditFilter filter = 2;
+}
+// CONTRACT_STATUS: implemented - P12e read-only owner audit/log projection (real PG + RPC).
+message IdentityListLogsResponse {
+  repeated IdentityLogRecord entries = 1;
+  SnapshotPage page = 2;
+  google.protobuf.Timestamp checked_at = 3;
+}
+
 service IdentityService {
   rpc Login(IdentityLoginRequest) returns (IdentityLoginResponse) {
     option (required_permission) = PERMISSION_IDENTITY_SESSION_CREATE;
@@ -575,6 +639,27 @@ service IdentityService {
   }
   rpc GetCredentialStatus(IdentityGetCredentialStatusRequest) returns (IdentityGetCredentialStatusResponse) {
     option (required_permission) = PERMISSION_IDENTITY_PRINCIPAL_READ;
+    option (requires_idempotency) = false;
+    option (default_deadline_ms) = 2000;
+    option (max_deadline_ms) = 5000;
+    option (requires_online_authorization) = true;
+  }
+
+  // P12e read-only Control aggregation projection. Caller must be the Control platform peer with
+  // an explicit audit.read assignment on the Control catalog resource; no cross-owner reads.
+  rpc ListAudit(IdentityListAuditRequest) returns (IdentityListAuditResponse) {
+    option (required_permission) = PERMISSION_AUDIT_READ;
+    option (scope_kinds) = RESOURCE_CATALOG;
+    option (requires_idempotency) = false;
+    option (default_deadline_ms) = 2000;
+    option (max_deadline_ms) = 5000;
+    option (requires_online_authorization) = true;
+  }
+  // Same bound but requires log.read. Returns the redacted operational log projection derived from
+  // the owner's authoritative audit facts; a missing source is UNAVAILABLE, never an empty page.
+  rpc ListLogs(IdentityListLogsRequest) returns (IdentityListLogsResponse) {
+    option (required_permission) = PERMISSION_LOG_READ;
+    option (scope_kinds) = RESOURCE_CATALOG;
     option (requires_idempotency) = false;
     option (default_deadline_ms) = 2000;
     option (max_deadline_ms) = 5000;
