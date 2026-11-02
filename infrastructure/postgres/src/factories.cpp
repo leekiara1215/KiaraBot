@@ -699,6 +699,16 @@ public:
   query_principals(const target::PrincipalDirectoryQuery& query) override {
     return work().query_principals(query);
   }
+  // P12e Control audit/log aggregation sources. IdentitySecurityWork is the canonical Identity
+  // transaction used by the audit application; without these overrides the fail-closed UnitOfWork
+  // defaults return UPSTREAM_UNAVAILABLE, so Control /logs and /audit could never see Identity
+  // facts (P14l native single-host finding).
+  target::Outcome<target::AuditPage> query_audit(const target::AuditQuery& query) override {
+    return work().query_audit(query);
+  }
+  target::Outcome<target::LogPage> query_logs(const target::LogQuery& query) override {
+    return work().query_logs(query);
+  }
 
 private:
   target::UnitOfWork& work() {
