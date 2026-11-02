@@ -1,5 +1,6 @@
 #include "kiarabot/core/runtime/platform/runtime_bridge.hpp"
 
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <chrono>
@@ -13,6 +14,7 @@
 #include <utility>
 #include <vector>
 
+#include "kiarabot/core/ports/target/runtime_model.hpp"
 #include "kiarabot/core/runtime/platform/target_codec.hpp"
 #include "kiarabot/v1/adapters.pb.h"
 #include "kiarabot/v1/events.pb.h"
@@ -323,6 +325,9 @@ struct StreamState {
   std::string adapter_id;
   target::TimePoint sampled_at;
   bool sampled = false;
+  // Negotiated registration grants; plugin host frames are only served when the exact permission
+  // was granted at registration. Empty for adapters.
+  std::vector<std::string> permissions;
 };
 
 target::Outcome<target::BridgeFence> frame_fence(const v1::Fence& wire, const std::string& proof,
@@ -1008,8 +1013,8 @@ private:
 
 class PluginBridgeImpl final : public v1::PluginBridge::Service {
 public:
-  explicit PluginBridgeImpl(target::RuntimeBridgeApplication& application)
-      : application_(application) {}
+  PluginBridgeImpl(target::RuntimeBridgeApplication& application, target::RuntimeModelPort* model)
+      : application_(application), model_(model) {}
 
   grpc::Status
   Connect(grpc::ServerContext* context,
@@ -1067,7 +1072,8 @@ public:
       return grpc::Status::OK;
     }
     const auto& result = std::get<target::BridgeRegistrationResult>(outcome);
-    StreamState state{target::BridgePeerKind::Plugin, result.authorization, {}, {}, false};
+    StreamState state{target::BridgePeerKind::Plugin, result.authorization, {}, {}, false,
+                      result.granted_permissions};
     const auto stream_instance = result.authorization.fence.instance;
     const auto stream_generation = result.authorization.fence.connection_generation;
     bool delivery_attached = false;
@@ -1368,6 +1374,66 @@ public:
         if (!write(*stream, response)) {
           break;
         }
+      } else if (body == v1::PluginToCore::kHostRequest) {
+        const auto& host = frame.host_request();
+        v1::CoreToPlugin response;
+        fence_to_wire(state.authorization.fence, response.mutable_fence());
+        auto* host_response = response.mutable_host_response();
+        host_response->set_request_id(host.request_id());
+        const auto grant = std::find(state.permissions.begin(), state.permissions.end(),
+                                     "model.chat") != state.permissions.end();
+        auto deadline = codec::from_wire(host.deadline());
+        if (host.operation_case() != v1::HostRequest::kModelChat) {
+          *host_response->mutable_error() = wire_error(target::ErrorCode::CapabilityNotSupported,
+                                                       host.request_id(), host.trace_id());
+        } else if (!model_) {
+          *host_response->mutable_error() = wire_error(target::ErrorCode::CapabilityNotSupported,
+                                                       host.request_id(), host.trace_id());
+        } else if (!grant) {
+          *host_response->mutable_error() =
+              wire_error(target::ErrorCode::PermissionDenied, host.request_id(), host.trace_id());
+        } else if (const auto* parsed = std::get_if<target::TimePoint>(&deadline);
+                   parsed == nullptr) {
+          *host_response->mutable_error() =
+              wire_error(target::ErrorCode::InvalidArgument, host.request_id(), host.trace_id());
+        } else {
+          const auto& chat = host.model_chat();
+          target::RuntimeModelChatRequest command;
+          command.instance = state.authorization.fence.instance;
+          command.request_id = host.request_id();
+          command.logical_call_id = chat.logical_call_id();
+          command.model = chat.model();
+          command.messages.reserve(static_cast<std::size_t>(chat.messages_size()));
+          for (const auto& message : chat.messages()) {
+            command.messages.push_back({message.role(), message.text()});
+          }
+          if (command.logical_call_id.empty() || command.model.empty() ||
+              command.messages.empty()) {
+            *host_response->mutable_error() =
+                wire_error(target::ErrorCode::InvalidArgument, host.request_id(), host.trace_id());
+          } else {
+            auto reply = model_->chat(command, *parsed);
+            if (const auto* failure = std::get_if<target::Failure>(&reply)) {
+              const bool retryable = failure->recovery == target::Recovery::QuerySameIdentity ||
+                                     failure->code == target::ErrorCode::RateLimited;
+              *host_response->mutable_error() =
+                  wire_error(failure->code, host.request_id(), host.trace_id(), retryable);
+              if (failure->retry_after) {
+                // Host wire has no retry_after field; the stable RATE_LIMITED code+bounded
+                // retryable flag is the frozen contract.
+              }
+            } else {
+              const auto& value = std::get<target::RuntimeModelChatReply>(reply);
+              auto* result = host_response->mutable_model_chat();
+              result->set_text(value.text);
+              result->set_input_tokens(value.input_tokens);
+              result->set_output_tokens(value.output_tokens);
+            }
+          }
+        }
+        if (!write(*stream, response)) {
+          break;
+        }
       } else {
         v1::CoreToPlugin response;
         fence_to_wire(state.authorization.fence, response.mutable_fence());
@@ -1386,6 +1452,7 @@ private:
     return guard_ && guard_->write(frame);
   }
   target::RuntimeBridgeApplication& application_;
+  target::RuntimeModelPort* model_;
   std::shared_ptr<StreamGuard<v1::CoreToPlugin, v1::PluginToCore>> guard_;
 };
 
@@ -1424,10 +1491,10 @@ make_adapter_bridge(target::RuntimeBridgeApplication& application) {
   }
 }
 target::Outcome<std::unique_ptr<v1::PluginBridge::Service>>
-make_plugin_bridge(target::RuntimeBridgeApplication& application) {
+make_plugin_bridge(target::RuntimeBridgeApplication& application, target::RuntimeModelPort* model) {
   try {
     return std::unique_ptr<v1::PluginBridge::Service>(
-        std::make_unique<PluginBridgeImpl>(application));
+        std::make_unique<PluginBridgeImpl>(application, model));
   } catch (...) {
     return failure(target::ErrorCode::Internal);
   }

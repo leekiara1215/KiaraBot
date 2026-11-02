@@ -154,6 +154,18 @@ def main(driver, identity=None):
         expect(2, {**config, 'identity_endpoint': identity_endpoint})
         expect(2, {**runtime, 'identity_endpoint': identity_endpoint, 'extra': True},
                service='runtime')
+        model_endpoint = 'model.internal:7443'
+        expect(0, {**runtime, 'model_endpoint': model_endpoint}, service='runtime')
+        for invalid in [{'model_endpoint': 'https://model:443'},
+                        {'model_endpoint': 'model:0'},
+                        {'model_endpoint': 'model:65536'},
+                        {'model_endpoint': 'one,two:443'},
+                        {'model_endpoint': 'x:443/path'},
+                        {'model_endpoint': ':443'},
+                        {'model_endpoint': 443}]:
+            expect(2, {**runtime, **invalid}, service='runtime')
+        expect(2, {**config, 'model_endpoint': model_endpoint})
+
         model = {**config, 'service': 'model'}
         expect(0, {**model, 'identity_endpoint': identity_endpoint}, service='model')
         for invalid in [{'identity_endpoint': 'https://identity:443'},

@@ -304,12 +304,28 @@ kiarabot_platform_warnings(kiarabot_runtime_rpc)
 target_link_libraries(kiarabot_runtime_rpc PUBLIC kiarabot_proto kiarabot_target_codec
   PRIVATE kiarabot_runtime_resource_application OpenSSL::Crypto)
 
+add_library(kiarabot_runtime_model_client STATIC
+  ${CMAKE_SOURCE_DIR}/core/src/runtime/platform/runtime_model_client.cpp)
+target_include_directories(kiarabot_runtime_model_client PUBLIC
+  ${CMAKE_SOURCE_DIR}/core/include)
+kiarabot_platform_warnings(kiarabot_runtime_model_client)
+target_link_libraries(kiarabot_runtime_model_client PUBLIC kiarabot_proto
+  kiarabot_target_codec)
+
 add_library(kiarabot_model_rpc STATIC
   ${CMAKE_SOURCE_DIR}/core/src/runtime/platform/model_rpc.cpp)
 target_include_directories(kiarabot_model_rpc PUBLIC ${CMAKE_SOURCE_DIR}/core/include)
 kiarabot_platform_warnings(kiarabot_model_rpc)
 target_link_libraries(kiarabot_model_rpc PUBLIC kiarabot_proto kiarabot_target_codec
   kiarabot_model_gateway_application)
+
+add_executable(kiarabot_runtime_model_client_test
+  ${CMAKE_SOURCE_DIR}/core/tests/platform/runtime_model_client_test.cpp)
+target_link_libraries(kiarabot_runtime_model_client_test PRIVATE
+  kiarabot_runtime_model_client)
+kiarabot_platform_warnings(kiarabot_runtime_model_client_test)
+add_test(NAME p11_runtime_model_client COMMAND kiarabot_runtime_model_client_test)
+set_tests_properties(p11_runtime_model_client PROPERTIES LABELS "p11;integration" TIMEOUT 30)
 
 add_executable(kiarabot_model_identity_client_test
   ${CMAKE_SOURCE_DIR}/core/tests/platform/model_identity_client_test.cpp)
@@ -377,6 +393,7 @@ foreach(SERVICE identity runtime plugin_host scheduler model)
     target_sources(kiarabot-runtime PRIVATE
       ${CMAKE_SOURCE_DIR}/core/app/runtime_composition.cpp)
     target_link_libraries(kiarabot-runtime PRIVATE
+      kiarabot_runtime_model_client
       kiarabot_runtime_rpc kiarabot_runtime_identity_client kiarabot_postgres OpenSSL::Crypto)
   endif()
   set_target_properties(kiarabot-${BINARY} PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")

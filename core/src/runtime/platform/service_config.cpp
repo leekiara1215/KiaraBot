@@ -563,6 +563,13 @@ ConfigResult load_service_config(const std::string& path, target::Service servic
       }
       keys.insert("identity_endpoint");
     }
+    if (document.contains("model_endpoint")) {
+      if (service != target::Service::Runtime || !document["model_endpoint"].is_string() ||
+          !endpoint_valid(document["model_endpoint"].get<std::string>())) {
+        return ConfigFailure{2, "invalid_model_endpoint_config"};
+      }
+      keys.insert("model_endpoint");
+    }
     if (document.contains("runtime_endpoint")) {
       if (service != target::Service::Scheduler || !document["runtime_endpoint"].is_string() ||
           !endpoint_valid(document["runtime_endpoint"].get<std::string>())) {
@@ -638,6 +645,16 @@ ConfigResult load_service_config(const std::string& path, target::Service servic
     }
     if (document.contains("identity_endpoint")) {
       config.identity_endpoint = document["identity_endpoint"].get<std::string>();
+    }
+    if (document.contains("model_endpoint")) {
+      config.model_endpoint = document["model_endpoint"].get<std::string>();
+    }
+    if (document.contains("model_endpoint")) {
+      if (service != target::Service::Runtime || !document["model_endpoint"].is_string() ||
+          !endpoint_valid(document["model_endpoint"].get<std::string>())) {
+        return ConfigFailure{2, "invalid_model_endpoint_config"};
+      }
+      keys.insert("model_endpoint");
     }
     if (document.contains("runtime_endpoint")) {
       config.runtime_endpoint = document["runtime_endpoint"].get<std::string>();

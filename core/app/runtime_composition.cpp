@@ -21,6 +21,7 @@
 #include "kiarabot/core/application/target/runtime_storage_application.hpp"
 #include "kiarabot/core/runtime/platform/runtime_bridge.hpp"
 #include "kiarabot/core/runtime/platform/runtime_identity_client.hpp"
+#include "kiarabot/core/runtime/platform/runtime_model_client.hpp"
 #include "kiarabot/core/runtime/platform/runtime_rpc.hpp"
 #include "kiarabot/core/runtime/platform/service_rpc.hpp"
 #include "kiarabot/infrastructure/postgres/factories.hpp"
@@ -178,6 +179,7 @@ struct State {
   std::unique_ptr<target::RuntimeActionApplication> actions;
   target::RuntimeActionApplication* action_application = nullptr;
   std::unique_ptr<target::RuntimeBridgeApplication> bridge;
+  std::unique_ptr<platform::RuntimeModelClient> model_client;
 };
 // Readiness merges the composition-observed database state with the authorization-chain observation
 // and the assembled business implementation. Unobserved inputs remain Unverified and never ready.
@@ -289,6 +291,20 @@ compose_runtime_service(const platform::ProcessConfig& config) {
             if (const auto* failure = std::get_if<target::Failure>(&bridge)) {
               return {};
             }
+            if (config.model_endpoint) {
+              grpc::SslCredentialsOptions ssl;
+              ssl.pem_root_certs = config.tls.ca;
+              ssl.pem_cert_chain = config.tls.certificate;
+              ssl.pem_private_key = config.tls.private_key;
+              auto model_client = platform::RuntimeModelClient::create(
+                  {*config.model_endpoint, grpc::SslCredentials(ssl),
+                   platform::unavailable_model_delegation(), std::chrono::milliseconds{30000}});
+              if (const auto* failure = std::get_if<target::Failure>(&model_client)) {
+                return {};
+              }
+              state->model_client =
+                  std::move(std::get<std::unique_ptr<platform::RuntimeModelClient>>(model_client));
+            }
             state->bridge =
                 std::move(std::get<std::unique_ptr<target::RuntimeBridgeApplication>>(bridge));
           }
@@ -373,7 +389,7 @@ compose_runtime_service(const platform::ProcessConfig& config) {
       if (const auto* failure = std::get_if<target::Failure>(&registered)) {
         return *failure;
       }
-      auto plugin_bridge = platform::make_plugin_bridge(*state->bridge);
+      auto plugin_bridge = platform::make_plugin_bridge(*state->bridge, state->model_client.get());
       if (const auto* failure = std::get_if<target::Failure>(&plugin_bridge)) {
         return *failure;
       }
