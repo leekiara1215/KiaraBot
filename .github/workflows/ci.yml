@@ -3,6 +3,9 @@ name: CI
 # 自动触发仍暂停：先手动 Run workflow 验证全绿，再恢复 pull_request / push 触发器。
 # 2026-10-31 更新：descriptor 基线支持从上一发布版 Release 资产下载；新增 Clang 16
 # full 构建 + 全模块静态分析 job；依赖审计扩展到 panel 与 Python（report-only）。
+# 2026-11-02 更新：contracts/full-build 改为从 dependencies/architecture 的锁定
+# manifest 安装固定版本依赖（不再用经典 vcpkg 包列表）；full-build 的 full CTest
+# 仍被 P00 fixture 环境（PG16.4/OpenSSL3.5/Python venv）阻塞，见 doc/12-ci-cd.md。
 # 恢复步骤见 doc/12-ci-cd.md「恢复自动触发」。
 on:
   workflow_dispatch:
@@ -82,17 +85,43 @@ jobs:
       - name: Install build prerequisites
         run: |
           sudo apt-get update
-          sudo apt-get install -y gcc-13 g++-13 autoconf automake libtool pkg-config ninja-build python3-venv tzdata ruby
-      - name: Install pinned Protobuf and gRPC
+          sudo apt-get install -y gcc-13 g++-13 autoconf automake bison flex libtool perl \
+            pkg-config ninja-build python3-venv ruby tzdata
+      - name: Verify pinned vcpkg registry against the dependency lock
+        # Offline gate: registry revision, baseline port versions, port trees and
+        # portfile hashes must match dependencies/architecture/dependencies.lock.json
+        # (doc/11-toolchain.md). Runs before the expensive dependency build.
+        run: python3 scripts/quality/check-dependency-lock.py --registry "$VCPKG_ROOT"
+      - name: Install locked architecture dependencies
+        # GENERATE_PROTO=ON always adds dependencies/architecture/smoke plus
+        # infrastructure/postgres and infrastructure/identity_crypto, which require
+        # the manifest's exact versions (OpenSSL 3.5.0 EXACT, nlohmann_json 3.11.3
+        # EXACT, libpqxx 7.10.0, jwt-cpp, libpq). A classic `vcpkg install <port>`
+        # list cannot express those override versions.
         run: |
           "$VCPKG_ROOT/bootstrap-vcpkg.sh" -disableMetrics
-          "$VCPKG_ROOT/vcpkg" install grpc protobuf curl sqlite3 boost-beast boost-asio libsodium --triplet x64-linux
+          "$VCPKG_ROOT/vcpkg" install \
+            --x-manifest-root="$GITHUB_WORKSPACE/dependencies/architecture" \
+            --triplet=x64-linux \
+            --x-install-root="$VCPKG_ROOT/installed" \
+            --clean-after-build
           echo "$VCPKG_ROOT/installed/x64-linux/tools/protobuf" >> "$GITHUB_PATH"
           echo "$VCPKG_ROOT/installed/x64-linux/tools/grpc" >> "$GITHUB_PATH"
+      - name: Install locked Python SDK test environment
+        # The proto preset builds the default (ALL) target, which includes
+        # kiarabot_python_proto_generate and therefore needs sdk/python/.venv.
+        run: |
+          python3 -m venv /tmp/kiarabot-ci-uv
+          /tmp/kiarabot-ci-uv/bin/pip install uv==0.13.6
+          /tmp/kiarabot-ci-uv/bin/uv sync --project sdk/python --locked --python 3.11.18
+          /tmp/kiarabot-ci-uv/bin/uv sync --project control/api/tests --locked --python 3.11.18
       - name: Configure proto
         env:
           CC: gcc-13
           CXX: g++-13
+        # Dependencies were installed from the locked manifest into
+        # $VCPKG_ROOT/installed by the previous steps, so classic toolchain mode
+        # (VCPKG_MANIFEST_MODE=OFF) reuses exactly that tree.
         run: >-
           cmake --preset proto
           -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake"
@@ -100,12 +129,6 @@ jobs:
           -DKIARABOT_ENABLE_INFRASTRUCTURE=ON
       - name: Build proto and compatibility tool
         run: cmake --build --preset proto --parallel 2
-      - name: Install locked Python SDK test environment
-        run: |
-          python3 -m venv /tmp/kiarabot-ci-uv
-          /tmp/kiarabot-ci-uv/bin/pip install uv==0.13.6
-          /tmp/kiarabot-ci-uv/bin/uv sync --project sdk/python --locked --python 3.11.18
-          /tmp/kiarabot-ci-uv/bin/uv sync --project control/api/tests --locked --python 3.11.18
       - name: Install locked adapter test environment
         run: /tmp/kiarabot-ci-uv/bin/uv sync --project adapters/nonebot --locked --python 3.11.18
       - name: Test Core and mixed-language closed loop
@@ -316,14 +339,38 @@ jobs:
       - name: Install build prerequisites
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang-16 clang-tidy-16 autoconf automake libtool pkg-config ninja-build python3-venv tzdata
-      - name: Install pinned C++ dependencies
+          sudo apt-get install -y clang-16 clang-tidy-16 autoconf automake bison flex libtool perl \
+            pkg-config ninja-build python3-venv ruby tzdata
+      # TODO(P14): once the pinned Python/Node/PostgreSQL/TLS fixture environment is
+      # available on the runner, switch this job to the full-locked preset and the
+      # unified gate (`KIARABOT_CHECK_PRESET=full-locked ./scripts/check-toolchain.sh`).
+      # Until then the manifest install below reproduces the same locked dependency set.
+      - name: Verify pinned vcpkg registry against the dependency lock
+        run: python3 scripts/quality/check-dependency-lock.py --registry "$VCPKG_ROOT"
+      - name: Install locked architecture dependencies
+        # Same locked manifest as the contracts job: the full preset now always
+        # builds dependencies/architecture/smoke plus the P02-P04 targets that need
+        # OpenSSL 3.5.0 EXACT, nlohmann_json 3.11.3 EXACT, libpqxx 7.10.0, jwt-cpp.
         run: |
           "$VCPKG_ROOT/bootstrap-vcpkg.sh" -disableMetrics
-          "$VCPKG_ROOT/vcpkg" install grpc protobuf curl sqlite3 boost-beast boost-asio libsodium --triplet x64-linux
+          "$VCPKG_ROOT/vcpkg" install \
+            --x-manifest-root="$GITHUB_WORKSPACE/dependencies/architecture" \
+            --triplet=x64-linux \
+            --x-install-root="$VCPKG_ROOT/installed" \
+            --clean-after-build
           echo "$VCPKG_ROOT/installed/x64-linux/tools/protobuf" >> "$GITHUB_PATH"
           echo "$VCPKG_ROOT/installed/x64-linux/tools/grpc" >> "$GITHUB_PATH"
+      - name: Install locked Python SDK environment (target generation)
+        # The full preset builds the default (ALL) target, which includes
+        # kiarabot_python_proto_generate and therefore needs sdk/python/.venv.
+        run: |
+          python3 -m venv /tmp/kiarabot-ci-uv
+          /tmp/kiarabot-ci-uv/bin/pip install uv==0.13.6
+          /tmp/kiarabot-ci-uv/bin/uv sync --project sdk/python --locked --python 3.11.18
       - name: Configure full preset
+        # Dependencies were installed from the locked manifest into
+        # $VCPKG_ROOT/installed by the previous steps, so classic toolchain mode
+        # (VCPKG_MANIFEST_MODE=OFF) reuses exactly that tree.
         run: >-
           cmake --preset full
           -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake"
@@ -332,6 +379,12 @@ jobs:
         run: |
           set -o pipefail
           cmake --build --preset full --parallel 2 2>&1 | tee build-full.log
+      # Known blocker (2026-11-02): full CTest registers the P00/P02/P03/P04 fixture
+      # tests, which need the pinned P00 environment that is not on the runner yet:
+      # PostgreSQL 16.4 server tools at KIARABOT_TEST_PG_BIN, the OpenSSL 3.5.0 CLI at
+      # KIARABOT_TEST_OPENSSL and a locked Python 3.11 venv (plus TLS fixtures). This
+      # step fails closed on purpose instead of filtering those tests out; the minimal
+      # wiring plan and TODO are in doc/12-ci-cd.md.
       - name: Test full preset
         run: ctest --preset full --no-tests=error --output-on-failure
       - name: Analyze all full translation units
