@@ -137,7 +137,7 @@ jobs:
         run: bash -x tests/acceptance/run.sh
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          node-version: '22'
+          node-version: '22.14.0'
       - name: Test TypeScript panel against Core
         run: |
           npm ci --prefix panel --no-audit --no-fund
@@ -246,7 +246,7 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          node-version: '22'
+          node-version: '22.14.0'
       - run: npm ci --prefix scripts/ci --ignore-scripts --no-audit --no-fund
       - name: Install YAML parser
         run: sudo apt-get update && sudo apt-get install -y python3-yaml
@@ -274,7 +274,7 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          node-version: '22'
+          node-version: '22.14.0'
       - name: Audit locked CI dependencies
         run: npm audit --prefix scripts/ci --audit-level=high
       # Panel and Python audits are report-only until their findings are triaged:
@@ -317,6 +317,77 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
+  boundaries:
+    name: Boundaries and static quality
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Install helpers
+        run: sudo apt-get update && sudo apt-get install -y python3 python3-yaml ruby ripgrep
+      - name: Check module boundaries
+        run: python3 scripts/quality/check-boundaries.py
+      - name: Check tracked shell syntax
+        run: git ls-files -z '*.sh' | xargs -0 -r bash -n
+
+  python-panel:
+    name: SDK/adapter/control pytest and panel gates
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22.14.0'
+      - name: Install uv and locked Python environments
+        run: |
+          python3 -m venv /tmp/kiarabot-ci-uv
+          /tmp/kiarabot-ci-uv/bin/pip install uv==0.13.6
+          /tmp/kiarabot-ci-uv/bin/uv sync --project sdk/python --locked --python 3.11.18
+          /tmp/kiarabot-ci-uv/bin/uv sync --project adapters/nonebot --locked --python 3.11.18
+      - name: Generate Python protocol stubs
+        run: |
+          sdk/python/.venv/bin/python sdk/python/tools/generate_proto.py
+          adapters/nonebot/.venv/bin/python adapters/nonebot/tools/generate_proto.py proto
+      - name: Python SDK tests
+        run: |
+          cd sdk/python
+          PYTHONPATH=src:build/generated .venv/bin/python -m pytest -q
+      - name: Adapter tests
+        run: |
+          cd adapters/nonebot
+          PYTHONPATH=src:generated .venv/bin/python -m pytest -q
+      - name: Panel contract/lint/test/build (locked Node 22.14.0)
+        run: |
+          npm ci --prefix panel --no-audit --no-fund
+          npm run check:contracts --prefix panel
+          npm run lint --prefix panel
+          npm test --prefix panel
+          npm run build --prefix panel
+
+  images-dry-run:
+    name: Target images and compose config (no registry credentials)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Validate compose configuration
+        run: |
+          docker compose --env-file deploy/target.env.example             -f deploy/compose.infra.yml -f deploy/compose.core.yml             -f deploy/compose.exec.yml config -q
+      - name: Build target suite/panel/adapter images (no push)
+        run: |
+          docker buildx version
+          for target in identity runtime tools; do
+            docker build -f deploy/docker/suite.Dockerfile --target "$target" \
+              --build-arg UBUNTU_BASE="${UBUNTU_BASE:-ubuntu:24.04}" \
+              -t "kiarabot-${target}:ci" .
+          done
+          docker build -f deploy/docker/panel.Dockerfile -t kiarabot-panel:ci .
+          docker build -f deploy/docker/adapter.Dockerfile -t kiarabot-adapter:ci .
+      - name: Record image digests
+        run: |
+          for image in kiarabot-identity kiarabot-runtime kiarabot-tools kiarabot-panel kiarabot-adapter; do
+            docker image inspect "$image:ci" --format '{{.Id}}' || true
+          done
+
   full-build:
     name: Full build and static analysis (Clang 16)
     runs-on: ubuntu-24.04
@@ -341,70 +412,100 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y clang-16 clang-tidy-16 autoconf automake bison flex libtool perl \
             pkg-config ninja-build python3-venv ruby tzdata
-      # TODO(P14): once the pinned Python/Node/PostgreSQL/TLS fixture environment is
-      # available on the runner, switch this job to the full-locked preset and the
-      # unified gate (`KIARABOT_CHECK_PRESET=full-locked ./scripts/check-toolchain.sh`).
-      # Until then the manifest install below reproduces the same locked dependency set.
-      - name: Verify pinned vcpkg registry against the dependency lock
-        run: python3 scripts/quality/check-dependency-lock.py --registry "$VCPKG_ROOT"
-      - name: Install locked architecture dependencies
-        # Same locked manifest as the contracts job: the full preset now always
-        # builds dependencies/architecture/smoke plus the P02-P04 targets that need
-        # OpenSSL 3.5.0 EXACT, nlohmann_json 3.11.3 EXACT, libpqxx 7.10.0, jwt-cpp.
+      - name: Install locked P00 fixtures (OpenSSL 3.5.0, PostgreSQL 16.4)
+        # The full-locked CTest suite requires the exact P00 fixture versions
+        # (doc/11-toolchain.md). Archives come from the lock URLs and are hash-
+        # verified before extraction; builds stay in ignored build/. OpenSSL is
+        # built first because PostgreSQL links against it.
         run: |
-          "$VCPKG_ROOT/bootstrap-vcpkg.sh" -disableMetrics
-          "$VCPKG_ROOT/vcpkg" install \
-            --x-manifest-root="$GITHUB_WORKSPACE/dependencies/architecture" \
-            --triplet=x64-linux \
-            --x-install-root="$VCPKG_ROOT/installed" \
-            --clean-after-build
-          echo "$VCPKG_ROOT/installed/x64-linux/tools/protobuf" >> "$GITHUB_PATH"
-          echo "$VCPKG_ROOT/installed/x64-linux/tools/grpc" >> "$GITHUB_PATH"
-      - name: Install locked Python SDK environment (target generation)
-        # The full preset builds the default (ALL) target, which includes
-        # kiarabot_python_proto_generate and therefore needs sdk/python/.venv.
-        run: |
-          python3 -m venv /tmp/kiarabot-ci-uv
-          /tmp/kiarabot-ci-uv/bin/pip install uv==0.13.6
-          /tmp/kiarabot-ci-uv/bin/uv sync --project sdk/python --locked --python 3.11.18
-      - name: Configure full preset
+          set -euo pipefail
+          lock=dependencies/architecture/dependencies.lock.json
+          mkdir -p build/p00/archives
+          ssl_sha="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["openssl-cli"]["sha512"])' "$lock")"
+          ssl_url="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["openssl-cli"]["url"])' "$lock")"
+          curl -fsSL "$ssl_url" -o build/p00/archives/openssl-3.5.0.tar.gz
+          echo "${ssl_sha}  build/p00/archives/openssl-3.5.0.tar.gz" | sha512sum -c -
+          tar -xzf build/p00/archives/openssl-3.5.0.tar.gz -C build/p00
+          (
+            cd build/p00/openssl-openssl-3.5.0
+            ./Configure shared no-tests no-docs --prefix="$PWD/../../p00/openssl"
+            make -j2
+            make install_sw install_ssldirs
+          )
+          pg_sha="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["postgresql"]["sha512"])' "$lock")"
+          pg_url="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["postgresql"]["url"])' "$lock")"
+          curl -fsSL "$pg_url" -o build/p00/archives/postgresql-16.4.tar.bz2
+          echo "${pg_sha}  build/p00/archives/postgresql-16.4.tar.bz2" | sha512sum -c -
+          tar -xjf build/p00/archives/postgresql-16.4.tar.bz2 -C build/p00
+          (
+            cd build/p00/postgresql-16.4
+            PKG_CONFIG_PATH="$PWD/../../p00/openssl/lib/pkgconfig" \
+            CPPFLAGS="-I$PWD/../../p00/openssl/include" \
+            LDFLAGS="-L$PWD/../../p00/openssl/lib -Wl,-rpath,$PWD/../../p00/openssl/lib" \
+            ./configure --prefix="$PWD/../../p00/pg" --with-openssl \
+              --without-readline --without-icu --without-zlib
+            make -j2
+            make install
+          )
+          echo "$PWD/build/p00/pg/bin" >> "$GITHUB_PATH"
+          echo "$PWD/build/p00/openssl/bin" >> "$GITHUB_PATH"
+          echo "KIARABOT_TEST_PG_BIN=$PWD/build/p00/pg/bin" >> "$GITHUB_ENV"
+          echo "KIARABOT_TEST_OPENSSL=$PWD/build/p00/openssl/bin/openssl" >> "$GITHUB_ENV"
+      - name: Configure full-locked target preset
         # Dependencies were installed from the locked manifest into
-        # $VCPKG_ROOT/installed by the previous steps, so classic toolchain mode
-        # (VCPKG_MANIFEST_MODE=OFF) reuses exactly that tree.
+        # $VCPKG_ROOT/installed by the previous steps. The P00 fixture paths are
+        # explicit so CTest does not silently skip environment-gated tests.
         run: >-
-          cmake --preset full
+          cmake --preset full-locked -B build/full-locked
           -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake"
           -DVCPKG_MANIFEST_MODE=OFF
-      - name: Build full preset
+          -DVCPKG_INSTALLED_DIR="$VCPKG_ROOT/installed"
+          -DPython3_EXECUTABLE="$GITHUB_WORKSPACE/sdk/python/.venv/bin/python"
+          -DKIARABOT_TARGET_PYTHON="$GITHUB_WORKSPACE/sdk/python/.venv/bin/python"
+          -DKIARABOT_TEST_OPENSSL="$GITHUB_WORKSPACE/build/p00/openssl/bin/openssl"
+          -DKIARABOT_TEST_PG_BIN="$GITHUB_WORKSPACE/build/p00/pg/bin"
+      - name: Build full-locked target preset
         run: |
           set -o pipefail
-          cmake --build --preset full --parallel 2 2>&1 | tee build-full.log
-      # Known blocker (2026-11-02): full CTest registers the P00/P02/P03/P04 fixture
-      # tests, which need the pinned P00 environment that is not on the runner yet:
-      # PostgreSQL 16.4 server tools at KIARABOT_TEST_PG_BIN, the OpenSSL 3.5.0 CLI at
-      # KIARABOT_TEST_OPENSSL and a locked Python 3.11 venv (plus TLS fixtures). This
-      # step fails closed on purpose instead of filtering those tests out; the minimal
-      # wiring plan and TODO are in doc/12-ci-cd.md.
-      - name: Test full preset
-        run: ctest --preset full --no-tests=error --output-on-failure
-      - name: Analyze all full translation units
+          cmake --build build/full-locked --parallel 2 2>&1 | tee build-full-locked.log
+      - name: Test full-locked target preset
+        # No -E/label filtering: the full-locked CTest suite is the gate.
+        run: ctest --test-dir build/full-locked --output-on-failure
+      - name: Unified local CI entry (test + contracts, JSON evidence)
+        env:
+          KIARABOT_DESCRIPTOR_COMPATIBILITY_TOOL: ${{ github.workspace }}/build/full-locked/kiarabot_descriptor_compatibility
+          PROTOBUF_INCLUDE_DIR: ${{ env.VCPKG_ROOT }}/installed/x64-linux/include
+        run: |
+          scripts/run-ci-local.sh test --json build/ci-local/test.json
+          scripts/run-ci-local.sh contracts --json build/ci-local/contracts.json
+      - name: Upload unified CI evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ci-local-evidence-${{ github.sha }}
+          path: build/ci-local/
+          if-no-files-found: ignore
+          retention-days: 14
+      - name: Analyze all full-locked translation units
         run: |
           mapfile -t files < <(python3 - <<'PY'
           import json
 
-          with open('build/full/compile_commands.json', encoding='utf-8') as handle:
+          with open('build/full-locked/compile_commands.json', encoding='utf-8') as handle:
               for entry in json.load(handle):
                   print(entry['file'])
           PY
           )
-          clang-tidy-16 -p build/full --checks='clang-analyzer-*' \
+          clang-tidy-16 -p build/full-locked --checks='clang-analyzer-*' \
             --warnings-as-errors='*' --header-filter="$GITHUB_WORKSPACE/(core|proto|control|infrastructure)/" \
             "${files[@]}"
-      - name: Upload full build log on failure
+      - name: Upload full-locked build log and test output on failure
         if: failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: full-build-log-${{ github.sha }}
-          path: build-full.log
+          path: |
+            build-full-locked.log
+            build/full-locked/Testing/Temporary/
           if-no-files-found: ignore
           retention-days: 7

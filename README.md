@@ -100,7 +100,7 @@ P00–P03本机固定环境统一门禁已通过，P04认证链开发中，目�
 - 协议构建：`protoc` 25+、Protobuf 运行库 25.0+、gRPC 1.60+、OpenSSL 3.0+ Crypto；
 - 控制 API 构建：Boost 1.86+、libsodium，以及构建时按内容哈希获取的 nlohmann/json 3.11.3；
 - 基础设施构建：SQLite3、libcurl 7.85+、Abseil（`absl::time`），以及系统 IANA zoneinfo（Linux 为 tzdata）；
-- 面板：Node 20.19+（低于 21）或 22.12+、npm 10+；
+- 面板：锁定 Node 22.14.0（`scripts/toolchain/install-node.sh` 官方归档+SHA-256；不覆盖系统 Node）、npm 10+；
 - 契约与质量检查：Ruby、clang-format 16+、clang-tidy 16+。
 
 完整版本矩阵与检查方式见 [开发工具链](doc/11-toolchain.md)。
@@ -152,6 +152,22 @@ npm run build
 ```
 
 `npm run dev` 默认使用 mock 数据；连接真实服务时设置 `VITE_API_MODE=live`，必要时再设置 `VITE_API_BASE` 和 `VITE_WS_URL`。
+
+### 统一本地 CI（P14b）
+
+```bash
+# 安装锁内 Node 22.14.0（官方归档 SHA-256 校验，写入 build/ 不覆盖系统 Node）
+scripts/toolchain/install-node.sh
+export PATH="$PWD/build/toolchain/node-v22.14.0/bin:$PATH"
+
+# 统一入口；--json 输出机器可读证据（默认 build/ci-local/）
+scripts/run-ci-local.sh toolchain
+scripts/run-ci-local.sh contracts --json build/ci-local/contracts.json
+scripts/run-ci-local.sh panel
+scripts/run-ci-local.sh all --json build/ci-local/all.json
+```
+
+`run-ci-local` 子命令：`toolchain|build|test|contracts|python|panel|all`；缺少前置的步骤记录为 `skip` 且整体 `pass-with-skips`，不会把未执行项当作已通过。`--dry-run` 只打印命令，`--self-test` 校验参数/JSON 写入。远端 CI 使用同一批脚本；自动触发仍暂停，恢复前需手动 Run workflow 全绿。
 
 ### 统一检查
 

@@ -119,7 +119,7 @@ ghcr.io/leekiara1215/kiarabot-core:v1.0.0
 - 检查 workflow YAML、actionlint、手写 C++ 的 clang-format 和 dev 预设全部翻译单元的 clang-tidy；仓库内跟踪 `.sh` 的 `bash -n`；Redocly lint OpenAPI，AsyncAPI parser 拒绝错误诊断。
 - Gitleaks 扫描 Git 历史（使用仓库根 `.gitleaks.toml`，默认规则保持启用，只允许明确写成 `secret-key-must-not-leak`、`platform-test-token` 等测试占位值，避免测试夹具造成误报；真实凭据仍在扫描范围）；失败时上传 `gitleaks-report.json` 工件。npm audit 扫描 `scripts/ci/package-lock.json` 中锁定的 CI 工具及传递依赖。当前 npm audit **不覆盖** vcpkg 的 C++ 依赖：需另行接入能识别 vcpkg 已解析依赖的漏洞数据，不能将此检查描述为完整 C++ 依赖漏洞扫描。
 
-CI 的 vcpkg registry/tool 固定为 `ce613c41372b23b1f51333815feb3edd87ef8a8b`（2025.04.09，Protobuf 29.3 / C++ runtime 5.29.3、gRPC 1.71.0）。Node 工具使用 `scripts/ci/package-lock.json`。版本升级需同时更新锁定来源并重新运行协议生成、兼容性和测试。CI 检查本身不能配置分支保护；仓库管理员需将所有 CI job 设为 `main` 的必需状态检查，并禁止绕过规则，才能阻止不兼容变更合并。新建分支或 force push 无法提供有效前一 SHA 时，push 的协议任务会失败，需要先提供可审计的比较基准。
+CI 的 vcpkg registry/tool 固定为 `ce613c41372b23b1f51333815feb3edd87ef8a8b`（2025.04.09，Protobuf 29.3 / C++ runtime 5.29.3、gRPC 1.71.0）。Node 工具使用 `scripts/ci/package-lock.json`，版本固定为锁内 **22.14.0**（`scripts/toolchain/install-node.sh`，CI setup-node 精确版本）。版本升级需同时更新锁定来源并重新运行协议生成、兼容性和测试。CI 检查本身不能配置分支保护；仓库管理员需将所有 CI job 设为 `main` 的必需状态检查，并禁止绕过规则，才能阻止不兼容变更合并。新建分支或 force push 无法提供有效前一 SHA 时，push 的协议任务会失败，需要先提供可审计的比较基准。
 
 本地验证示例（需先安装对应工具和协议依赖）：
 
@@ -354,14 +354,19 @@ contracts job 在原固定 vcpkg registry 中增加 boost-beast、boost-asio、l
 ## 2026-11-02 更新：锁定依赖安装、descriptor 自比与 full-build 阻塞
 
 - **C++ 依赖安装改为锁定 manifest**：`contracts` 与 `full-build` 不再使用经典 `vcpkg install <port>` 列表，统一先运行 `python3 scripts/quality/check-dependency-lock.py --registry "$VCPKG_ROOT"` 校验固定 registry，再从 `dependencies/architecture` 用 `--x-manifest-root` 安装 x64-linux 依赖。原因是 `KIARABOT_GENERATE_PROTO=ON` 现在总会构建 `dependencies/architecture/smoke`、`infrastructure/postgres` 与 `infrastructure/identity_crypto`，需要 OpenSSL 3.5.0 EXACT、nlohmann_json 3.11.3 EXACT、libpqxx 7.10.0、jwt-cpp、libpq 等锁定版本，经典包列表无法表达这些 override。构建前置补充 bison/flex/perl（libpq port）与 ruby（configure 期 `find_program` 探测）；proto/full 预设构建 ALL 目标且包含 `kiarabot_python_proto_generate`，因此 SDK venv 安装步骤移到 proto 构建之前。
-- **full-build 的 full CTest 仍未接线（已知阻塞，不假装验收）**：测试需要 P00 fixture 环境：PostgreSQL 16.4 server 工具（`KIARABOT_TEST_PG_BIN`）、OpenSSL 3.5.0 CLI（`KIARABOT_TEST_OPENSSL`）、锁定 Python 3.11.18 venv 与 TLS 证书夹具。workflow 注释保留该缺口，测试步骤继续 fail-closed，不用 `-E`/标签过滤制造假绿。最小接线方案如下（留到 P14/有固定环境后实现，本轮未验收）：
-  1. `python3 scripts/quality/check-dependency-lock.py --archive postgresql-16.4.tar.bz2` 校验锁内 PG 源码 sha512 后解包，在忽略目录执行 `./configure --prefix="$PWD/../pg-16.4-install" --with-openssl --without-readline --without-icu`、`make -j2`、`make install`；
-  2. 从锁内 OpenSSL 3.5.0 同源 archive/hash 构建 CLI（或使用已验证 3.5.0 的构建产物），导出 `KIARABOT_TEST_OPENSSL`；
-  3. 用 uv 安装锁定 Python 3.11.18 与各项目 `.venv`（`KIARABOT_TARGET_PYTHON` 默认 `sdk/python/.venv/bin/python`），并导出 `KIARABOT_TEST_PG_BIN`；
-  4. 之后运行 `ctest --preset full`；`full-locked` 预置与 `KIARABOT_CHECK_PRESET=full-locked ./scripts/check-toolchain.sh` 的统一门禁接线也留到同一阶段（`TODO(P14)` 已写在 `ci.yml`）。
+- **full-build 已切换到 full-locked（P14b 实现，远端未运行）**：workflow 从 `dependencies/architecture/dependencies.lock.json` 的 URL 下载 OpenSSL 3.5.0 与 PostgreSQL 16.4 源码，先用锁内 sha512 校验，再在 `build/p00` 内构建/安装；显式导出 `KIARABOT_TEST_OPENSSL`、`KIARABOT_TEST_PG_BIN` 与锁定 Python3.11.18，`cmake --preset full-locked -B build/full-locked` 后 `ctest --test-dir build/full-locked`（不加 `-E`/标签过滤），再跑 clang-tidy 与 `scripts/run-ci-local.sh test/contracts --json`，失败上传日志与 JSON 证据。Node 由 setup-node 固定 `22.14.0`；新增 `boundaries`、`python-panel`、`images-dry-run` job。自动触发仍暂停，远端未复跑——不能据此宣称 CI 已绿。
 - **Dockerfile 仅静态核对（未运行 docker build）**：修复构建 target 名、产物路径与锁定依赖安装；本机无 Docker，镜像内容、健康检查与 Compose 不在本轮验证范围，见 [部署与可观测性](08-operations.md)。
 - **descriptor 自比假绿**：`scripts/ci/check-descriptor.sh` 现在拒绝 baseline 解析为 HEAD 的自比（退出 1），`test-descriptor-gate.sh` 增加回归；说明见上文「已实现的 CI 与协议门禁」与 2026-10-31 更新条目。
 - 本轮所有 CI 修改只做本机静态验证（YAML 解析、`bash -n`、descriptor 门禁自测、依赖锁校验），未触发远端 GitHub Actions，不声称 CI 已绿。
+
+## 2026-11-02 P14b：统一本地 CI 入口与 Node 22.14 锁定补齐
+
+- **Node 22.14.0 锁定安装**：新增 `scripts/toolchain/install-node.sh`，从锁内官方归档 URL 下载（或 `--archive` 使用已下载文件），用锁内 SHA-256 校验后解压到 `build/toolchain/node-v22.14.0`，不覆盖系统 Node；离线/校验失败硬失败。`check-toolchain.sh` 现在**始终要求 Node 精确 22.14.0**（不再接受 20.x/22.12 浮动）；CI 三处 setup-node 改为 `22.14.0`；`deploy/docker/panel.Dockerfile` 构建阶段改为 `node:22.14-bookworm-slim`（发布仍需 digest 固定）。
+- **本地实测证据（本机 macOS arm64）**：已成功下载官方 `node-v22.14.0-darwin-arm64.tar.gz` 并通过锁内 SHA-256 校验，安装 Node v22.14.0/npm 10.9.2；随后以该 Node 执行 `npm ci --prefix scripts/ci`、`npm ci --prefix panel`、面板 `check:contracts`/`lint`/`test`（34 passed/2 skipped）/`build` 全部通过。
+- **统一入口 `scripts/run-ci-local.sh`**：子命令 `toolchain|build|test|contracts|python|panel|all`，支持 `--json PATH`（默认 `build/ci-local/ci-local-<sha>.json`）、`--dry-run`、`--self-test`；内部调用现有 check-toolchain、CMake/CTest、proto/tests、quality、pytest、npm 入口，不复制门禁逻辑。缺少前置时记录为 `skip` 且整体为 `pass-with-skips`，不把未执行项伪装成已通过；失败退出码 1/2，JSON 含每步命令、耗时、状态与“skip 不是验证证据”说明。
+- **远端 CI 补齐（未运行）**：full-locked P00 fixture、full CTest、clang-tidy、统一入口证据 artifact；新增 `boundaries`（check-boundaries + 全部 shell 语法）、`python-panel`（锁定 uv SDK/adapter pytest + 面板四门禁）、`images-dry-run`（`docker compose config` + suite/panel/adapter 镜像构建，无推送/无凭据）。保留既有 contracts/format/tidy/api/依赖/密钥门禁；自动触发仍暂停，恢复需先手动 Run workflow 全绿后再打开 `pull_request`/`push`。
+- **未验证/原因**：本机无 Docker、无 Linux 两主机；远端 GitHub Actions 未执行（无仓库凭据/触发仍暂停）；`full-build` 的 PG/OpenSSL fixture 构建与 `images-dry-run` 仅静态/本机 YAML、bash、JSON 检查，未实际在 GitHub runner 跑通；`run-ci-local build/test/python/all` 在本 worktree 未运行（无 full-locked 构建缓存/SDK venv），只运行了 `contracts`（PASS WITH SKIPS：descriptor tool 与 clang-format 未安装）与 `panel`（PASS）。
+- **与提案差异/需确认**：远端 CI 触发恢复与仓库/registry 凭据仍待用户确认；镜像签名/SBOM/推送不在 P14b（留 P14d）；full-build fixture 构建耗时可能接近 job timeout，需实测后决定缓存策略；Node 22.14.0 为精确锁，升级必须同步锁文件与 CI。
 
 ## 2026-11-01 目标架构阶段门禁规格（P00，CI 尚未接线）
 
