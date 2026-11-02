@@ -1,6 +1,6 @@
 # P14n 最终交付状态与证据索引
 
-- 日期：2026-11-03；worktree `.worktrees/p14n`，branch `codex/p14n`，基线 `a1a33d1`（main；P14o 刷新）。
+- 日期：2026-11-03；worktree `.worktrees/p14n`，branch `codex/p14n`，基线 `1213790`（main；P14o 刷新）。
 - 任务：只刷新最终证据矩阵/交付口径，不修改实现、契约或部署脚本；`doc/18` 冻结基线只读。
 - 结论：**实现与测试证据已收口到可交付审查状态；单机 Docker Compose、两主机、远端 CI、正式发布仍属未验收环境项；P13 生产未退出（test-only 证据已具备）、P05b/P12 host operation/bootstrap_credential 待用户决策。不得把本报告当作“已发布/全部验收”声明。**
 
@@ -8,7 +8,7 @@
 
 | 项 | 结果 |
 |---|---|
-| full-locked build + CTest | **148/148 passed @a1a33d1**（`build/env/recheck-full-locked.sh`，日志 `build/logs/recheck-ctest-055853.log`，2026-11-03；708.53s；新增 `p13_joint_delete_e2e` 38.59s）。首跑 `sqlite_runtime_store` flake 已由 P00n 根因修复（SQLite 双连接写锁竞争；final gate `sqlite_runtime_store` 0.27s；此前孤立 14/14、全量重跑 148/148） |
+| full-locked build + CTest | **148/148 passed @1213790（exact HEAD）**（`build/env/recheck-full-locked.sh`，日志 `build/logs/recheck-ctest-064402.log`，2026-11-03；687.02s；新增 `p13_joint_delete_e2e` 38.59s）。同 HEAD 首跑 146/148 的 `p02_core_process`/`p08_managed_host_e2e` 为负载时序 flake（孤立 5/5、3/3 通过），第二次全量 148/148。首跑 `sqlite_runtime_store` flake 已由 P00n 根因修复（SQLite 双连接写锁竞争；final gate `sqlite_runtime_store` 0.27s；此前孤立 14/14、全量重跑 148/148） |
 | P10m 优雅停机 SIGSEGV | **已修复**：OpenSSL 3 `OPENSSL_cleanup` atexit 与 gRPC worker 线程 TLS 析构竞态；`run_service` 使用 `OPENSSL_INIT_NO_ATEXIT`。修复前受控诊断 4 次循环 1 次 exit -11；修复后新增 10 次“8192 filler→SIGTERM→Runtime 重启”循环，连续 5 次完整 e2e（50 次停机）exit 0，另 12 次完整 e2e 无崩溃。提交 `6bff2c9`/`532b1d3`/`e83a988` |
 | 原生单机栈（P14f/i/j/k/l/m） | 真实 Identity/Runtime/Scheduler/Model/Control 五进程 + owned PG16.4 + 临时 PKI + Control HTTPS；最终 **success 9 + stable-ok 1 + known-gap 0**（health/principals/logs/audit/tasks_list/models/action_query/delete/restore success；action_policy GET stable-ok 404；无 known-gap） |
 | Panel API client live（P12j） | 严格模式 `KIARABOT_P12J_EXPECT_FIXED=1` PASS：受权 `/api/v1/health` 200 HEALTHY 四 owner；login/refresh/401/400；其余 owner 按当时 known-gap/capability-gap 口径记录，最终由 P14 原生矩阵收口 |
@@ -68,7 +68,7 @@
 - 交付文档相对链接：0 missing（README/doc/23/27/28/08/本报告）。
 - 脚本/命令路径：`build/env/recheck-full-locked.sh`、`scripts/deploy/target-smoke.sh`、`scripts/ops/tests/ops_scripts_test.sh`、`scripts/ci/check-workflows.sh`、`scripts/deploy/tests/target_rotate_test.sh` 等在 P14e 已实跑；本任务只复核路径。
 - 秘密扫描：tracked 文件无真实私钥/云 token；仅 identity_crypto 的 PEM 头字符串常量。
-- 口径检查：doc/27/28/README/doc/23 基线统一 `a1a33d1`；final gate 统一 148/148；P00n、P06h、P10m、P13g test-only、原生矩阵、P13 生产未退出、P05b/P12 待决策、Docker/跨主机/远端 CI/发布环境项在各文档一致。
+- 口径检查：doc/27/28/README/doc/23 基线统一 `1213790`；final gate 统一 148/148；P00n、P06h、P10m、P13g test-only、原生矩阵、P13 生产未退出、P05b/P12 待决策、Docker/跨主机/远端 CI/发布环境项在各文档一致。
 
 ## 6. 未做/限制
 

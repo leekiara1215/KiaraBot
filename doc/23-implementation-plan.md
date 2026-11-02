@@ -2,7 +2,7 @@
 
 - 版本：v1.3
 - 日期：2026-11-02
-- 状态：P00–P14 实现主体已合入 main（P14q 最终基线 `a1a33d1`，final gate **148/148**；P00n SQLite 写锁竞态修复、P06h 真实链 UNKNOWN/EXPIRED/重连补齐、P10m 优雅停机修复+p10 抽验、P13g test-only 联合 e2e；原生单机栈矩阵 **9 success+1 stable-ok+0 known-gap**）；阶段退出/发布证据矩阵见 [P14n 矩阵](27-phase-exit-evidence.md)，发布门禁见 [P14n 发布清单](28-p14d-release-checklist.md)，最终状态索引见 [P14q 交付状态](../reports/modules/architecture-delivery-status.md)。单机 Docker Compose、两主机演练、远端 CI 与正式发布仍未验收；P13 生产退出未通过（test-only 证据已具备）、P05b/P12 host operation/bootstrap_credential 待用户决策，不能标记阶段全部“已退出”。
+- 状态：P00–P14 实现主体已合入 main（P14q 最终基线 `1213790`，final gate **148/148**；P00n SQLite 写锁竞态修复、P06h 真实链 UNKNOWN/EXPIRED/重连补齐、P10m 优雅停机修复+p10 抽验、P13g test-only 联合 e2e；原生单机栈矩阵 **9 success+1 stable-ok+0 known-gap**）；阶段退出/发布证据矩阵见 [P14n 矩阵](27-phase-exit-evidence.md)，发布门禁见 [P14n 发布清单](28-p14d-release-checklist.md)，最终状态索引见 [P14q 交付状态](../reports/modules/architecture-delivery-status.md)。单机 Docker Compose、两主机演练、远端 CI 与正式发布仍未验收；P13 生产退出未通过（test-only 证据已具备）、P05b/P12 host operation/bootstrap_credential 待用户决策，不能标记阶段全部“已退出”。
 - 依据：[方向基线](19-architecture-direction-baseline.md)、[设计总览](20-detailed-architecture-design.md)、[通信方法](21-service-contract-design.md)、[事务与初始化](22-transactions-and-migration-design.md)
 - 当前授权：单机真实QQ群聊首轮已通过，用户要求关闭运行、记录已确认接入方向并推送；本次不继续开发。下一轮按[接入设计](26-real-qq-onboarding.md)独立推进，插件机制、完整账号管理、多主机等非核心内容继续后移。保留独立提交、主对话审查及换机交接；本文件保留后续目标架构迁移路线，未达到退出条件的阶段不能标为完成。
 
@@ -407,7 +407,7 @@ ListTasks/CancelTask（当前仅注入 fake 端口 BLOCKED→Done）；跨主机
 [`reports/modules/architecture-delivery-status.md`](../reports/modules/architecture-delivery-status.md)、
 [doc/27](27-phase-exit-evidence.md)、[doc/28](28-p14d-release-checklist.md)。
 
-- **final gate（当时）**：`build/env/recheck-full-locked.sh` 在 `e83a988` 实跑 full-locked build + **147/147 CTest passed**（`build/logs/recheck-ctest-035852.log`，2026-11-03）；现由 P14q 刷新为 **148/148@a1a33d1**。
+- **final gate（当时）**：`build/env/recheck-full-locked.sh` 在 `e83a988` 实跑 full-locked build + **147/147 CTest passed**（`build/logs/recheck-ctest-035852.log`，2026-11-03）；现由 P14q 刷新为 **148/148@1213790**。
 - **P10m**：修复优雅停机 OpenSSL atexit RAND 竞态 SIGSEGV；连续 5 次完整 `p10_timer_e2e`（50 次停机）exit 0，final gate 以此为基础。
 - **原生单机矩阵（P14f/i/j/k/l/m）**：真实五进程 + PG16.4 + mTLS，最终 **success 9 + stable-ok 1 + known-gap 0**；P14m 修复 Runtime 审计源委派 claim 校验（permission 上限/ Catalog id）。
 - **阶段状态**：P07/P08/P10 退出通过；P12 范围完成；P11 分层证据退出（P05b 单链待决策）；P13 **未通过**（决策包 A/C）；P04–P06/P09 主体已实现/本机实测，残余环境项保留。
@@ -417,9 +417,9 @@ ListTasks/CancelTask（当前仅注入 fake 端口 BLOCKED→Done）；跨主机
 
 ## P14o 阶段记录（历史；main=23aa6ab，后续由 P14q 刷新）
 
-本任务是 P14n 后的文档刷新：P14o 时 final gate **148/148@23aa6ab**（`build/logs/recheck-ctest-050454.log`，684.68s），新增 `p13_joint_delete_e2e` 36.88s；之后 P00n 定位并修复 `sqlite_runtime_store` 首跑 flake 的 SQLite 双连接写锁竞态，P14q 已刷新到 a1a33d1/708.53s。P10m 优雅停机 SIGSEGV 修复与 p10 抽验通过。P13g 提供 **test-only** 联合生命周期 e2e：BeginDelete→Blocked→Done→DELETED、Restore 不复活凭据、Host 离线/UNKNOWN 保持 Blocked、重复 BeginDelete 幂等；HostCommand identity 增加 instance version 修复复用旧 receipt。该证据**不改变 P13 生产退出未通过**，生产 Scheduler 授权/委托（P13f A/B）仍待用户决策。完整清单见 [architecture-delivery-status.md](../reports/modules/architecture-delivery-status.md)。
+本任务是 P14n 后的文档刷新：P14o 时 final gate **148/148@23aa6ab**（`build/logs/recheck-ctest-050454.log`，684.68s），新增 `p13_joint_delete_e2e` 36.88s；之后 P00n 定位并修复 `sqlite_runtime_store` 首跑 flake 的 SQLite 双连接写锁竞态，P14q 已刷新到 1213790/687.02s。P10m 优雅停机 SIGSEGV 修复与 p10 抽验通过。P13g 提供 **test-only** 联合生命周期 e2e：BeginDelete→Blocked→Done→DELETED、Restore 不复活凭据、Host 离线/UNKNOWN 保持 Blocked、重复 BeginDelete 幂等；HostCommand identity 增加 instance version 修复复用旧 receipt。该证据**不改变 P13 生产退出未通过**，生产 Scheduler 授权/委托（P13f A/B）仍待用户决策。完整清单见 [architecture-delivery-status.md](../reports/modules/architecture-delivery-status.md)。
 
 
-## P14q 最终基线刷新（2026-11-03，main=a1a33d1）
+## P14q 最终基线刷新（2026-11-03，main=1213790）
 
-本任务把交付证据刷到 `a1a33d1`：final gate **148/148/708.53s**（`build/logs/recheck-ctest-055853.log`；p10_timer 50.48s、p07_adapter_e2e 29.19s、p13_joint_delete_e2e 38.59s、p14_native_single_host 13.09s、sqlite_runtime_store 0.27s）。P00n 修复 SQLite 双连接 CAS 写锁竞态（50ms peer wait + ready latch；首跑 flake 根因消除）；P06h 补齐真实 adapter 链 UNKNOWN/EXPIRED 迟到与 adapter 重连 UNKNOWN evidence；P10m 优雅停机 SIGSEGV 修复与 p10 抽验；P13g test-only 联合 e2e 已具备（生产授权仍待用户决策）。P14 待验收口径不变：Docker Compose、两主机、远端 CI、正式发布均未验收。面板/SDK 过期文案已同步清理（仅事实性文案，不改行为/契约）。
+本任务把交付证据刷到 `1213790`：final gate **148/148/687.02s**（`build/logs/recheck-ctest-064402.log`；p10_timer 50.48s、p07_adapter_e2e 29.19s、p13_joint_delete_e2e 38.59s、p14_native_single_host 13.09s、sqlite_runtime_store 0.27s）。P00n 修复 SQLite 双连接 CAS 写锁竞态（50ms peer wait + ready latch；首跑 flake 根因消除）；P06h 补齐真实 adapter 链 UNKNOWN/EXPIRED 迟到与 adapter 重连 UNKNOWN evidence；P10m 优雅停机 SIGSEGV 修复与 p10 抽验；P13g test-only 联合 e2e 已具备（生产授权仍待用户决策）。P14 待验收口径不变：Docker Compose、两主机、远端 CI、正式发布均未验收。面板/SDK 过期文案已同步清理（仅事实性文案，不改行为/契约）。
