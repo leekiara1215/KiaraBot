@@ -505,10 +505,15 @@ Dispatched；receipt 帧按 (command_id, connection_generation) 条件更新，�
 receipt 返回 FAILURE，重复相同 receipt 幂等；observation 帧按
 (host,connection_generation,cursor.sequence) 去重写入，校验 cursor epoch/generation，重复帧与
 resync 重放幂等；新 connection 重放未 receipt 的同一 command_id。30s 未回执转 Unknown（不写
-stopped），P13a 60s 清理批次执行 7d/30d 保留。**P08b-3b（部分）**：新增 `p08_host_bridge_e2e`，用真 PG16.4+真 mTLS Runtime+fake Host
-客户端覆盖注册→apply 下发→receipt/observation 落 PG→重复 observation 去重→重连 generation→
-旧 fence 拒绝；修复 host_commands kind CHECK 与 domain 枚举不一致（1..3）及 installation_id
-读取缺失，Runtime schema v16（descriptor `ec12933ab8bff61620db24ebcb05ef44`/152）。
+stopped），P13a 60s 清理批次执行 7d/30d 保留。**P08b-3b/3e**：`p08_host_bridge_e2e` 用真 PG16.4+真 mTLS Runtime+fake Host 覆盖注册→
+apply 下发→receipt/observation 落 PG→去重→重连 generation→旧 fence；`p08_managed_host_e2e`
+进一步用真 `kiarabot-plugin-host`+真受管 SDK 插件子进程覆盖 Host 注册/心跳→预置 host_command
+apply→Host spawn 插件（P08d helper 0600 凭据/白名单 env）→插件经 PluginBridge 注册→
+plugin on_start/on_stop→Runtime receipt/observation 落 PG→Stop→Host 重启不重复 spawn→Drain；
+断言插件进程退出、journal 终态、凭据不泄露。真实 e2e 修复了 Stop/Drain handoff payload 未写
+（导致 Host 拒绝 stop）的缺陷。Runtime schema v16（descriptor
+`ec12933ab8bff61620db24ebcb05ef44`/152）。**P08 退出剩余**：真实配置 apply/version conflict
+矩阵、包/参数拒绝、start 前后 kill 与 10s 宽限边界仍需补齐；当前不能宣称 P08 全退出。
 **P08d（部署 helper + Delete 快照）**：新增 `scripts/deploy/target_host_credential.py`，从
 CreateInstance/BindAdapter 一次性响应生成 Host `credential_directory/<instance_id>.bootstrap`
 （0600/atomic/幂等/显式轮换/清理/verify，不落日志/argv，见 doc/08），补上“自动预置”的部署

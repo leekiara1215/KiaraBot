@@ -1193,12 +1193,14 @@ probe_listen/grpc_listen/tls），并额外要求 Host-only 的 `host` 对象（
   epoch；重连新 generation 重放未确认命令。30s 无回执转 Unknown（不伪造 stopped），7d/30d
   保留清理随 P13a 60s 批次。**未完成**：真实 Host 二进制 e2e、受管 bootstrap 自动预置。
   未确认命令在运维视图应显示 Pending/Unknown，不能当 stopped。
-- **P08b-3b（部分）**：新增 `p08_host_bridge_e2e` 真 PG16.4 + 真 Runtime + fake Host 客户端
-  用例（p08 标签），覆盖 apply 快照、receipt、observation 去重、重连 generation 与旧 fence；
-  实测 Runtime schema v16 / descriptor `ec12933ab8bff61620db24ebcb05ef44` / 152 relations。
-  **未完成**：真实 `kiarabot-plugin-host`+受管 SDK 插件进程 e2e；受管 bootstrap 自动预置受
-  冻结协议限制（无 HostBridge 凭据交付帧，Runtime 不直接写 Host 文件系统），仍需部署方按
-  0600 文件约定预置或补契约后实现；不得据此宣称 P08 退出。
+- **P08b-3b/3e（真实进程 e2e 已通过）**：`p08_host_bridge_e2e` 覆盖真 PG+真 Runtime+fake
+  Host 的 apply/receipt/observation/重连/旧 fence；`p08_managed_host_e2e` 覆盖真
+  `kiarabot-plugin-host`+真受管 SDK 插件子进程：Host 注册→host_command apply→spawn 插件
+  （P08d helper 预置 0600 bootstrap/白名单 env）→SDK PluginBridge 注册/on_start/on_stop→
+  Runtime receipt/observation 落 PG→Stop→Host 重启不重复 spawn→Drain，断言进程退出/journal/
+  凭据不泄露。**P08 退出剩余**：真实配置 apply/version conflict、包/参数拒绝、start 前后 kill
+  与 10s 宽限边界；受管 bootstrap 仍按部署 helper/0600 文件约定预置（无 wire 凭据交付帧），
+  不得据此宣称 P08 全退出。
   2026-11-02 合并回归修复：P13c 冲突解决丢失 HostBridgePersistence 接线，导致 apply 不下发；
   已恢复 pending/dispatched/receipt/observation 回调，e2e 通过；运行时应保留 P13c Host lifecycle
   participant。

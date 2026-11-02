@@ -59,7 +59,9 @@ e2e（P08b-3b）与 P08d 部署 helper/Delete 快照已完成；真实 `kiarabot
 
 未完成/边界：
 
-- 真实 `kiarabot-plugin-host` + 受管 SDK 插件进程 e2e 仍属 P08b-3b/P08 退出关键路径。
+- P08e：`p08_managed_host_e2e` 已用真 PG16.4 + 真 Runtime + 真 `kiarabot-plugin-host` + 真受管
+  SDK 插件子进程跑通注册/apply/spawn/PluginBridge 注册/Stop/Drain/Host 重启；修复 Stop/Drain
+  handoff payload 未写导致 Host 拒绝命令的缺陷。
 - 未新增 Restart RPC（proto 冻结）；Host 重启走 P13b drain/恢复，实例 restart 由
   stop/start desired-state 组合，host_command 快照复用既有 Apply/Stop 命令。
 - Runtime 不解析 manifest，launch_profile/arguments/environment 仍由部署 host 配置映射；
