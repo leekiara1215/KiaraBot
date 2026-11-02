@@ -93,11 +93,11 @@ PYTHONPATH=src:build/generated .venv/bin/python -m pytest -q tests/test_actions.
 
 ### target/契约核对
 - 已 implemented 且有上述证据：`ActionEnvelope`、`ActionResult`、`ActionExecutionEvidence`、`ActionReceipt`、`ActionMetadata`、`PluginActionRequest/Query/Cancel/Response`、`RuntimeQueryActionResult*`；`ActionResult.status/execution_outcome`、evidence/receipt 全字段、dispatch attempt/sequence、send_message payload、权限枚举 41–46、5 条 action semantic rule；target_spec `QueryActionResult=implemented`（wire + Control caller）。
+- P07f-2 已翻转（2026-11-02）：`RuntimeService.GetActionPolicy/UpdateActionPolicy`、ActionPolicy message/fields、`ActionEnvelope.react_message/delete_message/mute_member/kick_member/approve_request` payload 及对应 message/fields 均登记 target implemented；证据为 P07f-1 real TLS/PG bridge policy gate、dispatch→result→receipt、target source 与 tests/architecture/p06_bridge_acceptance.py/P07 测试。target_spec 两个 owner 方法改 implemented。
 - 未翻转项及理由：
-  - `RuntimeService.GetActionPolicy/UpdateActionPolicy`（及 ActionPolicy message/fields）：应用层已实现，target_spec 仍 not_implemented；P07f-1 正在补 wire/client 证据，翻转由 P07f-2 按证据进行（本任务不预翻）。
-  - `ActionEnvelope.react_message/delete_message/mute_member/kick_member/approve_request` target payload 项：适配器/领域已有实现与单测，但 target 翻转待 P07f-1/2 的跨服务 wire 证据；仅 `send_message` 已翻。
-  - plugin 权限过滤（manifest 权限 × kind × policy）target 语义未单列翻转：现有 41–46 枚举已翻，但“插件侧权限过滤”作为独立 target 项需 P07f-1 wire 证据后再登记。
+  - plugin 权限过滤（manifest 权限 × kind × policy）作为独立 target 语义未单列；现有 41–46 枚举已翻，实际 kind/policy gate 由 application 覆盖。
   - `ListActionMetadata`/`InspectActionMetadata`：target_spec 仍 not_implemented（Control 查询走 QueryActionResult；list 未接线）。
+  - Control REST 的 ActionPolicy OpenAPI `x-contract-status` 按 owner-RPC 规则保持 not_implemented；REST handler 已由 P12c-3 接线。
 - 契约门禁：`check_implementation_status.py` 通过；`target_api_test.rb`/`evidence_scopes_test.py` 在 main@95495c2 仍失败（listAuditEntries/listLogs/beginDeleteResource/restoreResource 带 owner-RPC 却标 implemented + 冻结集缺这 4 项），属 P12c-7/P12e/P13c 登记漂移，Lead 已安排 core-target 在 P12c-8 修，P07g 未扩改。
 
 ### 剩余缺口
@@ -109,3 +109,11 @@ PYTHONPATH=src:build/generated .venv/bin/python -m pytest -q tests/test_actions.
 | Host/Adapter 跨主机 | 待环境 |
 | 真实平台 reaction API（NapCat set_msg_emoji_like） | 待环境/未验收（T07b） |
 | Control listActionMetadata REST | 未接线；现有 QueryActionResult REST 已测 |
+
+## P07 退出判定（P07f-2，2026-11-02）
+
+**通过**。Action target 契约（payload 五类、ActionPolicy owner RPC/message/fields）、真实
+TLS/PG16.4 Runtime wire 证据、dispatch→result→receipt/evidence、Mute/Kick policy 允许/拒绝矩阵、
+旧策略/预算拒绝无副作用、target_spec/执行范围/证据登记均通过门禁。非阻塞残余：真实平台
+reaction API（NapCat set_msg_emoji_like）与 Control `listActionMetadata` REST 未接线，属环境/
+后续能力，不影响 P07 target Action 契约退出。

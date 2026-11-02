@@ -524,6 +524,9 @@ P12c 在独立 Control 进程的 HTTPS 边界新增 owner-backed 转发层（`co
   （`plugin.manage`/`plugin.config.read`；三类事实由 owner 快照区分，不伪造 APPLIED）。
 - `GET/PUT /api/v1/accounts/{id}/action-policy` → Get/UpdateActionPolicy（`account.policy.read/
   manage`、account scope、`expected_version`；群白名单/禁言踢出开关/每日预算随 policy 透传）。
+  P07f-2 已将 RuntimeService Get/UpdateActionPolicy owner 方法及 ActionPolicy 消息/字段、五种
+  Action payload（react/delete/mute/kick/approve）登记为 target implemented；OpenAPI REST 的
+  `x-contract-status` 仍按 owner-RPC 规则保持 not_implemented，REST handler 证据见 P12c-3。
 - `GET /api/v1/tasks` → Scheduler ListTasks；`GET /api/v1/tasks/{id}` → GetTask；
   `POST /api/v1/tasks/{id}/cancel` → CancelTask（`task.read`/`task.schedule` + 可选 scope JSON、
   page_size/page_token；owner UNAVAILABLE/TIMEOUT 稳定映射）。
