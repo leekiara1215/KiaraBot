@@ -77,6 +77,26 @@ inline bool known_principal_kind(PrincipalKind kind) {
   return kind == PrincipalKind::Human || kind == PrincipalKind::PlatformService ||
          kind == PrincipalKind::Adapter || kind == PrincipalKind::Plugin;
 }
+// v1 Identity registration binding shape, one Principal per binding. Humans are created only by
+// the trusted offline bootstrap (self Principal binding); public registration accepts the three
+// workload kinds with their authoritative resource kinds. The database enforces the global
+// "one Principal per exact binding" unique rule independently of request idempotency keys.
+inline bool valid_principal_binding(PrincipalKind kind, const ResourceRef& binding) {
+  if (!valid_resource_ref(binding)) {
+    return false;
+  }
+  switch (kind) {
+  case PrincipalKind::PlatformService:
+    return binding.kind == ResourceKind::Principal;
+  case PrincipalKind::Adapter:
+    return binding.kind == ResourceKind::Adapter;
+  case PrincipalKind::Plugin:
+    return binding.kind == ResourceKind::Instance;
+  case PrincipalKind::Human:
+    return false;
+  }
+  return false;
+}
 inline bool known_role(FixedRole role) {
   return role == FixedRole::Admin || role == FixedRole::Operator || role == FixedRole::Viewer;
 }

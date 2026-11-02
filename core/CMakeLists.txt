@@ -89,6 +89,27 @@ add_test(NAME p04_identity_security_application COMMAND kiarabot_identity_securi
 set_tests_properties(p04_identity_security_application PROPERTIES
   LABELS "p04;unit;security" TIMEOUT 30)
 
+# Five principal/credential management use cases stay pure and independently linkable. The
+# application owns no SQL/protobuf type; the composition root injects the fingerprinting port
+# adapter and the outer PG security factory.
+add_library(kiarabot_identity_principal_application STATIC
+  src/application/target/identity_principal_application.cpp)
+target_include_directories(kiarabot_identity_principal_application PUBLIC include)
+target_compile_features(kiarabot_identity_principal_application PUBLIC cxx_std_20)
+target_compile_options(kiarabot_identity_principal_application PRIVATE
+  $<$<CXX_COMPILER_ID:AppleClang,Clang,GNU>:-Wall -Wextra -Wpedantic>)
+add_executable(kiarabot_identity_principal_application_test
+  tests/architecture/identity_principal_application_test.cpp)
+target_link_libraries(kiarabot_identity_principal_application_test PRIVATE
+  kiarabot_identity_principal_application)
+target_compile_options(kiarabot_identity_principal_application_test PRIVATE
+  $<$<CXX_COMPILER_ID:AppleClang,Clang,GNU>:-Wall -Wextra -Wpedantic -UNDEBUG>
+  $<$<CXX_COMPILER_ID:MSVC>:/UNDEBUG>)
+add_test(NAME p04_identity_principal_application
+  COMMAND kiarabot_identity_principal_application_test)
+set_tests_properties(p04_identity_principal_application PROPERTIES
+  LABELS "p04;unit;security" TIMEOUT 30)
+
 find_program(KIARABOT_TEST_RUBY ruby REQUIRED)
 add_test(NAME p04_identity_role_catalog COMMAND "${KIARABOT_TEST_RUBY}"
   ${CMAKE_SOURCE_DIR}/proto/tests/identity_role_catalog_test.rb

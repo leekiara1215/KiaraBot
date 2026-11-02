@@ -18,6 +18,27 @@ inline bool valid_credential_kind(CredentialKind kind) {
   }
   return false;
 }
+// Registration may capture a bounded, duplicate-free, non-Control workload bootstrap audience
+// set before any verifier exists. Order is preserved for the eventual issuance verifier.
+inline bool valid_pending_audiences(CredentialKind kind, const std::vector<Service>& audiences) {
+  if (audiences.empty()) {
+    return true;
+  }
+  if (kind != CredentialKind::WorkloadBootstrap || audiences.size() > 16) {
+    return false;
+  }
+  for (std::size_t index = 0; index < audiences.size(); ++index) {
+    if (!valid_service(audiences[index]) || audiences[index] == Service::Control) {
+      return false;
+    }
+    for (std::size_t earlier = 0; earlier < index; ++earlier) {
+      if (audiences[index] == audiences[earlier]) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
 // Structural state/material validation only. Algorithm/hash/certificate verification belongs to
 // mature crypto adapters; expiration is checked at authentication UTC, not a stored fake terminal.
 inline Status validate_credential_record(const CredentialVersionRecord& record) {
@@ -28,7 +49,8 @@ inline Status validate_credential_record(const CredentialVersionRecord& record) 
   const auto* pending = std::get_if<PendingCredentialMaterial>(&record.material);
   switch (record.state) {
   case CredentialState::Pending:
-    if (!pending || !valid_credential_kind(pending->kind) || record.revoked_at ||
+    if (!pending || !valid_credential_kind(pending->kind) ||
+        !valid_pending_audiences(pending->kind, pending->audiences) || record.revoked_at ||
         record.expires_at) {
       return rejected(ErrorCode::InvalidArgument, Recovery::CorrectInput);
     }
@@ -48,7 +70,8 @@ inline Status validate_credential_record(const CredentialVersionRecord& record) 
     }
     // Revoking an unissued stub is a real revocation, not an active empty verifier.
     if (pending) {
-      return valid_credential_kind(pending->kind)
+      return valid_credential_kind(pending->kind) &&
+                     valid_pending_audiences(pending->kind, pending->audiences)
                  ? Status{std::monostate{}}
                  : Status{rejected(ErrorCode::InvalidArgument, Recovery::CorrectInput)};
     }
@@ -85,13 +108,12 @@ inline Status validate_credential_record(const CredentialVersionRecord& record) 
   }
   return std::monostate{};
 }
-inline Outcome<CredentialVersionRecord> make_pending_credential(CredentialId id, SubjectId subject,
-                                                                CredentialKind kind,
-                                                                ResourceRef binding,
-                                                                TimePoint now) {
+inline Outcome<CredentialVersionRecord>
+make_pending_credential(CredentialId id, SubjectId subject, CredentialKind kind,
+                        ResourceRef binding, TimePoint now, std::vector<Service> audiences = {}) {
   CredentialVersionRecord record{{std::move(id), {1}},
                                  std::move(subject),
-                                 PendingCredentialMaterial{kind},
+                                 PendingCredentialMaterial{kind, std::move(audiences)},
                                  CredentialState::Pending,
                                  now,
                                  std::nullopt,

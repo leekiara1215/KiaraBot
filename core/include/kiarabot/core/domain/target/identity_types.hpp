@@ -81,6 +81,11 @@ enum class CredentialKind { Unspecified, Password, WorkloadBootstrap, Certificat
 // A registered stub has a kind but NO secret/verifier. No fabricated empty password hash.
 struct PendingCredentialMaterial {
   CredentialKind kind = CredentialKind::Unspecified;
+  // Audiences captured at public registration for a not-yet-issued WorkloadBootstrap credential.
+  // RotateCredential copies the same ordered set into the issued verifier. Empty for the other
+  // kinds; Control is not a valid workload bootstrap audience and registration never fabricates
+  // a verifier.
+  std::vector<Service> audiences;
 };
 enum class CredentialState { Pending, Active, Revoked };
 using CredentialMaterial = std::variant<PendingCredentialMaterial, PasswordVerifier,
