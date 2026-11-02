@@ -159,6 +159,11 @@ message RuntimeBindAdapterRequest {
 message RuntimeBindAdapterResponse {
   AdapterBinding binding = 1;
   OperationRef operation = 2;
+  // CONTRACT_STATUS: not_implemented - P06 one-time adapter bridge bootstrap credential.
+  // Returned only when this binding creates the adapter instance registration; the caller
+  // (Control) must deliver it once to the adapter deployment and never persist or log it.
+  // Runtime stores only the SHA-256 of the opaque text; every other response leaves it empty.
+  string bootstrap_credential = 3;
 }
 
 // CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
@@ -244,6 +249,11 @@ message RuntimeCreateInstanceRequest {
 // CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
 message RuntimeCreateInstanceResponse {
   InstanceRecord instance = 1;
+  // CONTRACT_STATUS: not_implemented - P06 one-time plugin bridge bootstrap credential.
+  // Returned only for externally_managed=true instances; Host-managed instances leave it empty
+  // and authenticate through the Host bridge instead. The caller (Control) must deliver it once
+  // to the plugin deployment and never persist or log it. Runtime stores only its SHA-256.
+  string bootstrap_credential = 2;
 }
 
 // CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.

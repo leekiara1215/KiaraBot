@@ -1014,6 +1014,7 @@
       "RuntimeBindAdapterRequest.expected_version": "not_implemented",
       "RuntimeBindAdapterResponse.binding": "not_implemented",
       "RuntimeBindAdapterResponse.operation": "not_implemented",
+      "RuntimeBindAdapterResponse.bootstrap_credential": "not_implemented",
       "RuntimeUnbindAdapterRequest.context": "not_implemented",
       "RuntimeUnbindAdapterRequest.binding": "not_implemented",
       "RuntimeUnbindAdapterRequest.expected_version": "not_implemented",
@@ -1043,6 +1044,7 @@
       "RuntimeCreateInstanceRequest.host_id": "not_implemented",
       "RuntimeCreateInstanceRequest.externally_managed": "not_implemented",
       "RuntimeCreateInstanceResponse.instance": "not_implemented",
+      "RuntimeCreateInstanceResponse.bootstrap_credential": "not_implemented",
       "RuntimeSetDesiredStateRequest.context": "not_implemented",
       "RuntimeSetDesiredStateRequest.instance_id": "not_implemented",
       "RuntimeSetDesiredStateRequest.desired_state": "not_implemented",
@@ -3277,6 +3279,9 @@
     "RuntimeBindAdapterResponse.operation": [
       "reports/modules/architecture-contracts.md"
     ],
+    "RuntimeBindAdapterResponse.bootstrap_credential": [
+      "reports/modules/architecture-contracts.md"
+    ],
     "RuntimeUnbindAdapterRequest.context": [
       "reports/modules/architecture-contracts.md"
     ],
@@ -3362,6 +3367,9 @@
       "reports/modules/architecture-contracts.md"
     ],
     "RuntimeCreateInstanceResponse.instance": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "RuntimeCreateInstanceResponse.bootstrap_credential": [
       "reports/modules/architecture-contracts.md"
     ],
     "RuntimeSetDesiredStateRequest.context": [
