@@ -455,7 +455,7 @@ socket，不继续受理。暂时忙等可恢复情况由具体组合根区分�
 ### P03 common transaction limits
 
 
-P03 公共 schema 为 v3；P04 Identity 空库含安全关系、完整会话结果、当前 bootstrap 定位、源 Control 会话绑定、平台当前定位索引、Assignment墓碑、完整普通结果、Pending 凭据受众关系及一个 binding 只对应一个 Principal 的唯一索引后为 v11，另三库为 v5。要求UTF8数据库；
+P03 公共 schema 为 v3；P04 Identity 空库含安全关系、完整会话结果、当前 bootstrap 定位、源 Control 会话绑定、平台当前定位索引、Assignment墓碑、完整普通结果、Pending 凭据受众关系及一个 binding 只对应一个 Principal 的唯一索引；P14h 对齐 exact_permissions 权限范围后 Identity 为 v15、Runtime v17、Scheduler v10、Model v9。要求UTF8数据库；
 旧版本或其他结构不自动升级，必须按本轮空库部署
 流程初始化新的专属库，不能清空原库或自动补表。schema结构描述/对象owner/运行权限均参与
 启动验证。当前仅存储公共能力，业务就绪仍由各服务已实现依赖决定。
@@ -1546,13 +1546,15 @@ P07g（2026-11-02）：P07 Action 退出证据已按当前 HEAD 复核：`p07_ac
   `/health/live` HEALTHY、`/health/ready` UNHEALTHY（组合根 readiness 未置 ready，稳定记录）；
   停 Identity→登录失败/依赖健康稳定失败→重启恢复登录；停 Runtime→probe 未就绪→重启恢复；
   Control 不可信 CA 与 Runtime 错误 DB 密码均启动非零（fail-closed）。
-- **实测缺口/缺陷（已上报 Lead，未在 P14f 修复）**：授权 `/api/v1/health` 与 owner-backed 读取
+- **实测缺口/缺陷与 P14h 修复**：授权 `/api/v1/health` 与 owner-backed 读取
   （principals/logs/audit/tasks/models/action policy/action query/delete/restore）在原生栈返回
   稳定 400 INVALID_ARGUMENT，原因有二：1) Identity `exact_permissions` CHECK(permission BETWEEN
   1 AND 40) 未随 wire Permission 41–50（P07 按动作、P09 namespace.read、P12 log/audit/health）
-  迁移，离线 bootstrap 无法持久化敏感授权；2) Control 对空 ResourceScope 发委派，Identity
-  `issue_delegation` 对空 permissions 返回 INVALID_ARGUMENT（P12c fake Identity 掩盖）。
-  因此本 harness 只证明“fail-closed 稳定错误”，不证明单机健康聚合/敏感读取成功链。
+  迁移，离线 bootstrap 无法持久化敏感授权——**P14h 已修复**：CHECK 对齐 50、四服务共享
+  result 表 descriptor 同次 bump、内部权限名称表补 41–50，并在真 PG16.4 验证 bootstrap 可持久化
+  及 CheckAuthorization 允许敏感 exact grant；2) Control 对空 ResourceScope 发委派，Identity
+  `issue_delegation` 对空 permissions 返回 INVALID_ARGUMENT（P12c fake Identity 掩盖）——P14h
+  未修复，仍待 Control 委托范围收口任务。原生栈 harness 仍不宣称单机健康聚合/敏感读取全成功。
 - **与 Compose 单机差异**：无镜像构建/Compose/healthcheck/restart/非 root/只读/秘密挂载/
   官方 PG 镜像；无 Host/Adapter/Bridge、真实 QQ/Provider、两主机与备份演练。详见
   [architecture-p14f-native-single-host.md](../reports/modules/architecture-p14f-native-single-host.md)。

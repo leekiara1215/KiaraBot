@@ -568,6 +568,30 @@ claim/confirm/确认丢失重放、过期 FAILED(TIMEOUT)、重启持久化、�
 
 Runtime 私有库 schema 从 v12 升至 v13（`infrastructure/postgres/schema/v1.hpp`；合并 main 的 P08b-2c/UoW `host_registration()` 后再次用真 PG16.4 实测：host_connections 已在 v12 计入，P08b-2c 未新增 relation，故 Runtime 保持 v13）：`operations` 增加 `created_at/updated_at/retain_until` 与 `(state,retain_until)` 索引；新增 `operation_participants(operation_id,participant,state,reason,next_attempt)`（FK 到 operations，级联删除）和 `lifecycle_tombstones(resource_kind,resource_id,operation_id,state,deleted_at,restore_until,purge_after)`；共享 audit/outbox/operations 表增加 180 天清理索引。四个逻辑库的 descriptor 与 relation_count 用真实 PG16.4 实测同步，rebase 到 main@8f3bfd3 后复测一致：Identity 135/`3caa2e6995fdd42d88f45d01f34017ac`、Runtime 145/`8a4aba6dc6cbc2b555a1fd8053a38cee`、Scheduler 83/`4ec3a4dd616f66e5529d2edc8e67f5f4`、Model 77/`ccee8cca142d137ac2726c48ce8ab8a7`。
 
+## P14h Identity exact_permissions 权限范围对齐（2026-11-02）
+
+P14f 原生单机 smoke 暴露 Identity `exact_permissions`/共享 `result_exact_permissions`
+仍为 `CHECK(permission BETWEEN 1 AND 40)`，而冻结 wire `Permission` 已到 50
+（`PERMISSION_HEALTH_READ`；41–50 为 P07 Action、P09 `namespace.read`、P12
+`log.read`/`audit.read`/`health.read`）。P14h 将两处 CHECK 上限对齐到 wire 最大值 50
+（仍是范围校验，未放宽到任意整数），并补内部 `kPermissionNames` 41–50 名称映射；
+bootstrap/application 的 `known_permission`/`permission_from_name` 因此可持久化敏感授权。
+
+`result_exact_permissions` 属四服务共享 result 表，故四个 schema 版本与 descriptor 同次
+实测 bump（真 PG16.4，relation_count 不变）：
+
+| service | version | relation_count | descriptor |
+| --- | --- | --- | --- |
+| Identity | 15 | 135 | `decc8401bef9d3ac3c92116e7608b2f4` |
+| Runtime | 17 | 152 | `b35506904148274266908e2733518d87` |
+| Scheduler | 10 | 83 | `73411831b606f8340ab7b441401aad8e` |
+| Model | 9 | 77 | `f12417031e89ea2bb4f6c8d153447292` |
+
+约束测试覆盖 41–50 接受、51/0 拒绝；`identity_bootstrap_test.py` 在真实 owned PG 上把
+41–50 十个权限持久化并断言 `exact_permissions` 计数；`identity_authorization_application_test`
+验证 namespace/log/audit/health/action 敏感 exact grant 经 CheckAuthorization 允许、错 scope
+拒绝。P14f 记录的第二个原因（Control 空 ResourceScope 委派）仍属后续任务，不在 P14h 修复。
+
 **P08b-3/3a（2026-11-02）**：Runtime schema 升至 **v16**（P08b-3 的 host_commands/host_observations
 加 P08b-3a 的 `installation_id` 快照列），新增 `host_commands`（command_id 主键、host/instance/
 installation/kind、execution_generation、desired_version/state、package_sha256/launch_profile

@@ -95,7 +95,9 @@ identity_endpoint/runtime_endpoint/model_endpoint）、同一 PKI/离线 bootstr
   未接真实 QQ/NapCat、真实外部 Model Provider。
 - 未覆盖两主机拓扑、跨主机网络分区、备份恢复演练（P14c 已有独立本地演练）；本 harness 的
   PG 是临时 disposable 集群，不代表生产备份/恢复。
-- Control `/api/v1/health` 与敏感读取只能 fail-closed（第 3 节），不能作为“单机健康聚合已验收”。
+- Control `/api/v1/health` 与敏感读取当时只能 fail-closed（第 3 节）；P14h 已修复 Identity
+  exact_permissions 1..40 约束/boot 敏感授权持久化，但 Control 空 ResourceScope 委派仍使
+  原生 health/owner-backed 读取 fail-closed，需后续任务；本报告不因此宣称单机健康聚合已验收。
 
 ## 5. 未验收/需环境（用户/Docker）
 
@@ -103,8 +105,8 @@ identity_endpoint/runtime_endpoint/model_endpoint）、同一 PKI/离线 bootstr
   非 root/只读/秘密挂载、重启/资源限制（本机无 Docker）。
 - 真实 QQ/NapCat 平台与真实外部 Model Provider；受管 Host/Adapter 进程联测。
 - 两主机/跨主机与断网演练；生产 CA/密钥托管、GHCR 签名/release tag。
-- P12f（敏感读取/空 scope 委派）与 Identity schema 迁移完成后，重跑本 harness 并把
-  owner-backed 成功链纳入矩阵。
+- Control 空 ResourceScope 委派修复（P14h 仅修 Identity 权限范围/bootstrap 授权）后，重跑
+  本 harness 并把 owner-backed 成功链纳入矩阵。
 
 ## 6. 文档影响判断
 

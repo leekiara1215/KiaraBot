@@ -335,3 +335,28 @@ metadata章节与diff检查通过，doc18无差异。无secret/key/生成物提�
 本cap依赖冻结A47c23d8+B9cf880f（本地B为e22b5c5）；只交test/report差异，CMake未改，
 根CMake/CTest由父成组接线后检查，本地不声称已跑。GetVerificationKeys RPC不在本测试
 通过范围，也不以此次正常组合通过关闭P04。
+
+
+## P14h exact_permissions 权限范围对齐（2026-11-02）
+
+P14f 原生单机 smoke 发现 Identity `exact_permissions` 与共享 `result_exact_permissions`
+仍限制 `permission BETWEEN 1 AND 40`，而冻结 wire Permission 已到 50。P14h 把两处 CHECK
+上限改为 50（范围校验不放宽为任意值），扩展内部 `kPermissionNames` 到 50（41 message.send、
+42 message.react、43 message.delete、44 member.mute、45 member.kick、46 request.approve、
+47 namespace.read、48 log.read、49 audit.read、50 health.read），并同步 `record_codec`
+读取上限 50。
+
+真实 PG16.4 空库实测 bump（共享 result 表影响四服务，relation_count 不变）：
+
+| service | version | relation_count | descriptor |
+| --- | --- | --- | --- |
+| Identity | 15 | 135 | `decc8401bef9d3ac3c92116e7608b2f4` |
+| Runtime | 17 | 152 | `b35506904148274266908e2733518d87` |
+| Scheduler | 10 | 83 | `73411831b606f8340ab7b441401aad8e` |
+| Model | 9 | 77 | `f12417031e89ea2bb4f6c8d153447292` |
+
+验证：`p03_postgres_database` 约束测试接受 41–50、拒绝 0/51；`p04_identity_bootstrap`
+真实 owned PG bootstrap 持久化 10 个敏感权限并断言 DB 计数，未知权限名仍拒绝；
+`p04_identity_authorization_application` 验证 namespace/log/audit/health/action 敏感 exact
+grant 经 CheckAuthorization 允许、错 scope 拒绝；`p04_identity_rules` 覆盖名称映射与 51
+越界拒绝。P14f 第二个原因（Control 空 ResourceScope 委派）未在本任务修复。

@@ -312,6 +312,11 @@ HostBridge 只注册在 Runtime 内部 mTLS `grpc_listen`（与 `RuntimeService`
 
 ### P09/P10 Storage/Namespace/Scheduler 方法族冻结（未实现）
 
+P14h（2026-11-02）：Identity `exact_permissions`/共享 `result_exact_permissions` 的 CHECK 上限对齐
+冻结 wire `Permission` 1–50（含 P07 41–46、P09 `namespace.read`、P12 `log/audit/health.read`），
+内部权限名称表补 41–50；`CheckAuthorization` 对显式 exact 敏感授权允许、错 scope 拒绝。Control
+空 ResourceScope 委派问题另项处理。
+
 Runtime storage 4 个 unary 方法（Get/Set/Delete/CompareAndSetStorage）标记 `exposure=internal_dispatcher`，外部插件只走 PluginBridge HostRequest.storage_* 帧；`CreateSharedNamespace`（namespace.manage、幂等、每安装一个共享 namespace，已存在 CONFLICT 后用 Get 读）与 `GetSharedNamespace`（namespace.read、exact installation scope、返回版本/禁用/成员/配额用量、不回键值）为既有 Runtime owner 方法族新增，wire 暴露。`SetSharedMembers`/`DisableSharedNamespace` 保持 namespace.manage。Scheduler 6 方法 caller/permission/idempotency/deadline 不变，本次补 TaskRecord/OccurrenceRecord 观测字段、ListTasks 状态过滤与语义（owner 派生、时间/horizon、容量、PENDING/COMPLETED=已入队、取消窗口、交接 7 天/100 attempts 到期人工恢复）；`AcceptTimerTrigger` 保持 wire（内部 mTLS RuntimeService，Scheduler 服务主体调用，不是 Bridge），不新增 exposure 枚举值。类型 relocation（NamespaceScope/StorageEntry/StorageCondition/SharedMember、LocalTaskTime/ScheduledTaskState→common.proto）FQN 不变，见 proto/README。
 
 ### P11 Model 方法族冻结（未实现）
