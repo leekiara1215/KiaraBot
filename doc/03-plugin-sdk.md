@@ -38,9 +38,14 @@ plugins/ai-reply 示例仅对 /ai 前缀纯文本事件应答，通过 SDK 存�
 
 Context 提供 submit_action(ActionEnvelope)、query_action(action_id 或 idempotency_key) 与 cancel_action(action_id)。使用生成类型，自动创建每次调用的 request_id，只有 action.result.v1 协商成功后才发送；未协商本地 CAPABILITY_NOT_SUPPORTED。读取响应独立于事件回调，回调中调用 Action 不会阻塞接收器。断开/超时抛稳定 PluginError，不能把未知结果包装成 FAILED；调用者重连后用原幂等键查询。SDK 不自动重发可能已有副作用的请求。
 
-## P07 Action 客户端（目标，未实现）
+## P07 Action 客户端（P07b 已实现，2026-11-02）
 
-P07 目标将 Action 客户端固定在 `PluginBridge`：submit/action_query/action_cancel 与 `action_response` 保持一问一答，`action.result.v1` 协商后才可用；unary RuntimeService Action 方法仅 internal dispatcher，SDK 不使用。`ActionResult` 增加 `execution_outcome`：`ACCEPTED` 为 `NOT_STARTED`（未派发）或 `UNKNOWN`（已派发、结果未知），`EXPIRED` 的 `UNKNOWN` 表示平台可能已执行；SDK 不得把未知包成 FAILED，也不得自动重发可能已有副作用的请求，重连后用同一 action_id/idempotency_key 查询。每-kind 权限使用已冻结 Permission 枚举值（41–46，见 `doc/01-contracts.md`），`schedule_task` 继续拒绝。以上为契约冻结，实现随 P07b。
+Action 客户端固定在 `PluginBridge`：`submit_action`/`query_action`/`cancel_action` 与 `action_response` 一问一答，只有协商 `action.result.v1` 后才发送（未协商本地 `CAPABILITY_NOT_SUPPORTED`）；unary RuntimeService Action 方法仅 internal dispatcher，SDK 不使用。SDK 不做过期或权限决策，只做冻结 wire 的前置校验：
+
+- `submit_action(action, idempotency_key=..., deadline=..., timeout=5.0)`：必须含 `action_id`/`idempotency_key`/`trace_id`/已知 payload/未来 UTC `deadline`（≤300 秒）；`action_id`/`trace_id` 为空时 SDK 生成 UUID，`idempotency_key`/`deadline` 可用关键字补齐；`dispatch_attempt_id`/`dispatch_sequence` 由 Runtime 填，非空/非 0 本地 `INVALID_ARGUMENT`；`schedule_task` 与缺失 payload 本地 `CAPABILITY_NOT_SUPPORTED`。同一幂等键同内容重投返回原 `ActionResult`（原 action_id/状态），异内容由 Runtime 返回 `CONFLICT` 稳定错误。
+- `query_action(action_id=...)` 或 `query_action(idempotency_key=...)`：selector 恰一；按 action_id 查询时响应 action_id 必须回带一致，否则按未知传输结果处理。`cancel_action(action_id, timeout=5.0)`：仅取消未派发动作，派发后返回 `CONFLICT`，已有终态返回原结果；query/cancel deadline 由 SDK 生成（≤300 秒）。
+- 结果语义：`ActionResult.execution_outcome` 按冻结矩阵校验——`ACCEPTED`=`NOT_STARTED|UNKNOWN`、`SUCCEEDED`=`KNOWN_SUCCEEDED`、`FAILED`=`KNOWN_FAILED`+稳定错误码、`EXPIRED`=`NOT_STARTED|UNKNOWN`（error=TIMEOUT）、`CANCELLED`=`NOT_STARTED`；派发态（UNKNOWN/KNOWN_*）必须回带 UUIDv4 `dispatch_attempt_id`，终态必须带 `completed_at`。`ACCEPTED`/`EXPIRED`+`UNKNOWN` 的 `ActionExecutionEvidence`/`action_receipt` 处置通过结果形状体现：重投为原快照（RECORDED/DUPLICATE 等价）、迟到结果为 `EXPIRED+UNKNOWN`（EVIDENCE_ONLY 等价）、异内容/派发后取消为 `CONFLICT`；客户端不接收 adapter receipt，也绝不解包成 FAILED。
+- 安全边界：畸形/矩阵矛盾/相关性错误的响应按重试性 `UPSTREAM_UNAVAILABLE` 处理（结果未知，不能伪造 FAILED）；断线/超时同样为未知，SDK 不自动重发可能已有副作用的 submit，重连后调用方用同一 `action_id`/`idempotency_key` 查询。工具函数 `kiarabot_sdk.action_kind`、`is_action_terminal`、`is_action_unknown`、`may_have_executed` 供插件判定风险。每-kind 权限仍由 Runtime/Identity 校验（冻结 Permission 41–46），SDK 只映射稳定错误码。P07a Runtime 侧与真实 Runtime 端到端验收前，以上由 `FakeTargetRuntime` 验证。
 
 ## T03b Python SDK 与进程生命周期
 
