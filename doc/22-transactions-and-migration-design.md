@@ -39,7 +39,7 @@
 
 新资源 ID 用 UUIDv4，旧平台原始 ID 作为平台引用。不需要旧开发 ID 映射/导入；四元组顺序仍区分适配器、账号、会话 ID 和会话类型，内部稳定账号与平台账号由当前绑定显式解析，不能合并群/私聊。
 
-P06 事件/投递表列定稿（Runtime schema v6，空库初始化，无迁移）：
+P06 事件/投递表列定稿（Runtime schema 在 P05 资源表之后合并为 v8，空库初始化，无迁移）：
 
 - `events(adapter,event_id)` 主键；`fingerprint bytea(32)`、`conversation_key`（长度前缀四元组编码，存储内部键）、`payload_kind`、`has_conversation`、`sequence kiarabot.uint64`/`has_sequence`（两者同存同缺）、`serialized_envelope bytea<=1MiB`、`occurred_at`、`retain_until`、`state`（0 open / 1 terminal）、`received_at`；保留索引 `(state,retain_until)`。
 - `conversation_watermarks(conversation_key)` 主键；`has_sequence`/`last_sequence` 同存同缺、`degraded` sticky、`updated_at`。按会话键而不是四列主键，避免拼接歧义。

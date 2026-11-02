@@ -16,6 +16,7 @@
 
 #include "kiarabot/core/application/target/runtime_readiness.hpp"
 #include "kiarabot/core/application/target/runtime_resource_application.hpp"
+#include "kiarabot/core/ports/target/business_ports.hpp"
 
 namespace {
 namespace t = kiarabot::core::target;
@@ -360,6 +361,45 @@ public:
 private:
   Store& store_;
 };
+// P05 runtime resource tests do not exercise event delivery; the merged UoW contract still
+// requires an EventRepository. Every call fails closed so an accidental dependency is visible.
+class UnusedEvents final : public t::EventRepository {
+public:
+  t::Outcome<t::EventAcceptanceResult> accept(const t::EventRecord&,
+                                              const std::vector<t::DeliveryRecord>&,
+                                              const t::EventCapacityLimits&) override {
+    return failure(t::ErrorCode::CapabilityNotSupported);
+  }
+  t::Outcome<std::vector<t::DeliveryClaim>> claim(const t::DeliveryClaimRequest&) override {
+    return failure(t::ErrorCode::CapabilityNotSupported);
+  }
+  t::Outcome<t::DeliveryReceipt> acknowledge(const t::DeliveryAcknowledgement&,
+                                             t::TimePoint) override {
+    return failure(t::ErrorCode::CapabilityNotSupported);
+  }
+  t::Outcome<t::DeliveryReceipt> renew(const t::DeliveryAttempt&, t::TimePoint) override {
+    return failure(t::ErrorCode::CapabilityNotSupported);
+  }
+  t::Outcome<t::DeliverySweep> sweep(t::TimePoint, const t::RetryPolicy&, double) override {
+    return failure(t::ErrorCode::CapabilityNotSupported);
+  }
+  t::Outcome<std::size_t> recover(t::TimePoint, const t::RetryPolicy&, double) override {
+    return failure(t::ErrorCode::CapabilityNotSupported);
+  }
+  t::Outcome<std::vector<t::DeadLetter>> list_dead_letters(const std::optional<t::InstanceId>&,
+                                                           std::size_t) override {
+    return failure(t::ErrorCode::CapabilityNotSupported);
+  }
+  t::Outcome<std::optional<t::DeliveryRecord>> replay(const t::ReplayRequest&) override {
+    return failure(t::ErrorCode::CapabilityNotSupported);
+  }
+  t::Outcome<t::EventCapacity> capacity(const t::EventCapacityLimits&) override {
+    return failure(t::ErrorCode::CapabilityNotSupported);
+  }
+  t::Outcome<std::size_t> prune_expired(t::TimePoint, std::size_t) override {
+    return failure(t::ErrorCode::CapabilityNotSupported);
+  }
+};
 class MemoryWork final : public t::RuntimeUnitOfWork {
 public:
   explicit MemoryWork(Store& store)
@@ -428,6 +468,9 @@ public:
   }
   t::Repository<t::InstanceId, t::InstanceConfiguration>& instance_configs() override {
     return configs_;
+  }
+  t::EventRepository& events() override {
+    return events_;
   }
   t::Outcome<std::vector<t::BotAccount>> list_accounts(std::size_t limit,
                                                        const std::string& after) override {
@@ -519,6 +562,7 @@ private:
   MemoryRepository<t::InstallationId, t::PluginInstallation> installations_;
   MemoryRepository<t::InstanceId, t::PluginInstance> instances_;
   MemoryRepository<t::InstanceId, t::InstanceConfiguration> configs_;
+  UnusedEvents events_;
   MemoryRepository<t::OperationId, t::Operation> operations_;
   MemoryCredentials credentials_;
   MemoryReceipts receipts_;

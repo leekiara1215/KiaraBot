@@ -217,8 +217,7 @@ public:
         credentials_(work()), hosts_(work(), detail::RecordKind::Host),
         installations_(work(), detail::RecordKind::Installation),
         instances_(work(), detail::RecordKind::Instance),
-        instance_configs_(work(), detail::RecordKind::InstanceConfig),
-        events_(*common.sql) {}
+        instance_configs_(work(), detail::RecordKind::InstanceConfig), events_(*common.sql) {}
   target::Repository<target::ResourceId, target::BotAccount>& accounts() override {
     return accounts_;
   }
@@ -275,10 +274,6 @@ public:
   }
 
 private:
-  target::UnitOfWork& work() const {
-    return *common_.work;
-  }
-  detail::CommonWorkAccess common_;
   LiveRepository<target::ResourceId, target::BotAccount> accounts_;
   LiveRepository<target::ResourceId, target::AdapterBindingRecord> bindings_;
   AdapterRegistry adapters_;

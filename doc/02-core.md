@@ -415,7 +415,7 @@ P06a 追加 Runtime 事件账本：纯领域规则在 `domain/target/event_deliv
 死信、ACK/Renew 的 Acknowledged/Duplicate/Stale/Rejected 判定、容量与重启恢复）；
 `RuntimeUnitOfWork` 新增 `events()` 端口，PG 实现在同一事务内完成事件/水位/目标/
 attempt 的接收、领取、ACK、续租、超时扫描、恢复、死信查询、重放、容量与保留清理。
-Runtime schema 升到 v6 并新增五张表（events、conversation_watermarks、
+Runtime schema 在 P05 合并后升到 v8，并新增五张事件/投递表（events、conversation_watermarks、
 delivery_targets、delivery_attempts、ordered_delivery_heads）；开发阶段无迁移，
 v5 库必须清空重初始化，target 仍在 Bridge 接线验收后才翻转。
 

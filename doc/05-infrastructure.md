@@ -249,8 +249,8 @@ P03数据库资源/系统依赖故障（SQLSTATE类53/58及非取消类57）映�
 
 ### P06 Runtime事件投递表（实施中）
 
-Runtime私有库 schema v6 在 P03 基础表之外新增五张事件/投递表，空库初始化一次性创建，
-开发阶段不提供 v5→v6 迁移。`events` 保存 opaque 序列化 envelope、确定性指纹、四元组
+Runtime私有库 schema v8（P05 资源表 + P06 事件/投递表）在共享基础表之外新增五张事件/投递表，
+空库初始化一次性创建，开发阶段不提供旧版本→v8 迁移。`events` 保存 opaque 序列化 envelope、确定性指纹、四元组
 会话键、payload 类型、sequence/口径与保留期；`conversation_watermarks` 按会话键保存
 最大 sequence 与 sticky degraded；`delivery_targets` 为 event+instance 唯一目标行，含
 ordered、trace_id、状态、attempts、next_attempt_at、current_attempt、死信原因与
