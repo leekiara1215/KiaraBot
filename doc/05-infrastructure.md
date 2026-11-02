@@ -566,4 +566,12 @@ claim/confirm/确认丢失重放、过期 FAILED(TIMEOUT)、重启持久化、�
 
 Runtime 私有库 schema 从 v12 升至 v13（`infrastructure/postgres/schema/v1.hpp`；合并 main 的 P08b-2c/UoW `host_registration()` 后再次用真 PG16.4 实测：host_connections 已在 v12 计入，P08b-2c 未新增 relation，故 Runtime 保持 v13）：`operations` 增加 `created_at/updated_at/retain_until` 与 `(state,retain_until)` 索引；新增 `operation_participants(operation_id,participant,state,reason,next_attempt)`（FK 到 operations，级联删除）和 `lifecycle_tombstones(resource_kind,resource_id,operation_id,state,deleted_at,restore_until,purge_after)`；共享 audit/outbox/operations 表增加 180 天清理索引。四个逻辑库的 descriptor 与 relation_count 用真实 PG16.4 实测同步，rebase 到 main@8f3bfd3 后复测一致：Identity 135/`3caa2e6995fdd42d88f45d01f34017ac`、Runtime 145/`8a4aba6dc6cbc2b555a1fd8053a38cee`、Scheduler 83/`4ec3a4dd616f66e5529d2edc8e67f5f4`、Model 77/`ccee8cca142d137ac2726c48ce8ab8a7`。
 
+**P08b-3（2026-11-02，部分实现）**：Runtime schema 升至 **v14**，新增 `host_commands`（命令
+outbox：command_id 主键、host/instance/kind、execution_generation、desired_version/state、
+package_sha256/launch_profile 快照、payload_sha256、delivery state、connection_generation/
+runtime_epoch、receipt 列）与 `host_observations`（`(host_id,connection_generation,sequence)` 主键
+去重）；索引 `host_commands_pending/instance`、`host_observations_instance`。真 PG16.4 实测 Runtime
+descriptor `7620002f564f2db02e83bd77d89e78fe`、relation_count **152**；其它三库不变。命令入队与
+实例 desired 变更同 UoW；HostBridge server 的 receipt/observation 持久化接线尚未完成。
+
 保留期：逻辑删除后非秘密内容 30 天可恢复；最小墓碑/必要审计 180 天，ID 永不复用；操作记录由 lifecycle 显式设置 `retain_until` 后才可清理（P05 普通 operation 无保留期限，不误删）；清理每 60 秒有界批次执行，未决 receipts/inbox/outbox 不提前清理，清理单项失败只告警不撤销业务 gate。墓碑与参与者均为 owner-local 表，不跨库级联、不新增服务边界。`HostJournal::prune` 的 Host 侧调用属 P13b。

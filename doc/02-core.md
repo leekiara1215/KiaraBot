@@ -487,6 +487,15 @@ P08b 在 Runtime application 内新增 HostBridge 入站应用：内部 mTLS 注
 
 **P08b-2b（已实现，传输层）**：`core/src/runtime/platform/host_bridge_server.{hpp,cpp}` 实现 `v1::HostBridge::Service::Connect` 同步 bidi：首帧必须为 registration，服务端用 `extract_peer_certificate(*ServerContext::auth_context())` 取内部 mTLS 叶证书 SHA-256，交给 `RuntimeHostApplication::register_host` 与部署 `hosts[]` allowlist（`certificate_sha256 → host_id`，空 allowlist 拒绝所有）匹配，回 `registered{host,fence}`；此后每帧必须携带精确当前 fence，旧 generation/缺失 fence 以 `CONFLICT` failure 结束流；heartbeat 经 `RuntimeHostApplication::heartbeat` 更新 `last_heartbeat_at`/online 并回 `heartbeat_ack{fence,received_at,interval=5s,resync_required}`，cursor epoch 不匹配强制 resync；inventory/receipt/observation 做帧校验并交给可选 P08b-3 回调（当前 composition 未接持久化回调，只有传输校验）。注册认证失败映射稳定 gRPC `PERMISSION_DENIED`/`UNAUTHENTICATED`，注册后业务失败映射 `RuntimeToHost.failure` 的稳定 Error。服务端只由 Runtime composition 注册在 owner mTLS `grpc_listen`，替换 generated `HostBridge` 占位，不占用 `bridge_listen`。配置 only Runtime 允许 `hosts[]`；PG `HostRegistration` 持久化接线与真实 Host 二进制、PG 证据留 P08b-2c，当前 composition 用进程内 allowlist/registration/connection store（重启不保留，显式未完成）。
 
+**P08b-3（部分实现）**：Runtime UoW 新增 `host_commands()`（默认 fail-closed），PG 实现
+`host_commands` outbox 与 `host_observations` inbox（Runtime schema v14）；P05 的
+`CreateInstance`（带 host）与 `SetDesiredState` 在同一事务内写确定性 `hc-<payload sha256>`
+命令快照（kind/generation/desired version/package sha/launch profile/payload hash），重复插入
+同 payload 幂等、同 id 不同 payload CONFLICT；受管实例与外部实例均生成一次性 bootstrap，
+Runtime 只存 SHA-256、明文仅出现在部署方 CreateInstance 响应。**未完成**：HostBridge server
+从 outbox 下发 apply/stop/drain、receipt/observation 帧写回 PG、重连重放/resync、restart/delete
+命令与 Host 凭据目录自动预置；因此 command 的发送/确认仍没有端到端证据。
+
 ## P09/P10 目标 Storage/Scheduler 应用与端口（未实现）
 
 P09a/P09b：Runtime application 提供 storage 应用（scope 解析、成员/禁用 gate、Get/Set/Delete/CAS、TTL、幂等/收据、配额预留）；`NamespaceRepository` 扩 resolve/get/create_shared/set_members/disable/get_entry/put/erase/quota_admit/receipt_insert，`RuntimeUnitOfWork` 在 P06/P07 访问器后追加 `namespaces()`。共享 namespace 写按固定锁序 namespace 行→成员/版本→namespace 配额→installation 聚合配额→key 行；审计复用 P07 共享 `audit_entries`（resource=namespace/key）。**P09a 阶段 2（已实现）**：PG 落 `namespaces/namespace_members/namespace_values/namespace_quota_counters` 四表加 `namespace_receipt_results` typed replay 载荷表；Runtime schema v11（真 PG16.4 实测 descriptor=09c7176f032043f3bc7ba18f8c87b281、relation_count=134）；私有 namespace 以稳定实例 id 惰性建行，值读写/CAS/删除用条件写并按 DB UTC 惰性清理过期、同事务调整 namespace 与 installation 聚合计数；配额准入按固定锁序条件更新；storage/管理写收据复用 `command_receipts`，同键同 fingerprint 重放返回原快照且不续 TTL，容量按实例/安装计数且不淘汰有效行；Runtime owner RPC 适配 unary storage 与共享 namespace 管理面（application 注入才启用，否则 CAPABILITY_NOT_SUPPORTED）。**P09b（已实现）**：PluginBridge 消费 `PluginToCore.host_request` 的 storage Get/Set/Delete/CompareAndSet 帧并回复 `CoreToPlugin.host_response`；私有 namespace 由已认证实例服务端派生，共享 namespace 由注册的 installation 解析（插件不得自报 namespace id），Set/Delete/CAS 的 condition 由帧携带；bridge 以 P06 会话的 ConnectionAuthorization 版本/有效期 + 注册 profile 的 `storage.namespace` 生成在线授权快照，`RuntimeStorageApplication` 仍执行成员/禁用/配额/收据门禁并把失败映射为稳定 `Error`；unary storage 仅内部注入，不对外暴露。

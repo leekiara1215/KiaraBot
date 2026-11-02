@@ -1179,6 +1179,14 @@ probe_listen/grpc_listen/tls），并额外要求 Host-only 的 `host` 对象（
   计算；observation/inventory 的持久投影与 Host 命令 outbox 仍属 P08b-3。**未完成**：PG
   `host_connections` 持久化尚未接到该 server（当前 composition 用进程内 store，Runtime 重启
   后注册/代次不保留），真实 Host 二进制/PG 端到端验收属 P08b-2c；不得据此宣称 T11b 通过。
+- **P08b-3 受管命令/凭据（部分实现）**：带 `host_id` 的受管实例创建/desired 状态变更会在
+  Runtime 同一 UoW 写 `host_commands` outbox（确定性 command_id、generation/desired/package/
+  profile/payload 快照）；只存 SHA-256 的受管 bootstrap 与外部自管共用 `bridge_credentials`，
+  明文仅出现在 CreateInstance 响应，部署方须按 P08a 约定写入 Host
+  `credential_directory/<instance_id>.bootstrap`（0600、属主 Host 用户）并随部署回收/轮换。
+  **未完成**：HostBridge server 尚未实际下发命令和持久化 receipt/observation（当前帧校验后
+  只接 transport-only 回调），未确认命令保持 Pending/Unknown、不伪造 stopped；重连重放和
+  `Resync` 去重无端到端证据，P08b-3 未验收。
 - 当前验证范围：P08a 用 in-process fake Runtime bridge 与 fake supervisor 覆盖注册/fence/心跳/
   resync/命令回执/观察/恢复；真实 Runtime Bridge 监听（P06a-2）与 Host 受管配置的端到端验收
   尚未执行，不能据此宣称 T11b 或真实部署通过。
