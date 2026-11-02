@@ -41,6 +41,9 @@ struct DatabaseMaterial {
 struct ControlApiMaterial {
   std::string listen;
   std::string identity_endpoint;
+  // P12c: optional Runtime owner endpoint for Action result queries. Absent means those REST
+  // routes answer UNAVAILABLE instead of pretending a successful empty result.
+  std::optional<std::string> runtime_endpoint;
 };
 // Trusted file references only; mature crypto loaders own secret allocation and key validation.
 struct IdentitySymmetricKeyFile {

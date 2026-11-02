@@ -20,6 +20,7 @@
 #include <openssl/rand.h>
 #include <openssl/x509.h>
 
+#include "kiarabot/control/target/owner_clients.hpp"
 #include "kiarabot/core/runtime/platform/target_codec.hpp"
 #include "kiarabot/v1/identity.grpc.pb.h"
 
@@ -454,7 +455,8 @@ wire::SnapshotPage session_page(const AuthHttpRequest& request, std::size_t sepa
 
 class IdentityAuthClient::Impl {
 public:
-  Impl(const std::string& endpoint, const core::platform::TlsMaterial& tls) {
+  Impl(const std::string& endpoint, const std::string& runtime_endpoint,
+       const core::platform::TlsMaterial& tls) {
     grpc::SslCredentialsOptions options;
     options.pem_root_certs = tls.ca;
     options.pem_cert_chain = tls.certificate;
@@ -479,6 +481,7 @@ public:
       throw InvalidUpstream{};
     }
     fingerprint_.assign(reinterpret_cast<const char*>(digest.data()), length);
+    owners_ = std::make_unique<OwnerClients>(endpoint, runtime_endpoint, tls);
   }
   template <typename Request, typename Response, typename Method>
   void call(Method method, Request& request, Response& response,
@@ -552,6 +555,13 @@ public:
           std::chrono::duration_cast<core::target::TimePoint::duration>(now.time_since_epoch())}));
       const auto separator = request.target.find('?');
       const auto path = request.target.substr(0, separator);
+      // P12c owner-backed REST/health surface: only forwarding and stable mapping here; every
+      // permission/version decision remains with Identity and the owning service.
+      if (owners_) {
+        if (auto owner = owners_->handle(request); owner && owner->status != 0) {
+          return *owner;
+        }
+      }
       const bool login = path == "/api/v1/auth/login";
       const bool refresh = path == "/api/v1/auth/refresh";
       const bool me = path == "/api/v1/auth/me";
@@ -753,13 +763,15 @@ public:
 private:
   std::unique_ptr<wire::IdentityService::Stub> stub_;
   std::string fingerprint_;
+  std::unique_ptr<OwnerClients> owners_;
   std::mutex mutex_;
   std::set<grpc::ClientContext*> active_;
   bool cancelled_ = false;
 };
 IdentityAuthClient::IdentityAuthClient(const std::string& endpoint,
+                                       const std::string& runtime_endpoint,
                                        const core::platform::TlsMaterial& tls)
-    : impl_(std::make_unique<Impl>(endpoint, tls)) {}
+    : impl_(std::make_unique<Impl>(endpoint, runtime_endpoint, tls)) {}
 IdentityAuthClient::~IdentityAuthClient() {
   impl_->cancel();
 }

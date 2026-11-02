@@ -29,7 +29,8 @@ struct AuthHttpResponse {
 // Each HTTP operation has a total two-second upstream budget; cancel prevents new calls.
 class IdentityAuthClient {
 public:
-  IdentityAuthClient(const std::string& endpoint, const core::platform::TlsMaterial& tls);
+  IdentityAuthClient(const std::string& endpoint, const std::string& runtime_endpoint,
+                     const core::platform::TlsMaterial& tls);
   ~IdentityAuthClient();
   IdentityAuthClient(const IdentityAuthClient&) = delete;
   IdentityAuthClient& operator=(const IdentityAuthClient&) = delete;

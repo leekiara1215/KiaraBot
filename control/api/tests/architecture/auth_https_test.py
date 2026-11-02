@@ -16,6 +16,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import urllib.parse
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / 'core/tests/platform'))
 from service_config_test import certificates
@@ -117,6 +118,26 @@ def main(control, fixture):
             assert refreshed[0] == 200, refreshed
             assert request('POST', '/api/v1/auth/refresh', {'refresh_token': tokens['refresh_token']},
                            {'Content-Type': 'application/json', 'Idempotency-Key': KEY})[1] == refreshed[1]
+            # P12c: health is local; log/audit and owner-backed reads never fabricate success when
+            # no authoritative source is registered in this minimal fixture configuration.
+            status, body, _ = request('GET', '/health/live')
+            assert status == 200 and body == {'state': 'HEALTHY'}, (status, body)
+            status, body, _ = request('GET', '/api/v1/logs',
+                                      headers={'Authorization': 'Bearer ' + ACCESS})
+            assert status == 503 and body['code'] == 'UPSTREAM_UNAVAILABLE', (status, body)
+            status, body, _ = request('GET', '/api/v1/audit',
+                                      headers={'Authorization': 'Bearer ' + ACCESS})
+            assert status == 503 and body['code'] == 'UPSTREAM_UNAVAILABLE', (status, body)
+            scope = urllib.parse.quote(json.dumps({'resources': [
+                {'kind': 'RESOURCE_ACCOUNT', 'id': SESSION}]}))
+            status, body, _ = request(
+                'GET', '/api/v1/actions/' + SESSION + '?scope=' + scope,
+                headers={'Authorization': 'Bearer ' + ACCESS})
+            # The fixture Identity does not grant action.inspect: either the owner path denies
+            # (403 PERMISSION_DENIED) or an unconfigured Runtime answers UNAVAILABLE; both are
+            # stable and neither fabricates an action result.
+            assert status in (403, 503), (status, body)
+            assert body['code'] in ('PERMISSION_DENIED', 'UPSTREAM_UNAVAILABLE'), body
             auth = {'Authorization': 'Bearer ' + ACCESS}
             current = request('GET', '/api/v1/auth/me', headers=auth)
             assert current[0] == 200, current

@@ -268,8 +268,9 @@ bool endpoint_valid(const std::string& endpoint) {
          });
 }
 bool control_api_shape(const nlohmann::json& value) {
-  return exact_keys(value, {"listen", "identity_endpoint"}) && value["listen"].is_string() &&
-         value["identity_endpoint"].is_string() &&
+  return (exact_keys(value, {"listen", "identity_endpoint"}) ||
+          exact_keys(value, {"listen", "identity_endpoint", "runtime_endpoint"})) &&
+         value["listen"].is_string() && value["identity_endpoint"].is_string() &&
          address_valid(value["listen"].get<std::string>(), false) &&
          endpoint_valid(value["identity_endpoint"].get<std::string>());
 }
@@ -625,9 +626,14 @@ ConfigResult load_service_config(const std::string& path, target::Service servic
       config.bridge_listen = bridge_listen;
     }
     if (document.contains("control_api")) {
-      config.control_api =
-          ControlApiMaterial{document["control_api"]["listen"].get<std::string>(),
-                             document["control_api"]["identity_endpoint"].get<std::string>()};
+      ControlApiMaterial control_material{
+          document["control_api"]["listen"].get<std::string>(),
+          document["control_api"]["identity_endpoint"].get<std::string>(), std::nullopt};
+      if (document["control_api"].contains("runtime_endpoint")) {
+        control_material.runtime_endpoint =
+            document["control_api"]["runtime_endpoint"].get<std::string>();
+      }
+      config.control_api = std::move(control_material);
     }
     if (document.contains("model_security")) {
       if (service != target::Service::Model || !model_security_shape(document["model_security"])) {
