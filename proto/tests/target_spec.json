@@ -189,7 +189,7 @@
       "idempotency": "none",
       "deadline_ms": 2000,
       "server_streaming": false,
-      "status": "not_implemented",
+      "status": "implemented",
       "max_deadline_ms": 5000,
       "requires_idempotency_key": false
     },

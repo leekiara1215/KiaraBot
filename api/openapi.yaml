@@ -2799,16 +2799,18 @@ paths:
       x-target-response-schema: '#/components/schemas/TargetIdentityListPrincipalsResponse'
       x-target-contract-status: not_implemented
       x-permission: identity.principal.read
-      x-contract-status: not_implemented
+      x-contract-status: implemented
       summary: List human principals visible to the caller
       description: >-
-        Target P12 read-only principal directory. Only human principals are listed; service, Host
-        and plugin-instance identities are excluded. The caller must hold identity.principal.read
-        and the page is filtered by its currently granted resource scope. Results are an immutable
-        snapshot with the Identity checked_at/version facts; deleted/purged principals are never
-        returned. The projection is display-only and never includes credentials or assignments.
-        v1 Control wiring is not_implemented; until then this path returns UNAVAILABLE rather than
-        an empty success page.
+        P12l implemented read-only principal directory. Only human principals are listed; service,
+        Host and plugin-instance identities are excluded. The caller (Control platform peer) must
+        hold identity.principal.read and the page is filtered by currently granted resource scope
+        (Control catalog scope = directory-wide; other exact resources restrict principals/roles).
+        Results use stable principal-id keyset pagination with identity checked_at/version facts;
+        deleted/purged principals are never returned. The projection is display-only and never
+        includes credentials or assignments. The OpenAPI x-target-contract-status marker stays
+        not_implemented per the target_api auth-projection rule; target execution scope and evidence
+        are registered as operations.listPrincipals + Identity principal-directory messages.
       parameters:
       - $ref: '#/components/parameters/PageSize'
       - $ref: '#/components/parameters/PageToken'

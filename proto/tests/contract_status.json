@@ -5793,7 +5793,8 @@
           "operations.cancelTask": "implemented",
           "operations.getActionPolicy": "implemented",
           "operations.updateActionPolicy": "implemented",
-          "operations.getOccurrence": "implemented"
+          "operations.getOccurrence": "implemented",
+          "operations.listPrincipals": "implemented"
         },
         "proto_messages": {
           "IdentityAuditFilter": "implemented",
@@ -5908,7 +5909,10 @@
           "RuntimeGetActionPolicyRequest": "implemented",
           "RuntimeGetActionPolicyResponse": "implemented",
           "RuntimeUpdateActionPolicyRequest": "implemented",
-          "RuntimeUpdateActionPolicyResponse": "implemented"
+          "RuntimeUpdateActionPolicyResponse": "implemented",
+          "IdentityPrincipalSummary": "implemented",
+          "IdentityListPrincipalsRequest": "implemented",
+          "IdentityListPrincipalsResponse": "implemented"
         },
         "proto_fields": {
           "IdentityAuditFilter.scope": "implemented",
@@ -6410,7 +6414,19 @@
           "RuntimeUpdateActionPolicyRequest.context": "implemented",
           "RuntimeUpdateActionPolicyRequest.policy": "implemented",
           "RuntimeUpdateActionPolicyRequest.expected_version": "implemented",
-          "RuntimeUpdateActionPolicyResponse.policy": "implemented"
+          "RuntimeUpdateActionPolicyResponse.policy": "implemented",
+          "IdentityPrincipalSummary.principal_id": "implemented",
+          "IdentityPrincipalSummary.binding": "implemented",
+          "IdentityPrincipalSummary.principal_kind": "implemented",
+          "IdentityPrincipalSummary.version": "implemented",
+          "IdentityPrincipalSummary.state": "implemented",
+          "IdentityPrincipalSummary.roles": "implemented",
+          "IdentityListPrincipalsRequest.context": "implemented",
+          "IdentityListPrincipalsRequest.page": "implemented",
+          "IdentityListPrincipalsRequest.state_filter": "implemented",
+          "IdentityListPrincipalsResponse.principals": "implemented",
+          "IdentityListPrincipalsResponse.page": "implemented",
+          "IdentityListPrincipalsResponse.checked_at": "implemented"
         },
         "bridge_methods": {
           "AdapterBridge.Connect": "implemented",
@@ -11361,6 +11377,101 @@
           "control/api/src/target/owner_gateway.cpp",
           "tests/architecture/p10_scheduler_rest.py",
           "control/api/tests/owner_gateway_test.cpp"
+        ],
+        "proto_messages:IdentityPrincipalSummary": [
+          "core/src/application/target/identity_principal_directory_application.cpp",
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/identity_rpc_test.cpp",
+          "infrastructure/postgres/tests/identity_application_test.cpp"
+        ],
+        "proto_messages:IdentityListPrincipalsRequest": [
+          "core/src/application/target/identity_principal_directory_application.cpp",
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/identity_rpc_test.cpp",
+          "infrastructure/postgres/tests/identity_application_test.cpp"
+        ],
+        "proto_messages:IdentityListPrincipalsResponse": [
+          "core/src/application/target/identity_principal_directory_application.cpp",
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/identity_rpc_test.cpp",
+          "infrastructure/postgres/tests/identity_application_test.cpp"
+        ],
+        "proto_fields:IdentityPrincipalSummary.principal_id": [
+          "core/src/application/target/identity_principal_directory_application.cpp",
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/identity_rpc_test.cpp",
+          "infrastructure/postgres/tests/identity_application_test.cpp"
+        ],
+        "proto_fields:IdentityPrincipalSummary.binding": [
+          "core/src/application/target/identity_principal_directory_application.cpp",
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/identity_rpc_test.cpp",
+          "infrastructure/postgres/tests/identity_application_test.cpp"
+        ],
+        "proto_fields:IdentityPrincipalSummary.principal_kind": [
+          "core/src/application/target/identity_principal_directory_application.cpp",
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/identity_rpc_test.cpp",
+          "infrastructure/postgres/tests/identity_application_test.cpp"
+        ],
+        "proto_fields:IdentityPrincipalSummary.version": [
+          "core/src/application/target/identity_principal_directory_application.cpp",
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/identity_rpc_test.cpp",
+          "infrastructure/postgres/tests/identity_application_test.cpp"
+        ],
+        "proto_fields:IdentityPrincipalSummary.state": [
+          "core/src/application/target/identity_principal_directory_application.cpp",
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/identity_rpc_test.cpp",
+          "infrastructure/postgres/tests/identity_application_test.cpp"
+        ],
+        "proto_fields:IdentityPrincipalSummary.roles": [
+          "core/src/application/target/identity_principal_directory_application.cpp",
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/identity_rpc_test.cpp",
+          "infrastructure/postgres/tests/identity_application_test.cpp"
+        ],
+        "proto_fields:IdentityListPrincipalsRequest.context": [
+          "core/src/application/target/identity_principal_directory_application.cpp",
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/identity_rpc_test.cpp",
+          "infrastructure/postgres/tests/identity_application_test.cpp"
+        ],
+        "proto_fields:IdentityListPrincipalsRequest.page": [
+          "core/src/application/target/identity_principal_directory_application.cpp",
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/identity_rpc_test.cpp",
+          "infrastructure/postgres/tests/identity_application_test.cpp"
+        ],
+        "proto_fields:IdentityListPrincipalsRequest.state_filter": [
+          "core/src/application/target/identity_principal_directory_application.cpp",
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/identity_rpc_test.cpp",
+          "infrastructure/postgres/tests/identity_application_test.cpp"
+        ],
+        "proto_fields:IdentityListPrincipalsResponse.principals": [
+          "core/src/application/target/identity_principal_directory_application.cpp",
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/identity_rpc_test.cpp",
+          "infrastructure/postgres/tests/identity_application_test.cpp"
+        ],
+        "proto_fields:IdentityListPrincipalsResponse.page": [
+          "core/src/application/target/identity_principal_directory_application.cpp",
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/identity_rpc_test.cpp",
+          "infrastructure/postgres/tests/identity_application_test.cpp"
+        ],
+        "proto_fields:IdentityListPrincipalsResponse.checked_at": [
+          "core/src/application/target/identity_principal_directory_application.cpp",
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/identity_rpc_test.cpp",
+          "infrastructure/postgres/tests/identity_application_test.cpp"
+        ],
+        "operations:operations.listPrincipals": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/src/application/target/identity_principal_directory_application.cpp",
+          "core/tests/platform/identity_rpc_test.cpp"
         ]
       }
     }

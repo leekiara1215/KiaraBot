@@ -840,6 +840,24 @@ class ScopeTest(unittest.TestCase):
             ('proto_messages', 'RuntimeUpdateActionPolicyRequest'),
             ('proto_messages', 'RuntimeUpdateActionPolicyResponse')
         }
+        expected |= {
+            ('proto_messages', 'IdentityPrincipalSummary'),
+            ('proto_messages', 'IdentityListPrincipalsRequest'),
+            ('proto_messages', 'IdentityListPrincipalsResponse'),
+            ('proto_fields', 'IdentityPrincipalSummary.principal_id'),
+            ('proto_fields', 'IdentityPrincipalSummary.binding'),
+            ('proto_fields', 'IdentityPrincipalSummary.principal_kind'),
+            ('proto_fields', 'IdentityPrincipalSummary.version'),
+            ('proto_fields', 'IdentityPrincipalSummary.state'),
+            ('proto_fields', 'IdentityPrincipalSummary.roles'),
+            ('proto_fields', 'IdentityListPrincipalsRequest.context'),
+            ('proto_fields', 'IdentityListPrincipalsRequest.page'),
+            ('proto_fields', 'IdentityListPrincipalsRequest.state_filter'),
+            ('proto_fields', 'IdentityListPrincipalsResponse.principals'),
+            ('proto_fields', 'IdentityListPrincipalsResponse.page'),
+            ('proto_fields', 'IdentityListPrincipalsResponse.checked_at'),
+            ('operations', 'operations.listPrincipals')
+        }
         self.assertEqual(available, expected)
         self.assertEqual(effective_status(registry, 'reference', 'action_payloads', 'ActionEnvelope.send_message'), 'implemented')
         self.assertEqual(effective_status(registry, 'target', 'action_payloads', 'ActionEnvelope.send_message'), 'implemented')
