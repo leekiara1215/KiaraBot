@@ -36,6 +36,12 @@ def configure():
     token = os.environ['ONEBOT_ACCESS_TOKEN']
     if not token:
         raise AdapterError(common.INVALID_ARGUMENT)
+    # Runtime account ids are canonical UUIDs, while the OneBot bot key is the platform self_id
+    # (a decimal QQ id). Deployments with a UUID ACCOUNT_ID must provide the platform self id
+    # separately; otherwise NoneBot's get_bot lookup can never find the connected bot.
+    platform_self_id = os.environ.get('ONEBOT_SELF_ID') or config.account_id
+    if not platform_self_id or len(platform_self_id) > 128:
+        raise AdapterError(common.INVALID_ARGUMENT)
     # Disable NoneBot's INFO event descriptions; never log platform payloads.
     nonebot.init(driver='~websockets', onebot_ws_urls=[os.environ['ONEBOT_WS_URL']],
                  onebot_access_token=token, log_level='WARNING')
@@ -56,7 +62,7 @@ def configure():
     async def call_platform(api, params):
         from nonebot.adapters.onebot.v11.exception import ActionFailed
         try:
-            bot = nonebot.get_bot(config.account_id)
+            bot = nonebot.get_bot(platform_self_id)
         except KeyError:
             raise AdapterError(common.UPSTREAM_UNAVAILABLE) from None
         try:
