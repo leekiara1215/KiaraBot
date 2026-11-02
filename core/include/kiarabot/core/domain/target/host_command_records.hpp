@@ -1,5 +1,6 @@
 #pragma once
 
+#include <chrono>
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -20,6 +21,7 @@ struct HostCommandOutboxRecord {
   std::string command_id;
   std::string host_id;
   std::string instance_id;
+  std::string installation_id;
   HostCommandKind kind = HostCommandKind::ApplyDesiredProcess;
   std::uint64_t execution_generation = 0;
   std::uint64_t desired_version = 0;
@@ -55,6 +57,12 @@ struct HostObservationRecord {
   std::string command_id;
   TimePoint observed_at;
 };
+
+// P08b-3a maintenance policy: a command dispatched for longer than this without a receipt becomes
+// UNKNOWN (never stopped); receipted rows keep seven days, unresolved rows thirty days.
+inline constexpr auto kHostCommandDispatchTimeout = std::chrono::seconds{30};
+inline constexpr auto kHostCommandResolvedRetention = std::chrono::hours{24 * 7};
+inline constexpr auto kHostCommandUnresolvedRetention = std::chrono::hours{24 * 30};
 
 struct PersistedHostCommand {
   HostCommandOutboxRecord record;

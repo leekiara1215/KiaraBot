@@ -140,8 +140,9 @@ target::HostObservationRecord read_observation(const pqxx::row& row) {
   return record;
 }
 constexpr std::string_view kColumns =
-    "command_id,host_id,instance_id,kind,execution_generation,desired_version,desired_state,"
-    "package_sha256,launch_profile,payload_sha256,state,connection_generation,runtime_epoch,"
+    "command_id,host_id,instance_id,installation_id,kind,execution_generation,desired_version,"
+    "desired_state,package_sha256,launch_profile,payload_sha256,state,connection_generation,"
+    "runtime_epoch,"
     "created_at,updated_at,dispatched_at,receipted_at,receipt_persisted,receipt_outcome,"
     "receipt_process_marker";
 } // namespace
@@ -152,9 +153,10 @@ HostCommandOutbox::insert(const target::HostCommandOutboxRecord& record) {
       sql_,
       [&](pqxx::transaction_base& transaction) -> target::Outcome<target::PersistedHostCommand> {
         if (!valid_id(record.command_id) || !valid_id(record.host_id) ||
-            !valid_id(record.instance_id) || !hex_digest(record.payload_sha256) ||
-            !valid_state(record.state) || record.execution_generation == 0 ||
-            !valid_text(record.package_sha256) || !valid_text(record.launch_profile)) {
+            !valid_id(record.instance_id) || !valid_id(record.installation_id) ||
+            !hex_digest(record.payload_sha256) || !valid_state(record.state) ||
+            record.execution_generation == 0 || !valid_text(record.package_sha256) ||
+            !valid_text(record.launch_profile)) {
           return invalid();
         }
         for (const auto& argument : record.arguments) {
@@ -172,10 +174,11 @@ HostCommandOutbox::insert(const target::HostCommandOutboxRecord& record) {
         const auto inserted = transaction.exec(
             "INSERT INTO kiarabot.host_commands(" + std::string(kColumns) +
                 ") VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,"
-                "$18,$19,$20) ON CONFLICT(command_id) DO NOTHING RETURNING command_id",
+                "$18,$19,$20,$21) ON CONFLICT(command_id) DO NOTHING RETURNING command_id",
             pqxx::params{record.command_id,
                          record.host_id,
                          record.instance_id,
+                         record.installation_id,
                          static_cast<int>(record.kind),
                          record.execution_generation,
                          record.desired_version,
@@ -358,6 +361,46 @@ HostCommandOutbox::observations(const std::string& host_id, std::uint64_t connec
           result.push_back(read_observation(row));
         }
         return result;
+      });
+}
+
+target::Outcome<std::size_t> HostCommandOutbox::expire_dispatched(target::TimePoint now,
+                                                                  std::chrono::seconds timeout) {
+  return query<std::size_t>(
+      sql_, [&](pqxx::transaction_base& transaction) -> target::Outcome<std::size_t> {
+        if (timeout.count() <= 0) {
+          return invalid();
+        }
+        const auto cutoff = ns(now) - static_cast<std::int64_t>(timeout.count()) * 1000000000LL;
+        const auto updated =
+            transaction.exec("UPDATE kiarabot.host_commands SET state=3,updated_at=$2"
+                             " WHERE state=1 AND dispatched_at<=$1",
+                             pqxx::params{cutoff, ns(now)});
+        return static_cast<std::size_t>(updated.affected_rows());
+      });
+}
+
+target::Outcome<std::size_t> HostCommandOutbox::prune(target::TimePoint now,
+                                                      std::chrono::seconds resolved_retention,
+                                                      std::chrono::seconds unresolved_retention,
+                                                      std::size_t limit) {
+  return query<std::size_t>(
+      sql_, [&](pqxx::transaction_base& transaction) -> target::Outcome<std::size_t> {
+        if (resolved_retention.count() <= 0 || unresolved_retention.count() <= 0 || limit == 0 ||
+            limit > 1000) {
+          return invalid();
+        }
+        const auto resolved_cutoff =
+            ns(now) - static_cast<std::int64_t>(resolved_retention.count()) * 1000000000LL;
+        const auto unresolved_cutoff =
+            ns(now) - static_cast<std::int64_t>(unresolved_retention.count()) * 1000000000LL;
+        const auto removed = transaction.exec(
+            "DELETE FROM kiarabot.host_commands WHERE command_id IN ("
+            " SELECT command_id FROM kiarabot.host_commands"
+            " WHERE (state=2 AND receipted_at<=$1) OR (state=3 AND updated_at<=$2)"
+            " ORDER BY updated_at LIMIT $3)",
+            pqxx::params{resolved_cutoff, unresolved_cutoff, static_cast<int>(limit)});
+        return static_cast<std::size_t>(removed.affected_rows());
       });
 }
 

@@ -419,8 +419,37 @@ compose_runtime_service(const platform::ProcessConfig& config) {
       }
       // P08 HostBridge is an owner mTLS internal service, never registered on bridge_listen.
       // The deployment certificate allowlist is consumed only here; empty means every Host is
-      // rejected (fail closed). P08b-2c replaces the in-memory store with the PG port.
-      auto host_bridge = platform::make_deployment_host_bridge(*state->ids, host_allowlist);
+      // rejected (fail closed). Persistence callbacks open short owner UoWs; the transport never
+      // commits Runtime transactions itself.
+      platform::HostBridgePersistence host_persistence;
+      if (application != nullptr) {
+        host_persistence.pending = [application](const std::string& host_id,
+                                                 std::uint64_t generation, std::size_t limit) {
+          return application->host_pending_commands(host_id, generation, limit);
+        };
+        host_persistence.dispatched = [application](const std::string& command_id,
+                                                    std::uint64_t generation,
+                                                    std::string_view runtime_epoch) {
+          return application->host_command_dispatched(command_id, generation, runtime_epoch);
+        };
+        host_persistence.receipt = [application](const std::string& command_id,
+                                                 std::uint64_t generation, bool persisted,
+                                                 std::optional<target::ExecutionOutcome> outcome,
+                                                 std::optional<std::string> marker) {
+          return application->host_command_receipt(command_id, generation, persisted, outcome,
+                                                   std::move(marker));
+        };
+        host_persistence.observation =
+            [application](const target::HostObservationRecord& observation) {
+              auto recorded = application->host_observation(observation);
+              if (const auto* failure = std::get_if<target::Failure>(&recorded)) {
+                return target::Status{*failure};
+              }
+              return target::Status{std::monostate{}};
+            };
+      }
+      auto host_bridge = platform::make_deployment_host_bridge(*state->ids, host_allowlist, {},
+                                                               std::move(host_persistence));
       if (const auto* failure = std::get_if<target::Failure>(&host_bridge)) {
         return *failure;
       }

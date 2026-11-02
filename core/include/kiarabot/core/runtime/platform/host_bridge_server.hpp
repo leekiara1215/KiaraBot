@@ -9,6 +9,7 @@
 #include <grpcpp/grpcpp.h>
 
 #include "kiarabot/core/application/target/runtime_host_application.hpp"
+#include "kiarabot/core/domain/target/host_command_records.hpp"
 #include "kiarabot/core/ports/target/runtime_ids.hpp"
 #include "kiarabot/v1/host.grpc.pb.h"
 
@@ -30,11 +31,27 @@ struct HostBridgeCallbacks {
   std::function<target::Status(const v1::HostWatchExecutionsResponse&)> observation;
 };
 
+// Durable Runtime-side effects of a Host stream. The application implementation opens its own
+// short Runtime UoWs; the transport never commits transactions itself. Null callbacks mean the
+// listener is transport-only (used by conformance tests before PG composition), and dispatch then
+// sends nothing rather than pretending a command was delivered.
+struct HostBridgePersistence {
+  std::function<target::Outcome<std::vector<target::HostCommandOutboxRecord>>(
+      const std::string&, std::uint64_t, std::size_t)>
+      pending;
+  std::function<target::Status(const std::string&, std::uint64_t, std::string_view)> dispatched;
+  std::function<target::Status(const std::string&, std::uint64_t, bool,
+                               std::optional<target::ExecutionOutcome>, std::optional<std::string>)>
+      receipt;
+  std::function<target::Status(const target::HostObservationRecord&)> observation;
+};
+
 struct HostBridgeServerDependencies {
   target::HostRegistrationPort& registration;
   target::HostClockPort& clock;
   HostPeerCertificateResolver peer_certificate;
   HostBridgeCallbacks callbacks;
+  HostBridgePersistence persistence;
 };
 
 // Synchronous bidirectional HostBridge server for the Runtime internal mTLS listener. The first
@@ -50,9 +67,8 @@ make_host_bridge(HostBridgeServerDependencies dependencies);
 // the runtime epoch/connection generation come from the process id port. Registration state is
 // therefore NOT durable across Runtime restart; P08b-2c replaces this store with the PG
 // HostRegistrationPort implementation.
-target::Outcome<std::unique_ptr<v1::HostBridge::Service>>
-make_deployment_host_bridge(target::RuntimeIdPort& ids,
-                            std::vector<target::HostCertificateBinding> allowlist,
-                            HostBridgeCallbacks callbacks = {});
+target::Outcome<std::unique_ptr<v1::HostBridge::Service>> make_deployment_host_bridge(
+    target::RuntimeIdPort& ids, std::vector<target::HostCertificateBinding> allowlist,
+    HostBridgeCallbacks callbacks = {}, HostBridgePersistence persistence = {});
 
 } // namespace kiarabot::core::platform

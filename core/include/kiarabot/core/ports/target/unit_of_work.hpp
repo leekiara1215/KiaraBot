@@ -68,6 +68,13 @@ public:
                                                            std::size_t) override {
     return rejected(ErrorCode::UpstreamUnavailable);
   }
+  Outcome<std::size_t> expire_dispatched(TimePoint, std::chrono::seconds) override {
+    return rejected(ErrorCode::UpstreamUnavailable);
+  }
+  Outcome<std::size_t> prune(TimePoint, std::chrono::seconds, std::chrono::seconds,
+                             std::size_t) override {
+    return rejected(ErrorCode::UpstreamUnavailable);
+  }
 };
 inline HostCommandOutbox& unsupported_host_commands() {
   static UnsupportedHostCommandOutbox instance;

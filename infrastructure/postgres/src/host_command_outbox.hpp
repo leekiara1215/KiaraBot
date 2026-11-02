@@ -37,6 +37,12 @@ public:
   core::target::Outcome<std::vector<core::target::HostObservationRecord>>
   observations(const std::string& host_id, std::uint64_t connection_generation,
                std::size_t limit) override;
+  core::target::Outcome<std::size_t> expire_dispatched(core::target::TimePoint now,
+                                                       std::chrono::seconds timeout) override;
+  core::target::Outcome<std::size_t> prune(core::target::TimePoint now,
+                                           std::chrono::seconds resolved_retention,
+                                           std::chrono::seconds unresolved_retention,
+                                           std::size_t limit) override;
 
 private:
   SqlWork& sql_;

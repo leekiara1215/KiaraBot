@@ -145,7 +145,8 @@ private:
 };
 
 struct Fixture {
-  explicit Fixture(std::vector<t::HostCertificateBinding> allowlist, std::string fingerprint)
+  explicit Fixture(std::vector<t::HostCertificateBinding> allowlist, std::string fingerprint,
+                   platform::HostBridgePersistence persistence = {})
       : store(std::move(allowlist)), fingerprint_(std::move(fingerprint)) {
     platform::HostBridgeServerDependencies dependencies{
         store, clock,
@@ -159,7 +160,7 @@ struct Fixture {
           }
           return fingerprint_;
         },
-        platform::HostBridgeCallbacks{}};
+        platform::HostBridgeCallbacks{}, std::move(persistence)};
     auto service = platform::make_host_bridge(std::move(dependencies));
     require(std::holds_alternative<std::unique_ptr<v1::HostBridge::Service>>(service),
             "server construction");
@@ -268,7 +269,12 @@ void test_registration_and_frames() {
   auto* execution = observation.mutable_observation()->mutable_execution();
   execution->set_host_id("host-a");
   execution->set_instance_id("instance-1");
+  execution->set_execution_generation(1);
   execution->mutable_observed_at()->CopyFrom(google::protobuf::util::TimeUtil::GetCurrentTime());
+  auto* cursor = observation.mutable_observation()->mutable_cursor();
+  cursor->set_source_service("host");
+  cursor->set_epoch(fence.runtime_epoch());
+  cursor->set_sequence(1);
   require(stream->Write(observation), "write observation");
   require(stream->Write(heartbeat), "write trailing heartbeat");
   const auto trailing = read_frame(stream.get());
@@ -325,6 +331,147 @@ void test_peer_certificate_binding() {
           "empty allowlist status");
 }
 
+void test_dispatch_receipt_observation_and_replay() {
+  int dispatch_marks = 0;
+  int receipts = 0;
+  int observations = 0;
+  std::string last_command;
+  std::uint64_t last_mark_generation = 0;
+  t::HostCommandOutboxRecord command;
+  command.command_id = "hc-dispatch";
+  command.host_id = "host-a";
+  command.instance_id = "instance-1";
+  command.installation_id = "installation-1";
+  command.kind = t::HostCommandKind::ApplyDesiredProcess;
+  command.execution_generation = 7;
+  command.desired_version = 3;
+  command.desired_state = t::DesiredState::Running;
+  command.package_sha256 = std::string(64, 'a');
+  command.payload_sha256 = std::string(64, 'b');
+  command.state = t::HostCommandDeliveryState::Pending;
+  platform::HostBridgePersistence persistence;
+  persistence.pending = [&](const std::string& host, std::uint64_t,
+                            std::size_t) -> t::Outcome<std::vector<t::HostCommandOutboxRecord>> {
+    if (host != "host-a") {
+      return t::Failure{
+          t::ErrorCode::NotFound, t::Acceptance::NotAccepted, t::Recovery::ReadCurrent, {}, {}};
+    }
+    if (receipts > 0) {
+      return std::vector<t::HostCommandOutboxRecord>{};
+    }
+    return std::vector<t::HostCommandOutboxRecord>{command};
+  };
+  persistence.dispatched = [&](const std::string& command_id, std::uint64_t generation,
+                               std::string_view) {
+    ++dispatch_marks;
+    last_command = command_id;
+    last_mark_generation = generation;
+    return t::Status{std::monostate{}};
+  };
+  persistence.receipt = [&](const std::string& command_id, std::uint64_t, bool persisted,
+                            std::optional<t::ExecutionOutcome>,
+                            std::optional<std::string>) -> t::Status {
+    ++receipts;
+    last_command = command_id;
+    if (!persisted) {
+      return t::Failure{
+          t::ErrorCode::Conflict, t::Acceptance::NotAccepted, t::Recovery::ReadCurrent, {}, {}};
+    }
+    return std::monostate{};
+  };
+  persistence.observation = [&](const t::HostObservationRecord&) {
+    ++observations;
+    return t::Status{std::monostate{}};
+  };
+  Fixture fixture(allowlist_for("host-a", "aa"), "aa", std::move(persistence));
+  grpc::ClientContext context;
+  auto stream = fixture.stub()->Connect(&context);
+  require(stream->Write(registration_frame("host-a", {})), "write registration");
+  const auto registered = read_frame(stream.get());
+  require(registered.body_case() == v1::RuntimeToHost::kRegistered, "registered before dispatch");
+  const auto apply = read_frame(stream.get());
+  require(apply.body_case() == v1::RuntimeToHost::kApply,
+          "pending apply command was not dispatched");
+  require(apply.apply().command_id() == "hc-dispatch" &&
+              apply.apply().process().instance_id() == "instance-1" &&
+              apply.apply().process().installation_id() == "installation-1" &&
+              apply.apply().process().execution_generation() == 7 &&
+              apply.apply().process().desired_version() == 3,
+          "apply snapshot fields");
+  require(dispatch_marks == 1 && last_command == "hc-dispatch" && last_mark_generation == 1,
+          "dispatched marker");
+  const auto fence = registered.registered().fence();
+
+  auto receipt_frame = v1::HostToRuntime{};
+  receipt_frame.mutable_fence()->CopyFrom(fence);
+  receipt_frame.mutable_receipt()->set_command_id("hc-dispatch");
+  receipt_frame.mutable_receipt()->set_persisted(true);
+  require(stream->Write(receipt_frame), "write receipt");
+  auto heartbeat = heartbeat_frame(fence, clock_now());
+  require(stream->Write(heartbeat), "write heartbeat after receipt");
+  const auto ack = read_frame(stream.get());
+  require(ack.body_case() == v1::RuntimeToHost::kHeartbeatAck && receipts == 1,
+          "receipt did not leave the stream healthy");
+
+  auto observation = v1::HostToRuntime{};
+  observation.mutable_fence()->CopyFrom(fence);
+  auto* execution = observation.mutable_observation()->mutable_execution();
+  execution->set_host_id("host-a");
+  execution->set_instance_id("instance-1");
+  execution->set_execution_generation(7);
+  execution->set_outcome(v1::EXECUTION_KNOWN_SUCCEEDED);
+  execution->mutable_observed_at()->CopyFrom(google::protobuf::util::TimeUtil::GetCurrentTime());
+  auto* cursor = observation.mutable_observation()->mutable_cursor();
+  cursor->set_source_service("host");
+  cursor->set_epoch(fence.runtime_epoch());
+  cursor->set_sequence(9);
+  require(stream->Write(observation), "write observation");
+  require(stream->Write(heartbeat), "write heartbeat after observation");
+  require(read_frame(stream.get()).body_case() == v1::RuntimeToHost::kHeartbeatAck &&
+              observations == 1,
+          "observation did not persist");
+  require(stream->WritesDone(), "writes done");
+  require(stream->Finish().ok(), "finish");
+}
+
+void test_reconnect_replays_unconfirmed_command() {
+  t::HostCommandOutboxRecord command;
+  command.command_id = "hc-replay";
+  command.host_id = "host-a";
+  command.instance_id = "instance-1";
+  command.installation_id = "installation-1";
+  command.kind = t::HostCommandKind::StopExecution;
+  command.execution_generation = 4;
+  command.package_sha256 = std::string(64, 'a');
+  command.payload_sha256 = std::string(64, 'b');
+  command.state = t::HostCommandDeliveryState::Pending;
+  int dispatch_marks = 0;
+  platform::HostBridgePersistence persistence;
+  persistence.pending = [&](const std::string&, std::uint64_t,
+                            std::size_t) -> t::Outcome<std::vector<t::HostCommandOutboxRecord>> {
+    return std::vector<t::HostCommandOutboxRecord>{command};
+  };
+  persistence.dispatched = [&](const std::string&, std::uint64_t, std::string_view) {
+    ++dispatch_marks;
+    return t::Status{std::monostate{}};
+  };
+  Fixture fixture(allowlist_for("host-a", "aa"), "aa", std::move(persistence));
+  for (int attempt = 0; attempt < 2; ++attempt) {
+    grpc::ClientContext context;
+    auto stream = fixture.stub()->Connect(&context);
+    require(stream->Write(registration_frame("host-a", {})), "write replay registration");
+    require(read_frame(stream.get()).body_case() == v1::RuntimeToHost::kRegistered,
+            "replay registered");
+    const auto stop = read_frame(stream.get());
+    require(stop.body_case() == v1::RuntimeToHost::kStop &&
+                stop.stop().command_id() == "hc-replay" && stop.stop().execution_generation() == 4,
+            "unconfirmed stop command not replayed");
+    require(stream->WritesDone(), "replay writes done");
+    require(stream->Finish().ok(), "replay finish");
+  }
+  require(dispatch_marks == 2, "dispatch marker did not advance per connection generation");
+}
+
 void test_missing_registration_rejected() {
   Fixture fixture(allowlist_for("host-a", "aa"), "aa");
   grpc::ClientContext context;
@@ -341,6 +488,8 @@ int main() {
     test_registration_and_frames();
     test_stale_generation_rejected();
     test_peer_certificate_binding();
+    test_dispatch_receipt_observation_and_replay();
+    test_reconnect_replays_unconfirmed_command();
     test_missing_registration_rejected();
     std::cout << "P08b HostBridge server conformance passed\n";
     return 0;

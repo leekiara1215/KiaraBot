@@ -298,6 +298,11 @@ struct TimerTriggerAcceptance {
 // authorization before effects, commits receipts/audit/operation in the same local transaction and
 // never performs network I/O inside a UoW. Boundary adapters only convert wire values and map
 // stable failures.
+struct HostCommandMaintenance {
+  std::size_t expired = 0;
+  std::size_t pruned = 0;
+};
+
 class RuntimeResourceApplication : public ServiceReadinessPort {
 public:
   ~RuntimeResourceApplication() override = default;
@@ -343,6 +348,24 @@ public:
   virtual Outcome<Operation> begin_delete(const BeginDeleteRequest& request) = 0;
   virtual Outcome<Operation> restore_resource(const RestoreResourceRequest& request) = 0;
   virtual Outcome<LifecycleMaintenance> lifecycle_maintenance() = 0;
+
+  // P08b-3a trusted HostBridge persistence (called only by the Runtime transport adapter after
+  // the internal-mTLS fence/allowlist checks). These are not public RPC methods: they read/write
+  // the Host outbox/observation projections in short owner UoWs.
+  virtual Outcome<std::vector<HostCommandOutboxRecord>>
+  host_pending_commands(const std::string& host_id, std::uint64_t connection_generation,
+                        std::size_t limit) = 0;
+  virtual Status host_command_dispatched(const std::string& command_id,
+                                         std::uint64_t connection_generation,
+                                         std::string_view runtime_epoch) = 0;
+  // Receipt is accepted only for the connection generation the command was dispatched on; a
+  // repeated identical receipt is idempotent, a changed receipt is Conflict.
+  virtual Status host_command_receipt(const std::string& command_id,
+                                      std::uint64_t connection_generation, bool persisted,
+                                      std::optional<ExecutionOutcome> outcome,
+                                      std::optional<std::string> process_marker) = 0;
+  virtual Outcome<bool> host_observation(const HostObservationRecord& observation) = 0;
+  virtual Outcome<HostCommandMaintenance> host_command_maintenance() = 0;
 };
 
 struct RuntimeResourceDependencies {

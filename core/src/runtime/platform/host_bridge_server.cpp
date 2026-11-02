@@ -114,6 +114,106 @@ void set_error(const t::Failure& rejected, std::string_view request_id, std::str
   frame->mutable_failure()->mutable_context()->set_recovery(v1::RECOVERY_UNSPECIFIED);
 }
 
+std::optional<t::Sha256Digest> digest_from_hex(std::string_view text) {
+  if (text.size() != 64) {
+    return std::nullopt;
+  }
+  auto digit = [](char character) -> int {
+    if (character >= '0' && character <= '9') {
+      return character - '0';
+    }
+    if (character >= 'a' && character <= 'f') {
+      return character - 'a' + 10;
+    }
+    return -1;
+  };
+  t::Sha256Digest digest;
+  for (std::size_t index = 0; index < 32; ++index) {
+    const int high = digit(text[index * 2]);
+    const int low = digit(text[index * 2 + 1]);
+    if (high < 0 || low < 0) {
+      return std::nullopt;
+    }
+    digest.bytes[index] = static_cast<std::byte>((high << 4) | low);
+  }
+  return digest;
+}
+
+t::ExecutionOutcome execution_outcome(v1::ExecutionOutcome outcome) {
+  switch (outcome) {
+  case v1::EXECUTION_KNOWN_SUCCEEDED:
+    return t::ExecutionOutcome::KnownSucceeded;
+  case v1::EXECUTION_KNOWN_FAILED:
+    return t::ExecutionOutcome::KnownFailed;
+  case v1::EXECUTION_UNKNOWN:
+    return t::ExecutionOutcome::Unknown;
+  default:
+    return t::ExecutionOutcome::NotStarted;
+  }
+}
+
+void set_handoff(const t::HostCommandOutboxRecord& command, v1::HandoffContext* handoff) {
+  handoff->set_source_service("runtime");
+  handoff->set_message_id(command.command_id);
+  if (const auto digest = digest_from_hex(command.payload_sha256)) {
+    handoff->set_payload_sha256(
+        std::string(reinterpret_cast<const char*>(digest->bytes.data()), digest->bytes.size()));
+  }
+  handoff->mutable_created_at()->CopyFrom(google::protobuf::util::TimeUtil::GetCurrentTime());
+}
+
+bool fill_dispatch_frame(const t::HostCommandOutboxRecord& command, v1::RuntimeToHost* frame,
+                         const t::HostFence& fence) {
+  if (command.host_id != fence.host.value || command.command_id.empty()) {
+    return false;
+  }
+  fence_to_wire(fence, frame->mutable_fence());
+  set_handoff(command, frame->mutable_apply()->mutable_handoff());
+  switch (command.kind) {
+  case t::HostCommandKind::ApplyDesiredProcess: {
+    auto* apply = frame->mutable_apply();
+    apply->set_command_id(command.command_id);
+    auto* process = apply->mutable_process();
+    process->set_instance_id(command.instance_id);
+    process->set_installation_id(command.installation_id);
+    process->set_execution_generation(command.execution_generation);
+    process->set_desired_version(command.desired_version);
+    process->set_desired_state(command.desired_state == t::DesiredState::Running
+                                   ? v1::DESIRED_RUNNING
+                                   : v1::DESIRED_STOPPED);
+    if (const auto digest = digest_from_hex(command.package_sha256)) {
+      process->set_package_sha256(
+          std::string(reinterpret_cast<const char*>(digest->bytes.data()), digest->bytes.size()));
+    }
+    process->set_launch_profile(command.launch_profile);
+    for (const auto& argument : command.arguments) {
+      process->add_arguments(argument);
+    }
+    for (const auto& name : command.environment_names) {
+      process->add_environment_names(name);
+    }
+    return true;
+  }
+  case t::HostCommandKind::StopExecution: {
+    auto* stop = frame->mutable_stop();
+    stop->set_command_id(command.command_id);
+    stop->set_host_id(command.host_id);
+    stop->set_instance_id(command.instance_id);
+    stop->set_execution_generation(command.execution_generation);
+    stop->set_grace_ms(5000);
+    return true;
+  }
+  case t::HostCommandKind::DrainHost: {
+    auto* drain = frame->mutable_drain();
+    drain->set_command_id(command.command_id);
+    drain->set_host_id(command.host_id);
+    drain->set_grace_ms(5000);
+    return true;
+  }
+  }
+  return false;
+}
+
 void set_context_ids(const v1::RequestContext& context, std::string* request_id,
                      std::string* trace_id) {
   *request_id = context.request_id();
@@ -198,6 +298,9 @@ public:
     if (!stream->Write(response)) {
       return grpc::Status::OK;
     }
+    if (!dispatch_pending(stream, fence)) {
+      return grpc::Status::OK;
+    }
 
     v1::HostToRuntime frame;
     while (stream->Read(&frame)) {
@@ -215,6 +318,9 @@ public:
       }
       if (body == v1::HostToRuntime::kHeartbeat) {
         if (!handle_heartbeat(stream, frame, fence)) {
+          return grpc::Status::OK;
+        }
+        if (!dispatch_pending(stream, fence)) {
           return grpc::Status::OK;
         }
         continue;
@@ -235,13 +341,31 @@ public:
         continue;
       }
       if (body == v1::HostToRuntime::kReceipt) {
-        if (!valid_identifier(frame.receipt().command_id())) {
+        const auto& receipt = frame.receipt();
+        if (!valid_identifier(receipt.command_id())) {
           send_failure(stream, invalid_argument(), fence, frame_request_id, frame_trace_id);
           return grpc::Status::OK;
         }
+        if (dependencies_.persistence.receipt) {
+          std::optional<t::ExecutionOutcome> outcome;
+          std::optional<std::string> marker;
+          if (receipt.has_execution()) {
+            outcome = execution_outcome(receipt.execution().outcome());
+            if (!receipt.execution().process_marker().empty()) {
+              marker = receipt.execution().process_marker();
+            }
+          }
+          const auto persisted =
+              dependencies_.persistence.receipt(receipt.command_id(), fence.connection_generation,
+                                                receipt.persisted(), outcome, marker);
+          if (const auto* rejected = std::get_if<t::Failure>(&persisted)) {
+            send_failure(stream, *rejected, fence, frame_request_id, frame_trace_id);
+            return grpc::Status::OK;
+          }
+        }
         t::Status handled = std::monostate{};
         if (dependencies_.callbacks.receipt) {
-          handled = dependencies_.callbacks.receipt(frame.receipt());
+          handled = dependencies_.callbacks.receipt(receipt);
         }
         if (const auto* rejected = std::get_if<t::Failure>(&handled)) {
           send_failure(stream, *rejected, fence, frame_request_id, frame_trace_id);
@@ -252,9 +376,34 @@ public:
       if (body == v1::HostToRuntime::kObservation) {
         const auto& observation = frame.observation();
         if (!observation.has_execution() || observation.execution().host_id() != fence.host.value ||
-            !valid_identifier(observation.execution().instance_id())) {
+            !valid_identifier(observation.execution().instance_id()) || !observation.has_cursor() ||
+            observation.cursor().sequence() == 0 ||
+            observation.cursor().epoch() != fence.runtime_epoch ||
+            observation.execution().execution_generation() == 0) {
           send_failure(stream, invalid_argument(), fence, frame_request_id, frame_trace_id);
           return grpc::Status::OK;
+        }
+        if (dependencies_.persistence.observation) {
+          t::HostObservationRecord record;
+          record.host_id = fence.host.value;
+          record.connection_generation = fence.connection_generation;
+          record.sequence = observation.cursor().sequence();
+          record.instance_id = observation.execution().instance_id();
+          record.execution_generation = observation.execution().execution_generation();
+          record.outcome = execution_outcome(observation.execution().outcome());
+          record.process_marker = observation.execution().process_marker();
+          record.command_id = observation.execution().command_id();
+          t::TimePoint observed_at;
+          if (!timestamp_to_time(observation.execution().observed_at(), &observed_at)) {
+            send_failure(stream, invalid_argument(), fence, frame_request_id, frame_trace_id);
+            return grpc::Status::OK;
+          }
+          record.observed_at = observed_at;
+          const auto stored = dependencies_.persistence.observation(record);
+          if (const auto* rejected = std::get_if<t::Failure>(&stored)) {
+            send_failure(stream, *rejected, fence, frame_request_id, frame_trace_id);
+            return grpc::Status::OK;
+          }
         }
         t::Status handled = std::monostate{};
         if (dependencies_.callbacks.observation) {
@@ -273,6 +422,38 @@ public:
   }
 
 private:
+  bool dispatch_pending(grpc::ServerReaderWriter<v1::RuntimeToHost, v1::HostToRuntime>* stream,
+                        const t::HostFence& fence) {
+    if (!dependencies_.persistence.pending) {
+      return true;
+    }
+    auto pending =
+        dependencies_.persistence.pending(fence.host.value, fence.connection_generation, 20);
+    if (const auto* rejected = std::get_if<t::Failure>(&pending)) {
+      send_failure(stream, *rejected, fence, {}, {});
+      return false;
+    }
+    for (const auto& command : std::get<std::vector<t::HostCommandOutboxRecord>>(pending)) {
+      v1::RuntimeToHost frame;
+      if (!fill_dispatch_frame(command, &frame, fence)) {
+        send_failure(stream, invalid_argument(), fence, {}, {});
+        return false;
+      }
+      if (!stream->Write(frame)) {
+        return false;
+      }
+      if (dependencies_.persistence.dispatched) {
+        const auto marked = dependencies_.persistence.dispatched(
+            command.command_id, fence.connection_generation, fence.runtime_epoch);
+        if (const auto* rejected = std::get_if<t::Failure>(&marked)) {
+          send_failure(stream, *rejected, fence, {}, {});
+          return false;
+        }
+      }
+    }
+    return true;
+  }
+
   bool handle_heartbeat(grpc::ServerReaderWriter<v1::RuntimeToHost, v1::HostToRuntime>* stream,
                         const v1::HostToRuntime& frame, const t::HostFence& fence) {
     const auto& heartbeat = frame.heartbeat();
@@ -457,16 +638,18 @@ make_host_bridge(HostBridgeServerDependencies dependencies) {
 
 t::Outcome<std::unique_ptr<v1::HostBridge::Service>>
 make_deployment_host_bridge(t::RuntimeIdPort& ids, std::vector<t::HostCertificateBinding> allowlist,
-                            HostBridgeCallbacks callbacks) {
+                            HostBridgeCallbacks callbacks, HostBridgePersistence persistence) {
   try {
     // Keep the in-memory ports alive for the lifetime of the service, which borrows them.
     class OwnedBridge final : public v1::HostBridge::Service {
     public:
       OwnedBridge(std::unique_ptr<t::HostRegistrationPort> store,
-                  std::unique_ptr<t::HostClockPort> clock, HostBridgeCallbacks callbacks)
+                  std::unique_ptr<t::HostClockPort> clock, HostBridgeCallbacks callbacks,
+                  HostBridgePersistence persistence)
           : store_(std::move(store)), clock_(std::move(clock)),
-            service_(std::make_unique<HostBridgeImpl>(HostBridgeServerDependencies{
-                *store_, *clock_, default_peer_certificate, std::move(callbacks)})) {}
+            service_(std::make_unique<HostBridgeImpl>(
+                HostBridgeServerDependencies{*store_, *clock_, default_peer_certificate,
+                                             std::move(callbacks), std::move(persistence)})) {}
       grpc::Status
       Connect(grpc::ServerContext* context,
               grpc::ServerReaderWriter<v1::RuntimeToHost, v1::HostToRuntime>* stream) override {
@@ -480,7 +663,7 @@ make_deployment_host_bridge(t::RuntimeIdPort& ids, std::vector<t::HostCertificat
     };
     return std::unique_ptr<v1::HostBridge::Service>(std::make_unique<OwnedBridge>(
         std::make_unique<InMemoryHostStore>(std::move(allowlist)),
-        std::make_unique<DeploymentHostClock>(ids), std::move(callbacks)));
+        std::make_unique<DeploymentHostClock>(ids), std::move(callbacks), std::move(persistence)));
   } catch (const std::bad_alloc&) {
     return failure(t::ErrorCode::UpstreamUnavailable, t::Recovery::Backoff);
   } catch (...) {

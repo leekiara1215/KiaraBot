@@ -527,6 +527,13 @@ public:
                                                                  std::size_t) override {
     return failure(t::ErrorCode::CapabilityNotSupported);
   }
+  t::Outcome<std::size_t> expire_dispatched(t::TimePoint, std::chrono::seconds) override {
+    return std::size_t{0};
+  }
+  t::Outcome<std::size_t> prune(t::TimePoint, std::chrono::seconds, std::chrono::seconds,
+                                std::size_t) override {
+    return std::size_t{0};
+  }
   std::map<std::string, t::HostCommandOutboxRecord> commands;
 };
 class MemoryWork final : public t::RuntimeUnitOfWork {

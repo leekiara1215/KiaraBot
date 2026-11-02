@@ -569,6 +569,7 @@ void runtime(const DatabaseConfig& config) {
   command.command_id = {"live-host-command"};
   command.host_id = "live-host";
   command.instance_id = "live-instance";
+  command.installation_id = "live-installation";
   command.kind = target::HostCommandKind::ApplyDesiredProcess;
   command.execution_generation = 7;
   command.desired_version = 3;
@@ -619,9 +620,38 @@ void runtime(const DatabaseConfig& config) {
         "observation lost after restart");
   work->rollback();
 
+  // Maintenance: dispatched-without-receipt becomes Unknown after the timeout; pruned only after
+  // the unresolved retention window, never fabricated as a stopped process.
+  work = take(factory->begin());
+  auto timeout_command = command;
+  timeout_command.command_id = "live-host-timeout";
+  timeout_command.payload_sha256 = std::string(64, 'd');
+  timeout_command.state = target::HostCommandDeliveryState::Pending;
+  take(work->host_commands().insert(timeout_command));
+  take(work->host_commands().mark_dispatched(timeout_command.command_id, 1, "live-epoch", now));
+  check(take(work->host_commands().expire_dispatched(now + std::chrono::seconds{31},
+                                                     std::chrono::seconds{30})) == 1,
+        "dispatched timeout command not expired");
+  const auto expired = take(work->host_commands().find(timeout_command.command_id));
+  check(expired && expired->state == target::HostCommandDeliveryState::Unknown,
+        "timed out command not Unknown");
+  const auto pruned = take(work->host_commands().prune(now + std::chrono::hours{24 * 40},
+                                                       std::chrono::hours{24 * 7},
+                                                       std::chrono::hours{24 * 30}, 100));
+  check(pruned == 2, "expired/receipted commands not pruned by retention");
+  check(!take(work->host_commands().find(timeout_command.command_id)),
+        "pruned command still present");
+  commit(*work);
+
   // Same command_id with a different payload is a conflict, and that failure poisons its UoW.
   work = take(factory->begin());
-  auto conflicting = command;
+  auto conflict_seed = command;
+  conflict_seed.command_id = "live-host-conflict";
+  conflict_seed.payload_sha256 = std::string(64, 'e');
+  take(work->host_commands().insert(conflict_seed));
+  commit(*work);
+  work = take(factory->begin());
+  auto conflicting = conflict_seed;
   conflicting.payload_sha256 = std::string(64, 'c');
   expect(work->host_commands().insert(conflicting), target::ErrorCode::Conflict);
   rollback_rejected(*work);

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <optional>
@@ -34,6 +35,13 @@ public:
   virtual Outcome<std::vector<HostObservationRecord>>
   observations(const std::string& host_id, std::uint64_t connection_generation,
                std::size_t limit) = 0;
+  // Maintenance: dispatched commands older than the timeout become Unknown (never "stopped");
+  // receipted rows are pruned after the resolved retention and Unknown rows after the longer
+  // unresolved retention. Bounded batch, no cross-service cascade.
+  virtual Outcome<std::size_t> expire_dispatched(TimePoint now, std::chrono::seconds timeout) = 0;
+  virtual Outcome<std::size_t> prune(TimePoint now, std::chrono::seconds resolved_retention,
+                                     std::chrono::seconds unresolved_retention,
+                                     std::size_t limit) = 0;
 };
 
 } // namespace kiarabot::core::target
