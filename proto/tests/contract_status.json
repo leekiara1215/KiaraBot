@@ -5619,7 +5619,72 @@
           "IdentityGetCredentialStatusRequest.credential_id": "implemented",
           "IdentityGetCredentialStatusResponse.credential": "implemented",
           "IdentityWatchInvalidationsResponse.resync_required": "implemented",
-          "IdentityWatchInvalidationsResponse.cursor": "implemented"
+          "IdentityWatchInvalidationsResponse.cursor": "implemented",
+          "RegisterAdapterRequest.adapter_instance_id": "implemented",
+          "RegisterAdapterResponse.fence": "implemented",
+          "RegisterAdapterResponse.effective_capabilities": "implemented",
+          "RegisterAdapterResponse.authorization": "implemented",
+          "AdapterToCore.fence": "implemented",
+          "AdapterToCore.connection_proof": "implemented",
+          "AdapterToCore.refresh_authorization": "implemented",
+          "CoreToAdapter.fence": "implemented",
+          "CoreToAdapter.authorization_result": "implemented",
+          "RegisterPluginRequest.installation_id": "implemented",
+          "RegisterPluginRequest.execution_generation": "implemented",
+          "RegisterPluginResponse.fence": "implemented",
+          "RegisterPluginResponse.desired_config_version": "implemented",
+          "RegisterPluginResponse.authorization": "implemented",
+          "PluginToCore.fence": "implemented",
+          "PluginToCore.connection_proof": "implemented",
+          "PluginToCore.renew_delivery": "implemented",
+          "PluginToCore.refresh_authorization": "implemented",
+          "CoreToPlugin.fence": "implemented",
+          "CoreToPlugin.delivery_attempt": "implemented",
+          "CoreToPlugin.delivery_receipt": "implemented",
+          "CoreToPlugin.authorization_result": "implemented",
+          "PluginEventAck.attempt": "implemented",
+          "DeliveryAttempt.event_id": "implemented",
+          "DeliveryAttempt.attempt_id": "implemented",
+          "DeliveryAttempt.fence": "implemented",
+          "DeliveryAttempt.started_at": "implemented",
+          "DeliveryAttempt.lease_until": "implemented",
+          "DeliveryAttempt.attempt_number": "implemented",
+          "DeliveryReceipt.attempt": "implemented",
+          "DeliveryReceipt.disposition": "implemented",
+          "DeliveryReceipt.failure": "implemented",
+          "ConnectionAuthorization.fence": "implemented",
+          "ConnectionAuthorization.proof": "implemented",
+          "ConnectionAuthorization.issued_at": "implemented",
+          "ConnectionAuthorization.expires_at": "implemented",
+          "ConnectionAuthorization.refresh_credential": "implemented",
+          "ConnectionAuthorization.refresh_generation": "implemented",
+          "ConnectionAuthorization.principal_id": "implemented",
+          "ConnectionAuthorization.credential_version": "implemented",
+          "ConnectionAuthorization.authorization_version": "implemented",
+          "RefreshConnectionAuthorization.request_id": "implemented",
+          "RefreshConnectionAuthorization.fence": "implemented",
+          "RefreshConnectionAuthorization.proof": "implemented",
+          "RefreshConnectionAuthorization.refresh_credential": "implemented",
+          "RefreshConnectionAuthorization.refresh_generation": "implemented",
+          "ConnectionAuthorizationResult.request_id": "implemented",
+          "ConnectionAuthorizationResult.authorization": "implemented",
+          "ConnectionAuthorizationResult.error": "implemented"
+        },
+        "bridge_methods": {
+          "AdapterBridge.Connect": "implemented",
+          "PluginBridge.Connect": "implemented"
+        },
+        "semantic_rules": {
+          "semantic.bridge.connection_authorization": "implemented",
+          "semantic.bridge.external_listener": "implemented",
+          "semantic.bridge.plugin_delivery_lease": "implemented"
+        },
+        "enum_values": {
+          "DeliveryDisposition.DELIVERY_ACKNOWLEDGED": "implemented",
+          "DeliveryDisposition.DELIVERY_DUPLICATE": "implemented",
+          "DeliveryDisposition.DELIVERY_STALE": "implemented",
+          "DeliveryDisposition.DELIVERY_RENEWED": "implemented",
+          "DeliveryDisposition.DELIVERY_REJECTED": "implemented"
         }
       },
       "evidence": {
@@ -5867,6 +5932,301 @@
           "core/src/application/target/identity_invalidation_application.cpp",
           "core/src/runtime/platform/identity_rpc.cpp",
           "core/tests/architecture/identity_invalidation_application_test.cpp"
+        ],
+        "bridge_methods:AdapterBridge.Connect": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/application/target/runtime_bridge_application.cpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "bridge_methods:PluginBridge.Connect": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/application/target/runtime_bridge_application.cpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "semantic_rules:semantic.bridge.connection_authorization": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/application/target/runtime_bridge_application.cpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "semantic_rules:semantic.bridge.external_listener": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/application/target/runtime_bridge_application.cpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "semantic_rules:semantic.bridge.plugin_delivery_lease": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/application/target/runtime_bridge_application.cpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "enum_values:DeliveryDisposition.DELIVERY_ACKNOWLEDGED": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/application/target/runtime_bridge_application.cpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "enum_values:DeliveryDisposition.DELIVERY_DUPLICATE": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/application/target/runtime_bridge_application.cpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "enum_values:DeliveryDisposition.DELIVERY_STALE": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/application/target/runtime_bridge_application.cpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "enum_values:DeliveryDisposition.DELIVERY_RENEWED": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/application/target/runtime_bridge_application.cpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "enum_values:DeliveryDisposition.DELIVERY_REJECTED": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/application/target/runtime_bridge_application.cpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:RegisterAdapterRequest.adapter_instance_id": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/application/target/runtime_bridge_application.cpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:RegisterAdapterResponse.fence": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/application/target/runtime_bridge_application.cpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:RegisterAdapterResponse.effective_capabilities": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/application/target/runtime_bridge_application.cpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:RegisterAdapterResponse.authorization": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/application/target/runtime_bridge_application.cpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:AdapterToCore.fence": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/application/target/runtime_bridge_application.cpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:AdapterToCore.connection_proof": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/application/target/runtime_bridge_application.cpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:AdapterToCore.refresh_authorization": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/application/target/runtime_bridge_application.cpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:CoreToAdapter.fence": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/application/target/runtime_bridge_application.cpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:CoreToAdapter.authorization_result": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/application/target/runtime_bridge_application.cpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:RegisterPluginRequest.installation_id": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/application/target/runtime_bridge_application.cpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:RegisterPluginRequest.execution_generation": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/application/target/runtime_bridge_application.cpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:RegisterPluginResponse.fence": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/application/target/runtime_bridge_application.cpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:RegisterPluginResponse.desired_config_version": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/application/target/runtime_bridge_application.cpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:RegisterPluginResponse.authorization": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/application/target/runtime_bridge_application.cpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:PluginToCore.fence": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/application/target/runtime_bridge_application.cpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:PluginToCore.connection_proof": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/application/target/runtime_bridge_application.cpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:PluginToCore.renew_delivery": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/application/target/runtime_bridge_application.cpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:PluginToCore.refresh_authorization": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/application/target/runtime_bridge_application.cpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:CoreToPlugin.fence": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/application/target/runtime_bridge_application.cpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:CoreToPlugin.delivery_attempt": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/application/target/runtime_bridge_application.cpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:CoreToPlugin.delivery_receipt": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/application/target/runtime_bridge_application.cpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:CoreToPlugin.authorization_result": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/application/target/runtime_bridge_application.cpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:PluginEventAck.attempt": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/application/target/runtime_bridge_application.cpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:DeliveryAttempt.event_id": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/application/target/runtime_bridge_application.cpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:DeliveryAttempt.attempt_id": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/application/target/runtime_bridge_application.cpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:DeliveryAttempt.fence": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/application/target/runtime_bridge_application.cpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:DeliveryAttempt.started_at": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/application/target/runtime_bridge_application.cpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:DeliveryAttempt.lease_until": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/application/target/runtime_bridge_application.cpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:DeliveryAttempt.attempt_number": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/application/target/runtime_bridge_application.cpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:DeliveryReceipt.attempt": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/application/target/runtime_bridge_application.cpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:DeliveryReceipt.disposition": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/application/target/runtime_bridge_application.cpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:DeliveryReceipt.failure": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/application/target/runtime_bridge_application.cpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:ConnectionAuthorization.fence": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/application/target/runtime_bridge_application.cpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:ConnectionAuthorization.proof": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/application/target/runtime_bridge_application.cpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:ConnectionAuthorization.issued_at": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/application/target/runtime_bridge_application.cpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:ConnectionAuthorization.expires_at": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/application/target/runtime_bridge_application.cpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:ConnectionAuthorization.refresh_credential": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/application/target/runtime_bridge_application.cpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:ConnectionAuthorization.refresh_generation": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/application/target/runtime_bridge_application.cpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:ConnectionAuthorization.principal_id": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/application/target/runtime_bridge_application.cpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:ConnectionAuthorization.credential_version": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/application/target/runtime_bridge_application.cpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:ConnectionAuthorization.authorization_version": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/application/target/runtime_bridge_application.cpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:RefreshConnectionAuthorization.request_id": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/application/target/runtime_bridge_application.cpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:RefreshConnectionAuthorization.fence": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/application/target/runtime_bridge_application.cpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:RefreshConnectionAuthorization.proof": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/application/target/runtime_bridge_application.cpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:RefreshConnectionAuthorization.refresh_credential": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/application/target/runtime_bridge_application.cpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:RefreshConnectionAuthorization.refresh_generation": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/application/target/runtime_bridge_application.cpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:ConnectionAuthorizationResult.request_id": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/application/target/runtime_bridge_application.cpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:ConnectionAuthorizationResult.authorization": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/application/target/runtime_bridge_application.cpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:ConnectionAuthorizationResult.error": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/application/target/runtime_bridge_application.cpp",
+          "tests/architecture/p06_bridge_acceptance.py"
         ]
       }
     }

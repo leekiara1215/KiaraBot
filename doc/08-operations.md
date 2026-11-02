@@ -329,6 +329,10 @@ P06 起 runtime 配置允许可选的 `bridge_listen`（IPv4 字面量:端口，
 其他服务携带即退出2）：用于外部 Adapter/Plugin 的 Bridge 长连接。它必须与
 grpc_listen 不同（相同则退出2），复用同一 tls 证书/私钥/CA 材料，但**不要求也不验证
 客户端证书**（server-verified TLS；外部客户端用部署 CA 校验服务端证书和 SAN）。
+外部 `bridge_listen` 只注册 AdapterBridge/PluginBridge，使用 server-verified TLS、不请求客户端证书；
+bootstrap 以 gRPC metadata `authorization: Bearer <credential>` 交付一次，只存 SHA-256，
+proof/refresh 仅存进程内存。SIGTERM/SIGINT 时先向活动 bridge 流发有界 ShutdownNotice
+（drain_timeout_ms，1s 预算）再关闭监听；客户端未收到该帧时按“结果未知”重连，不能假定投递成功。
 grpc_listen 的平台 owner mTLS 监听保持强制客户端证书，两个监听在同一进程、同一
 application 上并存；bridge_listen 缺省时不启动外部监听，且 Runtime 已注册 Bridge
 服务时必须配置该项（否则组合失败退出1）。bridge 端口不得作为匿名公网入口发布，

@@ -199,12 +199,13 @@ REST 不可变分页用于一致列表；WebSocket 是资源状态刷新通知�
 
 内部成功命令收据至少七天；可靠交接使用 source_service/message_id/资源版本/hash/created_at/valid_until，默认有效七天。inbox 保留到 max(首次接收+七天, valid_until+七天)。已过期新消息拒绝，不盲延长有效期；重复提交不新增投递目标。断线/取消等待不回滚提交，不将未知平台/模型执行记成 FAILED。
 
-### P06 外部 Bridge 入站与投递尝试（已冻结，未实现）
+### P06 外部 Bridge 入站与投递尝试（target 已实现）
 
 - **监听与认证**：外部 Adapter/Plugin 只连 Runtime 进程的可选 `bridge_listen`（server-verified TLS，不请求客户端证书），`authorization: Bearer <bootstrap_credential>` 恰好一个；bootstrap 是逐实例一次性交付、可撤销的登记凭据（Runtime 只存 SHA-256），不是业务授权。首帧注册校验资源/代次后返回 Fence+`ConnectionAuthorization`；后续每帧带完整 Fence 和当前 proof。`grpc_listen` 的平台 owner mTLS 监听不变；unary RuntimeService 的注册/事件/ACK/续租方法为 internal_dispatcher，不对外。
 - **bootstrap 交付**：Adapter 由 `RuntimeBindAdapterResponse.bootstrap_credential`（字段 3）返回，externally_managed 插件实例由 `RuntimeCreateInstanceResponse.bootstrap_credential`（字段 2）返回；Host 受管实例不返回。调用方只交付一次，不持久化/记录明文；撤销随实例停用/解绑发生，proof/refresh 摘要只驻留 Runtime 连接状态，重启即失效。
 - **投递尝试**：沿用 P01 租约规则。`delivery` 身份为 `(event_id, instance_id)`，`delivery_id` 字段取 `event_id`；`ReplayDelivery.expected_version` P06 必须 0/未设置；重放只重置目标实例、保留 event_id、新 trace/attempt。ACK/Renew 必须以当前 attempt+fence 条件写；当前 active 成功 ACK=`DELIVERY_ACKNOWLEDGED`，同 attempt 重复成功=`DELIVERY_DUPLICATE`，旧/过期 attempt=`DELIVERY_STALE`（不确认新尝试），错误 ACK=`DELIVERY_REJECTED`（retryable 决定退避或死信），Renew 成功/重发=`DELIVERY_RENEWED`。
-- **超时与背压**：`check_dependencies` 每秒有界 sweep 把过期 attempt 记一次可重试失败（1/2/4/8/16s ±20%，5 次后死信）；执行不持有 UoW 等网络。入站容量不足按 target 语义返回可重试 `RATE_LIMITED` 并关闭本次流，Adapter 保留未确认事件重投；`semantic.bridge.*` 在 P06 完成前保持 not_implemented。
+- **A1/B1 目标语义**：外部自管 adapter 的 `BindAdapter` 可在首次 bridge 登记前建立，binding 是登记前的权威身份；bootstrap 凭据在同事务签发。首次 `AdapterBridge` 登记用 bootstrap 的 resource_id 作为 `assigned_instance_id` 创建 AdapterRecord 并校验声明的每个 account binding 都属于该实例，之后重连只推进 connection_generation。外部自管 plugin 首次登记分配并持久 execution_generation=1，重连保持 execution_generation、仅推进 connection_generation；这是“外部进程执行由该登记连接代表”的目标语义，P08 Host 受管执行仍使用真实进程代次。
+- **超时与背压**：`check_dependencies` 每秒有界 sweep 把过期 attempt 记一次可重试失败（1/2/4/8/16s ±20%，5 次后死信）；执行不持有 UoW 等网络。入站容量不足按 target 语义返回可重试 `RATE_LIMITED` 并关闭本次流，Adapter 保留未确认事件重投；`semantic.bridge.*` 已由生产 Runtime Bridge 实现并登记到 target execution scope；HostBridge 与 P07 Action 面仍 not_implemented。
 
 ### P07 目标 Action 语义（已冻结，未实现）
 

@@ -366,7 +366,7 @@ application/target/<name>_application.hpp/.cpp，返回 unique_ptr<ServiceReadin
 SchedulerService、ModelService 的生成 Service 默认实现；Runtime 另注册 AdapterBridge、
 PluginBridge、HostBridge。全部业务方法返回 UNIMPLEMENTED，不执行授权成功分支或写状态。
 Control 不创建入站业务 gRPC。生成协议及 gRPC 只存在外层，五个 application 无协议依赖。
-P06 已冻结的扩展（未实现）：Runtime 在同一进程内增加可选外部 `bridge_listen`
+P06 已冻结并已实现的扩展：Runtime 在同一进程内增加可选外部 `bridge_listen`
 （server-verified TLS，不请求客户端证书），只注册 AdapterBridge/PluginBridge；
 `grpc_listen` 的 owner mTLS 监听、HostBridge 与既有服务不变。外部监听器由
 `ProcessConfig.bridge_listen` 开关，缺 `bridge_listen` 而注册 bridge 服务时组合失败。
@@ -1196,15 +1196,28 @@ CONFLICT（正确输入恢复），读依赖故障返回失败而不是空页/�
 业务应用已装配 + Runtime 私有库/schema writer 可用 + Identity 授权链路可用才 ready=true；
 未观测或不可用保持 false，测试 fake 只验证判定逻辑，不能使组合进程报 ready。
 
-**P06 外部 Bridge bootstrap（Runtime 侧已实现，消费端 P06 未实现）**：BindAdapter 创建新绑定时
+**P06 外部 Bridge bootstrap（Runtime 与外部消费端均已实现）**：BindAdapter 创建新绑定时
 由 Runtime 为 adapter instance 生成一次 32 字节 CSPRNG opaque bootstrap（64 位十六进制文本），
 externally_managed 实例在 CreateInstance 时同样生成；Runtime 私有库
 `bridge_credentials` 只保存 SHA-256 摘要，明文只在对应 RPC 响应中出现一次，不进入收据、
 审计、日志或面板。已存在 active 凭据时不重复发放；解绑最后一个绑定会撤销 adapter 凭据。
 `RuntimeBindAdapterResponse.bootstrap_credential`（字段3）/
-`RuntimeCreateInstanceResponse.bootstrap_credential`（字段2）由 P05 RPC 返回；外部客户端以
-Bearer 连接 bridge 的消费/换取 ConnectionAuthorization 仍属 P06，契约 target 状态继续
-not_implemented，本增量不宣称 P06 完成。
+`RuntimeCreateInstanceResponse.bootstrap_credential`（字段2）由 P05 RPC 返回；P06a-2 的外部
+Bridge 服务端已消费该凭据：`bridge_listen`（server-verified TLS）校验 Bearer→sha256 行，
+返回 ConnectionAuthorization（≤56s proof/refresh、fence、credential/authorization version），
+每帧校验 fence+proof、单飞 refresh，并实现 AdapterBridge 事件接收与 PluginBridge
+lease/ACK/Renew/死信/维护 sweep。A1：BindAdapter 不再要求 AdapterRecord 预先存在；首次
+bridge 登记用 bootstrap resource_id 创建/补全 AdapterRecord 并要求 `assigned_instance_id`
+等于该 id、声明的 account binding 全部属于该实例。B1：外部自管 peer 的目标 execution
+generation 为登记连接代表（adapter 固定 1，plugin 首次分配 1 并持久，重连只推进
+connection_generation）；Host 受管执行仍使用真实进程代次。
+
+**P06a-2 Bridge 组合（已实现）**：Runtime 组合根在配置 `bridge_listen` 时创建
+RuntimeBridgeApplication，并把真实 AdapterBridge/PluginBridge 注册在外部监听；`grpc_listen`
+仍只注册 RuntimeService/HostBridge 的 owner mTLS 面。连接授权材料只存在进程内存，PG 只存
+bootstrap SHA-256；bridge 维护（sweep/claim/push）挂在每秒有界的 check_dependencies 钩子上，
+停进程前 `before_stop` 向活动流发送有界 ShutdownNotice。9 个 internal_dispatcher unary 方法
+仍未实现、不在任何监听上实现。
 
 **Identity 在线授权接线（P04 就绪后）**：Runtime 组合根在存在 `identity_endpoint` 配置时创建
 真实 Identity owner gRPC 客户端，复用 Runtime 服务 TLS 材料作为出站 mTLS 身份：

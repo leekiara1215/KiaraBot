@@ -181,6 +181,64 @@ class ScopeTest(unittest.TestCase):
         expected |= {('proto_fields', 'IdentityRotateCredentialRequest.credential_id'), ('proto_fields', 'IdentityRotateCredentialRequest.expected_version'), ('proto_fields', 'IdentityRotateCredentialResponse.delivery')}
         expected |= {('proto_fields', 'IdentityWatchInvalidationsResponse.resync_required'),
                     ('proto_fields', 'IdentityWatchInvalidationsResponse.cursor')}
+        # P06 external Bridge: both audience-bound Connect streams, bootstrap ->
+        # ConnectionAuthorization/refresh, delivery attempt/lease/receipt and shutdown.
+        expected |= {('bridge_methods', 'AdapterBridge.Connect'),
+                     ('bridge_methods', 'PluginBridge.Connect')}
+        expected |= {('semantic_rules', 'semantic.bridge.connection_authorization'),
+                     ('semantic_rules', 'semantic.bridge.external_listener'),
+                     ('semantic_rules', 'semantic.bridge.plugin_delivery_lease')}
+        expected |= {('enum_values', 'DeliveryDisposition.DELIVERY_ACKNOWLEDGED'),
+                     ('enum_values', 'DeliveryDisposition.DELIVERY_DUPLICATE'),
+                     ('enum_values', 'DeliveryDisposition.DELIVERY_STALE'),
+                     ('enum_values', 'DeliveryDisposition.DELIVERY_RENEWED'),
+                     ('enum_values', 'DeliveryDisposition.DELIVERY_REJECTED')}
+        expected |= {('proto_fields', 'RegisterAdapterRequest.adapter_instance_id'),
+                     ('proto_fields', 'RegisterAdapterResponse.fence'),
+                     ('proto_fields', 'RegisterAdapterResponse.effective_capabilities'),
+                     ('proto_fields', 'RegisterAdapterResponse.authorization'),
+                     ('proto_fields', 'AdapterToCore.fence'),
+                     ('proto_fields', 'AdapterToCore.connection_proof'),
+                     ('proto_fields', 'AdapterToCore.refresh_authorization'),
+                     ('proto_fields', 'CoreToAdapter.fence'),
+                     ('proto_fields', 'CoreToAdapter.authorization_result'),
+                     ('proto_fields', 'RegisterPluginRequest.installation_id'),
+                     ('proto_fields', 'RegisterPluginRequest.execution_generation'),
+                     ('proto_fields', 'RegisterPluginResponse.fence'),
+                     ('proto_fields', 'RegisterPluginResponse.desired_config_version'),
+                     ('proto_fields', 'RegisterPluginResponse.authorization'),
+                     ('proto_fields', 'PluginToCore.fence'),
+                     ('proto_fields', 'PluginToCore.connection_proof'),
+                     ('proto_fields', 'PluginToCore.renew_delivery'),
+                     ('proto_fields', 'PluginToCore.refresh_authorization'),
+                     ('proto_fields', 'CoreToPlugin.fence'),
+                     ('proto_fields', 'CoreToPlugin.delivery_attempt'),
+                     ('proto_fields', 'CoreToPlugin.delivery_receipt'),
+                     ('proto_fields', 'CoreToPlugin.authorization_result'),
+                     ('proto_fields', 'PluginEventAck.attempt')}
+        expected |= {('proto_fields', name)
+                     for name in ('DeliveryAttempt.event_id', 'DeliveryAttempt.attempt_id',
+                                  'DeliveryAttempt.fence', 'DeliveryAttempt.started_at',
+                                  'DeliveryAttempt.lease_until', 'DeliveryAttempt.attempt_number',
+                                  'DeliveryReceipt.attempt', 'DeliveryReceipt.disposition',
+                                  'DeliveryReceipt.failure')}
+        expected |= {('proto_fields', name)
+                     for name in ('ConnectionAuthorization.fence', 'ConnectionAuthorization.proof',
+                                  'ConnectionAuthorization.issued_at',
+                                  'ConnectionAuthorization.expires_at',
+                                  'ConnectionAuthorization.refresh_credential',
+                                  'ConnectionAuthorization.refresh_generation',
+                                  'ConnectionAuthorization.principal_id',
+                                  'ConnectionAuthorization.credential_version',
+                                  'ConnectionAuthorization.authorization_version',
+                                  'RefreshConnectionAuthorization.request_id',
+                                  'RefreshConnectionAuthorization.fence',
+                                  'RefreshConnectionAuthorization.proof',
+                                  'RefreshConnectionAuthorization.refresh_credential',
+                                  'RefreshConnectionAuthorization.refresh_generation',
+                                  'ConnectionAuthorizationResult.request_id',
+                                  'ConnectionAuthorizationResult.authorization',
+                                  'ConnectionAuthorizationResult.error')}
         self.assertEqual(available, expected)
         self.assertEqual(effective_status(registry, 'reference', 'action_payloads', 'ActionEnvelope.send_message'), 'implemented')
         self.assertEqual(effective_status(registry, 'target', 'action_payloads', 'ActionEnvelope.send_message'), 'not_implemented')

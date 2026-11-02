@@ -249,8 +249,8 @@ P03数据库资源/系统依赖故障（SQLSTATE类53/58及非取消类57）映�
 
 ### P06 Runtime事件投递表（实施中）
 
-Runtime私有库 schema v8（P05 资源表 + P06 事件/投递表）在共享基础表之外新增五张事件/投递表，
-空库初始化一次性创建，开发阶段不提供旧版本→v8 迁移。`events` 保存 opaque 序列化 envelope、确定性指纹、四元组
+Runtime私有库 schema v9（P05 资源表 + P06 事件/投递表）在共享基础表之外新增五张事件/投递表，
+空库初始化一次性创建，开发阶段不提供旧版本→v9 迁移。`events` 保存 opaque 序列化 envelope、确定性指纹、四元组
 会话键、payload 类型、sequence/口径与保留期；`conversation_watermarks` 按会话键保存
 最大 sequence 与 sticky degraded；`delivery_targets` 为 event+instance 唯一目标行，含
 ordered、trace_id、状态、attempts、next_attempt_at、current_attempt、死信原因与
@@ -260,8 +260,12 @@ attempt_number；`ordered_delivery_heads` 按 instance+会话键记录当前有�
 外键级联只发生在事件删除清理路径；attempt 唯一、目标唯一、队列索引与保留索引用于
 容量/到期查询。仓储 `runtime_events.cpp` 借用 Runtime UoW 的同一 SQL 事务，不自行
 commit、不建第二连接；通用 outbox/inbox 的 handoff 语义不用于事件账本。
-`infrastructure/postgres/schema/manifest.hpp` 的 Runtime descriptor/relation count 在首次
-真实 PG 初始化后重新生成，不能拿旧哈希充当 v6 校验值。
+A1 起 `adapter_bindings.adapter_instance` 不再外键到 `adapters.instance`：外部自管绑定在首次
+bridge 登记创建 AdapterRecord 之前就是权威身份，改为非空文本 CHECK，由登记 handler 校验
+绑定与 bootstrap 资源一致；`adapter_bindings.account → accounts.id` 外键保留。
+`infrastructure/postgres/schema/manifest.hpp` 的 Runtime descriptor/relation count 在真实 PG
+初始化后重新生成（v9 实测值：descriptor `2eae4bf68d863c9ceec9d3a186a7e53e`、relation_count 101），
+不能拿旧哈希充当校验值。
 
 ### P04 Identity 密码与随机适配器（部分实施）
 
