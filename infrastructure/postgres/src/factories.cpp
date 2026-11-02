@@ -15,6 +15,7 @@
 #include "model_store.hpp"
 #include "record_access.hpp"
 #include "runtime_events.hpp"
+#include "storage_records.hpp"
 
 namespace kiarabot::infrastructure::postgres {
 namespace {
@@ -253,7 +254,8 @@ public:
         instances_(work(), detail::RecordKind::Instance),
         instance_configs_(work(), detail::RecordKind::InstanceConfig), events_(*common.sql),
         actions_(*common.sql), action_quota_(*common.sql), action_policies_(*common.sql),
-        action_evidence_(*common.sql) {}
+        action_evidence_(*common.sql), namespaces_(*common.sql), shared_namespaces_(*common.sql),
+        namespace_quota_(*common.sql), storage_receipts_(*common.sql) {}
   target::Repository<target::ResourceId, target::BotAccount>& accounts() override {
     return accounts_;
   }
@@ -320,6 +322,18 @@ public:
   target::ActionEvidenceRepository& action_evidence() override {
     return action_evidence_;
   }
+  target::NamespaceRepository& namespaces() override {
+    return namespaces_;
+  }
+  target::SharedNamespaceRepository& shared_namespaces() override {
+    return shared_namespaces_;
+  }
+  target::NamespaceQuotaRepository& namespace_quota() override {
+    return namespace_quota_;
+  }
+  target::StorageReceiptRepository& storage_receipts() override {
+    return storage_receipts_;
+  }
 
 private:
   LiveRepository<target::ResourceId, target::BotAccount> accounts_;
@@ -335,6 +349,10 @@ private:
   detail::ActionQuotaRecords action_quota_;
   detail::ActionPolicyRecords action_policies_;
   detail::ActionEvidenceRecords action_evidence_;
+  detail::NamespaceRecords namespaces_;
+  detail::SharedNamespaceRecords shared_namespaces_;
+  detail::NamespaceQuotaRecords namespace_quota_;
+  detail::StorageReceiptRecords storage_receipts_;
 };
 class RuntimeFactory final : public target::RuntimeUnitOfWorkFactory {
 public:

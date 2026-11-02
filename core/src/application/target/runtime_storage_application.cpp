@@ -454,14 +454,18 @@ public:
       if (const auto* error = std::get_if<Failure>(&opened)) {
         return *error;
       }
-      auto& probe = *std::get<std::unique_ptr<RuntimeUnitOfWork>>(opened);
-      auto resolved_probe = resolve_scope(probe, request.context);
-      if (const auto* error = std::get_if<Failure>(&resolved_probe)) {
-        return *error;
+      NamespaceScope probed_scope;
+      {
+        auto& probe = *std::get<std::unique_ptr<RuntimeUnitOfWork>>(opened);
+        auto resolved_probe = resolve_scope(probe, request.context);
+        if (const auto* error = std::get_if<Failure>(&resolved_probe)) {
+          return *error;
+        }
+        probed_scope = std::get<ResolvedScope>(resolved_probe).scope;
       }
+      std::get<std::unique_ptr<RuntimeUnitOfWork>>(opened).reset();
       if (auto denied =
-              authorize_service(request.context, std::get<ResolvedScope>(resolved_probe).scope,
-                                Permission::StorageNamespace);
+              authorize_service(request.context, probed_scope, Permission::StorageNamespace);
           std::holds_alternative<Failure>(denied)) {
         return std::get<Failure>(denied);
       }
@@ -796,13 +800,17 @@ private:
     if (const auto* error = std::get_if<Failure>(&opened)) {
       return *error;
     }
-    auto& probe = *std::get<std::unique_ptr<RuntimeUnitOfWork>>(opened);
-    auto probe_resolved = resolve_scope(probe, context);
-    if (const auto* error = std::get_if<Failure>(&probe_resolved)) {
-      return *error;
+    NamespaceScope probed_scope;
+    {
+      auto& probe = *std::get<std::unique_ptr<RuntimeUnitOfWork>>(opened);
+      auto probe_resolved = resolve_scope(probe, context);
+      if (const auto* error = std::get_if<Failure>(&probe_resolved)) {
+        return *error;
+      }
+      probed_scope = std::get<ResolvedScope>(probe_resolved).scope;
     }
-    if (auto denied = authorize_service(context, std::get<ResolvedScope>(probe_resolved).scope,
-                                        Permission::StorageNamespace);
+    std::get<std::unique_ptr<RuntimeUnitOfWork>>(opened).reset();
+    if (auto denied = authorize_service(context, probed_scope, Permission::StorageNamespace);
         std::holds_alternative<Failure>(denied)) {
       return std::get<Failure>(denied);
     }
