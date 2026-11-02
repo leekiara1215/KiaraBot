@@ -217,11 +217,47 @@ async def main_async(args) -> None:
             require(ack.WhichOneof('body') == 'heartbeat_ack', 'heartbeat ack missing')
             # Duplicate observation must be accepted idempotently and not create a second row.
             await stream.write(observation)
+            # P13e: stop/drain commands seeded while the Host connection is live are dispatched
+            # after a heartbeat and receipted through the same HostBridge wire.
+            fixture.psql(Path(args.pg_bin), root, port, runtime_password,
+                         "INSERT INTO kiarabot.host_commands("
+                         "command_id,host_id,instance_id,installation_id,kind,"
+                         "execution_generation,desired_version,desired_state,package_sha256,"
+                         "launch_profile,payload_sha256,state,created_at,updated_at) VALUES("
+                         "'hc-stop','host-a','instance-1','installation-1',2,1,1,1,"
+                         f"repeat('a',64),'python',repeat('c',64),0,{now_sql},{now_sql}),("
+                         "'hc-drain','host-a','instance-1','installation-1',3,1,1,1,"
+                         f"repeat('a',64),'python',repeat('d',64),0,{now_sql},{now_sql})")
             heartbeat.GetCurrentTime()
             await stream.write(host_pb2.HostToRuntime(
                 fence=fence, heartbeat=host_pb2.HostHeartbeat(fence=fence, sent_at=heartbeat)))
             ack = await read_labeled(stream, 'heartbeat ack 2 (duplicate observation)')
             require(ack.WhichOneof('body') == 'heartbeat_ack', 'duplicate observation failed')
+            frames = {}
+            for _ in range(2):
+                pending = await read_labeled(stream, 'stop/drain dispatch')
+                require(pending.WhichOneof('body') in ('stop', 'drain'),
+                        f'expected stop/drain dispatch, got {pending.WhichOneof("body")}')
+                frames[pending.WhichOneof('body')] = pending
+            stop_frame = frames['stop'].stop
+            drain_frame = frames['drain'].drain
+            require(stop_frame.command_id == 'hc-stop' and stop_frame.host_id == 'host-a' and
+                    stop_frame.instance_id == 'instance-1' and
+                    stop_frame.execution_generation == 1 and
+                    stop_frame.grace_ms == 5000,
+                    'dispatched stop snapshot mismatch')
+            require(drain_frame.command_id == 'hc-drain' and drain_frame.host_id == 'host-a' and
+                    drain_frame.grace_ms == 5000,
+                    'dispatched drain snapshot mismatch')
+            for command_id, kind in (('hc-stop', 'StopExecution'), ('hc-drain', 'DrainHost')):
+                await stream.write(host_pb2.HostToRuntime(
+                    fence=fence, receipt=host_pb2.HostCommandReceipt(
+                        command_id=command_id, persisted=True)))
+            for command_id in ('hc-stop', 'hc-drain'):
+                row = fixture.psql(Path(args.pg_bin), root, port, runtime_password,
+                                   "SELECT state,receipt_persisted FROM kiarabot.host_commands "
+                                   f"WHERE command_id='{command_id}'").stdout.decode().strip()
+                require(row.startswith('2|t'), f'{command_id} receipt not persisted: {row}')
             state_row = fixture.psql(Path(args.pg_bin), root, port, runtime_password,
                                      FINGERPRINT_QUERY).stdout.decode().strip()
             require(state_row.startswith('2|t'), f'command receipt not persisted: {state_row}')
