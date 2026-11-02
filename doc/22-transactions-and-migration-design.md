@@ -239,3 +239,15 @@ scheduler_quota_counters 关系及 due/owner 索引；record codec 同步 P10a �
 PG16.4 上重新实测写回 `manifest.hpp`，不预写猜测值。`database_test`/initializer 对 descriptor、
 关系计数和权限的校验已通过。后续任何关系变更仍必须同时更新 descriptor、relation_count、
 record codec 与测试，不得只改代码或版本号。
+
+## P10b TimerTrigger 交接事务（2026-11-02）
+
+Runtime 保存时在单个 Runtime UoW 内插入事件（`events`，event_id=occurrence_id）与唯一 owner
+instance 的 delivery target；重复交接依赖事件 id+fingerprint 的既有唯一/比较语义返回 duplicate，
+不会重复写 target。Scheduler 不把 Runtime 的 UoW 拉入本地事务：Scheduler 先持久化 outbox
+claim（通用 outbox），在事务外调用 Runtime.AcceptTimerTrigger，成功后再用独立 UoW confirm
+occurrence/task（COMPLETED）。因此存在“Runtime 已入队但 Scheduler confirm 丢失”的窗口：
+claim 到期后以同一 occurrence/event id 重发，Runtime 返回 duplicate，Scheduler 正常 confirm；
+不会产生第二个事件或 target。Runtime 永久拒绝时 Scheduler 将 occurrence/task 置 FAILED 并
+confirm outbox 以结束该交接；UNAVAILABLE/超时/限流保留 claim 重试。Scheduler→Runtime 请求由
+部署配置 `runtime_endpoint` 提供，使用服务 TLS mTLS；授权链/真实 e2e 仍需后续增量验证。

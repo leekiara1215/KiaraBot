@@ -1174,3 +1174,19 @@ IANA zoneinfo；Identity delegation/current-authorization 尚未接线（authori
 数据库故障终止服务。数据库 schema 为合并 P07a/P11a 后的 Scheduler v9（观察列/quota counter/索引/descriptor
 已在真 PG16.4 重测验证）。生产环境需确认 `/usr/share/zoneinfo` 存在且包含所需 IANA zone；非法或不
 存在的 zone、DST gap/fold 返回 INVALID_ARGUMENT，缺失 zoneinfo 返回 UPSTREAM_UNAVAILABLE。
+
+## P10b Scheduler→Runtime 触发交接（第一阶段）
+
+Scheduler 配置新增可选的顶层 `identity_endpoint`（与 Runtime 相同：Identity owner gRPC endpoint，
+复用服务 TLS 作为出站 mTLS 身份）和 `runtime_endpoint`（Runtime 内部 mTLS owner 监听，用于
+`RuntimeService.AcceptTimerTrigger`）。两者缺省时 Scheduler 仍可启动但 readiness=false（Runtime/
+Identity 依赖不可用），拒绝一切业务调用。配置值必须是 host:port；其它服务出现这些键会被拒绝。
+
+维护循环每秒在进程线程执行有界操作：due sweep、过期 trigger、保留期清理，然后在
+`runtime_endpoint` 配置时 claim 最多 5 个 trigger outbox 并调用 Runtime AcceptTimerTrigger
+（5s 预算），成功则 confirm occurrence/task COMPLETED；Runtime 永久拒绝将 occurrence/task 置
+FAILED；Runtime 不可用/超时/限流保留 claim，到期重试同一 occurrence/event id（Runtime 以
+event id+fingerprint 去重，不会重复入队或 fan-out）。COMPLETED 仅表示 Runtime 已持久入队，
+不代表插件已执行。当前 Scheduler RPC authorizer 与多进程 e2e 仍在收尾：authorizer 仍 fail-closed，
+readiness 不会因真实 Identity 授权链而转 true；部署前需等待后续增量完成 Identity delegation
+接线与真 PG+多进程验收。

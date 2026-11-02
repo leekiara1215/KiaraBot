@@ -1365,3 +1365,25 @@ zoneinfo 适配器（`/usr/share/zoneinfo` + `mktime/localtime_r` 往返检测 D
 后续若统一 protobuf 生成物，应切回基础设施 resolver。容量计数仍为 SQL 聚合扫描（quota counter
 关系保留给后续事务化缓存），RPC List 的分页 token 为 owner keyset task_id（非 10 分钟不可变
 snapshot，P10b/后续补齐）。
+
+### P10b Runtime AcceptTimerTrigger 与 Scheduler 交接（第一阶段）
+
+Runtime `RuntimeResourceApplication::accept_timer_trigger` 接收 Scheduler 的一次性触发交接：
+校验 TimerAccept 权限（online Identity 授权）、source 必须 Scheduler、handoff.message/occurrence_id/
+event_id 一致、operation/resource 均指向同一 task_id、`schedule_version` 与 handoff.version 一致、
+payload ≤64 KiB 且 `handoff.payload_hash` 与 payload SHA-256 相等、`valid_until` 未过期
+（否则 TIMEOUT）；随后把 `TimerTriggered` 事件（event_id=occurrence_id）与唯一 owner-instance
+fan-out target 在同一 UoW 内持久化。重复交接按 event id+fingerprint 返回 duplicate=true，不重复
+入队/建 target；同一 event id 不同内容返回 CONFLICT。RuntimeService 新增 AcceptTimerTrigger
+unary 处理器，wire HandoffContext 在边界转换为 domain handoff 并由边界序列化 TimerTriggered
+EventEnvelope（应用层不依赖 protobuf）。
+
+Scheduler 侧新增 `TimerDeliveryPort` 与 `SchedulerService::deliver_triggers`：维护循环 claim
+trigger outbox → 在 UoW 外调用 Runtime.AcceptTimerTrigger（生产 `SchedulerRuntimeClient` 使用
+服务 TLS 材料的 mTLS）→ 成功后 ConfirmTriggerAccepted（同一 occurrence 幂等）；Runtime 永久
+拒绝（INVALID_ARGUMENT/PERMISSION_DENIED/CONFLICT/CAPABILITY_NOT_SUPPORTED）将 occurrence/task
+置 FAILED 并结束 outbox 交接；UNAVAILABLE/DEADLINE_EXCEEDED/RATE_LIMITED 不伪造 COMPLETED，
+保留 claim 到期重试并复用同一 occurrence/event id。Scheduler 组合根在配置 `runtime_endpoint`
+时装配真实客户端，否则保持可启动但 Runtime 依赖不可用。Scheduler RPC authorizer 仍为
+fail-closed 占位（真实 Identity delegation/current-authorization 接线与多进程 e2e 未在本次完成，
+见 doc/08 未完成项）。
