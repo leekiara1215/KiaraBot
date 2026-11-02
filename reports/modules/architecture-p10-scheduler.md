@@ -181,3 +181,31 @@ proto 门禁：check_implementation_status / target_api_test / evidence_scopes_t
 
 ### P10 退出判定
 P10a/g 的 Scheduler domain/RPC/PG16.4/三进程 mTLS、P10g target RPC 翻转保持通过；P10h 使 `operations.getTask/cancelTask` 的 Control REST 成功链有 target 证据并翻转。**getOccurrence REST 仍未实现/未翻转**，因此 P10 退出为“目标 RPC + list/get/cancel REST 已验收；getOccurrence REST 待 P12 Control handler；真实 7 天 EXPIRED、多 installation 容量、真实平台触发/委托来源仍待环境”。
+
+## P10j SDK 任务方法端到端验证（2026-11-02，HEAD 3f43c8f）
+
+工作树 `.worktrees/p10j`，分支 `codex/p10j`，基于 main@3f43c8f。本任务验证 SDK 任务方法（task_create/get/cancel），并核对生产宿主链路。
+
+### 实际运行
+```text
+cmake --build --preset full-locked --parallel 8   # build=0
+ctest --preset full-locked -R 'p10|p14_native_single_host'
+# 8/8 passed, 89.80s
+# p10_scheduler_service/p10_scheduler_identity/p10_scheduler_rpc/p10_timer_e2e/
+# p10_sdk_tasks_e2e(5.16s)/p10_scheduler_rest/p10_postgres_scheduler
+# p14_native_single_host 15.74s（Identity+Runtime+Scheduler+Model+Control 原生五进程真 PG16.4 栈）
+```
+P14f 原生单机栈本身通过（真实五进程 + 临时 CA/叶子证书 + owned PG16.4 + Control HTTPS），但 P14f harness **不连接 PluginBridge、不覆盖 SDK 任务帧**；只能作为栈健康证据，不能替代 SDK 任务全链路。
+
+### 新增 SDK 端到端协议验收
+`tests/architecture/p10_sdk_tasks_e2e.py`（CTest `p10_sdk_tasks_e2e`，labels `p10;sdk;integration;fault`）：真实 SDK Runner 经真实 TLS `PluginBridge` fixture（`kiarabot_sdk.testing.FakeTargetRuntime`）执行 task_create/get/cancel；fake scheduler owner 实现任务状态机与错误语义，覆盖：
+- create→PENDING、get 回 task/version、同幂等键+同内容回放、同键异内容 CONFLICT；
+- cancel PENDING→CANCELLED、重复 cancel 同结果；COMPLETED（occurrence_id 存在）为终态，cancel→CONFLICT；
+- capacity 满→RATE_LIMITED retryable=true；
+- DST gap（America/New_York 2027-03-14 02:30）与未知 zone→INVALID_ARGUMENT（SDK 不做本地换算，稳定码由 owner 回传）；
+- 未知/跨实例 task_get→NOT_FOUND；
+- 断言 COMPLETED 只代表 TimerTriggered 已入队（SDK doc 语义），不代表插件回调成功。
+
+### 真实宿主阻塞（必须报告）
+生产 Runtime 的 PluginBridge `HostRequest` 处理 **没有 task_create/task_get/task_cancel 分支**（`core/src/runtime/platform/runtime_bridge.cpp` 的 `HostRequest.operation_case()` 只处理 storage/model；core 全仓库无 task 帧消费），因此 SDK→真实 Runtime→真实 Scheduler 的链路在当前 main 不存在，无法用 P14f/native 或三进程 harness 完成真实验收；Scheduler owner RPC 本身（P10a/g）和 Control REST（P10h）已通。P10j 的协议夹具测试只证明 SDK 端帧/错误映射；**P10 真实宿主 task 帧 ingress + Runtime→Scheduler 生产委托来源仍待实现/环境**（P10i/P10 后续）。本任务未改 core/契约（写范围不含 core），未伪称原生栈通过。
+另：tzdata 缺失稳定错误（UPSTREAM_UNAVAILABLE）由真实 Scheduler readiness 决定，fake owner 未模拟；真实 qq/平台触发仍需环境。

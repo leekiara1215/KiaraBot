@@ -380,3 +380,5 @@ refresh只接受当前实际流、未过期未撤销的proof/refresh及正refres
 ## P11f Model SDK 状态（2026-11-02）
 
 SDK `model.chat` 的 target Model e2e 用例当前标记 deferred（依赖 P06a Bridge handler + P08 managed Host：`7 passed, 19 skipped`），不能作为 Model 单链路已验收证据。SDK model.chat 的普通单测 7 passed；目标 HostRequest.model_chat 的 wire 证据来自 P11e bridge fixture。dispositions 不暴露给插件/SDK，streaming 不做。
+
+P10j（2026-11-02）：SDK task_create/get/cancel 在真实 TLS PluginBridge fixture 上通过端到端协议验收（`p10_sdk_tasks_e2e`：create/get/cancel/幂等/COMPLETED=入队/capacity RATE_LIMITED/DST gap+未知 zone INVALID_ARGUMENT/跨实例 NOT_FOUND）。但生产 Runtime 的 PluginBridge `HostRequest` 尚无 task 帧消费分支（只处理 storage/model），SDK→真实 Runtime→Scheduler 全链路当前不可用；P14f 原生五进程栈虽通过，但 harness 不含 PluginBridge/SDK 任务帧。真实宿主 task ingress、tzdata 缺失 readiness、真实平台触发与生产委托来源待后续；不要把 fake Owner 结果当作原生栈通过。

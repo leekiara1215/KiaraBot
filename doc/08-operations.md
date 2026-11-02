@@ -1565,3 +1565,5 @@ P07g（2026-11-02）：P07 Action 退出证据已按当前 HEAD 复核：`p07_ac
 - `/health/ready` 语义：Control probe 只有自身 HTTPS 组合就绪 **且** Control→Identity 校验/撤销 channel READY 才 HEALTHY；Identity 不可达返回 503（UNHEALTHY），运维应先检查 Identity readiness/证书/网络，而非重启 Control 或伪造 probe。
 - `GET /api/v1/occurrences/{id}` 仅作 owner 投影查询（task.read + explicit scope），不是调度触发入口；404/409/503 按 owner 语义处理，不得据 occurrence 状态反推任务执行成功。
 - 原生栈重跑：P14f harness 现有断言改为等待 Control probe HEALTHY；若仍 UNHEALTHY，先核对 Identity readiness 与 Control 配置 identity_endpoint/TLS CA。
+
+P10j（2026-11-02）：SDK 任务方法（create/get/cancel）已有 `p10_sdk_tasks_e2e` 协议级验收（真实 TLS PluginBridge fixture + fake Scheduler owner，5.16s；p10 标签），P14f 原生五进程栈 `p14_native_single_host` 15.74s 通过。**生产运行时尚未消费 PluginBridge task_create/task_get/task_cancel 帧**，故真实 Runtime/Scheduler 任务链路仍不可用；排障时若插件任务调用返回 CAPABILITY_NOT_SUPPORTED/UPSTREAM_UNAVAILABLE，先确认 Runtime task ingress 是否已交付，不要用 fake owner 成功当作生产可用。tzdata 缺失、真实平台触发和生产委托来源仍待环境；COMPLETED 只表示 TimerTriggered 已入队，不代表插件回调成功。
