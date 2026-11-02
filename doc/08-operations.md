@@ -12,7 +12,7 @@ T04b 启用持久化插件入口时装配 ActionRouter，插件 message.send 权
 
 ### P11a Model 根密钥配置（可选，仅 model 服务）
 
-P11 起 model 配置允许 `model_security: {"root_key_file": "...", "key_version": 1}`：`root_key_file` 必须为 32 字节 hex、0600、非符号链接的部署文件，组合根只读取一次；`key_version` 为单调正 uint64。缺失/非法/其他服务携带即退出 2；运行期解密失败 fail closed（不启动 Provider、不写调用意图）。根密钥不进入数据库、日志、审计、outbox、argv 或面板；P11b 起模型进程默认使用 libcurl HTTP Provider（无额外进程级 endpoint/key 环境变量；模型 endpoint/model/超时/并发送由 Model 私有配置写入，secret 只经 AEAD 解封），调用者校验仍 fail-closed、readiness=false；Identity 委派与 readiness 翻转在 P11c 接入。Provider 请求/响应不写日志，错误只保留稳定码；上游 429 的 Retry-After 以有界提示透传，5xx/超时/畸形保持 UNKNOWN。
+P11 起 model 配置允许 `model_security: {"root_key_file": "...", "key_version": 1}`：`root_key_file` 必须为 32 字节 hex、0600、非符号链接的部署文件，组合根只读取一次；`key_version` 为单调正 uint64。缺失/非法/其他服务携带即退出 2；运行期解密失败 fail closed（不启动 Provider、不写调用意图）。根密钥不进入数据库、日志、审计、outbox、argv 或面板；P11b 起模型进程默认使用 libcurl HTTP Provider（无额外进程级 endpoint/key 环境变量；模型 endpoint/model/超时/并发送由 Model 私有配置写入，secret 只经 AEAD 解封），P11c 起配置顶层 `identity_endpoint` 后使用真实 Identity 委托/CheckAuthorization 校验调用者，Identity 通道可用即 ready=true（组合根仍 AND DB）；未配置时保持 fail-closed/not-ready。Runtime 另可用 `model_endpoint` 出站 Model Chat；当前 P05 实例委托获取未接线，Runtime 默认 fail-closed，直到委托来源接入。Provider 请求/响应不写日志，错误只保留稳定码；上游 429 的 Retry-After 以有界提示透传，5xx/超时/畸形保持 UNKNOWN。
 
 ## T03b 受管 Python 插件
 
@@ -517,7 +517,7 @@ PeerCertificatePort信任根由部署配置传入公共PEM，最多16根，每�
 ### P04 Control HTTPS configuration and endpoint lifetime
 
 Control alone accepts optional `control_api` with exactly `listen` and
-`identity_endpoint` strings. Listen is IPv4:port (port zero is allowed for isolated
+`identity_endpoint` strings (Runtime/Scheduler/Model) and Runtime `model_endpoint`. Listen is IPv4:port (port zero is allowed for isolated
 tests), independent of the loopback probe. Identity is a single ASCII DNS/IPv4
 host:port, port 1–65535; URLs, DSNs, scripts and TLS verification overrides are
 rejected. Unknown/duplicate keys and wrong types exit 2. Validated `tls` material

@@ -24,7 +24,7 @@ Context.task_create(task_id, target_conversation, payload, idempotency_key, run_
 
 ## T06b 模型客户端
 
-Context.model_chat(model, messages, timeout=5.0) 返回生成的 ModelChatResponse；messages 使用 role/text 字段。只在 host.model.v1 协商成功后发送，必须获授 model.chat。请求限制与错误码见 doc/05-infrastructure.md。默认五秒、最多五分钟的 Host deadline 另受 Provider 最长三十秒限制。模型调用没有幂等回放，SDK 不自动重发；断线或 TIMEOUT 可能已经产生费用。插件不接触 HTTP 客户端、端点和 API Key。
+Context.model_chat(model, messages, *, logical_call_id=None, timeout=5.0, stream=False) 返回 ModelChatResponse；messages 使用 role/text（或 content）字段。只在 host.model.v1 协商成功后发送，必须获授 model.chat。SDK 为新调用生成 UUIDv4 logical_call_id；重试或 UNKNOWN 后续必须传入同一 logical_call_id，让 Model 重放已记录调用而不是再次调用 Provider。RATE_LIMITED、TIMEOUT、UPSTREAM_UNAVAILABLE(UNKNOWN/QUERY_SAME_INTENT) 以 retryable=True 暴露，其余稳定码 retryable=False；stream=True 明确 CAPABILITY_NOT_SUPPORTED。请求限制与错误码见 doc/05-infrastructure.md。插件不接触 HTTP 客户端、端点和 API Key。
 
 plugins/ai-reply 示例仅对 /ai 前缀纯文本事件应答，通过 SDK 存储先记录调用意图，再调用配置模型别名 default，最后发送 Action。若调用完成前崩溃/超时，意图记录阻止重放再次调用模型；该事件可能不产生回复，需要人工处理。已经保存的回答可以重放提交相同 Action 幂等键。示例需要 message.read、message.send、model.chat、storage.namespace，事件回调超时应配置为大于模型调用时限。
 

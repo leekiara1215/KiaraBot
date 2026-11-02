@@ -107,8 +107,55 @@ class Context:
     async def storage_get(self, key, timeout=5.0):
         return (await self._host('storage_get', timeout, key=key)).value
 
-    async def model_chat(self, model, messages, timeout=5.0):
-        return await self._host('model_chat', timeout, model=model, messages=messages)
+    async def model_chat(self, model, messages, *, logical_call_id=None, timeout=5.0,
+                         stream=False):
+        """Non-streaming Model chat.
+
+        ``logical_call_id`` is the durable call identity: generate a fresh UUIDv4 for a new call;
+        for a retry or an UNKNOWN-outcome continuation reuse the exact same value so Model replays
+        the recorded call instead of calling the provider again. Streaming is explicitly
+        unsupported in this contract version. RATE_LIMITED and UPSTREAM_UNAVAILABLE
+        (QUERY_SAME_INTENT) failures are marked retryable; never retry another failure blindly.
+        """
+        if stream:
+            raise PluginError(common.CAPABILITY_NOT_SUPPORTED)
+        if not isinstance(model, str) or not model or len(model) > 128:
+            raise PluginError(common.INVALID_ARGUMENT)
+        if not isinstance(messages, (list, tuple)) or not messages or len(messages) > 128:
+            raise PluginError(common.INVALID_ARGUMENT)
+        wire_messages = []
+        for message in messages:
+            if not isinstance(message, dict):
+                raise PluginError(common.INVALID_ARGUMENT)
+            role = message.get('role')
+            text = message.get('text', message.get('content'))
+            if role not in ('system', 'user', 'assistant') or not isinstance(text, str):
+                raise PluginError(common.INVALID_ARGUMENT)
+            if len(text.encode('utf-8')) > 65536:
+                raise PluginError(common.INVALID_ARGUMENT)
+            wire_messages.append(plugins.ModelMessage(role=role, text=text))
+        if logical_call_id is None:
+            logical_call_id = str(uuid.uuid4())
+        elif not isinstance(logical_call_id, str) or len(logical_call_id) != 36:
+            raise PluginError(common.INVALID_ARGUMENT)
+        request = plugins.HostRequest(request_id=str(uuid.uuid4()), trace_id=str(uuid.uuid4()),
+                                      model_chat=plugins.ModelChatRequest(
+                                          model=model, messages=wire_messages,
+                                          logical_call_id=logical_call_id),
+                                      idempotency_key='')
+        request.deadline.FromDatetime(datetime.now(timezone.utc) + timedelta(seconds=timeout))
+        try:
+            response = await self._call(plugins.PluginToCore(host_request=request), timeout,
+                                        'host.model.v1')
+        except PluginError as error:
+            retryable = error.retryable and error.code in (common.RATE_LIMITED,
+                                                           common.UPSTREAM_UNAVAILABLE,
+                                                           common.TIMEOUT)
+            raise PluginError(error.code, retryable) from None
+        result = response.host_response
+        if result.HasField('error'):
+            raise PluginError(result.error.code, result.error.retryable)
+        return result.model_chat
 
     async def task_create(self, task_id, target_conversation, payload, idempotency_key,
                           *, run_at=None, local_time=None, timeout=5.0):
