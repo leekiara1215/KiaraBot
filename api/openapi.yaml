@@ -31,6 +31,10 @@ x-contract-status:
     - getInstanceConfig
     - getCredentialStatus
     - getModelConfiguration
+    - disableModel
+    - enableModel
+    - getModelCallStatus
+    - resolveModelCall
     - createAccount
     - updateAccount
     - disableAccount
@@ -175,6 +179,22 @@ x-control-policy:
       scheduler: Task queries/cancellation and scheduler-backed channels unavailable -> DEGRADED.
       model: Model metadata/configuration operations and model chat unavailable -> DEGRADED; stored reads must not be invented.
     http: Authorized health returns 200 for HEALTHY or DEGRADED and 503 only for UNHEALTHY; degraded features carry their stable UNAVAILABLE code per operation.
+  model_management:
+    target_rpc: ModelService.UpdateModel/DisableModel/EnableModel/RotateProviderSecret/GetModelConfiguration/GetCallStatus/ResolveModelCall/GetOperation
+    delegation: Every command issues one short-lived Identity delegation for audience model with a
+      single exact RESOURCE_MODEL scope and the operation permission (model.manage, model.read,
+      model.call.inspect or resource.read). Control never authorizes from cached roles or widens to
+      another model.
+    secrets: Provider secrets are write-only. Rotation returns only the new secret version; reads
+      return secret_configured/secret_version plus redacted configuration, never credential bytes
+      or historical secrets. No request/response body containing new_secret is logged or echoed.
+    unknown_calls: GetCallStatus exposes the owner call record, including EXECUTION_UNKNOWN and
+      may_have_billed; a transport timeout or query failure never proves the provider call failed.
+      ResolveModelCall accepts only a finite disposition and is idempotent by owner key; a different
+      disposition for the same call is CONFLICT.
+    availability: control_api.model_endpoint is optional. When absent, Model REST routes answer
+      UNAVAILABLE (503) instead of a fabricated result; when present every request still gets a
+      fresh online Identity authorization.
   principal_directory:
     operation: listPrincipals
     target_rpc: IdentityService.ListPrincipals
@@ -2390,11 +2410,12 @@ paths:
       x-owner-rpc: ModelService.GetModelMetadata
       x-permission: model.read
       x-mutating: false
-      description: Target P01 declaration; production handler is not implemented. Current
-        Identity session and explicit resource grant are required. Path IDs must equal
-        any repeated body IDs; mismatch is INVALID_ARGUMENT. Versions are positive decimal
-        uint64 strings; writes reject missing expected_version except creation. An accepted
-        operation is not completed work.
+      description: >-
+        P11d Control forwards this to ModelService.UpdateModel with one exact model.manage
+        delegation scope. Path modelId must equal config.model_id; versions are positive decimal
+        uint64 strings and stale expected_version is CONFLICT. The response confirms persistence
+        only and never contains provider credentials. Target REST operation status stays
+        not_implemented until the owner REST layer is contract-flipped.
       parameters:
       - name: modelId
         in: path
@@ -2501,11 +2522,11 @@ paths:
       x-owner-rpc: ModelService.RotateProviderSecret
       x-permission: model.manage
       x-mutating: true
-      description: Target P01 declaration; production handler is not implemented. Current
-        Identity session and explicit resource grant are required. Path IDs must equal
-        any repeated body IDs; mismatch is INVALID_ARGUMENT. Versions are positive decimal
-        uint64 strings; writes reject missing expected_version except creation. An accepted
-        operation is not completed work.
+      description: >-
+        P11d Control forwards secret rotation to ModelService.RotateProviderSecret with one exact
+        model.manage delegation scope. new_secret is write-only: it is forwarded once to the owner,
+        never logged, and never echoed. The response reports only the new secret version; stale
+        expected_version is CONFLICT.
       parameters:
       - name: modelId
         in: path
@@ -2534,7 +2555,7 @@ paths:
         '504':
           "$ref": "#/components/responses/Timeout"
         '200':
-          description: Owner committed result or current scoped projection
+          description: Owner committed secret version (never the secret)
           content:
             application/json:
               schema:
@@ -2945,6 +2966,186 @@ paths:
           application/json:
             schema:
               "$ref": "#/components/schemas/TargetIdentityRevokeCredentialRequest"
+  "/models/{modelId}/disable":
+    post:
+      operationId: disableModel
+      summary: Disable a model through its owner
+      x-contract-status: not_implemented
+      x-owner-service: model
+      x-owner-rpc: ModelService.DisableModel
+      x-permission: model.manage
+      x-mutating: true
+      description: >-
+        P11d Control forwarding to ModelService.DisableModel with a single-model delegation scope
+        and model.manage. expected_version is mandatory and must match the current configuration
+        generation; a stale version is CONFLICT. Successful response confirms persistence only.
+      parameters:
+      - name: modelId
+        in: path
+        required: true
+        schema: { type: string, minLength: 1 }
+      - "$ref": "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/TargetModelLifecycleRequest"
+      responses:
+        '200':
+          description: Owner committed the disabled model snapshot
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/TargetModelLifecycleResponse"
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/Internal' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+        '504': { $ref: '#/components/responses/Timeout' }
+  "/models/{modelId}/enable":
+    post:
+      operationId: enableModel
+      summary: Enable a model through its owner
+      x-contract-status: not_implemented
+      x-owner-service: model
+      x-owner-rpc: ModelService.EnableModel
+      x-permission: model.manage
+      x-mutating: true
+      description: >-
+        P11d Control forwarding to ModelService.EnableModel with model.manage and a single-model
+        delegation scope. expected_version is mandatory; stale versions are CONFLICT.
+      parameters:
+      - name: modelId
+        in: path
+        required: true
+        schema: { type: string, minLength: 1 }
+      - "$ref": "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/TargetModelLifecycleRequest"
+      responses:
+        '200':
+          description: Owner committed the enabled model snapshot
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/TargetModelLifecycleResponse"
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/Internal' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+        '504': { $ref: '#/components/responses/Timeout' }
+  "/models/{modelId}/calls/{logicalCallId}":
+    get:
+      operationId: getModelCallStatus
+      summary: Query a model call status, including UNKNOWN outcomes
+      x-contract-status: not_implemented
+      x-owner-service: model
+      x-owner-rpc: ModelService.GetCallStatus
+      x-permission: model.call.inspect
+      x-mutating: false
+      description: >-
+        P11d Control forwarding to ModelService.GetCallStatus with model.call.inspect and exactly
+        one model delegation scope. An UNKNOWN execution outcome remains UNKNOWN; a query timeout
+        or transport error never proves that the provider call failed. reason/disposition are
+        owner facts, never synthesized by Control.
+      parameters:
+      - name: modelId
+        in: path
+        required: true
+        schema: { type: string, minLength: 1 }
+      - name: logicalCallId
+        in: path
+        required: true
+        schema: { type: string, minLength: 1 }
+      - name: scope
+        in: query
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/TargetResourceScope"
+      responses:
+        '200':
+          description: Owner call record snapshot
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/TargetModelGetCallStatusResponse"
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/Internal' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+        '504': { $ref: '#/components/responses/Timeout' }
+  "/models/{modelId}/calls/{logicalCallId}/resolve":
+    post:
+      operationId: resolveModelCall
+      summary: Resolve an UNKNOWN model call disposition
+      x-contract-status: not_implemented
+      x-owner-service: model
+      x-owner-rpc: ModelService.ResolveModelCall
+      x-permission: model.manage
+      x-mutating: true
+      description: >-
+        P11d Control forwarding to ModelService.ResolveModelCall with model.manage and a single
+        model delegation scope. Only a finite disposition is accepted. Same idempotency key and
+        payload replay returns the owner snapshot; a different disposition for the same call is
+        CONFLICT. Control never infers billing or execution outcome.
+      parameters:
+      - name: modelId
+        in: path
+        required: true
+        schema: { type: string, minLength: 1 }
+      - name: logicalCallId
+        in: path
+        required: true
+        schema: { type: string, minLength: 1 }
+      - "$ref": "#/components/parameters/IdempotencyKey"
+      - name: scope
+        in: query
+        required: false
+        description: Optional exact model scope; absent derives it from the path model id.
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/TargetResourceScope"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/TargetModelResolveModelCallRequest"
+      responses:
+        '200':
+          description: Owner resolved call snapshot
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/TargetModelResolveModelCallResponse"
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/Internal' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+        '504': { $ref: '#/components/responses/Timeout' }
   "/models/{modelId}/configuration":
     get:
       operationId: getModelConfiguration
@@ -2954,9 +3155,11 @@ paths:
       x-permission: model.manage
       x-mutating: false
       x-contract-status: not_implemented
-      description: Current online authorization on the exact model is required. Provider
-        secrets and URL credentials never appear; secret_configured only reports presence.
-        Unknown or invisible model is NOT_FOUND.
+      description: >-
+        P11d Control forwards to ModelService.GetModelConfiguration with one exact model.manage
+        delegation scope. Provider secrets and URL credentials never appear;
+        secret_configured/secret_version only report presence/version and the configuration is
+        redacted. Unknown or invisible model is NOT_FOUND.
       parameters:
       - name: modelId
         in: path
@@ -5569,18 +5772,131 @@ components:
         operation:
           "$ref": "#/components/schemas/TargetOperation"
       x-contract-status: not_implemented
+    TargetModelLifecycleRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        expected_version:
+          "$ref": "#/components/schemas/TargetPositiveUint64"
+      required:
+      - expected_version
+      x-contract-status: not_implemented
+    TargetModelLifecycleResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        model:
+          "$ref": "#/components/schemas/TargetModelMetadata"
+      required:
+      - model
+      x-contract-status: not_implemented
+    TargetModelCallRecord:
+      type: object
+      additionalProperties: false
+      properties:
+        logical_call_id: { type: string, minLength: 1 }
+        owner_instance_id: { type: string }
+        model_id: { type: string, minLength: 1 }
+        config_version: { "$ref": "#/components/schemas/TargetUint64" }
+        state:
+          type: string
+          enum:
+          - OPERATION_STATE_UNSPECIFIED
+          - OPERATION_ACCEPTED
+          - OPERATION_RUNNING
+          - OPERATION_BLOCKED
+          - OPERATION_SUCCEEDED
+          - OPERATION_FAILED
+          - OPERATION_CANCELLED
+          - OPERATION_EXPIRED
+        execution_outcome:
+          type: string
+          enum:
+          - EXECUTION_NOT_STARTED
+          - EXECUTION_KNOWN_SUCCEEDED
+          - EXECUTION_KNOWN_FAILED
+          - EXECUTION_UNKNOWN
+        input_tokens: { "$ref": "#/components/schemas/TargetUint64" }
+        output_tokens: { "$ref": "#/components/schemas/TargetUint64" }
+        observed_at: { type: string, format: date-time }
+        reason: { "$ref": "#/components/schemas/TargetError" }
+        secret_version: { "$ref": "#/components/schemas/TargetUint64" }
+        usage_known: { type: boolean }
+        may_have_billed: { type: boolean }
+        provider_request_id: { type: string }
+        latency_ms: { type: integer, minimum: 0 }
+        disposition:
+          type: string
+          enum:
+          - MODEL_CALL_DISPOSITION_UNSPECIFIED
+          - NOT_EXECUTED
+          - EXECUTED_NOT_BILLED
+          - EXECUTED_BILLED
+          - ABANDONED
+      required:
+      - logical_call_id
+      - model_id
+      - state
+      - execution_outcome
+      - disposition
+      x-contract-status: not_implemented
+    TargetModelGetCallStatusResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        call:
+          "$ref": "#/components/schemas/TargetModelCallRecord"
+      required:
+      - call
+      x-contract-status: not_implemented
+    TargetModelResolveModelCallRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        expected_version: { "$ref": "#/components/schemas/TargetPositiveUint64" }
+        disposition:
+          type: string
+          enum:
+          - NOT_EXECUTED
+          - EXECUTED_NOT_BILLED
+          - EXECUTED_BILLED
+          - ABANDONED
+      required:
+      - disposition
+      x-contract-status: not_implemented
+    TargetModelResolveModelCallResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        call:
+          "$ref": "#/components/schemas/TargetModelCallRecord"
+      required:
+      - call
+      x-contract-status: not_implemented
+    TargetModelGetOperationResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        operation:
+          "$ref": "#/components/schemas/TargetOperation"
+      required:
+      - operation
+      x-contract-status: not_implemented
     TargetModelGetModelConfigurationResponse:
       type: object
       additionalProperties: false
       required:
       - config
       - secret_configured
+      - secret_version
       - observed_at
       properties:
         config:
           "$ref": "#/components/schemas/TargetModelConfiguration"
         secret_configured:
           type: boolean
+        secret_version:
+          "$ref": "#/components/schemas/TargetUint64"
         observed_at:
           type: string
           format: date-time

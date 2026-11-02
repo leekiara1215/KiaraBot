@@ -148,6 +148,28 @@ GET  /plugins/{id}/health
 
 **Q8 P12 v1 验收**：分批交付；首批“基础写操作”验收项：会话撤销、账号与适配器绑定、插件启停与配置、模型配置与密钥更新、群白名单更新、任务查询与取消、Action 元数据查询。异步操作必须区分已受理/已完成/受阻/结果未知；WS 断流后从权威快照恢复，不得用本地/旧流推断成功。日志/审计查询 UI 可后置，但必须记录为阶段性延期（冻结基线与 P12 计划将日志/审计列入面板能力）。P12b 只是 mock 预览；完整 P12 需真实 HTTP/WS + Panel live 覆盖批准入口、拒绝、版本冲突、断流恢复。
 
+## P11d Model 管理面（Control）
+
+Control 提供 Model 管理面的 REST 转发，全部经 Identity 一次性委托（audience=`model`、单一精确 `RESOURCE_MODEL` scope、每次请求重新在线授权，不使用本地角色缓存）：
+
+```text
+PUT  /api/v1/models/{modelId}                          model.manage  UpdateModel
+POST /api/v1/models/{modelId}/disable                  model.manage  DisableModel（expected_version 必填）
+POST /api/v1/models/{modelId}/enable                   model.manage  EnableModel（expected_version 必填）
+PUT  /api/v1/models/{modelId}/secret                   model.manage  RotateProviderSecret
+GET  /api/v1/models/{modelId}/configuration            model.manage  GetModelConfiguration
+GET  /api/v1/models/{modelId}/calls/{logicalCallId}    model.call.inspect GetCallStatus
+POST /api/v1/models/{modelId}/calls/{logicalCallId}/resolve model.manage ResolveModelCall
+GET  /api/v1/operations/model/{operationId}            resource.read GetOperation（仅 model owner）
+```
+
+约束：
+- 密钥只写不读：轮换请求中的 `new_secret` 只转发给 owner，不写日志、不回显；读取只返回 `secret_configured`/`secret_version` 与脱敏配置。
+- `expected_version` 缺失/过期映射 `CONFLICT`；未知/不可见模型 `NOT_FOUND`；委托失败在调用 owner 前终止（401/403/503），不得本地放行。
+- `GetCallStatus` 可返回 `EXECUTION_UNKNOWN` 与 `may_have_billed`；查询超时/传输失败不等于 Provider 调用失败，客户端不得推断 FAILED。`ResolveModelCall` 只接受有限 disposition，同键重放返回 owner 快照，异处置同调用为 `CONFLICT`。
+- `control_api.model_endpoint` 可省略；省略时 Model REST 路由明确返回 `UNAVAILABLE`（503），不伪造成功或空结果。
+- 当前 target REST operations 仍登记 not_implemented（owner REST 契约状态另行翻转）；ModelService 生产 RPC 已由 P11d 证据翻转。
+
 ## WebSocket 频道
 
 T09a 已实现同一监听提供以下频道；各频道状态如下：

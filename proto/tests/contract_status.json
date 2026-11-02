@@ -1829,7 +1829,11 @@
       "operations.listPrincipals": "not_implemented",
       "operations.setInstancePluginState": "not_implemented",
       "operations.getInstanceConfiguration": "not_implemented",
-      "operations.updateInstanceConfiguration": "not_implemented"
+      "operations.updateInstanceConfiguration": "not_implemented",
+      "operations.disableModel": "not_implemented",
+      "operations.enableModel": "not_implemented",
+      "operations.getModelCallStatus": "not_implemented",
+      "operations.resolveModelCall": "not_implemented"
     },
     "semantic_rules": {
       "semantic.action.deadline_max_300s": "not_implemented",
@@ -5610,6 +5614,18 @@
       "api/openapi.yaml",
       "doc/06-control-api.md",
       "doc/01-contracts.md"
+    ],
+    "operations.disableModel": [
+      "api/openapi.yaml"
+    ],
+    "operations.enableModel": [
+      "api/openapi.yaml"
+    ],
+    "operations.getModelCallStatus": [
+      "api/openapi.yaml"
+    ],
+    "operations.resolveModelCall": [
+      "api/openapi.yaml"
     ]
   },
   "vocabulary": {
@@ -5713,7 +5729,32 @@
           "StorageCompareAndSetResponse": "implemented",
           "ModelChatRequest": "implemented",
           "ModelChatResponse": "implemented",
-          "ModelMessage": "implemented"
+          "ModelMessage": "implemented",
+          "ModelMetadata": "implemented",
+          "ModelConfiguration": "implemented",
+          "ModelCallRecord": "implemented",
+          "ModelGetModelMetadataRequest": "implemented",
+          "ModelGetModelMetadataResponse": "implemented",
+          "ModelListModelMetadataRequest": "implemented",
+          "ModelListModelMetadataResponse": "implemented",
+          "ModelUpdateModelRequest": "implemented",
+          "ModelUpdateModelResponse": "implemented",
+          "ModelRotateProviderSecretRequest": "implemented",
+          "ModelRotateProviderSecretResponse": "implemented",
+          "ModelGetCallStatusRequest": "implemented",
+          "ModelGetCallStatusResponse": "implemented",
+          "ModelGetOperationRequest": "implemented",
+          "ModelGetOperationResponse": "implemented",
+          "ModelGetModelConfigurationRequest": "implemented",
+          "ModelGetModelConfigurationResponse": "implemented",
+          "ModelDisableModelRequest": "implemented",
+          "ModelDisableModelResponse": "implemented",
+          "ModelEnableModelRequest": "implemented",
+          "ModelEnableModelResponse": "implemented",
+          "ModelResolveModelCallRequest": "implemented",
+          "ModelResolveModelCallResponse": "implemented",
+          "ModelGatewayChatRequest": "implemented",
+          "ModelGatewayChatResponse": "implemented"
         },
         "proto_fields": {
           "CredentialDelivery.credential_id": "implemented",
@@ -5950,7 +5991,91 @@
           "ModelChatResponse.input_tokens": "implemented",
           "ModelChatResponse.output_tokens": "implemented",
           "ModelMessage.role": "implemented",
-          "ModelMessage.text": "implemented"
+          "ModelMessage.text": "implemented",
+          "ModelMetadata.model_id": "implemented",
+          "ModelMetadata.alias": "implemented",
+          "ModelMetadata.config_version": "implemented",
+          "ModelMetadata.state": "implemented",
+          "ModelMetadata.provider_kind": "implemented",
+          "ModelConfiguration.model_id": "implemented",
+          "ModelConfiguration.alias": "implemented",
+          "ModelConfiguration.provider_kind": "implemented",
+          "ModelConfiguration.endpoint": "implemented",
+          "ModelConfiguration.provider_model": "implemented",
+          "ModelConfiguration.timeout_ms": "implemented",
+          "ModelConfiguration.version": "implemented",
+          "ModelCallRecord.logical_call_id": "implemented",
+          "ModelCallRecord.owner_instance_id": "implemented",
+          "ModelCallRecord.model_id": "implemented",
+          "ModelCallRecord.config_version": "implemented",
+          "ModelCallRecord.state": "implemented",
+          "ModelCallRecord.execution_outcome": "implemented",
+          "ModelCallRecord.input_tokens": "implemented",
+          "ModelCallRecord.output_tokens": "implemented",
+          "ModelCallRecord.observed_at": "implemented",
+          "ModelCallRecord.reason": "implemented",
+          "ModelGetModelMetadataRequest.context": "implemented",
+          "ModelGetModelMetadataRequest.model_id": "implemented",
+          "ModelGetModelMetadataRequest.scope": "implemented",
+          "ModelGetModelMetadataResponse.model": "implemented",
+          "ModelListModelMetadataRequest.context": "implemented",
+          "ModelListModelMetadataRequest.scope": "implemented",
+          "ModelListModelMetadataRequest.page": "implemented",
+          "ModelListModelMetadataResponse.models": "implemented",
+          "ModelListModelMetadataResponse.page": "implemented",
+          "ModelUpdateModelRequest.context": "implemented",
+          "ModelUpdateModelRequest.config": "implemented",
+          "ModelUpdateModelRequest.expected_version": "implemented",
+          "ModelUpdateModelResponse.model": "implemented",
+          "ModelUpdateModelResponse.operation": "implemented",
+          "ModelRotateProviderSecretRequest.context": "implemented",
+          "ModelRotateProviderSecretRequest.model_id": "implemented",
+          "ModelRotateProviderSecretRequest.new_secret": "implemented",
+          "ModelRotateProviderSecretRequest.expected_version": "implemented",
+          "ModelRotateProviderSecretResponse.version": "implemented",
+          "ModelRotateProviderSecretResponse.operation": "implemented",
+          "ModelGatewayChatRequest.context": "implemented",
+          "ModelGatewayChatRequest.logical_call_id": "implemented",
+          "ModelGatewayChatRequest.model_id": "implemented",
+          "ModelGatewayChatRequest.messages": "implemented",
+          "ModelGatewayChatResponse.result": "implemented",
+          "ModelGatewayChatResponse.call": "implemented",
+          "ModelGetCallStatusRequest.context": "implemented",
+          "ModelGetCallStatusRequest.logical_call_id": "implemented",
+          "ModelGetCallStatusRequest.scope": "implemented",
+          "ModelGetCallStatusResponse.call": "implemented",
+          "ModelGetOperationRequest.context": "implemented",
+          "ModelGetOperationRequest.operation": "implemented",
+          "ModelGetOperationResponse.operation": "implemented",
+          "ModelGetModelConfigurationRequest.context": "implemented",
+          "ModelGetModelConfigurationRequest.model_id": "implemented",
+          "ModelGetModelConfigurationRequest.scope": "implemented",
+          "ModelGetModelConfigurationResponse.config": "implemented",
+          "ModelGetModelConfigurationResponse.secret_configured": "implemented",
+          "ModelGetModelConfigurationResponse.observed_at": "implemented",
+          "ModelConfiguration.state": "implemented",
+          "ModelConfiguration.max_concurrency": "implemented",
+          "ModelCallRecord.secret_version": "implemented",
+          "ModelCallRecord.usage_known": "implemented",
+          "ModelCallRecord.may_have_billed": "implemented",
+          "ModelCallRecord.provider_request_id": "implemented",
+          "ModelCallRecord.latency_ms": "implemented",
+          "ModelCallRecord.disposition": "implemented",
+          "ModelGatewayChatResponse.disposition": "implemented",
+          "ModelGetModelConfigurationResponse.secret_version": "implemented",
+          "ModelDisableModelRequest.context": "implemented",
+          "ModelDisableModelRequest.model_id": "implemented",
+          "ModelDisableModelRequest.expected_version": "implemented",
+          "ModelDisableModelResponse.model": "implemented",
+          "ModelEnableModelRequest.context": "implemented",
+          "ModelEnableModelRequest.model_id": "implemented",
+          "ModelEnableModelRequest.expected_version": "implemented",
+          "ModelEnableModelResponse.model": "implemented",
+          "ModelResolveModelCallRequest.context": "implemented",
+          "ModelResolveModelCallRequest.logical_call_id": "implemented",
+          "ModelResolveModelCallRequest.expected_version": "implemented",
+          "ModelResolveModelCallRequest.disposition": "implemented",
+          "ModelResolveModelCallResponse.call": "implemented"
         },
         "bridge_methods": {
           "AdapterBridge.Connect": "implemented",
@@ -5970,7 +6095,14 @@
           "semantic.storage.cas_condition": "implemented",
           "semantic.storage.quota_persistent": "implemented",
           "semantic.storage.receipt_capacity": "implemented",
-          "semantic.namespace.shared_membership": "implemented"
+          "semantic.namespace.shared_membership": "implemented",
+          "semantic.model.two_phase_unknown": "implemented",
+          "semantic.model.duplicate_call_replay": "implemented",
+          "semantic.model.request_hash": "implemented",
+          "semantic.model.secret_rotation_pinning": "implemented",
+          "semantic.model.provider_error_mapping": "implemented",
+          "semantic.model.usage_known_billing": "implemented",
+          "semantic.model.instance_delegation": "implemented"
         },
         "enum_values": {
           "DeliveryDisposition.DELIVERY_ACKNOWLEDGED": "implemented",
@@ -5986,7 +6118,21 @@
           "Permission.PERMISSION_REQUEST_APPROVE": "implemented",
           "ActionReceiptDisposition.ACTION_RECEIPT_RECORDED": "implemented",
           "ActionReceiptDisposition.ACTION_RECEIPT_DUPLICATE": "implemented",
-          "ActionReceiptDisposition.ACTION_RECEIPT_EVIDENCE_ONLY": "implemented"
+          "ActionReceiptDisposition.ACTION_RECEIPT_EVIDENCE_ONLY": "implemented",
+          "ResourceKind.RESOURCE_MODEL": "implemented",
+          "Permission.PERMISSION_MODEL_CALL_INSPECT": "implemented",
+          "Permission.PERMISSION_MODEL_CHAT": "implemented",
+          "Permission.PERMISSION_MODEL_MANAGE": "implemented",
+          "Permission.PERMISSION_MODEL_READ": "implemented",
+          "ModelCallDisposition.MODEL_CALL_DISPOSITION_UNSPECIFIED": "implemented",
+          "ModelCallDisposition.NOT_EXECUTED": "implemented",
+          "ModelCallDisposition.EXECUTED_NOT_BILLED": "implemented",
+          "ModelCallDisposition.EXECUTED_BILLED": "implemented",
+          "ModelCallDisposition.ABANDONED": "implemented",
+          "ModelChatDisposition.MODEL_CHAT_DISPOSITION_UNSPECIFIED": "implemented",
+          "ModelChatDisposition.FRESH_RESULT": "implemented",
+          "ModelChatDisposition.REPLAY_IN_PROGRESS": "implemented",
+          "ModelChatDisposition.REPLAY_TERMINAL": "implemented"
         },
         "event_payloads": {
           "EventEnvelope.message_received": "implemented"
@@ -7812,6 +7958,1172 @@
         "host_results:HostResponse.model_chat": [
           "core/src/runtime/platform/runtime_bridge.cpp",
           "core/tests/platform/model_bridge_test.cpp"
+        ],
+        "proto_messages:ModelMetadata": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/architecture/model_gateway_test.cpp",
+          "core/tests/platform/model_identity_client_test.cpp"
+        ],
+        "proto_messages:ModelConfiguration": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/architecture/model_gateway_test.cpp",
+          "core/tests/platform/model_identity_client_test.cpp"
+        ],
+        "proto_messages:ModelCallRecord": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/architecture/model_gateway_test.cpp",
+          "core/tests/platform/model_identity_client_test.cpp"
+        ],
+        "proto_messages:ModelGetModelMetadataRequest": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/architecture/model_gateway_test.cpp",
+          "core/tests/platform/model_identity_client_test.cpp"
+        ],
+        "proto_messages:ModelGetModelMetadataResponse": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/architecture/model_gateway_test.cpp",
+          "core/tests/platform/model_identity_client_test.cpp"
+        ],
+        "proto_messages:ModelListModelMetadataRequest": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/architecture/model_gateway_test.cpp",
+          "core/tests/platform/model_identity_client_test.cpp"
+        ],
+        "proto_messages:ModelListModelMetadataResponse": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/architecture/model_gateway_test.cpp",
+          "core/tests/platform/model_identity_client_test.cpp"
+        ],
+        "proto_messages:ModelUpdateModelRequest": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/architecture/model_gateway_test.cpp",
+          "core/tests/platform/model_identity_client_test.cpp"
+        ],
+        "proto_messages:ModelUpdateModelResponse": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/architecture/model_gateway_test.cpp",
+          "core/tests/platform/model_identity_client_test.cpp"
+        ],
+        "proto_messages:ModelRotateProviderSecretRequest": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/architecture/model_gateway_test.cpp",
+          "core/tests/platform/model_identity_client_test.cpp"
+        ],
+        "proto_messages:ModelRotateProviderSecretResponse": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/architecture/model_gateway_test.cpp",
+          "core/tests/platform/model_identity_client_test.cpp"
+        ],
+        "proto_messages:ModelGetCallStatusRequest": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/architecture/model_gateway_test.cpp",
+          "core/tests/platform/model_identity_client_test.cpp"
+        ],
+        "proto_messages:ModelGetCallStatusResponse": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/architecture/model_gateway_test.cpp",
+          "core/tests/platform/model_identity_client_test.cpp"
+        ],
+        "proto_messages:ModelGetOperationRequest": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/architecture/model_gateway_test.cpp",
+          "core/tests/platform/model_identity_client_test.cpp"
+        ],
+        "proto_messages:ModelGetOperationResponse": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/architecture/model_gateway_test.cpp",
+          "core/tests/platform/model_identity_client_test.cpp"
+        ],
+        "proto_messages:ModelGetModelConfigurationRequest": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/architecture/model_gateway_test.cpp",
+          "core/tests/platform/model_identity_client_test.cpp"
+        ],
+        "proto_messages:ModelGetModelConfigurationResponse": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/architecture/model_gateway_test.cpp",
+          "core/tests/platform/model_identity_client_test.cpp"
+        ],
+        "proto_messages:ModelDisableModelRequest": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/architecture/model_gateway_test.cpp",
+          "core/tests/platform/model_identity_client_test.cpp"
+        ],
+        "proto_messages:ModelDisableModelResponse": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/architecture/model_gateway_test.cpp",
+          "core/tests/platform/model_identity_client_test.cpp"
+        ],
+        "proto_messages:ModelEnableModelRequest": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/architecture/model_gateway_test.cpp",
+          "core/tests/platform/model_identity_client_test.cpp"
+        ],
+        "proto_messages:ModelEnableModelResponse": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/architecture/model_gateway_test.cpp",
+          "core/tests/platform/model_identity_client_test.cpp"
+        ],
+        "proto_messages:ModelResolveModelCallRequest": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/architecture/model_gateway_test.cpp",
+          "core/tests/platform/model_identity_client_test.cpp"
+        ],
+        "proto_messages:ModelResolveModelCallResponse": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/architecture/model_gateway_test.cpp",
+          "core/tests/platform/model_identity_client_test.cpp"
+        ],
+        "proto_messages:ModelGatewayChatRequest": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/architecture/model_gateway_test.cpp",
+          "core/tests/platform/model_identity_client_test.cpp"
+        ],
+        "proto_messages:ModelGatewayChatResponse": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/architecture/model_gateway_test.cpp",
+          "core/tests/platform/model_identity_client_test.cpp"
+        ],
+        "proto_fields:ModelMetadata.model_id": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/architecture/model_gateway_test.cpp",
+          "core/tests/platform/model_identity_client_test.cpp"
+        ],
+        "proto_fields:ModelMetadata.alias": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/architecture/model_gateway_test.cpp",
+          "core/tests/platform/model_identity_client_test.cpp"
+        ],
+        "proto_fields:ModelMetadata.config_version": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/architecture/model_gateway_test.cpp",
+          "core/tests/platform/model_identity_client_test.cpp"
+        ],
+        "proto_fields:ModelMetadata.state": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/architecture/model_gateway_test.cpp",
+          "core/tests/platform/model_identity_client_test.cpp"
+        ],
+        "proto_fields:ModelMetadata.provider_kind": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/architecture/model_gateway_test.cpp",
+          "core/tests/platform/model_identity_client_test.cpp"
+        ],
+        "proto_fields:ModelConfiguration.model_id": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/architecture/model_gateway_test.cpp",
+          "core/tests/platform/model_identity_client_test.cpp"
+        ],
+        "proto_fields:ModelConfiguration.alias": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/architecture/model_gateway_test.cpp",
+          "core/tests/platform/model_identity_client_test.cpp"
+        ],
+        "proto_fields:ModelConfiguration.provider_kind": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/architecture/model_gateway_test.cpp",
+          "core/tests/platform/model_identity_client_test.cpp"
+        ],
+        "proto_fields:ModelConfiguration.endpoint": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/architecture/model_gateway_test.cpp",
+          "core/tests/platform/model_identity_client_test.cpp"
+        ],
+        "proto_fields:ModelConfiguration.provider_model": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/architecture/model_gateway_test.cpp",
+          "core/tests/platform/model_identity_client_test.cpp"
+        ],
+        "proto_fields:ModelConfiguration.timeout_ms": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/architecture/model_gateway_test.cpp",
+          "core/tests/platform/model_identity_client_test.cpp"
+        ],
+        "proto_fields:ModelConfiguration.version": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/architecture/model_gateway_test.cpp",
+          "core/tests/platform/model_identity_client_test.cpp"
+        ],
+        "proto_fields:ModelCallRecord.logical_call_id": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/architecture/model_gateway_test.cpp",
+          "core/tests/platform/model_identity_client_test.cpp"
+        ],
+        "proto_fields:ModelCallRecord.owner_instance_id": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/architecture/model_gateway_test.cpp",
+          "core/tests/platform/model_identity_client_test.cpp"
+        ],
+        "proto_fields:ModelCallRecord.model_id": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/architecture/model_gateway_test.cpp",
+          "core/tests/platform/model_identity_client_test.cpp"
+        ],
+        "proto_fields:ModelCallRecord.config_version": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/architecture/model_gateway_test.cpp",
+          "core/tests/platform/model_identity_client_test.cpp"
+        ],
+        "proto_fields:ModelCallRecord.state": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/architecture/model_gateway_test.cpp",
+          "core/tests/platform/model_identity_client_test.cpp"
+        ],
+        "proto_fields:ModelCallRecord.execution_outcome": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/architecture/model_gateway_test.cpp",
+          "core/tests/platform/model_identity_client_test.cpp"
+        ],
+        "proto_fields:ModelCallRecord.input_tokens": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/architecture/model_gateway_test.cpp",
+          "core/tests/platform/model_identity_client_test.cpp"
+        ],
+        "proto_fields:ModelCallRecord.output_tokens": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/architecture/model_gateway_test.cpp",
+          "core/tests/platform/model_identity_client_test.cpp"
+        ],
+        "proto_fields:ModelCallRecord.observed_at": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/architecture/model_gateway_test.cpp",
+          "core/tests/platform/model_identity_client_test.cpp"
+        ],
+        "proto_fields:ModelCallRecord.reason": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/architecture/model_gateway_test.cpp",
+          "core/tests/platform/model_identity_client_test.cpp"
+        ],
+        "proto_fields:ModelGetModelMetadataRequest.context": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/architecture/model_gateway_test.cpp",
+          "core/tests/platform/model_identity_client_test.cpp"
+        ],
+        "proto_fields:ModelGetModelMetadataRequest.model_id": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/architecture/model_gateway_test.cpp",
+          "core/tests/platform/model_identity_client_test.cpp"
+        ],
+        "proto_fields:ModelGetModelMetadataRequest.scope": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/architecture/model_gateway_test.cpp",
+          "core/tests/platform/model_identity_client_test.cpp"
+        ],
+        "proto_fields:ModelGetModelMetadataResponse.model": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/architecture/model_gateway_test.cpp",
+          "core/tests/platform/model_identity_client_test.cpp"
+        ],
+        "proto_fields:ModelListModelMetadataRequest.context": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/architecture/model_gateway_test.cpp",
+          "core/tests/platform/model_identity_client_test.cpp"
+        ],
+        "proto_fields:ModelListModelMetadataRequest.scope": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/architecture/model_gateway_test.cpp",
+          "core/tests/platform/model_identity_client_test.cpp"
+        ],
+        "proto_fields:ModelListModelMetadataRequest.page": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/architecture/model_gateway_test.cpp",
+          "core/tests/platform/model_identity_client_test.cpp"
+        ],
+        "proto_fields:ModelListModelMetadataResponse.models": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/architecture/model_gateway_test.cpp",
+          "core/tests/platform/model_identity_client_test.cpp"
+        ],
+        "proto_fields:ModelListModelMetadataResponse.page": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/architecture/model_gateway_test.cpp",
+          "core/tests/platform/model_identity_client_test.cpp"
+        ],
+        "proto_fields:ModelUpdateModelRequest.context": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/architecture/model_gateway_test.cpp",
+          "core/tests/platform/model_identity_client_test.cpp"
+        ],
+        "proto_fields:ModelUpdateModelRequest.config": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/architecture/model_gateway_test.cpp",
+          "core/tests/platform/model_identity_client_test.cpp"
+        ],
+        "proto_fields:ModelUpdateModelRequest.expected_version": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/architecture/model_gateway_test.cpp",
+          "core/tests/platform/model_identity_client_test.cpp"
+        ],
+        "proto_fields:ModelUpdateModelResponse.model": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/architecture/model_gateway_test.cpp",
+          "core/tests/platform/model_identity_client_test.cpp"
+        ],
+        "proto_fields:ModelUpdateModelResponse.operation": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/architecture/model_gateway_test.cpp",
+          "core/tests/platform/model_identity_client_test.cpp"
+        ],
+        "proto_fields:ModelRotateProviderSecretRequest.context": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/architecture/model_gateway_test.cpp",
+          "core/tests/platform/model_identity_client_test.cpp"
+        ],
+        "proto_fields:ModelRotateProviderSecretRequest.model_id": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/architecture/model_gateway_test.cpp",
+          "core/tests/platform/model_identity_client_test.cpp"
+        ],
+        "proto_fields:ModelRotateProviderSecretRequest.new_secret": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/architecture/model_gateway_test.cpp",
+          "core/tests/platform/model_identity_client_test.cpp"
+        ],
+        "proto_fields:ModelRotateProviderSecretRequest.expected_version": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/architecture/model_gateway_test.cpp",
+          "core/tests/platform/model_identity_client_test.cpp"
+        ],
+        "proto_fields:ModelRotateProviderSecretResponse.version": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/architecture/model_gateway_test.cpp",
+          "core/tests/platform/model_identity_client_test.cpp"
+        ],
+        "proto_fields:ModelRotateProviderSecretResponse.operation": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/architecture/model_gateway_test.cpp",
+          "core/tests/platform/model_identity_client_test.cpp"
+        ],
+        "proto_fields:ModelGatewayChatRequest.context": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/architecture/model_gateway_test.cpp",
+          "core/tests/platform/model_identity_client_test.cpp"
+        ],
+        "proto_fields:ModelGatewayChatRequest.logical_call_id": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/architecture/model_gateway_test.cpp",
+          "core/tests/platform/model_identity_client_test.cpp"
+        ],
+        "proto_fields:ModelGatewayChatRequest.model_id": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/architecture/model_gateway_test.cpp",
+          "core/tests/platform/model_identity_client_test.cpp"
+        ],
+        "proto_fields:ModelGatewayChatRequest.messages": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/architecture/model_gateway_test.cpp",
+          "core/tests/platform/model_identity_client_test.cpp"
+        ],
+        "proto_fields:ModelGatewayChatResponse.result": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/architecture/model_gateway_test.cpp",
+          "core/tests/platform/model_identity_client_test.cpp"
+        ],
+        "proto_fields:ModelGatewayChatResponse.call": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/architecture/model_gateway_test.cpp",
+          "core/tests/platform/model_identity_client_test.cpp"
+        ],
+        "proto_fields:ModelGetCallStatusRequest.context": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/architecture/model_gateway_test.cpp",
+          "core/tests/platform/model_identity_client_test.cpp"
+        ],
+        "proto_fields:ModelGetCallStatusRequest.logical_call_id": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/architecture/model_gateway_test.cpp",
+          "core/tests/platform/model_identity_client_test.cpp"
+        ],
+        "proto_fields:ModelGetCallStatusRequest.scope": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/architecture/model_gateway_test.cpp",
+          "core/tests/platform/model_identity_client_test.cpp"
+        ],
+        "proto_fields:ModelGetCallStatusResponse.call": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/architecture/model_gateway_test.cpp",
+          "core/tests/platform/model_identity_client_test.cpp"
+        ],
+        "proto_fields:ModelGetOperationRequest.context": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/architecture/model_gateway_test.cpp",
+          "core/tests/platform/model_identity_client_test.cpp"
+        ],
+        "proto_fields:ModelGetOperationRequest.operation": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/architecture/model_gateway_test.cpp",
+          "core/tests/platform/model_identity_client_test.cpp"
+        ],
+        "proto_fields:ModelGetOperationResponse.operation": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/architecture/model_gateway_test.cpp",
+          "core/tests/platform/model_identity_client_test.cpp"
+        ],
+        "proto_fields:ModelGetModelConfigurationRequest.context": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/architecture/model_gateway_test.cpp",
+          "core/tests/platform/model_identity_client_test.cpp"
+        ],
+        "proto_fields:ModelGetModelConfigurationRequest.model_id": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/architecture/model_gateway_test.cpp",
+          "core/tests/platform/model_identity_client_test.cpp"
+        ],
+        "proto_fields:ModelGetModelConfigurationRequest.scope": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/architecture/model_gateway_test.cpp",
+          "core/tests/platform/model_identity_client_test.cpp"
+        ],
+        "proto_fields:ModelGetModelConfigurationResponse.config": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/architecture/model_gateway_test.cpp",
+          "core/tests/platform/model_identity_client_test.cpp"
+        ],
+        "proto_fields:ModelGetModelConfigurationResponse.secret_configured": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/architecture/model_gateway_test.cpp",
+          "core/tests/platform/model_identity_client_test.cpp"
+        ],
+        "proto_fields:ModelGetModelConfigurationResponse.observed_at": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/architecture/model_gateway_test.cpp",
+          "core/tests/platform/model_identity_client_test.cpp"
+        ],
+        "proto_fields:ModelConfiguration.state": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/architecture/model_gateway_test.cpp",
+          "core/tests/platform/model_identity_client_test.cpp"
+        ],
+        "proto_fields:ModelConfiguration.max_concurrency": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/architecture/model_gateway_test.cpp",
+          "core/tests/platform/model_identity_client_test.cpp"
+        ],
+        "proto_fields:ModelCallRecord.secret_version": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/architecture/model_gateway_test.cpp",
+          "core/tests/platform/model_identity_client_test.cpp"
+        ],
+        "proto_fields:ModelCallRecord.usage_known": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/architecture/model_gateway_test.cpp",
+          "core/tests/platform/model_identity_client_test.cpp"
+        ],
+        "proto_fields:ModelCallRecord.may_have_billed": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/architecture/model_gateway_test.cpp",
+          "core/tests/platform/model_identity_client_test.cpp"
+        ],
+        "proto_fields:ModelCallRecord.provider_request_id": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/architecture/model_gateway_test.cpp",
+          "core/tests/platform/model_identity_client_test.cpp"
+        ],
+        "proto_fields:ModelCallRecord.latency_ms": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/architecture/model_gateway_test.cpp",
+          "core/tests/platform/model_identity_client_test.cpp"
+        ],
+        "proto_fields:ModelCallRecord.disposition": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/architecture/model_gateway_test.cpp",
+          "core/tests/platform/model_identity_client_test.cpp"
+        ],
+        "proto_fields:ModelGatewayChatResponse.disposition": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/architecture/model_gateway_test.cpp",
+          "core/tests/platform/model_identity_client_test.cpp"
+        ],
+        "proto_fields:ModelGetModelConfigurationResponse.secret_version": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/architecture/model_gateway_test.cpp",
+          "core/tests/platform/model_identity_client_test.cpp"
+        ],
+        "proto_fields:ModelDisableModelRequest.context": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/architecture/model_gateway_test.cpp",
+          "core/tests/platform/model_identity_client_test.cpp"
+        ],
+        "proto_fields:ModelDisableModelRequest.model_id": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/architecture/model_gateway_test.cpp",
+          "core/tests/platform/model_identity_client_test.cpp"
+        ],
+        "proto_fields:ModelDisableModelRequest.expected_version": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/architecture/model_gateway_test.cpp",
+          "core/tests/platform/model_identity_client_test.cpp"
+        ],
+        "proto_fields:ModelDisableModelResponse.model": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/architecture/model_gateway_test.cpp",
+          "core/tests/platform/model_identity_client_test.cpp"
+        ],
+        "proto_fields:ModelEnableModelRequest.context": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/architecture/model_gateway_test.cpp",
+          "core/tests/platform/model_identity_client_test.cpp"
+        ],
+        "proto_fields:ModelEnableModelRequest.model_id": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/architecture/model_gateway_test.cpp",
+          "core/tests/platform/model_identity_client_test.cpp"
+        ],
+        "proto_fields:ModelEnableModelRequest.expected_version": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/architecture/model_gateway_test.cpp",
+          "core/tests/platform/model_identity_client_test.cpp"
+        ],
+        "proto_fields:ModelEnableModelResponse.model": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/architecture/model_gateway_test.cpp",
+          "core/tests/platform/model_identity_client_test.cpp"
+        ],
+        "proto_fields:ModelResolveModelCallRequest.context": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/architecture/model_gateway_test.cpp",
+          "core/tests/platform/model_identity_client_test.cpp"
+        ],
+        "proto_fields:ModelResolveModelCallRequest.logical_call_id": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/architecture/model_gateway_test.cpp",
+          "core/tests/platform/model_identity_client_test.cpp"
+        ],
+        "proto_fields:ModelResolveModelCallRequest.expected_version": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/architecture/model_gateway_test.cpp",
+          "core/tests/platform/model_identity_client_test.cpp"
+        ],
+        "proto_fields:ModelResolveModelCallRequest.disposition": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/architecture/model_gateway_test.cpp",
+          "core/tests/platform/model_identity_client_test.cpp"
+        ],
+        "proto_fields:ModelResolveModelCallResponse.call": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/architecture/model_gateway_test.cpp",
+          "core/tests/platform/model_identity_client_test.cpp"
+        ],
+        "enum_values:ResourceKind.RESOURCE_MODEL": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/architecture/model_gateway_test.cpp",
+          "core/tests/platform/model_identity_client_test.cpp"
+        ],
+        "enum_values:Permission.PERMISSION_MODEL_CALL_INSPECT": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/architecture/model_gateway_test.cpp",
+          "core/tests/platform/model_identity_client_test.cpp"
+        ],
+        "enum_values:Permission.PERMISSION_MODEL_CHAT": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/architecture/model_gateway_test.cpp",
+          "core/tests/platform/model_identity_client_test.cpp"
+        ],
+        "enum_values:Permission.PERMISSION_MODEL_MANAGE": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/architecture/model_gateway_test.cpp",
+          "core/tests/platform/model_identity_client_test.cpp"
+        ],
+        "enum_values:Permission.PERMISSION_MODEL_READ": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/architecture/model_gateway_test.cpp",
+          "core/tests/platform/model_identity_client_test.cpp"
+        ],
+        "enum_values:ModelCallDisposition.MODEL_CALL_DISPOSITION_UNSPECIFIED": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/architecture/model_gateway_test.cpp",
+          "core/tests/platform/model_identity_client_test.cpp"
+        ],
+        "enum_values:ModelCallDisposition.NOT_EXECUTED": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/architecture/model_gateway_test.cpp",
+          "core/tests/platform/model_identity_client_test.cpp"
+        ],
+        "enum_values:ModelCallDisposition.EXECUTED_NOT_BILLED": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/architecture/model_gateway_test.cpp",
+          "core/tests/platform/model_identity_client_test.cpp"
+        ],
+        "enum_values:ModelCallDisposition.EXECUTED_BILLED": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/architecture/model_gateway_test.cpp",
+          "core/tests/platform/model_identity_client_test.cpp"
+        ],
+        "enum_values:ModelCallDisposition.ABANDONED": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/architecture/model_gateway_test.cpp",
+          "core/tests/platform/model_identity_client_test.cpp"
+        ],
+        "semantic_rules:semantic.model.two_phase_unknown": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/architecture/model_gateway_test.cpp",
+          "core/tests/platform/model_identity_client_test.cpp"
+        ],
+        "semantic_rules:semantic.model.duplicate_call_replay": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/architecture/model_gateway_test.cpp",
+          "core/tests/platform/model_identity_client_test.cpp"
+        ],
+        "semantic_rules:semantic.model.request_hash": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/architecture/model_gateway_test.cpp",
+          "core/tests/platform/model_identity_client_test.cpp"
+        ],
+        "semantic_rules:semantic.model.secret_rotation_pinning": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/architecture/model_gateway_test.cpp",
+          "core/tests/platform/model_identity_client_test.cpp"
+        ],
+        "semantic_rules:semantic.model.provider_error_mapping": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/architecture/model_gateway_test.cpp",
+          "core/tests/platform/model_identity_client_test.cpp"
+        ],
+        "semantic_rules:semantic.model.usage_known_billing": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/architecture/model_gateway_test.cpp",
+          "core/tests/platform/model_identity_client_test.cpp"
+        ],
+        "semantic_rules:semantic.model.instance_delegation": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/architecture/model_gateway_test.cpp",
+          "core/tests/platform/model_identity_client_test.cpp"
+        ],
+        "enum_values:ModelChatDisposition.MODEL_CHAT_DISPOSITION_UNSPECIFIED": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/platform/runtime_model_client_test.cpp"
+        ],
+        "enum_values:ModelChatDisposition.FRESH_RESULT": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/platform/runtime_model_client_test.cpp"
+        ],
+        "enum_values:ModelChatDisposition.REPLAY_IN_PROGRESS": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/platform/runtime_model_client_test.cpp"
+        ],
+        "enum_values:ModelChatDisposition.REPLAY_TERMINAL": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "core/src/application/target/model_application.cpp",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp",
+          "core/tests/platform/runtime_model_client_test.cpp"
         ]
       }
     }

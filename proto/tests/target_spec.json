@@ -1297,9 +1297,10 @@
       "idempotency": "none",
       "deadline_ms": 2000,
       "server_streaming": false,
-      "status": "not_implemented",
+      "status": "implemented",
       "max_deadline_ms": 5000,
-      "requires_idempotency_key": false
+      "requires_idempotency_key": false,
+      "status_note": "P11a/b/c Model service production RPC + P11d Control REST forwarding evidence; REST Control operation status remains separately registered"
     },
     {
       "service": "ModelService",
@@ -1314,9 +1315,10 @@
       "idempotency": "none",
       "deadline_ms": 2000,
       "server_streaming": false,
-      "status": "not_implemented",
+      "status": "implemented",
       "max_deadline_ms": 5000,
-      "requires_idempotency_key": false
+      "requires_idempotency_key": false,
+      "status_note": "P11a/b/c Model service production RPC + P11d Control REST forwarding evidence; REST Control operation status remains separately registered"
     },
     {
       "service": "ModelService",
@@ -1331,9 +1333,10 @@
       "idempotency": "required",
       "deadline_ms": 5000,
       "server_streaming": false,
-      "status": "not_implemented",
+      "status": "implemented",
       "max_deadline_ms": 30000,
-      "requires_idempotency_key": true
+      "requires_idempotency_key": true,
+      "status_note": "P11a/b/c Model service production RPC + P11d Control REST forwarding evidence; REST Control operation status remains separately registered"
     },
     {
       "service": "ModelService",
@@ -1348,9 +1351,10 @@
       "idempotency": "required",
       "deadline_ms": 5000,
       "server_streaming": false,
-      "status": "not_implemented",
+      "status": "implemented",
       "max_deadline_ms": 30000,
-      "requires_idempotency_key": true
+      "requires_idempotency_key": true,
+      "status_note": "P11a/b/c Model service production RPC + P11d Control REST forwarding evidence; REST Control operation status remains separately registered"
     },
     {
       "service": "ModelService",
@@ -1365,12 +1369,13 @@
       "idempotency": "logical_call_id (business de-duplication; no idempotency_key)",
       "deadline_ms": 30000,
       "server_streaming": false,
-      "status": "not_implemented",
+      "status": "implemented",
       "max_deadline_ms": 30000,
       "requires_idempotency_key": false,
       "scope_kinds": [
         "RESOURCE_MODEL"
-      ]
+      ],
+      "status_note": "P11a/b/c Model service production RPC + P11d Control REST forwarding evidence; REST Control operation status remains separately registered"
     },
     {
       "service": "ModelService",
@@ -1385,9 +1390,10 @@
       "idempotency": "none",
       "deadline_ms": 2000,
       "server_streaming": false,
-      "status": "not_implemented",
+      "status": "implemented",
       "max_deadline_ms": 5000,
-      "requires_idempotency_key": false
+      "requires_idempotency_key": false,
+      "status_note": "P11a/b/c Model service production RPC + P11d Control REST forwarding evidence; REST Control operation status remains separately registered"
     },
     {
       "service": "RuntimeService",
@@ -1437,8 +1443,9 @@
       "deadline_ms": 2000,
       "max_deadline_ms": 5000,
       "server_streaming": false,
-      "status": "not_implemented",
-      "requires_idempotency_key": false
+      "status": "implemented",
+      "requires_idempotency_key": false,
+      "status_note": "P11a/b/c Model service production RPC + P11d Control REST forwarding evidence; REST Control operation status remains separately registered"
     },
     {
       "service": "ModelService",
@@ -1454,8 +1461,9 @@
       "deadline_ms": 2000,
       "max_deadline_ms": 5000,
       "server_streaming": false,
-      "status": "not_implemented",
-      "requires_idempotency_key": false
+      "status": "implemented",
+      "requires_idempotency_key": false,
+      "status_note": "P11a/b/c Model service production RPC + P11d Control REST forwarding evidence; REST Control operation status remains separately registered"
     },
     {
       "service": "RuntimeService",
@@ -1746,10 +1754,11 @@
       "idempotency": "required",
       "deadline_ms": 5000,
       "server_streaming": false,
-      "status": "not_implemented",
+      "status": "implemented",
       "max_deadline_ms": 30000,
       "requires_idempotency_key": true,
-      "exposure": "wire"
+      "exposure": "wire",
+      "status_note": "P11a/b/c Model service production RPC + P11d Control REST forwarding evidence; REST Control operation status remains separately registered"
     },
     {
       "service": "ModelService",
@@ -1764,10 +1773,11 @@
       "idempotency": "required",
       "deadline_ms": 5000,
       "server_streaming": false,
-      "status": "not_implemented",
+      "status": "implemented",
       "max_deadline_ms": 30000,
       "requires_idempotency_key": true,
-      "exposure": "wire"
+      "exposure": "wire",
+      "status_note": "P11a/b/c Model service production RPC + P11d Control REST forwarding evidence; REST Control operation status remains separately registered"
     },
     {
       "service": "ModelService",
@@ -1782,10 +1792,11 @@
       "idempotency": "required",
       "deadline_ms": 5000,
       "server_streaming": false,
-      "status": "not_implemented",
+      "status": "implemented",
       "max_deadline_ms": 30000,
       "requires_idempotency_key": true,
-      "exposure": "wire"
+      "exposure": "wire",
+      "status_note": "P11a/b/c Model service production RPC + P11d Control REST forwarding evidence; REST Control operation status remains separately registered"
     }
   ],
   "bridges": [
