@@ -510,8 +510,10 @@ std::unique_ptr<v1::HostBridge::Service> make_impl(HostBridgeServerDependencies 
   return std::make_unique<HostBridgeImpl>(std::move(dependencies));
 }
 
-// In-process fallback store for deployment composition before P08b-2c supplies the PG port.
-// It preserves the same version/generation semantics; it is explicitly not durable.
+// In-process store used by the current composition. The PG HostRegistrationPort and its real
+// PG fixture landed in P08b-2c, but runtime_composition still injects this store for registration
+// (state is intentionally not durable across restarts). Command/receipt/observation persistence is
+// wired separately through HostBridgePersistence (P08b-3a/3b), so that path is durable.
 class InMemoryHostStore final : public t::HostRegistrationPort {
 public:
   explicit InMemoryHostStore(std::vector<t::HostCertificateBinding> allowlist)
