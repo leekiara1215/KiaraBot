@@ -83,6 +83,8 @@ Model 进程使用独立逻辑库（P03 typed UoW 扩展）：`model_configs` �
 
 Provider 根密钥由部署通过 `model_security.root_key_file`（32 字节 hex、0600、可信文件）与单调 `key_version` 注入，只由 Model 组合根读取并交给 libsodium XChaCha20-Poly1305 适配器；根密钥不入数据库、不与密文同表、不写日志/审计/错误。sealed 值的 AAD 绑定 model_id/secret_version/root_key_version，解密失败 fail closed。P11b 已用 reviewed libcurl HTTP Provider 替换开发 fake：每次调用按已 pinning 的配置构造 OpenAI Chat Completions 请求（Bearer secret 只在内存、不日志不回显），TLS 校验证书/主机、禁代理与重定向、协议限定 HTTPS 或 127.0.0.1 HTTP；输入 128 条/64KiB、响应 1MiB、结果 64KiB，超时由服务端预算与配置取小，不自动重试。映射：400/422 INVALID_ARGUMENT、401/403 UPSTREAM_UNAVAILABLE、404/405/410 CAPABILITY_NOT_SUPPORTED、429 RATE_LIMITED（Retry-After 透传、已知未计费）、其他 4xx 已知 UPSTREAM_UNAVAILABLE；5xx/超时/TLS/连接/畸形/超大响应一律 UNKNOWN（may_have_billed 保守）。组合根默认注入真实 Provider，只允许显式测试选项注入 fake。真实 Identity 调用者委派校验和 readiness 翻转属于 P11c。
 
+Scheduler 进程私有逻辑库（P10a，真实 PG16.4）：`tasks/task_occurrences` 增列（created_at/updated_at/cancel_requested、attempts/last_error_code/created_at/updated_at），新增 `scheduler_quota_counters` 与 `occurrences_due`/`tasks_owner_state` 索引；occurrence claim/取消/容量计数为单 UoW 条件写。真 PG fixture `p10_postgres_scheduler` 覆盖 schema v9 初始化、任务/occurrence 条件写、claim 与收据/审计；三进程真 mTLS 交接见 `p10_timer_e2e`。target 契约登记尚未翻转，证据矩阵见 [architecture-p10-scheduler.md](../reports/modules/architecture-p10-scheduler.md)。
+
 ## 模型适配器
 
 ### T06b 非流式 HTTP Provider

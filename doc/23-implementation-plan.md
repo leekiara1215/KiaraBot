@@ -66,7 +66,7 @@ P00–P02 在同一集成工作分支形成目标构建基线；P01 的契约生
 | P07 | SDK Action→Runtime→Adapter→平台替身闭环 | P06 | 未开始 |
 | P08 | 插件宿主、期望状态与配置应用闭环 | P05、P06 | 未开始 |
 | P09 | 私有/共享 namespace、CAS、配额与收据 | P05、P03 | 未开始 |
-| P10 | Scheduler 一次性任务及可靠触发 | P06、P03、P04 | 未开始 |
+| P10 | Scheduler 一次性任务及可靠触发 | P06、P03、P04 | 已实现 P10a–P10c 并本地实测（ctest p10 5/5、p03_postgres 1/1、SDK tasks pytest 43 passed）；target 登记待 P10g，真实环境项见 [architecture-p10-scheduler.md](../reports/modules/architecture-p10-scheduler.md) |
 | P11 | Model 配置/密钥及调用前后记账 | P05、P03、P04 | 未开始 |
 | P12 | Control 与 Panel 核心运行管理全部接线 | P07–P11 | 未开始 |
 | P13 | 生命周期协调、分类清理与容量观测 | P07–P12 | 已实现 P13a–P13d；可观测最小面/验收矩阵见 doc/08 P13d 与 reports/modules/architecture-p13-lifecycle.md，真实满盘/跨主机待 P14 环境 |
@@ -280,6 +280,7 @@ PG Repository/COMMIT/锁/并发测试缺少真实 PG 时失败并报告原因，
 - **错误/状态**：歧义/不存在当地时间拒绝；owner从可信上下文派生；取消在触发交接开始后返回冲突；确认丢失同occurrence恢复，COMPLETED只代表持久入队。
 - **文档**：运行语义、`doc/02`、`doc/03`、`doc/05`、`doc/06`、`doc/08`；取消窗口和1024实例/8192安装默认限制。
 - **验证/退出**：V0/V1/V2/V3/V5(p10)，发送前后宕机、入队后确认丢失、取消/到期竞争、DST、重复恢复、目标停用；同occurrence只建一次事件与目标。
+- **P10f 证据（2026-11-02，基线 d508d67）**：Scheduler domain/RPC/授权、PG schema v9、三进程真 mTLS 定时交接与 SDK 任务方法已本地实测通过（`ctest -R 'p10'` 5/5、`p03_postgres` 1/1、SDK tasks pytest 43 passed）；target override/方法状态/证据未翻转，真实 7 天 EXPIRED、多 installation 容量、真实平台触发、生产委托来源未验收；矩阵见 [architecture-p10-scheduler.md](../reports/modules/architecture-p10-scheduler.md)。
 - **契约前置（2026-11-02 已冻结）**：P10 wire 同 P09 C 系列；`AcceptTimerTrigger` 保持内部 mTLS owner 方法（非 Bridge），TimerTriggered 只由 Runtime 产生且 event_id := occurrence_id；实现前 target override 不翻转，崩溃/重启/到期语义以 `semantic.scheduler.*` 契约为验收标准。
 
 ### P11：Model 网关、配置密钥与计费边界

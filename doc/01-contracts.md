@@ -15,6 +15,8 @@ T03a 新增 CoreToPlugin.error（oneof 字段 6），承载注册之后的终止
 <!-- execution-scopes:start -->
 当前 target 可用项为P02进程探针、P04-A Identity主体/凭据管理gRPC面与P09a-2共享namespace管理面：
 
+P10 Scheduler 的 domain/RPC/PG16.4/三进程 mTLS 交接已本地实测通过，但 target override、`target_spec` 方法状态、证据与执行范围行尚未登记，故下表仍不含 P10 项；登记清单与理由见 [architecture-p10-scheduler.md](../reports/modules/architecture-p10-scheduler.md)，属后续 P10g 契约登记任务。
+
 | target 契约项 | 状态 | 范围 |
 | --- | --- | --- |
 | `operations.getProcessLiveness` | implemented | 进程HTTP live，200/HEALTHY，不代表业务可用 |
