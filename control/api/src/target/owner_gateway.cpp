@@ -248,6 +248,205 @@ std::string instance_apply_state(const wire::VersionedResourceState& state) {
   }
   return "CONFIG_APPLY_UNAVAILABLE";
 }
+wire::ResourceScope control_catalog_scope() {
+  wire::ResourceScope scope;
+  auto* resource = scope.add_resources();
+  resource->set_kind(wire::RESOURCE_CATALOG);
+  resource->set_id("control");
+  return scope;
+}
+bool valid_audit_cursor(std::string_view token) {
+  if (token.empty() || token.size() > 160) {
+    return false;
+  }
+  const auto colon = token.find(':');
+  if (colon == 0 || colon == std::string_view::npos || colon + 1 >= token.size()) {
+    return false;
+  }
+  const auto number = token.substr(0, colon);
+  if (number.size() > 20 || !std::all_of(number.begin(), number.end(),
+                                         [](char value) { return value >= '0' && value <= '9'; })) {
+    return false;
+  }
+  const auto id = token.substr(colon + 1);
+  return id.size() <= 128 && std::all_of(id.begin(), id.end(), [](char value) {
+           return (value >= '0' && value <= '9') || (value >= 'a' && value <= 'f') ||
+                  (value >= 'A' && value <= 'F') || value == '-';
+         });
+}
+std::string audit_cursor(const AuditLogRow& row) {
+  const auto nanos =
+      std::chrono::duration_cast<std::chrono::nanoseconds>(row.occurred_at.time_since_epoch())
+          .count();
+  return std::to_string(nanos) + ":" + row.entry_id;
+}
+std::optional<AuditLogRow> map_audit_row(const wire::IdentityAuditRecord& record) {
+  AuditLogRow row;
+  row.entry_id = record.entry_id();
+  row.owner = "identity";
+  row.actor = record.actor();
+  row.resource_kind = record.resource().kind();
+  row.resource_id = record.resource().id();
+  row.request_id = record.request_id();
+  row.trace_id = record.trace_id();
+  row.method = record.method();
+  row.rejection = wire::ErrorCode_Name(record.rejection());
+  row.authorization_version = record.authorization_version();
+  row.account_id = record.target_account_id();
+  row.conversation_id = record.target_conversation_id();
+  const auto occurred = codec::from_wire(record.occurred_at());
+  if (const auto* value = std::get_if<core::target::TimePoint>(&occurred)) {
+    row.occurred_at = *value;
+    return row;
+  }
+  return std::nullopt;
+}
+std::optional<AuditLogRow> map_audit_row(const wire::RuntimeAuditRecord& record) {
+  AuditLogRow row;
+  row.entry_id = record.entry_id();
+  row.owner = "runtime";
+  row.actor = record.actor();
+  row.resource_kind = record.resource().kind();
+  row.resource_id = record.resource().id();
+  row.request_id = record.request_id();
+  row.trace_id = record.trace_id();
+  row.method = record.method();
+  row.rejection = wire::ErrorCode_Name(record.rejection());
+  row.authorization_version = record.authorization_version();
+  row.account_id = record.target_account_id();
+  row.conversation_id = record.target_conversation_id();
+  const auto occurred = codec::from_wire(record.occurred_at());
+  if (const auto* value = std::get_if<core::target::TimePoint>(&occurred)) {
+    row.occurred_at = *value;
+    return row;
+  }
+  return std::nullopt;
+}
+std::optional<AuditLogRow> map_log_row(const wire::IdentityLogRecord& record) {
+  AuditLogRow row;
+  row.entry_id = record.entry_id();
+  row.owner = "identity";
+  row.actor = record.actor();
+  row.resource_kind = record.resource().kind();
+  row.resource_id = record.resource().id();
+  row.request_id = record.request_id();
+  row.trace_id = record.trace_id();
+  row.method = record.method();
+  row.severity = record.severity();
+  row.component = record.component();
+  row.message = record.message();
+  const auto occurred = codec::from_wire(record.occurred_at());
+  if (const auto* value = std::get_if<core::target::TimePoint>(&occurred)) {
+    row.occurred_at = *value;
+    return row;
+  }
+  return std::nullopt;
+}
+std::optional<AuditLogRow> map_log_row(const wire::RuntimeLogRecord& record) {
+  AuditLogRow row;
+  row.entry_id = record.entry_id();
+  row.owner = "runtime";
+  row.actor = record.actor();
+  row.resource_kind = record.resource().kind();
+  row.resource_id = record.resource().id();
+  row.request_id = record.request_id();
+  row.trace_id = record.trace_id();
+  row.method = record.method();
+  row.severity = record.severity();
+  row.component = record.component();
+  row.message = record.message();
+  const auto occurred = codec::from_wire(record.occurred_at());
+  if (const auto* value = std::get_if<core::target::TimePoint>(&occurred)) {
+    row.occurred_at = *value;
+    return row;
+  }
+  return std::nullopt;
+}
+std::string json_time_point(core::target::TimePoint value) {
+  const auto encoded = codec::to_wire(value);
+  if (const auto* timestamp = std::get_if<google::protobuf::Timestamp>(&encoded)) {
+    return json_time(*timestamp);
+  }
+  return "";
+}
+std::string resource_text(const AuditLogRow& row) {
+  if (row.resource_id.empty()) {
+    return "";
+  }
+  return std::string{wire::ResourceKind_Name(row.resource_kind)} + ":" + row.resource_id;
+}
+Json audit_page_json(std::vector<AuditLogRow>& rows, std::uint32_t page_size,
+                     const std::optional<std::string>& next_token) {
+  std::sort(rows.begin(), rows.end(), [](const AuditLogRow& left, const AuditLogRow& right) {
+    if (left.occurred_at != right.occurred_at) {
+      return left.occurred_at > right.occurred_at;
+    }
+    if (left.owner != right.owner) {
+      return left.owner < right.owner;
+    }
+    return left.entry_id > right.entry_id;
+  });
+  Json items = Json::array();
+  const auto take = std::min<std::size_t>(rows.size(), page_size);
+  for (std::size_t index = 0; index < take; ++index) {
+    const auto& row = rows[index];
+    Json item{{"id", row.entry_id},          {"occurred_at", json_time_point(row.occurred_at)},
+              {"owner", row.owner},          {"actor", row.actor},
+              {"action", row.method},        {"resource", resource_text(row)},
+              {"request_id", row.request_id}};
+    if (!row.account_id.empty()) {
+      item["account_id"] = row.account_id;
+    }
+    if (!row.conversation_id.empty()) {
+      item["conversation_id"] = row.conversation_id;
+    }
+    if (!row.rejection.empty() && row.rejection != "ERROR_CODE_UNSPECIFIED") {
+      item["rejection"] = row.rejection;
+    }
+    items.push_back(std::move(item));
+  }
+  Json page{{"page_size", page_size}};
+  if (next_token) {
+    page["next_page_token"] = *next_token;
+  }
+  return {{"items", std::move(items)}, {"page", std::move(page)}};
+}
+Json logs_page_json(std::vector<AuditLogRow>& rows, std::uint32_t page_size,
+                    const std::optional<std::string>& next_token) {
+  std::sort(rows.begin(), rows.end(), [](const AuditLogRow& left, const AuditLogRow& right) {
+    if (left.occurred_at != right.occurred_at) {
+      return left.occurred_at > right.occurred_at;
+    }
+    if (left.owner != right.owner) {
+      return left.owner < right.owner;
+    }
+    return left.entry_id > right.entry_id;
+  });
+  Json items = Json::array();
+  const auto take = std::min<std::size_t>(rows.size(), page_size);
+  for (std::size_t index = 0; index < take; ++index) {
+    const auto& row = rows[index];
+    Json item{{"id", row.entry_id},
+              {"name", row.component},
+              {"occurred_at", json_time_point(row.occurred_at)},
+              {"owner", row.owner},
+              {"level", row.severity == "rejected" ? "ERROR"
+                        : row.severity == "warn"   ? "WARN"
+                        : row.severity == "debug"  ? "DEBUG"
+                                                   : "INFO"},
+              {"component", row.component},
+              {"message", row.message}};
+    if (!row.trace_id.empty()) {
+      item["trace_id"] = row.trace_id;
+    }
+    items.push_back(std::move(item));
+  }
+  Json page{{"page_size", page_size}};
+  if (next_token) {
+    page["next_page_token"] = *next_token;
+  }
+  return {{"items", std::move(items)}, {"page", std::move(page)}};
+}
 std::string request_identifier(const OwnerHttpRequest& request) {
   if (const auto value = header(request, "x-request-id");
       value && value->size() >= 8 && value->size() <= 128) {
@@ -1219,8 +1418,6 @@ std::optional<OwnerHttpResult> OwnerGateway::handle(const OwnerHttpRequest& requ
                                json_response(std::get<wire::SchedulerGetTaskResponse>(result))};
       }
     }
-    // P12c: authoritative log/audit sources are not registered yet. A successful empty page would
-    // claim "no events" without evidence; but first enforce the separate sensitive grants.
     if (path == "/api/v1/logs" || path == "/api/v1/audit") {
       if (request.method != "GET" && request.method != "HEAD") {
         return OwnerHttpResult{
@@ -1230,17 +1427,141 @@ std::optional<OwnerHttpResult> OwnerGateway::handle(const OwnerHttpRequest& requ
         return OwnerHttpResult{
             401, owner_error_body(wire::UNAUTHENTICATED, request_id, trace_id, false)};
       }
-      const auto permission =
-          path == "/api/v1/logs" ? wire::PERMISSION_LOG_READ : wire::PERMISSION_AUDIT_READ;
-      auto delegation = delegation_.issue("control", permission, wire::ResourceScope{},
+      if (!audit_logs_) {
+        return OwnerHttpResult{
+            503, owner_error_body(wire::UPSTREAM_UNAVAILABLE, request_id, trace_id, true)};
+      }
+      const bool logs = path == "/api/v1/logs";
+      const auto kind = logs ? AuditLogKind::Logs : AuditLogKind::Audit;
+      const auto permission = logs ? wire::PERMISSION_LOG_READ : wire::PERMISSION_AUDIT_READ;
+      auto query = parse_query(request.target);
+      if (!query) {
+        return OwnerHttpResult{
+            400, owner_error_body(wire::INVALID_ARGUMENT, request_id, trace_id, false)};
+      }
+      for (const auto& [name, value] : *query) {
+        (void)value;
+        if (name != "page_size" && name != "page_token" && name != "occurred_from" &&
+            name != "occurred_until" && name != "actor" && name != "resource") {
+          return OwnerHttpResult{
+              400, owner_error_body(wire::INVALID_ARGUMENT, request_id, trace_id, false)};
+        }
+      }
+      AuditLogFilter filter;
+      if (const auto size = query->find("page_size"); size != query->end()) {
+        std::uint32_t value = 0;
+        const auto parsed =
+            std::from_chars(size->second.data(), size->second.data() + size->second.size(), value);
+        if (parsed.ec != std::errc{} || parsed.ptr != size->second.data() + size->second.size() ||
+            value == 0 || value > 100) {
+          return OwnerHttpResult{
+              400, owner_error_body(wire::INVALID_ARGUMENT, request_id, trace_id, false)};
+        }
+        filter.page_size = value;
+      }
+      if (const auto token = query->find("page_token"); token != query->end()) {
+        if (!valid_audit_cursor(token->second)) {
+          return OwnerHttpResult{
+              400, owner_error_body(wire::INVALID_ARGUMENT, request_id, trace_id, false)};
+        }
+        filter.page_token = token->second;
+      }
+      const auto time_filter = [&](const char* name) -> std::optional<core::target::TimePoint> {
+        const auto found = query->find(name);
+        if (found == query->end()) {
+          return core::target::TimePoint{};
+        }
+        google::protobuf::Timestamp timestamp;
+        if (!google::protobuf::util::TimeUtil::FromString(found->second, &timestamp)) {
+          return std::nullopt;
+        }
+        const auto decoded = codec::from_wire(timestamp);
+        if (const auto* value = std::get_if<core::target::TimePoint>(&decoded)) {
+          return *value;
+        }
+        return std::nullopt;
+      };
+      auto occurred_from = time_filter("occurred_from");
+      auto occurred_until = time_filter("occurred_until");
+      if (!occurred_from || !occurred_until) {
+        return OwnerHttpResult{
+            400, owner_error_body(wire::INVALID_ARGUMENT, request_id, trace_id, false)};
+      }
+      if (*occurred_from != core::target::TimePoint{} &&
+          *occurred_until != core::target::TimePoint{} && *occurred_from > *occurred_until) {
+        return OwnerHttpResult{
+            400, owner_error_body(wire::INVALID_ARGUMENT, request_id, trace_id, false)};
+      }
+      filter.occurred_from = *occurred_from == core::target::TimePoint{}
+                                 ? std::nullopt
+                                 : std::optional<core::target::TimePoint>{*occurred_from};
+      filter.occurred_until = *occurred_until == core::target::TimePoint{}
+                                  ? std::nullopt
+                                  : std::optional<core::target::TimePoint>{*occurred_until};
+      if (const auto actor = query->find("actor"); actor != query->end()) {
+        if (actor->second.empty() || actor->second.size() > 256) {
+          return OwnerHttpResult{
+              400, owner_error_body(wire::INVALID_ARGUMENT, request_id, trace_id, false)};
+        }
+        filter.actor = actor->second;
+      }
+      if (const auto resource = query->find("resource"); resource != query->end()) {
+        wire::ResourceRef parsed_resource;
+        if (!google::protobuf::util::JsonStringToMessage(resource->second, &parsed_resource).ok() ||
+            parsed_resource.id().empty() ||
+            parsed_resource.kind() == wire::RESOURCE_KIND_UNSPECIFIED) {
+          return OwnerHttpResult{
+              400, owner_error_body(wire::INVALID_ARGUMENT, request_id, trace_id, false)};
+        }
+        filter.resource = std::move(parsed_resource);
+      }
+      // Identity enforces its Control peer assignment directly; Runtime requires a fresh one-shot
+      // delegation for the same sensitive permission on the Control catalog scope.
+      auto delegation = delegation_.issue("runtime", permission, control_catalog_scope(),
                                           request.access_token, request.deadline);
       if (const auto* failure = std::get_if<OwnerFailure>(&delegation)) {
         return OwnerHttpResult{
             owner_http_status(failure->code),
             owner_error_body(failure->code, request_id, trace_id, failure->retryable)};
       }
-      return OwnerHttpResult{
-          503, owner_error_body(wire::UPSTREAM_UNAVAILABLE, request_id, trace_id, true)};
+      auto identity_page = audit_logs_->identity(kind, filter);
+      if (const auto* failure = std::get_if<OwnerFailure>(&identity_page)) {
+        return OwnerHttpResult{
+            owner_http_status(failure->code),
+            owner_error_body(failure->code, request_id, trace_id, failure->retryable)};
+      }
+      auto runtime_page = audit_logs_->runtime(kind, filter, std::get<std::string>(delegation));
+      if (const auto* failure = std::get_if<OwnerFailure>(&runtime_page)) {
+        return OwnerHttpResult{
+            owner_http_status(failure->code),
+            owner_error_body(failure->code, request_id, trace_id, failure->retryable)};
+      }
+      auto rows = std::get<AuditLogSourcePage>(identity_page).rows;
+      const auto& runtime_rows = std::get<AuditLogSourcePage>(runtime_page);
+      rows.insert(rows.end(), runtime_rows.rows.begin(), runtime_rows.rows.end());
+      // Merge order: occurred_at DESC, owner ASC, entry id DESC for a deterministic cross-source
+      // keyset. The opaque token is the oldest returned row's occurred_at+id, understood by both
+      // owners' keyset cursor semantics.
+      std::sort(rows.begin(), rows.end(), [](const AuditLogRow& left, const AuditLogRow& right) {
+        if (left.occurred_at != right.occurred_at) {
+          return left.occurred_at > right.occurred_at;
+        }
+        if (left.owner != right.owner) {
+          return left.owner < right.owner;
+        }
+        return left.entry_id > right.entry_id;
+      });
+      const bool more = rows.size() > filter.page_size ||
+                        !std::get<AuditLogSourcePage>(identity_page).next_token.empty() ||
+                        !runtime_rows.next_token.empty();
+      std::optional<std::string> next_token;
+      if (more && !rows.empty()) {
+        const auto take = std::min<std::size_t>(rows.size(), filter.page_size) - 1;
+        next_token = audit_cursor(rows[take]);
+      }
+      Json body = logs ? logs_page_json(rows, filter.page_size, next_token)
+                       : audit_page_json(rows, filter.page_size, next_token);
+      return OwnerHttpResult{200, body.dump()};
     }
     if (path == "/api/v1/models") {
       if (!model_) {

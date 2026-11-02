@@ -41,3 +41,10 @@ add_test(NAME p11_control_model_rest COMMAND "${KIARABOT_TARGET_PYTHON}"
 set_tests_properties(p11_control_model_rest PROPERTIES
   LABELS "p11;p12;control;integration;fault" TIMEOUT 90 RESOURCE_LOCK control_https RUN_SERIAL TRUE
   ENVIRONMENT "PATH=${OPENSSL_BIN_DIR}:$ENV{PATH}")
+add_test(NAME p12_audit_logs_rest COMMAND "${KIARABOT_TARGET_PYTHON}"
+  ${CMAKE_SOURCE_DIR}/tests/architecture/p12c_audit_logs.py
+  $<TARGET_FILE:kiarabot-control> $<TARGET_FILE:kiarabot_control_identity_fixture>
+  $<TARGET_FILE:kiarabot_control_model_fixture>)
+set_tests_properties(p12_audit_logs_rest PROPERTIES
+  LABELS "p12;control;integration;fault" TIMEOUT 90 RESOURCE_LOCK control_https RUN_SERIAL TRUE
+  ENVIRONMENT "PATH=${OPENSSL_BIN_DIR}:$ENV{PATH}")

@@ -22,6 +22,9 @@ void require(bool condition, std::string_view message) {
     throw std::runtime_error("P12c owner gateway assertion: " + std::string{message});
   }
 }
+core::target::TimePoint timepoint(std::int64_t nanos) {
+  return core::target::TimePoint{std::chrono::nanoseconds{nanos}};
+}
 std::string scope_json() {
   return R"({"resources":[{"kind":"RESOURCE_ACCOUNT","id":"11111111-1111-4111-8111-111111111111"}]})";
 }
@@ -277,6 +280,61 @@ struct FakeOperations final : target::OperationPort {
     return operation;
   }
 };
+struct FakeAuditLogs final : target::AuditLogSourcePort {
+  std::optional<target::OwnerFailure> identity_failure;
+  std::optional<target::OwnerFailure> runtime_failure;
+  bool logs = false;
+  int identity_calls = 0;
+  int runtime_calls = 0;
+  target::AuditLogFilter last_identity_filter;
+  target::AuditLogFilter last_runtime_filter;
+  std::string last_runtime_delegation;
+  target::OwnerOutcome<target::AuditLogSourcePage>
+  identity(target::AuditLogKind kind, const target::AuditLogFilter& filter) override {
+    ++identity_calls;
+    last_identity_filter = filter;
+    logs = kind == target::AuditLogKind::Logs;
+    if (identity_failure) {
+      return *identity_failure;
+    }
+    target::AuditLogSourcePage page;
+    target::AuditLogRow row;
+    row.entry_id = "identity-entry-1";
+    row.owner = "identity";
+    row.actor = "alice";
+    row.method = logs ? "Login" : "Login";
+    row.occurred_at = timepoint(1'000'000'000);
+    row.severity = "info";
+    row.component = "identity";
+    row.message = "login accepted";
+    page.rows.push_back(row);
+    page.next_token = filter.page_token.empty() ? "" : "";
+    return page;
+  }
+  target::OwnerOutcome<target::AuditLogSourcePage> runtime(target::AuditLogKind kind,
+                                                           const target::AuditLogFilter& filter,
+                                                           std::string_view delegation) override {
+    ++runtime_calls;
+    last_runtime_filter = filter;
+    last_runtime_delegation = std::string{delegation};
+    logs = kind == target::AuditLogKind::Logs;
+    if (runtime_failure) {
+      return *runtime_failure;
+    }
+    target::AuditLogSourcePage page;
+    target::AuditLogRow row;
+    row.entry_id = "runtime-entry-1";
+    row.owner = "runtime";
+    row.actor = "bob";
+    row.method = logs ? "SendMessage" : "UpdateAccount";
+    row.occurred_at = timepoint(2'000'000'000);
+    row.severity = "info";
+    row.component = "runtime";
+    row.message = "runtime accepted";
+    page.rows.push_back(row);
+    return page;
+  }
+};
 struct FakeTasks final : target::SchedulerTasksPort {
   std::optional<target::OwnerFailure> failure;
   int calls = 0;
@@ -317,8 +375,9 @@ struct OwnerCommands {
   FakeResources resources;
   FakeTasks tasks;
   FakeOperations operations;
-  target::OwnerGateway gateway{delegation, runtime, &principals, &health,
-                               &resources, &tasks,  &operations};
+  FakeAuditLogs audit_logs;
+  target::OwnerGateway gateway{delegation, runtime,     &principals, &health,    &resources,
+                               &tasks,     &operations, nullptr,     &audit_logs};
 };
 struct ExtendedGateway {
   FakeDelegation delegation;
@@ -402,11 +461,11 @@ void unavailable_sources_and_health() {
   const auto logs = fixture.gateway.handle(request("GET", "/api/v1/logs"));
   require(logs && logs->status == 503 &&
               logs->body.find("\"code\":\"UPSTREAM_UNAVAILABLE\"") != std::string::npos,
-          "logs return UNAVAILABLE instead of an empty page");
+          "unconfigured logs source returns UNAVAILABLE instead of an empty page");
   const auto audit = fixture.gateway.handle(request("GET", "/api/v1/audit?page_size=20"));
-  require(audit && audit->status == 503, "audit returns UNAVAILABLE");
-  require(fixture.delegation.calls >= 1 && fixture.runtime.calls == 0,
-          "sensitive reads obtain a delegation but never call the action owner");
+  require(audit && audit->status == 503, "unconfigured audit source returns UNAVAILABLE");
+  require(fixture.delegation.calls == 0 && fixture.runtime.calls == 0,
+          "unconfigured sources do not call owners");
   const auto live = fixture.gateway.handle(request("GET", "/health/live"));
   require(live && live->status == 200, "health live");
   const auto unknown = fixture.gateway.handle(request("GET", "/api/v1/unknown"));
@@ -623,18 +682,73 @@ void instance_plugin_state_and_configuration() {
   auto unknown = request("PUT", base + "/unknown");
   require(fixture.gateway.handle(unknown)->status == 404, "unknown instance action");
 }
+void audit_logs_aggregation() {
+  OwnerCommands fixture;
+  auto logs = request("GET", "/api/v1/logs?page_size=20&occurred_from=2026-11-02T00:00:00Z");
+  auto page = fixture.gateway.handle(logs);
+  require(page && page->status == 200, "logs aggregation 200");
+  require(page->body.find("\"owner\":\"identity\"") != std::string::npos &&
+              page->body.find("\"owner\":\"runtime\"") != std::string::npos &&
+              page->body.find("runtime-entry-1") != std::string::npos,
+          "logs mark both owners and merge rows");
+  // occurred_at DESC: runtime 2s row precedes identity 1s row.
+  require(page->body.find("runtime-entry-1") < page->body.find("identity-entry-1"),
+          "logs merge sorted by occurred_at desc");
+  require(fixture.audit_logs.logs && fixture.delegation.permission == wire::PERMISSION_LOG_READ &&
+              fixture.delegation.audience == "runtime",
+          "logs uses log.read delegation only");
+  require(fixture.audit_logs.last_identity_filter.occurred_from.has_value() &&
+              fixture.audit_logs.last_runtime_filter.page_size == 20,
+          "filters forwarded to both owners");
+  fixture.delegation.failure = target::OwnerFailure{wire::PERMISSION_DENIED, false};
+  fixture.delegation.calls = 0;
+  require(fixture.gateway.handle(request("GET", "/api/v1/audit"))->status == 403,
+          "missing audit.read denied before owners");
+  fixture.delegation.failure.reset();
+  auto audit = fixture.gateway.handle(request("GET", "/api/v1/audit"));
+  require(audit && audit->status == 200 &&
+              fixture.delegation.permission == wire::PERMISSION_AUDIT_READ &&
+              !fixture.audit_logs.logs,
+          "audit uses audit.read and never substitutes logs");
+  auto invalid_cursor =
+      fixture.gateway.handle(request("GET", "/api/v1/logs?page_token=not-a-cursor"));
+  require(invalid_cursor && invalid_cursor->status == 400, "invalid cursor 400");
+  auto invalid_time =
+      fixture.gateway.handle(request("GET", "/api/v1/audit?occurred_from=not-a-time"));
+  require(invalid_time && invalid_time->status == 400, "invalid time filter 400");
+  auto invalid_actor =
+      fixture.gateway.handle(request("GET", "/api/v1/logs?actor=" + std::string(300, 'a')));
+  require(invalid_actor && invalid_actor->status == 400, "oversized actor filter 400");
+  fixture.audit_logs.identity_failure = target::OwnerFailure{wire::PERMISSION_DENIED, false};
+  require(fixture.gateway.handle(request("GET", "/api/v1/logs"))->status == 403,
+          "identity source denial maps 403");
+  fixture.audit_logs.identity_failure.reset();
+  fixture.audit_logs.runtime_failure = target::OwnerFailure{wire::UPSTREAM_UNAVAILABLE, true};
+  require(fixture.gateway.handle(request("GET", "/api/v1/logs"))->status == 503,
+          "runtime source unavailable maps 503 (no partial page)");
+  fixture.audit_logs.runtime_failure.reset();
+  auto no_token = request("GET", "/api/v1/audit");
+  no_token.access_token.clear();
+  require(fixture.gateway.handle(no_token)->status == 401, "logs/audit require authentication");
+  auto keyset =
+      request("GET", "/api/v1/logs?page_token=1000000000:aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa");
+  require(fixture.gateway.handle(keyset)->status == 200 &&
+              fixture.audit_logs.last_identity_filter.page_token ==
+                  "1000000000:aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa",
+          "keyset token passed through to owners");
+}
+
 void sensitive_read_permissions() {
   Gateway fixture;
-  fixture.delegation.failure = target::OwnerFailure{wire::PERMISSION_DENIED, false};
-  auto denied = fixture.gateway.handle(request("GET", "/api/v1/logs"));
-  require(denied && denied->status == 403, "missing log.read denied");
-  fixture.delegation.failure.reset();
   require(fixture.gateway.handle(request("GET", "/api/v1/logs"))->status == 503,
-          "granted log.read still UNAVAILABLE without source");
+          "logs UNAVAILABLE without an authoritative source");
   auto missing_token = request("GET", "/api/v1/audit");
   missing_token.access_token.clear();
-  auto unauthorized = fixture.gateway.handle(missing_token);
-  require(unauthorized && unauthorized->status == 401, "audit requires authentication");
+  require(fixture.gateway.handle(missing_token)->status == 401,
+          "logs/audit require authentication");
+  OwnerCommands granted;
+  require(granted.gateway.handle(request("GET", "/api/v1/logs"))->status == 200,
+          "granted log.read returns authoritative page");
 }
 
 void validation_rules() {
@@ -988,6 +1102,7 @@ int main() {
     sensitive_read_permissions();
     owner_commands();
     operation_snapshots();
+    audit_logs_aggregation();
     instance_plugin_state_and_configuration();
     validation_rules();
     model_management_surface();

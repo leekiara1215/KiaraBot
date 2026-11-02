@@ -80,6 +80,61 @@ std::optional<wire::ErrorCode> extract_error_code(const grpc::Status& status) {
 }
 } // namespace
 
+wire::ResourceScope audit_control_scope() {
+  wire::ResourceScope scope;
+  auto* resource = scope.add_resources();
+  resource->set_kind(wire::RESOURCE_CATALOG);
+  resource->set_id("control");
+  return scope;
+}
+template <typename Record> AuditLogRow audit_row(const Record& record, std::string owner) {
+  AuditLogRow row;
+  row.entry_id = record.entry_id();
+  row.owner = std::move(owner);
+  row.actor = record.actor();
+  row.resource_kind = record.resource().kind();
+  row.resource_id = record.resource().id();
+  row.request_id = record.request_id();
+  row.trace_id = record.trace_id();
+  row.method = record.method();
+  row.rejection = wire::ErrorCode_Name(record.rejection());
+  row.authorization_version = record.authorization_version();
+  row.account_id = record.target_account_id();
+  row.conversation_id = record.target_conversation_id();
+  const auto occurred = codec::from_wire(record.occurred_at());
+  if (const auto* value = std::get_if<core::target::TimePoint>(&occurred)) {
+    row.occurred_at = *value;
+  }
+  return row;
+}
+template <typename Record> AuditLogRow log_row(const Record& record, std::string owner) {
+  AuditLogRow row;
+  row.entry_id = record.entry_id();
+  row.owner = std::move(owner);
+  row.actor = record.actor();
+  row.resource_kind = record.resource().kind();
+  row.resource_id = record.resource().id();
+  row.request_id = record.request_id();
+  row.trace_id = record.trace_id();
+  row.method = record.method();
+  row.severity = record.severity();
+  row.component = record.component();
+  row.message = record.message();
+  const auto occurred = codec::from_wire(record.occurred_at());
+  if (const auto* value = std::get_if<core::target::TimePoint>(&occurred)) {
+    row.occurred_at = *value;
+  }
+  return row;
+}
+google::protobuf::Timestamp audit_deadline() {
+  google::protobuf::Timestamp deadline;
+  deadline.set_seconds(std::chrono::duration_cast<std::chrono::seconds>(
+                           std::chrono::system_clock::now().time_since_epoch())
+                           .count() +
+                       5);
+  return deadline;
+}
+
 class OwnerClients::Impl final : private DelegationPort,
                                  private RuntimeActionsPort,
                                  private IdentityPrincipalsPort,
@@ -87,7 +142,8 @@ class OwnerClients::Impl final : private DelegationPort,
                                  private RuntimeResourcesPort,
                                  private SchedulerTasksPort,
                                  private OperationPort,
-                                 private ModelManagementPort {
+                                 private ModelManagementPort,
+                                 private AuditLogSourcePort {
 public:
   Impl(const std::string& identity_endpoint, const std::string& runtime_endpoint,
        const std::string& scheduler_endpoint, const std::string& model_endpoint,
@@ -119,7 +175,8 @@ public:
         static_cast<DelegationPort&>(*this), static_cast<RuntimeActionsPort&>(*this),
         static_cast<IdentityPrincipalsPort*>(this), static_cast<HealthPort*>(this),
         static_cast<RuntimeResourcesPort*>(this), static_cast<SchedulerTasksPort*>(this),
-        static_cast<OperationPort*>(this), static_cast<ModelManagementPort*>(this));
+        static_cast<OperationPort*>(this), static_cast<ModelManagementPort*>(this),
+        static_cast<AuditLogSourcePort*>(this));
   }
 
   std::optional<AuthHttpResponse> handle(const AuthHttpRequest& request) {
@@ -344,6 +401,134 @@ private:
   OwnerOutcome<wire::SchedulerGetTaskResponse> get_task(const wire::SchedulerGetTaskRequest& input,
                                                         std::string_view delegation) override {
     return unary_task(&wire::SchedulerService::Stub::GetTask, input, delegation);
+  }
+
+  OwnerOutcome<AuditLogSourcePage> identity(AuditLogKind kind,
+                                            const AuditLogFilter& filter) override {
+    if (!identity_) {
+      return OwnerFailure{wire::UPSTREAM_UNAVAILABLE, true};
+    }
+    wire::RequestContext context;
+    context.set_request_id(random_identifier());
+    context.set_trace_id(random_identifier());
+    *context.mutable_deadline() = audit_deadline();
+    wire::ResourceScope scope = audit_control_scope();
+    const auto fill_filter = [&](auto* target) {
+      *target->mutable_scope() = scope;
+      if (filter.occurred_from) {
+        const auto encoded = codec::to_wire(*filter.occurred_from);
+        if (const auto* value = std::get_if<google::protobuf::Timestamp>(&encoded)) {
+          *target->mutable_occurred_from() = *value;
+        }
+      }
+      if (filter.occurred_until) {
+        const auto encoded = codec::to_wire(*filter.occurred_until);
+        if (const auto* value = std::get_if<google::protobuf::Timestamp>(&encoded)) {
+          *target->mutable_occurred_until() = *value;
+        }
+      }
+      target->set_actor(filter.actor);
+      if (filter.resource) {
+        *target->mutable_resource() = *filter.resource;
+      }
+      target->mutable_page()->set_page_size(filter.page_size);
+      target->mutable_page()->set_page_token(filter.page_token);
+    };
+    AuditLogSourcePage page;
+    grpc::ClientContext call;
+    call.set_deadline(std::chrono::system_clock::now() + std::chrono::seconds{5});
+    if (kind == AuditLogKind::Audit) {
+      wire::IdentityListAuditRequest input;
+      *input.mutable_context() = context;
+      fill_filter(input.mutable_filter());
+      wire::IdentityListAuditResponse output;
+      const auto status = identity_->ListAudit(&call, input, &output);
+      if (!status.ok()) {
+        return OwnerFailure{extract_error_code(status).value_or(wire::UPSTREAM_UNAVAILABLE), false};
+      }
+      for (const auto& record : output.entries()) {
+        page.rows.push_back(audit_row(record, "identity"));
+      }
+      page.next_token = output.page().next_page_token();
+    } else {
+      wire::IdentityListLogsRequest input;
+      *input.mutable_context() = context;
+      fill_filter(input.mutable_filter());
+      wire::IdentityListLogsResponse output;
+      const auto status = identity_->ListLogs(&call, input, &output);
+      if (!status.ok()) {
+        return OwnerFailure{extract_error_code(status).value_or(wire::UPSTREAM_UNAVAILABLE), false};
+      }
+      for (const auto& record : output.entries()) {
+        page.rows.push_back(log_row(record, "identity"));
+      }
+      page.next_token = output.page().next_page_token();
+    }
+    return page;
+  }
+  OwnerOutcome<AuditLogSourcePage> runtime(AuditLogKind kind, const AuditLogFilter& filter,
+                                           std::string_view delegation) override {
+    if (!runtime_) {
+      return OwnerFailure{wire::UPSTREAM_UNAVAILABLE, true};
+    }
+    wire::RequestContext context;
+    context.set_request_id(random_identifier());
+    context.set_trace_id(random_identifier());
+    *context.mutable_deadline() = audit_deadline();
+    context.set_delegation(std::string{delegation});
+    wire::ResourceScope scope = audit_control_scope();
+    const auto fill_filter = [&](auto* target) {
+      *target->mutable_scope() = scope;
+      if (filter.occurred_from) {
+        const auto encoded = codec::to_wire(*filter.occurred_from);
+        if (const auto* value = std::get_if<google::protobuf::Timestamp>(&encoded)) {
+          *target->mutable_occurred_from() = *value;
+        }
+      }
+      if (filter.occurred_until) {
+        const auto encoded = codec::to_wire(*filter.occurred_until);
+        if (const auto* value = std::get_if<google::protobuf::Timestamp>(&encoded)) {
+          *target->mutable_occurred_until() = *value;
+        }
+      }
+      target->set_actor(filter.actor);
+      if (filter.resource) {
+        *target->mutable_resource() = *filter.resource;
+      }
+      target->mutable_page()->set_page_size(filter.page_size);
+      target->mutable_page()->set_page_token(filter.page_token);
+    };
+    AuditLogSourcePage page;
+    grpc::ClientContext call;
+    call.set_deadline(std::chrono::system_clock::now() + std::chrono::seconds{5});
+    if (kind == AuditLogKind::Audit) {
+      wire::RuntimeListAuditRequest input;
+      *input.mutable_context() = context;
+      fill_filter(input.mutable_filter());
+      wire::RuntimeListAuditResponse output;
+      const auto status = runtime_->ListAudit(&call, input, &output);
+      if (!status.ok()) {
+        return OwnerFailure{extract_error_code(status).value_or(wire::UPSTREAM_UNAVAILABLE), false};
+      }
+      for (const auto& record : output.entries()) {
+        page.rows.push_back(audit_row(record, "runtime"));
+      }
+      page.next_token = output.page().next_page_token();
+    } else {
+      wire::RuntimeListLogsRequest input;
+      *input.mutable_context() = context;
+      fill_filter(input.mutable_filter());
+      wire::RuntimeListLogsResponse output;
+      const auto status = runtime_->ListLogs(&call, input, &output);
+      if (!status.ok()) {
+        return OwnerFailure{extract_error_code(status).value_or(wire::UPSTREAM_UNAVAILABLE), false};
+      }
+      for (const auto& record : output.entries()) {
+        page.rows.push_back(log_row(record, "runtime"));
+      }
+      page.next_token = output.page().next_page_token();
+    }
+    return page;
   }
 
   OwnerOutcome<wire::Operation> get(std::string_view owner_service,

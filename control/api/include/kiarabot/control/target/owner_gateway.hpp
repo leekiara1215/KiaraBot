@@ -1,10 +1,12 @@
 #pragma once
 
+#include <cstdint>
 #include <map>
 #include <optional>
 #include <string>
 #include <string_view>
 #include <variant>
+#include <vector>
 
 #include "kiarabot/core/domain/target/foundation.hpp"
 #include "kiarabot/v1/identity.pb.h"
@@ -112,6 +114,49 @@ public:
   get_task(const kiarabot::v1::SchedulerGetTaskRequest&, std::string_view) = 0;
 };
 
+// P12e read-only audit/log projections aggregated across Identity and Runtime. Each source keeps
+// its own authority: Identity authenticates Control as its platform peer directly; Runtime requires
+// a per-request Control delegation for log.read(48)/audit.read(49) on the Control catalog scope.
+enum class AuditLogKind { Audit, Logs };
+struct AuditLogFilter {
+  std::optional<core::target::TimePoint> occurred_from;
+  std::optional<core::target::TimePoint> occurred_until;
+  std::string actor;
+  std::optional<kiarabot::v1::ResourceRef> resource;
+  std::uint32_t page_size = 20;
+  std::string page_token;
+};
+struct AuditLogRow {
+  kiarabot::v1::ResourceKind resource_kind = kiarabot::v1::RESOURCE_KIND_UNSPECIFIED;
+  std::string entry_id;
+  std::string owner;
+  std::string actor;
+  std::string resource_id;
+  std::string request_id;
+  std::string trace_id;
+  std::string method;
+  std::string rejection;
+  std::string severity;
+  std::string component;
+  std::string message;
+  std::string account_id;
+  std::string conversation_id;
+  std::uint64_t authorization_version = 0;
+  core::target::TimePoint occurred_at;
+};
+struct AuditLogSourcePage {
+  std::vector<AuditLogRow> rows;
+  std::string next_token;
+};
+class AuditLogSourcePort {
+public:
+  virtual ~AuditLogSourcePort() = default;
+  virtual OwnerOutcome<AuditLogSourcePage> identity(AuditLogKind kind,
+                                                    const AuditLogFilter& filter) = 0;
+  virtual OwnerOutcome<AuditLogSourcePage> runtime(AuditLogKind kind, const AuditLogFilter& filter,
+                                                   std::string_view delegation) = 0;
+};
+
 // Authoritative owner operation snapshot. Each owner stores its own operation; Control only
 // routes to the named owner and never synthesizes progress.
 class OperationPort {
@@ -182,9 +227,11 @@ public:
   OwnerGateway(DelegationPort& delegation, RuntimeActionsPort& runtime,
                IdentityPrincipalsPort* principals = nullptr, HealthPort* health = nullptr,
                RuntimeResourcesPort* resources = nullptr, SchedulerTasksPort* tasks = nullptr,
-               OperationPort* operations = nullptr, ModelManagementPort* model = nullptr)
+               OperationPort* operations = nullptr, ModelManagementPort* model = nullptr,
+               AuditLogSourcePort* audit_logs = nullptr)
       : delegation_(delegation), runtime_(runtime), principals_(principals), health_(health),
-        resources_(resources), tasks_(tasks), operations_(operations), model_(model) {}
+        resources_(resources), tasks_(tasks), operations_(operations), model_(model),
+        audit_logs_(audit_logs) {}
   std::optional<OwnerHttpResult> handle(const OwnerHttpRequest& request);
   // Health probes are local process facts plus the composition-provided readiness answer.
   static OwnerHttpResult live();
@@ -199,6 +246,7 @@ private:
   SchedulerTasksPort* tasks_;
   OperationPort* operations_;
   ModelManagementPort* model_;
+  AuditLogSourcePort* audit_logs_;
 };
 
 } // namespace kiarabot::control::target
