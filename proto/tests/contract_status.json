@@ -5668,7 +5668,11 @@
           "RefreshConnectionAuthorization.refresh_generation": "implemented",
           "ConnectionAuthorizationResult.request_id": "implemented",
           "ConnectionAuthorizationResult.authorization": "implemented",
-          "ConnectionAuthorizationResult.error": "implemented"
+          "ConnectionAuthorizationResult.error": "implemented",
+          "CoreToAdapter.shutdown": "implemented",
+          "CoreToPlugin.shutdown": "implemented",
+          "ShutdownNotice.reason": "implemented",
+          "ShutdownNotice.drain_timeout_ms": "implemented"
         },
         "bridge_methods": {
           "AdapterBridge.Connect": "implemented",
@@ -5677,7 +5681,8 @@
         "semantic_rules": {
           "semantic.bridge.connection_authorization": "implemented",
           "semantic.bridge.external_listener": "implemented",
-          "semantic.bridge.plugin_delivery_lease": "implemented"
+          "semantic.bridge.plugin_delivery_lease": "implemented",
+          "semantic.transport.graceful_shutdown": "implemented"
         },
         "enum_values": {
           "DeliveryDisposition.DELIVERY_ACKNOWLEDGED": "implemented",
@@ -6224,6 +6229,31 @@
           "tests/architecture/p06_bridge_acceptance.py"
         ],
         "proto_fields:ConnectionAuthorizationResult.error": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/application/target/runtime_bridge_application.cpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:CoreToAdapter.shutdown": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/application/target/runtime_bridge_application.cpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:CoreToPlugin.shutdown": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/application/target/runtime_bridge_application.cpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:ShutdownNotice.reason": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/application/target/runtime_bridge_application.cpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:ShutdownNotice.drain_timeout_ms": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/application/target/runtime_bridge_application.cpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "semantic_rules:semantic.transport.graceful_shutdown": [
           "core/src/runtime/platform/runtime_bridge.cpp",
           "core/src/application/target/runtime_bridge_application.cpp",
           "tests/architecture/p06_bridge_acceptance.py"

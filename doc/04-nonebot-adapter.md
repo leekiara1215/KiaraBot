@@ -149,7 +149,7 @@ reference 时代的环境变量 `CORE_GRPC_ENDPOINT`/`CORE_AUTH_TOKEN` 仅存在
 
 ## 健康检查
 
-适配器在 `127.0.0.1:HEALTH_PORT`（默认 `8081`，`HEALTH_PORT` 可配置）提供本地 HTTP 探针：`/health/live` 只表示进程存活（恒 200）；目标 Bridge 的 `/health/ready` 要求**Runtime 注册成功且当前 `ConnectionAuthorization` 未过期（fence 当前）**且**平台 Bot 已连接**，否则 503/NOT_READY。响应体 `components` 返回 `core`（目标桥授权）、`authorization`（proof/refresh 有效）与 `platform`（OneBot 连接）；桥断线/refresh 失败时 ready 立即转 503，重新注册并取得有效授权后自动转回 200。`heartbeat_interval_seconds` 来自注册响应（目标为 5 秒）；适配器空闲时持续读取 Runtime 推送的 Action/回执，不等待下一次心跳。探针绑定回环地址，供同机 compose/systemd 使用。以上为目标行为；reference bridge 的旧就绪语义（仅 Core 注册）随 P06c 移除。
+适配器在 `127.0.0.1:HEALTH_PORT`（默认 `8081`，`HEALTH_PORT` 可配置）提供本地 HTTP 探针：`/health/live` 只表示进程存活（恒 200）；目标 Bridge 的 `/health/ready` 要求**Runtime 注册成功且当前 `ConnectionAuthorization` 未过期（fence 当前）**且**平台 Bot 已连接**，否则 503/NOT_READY。响应体 `components` 返回 `core`（目标桥授权）、`authorization`（proof/refresh 有效）与 `platform`（OneBot 连接）；桥断线/refresh 失败时 ready 立即转 503，重新注册并取得有效授权后自动转回 200。`heartbeat_interval_seconds` 来自注册响应（P06 target 为 30 秒；客户端按注册响应自适应）；适配器空闲时持续读取 Runtime 推送的 Action/回执，不等待下一次心跳。探针绑定回环地址，供同机 compose/systemd 使用。以上为目标行为；reference bridge 的旧就绪语义（仅 Core 注册）随 P06c 移除。
 
 ## 替换标准
 

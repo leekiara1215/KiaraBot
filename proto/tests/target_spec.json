@@ -1700,7 +1700,7 @@
       "server_streaming": true,
       "caller": "external adapter authenticated by per-instance bootstrap credential and ConnectionAuthorization",
       "exposure": "wire",
-      "status": "not_implemented"
+      "status": "implemented"
     },
     {
       "service": "PluginBridge",
@@ -1712,7 +1712,7 @@
       "server_streaming": true,
       "caller": "external plugin instance authenticated by per-instance bootstrap credential and ConnectionAuthorization",
       "exposure": "wire",
-      "status": "not_implemented"
+      "status": "implemented"
     },
     {
       "service": "HostBridge",

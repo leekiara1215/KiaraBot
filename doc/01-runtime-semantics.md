@@ -42,7 +42,7 @@ T03a 将逐插件状态机接入 PluginBridge。订阅来自已授权活动连�
 - Core 在接收事件的同一事务中按当时的订阅快照为每个目标插件创建独立投递记录，重复事件不会追加目标；`ordered=true` 时，同一插件、同一非空会话的较早记录在 ACK 或死信之前阻塞后续记录，即使正在等待重试；不同插件及不同会话互不阻塞。缺少会话标识时无法建立会话顺序，宿主应提供稳定会话键；
 - 队列达到上限时暂停读取非关键事件并返回 `RATE_LIMITED`。
 
-  背压契约要求该 `RATE_LIMITED` 可重试（`retryable=true`、`retry_after_ms=1000`）并关闭本次流；v1 实现返回 `retryable=false` 且不关流，登记为 `semantic.adapter.backpressure_retryable_rate_limited` = `not_implemented`。适配器仍必须按“确认丢失 = 未知结果”处理：保留未确认事件，退避后重连重投，不能因不可重试标记丢弃事件。
+  P06 target Runtime 的 bridge 事件入口在容量/存储背压和旧 sequence 时返回 `REJECTED`（`RATE_LIMITED`/`CONFLICT`、`retryable=true`、`retry_after_ms=1000`）并关闭本次流；适配器按“确认丢失 = 未知结果”处理：保留未确认事件，退避后重连重投，不能因不可重试标记丢弃事件。reference-era 的 `retryable=false`/不关流行为只作为历史说明。
 
 ## 确认和重试
 

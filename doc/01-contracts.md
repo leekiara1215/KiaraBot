@@ -31,6 +31,8 @@ T03a 新增 CoreToPlugin.error（oneof 字段 6），承载注册之后的终止
 | `RegisterPluginRequest.installation_id`、`RegisterPluginRequest.execution_generation`、`RegisterPluginResponse.fence`、`RegisterPluginResponse.desired_config_version`、`RegisterPluginResponse.authorization`、`PluginToCore.fence`、`PluginToCore.connection_proof`、`PluginToCore.renew_delivery`、`PluginToCore.refresh_authorization`、`CoreToPlugin.fence`、`CoreToPlugin.delivery_attempt`、`CoreToPlugin.delivery_receipt`、`CoreToPlugin.authorization_result`、`PluginEventAck.attempt` | implemented | P06 PluginBridge 注册/投递/ACK/续租帧 |
 | `DeliveryAttempt.event_id`、`DeliveryAttempt.attempt_id`、`DeliveryAttempt.fence`、`DeliveryAttempt.started_at`、`DeliveryAttempt.lease_until`、`DeliveryAttempt.attempt_number`、`DeliveryReceipt.attempt`、`DeliveryReceipt.disposition`、`DeliveryReceipt.failure`、`ConnectionAuthorization.fence`、`ConnectionAuthorization.proof`、`ConnectionAuthorization.issued_at`、`ConnectionAuthorization.expires_at`、`ConnectionAuthorization.refresh_credential`、`ConnectionAuthorization.refresh_generation`、`ConnectionAuthorization.principal_id`、`ConnectionAuthorization.credential_version`、`ConnectionAuthorization.authorization_version`、`RefreshConnectionAuthorization.request_id`、`RefreshConnectionAuthorization.fence`、`RefreshConnectionAuthorization.proof`、`RefreshConnectionAuthorization.refresh_credential`、`RefreshConnectionAuthorization.refresh_generation`、`ConnectionAuthorizationResult.request_id`、`ConnectionAuthorizationResult.authorization`、`ConnectionAuthorizationResult.error` | implemented | P06 连接授权/投递 attempt/receipt 公共帧 |
 
+| `CoreToAdapter.shutdown`、`CoreToPlugin.shutdown`、`ShutdownNotice.reason`、`ShutdownNotice.drain_timeout_ms`、`semantic.transport.graceful_shutdown` | implemented | P06 生产 Runtime：停止信号后向活动 bridge 流发送有界 ShutdownNotice（drain_timeout_ms=1000），真实 TLS 验收断言客户端收到该帧；reference 不发送 |
+
 除上述明确override外，target所有非废弃业务声明均为not_implemented，包括旧reference已有的Action/Host/认证/WS能力及其余目标owner RPC（按target_spec动态计数）；mTLS监听返回UNIMPLEMENTED不算业务实现。API已有x-contract-status列表与下表、proto内联CONTRACT_STATUS保留声明/历史reference语境；不可据其单独判断target可用性。客户端与面板须依据target执行范围及真实生产者验收，不得用历史测试通过自动启用。
 <!-- execution-scopes:end -->
 
@@ -1720,11 +1722,11 @@ Action `deadline` 为未来 UTC 时间，契约上限 300 秒；v1 仅校验正�
 
 ## 优雅停机与 drain
 
-v1 Core 关闭 `AdapterBridge` / `PluginBridge` 时直接取消或结束流，不发送 `ShutdownNotice`（`CoreToAdapter.shutdown=5`、`CoreToPlugin.shutdown=8` 已定义，状态为 not_implemented）。因此：
+reference-era Core 关闭 `AdapterBridge` / `PluginBridge` 时直接取消或结束流，不发送 `ShutdownNotice`；P06 target Runtime 在停止信号后先发送有界 `ShutdownNotice`（reason/drain_timeout_ms=1000，单次写有 1s deadline），随后关闭监听与流。因此：
 
 - 客户端收到流关闭（无论 gRPC 状态）都视为**未知结果**，不得推断事件未入库或 Action 未执行；
 - 重连后必须重新注册，并按 `event_id` 幂等重投未确认事件、按认证调用方 + 幂等键查询未确认 Action；
-- 将来 Core 发送 `ShutdownNotice` 时，`reason` 给出原因，`drain_timeout_ms` 给出在途处理上限：客户端应停止领取新工作、在上限内完成并确认在途请求，然后正常关闭。未收到该帧时的行为与 v1 完全相同；旧客户端必须忽略未知 oneof 成员。
+- **P06 target 行为**：`ShutdownNotice.reason` 给出原因，`drain_timeout_ms` 给出在途处理上限（当前 1000ms）：客户端应停止领取新工作、在上限内完成并确认在途请求，然后正常关闭。未收到该帧时的行为与 reference 相同；旧客户端必须忽略未知 oneof 成员。
 
 ## 代码生成和字段校验
 
@@ -1790,7 +1792,7 @@ protoc --descriptor_set_out=build/kiarabot-v1.pb \
 
 ## T02a 注册与 inbox 确认
 
-启用持久化接收的 AdapterBridge 首帧必须是 RegisterAdapterRequest。协议版本固定 kiarabot.v1；账号至少一个，必须 enabled 且在宿主配置的允许列表中；自报账号及 Capability 不授予权限。注册成功返回 accepted、随机 assigned_instance_id、required_protocol_version 和 30 秒心跳间隔；注册失败返回 accepted=false 和稳定 Error，然后正常结束流。新注册替换同身份旧实例，旧连接不能继续入库。事件和心跳必须绑定当前实例。身份冒用仍以 gRPC PERMISSION_DENIED 终止。
+启用持久化接收的 AdapterBridge 首帧必须是 RegisterAdapterRequest。协议版本固定 kiarabot.v1；账号至少一个，必须 enabled 且属于 bootstrap 的 adapter_instance 的 A1 账号绑定（事件帧同样按该绑定校验，跨账号注入以 PERMISSION_DENIED 终止且不持久化/不 fan-out）；自报账号及 Capability 不授予权限。注册成功返回 accepted、`assigned_instance_id` = bootstrap credential 的 resource_id（BindAdapter 传入的 adapter instance，不是随机新 id）、required_protocol_version 和 30 秒心跳间隔；auth/输入类失败以稳定 gRPC status 终止，业务拒绝返回 accepted=false 和稳定 Error 后正常结束流。新注册替换同身份旧实例，旧连接不能继续入库。
 
 CoreToAdapter.event_ack 使用新编号 4。AdapterEventAck 包含 event_id、trace_id、status、error、retry_after_ms：PERSISTED 表示 inbox/会话水位/审计和幂等记录已原子提交，DUPLICATE 表示同内容已提交，REJECTED 表示本次未接收。只有前两者是确认；不是插件 ACK 或 Action 完成。
 

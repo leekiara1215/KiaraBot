@@ -216,6 +216,11 @@ class ScopeTest(unittest.TestCase):
                      ('proto_fields', 'CoreToPlugin.delivery_receipt'),
                      ('proto_fields', 'CoreToPlugin.authorization_result'),
                      ('proto_fields', 'PluginEventAck.attempt')}
+        expected |= {('proto_fields', 'CoreToAdapter.shutdown'),
+                     ('proto_fields', 'CoreToPlugin.shutdown'),
+                     ('proto_fields', 'ShutdownNotice.reason'),
+                     ('proto_fields', 'ShutdownNotice.drain_timeout_ms'),
+                     ('semantic_rules', 'semantic.transport.graceful_shutdown')}
         expected |= {('proto_fields', name)
                      for name in ('DeliveryAttempt.event_id', 'DeliveryAttempt.attempt_id',
                                   'DeliveryAttempt.fence', 'DeliveryAttempt.started_at',
