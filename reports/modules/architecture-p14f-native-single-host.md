@@ -221,3 +221,44 @@ ListPrincipals target `not_implemented`，P12l 并行补齐）、
 **需用户环境项**（延续 P14f/P14i）：真实 Host/Adapter 联测、真实 QQ/NapCat 与外部 Model
 Provider、Docker Compose 单机（镜像构建/compose/healthcheck/非 root/只读/秘密挂载）、
 两主机与断网演练、生产 CA/密钥托管与 release 签名。
+
+## 10. P14k owner 链对齐与契约缺口（2026-11-03）
+
+P14k 定位并修复了两个跨边界真实缺陷（commit `fix(p14k)`，无 proto/API 改动）：
+
+1. **Control response request/trace id 非 UUID**：`owner_gateway::random_identifier` 产生 32-hex；
+   这些 id 原样进入 owner RPC `RequestContext`，所有 owner 边界要求 UUIDv4 并在 use case 前
+   以 INVALID_ARGUMENT 拒绝。修复为 UUIDv4 后 principals/tasks/models/actions/lifecycle 的
+   RPC 才真正到达 owner。
+2. **Scheduler 授权 scope 混入 Installation**：`SchedulerIdentityClient` 把客户端 scope 原样
+   转发给 Identity CheckAuthorization，而 Scheduler 方法策略只接受 Instance/Task；
+   Installation 只是 delegation binding 的 owner 派生锚点。过滤 Installation 后 tasks_list
+   变为真实 200 空页。
+
+修复后实测（strict matrix，`ctest -R '^p14_native_single_host$'` Passed ~14s）：
+- **success**：`health`（200 HEALTHY 四真实组件）、`principals`（P12l 真实页：1 principal +
+  page/checked_at）、`tasks_list`（200 空页 + page_size）、`delete`（404 NOT_FOUND owner 语义）、
+  `restore`（409 CONFLICT owner 语义）。
+- **known-gap**：`logs`/`audit` 稳定 503 UPSTREAM_UNAVAILABLE；`models` 稳定 403
+  PERMISSION_DENIED；`action_policy`/`action_query` 稳定 400 INVALID_ARGUMENT。
+
+**契约缺口（按任务要求停下上报，不修改 proto）**：以下已实现 owner 方法在 proto option 中
+缺少 `scope_kinds`，Identity `CheckAuthorization` 方法策略因此无法接受任何 scope，必然以
+INVALID_ARGUMENT 拒绝（或 Model 侧映射为 PERMISSION_DENIED），Control 无法通过合法的精确
+scope 委派它们：
+- `RuntimeService.GetActionPolicy`（runtime.proto:1248，仅 required_permission/idempotency；
+  对照同文件 GetAccount 有 `scope_kinds = RESOURCE_ACCOUNT`）；
+- `RuntimeService.UpdateActionPolicy`（runtime.proto:1255）；
+- `RuntimeService.QueryActionResult`（runtime.proto:1121）；
+- `ModelService.ListModelMetadata`（model.proto:240；对照 Chat 有 `scope_kinds = RESOURCE_MODEL`）。
+需要契约/P07/P11 owner 决策补充 scope_kinds（或明确这些 target 方法不对外），本任务不改 proto。
+
+**logs/audit 503 诊断（未根因）**：Control→Identity/Runtime audit source 调用仍返回
+UPSTREAM_UNAVAILABLE；Identity audit 查询要求 peer Control 在 catalog `control` 上的
+log.read/audit.read 精确授权（fixture 已镜像授权，bootstrap 通过），Runtime 侧要求同权限一次性
+委派（fixture 已配置）。下一步需要在 audit source client/owner 侧加稳定错误细节定位
+（候选 P14l），空数据应返回 200 空页而非 503。
+
+**修复前/后对照**：P14j 时仅 health success、principals 503、tasks/models/action 400/403、
+delete/restore 400；P14k 后 health/principals/tasks/delete/restore 共 5 项 success，
+其余 5 项为稳定 known-gap，其中 4 项是明确的契约 scope_kinds 缺口。
