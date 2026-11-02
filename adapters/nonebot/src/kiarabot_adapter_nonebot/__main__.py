@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import signal
 import sys
 from contextlib import suppress
 from urllib.parse import urlparse
@@ -11,8 +12,9 @@ import nonebot
 from nonebot.adapters.onebot.v11 import Adapter, Bot, MessageEvent, RequestEvent
 from kiarabot.v1 import common_pb2 as common
 
-from .client import ClientConfig, CoreClient
 from .actions import ActionExecutor
+from .bridge import BridgeConfig
+from .client import BridgeClient
 from .health import HealthServer
 from .mapper import AdapterError, map_message, map_request
 from .outbox import Outbox
@@ -20,19 +22,23 @@ from .platform_errors import classify_retcode
 from .status import AdapterStatusReporter
 
 
-def configure():
-    config = ClientConfig(os.environ['CORE_GRPC_ENDPOINT'], os.environ['CORE_AUTH_TOKEN'],
-                          os.environ['ADAPTER_ID'], os.environ['ACCOUNT_ID'])
-    url = os.environ['ONEBOT_WS_URL']
-    parsed = urlparse(url)
-    if parsed.scheme not in ('ws', 'wss') or not parsed.hostname or parsed.username or parsed.password or parsed.query or parsed.fragment:
+def platform_url(value: str) -> str:
+    parsed = urlparse(value)
+    if (parsed.scheme not in ('ws', 'wss') or not parsed.hostname or parsed.username
+            or parsed.password or parsed.query or parsed.fragment):
         raise AdapterError(common.INVALID_ARGUMENT)
+    return value
+
+
+def configure():
+    config = BridgeConfig.from_environment(os.environ)
+    platform_url(os.environ['ONEBOT_WS_URL'])
     token = os.environ['ONEBOT_ACCESS_TOKEN']
     if not token:
         raise AdapterError(common.INVALID_ARGUMENT)
     # Disable NoneBot's INFO event descriptions; never log platform payloads.
-    nonebot.init(driver='~websockets', onebot_ws_urls=[url], onebot_access_token=token,
-                 log_level='WARNING')
+    nonebot.init(driver='~websockets', onebot_ws_urls=[os.environ['ONEBOT_WS_URL']],
+                 onebot_access_token=token, log_level='WARNING')
     # Framework failures can include platform bodies/URLs in exception text.
     # Keep severity, but strip free text and traceback from the shared Loguru sink.
     from nonebot.log import logger
@@ -62,19 +68,27 @@ def configure():
             if code in (common.PERMISSION_DENIED, common.RATE_LIMITED):
                 status.report(common.DEGRADED, 'platform_action_failed')
             raise AdapterError(code) from None
-    executor = ActionExecutor(os.environ['OUTBOX_PATH'] + '.actions', config.adapter_id, config.account_id, call_platform)
-    client = CoreClient(config, outbox, executor, status)
+    executor = ActionExecutor(os.environ['OUTBOX_PATH'] + '.actions', config.adapter_id,
+                              config.account_id, call_platform)
+
+    def stop_process():
+        # A terminal bridge failure (revoked/expired bootstrap, rejected registration) must end
+        # the adapter process with a non-zero status after the normal graceful shutdown path.
+        signal.raise_signal(signal.SIGTERM)
+
+    client = BridgeClient(config, outbox, executor, status, on_fatal=stop_process)
     stop = asyncio.Event()
     tasks = []
     matcher = nonebot.on_message(priority=1, block=False)
 
     def ready_snapshot():
-        core_connected = client.instance is not None
+        authorized = client.authorized
         platform_connected = bool(nonebot.get_bots())
         return {
-            'ready': core_connected,
+            'ready': authorized and platform_connected,
             'components': {
-                'core': 'HEALTHY' if core_connected else 'UNHEALTHY',
+                'core': 'HEALTHY' if authorized else 'UNHEALTHY',
+                'authorization': 'HEALTHY' if authorized else 'UNHEALTHY',
                 'platform': 'HEALTHY' if platform_connected else 'DEGRADED',
             },
         }
@@ -137,16 +151,19 @@ def configure():
         await health.close()
         executor.close()
         outbox.close()
-    return driver
+    return driver, client
 
 
 def main():
+    client = None
     try:
-        configure()
+        driver, client = configure()
         nonebot.run()
     except Exception:
         logging.getLogger(__name__).error('operation=adapter_process error_code=INTERNAL')
         raise SystemExit(1) from None
+    if client is not None and client.fatal:
+        raise SystemExit(1)
 
 
 if __name__ == '__main__':
