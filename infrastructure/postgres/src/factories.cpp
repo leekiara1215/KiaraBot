@@ -1,4 +1,3 @@
-#include "kiarabot/core/domain/target/scheduler_rules.hpp"
 #include "kiarabot/infrastructure/postgres/factories.hpp"
 
 #include <exception>
@@ -9,6 +8,7 @@
 #include <vector>
 
 #include "identity_security.hpp"
+#include "kiarabot/core/domain/target/scheduler_rules.hpp"
 #include "kiarabot/core/ports/target/business_ports.hpp"
 #include "kiarabot/infrastructure/postgres/security_factory.hpp"
 #include "model_store.hpp"
@@ -80,9 +80,9 @@ target::Outcome<std::vector<Value>> listed(target::UnitOfWork& work, detail::Rec
   return result;
 }
 template <typename Value>
-target::Outcome<std::vector<Value>> load_records(
-    target::UnitOfWork& work, detail::RecordKind kind,
-    const std::vector<std::vector<std::string>>& keys) {
+target::Outcome<std::vector<Value>>
+load_records(target::UnitOfWork& work, detail::RecordKind kind,
+             const std::vector<std::vector<std::string>>& keys) {
   std::vector<Value> result;
   result.reserve(keys.size());
   for (const auto& key : keys) {
@@ -448,43 +448,44 @@ public:
   // Owner/due projections are real SQL scans over the private scheduler relations; the closed
   // record kind is reloaded through the same live-record dispatch as Find/Save. Authorization is
   // never decided here.
-  target::Outcome<std::vector<target::ScheduledTask>> list_tasks(
-      const target::InstanceId& owner, std::size_t limit, const std::string& after) override {
+  target::Outcome<std::vector<target::ScheduledTask>>
+  list_tasks(const target::InstanceId& owner, std::size_t limit,
+             const std::string& after) override {
     if (limit == 0 || limit > 1000) {
       return failure(target::ErrorCode::InvalidArgument);
     }
     std::vector<std::vector<std::string>> keys;
-    const auto status = run_sql(
-        [&](pqxx::transaction_base& tx) -> target::Status {
-          const auto rows = tx.exec(
-              "SELECT owner,task_id FROM kiarabot.tasks WHERE owner=$1 AND "
-              "state IN (0,1,2) AND ($2='' OR task_id>$2) ORDER BY task_id LIMIT $3",
-              pqxx::params{owner.value, after, static_cast<int>(limit)});
-          for (const auto& row : rows) {
-            keys.push_back({row[0].as<std::string>(), row[1].as<std::string>()});
-          }
-          return std::monostate{};
-        });
+    const auto status = run_sql([&](pqxx::transaction_base& tx) -> target::Status {
+      const auto rows =
+          tx.exec("SELECT owner,task_id FROM kiarabot.tasks WHERE owner=$1 AND "
+                  "state IN (0,1,2) AND ($2='' OR task_id>$2) ORDER BY task_id LIMIT $3",
+                  pqxx::params{owner.value, after, static_cast<int>(limit)});
+      for (const auto& row : rows) {
+        keys.push_back({row[0].as<std::string>(), row[1].as<std::string>()});
+      }
+      return std::monostate{};
+    });
     if (const auto* rejected = std::get_if<target::Failure>(&status)) {
       return *rejected;
     }
     return load_records<target::ScheduledTask>(work(), detail::RecordKind::Task, keys);
   }
-  target::Outcome<std::pair<std::size_t, std::size_t>> count_tasks(
-      const target::InstanceId& owner, const target::InstallationId& installation) override {
+  target::Outcome<std::pair<std::size_t, std::size_t>>
+  count_tasks(const target::InstanceId& owner,
+              const target::InstallationId& installation) override {
     std::size_t instance = 0;
     std::size_t aggregate = 0;
-    const auto status = run_sql(
-        [&](pqxx::transaction_base& tx) -> target::Status {
-          const auto row = tx.exec(
-              "SELECT count(*) FILTER (WHERE owner=$1 AND state IN (0,1,2)),"
-              " count(*) FILTER (WHERE installation=$2 AND state IN (0,1,2)) FROM kiarabot.tasks",
-              pqxx::params{owner.value, installation.value})
+    const auto status = run_sql([&](pqxx::transaction_base& tx) -> target::Status {
+      const auto row =
+          tx.exec(
+                "SELECT count(*) FILTER (WHERE owner=$1 AND state IN (0,1,2)),"
+                " count(*) FILTER (WHERE installation=$2 AND state IN (0,1,2)) FROM kiarabot.tasks",
+                pqxx::params{owner.value, installation.value})
               .one_row();
-          instance = static_cast<std::size_t>(row[0].as<long long>());
-          aggregate = static_cast<std::size_t>(row[1].as<long long>());
-          return std::monostate{};
-        });
+      instance = static_cast<std::size_t>(row[0].as<long long>());
+      aggregate = static_cast<std::size_t>(row[1].as<long long>());
+      return std::monostate{};
+    });
     if (const auto* rejected = std::get_if<target::Failure>(&status)) {
       return *rejected;
     }
@@ -496,63 +497,58 @@ public:
       return failure(target::ErrorCode::InvalidArgument);
     }
     std::vector<std::vector<std::string>> keys;
-    const auto status = run_sql(
-        [&](pqxx::transaction_base& tx) -> target::Status {
-          const auto rows = tx.exec(
-              "SELECT owner,task_id FROM kiarabot.tasks WHERE state=0 AND run_at<=$1 "
-              "ORDER BY run_at LIMIT $2",
-              pqxx::params{run_at.time_since_epoch().count(), static_cast<int>(limit)});
-          for (const auto& row : rows) {
-            keys.push_back({row[0].as<std::string>(), row[1].as<std::string>()});
-          }
-          return std::monostate{};
-        });
+    const auto status = run_sql([&](pqxx::transaction_base& tx) -> target::Status {
+      const auto rows =
+          tx.exec("SELECT owner,task_id FROM kiarabot.tasks WHERE state=0 AND run_at<=$1 "
+                  "ORDER BY run_at LIMIT $2",
+                  pqxx::params{run_at.time_since_epoch().count(), static_cast<int>(limit)});
+      for (const auto& row : rows) {
+        keys.push_back({row[0].as<std::string>(), row[1].as<std::string>()});
+      }
+      return std::monostate{};
+    });
     if (const auto* rejected = std::get_if<target::Failure>(&status)) {
       return *rejected;
     }
     return load_records<target::ScheduledTask>(work(), detail::RecordKind::Task, keys);
   }
-  target::Outcome<std::vector<target::Occurrence>> list_occurrences(
-      const target::InstanceId& owner, std::size_t limit,
-      const std::string& after) override {
+  target::Outcome<std::vector<target::Occurrence>>
+  list_occurrences(const target::InstanceId& owner, std::size_t limit,
+                   const std::string& after) override {
     if (limit == 0 || limit > 1000) {
       return failure(target::ErrorCode::InvalidArgument);
     }
     std::vector<std::vector<std::string>> keys;
-    const auto status = run_sql(
-        [&](pqxx::transaction_base& tx) -> target::Status {
-          const auto rows = tx.exec(
-              "SELECT occurrence_id FROM kiarabot.occurrences WHERE owner=$1 AND "
-              "($2='' OR occurrence_id>$2) ORDER BY occurrence_id LIMIT $3",
-              pqxx::params{owner.value, after, static_cast<int>(limit)});
-          for (const auto& row : rows) {
-            keys.push_back({row[0].as<std::string>()});
-          }
-          return std::monostate{};
-        });
+    const auto status = run_sql([&](pqxx::transaction_base& tx) -> target::Status {
+      const auto rows = tx.exec("SELECT occurrence_id FROM kiarabot.occurrences WHERE owner=$1 AND "
+                                "($2='' OR occurrence_id>$2) ORDER BY occurrence_id LIMIT $3",
+                                pqxx::params{owner.value, after, static_cast<int>(limit)});
+      for (const auto& row : rows) {
+        keys.push_back({row[0].as<std::string>()});
+      }
+      return std::monostate{};
+    });
     if (const auto* rejected = std::get_if<target::Failure>(&status)) {
       return *rejected;
     }
     return load_records<target::Occurrence>(work(), detail::RecordKind::Occurrence, keys);
   }
-  target::Outcome<std::vector<target::Occurrence>> inflight_occurrences(
-      std::size_t limit) override {
+  target::Outcome<std::vector<target::Occurrence>>
+  inflight_occurrences(std::size_t limit) override {
     if (limit == 0 || limit > 256) {
       return failure(target::ErrorCode::InvalidArgument);
     }
     std::vector<std::vector<std::string>> keys;
-    const auto status = run_sql(
-        [&](pqxx::transaction_base& tx) -> target::Status {
-          const auto rows = tx.exec(
-              "SELECT occurrence_id FROM kiarabot.occurrences WHERE state=$1 "
-              "ORDER BY due_at LIMIT $2",
-              pqxx::params{static_cast<int>(target::OperationState::Accepted),
-                           static_cast<int>(limit)});
-          for (const auto& row : rows) {
-            keys.push_back({row[0].as<std::string>()});
-          }
-          return std::monostate{};
-        });
+    const auto status = run_sql([&](pqxx::transaction_base& tx) -> target::Status {
+      const auto rows = tx.exec("SELECT occurrence_id FROM kiarabot.occurrences WHERE state=$1 "
+                                "ORDER BY due_at LIMIT $2",
+                                pqxx::params{static_cast<int>(target::OperationState::Accepted),
+                                             static_cast<int>(limit)});
+      for (const auto& row : rows) {
+        keys.push_back({row[0].as<std::string>()});
+      }
+      return std::monostate{};
+    });
     if (const auto* rejected = std::get_if<target::Failure>(&status)) {
       return *rejected;
     }
@@ -560,8 +556,7 @@ public:
   }
 
 private:
-  target::Status run_sql(
-      const std::function<target::Status(pqxx::transaction_base&)>& function) {
+  target::Status run_sql(const std::function<target::Status(pqxx::transaction_base&)>& function) {
     auto* sql = dynamic_cast<detail::SqlWork*>(&work());
     if (!sql) {
       return failure(target::ErrorCode::Internal);
