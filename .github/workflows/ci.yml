@@ -11,7 +11,7 @@ on:
   workflow_dispatch:
     inputs:
       base_ref:
-        description: 'Descriptor 基线提交（commit SHA，默认 origin/main；main 上手动运行会与自身比较）'
+        description: 'Descriptor 基线提交（必须与 HEAD 不同；main 手动运行默认 origin/main 会自比并被拒绝，需显式给上一提交/tag）'
         required: false
         default: origin/main
         type: string

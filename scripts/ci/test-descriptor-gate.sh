@@ -44,4 +44,14 @@ cp "$root/proto/kiarabot/v1/common.proto" "$tmp_dir/proto/kiarabot/v1/common.pro
 printf '\nmessage CiCompatibilityFixture { string value = 1; }\n' >> "$tmp_dir/proto/kiarabot/v1/common.proto"
 generate "$tmp_dir/additive.pb"
 "$tool" "$tmp_dir/additive.pb" "$tmp_dir/original.pb"
-echo "Descriptor compatibility positive and negative checks passed"
+
+# The wrapper must reject a baseline that resolves to HEAD instead of comparing a
+# commit against itself (the previous false green on main). The guard fails before
+# protoc runs, so this check only needs git and the wrapper.
+self_status=0
+"$root/scripts/ci/check-descriptor.sh" "$(git -C "$root" rev-parse HEAD)" >/dev/null 2>&1 || self_status=$?
+if [[ "$self_status" -ne 1 ]]; then
+  echo "check-descriptor.sh must reject a HEAD baseline with exit code 1, got $self_status" >&2
+  exit 1
+fi
+echo "Descriptor compatibility positive and negative checks passed; self-baseline guard rejected HEAD"

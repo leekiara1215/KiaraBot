@@ -115,7 +115,7 @@ ghcr.io/leekiara1215/kiarabot-core:v1.0.0
 `.github/workflows/ci.yml` 原本在 Pull Request 和 push 到 `main` 时运行，不引用 production Environment 或生产密钥，仓库权限仅为 `contents: read`。它执行：
 
 - GCC 13、Clang 16 分别配置和构建 `dev` 预设，运行全部 CTest；协议任务配置、构建 `proto` 并运行全部 CTest。
-- `proto/tests/check_contracts.sh` 检查契约；`scripts/ci/check-descriptor.sh` 从 PR 目标分支的 base SHA（push 时为推送前 SHA）生成 descriptor，再使用现有兼容性检查器比较。找不到基准或基准为全零时失败；`scripts/ci/test-descriptor-gate.sh` 验证不兼容字段和更改的基准会失败。基准来自 Git 历史而非 PR 提供的文件，descriptor 构建产物以被检提交 SHA 命名。
+- `proto/tests/check_contracts.sh` 检查契约；`scripts/ci/check-descriptor.sh` 从 PR 目标分支的 base SHA（push 时为推送前 SHA）生成 descriptor，再使用现有兼容性检查器比较。找不到基准、基准为全零、或基准解析为被检 HEAD 时失败（2026-11-02 起拒绝自比；仅本地自检可显式设置 `KIARABOT_ALLOW_DESCRIPTOR_SELF_BASELINE=1`，该运行不构成兼容性结论）；`scripts/ci/test-descriptor-gate.sh` 验证不兼容字段和更改的基准会失败，并回归「HEAD 自比被拒绝」。基准来自 Git 历史而非 PR 提供的文件，descriptor 构建产物以被检提交 SHA 命名。
 - 检查 workflow YAML、actionlint、手写 C++ 的 clang-format 和 dev 预设全部翻译单元的 clang-tidy；仓库内跟踪 `.sh` 的 `bash -n`；Redocly lint OpenAPI，AsyncAPI parser 拒绝错误诊断。
 - Gitleaks 扫描 Git 历史（使用仓库根 `.gitleaks.toml`，默认规则保持启用，只允许明确写成 `secret-key-must-not-leak`、`platform-test-token` 等测试占位值，避免测试夹具造成误报；真实凭据仍在扫描范围）；失败时上传 `gitleaks-report.json` 工件。npm audit 扫描 `scripts/ci/package-lock.json` 中锁定的 CI 工具及传递依赖。当前 npm audit **不覆盖** vcpkg 的 C++ 依赖：需另行接入能识别 vcpkg 已解析依赖的漏洞数据，不能将此检查描述为完整 C++ 依赖漏洞扫描。
 
@@ -344,7 +344,7 @@ contracts job 在原固定 vcpkg registry 中增加 boost-beast、boost-asio、l
 
 ## 2026-10-31 更新：基线、全模块构建与审计
 
-- **descriptor 基线**：`workflow_dispatch` 新增输入 `baseline_release`，可从上一发布版 GitHub Release 下载 `kiarabot-v1.pb` 作为 `KIARABOT_BASELINE_DESCRIPTOR` 做发布兼容比较；与 base commit 的比较保留（PR 用 `pull_request.base.sha`，push 用 `event.before`，手动用 `base_ref`）。注意：在 `main` 上手动运行且未给 release 时 `origin/main == HEAD`，只能验证当前 descriptor 与测试门禁，不能声称跨版本兼容。
+- **descriptor 基线**：`workflow_dispatch` 新增输入 `baseline_release`，可从上一发布版 GitHub Release 下载 `kiarabot-v1.pb` 作为 `KIARABOT_BASELINE_DESCRIPTOR` 做发布兼容比较；与 base commit 的比较保留（PR 用 `pull_request.base.sha`，push 用 `event.before`，手动用 `base_ref`）。注意：在 `main` 上手动运行且未给 release 时 `origin/main == HEAD`；自 2026-11-02 起 `scripts/ci/check-descriptor.sh` 拒绝这种自比并退出 1，因此手动运行必须显式给出与 HEAD 不同的 `base_ref`（上一提交或 tag）或设置 `baseline_release`，不能用当前 descriptor 自比证明跨版本兼容。
 - **新增 `full-build` job**（Clang 16 + pinned vcpkg + CMake `full` 预设）：构建 proto + infrastructure、运行 full CTest，并用 `build/full/compile_commands.json` 对 core/proto/control/infrastructure 全部翻译单元执行 clang-tidy。这补上了原 `build-test` 只跑 dev、原 tidy job 只分析 core 的覆盖缺口。
 - **依赖审计**：`dependency-scan` 增加面板 `npm audit` 与 Python `uv export + pip-audit`（两者当前 report-only，不阻断）；vcpkg C++ 依赖仍不在审计范围，不能宣称完整漏洞覆盖。
 - **失败工件**：`full-build` 失败时上传 `build-full.log`；密钥扫描已有 gitleaks 报告工件。

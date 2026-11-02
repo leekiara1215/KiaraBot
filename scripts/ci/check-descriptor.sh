@@ -8,6 +8,25 @@ if [[ "$baseline_ref" =~ ^0+$ ]] || ! git -C "$root" cat-file -e "${baseline_ref
   exit 1
 fi
 
+# A baseline that resolves to the tested commit compares the working tree against
+# itself and always passes. That was the false green on main, where the manual
+# workflow default (origin/main) equals HEAD: the step looked green while proving
+# nothing about cross-version compatibility. Fail closed and require an explicit
+# baseline instead. KIARABOT_ALLOW_DESCRIPTOR_SELF_BASELINE=1 is only a local
+# sanity switch; it never turns the run into a compatibility result.
+head_sha="$(git -C "$root" rev-parse HEAD)"
+baseline_sha="$(git -C "$root" rev-parse "${baseline_ref}^{commit}")"
+if [[ "$baseline_sha" == "$head_sha" ]]; then
+  if [[ "${KIARABOT_ALLOW_DESCRIPTOR_SELF_BASELINE:-0}" != "1" ]]; then
+    echo "Refusing a descriptor self-comparison: baseline '$baseline_ref' resolves to HEAD ($head_sha)." >&2
+    echo "Such a run only proves the gate itself, not cross-version protocol compatibility." >&2
+    echo "Pass an earlier commit or release tag as BASELINE_COMMIT (workflow_dispatch input base_ref)." >&2
+    echo "For a deliberate local sanity run only, set KIARABOT_ALLOW_DESCRIPTOR_SELF_BASELINE=1." >&2
+    exit 1
+  fi
+  echo "WARNING: baseline '$baseline_ref' equals HEAD; this run proves the gate only, not compatibility." >&2
+fi
+
 tmp_dir="$(mktemp -d)"
 trap 'rm -rf "$tmp_dir"' EXIT
 git -C "$root" archive "$baseline_ref" proto/kiarabot/v1 | tar -x -C "$tmp_dir"
