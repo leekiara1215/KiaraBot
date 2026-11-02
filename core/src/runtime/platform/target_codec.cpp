@@ -109,7 +109,10 @@ constexpr std::array kPermissions{
     std::pair{target::Permission::MemberKick, v1::PERMISSION_MEMBER_KICK},
     std::pair{target::Permission::RequestApprove, v1::PERMISSION_REQUEST_APPROVE},
     // P09 shared-namespace read (wire 47); no other P09 wire type has an internal consumer yet.
-    std::pair{target::Permission::NamespaceRead, v1::PERMISSION_NAMESPACE_READ}};
+    std::pair{target::Permission::NamespaceRead, v1::PERMISSION_NAMESPACE_READ},
+    // P12 sensitive reads (wire 48/49); Control authorizes them through Identity delegations.
+    std::pair{target::Permission::LogRead, v1::PERMISSION_LOG_READ},
+    std::pair{target::Permission::AuditRead, v1::PERMISSION_AUDIT_READ}};
 
 struct ErrorMapping {
   target::ErrorCode internal;
