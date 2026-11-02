@@ -209,6 +209,45 @@ Json task_page_json(const wire::SchedulerListTasksResponse& response) {
   }
   return {{"items", std::move(items)}, {"page", std::move(page)}};
 }
+Json state_json(const wire::VersionedResourceState& state) {
+  Json value{
+      {"resource",
+       {{"kind", wire::ResourceKind_Name(state.resource().kind())}, {"id", state.resource().id()}}},
+      {"version", std::to_string(state.version())},
+      {"lifecycle", wire::LifecycleState_Name(state.lifecycle())},
+      {"desired", wire::DesiredState_Name(state.desired())},
+      {"registered", state.registered()},
+      {"desired_config_version", std::to_string(state.desired_config_version())},
+      {"applied_config_version", std::to_string(state.applied_config_version())},
+      {"process_outcome", wire::ExecutionOutcome_Name(state.process_outcome())},
+      {"observed_at", json_time(state.observed_at())}};
+  if (!state.source_service().empty()) {
+    value["source_service"] = state.source_service();
+  }
+  return value;
+}
+Json instance_record_json(const wire::InstanceRecord& instance) {
+  Json value{{"instance_id", instance.instance_id()},
+             {"installation_id", instance.installation_id()},
+             {"externally_managed", instance.externally_managed()},
+             {"state", state_json(instance.state())}};
+  if (!instance.host_id().empty()) {
+    value["host_id"] = instance.host_id();
+  }
+  return value;
+}
+std::string instance_apply_state(const wire::VersionedResourceState& state) {
+  // Do not claim APPLIED from desired state alone: only an equal, non-zero applied version counts
+  // as plugin/Host confirmation; otherwise the fact stays PENDING/UNAVAILABLE.
+  if (state.applied_config_version() > 0 &&
+      state.applied_config_version() >= state.desired_config_version()) {
+    return "CONFIG_APPLY_APPLIED";
+  }
+  if (state.desired_config_version() > 0) {
+    return "CONFIG_APPLY_PENDING";
+  }
+  return "CONFIG_APPLY_UNAVAILABLE";
+}
 std::string request_identifier(const OwnerHttpRequest& request) {
   if (const auto value = header(request, "x-request-id");
       value && value->size() >= 8 && value->size() <= 128) {
@@ -492,6 +531,16 @@ std::optional<OwnerHttpResult> OwnerGateway::handle(const OwnerHttpRequest& requ
         return OwnerHttpResult{
             401, owner_error_body(wire::UNAUTHENTICATED, request_id, trace_id, false)};
       }
+      // health.read (Permission 50) is a sensitive read: validate the caller through the same
+      // one-use Identity delegation as every other owner call before exposing component detail.
+      auto delegation =
+          delegation_.issue("control", wire::PERMISSION_HEALTH_READ, wire::ResourceScope{},
+                            request.access_token, request.deadline);
+      if (const auto* failure = std::get_if<OwnerFailure>(&delegation)) {
+        return OwnerHttpResult{
+            owner_http_status(failure->code),
+            owner_error_body(failure->code, request_id, trace_id, failure->retryable)};
+      }
       if (!health_) {
         return OwnerHttpResult{503, health_body(HealthObservation{})};
       }
@@ -738,6 +787,225 @@ std::optional<OwnerHttpResult> OwnerGateway::handle(const OwnerHttpRequest& requ
             json_response(std::get<wire::RuntimeCreateInstanceResponse>(result)));
         value.erase("bootstrap_credential");
         return OwnerHttpResult{200, value.dump()};
+      }
+      constexpr std::string_view kInstancePlugin = "/installations/";
+      if (path.starts_with("/api/v1/installations/")) {
+        const auto rest = path.substr(std::string{"/api/v1/installations/"}.size());
+        const auto first = rest.find("/instances/");
+        if (first != std::string_view::npos) {
+          const auto installation = std::string{rest.substr(0, first)};
+          const auto tail = rest.substr(first + std::string{"/instances/"}.size());
+          const auto slash = tail.find('/');
+          if (slash != std::string_view::npos) {
+            const auto instance = std::string{tail.substr(0, slash)};
+            const auto action = tail.substr(slash);
+            const auto method = request.method == "HEAD" ? std::string{"GET"} : request.method;
+            const auto scope = instance_scope(instance);
+            if (action == "/plugin-state" && method == "PUT") {
+              const auto parsed = Json::parse(request.body, nullptr, false);
+              wire::RuntimeSetDesiredStateRequest input;
+              if (installation.empty() || instance.empty() || parsed.is_discarded() ||
+                  !parsed.is_object() || !parsed.contains("installation_id") ||
+                  !parsed.contains("instance_id") || !parsed.contains("desired") ||
+                  !parsed["installation_id"].is_string() || !parsed["instance_id"].is_string() ||
+                  !parsed["desired"].is_string() ||
+                  parsed["installation_id"].get<std::string>() != installation ||
+                  parsed["instance_id"].get<std::string>() != instance) {
+                return OwnerHttpResult{
+                    400, owner_error_body(wire::INVALID_ARGUMENT, request_id, trace_id, false)};
+              }
+              const auto desired_name = parsed["desired"].get<std::string>();
+              if (desired_name != "DESIRED_RUNNING" && desired_name != "DESIRED_STOPPED") {
+                return OwnerHttpResult{
+                    400, owner_error_body(wire::INVALID_ARGUMENT, request_id, trace_id, false)};
+              }
+              input.set_instance_id(instance);
+              input.set_desired_state(desired_name == "DESIRED_RUNNING" ? wire::DESIRED_RUNNING
+                                                                        : wire::DESIRED_STOPPED);
+              if (parsed.contains("expected_version")) {
+                if (!parsed["expected_version"].is_string()) {
+                  return OwnerHttpResult{
+                      400, owner_error_body(wire::INVALID_ARGUMENT, request_id, trace_id, false)};
+                }
+                std::uint64_t version = 0;
+                const auto& text = parsed["expected_version"].get_ref<const std::string&>();
+                const auto converted =
+                    std::from_chars(text.data(), text.data() + text.size(), version);
+                if (converted.ec != std::errc{} || converted.ptr != text.data() + text.size() ||
+                    version == 0) {
+                  return OwnerHttpResult{
+                      400, owner_error_body(wire::INVALID_ARGUMENT, request_id, trace_id, false)};
+                }
+                input.set_expected_version(version);
+              }
+              if (!fill_context(input.mutable_context(), request_id, trace_id, request)) {
+                return OwnerHttpResult{
+                    400, owner_error_body(wire::INVALID_ARGUMENT, request_id, trace_id, false)};
+              }
+              auto delegation = delegation_.issue("runtime", wire::PERMISSION_PLUGIN_MANAGE, scope,
+                                                  request.access_token, request.deadline);
+              if (const auto* failure = std::get_if<OwnerFailure>(&delegation)) {
+                return OwnerHttpResult{
+                    owner_http_status(failure->code),
+                    owner_error_body(failure->code, request_id, trace_id, failure->retryable)};
+              }
+              auto result = resources_->set_desired_state(input, std::get<std::string>(delegation));
+              if (const auto* failure = std::get_if<OwnerFailure>(&result)) {
+                return OwnerHttpResult{
+                    owner_http_status(failure->code),
+                    owner_error_body(failure->code, request_id, trace_id, failure->retryable)};
+              }
+              const auto& response = std::get<wire::RuntimeSetDesiredStateResponse>(result);
+              if (response.instance().installation_id() != installation) {
+                return OwnerHttpResult{
+                    404, owner_error_body(wire::NOT_FOUND, request_id, trace_id, false)};
+              }
+              const auto& state = response.instance().state();
+              Json body{{"instance", instance_record_json(response.instance())}};
+              body["runtime"] = {{"desired", wire::DesiredState_Name(state.desired())},
+                                 {"version", std::to_string(state.version())},
+                                 {"observed_at", json_time(state.observed_at())}};
+              if (state.desired_config_version() > 0) {
+                body["runtime"]["desired_config_version"] =
+                    std::to_string(state.desired_config_version());
+              }
+              Json host{{"registered", state.registered()},
+                        {"process_outcome", wire::ExecutionOutcome_Name(state.process_outcome())},
+                        {"observed_at", json_time(state.observed_at())}};
+              if (!response.instance().host_id().empty()) {
+                host["host_id"] = response.instance().host_id();
+              }
+              body["host"] = std::move(host);
+              body["plugin"] = {{"apply_state", instance_apply_state(state)},
+                                {"observed_at", json_time(state.observed_at())}};
+              if (state.applied_config_version() > 0) {
+                body["plugin"]["applied_config_version"] =
+                    std::to_string(state.applied_config_version());
+              }
+              if (response.has_operation()) {
+                body["operation"] = {{"owner_service", response.operation().owner_service()},
+                                     {"operation_id", response.operation().operation_id()}};
+              }
+              return OwnerHttpResult{200, body.dump()};
+            }
+            if (action == "/configuration" && (method == "GET" || method == "PUT")) {
+              const auto permission = method == "GET" ? wire::PERMISSION_PLUGIN_CONFIG_READ
+                                                      : wire::PERMISSION_PLUGIN_MANAGE;
+              auto delegation = delegation_.issue("runtime", permission, scope,
+                                                  request.access_token, request.deadline);
+              if (const auto* failure = std::get_if<OwnerFailure>(&delegation)) {
+                return OwnerHttpResult{
+                    owner_http_status(failure->code),
+                    owner_error_body(failure->code, request_id, trace_id, failure->retryable)};
+              }
+              if (method == "GET") {
+                wire::RuntimeGetInstanceConfigRequest input;
+                input.mutable_resource()->set_kind(wire::RESOURCE_INSTANCE);
+                input.mutable_resource()->set_id(instance);
+                if (!fill_context(input.mutable_context(), request_id, trace_id, request)) {
+                  return OwnerHttpResult{
+                      400, owner_error_body(wire::INVALID_ARGUMENT, request_id, trace_id, false)};
+                }
+                auto result =
+                    resources_->get_instance_config(input, std::get<std::string>(delegation));
+                if (const auto* failure = std::get_if<OwnerFailure>(&result)) {
+                  return OwnerHttpResult{
+                      owner_http_status(failure->code),
+                      owner_error_body(failure->code, request_id, trace_id, failure->retryable)};
+                }
+                const auto& config =
+                    std::get<wire::RuntimeGetInstanceConfigResponse>(result).config();
+                Json runtime{{"desired_config_version", std::to_string(config.desired_version())},
+                             {"apply_state", wire::ConfigApplyState_Name(config.apply_state())},
+                             {"observed_at", json_time(config.observed_at())}};
+                if (!config.delivery_id().empty()) {
+                  runtime["delivery_id"] = config.delivery_id();
+                }
+                std::string values;
+                google::protobuf::util::JsonPrintOptions options;
+                options.preserve_proto_field_names = true;
+                if (google::protobuf::util::MessageToJsonString(config.values(), &values, options)
+                        .ok()) {
+                  runtime["configuration"] = json_request_value(values);
+                }
+                Json host{{"registered", false},
+                          {"process_outcome", "EXECUTION_UNKNOWN"},
+                          {"observed_at", json_time(config.observed_at())}};
+                Json plugin{{"apply_state", wire::ConfigApplyState_Name(config.apply_state())},
+                            {"observed_at", json_time(config.observed_at())}};
+                if (config.applied_version() > 0) {
+                  plugin["applied_config_version"] = std::to_string(config.applied_version());
+                }
+                Json body{{"runtime", std::move(runtime)},
+                          {"host", std::move(host)},
+                          {"plugin", std::move(plugin)}};
+                if (config.has_error()) {
+                  body["plugin"]["error"] = {{"code", wire::ErrorCode_Name(config.error().code())}};
+                }
+                return OwnerHttpResult{200, body.dump()};
+              }
+              const auto parsed = Json::parse(request.body, nullptr, false);
+              wire::RuntimeUpdateConfigRequest input;
+              if (parsed.is_discarded() || !parsed.is_object() ||
+                  !parsed.contains("configuration") || !parsed["configuration"].is_object() ||
+                  !parsed.contains("expected_version") || !parsed["expected_version"].is_string()) {
+                return OwnerHttpResult{
+                    400, owner_error_body(wire::INVALID_ARGUMENT, request_id, trace_id, false)};
+              }
+              std::uint64_t version = 0;
+              const auto& version_text = parsed["expected_version"].get_ref<const std::string&>();
+              const auto converted = std::from_chars(
+                  version_text.data(), version_text.data() + version_text.size(), version);
+              if (converted.ec != std::errc{} ||
+                  converted.ptr != version_text.data() + version_text.size() || version == 0 ||
+                  !google::protobuf::util::JsonStringToMessage(parsed["configuration"].dump(),
+                                                               input.mutable_config())
+                       .ok()) {
+                return OwnerHttpResult{
+                    400, owner_error_body(wire::INVALID_ARGUMENT, request_id, trace_id, false)};
+              }
+              input.mutable_resource()->set_kind(wire::RESOURCE_INSTANCE);
+              input.mutable_resource()->set_id(instance);
+              input.set_expected_version(version);
+              if (!fill_context(input.mutable_context(), request_id, trace_id, request)) {
+                return OwnerHttpResult{
+                    400, owner_error_body(wire::INVALID_ARGUMENT, request_id, trace_id, false)};
+              }
+              auto result = resources_->update_config(input, std::get<std::string>(delegation));
+              if (const auto* failure = std::get_if<OwnerFailure>(&result)) {
+                return OwnerHttpResult{
+                    owner_http_status(failure->code),
+                    owner_error_body(failure->code, request_id, trace_id, failure->retryable)};
+              }
+              const auto& response = std::get<wire::RuntimeUpdateConfigResponse>(result);
+              std::string values;
+              google::protobuf::util::JsonPrintOptions options;
+              options.preserve_proto_field_names = true;
+              const auto printed =
+                  google::protobuf::util::MessageToJsonString(input.config(), &values, options);
+              Json runtime{{"desired_config_version", std::to_string(response.state().version())},
+                           {"apply_state", "CONFIG_APPLY_PENDING"},
+                           {"observed_at", json_time(response.state().observed_at())}};
+              if (printed.ok()) {
+                runtime["configuration"] = json_request_value(values);
+              }
+              Json body{{"runtime", std::move(runtime)},
+                        {"host",
+                         {{"registered", false},
+                          {"process_outcome", "EXECUTION_UNKNOWN"},
+                          {"observed_at", json_time(response.state().observed_at())}}},
+                        {"plugin",
+                         {{"apply_state", "CONFIG_APPLY_PENDING"},
+                          {"observed_at", json_time(response.state().observed_at())}}}};
+              if (response.has_operation()) {
+                body["operation"] = {{"owner_service", response.operation().owner_service()},
+                                     {"operation_id", response.operation().operation_id()}};
+              }
+              return OwnerHttpResult{200, body.dump()};
+            }
+            return missing(wire::NOT_FOUND);
+          }
+        }
       }
       if (path.starts_with(kInstances)) {
         const auto tail = path.substr(kInstances.size());

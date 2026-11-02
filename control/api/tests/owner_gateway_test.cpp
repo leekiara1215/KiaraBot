@@ -134,6 +134,7 @@ struct FakeResources final : target::RuntimeResourcesPort {
   wire::RuntimeBindAdapterRequest last_bind;
   wire::RuntimeSetDesiredStateRequest last_state;
   wire::RuntimeUpdateActionPolicyRequest last_policy;
+  wire::RuntimeUpdateConfigRequest last_config;
   template <typename Response> target::OwnerOutcome<Response> ok(Response response) const {
     if (failure) {
       return *failure;
@@ -178,20 +179,54 @@ struct FakeResources final : target::RuntimeResourcesPort {
     ++calls;
     last_state = input;
     wire::RuntimeSetDesiredStateResponse response;
-    response.mutable_instance()->set_instance_id(input.instance_id());
+    auto* instance = response.mutable_instance();
+    instance->set_instance_id(input.instance_id());
+    instance->set_installation_id("installation-1");
+    instance->set_host_id("host-1");
+    instance->set_externally_managed(false);
+    auto* state = instance->mutable_state();
+    state->mutable_resource()->set_kind(wire::RESOURCE_INSTANCE);
+    state->mutable_resource()->set_id(input.instance_id());
+    state->set_version(3);
+    state->set_lifecycle(wire::LIFECYCLE_ACTIVE);
+    state->set_desired(input.desired_state());
+    state->set_registered(true);
+    state->set_desired_config_version(2);
+    state->set_applied_config_version(1);
+    state->set_process_outcome(wire::EXECUTION_KNOWN_SUCCEEDED);
+    state->mutable_observed_at()->set_seconds(1'700'000'000);
+    state->set_source_service("host");
+    response.mutable_operation()->set_owner_service("runtime");
     response.mutable_operation()->set_operation_id("operation-3");
     return ok(response);
   }
   target::OwnerOutcome<wire::RuntimeUpdateConfigResponse>
   update_config(const wire::RuntimeUpdateConfigRequest& input, std::string_view) override {
     ++calls;
-    return ok(wire::RuntimeUpdateConfigResponse{});
+    last_config = input;
+    wire::RuntimeUpdateConfigResponse response;
+    response.mutable_state()->mutable_resource()->set_kind(wire::RESOURCE_INSTANCE);
+    response.mutable_state()->mutable_resource()->set_id(input.resource().id());
+    response.mutable_state()->set_version(5);
+    response.mutable_state()->mutable_observed_at()->set_seconds(1'700'000'000);
+    response.mutable_operation()->set_owner_service("runtime");
+    response.mutable_operation()->set_operation_id("operation-config");
+    return ok(response);
   }
   target::OwnerOutcome<wire::RuntimeGetInstanceConfigResponse>
   get_instance_config(const wire::RuntimeGetInstanceConfigRequest& input,
                       std::string_view) override {
     ++calls;
-    return ok(wire::RuntimeGetInstanceConfigResponse{});
+    wire::RuntimeGetInstanceConfigResponse response;
+    auto* config = response.mutable_config();
+    config->mutable_instance()->set_kind(wire::RESOURCE_INSTANCE);
+    config->mutable_instance()->set_id(input.resource().id());
+    config->set_desired_version(4);
+    config->set_applied_version(3);
+    config->set_apply_state(wire::CONFIG_APPLY_PENDING);
+    config->mutable_observed_at()->set_seconds(1'700'000'000);
+    config->set_delivery_id("delivery-1");
+    return ok(response);
   }
   target::OwnerOutcome<wire::RuntimeGetActionPolicyResponse>
   get_action_policy(const wire::RuntimeGetActionPolicyRequest& input, std::string_view) override {
@@ -400,6 +435,12 @@ void health_aggregation() {
   anonymous.access_token.clear();
   auto unauthorized = fixture.gateway.handle(anonymous);
   require(unauthorized && unauthorized->status == 401, "authorized health requires a caller");
+  fixture.delegation.failure = target::OwnerFailure{wire::PERMISSION_DENIED, false};
+  auto denied = fixture.gateway.handle(request("GET", "/api/v1/health"));
+  require(denied && denied->status == 403 &&
+              fixture.delegation.permission == wire::PERMISSION_HEALTH_READ,
+          "health.read denial maps 403");
+  fixture.delegation.failure.reset();
 }
 
 void principals_catalog() {
@@ -523,6 +564,65 @@ void operation_snapshots() {
   require(conflict && conflict->status == 409, "owner conflict maps 409");
 }
 
+void instance_plugin_state_and_configuration() {
+  OwnerCommands fixture;
+  const std::string installation = "installation-1";
+  const std::string instance = "inst-1";
+  const std::string base = "/api/v1/installations/" + installation + "/instances/" + instance;
+  auto state = request("PUT", base + "/plugin-state");
+  state.body =
+      R"({"installation_id":"installation-1","instance_id":"inst-1","desired":"DESIRED_RUNNING","expected_version":"2"})";
+  auto started = fixture.gateway.handle(state);
+  require(started && started->status == 200, "plugin-state 200");
+  require(started->body.find("\"desired\":\"DESIRED_RUNNING\"") != std::string::npos &&
+              started->body.find("\"process_outcome\":\"EXECUTION_KNOWN_SUCCEEDED\"") !=
+                  std::string::npos &&
+              started->body.find("\"apply_state\":\"CONFIG_APPLY_PENDING\"") != std::string::npos &&
+              started->body.find("operation-3") != std::string::npos,
+          "three separate facts + operation, non-APPLIED explicit");
+  require(fixture.resources.last_state.expected_version() == 2 &&
+              fixture.delegation.permission == wire::PERMISSION_PLUGIN_MANAGE,
+          "plugin-state expected_version/delegation");
+  auto mismatch = state;
+  mismatch.body =
+      R"({"installation_id":"other","instance_id":"inst-1","desired":"DESIRED_RUNNING"})";
+  require(fixture.gateway.handle(mismatch)->status == 400, "plugin-state path/body mismatch");
+  fixture.resources.failure = target::OwnerFailure{wire::CONFLICT, false};
+  require(fixture.gateway.handle(state)->status == 409, "plugin-state conflict maps 409");
+  fixture.resources.failure.reset();
+
+  auto get_config = request("GET", base + "/configuration");
+  auto read = fixture.gateway.handle(get_config);
+  require(read && read->status == 200, "configuration GET 200");
+  require(read->body.find("\"desired_config_version\":\"4\"") != std::string::npos &&
+              read->body.find("\"apply_state\":\"CONFIG_APPLY_PENDING\"") != std::string::npos &&
+              read->body.find("delivery-1") != std::string::npos,
+          "configuration facts include pending apply state");
+  require(fixture.delegation.permission == wire::PERMISSION_PLUGIN_CONFIG_READ,
+          "configuration GET delegation");
+  auto put_config = request("PUT", base + "/configuration");
+  put_config.body = R"({"configuration":{"timeout":5},"expected_version":"4"})";
+  auto written = fixture.gateway.handle(put_config);
+  require(written && written->status == 200, "configuration PUT 200");
+  require(written->body.find("\"apply_state\":\"CONFIG_APPLY_PENDING\"") != std::string::npos &&
+              written->body.find("operation-config") != std::string::npos &&
+              written->body.find("bootstrap") == std::string::npos,
+          "configuration PUT returns pending apply + operation, no secret echo");
+  require(fixture.resources.last_config.expected_version() == 4 &&
+              fixture.resources.last_config.resource().id() == instance &&
+              fixture.delegation.permission == wire::PERMISSION_PLUGIN_MANAGE,
+          "configuration PUT expected_version/resource");
+  auto bad_put = put_config;
+  bad_put.body = R"({"configuration":{"timeout":5},"expected_version":"4"})";
+  require(fixture.gateway.handle(bad_put)->status == 200,
+          "second PUT same body is idempotent forward");
+  auto missing_version = put_config;
+  missing_version.body = R"({"configuration":{"timeout":5}})";
+  require(fixture.gateway.handle(missing_version)->status == 400,
+          "configuration PUT requires expected_version");
+  auto unknown = request("PUT", base + "/unknown");
+  require(fixture.gateway.handle(unknown)->status == 404, "unknown instance action");
+}
 void sensitive_read_permissions() {
   Gateway fixture;
   fixture.delegation.failure = target::OwnerFailure{wire::PERMISSION_DENIED, false};
@@ -888,6 +988,7 @@ int main() {
     sensitive_read_permissions();
     owner_commands();
     operation_snapshots();
+    instance_plugin_state_and_configuration();
     validation_rules();
     model_management_surface();
   } catch (const std::exception& error) {
