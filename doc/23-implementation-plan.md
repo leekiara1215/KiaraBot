@@ -66,7 +66,7 @@ P00–P02 在同一集成工作分支形成目标构建基线；P01 的契约生
 | P07 | SDK Action→Runtime→Adapter→平台替身闭环 | P06 | 未开始 |
 | P08 | 插件宿主、期望状态与配置应用闭环 | P05、P06 | 未开始 |
 | P09 | 私有/共享 namespace、CAS、配额与收据 | P05、P03 | 未开始 |
-| P10 | Scheduler 一次性任务及可靠触发 | P06、P03、P04 | 已实现 P10a–P10c 并本地实测（ctest p10 5/5、p03_postgres 1/1、SDK tasks pytest 43 passed）；target 登记待 P10g，真实环境项见 [architecture-p10-scheduler.md](../reports/modules/architecture-p10-scheduler.md) |
+| P10 | Scheduler 一次性任务及可靠触发 | P06、P03、P04 | 已实现 P10a–P10c、本地实测（ctest p10 5/5、p03_postgres 1/1、SDK tasks pytest 43 passed）并完成 P10g target 登记（6 方法/14 消息/52 字段/4 semantic）；3 个 Control REST 任务 operation 因无限定目录 target 测试未翻；真实环境项见 [architecture-p10-scheduler.md](../reports/modules/architecture-p10-scheduler.md) |
 | P11 | Model 配置/密钥及调用前后记账 | P05、P03、P04 | 未开始 |
 | P12 | Control 与 Panel 核心运行管理全部接线 | P07–P11 | 未开始 |
 | P13 | 生命周期协调、分类清理与容量观测 | P07–P12 | 已实现 P13a–P13d；可观测最小面/验收矩阵见 doc/08 P13d 与 reports/modules/architecture-p13-lifecycle.md，真实满盘/跨主机待 P14 环境 |

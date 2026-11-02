@@ -129,3 +129,24 @@ scheduler_service_test.cpp`、`scheduler_rpc_test.cpp`、`scheduler_identity_cli
   （无行为变化）。
 - 校验命令见第 1 节；契约门禁（`proto/tests/check_implementation_status.py`、
   `check_semantic_rules.py`、`target_contract_test.py`）在文档提交后运行。
+
+## 8. P10g target 登记（2026-11-02，后续任务）
+
+P10g 已按本报告第 3 节候选完成 target 登记（只翻真实实现+测试通过项）：
+- `target_spec.json`：SchedulerService CreateTask/CancelTask/GetTask/ListTasks/GetOccurrence/GetOperation
+  → `implemented`，`exposure=wire`，附 status_note 引用本报告。
+- `execution_scopes.target.overrides` + `evidence`：proto_messages 14 项、proto_fields 52 项
+  （含 `TimerTriggered.occurrence_id`）、semantic_rules 4 项；evidence 统一指向
+  `core/src/application/target/scheduler_{application,rules,service}.cpp`、
+  `core/src/runtime/platform/scheduler_{rpc,runtime_client,identity_client}.cpp` 与
+  `core/tests/platform/{scheduler_service_test,scheduler_rpc_test,scheduler_identity_client_test,p10_timer_e2e_test.py}`。
+- doc/01 execution-scopes 表补三行覆盖上述 70 项；doc/23 P10 状态更新为已实现+已登记。
+- **未翻转**：`operations.getTask/cancelTask/getOccurrence` 3 项——Control REST owner_gateway
+  已实现，但 target evidence 要求 `tests/architecture/`/`core/tests/{platform,architecture}/`
+  下的真实测试；当前任务 REST 验收位于 `control/api/tests/`，不在限定路径内，故按“不证不翻”
+  保持 not_implemented，需补 target 目录 REST 测试后再翻。真实 7 天 EXPIRED/多 installation
+  容量/真实平台触发/生产委托来源仍为待环境项。
+- 门禁：check_implementation_status PASS（含 doc/01 行与 evidence 校验）、
+  `evidence_scopes_test.py` 9/9 PASS（expected 集合补 P10g 70 项 + main 既有 P12c/P13 4 个
+  operation 探针）、target_api_test PASS、check_contracts.sh PASS；check_target.sh 仍受本机
+  protoc/protobuf 版本限制（记录替代证据）。
