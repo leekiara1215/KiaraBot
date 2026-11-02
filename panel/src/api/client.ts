@@ -150,6 +150,17 @@ export function queryJson(value: unknown): string | undefined {
   return value === undefined || value === null ? undefined : JSON.stringify(value);
 }
 
+export interface LogQuery {
+  pageToken?: string;
+  pageSize?: number;
+  occurredAfter?: string;
+  occurredBefore?: string;
+  actor?: string;
+  resource?: string;
+  owner?: string;
+}
+export interface AuditQuery extends LogQuery {}
+
 export class ApiError extends Error {
   constructor(
     public readonly status: number,
@@ -293,6 +304,24 @@ export class ApiClient {
   // merge pages locally; live Control still returns 503 until P12e's authoritative source lands.
   logs(token?: string, pageSize?: number) { return this.list<LogEntry>(endpoints.logs, { token, pageSize }); }
   audit(token?: string, pageSize?: number) { return this.list<AuditEntry>(endpoints.audit, { token, pageSize }); }
+  // P12c-6 (pending wiring) exposes the same /logs /audit paths with server-side
+  // occurred_at+stable-ID keyset page tokens. Filter parameter names are the frontend mapping
+  // requested by P12d-4; they must be re-confirmed against P12c-6's frozen contract before live
+  // use. Live Control currently returns 503 for both paths.
+  logPage(query: LogQuery = {}) {
+    return this.call<Schemas['LogPage']>(endpoints.logs, { query: {
+      page_token: query.pageToken, page_size: query.pageSize,
+      occurred_after: query.occurredAfter, occurred_before: query.occurredBefore,
+      actor: query.actor, resource: query.resource, owner: query.owner,
+    } });
+  }
+  auditPage(query: AuditQuery = {}) {
+    return this.call<Schemas['AuditPage']>(endpoints.audit, { query: {
+      page_token: query.pageToken, page_size: query.pageSize,
+      occurred_after: query.occurredAfter, occurred_before: query.occurredBefore,
+      actor: query.actor, resource: query.resource, owner: query.owner,
+    } });
+  }
   validatePlugin(manifest: PluginManifest) {
     return this.call<ValidationResult>(endpoints.pluginValidate, { body: manifest });
   }

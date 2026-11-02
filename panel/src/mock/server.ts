@@ -26,21 +26,45 @@ const principalItems: Schemas['TargetIdentityPrincipalSummary'][] = [
   { principal_id: '22222222-2222-4222-8222-222222222222', principal_kind: 'human',
     version: '3', state: 'LIFECYCLE_DISABLED', roles: ['ROLE_VIEWER'] },
 ];
-const logItems = Array.from({ length: 25 }, (_, index) => ({
+type OwnerLog = Schemas['LogEntry'] & { owner_service: string };
+type OwnerAudit = Schemas['AuditEntry'] & { owner_service: string };
+const logItems: OwnerLog[] = Array.from({ length: 25 }, (_, index) => ({
   id: `log-${String(index + 1).padStart(2, '0')}`,
   name: `Core event ${index + 1}`,
   occurred_at: new Date(Date.UTC(2026, 9, 30, 2, index)).toISOString(),
   level: index % 7 === 0 ? 'WARN' : 'INFO',
   component: 'Core',
+  owner_service: index % 2 === 0 ? 'identity' : 'runtime',
   message: index === 0 ? '服务已启动' : `第 ${index + 1} 条运行日志`,
-})) satisfies Schemas['LogEntry'][];
+}));
+const auditItems: OwnerAudit[] = [
+  { id: 'audit-01', occurred_at: '2026-10-30T02:00:00Z', actor: 'admin', action: 'login',
+    resource: 'control-panel', request_id: 'request-audit-01', owner_service: 'identity' },
+  { id: 'audit-02', occurred_at: '2026-10-30T02:01:00Z', actor: 'runtime', action: 'timer.accept',
+    resource: 'task-01', request_id: 'request-audit-02', owner_service: 'runtime' },
+  { id: 'audit-03', occurred_at: '2026-10-30T02:02:00Z', actor: 'admin', action: 'account.disable',
+    resource: 'account-qq-10001', request_id: 'request-audit-03', owner_service: 'runtime' },
+];
+function filterLogAudit<T extends { occurred_at: string; owner_service: string; actor?: string; resource?: string }>(
+  items: T[], url: URL,
+): T[] {
+  const after = url.searchParams.get('occurred_after') ?? '';
+  const before = url.searchParams.get('occurred_before') ?? '';
+  const owner = url.searchParams.get('owner') ?? '';
+  const actor = url.searchParams.get('actor') ?? '';
+  const resource = url.searchParams.get('resource') ?? '';
+  return items.filter((item) =>
+    (!after || item.occurred_at >= after) && (!before || item.occurred_at <= before) &&
+    (!owner || item.owner_service === owner) && (!actor || item.actor === actor) &&
+    (!resource || item.resource === resource));
+}
 const json = (body: unknown, status = 200, headers: Record<string, string> = {}) =>
   new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json', ...headers } });
 const error = (status: number, code: string, message: string, extra: Record<string, string> = {}) =>
   json({ code, message, request_id: `mock-${code.toLowerCase()}` }, status, extra);
 
 /** Page `items` with an opaque next token when the client asks for more (only /logs and /sessions). */
-function paginate<T>(items: T[], url: URL, token: string, page: 'LogPage' | 'SessionPage') {
+function paginate<T>(items: T[], url: URL, token: string, page: 'LogPage' | 'SessionPage' | 'AuditPage') {
   const size = Math.min(100, Math.max(1, Number(url.searchParams.get('page_size') ?? 20) || 20));
   const offset = url.searchParams.get('page_token') === token ? size : 0;
   const slice = items.slice(offset, offset + size);
@@ -277,7 +301,12 @@ export class MockServer {
       const items = [...this.pluginStates].map(([id, state]) => pluginItem(id, id === 'welcome' ? 'Welcome' : id, state));
       return json({ items, page: {} } satisfies Schemas['PluginPage']);
     }
-    if (path === '/logs') return json(paginate(logItems, url, 'logs-page-2', 'LogPage'));
+    if (path === '/logs') {
+      return json(paginate(filterLogAudit(logItems, url), url, 'logs-page-2', 'LogPage'));
+    }
+    if (path === '/audit') {
+      return json(paginate(filterLogAudit(auditItems, url), url, 'audit-page-2', 'AuditPage'));
+    }
     const value = base[path as keyof typeof base];
     return value ? json(value) : error(404, 'NOT_FOUND', '资源不存在');
   };
