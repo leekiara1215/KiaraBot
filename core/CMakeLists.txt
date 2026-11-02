@@ -162,6 +162,27 @@ target_compile_features(kiarabot_identity_invalidation_application PUBLIC cxx_st
 target_compile_options(kiarabot_identity_invalidation_application PRIVATE
   $<$<CXX_COMPILER_ID:AppleClang,Clang,GNU>:-Wall -Wextra -Wpedantic>)
 
+# Assignment management stays independent of proto, RPC, crypto implementations and SQL; typed
+# fingerprints are an injected port and every write owns ONE short security transaction.
+add_library(kiarabot_identity_assignment_application STATIC
+  src/application/target/identity_assignment_application.cpp)
+target_include_directories(kiarabot_identity_assignment_application PUBLIC include)
+target_compile_features(kiarabot_identity_assignment_application PUBLIC cxx_std_20)
+target_compile_options(kiarabot_identity_assignment_application PRIVATE
+  $<$<CXX_COMPILER_ID:AppleClang,Clang,GNU>:-Wall -Wextra -Wpedantic>)
+target_link_libraries(kiarabot_identity_assignment_application PRIVATE
+  kiarabot_identity_invalidation_application)
+add_executable(kiarabot_identity_assignment_application_test
+  tests/architecture/identity_assignment_application_test.cpp)
+target_link_libraries(kiarabot_identity_assignment_application_test PRIVATE
+  kiarabot_identity_assignment_application)
+target_compile_options(kiarabot_identity_assignment_application_test PRIVATE
+  $<$<CXX_COMPILER_ID:AppleClang,Clang,GNU>:-Wall -Wextra -Wpedantic -UNDEBUG>
+  $<$<CXX_COMPILER_ID:MSVC>:/UNDEBUG>)
+add_test(NAME p04_identity_assignment_application COMMAND kiarabot_identity_assignment_application_test)
+set_tests_properties(p04_identity_assignment_application PROPERTIES
+  LABELS "p04;unit;security" TIMEOUT 10)
+
 add_executable(kiarabot_identity_invalidation_application_test
   tests/architecture/identity_invalidation_application_test.cpp)
 target_link_libraries(kiarabot_identity_invalidation_application_test PRIVATE
