@@ -121,9 +121,10 @@ def proto_modules(repo: Path):
     require((generated / 'kiarabot/v1/services_pb2_grpc.py').is_file(),
             'generated Python protos missing (run the full build first)')
     sys.path.insert(0, str(generated))
-    from kiarabot.v1 import (adapters_pb2, common_pb2, events_pb2, platform_pb2,
+    from kiarabot.v1 import (actions_pb2, adapters_pb2, common_pb2, events_pb2, platform_pb2,
                              plugins_pb2, services_pb2_grpc)
-    return adapters_pb2, common_pb2, events_pb2, platform_pb2, plugins_pb2, services_pb2_grpc
+    return (actions_pb2, adapters_pb2, common_pb2, events_pb2, platform_pb2, plugins_pb2,
+            services_pb2_grpc)
 
 
 def timestamp(seconds: float):
@@ -165,7 +166,7 @@ async def async_main(args) -> None:
     initializer = Path(args.initializer).resolve()
     openssl = Path(args.openssl).resolve()
     pg_bin = Path(args.pg_bin).resolve()
-    adapters, common, events, platform, plugins, stubs = proto_modules(repo)
+    (actions, adapters, common, events, platform, plugins, stubs) = proto_modules(repo)
     grpc = _grpc()
     sys.path.insert(0, str(repo / 'tests/architecture'))
     from fixtures import TestPki
@@ -263,8 +264,9 @@ async def async_main(args) -> None:
                     api_version='kiarabot.plugin.v1', runtime='python-rpc',
                     entrypoint='plugin:factory', isolation='process', config_schema='{}',
                     ordered=False, capabilities=['event.message.received'],
-                    permissions=['message.read']),
-                instance_id=PLUGIN_INSTANCE, supported_features=['plugin.config.v1'])))
+                    permissions=['message.read', 'message.send']),
+                instance_id=PLUGIN_INSTANCE,
+                supported_features=['plugin.config.v1', 'action.result.v1'])))
             plugin_registered = await read_or_fail(plugin_call, 'plugin registration')
             require(plugin_registered.WhichOneof('body') == 'register_result',
                     'plugin registration returned the wrong frame')
@@ -322,6 +324,132 @@ async def async_main(args) -> None:
             adapter_proof = adapter_auth.proof
             adapter_refresh = adapter_auth.refresh_credential
             adapter_refresh_generation = adapter_auth.refresh_generation
+
+            # ---- P07 Action: plugin submit -> Runtime dispatch -> adapter result -> receipt ----
+            action_id = str(__import__('uuid').uuid4())
+            action_idempotency = 'p07-action-' + action_id
+            action_request_id = str(__import__('uuid').uuid4())
+
+            def action_envelope(identifier, idempotency, conversation='group-1'):
+                return actions.ActionEnvelope(
+                    action_id=identifier, idempotency_key=idempotency,
+                    deadline=timestamp(time.time() + 30), trace_id=identifier,
+                    target_source=common.SourceRef(
+                        adapter_id=ADAPTER_ID, adapter_instance_id=ADAPTER_INSTANCE,
+                        account_id=ACCOUNT),
+                    target=common.Subject(conversation_id=conversation),
+                    send_message=actions.SendMessage(
+                        conversation=common.ConversationRef(
+                            id=conversation, type=common.ConversationRef.GROUP,
+                            account_id=ACCOUNT),
+                        message=common.Message(plain_text='hello from p07')))
+
+            await plugin_call.write(plugins.PluginToCore(
+                fence=plugin_fence, connection_proof=plugin_proof,
+                action=plugins.PluginActionRequest(
+                    action=action_envelope(action_id, action_idempotency),
+                    request_id=action_request_id)))
+            submitted = await read_or_fail(plugin_call, 'plugin action submit')
+            require(submitted.WhichOneof('body') == 'action_response' and
+                    submitted.action_response.HasField('result'),
+                    'plugin action submission failed')
+            require(submitted.action_response.result.action_id == action_id and
+                    submitted.action_response.result.status == actions.ACCEPTED and
+                    submitted.action_response.result.execution_outcome ==
+                    platform.EXECUTION_NOT_STARTED,
+                    'plugin action submission snapshot mismatch')
+
+            dispatched = await read_or_fail(adapter_call, 'adapter action dispatch', timeout=10)
+            require(dispatched.WhichOneof('body') == 'action' and
+                    dispatched.action.action_id == action_id,
+                    'adapter did not receive the submitted Action')
+            require(dispatched.action.dispatch_attempt_id and
+                    dispatched.action.dispatch_sequence >= 1,
+                    'Runtime did not fill dispatch attempt/sequence')
+            dispatch_attempt = dispatched.action.dispatch_attempt_id
+
+            terminal = actions.ActionResult(
+                action_id=action_id, status=actions.SUCCEEDED,
+                platform_message_id='platform-message-1',
+                execution_outcome=platform.EXECUTION_KNOWN_SUCCEEDED,
+                dispatch_attempt_id=dispatch_attempt,
+                completed_at=timestamp(time.time()))
+            await adapter_call.write(adapters.AdapterToCore(
+                fence=adapter_fence, connection_proof=adapter_proof, action_result=terminal))
+            receipt = await read_or_fail(adapter_call, 'adapter action receipt')
+            require(receipt.WhichOneof('body') == 'action_receipt' and
+                    receipt.action_receipt.action_id == action_id and
+                    receipt.action_receipt.dispatch_attempt_id == dispatch_attempt and
+                    receipt.action_receipt.disposition == actions.ACTION_RECEIPT_RECORDED and
+                    receipt.action_receipt.result.status == actions.SUCCEEDED and
+                    receipt.action_receipt.result.platform_message_id == 'platform-message-1',
+                    'adapter terminal result receipt mismatch')
+
+            await adapter_call.write(adapters.AdapterToCore(
+                fence=adapter_fence, connection_proof=adapter_proof, action_result=terminal))
+            duplicate_receipt = await read_or_fail(adapter_call, 'adapter duplicate result receipt')
+            require(duplicate_receipt.action_receipt.disposition ==
+                    actions.ACTION_RECEIPT_DUPLICATE,
+                    'duplicate terminal result was not DUPLICATE')
+
+            await plugin_call.write(plugins.PluginToCore(
+                fence=plugin_fence, connection_proof=plugin_proof,
+                action_query=plugins.PluginActionQuery(
+                    request_id=str(__import__('uuid').uuid4()),
+                    trace_id=str(__import__('uuid').uuid4()),
+                    deadline=timestamp(time.time() + 5), action_id=action_id)))
+            queried = await read_or_fail(plugin_call, 'plugin action query')
+            require(queried.WhichOneof('body') == 'action_response' and
+                    queried.action_response.HasField('result') and
+                    queried.action_response.result.status == actions.SUCCEEDED and
+                    queried.action_response.result.dispatch_attempt_id == dispatch_attempt,
+                    'plugin action query did not observe the terminal result')
+
+            # Evidence-only report: a second Action dispatched with UNKNOWN evidence stays
+            # non-terminal and never overwrites a terminal row.
+            evidence_action_id = str(__import__('uuid').uuid4())
+            await plugin_call.write(plugins.PluginToCore(
+                fence=plugin_fence, connection_proof=plugin_proof,
+                action=plugins.PluginActionRequest(
+                    action=action_envelope(evidence_action_id,
+                                           'p07-evidence-' + evidence_action_id),
+                    request_id=str(__import__('uuid').uuid4()))))
+            evidence_submitted = await read_or_fail(plugin_call, 'second plugin action submit')
+            require(evidence_submitted.action_response.HasField('result') and
+                    evidence_submitted.action_response.result.action_id == evidence_action_id,
+                    'second plugin action submission failed')
+            evidence_dispatch = await read_or_fail(adapter_call, 'second adapter dispatch',
+                                                   timeout=10)
+            require(evidence_dispatch.WhichOneof('body') == 'action' and
+                    evidence_dispatch.action.action_id == evidence_action_id,
+                    'second action was not dispatched')
+            await adapter_call.write(adapters.AdapterToCore(
+                fence=adapter_fence, connection_proof=adapter_proof,
+                action_evidence=actions.ActionExecutionEvidence(
+                    action_id=evidence_action_id,
+                    dispatch_attempt_id=evidence_dispatch.action.dispatch_attempt_id,
+                    execution_outcome=platform.EXECUTION_UNKNOWN,
+                    observed_at=timestamp(time.time()))))
+            evidence_receipt = await read_or_fail(adapter_call, 'adapter evidence receipt')
+            require(evidence_receipt.WhichOneof('body') == 'action_receipt' and
+                    evidence_receipt.action_receipt.disposition ==
+                    actions.ACTION_RECEIPT_EVIDENCE_ONLY and
+                    evidence_receipt.action_receipt.result.status == actions.ACCEPTED and
+                    evidence_receipt.action_receipt.result.execution_outcome ==
+                    platform.EXECUTION_UNKNOWN,
+                    'evidence-only receipt mismatch')
+            await plugin_call.write(plugins.PluginToCore(
+                fence=plugin_fence, connection_proof=plugin_proof,
+                action_query=plugins.PluginActionQuery(
+                    request_id=str(__import__('uuid').uuid4()),
+                    trace_id=str(__import__('uuid').uuid4()),
+                    deadline=timestamp(time.time() + 5), action_id=evidence_action_id)))
+            evidence_query = await read_or_fail(plugin_call, 'evidence action query')
+            require(evidence_query.action_response.HasField('result') and
+                    evidence_query.action_response.result.status == actions.ACCEPTED and
+                    evidence_query.action_response.result.execution_outcome ==
+                    platform.EXECUTION_UNKNOWN,
+                    'evidence did not preserve the non-terminal snapshot')
 
             event_id = str(__import__('uuid').uuid4())
             envelope = events.EventEnvelope(

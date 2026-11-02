@@ -10,6 +10,10 @@ T06b HostDispatcher 通过 IModelProvider 注入模型实现，使用已认证 P
 
 T06a HostDispatcher 使用已认证 PluginSession 和 RuntimeStore 事务处理存储请求，默认拒绝未获授 storage.namespace 的插件；业务判断在 Core，SQLite 只保存数据。限额和 TTL 由 Core 决定。该路径复用 RuntimeTransaction 作为统一原子工作单元，不调用彼此独立提交的存储/审计端口；旧 IUnitOfWork 接口仍是后续扩展端口，并非另一套已接线事务。
 
+## P07a-B 目标 Action 实现（2026-11-02）
+
+目标 Runtime 已实现 Action 应用层：`RuntimeActionApplication` 通过 `RuntimeUnitOfWork` 的 actions/action_quota/action_policies/action_evidence 四端口在短 UoW 内完成受理（幂等重放返回原记录）、owner 查询/取消、Control 显式账号 scope 查询、元数据分页、ActionPolicy 读取/更新、结果/证据写入和过期/配额/证据清理。提交顺序为保证 `quota_windows` 外键的 Action 行先插入、再准入持久配额，任何拒绝回滚整个 UoW；提交结果 Unknown 时只按原 action/owner 幂等身份在新 UoW 复核，不重试插入。适配器终端结果通过 `record_terminal` 条件更新返回 RECORDED/DUPLICATE/EVIDENCE_ONLY/CONFLICT，迟到结果只追加证据；非终态证据只追加，绝不改写终态。Bridge 通过 `ActionDispatchPort` 在提交 `dispatched` 条件更新后下发动作帧，通过 `ActionEvidenceSink` 处理 adapter 结果/证据；`RuntimeService.QueryActionResult` 已实现 Control caller + `action.inspect` + 显式账号 scope 的只读查询（插件 owner 查询仍走 PluginBridge）。目标契约翻转与 Control REST 接线仍按 P07-C/P12 分阶段推进。
+
 ## T04b Action 接线范围
 
 ActionRouter 通过 RuntimeStore 原子保存请求、认证所有者、规范化 fingerprint、派发标志和结果；插件按 Action 类型申请对应权限（`message.send`、`message.react`、`message.delete`、`member.mute`、`member.kick`、`request.approve`）且获授后才可提交。v1 实现 `send_message` 的群/私聊纯文本子集、`react_message` 的群/私聊表情回应（平台中立 token）、`delete_message` 的 bot 自发送消息撤回、`mute_member`/`kick_member` 群管理动作（受会话白名单、每日预算与速率限制约束），以及 `approve_request` 好友请求审批（`request_id` 回填 FriendRequest token），其余 payload/消息段明确 `CAPABILITY_NOT_SUPPORTED`。适配器须声明对应能力（`action.send_message.text.v1`、`action.react_message.v1`、`action.delete_message.v1`、`action.mute_member.v1`、`action.kick_member.v1`、`action.approve_request.v1`）；账号和实例由注册上下文约束。提交、取消、派发和结果更新均记录事务审计；任何提交失败不调用平台。
