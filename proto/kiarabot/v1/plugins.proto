@@ -197,6 +197,8 @@ message HostRequest {
     TaskCreateRequest task_create = 14;
     TaskCancelRequest task_cancel = 15;
     TaskGetRequest task_get = 16;
+    // CONTRACT_STATUS: not_implemented - P09 target declaration, no producer.
+    StorageCompareAndSetRequest storage_compare_and_set = 17;
   }
 }
 
@@ -213,6 +215,8 @@ message HostResponse {
     TaskResponse task_create = 14;
     TaskResponse task_cancel = 15;
     TaskResponse task_get = 16;
+    // CONTRACT_STATUS: not_implemented - P09 target declaration, no producer.
+    StorageCompareAndSetResponse storage_compare_and_set = 17;
   }
 }
 
@@ -228,17 +232,66 @@ message ModelChatResponse {
   uint64 input_tokens = 2;
   uint64 output_tokens = 3;
 }
-message StorageGetRequest { string key = 1; }
-message StorageGetResponse { bytes value = 1; }
+// P09 target storage frames: namespace scope is resolved by Runtime from the authenticated
+// instance; the plugin never supplies an owner. Shared-namespace Set/Delete/CAS require a
+// StorageCondition (absent=create, version=update/delete); private Set must omit condition.
+message StorageGetRequest {
+  string key = 1;
+  // CONTRACT_STATUS: not_implemented - P09 target declaration, no producer.
+  // Absent scope means instance_private; installation_shared is resolved server-side.
+  NamespaceScope scope = 2;
+}
+message StorageGetResponse {
+  bytes value = 1;
+  // CONTRACT_STATUS: not_implemented - P09 target declaration, no producer.
+  uint64 version = 2;
+  // CONTRACT_STATUS: not_implemented - P09 target declaration, no producer.
+  google.protobuf.Timestamp expires_at = 3;
+}
 message StorageSetRequest {
   string key = 1;
   bytes value = 2;
   // Optional expiration; absent means no expiration.
   google.protobuf.Timestamp expires_at = 3;
+  // CONTRACT_STATUS: not_implemented - P09 target declaration, no producer.
+  NamespaceScope scope = 4;
+  // CONTRACT_STATUS: not_implemented - P09 target declaration, no producer.
+  // Private namespace: must be absent. Shared namespace: required (absent=create, version=update).
+  StorageCondition condition = 5;
 }
-message StorageSetResponse {}
-message StorageDeleteRequest { string key = 1; }
-message StorageDeleteResponse {}
+message StorageSetResponse {
+  // CONTRACT_STATUS: not_implemented - P09 target declaration, no producer.
+  uint64 version = 1;
+  // CONTRACT_STATUS: not_implemented - P09 target declaration, no producer.
+  google.protobuf.Timestamp expires_at = 2;
+}
+message StorageDeleteRequest {
+  string key = 1;
+  // CONTRACT_STATUS: not_implemented - P09 target declaration, no producer.
+  NamespaceScope scope = 2;
+  // CONTRACT_STATUS: not_implemented - P09 target declaration, no producer.
+  // Private: optional (LWW delete). Shared: required current version.
+  StorageCondition condition = 3;
+}
+message StorageDeleteResponse {
+  // CONTRACT_STATUS: not_implemented - P09 target declaration, no producer.
+  bool deleted = 1;
+  // CONTRACT_STATUS: not_implemented - P09 target declaration, no producer.
+  uint64 version = 2;
+}
+// CONTRACT_STATUS: not_implemented - P09 target declaration, no producer.
+message StorageCompareAndSetRequest {
+  string key = 1;
+  NamespaceScope scope = 2;
+  bytes value = 3;
+  // Required in both private and shared namespaces (absent=create, version=update).
+  StorageCondition condition = 4;
+  google.protobuf.Timestamp expires_at = 5;
+}
+// CONTRACT_STATUS: not_implemented - P09 target declaration, no producer.
+message StorageCompareAndSetResponse {
+  StorageEntry entry = 1;
+}
 
 // A one-shot local civil time in an IANA time zone. Ambiguous and nonexistent
 // civil times are rejected; callers must select a different local time.

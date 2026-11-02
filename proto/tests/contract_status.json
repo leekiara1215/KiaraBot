@@ -325,7 +325,15 @@
       "RuntimeQueryActionResultRequest": "not_implemented",
       "RuntimeQueryActionResultResponse": "not_implemented",
       "HostHeartbeat": "not_implemented",
-      "HostHeartbeatAck": "not_implemented"
+      "HostHeartbeatAck": "not_implemented",
+      "NamespaceRecord": "not_implemented",
+      "StorageQuota": "not_implemented",
+      "RuntimeCreateSharedNamespaceRequest": "not_implemented",
+      "RuntimeCreateSharedNamespaceResponse": "not_implemented",
+      "RuntimeGetSharedNamespaceRequest": "not_implemented",
+      "RuntimeGetSharedNamespaceResponse": "not_implemented",
+      "StorageCompareAndSetRequest": "not_implemented",
+      "StorageCompareAndSetResponse": "not_implemented"
     },
     "proto_fields": {
       "Account.account_id": "implemented",
@@ -1427,7 +1435,50 @@
       "HostHeartbeatAck.fence": "not_implemented",
       "HostHeartbeatAck.received_at": "not_implemented",
       "HostHeartbeatAck.heartbeat_interval_seconds": "not_implemented",
-      "HostHeartbeatAck.resync_required": "not_implemented"
+      "HostHeartbeatAck.resync_required": "not_implemented",
+      "NamespaceScope.installation_shared": "not_implemented",
+      "NamespaceRecord.namespace_id": "not_implemented",
+      "NamespaceRecord.installation_id": "not_implemented",
+      "NamespaceRecord.version": "not_implemented",
+      "NamespaceRecord.disabled": "not_implemented",
+      "NamespaceRecord.created_at": "not_implemented",
+      "NamespaceRecord.updated_at": "not_implemented",
+      "StorageQuota.namespace_keys_used": "not_implemented",
+      "StorageQuota.namespace_keys_limit": "not_implemented",
+      "StorageQuota.namespace_bytes_used": "not_implemented",
+      "StorageQuota.namespace_bytes_limit": "not_implemented",
+      "StorageQuota.installation_keys_used": "not_implemented",
+      "StorageQuota.installation_keys_limit": "not_implemented",
+      "StorageQuota.installation_bytes_used": "not_implemented",
+      "StorageQuota.installation_bytes_limit": "not_implemented",
+      "RuntimeCreateSharedNamespaceRequest.context": "not_implemented",
+      "RuntimeCreateSharedNamespaceRequest.installation_id": "not_implemented",
+      "RuntimeCreateSharedNamespaceRequest.expected_version": "not_implemented",
+      "RuntimeCreateSharedNamespaceResponse.namespace": "not_implemented",
+      "RuntimeGetSharedNamespaceRequest.context": "not_implemented",
+      "RuntimeGetSharedNamespaceRequest.namespace_id": "not_implemented",
+      "RuntimeGetSharedNamespaceResponse.namespace": "not_implemented",
+      "RuntimeGetSharedNamespaceResponse.members": "not_implemented",
+      "RuntimeGetSharedNamespaceResponse.quota": "not_implemented",
+      "StorageCompareAndSetRequest.key": "not_implemented",
+      "StorageCompareAndSetRequest.scope": "not_implemented",
+      "StorageCompareAndSetRequest.value": "not_implemented",
+      "StorageCompareAndSetRequest.condition": "not_implemented",
+      "StorageCompareAndSetRequest.expires_at": "not_implemented",
+      "StorageCompareAndSetResponse.entry": "not_implemented",
+      "StorageGetRequest.scope": "not_implemented",
+      "StorageGetResponse.version": "not_implemented",
+      "StorageGetResponse.expires_at": "not_implemented",
+      "StorageSetRequest.scope": "not_implemented",
+      "StorageSetRequest.condition": "not_implemented",
+      "StorageSetResponse.version": "not_implemented",
+      "StorageSetResponse.expires_at": "not_implemented",
+      "StorageDeleteRequest.scope": "not_implemented",
+      "StorageDeleteRequest.condition": "not_implemented",
+      "StorageDeleteResponse.deleted": "not_implemented",
+      "StorageDeleteResponse.version": "not_implemented",
+      "HostRequest.storage_compare_and_set": "not_implemented",
+      "HostResponse.storage_compare_and_set": "not_implemented"
     },
     "event_payloads": {
       "EventEnvelope.message_received": "implemented",
@@ -1454,7 +1505,8 @@
       "HostRequest.storage_delete": "implemented",
       "HostRequest.task_create": "implemented",
       "HostRequest.task_cancel": "implemented",
-      "HostRequest.task_get": "implemented"
+      "HostRequest.task_get": "implemented",
+      "HostRequest.storage_compare_and_set": "not_implemented"
     },
     "host_results": {
       "HostResponse.model_chat": "implemented",
@@ -1463,7 +1515,8 @@
       "HostResponse.storage_delete": "implemented",
       "HostResponse.task_create": "implemented",
       "HostResponse.task_cancel": "implemented",
-      "HostResponse.task_get": "implemented"
+      "HostResponse.task_get": "implemented",
+      "HostResponse.storage_compare_and_set": "not_implemented"
     },
     "bridge_methods": {
       "AdapterBridge.Connect": "implemented",
@@ -5025,6 +5078,159 @@
       "core/src/application/target/host_application.cpp"
     ],
     "Permission.PERMISSION_NAMESPACE_READ": [
+      "core/src/application/target/runtime_application.cpp"
+    ],
+    "NamespaceRecord": [
+      "core/src/application/target/runtime_application.cpp"
+    ],
+    "StorageQuota": [
+      "core/src/application/target/runtime_application.cpp"
+    ],
+    "RuntimeCreateSharedNamespaceRequest": [
+      "core/src/application/target/runtime_application.cpp"
+    ],
+    "RuntimeCreateSharedNamespaceResponse": [
+      "core/src/application/target/runtime_application.cpp"
+    ],
+    "RuntimeGetSharedNamespaceRequest": [
+      "core/src/application/target/runtime_application.cpp"
+    ],
+    "RuntimeGetSharedNamespaceResponse": [
+      "core/src/application/target/runtime_application.cpp"
+    ],
+    "StorageCompareAndSetRequest": [
+      "core/src/application/target/runtime_application.cpp"
+    ],
+    "StorageCompareAndSetResponse": [
+      "core/src/application/target/runtime_application.cpp"
+    ],
+    "NamespaceScope.installation_shared": [
+      "core/src/application/target/runtime_application.cpp"
+    ],
+    "NamespaceRecord.namespace_id": [
+      "core/src/application/target/runtime_application.cpp"
+    ],
+    "NamespaceRecord.installation_id": [
+      "core/src/application/target/runtime_application.cpp"
+    ],
+    "NamespaceRecord.version": [
+      "core/src/application/target/runtime_application.cpp"
+    ],
+    "NamespaceRecord.disabled": [
+      "core/src/application/target/runtime_application.cpp"
+    ],
+    "NamespaceRecord.created_at": [
+      "core/src/application/target/runtime_application.cpp"
+    ],
+    "NamespaceRecord.updated_at": [
+      "core/src/application/target/runtime_application.cpp"
+    ],
+    "StorageQuota.namespace_keys_used": [
+      "core/src/application/target/runtime_application.cpp"
+    ],
+    "StorageQuota.namespace_keys_limit": [
+      "core/src/application/target/runtime_application.cpp"
+    ],
+    "StorageQuota.namespace_bytes_used": [
+      "core/src/application/target/runtime_application.cpp"
+    ],
+    "StorageQuota.namespace_bytes_limit": [
+      "core/src/application/target/runtime_application.cpp"
+    ],
+    "StorageQuota.installation_keys_used": [
+      "core/src/application/target/runtime_application.cpp"
+    ],
+    "StorageQuota.installation_keys_limit": [
+      "core/src/application/target/runtime_application.cpp"
+    ],
+    "StorageQuota.installation_bytes_used": [
+      "core/src/application/target/runtime_application.cpp"
+    ],
+    "StorageQuota.installation_bytes_limit": [
+      "core/src/application/target/runtime_application.cpp"
+    ],
+    "RuntimeCreateSharedNamespaceRequest.context": [
+      "core/src/application/target/runtime_application.cpp"
+    ],
+    "RuntimeCreateSharedNamespaceRequest.installation_id": [
+      "core/src/application/target/runtime_application.cpp"
+    ],
+    "RuntimeCreateSharedNamespaceRequest.expected_version": [
+      "core/src/application/target/runtime_application.cpp"
+    ],
+    "RuntimeCreateSharedNamespaceResponse.namespace": [
+      "core/src/application/target/runtime_application.cpp"
+    ],
+    "RuntimeGetSharedNamespaceRequest.context": [
+      "core/src/application/target/runtime_application.cpp"
+    ],
+    "RuntimeGetSharedNamespaceRequest.namespace_id": [
+      "core/src/application/target/runtime_application.cpp"
+    ],
+    "RuntimeGetSharedNamespaceResponse.namespace": [
+      "core/src/application/target/runtime_application.cpp"
+    ],
+    "RuntimeGetSharedNamespaceResponse.members": [
+      "core/src/application/target/runtime_application.cpp"
+    ],
+    "RuntimeGetSharedNamespaceResponse.quota": [
+      "core/src/application/target/runtime_application.cpp"
+    ],
+    "StorageCompareAndSetRequest.key": [
+      "core/src/application/target/runtime_application.cpp"
+    ],
+    "StorageCompareAndSetRequest.scope": [
+      "core/src/application/target/runtime_application.cpp"
+    ],
+    "StorageCompareAndSetRequest.value": [
+      "core/src/application/target/runtime_application.cpp"
+    ],
+    "StorageCompareAndSetRequest.condition": [
+      "core/src/application/target/runtime_application.cpp"
+    ],
+    "StorageCompareAndSetRequest.expires_at": [
+      "core/src/application/target/runtime_application.cpp"
+    ],
+    "StorageCompareAndSetResponse.entry": [
+      "core/src/application/target/runtime_application.cpp"
+    ],
+    "StorageGetRequest.scope": [
+      "core/src/application/target/runtime_application.cpp"
+    ],
+    "StorageGetResponse.version": [
+      "core/src/application/target/runtime_application.cpp"
+    ],
+    "StorageGetResponse.expires_at": [
+      "core/src/application/target/runtime_application.cpp"
+    ],
+    "StorageSetRequest.scope": [
+      "core/src/application/target/runtime_application.cpp"
+    ],
+    "StorageSetRequest.condition": [
+      "core/src/application/target/runtime_application.cpp"
+    ],
+    "StorageSetResponse.version": [
+      "core/src/application/target/runtime_application.cpp"
+    ],
+    "StorageSetResponse.expires_at": [
+      "core/src/application/target/runtime_application.cpp"
+    ],
+    "StorageDeleteRequest.scope": [
+      "core/src/application/target/runtime_application.cpp"
+    ],
+    "StorageDeleteRequest.condition": [
+      "core/src/application/target/runtime_application.cpp"
+    ],
+    "StorageDeleteResponse.deleted": [
+      "core/src/application/target/runtime_application.cpp"
+    ],
+    "StorageDeleteResponse.version": [
+      "core/src/application/target/runtime_application.cpp"
+    ],
+    "HostRequest.storage_compare_and_set": [
+      "core/src/application/target/runtime_application.cpp"
+    ],
+    "HostResponse.storage_compare_and_set": [
       "core/src/application/target/runtime_application.cpp"
     ]
   },

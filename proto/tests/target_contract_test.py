@@ -8,7 +8,7 @@ from pathlib import Path
 
 from google.protobuf import descriptor_pb2, message_factory
 from google.protobuf.json_format import ParseDict
-from kiarabot.v1 import platform_pb2, policy_pb2, runtime_pb2, identity_pb2
+from kiarabot.v1 import common_pb2, platform_pb2, policy_pb2, runtime_pb2, identity_pb2
 from resource_query_rules import runtime_query_valid
 from identity_projection_rules import allows, validate_current_projection, session_state, access_seconds_remaining, assignment_command_valid
 
@@ -233,7 +233,8 @@ def main():
     assert validate_fence(fence)
     fence.runtime_epoch = ''
     assert not validate_fence(fence)
-    condition = runtime_pb2.StorageCondition(absent=True)
+    # P09 relocated storage value types to common.proto (FQN unchanged).
+    condition = common_pb2.StorageCondition(absent=True)
     assert condition.WhichOneof('expected') == 'absent'
     condition.version = 2
     assert condition.WhichOneof('expected') == 'version'

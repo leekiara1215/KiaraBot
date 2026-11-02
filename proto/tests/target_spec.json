@@ -755,7 +755,7 @@
       "file": "runtime.proto",
       "request": "RuntimeGetStorageRequest",
       "response": "RuntimeGetStorageResponse",
-      "caller": "authenticated Plugin instance",
+      "caller": "runtime internal dispatcher/test only; external plugins use PluginBridge.Connect host_request",
       "permission": "storage.namespace",
       "risk": "online",
       "mutating": false,
@@ -764,7 +764,8 @@
       "server_streaming": false,
       "status": "not_implemented",
       "max_deadline_ms": 5000,
-      "requires_idempotency_key": false
+      "requires_idempotency_key": false,
+      "exposure": "internal_dispatcher"
     },
     {
       "service": "RuntimeService",
@@ -772,7 +773,7 @@
       "file": "runtime.proto",
       "request": "RuntimeSetStorageRequest",
       "response": "RuntimeSetStorageResponse",
-      "caller": "authenticated Plugin instance",
+      "caller": "runtime internal dispatcher/test only; external plugins use PluginBridge.Connect host_request",
       "permission": "storage.namespace",
       "risk": "online",
       "mutating": true,
@@ -781,7 +782,8 @@
       "server_streaming": false,
       "status": "not_implemented",
       "max_deadline_ms": 30000,
-      "requires_idempotency_key": true
+      "requires_idempotency_key": true,
+      "exposure": "internal_dispatcher"
     },
     {
       "service": "RuntimeService",
@@ -789,7 +791,7 @@
       "file": "runtime.proto",
       "request": "RuntimeDeleteStorageRequest",
       "response": "RuntimeDeleteStorageResponse",
-      "caller": "authenticated Plugin instance",
+      "caller": "runtime internal dispatcher/test only; external plugins use PluginBridge.Connect host_request",
       "permission": "storage.namespace",
       "risk": "online",
       "mutating": true,
@@ -798,7 +800,8 @@
       "server_streaming": false,
       "status": "not_implemented",
       "max_deadline_ms": 30000,
-      "requires_idempotency_key": true
+      "requires_idempotency_key": true,
+      "exposure": "internal_dispatcher"
     },
     {
       "service": "RuntimeService",
@@ -806,7 +809,7 @@
       "file": "runtime.proto",
       "request": "RuntimeCompareAndSetStorageRequest",
       "response": "RuntimeCompareAndSetStorageResponse",
-      "caller": "authenticated Plugin instance",
+      "caller": "runtime internal dispatcher/test only; external plugins use PluginBridge.Connect host_request",
       "permission": "storage.namespace",
       "risk": "online",
       "mutating": true,
@@ -815,7 +818,8 @@
       "server_streaming": false,
       "status": "not_implemented",
       "max_deadline_ms": 30000,
-      "requires_idempotency_key": true
+      "requires_idempotency_key": true,
+      "exposure": "internal_dispatcher"
     },
     {
       "service": "RuntimeService",
@@ -1584,6 +1588,42 @@
       "response": "RuntimeQueryActionResultResponse",
       "caller": "scoped Control",
       "permission": "action.inspect",
+      "risk": "online",
+      "mutating": false,
+      "idempotency": "none",
+      "deadline_ms": 2000,
+      "server_streaming": false,
+      "status": "not_implemented",
+      "max_deadline_ms": 5000,
+      "requires_idempotency_key": false,
+      "exposure": "wire"
+    },
+    {
+      "service": "RuntimeService",
+      "method": "CreateSharedNamespace",
+      "file": "runtime.proto",
+      "request": "RuntimeCreateSharedNamespaceRequest",
+      "response": "RuntimeCreateSharedNamespaceResponse",
+      "caller": "scoped Control",
+      "permission": "namespace.manage",
+      "risk": "online",
+      "mutating": true,
+      "idempotency": "required",
+      "deadline_ms": 5000,
+      "server_streaming": false,
+      "status": "not_implemented",
+      "max_deadline_ms": 30000,
+      "requires_idempotency_key": true,
+      "exposure": "wire"
+    },
+    {
+      "service": "RuntimeService",
+      "method": "GetSharedNamespace",
+      "file": "runtime.proto",
+      "request": "RuntimeGetSharedNamespaceRequest",
+      "response": "RuntimeGetSharedNamespaceResponse",
+      "caller": "scoped Control",
+      "permission": "namespace.read",
       "risk": "online",
       "mutating": false,
       "idempotency": "none",

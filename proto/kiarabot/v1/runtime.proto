@@ -46,33 +46,8 @@ message InstanceRecord {
   VersionedResourceState state = 5;
 }
 
-// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
-message NamespaceScope {
-
-  oneof scope { bool instance_private = 1; string installation_shared_id = 2; }
-}
-
-// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
-message StorageEntry {
-  string key = 1;
-  bytes value = 2;
-  uint64 version = 3;
-  google.protobuf.Timestamp expires_at = 4;
-}
-
-// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
-message StorageCondition {
-
-  oneof expected { bool absent = 1; uint64 version = 2; }
-}
-
-// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
-message SharedMember {
-  string instance_id = 1;
-  bool can_read = 2;
-  bool can_write = 3;
-}
-
+// P09/P10 value types NamespaceScope/StorageEntry/StorageCondition/SharedMember live in
+// common.proto (FQN unchanged) so plugins.proto does not import runtime.proto.
 // CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
 message ActionMetadata {
   string action_id = 1;
@@ -459,6 +434,11 @@ message RuntimeQueryActionResultResponse {
   ActionMetadata metadata = 3;
 }
 
+// P09 target: the four unary storage methods are runtime internal dispatcher/test only.
+// External plugins read/write storage through PluginBridge HostRequest.storage_* frames;
+// the bridge handler reuses the same Runtime application service. Unary callers are
+// never registered on the external listener. Permission/scope resolution is by the
+// authenticated instance, never by request input.
 // CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
 message RuntimeGetStorageRequest {
   RequestContext context = 1;
@@ -516,6 +496,53 @@ message RuntimeCompareAndSetStorageRequest {
 // CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
 message RuntimeCompareAndSetStorageResponse {
   StorageEntry entry = 1;
+}
+
+// CONTRACT_STATUS: not_implemented - P09 target declaration, no producer.
+message NamespaceRecord {
+  string namespace_id = 1;
+  string installation_id = 2;
+  uint64 version = 3;
+  bool disabled = 4;
+  google.protobuf.Timestamp created_at = 5;
+  google.protobuf.Timestamp updated_at = 6;
+}
+
+// CONTRACT_STATUS: not_implemented - P09 target declaration, no producer.
+message StorageQuota {
+  uint64 namespace_keys_used = 1;
+  uint64 namespace_keys_limit = 2;
+  uint64 namespace_bytes_used = 3;
+  uint64 namespace_bytes_limit = 4;
+  uint64 installation_keys_used = 5;
+  uint64 installation_keys_limit = 6;
+  uint64 installation_bytes_used = 7;
+  uint64 installation_bytes_limit = 8;
+}
+
+// CONTRACT_STATUS: not_implemented - P09 target declaration, no producer.
+message RuntimeCreateSharedNamespaceRequest {
+  RequestContext context = 1;
+  string installation_id = 2;
+  optional uint64 expected_version = 3;
+}
+
+// CONTRACT_STATUS: not_implemented - P09 target declaration, no producer.
+message RuntimeCreateSharedNamespaceResponse {
+  NamespaceRecord namespace = 1;
+}
+
+// CONTRACT_STATUS: not_implemented - P09 target declaration, no producer.
+message RuntimeGetSharedNamespaceRequest {
+  RequestContext context = 1;
+  string namespace_id = 2;
+}
+
+// CONTRACT_STATUS: not_implemented - P09 target declaration, no producer.
+message RuntimeGetSharedNamespaceResponse {
+  NamespaceRecord namespace = 1;
+  repeated SharedMember members = 2;
+  StorageQuota quota = 3;
 }
 
 // CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
@@ -1068,6 +1095,20 @@ service RuntimeService {
     option (requires_idempotency) = true;
     option (default_deadline_ms) = 5000;
     option (max_deadline_ms) = 30000;
+    option (requires_online_authorization) = true;
+  }
+  rpc CreateSharedNamespace(RuntimeCreateSharedNamespaceRequest) returns (RuntimeCreateSharedNamespaceResponse) {
+    option (required_permission) = PERMISSION_NAMESPACE_MANAGE;
+    option (requires_idempotency) = true;
+    option (default_deadline_ms) = 5000;
+    option (max_deadline_ms) = 30000;
+    option (requires_online_authorization) = true;
+  }
+  rpc GetSharedNamespace(RuntimeGetSharedNamespaceRequest) returns (RuntimeGetSharedNamespaceResponse) {
+    option (required_permission) = PERMISSION_NAMESPACE_READ;
+    option (requires_idempotency) = false;
+    option (default_deadline_ms) = 2000;
+    option (max_deadline_ms) = 5000;
     option (requires_online_authorization) = true;
   }
   rpc AcceptTimerTrigger(RuntimeAcceptTimerTriggerRequest) returns (RuntimeAcceptTimerTriggerResponse) {

@@ -133,3 +133,40 @@ message ShutdownNotice {
   string reason = 1;
   uint32 drain_timeout_ms = 2;
 }
+
+// P09 relocation from runtime.proto (FQN unchanged): plugin host storage frames and Runtime
+// storage messages share these value types, and plugins.proto must not import runtime.proto.
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message NamespaceScope {
+  oneof scope {
+    bool instance_private = 1;
+    string installation_shared_id = 2;
+    // CONTRACT_STATUS: not_implemented - P09 target declaration, no producer.
+    // Server resolves the authenticated instance's installation shared namespace; the plugin
+    // never self-reports an installation or namespace owner.
+    bool installation_shared = 3;
+  }
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message StorageEntry {
+  string key = 1;
+  bytes value = 2;
+  uint64 version = 3;
+  google.protobuf.Timestamp expires_at = 4;
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message StorageCondition {
+  oneof expected {
+    bool absent = 1;
+    uint64 version = 2;
+  }
+}
+
+// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+message SharedMember {
+  string instance_id = 1;
+  bool can_read = 2;
+  bool can_write = 3;
+}
