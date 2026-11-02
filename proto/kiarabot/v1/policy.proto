@@ -1,6 +1,7 @@
 syntax = "proto3";
 package kiarabot.v1;
 import "google/protobuf/descriptor.proto";
+import "kiarabot/v1/platform.proto";
 
 // CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
 enum Permission {
@@ -62,4 +63,9 @@ extend google.protobuf.MethodOptions {
   uint32 default_deadline_ms = 51003;
   bool requires_online_authorization = 51004;
   uint32 max_deadline_ms = 51005;
+  // Trusted canonical scope annotation for the descriptor-driven authorization policy resolver.
+  // CONTRACT_STATUS: implemented - target method metadata; no payload/field producer is added.
+  // Only methods whose exact resource-kind scope is frozen may carry it; absent/empty means the
+  // resolver fails closed instead of inferring scope from a request or method spelling.
+  repeated ResourceKind scope_kinds = 51006;
 }

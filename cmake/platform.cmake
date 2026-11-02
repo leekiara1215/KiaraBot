@@ -23,6 +23,23 @@ kiarabot_platform_warnings(kiarabot_target_codec_test)
 add_test(NAME p04_target_codec COMMAND kiarabot_target_codec_test)
 set_tests_properties(p04_target_codec PROPERTIES LABELS "p04;unit;security" TIMEOUT 10)
 
+# Descriptor-driven authorization policy resolver: canonical proto method metadata only, no
+# handwritten method table. Unannotated/unknown methods resolve empty and callers fail closed.
+add_library(kiarabot_authorization_method_policy STATIC
+  ${CMAKE_SOURCE_DIR}/core/src/runtime/platform/authorization_method_policy.cpp)
+target_include_directories(kiarabot_authorization_method_policy PUBLIC
+  ${CMAKE_SOURCE_DIR}/core/include)
+target_link_libraries(kiarabot_authorization_method_policy PUBLIC kiarabot_target_codec)
+kiarabot_platform_warnings(kiarabot_authorization_method_policy)
+add_executable(kiarabot_authorization_method_policy_test
+  ${CMAKE_SOURCE_DIR}/core/tests/platform/authorization_method_policy_test.cpp)
+target_link_libraries(kiarabot_authorization_method_policy_test PRIVATE
+  kiarabot_authorization_method_policy kiarabot_proto)
+kiarabot_platform_warnings(kiarabot_authorization_method_policy_test)
+add_test(NAME p04_authorization_method_policy COMMAND kiarabot_authorization_method_policy_test)
+set_tests_properties(p04_authorization_method_policy PROPERTIES
+  LABELS "p04;unit;security" TIMEOUT 10)
+
 foreach(SERVICE identity runtime plugin_host scheduler model)
   set(APPLICATION_SOURCE "${SERVICE}")
   if(SERVICE STREQUAL "plugin_host")

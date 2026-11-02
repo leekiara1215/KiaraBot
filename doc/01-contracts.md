@@ -1728,6 +1728,10 @@ CoreToAdapter.event_ack 使用新编号 4。AdapterEventAck 包含 event_id、tr
 
 操作采用 OPERATION_ACCEPTED/RUNNING/BLOCKED/SUCCEEDED/FAILED/CANCELLED/EXPIRED；BLOCKED 非终态且带 reason/next_attempt_at；stalled 仅观测标记。执行结果采用 EXECUTION_NOT_STARTED/KNOWN_SUCCEEDED/KNOWN_FAILED/UNKNOWN，与操作状态独立。目标 gRPC 映射以 target_spec.json 为准：CONFLICT→ABORTED，CAPABILITY_NOT_SUPPORTED→UNIMPLEMENTED；流错误帧与 unary status details 都保留稳定码及关联 ID。Unary RpcFailure 包含受理事实、恢复建议和操作引用；无法收到响应仍按原意图查询。
 
+## 目标方法元数据扩展（proto 唯一来源）
+
+`proto/kiarabot/v1/policy.proto` 的 `google.protobuf.MethodOptions` 扩展是方法权限与在线授权的唯一权威：`required_permission`、`requires_idempotency`、`default_deadline_ms`、`max_deadline_ms`、`requires_online_authorization`，以及 P04-B 新增的 `repeated ResourceKind scope_kinds = 51006`。`scope_kinds` 只标注**资源种类语义已冻结**的消费者方法：目前仅 `ModelService.Chat` 标注 `RESOURCE_MODEL`（与 CheckAuthorization 纯应用/真实 PG fixture 的既有契约一致）；未标注/未知方法由 descriptor-driven resolver 返回空并由上层 fail closed，不按方法名、请求字段或权限反推 scope。`proto/tests/target_spec.json` 只镜像 reviewed 标注供 `target_contract_test.py` 校验，descriptor 仍是第一权威。禁止手写方法→scope 表。
+
 ## P01 五服务方法与权限（尚未实现）
 
 目标消息、方法和权限的机器可读索引是 `proto/tests/target_spec.json`；RPC 唯一来源仍为对应 `.proto`，`policy.proto` 的 descriptor options 将封闭 Permission、是否需业务幂等、默认/最大等待 deadline 和在线核验写到每个方法。不得把所有 Identity 方法向所有服务开放：Login/Refresh/人类 Session 入口仅 Control，其他方法须 mTLS 服务及逐方法范围授权。登录不要求已有最终用户会话，但要求可信 Control、限频/审计。CheckAuthorization 500ms/最大1秒；普通查询2秒/最大5秒；命令5秒/最大30秒；Chat 总预算30秒且不自动重发供应商。Chat logical_call_id 单独防重，不套普通命令重放正文。

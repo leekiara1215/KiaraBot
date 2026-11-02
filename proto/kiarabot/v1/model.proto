@@ -180,6 +180,8 @@ service ModelService {
     option (default_deadline_ms) = 30000;
     option (max_deadline_ms) = 30000;
     option (requires_online_authorization) = true;
+    // Exact business scope is the Model resource family; no instance/namespace widening.
+    option (scope_kinds) = RESOURCE_MODEL;
   }
   rpc GetCallStatus(ModelGetCallStatusRequest) returns (ModelGetCallStatusResponse) {
     option (required_permission) = PERMISSION_MODEL_CALL_INSPECT;

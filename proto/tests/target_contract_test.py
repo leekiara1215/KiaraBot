@@ -98,6 +98,13 @@ def main():
         assert rpc.options.Extensions[policy_pb2.default_deadline_ms] == method['deadline_ms']
         assert rpc.options.Extensions[policy_pb2.max_deadline_ms] == method['max_deadline_ms']
         assert rpc.options.Extensions[policy_pb2.requires_online_authorization] == (method['risk'] == 'online')
+        # The descriptor is authoritative; target_spec.json only mirrors the reviewed annotation so
+        # an accidental/unreviewed scope annotation fails this contract gate.
+        expected_scope_kinds = method.get('scope_kinds')
+        actual_scope_kinds = [platform_pb2.ResourceKind.Name(value) for value in
+                              rpc.options.Extensions[policy_pb2.scope_kinds]]
+        assert actual_scope_kinds == (expected_scope_kinds or []), (
+            method['service'], method['method'], actual_scope_kinds, expected_scope_kinds)
         module = importlib.import_module('kiarabot.v1.' + Path(method['file']).stem + '_pb2')
         request = getattr(module, method['request'])()
         assert request.DESCRIPTOR.fields_by_name['context'].message_type.full_name == 'kiarabot.v1.RequestContext'
