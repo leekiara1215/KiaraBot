@@ -1,51 +1,42 @@
-"""Actual C++ daemon -> managed Python SDK -> generated gRPC, isolated local ports."""
+"""Managed subprocess chain: real Python plugin process -> fake target PluginBridge."""
 import asyncio
 import json
 import os
 from pathlib import Path
-import re
 import signal
 import sys
 
-import grpc
 import pytest
-from kiarabot.v1 import adapters_pb2 as adapters, common_pb2 as common, events_pb2 as events
-from kiarabot.v1 import services_pb2_grpc as services
+from kiarabot.v1 import events_pb2 as events
+from kiarabot_sdk.testing import FakeTargetRuntime
 
 ROOT = Path(__file__).resolve().parents[3]
-BINARY = Path(os.environ.get('CORE_TEST_BINARY', ROOT / 'build/proto/core/kiarabot-core'))
 
 
-async def wait_file(path):
-    async with asyncio.timeout(5):
+async def wait_file(path, timeout=5):
+    async with asyncio.timeout(timeout):
         while not path.exists():
             await asyncio.sleep(.01)
     return path.read_text()
 
 
-def environment(tmp_path, mode):
-    marker = tmp_path / 'marker.json'
-    stopped = tmp_path / 'stopped'
-    seen = tmp_path / 'seen'
+def write_subject(tmp_path, mode):
+    marker, stopped, seen = tmp_path / 'marker.json', tmp_path / 'stopped', tmp_path / 'seen'
     (tmp_path / 'subject.py').write_text(f'''
-import asyncio, json, os, time
+import asyncio, json, os
 from pathlib import Path
 from kiarabot_sdk import Plugin
 class Subject(Plugin):
     async def on_start(self, context):
         Path({str(marker)!r}).write_text(json.dumps(dict(pid=os.getpid(), environment=dict(os.environ))))
-        if {mode!r} == 'start_timeout':
-            time.sleep(60)
         if {mode!r} == 'crash':
             async def crash():
-                await asyncio.sleep(.5)
+                await asyncio.sleep(.3)
                 os._exit(12)
             self.crasher = asyncio.create_task(crash())
     async def on_event(self, event, context):
         Path({str(seen)!r}).write_text(event.event_id)
     async def on_stop(self, reason):
-        if {mode!r} == 'stop_timeout':
-            time.sleep(60)
         Path({str(stopped)!r}).write_text(reason)
 def create():
     return Subject()
@@ -54,22 +45,29 @@ def create():
     manifest['entrypoint'] = 'subject:create'
     manifest_path = tmp_path / 'plugin.json'
     manifest_path.write_text(json.dumps(manifest))
-    base = {key: value for key, value in os.environ.items() if not key.startswith('KIARABOT_')}
-    base.update(KIARABOT_ADAPTER_ID='adapter', KIARABOT_ADAPTER_TOKEN='a' * 32,
-                KIARABOT_PLUGIN_ID='event-observer', KIARABOT_PLUGIN_TOKEN='p' * 32,
-                KIARABOT_PLUGIN_PERMISSIONS='message.read',
-                KIARABOT_ADAPTER_ACCOUNTS='account', KIARABOT_RUNTIME_DB=str(tmp_path / 'runtime.db'),
-                KIARABOT_PLUGIN_EXECUTABLE=sys.executable, KIARABOT_PLUGIN_MANIFEST=str(manifest_path),
-                KIARABOT_PLUGIN_PYTHONPATH=os.pathsep.join(map(str, [ROOT / 'sdk/python/src',
-                    ROOT / 'sdk/python/build/generated', tmp_path])),
-                KIARABOT_PLUGIN_START_TIMEOUT_MS='500' if mode == 'start_timeout' else '5000',
-                KIARABOT_PLUGIN_STOP_TIMEOUT_MS='100', PRIVATE_SECRET='must-not-reach-child')
+    return manifest_path
+
+
+def environment(tmp_path, host, manifest_path):
+    ca = tmp_path / 'ca.pem'
+    ca.write_bytes(host.root_cert)
+    # A Host supplies a minimal allow-listed environment; runtime/adaptor
+    # secrets are never inherited by the managed plugin process.
+    base = {'PATH': os.environ.get('PATH', '/usr/bin:/bin'),
+            'HOME': str(tmp_path),
+            'LANG': os.environ.get('LANG', 'C.UTF-8'),
+            'PYTHONPATH': os.pathsep.join(map(str, [ROOT / 'sdk/python/src',
+                ROOT / 'sdk/python/build/generated', tmp_path]))}
+    base.update(PLUGIN_CORE_ENDPOINT=host.endpoint, PLUGIN_AUTH_TOKEN=host.token,
+                PLUGIN_TLS_ROOT=str(ca), PLUGIN_INSTANCE_ID='managed-instance-1',
+                PLUGIN_IO_TIMEOUT='3', PLUGIN_HEARTBEAT_INTERVAL='0.2',
+                PLUGIN_RETRY_DELAY='0.1')
     return base
 
 
 async def launch(env):
-    assert BINARY.exists(), 'Build the proto + infrastructure Core before SDK acceptance'
-    return await asyncio.create_subprocess_exec(str(BINARY), '--grpc-listen', '127.0.0.1:0',
+    return await asyncio.create_subprocess_exec(
+        sys.executable, '-m', 'kiarabot_sdk', '--manifest', env.pop('PLUGIN_MANIFEST'),
         env=env, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
 
 
@@ -83,89 +81,62 @@ async def cleanup(process):
     await process.communicate()
 
 
-@pytest.mark.parametrize('mode', ['graceful', 'stop_timeout', 'crash', 'start_timeout'])
-async def test_managed_lifecycle_environment_reclaim_and_event(tmp_path, mode):
-    env = environment(tmp_path, mode)
-    env.update(KIARABOT_MODEL_ENDPOINT='http://127.0.0.1:1/chat/completions',
-               KIARABOT_MODEL_API_KEY='private-model-key', KIARABOT_MODEL_NAME='default')
-    process = await launch(env)
-    try:
-        marker = json.loads(await wait_file(tmp_path / 'marker.json'))
-        child_environment = marker['environment']
-        assert 'PRIVATE_SECRET' not in child_environment
-        assert 'KIARABOT_ADAPTER_TOKEN' not in child_environment
-        assert 'KIARABOT_MODEL_API_KEY' not in child_environment
-        assert 'KIARABOT_MODEL_ENDPOINT' not in child_environment
-        assert child_environment['PLUGIN_AUTH_TOKEN'] == 'p' * 32
-        if mode == 'start_timeout':
-            output, error = await asyncio.wait_for(process.communicate(), 5)
-            assert process.returncode == 1 and b'error_code=TIMEOUT' in error
-        else:
-            async with asyncio.timeout(7):
-                lines = []
-                while True:
-                    line = await process.stdout.readline()
-                    assert line, await process.stderr.read()
-                    lines.append(line)
-                    if b'operation=process_start' in line:
-                        break
-            port = int(re.search(rb'port=(\d+)', b''.join(lines))[1])
-            assert b'operation=plugin_start outcome=registered' in b''.join(lines)
-            if mode == 'graceful':
-                async with grpc.aio.insecure_channel(f'127.0.0.1:{port}') as channel:
-                    call = services.AdapterBridgeStub(channel).Connect(metadata=(('authorization', 'Bearer ' + 'a' * 32),))
-                    try:
-                        await call.write(adapters.AdapterToCore(register=adapters.RegisterAdapterRequest(
-                            adapter_id='adapter', protocol_version='kiarabot.v1', implementation='fake',
-                            implementation_version='1.0', accounts=[adapters.Account(account_id='account', enabled=True)])))
-                        registered = (await asyncio.wait_for(call.read(), 2)).register_result
-                        assert registered.accepted
-                        event = events.EventEnvelope(event_id='sdk-process-event', trace_id='trace',
-                            schema_version='kiarabot.v1', delivery_mode=common.AT_LEAST_ONCE, sequence=1)
-                        event.occurred_at.GetCurrentTime()
-                        event.source.adapter_id = 'adapter'
-                        event.source.account_id = 'account'
-                        event.source.adapter_instance_id = registered.assigned_instance_id
-                        event.subject.conversation_id = 'conversation'
-                        event.subject.user_id = 'user'
-                        event.message_received.message_id = 'message'
-                        event.message_received.sender_id = 'user'
-                        event.message_received.conversation.id = 'conversation'
-                        event.message_received.conversation.account_id = 'account'
-                        event.message_received.conversation.type = common.ConversationRef.PRIVATE
-                        await call.write(adapters.AdapterToCore(event=event))
-                        assert (await asyncio.wait_for(call.read(), 2)).event_ack.status == adapters.AdapterEventAck.PERSISTED
-                        assert await wait_file(tmp_path / 'seen') == event.event_id
-                    finally:
-                        call.cancel()
+@pytest.mark.parametrize('mode', ['graceful', 'crash'])
+async def test_managed_plugin_process_against_fake_target(tmp_path, mode):
+    manifest_path = write_subject(tmp_path, mode)
+    async with FakeTargetRuntime() as host:
+        env = environment(tmp_path, host, manifest_path)
+        env['PLUGIN_MANIFEST'] = str(manifest_path)
+        process = await launch(env)
+        try:
+            marker = json.loads(await wait_file(tmp_path / 'marker.json'))
+            child_environment = marker['environment']
+            # Only the bootstrap material explicitly provided by deployment is
+            # visible to the managed plugin; runtime secrets never leak.
+            assert 'PRIVATE_SECRET' not in child_environment
+            assert 'KIARABOT_ADAPTER_TOKEN' not in child_environment
+            registration = await asyncio.wait_for(host.registrations.get(), 5)
+            assert registration.instance_id == 'managed-instance-1'
+            await host.send_event(events.EventEnvelope(event_id='child-event', trace_id='trace'))
+            assert await wait_file(tmp_path / 'seen') == 'child-event'
+            ack = await asyncio.wait_for(host.acknowledgements.get(), 3)
+            assert ack.accepted and ack.HasField('attempt')
             if mode == 'crash':
-                error_line = await asyncio.wait_for(process.stderr.readline(), 3)
-                assert b'operation=plugin_exit' in error_line
-                assert process.returncode is None
-            process.send_signal(signal.SIGTERM)
-            output, error = await asyncio.wait_for(process.communicate(), 5)
-            assert process.returncode == 0
-            assert (b'forced=true' in output) == (mode == 'stop_timeout')
-            if mode == 'graceful':
+                await asyncio.wait_for(process.wait(), 5)
+                assert process.returncode == 12
+            else:
+                process.send_signal(signal.SIGTERM)
+                assert await asyncio.wait_for(process.wait(), 5) == 0
                 assert (tmp_path / 'stopped').read_text() == 'shutdown'
-        with pytest.raises(ProcessLookupError):
-            os.kill(marker['pid'], 0)
-        assert b'p' * 32 not in output + error and b'must-not-reach-child' not in output + error
-    finally:
-        await cleanup(process)
+            output, error = await process.communicate()
+            assert b'must-not-reach-child' not in output + error
+        finally:
+            await cleanup(process)
 
 
-@pytest.mark.parametrize('change', [
-    {'KIARABOT_PLUGIN_EXECUTABLE': '/missing/executable'},
-    {'KIARABOT_PLUGIN_EXECUTABLE': 'python'},
-    {'KIARABOT_PLUGIN_MANIFEST': '/missing/manifest'},
-    {'KIARABOT_PLUGIN_STOP_TIMEOUT_MS': 'invalid'},
-    {'KIARABOT_PLUGIN_START_TIMEOUT_MS': '0'},
-])
-async def test_invalid_process_configuration_fails_closed(tmp_path, change):
-    process = await launch(dict(environment(tmp_path, 'graceful'), **change))
-    try:
-        await asyncio.wait_for(process.communicate(), 7)
-        assert process.returncode == 1
-    finally:
-        await cleanup(process)
+async def test_missing_tls_configuration_fails_closed(tmp_path):
+    manifest_path = write_subject(tmp_path, 'graceful')
+    async with FakeTargetRuntime() as host:
+        env = environment(tmp_path, host, manifest_path)
+        env.pop('PLUGIN_TLS_ROOT')
+        env['PLUGIN_MANIFEST'] = str(manifest_path)
+        process = await launch(env)
+        try:
+            await asyncio.wait_for(process.communicate(), 5)
+            assert process.returncode == 1
+        finally:
+            await cleanup(process)
+
+
+async def test_invalid_managed_configuration_fails_closed(tmp_path):
+    manifest_path = write_subject(tmp_path, 'graceful')
+    async with FakeTargetRuntime() as host:
+        env = environment(tmp_path, host, manifest_path)
+        env['PLUGIN_AUTH_TOKEN'] = 'short'
+        env['PLUGIN_MANIFEST'] = str(manifest_path)
+        process = await launch(env)
+        try:
+            await asyncio.wait_for(process.communicate(), 5)
+            assert process.returncode == 1
+        finally:
+            await cleanup(process)

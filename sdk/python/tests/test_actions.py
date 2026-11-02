@@ -3,7 +3,7 @@ from contextlib import suppress
 import pytest
 from kiarabot.v1 import actions_pb2 as actions, plugins_pb2 as plugins, events_pb2 as events, common_pb2 as common
 from kiarabot_sdk import Plugin, PluginError, Runner
-from kiarabot_sdk.testing import FakeHost
+from kiarabot_sdk.testing import FakeTargetRuntime
 from test_runtime import manifest, options, get
 
 
@@ -18,7 +18,7 @@ async def test_action_in_event_callback_and_out_of_order_responses():
         async def on_event(self, event, context):
             result = await context.submit_action(actions.ActionEnvelope(action_id='sent'))
             assert result.status == actions.ACCEPTED
-    async with FakeHost() as host:
+    async with FakeTargetRuntime() as host:
         host.features = ['action.result.v1']
         stop = asyncio.Event()
         runner = Runner(manifest(), Sender(), options(host))
@@ -26,9 +26,9 @@ async def test_action_in_event_callback_and_out_of_order_responses():
         pending = []
         try:
             await ready(runner)
-            await host.outgoing.put(plugins.CoreToPlugin(event=events.EventEnvelope(event_id='event')))
+            await host.send_frame(plugins.CoreToPlugin(event=events.EventEnvelope(event_id='event')))
             request = (await get(host.actions)).action
-            await host.outgoing.put(plugins.CoreToPlugin(action_response=plugins.PluginActionResponse(
+            await host.send_frame(plugins.CoreToPlugin(action_response=plugins.PluginActionResponse(
                 request_id=request.request_id, result=actions.ActionResult(action_id='sent', status=actions.ACCEPTED))))
             assert (await get(host.acknowledgements)).accepted
             pending = [asyncio.create_task(runner.context.query_action(action_id='first')),
@@ -36,7 +36,7 @@ async def test_action_in_event_callback_and_out_of_order_responses():
             requests = [(await get(host.actions)).action_query for _ in range(2)]
             for query in reversed(requests):
                 key = query.action_id or query.idempotency_key
-                await host.outgoing.put(plugins.CoreToPlugin(action_response=plugins.PluginActionResponse(
+                await host.send_frame(plugins.CoreToPlugin(action_response=plugins.PluginActionResponse(
                     request_id=query.request_id, result=actions.ActionResult(action_id=key, status=actions.SUCCEEDED, completed_at={'seconds': 1}))))
             assert [value.action_id for value in await asyncio.gather(*pending)] == ['first', 'second']
         finally:
@@ -49,7 +49,7 @@ async def test_action_in_event_callback_and_out_of_order_responses():
 @pytest.mark.parametrize('mode,code', [('legacy', common.CAPABILITY_NOT_SUPPORTED), ('timeout', common.TIMEOUT),
     ('disconnect', common.UPSTREAM_UNAVAILABLE), ('unknown', common.UPSTREAM_UNAVAILABLE), ('denied', common.PERMISSION_DENIED)])
 async def test_unknown_results_never_become_failed(mode, code):
-    async with FakeHost() as host:
+    async with FakeTargetRuntime() as host:
         if mode != 'legacy':
             host.features = ['action.result.v1']
         stop = asyncio.Event()
@@ -63,10 +63,10 @@ async def test_unknown_results_never_become_failed(mode, code):
                 if mode == 'disconnect':
                     await host.outgoing.put(None)
                 elif mode == 'unknown':
-                    await host.outgoing.put(plugins.CoreToPlugin(action_response=plugins.PluginActionResponse(
+                    await host.send_frame(plugins.CoreToPlugin(action_response=plugins.PluginActionResponse(
                         request_id=request.request_id, result=actions.ActionResult(status=999))))
                 elif mode == 'denied':
-                    await host.outgoing.put(plugins.CoreToPlugin(action_response=plugins.PluginActionResponse(
+                    await host.send_frame(plugins.CoreToPlugin(action_response=plugins.PluginActionResponse(
                         request_id=request.request_id, error=common.Error(code=common.PERMISSION_DENIED))))
             with pytest.raises(PluginError) as failure:
                 await request_task
@@ -79,7 +79,7 @@ async def test_unknown_results_never_become_failed(mode, code):
 
 
 async def test_cancel_action_and_query_selector_validation():
-    async with FakeHost() as host:
+    async with FakeTargetRuntime() as host:
         host.features = ['action.result.v1']
         stop = asyncio.Event()
         runner = Runner(manifest(), Plugin(), options(host))
@@ -93,7 +93,7 @@ async def test_cancel_action_and_query_selector_validation():
             pending = asyncio.create_task(runner.context.cancel_action('action'))
             request = (await get(host.actions)).action_cancel
             assert request.action_id == 'action' and request.trace_id
-            await host.outgoing.put(plugins.CoreToPlugin(action_response=plugins.PluginActionResponse(
+            await host.send_frame(plugins.CoreToPlugin(action_response=plugins.PluginActionResponse(
                 request_id=request.request_id,
                 result=actions.ActionResult(action_id='action', status=actions.CANCELLED,
                                             completed_at={'seconds': 1}))))
