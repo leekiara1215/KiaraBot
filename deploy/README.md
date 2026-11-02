@@ -42,6 +42,7 @@
 | `compose.infra.yml` | PostgreSQL 16.4（四私有库由 init profile 显式初始化）；TLS/数据/备份卷；init-identity/runtime/scheduler/model + identity-bootstrap |
 | `compose.core.yml` | Identity/Runtime/Scheduler/Model/Control/Panel；只读 rootfs、非 root、资源限制、healthcheck、只读 config/TLS/secrets 挂载 |
 | `compose.exec.yml` | Plugin Host + Adapter；Host SQLite/包/凭据卷；Adapter P06c `BRIDGE_*` 配置与 bootstrap secret；REST/WS 只走 Control |
+| `postgres-bootstrap.sql.example` | 四库/双角色 DBA 一次性 bootstrap 模板（无密码，psql 变量传入） |
 | `target.env.example` | 两代/主机拓扑变量模板（镜像、端口、material 路径）；不包含秘密 |
 | `target/README.md` | 部署生成材料布局（config/tls/secrets/data/packages/backups） |
 | `../scripts/deploy/target-initialize.sh` | 单个私有库的显式空库初始化（P03 CLI 包装；无清理/无自动迁移） |

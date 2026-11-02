@@ -3,7 +3,7 @@ name: ${COMPOSE_PROJECT_NAME:-kiarabot-target}
 # Target deployment infrastructure (P14a): PostgreSQL 16.4 cluster hosting the four
 # private logical databases (identity/runtime/scheduler/model). This file does NOT
 # create roles/databases or run schema DDL automatically:
-#   1) provision roles/databases once with deploy/target/postgres-bootstrap.sql.example
+#   1) provision roles/databases once with deploy/postgres-bootstrap.sql.example
 #      (or an external DBA/PostgreSQL service);
 #   2) run the explicit `init` profile (docker compose ... run --rm init-*).
 # The service never falls back to SQLite and never auto-migrates at startup.

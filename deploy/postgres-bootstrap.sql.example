@@ -1,0 +1,43 @@
+-- KiaraBot target PostgreSQL bootstrap template (P14a).
+--
+-- Run ONCE as a PostgreSQL superuser against the target cluster BEFORE the
+-- compose `init-*` profiles. It creates four private databases plus separate
+-- migration/runtime login roles; schema DDL is performed only by
+-- kiarabot-pg-initialize (explicit empty-database initialization).
+--
+-- This file contains NO passwords. Pass each password as a psql variable from a
+-- 0600 file or an interactive prompt, e.g.:
+--   psql -v ON_ERROR_STOP=1 \
+--        -v identity_migration_password="$(cat ...)" \
+--        -v identity_runtime_password="$(cat ...)" ... \
+--        -f deploy/postgres-bootstrap.sql.example
+--
+-- Requirements (doc/08 P03):
+--   * migration and runtime roles are distinct per database, NOLOGIN inheritance
+--     disabled, no SUPERUSER/CREATEDB/CREATEROLE/REPLICATION/BYPASSRLS;
+--   * pg_hba requires verify-full TLS for these roles (the compose PG serves TLS
+--     on the private network only);
+--   * REVOKE PUBLIC CONNECT/CREATE/TEMP and grant CONNECT to the two roles only;
+--   * never reuse passwords across databases and never put them in argv/logs.
+\set ON_ERROR_STOP on
+
+-- Helper: create role if absent (idempotent operator convenience).
+SELECT format('CREATE ROLE %I LOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS', :'identity_migration_role')
+WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = :'identity_migration_role') \gexec
+ALTER ROLE :"identity_migration_role" PASSWORD :'identity_migration_password';
+-- ... repeat for identity_runtime, runtime_migration, runtime_runtime,
+-- scheduler_migration, scheduler_runtime, model_migration, model_runtime.
+-- Keep this template intentionally explicit: deployments may prefer a separate
+-- DBA-managed secret store/rotation script instead of editing this file.
+
+-- Create the four databases owned by the respective migration role.
+SELECT format('CREATE DATABASE %I OWNER %I', :'identity_db', :'identity_migration_role')
+WHERE NOT EXISTS (SELECT 1 FROM pg_database WHERE datname = :'identity_db') \gexec
+-- ... same for runtime/scheduler/model.
+
+-- Per-database grants (run while connected to each database):
+--   REVOKE ALL ON DATABASE <db> FROM PUBLIC;
+--   GRANT CONNECT ON DATABASE <db> TO <db>_runtime, <db>_migration;
+--   ALTER DATABASE <db> OWNER TO <db>_migration;
+-- The runtime role never owns the database and never has DDL privileges; the
+-- migration role is used only by kiarabot-pg-initialize and operator tooling.
