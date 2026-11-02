@@ -1410,7 +1410,9 @@
       "RuntimeQueryActionResultRequest.owner_instance_id": "not_implemented",
       "RuntimeQueryActionResultResponse.result": "not_implemented",
       "RuntimeQueryActionResultResponse.execution_outcome": "not_implemented",
-      "RuntimeQueryActionResultResponse.metadata": "not_implemented"
+      "RuntimeQueryActionResultResponse.metadata": "not_implemented",
+      "IdentityWatchInvalidationsResponse.resync_required": "not_implemented",
+      "IdentityWatchInvalidationsResponse.cursor": "not_implemented"
     },
     "event_payloads": {
       "EventEnvelope.message_received": "implemented",
@@ -4926,6 +4928,12 @@
     ],
     "semantic.action.policy_gate": [
       "core/src/application/target/runtime_application.cpp"
+    ],
+    "IdentityWatchInvalidationsResponse.resync_required": [
+      "reports/modules/architecture-contracts.md"
+    ],
+    "IdentityWatchInvalidationsResponse.cursor": [
+      "reports/modules/architecture-contracts.md"
     ]
   },
   "vocabulary": {

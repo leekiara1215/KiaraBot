@@ -331,6 +331,13 @@ message IdentityWatchInvalidationsRequest {
 // CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
 message IdentityWatchInvalidationsResponse {
   InvalidationRecord invalidation = 1;
+  // CONTRACT_STATUS: not_implemented - P04 target declaration, producer pending.
+  // True means the cursor could not prove continuity; the client MUST take a full
+  // GetAuthorizationSnapshot and apply only records after the returned cursor.
+  bool resync_required = 2;
+  // CONTRACT_STATUS: not_implemented - P04 target declaration, producer pending.
+  // Durable stream watermark for the resync signal. Always present when resync_required=true.
+  StreamCursor cursor = 3;
 }
 
 // CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.

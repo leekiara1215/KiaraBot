@@ -56,6 +56,19 @@
 | CheckAuthorization | 主体、方法、资源、委托 | 允许/拒绝、授权版本、检查时间 | 面向当前权威；不返回秘密，不使用复制滞后伪装最新 |
 | ListAssignments/SetAssignment/RevokeAssignment | 固定角色或已登记权限、资源、版本 | 授予结果和版本 | 仅身份管理授权；事务含审计/收据/失效 outbox |
 | WatchInvalidations/GetAuthorizationSnapshot | 范围、版本游标 | 顺序失效/范围快照 | 仅订阅获准范围；游标过期全量补齐，禁止永久离线缓存 |
+
+#### Identity 失效流与授权快照（P04-B 最小冻结，2026-11-02）
+
+失效流是授权收敛的**有界加速器**，不替代高风险在线 `CheckAuthorization`、浏览器 REST 当前会话校验或 WS 一秒内检查；不得以缓存延续授权成功。
+
+- **持久模型**（Identity 私有库，空库初始化 schema 内置，无自动迁移）：单行 `identity_invalidation_state{epoch,next_sequence}` + `identity_invalidations{epoch,sequence,principal,authorization_version,created_at}` + `identity_invalidation_scopes{epoch,sequence,position,resource_kind,resource_id}`。`epoch` 只在该逻辑库被重新初始化/恢复时变化；进程重启沿用同一 epoch 与已提交 sequence（真实连续，不伪造也不重置）。`sequence` 在写事务内分配并随事务提交，是唯一排序权威。
+- **写入可见性**：SetAssignment、RevokeAssignment 以及凭据撤销等授权事实变更，必须在**同一物理事务**中同时推进主体授权水位、写失效记录与作用域行；普通 outbox 满不得静默丢失已提交撤销。P04-A 的凭据撤销实现必须调用同一 helper。
+- **StreamCursor{source_service,epoch,scope,sequence}**：`source_service` 固定 `identity`；`scope` 是订阅者声明的精确资源集合（1..128 个合法去重 `ResourceRef`，不接受 all/祖先/空）；`sequence` 为已确认水位。订阅与每次续发都必须重新用真实当前 mTLS peer 校验 `identity.invalidation.read` 在每个 scope 资源上的显式当前授权，不得缓存订阅授权。
+- **连续性判定**：空游标或 `sequence=0`（首次订阅）、epoch 与当前持久 epoch 不一致（库被重建/恢复）、或 `cursor.sequence+1 < 当前保留的最小 sequence`（超出重放窗）都判定为需要 resync；`cursor.sequence > 当前 watermark` 是调用方错误 `INVALID_ARGUMENT`，不得当作 resync。除 resync 外，服务端从 `sequence+1` 起按序续发。
+- **resync 表达**：`IdentityWatchInvalidationsResponse{resync_required=true, cursor=当前 watermark}`；客户端必须随后取 `GetAuthorizationSnapshot`，并只应用 `sequence > snapshot.cursor.sequence` 的后续记录。resync 后服务端继续推送后续记录，不关闭流。
+- **有界重放**：最近 **10 分钟且最多 4096 条**（两条件同时生效，按 sequence 保留）；Identity 维护循环每轮按批清理超界记录。清理只影响续发能力：超出窗口的订阅触发 resync，不返回空流假装无事件。
+- **GetAuthorizationSnapshot**：按请求 scope 返回当前权威快照 `{cursor, assignments, authorization_version}`。`cursor={identity, 当前 epoch, 请求 scope, 当前已提交 watermark}`；`assignments` 为与 scope 相交的当前 Active exact 记录（投影为 AssignmentRecord，不拼权限×资源笛卡尔积）；`authorization_version` 为快照内主体当前 AuthorizationState 版本最大值（无记录为 0）。空快照只在已授权 scope 确实无记录时为真实值；依赖/数据库失败必须返回稳定 Failure，禁止伪造空快照。
+- **流生命周期**：Watch 为 ServerWriter 长连接；按请求/传输/自身 TLS 期限最早者结束（Identity 方法上限 5s，客户端用游标重连），服务端约 200ms 轮询新记录。重连不是跨服务一致性承诺，客户端仍须按 resync/在线检查处置敏感操作。
 | GetVerificationKeys | 可信服务上下文、键版本 | 公钥/版本 | 已有信任链访问；不能从 token 指定 URL 下载任意验签键 |
 
 浏览器 access 15 分钟、refresh 30 天及原轮换语义不变。内部证明不是浏览器 token 的替代。Identity 初始可信管理员由显式离线部署引导，不能通过“向自己申请管理员”解决启动循环；引导材料安装后禁用。

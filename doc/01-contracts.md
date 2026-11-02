@@ -664,6 +664,8 @@ T03a 新增 CoreToPlugin.error（oneof 字段 6），承载注册之后的终止
 | `IdentityWatchInvalidationsRequest.scope` | not_implemented | P01 目标声明；无生产实现，见模块报告。 |
 | `IdentityWatchInvalidationsRequest.cursor` | not_implemented | P01 目标声明；无生产实现，见模块报告。 |
 | `IdentityWatchInvalidationsResponse.invalidation` | not_implemented | P01 目标声明；无生产实现，见模块报告。 |
+| `IdentityWatchInvalidationsResponse.resync_required` | not_implemented | P04 失效流扩展：游标断档时必须先取全量授权快照；写入/实现随 P04-B 提交。 |
+| `IdentityWatchInvalidationsResponse.cursor` | not_implemented | P04 失效流扩展：resync 信号携带的 durable stream watermark；实现随 P04-B 提交。 |
 | `IdentityGetAuthorizationSnapshotRequest.context` | not_implemented | P01 目标声明；无生产实现，见模块报告。 |
 | `IdentityGetAuthorizationSnapshotRequest.scope` | not_implemented | P01 目标声明；无生产实现，见模块报告。 |
 | `IdentityGetAuthorizationSnapshotRequest.after` | not_implemented | P01 目标声明；无生产实现，见模块报告。 |
