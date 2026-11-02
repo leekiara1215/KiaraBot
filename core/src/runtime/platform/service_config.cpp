@@ -555,7 +555,8 @@ ConfigResult load_service_config(const std::string& path, target::Service servic
       keys.insert("identity_security");
     }
     if (document.contains("identity_endpoint")) {
-      if ((service != target::Service::Runtime && service != target::Service::Scheduler) ||
+      if ((service != target::Service::Runtime && service != target::Service::Scheduler &&
+           service != target::Service::Model) ||
           !document["identity_endpoint"].is_string() ||
           !endpoint_valid(document["identity_endpoint"].get<std::string>())) {
         return ConfigFailure{2, "invalid_identity_endpoint_config"};

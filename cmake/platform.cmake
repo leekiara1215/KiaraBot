@@ -278,6 +278,15 @@ set_tests_properties(p03_service_composition PROPERTIES LABELS "p03;integration;
 # Runtime -> Identity owner client: online CheckAuthorization and delegation-metadata binding to the
 # actual inbound TLS leaf. Production composition injects it; tests use a fake Identity server.
 find_package(nlohmann_json 3.11.3 EXACT CONFIG REQUIRED)
+add_library(kiarabot_model_identity_client STATIC
+  ${CMAKE_SOURCE_DIR}/core/src/runtime/platform/model_identity_client.cpp)
+target_include_directories(kiarabot_model_identity_client PUBLIC
+  ${CMAKE_SOURCE_DIR}/core/include)
+kiarabot_platform_warnings(kiarabot_model_identity_client)
+target_link_libraries(kiarabot_model_identity_client PUBLIC kiarabot_proto
+  kiarabot_model_gateway_application
+  PRIVATE kiarabot_target_codec kiarabot_service_process nlohmann_json::nlohmann_json)
+
 add_library(kiarabot_runtime_identity_client STATIC
   ${CMAKE_SOURCE_DIR}/core/src/runtime/platform/runtime_identity_client.cpp)
 target_include_directories(kiarabot_runtime_identity_client PUBLIC
@@ -301,6 +310,14 @@ target_include_directories(kiarabot_model_rpc PUBLIC ${CMAKE_SOURCE_DIR}/core/in
 kiarabot_platform_warnings(kiarabot_model_rpc)
 target_link_libraries(kiarabot_model_rpc PUBLIC kiarabot_proto kiarabot_target_codec
   kiarabot_model_gateway_application)
+
+add_executable(kiarabot_model_identity_client_test
+  ${CMAKE_SOURCE_DIR}/core/tests/platform/model_identity_client_test.cpp)
+target_link_libraries(kiarabot_model_identity_client_test PRIVATE
+  kiarabot_model_identity_client)
+kiarabot_platform_warnings(kiarabot_model_identity_client_test)
+add_test(NAME p11_model_identity_client COMMAND kiarabot_model_identity_client_test)
+set_tests_properties(p11_model_identity_client PROPERTIES LABELS "p11;unit;security" TIMEOUT 30)
 
 # P11b integration additions use the real HTTP provider in the application fixture.
 if(TARGET kiarabot_model_gateway_application_test)
@@ -351,8 +368,8 @@ foreach(SERVICE identity runtime plugin_host scheduler model)
     target_sources(kiarabot-model PRIVATE
       ${CMAKE_SOURCE_DIR}/core/app/model_composition.cpp)
     target_link_libraries(kiarabot-model PRIVATE
-      kiarabot_model_rpc kiarabot_model_http_provider kiarabot_postgres
-      kiarabot_identity_crypto OpenSSL::Crypto)
+      kiarabot_model_rpc kiarabot_model_http_provider kiarabot_model_identity_client
+      kiarabot_postgres kiarabot_identity_crypto OpenSSL::Crypto)
   endif()
   if(SERVICE STREQUAL "runtime")
     # The independent Runtime composition owns the typed PG factory, application and unary RPC

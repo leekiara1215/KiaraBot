@@ -128,7 +128,7 @@ private:
   int port_ = 0;
 };
 
-t::Outcome<t::ModelCaller> authenticate(grpc::ServerContext&) {
+t::Outcome<t::ModelCaller> authenticate(grpc::ServerContext&, const v1::RequestContext&) {
   t::ModelCaller caller;
   caller.subject = t::SubjectId{"44444444-4444-4444-8444-444444444444"};
   caller.owner = t::InstanceId{"22222222-2222-4222-8222-222222222222"};

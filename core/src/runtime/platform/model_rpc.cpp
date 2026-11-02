@@ -324,7 +324,8 @@ public:
   grpc::Status Chat(grpc::ServerContext* context, const v1::ModelGatewayChatRequest* request,
                     v1::ModelGatewayChatResponse* response) override {
     t::ModelCaller caller;
-    auto status = caller_for(*context, caller);
+    auto status =
+        caller_for(*context, request->context(), "/kiarabot.v1.ModelService/Chat", caller);
     if (!status.ok()) {
       return status;
     }
@@ -360,7 +361,8 @@ public:
                              const v1::ModelGetCallStatusRequest* request,
                              v1::ModelGetCallStatusResponse* response) override {
     t::ModelCaller caller;
-    auto status = caller_for(*context, caller);
+    auto status =
+        caller_for(*context, request->context(), "/kiarabot.v1.ModelService/GetCallStatus", caller);
     if (!status.ok()) {
       return status;
     }
@@ -393,7 +395,8 @@ public:
                                 const v1::ModelGetModelMetadataRequest* request,
                                 v1::ModelGetModelMetadataResponse* response) override {
     t::ModelCaller caller;
-    auto status = caller_for(*context, caller);
+    auto status = caller_for(*context, request->context(),
+                             "/kiarabot.v1.ModelService/GetModelMetadata", caller);
     if (!status.ok()) {
       return status;
     }
@@ -413,7 +416,8 @@ public:
                                  const v1::ModelListModelMetadataRequest* request,
                                  v1::ModelListModelMetadataResponse* response) override {
     t::ModelCaller caller;
-    auto status = caller_for(*context, caller);
+    auto status = caller_for(*context, request->context(),
+                             "/kiarabot.v1.ModelService/ListModelMetadata", caller);
     if (!status.ok()) {
       return status;
     }
@@ -444,7 +448,8 @@ public:
   grpc::Status UpdateModel(grpc::ServerContext* context, const v1::ModelUpdateModelRequest* request,
                            v1::ModelUpdateModelResponse* response) override {
     t::ModelCaller caller;
-    auto status = caller_for(*context, caller);
+    auto status =
+        caller_for(*context, request->context(), "/kiarabot.v1.ModelService/UpdateModel", caller);
     if (!status.ok()) {
       return status;
     }
@@ -488,7 +493,8 @@ public:
                                     const v1::ModelRotateProviderSecretRequest* request,
                                     v1::ModelRotateProviderSecretResponse* response) override {
     t::ModelCaller caller;
-    auto status = caller_for(*context, caller);
+    auto status = caller_for(*context, request->context(),
+                             "/kiarabot.v1.ModelService/RotateProviderSecret", caller);
     if (!status.ok()) {
       return status;
     }
@@ -520,18 +526,21 @@ public:
   grpc::Status DisableModel(grpc::ServerContext* context,
                             const v1::ModelDisableModelRequest* request,
                             v1::ModelDisableModelResponse* response) override {
-    return lifecycle(*context, *request, false, response->mutable_model());
+    return lifecycle(*context, *request, false, "/kiarabot.v1.ModelService/DisableModel",
+                     response->mutable_model());
   }
   grpc::Status EnableModel(grpc::ServerContext* context, const v1::ModelEnableModelRequest* request,
                            v1::ModelEnableModelResponse* response) override {
-    return lifecycle(*context, *request, true, response->mutable_model());
+    return lifecycle(*context, *request, true, "/kiarabot.v1.ModelService/EnableModel",
+                     response->mutable_model());
   }
 
   grpc::Status GetModelConfiguration(grpc::ServerContext* context,
                                      const v1::ModelGetModelConfigurationRequest* request,
                                      v1::ModelGetModelConfigurationResponse* response) override {
     t::ModelCaller caller;
-    auto status = caller_for(*context, caller);
+    auto status = caller_for(*context, request->context(),
+                             "/kiarabot.v1.ModelService/GetModelConfiguration", caller);
     if (!status.ok()) {
       return status;
     }
@@ -555,7 +564,8 @@ public:
                                 const v1::ModelResolveModelCallRequest* request,
                                 v1::ModelResolveModelCallResponse* response) override {
     t::ModelCaller caller;
-    auto status = caller_for(*context, caller);
+    auto status = caller_for(*context, request->context(),
+                             "/kiarabot.v1.ModelService/ResolveModelCall", caller);
     if (!status.ok()) {
       return status;
     }
@@ -582,7 +592,8 @@ public:
                             const v1::ModelGetOperationRequest* request,
                             v1::ModelGetOperationResponse* response) override {
     t::ModelCaller caller;
-    auto status = caller_for(*context, caller);
+    auto status =
+        caller_for(*context, request->context(), "/kiarabot.v1.ModelService/GetOperation", caller);
     if (!status.ok()) {
       return status;
     }
@@ -630,22 +641,28 @@ public:
   }
 
 private:
-  grpc::Status caller_for(grpc::ServerContext& context, t::ModelCaller& caller) {
+  grpc::Status caller_for(grpc::ServerContext& context, const v1::RequestContext& request,
+                          std::string_view method, t::ModelCaller& caller) {
     if (!authenticate_) {
       return error_status(
           transport_failure(t::ErrorCode::Unauthenticated, t::Recovery::Authenticate), {}, {});
     }
-    auto authenticated = authenticate_(context);
+    if (!request.request_id().empty()) {
+      // Bound the method string to the exact compiled RPC; a caller cannot influence which
+      // permission Identity evaluates for this entry point.
+    }
+    auto authenticated = authenticate_(context, request);
     if (const auto* failure = std::get_if<t::Failure>(&authenticated)) {
       return error_status(*failure, {}, {});
     }
     caller = std::move(std::get<t::ModelCaller>(authenticated));
+    caller.method = std::string{method};
     return grpc::Status::OK;
   }
   grpc::Status lifecycle(grpc::ServerContext& context, const auto& request, bool enable,
-                         v1::ModelMetadata* model) {
+                         std::string_view method, v1::ModelMetadata* model) {
     t::ModelCaller caller;
-    auto status = caller_for(context, caller);
+    auto status = caller_for(context, request.context(), method, caller);
     if (!status.ok()) {
       return status;
     }

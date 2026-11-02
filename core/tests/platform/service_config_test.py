@@ -154,6 +154,28 @@ def main(driver, identity=None):
         expect(2, {**config, 'identity_endpoint': identity_endpoint})
         expect(2, {**runtime, 'identity_endpoint': identity_endpoint, 'extra': True},
                service='runtime')
+        model = {**config, 'service': 'model'}
+        expect(0, {**model, 'identity_endpoint': identity_endpoint}, service='model')
+        for invalid in [{'identity_endpoint': 'https://identity:443'},
+                        {'identity_endpoint': 'identity:0'},
+                        {'identity_endpoint': 'identity:65536'},
+                        {'identity_endpoint': 'one,two:443'},
+                        {'identity_endpoint': 'x:443/path'},
+                        {'identity_endpoint': ':443'},
+                        {'identity_endpoint': 443}]:
+            expect(2, {**model, **invalid}, service='model')
+        root_key_file = {'id': 'model-root-v1', 'file': str(root / 'model-root.key')}
+        model_security = {'root_key_file': root_key_file, 'key_version': 1}
+        expect(0, {**model, 'model_security': model_security}, service='model')
+        for invalid in [{'root_key_file': root_key_file},
+                        {'root_key_file': root_key_file, 'key_version': 0},
+                        {'root_key_file': root_key_file, 'key_version': -1},
+                        {'root_key_file': {'id': 'model-root-v1'}, 'key_version': 1},
+                        {'root_key_file': {'id': 'model-root-v1', 'file': 7}, 'key_version': 1},
+                        {'root_key_file': root_key_file, 'key_version': 1, 'extra': True}]:
+            expect(2, {**model, 'model_security': invalid}, service='model')
+        expect(2, {**config, 'model_security': model_security})
+
         for update in [{'port': 0}, {'port': -1}, {'port': 65536}, {'port': True},
                        {'name': 'db name'}, {'host': '/tmp/socket'}, {'host': 'one,two'},
                        {'host': 'bad host'}, {'runtime_role': 'identity_migration'},

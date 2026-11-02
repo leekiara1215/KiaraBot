@@ -11,6 +11,7 @@
 
 #include "kiarabot/core/application/target/model_application.hpp"
 #include "kiarabot/core/application/target/model_gateway_application.hpp"
+#include "kiarabot/core/runtime/platform/model_identity_client.hpp"
 #include "kiarabot/core/runtime/platform/model_rpc.hpp"
 #include "kiarabot/core/runtime/platform/service_process.hpp"
 #include "kiarabot/core/runtime/platform/service_rpc.hpp"
@@ -70,7 +71,8 @@ struct State {
   std::unique_ptr<target::ModelSecretCryptoPort> crypto;
   std::unique_ptr<target::ModelDigestPort> digest;
   std::unique_ptr<RandomModelIds> ids;
-  std::unique_ptr<FailClosedModelAuthorization> authorization;
+  std::unique_ptr<platform::ModelIdentityClient> identity;
+  std::unique_ptr<FailClosedModelAuthorization> fail_closed_authorization;
   std::unique_ptr<target::ModelGatewayApplication> application;
 };
 
@@ -81,13 +83,17 @@ public:
     return target::Service::Model;
   }
   target::ServiceReadiness readiness() const override {
-    // P11b installed the reviewed HTTP provider and deployment root key; authoritative caller
-    // verification remains P11c, so the daemon still reports not-ready.
-    return {false,
-            {{target::Dependency::BusinessImplementation, target::DependencyState::Available},
-             {target::Dependency::DatabaseSchema, target::DependencyState::Unverified},
-             {target::Dependency::Identity, target::DependencyState::Unverified},
-             {target::Dependency::Credentials, target::DependencyState::Available}}};
+    // Real HTTP provider, deployment root key and (when configured) the Identity authorization
+    // channel are installed. Ready is true only while the Identity channel is actually connected;
+    // the composition root still ANDs the live database observation.
+    const auto identity_available = state_->identity && state_->identity->available();
+    return {
+        identity_available,
+        {{target::Dependency::BusinessImplementation, target::DependencyState::Available},
+         {target::Dependency::DatabaseSchema, target::DependencyState::Unverified},
+         {target::Dependency::Identity, identity_available ? target::DependencyState::Available
+                                                           : target::DependencyState::Unavailable},
+         {target::Dependency::Credentials, target::DependencyState::Available}}};
   }
 
 private:
@@ -139,22 +145,49 @@ build_application(const platform::ProcessConfig& config, target::ModelUnitOfWork
                            {}};
   }
   state->ids = std::make_unique<RandomModelIds>();
-  state->authorization = std::make_unique<FailClosedModelAuthorization>();
+  if (config.identity_endpoint) {
+    grpc::SslCredentialsOptions ssl;
+    ssl.pem_root_certs = config.tls.ca;
+    ssl.pem_cert_chain = config.tls.certificate;
+    ssl.pem_private_key = config.tls.private_key;
+    auto client = platform::ModelIdentityClient::create(
+        {*config.identity_endpoint, grpc::SslCredentials(ssl), std::chrono::milliseconds{500},
+         std::chrono::milliseconds{1000}});
+    if (const auto* failure = std::get_if<target::Failure>(&client)) {
+      return *failure;
+    }
+    state->identity = std::move(std::get<std::unique_ptr<platform::ModelIdentityClient>>(client));
+  } else {
+    state->fail_closed_authorization = std::make_unique<FailClosedModelAuthorization>();
+  }
+  auto& authorization =
+      state->identity
+          ? static_cast<target::ModelAuthorizationPort&>(*state->identity)
+          : static_cast<target::ModelAuthorizationPort&>(*state->fail_closed_authorization);
   state->application = target::make_model_gateway_application(
-      {factory, *state->provider, *state->crypto, *state->digest, *state->ids,
-       *state->authorization, material.key_version});
+      {factory, *state->provider, *state->crypto, *state->digest, *state->ids, authorization,
+       material.key_version});
   return std::unique_ptr<target::ServiceReadinessPort>(std::make_unique<Applications>(state));
 }
 
-target::Outcome<platform::ModelPeerAuthenticator> fail_closed_authenticator() {
+target::Outcome<platform::ModelPeerAuthenticator> authenticator_for(std::shared_ptr<State> state) {
+  if (!state->identity) {
+    return platform::ModelPeerAuthenticator{
+        [](grpc::ServerContext&,
+           const v1::RequestContext&) -> target::Outcome<target::ModelCaller> {
+          // No Identity endpoint is configured: every RPC stays unauthenticated/fail-closed.
+          return target::Failure{target::ErrorCode::Unauthenticated,
+                                 target::Acceptance::NotAccepted,
+                                 target::Recovery::Authenticate,
+                                 {},
+                                 {}};
+        }};
+  }
+  auto client = state->identity.get();
   return platform::ModelPeerAuthenticator{
-      [](grpc::ServerContext&) -> target::Outcome<target::ModelCaller> {
-        // P11c/P11d install the Identity/Control delegation gate before readiness can be true.
-        return target::Failure{target::ErrorCode::Unauthenticated,
-                               target::Acceptance::NotAccepted,
-                               target::Recovery::Authenticate,
-                               {},
-                               {}};
+      [client](grpc::ServerContext& context,
+               const v1::RequestContext& request) -> target::Outcome<target::ModelCaller> {
+        return client->authenticate(context, request);
       }};
 }
 
@@ -208,7 +241,7 @@ compose_model_service(const platform::ProcessConfig& config, ModelCompositionOpt
           return *failure;
         }
       }
-      auto authenticator = fail_closed_authenticator();
+      auto authenticator = authenticator_for(state);
       if (const auto* failure = std::get_if<target::Failure>(&authenticator)) {
         return *failure;
       }

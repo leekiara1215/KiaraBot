@@ -23,8 +23,19 @@ namespace kiarabot::core::target {
 // delegation and is never accepted from request fields.
 struct ModelCaller {
   std::optional<SubjectId> subject;
+  // Plugin instance represented by a Runtime Chat delegation (P11 logical owner/dedupe key);
+  // empty for scoped Control management calls.
   std::optional<InstanceId> owner;
+  // Structurally decoded direct actor of the delegation; Identity.CheckAuthorization remains the
+  // authoritative decision and the RPC boundary sets both fields only from the real proof.
+  std::optional<SubjectId> direct_actor;
+  // True only for a structurally validated Runtime second-hop (Exchange) delegation; false for a
+  // direct Control issuance. Identity still decides the current permission online.
+  bool runtime_origin = false;
   std::string delegation;
+  // Exact gRPC full method for online authorization/audit. The RPC boundary sets it; application
+  // permission decisions never accept a client-supplied method.
+  std::string method;
   Sha256Digest peer_fingerprint;
 };
 
