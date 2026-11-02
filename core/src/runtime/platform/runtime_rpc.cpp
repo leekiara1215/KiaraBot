@@ -1539,6 +1539,8 @@ public:
     const auto& result = std::get<t::SharedMembersMutation>(disabled);
     response->set_version(result.version.value);
     operation_ref(result.operation, response->mutable_operation());
+    return grpc::Status::OK;
+  }
   grpc::Status AcceptTimerTrigger(grpc::ServerContext* transport,
                                   const v1::RuntimeAcceptTimerTriggerRequest* request,
                                   v1::RuntimeAcceptTimerTriggerResponse* response) override {
