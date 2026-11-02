@@ -326,7 +326,7 @@ proto + infrastructure 构建可通过 `KIARABOT_CONTROL_CONFIG` 指定私有 JS
 
 ## P14a 目标部署面（Docker/Compose，未验证）
 
-- 状态：**已实现 P14a 交付文件；本机无 Docker，镜像构建/Compose 启动/healthcheck/初始化/两主机行为均未执行、未验证**。不得把下文当作已验收部署。两主机拓扑（Host-A 数据/控制面 + Host-B 执行面）按 P14 提案文档化，**待用户确认**；P13 的 drain/生命周期设计未合入，启停顺序只是临时口径。
+- 状态：**已实现 P14a 交付文件；本机无 Docker，镜像构建/Compose 启动/healthcheck/初始化/两主机行为均未执行、未验证**。不得把下文当作已验收部署。默认拓扑已由用户确认为**单主机 Docker Compose**；两主机（Host-A 数据/控制面 + Host-B 执行面）改为可选且**延期单独记录**。P13 drain/生命周期已合入，启停顺序见下文 P14c/P13b 段。
 - 交付物：`deploy/docker/suite.Dockerfile`（Ubuntu24.04 + 固定 vcpkg registry/manifest + Python3.11.18/uv0.13.6 生成 proto，构建 `kiarabot-control/-identity/-runtime/-plugin-host/-scheduler/-model` + `kiarabot-pg-initialize` + `kiarabot-identity-bootstrap`，共享 runtime base 与六个薄镜像 + tools）；`deploy/compose.infra.yml`（PG16.4/四私有库、TLS/数据/备份卷、显式 init profile）；`deploy/compose.core.yml`（六服务、只读 rootfs/非 root/资源限制/healthcheck/只读 config-TLS-secrets 挂载）；`deploy/compose.exec.yml`（Plugin Host + Adapter，Adapter 使用 P06c `BRIDGE_*`/`ONEBOT_*_FILE` 与 bootstrap 秘密）；`deploy/target.env.example`、`deploy/target/README.md`、`scripts/deploy/target-initialize.sh`、`scripts/deploy/target-smoke.sh`、`deploy/README.md`。
 - 拓扑/端口（提案默认，待确认）：Host-A 的 PG 5432（不公网）+ Identity 7441/probe 9081、Runtime 7442/ bridge 7443/probe 9082、Scheduler 7444/9083、Model 7445/9084、Control 8080/9080、Panel 8082；Host-B 的 Plugin Host 7446/9085、Adapter health 8081；所有 owner gRPC 用 mTLS，Runtime bridge 用 server-verified TLS + Bearer bootstrap，Panel 仅经反代/隧道对外。端口可在 `deploy/target.env` 覆盖并按防火墙收敛。
 - TLS/秘密：部署自建 CA/leaf（SAN 精确覆盖连接名）、PG server CA、四库迁移/运行双密码、Identity enrollment/admin密码、model root key（32B hex/0600）、Control encryption key、Adapter/插件 bootstrap 与 OneBot token 均以只读文件挂载；不进入镜像、argv、日志或 git。当前只有启动校验，无热轮换；P14 采用“新文件 + 按顺序重启”的手动轮换。
@@ -1358,3 +1358,16 @@ bash scripts/ops/target-drill.sh             # 真 PG16.4 + SQLite 本地全矩�
 
 - **仍需用户确认**：备份保留周期、离站复制位置/频率、密钥托管方式（KMS/离线/分片）；脚本默认只保留本地最近 7 份完整集，不提供异地复制。
 P13b（2026-11-02）：Host 进程 SIGTERM 走有界优雅收尾（活动受管进程 TERM≤grace10s，再 KILL；最终观察上报；Host SQLite journal prune 后关闭；HostBridge 断开），退出码 0；无法确认的进程结果保持 UNKNOWN，不伪造 stopped。SDK 收到 ShutdownNotice 后停止接新事件、在 drain 窗口内收完已受理事件的 ACK/回执、最后调用 `on_stop` 并以 0 退出；Adapter 保留未确认本地 outbox，drain 窗口后按退避重连，致命鉴权错误以非零退出。崩溃恢复：Host 重启按 marker/代次恢复，不重复 spawn 同代次、不把崩溃执行改写成成功；Host 本地日志与 Runtime 中央库的恢复/清理分别由 P13a/P14 协调，不跨库级联。
+
+## P14a-2 默认单主机 Compose、官方 PG 镜像与秘密轮换（2026-11-02）
+
+- 状态：**文件/脚本/离线检查完成；本机无 Docker，镜像构建、`docker compose config/up`、官方镜像初始化/迁移/恢复均未运行**。不得把本篇当作已验收部署。
+- 默认拓扑（用户确认）：单主机 Docker Compose，PG + Identity/Runtime/Scheduler/Model/Control/Panel + Plugin Host/Adapter 同机，各服务独立容器、TLS 材料、凭据文件与 DB 角色/权限边界。`deploy/compose.target.yml` include 三个组件文件；单机 `--profile exec`，一次性初始化 `--profile init`。两主机可选，Host-A=infra+core、Host-B=exec `--profile host --profile adapter`；跨主机断网/重连演练**延期并单独记录**（未验证）。
+- PostgreSQL：默认 `postgres:16.4-bookworm`（复现 P00）；release 用发布时 PG16 当前修订并固定 digest，`target-smoke.sh --release` 强制 `POSTGRES_IMAGE=postgres:<PG16>-bookworm@sha256:<64 hex>`，并同时校验 UBUNTU_BASE/服务镜像 digest、非 dev `KIARABOT_VERSION` 与 secrets 模式。full-locked CI 的 P00 源码构建不变。官方镜像的初始化/迁移/恢复步骤：启动 postgres → `--profile init run --rm init-*`（逐库、非原子）→ 显式迁移 → P14c 备份/恢复脚本；**本机无 Docker，实际未运行**。
+- 秘密：默认只读文件挂载（config/tls/secrets）；`target.env.example` 增加 `KIARABOT_SECRETS_DIR/MANIFEST` 与逐秘密路径，`deploy/secrets.manifest.example` 记录文件名/mode/消费者/轮换重启顺序。Docker secrets 为按需覆盖（`deploy/compose.docker-secrets.yml`，挂到 `/run/secrets`，选择时 config 路径需同步）。本期人工轮换，KMS/热轮换延期。
+- 人工轮换流程：先做 P14c 离线备份（`scripts/ops/target-backup.sh --offline`）→ 用
+  `scripts/deploy/target-rotate-secret.sh --env deploy/target.env --name <name> --value-file <file> --confirm`
+  原子替换（0600、旧值备份、manifest 校验）→ 按 Identity→Runtime/Scheduler/Model→Host→Adapter→Control→Panel 顺序重启 → 验证新凭据可用/旧失效 → 观察窗口结束后再清理备份。脚本不自动重启容器、不访问 secret store；离线测试 `scripts/deploy/tests/target_rotate_test.sh`。
+- 检查（本机实际运行）：`scripts/deploy/target-smoke.sh` 通过（Compose YAML、target include、host/adapter profiles、官方 PG 默认、安全约束、shell 语法、rotate 测试、release 规则可离线校验）；`target-smoke --release` 对含 digests 的临时 env 通过、缺失 PG digest 失败（见提交说明）；`bash -n` 全部部署脚本；`scripts/deploy/tests/target_rotate_test.sh` PASS。
+- 未验证/未完成：Docker 构建/Compose 启动/healthcheck/官方 PG 镜像初始化/迁移/恢复、两主机与跨主机故障、真实秘密轮换后的容器按序重启（本机无 Docker，数据层轮换仅 P14c 演练覆盖）。
+- 剩余待确认：备份保留/离站策略、密钥托管（KMS/离线/分片）；正式发布仍受官方 PG 镜像 digest/Compose 验收/秘密托管阻塞。
