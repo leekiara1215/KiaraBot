@@ -1455,3 +1455,17 @@ scripts/deploy/target_host_credential.py verify --directory /etc/kiarabot-host/c
 - Host 仍按 P08a 约定在 spawn 时从 `credential_directory/<instance_id>.bootstrap` 读取并只
   注入 launch profile 的 `credential_environment`；SDK 的 P06 首帧使用不变，Runtime 仍只存
   SHA-256。该 helper 不新增协议、不自动改 Host 配置；Host 配置/白名单仍由部署维护。
+
+## P12c-7 生命周期删除/恢复操作口径（2026-11-02）
+
+- 删除/恢复通过 Control REST `POST /api/v1/resources/{kind}/{id}/delete|restore` 发起，Runtime 是唯一
+  所有者：Control 只转发带 Idempotency-Key + expected_version（体）与一次性 resource.manage（ACCOUNT
+  为 account.manage）委托的命令，返回 202+operation；不得直接清库/跨库级联/绕过参与者。
+- 进度只认 `GET /api/v1/operations/runtime/{operationId}`：BLOCKED 表示等待 Host/Adapter 参与者或
+  drain，是受理后的正常中间态，不是失败；CONFLICT/404 按 owner 语义处理，503 表示不可用，不得重试
+  为“已删除/已恢复”。
+- 恢复仅限 DELETED 且在 30 天窗口内；超过窗口/已 PURGED/NOT_FOUND 返回稳定 NOT_FOUND/CONFLICT，
+  不得用备份恢复绕过 owner 生命周期。180 天墓碑/审计保留与 60 秒清理批次属 P13/P14c 数据层，本
+  REST 不扩大或缩短保留。
+- 失败处置：保持当前状态，按 operation participants/reason 定位阻塞参与者；不要手工改 tombstone/
+  删除 outbox；回滚/恢复参见 P14c runbook（备份恢复是停机例外，不是生命周期恢复替代）。

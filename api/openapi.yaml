@@ -1621,16 +1621,20 @@ paths:
     post:
       operationId: beginDeleteResource
       summary: Runtime BeginDelete
-      x-contract-status: not_implemented
+      x-contract-status: implemented
       x-owner-service: runtime
       x-owner-rpc: RuntimeService.BeginDelete
       x-permission: resource.manage
       x-mutating: true
-      description: Target P01 declaration; production handler is not implemented. Current
-        Identity session and explicit resource grant are required. Path IDs must equal
-        any repeated body IDs; mismatch is INVALID_ARGUMENT. Versions are positive decimal
-        uint64 strings; writes reject missing expected_version except creation. An accepted
-        operation is not completed work.
+      description: >-
+        P12c-7 implemented Control -> Runtime BeginDelete. Control issues a one-use delegation
+        (runtime audience, resource.manage; account resources use account.manage) on exactly the
+        path resource scope, requires Idempotency-Key and expected_version, and forwards the
+        command. Path/body resource kind+id must match (otherwise INVALID_ARGUMENT). 202 carries
+        the persisted owner operation reference; an operation whose participants are BLOCKED is
+        still an accepted operation, not a failed delete - poll
+        GET /api/v1/operations/runtime/{operationId}. CONFLICT/state gates are owner decisions,
+        NOT_FOUND means missing/invisible, 503 means the owner/source is unavailable.
       parameters:
       - name: resourceKind
         in: path
@@ -1686,16 +1690,18 @@ paths:
     post:
       operationId: restoreResource
       summary: Runtime RestoreResource
-      x-contract-status: not_implemented
+      x-contract-status: implemented
       x-owner-service: runtime
       x-owner-rpc: RuntimeService.RestoreResource
       x-permission: resource.manage
       x-mutating: true
-      description: Target P01 declaration; production handler is not implemented. Current
-        Identity session and explicit resource grant are required. Path IDs must equal
-        any repeated body IDs; mismatch is INVALID_ARGUMENT. Versions are positive decimal
-        uint64 strings; writes reject missing expected_version except creation. An accepted
-        operation is not completed work.
+      description: >-
+        P12c-7 implemented Control -> Runtime RestoreResource for DELETED resources inside the
+        owner 30-day restore window. Control issues a one-use delegation (runtime audience,
+        resource.manage; account resources use account.manage) on exactly the path resource scope,
+        requires Idempotency-Key and expected_version, and returns 202 with the persisted operation
+        reference. BLOCKED participants remain a successful accepted operation; CONFLICT/NOT_FOUND/
+        503 follow the stable owner mapping and clients poll the runtime operation endpoint.
       parameters:
       - name: resourceKind
         in: path

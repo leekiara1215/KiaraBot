@@ -5786,7 +5786,9 @@
           "operations.listModels": "implemented",
           "operations.getOperation": "implemented",
           "operations.listAuditEntries": "implemented",
-          "operations.listLogs": "implemented"
+          "operations.listLogs": "implemented",
+          "operations.beginDeleteResource": "implemented",
+          "operations.restoreResource": "implemented"
         },
         "proto_messages": {
           "IdentityAuditFilter": "implemented",
@@ -10142,6 +10144,20 @@
           "core/src/application/target/identity_audit_application.cpp",
           "core/src/application/target/runtime_audit_application.cpp",
           "tests/architecture/p12c_audit_logs.py",
+          "control/api/tests/owner_gateway_test.cpp"
+        ],
+        "operations:operations.beginDeleteResource": [
+          "core/src/application/target/runtime_resource_application.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/tests/architecture/runtime_resource_application_test.cpp",
+          "control/api/src/target/owner_gateway.cpp",
+          "control/api/tests/owner_gateway_test.cpp"
+        ],
+        "operations:operations.restoreResource": [
+          "core/src/application/target/runtime_resource_application.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/tests/architecture/runtime_resource_application_test.cpp",
+          "control/api/src/target/owner_gateway.cpp",
           "control/api/tests/owner_gateway_test.cpp"
         ]
       }

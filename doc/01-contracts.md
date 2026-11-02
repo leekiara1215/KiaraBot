@@ -80,6 +80,8 @@ T03a 新增 CoreToPlugin.error（oneof 字段 6），承载注册之后的终止
 
 | `EventEnvelope.message_received` | implemented | P06 target：真实 NoneBot Adapter bridge client 生成、Runtime inbox 接收并 fan-out 给真实 SDK 插件；ACL/lease/ACK 见 p06_client_e2e |
 | `operations.listAuditEntries`、`operations.listLogs` | implemented | P12c-6 Control 只读聚合 Identity/Runtime ListAudit/ListLogs（真实 TLS 401/400/403/503 验收 + gateway 合并/分页/过滤单测）；owner 数据与保留仍归各服务，WS logs 频道延期 |
+| `operations.beginDeleteResource`、`operations.restoreResource` | implemented | P12c-7 Control REST 生命周期删除/恢复：runtime owner 委托（resource.manage；account 用 account.manage）、显式 resource scope、Idempotency-Key+expected_version、202+operation ref、BLOCKED 非失败；P13a Runtime 语义 + Control gateway 单测/真实 TLS 拒绝验收 |
+
 
 
 | `ActionEnvelope`、`ActionResult`、`PluginActionCancel`、`PluginActionQuery`、`PluginActionRequest`、`PluginActionResponse`、`ActionMetadata`、`ActionExecutionEvidence`、`ActionReceipt`、`RuntimeQueryActionResultRequest`、`RuntimeQueryActionResultResponse` | implemented | P07a-C 真实 Runtime/PG16.4/TLS 桥帧验收（submit→dispatch→result/evidence→receipt/query，含幂等/配额/重连/EXPIRED 迟到） |

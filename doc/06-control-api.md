@@ -634,3 +634,21 @@ P12 v1 target **不提供** Control WebSocket 服务端；`api/asyncapi.yaml` �
 - 与 P12d：REST 分页 `page.next_page_token` 直接回传；`owner`/`rejection` 可用于跳转 owner 操作；
   503 必须显示"数据源暂不可用"，不得渲染为"暂无日志/审计"；WS `logs` 频道仍为 P12a-2 延期项，
   REST 聚合不改变该状态。
+
+### P12c-7 已实现：生命周期删除/恢复 REST（2026-11-02）
+
+- `POST /api/v1/resources/{resourceKind}/{resourceId}/delete` → Runtime `BeginDelete`；
+  `POST .../restore` → Runtime `RestoreResource`（仅 DELETED 且在 owner 30 天恢复窗口内）。
+- Control 每请求执行一次 `IssueDelegation(audience=runtime, permission=resource.manage（ACCOUNT 为
+  account.manage）, scope=路径 resource)`；body 必须含 `resource`（kind+id 与 path 一致）和正十进制
+  `expected_version`，并必须有 `Idempotency-Key`；不一致/缺失→400，未登录→401，拒绝→403。
+- 成功统一返回 **202 + `{operation:{owner_service,operation_id[,resource]}}`**；operation 是唯一进度
+  权威，客户端轮询 `GET /api/v1/operations/runtime/{operationId}`。**BLOCKED 参与者的 operation 仍是
+  成功受理（202），不得显示为删除/恢复失败**；CONFLICT（状态不允许/版本冲突）→409，NOT_FOUND→404，
+  owner 不可用→503。
+- 管理面不级联：Control 不直接删除数据、不绕过 owner 的 gate/参与者，不自动迁移；Host/Scheduler 等
+  参与者由 Runtime operation 推进（未接线时保持 BLOCKED）。
+- operation 查询分支：`runtime`（P13 BeginDelete/Restore/GetOperation）、`scheduler`、`model` 由 P12c-4
+  已实现转发；`host` 不在 OpenAPI `/operations/{ownerService}` 枚举/owner RPC 映射内（P12a 未声明），
+  Control 按非法 owner 返回 400，不伪造 host operation；participants/blocked/reason/next_attempt_at 由
+  `/operations` 权威快照透出（P12c-4）。
