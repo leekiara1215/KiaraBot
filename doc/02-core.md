@@ -513,6 +513,10 @@ stopped），P13a 60s 清理批次执行 7d/30d 保留。**P08b-3b（部分）**
 credential_directory 受冻结协议约束（无凭据交付帧，Runtime 不应直接写 Host 文件系统），
 需部署侧 helper 或契约/用户确认；restart/Delete 专门命令快照仍未接。
 
+**合并回归（2026-11-02）**：P13c 合入时重解 runtime_composition 冲突丢失 HostBridge
+Persistence 回调，HostBridge 只注册不派发，main 的 `p08_host_bridge_e2e` apply 超时；已恢复四路
+回调并保留 P13c HostLifecycleParticipant，e2e 等待增加阶段标签后通过。
+
 ## P09/P10 目标 Storage/Scheduler 应用与端口（未实现）
 
 P09a/P09b：Runtime application 提供 storage 应用（scope 解析、成员/禁用 gate、Get/Set/Delete/CAS、TTL、幂等/收据、配额预留）；`NamespaceRepository` 扩 resolve/get/create_shared/set_members/disable/get_entry/put/erase/quota_admit/receipt_insert，`RuntimeUnitOfWork` 在 P06/P07 访问器后追加 `namespaces()`。共享 namespace 写按固定锁序 namespace 行→成员/版本→namespace 配额→installation 聚合配额→key 行；审计复用 P07 共享 `audit_entries`（resource=namespace/key）。**P09a 阶段 2（已实现）**：PG 落 `namespaces/namespace_members/namespace_values/namespace_quota_counters` 四表加 `namespace_receipt_results` typed replay 载荷表；Runtime schema v11（真 PG16.4 实测 descriptor=09c7176f032043f3bc7ba18f8c87b281、relation_count=134）；私有 namespace 以稳定实例 id 惰性建行，值读写/CAS/删除用条件写并按 DB UTC 惰性清理过期、同事务调整 namespace 与 installation 聚合计数；配额准入按固定锁序条件更新；storage/管理写收据复用 `command_receipts`，同键同 fingerprint 重放返回原快照且不续 TTL，容量按实例/安装计数且不淘汰有效行；Runtime owner RPC 适配 unary storage 与共享 namespace 管理面（application 注入才启用，否则 CAPABILITY_NOT_SUPPORTED）。**P09b（已实现）**：PluginBridge 消费 `PluginToCore.host_request` 的 storage Get/Set/Delete/CompareAndSet 帧并回复 `CoreToPlugin.host_response`；私有 namespace 由已认证实例服务端派生，共享 namespace 由注册的 installation 解析（插件不得自报 namespace id），Set/Delete/CAS 的 condition 由帧携带；bridge 以 P06 会话的 ConnectionAuthorization 版本/有效期 + 注册 profile 的 `storage.namespace` 生成在线授权快照，`RuntimeStorageApplication` 仍执行成员/禁用/配额/收据门禁并把失败映射为稳定 `Error`；unary storage 仅内部注入，不对外暴露。

@@ -27,6 +27,8 @@ e2e（P08b-3b）已完成；真实 `kiarabot-plugin-host`+受管 SDK 插件进�
 - 未确认/失败命令不伪造 stopped：outbox 行保持 Pending/Unknown，receipt 只记录
   `receipt_persisted/outcome`，Runtime 不自行写 process stopped。
 
+- 2026-11-02 合并回归：P13c 合入时 runtime_composition 的 HostBridgePersistence 回调接线被冲突解决误删，HostBridge 只注册不派发，main 的 `p08_host_bridge_e2e` 在 apply 阶段超时；已恢复 pending/dispatched/receipt/observation 四路回调（保留 P13c HostLifecycleParticipant），e2e 等待增加阶段标签，干净增量构建后通过。
+
 ## 未完成 / 风险
 
 - 真实 Host 二进制 + 真 PG 的 HostBridge 命令端到端（含 P08a client journal/resync）未跑；

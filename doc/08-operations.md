@@ -1199,6 +1199,9 @@ probe_listen/grpc_listen/tls），并额外要求 Host-only 的 `host` 对象（
   **未完成**：真实 `kiarabot-plugin-host`+受管 SDK 插件进程 e2e；受管 bootstrap 自动预置受
   冻结协议限制（无 HostBridge 凭据交付帧，Runtime 不直接写 Host 文件系统），仍需部署方按
   0600 文件约定预置或补契约后实现；不得据此宣称 P08 退出。
+  2026-11-02 合并回归修复：P13c 冲突解决丢失 HostBridgePersistence 接线，导致 apply 不下发；
+  已恢复 pending/dispatched/receipt/observation 回调，e2e 通过；运行时应保留 P13c Host lifecycle
+  participant。
 - 当前验证范围：P08a 用 in-process fake Runtime bridge 与 fake supervisor 覆盖注册/fence/心跳/
   resync/命令回执/观察/恢复；真实 Runtime Bridge 监听（P06a-2）与 Host 受管配置的端到端验收
   尚未执行，不能据此宣称 T11b 或真实部署通过。

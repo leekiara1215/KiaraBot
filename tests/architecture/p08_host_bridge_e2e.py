@@ -21,7 +21,6 @@ import signal
 import subprocess
 import sys
 import tempfile
-import time
 
 FINGERPRINT_QUERY = (
     "SELECT state,receipt_persisted FROM kiarabot.host_commands "
@@ -36,6 +35,13 @@ class Failure(RuntimeError):
 def require(condition, label):
     if not condition:
         raise Failure(label)
+
+
+async def read_labeled(stream, label, timeout=5.0):
+    try:
+        return await asyncio.wait_for(stream.read(), timeout=timeout)
+    except asyncio.TimeoutError as error:
+        raise Failure(f'{label}: gRPC stream read timed out after {timeout}s') from error
 
 
 def load_fixture(repo: Path):
@@ -169,12 +175,12 @@ async def main_async(args) -> None:
                 registration=host_pb2.HostRegisterHostRequest(
                     host=host_pb2.HostRecord(host_id='host-a')))
             await stream.write(registration)
-            registered = await stream.read()
+            registered = await read_labeled(stream, 'registration response')
             require(registered.WhichOneof('body') == 'registered', 'registration rejected')
             fence = registered.registered.fence
             require(fence.instance_id == 'host-a' and fence.connection_generation == 1,
                     'unexpected registration fence')
-            dispatched = await asyncio.wait_for(stream.read(), timeout=5)
+            dispatched = await read_labeled(stream, 'apply dispatch')
             if dispatched.WhichOneof('body') != 'apply':
                 error = dispatched.failure.error
                 error_file.flush()
@@ -207,14 +213,14 @@ async def main_async(args) -> None:
             heartbeat.GetCurrentTime()
             await stream.write(host_pb2.HostToRuntime(
                 fence=fence, heartbeat=host_pb2.HostHeartbeat(fence=fence, sent_at=heartbeat)))
-            ack = await asyncio.wait_for(stream.read(), timeout=5)
+            ack = await read_labeled(stream, 'heartbeat ack 1')
             require(ack.WhichOneof('body') == 'heartbeat_ack', 'heartbeat ack missing')
             # Duplicate observation must be accepted idempotently and not create a second row.
             await stream.write(observation)
             heartbeat.GetCurrentTime()
             await stream.write(host_pb2.HostToRuntime(
                 fence=fence, heartbeat=host_pb2.HostHeartbeat(fence=fence, sent_at=heartbeat)))
-            ack = await asyncio.wait_for(stream.read(), timeout=5)
+            ack = await read_labeled(stream, 'heartbeat ack 2 (duplicate observation)')
             require(ack.WhichOneof('body') == 'heartbeat_ack', 'duplicate observation failed')
             state_row = fixture.psql(Path(args.pg_bin), root, port, runtime_password,
                                      FINGERPRINT_QUERY).stdout.decode().strip()
@@ -226,7 +232,7 @@ async def main_async(args) -> None:
             # Reconnect gets a new connection generation; an old fence must be rejected.
             stream = stub.Connect()
             await stream.write(registration)
-            second = await stream.read()
+            second = await read_labeled(stream, 'second registration response')
             require(second.WhichOneof('body') == 'registered', 'second registration rejected')
             require(second.registered.fence.connection_generation == 2,
                     'second generation not advanced')
@@ -235,7 +241,7 @@ async def main_async(args) -> None:
             await stream.write(host_pb2.HostToRuntime(
                 fence=fence,
                 heartbeat=host_pb2.HostHeartbeat(fence=fence, sent_at=old_heartbeat)))
-            rejected = await asyncio.wait_for(stream.read(), timeout=5)
+            rejected = await read_labeled(stream, 'old fence rejection')
             require(rejected.WhichOneof('body') == 'failure',
                     f'old fence was not rejected: {rejected.WhichOneof("body")}')
             await stream.done_writing()
@@ -244,6 +250,12 @@ async def main_async(args) -> None:
                                  COUNT_QUERY).stdout.decode().strip() == '1',
                     'observation count changed after reconnect')
             print('P08 HostBridge e2e: PASS')
+    except BaseException as error:
+        error_path = root / 'runtime.err'
+        if error_path.is_file():
+            print('P08 e2e runtime stderr:\n' + error_path.read_text(errors='replace')[-4000:],
+                  file=sys.stderr)
+        raise error
     finally:
         stop_process(process)
         if error_file:
