@@ -148,6 +148,16 @@ mock 覆盖：登录/刷新、`/auth/me`、会话列表与撤销、9 个资源�
 - 订阅要求每用户显式 `message.read`（admin/operator/viewer 默认都不持有）；未授予时服务端仍以 4403 关闭，面板按终止性失败提示并停止重连。
 - 测试：`panel/tests/integration.test.tsx` 的已知事件刷新用例增加一次 mock `message.updated` 投递断言（被接受并触发刷新），并保留未知事件不触发的断言；未新增 UI。
 
+## P12d Panel 真实接线（2026-11-02）
+
+- 状态：**live 骨架接线完成；P12c Control 后端并行开发中，target 端点契约仍标 not_implemented，请求可能返回 404/501，Panel 显式显示「P12c 后端未实现」且不伪造成功**。仅改 `panel/` 与本文档；未改 `api/`、`proto/`、`control/`、`core/`。
+- 范围：`panel/src/api/client.ts` 新增 P12 目标端点描述符与 live 方法（认证/公开探针分根路径、多占位符 URL、账号/安装/实例/operation/task/model/action metadata/action policy/bind-unbind/desired-state/config），`panel/src/views/p12-live.tsx`（7 页 live 实现），`panel/src/App.tsx`（默认 live；mock 模式保留全 mock 预览与「P12 预览」导航），`panel/src/mock/server.ts`（P12 端点 mock 响应），`panel/tests/p12-live.test.tsx`。
+- 已接线：`/health/live`、`/health/ready`（公开根路径）、受权 `/api/v1/health` 聚合；账号列表；账号↔adapter 绑定/解绑；账号 ActionPolicy（群白名单/禁言踢出开关/每日预算，带 expected_version）；安装列表；实例配置读取与更新、desired-state（以实例为对象，不复用 `/plugins enable`）；operation 进度轮询（受理/执行/受阻/完成/失败/取消/过期 + participants/stalled/reason/next_attempt_at）；任务读取与取消；模型元数据（model.read）与完整只读配置（model.manage）；动作元数据（action.inspect + 显式账号 scope，NOT_FOUND 只显示未找到）。
+- Q 口径：NOT_FOUND 不推断动作失败；日志/审计按 Q2 **阶段性延期**（本版不调用 `/logs`、`/audit`，总览显式标记）；密钥不回显（模型页只显示「已配置」且完整配置受 model.manage 门禁）；会话撤销沿用既有 SessionsPanel；未裁定/未接线的账号创建/停用、安装/实例创建、插件密钥轮换、ListPrincipals 主体目录显式保留待后续。
+- WS/REST：沿用 `ControlStream`；WS 收到 RESYNC_REQUIRED/重连 SESSION_READY 触发 revision，live 页面从 REST 权威快照重新加载（有 mock 测试覆盖 resync 后重新请求 `/accounts`）。
+- 检查（本机实际运行）：`npm test -- --run` **34 passed / 2 skipped（live.test.ts 真后端套件按缺构建产物跳过，预期）**；`npm run lint` 通过；`npm run check:contracts` 通过（45 个 panel 端点、5 个 known events，OpenAPI/AsyncAPI 漂移检查）；`npm run build` 通过。真实 P12c Control/REST/WS 未运行：P12c 并行开发，合并后需补真实 live 验收并翻转对应 target 状态。
+- 与 P12a/P12c 差异：Panel 只消费已冻结的 P12a 路径/权限，不新增或改契约；后端 handler 未在 main，live 页以 404/501 显式降级。P12c 合并后如字段/权限有变，需同步 client 类型与页面映射。
+
 ## P12b Panel 管理面预研骨架（2026-11-02）
 
 - 状态：**骨架/类型/mock 预览完成，未接真实后端**。本段只新增 Panel 侧 target 管理面预览；未修改 `api/`、`proto/`、`control/`、`core/`，未接 live 请求，未新增 UI 依赖。生产管理页接线等待 P12 与 Q1–Q8 决策。
