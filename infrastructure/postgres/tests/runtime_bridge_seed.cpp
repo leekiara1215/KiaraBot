@@ -44,7 +44,7 @@ target::Sha256Digest digest(std::string_view value) {
 
 int main(int argc, char* argv[]) {
   try {
-    if (argc != 9) {
+    if (argc != 11) {
       return 2;
     }
     const std::filesystem::path root{argv[1]};
@@ -55,6 +55,8 @@ int main(int argc, char* argv[]) {
     const std::string adapter_bootstrap{argv[6]};
     const std::string plugin_bootstrap{argv[7]};
     const target::InstallationId installation{argv[8]};
+    const target::InstanceId shutdown_instance{argv[9]};
+    const std::string shutdown_bootstrap{argv[10]};
     pg::DatabaseConfig config{target::Service::Runtime,
                               "localhost",
                               port,
@@ -111,16 +113,33 @@ int main(int argc, char* argv[]) {
     target::BridgeCredentialRecord plugin_credential{"77777777-7777-4777-8777-777777777777",
                                                      instance.value, digest(plugin_bootstrap), now,
                                                      false};
+    target::PluginInstance shutdown_record{shutdown_instance,
+                                           installation,
+                                           installation_record.plugin_type,
+                                           target::ResourceVersion{1},
+                                           target::ResourceVersion{0},
+                                           std::nullopt,
+                                           target::ResourceVersion{1},
+                                           target::LifecycleState::Active,
+                                           std::nullopt,
+                                           target::DesiredState::Running};
+    target::BridgeCredentialRecord shutdown_credential{"88888888-8888-4888-8888-888888888888",
+                                                       shutdown_instance.value,
+                                                       digest(shutdown_bootstrap), now, false};
     const auto saved_account = work->accounts().save(account_record, std::nullopt);
     const auto saved_binding = work->adapter_bindings().save(binding, std::nullopt);
     const auto saved_installation = work->installations().save(installation_record, std::nullopt);
     const auto saved_instance = work->instances().save(instance_record, std::nullopt);
+    const auto saved_shutdown_instance = work->instances().save(shutdown_record, std::nullopt);
+    const auto saved_shutdown_credential = work->bridge_credentials().insert(shutdown_credential);
     const auto saved_adapter_credential = work->bridge_credentials().insert(adapter_credential);
     const auto saved_plugin_credential = work->bridge_credentials().insert(plugin_credential);
     if (std::holds_alternative<target::Failure>(saved_account) ||
         std::holds_alternative<target::Failure>(saved_binding) ||
         std::holds_alternative<target::Failure>(saved_installation) ||
         std::holds_alternative<target::Failure>(saved_instance) ||
+        std::holds_alternative<target::Failure>(saved_shutdown_instance) ||
+        std::holds_alternative<target::Failure>(saved_shutdown_credential) ||
         std::holds_alternative<target::Failure>(saved_adapter_credential) ||
         std::holds_alternative<target::Failure>(saved_plugin_credential)) {
       std::cerr << "seed writes failed\n";

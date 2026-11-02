@@ -81,7 +81,12 @@ enum class BridgeAckStatus { Persisted, Duplicate, Rejected };
 struct BridgeEventAck {
   BridgeAckStatus status = BridgeAckStatus::Rejected;
   std::optional<Failure> failure;
+  // Frozen backpressure semantics: capacity/out-of-order rejections are retryable RATE_LIMITED /
+  // CONFLICT with retry_after_ms and close the stream; the adapter retains the event and resends
+  // after reconnecting. Non-retryable rejections finish the event.
+  bool retryable = false;
   std::uint32_t retry_after_ms = 0;
+  bool close_stream = false;
 };
 
 // Wire-supplied attempt identity for ACK/Renew. The transport never supplies internal execution or
@@ -108,6 +113,7 @@ struct BridgeRegistrationResult {
   std::vector<Capability> effective_capabilities;
   std::vector<std::string> granted_permissions;
   std::vector<std::string> enabled_features;
+  std::uint64_t desired_config_version = 0;
   std::string required_api_version;
   std::string required_protocol_version;
 };
@@ -159,7 +165,9 @@ public:
                                                const BridgeEventIngress& ingress) = 0;
   // Register/remove the push sink of one accepted plugin connection. The central dispatcher
   // claims due deliveries for the persisted instance fence and pushes them through this sink.
-  virtual Status attach_plugin_delivery(const InstanceId& instance, const DeliverySink& sink) = 0;
+  virtual Status attach_plugin_delivery(const InstanceId& instance,
+                                        ConnectionGeneration connection_generation,
+                                        const DeliverySink& sink) = 0;
   virtual void detach_plugin_delivery(const InstanceId& instance,
                                       ConnectionGeneration connection_generation) = 0;
   // Bounded periodic work run by the composition maintenance hook: expiry sweep plus one claim
@@ -168,8 +176,10 @@ public:
   // Graceful shutdown: send one bounded ShutdownNotice to every accepted peer. Returns after the
   // notices were attempted; in-flight work is bounded by the transport drain budget.
   virtual Status attach_shutdown_sink(BridgePeerKind kind, const InstanceId& instance,
+                                      ConnectionGeneration connection_generation,
                                       const ShutdownSink& sink) = 0;
-  virtual void detach_shutdown_sink(BridgePeerKind kind, const InstanceId& instance) = 0;
+  virtual void detach_shutdown_sink(BridgePeerKind kind, const InstanceId& instance,
+                                    ConnectionGeneration connection_generation) = 0;
   virtual Status shutdown_notice() = 0;
   // Plugin ACK/Renew for one claimed attempt. Unknown/stale attempt ids map to DELIVERY_STALE and
   // never confirm another attempt.

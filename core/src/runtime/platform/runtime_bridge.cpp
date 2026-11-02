@@ -1,8 +1,10 @@
 #include "kiarabot/core/runtime/platform/runtime_bridge.hpp"
 
 #include <array>
+#include <atomic>
 #include <chrono>
 #include <cstddef>
+#include <future>
 #include <iostream>
 #include <mutex>
 #include <optional>
@@ -166,6 +168,102 @@ target::Status authorize_frame(target::RuntimeBridgeApplication& application, St
                                      std::get<target::BridgeFence>(expected), parsed,
                                      state.sampled_at);
 }
+// Serialized access to one live gRPC stream. Sinks capture a weak_ptr and can never touch a raw
+// stream pointer after handler teardown; teardown sets alive=false under the same mutex, so an
+// in-flight sink write either completes before teardown or sees the closed guard.
+template <typename Out, typename In> struct StreamGuard {
+  grpc::ServerReaderWriter<Out, In>* stream;
+  grpc::ServerContext* context;
+  std::mutex mutex;
+  bool alive = true;
+  StreamGuard(grpc::ServerReaderWriter<Out, In>* value, grpc::ServerContext* server)
+      : stream(value), context(server) {}
+  bool write(const Out& frame) {
+    std::lock_guard<std::mutex> lock(mutex);
+    if (!alive) {
+      return false;
+    }
+    if (!stream->Write(frame)) {
+      alive = false;
+      return false;
+    }
+    return true;
+  }
+  void close() {
+    std::lock_guard<std::mutex> lock(mutex);
+    alive = false;
+  }
+};
+// Bounded shutdown write: a watchdog cancels the call if Write does not return within the budget.
+// The writer holds the guard mutex, so handler teardown waits for an in-flight write and no raw
+// stream pointer can outlive the handler.
+template <typename Out, typename In>
+bool bounded_write(const std::shared_ptr<StreamGuard<Out, In>>& guard, const Out& frame,
+                   std::chrono::milliseconds budget) {
+  if (!guard) {
+    return false;
+  }
+  std::atomic<bool> finished{false};
+  std::thread watchdog([guard, &finished, budget] {
+    std::this_thread::sleep_for(budget);
+    if (!finished.load()) {
+      guard->context->TryCancel();
+    }
+  });
+  const bool written = guard->write(frame);
+  finished.store(true);
+  watchdog.join();
+  return written;
+}
+class FirstFrameWatchdog {
+public:
+  explicit FirstFrameWatchdog(grpc::ServerContext* context) : context_(context) {
+    thread_ = std::thread([this] {
+      std::unique_lock<std::mutex> lock(mutex_);
+      if (!finished_ &&
+          !condition_.wait_for(lock, std::chrono::seconds{5}, [this] { return finished_; })) {
+        context_->TryCancel();
+      }
+    });
+  }
+  void finish() {
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      finished_ = true;
+    }
+    condition_.notify_all();
+  }
+  ~FirstFrameWatchdog() {
+    finish();
+    if (thread_.joinable()) {
+      thread_.join();
+    }
+  }
+
+private:
+  grpc::ServerContext* context_;
+  std::mutex mutex_;
+  std::condition_variable condition_;
+  bool finished_ = false;
+  std::thread thread_;
+};
+bool transport_registration_failure(target::ErrorCode code) {
+  switch (code) {
+  case target::ErrorCode::Unauthenticated:
+  case target::ErrorCode::PermissionDenied:
+  case target::ErrorCode::InvalidArgument:
+  case target::ErrorCode::UpstreamUnavailable:
+  case target::ErrorCode::Timeout:
+  case target::ErrorCode::Internal:
+    return true;
+  default:
+    return false;
+  }
+}
+target::Failure retryable_failure(target::ErrorCode code) {
+  return {code, target::Acceptance::NotAccepted, target::Recovery::Backoff, {}, {}};
+}
+
 grpc::Status rejected_status(const target::Failure& rejected) {
   return {status_of(rejected.code), "bridge request rejected"};
 }
@@ -349,6 +447,8 @@ public:
   grpc::Status
   Connect(grpc::ServerContext* context,
           grpc::ServerReaderWriter<v1::CoreToAdapter, v1::AdapterToCore>* stream) override {
+    FirstFrameWatchdog watchdog(context);
+    guard_ = std::make_shared<StreamGuard<v1::CoreToAdapter, v1::AdapterToCore>>(stream, context);
     std::string bearer;
     if (!bearer_metadata(*context, bearer)) {
       return {grpc::StatusCode::UNAUTHENTICATED, "bridge authorization missing"};
@@ -357,6 +457,7 @@ public:
     if (!stream->Read(&first) || first.body_case() != v1::AdapterToCore::kRegister) {
       return {grpc::StatusCode::INVALID_ARGUMENT, "registration frame required"};
     }
+    watchdog.finish();
     const auto& registered = first.register_();
     auto deadline = register_deadline(registered.context());
     if (const auto* rejected = std::get_if<target::Failure>(&deadline)) {
@@ -380,11 +481,38 @@ public:
     command.bearer_credential = bearer;
     auto outcome = application_.register_adapter(command);
     if (const auto* rejected = std::get_if<target::Failure>(&outcome)) {
-      return rejected_status(*rejected);
+      if (transport_registration_failure(rejected->code)) {
+        return rejected_status(*rejected);
+      }
+      v1::CoreToAdapter response;
+      auto* rejected_response = response.mutable_register_result();
+      rejected_response->set_accepted(false);
+      *rejected_response->mutable_error() =
+          wire_error(rejected->code, command.request_id, command.trace_id,
+                     rejected->recovery == target::Recovery::Backoff);
+      (void)stream->Write(response);
+      return grpc::Status::OK;
     }
     const auto& result = std::get<target::BridgeRegistrationResult>(outcome);
     StreamState state{
         target::BridgePeerKind::Adapter, result.authorization, command.adapter.value, {}, false};
+    const auto stream_instance = result.authorization.fence.instance;
+    const auto stream_generation = result.authorization.fence.connection_generation;
+    bool shutdown_attached = false;
+    struct Exit {
+      target::RuntimeBridgeApplication& application;
+      std::shared_ptr<StreamGuard<v1::CoreToAdapter, v1::AdapterToCore>> guard;
+      target::InstanceId instance;
+      target::ConnectionGeneration generation;
+      bool* attached;
+      ~Exit() {
+        if (*attached) {
+          application.detach_shutdown_sink(target::BridgePeerKind::Adapter, instance, generation);
+        }
+        guard->close();
+        application.disconnect(target::BridgePeerKind::Adapter, instance, generation);
+      }
+    } exit_guard{application_, guard_, stream_instance, stream_generation, &shutdown_attached};
     {
       v1::CoreToAdapter response;
       auto* registered_response = response.mutable_register_result();
@@ -402,22 +530,26 @@ public:
       }
     }
     const auto shutdown_fence = state.authorization.fence;
-    application_.attach_shutdown_sink(target::BridgePeerKind::Adapter, shutdown_fence.instance,
-                                      [this, stream, shutdown_fence]() -> target::Status {
-                                        v1::CoreToAdapter notice;
-                                        fence_to_wire(shutdown_fence, notice.mutable_fence());
-                                        notice.mutable_shutdown()->set_reason("shutdown");
-                                        notice.mutable_shutdown()->set_drain_timeout_ms(1000);
-                                        if (!write(*stream, notice)) {
-                                          return target::Failure{
-                                              target::ErrorCode::UpstreamUnavailable,
-                                              target::Acceptance::NotAccepted,
-                                              target::Recovery::Backoff,
-                                              {},
-                                              {}};
-                                        }
-                                        return target::Status{std::monostate{}};
-                                      });
+    {
+      std::weak_ptr<StreamGuard<v1::CoreToAdapter, v1::AdapterToCore>> weak = guard_;
+      application_.attach_shutdown_sink(
+          target::BridgePeerKind::Adapter, stream_instance, stream_generation,
+          [weak, shutdown_fence]() -> target::Status {
+            auto guard = weak.lock();
+            if (!guard) {
+              return retryable_failure(target::ErrorCode::UpstreamUnavailable);
+            }
+            v1::CoreToAdapter notice;
+            fence_to_wire(shutdown_fence, notice.mutable_fence());
+            notice.mutable_shutdown()->set_reason("shutdown");
+            notice.mutable_shutdown()->set_drain_timeout_ms(1000);
+            if (!bounded_write(guard, notice, std::chrono::milliseconds{1000})) {
+              return retryable_failure(target::ErrorCode::UpstreamUnavailable);
+            }
+            return std::monostate{};
+          });
+      shutdown_attached = true;
+    }
     grpc::Status status = grpc::Status::OK;
     while (!context->IsCancelled()) {
       v1::AdapterToCore frame;
@@ -515,7 +647,7 @@ public:
         }
         if (ack_result.failure) {
           *ack->mutable_error() = wire_error(ack_result.failure->code, frame.event().event_id(),
-                                             frame.event().trace_id());
+                                             frame.event().trace_id(), ack_result.retryable);
           if (ack_result.retry_after_ms) {
             ack->set_retry_after_ms(ack_result.retry_after_ms);
           }
@@ -523,26 +655,24 @@ public:
         if (!write(*stream, response)) {
           break;
         }
+        if (ack_result.close_stream) {
+          return grpc::Status::OK;
+        }
       } else {
         status = {grpc::StatusCode::INVALID_ARGUMENT, "unsupported bridge frame"};
         break;
       }
     }
-    application_.detach_shutdown_sink(target::BridgePeerKind::Adapter,
-                                      state.authorization.fence.instance);
-    application_.disconnect(target::BridgePeerKind::Adapter, state.authorization.fence.instance,
-                            state.authorization.fence.connection_generation);
     return status;
   }
 
 private:
-  bool write(grpc::ServerReaderWriter<v1::CoreToAdapter, v1::AdapterToCore>& stream,
+  bool write(grpc::ServerReaderWriter<v1::CoreToAdapter, v1::AdapterToCore>&,
              const v1::CoreToAdapter& frame) {
-    std::lock_guard<std::mutex> lock(write_mutex_);
-    return stream.Write(frame);
+    return guard_ && guard_->write(frame);
   }
   target::RuntimeBridgeApplication& application_;
-  std::mutex write_mutex_;
+  std::shared_ptr<StreamGuard<v1::CoreToAdapter, v1::AdapterToCore>> guard_;
 };
 
 class PluginBridgeImpl final : public v1::PluginBridge::Service {
@@ -553,6 +683,8 @@ public:
   grpc::Status
   Connect(grpc::ServerContext* context,
           grpc::ServerReaderWriter<v1::CoreToPlugin, v1::PluginToCore>* stream) override {
+    FirstFrameWatchdog watchdog(context);
+    guard_ = std::make_shared<StreamGuard<v1::CoreToPlugin, v1::PluginToCore>>(stream, context);
     std::string bearer;
     if (!bearer_metadata(*context, bearer)) {
       return {grpc::StatusCode::UNAUTHENTICATED, "bridge authorization missing"};
@@ -561,6 +693,7 @@ public:
     if (!stream->Read(&first) || first.body_case() != v1::AdapterToCore::kRegister) {
       return {grpc::StatusCode::INVALID_ARGUMENT, "registration frame required"};
     }
+    watchdog.finish();
     const auto& registered = first.register_();
     target::BridgePluginRegistration command;
     command.request_id = "plugin-register-" + registered.instance_id();
@@ -591,10 +724,42 @@ public:
     }
     auto outcome = application_.register_plugin(command);
     if (const auto* rejected = std::get_if<target::Failure>(&outcome)) {
-      return rejected_status(*rejected);
+      if (transport_registration_failure(rejected->code)) {
+        return rejected_status(*rejected);
+      }
+      v1::CoreToPlugin response;
+      auto* rejected_response = response.mutable_register_result();
+      rejected_response->set_accepted(false);
+      *rejected_response->mutable_error() =
+          wire_error(rejected->code, {}, {}, rejected->recovery == target::Recovery::Backoff);
+      (void)stream->Write(response);
+      return grpc::Status::OK;
     }
     const auto& result = std::get<target::BridgeRegistrationResult>(outcome);
     StreamState state{target::BridgePeerKind::Plugin, result.authorization, {}, {}, false};
+    const auto stream_instance = result.authorization.fence.instance;
+    const auto stream_generation = result.authorization.fence.connection_generation;
+    bool delivery_attached = false;
+    bool shutdown_attached = false;
+    struct Exit {
+      target::RuntimeBridgeApplication& application;
+      std::shared_ptr<StreamGuard<v1::CoreToPlugin, v1::PluginToCore>> guard;
+      target::InstanceId instance;
+      target::ConnectionGeneration generation;
+      bool* delivery_attached;
+      bool* shutdown_attached;
+      ~Exit() {
+        if (*delivery_attached) {
+          application.detach_plugin_delivery(instance, generation);
+        }
+        if (*shutdown_attached) {
+          application.detach_shutdown_sink(target::BridgePeerKind::Plugin, instance, generation);
+        }
+        guard->close();
+        application.disconnect(target::BridgePeerKind::Plugin, instance, generation);
+      }
+    } exit_guard{application_,      guard_, stream_instance, stream_generation, &delivery_attached,
+                 &shutdown_attached};
     {
       v1::CoreToPlugin response;
       auto* registered_response = response.mutable_register_result();
@@ -606,6 +771,7 @@ public:
       for (const auto& feature : result.enabled_features) {
         registered_response->add_enabled_features(feature);
       }
+      registered_response->set_desired_config_version(result.desired_config_version);
       fence_to_wire(result.authorization.fence, registered_response->mutable_fence());
       authorization_to_wire(result.authorization, registered_response->mutable_authorization());
       fence_to_wire(result.authorization.fence, response.mutable_fence());
@@ -614,51 +780,67 @@ public:
       }
     }
     const auto delivered_instance = result.authorization.fence.instance;
-    target::DeliverySink delivery_sink = [this, stream](const target::EventRecord& event,
-                                                        const target::DeliveryAttempt& attempt,
-                                                        std::string_view) -> target::Status {
-      v1::EventEnvelope envelope;
-      if (!envelope.ParseFromString(event.serialized_envelope)) {
-        return target::Failure{target::ErrorCode::Internal,
-                               target::Acceptance::NotAccepted,
-                               target::Recovery::Diagnose,
-                               {},
-                               {}};
-      }
-      v1::CoreToPlugin frame;
-      fence_to_wire(target::BridgeFence{attempt.fence.instance, attempt.fence.runtime_epoch,
-                                        attempt.fence.execution_generation,
-                                        attempt.fence.connection_generation},
-                    frame.mutable_fence());
-      frame.mutable_delivery_attempt()->CopyFrom(attempt_to_wire(attempt));
-      *frame.mutable_event() = std::move(envelope);
-      if (!write(*stream, frame)) {
-        return target::Failure{target::ErrorCode::UpstreamUnavailable,
-                               target::Acceptance::NotAccepted,
-                               target::Recovery::Backoff,
-                               {},
-                               {}};
-      }
-      return std::monostate{};
-    };
-    application_.attach_plugin_delivery(delivered_instance, delivery_sink);
+    {
+      std::weak_ptr<StreamGuard<v1::CoreToPlugin, v1::PluginToCore>> weak = guard_;
+      target::DeliverySink delivery_sink = [weak](const target::EventRecord& event,
+                                                  const target::DeliveryAttempt& attempt,
+                                                  std::string_view) -> target::Status {
+        auto guard = weak.lock();
+        if (!guard) {
+          return target::Failure{target::ErrorCode::UpstreamUnavailable,
+                                 target::Acceptance::NotAccepted,
+                                 target::Recovery::Backoff,
+                                 {},
+                                 {}};
+        }
+        v1::EventEnvelope envelope;
+        if (!envelope.ParseFromString(event.serialized_envelope)) {
+          return target::Failure{target::ErrorCode::Internal,
+                                 target::Acceptance::NotAccepted,
+                                 target::Recovery::Diagnose,
+                                 {},
+                                 {}};
+        }
+        v1::CoreToPlugin frame;
+        fence_to_wire(target::BridgeFence{attempt.fence.instance, attempt.fence.runtime_epoch,
+                                          attempt.fence.execution_generation,
+                                          attempt.fence.connection_generation},
+                      frame.mutable_fence());
+        frame.mutable_delivery_attempt()->CopyFrom(attempt_to_wire(attempt));
+        *frame.mutable_event() = std::move(envelope);
+        if (!guard->write(frame)) {
+          return target::Failure{target::ErrorCode::UpstreamUnavailable,
+                                 target::Acceptance::NotAccepted,
+                                 target::Recovery::Backoff,
+                                 {},
+                                 {}};
+        }
+        return std::monostate{};
+      };
+      application_.attach_plugin_delivery(delivered_instance, stream_generation, delivery_sink);
+      delivery_attached = true;
+    }
     const auto shutdown_fence = state.authorization.fence;
-    application_.attach_shutdown_sink(target::BridgePeerKind::Plugin, delivered_instance,
-                                      [this, stream, shutdown_fence]() -> target::Status {
-                                        v1::CoreToPlugin notice;
-                                        fence_to_wire(shutdown_fence, notice.mutable_fence());
-                                        notice.mutable_shutdown()->set_reason("shutdown");
-                                        notice.mutable_shutdown()->set_drain_timeout_ms(1000);
-                                        if (!write(*stream, notice)) {
-                                          return target::Failure{
-                                              target::ErrorCode::UpstreamUnavailable,
-                                              target::Acceptance::NotAccepted,
-                                              target::Recovery::Backoff,
-                                              {},
-                                              {}};
-                                        }
-                                        return target::Status{std::monostate{}};
-                                      });
+    {
+      std::weak_ptr<StreamGuard<v1::CoreToPlugin, v1::PluginToCore>> weak = guard_;
+      application_.attach_shutdown_sink(
+          target::BridgePeerKind::Plugin, delivered_instance, stream_generation,
+          [weak, shutdown_fence]() -> target::Status {
+            auto guard = weak.lock();
+            if (!guard) {
+              return retryable_failure(target::ErrorCode::UpstreamUnavailable);
+            }
+            v1::CoreToPlugin notice;
+            fence_to_wire(shutdown_fence, notice.mutable_fence());
+            notice.mutable_shutdown()->set_reason("shutdown");
+            notice.mutable_shutdown()->set_drain_timeout_ms(1000);
+            if (!bounded_write(guard, notice, std::chrono::milliseconds{1000})) {
+              return retryable_failure(target::ErrorCode::UpstreamUnavailable);
+            }
+            return std::monostate{};
+          });
+      shutdown_attached = true;
+    }
     grpc::Status status = grpc::Status::OK;
     while (!context->IsCancelled()) {
       v1::PluginToCore frame;
@@ -775,22 +957,16 @@ public:
         }
       }
     }
-    application_.detach_plugin_delivery(delivered_instance,
-                                        state.authorization.fence.connection_generation);
-    application_.detach_shutdown_sink(target::BridgePeerKind::Plugin, delivered_instance);
-    application_.disconnect(target::BridgePeerKind::Plugin, state.authorization.fence.instance,
-                            state.authorization.fence.connection_generation);
     return status;
   }
 
 private:
-  bool write(grpc::ServerReaderWriter<v1::CoreToPlugin, v1::PluginToCore>& stream,
+  bool write(grpc::ServerReaderWriter<v1::CoreToPlugin, v1::PluginToCore>&,
              const v1::CoreToPlugin& frame) {
-    std::lock_guard<std::mutex> lock(write_mutex_);
-    return stream.Write(frame);
+    return guard_ && guard_->write(frame);
   }
   target::RuntimeBridgeApplication& application_;
-  std::mutex write_mutex_;
+  std::shared_ptr<StreamGuard<v1::CoreToPlugin, v1::PluginToCore>> guard_;
 };
 
 target::Outcome<target::BridgeAuthorization>

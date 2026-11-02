@@ -1,10 +1,12 @@
 #include "runtime_composition.hpp"
 
 #include <array>
+#include <chrono>
 #include <cstddef>
 #include <memory>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -352,7 +354,11 @@ compose_runtime_service(const platform::ProcessConfig& config) {
       if (!state->bridge) {
         return std::monostate{};
       }
-      return state->bridge->shutdown_notice();
+      auto sent = state->bridge->shutdown_notice();
+      // Bounded drain: the writer threads flush the notice frames while the process releases
+      // listeners; a slow peer can never extend shutdown beyond this fixed budget.
+      std::this_thread::sleep_for(std::chrono::milliseconds{500});
+      return sent;
     };
     result.application = std::make_unique<RuntimeReadiness>(std::move(result.application), state);
     return std::move(result);

@@ -29,6 +29,9 @@ ADAPTER_INSTANCE = '33333333-3333-4333-8333-333333333333'
 ACCOUNT = '11111111-1111-4111-8111-111111111111'
 PLUGIN_INSTANCE = '44444444-4444-4444-8444-444444444444'
 INSTALLATION = '55555555-5555-4555-8555-555555555555'
+SHUTDOWN_INSTANCE = 'a1a1a1a1-a1a1-4a1a-8a1a-a1a1a1a1a1a1'
+SHUTDOWN_BOOTSTRAP = 'c' * 64
+UNBOUND_ACCOUNT = '22222222-2222-4222-8222-222222222222'
 ADAPTER_ID = '88888888-8888-4888-8888-888888888888'
 ADAPTER_BOOTSTRAP = 'a' * 64
 PLUGIN_BOOTSTRAP = 'b' * 64
@@ -139,6 +142,15 @@ async def read_or_fail(call, label, timeout=15.0):
     return response
 
 
+async def expect_rpc_error(call, label, allowed):
+    grpc = _grpc()
+    try:
+        response = await asyncio.wait_for(call.read(), 5)
+        raise AcceptanceFailure(f'{label}: expected a gRPC error, got {response}')
+    except grpc.RpcError as error:
+        require(error.code() in allowed, f'{label}: unexpected gRPC code {error.code()}')
+
+
 def fence_fields(fence):
     require(fence.instance_id and fence.runtime_epoch and fence.HasField('execution_generation')
             and fence.execution_generation > 0 and fence.HasField('connection_generation')
@@ -187,7 +199,8 @@ async def async_main(args) -> None:
              'p03_runtime', 'p03_runtime_migration', 'p03_runtime_runtime',
              str(root / 'server.pem'), str(root / 'password-p03_runtime_migration')], env=env)
         seeded = run([seed, str(root), str(port), ADAPTER_INSTANCE, ACCOUNT, PLUGIN_INSTANCE,
-                      ADAPTER_BOOTSTRAP, PLUGIN_BOOTSTRAP, INSTALLATION], env=env)
+                      ADAPTER_BOOTSTRAP, PLUGIN_BOOTSTRAP, INSTALLATION, SHUTDOWN_INSTANCE,
+                      SHUTDOWN_BOOTSTRAP], env=env)
         require(b'SEEDED' in seeded.stdout, 'seed driver did not report success')
 
         with TestPki(openssl) as pki:
@@ -260,6 +273,8 @@ async def async_main(args) -> None:
                     'plugin registration rejected')
             require(plugin_result.fence.instance_id == PLUGIN_INSTANCE,
                     'plugin assigned instance mismatch')
+            require(plugin_result.desired_config_version == 1,
+                    'plugin desired_config_version producer missing')
             plugin_fence = fence_fields(plugin_result.fence)
             require(plugin_result.authorization.HasField('fence') and
                     len(plugin_result.authorization.proof) == 32 and
@@ -374,6 +389,65 @@ async def async_main(args) -> None:
             require(ack_receipt.delivery_receipt.disposition ==
                     platform.DELIVERY_ACKNOWLEDGED, 'ACK disposition mismatch')
 
+            # Stale attempt: the acknowledged attempt is no longer current and must never confirm
+            # a future attempt. The stream stays usable.
+            await plugin_call.write(plugins.PluginToCore(
+                fence=plugin_fence, connection_proof=plugin_proof,
+                renew_delivery=attempt))
+            stale_receipt = await read_or_fail(plugin_call, 'stale renew receipt')
+            require(stale_receipt.WhichOneof('body') == 'delivery_receipt' and
+                    stale_receipt.delivery_receipt.disposition == platform.DELIVERY_STALE,
+                    'stale attempt was not DELIVERY_STALE')
+
+            # Rejected retryable delivery: REJECTED, then maintenance redelivers a new attempt.
+            event_id_2 = str(__import__('uuid').uuid4())
+            envelope_2 = events.EventEnvelope(
+                event_id=event_id_2, trace_id=event_id_2, schema_version='kiarabot.v1',
+                occurred_at=timestamp(time.time()),
+                source=common.SourceRef(adapter_id=ADAPTER_ID,
+                                        adapter_instance_id=ADAPTER_INSTANCE,
+                                        account_id=ACCOUNT),
+                subject=common.Subject(user_id='10001', conversation_id='group-1',
+                                       group_id='group-1'),
+                message_received=events.MessageReceived(
+                    message_id='message-2', sender_id='10001',
+                    conversation=common.ConversationRef(id='group-1',
+                                                        type=common.ConversationRef.GROUP,
+                                                        account_id=ACCOUNT)))
+            await adapter_call.write(adapters.AdapterToCore(
+                fence=adapter_fence, connection_proof=adapter_proof, event=envelope_2))
+            event_ack_2 = await read_or_fail(adapter_call, 'second adapter event_ack')
+            require(event_ack_2.event_ack.status == adapters.AdapterEventAck.PERSISTED,
+                    'second adapter event rejected')
+            delivered_2 = await read_or_fail(plugin_call, 'second plugin delivery', timeout=15)
+            attempt_2 = delivered_2.delivery_attempt
+            require(delivered_2.WhichOneof('body') == 'event' and
+                    delivered_2.event.event_id == event_id_2 and
+                    attempt_2.attempt_number >= 1, 'second delivery incomplete')
+            await plugin_call.write(plugins.PluginToCore(
+                fence=plugin_fence, connection_proof=plugin_proof,
+                event_ack=plugins.PluginEventAck(
+                    event_id=event_id_2, accepted=False,
+                    error=common.Error(code=common.UPSTREAM_UNAVAILABLE, retryable=True),
+                    attempt=attempt_2)))
+            rejected_receipt = await read_or_fail(plugin_call, 'rejected receipt')
+            require(rejected_receipt.WhichOneof('body') == 'delivery_receipt' and
+                    rejected_receipt.delivery_receipt.disposition ==
+                    platform.DELIVERY_REJECTED, 'rejected delivery disposition mismatch')
+            redelivered = await read_or_fail(plugin_call, 'redelivery', timeout=15)
+            attempt_3 = redelivered.delivery_attempt
+            require(redelivered.WhichOneof('body') == 'event' and
+                    redelivered.event.event_id == event_id_2 and
+                    attempt_3.attempt_number > attempt_2.attempt_number,
+                    'retryable rejection was not redelivered with a new attempt')
+            await plugin_call.write(plugins.PluginToCore(
+                fence=plugin_fence, connection_proof=plugin_proof,
+                event_ack=plugins.PluginEventAck(event_id=event_id_2, accepted=True,
+                                                 attempt=attempt_3)))
+            redelivery_ack = await read_or_fail(plugin_call, 'redelivery ack receipt')
+            require(redelivery_ack.delivery_receipt.disposition ==
+                    platform.DELIVERY_ACKNOWLEDGED, 'redelivery ACK mismatch')
+
             refresh_request_id = str(__import__('uuid').uuid4())
             await adapter_call.write(adapters.AdapterToCore(
                 fence=adapter_fence, connection_proof=adapter_proof,
@@ -404,20 +478,89 @@ async def async_main(args) -> None:
 
             psql_result = psql(pg_bin, root, port, runtime_password,
                                'SELECT state FROM kiarabot.delivery_targets')
-            require(psql_result.stdout.strip() == b'3', 'delivery target was not acknowledged')
+            require(sorted(psql_result.stdout.split()) == [b'3', b'3'],
+                    f'delivery targets not acknowledged: {psql_result.stdout!r}')
 
-            plugin_call.cancel()
-            adapter_call.cancel()
-            channel.close()
-            channel = None
+            # Revocation must win within <=1s even though the peer still has valid proof.
+            psql(pg_bin, root, port, runtime_password,
+                 f"UPDATE kiarabot.bridge_credentials SET revoked=true WHERE "
+                 f"resource_id={quote_sql(PLUGIN_INSTANCE)}")
+            await asyncio.sleep(0.7)
+            started = time.monotonic()
+            await plugin_call.write(plugins.PluginToCore(
+                fence=plugin_fence, connection_proof=plugin_proof,
+                heartbeat=plugins.PluginHeartbeat(instance_id=PLUGIN_INSTANCE,
+                                                  sent_at_unix_ms=int(time.time() * 1000))))
+            await expect_rpc_error(plugin_call, 'revoked plugin stream',
+                                   {_grpc().StatusCode.UNAUTHENTICATED,
+                                    _grpc().StatusCode.PERMISSION_DENIED})
+            require(time.monotonic() - started < 3.0, 'revocation took too long')
+
+            # Cross-account injection must terminate the adapter stream without persistence or
+            # fan-out.
+            targets_before = psql(pg_bin, root, port, runtime_password,
+                                  'SELECT count(*) FROM kiarabot.delivery_targets').stdout.strip()
+            bad_event = str(__import__('uuid').uuid4())
+            bad_envelope = events.EventEnvelope(
+                event_id=bad_event, trace_id=bad_event, schema_version='kiarabot.v1',
+                occurred_at=timestamp(time.time()),
+                source=common.SourceRef(adapter_id=ADAPTER_ID,
+                                        adapter_instance_id=ADAPTER_INSTANCE,
+                                        account_id=UNBOUND_ACCOUNT),
+                subject=common.Subject(user_id='10002', conversation_id='group-2',
+                                       group_id='group-2'),
+                message_received=events.MessageReceived(
+                    message_id='message-bad', sender_id='10002',
+                    conversation=common.ConversationRef(id='group-2',
+                                                        type=common.ConversationRef.GROUP,
+                                                        account_id=UNBOUND_ACCOUNT)))
+            await adapter_call.write(adapters.AdapterToCore(
+                fence=adapter_fence, connection_proof=adapter_proof, event=bad_envelope))
+            await expect_rpc_error(adapter_call, 'unbound account event',
+                                   {_grpc().StatusCode.PERMISSION_DENIED,
+                                    _grpc().StatusCode.UNAUTHENTICATED})
+            targets_after = psql(pg_bin, root, port, runtime_password,
+                                 'SELECT count(*) FROM kiarabot.delivery_targets').stdout.strip()
+            require(targets_before == targets_after,
+                    'cross-account event was persisted or fanned out')
+
+            # A fresh accepted stream receives the bounded ShutdownNotice before closure.
+            shutdown_factory = channel.stream_stream(
+                '/kiarabot.v1.PluginBridge/Connect',
+                request_serializer=plugins.PluginToCore.SerializeToString,
+                response_deserializer=plugins.CoreToPlugin.FromString)
+            shutdown_call = shutdown_factory(
+                metadata=(('authorization', 'Bearer ' + SHUTDOWN_BOOTSTRAP),))
+            await shutdown_call.write(plugins.PluginToCore(
+                register=plugins.RegisterPluginRequest(
+                    manifest=plugins.PluginManifest(
+                        id='p06.bridge.shutdown', name='P06 Shutdown Plugin', version='1.0.0',
+                        api_version='kiarabot.plugin.v1', runtime='python-rpc',
+                        entrypoint='plugin:factory', isolation='process', config_schema='{}',
+                        ordered=False, capabilities=['event.message.received'],
+                        permissions=['message.read']),
+                    instance_id=SHUTDOWN_INSTANCE, supported_features=[])))
+            shutdown_registered = await read_or_fail(shutdown_call, 'shutdown plugin registration')
+            require(shutdown_registered.WhichOneof('body') == 'register_result' and
+                    shutdown_registered.register_result.accepted,
+                    'shutdown plugin registration rejected')
+
             process.send_signal(signal.SIGTERM)
+            notice = await read_or_fail(shutdown_call, 'shutdown notice', timeout=5)
+            require(notice.WhichOneof('body') == 'shutdown',
+                    'Runtime closed without a ShutdownNotice')
+            require(notice.shutdown.reason == 'shutdown' and
+                    notice.shutdown.drain_timeout_ms == 1000,
+                    'ShutdownNotice payload mismatch')
             require(process.wait(timeout=8) == 0, 'Runtime did not shut down cleanly')
             output = (process.stdout.read() if process.stdout is not None else b'') + (
                 error_path.read_bytes() if error_path.exists() else b'')
             require(b'PRIVATE KEY' not in output and b'password=' not in output,
                     'Runtime diagnostics leaked secret material')
             process = None
-            print('P06 external bridge TLS acceptance passed (register/event/lease/renew/ack/refresh/revoke-free clean shutdown)')
+            print('P06 external bridge TLS acceptance passed '
+                  '(register/event/lease/renew/ack/refresh/stale/rejected-retry/'
+                  'revocation/cross-account-rejection/shutdown-notice)')
     finally:
         if channel is not None:
             await channel.close()

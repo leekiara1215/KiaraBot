@@ -171,6 +171,12 @@ public:
       return invalid_runtime_input();
     }
     try {
+      {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (current_.size() >= kMaximumBridgeConnections) {
+          return bridge_failure(ErrorCode::RateLimited, Recovery::Backoff);
+        }
+      }
       auto resolved = resolve_bootstrap(BridgePeerKind::Adapter, request.bearer_credential);
       if (const auto* failure = std::get_if<Failure>(&resolved)) {
         return *failure;
@@ -245,6 +251,12 @@ public:
       return *failure;
     }
     try {
+      {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (current_.size() >= kMaximumBridgeConnections) {
+          return bridge_failure(ErrorCode::RateLimited, Recovery::Backoff);
+        }
+      }
       auto resolved = resolve_bootstrap(BridgePeerKind::Plugin, request.bearer_credential);
       if (const auto* failure = std::get_if<Failure>(&resolved)) {
         return *failure;
@@ -286,6 +298,15 @@ public:
           current->installation.value != request.installation_id->value) {
         return permission_denied();
       }
+      // B1 wire field: the client may only repeat the already allocated external execution
+      // generation (the first registration allocates 1); a different value never changes it.
+      if (request.execution_generation) {
+        const auto expected =
+            current->current ? current->current->execution_generation.value : std::uint64_t{1};
+        if (*request.execution_generation != expected) {
+          return runtime_conflict_failure();
+        }
+      }
       auto expected_version = std::optional<ResourceVersion>{current->version};
       Fence fence;
       fence.instance = instance;
@@ -322,6 +343,7 @@ public:
       bridge.assigned_instance_id = instance;
       bridge.heartbeat_interval_seconds = 30;
       bridge.required_api_version = std::string{kPluginApiVersion};
+      bridge.desired_config_version = current->desired_version.value;
       bridge.granted_permissions = request.manifest.permissions;
       for (const auto& feature : request.supported_features) {
         if (std::find(supported_features_.begin(), supported_features_.end(), feature) !=
@@ -464,14 +486,18 @@ public:
     if (!bridge_frame_fence_matches(current, fence) || !bridge_secret_equal(current.proof, proof)) {
       return unauthenticated();
     }
-    std::lock_guard<std::mutex> lock(mutex_);
-    const auto found = current_.find(bridge_key(kind, current.fence.instance));
-    if (found == current_.end() || found->second.fence != current.fence ||
-        found->second.fence.connection_generation != current.fence.connection_generation ||
-        !bridge_secret_equal(found->second.proof, current.proof)) {
-      return unauthenticated();
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      const auto found = current_.find(bridge_key(kind, current.fence.instance));
+      if (found == current_.end() || found->second.fence != current.fence ||
+          found->second.fence.connection_generation != current.fence.connection_generation ||
+          !bridge_secret_equal(found->second.proof, current.proof)) {
+        return unauthenticated();
+      }
     }
-    return std::monostate{};
+    // Bounded local authority refresh: revocation/disable/invalidation becomes effective within
+    // kBridgeAuthorizationGateInterval (<=1s) even when the peer keeps sending valid proofs.
+    return authorization_gate(kind, current.fence.instance, now);
   }
 
   Status disconnect(BridgePeerKind kind, const InstanceId& instance,
@@ -482,6 +508,7 @@ public:
     if (found != current_.end() &&
         found->second.fence.connection_generation == connection_generation) {
       current_.erase(found);
+      gates_.erase(key);
     }
     return std::monostate{};
   }
@@ -510,6 +537,10 @@ public:
 
   Outcome<BridgeEventAck> ingest_event(const InstanceId& adapter_instance,
                                        const BridgeEventIngress& ingress) override {
+    if (!canonical_id(ingress.account_id) || !canonical_id(ingress.adapter_id) ||
+        ingress.event_id.empty()) {
+      return invalid_runtime_input();
+    }
     auto fingerprint = secrets_.sha256(ingress.serialized_envelope);
     if (const auto* failure = std::get_if<Failure>(&fingerprint)) {
       return *failure;
@@ -551,14 +582,39 @@ public:
       if (!work) {
         return internal_failure();
       }
+      // Audit the envelope account against the authoritative A1 binding and registration: a stream
+      // authenticated for one instance must never inject events for an unbound account.
+      auto binding = work->adapter_bindings().find(ResourceId{ingress.account_id});
+      if (const auto* failure = std::get_if<Failure>(&binding)) {
+        return *failure;
+      }
+      const auto bound = std::get<std::optional<AdapterBindingRecord>>(binding);
+      if (!bound || bound->state != LifecycleState::Active ||
+          bound->adapter_instance != adapter_instance) {
+        work->rollback();
+        return permission_denied();
+      }
+      auto adapter = work->adapters().by_instance(adapter_instance);
+      if (const auto* failure = std::get_if<Failure>(&adapter)) {
+        return *failure;
+      }
+      const auto registered = std::get<std::optional<AdapterRecord>>(adapter);
+      if (!registered || registered->state != LifecycleState::Active ||
+          registered->current.instance != adapter_instance) {
+        work->rollback();
+        return permission_denied();
+      }
       auto accepted = work->events().accept(event, targets, EventCapacityLimits{});
       if (const auto* rejected = std::get_if<Failure>(&accepted)) {
         work->rollback();
         BridgeEventAck ack;
         ack.status = BridgeAckStatus::Rejected;
         ack.failure = *rejected;
-        if (rejected->code == ErrorCode::RateLimited) {
+        if (rejected->code == ErrorCode::RateLimited ||
+            rejected->code == ErrorCode::UpstreamUnavailable) {
+          ack.retryable = true;
           ack.retry_after_ms = 1000;
+          ack.close_stream = true;
         }
         return ack;
       }
@@ -572,6 +628,9 @@ public:
       } else if (result.sequence.verdict == SequenceVerdict::OutOfOrder) {
         ack.status = BridgeAckStatus::Rejected;
         ack.failure = bridge_failure(ErrorCode::Conflict, Recovery::ReadCurrent);
+        ack.retryable = true;
+        ack.retry_after_ms = 1000;
+        ack.close_stream = true;
       } else {
         ack.status = BridgeAckStatus::Persisted;
       }
@@ -584,17 +643,14 @@ public:
     }
   }
 
-  Status attach_plugin_delivery(const InstanceId& instance, const DeliverySink& sink) override {
-    if (!sink) {
+  Status attach_plugin_delivery(const InstanceId& instance,
+                                ConnectionGeneration connection_generation,
+                                const DeliverySink& sink) override {
+    if (!sink || connection_generation.value == 0) {
       return invalid_runtime_input();
     }
     std::lock_guard<std::mutex> lock(mutex_);
-    auto entry = sinks_.find(instance.value);
-    if (entry == sinks_.end()) {
-      sinks_.emplace(instance.value, SinkEntry{sink, {}, std::nullopt});
-    } else {
-      entry->second.sink = sink;
-    }
+    sinks_[instance.value] = SinkEntry{sink, {}, connection_generation};
     return std::monostate{};
   }
 
@@ -603,15 +659,16 @@ public:
     std::lock_guard<std::mutex> lock(mutex_);
     const auto entry = sinks_.find(instance.value);
     if (entry != sinks_.end() &&
-        (!entry->second.connection_generation ||
-         entry->second.connection_generation->value == connection_generation.value)) {
+        entry->second.connection_generation.value == connection_generation.value) {
       sinks_.erase(entry);
     }
-    const auto refreshed = current_.find(bridge_key(BridgePeerKind::Plugin, instance));
+    const auto key = bridge_key(BridgePeerKind::Plugin, instance);
+    const auto refreshed = current_.find(key);
     if (refreshed != current_.end() &&
         refreshed->second.fence.connection_generation == connection_generation) {
       current_.erase(refreshed);
       plugin_profiles_.erase(instance.value);
+      gates_.erase(key);
     }
   }
 
@@ -643,6 +700,22 @@ public:
       }
       const auto& bytes = std::get<std::array<std::byte, 32>>(entropy);
       const auto jitter = static_cast<double>(static_cast<unsigned char>(bytes[0])) / 255.0;
+      const bool recover_now = !recovered_;
+      const bool prune_now = (++maintenance_round_ % 60U) == 0;
+      if (recover_now) {
+        auto recovered = work->events().recover(now, RetryPolicy{}, jitter);
+        if (const auto* failure = std::get_if<Failure>(&recovered)) {
+          work->rollback();
+          return transient(*failure);
+        }
+      }
+      if (prune_now) {
+        auto pruned = work->events().prune_expired(now, 100);
+        if (const auto* failure = std::get_if<Failure>(&pruned)) {
+          work->rollback();
+          return transient(*failure);
+        }
+      }
       auto swept = work->events().sweep(now, RetryPolicy{}, jitter);
       if (const auto* failure = std::get_if<Failure>(&swept)) {
         work->rollback();
@@ -693,6 +766,9 @@ public:
       if (work->commit() != CommitResult::Committed) {
         return transient(runtime_conflict_failure());
       }
+      if (recover_now) {
+        recovered_ = true;
+      }
       for (auto& group : pending) {
         DeliverySink sink;
         {
@@ -701,8 +777,10 @@ public:
           if (entry == sinks_.end()) {
             continue;
           }
-          sinks_[group.instance.value].connection_generation =
-              ConnectionGeneration{group.claims.front().attempt.fence.connection_generation};
+          if (entry->second.connection_generation.value !=
+              group.claims.front().attempt.fence.connection_generation.value) {
+            continue;
+          }
           for (const auto& claim : group.claims) {
             sinks_[group.instance.value].attempts[claim.attempt.attempt.value] =
                 claim.attempt.delivery;
@@ -722,18 +800,25 @@ public:
   }
 
   Status attach_shutdown_sink(BridgePeerKind kind, const InstanceId& instance,
+                              ConnectionGeneration connection_generation,
                               const ShutdownSink& sink) override {
-    if (!sink) {
+    if (!sink || connection_generation.value == 0) {
       return invalid_runtime_input();
     }
     std::lock_guard<std::mutex> lock(mutex_);
-    shutdown_sinks_[bridge_key(kind, instance)] = sink;
+    shutdown_sinks_[bridge_key(kind, instance)] = ShutdownEntry{connection_generation, sink};
     return std::monostate{};
   }
 
-  void detach_shutdown_sink(BridgePeerKind kind, const InstanceId& instance) override {
+  void detach_shutdown_sink(BridgePeerKind kind, const InstanceId& instance,
+                            ConnectionGeneration connection_generation) override {
     std::lock_guard<std::mutex> lock(mutex_);
-    shutdown_sinks_.erase(bridge_key(kind, instance));
+    const auto key = bridge_key(kind, instance);
+    const auto entry = shutdown_sinks_.find(key);
+    if (entry != shutdown_sinks_.end() &&
+        entry->second.connection_generation.value == connection_generation.value) {
+      shutdown_sinks_.erase(entry);
+    }
   }
 
   Status shutdown_notice() override {
@@ -741,9 +826,9 @@ public:
     {
       std::lock_guard<std::mutex> lock(mutex_);
       sinks.reserve(shutdown_sinks_.size());
-      for (const auto& [key, sink] : shutdown_sinks_) {
+      for (const auto& [key, entry] : shutdown_sinks_) {
         (void)key;
-        sinks.push_back(sink);
+        sinks.push_back(entry.sink);
       }
     }
     Status result = std::monostate{};
@@ -773,6 +858,65 @@ public:
   }
 
 private:
+  Status authorization_gate(BridgePeerKind kind, const InstanceId& instance, TimePoint now) {
+    const auto key = bridge_key(kind, instance);
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      const auto cached = gates_.find(key);
+      if (cached != gates_.end() && now >= cached->second.checked &&
+          now - cached->second.checked < kBridgeAuthorizationGateInterval) {
+        return cached->second.allowed ? Status{std::monostate{}} : permission_denied();
+      }
+    }
+    try {
+      auto begun = transactions_.begin();
+      if (const auto* failure = std::get_if<Failure>(&begun)) {
+        return *failure;
+      }
+      auto work = std::move(std::get<std::unique_ptr<RuntimeUnitOfWork>>(begun));
+      if (!work) {
+        return internal_failure();
+      }
+      bool allowed = false;
+      auto active = work->bridge_credentials().active(instance.value);
+      if (const auto* failure = std::get_if<Failure>(&active)) {
+        return *failure;
+      }
+      if (std::get<bool>(active)) {
+        if (kind == BridgePeerKind::Adapter) {
+          auto adapter = work->adapters().by_instance(instance);
+          if (const auto* failure = std::get_if<Failure>(&adapter)) {
+            return *failure;
+          }
+          const auto record = std::get<std::optional<AdapterRecord>>(adapter);
+          auto bound = work->active_bindings(instance);
+          if (const auto* failure = std::get_if<Failure>(&bound)) {
+            return *failure;
+          }
+          allowed = record && record->state == LifecycleState::Active &&
+                    record->current.instance == instance && std::get<std::size_t>(bound) > 0;
+        } else {
+          auto found = work->instances().find(instance);
+          if (const auto* failure = std::get_if<Failure>(&found)) {
+            return *failure;
+          }
+          const auto record = std::get<std::optional<PluginInstance>>(found);
+          allowed = record && record->state == LifecycleState::Active && !record->host.has_value();
+        }
+      }
+      work->rollback();
+      {
+        std::lock_guard<std::mutex> lock(mutex_);
+        gates_[key] = GateEntry{now, allowed};
+      }
+      return allowed ? Status{std::monostate{}} : permission_denied();
+    } catch (const std::bad_alloc&) {
+      return unavailable();
+    } catch (...) {
+      return internal_failure();
+    }
+  }
+
   static Status transient(const Failure& failure) {
     if (failure.code == ErrorCode::Conflict || failure.code == ErrorCode::UpstreamUnavailable ||
         failure.code == ErrorCode::Timeout) {
@@ -984,7 +1128,15 @@ private:
   struct SinkEntry {
     DeliverySink sink;
     std::map<std::string, DeliveryKey> attempts;
-    std::optional<ConnectionGeneration> connection_generation;
+    ConnectionGeneration connection_generation;
+  };
+  struct ShutdownEntry {
+    ConnectionGeneration connection_generation;
+    ShutdownSink sink;
+  };
+  struct GateEntry {
+    TimePoint checked;
+    bool allowed = false;
   };
 
   RuntimeUnitOfWorkFactory& transactions_;
@@ -995,8 +1147,11 @@ private:
   mutable std::mutex mutex_;
   std::map<std::string, BridgeAuthorization> current_;
   std::map<std::string, PluginProfile> plugin_profiles_;
-  std::map<std::string, ShutdownSink> shutdown_sinks_;
+  std::map<std::string, ShutdownEntry> shutdown_sinks_;
   std::map<std::string, SinkEntry> sinks_;
+  std::map<std::string, GateEntry> gates_;
+  bool recovered_ = false;
+  std::uint64_t maintenance_round_ = 0;
   std::optional<RuntimeEpoch> epoch_;
 };
 

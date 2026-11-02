@@ -51,6 +51,10 @@ struct BridgeAuthorization {
 // total budget including refresh skew stays under the 60-second contract bound.
 inline constexpr auto kBridgeAuthorizationLifetime = std::chrono::seconds{56};
 inline constexpr std::uint64_t kBridgeCredentialVersion = 1;
+// Bounded external connection table; registration above the limit is rejected with RATE_LIMITED.
+inline constexpr std::size_t kMaximumBridgeConnections = 128;
+// Local authorization gate refresh interval: a revoked/disabled peer is rejected within 1 second.
+inline constexpr auto kBridgeAuthorizationGateInterval = std::chrono::milliseconds{500};
 inline constexpr std::size_t kBridgeProofBytes = 32;
 
 inline bool valid_bridge_fence(const BridgeFence& fence) {
