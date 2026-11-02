@@ -487,19 +487,14 @@ P08b 在 Runtime application 内新增 HostBridge 入站应用：内部 mTLS 注
 
 **P08b-2b（已实现，传输层）**：`core/src/runtime/platform/host_bridge_server.{hpp,cpp}` 实现 `v1::HostBridge::Service::Connect` 同步 bidi：首帧必须为 registration，服务端用 `extract_peer_certificate(*ServerContext::auth_context())` 取内部 mTLS 叶证书 SHA-256，交给 `RuntimeHostApplication::register_host` 与部署 `hosts[]` allowlist（`certificate_sha256 → host_id`，空 allowlist 拒绝所有）匹配，回 `registered{host,fence}`；此后每帧必须携带精确当前 fence，旧 generation/缺失 fence 以 `CONFLICT` failure 结束流；heartbeat 经 `RuntimeHostApplication::heartbeat` 更新 `last_heartbeat_at`/online 并回 `heartbeat_ack{fence,received_at,interval=5s,resync_required}`，cursor epoch 不匹配强制 resync；inventory/receipt/observation 做帧校验并交给可选 P08b-3 回调（当前 composition 未接持久化回调，只有传输校验）。注册认证失败映射稳定 gRPC `PERMISSION_DENIED`/`UNAUTHENTICATED`，注册后业务失败映射 `RuntimeToHost.failure` 的稳定 Error。服务端只由 Runtime composition 注册在 owner mTLS `grpc_listen`，替换 generated `HostBridge` 占位，不占用 `bridge_listen`。配置 only Runtime 允许 `hosts[]`；PG `HostRegistration` 持久化接线与真实 Host 二进制、PG 证据留 P08b-2c，当前 composition 用进程内 allowlist/registration/connection store（重启不保留，显式未完成）。
 
-**P08b-3/3a（已实现传输闭环，3b 真实 Host/凭据待完成）**：Runtime UoW 新增 `host_commands()`
-（默认 fail-closed），PG 实现 outbox 与 observation inbox（schema v15，含 installation 快照）；
-P05 `CreateInstance`（带 host）与 `SetDesiredState` 在同 UoW 写确定性 `hc-<payload sha256>`
-快照，重复幂等/异 payload CONFLICT。HostBridge server 在注册和每次 heartbeat 后按当前
-connection_generation 读取 pending，下发 apply/stop/drain（含 command_id/generation/
-installation/desired version/package/launch profile/args/env 与 payload hash），写入成功后标记
-Dispatched；receipt 帧按 (command_id, connection_generation) 条件更新，旧 generation/不一致
-receipt 返回 FAILURE，重复相同 receipt 幂等；observation 帧按
-(host,connection_generation,cursor.sequence) 去重写入，校验 cursor epoch/generation，重复帧与
-resync 重放幂等；新 connection 重放未 receipt 的同一 command_id。30s 未回执转 Unknown（不写
-stopped），P13a 60s 清理批次执行 7d/30d 保留。**未完成（3b）**：真实 Host 二进制 e2e、受管
-bootstrap 自动写入 Host credential_directory、restart/Delete 专门命令快照；当前执行投影以
-receipt_outcome/observation 为准，尚无独立 observed-state 列表。
+**P08b-3（部分实现）**：Runtime UoW 新增 `host_commands()`（默认 fail-closed），PG 实现
+`host_commands` outbox 与 `host_observations` inbox（Runtime schema v14）；P05 的
+`CreateInstance`（带 host）与 `SetDesiredState` 在同一事务内写确定性 `hc-<payload sha256>`
+命令快照（kind/generation/desired version/package sha/launch profile/payload hash），重复插入
+同 payload 幂等、同 id 不同 payload CONFLICT；受管实例与外部实例均生成一次性 bootstrap，
+Runtime 只存 SHA-256、明文仅出现在部署方 CreateInstance 响应。**未完成**：HostBridge server
+从 outbox 下发 apply/stop/drain、receipt/observation 帧写回 PG、重连重放/resync、restart/delete
+命令与 Host 凭据目录自动预置；因此 command 的发送/确认仍没有端到端证据。
 
 ## P09/P10 目标 Storage/Scheduler 应用与端口（未实现）
 
@@ -1488,3 +1483,9 @@ authentication.subject 与请求 owner_instance/account，不接受 installation
 `HostService::stop()` 与 Host 组合根 `before_stop`（SIGTERM/SIGINT）按固定顺序收尾：先对每个未终态 `managed_executions` 执行有界 TERM（grace≤10s，supervisor 负责 TERM→KILL），再 `flush_pending_locked()` 把最终 execution observation 通过 HostBridge 上报，随后对 Host 本地 SQLite journal 做一次有界 prune，关闭 journal，最后停止 HostBridge 连接。任何无法确认的终止保持 `ManagedExecutionState::Unknown`/`ExecutionOutcome::Unknown`，shutdown 不把 UNKNOWN 改写成 stopped/succeeded；同代次恢复不重复 spawn（P08a marker 规则）。Host 进程以 0 退出；`kiarabot-plugin-host` 的 `host_connections` 代次/epoch 仍由 Runtime 注册投影维护（P08b）。
 
 SDK `ShutdownNotice` 收尾：停止接收新事件，但 reader 在 drain 窗口内继续处理 delivery receipt/host/action response，等待已受理事件队列排空后才结束 session；超窗口则停止等待（不无限阻塞），`on_stop('shutdown')` 最后执行一次，`_draining` 抑制重连，进程正常退出 0。Adapter `ShutdownNotice`：在该连接内不再发新事件/新 Action，未确认事件保留本地 outbox，drain 窗口后按退避重连（Runtime 重启新代次），`on_shutdown` 顺序为 stop event → 取消连接任务 → 关健康端口 → close action journal/outbox；致命鉴权失败以非零码退出。Adapter 在异机部署时与 Host 无共享 SQLite，仅通过 Runtime/PluginBridge 观察事实，Host 停止不代表 Adapter 已停止。
+
+### P13c Host 参与者真实接线与 P13 target 登记（2026-11-02）
+
+Runtime 生命周期 maintenance 的 Host 参与者不再使用 fake 端口：`RuntimeHostLifecycleParticipant` 在维护线程外开启短 UoW，按与实例 desired-state 一致的确定性 command identity 向 P08b-3 `host_command` outbox 写 `StopExecution` 快照（host/instance/execution_generation/desired_version/package hash/payload hash），同 command_id 重放幂等。只有 outbox 出现持久 receipt 且 `receipt_outcome` 为 `KnownSucceeded/KnownFailed` 时才返回 Done；`Pending/Dispatched/Unknown` 持续 BLOCKED（UNKNOWN 不伪 stopped），Host 明确拒绝（persisted=false）返回可观测 BLOCKED(Conflict)，等待 P08b-3b 的 HostBridge 命令下发/回执与 P13b Host drain 语义完成。Scheduler 参与者仍按 P10 契约的 `ListTasks/CancelTask` 实例委托接口预留：Runtime→Scheduler 的真实 delegation 签发/endpoint 配置未在 composition 中提供前保持 BLOCKED，测试用 fake 端口验证“离线不完成、恢复后收敛”。Control 的 operation 快照（participants/blocked/reason）与 P12c 路由已就绪，本阶段只补 target 登记，不重复实现 REST。
+
+P13 target 翻转（证据：P13a 应用/PG/RPC + 真实 Runtime↔Identity e2e + P13b Host drain 矩阵）：`RuntimeGetOperationRequest/Response`、`RuntimeBeginDeleteRequest/Response`、`RuntimeRestoreResourceRequest/Response`、`Operation`、`OperationRef`、`OperationProgress` 及字段、`OperationState.*`、`operations.getOperation`。`RuntimeService.BeginDelete/RestoreResource/GetOperation` 的 target_spec 状态同步为 implemented；REST 的 beginDelete/restore 操作仍 not_implemented（Control 未接线），getOperation 以 P12c owner gateway 实现并保留 REST 规则的 unavailable marker。

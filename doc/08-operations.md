@@ -326,7 +326,7 @@ proto + infrastructure 构建可通过 `KIARABOT_CONTROL_CONFIG` 指定私有 JS
 
 ## P14a 目标部署面（Docker/Compose，未验证）
 
-- 状态：**已实现 P14a 交付文件；本机无 Docker，镜像构建/Compose 启动/healthcheck/初始化/两主机行为均未执行、未验证**。不得把下文当作已验收部署。默认拓扑已由用户确认为**单主机 Docker Compose**；两主机（Host-A 数据/控制面 + Host-B 执行面）改为可选且**延期单独记录**。P13 drain/生命周期已合入，启停顺序见下文 P14c/P13b 段。
+- 状态：**已实现 P14a 交付文件；本机无 Docker，镜像构建/Compose 启动/healthcheck/初始化/两主机行为均未执行、未验证**。不得把下文当作已验收部署。两主机拓扑（Host-A 数据/控制面 + Host-B 执行面）按 P14 提案文档化，**待用户确认**；P13 的 drain/生命周期设计未合入，启停顺序只是临时口径。
 - 交付物：`deploy/docker/suite.Dockerfile`（Ubuntu24.04 + 固定 vcpkg registry/manifest + Python3.11.18/uv0.13.6 生成 proto，构建 `kiarabot-control/-identity/-runtime/-plugin-host/-scheduler/-model` + `kiarabot-pg-initialize` + `kiarabot-identity-bootstrap`，共享 runtime base 与六个薄镜像 + tools）；`deploy/compose.infra.yml`（PG16.4/四私有库、TLS/数据/备份卷、显式 init profile）；`deploy/compose.core.yml`（六服务、只读 rootfs/非 root/资源限制/healthcheck/只读 config-TLS-secrets 挂载）；`deploy/compose.exec.yml`（Plugin Host + Adapter，Adapter 使用 P06c `BRIDGE_*`/`ONEBOT_*_FILE` 与 bootstrap 秘密）；`deploy/target.env.example`、`deploy/target/README.md`、`scripts/deploy/target-initialize.sh`、`scripts/deploy/target-smoke.sh`、`deploy/README.md`。
 - 拓扑/端口（提案默认，待确认）：Host-A 的 PG 5432（不公网）+ Identity 7441/probe 9081、Runtime 7442/ bridge 7443/probe 9082、Scheduler 7444/9083、Model 7445/9084、Control 8080/9080、Panel 8082；Host-B 的 Plugin Host 7446/9085、Adapter health 8081；所有 owner gRPC 用 mTLS，Runtime bridge 用 server-verified TLS + Bearer bootstrap，Panel 仅经反代/隧道对外。端口可在 `deploy/target.env` 覆盖并按防火墙收敛。
 - TLS/秘密：部署自建 CA/leaf（SAN 精确覆盖连接名）、PG server CA、四库迁移/运行双密码、Identity enrollment/admin密码、model root key（32B hex/0600）、Control encryption key、Adapter/插件 bootstrap 与 OneBot token 均以只读文件挂载；不进入镜像、argv、日志或 git。当前只有启动校验，无热轮换；P14 采用“新文件 + 按顺序重启”的手动轮换。
@@ -1184,12 +1184,9 @@ probe_listen/grpc_listen/tls），并额外要求 Host-only 的 `host` 对象（
   profile/payload 快照）；只存 SHA-256 的受管 bootstrap 与外部自管共用 `bridge_credentials`，
   明文仅出现在 CreateInstance 响应，部署方须按 P08a 约定写入 Host
   `credential_directory/<instance_id>.bootstrap`（0600、属主 Host 用户）并随部署回收/轮换。
-  **P08b-3a**：HostBridge server 已接 PG 回调，注册/心跳后按 generation 下发 pending
-  apply/stop/drain；receipt 以 (command_id, connection_generation) 条件更新（旧 generation
-  返回失败），observation 按 `(host_id,connection_generation,cursor.sequence)` 去重并校验 cursor
-  epoch；重连新 generation 重放未确认命令。30s 无回执转 Unknown（不伪造 stopped），7d/30d
-  保留清理随 P13a 60s 批次。**未完成**：真实 Host 二进制 e2e、受管 bootstrap 自动预置。
-  未确认命令在运维视图应显示 Pending/Unknown，不能当 stopped。
+  **未完成**：HostBridge server 尚未实际下发命令和持久化 receipt/observation（当前帧校验后
+  只接 transport-only 回调），未确认命令保持 Pending/Unknown、不伪造 stopped；重连重放和
+  `Resync` 去重无端到端证据，P08b-3 未验收。
 - 当前验证范围：P08a 用 in-process fake Runtime bridge 与 fake supervisor 覆盖注册/fence/心跳/
   resync/命令回执/观察/恢复；真实 Runtime Bridge 监听（P06a-2）与 Host 受管配置的端到端验收
   尚未执行，不能据此宣称 T11b 或真实部署通过。
@@ -1394,3 +1391,4 @@ Identity 与 Runtime 各新增两个只读 owner RPC（不新增服务、权限�
 - Control 的 `/logs`、`/audit` 聚合接线仍由 P12c 完成；在此之前 REST 继续 503，owner RPC 已可被
   Control 受权调用。验证：`p03_postgres_database`（真 PG16.4 分页/过滤/脱敏）与
   `p12e_audit_query`（游标契约）以及 `proto/tests/check_target.sh` 契约门禁。
+P13c（2026-11-02）：Runtime BeginDelete 对受管实例的 Host 参与者已改为写 durable StopExecution host_command outbox，按确定性 command_id 幂等；只有 Host receipt 的已知终态才算完成，Pending/Unknown/拒绝保持 blocked，UNKNOWN 不伪 stopped。P08b-3b 完成 HostBridge 命令下发/回执后自动收敛，无需改 SDK/Control；Scheduler 参与者需 Runtime→Scheduler 实例委托配置（P10b-2），未配置时删除实例保持 BLOCKED。`/operations/...` 参与者进度已在 Control owner gateway 投影。
