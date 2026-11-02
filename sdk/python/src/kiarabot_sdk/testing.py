@@ -81,6 +81,12 @@ class FakeTargetRuntime(services.PluginBridgeServicer):
         self.heartbeats = asyncio.Queue()
         self.host_requests = asyncio.Queue()
         self.actions = asyncio.Queue()
+        # P07 Action fixture: when set, action/action_query/action_cancel frames are answered
+        # automatically. policy(kind, request, sequence) -> None (drop) | {'result': ...} |
+        # {'error': ErrorCode}.
+        self.action_policy = None
+        self.action_requests: list = []
+        self.action_sequence = 0
         self.outgoing = asyncio.Queue()
         self.connection_generation = 0
         self.runtime_epoch = 'epoch-' + uuid.uuid4().hex[:8]
@@ -241,6 +247,12 @@ class FakeTargetRuntime(services.PluginBridgeServicer):
                     self.host_requests.put_nowait(request.host_request)
                 elif body in ('action', 'action_query', 'action_cancel'):
                     self.actions.put_nowait(request)
+                    self.action_requests.append((body, request))
+                    if self.action_policy is not None:
+                        self.action_sequence += 1
+                        answer = self.action_policy(body, request, self.action_sequence)
+                        if answer is not None:
+                            responses.put_nowait(self._action_response(body, request, answer))
 
         async def forward():
             while True:
@@ -281,6 +293,16 @@ class FakeTargetRuntime(services.PluginBridgeServicer):
         if frame.WhichOneof('body') == 'config' and not frame.config.HasField('fence'):
             if self.fence is not None:
                 frame.config.fence.CopyFrom(self.fence)
+
+    @staticmethod
+    def _action_response(body, request, answer):
+        request_id = getattr(request, body).request_id
+        if 'error' in answer:
+            return plugins.CoreToPlugin(action_response=plugins.PluginActionResponse(
+                request_id=request_id,
+                error=common.Error(code=answer['error'], message='fixture')))
+        return plugins.CoreToPlugin(action_response=plugins.PluginActionResponse(
+            request_id=request_id, result=answer['result']))
 
     async def _handle_ack(self, ack: plugins.PluginEventAck,
                           responses: asyncio.Queue) -> None:

@@ -14,7 +14,7 @@ from google.protobuf.json_format import Parse, ParseError
 from kiarabot.v1 import common_pb2 as common, platform_pb2 as platform, plugins_pb2 as plugins
 from kiarabot.v1 import services_pb2_grpc as services
 
-from . import delivery, transport
+from . import actions as action_api, delivery, transport
 from .errors import PluginError
 
 logger = logging.getLogger(__name__)
@@ -53,24 +53,38 @@ class Context:
             raise PluginError(common.CAPABILITY_NOT_SUPPORTED)
         return await self._rpc(request, timeout)
 
-    async def submit_action(self, action, timeout=5.0):
+    def _require_action_feature(self, timeout):
+        if not isinstance(timeout, (int, float)) or not 0 < timeout <= action_api.MAX_DEADLINE_SECONDS:
+            raise PluginError(common.INVALID_ARGUMENT)
+        if not self._rpc:
+            raise PluginError(common.UPSTREAM_UNAVAILABLE, True)
+        if action_api.ACTION_FEATURE not in self._features:
+            raise PluginError(common.CAPABILITY_NOT_SUPPORTED)
+
+    async def submit_action(self, action, *, idempotency_key=None, deadline=None, timeout=5.0):
+        self._require_action_feature(timeout)
+        prepared = action_api.prepare_submission(action, idempotency_key=idempotency_key,
+                                                 deadline=deadline)
         return await self._call(plugins.PluginToCore(action=plugins.PluginActionRequest(
-            request_id=str(uuid.uuid4()), action=action)), timeout)
+            request_id=str(uuid.uuid4()), action=prepared)), timeout)
 
     async def query_action(self, *, action_id=None, idempotency_key=None, timeout=5.0):
-        if (action_id is None) == (idempotency_key is None) or timeout <= 0:
+        self._require_action_feature(timeout)
+        if (action_id is None) == (idempotency_key is None):
             raise PluginError(common.INVALID_ARGUMENT)
         request = plugins.PluginActionQuery(request_id=str(uuid.uuid4()), trace_id=str(uuid.uuid4()))
         request.deadline.FromDatetime(datetime.now(timezone.utc) + timedelta(seconds=timeout))
         if action_id is not None:
+            action_api.validate_identifier(action_id)
             request.action_id = action_id
         else:
+            action_api.validate_identifier(idempotency_key)
             request.idempotency_key = idempotency_key
         return await self._call(plugins.PluginToCore(action_query=request), timeout)
 
     async def cancel_action(self, action_id, timeout=5.0):
-        if timeout <= 0:
-            raise PluginError(common.INVALID_ARGUMENT)
+        self._require_action_feature(timeout)
+        action_api.validate_identifier(action_id)
         request = plugins.PluginActionCancel(request_id=str(uuid.uuid4()), trace_id=str(uuid.uuid4()), action_id=action_id)
         request.deadline.FromDatetime(datetime.now(timezone.utc) + timedelta(seconds=timeout))
         return await self._call(plugins.PluginToCore(action_cancel=request), timeout)
@@ -273,8 +287,18 @@ class _Rpc:
         request_id = getattr(frame, frame.WhichOneof('body')).request_id
         future = asyncio.get_running_loop().create_future()
         self._pending[request_id] = future
-        self._expected[request_id] = (frame.host_request.WhichOneof('operation')
-                                      if frame.HasField('host_request') else None)
+        body = frame.WhichOneof('body')
+        if body == 'host_request':
+            expected = frame.host_request.WhichOneof('operation')
+        elif body == 'action':
+            expected = ('submit', frame.action.action.action_id)
+        elif body == 'action_query':
+            expected = ('query', frame.action_query.action_id or None)
+        elif body == 'action_cancel':
+            expected = ('cancel', frame.action_cancel.action_id)
+        else:
+            expected = None
+        self._expected[request_id] = expected
         try:
             async with asyncio.timeout(timeout):
                 await self._write(frame)
@@ -578,18 +602,18 @@ class Runner:
                         future = pending.get(result.request_id)
                         if future is None or future.done():
                             continue  # A response to a timed-out call cannot finish another call.
-                        if expected.get(result.request_id) is not None:
-                            future.set_exception(PluginError(common.UPSTREAM_UNAVAILABLE, True))
+                        try:
+                            action_api.validate_response(result,
+                                                         expected.get(result.request_id))
+                        except PluginError as failure:
+                            future.set_exception(failure)
                             continue
                         outcome = result.WhichOneof('outcome')
                         if outcome == 'error':
-                            future.set_exception(PluginError(result.error.code, result.error.retryable))
-                        elif (outcome == 'result' and result.result.action_id and result.result.status in (1, 2, 3, 4, 5)
-                              and (result.result.status == 1 or result.result.HasField('completed_at'))
-                              and (result.result.status != 3 or (result.result.HasField('error') and result.result.error.code))):
-                            future.set_result(result.result)
+                            future.set_exception(PluginError(result.error.code,
+                                                             result.error.retryable))
                         else:
-                            future.set_exception(PluginError(common.UPSTREAM_UNAVAILABLE, True))
+                            future.set_result(result.result)
                         continue
                     if kind == 'config':
                         if 'plugin.config.v1' not in self.context._features:

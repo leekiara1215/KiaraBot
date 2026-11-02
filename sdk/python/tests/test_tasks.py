@@ -51,8 +51,8 @@ async def test_task_local_time_is_forwarded_without_local_dst_logic():
             await host.send_frame(plugins.CoreToPlugin(host_response=plugins.HostResponse(
                 request_id=request.request_id,
                 task_create=plugins.TaskResponse(task_id='task-1',
-                                                 state=plugins.SCHEDULED_TASK_PENDING))))
-            assert (await pending).state == plugins.SCHEDULED_TASK_PENDING
+                                                 state=common.SCHEDULED_TASK_PENDING))))
+            assert (await pending).state == common.SCHEDULED_TASK_PENDING
             for kwargs in ({}, {'run_at': datetime.now(timezone.utc), 'local_time': local}):
                 with pytest.raises(PluginError) as failure:
                     await runner.context.task_create('task-2', 'conversation-1', b'payload',
