@@ -21,5 +21,6 @@ npm run build
 - P12 管理面 live 页面消费 Control owner 投影；HTTP 200/202 是读取或受理，完成状态以 owner operation/记录为准。
 - 敏感数据：密钥不渲染、不持久化；日志/审计权威源 503 显示“数据源暂不可用”，不显示空数据。
 - 实例页按 P12c-5 对象路径展示 runtime/host/plugin 三类事实；非 APPLIED 不显示完成，configuration 秘密不回显。
-- logs/audit 为独立分区（log.read vs audit.read）；P12c-6 未接线前显示“数据源暂不可用（503）”，分页/过滤/owner 映射已准备，待 P12c-6 后真实复验。
-- 详细页面与契约/未接线清单见 `doc/07-control-panel.md` 的 P12d-4 段。
+- logs/audit 为独立分区（log.read vs audit.read），按 P12c-6 的 occurred_from/occurred_until/actor/resource 过滤与 owner 标注消费；目标栈 live 未运行，p04 owner-gateway 验收通过。
+- 资源删除/恢复（P12c-7）暂以 mock + 显式待后端提供；BLOCKED 非失败、30 天恢复窗、终态前不显示完成。
+- 详细页面、P12 验收清单与未接线项见 `doc/07-control-panel.md` 的 P12d-5 段。

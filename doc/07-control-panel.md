@@ -227,3 +227,39 @@ mock 覆盖：登录/刷新、`/auth/me`、会话列表与撤销、9 个资源�
   4. 复验 400（非法时间窗/参数）、401（未登录/会话失效）、403（缺权限）、503（owner 数据源不可用）稳定映射，并跑真实 Control 进程 live 验收（若环境可跑）或 p04 验收路径。
 - 未接线/未冻结：P12c-6 聚合与真实 live；P12e owner RPC 已声明但 Control 未接线；日志/审计 filter 契约未冻结；`health.updated`/WS 目标仍延期。
 - 检查（本机实际运行）：`npm test -- --run` **49 passed / 2 skipped**（live.test.ts 缺 C++/venv 跳过）；`npm run lint`、`npm run build` 通过；`npm run check:contracts` 通过（53 个 panel 端点、5 个 known events）。
+
+## P12d-5 Panel /logs /audit 真实验收 + 生命周期 UI + P12 验收清单（2026-11-02）
+
+- 状态：**P12c-6 已合入，Panel 按冻结契约修正字段并完成 p04 owner-gateway 验收；真实目标六服务 Control live 未运行（本机未启动目标栈），用 p04 路径替代并在此明确标注**。P12c-7 未合入，生命周期删除/恢复 UI 以 mock + 显式“待后端”实现；P12 首批验收项清单见下。
+- **P12c-6 字段修正**（按 `control/api/src/target/owner_gateway.cpp` 实现）：
+  - 过滤参数为 `occurred_from`、`occurred_until`（RFC3339）、`actor`、`resource`（JSON `TargetResourceRef`，如 `{"kind":"RESOURCE_TASK","id":"..."}`）；**没有 `owner` 过滤**（owner 是响应标注，不是过滤参数）。
+  - 响应行 owner 字段为 `owner`（`identity`/`runtime`）；Panel 优先读 `owner`，兼容旧 `owner_service`，缺失显式“未标注（待 P12c-6）”。
+  - 合并顺序 `occurred_at DESC, owner ASC, id DESC`，opaque keyset token 原样透传（不重排/跨页合并）；空页只在 200 成功且 items 为空时显示。
+  - 400（非法时间/cursor/resource/actor）、401（未登录）、403（缺 log.read/audit.read）、503（任一 owner 源不可用，不返回部分页）分别显示未授权/权限/参数/数据源不可用；mock 对未知旧参数名严格返回 400 防回归。
+  - logs/audit 分区独立：只走各自路径与权限，audit 不显示到 logs，反之亦然；脱敏字段仅 owner/occurred_at/level/component/message 或 audit 的 actor/action/resource/request_id/account/conversation/rejection。
+- **真实/验收证据（本机实际运行）**：
+  - `ctest -R p12_control_owner_gateway`（main build，P12c-6 C++ owner-gateway 验收；fake Identity/Runtime owner sources + delegation）**PASS 0.14s**：覆盖 200 跨源合并、owner 标注、occurred_at 排序、log.read/audit.read 独立、过滤转发、400、401、403、503、opaque keyset token。
+  - `tests/live.test.ts` 对参考 C++ HTTP/WS（reference core）**2 passed**；该 fixture 不是目标六服务 Control，响应无 P12c-6 `owner` 字段，因此不作为 P12c-6 live 证据；本机未启动目标栈，**真实目标 Control live 验收未运行**（原因：需四库/PG/Identity/Runtime 全栈；本机当前只具备 reference fixture）。
+  - Panel mock/unit：`npm test -- --run` **51 passed / 2 skipped**（live.test.ts 条件跳过）；`lint`、`build`、`check:contracts`（55 个 panel 端点/5 known events）通过。
+- **生命周期删除/恢复 UI（P12c-7 未合入）**：新增 client 描述符/方法（`/resources/{resourceKind}/{resourceId}/delete|restore`）与安装实例页“资源删除与恢复”面板；mock 返回 operation，404/501 显示“P12c-7 后端未实现”。operation 进度展示 state/execution_outcome/participants/stalled/observed_at/reason/next_attempt_at；**BLOCKED 显式标注为等待依赖/参与者，不是失败**；只有终态（SUCCEEDED/FAILED/CANCELLED/EXPIRED）才显示完成/失败；提示删除后 **30 天**恢复窗（P13a）与 409 CONFLICT 需重读版本；HTTP 200/202 仅受理，不显示删除完成。
+- **P12c-7 复验点**：确认 `/resources/{kind}/{id}/delete|restore` handler 状态/请求字段（resource、expected_version）与 200/202/operation 形状；确认 BLOCKED/reason/participants、30 天恢复窗与 409 映射；确认 operation owner/终态语义；合入后移除 mock 待后端提示并补真实 live/UI 验收。
+- **P12 首批验收清单（Q8）**：
+
+| 验收项 | Panel 状态 | 后端/live 状态 |
+|---|---|---|
+| 会话撤销 | 已接线 | 参考 live 通过；目标 Control live 未跑 |
+| 账号列表/Adapter 绑定解绑 | 已接线（catalog/expected_version/operation） | target owner 未跑真实栈 |
+| 安装/实例创建与启停配置 | 已接线（P12c-5 三类事实） | target owner 未跑真实栈 |
+| 插件配置 | 既有 reference 页面通过 live；实例配置走 P12c-5 | target live 未跑 |
+| Action 元数据 | 已接线（action.inspect） | target live 未跑 |
+| 任务查询/取消 | 已接线（TaskSummary/owner scope） | target live 未跑 |
+| 模型配置/更新/密钥 | 已接线读/更新；secret 仅显示已配置/版本 | target live 未跑；Disable/Enable 无契约 |
+| 群白名单/ActionPolicy | 已接线（group whitelist/开关/预算） | target live 未跑 |
+| 主体目录 principals | 已接线（分页/503） | target live 未跑 |
+| 健康四依赖 | 已接线（DEGRADED/401/503 语义） | target live 未跑 |
+| 日志/审计 | P12c-6 字段已修正；分区/过滤/分页/错误语义 | p04 owner-gateway PASS；目标 Control live 未跑 |
+| 生命周期删除/恢复 | mock + 显式待 P12c-7 | **未接线** |
+| 模型 Disable/Enable | 未接线（无契约） | 阻塞 P12a |
+| 旧 /plugins enable/config、WS 目标/health.updated | 不复用/延期 | P12a/后续 |
+
+- 未接线清单：真实目标六服务 Control live 验收（本机无目标栈）；P12c-7 生命周期 REST；模型 Disable/Enable；旧 `/plugins` 启停/配置不复用；WS 目标/`health.updated` 延期；模型密钥轮换提交（仅标记已配置/版本）。
