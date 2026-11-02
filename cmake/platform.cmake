@@ -140,9 +140,11 @@ add_test(NAME p10_scheduler_rpc COMMAND kiarabot_scheduler_rpc_test)
 set_tests_properties(p10_scheduler_rpc PROPERTIES LABELS "p10;integration;fault" TIMEOUT 60)
 
 add_library(kiarabot_host_bridge STATIC
-  ${CMAKE_SOURCE_DIR}/core/src/runtime/platform/host_bridge_client.cpp)
+  ${CMAKE_SOURCE_DIR}/core/src/runtime/platform/host_bridge_client.cpp
+  ${CMAKE_SOURCE_DIR}/core/src/runtime/platform/host_bridge_server.cpp)
 target_include_directories(kiarabot_host_bridge PUBLIC ${CMAKE_SOURCE_DIR}/core/include)
-target_link_libraries(kiarabot_host_bridge PUBLIC kiarabot_proto)
+target_link_libraries(kiarabot_host_bridge PUBLIC kiarabot_proto PRIVATE
+  kiarabot_service_process kiarabot_target_codec)
 kiarabot_platform_warnings(kiarabot_host_bridge)
 
 if(UNIX)
@@ -152,6 +154,13 @@ if(UNIX)
   kiarabot_platform_warnings(kiarabot_host_bridge_test)
   add_test(NAME p08_host_bridge COMMAND kiarabot_host_bridge_test)
   set_tests_properties(p08_host_bridge PROPERTIES LABELS "p08;integration;fault" TIMEOUT 60)
+  add_executable(kiarabot_host_bridge_server_test
+    ${CMAKE_SOURCE_DIR}/core/tests/platform/host_bridge_server_test.cpp)
+  target_link_libraries(kiarabot_host_bridge_server_test PRIVATE kiarabot_host_bridge)
+  kiarabot_platform_warnings(kiarabot_host_bridge_server_test)
+  add_test(NAME p08_host_bridge_server COMMAND kiarabot_host_bridge_server_test)
+  set_tests_properties(p08_host_bridge_server PROPERTIES
+    LABELS "p08;integration;fault" TIMEOUT 60)
 endif()
 
 add_library(kiarabot_host_service STATIC
@@ -423,7 +432,7 @@ foreach(SERVICE identity runtime plugin_host scheduler model)
     target_sources(kiarabot-runtime PRIVATE
       ${CMAKE_SOURCE_DIR}/core/app/runtime_composition.cpp)
     target_link_libraries(kiarabot-runtime PRIVATE
-      kiarabot_runtime_model_client
+      kiarabot_runtime_model_client kiarabot_host_bridge
       kiarabot_runtime_rpc kiarabot_runtime_identity_client kiarabot_runtime_storage_application
       kiarabot_postgres OpenSSL::Crypto)
   endif()

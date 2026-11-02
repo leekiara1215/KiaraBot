@@ -19,6 +19,7 @@
 #include "kiarabot/core/application/target/runtime_readiness.hpp"
 #include "kiarabot/core/application/target/runtime_resource_application.hpp"
 #include "kiarabot/core/application/target/runtime_storage_application.hpp"
+#include "kiarabot/core/runtime/platform/host_bridge_server.hpp"
 #include "kiarabot/core/runtime/platform/peer_certificate.hpp"
 #include "kiarabot/core/runtime/platform/runtime_bridge.hpp"
 #include "kiarabot/core/runtime/platform/runtime_identity_client.hpp"
@@ -359,9 +360,16 @@ compose_runtime_service(const platform::ProcessConfig& config) {
       };
     }
     auto* application = state->application;
+    std::vector<target::HostCertificateBinding> host_allowlist;
+    host_allowlist.reserve(config.hosts.size());
+    for (const auto& host : config.hosts) {
+      host_allowlist.push_back(
+          target::HostCertificateBinding{host.host_id, host.certificate_sha256});
+    }
     auto configure = std::move(result.configure_rpc);
-    result.configure_rpc = [configure = std::move(configure), state,
-                            application](platform::ServiceRpc& rpc) mutable -> target::Status {
+    result.configure_rpc = [configure = std::move(configure), state, application,
+                            host_allowlist = std::move(host_allowlist)](
+                               platform::ServiceRpc& rpc) mutable -> target::Status {
       if (configure) {
         auto configured = configure(rpc);
         if (const auto* failure = std::get_if<target::Failure>(&configured)) {
@@ -406,6 +414,19 @@ compose_runtime_service(const platform::ProcessConfig& config) {
       auto registered = rpc.add_service(
           target::Service::Runtime,
           std::move(std::get<std::unique_ptr<v1::RuntimeService::Service>>(adapter)));
+      if (const auto* failure = std::get_if<target::Failure>(&registered)) {
+        return *failure;
+      }
+      // P08 HostBridge is an owner mTLS internal service, never registered on bridge_listen.
+      // The deployment certificate allowlist is consumed only here; empty means every Host is
+      // rejected (fail closed). P08b-2c replaces the in-memory store with the PG port.
+      auto host_bridge = platform::make_deployment_host_bridge(*state->ids, host_allowlist);
+      if (const auto* failure = std::get_if<target::Failure>(&host_bridge)) {
+        return *failure;
+      }
+      registered = rpc.add_service(
+          target::Service::Runtime,
+          std::move(std::get<std::unique_ptr<v1::HostBridge::Service>>(host_bridge)));
       if (const auto* failure = std::get_if<target::Failure>(&registered)) {
         return *failure;
       }
