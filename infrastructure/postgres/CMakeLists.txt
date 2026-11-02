@@ -77,6 +77,18 @@ if(UNIX)
   set_tests_properties(p06_postgres_runtime_events PROPERTIES
     LABELS "p06;integration;fault" TIMEOUT 180)
 
+  add_executable(kiarabot_postgres_action_records_test tests/action_records_test.cpp)
+  target_link_libraries(kiarabot_postgres_action_records_test PRIVATE
+    kiarabot_postgres libpqxx::pqxx)
+  kiarabot_platform_warnings(kiarabot_postgres_action_records_test)
+  add_test(NAME p07_postgres_action_records COMMAND "${KIARABOT_TARGET_PYTHON}"
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_database_test.py"
+    --pg-bin "${KIARABOT_TEST_PG_BIN}" --openssl "${KIARABOT_TEST_OPENSSL}"
+    --test $<TARGET_FILE:kiarabot_postgres_action_records_test>
+    --initializer $<TARGET_FILE:kiarabot-pg-initialize>)
+  set_tests_properties(p07_postgres_action_records PROPERTIES
+    LABELS "p07;integration;fault" TIMEOUT 180)
+
   add_executable(kiarabot_postgres_scheduler_test
     tests/scheduler_application_test.cpp)
   target_link_libraries(kiarabot_postgres_scheduler_test PRIVATE

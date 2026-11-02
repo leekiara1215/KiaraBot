@@ -114,7 +114,7 @@ Runtime 结果事务验证账号/Action 绑定、内容及允许的结果状态�
 
 Action 查询直接读这份记录。插件仅自身 owner；控制用户需明确账号范围的元数据查询权，不返回正文/平台秘密，默认 admin 不是隐式跨 owner 放行。
 
-P07 目标契约把上述规则落到 wire（2026-11-02 冻结，未实现）：提交事务写 `actions/action_idempotency/quota_windows/daily_budgets`（窗口持久化，不因重启重置）；派发记录 `dispatch_attempt_id/dispatch_sequence` 后才写 Adapter 流；适配器结果用 `ActionResult.execution_outcome`、非终态证据用 `ActionExecutionEvidence`、Runtime 用 `ActionReceipt` 确认；迟到结果在 Action 已 EXPIRED 时只写 `adapter_result_evidence` 不覆盖终态，已派发未知不跨 adapter 实例重派；Control 结果查询必须显式账号 scope + `action.inspect`（`RuntimeService.QueryActionResult`）。表结构/锁顺序与审计字段按 P07 提案实现阶段落地。
+P07 目标契约把上述规则落到 wire（2026-11-02 冻结）；P07a-A C3 已实现 typed PG 仓储：提交事务写 `actions/action_idempotency/quota_windows/daily_budgets`（窗口持久化，不因重启重置；配额与 Action 行同 UoW，取消/失败/到期不退款）；派发用单行条件 UPDATE 记录 `dispatch_attempt_id/dispatch_sequence` 后才写 Adapter 流；适配器结果走 `record_terminal` 条件更新，重复相同结果幂等、异结果 CONFLICT 且追加 `adapter_result_evidence`、迟到结果在 EXPIRED/CANCELLED 时只追加证据不覆盖终态；`expire_due` 用 `FOR UPDATE SKIP LOCKED` 单次条件 UPDATE claim，`prune_terminal` 只删除已到期终态行（CASCADE 清理幂等/窗口/证据）；Control 查询必须显式账号 scope + `action.inspect`（`list_control` 只按 account_id 过滤，不越权）。全部时间谓词在 SQL 内以数据库 UTC 重核；写入和配额准入都在调用方 Runtime UoW 内，unique 冲突/容量/依赖故障分别映射 CONFLICT/RATE_LIMITED/UPSTREAM_UNAVAILABLE。审计目标准列 target_account_id/target_conversation_id 由 P07 application 在写 action 同事务的 journal 审计中填充（C3 只验证表列与仓储边界，application 接线属 P07a-B/P07b）。真 PG16.4 矩阵见 `p07_postgres_action_records`。
 
 账号/Adapter 迁移须先停旧出站并确认旧执行停止或人工隔离，再携本地未决执行日志切换；不能换一个空 SQLite 日志就重放待定平台动作。网络失联只标 unknown，不自动接管该账号。
 
