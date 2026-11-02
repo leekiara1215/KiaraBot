@@ -116,7 +116,12 @@ def main(*, control_server_certificate=False, after_bootstrap=None,
                      'scope': [{'kind': 'RESOURCE_PRINCIPAL', 'id': admin}]}],
                 'control_assignments': [
                     {'assignment_id': str(uuid.uuid4()), 'permissions': ['identity.delegation.issue'],
-                     'scope': [{'kind': 'RESOURCE_PRINCIPAL', 'id': control}]}]}
+                     'scope': [{'kind': 'RESOURCE_PRINCIPAL', 'id': control}]},
+                    {'assignment_id': str(uuid.uuid4()),
+                     'permissions': ['message.send', 'message.react', 'message.delete',
+                                     'member.mute', 'member.kick', 'request.approve',
+                                     'namespace.read', 'log.read', 'audit.read', 'health.read'],
+                     'scope': [{'kind': 'RESOURCE_ACCOUNT', 'id': str(uuid.uuid4())}]}]}
     runtime_principal, runtime_credential = str(uuid.uuid4()), str(uuid.uuid4())
     enrolled['platform_peers'] = [{
         'service': 'runtime', 'principal_id': runtime_principal,
@@ -186,12 +191,21 @@ def main(*, control_server_certificate=False, after_bootstrap=None,
     write(tampered)
     run(command, 1)
     assert 'state=required version=1' in run(status_arguments)
+    invalid_permission = json.loads(json.dumps(enrolled))
+    invalid_permission['control_assignments'].append({
+        'assignment_id': str(uuid.uuid4()), 'permissions': ['not.a.permission'],
+        'scope': [{'kind': 'RESOURCE_ACCOUNT', 'id': str(uuid.uuid4())}]})
+    write(invalid_permission)
+    run(command, 1)
+    assert 'state=required version=1' in run(status_arguments)
     write(enrolled)
     assert 'outcome=committed state=consumed' in run(command)
     assert 'state=consumed version=2' in run(status_arguments)
     assert sql(f"SELECT count(*) FROM kiarabot.principals WHERE id='{runtime_principal}';", 'p03_identity') == '1'
     assert sql(f"SELECT count(*) FROM kiarabot.credential_heads WHERE id='{runtime_credential}';", 'p03_identity') == '1'
     assert sql(f"SELECT count(*) FROM kiarabot.exact_assignments WHERE subject='{runtime_principal}';", 'p03_identity') == '1'
+    assert sql("SELECT count(*) FROM kiarabot.exact_permissions WHERE permission BETWEEN 41 AND 50;",
+               'p03_identity') == '10'
     assert 'CONFLICT' in run(command, 1)
     assert 'state=consumed version=2' in run(status_arguments)
     print('Real owned PG offline bootstrap, rejected enrollment, once-only state and redaction passed')

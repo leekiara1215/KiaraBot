@@ -182,6 +182,14 @@ void check_identity_security_schema(const pg::DatabaseConfig& config) {
                    "'security-owner',1,0,NULL)");
   transaction.exec(
       "INSERT INTO kiarabot.exact_permissions VALUES('security-grant',40,15,'catalog')");
+  for (int permission = 41; permission <= 50; ++permission) {
+    transaction.exec("INSERT INTO kiarabot.exact_permissions VALUES('security-grant'," +
+                     std::to_string(permission) + ",15,'catalog')");
+  }
+  // Remove the high-permission rows before typed assignment checks; the acceptance above is the
+  // constraint assertion, not a synthetic grant that should survive into later fixtures.
+  transaction.exec("DELETE FROM kiarabot.exact_permissions WHERE assignment='security-grant' "
+                   "AND permission BETWEEN 41 AND 50");
   transaction.exec("SET CONSTRAINTS ALL IMMEDIATE; SET CONSTRAINTS ALL DEFERRED");
   rejects("UPDATE kiarabot.grants SET version=2 WHERE id='security-grant'", "23503");
   rejects("UPDATE kiarabot.exact_assignments SET state=1 WHERE id='security-grant'", "23514");
@@ -189,7 +197,9 @@ void check_identity_security_schema(const pg::DatabaseConfig& config) {
           "23514");
   rejects("UPDATE kiarabot.exact_assignments SET state=1,revoked_at=0 WHERE id='security-grant'",
           "23514");
-  rejects("INSERT INTO kiarabot.exact_permissions VALUES('security-grant',41,15,'catalog')",
+  rejects("INSERT INTO kiarabot.exact_permissions VALUES('security-grant',51,15,'catalog')",
+          "23514");
+  rejects("INSERT INTO kiarabot.exact_permissions VALUES('security-grant',0,15,'catalog')",
           "23514");
   transaction.exec(
       "INSERT INTO kiarabot.secret_receipts VALUES(1,'control-peer','security-session',"

@@ -103,6 +103,43 @@ void policy_rules() {
                                          std::span{&sensitive, 1}),
                  target::ErrorCode::PermissionDenied),
         "explicit sensitive grant does not cross account scope");
+  const std::array sensitive_reads{
+      target::Permission::MessageSend,   target::Permission::MessageReact,
+      target::Permission::MessageDelete, target::Permission::MemberMute,
+      target::Permission::MemberKick,    target::Permission::RequestApprove,
+      target::Permission::NamespaceRead, target::Permission::LogRead,
+      target::Permission::AuditRead,     target::Permission::HealthRead};
+  // The exact-pair product rejects mixing permissions on a single resource; build one permission
+  // per assignment instead and check every 41..50 permission independently.
+  for (const auto permission : sensitive_reads) {
+    const target::ExactAssignment grant{
+        {"explicit-sensitive"}, actor.id, {}, {{permission, a}}, {1}};
+    check(success(target::authorize_exact(actor, permission, a, std::span{&grant, 1})),
+          "explicit P14h sensitive grant authorizes its exact scope");
+    check(error_is(target::authorize_exact(actor, permission, b, std::span{&grant, 1}),
+                   target::ErrorCode::PermissionDenied),
+          "explicit P14h sensitive grant never crosses resource scope");
+  }
+  check(equals(target::permission_from_name("message.send"), target::Permission::MessageSend),
+        "wire permission 41 name is registered");
+  check(equals(target::permission_from_name("member.mute"), target::Permission::MemberMute),
+        "wire permission 44 name is registered");
+  check(equals(target::permission_from_name("namespace.read"), target::Permission::NamespaceRead),
+        "wire permission 47 name is registered");
+  check(equals(target::permission_from_name("log.read"), target::Permission::LogRead),
+        "wire permission 48 name is registered");
+  check(equals(target::permission_from_name("audit.read"), target::Permission::AuditRead),
+        "wire permission 49 name is registered");
+  check(equals(target::permission_from_name("health.read"), target::Permission::HealthRead),
+        "wire permission 50 name is registered");
+  check(error_is(target::permission_from_name("not.a.permission"),
+                 target::ErrorCode::InvalidArgument),
+        "unknown P14h permission name still rejects");
+  volatile int permission_51 = 51;
+  check(error_is(target::authorize_exact(actor, static_cast<target::Permission>(permission_51), a,
+                                         grants),
+                 target::ErrorCode::InvalidArgument),
+        "permission 51 beyond wire maximum still rejects");
   const target::ExactAssignment non_product{
       {"non-product"},
       actor.id,

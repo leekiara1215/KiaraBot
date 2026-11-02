@@ -518,7 +518,10 @@ public:
     if (fault) {
       return failure(t::ErrorCode::UpstreamUnavailable);
     }
-    return method == "/kiarabot.v1.ModelService/Chat" ? policy : std::nullopt;
+    return (method == "/kiarabot.v1.ModelService/Chat" ||
+            method == "/kiarabot.v1.ControlService/GetHealth")
+               ? policy
+               : std::nullopt;
   }
   State& state_;
   bool fault = false;
@@ -858,6 +861,30 @@ void final_clock_crossing_expiry_never_returns_allow() {
     assert(f.state.now < expiry); // Every DB authority sample remains valid and unchanged.
   }
 }
+void sensitive_exact_grant_authorizes_check() {
+  for (const auto permission :
+       {t::Permission::NamespaceRead, t::Permission::LogRead, t::Permission::AuditRead,
+        t::Permission::HealthRead, t::Permission::MessageReact}) {
+    Fixture f;
+    const t::ResourceRef scope{t::ResourceKind::Catalog, {"catalog"}};
+    f.methods.policy =
+        t::AuthorizationMethodPolicy{t::Service::Model, permission, {t::ResourceKind::Catalog}};
+    f.state.assignments.back().explicit_permissions = {{permission, scope}};
+    f.crypto.claims.permissions = {{permission, scope}};
+    auto request = f.request();
+    request.full_method = "/kiarabot.v1.ControlService/GetHealth";
+    request.scope = {scope};
+    const auto reply = std::get<t::CheckAuthorizationReply>(f.app->check_authorization(request));
+    assert(reply.allowed && !reply.denial);
+    auto wrong_scope = request;
+    wrong_scope.scope = {{t::ResourceKind::Catalog, {"other"}}};
+    const auto denied = f.app->check_authorization(wrong_scope);
+    assert(std::holds_alternative<t::CheckAuthorizationReply>(denied));
+    const auto& denied_reply = std::get<t::CheckAuthorizationReply>(denied);
+    assert(!denied_reply.allowed && denied_reply.denial &&
+           denied_reply.denial->code == t::ErrorCode::PermissionDenied);
+  }
+}
 void permitted_consumers_and_rejected_control() {
   for (const auto service :
        {t::Service::Runtime, t::Service::Host, t::Service::Scheduler, t::Service::Model}) {
@@ -916,6 +943,7 @@ int main() {
   final_reread_rejects_current_authority_changes();
   workload_and_single_hop();
   crypto_races_and_monotonic_budget();
+  sensitive_exact_grant_authorizes_check();
   permitted_consumers_and_rejected_control();
   final_clock_crossing_expiry_never_returns_allow();
 }
