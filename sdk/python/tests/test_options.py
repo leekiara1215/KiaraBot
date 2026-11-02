@@ -4,22 +4,32 @@ from kiarabot.v1 import common_pb2 as common
 from kiarabot_sdk import PluginError
 from kiarabot_sdk.__main__ import options_from_environment
 
-BASE = {'PLUGIN_CORE_ENDPOINT': '127.0.0.1:1234', 'PLUGIN_AUTH_TOKEN': 't' * 32}
+
+def base(tmp_path):
+    tls_root = tmp_path / 'ca.pem'
+    tls_root.write_bytes(b'-----BEGIN CERTIFICATE-----\n-----END CERTIFICATE-----\n')
+    return {'PLUGIN_CORE_ENDPOINT': '127.0.0.1:1234',
+            'PLUGIN_AUTH_TOKEN': 't' * 32,
+            'PLUGIN_TLS_ROOT': str(tls_root)}
 
 
-def test_defaults_match_the_library_defaults():
-    options = options_from_environment(dict(BASE))
+def test_defaults_match_the_library_defaults(tmp_path):
+    options = options_from_environment(base(tmp_path))
     assert (options.io_timeout, options.hook_timeout, options.heartbeat_interval,
-            options.retry_delay) == (5.0, 5.0, 1.0, 1.0)
+            options.retry_delay, options.lease_renew_interval) == (5.0, 5.0, 5.0, 1.0, 10.0)
+    assert options.tls_root_certificate
 
 
-def test_environment_overrides_runtime_parameters():
-    options = options_from_environment(dict(BASE, PLUGIN_IO_TIMEOUT='2.5',
-                                            PLUGIN_HOOK_TIMEOUT='0.5',
-                                            PLUGIN_HEARTBEAT_INTERVAL='0.25',
-                                            PLUGIN_RETRY_DELAY='3'))
+def test_environment_overrides_runtime_parameters(tmp_path):
+    options = options_from_environment(dict(
+        base(tmp_path), PLUGIN_IO_TIMEOUT='2.5', PLUGIN_HOOK_TIMEOUT='0.5',
+        PLUGIN_HEARTBEAT_INTERVAL='0.25', PLUGIN_RETRY_DELAY='3',
+        PLUGIN_LEASE_RENEW_INTERVAL='1', PLUGIN_INSTANCE_ID='instance-1',
+        PLUGIN_TLS_SERVER_NAME='runtime.example'))
     assert (options.io_timeout, options.hook_timeout, options.heartbeat_interval,
-            options.retry_delay) == (2.5, 0.5, 0.25, 3.0)
+            options.retry_delay, options.lease_renew_interval) == (2.5, 0.5, 0.25, 3.0, 1.0)
+    assert options.instance_id == 'instance-1'
+    assert options.tls_server_name == 'runtime.example'
 
 
 @pytest.mark.parametrize('change', [
@@ -28,20 +38,23 @@ def test_environment_overrides_runtime_parameters():
     {'PLUGIN_HEARTBEAT_INTERVAL': 'nan'},
     {'PLUGIN_RETRY_DELAY': '-1'},
     {'PLUGIN_RETRY_DELAY': 'inf'},
+    {'PLUGIN_LEASE_RENEW_INTERVAL': '0'},
     {'PLUGIN_CORE_ENDPOINT': ''},
+    {'PLUGIN_CORE_ENDPOINT': 'localhost'},
+    {'PLUGIN_CORE_ENDPOINT': '127.0.0.1:0'},
     {'PLUGIN_AUTH_TOKEN': 'short'},
+    {'PLUGIN_TLS_ROOT': '/missing/ca.pem'},
 ])
-def test_invalid_runtime_configuration_fails_with_stable_code(change):
+def test_invalid_runtime_configuration_fails_with_stable_code(tmp_path, change):
     with pytest.raises(PluginError) as failure:
-        options_from_environment(dict(BASE, **change))
+        options_from_environment(dict(base(tmp_path), **change))
     assert failure.value.code == common.INVALID_ARGUMENT
 
 
-def test_missing_required_variables_are_invalid():
-    missing_endpoint = dict(BASE)
-    missing_endpoint.pop('PLUGIN_CORE_ENDPOINT')
-    for environ in (missing_endpoint, {key: value for key, value in BASE.items()
-                                       if key != 'PLUGIN_AUTH_TOKEN'}):
+def test_missing_required_variables_are_invalid(tmp_path):
+    for key in ('PLUGIN_CORE_ENDPOINT', 'PLUGIN_AUTH_TOKEN', 'PLUGIN_TLS_ROOT'):
+        environ = base(tmp_path)
+        environ.pop(key)
         with pytest.raises(PluginError) as failure:
             options_from_environment(environ)
         assert failure.value.code == common.INVALID_ARGUMENT

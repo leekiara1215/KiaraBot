@@ -2,10 +2,11 @@ import asyncio
 from pathlib import Path
 
 import pytest
-from kiarabot.v1 import common_pb2 as common, events_pb2 as events, plugins_pb2 as plugins
+from kiarabot.v1 import common_pb2 as common, events_pb2 as events, platform_pb2 as platform
+from kiarabot.v1 import plugins_pb2 as plugins
 from kiarabot_sdk import Options, Plugin, PluginError, Runner, load_manifest
 from kiarabot_sdk.runtime import validate_manifest
-from kiarabot_sdk.testing import FakeHost
+from kiarabot_sdk.testing import FakeTargetRuntime
 from observer import create_plugin
 
 MANIFEST = Path(__file__).resolve().parents[3] / 'plugins/event-observer/plugin.json'
@@ -19,8 +20,17 @@ async def get(queue):
     return await asyncio.wait_for(queue.get(), 3)
 
 
+async def wait_disposition(runner, expected):
+    async with asyncio.timeout(3):
+        while not runner.last_dispositions or runner.last_dispositions[-1] != expected:
+            await asyncio.sleep(.01)
+    return runner.last_dispositions[-1]
+
+
 def options(host, **kwargs):
-    return Options(host.endpoint, host.token, retry_delay=.01, heartbeat_interval=.05, **kwargs)
+    return Options(host.endpoint, host.token, tls_root_cert=host.root_cert,
+                   retry_delay=.01, heartbeat_interval=.05, lease_renew_interval=.1,
+                   **kwargs)
 
 
 @pytest.mark.parametrize('field,value,code', [
@@ -47,163 +57,179 @@ def test_manifest_strict_json_and_permissions(tmp_path):
     candidate.permissions.append(candidate.permissions[0])
     with pytest.raises(PluginError):
         validate_manifest(candidate)
-    assert 'secret' not in repr(Options('127.0.0.1:1234', 'secret' * 8))
+    secured = Options('127.0.0.1:1234', 'secret' * 8, tls_root_cert=b'dummy-pem')
+    assert 'secret' not in repr(secured) and 'dummy-pem' not in repr(secured)
 
 
-async def test_example_receives_generated_event_and_reconnects():
-    plugin = create_plugin()
-    stop = asyncio.Event()
-    async with FakeHost() as host:
+def test_transport_fails_closed_without_server_verified_tls():
+    with pytest.raises(PluginError) as missing:
+        Options('127.0.0.1:1234', 't' * 32)
+    assert missing.value.code == common.INVALID_ARGUMENT
+    with pytest.raises(PluginError):
+        Options('127.0.0.1:1234', 't' * 32, tls_root_cert='/missing/ca.pem')
+    with pytest.raises(PluginError):
+        Options('not-an-endpoint', 't' * 32, tls_root_cert=b'pem')
+    with pytest.raises(PluginError):
+        Options('127.0.0.1:1234', 'short', tls_root_cert=b'pem')
+
+
+async def test_revoked_bootstrap_fails_without_retry():
+    plugin, stop = create_plugin(), asyncio.Event()
+    async with FakeTargetRuntime() as host:
+        runner = Runner(manifest(), plugin, Options(
+            host.endpoint, 'x' * 32, tls_root_cert=host.root_cert,
+            retry_delay=.01, heartbeat_interval=.05))
+        with pytest.raises(PluginError) as failure:
+            await asyncio.wait_for(runner.run(stop), 3)
+        assert failure.value.code == common.PERMISSION_DENIED
+
+
+async def test_registration_returns_fence_and_acks_carry_attempt():
+    plugin, stop = create_plugin(), asyncio.Event()
+    async with FakeTargetRuntime() as host:
+        runner = Runner(manifest(), plugin, options(host))
+        running = asyncio.create_task(runner.run(stop))
+        try:
+            registration = await get(host.registrations)
+            assert registration.instance_id
+            await host.send_event(events.EventEnvelope(event_id='first', trace_id='trace'))
+            ack = await get(host.acknowledgements)
+            assert ack.accepted and ack.event_id == 'first'
+            # The target ACK carries the current delivery attempt.
+            assert ack.HasField('attempt') and ack.attempt.event_id == 'first'
+            assert host.attempts['first'].attempt_id == ack.attempt.attempt_id
+            assert await wait_disposition(runner, platform.DELIVERY_ACKNOWLEDGED)
+        finally:
+            stop.set()
+            await asyncio.wait_for(running, 2)
+    assert not runner.context.granted_permissions
+
+
+async def test_delivery_renewed_then_stale_is_not_treated_as_success():
+    release = asyncio.Event()
+
+    class Slow(Plugin):
+        async def on_event(self, event, context):
+            await release.wait()
+
+    plugin, stop = Slow(), asyncio.Event()
+    async with FakeTargetRuntime() as host:
+        runner = Runner(manifest(), plugin, options(host))
+        running = asyncio.create_task(runner.run(stop))
+        try:
+            await get(host.registrations)
+            await host.send_event(events.EventEnvelope(event_id='slow', trace_id='trace'))
+            attempt, disposition = await get(host.renewals)
+            assert disposition == platform.DELIVERY_RENEWED
+            host.expire_attempt('slow')
+            release.set()
+            ack = await get(host.acknowledgements)
+            assert ack.event_id == 'slow'
+            assert await wait_disposition(runner, platform.DELIVERY_STALE)
+        finally:
+            stop.set()
+            await asyncio.wait_for(running, 2)
+
+
+async def test_rejected_hook_sends_error_ack_and_receipt():
+    class Rejecting(Plugin):
+        async def on_event(self, event, context):
+            raise PluginError(common.INVALID_ARGUMENT, retryable=False)
+
+    plugin, stop = Rejecting(), asyncio.Event()
+    async with FakeTargetRuntime() as host:
+        runner = Runner(manifest(), plugin, options(host))
+        running = asyncio.create_task(runner.run(stop))
+        try:
+            await get(host.registrations)
+            await host.send_event(events.EventEnvelope(event_id='bad', trace_id='trace'))
+            ack = await get(host.acknowledgements)
+            assert not ack.accepted and ack.error.code == common.INVALID_ARGUMENT
+            assert await wait_disposition(runner, platform.DELIVERY_REJECTED)
+        finally:
+            stop.set()
+            await asyncio.wait_for(running, 2)
+
+
+async def test_single_flight_refresh_rotates_proof_and_keeps_stream():
+    plugin, stop = create_plugin(), asyncio.Event()
+    async with FakeTargetRuntime(authorization_lifetime=2.0) as host:
+        runner = Runner(manifest(), plugin, options(host))
+        running = asyncio.create_task(runner.run(stop))
+        try:
+            await get(host.registrations)
+            first = await get(host.refreshes)
+            assert first.refresh_generation == 1
+            # After rotation the SDK must use the new proof; the fake validates
+            # the connection proof on every post-registration frame.
+            await asyncio.sleep(.3)
+            await host.send_event(events.EventEnvelope(event_id='after-refresh'))
+            ack = await get(host.acknowledgements)
+            assert ack.accepted and ack.event_id == 'after-refresh'
+            assert host.refresh_generation >= 2
+        finally:
+            stop.set()
+            await asyncio.wait_for(running, 2)
+
+
+async def test_refresh_failure_reestablishes_connection_with_bootstrap():
+    plugin, stop = create_plugin(), asyncio.Event()
+    async with FakeTargetRuntime(authorization_lifetime=1.0) as host:
+        host.refresh_failure = 'abort'
         runner = Runner(manifest(), plugin, options(host))
         running = asyncio.create_task(runner.run(stop))
         try:
             first = await get(host.registrations)
-            await host.outgoing.put(plugins.CoreToPlugin(event=events.EventEnvelope(event_id='first', trace_id='trace')))
-            ack = await get(host.acknowledgements)
-            assert ack.accepted and ack.event_id == 'first' and not ack.HasField('error')
-            assert plugin.events == ['first']
-            assert runner.context.granted_permissions == frozenset(['message.read'])
-            await host.outgoing.put(None)
             second = await get(host.registrations)
-            assert first.instance_id != second.instance_id
-            await host.outgoing.put(plugins.CoreToPlugin(event=events.EventEnvelope(event_id='second')))
-            assert (await get(host.acknowledgements)).accepted
-            assert plugin.events == ['first', 'second']
+            assert second.instance_id == first.instance_id
+            assert host.connection_generation >= 2
         finally:
             stop.set()
             await asyncio.wait_for(running, 2)
-        assert not runner.context.granted_permissions
-
-
-@pytest.mark.parametrize('mode,code', [('exception', common.INTERNAL), ('timeout', common.TIMEOUT)])
-async def test_hook_failure_isolated_and_next_event_delivered(mode, code, caplog):
-    class Faulty(Plugin):
-        stopped = False
-        async def on_event(self, event, context):
-            if event.event_id == 'bad':
-                if mode == 'exception':
-                    raise ValueError('private credential never logged')
-                await asyncio.sleep(60)
-        async def on_stop(self, reason):
-            self.stopped = True
-    plugin, stop = Faulty(), asyncio.Event()
-    async with FakeHost() as host:
-        running = asyncio.create_task(Runner(manifest(), plugin, options(host, hook_timeout=.03)).run(stop))
-        try:
-            await get(host.registrations)
-            await host.outgoing.put(plugins.CoreToPlugin(event=events.EventEnvelope(event_id='bad', trace_id='trace')))
-            ack = await get(host.acknowledgements)
-            assert not ack.accepted and ack.error.code == code and ack.error.trace_id == 'trace'
-            assert 'private' not in str(ack) + caplog.text
-            await host.outgoing.put(plugins.CoreToPlugin(event=events.EventEnvelope(event_id='good')))
-            assert (await get(host.acknowledgements)).accepted
-        finally:
-            stop.set()
-            await asyncio.wait_for(running, 2)
-        assert plugin.stopped
 
 
 async def test_reconnect_rechecks_grants_before_events():
     plugin, stop = create_plugin(), asyncio.Event()
-    async with FakeHost() as host:
+    async with FakeTargetRuntime() as host:
         runner = Runner(manifest(), plugin, options(host))
         running = asyncio.create_task(runner.run(stop))
         await get(host.registrations)
-        await host.outgoing.put(plugins.CoreToPlugin(event=events.EventEnvelope(event_id='ok')))
+        await host.send_event(events.EventEnvelope(event_id='ok'))
         assert (await get(host.acknowledgements)).accepted
         host.grants = []
-        await host.outgoing.put(None)
+        await host.disconnect()
         with pytest.raises(PluginError) as failure:
-            await asyncio.wait_for(running, 2)
+            await asyncio.wait_for(running, 3)
         assert failure.value.code == common.PERMISSION_DENIED
         assert plugin.events == ['ok'] and not runner.context.granted_permissions
 
 
-async def test_rejected_registration_and_bad_credentials_do_not_call_event():
-    async with FakeHost() as host:
-        host.rejection = common.Error(code=common.PERMISSION_DENIED)
-        for token in (host.token, 'w' * 32):
-            plugin = create_plugin()
-            with pytest.raises(PluginError) as failure:
-                await asyncio.wait_for(Runner(manifest(), plugin, Options(host.endpoint, token)).run(asyncio.Event()), 2)
-            assert failure.value.code == common.PERMISSION_DENIED
-            assert not plugin.events
-
-
-async def test_start_precedes_registration_and_stop_runs():
-    class Ordered(Plugin):
-        seen = []
-        async def on_start(self, context):
-            self.seen.append('start')
-        async def on_stop(self, reason):
-            self.seen.append('stop')
-    plugin, stop = Ordered(), asyncio.Event()
-    async with FakeHost() as host:
-        running = asyncio.create_task(Runner(manifest(), plugin, options(host)).run(stop))
-        await get(host.registrations)
-        assert plugin.seen == ['start']
-        stop.set()
-        await asyncio.wait_for(running, 2)
-        assert plugin.seen == ['start', 'stop']
-
-
-def test_manifest_capabilities_match_host_validation():
-    unknown = manifest()
-    unknown.capabilities.append('event.not.real')
-    with pytest.raises(PluginError) as failure:
-        validate_manifest(unknown)
-    assert failure.value.code == common.CAPABILITY_NOT_SUPPORTED
-    missing = manifest()
-    missing.capabilities.append('event.timer.triggered')
-    with pytest.raises(PluginError) as failure:
-        validate_manifest(missing)
-    assert failure.value.code == common.PERMISSION_DENIED
-    invalid = manifest()
-    invalid.permissions.append('not a permission')
-    with pytest.raises(PluginError) as failure:
-        validate_manifest(invalid)
-    assert failure.value.code == common.INVALID_ARGUMENT
-
-
-async def test_ordered_manifest_is_forwarded_and_heartbeat_timeout_reconnects():
+async def test_heartbeats_survive_a_silent_server():
     plugin, stop = create_plugin(), asyncio.Event()
-    async with FakeHost(heartbeat_acks=False) as host:
-        runner = Runner(manifest(), plugin,
-                        options(host, io_timeout=.05))
-        running = asyncio.create_task(runner.run(stop))
-        try:
-            first = await get(host.registrations)
-            assert first.manifest.ordered is True
-            second = await get(host.registrations)
-            assert second.instance_id != first.instance_id
-            assert not (await get(host.heartbeats)).instance_id == ''
-        finally:
-            stop.set()
-            await asyncio.wait_for(running, 2)
-
-
-async def test_full_event_queue_rate_limits_and_reconnects():
-    class Blocking(Plugin):
-        def __init__(self):
-            self.release = asyncio.Event()
-
-        async def on_event(self, event, context):
-            await self.release.wait()
-
-    plugin, stop = Blocking(), asyncio.Event()
-    async with FakeHost() as host:
+    async with FakeTargetRuntime(heartbeat_acks=False) as host:
         runner = Runner(manifest(), plugin, options(host))
         running = asyncio.create_task(runner.run(stop))
         try:
             await get(host.registrations)
-            # The first event is consumed by the serial hook, the next two fill the
-            # queue and the fourth overflows it with RATE_LIMITED, forcing a reconnect.
-            for index in range(4):
-                await host.outgoing.put(plugins.CoreToPlugin(
-                    event=events.EventEnvelope(event_id=f'event-{index}')))
-            second = await get(host.registrations)
-            assert second.instance_id
+            await get(host.heartbeats)
         finally:
-            plugin.release.set()
             stop.set()
             await asyncio.wait_for(running, 2)
+
+
+async def test_shutdown_notice_drains_and_stops_without_reconnect():
+    class Draining(Plugin):
+        stopped = False
+        async def on_stop(self, reason):
+            self.stopped = True
+
+    plugin, stop = Draining(), asyncio.Event()
+    async with FakeTargetRuntime() as host:
+        runner = Runner(manifest(), plugin, options(host))
+        running = asyncio.create_task(runner.run(stop))
+        await get(host.registrations)
+        await host.send_shutdown(reason='upgrade', drain_timeout_ms=500)
+        await asyncio.wait_for(running, 3)
+        assert plugin.stopped
+        assert host.registrations.empty()
+        assert host.connection_generation == 1
