@@ -1529,3 +1529,30 @@ P07g（2026-11-02）：P07 Action 退出证据已按当前 HEAD 复核：`p07_ac
 - 仍缺：真实 Host 进程参与 BeginDelete/Restore 的单一联合 e2e（当前为 HostBridge 帧级 +
   Runtime 生命周期应用级 fake 端口证据），Scheduler `ListTasks/CancelTask` 生产客户端/委托
   未接线（fake 端口已验证 BLOCKED→Done 语义）。P13 退出前需补齐这两项或由用户确认环境。
+## P14f 原生单机目标栈 smoke（无 Docker，2026-11-02）
+
+- **定位**：补 P14「单机部署验收」缺口的 native 验收 harness；**不是生产部署替代**，不修改业务
+  契约。入口：`ctest --preset full-locked -R '^p14_native_single_host$'`（label
+  `p14;integration;fault`），驱动 `tests/architecture/p14_native_single_host.py`，由
+  `run_database_test.py` 在 owned PG16.4 fixture 上执行；无外部 DSN/Docker/生产端点。
+- **拓扑**：owned PG16.4 四库（identity/runtime/scheduler/model）经 `kiarabot-pg-initialize
+  --initialize-empty` 初始化；临时 CA + control 浏览器 TLS/客户端证书 + runtime/scheduler/model
+  peer 证书；`kiarabot-identity-bootstrap` 离线 enrollment（administrator、Control principal、
+  runtime/scheduler/model platform peers）；启动 identity/runtime/scheduler/model/control 真实
+  二进制（probe HTTP + owner gRPC mTLS；Control HTTPS `control_api` 指向四个 owner）。Host/
+  Adapter/Bridge 未启动（见未验收项）。
+- **已实测**（本 HEAD，约 12–22s）：五进程启动与四个 owner probe `/health/live|ready` HEALTHY；
+  Control 真实 Identity 登录/refresh 200、未授权 `/api/v1/health` 401；Control probe
+  `/health/live` HEALTHY、`/health/ready` UNHEALTHY（组合根 readiness 未置 ready，稳定记录）；
+  停 Identity→登录失败/依赖健康稳定失败→重启恢复登录；停 Runtime→probe 未就绪→重启恢复；
+  Control 不可信 CA 与 Runtime 错误 DB 密码均启动非零（fail-closed）。
+- **实测缺口/缺陷（已上报 Lead，未在 P14f 修复）**：授权 `/api/v1/health` 与 owner-backed 读取
+  （principals/logs/audit/tasks/models/action policy/action query/delete/restore）在原生栈返回
+  稳定 400 INVALID_ARGUMENT，原因有二：1) Identity `exact_permissions` CHECK(permission BETWEEN
+  1 AND 40) 未随 wire Permission 41–50（P07 按动作、P09 namespace.read、P12 log/audit/health）
+  迁移，离线 bootstrap 无法持久化敏感授权；2) Control 对空 ResourceScope 发委派，Identity
+  `issue_delegation` 对空 permissions 返回 INVALID_ARGUMENT（P12c fake Identity 掩盖）。
+  因此本 harness 只证明“fail-closed 稳定错误”，不证明单机健康聚合/敏感读取成功链。
+- **与 Compose 单机差异**：无镜像构建/Compose/healthcheck/restart/非 root/只读/秘密挂载/
+  官方 PG 镜像；无 Host/Adapter/Bridge、真实 QQ/Provider、两主机与备份演练。详见
+  [architecture-p14f-native-single-host.md](../reports/modules/architecture-p14f-native-single-host.md)。
