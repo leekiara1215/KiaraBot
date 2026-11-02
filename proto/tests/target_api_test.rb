@@ -27,9 +27,13 @@ walk = lambda do |node, origin|
 end
 [openapi, asyncapi].each {|data| walk.call(data, data)}
 declared_rpcs = spec['methods'].map {|m| m['service'] + '.' + m['method']}
+# Internal dispatcher methods are never a client-visible API: no REST operation may bind them.
+internal_rpcs = spec['methods'].select {|m| m['exposure'] == 'internal_dispatcher'}
+                              .map {|m| m['service'] + '.' + m['method']}
 openapi['paths'].each do |path, methods|
   methods.each do |verb, operation|
     next unless operation.is_a?(Hash) && operation['x-target-owner-rpc']
+    raise 'internal dispatcher RPC exposed through REST' if internal_rpcs.include?(operation['x-target-owner-rpc'])
     raise 'undeclared target auth RPC' unless declared_rpcs.include?(operation['x-target-owner-rpc'])
     raise 'auth projection missing scope marker' unless operation['x-target-contract-status'] == 'not_implemented'
     projection = resolve.call(operation.fetch('x-target-response-schema'), openapi)
@@ -43,6 +47,7 @@ openapi['paths'].each do |path, verbs|
     raise 'missing unavailable marker' unless operation['x-contract-status'] == 'not_implemented'
     raise 'missing permission' unless operation['x-permission']
     bindings = operation['x-owner-rpc'].is_a?(Hash) ? operation['x-owner-rpc'].values : [operation['x-owner-rpc']]
+    raise 'internal dispatcher RPC exposed through REST' if bindings.any? {|rpc| internal_rpcs.include?(rpc)}
     raise 'owner RPC mapping is undeclared' unless bindings.all? {|rpc| declared_rpcs.include?(rpc)}
     if operation['x-owner-rpc'].is_a?(Hash)
       operation['x-owner-rpc'].each do |owner, rpc|

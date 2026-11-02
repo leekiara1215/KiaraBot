@@ -111,6 +111,7 @@ class ProtoModel:
         self.field_annotations: Dict[str, Set[str]] = {}
         self.enums: Dict[str, Dict[str, int]] = {}
         self.enum_annotations: Dict[str, Set[str]] = {}
+        self.services: Dict[str, Set[str]] = {}
 
     def message_names(self) -> Set[str]:
         return set(self.messages)
@@ -190,6 +191,15 @@ def parse_proto_files() -> ProtoModel:
                     annotations |= status_tokens(enum_comment)
                     model.enum_annotations[f"{block['dotted']}.{name}"] = annotations
                 model.enums[block["dotted"]] = values
+        # Service declarations (only their method names; options live in target_spec).
+        for service in re.finditer(r"\bservice\s+(\w+)\s*\{", cleaned):
+            name = service.group(1)
+            end = block_end(cleaned, service.end() - 1)
+            if name in model.services:
+                raise ValueError(f"duplicate service {name} in {path.name}")
+            model.services[name] = set(
+                re.findall(r"\brpc\s+(\w+)\s*\(", cleaned[service.end():end - 1])
+            )
     if not model.messages or not model.enums:
         raise ValueError("no Protobuf definitions found")
     return model
@@ -394,6 +404,24 @@ def main() -> int:
                     f"{payload_type} is {message_status} in proto_messages"
                 )
 
+    # 1b. External Bridge service coverage. Bridge RPCs are registered separately from the
+    # five owner services because they are streaming transport entry points without policy
+    # options; their target availability follows execution_scopes.target like any other item.
+    expected_bridge_methods = set()
+    for service_name in ("AdapterBridge", "PluginBridge"):
+        methods = proto.services.get(service_name)
+        if methods is None:
+            fail(f"missing Protobuf bridge service {service_name}")
+            continue
+        expected_bridge_methods |= {f"{service_name}.{method}" for method in methods}
+    observed_bridge_methods = set(categories["bridge_methods"])
+    if expected_bridge_methods != observed_bridge_methods:
+        fail(
+            "bridge_methods coverage differs: missing "
+            f"{sorted(expected_bridge_methods - observed_bridge_methods)}, extra "
+            f"{sorted(observed_bridge_methods - expected_bridge_methods)}"
+        )
+
     # 2. Enum values coverage.
     enum_lookup: Dict[str, int] = {}
     for enum_name, values in proto.enums.items():
@@ -430,7 +458,8 @@ def main() -> int:
     evidence_required: Set[str] = set()
 
     for category in ("event_payloads", "action_payloads", "host_operations", "host_results",
-                     "enum_values", "channels", "stream_events", "operations", "semantic_rules"):
+                     "bridge_methods", "enum_values", "channels", "stream_events", "operations",
+                     "semantic_rules"):
         for key, status in categories[category].items():
             if status == "implemented":
                 continue

@@ -42,6 +42,7 @@ T03a 新增 CoreToPlugin.error（oneof 字段 6），承载注册之后的终止
 | `operations.getActionByIdempotencyKey`、`operations.getActionResult`、`operations.listGroups` | not_implemented | REST Action 查询没有写入方（无 `control/<user>` owner），恒 404；`/groups` 无 Groups 分支，恒空页。 |
 | `semantic.action.deadline_max_300s`、`semantic.action.target_source_id_charset` | not_implemented | deadline 只校验正时间戳，无 300 秒上限；Action 的 `target_source` 用比入口更窄的字符集。 |
 | `semantic.adapter.backpressure_retryable_rate_limited` | not_implemented | 契约要求队列满返回可重试 `RATE_LIMITED`，实现返回 `retryable=false` 且不关流。 |
+| `semantic.bridge.connection_authorization`、`semantic.bridge.external_listener`、`semantic.bridge.plugin_delivery_lease` | not_implemented | P06 目标：Runtime 外部 Bridge 监听（server-verified TLS）、bootstrap→`ConnectionAuthorization`/fence/proof/refresh、插件投递 attempt 租约与 `DELIVERY_STALE`/`DELIVERY_DUPLICATE`；reference 无外部监听、连接授权和 attempt，P06 实现后按 target scope 翻转。 |
 | `semantic.host.unknown_operation_error` | not_implemented | 契约要求未知 Host operation 返回 `CAPABILITY_NOT_SUPPORTED`，实现先返回 `INVALID_ARGUMENT`。 |
 | `semantic.rest.action_query_terminal_retention`、`semantic.rest.action_query_deadline_expired` | not_implemented | REST 查询未实现 168 小时终态保留与到期 `EXPIRED` 迁移；语义已冻结，待 control-api 接线。 |
 | `semantic.grpc.business_error_mapping` | deprecated | 旧文档的 `CONFLICT→ALREADY_EXISTS/ABORTED` 等业务错误映射已废止；业务错误以 in-band `Error` 帧为准，见“错误模型”。 |

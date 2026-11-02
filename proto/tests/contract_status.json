@@ -1407,6 +1407,10 @@
       "HostResponse.task_cancel": "implemented",
       "HostResponse.task_get": "implemented"
     },
+    "bridge_methods": {
+      "AdapterBridge.Connect": "implemented",
+      "PluginBridge.Connect": "implemented"
+    },
     "enum_values": {
       "MessageSegment.Type.AUDIO": "not_implemented",
       "MessageSegment.Type.VIDEO": "not_implemented",
@@ -1632,7 +1636,10 @@
       "semantic.rest.action_query_deadline_expired": "not_implemented",
       "semantic.rest.admin_role_wildcard": "deprecated",
       "semantic.stream.message_read_grant": "implemented",
-      "semantic.stream.plugin_updated_health_state": "not_implemented"
+      "semantic.stream.plugin_updated_health_state": "not_implemented",
+      "semantic.bridge.connection_authorization": "not_implemented",
+      "semantic.bridge.external_listener": "not_implemented",
+      "semantic.bridge.plugin_delivery_lease": "not_implemented"
     }
   },
   "evidence": {
@@ -4646,6 +4653,15 @@
     ],
     "CoreToPlugin.authorization_result": [
       "reports/modules/architecture-p03-contract-evidence.md"
+    ],
+    "semantic.bridge.connection_authorization": [
+      "core/src/runtime/platform/service_rpc.cpp"
+    ],
+    "semantic.bridge.external_listener": [
+      "core/src/runtime/platform/service_config.cpp"
+    ],
+    "semantic.bridge.plugin_delivery_lease": [
+      "core/src/application/target/runtime_application.cpp"
     ]
   },
   "vocabulary": {

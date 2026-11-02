@@ -64,8 +64,28 @@ def main():
                       {'IdentityService', 'RuntimeService', 'HostService', 'SchedulerService', 'ModelService'}
                       for rpc in service.method}
     assert actual_methods == expected_methods, (actual_methods - expected_methods, expected_methods - actual_methods)
+    # External Bridge transports are streaming entry points without owner policy options;
+    # they are registered in target_spec.bridges instead of target_spec.methods.
+    bridge_specs = SPEC['bridges']
+    expected_bridges = {(bridge['service'], bridge['method']) for bridge in bridge_specs}
+    actual_bridges = {(service.name, rpc.name) for file in files.values()
+                      for service in file.service if service.name in {'AdapterBridge', 'PluginBridge'}
+                      for rpc in service.method}
+    assert actual_bridges == expected_bridges, (actual_bridges - expected_bridges,
+                                                expected_bridges - actual_bridges)
+    for bridge in bridge_specs:
+        file = files['kiarabot/v1/' + bridge['file']]
+        service = next(s for s in file.service if s.name == bridge['service'])
+        rpc = next(m for m in service.method if m.name == bridge['method'])
+        assert rpc.input_type == '.kiarabot.v1.' + bridge['request']
+        assert rpc.output_type == '.kiarabot.v1.' + bridge['response']
+        assert rpc.client_streaming == bridge['client_streaming']
+        assert rpc.server_streaming == bridge['server_streaming']
+        assert bridge['status'] in {'implemented', 'not_implemented', 'deprecated'}
+        assert bridge.get('exposure', 'wire') in {'wire', 'internal_dispatcher'}
     checked = 0
     for method in SPEC['methods']:
+        assert method.get('exposure', 'wire') in {'wire', 'internal_dispatcher'}
         file = files['kiarabot/v1/' + method['file']]
         service = next(s for s in file.service if s.name == method['service'])
         rpc = next(m for m in service.method if m.name == method['method'])

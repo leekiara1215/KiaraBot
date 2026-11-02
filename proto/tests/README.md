@@ -11,7 +11,7 @@ python3 proto/tests/check_semantic_rules.py
 ```
 
 - `check_enum_consistency.py`：解析 v1 全部 10 个枚举（含嵌套枚举），与 `proto/tests/enum_baseline.json` 的冻结名称/数值逐项比较；名称/数值/顺序漂移、删除、`allow_alias` 都会失败。新增枚举值允许，但必须在同一变更更新基线。随后比较 `ErrorCode`、`HealthState`、`PluginState`、`ActionStatus` 在 OpenAPI/AsyncAPI 中的字符串词表。
-- `check_implementation_status.py`：以 `proto/tests/contract_status.json` 为唯一登记表，覆盖每个 Protobuf 字段/oneof 载荷、枚举值、AsyncAPI 频道/事件、OpenAPI operationId 和跨契约语义规则；要求未实现项的 `.proto` 内联 `CONTRACT_STATUS` 注释、`api/*.yaml` 的 `x-contract-status` 列表、存在的证据路径、`doc/01-contracts.md` 状态表行，以及冻结的权限/能力/订阅词表同时出现在文档与实现源码中。
+- `check_implementation_status.py`：以 `proto/tests/contract_status.json` 为唯一登记表，覆盖每个 Protobuf 字段/oneof 载荷、枚举值、AsyncAPI 频道/事件、OpenAPI operationId、外部 Bridge 流方法（`bridge_methods`，与 `services.proto` 的 service/rpc 双向相等）和跨契约语义规则；要求未实现项的 `.proto` 内联 `CONTRACT_STATUS` 注释、`api/*.yaml` 的 `x-contract-status` 列表、存在的证据路径、`doc/01-contracts.md` 状态表行，以及冻结的权限/能力/订阅词表同时出现在文档与实现源码中。
 - `check_semantic_rules.py`：校验统一 ID 语法（文档表 ↔ OpenAPI/AsyncAPI 参数）、Action deadline 300 秒上限、gRPC 传输状态与 in-band 业务错误、reserved/deprecated 规则、优雅停机/drain、REST Action 的 168 小时保留/EXPIRED 语义、admin 无通配且无默认 `message.read`、PluginManifest 枚举只声明已实现值。
 
 ## 需要 protoc / 构建产物的完整门禁
@@ -53,7 +53,7 @@ CI 可设置 `KIARABOT_BASELINE_DESCRIPTOR` 指向上一发布版 descriptor。`
 
 `KIARABOT_TARGET_PYTHON=<含 protobuf 和 grpcio-tools 的 Python> proto/tests/check_target.sh` 不依赖根 CMake，临时生成全部 C++/gRPC 与 Python/gRPC、descriptor，编译反射 round-trip 工具，执行目标方法/descriptor options 逐项匹配、fence presence/零值反例和 Python→C++→Python 消息往返。临时目录退出清理，不提交生成物。Python generator 使用其自带兼容运行时；禁止修改生成版本检查。`target_contract_test.py` 的校验 oracle 是规格夹具，不是生产边界实现或数据库并发证明。旧 descriptor 兼容夹具仍是旧开发快照检查，不能当作目标兼容承诺。
 
-`ruby proto/tests/target_api_test.rb` 解析 REST/WS 并递归检查所有本地/跨文件引用、33个目标操作权限/写幂等声明、错误映射与目标状态流。此静态门禁不需要旧 Control --dump-policy 二进制，也不替代固定 Redocly/AsyncAPI parser 的正式 lint。目标RPC验证比较五个owner service完整方法集合双向相等，requires_idempotency_key 与 mutating 独立，防止稳定业务身份被误当普通收据。
+`ruby proto/tests/target_api_test.rb` 解析 REST/WS 并递归检查所有本地/跨文件引用、33个目标操作权限/写幂等声明、错误映射与目标状态流。此静态门禁不需要旧 Control --dump-policy 二进制，也不替代固定 Redocly/AsyncAPI parser 的正式 lint。目标RPC验证比较五个owner service完整方法集合双向相等，requires_idempotency_key 与 mutating 独立，防止稳定业务身份被误当普通收据；`target_spec.json` 的 `bridges` 与两个 Bridge 流方法双向相等、`methods[].exposure` 封闭，且 `internal_dispatcher` 方法不得被 REST owner 映射引用。
 
 目标JSON schema回归：用Ruby YAML解析OpenAPI为JSON临时文件，再运行 `node proto/tests/target_schema_test.cjs <固定lint环境node_modules> <临时OpenAPI.json>`。Ajv逐个证明成功主结果、资源/操作引用、完整Fence必填；拒绝空ID/零代次/缺字段/uint64越界，接受uint64最大值和未应用配置0；registered=true必须完整Fence、Blocked必须原因与下次处理时间。该检查使用lint依赖中的Ajv，未安装依赖即失败。
 

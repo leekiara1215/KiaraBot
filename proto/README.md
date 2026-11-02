@@ -56,7 +56,7 @@ v1 的稳定枚举词汇也由 REST 和 WebSocket 契约复用：`ErrorCode`、`
 
 ## 契约实现状态与门禁
 
-`proto/tests/contract_status.json` 登记每个 Protobuf 字段/oneof 载荷、枚举值、AsyncAPI 频道/事件和 OpenAPI 操作的 `implemented` / `not_implemented` / `deprecated` 状态。未实现项在 `.proto` 内有 `CONTRACT_STATUS` 注释、在 `api/*.yaml` 的 `x-contract-status` 中列出，并在 `doc/01-contracts.md` 状态表中说明。
+`proto/tests/contract_status.json` 登记每个 Protobuf 字段/oneof 载荷、枚举值、AsyncAPI 频道/事件和 OpenAPI 操作的 `implemented` / `not_implemented` / `deprecated` 状态。未实现项在 `.proto` 内有 `CONTRACT_STATUS` 注释、在 `api/*.yaml` 的 `x-contract-status` 中列出，并在 `doc/01-contracts.md` 状态表中说明。外部 Adapter/Plugin 的流式 Bridge 方法单独登记在 `categories.bridge_methods`（无 owner service 的 policy options，故不能混入 `target_spec.json` 的 methods）；外部监听、bootstrap/`ConnectionAuthorization` 与插件投递租约等语义登记在 `categories.semantic_rules` 的 `semantic.bridge.*`。`target_spec.json` 另有 `bridges` 与 `methods[].exposure` 描述传输暴露面。
 
 本机可运行的契约门禁（无需 protoc）：
 

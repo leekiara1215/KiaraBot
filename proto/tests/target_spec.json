@@ -416,7 +416,7 @@
       "file": "runtime.proto",
       "request": "RuntimeRegisterAdapterRequest",
       "response": "RuntimeRegisterAdapterResponse",
-      "caller": "authenticated Adapter",
+      "caller": "runtime internal dispatcher/test only; external adapters use AdapterBridge.Connect",
       "permission": "adapter.connect",
       "risk": "online",
       "mutating": true,
@@ -425,7 +425,8 @@
       "server_streaming": false,
       "status": "not_implemented",
       "max_deadline_ms": 5000,
-      "requires_idempotency_key": false
+      "requires_idempotency_key": false,
+      "exposure": "internal_dispatcher"
     },
     {
       "service": "RuntimeService",
@@ -433,7 +434,7 @@
       "file": "runtime.proto",
       "request": "RuntimeHeartbeatRequest",
       "response": "RuntimeHeartbeatResponse",
-      "caller": "authenticated Adapter",
+      "caller": "runtime internal dispatcher/test only; external adapters heartbeat on AdapterBridge.Connect",
       "permission": "adapter.connect",
       "risk": "current_authenticated_fence",
       "mutating": true,
@@ -442,7 +443,8 @@
       "server_streaming": false,
       "status": "not_implemented",
       "max_deadline_ms": 5000,
-      "requires_idempotency_key": false
+      "requires_idempotency_key": false,
+      "exposure": "internal_dispatcher"
     },
     {
       "service": "RuntimeService",
@@ -450,7 +452,7 @@
       "file": "runtime.proto",
       "request": "RuntimePublishEventRequest",
       "response": "RuntimePublishEventResponse",
-      "caller": "authenticated Adapter",
+      "caller": "runtime internal dispatcher/test only; external adapters publish on AdapterBridge.Connect",
       "permission": "adapter.connect",
       "risk": "online",
       "mutating": true,
@@ -459,7 +461,8 @@
       "server_streaming": false,
       "status": "not_implemented",
       "max_deadline_ms": 30000,
-      "requires_idempotency_key": false
+      "requires_idempotency_key": false,
+      "exposure": "internal_dispatcher"
     },
     {
       "service": "RuntimeService",
@@ -552,7 +555,7 @@
       "file": "runtime.proto",
       "request": "RuntimeRegisterPluginRequest",
       "response": "RuntimeRegisterPluginResponse",
-      "caller": "authenticated Plugin instance",
+      "caller": "runtime internal dispatcher/test only; external plugins use PluginBridge.Connect",
       "permission": "plugin.connect",
       "risk": "online",
       "mutating": true,
@@ -561,7 +564,8 @@
       "server_streaming": false,
       "status": "not_implemented",
       "max_deadline_ms": 5000,
-      "requires_idempotency_key": false
+      "requires_idempotency_key": false,
+      "exposure": "internal_dispatcher"
     },
     {
       "service": "RuntimeService",
@@ -569,7 +573,7 @@
       "file": "runtime.proto",
       "request": "RuntimeHeartbeatPluginRequest",
       "response": "RuntimeHeartbeatPluginResponse",
-      "caller": "authenticated Plugin instance",
+      "caller": "runtime internal dispatcher/test only; external plugins heartbeat on PluginBridge.Connect",
       "permission": "plugin.connect",
       "risk": "current_authenticated_fence",
       "mutating": true,
@@ -578,7 +582,8 @@
       "server_streaming": false,
       "status": "not_implemented",
       "max_deadline_ms": 5000,
-      "requires_idempotency_key": false
+      "requires_idempotency_key": false,
+      "exposure": "internal_dispatcher"
     },
     {
       "service": "RuntimeService",
@@ -595,7 +600,8 @@
       "server_streaming": false,
       "status": "not_implemented",
       "max_deadline_ms": 30000,
-      "requires_idempotency_key": true
+      "requires_idempotency_key": true,
+      "exposure": "internal_dispatcher"
     },
     {
       "service": "RuntimeService",
@@ -612,7 +618,8 @@
       "server_streaming": false,
       "status": "not_implemented",
       "max_deadline_ms": 5000,
-      "requires_idempotency_key": false
+      "requires_idempotency_key": false,
+      "exposure": "internal_dispatcher"
     },
     {
       "service": "RuntimeService",
@@ -620,7 +627,7 @@
       "file": "runtime.proto",
       "request": "RuntimeAckDeliveryRequest",
       "response": "RuntimeAckDeliveryResponse",
-      "caller": "authenticated Plugin instance",
+      "caller": "runtime internal dispatcher/test only; external plugins ack on PluginBridge.Connect",
       "permission": "delivery.process",
       "risk": "current_authenticated_fence",
       "mutating": true,
@@ -629,7 +636,8 @@
       "server_streaming": false,
       "status": "not_implemented",
       "max_deadline_ms": 30000,
-      "requires_idempotency_key": false
+      "requires_idempotency_key": false,
+      "exposure": "internal_dispatcher"
     },
     {
       "service": "RuntimeService",
@@ -637,7 +645,7 @@
       "file": "runtime.proto",
       "request": "RuntimeRenewDeliveryRequest",
       "response": "RuntimeRenewDeliveryResponse",
-      "caller": "authenticated Plugin instance",
+      "caller": "runtime internal dispatcher/test only; external plugins renew on PluginBridge.Connect",
       "permission": "delivery.process",
       "risk": "current_authenticated_fence",
       "mutating": true,
@@ -646,7 +654,8 @@
       "server_streaming": false,
       "status": "not_implemented",
       "max_deadline_ms": 30000,
-      "requires_idempotency_key": false
+      "requires_idempotency_key": false,
+      "exposure": "internal_dispatcher"
     },
     {
       "service": "RuntimeService",
@@ -1548,6 +1557,32 @@
       "server_streaming": false,
       "status": "not_implemented",
       "requires_idempotency_key": false
+    }
+  ],
+  "bridges": [
+    {
+      "service": "AdapterBridge",
+      "method": "Connect",
+      "file": "services.proto",
+      "request": "AdapterToCore",
+      "response": "CoreToAdapter",
+      "client_streaming": true,
+      "server_streaming": true,
+      "caller": "external adapter authenticated by per-instance bootstrap credential and ConnectionAuthorization",
+      "exposure": "wire",
+      "status": "not_implemented"
+    },
+    {
+      "service": "PluginBridge",
+      "method": "Connect",
+      "file": "services.proto",
+      "request": "PluginToCore",
+      "response": "CoreToPlugin",
+      "client_streaming": true,
+      "server_streaming": true,
+      "caller": "external plugin instance authenticated by per-instance bootstrap credential and ConnectionAuthorization",
+      "exposure": "wire",
+      "status": "not_implemented"
     }
   ],
   "error_mapping": {
