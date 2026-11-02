@@ -192,3 +192,23 @@ mock 覆盖：登录/刷新、`/auth/me`、会话列表与撤销、9 个资源�
   2. `/accounts`、`/installations` 列表要求 `catalog`（TargetCatalogRef）但没有 catalog 发现端点；Panel 只能手工输入 catalog ID，需要 P12a/Control 给出 catalog 选择来源。
   3. TaskPage/operation 的 200/202 “受理 ≠ 完成”已由各自 owner operation 表达；若后续增加统一 operation 推送事件，需要 AsyncAPI 目标/事件冻结。
 - 检查（本机实际运行）：`npm test -- --run` **41 passed / 2 skipped**（live.test.ts 真后端套件按缺陷构建产物跳过）；`npm run lint` 通过；`npm run check:contracts` 通过（50 个 panel 端点、5 个 known events）；`npm run build` 通过。
+
+## P12d-3 Panel 实例三类事实/health.read/TaskSummary/日志审计对齐（2026-11-02）
+
+- 状态：**P12c-5 实例 plugin-state/configuration 端点已接线；P12e 尚未合入，logs/audit live 仍按 503 暂不可用渲染**。mock 测试、lint、build、check:contracts 本机实际运行；真实 Control/REST 需 C++ 构建与测试 venv，`live.test.ts` 按既有条件跳过。仅改 `panel/` 与本文档。
+- 实例事实（`deploy/...` 不涉及）：新增
+  `PUT /installations/{installationId}/instances/{instanceId}/plugin-state`、
+  `GET/PUT /installations/{installationId}/instances/{instanceId}/configuration` 的 client 类型与方法；安装与实例页改为“安装+实例对象路径”，分别展示三类独立事实：
+  - **runtime**：desired / desired_config_version / version / observed_at（期望，不代表 Host/插件已执行）；
+  - **host**：host_id / registered / process_outcome / observed_at（`EXECUTION_UNKNOWN` 明确显示“结果未知（不等于已停止）”）；
+  - **plugin**：apply_state / applied_config_version / observed_at；只有 `CONFIG_APPLY_APPLIED` 显示“已确认应用”，非 APPLIED 显示处理中/未确认/已拒绝/不可用，**不显示完成**。
+  desired-state 与 configuration 更新均带 `expected_version`，返回的 operation 进入统一轮询组件；configuration 只读展示 runtime.configuration（服务端脱敏）与十进制版本字符串，秘密永不回显。旧 `/instances/{id}/config` 仅保留 client 兼容，UI 已迁移到新对象路径。
+- 健康页：受权 `/api/v1/health` 401/403 显示“未授权/无权限”，不显示为 unhealthy/Identity 故障；匿名 `/health/live`、`/health/ready` 继续独立展示。HTTP 200+DEGRADED 与 HTTP 503 的 `CAPABILITY_NOT_SUPPORTED`（聚合未实现）分别渲染；`UPSTREAM_UNAVAILABLE` 503 才显示 Identity/依赖不可用。四依赖缺失显示“未上报”，不推断正常。
+- Tasks：列表消费 TaskPage 的 `TaskSummary`（id/name/state/created_at），分页 token/scope 原样转发；详情/取消继续使用 owner 语义。operation 轮询沿用 P12c-4 统一形状（state/execution_outcome/participants/stalled/observed_at/reason/next_attempt_at），200 不等于完成、EXECUTION_UNKNOWN 不推断。
+- 日志/审计：**P12e 未合入**，Control 对 `/logs`、`/audit` 返回 503 时显示“数据源暂不可用（503）/P12e 未合入”，不显示空数据；client 保持 `occurred_at + 稳定 ID` 的服务端排序语义与 opaque page_token，原样透传、不在前端重排/跨页合并。mock 提供日志分页与审计 503 可测路径。需 P12e 合入后补真实 live 验收并确认字段/顺序/401/403/503 稳定。
+- 未接线/未冻结（显式标记）：Model Disable/Enable 无契约；旧 `/plugins/{id}/enable|config` 不复用（实例用 P12c-5 对象路径）；WS 目标/`health.updated` 事件未冻结；模型 secret 轮换不提交（仅已配置/版本）。
+- 需 P12c/P12e 同步点：
+  1. **P12c**：确认 `setInstancePluginState`/`get|updateInstanceConfiguration` 的 handler 状态与字段（三个 facts、operation、错误码）与 OpenAPI 一致；当前 contract 仍 `not_implemented`，handler 若返回 404/501，Panel 以“后端未实现”显式降级。
+  2. **P12e**：`/logs`、`/audit` 权威源接线后，按 occurred_at+ID 的 opaque page token 分页；Panel 已预留透传与 503 语义，需 P12e 提供稳定字段（LogEntry/AuditEntry、occurred_at、id）并跑真实 live 验收。
+  3. **P12a**：`/tasks` 的 scope 查询、catalog 发现来源仍未在契约中补齐（沿用 P12d-2 记录）。
+- 检查（本机实际运行）：`npm test -- --run` **45 passed / 2 skipped**（live.test.ts 缺 C++ 构建/venv 跳过）；`npm run lint`、`npm run build` 通过；`npm run check:contracts` 通过（53 个 panel 端点、5 个 known events）。

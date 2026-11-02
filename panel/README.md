@@ -20,4 +20,6 @@ npm run build
 - 认证：登录/刷新只保存在内存；401 清空会话回到登录。
 - P12 管理面 live 页面消费 Control owner 投影；HTTP 200/202 是读取或受理，完成状态以 owner operation/记录为准。
 - 敏感数据：密钥不渲染、不持久化；日志/审计权威源 503 显示“数据源暂不可用”，不显示空数据。
-- 详细页面与契约/未接线清单见 `doc/07-control-panel.md` 的 P12d-2 段。
+- 实例页按 P12c-5 对象路径展示 runtime/host/plugin 三类事实；非 APPLIED 不显示完成，configuration 秘密不回显。
+- P12e logs/audit 未合入时仍显示“数据源暂不可用（503）”，分页令牌按服务端 occurred_at+ID 顺序透传。
+- 详细页面与契约/未接线清单见 `doc/07-control-panel.md` 的 P12d-3 段。
