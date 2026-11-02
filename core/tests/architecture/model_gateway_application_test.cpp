@@ -2,23 +2,37 @@
 #include <array>
 #include <atomic>
 #include <chrono>
+#include <csignal>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
+#include <functional>
 #include <iostream>
 #include <map>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <source_location>
+#include <span>
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <thread>
+#include <unistd.h>
 #include <utility>
 #include <vector>
+
+#include <arpa/inet.h>
+#include <netinet/in.h>
+#include <sys/socket.h>
 
 #include "kiarabot/core/application/target/model_gateway_application.hpp"
 #include "kiarabot/core/domain/target/model_gateway.hpp"
 #include "kiarabot/core/ports/target/model_ports.hpp"
 #include "kiarabot/core/ports/target/unit_of_work.hpp"
+#include "kiarabot/infrastructure/identity_crypto/factories.hpp"
+#include "kiarabot/infrastructure/identity_crypto/model_secret_crypto.hpp"
+#include "kiarabot/infrastructure/model_http_provider.hpp"
 
 namespace {
 namespace t = kiarabot::core::target;
@@ -30,6 +44,11 @@ void require(bool condition,
   if (!condition) {
     throw std::runtime_error("P11 Model application assertion failed at line " +
                              std::to_string(location.line()));
+  }
+}
+void require(bool condition, std::string_view message) {
+  if (!condition) {
+    throw std::runtime_error("P11 Model application assertion failed: " + std::string{message});
   }
 }
 
@@ -88,6 +107,8 @@ struct Store {
   int commits = 0;
   int rollbacks = 0;
   int fail_commits = 0;
+  // P11b integration hook: let the first N commits through, then fail the next one.
+  int skip_commits = 0;
 };
 
 class FakeSecret final : public t::SecretBuffer {
@@ -380,7 +401,9 @@ public:
     return operations_;
   }
   t::CommitResult commit() override {
-    if (store_.fail_commits > 0) {
+    if (store_.skip_commits > 0) {
+      --store_.skip_commits;
+    } else if (store_.fail_commits > 0) {
       --store_.fail_commits;
       return t::CommitResult::RolledBack;
     }
@@ -723,6 +746,314 @@ void maintenance_and_authorization() {
           std::get<t::Failure>(status).code == t::ErrorCode::NotFound);
 }
 
+// ---------------------------------------------------------------------------------------------
+// P11b integration: real libcurl provider and real root-key AEAD against a loopback fake upstream,
+// with the P11a in-memory typed store to exercise the two transactions and failure persistence.
+// ---------------------------------------------------------------------------------------------
+std::string http_response(int status, std::string_view reason, const std::string& body,
+                          std::string_view extra_headers = {}) {
+  return "HTTP/1.1 " + std::to_string(status) + " " + std::string{reason} +
+         "\r\nContent-Type: application/json\r\n" + std::string{extra_headers} +
+         "Content-Length: " + std::to_string(body.size()) + "\r\nConnection: close\r\n\r\n" + body;
+}
+std::string upstream_success(std::string_view content = "answer") {
+  return std::string{"{\"id\":\"chatcmpl-p11b\",\"choices\":[{\"message\":{\"role\":"
+                     "\"assistant\",\"content\":\""} +
+         std::string{content} + "\"}}],\"usage\":{\"prompt_tokens\":5,\"completion_tokens\":6}}";
+}
+class HttpLoopbackServer {
+public:
+  using Handler = std::function<std::string(const std::string& request)>;
+  explicit HttpLoopbackServer(Handler handler) : handler_(std::move(handler)) {
+    fd_ = ::socket(AF_INET, SOCK_STREAM, 0);
+    require(fd_ >= 0, "loopback socket");
+    int reuse = 1;
+    ::setsockopt(fd_, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
+    sockaddr_in address{};
+    address.sin_family = AF_INET;
+    address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    address.sin_port = 0;
+    require(::bind(fd_, reinterpret_cast<sockaddr*>(&address), sizeof(address)) == 0,
+            "loopback bind");
+    require(::listen(fd_, 8) == 0, "loopback listen");
+    socklen_t length = sizeof(address);
+    require(::getsockname(fd_, reinterpret_cast<sockaddr*>(&address), &length) == 0,
+            "loopback name");
+    port_ = ntohs(address.sin_port);
+    thread_ = std::thread([this] { serve(); });
+  }
+  ~HttpLoopbackServer() {
+    stop_ = true;
+    if (fd_ >= 0) {
+      ::shutdown(fd_, SHUT_RDWR);
+      ::close(fd_);
+    }
+    if (thread_.joinable()) {
+      thread_.join();
+    }
+  }
+  HttpLoopbackServer(const HttpLoopbackServer&) = delete;
+  HttpLoopbackServer& operator=(const HttpLoopbackServer&) = delete;
+  std::string endpoint() const {
+    return "http://127.0.0.1:" + std::to_string(port_) + "/v1/chat/completions";
+  }
+  int requests() const {
+    return requests_.load();
+  }
+  std::string last_request() const {
+    std::lock_guard lock(mutex_);
+    return request_;
+  }
+
+private:
+  void serve() {
+    while (!stop_) {
+      const int client = ::accept(fd_, nullptr, nullptr);
+      if (client < 0) {
+        return;
+      }
+      std::string received;
+      char buffer[4096];
+      while (received.find("\r\n\r\n") == std::string::npos) {
+        const auto read = ::recv(client, buffer, sizeof(buffer), 0);
+        if (read <= 0) {
+          break;
+        }
+        received.append(buffer, static_cast<std::size_t>(read));
+      }
+      const auto separator = received.find("\r\n\r\n");
+      if (separator != std::string::npos) {
+        std::size_t length = 0;
+        const auto content_length = received.find("Content-Length:");
+        if (content_length != std::string::npos) {
+          length = static_cast<std::size_t>(
+              std::strtoul(received.c_str() + content_length + 15, nullptr, 10));
+        }
+        while (received.size() < separator + 4 + length) {
+          const auto read = ::recv(client, buffer, sizeof(buffer), 0);
+          if (read <= 0) {
+            break;
+          }
+          received.append(buffer, static_cast<std::size_t>(read));
+        }
+      }
+      requests_.fetch_add(1);
+      {
+        std::lock_guard lock(mutex_);
+        request_ = received;
+      }
+      const auto response = stop_ ? std::string{} : handler_(received);
+      if (!response.empty()) {
+        ::send(client, response.data(), response.size(), 0);
+      }
+      ::shutdown(client, SHUT_RDWR);
+      ::close(client);
+    }
+  }
+  int fd_{-1};
+  unsigned short port_{0};
+  Handler handler_;
+  std::thread thread_;
+  std::atomic<bool> stop_{false};
+  std::atomic<int> requests_{0};
+  mutable std::mutex mutex_;
+  std::string request_;
+};
+kiarabot::infrastructure::identity_crypto::SymmetricKey root_key(std::byte seed) {
+  std::array<std::byte, 32> bytes{};
+  for (std::size_t index = 0; index < bytes.size(); ++index) {
+    bytes[index] = static_cast<std::byte>(
+        (static_cast<unsigned char>(seed) + static_cast<unsigned char>(index)) & 0xffU);
+  }
+  auto copied =
+      kiarabot::infrastructure::identity_crypto::copy_secret(std::as_bytes(std::span{bytes}));
+  require(std::holds_alternative<t::OwnedSecret>(copied), "root key copy");
+  return kiarabot::infrastructure::identity_crypto::SymmetricKey{
+      {"model-root-v1"}, std::move(std::get<t::OwnedSecret>(copied))};
+}
+std::vector<std::byte> provider_secret(std::string_view value) {
+  std::vector<std::byte> result(value.size());
+  for (std::size_t index = 0; index < value.size(); ++index) {
+    result[index] = static_cast<std::byte>(static_cast<unsigned char>(value[index]));
+  }
+  return result;
+}
+struct HttpFixture {
+  Store store;
+  FakeDigest digest;
+  FakeIds ids;
+  FakeAuthorization authorization;
+  FakeFactory factory{store};
+  std::unique_ptr<t::ModelProviderPort> provider;
+  std::unique_ptr<t::ModelSecretCryptoPort> crypto;
+  std::unique_ptr<t::ModelGatewayApplication> application;
+  void configure(std::byte root_seed) {
+    auto opened =
+        kiarabot::infrastructure::identity_crypto::make_model_secret_crypto(root_key(root_seed));
+    require(std::holds_alternative<std::unique_ptr<t::ModelSecretCryptoPort>>(opened),
+            "crypto open");
+    crypto = std::move(std::get<std::unique_ptr<t::ModelSecretCryptoPort>>(opened));
+    auto opened_provider = kiarabot::infrastructure::make_model_http_provider();
+    require(std::holds_alternative<std::unique_ptr<t::ModelProviderPort>>(opened_provider),
+            "provider open");
+    provider = std::move(std::get<std::unique_ptr<t::ModelProviderPort>>(opened_provider));
+    rebuild();
+  }
+  void rebuild() {
+    application.reset();
+    application = t::make_model_gateway_application(
+        {factory, *provider, *crypto, digest, ids, authorization, 7});
+  }
+  void replace_crypto(std::byte root_seed) {
+    application.reset();
+    auto opened =
+        kiarabot::infrastructure::identity_crypto::make_model_secret_crypto(root_key(root_seed));
+    require(std::holds_alternative<std::unique_ptr<t::ModelSecretCryptoPort>>(opened),
+            "crypto replacement");
+    crypto = std::move(std::get<std::unique_ptr<t::ModelSecretCryptoPort>>(opened));
+    rebuild();
+  }
+  template <typename Value> Value take(t::Outcome<Value> result) {
+    if (const auto* failure = std::get_if<t::Failure>(&result)) {
+      std::cerr << "P11b integration failure code " << static_cast<int>(failure->code) << '\n';
+      throw std::runtime_error("P11b integration operation failed");
+    }
+    return std::move(std::get<Value>(result));
+  }
+  void create_model(const std::string& endpoint, std::string_view secret) {
+    t::ModelConfiguration config;
+    config.model_id = {kModel};
+    config.alias = "default";
+    config.endpoint = endpoint;
+    config.provider_model = "gpt-test";
+    config.timeout_ms = 5000;
+    config.max_concurrency = 2;
+    take(application->update_model({control(), context("http-update-1"), config, {}}));
+    take(application->rotate_provider_secret(
+        {control(), context("http-rotate-1"), {kModel}, provider_secret(secret), {}}));
+    take(application->set_model_lifecycle(
+        {control(), context("http-enable-1"), {kModel}, t::ResourceVersion{1}, true}));
+  }
+  t::Outcome<t::ModelChatReply> chat(t::ModelCallContext call_context, std::string call_id,
+                                     std::string text = "hello") {
+    return application->chat({plugin(),
+                              std::move(call_context),
+                              std::move(call_id),
+                              "default",
+                              {message(std::move(text))}});
+  }
+};
+
+void http_success_and_pinning() {
+  HttpLoopbackServer server(
+      [](const std::string&) { return http_response(200, "OK", upstream_success()); });
+  HttpFixture fixture;
+  fixture.configure(std::byte{1});
+  fixture.create_model(server.endpoint(), "secret-one");
+  auto reply = fixture.take(fixture.chat(context("http-chat-1"), kCall));
+  require(reply.disposition == t::ModelChatDisposition::FreshResult && reply.result &&
+              *reply.result == "answer",
+          "http success");
+  require(server.requests() == 1, "one provider request");
+  require(server.last_request().find("Authorization: Bearer secret-one") != std::string::npos,
+          "real provider receives unsealed secret");
+  require(reply.call.usage_known && reply.call.input_tokens == 5 && reply.call.output_tokens == 6 &&
+              reply.call.secret_version.value == 1,
+          "usage call facts");
+  auto replay = fixture.take(fixture.chat(context("http-chat-2"), kCall));
+  require(replay.disposition == t::ModelChatDisposition::ReplayTerminal && server.requests() == 1,
+          "replay never re-invokes provider");
+  fixture.take(fixture.application->rotate_provider_secret({control(),
+                                                            context("http-rotate-2"),
+                                                            {kModel},
+                                                            provider_secret("secret-two"),
+                                                            t::ResourceVersion{1}}));
+  auto second = fixture.take(fixture.chat(context("http-chat-3"), kCall2, "second"));
+  require(second.call.secret_version.value == 2, "second call pinned secret v2");
+  require(server.requests() == 2 &&
+              server.last_request().find("Authorization: Bearer secret-two") != std::string::npos,
+          "rotated secret used by later call");
+  require(fixture.store.calls.at({kOwner, kCall}).secret_version.value == 1,
+          "in-flight/first call kept secret v1");
+}
+
+void http_mapping_integration() {
+  {
+    HttpLoopbackServer limited([](const std::string&) {
+      return http_response(429, "Too Many", "{}", "Retry-After: 3\r\n");
+    });
+    HttpFixture fixture;
+    fixture.configure(std::byte{2});
+    fixture.create_model(limited.endpoint(), "secret");
+    auto reply = fixture.chat(context("http-429"), kCall);
+    require(std::holds_alternative<t::Failure>(reply), "429 failure");
+    const auto& failure = std::get<t::Failure>(reply);
+    require(failure.code == t::ErrorCode::RateLimited &&
+                failure.acceptance == t::Acceptance::Accepted && failure.retry_after &&
+                failure.retry_after->count() == 3000,
+            "429 stable accepted failure with retry-after");
+    const auto call = fixture.store.calls.at({kOwner, kCall});
+    require(call.state == t::ModelCallState::Failed && !call.may_have_billed &&
+                limited.requests() == 1,
+            "429 known failure is not billed and not retried");
+  }
+  {
+    HttpLoopbackServer broken(
+        [](const std::string&) { return http_response(500, "Server", "{}"); });
+    HttpFixture fixture;
+    fixture.configure(std::byte{3});
+    fixture.create_model(broken.endpoint(), "secret");
+    auto reply = fixture.chat(context("http-500"), kCall);
+    require(std::holds_alternative<t::Failure>(reply), "500 failure");
+    const auto& failure = std::get<t::Failure>(reply);
+    require(failure.code == t::ErrorCode::UpstreamUnavailable &&
+                failure.acceptance == t::Acceptance::Unknown,
+            "500 is unknown");
+    const auto call = fixture.store.calls.at({kOwner, kCall});
+    require(call.state == t::ModelCallState::Unknown && call.may_have_billed,
+            "500 persists conservative unknown");
+  }
+}
+
+void http_txn2_failure_keeps_unknown() {
+  HttpLoopbackServer server(
+      [](const std::string&) { return http_response(200, "OK", upstream_success()); });
+  HttpFixture fixture;
+  fixture.configure(std::byte{4});
+  fixture.create_model(server.endpoint(), "secret");
+  // Let the txn1 intent commit, then fail the txn2 result commit after the provider responded.
+  fixture.store.skip_commits = 1;
+  fixture.store.fail_commits = 1;
+  auto reply = fixture.chat(context("http-txn2"), kCall);
+  require(server.requests() == 1, "provider invoked before txn2 failure");
+  require(std::holds_alternative<t::Failure>(reply), "txn2 failure");
+  require(std::get<t::Failure>(reply).acceptance == t::Acceptance::Unknown,
+          "txn2 failure keeps unknown acceptance");
+  const auto call = fixture.store.calls.at({kOwner, kCall});
+  require(call.state == t::ModelCallState::Started,
+          "txn2 failure leaves durable intent (not a known result)");
+}
+
+void http_unseal_failure_is_closed() {
+  HttpLoopbackServer server(
+      [](const std::string&) { return http_response(200, "OK", upstream_success()); });
+  HttpFixture fixture;
+  fixture.configure(std::byte{5});
+  fixture.create_model(server.endpoint(), "secret");
+  // Deploy a different root key after the secret was sealed: the provider must never be called.
+  fixture.replace_crypto(std::byte{6});
+  auto reply = fixture.chat(context("http-unseal"), kCall);
+  require(std::holds_alternative<t::Failure>(reply), "unseal failure");
+  const auto& failure = std::get<t::Failure>(reply);
+  require(failure.code == t::ErrorCode::UpstreamUnavailable &&
+              failure.acceptance == t::Acceptance::Accepted,
+          "unseal fault is a known not-billed failure");
+  require(server.requests() == 0, "provider not invoked without a readable secret");
+  const auto call = fixture.store.calls.at({kOwner, kCall});
+  require(call.state == t::ModelCallState::Failed && !call.may_have_billed,
+          "unseal fault does not mark billed");
+}
+
 } // namespace
 
 int main() {
@@ -730,6 +1061,10 @@ int main() {
     management_and_chat();
     failures_keep_unknown();
     maintenance_and_authorization();
+    http_success_and_pinning();
+    http_mapping_integration();
+    http_txn2_failure_keeps_unknown();
+    http_unseal_failure_is_closed();
   } catch (const std::exception& error) {
     std::cerr << error.what() << '\n';
     return 1;

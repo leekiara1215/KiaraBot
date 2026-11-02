@@ -81,7 +81,7 @@ Core 内部接口位于 `core/include/kiarabot/core/ports/ports.hpp`，协议类
 
 Model 进程使用独立逻辑库（P03 typed UoW 扩展）：`model_configs` 保存别名/Provider/端点/超时/并发上限/生命周期与配置版本（版本即 CAS/水位）；`encrypted_provider_secrets` 按 `(model_id, secret_version)` 保存 nonce+AEAD 密文，旧版本保留给在途调用；原 `model_intents` 就地扩展为调用记录（config/secret 版本、request_hash、usage_known、may_have_billed、provider_request_id、latency、disposition、resolved_at/by、retain_until），不另建 `model_calls` 以免删除 P03 证据关系。真实 PG16.4 实测合并 P07 后的 Model schema v8、descriptor/relation_count 已写回 manifest；共享 result_model_intents 列变化使 Identity/Runtime/Scheduler 的 descriptor 同步更新（relation 数不变）。
 
-Provider 根密钥由部署通过 `model_security.root_key_file`（32 字节 hex、0600、可信文件）与单调 `key_version` 注入，只由 Model 组合根读取并交给 libsodium XChaCha20-Poly1305 适配器；根密钥不入数据库、不与密文同表、不写日志/审计/错误。sealed 值的 AAD 绑定 model_id/secret_version/root_key_version，解密失败 fail closed。P11a 使用确定性开发 Provider（不联网）；HTTP Provider、真实 Identity 调用者委派校验和 readiness 翻转属于 P11b/P11c。
+Provider 根密钥由部署通过 `model_security.root_key_file`（32 字节 hex、0600、可信文件）与单调 `key_version` 注入，只由 Model 组合根读取并交给 libsodium XChaCha20-Poly1305 适配器；根密钥不入数据库、不与密文同表、不写日志/审计/错误。sealed 值的 AAD 绑定 model_id/secret_version/root_key_version，解密失败 fail closed。P11b 已用 reviewed libcurl HTTP Provider 替换开发 fake：每次调用按已 pinning 的配置构造 OpenAI Chat Completions 请求（Bearer secret 只在内存、不日志不回显），TLS 校验证书/主机、禁代理与重定向、协议限定 HTTPS 或 127.0.0.1 HTTP；输入 128 条/64KiB、响应 1MiB、结果 64KiB，超时由服务端预算与配置取小，不自动重试。映射：400/422 INVALID_ARGUMENT、401/403 UPSTREAM_UNAVAILABLE、404/405/410 CAPABILITY_NOT_SUPPORTED、429 RATE_LIMITED（Retry-After 透传、已知未计费）、其他 4xx 已知 UPSTREAM_UNAVAILABLE；5xx/超时/TLS/连接/畸形/超大响应一律 UNKNOWN（may_have_billed 保守）。组合根默认注入真实 Provider，只允许显式测试选项注入 fake。真实 Identity 调用者委派校验和 readiness 翻转属于 P11c。
 
 ## 模型适配器
 
