@@ -679,3 +679,10 @@ P07d 真实 adapter e2e 的事件 fan-out 断言现已覆盖：真实 adapter �
   WS 频道（延期）、`listActionMetadata`（契约未声明）、operation host owner（未声明）。
 - P12f 修复真实缺陷：owner gRPC `ABORTED/NOT_FOUND/RESOURCE_EXHAUSTED/UNIMPLEMENTED/INTERNAL`
   未映射，CONFLICT 曾被降级为 503；现已映射为 409/404/429/503/500。
+
+## P05f Identity/Runtime 出口核对（2026-11-02，main@439fb9e）
+
+- Control 的 P04 认证边界与 Identity owner 目标路径已由真实 TLS harness 覆盖：`p04_control_auth_https` 通过（严格输入、撤销、依赖故障、停机）；P04 本机 `p04_identity_*` 28 项通过（含真实 PG16.4/TLS daemon/daemon_keys 测试）。
+- Runtime 的 owner 路径由 `p05_runtime_*` 4 项覆盖，其中 `p05_runtime_identity_e2e` 为真实双进程 mTLS/委托/PG16.4、允许与撤销后拒绝；这仍是本机证据，不代表目标六服务栈 live。
+- target 状态：Identity 7/23 方法、Runtime 10/55 方法已登记 implemented；P04 认证链、P05 核心资源方法、ListPrincipals 等未翻项、`bootstrap_credential` 字段级与 P05b 委托缺口见 [P04 报告](../reports/modules/architecture-p04-identity.md)/[P05 报告](../reports/modules/architecture-p05-runtime.md) 的 P05f 段。
+- Control 消费说明：P04 认证/撤销语义不变；P05 的 `runtime_endpoint` 必须配置且 Identity 的 Runtime/Scheduler/Model platform peers 已离线登记，否则 fail-closed/503；P05b 实例委托未确认前，Model 深链路不宣称完成。

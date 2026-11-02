@@ -1509,3 +1509,10 @@ P07g（2026-11-02）：P07 Action 退出证据已按当前 HEAD 复核：`p07_ac
 - 已实测：Model owner RPC 全套（9/9）、真 PG16.4 p03（2/2）、Control Model REST e2e；模型密钥只在 owner 内解密、日志/管理投影不回显。
 - 未验收：真实外部 Provider 付费联调（T07b）、真实插件→Runtime→Model→Provider 单链路（P05b）、readiness composition 级真实 TLS harness、目标栈 live。运维启用 Provider 前需完成外部 provider 环境验收；本期不把 fixture provider 当生产 Provider。
 - 契约核对发现：OpenAPI Model REST 仍 inline not_implemented（与 p11_control_model_rest 证据不一致）；p01_target_roundtrip 因 ListAudit scope_kinds 镜像不一致失败，均上报 Lead，本任务不改契约。
+
+## P05f Identity/Runtime 运维核对与剩余环境项（2026-11-02，main@439fb9e）
+
+- 本机 full-locked 构建 + 46 项 P02/P03/P04/P05 测试通过；Identity 的 bootstrap/daemon/keys/真实 TLS 与 Runtime 的真实双进程 mTLS/PG16.4 e2e 均有本机证据（命令见模块报告）。
+- 生产准备仍缺：目标六服务真实栈 live、Host peer 生产证书签发/轮换/吊销流程、跨主机网络分区演练、P06 外部 Bridge 的 bootstrap_credential 消费闭环。
+- P05b（Runtime 实例委托来源）待用户确认语义；未确认前 Runtime→Model/Scheduler 深链路保持 fail-closed/分层证据，不把 fake/fixture 当生产验收。
+- `platform_peers` 离线登记与显式 assignment 是目标栈部署前置；readiness 仍按真实 DB/schema/Identity 授权链/密钥材料判定，缺配置不得 ready。生产证书轮换需停写/滚动窗口与 Identity 登记变更，不能热改文件冒充轮换。

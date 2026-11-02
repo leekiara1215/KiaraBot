@@ -114,6 +114,15 @@ P10 Scheduler 的 domain/RPC/PG16.4/三进程 mTLS 交接已本地实测通过�
 | `operations.getOccurrence` | not_implemented | P10h：SchedulerService.GetOccurrence owner RPC 已 implemented，但 Control 尚无 `/occurrences/{id}` REST handler，成功链无 target 证据，保持 not_implemented（未新增 handler，不伪翻转） |
 <!-- execution-scopes:end -->
 
+### P05f 核对注记（2026-11-02，main@439fb9e）
+
+P05f 只读核对了 Identity/Runtime 的 target 状态并补退出证据，未修改 proto/OpenAPI/contract_status。结论：
+P04-A 管理面与 P12e ListAudit/ListLogs 已登记 implemented；P04 认证链、
+P05 Runtime 资源方法、Identity ListPrincipals 等有本机测试证据但 target 未翻（逐项 evidence 未登记/
+生产环境和 P05b 未验收），清单与理由见 `reports/modules/architecture-p04-identity.md` 与
+`architecture-p05-runtime.md` 的 P05f 段。`bootstrap_credential` 字段级、P05b 实例委托与
+`HostRequest.storage_compare_and_set` 仍保持 not_implemented。
+
 检查器继续核对每个Proto字段/oneof、枚举、频道/事件、OpenAPI操作及原未实现项的内联注释、API列表、文档行和证据，不删除原门禁。历史Core逻辑证据路径只通过`core/reference/manifest.json`的明确source→reference映射解析并核对Git blob，未登记/缺失/字节变化/重引入/路径逃逸或符号链接均失败。target已实现项另需当前生产source及target测试，reference、旧客户端或测试内字符串不能证明target生产能力。
 
 <!-- contract-status:start -->
@@ -1925,7 +1934,7 @@ SetAssignment 输入 AssignmentSpec：创建不带 assignment_id/expected_versio
 
 SessionRecord.created_at 是 Identity 持久保存的首次创建时间，刷新/撤销不改写。会话状态以同响应 checked_at 判定：revoked 优先 REVOKED，其次 checked_at >= expires_at 为 EXPIRED，否则 ACTIVE。Login/Refresh 的剩余 access TTL 为 max(0,floor(access_expires_at-checked_at))；Control 不用本地时间、token iat 或占位时间补齐。缺失权威字段、非当前绑定或授权依赖不可用必须拒绝，不能伪造空权限/成功。
 
-RegisterPrincipal 同事务创建 Disabled Principal 与无秘密 PENDING 凭据引用（allowed_services 作为 Pending audiences 持久化）；尚未发放的 PENDING 不得伪造 expires_at。首轮成功的 RotateCredential（WorkloadBootstrap 或 human Password）在同一事务激活 principal；RevokeCredential 撤销后该凭据的 Login/Validate 当前凭据门禁失败。WorkloadBootstrap 交付一次 opaque token（24h），human Password 交付一次服务端临时密码并重新派生 verifier，CertificateBinding 轮换明确 CAPABILITY_NOT_SUPPORTED。expected_version 进入 keyed request commitment，同键异版本 CONFLICT；未授权与不存在统一 NOT_FOUND，一个精确 binding 只对应一个 Principal。P04-A 应用/仓储/RPC 已接线（实现中），待完整门禁与真实 PG/TLS 验收后翻转。
+RegisterPrincipal 同事务创建 Disabled Principal 与无秘密 PENDING 凭据引用（allowed_services 作为 Pending audiences 持久化）；尚未发放的 PENDING 不得伪造 expires_at。首轮成功的 RotateCredential（WorkloadBootstrap 或 human Password）在同一事务激活 principal；RevokeCredential 撤销后该凭据的 Login/Validate 当前凭据门禁失败。WorkloadBootstrap 交付一次 opaque token（24h），human Password 交付一次服务端临时密码并重新派生 verifier，CertificateBinding 轮换明确 CAPABILITY_NOT_SUPPORTED。expected_version 进入 keyed request commitment，同键异版本 CONFLICT；未授权与不存在统一 NOT_FOUND，一个精确 binding 只对应一个 Principal。P04-A 应用/仓储/RPC 已接线；P05f 已在 `main@439fb9e` 通过本机完整门禁与真实 PG16.4/TLS 测试（28 项 `p04_identity_*` + `p04_control_auth_https`），但 target 契约状态仍按独立 target evidence 逐项登记，未批量翻转；未翻项见 [P04 报告](../reports/modules/architecture-p04-identity.md)。
 
 ## 外部 Bridge 连接授权（目标未实现）
 
@@ -1969,7 +1978,7 @@ Login、RefreshSession、RotateCredential、RevokeSession 等既有幂等/恢复
 
 ## P04 Identity RPC 边界（应用已接生产组合根，实现中）
 
-`runtime/platform/identity_rpc.hpp/.cpp` 的 make_identity_rpc 借用 IdentitySecurityApplication 并持有组合根注入 PeerAuthenticator；适配 Login/RefreshSession/ValidateSession/GetPrincipal/RevokeSession/ListSessions，并通过可选 `IdentityRpcOptions{.principal=&app}` 追加 RegisterPrincipal/RotateCredential/RevokeCredential/GetPrincipalStatus/GetCredentialStatus 五个主体/凭据管理方法。RPC 层只做字段转换与稳定错误映射，业务与事务在 `IdentityPrincipalApplication`；未注入 principal 能力时五个方法返回 typed CAPABILITY_NOT_SUPPORTED，其余 Identity 方法继续稳定拒绝。应用已接生产组合根（Identity daemon），但仍为实现中，待完整 P04 门禁与真实 PG/TLS 验收后翻转契约状态。
+`runtime/platform/identity_rpc.hpp/.cpp` 的 make_identity_rpc 借用 IdentitySecurityApplication 并持有组合根注入 PeerAuthenticator；适配 Login/RefreshSession/ValidateSession/GetPrincipal/RevokeSession/ListSessions，并通过可选 `IdentityRpcOptions{.principal=&app}` 追加 RegisterPrincipal/RotateCredential/RevokeCredential/GetPrincipalStatus/GetCredentialStatus 五个主体/凭据管理方法。RPC 层只做字段转换与稳定错误映射，业务与事务在 `IdentityPrincipalApplication`；未注入 principal 能力时五个方法返回 typed CAPABILITY_NOT_SUPPORTED，其余 Identity 方法继续稳定拒绝。应用已接生产组合根（Identity daemon）；P05f 已在 `main@439fb9e` 通过本机完整门禁与真实 PG16.4/TLS 测试，但 target 契约状态未翻转（target evidence 逐项登记，不把本机证据自动视为生产部署）；未翻项与证据见 [P04 报告](../reports/modules/architecture-p04-identity.md)。
 
 每次从真实ServerContext.auth_context提取受限叶证据，再调用必须核对当前登记/凭据/SAN的可信认证回调，并核对回调的主体、证书指纹、平台角色和凭据版本。六方法要求Control peer；不相信body actor/peer、不把CA有效当业务授权。纯应用仍须复核当前Identity状态、self Principal列表和exact Session撤销权限。认证回调为同步借用契约，生产者须有自身有界I/O并遵守实际取消/deadline；边界在其前后检查预算，不声称能抢占任意阻塞回调。
 

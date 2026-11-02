@@ -316,3 +316,7 @@ P07 退出证据覆盖 Action 行与配额/证据/回执的 owner 事务、派�
 ## P11f Model 事务/存储证据补充（2026-11-02）
 
 P11 全套测试通过（9/9）覆盖 Model 两事务意图/结果、UNKNOWN 保守计费、replay、AEAD provider secret 版本固定与轮换、per-model 配置条件版本；p03 真 PG16.4 fixture 2/2。无 schema/事务实现改动；Provider 外部真实调用与目标栈 live 未验收（T07b/环境）。
+
+## P05f 事务/迁移状态核对（2026-11-02，main@439fb9e）
+
+P05f 未修改事务/迁移设计；本机真 PG16.4 测试（`p03_postgres_database` 及 P04/P05 相关）通过，Identity/Runtime 私有库 schema/初始化与双进程 e2e 有现有证据。target 未翻项与生产环境项：P05 核心 Runtime 资源方法 target 状态仍 not_implemented（逐方法 evidence 未登记）、`bootstrap_credential` 字段级与 P05b 委托未验收；真实目标栈迁移顺序、备份/恢复（P14c 本机演练不等于生产）、Host peer 证书轮换与跨主机未验收。详见 P04/P05 模块报告 P05f 段。

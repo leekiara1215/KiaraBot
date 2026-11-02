@@ -351,3 +351,7 @@ subject 派生；缺失 installation binding 时接收方必须 fail-closed。Sc
 scheduler.proto 增加既有 `scope_kinds` 注释（TASK/INSTANCE），供 Identity.CheckAuthorization
 解析方法策略；未新增 proto 字段、权限或 wire 语义。Identity 侧签发需要同时包含 Installation
 与 Instance scope（Runtime/Scheduler 的精确 scope 校验依赖该组合）。
+
+## P05f 契约核对状态（2026-11-02，main@439fb9e）
+
+P04/P05 设计语义未变；P05f 只补退出证据与 target 状态核对。本机验证：`p04_identity_*` 28/28、`p05_runtime_*` 4/4（含真实双进程 mTLS/PG16.4）、`p04_control_auth_https`、`p03_postgres_database`、P02 相关 12 项，合计 46/46。target 仅 Identity 7/23、Runtime 10/55 方法登记 implemented；P04 认证链/P05 资源方法/ListPrincipals 未翻原因与 `bootstrap_credential` 字段级、P05b 委托、host operation 缺口见 P04/P05 模块报告 P05f 段。设计文档不因此修改 wire/权限/委托规则。

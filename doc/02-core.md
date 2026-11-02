@@ -1551,3 +1551,10 @@ P07 Action 退出证据：领域规则 `p07_action_rules`、真 PG16.4 `p07_post
 ## P11f Model 退出证据（2026-11-02）
 
 Model owner 的 11 个 RPC（GatewayChat/GetCallStatus/Resolve/元数据/配置/Disable/Enable/GetOperation 等）由 P11 全套测试实测（9/9），应用层两事务/UNKNOWN 保守计费/AEAD secret/HTTP provider 映射/Identity 调用者校验均有覆盖；插件入口仅 HostRequest.model_chat 的 bridge fixture 证据，真实插件→Runtime→Model→Provider 单链路待 P05b 委托语义确认。ModelChatDisposition/ModelCallDisposition 不作为线上客户端能力验收（无暴露消费证据），streaming 明确不做，GetOperation 仅 model owner 分支。详见 `reports/modules/architecture-p11-model.md` P11f 段。
+
+## P05f Identity/Runtime 退出证据（2026-11-02，main@439fb9e）
+
+- 本机 full-locked 完整构建后运行 `ctest -R 'p04_identity|p04_control_auth_https|p05_runtime|p03_postgres|p02|architecture_p02'`：**46/46 passed**；其中 `p04_identity_*` 28 项、`p05_runtime_*` 4 项（含真实双进程 Identity/Runtime mTLS/PG16.4 的 `p05_runtime_identity_e2e`）、`p04_control_auth_https`、`p03_postgres_database`、P02 相关 12 项。命令与逐组结果见 [P04 报告](../reports/modules/architecture-p04-identity.md) 与 [P05 报告](../reports/modules/architecture-p05-runtime.md) 的 P05f 段。
+- target 核对（只读）：IdentityService 方法 target implemented 7/23（RegisterPrincipal/RotateCredential/RevokeCredential/GetPrincipalStatus/GetCredentialStatus/ListAudit/ListLogs），消息 17、字段 59；RuntimeService 方法 target implemented 10/55（P09a-2 namespace、P13 生命周期、P12e audit/logs、QueryActionResult），消息 23、字段 77。
+- 未翻项（未改契约）：P04 Login/Refresh/Validate/GetPrincipal/ListSessions/RevokeSession、IssueDelegation/CheckAuthorization、Exchange/Assignment/Invalidation/VerificationKeys、ListPrincipals；P05 核心 Runtime 资源方法（CreateAccount…GetInstanceConfig）；`bootstrap_credential` 字段级、P05b 实例委托、`HostRequest.storage_compare_and_set`/host operation owner。原因与证据逐项见两份模块报告的 P05f 段。
+- 剩余缺口：P05b 委托语义待用户确认；真实目标栈 live、Host peer 生产证书签发/轮换、跨主机网络分区演练未验收；P06 外部 Bridge 的 bootstrap_credential 消费未形成端到端证据。
