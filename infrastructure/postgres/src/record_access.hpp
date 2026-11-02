@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <functional>
 #include <memory>
 #include <optional>
@@ -31,6 +32,8 @@ struct DatabaseAccess {
 };
 
 // Closed infrastructure dispatch to concrete relation tables. Not a Core port or a blob store.
+// Values encode the ReplayResult variant index for live-relation dispatch; new kinds are appended
+// and existing values never change (they are also stored as replay_results.kind snapshots).
 enum class RecordKind {
   Principal = 3,
   Session = 4,
@@ -40,13 +43,25 @@ enum class RecordKind {
   Instance = 8,
   Task = 9,
   Occurrence = 10,
-  ModelIntent = 11
+  ModelIntent = 11,
+  Adapter = 15,
+  AdapterBinding = 16,
+  Host = 17,
+  InstanceConfig = 18
 };
 core::target::Outcome<std::optional<core::target::ReplayResult>>
 find_record(core::target::UnitOfWork& work, RecordKind kind, std::span<const std::string> key);
 core::target::Status save_record(core::target::UnitOfWork& work, RecordKind kind,
                                  const core::target::ReplayResult& value,
                                  std::optional<core::target::ResourceVersion> expected);
+// Owner-ordered bounded projection for typed List queries. Trusted application limit only; the
+// repository never applies authorization. Faults are Failure, never an empty page.
+core::target::Outcome<std::vector<core::target::ReplayResult>>
+list_records(core::target::UnitOfWork& work, RecordKind kind, std::size_t limit,
+             const std::string& after);
+// Resolve the stable adapter resource id from an assigned adapter instance identity (unique key).
+core::target::Outcome<std::optional<core::target::ResourceId>>
+find_adapter_id(core::target::UnitOfWork& work, const core::target::InstanceId& instance);
 core::target::Outcome<std::optional<core::target::AuthorizationState>>
 find_authorization(core::target::UnitOfWork& work, const core::target::SubjectId& subject);
 core::target::Status save_authorization(core::target::UnitOfWork& work,

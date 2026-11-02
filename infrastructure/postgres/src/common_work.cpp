@@ -613,6 +613,63 @@ public:
       return std::monostate{};
     });
   }
+  target::Outcome<std::vector<target::ReplayResult>> list_live(RecordKind kind, std::size_t limit,
+                                                               const std::string& after) {
+    return invoke<std::vector<target::ReplayResult>>(
+        [&]() -> target::Outcome<std::vector<target::ReplayResult>> {
+          const auto spec = record_spec(kind);
+          if (spec.owner != owner()) {
+            return error(target::ErrorCode::PermissionDenied);
+          }
+          if (limit < 1 || limit > 1024 || spec.keys.size() != 1) {
+            return error(target::ErrorCode::InvalidArgument);
+          }
+          if (!after.empty() && !valid_sql_text(after)) {
+            return error(target::ErrorCode::InvalidArgument);
+          }
+          const std::string columns{spec.keys.front()};
+          const std::string predicate = after.empty() ? "" : " WHERE " + columns + ">$2";
+          pqxx::params parameters;
+          parameters.append(static_cast<int>(limit));
+          if (!after.empty()) {
+            parameters.append(after);
+          }
+          const auto rows = exec("SELECT " + columns + " FROM kiarabot." + std::string(spec.table) +
+                                     predicate + " ORDER BY " + columns + " LIMIT $1",
+                                 parameters);
+          std::vector<target::ReplayResult> result;
+          result.reserve(rows.size());
+          for (const auto& row : rows) {
+            std::vector<std::string> key{row[columns].as<std::string>()};
+            auto loaded = load_live(*transaction_, kind, key);
+            if (!loaded) {
+              throw std::runtime_error("listed relation row disappeared");
+            }
+            result.push_back(std::move(*loaded));
+          }
+          return result;
+        });
+  }
+  target::Outcome<std::optional<target::ResourceId>>
+  adapter_id_by_instance(const target::InstanceId& instance) {
+    return invoke<std::optional<target::ResourceId>>(
+        [&]() -> target::Outcome<std::optional<target::ResourceId>> {
+          if (owner() != target::Service::Runtime) {
+            return error(target::ErrorCode::PermissionDenied);
+          }
+          if (instance.value.empty() || !valid_sql_text(instance.value)) {
+            return error(target::ErrorCode::InvalidArgument);
+          }
+          const auto rows =
+              exec("SELECT id FROM kiarabot.adapters WHERE instance=$1", {instance.value});
+          if (rows.empty()) {
+            return std::optional<target::ResourceId>{};
+          }
+          return std::optional<target::ResourceId>{
+              target::ResourceId{rows.one_row()["id"].as<std::string>()}};
+        });
+  }
+
   target::Outcome<std::optional<target::AuthorizationState>>
   lookup_authorization(const target::SubjectId& subject) {
     return invoke<std::optional<target::AuthorizationState>>([&]()
@@ -797,6 +854,21 @@ target::Status save_record(target::UnitOfWork& work, RecordKind kind,
                            std::optional<target::ResourceVersion> expected) {
   if (auto* common = dynamic_cast<CommonWork*>(&work)) {
     return common->write_live(kind, value, expected);
+  }
+  return error(target::ErrorCode::Internal);
+}
+target::Outcome<std::vector<target::ReplayResult>> list_records(target::UnitOfWork& work,
+                                                                RecordKind kind, std::size_t limit,
+                                                                const std::string& after) {
+  if (auto* common = dynamic_cast<CommonWork*>(&work)) {
+    return common->list_live(kind, limit, after);
+  }
+  return error(target::ErrorCode::Internal);
+}
+target::Outcome<std::optional<target::ResourceId>>
+find_adapter_id(target::UnitOfWork& work, const target::InstanceId& instance) {
+  if (auto* common = dynamic_cast<CommonWork*>(&work)) {
+    return common->adapter_id_by_instance(instance);
   }
   return error(target::ErrorCode::Internal);
 }

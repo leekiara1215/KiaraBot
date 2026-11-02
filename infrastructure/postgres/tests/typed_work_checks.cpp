@@ -459,6 +459,79 @@ void runtime(const DatabaseConfig& config) {
   check(take(work->accounts().find(account.id))->display_name == "机器人🙂",
         "runtime restart lost UTF8 state");
   work->rollback();
+
+  // P05 adapter registry: stable adapter id plus assigned instance lookup, connection-only fence,
+  // declared/effective capability text round-trip and bounded list ordering. The earlier factory is
+  // still valid; opening a second writer session while this UoW holds its lease would conflict.
+  work = take(factory->begin());
+  target::AdapterRecord adapter{
+      {"live-adapter"},
+      {"nonebot",
+       "1.0.0",
+       "kiarabot.v1",
+       {{"action.send_message.text.v1", "1"}, {"action.react_message.v1", "1"}},
+       {{"action.send_message.text.v1", "1"}}},
+      {{"live-adapter-instance"}, {"live-epoch"}, {"live-connection"}, {1}},
+      {1},
+      target::LifecycleState::Active,
+      take(work->current_time()),
+      take(work->current_time()) + std::chrono::seconds{1},
+      take(work->current_time()) + std::chrono::seconds{91}};
+  take(work->adapters().save(adapter, {}));
+  target::AdapterBindingRecord binding{
+      {"live-account"}, {"live-adapter-instance"}, {1}, target::LifecycleState::Active};
+  take(work->adapter_bindings().save(binding, {}));
+  target::InstanceConfiguration instance_config{{"live-instance"},
+                                                {1},
+                                                {0},
+                                                target::ConfigApplyState::Pending,
+                                                "delivery-1",
+                                                std::nullopt,
+                                                std::nullopt,
+                                                take(work->current_time()),
+                                                {std::byte{1}, std::byte{2}},
+                                                {1}};
+  take(work->instance_configs().save(instance_config, {}));
+  commit(*work);
+  work = take(factory->begin());
+  const auto stored_adapter = take(work->adapters().find({"live-adapter"}));
+  check(stored_adapter && stored_adapter->current.instance.value == "live-adapter-instance" &&
+            stored_adapter->current.connection_generation.value == 1 &&
+            stored_adapter->registration.declared_capabilities.size() == 2 &&
+            stored_adapter->registration.effective_capabilities.size() == 1,
+        "adapter relation lost connection fence or capability negotiation");
+  const auto by_instance = take(work->adapters().by_instance({"live-adapter-instance"}));
+  check(by_instance && by_instance->adapter.value == "live-adapter",
+        "adapter instance lookup lost stable adapter id");
+  check(!take(work->adapters().by_instance({"unknown-instance"})),
+        "unknown adapter instance resolved to a record");
+  const auto stored_binding = take(work->adapter_bindings().find({"live-account"}));
+  check(stored_binding && stored_binding->adapter_instance.value == "live-adapter-instance",
+        "adapter binding lost assigned instance");
+  const auto stored_config = take(work->instance_configs().find({"live-instance"}));
+  check(stored_config && stored_config->values.size() == 2 && stored_config->version.value == 1,
+        "instance config lost values/version");
+  const auto adapters = take(work->list_adapters(2, {}));
+  check(adapters.size() == 1 && adapters.front().adapter.value == "live-adapter",
+        "adapter list lost owner ordering");
+  const auto installations = take(work->list_installations(2, {}));
+  check(!installations.empty(), "installation list lost current rows");
+  const auto configs_missing = work->instance_configs().find({"unknown-instance"});
+  check(!take(configs_missing), "unknown instance config found");
+  work->rollback();
+
+  // Conditional version still rejects a stale expected version for the new records.
+  work = take(factory->begin());
+  auto changed_adapter = *stored_adapter;
+  changed_adapter.version = {2};
+  changed_adapter.last_heartbeat_at += std::chrono::seconds{30};
+  take(work->adapters().save(changed_adapter, target::ResourceVersion{1}));
+  commit(*work);
+  work = take(factory->begin());
+  auto duplicate_adapter = adapter;
+  duplicate_adapter.adapter = {"duplicate-adapter"};
+  expect(work->adapters().save(duplicate_adapter, {}), target::ErrorCode::Conflict);
+  rollback_rejected(*work);
 }
 void scheduler(const DatabaseConfig& config) {
   auto factory = take(open_scheduler(config));

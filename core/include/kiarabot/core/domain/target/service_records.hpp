@@ -64,6 +64,9 @@ struct PluginInstallation {
   ResourceId plugin_type;
   ResourceVersion version;
   LifecycleState state = LifecycleState::Active;
+  // Canonical serialized plugin manifest accepted at installation time; Core never parses plugin
+  // JSON/protobuf. Rejection/validation of manifest schema stays at the trusted boundary.
+  std::vector<std::byte> manifest{};
 };
 struct ConversationKey {
   ResourceId adapter;

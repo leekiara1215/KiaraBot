@@ -8,7 +8,9 @@
 // clang-format on
 
 namespace t = kiarabot::core::target;
-static_assert(std::variant_size_v<t::ReplayResult> == 15);
+// P05 appends four Runtime resource records after the historical alternatives; the first fifteen
+// indices are storage-contract stable (replay_results.kind / RecordKind dispatch).
+static_assert(std::variant_size_v<t::ReplayResult> == 19);
 static_assert(std::is_same_v<std::variant_alternative_t<0, t::ReplayResult>, t::EmptySuccess>);
 static_assert(
     std::is_same_v<std::variant_alternative_t<1, t::ReplayResult>, t::ResourceMutationResult>);
@@ -27,6 +29,12 @@ static_assert(std::is_same_v<std::variant_alternative_t<12, t::ReplayResult>, t:
 static_assert(std::is_same_v<std::variant_alternative_t<13, t::ReplayResult>,
                              t::RegisteredPrincipalSnapshot>);
 static_assert(std::is_same_v<std::variant_alternative_t<14, t::ReplayResult>, t::ExactAssignment>);
+static_assert(std::is_same_v<std::variant_alternative_t<15, t::ReplayResult>, t::AdapterRecord>);
+static_assert(
+    std::is_same_v<std::variant_alternative_t<16, t::ReplayResult>, t::AdapterBindingRecord>);
+static_assert(std::is_same_v<std::variant_alternative_t<17, t::ReplayResult>, t::HostRegistration>);
+static_assert(
+    std::is_same_v<std::variant_alternative_t<18, t::ReplayResult>, t::InstanceConfiguration>);
 static_assert(!std::is_constructible_v<t::ReplayResult, t::SecretReplayPayload>);
 
 int main() try {

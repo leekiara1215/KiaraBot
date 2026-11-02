@@ -53,6 +53,70 @@ private:
   target::UnitOfWork& work_;
   detail::RecordKind kind_;
 };
+// Bounded owner-ordered list projection used by Runtime typed List queries. Casts each loaded
+// record to the exact expected type; a mismatch is an internal storage fault, never an empty page.
+template <typename Value>
+target::Outcome<std::vector<Value>> listed(target::UnitOfWork& work, detail::RecordKind kind,
+                                           std::size_t limit, const std::string& after) {
+  auto records = detail::list_records(work, kind, limit, after);
+  if (const auto* rejected = std::get_if<target::Failure>(&records)) {
+    return *rejected;
+  }
+  std::vector<Value> result;
+  auto& values = std::get<std::vector<target::ReplayResult>>(records);
+  result.reserve(values.size());
+  for (auto& record : values) {
+    auto* value = std::get_if<Value>(&record);
+    if (!value) {
+      return failure(target::ErrorCode::Internal);
+    }
+    result.push_back(std::move(*value));
+  }
+  return result;
+}
+// Adapter registry has two reads: stable adapter resource id and the assigned adapter instance
+// identity carried by registration/heartbeat frames. Both borrow the same owner UoW.
+class AdapterRegistry final : public target::AdapterRegistryRepository {
+public:
+  explicit AdapterRegistry(target::UnitOfWork& work) : work_(work) {}
+  target::Outcome<std::optional<target::AdapterRecord>>
+  find(const target::ResourceId& adapter) override {
+    const std::string key = adapter.value;
+    auto found = detail::find_record(work_, detail::RecordKind::Adapter,
+                                     std::span<const std::string>(&key, 1));
+    if (const auto* rejected = std::get_if<target::Failure>(&found)) {
+      return *rejected;
+    }
+    auto record = std::move(std::get<std::optional<target::ReplayResult>>(found));
+    if (!record) {
+      return std::optional<target::AdapterRecord>{};
+    }
+    if (auto* value = std::get_if<target::AdapterRecord>(&*record)) {
+      return std::optional<target::AdapterRecord>(std::move(*value));
+    }
+    return failure(target::ErrorCode::Internal);
+  }
+  target::Outcome<std::optional<target::AdapterRecord>>
+  by_instance(const target::InstanceId& instance) override {
+    auto resolved = detail::find_adapter_id(work_, instance);
+    if (const auto* rejected = std::get_if<target::Failure>(&resolved)) {
+      return *rejected;
+    }
+    const auto& id = std::get<std::optional<target::ResourceId>>(resolved);
+    if (!id) {
+      return std::optional<target::AdapterRecord>{};
+    }
+    return find(*id);
+  }
+  target::Status save(const target::AdapterRecord& value,
+                      std::optional<target::ResourceVersion> expected) override {
+    return detail::save_record(work_, detail::RecordKind::Adapter, target::ReplayResult(value),
+                               expected);
+  }
+
+private:
+  target::UnitOfWork& work_;
+};
 class AuthorizationRepository final
     : public target::Repository<target::SubjectId, target::AuthorizationState> {
 public:
@@ -131,10 +195,23 @@ class RuntimeWork final : public WorkDelegate<target::RuntimeUnitOfWork> {
 public:
   explicit RuntimeWork(std::unique_ptr<target::UnitOfWork> common)
       : WorkDelegate(std::move(common)), accounts_(work(), detail::RecordKind::Account),
+        bindings_(work(), detail::RecordKind::AdapterBinding), adapters_(work()),
+        hosts_(work(), detail::RecordKind::Host),
         installations_(work(), detail::RecordKind::Installation),
-        instances_(work(), detail::RecordKind::Instance) {}
+        instances_(work(), detail::RecordKind::Instance),
+        instance_configs_(work(), detail::RecordKind::InstanceConfig) {}
   target::Repository<target::ResourceId, target::BotAccount>& accounts() override {
     return accounts_;
+  }
+  target::Repository<target::ResourceId, target::AdapterBindingRecord>&
+  adapter_bindings() override {
+    return bindings_;
+  }
+  target::AdapterRegistryRepository& adapters() override {
+    return adapters_;
+  }
+  target::Repository<target::ResourceId, target::HostRegistration>& hosts() override {
+    return hosts_;
   }
   target::Repository<target::InstallationId, target::PluginInstallation>& installations() override {
     return installations_;
@@ -142,11 +219,40 @@ public:
   target::Repository<target::InstanceId, target::PluginInstance>& instances() override {
     return instances_;
   }
+  target::Repository<target::InstanceId, target::InstanceConfiguration>&
+  instance_configs() override {
+    return instance_configs_;
+  }
+  target::Outcome<std::vector<target::BotAccount>>
+  list_accounts(std::size_t limit, const std::string& after) override {
+    return listed<target::BotAccount>(work(), detail::RecordKind::Account, limit, after);
+  }
+  target::Outcome<std::vector<target::AdapterRecord>>
+  list_adapters(std::size_t limit, const std::string& after) override {
+    return listed<target::AdapterRecord>(work(), detail::RecordKind::Adapter, limit, after);
+  }
+  target::Outcome<std::vector<target::HostRegistration>>
+  list_hosts(std::size_t limit, const std::string& after) override {
+    return listed<target::HostRegistration>(work(), detail::RecordKind::Host, limit, after);
+  }
+  target::Outcome<std::vector<target::PluginInstallation>>
+  list_installations(std::size_t limit, const std::string& after) override {
+    return listed<target::PluginInstallation>(work(), detail::RecordKind::Installation, limit,
+                                              after);
+  }
+  target::Outcome<std::vector<target::PluginInstance>>
+  list_instances(std::size_t limit, const std::string& after) override {
+    return listed<target::PluginInstance>(work(), detail::RecordKind::Instance, limit, after);
+  }
 
 private:
   LiveRepository<target::ResourceId, target::BotAccount> accounts_;
+  LiveRepository<target::ResourceId, target::AdapterBindingRecord> bindings_;
+  AdapterRegistry adapters_;
+  LiveRepository<target::ResourceId, target::HostRegistration> hosts_;
   LiveRepository<target::InstallationId, target::PluginInstallation> installations_;
   LiveRepository<target::InstanceId, target::PluginInstance> instances_;
+  LiveRepository<target::InstanceId, target::InstanceConfiguration> instance_configs_;
 };
 class SchedulerWork final : public WorkDelegate<target::SchedulerUnitOfWork> {
 public:

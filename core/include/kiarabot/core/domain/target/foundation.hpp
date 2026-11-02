@@ -152,6 +152,9 @@ struct Operation {
   std::optional<TimePoint> next_attempt;
 };
 enum class LifecycleState { Active, Disabled, Deleting, Deleted, Restoring, Purged };
+// Durable management intent, distinct from lifecycle and observed process state. A stopped plugin
+// can remain registered/connected; an offline host never proves its process was stopped.
+enum class DesiredState { Running, Stopped };
 
 struct PluginInstance {
   InstanceId id;
@@ -163,6 +166,7 @@ struct PluginInstance {
   ResourceVersion version;
   LifecycleState state = LifecycleState::Active;
   std::optional<ResourceId> host;
+  DesiredState desired = DesiredState::Running;
 };
 
 } // namespace kiarabot::core::target

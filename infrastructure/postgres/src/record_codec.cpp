@@ -152,6 +152,44 @@ bool valid_text(const target::ReplayResult& result) {
           const auto& fence = *value.current;
           return valid_sql_text_fields({fence.instance.value, fence.runtime_epoch.value,
                                         fence.execution.value, fence.connection.value});
+        } else if constexpr (std::is_same_v<Value, target::AdapterRecord>) {
+          if (!valid_sql_text_fields(
+                  {value.adapter.value, value.registration.implementation,
+                   value.registration.implementation_version, value.registration.protocol_version,
+                   value.current.instance.value, value.current.runtime_epoch.value,
+                   value.current.connection.value})) {
+            return false;
+          }
+          for (const auto& capability : value.registration.declared_capabilities) {
+            if (!valid_sql_text_fields({capability.name, capability.version})) {
+              return false;
+            }
+          }
+          for (const auto& capability : value.registration.effective_capabilities) {
+            if (!valid_sql_text_fields({capability.name, capability.version})) {
+              return false;
+            }
+          }
+          return true;
+        } else if constexpr (std::is_same_v<Value, target::AdapterBindingRecord>) {
+          return valid_sql_text_fields({value.account.value, value.adapter_instance.value});
+        } else if constexpr (std::is_same_v<Value, target::HostRegistration>) {
+          if (!valid_sql_text(value.host.value)) {
+            return false;
+          }
+          for (const auto& capability : value.capabilities) {
+            if (!valid_sql_text(capability)) {
+              return false;
+            }
+          }
+          return true;
+        } else if constexpr (std::is_same_v<Value, target::InstanceConfiguration>) {
+          if (!valid_sql_text_fields({value.instance.value, value.delivery_id})) {
+            return false;
+          }
+          return !value.fence || valid_sql_text_fields(
+                                     {value.fence->instance.value, value.fence->runtime_epoch.value,
+                                      value.fence->execution.value, value.fence->connection.value});
         } else if constexpr (std::is_same_v<Value, target::ScheduledTask>) {
           return valid_sql_text_fields({value.key.owner.value, value.key.task_id,
                                         value.installation.value, value.target.adapter.value,
@@ -207,6 +245,72 @@ target::Sha256Digest read_digest(const pqxx::field& field) {
   }
   return result;
 }
+// Canonical text encodings for small bounded value collections in this owner's relations. Unit and
+// record separators cannot appear in validated names/versions, so no escaping is required.
+std::string capabilities_text(const std::vector<target::Capability>& values) {
+  std::string result;
+  for (const auto& capability : values) {
+    result += capability.name;
+    result += '\x1f';
+    result += capability.version;
+    result += '\x1e';
+  }
+  return result;
+}
+std::vector<target::Capability> read_capabilities(std::string_view text) {
+  std::vector<target::Capability> result;
+  std::size_t position = 0;
+  while (position < text.size()) {
+    const auto end = text.find('\x1e', position);
+    if (end == std::string_view::npos) {
+      throw std::runtime_error("invalid stored capability encoding");
+    }
+    const auto field = text.substr(position, end - position);
+    const auto separator = field.find('\x1f');
+    if (separator == std::string_view::npos || separator == 0 || separator + 1 == field.size()) {
+      throw std::runtime_error("invalid stored capability field");
+    }
+    result.push_back(
+        {std::string(field.substr(0, separator)), std::string(field.substr(separator + 1))});
+    position = end + 1;
+  }
+  return result;
+}
+std::string text_list(const std::vector<std::string>& values) {
+  std::string result;
+  for (const auto& value : values) {
+    result += value;
+    result += '\x1e';
+  }
+  return result;
+}
+std::vector<std::string> read_text_list(std::string_view text) {
+  std::vector<std::string> result;
+  std::size_t position = 0;
+  while (position < text.size()) {
+    const auto end = text.find('\x1e', position);
+    if (end == std::string_view::npos || end == position) {
+      throw std::runtime_error("invalid stored text list");
+    }
+    result.emplace_back(text.substr(position, end - position));
+    position = end + 1;
+  }
+  return result;
+}
+std::vector<std::byte> byte_vector(const pqxx::bytes& value) {
+  std::vector<std::byte> result;
+  result.reserve(value.size());
+  for (const auto byte : value) {
+    result.push_back(static_cast<std::byte>(byte));
+  }
+  return result;
+}
+// BYTEA parameters must be copied into pqxx::bytes: a zero-length bytes_view built from an empty
+// vector's null data pointer is encoded as SQL NULL, which violates NOT NULL binary columns.
+pqxx::bytes binary(const std::vector<std::byte>& value) {
+  return pqxx::bytes(value.begin(), value.end());
+}
+
 target::Operation read_operation(const pqxx::row& row) {
   target::Operation value;
   value.ref = {enum_field<target::Service>(row["owner"], 5),
@@ -293,6 +397,14 @@ RecordSpec record_spec(RecordKind kind) {
     return {"occurrences", {"occurrence_id"}, target::Service::Scheduler};
   case RecordKind::ModelIntent:
     return {"model_intents", {"owner", "logical_call_id"}, target::Service::Model};
+  case RecordKind::Adapter:
+    return {"adapters", {"id"}, target::Service::Runtime};
+  case RecordKind::AdapterBinding:
+    return {"adapter_bindings", {"account"}, target::Service::Runtime};
+  case RecordKind::Host:
+    return {"hosts", {"id"}, target::Service::Runtime};
+  case RecordKind::InstanceConfig:
+    return {"instance_configs", {"instance"}, target::Service::Runtime};
   }
   throw std::runtime_error("invalid relation dispatch");
 }
@@ -300,7 +412,15 @@ std::vector<std::string> record_key(const target::ReplayResult& value) {
   return std::visit(
       [](const auto& record) -> std::vector<std::string> {
         using Value = std::decay_t<decltype(record)>;
-        if constexpr (std::is_same_v<Value, target::ScheduledTask>) {
+        if constexpr (std::is_same_v<Value, target::AdapterRecord>) {
+          return {record.adapter.value};
+        } else if constexpr (std::is_same_v<Value, target::AdapterBindingRecord>) {
+          return {record.account.value};
+        } else if constexpr (std::is_same_v<Value, target::HostRegistration>) {
+          return {record.host.value};
+        } else if constexpr (std::is_same_v<Value, target::InstanceConfiguration>) {
+          return {record.instance.value};
+        } else if constexpr (std::is_same_v<Value, target::ScheduledTask>) {
           return {record.key.owner.value, record.key.task_id};
         } else if constexpr (std::is_same_v<Value, target::ModelIntent>) {
           return {record.owner.value, record.logical_call_id};
@@ -499,9 +619,9 @@ std::int64_t write_record(pqxx::transaction_base& transaction, const target::Rep
               {value.id.value, value.platform, value.platform_account_id, value.display_name,
                value.version.value, static_cast<int>(value.state)});
         } else if constexpr (std::is_same_v<Value, target::PluginInstallation>) {
-          put(transaction, "installations", "id,plugin_type,version,state", id,
+          put(transaction, "installations", "id,plugin_type,version,state,manifest", id,
               {value.id.value, value.plugin_type.value, value.version.value,
-               static_cast<int>(value.state)});
+               static_cast<int>(value.state), binary(value.manifest)});
         } else if constexpr (std::is_same_v<Value, target::PluginInstance>) {
           pqxx::params parameters{value.id.value, value.installation.value, value.plugin_type.value,
                                   value.desired_version.value, value.applied_config_version.value};
@@ -516,11 +636,12 @@ std::int64_t write_record(pqxx::transaction_base& transaction, const target::Rep
           }
           parameters.append(pqxx::params{value.version.value, static_cast<int>(value.state),
                                          value.host ? std::optional<std::string>(value.host->value)
-                                                    : std::nullopt});
+                                                    : std::nullopt,
+                                         static_cast<int>(value.desired)});
           put(transaction, "instances",
               "id,installation,plugin_type,desired_version,applied_config_version,fence_instance,"
               "runtime_epoch,execution_id,execution_generation,connection_id,connection_generation,"
-              "version,state,host",
+              "version,state,host,desired",
               id, std::move(parameters));
         } else if constexpr (std::is_same_v<Value, target::ScheduledTask>) {
           put(transaction, "tasks",
@@ -529,10 +650,8 @@ std::int64_t write_record(pqxx::transaction_base& transaction, const target::Rep
               id,
               {value.key.owner.value, value.key.task_id, value.installation.value,
                value.target.adapter.value, value.target.account.value, value.target.conversation_id,
-               static_cast<int>(value.target.kind),
-               pqxx::bytes_view(value.payload.data(), value.payload.size()),
-               timestamp(value.run_at), static_cast<int>(value.state), value.version.value,
-               value.occurrence.value});
+               static_cast<int>(value.target.kind), binary(value.payload), timestamp(value.run_at),
+               static_cast<int>(value.state), value.version.value, value.occurrence.value});
         } else if constexpr (std::is_same_v<Value, target::Occurrence>) {
           pqxx::params parameters{value.owner.value,
                                   value.installation.value,
@@ -564,6 +683,49 @@ std::int64_t write_record(pqxx::transaction_base& transaction, const target::Rep
                value.config_version.value, digest(value.request_hash),
                static_cast<int>(value.state), value.version.value, timestamp(value.created_at),
                timestamp(value.observed_at)});
+        } else if constexpr (std::is_same_v<Value, target::AdapterRecord>) {
+          put(transaction, "adapters",
+              "id,implementation,implementation_version,protocol_version,declared_capabilities,"
+              "effective_capabilities,version,state,registered_at,heartbeat_at,online_until,"
+              "instance,runtime_epoch,connection_id,connection_generation",
+              id,
+              {value.adapter.value, value.registration.implementation,
+               value.registration.implementation_version, value.registration.protocol_version,
+               capabilities_text(value.registration.declared_capabilities),
+               capabilities_text(value.registration.effective_capabilities), value.version.value,
+               static_cast<int>(value.state), timestamp(value.last_registered_at),
+               timestamp(value.last_heartbeat_at), timestamp(value.online_until),
+               value.current.instance.value, value.current.runtime_epoch.value,
+               value.current.connection.value, value.current.connection_generation.value});
+        } else if constexpr (std::is_same_v<Value, target::AdapterBindingRecord>) {
+          put(transaction, "adapter_bindings", "account,adapter_instance,version,state", id,
+              {value.account.value, value.adapter_instance.value, value.version.value,
+               static_cast<int>(value.state)});
+        } else if constexpr (std::is_same_v<Value, target::HostRegistration>) {
+          put(transaction, "hosts", "id,capabilities,version,state,heartbeat_at,observed_at", id,
+              {value.host.value, text_list(value.capabilities), value.version.value,
+               static_cast<int>(value.state), timestamp(value.last_heartbeat_at),
+               timestamp(value.observed_at)});
+        } else if constexpr (std::is_same_v<Value, target::InstanceConfiguration>) {
+          pqxx::params parameters{value.instance.value,        value.desired_version.value,
+                                  value.applied_version.value, static_cast<int>(value.apply_state),
+                                  value.delivery_id,           value.fence.has_value()};
+          if (value.fence) {
+            const auto& fence = *value.fence;
+            parameters.append(pqxx::params{fence.instance.value, fence.runtime_epoch.value,
+                                           fence.execution.value, fence.execution_generation.value,
+                                           fence.connection.value,
+                                           fence.connection_generation.value});
+          } else {
+            parameters.append(pqxx::params{nullptr, nullptr, nullptr, nullptr, nullptr, nullptr});
+          }
+          parameters.append(pqxx::params{optional_enum(value.error), timestamp(value.observed_at),
+                                         binary(value.values), value.version.value});
+          put(transaction, "instance_configs",
+              "instance,desired_version,applied_version,apply_state,delivery_id,has_fence,"
+              "fence_instance,runtime_epoch,execution_id,execution_generation,connection_id,"
+              "connection_generation,error,observed_at,values,version",
+              id, std::move(parameters));
         }
       },
       result);
@@ -700,7 +862,8 @@ target::ReplayResult load_record(pqxx::transaction_base& transaction, std::int64
     return target::PluginInstallation{{row["id"].as<std::string>()},
                                       {row["plugin_type"].as<std::string>()},
                                       {row["version"].as<std::uint64_t>()},
-                                      enum_field<target::LifecycleState>(row["state"], 5)};
+                                      enum_field<target::LifecycleState>(row["state"], 5),
+                                      byte_vector(row["manifest"].as<pqxx::bytes>())};
   }
   case 8: {
     const auto row = get(transaction, "instances", id);
@@ -712,7 +875,8 @@ target::ReplayResult load_record(pqxx::transaction_base& transaction, std::int64
                                  {},
                                  {row["version"].as<std::uint64_t>()},
                                  enum_field<target::LifecycleState>(row["state"], 5),
-                                 {}};
+                                 {},
+                                 enum_field<target::DesiredState>(row["desired"], 1)};
     if (!row["fence_instance"].is_null()) {
       value.current = target::Fence{{row["fence_instance"].as<std::string>()},
                                     {row["runtime_epoch"].as<std::string>()},
@@ -848,6 +1012,73 @@ target::ReplayResult load_record(pqxx::transaction_base& transaction, std::int64
         !valid_exact_result(value)) {
       throw std::runtime_error("invalid stored exact assignment result");
     }
+    return value;
+  }
+  case 15: {
+    const auto row = get(transaction, "adapters", id);
+    target::AdapterRecord value;
+    value.adapter = {row["id"].as<std::string>()};
+    value.registration.implementation = row["implementation"].as<std::string>();
+    value.registration.implementation_version = row["implementation_version"].as<std::string>();
+    value.registration.protocol_version = row["protocol_version"].as<std::string>();
+    value.registration.declared_capabilities =
+        read_capabilities(row["declared_capabilities"].as<std::string>());
+    value.registration.effective_capabilities =
+        read_capabilities(row["effective_capabilities"].as<std::string>());
+    value.current.instance = {row["instance"].as<std::string>()};
+    value.current.runtime_epoch = {row["runtime_epoch"].as<std::string>()};
+    value.current.connection = {row["connection_id"].as<std::string>()};
+    value.current.connection_generation = {row["connection_generation"].as<std::uint64_t>()};
+    value.version = {row["version"].as<std::uint64_t>()};
+    value.state = enum_field<target::LifecycleState>(row["state"], 5);
+    value.last_registered_at = time_field(row, "registered_at");
+    value.last_heartbeat_at = time_field(row, "heartbeat_at");
+    value.online_until = time_field(row, "online_until");
+    if (!valid_adapter_fence(value.current)) {
+      throw std::runtime_error("invalid stored adapter fence");
+    }
+    return value;
+  }
+  case 16: {
+    const auto row = get(transaction, "adapter_bindings", id);
+    return target::AdapterBindingRecord{{row["account"].as<std::string>()},
+                                        {row["adapter_instance"].as<std::string>()},
+                                        {row["version"].as<std::uint64_t>()},
+                                        enum_field<target::LifecycleState>(row["state"], 5)};
+  }
+  case 17: {
+    const auto row = get(transaction, "hosts", id);
+    target::HostRegistration value;
+    value.host = {row["id"].as<std::string>()};
+    value.capabilities = read_text_list(row["capabilities"].as<std::string>());
+    value.version = {row["version"].as<std::uint64_t>()};
+    value.state = enum_field<target::LifecycleState>(row["state"], 5);
+    value.last_heartbeat_at = time_field(row, "heartbeat_at");
+    value.observed_at = time_field(row, "observed_at");
+    return value;
+  }
+  case 18: {
+    const auto row = get(transaction, "instance_configs", id);
+    target::InstanceConfiguration value;
+    value.instance = {row["instance"].as<std::string>()};
+    value.desired_version = {row["desired_version"].as<std::uint64_t>()};
+    value.applied_version = {row["applied_version"].as<std::uint64_t>()};
+    value.apply_state = enum_field<target::ConfigApplyState>(row["apply_state"], 3);
+    value.delivery_id = row["delivery_id"].as<std::string>();
+    if (row["has_fence"].as<bool>()) {
+      value.fence = target::Fence{{row["fence_instance"].as<std::string>()},
+                                  {row["runtime_epoch"].as<std::string>()},
+                                  {row["execution_id"].as<std::string>()},
+                                  {row["execution_generation"].as<std::uint64_t>()},
+                                  {row["connection_id"].as<std::string>()},
+                                  {row["connection_generation"].as<std::uint64_t>()}};
+    }
+    if (!row["error"].is_null()) {
+      value.error = enum_field<target::ErrorCode>(row["error"], 10);
+    }
+    value.observed_at = time_field(row, "observed_at");
+    value.values = byte_vector(row["values"].as<pqxx::bytes>());
+    value.version = {row["version"].as<std::uint64_t>()};
     return value;
   }
   default:

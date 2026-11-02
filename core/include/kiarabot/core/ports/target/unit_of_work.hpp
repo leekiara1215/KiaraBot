@@ -83,11 +83,44 @@ public:
   virtual Repository<AssignmentId, ResourceGrant>& grants() = 0;
   virtual Repository<SubjectId, AuthorizationState>& authorizations() = 0;
 };
+// Adapter instances are looked up by their stable adapter resource id or by the assigned instance
+// identity that the wire registration/heartbeat frames carry. Both reads belong to the same owner
+// UoW; the registry never decides authorization.
+class AdapterRegistryRepository {
+public:
+  virtual ~AdapterRegistryRepository() = default;
+  virtual Outcome<std::optional<AdapterRecord>> find(const ResourceId& adapter) = 0;
+  virtual Outcome<std::optional<AdapterRecord>> by_instance(const InstanceId& instance) = 0;
+  virtual Status save(const AdapterRecord& value, std::optional<ResourceVersion> expected) = 0;
+};
 class RuntimeUnitOfWork : public UnitOfWork {
 public:
   virtual Repository<ResourceId, BotAccount>& accounts() = 0;
+  // Keyed by the bound account; one account is served by at most one adapter instance and an
+  // adapter serves many accounts.
+  virtual Repository<ResourceId, AdapterBindingRecord>& adapter_bindings() = 0;
+  virtual AdapterRegistryRepository& adapters() = 0;
+  virtual Repository<ResourceId, HostRegistration>& hosts() = 0;
   virtual Repository<InstallationId, PluginInstallation>& installations() = 0;
   virtual Repository<InstanceId, PluginInstance>& instances() = 0;
+  virtual Repository<InstanceId, InstanceConfiguration>& instance_configs() = 0;
+  // Bounded owner-local projections for typed List queries, ordered by the stable id and capped by
+  // a trusted application limit (1..100). The application filters current authorization; the
+  // repository never decides visibility. Empty page is a successful empty result, faults are
+  // Failure, never a fake empty page.
+  // Keyset read: ascending stable id strictly greater than `after` (empty = from the beginning),
+  // bounded by a trusted application limit. This is a current-authority read, not a frozen page
+  // snapshot; the application owns opaque cursor tokens and per-item authorization filtering.
+  virtual Outcome<std::vector<BotAccount>> list_accounts(std::size_t limit,
+                                                         const std::string& after) = 0;
+  virtual Outcome<std::vector<AdapterRecord>> list_adapters(std::size_t limit,
+                                                            const std::string& after) = 0;
+  virtual Outcome<std::vector<HostRegistration>> list_hosts(std::size_t limit,
+                                                            const std::string& after) = 0;
+  virtual Outcome<std::vector<PluginInstallation>> list_installations(std::size_t limit,
+                                                                      const std::string& after) = 0;
+  virtual Outcome<std::vector<PluginInstance>> list_instances(std::size_t limit,
+                                                              const std::string& after) = 0;
 };
 class SchedulerUnitOfWork : public UnitOfWork {
 public:

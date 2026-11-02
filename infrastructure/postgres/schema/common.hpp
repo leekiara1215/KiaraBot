@@ -31,7 +31,7 @@ CREATE DOMAIN kiarabot.uint64 AS numeric(20,0)
   CHECK(VALUE>=0 AND VALUE<=18446744073709551615);
 CREATE TABLE kiarabot.replay_results (
   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-  kind integer NOT NULL CHECK(kind BETWEEN 0 AND 14)
+  kind integer NOT NULL CHECK(kind BETWEEN 0 AND 18)
 );
 CREATE TABLE kiarabot.result_mutations (
   result_id bigint PRIMARY KEY REFERENCES kiarabot.replay_results(id) ON DELETE CASCADE,
@@ -78,7 +78,8 @@ CREATE TABLE kiarabot.result_grant_scopes (
   )sql");
   snapshot("installations", R"sql(
     id text NOT NULL, plugin_type text NOT NULL, version kiarabot.uint64 NOT NULL,
-    state integer NOT NULL CHECK(state BETWEEN 0 AND 5)
+    state integer NOT NULL CHECK(state BETWEEN 0 AND 5),
+    manifest bytea NOT NULL CHECK(octet_length(manifest)<=65536)
   )sql");
   snapshot("instances", R"sql(
     id text NOT NULL, installation text NOT NULL, plugin_type text NOT NULL,
@@ -86,10 +87,44 @@ CREATE TABLE kiarabot.result_grant_scopes (
     fence_instance text, runtime_epoch text, execution_id text, execution_generation kiarabot.uint64,
     connection_id text, connection_generation kiarabot.uint64,
     version kiarabot.uint64 NOT NULL, state integer NOT NULL CHECK(state BETWEEN 0 AND 5), host text,
+    desired integer NOT NULL DEFAULT 0 CHECK(desired BETWEEN 0 AND 1),
     CHECK((fence_instance IS NULL AND runtime_epoch IS NULL AND execution_id IS NULL AND
       execution_generation IS NULL AND connection_id IS NULL AND connection_generation IS NULL) OR
       (fence_instance IS NOT NULL AND runtime_epoch IS NOT NULL AND execution_id IS NOT NULL AND
       execution_generation IS NOT NULL AND connection_id IS NOT NULL AND connection_generation IS NOT NULL))
+  )sql");
+  snapshot("adapters", R"sql(
+    id text NOT NULL, implementation text NOT NULL, implementation_version text NOT NULL,
+    protocol_version text NOT NULL, declared_capabilities text NOT NULL,
+    effective_capabilities text NOT NULL, version kiarabot.uint64 NOT NULL,
+    state integer NOT NULL CHECK(state BETWEEN 0 AND 5), registered_at bigint NOT NULL,
+    heartbeat_at bigint NOT NULL, online_until bigint NOT NULL,
+    instance text NOT NULL, runtime_epoch text NOT NULL, connection_id text NOT NULL,
+    connection_generation kiarabot.uint64 NOT NULL CHECK(connection_generation>0)
+  )sql");
+  snapshot("adapter_bindings", R"sql(
+    account text NOT NULL, adapter_instance text NOT NULL, version kiarabot.uint64 NOT NULL,
+    state integer NOT NULL CHECK(state BETWEEN 0 AND 5)
+  )sql");
+  snapshot("hosts", R"sql(
+    id text NOT NULL, capabilities text NOT NULL, version kiarabot.uint64 NOT NULL,
+    state integer NOT NULL CHECK(state BETWEEN 0 AND 5),
+    heartbeat_at bigint NOT NULL, observed_at bigint NOT NULL
+  )sql");
+  snapshot("instance_configs", R"sql(
+    instance text NOT NULL, desired_version kiarabot.uint64 NOT NULL,
+    applied_version kiarabot.uint64 NOT NULL, apply_state integer NOT NULL CHECK(apply_state BETWEEN 0 AND 3),
+    delivery_id text NOT NULL, has_fence boolean NOT NULL,
+    fence_instance text, runtime_epoch text, execution_id text, execution_generation kiarabot.uint64,
+    connection_id text, connection_generation kiarabot.uint64,
+    error integer CHECK(error BETWEEN 0 AND 10), observed_at bigint NOT NULL,
+    values bytea NOT NULL CHECK(octet_length(values)<=65536),
+    version kiarabot.uint64 NOT NULL CHECK(version>0),
+    CHECK((has_fence AND fence_instance IS NOT NULL AND runtime_epoch IS NOT NULL AND
+      execution_id IS NOT NULL AND execution_generation IS NOT NULL AND connection_id IS NOT NULL AND
+      connection_generation IS NOT NULL) OR
+      (NOT has_fence AND fence_instance IS NULL AND runtime_epoch IS NULL AND execution_id IS NULL AND
+      execution_generation IS NULL AND connection_id IS NULL AND connection_generation IS NULL))
   )sql");
   snapshot("tasks", R"sql(
     owner text NOT NULL, task_id text NOT NULL, installation text NOT NULL,

@@ -1578,6 +1578,39 @@ void check_common(Database& database, const DatabaseConfig& config) {
            {target::Permission::ActionInspect, {target::ResourceKind::Account, {"b"}}},
            {target::Permission::ActionInspect, {target::ResourceKind::Account, {"a"}}},
            {target::Permission::MessageRead, {target::ResourceKind::Account, {"a"}}}},
+          {kMaximum}},
+      target::AdapterRecord{
+          {"adapter-original"},
+          {"nonebot",
+           "1.0.0",
+           "kiarabot.v1",
+           {{"action.send_message.text.v1", "1"}, {"action.react_message.v1", "1"}},
+           {{"action.send_message.text.v1", "1"}}},
+          {{"adapter-instance"}, {"epoch"}, {"connection"}, {kMaximum}},
+          {kMaximum},
+          target::LifecycleState::Active,
+          now,
+          now + std::chrono::seconds{1},
+          now + std::chrono::seconds{91}},
+      target::AdapterBindingRecord{
+          {"binding-account"}, {"adapter-instance"}, {kMaximum}, target::LifecycleState::Disabled},
+      target::HostRegistration{{"host-original"},
+                               {"host.packages", "host.execution"},
+                               {kMaximum},
+                               target::LifecycleState::Active,
+                               now,
+                               now + std::chrono::seconds{1}},
+      target::InstanceConfiguration{
+          {"config-instance"},
+          {kHigh},
+          {kMaximum},
+          target::ConfigApplyState::Unavailable,
+          "delivery-original",
+          target::Fence{
+              {"config-instance"}, {"epoch"}, {"execution"}, {kMaximum}, {"connection"}, {kHigh}},
+          target::ErrorCode::Timeout,
+          now,
+          {std::byte{0}, std::byte{0xff}},
           {kMaximum}}};
   for (std::size_t index = 0; index < snapshots.size(); ++index) {
     work = begin(database);
@@ -1714,6 +1747,42 @@ void check_common(Database& database, const DatabaseConfig& config) {
             "assignment replay lost exact tuple boundaries/order or read proposed state");
       break;
     }
+    case 15: {
+      const auto& adapter = std::get<target::AdapterRecord>(replay);
+      const auto& original = std::get<target::AdapterRecord>(snapshots[index]);
+      check(adapter.adapter == original.adapter &&
+                adapter.registration.declared_capabilities.size() == 2 &&
+                adapter.registration.effective_capabilities.size() == 1 &&
+                adapter.current == original.current &&
+                adapter.current.connection_generation.value == kMaximum &&
+                adapter.last_registered_at == now &&
+                adapter.last_heartbeat_at == now + std::chrono::seconds{1},
+            "adapter snapshot lost negative/exact capabilities or connection fence");
+      break;
+    }
+    case 16: {
+      const auto& binding = std::get<target::AdapterBindingRecord>(replay);
+      check(binding.account.value == "binding-account" && binding.version.value == kMaximum &&
+                binding.state == target::LifecycleState::Disabled,
+            "adapter binding snapshot lost state/version");
+      break;
+    }
+    case 17: {
+      const auto& host = std::get<target::HostRegistration>(replay);
+      check(host.capabilities.size() == 2 && host.capabilities[1] == "host.execution" &&
+                host.version.value == kMaximum && host.observed_at == now + std::chrono::seconds{1},
+            "host snapshot lost capability list or observation time");
+      break;
+    }
+    case 18: {
+      const auto& config = std::get<target::InstanceConfiguration>(replay);
+      check(config.instance.value == "config-instance" &&
+                config.apply_state == target::ConfigApplyState::Unavailable &&
+                config.error == target::ErrorCode::Timeout && config.fence.has_value() &&
+                config.values.size() == 2 && config.version.value == kMaximum,
+            "instance config snapshot lost apply state/failure/fence/values");
+      break;
+    }
     default:
       break;
     }
@@ -1736,6 +1805,10 @@ void check_common(Database& database, const DatabaseConfig& config) {
   std::get<target::SessionMetadata>(nul_results[11]).subject.value += nul;
   std::get<target::RegisteredPrincipalSnapshot>(nul_results[12])
       .initial_credential.binding.id.value += nul;
+  std::get<target::AdapterRecord>(nul_results[14]).registration.implementation += nul;
+  std::get<target::AdapterBindingRecord>(nul_results[15]).adapter_instance.value += nul;
+  std::get<target::HostRegistration>(nul_results[16]).capabilities[0] += nul;
+  std::get<target::InstanceConfiguration>(nul_results[17]).delivery_id += nul;
   std::get<target::ExactAssignment>(nul_results[13])
       .explicit_permissions.front()
       .resource.id.value += nul;

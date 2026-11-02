@@ -9,6 +9,7 @@
 
 #include "kiarabot/core/domain/target/identity_registration_snapshot.hpp"
 #include "kiarabot/core/domain/target/identity_types.hpp"
+#include "kiarabot/core/domain/target/runtime_records.hpp"
 #include "kiarabot/core/domain/target/service_records.hpp"
 
 namespace kiarabot::core::target {
@@ -26,10 +27,15 @@ struct ResourceMutationResult {
 // Immutable complete success snapshot, not a live-resource lookup. No transport bytes or secrets.
 // Login/refresh/credential secret replay needs a separate encrypted P04 contract; not supported
 // here.
-using ReplayResult = std::variant<EmptySuccess, ResourceMutationResult, Operation, Principal,
-                                  LoginSession, ResourceGrant, BotAccount, PluginInstallation,
-                                  PluginInstance, ScheduledTask, Occurrence, ModelIntent,
-                                  SessionMetadata, RegisteredPrincipalSnapshot, ExactAssignment>;
+// Order is storage contract: infrastructure RecordKind values dispatch by variant index, so new
+// records are APPENDED after ExactAssignment (runtime kinds start at 15) and existing indices must
+// never be reordered or removed.
+using ReplayResult =
+    std::variant<EmptySuccess, ResourceMutationResult, Operation, Principal, LoginSession,
+                 ResourceGrant, BotAccount, PluginInstallation, PluginInstance, ScheduledTask,
+                 Occurrence, ModelIntent, SessionMetadata, RegisteredPrincipalSnapshot,
+                 ExactAssignment, AdapterRecord, AdapterBindingRecord, HostRegistration,
+                 InstanceConfiguration>;
 struct ReceiptKey {
   SubjectId subject;
   std::string method;

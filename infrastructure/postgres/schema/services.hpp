@@ -47,11 +47,19 @@ CREATE UNIQUE INDEX principals_binding_unique ON kiarabot.principals(binding_kin
     relation("accounts", "id");
     relation("installations", "id");
     relation("instances", "id");
+    relation("adapters", "id");
+    relation("adapter_bindings", "account");
+    relation("hosts", "id");
+    relation("instance_configs", "instance");
     sql += R"sql(
 ALTER TABLE kiarabot.accounts ADD UNIQUE(platform,platform_account_id);
 ALTER TABLE kiarabot.installations ADD UNIQUE(id,plugin_type);
 ALTER TABLE kiarabot.instances ADD FOREIGN KEY(installation,plugin_type) REFERENCES kiarabot.installations(id,plugin_type);
 ALTER TABLE kiarabot.instances ADD CHECK(fence_instance IS NULL OR fence_instance=id);
+ALTER TABLE kiarabot.adapters ADD UNIQUE(instance);
+ALTER TABLE kiarabot.adapter_bindings ADD FOREIGN KEY(account) REFERENCES kiarabot.accounts(id);
+ALTER TABLE kiarabot.adapter_bindings ADD FOREIGN KEY(adapter_instance) REFERENCES kiarabot.adapters(instance);
+ALTER TABLE kiarabot.instance_configs ADD FOREIGN KEY(instance) REFERENCES kiarabot.instances(id);
 )sql";
     break;
   case core::target::Service::Scheduler:
