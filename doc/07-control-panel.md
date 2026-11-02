@@ -212,3 +212,18 @@ mock 覆盖：登录/刷新、`/auth/me`、会话列表与撤销、9 个资源�
   2. **P12e**：`/logs`、`/audit` 权威源接线后，按 occurred_at+ID 的 opaque page token 分页；Panel 已预留透传与 503 语义，需 P12e 提供稳定字段（LogEntry/AuditEntry、occurred_at、id）并跑真实 live 验收。
   3. **P12a**：`/tasks` 的 scope 查询、catalog 发现来源仍未在契约中补齐（沿用 P12d-2 记录）。
 - 检查（本机实际运行）：`npm test -- --run` **45 passed / 2 skipped**（live.test.ts 缺 C++ 构建/venv 跳过）；`npm run lint`、`npm run build` 通过；`npm run check:contracts` 通过（53 个 panel 端点、5 个 known events）。
+
+## P12d-4 Panel /logs /audit live 与 P12c-6 分页/脱敏/权限验收（2026-11-02）
+
+- 状态：**P12c-6 尚未合入**（Control owner gateway 仍对 `/api/v1/logs`、`/api/v1/audit` 返回 503；OpenAPI 仍 `x-contract-status: not_implemented`）。P12d-4 已完成前端类型/映射、独立分区页面、mock 测试；live 保持 503 显式降级，待 P12c-6 合入后补真实分页/过滤/owner 标注/401/403/503/400 验收。仅改 `panel/` 与本文档。
+- 页面：新增 `panel/src/views/logs-audit.tsx`，App 将“日志”“审计”导航路由到该独立组件（不再复用通用 ResourceView）。两分区权限独立：日志仅 `log.read`，审计仅 `audit.read`，互不回退；页面文案显式说明。`/logs`、`/audit` 分别调用 `api.logPage`/`api.auditPage`，不存在混合请求。
+- 分页/过滤映射（待 P12c-6 冻结确认）：显式发送 `page_token`/`page_size`、`occurred_after`/`occurred_before`、`actor`、`resource`、`owner`；opaque token 原样透传，不在前端按 occurred_at+ID 重排或跨页合并。mock 提供 occurred_at+owner+稳定 ID 行、时间窗/actor/resource/owner 过滤与 keyset 式下一页，覆盖映射行为。
+- Owner 标注：服务端行若带 `owner_service`/`owner` 即展示（identity/runtime 等）；字段缺失时显式显示“未标注（待 P12c-6）”，不猜测 owner。P12c-6 需确认该字段名/形状并回填契约。
+- 脱敏/错误：日志只显示 `message`/component/level/occurred_at（服务端已脱敏）；审计只显示 actor/action/resource/request_id/account/conversation；不显示凭据、消息正文、模型密钥或任何自由文本外的秘密。401 显示未授权（会话/权限问题），403 显示权限不足，400 显示请求参数无效，503 显示“数据源暂不可用（503）/P12c-6 未接线”且不显示空数据。
+- 需 P12c-6 复验点：
+  1. `/logs`、`/audit` 200 聚合真正接通 Identity/Runtime ListAudit/ListLogs；确认 `log.read` 与 `audit.read` 分别授权、不可互相替代；
+  2. 确认分页/过滤 query 名称与语义（当前 Panel 映射为 `occurred_after|occurred_before|actor|resource|owner`；若 P12c-6 采用不同名字需同步 client/mock/tests）；
+  3. 确认 owner 标注字段名（`owner_service` 优先）及响应行字段，Panel 当前兼容缺省并标注未标注；
+  4. 复验 400（非法时间窗/参数）、401（未登录/会话失效）、403（缺权限）、503（owner 数据源不可用）稳定映射，并跑真实 Control 进程 live 验收（若环境可跑）或 p04 验收路径。
+- 未接线/未冻结：P12c-6 聚合与真实 live；P12e owner RPC 已声明但 Control 未接线；日志/审计 filter 契约未冻结；`health.updated`/WS 目标仍延期。
+- 检查（本机实际运行）：`npm test -- --run` **49 passed / 2 skipped**（live.test.ts 缺 C++/venv 跳过）；`npm run lint`、`npm run build` 通过；`npm run check:contracts` 通过（53 个 panel 端点、5 个 known events）。
