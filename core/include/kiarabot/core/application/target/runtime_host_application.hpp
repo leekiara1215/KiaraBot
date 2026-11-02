@@ -123,10 +123,11 @@ public:
       }
       registration = *found;
       expected = registration.version;
+      registration.version.value = expected->value + 1;
     } else {
       registration.host = host;
       registration.state = LifecycleState::Active;
-      registration.version = ResourceVersion{0};
+      registration.version = ResourceVersion{1};
     }
     registration.capabilities = command.capabilities;
     registration.observed_at = std::get<TimePoint>(now);
