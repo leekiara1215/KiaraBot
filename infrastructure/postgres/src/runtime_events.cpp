@@ -69,7 +69,7 @@ target::ConversationKey conversation(const pqxx::row& row, const char* column) {
   return *parsed;
 }
 target::EventPayloadKind payload_kind(int value) {
-  if (value < 0 || value > static_cast<int>(target::EventPayloadKind::AdapterStatusChanged)) {
+  if (value < 0 || value > static_cast<int>(target::EventPayloadKind::TimerTriggered)) {
     throw std::runtime_error("corrupt Runtime event payload kind");
   }
   return static_cast<target::EventPayloadKind>(value);

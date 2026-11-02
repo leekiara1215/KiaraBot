@@ -246,12 +246,16 @@ add_test(NAME p04_identity_invalidation_application
   COMMAND kiarabot_identity_invalidation_application_test)
 set_tests_properties(p04_identity_invalidation_application PROPERTIES
   LABELS "p04;unit;security" TIMEOUT 10)
+find_package(OpenSSL 3.0 REQUIRED)
 # P05 Runtime resources, bindings and current generations. The application owns business rules over
 # the pure Runtime UoW ports; RPC/transport mapping and PG adapters stay in outer layers.
 add_library(kiarabot_runtime_resource_application STATIC
   src/application/target/runtime_resource_application.cpp
   src/application/target/runtime_bridge_application.cpp)
 target_include_directories(kiarabot_runtime_resource_application PUBLIC include)
+target_link_libraries(kiarabot_runtime_resource_application PRIVATE OpenSSL::Crypto)
+target_include_directories(kiarabot_runtime_resource_application SYSTEM PRIVATE
+  $<TARGET_PROPERTY:OpenSSL::Crypto,INTERFACE_INCLUDE_DIRECTORIES>)
 target_compile_features(kiarabot_runtime_resource_application PUBLIC cxx_std_20)
 target_compile_options(kiarabot_runtime_resource_application PRIVATE
   $<$<CXX_COMPILER_ID:AppleClang,Clang,GNU>:-Wall -Wextra -Wpedantic>)

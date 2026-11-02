@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "kiarabot/core/application/target/context.hpp"
+#include "kiarabot/core/domain/target/context.hpp"
 #include "kiarabot/core/domain/target/runtime_records.hpp"
 #include "kiarabot/core/domain/target/runtime_rules.hpp"
 #include "kiarabot/core/ports/target/runtime_authorization.hpp"
@@ -217,6 +218,28 @@ struct OperationQuery {
   CommandContext context;
   OperationRef operation;
 };
+// P10b Runtime-side timer trigger acceptance. The Scheduler owns the occurrence identity; Runtime
+// only validates the handoff and durably enqueues the TimerTriggered event exactly once.
+struct AcceptTimerTriggerRequest {
+  CommandContext context;
+  HandoffContext handoff;
+  MessageId occurrence_id;
+  std::string task_id;
+  InstanceId owner_instance_id;
+  ResourceVersion schedule_version;
+  std::string conversation_id;
+  ConversationKey::Kind conversation_kind = ConversationKey::Kind::Unspecified;
+  std::vector<std::byte> payload;
+  // Serialized EventEnvelope carrying the TimerTriggered payload; built by the boundary so the
+  // application stays independent of protobuf.
+  std::string serialized_envelope;
+};
+struct TimerTriggerAcceptance {
+  MessageId occurrence_id;
+  MessageId event_id;
+  bool duplicate = false;
+  TimePoint persisted_at;
+};
 
 // Runtime resource application boundary. Every method owns its UoWs, enforces current online
 // authorization before effects, commits receipts/audit/operation in the same local transaction and
@@ -257,6 +280,8 @@ public:
   virtual Outcome<ConfigMutation> update_config(const UpdateConfigRequest& request) = 0;
 
   virtual Outcome<ResourceState> get_resource_state(const ResourceStateQuery& request) = 0;
+  virtual Outcome<TimerTriggerAcceptance>
+  accept_timer_trigger(const AcceptTimerTriggerRequest& request) = 0;
   virtual Outcome<Operation> get_operation(const OperationQuery& request) = 0;
 };
 

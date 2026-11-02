@@ -43,7 +43,7 @@ if(UNIX)
 
   add_executable(kiarabot_postgres_runtime_events_test tests/runtime_events_test.cpp)
   target_link_libraries(kiarabot_postgres_runtime_events_test PRIVATE
-    kiarabot_postgres libpqxx::pqxx)
+    kiarabot_postgres kiarabot_runtime_resource_application libpqxx::pqxx)
   kiarabot_platform_warnings(kiarabot_postgres_runtime_events_test)
   add_executable(kiarabot_postgres_runtime_bridge_seed tests/runtime_bridge_seed.cpp)
   target_link_libraries(kiarabot_postgres_runtime_bridge_seed PRIVATE
@@ -142,5 +142,6 @@ if(TARGET kiarabot-scheduler AND TARGET kiarabot_scheduler_rpc)
   target_sources(kiarabot-scheduler PRIVATE
     ${CMAKE_SOURCE_DIR}/core/app/scheduler_composition.cpp)
   target_link_libraries(kiarabot-scheduler PRIVATE
-    kiarabot_scheduler_rpc kiarabot_scheduler_service kiarabot_postgres OpenSSL::Crypto)
+    kiarabot_scheduler_rpc kiarabot_scheduler_runtime_client kiarabot_scheduler_service
+    kiarabot_postgres OpenSSL::Crypto)
 endif()

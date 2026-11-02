@@ -22,9 +22,13 @@ extern char** environ;
 
 #include <pqxx/pqxx>
 
+#include "kiarabot/core/application/target/runtime_resource_application.hpp"
 #include "kiarabot/core/domain/target/event_delivery.hpp"
 #include "kiarabot/core/domain/target/persistence.hpp"
 #include "kiarabot/core/ports/target/business_ports.hpp"
+#include "kiarabot/core/ports/target/runtime_authorization.hpp"
+#include "kiarabot/core/ports/target/runtime_ids.hpp"
+#include "kiarabot/core/ports/target/runtime_secrets.hpp"
 #include "kiarabot/infrastructure/postgres/database.hpp"
 #include "kiarabot/infrastructure/postgres/factories.hpp"
 
@@ -99,6 +103,86 @@ target::DeliveryRecord target_for(const target::EventRecord& record, std::string
   delivery.trace_id = "trace-" + record.key.event_id;
   return delivery;
 }
+
+std::string uuid_like(char seed) {
+  std::string value(36, '0');
+  for (const int index : {8, 13, 18, 23}) {
+    value[static_cast<std::size_t>(index)] = '-';
+  }
+  value[0] = seed;
+  value[14] = '4';
+  value[19] = '8';
+  return value;
+}
+
+class FakeRuntimeIds final : public target::RuntimeIdPort {
+public:
+  target::Outcome<target::ResourceId> account_id() override {
+    return target::ResourceId{uuid_like('a')};
+  }
+  target::Outcome<target::InstallationId> installation_id() override {
+    return target::InstallationId{uuid_like('b')};
+  }
+  target::Outcome<target::InstanceId> instance_id() override {
+    return target::InstanceId{uuid_like('c')};
+  }
+  target::Outcome<target::InstanceId> adapter_instance_id() override {
+    return target::InstanceId{uuid_like('d')};
+  }
+  target::Outcome<target::ConnectionId> connection_id() override {
+    return target::ConnectionId{uuid_like('e')};
+  }
+  target::Outcome<target::OperationId> operation_id() override {
+    return target::OperationId{uuid_like('f')};
+  }
+  target::Outcome<target::RuntimeEpoch> runtime_epoch() override {
+    return target::RuntimeEpoch{uuid_like('1')};
+  }
+  target::Outcome<std::string> snapshot_id() override {
+    return uuid_like('2');
+  }
+};
+
+class FakeRuntimeSecrets final : public target::RuntimeSecretPort {
+public:
+  target::Outcome<std::string> bootstrap_credential() override {
+    return std::string(64, 'a');
+  }
+  target::Outcome<std::array<std::byte, 32>> opaque_secret() override {
+    return std::array<std::byte, 32>{};
+  }
+  target::Outcome<target::Sha256Digest> sha256(std::string_view value) override {
+    target::Sha256Digest digest;
+    for (std::size_t index = 0; index < digest.bytes.size() && index < value.size(); ++index) {
+      digest.bytes[index] = static_cast<std::byte>(value[index]);
+    }
+    return digest;
+  }
+};
+
+class FakeRuntimeAuthorization final : public target::RuntimeAuthorizationPort {
+public:
+  bool available() const noexcept override {
+    return true;
+  }
+  target::Outcome<target::RuntimeAuthorizationDecision>
+  check(const target::RuntimeAuthorizationRequest& request) override {
+    target::RuntimeAuthorizationDecision decision;
+    decision.allowed = allow && request.permission == target::Permission::TimerAccept;
+    decision.subject = request.authentication.subject;
+    decision.permission = request.permission;
+    decision.scope = request.scope;
+    decision.authorization_version = {1};
+    decision.checked_at = target::TimePoint{std::chrono::system_clock::now().time_since_epoch()};
+    if (!decision.allowed) {
+      decision.denial =
+          target::Failure{target::ErrorCode::PermissionDenied, target::Acceptance::NotAccepted,
+                          target::Recovery::ReadCurrent, std::nullopt, std::nullopt};
+    }
+    return decision;
+  }
+  bool allow = true;
+};
 
 void run(std::uint16_t port, const std::filesystem::path& root,
          const std::filesystem::path& initializer) {
@@ -347,6 +431,116 @@ void run(std::uint16_t port, const std::filesystem::path& root,
     require(std::holds_alternative<std::size_t>(recovered) && std::get<std::size_t>(recovered) == 0,
             "restart recovery ignores non-dispatched rows");
     require(work->commit() == target::CommitResult::Committed, "sweep transaction commits");
+  }
+
+  // --- P10b AcceptTimerTrigger: durable/idempotent TimerTriggered acceptance and owner fan-out ---
+  {
+    FakeRuntimeIds ids;
+    FakeRuntimeSecrets secrets;
+    FakeRuntimeAuthorization authorization;
+    auto built =
+        target::make_runtime_resource_application({*factory, ids, secrets, authorization, {}});
+    require(!std::holds_alternative<target::Failure>(built), "runtime application built");
+    auto application =
+        std::move(std::get<std::unique_ptr<target::RuntimeResourceApplication>>(built));
+    auto time_work = begin();
+    const auto base = now(time_work);
+    time_work->rollback();
+    const auto occurrence = uuid_like('9');
+    const auto owner = uuid_like('8');
+    const auto subject = uuid_like('7');
+    target::AcceptTimerTriggerRequest request;
+    request.context.request_id = uuid_like('3');
+    request.context.trace_id = uuid_like('4');
+    request.context.method = "kiarabot.v1.RuntimeService/AcceptTimerTrigger";
+    request.context.deadline = base + std::chrono::seconds{5};
+    request.context.authentication.subject = target::SubjectId{subject};
+    request.context.authentication.direct_peer =
+        target::PlatformPeer{target::Service::Scheduler, target::SubjectId{subject}};
+    request.context.authentication.audience = target::Service::Runtime;
+    request.context.authentication.authorization_version = {1};
+    request.context.authentication.verified_at = base - std::chrono::seconds{1};
+    request.context.authentication.expires_at = base + std::chrono::seconds{60};
+    request.occurrence_id = target::MessageId{occurrence};
+    request.task_id = "task-1";
+    request.owner_instance_id = target::InstanceId{owner};
+    request.schedule_version = {1};
+    request.conversation_id = "conversation";
+    request.conversation_kind = target::ConversationKey::Kind::Private;
+    request.serialized_envelope = "timer-envelope";
+    request.handoff.source = target::Service::Scheduler;
+    request.handoff.message = target::MessageId{occurrence};
+    request.handoff.operation =
+        target::OperationRef{target::Service::Scheduler, target::OperationId{uuid_like('6')},
+                             target::ResourceRef{target::ResourceKind::Task, "task-1"}};
+    request.handoff.resource = target::ResourceRef{target::ResourceKind::Task, "task-1"};
+    request.handoff.version = {1};
+    request.handoff.actor = target::SubjectId{owner};
+    request.handoff.authorization_version = {1};
+    // SHA-256 of the empty Scheduler payload (the request carries no payload in this fixture).
+    constexpr std::array<unsigned char, 32> kEmptySha256{
+        0xe3, 0xb0, 0xc4, 0x42, 0x98, 0xfc, 0x1c, 0x14, 0x9a, 0xfb, 0xf4,
+        0xc8, 0x99, 0x6f, 0xb9, 0x24, 0x27, 0xae, 0x41, 0xe4, 0x64, 0x9b,
+        0x93, 0x4c, 0xa4, 0x95, 0x99, 0x1b, 0x78, 0x52, 0xb8, 0x55};
+    for (std::size_t index = 0; index < kEmptySha256.size(); ++index) {
+      request.handoff.payload_hash.bytes[index] = static_cast<std::byte>(kEmptySha256[index]);
+    }
+    request.handoff.created_at = base - std::chrono::seconds{1};
+    request.handoff.valid_until = base + std::chrono::hours{1};
+    auto accepted = application->accept_timer_trigger(request);
+    require(std::holds_alternative<target::TimerTriggerAcceptance>(accepted) &&
+                !std::get<target::TimerTriggerAcceptance>(accepted).duplicate,
+            "timer trigger durably accepted");
+    auto duplicate = application->accept_timer_trigger(request);
+    require(std::holds_alternative<target::TimerTriggerAcceptance>(duplicate) &&
+                std::get<target::TimerTriggerAcceptance>(duplicate).duplicate,
+            "same occurrence/event id is duplicate without a second enqueue");
+    auto changed = request;
+    changed.serialized_envelope = "different-envelope";
+    auto conflict = application->accept_timer_trigger(changed);
+    require(std::holds_alternative<target::Failure>(conflict) &&
+                std::get<target::Failure>(conflict).code == target::ErrorCode::Conflict,
+            "changed handoff for the same event id is Conflict");
+    auto expired = request;
+    expired.occurrence_id = target::MessageId{uuid_like('5')};
+    expired.handoff.message = expired.occurrence_id;
+    expired.handoff.valid_until = base - std::chrono::seconds{1};
+    auto timed_out = application->accept_timer_trigger(expired);
+    require(std::holds_alternative<target::Failure>(timed_out) &&
+                std::get<target::Failure>(timed_out).code == target::ErrorCode::Timeout,
+            "handoff past valid_until is Timeout");
+    auto mismatch = request;
+    mismatch.handoff.payload_hash.bytes[0] = std::byte{0};
+    auto mismatched = application->accept_timer_trigger(mismatch);
+    require(std::holds_alternative<target::Failure>(mismatched) &&
+                std::get<target::Failure>(mismatched).code == target::ErrorCode::Conflict,
+            "payload hash mismatch is Conflict");
+    auto wrong_source = request;
+    wrong_source.handoff.source = target::Service::Runtime;
+    auto rejected = application->accept_timer_trigger(wrong_source);
+    require(std::holds_alternative<target::Failure>(rejected) &&
+                std::get<target::Failure>(rejected).code == target::ErrorCode::InvalidArgument,
+            "non-Scheduler handoff is InvalidArgument");
+    // The accepted event has exactly the owning instance as fan-out target.
+    {
+      auto work = begin();
+      target::DeliveryClaimRequest claim;
+      claim.instance = {owner};
+      claim.fence = {{owner}, {"epoch"}, {"execution"}, {1}, {"connection"}, {1}};
+      claim.limit = 1;
+      claim.lease = target::kDeliveryLease;
+      claim.now = base + std::chrono::seconds{1};
+      claim.attempt_ids = {{uuid_like('0')}};
+      auto claimed = work->events().claim(claim);
+      require(std::holds_alternative<std::vector<target::DeliveryClaim>>(claimed) &&
+                  std::get<std::vector<target::DeliveryClaim>>(claimed).size() == 1 &&
+                  std::get<std::vector<target::DeliveryClaim>>(claimed)[0].event.key.event_id ==
+                      occurrence &&
+                  std::get<std::vector<target::DeliveryClaim>>(claimed)[0]
+                          .attempt.delivery.instance.value == owner,
+              "timer event fan-out targets the owner instance exactly once");
+      work->rollback();
+    }
   }
 
   std::cout << "P06 Runtime event inbox, watermark, delivery and lease passed\n";

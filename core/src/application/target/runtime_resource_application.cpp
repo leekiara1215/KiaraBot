@@ -15,8 +15,12 @@
 #include <variant>
 #include <vector>
 
+#include <openssl/sha.h>
+
 #include "kiarabot/core/application/target/runtime_readiness.hpp"
+#include "kiarabot/core/domain/target/event_delivery.hpp"
 #include "kiarabot/core/domain/target/persistence.hpp"
+#include "kiarabot/core/ports/target/business_ports.hpp"
 
 namespace kiarabot::core::target {
 namespace {
@@ -1531,6 +1535,116 @@ public:
         transactions_, request.context, [&](RuntimeUnitOfWork& work, TimePoint) {
           return require_found(work.operations().find(request.operation.id));
         });
+  }
+
+  // P10b: accept the Scheduler's one-shot TimerTriggered handoff exactly once. The event id is the
+  // Scheduler-owned occurrence id, so a resend after a lost receipt replays the original acceptance
+  // (duplicate=true) instead of creating a second event or fan-out target.
+  Outcome<TimerTriggerAcceptance>
+  accept_timer_trigger(const AcceptTimerTriggerRequest& request) override {
+    if (const auto failure = status_failure(validate_command_context(request.context, false))) {
+      return *failure;
+    }
+    const auto safe_text = [](std::string_view value, std::size_t maximum) {
+      return !value.empty() && value.size() <= maximum &&
+             value.find('\0') == std::string_view::npos;
+    };
+    if (!canonical(request.occurrence_id.value) || !canonical(request.owner_instance_id.value) ||
+        !safe_text(request.task_id, 128) || request.schedule_version.value == 0 ||
+        request.conversation_id.empty() || request.conversation_id.size() > 128 ||
+        request.conversation_id.find('\0') != std::string::npos ||
+        request.conversation_kind == ConversationKey::Kind::Unspecified ||
+        request.payload.size() > 65536 || request.serialized_envelope.empty() ||
+        request.serialized_envelope.size() > 1024 * 1024 ||
+        request.handoff.source != Service::Scheduler ||
+        request.handoff.message != request.occurrence_id ||
+        request.handoff.operation.owner != Service::Scheduler ||
+        request.handoff.operation.resource.kind != ResourceKind::Task ||
+        request.handoff.operation.resource.id.value != request.task_id ||
+        request.handoff.resource.kind != ResourceKind::Task ||
+        request.handoff.resource.id.value != request.task_id ||
+        request.handoff.version != request.schedule_version) {
+      return invalid_runtime_input();
+    }
+    Sha256Digest payload_digest;
+    SHA256(reinterpret_cast<const unsigned char*>(request.payload.data()), request.payload.size(),
+           reinterpret_cast<unsigned char*>(payload_digest.bytes.data()));
+    if (payload_digest != request.handoff.payload_hash) {
+      return failure(ErrorCode::Conflict, Recovery::ReadCurrent);
+    }
+    auto checked =
+        authorize(authorization_, request.context.authentication, Permission::TimerAccept,
+                  request.context.method, {ResourceRef{ResourceKind::Task, request.task_id}},
+                  request.context.deadline);
+    if (const auto* failure = std::get_if<Failure>(&checked)) {
+      return *failure;
+    }
+    const auto authorization_version =
+        std::get<RuntimeAuthorizationDecision>(checked).authorization_version;
+    (void)authorization_version;
+    auto begun = transactions_.begin();
+    if (const auto* failure = std::get_if<Failure>(&begun)) {
+      return *failure;
+    }
+    auto work = std::move(std::get<std::unique_ptr<RuntimeUnitOfWork>>(begun));
+    if (!work) {
+      return internal_failure();
+    }
+    auto sample = work->current_time();
+    if (const auto* failure = std::get_if<Failure>(&sample)) {
+      work->rollback();
+      return *failure;
+    }
+    const auto now = std::get<TimePoint>(sample);
+    if (request.handoff.valid_until <= now) {
+      work->rollback();
+      return failure(ErrorCode::Timeout, Recovery::QuerySameIdentity);
+    }
+    std::string canonical;
+    canonical.reserve(request.payload.size() + request.serialized_envelope.size() + 512);
+    const auto append = [&canonical](std::string_view value) {
+      canonical.append(std::to_string(value.size()));
+      canonical.push_back(':');
+      canonical.append(value);
+    };
+    append(request.occurrence_id.value);
+    append(request.task_id);
+    append(request.owner_instance_id.value);
+    append(std::to_string(request.schedule_version.value));
+    append(request.conversation_id);
+    append(std::to_string(static_cast<int>(request.conversation_kind)));
+    append(std::string_view(reinterpret_cast<const char*>(request.payload.data()),
+                            request.payload.size()));
+    append(request.serialized_envelope);
+    Sha256Digest fingerprint;
+    SHA256(reinterpret_cast<const unsigned char*>(canonical.data()), canonical.size(),
+           reinterpret_cast<unsigned char*>(fingerprint.bytes.data()));
+    EventRecord event;
+    event.key = {ResourceId{std::string{"scheduler"}}, request.occurrence_id.value};
+    event.fingerprint = fingerprint;
+    event.payload = EventPayloadKind::TimerTriggered;
+    event.has_conversation = false;
+    event.serialized_envelope = request.serialized_envelope;
+    event.occurred_at = now;
+    event.retain_until = now + std::chrono::hours{24 * 7};
+    DeliveryRecord target;
+    target.delivery = {event.key, request.owner_instance_id};
+    target.ordered = false;
+    target.trace_id = request.context.trace_id;
+    auto accepted = work->events().accept(event, {target}, EventCapacityLimits{});
+    if (const auto* failure = std::get_if<Failure>(&accepted)) {
+      work->rollback();
+      return *failure;
+    }
+    const bool duplicate = std::get<EventAcceptanceResult>(accepted).duplicate;
+    if (duplicate) {
+      work->rollback();
+      return TimerTriggerAcceptance{request.occurrence_id, request.occurrence_id, true, now};
+    }
+    if (work->commit() != CommitResult::Committed) {
+      return unknown_result();
+    }
+    return TimerTriggerAcceptance{request.occurrence_id, request.occurrence_id, false, now};
   }
 
 private:

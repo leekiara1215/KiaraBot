@@ -4,6 +4,7 @@
 #include <array>
 #include <chrono>
 #include <cstdint>
+#include <cstring>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -15,6 +16,7 @@
 #include "kiarabot/core/runtime/platform/runtime_fence_codec.hpp"
 #include "kiarabot/core/runtime/platform/target_codec.hpp"
 #include "kiarabot/v1/common.pb.h"
+#include "kiarabot/v1/events.pb.h"
 #include "kiarabot/v1/platform.pb.h"
 
 namespace kiarabot::core::platform {
@@ -522,6 +524,88 @@ grpc::Status fail(const Prepared& prepared, const t::Failure& error) {
 template <typename Output>
 grpc::Status success(Output* context, const Prepared&, const t::Outcome<Output>& result,
                      v1::RuntimeService::Service* = nullptr) = delete;
+
+// P10b timer handoff conversion. The frozen wire HandoffContext omits actor/authorization_version;
+// Runtime binds the actor to the request owner instance and treats the Scheduler authorization
+// version as 1 (Scheduler-side evidence stays in the Scheduler journal).
+bool handoff_from_wire(const v1::HandoffContext& input, t::HandoffContext* output) {
+  if (input.source_service() != "Scheduler" || input.operation().owner_service() != "Scheduler" ||
+      input.payload_sha256().size() != t::Sha256Digest{}.bytes.size()) {
+    return false;
+  }
+  const auto operation_resource = codec::from_wire(input.operation().resource());
+  const auto* operation_resource_value = std::get_if<t::ResourceRef>(&operation_resource);
+  const auto resource = codec::from_wire(input.resource());
+  const auto* resource_value = std::get_if<t::ResourceRef>(&resource);
+  const auto created = codec::from_wire(input.created_at());
+  const auto* created_value = std::get_if<t::TimePoint>(&created);
+  const auto valid = codec::from_wire(input.valid_until());
+  const auto* valid_value = std::get_if<t::TimePoint>(&valid);
+  if (!operation_resource_value || !resource_value || !created_value || !valid_value ||
+      !canonical_uuid(input.message_id()) || input.operation().operation_id().empty()) {
+    return false;
+  }
+  output->source = t::Service::Scheduler;
+  output->message = t::MessageId{input.message_id()};
+  output->operation =
+      t::OperationRef{t::Service::Scheduler, t::OperationId{input.operation().operation_id()},
+                      *operation_resource_value};
+  if (!input.causation_id().empty()) {
+    output->causation = t::MessageId{input.causation_id()};
+  }
+  output->resource = *resource_value;
+  output->version = t::ResourceVersion{input.resource_version()};
+  output->actor = t::SubjectId{};
+  output->authorization_version = t::ResourceVersion{1};
+  std::memcpy(output->payload_hash.bytes.data(), input.payload_sha256().data(),
+              output->payload_hash.bytes.size());
+  output->created_at = *created_value;
+  output->valid_until = *valid_value;
+  return true;
+}
+bool timer_acceptance_wire(const t::TimerTriggerAcceptance& value, v1::TimerAcceptance* output) {
+  output->set_occurrence_id(value.occurrence_id.value);
+  output->set_event_id(value.event_id.value);
+  output->set_duplicate(value.duplicate);
+  const auto persisted = codec::to_wire(value.persisted_at);
+  if (const auto* wire = std::get_if<google::protobuf::Timestamp>(&persisted)) {
+    *output->mutable_persisted_at() = *wire;
+    return true;
+  }
+  return false;
+}
+std::optional<std::string> timer_envelope(const v1::RuntimeAcceptTimerTriggerRequest& request,
+                                          const t::HandoffContext& handoff,
+                                          std::string_view trace_id) {
+  v1::EventEnvelope envelope;
+  envelope.set_event_id(request.occurrence_id());
+  envelope.set_schema_version("v1");
+  envelope.set_trace_id(std::string(trace_id));
+  envelope.set_delivery_mode(v1::AT_LEAST_ONCE);
+  envelope.mutable_source()->set_adapter_id("scheduler");
+  const auto occurred = codec::to_wire(handoff.created_at);
+  if (const auto* occurred_wire = std::get_if<google::protobuf::Timestamp>(&occurred)) {
+    *envelope.mutable_occurred_at() = *occurred_wire;
+  } else {
+    return std::nullopt;
+  }
+  auto* timer = envelope.mutable_timer_triggered();
+  timer->set_task_id(request.task_id());
+  timer->set_owner_plugin_id(request.owner_instance_id());
+  timer->set_occurrence_id(request.occurrence_id());
+  timer->set_payload(request.payload());
+  const auto scheduled = codec::to_wire(handoff.created_at);
+  if (const auto* scheduled_wire = std::get_if<google::protobuf::Timestamp>(&scheduled)) {
+    *timer->mutable_scheduled_at() = *scheduled_wire;
+  } else {
+    return std::nullopt;
+  }
+  std::string serialized;
+  if (!envelope.SerializeToString(&serialized)) {
+    return std::nullopt;
+  }
+  return serialized;
+}
 
 class RuntimeRpc final : public v1::RuntimeService::Service {
 public:
@@ -1455,6 +1539,54 @@ public:
     const auto& result = std::get<t::SharedMembersMutation>(disabled);
     response->set_version(result.version.value);
     operation_ref(result.operation, response->mutable_operation());
+  grpc::Status AcceptTimerTrigger(grpc::ServerContext* transport,
+                                  const v1::RuntimeAcceptTimerTriggerRequest* request,
+                                  v1::RuntimeAcceptTimerTriggerResponse* response) override {
+    auto prepared =
+        prepare(*transport, request->context(), "kiarabot.v1.RuntimeService/AcceptTimerTrigger",
+                *request, false, options_);
+    if (const auto* rejected = std::get_if<t::Failure>(&prepared)) {
+      return error_status(*rejected, request->context().request_id(),
+                          request->context().trace_id());
+    }
+    auto& context = std::get<Prepared>(prepared);
+    t::HandoffContext handoff;
+    if (!handoff_from_wire(request->handoff(), &handoff)) {
+      return error_status(failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput),
+                          context.request, context.trace);
+    }
+    handoff.actor = t::SubjectId{request->owner_instance_id()};
+    const auto kind = request->target().type() == v1::ConversationRef::PRIVATE
+                          ? t::ConversationKey::Kind::Private
+                      : request->target().type() == v1::ConversationRef::GROUP
+                          ? t::ConversationKey::Kind::Group
+                          : t::ConversationKey::Kind::Unspecified;
+    auto envelope = timer_envelope(*request, handoff, context.trace);
+    if (!envelope) {
+      return error_status(internal_failure(), context.request, context.trace);
+    }
+    t::AcceptTimerTriggerRequest application_request;
+    application_request.context = context.command;
+    application_request.handoff = handoff;
+    application_request.occurrence_id = t::MessageId{request->occurrence_id()};
+    application_request.task_id = request->task_id();
+    application_request.owner_instance_id = t::InstanceId{request->owner_instance_id()};
+    application_request.schedule_version = t::ResourceVersion{request->schedule_version()};
+    application_request.conversation_id = request->target().id();
+    application_request.conversation_kind = kind;
+    application_request.payload.reserve(request->payload().size());
+    for (const unsigned char byte : request->payload()) {
+      application_request.payload.push_back(static_cast<std::byte>(byte));
+    }
+    application_request.serialized_envelope = std::move(*envelope);
+    auto accepted = application_.accept_timer_trigger(application_request);
+    if (const auto* rejected = std::get_if<t::Failure>(&accepted)) {
+      return fail(context, *rejected);
+    }
+    if (!timer_acceptance_wire(std::get<t::TimerTriggerAcceptance>(accepted),
+                               response->mutable_receipt())) {
+      return error_status(internal_failure(), context.request, context.trace);
+    }
     return grpc::Status::OK;
   }
 

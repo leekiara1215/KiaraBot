@@ -57,6 +57,9 @@ enum class EventPayloadKind {
   GroupMemberChanged,
   FriendRequest,
   AdapterStatusChanged,
+  // Runtime-created one-shot task trigger; event_id equals the Scheduler occurrence id and the
+  // target is the owning plugin instance, not a subscription fan-out.
+  TimerTriggered,
 };
 
 inline std::string_view event_subscription(EventPayloadKind kind) noexcept {
@@ -71,6 +74,8 @@ inline std::string_view event_subscription(EventPayloadKind kind) noexcept {
     return "event.friend.request";
   case EventPayloadKind::AdapterStatusChanged:
     return "event.adapter.status.changed";
+  case EventPayloadKind::TimerTriggered:
+    return {};
   }
   return {};
 }
