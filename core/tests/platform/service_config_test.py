@@ -108,6 +108,18 @@ def main(driver, identity=None):
         expect(0, database_config)
         for service in ['runtime', 'scheduler', 'model']:
             expect(0, {**database_config, 'service': service}, service=service)
+        runtime = {**config, 'service': 'runtime'}
+        expect(0, {**runtime, 'bridge_listen': '127.0.0.1:1'}, service='runtime')
+        expect(0, {**runtime, 'bridge_listen': '127.0.0.1:0'}, service='runtime')
+        bounded = {**runtime, 'probe_listen': '127.0.0.1:4444',
+                   'grpc_listen': '127.0.0.1:4445'}
+        for invalid in ['localhost:70001', '127.0.0.1', 'bridge.local:7443',
+                        bounded['probe_listen'], bounded['grpc_listen']]:
+            expect(2, {**bounded, 'bridge_listen': invalid}, service='runtime')
+        for service, name in [('identity', 'identity'), ('scheduler', 'scheduler'),
+                              ('model', 'model'), ('host', 'plugin-host')]:
+            expect(2, {**config, 'service': name, 'bridge_listen': '127.0.0.1:0'},
+                   service=service)
         for service, name in [('host', 'plugin-host'), ('control', 'control')]:
             value = {**config, 'service': name}
             if service == 'control':

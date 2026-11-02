@@ -263,7 +263,7 @@ int run_service(target::Service service, const ServiceComposer& compose, int arg
       return 1;
     }
     std::cout << "service=" << service_name(application.service()) << " probe_port=" << probe_port
-              << " grpc_port=" << rpc.port()
+              << " grpc_port=" << rpc.port() << " bridge_port=" << rpc.bridge_port()
               << " ready=" << (application.readiness().ready ? "true" : "false") << '\n'
               << std::flush;
     auto next_dependency_check = std::chrono::steady_clock::now() + std::chrono::seconds{1};

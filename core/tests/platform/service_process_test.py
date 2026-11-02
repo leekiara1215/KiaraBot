@@ -31,6 +31,9 @@ def main(*arguments):
         def config_for(name, probe=0, grpc=0):
             value = {**base, "service": "plugin-host" if name == "host" else name,
                      "probe_listen": f"127.0.0.1:{probe}", "grpc_listen": f"127.0.0.1:{grpc}"}
+            if name == "runtime":
+                # P06 external bridge listener: server-verified TLS, owner services stay mTLS-only.
+                value["bridge_listen"] = "127.0.0.1:0"
             path = root / f"{name}-{probe}-{grpc}.json"
             path.write_text(json.dumps(value))
             return path
@@ -82,8 +85,11 @@ def main(*arguments):
                                     str(root / "server.key"), mode], check=True, timeout=5,
                                    stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             runtime = running[1][2]
-            for bridge in ["adapter-bridge", "plugin-bridge", "host-bridge"]:
-                subprocess.run([rpc_client, bridge, f'127.0.0.1:{runtime["grpc_port"]}',
+            assert int(runtime["bridge_port"]) > 0, runtime
+            for bridge, port in [("adapter-bridge", runtime["bridge_port"]),
+                                 ("plugin-bridge", runtime["bridge_port"]),
+                                 ("host-bridge", runtime["grpc_port"])]:
+                subprocess.run([rpc_client, bridge, f'127.0.0.1:{port}',
                                 str(root / "ca.pem"), str(root / "server.pem"),
                                 str(root / "server.key"), "authenticated"], check=True, timeout=5)
             first = running[0][2]

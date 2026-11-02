@@ -20,8 +20,13 @@ public:
   // Composition-root use only, before start. Owns each adapter until server shutdown completes.
   // All adapters must belong to this process; empty registration keeps generated rejecting stubs.
   target::Status add_service(target::Service owner, std::unique_ptr<grpc::Service> service);
+  // External Bridge listener only (AdapterBridge/PluginBridge). Server-verified TLS, no client
+  // certificate request. Runtime-only; requires bridge_listen in start(). Registered separately
+  // from the internal owner mTLS listener so the two services never share a socket.
+  target::Status add_bridge_service(target::Service owner, std::unique_ptr<grpc::Service> service);
   bool start(const ProcessConfig& config);
   int port() const noexcept;
+  int bridge_port() const noexcept;
 
 private:
   class Impl;

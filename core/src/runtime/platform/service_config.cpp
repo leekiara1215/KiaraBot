@@ -551,6 +551,12 @@ ConfigResult load_service_config(const std::string& path, target::Service servic
       }
       keys.insert("host");
     }
+    if (document.contains("bridge_listen")) {
+      if (service != target::Service::Runtime || !document["bridge_listen"].is_string()) {
+        return ConfigFailure{2, "invalid_bridge_listen_config"};
+      }
+      keys.insert("bridge_listen");
+    }
     if (document.contains("database")) {
       if (service == target::Service::Control || service == target::Service::Host ||
           !database_shape(document["database"])) {
@@ -572,6 +578,19 @@ ConfigResult load_service_config(const std::string& path, target::Service servic
     if (!address_valid(config.probe_listen, true) ||
         (service != target::Service::Control && !address_valid(config.grpc_listen, false))) {
       return ConfigFailure{2, "invalid_address"};
+    }
+    if (document.contains("bridge_listen")) {
+      const auto bridge_listen = document["bridge_listen"].get<std::string>();
+      // The external Bridge listener must be a distinct bind target and never aliases the owner
+      // mTLS or probe sockets. Port 0 selects an ephemeral port, so an equal "host:0" string does
+      // not alias: the kernel assigns different ports.
+      const bool explicit_port = !bridge_listen.ends_with(":0");
+      if (!address_valid(bridge_listen, false) ||
+          (explicit_port &&
+           (bridge_listen == config.grpc_listen || bridge_listen == config.probe_listen))) {
+        return ConfigFailure{2, "invalid_bridge_listen_address"};
+      }
+      config.bridge_listen = bridge_listen;
     }
     if (document.contains("control_api")) {
       config.control_api =

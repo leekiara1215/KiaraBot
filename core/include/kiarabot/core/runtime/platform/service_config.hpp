@@ -109,6 +109,10 @@ struct ProcessConfig {
   std::optional<std::string> identity_endpoint = std::nullopt;
   // Host-only: deployment identity, package/profile allowlists and local journal path.
   std::optional<HostMaterial> host = std::nullopt;
+  // Runtime-only, optional: external Adapter/Plugin bridge listener. Server-verified TLS only (no
+  // client certificate request), same certificate material as grpc_listen. Absent means no external
+  // bridge listener; disabling the listener never falls back to the internal mTLS owner listener.
+  std::optional<std::string> bridge_listen = std::nullopt;
 };
 struct ConfigFailure {
   int exit_code;
