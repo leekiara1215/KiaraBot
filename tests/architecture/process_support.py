@@ -59,6 +59,34 @@ def service_config(service, pki):
         config['grpc_listen'] = free_endpoint()
         while config['grpc_listen'] == config['probe_listen']:
             config['grpc_listen'] = free_endpoint()
+    if service == 'plugin-host':
+        # P08a requires deployment material; Runtime HostBridge is not part of the P02 process
+        # group, so the host starts offline with readiness=false and retries registration without
+        # launching any managed instance.
+        host_root = Path(pki.root) / 'plugin-host-fixture'
+        credentials = host_root / 'credentials'
+        credentials.mkdir(parents=True, exist_ok=True)
+        config['host'] = {
+            'host_id': 'host-a',
+            'sqlite_path': str(host_root / 'host.sqlite'),
+            'runtime_endpoint': free_endpoint(),
+            'credential_directory': str(credentials),
+            'packages': [{
+                'plugin_type_id': 'observer',
+                'root': '/opt/kiarabot/packages/observer',
+                'sha256': 'a' * 64,
+                'launch_profile': 'python',
+                'allowed_argument_names': ['instance'],
+            }],
+            'profiles': [{
+                'name': 'python',
+                'executable': '/opt/kiarabot/.venv/bin/python',
+                'fixed_arguments': ['-m', 'kiarabot_sdk'],
+                'allowed_environment_names': ['PYTHONUNBUFFERED'],
+                'credential_environment': 'KIARABOT_PLUGIN_BOOTSTRAP',
+            }],
+            'environment': {},
+        }
     return config
 
 
