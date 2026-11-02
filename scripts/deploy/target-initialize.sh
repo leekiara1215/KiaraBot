@@ -8,7 +8,13 @@ usage: target-initialize.sh SERVICE   # SERVICE: identity|runtime|scheduler|mode
 Runs the explicit empty-database initializer for one private PostgreSQL database.
 Requires PG_HOST, PG_PORT, PG_CA_FILE, KIARABOT_DB_NAME, KIARABOT_MIGRATION_ROLE,
 KIARABOT_RUNTIME_ROLE and KIARABOT_MIGRATION_PASSWORD_FILE.
-This command never cleans an existing database, imports snapshots or auto-migrates.
+Default target topology is single-host Compose (deploy/compose.target.yml); run this
+through the one-shot `init` profile, never by `up -d`:
+  docker compose --env-file deploy/target.env -f deploy/compose.target.yml \
+    --profile init run --rm init-identity
+The PostgreSQL image is the official postgres:16.4-bookworm by default; release smoke
+requires a pinned digest (POSTGRES_IMAGE=postgres:<PG16>-bookworm@sha256:...). This script
+does not pull images, create roles/databases, clean data, import snapshots or auto-migrate.
 USAGE
 }
 

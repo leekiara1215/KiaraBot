@@ -52,12 +52,16 @@ note() { echo "target-smoke: $*"; }
 command -v docker >/dev/null 2>&1 && docker_available=1
 
 composes=(deploy/compose.infra.yml deploy/compose.core.yml deploy/compose.exec.yml)
+target_compose=deploy/compose.target.yml
+secrets_override=deploy/compose.docker-secrets.yml
 expected_services=(
   "deploy/compose.infra.yml:postgres init-identity init-runtime init-scheduler init-model identity-bootstrap"
   "deploy/compose.core.yml:identity runtime scheduler model control panel"
   "deploy/compose.exec.yml:plugin-host adapter"
 )
 
+[[ -f "$repo_root/$target_compose" ]] || fail "default single-host compose missing"
+[[ -f "$repo_root/$secrets_override" ]] || fail "docker secrets override missing"
 [[ -f "$repo_root/deploy/docker/suite.Dockerfile" ]] || fail "suite Dockerfile missing"
 [[ -f "$repo_root/deploy/docker/adapter-entrypoint.sh" ]] || fail "adapter entrypoint missing"
 [[ -f "$repo_root/scripts/deploy/target-initialize.sh" ]] || fail "target initializer missing"
@@ -80,6 +84,28 @@ for spec in "${expected_services[@]}"; do
     abort "unexpected services: #{extra.join(",")}" unless extra.empty?
   ' "$path" "$services" || fail "Compose parse/structure failed: $file"
 done
+
+note "validating default single-host compose wrapper and execution profiles"
+ruby -ryaml -e '
+  document = YAML.load_file(ARGV[0], aliases: true)
+  includes = document["include"]
+  abort "target compose must include the three component files" unless includes.is_a?(Array)
+  expected = ["compose.infra.yml", "compose.core.yml", "compose.exec.yml"]
+  abort "target include list mismatch: #{includes.inspect}" unless includes.sort == expected.sort
+' "$repo_root/$target_compose" || fail "default target compose/include validation failed"
+ruby -ryaml -e '
+  document = YAML.load_file(ARGV[0], aliases: true)
+  plugin = document["services"] && document["services"]["plugin-host"]
+  adapter = document["services"] && document["services"]["adapter"]
+  abort "plugin-host profile missing" unless plugin && plugin["profiles"].include?("exec") && plugin["profiles"].include?("host")
+  abort "adapter profile missing" unless adapter && adapter["profiles"].include?("exec") && adapter["profiles"].include?("adapter")
+' "$repo_root/deploy/compose.exec.yml" || fail "host/adapter profiles are incomplete"
+grep -q 'POSTGRES_IMAGE:-postgres:16.4-bookworm' "$repo_root/deploy/compose.infra.yml" \
+  || fail "PostgreSQL official 16.4 image is not the default"
+ruby -ryaml -e '
+  document = YAML.load_file(ARGV[0], aliases: true)
+  abort "secrets override must define secrets/services" unless document["secrets"].is_a?(Hash) && document["services"].is_a?(Hash)
+' "$repo_root/$secrets_override" || fail "docker secrets override YAML validation failed"
 
 note "validating Compose security defaults and no host networking"
 if grep -RInE "^[[:space:]]*(network_mode:[[:space:]]*host|privileged:[[:space:]]*true)" \
@@ -121,9 +147,12 @@ fi
 note "running shell syntax checks"
 for script in "$repo_root"/scripts/deploy/target-initialize.sh \
               "$repo_root"/scripts/deploy/target-smoke.sh \
+              "$repo_root"/scripts/deploy/target-rotate-secret.sh \
               "$repo_root"/deploy/docker/adapter-entrypoint.sh; do
   bash -n "$script" || fail "shell syntax: ${script#"$repo_root"/}"
 done
+bash "$repo_root/scripts/deploy/tests/target_rotate_test.sh" >/dev/null \
+  || fail "target secret rotation offline test failed"
 
 if ((release)); then
   [[ "$env_file" == *example* ]] && fail "--release must use a real env file, not the example"
@@ -135,7 +164,16 @@ if ((release)); then
     grep -qE "^${image_var}=.+/[^:]+@sha256:[0-9a-f]{64}\$" "$env_file" \
       || fail "release requires ${image_var} pinned by digest"
   done
-  note "release digest checks passed"
+  grep -qE '^POSTGRES_IMAGE=postgres:[0-9]+\.[0-9]+-bookworm@sha256:[0-9a-f]{64}$' "$env_file" \
+    || fail "release requires POSTGRES_IMAGE=postgres:<PG16>-bookworm@sha256:<64 hex>"
+  grep -qE '^KIARABOT_VERSION=[^[:space:]]+$' "$env_file" || fail "release requires KIARABOT_VERSION"
+  if grep -q '^KIARABOT_VERSION=dev$' "$env_file"; then fail "release requires a non-dev KIARABOT_VERSION"; fi
+  if grep -qE '^KIARABOT_SECRETS_MODE=docker-secrets$' "$env_file"; then
+    [[ -f "$repo_root/$secrets_override" ]] || fail "docker secrets mode requires the override file"
+  else
+    grep -qE '^KIARABOT_SECRETS_MODE=files$' "$env_file" || fail "release requires KIARABOT_SECRETS_MODE=files or docker-secrets"
+  fi
+  note "release digest/PG/secrets checks passed"
 fi
 
 if ((docker_available)); then
@@ -147,12 +185,13 @@ if ((docker_available)); then
     note "WARN: $env_file missing; using deploy/target.env.example for validation only"
     compose_env=(--env-file "$repo_root/deploy/target.env.example")
   fi
-  docker compose "${compose_env[@]}" \
-    -f "$repo_root/deploy/compose.infra.yml" \
-    -f "$repo_root/deploy/compose.core.yml" \
-    -f "$repo_root/deploy/compose.exec.yml" config -q \
-    || fail "docker compose config rejected the target files"
-  note "docker compose config passed (services are NOT started)"
+  docker compose "${compose_env[@]}" -f "$repo_root/$target_compose" config -q \
+    || fail "docker compose config rejected the default single-host target compose"
+  docker compose "${compose_env[@]}" -f "$repo_root/$target_compose" \
+    -f "$repo_root/$secrets_override" config -q \
+    || fail "docker compose config rejected the optional docker secrets override"
+  note "docker compose config passed for target.yml (+ optional secrets override); services are NOT started"
+  note "UNVERIFIED here: official postgres:16.4-bookworm image pull/init/migrate/restore (requires Docker)"
   if ((do_build)); then
     for service in identity runtime scheduler model plugin-host control; do
       docker build -f "$repo_root/deploy/docker/suite.Dockerfile" \
@@ -174,7 +213,9 @@ else
   note "Commands to run on a Docker-capable Linux host:"
   note "  deploy/target.env.example -> deploy/target.env; fill target config/tls/secrets"
   note "  ./scripts/deploy/target-smoke.sh --require-docker --build"
-  note "  docker compose --env-file deploy/target.env -f deploy/compose.infra.yml -f deploy/compose.core.yml -f deploy/compose.exec.yml config"
+  note "  docker compose --env-file deploy/target.env -f deploy/compose.target.yml --profile exec config"
+  note "  docker compose --env-file deploy/target.env -f deploy/compose.target.yml --profile init run --rm init-identity"
+  note "  UNVERIFIED: official postgres:16.4-bookworm image pull/init/migrate/restore (no Docker here)"
   note "  (initialization: run scripts/deploy/target-initialize.sh via the init profile; never call up before it)"
   if ((require_docker)); then
     fail "Docker is required by --require-docker but unavailable"
