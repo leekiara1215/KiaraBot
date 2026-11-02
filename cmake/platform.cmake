@@ -273,6 +273,21 @@ kiarabot_platform_warnings(kiarabot_runtime_rpc)
 target_link_libraries(kiarabot_runtime_rpc PUBLIC kiarabot_proto kiarabot_target_codec
   PRIVATE kiarabot_runtime_resource_application OpenSSL::Crypto)
 
+add_library(kiarabot_model_rpc STATIC
+  ${CMAKE_SOURCE_DIR}/core/src/runtime/platform/model_rpc.cpp)
+target_include_directories(kiarabot_model_rpc PUBLIC ${CMAKE_SOURCE_DIR}/core/include)
+kiarabot_platform_warnings(kiarabot_model_rpc)
+target_link_libraries(kiarabot_model_rpc PUBLIC kiarabot_proto kiarabot_target_codec
+  kiarabot_model_gateway_application)
+
+add_executable(kiarabot_model_rpc_test
+  ${CMAKE_SOURCE_DIR}/core/tests/platform/model_rpc_test.cpp)
+target_link_libraries(kiarabot_model_rpc_test PRIVATE
+  kiarabot_model_rpc kiarabot_model_gateway_application kiarabot_service_process)
+kiarabot_platform_warnings(kiarabot_model_rpc_test)
+add_test(NAME p11_model_rpc COMMAND kiarabot_model_rpc_test)
+set_tests_properties(p11_model_rpc PROPERTIES LABELS "p11;integration" TIMEOUT 30)
+
 foreach(SERVICE identity runtime plugin_host scheduler model)
   set(ENTRY "${SERVICE}")
   set(BINARY "${SERVICE}")
@@ -292,6 +307,15 @@ foreach(SERVICE identity runtime plugin_host scheduler model)
       kiarabot_host_service kiarabot_host_bridge kiarabot_host_process kiarabot_host_journal
       OpenSSL::Crypto)
     target_compile_definitions(kiarabot-${BINARY} PRIVATE KIARABOT_HOST_COMPOSITION=1)
+  endif()
+  if(SERVICE STREQUAL "model")
+    # P11a Model composition owns the typed PG factory, deployment root key, secret/digest
+    # adapters and the development provider/RPC surface. HTTP provider and real Identity caller
+    # verification are P11b/P11c.
+    target_sources(kiarabot-model PRIVATE
+      ${CMAKE_SOURCE_DIR}/core/app/model_composition.cpp)
+    target_link_libraries(kiarabot-model PRIVATE
+      kiarabot_model_rpc kiarabot_postgres kiarabot_identity_crypto OpenSSL::Crypto)
   endif()
   if(SERVICE STREQUAL "runtime")
     # The independent Runtime composition owns the typed PG factory, application and unary RPC

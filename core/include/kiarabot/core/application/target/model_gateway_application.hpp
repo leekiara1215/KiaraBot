@@ -138,17 +138,19 @@ struct ModelApplicationDependencies {
 class ModelGatewayApplication {
 public:
   explicit ModelGatewayApplication(ModelApplicationDependencies dependencies);
+  virtual ~ModelGatewayApplication() = default;
 
-  Outcome<ModelChatReply> chat(const ModelChatCommand& command);
-  Outcome<ModelIntent> get_call_status(const ModelGetCallStatusQuery& query);
-  Outcome<ModelMetadataView> get_model_metadata(const ModelMetadataQuery& query);
-  Outcome<ModelListMetadataReply> list_model_metadata(const ModelListMetadataQuery& query);
-  Outcome<ModelMutationReply> update_model(const ModelUpdateCommand& command);
-  Outcome<ModelMutationReply> rotate_provider_secret(const ModelRotateSecretCommand& command);
-  Outcome<ModelMutationReply> set_model_lifecycle(const ModelLifecycleCommand& command);
-  Outcome<ModelConfigurationView> get_configuration(const ModelConfigurationQuery& query);
-  Outcome<ModelIntent> resolve_call(const ModelResolveCallCommand& command);
-  Outcome<Operation> get_operation(const ModelOperationQuery& query);
+  virtual Outcome<ModelChatReply> chat(const ModelChatCommand& command);
+  virtual Outcome<ModelIntent> get_call_status(const ModelGetCallStatusQuery& query);
+  virtual Outcome<ModelMetadataView> get_model_metadata(const ModelMetadataQuery& query);
+  virtual Outcome<ModelListMetadataReply> list_model_metadata(const ModelListMetadataQuery& query);
+  virtual Outcome<ModelMutationReply> update_model(const ModelUpdateCommand& command);
+  virtual Outcome<ModelMutationReply>
+  rotate_provider_secret(const ModelRotateSecretCommand& command);
+  virtual Outcome<ModelMutationReply> set_model_lifecycle(const ModelLifecycleCommand& command);
+  virtual Outcome<ModelConfigurationView> get_configuration(const ModelConfigurationQuery& query);
+  virtual Outcome<ModelIntent> resolve_call(const ModelResolveCallCommand& command);
+  virtual Outcome<Operation> get_operation(const ModelOperationQuery& query);
   // Bounded maintenance: abandon UNKNOWN rows past the 30-day window (rule-based, conservative
   // billing) and delete terminal rows past retention. Transient conflicts are retried by caller.
   Status maintenance();

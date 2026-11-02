@@ -10,6 +10,10 @@ T06a 持久化插件入口装配 HostDispatcher；存储、可选模型和任务
 
 T04b 启用持久化插件入口时装配 ActionRouter，插件 message.send 权限仍显式配置；只声明已实现的 action.result.v1。T04b 引入 schema v3，当前已继续升级至 v6，旧二进制不能读取新 schema，回滚必须使用迁移前备份。Python 适配器在 OUTBOX_PATH 旁维护 .actions 执行日志，备份/恢复须与事件 outbox 一起处理，禁止删除未终态记录后重放平台请求。
 
+### P11a Model 根密钥配置（可选，仅 model 服务）
+
+P11 起 model 配置允许 `model_security: {"root_key_file": "...", "key_version": 1}`：`root_key_file` 必须为 32 字节 hex、0600、非符号链接的部署文件，组合根只读取一次；`key_version` 为单调正 uint64。缺失/非法/其他服务携带即退出 2；运行期解密失败 fail closed（不启动 Provider、不写调用意图）。根密钥不进入数据库、日志、审计、outbox、argv 或面板；P11a 的模型进程仍以开发 Provider + fail-closed 调用者校验运行，readiness=false，HTTP Provider 与 Identity 委派在 P11b/P11c 接入。
+
 ## T03b 受管 Python 插件
 
 在 T03a 插件入口基础上，配置 KIARABOT_PLUGIN_EXECUTABLE（Python 可执行文件绝对路径）和 KIARABOT_PLUGIN_MANIFEST（清单绝对路径）；可选 KIARABOT_PLUGIN_PYTHONPATH 指定 SDK、生成协议和插件模块目录。Core 执行 `python -m kiarabot_sdk --manifest ...`，不经过 shell。默认启动等待 5000 ms、停止宽限 2000 ms，可分别用 KIARABOT_PLUGIN_START_TIMEOUT_MS、KIARABOT_PLUGIN_STOP_TIMEOUT_MS 配置为 10–30000 ms。配置不完整或缺少插件入口时启动失败。

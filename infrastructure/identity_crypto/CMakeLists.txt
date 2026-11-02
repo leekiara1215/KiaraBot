@@ -4,7 +4,8 @@ find_package(jwt-cpp CONFIG REQUIRED)
 find_package(nlohmann_json 3.11.3 EXACT CONFIG REQUIRED)
 add_library(kiarabot_identity_crypto STATIC src/password_crypto.cpp src/token_crypto.cpp
   src/receipt_crypto.cpp src/peer_certificate.cpp src/delegation_crypto.cpp src/key_files.cpp
-  src/verification_keys.cpp src/assignment_fingerprint.cpp src/principal_fingerprint.cpp)
+  src/verification_keys.cpp src/assignment_fingerprint.cpp src/principal_fingerprint.cpp
+  src/model_secret_crypto.cpp)
 target_include_directories(kiarabot_identity_crypto PUBLIC
   include ${CMAKE_SOURCE_DIR}/core/include)
 target_link_libraries(kiarabot_identity_crypto PRIVATE unofficial-sodium::sodium

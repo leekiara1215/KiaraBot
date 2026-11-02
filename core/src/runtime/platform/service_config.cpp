@@ -149,8 +149,8 @@ bool host_package_shape(const nlohmann::json& value) {
          host_string_list(value["allowed_argument_names"], 64, 128, true);
 }
 bool host_profile_shape(const nlohmann::json& value) {
-  return exact_keys(value, {"name", "executable", "fixed_arguments",
-                            "allowed_environment_names", "credential_environment"}) &&
+  return exact_keys(value, {"name", "executable", "fixed_arguments", "allowed_environment_names",
+                            "credential_environment"}) &&
          host_name(value["name"], 128) && host_absolute_path(value["executable"]) &&
          host_string_list(value["fixed_arguments"], 64, 1024, false) &&
          host_string_list(value["allowed_environment_names"], 64, 128, true) &&
@@ -165,9 +165,8 @@ bool host_material_shape(const nlohmann::json& value) {
       !host_absolute_path(value["credential_directory"]) ||
       !value["runtime_endpoint"].is_string() ||
       !address_valid(value["runtime_endpoint"].get<std::string>(), false) ||
-      !value["packages"].is_array() || value["packages"].empty() ||
-      value["packages"].size() > 64 || !value["profiles"].is_array() ||
-      value["profiles"].empty() || value["profiles"].size() > 32 ||
+      !value["packages"].is_array() || value["packages"].empty() || value["packages"].size() > 64 ||
+      !value["profiles"].is_array() || value["profiles"].empty() || value["profiles"].size() > 32 ||
       !value["environment"].is_object() || value["environment"].size() > 64) {
     return false;
   }
@@ -337,6 +336,17 @@ bool identity_security_shape(const nlohmann::json& value) {
     return skew.get<std::uint64_t>() <= 2000;
   }
   return skew.get<std::int64_t>() >= 0 && skew.get<std::int64_t>() <= 2000;
+}
+bool model_security_shape(const nlohmann::json& value) {
+  if (!exact_keys(value, {"root_key_file", "key_version"}) ||
+      !symmetric_key_file_shape(value["root_key_file"])) {
+    return false;
+  }
+  const auto& version = value["key_version"];
+  if (version.is_number_unsigned()) {
+    return version.get<std::uint64_t>() > 0;
+  }
+  return version.is_number_integer() && version.get<std::int64_t>() > 0;
 }
 IdentitySymmetricKeyFile symmetric_key_file(const nlohmann::json& value) {
   return {value["id"].get<std::string>(), value["file"].get<std::string>()};
@@ -531,6 +541,12 @@ ConfigResult load_service_config(const std::string& path, target::Service servic
       }
       keys.insert("control_api");
     }
+    if (document.contains("model_security")) {
+      if (service != target::Service::Model || !model_security_shape(document["model_security"])) {
+        return ConfigFailure{2, "invalid_model_security_config"};
+      }
+      keys.insert("model_security");
+    }
     if (document.contains("identity_security")) {
       if (service != target::Service::Identity || !document.contains("database") ||
           !identity_security_shape(document["identity_security"])) {
@@ -596,6 +612,17 @@ ConfigResult load_service_config(const std::string& path, target::Service servic
       config.control_api =
           ControlApiMaterial{document["control_api"]["listen"].get<std::string>(),
                              document["control_api"]["identity_endpoint"].get<std::string>()};
+    }
+    if (document.contains("model_security")) {
+      if (service != target::Service::Model || !model_security_shape(document["model_security"])) {
+        return ConfigFailure{2, "invalid_model_security_config"};
+      }
+      keys.insert("model_security");
+    }
+    if (document.contains("model_security")) {
+      const auto& material = document["model_security"];
+      config.model_security = ModelSecurityMaterial{symmetric_key_file(material["root_key_file"]),
+                                                    material["key_version"].get<std::uint64_t>()};
     }
     if (document.contains("identity_security")) {
       config.identity_security = identity_security_material(document["identity_security"]);

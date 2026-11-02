@@ -1,7 +1,7 @@
 #include <iostream>
 
-#include "kiarabot/core/application/target/model_application.hpp"
 #include "kiarabot/core/runtime/platform/service_process.hpp"
+#include "model_composition.hpp"
 #include "postgres_service.hpp"
 
 namespace target = kiarabot::core::target;
@@ -13,9 +13,7 @@ int main(int argc, char* argv[]) {
     return platform::run_service(
         target::Service::Model,
         [](const platform::ProcessConfig& config) {
-          return composition::compose_database_service<target::ModelUnitOfWork>(
-              config, kiarabot::infrastructure::postgres::open_model,
-              [](auto&) { return target::make_model_application(); });
+          return composition::compose_model_service(config);
         },
         argc, argv);
   } catch (...) {

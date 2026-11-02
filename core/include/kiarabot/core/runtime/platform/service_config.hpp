@@ -71,6 +71,12 @@ struct IdentitySecurityMaterial {
   IdentityClockDeclaration clock;
   IdentityVerificationDeclaration verification;
 };
+// Model provider-secret AEAD root key. Deployment-injected file + monotonic key version; the
+// material is read by the composition root and never stored in PostgreSQL or logs.
+struct ModelSecurityMaterial {
+  IdentitySymmetricKeyFile root_key;
+  std::uint64_t key_version = 0;
+};
 // Host deployment material (P08). Only file references/allowlists; secret values are read from
 // owner-only deployment files by the composition root and never appear in JSON/argv.
 struct HostPackageMaterial {
@@ -104,6 +110,7 @@ struct ProcessConfig {
   std::optional<DatabaseMaterial> database;
   std::optional<ControlApiMaterial> control_api = std::nullopt;
   std::optional<IdentitySecurityMaterial> identity_security = std::nullopt;
+  std::optional<ModelSecurityMaterial> model_security = std::nullopt;
   // Runtime-only: Identity owner gRPC endpoint for online authorization and delegation checks.
   // The validated service TLS material is reused as the outbound mTLS client identity.
   std::optional<std::string> identity_endpoint = std::nullopt;
