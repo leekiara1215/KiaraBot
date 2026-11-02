@@ -217,6 +217,37 @@ async def test_heartbeats_survive_a_silent_server():
             await asyncio.wait_for(running, 2)
 
 
+async def test_shutdown_notice_waits_for_inflight_event_before_on_stop():
+    order = []
+
+    class Ordered(Plugin):
+        async def on_event(self, event, context):
+            order.append('event-start')
+            await asyncio.sleep(.1)
+            order.append('event-end')
+
+        async def on_stop(self, reason):
+            order.append(('on_stop', reason))
+
+    plugin, stop = Ordered(), asyncio.Event()
+    async with FakeTargetRuntime() as host:
+        runner = Runner(manifest(), plugin, options(host))
+        running = asyncio.create_task(runner.run(stop))
+        try:
+            await get(host.registrations)
+            await host.send_event(events.EventEnvelope(event_id='inflight', trace_id='trace'))
+            await asyncio.sleep(.02)
+            await host.send_shutdown(reason='upgrade', drain_timeout_ms=500)
+            await asyncio.wait_for(running, 3)
+            # The queued/in-flight handler finishes (and is ACKed) before on_stop runs; a
+            # ShutdownNotice never drops accepted work or reconnects the same session.
+            assert order == ['event-start', 'event-end', ('on_stop', 'shutdown')]
+            assert host.registrations.empty() and host.connection_generation == 1
+        finally:
+            stop.set()
+            await asyncio.wait_for(running, 2)
+
+
 async def test_shutdown_notice_drains_and_stops_without_reconnect():
     class Draining(Plugin):
         stopped = False

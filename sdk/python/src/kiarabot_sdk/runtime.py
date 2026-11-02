@@ -629,15 +629,47 @@ class Runner:
                 worker = asyncio.create_task(events())
                 refresh_task = asyncio.create_task(refresh_loop())
                 reader = asyncio.create_task(reader_loop())
+                drain_deadline = None
                 while True:
-                    try:
-                        response = await asyncio.wait_for(incoming.get(),
-                                                          self.options.heartbeat_interval)
-                    except asyncio.TimeoutError:
-                        await write(plugins.PluginToCore(
-                            heartbeat=plugins.PluginHeartbeat(
-                                instance_id=connection.fence.instance_id)))
-                        continue
+                    if self._draining:
+                        # Keep reading delivery receipts/host responses while accepted work
+                        # finishes; otherwise an in-flight ACK would wait forever for a receipt
+                        # that the already-broken reader never processes.
+                        join_task = asyncio.create_task(event_queue.join())
+                        incoming_task = asyncio.create_task(incoming.get())
+                        now = asyncio.get_running_loop().time()
+                        remaining = (drain_deadline - now
+                                     if drain_deadline is not None else self.options.io_timeout)
+                        timeout = max(0.0, min(self.options.heartbeat_interval, remaining))
+                        done, _ = await asyncio.wait({join_task, incoming_task}, timeout=timeout,
+                                                     return_when=asyncio.FIRST_COMPLETED)
+                        if join_task in done:
+                            if not incoming_task.done():
+                                incoming_task.cancel()
+                                with suppress(asyncio.CancelledError):
+                                    await incoming_task
+                            break
+                        if incoming_task not in done:
+                            incoming_task.cancel()
+                            with suppress(asyncio.CancelledError):
+                                await incoming_task
+                            if (drain_deadline is not None
+                                    and asyncio.get_running_loop().time() >= drain_deadline):
+                                break
+                            continue
+                        response = incoming_task.result()
+                        join_task.cancel()
+                        with suppress(asyncio.CancelledError):
+                            await join_task
+                    else:
+                        try:
+                            response = await asyncio.wait_for(incoming.get(),
+                                                              self.options.heartbeat_interval)
+                        except asyncio.TimeoutError:
+                            await write(plugins.PluginToCore(
+                                heartbeat=plugins.PluginHeartbeat(
+                                    instance_id=connection.fence.instance_id)))
+                            continue
                     if response is None:
                         if failure_future.done():
                             raise failure_future.exception()
@@ -647,7 +679,12 @@ class Runner:
                         raise PluginError(common.INVALID_ARGUMENT)
                     if kind == 'shutdown':
                         self._draining = True
-                        break
+                        drain_ms = response.shutdown.drain_timeout_ms
+                        drain_deadline = asyncio.get_running_loop().time() + max(
+                            0.001,
+                            min(drain_ms / 1000.0 if drain_ms else self.options.io_timeout,
+                                self.options.io_timeout))
+                        continue
                     transport.validate_frame_authorization(response, connection)
                     if kind == 'heartbeat_ack':
                         continue
