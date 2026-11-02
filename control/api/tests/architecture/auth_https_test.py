@@ -45,7 +45,7 @@ def stop(child):
     return child.communicate(timeout=5)
 
 
-def main(control, fixture, model_fixture=None):
+def main(control, fixture, model_fixture=None, runtime_fixture=None):
     with tempfile.TemporaryDirectory(prefix='p04-control-') as folder:
         root = Path(folder)
         config = certificates(root, 'ec')
@@ -53,6 +53,7 @@ def main(control, fixture, model_fixture=None):
         identity = subprocess.Popen([fixture, tls['ca_file'], tls['certificate_file'], tls['private_key_file']],
                                     stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         model = None
+        runtime = None
         child = None
         secrets = ['never-print-password', 'never-print-upstream-secret', ACCESS,
                    'secret-refresh-credential-login', 'secret-access-credential-refresh',
@@ -60,6 +61,12 @@ def main(control, fixture, model_fixture=None):
         logs = ''
         try:
             identity_port = int(line(identity))
+            runtime_port = None
+            if runtime_fixture:
+                runtime = subprocess.Popen([runtime_fixture, tls['ca_file'], tls['certificate_file'],
+                                            tls['private_key_file']],
+                                           stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                runtime_port = int(line(runtime))
             model_port = None
             if model_fixture:
                 model = subprocess.Popen([model_fixture, tls['ca_file'], tls['certificate_file'], tls['private_key_file']],
@@ -68,6 +75,8 @@ def main(control, fixture, model_fixture=None):
             config['service'] = 'control'
             config.pop('grpc_listen')
             config['control_api'] = {'listen': '127.0.0.1:0', 'identity_endpoint': f'localhost:{identity_port}'}
+            if runtime_port is not None:
+                config['control_api']['runtime_endpoint'] = f'localhost:{runtime_port}'
             if model_port is not None:
                 config['control_api']['model_endpoint'] = f'localhost:{model_port}'
             path = root / 'control.json'
@@ -130,11 +139,12 @@ def main(control, fixture, model_fixture=None):
             # no authoritative source is registered in this minimal fixture configuration.
             status, body, _ = request('GET', '/health/live')
             assert status == 200 and body == {'state': 'HEALTHY'}, (status, body)
-            for sensitive_path in ('/api/v1/logs', '/api/v1/audit'):
-                status, body, _ = request('GET', sensitive_path,
-                                          headers={'Authorization': 'Bearer ' + ACCESS})
-                assert status in (403, 503), (sensitive_path, status, body)
-                assert body['code'] in ('PERMISSION_DENIED', 'UPSTREAM_UNAVAILABLE'), body
+            if runtime_fixture is None:
+                for sensitive_path in ('/api/v1/logs', '/api/v1/audit'):
+                    status, body, _ = request('GET', sensitive_path,
+                                              headers={'Authorization': 'Bearer ' + ACCESS})
+                    assert status in (403, 503), (sensitive_path, status, body)
+                    assert body['code'] in ('PERMISSION_DENIED', 'UPSTREAM_UNAVAILABLE'), body
             for anonymous_path in ('/api/v1/logs', '/api/v1/audit'):
                 status, body, _ = request('GET', anonymous_path)
                 assert status == 401 and body['code'] == 'UNAUTHENTICATED', (anonymous_path, body)
@@ -148,6 +158,37 @@ def main(control, fixture, model_fixture=None):
                                           headers={'Authorization': 'Bearer ' + ACCESS})
                 assert status == 400 and body['code'] == 'INVALID_ARGUMENT', (
                     invalid_target, status, body)
+            if runtime_fixture is not None:
+                # Cross-owner success aggregation over real Control->Identity/Runtime mTLS:
+                # composite keyset token, owner labels, DESC ordering and two-page paging.
+                observed = []
+                owners = set()
+                token = ''
+                pages = 0
+                while True:
+                    target = '/api/v1/logs?page_size=2' + (
+                        '' if not token else '&page_token=' + urllib.parse.quote(token, safe=''))
+                    status, body, _ = request('GET', target,
+                                              headers={'Authorization': 'Bearer ' + ACCESS})
+                    assert status == 200, (status, body)
+                    pages += 1
+                    for item in body['items']:
+                        observed.append(item['id'])
+                        owners.add(item['owner'])
+                        assert item['message'] == 'request.recorded', item
+                    token = body['page'].get('next_page_token', '')
+                    if not token:
+                        break
+                    assert pages < 8, 'pagination did not terminate'
+                assert pages == 4, pages
+                assert observed == ['10', '20', '9', '30', '40', '19', '8'], observed
+                assert owners == {'identity', 'runtime'}, owners
+                status, body, _ = request(
+                    'GET', '/api/v1/audit?page_size=20&actor=alice',
+                    headers={'Authorization': 'Bearer ' + ACCESS})
+                assert status == 200, (status, body)
+                assert body['items'] and all(item['actor'] == 'alice' for item in body['items']), body
+                assert all(item['owner'] == 'identity' for item in body['items']), body
             status, body, _ = request('GET', '/api/v1/health',
                                       headers={'Authorization': 'Bearer ' + ACCESS})
             assert status in (200, 403, 503), (status, body)
@@ -507,6 +548,8 @@ def main(control, fixture, model_fixture=None):
                 stop(child)
             if model is not None and model.poll() is None:
                 stop(model)
+            if runtime is not None and runtime.poll() is None:
+                stop(runtime)
             if identity.poll() is None:
                 stop(identity)
 

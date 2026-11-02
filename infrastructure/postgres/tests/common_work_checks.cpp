@@ -1459,6 +1459,53 @@ void check_audit_queries(Database& database, std::string_view service) {
           "invalid audit cursor rejected");
     work->rollback();
   }
+  // Real SQL keyset consistency with duplicate occurred_at values: page through the whole
+  // resource with limit 2 and assert every row appears exactly once, ties ordered by id DESC.
+  const target::ResourceRef tie_resource{target::ResourceKind::Catalog, {"p12e-audit-tie"}};
+  target::TimePoint tie_base{};
+  {
+    auto work = begin(database);
+    tie_base = take(work->current_time());
+    for (const auto& request : {"tie-a", "tie-b", "tie-c"}) {
+      take(work->journal().append_audit(
+          {actor, tie_resource, request, "trace-tie", "/kiarabot.v1.P12e/Audit", std::nullopt,
+           target::ResourceVersion{7},
+           std::string_view{request} == "tie-c" ? tie_base - std::chrono::seconds{3}
+                                                : tie_base - std::chrono::seconds{2}}));
+    }
+    check(work->commit() == target::CommitResult::Committed, "audit tie fixture commit");
+  }
+  {
+    auto work = begin(database);
+    target::AuditQuery query;
+    query.filter.occurred_from = tie_base - std::chrono::seconds{10};
+    query.filter.occurred_until = tie_base + std::chrono::seconds{10};
+    query.filter.resource = tie_resource;
+    query.limit = 2;
+    std::vector<target::AuditRecord> collected;
+    for (int page = 0; page < 5; ++page) {
+      auto result = take(work->query_audit(query));
+      collected.insert(collected.end(), result.records.begin(), result.records.end());
+      if (result.next_cursor.empty()) {
+        break;
+      }
+      query.cursor = target::decode_audit_cursor(result.next_cursor);
+      check(query.cursor.has_value(), "audit tie cursor decode");
+    }
+    check(collected.size() == 3, "audit keyset duplicated or lost rows");
+    check(collected[0].request_id == "tie-b" && collected[1].request_id == "tie-a" &&
+              collected[2].request_id == "tie-c",
+          "audit keyset tie ordering");
+    check(collected[0].occurred_at == collected[1].occurred_at &&
+              collected[0].id > collected[1].id,
+          "audit same-occurred_at id ordering");
+    std::set<std::string> unique;
+    for (const auto& record : collected) {
+      unique.insert(record.request_id);
+    }
+    check(unique.size() == 3, "audit keyset uniqueness");
+    work->rollback();
+  }
 }
 
 void check_common(Database& database, const DatabaseConfig& config) {

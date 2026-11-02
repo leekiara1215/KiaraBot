@@ -23,6 +23,10 @@ add_executable(kiarabot_control_identity_fixture
   ${CMAKE_SOURCE_DIR}/control/api/tests/architecture/identity_fixture.cpp)
 target_link_libraries(kiarabot_control_identity_fixture PRIVATE kiarabot_proto OpenSSL::Crypto)
 kiarabot_platform_warnings(kiarabot_control_identity_fixture)
+add_executable(kiarabot_control_runtime_fixture
+  ${CMAKE_SOURCE_DIR}/control/api/tests/architecture/runtime_fixture.cpp)
+target_link_libraries(kiarabot_control_runtime_fixture PRIVATE kiarabot_proto OpenSSL::Crypto)
+kiarabot_platform_warnings(kiarabot_control_runtime_fixture)
 add_executable(kiarabot_control_model_fixture
   ${CMAKE_SOURCE_DIR}/control/api/tests/architecture/model_fixture.cpp)
 target_link_libraries(kiarabot_control_model_fixture PRIVATE kiarabot_proto OpenSSL::Crypto)
@@ -44,7 +48,8 @@ set_tests_properties(p11_control_model_rest PROPERTIES
 add_test(NAME p12_audit_logs_rest COMMAND "${KIARABOT_TARGET_PYTHON}"
   ${CMAKE_SOURCE_DIR}/tests/architecture/p12c_audit_logs.py
   $<TARGET_FILE:kiarabot-control> $<TARGET_FILE:kiarabot_control_identity_fixture>
-  $<TARGET_FILE:kiarabot_control_model_fixture>)
+  $<TARGET_FILE:kiarabot_control_model_fixture>
+  $<TARGET_FILE:kiarabot_control_runtime_fixture>)
 set_tests_properties(p12_audit_logs_rest PROPERTIES
   LABELS "p12;control;integration;fault" TIMEOUT 90 RESOURCE_LOCK control_https RUN_SERIAL TRUE
   ENVIRONMENT "PATH=${OPENSSL_BIN_DIR}:$ENV{PATH}")

@@ -1,11 +1,17 @@
+#include <algorithm>
+#include <charconv>
 #include <chrono>
+#include <cstdint>
 #include <fstream>
 #include <iostream>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <sstream>
 #include <string>
 #include <thread>
+#include <utility>
+#include <vector>
 
 #include <grpcpp/grpcpp.h>
 #include <openssl/pem.h>
@@ -57,6 +63,98 @@ template <typename Response> void tokens(Response* output, const std::string& su
   pair->mutable_access_expires_at()->set_nanos(100000000);
   pair->mutable_refresh_expires_at()->set_seconds(kChecked + 2592000);
 }
+
+struct AuditRow {
+  std::string id;
+  std::string actor = "alice";
+  std::string request = "request";
+  std::string trace = "trace";
+  std::string method = "List";
+  std::int64_t nanos = 0;
+  std::string severity = "info";
+  std::string message = "request.recorded";
+};
+std::vector<AuditRow> audit_rows() {
+  return {{"10", "alice", "request-10", "trace-10", "Login", 5'000'000'000},
+          {"9", "alice", "request-9", "trace-9", "RefreshSession", 4'000'000'000},
+          {"30", "alice", "request-30", "trace-30", "GetPrincipalStatus", 3'000'000'000},
+          {"8", "alice", "request-8", "trace-8", "RevokeSession", 1'000'000'000}};
+}
+std::int64_t timestamp_nanos(const google::protobuf::Timestamp& value) {
+  return value.seconds() * 1'000'000'000LL + value.nanos();
+}
+std::optional<std::pair<std::int64_t, std::string>> audit_token(std::string_view value) {
+  const auto colon = value.find(':');
+  if (colon == std::string_view::npos) {
+    return std::nullopt;
+  }
+  std::int64_t nanos = 0;
+  const auto parsed = std::from_chars(value.data(), value.data() + colon, nanos);
+  if (parsed.ec != std::errc{} || parsed.ptr != value.data() + colon) {
+    return std::nullopt;
+  }
+  return std::pair{nanos, std::string{value.substr(colon + 1)}};
+}
+std::vector<AuditRow>
+filter_rows(const wire::IdentityAuditFilter& filter) {
+  std::vector<AuditRow> rows;
+  const auto cursor = filter.page().page_token().empty()
+                          ? std::optional<std::pair<std::int64_t, std::string>>{}
+                          : audit_token(filter.page().page_token());
+  for (const auto& row : audit_rows()) {
+    if (!filter.actor().empty() && row.actor != filter.actor()) {
+      continue;
+    }
+    if (filter.has_resource() &&
+        (filter.resource().kind() != wire::RESOURCE_CATALOG ||
+         filter.resource().id() != "catalog")) {
+      continue;
+    }
+    if (filter.has_occurred_from() && row.nanos < timestamp_nanos(filter.occurred_from())) {
+      continue;
+    }
+    if (filter.has_occurred_until() && row.nanos >= timestamp_nanos(filter.occurred_until())) {
+      continue;
+    }
+    if (cursor && (row.nanos > cursor->first ||
+                   (row.nanos == cursor->first && row.id >= cursor->second))) {
+      continue;
+    }
+    rows.push_back(row);
+  }
+  std::sort(rows.begin(), rows.end(), [](const AuditRow& left, const AuditRow& right) {
+    return left.nanos != right.nanos ? left.nanos > right.nanos : left.id > right.id;
+  });
+  return rows;
+}
+void fill_audit_row(const AuditRow& row, wire::IdentityAuditRecord* output) {
+  output->set_entry_id(row.id);
+  output->set_actor(row.actor);
+  output->mutable_resource()->set_kind(wire::RESOURCE_CATALOG);
+  output->mutable_resource()->set_id("catalog");
+  output->set_request_id(row.request);
+  output->set_trace_id(row.trace);
+  output->set_method(row.method);
+  output->set_rejection(wire::ERROR_CODE_UNSPECIFIED);
+  output->set_authorization_version(7);
+  output->mutable_occurred_at()->set_seconds(row.nanos / 1'000'000'000LL);
+  output->mutable_occurred_at()->set_nanos(static_cast<std::int32_t>(row.nanos % 1'000'000'000LL));
+}
+void fill_log_row(const AuditRow& row, wire::IdentityLogRecord* output) {
+  output->set_entry_id(row.id);
+  output->set_severity(row.severity);
+  output->set_component("identity");
+  output->set_method(row.method);
+  output->set_actor(row.actor);
+  output->mutable_resource()->set_kind(wire::RESOURCE_CATALOG);
+  output->mutable_resource()->set_id("catalog");
+  output->set_request_id(row.request);
+  output->set_trace_id(row.trace);
+  output->set_message(row.message);
+  output->mutable_occurred_at()->set_seconds(row.nanos / 1'000'000'000LL);
+  output->mutable_occurred_at()->set_nanos(static_cast<std::int32_t>(row.nanos % 1'000'000'000LL));
+}
+
 class Fixture final : public wire::IdentityService::Service {
 public:
   grpc::Status Login(grpc::ServerContext* context, const wire::IdentityLoginRequest* input,
@@ -245,7 +343,8 @@ public:
         input->client_certificate_sha256() !=
             std::string(reinterpret_cast<const char*>(digest), length) ||
         input->subject_proof() != "secret-access-credential-login" ||
-        (input->audience() != "identity" && input->audience() != "model") ||
+        (input->audience() != "identity" && input->audience() != "runtime" &&
+         input->audience() != "model") ||
         input->scope().resources_size() != 1 || input->permissions_size() != 1) {
       return error(wire::PERMISSION_DENIED, grpc::StatusCode::PERMISSION_DENIED, input->context());
     }
@@ -265,13 +364,64 @@ public:
                                    input->permissions(0) == wire::PERMISSION_MODEL_READ ||
                                    input->permissions(0) == wire::PERMISSION_MODEL_CALL_INSPECT ||
                                    input->permissions(0) == wire::PERMISSION_RESOURCE_READ);
-    if (!identity_delegation && !model_delegation) {
+    const bool audit_log_delegation =
+        input->audience() == "runtime" && resource.kind() == wire::RESOURCE_CATALOG &&
+        resource.id() == "control" &&
+        (input->permissions(0) == wire::PERMISSION_LOG_READ ||
+         input->permissions(0) == wire::PERMISSION_AUDIT_READ);
+    if (!identity_delegation && !model_delegation && !audit_log_delegation) {
       return error(wire::PERMISSION_DENIED, grpc::StatusCode::PERMISSION_DENIED, input->context());
     }
     output->mutable_delegation()->set_proof(
-        std::string{model_delegation ? "fixture-model-proof:" : "fixture-proof:"} + resource.id());
+        std::string{model_delegation ? "fixture-model-proof:"
+                    : audit_log_delegation ? "fixture-runtime-proof:"
+                                           : "fixture-proof:"} +
+        resource.id());
     output->mutable_delegation()->set_audience("identity");
     output->mutable_delegation()->mutable_expires_at()->set_seconds(kChecked + 30);
+    return grpc::Status::OK;
+  }
+  grpc::Status ListAudit(grpc::ServerContext*,
+                         const wire::IdentityListAuditRequest* input,
+                         wire::IdentityListAuditResponse* output) override {
+    if (!input->has_filter() || input->filter().scope().resources_size() != 1) {
+      return error(wire::INVALID_ARGUMENT, grpc::StatusCode::INVALID_ARGUMENT, input->context());
+    }
+    auto rows = filter_rows(input->filter());
+    const auto size = std::min<std::size_t>(
+        rows.size(), input->filter().page().page_size() == 0
+                         ? 20
+                         : static_cast<std::size_t>(input->filter().page().page_size()));
+    for (std::size_t index = 0; index < size; ++index) {
+      fill_audit_row(rows[index], output->add_entries());
+    }
+    if (rows.size() > size) {
+      output->mutable_page()->set_next_page_token(std::to_string(rows[size - 1].nanos) + ":" +
+                                                  rows[size - 1].id);
+    }
+    output->mutable_page()->set_page_size(static_cast<std::uint32_t>(size));
+    output->mutable_checked_at()->set_seconds(kChecked);
+    return grpc::Status::OK;
+  }
+  grpc::Status ListLogs(grpc::ServerContext*, const wire::IdentityListLogsRequest* input,
+                        wire::IdentityListLogsResponse* output) override {
+    if (!input->has_filter() || input->filter().scope().resources_size() != 1) {
+      return error(wire::INVALID_ARGUMENT, grpc::StatusCode::INVALID_ARGUMENT, input->context());
+    }
+    auto rows = filter_rows(input->filter());
+    const auto size = std::min<std::size_t>(
+        rows.size(), input->filter().page().page_size() == 0
+                         ? 20
+                         : static_cast<std::size_t>(input->filter().page().page_size()));
+    for (std::size_t index = 0; index < size; ++index) {
+      fill_log_row(rows[index], output->add_entries());
+    }
+    if (rows.size() > size) {
+      output->mutable_page()->set_next_page_token(std::to_string(rows[size - 1].nanos) + ":" +
+                                                  rows[size - 1].id);
+    }
+    output->mutable_page()->set_page_size(static_cast<std::uint32_t>(size));
+    output->mutable_checked_at()->set_seconds(kChecked);
     return grpc::Status::OK;
   }
   grpc::Status ListSessions(grpc::ServerContext*, const wire::IdentityListSessionsRequest* input,
