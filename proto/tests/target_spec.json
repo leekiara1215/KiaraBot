@@ -861,7 +861,7 @@
       "file": "runtime.proto",
       "request": "RuntimeAcceptTimerTriggerRequest",
       "response": "RuntimeAcceptTimerTriggerResponse",
-      "caller": "Scheduler",
+      "caller": "Scheduler service principal on the internal mTLS RuntimeService only; not an external bridge and adapters cannot call it",
       "permission": "timer.accept",
       "risk": "online",
       "mutating": true,

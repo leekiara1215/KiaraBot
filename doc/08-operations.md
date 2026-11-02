@@ -933,6 +933,14 @@ verifier 或 SecretReplayPayload。重复同指纹仍返回原完整快照及原
 - **心跳/离线告警**：Host 每 5s 心跳；15s 无心跳只告警在线状态并保持 `process_outcome=UNKNOWN`，不得显示“已停止”或触发自动重启；运维需按跨主机 gate 人工处置（旧执行未确认时拒绝迁移）。
 - **迁移**：切换 Host/账号前必须确认旧执行已终止或留下操作员显式处置记录；不得同时运行 reference 内嵌 launcher 与 P08 Host 管理同一实例（双 spawn 风险）。
 
+## P09/P10 Storage/Task 运维口径（契约冻结，未实现）
+
+- **Storage 限额**：每私有/共享 namespace 1024 键/1MiB、单值 64KiB，安装聚合 8192 键/8MiB；写收据每实例 10000/安装 80000、保留 7 天，容量满拒绝（RATE_LIMITED）且不预删有效收据。TTL 绝对值必须未来且 ≤30 天，过期读取视同不存在；运维清理只清过期值，不清未决收据。
+- **共享 namespace**：每安装至多一个，必须先由 Control `CreateSharedNamespace`（namespace.manage、Idempotency-Key）创建再 `SetSharedMembers`；插件首次写前未创建返回 NOT_FOUND，不静默创建。成员/禁用撤销与并发写按同 gate 线性化，敏感共享读每次在线检查 Identity。
+- **任务容量/时间**：每实例 1024/安装 8192 未终态任务；run_at 必须未来且 ≤ 默认 366 天 horizon（`KIARABOT_TASK_MAX_HORIZON_DAYS` 可配）；local_time 依赖 tzdata，缺失时 readiness 不就绪并返回 UPSTREAM_UNAVAILABLE，不得静默按 UTC。
+- **交接过期/人工恢复**：trigger outbox valid_until 默认 7 天、attempts 上限 100；超窗 occurrence EXPIRED、task FAILED(TIMEOUT) 且不自动重建；运维通过 GetTask/GetOccurrence 观察后用新 task 显式恢复，禁止自动重放。COMPLETED 仅表示事件已持久入队，不是插件执行成功。
+- **审计/幂等**：storage 审计以 namespace/key 为 resource，任务审计以 task 为 resource，复用共享 audit_entries 扩列；幂等 scope=认证主体+方法+有效 namespace/key（或 owner+task_id）；跨实例不串响应。
+
 ## 今晚单机 MVP：reference 本地收发入口
 
 `scripts/local/start.py` 使用现成 reference Core、Control HTTP、SQLite、固定

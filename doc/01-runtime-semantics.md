@@ -214,6 +214,14 @@ P06 之后插件 Action 只走 `PluginBridge` 流帧、适配器执行只走 `Ad
 
 HostBridge 只走 Runtime 内部 mTLS（Host 证书→预注册 host_id，无 bootstrap/proof）；注册后每帧带 Fence，同 host 新连接替换旧连接。Host 每 5s 心跳，15s 无心跳只把在线状态置 false、`process_outcome` 转 UNKNOWN，不写 FAILED/已停止、不 bump 版本。观察身份为 `(host_id, connection_generation, cursor.sequence)` + `command_id`，Runtime inbox 以 source=Host 去重，断线用 resync 补播。Host 先持久命令 journal 再 spawn，marker（boot id+pid+starttime）校验后才认领；同代次无法确认时不重复 spawn，等 Runtime 提升 generation。期望/进程事实/注册/配置应用四层分开：Host 离线不证明进程停止；配置只允许当前 fence+当前 config_version 的 ACK 推进持久 `applied_version`，旧 ACK 幂等 no-op，重连后 delivery 变 Unavailable 并重新应用。跨主机变更要求旧执行终止或操作员显式处置，否则 operation Blocked。详细字段/恢复/凭据部署见 `doc/01-contracts.md` 的 P08 目标 HostBridge 契约节。
 
+### P09 目标 Storage/CAS/Namespace（已冻结，未实现）
+
+外部插件 storage 只走 PluginBridge HostRequest.storage_* 帧，Runtime 按已认证实例解析私有/共享 namespace（`installation_shared` 由服务端解析，插件不自报 owner）；4 个 unary storage 方法为 internal dispatcher。共享 namespace 的 Set/Delete/CAS 必须带 condition（absent=create、version=update/delete），私有 Set 必须缺 condition；CAS 冲突 CONFLICT 且只回授权范围版本。TTL 为绝对 UTC、未来且 ≤30 天；命名空间 1024 键/1MiB、单值 64KiB、安装聚合 8192 键/8MiB；写收据复用通用 command_receipts（7 天、每实例 10000/安装 80000、满则 RATE_LIMITED 不淘汰有效记录）。共享成员访问需 storage.namespace + 成员权限双门禁，撤销与并发写同 gate 线性化。Create/GetSharedNamespace 是既有 Runtime owner 方法新增（namespace.manage/read + exact installation scope），插件首次写前必须已创建，否则 NOT_FOUND。详见 `doc/01-contracts.md` 的 P09/P10 契约节。
+
+### P10 目标任务与 TimerTriggered（已冻结，未实现）
+
+任务 owner_instance/installation 由 Runtime→Scheduler 实例委托 claims 派生，插件不可自报；task_id 为 owner 内业务身份，HostRequest.idempotency_key 为命令幂等。run_at 必须严格未来且在配置 horizon 内；local_time 用 IANA 时区、拒绝 DST gap/fold 与未知/路径型 zone，tzdata 不可用返回 UPSTREAM_UNAVAILABLE。每实例 1024/安装 8192 未终态任务，超限 RATE_LIMITED（明确未受理）。Create 返回 PENDING；到期 claim 生成 occurrence 并持久 enqueue TimerTriggered 后 occurrence SUCCEEDED、task COMPLETED，COMPLETED 仅表示事件已持久入队，不代表插件回调成功/ACK。取消仅在没有触发意图时成功，交接开始后/终态 CONFLICT。交接 valid_until 7 天、attempts 上限 100，超窗 occurrence EXPIRED、task FAILED(TIMEOUT) 不自动重建。TimerTriggered 只由 Runtime 产生，occurrence_id 由 Scheduler 生成持久且 event_id := occurrence_id，Runtime 以 inbox(source=scheduler, message=occurrence_id) 去重；AcceptTimerTrigger 仍是内部 mTLS owner 方法（非 Bridge）。详见 `doc/01-contracts.md` 的 P09/P10 契约节。
+
 ### 目标管理、存储和异步交接
 
 期望配置、Host进程事实、协议注册与配置应用分层；旧 desired_version 或 execution_generation 观察不能覆盖新状态。Host离线不是已停止证据，不允许盲跨主机接管。私有 namespace 绑定稳定实例，换连接不重建；共享写条件版本，TTL 重放不续期。默认私有/共享各1024键/1MiB、单值64KiB、安装聚合8192键/8MiB；成功收据实例10000/安装80000，七天内不淘汰。一次性任务实例1024/安装8192；COMPLETED 仅 Runtime 已持久入队，确认丢失重发同 occurrence/message ID。

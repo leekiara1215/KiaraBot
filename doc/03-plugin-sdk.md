@@ -318,6 +318,12 @@ class Example(Plugin):
 
 早期草案中的 `MessageService`/`on_message`/`context.models.default()`/`messages.reply()` 尚未实现，不应作为现行 API 使用。这段代码不能导入 NoneBot2，也不能调用 OneBot API。
 
+## P09/P10 Storage 与 Task 客户端（目标，未实现）
+
+Storage（P09c）：SDK 的 storage_get/set/delete 帧增加 scope/condition 与 version/expires_at 响应，并新增 compare-and-set（HostRequest/HostResponse oneof 第 17 项）。私有空间可省略 scope（=instance_private），共享用 `installation_shared=true`（服务端解析，插件不知道 namespace ID）；私有 Set 必须缺 condition，共享 Set/Delete/CAS 必须带 condition（absent=create、version=update/delete）。TTL 为绝对 UTC、未来 ≤30 天；冲突返回 CONFLICT 且只带授权范围 current_version；不跨实例串响应、重放不续 TTL。SDK 不自动重试有副作用的写，超时用同幂等键查询。
+
+Task（P10c）：沿用 task_create/task_get/task_cancel 的 Host 通道，TaskResponse 增加 version/occurrence_id；task_id 是业务身份、HostRequest.idempotency_key 是命令幂等，同 task_id 异内容 CONFLICT、同内容返回当前状态。Create 返回 PENDING；COMPLETED 只表示 TimerTriggered 已持久入队，不代表插件回调成功/ACK；SDK 检查到 COMPLETED 后仍需等待事件投递。取消仅在未产生触发意图前成功，交接开始/终态返回 CONFLICT。时间规则同 Runtime/Scheduler（DST gap/fold 与未知时区 INVALID_ARGUMENT，tzdata 不可用 UPSTREAM_UNAVAILABLE）。插件不感知 occurrence 内部状态，可通过 GetTask 的 TaskRecord/occurrence_id 观察。
+
 ## 测试能力
 
 当前 SDK 只提供 `kiarabot_sdk.testing.FakeHost`（真实 gRPC + 生成类型）：注册/事件/心跳、Action 请求与响应、Host 请求与响应、配置帧与 ACK 队列；`FakeHost(heartbeat_acks=False)` 可模拟心跳不返回以验证 `io_timeout` 重连。早期列出的 `FakeEvent`/`FakeMessageService`/`FakeModelService`/`FakeStorage`/`FakeScheduler` 尚未实现（交接项），插件测试直接构造生成消息或使用 FakeHost。

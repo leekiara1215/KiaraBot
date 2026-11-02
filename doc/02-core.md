@@ -481,6 +481,10 @@ P07a 在 Runtime application 内实现 submit/dispatch/result/cancel/query/polic
 
 P08b 在 Runtime application 内新增 HostBridge 入站应用：内部 mTLS 注册（证书→预注册 `host_id`、连接代次分配）、心跳（5s/15s 在线判据，只更新 `online/last_heartbeat_at` 不 bump 版本）、观察 inbox（source=Host 去重 + P05 `HostRegistration`/`InstanceConfiguration` 条件更新）、Host 命令下发（P05 outbox/desired version；`ApplyDesiredProcess`/`StopExecution`/`DrainHost` 用 `command_id`+content hash 幂等）、跨主机 gate（旧执行未确认时 operation `BLOCKED`）。HostBridge server 注册在既有 owner mTLS `grpc_listen`，不新增进程/端口；`HostService` unary 方法列仅作方法目录，不在外部监听。Host 侧进程事实与恢复归 Host 进程（`host_application`/SQLite `command_journal`/`managed_executions`/`execution_observations`），Runtime 只存投影与观察，不解释 marker。配置应用证据按 P08 规则持久 `applied_version/apply_state`、delivery 易失。实现前 P05/P06 的 Host 记录与配置投递仍为 WIP，本契约不改变其 owner。
 
+## P09/P10 目标 Storage/Scheduler 应用与端口（未实现）
+
+P09a/P09b：Runtime application 提供 storage 应用（scope 解析、成员/禁用 gate、Get/Set/Delete/CAS、TTL、幂等/收据、配额预留）；`NamespaceRepository` 扩 resolve/get/create_shared/set_members/disable/get_entry/put/erase/quota_admit/receipt_insert，`RuntimeUnitOfWork` 在 P06/P07 访问器后追加 `namespaces()`。共享 namespace 写按固定锁序 namespace 行→成员/版本→namespace 配额→installation 聚合配额→key 行；审计复用 P07 共享 `audit_entries`（resource=namespace/key）。P10a：Scheduler application 实现任务/occurrence 状态机、create/get/list/cancel、到期 claim、receipts/审计、容量计数与 due 索引；`SchedulerUnitOfWork` 增 `tasks()/occurrences()/task_quota()`，occurrence claim 用条件写。P10b：Runtime AcceptTimerTrigger 应用以 inbox(source=scheduler,message=occurrence_id) 去重后持久产生 TimerTriggered，不新增 Runtime 表。Runtime/Scheduler 不新增进程/端口；SDK 的外部 storage/task 路径仍是 PluginBridge host_request。租约/事务细节见 doc/22。
+
 ## 目标Model查询契约补全（未实现）
 
 Model应用负责GetOperation的权威operation/resource绑定与当前授权，以及GetModelConfiguration的精确资源授权与秘密隔离；边界使用model.proto typed请求/结果，内层仍独立值类型。读取不启动Provider、不写新业务操作；缺失/不可见NOT_FOUND，授权依赖不可用UPSTREAM_UNAVAILABLE，2秒默认/5秒上限。metadata与可编辑配置读取分开，配置只返回secret存在性，不返回密钥。P02 stub/参考实现不能作为上述生产者。

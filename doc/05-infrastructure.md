@@ -523,3 +523,7 @@ verifier 或 SecretReplayPayload。重复同指纹仍返回原完整快照及原
 一 binding 一 Principal 唯一索引），Runtime/Scheduler/Model 均为 schema5；四库 descriptor
 全部更新。旧库拒绝打开，不自动迁移或清空。Register/Rotate/Revoke/GetStatus 五个 RPC 的
 应用/PG/传输已接线（实现中），仍待完整门禁与真实 PG/TLS 验收。
+
+## P09/P10 目标表与配额（契约冻结，未实现）
+
+P09（Runtime 私有 PG）：新增 `kiarabot.namespaces`（namespace_id PK、installation_id、kind 0/1、owner_instance、disabled、version、created_at/updated_at；私有 owner 唯一、共享 installation 部分唯一）、`namespace_members`（(namespace_id,instance_id) PK、can_read/can_write/version/joined_at）、`namespace_values`（(namespace_id,key) PK、value ≤64KiB、version、expires_at、updated_at，expiry 索引）、`namespace_quota_counters`（(scope_kind,scope_id) PK、key_count/byte_count）。锁序固定 namespace 行→成员/版本→namespace 配额→installation 聚合配额→key 行（READ COMMITTED 条件写/行锁，不靠隔离级别）。写收据复用通用 `command_receipts`（不新增 storage_receipts 表），容量用索引 (subject,method,created_at) 同事务计数。P10（Scheduler 私有 PG）：既有 tasks/occurrences 关系表增列（tasks：created_at/updated_at/cancel_requested；occurrences：attempts/last_error_code/created_at/updated_at，需同步 common.hpp snapshot 列定义），新增 `scheduler_quota_counters(scope_kind,scope_id,pending_tasks)`；索引 occurrences_due(state,due_at)、tasks_owner_state(owner,installation,state)。trigger_outbox/trigger_receipts 与 storage_receipts 均为通用 outbox/inbox/command_receipts 的逻辑别名，不新增表。各 stage 独立 commit 顺序 bump schema/descriptor（P03→P05→P06→P07→P09→P10），旧库拒绝打开、不自动迁移。

@@ -307,6 +307,10 @@ P07 沿用 P06 拓扑：插件 submit/query/cancel 与适配器执行都走 Brid
 
 HostBridge 只注册在 Runtime 内部 mTLS `grpc_listen`（与 `RuntimeService` 同监听），不进入 P06 外部 `bridge_listen`；Host 以部署签发的 mTLS 客户端证书认证，证书 SAN/指纹映射到预注册 `host_id`，不使用 bootstrap/`ConnectionAuthorization`/`connection_proof`/refresh。注册响应返回 `Fence`（`instance_id`=host_id、`execution_generation` 缺省、connection_generation/runtime_epoch 由注册事务分配），同 host 新连接替换旧连接。心跳 5s、15s 判疑似离线（只 `online=false`+`process_outcome=UNKNOWN`，不写停止/失败）；观察身份 `(host_id, connection_generation, cursor.sequence)` + `command_id`，inbox source=Host 去重。Host 先持久 command journal 再 spawn，marker 校验避免 PID 复用误认，同代次未知不重复 spawn、崩溃恢复重建 receipt；跨主机迁移 gate 未确认旧执行时 operation `BLOCKED`。配置应用仅当前 fence+当前 config_version 的 ACK 推进持久 applied_version，delivery 易失。`HostService` 7 方法与 `HostBridge.Connect` 均登记 `not_implemented`，P08 C5/C7 实现后翻转。详见 `doc/01-contracts.md` 的 P08 目标 HostBridge 契约节。
 
+### P09/P10 Storage/Namespace/Scheduler 方法族冻结（未实现）
+
+Runtime storage 4 个 unary 方法（Get/Set/Delete/CompareAndSetStorage）标记 `exposure=internal_dispatcher`，外部插件只走 PluginBridge HostRequest.storage_* 帧；`CreateSharedNamespace`（namespace.manage、幂等、每安装一个共享 namespace，已存在 CONFLICT 后用 Get 读）与 `GetSharedNamespace`（namespace.read、exact installation scope、返回版本/禁用/成员/配额用量、不回键值）为既有 Runtime owner 方法族新增，wire 暴露。`SetSharedMembers`/`DisableSharedNamespace` 保持 namespace.manage。Scheduler 6 方法 caller/permission/idempotency/deadline 不变，本次补 TaskRecord/OccurrenceRecord 观测字段、ListTasks 状态过滤与语义（owner 派生、时间/horizon、容量、PENDING/COMPLETED=已入队、取消窗口、交接 7 天/100 attempts 到期人工恢复）；`AcceptTimerTrigger` 保持 wire（内部 mTLS RuntimeService，Scheduler 服务主体调用，不是 Bridge），不新增 exposure 枚举值。类型 relocation（NamespaceScope/StorageEntry/StorageCondition/SharedMember、LocalTaskTime/ScheduledTaskState→common.proto）FQN 不变，见 proto/README。
+
 ## P04 短期委托证明的重试边界
 
 IssueDelegation / ExchangeDelegation 只在线重验权威并签名，不产生业务意图或消费配额；

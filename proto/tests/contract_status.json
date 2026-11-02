@@ -1797,7 +1797,16 @@
       "semantic.host.config_apply_evidence": "not_implemented",
       "semantic.host.connection_fence": "not_implemented",
       "semantic.host.heartbeat_offline": "not_implemented",
-      "semantic.host.bridge_mtls_identity": "not_implemented"
+      "semantic.host.bridge_mtls_identity": "not_implemented",
+      "semantic.storage.scope_resolution": "not_implemented",
+      "semantic.storage.cas_condition": "not_implemented",
+      "semantic.storage.quota_persistent": "not_implemented",
+      "semantic.storage.receipt_capacity": "not_implemented",
+      "semantic.namespace.shared_membership": "not_implemented",
+      "semantic.scheduler.owner_derivation": "not_implemented",
+      "semantic.scheduler.cancel_window": "not_implemented",
+      "semantic.scheduler.handoff_expiry": "not_implemented",
+      "semantic.scheduler.timer_occurrence_identity": "not_implemented"
     }
   },
   "evidence": {
@@ -5288,6 +5297,33 @@
     ],
     "operations.getSharedNamespace": [
       "api/openapi.yaml"
+    ],
+    "semantic.storage.scope_resolution": [
+      "core/src/application/target/runtime_application.cpp"
+    ],
+    "semantic.storage.cas_condition": [
+      "core/src/application/target/runtime_application.cpp"
+    ],
+    "semantic.storage.quota_persistent": [
+      "core/src/application/target/runtime_application.cpp"
+    ],
+    "semantic.storage.receipt_capacity": [
+      "core/src/application/target/runtime_application.cpp"
+    ],
+    "semantic.namespace.shared_membership": [
+      "core/src/application/target/runtime_application.cpp"
+    ],
+    "semantic.scheduler.owner_derivation": [
+      "core/src/application/target/scheduler_application.cpp"
+    ],
+    "semantic.scheduler.cancel_window": [
+      "core/src/application/target/scheduler_application.cpp"
+    ],
+    "semantic.scheduler.handoff_expiry": [
+      "core/src/application/target/scheduler_application.cpp"
+    ],
+    "semantic.scheduler.timer_occurrence_identity": [
+      "core/src/application/target/scheduler_application.cpp"
     ]
   },
   "vocabulary": {

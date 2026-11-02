@@ -255,6 +255,7 @@ PG Repository/COMMIT/锁/并发测试缺少真实 PG 时失败并报告原因，
 - **错误/状态**：未授权共享拒绝；撤销与并发写竞争同gate；同键跨实例不串收据，重放不续TTL；1MiB/1024键等默认与安装8MiB/8192键共同限制，不因加实例绕过。
 - **文档**：运行语义、`doc/02`、`doc/03`、`doc/05`、`doc/06`及SDK文档；逻辑所有权与托管职责清楚。
 - **验证/退出**：V0/V1/V2/V3/V5(p09)，真实PG两实例CAS、配额并发、成员撤销、TTL、幂等冲突、实例重启/换宿主保留数据；不宣称CAS保证外部只执行一次。
+- **契约前置（2026-11-02 已冻结）**：P09 wire（storage scope/CAS 帧、Create/GetSharedNamespace、4 个 storage 方法 internal_dispatcher）与 P10 wire（TaskRecord/OccurrenceRecord 观测字段、ListTasks 过滤、TaskResponse version/occurrence_id、TimerTriggered.occurrence_id=5、类型 relocation）及 Permission 47/共享 namespace REST 契约已登记；实现前全部 not_implemented，reference 行为仍是唯一生产语义；实现验收证据用 target application/真实 PG 测试。
 
 ### P10：Scheduler 与可靠 TimerTriggered
 
@@ -263,6 +264,7 @@ PG Repository/COMMIT/锁/并发测试缺少真实 PG 时失败并报告原因，
 - **错误/状态**：歧义/不存在当地时间拒绝；owner从可信上下文派生；取消在触发交接开始后返回冲突；确认丢失同occurrence恢复，COMPLETED只代表持久入队。
 - **文档**：运行语义、`doc/02`、`doc/03`、`doc/05`、`doc/06`、`doc/08`；取消窗口和1024实例/8192安装默认限制。
 - **验证/退出**：V0/V1/V2/V3/V5(p10)，发送前后宕机、入队后确认丢失、取消/到期竞争、DST、重复恢复、目标停用；同occurrence只建一次事件与目标。
+- **契约前置（2026-11-02 已冻结）**：P10 wire 同 P09 C 系列；`AcceptTimerTrigger` 保持内部 mTLS owner 方法（非 Bridge），TimerTriggered 只由 Runtime 产生且 event_id := occurrence_id；实现前 target override 不翻转，崩溃/重启/到期语义以 `semantic.scheduler.*` 契约为验收标准。
 
 ### P11：Model 网关、配置密钥与计费边界
 
