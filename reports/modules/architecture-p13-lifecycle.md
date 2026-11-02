@@ -11,21 +11,25 @@
 - **审计/日志查询**：begin_delete/restore 等命令继续写 owner 审计，`ListAudit` 可按 resource/actor/时间过滤，`ListLogs` 是同一审计的脱敏投影；权限仍为现有 `audit.read`/`log.read`。
 - **容量/租约/积压**：使用 owner 私有表只读 SQL 核对（operations/outbox/host_commands/delivery_targets），不新增查询 RPC；指标/告警/集中日志留 P14。
 
-## P13 退出验收矩阵（doc/23 P13 验证/退出点）
+## P13 退出验收矩阵（P13f 刷新，基线 main=d28020e）
 
-| 验证点 | 状态 | 证据/说明 |
+决策包见 [P13f 退出决策包](architecture-p13f-exit-decision.md)；P13 退出判定：**未通过**。
+
+| doc/23 P13 验证点 | 状态 | 证据/说明 |
 | --- | --- | --- |
-| 重复删除/恢复并发（同资源重复 delete、重复 restore、已删恢复、窗口外恢复） | **已实测（应用/单机）** | `p13_runtime_lifecycle`：duplicate begin_delete=CONFLICT、restore 复活版本、non-deleted restore=CONFLICT、30 天外恢复=CONFLICT 且状态不变；`p03_postgres_database` 覆盖 owner UoW/PG 事务 |
-| 共享成员删除不误删他人数据 | **待补（代码路径保证，未直接测试）** | P13a 删除只处理 owner lifecycle 记录/tombstone，不触碰 storage 表；尚无“删除实例后共享 namespace 其他成员数据保留”的直接集成断言，列入后续 P09/P13 交叉测试 |
-| 清理批次失败/满盘 | **部分实测**：cleanup prune 故障注入 **已实测**；真实满盘 **待环境** | `p13_runtime_lifecycle` 新增 fail_cleanup 故障 prune：`cleanup_failed=true`、结构化行 `outcome=degraded cleanup_failed=true`、未决记录不删；真实磁盘满/只读由 P14c 演练环境注入 |
-| 失效 outbox 满/容量 | **部分实测** | `p03_postgres_database` 覆盖 identity outbox 容量与 owner journal capacity、Host command pending/prune；HostBridge apply/receipt/observation 容量与 P08 真实 e2e 见 `p08_*`；Adapter outbox 容量由 P06/P07 e2e/证据覆盖。未做全链路同时打满四库的容量压力 |
-| 未决副作用（UNKNOWN/EVIDENCE_ONLY、清理不提前删未决） | **已实测** | P13a 清理保留 unresolved receipts/inbox/outbox/operations；P07 Action UNKNOWN/EXPIRED/EVIDENCE_ONLY 由 `p07_action_rules`、`p07_postgres_action_records` 覆盖；Host UNKNOWN 由 `p08_host_journal`、`p08_postgres_host_registration`、`p13_host_sdk_drain` 覆盖 |
-| 保留期与配额（30 天恢复、180 天墓碑/审计、60 秒批次、period 配额） | **已实测（应用/单机）** | `p13_runtime_lifecycle` 覆盖 30/180 天、purge、60 秒 prune 计数；`p03_postgres_database`/`p13` 单测覆盖 tombstone/retention 与 Action 配额；长时间保留与生产数据量 **待环境** |
-| Host/SDK drain 与 UNKNOWN 不伪 stopped | **已实测** | `p13_host_sdk_drain`：真实 Host+SDK SIGTERM/SIGKILL/重启、journal integrity、UNKNOWN 不伪成功 |
-| Host participant outbox 收敛（P13c） | **已实测（fake receipt 应用层）**；真实 HostBridge 收敛依赖 P08b-3b 链路 | `p13_runtime_lifecycle` 真实 participant（fake outbox receipt）BLOCKED→Done、UNKNOWN/拒绝保持 BLOCKED；P08b-3b dispatch/receipt 已有真实 e2e（p08），但 P13 删除→真实 Host 回执的联合 e2e 未跑（**待环境/后续集成**） |
-| Scheduler participant 真实 ListTasks/CancelTask | **未实测（BLOCKED 语义已测）** | 应用/契约 BLOCKED 不伪完成已测；Runtime→Scheduler 实例委托配置（P10b-2）未接线，真实取消 **待环境/后续 P10b** |
-| 跨主机/真实平台故障与规模 | **待环境** | 需 P14 两主机/真实网络分区/生产规模 PG；本机无 Docker/多主机 |
-| 指标/告警/集中日志 | **未交付** | 用户决定不新增 metrics RPC；现有 stderr 结构化行 + owner 审计可用于日志采集，但集中收集/告警阈值留 P14 |
+| 重复删除/恢复并发（重复 delete/restore、已删恢复、窗口外恢复） | 已实测（应用/单机） | `p13_runtime_lifecycle`；`p05_runtime_identity_e2e`（真 PG/Identity/Runtime Account BeginDelete/Restore） |
+| 共享成员删除不误删他人数据 | **已实测** | `p06_bridge_acceptance`（P13e：真 PG16.4 storage/namespace 帧，成员撤销/namespace 删除隔离） |
+| 清理批次失败/满盘 | 部分实测：cleanup fault 已测，真实满盘待 P14 环境 | `p13_runtime_lifecycle` cleanup 故障注入；真实磁盘满/只读未跑 |
+| 失效 outbox 满/容量 | 部分实测：Identity/owner outbox 容量有覆盖，无四库同时打满 | `p03_postgres_database`、`p08_*`、P06/P07 e2e；全链路容量压力未做 |
+| 未决副作用（UNKNOWN/EVIDENCE_ONLY、不提前清理） | 已实测 | `p13_runtime_lifecycle`、`p07_action_rules`/`p07_postgres_action_records`、`p08_host_journal`/`p08_postgres_host_registration`/`p13_host_sdk_drain` |
+| 保留期与配额（30/180 天、60s 批次、period 配额） | 已实测（应用/PG）；生产规模待环境 | `p13_runtime_lifecycle`、`p03_postgres_database`、`p07`/`p09` 配额测试；长周期/生产数据量未验证 |
+| Host/SDK drain 与 UNKNOWN 不伪 stopped | 已实测 | `p13_host_sdk_drain`（真实 Host+SDK SIGTERM/SIGKILL/重启/journal） |
+| Host participant outbox 收敛 | 部分实测 | `p13_runtime_lifecycle` fake receipt BLOCKED→Done/UNKNOWN；`p08_host_bridge_e2e`（P13e live Stop/Drain 帧 + PG receipt）；**缺 BeginDelete→真实 Host receipt 单链** |
+| Scheduler participant 真实 ListTasks/CancelTask | **未验收（仅 fake 语义）** | `p13_runtime_lifecycle` fake 端口 BLOCKED→Done/离线/超时；生产 composition 未注入 participant，Scheduler 委托未确认（P13f 方案 A/B） |
+| BeginDelete/Restore 与真实 Host 单链到 DELETED | **未验收** | 依赖 Scheduler participant 生产路径；P13e 记录 |
+| 跨主机/真实平台故障/生产规模 | 未验收 | P14 环境项 |
+| 指标/告警/集中日志 | 部分实现（最小观测行/审计查询），集中 metrics/告警未交付 | P13d/doc/08 |
+| P10k task ingress + fail-closed 委托（非 P13 participant） | 已实测 fail-closed | `p10_sdk_tasks_e2e`、`p10_scheduler_rpc`、P10k 报告；真实 Runtime→Scheduler 委托仍待确认 |
 
 ## 排障入口（与 P14c runbook 交叉引用）
 见 doc/08 “P13d” 节：GetOperation → participants/reason/next_attempt；audit/log 查询；`operation=lifecycle_maintenance outcome=degraded` 日志；owner 私有库积压/租约 SQL；满盘/恢复按 P14c 备份恢复 runbook 停机处置，不用生命周期快捷方式绕过业务门禁。
