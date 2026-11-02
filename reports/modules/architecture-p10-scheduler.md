@@ -150,3 +150,34 @@ P10g 已按本报告第 3 节候选完成 target 登记（只翻真实实现+测
   `evidence_scopes_test.py` 9/9 PASS（expected 集合补 P10g 70 项 + main 既有 P12c/P13 4 个
   operation 探针）、target_api_test PASS、check_contracts.sh PASS；check_target.sh 仍受本机
   protoc/protobuf 版本限制（记录替代证据）。
+
+## P10h Scheduler 任务 REST target 翻转与证据（2026-11-02，HEAD 439fb9e）
+
+工作树 `.worktrees/p10h`，分支 `codex/p10h`，基于 main@439fb9e。P10g 的 Scheduler owner RPC target 已合入；P10h 补齐 Control 任务 REST 的 target 目录证据并翻转 REST operation。
+
+### 新增验收（允许的 target 证据目录）
+`tests/architecture/p10_scheduler_rest.py`：真实 `kiarabot-control` 进程 + 真 TLS + Identity/Model/Scheduler owner fixture（`auth_https_test` 同源 fixture 二进制），通过真实 Control HTTPS 边界断言：
+- `GET /api/v1/tasks?scope=...&page_size=2` → 200，items `task-fixture`，page_size 转发（分页字段）；
+- `GET /api/v1/tasks/{id}?scope=...` → 200 task 投影；
+- `POST /api/v1/tasks/{id}/cancel?scope=...` → 200 + owner task 结果（`SCHEDULED_TASK_CANCELLED`），同 Idempotency-Key 重复 cancel 仍 200 同结果；
+- owner CONFLICT（fixture marker）→ 409 CONFLICT；Control 路由空 task → 404 NOT_FOUND；
+- `GET /api/v1/occurrences/{id}` 当前无 Control handler → 404（不伪成功，故 getOccurrence 不翻转）。
+CTest：`p10_scheduler_rest`（labels `p10;control;scheduler;integration;fault`，RESOURCE_LOCK control_https，1.88s）。
+
+### target 翻转/核对
+- 翻转 `operations.getTask`、`operations.cancelTask` target override + evidence（`control/api/src/target/owner_gateway.cpp`、`control/api/app/main.cpp`、`tests/architecture/p10_scheduler_rest.py`、`control/api/tests/owner_gateway_test.cpp`）。
+- `operations.getOccurrence` **保持 not_implemented**：SchedulerService.GetOccurrence owner RPC 已 implemented，但 Control 尚无 `/occurrences/{id}` REST handler；没有成功链证据不能翻转，未新增 handler（Control 实现不在本任务写范围），作为 P10 退出缺口报告 Lead。
+- target_spec Scheduler 六方法（Create/Get/Cancel/List/GetOccurrence/GetOperation）此前已 implemented，本次不变；`schema/契约` 未改。REST cancel 契约成功响应是 **200**（`TargetSchedulerCancelTaskResponse`），不是 202；测试按现有 OpenAPI 契约断言，未为满足任务措辞改实现/契约。
+- doc/01 execution-scopes 增加 `operations.getTask/cancelTask` implemented 行与 `getOccurrence` 未实现说明；evidence_scopes 冻结集加入两项。
+
+### 实际运行
+```text
+cmake --build --preset full-locked --parallel 8   # build=0
+ctest --preset full-locked -R 'p10|p12|control|p04_control|p03_postgres'
+# 18/18 passed, 158.67s（含 p10_scheduler_rest 1.88s）
+proto 门禁：check_implementation_status / target_api_test / evidence_scopes_test / check_contracts.sh 全通过
+```
+（前一轮 P10g 门禁 143/143 的漂移已由 core-target 修复合入，本次门禁绿。）
+
+### P10 退出判定
+P10a/g 的 Scheduler domain/RPC/PG16.4/三进程 mTLS、P10g target RPC 翻转保持通过；P10h 使 `operations.getTask/cancelTask` 的 Control REST 成功链有 target 证据并翻转。**getOccurrence REST 仍未实现/未翻转**，因此 P10 退出为“目标 RPC + list/get/cancel REST 已验收；getOccurrence REST 待 P12 Control handler；真实 7 天 EXPIRED、多 installation 容量、真实平台触发/委托来源仍待环境”。
