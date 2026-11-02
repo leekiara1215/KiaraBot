@@ -19,6 +19,26 @@ struct Principal {
   ResourceVersion version;
   LifecycleState state = LifecycleState::Active;
 };
+// P12l read-only human principal directory projection. The caller is the verified Control platform
+// peer; visibility is either the Control management catalog (directory-wide) or the exact resources
+// on which the caller currently holds identity.principal.read. Deleted/purged principals are never
+// returned; roles are projected from Active exact assignments only.
+struct PrincipalDirectoryQuery {
+  std::optional<SubjectId> after;
+  std::size_t limit = 0;
+  LifecycleState state_filter = LifecycleState::Active;
+  bool include_all_states = true;
+  bool catalog_scope = false;
+  std::vector<ResourceRef> visible_resources;
+};
+struct PrincipalDirectoryEntry {
+  Principal principal;
+  std::vector<FixedRole> roles;
+};
+struct PrincipalDirectoryPage {
+  std::vector<PrincipalDirectoryEntry> entries;
+  bool has_more = false;
+};
 struct LoginSession {
   SessionId id;
   SubjectId subject;

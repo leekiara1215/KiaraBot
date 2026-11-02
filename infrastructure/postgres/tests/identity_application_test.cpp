@@ -22,6 +22,7 @@
 #include "kiarabot/core/application/target/identity_delegation_application.hpp"
 #include "kiarabot/core/application/target/identity_invalidation_application.hpp"
 #include "kiarabot/core/application/target/identity_principal_application.hpp"
+#include "kiarabot/core/application/target/identity_principal_directory_application.hpp"
 #include "kiarabot/core/domain/target/identity_state_rules.hpp"
 #include "kiarabot/infrastructure/identity_crypto/delegation_crypto.hpp"
 #include "kiarabot/infrastructure/identity_crypto/factories.hpp"
@@ -551,6 +552,63 @@ void application_flow(const pg::DatabaseConfig& config) {
   expect(app->login({context(clock, "login-revoked-password"), peer(), "alice",
                      human_delivery.secret->bytes()}),
          t::ErrorCode::Unauthenticated);
+
+  phase = "principal directory listing";
+  // Seed a second human plus the exact grants that make both principals visible to the real
+  // Control peer without granting a wildcard: Control gets identity.principal.read on the second
+  // principal resource, and the second human gets a visible ViewRole on itself.
+  const t::SubjectId second_human{"20000000-0000-4000-8000-000000000009"};
+  const t::ResourceRef second_resource{t::ResourceKind::Principal, {second_human.value}};
+  {
+    auto work = take(factory->begin());
+    take(work->principals().save(
+        t::Principal{
+            second_human, t::PrincipalKind::Human, second_resource, {1}, t::LifecycleState::Active},
+        std::nullopt));
+    take(work->exact_assignments().save(
+        t::ExactAssignment{{"40000000-0000-4000-8000-000000000005"},
+                           control,
+                           {},
+                           {{t::Permission::IdentityPrincipalRead, second_resource}},
+                           {1}},
+        std::nullopt));
+    take(
+        work->exact_assignments().save(t::ExactAssignment{{"40000000-0000-4000-8000-000000000006"},
+                                                          second_human,
+                                                          {{t::FixedRole::Viewer, second_resource}},
+                                                          {},
+                                                          {1}},
+                                       std::nullopt));
+    check(work->commit() == t::CommitResult::Committed, "directory seed commit failed");
+  }
+  auto directory = take(t::make_identity_principal_directory_application(*factory));
+  auto first_page = take(directory->list_principals(
+      {context(clock, "principal-directory-first"), peer(), 1, "", std::nullopt}));
+  check(first_page.principals.size() == 1 && first_page.page_size == 1 &&
+            first_page.checked_at > t::TimePoint{} && !first_page.next_page_token.empty(),
+        "principal directory first page malformed");
+  check(first_page.principals.front().principal.kind == t::PrincipalKind::Human,
+        "principal directory returned a non-human principal");
+  auto second_page =
+      take(directory->list_principals({context(clock, "principal-directory-second"), peer(), 1,
+                                       first_page.next_page_token, std::nullopt}));
+  check(second_page.principals.size() == 1 &&
+            second_page.principals.front().principal.id.value == second_human.value &&
+            second_page.principals.front().roles ==
+                std::vector<t::FixedRole>{t::FixedRole::Viewer} &&
+            second_page.next_page_token.empty(),
+        "principal directory keyset page/roles projection mismatch");
+  auto empty_page = take(directory->list_principals(
+      {context(clock, "principal-directory-empty"), peer(), 20, "", t::LifecycleState::Disabled}));
+  check(empty_page.principals.empty() && empty_page.checked_at > t::TimePoint{} &&
+            empty_page.next_page_token.empty(),
+        "principal directory explicit disabled filter must be an empty authoritative page");
+  expect(directory->list_principals(
+             {context(clock, "principal-directory-invalid"), peer(), 101, "", std::nullopt}),
+         t::ErrorCode::InvalidArgument);
+  expect(directory->list_principals({context(clock, "principal-directory-token"), peer(), 1,
+                                     "not-a-cursor", std::nullopt}),
+         t::ErrorCode::InvalidArgument);
 }
 void run(const std::filesystem::path& supplied, std::uint16_t port) {
   check(!std::filesystem::is_symlink(supplied), "unsafe fixture root");

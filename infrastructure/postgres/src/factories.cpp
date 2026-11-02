@@ -229,6 +229,10 @@ public:
   target::Outcome<target::LogPage> query_logs(const target::LogQuery& query) override {
     return common_->query_logs(query);
   }
+  target::Outcome<target::PrincipalDirectoryPage>
+  query_principals(const target::PrincipalDirectoryQuery& query) override {
+    return common_->query_principals(query);
+  }
   target::Outcome<std::optional<target::LifecycleTombstone>>
   find_lifecycle_tombstone(const target::ResourceRef& resource) override {
     return common_->find_lifecycle_tombstone(resource);
@@ -690,6 +694,10 @@ public:
   }
   target::IdentityInvalidationRepository* invalidations() noexcept override {
     return invalidations_.get();
+  }
+  target::Outcome<target::PrincipalDirectoryPage>
+  query_principals(const target::PrincipalDirectoryQuery& query) override {
+    return work().query_principals(query);
   }
 
 private:

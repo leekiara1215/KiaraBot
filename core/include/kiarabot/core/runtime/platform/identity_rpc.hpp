@@ -13,6 +13,7 @@
 #include "kiarabot/core/application/target/identity_exchange_application.hpp"
 #include "kiarabot/core/application/target/identity_invalidation_application.hpp"
 #include "kiarabot/core/application/target/identity_principal_application.hpp"
+#include "kiarabot/core/application/target/identity_principal_directory_application.hpp"
 #include "kiarabot/core/application/target/identity_security_application.hpp"
 #include "kiarabot/core/application/target/identity_verification_keys_application.hpp"
 #include "kiarabot/v1/identity.grpc.pb.h"
@@ -50,6 +51,8 @@ struct IdentityRpcOptions {
   target::IdentityAuditApplication* audit = nullptr;
   target::IdentityAssignmentApplication* assignments = nullptr;
   target::IdentityInvalidationApplication* invalidation = nullptr;
+  // P12l read-only human principal directory (Control platform peer + identity.principal.read).
+  target::IdentityPrincipalDirectoryApplication* principal_directory = nullptr;
 };
 
 // Borrows application for the service lifetime; owns the verifier closure. No readiness or

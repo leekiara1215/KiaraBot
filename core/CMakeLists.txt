@@ -239,6 +239,13 @@ target_compile_features(kiarabot_runtime_audit_application PUBLIC cxx_std_20)
 target_compile_options(kiarabot_runtime_audit_application PRIVATE
   $<$<CXX_COMPILER_ID:AppleClang,Clang,GNU>:-Wall -Wextra -Wpedantic>)
 
+# P12l read-only human principal directory; pure application, no proto/SQL in the library.
+add_library(kiarabot_identity_principal_directory_application STATIC
+  src/application/target/identity_principal_directory_application.cpp)
+target_include_directories(kiarabot_identity_principal_directory_application PUBLIC include)
+target_compile_features(kiarabot_identity_principal_directory_application PUBLIC cxx_std_20)
+target_compile_options(kiarabot_identity_principal_directory_application PRIVATE
+  $<$<CXX_COMPILER_ID:AppleClang,Clang,GNU>:-Wall -Wextra -Wpedantic>)
 add_library(kiarabot_identity_invalidation_application STATIC
   src/application/target/identity_invalidation_application.cpp)
 target_include_directories(kiarabot_identity_invalidation_application PUBLIC include)

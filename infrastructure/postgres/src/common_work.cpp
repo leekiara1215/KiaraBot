@@ -636,7 +636,8 @@ public:
            *query.filter.occurred_from >= *query.filter.occurred_until) ||
           (query.filter.actor && !valid_sql_text(query.filter.actor->value)) ||
           (query.filter.resource && !valid_sql_text(query.filter.resource->id.value)) ||
-          (query.cursor && (query.cursor->id <= 0 || query.cursor->occurred_at <= target::TimePoint{}))) {
+          (query.cursor &&
+           (query.cursor->id <= 0 || query.cursor->occurred_at <= target::TimePoint{}))) {
         return error(target::ErrorCode::InvalidArgument);
       }
       pqxx::params parameters;
@@ -670,14 +671,14 @@ public:
                  std::to_string(parameters.size()) + "::bigint)";
       }
       parameters.append(static_cast<int>(query.limit) + 1);
-      const auto rows = exec(
-          "SELECT id,actor,resource_kind,resource_id,request_id,trace_id,method,rejection,"
-          "authorization_version," +
-              time_projection("occurred_at") +
-              ",target_account_id,target_conversation_id FROM kiarabot.audit_entries" + where +
-              " ORDER BY occurred_at DESC,id DESC LIMIT $" + std::to_string(parameters.size()) +
-              "::int",
-          parameters);
+      const auto rows =
+          exec("SELECT id,actor,resource_kind,resource_id,request_id,trace_id,method,rejection,"
+               "authorization_version," +
+                   time_projection("occurred_at") +
+                   ",target_account_id,target_conversation_id FROM kiarabot.audit_entries" + where +
+                   " ORDER BY occurred_at DESC,id DESC LIMIT $" +
+                   std::to_string(parameters.size()) + "::int",
+               parameters);
       target::AuditPage page;
       page.checked_at = db_now();
       for (const auto& row : rows) {
@@ -701,14 +702,165 @@ public:
           record.target_conversation_id = row["target_conversation_id"].as<std::string>();
         }
         if (page.records.size() == query.limit) {
-          page.next_cursor =
-              target::encode_audit_cursor({page.records.back().occurred_at, page.records.back().id});
+          page.next_cursor = target::encode_audit_cursor(
+              {page.records.back().occurred_at, page.records.back().id});
           break;
         }
         page.records.push_back(std::move(record));
       }
       return page;
     });
+  }
+  target::Outcome<target::PrincipalDirectoryPage>
+  query_principals(const target::PrincipalDirectoryQuery& query) override {
+    return invoke<target::PrincipalDirectoryPage>(
+        [&]() -> target::Outcome<target::PrincipalDirectoryPage> {
+          if (query.limit == 0 || query.limit > 100 ||
+              (!query.catalog_scope && query.visible_resources.empty()) ||
+              query.visible_resources.size() > 64) {
+            return target::Failure{target::ErrorCode::InvalidArgument,
+                                   target::Acceptance::NotAccepted,
+                                   target::Recovery::CorrectInput,
+                                   {},
+                                   {}};
+          }
+          // Human principals only; deleted/purged are never returned. The caller visibility
+          // filter is either the Control management catalog or exact resource tuples. This is
+          // one Identity database/UoW read; no cross-owner or cross-database access.
+          std::string visibility = "TRUE";
+          if (!query.catalog_scope) {
+            visibility = "(";
+          }
+          // Parameter numbering: $1 = human kind; each visible resource consumes two parameters
+          // (kind,id) used by both the binding equality and the exact-role EXISTS branch.
+          std::size_t next = 2;
+          if (!query.catalog_scope) {
+            for (std::size_t index = 0; index < query.visible_resources.size(); ++index) {
+              if (index != 0) {
+                visibility += " OR ";
+              }
+              const auto kind_parameter = next++;
+              const auto id_parameter = next++;
+              visibility += "(p.binding_kind=$" + std::to_string(kind_parameter) +
+                            " AND p.binding_id=$" + std::to_string(id_parameter) +
+                            " OR EXISTS (SELECT 1 FROM kiarabot.exact_assignments ea "
+                            "JOIN kiarabot.exact_roles er ON er.assignment=ea.id "
+                            "WHERE ea.subject=p.id AND ea.state=0 AND er.resource_kind=$" +
+                            std::to_string(kind_parameter) + " AND er.resource_id=$" +
+                            std::to_string(id_parameter) + "))";
+            }
+            visibility += ")";
+          }
+          std::string sql =
+              "SELECT p.id,p.binding_kind,p.binding_id,p.version,p.state "
+              "FROM kiarabot.principals p WHERE p.kind=$1 AND p.state NOT IN (3,5) AND " +
+              visibility;
+          pqxx::params parameters;
+          parameters.append(static_cast<int>(target::PrincipalKind::Human));
+          if (!query.catalog_scope) {
+            for (const auto& resource : query.visible_resources) {
+              parameters.append(static_cast<int>(resource.kind));
+              parameters.append(resource.id.value);
+            }
+          }
+          if (!query.include_all_states) {
+            sql += " AND p.state=$" + std::to_string(next++);
+            parameters.append(static_cast<int>(query.state_filter));
+          }
+          if (query.after) {
+            sql += " AND p.id>$" + std::to_string(next++);
+            parameters.append(query.after->value);
+          }
+          sql += " ORDER BY p.id LIMIT $" + std::to_string(next);
+          parameters.append(static_cast<int>(query.limit + 1));
+          const auto rows = exec(sql, parameters);
+          target::PrincipalDirectoryPage page;
+          std::vector<std::string> selected;
+          for (const auto& row : rows) {
+            if (selected.size() == query.limit) {
+              page.has_more = true;
+              break;
+            }
+            target::Principal principal;
+            principal.id = target::SubjectId{row["id"].as<std::string>()};
+            principal.kind = target::PrincipalKind::Human;
+            if (!row["binding_kind"].is_null() && !row["binding_id"].is_null()) {
+              const int kind = row["binding_kind"].as<int>();
+              if (kind < 0 || kind > 15) {
+                return target::Failure{target::ErrorCode::Internal,
+                                       target::Acceptance::NotAccepted,
+                                       target::Recovery::Diagnose,
+                                       {},
+                                       {}};
+              }
+              principal.binding =
+                  target::ResourceRef{static_cast<target::ResourceKind>(kind),
+                                      target::ResourceId{row["binding_id"].as<std::string>()}};
+            }
+            principal.version = target::ResourceVersion{row["version"].as<std::uint64_t>()};
+            const int state = row["state"].as<int>();
+            if (state < 0 || state > 5) {
+              return target::Failure{target::ErrorCode::Internal,
+                                     target::Acceptance::NotAccepted,
+                                     target::Recovery::Diagnose,
+                                     {},
+                                     {}};
+            }
+            principal.state = static_cast<target::LifecycleState>(state);
+            page.entries.push_back(target::PrincipalDirectoryEntry{std::move(principal), {}});
+            selected.push_back(page.entries.back().principal.id.value);
+          }
+          if (selected.empty()) {
+            return page;
+          }
+          std::string ids;
+          for (std::size_t index = 0; index < selected.size(); ++index) {
+            if (index != 0) {
+              ids += ",";
+            }
+            ids += transaction_->quote(selected[index]);
+          }
+          std::string roles_sql = "SELECT ea.subject,er.role FROM kiarabot.exact_assignments ea "
+                                  "JOIN kiarabot.exact_roles er ON er.assignment=ea.id "
+                                  "WHERE ea.state=0 AND ea.subject IN (" +
+                                  ids + ")";
+          pqxx::params role_parameters;
+          std::size_t role_next = 1;
+          if (!query.catalog_scope) {
+            roles_sql += " AND (";
+            for (std::size_t index = 0; index < query.visible_resources.size(); ++index) {
+              if (index != 0) {
+                roles_sql += " OR ";
+              }
+              roles_sql += "(er.resource_kind=$" + std::to_string(role_next++) +
+                           " AND er.resource_id=$" + std::to_string(role_next++) + ")";
+              role_parameters.append(static_cast<int>(query.visible_resources[index].kind));
+              role_parameters.append(query.visible_resources[index].id.value);
+            }
+            roles_sql += ")";
+          }
+          roles_sql += " ORDER BY ea.subject,er.role";
+          const auto role_rows = exec(roles_sql, role_parameters);
+          std::map<std::string, std::vector<target::FixedRole>> roles;
+          for (const auto& row : role_rows) {
+            const int role = row["role"].as<int>();
+            if (role < 0 || role > 2) {
+              return target::Failure{target::ErrorCode::Internal,
+                                     target::Acceptance::NotAccepted,
+                                     target::Recovery::Diagnose,
+                                     {},
+                                     {}};
+            }
+            roles[row["subject"].as<std::string>()].push_back(static_cast<target::FixedRole>(role));
+          }
+          for (auto& entry : page.entries) {
+            const auto found = roles.find(entry.principal.id.value);
+            if (found != roles.end()) {
+              entry.roles = found->second;
+            }
+          }
+          return page;
+        });
   }
   target::Outcome<target::LogPage> query_logs(const target::LogQuery& query) override {
     return invoke<target::LogPage>([&]() -> target::Outcome<target::LogPage> {

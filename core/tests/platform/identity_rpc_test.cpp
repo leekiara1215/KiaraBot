@@ -184,6 +184,40 @@ public:
                                        kChecked};
   }
 };
+class PrincipalDirectoryFixture final : public t::IdentityPrincipalDirectoryApplication {
+public:
+  std::atomic<int> mode{0}; // 0 success, 1 PermissionDenied
+  std::atomic<int> calls{0};
+  std::uint32_t last_page_size = 0;
+  std::string last_page_token;
+  std::optional<t::LifecycleState> last_filter;
+  t::Outcome<t::PrincipalDirectoryReply>
+  list_principals(const t::PrincipalDirectoryCommand& command) override {
+    ++calls;
+    last_page_size = command.page_size;
+    last_page_token = command.page_token;
+    last_filter = command.state_filter;
+    if (mode.load() == 1) {
+      return t::Failure{t::ErrorCode::PermissionDenied, t::Acceptance::NotAccepted,
+                        t::Recovery::Authenticate, std::nullopt, std::nullopt};
+    }
+    t::PrincipalDirectoryReply reply;
+    reply.page_size = command.page_size == 0 ? 20 : command.page_size;
+    reply.checked_at = t::TimePoint{std::chrono::seconds{1700000000}};
+    if (command.page_token.empty()) {
+      reply.next_page_token = "cursor-next";
+    }
+    const t::ResourceRef binding{t::ResourceKind::Principal, {kSession}};
+    reply.principals.push_back({t::Principal{t::SubjectId{kSession},
+                                             t::PrincipalKind::Human,
+                                             binding,
+                                             {3},
+                                             t::LifecycleState::Active},
+                                {t::FixedRole::Admin}});
+    return reply;
+  }
+};
+
 class ApplicationFixture final : public t::IdentitySecurityApplication {
 public:
   std::optional<t::ValidatedSession> issued_source{};
@@ -2250,6 +2284,35 @@ void exercise_verification_keys(const std::string& leaf, const std::string& ca,
   server->Shutdown();
   server->Wait();
 }
+void exercise_principal_directory(w::IdentityService::Stub& stub, PrincipalDirectoryFixture& app) {
+  w::IdentityListPrincipalsRequest request;
+  request_context(request.mutable_context());
+  request.mutable_page()->set_page_size(1);
+  request.set_state_filter(w::LIFECYCLE_DISABLED);
+  w::IdentityListPrincipalsResponse reply;
+  require(call(stub, &w::IdentityService::Stub::ListPrincipals, request, &reply).ok());
+  require(reply.principals_size() == 1 && reply.principals(0).principal_id() == kSession &&
+          reply.principals(0).principal_kind() == "human" &&
+          reply.principals(0).state() == w::LIFECYCLE_ACTIVE &&
+          reply.principals(0).version() == 3 && reply.principals(0).roles_size() == 1 &&
+          reply.principals(0).roles(0) == w::ROLE_ADMIN && reply.page().page_size() == 1 &&
+          reply.page().next_page_token() == "cursor-next" && reply.has_checked_at());
+  require(app.calls.load() == 1 && app.last_page_size == 1 &&
+          app.last_filter == t::LifecycleState::Disabled);
+  w::IdentityListPrincipalsRequest paged = request;
+  paged.mutable_page()->set_page_token("cursor-next");
+  paged.clear_state_filter();
+  require(call(stub, &w::IdentityService::Stub::ListPrincipals, paged, &reply).ok() &&
+          app.last_page_token == "cursor-next" && !app.last_filter);
+  w::IdentityListPrincipalsRequest bad = request;
+  bad.mutable_page()->set_page_size(101);
+  rejected(call(stub, &w::IdentityService::Stub::ListPrincipals, bad, &reply), w::INVALID_ARGUMENT);
+  app.mode.store(1);
+  rejected(call(stub, &w::IdentityService::Stub::ListPrincipals, request, &reply),
+           w::PERMISSION_DENIED);
+  app.mode.store(0);
+}
+
 void exercise_principal(w::IdentityService::Stub& stub, PrincipalApplicationFixture& app) {
   w::IdentityRegisterPrincipalRequest registration;
   request_context(registration.mutable_context());
@@ -2496,6 +2559,22 @@ int main(int argc, char* argv[]) {
     exercise_principal(*principal_stub, principal_app);
     principal_server->Shutdown();
     principal_server->Wait();
+    PrincipalDirectoryFixture directory_app;
+    auto directory_service = std::get<std::unique_ptr<w::IdentityService::Service>>(
+        p::make_identity_rpc(app, verifier, nullptr, lifecycle,
+                             p::IdentityRpcOptions{.principal_directory = &directory_app}));
+    grpc::ServerBuilder directory_builder;
+    int directory_port = 0;
+    directory_builder.RegisterService(directory_service.get());
+    directory_builder.AddListeningPort("127.0.0.1:0", grpc::SslServerCredentials(options),
+                                       &directory_port);
+    auto directory_server = directory_builder.BuildAndStart();
+    require(directory_server && directory_port > 0);
+    auto directory_stub = w::IdentityService::NewStub(grpc::CreateChannel(
+        "localhost:" + std::to_string(directory_port), grpc::SslCredentials(client)));
+    exercise_principal_directory(*directory_stub, directory_app);
+    directory_server->Shutdown();
+    directory_server->Wait();
     exercise_registered_peer(leaf, ca, key);
     exercise_issue(leaf, ca, key);
     exercise_exchange(leaf, ca, key);

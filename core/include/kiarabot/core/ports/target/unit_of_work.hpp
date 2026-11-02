@@ -5,9 +5,9 @@
 #include <optional>
 #include <vector>
 
+#include "kiarabot/core/domain/target/audit_query.hpp"
 #include "kiarabot/core/domain/target/invariants.hpp"
 #include "kiarabot/core/domain/target/model_gateway.hpp"
-#include "kiarabot/core/domain/target/audit_query.hpp"
 #include "kiarabot/core/domain/target/persistence.hpp"
 #include "kiarabot/core/ports/target/host_command_ports.hpp"
 #include "kiarabot/core/ports/target/host_registration_ports.hpp"
@@ -183,6 +183,12 @@ public:
   }
   virtual Outcome<LogPage> query_logs(const LogQuery&) {
     return unsupported_lifecycle_read();
+  }
+  // P12l Identity-only read-only directory projection. Default fail-closed for every other owner
+  // (and for Identity fixtures without storage); production PG implements stable keyset pages.
+  virtual Outcome<PrincipalDirectoryPage> query_principals(const PrincipalDirectoryQuery&) {
+    return Failure{
+        ErrorCode::UpstreamUnavailable, Acceptance::NotAccepted, Recovery::Diagnose, {}, {}};
   }
   virtual Outcome<std::size_t> prune_operations(TimePoint, std::size_t) {
     return unsupported_lifecycle_read();

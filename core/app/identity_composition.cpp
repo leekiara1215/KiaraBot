@@ -16,6 +16,7 @@
 #include "kiarabot/core/application/target/identity_delegation_application.hpp"
 #include "kiarabot/core/application/target/identity_invalidation_application.hpp"
 #include "kiarabot/core/application/target/identity_principal_application.hpp"
+#include "kiarabot/core/application/target/identity_principal_directory_application.hpp"
 #include "kiarabot/core/application/target/identity_security_application.hpp"
 #include "kiarabot/core/application/target/identity_verification_keys_application.hpp"
 #include "kiarabot/core/domain/target/time.hpp"
@@ -80,6 +81,10 @@ public:
         invalidation_(std::move(invalidation)),
         audit_(std::move(std::get<std::unique_ptr<target::IdentityAuditApplication>>(
             target::make_identity_audit_application(*dependencies_->transactions)))),
+        principal_directory_(
+            std::move(std::get<std::unique_ptr<target::IdentityPrincipalDirectoryApplication>>(
+                target::make_identity_principal_directory_application(
+                    *dependencies_->transactions)))),
         admin_(*dependencies_->transactions, *dependencies_->certificates),
         issuer_(*sessions_, *dependencies_->transactions, *dependencies_->delegations,
                 *dependencies_->random, dependencies_->clock,
@@ -129,6 +134,9 @@ public:
   target::IdentityAuditApplication& audit() {
     return *audit_;
   }
+  target::IdentityPrincipalDirectoryApplication& principal_directory() {
+    return *principal_directory_;
+  }
   target::IdentityAdminApplication& admin() {
     return admin_;
   }
@@ -146,6 +154,7 @@ private:
   std::unique_ptr<target::IdentityAuthorizationApplication> authorization_;
   std::unique_ptr<target::IdentityInvalidationApplication> invalidation_;
   std::unique_ptr<target::IdentityAuditApplication> audit_;
+  std::unique_ptr<target::IdentityPrincipalDirectoryApplication> principal_directory_;
   target::IdentityAdminApplication admin_;
   target::IdentityDelegationApplication issuer_;
 };
@@ -502,7 +511,8 @@ target::Outcome<platform::ServiceComposition> configured(const platform::Process
              .authorization = &observed->authorization(),
              .assignments = &observed->assignments(),
              .invalidation = &observed->invalidation(),
-             .audit = &observed->audit()});
+             .audit = &observed->audit(),
+             .principal_directory = &observed->principal_directory()});
         if (const auto* error = std::get_if<target::Failure>(&adapter)) {
           return *error;
         }

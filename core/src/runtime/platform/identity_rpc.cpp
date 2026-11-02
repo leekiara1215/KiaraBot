@@ -539,6 +539,24 @@ const char* principal_kind_name(t::PrincipalKind kind) {
   }
   return nullptr;
 }
+std::optional<t::LifecycleState> lifecycle_from_wire(v1::LifecycleState state) {
+  switch (state) {
+  case v1::LIFECYCLE_ACTIVE:
+    return t::LifecycleState::Active;
+  case v1::LIFECYCLE_DISABLED:
+    return t::LifecycleState::Disabled;
+  case v1::LIFECYCLE_DELETING:
+    return t::LifecycleState::Deleting;
+  case v1::LIFECYCLE_DELETED:
+    return t::LifecycleState::Deleted;
+  case v1::LIFECYCLE_RESTORING:
+    return t::LifecycleState::Restoring;
+  case v1::LIFECYCLE_PURGED:
+    return t::LifecycleState::Purged;
+  default:
+    return std::nullopt;
+  }
+}
 std::optional<v1::LifecycleState> lifecycle(t::LifecycleState state) {
   switch (state) {
   case t::LifecycleState::Active:
@@ -736,6 +754,54 @@ t::IdentityAuditCommand audit_command_for(const t::IdentityRequestContext& conte
                                           const AuditCommandInput& input) {
   return {context, peer, input.scope, input.query};
 }
+std::optional<v1::FixedRole> fixed_role(t::FixedRole role) {
+  switch (role) {
+  case t::FixedRole::Admin:
+    return v1::ROLE_ADMIN;
+  case t::FixedRole::Operator:
+    return v1::ROLE_OPERATOR;
+  case t::FixedRole::Viewer:
+    return v1::ROLE_VIEWER;
+  }
+  return std::nullopt;
+}
+t::Outcome<v1::IdentityPrincipalSummary> principal_summary(const t::Principal& principal,
+                                                           const std::vector<t::FixedRole>& roles) {
+  if (!uuid(principal.id.value) || principal.version.value == 0 ||
+      principal.kind != t::PrincipalKind::Human) {
+    return invalid_result();
+  }
+  const auto state = lifecycle(principal.state);
+  if (!state) {
+    return invalid_result();
+  }
+  v1::IdentityPrincipalSummary summary;
+  summary.set_principal_id(principal.id.value);
+  summary.set_principal_kind("human");
+  summary.set_version(principal.version.value);
+  summary.set_state(*state);
+  if (principal.binding) {
+    const auto encoded = codec::to_wire(*principal.binding);
+    if (const auto* binding = std::get_if<v1::ResourceRef>(&encoded)) {
+      *summary.mutable_binding() = *binding;
+    } else {
+      return invalid_result();
+    }
+  }
+  std::set<t::FixedRole> unique;
+  for (const auto role : roles) {
+    if (!unique.insert(role).second) {
+      continue;
+    }
+    const auto projected = fixed_role(role);
+    if (!projected) {
+      return invalid_result();
+    }
+    summary.add_roles(*projected);
+  }
+  return summary;
+}
+
 class IdentityRpc final : public v1::IdentityService::Service {
 public:
   IdentityRpc(t::IdentitySecurityApplication& application, PeerAuthenticator authenticate,
@@ -746,7 +812,7 @@ public:
         verification_keys_(options.verification_keys), exchange_(options.exchange),
         principal_(options.principal), authorization_(options.authorization),
         assignments_(options.assignments), invalidation_(options.invalidation),
-        audit_(options.audit) {}
+        audit_(options.audit), principal_directory_(options.principal_directory) {}
 
   grpc::Status Login(grpc::ServerContext* transport, const v1::IdentityLoginRequest* request,
                      v1::IdentityLoginResponse* response) override {
@@ -1113,8 +1179,8 @@ public:
           if (const auto* error = std::get_if<t::Failure>(&converted)) {
             return *error;
           }
-          auto result =
-              audit_->list_audit(audit_command_for(context, peer, std::get<AuditCommandInput>(converted)));
+          auto result = audit_->list_audit(
+              audit_command_for(context, peer, std::get<AuditCommandInput>(converted)));
           if (const auto* error = std::get_if<t::Failure>(&result)) {
             return *error;
           }
@@ -1169,8 +1235,7 @@ public:
         },
         false);
   }
-  grpc::Status ListLogs(grpc::ServerContext* transport,
-                        const v1::IdentityListLogsRequest* request,
+  grpc::Status ListLogs(grpc::ServerContext* transport, const v1::IdentityListLogsRequest* request,
                         v1::IdentityListLogsResponse* response) override {
     return run(
         transport, request->has_context(), request->context(), response,
@@ -1183,8 +1248,8 @@ public:
           if (const auto* error = std::get_if<t::Failure>(&converted)) {
             return *error;
           }
-          auto result =
-              audit_->list_logs(audit_command_for(context, peer, std::get<AuditCommandInput>(converted)));
+          auto result = audit_->list_logs(
+              audit_command_for(context, peer, std::get<AuditCommandInput>(converted)));
           if (const auto* error = std::get_if<t::Failure>(&result)) {
             return *error;
           }
@@ -1884,6 +1949,56 @@ public:
         false);
   }
 
+  grpc::Status ListPrincipals(grpc::ServerContext* transport,
+                              const v1::IdentityListPrincipalsRequest* request,
+                              v1::IdentityListPrincipalsResponse* response) override {
+    return run(
+        transport, request->has_context(), request->context(), response,
+        [&](const t::VerifiedPeer& peer, const t::IdentityRequestContext& context)
+            -> t::Outcome<v1::IdentityListPrincipalsResponse> {
+          if (!principal_directory_) {
+            return failure(t::ErrorCode::CapabilityNotSupported);
+          }
+          if (request->page().page_size() > 100 || request->page().page_token().size() > 128) {
+            return failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput);
+          }
+          std::optional<t::LifecycleState> filter;
+          if (request->state_filter() != v1::LIFECYCLE_UNSPECIFIED) {
+            const auto decoded = lifecycle_from_wire(request->state_filter());
+            if (!decoded) {
+              return failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput);
+            }
+            filter = *decoded;
+          }
+          auto reply = principal_directory_->list_principals(t::PrincipalDirectoryCommand{
+              context, peer, request->page().page_size(), request->page().page_token(), filter});
+          if (const auto* error = std::get_if<t::Failure>(&reply)) {
+            return *error;
+          }
+          const auto& page = std::get<t::PrincipalDirectoryReply>(reply);
+          if (page.page_size == 0 || page.page_size > 100 || !positive(page.checked_at)) {
+            return invalid_result();
+          }
+          v1::IdentityListPrincipalsResponse output;
+          for (const auto& row : page.principals) {
+            auto summary = principal_summary(row.principal, row.roles);
+            if (const auto* error = std::get_if<t::Failure>(&summary)) {
+              return *error;
+            }
+            *output.add_principals() = std::get<v1::IdentityPrincipalSummary>(std::move(summary));
+          }
+          output.mutable_page()->set_page_size(page.page_size);
+          if (!page.next_page_token.empty()) {
+            output.mutable_page()->set_next_page_token(page.next_page_token);
+          }
+          if (!timestamp(page.checked_at, output.mutable_checked_at())) {
+            return invalid_result();
+          }
+          return output;
+        },
+        true);
+  }
+
 private:
   struct StreamInvocation {
     t::VerifiedPeer peer;
@@ -2096,6 +2211,7 @@ private:
   t::IdentityAssignmentApplication* assignments_;
   t::IdentityInvalidationApplication* invalidation_;
   t::IdentityAuditApplication* audit_;
+  t::IdentityPrincipalDirectoryApplication* principal_directory_;
 };
 } // namespace
 
