@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <span>
 #include <utility>
 
 #include "identity_access.hpp"
@@ -92,6 +93,40 @@ public:
           }
           require_stored(std::holds_alternative<std::monostate>(
               target::validate_assignment_collection(result, subject)));
+          return result;
+        });
+  }
+  target::Outcome<std::vector<target::ExactAssignment>>
+  for_scope(std::span<const target::ResourceRef> scope) override {
+    return query<std::vector<target::ExactAssignment>>(
+        sql_, [&](auto& transaction) -> target::Outcome<std::vector<target::ExactAssignment>> {
+          if (scope.empty() || scope.size() > target::kMaximumInvalidationScope) {
+            return invalid();
+          }
+          std::vector<target::ExactAssignment> result;
+          std::vector<std::string> seen;
+          for (const auto& resource : scope) {
+            if (!target::valid_policy_resource(resource)) {
+              return invalid();
+            }
+            const auto rows = transaction.exec(
+                "SELECT DISTINCT a.* FROM kiarabot.exact_assignments a "
+                "WHERE a.state=0 AND (EXISTS(SELECT 1 FROM kiarabot.exact_roles r "
+                "WHERE r.assignment=a.id AND r.resource_kind=$1 AND r.resource_id=$2) "
+                "OR EXISTS(SELECT 1 FROM kiarabot.exact_permissions p "
+                "WHERE p.assignment=a.id AND p.resource_kind=$1 AND p.resource_id=$2)) "
+                "ORDER BY a.id",
+                pqxx::params{static_cast<int>(resource.kind), resource.id.value});
+            for (const auto& row : rows) {
+              auto record = read_assignment(transaction, row).assignment;
+              const bool known =
+                  std::any_of(result.begin(), result.end(),
+                              [&](const auto& existing) { return existing.id == record.id; });
+              if (!known) {
+                result.push_back(std::move(record));
+              }
+            }
+          }
           return result;
         });
   }

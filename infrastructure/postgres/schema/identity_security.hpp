@@ -182,6 +182,30 @@ CREATE TABLE kiarabot.administrator_bootstrap (
         (state=1 AND administrator IS NOT NULL AND consumed_at IS NOT NULL))
 );
 INSERT INTO kiarabot.administrator_bootstrap VALUES(true,0,1,NULL,NULL);
+-- P04 authorization invalidation stream: bounded durable log + one persisted stream epoch.
+-- The epoch changes only when this logical database is reinitialized/restored; a daemon restart
+-- keeps the same epoch/sequence so a valid cursor continues truthfully (no fake continuity).
+CREATE TABLE kiarabot.identity_invalidation_state (
+  singleton boolean PRIMARY KEY CHECK(singleton),
+  epoch text NOT NULL CHECK(epoch<>''),
+  next_sequence bigint NOT NULL CHECK(next_sequence>=0 AND next_sequence<9223372036854775807)
+);
+CREATE TABLE kiarabot.identity_invalidations (
+  epoch text NOT NULL CHECK(epoch<>''), sequence bigint NOT NULL CHECK(sequence>0),
+  principal text NOT NULL CHECK(principal<>''),
+  authorization_version kiarabot.uint64 NOT NULL CHECK(authorization_version>0),
+  created_at bigint NOT NULL CHECK(created_at>0),
+  PRIMARY KEY(epoch,sequence)
+);
+CREATE INDEX identity_invalidations_created ON kiarabot.identity_invalidations(created_at);
+CREATE TABLE kiarabot.identity_invalidation_scopes (
+  epoch text NOT NULL, sequence bigint NOT NULL, position integer NOT NULL CHECK(position>=0),
+  resource_kind integer NOT NULL CHECK(resource_kind BETWEEN 0 AND 15),
+  resource_id text NOT NULL CHECK(resource_id<>''),
+  PRIMARY KEY(epoch,sequence,position),
+  FOREIGN KEY(epoch,sequence) REFERENCES kiarabot.identity_invalidations(epoch,sequence)
+    ON DELETE CASCADE
+);
 )sql";
 
 } // namespace kiarabot::infrastructure::postgres::schema

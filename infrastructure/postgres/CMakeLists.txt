@@ -3,7 +3,7 @@ find_package(libpqxx 7.10.0 EXACT CONFIG REQUIRED)
 add_library(kiarabot_postgres STATIC
   src/database.cpp src/common_work.cpp src/record_codec.cpp src/factories.cpp
   src/identity_security.cpp src/identity_sessions.cpp src/identity_receipts.cpp
-  src/identity_assignments.cpp)
+  src/identity_assignments.cpp src/identity_invalidations.cpp)
 target_include_directories(kiarabot_postgres PUBLIC
   include ${CMAKE_SOURCE_DIR}/core/include)
 target_link_libraries(kiarabot_postgres PRIVATE libpqxx::pqxx Threads::Threads)
@@ -26,6 +26,7 @@ if(UNIX)
     kiarabot_postgres kiarabot_identity_crypto kiarabot_identity_admin_application
     kiarabot_identity_delegation_application kiarabot_identity_security_application
     kiarabot_identity_principal_application kiarabot_identity_authorization_application
+    kiarabot_identity_invalidation_application
     libpqxx::pqxx)
   # Static PG/crypto adapters already supply SSL/Crypto linkage; these headers are used directly.
   target_include_directories(kiarabot_identity_application_test SYSTEM PRIVATE

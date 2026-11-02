@@ -184,7 +184,8 @@ public:
         security_(detail::session_security_repository(*common_.sql)),
         assignments_(detail::exact_assignment_repository(*common_.sql)),
         secrets_(detail::secret_receipt_repository(*common_.sql)),
-        bootstrap_(detail::bootstrap_repository(*common_.sql)) {}
+        bootstrap_(detail::bootstrap_repository(*common_.sql)),
+        invalidations_(detail::invalidation_repository(*common_.sql)) {}
   target::Outcome<target::TimePoint> current_time() override {
     return work().current_time();
   }
@@ -230,6 +231,9 @@ public:
   target::IdentityBootstrapRepository& bootstrap() override {
     return *bootstrap_;
   }
+  target::IdentityInvalidationRepository* invalidations() noexcept override {
+    return invalidations_.get();
+  }
 
 private:
   target::UnitOfWork& work() {
@@ -245,6 +249,7 @@ private:
   std::unique_ptr<target::IdentityExactAssignmentRepository> assignments_;
   std::unique_ptr<target::IdentitySecretReceiptRepository> secrets_;
   std::unique_ptr<target::IdentityBootstrapRepository> bootstrap_;
+  std::unique_ptr<target::IdentityInvalidationRepository> invalidations_;
 };
 class IdentitySecurityFactory final : public target::IdentitySecurityUnitOfWorkFactory {
 public:

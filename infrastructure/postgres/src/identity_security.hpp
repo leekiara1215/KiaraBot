@@ -16,5 +16,6 @@ std::unique_ptr<core::target::IdentitySecretReceiptRepository>
 secret_receipt_repository(SqlWork& sql);
 std::unique_ptr<core::target::IdentityExactAssignmentRepository>
 exact_assignment_repository(SqlWork& sql);
+std::unique_ptr<core::target::IdentityInvalidationRepository> invalidation_repository(SqlWork& sql);
 
 } // namespace kiarabot::infrastructure::postgres::detail

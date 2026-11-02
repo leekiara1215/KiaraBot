@@ -1,10 +1,12 @@
 #pragma once
 
 #include <optional>
+#include <span>
 #include <string>
 #include <vector>
 
 #include "kiarabot/core/domain/target/identity_assignment_state.hpp"
+#include "kiarabot/core/domain/target/identity_invalidation.hpp"
 #include "kiarabot/core/domain/target/identity_types.hpp"
 #include "kiarabot/core/ports/target/unit_of_work.hpp"
 
@@ -105,6 +107,33 @@ public:
   // create/update owner/version CAS and atomic base synchronization. Never revives Revoked.
   virtual Status save(const ExactAssignment& assignment,
                       std::optional<ResourceVersion> expected) = 0;
+  // CURRENT Active exact tuples whose scope contains at least one requested resource, for the
+  // bounded authorization snapshot. Empty scope is invalid; dependency failure stays Failure and
+  // is never reported as an empty snapshot. The default exists only for legacy fixtures that do
+  // not implement snapshots; production must override it.
+  virtual Outcome<std::vector<ExactAssignment>> for_scope(std::span<const ResourceRef> scope) {
+    static_cast<void>(scope);
+    return Failure{
+        ErrorCode::UpstreamUnavailable, Acceptance::NotAccepted, Recovery::Diagnose, {}, {}};
+  }
+};
+class IdentityInvalidationRepository {
+public:
+  virtual ~IdentityInvalidationRepository() = default;
+  // Persisted stream incarnation; empty optional means the log was never initialized yet.
+  virtual Outcome<std::optional<InvalidationStreamState>> state() = 0;
+  // Idempotent initialization in the SAME transaction as the first invalidation write; an already
+  // present epoch is not overwritten (concurrent first writers re-read).
+  virtual Status initialize(const InvalidationStreamState& state) = 0;
+  // Oldest retained sequence of the CURRENT epoch; empty means the bounded log is empty.
+  virtual Outcome<std::optional<std::uint64_t>> oldest_sequence(const std::string& epoch) = 0;
+  // Committed records strictly after sequence, ordered by sequence, bounded 1..256.
+  virtual Outcome<std::vector<InvalidationRecord>>
+  read_after(const std::string& epoch, std::uint64_t sequence, std::size_t limit) = 0;
+  // Allocate the next committed sequence and insert the record + its exact scope atomically.
+  // Callers pass the current DB UTC; retention pruning is a separate bounded maintenance step.
+  virtual Outcome<InvalidationRecord> append(const InvalidationEvent& event, TimePoint now) = 0;
+  virtual Outcome<std::size_t> prune(TimePoint now, std::size_t limit) = 0;
 };
 class IdentitySecretReceiptRepository {
 public:
@@ -138,6 +167,12 @@ public:
   virtual IdentityExactAssignmentRepository& exact_assignments() = 0;
   virtual IdentitySecretReceiptRepository& secret_receipts() = 0;
   virtual IdentityBootstrapRepository& bootstrap() = 0;
+  // P04 invalidations: production PostgreSQL returns the durable log. The default null result is a
+  // deliberate fail-closed extension point for fixtures without invalidation storage; every
+  // stream/snapshot mutation must treat null as UpstreamUnavailable, never as an empty stream.
+  virtual IdentityInvalidationRepository* invalidations() noexcept {
+    return nullptr;
+  }
 };
 using IdentitySecurityUnitOfWorkFactory = LocalUnitOfWorkFactory<IdentitySecurityUnitOfWork>;
 
