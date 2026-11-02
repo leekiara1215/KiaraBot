@@ -323,7 +323,9 @@
       "ActionExecutionEvidence": "not_implemented",
       "ActionReceipt": "not_implemented",
       "RuntimeQueryActionResultRequest": "not_implemented",
-      "RuntimeQueryActionResultResponse": "not_implemented"
+      "RuntimeQueryActionResultResponse": "not_implemented",
+      "HostHeartbeat": "not_implemented",
+      "HostHeartbeatAck": "not_implemented"
     },
     "proto_fields": {
       "Account.account_id": "implemented",
@@ -1412,7 +1414,20 @@
       "RuntimeQueryActionResultResponse.execution_outcome": "not_implemented",
       "RuntimeQueryActionResultResponse.metadata": "not_implemented",
       "IdentityWatchInvalidationsResponse.resync_required": "implemented",
-      "IdentityWatchInvalidationsResponse.cursor": "implemented"
+      "IdentityWatchInvalidationsResponse.cursor": "implemented",
+      "HostToRuntime.fence": "not_implemented",
+      "HostToRuntime.heartbeat": "not_implemented",
+      "RuntimeToHost.fence": "not_implemented",
+      "RuntimeToHost.heartbeat_ack": "not_implemented",
+      "HostRegisterHostResponse.fence": "not_implemented",
+      "ExecutionRecord.command_id": "not_implemented",
+      "HostHeartbeat.fence": "not_implemented",
+      "HostHeartbeat.sent_at": "not_implemented",
+      "HostHeartbeat.cursor": "not_implemented",
+      "HostHeartbeatAck.fence": "not_implemented",
+      "HostHeartbeatAck.received_at": "not_implemented",
+      "HostHeartbeatAck.heartbeat_interval_seconds": "not_implemented",
+      "HostHeartbeatAck.resync_required": "not_implemented"
     },
     "event_payloads": {
       "EventEnvelope.message_received": "implemented",
@@ -1452,7 +1467,8 @@
     },
     "bridge_methods": {
       "AdapterBridge.Connect": "implemented",
-      "PluginBridge.Connect": "implemented"
+      "PluginBridge.Connect": "implemented",
+      "HostBridge.Connect": "not_implemented"
     },
     "enum_values": {
       "MessageSegment.Type.AUDIO": "not_implemented",
@@ -1707,7 +1723,13 @@
       "semantic.action.control_query_scope": "not_implemented",
       "semantic.action.permission_vocabulary": "not_implemented",
       "semantic.action.quota_persistence": "not_implemented",
-      "semantic.action.policy_gate": "not_implemented"
+      "semantic.action.policy_gate": "not_implemented",
+      "semantic.host.execution_recovery": "not_implemented",
+      "semantic.host.observation_identity": "not_implemented",
+      "semantic.host.config_apply_evidence": "not_implemented",
+      "semantic.host.connection_fence": "not_implemented",
+      "semantic.host.heartbeat_offline": "not_implemented",
+      "semantic.host.bridge_mtls_identity": "not_implemented"
     }
   },
   "evidence": {
@@ -4934,6 +4956,72 @@
     ],
     "IdentityWatchInvalidationsResponse.cursor": [
       "reports/modules/architecture-contracts.md"
+    ],
+    "HostBridge.Connect": [
+      "core/src/application/target/host_application.cpp"
+    ],
+    "HostHeartbeat": [
+      "core/src/application/target/host_application.cpp"
+    ],
+    "HostHeartbeatAck": [
+      "core/src/application/target/host_application.cpp"
+    ],
+    "HostToRuntime.fence": [
+      "core/src/application/target/host_application.cpp"
+    ],
+    "HostToRuntime.heartbeat": [
+      "core/src/application/target/host_application.cpp"
+    ],
+    "RuntimeToHost.fence": [
+      "core/src/application/target/host_application.cpp"
+    ],
+    "RuntimeToHost.heartbeat_ack": [
+      "core/src/application/target/host_application.cpp"
+    ],
+    "HostRegisterHostResponse.fence": [
+      "core/src/application/target/host_application.cpp"
+    ],
+    "ExecutionRecord.command_id": [
+      "core/src/application/target/host_application.cpp"
+    ],
+    "HostHeartbeat.fence": [
+      "core/src/application/target/host_application.cpp"
+    ],
+    "HostHeartbeat.sent_at": [
+      "core/src/application/target/host_application.cpp"
+    ],
+    "HostHeartbeat.cursor": [
+      "core/src/application/target/host_application.cpp"
+    ],
+    "HostHeartbeatAck.fence": [
+      "core/src/application/target/host_application.cpp"
+    ],
+    "HostHeartbeatAck.received_at": [
+      "core/src/application/target/host_application.cpp"
+    ],
+    "HostHeartbeatAck.heartbeat_interval_seconds": [
+      "core/src/application/target/host_application.cpp"
+    ],
+    "HostHeartbeatAck.resync_required": [
+      "core/src/application/target/host_application.cpp"
+    ],
+    "semantic.host.execution_recovery": [
+      "core/src/application/target/host_application.cpp"
+    ],
+    "semantic.host.observation_identity": [
+      "core/src/application/target/host_application.cpp"
+    ],
+    "semantic.host.config_apply_evidence": [
+      "core/src/application/target/host_application.cpp"
+    ],
+    "semantic.host.connection_fence": [
+      "core/src/application/target/host_application.cpp"
+    ],
+    "semantic.host.heartbeat_offline": [
+      "core/src/application/target/host_application.cpp"
+    ],
+    "semantic.host.bridge_mtls_identity": [
+      "core/src/application/target/host_application.cpp"
     ]
   },
   "vocabulary": {

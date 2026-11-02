@@ -45,6 +45,10 @@ message ExecutionRecord {
   string process_marker = 6;
   google.protobuf.Timestamp observed_at = 7;
   Error reason = 8;
+  // CONTRACT_STATUS: not_implemented - P08 target declaration, no producer.
+  // HostCommandReceipt.command_id that triggered this observation; empty for a
+  // spontaneous state change not caused by a Runtime command (no fabricated id).
+  string command_id = 9;
 }
 
 // CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
@@ -64,6 +68,11 @@ message HostRegisterHostRequest {
 // CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
 message HostRegisterHostResponse {
   HostRecord host = 1;
+  // CONTRACT_STATUS: not_implemented - P08 target declaration, no producer.
+  // Connection-scoped Fence assigned by Runtime: instance_id carries host_id,
+  // execution_generation must be absent, connection_generation/runtime_epoch are
+  // authoritative for every subsequent HostToRuntime/RuntimeToHost frame.
+  Fence fence = 2;
 }
 
 // CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
@@ -202,19 +211,68 @@ service HostService {
     option (requires_online_authorization) = true;
   }
 }
+// P08 target liveness frame sent by the Host every 5 seconds on the internal mTLS
+// HostBridge stream. cursor reports the highest observation already delivered, so a
+// reconnect can request replay without inventing an observation identity.
+// CONTRACT_STATUS: not_implemented - P08 target declaration, no producer.
+message HostHeartbeat {
+  Fence fence = 1;
+  google.protobuf.Timestamp sent_at = 2;
+  StreamCursor cursor = 3;
+}
+
+// P08 target response from Runtime; 15 seconds without a heartbeat makes online=false.
+// resync_required uses the P06 resync meaning and never asserts that processes stopped.
+// CONTRACT_STATUS: not_implemented - P08 target declaration, no producer.
+message HostHeartbeatAck {
+  Fence fence = 1;
+  google.protobuf.Timestamp received_at = 2;
+  uint32 heartbeat_interval_seconds = 3;
+  bool resync_required = 4;
+}
+
+// P08 target: internal mTLS inbound stream for a pre-registered Host platform service.
+// Host identity comes from the deployment-issued client certificate plus the deployment
+// allowlist (no bootstrap credential, connection_proof or ConnectionAuthorization). The
+// frame-level fence is mandatory after registration; see HostBridge below.
 // CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
 message HostToRuntime {
   RequestContext context = 1;
-  oneof body { HostRegisterHostRequest registration = 10; HostReportInventoryRequest inventory = 11; HostCommandReceipt receipt = 12; HostWatchExecutionsResponse observation = 13; }
+  // CONTRACT_STATUS: not_implemented - P08 target declaration, no producer.
+  Fence fence = 2;
+  oneof body {
+    HostRegisterHostRequest registration = 10;
+    HostReportInventoryRequest inventory = 11;
+    HostCommandReceipt receipt = 12;
+    HostWatchExecutionsResponse observation = 13;
+    // CONTRACT_STATUS: not_implemented - P08 target declaration, no producer.
+    HostHeartbeat heartbeat = 14;
+  }
 }
 
 // CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
 message RuntimeToHost {
-
-  oneof body { HostApplyDesiredProcessRequest apply = 10; HostStopExecutionRequest stop = 11; HostDrainHostRequest drain = 12; HostRegisterHostResponse registered = 13; RpcFailure failure = 14; }
+  // CONTRACT_STATUS: not_implemented - P08 target declaration, no producer.
+  Fence fence = 1;
+  oneof body {
+    HostApplyDesiredProcessRequest apply = 10;
+    HostStopExecutionRequest stop = 11;
+    HostDrainHostRequest drain = 12;
+    HostRegisterHostResponse registered = 13;
+    RpcFailure failure = 14;
+    // CONTRACT_STATUS: not_implemented - P08 target declaration, no producer.
+    HostHeartbeatAck heartbeat_ack = 15;
+  }
 }
 
-// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+// P08 target: registered on the Runtime internal mTLS grpc_listen only (never on the P06
+// external bridge_listen). Host authenticates with a deployment-issued client certificate;
+// the certificate SAN/fingerprint maps to a pre-registered host_id and RegisterHost must
+// match it. No bootstrap/proof/refresh frames: mTLS is the transport authentication, and
+// business authorization stays at the Runtime application command layer. Every frame after
+// registration carries the current Fence; a new connection for the same host_id replaces
+// the old one (stale connection_generation frames are rejected).
+// CONTRACT_STATUS: not_implemented - P08 target declaration, no producer.
 service HostBridge {
   rpc Connect(stream HostToRuntime) returns (stream RuntimeToHost);
 }

@@ -404,11 +404,13 @@ def main() -> int:
                     f"{payload_type} is {message_status} in proto_messages"
                 )
 
-    # 1b. External Bridge service coverage. Bridge RPCs are registered separately from the
-    # five owner services because they are streaming transport entry points without policy
-    # options; their target availability follows execution_scopes.target like any other item.
+    # 1b. Bridge service coverage. Bridge RPCs are registered separately from the five owner
+    # services because they are streaming transport entry points without policy options.
+    # Adapter/Plugin bridges are external listeners; HostBridge is the internal mTLS stream
+    # for a pre-registered Host platform service (P08). Target availability still follows
+    # execution_scopes.target like any other item.
     expected_bridge_methods = set()
-    for service_name in ("AdapterBridge", "PluginBridge"):
+    for service_name in ("AdapterBridge", "PluginBridge", "HostBridge"):
         methods = proto.services.get(service_name)
         if methods is None:
             fail(f"missing Protobuf bridge service {service_name}")
