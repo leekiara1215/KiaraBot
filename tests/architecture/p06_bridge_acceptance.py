@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+from contextlib import suppress
 import json
 import os
 from pathlib import Path
@@ -330,10 +331,11 @@ async def async_main(args) -> None:
             action_idempotency = 'p07-action-' + action_id
             action_request_id = str(__import__('uuid').uuid4())
 
-            def action_envelope(identifier, idempotency, conversation='group-1'):
+            def action_envelope(identifier, idempotency, conversation='group-1',
+                                deadline_offset=30):
                 return actions.ActionEnvelope(
                     action_id=identifier, idempotency_key=idempotency,
-                    deadline=timestamp(time.time() + 30), trace_id=identifier,
+                    deadline=timestamp(time.time() + deadline_offset), trace_id=identifier,
                     target_source=common.SourceRef(
                         adapter_id=ADAPTER_ID, adapter_instance_id=ADAPTER_INSTANCE,
                         account_id=ACCOUNT),
@@ -344,10 +346,11 @@ async def async_main(args) -> None:
                             account_id=ACCOUNT),
                         message=common.Message(plain_text='hello from p07')))
 
+            first_action_envelope = action_envelope(action_id, action_idempotency)
             await plugin_call.write(plugins.PluginToCore(
                 fence=plugin_fence, connection_proof=plugin_proof,
                 action=plugins.PluginActionRequest(
-                    action=action_envelope(action_id, action_idempotency),
+                    action=first_action_envelope,
                     request_id=action_request_id)))
             submitted = await read_or_fail(plugin_call, 'plugin action submit')
             require(submitted.WhichOneof('body') == 'action_response' and
@@ -450,6 +453,212 @@ async def async_main(args) -> None:
                     evidence_query.action_response.result.execution_outcome ==
                     platform.EXECUTION_UNKNOWN,
                     'evidence did not preserve the non-terminal snapshot')
+
+            async def submit_action(identifier, idempotency, conversation='group-1',
+                                    deadline_offset=30):
+                await plugin_call.write(plugins.PluginToCore(
+                    fence=plugin_fence, connection_proof=plugin_proof,
+                    action=plugins.PluginActionRequest(
+                        action=action_envelope(identifier, idempotency, conversation,
+                                               deadline_offset),
+                        request_id=str(__import__('uuid').uuid4()))))
+                response = await read_or_fail(plugin_call, 'action submit ' + identifier)
+                require(response.WhichOneof('body') == 'action_response',
+                        'action response body mismatch')
+                return response.action_response
+
+            async def read_dispatch(label):
+                frame = await read_or_fail(adapter_call, label, timeout=10)
+                require(frame.WhichOneof('body') == 'action' and
+                        frame.action.dispatch_attempt_id,
+                        label + ': no dispatched Action with attempt id')
+                return frame.action
+
+            # ---- result vs evidence race on the same dispatched attempt -----------------
+            race_id = str(__import__('uuid').uuid4())
+            await submit_action(race_id, 'p07-race-' + race_id)
+            race_dispatch = await read_dispatch('race dispatch')
+            race_evidence = actions.ActionExecutionEvidence(
+                action_id=race_id,
+                dispatch_attempt_id=race_dispatch.dispatch_attempt_id,
+                execution_outcome=platform.EXECUTION_UNKNOWN,
+                observed_at=timestamp(time.time()))
+            race_result = actions.ActionResult(
+                action_id=race_id, status=actions.SUCCEEDED,
+                execution_outcome=platform.EXECUTION_KNOWN_SUCCEEDED,
+                dispatch_attempt_id=race_dispatch.dispatch_attempt_id,
+                completed_at=timestamp(time.time()))
+            await adapter_call.write(adapters.AdapterToCore(
+                fence=adapter_fence, connection_proof=adapter_proof,
+                action_evidence=race_evidence))
+            await adapter_call.write(adapters.AdapterToCore(
+                fence=adapter_fence, connection_proof=adapter_proof,
+                action_result=race_result))
+            race_first = await read_or_fail(adapter_call, 'race first receipt')
+            race_second = await read_or_fail(adapter_call, 'race second receipt')
+            require(race_first.action_receipt.disposition ==
+                    actions.ACTION_RECEIPT_EVIDENCE_ONLY and
+                    race_second.action_receipt.disposition ==
+                    actions.ACTION_RECEIPT_RECORDED and
+                    race_second.action_receipt.result.status == actions.SUCCEEDED,
+                    'evidence/result race did not preserve wire order')
+
+            # ---- cancel vs already-dispatched Action ------------------------------------
+            cancel_id = str(__import__('uuid').uuid4())
+            await submit_action(cancel_id, 'p07-cancel-' + cancel_id,
+                                conversation='group-cancel')
+            await read_dispatch('cancel dispatch')
+            await plugin_call.write(plugins.PluginToCore(
+                fence=plugin_fence, connection_proof=plugin_proof,
+                action_cancel=plugins.PluginActionCancel(
+                    request_id=str(__import__('uuid').uuid4()),
+                    trace_id=str(__import__('uuid').uuid4()),
+                    deadline=timestamp(time.time() + 5), action_id=cancel_id)))
+            cancel_response = await read_or_fail(plugin_call, 'cancel dispatched response')
+            require(cancel_response.WhichOneof('body') == 'action_response' and
+                    cancel_response.action_response.HasField('error') and
+                    cancel_response.action_response.error.code == common.CONFLICT,
+                    'cancel of dispatched Action was not CONFLICT')
+
+            # ---- duplicate submission is replayed without a second dispatch -------------
+            await plugin_call.write(plugins.PluginToCore(
+                fence=plugin_fence, connection_proof=plugin_proof,
+                action=plugins.PluginActionRequest(
+                    action=first_action_envelope,
+                    request_id=str(__import__('uuid').uuid4()))))
+            duplicate_submit = await read_or_fail(plugin_call, 'duplicate action submit')
+            require(duplicate_submit.action_response.HasField('result') and
+                    duplicate_submit.action_response.result.status == actions.SUCCEEDED and
+                    duplicate_submit.action_response.result.action_id == action_id,
+                    'duplicate submission did not replay the original snapshot')
+            # No second dispatch frame: the next expected adapter frames (quota Action frames)
+            # are asserted by action id below, so a duplicate dispatch would surface there.
+            await asyncio.sleep(1.2)
+
+            # ---- persistent per-account/group quota window (3/group/minute) ------------
+            quota_conversation = 'group-quota'
+            quota_identifiers = [str(__import__('uuid').uuid4()) for _ in range(4)]
+            for identifier in quota_identifiers:
+                await plugin_call.write(plugins.PluginToCore(
+                    fence=plugin_fence, connection_proof=plugin_proof,
+                    action=plugins.PluginActionRequest(
+                        action=action_envelope(identifier, 'p07-quota-' + identifier,
+                                               quota_conversation),
+                        request_id=str(__import__('uuid').uuid4()))))
+            quota_responses = [
+                await read_or_fail(plugin_call, 'quota submit') for _ in range(4)]
+            accepted_quota = sum(1 for response in quota_responses
+                                 if response.action_response.HasField('result'))
+            rejected_quota = sum(
+                1 for response in quota_responses
+                if response.action_response.HasField('error') and
+                response.action_response.error.code == common.RATE_LIMITED)
+            require(accepted_quota == 3 and rejected_quota == 1,
+                    f'quota window mismatch accepted={accepted_quota} rejected={rejected_quota}')
+            dispatched_quota = [await read_dispatch('quota dispatch') for _ in range(3)]
+            require(sorted(frame.action_id for frame in dispatched_quota) ==
+                    sorted(quota_identifiers[:3]),
+                    'quota dispatch ids do not match the three admitted Actions')
+
+            # ---- adapter disconnect/reconnect resends the old attempt's result ----------
+            replay_id = str(__import__('uuid').uuid4())
+            await submit_action(replay_id, 'p07-replay-' + replay_id,
+                                conversation='group-replay')
+            replay_dispatch = await read_dispatch('reconnect replay dispatch')
+            adapter_call.cancel()
+            with suppress(asyncio.CancelledError, Exception):
+                await adapter_call
+            adapter_call = adapter_factory(
+                metadata=(('authorization', 'Bearer ' + ADAPTER_BOOTSTRAP),))
+            await adapter_call.write(adapters.AdapterToCore(register=adapters.RegisterAdapterRequest(
+                adapter_id=ADAPTER_ID, implementation='p06-acceptance',
+                implementation_version='1.0.0', protocol_version='kiarabot.v1',
+                adapter_instance_id=ADAPTER_INSTANCE,
+                accounts=[adapters.Account(account_id=ACCOUNT, enabled=True)],
+                capabilities=[common.Capability(name='action.send_message.text.v1',
+                                                version='1', supported=True)],
+                context=platform.RequestContext(
+                    request_id=str(__import__('uuid').uuid4()),
+                    trace_id=str(__import__('uuid').uuid4()),
+                    deadline=timestamp(time.time() + 5)))))
+            reconnect_registration = await read_or_fail(adapter_call,
+                                                        'reconnect registration')
+            require(reconnect_registration.WhichOneof('body') == 'register_result' and
+                    reconnect_registration.register_result.accepted,
+                    'adapter reconnect registration rejected')
+            adapter_fence = fence_fields(reconnect_registration.register_result.fence)
+            adapter_auth = reconnect_registration.register_result.authorization
+            adapter_proof = adapter_auth.proof
+            adapter_refresh = adapter_auth.refresh_credential
+            adapter_refresh_generation = adapter_auth.refresh_generation
+            replay_result = actions.ActionResult(
+                action_id=replay_id, status=actions.SUCCEEDED,
+                execution_outcome=platform.EXECUTION_KNOWN_SUCCEEDED,
+                dispatch_attempt_id=replay_dispatch.dispatch_attempt_id,
+                completed_at=timestamp(time.time()))
+            await adapter_call.write(adapters.AdapterToCore(
+                fence=adapter_fence, connection_proof=adapter_proof,
+                action_result=replay_result))
+            replay_receipt = await read_or_fail(adapter_call, 'reconnect replay receipt')
+            require(replay_receipt.action_receipt.disposition ==
+                    actions.ACTION_RECEIPT_RECORDED,
+                    'reconnected adapter could not report the old dispatch attempt')
+            await plugin_call.write(plugins.PluginToCore(
+                fence=plugin_fence, connection_proof=plugin_proof,
+                action_query=plugins.PluginActionQuery(
+                    request_id=str(__import__('uuid').uuid4()),
+                    trace_id=str(__import__('uuid').uuid4()),
+                    deadline=timestamp(time.time() + 5), action_id=replay_id)))
+            replay_query = await read_or_fail(plugin_call, 'reconnect replay query')
+            require(replay_query.action_response.result.status == actions.SUCCEEDED,
+                    'replayed result was not visible after reconnect')
+
+            # ---- EXPIRED late result is evidence-only and never rewrites the terminal row
+            expired_id = str(__import__('uuid').uuid4())
+            await submit_action(expired_id, 'p07-expired-' + expired_id,
+                                conversation='group-expired', deadline_offset=2.5)
+            expired_dispatch = await read_dispatch('expired dispatch')
+            await asyncio.sleep(4.5)
+            await plugin_call.write(plugins.PluginToCore(
+                fence=plugin_fence, connection_proof=plugin_proof,
+                action_query=plugins.PluginActionQuery(
+                    request_id=str(__import__('uuid').uuid4()),
+                    trace_id=str(__import__('uuid').uuid4()),
+                    deadline=timestamp(time.time() + 5), action_id=expired_id)))
+            expired_query = await read_or_fail(plugin_call, 'expired query')
+            require(expired_query.action_response.result.status == actions.EXPIRED and
+                    expired_query.action_response.result.execution_outcome ==
+                    platform.EXECUTION_UNKNOWN,
+                    'dispatched Action did not expire as UNKNOWN: result={} status={} outcome={} error={}'.format(
+                        expired_query.action_response.HasField('result'),
+                        expired_query.action_response.result.status,
+                        expired_query.action_response.result.execution_outcome,
+                        expired_query.action_response.error if
+                        expired_query.action_response.HasField('error') else None))
+            late_result = actions.ActionResult(
+                action_id=expired_id, status=actions.SUCCEEDED,
+                execution_outcome=platform.EXECUTION_KNOWN_SUCCEEDED,
+                dispatch_attempt_id=expired_dispatch.dispatch_attempt_id,
+                completed_at=timestamp(time.time()))
+            await adapter_call.write(adapters.AdapterToCore(
+                fence=adapter_fence, connection_proof=adapter_proof,
+                action_result=late_result))
+            late_receipt = await read_or_fail(adapter_call, 'late expired result receipt')
+            require(late_receipt.action_receipt.disposition ==
+                    actions.ACTION_RECEIPT_EVIDENCE_ONLY and
+                    late_receipt.action_receipt.result.status == actions.EXPIRED,
+                    'late result did not become evidence-only')
+            await plugin_call.write(plugins.PluginToCore(
+                fence=plugin_fence, connection_proof=plugin_proof,
+                action_query=plugins.PluginActionQuery(
+                    request_id=str(__import__('uuid').uuid4()),
+                    trace_id=str(__import__('uuid').uuid4()),
+                    deadline=timestamp(time.time() + 5), action_id=expired_id)))
+            late_query = await read_or_fail(plugin_call, 'late result query')
+            require(late_query.action_response.result.status == actions.EXPIRED and
+                    late_query.action_response.result.execution_outcome ==
+                    platform.EXECUTION_UNKNOWN,
+                    'late result rewrote the expired terminal snapshot')
 
             event_id = str(__import__('uuid').uuid4())
             envelope = events.EventEnvelope(

@@ -68,7 +68,7 @@ if(UNIX)
     --pg-bin "${KIARABOT_TEST_PG_BIN}"
     --repo-source "${CMAKE_SOURCE_DIR}")
   set_tests_properties(p06_bridge_acceptance PROPERTIES
-    LABELS "p06;integration;fault" TIMEOUT 240)
+    LABELS "p06;p07;integration;fault" TIMEOUT 300)
   add_test(NAME p06_postgres_runtime_events COMMAND "${KIARABOT_TARGET_PYTHON}"
     "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_database_test.py"
     --pg-bin "${KIARABOT_TEST_PG_BIN}" --openssl "${KIARABOT_TEST_OPENSSL}"
