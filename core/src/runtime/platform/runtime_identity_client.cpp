@@ -287,7 +287,11 @@ decode_delegation_claims(std::string_view proof, const target::Sha256Digest& lea
       }
       const auto permission_value = *permission_claim;
       const auto kind_value = *kind_claim;
-      if (permission_value <= 0 || permission_value > 46 || kind_value < 0 || kind_value > 15) {
+      // P14m: permissions include P07/P09/P12 wire values 41-50 (log.read=48, audit.read=49).
+      // Bind the cast by the frozen enum maximum before known_permission, and accept the
+      // catalog control scope whose id is a stable contract id, not a UUID.
+      if (permission_value <= 0 || permission_value > static_cast<int>(t::Permission::HealthRead) ||
+          kind_value < 0 || kind_value > static_cast<int>(t::ResourceKind::Catalog)) {
         return unauthenticated();
       }
       const auto permission = static_cast<t::Permission>(permission_value);
@@ -295,11 +299,13 @@ decode_delegation_claims(std::string_view proof, const target::Sha256Digest& lea
         return unauthenticated();
       }
       const auto id = item[2].get<std::string>();
-      if (!canonical_uuid(id)) {
+      const auto kind = static_cast<t::ResourceKind>(kind_value);
+      if (!t::valid_policy_resource(t::ResourceRef{kind, {id}}) ||
+          (kind != t::ResourceKind::Catalog && !canonical_uuid(id)) ||
+          permission_name(permission).empty()) {
         return unauthenticated();
       }
-      scopes.push_back(
-          {{static_cast<t::ResourceKind>(kind_value), {id}}, permission_name(permission)});
+      scopes.push_back({t::ResourceRef{kind, {id}}, permission_name(permission)});
     }
     if (!delegation.contains("client_certificate") ||
         !delegation["client_certificate"].is_string()) {
