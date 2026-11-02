@@ -1263,3 +1263,97 @@ Identity/Runtime 服务主体约定前，不能把 Scheduler 交接标记为多�
 p10_postgres_scheduler。
 
 P12a-2（2026-11-02，契约登记）：受权 `GET /api/v1/health` 使用显式 `health.read`（Permission 50），匿名 live/ready 探针不暴露组件；target Control v1 无 WebSocket 服务端，运维排障/面板恢复以 `/api/v1/operations/...` REST 快照为准。`/logs` 与 `/audit` 是 Control 只读聚合，分别需 `log.read`/`audit.read`（48/49），日志默认 7 天、必要审计最小 180 天；无 owner 权威来源时返回 503，不返回空页冒充无事件。旧 `/plugins/{id}/enable|disable|config` 不映射到实例级启停/配置，实例路径见 doc/06。
+
+## P14c 本地真实备份/恢复与故障 runbook（2026-11-02）
+
+### 状态与范围
+
+- **已实现并本地真实验证**：`scripts/ops/target-backup.sh`、`target-restore.sh`、`target-drill.sh` 与 `scripts/ops/lib.sh`；真 PG16.4 四库 + Host/Adapter SQLite（WAL）+ CA/证书/root key/config/credential 目录的备份/恢复和故障矩阵。演练记录见 `reports/p14c/p14c-local-drill.md`。
+- 仅验证**本机单实例**；Docker Compose、双主机、离站复制和真实生产数据量下的 RTO 未验证，不得宣称已验证。
+- 脚本不自动迁移、不清库、不启动服务；恢复是显式停机例外，必须 `--confirm`。
+- 文档影响：本段仅描述运维脚本/流程，未修改 `api/`、`proto/`、`control/`、`core/` 契约或服务行为。
+
+### 备份
+
+前置（与 P13b 协调）：先完成 drain/停写。建议顺序：Control（停止新流量）→ Adapter → Host → Scheduler/Runtime/Model → Identity（最后）。**所有服务停止且四库无客户端连接后**才允许备份；`target-backup.sh` 会以 `pg_stat_activity` 校验并在有活跃 writer 时失败。
+
+命令（算子环境文件需 `chmod 600`，属于秘密材料）：
+
+```bash
+scripts/ops/target-backup.sh \
+  --root /path/deploy/target \
+  --env /path/operator/target.env \
+  --output /path/backups \
+  --retain 7 --offline
+```
+
+产出 `target-<UTC>-<rand>/`，含：`postgres/{identity,runtime,scheduler,model}.dump`（`pg_dump -Fc` + schema_version/SHA-256）、`sqlite/{host,adapter-outbox[,adapter-actions]}.sqlite`（先 `wal_checkpoint(TRUNCATE)` 再 `VACUUM INTO`，`integrity_check`）、`material.tar.gz`（config/tls/secrets/host credentials）、`manifest.txt`。只有 manifest 写成功才算完整备份；失败会删除临时集，不发布部分备份。
+
+环境文件至少包含：`PG_HOST/PG_PORT/PG_CA_FILE/PG_BIN`、四个 `<SERVICE>_DB`、`<SERVICE>_MIGRATION_ROLE`、`<SERVICE>_MIGRATION_PASSWORD_FILE`、`HOST_SQLITE_PATH`、`ADAPTER_OUTBOX_PATH`、可选 `ADAPTER_ACTIONS_PATH`/`HOST_CREDENTIAL_DIRECTORY`。`PG_CA_FILE` 用于连接 PG 的受信 CA，建议由算子保存在材料目录之外（恢复材料中的 CA 丢失时仍能连库恢复）。
+
+保留/离站/密钥托管是待用户确认策略：脚本默认保留最近 7 份完整集；**不提供异地复制**，必须由算子将备份卷复制到独立受保护位置。
+
+### 恢复
+
+前置：所有服务停止；PG 可达；SQLite 无 `-wal/-shm` 活跃使用者；备份集完整。恢复脚本先做全量预检（manifest、每个 PG dump/SQLite/material 的 SHA-256、SQLite integrity、user_version、可选 `--expect` schema 版本），任一缺失/损坏立即失败，**不触碰 live 数据**；随后按“材料 → SQLite → 四个显式 PG 库”顺序恢复。它不调用迁移、不 drop 数据库、不跨库级联；若中途失败会显式提示“可能已部分恢复”，必须保持停机并按本节人工核对，不得直接启动服务。
+
+```bash
+scripts/ops/target-restore.sh \
+  --root /path/deploy/target \
+  --env /path/operator/target.env \
+  --input /path/backups/target-20261102T121944Z-XXXX \
+  --confirm \
+  --expect identity=14 --expect runtime=14 --expect scheduler=9 --expect model=8 \
+  --verify-sql /path/operator/verify.sql
+```
+
+恢复后校验：四库 `kiarabot.schema_versions` 与备份/`--expect` 一致、关系数 >0、`--verify-sql` 返回 `ok`；SQLite `integrity_check=ok` 且 `user_version` 与 manifest 一致；材料 `tls/ca.pem`、`secrets/model-root-key.hex`（0600）存在。随后按 **PostgreSQL/Identity → Runtime/Scheduler/Model → Host → Adapter → Control** 启动，并执行观察窗口（见下）。
+
+### 启停、健康与降级（与 P13b）
+
+- 启动顺序：PG（迁移仅由显式初始化/迁移命令，不在服务启动时自动迁移）→ Identity → Runtime/Scheduler/Model（owner 私库+在线授权）→ Host（SQLite journal/credential dir）→ Adapter → Control。任一步 readiness 不通过就停在原地，不跳过健康检查。
+- 停止顺序：Control → Adapter → Host → Scheduler/Runtime/Model → Identity；先完成 P13b drain，再确认 owner 私库无活跃 writer，最后执行备份。P13b 的清理/保留（60 秒有界批次、unresolved receipts/inbox/outbox 不提前清理）在停机前自然停止；不要为缩短停机手工删除 journal/outbox。
+- 健康口径：`/health/live` 进程存活；`/health/ready` 就绪（Identity 未就绪时 503）；受权 `/api/v1/health` 为四依赖（identity/runtime/scheduler/model）聚合：单点 Runtime/Scheduler/Model 故障为 **DEGRADED（HTTP 200）**，相关读取返回 UPSTREAM_UNAVAILABLE，不伪造空数据；Identity/凭证链/撤销异常为 **UNHEALTHY（HTTP 503）**。恢复后观察至少一个完整备份周期/健康轮询周期，确认无 DEGRADED/UNHEALTHY 再恢复流量。
+
+### 秘密与轮换
+
+- 备份材料包含 CA/证书/root key/配置/凭据目录；必须与备份卷一起离线保管并限制访问。root key/CA 丢失时优先从最近完整备份恢复材料，再重启依赖服务；不要用新 CA 替换旧材料后直接启动，否则已签发证书/加密状态可能不可读。
+- 轮换顺序（停机窗口）：新 CA/证书/root key 先写入备份/材料副本 → 按依赖顺序重启 Identity → Runtime/Scheduler/Model → Host → Adapter → Control；旧材料保留到观察窗口结束。模型 provider secret 轮换只通过受控接口/离线流程，Panel/日志不回显密钥。
+- 每次轮换前做一次完整 `--offline` 备份，并记录 manifest/SHA-256；密钥托管方式（KMS/离线介质/分片）待用户确认，脚本不假设。
+
+### 故障处理
+
+| 故障 | 处置 |
+|---|---|
+| 单 PG 库丢失/损坏 | 保持全部服务停机；用最近完整备份执行 `target-restore.sh --confirm`（会恢复四库+SQLite+材料并校验版本）；不得只恢复一库后直接启动，也不得让服务自动迁移。 |
+| 单服务停机 | 其他服务可继续；该服务恢复后按启动顺序/readiness 归队。备份必须在所有 writer 停止后做，单服务未停时脚本会显式失败而不是做部分备份。 |
+| 证书/root key 缺失 | 立即停止依赖服务；从备份恢复 `tls/`/`secrets/`（保持 0600、非符号链接）；确认文件完整后再启动。禁止用空/新密钥顶替。 |
+| Host journal 损坏 | 停止 Host/Adapter；从备份恢复 Host SQLite（脚本会 integrity_check），不要删除 live `-wal/-shm` 后手工拼库；Adapter outbox/.actions 同步恢复，未终态记录不得被重放。 |
+| 部分恢复 | 只接受“全部组件预检通过后完整恢复”。若脚本中途失败或人工只拷贝了部分文件：保持停机、核对 manifest/`schema_versions`/SQLite integrity，重新完整恢复；**禁止**启动服务或用迁移“补齐”。 |
+| 备份介质损坏 | 换上一份完整备份集；保留损坏集用于审计，不用部分文件拼装。 |
+
+### 演练与检查
+
+```bash
+bash scripts/ops/tests/ops_scripts_test.sh   # shell syntax/help/safety gates
+bash scripts/ops/target-drill.sh             # 真 PG16.4 + SQLite 本地全矩阵（约 1 分钟）
+```
+
+演练脚本使用 owned 临时集群和临时目录，不触碰仓库/真实部署；需要 `PG16_BIN`、`KIARABOT_PG_INITIALIZE`、`OPENSSL_BIN`/PATH、`sqlite3`。实测（本地小数据量）**RPO=0s（停写备份）、RTO≈4.6s（最近一次；范围 4.6–8.5s）**，详见 `reports/p14c/p14c-local-drill.md`。生产数据量、Docker/双主机与离站 RTO 仍未验证。
+
+### P14 范围决定对齐与验收分类（2026-11-02 用户确认）
+
+- **默认部署形态是单主机 Docker Compose**：PG + 控制面 + 执行面同机，但每个服务独立容器/TLS/凭据/DB 权限边界；两主机为可选，跨主机断网/重连演练**延期并单独记录**（当前未验证）。
+- **PostgreSQL 镜像**：生产目标 `postgres:16.4-bookworm`（复现 P00），发布时使用 PG16 当前修订并固定 digest；full-locked CI 保留 P00 源码构建。本机无 Docker 时，本地演练使用 P00 源码构建 PG16.4（server_version_num=160004）；**官方镜像 digest 与容器生命周期验证待 Docker 环境**。备份/恢复脚本只使用 libpq/pg_dump/pg_restore 公共语义，不依赖源码构建特有能力。
+- **秘密**：以只读文件挂载为主，按需增加 Docker secrets；本期人工轮换，KMS/热轮换延期。轮换流程见上节，停机窗口内按 Identity→Runtime/Scheduler/Model→Host→Adapter→Control 顺序重启并验证旧凭据失效、新凭据可用。演练脚本已验证一次凭据替换（旧密码被拒/新密码用于备份成功）；**真实服务进程的按序重启需在单机 Compose 验收补做**。
+- **验收分类**：
+
+| 类别 | 状态 |
+|---|---|
+| 单机数据层备份/恢复/故障演练（P00 PG16.4 + SQLite） | 本机实测 PASS（RPO=0s，RTO≈4.6–12.1s，小数据量；见 reports/p14c） |
+| 单主机 Docker Compose（默认） | 未验证（本机无 Docker；启动顺序/健康口径已文档化） |
+| 两主机 + 跨主机断网/重连 | 延期并单独记录 |
+| 远端 CI | 未运行远端 CI；P14b 入口存在 |
+| 正式发布 | 未就绪（官方镜像 digest、主机/秘密托管、保留离站、Compose 验收待完成） |
+
+- **仍需用户确认**：备份保留周期、离站复制位置/频率、密钥托管方式（KMS/离线/分片）；脚本默认只保留本地最近 7 份完整集，不提供异地复制。
