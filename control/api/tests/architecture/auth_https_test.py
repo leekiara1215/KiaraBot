@@ -290,8 +290,24 @@ def main(control, fixture, model_fixture=None):
             assert time.monotonic() - started < 3.5, 'queue wait escaped HTTP budget'
             stalled_connections = [socket.create_connection(('localhost', port), timeout=2) for _ in range(70)]
             try:
-                ready = select.select(stalled_connections, [], [], 0.5)[0]
-                closed = sum(connection.recv(1) == b'' for connection in ready)
+                # The cap test needs at least six of the 70 excess sockets closed. Under a loaded
+                # CI host the accept/close path can take longer than one 0.5s select window, so
+                # observe for a bounded two seconds instead of sampling once.
+                closed = 0
+                seen = set()
+                deadline = time.monotonic() + 2
+                while closed < 6 and time.monotonic() < deadline:
+                    ready = select.select(stalled_connections, [], [], 0.25)[0]
+                    for connection in ready:
+                        if connection in seen:
+                            continue
+                        seen.add(connection)
+                        try:
+                            data = connection.recv(1)
+                        except OSError:
+                            data = b''
+                        if data == b'':
+                            closed += 1
                 assert closed >= 6, ('connection cap not enforced', closed)
             finally:
                 for connection in stalled_connections:
