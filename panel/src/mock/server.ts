@@ -17,7 +17,7 @@ const base = {
   '/models': { items: [{ id: 'model-primary', name: 'Primary provider', state: 'READY' }], page: {} } satisfies Schemas['ModelPage'],
   '/groups': { items: [{ id: 'group-01', name: 'Operators', roles: ['operator'], permissions: ['logs.read', 'tasks.read'] }], page: {} } satisfies Schemas['GroupPage'],
   '/users': { items: [{ id: 'user-01', name: 'Administrator', groups: ['group-01'], roles: ['admin'], permissions: ['*'] }], page: {} } satisfies Schemas['UserPage'],
-  '/tasks': { items: [{ id: 'task-01', name: 'Daily digest', state: 'SCHEDULED' }], page: {} } satisfies Schemas['TaskPage'],
+  '/tasks': { items: [{ id: 'task-01', name: 'Daily digest', state: 'SCHEDULED_TASK_PENDING', created_at: '2026-10-30T02:00:00Z' }], page: {} } satisfies Schemas['TaskPage'],
   '/audit': { items: [{ id: 'audit-01', occurred_at: '2026-10-30T02:00:00Z', actor: 'admin', action: 'login', resource: 'control-panel' }], page: {} } satisfies Schemas['AuditPage'],
 };
 const principalItems: Schemas['TargetIdentityPrincipalSummary'][] = [
@@ -136,6 +136,33 @@ export class MockServer {
       return json({ binding: { account_id: accountId,
         adapter_instance_id: body.binding?.adapter_instance_id ?? 'instance-mock', version: '1' } } as never);
     }
+    const pluginStateMatch = /^\/installations\/([^/]+)\/instances\/([^/]+)\/plugin-state$/.exec(path);
+    if (pluginStateMatch && String(init?.method ?? 'GET').toUpperCase() === 'PUT') {
+      const body = JSON.parse(String(init?.body ?? '{}')) as Schemas['TargetInstancePluginStateRequest'];
+      const now = new Date().toISOString();
+      return json({
+        instance: fixtures.instances[0],
+        runtime: { desired: body.desired, desired_config_version: '1', version: '2', observed_at: now },
+        host: { host_id: 'host-local-01', registered: true, process_outcome: 'EXECUTION_UNKNOWN', observed_at: now },
+        plugin: { apply_state: 'CONFIG_APPLY_PENDING', applied_config_version: '1', observed_at: now },
+        operation: { owner_service: 'runtime', operation_id: 'operation-plugin-state-01' },
+      } as Schemas['TargetInstancePluginStateResponse']);
+    }
+    const instanceConfigurationMatch = /^\/installations\/([^/]+)\/instances\/([^/]+)\/configuration$/.exec(path);
+    if (instanceConfigurationMatch) {
+      const now = new Date().toISOString();
+      const body = String(init?.method ?? 'GET').toUpperCase() === 'PUT'
+        ? JSON.parse(String(init?.body ?? '{}')) as Schemas['TargetInstanceConfigurationRequest']
+        : undefined;
+      return json({
+        runtime: { configuration: body?.configuration ?? { greeting: '你好' },
+          desired_config_version: '2', delivery_id: 'delivery-mock-01',
+          apply_state: 'CONFIG_APPLY_PENDING', observed_at: now },
+        host: { host_id: 'host-local-01', registered: true, process_outcome: 'EXECUTION_UNKNOWN', observed_at: now },
+        plugin: { apply_state: 'CONFIG_APPLY_PENDING', applied_config_version: '1', observed_at: now },
+        operation: { owner_service: 'runtime', operation_id: 'operation-config-01' },
+      } as Schemas['TargetInstanceConfigurationResponse']);
+    }
     const instanceConfigMatch = /^\/instances\/([^/]+)\/config$/.exec(path);
     if (instanceConfigMatch) {
       const config = {
@@ -171,8 +198,8 @@ export class MockServer {
         checked_at: new Date().toISOString() } satisfies Schemas['TargetIdentityListPrincipalsResponse']);
     }
     if (path === '/tasks' && url.searchParams.has('scope')) {
-      return json({ items: [{ id: 'task-mock-01', name: '定时摘要', state: 'PENDING' }],
-        page: { page_size: 20 } } satisfies Schemas['TaskPage']);
+      return json({ items: [{ id: 'task-mock-01', name: '定时摘要', state: 'SCHEDULED_TASK_PENDING',
+        created_at: '2026-10-30T02:00:00Z' }], page: { page_size: 20 } } satisfies Schemas['TaskPage']);
     }
     if (path === '/installations' && String(init?.method ?? 'GET').toUpperCase() === 'POST') {
       const body = JSON.parse(String(init?.body ?? '{}')) as Schemas['TargetRuntimeCreateInstallationRequest'];

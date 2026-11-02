@@ -80,6 +80,9 @@ export const endpoints = {
   principals: operation('/principals', 'get'),
   createInstallation: operation('/installations', 'post'),
   createInstance: operation('/installations/{installationId}/instances', 'post'),
+  instancePluginState: operation('/installations/{installationId}/instances/{instanceId}/plugin-state', 'put'),
+  instanceConfiguration: operation('/installations/{installationId}/instances/{instanceId}/configuration', 'get'),
+  instanceConfigurationUpdate: operation('/installations/{installationId}/instances/{instanceId}/configuration', 'put'),
   modelUpdate: operation('/models/{modelId}', 'put'),
   modelSecret: operation('/models/{modelId}/secret', 'put'),
   actionMetadata: operation('/actions/metadata', 'get'),
@@ -122,6 +125,14 @@ export type TargetActionPolicyUpdateRequest = Schemas['TargetRuntimeUpdateAction
 export type TargetResourceScope = Schemas['TargetResourceScope'];
 export type TargetCatalogRef = Schemas['TargetCatalogRef'];
 export type TargetTaskPage = Schemas['TaskPage'];
+export type TaskSummary = Schemas['TaskSummary'];
+export type TargetInstancePluginStateRequest = Schemas['TargetInstancePluginStateRequest'];
+export type TargetInstancePluginStateResponse = Schemas['TargetInstancePluginStateResponse'];
+export type TargetInstanceConfigurationRequest = Schemas['TargetInstanceConfigurationRequest'];
+export type TargetInstanceConfigurationResponse = Schemas['TargetInstanceConfigurationResponse'];
+export type TargetInstanceFactRuntime = Schemas['TargetInstanceFactRuntime'];
+export type TargetInstanceFactHost = Schemas['TargetInstanceFactHost'];
+export type TargetInstanceFactPlugin = Schemas['TargetInstanceFactPlugin'];
 export type TargetPrincipalPage = Schemas['TargetIdentityListPrincipalsResponse'];
 export type TargetPrincipalSummary = Schemas['TargetIdentityPrincipalSummary'];
 export type TargetCreateInstallationRequest = Schemas['TargetRuntimeCreateInstallationRequest'];
@@ -254,6 +265,19 @@ export class ApiClient {
   updateInstanceConfig(instanceId: string, input: TargetInstanceConfigUpdateRequest) {
     return this.call<Schemas['TargetRuntimeUpdateConfigResponse']>(endpoints.instanceConfigUpdate, { param: instanceId, body: input });
   }
+  setInstancePluginState(installationId: string, instanceId: string, input: TargetInstancePluginStateRequest) {
+    return this.call<TargetInstancePluginStateResponse>(endpoints.instancePluginState, {
+      params: { installationId, instanceId }, body: input });
+  }
+  instanceConfiguration(installationId: string, instanceId: string) {
+    return this.call<TargetInstanceConfigurationResponse>(endpoints.instanceConfiguration, {
+      params: { installationId, instanceId } });
+  }
+  updateInstanceConfiguration(installationId: string, instanceId: string,
+                              input: TargetInstanceConfigurationRequest) {
+    return this.call<TargetInstanceConfigurationResponse>(endpoints.instanceConfigurationUpdate, {
+      params: { installationId, instanceId }, body: input });
+  }
   setInstanceDesiredState(instanceId: string, input: TargetInstanceDesiredStateRequest) {
     return this.call<Schemas['TargetRuntimeSetDesiredStateResponse']>(endpoints.instanceDesiredState, { param: instanceId, body: input });
   }
@@ -263,7 +287,10 @@ export class ApiClient {
   models(token?: string, pageSize?: number) { return this.list<GenericResource>(endpoints.models, { token, pageSize }); }
   groups(token?: string, pageSize?: number) { return this.list<Group>(endpoints.groups, { token, pageSize }); }
   users(token?: string, pageSize?: number) { return this.list<User>(endpoints.users, { token, pageSize }); }
-  tasks(token?: string, pageSize?: number) { return this.list<GenericResource>(endpoints.tasks, { token, pageSize }); }
+  tasks(token?: string, pageSize?: number) { return this.list<TaskSummary>(endpoints.tasks, { token, pageSize }); }
+  // P12e contract mapping: logs/audit are server-ordered by occurred_at + stable ID and the
+  // page token is opaque. The panel must pass the token through unchanged and never re-sort or
+  // merge pages locally; live Control still returns 503 until P12e's authoritative source lands.
   logs(token?: string, pageSize?: number) { return this.list<LogEntry>(endpoints.logs, { token, pageSize }); }
   audit(token?: string, pageSize?: number) { return this.list<AuditEntry>(endpoints.audit, { token, pageSize }); }
   validatePlugin(manifest: PluginManifest) {
