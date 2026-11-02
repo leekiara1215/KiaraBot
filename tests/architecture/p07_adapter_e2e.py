@@ -129,8 +129,102 @@ def write_manifest(path: Path, capabilities=None) -> None:
         'api_version': 'kiarabot.plugin.v1', 'runtime': 'python-rpc',
         'entrypoint': 'p07d_subject:create', 'isolation': 'process', 'ordered': False,
         'capabilities': ['event.message.received'] if capabilities is None else capabilities,
-        'permissions': ['message.read', 'message.send'],
+        'permissions': ['message.read', 'message.send', 'member.mute', 'member.kick',
+                        'request.approve'],
     }))
+
+
+def write_child_plugin(directory: Path) -> tuple[Path, Path]:
+    """A real SDK plugin child process: first event submits send_message, second a mute.
+
+    It writes action ids to P06G_STATE so the parent can observe the real PluginBridge submissions.
+    """
+    directory.mkdir(mode=0o700, exist_ok=True)
+    state = directory / 'actions.json'
+    module = directory / 'p06g_subject.py'
+    module.write_text("""import json
+import os
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+
+from kiarabot_sdk import Plugin
+
+class Subject(Plugin):
+    async def on_start(self, context):
+        self.context = context
+        self.count = 0
+
+    async def on_event(self, event, context):
+        import kiarabot.v1.actions_pb2 as actions
+        import kiarabot.v1.common_pb2 as common
+        self.count += 1
+        envelope = actions.ActionEnvelope(
+            action_id=os.urandom(16).hex(), idempotency_key=os.urandom(16).hex(),
+            trace_id=os.urandom(16).hex(),
+            target_source=common.SourceRef(
+                adapter_id=os.environ['P06G_ADAPTER_ID'],
+                adapter_instance_id=os.environ['P06G_ADAPTER_ID'],
+                account_id=os.environ['P06G_ACCOUNT']),
+            target=common.Subject(conversation_id='20001'))
+        envelope.deadline.FromDatetime(datetime.now(timezone.utc) + timedelta(seconds=30))
+        if self.count == 1:
+            envelope.send_message.conversation.id = '20001'
+            envelope.send_message.conversation.account_id = os.environ['P06G_ACCOUNT']
+            envelope.send_message.conversation.type = common.ConversationRef.GROUP
+            envelope.send_message.message.plain_text = 'managed-child'
+            kind = 'send_message'
+        else:
+            envelope.mute_member.group_id = '20001'
+            envelope.mute_member.user_id = '10002'
+            envelope.mute_member.duration_seconds = 60
+            kind = 'mute_member'
+        result = await context.submit_action(envelope)
+        Path(os.environ['P06G_STATE']).open('a').write(
+            json.dumps({'action_id': result.action_id, 'kind': kind}) + '\\n')
+
+def create():
+    return Subject()
+""")
+    runner = directory / 'run_child.py'
+    runner.write_text("""import asyncio
+import importlib
+import logging
+import os
+import signal
+import sys
+import traceback
+
+logging.basicConfig(level=logging.DEBUG)
+
+from kiarabot_sdk.runtime import Options, Plugin, Runner, load_manifest
+from kiarabot_sdk.__main__ import options_from_environment
+
+async def main():
+    manifest = load_manifest(sys.argv[1])
+    module, factory = manifest.entrypoint.split(':')
+    plugin = getattr(importlib.import_module(module), factory)()
+    options = options_from_environment()
+    stop = asyncio.Event()
+    loop = asyncio.get_running_loop()
+    for signum in (signal.SIGINT, signal.SIGTERM):
+        loop.add_signal_handler(signum, stop.set)
+    await Runner(manifest, plugin, options).run(stop)
+
+try:
+    asyncio.run(main())
+except BaseException:
+    traceback.print_exc()
+    raise
+""")
+    manifest = directory / 'plugin.json'
+    manifest.write_text(json.dumps({
+        'id': 'p06g.child.plugin', 'name': 'P06g Child Plugin', 'version': '1.0.0',
+        'api_version': 'kiarabot.plugin.v1', 'runtime': 'python-rpc',
+        'entrypoint': 'p06g_subject:create', 'isolation': 'process', 'ordered': False,
+        'capabilities': ['event.message.received'],
+        'permissions': ['message.read', 'message.send', 'member.mute'],
+    }))
+    return manifest, state
 
 
 async def async_main(args) -> int:
@@ -143,6 +237,9 @@ async def async_main(args) -> int:
     root.chmod(0o700)
     process = None
     adapter_process = None
+    child_plugin = None
+    child_manifest = None
+    child_state = None
     onebot = await FakeOneBot().start()
     tasks = []
     try:
@@ -238,7 +335,8 @@ async def async_main(args) -> int:
                     # explicitly so the platform-response matrix is deterministic.
                     plugin_events.append(event.event_id)
 
-                async def submit(self, *, cancel_after_dispatch=False):
+                async def submit(self, *, cancel_after_dispatch=False, payload='send_message',
+                                 conversation=None):
                     import kiarabot.v1.actions_pb2 as actions
                     envelope = actions.ActionEnvelope(
                         action_id=str(uuid.uuid4()), idempotency_key=str(uuid.uuid4()),
@@ -249,12 +347,19 @@ async def async_main(args) -> int:
                     envelope.target_source.account_id = ACCOUNT
                     envelope.target_source.adapter_instance_id = ADAPTER_INSTANCE
                     self.submits += 1
-                    conversation = f'2000{self.submits}'
+                    conversation = conversation or f'2000{self.submits}'
                     envelope.target.conversation_id = conversation
-                    envelope.send_message.conversation.id = conversation
-                    envelope.send_message.conversation.account_id = ACCOUNT
-                    envelope.send_message.conversation.type = common.ConversationRef.GROUP
-                    envelope.send_message.message.plain_text = 'e2e'
+                    if payload == 'send_message':
+                        envelope.send_message.conversation.id = conversation
+                        envelope.send_message.conversation.account_id = ACCOUNT
+                        envelope.send_message.conversation.type = common.ConversationRef.GROUP
+                        envelope.send_message.message.plain_text = 'e2e'
+                    elif payload == 'mute_member':
+                        envelope.mute_member.group_id = conversation
+                        envelope.mute_member.user_id = '10002'
+                        envelope.mute_member.duration_seconds = 60
+                    else:
+                        raise AcceptanceFailure('unsupported payload ' + payload)
                     result = await self.context.submit_action(envelope)
                     plugin_actions.append(result.action_id)
                     if cancel_after_dispatch:
@@ -376,10 +481,29 @@ async def async_main(args) -> int:
                                        ).fetchone()[0] >= 1,
                             'adapter platform event was not ACKed by Runtime')
 
+                # ---- P06g: one policy-gated Action on the same real chain (mute) ----
+                psql("INSERT INTO kiarabot.action_policies(account_id,mute_enabled,"
+                     "kick_enabled,allowed_group_ids,mute_daily_budget,kick_daily_budget,"
+                     "version,updated_at) VALUES (" + fixture.quote_sql(ACCOUNT) +
+                     ",true,true,ARRAY['20001'],10,10,1,"
+                     "(extract(epoch from clock_timestamp())*1000000000)::bigint-1000000000) "
+                     "ON CONFLICT (account_id) DO UPDATE SET mute_enabled=true,"
+                     "allowed_group_ids=ARRAY['20001'],mute_daily_budget=10,"
+                     "updated_at=EXCLUDED.updated_at")
+                mute_action = await subject.submit(payload='mute_member', conversation='20001')
+                await p06.wait_until(lambda: action_state(mute_action) is not None,
+                                     'policy Action accepted', 20)
+                await p06.wait_until(lambda: any(call.get('action') == 'set_group_ban'
+                                                 for call in onebot.calls),
+                                     'adapter applied mute policy Action', 30)
+                mute = await wait_state(mute_action)
+                require(mute[:2] == ('1', '1'),
+                        f'policy mute Action not KNOWN_SUCCEEDED: {mute}')
+
                 # ---- platform failure: retcode maps to known-failed, never success ----
                 onebot.mode = 'platform_fail'
                 second = await subject.submit()
-                await p06.wait_until(lambda: len(plugin_actions) >= 2,
+                await p06.wait_until(lambda: len(plugin_actions) >= 3,
                                      'second plugin Action', 30)
                 failed = await wait_state(second)
                 require(failed[:2] == ('2', '2'),
@@ -395,12 +519,12 @@ async def async_main(args) -> int:
                                         ).stdout.decode().strip() or '0')
                 require(events_after == events_before,
                         'duplicate platform frame created a second Runtime event')
-                require(len(plugin_actions) == 2,
+                require(len(plugin_actions) == 3,
                         'duplicate platform frame created another Action')
 
                 # ---- cancellation after dispatch: CONFLICT, no fake success ----
                 third = await subject.submit(cancel_after_dispatch=True)
-                await p06.wait_until(lambda: len(plugin_actions) >= 3,
+                await p06.wait_until(lambda: len(plugin_actions) >= 4,
                                      'third plugin Action', 30)
                 await p06.wait_until(lambda: bool(cancel_errors),
                                      'post-dispatch cancel conflict', 30)
@@ -418,7 +542,7 @@ async def async_main(args) -> int:
                                      'adapter platform reconnect', 30)
                 before = len(onebot.calls)
                 fourth = await subject.submit()
-                await p06.wait_until(lambda: len(plugin_actions) >= 4,
+                await p06.wait_until(lambda: len(plugin_actions) >= 5,
                                      'Action after reconnect', 30)
                 reconnected = await wait_state(fourth)
                 require(reconnected[0] == '1',
@@ -468,6 +592,74 @@ async def async_main(args) -> int:
                                      'post-reconnect delivery target', 20)
                 await p06.wait_until(lambda: reconnect_event in plugin_events,
                                      'post-reconnect SDK plugin delivery', 20)
+
+                # ---- P06g: real managed SDK plugin child process on the same bus ----
+                await stop_plugin(sdk_stop, sdk_task)
+                await asyncio.sleep(0.3)
+                plugin_dir = root / 'p06g-child'
+                child_manifest, child_state = write_child_plugin(plugin_dir)
+                generation_before = plugin_generation()
+                child_env = {key: value for key, value in os.environ.items()
+                             if not key.startswith(('PLUGIN_', 'P06G_'))}
+                child_env.update(
+                    PLUGIN_CORE_ENDPOINT=endpoint,
+                    PLUGIN_TLS_ROOT=str(ca_path),
+                    KIARABOT_PLUGIN_BOOTSTRAP=PLUGIN_BOOTSTRAP,
+                    PLUGIN_INSTANCE_ID=PLUGIN_INSTANCE,
+                    PLUGIN_IO_TIMEOUT='5',
+                    PLUGIN_HOOK_TIMEOUT='5',
+                    PLUGIN_HEARTBEAT_INTERVAL='0.2',
+                    PLUGIN_RETRY_DELAY='0.1',
+                    PLUGIN_LEASE_RENEW_INTERVAL='0.2',
+                    P06G_STATE=str(child_state),
+                    P06G_ADAPTER_ID=ADAPTER_INSTANCE,
+                    P06G_ACCOUNT=ACCOUNT,
+                    PYTHONPATH=os.pathsep.join([
+                        str(plugin_dir), str(repo / 'sdk/python/src'),
+                        str(repo / 'sdk/python/build/generated')]),
+                    PYTHONUNBUFFERED='1')
+                child_log = (root / 'child-plugin.log').open('wb')
+                child_plugin = await asyncio.create_subprocess_exec(
+                    sys.executable, str(plugin_dir / 'run_child.py'), str(child_manifest),
+                    cwd=repo, env=child_env, stdout=child_log, stderr=child_log)
+                try:
+                    await p06.wait_until(lambda: plugin_generation() > generation_before,
+                                         'managed child plugin registration', 25, interval=0.1)
+                except BaseException:
+                    child_log.flush()
+                    print('managed child plugin log:', (root / 'child-plugin.log').read_text(
+                        errors='replace')[-1500:], file=sys.stderr)
+                    raise
+
+                def child_actions():
+                    if child_state is None or not child_state.is_file():
+                        return []
+                    return [json.loads(line) for line in child_state.read_text().splitlines()
+                            if line.strip()]
+                await onebot.send_event(message_event(70005, 'managed-send'))
+                await p06.wait_until(lambda: len(child_actions()) >= 1,
+                                     'managed child submitted send Action', 25)
+                await p06.wait_until(
+                    lambda: action_state(child_actions()[0]['action_id']) is not None,
+                    'managed child send Action accepted', 20)
+                send_state = await wait_state(child_actions()[0]['action_id'])
+                require(send_state[:2] == ('1', '1'),
+                        f'managed child send Action failed: {send_state}')
+                await onebot.send_event(message_event(70006, 'managed-mute'))
+                await p06.wait_until(lambda: len(child_actions()) >= 2,
+                                     'managed child submitted mute Action', 25)
+                mute_id = child_actions()[1]['action_id']
+                await p06.wait_until(lambda: action_state(mute_id) is not None,
+                                     'managed child mute Action accepted', 20)
+                child_mute = await wait_state(mute_id)
+                require(child_mute[:2] == ('1', '1'),
+                        f'managed child policy Action failed: {child_mute}')
+                require(len({entry['action_id'] for entry in child_actions()}) == len(
+                    child_actions()), 'managed child reused an Action id')
+                require(any(call.get('action') == 'set_group_ban' for call in onebot.calls),
+                        'managed child policy Action did not reach the platform')
+                require(len(child_actions()) == 2,
+                        f'managed child submitted unexpected Actions: {child_actions()}')
             finally:
                 adapter_output = b''
                 if adapter_process.returncode is None:
@@ -499,6 +691,17 @@ async def async_main(args) -> int:
                     await asyncio.wait_for(task, 5)
                 except (asyncio.CancelledError, asyncio.TimeoutError, Exception):
                     pass
+        if child_plugin is not None and child_plugin.returncode is None:
+            child_plugin.terminate()
+            try:
+                await asyncio.wait_for(child_plugin.wait(), 10)
+            except asyncio.TimeoutError:
+                child_plugin.kill()
+                await child_plugin.wait()
+            child_log_path = root / 'child-plugin.log'
+            if child_log_path.is_file():
+                require(PLUGIN_BOOTSTRAP.encode() not in child_log_path.read_bytes(),
+                        'managed child plugin logged its bootstrap credential')
         if adapter_process is not None and adapter_process.returncode is None:
             adapter_process.kill()
             await adapter_process.wait()
