@@ -63,3 +63,6 @@ cookies.json
 
 # ---- 本地分析记录（不入库）----
 reports/analysis/
+
+# ---- 仓库内 AI 并行开发 worktree（不入库）----
+.worktrees/
