@@ -752,8 +752,9 @@ void model_management_surface() {
   FakeDelegation delegation;
   FakeRuntime runtime;
   FakeModel model;
-  target::OwnerGateway gateway{delegation, runtime, nullptr, nullptr, nullptr, nullptr,
-                                  nullptr, &model};
+  FakeOperations operations;
+  target::OwnerGateway gateway{delegation, runtime, nullptr,     nullptr,
+                               nullptr,    nullptr, &operations, &model};
   auto update = request("PUT", "/api/v1/models/model-1");
   update.headers["idempotency-key"] = "model-idem-1";
   update.body =
@@ -784,12 +785,13 @@ void model_management_surface() {
   require(listed && listed->status == 200 && listed->body.find("\"models\"") != std::string::npos &&
               model.list_request.scope().resources_size() == 1,
           "model metadata list forwarded");
-  auto unsupported_operation = gateway.handle(
+  auto runtime_operation = gateway.handle(
       request("GET", "/api/v1/operations/runtime/operation-1?scope=" + model_scope_json()));
-  require(unsupported_operation && unsupported_operation->status == 503 &&
-              unsupported_operation->body.find("\"code\":\"CAPABILITY_NOT_SUPPORTED\"") !=
-                  std::string::npos,
-          "unified operation owner branch fails closed for unwired owners");
+  require(runtime_operation && runtime_operation->status == 200 &&
+              runtime_operation->body.find("\"state\":\"OPERATION_RUNNING\"") !=
+                  std::string::npos &&
+              operations.owner == "runtime",
+          "P12c-4 unified operation branch routes runtime through OperationPort");
 
   auto disable = request("POST", "/api/v1/models/model-1/disable");
   disable.headers["idempotency-key"] = "model-idem-2";
@@ -848,15 +850,15 @@ void model_management_surface() {
       request("GET", "/api/v1/operations/model/operation-1" + model_scope_query());
   auto operation = gateway.handle(operation_request);
   require(operation && operation->status == 200 &&
-              operation->body.find("\"state\":\"OPERATION_SUCCEEDED\"") != std::string::npos,
+              operation->body.find("\"state\":\"OPERATION_RUNNING\"") != std::string::npos,
           "model get operation forwarded");
   require(delegation.permission == wire::PERMISSION_RESOURCE_READ,
           "operation delegation is resource.read");
 
   FakeModel failing;
   failing.failure = target::OwnerFailure{wire::CONFLICT, false};
-  target::OwnerGateway conflicted{delegation, runtime, nullptr, nullptr, nullptr,
-                                       nullptr, nullptr, &failing};
+  target::OwnerGateway conflicted{delegation, runtime, nullptr, nullptr,
+                                  nullptr,    nullptr, nullptr, &failing};
   auto conflict = request("PUT", "/api/v1/models/model-1");
   conflict.headers["idempotency-key"] = "model-idem-6";
   conflict.body =
