@@ -10,6 +10,10 @@
 namespace kiarabot::core::target {
 
 class EventRepository;
+class ActionRepository;
+class ActionQuotaRepository;
+class ActionPolicyRepository;
+class ActionEvidenceRepository;
 
 // Repositories borrow their UoW lifetime, never commit and use its authoritative database UTC.
 // Empty optional means absent; faults are Failure (Unavailable/Conflict/Internal), never absence.
@@ -153,6 +157,12 @@ public:
   // Event inbox, watermark and per-instance delivery ledger share this UoW so acceptance,
   // claim, ACK and retry state commit atomically (P06). Injected by the PG adapter.
   virtual EventRepository& events() = 0;
+  // P07 authoritative Action records and their quota/policy/evidence relations. All four
+  // participate in this same Runtime UoW; dispatch frames are written after commit, never here.
+  virtual ActionRepository& actions() = 0;
+  virtual ActionQuotaRepository& action_quota() = 0;
+  virtual ActionPolicyRepository& action_policies() = 0;
+  virtual ActionEvidenceRepository& action_evidence() = 0;
 };
 class SchedulerUnitOfWork : public UnitOfWork {
 public:

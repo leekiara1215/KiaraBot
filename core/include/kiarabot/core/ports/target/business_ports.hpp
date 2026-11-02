@@ -8,6 +8,7 @@
 #include <variant>
 #include <vector>
 
+#include "kiarabot/core/domain/target/action_rules.hpp"
 #include "kiarabot/core/domain/target/event_delivery.hpp"
 #include "kiarabot/core/ports/target/unit_of_work.hpp"
 
@@ -93,26 +94,101 @@ public:
   // Delete terminal events (and their targets/attempts) past retain_until; bounded batch.
   virtual Outcome<std::size_t> prune_expired(TimePoint now, std::size_t limit) = 0;
 };
-enum class ActionKind {
-  SendMessage,
-  ReactMessage,
-  DeleteMessage,
-  MuteMember,
-  KickMember,
-  ApproveRequest
+// Draft P07a persistence ports. The Runtime application owns policy/authorization; these ports
+// only adjudicate durable row state in the caller's Runtime UoW (no network, no second commit).
+// All temporal predicates are rechecked against database UTC inside the implementation; TimePoint
+// arguments are application samples, never lease authorities.
+struct ActionCapacity {
+  // Trusted deployment limits, never request-controlled.
+  std::size_t max_pending_per_owner = 1024;
+  std::size_t max_records = 100000;
 };
-struct QuotaReservation {
-  std::string action_id;
-  InstanceId owner;
-  ActionKind kind;
-  ConversationKey conversation;
-  TimePoint accepted_at;
+struct ActionPageRequest {
+  std::size_t limit = 20;
+  std::string after_action_id;
 };
+struct ActionControlQuery {
+  ResourceScope scope;
+  std::optional<ActionState> state;
+  std::optional<ActionKind> kind;
+  ActionPageRequest page;
+};
+struct ActionTerminalReceipt {
+  ActionReceiptDisposition disposition = ActionReceiptDisposition::Recorded;
+  ActionRecord record;
+  bool evidence_appended = false;
+};
+struct ActionEvidenceRecord {
+  ActionId action_id;
+  AttemptId dispatch_attempt_id;
+  InstanceId adapter_instance;
+  ActionEvidenceKind kind = ActionEvidenceKind::Unknown;
+  ExecutionOutcome execution_outcome = ExecutionOutcome::Unknown;
+  std::optional<ErrorCode> error_code;
+  std::optional<std::string> platform_reference;
+  TimePoint observed_at;
+  TimePoint received_at;
+  TimePoint retain_until;
+};
+
+// One authoritative Action row per (owner, idempotency key). insert is create-only; the caller
+// resolves idempotent replay/conflict through find_by_owner_key before deciding to insert. Quota
+// admission and the Action row are part of the same UoW and fixed lock order.
+class ActionRepository {
+public:
+  virtual ~ActionRepository() = default;
+  virtual Outcome<std::optional<ActionRecord>> find_by_id(const ActionId& action_id) = 0;
+  virtual Outcome<std::optional<ActionRecord>>
+  find_by_owner_key(const InstanceId& owner, std::string_view idempotency_key) = 0;
+  // Inserts the admitted row; a duplicate (owner,idempotency_key)/(dispatch_attempt_id) or
+  // capacity exhaustion is never partially written and surfaces Conflict/RateLimited.
+  virtual Outcome<ActionRecord> insert(const ActionRecord& record, ActionCapacity capacity) = 0;
+  // Conditional update: only Accepted+NotDispatched and now<deadline; persists attempt id,
+  // sequence and dispatched instance atomically (Conflict otherwise).
+  virtual Status mark_dispatched(const ActionId& action_id, const AttemptId& attempt_id,
+                                 const InstanceId& adapter_instance, TimePoint now) = 0;
+  // Applies the domain terminal/evidence decision; duplicate/conflict/late results never rewrite
+  // a known terminal row. The returned record is the persisted authoritative snapshot.
+  virtual Outcome<ActionTerminalReceipt> record_terminal(const ActionRecord& current,
+                                                         const ActionTerminalResult& result,
+                                                         std::optional<AttemptId> attempt_id,
+                                                         std::optional<InstanceId> adapter_instance,
+                                                         TimePoint now) = 0;
+  // Cancel only when Accepted+NotDispatched; dispatched/terminal rows Conflict and keep state.
+  virtual Status cancel(const ActionId& action_id, TimePoint now) = 0;
+  // Claims up to limit accepted actions whose deadline elapsed; each row becomes terminal in the
+  // same conditional update and the returned records carry the authoritative outcome.
+  virtual Outcome<std::vector<ActionRecord>> expire_due(std::size_t limit, TimePoint now) = 0;
+  virtual Outcome<std::vector<ActionRecord>> list_owner(const InstanceId& owner,
+                                                        const ActionPageRequest& page) = 0;
+  virtual Outcome<std::vector<ActionRecord>> list_control(const ActionControlQuery& query) = 0;
+  // Removes only terminal rows whose retain_until elapsed; pending/unknown rows are never pruned.
+  virtual Outcome<std::size_t> prune_terminal(TimePoint now, std::size_t limit) = 0;
+};
+// Persistent sliding-window occupancy + UTC-day budget. admit must be called in the same UoW as
+// the Action insert; it never refunds explicit failures/cancels/expiry (conservative budgets).
 class ActionQuotaRepository {
 public:
   virtual ~ActionQuotaRepository() = default;
-  // Action + receipt + quota + budget + audit must commit together; duplicates never charge twice.
-  virtual Status reserve(const QuotaReservation& reservation) = 0;
+  virtual Status admit(const ActionId& action_id, ActionKind kind,
+                       std::span<const ActionScope> scopes, const ActionQuotaLimits& limits,
+                       TimePoint now) = 0;
+  virtual Outcome<std::size_t> prune_windows(TimePoint now, std::size_t limit) = 0;
+};
+class ActionPolicyRepository {
+public:
+  virtual ~ActionPolicyRepository() = default;
+  virtual Outcome<std::optional<ActionPolicy>> get(const ResourceId& account_id) = 0;
+  // expected absent = create-only (version must be 0); present = exact-version update/upsert.
+  virtual Status upsert(const ActionPolicy& policy, std::optional<ResourceVersion> expected) = 0;
+};
+// Append-only adapter evidence; evidence never makes an Action terminal and is never rewritten.
+class ActionEvidenceRepository {
+public:
+  virtual ~ActionEvidenceRepository() = default;
+  virtual Status append(const ActionEvidenceRecord& evidence) = 0;
+  virtual Outcome<std::vector<ActionEvidenceRecord>> list(const ActionId& action_id) = 0;
+  virtual Outcome<std::size_t> prune(TimePoint now, std::size_t limit) = 0;
 };
 struct PrivateNamespace {
   InstanceId instance;
