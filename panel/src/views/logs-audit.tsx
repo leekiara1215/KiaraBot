@@ -18,7 +18,7 @@ type AuditRow = AuditEntry & OwnerMarked;
 
 /** Owner annotation is optional until P12c-6 freezes it; never invent an owner. */
 function ownerOf(item: OwnerMarked): string {
-  return item.owner_service ?? item.owner ?? '未标注（待 P12c-6）';
+  return item.owner ?? item.owner_service ?? '未标注（待 P12c-6）';
 }
 
 const sourceUnavailable = (error: unknown) =>
@@ -33,24 +33,22 @@ function Filters({ kind, values, onChange, onPageSize, onApply, busy }: {
   busy: boolean;
 }) {
   return <div className="row-actions">
-    <label>occurred_after
-      <input aria-label={`${kind} occurred_after`} placeholder="RFC3339" value={values.occurredAfter ?? ''}
-        onChange={(event) => onChange({ ...values, occurredAfter: event.target.value })} />
+    <label>occurred_from
+      <input aria-label={`${kind} occurred_from`} placeholder="RFC3339" value={values.occurredFrom ?? ''}
+        onChange={(event) => onChange({ ...values, occurredFrom: event.target.value })} />
     </label>
-    <label>occurred_before
-      <input aria-label={`${kind} occurred_before`} placeholder="RFC3339" value={values.occurredBefore ?? ''}
-        onChange={(event) => onChange({ ...values, occurredBefore: event.target.value })} />
+    <label>occurred_until
+      <input aria-label={`${kind} occurred_until`} placeholder="RFC3339" value={values.occurredUntil ?? ''}
+        onChange={(event) => onChange({ ...values, occurredUntil: event.target.value })} />
     </label>
-    <label>owner
-      <input aria-label={`${kind} owner`} placeholder="identity/runtime" value={values.owner ?? ''}
-        onChange={(event) => onChange({ ...values, owner: event.target.value })} />
+    <label>actor
+      <input aria-label={`${kind} actor`} value={values.actor ?? ''}
+        onChange={(event) => onChange({ ...values, actor: event.target.value })} />
     </label>
-    {kind === 'audit' ? <>
-      <label>actor<input aria-label="audit actor" value={values.actor ?? ''}
-        onChange={(event) => onChange({ ...values, actor: event.target.value })} /></label>
-      <label>resource<input aria-label="audit resource" value={values.resource ?? ''}
-        onChange={(event) => onChange({ ...values, resource: event.target.value })} /></label>
-    </> : null}
+    <label>resource（JSON TargetResourceRef）
+      <input aria-label={`${kind} resource`} placeholder='{"kind":"RESOURCE_TASK","id":"task-01"}' value={values.resource ?? ''}
+        onChange={(event) => onChange({ ...values, resource: event.target.value })} />
+    </label>
     <label>每页<select aria-label={kind === 'logs' ? '每页条数' : `${kind} page size`} value={values.pageSize ?? 20}
       onChange={(event) => onPageSize(Number(event.target.value))}>
       <option value={20}>20</option><option value={50}>50</option><option value={100}>100</option>

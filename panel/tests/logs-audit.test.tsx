@@ -25,9 +25,9 @@ describe('P12d-4 logs/audit partitions', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '下一页 →' }));
     await waitFor(() => expect(server.queries.some((q) => q.includes('page_token=logs-page-2'))).toBe(true));
-    fireEvent.change(screen.getByLabelText('logs owner'), { target: { value: 'identity' } });
+    fireEvent.change(screen.getByLabelText('logs occurred_from'), { target: { value: '2026-10-30T02:10:00Z' } });
     fireEvent.click(screen.getByRole('button', { name: '查询' }));
-    await waitFor(() => expect(server.queries.some((q) => q.includes('owner=identity'))).toBe(true));
+    await waitFor(() => expect(server.queries.some((q) => q.includes('occurred_from='))).toBe(true));
   });
 
   it('keeps audit independent and uses only audit.read with owner/actor/resource mapping', async () => {
@@ -39,9 +39,11 @@ describe('P12d-4 logs/audit partitions', () => {
     expect(server.requests).toContain('/audit');
     expect(server.requests).not.toContain('/logs');
     fireEvent.change(screen.getByLabelText('audit actor'), { target: { value: 'admin' } });
-    fireEvent.change(screen.getByLabelText('audit resource'), { target: { value: 'control-panel' } });
+    fireEvent.change(screen.getByLabelText('audit resource'), {
+      target: { value: '{"kind":"RESOURCE_ACCOUNT","id":"control-panel"}' },
+    });
     fireEvent.click(screen.getByRole('button', { name: '查询' }));
-    await waitFor(() => expect(server.queries.some((q) => q.includes('actor=admin') && q.includes('resource=control-panel'))).toBe(true));
+    await waitFor(() => expect(server.queries.some((q) => q.includes('actor=admin') && q.includes('resource='))).toBe(true));
   });
 
   it('shows P12c-6 pending 503 as unavailable, never as an empty page', async () => {

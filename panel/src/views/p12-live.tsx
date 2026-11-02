@@ -35,6 +35,8 @@ import type {
   TargetInstanceFactHost,
   TargetInstanceFactPlugin,
   TargetInstanceFactRuntime,
+  TargetBeginDeleteRequest,
+  TargetRestoreResourceRequest,
 } from '../api/client';
 import { ApiError } from '../api/client';
 import { describeError, FailureNotice, formatTime, label, type Failure } from '../ui';
@@ -318,6 +320,61 @@ function ActionMetadataSection({ api, permissions, revision }: { api: ApiClient;
   </section>;
 }
 
+function LifecyclePanel({ api }: { api: ApiClient }) {
+  const [kind, setKind] = useState('RESOURCE_INSTANCE');
+  const [resourceId, setResourceId] = useState('');
+  const [expectedVersion, setExpectedVersion] = useState('1');
+  const [scope, setScope] = useState(() => scopeText(defaultScope()));
+  const parsedScope = useMemo(() => parseScopeText(scope), [scope]);
+  const [operation, setOperation] = useState<TargetOperationRef>();
+  const [failure, setFailure] = useState<Failure>();
+  const [pending, setPending] = useState(false);
+  const [notice, setNotice] = useState('');
+  const act = async (mode: 'delete' | 'restore') => {
+    setFailure(undefined); setNotice(''); setPending(false);
+    if (!resourceId || !parsedScope) {
+      setFailure({ kind: 'invalid', title: '缺少资源或 scope', detail: '生命周期命令需要资源 kind/id 与精确 scope。' });
+      return;
+    }
+    const resource = { kind, id: resourceId };
+    try {
+      const reply = mode === 'delete'
+        ? await api.beginDeleteResource(kind, resourceId, { resource, expected_version: expectedVersion } as TargetBeginDeleteRequest)
+        : await api.restoreResource(kind, resourceId, { resource, expected_version: expectedVersion } as TargetRestoreResourceRequest);
+      setOperation(operationFrom(reply));
+      setNotice(mode === 'delete'
+        ? '删除已受理；operation 未到终态前不显示完成，BLOCKED 只表示等待依赖/参与者，不是失败'
+        : '恢复已受理；30 天内可恢复，operation/状态未到终态前不显示完成');
+    } catch (error) {
+      if (isBackendPending(error)) { setPending(true); return; }
+      setFailure(describeError(error));
+    }
+  };
+  return <section className="table-card"><div className="table-head"><div>
+    <p className="eyebrow">LIFECYCLE · DELETE / RESTORE · P12c-7</p><h2>资源删除与恢复（operation 进度）</h2></div></div>
+    <p className="muted">删除/恢复是异步命令：HTTP 200/202 只是受理。BLOCKED（受阻）不是失败；只有 operation 终态才能显示完成/失败。删除后 30 天内可恢复（P13a 保留语义），超过窗口不得假设可恢复；CONFLICT（409）表示版本/状态冲突，请重新读取后再试。</p>
+    <div className="row-actions">
+      <label>resourceKind<select aria-label="生命周期 resourceKind" value={kind} onChange={(event) => setKind(event.target.value)}>
+        <option value="RESOURCE_INSTANCE">RESOURCE_INSTANCE</option>
+        <option value="RESOURCE_ACCOUNT">RESOURCE_ACCOUNT</option>
+        <option value="RESOURCE_INSTALLATION">RESOURCE_INSTALLATION</option>
+        <option value="RESOURCE_NAMESPACE">RESOURCE_NAMESPACE</option>
+        <option value="RESOURCE_MODEL">RESOURCE_MODEL</option>
+        <option value="RESOURCE_TASK">RESOURCE_TASK</option>
+      </select></label>
+      <label>resource ID<input aria-label="生命周期 resource ID" value={resourceId} onChange={(event) => setResourceId(event.target.value)} /></label>
+      <label>expected_version<input aria-label="生命周期 expected_version" value={expectedVersion} onChange={(event) => setExpectedVersion(event.target.value)} /></label>
+      <ScopeField value={scope} onChange={setScope} />
+      <button className="secondary" onClick={() => void act('delete')} disabled={!resourceId || !parsedScope}>删除资源</button>
+      <button className="secondary" onClick={() => void act('restore')} disabled={!resourceId || !parsedScope}>恢复资源</button>
+    </div>
+    {pending && <div className="failure"><strong>P12c-7 后端未实现 / 契约已声明但 handler 未接线</strong>
+      <p>删除/恢复 REST 当前返回 404/501；Panel 保持显式待后端，不伪造删除/恢复成功。P12c-7 接线后按 operation 终态复验 BLOCKED/409/30 天恢复窗。</p></div>}
+    {notice && <p className="success">{notice}</p>}{failure && <FailureNotice failure={failure} />}
+    <OperationTracker api={api} operation={operation} scope={parsedScope} />
+  </section>;
+}
+
 function InstallationsPage({ api, revision }: { api: ApiClient; revision: number }) {
   const [catalogId, setCatalogId] = useState('');
   const [pageToken, setPageToken] = useState<string>();
@@ -501,6 +558,7 @@ function InstallationsPage({ api, revision }: { api: ApiClient; revision: number
         <button className="secondary" onClick={() => void updateConfig()} disabled={!installationId || !instanceId}>更新 configuration</button></div>
     </section>
     <OperationTracker api={api} operation={operation} scope={trackerScope} />
+    <LifecyclePanel api={api} />
   </div>;
 }
 

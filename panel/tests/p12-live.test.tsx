@@ -254,3 +254,34 @@ describe('P12d-3 instance facts, health auth, TaskSummary', () => {
     expect(screen.getByText('created_at')).toBeInTheDocument();
   });
 });
+
+describe('P12d-5 lifecycle delete/restore', () => {
+  it('shows accepted delete with blocked operation, not completion', async () => {
+    const server = new MockServer();
+    const api = new ApiClient(server.fetch);
+    api.setToken('mock-access-token-0123456789');
+    render(<P12LiveView page="p12-installations" api={api} permissions={['plugin.read', 'plugin.manage']} revision={0} />);
+    fireEvent.change(screen.getByLabelText('生命周期 resource ID'), { target: { value: 'instance-welcome-01' } });
+    fireEvent.change(screen.getByLabelText('生命周期 expected_version'), { target: { value: '2' } });
+    fireEvent.click(screen.getByRole('button', { name: '删除资源' }));
+    expect(await screen.findByText(/删除已受理/)).toBeInTheDocument();
+    expect((await screen.findAllByText('受阻')).length).toBeGreaterThan(0);
+    expect(screen.getByText(/30 天内可恢复/)).toBeInTheDocument();
+    expect(screen.getByText(/BLOCKED（受阻）不是失败/)).toBeInTheDocument();
+    expect(screen.queryByText('状态成功')).not.toBeInTheDocument();
+    expect(server.requests).toContain('/resources/RESOURCE_INSTANCE/instance-welcome-01/delete');
+    expect(server.requests.some((path) => path.startsWith('/operations/runtime/operation-lifecycle-01'))).toBe(true);
+  });
+
+  it('keeps lifecycle explicit when P12c-7 REST is not wired (404)', async () => {
+    const server = new MockServer();
+    server.failures.set('/resources/RESOURCE_INSTANCE/x/restore', { status: 404, code: 'NOT_FOUND' });
+    const api = new ApiClient(server.fetch);
+    api.setToken('mock-access-token-0123456789');
+    render(<P12LiveView page="p12-installations" api={api} permissions={['plugin.read', 'plugin.manage']} revision={0} />);
+    fireEvent.change(screen.getByLabelText('生命周期 resource ID'), { target: { value: 'x' } });
+    fireEvent.click(screen.getByRole('button', { name: '恢复资源' }));
+    expect(await screen.findByText(/P12c-7 后端未实现/)).toBeInTheDocument();
+    expect(screen.queryByText('状态成功')).not.toBeInTheDocument();
+  });
+});
