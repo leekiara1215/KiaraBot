@@ -317,3 +317,34 @@ code=2），不是 Identity 或数据为空的问题。下一步需核对 Runtim
 **未覆盖项**：action_policy PUT（update）未在 native matrix 触发（需先播种 policy/
 expected_version fixture）；真实 Host/Adapter、真实 QQ/Provider、Docker Compose 单机、两主机/
 断网、生产 CA/密钥/release 仍为环境项。
+
+## 13. P14m 后最终矩阵（2026-11-03，P14l 收尾）
+
+P14m（Runtime delegation claim 校验修复：permission 上限 50 + RESOURCE_CATALOG 契约 id）合入
+并 rebase main=`c9b1382` 后，native strict smoke 全矩阵通过，logs/audit 由 401 变为真实
+**success**（Identity + Runtime 两个源都返回数据页：`items[0]` 为登录 RefreshSession 审计行 /
+identity request.recorded 日志行，含 owner/trace/分页 token）。
+
+**最终 strict 矩阵**（`ctest -R '^p14_native_single_host$'` Passed ~18s）：
+- **success（9）**：health（200 HEALTHY 四真实组件）、principals（P12l 真实页）、
+  logs（200 + identity 日志行）、audit（200 + identity 审计行/分页）、tasks_list（200 空页）、
+  models（200 空页）、action_query（404 NOT_FOUND owner 语义）、delete（404 NOT_FOUND）、
+  restore（409 CONFLICT）。
+- **stable-ok（1）**：action_policy GET（404 NOT_FOUND——fixture 未播种 account action policy，
+  稳定 owner 业务语义）。
+- **known-gap：无。**
+
+故障注入（identity/runtime outage）、重启恢复、fail-closed（bad CA/unauthenticated DB）全部
+保留通过。`p03_postgres`、`p04_target_codec` 亦通过；全量构建 exit 0。
+
+**剩余项（非本任务阻塞）**：
+1) action_policy **PUT/update** 未在 native matrix 覆盖：Control PUT 要求 `expected_version`
+   必填，而首次创建在 Runtime app 要求 expected_version 缺省（当前 account 无 policy 时
+   expected_version=0 会 conflict），因此 REST 无法完成首次播种；如需 update 成功链，需要先
+   在 fixture 直接播种 policy（或由契约确认真实创建路径），本任务按“可选”跳过。GET 已稳定
+   owner NOT_FOUND。
+2) 真实 Host/Adapter、真实 QQ/NapCat 与外部 Provider、Docker Compose 单机（镜像/
+   healthcheck/非 root/只读/秘密挂载）、两主机/断网演练、生产 CA/密钥托管与 release 签名
+   仍属环境项。
+3) p12j_panel_live 的 models list shape 失败由 core-target P12n（owner_gateway 输出形状）
+   负责，与本 native smoke 的 metrics 分类无关（本报告分类不依赖该失败）。
