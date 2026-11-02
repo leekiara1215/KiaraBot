@@ -20,6 +20,11 @@
 !panel/**
 !api/
 !api/**
+# The build stage installs C++ dependencies from the locked architecture
+# manifest, so the allowlist must carry the manifest and its smoke target.
+!dependencies/
+!dependencies/architecture/
+!dependencies/architecture/**
 !deploy/
 !deploy/docker/
 !deploy/docker/**
