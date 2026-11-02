@@ -157,6 +157,8 @@ PUT  /api/v1/models/{modelId}                          model.manage  UpdateModel
 POST /api/v1/models/{modelId}/disable                  model.manage  DisableModel（expected_version 必填）
 POST /api/v1/models/{modelId}/enable                   model.manage  EnableModel（expected_version 必填）
 PUT  /api/v1/models/{modelId}/secret                   model.manage  RotateProviderSecret
+GET  /api/v1/models/{modelId}                          model.read    GetModelMetadata
+GET  /api/v1/models                                    model.read    ListModelMetadata（scope 必填，一个或多个 RESOURCE_MODEL）
 GET  /api/v1/models/{modelId}/configuration            model.manage  GetModelConfiguration
 GET  /api/v1/models/{modelId}/calls/{logicalCallId}    model.call.inspect GetCallStatus
 POST /api/v1/models/{modelId}/calls/{logicalCallId}/resolve model.manage ResolveModelCall
@@ -168,6 +170,8 @@ GET  /api/v1/operations/model/{operationId}            resource.read GetOperatio
 - `expected_version` 缺失/过期映射 `CONFLICT`；未知/不可见模型 `NOT_FOUND`；委托失败在调用 owner 前终止（401/403/503），不得本地放行。
 - `GetCallStatus` 可返回 `EXECUTION_UNKNOWN` 与 `may_have_billed`；查询超时/传输失败不等于 Provider 调用失败，客户端不得推断 FAILED。`ResolveModelCall` 只接受有限 disposition，同键重放返回 owner 快照，异处置同调用为 `CONFLICT`。
 - `control_api.model_endpoint` 可省略；省略时 Model REST 路由明确返回 `UNAVAILABLE`（503），不伪造成功或空结果。
+- `GET /api/v1/models` 必须携带 `scope`（一个或多个 `RESOURCE_MODEL`），按该精确资源集委托；metadata 只返回脱敏字段，不含密钥。
+- `/api/v1/operations/{owner}/{id}` 统一 owner 分支：`model` 走 ModelService.GetOperation；`runtime`/`scheduler`/`host` 的 Control operation 适配器未接线时稳定返回 `CAPABILITY_NOT_SUPPORTED`（503），不按 404/405 猜测。
 - 当前 target REST operations 仍登记 not_implemented（owner REST 契约状态另行翻转）；ModelService 生产 RPC 已由 P11d 证据翻转。
 
 ## WebSocket 频道

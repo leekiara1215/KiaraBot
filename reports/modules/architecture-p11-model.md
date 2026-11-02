@@ -44,3 +44,18 @@ owner gateway/委托/错误映射沿用 P12c；本任务只新增 Model owner �
 - GetOperation 只支持 `owner=model`，Runtime/Scheduler operation 路由保持 CAPABILITY_NOT_SUPPORTED；
 - 未做 Control 进程级 TLS+Identity fake 的端到端 REST 夹具；本次为 gateway 单测 + 既有 Control HTTPS 测试；
 - 未运行真实 Provider 外部联调（与 P11b 记录一致）。
+
+## P11d-2 Model metadata/list、统一 operation 与真实 Control e2e
+
+- Control gateway 新增 `GET /api/v1/models/{modelId}`（GetModelMetadata，model.read + 单模型 scope）与
+  `GET /api/v1/models`（ListModelMetadata，要求一个或多个 RESOURCE_MODEL scope）；响应只含脱敏 metadata。
+- `/api/v1/operations/{owner}/{id}` 统一 owner 分支：`model` 转发 ModelService.GetOperation；其他 owner
+  的 Control 适配器未接线时稳定返回 `CAPABILITY_NOT_SUPPORTED`，并在所有 owner 上先做 GET/HEAD 方法校验。
+- 新增真实 Control 进程 REST e2e：`tests/architecture/p11_control_model_rest.py` 复用 P04 的临时 PKI，
+  启动真实 Control + Identity fixture + Model fixture（mTLS），覆盖 metadata/list/update/disable/enable/
+  secret rotation（密钥不回显）/configuration/call UNKNOWN/resolve/operation，以及未接线 owner 的 503。
+- target 翻转：9 个 Model REST operations 标 target implemented（证据含上述 e2e）；`operations.getOperation`
+  仍 not_implemented（只有 model owner 分支接线，runtime/scheduler 未接线）。
+- 未翻转：插件 `HostRequest.model_chat` 的 target 消息（ModelChatRequest/Response/ModelMessage）仍
+  not_implemented——当前无真实 PluginBridge+Model+Identity target fixture 覆盖该 ingress，P11c 的插件
+  chat 证据来自 reference 测试，不足以按 P06 规则认证 target；待后续 bridge fixture。

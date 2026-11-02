@@ -598,7 +598,23 @@ paths:
       operationId: listModels
       x-permission: model.read
       summary: List configured model providers
-      parameters: [{ $ref: '#/components/parameters/PageSize' }, { $ref: '#/components/parameters/PageToken' }]
+      description: >-
+        P11d-2 Control forwards this to ModelService.ListModelMetadata with a model.read delegation
+        whose scope is exactly the caller-supplied model resource set. The scope query is required
+        (one or more RESOURCE_MODEL ids); the response carries redacted metadata only. Target REST
+        operation status stays not_implemented until the owner REST layer is contract-flipped.
+      parameters:
+      - $ref: '#/components/parameters/PageSize'
+      - $ref: '#/components/parameters/PageToken'
+      - name: scope
+        in: query
+        required: true
+        description: Explicit model resource set checked by the owner; no role wildcard.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TargetResourceScope'
+
       responses:
         '200':
           description: Model page
@@ -2411,11 +2427,11 @@ paths:
       x-permission: model.read
       x-mutating: false
       description: >-
-        P11d Control forwards this to ModelService.UpdateModel with one exact model.manage
-        delegation scope. Path modelId must equal config.model_id; versions are positive decimal
-        uint64 strings and stale expected_version is CONFLICT. The response confirms persistence
-        only and never contains provider credentials. Target REST operation status stays
-        not_implemented until the owner REST layer is contract-flipped.
+        P11d Control forwards this to ModelService.GetModelMetadata with one exact model.read
+        delegation scope derived from the required scope query (single RESOURCE_MODEL matching the
+        path modelId). The response is the redacted metadata projection only; unknown or invisible
+        models are NOT_FOUND. Target REST operation status stays not_implemented until the owner
+        REST layer is contract-flipped (P11d-2 e2e evidence).
       parameters:
       - name: modelId
         in: path

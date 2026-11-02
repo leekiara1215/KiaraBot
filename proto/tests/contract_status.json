@@ -5686,7 +5686,16 @@
       "overrides": {
         "operations": {
           "operations.getProcessLiveness": "implemented",
-          "operations.getProcessReadiness": "implemented"
+          "operations.getProcessReadiness": "implemented",
+          "operations.updateModel": "implemented",
+          "operations.getModelMetadata": "implemented",
+          "operations.getModelConfiguration": "implemented",
+          "operations.rotateProviderSecret": "implemented",
+          "operations.disableModel": "implemented",
+          "operations.enableModel": "implemented",
+          "operations.getModelCallStatus": "implemented",
+          "operations.resolveModelCall": "implemented",
+          "operations.listModels": "implemented"
         },
         "proto_messages": {
           "CredentialDelivery": "implemented",
@@ -9124,6 +9133,69 @@
           "core/tests/platform/model_rpc_test.cpp",
           "core/tests/architecture/model_gateway_application_test.cpp",
           "core/tests/platform/runtime_model_client_test.cpp"
+        ],
+        "operations:operations.updateModel": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "tests/architecture/p11_control_model_rest.py",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp"
+        ],
+        "operations:operations.getModelMetadata": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "tests/architecture/p11_control_model_rest.py",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp"
+        ],
+        "operations:operations.getModelConfiguration": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "tests/architecture/p11_control_model_rest.py",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp"
+        ],
+        "operations:operations.rotateProviderSecret": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "tests/architecture/p11_control_model_rest.py",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp"
+        ],
+        "operations:operations.disableModel": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "tests/architecture/p11_control_model_rest.py",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp"
+        ],
+        "operations:operations.enableModel": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "tests/architecture/p11_control_model_rest.py",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp"
+        ],
+        "operations:operations.getModelCallStatus": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "tests/architecture/p11_control_model_rest.py",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp"
+        ],
+        "operations:operations.resolveModelCall": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "tests/architecture/p11_control_model_rest.py",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp"
+        ],
+        "operations:operations.listModels": [
+          "core/src/runtime/platform/model_rpc.cpp",
+          "core/src/application/target/model_gateway_application.cpp",
+          "tests/architecture/p11_control_model_rest.py",
+          "core/tests/platform/model_rpc_test.cpp",
+          "core/tests/architecture/model_gateway_application_test.cpp"
         ]
       }
     }

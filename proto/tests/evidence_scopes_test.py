@@ -378,6 +378,18 @@ class ScopeTest(unittest.TestCase):
             ('semantic_rules', 'semantic.model.two_phase_unknown'),
             ('semantic_rules', 'semantic.model.usage_known_billing')
         }
+        # P11d-2 Control Model REST target flips: real Control-process TLS e2e evidence.
+        expected |= {
+            ('operations', 'operations.disableModel'),
+            ('operations', 'operations.enableModel'),
+            ('operations', 'operations.getModelCallStatus'),
+            ('operations', 'operations.getModelConfiguration'),
+            ('operations', 'operations.getModelMetadata'),
+            ('operations', 'operations.listModels'),
+            ('operations', 'operations.resolveModelCall'),
+            ('operations', 'operations.rotateProviderSecret'),
+            ('operations', 'operations.updateModel')
+        }
         # P06 external Bridge: both audience-bound Connect streams, bootstrap ->
         # ConnectionAuthorization/refresh, delivery attempt/lease/receipt and shutdown.
         expected |= {('bridge_methods', 'AdapterBridge.Connect'),
