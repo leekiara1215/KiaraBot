@@ -98,6 +98,7 @@ target::HostCommandOutboxRecord read_row(pqxx::transaction_base& transaction,
   record.command_id = row["command_id"].as<std::string>();
   record.host_id = row["host_id"].as<std::string>();
   record.instance_id = row["instance_id"].as<std::string>();
+  record.installation_id = row["installation_id"].as<std::string>();
   record.kind = static_cast<target::HostCommandKind>(row["kind"].as<int>());
   record.execution_generation = row["execution_generation"].as<std::uint64_t>();
   record.desired_version = row["desired_version"].as<std::uint64_t>();

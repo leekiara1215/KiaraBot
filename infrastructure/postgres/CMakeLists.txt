@@ -60,6 +60,15 @@ if(UNIX)
     --repo-source "${CMAKE_SOURCE_DIR}")
   set_tests_properties(p06_client_e2e PROPERTIES
     LABELS "p06;integration;fault" TIMEOUT 240)
+  add_test(NAME p08_host_bridge_e2e COMMAND "${KIARABOT_TARGET_PYTHON}"
+    "${CMAKE_SOURCE_DIR}/tests/architecture/p08_host_bridge_e2e.py"
+    --runtime $<TARGET_FILE:kiarabot-runtime>
+    --initializer $<TARGET_FILE:kiarabot-pg-initialize>
+    --openssl "${KIARABOT_TEST_OPENSSL}"
+    --pg-bin "${KIARABOT_TEST_PG_BIN}"
+    --repo-source "${CMAKE_SOURCE_DIR}")
+  set_tests_properties(p08_host_bridge_e2e PROPERTIES
+    LABELS "p08;integration;fault" TIMEOUT 240)
   add_test(NAME p06_bridge_acceptance COMMAND "${KIARABOT_TARGET_PYTHON}"
     "${CMAKE_SOURCE_DIR}/tests/architecture/p06_bridge_acceptance.py"
     --runtime $<TARGET_FILE:kiarabot-runtime>

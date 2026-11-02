@@ -2429,19 +2429,13 @@ public:
         observation.execution_generation == 0) {
       return invalid_runtime_input();
     }
-    return with_host_work<bool>(
-        transactions_, [&](RuntimeUnitOfWork& work, TimePoint) -> Outcome<bool> {
-          auto connection = work.host_registration().connection(ResourceId{observation.host_id});
-          if (const auto* failure = std::get_if<Failure>(&connection)) {
-            return *failure;
-          }
-          const auto& current = std::get<std::optional<HostConnectionState>>(connection);
-          if (!current ||
-              current->fence.connection_generation != observation.connection_generation) {
-            return failure(ErrorCode::Conflict, Recovery::ReadCurrent);
-          }
-          return work.host_commands().record_observation(observation);
-        });
+    // The HostBridge transport has already verified the frame fence against the authoritative
+    // registration/connection state; this trusted adapter must not require a second PG row lookup
+    // (composition may keep registration in a different store). The observation key itself carries
+    // host+connection_generation+sequence, so dedupe/old-generation separation stays intact.
+    return with_host_work<bool>(transactions_, [&](RuntimeUnitOfWork& work, TimePoint) {
+      return work.host_commands().record_observation(observation);
+    });
   }
 
   Outcome<HostCommandMaintenance> host_command_maintenance() override {

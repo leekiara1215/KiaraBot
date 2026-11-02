@@ -12,7 +12,7 @@ CREATE TABLE kiarabot.host_commands (
   host_id text NOT NULL CHECK(host_id<>''),
   instance_id text NOT NULL CHECK(instance_id<>''),
   installation_id text NOT NULL CHECK(installation_id<>''),
-  kind integer NOT NULL CHECK(kind BETWEEN 0 AND 2),
+  kind integer NOT NULL CHECK(kind BETWEEN 1 AND 3),
   execution_generation kiarabot.uint64 NOT NULL,
   desired_version kiarabot.uint64 NOT NULL,
   desired_state integer NOT NULL CHECK(desired_state BETWEEN 0 AND 2),

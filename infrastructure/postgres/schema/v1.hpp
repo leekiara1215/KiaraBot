@@ -18,9 +18,10 @@ inline constexpr int version(core::target::Service owner) {
     // relations plus the typed namespace receipt payload relation; P08b adds the authoritative
     // host_connections projection (connection generation/epoch/liveness/desired config version)
     // and P08b-3 host_commands outbox + host_observations inbox (P08b-3a adds the
-    // installation snapshot column); P13a adds operation
-    // retention/participants, audit/outbox cleanup indexes and the lifecycle tombstone relation.
-    return 15;
+    // installation snapshot column; P08b-3b fixes the command-kind CHECK range); P13a adds
+    // operation retention/participants, audit/outbox cleanup indexes and the lifecycle tombstone
+    // relation.
+    return 16;
   case core::target::Service::Scheduler:
     // P10a adds task/occurrence observation columns, the quota counter relation and due/owner
     // indexes; P07 adds the shared nullable audit target columns to every service schema. The
