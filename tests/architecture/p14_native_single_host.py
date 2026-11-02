@@ -533,7 +533,8 @@ def run_checks(root, https_port, configs, binaries, children, endpoints):
         if status >= 400 and code == 'CAPABILITY_NOT_SUPPORTED':
             return 'capability-gap'
         if STATE.get('fix_ready') and status >= 400 and code in (
-                'INVALID_ARGUMENT', 'PERMISSION_DENIED', 'UPSTREAM_UNAVAILABLE'):
+                'INVALID_ARGUMENT', 'PERMISSION_DENIED', 'UNAUTHENTICATED',
+                'UPSTREAM_UNAVAILABLE'):
             return 'known-gap'
         if status >= 400 and code in pre_fix_codes:
             return 'pre-fix-skip'
