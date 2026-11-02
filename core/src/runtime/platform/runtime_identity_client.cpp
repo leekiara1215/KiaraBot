@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <charconv>
 #include <chrono>
 #include <cstdint>
 #include <limits>
@@ -214,6 +215,23 @@ decode_delegation_claims(std::string_view proof, const target::Sha256Digest& lea
       }
       return value.get<std::int64_t>();
     };
+    // Identity signs uint64 delegation claims as canonical decimal JSON strings (see the mature
+    // identity_crypto signer), never as JSON numbers; reject anything the signer could not emit.
+    const auto claim_integer = [&](const Json& value) -> std::optional<std::int64_t> {
+      if (!value.is_string()) {
+        return std::nullopt;
+      }
+      const auto input = value.get<std::string>();
+      if (input.empty() || input.size() > 19 || (input.size() > 1 && input[0] == '0')) {
+        return std::nullopt;
+      }
+      std::int64_t parsed = 0;
+      const auto result = std::from_chars(input.data(), input.data() + input.size(), parsed);
+      if (result.ec != std::errc{} || result.ptr != input.data() + input.size() || parsed < 0) {
+        return std::nullopt;
+      }
+      return parsed;
+    };
     if (!document.contains("iat") || !document.contains("nbf") || !document.contains("exp")) {
       return unauthenticated();
     }
@@ -255,12 +273,16 @@ decode_delegation_claims(std::string_view proof, const target::Sha256Digest& lea
     }
     std::vector<t::ResourceScope> scopes;
     for (const auto& item : delegation["permissions"]) {
-      if (!item.is_array() || item.size() != 3 || !item[0].is_number_integer() ||
-          !item[1].is_number_integer() || !item[2].is_string()) {
+      if (!item.is_array() || item.size() != 3 || !item[2].is_string()) {
         return unauthenticated();
       }
-      const auto permission_value = item[0].get<std::int64_t>();
-      const auto kind_value = item[1].get<std::int64_t>();
+      const auto permission_claim = claim_integer(item[0]);
+      const auto kind_claim = claim_integer(item[1]);
+      if (!permission_claim || !kind_claim) {
+        return unauthenticated();
+      }
+      const auto permission_value = *permission_claim;
+      const auto kind_value = *kind_claim;
       if (permission_value <= 0 || permission_value > 46 || kind_value < 0 || kind_value > 15) {
         return unauthenticated();
       }
@@ -283,27 +305,28 @@ decode_delegation_claims(std::string_view proof, const target::Sha256Digest& lea
     if (!certificate || !(*certificate == leaf_fingerprint)) {
       return unauthenticated();
     }
-    if (!delegation.contains("authorization_version") ||
-        !delegation["authorization_version"].is_number_integer()) {
+    if (!delegation.contains("authorization_version")) {
       return unauthenticated();
     }
-    const auto authorization_version = delegation["authorization_version"].get<std::int64_t>();
-    if (authorization_version <= 0) {
+    const auto authorization_version = claim_integer(delegation["authorization_version"]);
+    if (!authorization_version || *authorization_version <= 0) {
       return unauthenticated();
     }
-    if (!delegation.contains("business_hops") || !delegation["business_hops"].is_number_integer()) {
+    if (!delegation.contains("business_hops")) {
       return unauthenticated();
     }
-    const auto hops = delegation["business_hops"].get<std::int64_t>();
-    if (hops < 0 || hops > 2) {
+    const auto hops = claim_integer(delegation["business_hops"]);
+    if (!hops || *hops < 0 || *hops > 2) {
       return unauthenticated();
     }
     if (!delegation.contains("source_credential") || !delegation["source_credential"].is_array() ||
         delegation["source_credential"].size() != 2 ||
-        !delegation["source_credential"][0].is_string() ||
-        !delegation["source_credential"][1].is_number_integer() ||
-        !canonical_uuid(delegation["source_credential"][0].get<std::string>()) ||
-        delegation["source_credential"][1].get<std::int64_t>() <= 0) {
+        !delegation["source_credential"][0].is_string()) {
+      return unauthenticated();
+    }
+    const auto source_version = claim_integer(delegation["source_credential"][1]);
+    if (!canonical_uuid(delegation["source_credential"][0].get<std::string>()) || !source_version ||
+        *source_version <= 0) {
       return unauthenticated();
     }
     t::AuthenticationContext context;
@@ -312,7 +335,7 @@ decode_delegation_claims(std::string_view proof, const target::Sha256Digest& lea
     context.audience = t::Service::Runtime;
     context.actors = std::move(actors);
     context.scopes = std::move(scopes);
-    context.authorization_version = {static_cast<std::uint64_t>(authorization_version)};
+    context.authorization_version = {static_cast<std::uint64_t>(*authorization_version)};
     context.verified_at = now;
     context.expires_at = *valid_until;
     context.proof = std::string{proof};

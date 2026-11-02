@@ -76,11 +76,11 @@ std::string hex(const t::Sha256Digest& value) {
 std::string token(t::TimePoint now, const std::string& audience, const std::string& certificate) {
   Json delegation{{"direct_actor", kActor},
                   {"actor_chain", Json::array({kActor})},
-                  {"permissions", Json::array({Json::array({1, 1, kResource})})},
+                  {"permissions", Json::array({Json::array({"1", "1", kResource})})},
                   {"client_certificate", certificate},
-                  {"authorization_version", 5},
-                  {"business_hops", 0},
-                  {"source_credential", Json::array({"eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee", 1})},
+                  {"authorization_version", "5"},
+                  {"business_hops", "0"},
+                  {"source_credential", Json::array({"eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee", "1"})},
                   {"source_session", nullptr}};
   Json payload{{"iss", "identity"},   {"sub", kSubject},         {"aud", audience},
                {"iat", seconds(now)}, {"nbf", seconds(now) - 1}, {"exp", seconds(now) + 30},

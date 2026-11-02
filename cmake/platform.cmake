@@ -214,6 +214,23 @@ add_test(NAME p05_runtime_identity_client COMMAND kiarabot_runtime_identity_clie
 set_tests_properties(p05_runtime_identity_client PROPERTIES
   LABELS "p05;unit;security" TIMEOUT 30)
 
+# Real two-process Runtime<->Identity authorization chain: owned PG cluster, offline bootstrap of
+# the Runtime platform peer, real mTLS daemons and real delegation/CheckAuthorization decisions.
+get_filename_component(RUNTIME_E2E_PYTHON_BIN_DIR "${KIARABOT_TARGET_PYTHON}" DIRECTORY)
+get_filename_component(RUNTIME_E2E_OPENSSL_BIN_DIR "${KIARABOT_TEST_OPENSSL}" DIRECTORY)
+add_test(NAME p05_runtime_identity_e2e COMMAND "${KIARABOT_TARGET_PYTHON}"
+  "${CMAKE_SOURCE_DIR}/infrastructure/postgres/tests/run_database_test.py"
+  --pg-bin "${KIARABOT_TEST_PG_BIN}" --openssl "${KIARABOT_TEST_OPENSSL}"
+  --initializer $<TARGET_FILE:kiarabot-pg-initialize>
+  --test "${CMAKE_SOURCE_DIR}/core/tests/platform/runtime_identity_e2e_test.py"
+  --test-argument $<TARGET_FILE:kiarabot-identity-bootstrap>
+  --test-argument "${KIARABOT_TEST_PG_BIN}"
+  --test-argument $<TARGET_FILE:kiarabot-identity>
+  --test-argument $<TARGET_FILE:kiarabot-runtime>)
+set_tests_properties(p05_runtime_identity_e2e PROPERTIES
+  LABELS "p05;p04;integration;security;fault" TIMEOUT 180
+  ENVIRONMENT "PATH=${RUNTIME_E2E_OPENSSL_BIN_DIR}:${RUNTIME_E2E_PYTHON_BIN_DIR}:$ENV{PATH};PYTHONPATH=${CMAKE_SOURCE_DIR}/sdk/python/build/generated")
+
 add_test(NAME p03_service_composition COMMAND "${KIARABOT_TARGET_PYTHON}"
   ${CMAKE_SOURCE_DIR}/core/tests/platform/service_composition_test.py
   $<TARGET_FILE:kiarabot_service_composition_driver> $<TARGET_FILE:kiarabot_service_rpc_client>)

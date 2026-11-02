@@ -27,7 +27,9 @@ using detail::failure;
 constexpr std::uint32_t kDefaultAssignmentPageSize = 20;
 constexpr std::uint32_t kMaximumAssignmentPageSize = 100;
 constexpr auto kAssignmentSnapshotLifetime = std::chrono::minutes{10};
-constexpr auto kAssignmentReceiptRetention = std::chrono::hours{24};
+// Command receipts must satisfy the domain minimum retention (7 days); a shorter value is rejected
+// by check_receipt_write before any row is written.
+constexpr auto kAssignmentReceiptRetention = std::chrono::hours{24 * 7};
 constexpr std::size_t kAssignmentReceiptCapacity = 10000;
 constexpr std::string_view kSetAssignmentMethod = "SetAssignment";
 constexpr std::string_view kRevokeAssignmentMethod = "RevokeAssignment";
