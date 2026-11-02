@@ -5,6 +5,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <functional>
+#include <iostream>
 #include <map>
 #include <memory>
 #include <optional>
@@ -486,6 +487,48 @@ public:
     return failure(t::ErrorCode::UpstreamUnavailable);
   }
 };
+// P08b-3 outbox fake: only the enqueue path is exercised by P05 application tests. Delivery
+// methods stay unsupported so a hidden transport dependency is visible, never fake-successful.
+class MemoryHostCommands final : public t::HostCommandOutbox {
+public:
+  t::Outcome<t::PersistedHostCommand> insert(const t::HostCommandOutboxRecord& record) override {
+    const auto found = commands.find(record.command_id);
+    if (found != commands.end()) {
+      if (found->second.payload_sha256 != record.payload_sha256) {
+        return failure(t::ErrorCode::Conflict);
+      }
+      return t::PersistedHostCommand{found->second, true};
+    }
+    commands.emplace(record.command_id, record);
+    return t::PersistedHostCommand{record, false};
+  }
+  t::Outcome<std::vector<t::HostCommandOutboxRecord>> pending(const std::string&, std::uint64_t,
+                                                              std::size_t) override {
+    return failure(t::ErrorCode::CapabilityNotSupported);
+  }
+  t::Outcome<std::optional<t::HostCommandOutboxRecord>> find(const std::string&) override {
+    return failure(t::ErrorCode::CapabilityNotSupported);
+  }
+  t::Status mark_dispatched(const std::string&, std::uint64_t, std::string_view,
+                            t::TimePoint) override {
+    return failure(t::ErrorCode::CapabilityNotSupported);
+  }
+  t::Status record_receipt(const std::string&, bool, std::optional<t::ExecutionOutcome>,
+                           std::optional<std::string>, t::TimePoint) override {
+    return failure(t::ErrorCode::CapabilityNotSupported);
+  }
+  t::Status mark_unknown(const std::string&, t::TimePoint) override {
+    return failure(t::ErrorCode::CapabilityNotSupported);
+  }
+  t::Outcome<bool> record_observation(const t::HostObservationRecord&) override {
+    return failure(t::ErrorCode::CapabilityNotSupported);
+  }
+  t::Outcome<std::vector<t::HostObservationRecord>> observations(const std::string&, std::uint64_t,
+                                                                 std::size_t) override {
+    return failure(t::ErrorCode::CapabilityNotSupported);
+  }
+  std::map<std::string, t::HostCommandOutboxRecord> commands;
+};
 class MemoryWork final : public t::RuntimeUnitOfWork {
 public:
   explicit MemoryWork(Store& store)
@@ -497,6 +540,9 @@ public:
   }
   t::Outcome<t::TimePoint> current_time() override {
     return store_.now;
+  }
+  t::HostCommandOutbox& host_commands() override {
+    return host_commands_;
   }
   t::ReceiptRepository& receipts() override {
     return receipts_;
@@ -743,6 +789,7 @@ private:
   MemoryCredentials credentials_;
   MemoryReceipts receipts_;
   MemoryJournal journal_;
+  MemoryHostCommands host_commands_;
   MemoryActionPorts memory_actions_;
   MemoryStorageReceipts storage_receipts_;
 };
@@ -1208,8 +1255,8 @@ void installation_instance_flow(Harness& harness) {
   auto instance = harness.application->create_instance(create);
   check(std::holds_alternative<t::InstanceCreation>(instance), "instance creation failed");
   const auto creation = std::get<t::InstanceCreation>(instance);
-  check(!creation.bootstrap_credential.has_value(),
-        "managed instance unexpectedly received an external-bridge bootstrap credential");
+  check(creation.bootstrap_credential.has_value() && creation.bootstrap_credential->size() == 64,
+        "managed instance missing one-time Host deployment bootstrap");
   const auto id = creation.instance.id;
   t::SetDesiredStateRequest desired{context("runtime.set_desired_state", digest(22)), id,
                                     t::DesiredState::Stopped};
@@ -1247,15 +1294,17 @@ void installation_instance_flow(Harness& harness) {
   check(external_creation.bootstrap_credential.has_value() &&
             external_creation.bootstrap_credential->size() == 64,
         "externally-managed instance did not receive a bootstrap credential");
-  check(harness.store.bridge_credentials.size() == 1,
-        "external instance credential was not persisted exactly once");
+  check(harness.store.bridge_credentials.size() == 2,
+        "managed/external instance credentials were not each persisted exactly once");
   bool plaintext_stored = false;
   for (const auto& record : harness.store.bridge_credentials) {
     plaintext_stored = plaintext_stored ||
                        record.resource_id == *external_creation.bootstrap_credential ||
-                       record.id == *external_creation.bootstrap_credential;
+                       record.id == *external_creation.bootstrap_credential ||
+                       record.resource_id == *creation.bootstrap_credential ||
+                       record.id == *creation.bootstrap_credential;
   }
-  check(!plaintext_stored, "external instance bootstrap plaintext was persisted");
+  check(!plaintext_stored, "instance bootstrap plaintext was persisted");
 }
 void authorization_flow() {
   Harness denied;
