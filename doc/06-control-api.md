@@ -476,9 +476,9 @@ P12c 在独立 Control 进程的 HTTPS 边界新增 owner-backed 转发层（`co
   Control 用调用者 Bearer 会话向 Identity `IssueDelegation`（audience=runtime、action.inspect、精确 scope），
   再原样转发 `RuntimeService.QueryActionResult`。不存在/不可见/过保留返回 404 `NOT_FOUND`，不推断动作执行失败；
   身份/权限/超时/不可用分别映射 401/403/504/503；Control 不缓存授权、不重试副作用。
-- `GET /api/v1/logs`、`GET /api/v1/audit`：P12c 尚无权威日志/审计查询来源（`log.read`/`audit.read` 权限与
-  ListPrincipals 等由 P12a 契约补充），边界返回 503 `UPSTREAM_UNAVAILABLE`，不返回成功空页；待来源与权限
-  落地后按脱敏/分页规则替换。
+- `GET /api/v1/logs`、`GET /api/v1/audit`：P12e 已声明 Identity/Runtime 只读 owner RPC
+  (`IdentityService.ListLogs`/`ListAudit`、`RuntimeService.ListLogs`/`ListAudit`)；P12c-2 的 REST
+  聚合接线尚未完成，边界仍返回 503 `UPSTREAM_UNAVAILABLE`，不返回成功空页。
 - `/health/live` 仅进程存活；`/health/ready` 由进程 readiness 决定；受权 `/api/v1/health` 组件详情待 P12a
   健康契约与四依赖端点配置对齐后接入。
 - 配置：`control_api` 新增可选 `runtime_endpoint`（Runtime owner mTLS 地址）；缺省时 Action 查询在委托/owner
@@ -499,8 +499,9 @@ P12c 在独立 Control 进程的 HTTPS 边界新增 owner-backed 转发层（`co
   否则 503，且不暴露组件细节；受权 `GET /api/v1/health`：返回 `state` + `identity/runtime/
   scheduler/model` 四组件与 `checked_at`。Identity 不可用 → 503 `UNHEALTHY`；Runtime/Scheduler/Model
   单点不可用 → 200 `DEGRADED`（不整体摘流，对应 owner 功能 503），单项故障不产生 `HEALTHY`。
-- `/logs`、`/audit`：先按 `log.read`(48)/`audit.read`(49) 分别取得一次性委托（缺失/拒绝 → 401/403），
-  因尚无权威日志/审计聚合来源，授权通过后仍返回 503 `UPSTREAM_UNAVAILABLE`，绝不返回成功空页。
+- `/logs`、`/audit`：先按 `log.read`(48)/`audit.read`(49) 分别取得一次性委托（缺失/拒绝 → 401/403）。
+  P12e 已实现 Identity/Runtime 只读 owner RPC（真实 PG16.4 keyset 分页/过滤/脱敏/权限校验）；
+  P12c 的 REST 聚合接线尚未合入，授权通过后仍返回 503 `UPSTREAM_UNAVAILABLE`，绝不返回成功空页。
 - `control_api` owner 端点统一：`identity_endpoint`（必填）+ 可选 `runtime_endpoint`、
   `scheduler_endpoint`、`model_endpoint`、`host_endpoint`（host:port，逐项校验）；缺省端点使对应
   owner 读取稳定失败而不伪造数据。健康聚合用这些 mTLS 通道的当前状态观测。
@@ -580,8 +581,8 @@ P12 v1 target **不提供** Control WebSocket 服务端；`api/asyncapi.yaml` �
 
 ### /logs 与 /audit 聚合契约
 
-- 权威事实归各业务所有者；Control 只做只读聚合，不跨库读取、不复制事实。当前**没有** owner 日志/审计 list RPC，新增此类 RPC 需用户确认并登记；无权威来源时必须返回 `503 UNAVAILABLE`，不得返回成功空页。
-- `/logs` 需显式 `log.read`（48），只返回运维分类、脱敏后的结构化日志，默认保留 7 天；`/audit` 需显式 `audit.read`（49），返回业务事务内提交的必要审计事实，最小保留 180 天；二者互不蕴含，每行携带 owner 归属，分页按 `occurred_at`+稳定 ID，v1 不接受自由过滤条件。
+- 权威事实归各业务所有者；Control 只做只读聚合，不跨库读取、不复制事实。P12e 已声明并实现 Identity/Runtime 四个只读 owner RPC（P12e 契约点）：`IdentityService.ListAudit`/`ListLogs` 与 `RuntimeService.ListAudit`/`ListLogs`，caller 分别为 Control platform peer（Identity，需本主体 `audit.read`/`log.read` 显式 assignment）或 Control 当前委托（Runtime，需在线 `audit.read`/`log.read`），scope 固定 `RESOURCE_CATALOG` id `control`；Control 的 REST 聚合接线仍由 P12c 后续完成，未接线前返回 `503 UNAVAILABLE`，不得返回成功空页。
+- `/logs` 需显式 `log.read`（48），只返回运维分类、脱敏后的结构化日志，默认保留 7 天；`/audit` 需显式 `audit.read`（49），返回业务事务内提交的必要审计事实，最小保留 180 天；二者互不蕴含，每行携带 owner 归属，分页按 `occurred_at`+稳定 ID，v1 不接受自由过滤条件。owner RPC 只返回本服务库内事实；响应脱敏字段固定为 entry_id/actor/resource/request_id/trace_id/method/rejection/authorization_version/occurred_at 与日志 severity/component/message，日志 message 是闭集 `request.recorded`/`request.rejected`，不含自由文本、凭据、消息正文或模型秘密。
 - 凭据、消息正文、模型秘密和平台原始内容不得进入日志/审计投影；Control 不缓存延长保留期。
 
 ### 状态与字段统一

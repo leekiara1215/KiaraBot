@@ -1374,3 +1374,23 @@ P13b（2026-11-02）：Host 进程 SIGTERM 走有界优雅收尾（活动受管�
 - 检查（本机实际运行）：`scripts/deploy/target-smoke.sh` 通过（Compose YAML、target include、host/adapter profiles、官方 PG 默认、安全约束、shell 语法、rotate 测试、release 规则可离线校验）；`target-smoke --release` 对含 digests 的临时 env 通过、缺失 PG digest 失败（见提交说明）；`bash -n` 全部部署脚本；`scripts/deploy/tests/target_rotate_test.sh` PASS。
 - 未验证/未完成：Docker 构建/Compose 启动/healthcheck/官方 PG 镜像初始化/迁移/恢复、两主机与跨主机故障、真实秘密轮换后的容器按序重启（本机无 Docker，数据层轮换仅 P14c 演练覆盖）。
 - 剩余待确认：备份保留/离站策略、密钥托管（KMS/离线/分片）；正式发布仍受官方 PG 镜像 digest/Compose 验收/秘密托管阻塞。
+## P12e Identity/Runtime 只读审计/日志查询（2026-11-02）
+
+Identity 与 Runtime 各新增两个只读 owner RPC（不新增服务、权限编号或数据库表）：
+
+- `IdentityService.ListAudit` / `ListLogs`：caller 必须是 Control platform peer，Identity 在自身库
+  复核该 Control 主体的当前注册/凭据，并要求 Control principal 上有显式 `audit.read`(49) /
+  `log.read`(48) 的精确 `RESOURCE_CATALOG` id `control` assignment；不跨库、无委托转发。
+- `RuntimeService.ListAudit` / `ListLogs`：caller 必须是 Control 且携带当前在线委托；Runtime
+  通过 Identity.CheckAuthorization 复核精确权限与同一 `RESOURCE_CATALOG`/`control` scope 后才查询
+  自己的 `audit_entries`。
+- 统一语义：`occurred_at` 降序 + 稳定 bigint id 的 keyset 分页（`from` 含、`until` 含、时间窗、
+  actor、resource 过滤；默认 20 最大 100，无效/篡改游标 `INVALID_ARGUMENT`）；日志是同一权威
+  审计事实的脱敏运维投影（severity `info|rejected`、component=owner、message 为闭集
+  `request.recorded`/`request.rejected`），不返回凭据、消息正文、模型密钥或自由错误文本。
+- 失败语义：持久化查询依赖不可用返回稳定的 `UPSTREAM_UNAVAILABLE`（RPC/Control 映射 503），
+  不返回成功空页；只有确认无匹配记录的已授权查询才返回空页；权限/凭据失败分别
+  `UNAUTHENTICATED`/`PERMISSION_DENIED`。
+- Control 的 `/logs`、`/audit` 聚合接线仍由 P12c 完成；在此之前 REST 继续 503，owner RPC 已可被
+  Control 受权调用。验证：`p03_postgres_database`（真 PG16.4 分页/过滤/脱敏）与
+  `p12e_audit_query`（游标契约）以及 `proto/tests/check_target.sh` 契约门禁。

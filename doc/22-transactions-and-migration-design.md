@@ -280,3 +280,10 @@ P11d/P07 后续（届时按同一 fail-closed 规则补充派生与测试，不�
 ## P13b Host/SDK/Adapter 优雅停止与恢复顺序（实现记录，2026-11-02）
 
 Host 本地 journal 是进程事实的唯一本地权威，不冒充 Runtime 业务账本。优雅停止顺序固定为：停止接受新命令 → 活动 execution 有界 TERM（grace≤10s，TERM→KILL）→ flush 最终 observation → 有界 prune → close journal → 停 HostBridge；写盘与观察在同一次锁内完成，关闭后不再接受命令。无法确认的终止保留 UNKNOWN，重启恢复按 instance+execution_generation/marker 判断，不重复 spawn、不把 UNKNOWN 写成成功。SDK 的 ShutdownNotice 不丢已受理事件：在 drain 窗口内继续处理回执，窗口结束后停止但不重连；Adapter 未确认事件保留本地 outbox 并在窗口后按退避重连（Runtime 新代次重注册）。跨服务故障矩阵由 p13_host_sdk_drain（真实 Host+SDK）与 p08 单测覆盖；P08b-3a Host 命令下发接好后，Runtime BeginDelete 的 Host 参与者可复用同一 drain 语义。
+## P12e 只读审计/日志投影事务边界（2026-11-02）
+
+P12e 不新增表、不改变业务事务写入：Identity/Runtime 的 `audit_entries` 是各自权威事实，仍由原
+业务 UoW 在同事务提交。新增的 `ListAudit`/`ListLogs` 只在独立的短只读 UoW（2s 预算）内执行
+keyset 查询，提交/回滚不产生写、审计或 outbox；查询失败不接触业务事务。日志是审计事实的
+脱敏投影，不复制到 Control、不延长保留期：审计最小 180 天、运维日志默认 7 天仍由各 owner
+保留策略决定，Control 只投影授权且已存在的行。
