@@ -393,6 +393,14 @@ add_executable(kiarabot_model_rpc_test
 target_link_libraries(kiarabot_model_rpc_test PRIVATE
   kiarabot_model_rpc kiarabot_model_gateway_application kiarabot_service_process)
 kiarabot_platform_warnings(kiarabot_model_rpc_test)
+add_executable(kiarabot_model_bridge_test
+  ${CMAKE_SOURCE_DIR}/core/tests/platform/model_bridge_test.cpp)
+target_link_libraries(kiarabot_model_bridge_test PRIVATE
+  kiarabot_runtime_rpc OpenSSL::SSL OpenSSL::Crypto)
+kiarabot_platform_warnings(kiarabot_model_bridge_test)
+add_test(NAME p11_model_bridge COMMAND kiarabot_model_bridge_test)
+set_tests_properties(p11_model_bridge PROPERTIES LABELS "p11;integration;bridge" TIMEOUT 60)
+
 add_test(NAME p11_model_rpc COMMAND kiarabot_model_rpc_test)
 set_tests_properties(p11_model_rpc PROPERTIES LABELS "p11;integration" TIMEOUT 30)
 
