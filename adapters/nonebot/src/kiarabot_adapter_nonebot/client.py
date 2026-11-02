@@ -18,12 +18,13 @@ from contextlib import suppress
 from dataclasses import dataclass
 
 import grpc
-from kiarabot.v1 import adapters_pb2 as adapters, common_pb2 as common, services_pb2_grpc as services
+from kiarabot.v1 import (actions_pb2 as actions, adapters_pb2 as adapters, common_pb2 as common,
+                         services_pb2_grpc as services)
 
 from .actions import ACTION_CAPABILITIES
 from .bridge import (BridgeConfig, BridgeFailure, ConnectionAuthorization, FATAL_REGISTRATION_CODES,
-                     Registration, authorization_result, check_response_fence, error_code, frame,
-                     shutdown_notice)
+                     Registration, authorization_result, bounded_identifier,
+                     check_response_fence, error_code, frame, shutdown_notice, valid_uuid4)
 from .mapper import AdapterError
 from .outbox import Outbox
 
@@ -32,6 +33,16 @@ logger = logging.getLogger(__name__)
 EVENT_CAPABILITY = 'event.message_received'
 # Rejections that must keep the event pending even if the Runtime omits retryable=true.
 ALWAYS_RETRYABLE_REJECTIONS = frozenset({common.RATE_LIMITED})
+KNOWN_RECEIPTS = frozenset({actions.ACTION_RECEIPT_RECORDED, actions.ACTION_RECEIPT_DUPLICATE,
+                            actions.ACTION_RECEIPT_EVIDENCE_ONLY,
+                            actions.ACTION_RECEIPT_CONFLICT})
+
+
+def valid_receipt(receipt) -> bool:
+    """P07 receipt frame: correlate by action id + dispatch attempt and a known disposition."""
+    return (bounded_identifier(receipt.action_id)
+            and valid_uuid4(receipt.dispatch_attempt_id)
+            and receipt.disposition in KNOWN_RECEIPTS)
 
 
 @dataclass
@@ -75,7 +86,12 @@ class BridgeClient:
         self._refresh_pending: str | None = None
         self._refresh_deadline = float('inf')
         self._drain_deadline = float('inf')
-        self._deferred_action_results = []
+        # Reports/evidence generated while a refresh rotation is in flight carry the old
+        # proof; they are deferred until the new authorization is applied.
+        self._deferred_reports = []
+        # Report keys already sent on the current connection. Persisted reports stay UNSENT
+        # until an action_receipt arrives, so this prevents same-connection duplicates only.
+        self._sent_reports = set()
         self._last_heartbeat = 0.0
 
     # ---- state exposed to health/status -------------------------------------------------
@@ -167,6 +183,8 @@ class BridgeClient:
         self._draining = False
         self._drain_deadline = float('inf')
         self._refresh_pending = None
+        self._sent_reports = set()
+        self._deferred_reports = []
         self._schedule_refresh(registration.authorization)
         if self.executor is not None:
             self.executor.configure(registration.instance_id, registration.effective_capabilities)
@@ -202,9 +220,9 @@ class BridgeClient:
         self._schedule_refresh(refreshed)
         # Frames generated while the rotation was in flight must use the new proof: the Runtime
         # invalidates the old material atomically when it accepts the refresh request.
-        deferred, self._deferred_action_results = self._deferred_action_results, []
-        for result in deferred:
-            await self._write(call, self._frame(action_result=result))
+        deferred, self._deferred_reports = self._deferred_reports, []
+        for report in deferred:
+            await self._send_report(call, report)
 
     def _refresh_failure(self, request_id: str, code: int) -> None:
         if request_id != self._refresh_pending:
@@ -236,14 +254,20 @@ class BridgeClient:
         if body == 'action':
             if not self.executor:
                 raise BridgeFailure(common.CAPABILITY_NOT_SUPPORTED)
-            result = await self.executor.execute(response.action, self._fence.instance_id)
-            if self._refresh_pending is not None:
-                self._deferred_action_results.append(result)
-            else:
-                await self._write(call, self._frame(action_result=result))
+            try:
+                report = await self.executor.execute(response.action, self._fence.instance_id)
+            except AdapterError as failure:
+                # Invalid dispatch correlation / local journal failure: execute nothing and
+                # reconnect; the Runtime keeps ownership of the attempt/expiry decision.
+                raise RetryConnection(failure.code) from None
+            await self._send_report(call, report)
             return
         if body == 'action_receipt':
-            # P07 export confirmation is not consumed in the P06 adapter phase.
+            receipt = response.action_receipt
+            if (not receipt.action_id or not valid_receipt(receipt)):
+                raise RetryConnection(common.INTERNAL)
+            if self.executor is not None:
+                self.executor.acknowledge(receipt)
             return
         if body == 'authorization_result':
             request_id, authorization, code = authorization_result(response)
@@ -253,6 +277,36 @@ class BridgeClient:
             await self._apply_refresh(call, request_id, authorization)
             return
         raise RetryConnection(common.INTERNAL)
+
+    # ---- action reports / receipts -----------------------------------------------------
+    async def _send_report(self, call, report) -> None:
+        if not getattr(report, 'send', True) or report.key in self._sent_reports:
+            return
+        if self._refresh_pending is not None:
+            self._deferred_reports.append(report)
+            return
+        if report.kind == 'result':
+            await self._write(call, self._frame(action_result=report.result))
+        else:
+            await self._write(call, self._frame(action_evidence=report.evidence))
+        self._sent_reports.add(report.key)
+
+    async def _flush_pending_reports(self, call) -> None:
+        """Retransmit unacknowledged results/evidence after a new connection is authorized.
+
+        The journal sorts reports; a receipt moves the row out of UNSENT. Reports already sent on
+        this connection are skipped so a lost receipt is retried only after reconnection.
+        """
+        if self.executor is None:
+            return
+        offset = 0
+        while True:
+            batch = self.executor.pending_reports(256, offset)
+            if not batch:
+                return
+            for report in batch:
+                await self._send_report(call, report)
+            offset += len(batch)
 
     def handle_event_ack(self, event, ack) -> None:
         if ack.status in (adapters.AdapterEventAck.PERSISTED, adapters.AdapterEventAck.DUPLICATE):
@@ -364,6 +418,7 @@ class BridgeClient:
                     result, expected_instance=self.config.adapter_instance_id))
                 self._connected = True
                 self.report_status(common.HEALTHY, 'runtime_connected')
+                await self._flush_pending_reports(call)
                 await self._loop(call, inbox, stop)
             finally:
                 self._connected = False

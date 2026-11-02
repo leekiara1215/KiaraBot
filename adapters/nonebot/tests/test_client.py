@@ -8,6 +8,7 @@ from contextlib import asynccontextmanager, suppress
 
 import pytest
 from kiarabot.v1 import actions_pb2 as actions, adapters_pb2 as adapters, common_pb2 as common
+from kiarabot.v1 import platform_pb2 as platform
 from kiarabot_adapter_nonebot.actions import ActionExecutor
 from kiarabot_adapter_nonebot.client import BridgeClient, RetryConnection
 from kiarabot_adapter_nonebot.mapper import map_message
@@ -331,7 +332,7 @@ async def test_status_event_is_delivered_through_target_frames(tmp_path, server_
             await finish(store, task, stop)
 
 
-async def test_action_execution_requires_effective_capability(tmp_path, server_tls):
+async def test_action_result_correlation_and_capability_precheck(tmp_path, server_tls):
     calls = []
 
     async def call_platform(api, params):
@@ -350,16 +351,24 @@ async def test_action_execution_requires_effective_capability(tmp_path, server_t
             await until(lambda: runtime.active is not None)
             approve = action_request(config, entry.instance_id, payload='approve_request')
             send = action_request(config, entry.instance_id, payload='send_message')
-            await runtime.push_action(approve)
-            await runtime.push_action(send)
+            approve_envelope = await runtime.dispatch_action(approve)
+            send_envelope = await runtime.dispatch_action(send)
             await until(lambda: len(runtime.connections[0].action_results) >= 2, 6)
             results = runtime.connections[0].action_results
+            assert results[0].dispatch_attempt_id == approve_envelope.dispatch_attempt_id
             assert results[0].status == actions.FAILED
             assert results[0].error.code == common.CAPABILITY_NOT_SUPPORTED
+            assert results[0].execution_outcome == platform.EXECUTION_KNOWN_FAILED
+            assert results[1].dispatch_attempt_id == send_envelope.dispatch_attempt_id
             assert results[1].status == actions.SUCCEEDED
+            assert results[1].execution_outcome == platform.EXECUTION_KNOWN_SUCCEEDED
             assert results[1].platform_message_id == '4242'
             assert calls == [('send_group_msg', {'group_id': 456, 'message': [
                 {'type': 'text', 'data': {'text': 'hello'}}]})]
+            # The fixture acknowledged both reports; the local journal is now clean.
+            await until(lambda: executor.pending_reports() == [])
+            assert runtime.connections[0].receipts[0].disposition == \
+                actions.ACTION_RECEIPT_RECORDED
         finally:
             executor.close()
             await finish(store, task, stop)
@@ -421,3 +430,265 @@ async def test_cancelled_transport_is_not_retried(tmp_path, server_tls):
                 await asyncio.wait_for(task, 1)
         finally:
             store.close()
+
+
+def copy_action(action):
+    value = actions.ActionEnvelope()
+    value.CopyFrom(action)
+    return value
+
+
+async def test_duplicate_dispatch_same_attempt_is_not_reexecuted(tmp_path, server_tls):
+    calls = []
+
+    async def call_platform(api, params):
+        calls.append(api)
+        return {'message_id': 51}
+
+    async with make_runtime(server_tls) as runtime:
+        entry, config = deploy(tmp_path, runtime)
+        executor = ActionExecutor(tmp_path / 'dup.db', config.adapter_id, config.account_id,
+                                  call_platform)
+        client, store, task, stop, _ = start(tmp_path, config, executor=executor)
+        try:
+            await until(lambda: runtime.active is not None)
+            action = action_request(config, entry.instance_id)
+            envelope = await runtime.dispatch_action(action)
+            await until(lambda: len(runtime.connections[0].action_results) == 1)
+            await runtime.dispatch_action(copy_action(action),
+                                          attempt_id=envelope.dispatch_attempt_id,
+                                          sequence=envelope.dispatch_sequence)
+            await asyncio.sleep(0.2)
+            assert calls == ['send_group_msg']
+            assert len(runtime.connections[0].action_results) == 1
+            await until(lambda: executor.pending_reports() == [])
+        finally:
+            executor.close()
+            await finish(store, task, stop)
+
+
+async def test_redispatch_new_attempt_reports_known_result_without_execution(tmp_path, server_tls):
+    calls = []
+
+    async def call_platform(api, params):
+        calls.append(api)
+        return {'message_id': 61}
+
+    async with make_runtime(server_tls) as runtime:
+        entry, config = deploy(tmp_path, runtime)
+        executor = ActionExecutor(tmp_path / 'redispatch.db', config.adapter_id,
+                                  config.account_id, call_platform)
+        client, store, task, stop, _ = start(tmp_path, config, executor=executor)
+        try:
+            await until(lambda: runtime.active is not None)
+            action = action_request(config, entry.instance_id)
+            first = await runtime.dispatch_action(action)
+            await until(lambda: len(runtime.connections[0].action_results) == 1)
+            second = await runtime.dispatch_action(copy_action(action), sequence=2)
+            await until(lambda: len(runtime.connections[0].action_results) == 2)
+            results = runtime.connections[0].action_results
+            assert results[1].dispatch_attempt_id == second.dispatch_attempt_id
+            assert results[1].status == actions.SUCCEEDED
+            assert calls == ['send_group_msg']
+        finally:
+            executor.close()
+            await finish(store, task, stop)
+
+
+async def test_missing_receipt_retransmits_report_after_reconnect(tmp_path, server_tls):
+    calls = []
+
+    async def call_platform(api, params):
+        calls.append(api)
+        return {'message_id': 71}
+
+    async with make_runtime(server_tls) as runtime:
+        runtime.receipt_policy = lambda connection, kind, payload: 'none'
+        entry, config = deploy(tmp_path, runtime)
+        executor = ActionExecutor(tmp_path / 'receipt.db', config.adapter_id, config.account_id,
+                                  call_platform)
+        client, store, task, stop, _ = start(tmp_path, config, executor=executor)
+        try:
+            await until(lambda: runtime.active is not None)
+            action = action_request(config, entry.instance_id)
+            envelope = await runtime.dispatch_action(action)
+            await until(lambda: len(runtime.connections[0].action_results) == 1)
+            await until(lambda: len(executor.pending_reports()) == 1)
+            await runtime.close_stream()
+            await until(lambda: len(runtime.connections) >= 2)
+            await until(lambda: runtime.connections[1].action_results)
+            resent = runtime.connections[1].action_results[0]
+            assert resent.dispatch_attempt_id == envelope.dispatch_attempt_id
+            assert resent.action_id == action.action_id
+            assert calls == ['send_group_msg']
+            # A receipt on the new connection finally clears the local journal.
+            runtime.receipt_policy = None
+            await runtime.close_stream()
+            await until(lambda: len(runtime.connections) >= 3)
+            await until(lambda: executor.pending_reports() == [], 6)
+        finally:
+            executor.close()
+            await finish(store, task, stop)
+
+
+async def test_unknown_platform_result_uses_evidence_and_never_replays(tmp_path, server_tls):
+    calls = []
+
+    async def call_platform(api, params):
+        calls.append(api)
+        raise asyncio.TimeoutError()
+
+    async with make_runtime(server_tls) as runtime:
+        entry, config = deploy(tmp_path, runtime)
+        executor = ActionExecutor(tmp_path / 'unknown.db', config.adapter_id, config.account_id,
+                                  call_platform)
+        client, store, task, stop, _ = start(tmp_path, config, executor=executor)
+        try:
+            await until(lambda: runtime.active is not None)
+            action = action_request(config, entry.instance_id)
+            envelope = await runtime.dispatch_action(action)
+            await until(lambda: runtime.connections[0].action_evidence)
+            evidence = runtime.connections[0].action_evidence[0]
+            assert evidence.dispatch_attempt_id == envelope.dispatch_attempt_id
+            assert evidence.execution_outcome == platform.EXECUTION_UNKNOWN
+            assert evidence.last_error.code == common.UPSTREAM_UNAVAILABLE
+            await until(lambda: executor.pending_reports() == [])
+            second = await runtime.dispatch_action(copy_action(action), sequence=2)
+            await until(lambda: len(runtime.connections[0].action_evidence) == 2)
+            again = runtime.connections[0].action_evidence[1]
+            assert again.dispatch_attempt_id == second.dispatch_attempt_id
+            assert again.execution_outcome == platform.EXECUTION_UNKNOWN
+            assert calls == ['send_group_msg']
+        finally:
+            executor.close()
+            await finish(store, task, stop)
+
+
+async def test_expired_dispatch_reports_not_started_without_platform_call(tmp_path, server_tls):
+    calls = []
+
+    async def call_platform(api, params):
+        calls.append(api)
+
+    async with make_runtime(server_tls) as runtime:
+        entry, config = deploy(tmp_path, runtime)
+        executor = ActionExecutor(tmp_path / 'expired.db', config.adapter_id, config.account_id,
+                                  call_platform)
+        client, store, task, stop, _ = start(tmp_path, config, executor=executor)
+        try:
+            await until(lambda: runtime.active is not None)
+            action = action_request(config, entry.instance_id)
+            action.deadline.seconds = int(time.time()) - 1
+            envelope = await runtime.dispatch_action(action)
+            await until(lambda: runtime.connections[0].action_evidence)
+            evidence = runtime.connections[0].action_evidence[0]
+            assert evidence.dispatch_attempt_id == envelope.dispatch_attempt_id
+            assert evidence.execution_outcome == platform.EXECUTION_NOT_STARTED
+            assert evidence.last_error.code == common.TIMEOUT
+            assert runtime.connections[0].action_results == []
+            assert calls == []
+        finally:
+            executor.close()
+            await finish(store, task, stop)
+
+
+@pytest.mark.parametrize('disposition', [actions.ACTION_RECEIPT_EVIDENCE_ONLY,
+                                         actions.ACTION_RECEIPT_CONFLICT])
+async def test_receipt_without_recording_stops_retransmission(tmp_path, server_tls, disposition):
+    async def call_platform(api, params):
+        return {'message_id': 81}
+
+    async with make_runtime(server_tls) as runtime:
+        runtime.receipt_policy = lambda connection, kind, payload: {
+            'disposition': disposition, 'error_code': common.TIMEOUT
+            if disposition == actions.ACTION_RECEIPT_EVIDENCE_ONLY else common.CONFLICT}
+        entry, config = deploy(tmp_path, runtime)
+        executor = ActionExecutor(tmp_path / 'late.db', config.adapter_id, config.account_id,
+                                  call_platform)
+        client, store, task, stop, _ = start(tmp_path, config, executor=executor)
+        try:
+            await until(lambda: runtime.active is not None)
+            action = action_request(config, entry.instance_id)
+            await runtime.dispatch_action(action)
+            await until(lambda: runtime.connections[0].receipts)
+            await until(lambda: executor.pending_reports() == [])
+            await runtime.close_stream()
+            await until(lambda: len(runtime.connections) >= 2)
+            await asyncio.sleep(0.2)
+            assert runtime.connections[1].action_results == []
+            assert runtime.connections[1].action_evidence == []
+        finally:
+            executor.close()
+            await finish(store, task, stop)
+
+
+async def test_process_restart_reports_unknown_instead_of_replaying(tmp_path, server_tls):
+    path = tmp_path / 'crash.db'
+    calls = []
+
+    async def hanging_platform(api, params):
+        calls.append(api)
+        await asyncio.Event().wait()
+
+    async with make_runtime(server_tls) as runtime:
+        entry, config = deploy(tmp_path, runtime)
+        executor = ActionExecutor(path, config.adapter_id, config.account_id, hanging_platform)
+        client, store, task, stop, _ = start(tmp_path, config, executor=executor)
+        try:
+            await until(lambda: runtime.active is not None)
+            action = action_request(config, entry.instance_id)
+            envelope = await runtime.dispatch_action(action)
+
+            def journal_state():
+                row = executor.db.execute('SELECT state FROM actions WHERE id=?',
+                                          (action.action_id,)).fetchone()
+                return row[0] if row else None
+            await until(lambda: journal_state() == 'claimed')
+        finally:
+            await finish(store, task, stop)
+            executor.close()
+        # Simulated process death during the platform call: reopening recovers UNKNOWN evidence.
+        recovered = ActionExecutor(path, config.adapter_id, config.account_id,
+                                   lambda *_: pytest.fail('platform must not be called'))
+        try:
+            pending = recovered.pending_reports()
+            assert len(pending) == 1
+            assert pending[0].kind == 'evidence'
+            assert pending[0].dispatch_attempt_id == envelope.dispatch_attempt_id
+            client2, store2, task2, stop2, _ = start(tmp_path, config, executor=recovered)
+            try:
+                await until(lambda: runtime.active is not None and runtime.active.action_evidence)
+                evidence = runtime.active.action_evidence[0]
+                assert evidence.dispatch_attempt_id == envelope.dispatch_attempt_id
+                assert evidence.execution_outcome == platform.EXECUTION_UNKNOWN
+                assert calls == ['send_group_msg']
+            finally:
+                await finish(store2, task2, stop2)
+        finally:
+            recovered.close()
+
+
+async def test_invalid_dispatch_correlation_is_never_executed(tmp_path, server_tls):
+    calls = []
+
+    async def call_platform(api, params):
+        calls.append(api)
+
+    async with make_runtime(server_tls) as runtime:
+        entry, config = deploy(tmp_path, runtime)
+        executor = ActionExecutor(tmp_path / 'invalid.db', config.adapter_id, config.account_id,
+                                  call_platform)
+        client, store, task, stop, _ = start(tmp_path, config, executor=executor)
+        try:
+            await until(lambda: runtime.active is not None)
+            action = action_request(config, entry.instance_id)
+            # Runtime contract violation: missing dispatch_attempt_id/dispatch_sequence.
+            await runtime.push_raw_action(action)
+            await until(lambda: len(runtime.connections) >= 2, 6)
+            first = runtime.connections[0]
+            assert first.action_results == [] and first.action_evidence == []
+            assert calls == []
+            assert executor.pending_reports() == []
+        finally:
+            executor.close()
+            await finish(store, task, stop)

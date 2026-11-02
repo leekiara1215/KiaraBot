@@ -16,7 +16,8 @@ import uuid
 from dataclasses import dataclass, field
 
 import grpc
-from kiarabot.v1 import adapters_pb2 as adapters, common_pb2 as common, platform_pb2 as platform
+from kiarabot.v1 import actions_pb2 as actions, adapters_pb2 as adapters, common_pb2 as common
+from kiarabot.v1 import platform_pb2 as platform
 from kiarabot.v1 import services_pb2_grpc as services
 from kiarabot_adapter_nonebot.bridge import (PROTOCOL_VERSION, BridgeConfig, Fence, timestamp)
 
@@ -63,7 +64,10 @@ class Connection:
     heartbeats: list = field(default_factory=list)
     events: list = field(default_factory=list)
     refreshes: list = field(default_factory=list)
+    dispatched: list = field(default_factory=list)
     action_results: list = field(default_factory=list)
+    action_evidence: list = field(default_factory=list)
+    receipts: list = field(default_factory=list)
     closed: bool = False
 
 
@@ -92,6 +96,12 @@ class FakeTargetRuntime(services.AdapterBridgeServicer):
         self.effective_capability_filter = None  # callable(iterable[str]) -> iterable[str]
         self.mutate_ack_fence = False
         self.effective_capabilities = None
+        # P07 dispatch/receipt fixture: default acknowledges every result/evidence with RECORDED.
+        self.receipt_policy = None  # callable(connection, kind, payload) -> None | dict
+        self.action_sequences: dict = {}
+        # Dispatch history spans connections: reports for an attempt dispatched before a
+        # reconnect are valid after retransmission.
+        self.dispatched: list = []
         self._server = grpc.aio.server()
         services.add_AdapterBridgeServicer_to_server(self, self._server)
         with open(certificate, 'rb') as certificate_file:
@@ -141,8 +151,40 @@ class FakeTargetRuntime(services.AdapterBridgeServicer):
             raise AssertionError('no active connection')
         await self._outbox.put(item)
 
-    async def push_action(self, action) -> None:
-        await self._put(self._frame(self._active, action=action))
+    async def dispatch_action(self, action, *, attempt_id=None, sequence=None):
+        """Runtime-side dispatch: fill P07 fields and send the action frame to the adapter."""
+        connection = self._active
+        if connection is None:
+            raise AssertionError('no active connection')
+        attempt = attempt_id if attempt_id is not None else str(uuid.uuid4())
+        if sequence is None:
+            sequence = self.action_sequences.get(action.action_id, 0) + 1
+        self.action_sequences[action.action_id] = sequence
+        envelope = actions.ActionEnvelope()
+        envelope.CopyFrom(action)
+        envelope.dispatch_attempt_id = attempt
+        envelope.dispatch_sequence = sequence
+        envelope.target_source.adapter_instance_id = connection.fence.instance_id
+        record = {'action_id': envelope.action_id, 'attempt_id': attempt,
+                  'sequence': sequence, 'envelope': envelope, 'connection': connection}
+        connection.dispatched.append(record)
+        self.dispatched.append(record)
+        await self._put(self._frame(connection, action=envelope))
+        return envelope
+
+    async def push_raw_action(self, envelope) -> None:
+        """Bypass dispatch-field filling so tests can assert adapter fail-closed behavior."""
+        await self._put(self._frame(self._active, action=envelope))
+
+    def latest_dispatch(self, action_id):
+        for record in reversed(self.dispatched):
+            if record['action_id'] == action_id:
+                return record
+        return None
+
+    def dispatched_attempts(self, action_id):
+        return {record['attempt_id'] for record in self.dispatched
+                if record['action_id'] == action_id}
 
     async def push_shutdown(self, *, reason: str = 'drain', drain_timeout_ms: int = 0) -> None:
         await self._put(self._frame(self._active, shutdown=common.ShutdownNotice(
@@ -302,7 +344,11 @@ class FakeTargetRuntime(services.AdapterBridgeServicer):
                     if not await self._handle_refresh(connection, frame.refresh_authorization):
                         return
                 elif body == 'action_result':
-                    connection.action_results.append(frame.action_result)
+                    if not await self._handle_action_result(connection, frame.action_result):
+                        return
+                elif body == 'action_evidence':
+                    if not await self._handle_action_evidence(connection, frame.action_evidence):
+                        return
                 else:
                     self.protocol_violations.append('unexpected_client_body')
                     await self._put(_Abort(grpc.StatusCode.INVALID_ARGUMENT))
@@ -313,6 +359,59 @@ class FakeTargetRuntime(services.AdapterBridgeServicer):
             outbox = self._outbox
             if outbox is not None:
                 await outbox.put(_CLOSE)
+
+    async def _handle_action_result(self, connection: Connection, result) -> bool:
+        if result.dispatch_attempt_id not in self.dispatched_attempts(result.action_id):
+            self.protocol_violations.append('result_attempt_mismatch')
+            await self._put(_Abort(grpc.StatusCode.INVALID_ARGUMENT))
+            return False
+        if (result.status not in (actions.SUCCEEDED, actions.FAILED)
+                or result.execution_outcome not in (platform.EXECUTION_KNOWN_SUCCEEDED,
+                                                    platform.EXECUTION_KNOWN_FAILED)
+                or (result.status == actions.SUCCEEDED
+                    and result.execution_outcome != platform.EXECUTION_KNOWN_SUCCEEDED)
+                or (result.status == actions.FAILED
+                    and result.execution_outcome != platform.EXECUTION_KNOWN_FAILED)
+                or (result.status == actions.FAILED and not result.error.code)
+                or not result.HasField('completed_at')):
+            self.protocol_violations.append('invalid_action_result')
+            await self._put(_Abort(grpc.StatusCode.INVALID_ARGUMENT))
+            return False
+        connection.action_results.append(result)
+        await self._send_receipt(connection, 'result', result)
+        return True
+
+    async def _handle_action_evidence(self, connection: Connection, item) -> bool:
+        attempts = self.dispatched_attempts(item.action_id)
+        if (item.dispatch_attempt_id not in attempts
+                or item.execution_outcome not in (platform.EXECUTION_NOT_STARTED,
+                                                  platform.EXECUTION_UNKNOWN)
+                or not item.HasField('observed_at')):
+            self.protocol_violations.append('invalid_action_evidence')
+            await self._put(_Abort(grpc.StatusCode.INVALID_ARGUMENT))
+            return False
+        connection.action_evidence.append(item)
+        await self._send_receipt(connection, 'evidence', item)
+        return True
+
+    async def _send_receipt(self, connection: Connection, kind, payload) -> None:
+        policy = self.receipt_policy(connection, kind, payload) if self.receipt_policy else None
+        if policy == 'none':
+            return
+        policy = policy or {'disposition': actions.ACTION_RECEIPT_RECORDED}
+        receipt = actions.ActionReceipt(action_id=payload.action_id,
+                                        dispatch_attempt_id=payload.dispatch_attempt_id,
+                                        disposition=policy.get(
+                                            'disposition', actions.ACTION_RECEIPT_RECORDED))
+        code = policy.get('error_code')
+        if code:
+            receipt.error.CopyFrom(common.Error(code=code,
+                                               message=common.ErrorCode.Name(code)))
+        authoritative = policy.get('result')
+        if authoritative is not None:
+            receipt.result.CopyFrom(authoritative)
+        connection.receipts.append(receipt)
+        await self._put(self._frame(connection, action_receipt=receipt))
 
     async def _handle_event(self, connection: Connection, event) -> bool:
         if (not event.event_id or not event.trace_id
