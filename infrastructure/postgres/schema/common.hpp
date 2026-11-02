@@ -163,7 +163,10 @@ CREATE TABLE kiarabot.audit_entries (
   actor text NOT NULL, resource_kind integer NOT NULL CHECK(resource_kind BETWEEN 0 AND 15), resource_id text NOT NULL,
   request_id text NOT NULL, trace_id text NOT NULL, method text NOT NULL,
   rejection integer CHECK(rejection BETWEEN 0 AND 10), authorization_version kiarabot.uint64 NOT NULL,
-  occurred_at bigint NOT NULL
+  occurred_at bigint NOT NULL,
+  -- P07 target columns: exact Action/account/conversation context for audit projection.
+  target_account_id text,
+  target_conversation_id text
 );
 )sql";
   sql +=

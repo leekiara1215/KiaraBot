@@ -9,17 +9,20 @@ namespace kiarabot::infrastructure::postgres::schema {
 inline constexpr int version(core::target::Service owner) {
   switch (owner) {
   case core::target::Service::Identity:
-    return 13;
+    return 14;
   case core::target::Service::Runtime:
     // P05 adds Runtime relations/columns, shared replay-result relations and the private
     // bridge_credentials relation; P06 adds the five event/delivery relations and A1's
-    // binding-before-registration constraint.
-    return 9;
+    // binding-before-registration constraint; P07 adds the six Action/quota/policy/evidence
+    // relations and the shared audit target columns.
+    return 10;
   case core::target::Service::Scheduler:
-    // P10a adds the one-shot task/occurrence trigger-observation columns and due/owner indexes.
-    return 7;
+    // P10a adds the one-shot task/occurrence trigger-observation columns and due/owner indexes;
+    // P07 adds the shared nullable audit target columns to every service schema.
+    return 8;
   case core::target::Service::Model:
-    return 6;
+    // P07 adds the shared nullable audit target columns to every service schema.
+    return 7;
   }
   return 0;
 }
