@@ -265,8 +265,9 @@ async def async_main(args) -> None:
                     api_version='kiarabot.plugin.v1', runtime='python-rpc',
                     entrypoint='plugin:factory', isolation='process', config_schema='{}',
                     ordered=False, capabilities=['event.message.received'],
-                    permissions=['message.read', 'message.send']),
+                    permissions=['message.read', 'message.send', 'storage.namespace']),
                 instance_id=PLUGIN_INSTANCE,
+                installation_id=INSTALLATION,
                 supported_features=['plugin.config.v1', 'action.result.v1'])))
             plugin_registered = await read_or_fail(plugin_call, 'plugin registration')
             require(plugin_registered.WhichOneof('body') == 'register_result',
@@ -659,6 +660,195 @@ async def async_main(args) -> None:
                     late_query.action_response.result.execution_outcome ==
                     platform.EXECUTION_UNKNOWN,
                     'late result rewrote the expired terminal snapshot')
+
+            # ---- P09b storage: PluginBridge host_request frames -> RuntimeStorageApplication ----
+            async def storage_frame(label, *, idempotency_key='', **operation):
+                await plugin_call.write(plugins.PluginToCore(
+                    fence=plugin_fence, connection_proof=plugin_proof,
+                    host_request=plugins.HostRequest(
+                        request_id=str(__import__('uuid').uuid4()),
+                        trace_id=str(__import__('uuid').uuid4()),
+                        deadline=timestamp(time.time() + 5),
+                        idempotency_key=idempotency_key, **operation)))
+                frame = await read_or_fail(plugin_call, label)
+                require(frame.WhichOneof('body') == 'host_response',
+                        f'{label}: wrong response frame')
+                require(frame.host_response.request_id, f'{label}: request id missing')
+                return frame.host_response
+
+            def require_storage_error(response, label, code):
+                require(response.HasField('error') and response.error.code == code,
+                        f'{label}: unexpected error {response.error}')
+
+            private_scope = common.NamespaceScope(instance_private=True)
+            shared_scope = common.NamespaceScope(installation_shared=True)
+            set_idem = 'p09-private-set-' + str(__import__('uuid').uuid4())
+            stored = await storage_frame(
+                'storage private set',
+                idempotency_key=set_idem,
+                storage_set=plugins.StorageSetRequest(
+                    key='p09/alpha', value=b'one', scope=private_scope))
+            require(not stored.HasField('error') and stored.storage_set.version == 1,
+                    'private storage set failed')
+            fetched = await storage_frame(
+                'storage private get',
+                storage_get=plugins.StorageGetRequest(key='p09/alpha', scope=private_scope))
+            require(not fetched.HasField('error') and fetched.storage_get.value == b'one' and
+                    fetched.storage_get.version == 1, 'private storage get mismatch')
+            replayed = await storage_frame(
+                'storage private replay',
+                idempotency_key=set_idem,
+                storage_set=plugins.StorageSetRequest(
+                    key='p09/alpha', value=b'one', scope=private_scope))
+            require(not replayed.HasField('error') and
+                    replayed.storage_set.version == stored.storage_set.version,
+                    'private receipt replay changed the version')
+            require_storage_error(await storage_frame(
+                'storage private conflicting replay',
+                idempotency_key=set_idem,
+                storage_set=plugins.StorageSetRequest(
+                    key='p09/alpha', value=b'changed', scope=private_scope)),
+                'private conflicting replay', common.CONFLICT)
+            cas = await storage_frame(
+                'storage private cas',
+                idempotency_key='p09-private-cas-' + str(__import__('uuid').uuid4()),
+                storage_compare_and_set=plugins.StorageCompareAndSetRequest(
+                    key='p09/alpha', value=b'two', scope=private_scope,
+                    condition=common.StorageCondition(version=1)))
+            require(not cas.HasField('error') and
+                    cas.storage_compare_and_set.entry.value == b'two' and
+                    cas.storage_compare_and_set.entry.version == 2, 'private CAS mismatch')
+            require_storage_error(await storage_frame(
+                'storage private stale cas',
+                idempotency_key='p09-private-cas-stale-' + str(__import__('uuid').uuid4()),
+                storage_compare_and_set=plugins.StorageCompareAndSetRequest(
+                    key='p09/alpha', value=b'three', scope=private_scope,
+                    condition=common.StorageCondition(version=1))),
+                'private stale CAS', common.CONFLICT)
+            removed = await storage_frame(
+                'storage private delete',
+                idempotency_key='p09-private-del-' + str(__import__('uuid').uuid4()),
+                storage_delete=plugins.StorageDeleteRequest(
+                    key='p09/alpha', scope=private_scope,
+                    condition=common.StorageCondition(version=2)))
+            require(not removed.HasField('error') and removed.storage_delete.deleted and
+                    removed.storage_delete.version == 2, 'private delete mismatch')
+            require_storage_error(await storage_frame(
+                'storage private get after delete',
+                storage_get=plugins.StorageGetRequest(key='p09/alpha', scope=private_scope)),
+                'private get after delete', common.NOT_FOUND)
+            ttl_deadline = timestamp(time.time() + 1)
+            ttl_set = await storage_frame(
+                'storage private ttl set',
+                idempotency_key='p09-private-ttl-' + str(__import__('uuid').uuid4()),
+                storage_set=plugins.StorageSetRequest(
+                    key='p09/ttl', value=b'ttl', scope=private_scope, expires_at=ttl_deadline))
+            require(not ttl_set.HasField('error') and ttl_set.storage_set.HasField('expires_at'),
+                    'private TTL set mismatch')
+            await asyncio.sleep(1.2)
+            require_storage_error(await storage_frame(
+                'storage private expired get',
+                storage_get=plugins.StorageGetRequest(key='p09/ttl', scope=private_scope)),
+                'private expired get', common.NOT_FOUND)
+            replay_deadline = timestamp(time.time() + 1)
+            replay_idem = 'p09-private-ttl-replay-' + str(__import__('uuid').uuid4())
+            replay_set = await storage_frame(
+                'storage private ttl replay set',
+                idempotency_key=replay_idem,
+                storage_set=plugins.StorageSetRequest(
+                    key='p09/ttl-replay', value=b'ttl', scope=private_scope,
+                    expires_at=replay_deadline))
+            require(not replay_set.HasField('error'), 'private ttl replay set failed')
+            await asyncio.sleep(1.2)
+            replayed_ttl = await storage_frame(
+                'storage private ttl replay',
+                idempotency_key=replay_idem,
+                storage_set=plugins.StorageSetRequest(
+                    key='p09/ttl-replay', value=b'ttl', scope=private_scope,
+                    expires_at=replay_deadline))
+            require(not replayed_ttl.HasField('error') and
+                    replayed_ttl.storage_set.version == replay_set.storage_set.version,
+                    'ttl receipt replay did not return the original snapshot')
+            require_storage_error(await storage_frame(
+                'storage private ttl replay get',
+                storage_get=plugins.StorageGetRequest(key='p09/ttl-replay', scope=private_scope)),
+                'ttl replay did not extend TTL', common.NOT_FOUND)
+            psql(pg_bin, root, port, runtime_password,
+                 "INSERT INTO kiarabot.namespace_quota_counters(scope_kind,scope_id,key_count,"
+                 "byte_count,updated_at) VALUES (0," + quote_sql(PLUGIN_INSTANCE) +
+                 ",1024,0,1),(1," + quote_sql(INSTALLATION) + ",1024,0,1) "
+                 "ON CONFLICT (scope_kind,scope_id) DO UPDATE SET key_count=1024,"
+                 "byte_count=0,updated_at=1")
+            require_storage_error(await storage_frame(
+                'storage private quota',
+                idempotency_key='p09-private-quota-' + str(__import__('uuid').uuid4()),
+                storage_set=plugins.StorageSetRequest(
+                    key='p09/quota', value=b'over', scope=private_scope)),
+                'private quota rejection', common.RATE_LIMITED)
+            psql(pg_bin, root, port, runtime_password,
+                 "UPDATE kiarabot.namespace_quota_counters SET key_count=0,byte_count=0 "
+                 "WHERE scope_kind IN (0,1)")
+            shared_namespace = str(__import__('uuid').uuid4())
+            psql(pg_bin, root, port, runtime_password,
+                 "DELETE FROM kiarabot.namespaces WHERE installation_id=" +
+                 quote_sql(INSTALLATION) + " AND kind=1")
+            psql(pg_bin, root, port, runtime_password,
+                 "INSERT INTO kiarabot.namespaces(namespace_id,installation_id,kind,"
+                 "owner_instance,disabled,version,created_at,updated_at) VALUES (" +
+                 quote_sql(shared_namespace) + "," + quote_sql(INSTALLATION) +
+                 ",1,NULL,false,2,1,1);"
+                 "INSERT INTO kiarabot.namespace_members(namespace_id,instance_id,can_read,"
+                 "can_write,version,joined_at) VALUES (" + quote_sql(shared_namespace) + "," +
+                 quote_sql(PLUGIN_INSTANCE) + ",true,true,2,1);"
+                 "INSERT INTO kiarabot.namespace_values(namespace_id,key,value,version,"
+                 "expires_at,updated_at) VALUES (" + quote_sql(shared_namespace) +
+                 ",'shared/seed','seed',1,NULL,1)")
+            shared_get = await storage_frame(
+                'storage shared get',
+                storage_get=plugins.StorageGetRequest(key='shared/seed', scope=shared_scope))
+            require(not shared_get.HasField('error') and
+                    shared_get.storage_get.value == b'seed',
+                    'shared storage get mismatch')
+            require_storage_error(await storage_frame(
+                'storage shared set without condition',
+                idempotency_key='p09-shared-nocond-' + str(__import__('uuid').uuid4()),
+                storage_set=plugins.StorageSetRequest(
+                    key='shared/key', value=b'shared', scope=shared_scope)),
+                'shared set requires condition', common.INVALID_ARGUMENT)
+            shared_set = await storage_frame(
+                'storage shared set',
+                idempotency_key='p09-shared-set-' + str(__import__('uuid').uuid4()),
+                storage_set=plugins.StorageSetRequest(
+                    key='shared/key', value=b'shared', scope=shared_scope,
+                    condition=common.StorageCondition(absent=True)))
+            require(not shared_set.HasField('error') and shared_set.storage_set.version == 1,
+                    'shared storage set mismatch')
+            psql(pg_bin, root, port, runtime_password,
+                 "UPDATE kiarabot.namespace_members SET can_read=true,can_write=false "
+                 "WHERE namespace_id=" + quote_sql(shared_namespace))
+            require_storage_error(await storage_frame(
+                'storage shared member denial',
+                idempotency_key='p09-shared-denied-' + str(__import__('uuid').uuid4()),
+                storage_set=plugins.StorageSetRequest(
+                    key='shared/denied', value=b'x', scope=shared_scope,
+                    condition=common.StorageCondition(absent=True))),
+                'shared member denial', common.PERMISSION_DENIED)
+            psql(pg_bin, root, port, runtime_password,
+                 "UPDATE kiarabot.namespace_members SET can_read=true,can_write=true "
+                 "WHERE namespace_id=" + quote_sql(shared_namespace))
+            psql(pg_bin, root, port, runtime_password,
+                 "UPDATE kiarabot.namespaces SET disabled=true WHERE namespace_id=" +
+                 quote_sql(shared_namespace))
+            require_storage_error(await storage_frame(
+                'storage shared disabled',
+                storage_get=plugins.StorageGetRequest(key='shared/seed', scope=shared_scope)),
+                'shared disabled namespace', common.CONFLICT)
+            require_storage_error(await storage_frame(
+                'storage explicit shared id',
+                storage_get=plugins.StorageGetRequest(
+                    key='shared/seed',
+                    scope=common.NamespaceScope(installation_shared_id=shared_namespace))),
+                'plugin explicit shared namespace id', common.CAPABILITY_NOT_SUPPORTED)
 
             event_id = str(__import__('uuid').uuid4())
             envelope = events.EventEnvelope(
