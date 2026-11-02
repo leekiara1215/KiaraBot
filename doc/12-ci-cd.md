@@ -92,9 +92,30 @@ ghcr.io/leekiara1215/kiarabot-core:v1.0.0
 
 ## 已实现的 CI 与协议门禁
 
-### 2026-10-30 起暂停自动触发
+### 自动触发恢复门控（P14b-2，2026-11-02）
 
-`.github/workflows/ci.yml` 目前只保留 `workflow_dispatch`：Pull Request 和 push 到 `main` 不再触发 CI，CD 本就未接通，本次不涉及镜像构建与部署。暂停是临时状态，恢复方式：
+`.github/workflows/ci.yml` 已恢复 `pull_request` 与 `push: branches: [main]` 触发器，但所有 job 默认门控：
+只有仓库变量 **`CI_AUTO_ENABLED=true`** 时自动事件才真正执行；`workflow_dispatch` 手动运行不受变量影响。
+这样可以先按用户决定手动跑绿 full-locked，再开启自动 CI，避免把未验证的工作流直接推到 PR 门禁上。
+开启方式：
+
+- 先在 Actions 页面手动 `Run workflow`（`base_ref` 填上一提交/tag，避免自比拒绝）并确认 full-build
+  （full-locked 构建 + 全量 ctest + P00 fixture）绿色；
+- 在仓库 Settings → Variables 设置 `CI_AUTO_ENABLED=true`（不需要 secret）；
+- 之后 PR/push 自动执行；首次自动运行仍需观察一次，确认 runner 资源与缓存行为。
+若 main 分支保护把本 workflow 设为必需检查，开启变量前 PR 会因 job 全部 skipped 而缺检查，需先临时调整
+分支保护或直接先手动跑绿。
+
+本轮同时把 full-locked 的构建/测试证据统一为 JSON artifact：
+
+- `full-build` 在 full-locked 构建与 ctest 后运行 `scripts/run-ci-local.sh test --json` 与
+  `contracts --json`，上传 `ci-local-evidence-<sha>`；`ci-evidence` 汇总所有 job 结果写入
+  `build/ci-evidence/ci-evidence.json` 并上传 `ci-evidence-<sha>`，包含 workflow/ref/sha/run id、
+  每个 job 的 result 与 failed_jobs。JSON 只记录事实，不替代真实 ctest/contracts 门禁。
+- 本地可用 `scripts/ci/check-workflows.sh` 做 YAML 解析、action SHA pin、release 安全门禁静态检查，
+  以及 `gh`/remote 凭据探测；它不会触发任何 Docker/GitHub Actions。
+- 旧的恢复说明（取消注释触发器、删除 base_ref 兜底）已由上述变量门控取代；`base_ref` 仍用于
+  descriptor 基线，手动运行仍需提供有效值。
 
 - 手动运行：Actions 页面选择 `CI` → `Run workflow`，`base_ref` 填 descriptor 基线提交（默认 `origin/main`）。协议兼容性 job 需要可解析的基准提交，不会使用空 SHA。
 - 恢复自动触发：取消 `ci.yml` 顶部 `pull_request`、`push: branches: [main]` 触发器的注释，并删除 `workflow_dispatch.inputs.base_ref` 与 `BASE_SHA` 表达式中的 `|| inputs.base_ref` 兜底。
@@ -134,6 +155,44 @@ node scripts/ci/validate-asyncapi.cjs api/asyncapi.yaml
 npm audit --prefix scripts/ci --audit-level=high
 ```
 
+
+### GHCR 发布 / 签名 / SBOM 骨架（P14b-2，P14d 前置）
+
+`.github/workflows/release.yml` 只发布 KiaraBot 自建镜像（suite 服务 identity/runtime/scheduler/model/
+plugin-host/control/tools、panel、adapter），registry 固定为 `ghcr.io/leekiara1215/<image>`。触发仅
+`workflow_dispatch`（必须给 `v*` 版本）或推送 `v*` tag。
+
+发布权限与门禁（缺一不推）：
+
+1. 顶层 `permissions` 仅 `contents: read`；只有 `publish` job 有 `packages: write`，并为 keyless cosign
+   提供 `id-token: write`。该 job 使用受保护 Environment **`release-gated`**，仓库管理员必须配置
+   required reviewers、deployment branches/tags 与（如用固定密钥）environment secrets 后，发布才受人工审批保护。
+2. 仓库变量 **`RELEASE_PUSH_ENABLED=true`** 才允许 push（默认 false）；`workflow_dispatch` 的
+   `push=true` 是第二道显式请求，tag 触发同样受变量约束。
+3. 仓库变量 **`RELEASE_COSIGN_KEYLESS=true`** 才执行 keyless cosign 签名；签名和 SBOM 是发布门槛：
+   没有签名凭据时只做 dry-run（构建镜像+生成 SBOM），**不 push**，并在 `release-evidence.json` 的
+   `blockers` 明确记录 `signed images are a release gate, so nothing was pushed`。
+4. 每个镜像用 Syft 生成 SPDX JSON（`sbom/<image>.spdx.json`，缺失即失败）；Trivy 漏洞扫描当前
+   report-only（`trivy-<image>.json`），需 triage 后才能把它描述为漏洞门禁。
+5. 证据：`release-evidence/release-evidence.json` 记录 version/sha/registry、push/sign 变量状态、
+   每镜像 SBOM sha256、pushed/signed、blockers；artifact `release-evidence-<version>-<sha>` 保留 30 天。
+   发布失败或 dry-run 也必须上传 artifact，禁止用“无 artifact”表示成功。
+
+**手动验证清单（不能在本地替代）**：
+
+- 先手动跑 `CI` workflow 的 full-build 绿色（见上一节）；
+- `gh auth login` 后 `gh workflow run release.yml -f version=v0.0.0-dev -f push=false`，确认 build/SBOM
+  成功、`pushed=false` 且 blockers 含 dry-run/变量原因；
+- 在仓库 Settings 配置 `release-gated` Environment（required reviewers、允许分支/tag、secrets）与
+  `RELEASE_*` 变量；cosign 首选 keyless（OIDC），避免长期私钥；若必须使用固定密钥，只放 Environment
+  secret，禁止写仓库级 secret/日志；
+- 用 `push=false` 验证后，再以 `push=true` + `RELEASE_PUSH_ENABLED=true` + `RELEASE_COSIGN_KEYLESS=true`
+  跑一次受保护发布；核对 GHCR digest 与 `cosign verify` 证明，再决定是否提升为 production 发布；
+- 发布 job 失败时按 `release-evidence.json` 的 blockers 定位，绝不手工补推未签名镜像。
+
+**待确认项**：GHCR 凭据使用 `GITHUB_TOKEN`（packages: write + environment 审批）还是独立 PAT；
+keyless cosign 的 OIDC 策略与可验证身份（workflow ref/环境）；Trivy 是否提升为阻断门禁及阈值；
+release tag 保护规则、`release-gated` required reviewers 名单、是否允许 tag 触发发布。
 ### 其他模块及仓库管理依赖
 
 - **仓库编码配置维护者**：维护 `.clang-format` 配置，并处理检查发现的手写代码格式差异。
