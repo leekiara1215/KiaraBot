@@ -1583,3 +1583,12 @@ UNKNOWN/EXPIRED 单链迟到证据属剩余环境/验收项。
   `4e88fb4`（P14g/P14h 未合入）实测 Passed 13.7s、矩阵全部 `pre-fix-skip`（稳定 400），
   `task_get_cancel` 因未播种任务跳过；修复合入后 rebase main 重跑同一命令即可得到
   修复后 success 矩阵（无需改测试）。
+- **P14i 成功链矩阵与修复后复验（2026-11-03）**：P14g/P14h 合入后，native smoke 复验
+  定位并修复了 4 个真实边界缺陷（Control 委派 request/trace id 非 UUID 与缺 idempotency key、
+  Catalog 资源 id 被 UUID 规则误拒、delegation_crypto 权限上限仍为 MessageRead(40)）。修复后
+  `p14_native_single_host` 通过，受权 `/api/v1/health` 首次返回 200 HEALTHY 四真实依赖，
+  Control probe ready=HEALTHY；principals 因 Identity ListPrincipals 仍 not_implemented 为稳定
+  capability-gap，logs/audit/tasks/models/action/lifecycle 为已记录的 stable known-gap（owner
+  请求参数/委派 scope 待 P14j 对齐），不伪造成功。详见
+  [architecture-p14f-native-single-host.md](../reports/modules/architecture-p14f-native-single-host.md)
+  第 8 节；故障/重启/fail-closed 矩阵保留。
