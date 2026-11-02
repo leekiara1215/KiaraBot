@@ -39,16 +39,28 @@ def platform_id(value: object) -> str:
     return result
 
 
-def map_message(raw: Mapping, adapter_id: str, account_id: str) -> events.EventEnvelope:
+def map_message(raw: Mapping, adapter_id: str, account_id: str,
+                platform_self_id: str | None = None) -> events.EventEnvelope:
+    """Map a OneBot V11 message.
+
+    `account_id` is the Runtime account resource UUID carried in the envelope. OneBot's
+    `self_id` is the platform bot id, which may be a numeric QQ id distinct from the
+    canonical Runtime account id. `platform_self_id` is the expected platform bot id used
+    only to reject frames addressed to another bot; it defaults to `account_id` for the
+    historical tests/deployments where both are the same value.
+    """
     try:
-        return _map_message(raw, identifier(adapter_id), identifier(account_id))
+        runtime_account = identifier(account_id)
+        expected_self = identifier(platform_self_id) if platform_self_id is not None else runtime_account
+        return _map_message(raw, identifier(adapter_id), runtime_account, expected_self)
     except AdapterError:
         raise
     except (KeyError, TypeError, ValueError, OverflowError):
         raise AdapterError(common.INVALID_ARGUMENT) from None
 
 
-def map_request(raw: Mapping, adapter_id: str, account_id: str) -> events.EventEnvelope:
+def map_request(raw: Mapping, adapter_id: str, account_id: str,
+                platform_self_id: str | None = None) -> events.EventEnvelope:
     """Map a OneBot V11 friend request into a FriendRequest event.
 
     The emitted request_id is the deterministic event id (adapter-scoped safe
@@ -56,17 +68,20 @@ def map_request(raw: Mapping, adapter_id: str, account_id: str) -> events.EventE
     resolve the raw flag later without exposing it to plugins.
     """
     try:
-        return _map_request(raw, identifier(adapter_id), identifier(account_id))
+        runtime_account = identifier(account_id)
+        expected_self = identifier(platform_self_id) if platform_self_id is not None else runtime_account
+        return _map_request(raw, identifier(adapter_id), runtime_account, expected_self)
     except AdapterError:
         raise
     except (KeyError, TypeError, ValueError, OverflowError):
         raise AdapterError(common.INVALID_ARGUMENT) from None
 
 
-def _map_request(raw: Mapping, adapter_id: str, account_id: str) -> events.EventEnvelope:
+def _map_request(raw: Mapping, adapter_id: str, account_id: str,
+                 platform_self_id: str) -> events.EventEnvelope:
     if raw.get('post_type') != 'request' or raw.get('request_type') != 'friend':
         raise AdapterError(common.CAPABILITY_NOT_SUPPORTED)
-    if identifier(raw['self_id']) != account_id:
+    if identifier(raw['self_id']) != platform_self_id:
         raise AdapterError(common.PERMISSION_DENIED)
     user = platform_id(raw['user_id'])
     identifier(raw['flag'])
@@ -93,10 +108,11 @@ def _map_request(raw: Mapping, adapter_id: str, account_id: str) -> events.Event
     return result
 
 
-def _map_message(raw: Mapping, adapter_id: str, account_id: str) -> events.EventEnvelope:
+def _map_message(raw: Mapping, adapter_id: str, account_id: str,
+                 platform_self_id: str) -> events.EventEnvelope:
     if raw.get('post_type') != 'message' or raw.get('message_type') not in ('group', 'private'):
         raise AdapterError(common.CAPABILITY_NOT_SUPPORTED)
-    if identifier(raw['self_id']) != account_id:
+    if identifier(raw['self_id']) != platform_self_id:
         raise AdapterError(common.PERMISSION_DENIED)
     user = platform_id(raw['user_id'])
     group = platform_id(raw['group_id']) if raw['message_type'] == 'group' else ''

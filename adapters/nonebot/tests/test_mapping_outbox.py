@@ -289,3 +289,32 @@ def test_malformed_v1_session_key_fails_closed_without_partial_write(tmp_path):
         assert db.execute('SELECT count(*) FROM sessions').fetchone()[0] == 2
     finally:
         db.close()
+
+
+def test_platform_self_id_may_differ_from_runtime_account_uuid():
+    """Real OneBot frames carry a platform bot id; the Runtime account id is a UUID.
+
+    P06f regression: comparing the platform self_id to the Runtime account UUID rejected every
+    real platform message before it reached the outbox (delivery_targets stayed empty). The
+    envelope must keep the Runtime UUID while validation uses the configured platform self id.
+    """
+    runtime_account = '11111111-1111-4111-8111-111111111111'
+    source = raw()
+    source['self_id'] = 10001
+    event = map_message(source, 'adapter', runtime_account, '10001')
+    assert event.source.account_id == runtime_account
+    assert event.message_received.conversation.account_id == runtime_account
+    assert event.message_received.message.plain_text == 'hello'
+    assert event == map_message(copy.deepcopy(source), 'adapter', runtime_account, '10001')
+    with pytest.raises(AdapterError) as failure:
+        map_message(source, 'adapter', runtime_account, '99999')
+    assert failure.value.code == common.PERMISSION_DENIED
+
+
+def test_friend_request_platform_self_id_may_differ_from_account_uuid():
+    runtime_account = '11111111-1111-4111-8111-111111111111'
+    source = friend_request_raw()
+    source['self_id'] = 10001
+    event = map_request(source, 'adapter', runtime_account, '10001')
+    assert event.source.account_id == runtime_account
+    assert event.friend_request.comment == 'hello'
