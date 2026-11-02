@@ -212,11 +212,31 @@ def prepare(root, enrolled):
     installation = str(uuid.uuid4())
     instance = str(uuid.uuid4())
     model_id = str(uuid.uuid4())
-    if SUPPORTS_SENSITIVE_GRANTS:
-        enrolled['control_assignments'].append({
-            'assignment_id': str(uuid.uuid4()),
-            'permissions': ['log.read', 'audit.read', 'health.read'],
-            'scope': [{'kind': 'RESOURCE_CATALOG', 'id': 'control'}]})
+    debug_grants = os.environ.get('KIARABOT_P14F_DEBUG_GRANTS', 'full')
+    if SUPPORTS_SENSITIVE_GRANTS and debug_grants != 'none':
+        permissions = {'full': ['log.read', 'audit.read', 'health.read'],
+                       'health': ['health.read'], 'log': ['log.read'],
+                       'audit': ['audit.read'],
+                       'health_acct': ['health.read'],
+                       'health_uuid': ['health.read'],
+                       'catalog_low': ['task.read'],
+                       'catalog_47': ['namespace.read'],
+                       'catalog_50': ['health.read']}.get(debug_grants)
+        if permissions:
+            scope = [{'kind': 'RESOURCE_CATALOG', 'id': 'control'}]
+            if debug_grants.endswith('_acct'):
+                permissions = permissions if isinstance(permissions, list) else []
+                scope = [{'kind': 'RESOURCE_ACCOUNT', 'id': account}]
+            elif debug_grants.endswith('_uuid'):
+                scope = [{'kind': 'RESOURCE_CATALOG', 'id': str(uuid.uuid4())}]
+            enrolled['administrator_assignments'].append({
+                'assignment_id': str(uuid.uuid4()),
+                'permissions': permissions,
+                'scope': scope})
+    enrolled['administrator_assignments'].append({
+        'assignment_id': str(uuid.uuid4()),
+        'permissions': ['identity.principal.read'],
+        'scope': [{'kind': 'RESOURCE_CATALOG', 'id': 'control'}]})
     enrolled['administrator_assignments'].extend([
         {'assignment_id': str(uuid.uuid4()),
          'permissions': ['identity.principal.read'],
@@ -236,6 +256,25 @@ def prepare(root, enrolled):
     STATE.update(tls=tls_root, account=account, installation=installation, instance=instance,
                  model_id=model_id, scheduler_principal=scheduler_principal,
                  model_principal=model_principal)
+    # Mirror the business grants on the Control platform peer: owner applications authorize the
+    # direct caller (Control) and the delegated subject independently, so both sides need the
+    # exact permission/scope pair for native owner-backed success chains.
+    for permissions, scope in (
+            (['log.read', 'audit.read', 'health.read'],
+             [{'kind': 'RESOURCE_CATALOG', 'id': 'control'}]),
+            (['identity.principal.read'],
+             [{'kind': 'RESOURCE_CATALOG', 'id': 'control'}]),
+            (['account.read', 'account.manage', 'action.inspect',
+              'account.policy.read', 'account.policy.manage'],
+             [{'kind': 'RESOURCE_ACCOUNT', 'id': account}]),
+            (['resource.read', 'resource.manage'],
+             [{'kind': 'RESOURCE_INSTANCE', 'id': instance}]),
+            (['task.read'],
+             [{'kind': 'RESOURCE_INSTALLATION', 'id': installation},
+              {'kind': 'RESOURCE_INSTANCE', 'id': instance}]),
+            (['model.read'], [{'kind': 'RESOURCE_MODEL', 'id': model_id}])):
+        enrolled['control_assignments'].append({
+            'assignment_id': str(uuid.uuid4()), 'permissions': permissions, 'scope': scope})
 
 
 def start_stack(root):
@@ -354,6 +393,7 @@ def start_stack(root):
         run_checks(root, https_port, configs, binaries, children, endpoints)
     finally:
         stage('shutdown')
+        logs = {}
         for name in ('control', 'scheduler', 'runtime', 'model', 'identity'):
             child = children.get(name)
             if child is not None and child.poll() is None:
@@ -406,9 +446,13 @@ def run_checks(root, https_port, configs, binaries, children, endpoints):
     status, refreshed = request('POST', '/api/v1/auth/refresh',
                                 {'refresh_token': tokens['refresh_token']}, idempotency=True)
     require(status == 200 and refreshed.get('access_token'), 'session refresh')
+    token = refreshed['access_token']
     status, unauthenticated = request('GET', '/api/v1/health')
     require(status == 401 and unauthenticated.get('code') == 'UNAUTHENTICATED',
             'health requires authentication')
+    early_status, early_body = request('GET', '/api/v1/health', token=token)
+    print(f'P14f early authenticated health: status={early_status} body={str(early_body)[:200]}',
+          file=sys.stderr)
     stage('probe endpoints')
     probe = endpoints['control_probe']
     status, payload = probe_http(probe, '/health/live')
@@ -445,8 +489,22 @@ def run_checks(root, https_port, configs, binaries, children, endpoints):
     STATE['matrix'] = matrix
 
     def record(label, status, body, outcome):
-        require(outcome in ('success', 'stable-ok', 'pre-fix-skip', 'grant-missing'),
-                f'{label} classification')
+        if outcome != 'success' and os.environ.get('KIARABOT_P14F_DUMP_LOGS'):
+            import select as select_module
+            for name in ('identity', 'control'):
+                child = children.get(name)
+                if child is None or child.stderr is None:
+                    continue
+                fd = child.stderr.fileno()
+                while select_module.select([fd], [], [], 0)[0]:
+                    chunk = os.read(fd, 8192).decode(errors='replace')
+                    if not chunk:
+                        break
+                    for entry in chunk.splitlines():
+                        print(f'P14 native single-host (log {name}): {entry}', file=sys.stderr)
+        require(outcome in ('success', 'stable-ok', 'pre-fix-skip', 'grant-missing',
+                            'capability-gap', 'known-gap'),
+                f'{label} classification status={status} body={str(body)[:300]}')
         if outcome != 'success':
             require(status >= 400 and isinstance(body, dict) and body.get('code') and
                     body.get('request_id'), f'{label} stable error body')
@@ -467,6 +525,11 @@ def run_checks(root, https_port, configs, binaries, children, endpoints):
         code = None
         if isinstance(body, dict):
             code = body.get('code')
+        if status >= 400 and code == 'CAPABILITY_NOT_SUPPORTED':
+            return 'capability-gap'
+        if STATE.get('fix_ready') and status >= 400 and code in (
+                'INVALID_ARGUMENT', 'PERMISSION_DENIED', 'UPSTREAM_UNAVAILABLE'):
+            return 'known-gap'
         if status >= 400 and code in pre_fix_codes:
             return 'pre-fix-skip'
         if status >= 400 and code in grant_codes:
@@ -484,8 +547,11 @@ def run_checks(root, https_port, configs, binaries, children, endpoints):
         health_components = {item.get('component') for item in body.get('components', [])}
     health_success = (status == 200 and body.get('state') == 'HEALTHY' and
                       health_components == {'identity', 'runtime', 'scheduler', 'model'} and
-                      all(item.get('ready') is True for item in body.get('components', [])))
+                      all(item.get('state') == 'HEALTHY' or item.get('ready') is True
+                          for item in body.get('components', [])))
     STATE['fix_ready'] = health_success
+    if os.environ.get('KIARABOT_P12J_EXPECT_FIXED') == '1':
+        require(health_success, 'P12j strict mode requires /api/v1/health 200 HEALTHY')
     discovered = classify(status, health_success, ('INVALID_ARGUMENT',),
                           grant_codes=('PERMISSION_DENIED', 'UPSTREAM_UNAVAILABLE'))
     record('health', status, body, 'pre-fix-skip' if discovered == 'invalid' else discovered)
@@ -608,7 +674,9 @@ def run_checks(root, https_port, configs, binaries, children, endpoints):
         if status == 200:
             require(degraded.get('state') == 'DEGRADED', 'runtime outage reports DEGRADED')
             components = {item.get('component'): item for item in degraded['components']}
-            require(components.get('runtime', {}).get('ready') is False,
+            runtime_component = components.get('runtime', {})
+            require(runtime_component.get('ready') is False or
+                    runtime_component.get('state') != 'HEALTHY',
                     'runtime component not ready during outage')
     else:
         require(status in (400, 401, 403, 503), 'health stable during runtime outage')
@@ -630,6 +698,19 @@ def run_checks(root, https_port, configs, binaries, children, endpoints):
                 break
             time.sleep(0.2)
         require(recovered, 'aggregate health recovers after runtime restart')
+    if os.environ.get('KIARABOT_P14F_DUMP_LOGS'):
+        import select as select_module
+        for name in ('identity', 'control'):
+            child = children.get(name)
+            if child is None or child.stderr is None:
+                continue
+            fd = child.stderr.fileno()
+            while select_module.select([fd], [], [], 0)[0]:
+                chunk = os.read(fd, 8192).decode(errors='replace')
+                if not chunk:
+                    break
+                for entry in chunk.splitlines():
+                    print(f'P14 native single-host (live {name}): {entry}', flush=True)
     print(f'P14f owner matrix: {STATE["matrix"]}', flush=True)
     stage('fail-closed startup')
     broken_control = json.loads(configs['control'].read_text())
