@@ -16,6 +16,7 @@
 #include "kiarabot/core/application/target/runtime_action_application.hpp"
 #include "kiarabot/core/application/target/runtime_application.hpp"
 #include "kiarabot/core/application/target/runtime_bridge_application.hpp"
+#include "kiarabot/core/application/target/runtime_lifecycle_participants.hpp"
 #include "kiarabot/core/application/target/runtime_readiness.hpp"
 #include "kiarabot/core/application/target/runtime_resource_application.hpp"
 #include "kiarabot/core/application/target/runtime_audit_application.hpp"
@@ -183,6 +184,7 @@ struct State {
   std::unique_ptr<target::RuntimeAuditApplication> audit;
   target::RuntimeActionApplication* action_application = nullptr;
   std::unique_ptr<target::RuntimeBridgeApplication> bridge;
+  std::unique_ptr<target::HostLifecycleParticipantPort> host_lifecycle;
   std::unique_ptr<platform::RuntimeModelClient> model_client;
 };
 // Readiness merges the composition-observed database state with the authorization-chain observation
@@ -261,6 +263,13 @@ compose_runtime_service(const platform::ProcessConfig& config) {
               state->identity_client
                   ? static_cast<target::RuntimeAuthorizationPort*>(state->identity_client.get())
                   : state->fail_closed_authorization.get();
+          auto host_lifecycle =
+              target::make_runtime_host_lifecycle_participant(factory, *state->secrets);
+          if (const auto* failure = std::get_if<target::Failure>(&host_lifecycle)) {
+            return {};
+          }
+          state->host_lifecycle = std::move(
+              std::get<std::unique_ptr<target::HostLifecycleParticipantPort>>(host_lifecycle));
           auto built = target::make_runtime_resource_application(
               {factory,
                *state->ids,
@@ -268,7 +277,8 @@ compose_runtime_service(const platform::ProcessConfig& config) {
                *state->authorization,
                {"action.send_message.text.v1", "action.react_message.v1",
                 "action.delete_message.v1", "action.mute_member.v1", "action.kick_member.v1",
-                "action.approve_request.v1"}});
+                "action.approve_request.v1"},
+               state->host_lifecycle.get()});
           if (const auto* failure = std::get_if<target::Failure>(&built)) {
             return {};
           }
@@ -428,37 +438,8 @@ compose_runtime_service(const platform::ProcessConfig& config) {
       }
       // P08 HostBridge is an owner mTLS internal service, never registered on bridge_listen.
       // The deployment certificate allowlist is consumed only here; empty means every Host is
-      // rejected (fail closed). Persistence callbacks open short owner UoWs; the transport never
-      // commits Runtime transactions itself.
-      platform::HostBridgePersistence host_persistence;
-      if (application != nullptr) {
-        host_persistence.pending = [application](const std::string& host_id,
-                                                 std::uint64_t generation, std::size_t limit) {
-          return application->host_pending_commands(host_id, generation, limit);
-        };
-        host_persistence.dispatched = [application](const std::string& command_id,
-                                                    std::uint64_t generation,
-                                                    std::string_view runtime_epoch) {
-          return application->host_command_dispatched(command_id, generation, runtime_epoch);
-        };
-        host_persistence.receipt = [application](const std::string& command_id,
-                                                 std::uint64_t generation, bool persisted,
-                                                 std::optional<target::ExecutionOutcome> outcome,
-                                                 std::optional<std::string> marker) {
-          return application->host_command_receipt(command_id, generation, persisted, outcome,
-                                                   std::move(marker));
-        };
-        host_persistence.observation =
-            [application](const target::HostObservationRecord& observation) {
-              auto recorded = application->host_observation(observation);
-              if (const auto* failure = std::get_if<target::Failure>(&recorded)) {
-                return target::Status{*failure};
-              }
-              return target::Status{std::monostate{}};
-            };
-      }
-      auto host_bridge = platform::make_deployment_host_bridge(*state->ids, host_allowlist, {},
-                                                               std::move(host_persistence));
+      // rejected (fail closed). P08b-2c replaces the in-memory store with the PG port.
+      auto host_bridge = platform::make_deployment_host_bridge(*state->ids, host_allowlist);
       if (const auto* failure = std::get_if<target::Failure>(&host_bridge)) {
         return *failure;
       }
