@@ -145,6 +145,33 @@ x-control-policy:
       intended semantics above are frozen for the control-api implementation;
       until then both query paths return NOT_FOUND and clients must not treat
       that as proof of failure (use the plugin bridge query while connected).
+  health_aggregation:
+    live: /health/live answers process liveness only; it never proves business readiness and never exposes dependencies.
+    ready_anonymous: >-
+      Anonymous /health/ready returns 200 only when the Control process finished startup, its own
+      storage is usable and the Identity session validation/revocation chain is currently reachable
+      and able to revoke. Identity/credential-chain failure, or inability to revoke, makes Control
+      not ready (503). Anonymous readiness never exposes component names, versions, reasons or
+      dependency detail.
+    authorized: >-
+      /api/v1/health requires health.read and returns aggregate state plus per-component detail for
+      the four direct business dependencies identity, runtime, scheduler and model, observed by
+      Control. Component checked_at is the Control observation time; clients never compute readiness
+      from local clocks.
+    aggregation:
+      healthy: All four direct dependencies report usable and the Control process/storage is healthy.
+      degraded: Runtime, Scheduler or Model alone is unavailable; Control keeps serving traffic and
+        reports DEGRADED; only the corresponding owner-backed features return UPSTREAM_UNAVAILABLE.
+        A single dependency outage never yields HEALTHY.
+      unready: Identity unavailable, the credential/session-revocation chain cannot be proven current,
+        Control startup incomplete, or Control's own storage/process unusable. Control returns 503
+        from authorized health and anonymous /health/ready.
+    dependency_notes:
+      identity: Session creation/validation/revocation unavailable or credential chain not current -> overall not ready.
+      runtime: Accounts/adapters/plugins/actions/namespaces data unavailable -> DEGRADED; owner-backed APIs 503, no fabricated empty pages.
+      scheduler: Task queries/cancellation and scheduler-backed channels unavailable -> DEGRADED.
+      model: Model metadata/configuration operations and model chat unavailable -> DEGRADED; stored reads must not be invented.
+    http: Authorized health returns 200 for HEALTHY or DEGRADED and 503 only for UNHEALTHY; degraded features carry their stable UNAVAILABLE code per operation.
   principal_directory:
     operation: listPrincipals
     target_rpc: IdentityService.ListPrincipals
@@ -182,6 +209,13 @@ paths:
       x-process-probe: true
       security: []
       summary: Readiness after migration and a successful storage write probe
+      description: >-
+        Anonymous readiness only answers whether Control should receive traffic: process started,
+        own storage usable and the Identity session validation/revocation chain reachable and able
+        to revoke. Component names, versions, reasons and per-dependency detail are not exposed
+        here; use authorized GET /api/v1/health. Identity/credential-chain or revocation failure
+        returns 503. Runtime/Scheduler/Model single failures degrade their features but do not
+        remove Control from traffic.
       responses:
         '200':
           description: Core transports started and runtime storage accepts transactions
@@ -306,6 +340,13 @@ paths:
       operationId: getHealth
       x-permission: health.read
       summary: Return aggregate readiness and dependency state
+      description: >-
+        Requires health.read. Returns aggregate HealthState plus per-component detail for the four
+        direct business dependencies identity, runtime, scheduler and model, observed by Control.
+        Identity/credential-chain/revocation failure is UNHEALTHY (HTTP 503); a Runtime, Scheduler
+        or Model single-point failure is DEGRADED (HTTP 200) with the affected setup returning
+        UPSTREAM_UNAVAILABLE rather than fabricated empty data. checked_at and component
+        observed_at are authoritative Control observations. See x-control-policy.health_aggregation.
       responses:
         '200':
           description: Ready or degraded
@@ -478,6 +519,14 @@ paths:
       operationId: listAuditEntries
       x-permission: audit.read
       summary: Query audit entries
+      description: >-
+        Control read-only aggregate of owner-service audit facts; requires the distinct audit.read
+        permission and never substitutes log.read. Data ownership stays with each business service
+        (audit committed in its business transaction); Control projects only authorized, redacted
+        rows and never credentials, message bodies or model secrets. Pagination uses occurred_at
+        plus stable ID. If no authoritative owner source is reachable, return UNAVAILABLE (503),
+        never a successful empty page. Audit/log permissions are separate and neither implies the
+        other.
       parameters: [{ $ref: '#/components/parameters/PageSize' }, { $ref: '#/components/parameters/PageToken' }]
       responses:
         '200':
@@ -668,6 +717,12 @@ paths:
       operationId: listLogs
       x-permission: log.read
       summary: Query redacted structured logs
+      description: >-
+        Control read-only aggregate of redacted structured logs; requires the distinct log.read
+        permission (P12 permission 48) and never substitutes audit.read. Only operational log
+        categories are returned; credential, message-body and model-secret material is removed
+        before projection. Pagination uses occurred_at plus stable ID. If no authoritative log
+        source is reachable, return UNAVAILABLE (503), never a successful empty page.
       parameters: [{ $ref: '#/components/parameters/PageSize' }, { $ref: '#/components/parameters/PageToken' }]
       responses:
         '200':
@@ -3142,9 +3197,13 @@ components:
       type: object
       required: [component, state]
       properties:
-        component: { type: string }
+        component:
+          type: string
+          description: One of identity, runtime, scheduler or model for the four direct dependencies.
+
         state: { $ref: '#/components/schemas/HealthState' }
         reason: { type: string }
+        checked_at: { type: string, format: date-time, description: Authoritative Control observation time for this component. }
     Adapter:
       type: object
       required: [id, state, implementation]

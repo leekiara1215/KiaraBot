@@ -119,6 +119,17 @@ GET  /plugins/{id}/health
 
 插件安装来源、版本、许可证和校验值必须记录在 Core 的插件状态中。
 
+## 健康与组件聚合（P12）
+
+- `/health/live`：仅进程存活，不访问存储、不暴露组件；200 只表示 HTTP 进程仍在运行。
+- `/health/ready`：匿名接流量判断。只有 Control 完成启动、自身存储可用且 Identity 会话校验/撤销链当前可达并可撤销时返回 200；Identity/凭据链失效或无法兑现撤销返回 503。匿名响应不暴露组件名、版本、原因或依赖细节。
+- `/api/v1/health`：需 `health.read`，返回聚合 `HealthState` 与四个直接业务依赖 `identity`、`runtime`、`scheduler`、`model` 的组件详情（`component`/`state`/可选 `reason` 与观测时间）。聚合规则：
+  - Identity 不可用、凭据链不是当前版本、或会话撤销无法证明 → 整体未就绪（503）；
+  - Runtime、Scheduler、Model 任一单点故障 → 整体 `DEGRADED`（HTTP 200），对应 owner 功能返回 `UPSTREAM_UNAVAILABLE`，不得伪造空页/旧快照，Control 不整体摘流；
+  - Control 自身进程/存储故障或启动未完成 → 未就绪；
+  - 单项故障绝不产生 `HEALTHY`。
+- `health.updated` WS 事件当前仍标 not_implemented；组件详情以受权 REST 为准，客户端不得从 WS 缺席推断组件状态。
+
 ## WebSocket 频道
 
 T09a 已实现同一监听提供以下频道；各频道状态如下：

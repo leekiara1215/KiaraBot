@@ -18,6 +18,12 @@ defaultContentType: application/json
 x-control-session-policy:
   authorization: Current roles and permissions follow openapi.yaml x-control-policy; control contains the union of allowed channels, never unfiltered data.
   permissions: {operations: resource.read, health: health.read, logs: log.read, adapters: adapter.read, plugins: plugin.read, tasks: task.read, messages: message.read}
+  health_aggregation: >-
+    The health R4EST contract in openapi.yaml x-control-policy.health_aggregation is authoritative:
+    four direct dependencies identity/runtime/scheduler/model; Identity/credential-chain/revocation
+    failure is unready, while Runtime/Scheduler/Model single failure is DEGRADED for affected
+    features only. The health.updated stream stays not_implemented until a real producer exists;
+    clients use authorized GET /api/v1/health and never infer component states from this channel.
   logs_default: >-
     The logs channel requires an explicit log.read grant (P12 permission 48); no default role
     derives it. audit.read (49) is a separate sensitive read and never grants this channel, and

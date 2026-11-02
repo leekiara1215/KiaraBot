@@ -134,6 +134,7 @@ systemd 的 `EnvironmentFile=-/etc/kiarabot/production.env` 只进入 `deploy.sh
 ```
 
 - Core：根路径 live/ready 由控制 API 提供；未 ready 时 API 返回 503；适配器/插件状态在 `/api/v1/health` 聚合。
+- P12 四依赖聚合：`/api/v1/health` 需 `health.read`，逐组件返回 `identity`/`runtime`/`scheduler`/`model`。Identity 不可用、凭据链过期或撤销链无法证明 → 整体 `UNHEALTHY`（503），匿名 `/health/ready` 同时 503；Runtime/Scheduler/Model 任一单点故障 → 整体 `DEGRADED`（200），只让对应功能返回 `UPSTREAM_UNAVAILABLE`，不整体摘流；Control 自身存储/进程故障 → 未就绪。`/health/live` 与匿名 `/health/ready` 不暴露组件细节；组件观测时间由 Control 记录，告警不得用本地时钟推断。
 - 适配器：`HEALTH_PORT`（默认 8081）上的 `127.0.0.1:/health/live`、`/health/ready`；ready 快照包含 `core`（是否已注册/连接）与 `platform`（是否有 OneBot bot 连接）组件，端口被占用只记录错误，不杀死进程。
 - 面板：nginx 的 `/health/live` 返回静态 200（进程存活），`/health/ready` 转发 Core `/health/ready`（等价“API 可达即 ready”）；不要求 QQ 在线。
 - 控制面传输层（W3）：支持 `OPTIONS`/`405 + Allow`、入站 `traceparent`/`X-Trace-ID` 传播并回写 `X-Request-ID`/`X-Trace-ID`、访问日志（JSON→stderr，含 method/path/status/duration/request_id/trace_id）；CORS 只在 `control.json` 的 `cors_origins` 精确白名单内放行（默认空=不做跨源），其余请求返回 429 + `Retry-After` 的限流按 `limits` 配置（认证 1000 rps/burst 2000，公开 30 rps/burst 60，默认值）。这些是传输层行为，不改变业务状态码语义。
