@@ -7,6 +7,7 @@
 #include <variant>
 #include <vector>
 
+#include "action_records.hpp"
 #include "identity_security.hpp"
 #include "kiarabot/core/domain/target/scheduler_rules.hpp"
 #include "kiarabot/core/ports/target/business_ports.hpp"
@@ -241,88 +242,6 @@ private:
   LiveRepository<target::AssignmentId, target::ResourceGrant> grants_;
   AuthorizationRepository authorizations_;
 };
-// P07a-A draft: the Action relations land in a follow-up commit once the shared audit columns
-// and P06a-2 Runtime schema are merged and measured on real PG16.4. Until then every Action port
-// fails closed with UPSTREAM_UNAVAILABLE; the Runtime application never treats this as absence.
-#define KIARABOT_P07A_STUB_FAILURE return failure(target::ErrorCode::UpstreamUnavailable)
-class ActionRepositoryStub final : public target::ActionRepository {
-public:
-  target::Outcome<std::optional<target::ActionRecord>>
-  find_by_id(const target::ActionId&) override {
-    KIARABOT_P07A_STUB_FAILURE;
-  }
-  target::Outcome<std::optional<target::ActionRecord>>
-  find_by_owner_key(const target::InstanceId&, std::string_view) override {
-    KIARABOT_P07A_STUB_FAILURE;
-  }
-  target::Outcome<target::ActionRecord> insert(const target::ActionRecord&,
-                                               target::ActionCapacity) override {
-    KIARABOT_P07A_STUB_FAILURE;
-  }
-  target::Status mark_dispatched(const target::ActionId&, const target::AttemptId&,
-                                 const target::InstanceId&, target::TimePoint) override {
-    KIARABOT_P07A_STUB_FAILURE;
-  }
-  target::Outcome<target::ActionTerminalReceipt>
-  record_terminal(const target::ActionRecord&, const target::ActionTerminalResult&,
-                  std::optional<target::AttemptId>, std::optional<target::InstanceId>,
-                  target::TimePoint) override {
-    KIARABOT_P07A_STUB_FAILURE;
-  }
-  target::Status cancel(const target::ActionId&, target::TimePoint) override {
-    KIARABOT_P07A_STUB_FAILURE;
-  }
-  target::Outcome<std::vector<target::ActionRecord>> expire_due(std::size_t,
-                                                                target::TimePoint) override {
-    KIARABOT_P07A_STUB_FAILURE;
-  }
-  target::Outcome<std::vector<target::ActionRecord>>
-  list_owner(const target::InstanceId&, const target::ActionPageRequest&) override {
-    KIARABOT_P07A_STUB_FAILURE;
-  }
-  target::Outcome<std::vector<target::ActionRecord>>
-  list_control(const target::ActionControlQuery&) override {
-    KIARABOT_P07A_STUB_FAILURE;
-  }
-  target::Outcome<std::size_t> prune_terminal(target::TimePoint, std::size_t) override {
-    KIARABOT_P07A_STUB_FAILURE;
-  }
-};
-class ActionQuotaRepositoryStub final : public target::ActionQuotaRepository {
-public:
-  target::Status admit(const target::ActionId&, target::ActionKind,
-                       std::span<const target::ActionScope>, const target::ActionQuotaLimits&,
-                       target::TimePoint) override {
-    KIARABOT_P07A_STUB_FAILURE;
-  }
-  target::Outcome<std::size_t> prune_windows(target::TimePoint, std::size_t) override {
-    KIARABOT_P07A_STUB_FAILURE;
-  }
-};
-class ActionPolicyRepositoryStub final : public target::ActionPolicyRepository {
-public:
-  target::Outcome<std::optional<target::ActionPolicy>> get(const target::ResourceId&) override {
-    KIARABOT_P07A_STUB_FAILURE;
-  }
-  target::Status upsert(const target::ActionPolicy&,
-                        std::optional<target::ResourceVersion>) override {
-    KIARABOT_P07A_STUB_FAILURE;
-  }
-};
-class ActionEvidenceRepositoryStub final : public target::ActionEvidenceRepository {
-public:
-  target::Status append(const target::ActionEvidenceRecord&) override {
-    KIARABOT_P07A_STUB_FAILURE;
-  }
-  target::Outcome<std::vector<target::ActionEvidenceRecord>>
-  list(const target::ActionId&) override {
-    KIARABOT_P07A_STUB_FAILURE;
-  }
-  target::Outcome<std::size_t> prune(target::TimePoint, std::size_t) override {
-    KIARABOT_P07A_STUB_FAILURE;
-  }
-};
-#undef KIARABOT_P07A_STUB_FAILURE
 
 class RuntimeWork final : public WorkDelegate<target::RuntimeUnitOfWork> {
 public:
@@ -332,7 +251,9 @@ public:
         credentials_(work()), hosts_(work(), detail::RecordKind::Host),
         installations_(work(), detail::RecordKind::Installation),
         instances_(work(), detail::RecordKind::Instance),
-        instance_configs_(work(), detail::RecordKind::InstanceConfig), events_(*common.sql) {}
+        instance_configs_(work(), detail::RecordKind::InstanceConfig), events_(*common.sql),
+        actions_(*common.sql), action_quota_(*common.sql), action_policies_(*common.sql),
+        action_evidence_(*common.sql) {}
   target::Repository<target::ResourceId, target::BotAccount>& accounts() override {
     return accounts_;
   }
@@ -410,10 +331,10 @@ private:
   LiveRepository<target::InstanceId, target::PluginInstance> instances_;
   LiveRepository<target::InstanceId, target::InstanceConfiguration> instance_configs_;
   detail::RuntimeEvents events_;
-  ActionRepositoryStub actions_;
-  ActionQuotaRepositoryStub action_quota_;
-  ActionPolicyRepositoryStub action_policies_;
-  ActionEvidenceRepositoryStub action_evidence_;
+  detail::ActionRecords actions_;
+  detail::ActionQuotaRecords action_quota_;
+  detail::ActionPolicyRecords action_policies_;
+  detail::ActionEvidenceRecords action_evidence_;
 };
 class RuntimeFactory final : public target::RuntimeUnitOfWorkFactory {
 public:
