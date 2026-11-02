@@ -14,7 +14,7 @@ from google.protobuf.json_format import Parse, ParseError
 from kiarabot.v1 import common_pb2 as common, platform_pb2 as platform, plugins_pb2 as plugins
 from kiarabot.v1 import services_pb2_grpc as services
 
-from . import actions as action_api, delivery, transport
+from . import actions as action_api, delivery, tasks as task_api, transport
 from .errors import PluginError
 
 logger = logging.getLogger(__name__)
@@ -30,6 +30,7 @@ class Context:
         self._permissions = frozenset()
         self._rpc = None
         self._features = frozenset()
+        self._capabilities = frozenset()
         self._config = None
 
     @property
@@ -157,27 +158,46 @@ class Context:
             raise PluginError(result.error.code, result.error.retryable)
         return result.model_chat
 
+    def _require_tasks(self, timeout, *, creating=False):
+        """P10c task preflight: feature, plugin permission and (create) timer subscription."""
+        if not isinstance(timeout, (int, float)) or not 0 < timeout <= 300:
+            raise PluginError(common.INVALID_ARGUMENT)
+        if not self._rpc:
+            raise PluginError(common.UPSTREAM_UNAVAILABLE, True)
+        if task_api.TASK_FEATURE not in self._features:
+            raise PluginError(common.CAPABILITY_NOT_SUPPORTED)
+        if task_api.TASK_PERMISSION not in self._permissions:
+            raise PluginError(common.PERMISSION_DENIED)
+        if creating and task_api.TIMER_CAPABILITY not in self._capabilities:
+            # Creating a task is only useful with event.timer.triggered delivery.
+            raise PluginError(common.CAPABILITY_NOT_SUPPORTED)
+
+    async def _task_call(self, operation, request, timeout, idempotency_key=''):
+        host = plugins.HostRequest(request_id=str(uuid.uuid4()), trace_id=str(uuid.uuid4()),
+                                   idempotency_key=idempotency_key,
+                                   **{operation: request})
+        host.deadline.FromDatetime(datetime.now(timezone.utc) + timedelta(seconds=timeout))
+        response = await self._call(plugins.PluginToCore(host_request=host), timeout,
+                                    task_api.TASK_FEATURE)
+        return task_api.validate_response(getattr(response, operation), request.task_id)
+
     async def task_create(self, task_id, target_conversation, payload, idempotency_key,
                           *, run_at=None, local_time=None, timeout=5.0):
-        if (run_at is None) == (local_time is None):
-            raise PluginError(common.INVALID_ARGUMENT)
-        operation = dict(task_id=task_id, target_conversation=target_conversation, payload=payload)
-        if run_at is not None:
-            from google.protobuf.timestamp_pb2 import Timestamp
-            if run_at.tzinfo is None or run_at.utcoffset() != timedelta(0):
-                raise PluginError(common.INVALID_ARGUMENT)
-            date = Timestamp()
-            date.FromDatetime(run_at)
-            operation['run_at'] = date
-        else:
-            operation['local_time'] = local_time
-        return await self._host('task_create', timeout, idempotency_key, **operation)
+        self._require_tasks(timeout, creating=True)
+        task_api.validate_idempotency_key(idempotency_key)
+        request = task_api.create_request(task_id, target_conversation, payload,
+                                          run_at=run_at, local_time=local_time)
+        return await self._task_call('task_create', request, timeout, idempotency_key)
 
     async def task_get(self, task_id, timeout=5.0):
-        return await self._host('task_get', timeout, task_id=task_id)
+        self._require_tasks(timeout)
+        return await self._task_call('task_get', task_api.get_request(task_id), timeout)
 
     async def task_cancel(self, task_id, idempotency_key, timeout=5.0):
-        return await self._host('task_cancel', timeout, idempotency_key, task_id=task_id)
+        self._require_tasks(timeout)
+        task_api.validate_idempotency_key(idempotency_key)
+        return await self._task_call('task_cancel', task_api.cancel_request(task_id), timeout,
+                                     idempotency_key)
 
     async def storage_set(self, key, value, idempotency_key, *, expires_at=None, timeout=5.0):
         operation = dict(key=key, value=value)
@@ -370,6 +390,7 @@ class Runner:
         self.manifest.CopyFrom(manifest)
         self.plugin, self.options = plugin, options
         self.context = Context()
+        self.context._capabilities = frozenset(self.manifest.capabilities)
         # A plugin instance keeps its identity across TLS reconnects; only the
         # connection generation changes. Deployment may pin it explicitly.
         self._instance_id = options.instance_id or str(uuid.uuid4())
