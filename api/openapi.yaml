@@ -621,13 +621,15 @@ paths:
   /models:
     get:
       operationId: listModels
+      x-contract-status: implemented
       x-permission: model.read
       summary: List configured model providers
       description: >-
         P11d-2 Control forwards this to ModelService.ListModelMetadata with a model.read delegation
         whose scope is exactly the caller-supplied model resource set. The scope query is required
-        (one or more RESOURCE_MODEL ids); the response carries redacted metadata only. Target REST
-        operation status stays not_implemented until the owner REST layer is contract-flipped.
+        (one or more RESOURCE_MODEL ids); the response carries redacted metadata only. P12k audit:
+        this operation has a real Control+TLS Model fixture success chain and no x-owner-rpc mapping,
+        so the REST marker is implemented (target operations.listModels override + evidence).
       parameters:
       - $ref: '#/components/parameters/PageSize'
       - $ref: '#/components/parameters/PageToken'
