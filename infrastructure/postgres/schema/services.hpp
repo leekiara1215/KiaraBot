@@ -85,6 +85,16 @@ CREATE UNIQUE INDEX bridge_credentials_active ON kiarabot.bridge_credentials(res
     sql += R"sql(
 ALTER TABLE kiarabot.tasks ADD UNIQUE(occurrence_id);
 ALTER TABLE kiarabot.tasks ADD UNIQUE(owner,task_id,installation,occurrence_id);
+CREATE INDEX tasks_due ON kiarabot.tasks(state,run_at);
+CREATE INDEX tasks_owner ON kiarabot.tasks(owner,state);
+CREATE INDEX occurrences_owner ON kiarabot.occurrences(owner);
+CREATE INDEX occurrences_inflight ON kiarabot.occurrences(state,due_at);
+CREATE TABLE kiarabot.scheduler_quota_counters (
+  owner text PRIMARY KEY CHECK(owner<>''),
+  instance_active integer NOT NULL CHECK(instance_active BETWEEN 0 AND 1024),
+  installation_active integer NOT NULL CHECK(installation_active BETWEEN 0 AND 8192),
+  updated_at bigint NOT NULL
+);
 ALTER TABLE kiarabot.occurrences ADD UNIQUE(owner,task_id);
 ALTER TABLE kiarabot.occurrences ADD FOREIGN KEY(owner,task_id,installation,occurrence_id) REFERENCES kiarabot.tasks(owner,task_id,installation,occurrence_id);
 )sql";

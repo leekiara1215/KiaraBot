@@ -132,7 +132,9 @@ CREATE TABLE kiarabot.result_grant_scopes (
     conversation_kind integer NOT NULL CHECK(conversation_kind BETWEEN 0 AND 2),
     payload bytea NOT NULL CHECK(octet_length(payload)<=65536), run_at bigint NOT NULL,
     state integer NOT NULL CHECK(state BETWEEN 0 AND 5), version kiarabot.uint64 NOT NULL,
-    occurrence_id text NOT NULL
+    occurrence_id text NOT NULL, cancel_requested boolean NOT NULL DEFAULT false,
+    reason integer CHECK(reason BETWEEN 0 AND 10), created_at bigint NOT NULL,
+    updated_at bigint NOT NULL
   )sql");
   snapshot("occurrences",
            "owner text NOT NULL, installation text NOT NULL, task_id text NOT NULL,"
@@ -140,7 +142,9 @@ CREATE TABLE kiarabot.result_grant_scopes (
            "NOT NULL,"
            "version kiarabot.uint64 NOT NULL,state integer NOT NULL CHECK(state BETWEEN 0 AND 6),"
            "accepted_event_id text, acknowledged_at bigint," +
-               std::string(kHandoffColumns));
+               std::string(kHandoffColumns) +
+               ",attempts integer NOT NULL,last_error integer CHECK(last_error BETWEEN 0 AND 10),"
+               "updated_at bigint NOT NULL");
   // P11 extends the original P03 declaration-level relation in place. The dedicated P11 repository
   // always writes every fact below; columns stay nullable (except disposition, which defaults 0) so
   // the P03 generic ModelIntent repository remains source/insert compatible.

@@ -646,12 +646,15 @@ std::int64_t write_record(pqxx::transaction_base& transaction, const target::Rep
         } else if constexpr (std::is_same_v<Value, target::ScheduledTask>) {
           put(transaction, "tasks",
               "owner,task_id,installation,adapter,account,conversation_id,conversation_kind,"
-              "payload,run_at,state,version,occurrence_id",
+              "payload,run_at,state,version,occurrence_id,cancel_requested,reason,created_at,"
+              "updated_at",
               id,
               {value.key.owner.value, value.key.task_id, value.installation.value,
                value.target.adapter.value, value.target.account.value, value.target.conversation_id,
                static_cast<int>(value.target.kind), binary(value.payload), timestamp(value.run_at),
-               static_cast<int>(value.state), value.version.value, value.occurrence.value});
+               static_cast<int>(value.state), value.version.value, value.occurrence.value,
+               value.cancel_requested, optional_enum(value.reason), timestamp(value.created_at),
+               timestamp(value.updated_at)});
         } else if constexpr (std::is_same_v<Value, target::Occurrence>) {
           pqxx::params parameters{value.owner.value,
                                   value.installation.value,
@@ -664,10 +667,13 @@ std::int64_t write_record(pqxx::transaction_base& transaction, const target::Rep
                                   value.accepted_event_id,
                                   optional_timestamp(value.acknowledged_at)};
           parameters.append(handoff_params(value.handoff));
+          parameters.append(pqxx::params{static_cast<int>(value.attempts),
+                                         optional_enum(value.last_error),
+                                         timestamp(value.updated_at)});
           put(transaction, "occurrences",
               "owner,installation,task_id,task_version,occurrence_id,due_at,version,state,accepted_"
               "event_id,acknowledged_at," +
-                  std::string(kHandoffFields),
+                  std::string(kHandoffFields) + ",attempts,last_error,updated_at",
               id, std::move(parameters));
         } else if constexpr (std::is_same_v<Value, target::SessionMetadata>) {
           put(transaction, "session_metadata",
@@ -893,8 +899,9 @@ target::ReplayResult load_record(pqxx::transaction_base& transaction, std::int64
   case 9: {
     const auto row = get(transaction, "tasks", id,
                          "owner,task_id,installation,adapter,account,conversation_id,conversation_"
-                         "kind,payload,state,version,occurrence_id," +
-                             time_projection("run_at"));
+                         "kind,payload,state,version,occurrence_id,cancel_requested,reason," +
+                             time_projection("run_at") + "," + time_projection("created_at") + "," +
+                             time_projection("updated_at"));
     const auto payload = row["payload"].as<pqxx::bytes>();
     target::ScheduledTask value{
         {{row["owner"].as<std::string>()}, row["task_id"].as<std::string>()},
@@ -908,6 +915,12 @@ target::ReplayResult load_record(pqxx::transaction_base& transaction, std::int64
         enum_field<target::TaskState>(row["state"], 5),
         {row["version"].as<std::uint64_t>()},
         {row["occurrence_id"].as<std::string>()}};
+    value.cancel_requested = row["cancel_requested"].as<bool>();
+    if (const auto reason = row["reason"].as<std::optional<int>>()) {
+      value.reason = static_cast<target::ErrorCode>(*reason);
+    }
+    value.created_at = time_field(row, "created_at");
+    value.updated_at = time_field(row, "updated_at");
     for (std::size_t index = 0; index < payload.size(); ++index) {
       value.payload.push_back(static_cast<std::byte>(payload[index]));
     }
@@ -918,18 +931,25 @@ target::ReplayResult load_record(pqxx::transaction_base& transaction, std::int64
         transaction, "occurrences", id,
         "owner,installation,task_id,task_version,occurrence_id,version,state,accepted_event_id," +
             time_projection("due_at") + "," + time_projection("acknowledged_at") + "," +
-            handoff_projection());
-    return target::Occurrence{{row["owner"].as<std::string>()},
-                              {row["installation"].as<std::string>()},
-                              row["task_id"].as<std::string>(),
-                              {row["task_version"].as<std::uint64_t>()},
-                              {row["occurrence_id"].as<std::string>()},
-                              time_field(row, "due_at"),
-                              read_handoff(row),
-                              {row["version"].as<std::uint64_t>()},
-                              enum_field<target::OperationState>(row["state"], 6),
-                              row["accepted_event_id"].as<std::optional<std::string>>(),
-                              optional_time(row, "acknowledged_at")};
+            handoff_projection() + ",attempts,last_error," + time_projection("updated_at"));
+    target::Occurrence value{{row["owner"].as<std::string>()},
+                             {row["installation"].as<std::string>()},
+                             row["task_id"].as<std::string>(),
+                             {row["task_version"].as<std::uint64_t>()},
+                             {row["occurrence_id"].as<std::string>()},
+                             time_field(row, "due_at"),
+                             read_handoff(row),
+                             {row["version"].as<std::uint64_t>()},
+                             enum_field<target::OperationState>(row["state"], 6),
+                             row["accepted_event_id"].as<std::optional<std::string>>(),
+                             optional_time(row, "acknowledged_at")};
+    value.attempts = row["attempts"].as<std::uint32_t>();
+    if (const auto error = row["last_error"].as<std::optional<int>>()) {
+      value.last_error = static_cast<target::ErrorCode>(*error);
+    }
+    value.created_at = value.handoff.created_at;
+    value.updated_at = time_field(row, "updated_at");
+    return value;
   }
   case 11: {
     const auto row = get(transaction, "model_intents", id,

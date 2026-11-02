@@ -17,9 +17,10 @@ inline constexpr int version(core::target::Service owner) {
     // relations and the shared audit target columns.
     return 10;
   case core::target::Service::Scheduler:
-    // P10a adds the one-shot task/occurrence trigger-observation columns and due/owner indexes;
-    // P07 adds the shared nullable audit target columns to every service schema.
-    return 8;
+    // P10a adds task/occurrence observation columns, the quota counter relation and due/owner
+    // indexes; P07 adds the shared nullable audit target columns to every service schema. The
+    // merged schema keeps version 9 (both prior increments were measured at Scheduler v8).
+    return 9;
   case core::target::Service::Model:
     // P11a adds model_configs + encrypted_provider_secrets and extends model_intents with the
     // durable call facts (disposition/UNKNOWN resolution/usage); P07 adds the shared nullable

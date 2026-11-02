@@ -231,8 +231,10 @@ Model 本地第一次事务：在线授权通过后，检查 owner+logical_call_
 
 ## P10a Scheduler schema 版本（2026-11-02）
 
-Scheduler 私有库 schema 版本由 6 提升为 7，作为 P10a 触发生命周期落地的版本标记。本增量只
-新增 SchedulerUnitOfWork 的 SQL 投影和应用层状态机，未新增/修改关系、列或索引，因此
-`manifest.hpp` 的 descriptor 与关系计数无需变化，`database_test` 在真实 PG16.4 上通过。下一
-增量若增加 tasks/occurrences 观察列、quota counter 或 due/owner 索引，必须同时更新
-descriptor、关系计数、record codec 与 database_test，不得只改代码或只改版本号。
+Scheduler 私有库 schema 版本为 8（P10a 第一阶段曾以 v7 仅做版本标记）。v8 增加 tasks/
+occurrences 观察列、scheduler_quota_counters 关系与 due/owner 索引，record codec 同步新增
+字段映射。由于 `result_*` snapshot 表由 `common_sql()` 为所有服务创建，这些列变更会改变
+Identity/Runtime/Scheduler/Model 的 schema descriptor；四者 descriptor 均在真实 PG16.4 上
+重新实测写回 `manifest.hpp`，Scheduler relation count 由 71 更新为 77，其余服务关系数不变。
+`database_test`/initializer 对 descriptor、关系计数和权限的校验已通过。后续任何关系变更仍
+必须同时更新 descriptor、relation_count、record codec 与测试，不得只改代码或版本号。

@@ -52,7 +52,7 @@ inline constexpr int relation_count(core::target::Service owner) {
   case core::target::Service::Runtime:
     return 120;
   case core::target::Service::Scheduler:
-    return 71;
+    return 77;
   case core::target::Service::Model:
     return 71;
   default:

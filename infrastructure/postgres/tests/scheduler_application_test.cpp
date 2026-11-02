@@ -225,6 +225,11 @@ void run(std::uint16_t port, const std::filesystem::path& root,
           "outbox claim failed");
   const auto claimed = std::get<std::vector<target::SchedulerTriggerClaim>>(claims);
   require(claimed.size() == 1, "one trigger claim");
+  require(claimed.front().occurrence.attempts == 1, "claim persists attempt observation");
+  require(claimed.front().occurrence.created_at.time_since_epoch().count() > 0,
+          "occurrence created_at is persisted");
+  require(claimed.front().occurrence.updated_at >= claimed.front().occurrence.created_at,
+          "occurrence updated_at is persisted");
   auto occurrence = service.confirm_trigger_accepted(claimed.front().claim, "event-1",
                                                      now + std::chrono::seconds{62});
   require(std::holds_alternative<target::Occurrence>(occurrence) &&
@@ -234,6 +239,17 @@ void run(std::uint16_t port, const std::filesystem::path& root,
   require(std::holds_alternative<target::ScheduledTask>(completed) &&
               std::get<target::ScheduledTask>(completed).state == target::TaskState::Completed,
           "confirmed task is COMPLETED");
+  const auto completed_task = std::get<target::ScheduledTask>(completed);
+  require(completed_task.created_at.time_since_epoch().count() > 0 &&
+              completed_task.updated_at >= completed_task.created_at,
+          "task observation timestamps are persisted");
+  // A pre-handoff cancel records the cancel observation flag on the task row.
+  auto cancellable = service.create_task(ctx, input("task-cancel", now + std::chrono::seconds{60}));
+  require(std::holds_alternative<target::ScheduledTask>(cancellable), "cancellable create");
+  auto cancelled_task = service.cancel_task(ctx, "task-cancel");
+  require(std::holds_alternative<target::ScheduledTask>(cancelled_task) &&
+              std::get<target::ScheduledTask>(cancelled_task).cancel_requested,
+          "cancel_requested observation is persisted");
   auto retried = service.confirm_trigger_accepted(claimed.front().claim, "event-1",
                                                   now + std::chrono::seconds{63});
   require(std::holds_alternative<target::Occurrence>(retried),
@@ -272,11 +288,24 @@ void run(std::uint16_t port, const std::filesystem::path& root,
       quote(role_password("p03_scheduler_runtime")) +
       " sslmode=verify-full channel_binding=require sslrootcert=" +
       quote((root / "server.pem").string()));
-  const auto version = pqxx::nontransaction(inspection)
-                           .exec("SELECT version FROM kiarabot.schema_versions")
+  pqxx::nontransaction schema_check(inspection);
+  const auto version = schema_check.exec("SELECT version FROM kiarabot.schema_versions")
                            .one_row()[0]
                            .as<int>();
-  require(version == 7, "scheduler schema version must be 7");
+  require(version == 8, "scheduler schema version must be 8");
+  const auto columns = schema_check.exec(
+      "SELECT count(*) FROM information_schema.columns WHERE table_schema='kiarabot' AND "
+      "((table_name='tasks' AND column_name IN ('cancel_requested','reason','created_at','"
+      "updated_at')) OR (table_name='occurrences' AND column_name IN ('attempts','last_error',"
+      "'updated_at')))");
+  require(columns.one_row()[0].as<int>() == 7, "v8 observation columns present");
+  const auto quota = schema_check.exec(
+      "SELECT to_regclass('kiarabot.scheduler_quota_counters') IS NOT NULL");
+  require(quota.one_row()[0].as<bool>(), "scheduler quote counters relation present");
+  const auto indexes = schema_check.exec(
+      "SELECT count(*) FROM pg_indexes WHERE schemaname='kiarabot' AND indexname IN "
+      "('tasks_due','tasks_owner','occurrences_owner','occurrences_inflight')");
+  require(indexes.one_row()[0].as<int>() == 4, "due/owner indexes present");
   std::cout << "scheduler application fixtures only\n";
 }
 
