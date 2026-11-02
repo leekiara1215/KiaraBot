@@ -16,6 +16,7 @@
 #include <vector>
 
 #include "kiarabot/core/application/target/runtime_bridge_application.hpp"
+#include "kiarabot/core/application/target/runtime_lifecycle_participants.hpp"
 #include "kiarabot/core/application/target/runtime_readiness.hpp"
 #include "kiarabot/core/application/target/runtime_resource_application.hpp"
 #include "kiarabot/core/ports/target/business_ports.hpp"
@@ -64,6 +65,7 @@ struct Store {
   std::map<std::string, t::Operation> operations;
   std::map<std::string, std::vector<t::OperationParticipant>> operation_participants;
   std::map<std::pair<int, std::string>, t::LifecycleTombstone> tombstones;
+  std::map<std::string, t::HostCommandOutboxRecord> host_commands;
   std::vector<t::BridgeCredentialRecord> bridge_credentials;
   std::vector<std::pair<t::ReceiptKey, t::CommandReceipt>> receipts;
   std::vector<t::AuditEntry> audits;
@@ -491,41 +493,72 @@ public:
 // methods stay unsupported so a hidden transport dependency is visible, never fake-successful.
 class MemoryHostCommands final : public t::HostCommandOutbox {
 public:
+  explicit MemoryHostCommands(Store& store) : store_(store) {}
   t::Outcome<t::PersistedHostCommand> insert(const t::HostCommandOutboxRecord& record) override {
-    const auto found = commands.find(record.command_id);
-    if (found != commands.end()) {
+    auto found = store_.host_commands.find(record.command_id);
+    if (found != store_.host_commands.end()) {
       if (found->second.payload_sha256 != record.payload_sha256) {
         return failure(t::ErrorCode::Conflict);
       }
       return t::PersistedHostCommand{found->second, true};
     }
-    commands.emplace(record.command_id, record);
+    store_.host_commands.emplace(record.command_id, record);
     return t::PersistedHostCommand{record, false};
   }
-  t::Outcome<std::vector<t::HostCommandOutboxRecord>> pending(const std::string&, std::uint64_t,
-                                                              std::size_t) override {
-    return failure(t::ErrorCode::CapabilityNotSupported);
+  t::Outcome<std::vector<t::HostCommandOutboxRecord>> pending(const std::string& host_id,
+                                                              std::uint64_t, std::size_t) override {
+    std::vector<t::HostCommandOutboxRecord> result;
+    for (const auto& [key, value] : store_.host_commands) {
+      (void)key;
+      if (value.host_id == host_id && value.state == t::HostCommandDeliveryState::Pending) {
+        result.push_back(value);
+      }
+    }
+    return result;
   }
-  t::Outcome<std::optional<t::HostCommandOutboxRecord>> find(const std::string&) override {
-    return failure(t::ErrorCode::CapabilityNotSupported);
+  t::Outcome<std::optional<t::HostCommandOutboxRecord>>
+  find(const std::string& command_id) override {
+    const auto found = store_.host_commands.find(command_id);
+    return found == store_.host_commands.end()
+               ? std::optional<t::HostCommandOutboxRecord>{}
+               : std::optional<t::HostCommandOutboxRecord>{found->second};
   }
-  t::Status mark_dispatched(const std::string&, std::uint64_t, std::string_view,
+  t::Status mark_dispatched(const std::string& command_id, std::uint64_t, std::string_view,
                             t::TimePoint) override {
-    return failure(t::ErrorCode::CapabilityNotSupported);
+    const auto found = store_.host_commands.find(command_id);
+    if (found == store_.host_commands.end()) {
+      return failure(t::ErrorCode::NotFound);
+    }
+    found->second.state = t::HostCommandDeliveryState::Dispatched;
+    return std::monostate{};
   }
-  t::Status record_receipt(const std::string&, bool, std::optional<t::ExecutionOutcome>,
-                           std::optional<std::string>, t::TimePoint) override {
-    return failure(t::ErrorCode::CapabilityNotSupported);
+  t::Status record_receipt(const std::string& command_id, bool persisted,
+                           std::optional<t::ExecutionOutcome> outcome,
+                           std::optional<std::string> marker, t::TimePoint) override {
+    const auto found = store_.host_commands.find(command_id);
+    if (found == store_.host_commands.end()) {
+      return failure(t::ErrorCode::NotFound);
+    }
+    found->second.state = t::HostCommandDeliveryState::Receipted;
+    found->second.receipt_persisted = persisted;
+    found->second.receipt_outcome = outcome;
+    found->second.receipt_process_marker = std::move(marker);
+    return std::monostate{};
   }
-  t::Status mark_unknown(const std::string&, t::TimePoint) override {
-    return failure(t::ErrorCode::CapabilityNotSupported);
+  t::Status mark_unknown(const std::string& command_id, t::TimePoint) override {
+    const auto found = store_.host_commands.find(command_id);
+    if (found == store_.host_commands.end()) {
+      return failure(t::ErrorCode::NotFound);
+    }
+    found->second.state = t::HostCommandDeliveryState::Unknown;
+    return std::monostate{};
   }
   t::Outcome<bool> record_observation(const t::HostObservationRecord&) override {
-    return failure(t::ErrorCode::CapabilityNotSupported);
+    return false;
   }
   t::Outcome<std::vector<t::HostObservationRecord>> observations(const std::string&, std::uint64_t,
                                                                  std::size_t) override {
-    return failure(t::ErrorCode::CapabilityNotSupported);
+    return std::vector<t::HostObservationRecord>{};
   }
   t::Outcome<std::size_t> expire_dispatched(t::TimePoint, std::chrono::seconds) override {
     return std::size_t{0};
@@ -534,7 +567,9 @@ public:
                                 std::size_t) override {
     return std::size_t{0};
   }
-  std::map<std::string, t::HostCommandOutboxRecord> commands;
+
+private:
+  Store& store_;
 };
 class MemoryWork final : public t::RuntimeUnitOfWork {
 public:
@@ -796,7 +831,7 @@ private:
   MemoryCredentials credentials_;
   MemoryReceipts receipts_;
   MemoryJournal journal_;
-  MemoryHostCommands host_commands_;
+  MemoryHostCommands host_commands_{store_};
   MemoryActionPorts memory_actions_;
   MemoryStorageReceipts storage_receipts_;
 };
@@ -1730,6 +1765,61 @@ void lifecycle_cleanup_flow(Harness& harness) {
         "60s retention batch did not prune stubbed outbox/audit/operations exactly once");
 }
 
+void lifecycle_host_participant_flow() {
+  Harness harness;
+  constexpr auto kLifecycleInstance = "77777777-7777-4777-8777-777777777777";
+  t::PluginInstallation installation;
+  installation.id = {kLifecycleInstance};
+  installation.plugin_type = {kHost};
+  installation.version = t::ResourceVersion{1};
+  installation.manifest = {std::byte{1}, std::byte{2}};
+  harness.store.installations[installation.id.value] = installation;
+  t::PluginInstance instance;
+  instance.id = {kLifecycleInstance};
+  instance.installation = installation.id;
+  instance.plugin_type = {kHost};
+  instance.version = t::ResourceVersion{1};
+  instance.state = t::LifecycleState::Deleting;
+  instance.host = t::ResourceId{kHost};
+  instance.desired = t::DesiredState::Stopped;
+  harness.store.instances[kLifecycleInstance] = instance;
+  harness.host_lifecycle.done = false;
+  harness.scheduler_lifecycle.done = false;
+  auto participant = t::make_runtime_host_lifecycle_participant(harness.factory, harness.secrets);
+  check(std::holds_alternative<std::unique_ptr<t::HostLifecycleParticipantPort>>(participant),
+        "host lifecycle participant construction failed");
+  auto& host = *std::get<std::unique_ptr<t::HostLifecycleParticipantPort>>(participant);
+  const t::ResourceRef resource{t::ResourceKind::Instance, {kLifecycleInstance}};
+  auto pending = host.stop_instance(resource);
+  check(pending.disposition == t::LifecycleParticipantDisposition::Blocked &&
+            pending.reason == t::ErrorCode::UpstreamUnavailable,
+        "host participant must stay blocked before a receipt");
+  check(harness.store.host_commands.size() == 1,
+        "host participant did not enqueue a durable stop command");
+  const auto& command = harness.store.host_commands.begin()->second;
+  check(command.kind == t::HostCommandKind::StopExecution && command.host_id == kHost &&
+            command.instance_id == kLifecycleInstance &&
+            command.desired_state == t::DesiredState::Stopped,
+        "host stop command snapshot incorrect");
+  auto& stored = harness.store.host_commands.begin()->second;
+  stored.state = t::HostCommandDeliveryState::Receipted;
+  stored.receipt_persisted = true;
+  stored.receipt_outcome = t::ExecutionOutcome::KnownSucceeded;
+  check(host.stop_instance(resource).disposition == t::LifecycleParticipantDisposition::Done,
+        "known host receipt did not converge participant");
+  stored.receipt_outcome = t::ExecutionOutcome::Unknown;
+  auto unknown = host.stop_instance(resource);
+  check(unknown.disposition == t::LifecycleParticipantDisposition::Blocked &&
+            unknown.reason == t::ErrorCode::UpstreamUnavailable,
+        "UNKNOWN process outcome was treated as stopped");
+  stored.receipt_outcome = std::nullopt;
+  stored.receipt_persisted = false;
+  auto rejected = host.stop_instance(resource);
+  check(rejected.disposition == t::LifecycleParticipantDisposition::Blocked &&
+            rejected.reason == t::ErrorCode::Conflict,
+        "rejected host stop was treated as done");
+}
+
 } // namespace
 
 int main() {
@@ -1766,5 +1856,6 @@ int main() {
     Harness harness;
     lifecycle_cleanup_flow(harness);
   }
+  lifecycle_host_participant_flow();
   return 0;
 }
