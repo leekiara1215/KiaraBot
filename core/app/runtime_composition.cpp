@@ -1,0 +1,240 @@
+#include "runtime_composition.hpp"
+
+#include <array>
+#include <cstddef>
+#include <memory>
+#include <string>
+#include <string_view>
+#include <utility>
+#include <vector>
+
+#include <openssl/rand.h>
+
+#include "kiarabot/core/application/target/runtime_application.hpp"
+#include "kiarabot/core/application/target/runtime_readiness.hpp"
+#include "kiarabot/core/application/target/runtime_resource_application.hpp"
+#include "kiarabot/core/runtime/platform/runtime_rpc.hpp"
+#include "kiarabot/core/runtime/platform/service_rpc.hpp"
+#include "kiarabot/infrastructure/postgres/factories.hpp"
+#include "postgres_service.hpp"
+
+namespace kiarabot::core::composition {
+namespace {
+namespace target = kiarabot::core::target;
+namespace platform = kiarabot::core::platform;
+namespace postgres = kiarabot::infrastructure::postgres;
+
+target::Failure invalid_composition() {
+  return {target::ErrorCode::InvalidArgument,
+          target::Acceptance::NotAccepted,
+          target::Recovery::CorrectInput,
+          {},
+          {}};
+}
+target::Failure unavailable() {
+  return {target::ErrorCode::UpstreamUnavailable,
+          target::Acceptance::NotAccepted,
+          target::Recovery::Backoff,
+          {},
+          {}};
+}
+// CSPRNG UUIDv4 ids for owner commands and opaque page tokens. No fallback id is generated on
+// entropy failure; the caller receives UpstreamUnavailable instead.
+class RandomIds final : public target::RuntimeIdPort {
+public:
+  target::Outcome<target::ResourceId> account_id() override {
+    return typed<target::ResourceId>();
+  }
+  target::Outcome<target::InstallationId> installation_id() override {
+    return typed<target::InstallationId>();
+  }
+  target::Outcome<target::InstanceId> instance_id() override {
+    return typed<target::InstanceId>();
+  }
+  target::Outcome<target::InstanceId> adapter_instance_id() override {
+    return typed<target::InstanceId>();
+  }
+  target::Outcome<target::ConnectionId> connection_id() override {
+    return typed<target::ConnectionId>();
+  }
+  target::Outcome<target::OperationId> operation_id() override {
+    return typed<target::OperationId>();
+  }
+  target::Outcome<target::RuntimeEpoch> runtime_epoch() override {
+    return typed<target::RuntimeEpoch>();
+  }
+  target::Outcome<std::string> snapshot_id() override {
+    auto value = uuid();
+    if (const auto* failure = std::get_if<target::Failure>(&value)) {
+      return *failure;
+    }
+    return std::get<std::string>(value);
+  }
+
+private:
+  template <typename Identifier> target::Outcome<Identifier> typed() {
+    auto value = uuid();
+    if (const auto* failure = std::get_if<target::Failure>(&value)) {
+      return *failure;
+    }
+    return Identifier{std::get<std::string>(value)};
+  }
+  target::Outcome<std::string> uuid() {
+    std::array<unsigned char, 16> bytes{};
+    if (RAND_bytes(bytes.data(), static_cast<int>(bytes.size())) != 1) {
+      return unavailable();
+    }
+    bytes[6] = static_cast<unsigned char>((bytes[6] & 0x0fU) | 0x40U);
+    bytes[8] = static_cast<unsigned char>((bytes[8] & 0x3fU) | 0x80U);
+    constexpr char kDigits[] = "0123456789abcdef";
+    std::string result;
+    result.reserve(36);
+    for (std::size_t index = 0; index < bytes.size(); ++index) {
+      if (index == 4 || index == 6 || index == 8 || index == 10) {
+        result += '-';
+      }
+      result += kDigits[bytes[index] >> 4U];
+      result += kDigits[bytes[index] & 0x0fU];
+    }
+    return result;
+  }
+};
+// Fail-closed until the real Identity current-authorization/delegation client is wired. It never
+// allows a request, and its availability observation is false so readiness stays false.
+class FailClosedAuthorization final : public target::RuntimeAuthorizationPort {
+public:
+  bool available() const noexcept override {
+    return false;
+  }
+  target::Outcome<target::RuntimeAuthorizationDecision>
+  check(const target::RuntimeAuthorizationRequest&) override {
+    return target::Failure{target::ErrorCode::UpstreamUnavailable,
+                           target::Acceptance::NotAccepted,
+                           target::Recovery::Backoff,
+                           {},
+                           {}};
+  }
+};
+// Fail-closed peer authorizer until the real mTLS peer + Identity delegation verification lands.
+platform::RuntimePeerAuthorizer fail_closed_authorizer() {
+  return [](grpc::ServerContext&,
+            const v1::RequestContext&) -> target::Outcome<target::AuthenticationContext> {
+    return target::Failure{target::ErrorCode::Unauthenticated,
+                           target::Acceptance::NotAccepted,
+                           target::Recovery::Authenticate,
+                           {},
+                           {}};
+  };
+}
+struct State {
+  std::unique_ptr<target::RuntimeIdPort> ids;
+  std::unique_ptr<target::RuntimeAuthorizationPort> authorization;
+  target::RuntimeResourceApplication* application = nullptr;
+};
+// Readiness merges the composition-observed database state with the authorization-chain observation
+// and the assembled business implementation. Unobserved inputs remain Unverified and never ready.
+class RuntimeReadiness final : public target::ServiceReadinessPort {
+public:
+  RuntimeReadiness(std::unique_ptr<target::ServiceReadinessPort> database_observed,
+                   std::shared_ptr<State> state)
+      : database_observed_(std::move(database_observed)), state_(std::move(state)) {}
+  target::Service service() const noexcept override {
+    return target::Service::Runtime;
+  }
+  target::ServiceReadiness readiness() const override {
+    target::RuntimeReadinessObservation observation;
+    if (database_observed_) {
+      const auto base = database_observed_->readiness();
+      for (const auto& dependency : base.dependencies) {
+        if (dependency.dependency == target::Dependency::BusinessImplementation) {
+          observation.business_assembled = dependency.state;
+        }
+        if (dependency.dependency == target::Dependency::DatabaseSchema) {
+          observation.database_schema = dependency.state;
+        }
+      }
+    }
+    if (state_ && state_->authorization) {
+      observation.identity_authorization = state_->authorization->available()
+                                               ? target::DependencyState::Available
+                                               : target::DependencyState::Unavailable;
+    }
+    return target::evaluate_runtime_readiness(observation);
+  }
+
+private:
+  std::unique_ptr<target::ServiceReadinessPort> database_observed_;
+  std::shared_ptr<State> state_;
+};
+} // namespace
+
+target::Outcome<platform::ServiceComposition>
+compose_runtime_service(const platform::ProcessConfig& config) {
+  try {
+    if (config.service != target::Service::Runtime) {
+      return invalid_composition();
+    }
+    if (!config.database) {
+      // P02 lifecycle/smoke fixtures start every process without a database. Keep the independent
+      // Runtime process startable with an explicit non-ready application and no business RPC, as
+      // before P05; the typed PG composition is selected only when a database is configured.
+      return compose_database_service<target::RuntimeUnitOfWork>(
+          config, postgres::open_runtime, [](auto&) { return target::make_runtime_application(); });
+    }
+    auto state = std::make_shared<State>();
+    auto composition = compose_database_service<target::RuntimeUnitOfWork>(
+        config, postgres::open_runtime,
+        [state](auto& factory) -> std::unique_ptr<target::ServiceReadinessPort> {
+          state->ids = std::make_unique<RandomIds>();
+          state->authorization = std::make_unique<FailClosedAuthorization>();
+          auto built = target::make_runtime_resource_application(
+              {factory,
+               *state->ids,
+               *state->authorization,
+               {"action.send_message.text.v1", "action.react_message.v1",
+                "action.delete_message.v1", "action.mute_member.v1", "action.kick_member.v1",
+                "action.approve_request.v1"}});
+          if (const auto* failure = std::get_if<target::Failure>(&built)) {
+            return {};
+          }
+          auto application =
+              std::move(std::get<std::unique_ptr<target::RuntimeResourceApplication>>(built));
+          state->application = application.get();
+          return application;
+        });
+    if (const auto* failure = std::get_if<target::Failure>(&composition)) {
+      return *failure;
+    }
+    auto& result = std::get<platform::ServiceComposition>(composition);
+    if (!state->application) {
+      return unavailable();
+    }
+    auto* application = state->application;
+    auto configure = std::move(result.configure_rpc);
+    result.configure_rpc = [configure = std::move(configure), state, application,
+                            authorizer = fail_closed_authorizer()](
+                               platform::ServiceRpc& rpc) mutable -> target::Status {
+      if (configure) {
+        auto configured = configure(rpc);
+        if (const auto* failure = std::get_if<target::Failure>(&configured)) {
+          return *failure;
+        }
+      }
+      platform::RuntimeRpcOptions options;
+      options.authorize = authorizer;
+      auto adapter = platform::make_runtime_rpc(*application, std::move(options));
+      if (const auto* failure = std::get_if<target::Failure>(&adapter)) {
+        return *failure;
+      }
+      return rpc.add_service(
+          target::Service::Runtime,
+          std::move(std::get<std::unique_ptr<v1::RuntimeService::Service>>(adapter)));
+    };
+    result.application = std::make_unique<RuntimeReadiness>(std::move(result.application), state);
+    return std::move(result);
+  } catch (...) {
+    return unavailable();
+  }
+}
+
+} // namespace kiarabot::core::composition

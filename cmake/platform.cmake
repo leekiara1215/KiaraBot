@@ -171,6 +171,16 @@ add_test(NAME p03_service_composition COMMAND "${KIARABOT_TARGET_PYTHON}"
   $<TARGET_FILE:kiarabot_service_composition_driver> $<TARGET_FILE:kiarabot_service_rpc_client>)
 set_tests_properties(p03_service_composition PROPERTIES LABELS "p03;integration;fault" TIMEOUT 30)
 
+# P05 Runtime production unary transport. Only conversion and stable error mapping; all business
+# rules stay in kiarabot_runtime_resource_application. Nine P06 internal_dispatcher methods are
+# intentionally not overridden and keep generated UNIMPLEMENTED until P06 Bridge wiring.
+add_library(kiarabot_runtime_rpc STATIC
+  ${CMAKE_SOURCE_DIR}/core/src/runtime/platform/runtime_rpc.cpp)
+target_include_directories(kiarabot_runtime_rpc PUBLIC ${CMAKE_SOURCE_DIR}/core/include)
+kiarabot_platform_warnings(kiarabot_runtime_rpc)
+target_link_libraries(kiarabot_runtime_rpc PUBLIC kiarabot_proto kiarabot_target_codec
+  PRIVATE kiarabot_runtime_resource_application OpenSSL::Crypto)
+
 foreach(SERVICE identity runtime plugin_host scheduler model)
   set(ENTRY "${SERVICE}")
   set(BINARY "${SERVICE}")
@@ -181,6 +191,14 @@ foreach(SERVICE identity runtime plugin_host scheduler model)
   add_executable(kiarabot-${BINARY} ${CMAKE_SOURCE_DIR}/core/app/${ENTRY}_main.cpp)
   target_link_libraries(kiarabot-${BINARY} PRIVATE
     kiarabot_${SERVICE}_application kiarabot_service_process)
+  if(SERVICE STREQUAL "runtime")
+    # The independent Runtime composition owns the typed PG factory, application and unary RPC
+    # registration; keep the Identity/control composition out of this process.
+    target_sources(kiarabot-runtime PRIVATE
+      ${CMAKE_SOURCE_DIR}/core/app/runtime_composition.cpp)
+    target_link_libraries(kiarabot-runtime PRIVATE
+      kiarabot_runtime_rpc kiarabot_postgres OpenSSL::Crypto)
+  endif()
   set_target_properties(kiarabot-${BINARY} PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
   kiarabot_platform_warnings(kiarabot-${BINARY})
 endforeach()
