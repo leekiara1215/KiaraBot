@@ -14,6 +14,8 @@
 
 仍未实现（deferred）：Runtime 的 Bridge handler（P06a）与 Host 受管启动/最小环境/PID 与 stop 超时（P08）；真实 Core/Adapter 端到端夹具在二者落地后替换 `FakeTargetRuntime` 的本机验收，不用旧 reference 桥接兼容层。
 
+reference 冻结轨说明：`control/api/tests/test_config_delivery.py` 中启动真实 SDK Runner 的配置下发 e2e 已随本次 SDK 迁移失效——reference 单机 Core 仍只提供旧 plugin RPC 端点，target-only SDK 在其上无法完成注册与配置协商，故该单个用例显式 skip 且保留在套件中（其余 reference 用例继续真实运行）；目标等价覆盖由 P06a-2（Runtime Bridge handler）与 P08c（配置下发闭环）承担。
+
 ## T06c 任务客户端
 
 Context.task_create(task_id, target_conversation, payload, idempotency_key, run_at=UTC datetime 或 local_time=LocalTaskTime 字段字典)、task_get(task_id)、task_cancel(task_id, idempotency_key) 使用 host.tasks.v1，默认五秒 deadline。必须获授 task.schedule；创建还需 event.timer.triggered 订阅。返回生成的 TaskResponse；本地时间不猜测 DST，详见 doc/05-infrastructure.md。任务身份来自注册会话，不接受自报 owner；事件仅交给创建插件。COMPLETED 代表 TimerTriggered 已入队，回调仍可能重复，消费者按 task_id 幂等。

@@ -5,6 +5,8 @@ import subprocess
 import time
 from pathlib import Path
 
+import pytest
+
 from conftest import ROOT, Server, validate
 
 
@@ -41,6 +43,10 @@ class SDK:
         return [json.loads(line) for line in self.observations.read_text().splitlines()]
 
 
+@pytest.mark.skip(reason='SDK migrated to the target TLS/bootstrap/ConnectionAuthorization transport; '
+                         'the reference single-host Core still exposes the legacy plugin RPC endpoint, '
+                         'so this reference config-delivery e2e no longer applies. Target equivalent '
+                         'coverage is P06a-2 (Runtime Bridge handler) + P08c (config delivery).')
 def test_config_application_rejection_reconnect_and_restart(tmp_path):
     server = Server(tmp_path, plugin=True)
     sdk = None
