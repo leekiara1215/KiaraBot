@@ -1234,6 +1234,18 @@ bootstrap SHA-256；bridge 维护（sweep/claim/push）挂在每秒有界的 che
   可用 + 该 channel 可用。`identity_endpoint` 缺失时组合根保持 fail-closed 占位与 ready=false。
 - 明文 delegation proof 只存在于请求内存（AuthenticationContext.proof），不写入收据、审计、
   operation 或日志。
+- 平台 peer 供给：Runtime 的 mTLS client 证书、Principal 与 `identity.authorization.check`
+  等显式 assignment 只能由 `kiarabot-identity-bootstrap` 的离线 `platform_peers` 登记，
+  与管理员/Control 同事务提交（见 doc/08）；无匿名注册/自绑定或 RPC 绕过。缺少登记时
+  Runtime 侧 CheckAuthorization 返回拒绝且 readiness=false，仍 fail closed。
+- 委托 proof 是 Identity 签名的不透明 JWT；其 uint64 字段（permission/kind、
+  authorization_version、business_hops、source_credential.version）按 Identity 签名器编码为
+  **规范十进制字符串**。Runtime 消费者必须按此解析并拒绝数字形式/前导零/越界值，不得用
+  宽松 JSON number 猜测。真实双进程 mTLS/PG e2e（允许→撤销 assignment 拒绝→撤销凭据登录
+  失败→Identity 停机 readiness=false→缺配置 fail closed）由 `p05_runtime_identity_e2e` 覆盖。
+- Runtime exact 资源方法通过 `scope_kinds` 标注（Account/Adapter/Installation/Instance）供
+  Identity descriptor-driven resolver 校验；未标注方法（Create/List/GetResourceState/
+  GetOperation 等）保持 fail closed，补标注必须同时补齐应用传入的 exact scope。
 
 **持久化说明**：新增 adapters/adapter_bindings/hosts/instance_configs/bridge_credentials 关系与
 installations.manifest、instances.desired 列在同一 Runtime 库 v1 初始化 schema 内创建。

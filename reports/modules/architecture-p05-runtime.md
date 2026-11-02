@@ -95,20 +95,31 @@ ready=false），readiness 依据 channel READY + DB/schema + 应用装配判定
 
 ## 未完成 / 降级项
 
-1. **Identity 真实授权链路未接线**：组合根当前注入 fail-closed `PeerAuthorizer` 与
-   `RuntimeAuthorizationPort`（available=false，check 恒 UPSTREAM_UNAVAILABLE），Runtime
-   readiness 保持 false，生产 gRPC 不会放行任何请求。需在 P04 `CheckAuthorization`/委托链可用后
-   追加真实 Identity client 接线 commit（可用 fake server 验证后切真实 PG/TLS），并补 RPC 传输
-   级集成测试。
+1. **Identity 真实授权链路未接线 → 已由 P05 follow-up 关闭**：组合根在配置
+   `identity_endpoint` 时注入真实 `RuntimeIdentityClient`（mTLS CheckAuthorization/委托校验），
+   缺配置时保持 fail-closed。真实双进程 e2e `p05_runtime_identity_e2e` 覆盖允许、撤销后拒绝、
+   凭据撤销、Identity 不可用 readiness=false 与缺配置 fail-closed；剩余未标注 `scope_kinds`
+   的方法仍 fail closed（见 follow-up 报告）。
 2. **bootstrap_credential 未生成/返回**：`RuntimeBindAdapterResponse.bootstrap_credential` 与
    `RuntimeCreateInstanceResponse.bootstrap_credential`（externally_managed 一次性 opaque）依赖
    P06 C1 契约，当前分支不含该契约，按 Lead 指示 deferred 到 rebase 后的小 commit。
-3. **契约状态未翻 target implemented**：P05 目标生产可用性要求真实 Identity 授权链路与端到端
-   验收；当前只有 fake/单测与编译证据，因此 `proto/tests/contract_status.json`、
-   `api/openapi.yaml` 的 target 标注保持 not_implemented，未伪造状态。rebase 集成与 Identity
-   接线完成后由后续 commit 翻转已验证项。
+3. **契约状态未翻 target implemented**：`proto/tests/contract_status.json`、
+   `api/openapi.yaml` 的 target 标注保持 not_implemented，未伪造状态。真实授权链 e2e 只证明
+   Identity/Runtime 边界与平台 peer 供给；Runtime 业务方法仍有未标注 scope/未实现能力，
+   翻转须按方法逐项验收后另行登记。
 4. **Host 登记写入口**：按裁决只建记录与仓储，RegisterHost/ReportInventory 等写流程归 P08。
-5. **RPC 传输测试**：本增量验证到编译与内部应用测试；真实 mTLS peer/delegation 与 Control→Runtime
-   端到端验收留到 Identity 接线后（与第 1 项同一 commit/验收）。
+5. **RPC 传输测试 → 已补真实 e2e**：`p05_runtime_identity_e2e` 使用真实 Identity/Runtime
+   双进程、真实 mTLS/委托/PG16.4 验证 Control→Runtime 业务命令的允许与撤销后拒绝。
 6. Register/heartbeat 拒绝路径当前只写成功审计；拒绝审计与 P06 Bridge 一起补（避免在 P05 单机
    驱动路径引入半套审计语义）。
+
+## P05 follow-up（2026-11-02）
+
+新增离线平台 peer 供给（`kiarabot-identity-bootstrap` 的 `platform_peers`，Runtime/Scheduler/
+Model 的 Principal+clientAuth 证书凭据+显式 assignment，同 once-only 事务）、Runtime exact
+资源方法的既有 `scope_kinds` 元数据、descriptor 兼容工具 additive-option 规则与真实双进程
+mTLS/PG e2e。过程中修复两个真实链路缺陷：委托 claims 的规范十进制字符串编码（Runtime
+decoder 误要求 JSON integer）与 Assignment 收据 24h<7 天最小保留期。详见
+`reports/modules/architecture-p05-peer-provisioning.md`。可关闭 P05“Identity 真实授权链路未接线”
+与“RPC 传输测试未验”两项；Create/List/GetResourceState/GetOperation 的 scope 与应用输入、
+P06 bootstrap_credential 消费、生产部署编排仍在后续任务。

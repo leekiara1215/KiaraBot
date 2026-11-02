@@ -656,6 +656,48 @@ Required/v1 → Consumed/v2 和所有主体、凭据、授权、水位、审计�
 查询持久marker（required/consumed与version），不要自动生成新身份重试；缺marker为损坏。
 命令未实现秘密恢复/密码找回，后续凭据轮换仍走其既定所有者契约。
 
+### P05 平台服务 peer 离线注册（Runtime/Scheduler/Model，实施）
+
+Runtime/Scheduler/Model 作为 Identity 的 mTLS 消费者，必须先有平台 Principal、clientAuth
+证书凭据与显式 assignment，才能通过真实授权链。该供给只走可信离线 bootstrap，不新增匿名
+注册或 RPC：在登记 JSON 顶层追加可选 `platform_peers` 数组（最多16项），与管理员/Control
+在**同一 once-only 事务**、同一 UoW 提交，含主体、证书凭据、授权水位与审计：
+
+```json
+{
+  "platform_peers": [{
+    "service": "runtime",
+    "principal_id": "20000000-0000-4000-8000-000000000001",
+    "credential_id": "20000000-0000-4000-8000-000000000002",
+    "certificate_chain_file": "/run/kiarabot/runtime-chain.pem",
+    "san": "spiffe://kiarabot/runtime",
+    "assignments": [{
+      "assignment_id": "20000000-0000-4000-8000-000000000003",
+      "permissions": ["identity.authorization.check"],
+      "scope": [{"kind": "RESOURCE_PRINCIPAL", "id": "20000000-0000-4000-8000-000000000001"}]
+    }]
+  }]
+}
+```
+
+`service` 仅接受 `runtime|scheduler|model`；`principal_id`/`credential_id`/`assignment_id`
+必须与既有主体、Control 及其凭据/assignment 互不重复。证书链须经受信 CA、clientAuth、实际
+SAN/指纹/时间及平台服务绑定校验（复用 Control 同一 `peer_certificate_crypto`）；证书主体
+必须等于 principal，平台服务必须等于 enrollment service，且仅在有效期内。每条 assignment
+必须是**显式 permissions**（不得 role，角色仅 human），subject 为该 peer，且在其 scope 上
+非空、去重、合法 exact 资源；`identity.authorization.check` 是 Runtime 消费
+CheckAuthorization 的必要能力（scope=自身 Principal）。缺失/非法/重复/证书不匹配返回稳定
+INVALID_ARGUMENT（exit1），重复引导仍 CONFLICT；不打印证书、密钥、密码或路径正文。
+该 JSON 值仍受“当前用户或root拥有、无 group/other 写权限的常规文件、重复/额外键拒绝”约束。
+
+Runtime 配置继续用服务 TLS 材料作为出站 mTLS 身份：`identity_endpoint` 必填时可启动业务
+RPC，并在 Identity 授权链可用后 ready=true；缺省 `identity_endpoint` 时使用 fail-closed
+authorizer、ready=false 且拒绝业务命令（不是降级放行）。Identity 不可用/证书或时钟异常时
+Runtime readiness 必须变 false、拒绝新命令且不伪造成功；只有恢复后重新观测到当前授权才可
+再次 ready。Runtime 方法通过 `scope_kinds`（见 doc/01）声明 exact 资源族；未标注方法保持
+fail closed，CreateAccount/List*/GetResourceState/GetOperation 仍待补应用 scope 后再标注。
+
+
 ### Identity security configuration declaration (P04)
 
 Identity alone accepts optional `identity_security`, with exactly these keys:
@@ -708,8 +750,7 @@ bound, steady regression or invalid range latches unavailable until process rest
 No rolling recalibration or NTP check is performed. Faults reject authentication and
 keep readiness false. Fixed finite application limits are 4096 sessions per subject,
 10000 secret receipts, 1024 snapshots and 4096 total snapshot records; password lifetime
-is 365 days. These do not remove lower global/domain limits. Overall readiness remains
-false because the complete Identity API has not yet been implemented.
+is 365 days. These do not remove lower global/domain limits. Readiness is the real gate described in P04-A (business implementation + DB writer + loaded key material + consumed bootstrap + trusted clock); it is no longer a fixed false placeholder.
 
 ### P04 IssueDelegation RPC（第七方法，可选依赖）
 
