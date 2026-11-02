@@ -833,6 +833,32 @@ std::optional<std::string> timer_envelope(const v1::RuntimeAcceptTimerTriggerReq
   return serialized;
 }
 
+bool action_policy_from_wire(const v1::ActionPolicy& value, target::ActionPolicy* out) {
+  if (!canonical_uuid(value.account_id())) {
+    return false;
+  }
+  out->account_id = target::ResourceId{value.account_id()};
+  out->mute_enabled = value.mute_enabled();
+  out->kick_enabled = value.kick_enabled();
+  out->allowed_group_ids.assign(value.allowed_group_ids().begin(), value.allowed_group_ids().end());
+  out->mute_daily_budget = value.mute_daily_budget();
+  out->kick_daily_budget = value.kick_daily_budget();
+  out->version = target::ResourceVersion{value.version()};
+  return true;
+}
+bool action_policy_wire(const target::ActionPolicy& value, v1::ActionPolicy* out) {
+  out->set_account_id(value.account_id.value);
+  out->set_mute_enabled(value.mute_enabled);
+  out->set_kick_enabled(value.kick_enabled);
+  for (const auto& group : value.allowed_group_ids) {
+    out->add_allowed_group_ids(group);
+  }
+  out->set_mute_daily_budget(value.mute_daily_budget);
+  out->set_kick_daily_budget(value.kick_daily_budget);
+  out->set_version(value.version.value);
+  return true;
+}
+
 class RuntimeRpc final : public v1::RuntimeService::Service {
 public:
   RuntimeRpc(t::RuntimeResourceApplication& application, RuntimeRpcOptions options)
@@ -2097,6 +2123,80 @@ public:
       return error_status(failure(t::ErrorCode::Internal), context.request, context.trace);
     }
     response->set_execution_outcome(outcome);
+    return grpc::Status::OK;
+  }
+
+  grpc::Status GetActionPolicy(grpc::ServerContext* transport,
+                               const v1::RuntimeGetActionPolicyRequest* request,
+                               v1::RuntimeGetActionPolicyResponse* response) override {
+    auto prepared =
+        prepare(*transport, request->context(), "kiarabot.v1.RuntimeService/GetActionPolicy",
+                *request, false, options_);
+    if (const auto* rejected = std::get_if<t::Failure>(&prepared)) {
+      return error_status(*rejected, request->context().request_id(),
+                          request->context().trace_id());
+    }
+    auto& context = std::get<Prepared>(prepared);
+    if (options_.actions == nullptr) {
+      return error_status(failure(t::ErrorCode::CapabilityNotSupported), context.request,
+                          context.trace);
+    }
+    if (!canonical_uuid(request->account_id())) {
+      return error_status(failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput),
+                          context.request, context.trace);
+    }
+    t::ActionPolicyQuery query;
+    query.authentication = context.command.authentication;
+    query.request_id = context.command.request_id;
+    query.trace_id = context.command.trace_id;
+    query.method = context.command.method;
+    query.deadline = context.command.deadline;
+    query.account_id = t::ResourceId{request->account_id()};
+    auto policy = options_.actions->get_policy(query);
+    if (const auto* rejected = std::get_if<t::Failure>(&policy)) {
+      return error_status(*rejected, context.request, context.trace);
+    }
+    if (!action_policy_wire(std::get<t::ActionPolicy>(policy), response->mutable_policy())) {
+      return error_status(failure(t::ErrorCode::Internal), context.request, context.trace);
+    }
+    return grpc::Status::OK;
+  }
+
+  grpc::Status UpdateActionPolicy(grpc::ServerContext* transport,
+                                  const v1::RuntimeUpdateActionPolicyRequest* request,
+                                  v1::RuntimeUpdateActionPolicyResponse* response) override {
+    auto prepared =
+        prepare(*transport, request->context(), "kiarabot.v1.RuntimeService/UpdateActionPolicy",
+                *request, true, options_);
+    if (const auto* rejected = std::get_if<t::Failure>(&prepared)) {
+      return error_status(*rejected, request->context().request_id(),
+                          request->context().trace_id());
+    }
+    auto& context = std::get<Prepared>(prepared);
+    if (options_.actions == nullptr) {
+      return error_status(failure(t::ErrorCode::CapabilityNotSupported), context.request,
+                          context.trace);
+    }
+    t::ActionPolicyUpdate update;
+    update.authentication = context.command.authentication;
+    update.request_id = context.command.request_id;
+    update.trace_id = context.command.trace_id;
+    update.method = context.command.method;
+    update.deadline = context.command.deadline;
+    if (!action_policy_from_wire(request->policy(), &update.policy)) {
+      return error_status(failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput),
+                          context.request, context.trace);
+    }
+    if (request->has_expected_version()) {
+      update.expected_version = t::ResourceVersion{request->expected_version()};
+    }
+    auto policy = options_.actions->update_policy(update);
+    if (const auto* rejected = std::get_if<t::Failure>(&policy)) {
+      return error_status(*rejected, context.request, context.trace);
+    }
+    if (!action_policy_wire(std::get<t::ActionPolicy>(policy), response->mutable_policy())) {
+      return error_status(failure(t::ErrorCode::Internal), context.request, context.trace);
+    }
     return grpc::Status::OK;
   }
 
