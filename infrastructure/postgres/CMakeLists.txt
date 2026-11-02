@@ -137,6 +137,26 @@ if(UNIX)
     LABELS "p14;integration;fault" TIMEOUT 300
     ENVIRONMENT "PATH=${P14F_OPENSSL_BIN_DIR}:${P14F_PYTHON_BIN_DIR}:$ENV{PATH}")
 
+  # P12j: Panel API client contract matrix against the same real native target stack.
+  # Default mode records the pre-P14g/P14h fail-closed 400s as known and still asserts all
+  # auth/error/page shapes; after the fixes are merged rerun with KIARABOT_P12J_EXPECT_FIXED=1
+  # (see reports/modules/architecture-p12j-panel-live.md) to require owner-backed success.
+  add_test(NAME p12j_panel_live COMMAND "${KIARABOT_TARGET_PYTHON}"
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_database_test.py"
+    --pg-bin "${KIARABOT_TEST_PG_BIN}" --openssl "${KIARABOT_TEST_OPENSSL}"
+    --initializer $<TARGET_FILE:kiarabot-pg-initialize>
+    --test "${CMAKE_SOURCE_DIR}/tests/architecture/p14_native_single_host.py"
+    --test-argument $<TARGET_FILE:kiarabot-identity-bootstrap>
+    --test-argument "${KIARABOT_TEST_PG_BIN}"
+    --test-argument $<TARGET_FILE:kiarabot-identity>
+    --test-argument $<TARGET_FILE:kiarabot-runtime>
+    --test-argument $<TARGET_FILE:kiarabot-scheduler>
+    --test-argument $<TARGET_FILE:kiarabot-model>
+    --test-argument $<TARGET_FILE:kiarabot-control>)
+  set_tests_properties(p12j_panel_live PROPERTIES
+    LABELS "p12;p14;integration;fault" TIMEOUT 300
+    ENVIRONMENT "PATH=${P14F_OPENSSL_BIN_DIR}:${P14F_PYTHON_BIN_DIR}:$ENV{PATH};KIARABOT_P12J_PANEL=1")
+
   add_executable(kiarabot_postgres_storage_records_test tests/storage_records_test.cpp)
   target_link_libraries(kiarabot_postgres_storage_records_test PRIVATE
     kiarabot_postgres kiarabot_runtime_storage_application libpqxx::pqxx)

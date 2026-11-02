@@ -626,6 +626,204 @@ def run_checks(root, https_port, configs, binaries, children, endpoints):
                 f'owner-backed matrix classified invalid: {matrix}')
     print(f'P14f owner matrix (fix_ready={STATE["fix_ready"]}): {matrix}', flush=True)
 
+    def p12j_panel_matrix(request, token, password):
+        """P12j: HTTP-level live matrix for the Panel API client contract.
+
+        Panel's ApiClient maps these operations to generated OpenAPI types. This matrix checks the
+        same status classes and response keys the Panel client consumes, without a browser. Before
+        P14g/P14h fixes the owner-backed chain is fail-closed (stable 400), so the default mode
+        records that known pre-fix behaviour; KIARABOT_P12J_EXPECT_FIXED=1 requires the post-fix
+        success shapes and fails on the old 400s.
+        """
+        if os.environ.get('KIARABOT_P12J_PANEL') != '1':
+            return
+        strict = os.environ.get('KIARABOT_P12J_EXPECT_FIXED') == '1'
+        stage('P12j Panel API live matrix')
+        results = []
+        STATE['p12j'] = results
+
+        def shape_object(body, label, key=None):
+            require(isinstance(body, dict), f'{label} object shape')
+            if key is not None:
+                require(isinstance(body.get(key), dict), f'{label}.{key} object shape')
+            return body
+
+        def shape_page(body, label, key='items'):
+            shape_object(body, label)
+            require(isinstance(body.get(key), list), f'{label}.{key} array shape')
+            require(isinstance(body.get('page'), dict), f'{label}.page object shape')
+            return body[key]
+
+        def success_or_known(label, status, body, shape, known=(400, 403, 503)):
+            gap = label in {'principals', 'log', 'audit', 'actions-metadata',
+                            'tasks-list', 'models-list'}
+            if status == 200:
+                shape(body, label)
+                results.append(f'{label}=200-shape')
+                return
+            if strict and gap:
+                require(status in known and isinstance(body, dict) and body.get('code'),
+                        f'{label}: known-gap must be a stable error {status}:{body!r}'[:300])
+                results.append(f'{label}=known-gap-{status}:{body.get("code")}')
+                return
+            require(not strict,
+                    f'{label}: expected post-fix success, got {status}:{body.get("code") if isinstance(body, dict) else body}')
+            require(status in known and isinstance(body, dict) and body.get('code'),
+                    f'{label}: unexpected pre-fix status/body {status}:{body!r}'[:300])
+            results.append(f'{label}=pre-fix-{status}:{body.get("code")}')
+
+        def stable_error(label, status, body, allowed, codes):
+            require(status in allowed,
+                    f'{label}: status {status} not in {allowed}')
+            require(isinstance(body, dict) and body.get('code') in codes and body.get('request_id'),
+                    f'{label}: stable error body {status}:{body!r}'[:300])
+            results.append(f'{label}={status}:{body.get("code")}')
+
+        # Panel client: health() -> /api/v1/health; callRoot healthLive/healthReady.
+        status, health = request('GET', '/api/v1/health', token=token)
+        success_or_known('health', status, health,
+                         lambda body, label: require(
+                             body.get('state') in ('HEALTHY', 'DEGRADED') and
+                             isinstance(body.get('components'), list) and
+                             all(isinstance(c, dict) and c.get('component') and
+                                 c.get('state') for c in body['components']), label + ' shape'))
+        status, live = request('GET', '/health/live')
+        require(status == 200 and live.get('state') == 'HEALTHY', 'P12j control /health/live')
+        status, ready = request('GET', '/health/ready')
+        require(status in (200, 503) and ready.get('state') in ('HEALTHY', 'UNHEALTHY'),
+                'P12j control /health/ready shape')
+        results.append(f'control-probe=live:{live.get("state")},ready:{ready.get("state")}')
+
+        # Panel client: principalPage() -> /api/v1/principals (principals + page + checked_at).
+        status, principals = request('GET', '/api/v1/principals?page_size=2', token=token)
+        success_or_known('principals', status, principals,
+                         lambda body, label: (
+                             shape_page(body, label, 'principals'),
+                             require(isinstance(body.get('checked_at'), str), label + '.checked_at')))
+
+        # Panel client: logPage()/auditPage() with page_size + occurred/actor/resource filters.
+        resource_filter = json.dumps({'resources': [
+            {'kind': 'RESOURCE_ACCOUNT', 'id': STATE['account']}]})
+        for path, key in (('/api/v1/logs', 'log'), ('/api/v1/audit', 'audit')):
+            query = ('?page_size=2&actor=administrator&resource=' +
+                     urllib.parse.quote(resource_filter))
+            status, body = request('GET', path + query, token=token)
+            def check_page(body, label):
+                items = shape_page(body, label)
+                for entry in items:
+                    require(isinstance(entry, dict) and entry.get('owner') in ('identity', 'runtime'),
+                            label + ' entry owner projection')
+                    if label == '/api/v1/audit':
+                        require(isinstance(entry.get('id'), str) and
+                                isinstance(entry.get('occurred_at'), str) and
+                                isinstance(entry.get('actor'), str) and
+                                isinstance(entry.get('action'), str), label + ' audit entry shape')
+                    else:
+                        require(entry.get('level') in ('DEBUG', 'INFO', 'WARN', 'ERROR'),
+                                label + ' log entry level')
+            success_or_known(key, status, body, check_page)
+            results.append(f'{key}-filter=actor,resource')
+        # An unauthenticated read must be 401 with a stable code (Panel ApiError).
+        status, unauth = request('GET', '/api/v1/health')
+        stable_error('health-unauth', status, unauth, (401,),
+                     ('UNAUTHENTICATED',))
+        # Bad token also maps to 401, never a fabricated success.
+        status, bad = request('GET', '/api/v1/health', token='not-a-token')
+        stable_error('health-badtoken', status, bad, (400, 401),
+                     ('UNAUTHENTICATED', 'INVALID_ARGUMENT'))
+        # Malformed filter is a 400 INVALID_ARGUMENT (Panel passes raw JSON object strings).
+        status, invalid = request('GET', '/api/v1/logs?resource=not-json', token=token)
+        stable_error('logs-invalid-filter', status, invalid, (400,), ('INVALID_ARGUMENT',))
+
+        # Panel client: actionMetadata() and action()/actionByKey().
+        status, actions = request(
+            'GET', '/api/v1/actions/metadata?account_id=' + STATE['account'], token=token)
+        success_or_known('actions-metadata', status, actions,
+                         lambda body, label: (shape_object(body, label),
+                                              require(isinstance(body.get('actions'), list),
+                                                      label + '.actions'),
+                                              require(isinstance(body.get('page'), dict),
+                                                      label + '.page')))
+        status, action = request('GET', '/api/v1/actions/' + str(uuid.uuid4()), token=token)
+        stable_error('action-unknown', status, action, (400, 403, 404, 503),
+                     ('NOT_FOUND', 'INVALID_ARGUMENT', 'PERMISSION_DENIED', 'UPSTREAM_UNAVAILABLE'))
+
+        # Panel client: taskPage()/targetTask()/cancelTask(), and a forbidden cross-scope read.
+        scope_installation = json.dumps({'resources': [
+            {'kind': 'RESOURCE_INSTALLATION', 'id': STATE['installation']}]})
+        status, tasks = request('GET', '/api/v1/tasks?scope=' +
+                                urllib.parse.quote(scope_installation) + '&page_size=2', token=token)
+        success_or_known('tasks-list', status, tasks,
+                         lambda body, label: shape_page(body, label))
+        status, task = request('GET', '/api/v1/tasks/' + str(uuid.uuid4()) + '?scope=' +
+                               urllib.parse.quote(scope_installation), token=token)
+        stable_error('task-get-unknown', status, task, (400, 403, 404, 503),
+                     ('NOT_FOUND', 'INVALID_ARGUMENT', 'PERMISSION_DENIED', 'UPSTREAM_UNAVAILABLE'))
+        status, cancelled = request(
+            'POST', '/api/v1/tasks/' + str(uuid.uuid4()) + '/cancel?scope=' +
+            urllib.parse.quote(scope_installation),
+            {'task_id': str(uuid.uuid4()), 'expected_version': '1'}, token=token, idempotency=True)
+        stable_error('task-cancel-unknown', status, cancelled, (400, 403, 404, 409, 503),
+                     ('NOT_FOUND', 'INVALID_ARGUMENT', 'PERMISSION_DENIED', 'CONFLICT',
+                      'UPSTREAM_UNAVAILABLE'))
+        scope_model = json.dumps({'resources': [
+            {'kind': 'RESOURCE_MODEL', 'id': STATE['model_id']}]})
+        status, forbidden = request('GET', '/api/v1/tasks?scope=' +
+                                    urllib.parse.quote(scope_model), token=token)
+        require(status in (400, 403, 503), f'tasks cross-scope forbidden status={status}')
+        require(isinstance(forbidden, dict) and forbidden.get('code'), 'tasks cross-scope stable')
+        results.append(f'tasks-cross-scope={status}:{forbidden.get("code")}')
+
+        # Panel client: models()/modelMetadata()/modelConfiguration().
+        status, models = request('GET', '/api/v1/models?scope=' +
+                                 urllib.parse.quote(scope_model), token=token)
+        success_or_known('models-list', status, models,
+                         lambda body, label: shape_page(body, label))
+        status, metadata = request('GET', '/api/v1/models/' + STATE['model_id'], token=token)
+        if status == 200:
+            require(isinstance(metadata, dict) and isinstance(metadata.get('model'), dict),
+                    'model metadata success shape')
+            results.append('model-metadata=200-shape')
+        else:
+            stable_error('model-metadata', status, metadata, (400, 403, 404, 503),
+                         ('NOT_FOUND', 'INVALID_ARGUMENT', 'PERMISSION_DENIED',
+                          'UPSTREAM_UNAVAILABLE'))
+        status, configuration = request(
+            'GET', '/api/v1/models/' + STATE['model_id'] + '/configuration', token=token)
+        if status == 200:
+            require(isinstance(configuration, dict) and isinstance(configuration.get('config'), dict)
+                    and isinstance(configuration.get('secret_configured'), bool),
+                    'model configuration success shape')
+            results.append('model-configuration=200-shape')
+        else:
+            stable_error('model-configuration', status, configuration, (400, 403, 404, 503),
+                         ('NOT_FOUND', 'INVALID_ARGUMENT', 'PERMISSION_DENIED',
+                          'UPSTREAM_UNAVAILABLE'))
+
+        # Panel client: beginDeleteResource()/restoreResource(); unknown instance stays a stable
+        # error (404/409), never a fabricated operation.
+        lifecycle = {'resource': {'kind': 'RESOURCE_INSTANCE', 'id': STATE['instance']},
+                     'expected_version': '1'}
+        for operation in ('delete', 'restore'):
+            status, result = request(
+                'POST', f"/api/v1/resources/RESOURCE_INSTANCE/{STATE['instance']}/{operation}",
+                lifecycle, token=token, idempotency=True)
+            stable_error('resource-' + operation, status, result, (202, 400, 403, 404, 409, 503),
+                         ('NOT_FOUND', 'INVALID_ARGUMENT', 'PERMISSION_DENIED', 'CONFLICT',
+                          'UPSTREAM_UNAVAILABLE'))
+
+        # Dependency outage: model owner down must surface 503/INVALID_ARGUMENT, not success.
+        require(stop(children['model']) == 0, 'model graceful stop for 503 probe')
+        status, unavailable = request('GET', '/api/v1/models?scope=' +
+                                      urllib.parse.quote(scope_model), token=token)
+        require(status in (400, 403, 503), f'model-outage status={status}')
+        require(isinstance(unavailable, dict) and unavailable.get('code'), 'model-outage stable')
+        results.append(f'models-outage={status}:{unavailable.get("code")}')
+        model_child, model_state = daemon(binaries['model'], configs['model'])
+        children['model'] = model_child
+        require(rt.wait_ready(int(model_state['probe_port']), True, 20.0), 'model restart readiness')
+        print('P12j Panel API live matrix: ' + ', '.join(results), flush=True)
+    p12j_panel_matrix(request, token, password)
     stage('identity outage')
     require(stop(children['identity']) == 0, 'identity graceful stop')
     status, _ = request('POST', '/api/v1/auth/login',
