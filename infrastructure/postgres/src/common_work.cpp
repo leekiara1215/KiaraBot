@@ -663,6 +663,26 @@ public:
           .as<std::size_t>();
     });
   }
+  target::Outcome<std::optional<target::BridgeCredentialRecord>>
+  bridge_credential_by_digest(const target::Sha256Digest& value) {
+    return invoke<std::optional<target::BridgeCredentialRecord>>(
+        [&]() -> target::Outcome<std::optional<target::BridgeCredentialRecord>> {
+          if (owner() != target::Service::Runtime) {
+            return error(target::ErrorCode::PermissionDenied);
+          }
+          const auto rows = exec(
+              "SELECT id,resource_id,digest,created_at,revoked FROM kiarabot.bridge_credentials "
+              "WHERE digest=$1 AND NOT revoked",
+              {digest(value)});
+          if (rows.empty()) {
+            return std::optional<target::BridgeCredentialRecord>{};
+          }
+          const auto row = rows.one_row();
+          return std::optional<target::BridgeCredentialRecord>{target::BridgeCredentialRecord{
+              row["id"].as<std::string>(), row["resource_id"].as<std::string>(),
+              read_digest(row["digest"]), time_field(row, "created_at"), false}};
+        });
+  }
   target::Outcome<bool> bridge_credential_active(const std::string& resource_id) {
     return invoke<bool>([&]() -> target::Outcome<bool> {
       if (owner() != target::Service::Runtime || resource_id.empty() ||
@@ -926,6 +946,13 @@ target::Outcome<bool> bridge_credential_active(target::UnitOfWork& work,
                                                const std::string& resource_id) {
   if (auto* common = dynamic_cast<CommonWork*>(&work)) {
     return common->bridge_credential_active(resource_id);
+  }
+  return error(target::ErrorCode::Internal);
+}
+target::Outcome<std::optional<target::BridgeCredentialRecord>>
+bridge_credential_by_digest(target::UnitOfWork& work, const target::Sha256Digest& digest) {
+  if (auto* common = dynamic_cast<CommonWork*>(&work)) {
+    return common->bridge_credential_by_digest(digest);
   }
   return error(target::ErrorCode::Internal);
 }

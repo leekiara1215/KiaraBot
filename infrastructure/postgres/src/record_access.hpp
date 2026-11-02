@@ -65,6 +65,9 @@ core::target::Outcome<std::size_t> active_binding_count(core::target::UnitOfWork
                                                         const std::string& adapter_instance);
 core::target::Outcome<bool> bridge_credential_active(core::target::UnitOfWork& work,
                                                      const std::string& resource_id);
+core::target::Outcome<std::optional<core::target::BridgeCredentialRecord>>
+bridge_credential_by_digest(core::target::UnitOfWork& work,
+                            const core::target::Sha256Digest& digest);
 core::target::Status insert_bridge_credential(core::target::UnitOfWork& work,
                                               const core::target::BridgeCredentialRecord& record);
 core::target::Status revoke_bridge_credentials(core::target::UnitOfWork& work,

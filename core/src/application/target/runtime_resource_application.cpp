@@ -612,16 +612,19 @@ public:
             return *failure;
           }
           const auto adapter_value = std::get<std::optional<AdapterRecord>>(adapter);
-          if (!adapter_value) {
-            return not_found();
-          }
           auto existing = work.adapter_bindings().find(request.account);
           if (const auto* failure = std::get_if<Failure>(&existing)) {
             return *failure;
           }
           const auto binding_value = std::get<std::optional<AdapterBindingRecord>>(existing);
-          if (const auto failure =
-                  status_failure(validate_bind(*account_value, *adapter_value, binding_value))) {
+          // A1: an external self-managed adapter may be bound before its first bridge
+          // registration creates the AdapterRecord. The bootstrap credential issued below is the
+          // identity that the registration must present; a registered adapter still validates its
+          // current fence and lifecycle.
+          const auto validation = adapter_value
+                                      ? validate_bind(*account_value, *adapter_value, binding_value)
+                                      : validate_bind_unregistered(*account_value, binding_value);
+          if (const auto failure = status_failure(validation)) {
             return *failure;
           }
           AdapterBindingRecord binding{
@@ -756,15 +759,18 @@ public:
           adapter_peer->subject != request.authentication.subject) {
         return permission_denied();
       }
-      const auto connected =
-          authorize(authorization_, request.authentication, Permission::AdapterConnect,
-                    "RuntimeService.RegisterAdapter",
-                    {ResourceRef{ResourceKind::Adapter, request.adapter}}, request.deadline);
-      if (const auto* failure = std::get_if<Failure>(&connected)) {
-        return *failure;
+      ResourceVersion authorization_version{1};
+      if (!request.bootstrap_authenticated) {
+        const auto connected =
+            authorize(authorization_, request.authentication, Permission::AdapterConnect,
+                      "RuntimeService.RegisterAdapter",
+                      {ResourceRef{ResourceKind::Adapter, request.adapter}}, request.deadline);
+        if (const auto* failure = std::get_if<Failure>(&connected)) {
+          return *failure;
+        }
+        authorization_version =
+            std::get<RuntimeAuthorizationDecision>(connected).authorization_version;
       }
-      const auto authorization_version =
-          std::get<RuntimeAuthorizationDecision>(connected).authorization_version;
       if (request.declared_accounts.size() > kMaximumAdapterAccountCount) {
         return invalid_runtime_input();
       }
@@ -788,23 +794,43 @@ public:
       auto current_record = std::move(std::get<std::optional<AdapterRecord>>(current));
       const auto expected_version =
           current_record ? std::optional<ResourceVersion>{current_record->version} : std::nullopt;
-      auto allocated_instance = ids_.adapter_instance_id();
-      if (const auto* failure = std::get_if<Failure>(&allocated_instance)) {
-        return *failure;
+      // P06 external bridge: the bootstrap resource id is the assigned adapter instance; the
+      // first registration creates the record under that identity and a reconnect keeps it.
+      std::optional<InstanceId> allocated_instance;
+      if (current_record) {
+        allocated_instance = current_record->current.instance;
+      } else if (request.assigned_instance) {
+        allocated_instance = request.assigned_instance;
+      } else {
+        auto allocated = ids_.adapter_instance_id();
+        if (const auto* failure = std::get_if<Failure>(&allocated)) {
+          return *failure;
+        }
+        allocated_instance = std::get<InstanceId>(allocated);
       }
       auto allocated_connection = ids_.connection_id();
       if (const auto* failure = std::get_if<Failure>(&allocated_connection)) {
         return *failure;
       }
-      auto epoch = ids_.runtime_epoch();
-      if (const auto* failure = std::get_if<Failure>(&epoch)) {
-        return *failure;
+      std::optional<RuntimeEpoch> epoch = request.runtime_epoch;
+      if (!epoch) {
+        auto sampled = ids_.runtime_epoch();
+        if (const auto* failure = std::get_if<Failure>(&sampled)) {
+          return *failure;
+        }
+        epoch = std::get<RuntimeEpoch>(sampled);
       }
       // Declared accounts are validated before any registration effect: they must exist, be
       // active, and not currently bound to another adapter instance. Registration never creates
       // bindings; binding is an explicit pre-existing management command.
-      const InstanceId target_instance = current_record ? current_record->current.instance
-                                                        : std::get<InstanceId>(allocated_instance);
+      const InstanceId target_instance = *allocated_instance;
+      if (request.assigned_instance && *request.assigned_instance != target_instance) {
+        return permission_denied();
+      }
+      if (request.bootstrap_authenticated && request.presented_instance &&
+          *request.presented_instance != target_instance) {
+        return permission_denied();
+      }
       for (const auto& account_id : request.declared_accounts) {
         if (!canonical_id(account_id.value)) {
           return invalid_runtime_input();
@@ -829,11 +855,33 @@ public:
             binding_value->adapter_instance != target_instance) {
           return runtime_conflict();
         }
+        // The bootstrap connection must own exactly the bindings it declares; the binding is the
+        // pre-registration authority created by Control and cannot be claimed by another instance.
+        if (request.bootstrap_authenticated &&
+            (!binding_value || binding_value->state != LifecycleState::Active ||
+             binding_value->adapter_instance != target_instance)) {
+          return runtime_conflict();
+        }
+      }
+      if (request.bootstrap_authenticated) {
+        auto bound = work->active_bindings(target_instance);
+        if (const auto* failure = std::get_if<Failure>(&bound)) {
+          return *failure;
+        }
+        if (std::get<std::size_t>(bound) != request.declared_accounts.size()) {
+          return runtime_conflict();
+        }
+      }
+      // The domain rule treats a presented instance on the first registration as a reconnect
+      // claim; for a bootstrap first registration the assigned identity above is authoritative.
+      std::optional<InstanceId> presented_instance = request.presented_instance;
+      if (!current_record && request.bootstrap_authenticated) {
+        presented_instance = std::nullopt;
       }
       AdapterRegistrationRequest registration{request.adapter,
                                               std::move(metadata),
-                                              request.presented_instance,
-                                              std::get<RuntimeEpoch>(epoch),
+                                              std::move(presented_instance),
+                                              *epoch,
                                               target_instance,
                                               std::get<ConnectionId>(allocated_connection),
                                               now};

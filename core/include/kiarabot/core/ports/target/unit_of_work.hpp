@@ -101,6 +101,10 @@ public:
   // True when a non-revoked credential already exists for the resource; callers then do not issue a
   // second plaintext (it would be unrecoverable anyway).
   virtual Outcome<bool> active(const std::string& resource_id) = 0;
+  // Resolve an active bootstrap credential from its SHA-256 digest for the external bridge
+  // handshake. The plaintext token never reaches storage; an absent/revoked digest is an empty
+  // optional, a storage fault is a Failure.
+  virtual Outcome<std::optional<BridgeCredentialRecord>> by_digest(const Sha256Digest& digest) = 0;
   virtual Status insert(const BridgeCredentialRecord& record) = 0;
   virtual Status revoke(const std::string& resource_id, TimePoint now) = 0;
 };

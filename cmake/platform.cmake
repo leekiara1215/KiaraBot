@@ -235,7 +235,8 @@ target_link_libraries(kiarabot_runtime_identity_client PUBLIC kiarabot_proto
           OpenSSL::Crypto)
 
 add_library(kiarabot_runtime_rpc STATIC
-  ${CMAKE_SOURCE_DIR}/core/src/runtime/platform/runtime_rpc.cpp)
+  ${CMAKE_SOURCE_DIR}/core/src/runtime/platform/runtime_rpc.cpp
+  ${CMAKE_SOURCE_DIR}/core/src/runtime/platform/runtime_bridge.cpp)
 target_include_directories(kiarabot_runtime_rpc PUBLIC ${CMAKE_SOURCE_DIR}/core/include)
 kiarabot_platform_warnings(kiarabot_runtime_rpc)
 target_link_libraries(kiarabot_runtime_rpc PUBLIC kiarabot_proto kiarabot_target_codec

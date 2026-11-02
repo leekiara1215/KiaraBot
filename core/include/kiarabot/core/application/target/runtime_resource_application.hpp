@@ -134,6 +134,18 @@ struct AdapterRegistrationCommand {
   AdapterRegistrationMetadata metadata;
   std::optional<InstanceId> presented_instance;
   std::vector<ResourceId> declared_accounts;
+  // P06 external bridge registration: the bootstrap resource identity assigned by Control through
+  // BindAdapter. When set, the first registration creates the AdapterRecord for exactly this
+  // instance instead of allocating a fresh identity. Direct (non-bridge) callers leave it unset.
+  std::optional<InstanceId> assigned_instance;
+  // The connection was authenticated by the Runtime-local bootstrap/ConnectionAuthorization gate
+  // rather than an Identity delegation. AdapterConnect is already proven by the bootstrap
+  // handshake, so this path skips the online Identity AdapterConnect check; every later business
+  // operation still uses the normal online authorization path.
+  bool bootstrap_authenticated = false;
+  // The Runtime process epoch sampled once by the bridge composition. Direct callers leave it
+  // unset and each registration samples the id port (P05 behaviour).
+  std::optional<RuntimeEpoch> runtime_epoch;
 };
 struct HeartbeatCommand {
   AuthenticationContext authentication;

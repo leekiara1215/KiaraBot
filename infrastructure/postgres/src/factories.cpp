@@ -125,6 +125,10 @@ public:
   target::Outcome<bool> active(const std::string& resource_id) override {
     return detail::bridge_credential_active(work_, resource_id);
   }
+  target::Outcome<std::optional<target::BridgeCredentialRecord>>
+  by_digest(const target::Sha256Digest& digest) override {
+    return detail::bridge_credential_by_digest(work_, digest);
+  }
   target::Status insert(const target::BridgeCredentialRecord& record) override {
     return detail::insert_bridge_credential(work_, record);
   }

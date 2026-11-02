@@ -14,6 +14,7 @@
 #include <variant>
 #include <vector>
 
+#include "kiarabot/core/application/target/runtime_bridge_application.hpp"
 #include "kiarabot/core/application/target/runtime_readiness.hpp"
 #include "kiarabot/core/application/target/runtime_resource_application.hpp"
 #include "kiarabot/core/ports/target/business_ports.hpp"
@@ -334,6 +335,18 @@ public:
     }
     return false;
   }
+  t::Outcome<std::optional<t::BridgeCredentialRecord>>
+  by_digest(const t::Sha256Digest& digest) override {
+    if (store_.fail_reads) {
+      return failure(t::ErrorCode::UpstreamUnavailable);
+    }
+    for (const auto& record : store_.bridge_credentials) {
+      if (!record.revoked && record.digest == digest) {
+        return std::optional<t::BridgeCredentialRecord>{record};
+      }
+    }
+    return std::optional<t::BridgeCredentialRecord>{};
+  }
   t::Status insert(const t::BridgeCredentialRecord& record) override {
     if (store_.fail_writes) {
       return failure(t::ErrorCode::UpstreamUnavailable);
@@ -620,6 +633,14 @@ public:
     char value[65] = {};
     std::snprintf(value, sizeof(value), "%064llx", static_cast<unsigned long long>(++counter_));
     return std::string{value};
+  }
+  t::Outcome<std::array<std::byte, 32>> opaque_secret() override {
+    std::array<std::byte, 32> bytes{};
+    for (std::size_t index = 0; index < bytes.size(); ++index) {
+      bytes[index] = static_cast<std::byte>((counter_ + index) & 0xffU);
+    }
+    ++counter_;
+    return bytes;
   }
   t::Outcome<t::Sha256Digest> sha256(std::string_view value) override {
     t::Sha256Digest digest;
@@ -1154,6 +1175,175 @@ void readiness_flow() {
   harness.authorization.chain_available = false;
   check(!harness.authorization.available(), "masked unavailable authorization chain");
 }
+t::TimePoint bridged_now(Harness& harness) {
+  return harness.store.now;
+}
+void bridge_flow() {
+  Harness harness;
+  t::BotAccount account;
+  create_account(harness, &account);
+  auto built = t::make_runtime_bridge_application(
+      {harness.factory, harness.ids, harness.secrets, *harness.application, {"plugin.config.v1"}});
+  check(std::holds_alternative<std::unique_ptr<t::RuntimeBridgeApplication>>(built),
+        "bridge application construction failed");
+  auto bridge = std::move(std::get<std::unique_ptr<t::RuntimeBridgeApplication>>(built));
+  const std::string adapter_instance = "33333333-3333-4333-8333-333333333333";
+
+  // A1: the account binding is created before the adapter's first bridge registration; BindAdapter
+  // still issues the one-time bootstrap credential for the external identity.
+  t::BindAdapterRequest bind{context("runtime.bind_adapter", digest(30)), account.id,
+                             t::InstanceId{adapter_instance}};
+  auto bound = harness.application->bind_adapter(bind);
+  check(std::holds_alternative<t::BindingMutation>(bound),
+        "A1 bind before adapter registration failed");
+  const auto bootstrap = std::get<t::BindingMutation>(bound).bootstrap_credential;
+  check(bootstrap.has_value() && bootstrap->size() == 64, "A1 bind did not issue bootstrap");
+
+  auto adapter_command = [&](std::uint8_t seed) {
+    t::BridgeAdapterRegistration command;
+    command.request_id = id_text(0x9100 + seed, 0x9100);
+    command.trace_id = id_text(0x9200 + seed, 0x9200);
+    command.deadline = t::TimePoint{std::chrono::seconds{1300}};
+    command.adapter = t::ResourceId{kAdapter};
+    command.implementation = "nonebot";
+    command.implementation_version = "1.0.0";
+    command.protocol_version = "kiarabot.v1";
+    command.presented_instance = t::InstanceId{adapter_instance};
+    command.declared_accounts = {account.id};
+    command.declared_capabilities = {{"action.send_message.text.v1", "1"}};
+    command.bearer_credential = *bootstrap;
+    return command;
+  };
+  auto registered = bridge->register_adapter(adapter_command(1));
+  check(std::holds_alternative<t::BridgeRegistrationResult>(registered),
+        "bridge adapter registration failed");
+  const auto first = std::get<t::BridgeRegistrationResult>(registered);
+  check(first.assigned_instance_id.value == adapter_instance,
+        "assigned instance differs from the bootstrap resource");
+  check(first.authorization.fence.instance.value == adapter_instance &&
+            first.authorization.fence.execution_generation.value == 1 &&
+            first.authorization.fence.connection_generation.value == 1,
+        "adapter fence does not carry assigned/execution/connection identity");
+  check(first.heartbeat_interval_seconds == 30 && first.required_protocol_version == "kiarabot.v1",
+        "adapter registration response metadata incomplete");
+  check(first.authorization.authorization_version == 1, "adapter authorization version missing");
+  check(std::holds_alternative<std::monostate>(bridge->authorize_frame(
+            t::BridgePeerKind::Adapter, first.authorization, first.authorization.fence,
+            first.authorization.proof, bridged_now(harness))),
+        "current adapter frame rejected");
+
+  // Reconnect advances only the connection generation; the old connection material is invalid.
+  auto reconnected = bridge->register_adapter(adapter_command(2));
+  check(std::holds_alternative<t::BridgeRegistrationResult>(reconnected),
+        "bridge adapter reconnect failed");
+  const auto second = std::get<t::BridgeRegistrationResult>(reconnected);
+  check(second.authorization.fence.connection_generation.value == 2 &&
+            second.authorization.fence.execution_generation.value == 1,
+        "adapter reconnect did not advance only the connection generation");
+  check(std::holds_alternative<t::Failure>(bridge->authorize_frame(
+            t::BridgePeerKind::Adapter, first.authorization, first.authorization.fence,
+            first.authorization.proof, bridged_now(harness))),
+        "old adapter connection accepted after reconnect");
+
+  // Single-flight refresh rotates both secrets and keeps the fence/credential version.
+  t::BridgeRefreshRequest refresh;
+  refresh.fence = second.authorization.fence;
+  refresh.proof = second.authorization.proof;
+  refresh.refresh_credential = second.authorization.refresh_credential;
+  refresh.refresh_generation = second.authorization.refresh_generation;
+  auto renewed = bridge->refresh(t::BridgePeerKind::Adapter, t::InstanceId{adapter_instance},
+                                 second.authorization, refresh);
+  check(std::holds_alternative<t::BridgeAuthorization>(renewed), "adapter refresh failed");
+  const auto third = std::get<t::BridgeAuthorization>(renewed);
+  check(third.refresh_generation == 2 && third.fence == second.authorization.fence &&
+            third.credential_version == second.authorization.credential_version &&
+            third.proof != second.authorization.proof &&
+            third.refresh_credential != second.authorization.refresh_credential,
+        "adapter refresh semantics incorrect");
+  check(std::holds_alternative<t::Failure>(bridge->refresh(t::BridgePeerKind::Adapter,
+                                                           t::InstanceId{adapter_instance},
+                                                           second.authorization, refresh)),
+        "stale adapter refresh material was accepted");
+
+  // Unbinding the last account revokes the bootstrap credential and stops refresh.
+  t::UnbindAdapterRequest unbind{context("runtime.unbind_adapter", digest(31)), account.id};
+  unbind.context.expected_version = t::ResourceVersion{1};
+  check(std::holds_alternative<t::BindingMutation>(harness.application->unbind_adapter(unbind)),
+        "unbind failed");
+  check(!harness.store.bridge_credentials.empty() &&
+            harness.store.bridge_credentials.front().revoked,
+        "unbind did not revoke adapter bootstrap");
+  auto after_revoke = refresh;
+  after_revoke.fence = third.fence;
+  after_revoke.proof = third.proof;
+  after_revoke.refresh_credential = third.refresh_credential;
+  after_revoke.refresh_generation = third.refresh_generation;
+  check(std::holds_alternative<t::Failure>(bridge->refresh(
+            t::BridgePeerKind::Adapter, t::InstanceId{adapter_instance}, third, after_revoke)),
+        "revoked adapter bootstrap still refreshed");
+
+  // Plugin path: CreateInstance(externally_managed) issues bootstrap; the first bridge
+  // registration allocates execution generation 1 and the reconnect advances connection only.
+  const t::InstallationId installation{"44444444-4444-4444-8444-444444444444"};
+  harness.store.installations[installation.value] = {installation,
+                                                     t::ResourceId{"plugin.type"},
+                                                     t::ResourceVersion{1},
+                                                     t::LifecycleState::Active,
+                                                     {}};
+  t::CreateInstanceRequest create{context("runtime.create_instance", digest(32)), installation,
+                                  std::nullopt, true};
+  auto created = harness.application->create_instance(create);
+  check(std::holds_alternative<t::InstanceCreation>(created),
+        "externally-managed instance creation failed");
+  const auto creation = std::get<t::InstanceCreation>(created);
+  check(creation.bootstrap_credential.has_value() && creation.bootstrap_credential->size() == 64,
+        "externally-managed instance did not issue bootstrap");
+  auto plugin_command = [&]() {
+    t::BridgePluginRegistration command;
+    command.request_id = "plugin-register-test";
+    command.instance_id = creation.instance.id.value;
+    command.manifest = {"plugin.test",
+                        "Plugin",
+                        "1.0.0",
+                        "kiarabot.plugin.v1",
+                        "python-rpc",
+                        "module:factory",
+                        "process",
+                        "{}",
+                        false,
+                        {"event.message.received"},
+                        {"message.read"},
+                        {}};
+    command.supported_features = {"plugin.config.v1", "action.result.v1"};
+    command.installation_id = installation;
+    command.bearer_credential = *creation.bootstrap_credential;
+    return command;
+  };
+  auto plugin_registered = bridge->register_plugin(plugin_command());
+  check(std::holds_alternative<t::BridgeRegistrationResult>(plugin_registered),
+        "bridge plugin registration failed");
+  const auto plugin_first = std::get<t::BridgeRegistrationResult>(plugin_registered);
+  check(plugin_first.assigned_instance_id.value == creation.instance.id.value &&
+            plugin_first.authorization.fence.execution_generation.value == 1 &&
+            plugin_first.authorization.fence.connection_generation.value == 1,
+        "plugin fence identity/execution generation incorrect");
+  check(plugin_first.granted_permissions == std::vector<std::string>{"message.read"},
+        "plugin granted permissions differ from manifest declaration");
+  check(plugin_first.enabled_features == std::vector<std::string>{"plugin.config.v1"},
+        "plugin enabled features are not the server-supported intersection");
+  auto plugin_reconnected = bridge->register_plugin(plugin_command());
+  check(std::holds_alternative<t::BridgeRegistrationResult>(plugin_reconnected),
+        "bridge plugin reconnect failed");
+  const auto plugin_second = std::get<t::BridgeRegistrationResult>(plugin_reconnected);
+  check(plugin_second.authorization.fence.connection_generation.value == 2 &&
+            plugin_second.authorization.fence.execution_generation.value == 1,
+        "plugin reconnect did not keep execution generation");
+  check(std::holds_alternative<t::Failure>(bridge->authorize_frame(
+            t::BridgePeerKind::Plugin, plugin_first.authorization, plugin_first.authorization.fence,
+            plugin_first.authorization.proof, bridged_now(harness))),
+        "old plugin connection accepted after reconnect");
+}
+
 } // namespace
 
 int main() {

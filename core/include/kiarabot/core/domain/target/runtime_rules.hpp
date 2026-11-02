@@ -139,6 +139,21 @@ inline Status validate_bind(const BotAccount& account, const AdapterRecord& adap
   return std::monostate{};
 }
 
+// A1 external self-managed adapter: the account binding is authoritative before the adapter's
+// first bridge registration. Only the account lifecycle and the single-active-binding invariant
+// are checked here; the first registration later verifies that its bootstrap identity owns every
+// binding it declares, and an existing adapter record still goes through validate_bind.
+inline Status validate_bind_unregistered(const BotAccount& account,
+                                         std::optional<AdapterBindingRecord> existing) {
+  if (account.state != LifecycleState::Active) {
+    return runtime_conflict();
+  }
+  if (existing && existing->state == LifecycleState::Active) {
+    return runtime_conflict();
+  }
+  return std::monostate{};
+}
+
 inline Status validate_unbind(const AdapterBindingRecord& binding,
                               std::optional<ResourceVersion> expected) {
   if (binding.state != LifecycleState::Active) {

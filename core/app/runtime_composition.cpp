@@ -12,8 +12,10 @@
 #include <openssl/sha.h>
 
 #include "kiarabot/core/application/target/runtime_application.hpp"
+#include "kiarabot/core/application/target/runtime_bridge_application.hpp"
 #include "kiarabot/core/application/target/runtime_readiness.hpp"
 #include "kiarabot/core/application/target/runtime_resource_application.hpp"
+#include "kiarabot/core/runtime/platform/runtime_bridge.hpp"
 #include "kiarabot/core/runtime/platform/runtime_identity_client.hpp"
 #include "kiarabot/core/runtime/platform/runtime_rpc.hpp"
 #include "kiarabot/core/runtime/platform/service_rpc.hpp"
@@ -119,6 +121,14 @@ public:
     }
     return result;
   }
+  target::Outcome<std::array<std::byte, 32>> opaque_secret() override {
+    std::array<std::byte, 32> bytes{};
+    if (RAND_bytes(reinterpret_cast<unsigned char*>(bytes.data()),
+                   static_cast<int>(bytes.size())) != 1) {
+      return unavailable();
+    }
+    return bytes;
+  }
   target::Outcome<target::Sha256Digest> sha256(std::string_view value) override {
     target::Sha256Digest digest;
     SHA256(reinterpret_cast<const unsigned char*>(value.data()), value.size(),
@@ -160,6 +170,7 @@ struct State {
   std::unique_ptr<target::RuntimeAuthorizationPort> fail_closed_authorization;
   target::RuntimeAuthorizationPort* authorization = nullptr;
   target::RuntimeResourceApplication* application = nullptr;
+  std::unique_ptr<target::RuntimeBridgeApplication> bridge;
 };
 // Readiness merges the composition-observed database state with the authorization-chain observation
 // and the assembled business implementation. Unobserved inputs remain Unverified and never ready.
@@ -251,6 +262,15 @@ compose_runtime_service(const platform::ProcessConfig& config) {
           auto application =
               std::move(std::get<std::unique_ptr<target::RuntimeResourceApplication>>(built));
           state->application = application.get();
+          if (config.bridge_listen) {
+            auto bridge = target::make_runtime_bridge_application(
+                {factory, *state->ids, *state->secrets, *state->application, {}});
+            if (const auto* failure = std::get_if<target::Failure>(&bridge)) {
+              return {};
+            }
+            state->bridge =
+                std::move(std::get<std::unique_ptr<target::RuntimeBridgeApplication>>(bridge));
+          }
           return application;
         });
     if (const auto* failure = std::get_if<target::Failure>(&composition)) {
@@ -284,9 +304,32 @@ compose_runtime_service(const platform::ProcessConfig& config) {
       if (const auto* failure = std::get_if<target::Failure>(&adapter)) {
         return *failure;
       }
-      return rpc.add_service(
+      auto registered = rpc.add_service(
           target::Service::Runtime,
           std::move(std::get<std::unique_ptr<v1::RuntimeService::Service>>(adapter)));
+      if (const auto* failure = std::get_if<target::Failure>(&registered)) {
+        return *failure;
+      }
+      if (!state->bridge) {
+        return std::monostate{};
+      }
+      auto bridge_application = platform::make_adapter_bridge(*state->bridge);
+      if (const auto* failure = std::get_if<target::Failure>(&bridge_application)) {
+        return *failure;
+      }
+      registered = rpc.add_bridge_service(
+          target::Service::Runtime,
+          std::move(std::get<std::unique_ptr<v1::AdapterBridge::Service>>(bridge_application)));
+      if (const auto* failure = std::get_if<target::Failure>(&registered)) {
+        return *failure;
+      }
+      auto plugin_bridge = platform::make_plugin_bridge(*state->bridge);
+      if (const auto* failure = std::get_if<target::Failure>(&plugin_bridge)) {
+        return *failure;
+      }
+      return rpc.add_bridge_service(
+          target::Service::Runtime,
+          std::move(std::get<std::unique_ptr<v1::PluginBridge::Service>>(plugin_bridge)));
     };
     result.application = std::make_unique<RuntimeReadiness>(std::move(result.application), state);
     return std::move(result);
