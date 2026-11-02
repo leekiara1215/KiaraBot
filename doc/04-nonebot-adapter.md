@@ -237,3 +237,16 @@ refresh只接受当前实际流、未过期未撤销的proof/refresh及正refres
 真实 QQ/NapCat 未在本测试中使用：平台账号 self_id 与 Runtime 账号资源 UUID 的分离通过 `ONEBOT_SELF_ID` 配置解决；真实 QQ 的审批/撤回/禁言/踢出凭证、NapCat 扩展 API（如 `set_msg_emoji_like`）和真实网络/封禁风险仍属 M2/T07b，不在本测试的通过范围内。
 
 P07g（2026-11-02）：真实 NoneBot adapter 进程 + fake OneBot WS + 真实 Runtime Bridge 的 `p07_adapter_e2e` 已纳入 P07 退出证据（成功、平台 retcode 失败、重复帧、dispatch 后取消 CONFLICT、平台断线重连无重复调用）。真实 QQ/NapCat 平台 login/撤回/禁言/踢出/审批凭证与 reaction 扩展 API 仍属 M2/T07b 用户环境验收；adapter 侧领域/单测覆盖不等同真实平台副作用。
+
+## P06g 真实总线全链路验收（2026-11-02）
+
+`p07_adapter_e2e` 已扩展为单一真实进程链验收：真 PG16.4、真 mTLS Runtime、真
+`kiarabot-adapter`（NoneBot）+ loopback fake OneBot WS、以及**独立进程**的真实 SDK plugin
+（`python -m kiarabot_sdk` 的受管子进程，通过真实 PluginBridge 注册/订阅/提交 Action）。
+覆盖：平台消息→adapter 事件→Runtime accept→订阅投递（delivery target/lease/ACK）→plugin
+收到事件→plugin 提交 send_message + policy mute Action（action_policies 真 PG 播种）→
+Runtime 派发 adapter→fake OneBot `send_group_msg`/`set_group_ban`→result/evidence/receipt→
+plugin 查询终态；重复平台帧不重复建事件/Action；adapter 崩溃重启后 Action 不重复执行；
+非订阅/离线插件无 delivery target；post-dispatch cancel CONFLICT。仍未覆盖：真实
+QQ/NapCat（M2 环境项）与单链 UNKNOWN/EXPIRED late-evidence（手工 wire fixture
+`p06_bridge_acceptance` 已有，待后续合并到单链）。

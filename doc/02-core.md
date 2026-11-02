@@ -1566,3 +1566,13 @@ receipt 落库；Host 离线/未回执保持 Pending/Unknown，不推断进程�
 （真 PG+storage 帧断言）。仍缺 BeginDelete/Restore 与真实 Host 的单一联合 e2e 与 Scheduler
 participant 生产 ListTasks/CancelTask 委托接线；P13 退出判定未通过，待后续增量或用户确认测试
 注入方式。
+
+### P06g 真实 adapter+Runtime+受管 SDK plugin 全总线 e2e（2026-11-02）
+
+`p07_adapter_e2e` 现在是单一真实进程链：真 PG16.4 + 真 mTLS Runtime + 真 NoneBot adapter +
+fake OneBot WS + 独立 SDK plugin 子进程（真实 PluginBridge）。平台消息经 adapter 持久入
+Runtime 事件 inbox，按订阅投递到 SDK plugin 并 ACK；plugin 提交 send_message 与 policy-gated
+mute（真 PG action_policies），Runtime 派发 adapter 执行平台 API，result/evidence/receipt 回
+Runtime，plugin 查询终态。重复平台帧不产生第二事件/Action，adapter 断线重连不重复执行；
+非订阅/离线插件不伪造 delivery target；post-dispatch cancel 为 CONFLICT。真实 QQ/NapCat 与
+单链 UNKNOWN/EXPIRED 迟到证据仍是未验收项（后者已有手工 wire fixture 证据）。

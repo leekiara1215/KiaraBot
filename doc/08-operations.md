@@ -1567,3 +1567,11 @@ P07g（2026-11-02）：P07 Action 退出证据已按当前 HEAD 复核：`p07_ac
 - 原生栈重跑：P14f harness 现有断言改为等待 Control probe HEALTHY；若仍 UNHEALTHY，先核对 Identity readiness 与 Control 配置 identity_endpoint/TLS CA。
 
 P10j（2026-11-02）：SDK 任务方法（create/get/cancel）已有 `p10_sdk_tasks_e2e` 协议级验收（真实 TLS PluginBridge fixture + fake Scheduler owner，5.16s；p10 标签），P14f 原生五进程栈 `p14_native_single_host` 15.74s 通过。**生产运行时尚未消费 PluginBridge task_create/task_get/task_cancel 帧**，故真实 Runtime/Scheduler 任务链路仍不可用；排障时若插件任务调用返回 CAPABILITY_NOT_SUPPORTED/UPSTREAM_UNAVAILABLE，先确认 Runtime task ingress 是否已交付，不要用 fake owner 成功当作生产可用。tzdata 缺失、真实平台触发和生产委托来源仍待环境；COMPLETED 只表示 TimerTriggered 已入队，不代表插件回调成功。
+## P06g 全总线 e2e 运维验收（2026-11-02）
+
+`ctest -R p07_adapter_e2e` 启动真实 NoneBot adapter 子进程、fake loopback OneBot v11 WS、
+真 PG16.4 Runtime 和独立 `python -m kiarabot_sdk` plugin 子进程，仅依赖临时 PKI/临时 outbox/
+本地端口，不需要 QQ/NapCat。断言：事件投递 lease/ACK、SDK plugin 收到事件、send + policy mute
+Action 到达平台、receipt/终态、重复帧/重连去重、离线/非订阅不投递、post-dispatch cancel
+CONFLICT，并检查 adapter/plugin 日志不泄露 bootstrap/平台 token。真实 QQ/NapCat 与
+UNKNOWN/EXPIRED 单链迟到证据属剩余环境/验收项。
