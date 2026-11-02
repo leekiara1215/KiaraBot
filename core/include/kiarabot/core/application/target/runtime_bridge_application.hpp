@@ -8,6 +8,7 @@
 #include <string>
 #include <vector>
 
+#include "kiarabot/core/application/target/runtime_action_application.hpp"
 #include "kiarabot/core/application/target/runtime_resource_application.hpp"
 #include "kiarabot/core/domain/target/bridge_rules.hpp"
 #include "kiarabot/core/domain/target/event_delivery.hpp"
@@ -118,6 +119,45 @@ struct BridgeRegistrationResult {
   std::string required_protocol_version;
 };
 
+// One decoded plugin Action submission from the authenticated bridge stream. The transport owns
+// the wire ActionEnvelope parse; the bridge application resolves the owner identity, manifest
+// permission/feature set and the Runtime Action application transaction.
+struct BridgeActionSubmit {
+  std::string request_id;
+  std::string trace_id;
+  ActionId action_id;
+  ResourceId account_id;
+  ResourceId adapter_id;
+  ActionKind kind = ActionKind::SendMessage;
+  std::string idempotency_key;
+  std::string serialized_envelope;
+  std::string target_conversation;
+  std::uint8_t target_conversation_kind = 0;
+  TimePoint deadline;
+};
+
+struct BridgeActionReport {
+  ActionId action_id;
+  std::optional<AttemptId> dispatch_attempt_id;
+  ActionTerminalResult result;
+  std::string trace_id;
+};
+
+struct BridgeEvidenceReport {
+  ActionId action_id;
+  AttemptId dispatch_attempt_id;
+  ExecutionOutcome execution_outcome = ExecutionOutcome::Unknown;
+  std::optional<ErrorCode> error_code;
+  std::optional<std::string> platform_reference;
+  TimePoint observed_at;
+  std::string trace_id;
+};
+
+// Push callback used by the central maintenance dispatcher to hand one claimed Action frame to the
+// adapter stream. The claim has already been committed as Dispatched; a failed write can only make
+// the action resolve UNKNOWN/EXPIRED, never re-dispatch it.
+using ActionDispatchSink = std::function<Status(const ActionDispatchFrame&)>;
+
 // Trusted outer-composition dependencies. The bridge application owns the in-memory connection
 // registry (single active connection per external peer); durable adapter/instance records stay
 // behind the Runtime unit of work. No method performs network I/O inside a UoW.
@@ -126,6 +166,9 @@ struct RuntimeBridgeDependencies {
   RuntimeIdPort& ids;
   RuntimeSecretPort& secrets;
   RuntimeResourceApplication& resources;
+  // Optional P07 Action application; both the plugin Action surface and adapter dispatch/evidence
+  // are only available when the composition supplies it.
+  RuntimeActionApplication* actions = nullptr;
   // Trusted build feature catalog; the registration response reports only this intersection.
   std::vector<std::string> supported_features;
 };
@@ -170,8 +213,30 @@ public:
                                         const DeliverySink& sink) = 0;
   virtual void detach_plugin_delivery(const InstanceId& instance,
                                       ConnectionGeneration connection_generation) = 0;
+  // P07 plugin Action surface (action.result.v1): submit/query/cancel scoped to the authenticated
+  // plugin instance. The bridge resolves manifest permissions/features from the registered profile.
+  virtual Outcome<ActionRecord> submit_plugin_action(const InstanceId& instance,
+                                                     const BridgeActionSubmit& request) = 0;
+  virtual Outcome<ActionRecord> query_plugin_action(const InstanceId& instance,
+                                                    std::optional<ActionId> action_id,
+                                                    std::optional<std::string> idempotency_key) = 0;
+  virtual Outcome<ActionRecord> cancel_plugin_action(const InstanceId& instance,
+                                                     const ActionId& action_id) = 0;
+  // P07 adapter result/evidence reports. The caller must be the adapter instance recorded on the
+  // Action dispatch; report receipts are returned for the ActionReceipt frame.
+  virtual Outcome<ActionReportReceipt> record_adapter_result(const InstanceId& adapter_instance,
+                                                             const BridgeActionReport& report) = 0;
+  virtual Outcome<ActionReportReceipt> record_adapter_evidence(const InstanceId& adapter_instance,
+                                                               const BridgeEvidenceReport& report) = 0;
+  // Register/remove the adapter Action push sink for one accepted connection generation. The
+  // maintenance hook claims due Actions and pushes them through this sink outside the transaction.
+  virtual Status attach_adapter_action_sink(const InstanceId& instance,
+                                            ConnectionGeneration connection_generation,
+                                            const ActionDispatchSink& sink) = 0;
+  virtual void detach_adapter_action_sink(const InstanceId& instance,
+                                          ConnectionGeneration connection_generation) = 0;
   // Bounded periodic work run by the composition maintenance hook: expiry sweep plus one claim
-  // round for every connected plugin sink, then push outside the transaction.
+  // round for every connected plugin sink and adapter Action sink, then push outside transactions.
   virtual Status maintenance() = 0;
   // Graceful shutdown: send one bounded ShutdownNotice to every accepted peer. Returns after the
   // notices were attempted; in-flight work is bounded by the transport drain budget.

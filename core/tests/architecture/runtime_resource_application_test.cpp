@@ -454,6 +454,10 @@ public:
   t::Outcome<std::vector<t::ActionRecord>> list_control(const t::ActionControlQuery&) override {
     return failure(t::ErrorCode::UpstreamUnavailable);
   }
+  t::Outcome<std::vector<t::ActionRecord>> list_due(const t::ResourceId&, std::size_t,
+                                                    t::TimePoint) override {
+    return failure(t::ErrorCode::UpstreamUnavailable);
+  }
   t::Outcome<std::size_t> prune_terminal(t::TimePoint, std::size_t) override {
     return failure(t::ErrorCode::UpstreamUnavailable);
   }
@@ -1262,8 +1266,12 @@ void bridge_flow() {
   Harness harness;
   t::BotAccount account;
   create_account(harness, &account);
-  auto built = t::make_runtime_bridge_application(
-      {harness.factory, harness.ids, harness.secrets, *harness.application, {"plugin.config.v1"}});
+  auto built = t::make_runtime_bridge_application({harness.factory,
+                                                   harness.ids,
+                                                   harness.secrets,
+                                                   *harness.application,
+                                                   nullptr,
+                                                   {"plugin.config.v1"}});
   check(std::holds_alternative<std::unique_ptr<t::RuntimeBridgeApplication>>(built),
         "bridge application construction failed");
   auto bridge = std::move(std::get<std::unique_ptr<t::RuntimeBridgeApplication>>(built));

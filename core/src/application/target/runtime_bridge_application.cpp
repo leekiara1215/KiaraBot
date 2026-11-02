@@ -162,6 +162,7 @@ public:
   explicit RuntimeBridgeApplicationImpl(RuntimeBridgeDependencies dependencies)
       : transactions_(dependencies.transactions), ids_(dependencies.ids),
         secrets_(dependencies.secrets), resources_(dependencies.resources),
+        actions_(dependencies.actions),
         supported_features_(std::move(dependencies.supported_features)) {}
 
   Outcome<BridgeRegistrationResult>
@@ -364,6 +365,8 @@ public:
         std::lock_guard<std::mutex> lock(mutex_);
         PluginProfile profile;
         profile.ordered = request.manifest.ordered;
+        profile.permissions = request.manifest.permissions;
+        profile.enabled_features = bridge.enabled_features;
         for (const auto& capability : request.manifest.capabilities) {
           for (const auto payload :
                {EventPayloadKind::MessageReceived, EventPayloadKind::MessageSent,
@@ -509,6 +512,11 @@ public:
         found->second.fence.connection_generation == connection_generation) {
       current_.erase(found);
       gates_.erase(key);
+    }
+    const auto action_sink = action_sinks_.find(instance.value);
+    if (action_sink != action_sinks_.end() &&
+        action_sink->second.connection_generation.value == connection_generation.value) {
+      action_sinks_.erase(action_sink);
     }
     return std::monostate{};
   }
@@ -672,6 +680,133 @@ public:
     }
   }
 
+  Outcome<ActionRecord> submit_plugin_action(const InstanceId& instance,
+                                             const BridgeActionSubmit& request) override {
+    if (!actions_) {
+      return capability_not_supported();
+    }
+    std::vector<std::string> permissions;
+    std::vector<std::string> features;
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      const auto profile = plugin_profiles_.find(instance.value);
+      if (profile == plugin_profiles_.end()) {
+        return unauthenticated();
+      }
+      permissions = profile->second.permissions;
+      features = profile->second.enabled_features;
+    }
+    ActionSubmitRequest application_request;
+    application_request.owner_instance = instance;
+    application_request.request_id = request.request_id;
+    application_request.trace_id = request.trace_id;
+    application_request.owner_permissions = std::move(permissions);
+    application_request.enabled_features = std::move(features);
+    application_request.action_id = request.action_id;
+    application_request.account_id = request.account_id;
+    application_request.adapter_id = request.adapter_id;
+    application_request.kind = request.kind;
+    application_request.idempotency_key = request.idempotency_key;
+    application_request.serialized_envelope = request.serialized_envelope;
+    application_request.target_conversation = request.target_conversation;
+    application_request.target_conversation_kind = request.target_conversation_kind;
+    application_request.deadline = request.deadline;
+    auto submitted = actions_->submit_action(application_request);
+    if (const auto* failure = std::get_if<Failure>(&submitted)) {
+      return *failure;
+    }
+    return std::get<ActionSubmitOutcome>(std::move(submitted)).record;
+  }
+
+  Outcome<ActionRecord> query_plugin_action(const InstanceId& instance,
+                                            std::optional<ActionId> action_id,
+                                            std::optional<std::string> idempotency_key) override {
+    if (!actions_) {
+      return capability_not_supported();
+    }
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      if (plugin_profiles_.find(instance.value) == plugin_profiles_.end()) {
+        return unauthenticated();
+      }
+    }
+    ActionOwnerQuery query;
+    query.owner_instance = instance;
+    query.action_id = std::move(action_id);
+    query.idempotency_key = std::move(idempotency_key);
+    return actions_->query_owner_action(query);
+  }
+
+  Outcome<ActionRecord> cancel_plugin_action(const InstanceId& instance,
+                                             const ActionId& action_id) override {
+    if (!actions_) {
+      return capability_not_supported();
+    }
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      if (plugin_profiles_.find(instance.value) == plugin_profiles_.end()) {
+        return unauthenticated();
+      }
+    }
+    ActionCancelRequest request;
+    request.owner_instance = instance;
+    request.action_id = action_id;
+    return actions_->cancel_action(request);
+  }
+
+  Outcome<ActionReportReceipt> record_adapter_result(const InstanceId& adapter_instance,
+                                                     const BridgeActionReport& report) override {
+    if (!actions_) {
+      return capability_not_supported();
+    }
+    ActionResultReport application_report;
+    application_report.adapter_instance = adapter_instance;
+    application_report.action_id = report.action_id;
+    application_report.dispatch_attempt_id = report.dispatch_attempt_id;
+    application_report.result = report.result;
+    application_report.trace_id = report.trace_id;
+    return actions_->record_result(application_report);
+  }
+
+  Outcome<ActionReportReceipt>
+  record_adapter_evidence(const InstanceId& adapter_instance,
+                          const BridgeEvidenceReport& report) override {
+    if (!actions_) {
+      return capability_not_supported();
+    }
+    ActionAdapterEvidence application_report;
+    application_report.adapter_instance = adapter_instance;
+    application_report.action_id = report.action_id;
+    application_report.dispatch_attempt_id = report.dispatch_attempt_id;
+    application_report.execution_outcome = report.execution_outcome;
+    application_report.error_code = report.error_code;
+    application_report.platform_reference = report.platform_reference;
+    application_report.observed_at = report.observed_at;
+    application_report.trace_id = report.trace_id;
+    return actions_->record_evidence(application_report);
+  }
+
+  Status attach_adapter_action_sink(const InstanceId& instance,
+                                    ConnectionGeneration connection_generation,
+                                    const ActionDispatchSink& sink) override {
+    if (!sink || connection_generation.value == 0) {
+      return invalid_runtime_input();
+    }
+    std::lock_guard<std::mutex> lock(mutex_);
+    action_sinks_[instance.value] = ActionSinkEntry{sink, connection_generation};
+    return std::monostate{};
+  }
+
+  void detach_adapter_action_sink(const InstanceId& instance,
+                                  ConnectionGeneration connection_generation) override {
+    std::lock_guard<std::mutex> lock(mutex_);
+    const auto found = action_sinks_.find(instance.value);
+    if (found != action_sinks_.end() &&
+        found->second.connection_generation.value == connection_generation.value) {
+      action_sinks_.erase(found);
+    }
+  }
+
   Status maintenance() override {
     struct Pending {
       InstanceId instance;
@@ -789,6 +924,37 @@ public:
         }
         for (const auto& claim : group.claims) {
           (void)sink(claim.event, claim.attempt, claim.trace_id);
+        }
+      }
+      if (actions_ == nullptr) {
+        return std::monostate{};
+      }
+      std::vector<std::pair<InstanceId, ConnectionGeneration>> adapter_instances;
+      {
+        std::lock_guard<std::mutex> lock(mutex_);
+        adapter_instances.reserve(action_sinks_.size());
+        for (const auto& [instance_value, entry] : action_sinks_) {
+          adapter_instances.emplace_back(InstanceId{instance_value},
+                                         entry.connection_generation);
+        }
+      }
+      for (const auto& [instance, generation] : adapter_instances) {
+        auto claimed = actions_->claim_due(instance, 4, now);
+        if (const auto* failure = std::get_if<Failure>(&claimed)) {
+          return transient(*failure);
+        }
+        ActionDispatchSink sink;
+        {
+          std::lock_guard<std::mutex> lock(mutex_);
+          const auto entry = action_sinks_.find(instance.value);
+          if (entry == action_sinks_.end() ||
+              entry->second.connection_generation.value != generation.value) {
+            continue;
+          }
+          sink = entry->second.sink;
+        }
+        for (const auto& frame : std::get<ActionDispatchClaim>(claimed).frames) {
+          auto pushed = sink(frame);
         }
       }
       return std::monostate{};
@@ -1123,7 +1289,13 @@ private:
 
   struct PluginProfile {
     bool ordered = false;
+    std::vector<std::string> permissions;
+    std::vector<std::string> enabled_features;
     std::set<std::string> subscriptions;
+  };
+  struct ActionSinkEntry {
+    ActionDispatchSink sink;
+    ConnectionGeneration connection_generation;
   };
   struct SinkEntry {
     DeliverySink sink;
@@ -1143,11 +1315,13 @@ private:
   RuntimeIdPort& ids_;
   RuntimeSecretPort& secrets_;
   RuntimeResourceApplication& resources_;
+  RuntimeActionApplication* actions_;
   std::vector<std::string> supported_features_;
   mutable std::mutex mutex_;
   std::map<std::string, BridgeAuthorization> current_;
   std::map<std::string, PluginProfile> plugin_profiles_;
   std::map<std::string, ShutdownEntry> shutdown_sinks_;
+  std::map<std::string, ActionSinkEntry> action_sinks_;
   std::map<std::string, SinkEntry> sinks_;
   std::map<std::string, GateEntry> gates_;
   bool recovered_ = false;

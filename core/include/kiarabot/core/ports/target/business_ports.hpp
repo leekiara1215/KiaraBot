@@ -164,6 +164,11 @@ public:
   virtual Outcome<std::vector<ActionRecord>> list_owner(const InstanceId& owner,
                                                         const ActionPageRequest& page) = 0;
   virtual Outcome<std::vector<ActionRecord>> list_control(const ActionControlQuery& query) = 0;
+  // Bounded dispatch claim source for the bridge: accepted, not-dispatched rows targeting this
+  // adapter resource whose deadline is still in the future. The caller marks each row dispatched
+  // in the same UoW; the rows are selected FOR UPDATE SKIP LOCKED by the PG adapter.
+  virtual Outcome<std::vector<ActionRecord>>
+  list_due(const ResourceId& adapter_id, std::size_t limit, TimePoint now) = 0;
   // Removes only terminal rows whose retain_until elapsed; pending/unknown rows are never pruned.
   virtual Outcome<std::size_t> prune_terminal(TimePoint now, std::size_t limit) = 0;
 };

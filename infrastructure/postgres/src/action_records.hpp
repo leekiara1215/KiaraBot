@@ -40,6 +40,9 @@ public:
              const core::target::ActionPageRequest& page) override;
   core::target::Outcome<std::vector<core::target::ActionRecord>>
   list_control(const core::target::ActionControlQuery& query) override;
+  core::target::Outcome<std::vector<core::target::ActionRecord>>
+  list_due(const core::target::ResourceId& adapter_id, std::size_t limit,
+           core::target::TimePoint now) override;
   core::target::Outcome<std::size_t> prune_terminal(core::target::TimePoint now,
                                                     std::size_t limit) override;
 

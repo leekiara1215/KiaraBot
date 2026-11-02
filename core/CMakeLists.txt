@@ -251,7 +251,8 @@ find_package(OpenSSL 3.0 REQUIRED)
 # the pure Runtime UoW ports; RPC/transport mapping and PG adapters stay in outer layers.
 add_library(kiarabot_runtime_resource_application STATIC
   src/application/target/runtime_resource_application.cpp
-  src/application/target/runtime_bridge_application.cpp)
+  src/application/target/runtime_bridge_application.cpp
+  src/application/target/runtime_action_application.cpp)
 target_include_directories(kiarabot_runtime_resource_application PUBLIC include)
 target_link_libraries(kiarabot_runtime_resource_application PRIVATE OpenSSL::Crypto)
 target_include_directories(kiarabot_runtime_resource_application SYSTEM PRIVATE

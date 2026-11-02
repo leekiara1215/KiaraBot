@@ -658,6 +658,10 @@ private:
     t::Outcome<std::vector<t::ActionRecord>> list_control(const t::ActionControlQuery&) override {
       return unavailable();
     }
+    t::Outcome<std::vector<t::ActionRecord>> list_due(const t::ResourceId&, std::size_t,
+                                                      t::TimePoint) override {
+      return unavailable();
+    }
     t::Outcome<std::size_t> prune_terminal(t::TimePoint, std::size_t) override {
       return unavailable();
     }

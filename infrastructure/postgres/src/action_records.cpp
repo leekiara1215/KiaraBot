@@ -173,40 +173,6 @@ target::ActionEvidenceRecord read_evidence(const pqxx::row& row) {
   evidence.retain_until = time_field(row, "retain_until");
   return evidence;
 }
-pqxx::params action_params(const target::ActionRecord& record) {
-  return pqxx::params{
-      record.action_id.value,
-      record.owner_instance.value,
-      record.account_id.value,
-      record.adapter_id.value,
-      record.dispatched_to_instance
-          ? std::optional<std::string>{record.dispatched_to_instance->value}
-          : std::nullopt,
-      record.binding_version.value,
-      static_cast<int>(record.kind),
-      record.capability,
-      record.idempotency_key,
-      pqxx::binarystring{record.request_hash.bytes.data(), record.request_hash.bytes.size()},
-      pqxx::binarystring{record.serialized_envelope},
-      record.target_conversation,
-      static_cast<int>(record.target_conversation_kind),
-      timestamp(record.deadline),
-      timestamp(record.created_at),
-      timestamp(record.updated_at),
-      static_cast<int>(record.state),
-      static_cast<int>(record.execution_outcome),
-      static_cast<int>(record.dispatch_state),
-      record.dispatch_attempt_id ? std::optional<std::string>{record.dispatch_attempt_id->value}
-                                 : std::nullopt,
-      static_cast<int>(record.dispatch_sequence),
-      record.dispatched_at ? std::optional<std::string>{timestamp(*record.dispatched_at)}
-                           : std::nullopt,
-      record.platform_message_id,
-      record.error_code ? std::optional<int>{static_cast<int>(*record.error_code)} : std::nullopt,
-      record.completed_at ? std::optional<std::string>{timestamp(*record.completed_at)}
-                          : std::nullopt,
-      timestamp(record.retain_until)};
-}
 std::string action_projection() {
   return "action_id,owner_instance,account_id,adapter_id,dispatched_to_instance,binding_version,"
          "kind,capability,idempotency_key,request_hash,serialized_envelope,target_conversation,"
@@ -334,7 +300,41 @@ target::Outcome<target::ActionRecord> ActionRecords::insert(const target::Action
             "retain_until) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,"
             "$18,$19,$20,$21,$22,$23,$24,$25,$26) RETURNING " +
                 action_projection(),
-            action_params(record));
+            pqxx::params{
+                record.action_id.value,
+                record.owner_instance.value,
+                record.account_id.value,
+                record.adapter_id.value,
+                record.dispatched_to_instance
+                    ? std::optional<std::string>{record.dispatched_to_instance->value}
+                    : std::nullopt,
+                record.binding_version.value,
+                static_cast<int>(record.kind),
+                record.capability,
+                record.idempotency_key,
+                pqxx::binarystring{record.request_hash.bytes.data(),
+                                   record.request_hash.bytes.size()},
+                pqxx::binarystring{record.serialized_envelope},
+                record.target_conversation,
+                static_cast<int>(record.target_conversation_kind),
+                timestamp(record.deadline),
+                timestamp(record.created_at),
+                timestamp(record.updated_at),
+                static_cast<int>(record.state),
+                static_cast<int>(record.execution_outcome),
+                static_cast<int>(record.dispatch_state),
+                record.dispatch_attempt_id
+                    ? std::optional<std::string>{record.dispatch_attempt_id->value}
+                    : std::nullopt,
+                static_cast<int>(record.dispatch_sequence),
+                record.dispatched_at ? std::optional<std::string>{timestamp(*record.dispatched_at)}
+                                     : std::nullopt,
+                record.platform_message_id,
+                record.error_code ? std::optional<int>{static_cast<int>(*record.error_code)}
+                                  : std::nullopt,
+                record.completed_at ? std::optional<std::string>{timestamp(*record.completed_at)}
+                                    : std::nullopt,
+                timestamp(record.retain_until)});
         if (rows.empty()) {
           return storage_failure();
         }
@@ -546,6 +546,32 @@ ActionRecords::list_control(const target::ActionControlQuery& query_request) {
                 query_request.kind ? std::optional<int>{static_cast<int>(*query_request.kind)}
                                    : std::nullopt,
                 static_cast<int>(query_request.page.limit)});
+        std::vector<target::ActionRecord> result;
+        for (const auto& row : rows) {
+          result.push_back(read_action(row));
+        }
+        return result;
+      });
+}
+
+target::Outcome<std::vector<target::ActionRecord>>
+ActionRecords::list_due(const target::ResourceId& adapter_id, std::size_t limit,
+                        target::TimePoint now) {
+  return query<std::vector<target::ActionRecord>>(
+      sql_,
+      [&](pqxx::transaction_base& transaction)
+          -> target::Outcome<std::vector<target::ActionRecord>> {
+        if (!valid_action_id(adapter_id.value) || limit == 0 || limit > kMaximumPage ||
+            !positive(now)) {
+          return invalid();
+        }
+        const auto rows = transaction.exec(
+            "SELECT " + action_projection() +
+                " FROM kiarabot.actions WHERE adapter_id=$1 AND state=0 AND dispatch_state=0"
+                " AND deadline>" +
+                std::string{kDbNow} +
+                " ORDER BY created_at, action_id LIMIT $2 FOR UPDATE SKIP LOCKED",
+            pqxx::params{adapter_id.value, static_cast<int>(limit)});
         std::vector<target::ActionRecord> result;
         for (const auto& row : rows) {
           result.push_back(read_action(row));
