@@ -4,6 +4,8 @@
 #include <cerrno>
 #include <chrono>
 #include <csignal>
+#include <cstdlib>
+#include <execinfo.h>
 #include <fcntl.h>
 #include <iostream>
 #include <poll.h>
@@ -14,6 +16,7 @@
 #include <unistd.h>
 
 #include <arpa/inet.h>
+#include <openssl/crypto.h>
 #include <sys/socket.h>
 
 #include "kiarabot/core/runtime/platform/service_config.hpp"
@@ -205,7 +208,24 @@ void serve_probe(int listener, const target::ServiceReadinessPort& application) 
 
 } // namespace
 
+namespace {
+void crash_diagnostic(int signal) {
+  void* frames[64];
+  const int count = backtrace(frames, 64);
+  const char message[] = "operation=crash diagnostic=backtrace\n";
+  (void)write(STDERR_FILENO, message, sizeof(message) - 1);
+  backtrace_symbols_fd(frames, count, STDERR_FILENO);
+  std::signal(signal, SIG_DFL);
+  std::raise(signal);
+}
+} // namespace
+
 int run_service(target::Service service, const ServiceComposer& compose, int argc, char* argv[]) {
+  // OpenSSL's atexit cleanup races with worker threads that exit during process teardown and still
+  // run RAND thread-local destructors (observed SIGSEGV in EVP_RAND_CTX_free on SIGTERM). Process
+  // teardown does not require crypto cleanup; suppress the atexit registration before any crypto
+  // use so thread-local destructors never touch freed global RAND state.
+  (void)OPENSSL_init_crypto(OPENSSL_INIT_NO_ATEXIT, nullptr);
   if (argc == 2 && std::string_view(argv[1]) == "--help") {
     std::cout << "Usage: kiarabot-" << service_name(service) << " --config PATH\n";
     return 0;
@@ -223,6 +243,10 @@ int run_service(target::Service service, const ServiceComposer& compose, int arg
     const auto& config = std::get<ProcessConfig>(loaded);
     // Created before gRPC workers; they inherit blocked stop signals. No async handler callbacks.
     const StopSignals signals;
+    if (std::getenv("KIARABOT_CRASH_DIAGNOSTICS") != nullptr) {
+      std::signal(SIGSEGV, crash_diagnostic);
+      std::signal(SIGABRT, crash_diagnostic);
+    }
     auto composed = compose(config);
     if (std::holds_alternative<target::Failure>(composed)) {
       std::cerr << "operation=start outcome=failed reason=dependency_initialization_failed\n";
