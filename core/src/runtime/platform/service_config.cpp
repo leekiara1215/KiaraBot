@@ -97,6 +97,128 @@ bool exact_keys(const nlohmann::json& object, const std::set<std::string>& keys)
   }
   return true;
 }
+bool host_absolute_path(const nlohmann::json& value) {
+  if (!bounded_config_string(value, 4096)) {
+    return false;
+  }
+  const auto& text = value.get_ref<const std::string&>();
+  return text.front() == '/';
+}
+bool host_name(const nlohmann::json& value, std::size_t maximum) {
+  if (!bounded_config_string(value, maximum)) {
+    return false;
+  }
+  for (const unsigned char character : value.get_ref<const std::string&>()) {
+    if (!((character >= 'a' && character <= 'z') || (character >= 'A' && character <= 'Z') ||
+          (character >= '0' && character <= '9') || character == '-' || character == '_' ||
+          character == '.' || character == ':')) {
+      return false;
+    }
+  }
+  return true;
+}
+bool host_string_list(const nlohmann::json& value, std::size_t maximum, std::size_t item_maximum,
+                      bool names) {
+  if (!value.is_array() || value.size() > maximum) {
+    return false;
+  }
+  for (const auto& item : value) {
+    if (names ? !host_name(item, item_maximum) : !bounded_config_string(item, item_maximum)) {
+      return false;
+    }
+  }
+  return true;
+}
+bool host_sha256(const nlohmann::json& value) {
+  if (!value.is_string() || value.get_ref<const std::string&>().size() != 64) {
+    return false;
+  }
+  for (const char character : value.get_ref<const std::string&>()) {
+    if (!((character >= '0' && character <= '9') || (character >= 'a' && character <= 'f'))) {
+      return false;
+    }
+  }
+  return true;
+}
+bool host_package_shape(const nlohmann::json& value) {
+  return exact_keys(value, {"plugin_type_id", "root", "sha256", "launch_profile",
+                            "allowed_argument_names"}) &&
+         host_name(value["plugin_type_id"], 128) && host_absolute_path(value["root"]) &&
+         host_sha256(value["sha256"]) && host_name(value["launch_profile"], 128) &&
+         host_string_list(value["allowed_argument_names"], 64, 128, true);
+}
+bool host_profile_shape(const nlohmann::json& value) {
+  return exact_keys(value, {"name", "executable", "fixed_arguments",
+                            "allowed_environment_names", "credential_environment"}) &&
+         host_name(value["name"], 128) && host_absolute_path(value["executable"]) &&
+         host_string_list(value["fixed_arguments"], 64, 1024, false) &&
+         host_string_list(value["allowed_environment_names"], 64, 128, true) &&
+         (value["credential_environment"].is_string()
+              ? host_name(value["credential_environment"], 128)
+              : value["credential_environment"].is_null());
+}
+bool host_material_shape(const nlohmann::json& value) {
+  if (!exact_keys(value, {"host_id", "sqlite_path", "runtime_endpoint", "credential_directory",
+                          "packages", "profiles", "environment"}) ||
+      !host_name(value["host_id"], 128) || !host_absolute_path(value["sqlite_path"]) ||
+      !host_absolute_path(value["credential_directory"]) ||
+      !value["runtime_endpoint"].is_string() ||
+      !address_valid(value["runtime_endpoint"].get<std::string>(), false) ||
+      !value["packages"].is_array() || value["packages"].empty() ||
+      value["packages"].size() > 64 || !value["profiles"].is_array() ||
+      value["profiles"].empty() || value["profiles"].size() > 32 ||
+      !value["environment"].is_object() || value["environment"].size() > 64) {
+    return false;
+  }
+  for (const auto& package : value["packages"]) {
+    if (!host_package_shape(package)) {
+      return false;
+    }
+  }
+  for (const auto& profile : value["profiles"]) {
+    if (!host_profile_shape(profile)) {
+      return false;
+    }
+  }
+  for (const auto& [name, item] : value["environment"].items()) {
+    if (!host_name(nlohmann::json(name), 128) || !bounded_config_string(item, 1024)) {
+      return false;
+    }
+  }
+  return true;
+}
+HostMaterial host_material(const nlohmann::json& value) {
+  HostMaterial material{value["host_id"].get<std::string>(),
+                        value["sqlite_path"].get<std::string>(),
+                        value["runtime_endpoint"].get<std::string>(),
+                        value["credential_directory"].get<std::string>(),
+                        {},
+                        {},
+                        {}};
+  for (const auto& package : value["packages"]) {
+    material.packages.push_back(
+        {package["plugin_type_id"].get<std::string>(), package["root"].get<std::string>(),
+         package["sha256"].get<std::string>(), package["launch_profile"].get<std::string>(),
+         package["allowed_argument_names"].get<std::vector<std::string>>()});
+  }
+  for (const auto& profile : value["profiles"]) {
+    HostLaunchProfileMaterial material_profile;
+    material_profile.name = profile["name"].get<std::string>();
+    material_profile.executable = profile["executable"].get<std::string>();
+    material_profile.fixed_arguments = profile["fixed_arguments"].get<std::vector<std::string>>();
+    material_profile.allowed_environment_names =
+        profile["allowed_environment_names"].get<std::vector<std::string>>();
+    material_profile.credential_environment =
+        profile["credential_environment"].is_string()
+            ? profile["credential_environment"].get<std::string>()
+            : std::string{};
+    material.profiles.push_back(std::move(material_profile));
+  }
+  for (const auto& [name, item] : value["environment"].items()) {
+    material.environment.emplace_back(name, item.get<std::string>());
+  }
+  return material;
+}
 bool database_identifier(const std::string& value) {
   return !value.empty() && value.size() <= 63 &&
          std::all_of(value.begin(), value.end(), [](unsigned char character) {
@@ -422,6 +544,12 @@ ConfigResult load_service_config(const std::string& path, target::Service servic
       }
       keys.insert("identity_endpoint");
     }
+    if (document.contains("host")) {
+      if (service != target::Service::Host || !host_material_shape(document["host"])) {
+        return ConfigFailure{2, "invalid_host_config"};
+      }
+      keys.insert("host");
+    }
     if (document.contains("database")) {
       if (service == target::Service::Control || service == target::Service::Host ||
           !database_shape(document["database"])) {
@@ -454,6 +582,9 @@ ConfigResult load_service_config(const std::string& path, target::Service servic
     }
     if (document.contains("identity_endpoint")) {
       config.identity_endpoint = document["identity_endpoint"].get<std::string>();
+    }
+    if (document.contains("host")) {
+      config.host = host_material(document["host"]);
     }
     const auto certificate_path = document["tls"]["certificate_file"].get<std::string>();
     const auto key_path = document["tls"]["private_key_file"].get<std::string>();

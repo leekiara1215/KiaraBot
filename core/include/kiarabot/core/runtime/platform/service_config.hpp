@@ -5,6 +5,7 @@
 #include <string>
 #include <string_view>
 #include <variant>
+#include <vector>
 
 #include "kiarabot/core/domain/target/context.hpp"
 
@@ -70,6 +71,31 @@ struct IdentitySecurityMaterial {
   IdentityClockDeclaration clock;
   IdentityVerificationDeclaration verification;
 };
+// Host deployment material (P08). Only file references/allowlists; secret values are read from
+// owner-only deployment files by the composition root and never appear in JSON/argv.
+struct HostPackageMaterial {
+  std::string plugin_type_id;
+  std::string root;
+  std::string sha256;
+  std::string launch_profile;
+  std::vector<std::string> allowed_argument_names;
+};
+struct HostLaunchProfileMaterial {
+  std::string name;
+  std::string executable;
+  std::vector<std::string> fixed_arguments;
+  std::vector<std::string> allowed_environment_names;
+  std::string credential_environment;
+};
+struct HostMaterial {
+  std::string host_id;
+  std::string sqlite_path;
+  std::string runtime_endpoint;
+  std::string credential_directory;
+  std::vector<HostPackageMaterial> packages;
+  std::vector<HostLaunchProfileMaterial> profiles;
+  std::vector<std::pair<std::string, std::string>> environment;
+};
 struct ProcessConfig {
   target::Service service;
   std::string probe_listen;
@@ -81,6 +107,8 @@ struct ProcessConfig {
   // Runtime-only: Identity owner gRPC endpoint for online authorization and delegation checks.
   // The validated service TLS material is reused as the outbound mTLS client identity.
   std::optional<std::string> identity_endpoint = std::nullopt;
+  // Host-only: deployment identity, package/profile allowlists and local journal path.
+  std::optional<HostMaterial> host = std::nullopt;
 };
 struct ConfigFailure {
   int exit_code;
