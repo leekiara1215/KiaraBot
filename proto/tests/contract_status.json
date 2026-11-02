@@ -1766,7 +1766,9 @@
       "operations.getHost": "not_implemented",
       "operations.listHosts": "not_implemented",
       "operations.getInstanceConfig": "not_implemented",
-      "operations.getCredentialStatus": "not_implemented"
+      "operations.getCredentialStatus": "not_implemented",
+      "operations.createSharedNamespace": "not_implemented",
+      "operations.getSharedNamespace": "not_implemented"
     },
     "semantic_rules": {
       "semantic.action.deadline_max_300s": "not_implemented",
@@ -5280,6 +5282,12 @@
     ],
     "TimerTriggered.occurrence_id": [
       "core/src/application/target/runtime_application.cpp"
+    ],
+    "operations.createSharedNamespace": [
+      "api/openapi.yaml"
+    ],
+    "operations.getSharedNamespace": [
+      "api/openapi.yaml"
     ]
   },
   "vocabulary": {

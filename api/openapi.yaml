@@ -49,6 +49,8 @@ x-contract-status:
     - updateActionPolicy
     - setSharedMembers
     - disableSharedNamespace
+    - createSharedNamespace
+    - getSharedNamespace
     - listDeadLetters
     - replayDelivery
     - getTask
@@ -1782,6 +1784,113 @@ paths:
           application/json:
             schema:
               "$ref": "#/components/schemas/TargetRuntimeDisableSharedNamespaceRequest"
+  /installations/{installationId}/shared-namespace:
+    post:
+      operationId: createSharedNamespace
+      summary: Runtime CreateSharedNamespace
+      x-contract-status: not_implemented
+      x-owner-service: runtime
+      x-owner-rpc: RuntimeService.CreateSharedNamespace
+      x-permission: namespace.manage
+      x-mutating: true
+      description: >-
+        P09 target declaration; the production handler is not implemented until P12.
+        Requires the current Identity session plus an explicit namespace.manage grant
+        on the exact installation scope. At most one shared namespace exists per
+        installation: creation is idempotent via Idempotency-Key; an existing namespace
+        returns CONFLICT and must be read with GET. The server generates the namespace
+        ID/version; the body cannot choose an owner or installation other than the path.
+      parameters:
+      - name: installationId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
+      - "$ref": "#/components/parameters/IdempotencyKey"
+      responses:
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+        '404':
+          "$ref": "#/components/responses/NotFound"
+        '409':
+          "$ref": "#/components/responses/Conflict"
+        '429':
+          "$ref": "#/components/responses/RateLimited"
+        '500':
+          "$ref": "#/components/responses/Internal"
+        '503':
+          "$ref": "#/components/responses/Unavailable"
+        '504':
+          "$ref": "#/components/responses/Timeout"
+        '200':
+          description: Owner committed result or current scoped projection
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/TargetRuntimeCreateSharedNamespaceResponse"
+        '202':
+          description: Durably accepted; inspect operation at its owner
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/TargetRuntimeCreateSharedNamespaceResponse"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/TargetRuntimeCreateSharedNamespaceRequest"
+    get:
+      operationId: getSharedNamespace
+      summary: Runtime GetSharedNamespace
+      x-contract-status: not_implemented
+      x-owner-service: runtime
+      x-owner-rpc: RuntimeService.GetSharedNamespace
+      x-permission: namespace.read
+      x-mutating: false
+      description: >-
+        P09 target declaration; the production handler is not implemented until P12.
+        Requires an explicit namespace.read grant on the exact installation scope.
+        Returns the namespace version/disabled flag/members/quota usage but never key
+        values. Missing or invisible namespaces return NOT_FOUND; admin has no implicit
+        cross-installation access.
+      parameters:
+      - name: installationId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
+      responses:
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+        '404':
+          "$ref": "#/components/responses/NotFound"
+        '429':
+          "$ref": "#/components/responses/RateLimited"
+        '500':
+          "$ref": "#/components/responses/Internal"
+        '503':
+          "$ref": "#/components/responses/Unavailable"
+        '504':
+          "$ref": "#/components/responses/Timeout"
+        '200':
+          description: Owner committed result or current scoped projection
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/TargetRuntimeGetSharedNamespaceResponse"
   /dead-letters:
     get:
       operationId: listDeadLetters
@@ -4075,6 +4184,100 @@ components:
       x-contract-status: not_implemented
       required:
       - policy
+    TargetNamespaceRecord:
+      type: object
+      additionalProperties: false
+      properties:
+        namespace_id:
+          type: string
+          minLength: 1
+        installation_id:
+          type: string
+          minLength: 1
+        version:
+          "$ref": "#/components/schemas/TargetPositiveUint64"
+        disabled:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      x-contract-status: not_implemented
+      required:
+      - namespace_id
+      - installation_id
+      - version
+      - disabled
+      - created_at
+      - updated_at
+    TargetStorageQuota:
+      type: object
+      additionalProperties: false
+      properties:
+        namespace_keys_used:
+          "$ref": "#/components/schemas/TargetUint64"
+        namespace_keys_limit:
+          "$ref": "#/components/schemas/TargetUint64"
+        namespace_bytes_used:
+          "$ref": "#/components/schemas/TargetUint64"
+        namespace_bytes_limit:
+          "$ref": "#/components/schemas/TargetUint64"
+        installation_keys_used:
+          "$ref": "#/components/schemas/TargetUint64"
+        installation_keys_limit:
+          "$ref": "#/components/schemas/TargetUint64"
+        installation_bytes_used:
+          "$ref": "#/components/schemas/TargetUint64"
+        installation_bytes_limit:
+          "$ref": "#/components/schemas/TargetUint64"
+      x-contract-status: not_implemented
+      required:
+      - namespace_keys_used
+      - namespace_keys_limit
+      - namespace_bytes_used
+      - namespace_bytes_limit
+      - installation_keys_used
+      - installation_keys_limit
+      - installation_bytes_used
+      - installation_bytes_limit
+    TargetRuntimeCreateSharedNamespaceRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        installation_id:
+          type: string
+          minLength: 1
+        expected_version:
+          "$ref": "#/components/schemas/TargetPositiveUint64"
+      x-contract-status: not_implemented
+      required:
+      - installation_id
+    TargetRuntimeCreateSharedNamespaceResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        namespace:
+          "$ref": "#/components/schemas/TargetNamespaceRecord"
+      x-contract-status: not_implemented
+      required:
+      - namespace
+    TargetRuntimeGetSharedNamespaceResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        namespace:
+          "$ref": "#/components/schemas/TargetNamespaceRecord"
+        members:
+          type: array
+          items:
+            "$ref": "#/components/schemas/TargetSharedMember"
+        quota:
+          "$ref": "#/components/schemas/TargetStorageQuota"
+      x-contract-status: not_implemented
+      required:
+      - namespace
     TargetRuntimeSetSharedMembersRequest:
       type: object
       additionalProperties: false
