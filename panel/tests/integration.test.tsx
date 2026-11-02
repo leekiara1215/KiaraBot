@@ -192,7 +192,7 @@ describe('pagination, filters and stream events', () => {
     expect(await screen.findByText('请求过于频繁')).toBeInTheDocument();
     expect(screen.getByText(/约 7 秒/)).toBeInTheDocument();
     navigate('审计');
-    expect(await screen.findByText('依赖不可用')).toBeInTheDocument();
+    expect(await screen.findByText(/数据源暂不可用（503）/)).toBeInTheDocument();
   });
 });
 

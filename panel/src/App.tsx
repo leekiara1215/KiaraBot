@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { ApiClient, type Health, type Page as ApiPage, type TokenPair, type Schemas } from './api/client';
+import { ApiClient, ApiError, type Health, type Page as ApiPage, type TokenPair, type Schemas } from './api/client';
 import { ControlStream, type SocketFactory, type StreamStatus } from './stream/control-stream';
 import { describeError, FailureNotice, formatTime, label, StateTag, type Failure } from './ui';
 import { PluginsView } from './views/plugins';
@@ -7,7 +7,7 @@ import { SessionsPanel } from './views/sessions';
 import { ActionsView } from './views/actions';
 import { P12_PAGES, P12_PAGE_KEYS, P12_NAV, type P12PageKey } from './p12/catalog';
 import { P12PreviewView } from './views/p12-preview';
-import { P12LiveView } from './views/p12-live';
+import { P12LiveView, PrincipalsDirectory } from './views/p12-live';
 import './styles.css';
 
 type P12Page = P12PageKey;
@@ -82,6 +82,7 @@ function PermissionsView({ api, revision, permissions }: { api: ApiClient; revis
         ) : <p className="empty">暂无数据</p>)}
       </section>
       <SessionsPanel api={api} permissions={permissions ?? []} revision={revision} />
+      <PrincipalsDirectory api={api} revision={revision} />
     </div>
   );
 }
@@ -93,16 +94,27 @@ function Overview({ api, revision }: { api: ApiClient; revision: number }) {
 }
 function ResourceView({ api, page, revision }: { api: ApiClient; page: LegacyPage; revision: number }) {
   const [data, setData] = useState<ViewData>(); const [failure, setFailure] = useState<Failure>(); const [loading, setLoading] = useState(true);
+  const [sourceUnavailable, setSourceUnavailable] = useState(false);
   const [token, setToken] = useState<string>(); const [pageSize, setPageSize] = useState(20);
   useEffect(() => { setToken(undefined); }, [revision]);
   useEffect(() => {
-    let active = true; setLoading(true); setFailure(undefined);
+    let active = true; setLoading(true); setFailure(undefined); setSourceUnavailable(false);
     loadView(api, page, token, pageSize).then((value) => { if (active) setData(value); })
-      .catch((e) => { if (active) { setData(undefined); setFailure(describeError(e)); } })
+      .catch((e) => {
+        if (!active) return;
+        setData(undefined);
+        if ((page === 'logs' || page === 'audit') && e instanceof ApiError && e.status === 503) {
+          setSourceUnavailable(true); return;
+        }
+        setFailure(describeError(e));
+      })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
   }, [api, page, revision, token, pageSize]);
-  return <section className="table-card"><div className="table-head"><div><p className="eyebrow">SERVER DATA</p><h2>{nav.find((item) => item.key === page)?.label}列表</h2></div><div className="row-actions"><label className="size-select">每页<select aria-label="每页条数" value={pageSize} onChange={(event) => { setPageSize(Number(event.target.value)); setToken(undefined); }}><option value={20}>20</option><option value={50}>50</option><option value={100}>100</option></select></label><span className="count">{data?.rows.length ?? 0} 条</span></div></div>{loading && <p className="empty">正在加载…</p>}{failure && <FailureNotice failure={failure} />}{!loading && data && (data.rows.length ? <div className="table-wrap"><table><thead><tr>{data.columns.map((column) => <th key={column}>{column}</th>)}</tr></thead><tbody>{data.rows.map((row) => <tr key={row.id}>{row.cells.map((cell, index) => <td key={index}>{cell}</td>)}</tr>)}</tbody></table></div> : <p className="empty">暂无数据</p>)}<div className="pagination">{token && <button className="secondary" onClick={() => setToken(undefined)}>返回首页</button>}{data?.next && <button className="secondary" onClick={() => setToken(data.next)}>下一页 →</button>}</div></section>;
+  return <section className="table-card"><div className="table-head"><div><p className="eyebrow">SERVER DATA</p><h2>{nav.find((item) => item.key === page)?.label}列表</h2></div><div className="row-actions"><label className="size-select">每页<select aria-label="每页条数" value={pageSize} onChange={(event) => { setPageSize(Number(event.target.value)); setToken(undefined); }}><option value={20}>20</option><option value={50}>50</option><option value={100}>100</option></select></label><span className="count">{data?.rows.length ?? 0} 条</span></div></div>{loading && <p className="empty">正在加载…</p>}{failure && <FailureNotice failure={failure} />}
+      {sourceUnavailable && <div role="alert" className="failure unavailable"><strong>数据源暂不可用（503）</strong>
+        <p>{page === 'logs' ? '日志' : '审计'}权威数据源尚未接线或 Identity 未就绪；该页不显示空数据，避免把不可用误判为“没有记录”。</p></div>}
+      {!loading && !sourceUnavailable && data && (data.rows.length ? <div className="table-wrap"><table><thead><tr>{data.columns.map((column) => <th key={column}>{column}</th>)}</tr></thead><tbody>{data.rows.map((row) => <tr key={row.id}>{row.cells.map((cell, index) => <td key={index}>{cell}</td>)}</tr>)}</tbody></table></div> : <p className="empty">暂无数据</p>)}<div className="pagination">{token && <button className="secondary" onClick={() => setToken(undefined)}>返回首页</button>}{data?.next && <button className="secondary" onClick={() => setToken(data.next)}>下一页 →</button>}</div></section>;
 }
 
 export function App({ api, socketFactory, streamUrl = '/ws/control', mock = false }: { api: ApiClient; socketFactory: SocketFactory; streamUrl?: string; mock?: boolean }) {
@@ -122,15 +134,25 @@ export function App({ api, socketFactory, streamUrl = '/ws/control', mock = fals
     return () => { active = false; };
   }, [api, tokens, expire]);
   const [status, setStatus] = useState<StreamStatus>('disconnected'); const [revision, setRevision] = useState(0);
+  const [streamAttempted, setStreamAttempted] = useState(false);
+  const [streamFallback, setStreamFallback] = useState(false);
   useEffect(() => {
     if (!tokens) return;
     const stream = new ControlStream({
       url: streamUrl, accessToken: tokens.access_token, factory: socketFactory,
-      onStatus: (value) => { setStatus(value); setStreamReady(value === 'connected'); if (terminal.has(value)) setStreamReady(false); },
+      onStatus: (value) => { setStatus(value); setStreamReady(value === 'connected'); if (value === 'connecting') setStreamAttempted(true); if (value === 'connected') { setStreamAttempted(false); setStreamFallback(false); } if (terminal.has(value)) setStreamReady(false); },
       onUnauthorized: expire, onRefresh: () => setRevision((n) => n + 1),
     });
     stream.start(); return () => stream.stop();
   }, [tokens, socketFactory, streamUrl, expire]);
+  useEffect(() => {
+    if (!tokens) return;
+    if (status === 'connected') { setStreamFallback(false); return; }
+    if (status === 'disconnected' && streamAttempted) setStreamFallback(true);
+  }, [status, streamAttempted, tokens]);
+  useEffect(() => {
+    if (streamFallback) setRevision((n) => n + 1);
+  }, [streamFallback]);
   useEffect(() => {
     if (!tokens) return;
     let active = true;
@@ -151,7 +173,8 @@ export function App({ api, socketFactory, streamUrl = '/ws/control', mock = fals
   const pageLabel = page === 'p12-overview' ? (mock ? 'P12 预研' : 'P12 总览') : nav.find((item) => item.key === page)?.label ?? P12_PAGES[page as P12Page]?.label;
   const isP12 = P12_PAGE_KEYS.includes(page as P12PageKey);
   const permissions = principal?.permissions ?? [];
-  return <div className="shell"><aside className="sidebar"><div className="brand"><span className="brand-icon">K</span><div><strong>KiaraBot</strong><small>CONTROL PLANE</small></div></div><div className="nav-label">工作空间</div><nav aria-label="主导航">{visibleNav.map((item) => <button key={item.key} className={page === item.key ? 'nav-item selected' : 'nav-item'} onClick={() => setPage(item.key)}><span aria-hidden="true">{item.icon}</span>{item.label}</button>)}{visibleP12Nav.length > 0 && <><div className="nav-label">{mock ? 'P12 预览（未接线）' : 'P12 管理'}</div>{visibleP12Nav.map((item) => <button key={item.key} className={page === item.key ? 'nav-item selected' : 'nav-item'} onClick={() => setPage(item.key)}><span aria-hidden="true">{item.icon}</span>{item.label}</button>)}</>}</nav><div className="sidebar-bottom"><span className={`dot ${status}`} /> <span>{statusText[status]}</span></div></aside><main><header className="topbar"><div><span className="crumb">工作空间 / </span><strong>{pageLabel}</strong></div><div className="top-actions"><span>{principal?.roles.join('、')}</span>{mock && <span className="mock-badge">MOCK 环境</span>}<button className="text-button" onClick={async () => { try { if (principal) await api.revokeSession(principal.session_id); } finally { api.setToken(); setTokens(undefined); setPrincipal(undefined); setStreamReady(false); setPage('overview'); } }}>退出登录</button></div></header><div className="content"><div className="page-title"><div><p className="eyebrow">KIARABOT CONTROL</p><h1>{pageLabel}</h1><p className="muted">{page === 'overview' ? '系统运行状态与服务概览' : isP12 ? mock ? 'P12 预研骨架：仅契约与 mock 预览，不发起真实请求' : 'P12 live：契约端点真实请求；P12c 后端并行接入' : '来自控制 API 的最新数据；服务端仍独立鉴权与校验'}</p></div><button className="secondary" onClick={() => setRevision((n) => n + 1)}>↻ 刷新</button></div><div role="status" className={`connection ${status}`}><span className={`dot ${status}`} />{statusText[status]}</div>{terminal.has(status) ? <div role="alert" className="failure forbidden"><strong>实时连接不可用</strong><p>{statusText[status]}。REST 视图需要先建立事件流；请检查权限、限流或服务端状态后刷新重试。</p></div> : !streamReady || !principal ? <p className="empty">正在建立会话…（首个 SESSION_READY 之前不装载 REST 视图）</p> : page === 'overview' ? <Overview api={api} revision={revision} /> : page === 'plugins' ? <PluginsView api={api} permissions={permissions} revision={revision} /> : page === 'permissions' ? <PermissionsView api={api} revision={revision} permissions={permissions} /> : page === 'actions' ? <ActionsView api={api} permissions={permissions} /> : isP12 ? (mock ? <P12PreviewView key={page} page={page as P12PageKey} mock /> : <P12LiveView key={page} page={page as P12PageKey} api={api} permissions={permissions} revision={revision} />) : <ResourceView key={page} api={api} page={page as LegacyPage} revision={revision} />}</div></main></div>;
+  const restAvailable = streamReady || streamFallback;
+  return <div className="shell"><aside className="sidebar"><div className="brand"><span className="brand-icon">K</span><div><strong>KiaraBot</strong><small>CONTROL PLANE</small></div></div><div className="nav-label">工作空间</div><nav aria-label="主导航">{visibleNav.map((item) => <button key={item.key} className={page === item.key ? 'nav-item selected' : 'nav-item'} onClick={() => setPage(item.key)}><span aria-hidden="true">{item.icon}</span>{item.label}</button>)}{visibleP12Nav.length > 0 && <><div className="nav-label">{mock ? 'P12 预览（未接线）' : 'P12 管理'}</div>{visibleP12Nav.map((item) => <button key={item.key} className={page === item.key ? 'nav-item selected' : 'nav-item'} onClick={() => setPage(item.key)}><span aria-hidden="true">{item.icon}</span>{item.label}</button>)}</>}</nav><div className="sidebar-bottom"><span className={`dot ${status}`} /> <span>{statusText[status]}</span></div></aside><main><header className="topbar"><div><span className="crumb">工作空间 / </span><strong>{pageLabel}</strong></div><div className="top-actions"><span>{principal?.roles.join('、')}</span>{mock && <span className="mock-badge">MOCK 环境</span>}<button className="text-button" onClick={async () => { try { if (principal) await api.revokeSession(principal.session_id); } finally { api.setToken(); setTokens(undefined); setPrincipal(undefined); setStreamReady(false); setPage('overview'); } }}>退出登录</button></div></header><div className="content"><div className="page-title"><div><p className="eyebrow">KIARABOT CONTROL</p><h1>{pageLabel}</h1><p className="muted">{page === 'overview' ? '系统运行状态与服务概览' : isP12 ? mock ? 'P12 预研骨架：仅契约与 mock 预览，不发起真实请求' : 'P12 live：契约端点真实请求；P12c 后端并行接入' : '来自控制 API 的最新数据；服务端仍独立鉴权与校验'}</p></div><button className="secondary" onClick={() => setRevision((n) => n + 1)}>↻ 刷新</button></div><div role="status" className={`connection ${status}`}><span className={`dot ${status}`} />{statusText[status]}</div>{streamFallback && !streamReady && <div role="alert" className="failure unavailable"><strong>实时连接不可用，当前为 REST 快照（非最新）</strong><p>WS 未建立或已断开；页面已重新拉取 REST 权威快照并标注为非最新，重连收到 SESSION_READY 后会再次刷新。</p></div>}{terminal.has(status) ? <div role="alert" className="failure forbidden"><strong>实时连接不可用</strong><p>{statusText[status]}。REST 视图需要先建立事件流；请检查权限、限流或服务端状态后刷新重试。</p></div> : (!restAvailable || !principal) ? <p className="empty">正在建立会话…（首个 SESSION_READY 之前不装载 REST 视图）</p> : page === 'overview' ? <Overview api={api} revision={revision} /> : page === 'plugins' ? <PluginsView api={api} permissions={permissions} revision={revision} /> : page === 'permissions' ? <PermissionsView api={api} revision={revision} permissions={permissions} /> : page === 'actions' ? <ActionsView api={api} permissions={permissions} /> : isP12 ? (mock ? <P12PreviewView key={page} page={page as P12PageKey} mock /> : <P12LiveView key={page} page={page as P12PageKey} api={api} permissions={permissions} revision={revision} />) : <ResourceView key={page} api={api} page={page as LegacyPage} revision={revision} />}</div></main></div>;
 }
 function Login({ api, onLogin, mock, initialError }: { api: ApiClient; onLogin: (tokens: TokenPair) => void; mock: boolean; initialError: string }) {
   const [username, setUsername] = useState(''); const [password, setPassword] = useState(''); const [error, setError] = useState(initialError); const [busy, setBusy] = useState(false);

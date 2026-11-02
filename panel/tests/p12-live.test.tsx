@@ -3,7 +3,7 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import { describe, expect, it } from 'vitest';
 import { App } from '../src/App';
 import { ApiClient } from '../src/api/client';
-import { MockServer } from '../src/mock/server';
+import { MockServer, MockSocket } from '../src/mock/server';
 import { P12LiveView } from '../src/views/p12-live';
 
 async function login(server: MockServer, permissions?: string[]) {
@@ -95,5 +95,101 @@ describe('P12 live pages', () => {
     fireEvent.click(screen.getByRole('button', { name: '查询动作' }));
     await waitFor(() => expect(server.requests).toContain('/actions/metadata'));
     expect(screen.queryByText(/动作执行失败/)).not.toBeInTheDocument();
+  });
+});
+
+describe('P12d-2 live expansion', () => {
+  it('lists human principals and distinguishes 503 from an empty directory', async () => {
+    const { server } = await login(new MockServer());
+    navigate('权限');
+    expect(await screen.findByText('11111111-1111-4111-8111-111111111111')).toBeInTheDocument();
+    expect(server.requests).toContain('/principals');
+  });
+
+  it('pages tasks by items/page with explicit scope and keeps 200 neutral', async () => {
+    const server = new MockServer();
+    const api = new ApiClient(server.fetch);
+    api.setToken('mock-access-token-0123456789');
+    render(<P12LiveView page="p12-tasks" api={api} permissions={['task.read']} revision={0} />);
+    expect(await screen.findByText('task-mock-01')).toBeInTheDocument();
+    expect(server.queries.some((query) => query.includes('scope='))).toBe(true);
+    fireEvent.click(screen.getByText('task-mock-01'));
+    expect(await screen.findByText('task-preview-01')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '取消任务' }));
+    expect(await screen.findByText(/取消命令已受理/)).toBeInTheDocument();
+    expect(server.requests).toContain('/tasks/task-preview-01/cancel');
+    expect(server.queries.some((query) => query.includes('scope='))).toBe(true);
+  });
+
+  it('creates installations/instances and shows config version strings', async () => {
+    const server = new MockServer();
+    const api = new ApiClient(server.fetch);
+    api.setToken('mock-access-token-0123456789');
+    render(<P12LiveView page="p12-installations" api={api} permissions={['plugin.read', 'plugin.manage']} revision={0} />);
+    fireEvent.change(await screen.findByLabelText('plugin type ID'), { target: { value: 'welcome' } });
+    fireEvent.click(screen.getByRole('button', { name: '创建安装' }));
+    expect(await screen.findByText(/installation-mock-created/)).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('创建实例的安装 ID'), { target: { value: 'installation-mock-created' } });
+    fireEvent.change(screen.getByLabelText('host ID'), { target: { value: 'host-1' } });
+    fireEvent.click(screen.getByRole('button', { name: '创建实例' }));
+    expect(await screen.findByText(/instance-mock-created/)).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('实例 ID'), { target: { value: 'instance-mock-created' } });
+    fireEvent.click(screen.getByRole('button', { name: '读取配置' }));
+    expect(await screen.findByText('desired_version')).toBeInTheDocument();
+    expect(screen.getByText('applied_version')).toBeInTheDocument();
+    expect(server.requests).toContain('/instances/instance-mock-created/config');
+  });
+
+  it('shows operation state instead of inferring completion from HTTP 200', async () => {
+    const server = new MockServer();
+    const api = new ApiClient(server.fetch);
+    api.setToken('mock-access-token-0123456789');
+    render(<P12LiveView page="p12-operations" api={api} permissions={[]} revision={0} />);
+    fireEvent.change(screen.getByLabelText('operation ID'), { target: { value: 'operation-mock-01' } });
+    fireEvent.click(screen.getByRole('button', { name: '查询' }));
+    expect((await screen.findAllByText('执行中')).length).toBeGreaterThan(0);
+    expect(screen.getByText(/200 不等于完成/)).toBeInTheDocument();
+  });
+
+  it('distinguishes DEGRADED 200 from Identity 503', async () => {
+    const server = new MockServer();
+    server.healthOverride = { state: 'DEGRADED', components: [
+      { component: 'identity', state: 'HEALTHY' },
+      { component: 'runtime', state: 'DEGRADED', reason: 'runtime unavailable' },
+      { component: 'scheduler', state: 'HEALTHY' }, { component: 'model', state: 'HEALTHY' },
+    ] };
+    const api = new ApiClient(server.fetch);
+    api.setToken('mock-access-token-0123456789');
+    render(<P12LiveView page="p12-health" api={api} permissions={['health.read']} revision={0} />);
+    expect(await screen.findByText('部分依赖降级（HTTP 200）')).toBeInTheDocument();
+    expect(screen.getByText('四个直接依赖')).toBeInTheDocument();
+    expect(screen.getByText('runtime unavailable')).toBeInTheDocument();
+  });
+
+  it('shows Identity not-ready 503 without pretending four dependencies are healthy', async () => {
+    const server = new MockServer();
+    server.failures.set('/health', { status: 503, code: 'UPSTREAM_UNAVAILABLE' });
+    const api = new ApiClient(server.fetch);
+    api.setToken('mock-access-token-0123456789');
+    render(<P12LiveView page="p12-health" api={api} permissions={['health.read']} revision={0} />);
+    expect(await screen.findByText(/Identity 未就绪：受权健康聚合返回 503/)).toBeInTheDocument();
+    expect(screen.queryByText('四依赖正常')).not.toBeInTheDocument();
+  });
+
+  it('loads REST snapshots when the WS server is unavailable and marks them non-current', async () => {
+    const server = new MockServer();
+    const failingSocketFactory = () => {
+      const socket = new MockSocket();
+      queueMicrotask(() => socket.closeWith(1000));
+      return socket;
+    };
+    render(<App api={new ApiClient(server.fetch)} socketFactory={failingSocketFactory} />);
+    fireEvent.change(screen.getByLabelText('用户名'), { target: { value: 'admin' } });
+    fireEvent.change(screen.getByLabelText('密码'), { target: { value: 'secret' } });
+    fireEvent.click(screen.getByRole('button', { name: /登录/ }));
+    expect(await screen.findByText(/当前为 REST 快照（非最新）/)).toBeInTheDocument();
+    fireEvent.click(within(screen.getByRole('navigation')).getByRole('button', { name: '账号（P12）' }));
+    expect(await screen.findByText('account-qq-10001')).toBeInTheDocument();
+    expect(server.requests).toContain('/accounts');
   });
 });
