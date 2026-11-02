@@ -168,10 +168,10 @@ bool fill_dispatch_frame(const t::HostCommandOutboxRecord& command, v1::RuntimeT
     return false;
   }
   fence_to_wire(fence, frame->mutable_fence());
-  set_handoff(command, frame->mutable_apply()->mutable_handoff());
   switch (command.kind) {
   case t::HostCommandKind::ApplyDesiredProcess: {
     auto* apply = frame->mutable_apply();
+    set_handoff(command, apply->mutable_handoff());
     apply->set_command_id(command.command_id);
     auto* process = apply->mutable_process();
     process->set_instance_id(command.instance_id);
@@ -196,6 +196,7 @@ bool fill_dispatch_frame(const t::HostCommandOutboxRecord& command, v1::RuntimeT
   }
   case t::HostCommandKind::StopExecution: {
     auto* stop = frame->mutable_stop();
+    set_handoff(command, stop->mutable_handoff());
     stop->set_command_id(command.command_id);
     stop->set_host_id(command.host_id);
     stop->set_instance_id(command.instance_id);
@@ -205,6 +206,7 @@ bool fill_dispatch_frame(const t::HostCommandOutboxRecord& command, v1::RuntimeT
   }
   case t::HostCommandKind::DrainHost: {
     auto* drain = frame->mutable_drain();
+    set_handoff(command, drain->mutable_handoff());
     drain->set_command_id(command.command_id);
     drain->set_host_id(command.host_id);
     drain->set_grace_ms(5000);
