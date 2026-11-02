@@ -9,12 +9,16 @@
 #include <stdexcept>
 #include <string>
 #include <thread>
+#include <unistd.h>
 #include <vector>
 
+#include <arpa/inet.h>
 #include <grpcpp/grpcpp.h>
 #include <kiarabot/v1/host.grpc.pb.h>
 #include <kiarabot/v1/host.pb.h>
 #include <kiarabot/v1/platform.pb.h>
+#include <netinet/in.h>
+#include <sys/socket.h>
 
 #include "kiarabot/core/runtime/platform/host_bridge_client.hpp"
 
@@ -43,6 +47,25 @@ bool wait_for(Predicate predicate, std::chrono::milliseconds timeout = 3000ms) {
   return predicate();
 }
 
+int free_loopback_port() {
+  const int descriptor = ::socket(AF_INET, SOCK_STREAM, 0);
+  if (descriptor < 0) {
+    return 0;
+  }
+  sockaddr_in address{};
+  address.sin_family = AF_INET;
+  address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+  address.sin_port = 0;
+  socklen_t length = sizeof(address);
+  if (::bind(descriptor, reinterpret_cast<sockaddr*>(&address), sizeof(address)) != 0 ||
+      ::getsockname(descriptor, reinterpret_cast<sockaddr*>(&address), &length) != 0) {
+    ::close(descriptor);
+    return 0;
+  }
+  ::close(descriptor);
+  return ntohs(address.sin_port);
+}
+
 class GrpcLifetime {
 public:
   GrpcLifetime() {
@@ -57,9 +80,9 @@ public:
 
 class FakeRuntime final : public v1::HostBridge::Service {
 public:
-  grpc::Status Connect(
-      grpc::ServerContext*,
-      grpc::ServerReaderWriter<v1::RuntimeToHost, v1::HostToRuntime>* stream) override {
+  grpc::Status
+  Connect(grpc::ServerContext*,
+          grpc::ServerReaderWriter<v1::RuntimeToHost, v1::HostToRuntime>* stream) override {
     v1::HostToRuntime frame;
     if (!stream->Read(&frame) || frame.body_case() != v1::HostToRuntime::kRegistration) {
       return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "registration");
@@ -115,8 +138,8 @@ public:
     drain.mutable_drain()->mutable_handoff()->set_payload_sha256(std::string(32, 'd'));
     stream->Write(drain);
     while (stream->Read(&frame)) {
-      if (!frame.has_fence() || frame.fence().connection_generation() !=
-                                   fence.connection_generation()) {
+      if (!frame.has_fence() ||
+          frame.fence().connection_generation() != fence.connection_generation()) {
         return grpc::Status(grpc::StatusCode::UNAUTHENTICATED, "fence");
       }
       std::lock_guard lock(mutex_);
@@ -159,8 +182,8 @@ public:
 class Handler final : public t::HostBridgeHandler {
 public:
   t::Outcome<t::HostReceipt> apply_desired_process(const t::HostProcessSpec& process,
-                                                    std::string_view command_id,
-                                                    std::string_view payload_sha256) override {
+                                                   std::string_view command_id,
+                                                   std::string_view payload_sha256) override {
     std::lock_guard lock(mutex_);
     apply_calls_ += 1;
     apply_command_ = std::string(command_id);
@@ -234,7 +257,7 @@ void run() {
   Handler handler;
   kiarabot::core::platform::HostBridgeClient client(std::move(config));
   require(std::holds_alternative<std::monostate>(client.start(handler)));
-  require(client.registered());
+  require(wait_for([&] { return client.registered(); }));
   require(wait_for([&] {
     std::lock_guard lock(handler.mutex_);
     return handler.apply_calls_ == 1 && handler.stop_calls_ == 1 && handler.drain_calls_ == 1;
@@ -286,6 +309,40 @@ void run() {
   client.stop();
   require(!client.registered());
   server->Shutdown();
+
+  // Runtime offline at Host start: the process/bridge must not fail; registration retries until
+  // Runtime appears, and readiness stays false until the fence is accepted.
+  const int late_port = free_loopback_port();
+  require(late_port > 0);
+  kiarabot::core::platform::HostBridgeClientConfig late_config;
+  late_config.endpoint = "127.0.0.1:" + std::to_string(late_port);
+  late_config.credentials = grpc::InsecureChannelCredentials();
+  late_config.heartbeat_interval = 40ms;
+  late_config.registration_timeout = 500ms;
+  late_config.identity.host_id = "host-late";
+  late_config.identity.packages.push_back(package);
+  Handler late_handler;
+  kiarabot::core::platform::HostBridgeClient late_client(std::move(late_config));
+  require(std::holds_alternative<std::monostate>(late_client.start(late_handler)));
+  require(!late_client.registered());
+  std::this_thread::sleep_for(50ms);
+  require(!late_client.registered());
+  FakeRuntime late_runtime;
+  grpc::ServerBuilder late_builder;
+  int late_bound = 0;
+  late_builder.AddListeningPort("127.0.0.1:" + std::to_string(late_port),
+                                grpc::InsecureServerCredentials(), &late_bound);
+  late_builder.RegisterService(&late_runtime);
+  auto late_server = late_builder.BuildAndStart();
+  require(late_server != nullptr && late_bound == late_port);
+  require(wait_for([&] { return late_client.registered(); }, 8000ms));
+  require(wait_for([&] {
+    std::lock_guard lock(late_handler.mutex_);
+    return late_handler.ready_calls_ >= 1;
+  }));
+  late_client.stop();
+  require(!late_client.registered());
+  late_server->Shutdown();
 }
 
 } // namespace

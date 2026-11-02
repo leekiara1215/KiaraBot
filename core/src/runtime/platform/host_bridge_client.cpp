@@ -96,9 +96,8 @@ v1::ExecutionRecord to_wire(const t::ManagedExecution& execution) {
   record.set_outcome(to_wire(execution.outcome));
   record.set_process_marker(execution.process_marker);
   record.set_command_id(execution.command_id);
-  record.mutable_observed_at()->CopyFrom(
-      google::protobuf::util::TimeUtil::NanosecondsToTimestamp(
-          execution.observed_at.time_since_epoch().count()));
+  record.mutable_observed_at()->CopyFrom(google::protobuf::util::TimeUtil::NanosecondsToTimestamp(
+      execution.observed_at.time_since_epoch().count()));
   return record;
 }
 
@@ -128,67 +127,20 @@ public:
   }
 
   t::Status start(t::HostBridgeHandler& handler) {
-    if (started_) {
+    if (started_.exchange(true)) {
       return t::Status{std::monostate{}};
     }
-    if (config_.endpoint.empty() || !config_.credentials) {
+    if (config_.endpoint.empty() || !config_.credentials || config_.identity.host_id.empty()) {
+      started_.store(false);
       return failure(t::ErrorCode::InvalidArgument);
     }
     handler_ = &handler;
     channel_ = grpc::CreateChannel(config_.endpoint, config_.credentials);
-    if (!channel_->WaitForConnected(std::chrono::system_clock::now() +
-                                    config_.registration_timeout)) {
-      return failure(t::ErrorCode::UpstreamUnavailable, t::Recovery::Backoff);
-    }
-    context_ = std::make_unique<grpc::ClientContext>();
     stub_ = v1::HostBridge::NewStub(channel_);
-    stream_ = stub_->Connect(context_.get());
-    if (!stream_) {
-      return failure(t::ErrorCode::Internal);
-    }
-    v1::HostToRuntime registration;
-    set_context(*registration.mutable_context(), config_.registration_timeout);
-    auto* host = registration.mutable_registration()->mutable_host();
-    host->set_host_id(config_.identity.host_id);
-    for (const auto& package : config_.identity.packages) {
-      auto* wire = host->add_packages();
-      wire->set_plugin_type_id(package.plugin_type_id);
-      wire->set_package_sha256(package.sha256);
-      wire->set_launch_profile(package.launch_profile);
-      for (const auto& name : package.allowed_argument_names) {
-        wire->add_allowed_argument_names(name);
-      }
-    }
-    for (const auto& capability : config_.identity.capabilities) {
-      host->add_capabilities(capability);
-    }
-    host->mutable_observed_at()->CopyFrom(google::protobuf::util::TimeUtil::GetCurrentTime());
-    if (!stream_->Write(registration)) {
-      return failure(t::ErrorCode::UpstreamUnavailable, t::Recovery::Backoff);
-    }
-    v1::RuntimeToHost response;
-    if (!stream_->Read(&response) ||
-        response.body_case() != v1::RuntimeToHost::kRegistered) {
-      return failure(t::ErrorCode::UpstreamUnavailable, t::Recovery::Backoff);
-    }
-    if (!response.registered().has_fence()) {
-      return failure(t::ErrorCode::UpstreamUnavailable, t::Recovery::Backoff);
-    }
-    fence_ = response.registered().fence();
-    if (fence_.instance_id() != config_.identity.host_id || fence_.runtime_epoch().empty() ||
-        !fence_.has_connection_generation() || fence_.connection_generation() == 0 ||
-        fence_.has_execution_generation()) {
-      return failure(t::ErrorCode::Unauthenticated, t::Recovery::Authenticate);
-    }
-    {
-      std::lock_guard lock(mutex_);
-      registered_ = true;
-    }
-    started_ = true;
-    handler_->bridge_ready();
-    reader_ = std::thread([this] { read_loop(); });
-    writer_ = std::thread([this] { write_loop(); });
-    heartbeat_ = std::thread([this] { heartbeat_loop(); });
+    // A Host starts even when Runtime is offline: registration is retried in the background and
+    // readiness stays false until the Runtime-assigned fence is accepted. Offline never means the
+    // managed processes were stopped.
+    connection_ = std::thread([this] { connection_loop(); });
     return std::monostate{};
   }
 
@@ -198,15 +150,12 @@ public:
     }
     {
       std::lock_guard lock(mutex_);
-      registered_ = false;
       stopping_ = true;
     }
     outgoing_cv_.notify_all();
-    if (context_) {
-      context_->TryCancel();
-    }
-    if (reader_.joinable()) {
-      reader_.join();
+    cancel_active_context();
+    if (connection_.joinable()) {
+      connection_.join();
     }
     if (writer_.joinable()) {
       writer_.join();
@@ -268,10 +217,34 @@ public:
   }
 
 private:
+  bool stopping() const {
+    return stopping_.load();
+  }
+
+  void cancel_active_context() {
+    std::lock_guard lock(mutex_);
+    if (context_) {
+      context_->TryCancel();
+    }
+  }
+
+  bool sleep_interruptible(std::chrono::milliseconds duration) {
+    const auto deadline = std::chrono::steady_clock::now() + duration;
+    while (std::chrono::steady_clock::now() < deadline) {
+      if (stopping()) {
+        return false;
+      }
+      std::this_thread::sleep_for(std::min(std::chrono::milliseconds{100},
+                                           std::chrono::duration_cast<std::chrono::milliseconds>(
+                                               deadline - std::chrono::steady_clock::now())));
+    }
+    return !stopping();
+  }
+
   bool enqueue(v1::HostToRuntime frame) {
     {
       std::lock_guard lock(mutex_);
-      if (stopping_ || !registered_ || outgoing_.size() >= 1024) {
+      if (stopping_ || !session_active_ || outgoing_.size() >= 1024) {
         return false;
       }
       outgoing_.push_back(std::move(frame));
@@ -280,20 +253,146 @@ private:
     return true;
   }
 
+  bool open_session() {
+    if (stopping()) {
+      return false;
+    }
+    const auto wait = std::min(config_.registration_timeout, std::chrono::milliseconds{1000});
+    if (!channel_->WaitForConnected(std::chrono::system_clock::now() + wait)) {
+      return false;
+    }
+    auto context = std::make_unique<grpc::ClientContext>();
+    auto stream = stub_->Connect(context.get());
+    if (!stream) {
+      return false;
+    }
+    {
+      std::lock_guard lock(mutex_);
+      if (stopping_) {
+        return false;
+      }
+      context_ = std::move(context);
+      stream_ = std::move(stream);
+    }
+    v1::HostToRuntime registration;
+    set_context(*registration.mutable_context(), wait);
+    auto* host = registration.mutable_registration()->mutable_host();
+    host->set_host_id(config_.identity.host_id);
+    for (const auto& package : config_.identity.packages) {
+      auto* wire = host->add_packages();
+      wire->set_plugin_type_id(package.plugin_type_id);
+      wire->set_package_sha256(package.sha256);
+      wire->set_launch_profile(package.launch_profile);
+      for (const auto& name : package.allowed_argument_names) {
+        wire->add_allowed_argument_names(name);
+      }
+    }
+    for (const auto& capability : config_.identity.capabilities) {
+      host->add_capabilities(capability);
+    }
+    host->mutable_observed_at()->CopyFrom(google::protobuf::util::TimeUtil::GetCurrentTime());
+    if (!stream_->Write(registration)) {
+      return false;
+    }
+    v1::RuntimeToHost response;
+    if (!stream_->Read(&response) || response.body_case() != v1::RuntimeToHost::kRegistered ||
+        !response.registered().has_fence()) {
+      return false;
+    }
+    const auto& fence = response.registered().fence();
+    if (fence.instance_id() != config_.identity.host_id || fence.runtime_epoch().empty() ||
+        !fence.has_connection_generation() || fence.connection_generation() == 0 ||
+        fence.has_execution_generation()) {
+      return false;
+    }
+    fence_ = fence;
+    {
+      std::lock_guard lock(mutex_);
+      session_active_ = true;
+      session_stop_ = false;
+      registered_ = true;
+    }
+    return true;
+  }
+
+  void clear_session() {
+    {
+      std::lock_guard lock(mutex_);
+      session_active_ = false;
+      session_stop_ = true;
+      registered_ = false;
+      stream_.reset();
+      context_.reset();
+    }
+    outgoing_cv_.notify_all();
+  }
+
+  void start_io() {
+    writer_ = std::thread([this] { write_loop(); });
+    heartbeat_ = std::thread([this] { heartbeat_loop(); });
+  }
+
+  void stop_io() {
+    {
+      std::lock_guard lock(mutex_);
+      session_stop_ = true;
+    }
+    outgoing_cv_.notify_all();
+    if (writer_.joinable()) {
+      writer_.join();
+    }
+    if (heartbeat_.joinable()) {
+      heartbeat_.join();
+    }
+  }
+
+  void connection_loop() {
+    std::chrono::milliseconds backoff{200};
+    while (!stopping()) {
+      if (open_session()) {
+        backoff = std::chrono::milliseconds{200};
+        start_io();
+        handler_->bridge_ready();
+        read_loop();
+        stop_io();
+        clear_session();
+        // Drop frames that could not be written on the lost session; the durable observation
+        // journal re-sends them after the next registration/resync.
+        {
+          std::lock_guard lock(mutex_);
+          outgoing_.clear();
+        }
+      }
+      if (stopping()) {
+        break;
+      }
+      if (!sleep_interruptible(backoff)) {
+        break;
+      }
+      backoff = std::min(backoff * 2, std::chrono::milliseconds{5000});
+    }
+    stop_io();
+    if (!stopping()) {
+      return;
+    }
+    clear_session();
+  }
+
   void write_loop() {
     for (;;) {
       v1::HostToRuntime frame;
       {
         std::unique_lock lock(mutex_);
-        outgoing_cv_.wait(lock, [this] { return stopping_ || !outgoing_.empty(); });
-        if (stopping_ && outgoing_.empty()) {
+        outgoing_cv_.wait(lock,
+                          [this] { return stopping_ || session_stop_ || !outgoing_.empty(); });
+        if (stopping_ || session_stop_) {
           return;
         }
         frame = std::move(outgoing_.front());
         outgoing_.pop_front();
       }
       if (!stream_->Write(frame)) {
-        mark_connection_lost();
+        cancel_active_context();
         return;
       }
     }
@@ -308,7 +407,6 @@ private:
       const auto body = frame.body_case();
       if (body != v1::RuntimeToHost::kRegistered &&
           (!frame.has_fence() || !same_fence(frame.fence(), fence_))) {
-        mark_connection_lost();
         return;
       }
       if (body == v1::RuntimeToHost::kHeartbeatAck) {
@@ -330,17 +428,24 @@ private:
         continue;
       }
       if (body == v1::RuntimeToHost::kFailure) {
-        mark_connection_lost();
         return;
       }
     }
-    mark_connection_lost();
   }
 
   void heartbeat_loop() {
-    while (registered()) {
-      std::this_thread::sleep_for(config_.heartbeat_interval);
-      if (!registered()) {
+    const auto interval = config_.heartbeat_interval;
+    const auto slice = std::chrono::milliseconds{100};
+    for (;;) {
+      auto waited = std::chrono::milliseconds{0};
+      while (waited < interval) {
+        if (stopping() || !session_active_.load()) {
+          return;
+        }
+        std::this_thread::sleep_for(slice);
+        waited += slice;
+      }
+      if (stopping() || !session_active_.load()) {
         return;
       }
       v1::HostToRuntime frame;
@@ -381,10 +486,9 @@ private:
   }
 
   void stop_execution(const v1::HostStopExecutionRequest& request) {
-    const auto result =
-        handler_->stop_execution(request.instance_id(), request.execution_generation(),
-                                 request.grace_ms(), request.command_id(),
-                                 payload_hash(request.handoff()));
+    const auto result = handler_->stop_execution(
+        request.instance_id(), request.execution_generation(), request.grace_ms(),
+        request.command_id(), payload_hash(request.handoff()));
     send_handler_result(request.command_id(), result);
   }
 
@@ -394,8 +498,7 @@ private:
     send_handler_result(request.command_id(), result);
   }
 
-  void send_handler_result(std::string_view command_id,
-                           const t::Outcome<t::HostReceipt>& result) {
+  void send_handler_result(std::string_view command_id, const t::Outcome<t::HostReceipt>& result) {
     t::HostReceipt receipt;
     if (const auto* value = std::get_if<t::HostReceipt>(&result)) {
       receipt = *value;
@@ -408,15 +511,6 @@ private:
     (void)send_receipt(receipt);
   }
 
-  void mark_connection_lost() {
-    {
-      std::lock_guard lock(mutex_);
-      registered_ = false;
-      stopping_ = true;
-    }
-    outgoing_cv_.notify_all();
-  }
-
   HostBridgeClientConfig config_;
   t::HostBridgeHandler* handler_ = nullptr;
   std::shared_ptr<grpc::Channel> channel_;
@@ -426,12 +520,14 @@ private:
   v1::Fence fence_;
   std::atomic<bool> registered_{false};
   std::atomic<bool> started_{false};
+  std::atomic<bool> stopping_{false};
+  std::atomic<bool> session_active_{false};
   std::atomic<std::uint64_t> delivered_{0};
   mutable std::mutex mutex_;
   std::condition_variable outgoing_cv_;
   std::deque<v1::HostToRuntime> outgoing_;
-  bool stopping_ = false;
-  std::thread reader_;
+  bool session_stop_ = false;
+  std::thread connection_;
   std::thread writer_;
   std::thread heartbeat_;
 };
