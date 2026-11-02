@@ -9,6 +9,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -324,6 +325,189 @@ principal(const t::Principal& input, const std::vector<t::ExactAssignment>& assi
   }
   return result;
 }
+bool assignment_record(const t::AssignmentProjection& input, v1::AssignmentRecord* output) {
+  if (!uuid(input.id.value) || !uuid(input.subject.value) || input.version.value == 0 ||
+      input.scope.empty()) {
+    return false;
+  }
+  output->set_assignment_id(input.id.value);
+  output->set_principal_id(input.subject.value);
+  output->set_version(input.version.value);
+  if (input.role) {
+    switch (*input.role) {
+    case t::FixedRole::Admin:
+      output->set_role(v1::ROLE_ADMIN);
+      break;
+    case t::FixedRole::Operator:
+      output->set_role(v1::ROLE_OPERATOR);
+      break;
+    case t::FixedRole::Viewer:
+      output->set_role(v1::ROLE_VIEWER);
+      break;
+    default:
+      return false;
+    }
+    if (!input.permissions.empty()) {
+      return false;
+    }
+  }
+  for (const auto permission : input.permissions) {
+    const auto encoded = codec::to_wire(permission);
+    if (const auto* wire = std::get_if<v1::Permission>(&encoded)) {
+      output->add_permissions(*wire);
+    } else {
+      return false;
+    }
+  }
+  for (const auto& resource : input.scope) {
+    const auto encoded = codec::to_wire(resource);
+    if (const auto* wire = std::get_if<v1::ResourceRef>(&encoded)) {
+      *output->mutable_scope()->add_resources() = *wire;
+    } else {
+      return false;
+    }
+  }
+  return true;
+}
+t::Outcome<std::vector<t::ResourceRef>> resource_scope(const v1::ResourceScope& input) {
+  std::vector<t::ResourceRef> result;
+  if (input.resources_size() > 128) {
+    return failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput);
+  }
+  for (const auto& resource : input.resources()) {
+    auto decoded = codec::from_wire(resource);
+    if (const auto* error = std::get_if<t::Failure>(&decoded)) {
+      return *error;
+    }
+    result.push_back(std::get<t::ResourceRef>(decoded));
+  }
+  return result;
+}
+t::Outcome<t::FixedRole> decode_role(v1::FixedRole input) {
+  switch (input) {
+  case v1::ROLE_ADMIN:
+    return t::FixedRole::Admin;
+  case v1::ROLE_OPERATOR:
+    return t::FixedRole::Operator;
+  case v1::ROLE_VIEWER:
+    return t::FixedRole::Viewer;
+  default:
+    return failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput);
+  }
+}
+t::Outcome<t::ExactAssignmentSpec> decode_assignment_spec(const v1::AssignmentSpec& input) {
+  if (!uuid(input.principal_id())) {
+    return failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput);
+  }
+  t::ExactAssignmentSpec spec{t::SubjectId{input.principal_id()},
+                              t::ExplicitAssignmentSpec{{}, {}}};
+  auto scope = resource_scope(input.scope());
+  if (const auto* error = std::get_if<t::Failure>(&scope)) {
+    return *error;
+  }
+  auto resources = std::move(std::get<std::vector<t::ResourceRef>>(scope));
+  if (input.role() != v1::FIXED_ROLE_UNSPECIFIED) {
+    if (input.permissions_size() != 0) {
+      return failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput);
+    }
+    auto role = decode_role(input.role());
+    if (const auto* error = std::get_if<t::Failure>(&role)) {
+      return *error;
+    }
+    spec.basis = t::RoleAssignmentSpec{std::get<t::FixedRole>(role), std::move(resources)};
+    return spec;
+  }
+  if (input.permissions_size() == 0) {
+    return failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput);
+  }
+  t::ExplicitAssignmentSpec explicit_spec{{}, std::move(resources)};
+  for (const auto wire : input.permissions()) {
+    auto decoded = codec::from_wire(static_cast<v1::Permission>(wire));
+    if (const auto* error = std::get_if<t::Failure>(&decoded)) {
+      return *error;
+    }
+    explicit_spec.permissions.push_back(std::get<t::Permission>(decoded));
+  }
+  spec.basis = std::move(explicit_spec);
+  return spec;
+}
+bool cursor_scope_equal(std::span<const t::ResourceRef> left,
+                        std::span<const t::ResourceRef> right) {
+  return std::equal(left.begin(), left.end(), right.begin(), right.end());
+}
+t::Outcome<t::InvalidationCursor> decode_cursor(const v1::StreamCursor& input,
+                                                std::vector<t::ResourceRef> subscribed_scope) {
+  t::InvalidationCursor cursor;
+  cursor.source_service = input.source_service();
+  cursor.epoch = input.epoch();
+  cursor.sequence = input.sequence();
+  auto scope = resource_scope(input.scope());
+  if (const auto* error = std::get_if<t::Failure>(&scope)) {
+    return *error;
+  }
+  cursor.scope = std::move(std::get<std::vector<t::ResourceRef>>(scope));
+  if (cursor.scope.empty()) {
+    cursor.scope = std::move(subscribed_scope);
+  } else if (!cursor_scope_equal(cursor.scope, subscribed_scope)) {
+    // A cursor bound to another subscription scope cannot be silently widened or mixed.
+    return failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput);
+  }
+  return cursor;
+}
+bool encode_cursor(const t::InvalidationCursor& cursor, v1::StreamCursor* output) {
+  if (cursor.scope.empty() || cursor.scope.size() > t::kMaximumInvalidationScope ||
+      !t::valid_uuid_text(cursor.epoch)) {
+    return false;
+  }
+  output->set_source_service(std::string{t::kInvalidationSourceService});
+  output->set_epoch(cursor.epoch);
+  output->set_sequence(cursor.sequence);
+  for (const auto& resource : cursor.scope) {
+    const auto encoded = codec::to_wire(resource);
+    if (const auto* wire = std::get_if<v1::ResourceRef>(&encoded)) {
+      *output->mutable_scope()->add_resources() = *wire;
+    } else {
+      return false;
+    }
+  }
+  return true;
+}
+bool record_visible(const t::InvalidationRecord& record,
+                    std::span<const t::ResourceRef> subscribed) {
+  for (const auto& resource : record.event.scope) {
+    if (std::find(subscribed.begin(), subscribed.end(), resource) != subscribed.end()) {
+      return true;
+    }
+  }
+  return false;
+}
+bool encode_invalidation(const t::InvalidationRecord& record,
+                         std::span<const t::ResourceRef> subscribed,
+                         v1::InvalidationRecord* output) {
+  const auto wire_cursor = t::InvalidationCursor{std::string{t::kInvalidationSourceService},
+                                                 record.epoch, record.event.scope, record.sequence};
+  if (!encode_cursor(wire_cursor, output->mutable_cursor())) {
+    return false;
+  }
+  output->set_principal_id(record.event.principal.value);
+  output->set_authorization_version(record.event.authorization_version.value);
+  for (const auto& resource : record.event.scope) {
+    const auto encoded = codec::to_wire(resource);
+    if (const auto* wire = std::get_if<v1::ResourceRef>(&encoded)) {
+      *output->mutable_scope()->add_resources() = *wire;
+    } else {
+      return false;
+    }
+  }
+  return record_visible(record, subscribed);
+}
+bool resync_cursor(const t::InvalidationWatermark& watermark, std::span<const t::ResourceRef> scope,
+                   v1::StreamCursor* output) {
+  return encode_cursor(
+      t::InvalidationCursor{std::string{t::kInvalidationSourceService}, watermark.epoch,
+                            std::vector<t::ResourceRef>(scope.begin(), scope.end()),
+                            watermark.sequence},
+      output);
 // Principal/credential management projections. They never invent roles, scope, expiry or a
 // secret; every field comes from a committed application result.
 t::Outcome<t::PrincipalKind> principal_kind(std::string_view value) {
@@ -497,7 +681,8 @@ public:
       : application_(application), authenticate_(std::move(authenticate)), issuer_(issuer),
         invocation_deadline_(std::move(invocation_deadline)),
         verification_keys_(options.verification_keys), exchange_(options.exchange),
-        principal_(options.principal) {}
+        principal_(options.principal), authorization_(options.authorization),
+        assignments_(options.assignments), invalidation_(options.invalidation) {}
 
   grpc::Status Login(grpc::ServerContext* transport, const v1::IdentityLoginRequest* request,
                      v1::IdentityLoginResponse* response) override {
@@ -1061,74 +1246,360 @@ public:
 
   grpc::Status CheckAuthorization(grpc::ServerContext* transport,
                                   const v1::IdentityCheckAuthorizationRequest* request,
-                                  v1::IdentityCheckAuthorizationResponse*) override {
-    v1::IdentityCheckAuthorizationResponse unused;
+                                  v1::IdentityCheckAuthorizationResponse* response) override {
     return run(
-        transport, request->has_context(), request->context(), &unused,
-        [](const t::VerifiedPeer&,
-           const t::IdentityRequestContext&) -> t::Outcome<v1::IdentityCheckAuthorizationResponse> {
-          return failure(t::ErrorCode::CapabilityNotSupported);
+        transport, request->has_context(), request->context(), response,
+        [&](const t::VerifiedPeer& peer, const t::IdentityRequestContext& context)
+            -> t::Outcome<v1::IdentityCheckAuthorizationResponse> {
+          if (!authorization_) {
+            return failure(t::ErrorCode::CapabilityNotSupported);
+          }
+          if (request->subject_proof().empty() || request->full_method().empty() ||
+              request->scope().resources_size() == 0 || request->scope().resources_size() > 128) {
+            return failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput);
+          }
+          auto scope = resource_scope(request->scope());
+          if (const auto* error = std::get_if<t::Failure>(&scope)) {
+            return *error;
+          }
+          std::optional<t::ResourceVersion> known;
+          if (request->has_known_authorization_version()) {
+            if (request->known_authorization_version() == 0) {
+              return failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput);
+            }
+            known = t::ResourceVersion{request->known_authorization_version()};
+          }
+          auto reply = authorization_->check_authorization(t::CheckAuthorizationRequest{
+              context, peer, secret(request->subject_proof()), request->full_method(),
+              std::move(std::get<std::vector<t::ResourceRef>>(scope)), known});
+          if (const auto* error = std::get_if<t::Failure>(&reply)) {
+            return *error;
+          }
+          const auto& result = std::get<t::CheckAuthorizationReply>(reply);
+          if (!positive(result.checked_at) || result.authorization_version.value == 0 ||
+              (result.allowed && result.denial) ||
+              (!result.allowed &&
+               (!result.denial || result.denial->code != t::ErrorCode::PermissionDenied))) {
+            return invalid_result();
+          }
+          v1::IdentityCheckAuthorizationResponse output;
+          auto* decision = output.mutable_decision();
+          decision->set_allowed(result.allowed);
+          decision->set_authorization_version(result.authorization_version.value);
+          if (!timestamp(result.checked_at, decision->mutable_checked_at())) {
+            return invalid_result();
+          }
+          if (result.denial) {
+            auto encoded =
+                codec::make_error(result.denial->code, context.request_id, context.trace_id, false);
+            if (const auto* error = std::get_if<t::Failure>(&encoded)) {
+              return *error;
+            }
+            *decision->mutable_denial() = std::get<v1::Error>(encoded);
+          }
+          return output;
         },
         false);
   }
   grpc::Status ListAssignments(grpc::ServerContext* transport,
                                const v1::IdentityListAssignmentsRequest* request,
-                               v1::IdentityListAssignmentsResponse*) override {
-    v1::IdentityListAssignmentsResponse unused;
+                               v1::IdentityListAssignmentsResponse* response) override {
     return run(
-        transport, request->has_context(), request->context(), &unused,
-        [](const t::VerifiedPeer&,
-           const t::IdentityRequestContext&) -> t::Outcome<v1::IdentityListAssignmentsResponse> {
-          return failure(t::ErrorCode::CapabilityNotSupported);
+        transport, request->has_context(), request->context(), response,
+        [&](const t::VerifiedPeer& peer, const t::IdentityRequestContext& context)
+            -> t::Outcome<v1::IdentityListAssignmentsResponse> {
+          if (!assignments_) {
+            return failure(t::ErrorCode::CapabilityNotSupported);
+          }
+          if (!uuid(request->principal_id()) || request->page().page_size() > 100 ||
+              request->page().has_expires_at() || !request->page().next_page_token().empty()) {
+            return failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput);
+          }
+          auto scope = resource_scope(request->scope());
+          if (const auto* error = std::get_if<t::Failure>(&scope)) {
+            return *error;
+          }
+          t::AssignmentScopeFilter filter{std::move(std::get<std::vector<t::ResourceRef>>(scope))};
+          t::AssignmentPageRequest page;
+          page.page_size = request->page().page_size();
+          page.page_token = request->page().page_token();
+          page.snapshot_id = request->page().snapshot_id();
+          auto reply = assignments_->list_assignments(
+              t::ListAssignmentsRequest{context, peer, t::SubjectId{request->principal_id()},
+                                        std::move(filter), std::move(page)});
+          if (const auto* error = std::get_if<t::Failure>(&reply)) {
+            return *error;
+          }
+          const auto& result = std::get<t::ListAssignmentsReply>(reply);
+          if (result.page_size == 0 || result.page_size > 100 || result.snapshot_id.empty() ||
+              !positive(result.checked_at) || !positive(result.expires_at) ||
+              result.expires_at <= result.checked_at || result.authorization_version.value == 0) {
+            return invalid_result();
+          }
+          v1::IdentityListAssignmentsResponse output;
+          for (const auto& assignment : result.assignments) {
+            if (!assignment_record(assignment, output.add_assignments())) {
+              return invalid_result();
+            }
+          }
+          auto* out_page = output.mutable_page();
+          out_page->set_page_size(result.page_size);
+          out_page->set_page_token(request->page().page_token());
+          out_page->set_snapshot_id(result.snapshot_id);
+          out_page->set_next_page_token(result.next_page_token);
+          if (!timestamp(result.expires_at, out_page->mutable_expires_at())) {
+            return invalid_result();
+          }
+          return output;
         },
-        false);
+        true);
   }
   grpc::Status SetAssignment(grpc::ServerContext* transport,
                              const v1::IdentitySetAssignmentRequest* request,
-                             v1::IdentitySetAssignmentResponse*) override {
-    v1::IdentitySetAssignmentResponse unused;
+                             v1::IdentitySetAssignmentResponse* response) override {
     return run(
-        transport, request->has_context(), request->context(), &unused,
-        [](const t::VerifiedPeer&,
-           const t::IdentityRequestContext&) -> t::Outcome<v1::IdentitySetAssignmentResponse> {
-          return failure(t::ErrorCode::CapabilityNotSupported);
+        transport, request->has_context(), request->context(), response,
+        [&](const t::VerifiedPeer& peer, const t::IdentityRequestContext& context)
+            -> t::Outcome<v1::IdentitySetAssignmentResponse> {
+          if (!assignments_) {
+            return failure(t::ErrorCode::CapabilityNotSupported);
+          }
+          if (!request->has_assignment()) {
+            return failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput);
+          }
+          auto spec = decode_assignment_spec(request->assignment());
+          if (const auto* error = std::get_if<t::Failure>(&spec)) {
+            return *error;
+          }
+          std::optional<t::AssignmentId> assignment_id;
+          if (!request->assignment_id().empty()) {
+            if (!uuid(request->assignment_id())) {
+              return failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput);
+            }
+            assignment_id = t::AssignmentId{request->assignment_id()};
+          }
+          std::optional<t::ResourceVersion> expected;
+          if (request->has_expected_version()) {
+            if (request->expected_version() == 0) {
+              return failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput);
+            }
+            expected = t::ResourceVersion{request->expected_version()};
+          }
+          auto reply = assignments_->set_assignment(t::SetAssignmentRequest{
+              context, peer, std::move(std::get<t::ExactAssignmentSpec>(spec)), assignment_id,
+              expected});
+          if (const auto* error = std::get_if<t::Failure>(&reply)) {
+            return *error;
+          }
+          const auto& result = std::get<t::SetAssignmentReply>(reply);
+          if (!positive(result.checked_at) || result.assignment.version.value == 0 ||
+              !uuid(result.assignment.id.value) || !uuid(result.assignment.subject.value)) {
+            return invalid_result();
+          }
+          const auto projected = t::project_assignment(result.assignment);
+          if (const auto* error = std::get_if<t::Failure>(&projected)) {
+            return invalid_result();
+          }
+          v1::IdentitySetAssignmentResponse output;
+          if (!assignment_record(std::get<t::AssignmentProjection>(projected),
+                                 output.mutable_assignment())) {
+            return invalid_result();
+          }
+          return output;
         },
-        false);
+        true);
   }
   grpc::Status RevokeAssignment(grpc::ServerContext* transport,
                                 const v1::IdentityRevokeAssignmentRequest* request,
-                                v1::IdentityRevokeAssignmentResponse*) override {
-    v1::IdentityRevokeAssignmentResponse unused;
+                                v1::IdentityRevokeAssignmentResponse* response) override {
     return run(
-        transport, request->has_context(), request->context(), &unused,
-        [](const t::VerifiedPeer&,
-           const t::IdentityRequestContext&) -> t::Outcome<v1::IdentityRevokeAssignmentResponse> {
-          return failure(t::ErrorCode::CapabilityNotSupported);
+        transport, request->has_context(), request->context(), response,
+        [&](const t::VerifiedPeer& peer, const t::IdentityRequestContext& context)
+            -> t::Outcome<v1::IdentityRevokeAssignmentResponse> {
+          if (!assignments_) {
+            return failure(t::ErrorCode::CapabilityNotSupported);
+          }
+          if (!uuid(request->assignment_id()) || !request->has_expected_version() ||
+              request->expected_version() == 0) {
+            return failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput);
+          }
+          auto reply = assignments_->revoke_assignment(
+              t::RevokeAssignmentRequest{context, peer, t::AssignmentId{request->assignment_id()},
+                                         t::ResourceVersion{request->expected_version()}});
+          if (const auto* error = std::get_if<t::Failure>(&reply)) {
+            return *error;
+          }
+          const auto& result = std::get<t::RevokeAssignmentReply>(reply);
+          if (result.version.value == 0 || !positive(result.checked_at)) {
+            return invalid_result();
+          }
+          v1::IdentityRevokeAssignmentResponse output;
+          output.set_version(result.version.value);
+          return output;
         },
-        false);
+        true);
   }
   grpc::Status
   WatchInvalidations(grpc::ServerContext* transport,
                      const v1::IdentityWatchInvalidationsRequest* request,
-                     grpc::ServerWriter<v1::IdentityWatchInvalidationsResponse>*) override {
-    v1::IdentityWatchInvalidationsResponse unused;
-    return run(
-        transport, request->has_context(), request->context(), &unused,
-        [](const t::VerifiedPeer&,
-           const t::IdentityRequestContext&) -> t::Outcome<v1::IdentityWatchInvalidationsResponse> {
-          return failure(t::ErrorCode::CapabilityNotSupported);
-        },
-        false);
+                     grpc::ServerWriter<v1::IdentityWatchInvalidationsResponse>* writer) override {
+    std::string request_id;
+    std::string trace;
+    try {
+      auto invocation = stream_invocation(transport, request->has_context(), request->context(),
+                                          &request_id, &trace);
+      if (const auto* error = std::get_if<t::Failure>(&invocation)) {
+        return error_status(*error, request_id, trace);
+      }
+      const auto& call = std::get<StreamInvocation>(invocation);
+      if (!invalidation_) {
+        return error_status(failure(t::ErrorCode::CapabilityNotSupported), request_id, trace);
+      }
+      auto scope = resource_scope(request->scope());
+      if (const auto* error = std::get_if<t::Failure>(&scope)) {
+        return error_status(*error, request_id, trace);
+      }
+      auto subscribed = std::move(std::get<std::vector<t::ResourceRef>>(scope));
+      if (subscribed.empty() || subscribed.size() > t::kMaximumInvalidationScope ||
+          !t::unique_invalidation_scope(subscribed)) {
+        return error_status(failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput),
+                            request_id, trace);
+      }
+      auto cursor = decode_cursor(request->cursor(), subscribed);
+      if (const auto* error = std::get_if<t::Failure>(&cursor)) {
+        return error_status(*error, request_id, trace);
+      }
+      auto opened = invalidation_->open_watch(
+          {call.context, call.peer, subscribed, std::get<t::InvalidationCursor>(cursor)});
+      if (const auto* error = std::get_if<t::Failure>(&opened)) {
+        return error_status(*error, request_id, trace);
+      }
+      const auto& start = std::get<t::InvalidationWatchStart>(opened);
+      if (start.watermark.epoch.empty()) {
+        return error_status(invalid_result(), request_id, trace);
+      }
+      std::uint64_t last = std::get<t::InvalidationCursor>(cursor).sequence;
+      if (start.resync_required) {
+        v1::IdentityWatchInvalidationsResponse signal;
+        signal.set_resync_required(true);
+        if (!resync_cursor(start.watermark, subscribed, signal.mutable_cursor())) {
+          return error_status(invalid_result(), request_id, trace);
+        }
+        if (!writer->Write(signal)) {
+          return grpc::Status::OK;
+        }
+        last = start.watermark.sequence;
+      }
+      const auto send = [&](const t::InvalidationRecord& record) -> int {
+        if (record.sequence <= last) {
+          return 1;
+        }
+        v1::IdentityWatchInvalidationsResponse output;
+        auto* invalidation = output.mutable_invalidation();
+        if (!encode_invalidation(record, subscribed, invalidation)) {
+          return 0;
+        }
+        last = record.sequence;
+        return writer->Write(output) ? 1 : -1;
+      };
+      for (const auto& record : start.backlog) {
+        const auto status = send(record);
+        if (status <= 0) {
+          return status == 0 ? error_status(invalid_result(), request_id, trace) : grpc::Status::OK;
+        }
+      }
+      constexpr std::size_t kBatch = 32;
+      while (!transport->IsCancelled() && now() < call.context.deadline) {
+        std::this_thread::sleep_for(std::chrono::milliseconds{200});
+        if (transport->IsCancelled() || now() >= call.context.deadline) {
+          break;
+        }
+        auto polled = invalidation_->poll(
+            {call.context, call.peer, subscribed, start.watermark.epoch, last, kBatch});
+        if (const auto* error = std::get_if<t::Failure>(&polled)) {
+          return error_status(*error, request_id, trace);
+        }
+        const auto& batch = std::get<t::InvalidationPollReply>(polled);
+        if (batch.resync_required) {
+          v1::IdentityWatchInvalidationsResponse signal;
+          signal.set_resync_required(true);
+          if (!resync_cursor(batch.watermark, subscribed, signal.mutable_cursor())) {
+            return error_status(invalid_result(), request_id, trace);
+          }
+          if (!writer->Write(signal)) {
+            return grpc::Status::OK;
+          }
+          last = batch.watermark.sequence;
+          continue;
+        }
+        for (const auto& record : batch.records) {
+          const auto status = send(record);
+          if (status <= 0) {
+            return status == 0 ? error_status(invalid_result(), request_id, trace)
+                               : grpc::Status::OK;
+          }
+        }
+      }
+      return grpc::Status::OK;
+    } catch (...) {
+      try {
+        if (!request_id.empty() && !trace.empty()) {
+          return error_status(failure(t::ErrorCode::Internal, t::Recovery::QuerySameIdentity,
+                                      t::Acceptance::Unknown),
+                              request_id, trace);
+        }
+      } catch (...) {
+      }
+      return {grpc::StatusCode::INTERNAL, "INTERNAL"};
+    }
   }
-  grpc::Status GetAuthorizationSnapshot(grpc::ServerContext* transport,
-                                        const v1::IdentityGetAuthorizationSnapshotRequest* request,
-                                        v1::IdentityGetAuthorizationSnapshotResponse*) override {
-    v1::IdentityGetAuthorizationSnapshotResponse unused;
+  grpc::Status
+  GetAuthorizationSnapshot(grpc::ServerContext* transport,
+                           const v1::IdentityGetAuthorizationSnapshotRequest* request,
+                           v1::IdentityGetAuthorizationSnapshotResponse* response) override {
     return run(
-        transport, request->has_context(), request->context(), &unused,
-        [](const t::VerifiedPeer&, const t::IdentityRequestContext&)
+        transport, request->has_context(), request->context(), response,
+        [&](const t::VerifiedPeer& peer, const t::IdentityRequestContext& context)
             -> t::Outcome<v1::IdentityGetAuthorizationSnapshotResponse> {
-          return failure(t::ErrorCode::CapabilityNotSupported);
+          if (!invalidation_) {
+            return failure(t::ErrorCode::CapabilityNotSupported);
+          }
+          auto scope = resource_scope(request->scope());
+          if (const auto* error = std::get_if<t::Failure>(&scope)) {
+            return *error;
+          }
+          auto subscribed = std::move(std::get<std::vector<t::ResourceRef>>(scope));
+          if (subscribed.empty() || subscribed.size() > t::kMaximumInvalidationScope ||
+              !t::unique_invalidation_scope(subscribed)) {
+            return failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput);
+          }
+          auto cursor = decode_cursor(request->after(), subscribed);
+          if (const auto* error = std::get_if<t::Failure>(&cursor)) {
+            return *error;
+          }
+          auto reply = invalidation_->snapshot(
+              {context, peer, subscribed, std::move(std::get<t::InvalidationCursor>(cursor))});
+          if (const auto* error = std::get_if<t::Failure>(&reply)) {
+            return *error;
+          }
+          const auto& result = std::get<t::AuthorizationSnapshotReply>(reply);
+          if (!positive(result.checked_at) || result.cursor.scope.size() != subscribed.size() ||
+              !cursor_scope_equal(result.cursor.scope, subscribed) ||
+              result.assignments.size() > 100) {
+            return invalid_result();
+          }
+          v1::IdentityGetAuthorizationSnapshotResponse output;
+          auto* snapshot = output.mutable_snapshot();
+          if (!encode_cursor(result.cursor, snapshot->mutable_cursor())) {
+            return invalid_result();
+          }
+          snapshot->set_authorization_version(result.authorization_version.value);
+          for (const auto& assignment : result.assignments) {
+            if (!assignment_record(assignment, snapshot->add_assignments())) {
+              return invalid_result();
+            }
+          }
+          return output;
         },
         false);
   }
@@ -1220,6 +1691,98 @@ public:
   }
 
 private:
+  struct StreamInvocation {
+    t::VerifiedPeer peer;
+    t::IdentityRequestContext context;
+  };
+  // Streaming-read invocation gate: same real TLS/current-registration/deadline checks as unary
+  // run(), but any authenticated platform service may subscribe (authorization is checked by the
+  // Core use case per requested scope). Never constructs a peer from request fields.
+  t::Outcome<StreamInvocation> stream_invocation(grpc::ServerContext* transport, bool has_context,
+                                                 const v1::RequestContext& incoming,
+                                                 std::string* request_id,
+                                                 std::string* trace) noexcept {
+    try {
+      const bool identifiers_valid = uuid(incoming.request_id()) && uuid(incoming.trace_id());
+      *request_id = uuid(incoming.request_id()) ? incoming.request_id() : random_id();
+      *trace = uuid(incoming.trace_id()) ? incoming.trace_id() : random_id();
+      if (request_id->empty() || trace->empty()) {
+        return failure(t::ErrorCode::Internal);
+      }
+      if (!has_context || !identifiers_valid || !incoming.has_deadline() ||
+          !key_valid(incoming.idempotency_key())) {
+        return failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput);
+      }
+      const auto deadline = codec::from_wire(incoming.deadline());
+      const auto* requested = std::get_if<t::TimePoint>(&deadline);
+      if (!requested) {
+        return failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput);
+      }
+      const auto started = now();
+      auto effective = std::min(*requested, started + std::chrono::seconds{5});
+      const auto transport_limit = transport->deadline();
+      if (transport_limit == std::chrono::system_clock::time_point::max()) {
+        effective = std::min(effective, started + std::chrono::seconds{2});
+      } else if (transport_limit <= std::chrono::system_clock::now()) {
+        return failure(t::ErrorCode::Timeout, t::Recovery::QuerySameIdentity);
+      } else if (transport_limit < std::chrono::system_clock::now() + std::chrono::seconds{5}) {
+        const auto converted = codec::from_wire(std::get<google::protobuf::Timestamp>(
+            codec::to_wire(t::TimePoint{std::chrono::duration_cast<std::chrono::nanoseconds>(
+                transport_limit.time_since_epoch())})));
+        if (const auto* limit = std::get_if<t::TimePoint>(&converted)) {
+          effective = std::min(effective, *limit);
+        } else {
+          return failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput);
+        }
+      }
+      if (invocation_deadline_) {
+        auto own_limit = invocation_deadline_();
+        if (const auto* error = std::get_if<t::Failure>(&own_limit)) {
+          return *error;
+        }
+        const auto limit = std::get<t::TimePoint>(own_limit);
+        if (!positive(limit)) {
+          return failure(t::ErrorCode::UpstreamUnavailable);
+        }
+        effective = std::min(effective, limit);
+      }
+      if (effective <= now() || transport->IsCancelled()) {
+        return failure(t::ErrorCode::Timeout, t::Recovery::QuerySameIdentity);
+      }
+      const auto auth = transport->auth_context();
+      if (!auth) {
+        return failure(t::ErrorCode::Unauthenticated, t::Recovery::Authenticate);
+      }
+      const auto evidence = extract_peer_certificate(*auth);
+      const auto* certificate = std::get_if<PeerCertificateEvidence>(&evidence);
+      if (!certificate) {
+        return failure(t::ErrorCode::Unauthenticated, t::Recovery::Authenticate);
+      }
+      auto authenticated = authenticate_(*transport);
+      if (const auto* error = std::get_if<t::Failure>(&authenticated)) {
+        return *error;
+      }
+      const auto& peer = std::get<t::VerifiedPeer>(authenticated);
+      const auto* platform = std::get_if<t::PlatformPeer>(&peer.binding.peer);
+      if (!platform || !uuid(platform->subject.value) ||
+          peer.binding.certificate.subject != platform->subject ||
+          peer.binding.certificate.platform_service != platform->service ||
+          peer.binding.certificate.fingerprint != certificate->leaf_fingerprint ||
+          peer.binding.credential.version.value == 0 || !uuid(peer.binding.credential.id.value) ||
+          !positive(peer.verified_at)) {
+        return failure(t::ErrorCode::Unauthenticated, t::Recovery::Authenticate);
+      }
+      if (now() >= effective || transport->IsCancelled()) {
+        return failure(t::ErrorCode::Timeout, t::Recovery::QuerySameIdentity);
+      }
+      return StreamInvocation{
+          peer,
+          t::IdentityRequestContext{*request_id, *trace, incoming.idempotency_key(), effective}};
+    } catch (...) {
+      return failure(t::ErrorCode::Internal);
+    }
+  }
+
   template <typename Output, typename Invoke>
   grpc::Status run(grpc::ServerContext* transport, bool has_context,
                    const v1::RequestContext& incoming, Output* response, Invoke invoke,
@@ -1335,6 +1898,9 @@ private:
   t::IdentityVerificationKeysApplication* verification_keys_;
   t::IdentityExchangeApplication* exchange_;
   t::IdentityPrincipalApplication* principal_;
+  t::IdentityAuthorizationApplication* authorization_;
+  t::IdentityAssignmentApplication* assignments_;
+  t::IdentityInvalidationApplication* invalidation_;
 };
 } // namespace
 

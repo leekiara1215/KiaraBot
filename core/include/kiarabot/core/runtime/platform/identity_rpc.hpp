@@ -6,8 +6,11 @@
 #include <grpcpp/server_context.h>
 
 #include "kiarabot/core/application/target/identity_admin_application.hpp"
+#include "kiarabot/core/application/target/identity_assignment_application.hpp"
+#include "kiarabot/core/application/target/identity_authorization_application.hpp"
 #include "kiarabot/core/application/target/identity_delegation_application.hpp"
 #include "kiarabot/core/application/target/identity_exchange_application.hpp"
+#include "kiarabot/core/application/target/identity_invalidation_application.hpp"
 #include "kiarabot/core/application/target/identity_principal_application.hpp"
 #include "kiarabot/core/application/target/identity_security_application.hpp"
 #include "kiarabot/core/application/target/identity_verification_keys_application.hpp"
@@ -39,6 +42,11 @@ struct IdentityRpcOptions {
   // Borrowed five principal/credential management use cases. Absent keeps the methods a typed
   // CapabilityNotSupported rejection; the transport never fabricates a success.
   target::IdentityPrincipalApplication* principal = nullptr;
+  // Appended P04-B capabilities. Absent means a stable typed Unsupported reply, never a fake
+  // decision, empty snapshot or partially projected assignment.
+  target::IdentityAuthorizationApplication* authorization = nullptr;
+  target::IdentityAssignmentApplication* assignments = nullptr;
+  target::IdentityInvalidationApplication* invalidation = nullptr;
 };
 
 // Borrows application for the service lifetime; owns the verifier closure. No readiness or
