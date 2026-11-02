@@ -75,6 +75,7 @@ python3 ./scripts/quality/tests/boundaries_test.py
 
 - C++ 标准固定为 C++20，不随单个编译器升级改变；升级编译器、CMake 或协议工具后运行统一检查。
 - 协议变更还需要提供上一版本 descriptor，按 `proto/tests/README.md` 运行兼容性比较；统一检查不会在未提供基线时声称完成跨版本兼容性验证。
+- descriptor 兼容规则：新增消息/字段/枚举值和服务方法允许；**为既有方法新增 custom option（例如 `scope_kinds`）按 additive 兼容处理**，但删除或改变既有 option 值、修改字段类型/编号、删除枚举值/方法仍失败。`proto/tests/descriptor_compatibility_test.sh` 同时覆盖 additive 正例与 option 值变更/删除负例。
 - Python 3.11+ 与 Python 协议生成属于适配器项目的检查（`adapters/nonebot/`），不由本仓库统一脚本代替。
 
 ## 其他模块和 CI 的后续接入

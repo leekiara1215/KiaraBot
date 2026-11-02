@@ -23,7 +23,7 @@ cmake --build build --target kiarabot_proto
 
 该目标会调用 `protoc` 和 `grpc_cpp_plugin`，输出到 `build/generated/cpp/kiarabot/v1/`。如果本机没有这两个可执行文件，配置阶段应失败，而不是生成不完整的代码。
 
-协议兼容性检查器由 `kiarabot_descriptor_compatibility` 构建目标提供。它读取当前 descriptor 和上一版本 descriptor，按文件名、语法/包名、消息字段编号及完整字段元数据、oneof、嵌套类型、扩展/保留范围、枚举值和 gRPC 方法签名与选项进行语义比较；不比较 descriptor 二进制序列化结果。新增字段和枚举值允许，删除或改变已发布定义会失败。
+协议兼容性检查器由 `kiarabot_descriptor_compatibility` 构建目标提供。它读取当前 descriptor 和上一版本 descriptor，按文件名、语法/包名、消息字段编号及完整字段元数据、oneof、嵌套类型、扩展/保留范围、枚举值和 gRPC 方法签名与选项进行语义比较；不比较 descriptor 二进制序列化结果。新增字段和枚举值允许；**方法新增既有 custom option（如 `scope_kinds`）属 additive 兼容**，但同一 option 号的值改变或删除仍失败；删除或改变其他已发布定义同样会失败。
 
 ## 生成 Python 代码
 
@@ -75,7 +75,7 @@ python3 proto/tests/check_semantic_rules.py
 ./proto/tests/check_contracts.sh
 ```
 
-`check_contracts.sh` 还会在具备 `protoc`、descriptor 兼容工具与生成后 Python 包的 CI 环境中，执行 `descriptor_compatibility_test.sh` 的 6 个负例与 `action_contract_test.py` 的旧 reader 兼容检查。缺少依赖时脚本以退出码 2 明确失败，不能当作通过。
+`check_contracts.sh` 还会在具备 `protoc`、descriptor 兼容工具与生成后 Python 包的 CI 环境中，执行 `descriptor_compatibility_test.sh` 的 7 个负例与 2 个 additive 正例与 `action_contract_test.py` 的旧 reader 兼容检查。缺少依赖时脚本以退出码 2 明确失败，不能当作通过。
 
 ## 优雅停机（drain）
 

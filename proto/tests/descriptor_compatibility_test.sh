@@ -46,6 +46,14 @@ file_name, old, new = {
     "enum_number": ("actions.proto", "  CANCELLED = 5;", "  CANCELLED = 6;"),
     "oneof_name": ("events.proto", "  oneof payload {", "  oneof renamed_payload {"),
     "service_signature": ("services.proto", "returns (stream CoreToAdapter)", "returns (CoreToAdapter)"),
+    "option_added": ("runtime.proto",
+                     "  rpc CreateAccount(RuntimeCreateAccountRequest) returns (RuntimeCreateAccountResponse) {\n    option (required_permission) = PERMISSION_ACCOUNT_MANAGE;",
+                     "  rpc CreateAccount(RuntimeCreateAccountRequest) returns (RuntimeCreateAccountResponse) {\n    option (scope_kinds) = RESOURCE_ACCOUNT;\n    option (required_permission) = PERMISSION_ACCOUNT_MANAGE;"),
+    "option_changed": ("model.proto",
+                       "    option (scope_kinds) = RESOURCE_MODEL;",
+                       "    option (scope_kinds) = RESOURCE_NAMESPACE;"),
+    "option_removed": ("model.proto",
+                       "    option (scope_kinds) = RESOURCE_MODEL;\n", ""),
 }[scenario]
 path = directory / file_name
 source = path.read_text()
@@ -57,7 +65,7 @@ if scenario == "additions":
 path.write_text(source)
 PY
   make_descriptor "$tmp_dir/$scenario" "$tmp_dir/$scenario.pb"
-  if [[ "$scenario" == additions ]]; then
+  if [[ "$scenario" == additions || "$scenario" == option_added ]]; then
     "$tool" "$tmp_dir/$scenario.pb" "$tmp_dir/baseline.pb"
   else
     set +e

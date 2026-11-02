@@ -111,6 +111,12 @@ def main():
         assert rpc.options.Extensions[policy_pb2.default_deadline_ms] == method['deadline_ms']
         assert rpc.options.Extensions[policy_pb2.max_deadline_ms] == method['max_deadline_ms']
         assert rpc.options.Extensions[policy_pb2.requires_online_authorization] == (method['risk'] == 'online')
+        # scope_kinds is the reviewed method policy for Identity.CheckAuthorization; target_spec
+        # mirrors exactly the descriptor annotations (absent = fail closed, never inferred).
+        expected_kinds = method.get('scope_kinds', [])
+        actual_kinds = [platform_pb2.ResourceKind.Name(value)
+                        for value in rpc.options.Extensions[policy_pb2.scope_kinds]]
+        assert actual_kinds == expected_kinds, (method['method'], actual_kinds, expected_kinds)
         # The descriptor is authoritative; target_spec.json only mirrors the reviewed annotation so
         # an accidental/unreviewed scope annotation fails this contract gate.
         expected_scope_kinds = method.get('scope_kinds')

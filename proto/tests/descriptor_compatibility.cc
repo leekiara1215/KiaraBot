@@ -5,6 +5,7 @@
 #include <string_view>
 
 #include <google/protobuf/descriptor.pb.h>
+#include <google/protobuf/unknown_field_set.h>
 #include <google/protobuf/util/message_differencer.h>
 
 namespace {
@@ -28,6 +29,83 @@ template <typename Message>
 bool same_options(const Message& old_message, const Message& current_message) {
   return google::protobuf::util::MessageDifferencer::Equals(old_message.options(),
                                                             current_message.options());
+}
+
+// New custom options are encoded as unknown fields of the generated *Options message because the
+// descriptor set carries no registered extension pool. Adding a previously absent field number is
+// additive; changing/removing values for a number that already existed is not.
+bool same_unknown_field(const google::protobuf::UnknownField& old_field,
+                        const google::protobuf::UnknownField& current_field) {
+  using Type = google::protobuf::UnknownField::Type;
+  if (old_field.type() != current_field.type()) {
+    return false;
+  }
+  switch (old_field.type()) {
+  case Type::TYPE_VARINT:
+    return old_field.varint() == current_field.varint();
+  case Type::TYPE_FIXED32:
+    return old_field.fixed32() == current_field.fixed32();
+  case Type::TYPE_FIXED64:
+    return old_field.fixed64() == current_field.fixed64();
+  case Type::TYPE_LENGTH_DELIMITED:
+    return old_field.length_delimited() == current_field.length_delimited();
+  case Type::TYPE_GROUP: {
+    std::string old_group;
+    std::string current_group;
+    return old_field.group().SerializeToString(&old_group) &&
+           current_field.group().SerializeToString(&current_group) && old_group == current_group;
+  }
+  }
+  return false;
+}
+
+bool additive_unknown_fields(const google::protobuf::UnknownFieldSet& baseline,
+                             const google::protobuf::UnknownFieldSet& current) {
+  for (int index = 0; index < baseline.field_count(); ++index) {
+    const auto& old_field = baseline.field(index);
+    bool matched = false;
+    for (int candidate = 0; candidate < current.field_count(); ++candidate) {
+      const auto& current_field = current.field(candidate);
+      if (current_field.number() == old_field.number() &&
+          same_unknown_field(old_field, current_field)) {
+        matched = true;
+        break;
+      }
+    }
+    if (!matched) {
+      return false;
+    }
+  }
+  return true;
+}
+
+// Known option fields must stay identical; newly set known fields are additive too, but a changed
+// existing value is rejected. Unknown custom options are handled by additive_unknown_fields.
+bool additive_options(const google::protobuf::Message& baseline,
+                      const google::protobuf::Message& current) {
+  google::protobuf::Message* filtered = current.New();
+  filtered->CopyFrom(current);
+  filtered->GetReflection()->MutableUnknownFields(filtered)->Clear();
+  google::protobuf::Message* known_baseline = baseline.New();
+  known_baseline->CopyFrom(baseline);
+  known_baseline->GetReflection()->MutableUnknownFields(known_baseline)->Clear();
+  std::vector<const google::protobuf::FieldDescriptor*> fields;
+  filtered->GetReflection()->ListFields(*filtered, &fields);
+  for (const auto* field : fields) {
+    const auto* reflection = known_baseline->GetReflection();
+    const bool existed = field->is_repeated() ? reflection->FieldSize(*known_baseline, field) > 0
+                                              : reflection->HasField(*known_baseline, field);
+    if (!existed) {
+      filtered->GetReflection()->ClearField(filtered, field);
+    }
+  }
+  const bool known_equal = google::protobuf::util::MessageDifferencer::Equals(*known_baseline,
+                                                                              *filtered);
+  delete filtered;
+  delete known_baseline;
+  return known_equal &&
+         additive_unknown_fields(baseline.GetReflection()->GetUnknownFields(baseline),
+                                 current.GetReflection()->GetUnknownFields(current));
 }
 
 template <typename Range>
@@ -325,7 +403,7 @@ bool compare_file(const FileDescriptorProto& old_file, const FileDescriptorProto
           current_method->output_type() != old_method.output_type() ||
           current_method->client_streaming() != old_method.client_streaming() ||
           current_method->server_streaming() != old_method.server_streaming() ||
-          !same_options(old_method, *current_method)) {
+          !additive_options(old_method.options(), current_method->options())) {
         return fail(path, "method signature or options changed: " + old_method.name());
       }
     }
