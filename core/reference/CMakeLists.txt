@@ -50,6 +50,10 @@ if(UNIX)
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/scripts/deploy/tests/healthcheck_test.py)
   add_test(NAME deploy_deployment
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/scripts/deploy/tests/deployment_test.py)
+  add_test(NAME deploy_host_credential
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/scripts/deploy/tests/host_credential_test.py)
+  set_tests_properties(deploy_host_credential PROPERTIES TIMEOUT 30)
+
   set_tests_properties(deploy_deployment PROPERTIES TIMEOUT 30)
   add_test(NAME core_process_lifecycle
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_LIST_DIR}/../tests/process_lifecycle_test.py
