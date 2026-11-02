@@ -308,7 +308,20 @@ def scenario(root, port, pg_bin, binaries):
 
             def stop(child, label):
                 child.send_signal(signal.SIGTERM)
-                require(child.wait(timeout=15) == 0, 'graceful stop ' + label)
+                try:
+                    code = child.wait(timeout=15)
+                except subprocess.TimeoutExpired:
+                    child.kill()
+                    child.wait(timeout=5)
+                    raise RuntimeError('p10 timer e2e assertion: graceful stop timeout ' + label)
+                if code != 0:
+                    stdout, stderr = child.communicate(timeout=5)
+                    sys.stderr.write('=== graceful stop failure ' + label + ' exit=' +
+                                     str(code) + ' ===\n')
+                    sys.stderr.write('stdout: ' + stdout.decode(errors='replace') + '\n')
+                    sys.stderr.write('stderr: ' + stderr.decode(errors='replace') + '\n')
+                    sys.stderr.flush()
+                require(code == 0, 'graceful stop ' + label)
 
             def start_runtime():
                 child, state = rt.daemon(runtime_binary, runtime_path)
@@ -514,10 +527,35 @@ def scenario(root, port, pg_bin, binaries):
                                grpc.StatusCode.UNAUTHENTICATED),
                     'revoked delegation must not create tasks')
 
-            scheduler.send_signal(signal.SIGTERM)
-            require(scheduler.wait(timeout=10) == 0, 'scheduler graceful stop')
-            runtime.send_signal(signal.SIGTERM)
-            require(runtime.wait(timeout=10) == 0, 'runtime graceful stop')
+            # P10m regression: repeated SIGTERM after the high-load task churn. Before the OpenSSL
+            # atexit fix this intermittently SIGSEGVed inside a worker's RAND thread-local cleanup
+            # (EVP_RAND_CTX_free) instead of exiting 0.
+            for iteration in range(10):
+                query(scheduler_env,
+                      "INSERT INTO kiarabot.tasks(owner,task_id,installation,adapter,account,"
+                      "conversation_id,conversation_kind,payload,run_at,state,version,occurrence_id,"
+                      "cancel_requested,created_at,updated_at) SELECT "
+                      f"'shutdown-loop-'||g,'loop-filler-'||g,'{STATE['installation']}','','',"
+                      "'conversation',1,''::bytea,9000000000000000000,0,1,'loop-occ-'||g,false,1,1 "
+                      "FROM generate_series(1,8192) g;")
+                query(scheduler_env,
+                      "DELETE FROM kiarabot.tasks WHERE task_id LIKE 'loop-filler-%';")
+                stop(runtime, f'runtime shutdown loop {iteration}')
+                runtime = start_runtime()
+            require(runtime is not None, 'runtime alive after shutdown loop')
+
+            for child, label in ((scheduler, 'scheduler graceful stop'),
+                                 (runtime, 'runtime graceful stop')):
+                child.send_signal(signal.SIGTERM)
+                code = child.wait(timeout=10)
+                if code != 0:
+                    stdout, stderr = child.communicate(timeout=5)
+                    sys.stderr.write('=== graceful stop failure ' + label + ' exit=' +
+                                     str(code) + ' ===\n')
+                    sys.stderr.write('stdout: ' + stdout.decode(errors='replace') + '\n')
+                    sys.stderr.write('stderr: ' + stderr.decode(errors='replace') + '\n')
+                    sys.stderr.flush()
+                require(code == 0, label)
             identity.send_signal(signal.SIGTERM)
             # Teardown tolerance only: SIGTERM may race Identity's own shutdown checker after the
             # two dependent daemons are already gone; the lifecycle contract itself is covered by
