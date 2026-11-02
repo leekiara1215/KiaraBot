@@ -5604,7 +5604,11 @@
           "ActionReceipt": "implemented",
           "ActionMetadata": "implemented",
           "RuntimeQueryActionResultRequest": "implemented",
-          "RuntimeQueryActionResultResponse": "implemented"
+          "RuntimeQueryActionResultResponse": "implemented",
+          "StorageEntry": "implemented",
+          "StorageCondition": "implemented",
+          "StorageCompareAndSetRequest": "implemented",
+          "StorageCompareAndSetResponse": "implemented"
         },
         "proto_fields": {
           "CredentialDelivery.credential_id": "implemented",
@@ -5805,7 +5809,33 @@
           "RuntimeQueryActionResultRequest.owner_instance_id": "implemented",
           "RuntimeQueryActionResultResponse.result": "implemented",
           "RuntimeQueryActionResultResponse.execution_outcome": "implemented",
-          "RuntimeQueryActionResultResponse.metadata": "implemented"
+          "RuntimeQueryActionResultResponse.metadata": "implemented",
+          "HostRequest.storage_compare_and_set": "implemented",
+          "HostResponse.storage_compare_and_set": "implemented",
+          "NamespaceScope.instance_private": "implemented",
+          "StorageGetRequest.scope": "implemented",
+          "StorageGetResponse.version": "implemented",
+          "StorageGetResponse.expires_at": "implemented",
+          "StorageSetRequest.scope": "implemented",
+          "StorageSetRequest.condition": "implemented",
+          "StorageSetResponse.version": "implemented",
+          "StorageSetResponse.expires_at": "implemented",
+          "StorageDeleteRequest.scope": "implemented",
+          "StorageDeleteRequest.condition": "implemented",
+          "StorageDeleteResponse.deleted": "implemented",
+          "StorageDeleteResponse.version": "implemented",
+          "StorageEntry.key": "implemented",
+          "StorageEntry.value": "implemented",
+          "StorageEntry.version": "implemented",
+          "StorageEntry.expires_at": "implemented",
+          "StorageCondition.absent": "implemented",
+          "StorageCondition.version": "implemented",
+          "StorageCompareAndSetRequest.key": "implemented",
+          "StorageCompareAndSetRequest.scope": "implemented",
+          "StorageCompareAndSetRequest.value": "implemented",
+          "StorageCompareAndSetRequest.condition": "implemented",
+          "StorageCompareAndSetRequest.expires_at": "implemented",
+          "StorageCompareAndSetResponse.entry": "implemented"
         },
         "bridge_methods": {
           "AdapterBridge.Connect": "implemented",
@@ -5820,7 +5850,12 @@
           "semantic.action.result_execution_outcome": "implemented",
           "semantic.action.dispatch_attempt_correlation": "implemented",
           "semantic.action.evidence_late_result": "implemented",
-          "semantic.action.quota_persistence": "implemented"
+          "semantic.action.quota_persistence": "implemented",
+          "semantic.storage.scope_resolution": "implemented",
+          "semantic.storage.cas_condition": "implemented",
+          "semantic.storage.quota_persistent": "implemented",
+          "semantic.storage.receipt_capacity": "implemented",
+          "semantic.namespace.shared_membership": "implemented"
         },
         "enum_values": {
           "DeliveryDisposition.DELIVERY_ACKNOWLEDGED": "implemented",
@@ -7351,6 +7386,251 @@
           "core/src/application/target/runtime_action_application.cpp",
           "core/include/kiarabot/core/domain/target/action_rules.hpp",
           "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_messages:StorageEntry": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/application/target/runtime_storage_application.cpp",
+          "infrastructure/postgres/src/storage_records.cpp",
+          "tests/architecture/p06_bridge_acceptance.py",
+          "core/tests/architecture/runtime_storage_application_test.cpp"
+        ],
+        "proto_messages:StorageCondition": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/application/target/runtime_storage_application.cpp",
+          "infrastructure/postgres/src/storage_records.cpp",
+          "tests/architecture/p06_bridge_acceptance.py",
+          "core/tests/architecture/runtime_storage_application_test.cpp"
+        ],
+        "proto_messages:StorageCompareAndSetRequest": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/application/target/runtime_storage_application.cpp",
+          "infrastructure/postgres/src/storage_records.cpp",
+          "tests/architecture/p06_bridge_acceptance.py",
+          "core/tests/architecture/runtime_storage_application_test.cpp"
+        ],
+        "proto_messages:StorageCompareAndSetResponse": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/application/target/runtime_storage_application.cpp",
+          "infrastructure/postgres/src/storage_records.cpp",
+          "tests/architecture/p06_bridge_acceptance.py",
+          "core/tests/architecture/runtime_storage_application_test.cpp"
+        ],
+        "proto_fields:HostRequest.storage_compare_and_set": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/application/target/runtime_storage_application.cpp",
+          "infrastructure/postgres/src/storage_records.cpp",
+          "tests/architecture/p06_bridge_acceptance.py",
+          "core/tests/architecture/runtime_storage_application_test.cpp"
+        ],
+        "proto_fields:HostResponse.storage_compare_and_set": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/application/target/runtime_storage_application.cpp",
+          "infrastructure/postgres/src/storage_records.cpp",
+          "tests/architecture/p06_bridge_acceptance.py",
+          "core/tests/architecture/runtime_storage_application_test.cpp"
+        ],
+        "proto_fields:NamespaceScope.instance_private": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/application/target/runtime_storage_application.cpp",
+          "infrastructure/postgres/src/storage_records.cpp",
+          "tests/architecture/p06_bridge_acceptance.py",
+          "core/tests/architecture/runtime_storage_application_test.cpp"
+        ],
+        "proto_fields:StorageGetRequest.scope": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/application/target/runtime_storage_application.cpp",
+          "infrastructure/postgres/src/storage_records.cpp",
+          "tests/architecture/p06_bridge_acceptance.py",
+          "core/tests/architecture/runtime_storage_application_test.cpp"
+        ],
+        "proto_fields:StorageGetResponse.version": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/application/target/runtime_storage_application.cpp",
+          "infrastructure/postgres/src/storage_records.cpp",
+          "tests/architecture/p06_bridge_acceptance.py",
+          "core/tests/architecture/runtime_storage_application_test.cpp"
+        ],
+        "proto_fields:StorageGetResponse.expires_at": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/application/target/runtime_storage_application.cpp",
+          "infrastructure/postgres/src/storage_records.cpp",
+          "tests/architecture/p06_bridge_acceptance.py",
+          "core/tests/architecture/runtime_storage_application_test.cpp"
+        ],
+        "proto_fields:StorageSetRequest.scope": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/application/target/runtime_storage_application.cpp",
+          "infrastructure/postgres/src/storage_records.cpp",
+          "tests/architecture/p06_bridge_acceptance.py",
+          "core/tests/architecture/runtime_storage_application_test.cpp"
+        ],
+        "proto_fields:StorageSetRequest.condition": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/application/target/runtime_storage_application.cpp",
+          "infrastructure/postgres/src/storage_records.cpp",
+          "tests/architecture/p06_bridge_acceptance.py",
+          "core/tests/architecture/runtime_storage_application_test.cpp"
+        ],
+        "proto_fields:StorageSetResponse.version": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/application/target/runtime_storage_application.cpp",
+          "infrastructure/postgres/src/storage_records.cpp",
+          "tests/architecture/p06_bridge_acceptance.py",
+          "core/tests/architecture/runtime_storage_application_test.cpp"
+        ],
+        "proto_fields:StorageSetResponse.expires_at": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/application/target/runtime_storage_application.cpp",
+          "infrastructure/postgres/src/storage_records.cpp",
+          "tests/architecture/p06_bridge_acceptance.py",
+          "core/tests/architecture/runtime_storage_application_test.cpp"
+        ],
+        "proto_fields:StorageDeleteRequest.scope": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/application/target/runtime_storage_application.cpp",
+          "infrastructure/postgres/src/storage_records.cpp",
+          "tests/architecture/p06_bridge_acceptance.py",
+          "core/tests/architecture/runtime_storage_application_test.cpp"
+        ],
+        "proto_fields:StorageDeleteRequest.condition": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/application/target/runtime_storage_application.cpp",
+          "infrastructure/postgres/src/storage_records.cpp",
+          "tests/architecture/p06_bridge_acceptance.py",
+          "core/tests/architecture/runtime_storage_application_test.cpp"
+        ],
+        "proto_fields:StorageDeleteResponse.deleted": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/application/target/runtime_storage_application.cpp",
+          "infrastructure/postgres/src/storage_records.cpp",
+          "tests/architecture/p06_bridge_acceptance.py",
+          "core/tests/architecture/runtime_storage_application_test.cpp"
+        ],
+        "proto_fields:StorageDeleteResponse.version": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/application/target/runtime_storage_application.cpp",
+          "infrastructure/postgres/src/storage_records.cpp",
+          "tests/architecture/p06_bridge_acceptance.py",
+          "core/tests/architecture/runtime_storage_application_test.cpp"
+        ],
+        "proto_fields:StorageEntry.key": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/application/target/runtime_storage_application.cpp",
+          "infrastructure/postgres/src/storage_records.cpp",
+          "tests/architecture/p06_bridge_acceptance.py",
+          "core/tests/architecture/runtime_storage_application_test.cpp"
+        ],
+        "proto_fields:StorageEntry.value": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/application/target/runtime_storage_application.cpp",
+          "infrastructure/postgres/src/storage_records.cpp",
+          "tests/architecture/p06_bridge_acceptance.py",
+          "core/tests/architecture/runtime_storage_application_test.cpp"
+        ],
+        "proto_fields:StorageEntry.version": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/application/target/runtime_storage_application.cpp",
+          "infrastructure/postgres/src/storage_records.cpp",
+          "tests/architecture/p06_bridge_acceptance.py",
+          "core/tests/architecture/runtime_storage_application_test.cpp"
+        ],
+        "proto_fields:StorageEntry.expires_at": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/application/target/runtime_storage_application.cpp",
+          "infrastructure/postgres/src/storage_records.cpp",
+          "tests/architecture/p06_bridge_acceptance.py",
+          "core/tests/architecture/runtime_storage_application_test.cpp"
+        ],
+        "proto_fields:StorageCondition.absent": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/application/target/runtime_storage_application.cpp",
+          "infrastructure/postgres/src/storage_records.cpp",
+          "tests/architecture/p06_bridge_acceptance.py",
+          "core/tests/architecture/runtime_storage_application_test.cpp"
+        ],
+        "proto_fields:StorageCondition.version": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/application/target/runtime_storage_application.cpp",
+          "infrastructure/postgres/src/storage_records.cpp",
+          "tests/architecture/p06_bridge_acceptance.py",
+          "core/tests/architecture/runtime_storage_application_test.cpp"
+        ],
+        "proto_fields:StorageCompareAndSetRequest.key": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/application/target/runtime_storage_application.cpp",
+          "infrastructure/postgres/src/storage_records.cpp",
+          "tests/architecture/p06_bridge_acceptance.py",
+          "core/tests/architecture/runtime_storage_application_test.cpp"
+        ],
+        "proto_fields:StorageCompareAndSetRequest.scope": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/application/target/runtime_storage_application.cpp",
+          "infrastructure/postgres/src/storage_records.cpp",
+          "tests/architecture/p06_bridge_acceptance.py",
+          "core/tests/architecture/runtime_storage_application_test.cpp"
+        ],
+        "proto_fields:StorageCompareAndSetRequest.value": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/application/target/runtime_storage_application.cpp",
+          "infrastructure/postgres/src/storage_records.cpp",
+          "tests/architecture/p06_bridge_acceptance.py",
+          "core/tests/architecture/runtime_storage_application_test.cpp"
+        ],
+        "proto_fields:StorageCompareAndSetRequest.condition": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/application/target/runtime_storage_application.cpp",
+          "infrastructure/postgres/src/storage_records.cpp",
+          "tests/architecture/p06_bridge_acceptance.py",
+          "core/tests/architecture/runtime_storage_application_test.cpp"
+        ],
+        "proto_fields:StorageCompareAndSetRequest.expires_at": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/application/target/runtime_storage_application.cpp",
+          "infrastructure/postgres/src/storage_records.cpp",
+          "tests/architecture/p06_bridge_acceptance.py",
+          "core/tests/architecture/runtime_storage_application_test.cpp"
+        ],
+        "proto_fields:StorageCompareAndSetResponse.entry": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/application/target/runtime_storage_application.cpp",
+          "infrastructure/postgres/src/storage_records.cpp",
+          "tests/architecture/p06_bridge_acceptance.py",
+          "core/tests/architecture/runtime_storage_application_test.cpp"
+        ],
+        "semantic_rules:semantic.storage.scope_resolution": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/application/target/runtime_storage_application.cpp",
+          "infrastructure/postgres/src/storage_records.cpp",
+          "tests/architecture/p06_bridge_acceptance.py",
+          "core/tests/architecture/runtime_storage_application_test.cpp"
+        ],
+        "semantic_rules:semantic.storage.cas_condition": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/application/target/runtime_storage_application.cpp",
+          "infrastructure/postgres/src/storage_records.cpp",
+          "tests/architecture/p06_bridge_acceptance.py",
+          "core/tests/architecture/runtime_storage_application_test.cpp"
+        ],
+        "semantic_rules:semantic.storage.quota_persistent": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/application/target/runtime_storage_application.cpp",
+          "infrastructure/postgres/src/storage_records.cpp",
+          "tests/architecture/p06_bridge_acceptance.py",
+          "core/tests/architecture/runtime_storage_application_test.cpp"
+        ],
+        "semantic_rules:semantic.storage.receipt_capacity": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/application/target/runtime_storage_application.cpp",
+          "infrastructure/postgres/src/storage_records.cpp",
+          "tests/architecture/p06_bridge_acceptance.py",
+          "core/tests/architecture/runtime_storage_application_test.cpp"
+        ],
+        "semantic_rules:semantic.namespace.shared_membership": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/application/target/runtime_storage_application.cpp",
+          "infrastructure/postgres/src/storage_records.cpp",
+          "tests/architecture/p06_bridge_acceptance.py",
+          "core/tests/architecture/runtime_storage_application_test.cpp"
         ]
       }
     }

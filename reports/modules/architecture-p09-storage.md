@@ -44,3 +44,20 @@ Runtime 私有 storage/共享 namespace 的第二阶段：PG 四表、typed 仓�
   storage 操作面；未做 quota 并发横压测（writer lock 串行矩阵外）。
 - Runtime storage 相关 target message/field 未翻转；共享 namespace 的语义规则仍标 not_implemented，
   待 bridge 帧与目标测试补证后再翻转。
+
+## P09b plugin bridge ingress
+
+- PluginBridge 现在消费 `PluginToCore.host_request` 的 storage Get/Set/Delete/CompareAndSet 帧：
+  私有 namespace 由已认证实例派生，`installation_shared` 由注册 profile 的 installation 解析；
+  插件自报 `installation_shared_id` 或其他 host operation 一律拒绝（CAPABILITY_NOT_SUPPORTED）。
+- 授权复用 P06 bridge 会话：ConnectionAuthorization 版本/有效期 + 注册 profile 的
+  `storage.namespace` 组成受信 decision，`RuntimeStorageApplication` 校验 subject/permission/
+  scope/新鲜度后才执行成员、禁用、配额、TTL 与 `command_receipts` 收据逻辑；wire 帧不能伪造。
+- 真 TLS bridge + 真 PG16.4 矩阵：私有 Get/Set/Delete/CAS、同键同 payload 重放、冲突重放
+  CONFLICT、stale CAS CONFLICT、TTL 过期、重放不续 TTL、namespace 配额 RATE_LIMITED、共享
+  namespace condition/成员拒绝/禁用、显式 namespace id 拒绝；见
+  `tests/architecture/p06_bridge_acceptance.py`。
+- 同尺寸 CAS 的零配额 delta 曾触发 INVALID_ARGUMENT，已在应用层跳过零 delta 准入修复。
+- target 翻转：`StorageEntry`、`StorageCondition`、`StorageCompareAndSet*` 4 个 message、26 个
+  storage target-scope field、5 条 storage/namespace semantic rule；unary `Runtime*Storage*`
+  message/field 与 `NamespaceScope.installation_shared_id` 保持 not_implemented。
