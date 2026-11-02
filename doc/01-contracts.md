@@ -13,7 +13,7 @@ T03a 新增 CoreToPlugin.error（oneof 字段 6），承载注册之后的终止
 `proto/tests/contract_status.json` 的 schema v2 明确区分执行范围：`categories` 保留开发版本的历史/reference 状态与现有声明，**其中的 implemented 不代表六服务 target 生产能力**；`execution_scopes.target` 是当前目标生产可用性，默认 not_implemented，只有经独立证据登记的 override 才可标 implemented，deprecated 不会被复活。所有历史 categories 状态保持，不能通过迁移或改名删除旧断言。
 
 <!-- execution-scopes:start -->
-当前 target 可用项为P02进程探针与P04-A Identity主体/凭据管理gRPC面：
+当前 target 可用项为P02进程探针、P04-A Identity主体/凭据管理gRPC面与P09a-2共享namespace管理面：
 
 | target 契约项 | 状态 | 范围 |
 | --- | --- | --- |
@@ -36,6 +36,8 @@ T03a 新增 CoreToPlugin.error（oneof 字段 6），承载注册之后的终止
 | `EventEnvelope.message_received` | implemented | P06 target：真实 NoneBot Adapter bridge client 生成、Runtime inbox 接收并 fan-out 给真实 SDK 插件；ACL/lease/ACK 见 p06_client_e2e |
 
 除上述明确override外，target所有非废弃业务声明均为not_implemented，包括旧reference已有的Action/Host/认证/WS能力及其余目标owner RPC（按target_spec动态计数）；mTLS监听返回UNIMPLEMENTED不算业务实现。API已有x-contract-status列表与下表、proto内联CONTRACT_STATUS保留声明/历史reference语境；不可据其单独判断target可用性。客户端与面板须依据target执行范围及真实生产者验收，不得用历史测试通过自动启用。
+| `NamespaceRecord`、`StorageQuota`、`SharedMember`、`RuntimeCreateSharedNamespaceRequest`、`RuntimeCreateSharedNamespaceResponse`、`RuntimeGetSharedNamespaceRequest`、`RuntimeGetSharedNamespaceResponse`、`RuntimeSetSharedMembersRequest`、`RuntimeSetSharedMembersResponse`、`RuntimeDisableSharedNamespaceRequest`、`RuntimeDisableSharedNamespaceResponse` | implemented | P09a-2：共享 namespace 管理（Create/Get/SetMembers/Disable）纯应用+PG 四表+Runtime owner RPC 适配已接线，真 PG16.4 fixture 验证；PluginBridge storage 帧与 HTTP 操作面仍 not_implemented |
+| `NamespaceRecord.created_at`、`NamespaceRecord.disabled`、`NamespaceRecord.installation_id`、`NamespaceRecord.namespace_id`、`NamespaceRecord.updated_at`、`NamespaceRecord.version`、`NamespaceScope.installation_shared`、`RuntimeCreateSharedNamespaceRequest.context`、`RuntimeCreateSharedNamespaceRequest.expected_version`、`RuntimeCreateSharedNamespaceRequest.installation_id`、`RuntimeCreateSharedNamespaceResponse.namespace`、`RuntimeDisableSharedNamespaceRequest.context`、`RuntimeDisableSharedNamespaceRequest.expected_version`、`RuntimeDisableSharedNamespaceRequest.namespace_id`、`RuntimeDisableSharedNamespaceResponse.operation`、`RuntimeDisableSharedNamespaceResponse.version`、`RuntimeGetSharedNamespaceRequest.context`、`RuntimeGetSharedNamespaceRequest.namespace_id`、`RuntimeGetSharedNamespaceResponse.members`、`RuntimeGetSharedNamespaceResponse.namespace`、`RuntimeGetSharedNamespaceResponse.quota`、`RuntimeSetSharedMembersRequest.context`、`RuntimeSetSharedMembersRequest.expected_version`、`RuntimeSetSharedMembersRequest.installation_id`、`RuntimeSetSharedMembersRequest.members`、`RuntimeSetSharedMembersRequest.namespace_id`、`RuntimeSetSharedMembersResponse.operation`、`RuntimeSetSharedMembersResponse.version`、`SharedMember.can_read`、`SharedMember.can_write`、`SharedMember.instance_id`、`StorageQuota.installation_bytes_limit`、`StorageQuota.installation_bytes_used`、`StorageQuota.installation_keys_limit`、`StorageQuota.installation_keys_used`、`StorageQuota.namespace_bytes_limit`、`StorageQuota.namespace_bytes_used`、`StorageQuota.namespace_keys_limit`、`StorageQuota.namespace_keys_used` | implemented | P09a-2 target-scope 字段：namespace 记录/成员/配额投影与 Context/version 条件由 Runtime 实现；插件 storage 帧仍 not_implemented |
 <!-- execution-scopes:end -->
 
 检查器继续核对每个Proto字段/oneof、枚举、频道/事件、OpenAPI操作及原未实现项的内联注释、API列表、文档行和证据，不删除原门禁。历史Core逻辑证据路径只通过`core/reference/manifest.json`的明确source→reference映射解析并核对Git blob，未登记/缺失/字节变化/重引入/路径逃逸或符号链接均失败。target已实现项另需当前生产source及target测试，reference、旧客户端或测试内字符串不能证明target生产能力。

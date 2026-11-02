@@ -852,9 +852,10 @@
       "idempotency": "required",
       "deadline_ms": 5000,
       "server_streaming": false,
-      "status": "not_implemented",
+      "status": "implemented",
       "max_deadline_ms": 30000,
-      "requires_idempotency_key": true
+      "requires_idempotency_key": true,
+      "status_note": "P09a-2: pure application + PG relations + Runtime owner RPC adapter implemented; PluginBridge storage frames remain not_implemented"
     },
     {
       "service": "RuntimeService",
@@ -869,9 +870,10 @@
       "idempotency": "required",
       "deadline_ms": 5000,
       "server_streaming": false,
-      "status": "not_implemented",
+      "status": "implemented",
       "max_deadline_ms": 30000,
-      "requires_idempotency_key": true
+      "requires_idempotency_key": true,
+      "status_note": "P09a-2: pure application + PG relations + Runtime owner RPC adapter implemented; PluginBridge storage frames remain not_implemented"
     },
     {
       "service": "RuntimeService",
@@ -1644,10 +1646,11 @@
       "idempotency": "required",
       "deadline_ms": 5000,
       "server_streaming": false,
-      "status": "not_implemented",
+      "status": "implemented",
       "max_deadline_ms": 30000,
       "requires_idempotency_key": true,
-      "exposure": "wire"
+      "exposure": "wire",
+      "status_note": "P09a-2: pure application + PG relations + Runtime owner RPC adapter implemented; PluginBridge storage frames remain not_implemented"
     },
     {
       "service": "RuntimeService",
@@ -1662,10 +1665,11 @@
       "idempotency": "none",
       "deadline_ms": 2000,
       "server_streaming": false,
-      "status": "not_implemented",
+      "status": "implemented",
       "max_deadline_ms": 5000,
       "requires_idempotency_key": false,
-      "exposure": "wire"
+      "exposure": "wire",
+      "status_note": "P09a-2: pure application + PG relations + Runtime owner RPC adapter implemented; PluginBridge storage frames remain not_implemented"
     },
     {
       "service": "ModelService",

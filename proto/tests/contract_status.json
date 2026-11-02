@@ -5582,7 +5582,18 @@
           "IdentityGetPrincipalStatusRequest": "implemented",
           "IdentityGetPrincipalStatusResponse": "implemented",
           "IdentityGetCredentialStatusRequest": "implemented",
-          "IdentityGetCredentialStatusResponse": "implemented"
+          "IdentityGetCredentialStatusResponse": "implemented",
+          "NamespaceRecord": "implemented",
+          "StorageQuota": "implemented",
+          "SharedMember": "implemented",
+          "RuntimeCreateSharedNamespaceRequest": "implemented",
+          "RuntimeCreateSharedNamespaceResponse": "implemented",
+          "RuntimeGetSharedNamespaceRequest": "implemented",
+          "RuntimeGetSharedNamespaceResponse": "implemented",
+          "RuntimeSetSharedMembersRequest": "implemented",
+          "RuntimeSetSharedMembersResponse": "implemented",
+          "RuntimeDisableSharedNamespaceRequest": "implemented",
+          "RuntimeDisableSharedNamespaceResponse": "implemented"
         },
         "proto_fields": {
           "CredentialDelivery.credential_id": "implemented",
@@ -5672,7 +5683,46 @@
           "CoreToAdapter.shutdown": "implemented",
           "CoreToPlugin.shutdown": "implemented",
           "ShutdownNotice.reason": "implemented",
-          "ShutdownNotice.drain_timeout_ms": "implemented"
+          "ShutdownNotice.drain_timeout_ms": "implemented",
+          "SharedMember.instance_id": "implemented",
+          "SharedMember.can_read": "implemented",
+          "SharedMember.can_write": "implemented",
+          "RuntimeSetSharedMembersRequest.context": "implemented",
+          "RuntimeSetSharedMembersRequest.namespace_id": "implemented",
+          "RuntimeSetSharedMembersRequest.installation_id": "implemented",
+          "RuntimeSetSharedMembersRequest.members": "implemented",
+          "RuntimeSetSharedMembersRequest.expected_version": "implemented",
+          "RuntimeSetSharedMembersResponse.version": "implemented",
+          "RuntimeSetSharedMembersResponse.operation": "implemented",
+          "RuntimeDisableSharedNamespaceRequest.context": "implemented",
+          "RuntimeDisableSharedNamespaceRequest.namespace_id": "implemented",
+          "RuntimeDisableSharedNamespaceRequest.expected_version": "implemented",
+          "RuntimeDisableSharedNamespaceResponse.version": "implemented",
+          "RuntimeDisableSharedNamespaceResponse.operation": "implemented",
+          "NamespaceScope.installation_shared": "implemented",
+          "NamespaceRecord.namespace_id": "implemented",
+          "NamespaceRecord.installation_id": "implemented",
+          "NamespaceRecord.version": "implemented",
+          "NamespaceRecord.disabled": "implemented",
+          "NamespaceRecord.created_at": "implemented",
+          "NamespaceRecord.updated_at": "implemented",
+          "StorageQuota.namespace_keys_used": "implemented",
+          "StorageQuota.namespace_keys_limit": "implemented",
+          "StorageQuota.namespace_bytes_used": "implemented",
+          "StorageQuota.namespace_bytes_limit": "implemented",
+          "StorageQuota.installation_keys_used": "implemented",
+          "StorageQuota.installation_keys_limit": "implemented",
+          "StorageQuota.installation_bytes_used": "implemented",
+          "StorageQuota.installation_bytes_limit": "implemented",
+          "RuntimeCreateSharedNamespaceRequest.context": "implemented",
+          "RuntimeCreateSharedNamespaceRequest.installation_id": "implemented",
+          "RuntimeCreateSharedNamespaceRequest.expected_version": "implemented",
+          "RuntimeCreateSharedNamespaceResponse.namespace": "implemented",
+          "RuntimeGetSharedNamespaceRequest.context": "implemented",
+          "RuntimeGetSharedNamespaceRequest.namespace_id": "implemented",
+          "RuntimeGetSharedNamespaceResponse.namespace": "implemented",
+          "RuntimeGetSharedNamespaceResponse.members": "implemented",
+          "RuntimeGetSharedNamespaceResponse.quota": "implemented"
         },
         "bridge_methods": {
           "AdapterBridge.Connect": "implemented",
@@ -6265,6 +6315,256 @@
           "core/src/runtime/platform/runtime_bridge.cpp",
           "core/src/application/target/runtime_bridge_application.cpp",
           "tests/architecture/p06_client_e2e.py"
+        ],
+        "proto_messages:NamespaceRecord": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_storage_application.cpp",
+          "core/tests/architecture/runtime_storage_application_test.cpp"
+        ],
+        "proto_messages:StorageQuota": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_storage_application.cpp",
+          "core/tests/architecture/runtime_storage_application_test.cpp"
+        ],
+        "proto_messages:SharedMember": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_storage_application.cpp",
+          "core/tests/architecture/runtime_storage_application_test.cpp"
+        ],
+        "proto_messages:RuntimeCreateSharedNamespaceRequest": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_storage_application.cpp",
+          "core/tests/architecture/runtime_storage_application_test.cpp"
+        ],
+        "proto_messages:RuntimeCreateSharedNamespaceResponse": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_storage_application.cpp",
+          "core/tests/architecture/runtime_storage_application_test.cpp"
+        ],
+        "proto_messages:RuntimeGetSharedNamespaceRequest": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_storage_application.cpp",
+          "core/tests/architecture/runtime_storage_application_test.cpp"
+        ],
+        "proto_messages:RuntimeGetSharedNamespaceResponse": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_storage_application.cpp",
+          "core/tests/architecture/runtime_storage_application_test.cpp"
+        ],
+        "proto_messages:RuntimeSetSharedMembersRequest": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_storage_application.cpp",
+          "core/tests/architecture/runtime_storage_application_test.cpp"
+        ],
+        "proto_messages:RuntimeSetSharedMembersResponse": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_storage_application.cpp",
+          "core/tests/architecture/runtime_storage_application_test.cpp"
+        ],
+        "proto_messages:RuntimeDisableSharedNamespaceRequest": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_storage_application.cpp",
+          "core/tests/architecture/runtime_storage_application_test.cpp"
+        ],
+        "proto_messages:RuntimeDisableSharedNamespaceResponse": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_storage_application.cpp",
+          "core/tests/architecture/runtime_storage_application_test.cpp"
+        ],
+        "proto_fields:SharedMember.instance_id": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_storage_application.cpp",
+          "core/tests/architecture/runtime_storage_application_test.cpp"
+        ],
+        "proto_fields:SharedMember.can_read": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_storage_application.cpp",
+          "core/tests/architecture/runtime_storage_application_test.cpp"
+        ],
+        "proto_fields:SharedMember.can_write": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_storage_application.cpp",
+          "core/tests/architecture/runtime_storage_application_test.cpp"
+        ],
+        "proto_fields:RuntimeSetSharedMembersRequest.context": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_storage_application.cpp",
+          "core/tests/architecture/runtime_storage_application_test.cpp"
+        ],
+        "proto_fields:RuntimeSetSharedMembersRequest.namespace_id": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_storage_application.cpp",
+          "core/tests/architecture/runtime_storage_application_test.cpp"
+        ],
+        "proto_fields:RuntimeSetSharedMembersRequest.installation_id": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_storage_application.cpp",
+          "core/tests/architecture/runtime_storage_application_test.cpp"
+        ],
+        "proto_fields:RuntimeSetSharedMembersRequest.members": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_storage_application.cpp",
+          "core/tests/architecture/runtime_storage_application_test.cpp"
+        ],
+        "proto_fields:RuntimeSetSharedMembersRequest.expected_version": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_storage_application.cpp",
+          "core/tests/architecture/runtime_storage_application_test.cpp"
+        ],
+        "proto_fields:RuntimeSetSharedMembersResponse.version": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_storage_application.cpp",
+          "core/tests/architecture/runtime_storage_application_test.cpp"
+        ],
+        "proto_fields:RuntimeSetSharedMembersResponse.operation": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_storage_application.cpp",
+          "core/tests/architecture/runtime_storage_application_test.cpp"
+        ],
+        "proto_fields:RuntimeDisableSharedNamespaceRequest.context": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_storage_application.cpp",
+          "core/tests/architecture/runtime_storage_application_test.cpp"
+        ],
+        "proto_fields:RuntimeDisableSharedNamespaceRequest.namespace_id": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_storage_application.cpp",
+          "core/tests/architecture/runtime_storage_application_test.cpp"
+        ],
+        "proto_fields:RuntimeDisableSharedNamespaceRequest.expected_version": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_storage_application.cpp",
+          "core/tests/architecture/runtime_storage_application_test.cpp"
+        ],
+        "proto_fields:RuntimeDisableSharedNamespaceResponse.version": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_storage_application.cpp",
+          "core/tests/architecture/runtime_storage_application_test.cpp"
+        ],
+        "proto_fields:RuntimeDisableSharedNamespaceResponse.operation": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_storage_application.cpp",
+          "core/tests/architecture/runtime_storage_application_test.cpp"
+        ],
+        "proto_fields:NamespaceScope.installation_shared": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_storage_application.cpp",
+          "core/tests/architecture/runtime_storage_application_test.cpp"
+        ],
+        "proto_fields:NamespaceRecord.namespace_id": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_storage_application.cpp",
+          "core/tests/architecture/runtime_storage_application_test.cpp"
+        ],
+        "proto_fields:NamespaceRecord.installation_id": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_storage_application.cpp",
+          "core/tests/architecture/runtime_storage_application_test.cpp"
+        ],
+        "proto_fields:NamespaceRecord.version": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_storage_application.cpp",
+          "core/tests/architecture/runtime_storage_application_test.cpp"
+        ],
+        "proto_fields:NamespaceRecord.disabled": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_storage_application.cpp",
+          "core/tests/architecture/runtime_storage_application_test.cpp"
+        ],
+        "proto_fields:NamespaceRecord.created_at": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_storage_application.cpp",
+          "core/tests/architecture/runtime_storage_application_test.cpp"
+        ],
+        "proto_fields:NamespaceRecord.updated_at": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_storage_application.cpp",
+          "core/tests/architecture/runtime_storage_application_test.cpp"
+        ],
+        "proto_fields:StorageQuota.namespace_keys_used": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_storage_application.cpp",
+          "core/tests/architecture/runtime_storage_application_test.cpp"
+        ],
+        "proto_fields:StorageQuota.namespace_keys_limit": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_storage_application.cpp",
+          "core/tests/architecture/runtime_storage_application_test.cpp"
+        ],
+        "proto_fields:StorageQuota.namespace_bytes_used": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_storage_application.cpp",
+          "core/tests/architecture/runtime_storage_application_test.cpp"
+        ],
+        "proto_fields:StorageQuota.namespace_bytes_limit": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_storage_application.cpp",
+          "core/tests/architecture/runtime_storage_application_test.cpp"
+        ],
+        "proto_fields:StorageQuota.installation_keys_used": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_storage_application.cpp",
+          "core/tests/architecture/runtime_storage_application_test.cpp"
+        ],
+        "proto_fields:StorageQuota.installation_keys_limit": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_storage_application.cpp",
+          "core/tests/architecture/runtime_storage_application_test.cpp"
+        ],
+        "proto_fields:StorageQuota.installation_bytes_used": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_storage_application.cpp",
+          "core/tests/architecture/runtime_storage_application_test.cpp"
+        ],
+        "proto_fields:StorageQuota.installation_bytes_limit": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_storage_application.cpp",
+          "core/tests/architecture/runtime_storage_application_test.cpp"
+        ],
+        "proto_fields:RuntimeCreateSharedNamespaceRequest.context": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_storage_application.cpp",
+          "core/tests/architecture/runtime_storage_application_test.cpp"
+        ],
+        "proto_fields:RuntimeCreateSharedNamespaceRequest.installation_id": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_storage_application.cpp",
+          "core/tests/architecture/runtime_storage_application_test.cpp"
+        ],
+        "proto_fields:RuntimeCreateSharedNamespaceRequest.expected_version": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_storage_application.cpp",
+          "core/tests/architecture/runtime_storage_application_test.cpp"
+        ],
+        "proto_fields:RuntimeCreateSharedNamespaceResponse.namespace": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_storage_application.cpp",
+          "core/tests/architecture/runtime_storage_application_test.cpp"
+        ],
+        "proto_fields:RuntimeGetSharedNamespaceRequest.context": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_storage_application.cpp",
+          "core/tests/architecture/runtime_storage_application_test.cpp"
+        ],
+        "proto_fields:RuntimeGetSharedNamespaceRequest.namespace_id": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_storage_application.cpp",
+          "core/tests/architecture/runtime_storage_application_test.cpp"
+        ],
+        "proto_fields:RuntimeGetSharedNamespaceResponse.namespace": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_storage_application.cpp",
+          "core/tests/architecture/runtime_storage_application_test.cpp"
+        ],
+        "proto_fields:RuntimeGetSharedNamespaceResponse.members": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_storage_application.cpp",
+          "core/tests/architecture/runtime_storage_application_test.cpp"
+        ],
+        "proto_fields:RuntimeGetSharedNamespaceResponse.quota": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_storage_application.cpp",
+          "core/tests/architecture/runtime_storage_application_test.cpp"
         ]
       }
     }
