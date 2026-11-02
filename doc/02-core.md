@@ -1445,3 +1445,26 @@ TIMEOUT、撤销授权后创建任务 PERMISSION_DENIED。容量/EXPIRED/确认�
 `RuntimeResourceApplication` 新增 `begin_delete`/`restore_resource`/`lifecycle_maintenance`，接在冻结的 `RuntimeService.BeginDelete/RestoreResource/GetOperation` 上，**不新增 proto 消息、字段、RPC 或权限**。`BeginDelete` 在单个 Runtime UoW 内提交：校验 `resource.manage`、资源存在与预期版本，置 `DELETING`（实例同时 desired=STOPPED），撤销 Runtime 本地 `bridge_credentials`，创建 operation 与 `runtime/host/scheduler` 参与者，写 `lifecycle_tombstones`（删除时间、30 天恢复截止、180 天清理截止），返回 `OperationRef`。没有外部参与者的资源（账号/适配器/主机）同事务直接进入 `DELETED`；实例/安装保持 `DELETING`，由每秒维护钩子通过 fail-closed 端口推进 Host stop/drain 与 Scheduler 任务取消。P08b-3/P10b 客户端未接线时端口缺失，参与者记 `BLOCKED`/可重试，**绝不伪造 stopped 或全局完成**；operation 的 `participants` 通过既有 `OperationProgress` 投影给 Control。
 
 `RestoreResource` 只接受 `DELETED` 且未过 30 天恢复窗、版本匹配的资源，回到 `ACTIVE` 并删除墓碑；不复活已撤销凭据、已取消任务、过期租约或旧 token。超过窗口返回 `CONFLICT`。`lifecycle_maintenance` 每轮有界扫描墓碑：依赖恢复后完成 `DELETED`，超过 180 天转 `PURGED` 并移除墓碑；每 60 轮执行一次有界保留清理（receipts/inbox/outbox/audit/operations/storage receipts，单项失败只置 `cleanup_failed`，不撤销删除 gate）。Runtime schema 升至 v13：operations 增 `created_at/updated_at/retain_until` 与保留索引，新增 `operation_participants`、`lifecycle_tombstones`；Identity/Runtime/Scheduler/Model 的实测 descriptor/relation_count 已同步。`BeginDelete/RestoreResource` 的 proto `scope_kinds` 元数据补齐五个 Runtime 资源种类（无新字段/RPC/权限）。真实双进程 Runtime↔Identity e2e 已覆盖 BeginDelete→GetOperation(participants)→Restore，P08b-3/P10b 接线后的真实 Host/Scheduler 参与者验收仍待补。
+### P10b-3 定时交接残余矩阵（真 PG16.4 + 真 mTLS）
+
+`p10_timer_e2e` 在同一套三进程真实环境中继续覆盖残余矩阵：
+- **容量**：实例 1024 / 安装 8192 非终态任务上限，直接填充 owned Scheduler 表后 RPC 创建返回
+  RATE_LIMITED，不产生超发任务；
+- **EXPIRED**：Runtime 停机使首次交接可重试，到期后把 occurrence handoff 窗口改到过去，
+  maintenance 将 occurrence 置 EXPIRED、task 置 FAILED(TIMEOUT)，且不自动重放；
+- **Scheduler 崩溃恢复**：due sweep 建立 occurrence/outbox 后 SIGKILL 并重启 Scheduler，
+  恢复后 outbox 收敛到 COMPLETED，不产生第二次事件；
+- **confirm 丢失/重复**：Runtime 已持久化事件而 Scheduler 未确认时，重启 Runtime 并由 outbox
+  重试，Runtime 返回 duplicate、Scheduler 确认，事件与 fan-out target 恒为 1；
+- **撤销授权后 maintenance**：RPC 撤销 task.schedule 后，撤销前已受理的任务仍由平台
+  peer maintenance 完成；撤销后的新命令 fail-closed。
+矩阵仍限于单 installation/单 Runtime 进程；多 installation、跨实例容量与长时间 7 天真实等待未覆盖。
+
+### P10b-3 Installation-scope 约定复用检查
+
+按 doc/21/22 的签发约定检查了 Runtime 委托接受面：Scheduler 是当前唯一需要从 delegation
+permission bindings 派生 Installation resource scope 的消费者；Model gateway 只使用
+caller subject/owner（不消费 installation 字段），Runtime Action 使用
+authentication.subject 与请求 owner_instance/account，不接受 installation 输入。二者目前
+**无需** installation scope 派生/校验；若 P11d/P07 后续引入按 installation 隔离的 Model/Action
+行为，必须复用 Scheduler 的“缺失 Installation binding 即 fail-closed”规则，届时再实现。

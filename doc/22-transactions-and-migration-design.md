@@ -267,3 +267,11 @@ INSTANCE，无新权限）。多进程 e2e 验证了创建→到期→交接→C
 ## P13a 生命周期事务与保留清理（实现记录，2026-11-02）
 
 删除/恢复沿用“所有者驱动、本地事务、无跨库级联”：`BeginDelete` 的资源状态/operation/participants/tombstone/receipt/audit 同 Runtime UoW 提交，跨服务参与者（Host 停止、Scheduler 任务取消）不在 UoW 内调用，由维护循环在提交后按 command/receipt 幂等推进；依赖离线记 `BLOCKED` 并可重试，不把超时当 stopped。恢复只允许 30 天窗口内的 `DELETED` 资源，不复活凭据/任务/租约；超过 180 天转 `PURGED` 并清墓碑。清理使用索引化有界扫描（`state,retain_until`、`occurred_at`、`valid_until`），每 60 秒一批；receipts/inbox/outbox/audit/operations/storage receipts 各自保留期，未决义务不清理，清理失败仅 `cleanup_failed` 告警不撤销删除 gate。COMMIT 结果未知仍按原幂等键读取，不假定回滚。P08b-3/P10b 真实参与者客户端接入前，Host/Scheduler 参与者在真实环境保持 BLOCKED（fake 端口单测覆盖成功/阻塞/恢复路径）。
+## P10b-3 残余矩阵与 Installation-scope 复用结论（2026-11-02）
+
+容量、EXPIRED、Scheduler 崩溃恢复、confirm 丢失/重复、撤销授权后 maintenance 已纳入
+`p10_timer_e2e`（真 PG16.4/mTLS 三进程）。EXPIRED 通过在 owned DB 内回拨 occurrence handoff
+窗口验证，无需等待真实 7 天；崩溃恢复依赖 outbox claim lease 与重启后 maintenance 收敛，
+UNKNOWN 不伪完成。容量用 owned 表直接填充到 1024/8192 后经 RPC 断言 RATE_LIMITED。
+Installation-scope 签发约定只被 Scheduler 消费；Model/Action 当前不读取 installation，登记为
+P11d/P07 后续（届时按同一 fail-closed 规则补充派生与测试，不改 proto）。
