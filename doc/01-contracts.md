@@ -1468,6 +1468,20 @@ P06 之后外部插件 Action 只走 `PluginBridge.Connect`，适配器执行只
 - **权限/配额/策略**：每-kind 权限映射见上节；滑动窗口占用持久化（跨重启不重置，替代 reference 进程内窗口），Mute/Kick 另需 ActionPolicy（开关+群白名单+正预算，fail-closed；0 预算=禁用）与 UTC 日预算；取消/明确失败不自动退额；`RATE_LIMITED` 表示窗口/预算/容量，`PERMISSION_DENIED` 表示权限/白名单/策略，`CAPABILITY_NOT_SUPPORTED` 表示能力缺失，不新增错误码。
 - 以上均为 target declaration（not_implemented）；reference 行为与差异只保留在 reference 章节与评审报告，不构成 target 验收。
 
+## P08 目标 HostBridge 与受管执行契约（已冻结，未实现）
+
+P08 的 Host 控制面复用 P06 冻结的两个监听：`HostBridge.Connect` 只注册在 Runtime 内部 mTLS `grpc_listen`，**不**注册在外部 `bridge_listen`；`HostService` 7 个方法只经该内部桥调用（`exposure=host_bridge`），不出现在 REST 绑定。Host 是平台服务，身份来自受控部署签发的 mTLS 客户端证书 + 部署预注册 allowlist（证书 SAN/指纹→`host_id`），**不使用** bootstrap 凭据、`ConnectionAuthorization`、`connection_proof` 或 refresh；`host.register` 等 proto 权限词表只用于方法目录语义，内部 mTLS 不套 Identity 用户授权。无新增服务/进程/权限/错误码。
+
+- **帧与连接代次**：注册后每条 `HostToRuntime`/`RuntimeToHost` 帧带当前 `Fence`（`instance_id` 承载 `host_id`，`execution_generation` 必须缺省，`connection_generation` 由 Runtime 注册事务分配、`runtime_epoch` 为 Runtime 进程级随机值）。同一 `host_id` 新连接替换旧连接，旧 `connection_generation` 帧返回 `UNAUTHENTICATED`/`CONFLICT`；`HostRegisterHostResponse.fence` 返回本次连接 Fence。
+- **心跳与离线**：Host 每 5s 发 `HostHeartbeat`（`sent_at`、`cursor`=已上报观察游标），Runtime 回 `HostHeartbeatAck`（`received_at`、`heartbeat_interval_seconds`、`resync_required`）。15s 无心跳只置 `online=false` 与 `process_outcome=UNKNOWN`，**不**写 FAILED/已停止、不 bump `HostRecord.version`（避免心跳风暴）；离线记录的历史版本不是当前执行事实。
+- **执行观察**：不新增 `observation_id`；观察身份=`(host_id, connection_generation, cursor.sequence)`，命令结果额外用 `ExecutionRecord.command_id` 关联 `HostCommandReceipt.command_id`（空串=非命令触发的自发变化，不伪造 ID）。Runtime inbox 以 `source=Host, message=<host_id>:<connection_generation>:<sequence>` 去重；断线补播用 `resync_required`，不把缺失观察当失败。
+- **四层状态**：L1 期望（Runtime PG `plugin_instances`/outbox/version）；L2 进程事实（Host 本地 SQLite `command_journal`/`managed_executions`/`execution_observations`）；L3 注册（P06 `RegisterPlugin`+Fence，P05 HostRegistration 投影）；L4 配置应用（P05 `InstanceConfiguration`+P06 delivery/ACK）。Host 离线不证明进程已停止；desired STOPPED + 旧观察 RUNNING 只到 UNKNOWN，绝不推断 KNOWN_SUCCEEDED。
+- **执行与恢复**：Host 先持久 `command_id`+目标代次+payload hash 再事务外 `posix_spawn`；同键同 hash 重放返回原 receipt、异 hash `CONFLICT`；每次执行记录 marker=host_boot_id+pid+进程启动时刻（Linux `/proc/<pid>/stat` starttime / macOS `proc_pidinfo`），恢复先比 marker 再认领，不靠 PID 数字。崩溃在 spawn 后 receipt 前：启动回读 journal 重建确定 receipt，不重复 spawn；同 `execution_generation` 无法确认时命令转 Unknown 并拒绝再次 spawn，等 Runtime 提升 generation 后新命令。
+- **跨主机 gate**：实例 `host` 变更前，旧 host 对当前 `execution_generation` 的最新观察必须终止（KNOWN_SUCCEEDED/FAILED）或有操作员显式处置记录，否则 operation `BLOCKED`（`HOST_OFFLINE_EXECUTION_UNKNOWN`/`OLD_EXECUTION_UNCONFIRMED`），不自动在别机启动；首轮无强制接管命令。
+- **配置应用证据**：`desired_version/applied_version/apply_state/observed_at` 持久，`delivery_id` 只作最近一次连接投递证据（易失，不作为当前执行事实）。仅当前 fence 且 `config_version==desired_version` 的 ACK 推进 `applied_version`；旧 delivery/旧 config_version ACK 幂等 no-op；重启/断线后 `apply_state=UNAVAILABLE`，重连重新下发最新快照并重新 ACK（SDK 回调幂等）。
+- **受管凭据与参数**：受管实例由部署为每个实例生成 opaque bootstrap（32B CSPRNG），以 `0600` 文件挂载到 Host；Runtime 部署配置只登记 SHA-256（同 P06 `bridge_credentials` 行）并可撤销，HostBridge 不传明文；Host spawn 时按 profile 允许列表从 `credential_env` 注入环境变量，SDK 读取后走 P06 `PluginBridge` 首帧 `authorization`（P06 消费路径不变）；文件/环境值不得进入 Runtime 存储/outbox/日志/观察/审计。`externally_managed=true` 实例仍走 P06 `CreateInstanceResponse.bootstrap_credential`。`arguments`/`environment_names` 保持 `repeated string`，冻结 `name=value` 白名单语法，无 wire 变更。
+- 以上全部为 target declaration（not_implemented）；reference 无 Host/执行心跳/观察桥，reference 行为差异只保留在 reference 章节与评审报告，不构成 target 验收。
+
 ## 适配器注册协议
 
 适配器启动后必须先注册：

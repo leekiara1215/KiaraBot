@@ -468,6 +468,10 @@ Duplicate事实。缺token等损坏状态返回Internal，不能当作空队列�
 
 P07a 在 Runtime application 内实现 submit/dispatch/result/cancel/query/policy 的单 UoW 原子组；Runtime 私有 PG 新增 `actions/action_idempotency/quota_windows/daily_budgets/adapter_result_evidence/action_policies`，`RuntimeUnitOfWork` 追加 `actions()/action_policies()/action_quota()`。派发是提交后的流写，不在 UoW 内等网络；结果/取消/到期用单行条件更新，dispatch 扫描只领取 due/current 记录。审计复用共享 `audit_entries` 的 `target_account_id/target_conversation_id` 扩列（P07 与 P06/P09/P10 协调，不重复定义）。不新增服务、进程或端口。
 
+## P08 目标 Host 应用与端口（未实现）
+
+P08b 在 Runtime application 内新增 HostBridge 入站应用：内部 mTLS 注册（证书→预注册 `host_id`、连接代次分配）、心跳（5s/15s 在线判据，只更新 `online/last_heartbeat_at` 不 bump 版本）、观察 inbox（source=Host 去重 + P05 `HostRegistration`/`InstanceConfiguration` 条件更新）、Host 命令下发（P05 outbox/desired version；`ApplyDesiredProcess`/`StopExecution`/`DrainHost` 用 `command_id`+content hash 幂等）、跨主机 gate（旧执行未确认时 operation `BLOCKED`）。HostBridge server 注册在既有 owner mTLS `grpc_listen`，不新增进程/端口；`HostService` unary 方法列仅作方法目录，不在外部监听。Host 侧进程事实与恢复归 Host 进程（`host_application`/SQLite `command_journal`/`managed_executions`/`execution_observations`），Runtime 只存投影与观察，不解释 marker。配置应用证据按 P08 规则持久 `applied_version/apply_state`、delivery 易失。实现前 P05/P06 的 Host 记录与配置投递仍为 WIP，本契约不改变其 owner。
+
 ## 目标Model查询契约补全（未实现）
 
 Model应用负责GetOperation的权威operation/resource绑定与当前授权，以及GetModelConfiguration的精确资源授权与秘密隔离；边界使用model.proto typed请求/结果，内层仍独立值类型。读取不启动Provider、不写新业务操作；缺失/不可见NOT_FOUND，授权依赖不可用UPSTREAM_UNAVAILABLE，2秒默认/5秒上限。metadata与可编辑配置读取分开，配置只返回secret存在性，不返回密钥。P02 stub/参考实现不能作为上述生产者。

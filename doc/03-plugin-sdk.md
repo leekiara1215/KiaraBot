@@ -314,9 +314,11 @@ class Example(Plugin):
 
 ## 配置下发闭环（T08b 后续）
 
-REST PUT 配置成功只确认 desired version/value 已加密持久化；GET 返回当前连接的 delivery：UNAVAILABLE（离线、停用或未协商）、PENDING、APPLIED、REJECTED，以及该连接最后成功的 applied_version。REJECTED 带脱敏稳定 Error。PUT 与幂等重放不携带瞬时 delivery，查询使用 GET；接口权限与 HTTP 错误映射不变。状态只在内存保留，Core 重启/断线清除应用证据，重新连接必须重新确认。配置值仍禁止秘密字段，只支持空 schema，不新增 JSON Schema 解释器。
+REST PUT 配置成功只确认 desired version/value 已加密持久化；GET 返回当前连接的 delivery：UNAVAILABLE（离线、停用或未协商）、PENDING、APPLIED、REJECTED，以及该连接最后成功的 applied_version。REJECTED 带脱敏稳定 Error。PUT 与幂等重放不携带瞬时 delivery，查询使用 GET；接口权限与 HTTP 错误映射不变。目标语义（P08 冻结，未实现）：delivery 尝试（delivery_id/在途/退避）易失；`applied_version`/`apply_state`/`observed_at` 持久，作为历史应用证据，不代表当前进程已应用。仅当前 fence 且 `config_version==desired_version` 的 ACK 推进 `applied_version`，旧 delivery/旧 config_version ACK 幂等 no-op；Core 重启/断线后 `apply_state=UNAVAILABLE`，重连重新下发最新快照并重新 ACK（SDK 回调幂等）。reference 的“状态只在内存保留”行为仅作历史对照。配置值仍禁止秘密字段，只支持空 schema，不新增 JSON Schema 解释器。
 
 PluginBridge 协商 `plugin.config.v1`，注册后下发最新完整 PluginConfig（初始 version=0、values={}）。每连接最多一条在途配置，delivery_id 随机且绑定会话；SDK 的 `on_config(config, context)` 成功后才发送 PluginConfigAck。SDK 保存配置副本为 `context.config`；该属性返回副本，失败保留上一成功快照。配置回调与事件回调串行，但 RPC 响应继续独立接收，因此回调可调用 Host API。回调异常 INTERNAL、协作超时 TIMEOUT；PluginError 保留稳定码和 retryable，无原始异常文本。
+
+P08 目标补充（契约冻结，未实现）：受管实例的 P06 bootstrap 凭据由部署以 `0600` 文件预置到 Host，Host 按部署 profile 的允许列表注入环境变量（部署配置登记该名字；Runtime 不存明文、HostBridge 不传输秘密），SDK 从该环境变量读取后仍按 P06 在 `PluginBridge` 首帧以 `authorization: Bearer` 使用；`externally_managed` 实例继续走 P06 `CreateInstanceResponse.bootstrap_credential`。配置 ACK 必须回带当前 fence 与收到的 `config_version`，只有匹配当前 `desired_version` 的 ACK 推进持久 `applied_version`；旧 ACK 幂等无副作用。心跳 5s/15s 判疑似离线只影响在线投影，不证明进程停止；SDK 不得据离线推断插件失败。
 
 Core 等待 ACK 最多十秒，SDK 回调上限为 min(hook_timeout, apply_timeout_ms/1000)，宿主下发 5000 ms。当前版本被拒绝或超时后不在同连接自动重试；提交新版本或重连恢复。Core 发现新版本后暂停新的事件投递，直到该 desired version 应用成功；已经执行的事件不撤销。失败不是回滚插件自有副作用的承诺，回调应先校验后原子替换本地状态。拒绝取消的回调沿用进程隔离退出机制。
 

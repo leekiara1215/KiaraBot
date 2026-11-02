@@ -246,6 +246,7 @@ PG Repository/COMMIT/锁/并发测试缺少真实 PG 时失败并报告原因，
 - **错误/状态**：启动中宕机不能重复spawn；PID复用不误认旧进程；旧配置ACK不盖新版本；Host离线不显示已停；未确定旧执行已停不跨主机重启同一实例。
 - **文档**：`doc/02`、`doc/03`、`doc/06`、`doc/08`与部署配置说明；期望/进程/注册/配置应用四层分开。
 - **验证/退出**：V0/V1/V2/V3/V5(p08)，start前后kill、重复命令、Host重启认领/未知、包/参数拒绝、配置版本冲突和重连；10秒停止宽限及超时结果符合设计。
+- **契约前置（2026-11-02 已冻结）**：HostBridge 帧（Fence/heartbeat/observation.command_id）、内部 mTLS 身份与预注册 allowlist、HostBridge.Connect 登记（`internal_mtls`）与 `HostService` 7 方法 `exposure=host_bridge`、6 条 `semantic.host.*` 已合入契约但全部 not_implemented；P08a–d 实现前不得把 target override 翻转，reference 行为仍是唯一生产语义。实现验收时以 `core/src/application/target/host_application.cpp` 与 `core/src/runtime/platform/host_bridge.cpp` 为 target 证据。
 
 ### P09：Namespace、共享、CAS 与限额
 

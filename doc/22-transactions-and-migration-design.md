@@ -132,6 +132,8 @@ Runtime 修改 desired_state/config 时锁实例/安装和 expected_version，�
 
 Host SQLite 事务先登记 command_id/目标代次/hash，再在事务外 posix_spawn。启动参数来自已登记包摘要和允许参数集，环境最小化；用本地进程组与执行 marker 记录 PID+启动标识，不靠 PID 数字本身判断旧执行。崩溃恢复发现“已准备、无确认”时先检查/认领受管进程，无法确定时阻止重复启动并报告需处置。
 
+P08 目标把该规则细化为（契约冻结，未实现）：Runtime PG 保存 L1 期望（`plugin_instances`+outbox/version/审计）与 L3/L4 投影（`HostRegistration`/`InstanceConfiguration`，`applied_version/apply_state` 持久、`delivery_id` 易失）；Host 本地 SQLite `user_version=1` 三表 `command_journal`（`command_id` 主键、目标代次、payload hash、state/attempts/retain_until，按实例代次与 state 建索引）、`managed_executions`（`(instance_id, execution_generation)` 主键、pid/pgid/marker/spawn_result/exit 信息/保留期）、`execution_observations`（`observation_id=<host_id>:<connection_generation>:<sequence>` 主键、command_id、payload hash、reported/acked 状态；待上报索引）。收据/观察保留七天；Unknown/未决不静默删除，超 30 天转人工处置标记（§169 规则）。恢复：加载 `Persisted/Executing` 命令→比对 marker→存活认领 Running 并补观察；已 spawn 但 marker 缺失记 `Exited(unknown)` 观察；无法确定转 Unknown 并拒绝同代次再次 spawn，等 Runtime 提升 generation。崩溃于“spawn 后、receipt 写前”时启动回读 journal 重建确定 receipt，不重复 spawn。
+
 执行报告由 Runtime 事务比较实例 desired_version/execution_generation 后应用；旧状态只作历史证据，不将最新状态回退。Host 接收 newer stop 时先持久期望再停止进程，10s 宽限后 TERM/KILL 按现有平台能力回收；无法确认终止不显示成功。不因 Host 离线自动在别机启动同一逻辑实例。
 
 插件配置携完整版本、delivery_id 和应用期限，SDK 回调完成才 ACK。Runtime 只接受当前连接/执行代次和 delivery_id；旧 ACK 不盖新版本。配置保存、进程启动、协议注册、配置应用是独立字段。新配置未 ACK 的实例不接新事件；失败保留原实际版本并报告错误，不悄悄将旧配置标为新版本。

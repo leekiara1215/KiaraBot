@@ -210,6 +210,10 @@ REST 不可变分页用于一致列表；WebSocket 是资源状态刷新通知�
 
 P06 之后插件 Action 只走 `PluginBridge` 流帧、适配器执行只走 `AdapterBridge` 流帧；unary Action 方法为 internal dispatcher（`exposure=internal_dispatcher`），不对外。Runtime 受理必须原子写入 Action 记录/幂等索引/配额窗口/日预算/审计并提交后才派发；任何提交失败不调平台。派发前再复核权限、账号/白名单/开关、能力与 deadline，条件写 `dispatched`+`dispatch_attempt_id` 后才发流帧。适配器先本地 journal 登记再调平台，终态结果用 `action_result` 上报、未知/未执行用 `action_evidence` 上报、Runtime 用 `action_receipt` 确认；Action 已 EXPIRED 的迟到结果只追加证据不改终态，已派发未知不跨 adapter 实例重派。取消只对未派发 ACCEPTED 生效，派发后 CONFLICT；查询超时不改状态、`NOT_FOUND` 不证明未执行。终态 168 小时保留；控制查询必须显式账号 scope + `action.inspect`，插件查询限制自身 owner。详细状态×执行已知性矩阵、回执/证据语义、权限词表与配额/策略见 `doc/01-contracts.md` 的 P07 目标 Action 契约节。
 
+### P08 目标 Host 生命周期与执行观察（已冻结，未实现）
+
+HostBridge 只走 Runtime 内部 mTLS（Host 证书→预注册 host_id，无 bootstrap/proof）；注册后每帧带 Fence，同 host 新连接替换旧连接。Host 每 5s 心跳，15s 无心跳只把在线状态置 false、`process_outcome` 转 UNKNOWN，不写 FAILED/已停止、不 bump 版本。观察身份为 `(host_id, connection_generation, cursor.sequence)` + `command_id`，Runtime inbox 以 source=Host 去重，断线用 resync 补播。Host 先持久命令 journal 再 spawn，marker（boot id+pid+starttime）校验后才认领；同代次无法确认时不重复 spawn，等 Runtime 提升 generation。期望/进程事实/注册/配置应用四层分开：Host 离线不证明进程停止；配置只允许当前 fence+当前 config_version 的 ACK 推进持久 `applied_version`，旧 ACK 幂等 no-op，重连后 delivery 变 Unavailable 并重新应用。跨主机变更要求旧执行终止或操作员显式处置，否则 operation Blocked。详细字段/恢复/凭据部署见 `doc/01-contracts.md` 的 P08 目标 HostBridge 契约节。
+
 ### 目标管理、存储和异步交接
 
 期望配置、Host进程事实、协议注册与配置应用分层；旧 desired_version 或 execution_generation 观察不能覆盖新状态。Host离线不是已停止证据，不允许盲跨主机接管。私有 namespace 绑定稳定实例，换连接不重建；共享写条件版本，TTL 重放不续期。默认私有/共享各1024键/1MiB、单值64KiB、安装聚合8192键/8MiB；成功收据实例10000/安装80000，七天内不淘汰。一次性任务实例1024/安装8192；COMPLETED 仅 Runtime 已持久入队，确认丢失重发同 occurrence/message ID。

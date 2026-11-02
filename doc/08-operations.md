@@ -917,6 +917,14 @@ verifier 或 SecretReplayPayload。重复同指纹仍返回原完整快照及原
 - **查询/权限**：Control 查询必须显式 `RESOURCE_ACCOUNT` scope + `action.inspect`，admin 不隐式越权；插件仍走 `PluginBridge` owner-scoped 查询；`NOT_FOUND` 不代表平台未执行。
 - **日志/审计**：审计记录 action/submit|dispatch|complete|cancel|expire|evidence 与目标账号/会话；不记录消息正文、平台秘密或幂等键明文；本阶段未实现，不得以契约冻结宣称可达。
 
+## P08 Host 部署与受管凭据（契约冻结，未实现）
+
+- **监听与身份**：Host 连接 Runtime 的内部 mTLS `grpc_listen`（不是外部 `bridge_listen`）；Host 使用受控部署签发的客户端证书，Runtime 部署配置 `hosts[]` 预注册 `host_id`、证书指纹/SAN 精确匹配、允许的包摘要/profile 与凭据文件路径；未预注册或 `host.host_id` 与证书绑定不一致返回 `PERMISSION_DENIED`，不泄漏 allowlist 细节。
+- **Host 侧配置**：Host 自身登记 `host_id`、证书、包目录/摘要、launch profiles（interpreter/fixed_args/allowed_env_names/credential_env）与凭据文件；启动参数/环境变量走冻结 `name=value` 白名单，Host 校验长度/字符集；不得读取未登记 profile 或任意环境。
+- **受管凭据**：部署为每个受管实例生成 opaque bootstrap，`0600` 文件挂载 Host；Runtime 部署配置只登记 `(instance_id, version, hash, expires_at?)`（载入 P06 `bridge_credentials`），Host spawn 时按 `credential_env` 注入环境变量，SDK 走 P06 握手；明文不进入 Runtime 存储/outbox/日志/观察/审计，Host 不落日志。撤销/轮换属 P14 运维入口。
+- **心跳/离线告警**：Host 每 5s 心跳；15s 无心跳只告警在线状态并保持 `process_outcome=UNKNOWN`，不得显示“已停止”或触发自动重启；运维需按跨主机 gate 人工处置（旧执行未确认时拒绝迁移）。
+- **迁移**：切换 Host/账号前必须确认旧执行已终止或留下操作员显式处置记录；不得同时运行 reference 内嵌 launcher 与 P08 Host 管理同一实例（双 spawn 风险）。
+
 ## 今晚单机 MVP：reference 本地收发入口
 
 `scripts/local/start.py` 使用现成 reference Core、Control HTTP、SQLite、固定
