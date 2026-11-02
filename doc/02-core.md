@@ -1477,3 +1477,9 @@ caller subject/owner（不消费 installation 字段），Runtime Action 使用
 authentication.subject 与请求 owner_instance/account，不接受 installation 输入。二者目前
 **无需** installation scope 派生/校验；若 P11d/P07 后续引入按 installation 隔离的 Model/Action
 行为，必须复用 Scheduler 的“缺失 Installation binding 即 fail-closed”规则，届时再实现。
+
+### P13b Host/SDK/Adapter 优雅 drain 与崩溃恢复（2026-11-02）
+
+`HostService::stop()` 与 Host 组合根 `before_stop`（SIGTERM/SIGINT）按固定顺序收尾：先对每个未终态 `managed_executions` 执行有界 TERM（grace≤10s，supervisor 负责 TERM→KILL），再 `flush_pending_locked()` 把最终 execution observation 通过 HostBridge 上报，随后对 Host 本地 SQLite journal 做一次有界 prune，关闭 journal，最后停止 HostBridge 连接。任何无法确认的终止保持 `ManagedExecutionState::Unknown`/`ExecutionOutcome::Unknown`，shutdown 不把 UNKNOWN 改写成 stopped/succeeded；同代次恢复不重复 spawn（P08a marker 规则）。Host 进程以 0 退出；`kiarabot-plugin-host` 的 `host_connections` 代次/epoch 仍由 Runtime 注册投影维护（P08b）。
+
+SDK `ShutdownNotice` 收尾：停止接收新事件，但 reader 在 drain 窗口内继续处理 delivery receipt/host/action response，等待已受理事件队列排空后才结束 session；超窗口则停止等待（不无限阻塞），`on_stop('shutdown')` 最后执行一次，`_draining` 抑制重连，进程正常退出 0。Adapter `ShutdownNotice`：在该连接内不再发新事件/新 Action，未确认事件保留本地 outbox，drain 窗口后按退避重连（Runtime 重启新代次），`on_shutdown` 顺序为 stop event → 取消连接任务 → 关健康端口 → close action journal/outbox；致命鉴权失败以非零码退出。Adapter 在异机部署时与 Host 无共享 SQLite，仅通过 Runtime/PluginBridge 观察事实，Host 停止不代表 Adapter 已停止。

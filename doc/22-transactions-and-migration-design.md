@@ -276,3 +276,7 @@ INSTANCE，无新权限）。多进程 e2e 验证了创建→到期→交接→C
 UNKNOWN 不伪完成。容量用 owned 表直接填充到 1024/8192 后经 RPC 断言 RATE_LIMITED。
 Installation-scope 签发约定只被 Scheduler 消费；Model/Action 当前不读取 installation，登记为
 P11d/P07 后续（届时按同一 fail-closed 规则补充派生与测试，不改 proto）。
+
+## P13b Host/SDK/Adapter 优雅停止与恢复顺序（实现记录，2026-11-02）
+
+Host 本地 journal 是进程事实的唯一本地权威，不冒充 Runtime 业务账本。优雅停止顺序固定为：停止接受新命令 → 活动 execution 有界 TERM（grace≤10s，TERM→KILL）→ flush 最终 observation → 有界 prune → close journal → 停 HostBridge；写盘与观察在同一次锁内完成，关闭后不再接受命令。无法确认的终止保留 UNKNOWN，重启恢复按 instance+execution_generation/marker 判断，不重复 spawn、不把 UNKNOWN 写成成功。SDK 的 ShutdownNotice 不丢已受理事件：在 drain 窗口内继续处理回执，窗口结束后停止但不重连；Adapter 未确认事件保留本地 outbox 并在窗口后按退避重连（Runtime 新代次重注册）。跨服务故障矩阵由 p13_host_sdk_drain（真实 Host+SDK）与 p08 单测覆盖；P08b-3a Host 命令下发接好后，Runtime BeginDelete 的 Host 参与者可复用同一 drain 语义。

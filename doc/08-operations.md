@@ -1357,3 +1357,4 @@ bash scripts/ops/target-drill.sh             # 真 PG16.4 + SQLite 本地全矩�
 | 正式发布 | 未就绪（官方镜像 digest、主机/秘密托管、保留离站、Compose 验收待完成） |
 
 - **仍需用户确认**：备份保留周期、离站复制位置/频率、密钥托管方式（KMS/离线/分片）；脚本默认只保留本地最近 7 份完整集，不提供异地复制。
+P13b（2026-11-02）：Host 进程 SIGTERM 走有界优雅收尾（活动受管进程 TERM≤grace10s，再 KILL；最终观察上报；Host SQLite journal prune 后关闭；HostBridge 断开），退出码 0；无法确认的进程结果保持 UNKNOWN，不伪造 stopped。SDK 收到 ShutdownNotice 后停止接新事件、在 drain 窗口内收完已受理事件的 ACK/回执、最后调用 `on_stop` 并以 0 退出；Adapter 保留未确认本地 outbox，drain 窗口后按退避重连，致命鉴权错误以非零退出。崩溃恢复：Host 重启按 marker/代次恢复，不重复 spawn 同代次、不把崩溃执行改写成成功；Host 本地日志与 Runtime 中央库的恢复/清理分别由 P13a/P14 协调，不跨库级联。
