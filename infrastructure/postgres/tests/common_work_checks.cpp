@@ -1382,8 +1382,92 @@ void check_public_result_codec(Database& database) {
   }
 }
 
+void check_audit_queries(Database& database, std::string_view service) {
+  using target::AuditCursor;
+  const auto component = std::string{service == "identity" || service == "runtime" ? service
+                                                                                  : "owner"};
+  const target::SubjectId actor{"11111111-1111-4111-8111-111111111111"};
+  const target::SubjectId other{"22222222-2222-4222-8222-222222222222"};
+  const target::ResourceRef resource{target::ResourceKind::Catalog, {"p12e-audit-check"}};
+  target::TimePoint base{};
+  {
+    auto work = begin(database);
+    base = take(work->current_time());
+    for (int index = 0; index < 3; ++index) {
+      take(work->journal().append_audit(
+          {index == 1 ? other : actor, resource,
+           "request-" + std::to_string(index), "trace-" + std::to_string(index),
+           "/kiarabot.v1.P12e/Audit", index == 2 ? std::optional<target::ErrorCode>{
+                                                      target::ErrorCode::PermissionDenied}
+                                                : std::nullopt,
+           target::ResourceVersion{7},
+           base - std::chrono::seconds(3 - index)}));
+    }
+    check(work->commit() == target::CommitResult::Committed, "audit query fixture commit");
+  }
+  const auto window_start = base - std::chrono::seconds(10);
+  const auto window_until = base + std::chrono::seconds(10);
+  {
+    auto work = begin(database);
+    target::AuditQuery query;
+    query.filter.occurred_from = window_start;
+    query.filter.occurred_until = window_until;
+    query.filter.resource = resource;
+    query.limit = 2;
+    auto first = take(work->query_audit(query));
+    check(first.records.size() == 2, "audit page size");
+    check(first.records[0].request_id == "request-2" &&
+              first.records[1].request_id == "request-1",
+          "audit newest first");
+    check(first.records[0].rejection == target::ErrorCode::PermissionDenied,
+          "audit rejection projection");
+    check(!first.next_cursor.empty(), "audit next cursor");
+    auto cursor = target::decode_audit_cursor(first.next_cursor);
+    check(cursor.has_value(), "audit cursor decode");
+    query.cursor = cursor;
+    auto second = take(work->query_audit(query));
+    check(second.records.size() == 1 && second.records[0].request_id == "request-0",
+          "audit keyset second page");
+    check(second.next_cursor.empty(), "audit final page cursor");
+    target::AuditQuery actor_query;
+    actor_query.filter.occurred_from = window_start;
+    actor_query.filter.occurred_until = window_until;
+    actor_query.filter.resource = resource;
+    actor_query.filter.actor = actor;
+    auto filtered = take(work->query_audit(actor_query));
+    check(filtered.records.size() == 2, "audit actor filter");
+    target::AuditQuery missing;
+    missing.filter.occurred_from = window_start;
+    missing.filter.occurred_until = window_until;
+    missing.filter.resource = resource;
+    missing.filter.actor = target::SubjectId{"33333333-3333-4333-8333-333333333333"};
+    auto empty = take(work->query_audit(missing));
+    check(empty.records.empty(), "audit empty filter is not unavailable");
+    auto logs = take(work->query_logs(actor_query));
+    check(logs.records.size() == 2, "log projection size");
+    for (const auto& entry : logs.records) {
+      check(entry.component == component, "log component owner");
+      check(entry.actor && entry.actor->value == actor.value, "log actor projection");
+    }
+    check(logs.records.size() == 2 && logs.records[0].severity == "rejected" &&
+              logs.records[0].message == "request.rejected" &&
+              logs.records[1].severity == "info" && logs.records[1].message == "request.recorded",
+          "log redacted rejection projection");
+    target::AuditQuery invalid = actor_query;
+    invalid.cursor = AuditCursor{base, 0};
+    check(std::holds_alternative<target::Failure>(work->query_audit(invalid)),
+          "invalid audit cursor rejected");
+    work->rollback();
+  }
+}
+
 void check_common(Database& database, const DatabaseConfig& config) {
   check_public_result_codec(database);
+  check_audit_queries(database,
+                      config.service == target::Service::Identity    ? "identity"
+                      : config.service == target::Service::Runtime  ? "runtime"
+                      : config.service == target::Service::Scheduler ? "scheduler"
+                                                                     : "model");
   if (config.service == target::Service::Identity) {
     check_identity_credentials(database);
     check_bootstrap_locator(database);
