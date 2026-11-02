@@ -61,3 +61,39 @@ Runtime 私有 storage/共享 namespace 的第二阶段：PG 四表、typed 仓�
 - target 翻转：`StorageEntry`、`StorageCondition`、`StorageCompareAndSet*` 4 个 message、26 个
   storage target-scope field、5 条 storage/namespace semantic rule；unary `Runtime*Storage*`
   message/field 与 `NamespaceScope.installation_shared_id` 保持 not_implemented。
+
+## P09f 退出证据与 target 状态核对（2026-11-02，HEAD d508d67）
+
+工作树 `.worktrees/p09f`，分支 `codex/p09f`，基于 main@d508d67；本阶段只做证据/文档，无实现变更。
+
+### 实际运行（命令与结果）
+```text
+cmake --build --preset full-locked --parallel 8            # build=0
+ctest --preset full-locked -R 'p09|p06_bridge_acceptance|p06_client_e2e|p03_postgres_database'
+  # 5/5 passed, 103.97s
+  # p09a_runtime_storage_application (1.12s)
+  # p06_client_e2e (56.08s, 真 PG16.4 + TLS Runtime + 真 SDK/adapter)
+  # p06_bridge_acceptance (23.87s, 含 P09b PluginBridge storage 帧矩阵)
+  # p09_postgres_storage_records (3.48s, owned PG16.4)
+  # p03_postgres_database (19.40s)
+```
+- `p06_bridge_acceptance.py` 的 P09b 段覆盖：私有 Set/Get/replay/conflicting replay、私有 CAS/stale CAS/delete、TTL 设置与重放不续 TTL、过期读取、命名空间配额 RATE_LIMITED、共享 scope 未创建/非成员/无 condition/成员写读/禁用/显式 installation_shared_id 拒绝及对应稳定错误码。
+- `p09a_runtime_storage_application` 覆盖 application 层 scope/condition/TTL 边界/配额/收据/共享成员门禁/管理 operation；`p09_postgres_storage_records` 覆盖真 PG 四表/CAS 条件写/收据重放/成员 gate/TTL/配额/共享管理/重启持久。
+
+### target/契约核对
+- 已登记 target implemented（与实现/证据一致）：`NamespaceRecord`、`StorageQuota`、`SharedMember`、`RuntimeCreate/Get/DisableSharedNamespace*`、`RuntimeSetSharedMembers*`、`StorageEntry`、`StorageCondition`、`StorageCompareAndSet*` 及相关 target-scope 字段（scope/condition/version/expires_at/quota/members）、5 条 storage/namespace semantic rule；target_spec 的 Create/Get/SetMembers/Disable RPC 为 implemented。
+- **未翻转项及理由**：
+  - `NamespaceScope` message：只对已被 bridge/管理 e2e 验证的 `instance_private`/`installation_shared` 字段翻转；message 仍含 `installation_shared_id` 这一 internal/admin-only 字段，整体不翻转。
+  - `NamespaceScope.installation_shared_id`：P09b 明确拒绝插件自报 owner；该字段仅在内部/管理路径使用，无对外 target 证据。
+  - unary `RuntimeGetStorage/SetStorage/DeleteStorage/CompareAndSetStorage` message/field/RPC：target_spec exposure=`internal_dispatcher`，不注册对外 gRPC；插件实际走 `HostRequest.storage_*` bridge 帧（已翻转）。P12 REST storage 面未纳入，故保持 not_implemented。
+  - `operations.createSharedNamespace`/`getSharedNamespace`：Control REST handler 未接线（P12c 维护），OpenAPI x-contract-status 保持 not_implemented。
+- 契约脚本：`check_implementation_status.py` 通过；`target_api_test.rb` 与 `evidence_scopes_test.py` **在 main@d508d67 已失败**（P13c/P13d target override 与 REST marker/冻结集漂移，fail at target_api missing unavailable marker、evidence scope membership），不是本阶段引入，报告 Lead 作为真实缺陷，未在 P09f 扩改契约。
+
+### 剩余缺口
+| 缺口 | 状态 |
+| --- | --- |
+| unary storage 对外面（REST/P12） | 未做；当前只有 PluginBridge 帧与管理 RPC |
+| quota 多连接并发横压 | 待补；现有矩阵为串行真 PG，未做多 writer 配额竞争/长时间横压 |
+| storage 断线重连专项（帧重放/收据重发/TTL 跨重连） | 待补；P06 通用重连 e2e 未逐项断言 storage 帧，P09b 未单列 storage reconnect case |
+| 共享成员删除不误删他人数据 | 未直接实测（P09 删除不触碰 storage 表；与 P13d 交叉，P13d 已记录待补直接断言） |
+| 真 PG16.4 已实测 | 已跑 owned PG16.4 fixture；生产规模/长时保留待环境 |

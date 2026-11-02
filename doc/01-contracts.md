@@ -2087,3 +2087,5 @@ server 停止/Wait；原 issuer、InvocationDeadline 及 verification_keys 参�
 
 真实 mTLS fixture 覆盖该适配与实际 Core 编排；测试的仓储、随机和签验仍为明确替身，
 不代表生产 PostgreSQL、JWT 材料端口或组合根已接线可用。
+
+P09f（2026-11-02，HEAD d508d67）：上述 P09 target 状态经真 PG16.4 fixture `p09_postgres_storage_records`、application `p09a_runtime_storage_application` 与真 TLS/PG `p06_bridge_acceptance` storage 帧矩阵复核，5/5 P09 相关 CTest 通过。未翻转：`NamespaceScope` message（仅两个已验证字段翻转，message 仍含 internal-only `installation_shared_id`）、`NamespaceScope.installation_shared_id`（插件自报被拒绝，仅内部/管理路径）、unary `Runtime*Storage*`（internal_dispatcher，不对外注册；插件使用 `HostRequest.storage_*`）、`operations.createSharedNamespace/getSharedNamespace`（Control REST 未接线）。证据/缺口详见 `reports/modules/architecture-p09-storage.md` P09f 节。
