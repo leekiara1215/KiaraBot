@@ -1558,3 +1558,11 @@ Model owner 的 11 个 RPC（GatewayChat/GetCallStatus/Resolve/元数据/配置/
 - target 核对（只读）：IdentityService 方法 target implemented 7/23（RegisterPrincipal/RotateCredential/RevokeCredential/GetPrincipalStatus/GetCredentialStatus/ListAudit/ListLogs），消息 17、字段 59；RuntimeService 方法 target implemented 10/55（P09a-2 namespace、P13 生命周期、P12e audit/logs、QueryActionResult），消息 23、字段 77。
 - 未翻项（未改契约）：P04 Login/Refresh/Validate/GetPrincipal/ListSessions/RevokeSession、IssueDelegation/CheckAuthorization、Exchange/Assignment/Invalidation/VerificationKeys、ListPrincipals；P05 核心 Runtime 资源方法（CreateAccount…GetInstanceConfig）；`bootstrap_credential` 字段级、P05b 实例委托、`HostRequest.storage_compare_and_set`/host operation owner。原因与证据逐项见两份模块报告的 P05f 段。
 - 剩余缺口：P05b 委托语义待用户确认；真实目标栈 live、Host peer 生产证书签发/轮换、跨主机网络分区演练未验收；P06 外部 Bridge 的 bootstrap_credential 消费未形成端到端证据。
+### P13e Host 联合删除/恢复补充（2026-11-02）
+
+HostBridge live StopExecution/DrainHost 帧已由真 PG16.4+真 Runtime+fake mTLS Host 验证下发与
+receipt 落库；Host 离线/未回执保持 Pending/Unknown，不推断进程停止。共享 namespace 成员撤销
+或 namespace 删除只影响本 namespace/成员关系，私有 namespace 与其他 installation 数据保留
+（真 PG+storage 帧断言）。仍缺 BeginDelete/Restore 与真实 Host 的单一联合 e2e 与 Scheduler
+participant 生产 ListTasks/CancelTask 委托接线；P13 退出判定未通过，待后续增量或用户确认测试
+注入方式。

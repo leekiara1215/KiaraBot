@@ -29,3 +29,15 @@
 
 ## 排障入口（与 P14c runbook 交叉引用）
 见 doc/08 “P13d” 节：GetOperation → participants/reason/next_attempt；audit/log 查询；`operation=lifecycle_maintenance outcome=degraded` 日志；owner 私有库积压/租约 SQL；满盘/恢复按 P14c 备份恢复 runbook 停机处置，不用生命周期快捷方式绕过业务门禁。
+
+
+## P13e 补充（2026-11-02）
+
+- 新增真 PG16.4 + 真 Runtime + fake mTLS Host 的 HostBridge live StopExecution/DrainHost 帧
+  下发/heartbeat 触发/receipt 落 PG 断言（p08_host_bridge_e2e）。
+- 共享 namespace/成员删除不误删断言：撤销成员后访问 DENIED 但共享值/其他成员/另一安装
+  namespace 保留；删除共享 namespace 不影响私有 namespace（p06_bridge_acceptance，真 PG）。
+- Scheduler participant 仍只有 fake/注入端口证据（P13a 应用测试覆盖 BLOCKED→Done、离线/
+  恢复/超时），生产 Runtime 未接 ListTasks/CancelTask 客户端与委托。
+- 未完成：BeginDelete/Restore 与真实 Host 的单一联合 e2e（需 Scheduler participant 生产路径或
+  用户确认的测试注入方式）；P13 退出判定：**未通过**（上述两项为剩余缺口）。

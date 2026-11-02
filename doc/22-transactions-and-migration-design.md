@@ -320,3 +320,10 @@ P11 全套测试通过（9/9）覆盖 Model 两事务意图/结果、UNKNOWN 保
 ## P05f 事务/迁移状态核对（2026-11-02，main@439fb9e）
 
 P05f 未修改事务/迁移设计；本机真 PG16.4 测试（`p03_postgres_database` 及 P04/P05 相关）通过，Identity/Runtime 私有库 schema/初始化与双进程 e2e 有现有证据。target 未翻项与生产环境项：P05 核心 Runtime 资源方法 target 状态仍 not_implemented（逐方法 evidence 未登记）、`bootstrap_credential` 字段级与 P05b 委托未验收；真实目标栈迁移顺序、备份/恢复（P14c 本机演练不等于生产）、Host peer 证书轮换与跨主机未验收。详见 P04/P05 模块报告 P05f 段。
+
+## P13e 删除/恢复边界补充（2026-11-02）
+
+HostBridge StopExecution/DrainHost 命令仍是 Runtime outbox 的持久快照，Host receipt 只记录
+“已持久接受/执行观察”，不改变 Runtime 生命周期终态；未回执/Unknown/离线保持 Blocked，不能
+凭命令存在推断进程已停止。共享 namespace 删除只级联本 namespace 的成员/值，私有 namespace 与
+其他 installation 的 namespace 行不受影响；成员撤销只删 membership，不删共享值或其他成员数据。

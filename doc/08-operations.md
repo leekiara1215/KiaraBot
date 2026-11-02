@@ -1516,3 +1516,16 @@ P07g（2026-11-02）：P07 Action 退出证据已按当前 HEAD 复核：`p07_ac
 - 生产准备仍缺：目标六服务真实栈 live、Host peer 生产证书签发/轮换/吊销流程、跨主机网络分区演练、P06 外部 Bridge 的 bootstrap_credential 消费闭环。
 - P05b（Runtime 实例委托来源）待用户确认语义；未确认前 Runtime→Model/Scheduler 深链路保持 fail-closed/分层证据，不把 fake/fixture 当生产验收。
 - `platform_peers` 离线登记与显式 assignment 是目标栈部署前置；readiness 仍按真实 DB/schema/Identity 授权链/密钥材料判定，缺配置不得 ready。生产证书轮换需停写/滚动窗口与 Identity 登记变更，不能热改文件冒充轮换。
+## P13e Host 联合删除/恢复与共享成员删除验收（2026-11-02）
+
+- **HostBridge 停止/排空帧**：真 PG16.4 + 真 Runtime + fake mTLS Host e2e 增加 live
+  StopExecution/DrainHost 命令经心跳触发下发、宿主 receipt 落 PG（`state=Receipted`）断言；
+  Host 离线/未回执时命令保持 Pending/Unknown，不伪造 stopped。完整 BeginDelete 联合链路
+  （Runtime 生命周期 participant → HostBridge → 真 Host 回执 → operation DELETED）仍受
+  Scheduler participant 生产委托未接线限制，未在本增量宣称通过。
+- **共享 namespace 删除不误删**：真 PG16.4 + PluginBridge storage 帧断言：撤销当前成员后
+  访问被拒绝但共享值/其他成员行与另一 installation 的 namespace 值仍保留；删除整个共享
+  namespace 不做跨 namespace 级联，当前实例私有 namespace 数据仍可读。
+- 仍缺：真实 Host 进程参与 BeginDelete/Restore 的单一联合 e2e（当前为 HostBridge 帧级 +
+  Runtime 生命周期应用级 fake 端口证据），Scheduler `ListTasks/CancelTask` 生产客户端/委托
+  未接线（fake 端口已验证 BLOCKED→Done 语义）。P13 退出前需补齐这两项或由用户确认环境。
