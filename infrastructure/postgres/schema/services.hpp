@@ -7,6 +7,7 @@
 #include "kiarabot/core/domain/target/foundation.hpp"
 #include "runtime_actions.hpp"
 #include "runtime_events.hpp"
+#include "runtime_host_connections.hpp"
 #include "runtime_storage.hpp"
 
 namespace kiarabot::infrastructure::postgres::schema {
@@ -79,6 +80,7 @@ CREATE UNIQUE INDEX bridge_credentials_active ON kiarabot.bridge_credentials(res
 )sql";
     sql += kRuntimeEvents;
     sql += kRuntimeActions;
+    sql += kRuntimeHostConnections;
     sql += kRuntimeStorage;
     break;
   case core::target::Service::Scheduler:
