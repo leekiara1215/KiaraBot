@@ -17,7 +17,6 @@ inline constexpr int version(core::target::Service owner) {
     // relations and the shared audit target columns.
     return 10;
   case core::target::Service::Scheduler:
-  case core::target::Service::Scheduler:
     // P10a adds the one-shot task/occurrence trigger-observation columns and due/owner indexes;
     // P07 adds the shared nullable audit target columns to every service schema.
     return 8;
@@ -26,7 +25,6 @@ inline constexpr int version(core::target::Service owner) {
     // durable call facts (disposition/UNKNOWN resolution/usage); P07 adds the shared nullable
     // audit target columns to every service schema.
     return 8;
-    return 7;
   }
   return 0;
 }
