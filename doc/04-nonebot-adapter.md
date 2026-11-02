@@ -250,3 +250,17 @@ plugin 查询终态；重复平台帧不重复建事件/Action；adapter 崩溃�
 非订阅/离线插件无 delivery target；post-dispatch cancel CONFLICT。仍未覆盖：真实
 QQ/NapCat（M2 环境项）与单链 UNKNOWN/EXPIRED late-evidence（手工 wire fixture
 `p06_bridge_acceptance` 已有，待后续合并到单链）。
+
+## P06h UNKNOWN/EXPIRED 迟到证据与 adapter 重连补报（2026-11-03）
+
+`tests/architecture/p07_adapter_e2e.py` 在真实 adapter + fake OneBot + Runtime 链上增加：
+- **EXPIRED 迟到结果**：Action 已派发且平台响应被 fake OneBot 延迟；测试把 Action deadline
+  推进到过去并等待 Runtime maintenance 转 EXPIRED，再放行平台响应。迟到 ActionResult 只写
+  `adapter_result_evidence`/evidence-only receipt，不改 EXPIRED 终态；plugin 查询仍为 EXPIRED
+  且非 known-success，平台副作用只发生一次。
+- **adapter 崩溃/重连 UNKNOWN 补报**：平台调用中 SIGKILL adapter；重启同 OUTBOX_PATH 后
+  adapter `recover()` 对 claimed-but-unreported action 生成 UNKNOWN evidence report，重连后按
+  P07 语义补报至 Runtime；Action 保持 ACCEPTED/非 known-success，平台调用不重复。
+- **重复/乱序平台事件**：重复 message frame 不生成第二个 Runtime 事件；乱序投递的两个事件各
+  只被投递一次（同 event id 无重复 target）。
+- fake OneBot WS 测试控制面新增 `delay_seconds`（测试代码），用于精确制造平台延迟。

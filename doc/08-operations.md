@@ -1630,3 +1630,12 @@ Control `/logs` `/audit` 的 Runtime 源使用 `audit.read`(49)/`log.read`(48) �
 BeginDelete→Host/Scheduler participants 收敛到 DELETED、Restore 不复活凭据、Host 离线/
 UNKNOWN 不伪完成、重复 BeginDelete 幂等。生产 `kiarabot-runtime` 不包含该注入，Scheduler
 委派仍 fail-closed；P13 生产退出仍需用户确认 P13f 方案 A/B，不能引用本 e2e 作生产证据。
+
+## P06h UNKNOWN/EXPIRED/adapter 重连验收（2026-11-03）
+
+`ctest -R p07_adapter_e2e` 现覆盖真实 adapter/fake OneBot/Runtime 链的 P07 未决语义：
+Action deadline 过期后迟到平台结果只进 `adapter_result_evidence`，不把 EXPIRED 改成成功；
+adapter 平台调用中崩溃重启后，同 OUTBOX journal 的 claimed 记录生成 UNKNOWN evidence report
+并在重连后补报（Action 保持非 known-success、平台侧不重复执行）；重复/乱序平台 message frame
+只产生一个 Runtime 事件及投递 target。验证入口为测试 harness；生产运行仍按超时/未知语义
+fail-closed，不自动重试副作用。

@@ -117,3 +117,17 @@ TLS/PG16.4 Runtime wire 证据、dispatch→result→receipt/evidence、Mute/Kic
 旧策略/预算拒绝无副作用、target_spec/执行范围/证据登记均通过门禁。非阻塞残余：真实平台
 reaction API（NapCat set_msg_emoji_like）与 Control `listActionMetadata` REST 未接线，属环境/
 后续能力，不影响 P07 target Action 契约退出。
+
+## P06h UNKNOWN/EXPIRED late evidence + adapter reconnect（2026-11-03）
+
+扩展 `tests/architecture/p07_adapter_e2e.py`（真实 adapter/fake OneBot/Runtime/真 PG）：
+- fake OneBot 新增 `delay_seconds` 控制，制造平台延迟；Action 派发后把 PG deadline 推进到过去，
+  Runtime maintenance 转 EXPIRED，平台响应返回后的迟到 ActionResult 只写
+  `adapter_result_evidence`，动作终态保持 EXPIRED、plugin 查询不出现 known-success、平台副作用
+  仅一次。
+- SIGKILL adapter during platform call；重启同一 OUTBOX_PATH，adapter `recover()` 将 claimed
+  记录生成 UNKNOWN evidence report，重连补报；Runtime action 保持 ACCEPTED/非 known-success，
+  evidence 行存在，平台调用不重复（P07 evidence-only/UNKNOWN 语义）。
+- 重复平台 frame 不新增 Runtime event；乱序两事件各投递一次、无重复 target。
+验证：`ctest -R p07_adapter_e2e` 通过（整组 p06|p07|p05|p03_postgres 见交付说明）。
+未完成：真实 QQ/NapCat 平台、生产 adapter 重启后的重投递窗口仍需环境/后续验收。
