@@ -1324,6 +1324,7 @@ T03a 新增 CoreToPlugin.error（oneof 字段 6），承载注册之后的终止
 | `HostToRuntime.fence`、`HostToRuntime.heartbeat`、`RuntimeToHost.fence`、`RuntimeToHost.heartbeat_ack`、`HostRegisterHostResponse.fence`、`ExecutionRecord.command_id`、`HostHeartbeat.fence`、`HostHeartbeat.sent_at`、`HostHeartbeat.cursor`、`HostHeartbeatAck.fence`、`HostHeartbeatAck.received_at`、`HostHeartbeatAck.heartbeat_interval_seconds`、`HostHeartbeatAck.resync_required` | not_implemented | P08 目标 HostBridge 帧：内部 mTLS 上每条注册后帧携带当前 Fence；注册响应分配 connection_generation/runtime_epoch；Host 每 5s 发 HostHeartbeat（cursor=已上报观察游标），Runtime 回 HostHeartbeatAck（15s 无心跳判疑似离线，resync_required 沿用 P06 语义）；ExecutionRecord.command_id 关联触发命令，空串表示非命令触发的自发变化，不伪造 ID。不使用 bootstrap/ConnectionAuthorization/connection_proof。 |
 | `HostBridge.Connect` | not_implemented | P08 目标：HostBridge 只注册在 Runtime 内部 mTLS `grpc_listen`，Host 用部署签发的 mTLS 客户端证书认证；证书 SAN/指纹映射到部署预注册 host_id（不新增 bootstrap/proof/refresh，也不新增权限/服务）。reference runtime 未服务 HostBridge，故 reference 状态为 not_implemented；P08 C5 实现后翻转 target override。 |
 | `semantic.host.bridge_mtls_identity`、`semantic.host.connection_fence`、`semantic.host.heartbeat_offline`、`semantic.host.observation_identity`、`semantic.host.execution_recovery`、`semantic.host.config_apply_evidence` | not_implemented | P08 目标冻结语义：HostBridge 证书→预注册 host_id 身份与方向校验；注册代次/fence 单活动连接与旧代次拒绝；5s 心跳/15s 疑似离线（online=false 但 process_outcome 只转 UNKNOWN，不写 FAILED/已停止、不 bump version）；观察身份 `(host_id, connection_generation, cursor.sequence)`+command_id 与 source=Host inbox 去重；命令 journal 先持久后 spawn、marker 校验、同代次未知不重复 spawn、崩溃恢复重建 receipt；仅当前 fence+当前 config_version 的 ACK 推进持久 applied_version，delivery_id 易失、重连后 Unavailable。实现前 reference 行为仍是唯一生产语义。 |
+| `Permission.PERMISSION_NAMESPACE_READ` | not_implemented | P09 目标共享 namespace 管理读权限（枚举值 47，承接 P07 的 41–46）：只用于 `RuntimeService.GetSharedNamespace`（scoped Control，带 exact installation scope），必须显式资源授予，admin/operator/viewer 均不默认持有；P07 的 41–46 与既有 `NAMESPACE_MANAGE=27` 不变。 |
 <!-- contract-status:end -->
 
 `/ws/messages` 自 2026-10-31（W5）起为 `implemented`：只有被私有控制配置显式授予 `message.read` 的用户可订阅，事件 `message.updated` 仅含消息元数据（`message_id`、`conversation_id`、`direction`；v1 只产生 `received`），不推送正文、没有 REST 消息投影、也不构成审计；任何默认角色（含 admin）都不持有 `message.read`。授权模型见 `doc/08-operations.md`。
@@ -1601,6 +1602,19 @@ P06 之后外部插件 Action 只走 `PluginBridge`；P07 目标的每-kind 授�
 | approve_request | `request.approve` | `PERMISSION_REQUEST_APPROVE=46` | `action.approve_request.v1` |
 
 `PERMISSION_ACTION_EXECUTE`/`PERMISSION_ACTION_INSPECT` 保留为方法级权限：unary `Submit/Query/CancelAction` 仅内部 dispatcher 使用（需要 `action.execute`），Control 查询需要 `action.inspect`。以上敏感权限不由默认角色派生，必须显式资源授予；Mute/Kick 另受账号 ActionPolicy 门禁。`schedule_task` 已 deprecated，不产生 kind/权限。
+
+### P09/P10 目标 Storage/Namespace/Task 权限映射（未实现）
+
+| 用途 | Permission 枚举值 | 作用域 / 方法 |
+| --- | --- | --- |
+| 插件 storage 读写/CAS | `PERMISSION_STORAGE_NAMESPACE=32`（既有） | 认证实例解析出的私有/共享 namespace；外部插件经 `PluginBridge` `HostRequest.storage_*` 帧调用，4 个 unary storage 方法仅 internal dispatcher |
+| 共享成员/禁用管理 | `PERMISSION_NAMESPACE_MANAGE=27`（既有） | exact installation/namespace scope；`SetSharedMembers`、`DisableSharedNamespace`、`CreateSharedNamespace` |
+| 共享 namespace 管理读 | `PERMISSION_NAMESPACE_READ=47`（P09 新增） | exact installation scope；仅 `GetSharedNamespace`（scoped Control） |
+| 任务创建/取消 | `PERMISSION_TASK_SCHEDULE=34`（既有） | owner 由 Runtime 实例委托 claims 派生；`CreateTask`/`CancelTask` |
+| 任务/occurrence/operation 查询 | `PERMISSION_TASK_READ=33`（既有） | exact instance/installation scope；`GetTask`/`ListTasks`/`GetOccurrence`/`GetOperation` |
+| Runtime 接收 TimerTriggered | `PERMISSION_TIMER_ACCEPT=35`（既有） | Scheduler 服务主体（内部 mTLS owner service），不是外部 Bridge |
+
+以上权限均不由默认角色派生，必须显式资源授予；`namespace.manage/read` 绑定 exact installation scope，Control 不得以 admin 隐式越权。外部插件的 storage/task 入站统一走 `PluginBridge` 流帧，unary storage 方法不对外。
 
 ## 错误模型
 

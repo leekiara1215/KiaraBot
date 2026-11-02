@@ -55,6 +55,8 @@ enum Permission {
   PERMISSION_MEMBER_MUTE = 44;
   PERMISSION_MEMBER_KICK = 45;
   PERMISSION_REQUEST_APPROVE = 46;
+  // P09 target shared-namespace management read; explicit installation-scope grant only.
+  PERMISSION_NAMESPACE_READ = 47;
 }
 
 extend google.protobuf.MethodOptions {

@@ -1608,7 +1608,8 @@
       "Permission.PERMISSION_MESSAGE_DELETE": "not_implemented",
       "Permission.PERMISSION_MEMBER_MUTE": "not_implemented",
       "Permission.PERMISSION_MEMBER_KICK": "not_implemented",
-      "Permission.PERMISSION_REQUEST_APPROVE": "not_implemented"
+      "Permission.PERMISSION_REQUEST_APPROVE": "not_implemented",
+      "Permission.PERMISSION_NAMESPACE_READ": "not_implemented"
     },
     "channels": {
       "channels.control": "implemented",
@@ -5022,6 +5023,9 @@
     ],
     "semantic.host.bridge_mtls_identity": [
       "core/src/application/target/host_application.cpp"
+    ],
+    "Permission.PERMISSION_NAMESPACE_READ": [
+      "core/src/application/target/runtime_application.cpp"
     ]
   },
   "vocabulary": {
