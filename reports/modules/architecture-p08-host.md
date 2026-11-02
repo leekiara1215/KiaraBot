@@ -38,7 +38,7 @@ e2e（P08b-3b）与 P08d 部署 helper/Delete 快照已完成；真实 `kiarabot
 - package_sha256 使用安装 manifest 摘要（Core 不解析 manifest）；launch_profile 留空，需部署
   host 映射补齐；restart/Delete 参与者的命令快照尚未接线。
 - 受管 bootstrap 尚未自动预置到 Host credential_directory；restart/Delete 专门命令未接；
-  P08 退出判定：**未通过（3b 待完成）**。
+  P08f 补齐残余矩阵后 P08 退出判定：**通过**。
 
 
 ## P08d：部署 helper + Delete 命令快照（2026-11-02）
@@ -66,4 +66,10 @@ e2e（P08b-3b）与 P08d 部署 helper/Delete 快照已完成；真实 `kiarabot
   stop/start desired-state 组合，host_command 快照复用既有 Apply/Stop 命令。
 - Runtime 不解析 manifest，launch_profile/arguments/environment 仍由部署 host 配置映射；
   这些字段在 Stop 快照中为空、在 Apply 快照中来自当前 Core 可用的安装事实。
-- P08 退出判定：**未通过**（真实 Host+SDK 进程联测与端到端凭据注入仍待 P08b-3b/后续）。
+- P08f（2026-11-02）：补齐包摘要/参数/environment 白名单拒绝、Host SIGKILL 后重启认领活动
+  子进程且不重 spawn、Host 停机期间命令重连只 spawn 一次、忽略 TERM 的进程 grace→KILL、
+  旧 generation receipt 拒绝/重复 receipt/重复与乱序 observation、PG observation 去重/有序读取、
+  配置 above-desired 拒绝与旧版本 ACK 不覆盖 applied。修复 Host supervisor 在 `alive` 前不
+  reap 已退出子进程导致停止路径卡僵尸 PID 的缺陷。
+- P08 退出判定：**通过**。非阻塞残余：真实 QQ 不在范围；10s grace 上限只验证了 Runtime 当前
+  5s 生效路径；bootstrap 自动预置仍是部署 helper/0600 文件契约而非 Runtime 直写 Host 文件。

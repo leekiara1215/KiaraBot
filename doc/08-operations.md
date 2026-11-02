@@ -1198,9 +1198,11 @@ probe_listen/grpc_listen/tls），并额外要求 Host-only 的 `host` 对象（
   `kiarabot-plugin-host`+真受管 SDK 插件子进程：Host 注册→host_command apply→spawn 插件
   （P08d helper 预置 0600 bootstrap/白名单 env）→SDK PluginBridge 注册/on_start/on_stop→
   Runtime receipt/observation 落 PG→Stop→Host 重启不重复 spawn→Drain，断言进程退出/journal/
-  凭据不泄露。**P08 退出剩余**：真实配置 apply/version conflict、包/参数拒绝、start 前后 kill
-  与 10s 宽限边界；受管 bootstrap 仍按部署 helper/0600 文件约定预置（无 wire 凭据交付帧），
-  不得据此宣称 P08 全退出。
+  凭据不泄露。**P08f 退出矩阵**：包摘要/参数/environment 拒绝、Host SIGKILL 后重启认领不重
+  spawn、停机期间命令重连只 spawn 一次、忽略 TERM 进程 grace 后 KILL、旧 generation/重复
+  receipt、重复/乱序 observation、配置 above-desired/旧版本 conflict 均已补测；P08 退出判定：
+  **通过**（真实 QQ、10s 上限仅按 5s 生效路径验证等边界见模块报告；bootstrap 仍由部署 helper
+  按 0600 约定预置，不是 Runtime 直写 Host 文件）。
   2026-11-02 合并回归修复：P13c 冲突解决丢失 HostBridgePersistence 接线，导致 apply 不下发；
   已恢复 pending/dispatched/receipt/observation 回调，e2e 通过；运行时应保留 P13c Host lifecycle
   participant。

@@ -512,8 +512,14 @@ apply→Host spawn 插件（P08d helper 0600 凭据/白名单 env）→插件经
 plugin on_start/on_stop→Runtime receipt/observation 落 PG→Stop→Host 重启不重复 spawn→Drain；
 断言插件进程退出、journal 终态、凭据不泄露。真实 e2e 修复了 Stop/Drain handoff payload 未写
 （导致 Host 拒绝 stop）的缺陷。Runtime schema v16（descriptor
-`ec12933ab8bff61620db24ebcb05ef44`/152）。**P08 退出剩余**：真实配置 apply/version conflict
-矩阵、包/参数拒绝、start 前后 kill 与 10s 宽限边界仍需补齐；当前不能宣称 P08 全退出。
+`ec12933ab8bff61620db24ebcb05ef44`/152）。**P08f 退出矩阵（已完成）**：`p08_managed_host_e2e` 增加包摘要/参数/environment 白名单
+拒绝（receipt persisted=false、无 spawn/journal）、Host 启动后 SIGKILL 重启认领活动子进程且
+不重复 spawn、命令在 Host 停机期间到达并重连只 spawn 一次、忽略 TERM 的进程在 grace 后被
+KILL 且记录终态；`p08_host_bridge_server` 增加旧 generation receipt 拒绝、重复 receipt、重复/
+乱序 observation 转发语义；PG 检查增加乱序 observation 去重/有序读取；`p08_config_conflict`
+覆盖 above-desired 拒绝、重注册后旧版本 ACK 不覆盖 applied。另修复 Host supervisor `alive`
+在判定前不 reap 已退出子进程导致停止路径卡在僵尸 PID 的缺陷（P08f e2e 三连跑稳定）。P08 退出判定：**通过**（真实 QQ、
+10s 上限仅以 5s 生效路径验证等非阻塞边界见模块报告）。
 **P08d（部署 helper + Delete 快照）**：新增 `scripts/deploy/target_host_credential.py`，从
 CreateInstance/BindAdapter 一次性响应生成 Host `credential_directory/<instance_id>.bootstrap`
 （0600/atomic/幂等/显式轮换/清理/verify，不落日志/argv，见 doc/08），补上“自动预置”的部署
