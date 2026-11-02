@@ -1,194 +1,423 @@
+"""Target bridge client tests against the TLS FakeTargetRuntime protocol fixture."""
 import asyncio
 import copy
-from contextlib import suppress
-
 import grpc
+import time
+import uuid
+from contextlib import asynccontextmanager, suppress
+
 import pytest
-from kiarabot.v1 import adapters_pb2 as adapters, common_pb2 as common, services_pb2_grpc as services
-from kiarabot_adapter_nonebot.client import ClientConfig, CoreClient
-from kiarabot_adapter_nonebot.mapper import AdapterError, map_message
+from kiarabot.v1 import actions_pb2 as actions, adapters_pb2 as adapters, common_pb2 as common
+from kiarabot_adapter_nonebot.actions import ActionExecutor
+from kiarabot_adapter_nonebot.client import BridgeClient, RetryConnection
+from kiarabot_adapter_nonebot.mapper import map_message
 from kiarabot_adapter_nonebot.outbox import Outbox
+from kiarabot_adapter_nonebot.status import AdapterStatusReporter
+from fake_target_runtime import FakeTargetRuntime, make_bridge_config, until
 from test_mapping_outbox import raw
 
 
-class FakeCore(services.AdapterBridgeServicer):
-    def __init__(self, mode):
-        self.mode, self.registrations, self.events = mode, [], []
-        self.results, self.heartbeats = [], []
-        self.received, self.release = asyncio.Event(), asyncio.Event()
-
-    async def Connect(self, requests, context):
-        registration = await anext(requests)
-        assert registration.WhichOneof('body') == 'register'
-        assert dict(context.invocation_metadata())['authorization'] == 'Bearer ' + 'x' * 32
-        self.registrations.append(copy.deepcopy(registration.register))
-        instance = f'instance-{len(self.registrations)}'
-        yield adapters.CoreToAdapter(register_result=adapters.RegisterAdapterResponse(
-            accepted=True, assigned_instance_id=instance, required_protocol_version='kiarabot.v1',
-            heartbeat_interval_seconds=1 if self.mode == 'heartbeat' else 30))
-        async for request in requests:
-            if request.WhichOneof('body') == 'heartbeat':
-                self.heartbeats.append(copy.deepcopy(request.heartbeat))
-                yield adapters.CoreToAdapter(heartbeat_ack=adapters.HeartbeatAck(received_at_unix_ms=1))
-                continue
-            if request.WhichOneof('body') == 'action_result':
-                self.results.append(copy.deepcopy(request.action_result))
-                continue
-            event = request.event
-            assert event.source.adapter_instance_id == instance
-            self.events.append(copy.deepcopy(event))
-            self.received.set()
-            if self.mode == 'disconnect' and len(self.events) == 1:
-                await context.abort(grpc.StatusCode.UNAVAILABLE, 'secret-upstream-details')
-            if self.mode == 'hold':
-                await self.release.wait()
-            ack = adapters.AdapterEventAck(event_id=event.event_id, trace_id=event.trace_id,
-                                            status=adapters.AdapterEventAck.PERSISTED)
-            if self.mode == 'reject':
-                ack.status = adapters.AdapterEventAck.REJECTED
-                ack.error.code = common.INVALID_ARGUMENT
-            if self.mode == 'retry' and len(self.events) == 1:
-                ack.status = adapters.AdapterEventAck.REJECTED
-                ack.error.code, ack.error.retryable = common.RATE_LIMITED, True
-                ack.retry_after_ms = 1
-            if self.mode == 'rate-limited' and len(self.events) == 1:
-                # Core ingress backpressure: RATE_LIMITED arrives with retryable=false.
-                ack.status = adapters.AdapterEventAck.REJECTED
-                ack.error.code, ack.error.retryable = common.RATE_LIMITED, False
-            if self.mode == 'wrong-id':
-                ack.event_id = 'not-the-event'
-            yield adapters.CoreToAdapter(event_ack=ack)
-            if self.mode == 'action' and event.HasField('message_received'):
-                import time
-                from test_actions import request as action_request
-                action = action_request(int(time.time()) + 30)
-                action.target_source.adapter_instance_id = instance
-                yield adapters.CoreToAdapter(action=action)
+def make_runtime(server_tls, **kwargs):
+    return FakeTargetRuntime(str(server_tls[0]), str(server_tls[1]), **kwargs)
 
 
-async def until(predicate):
-    async with asyncio.timeout(5):
-        while not predicate():
-            await asyncio.sleep(0.005)
+def deploy(tmp_path, runtime):
+    entry = runtime.add_bootstrap(FakeTargetRuntime.credential())
+    config = make_bridge_config(tmp_path / 'deploy', runtime, entry, retry_base=0.01,
+                                idle_interval=0.01, timeout=1.0)
+    return entry, config
 
 
-@pytest.mark.parametrize('mode', ['hold', 'disconnect', 'reject', 'retry', 'rate-limited', 'wrong-id'])
-async def test_confirmation_and_reconnect(tmp_path, caplog, mode):
-    core = FakeCore(mode)
-    server = grpc.aio.server()
-    services.add_AdapterBridgeServicer_to_server(core, server)
-    port = server.add_insecure_port('127.0.0.1:0')
-    await server.start()
+def event_for(config, message_id=1):
+    event = map_message(raw(message_id=message_id), 'nonebot', '123')
+    event.source.adapter_id = config.adapter_id
+    return event
+
+
+def start(tmp_path, config, events=(), *, executor=None, status=None, on_fatal=None):
     store = Outbox(tmp_path / 'outbox.db')
-    event = map_message(raw(), 'adapter', '123')
-    store.enqueue(event)
-    config = ClientConfig(f'127.0.0.1:{port}', 'x' * 32, 'adapter', '123', retry_base=0.01, idle_interval=0.01)
+    queued = []
+    for event in events:
+        store.enqueue(event)
+        queued.append(event)
+    client = BridgeClient(config, store, executor=executor, status=status, on_fatal=on_fatal)
     stop = asyncio.Event()
-    task = asyncio.create_task(CoreClient(config, store).run(stop))
-    try:
-        await asyncio.wait_for(core.received.wait(), 5)
-        if mode == 'hold':
-            assert store.status(event.event_id) == ('pending', 0)
-            core.release.set()
-        if mode == 'wrong-id':
-            await until(lambda: len(core.events) >= 2)
-            assert store.status(event.event_id) == ('pending', 0)
-        else:
+    task = asyncio.create_task(client.run(stop))
+    return client, store, task, stop, queued
+
+
+async def finish(store, task, stop):
+    stop.set()
+    task.cancel()
+    with suppress(asyncio.CancelledError):
+        await asyncio.wait_for(task, 5)
+    store.close()
+
+
+async def test_registration_negotiation_and_event_ack(tmp_path, server_tls):
+    async with make_runtime(server_tls, heartbeat_interval=5) as runtime:
+        entry, config = deploy(tmp_path, runtime)
+        event = event_for(config)
+        client, store, task, stop, _ = start(tmp_path, config, [event])
+        try:
+            await until(lambda: store.status(event.event_id)[0] == 'acked')
+            connection = runtime.connections[0]
+            registration = connection.registration
+            assert registration.adapter_instance_id == entry.instance_id
+            assert registration.adapter_id == config.adapter_id
+            assert registration.protocol_version == 'kiarabot.v1'
+            assert registration.context.request_id and registration.context.trace_id
+            assert registration.context.deadline.seconds > 0
+            assert registration.accounts[0].account_id == '123' and registration.accounts[0].enabled
+            assert [item.name for item in registration.capabilities] == ['event.message_received']
+            assert connection.events[0].event_id == event.event_id
+            assert connection.events[0].source.adapter_instance_id == entry.instance_id
+            assert client.authorized and client.instance == entry.instance_id
+            assert client.effective_capabilities == frozenset({'event.message_received'})
+            assert client.fatal == 0 and not client.shutdown_seen
+        finally:
+            await finish(store, task, stop)
+
+
+async def test_duplicate_ack_releases_outbox(tmp_path, server_tls):
+    async with make_runtime(server_tls) as runtime:
+        entry, config = deploy(tmp_path, runtime)
+        event = event_for(config)
+        entry.accepted_events.add(event.event_id)
+        client, store, task, stop, _ = start(tmp_path, config, [event])
+        try:
+            await until(lambda: store.status(event.event_id)[0] == 'acked')
+            assert runtime.protocol_violations == []
+        finally:
+            await finish(store, task, stop)
+
+
+async def test_permanent_rejection_is_recorded_failed(tmp_path, server_tls):
+    async with make_runtime(server_tls) as runtime:
+        runtime.ack_policy = lambda connection, event, index: {
+            'status': adapters.AdapterEventAck.REJECTED, 'code': common.INVALID_ARGUMENT}
+        entry, config = deploy(tmp_path, runtime)
+        event = event_for(config)
+        client, store, task, stop, _ = start(tmp_path, config, [event])
+        try:
             await until(lambda: store.status(event.event_id)[0] != 'pending')
-            assert store.status(event.event_id) == (('failed', common.INVALID_ARGUMENT) if mode == 'reject' else ('acked', 0))
-        assert core.registrations[0].capabilities[0].name == 'event.message_received'
-        if mode in ('disconnect', 'retry', 'rate-limited'):
-            assert len(core.registrations) >= 2 and len(core.events) == 2
-            first, second = core.events
-            assert first.source.adapter_instance_id != second.source.adapter_instance_id
-            first.source.adapter_instance_id = second.source.adapter_instance_id
-            assert first == second
-        assert 'secret-upstream-details' not in caplog.text and 'x' * 32 not in caplog.text
-    finally:
-        stop.set()
-        task.cancel()
-        try:
-            with suppress(asyncio.CancelledError):
-                await asyncio.wait_for(task, 5)
+            assert store.status(event.event_id) == ('failed', common.INVALID_ARGUMENT)
         finally:
-            await server.stop(0)
+            await finish(store, task, stop)
+
+
+async def test_backpressure_retryable_reconnects_and_resends_same_event(tmp_path, server_tls):
+    async with make_runtime(server_tls) as runtime:
+        runtime.ack_policy = lambda connection, event, index: (
+            {'status': adapters.AdapterEventAck.REJECTED, 'code': common.RATE_LIMITED,
+             'retryable': False, 'after_ack': 'close'}
+            if len(runtime.connections) == 1 else None)
+        entry, config = deploy(tmp_path, runtime)
+        event = event_for(config)
+        client, store, task, stop, _ = start(tmp_path, config, [event])
+        try:
+            await until(lambda: store.status(event.event_id)[0] == 'acked')
+            await until(lambda: len(runtime.connections) >= 2)
+            first, second = runtime.connections[0], runtime.connections[1]
+            assert first.fence.connection_generation == 1
+            assert second.fence.connection_generation == 2
+            assert first.events[0].event_id == second.events[0].event_id
+            assert first.events[0].sequence == second.events[0].sequence
+            assert first.events[0].trace_id == second.events[0].trace_id
+        finally:
+            await finish(store, task, stop)
+
+
+async def test_retryable_rejection_keeps_pending_and_honours_reconnect(tmp_path, server_tls):
+    async with make_runtime(server_tls) as runtime:
+        runtime.ack_policy = lambda connection, event, index: (
+            {'status': adapters.AdapterEventAck.REJECTED, 'code': common.UPSTREAM_UNAVAILABLE,
+             'retryable': True, 'retry_after_ms': 50, 'after_ack': 'close'}
+            if len(runtime.connections) == 1 else None)
+        entry, config = deploy(tmp_path, runtime)
+        event = event_for(config)
+        client, store, task, stop, _ = start(tmp_path, config, [event])
+        try:
+            await until(lambda: len(runtime.connections) >= 2)
+            await until(lambda: store.status(event.event_id)[0] == 'acked')
+        finally:
+            await finish(store, task, stop)
+
+
+async def test_refresh_rotates_authorization_material(tmp_path, server_tls):
+    async with make_runtime(server_tls, authorization_lifetime=1.2, heartbeat_interval=5) as runtime:
+        entry, config = deploy(tmp_path, runtime)
+        event = event_for(config)
+        client, store, task, stop, _ = start(tmp_path, config, [event])
+        try:
+            await until(lambda: store.status(event.event_id)[0] == 'acked')
+            connection = runtime.connections[0]
+            first_proof = connection.proof
+            await until(lambda: len(connection.refreshes) >= 1, 5)
+            await until(lambda: connection.refresh_generation >= 2)
+            assert connection.proof != first_proof
+            assert connection.refreshes[0].refresh_generation == 1
+            assert connection.refreshes[0].fence == connection.fence.to_proto()
+            # Rotation is continuous (short lifetime); wait for one quiescent frame.
+            await until(lambda: client.authorization is not None
+                        and client.authorization.proof == connection.proof
+                        and client.authorization.refresh_generation
+                        == connection.refresh_generation)
+            assert client.authorized
+            assert len(runtime.connections) == 1
+            assert runtime.protocol_violations == []
+        finally:
+            await finish(store, task, stop)
+
+
+async def test_refresh_conflict_forces_new_connection_generation(tmp_path, server_tls):
+    async with make_runtime(server_tls, authorization_lifetime=1.0) as runtime:
+        runtime.refresh_policy = lambda connection, request: ('error', common.CONFLICT)
+        entry, config = deploy(tmp_path, runtime)
+        client, store, task, stop, _ = start(tmp_path, config)
+        try:
+            await until(lambda: len(runtime.connections) >= 2, 6)
+            await until(lambda: client.authorized)
+            assert runtime.connections[1].fence.connection_generation == 2
+            assert client.fatal == 0
+        finally:
+            await finish(store, task, stop)
+
+
+async def test_lost_refresh_response_reconnects(tmp_path, server_tls):
+    async with make_runtime(server_tls, authorization_lifetime=1.0) as runtime:
+        runtime.refresh_policy = lambda connection, request: 'drop'
+        entry, config = deploy(tmp_path, runtime)
+        config = copy.copy(config)
+        client, store, task, stop, _ = start(tmp_path, config)
+        try:
+            await until(lambda: len(runtime.connections) >= 2, 8)
+            assert client.fatal == 0
+        finally:
+            await finish(store, task, stop)
+
+
+async def test_refresh_permission_denied_is_terminal(tmp_path, server_tls):
+    async with make_runtime(server_tls, authorization_lifetime=1.0) as runtime:
+        runtime.refresh_policy = lambda connection, request: ('error', common.PERMISSION_DENIED)
+        entry, config = deploy(tmp_path, runtime)
+        fatal_codes = []
+        client, store, task, stop, _ = start(tmp_path, config, on_fatal=lambda: fatal_codes.append(1))
+        try:
+            await asyncio.wait_for(task, 6)
+            assert client.fatal == common.PERMISSION_DENIED
+            assert fatal_codes == [1]
+            assert len(runtime.connections) == 1
+        finally:
+            stop.set()
             store.close()
 
 
-def test_registration_declares_capabilities_of_executed_actions(tmp_path):
-    store = Outbox(tmp_path / 'registration.db')
-    try:
-        config = ClientConfig('127.0.0.1:50051', 'x' * 32, 'adapter', '123')
-        # Without an executor the adapter only consumes events.
-        assert [(item.name, item.version, item.supported)
-                for item in CoreClient(config, store).registration().register.capabilities] == [
-            ('event.message_received', '1', True)]
-        capabilities = CoreClient(config, store, executor=object()).registration().register.capabilities
-        # Every Action implemented by ActionExecutor must be negotiated, otherwise Core's
-        # capability gate rejects dispatched Actions.
-        assert [(item.name, item.version, item.supported) for item in capabilities] == [
-            ('event.message_received', '1', True),
-            ('action.send_message.text.v1', '1', True),
-            ('action.react_message.v1', '1', True),
-            ('action.delete_message.v1', '1', True),
-            ('action.mute_member.v1', '1', True),
-            ('action.kick_member.v1', '1', True),
-            ('action.approve_request.v1', '1', True),
-        ]
-        names = [item.name for item in capabilities]
-        assert len(names) == len(set(names))
-    finally:
-        store.close()
-
-
-def test_invalid_config_and_no_token_repr():
-    with pytest.raises(AdapterError):
-        ClientConfig('external.example:50051', 'x' * 32, 'adapter', '123')
-    config = ClientConfig('127.0.0.1:50051', 'x' * 32, 'adapter', '123')
-    assert 'x' * 32 not in repr(config)
-
-
-async def test_heartbeat_interval_from_registration(tmp_path):
-    core = FakeCore('heartbeat')
-    server = grpc.aio.server()
-    services.add_AdapterBridgeServicer_to_server(core, server)
-    port = server.add_insecure_port('127.0.0.1:0')
-    await server.start()
-    store = Outbox(tmp_path / 'heartbeat.db')
-    config = ClientConfig(f'127.0.0.1:{port}', 'x' * 32, 'adapter', '123', retry_base=0.01, idle_interval=0.01)
-    stop = asyncio.Event()
-    task = asyncio.create_task(CoreClient(config, store).run(stop))
-    try:
-        await until(lambda: bool(core.heartbeats))
-        first = core.heartbeats[0]
-        assert first.instance_id == 'instance-1'
-        assert first.sent_at_unix_ms > 0
-    finally:
-        stop.set()
-        task.cancel()
+async def test_revoked_bootstrap_is_terminal_on_reconnect(tmp_path, server_tls):
+    async with make_runtime(server_tls) as runtime:
+        entry, config = deploy(tmp_path, runtime)
+        event = event_for(config)
+        client, store, task, stop, _ = start(tmp_path, config, [event])
         try:
-            with suppress(asyncio.CancelledError):
-                await asyncio.wait_for(task, 5)
+            await until(lambda: store.status(event.event_id)[0] == 'acked')
+            runtime.revoke(entry)
+            await runtime.close_stream()
+            await asyncio.wait_for(task, 6)
+            assert client.fatal == common.PERMISSION_DENIED
+            assert runtime.auth_failures == [grpc.StatusCode.PERMISSION_DENIED]
         finally:
-            await server.stop(0)
+            stop.set()
             store.close()
 
 
-async def test_cancelled_transport_is_not_retried(tmp_path):
-    class CancelRace(CoreClient):
+async def test_rejected_registration_is_terminal(tmp_path, server_tls):
+    async with make_runtime(server_tls) as runtime:
+        runtime.registration_policy = lambda registration: ('reject', common.INVALID_ARGUMENT)
+        entry, config = deploy(tmp_path, runtime)
+        client, store, task, stop, _ = start(tmp_path, config)
+        try:
+            await asyncio.wait_for(task, 5)
+            assert client.fatal == common.INVALID_ARGUMENT
+            assert not client.authorized
+        finally:
+            stop.set()
+            store.close()
+
+
+async def test_shutdown_notice_stops_new_frames_and_reconnects(tmp_path, server_tls):
+    async with make_runtime(server_tls) as runtime:
+        entry, config = deploy(tmp_path, runtime)
+        client, store, task, stop, _ = start(tmp_path, config)
+        try:
+            await until(lambda: client.authorized)
+            await runtime.push_shutdown(drain_timeout_ms=20)
+            await until(lambda: client.shutdown_seen)
+            await until(lambda: len(runtime.connections) >= 2, 6)
+            await until(lambda: client.authorized)
+            event = event_for(config)
+            store.enqueue(event)
+            await until(lambda: store.status(event.event_id)[0] == 'acked')
+            assert runtime.connections[0].events == []
+        finally:
+            await finish(store, task, stop)
+
+
+async def test_empty_or_unknown_runtime_frame_reconnects_and_keeps_event(tmp_path, server_tls):
+    async with make_runtime(server_tls) as runtime:
+        runtime.ack_policy = lambda connection, event, index: (
+            'hold' if len(runtime.connections) == 1 else None)
+        entry, config = deploy(tmp_path, runtime)
+        event = event_for(config)
+        client, store, task, stop, _ = start(tmp_path, config, [event])
+        try:
+            await until(lambda: runtime.connections and runtime.connections[0].events)
+            await runtime.push_empty_frame()
+            await until(lambda: store.status(event.event_id)[0] == 'acked', 6)
+            assert len(runtime.connections) >= 2
+            assert runtime.protocol_violations == []
+        finally:
+            await finish(store, task, stop)
+
+
+async def test_response_fence_mismatch_is_unauthenticated_and_retried(tmp_path, server_tls):
+    async with make_runtime(server_tls) as runtime:
+        runtime.mutate_ack_fence = True
+        entry, config = deploy(tmp_path, runtime)
+        event = event_for(config)
+        client, store, task, stop, _ = start(tmp_path, config, [event])
+        try:
+            await until(lambda: store.status(event.event_id)[0] == 'acked', 6)
+            assert len(runtime.connections) >= 2
+            assert runtime.protocol_violations == []
+            assert client.fatal == 0
+        finally:
+            await finish(store, task, stop)
+
+
+async def test_heartbeat_uses_registration_interval_and_frame_fence(tmp_path, server_tls):
+    async with make_runtime(server_tls, heartbeat_interval=1) as runtime:
+        entry, config = deploy(tmp_path, runtime)
+        client, store, task, stop, _ = start(tmp_path, config)
+        try:
+            await until(lambda: runtime.connections and len(runtime.connections[0].heartbeats) >= 1,
+                        4)
+            heartbeat = runtime.connections[0].heartbeats[0]
+            assert heartbeat.instance_id == entry.instance_id
+            assert heartbeat.sent_at_unix_ms > 0
+            assert client.heartbeat_interval == 1.0
+        finally:
+            await finish(store, task, stop)
+
+
+async def test_status_event_is_delivered_through_target_frames(tmp_path, server_tls):
+    async with make_runtime(server_tls) as runtime:
+        entry, config = deploy(tmp_path, runtime)
+        store = Outbox(tmp_path / 'status.db')
+        status = AdapterStatusReporter(store, config.adapter_id, config.account_id)
+        client = BridgeClient(config, store, status=status)
+        stop = asyncio.Event()
+        task = asyncio.create_task(client.run(stop))
+        try:
+            await until(lambda: any(event.HasField('adapter_status_changed')
+                                    for event in runtime.connections[0].events) if runtime.connections
+                        else False)
+            status_events = [event.adapter_status_changed
+                             for event in runtime.connections[0].events
+                             if event.HasField('adapter_status_changed')]
+            assert status_events and status_events[0].adapter_id == config.adapter_id
+            assert status_events[0].state == common.HEALTHY
+            assert status_events[0].reason == 'runtime_connected'
+        finally:
+            await finish(store, task, stop)
+
+
+async def test_action_execution_requires_effective_capability(tmp_path, server_tls):
+    calls = []
+
+    async def call_platform(api, params):
+        calls.append((api, params))
+        return {'message_id': 4242}
+
+    executor = None
+    async with make_runtime(server_tls) as runtime:
+        runtime.effective_capability_filter = lambda names: [
+            name for name in names if name != 'action.approve_request.v1']
+        entry, config = deploy(tmp_path, runtime)
+        executor = ActionExecutor(tmp_path / 'actions.db', config.adapter_id, config.account_id,
+                                  call_platform)
+        client, store, task, stop, _ = start(tmp_path, config, executor=executor)
+        try:
+            await until(lambda: runtime.active is not None)
+            approve = action_request(config, entry.instance_id, payload='approve_request')
+            send = action_request(config, entry.instance_id, payload='send_message')
+            await runtime.push_action(approve)
+            await runtime.push_action(send)
+            await until(lambda: len(runtime.connections[0].action_results) >= 2, 6)
+            results = runtime.connections[0].action_results
+            assert results[0].status == actions.FAILED
+            assert results[0].error.code == common.CAPABILITY_NOT_SUPPORTED
+            assert results[1].status == actions.SUCCEEDED
+            assert results[1].platform_message_id == '4242'
+            assert calls == [('send_group_msg', {'group_id': 456, 'message': [
+                {'type': 'text', 'data': {'text': 'hello'}}]})]
+        finally:
+            executor.close()
+            await finish(store, task, stop)
+
+
+def action_request(config, instance, *, payload='send_message'):
+    value = actions.ActionEnvelope(action_id=str(uuid.uuid4()), idempotency_key=str(uuid.uuid4()),
+                                   trace_id=str(uuid.uuid4()))
+    value.deadline.seconds = int(time.time()) + 30
+    value.target_source.adapter_id = config.adapter_id
+    value.target_source.account_id = config.account_id
+    value.target_source.adapter_instance_id = instance
+    value.target.conversation_id = '456'
+    if payload == 'approve_request':
+        value.approve_request.request_id = 'request-token'
+        value.approve_request.approve = True
+    else:
+        value.send_message.conversation.id = '456'
+        value.send_message.conversation.account_id = config.account_id
+        value.send_message.conversation.type = common.ConversationRef.GROUP
+        value.send_message.message.plain_text = 'hello'
+    return value
+
+
+async def test_no_secret_material_in_logs(tmp_path, server_tls, caplog):
+    async with make_runtime(server_tls, authorization_lifetime=1.0) as runtime:
+        entry, config = deploy(tmp_path, runtime)
+        runtime.refresh_policy = lambda connection, request: ('error', common.CONFLICT)
+        client, store, task, stop, _ = start(tmp_path, config)
+        try:
+            await until(lambda: len(runtime.connections) >= 2, 6)
+            secrets = [entry.credential]
+            for connection in runtime.connections:
+                secrets.extend([connection.proof.hex(), connection.refresh_credential.hex()])
+            text = caplog.text
+            for secret in secrets:
+                assert secret not in text
+                assert secret not in repr(config)
+        finally:
+            await finish(store, task, stop)
+
+
+async def test_cancelled_transport_is_not_retried(tmp_path, server_tls):
+    class CancelRace(BridgeClient):
         async def connection(self, stop):
             try:
                 await asyncio.sleep(60)
             except asyncio.CancelledError:
-                # gRPC can report transport failure while a cancellation races.
-                from kiarabot_adapter_nonebot.client import RetryConnection
                 raise RetryConnection()
-    store = Outbox(tmp_path / 'cancel.db')
-    try:
-        task = asyncio.create_task(CancelRace(ClientConfig('127.0.0.1:1234', 'x' * 32, 'adapter', '123'), store).run(asyncio.Event()))
-        await asyncio.sleep(.01)
-        task.cancel()
-        with pytest.raises(asyncio.CancelledError):
-            await asyncio.wait_for(task, 1)
-    finally:
-        store.close()
+
+    async with make_runtime(server_tls) as runtime:
+        entry, config = deploy(tmp_path, runtime)
+        store = Outbox(tmp_path / 'cancel.db')
+        try:
+            task = asyncio.create_task(CancelRace(config, store).run(asyncio.Event()))
+            await asyncio.sleep(0.02)
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await asyncio.wait_for(task, 1)
+        finally:
+            store.close()

@@ -12,6 +12,18 @@ from .mapper import AdapterError, identifier, platform_id
 # message reactions through the set_msg_emoji_like extension API, not through
 # OneBot V11's standard action set; the mapping must be re-verified on a real
 # account (T07b) before being treated as verified platform behavior.
+# Payload kind to negotiated target capability. The Runtime only accepts an Action kind the
+# adapter declared and that registration returned in ``effective_capabilities``.
+CAPABILITY_BY_PAYLOAD = {
+    'send_message': 'action.send_message.text.v1',
+    'react_message': 'action.react_message.v1',
+    'delete_message': 'action.delete_message.v1',
+    'mute_member': 'action.mute_member.v1',
+    'kick_member': 'action.kick_member.v1',
+    'approve_request': 'action.approve_request.v1',
+}
+ACTION_CAPABILITIES = tuple(CAPABILITY_BY_PAYLOAD.values())
+
 REACTIONS = {
     'like': '128077',
     'laugh': '128514',
@@ -34,6 +46,9 @@ class ActionExecutor:
     def __init__(self, path, adapter_id, account_id, call_platform, now=time.time, limit=10000, timeout=5.0):
         self.adapter_id, self.account_id, self.call_platform = adapter_id, account_id, call_platform
         self.now, self.limit, self.timeout = now, limit, timeout
+        # None means the reference unit tests did not negotiate; the target bridge always
+        # configures the registration's effective capability set.
+        self.capabilities: frozenset | None = None
         self.db = sqlite3.connect(path)
         try:
             if self.db.execute('PRAGMA user_version').fetchone()[0] not in (0, 1, 2, 3):
@@ -55,6 +70,11 @@ class ActionExecutor:
             self.db.close()
             raise
 
+    def configure(self, instance, capabilities):
+        """Apply target registration negotiation: fence instance and effective capabilities."""
+        self.instance = instance
+        self.capabilities = frozenset(capabilities)
+
     def remember_request(self, request_id, flag):
         """Records the platform flag for an emitted FriendRequest token."""
         identifier(request_id)
@@ -67,12 +87,20 @@ class ActionExecutor:
     def validate(self, action, instance):
         identifier(action.action_id)
         identifier(action.idempotency_key)
-        if (action.target_source.adapter_id != self.adapter_id or action.target_source.account_id != self.account_id
-                or action.target_source.adapter_instance_id != instance):
+        if (action.target_source.adapter_id != self.adapter_id
+                or action.target_source.account_id != self.account_id
+                or (action.target_source.adapter_instance_id
+                    and action.target_source.adapter_instance_id != instance)):
+            # Target fencing is carried by the frame Fence; a non-empty legacy instance hint
+            # must still agree with the registered adapter instance.
             raise AdapterError(common.PERMISSION_DENIED)
         if not 0 < action.deadline.seconds <= 9223372035 or not 0 <= action.deadline.nanos < 10**9:
             raise AdapterError(common.INVALID_ARGUMENT)
         payload = action.WhichOneof('payload')
+        if self.capabilities is not None:
+            capability = CAPABILITY_BY_PAYLOAD.get(payload)
+            if capability is None or capability not in self.capabilities:
+                raise AdapterError(common.CAPABILITY_NOT_SUPPORTED)
         if payload == 'send_message':
             return self._send_message(action)
         if payload == 'react_message':
