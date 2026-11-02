@@ -1,8 +1,8 @@
 # P08 Host 受管执行与 HostBridge（P08a–P08b-3 进展）
 
-状态（2026-11-02）：**P08 未退出**。已完成传输层（P08b-2b）与 Runtime 命令/观察持久化底座
-（P08b-3 部分），真实 Host 命令下发、receipt/observation 的 HostBridge 持久化接线与受管
-bootstrap 经部署目录交付仍待完成。
+状态（2026-11-02）：**P08 未退出**。传输层（P08b-2b）、Runtime 命令/观察持久化（P08b-3）
+与 HostBridge 下发/receipt/observation PG 接线（P08b-3a）已完成；真实 Host 二进制 e2e 与受管
+bootstrap 自动写入 Host credential_directory 属 3b，仍未完成。
 
 ## 已实现
 
@@ -19,15 +19,20 @@ bootstrap 经部署目录交付仍待完成。
   `SetDesiredState` 在同一 UoW 内写入确定性 command_id（`hc-<payload sha256>`）的命令快照；
   受管实例也生成一次性 bootstrap（仅返回部署持有者，PG 只存 SHA-256）；PG 集成测试覆盖
   command 幂等/冲突/待发/回执/observation 去重与重启持久。
+- P08b-3a：HostBridge server 注册/心跳后按当前 generation 读 pending 并下发 apply/stop/drain；
+  receipt 条件更新（旧 generation 拒绝，重复 receipt 幂等）；observation 按
+  (host,generation,cursor.sequence) 去重落 PG；重连重放未确认 command_id；30s 超时 Unknown，
+  7d/30d 保留清理；fake Host server 测试覆盖下发/回执/观察/重放/旧 fence 拒绝。
 - 未确认/失败命令不伪造 stopped：outbox 行保持 Pending/Unknown，receipt 只记录
   `receipt_persisted/outcome`，Runtime 不自行写 process stopped。
 
 ## 未完成 / 风险
 
-- HostBridge server 尚未从 outbox 取命令下发 apply/stop/drain，也未把 receipt/observation
-  帧写入 PG（当前只有校验与 transport-only 回调挂点）；重连重放、resync 去重端到端未接。
+- 真实 Host 二进制 + 真 PG 的 HostBridge 命令端到端（含 P08a client journal/resync）未跑；
+  当前为 fake Host 帧测试 + 真 PG 仓储测试。
 - 受管 bootstrap 仅生成并随 CreateInstance 响应返回给部署方，尚未通过 HostBridge/部署目录
   自动预置到 Host `credential_directory`；P08a Host 侧启动消费已有文件约定，操作步骤需文档化。
 - package_sha256 使用安装 manifest 摘要（Core 不解析 manifest）；launch_profile 留空，需部署
   host 映射补齐；restart/Delete 参与者的命令快照尚未接线。
-- 无真实 Host 二进制 + 真 PG 的 P08 端到端验收；P08 退出判定：**未通过**。
+- 受管 bootstrap 尚未自动预置到 Host credential_directory；restart/Delete 专门命令未接；
+  P08 退出判定：**未通过（3b 待完成）**。

@@ -1184,9 +1184,12 @@ probe_listen/grpc_listen/tls），并额外要求 Host-only 的 `host` 对象（
   profile/payload 快照）；只存 SHA-256 的受管 bootstrap 与外部自管共用 `bridge_credentials`，
   明文仅出现在 CreateInstance 响应，部署方须按 P08a 约定写入 Host
   `credential_directory/<instance_id>.bootstrap`（0600、属主 Host 用户）并随部署回收/轮换。
-  **未完成**：HostBridge server 尚未实际下发命令和持久化 receipt/observation（当前帧校验后
-  只接 transport-only 回调），未确认命令保持 Pending/Unknown、不伪造 stopped；重连重放和
-  `Resync` 去重无端到端证据，P08b-3 未验收。
+  **P08b-3a**：HostBridge server 已接 PG 回调，注册/心跳后按 generation 下发 pending
+  apply/stop/drain；receipt 以 (command_id, connection_generation) 条件更新（旧 generation
+  返回失败），observation 按 `(host_id,connection_generation,cursor.sequence)` 去重并校验 cursor
+  epoch；重连新 generation 重放未确认命令。30s 无回执转 Unknown（不伪造 stopped），7d/30d
+  保留清理随 P13a 60s 批次。**未完成**：真实 Host 二进制 e2e、受管 bootstrap 自动预置。
+  未确认命令在运维视图应显示 Pending/Unknown，不能当 stopped。
 - 当前验证范围：P08a 用 in-process fake Runtime bridge 与 fake supervisor 覆盖注册/fence/心跳/
   resync/命令回执/观察/恢复；真实 Runtime Bridge 监听（P06a-2）与 Host 受管配置的端到端验收
   尚未执行，不能据此宣称 T11b 或真实部署通过。

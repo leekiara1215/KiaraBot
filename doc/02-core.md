@@ -487,14 +487,19 @@ P08b 在 Runtime application 内新增 HostBridge 入站应用：内部 mTLS 注
 
 **P08b-2b（已实现，传输层）**：`core/src/runtime/platform/host_bridge_server.{hpp,cpp}` 实现 `v1::HostBridge::Service::Connect` 同步 bidi：首帧必须为 registration，服务端用 `extract_peer_certificate(*ServerContext::auth_context())` 取内部 mTLS 叶证书 SHA-256，交给 `RuntimeHostApplication::register_host` 与部署 `hosts[]` allowlist（`certificate_sha256 → host_id`，空 allowlist 拒绝所有）匹配，回 `registered{host,fence}`；此后每帧必须携带精确当前 fence，旧 generation/缺失 fence 以 `CONFLICT` failure 结束流；heartbeat 经 `RuntimeHostApplication::heartbeat` 更新 `last_heartbeat_at`/online 并回 `heartbeat_ack{fence,received_at,interval=5s,resync_required}`，cursor epoch 不匹配强制 resync；inventory/receipt/observation 做帧校验并交给可选 P08b-3 回调（当前 composition 未接持久化回调，只有传输校验）。注册认证失败映射稳定 gRPC `PERMISSION_DENIED`/`UNAUTHENTICATED`，注册后业务失败映射 `RuntimeToHost.failure` 的稳定 Error。服务端只由 Runtime composition 注册在 owner mTLS `grpc_listen`，替换 generated `HostBridge` 占位，不占用 `bridge_listen`。配置 only Runtime 允许 `hosts[]`；PG `HostRegistration` 持久化接线与真实 Host 二进制、PG 证据留 P08b-2c，当前 composition 用进程内 allowlist/registration/connection store（重启不保留，显式未完成）。
 
-**P08b-3（部分实现）**：Runtime UoW 新增 `host_commands()`（默认 fail-closed），PG 实现
-`host_commands` outbox 与 `host_observations` inbox（Runtime schema v14）；P05 的
-`CreateInstance`（带 host）与 `SetDesiredState` 在同一事务内写确定性 `hc-<payload sha256>`
-命令快照（kind/generation/desired version/package sha/launch profile/payload hash），重复插入
-同 payload 幂等、同 id 不同 payload CONFLICT；受管实例与外部实例均生成一次性 bootstrap，
-Runtime 只存 SHA-256、明文仅出现在部署方 CreateInstance 响应。**未完成**：HostBridge server
-从 outbox 下发 apply/stop/drain、receipt/observation 帧写回 PG、重连重放/resync、restart/delete
-命令与 Host 凭据目录自动预置；因此 command 的发送/确认仍没有端到端证据。
+**P08b-3/3a（已实现传输闭环，3b 真实 Host/凭据待完成）**：Runtime UoW 新增 `host_commands()`
+（默认 fail-closed），PG 实现 outbox 与 observation inbox（schema v15，含 installation 快照）；
+P05 `CreateInstance`（带 host）与 `SetDesiredState` 在同 UoW 写确定性 `hc-<payload sha256>`
+快照，重复幂等/异 payload CONFLICT。HostBridge server 在注册和每次 heartbeat 后按当前
+connection_generation 读取 pending，下发 apply/stop/drain（含 command_id/generation/
+installation/desired version/package/launch profile/args/env 与 payload hash），写入成功后标记
+Dispatched；receipt 帧按 (command_id, connection_generation) 条件更新，旧 generation/不一致
+receipt 返回 FAILURE，重复相同 receipt 幂等；observation 帧按
+(host,connection_generation,cursor.sequence) 去重写入，校验 cursor epoch/generation，重复帧与
+resync 重放幂等；新 connection 重放未 receipt 的同一 command_id。30s 未回执转 Unknown（不写
+stopped），P13a 60s 清理批次执行 7d/30d 保留。**未完成（3b）**：真实 Host 二进制 e2e、受管
+bootstrap 自动写入 Host credential_directory、restart/Delete 专门命令快照；当前执行投影以
+receipt_outcome/observation 为准，尚无独立 observed-state 列表。
 
 ## P09/P10 目标 Storage/Scheduler 应用与端口（未实现）
 
