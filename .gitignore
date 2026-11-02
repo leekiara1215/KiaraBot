@@ -60,3 +60,6 @@ NapCat*/
 *.key
 secrets/
 cookies.json
+
+# ---- 本地分析记录（不入库）----
+reports/analysis/
