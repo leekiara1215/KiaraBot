@@ -183,14 +183,8 @@ public:
                IdentityPrincipalsPort* principals = nullptr, HealthPort* health = nullptr,
                RuntimeResourcesPort* resources = nullptr, SchedulerTasksPort* tasks = nullptr,
                OperationPort* operations = nullptr, ModelManagementPort* model = nullptr)
-      : delegation_(delegation),
-        runtime_(runtime),
-        principals_(principals),
-        health_(health),
-        resources_(resources),
-        tasks_(tasks),
-        operations_(operations),
-        model_(model) {}
+      : delegation_(delegation), runtime_(runtime), principals_(principals), health_(health),
+        resources_(resources), tasks_(tasks), operations_(operations), model_(model) {}
   std::optional<OwnerHttpResult> handle(const OwnerHttpRequest& request);
   // Health probes are local process facts plus the composition-provided readiness answer.
   static OwnerHttpResult live();

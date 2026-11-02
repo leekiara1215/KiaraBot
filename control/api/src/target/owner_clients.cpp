@@ -495,8 +495,8 @@ private:
     return model_call<wire::ModelDisableModelRequest, wire::ModelDisableModelResponse>(
         &wire::ModelService::Stub::DisableModel, request, delegation);
   }
-  OwnerOutcome<wire::ModelEnableModelResponse>
-  enable(const wire::ModelEnableModelRequest& request, std::string_view delegation) override {
+  OwnerOutcome<wire::ModelEnableModelResponse> enable(const wire::ModelEnableModelRequest& request,
+                                                      std::string_view delegation) override {
     return model_call<wire::ModelEnableModelRequest, wire::ModelEnableModelResponse>(
         &wire::ModelService::Stub::EnableModel, request, delegation);
   }
@@ -521,14 +521,12 @@ private:
         &wire::ModelService::Stub::GetCallStatus, request, delegation);
   }
   OwnerOutcome<wire::ModelResolveModelCallResponse>
-  resolve(const wire::ModelResolveModelCallRequest& request,
-          std::string_view delegation) override {
+  resolve(const wire::ModelResolveModelCallRequest& request, std::string_view delegation) override {
     return model_call<wire::ModelResolveModelCallRequest, wire::ModelResolveModelCallResponse>(
         &wire::ModelService::Stub::ResolveModelCall, request, delegation);
   }
   OwnerOutcome<wire::ModelGetOperationResponse>
-  operation(const wire::ModelGetOperationRequest& request,
-            std::string_view delegation) override {
+  operation(const wire::ModelGetOperationRequest& request, std::string_view delegation) override {
     return model_call<wire::ModelGetOperationRequest, wire::ModelGetOperationResponse>(
         &wire::ModelService::Stub::GetOperation, request, delegation);
   }
