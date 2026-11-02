@@ -1470,6 +1470,115 @@ void check_common(Database& database, const DatabaseConfig& config) {
          target::ErrorCode::InvalidArgument);
   rejected(*work);
 
+  {
+    // P13a owner-local lifecycle persistence: operation retention metadata, participant rows,
+    // tombstone registry and bounded retention passes.
+    auto lifecycle_work = begin(database);
+    target::Operation lifecycle{{config.service,
+                                 {"lifecycle-operation"},
+                                 {target::ResourceKind::Instance, {"lifecycle-resource"}}},
+                                {1},
+                                target::OperationState::Running,
+                                target::ExecutionOutcome::NotStarted,
+                                {},
+                                {},
+                                {},
+                                now,
+                                now,
+                                now + std::chrono::hours{24}};
+    take(lifecycle_work->operations().save(lifecycle, {}));
+    take(lifecycle_work->save_operation_participants(
+        lifecycle.ref.id,
+        {{"runtime", target::OperationState::Succeeded, {}, {}},
+         {"scheduler", target::OperationState::Blocked, target::ErrorCode::UpstreamUnavailable,
+          now + std::chrono::seconds{5}}}));
+    committed(*lifecycle_work);
+    lifecycle_work = begin(database);
+    const auto stored = take(lifecycle_work->operations().find(lifecycle.ref.id));
+    check(stored && stored->retain_until && *stored->retain_until == lifecycle.retain_until,
+          "operation retention metadata did not round-trip");
+    const auto participants = take(lifecycle_work->operation_participants(lifecycle.ref.id));
+    check(participants.size() == 2 && participants[0].participant == "runtime" &&
+              participants[1].participant == "scheduler" &&
+              participants[1].reason == target::ErrorCode::UpstreamUnavailable,
+          "operation participants did not round-trip");
+    take(lifecycle_work->save_operation_participants(lifecycle.ref.id, {}));
+    committed(*lifecycle_work);
+    lifecycle_work = begin(database);
+    check(take(lifecycle_work->operation_participants(lifecycle.ref.id)).empty(),
+          "participant replacement kept stale rows");
+    committed(*lifecycle_work);
+    // An explicit expired retention deadline is pruned; P05 rows without retain_until are not.
+    lifecycle_work = begin(database);
+    target::Operation expired{{config.service,
+                               {"expired-retention-operation"},
+                               {target::ResourceKind::Catalog, {"resource"}}},
+                              {1},
+                              target::OperationState::Succeeded,
+                              target::ExecutionOutcome::KnownSucceeded,
+                              {},
+                              {},
+                              {},
+                              now,
+                              now,
+                              now - std::chrono::seconds{1}};
+    take(lifecycle_work->operations().save(expired, {}));
+    committed(*lifecycle_work);
+    lifecycle_work = begin(database);
+    check(take(lifecycle_work->prune_operations(now, 10)) >= 1,
+          "expired operation retention was not pruned");
+    committed(*lifecycle_work);
+    lifecycle_work = begin(database);
+    check(!take(lifecycle_work->operations().find(expired.ref.id)),
+          "pruned operation remained readable");
+    check(take(lifecycle_work->operations().find(lifecycle.ref.id)).has_value(),
+          "unexpired operation was pruned");
+    committed(*lifecycle_work);
+    // Audit retention uses the same 180-day owner-local window.
+    lifecycle_work = begin(database);
+    take(lifecycle_work->journal().append_audit(
+        {{"actor"},
+         {target::ResourceKind::Catalog, {"audit-retention"}},
+         "request",
+         "trace",
+         "cleanup",
+         {},
+         {1},
+         now - std::chrono::hours{24 * 181}}));
+    committed(*lifecycle_work);
+    lifecycle_work = begin(database);
+    check(take(lifecycle_work->prune_audit(now - std::chrono::hours{24 * 180}, 10)) >= 1,
+          "expired audit retention was not pruned");
+    check(take(lifecycle_work->prune_outbox(now, 10)) == 0,
+          "pending outbox obligations were pruned by retention");
+    committed(*lifecycle_work);
+    if (config.service == target::Service::Runtime) {
+      lifecycle_work = begin(database);
+      target::LifecycleTombstone tombstone{{target::ResourceKind::Instance, {"lifecycle-instance"}},
+                                           lifecycle.ref.id.value,
+                                           target::LifecycleState::Deleting,
+                                           now,
+                                           now + std::chrono::hours{24 * 30},
+                                           now + std::chrono::hours{24 * 180}};
+      take(lifecycle_work->save_lifecycle_tombstone(tombstone));
+      committed(*lifecycle_work);
+      lifecycle_work = begin(database);
+      const auto loaded = take(lifecycle_work->find_lifecycle_tombstone(tombstone.resource));
+      check(loaded && loaded->state == target::LifecycleState::Deleting &&
+                loaded->operation_id == lifecycle.ref.id.value,
+            "lifecycle tombstone did not round-trip");
+      const auto listed = take(lifecycle_work->list_lifecycle_tombstones(10, ""));
+      check(!listed.empty() && listed.front().resource.id.value == tombstone.resource.id.value,
+            "lifecycle tombstone scan missed the row");
+      take(lifecycle_work->delete_lifecycle_tombstone(tombstone.resource));
+      committed(*lifecycle_work);
+      lifecycle_work = begin(database);
+      check(!take(lifecycle_work->find_lifecycle_tombstone(tombstone.resource)),
+            "deleted lifecycle tombstone remained readable");
+      committed(*lifecycle_work);
+    }
+  }
+
   target::HandoffContext handoff{config.service,
                                  {"handoff"},
                                  {target::Service::Control,
