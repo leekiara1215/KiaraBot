@@ -39,6 +39,14 @@
 
 新资源 ID 用 UUIDv4，旧平台原始 ID 作为平台引用。不需要旧开发 ID 映射/导入；四元组顺序仍区分适配器、账号、会话 ID 和会话类型，内部稳定账号与平台账号由当前绑定显式解析，不能合并群/私聊。
 
+P06 事件/投递表列定稿（Runtime schema v6，空库初始化，无迁移）：
+
+- `events(adapter,event_id)` 主键；`fingerprint bytea(32)`、`conversation_key`（长度前缀四元组编码，存储内部键）、`payload_kind`、`has_conversation`、`sequence kiarabot.uint64`/`has_sequence`（两者同存同缺）、`serialized_envelope bytea<=1MiB`、`occurred_at`、`retain_until`、`state`（0 open / 1 terminal）、`received_at`；保留索引 `(state,retain_until)`。
+- `conversation_watermarks(conversation_key)` 主键；`has_sequence`/`last_sequence` 同存同缺、`degraded` sticky、`updated_at`。按会话键而不是四列主键，避免拼接歧义。
+- `delivery_targets(adapter,event_id,instance)` 主键；`ordered`、`trace_id`、`state`（0 persisted/1 retrying/2 dispatched/3 acknowledged/4 dead_letter）、`attempts`、`next_attempt_at`、`current_attempt`、`dead_letter_reason`、`updated_at`、`retain_until`、`ordinal bigint GENERATED ALWAYS AS IDENTITY UNIQUE`（有序组稳定顺序）；FK 指向 events 且事件删除级联；到期索引 `(instance,state,next_attempt_at)` 与 `(state,retain_until)`。
+- `delivery_attempts(attempt_id)` 主键；event+instance 引用目标并级联，保存 `runtime_epoch`/`execution_id`/`execution_generation`/`connection_id`/`connection_generation` 完整 fence、`started_at`/`lease_until`（后者>前者）、`attempt_number`、`state`（0 active/1 acknowledged/2 cancelled/3 expired）；`(event,instance,attempt_number)` 唯一。
+- `ordered_delivery_heads(instance,conversation_key)` 主键；`head_ordinal` 可为 NULL（组内无 pending），新目标到达时仅在原 head 为 NULL 时填充，ACK/死信后推进到下一非终态 ordinal。
+
 ## 3. 公共收据与 outbox/inbox 原子组
 
 ### 3.1 本地命令模板

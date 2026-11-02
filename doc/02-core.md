@@ -410,6 +410,15 @@ occurrences，Model的model_intents。各自工厂返回对应unique_ptr<UoW>，
 框架/数据库对象；仅接收所属库，不为Identity/Model提供Runtime仓储。更复杂的注册、
 配置、事件、动作、namespace、凭据、模型配置仓储在所属阶段追加，P03不要求提前实现。
 
+P06a 追加 Runtime 事件账本：纯领域规则在 `domain/target/event_delivery.hpp`（四元组
+水位与跳号 degraded、fan-out 目标选择、30s 租约/300s 上限、1/2/4/8/16s±20% 重试与
+死信、ACK/Renew 的 Acknowledged/Duplicate/Stale/Rejected 判定、容量与重启恢复）；
+`RuntimeUnitOfWork` 新增 `events()` 端口，PG 实现在同一事务内完成事件/水位/目标/
+attempt 的接收、领取、ACK、续租、超时扫描、恢复、死信查询、重放、容量与保留清理。
+Runtime schema 升到 v6 并新增五张表（events、conversation_watermarks、
+delivery_targets、delivery_attempts、ordered_delivery_heads）；开发阶段无迁移，
+v5 库必须清空重初始化，target 仍在 Bridge 接线验收后才翻转。
+
 Repository查询成功空optional表示不存在，故障必须Failure；save的空expected仅创建，
 更新要求当前版本匹配及下一版本。唯一约束与条件版本由实际数据库事务执行，不能将
 纯值测试当作并发验证。应用服务控制原子组，Repository不commit、不持锁调用网络。

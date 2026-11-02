@@ -247,6 +247,22 @@ Model意图分别只在自己的库创建live表。业务行与收据结果快�
 P03数据库资源/系统依赖故障（SQLSTATE类53/58及非取消类57）映射UpstreamUnavailable，
 查询取消/锁等待仍为Timeout；关系结果损坏或无法解码为Internal，不能伪装成成功空optional。
 
+### P06 Runtime事件投递表（实施中）
+
+Runtime私有库 schema v6 在 P03 基础表之外新增五张事件/投递表，空库初始化一次性创建，
+开发阶段不提供 v5→v6 迁移。`events` 保存 opaque 序列化 envelope、确定性指纹、四元组
+会话键、payload 类型、sequence/口径与保留期；`conversation_watermarks` 按会话键保存
+最大 sequence 与 sticky degraded；`delivery_targets` 为 event+instance 唯一目标行，含
+ordered、trace_id、状态、attempts、next_attempt_at、current_attempt、死信原因与
+identity ordinal（有序组稳定顺序）；`delivery_attempts` 保存每次领取的 attempt_id、
+完整 fence（instance/epoch/execution/connection/generation）、started_at/lease_until/
+attempt_number；`ordered_delivery_heads` 按 instance+会话键记录当前有序头 ordinal。
+外键级联只发生在事件删除清理路径；attempt 唯一、目标唯一、队列索引与保留索引用于
+容量/到期查询。仓储 `runtime_events.cpp` 借用 Runtime UoW 的同一 SQL 事务，不自行
+commit、不建第二连接；通用 outbox/inbox 的 handoff 语义不用于事件账本。
+`infrastructure/postgres/schema/manifest.hpp` 的 Runtime descriptor/relation count 在首次
+真实 PG 初始化后重新生成，不能拿旧哈希充当 v6 校验值。
+
 ### P04 Identity 密码与随机适配器（部分实施）
 
 `infrastructure/identity_crypto/` 的密码和随机 factory 返回 Core crypto ports。
