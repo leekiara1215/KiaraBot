@@ -5710,7 +5710,10 @@
           "StorageEntry": "implemented",
           "StorageCondition": "implemented",
           "StorageCompareAndSetRequest": "implemented",
-          "StorageCompareAndSetResponse": "implemented"
+          "StorageCompareAndSetResponse": "implemented",
+          "ModelChatRequest": "implemented",
+          "ModelChatResponse": "implemented",
+          "ModelMessage": "implemented"
         },
         "proto_fields": {
           "CredentialDelivery.credential_id": "implemented",
@@ -5937,7 +5940,17 @@
           "StorageCompareAndSetRequest.value": "implemented",
           "StorageCompareAndSetRequest.condition": "implemented",
           "StorageCompareAndSetRequest.expires_at": "implemented",
-          "StorageCompareAndSetResponse.entry": "implemented"
+          "StorageCompareAndSetResponse.entry": "implemented",
+          "HostRequest.model_chat": "implemented",
+          "HostResponse.model_chat": "implemented",
+          "ModelChatRequest.model": "implemented",
+          "ModelChatRequest.messages": "implemented",
+          "ModelChatRequest.logical_call_id": "implemented",
+          "ModelChatResponse.text": "implemented",
+          "ModelChatResponse.input_tokens": "implemented",
+          "ModelChatResponse.output_tokens": "implemented",
+          "ModelMessage.role": "implemented",
+          "ModelMessage.text": "implemented"
         },
         "bridge_methods": {
           "AdapterBridge.Connect": "implemented",
@@ -5980,6 +5993,12 @@
         },
         "action_payloads": {
           "ActionEnvelope.send_message": "implemented"
+        },
+        "host_operations": {
+          "HostRequest.model_chat": "implemented"
+        },
+        "host_results": {
+          "HostResponse.model_chat": "implemented"
         }
       },
       "evidence": {
@@ -7733,6 +7752,66 @@
           "infrastructure/postgres/src/storage_records.cpp",
           "tests/architecture/p06_bridge_acceptance.py",
           "core/tests/architecture/runtime_storage_application_test.cpp"
+        ],
+        "proto_messages:ModelChatRequest": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/tests/platform/model_bridge_test.cpp"
+        ],
+        "proto_messages:ModelChatResponse": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/tests/platform/model_bridge_test.cpp"
+        ],
+        "proto_messages:ModelMessage": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/tests/platform/model_bridge_test.cpp"
+        ],
+        "proto_fields:HostRequest.model_chat": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/tests/platform/model_bridge_test.cpp"
+        ],
+        "proto_fields:HostResponse.model_chat": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/tests/platform/model_bridge_test.cpp"
+        ],
+        "proto_fields:ModelChatRequest.model": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/tests/platform/model_bridge_test.cpp"
+        ],
+        "proto_fields:ModelChatRequest.messages": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/tests/platform/model_bridge_test.cpp"
+        ],
+        "proto_fields:ModelChatRequest.logical_call_id": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/tests/platform/model_bridge_test.cpp"
+        ],
+        "proto_fields:ModelChatResponse.text": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/tests/platform/model_bridge_test.cpp"
+        ],
+        "proto_fields:ModelChatResponse.input_tokens": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/tests/platform/model_bridge_test.cpp"
+        ],
+        "proto_fields:ModelChatResponse.output_tokens": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/tests/platform/model_bridge_test.cpp"
+        ],
+        "proto_fields:ModelMessage.role": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/tests/platform/model_bridge_test.cpp"
+        ],
+        "proto_fields:ModelMessage.text": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/tests/platform/model_bridge_test.cpp"
+        ],
+        "host_operations:HostRequest.model_chat": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/tests/platform/model_bridge_test.cpp"
+        ],
+        "host_results:HostResponse.model_chat": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/tests/platform/model_bridge_test.cpp"
         ]
       }
     }

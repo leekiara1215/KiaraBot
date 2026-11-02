@@ -213,7 +213,7 @@ stop(reason)
 
 ### ModelService
 
-状态：**仅非流式已实现**（`Context.model_chat`，T06b）。`stream_chat` 未实现，协议没有流式消息。插件提交模型请求，但不能获得模型 API Key；Provider、模型、超时、配额和重试由 Core 管理。
+状态：**仅非流式已实现**（`Context.model_chat`，T06b；P11e 已用真实 TLS PluginBridge fixture 覆盖 target host_request ModelChatRequest/Response/ModelMessage 与 logical_call_id 重放，streaming 明确不做）。`stream_chat` 未实现，协议没有流式消息。插件提交模型请求，但不能获得模型 API Key；Provider、模型、超时、配额和重试由 Core 管理。
 
 ### ConversationService
 

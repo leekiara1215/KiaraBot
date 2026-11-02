@@ -225,7 +225,10 @@ message ModelChatRequest {
   // no automatic retry or idempotent replay after timeout/disconnection.
   string model = 1;
   repeated ModelMessage messages = 2;
-  // CONTRACT_STATUS: not_implemented - P11 target declaration, no producer.
+  // CONTRACT_STATUS: not_implemented - reference-only declaration; target availability is the
+  // P11e scoped override below.
+  // CONTRACT_STATUS: implemented - P11e real TLS PluginBridge fixture forwards this stable plugin-side
+  // call identity end to end; Model replays terminal calls by it instead of re-calling the provider.
   // Stable plugin-side UUIDv4 call identity; distinct from HostRequest.request_id (per attempt)
   // and idempotency_key (command idempotency). Retries reuse the same logical_call_id.
   string logical_call_id = 3;
