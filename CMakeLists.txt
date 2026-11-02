@@ -18,6 +18,18 @@ elseif(CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang" AND CMAKE_CXX_COMPILER_VERSIO
 endif()
 
 enable_testing()
+add_library(kiarabot_onboarding STATIC control/api/src/application/target/onboarding.cpp)
+target_include_directories(kiarabot_onboarding PUBLIC control/api/include core/include)
+target_compile_features(kiarabot_onboarding PUBLIC cxx_std_20)
+if(MSVC)
+  target_compile_options(kiarabot_onboarding PRIVATE /W4)
+else()
+  target_compile_options(kiarabot_onboarding PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+add_executable(kiarabot_onboarding_test control/api/tests/architecture/onboarding_test.cpp)
+target_link_libraries(kiarabot_onboarding_test PRIVATE kiarabot_onboarding)
+add_test(NAME control_onboarding_model COMMAND kiarabot_onboarding_test)
+set_tests_properties(control_onboarding_model PROPERTIES LABELS "unit;control")
 add_subdirectory(core)
 
 if(KIARABOT_GENERATE_PROTO)

@@ -38,6 +38,7 @@ add_library(kiarabot_control_application STATIC
   ${CMAKE_SOURCE_DIR}/control/api/src/application/target/application.cpp)
 target_include_directories(kiarabot_control_application PUBLIC
   ${CMAKE_SOURCE_DIR}/core/include ${CMAKE_SOURCE_DIR}/control/api/include)
+target_link_libraries(kiarabot_control_application PUBLIC kiarabot_onboarding)
 kiarabot_platform_warnings(kiarabot_control_application)
 
 add_executable(kiarabot_service_applications_test

@@ -1,5 +1,10 @@
 # 控制面板 API 设计
 
+## 接入向导进程内模型
+
+Control 接入驱动模型、配置校验和接口见 [接入方案](26-real-qq-onboarding.md#第一项进程内通用模型与驱动端口)。
+此阶段不新增 HTTP/WS 路由，驱动执行、操作持久化、权限和向导尚未接线；账号与绑定仍由 Runtime 拥有。
+
 ## T08a 冻结决策（2026-10-30）
 
 控制 API 使用同进程 C++ 应用端口 IControlApplication（core/include/kiarabot/core/application/control_application.hpp），由组合根注入到 control/api；不新增跨进程管理 RPC，不改变当前 Python 适配器/SDK 和 TypeScript 面板。端口覆盖当前全部 REST 操作；输入为 bearer 凭据、request_id/trace_id/deadline（最长三十秒）、幂等键及类型化命令，禁止自报 actor/role。Core 每次重新核验会话、执行授权、事务和审计；端口返回显式 PortResult，资源文档在输出前脱敏，HTTP 层按 OpenAPI 校验映射。T08b 已实现并完成本机 REST 服务验收。
