@@ -20,8 +20,11 @@ struct SchedulerIdentityClientOptions {
   // Production composition reuses the Scheduler service TLS material as outbound mTLS identity;
   // tests may inject insecure credentials for a loopback fake Identity.
   std::shared_ptr<grpc::ChannelCredentials> channel_credentials;
-  std::chrono::milliseconds budget{500};
-  std::chrono::milliseconds maximum_budget{1000};
+  // Identity.CheckAuthorization performs two read-only transactions plus delegation verification;
+  // 500ms proved too tight under a loaded multi-process fixture. Keep well below the frozen 5s RPC
+  // deadline while tolerating transient latency.
+  std::chrono::milliseconds budget{1500};
+  std::chrono::milliseconds maximum_budget{3000};
 };
 
 // P10b Scheduler authorizer. Verifies the actual inbound mTLS leaf against the delegation proof,

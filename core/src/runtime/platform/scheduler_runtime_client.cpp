@@ -106,7 +106,9 @@ SchedulerRuntimeClient::create(SchedulerRuntimeClientOptions options) {
 SchedulerRuntimeClient::~SchedulerRuntimeClient() = default;
 
 bool SchedulerRuntimeClient::available() const {
-  return available_.load();
+  // Derive liveness from the channel so readiness recovers when Runtime returns, instead of
+  // staying false until the next successful handoff (which may wait for an outbox lease).
+  return channel_ && channel_->GetState(true) == GRPC_CHANNEL_READY;
 }
 
 target::Outcome<target::TimerDeliveryReceipt>

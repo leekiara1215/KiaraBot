@@ -112,8 +112,11 @@ def main():
                                str(args.initializer.resolve()), str(proxy.port)], expected=1)
                 if b'fixture backend directory mismatch' not in refused.stderr:
                     raise RuntimeError('test driver did not verify backend ownership before DDL')
+            # Multi-process acceptance drivers may legitimately exceed the short fixture command
+            # budget (restart/lease/expiry matrix); the compiled driver and its ctest TIMEOUT still
+            # bound the run.
             output = run([str(test), str(root), str(port), str(args.initializer.resolve()),
-                          str(proxy.port), *args.test_argument])
+                          str(proxy.port), *args.test_argument], timeout=180)
             print(output.stdout.decode(), end='')
     finally:
         # No TemporaryDirectory auto-deletion: unknown ownership or failed bounded stop must
