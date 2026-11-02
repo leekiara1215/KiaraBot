@@ -130,6 +130,34 @@ public:
                std::string_view delegation) = 0;
 };
 
+// P11d Model owner port: forwards exactly the frozen ModelService management/query RPCs. Control
+// only converts REST<->typed RPC, issues one delegation and maps stable errors; it never reads
+// provider secrets, re-implements lifecycle rules or infers UNKNOWN results from transport errors.
+class ModelManagementPort {
+public:
+  virtual ~ModelManagementPort() = default;
+  virtual OwnerOutcome<kiarabot::v1::ModelUpdateModelResponse>
+  update(const kiarabot::v1::ModelUpdateModelRequest& request, std::string_view delegation) = 0;
+  virtual OwnerOutcome<kiarabot::v1::ModelDisableModelResponse>
+  disable(const kiarabot::v1::ModelDisableModelRequest& request, std::string_view delegation) = 0;
+  virtual OwnerOutcome<kiarabot::v1::ModelEnableModelResponse>
+  enable(const kiarabot::v1::ModelEnableModelRequest& request, std::string_view delegation) = 0;
+  virtual OwnerOutcome<kiarabot::v1::ModelRotateProviderSecretResponse>
+  rotate_secret(const kiarabot::v1::ModelRotateProviderSecretRequest& request,
+                std::string_view delegation) = 0;
+  virtual OwnerOutcome<kiarabot::v1::ModelGetModelConfigurationResponse>
+  configuration(const kiarabot::v1::ModelGetModelConfigurationRequest& request,
+                std::string_view delegation) = 0;
+  virtual OwnerOutcome<kiarabot::v1::ModelGetCallStatusResponse>
+  call_status(const kiarabot::v1::ModelGetCallStatusRequest& request,
+              std::string_view delegation) = 0;
+  virtual OwnerOutcome<kiarabot::v1::ModelResolveModelCallResponse>
+  resolve(const kiarabot::v1::ModelResolveModelCallRequest& request,
+          std::string_view delegation) = 0;
+  virtual OwnerOutcome<kiarabot::v1::ModelGetOperationResponse>
+  operation(const kiarabot::v1::ModelGetOperationRequest& request, std::string_view delegation) = 0;
+};
+
 // Stable status/body helpers shared by the Control HTTPS boundary.
 unsigned int owner_http_status(kiarabot::v1::ErrorCode code);
 std::string owner_error_body(kiarabot::v1::ErrorCode code, std::string_view request_id,
@@ -140,15 +168,23 @@ std::string owner_error_body(kiarabot::v1::ErrorCode code, std::string_view requ
 //  - GET /api/v1/actions/by-idempotency-key?scope&owner_instance (+ Idempotency-Key header)
 //  - GET /api/v1/logs, /api/v1/audit: authoritative source not yet registered -> 503 UNAVAILABLE
 //    (never a successful empty page; log.read/audit.read permissions land with the P12a contract)
-// Returns nullopt for paths owned by another handler (auth, health, model, tasks).
+//  - GET/PUT /api/v1/models/...: P11d Model management forwarding to ModelService with exactly one
+//    model delegation scope; secrets are write-only and never echoed.
+// Returns nullopt for paths owned by another handler (auth, health, tasks).
 class OwnerGateway {
 public:
   OwnerGateway(DelegationPort& delegation, RuntimeActionsPort& runtime,
                IdentityPrincipalsPort* principals = nullptr, HealthPort* health = nullptr,
                RuntimeResourcesPort* resources = nullptr, SchedulerTasksPort* tasks = nullptr,
-               OperationPort* operations = nullptr)
-      : delegation_(delegation), runtime_(runtime), principals_(principals), health_(health),
-        resources_(resources), tasks_(tasks), operations_(operations) {}
+               OperationPort* operations = nullptr, ModelManagementPort* model = nullptr)
+      : delegation_(delegation),
+        runtime_(runtime),
+        principals_(principals),
+        health_(health),
+        resources_(resources),
+        tasks_(tasks),
+        operations_(operations),
+        model_(model) {}
   std::optional<OwnerHttpResult> handle(const OwnerHttpRequest& request);
   // Health probes are local process facts plus the composition-provided readiness answer.
   static OwnerHttpResult live();
@@ -162,6 +198,7 @@ private:
   RuntimeResourcesPort* resources_;
   SchedulerTasksPort* tasks_;
   OperationPort* operations_;
+  ModelManagementPort* model_;
 };
 
 } // namespace kiarabot::control::target

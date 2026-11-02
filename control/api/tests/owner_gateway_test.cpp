@@ -555,6 +555,276 @@ void validation_rules() {
   require(wrong_method && wrong_method->status == 405, "non-GET rejected");
 }
 
+struct FakeModel final : target::ModelManagementPort {
+  std::optional<target::OwnerFailure> failure;
+  std::string permission;
+  int calls = 0;
+  wire::ModelUpdateModelRequest update_request;
+  wire::ModelDisableModelRequest disable_request;
+  wire::ModelEnableModelRequest enable_request;
+  wire::ModelRotateProviderSecretRequest rotate_request;
+  wire::ModelGetModelConfigurationRequest configuration_request;
+  wire::ModelGetCallStatusRequest call_request;
+  wire::ModelResolveModelCallRequest resolve_request;
+  wire::ModelGetOperationRequest operation_request;
+  wire::ModelMetadata metadata() {
+    wire::ModelMetadata value;
+    value.set_model_id("model-1");
+    value.set_alias("default");
+    value.set_config_version(2);
+    value.set_state(wire::LIFECYCLE_ACTIVE);
+    value.set_provider_kind("openai_chat_completions");
+    return value;
+  }
+  target::OwnerOutcome<wire::ModelUpdateModelResponse>
+  update(const wire::ModelUpdateModelRequest& request, std::string_view proof) override {
+    ++calls;
+    update_request = request;
+    permission = proof;
+    if (failure) {
+      return *failure;
+    }
+    wire::ModelUpdateModelResponse response;
+    *response.mutable_model() = metadata();
+    return response;
+  }
+  target::OwnerOutcome<wire::ModelDisableModelResponse>
+  disable(const wire::ModelDisableModelRequest& request, std::string_view proof) override {
+    ++calls;
+    disable_request = request;
+    permission = proof;
+    if (failure) {
+      return *failure;
+    }
+    wire::ModelDisableModelResponse response;
+    *response.mutable_model() = metadata();
+    return response;
+  }
+  target::OwnerOutcome<wire::ModelEnableModelResponse>
+  enable(const wire::ModelEnableModelRequest& request, std::string_view proof) override {
+    ++calls;
+    enable_request = request;
+    permission = proof;
+    if (failure) {
+      return *failure;
+    }
+    wire::ModelEnableModelResponse response;
+    *response.mutable_model() = metadata();
+    return response;
+  }
+  target::OwnerOutcome<wire::ModelRotateProviderSecretResponse>
+  rotate_secret(const wire::ModelRotateProviderSecretRequest& request,
+                std::string_view proof) override {
+    ++calls;
+    rotate_request = request;
+    permission = proof;
+    if (failure) {
+      return *failure;
+    }
+    wire::ModelRotateProviderSecretResponse response;
+    response.set_version(3);
+    return response;
+  }
+  target::OwnerOutcome<wire::ModelGetModelConfigurationResponse>
+  configuration(const wire::ModelGetModelConfigurationRequest& request,
+                std::string_view proof) override {
+    ++calls;
+    configuration_request = request;
+    permission = proof;
+    if (failure) {
+      return *failure;
+    }
+    wire::ModelGetModelConfigurationResponse response;
+    auto* config = response.mutable_config();
+    config->set_model_id("model-1");
+    config->set_alias("default");
+    config->set_provider_kind("openai_chat_completions");
+    config->set_endpoint("https://api.example.com/v1");
+    config->set_provider_model("gpt-test");
+    config->set_timeout_ms(30000);
+    config->set_version(2);
+    response.set_secret_configured(true);
+    response.set_secret_version(7);
+    google::protobuf::Timestamp observed;
+    observed.set_seconds(1'800'000'000);
+    *response.mutable_observed_at() = observed;
+    return response;
+  }
+  target::OwnerOutcome<wire::ModelGetCallStatusResponse>
+  call_status(const wire::ModelGetCallStatusRequest& request, std::string_view proof) override {
+    ++calls;
+    call_request = request;
+    permission = proof;
+    if (failure) {
+      return *failure;
+    }
+    wire::ModelGetCallStatusResponse response;
+    auto* call = response.mutable_call();
+    call->set_logical_call_id("call-1");
+    call->set_model_id("model-1");
+    call->set_config_version(2);
+    call->set_state(wire::OPERATION_BLOCKED);
+    call->set_execution_outcome(wire::EXECUTION_UNKNOWN);
+    call->set_usage_known(false);
+    call->set_may_have_billed(true);
+    call->set_disposition(wire::MODEL_CALL_DISPOSITION_UNSPECIFIED);
+    google::protobuf::Timestamp observed;
+    observed.set_seconds(1'800'000'000);
+    *call->mutable_observed_at() = observed;
+    return response;
+  }
+  target::OwnerOutcome<wire::ModelResolveModelCallResponse>
+  resolve(const wire::ModelResolveModelCallRequest& request, std::string_view proof) override {
+    ++calls;
+    resolve_request = request;
+    permission = proof;
+    if (failure) {
+      return *failure;
+    }
+    wire::ModelResolveModelCallResponse response;
+    auto* call = response.mutable_call();
+    call->set_logical_call_id("call-1");
+    call->set_model_id("model-1");
+    call->set_state(wire::OPERATION_SUCCEEDED);
+    call->set_execution_outcome(wire::EXECUTION_UNKNOWN);
+    call->set_disposition(wire::EXECUTED_BILLED);
+    return response;
+  }
+  target::OwnerOutcome<wire::ModelGetOperationResponse>
+  operation(const wire::ModelGetOperationRequest& request, std::string_view proof) override {
+    ++calls;
+    operation_request = request;
+    permission = proof;
+    if (failure) {
+      return *failure;
+    }
+    wire::ModelGetOperationResponse response;
+    auto* operation = response.mutable_operation();
+    auto* reference = operation->mutable_ref();
+    reference->set_owner_service("model");
+    reference->set_operation_id("operation-1");
+    operation->set_version(1);
+    operation->set_state(wire::OPERATION_SUCCEEDED);
+    operation->set_execution_outcome(wire::EXECUTION_KNOWN_SUCCEEDED);
+    google::protobuf::Timestamp observed;
+    observed.set_seconds(1'800'000'000);
+    *operation->mutable_observed_at() = observed;
+    return response;
+  }
+};
+std::string model_scope_json() {
+  return R"({"resources":[{"kind":"RESOURCE_MODEL","id":"model-1"}]})";
+}
+std::string model_path(std::string_view suffix = {}) {
+  return "/api/v1/models/model-1" + std::string{suffix} + "?scope=" + model_scope_json();
+}
+std::string model_scope_query() {
+  return "?scope=" + model_scope_json();
+}
+void model_management_surface() {
+  FakeDelegation delegation;
+  FakeRuntime runtime;
+  FakeModel model;
+  target::OwnerGateway gateway{delegation, runtime, nullptr, nullptr, nullptr, nullptr,
+                                  nullptr, &model};
+  auto update = request("PUT", "/api/v1/models/model-1");
+  update.headers["idempotency-key"] = "model-idem-1";
+  update.body =
+      R"({"config":{"model_id":"model-1","alias":"default","provider_kind":"openai_chat_completions","endpoint":"https://api.example.com/v1","provider_model":"gpt-test","timeout_ms":30000,"version":"2"},"expected_version":"2"})";
+  auto updated = gateway.handle(update);
+  require(updated && updated->status == 200, "model update 200");
+  require(updated->body.find("\"model_id\":\"model-1\"") != std::string::npos &&
+              updated->body.find("\"state\":\"LIFECYCLE_ACTIVE\"") != std::string::npos,
+          "model metadata projected");
+  require(delegation.calls == 1 && delegation.audience == "model" &&
+              delegation.permission == wire::PERMISSION_MODEL_MANAGE &&
+              delegation.scope_resources == 1,
+          "update delegation is model.manage + single scope");
+  require(model.update_request.config().model_id() == "model-1",
+          "model id forwarded from path/body");
+
+  auto disable = request("POST", "/api/v1/models/model-1/disable");
+  disable.headers["idempotency-key"] = "model-idem-2";
+  disable.body = R"({"expected_version":"2"})";
+  auto disabled = gateway.handle(disable);
+  require(disabled && disabled->status == 200 && model.disable_request.expected_version() == 2 &&
+              disabled->body.find("\"model\"") != std::string::npos,
+          "disable forwards expected_version");
+  auto enable = request("POST", "/api/v1/models/model-1/enable");
+  enable.headers["idempotency-key"] = "model-idem-3";
+  enable.body = R"({"expected_version":"3"})";
+  auto enabled = gateway.handle(enable);
+  require(enabled && enabled->status == 200 && model.enable_request.expected_version() == 3,
+          "enable forwards expected_version");
+
+  auto secret = request("PUT", "/api/v1/models/model-1/secret");
+  secret.headers["idempotency-key"] = "model-idem-4";
+  secret.body = R"({"model_id":"model-1","new_secret":"c2VjcmV0","expected_version":"2"})";
+  auto rotated = gateway.handle(secret);
+  require(rotated && rotated->status == 200 &&
+              rotated->body.find("\"version\":\"3\"") != std::string::npos,
+          "secret rotation version projected");
+  require(rotated->body.find("new_secret") == std::string::npos &&
+              rotated->body.find("c2VjcmV0") == std::string::npos,
+          "secret is never echoed");
+  require(model.rotate_request.new_secret() == "secret", "secret forwarded to owner only");
+
+  auto configuration = request("GET", model_path("/configuration"));
+  auto configured = gateway.handle(configuration);
+  require(configured && configured->status == 200 &&
+              configured->body.find("\"secret_configured\":true") != std::string::npos &&
+              configured->body.find("\"secret_version\":\"7\"") != std::string::npos &&
+              configured->body.find("\"observed_at\"") != std::string::npos,
+          "configuration reports presence only");
+  require(configured->body.find("secret") == configured->body.find("secret_configured"),
+          "configuration never contains the secret value");
+
+  auto status = request("GET", model_path("/calls/call-1"));
+  auto call = gateway.handle(status);
+  require(call && call->status == 200 &&
+              call->body.find("\"execution_outcome\":\"EXECUTION_UNKNOWN\"") != std::string::npos &&
+              call->body.find("\"may_have_billed\":true") != std::string::npos,
+          "UNKNOWN call status is queryable, not inferred from transport");
+  require(delegation.permission == wire::PERMISSION_MODEL_CALL_INSPECT,
+          "call status delegation is model.call.inspect");
+
+  auto resolve = request("POST", model_path("/calls/call-1/resolve"));
+  resolve.headers["idempotency-key"] = "model-idem-5";
+  resolve.body = R"({"disposition":"EXECUTED_BILLED","expected_version":"2"})";
+  auto resolved = gateway.handle(resolve);
+  require(resolved && resolved->status == 200 &&
+              resolved->body.find("\"disposition\":\"EXECUTED_BILLED\"") != std::string::npos,
+          "resolve disposition projected");
+
+  auto operation_request =
+      request("GET", "/api/v1/operations/model/operation-1" + model_scope_query());
+  auto operation = gateway.handle(operation_request);
+  require(operation && operation->status == 200 &&
+              operation->body.find("\"state\":\"OPERATION_SUCCEEDED\"") != std::string::npos,
+          "model get operation forwarded");
+  require(delegation.permission == wire::PERMISSION_RESOURCE_READ,
+          "operation delegation is resource.read");
+
+  FakeModel failing;
+  failing.failure = target::OwnerFailure{wire::CONFLICT, false};
+  target::OwnerGateway conflicted{delegation, runtime, nullptr, nullptr, nullptr,
+                                       nullptr, nullptr, &failing};
+  auto conflict = request("PUT", "/api/v1/models/model-1");
+  conflict.headers["idempotency-key"] = "model-idem-6";
+  conflict.body =
+      R"({"config":{"model_id":"model-1","alias":"default","provider_kind":"openai_chat_completions","endpoint":"https://api.example.com/v1","provider_model":"gpt-test"},"expected_version":"1"})";
+  auto version_conflict = conflicted.handle(conflict);
+  require(version_conflict && version_conflict->status == 409 &&
+              version_conflict->body.find("\"code\":\"CONFLICT\"") != std::string::npos,
+          "model version conflict maps to 409");
+
+  target::OwnerGateway unavailable{delegation, runtime};
+  auto missing = unavailable.handle(request("GET", model_path("/configuration")));
+  require(missing && missing->status == 503 &&
+              missing->body.find("\"code\":\"CAPABILITY_NOT_SUPPORTED\"") != std::string::npos,
+          "model routes without an injected owner stay explicitly unavailable");
+}
+
 } // namespace
 
 int main() {
@@ -569,6 +839,7 @@ int main() {
     owner_commands();
     operation_snapshots();
     validation_rules();
+    model_management_surface();
   } catch (const std::exception& error) {
     std::cerr << error.what() << '\n';
     return 1;
