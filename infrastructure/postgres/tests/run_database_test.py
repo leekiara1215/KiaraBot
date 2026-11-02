@@ -26,7 +26,8 @@ def main():
                     'kiarabot_identity_application_test',
                     'kiarabot_identity_application_test_sanitized',
                     'kiarabot_postgres_host_registration_test',
-                    'kiarabot_postgres_scheduler_test')
+                    'kiarabot_postgres_scheduler_test',
+                    'p14_native_single_host', 'p14_native_single_host.py')
     environment = {key: value for key, value in os.environ.items() if not key.startswith('PG')}
     environment['LC_ALL'] = 'C'
 
@@ -35,7 +36,7 @@ def main():
         if result.returncode != expected:
             if Path(command[0]).name in (*driver_names, 'identity_bootstrap_test.py', 'identity_daemon_http_test.py'):
                 for line in result.stderr.decode(errors='replace').splitlines():
-                    if line.startswith(('P03 assertion: ', 'P08 assertion: ', 'P10 ')):
+                    if line.startswith(('P03 assertion: ', 'P08 assertion: ', 'P10 ', 'P14 native single-host')):
                         print(line, flush=True)
             raise RuntimeError(f'fixture command failed: {Path(command[0]).name}; '
                                f'exit={result.returncode}; output redacted')

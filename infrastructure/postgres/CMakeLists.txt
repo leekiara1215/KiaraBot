@@ -116,6 +116,27 @@ if(UNIX)
   set_tests_properties(p06_postgres_runtime_events PROPERTIES
     LABELS "p06;integration;fault" TIMEOUT 180)
 
+  # P14f: native single-host target stack smoke (no Docker). Real native service binaries,
+  # owned PG16.4 fixture, temporary PKI and offline identity bootstrap; this is an acceptance
+  # harness, not the production Compose deployment.
+  get_filename_component(P14F_PYTHON_BIN_DIR "${KIARABOT_TARGET_PYTHON}" DIRECTORY)
+  get_filename_component(P14F_OPENSSL_BIN_DIR "${KIARABOT_TEST_OPENSSL}" DIRECTORY)
+  add_test(NAME p14_native_single_host COMMAND "${KIARABOT_TARGET_PYTHON}"
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_database_test.py"
+    --pg-bin "${KIARABOT_TEST_PG_BIN}" --openssl "${KIARABOT_TEST_OPENSSL}"
+    --initializer $<TARGET_FILE:kiarabot-pg-initialize>
+    --test "${CMAKE_SOURCE_DIR}/tests/architecture/p14_native_single_host.py"
+    --test-argument $<TARGET_FILE:kiarabot-identity-bootstrap>
+    --test-argument "${KIARABOT_TEST_PG_BIN}"
+    --test-argument $<TARGET_FILE:kiarabot-identity>
+    --test-argument $<TARGET_FILE:kiarabot-runtime>
+    --test-argument $<TARGET_FILE:kiarabot-scheduler>
+    --test-argument $<TARGET_FILE:kiarabot-model>
+    --test-argument $<TARGET_FILE:kiarabot-control>)
+  set_tests_properties(p14_native_single_host PROPERTIES
+    LABELS "p14;integration;fault" TIMEOUT 300
+    ENVIRONMENT "PATH=${P14F_OPENSSL_BIN_DIR}:${P14F_PYTHON_BIN_DIR}:$ENV{PATH}")
+
   add_executable(kiarabot_postgres_storage_records_test tests/storage_records_test.cpp)
   target_link_libraries(kiarabot_postgres_storage_records_test PRIVATE
     kiarabot_postgres kiarabot_runtime_storage_application libpqxx::pqxx)
