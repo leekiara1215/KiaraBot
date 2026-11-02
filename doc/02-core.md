@@ -1226,6 +1226,14 @@ bootstrap SHA-256；bridge 维护（sweep/claim/push）挂在每秒有界的 che
 停进程前 `before_stop` 向活动流发送有界 ShutdownNotice。9 个 internal_dispatcher unary 方法
 仍未实现、不在任何监听上实现。
 
+**P06 全链路完成状态（2026-11-02）**：P06a-1/P06a-2 的 Runtime 事件账本与外部 Bridge 已在
+真实 PG16.4、临时 TLS 与真实进程上通过 P06b SDK 插件与 P06c Adapter bridge client 的
+端到端验收（`ctest -R p06_client_e2e`，注册/授权/refresh/事件 lease+ACK/断线重连新
+generation/有界 ShutdownNotice）。P06 target 登记中 bridge_methods、授权/投递/停机字段与
+`EventEnvelope.message_received` 已翻 implemented；未覆盖项保持 not_implemented：适配器本地
+队列背压 semantic、插件 manifest 的 Identity 授予过滤（P06b/P08）、真实 QQ/OneBot 进程
+（P07/M2）、P05 bootstrap RPC 的 target 字段级验收。
+
 **Identity 在线授权接线（P04 就绪后）**：Runtime 组合根在存在 `identity_endpoint` 配置时创建
 真实 Identity owner gRPC 客户端，复用 Runtime 服务 TLS 材料作为出站 mTLS 身份：
 - PeerAuthorizer 从 gRPC `ServerContext::auth_context()` 提取真实 inbound 证书叶指纹，解析

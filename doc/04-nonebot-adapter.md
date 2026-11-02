@@ -128,7 +128,7 @@ ApproveRequest
 
 P06c 起目标适配器配置为：`BRIDGE_ENDPOINT`、`BRIDGE_CA_FILE`、
 `BRIDGE_BOOTSTRAP_CREDENTIAL_FILE`（0600 部署秘密，只读一次）、`ADAPTER_INSTANCE_ID`、
-`ACCOUNT_ID`、`OUTBOX_PATH`、`HEALTH_PORT`，可选 `ADAPTER_ID`/`BRIDGE_SERVER_NAME` 与
+`ACCOUNT_ID`（P06 target bridge 使用 Runtime 账号绑定身份；真实 QQ/NoneBot 平台 self_id 映射与账号资源 id 的分离留 P07/M2）、`OUTBOX_PATH`、`HEALTH_PORT`，可选 `ADAPTER_ID`/`BRIDGE_SERVER_NAME` 与
 `BRIDGE_TIMEOUT`/`BRIDGE_RETRY_BASE`/`BRIDGE_IDLE_INTERVAL`，平台侧仍是
 `ONEBOT_WS_URL`/`ONEBOT_ACCESS_TOKEN`；完整语义见适配器 README。缺失/非法/权限不符一律稳定
 `INVALID_ARGUMENT` 失败，不提供 insecure 或匿名明文降级。
@@ -136,6 +136,14 @@ P06c 起目标适配器配置为：`BRIDGE_ENDPOINT`、`BRIDGE_CA_FILE`、
 reference 时代的环境变量 `CORE_GRPC_ENDPOINT`/`CORE_AUTH_TOKEN` 仅存在于冻结的 reference
 分支/tag，不再被目标适配器读取；NapCat WebUI 密码、OneBot Token 与 bootstrap 凭据必须分开
 管理，三者都不进入日志或 outbox。
+
+## P06 全链路验收
+
+`ctest -R p06_client_e2e` 在真实 PG16.4 + 临时证书 + 真实 `kiarabot-runtime` 进程上运行
+本适配器真实的 `BridgeClient`/`Outbox`（经 `map_message` 产生 MessageReceived）和真实
+`kiarabot_sdk.Runner` 插件：注册/授权/心跳/事件 lease+Renew+ACK/证明 refresh/断线重连新
+connection_generation/ShutdownNotice drain。NoneBot 平台进程、OneBot WebSocket 与真实 QQ
+仍在 P07/M2 范围。
 
 ## 故障处理
 
@@ -188,7 +196,7 @@ reference 时代的环境变量 `CORE_GRPC_ENDPOINT`/`CORE_AUTH_TOKEN` 仅存在
 
 连接后先发送协议版本 kiarabot.v1 的注册请求，等待 accepted=true 并保存 assigned_instance_id；每次重连重新注册。发送事件前重绑 source.adapter_instance_id，event_id/trace_id/sequence/正文保持不变。等待匹配 event_id 的 event_ack：PERSISTED 或 DUPLICATE 才删除本地待发记录。REJECTED 的 retryable=true 或连接中断时保留事件，按 retry_after_ms 和退避重连；不可重试拒绝进入本地失败记录，不得当作投递成功。队列满会回复 RATE_LIMITED 并关闭流，所有尚未确认事件必须重投。适配器对 RATE_LIMITED 一律按可重试处理（即使 Core 返回 retryable=false 也不标 failed、不丢弃），保留 pending 并退避重投；其余不可重试拒绝才进入失败记录。心跳只确认连接，不确认事件。
 
-账号必须由 Core 管理员预先授权；注册的 capabilities 仅描述平台支持能力，不能授予账号权限。适配器不得发 TimerTriggered/PluginStatusChanged。当前任务只实现 Core 端及契约；Python 适配器客户端在 T02b 实现。
+账号必须由 Core 管理员预先授权；注册的 capabilities 只声明可执行的 Action 能力（P06 target 的六个 action.*），事件上报不是协商能力：认证连接上的 MessageReceived/FriendRequest/AdapterStatusChanged 由 Runtime inbox 接收，插件订阅按插件 manifest 单独协商。capabilities 不能授予账号权限。适配器不得发 TimerTriggered/PluginStatusChanged。当前任务只实现 Core 端及契约；Python 适配器客户端在 T02b 实现。
 
 ## T02b 适配器实现
 

@@ -118,7 +118,7 @@ TLS 由本层之外的反向代理/SSH 隧道提供；仓库当前**未交付 TL
 - Core 危险 Action 每日预算：`KIARABOT_ACTION_DAILY_LIMITS`（逗号分隔 `<action kind>=<limit>`，limit 1–100000，默认空=不限制；非法格式启动退出 1）。预算按 `(action kind, 账号)` 与 UTC 日持久化计数，跨重启保留，维护循环清理过期日；超限返回可重试 `RATE_LIMITED` 并写审计。当前只为危险动作配置（如 `action.mute_member.v1=20,action.kick_member.v1=5`）。
 - Core 危险 Action 会话白名单（fail closed）：`KIARABOT_ACTION_ALLOWED_CONVERSATIONS`（逗号分隔 `<action kind>=<会话>|<会话>...`，默认空；非法格式启动退出 1）。kind 一旦出现，只允许目标会话在白名单内的提交，其他返回 `PERMISSION_DENIED`；未出现的 kind 不受此配置限制。**部署禁言/踢人时必须为 `action.mute_member.v1`、`action.kick_member.v1` 配置白名单**，并同时配置每日预算与速率上限。
 - 控制面：`KIARABOT_CONTROL_CONFIG=/etc/kiarabot/control.json`（容器内路径）与 `KIARABOT_CONTROL_PORT`（默认 8080）。宿主机文件路径由 `KIARABOT_CONTROL_CONFIG_FILE` 指定并只读挂载；文件必须属于 UID 10001、权限 0600、普通文件且非符号链接，否则 Core 拒绝启动。`deploy/control/control.example.json` 给出字段模板，`encryption_key` 用 `kiarabot-control-credentials --key` 生成，密码哈希用同工具从 stdin 生成。
-- 适配器：`CORE_GRPC_ENDPOINT`、`CORE_AUTH_TOKEN`、`ADAPTER_ID`、`ACCOUNT_ID`、`ONEBOT_WS_URL`、`ONEBOT_ACCESS_TOKEN`、`OUTBOX_PATH`、`HEALTH_PORT`。`CORE_AUTH_TOKEN` 必须等于 Core 的 `KIARABOT_ADAPTER_TOKEN`。
+- 适配器（P06 target bridge）：`BRIDGE_ENDPOINT`、`BRIDGE_CA_FILE`、`BRIDGE_BOOTSTRAP_CREDENTIAL_FILE`（0600 一次性 bootstrap）、`ADAPTER_INSTANCE_ID`、`ACCOUNT_ID`（Runtime 账号绑定身份）、`OUTBOX_PATH`、`HEALTH_PORT`，平台侧 `ONEBOT_WS_URL`/`ONEBOT_ACCESS_TOKEN`；可选 `ADAPTER_ID`/`BRIDGE_SERVER_NAME`/超时与重试变量。reference 时代 `CORE_GRPC_ENDPOINT`/`CORE_AUTH_TOKEN` 仅存在于冻结 reference 分支/tag，目标进程不读取。
 - 面板：`VITE_API_MODE=live`、`VITE_API_BASE=/api/v1` 是**构建期**参数（由 `panel.Dockerfile` 的 build args 传入）；运行期只读取 nginx 模板变量 `KIARABOT_CONTROL_HOST/PORT`、`KIARABOT_PANEL_PORT`。Compose 中不再使用 `CORE_ENDPOINT`、`CONTROL_API_URL` 这类不存在的运行期变量。
 
 systemd 的 `EnvironmentFile=-/etc/kiarabot/production.env` 只进入 `deploy.sh` 进程，用于 Compose 插值；**不会**自动进入容器。容器环境来自 `deploy/.env`（`KIARABOT_ENV_FILE`）。如需单一文件，请把 `KIARABOT_ENV_FILE` 指向同一路径。
@@ -184,6 +184,13 @@ error_code
 - 不在启动脚本中实现权限判断；
 - 不把第三方源码复制进 Core；
 - 不通过日志系统传递业务命令。
+
+## P06 Bridge 全链路验收
+
+`ctest -R 'p06_client_e2e'`（tests/architecture）自建一次性 PG16.4 集群、临时证书并启动真实
+Runtime，使用真实 SDK 插件与 Adapter bridge client 验证注册/授权/refresh/事件投递/租约/
+ACK/重连/ShutdownNotice；不连接真实 QQ，不读取生产凭据。它与 `p06_bridge_acceptance` 的
+wire 级断言互补：后者锁协议帧，前者锁已发布客户端。
 
 ## 验收标准
 

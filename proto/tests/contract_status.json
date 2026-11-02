@@ -5690,6 +5690,9 @@
           "DeliveryDisposition.DELIVERY_STALE": "implemented",
           "DeliveryDisposition.DELIVERY_RENEWED": "implemented",
           "DeliveryDisposition.DELIVERY_REJECTED": "implemented"
+        },
+        "event_payloads": {
+          "EventEnvelope.message_received": "implemented"
         }
       },
       "evidence": {
@@ -6257,6 +6260,11 @@
           "core/src/runtime/platform/runtime_bridge.cpp",
           "core/src/application/target/runtime_bridge_application.cpp",
           "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "event_payloads:EventEnvelope.message_received": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/application/target/runtime_bridge_application.cpp",
+          "tests/architecture/p06_client_e2e.py"
         ]
       }
     }

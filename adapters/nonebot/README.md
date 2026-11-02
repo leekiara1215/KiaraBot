@@ -36,7 +36,7 @@ gRPC/token 兼容模式：连接使用 server-verified TLS，注册使用部署�
 | `BRIDGE_CA_FILE` | 是 | 部署 CA PEM（校验服务端证书；普通常规文件、非符号链接、≤1MiB） |
 | `BRIDGE_BOOTSTRAP_CREDENTIAL_FILE` | 是 | 逐实例 bootstrap 凭据文件：常规非符号链接文件、权限必须 0600 或更严、≤4KiB；只读一次、不进日志/outbox |
 | `ADAPTER_INSTANCE_ID` | 是 | Runtime 已绑定的 adapter 实例资源 ID（小写 UUIDv4；bootstrap 凭据解析出的资源必须与之一致） |
-| `ACCOUNT_ID` | 是 | 该实例承载的平台账号 ID（首帧 `Account`，必须已在 Runtime 绑定/启用） |
+| `ACCOUNT_ID` | 是 | P06 target bridge 的 Runtime 账号绑定身份（首帧 `Account`）；真实 QQ 平台 self_id 映射与分离在 P07/M2 完成 |
 | `ADAPTER_ID` | 否 | 注册帧 `adapter_id`；缺省等于 `ADAPTER_INSTANCE_ID` |
 | `BRIDGE_SERVER_NAME` | 否 | TLS 服务端名覆盖（证书 SAN 与 endpoint host 不同时使用） |
 | `BRIDGE_TIMEOUT` / `BRIDGE_RETRY_BASE` / `BRIDGE_IDLE_INTERVAL` | 否 | 秒；默认 5 / 1 / 1，非法即 `INVALID_ARGUMENT` |

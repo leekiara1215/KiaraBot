@@ -33,6 +33,8 @@ T03a 新增 CoreToPlugin.error（oneof 字段 6），承载注册之后的终止
 
 | `CoreToAdapter.shutdown`、`CoreToPlugin.shutdown`、`ShutdownNotice.reason`、`ShutdownNotice.drain_timeout_ms`、`semantic.transport.graceful_shutdown` | implemented | P06 生产 Runtime：停止信号后向活动 bridge 流发送有界 ShutdownNotice（drain_timeout_ms=1000），真实 TLS 验收断言客户端收到该帧；reference 不发送 |
 
+| `EventEnvelope.message_received` | implemented | P06 target：真实 NoneBot Adapter bridge client 生成、Runtime inbox 接收并 fan-out 给真实 SDK 插件；ACL/lease/ACK 见 p06_client_e2e |
+
 除上述明确override外，target所有非废弃业务声明均为not_implemented，包括旧reference已有的Action/Host/认证/WS能力及其余目标owner RPC（按target_spec动态计数）；mTLS监听返回UNIMPLEMENTED不算业务实现。API已有x-contract-status列表与下表、proto内联CONTRACT_STATUS保留声明/历史reference语境；不可据其单独判断target可用性。客户端与面板须依据target执行范围及真实生产者验收，不得用历史测试通过自动启用。
 <!-- execution-scopes:end -->
 

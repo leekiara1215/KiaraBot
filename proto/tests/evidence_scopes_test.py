@@ -185,6 +185,7 @@ class ScopeTest(unittest.TestCase):
         # ConnectionAuthorization/refresh, delivery attempt/lease/receipt and shutdown.
         expected |= {('bridge_methods', 'AdapterBridge.Connect'),
                      ('bridge_methods', 'PluginBridge.Connect')}
+        expected |= {('event_payloads', 'EventEnvelope.message_received')}
         expected |= {('semantic_rules', 'semantic.bridge.connection_authorization'),
                      ('semantic_rules', 'semantic.bridge.external_listener'),
                      ('semantic_rules', 'semantic.bridge.plugin_delivery_lease')}
