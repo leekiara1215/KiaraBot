@@ -5593,7 +5593,18 @@
           "RuntimeSetSharedMembersRequest": "implemented",
           "RuntimeSetSharedMembersResponse": "implemented",
           "RuntimeDisableSharedNamespaceRequest": "implemented",
-          "RuntimeDisableSharedNamespaceResponse": "implemented"
+          "RuntimeDisableSharedNamespaceResponse": "implemented",
+          "ActionEnvelope": "implemented",
+          "ActionResult": "implemented",
+          "PluginActionRequest": "implemented",
+          "PluginActionQuery": "implemented",
+          "PluginActionCancel": "implemented",
+          "PluginActionResponse": "implemented",
+          "ActionExecutionEvidence": "implemented",
+          "ActionReceipt": "implemented",
+          "ActionMetadata": "implemented",
+          "RuntimeQueryActionResultRequest": "implemented",
+          "RuntimeQueryActionResultResponse": "implemented"
         },
         "proto_fields": {
           "CredentialDelivery.credential_id": "implemented",
@@ -5722,7 +5733,79 @@
           "RuntimeGetSharedNamespaceRequest.namespace_id": "implemented",
           "RuntimeGetSharedNamespaceResponse.namespace": "implemented",
           "RuntimeGetSharedNamespaceResponse.members": "implemented",
-          "RuntimeGetSharedNamespaceResponse.quota": "implemented"
+          "RuntimeGetSharedNamespaceResponse.quota": "implemented",
+          "ActionEnvelope.action_id": "implemented",
+          "ActionEnvelope.idempotency_key": "implemented",
+          "ActionEnvelope.deadline": "implemented",
+          "ActionEnvelope.trace_id": "implemented",
+          "ActionEnvelope.target_source": "implemented",
+          "ActionEnvelope.target": "implemented",
+          "ActionEnvelope.send_message": "implemented",
+          "ActionEnvelope.dispatch_attempt_id": "implemented",
+          "ActionEnvelope.dispatch_sequence": "implemented",
+          "ActionResult.status": "implemented",
+          "ActionResult.execution_outcome": "implemented",
+          "ActionResult.dispatch_attempt_id": "implemented",
+          "ActionResult.completed_at": "implemented",
+          "ActionResult.platform_message_id": "implemented",
+          "ActionResult.error": "implemented",
+          "AdapterToCore.action_result": "implemented",
+          "AdapterToCore.action_evidence": "implemented",
+          "CoreToAdapter.action": "implemented",
+          "CoreToAdapter.action_receipt": "implemented",
+          "PluginToCore.action": "implemented",
+          "PluginToCore.action_query": "implemented",
+          "PluginToCore.action_cancel": "implemented",
+          "CoreToPlugin.action_response": "implemented",
+          "PluginActionRequest.action": "implemented",
+          "PluginActionRequest.request_id": "implemented",
+          "PluginActionResponse.request_id": "implemented",
+          "PluginActionResponse.result": "implemented",
+          "PluginActionResponse.error": "implemented",
+          "PluginActionQuery.request_id": "implemented",
+          "PluginActionQuery.trace_id": "implemented",
+          "PluginActionQuery.deadline": "implemented",
+          "PluginActionQuery.action_id": "implemented",
+          "PluginActionQuery.idempotency_key": "implemented",
+          "PluginActionCancel.request_id": "implemented",
+          "PluginActionCancel.trace_id": "implemented",
+          "PluginActionCancel.deadline": "implemented",
+          "PluginActionCancel.action_id": "implemented",
+          "ActionExecutionEvidence.action_id": "implemented",
+          "ActionExecutionEvidence.dispatch_attempt_id": "implemented",
+          "ActionExecutionEvidence.execution_outcome": "implemented",
+          "ActionExecutionEvidence.observed_at": "implemented",
+          "ActionExecutionEvidence.last_error": "implemented",
+          "ActionExecutionEvidence.platform_reference": "implemented",
+          "ActionReceipt.action_id": "implemented",
+          "ActionReceipt.dispatch_attempt_id": "implemented",
+          "ActionReceipt.disposition": "implemented",
+          "ActionReceipt.error": "implemented",
+          "ActionReceipt.result": "implemented",
+          "ActionMetadata.action_id": "implemented",
+          "ActionMetadata.owner_instance_id": "implemented",
+          "ActionMetadata.account_id": "implemented",
+          "ActionMetadata.status": "implemented",
+          "ActionMetadata.execution_outcome": "implemented",
+          "ActionMetadata.updated_at": "implemented",
+          "ActionMetadata.kind": "implemented",
+          "ActionMetadata.target_account_id": "implemented",
+          "ActionMetadata.target_conversation_id": "implemented",
+          "ActionMetadata.created_at": "implemented",
+          "ActionMetadata.deadline": "implemented",
+          "ActionMetadata.retain_until": "implemented",
+          "ActionMetadata.idempotency_key": "implemented",
+          "ActionMetadata.platform_message_id": "implemented",
+          "ActionMetadata.dispatch_attempt_id": "implemented",
+          "ActionMetadata.error": "implemented",
+          "RuntimeQueryActionResultRequest.context": "implemented",
+          "RuntimeQueryActionResultRequest.account_scope": "implemented",
+          "RuntimeQueryActionResultRequest.action_id": "implemented",
+          "RuntimeQueryActionResultRequest.idempotency_key": "implemented",
+          "RuntimeQueryActionResultRequest.owner_instance_id": "implemented",
+          "RuntimeQueryActionResultResponse.result": "implemented",
+          "RuntimeQueryActionResultResponse.execution_outcome": "implemented",
+          "RuntimeQueryActionResultResponse.metadata": "implemented"
         },
         "bridge_methods": {
           "AdapterBridge.Connect": "implemented",
@@ -5732,17 +5815,34 @@
           "semantic.bridge.connection_authorization": "implemented",
           "semantic.bridge.external_listener": "implemented",
           "semantic.bridge.plugin_delivery_lease": "implemented",
-          "semantic.transport.graceful_shutdown": "implemented"
+          "semantic.transport.graceful_shutdown": "implemented",
+          "semantic.action.deadline_max_300s": "implemented",
+          "semantic.action.result_execution_outcome": "implemented",
+          "semantic.action.dispatch_attempt_correlation": "implemented",
+          "semantic.action.evidence_late_result": "implemented",
+          "semantic.action.quota_persistence": "implemented"
         },
         "enum_values": {
           "DeliveryDisposition.DELIVERY_ACKNOWLEDGED": "implemented",
           "DeliveryDisposition.DELIVERY_DUPLICATE": "implemented",
           "DeliveryDisposition.DELIVERY_STALE": "implemented",
           "DeliveryDisposition.DELIVERY_RENEWED": "implemented",
-          "DeliveryDisposition.DELIVERY_REJECTED": "implemented"
+          "DeliveryDisposition.DELIVERY_REJECTED": "implemented",
+          "Permission.PERMISSION_MESSAGE_SEND": "implemented",
+          "Permission.PERMISSION_MESSAGE_REACT": "implemented",
+          "Permission.PERMISSION_MESSAGE_DELETE": "implemented",
+          "Permission.PERMISSION_MEMBER_MUTE": "implemented",
+          "Permission.PERMISSION_MEMBER_KICK": "implemented",
+          "Permission.PERMISSION_REQUEST_APPROVE": "implemented",
+          "ActionReceiptDisposition.ACTION_RECEIPT_RECORDED": "implemented",
+          "ActionReceiptDisposition.ACTION_RECEIPT_DUPLICATE": "implemented",
+          "ActionReceiptDisposition.ACTION_RECEIPT_EVIDENCE_ONLY": "implemented"
         },
         "event_payloads": {
           "EventEnvelope.message_received": "implemented"
+        },
+        "action_payloads": {
+          "ActionEnvelope.send_message": "implemented"
         }
       },
       "evidence": {
@@ -6565,6 +6665,692 @@
           "core/src/runtime/platform/runtime_rpc.cpp",
           "core/src/application/target/runtime_storage_application.cpp",
           "core/tests/architecture/runtime_storage_application_test.cpp"
+        ],
+        "proto_messages:ActionEnvelope": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_action_application.cpp",
+          "core/include/kiarabot/core/domain/target/action_rules.hpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_messages:ActionResult": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_action_application.cpp",
+          "core/include/kiarabot/core/domain/target/action_rules.hpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_messages:PluginActionRequest": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_action_application.cpp",
+          "core/include/kiarabot/core/domain/target/action_rules.hpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_messages:PluginActionQuery": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_action_application.cpp",
+          "core/include/kiarabot/core/domain/target/action_rules.hpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_messages:PluginActionCancel": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_action_application.cpp",
+          "core/include/kiarabot/core/domain/target/action_rules.hpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_messages:PluginActionResponse": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_action_application.cpp",
+          "core/include/kiarabot/core/domain/target/action_rules.hpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_messages:ActionExecutionEvidence": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_action_application.cpp",
+          "core/include/kiarabot/core/domain/target/action_rules.hpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_messages:ActionReceipt": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_action_application.cpp",
+          "core/include/kiarabot/core/domain/target/action_rules.hpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_messages:ActionMetadata": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_action_application.cpp",
+          "core/include/kiarabot/core/domain/target/action_rules.hpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_messages:RuntimeQueryActionResultRequest": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_action_application.cpp",
+          "core/include/kiarabot/core/domain/target/action_rules.hpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_messages:RuntimeQueryActionResultResponse": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_action_application.cpp",
+          "core/include/kiarabot/core/domain/target/action_rules.hpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:ActionEnvelope.action_id": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_action_application.cpp",
+          "core/include/kiarabot/core/domain/target/action_rules.hpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:ActionEnvelope.idempotency_key": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_action_application.cpp",
+          "core/include/kiarabot/core/domain/target/action_rules.hpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:ActionEnvelope.deadline": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_action_application.cpp",
+          "core/include/kiarabot/core/domain/target/action_rules.hpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:ActionEnvelope.trace_id": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_action_application.cpp",
+          "core/include/kiarabot/core/domain/target/action_rules.hpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:ActionEnvelope.target_source": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_action_application.cpp",
+          "core/include/kiarabot/core/domain/target/action_rules.hpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:ActionEnvelope.target": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_action_application.cpp",
+          "core/include/kiarabot/core/domain/target/action_rules.hpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:ActionEnvelope.send_message": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_action_application.cpp",
+          "core/include/kiarabot/core/domain/target/action_rules.hpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:ActionEnvelope.dispatch_attempt_id": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_action_application.cpp",
+          "core/include/kiarabot/core/domain/target/action_rules.hpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:ActionEnvelope.dispatch_sequence": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_action_application.cpp",
+          "core/include/kiarabot/core/domain/target/action_rules.hpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:ActionResult.status": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_action_application.cpp",
+          "core/include/kiarabot/core/domain/target/action_rules.hpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:ActionResult.execution_outcome": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_action_application.cpp",
+          "core/include/kiarabot/core/domain/target/action_rules.hpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:ActionResult.dispatch_attempt_id": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_action_application.cpp",
+          "core/include/kiarabot/core/domain/target/action_rules.hpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:ActionResult.completed_at": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_action_application.cpp",
+          "core/include/kiarabot/core/domain/target/action_rules.hpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:ActionResult.platform_message_id": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_action_application.cpp",
+          "core/include/kiarabot/core/domain/target/action_rules.hpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:ActionResult.error": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_action_application.cpp",
+          "core/include/kiarabot/core/domain/target/action_rules.hpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:AdapterToCore.action_result": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_action_application.cpp",
+          "core/include/kiarabot/core/domain/target/action_rules.hpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:AdapterToCore.action_evidence": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_action_application.cpp",
+          "core/include/kiarabot/core/domain/target/action_rules.hpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:CoreToAdapter.action": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_action_application.cpp",
+          "core/include/kiarabot/core/domain/target/action_rules.hpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:CoreToAdapter.action_receipt": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_action_application.cpp",
+          "core/include/kiarabot/core/domain/target/action_rules.hpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:PluginToCore.action": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_action_application.cpp",
+          "core/include/kiarabot/core/domain/target/action_rules.hpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:PluginToCore.action_query": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_action_application.cpp",
+          "core/include/kiarabot/core/domain/target/action_rules.hpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:PluginToCore.action_cancel": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_action_application.cpp",
+          "core/include/kiarabot/core/domain/target/action_rules.hpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:CoreToPlugin.action_response": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_action_application.cpp",
+          "core/include/kiarabot/core/domain/target/action_rules.hpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:PluginActionRequest.action": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_action_application.cpp",
+          "core/include/kiarabot/core/domain/target/action_rules.hpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:PluginActionRequest.request_id": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_action_application.cpp",
+          "core/include/kiarabot/core/domain/target/action_rules.hpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:PluginActionResponse.request_id": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_action_application.cpp",
+          "core/include/kiarabot/core/domain/target/action_rules.hpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:PluginActionResponse.result": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_action_application.cpp",
+          "core/include/kiarabot/core/domain/target/action_rules.hpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:PluginActionResponse.error": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_action_application.cpp",
+          "core/include/kiarabot/core/domain/target/action_rules.hpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:PluginActionQuery.request_id": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_action_application.cpp",
+          "core/include/kiarabot/core/domain/target/action_rules.hpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:PluginActionQuery.trace_id": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_action_application.cpp",
+          "core/include/kiarabot/core/domain/target/action_rules.hpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:PluginActionQuery.deadline": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_action_application.cpp",
+          "core/include/kiarabot/core/domain/target/action_rules.hpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:PluginActionQuery.action_id": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_action_application.cpp",
+          "core/include/kiarabot/core/domain/target/action_rules.hpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:PluginActionQuery.idempotency_key": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_action_application.cpp",
+          "core/include/kiarabot/core/domain/target/action_rules.hpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:PluginActionCancel.request_id": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_action_application.cpp",
+          "core/include/kiarabot/core/domain/target/action_rules.hpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:PluginActionCancel.trace_id": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_action_application.cpp",
+          "core/include/kiarabot/core/domain/target/action_rules.hpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:PluginActionCancel.deadline": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_action_application.cpp",
+          "core/include/kiarabot/core/domain/target/action_rules.hpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:PluginActionCancel.action_id": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_action_application.cpp",
+          "core/include/kiarabot/core/domain/target/action_rules.hpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:ActionExecutionEvidence.action_id": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_action_application.cpp",
+          "core/include/kiarabot/core/domain/target/action_rules.hpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:ActionExecutionEvidence.dispatch_attempt_id": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_action_application.cpp",
+          "core/include/kiarabot/core/domain/target/action_rules.hpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:ActionExecutionEvidence.execution_outcome": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_action_application.cpp",
+          "core/include/kiarabot/core/domain/target/action_rules.hpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:ActionExecutionEvidence.observed_at": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_action_application.cpp",
+          "core/include/kiarabot/core/domain/target/action_rules.hpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:ActionExecutionEvidence.last_error": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_action_application.cpp",
+          "core/include/kiarabot/core/domain/target/action_rules.hpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:ActionExecutionEvidence.platform_reference": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_action_application.cpp",
+          "core/include/kiarabot/core/domain/target/action_rules.hpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:ActionReceipt.action_id": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_action_application.cpp",
+          "core/include/kiarabot/core/domain/target/action_rules.hpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:ActionReceipt.dispatch_attempt_id": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_action_application.cpp",
+          "core/include/kiarabot/core/domain/target/action_rules.hpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:ActionReceipt.disposition": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_action_application.cpp",
+          "core/include/kiarabot/core/domain/target/action_rules.hpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:ActionReceipt.error": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_action_application.cpp",
+          "core/include/kiarabot/core/domain/target/action_rules.hpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:ActionReceipt.result": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_action_application.cpp",
+          "core/include/kiarabot/core/domain/target/action_rules.hpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:ActionMetadata.action_id": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_action_application.cpp",
+          "core/include/kiarabot/core/domain/target/action_rules.hpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:ActionMetadata.owner_instance_id": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_action_application.cpp",
+          "core/include/kiarabot/core/domain/target/action_rules.hpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:ActionMetadata.account_id": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_action_application.cpp",
+          "core/include/kiarabot/core/domain/target/action_rules.hpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:ActionMetadata.status": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_action_application.cpp",
+          "core/include/kiarabot/core/domain/target/action_rules.hpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:ActionMetadata.execution_outcome": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_action_application.cpp",
+          "core/include/kiarabot/core/domain/target/action_rules.hpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:ActionMetadata.updated_at": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_action_application.cpp",
+          "core/include/kiarabot/core/domain/target/action_rules.hpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:ActionMetadata.kind": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_action_application.cpp",
+          "core/include/kiarabot/core/domain/target/action_rules.hpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:ActionMetadata.target_account_id": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_action_application.cpp",
+          "core/include/kiarabot/core/domain/target/action_rules.hpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:ActionMetadata.target_conversation_id": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_action_application.cpp",
+          "core/include/kiarabot/core/domain/target/action_rules.hpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:ActionMetadata.created_at": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_action_application.cpp",
+          "core/include/kiarabot/core/domain/target/action_rules.hpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:ActionMetadata.deadline": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_action_application.cpp",
+          "core/include/kiarabot/core/domain/target/action_rules.hpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:ActionMetadata.retain_until": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_action_application.cpp",
+          "core/include/kiarabot/core/domain/target/action_rules.hpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:ActionMetadata.idempotency_key": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_action_application.cpp",
+          "core/include/kiarabot/core/domain/target/action_rules.hpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:ActionMetadata.platform_message_id": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_action_application.cpp",
+          "core/include/kiarabot/core/domain/target/action_rules.hpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:ActionMetadata.dispatch_attempt_id": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_action_application.cpp",
+          "core/include/kiarabot/core/domain/target/action_rules.hpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:ActionMetadata.error": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_action_application.cpp",
+          "core/include/kiarabot/core/domain/target/action_rules.hpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:RuntimeQueryActionResultRequest.context": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_action_application.cpp",
+          "core/include/kiarabot/core/domain/target/action_rules.hpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:RuntimeQueryActionResultRequest.account_scope": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_action_application.cpp",
+          "core/include/kiarabot/core/domain/target/action_rules.hpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:RuntimeQueryActionResultRequest.action_id": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_action_application.cpp",
+          "core/include/kiarabot/core/domain/target/action_rules.hpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:RuntimeQueryActionResultRequest.idempotency_key": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_action_application.cpp",
+          "core/include/kiarabot/core/domain/target/action_rules.hpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:RuntimeQueryActionResultRequest.owner_instance_id": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_action_application.cpp",
+          "core/include/kiarabot/core/domain/target/action_rules.hpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:RuntimeQueryActionResultResponse.result": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_action_application.cpp",
+          "core/include/kiarabot/core/domain/target/action_rules.hpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:RuntimeQueryActionResultResponse.execution_outcome": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_action_application.cpp",
+          "core/include/kiarabot/core/domain/target/action_rules.hpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "proto_fields:RuntimeQueryActionResultResponse.metadata": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_action_application.cpp",
+          "core/include/kiarabot/core/domain/target/action_rules.hpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "enum_values:Permission.PERMISSION_MESSAGE_SEND": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_action_application.cpp",
+          "core/include/kiarabot/core/domain/target/action_rules.hpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "enum_values:Permission.PERMISSION_MESSAGE_REACT": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_action_application.cpp",
+          "core/include/kiarabot/core/domain/target/action_rules.hpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "enum_values:Permission.PERMISSION_MESSAGE_DELETE": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_action_application.cpp",
+          "core/include/kiarabot/core/domain/target/action_rules.hpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "enum_values:Permission.PERMISSION_MEMBER_MUTE": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_action_application.cpp",
+          "core/include/kiarabot/core/domain/target/action_rules.hpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "enum_values:Permission.PERMISSION_MEMBER_KICK": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_action_application.cpp",
+          "core/include/kiarabot/core/domain/target/action_rules.hpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "enum_values:Permission.PERMISSION_REQUEST_APPROVE": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_action_application.cpp",
+          "core/include/kiarabot/core/domain/target/action_rules.hpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "enum_values:ActionReceiptDisposition.ACTION_RECEIPT_RECORDED": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_action_application.cpp",
+          "core/include/kiarabot/core/domain/target/action_rules.hpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "enum_values:ActionReceiptDisposition.ACTION_RECEIPT_DUPLICATE": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_action_application.cpp",
+          "core/include/kiarabot/core/domain/target/action_rules.hpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "enum_values:ActionReceiptDisposition.ACTION_RECEIPT_EVIDENCE_ONLY": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_action_application.cpp",
+          "core/include/kiarabot/core/domain/target/action_rules.hpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "action_payloads:ActionEnvelope.send_message": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_action_application.cpp",
+          "core/include/kiarabot/core/domain/target/action_rules.hpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "semantic_rules:semantic.action.deadline_max_300s": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_action_application.cpp",
+          "core/include/kiarabot/core/domain/target/action_rules.hpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "semantic_rules:semantic.action.result_execution_outcome": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_action_application.cpp",
+          "core/include/kiarabot/core/domain/target/action_rules.hpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "semantic_rules:semantic.action.dispatch_attempt_correlation": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_action_application.cpp",
+          "core/include/kiarabot/core/domain/target/action_rules.hpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "semantic_rules:semantic.action.evidence_late_result": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_action_application.cpp",
+          "core/include/kiarabot/core/domain/target/action_rules.hpp",
+          "tests/architecture/p06_bridge_acceptance.py"
+        ],
+        "semantic_rules:semantic.action.quota_persistence": [
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_action_application.cpp",
+          "core/include/kiarabot/core/domain/target/action_rules.hpp",
+          "tests/architecture/p06_bridge_acceptance.py"
         ]
       }
     }
