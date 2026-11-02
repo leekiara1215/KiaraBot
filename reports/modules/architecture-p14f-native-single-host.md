@@ -182,3 +182,42 @@ Passed ~13–16s，`fix_ready=True`，矩阵：
 tasks scope、models scope、action/lifecycle 请求体）；Identity ListPrincipals/ListSessions/
 ListAssignments 的 target 实现（当前 not_implemented）；真实 Host/Adapter、真实 QQ/Provider、
 Docker Compose 单机与两主机项仍按 P14f 文档保留。
+
+## 9. P14j 端点参数对齐与剩余 known-gap（2026-11-03）
+
+P14j 继续对齐 native owner-backed 请求与真实 owner 期望，未改 proto/业务契约：
+
+- `logs`/`audit`：`actor` 过滤从登录名 `administrator` 改为 administrator **principal UUID**
+  （Control/Identity 把 actor 当作 principal 标识校验），失败由 400 INVALID_ARGUMENT 变为
+  owner 稳定语义 503 UPSTREAM_UNAVAILABLE（Identity/Runtime audit source 仍有稳定失败，
+  矩阵继续记录为 known-gap）。
+- `tasks`/`models` 列表：请求补 `page_size=10`，避免 Scheduler/Model owner RPC 对缺省零
+  页大小的参数拒绝。
+- 矩阵分类保留：success / stable-ok（owner NOT_FOUND/CONFLICT）/
+  capability-gap（契约 target 未实现，如 Identity ListPrincipals，待 P12l）/
+  known-gap（稳定 4xx/5xx，记录原因且不计成功）/ pre-fix-skip / grant-missing。
+  严格模式 `KIARABOT_P12J_EXPECT_FIXED=1` 仍要求 `/api/v1/health` 200 HEALTHY。
+
+修复后实测：`ctest -R '^p14_native_single_host$'` Passed ~13–14s；矩阵
+`health=success`（200 HEALTHY 四真实组件）、`principals=capability-gap`（Identity
+ListPrincipals target `not_implemented`，P12l 并行补齐）、
+`logs/audit/tasks_list/models/action_policy/action_query/delete/restore=known-gap`。
+
+**剩余 known-gap 原因（P14k 候选）**：
+1) logs/audit：Control→Identity/Runtime audit source 仍返回稳定 503（需要逐 owner 审计源
+   配置/委派 scope 对齐；当前 fixture 未播种 audit/log 行，不能伪造 200）。
+2) tasks_list：SchedulerService ListTasks 仍 400 INVALID_ARGUMENT；RPC `prepare` 的
+   `authorize`（scheduler_identity_client）对 Control 委派的 installation scope/owner
+   derivation 需进一步对齐（或 Control 需要显式 instance scope）。
+3) models list：ModelService ListModelMetadata 仍 403 PERMISSION_DENIED；Model 的
+   `authorize(caller, ModelRead, model_resource)` 对 Control 委派/复核路径需核对
+   caller-vs-delegated-subject 授权语义。
+4) action_policy/action_query/delete/restore：Runtime owner RPC 仍 400 INVALID_ARGUMENT；
+   需逐方法核对 Control owner_clients 的 context/delegation/scope 与 Runtime prepare
+   期望（idempotency、scope kind、account scope 等），不排除 Control 侧真实缺陷。
+5) principals：Identity ListPrincipals/ListSessions/ListAssignments 仍 target
+   not_implemented，待 P12l 合入后接入成功链。
+
+**需用户环境项**（延续 P14f/P14i）：真实 Host/Adapter 联测、真实 QQ/NapCat 与外部 Model
+Provider、Docker Compose 单机（镜像构建/compose/healthcheck/非 root/只读/秘密挂载）、
+两主机与断网演练、生产 CA/密钥托管与 release 签名。
