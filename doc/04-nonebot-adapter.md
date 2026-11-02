@@ -128,7 +128,7 @@ ApproveRequest
 
 P06c 起目标适配器配置为：`BRIDGE_ENDPOINT`、`BRIDGE_CA_FILE`、
 `BRIDGE_BOOTSTRAP_CREDENTIAL_FILE`（0600 部署秘密，只读一次）、`ADAPTER_INSTANCE_ID`、
-`ACCOUNT_ID`（P06 target bridge 使用 Runtime 账号绑定身份；真实 QQ/NoneBot 平台 self_id 映射与账号资源 id 的分离留 P07/M2）、`OUTBOX_PATH`、`HEALTH_PORT`，可选 `ADAPTER_ID`/`BRIDGE_SERVER_NAME` 与
+`ACCOUNT_ID`（P06 target bridge 使用 Runtime 账号绑定身份，必须是 Runtime 账号资源 id/UUID）、`ONEBOT_SELF_ID`（可选，OneBot/NapCat 平台数字 self_id；真实平台账号与 Runtime 资源 id 不同时必填，缺省回退 `ACCOUNT_ID`）、`OUTBOX_PATH`、`HEALTH_PORT`，可选 `ADAPTER_ID`/`BRIDGE_SERVER_NAME` 与
 `BRIDGE_TIMEOUT`/`BRIDGE_RETRY_BASE`/`BRIDGE_IDLE_INTERVAL`，平台侧仍是
 `ONEBOT_WS_URL`/`ONEBOT_ACCESS_TOKEN`；完整语义见适配器 README。缺失/非法/权限不符一律稳定
 `INVALID_ARGUMENT` 失败，不提供 insecure 或匿名明文降级。
@@ -229,3 +229,9 @@ refresh只接受当前实际流、未过期未撤销的proof/refresh及正refres
 真实 QQ/NapCat 回归（P07/M2）、P07a Runtime 侧与 P06a-2 Bridge handler 就绪后的真实目标端到端
 验收（含 receipt CONFLICT 字面语义与真实 Runtime 核对）。unary RuntimeService 注册/事件方法不供
 适配器使用。
+
+## P07d 真实 Adapter + fake OneBot + 真实 Runtime 全链路验收（2026-11-02）
+
+`tests/architecture/p07_adapter_e2e.py` 启动真实 `kiarabot-runtime` 进程（真 PG16.4 + mTLS AdapterBridge/PluginBridge）、真实 NoneBot adapter 子进程和 loopback fake OneBot v11 WS 平台：fake 平台发送群消息事件并实现 `send_group_msg`/`send_private_msg`/`delete_msg`/`set_group_ban`/`set_group_kick`/`set_friend_add_request` 的成功/失败响应；真实 adapter 执行 Action 后把 `action_result`/`action_evidence` 与幂等 attempt 上报 Runtime，Runtime 记账并回 `action_receipt`。脚本覆盖成功、平台 retcode 失败（RATE_LIMITED 等稳定码→KNOWN_FAILED，绝不伪成功）、重复平台帧（Runtime event 去重、不新增 Action）、dispatch 后取消（CONFLICT 且不改写终态）、平台 WS 断线与 adapter 重连后继续执行且不重复平台调用；所有真实进程断言均在 CTest `p07_adapter_e2e`（labels `p07;integration;fault`）中运行。
+
+真实 QQ/NapCat 未在本测试中使用：平台账号 self_id 与 Runtime 账号资源 UUID 的分离通过 `ONEBOT_SELF_ID` 配置解决；真实 QQ 的审批/撤回/禁言/踢出凭证、NapCat 扩展 API（如 `set_msg_emoji_like`）和真实网络/封禁风险仍属 M2/T07b，不在本测试的通过范围内。

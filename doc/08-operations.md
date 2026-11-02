@@ -1469,3 +1469,4 @@ scripts/deploy/target_host_credential.py verify --directory /etc/kiarabot-host/c
   REST 不扩大或缩短保留。
 - 失败处置：保持当前状态，按 operation participants/reason 定位阻塞参与者；不要手工改 tombstone/
   删除 outbox；回滚/恢复参见 P14c runbook（备份恢复是停机例外，不是生命周期恢复替代）。
+P07d（2026-11-02）：新增真实 NoneBot adapter + fake OneBot WS + 真实 Runtime Bridge 的 CTest `p07_adapter_e2e`（p07/integration/fault，约 11s）：真实 adapter 子进程通过 `ONEBOT_SELF_ID` 关联平台 bot 与 Runtime 账号 UUID；成功/平台失败/重复帧/dispatch 后取消/平台断线重连场景均验证 Action 终态与幂等回执。真实 QQ/NapCat 与平台侧撤回/审批/禁言/踢出凭证仍属 M2/T07b 的人工验收，不在 CI 中伪造通过；失败重连恢复按 adapter 本地 journal + Runtime action receipt 补报，UNKNOWN 不自动重放平台调用。
