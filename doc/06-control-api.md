@@ -481,3 +481,27 @@ P12c 在独立 Control 进程的 HTTPS 边界新增 owner-backed 转发层（`co
 - 尚未实现（P12d/P11d 依赖或后续批次）：账号/适配器绑定、安装/实例启停配置、插件配置、
   ActionPolicy REST、任务查询/取消、模型管理 REST（P11d 负责专有端点，通用 owner 委托层本任务提供）、
   WS 断流恢复/异步 operation 快照。以上不得返回假资源。
+
+### P12c-3 已实现（2026-11-02）
+
+在通用 owner gateway 上继续接入 P12a 已冻结的 owner RPC（均每请求一次 Identity 委托、mTLS 转发、
+不缓存授权、不推断完成；成功响应只暴露持久 operation 引用，202/完成语义归 owner）：
+
+- `PUT/DELETE /api/v1/adapter-bindings/{accountId}` → `RuntimeService.BindAdapter/UnbindAdapter`
+  （`account.manage`、精确 account scope、`Idempotency-Key`、`expected_version`；响应剔除一次性
+  `bootstrap_credential`，绝不经 REST 回显）。
+- `POST /api/v1/installations` → CreateInstallation；`POST /api/v1/installations/{id}/instances`
+  → CreateInstance（path/body installation_id 必须一致；响应剔除 bootstrap credential）。
+- `PUT /api/v1/instances/{id}/desired-state` → SetDesiredState（`plugin.manage`、instance scope、
+  expected_version）；`PUT/GET /api/v1/instances/{id}/config` → UpdateConfig/GetInstanceConfig
+  （`plugin.manage`/`plugin.config.read`；三类事实由 owner 快照区分，不伪造 APPLIED）。
+- `GET/PUT /api/v1/accounts/{id}/action-policy` → Get/UpdateActionPolicy（`account.policy.read/
+  manage`、account scope、`expected_version`；群白名单/禁言踢出开关/每日预算随 policy 透传）。
+- `GET /api/v1/tasks` → Scheduler ListTasks；`GET /api/v1/tasks/{id}` → GetTask；
+  `POST /api/v1/tasks/{id}/cancel` → CancelTask（`task.read`/`task.schedule` + 可选 scope JSON、
+  page_size/page_token；owner UNAVAILABLE/TIMEOUT 稳定映射）。
+- 版本冲突 owner `CONFLICT` → 409；与 path 不一致/缺 expected_version → 400；无 owner 端点 → 503；
+  错误体保持统一 Error。
+- 尚未实现（后续批次）：实例级插件 enable/disable/config REST（不映射旧 `/plugins/{id}/enable`，
+  操作对象必须明确为实例；需要 Host/插件确认状态来源）、WS/异步 operation 快照与断流恢复、
+  operation 查询 REST、模型管理 REST（P11d/ref-infra）、日志/审计权威来源。

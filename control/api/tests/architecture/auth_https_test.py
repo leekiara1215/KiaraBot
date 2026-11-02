@@ -138,6 +138,19 @@ def main(control, fixture):
                                       headers={'Authorization': 'Bearer ' + ACCESS})
             assert status in (403, 503), (status, body)
             assert body['code'] in ('PERMISSION_DENIED', 'UPSTREAM_UNAVAILABLE'), body
+            for target_path in ('/api/v1/tasks',
+                                f'/api/v1/accounts/{SESSION}/action-policy'):
+                status, body, _ = request('GET', target_path,
+                                          headers={'Authorization': 'Bearer ' + ACCESS})
+                assert status in (403, 503), (target_path, status, body)
+                assert body['code'] in ('PERMISSION_DENIED', 'UPSTREAM_UNAVAILABLE'), body
+            status, body, _ = request(
+                'PUT', f'/api/v1/adapter-bindings/{SESSION}',
+                {'binding': {'account_id': SESSION, 'adapter_instance_id': 'adapter-1'},
+                 'expected_version': '1'},
+                headers={'Authorization': 'Bearer ' + ACCESS, 'Idempotency-Key': KEY})
+            assert status in (403, 503), (status, body)
+            assert body['code'] in ('PERMISSION_DENIED', 'UPSTREAM_UNAVAILABLE'), body
             scope = urllib.parse.quote(json.dumps({'resources': [
                 {'kind': 'RESOURCE_ACCOUNT', 'id': SESSION}]}))
             status, body, _ = request(
