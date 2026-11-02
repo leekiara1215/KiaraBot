@@ -695,3 +695,26 @@ P07d 真实 adapter e2e 的事件 fan-out 断言现已覆盖：真实 adapter �
 - `GET /api/v1/occurrences/{occurrenceId}` 已接线 Scheduler `GetOccurrence`：required `scope` 查询必须恰含一个资源（通常 `RESOURCE_ACCOUNT`），Control 以该 scope 发 `task.read` 一次性委托；成功返回 owner occurrence 投影（occurrence_id/task_id/state/handoff/accepted_event_id/attempts/last_error/时间戳），缺 scope/未登录/非法→400/401，owner 拒绝→403/404/409，owner 不可用→503。目标执行范围已翻转，REST OpenAPI marker 按 owner-RPC 规则保持 not_implemented。
 - **Control 委派 scope 修复**：所有 owner-backed 请求禁止空 `ResourceScope`；`/health`（health.read）、`/principals`（identity.principal.read）、安装/实例创建（plugin.manage）改为显式 `RESOURCE_CATALOG id=control`，其余绑定/配置/策略/任务/模型/operation/delete-restore 使用契约要求的 exact resource scope。Identity owner 校验该显式 catalog/resource scope；P04/P12 真实 TLS/fixture 成功链已覆盖。
 - **`/health/ready` 语义**：Control 进程 probe readiness 由组合根观测驱动——TLS 材料已加载、Control HTTPS 组合完成、Control→Identity 校验/撤销 channel READY 才 HEALTHY；Identity 不可达时返回 503 UNHEALTHY，而不是固定占位 false。受权 `/api/v1/health` 的四依赖聚合语义不变（Identity 故障整体未就绪，Runtime/Scheduler/Model 单点降级）。
+
+## P12k REST target 状态一致性审计（2026-11-02，main@3f43c8f）
+
+只读审计脚本：`scripts/quality/check-contract-status-consistency.rb`（Ruby，读 `api/openapi.yaml` +
+`proto/tests/contract_status.json`，不修改契约）。分类规则：
+
+- **A 应翻未翻**：target operations override=implemented 且有 evidence、无 `x-owner-rpc`、REST
+  marker 缺失/not_implemented。本次仅 **`listModels`（GET /models）1 项**，已补
+  `x-contract-status: implemented` 并更新描述。
+- **B 规则保持 not_implemented**：带 `x-owner-rpc` 的 REST operation。`target_api_test.rb` 强制其
+  REST marker 为 not_implemented（不论 target override/真实转发证据），因此 **59 项保持
+  not_implemented**；包括全部 Model 管理/查询 REST（get/update/disable/enable/secret/config/
+  call/resolve）、tasks/cancel、operation、logs/audit、delete/restore、action-policy、occurrence 等。
+  这些 operation 的 target 执行范围/证据可以 implemented（P11d-2/P12c-8/P10h/P10i），但不能把 REST
+  marker 翻成 implemented；否则 target_api 门禁失败。
+- **C 无实现/证据**：**19 项**保持现状（多为 reference 兼容路径/未声明 target 或缺少 target
+  evidence 的 auth/legacy/principal 等）；不伪造状态。
+- **D/E 过度声明**：本次 **0 项**（无 marker implemented 但 target 未登记，也无 owner-rpc 却标
+  implemented）。
+
+结论：`target_api` 规则不放宽；Model 管理 REST 的“成功 e2e vs marker not_implemented”是 B 类
+设计约束，不是漏翻；仅 `listModels` 属 A 类并在本任务修复。审计脚本在修复后应输出
+`PASS (no A/D/E drift; B owner-rpc markers are documented)`。

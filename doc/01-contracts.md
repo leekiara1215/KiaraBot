@@ -119,6 +119,14 @@ P10 Scheduler 的 domain/RPC/PG16.4/三进程 mTLS 交接已本地实测通过�
 | `operations.getActionPolicy`、`operations.updateActionPolicy` | implemented | P07f-2 target flip：RuntimeService Get/UpdateActionPolicy owner 方法已接线；Control REST operation 仍 not_implemented |
 <!-- execution-scopes:end -->
 
+### P12k REST marker 审计（2026-11-02，main@3f43c8f）
+
+REST `x-contract-status` 不是 target 执行范围的第二份状态：带 `x-owner-rpc` 的 operation 按
+`target_api` 规则保持 `not_implemented`（即使 target override/证据为 implemented，共 59 项，含全部
+Model 管理 REST）；无 `x-owner-rpc` 且有真实成功链证据的 `listModels` 已在本任务翻为 implemented
+（target `operations.listModels` override/evidence 保持一致）。分类与脚本见 `doc/06-control-api.md`
+P12k 节与 `scripts/quality/check-contract-status-consistency.rb`；C 类 19 项无证据保持原状。
+
 ### P05f 核对注记（2026-11-02，main@439fb9e）
 
 P05f 只读核对了 Identity/Runtime 的 target 状态并补退出证据，未修改 proto/OpenAPI/contract_status。结论：
