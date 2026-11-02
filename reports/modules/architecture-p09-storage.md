@@ -87,7 +87,10 @@ ctest --preset full-locked -R 'p09|p06_bridge_acceptance|p06_client_e2e|p03_post
   - `NamespaceScope.installation_shared_id`：P09b 明确拒绝插件自报 owner；该字段仅在内部/管理路径使用，无对外 target 证据。
   - unary `RuntimeGetStorage/SetStorage/DeleteStorage/CompareAndSetStorage` message/field/RPC：target_spec exposure=`internal_dispatcher`，不注册对外 gRPC；插件实际走 `HostRequest.storage_*` bridge 帧（已翻转）。P12 REST storage 面未纳入，故保持 not_implemented。
   - `operations.createSharedNamespace`/`getSharedNamespace`：Control REST handler 未接线（P12c 维护），OpenAPI x-contract-status 保持 not_implemented。
-- 契约脚本：`check_implementation_status.py` 通过；`target_api_test.rb` 与 `evidence_scopes_test.py` **在 main@d508d67 已失败**（P13c/P13d target override 与 REST marker/冻结集漂移，fail at target_api missing unavailable marker、evidence scope membership），不是本阶段引入，报告 Lead 作为真实缺陷，未在 P09f 扩改契约。
+- 契约脚本：`check_implementation_status.py` 通过；`target_api_test.rb` 与 `evidence_scopes_test.py` **在 main@d508d67 已失败**，不是本阶段引入，未在 P09f 扩改契约（真实缺陷，已报 Lead）：
+  - `target_api_test.rb`：`api/openapi.yaml` 的 `listAuditEntries`/`listLogs`/`beginDeleteResource`/`restoreResource` 仍带 `x-owner-rpc`，却把 `x-contract-status` 标为 implemented；脚本规则要求带 owner-RPC 的 REST 操作保持 not_implemented（`missing unavailable marker`）。
+  - `evidence_scopes_test.py`：冻结目标集合未加入上述 4 个 operations（`operations.listAuditEntries/listLogs/beginDeleteResource/restoreResource`），membership 断言失败。
+  这两项属于 P12e/P12c-7/P13c target 登记漂移，应由对应 owner 修复契约/evidence 或 REST marker，P09f 只做证据与记录。
 
 ### 剩余缺口
 | 缺口 | 状态 |
