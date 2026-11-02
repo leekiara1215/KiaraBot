@@ -265,7 +265,8 @@ async def async_main(args) -> None:
                     api_version='kiarabot.plugin.v1', runtime='python-rpc',
                     entrypoint='plugin:factory', isolation='process', config_schema='{}',
                     ordered=False, capabilities=['event.message.received'],
-                    permissions=['message.read', 'message.send', 'storage.namespace']),
+                    permissions=['message.read', 'message.send', 'member.mute', 'member.kick',
+                                  'request.approve', 'storage.namespace']),
                 instance_id=PLUGIN_INSTANCE,
                 installation_id=INSTALLATION,
                 supported_features=['plugin.config.v1', 'action.result.v1'])))
@@ -295,8 +296,12 @@ async def async_main(args) -> None:
                 implementation_version='1.0.0', protocol_version='kiarabot.v1',
                 adapter_instance_id=ADAPTER_INSTANCE,
                 accounts=[adapters.Account(account_id=ACCOUNT, enabled=True)],
-                capabilities=[common.Capability(name='action.send_message.text.v1',
-                                                version='1', supported=True)],
+                capabilities=[common.Capability(name='action.send_message.text.v1', version='1', supported=True),
+                              common.Capability(name='action.react_message.v1', version='1', supported=True),
+                              common.Capability(name='action.delete_message.v1', version='1', supported=True),
+                              common.Capability(name='action.mute_member.v1', version='1', supported=True),
+                              common.Capability(name='action.kick_member.v1', version='1', supported=True),
+                              common.Capability(name='action.approve_request.v1', version='1', supported=True)],
                 context=platform.RequestContext(request_id=request_id, trace_id=trace_id,
                                                 deadline=deadline))))
             adapter_registered = await read_or_fail(adapter_call, 'adapter registration')
@@ -333,19 +338,41 @@ async def async_main(args) -> None:
             action_request_id = str(__import__('uuid').uuid4())
 
             def action_envelope(identifier, idempotency, conversation='group-1',
-                                deadline_offset=30):
-                return actions.ActionEnvelope(
+                                deadline_offset=30, payload='send_message',
+                                conversation_type=common.ConversationRef.GROUP,
+                                account_id=ACCOUNT):
+                conversation_ref = common.ConversationRef(
+                    id=conversation, type=conversation_type, account_id=account_id)
+                envelope = actions.ActionEnvelope(
                     action_id=identifier, idempotency_key=idempotency,
                     deadline=timestamp(time.time() + deadline_offset), trace_id=identifier,
                     target_source=common.SourceRef(
                         adapter_id=ADAPTER_ID, adapter_instance_id=ADAPTER_INSTANCE,
-                        account_id=ACCOUNT),
-                    target=common.Subject(conversation_id=conversation),
-                    send_message=actions.SendMessage(
-                        conversation=common.ConversationRef(
-                            id=conversation, type=common.ConversationRef.GROUP,
-                            account_id=ACCOUNT),
+                        account_id=account_id),
+                    target=common.Subject(conversation_id=conversation))
+                if payload == 'send_message':
+                    envelope.send_message.CopyFrom(actions.SendMessage(
+                        conversation=conversation_ref,
                         message=common.Message(plain_text='hello from p07')))
+                elif payload == 'react_message':
+                    envelope.react_message.CopyFrom(actions.ReactMessage(
+                        message_id='p07-message', reaction='like',
+                        conversation=conversation_ref))
+                elif payload == 'delete_message':
+                    envelope.delete_message.CopyFrom(actions.DeleteMessage(
+                        message_id='p07-message', conversation=conversation_ref))
+                elif payload == 'mute_member':
+                    envelope.mute_member.CopyFrom(actions.MuteMember(
+                        group_id=conversation, user_id='p07-member', duration_seconds=60))
+                elif payload == 'kick_member':
+                    envelope.kick_member.CopyFrom(actions.KickMember(
+                        group_id=conversation, user_id='p07-member', reason='p07-policy'))
+                elif payload == 'approve_request':
+                    envelope.approve_request.CopyFrom(actions.ApproveRequest(
+                        request_id='p07-request', approve=True, reason='p07-policy'))
+                else:
+                    raise AssertionError('unknown action payload ' + payload)
+                return envelope
 
             first_action_envelope = action_envelope(action_id, action_idempotency)
             await plugin_call.write(plugins.PluginToCore(
@@ -456,12 +483,16 @@ async def async_main(args) -> None:
                     'evidence did not preserve the non-terminal snapshot')
 
             async def submit_action(identifier, idempotency, conversation='group-1',
-                                    deadline_offset=30):
+                                    deadline_offset=30, payload='send_message',
+                                    conversation_type=common.ConversationRef.GROUP,
+                                    account_id=ACCOUNT):
                 await plugin_call.write(plugins.PluginToCore(
                     fence=plugin_fence, connection_proof=plugin_proof,
                     action=plugins.PluginActionRequest(
                         action=action_envelope(identifier, idempotency, conversation,
-                                               deadline_offset),
+                                               deadline_offset, payload=payload,
+                                               conversation_type=conversation_type,
+                                               account_id=account_id),
                         request_id=str(__import__('uuid').uuid4()))))
                 response = await read_or_fail(plugin_call, 'action submit ' + identifier)
                 require(response.WhichOneof('body') == 'action_response',
@@ -576,8 +607,12 @@ async def async_main(args) -> None:
                 implementation_version='1.0.0', protocol_version='kiarabot.v1',
                 adapter_instance_id=ADAPTER_INSTANCE,
                 accounts=[adapters.Account(account_id=ACCOUNT, enabled=True)],
-                capabilities=[common.Capability(name='action.send_message.text.v1',
-                                                version='1', supported=True)],
+                capabilities=[common.Capability(name='action.send_message.text.v1', version='1', supported=True),
+                              common.Capability(name='action.react_message.v1', version='1', supported=True),
+                              common.Capability(name='action.delete_message.v1', version='1', supported=True),
+                              common.Capability(name='action.mute_member.v1', version='1', supported=True),
+                              common.Capability(name='action.kick_member.v1', version='1', supported=True),
+                              common.Capability(name='action.approve_request.v1', version='1', supported=True)],
                 context=platform.RequestContext(
                     request_id=str(__import__('uuid').uuid4()),
                     trace_id=str(__import__('uuid').uuid4()),
@@ -660,6 +695,147 @@ async def async_main(args) -> None:
                     late_query.action_response.result.execution_outcome ==
                     platform.EXECUTION_UNKNOWN,
                     'late result rewrote the expired terminal snapshot')
+
+            # ---- P07f wire Action policy gate for mute/kick -------------------------------
+            def seed_action_policy(*, mute=True, kick=True, groups=('group-1',),
+                                   mute_budget=10, kick_budget=10, updated_offset=-2,
+                                   account=ACCOUNT, version=1):
+                allowed = 'ARRAY[' + ','.join(quote_sql(group) for group in groups) + ']'
+                updated = int((time.time() + updated_offset) * 1_000_000_000)
+                psql(pg_bin, root, port, runtime_password,
+                     "INSERT INTO kiarabot.action_policies(account_id,mute_enabled,kick_enabled,"
+                     "allowed_group_ids,mute_daily_budget,kick_daily_budget,version,updated_at) "
+                     f"VALUES ({quote_sql(account)},{str(mute).lower()},{str(kick).lower()},"
+                     f"{allowed},{mute_budget},{kick_budget},{version},{updated}) "
+                     "ON CONFLICT (account_id) DO UPDATE SET mute_enabled=EXCLUDED.mute_enabled,"
+                     "kick_enabled=EXCLUDED.kick_enabled,"
+                     "allowed_group_ids=EXCLUDED.allowed_group_ids,"
+                     "mute_daily_budget=EXCLUDED.mute_daily_budget,"
+                     "kick_daily_budget=EXCLUDED.kick_daily_budget,"
+                     "version=EXCLUDED.version,updated_at=EXCLUDED.updated_at")
+
+            def policy_count(sql):
+                return int(psql(pg_bin, root, port, runtime_password, sql).stdout.strip())
+
+            def action_counts(action_id):
+                quoted = quote_sql(action_id)
+                return (policy_count(
+                            f"SELECT count(*) FROM kiarabot.actions WHERE action_id={quoted}"),
+                        policy_count(
+                            f"SELECT count(*) FROM kiarabot.quota_windows "
+                            f"WHERE action_id={quoted}"))
+
+            async def expect_rejected(action_id, idempotency, expected_code, label,
+                                      payload='mute_member', conversation='group-1',
+                                      conversation_type=common.ConversationRef.GROUP,
+                                      account_id=ACCOUNT):
+                response = await submit_action(
+                    action_id, idempotency, conversation=conversation, payload=payload,
+                    conversation_type=conversation_type, account_id=account_id)
+                require(response.HasField('error') and response.error.code == expected_code,
+                        f'{label}: expected {expected_code}, got {response}')
+                # A rejected Action is denied before the insert/outbox step. Reading the shared
+                # adapter stream with a timeout would cancel the gRPC read and poison the stream,
+                # so absence of a dispatch is proven by (a) no persisted Action row/quota and
+                # (b) the next allowed dispatch being exactly the next action_id below.
+                actions_rows, quota_rows = action_counts(action_id)
+                require(actions_rows == 0 and quota_rows == 0,
+                        f'{label}: rejected Action persisted or consumed quota')
+
+            seed_action_policy()
+            baseline_mute = policy_count(
+                f"SELECT COALESCE(SUM(used),0) FROM kiarabot.daily_budgets "
+                f"WHERE kind=4 AND account_id={quote_sql(ACCOUNT)}")
+            baseline_kick = policy_count(
+                f"SELECT COALESCE(SUM(used),0) FROM kiarabot.daily_budgets "
+                f"WHERE kind=5 AND account_id={quote_sql(ACCOUNT)}")
+
+            def rejected_id(label):
+                return str(__import__('uuid').uuid4()), 'p07-policy-' + label + '-' + str(
+                    __import__('uuid').uuid4())
+
+            action_id, idempotency = rejected_id('disabled')
+            seed_action_policy(mute=False)
+            await expect_rejected(action_id, idempotency, common.PERMISSION_DENIED,
+                                  'mute disabled')
+            action_id, idempotency = rejected_id('whitelist')
+            seed_action_policy(groups=('other-group',))
+            await expect_rejected(action_id, idempotency, common.PERMISSION_DENIED,
+                                  'mute group outside allowlist')
+            action_id, idempotency = rejected_id('budget')
+            seed_action_policy(mute_budget=0)
+            await expect_rejected(action_id, idempotency, common.PERMISSION_DENIED,
+                                  'mute zero daily budget')
+            action_id, idempotency = rejected_id('future')
+            seed_action_policy(updated_offset=3600)
+            await expect_rejected(action_id, idempotency, common.PERMISSION_DENIED,
+                                  'mute future policy updated_at')
+            action_id, idempotency = rejected_id('account')
+            seed_action_policy()
+            await expect_rejected(action_id, idempotency, common.PERMISSION_DENIED,
+                                  'mute account mismatch', account_id=UNBOUND_ACCOUNT)
+            # Wire difference from the domain rule: decode_plugin_action normalizes mute/kick to
+            # conversation_kind=1 (group), so a private-looking group id reaches the policy and is
+            # denied by the allowlist (PERMISSION_DENIED), not by the domain non-group
+            # INVALID_ARGUMENT branch. An empty conversation id exercises the pre-policy
+            # INVALID_ARGUMENT admission path that is reachable from the wire.
+            action_id, idempotency = rejected_id('foreign-group')
+            await expect_rejected(action_id, idempotency, common.PERMISSION_DENIED,
+                                  'mute non-allowlisted conversation',
+                                  conversation='private-1',
+                                  conversation_type=common.ConversationRef.PRIVATE)
+            action_id, idempotency = rejected_id('empty-group')
+            await expect_rejected(action_id, idempotency, common.INVALID_ARGUMENT,
+                                  'mute empty conversation', conversation='')
+            require(policy_count(
+                        f"SELECT COALESCE(SUM(used),0) FROM kiarabot.daily_budgets "
+                        f"WHERE kind=4 AND account_id={quote_sql(ACCOUNT)}") == baseline_mute,
+                    'rejected mute consumed the daily budget')
+
+            async def allowed_policy_action(payload, expected_kind):
+                seed_action_policy()
+                identifier = str(__import__('uuid').uuid4())
+                response = await submit_action(identifier, 'p07-policy-ok-' + identifier,
+                                               payload=payload)
+                require(not response.HasField('error') and
+                        response.result.status == actions.ACCEPTED and
+                        response.result.execution_outcome == platform.EXECUTION_NOT_STARTED,
+                        f'{payload}: allowed Action was not accepted: {response}')
+                dispatch = await read_dispatch(payload + ' policy dispatch')
+                require(dispatch.action_id == identifier and dispatch.HasField(payload),
+                        f'{payload}: dispatch payload mismatch')
+                result = actions.ActionResult(
+                    action_id=identifier, status=actions.SUCCEEDED,
+                    execution_outcome=platform.EXECUTION_KNOWN_SUCCEEDED,
+                    dispatch_attempt_id=dispatch.dispatch_attempt_id,
+                    completed_at=timestamp(time.time()))
+                await adapter_call.write(adapters.AdapterToCore(
+                    fence=adapter_fence, connection_proof=adapter_proof,
+                    action_result=result))
+                receipt = await read_or_fail(adapter_call, payload + ' policy receipt')
+                require(receipt.action_receipt.disposition == actions.ACTION_RECEIPT_RECORDED and
+                        receipt.action_receipt.result.status == actions.SUCCEEDED,
+                        f'{payload}: receipt mismatch')
+                state = policy_count(
+                    f"SELECT state FROM kiarabot.actions WHERE action_id="
+                    f"{quote_sql(identifier)}")
+                require(state == 1, f'{payload}: terminal state not persisted')
+                quota = policy_count(
+                    f"SELECT count(*) FROM kiarabot.quota_windows WHERE action_id="
+                    f"{quote_sql(identifier)} AND kind={expected_kind}")
+                require(quota > 0, f'{payload}: accepted Action did not consume quota')
+                return identifier
+
+            await allowed_policy_action('mute_member', 4)
+            await allowed_policy_action('kick_member', 5)
+            require(policy_count(
+                        f"SELECT COALESCE(SUM(used),0) FROM kiarabot.daily_budgets "
+                        f"WHERE kind=4 AND account_id={quote_sql(ACCOUNT)}") == baseline_mute + 1,
+                    'allowed mute did not consume one daily budget unit')
+            require(policy_count(
+                        f"SELECT COALESCE(SUM(used),0) FROM kiarabot.daily_budgets "
+                        f"WHERE kind=5 AND account_id={quote_sql(ACCOUNT)}") == baseline_kick + 1,
+                    'allowed kick did not consume one daily budget unit')
 
             # ---- P09b storage: PluginBridge host_request frames -> RuntimeStorageApplication ----
             async def storage_frame(label, *, idempotency_key='', **operation):
