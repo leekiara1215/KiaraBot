@@ -194,3 +194,100 @@ async def test_managed_plugin_action_roundtrip(tmp_path):
             assert await asyncio.wait_for(process.wait(), 5) == 0
         finally:
             await cleanup(process)
+
+
+async def test_managed_plugin_uses_host_injected_bootstrap_credential(tmp_path):
+    """P08c: a Host-spawned process authenticates with KIARABOT_PLUGIN_BOOTSTRAP only."""
+    manifest_path = write_subject(tmp_path, 'graceful')
+    async with FakeTargetRuntime() as host:
+        env = environment(tmp_path, host, manifest_path)
+        env.pop('PLUGIN_AUTH_TOKEN')
+        env['KIARABOT_PLUGIN_BOOTSTRAP'] = host.token
+        env['PLUGIN_MANIFEST'] = str(manifest_path)
+        process = await launch(env)
+        try:
+            marker = json.loads(await wait_file(tmp_path / 'marker.json'))
+            assert marker['environment']['KIARABOT_PLUGIN_BOOTSTRAP'] == host.token
+            assert 'PLUGIN_AUTH_TOKEN' not in marker['environment']
+            registration = await asyncio.wait_for(host.registrations.get(), 5)
+            assert registration.instance_id == 'managed-instance-1'
+            await host.send_event(events.EventEnvelope(event_id='bootstrap-event',
+                                                       trace_id='trace'))
+            assert await wait_file(tmp_path / 'seen') == 'bootstrap-event'
+            await asyncio.wait_for(host.acknowledgements.get(), 3)
+            process.send_signal(signal.SIGTERM)
+            assert await asyncio.wait_for(process.wait(), 5) == 0
+        finally:
+            await cleanup(process)
+
+
+def write_config_subject(tmp_path):
+    """Managed plugin that records every on_config application, like a Host-spawned package."""
+    applied = tmp_path / 'config-applied.jsonl'
+    (tmp_path / 'config_subject.py').write_text(f'''
+import json
+from pathlib import Path
+from kiarabot_sdk import Plugin
+class ConfigSubject(Plugin):
+    async def on_config(self, config, context):
+        Path({str(applied)!r}).open('a').write(json.dumps(dict(
+            version=config.version, config_version=config.config_version,
+            delivery_id=config.delivery_id, values=dict(config.values))) + '\\n')
+def create():
+    return ConfigSubject()
+''')
+    manifest = json.loads((ROOT / 'plugins/event-observer/plugin.json').read_text())
+    manifest['entrypoint'] = 'config_subject:create'
+    manifest_path = tmp_path / 'plugin.json'
+    manifest_path.write_text(json.dumps(manifest))
+    return manifest_path, applied
+
+
+async def wait_applied(path, count, timeout=5):
+    async with asyncio.timeout(timeout):
+        while not path.exists() or len(path.read_text().strip().splitlines()) < count:
+            await asyncio.sleep(.01)
+    return [json.loads(line) for line in path.read_text().strip().splitlines()]
+
+
+async def test_managed_process_config_apply_ack_and_restart_replay(tmp_path):
+    """P08c managed chain: Host-style env -> register -> desired config -> ACK -> restart replay."""
+    manifest_path, applied = write_config_subject(tmp_path)
+    async with FakeTargetRuntime(features=['plugin.config.v1'], desired_config_version=1) as host:
+        async def launch_plugin():
+            env = environment(tmp_path, host, manifest_path)
+            env.pop('PLUGIN_AUTH_TOKEN')
+            env['KIARABOT_PLUGIN_BOOTSTRAP'] = host.token
+            env['PLUGIN_MANIFEST'] = str(manifest_path)
+            return await launch(env)
+
+        process = await launch_plugin()
+        try:
+            await asyncio.wait_for(host.registrations.get(), 5)
+            await host.send_config('v1', {'greeting': 'hello'}, config_version=1,
+                                   delivery_id='first-delivery')
+            ack = await asyncio.wait_for(host.config_acknowledgements.get(), 5)
+            assert ack.accepted and ack.config_version == 1
+            assert ack.delivery_id == 'first-delivery' and ack.HasField('fence')
+            assert (await wait_applied(applied, 1))[0]['values'] == {'greeting': 'hello'}
+            process.send_signal(signal.SIGTERM)
+            assert await asyncio.wait_for(process.wait(), 5) == 0
+        finally:
+            await cleanup(process)
+
+        # Restart: the durable desired version is re-delivered with a new delivery id and the
+        # (idempotent) callback applies it again before a fresh ACK.
+        process = await launch_plugin()
+        try:
+            await asyncio.wait_for(host.registrations.get(), 5)
+            await host.send_config('v1', {'greeting': 'hello'}, config_version=1,
+                                   delivery_id='replay-delivery')
+            replay = await asyncio.wait_for(host.config_acknowledgements.get(), 5)
+            assert replay.accepted and replay.delivery_id == 'replay-delivery'
+            applications = await wait_applied(applied, 2)
+            assert [item['delivery_id'] for item in applications] == [
+                'first-delivery', 'replay-delivery']
+            process.send_signal(signal.SIGTERM)
+            assert await asyncio.wait_for(process.wait(), 5) == 0
+        finally:
+            await cleanup(process)
