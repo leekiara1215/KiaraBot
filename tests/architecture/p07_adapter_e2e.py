@@ -73,6 +73,7 @@ class FakeOneBot:
     def __init__(self):
         self.calls = []
         self.mode = 'success'
+        self.delay_seconds = 0.4
         self.connections = 0
         self._server = None
         self._sockets = []
@@ -90,7 +91,11 @@ class FakeOneBot:
 
     async def send_event(self, event: dict):
         for socket in list(self._sockets):
-            await socket.send(json.dumps(event))
+            try:
+                await socket.send(json.dumps(event))
+            except Exception:  # noqa: BLE001 - stale adapter socket after crash/restart
+                if socket in self._sockets:
+                    self._sockets.remove(socket)
 
     async def _handle(self, socket):
         if socket.request.headers.get('Authorization') != f'Bearer {ONEBOT_TOKEN}':
@@ -106,7 +111,7 @@ class FakeOneBot:
                 call = json.loads(encoded)
                 self.calls.append(call)
                 if self.mode == 'delay':
-                    await asyncio.sleep(0.4)
+                    await asyncio.sleep(self.delay_seconds)
                 if self.mode == 'platform_fail':
                     await socket.send(json.dumps({
                         'status': 'failed', 'retcode': 1200, 'data': None,
@@ -232,6 +237,7 @@ async def async_main(args) -> int:
     p06 = load_repo(repo)
     fixture = p06.load_fixture(repo)
     common, platform, plugins, sdk_runtime = p06.load_clients(repo)[:4]
+    from kiarabot.v1 import actions_pb2 as actions
     from fixtures import TestPki
     root = Path(tempfile.mkdtemp(prefix='kiarabot-p07d-e2e-')).resolve()
     root.chmod(0o700)
@@ -421,9 +427,13 @@ async def async_main(args) -> int:
                 ONEBOT_WS_URL=f'ws://127.0.0.1:{onebot.port}',
                 ONEBOT_ACCESS_TOKEN=ONEBOT_TOKEN, ONEBOT_SELF_ID='10001',
                 PYTHONPATH=os.pathsep.join([str(adapter_src), str(sdk_generated)]))
-            adapter_process = await asyncio.create_subprocess_exec(
-                sys.executable, '-m', 'kiarabot_adapter_nonebot', cwd=repo / 'adapters/nonebot',
-                env=environment, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+            async def spawn_adapter():
+                return await asyncio.create_subprocess_exec(
+                    sys.executable, '-m', 'kiarabot_adapter_nonebot',
+                    cwd=repo / 'adapters/nonebot', env=environment,
+                    stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+
+            adapter_process = await spawn_adapter()
             try:
                 # ---- success: real plugin Action -> Runtime dispatch -> real adapter process
                 # -> fake OneBot platform -> result/evidence -> durable receipt. ----
@@ -463,6 +473,22 @@ async def async_main(args) -> int:
                                      'SDK plugin delivery ACK/terminal target', 20)
                 require(len(target_states(fanned_event)) == 1,
                         f'expected exactly one fan-out target: {target_states(fanned_event)}')
+                before_duplicate = len(message_event_ids())
+                await onebot.send_event(first_frame)
+                await asyncio.sleep(0.6)
+                require(len(message_event_ids()) == before_duplicate,
+                        'duplicate platform frame created a second event')
+                newer = message_event(70020, 'newer')
+                older = message_event(70019, 'older')
+                older['time'] = int(time.time()) - 5
+                await onebot.send_event(newer)
+                await onebot.send_event(older)
+                await p06.wait_until(lambda: len(message_event_ids()) >= before_duplicate + 2,
+                                     'out-of-order platform events accepted', 20)
+                ordered_ids = message_event_ids()
+                require(len(ordered_ids) == len(set(ordered_ids)),
+                        'out-of-order platform events were duplicated')
+
                 first = await subject.submit()
                 await p06.wait_until(lambda: action_state(first) is not None, 'Action accepted', 20)
                 await p06.wait_until(lambda: onebot.calls, 'adapter called fake OneBot', 30)
@@ -550,6 +576,70 @@ async def async_main(args) -> int:
                 require(len(onebot.calls) == before + 1,
                         'reconnect duplicated a platform call')
 
+                # ---- P06h: EXPIRED Action + late result is evidence-only ----
+                onebot.mode = 'delay'
+                onebot.delay_seconds = 3.0
+                calls_before_expired = len(onebot.calls)
+                expired = await subject.submit()
+                await p06.wait_until(lambda: len(onebot.calls) > calls_before_expired,
+                                     'expired Action reached platform', 20)
+                psql("UPDATE kiarabot.actions SET deadline="
+                     "(extract(epoch from clock_timestamp())*1000000000)::bigint-1000000000 "
+                     f"WHERE action_id={fixture.quote_sql(expired)}")
+                await p06.wait_until(lambda: action_state(expired) is not None and
+                                     action_state(expired)[0] == '3',
+                                     'Action expired before late result', 25)
+                def evidence_count(action_id):
+                    return int(psql('SELECT count(*) FROM kiarabot.adapter_result_evidence '
+                                    f'WHERE action_id={fixture.quote_sql(action_id)}'
+                                    ).stdout.strip() or b'0')
+                await p06.wait_until(lambda: evidence_count(expired) >= 1,
+                                     'late result stored as evidence', 25)
+                require(action_state(expired)[0] == '3',
+                        'late result rewrote EXPIRED terminal state')
+                expired_query = await subject.context.query_action(action_id=expired)
+                require(expired_query.status == actions.EXPIRED and
+                        expired_query.execution_outcome != platform.EXECUTION_KNOWN_SUCCEEDED,
+                        f'late result faked plugin-visible success: {expired_query}')
+                require(len(onebot.calls) == calls_before_expired + 1,
+                        'expired late result duplicated a platform side effect')
+                onebot.mode = 'success'
+                onebot.delay_seconds = 0.4
+
+                # ---- P06h: adapter crash/reconnect reports UNKNOWN evidence, never replays ----
+                onebot.mode = 'delay'
+                onebot.delay_seconds = 8.0
+                calls_before_crash = len(onebot.calls)
+                crashed = await subject.submit()
+                await p06.wait_until(lambda: len(onebot.calls) > calls_before_crash,
+                                     'crash Action reached platform', 20)
+                await asyncio.sleep(0.5)
+                generation_before_crash = psql(
+                    'SELECT connection_generation FROM kiarabot.adapters'
+                ).stdout.strip()
+                adapter_process.kill()
+                await adapter_process.wait()
+                adapter_process = await spawn_adapter()
+                await p06.wait_until(lambda: onebot.connections >= 3,
+                                     'adapter platform reconnect after crash', 30)
+                await p06.wait_until(
+                    lambda: psql('SELECT connection_generation FROM kiarabot.adapters'
+                                 ).stdout.strip() != generation_before_crash,
+                    'adapter bridge reconnect after crash', 30)
+                await p06.wait_until(lambda: evidence_count(crashed) >= 1,
+                                     'adapter crash UNKNOWN evidence persisted', 30)
+                crash_state = action_state(crashed)
+                require(crash_state[0] == '0' and crash_state[1] != '1',
+                        f'crash UNKNOWN rewrote Action terminal/success: {crash_state}')
+                crash_query = await subject.context.query_action(action_id=crashed)
+                require(crash_query.status == actions.ACCEPTED and
+                        crash_query.execution_outcome != platform.EXECUTION_KNOWN_SUCCEEDED,
+                        f'crash UNKNOWN became known success: {crash_query}')
+                require(len(onebot.calls) == calls_before_crash + 1,
+                        'adapter crash recovery replayed the platform side effect')
+                onebot.mode = 'success'
+                onebot.delay_seconds = 0.4
+
                 # ---- P06f subscription/offline matrix with the real adapter + SDK plugin ----
                 await stop_plugin(sdk_stop, sdk_task)
                 await asyncio.sleep(0.3)
@@ -560,10 +650,12 @@ async def async_main(args) -> int:
                 await p06.wait_until(lambda: plugin_generation() > generation_before,
                                      'mismatched plugin registration', 20, interval=0.1)
                 events_at_mismatch = len(plugin_events)
+                before_mismatch = set(message_event_ids())
                 await onebot.send_event(message_event(70002, 'mismatch'))
-                await p06.wait_until(lambda: len(message_event_ids()) >= 2,
+                await p06.wait_until(lambda: len(message_event_ids()) > len(before_mismatch),
                                      'mismatched-subscription event accepted', 20)
-                mismatch_event = message_event_ids()[-1]
+                mismatch_event = next(event for event in message_event_ids()
+                                      if event not in before_mismatch)
                 await asyncio.sleep(0.5)
                 require(not target_states(mismatch_event),
                         'non-subscribed plugin received a delivery target')
@@ -573,10 +665,12 @@ async def async_main(args) -> int:
                 await asyncio.sleep(0.3)
                 # Offline plugin: event is accepted but no target is fabricated for a disconnected
                 # instance; a later reconnect delivers only events accepted after re-registration.
+                before_offline = set(message_event_ids())
                 await onebot.send_event(message_event(70003, 'offline'))
-                await p06.wait_until(lambda: len(message_event_ids()) >= 3,
+                await p06.wait_until(lambda: len(message_event_ids()) > len(before_offline),
                                      'offline-plugin event accepted', 20)
-                offline_event = message_event_ids()[-1]
+                offline_event = next(event for event in message_event_ids()
+                                     if event not in before_offline)
                 await asyncio.sleep(0.3)
                 require(not target_states(offline_event),
                         'offline plugin received a fabricated delivery target')
@@ -584,10 +678,12 @@ async def async_main(args) -> int:
                 _, sdk_stop, sdk_task = start_plugin(['event.message.received'])
                 await p06.wait_until(lambda: plugin_generation() > generation_before,
                                      'subscribed plugin reconnect registration', 20, interval=0.1)
+                before_reconnect_event = set(message_event_ids())
                 await onebot.send_event(message_event(70004, 'after-reconnect'))
-                await p06.wait_until(lambda: len(message_event_ids()) >= 4,
+                await p06.wait_until(lambda: len(message_event_ids()) > len(before_reconnect_event),
                                      'post-reconnect event accepted', 20)
-                reconnect_event = message_event_ids()[-1]
+                reconnect_event = next(event for event in message_event_ids()
+                                       if event not in before_reconnect_event)
                 await p06.wait_until(lambda: len(target_states(reconnect_event)) >= 1,
                                      'post-reconnect delivery target', 20)
                 await p06.wait_until(lambda: reconnect_event in plugin_events,
