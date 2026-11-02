@@ -51,6 +51,20 @@ foreach(SERVICE identity runtime plugin_host scheduler model)
   kiarabot_platform_warnings(kiarabot_${SERVICE}_application)
 endforeach()
 
+add_library(kiarabot_scheduler_service STATIC
+  ${CMAKE_SOURCE_DIR}/core/src/application/target/scheduler_rules.cpp
+  ${CMAKE_SOURCE_DIR}/core/src/application/target/scheduler_service.cpp)
+target_include_directories(kiarabot_scheduler_service PUBLIC ${CMAKE_SOURCE_DIR}/core/include)
+target_link_libraries(kiarabot_scheduler_service PRIVATE OpenSSL::Crypto)
+kiarabot_platform_warnings(kiarabot_scheduler_service)
+add_executable(kiarabot_scheduler_service_test
+  ${CMAKE_SOURCE_DIR}/core/tests/platform/scheduler_service_test.cpp)
+target_link_libraries(kiarabot_scheduler_service_test PRIVATE kiarabot_scheduler_service
+  OpenSSL::Crypto)
+kiarabot_platform_warnings(kiarabot_scheduler_service_test)
+add_test(NAME p10_scheduler_service COMMAND kiarabot_scheduler_service_test)
+set_tests_properties(p10_scheduler_service PROPERTIES LABELS "p10;unit;fault" TIMEOUT 30)
+
 add_library(kiarabot_control_application STATIC
   ${CMAKE_SOURCE_DIR}/control/api/src/application/target/application.cpp)
 target_include_directories(kiarabot_control_application PUBLIC

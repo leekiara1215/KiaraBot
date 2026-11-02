@@ -90,7 +90,13 @@ struct ScheduledTask {
   TimePoint run_at;
   TaskState state = TaskState::Pending;
   ResourceVersion version;
+  // Owned by the one-shot task and fixed at creation; the occurrence row appears only when the
+  // due sweep durably enqueues the TimerTriggered handoff.
   MessageId occurrence;
+  bool cancel_requested = false;
+  std::optional<ErrorCode> reason;
+  TimePoint created_at;
+  TimePoint updated_at;
 };
 struct Occurrence {
   InstanceId owner;
@@ -104,6 +110,10 @@ struct Occurrence {
   OperationState state = OperationState::Accepted;
   std::optional<std::string> accepted_event_id;
   std::optional<TimePoint> acknowledged_at;
+  std::uint32_t attempts = 0;
+  std::optional<ErrorCode> last_error;
+  TimePoint created_at;
+  TimePoint updated_at;
 };
 enum class ModelCallState { Started, Succeeded, Failed, Unknown };
 struct ModelIntent {

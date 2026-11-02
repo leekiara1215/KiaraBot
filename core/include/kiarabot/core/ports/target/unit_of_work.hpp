@@ -168,6 +168,46 @@ class SchedulerUnitOfWork : public UnitOfWork {
 public:
   virtual Repository<TaskKey, ScheduledTask>& tasks() = 0;
   virtual Repository<MessageId, Occurrence>& occurrences() = 0;
+  // Owner-scoped projections for typed queries and maintenance. Adapters implement these with
+  // owner/due indexes; the default fails closed so a partial adapter cannot silently list all rows.
+  virtual Outcome<std::vector<ScheduledTask>> list_tasks(const InstanceId& owner,
+                                                         std::size_t limit,
+                                                         const std::string& after) {
+    (void)owner;
+    (void)limit;
+    (void)after;
+    return Failure{ErrorCode::CapabilityNotSupported, Acceptance::NotAccepted, Recovery::Diagnose,
+                   std::nullopt, std::nullopt};
+  }
+  // Non-terminal task counts per instance and per installation for the frozen 1024/8192 limits.
+  virtual Outcome<std::pair<std::size_t, std::size_t>> count_tasks(const InstanceId& owner,
+                                                                   const InstallationId& installation) {
+    (void)owner;
+    (void)installation;
+    return Failure{ErrorCode::CapabilityNotSupported, Acceptance::NotAccepted, Recovery::Diagnose,
+                   std::nullopt, std::nullopt};
+  }
+  virtual Outcome<std::vector<ScheduledTask>> due_tasks(TimePoint run_at, std::size_t limit) {
+    (void)run_at;
+    (void)limit;
+    return Failure{ErrorCode::CapabilityNotSupported, Acceptance::NotAccepted, Recovery::Diagnose,
+                   std::nullopt, std::nullopt};
+  }
+  virtual Outcome<std::vector<Occurrence>> list_occurrences(const InstanceId& owner,
+                                                            std::size_t limit,
+                                                            const std::string& after) {
+    (void)owner;
+    (void)limit;
+    (void)after;
+    return Failure{ErrorCode::CapabilityNotSupported, Acceptance::NotAccepted, Recovery::Diagnose,
+                   std::nullopt, std::nullopt};
+  }
+  // Accepted occurrences whose durable handoff has not been confirmed or expired yet.
+  virtual Outcome<std::vector<Occurrence>> inflight_occurrences(std::size_t limit) {
+    (void)limit;
+    return Failure{ErrorCode::CapabilityNotSupported, Acceptance::NotAccepted, Recovery::Diagnose,
+                   std::nullopt, std::nullopt};
+  }
 };
 class ModelUnitOfWork : public UnitOfWork {
 public:
