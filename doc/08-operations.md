@@ -1470,3 +1470,12 @@ scripts/deploy/target_host_credential.py verify --directory /etc/kiarabot-host/c
 - 失败处置：保持当前状态，按 operation participants/reason 定位阻塞参与者；不要手工改 tombstone/
   删除 outbox；回滚/恢复参见 P14c runbook（备份恢复是停机例外，不是生命周期恢复替代）。
 P07d（2026-11-02）：新增真实 NoneBot adapter + fake OneBot WS + 真实 Runtime Bridge 的 CTest `p07_adapter_e2e`（p07/integration/fault，约 11s）：真实 adapter 子进程通过 `ONEBOT_SELF_ID` 关联平台 bot 与 Runtime 账号 UUID；成功/平台失败/重复帧/dispatch 后取消/平台断线重连场景均验证 Action 终态与幂等回执。真实 QQ/NapCat 与平台侧撤回/审批/禁言/踢出凭证仍属 M2/T07b 的人工验收，不在 CI 中伪造通过；失败重连恢复按 adapter 本地 journal + Runtime action receipt 补报，UNKNOWN 不自动重放平台调用。
+
+## P12e-2 日志/审计聚合验收补充（2026-11-02）
+
+真实 TLS 验收从 401/400/403/503 扩展到成功链：Control 经 mTLS 同时读取 Identity/Runtime
+`ListAudit`/`ListLogs`，两源成功页按 `occurred_at DESC, owner ASC, id DESC` 合并并以每 owner
+独立 keyset cursor 的复合 token 翻页（2 行/页共 4 页，无重复无遗漏）；`actor`/`resource`/时间
+过滤逐源转发；审计只回 `audit.read` 源。任一 owner 不可用仍 503 且不返回部分页。真 PG16.4
+测试补充相同 `occurred_at` 的 id DESC 顺序与跨页唯一性。运维仍按 P12c-6 口径：`/logs` 7 天、
+`/audit` 180 天，Control 不缓存、不扩保留期；无源时面板显示“数据源暂不可用”，不得显示为空。

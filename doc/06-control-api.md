@@ -623,14 +623,23 @@ P12 v1 target **不提供** Control WebSocket 服务端；`api/asyncapi.yaml` �
   Control 每请求执行一次 `IssueDelegation(audience=runtime, permission=48/49, scope=Catalog/control)`
   后调用 `RuntimeService.ListLogs/ListAudit`。任一权威源不可用/未配置→503 `UPSTREAM_UNAVAILABLE`，
   不返回部分页或成功空页；两源均可用但无数据时返回 200 空页（合法空结果）。
-- 合并与游标：两源按 `occurred_at DESC, owner ASC, id DESC` 合并；每行标注 `owner`
-  （identity/runtime）；分页 token 使用 owner 的 `occurred_at:id` keyset 语义透传到两源；默认
-  page_size=20，最大 100；`occurred_from`/`occurred_until`（含端点，RFC3339）、`actor`、`resource`
+- 合并与游标：两源按 `occurred_at DESC, owner ASC, id DESC`（id 为十进制时按数值，否则按字典）
+  合并；每行标注 `owner`（identity/runtime）。分页 token 是 **Control 复合 keyset**：分别携带
+  Identity 与 Runtime 已消费到的 `occurred_at:id`（或显式 exhausted 标记），下一请求把各自
+  cursor 精确还给对应 owner。不能把单一 owner 的 cursor 同时透传给两源：某 owner 一页只贡献
+  合并页前缀时，另一 owner 中位于“合并页末行之前、该 owner 页末行之后”的行会被跳过；
+  P12e-2 已修复并覆盖两页以上/同时间戳/无重复无遗漏测试。默认 page_size=20，最大 100；
+  `occurred_from`/`occurred_until`（含端点，RFC3339）、`actor`、`resource`
   （JSON TargetResourceRef）为服务端校验过滤；不引入自由文本/任意字段查询。
 - 投影/脱敏：仅按契约字段投影；日志 `level` 由 owner severity 闭集映射（INFO/WARN/DEBUG/ERROR），
   `message` 只来自 owner 已脱敏闭集；审计含 `id/occurred_at/owner/actor/action(method)/resource/
   request_id/rejection/account_id/conversation_id`；绝不返回凭据、消息正文、模型密钥、上游正文或
   自由错误文本。Control 不缓存审计/日志，不扩大 owner 保留期（audit 180 天、日志 7 天，见 doc/22）。
+- **P12e-2 真 TLS 成功链（2026-11-02）**：真实浏览器 TLS → Control → 互认证 Identity/Runtime
+  fixture 的 `ListAudit/ListLogs` 成功页验证：两源各返回权威行，Control 按上述顺序合并、标注
+  owner、复合 token 翻页（2 行/页共 4 页）无重复无遗漏；`actor`/`resource`/时间过滤转发到
+  两源且审计只回 identity 行；缺任一源仍 503，401/400/403 语义不变。真 PG16.4 另验证相同
+  `occurred_at` 的 id DESC 与 keyset 全量分页唯一性（p03_postgres_database）。
 - 与 P12d：REST 分页 `page.next_page_token` 直接回传；`owner`/`rejection` 可用于跳转 owner 操作；
   503 必须显示"数据源暂不可用"，不得渲染为"暂无日志/审计"；WS `logs` 频道仍为 P12a-2 延期项，
   REST 聚合不改变该状态。
