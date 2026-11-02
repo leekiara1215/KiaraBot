@@ -51,7 +51,7 @@
 | ValidateSession/GetPrincipal | 当前会话凭据 | 当前主体/会话/固定角色和范围 | 当前权威状态；不可用拒绝，不以缓存延续浏览器会话 |
 | ListSessions/RevokeSession | 分页/目标 session | 列表/撤销结果 | 本人或既有管理员范围，隐藏与不存在遵守既有 NOT_FOUND 规则 |
 | RegisterPrincipal/GetPrincipalStatus | 类型、资源绑定、登记版本 | 主体/状态引用 | 明确身份管理权限；首次部署引导不开放匿名登记 |
-| ListPrincipals | 人类主体展示投影（id/binding/state/version/roles） | 分页快照 + checked_at | `identity.principal.read` + 调用者当前获授资源范围；只读、无幂等键；排除服务/Host/插件身份（P12 目标，未实现） |
+| ListPrincipals | 人类主体展示投影（id/binding/state/version/roles） | 稳定 principal-id keyset 分页 + checked_at | `identity.principal.read` + 调用者当前获授资源范围；只读、无幂等键；排除服务/Host/插件身份（P12l 已实现：Control platform peer、真实 PG16.4+RPC fixture；catalog control 为目录全域，其他 exact resource 收窄可见 principals/roles） |
 | RotateCredential/RevokeCredential | 凭据引用、预期版本、幂等键 | 更新版本、交付回执 | 不返回已有秘密；新秘密一次性交付，响应丢失按加密收据恢复 |
 | IssueDelegation/ExchangeDelegation | 主体证明、目标、范围、父委托 | 至多 60 秒的受限证明 | 验证调用服务与主体；只能收窄，不任意跨 audience 转发 |
 | CheckAuthorization | 主体、方法、资源、委托 | 允许/拒绝、授权版本、检查时间 | 面向当前权威；不返回秘密，不使用复制滞后伪装最新 |

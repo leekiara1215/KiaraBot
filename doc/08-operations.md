@@ -1580,6 +1580,22 @@ UNKNOWN/EXPIRED 单链迟到证据属剩余环境/验收项。
   logs/audit actor（principal UUID）、tasks/models 分页参数。当前矩阵：health=success；
   principals=capability-gap（Identity ListPrincipals 待 P12l）；logs/audit/tasks/models/
   action-policy/action-query/delete-restore=known-gap（稳定 4xx/5xx，原因与 P14k 候选见
+- **P14i 成功链矩阵（2026-11-02，修复前基线）**：native smoke 已扩展为逐端点矩阵
+  （health/principals/logs/audit/tasks list/models/action policy/action query/delete/restore），
+  分类为 success / stable-ok（owner NOT_FOUND/CONFLICT）/ pre-fix-skip / grant-missing；
+  仅在 Identity 权限目录与 PG CHECK 允许 Permission 41–50 时才 enrollment 敏感授权，修复后
+  若受权 `/api/v1/health` 仍非 200 HEALTHY 或出现 grant-missing 则测试失败。当前 main
+  `4e88fb4`（P14g/P14h 未合入）实测 Passed 13.7s、矩阵全部 `pre-fix-skip`（稳定 400），
+  `task_get_cancel` 因未播种任务跳过；修复合入后 rebase main 重跑同一命令即可得到
+  修复后 success 矩阵（无需改测试）。
+- **P14i 成功链矩阵与修复后复验（2026-11-03）**：P14g/P14h 合入后，native smoke 复验
+  定位并修复了 4 个真实边界缺陷（Control 委派 request/trace id 非 UUID 与缺 idempotency key、
+  Catalog 资源 id 被 UUID 规则误拒、delegation_crypto 权限上限仍为 MessageRead(40)）。修复后
+  `p14_native_single_host` 通过，受权 `/api/v1/health` 首次返回 200 HEALTHY 四真实依赖，
+  Control probe ready=HEALTHY；principals 已由 P12l 实现（Identity ListPrincipals 真实 RPC/PG +
+Control 转发），为稳定
+  capability-gap，logs/audit/tasks/models/action/lifecycle 为已记录的 stable known-gap（owner
+  请求参数/委派 scope 待 P14j 对齐），不伪造成功。详见
   [architecture-p14f-native-single-host.md](../reports/modules/architecture-p14f-native-single-host.md)
   第 9 节），不伪造成功；故障/重启/fail-closed 矩阵保留。
   第 8 节；故障/重启/fail-closed 矩阵保留。
@@ -1588,3 +1604,11 @@ UNKNOWN/EXPIRED 单链迟到证据属剩余环境/验收项。
 ## P10k Runtime task 帧与 Scheduler 端口（2026-11-03）
 
 Runtime 可选配置 `scheduler_endpoint`（host:port，仅 Runtime，mTLS 复用服务证书/CA）用于插件 task 帧调用 SchedulerService.Create/Get/CancelTask。配置缺失时 PluginBridge task 帧稳定 `CAPABILITY_NOT_SUPPORTED`；配置存在但委托获取未确认时调用返回 `UNAUTHENTICATED`/`UPSTREAM_UNAVAILABLE`，不做本地假成功。readiness 不因该可选端点缺失而整体 false，但 task 能力不可用；Owner/installation 由已认证 PluginBridge 会话派生。真实委托来源待用户确认，见 P10 报告。
+## P12l：主体目录运维口径（2026-11-03）
+
+- `GET /api/v1/principals` 依赖 Control→Identity 的 `identity.principal.read` assignment；Control
+  platform peer 需在离线 bootstrap 中获得该权限的 catalog control 或 exact resource scope，否则
+  403/400（fail-closed）。目录只含人类 principal，服务/Host/插件身份不可见。
+- 分页使用 opaque principal-id keyset token；改变 state 过滤后必须从第一页重新拉取（token 绑定
+  state filter）。deleted/purged 永不返回；空页是权威空结果，不把 503/403 渲染为空。
+- 真实 PG16.4 与真 mTLS RPC fixture 已覆盖成功/分页/过滤/拒绝/空页；原生栈 P14j 将在合并后复验。

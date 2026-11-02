@@ -485,7 +485,7 @@ P12c 在独立 Control 进程的 HTTPS 边界新增 owner-backed 转发层（`co
   调用阶段稳定失败，不伪造结果。
 
 **与 P12a 的接口缺口（首批未实现）**：账号/适配器绑定、安装/实例启停与配置（202+operation）、插件启停/配置、
-群白名单（Runtime `ActionPolicy` 版本化）、任务查询/取消、模型配置/更新/密钥、主体目录 ListPrincipals 与
+群白名单（Runtime `ActionPolicy` 版本化）、任务查询/取消、模型配置/更新/密钥、主体目录 ListPrincipals（P12l 已实现）与
 `log.read`/`audit.read`（权限 48/49）、健康三端点聚合完整规则、日志/审计数据源、WS 断流恢复与异步 operation
 快照。上述端点占用现有 OpenAPI 路径但服务端 owner RPC/权限/配置端点仍待 P12a 契约与 P11d 管理 RPC 完整接线；
 在其落地前仍按未实现处理（不得返回假资源/成功空页）。`
@@ -718,3 +718,16 @@ P07d 真实 adapter e2e 的事件 fan-out 断言现已覆盖：真实 adapter �
 结论：`target_api` 规则不放宽；Model 管理 REST 的“成功 e2e vs marker not_implemented”是 B 类
 设计约束，不是漏翻；仅 `listModels` 属 A 类并在本任务修复。审计脚本在修复后应输出
 `PASS (no A/D/E drift; B owner-rpc markers are documented)`。
+
+## P12l：ListPrincipals 主体目录实现（2026-11-03，main@fc454bc）
+
+- Identity `ListPrincipals` 已实现：Control platform peer 经真实当前凭据/SAN 认证；要求
+  `identity.principal.read`（显式 assignment，默认角色不隐含）；按调用者当前获授资源范围过滤：
+  `RESOURCE_CATALOG id=control` 为管理目录全域，其他 exact resource 仅返回与该资源绑定的主体及
+  其可见 roles。只返回人类 principal；按 principal_id keyset 稳定分页（page_token opaque），
+  `checked_at` 取真实 DB UTC；deleted/purged 永不返回。`GET /api/v1/principals` Control 转发不变
+  （identity_endpoint + 一次性 delegation；缺源 503，不伪造空页）。
+- target 登记：`operations.listPrincipals` + 3 个 Principal 目录消息 + 12 个字段 target
+  implemented；`target_spec` 同步；OpenAPI REST `x-contract-status` 翻 implemented，而
+  `x-target-contract-status` 按 target_api 认证投影规则保持 not_implemented（不是 owner-rpc REST
+  marker 场景，规则不同）。仍不暴露凭据/assignment 内部。
