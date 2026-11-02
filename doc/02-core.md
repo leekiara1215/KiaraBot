@@ -1583,3 +1583,11 @@ Runtime，plugin 查询终态。重复平台帧不产生第二事件/Action，ad
 Runtime `PluginBridge` 现在消费 `HostRequest.task_create/task_get/task_cancel`：从已认证 P06 会话派生 instance/installation，校验注册 profile 的 `host.tasks.v1`、`task.schedule`/`task.read` 权限及 `event.timer.triggered` 订阅，校验 request/trace/idempotency、task_id/目标对话/payload 上限，稳定映射 `HostResponse.task_*` 与 wire 错误码；客户端自报 owner/installation 一律不采纳。
 
 新增 `RuntimeTaskApplication`（`core/src/application/target/runtime_task_application.cpp`）和 `SchedulerTaskPort`（`core/include/kiarabot/core/ports/target/scheduler_task.hpp`）；组合根可选配置 `scheduler_endpoint` 并装配 `SchedulerTaskClient` typed client（参考 RuntimeModelClient）。**真实 Runtime→Scheduler 委托来源尚未确认（P05b 同类语义）**，生产 composition 注入 `unavailable_scheduler_task_delegation()`：delegation 为空时稳定返回 `UNAUTHENTICATED/UPSTREAM_UNAVAILABLE`，端口缺失时返回 `UPSTREAM_UNAVAILABLE`，绝不伪造任务成功；测试注入 fake `SchedulerTaskPort` 验证成功/拒绝/幂等/取消/CONFLICT/超时。未改 proto、权限或 RPC。**待确认**：冻结的 `TaskCreateRequest` 只带 `target_conversation` 字符串、不带会话类型；P10k 暂按 GROUP 构造 Scheduler `ConversationKey`，需用户确认任务目标是否允许私聊或如何在 wire 上表达类型（否则私聊任务的事件 target 类型可能不准确）。另真实 Runtime→Scheduler delegation 来源仍需用户确认。
+
+## P14m Runtime 委派 claim 解析边界（2026-11-03）
+
+Runtime 的 `decode_delegation_claims` 只做结构 fail-closed 校验，最终授权仍由
+`Identity.CheckAuthorization` 在线决定。P12 的 `log.read`(48)/`audit.read`(49) 与 Catalog
+scope id `control` 曾因旧的 permission 上限 46 和 UUID-only scope 校验被误拒（UNAUTHENTICATED）；
+P14m 修正为 known permission（至 `health.read`=50）及 `valid_policy_resource`（Catalog 允许
+契约 id，其他 kind 仍要求 canonical UUID）。不放松在线授权，不改变空页/错误码语义。

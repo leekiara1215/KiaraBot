@@ -1597,3 +1597,12 @@ Runtime 可选配置 `scheduler_endpoint`（host:port，仅 Runtime，mTLS 复�
 - 分页使用 opaque principal-id keyset token；改变 state 过滤后必须从第一页重新拉取（token 绑定
   state filter）。deleted/purged 永不返回；空页是权威空结果，不把 503/403 渲染为空。
 - 真实 PG16.4 与真 mTLS RPC fixture 已覆盖成功/分页/过滤/拒绝/空页；原生栈 P14j 将在合并后复验。
+
+## P14m：Runtime 审计源委派排障口径（2026-11-03）
+
+Control `/logs` `/audit` 的 Runtime 源使用 `audit.read`(49)/`log.read`(48) 的
+`RESOURCE_CATALOG id=control` 一次性 delegation。若 Runtime 返回 UNAUTHENTICATED，先确认版本
+包含 P14m（旧版 Runtime 委派 claim 解析把 48/49 权限上限定为 46、并要求 scope id 是 UUID，
+会拒绝 control catalog scope）；确认版本后再检查 Identity `CheckAuthorization` 的 assignment/
+在线授权，而不是把 401 当“无数据”。授权成功但无记录必须表现为 **200 空页**；权限不匹配为
+403/PERMISSION_DENIED，过期/篡改 proof 为 401。禁止放宽 owner 查询或伪造空页来掩盖委派失败。

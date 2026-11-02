@@ -747,3 +747,13 @@ P14k 原生栈发现 Identity `CheckAuthorization` 对 4 个 owner 方法返回 
   校验 descriptor 与 target_spec 一致。
 - 解锁：P14l 可复跑原生 models/action_policy/action_query owner 链；本项不改变任何 wire 字段、
   权限或 RPC，上一层的 Control REST marker/错误映射不变。
+
+## P14m：/logs /audit Runtime 源 401 修复（2026-11-03）
+
+native 栈 Control `/logs` `/audit` 的 Runtime 源曾稳定 UNAUTHENTICATED：Runtime 委派 claim
+解析把 P12 权限 `log.read`(48)/`audit.read`(49) 按旧上限 46 拒绝，并把 `RESOURCE_CATALOG
+id=control` 当作非 UUID scope 拒绝；两者都发生在 Identity 在线 CheckAuthorization 之前。
+P14m 修正 Runtime 结构校验（不扩 proto、不改权限/接口）：权限按 known_permission 接受 48/49
+（上限 health.read=50），Catalog scope 允许契约 id `control`，其他资源仍 UUID；最终授权仍由
+`Identity.CheckAuthorization` 在线逐命令执行。授权成功且无数据时为 **200 空页**，权限拒绝/
+过期/篡改分别稳定 PERMISSION_DENIED/UNAUTHENTICATED，不伪造成功。
