@@ -1303,7 +1303,7 @@ scripts/ops/target-restore.sh \
   --env /path/operator/target.env \
   --input /path/backups/target-20261102T121944Z-XXXX \
   --confirm \
-  --expect identity=14 --expect runtime=14 --expect scheduler=9 --expect model=8 \
+  --expect identity=14 --expect runtime=15 --expect scheduler=9 --expect model=8 \
   --verify-sql /path/operator/verify.sql
 ```
 
