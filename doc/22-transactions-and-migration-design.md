@@ -106,6 +106,8 @@ Runtime 结果事务验证账号/Action 绑定、内容及允许的结果状态�
 
 Action 查询直接读这份记录。插件仅自身 owner；控制用户需明确账号范围的元数据查询权，不返回正文/平台秘密，默认 admin 不是隐式跨 owner 放行。
 
+P07 目标契约把上述规则落到 wire（2026-11-02 冻结，未实现）：提交事务写 `actions/action_idempotency/quota_windows/daily_budgets`（窗口持久化，不因重启重置）；派发记录 `dispatch_attempt_id/dispatch_sequence` 后才写 Adapter 流；适配器结果用 `ActionResult.execution_outcome`、非终态证据用 `ActionExecutionEvidence`、Runtime 用 `ActionReceipt` 确认；迟到结果在 Action 已 EXPIRED 时只写 `adapter_result_evidence` 不覆盖终态，已派发未知不跨 adapter 实例重派；Control 结果查询必须显式账号 scope + `action.inspect`（`RuntimeService.QueryActionResult`）。表结构/锁顺序与审计字段按 P07 提案实现阶段落地。
+
 账号/Adapter 迁移须先停旧出站并确认旧执行停止或人工隔离，再携本地未决执行日志切换；不能换一个空 SQLite 日志就重放待定平台动作。网络失联只标 unknown，不自动接管该账号。
 
 ## 6. Scheduler→Runtime 触发与取消（DD04.4）

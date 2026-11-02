@@ -286,6 +286,10 @@ Identity 仍是业务授权权威：连接证明只表达连接事实，高风�
 refresh 的 Identity gate 在 P04/P12 绑定落地后补。该拓扑不新增服务/进程/权限，REST/
 WS 契约不变。
 
+### P07 Action 方法族冻结（未实现）
+
+P07 沿用 P06 拓扑：插件 submit/query/cancel 与适配器执行都走 Bridge 流帧，`RuntimeService.SubmitAction/QueryAction/CancelAction` 标 `exposure=internal_dispatcher`，仅 runtime 内部 dispatcher/测试使用。Control 结果查询新增 `QueryActionResult`：caller=scoped Control、permission=`action.inspect`、显式 `RESOURCE_ACCOUNT` scope；插件查询仍限制自身 owner。每-kind 权限映射为封闭 `Permission` 枚举 41–46，必须显式资源授予；Mute/Kick 另受 ActionPolicy 与持久配额/日预算；deadline ≤300 秒。详见 `doc/01-contracts.md` 的 P07 目标 Action 契约节，target 实现前不改变本行 reference 语义。
+
 ## P04 短期委托证明的重试边界
 
 IssueDelegation / ExchangeDelegation 只在线重验权威并签名，不产生业务意图或消费配额；

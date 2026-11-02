@@ -237,6 +237,7 @@ PG Repository/COMMIT/锁/并发测试缺少真实 PG 时失败并报告原因，
 - **错误/状态**：Mute/Kick缺开关/白名单/正预算拒绝；同键不重复占额；取消与dispatched竞争；平台结果未知不自动再执行，EXPIRED不被迟到结果覆盖；控制查询须显式scope，不能admin隐式越权。
 - **文档**：运行语义、`doc/02`、`doc/03`、`doc/04`、`doc/06`、`doc/17`；配额保守不自动退额及重启不重置写清。
 - **验证/退出**：V0–V3/V5(p07)及目标闭环；并发预算不超额、提交失败零平台调用、执行后丢结果/两侧重启不重复、取消与到期、旧Adapter执行不确定不接管。达到 M2。
+- **契约前置（2026-11-02 已冻结）**：P06 C1/C2（Bridge/exposure/登记）先合入后落地 P07 契约提交：Actions 桥流帧/证据/回执、`RuntimeService.QueryActionResult`（action.inspect + 显式账号 scope）、Permission 41–46、target_spec exposure/门禁登记与文档。契约合入不代表实现；P07a–d 实现前 `semantic.action.*` 保持 not_implemented，target override 只在实现验收后由证据登记。
 
 ### P08：Plugin Host、期望状态与配置应用
 

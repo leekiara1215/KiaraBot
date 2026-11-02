@@ -907,6 +907,14 @@ verifier 或 SecretReplayPayload。重复同指纹仍返回原完整快照及原
 共享 typed 表及 kind 范围变化后，Identity 新空库 schema10，Runtime/Scheduler/Model 均为
 schema5；四库 descriptor 全部更新。旧库拒绝打开，不自动迁移或清空。此持久化能力不代表
 尚未接线的 Register/Set/Revoke RPC 或生产状态已启用。
+## P07 Action 配额、保留与运维口径（契约冻结，未实现）
+
+- **配额/预算**：出站滑动窗口占用持久化（单账号 10/分钟、单群 3/分钟、私聊 1/10 秒为默认起点，部署可配），跨进程重启不重置；危险 Action 的 UTC 日预算按 `(kind, account, UTC day)` 持久化。超限返回可重试 `RATE_LIMITED`，取消/明确失败不自动退额（保守取舍）。
+- **ActionPolicy**：Mute/Kick 必须显式开关 + 群白名单 + 正预算，缺省 fail-closed（缺失 policy 即拒绝）；预算 0 表示禁用；`UpdateActionPolicy` 为 upsert（缺 `expected_version`=创建）。`allowed_group_ids` 仅群管理 kind 生效。
+- **deadline 与保留**：deadline 未来 UTC 且 ≤300 秒；终态从最后状态更新起保留 168 小时；执行证据同样保留 168 小时；清理随维护循环，失败告警，不清除未决记录。
+- **查询/权限**：Control 查询必须显式 `RESOURCE_ACCOUNT` scope + `action.inspect`，admin 不隐式越权；插件仍走 `PluginBridge` owner-scoped 查询；`NOT_FOUND` 不代表平台未执行。
+- **日志/审计**：审计记录 action/submit|dispatch|complete|cancel|expire|evidence 与目标账号/会话；不记录消息正文、平台秘密或幂等键明文；本阶段未实现，不得以契约冻结宣称可达。
+
 ## 今晚单机 MVP：reference 本地收发入口
 
 `scripts/local/start.py` 使用现成 reference Core、Control HTTP、SQLite、固定

@@ -1316,6 +1316,7 @@ T03a 新增 CoreToPlugin.error（oneof 字段 6），承载注册之后的终止
 | `ActionKind.ACTION_KIND_UNSPECIFIED`、`ActionKind.ACTION_KIND_SEND_MESSAGE`、`ActionKind.ACTION_KIND_REACT_MESSAGE`、`ActionKind.ACTION_KIND_DELETE_MESSAGE`、`ActionKind.ACTION_KIND_MUTE_MEMBER`、`ActionKind.ACTION_KIND_KICK_MEMBER`、`ActionKind.ACTION_KIND_APPROVE_REQUEST` | not_implemented | P07 目标 Action 类型投影词表（wire 判别仍为 `ActionEnvelope.payload` oneof；`schedule_task` 不产生类型值）。 |
 | `ActionReceiptDisposition.ACTION_RECEIPT_DISPOSITION_UNSPECIFIED`、`ActionReceiptDisposition.ACTION_RECEIPT_RECORDED`、`ActionReceiptDisposition.ACTION_RECEIPT_DUPLICATE`、`ActionReceiptDisposition.ACTION_RECEIPT_EVIDENCE_ONLY`、`ActionReceiptDisposition.ACTION_RECEIPT_CONFLICT` | not_implemented | P07 目标结果/证据回执处置：迟到结果在 Action 已 EXPIRED 时只记证据（EVIDENCE_ONLY），不改变终态。 |
 | `Permission.PERMISSION_MESSAGE_SEND`、`Permission.PERMISSION_MESSAGE_REACT`、`Permission.PERMISSION_MESSAGE_DELETE`、`Permission.PERMISSION_MEMBER_MUTE`、`Permission.PERMISSION_MEMBER_KICK`、`Permission.PERMISSION_REQUEST_APPROVE` | not_implemented | P07 目标每-kind Action 权限：把已冻结的 `message.send/react/delete`、`member.mute/kick`、`request.approve` 字符串词表映射为封闭 `Permission` 枚举值（41–46），供 Identity 显式资源授予与 Runtime 校验；不改变现有 manifest 字符串词表，P07 实现前不授予/不校验。 |
+| `semantic.action.result_execution_outcome`、`semantic.action.dispatch_attempt_correlation`、`semantic.action.evidence_late_result`、`semantic.action.control_query_scope`、`semantic.action.permission_vocabulary`、`semantic.action.quota_persistence`、`semantic.action.policy_gate` | not_implemented | P07 目标 Action 冻结语义（见下节）：状态×执行已知性矩阵、dispatch attempt 关联、迟到结果只记证据、Control 显式账号 scope、每-kind 权限词表、滑动窗口持久化、Mute/Kick fail-closed 策略；实现前 reference 行为仍是唯一生产语义。 |
 <!-- contract-status:end -->
 
 `/ws/messages` 自 2026-10-31（W5）起为 `implemented`：只有被私有控制配置显式授予 `message.read` 的用户可订阅，事件 `message.updated` 仅含消息元数据（`message_id`、`conversation_id`、`direction`；v1 只产生 `received`），不推送正文、没有 REST 消息投影、也不构成审计；任何默认角色（含 admin）都不持有 `message.read`。授权模型见 `doc/08-operations.md`。
@@ -1447,6 +1448,18 @@ ActionResult
   platform_message_id
   error（Error message，包含 code、message、details、request_id、trace_id 和 retryable）
 ```
+
+## P07 目标 Action 契约（已冻结，未实现）
+
+P06 之后外部插件 Action 只走 `PluginBridge.Connect`，适配器执行只走 `AdapterBridge.Connect`；unary `RuntimeService.SubmitAction/QueryAction/CancelAction` 是 runtime internal dispatcher/test 面（`target_spec.json` 标 `exposure=internal_dispatcher`），不对外。P07 目标补充：
+
+- **下发与关联**：`CoreToAdapter.action` 仍为 `ActionEnvelope`；Runtime 在发送前填 `dispatch_attempt_id`（CSPRNG UUIDv4，重派发换新值）与 `dispatch_sequence`（1 起算递增）。插件提交必须留空/0，否则 `INVALID_ARGUMENT`。
+- **结果与证据**：`ActionResult.execution_outcome`（并回带 `dispatch_attempt_id`）表示状态×执行已知性：`ACCEPTED`=`NOT_STARTED|UNKNOWN`，`SUCCEEDED`=`KNOWN_SUCCEEDED`，`FAILED`=`KNOWN_FAILED`，`EXPIRED`=`NOT_STARTED|UNKNOWN`，`CANCELLED`=`NOT_STARTED`。适配器用 `AdapterToCore.action_result` 上报终态（只允许 SUCCEEDED/FAILED）、用 `action_evidence` 上报 `NOT_STARTED/UNKNOWN` 非终态证据；Runtime 用 `CoreToAdapter.action_receipt` 回执 `RECORDED/DUPLICATE/EVIDENCE_ONLY/CONFLICT`，适配器收到 RECORDED/DUPLICATE/EVIDENCE_ONLY 才标记本地 journal 已上报，否则重连重发。
+- **未知与迟到**：平台已执行但结果丢失保持 UNKNOWN，不自动重发平台；Action 已 EXPIRED 后的迟到结果只写 `adapter_result_evidence`+审计，不覆盖终态；已派发且未知的 Action 不跨 adapter_instance 重派（旧 Adapter 执行不确定不接管）。
+- **取消与到期**：只有未派发 `ACCEPTED` 可取消；派发后 `CONFLICT`，不通知适配器、不谎称撤回。deadline 必须为未来 UTC 且 ≤300 秒（target 强制，`semantic.action.deadline_max_300s` 在实现前仍为 not_implemented）；提交时已过期持久化 `EXPIRED`+`NOT_STARTED`，不占配额、不调平台。终态从最后状态更新起保留 168 小时。
+- **查询**：插件只查自身 owner（`PluginBridge` 的 `action_query`）；Control 用 `RuntimeService.QueryActionResult`（`action.inspect` + 恰含一个 `RESOURCE_ACCOUNT` 的显式 scope，按幂等键另需 `owner_instance_id`），不存在/不可见/超保留统一 `NOT_FOUND`，查询超时不改变状态。
+- **权限/配额/策略**：每-kind 权限映射见上节；滑动窗口占用持久化（跨重启不重置，替代 reference 进程内窗口），Mute/Kick 另需 ActionPolicy（开关+群白名单+正预算，fail-closed；0 预算=禁用）与 UTC 日预算；取消/明确失败不自动退额；`RATE_LIMITED` 表示窗口/预算/容量，`PERMISSION_DENIED` 表示权限/白名单/策略，`CAPABILITY_NOT_SUPPORTED` 表示能力缺失，不新增错误码。
+- 以上均为 target declaration（not_implemented）；reference 行为与差异只保留在 reference 章节与评审报告，不构成 target 验收。
 
 ## 适配器注册协议
 

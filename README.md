@@ -76,7 +76,7 @@ Host/Adapter                       各自本地 SQLite 可靠执行/发送日志
 
 **2026-11-01 架构重建**：当前开发按 [新方向基线](doc/19-architecture-direction-baseline.md)
 与 [P00–P14 计划](doc/23-implementation-plan.md) 推进。六个独立服务入口、分层构建与进程验收已接线，
-P00–P03本机固定环境统一门禁已通过，P04认证链开发中，目标业务仍未完成，不能以存活探针替代就绪。P06 的外部 Bridge 监听、bootstrap→`ConnectionAuthorization` 与投递 attempt/ACK 契约已冻结并登记（`contract_status.bridge_methods` / `semantic.bridge.*`），实现尚未开始。旧 Core 源码和原断言保留为
+P00–P03本机固定环境统一门禁已通过，P04认证链开发中，目标业务仍未完成，不能以存活探针替代就绪。P06 的外部 Bridge 监听、bootstrap→`ConnectionAuthorization` 与投递 attempt/ACK 契约已冻结并登记（`contract_status.bridge_methods` / `semantic.bridge.*`），实现尚未开始。P07 的 Action 桥流帧/执行证据/回执、Control `QueryActionResult`（显式账号 scope + `action.inspect`）与每-kind 权限 41–46 契约也已冻结登记（`semantic.action.*`），实现尚未开始。旧 Core 源码和原断言保留为
 `core/reference/` 构建；下列旧一体化闭环记录与部署说明属于 reference 证据，
 不代表六服务已经具备这些能力。旧 `kiarabot-core` 参考产物位于构建目录的
 `reference/core/`，不作为新生产入口。实际提交、检查与未验收项见

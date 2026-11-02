@@ -111,6 +111,8 @@ C++ Core                                ← 权限、幂等、审计、Action �
 - 实现配额/急停时同步更新：`doc/01-runtime-semantics.md` 的 Action 语义、`doc/02-core.md` 的消息处理流程、`doc/04-nonebot-adapter.md` 的健康与错误、`doc/08-operations.md` 的账号与网络规范；涉及持久化配额或审计时同步 `doc/05-infrastructure.md`。
 - 新增官方渠道时，按其真实能力声明 capability 并在 `doc/02`/`doc/04` 补渠道差异说明；不得沿用 OneBot 语义假设。
 
+- **P07 契约冻结（2026-11-02）**：出站配额改为持久化滑动窗口（跨重启不重置）、危险动作 ActionPolicy（开关+白名单+正预算，0=禁用，fail-closed）与每-kind 显式权限（41–46）已冻结；实现前仍以 reference 行为为准，不据此宣称真实平台已受控。真实平台/T07b 仍是封号风险验收边界。
+
 ## 6. 直接回答：应该在哪一层避免
 
 | 层 | 能否"避免"封号 | 应做什么 |

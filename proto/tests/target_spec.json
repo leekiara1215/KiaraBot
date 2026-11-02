@@ -663,7 +663,7 @@
       "file": "runtime.proto",
       "request": "RuntimeSubmitActionRequest",
       "response": "RuntimeSubmitActionResponse",
-      "caller": "authenticated Plugin instance",
+      "caller": "runtime internal dispatcher/test only; external plugins submit/query/cancel on PluginBridge.Connect",
       "permission": "action.execute",
       "risk": "online",
       "mutating": true,
@@ -672,7 +672,8 @@
       "server_streaming": false,
       "status": "not_implemented",
       "max_deadline_ms": 30000,
-      "requires_idempotency_key": true
+      "requires_idempotency_key": true,
+      "exposure": "internal_dispatcher"
     },
     {
       "service": "RuntimeService",
@@ -680,7 +681,7 @@
       "file": "runtime.proto",
       "request": "RuntimeQueryActionRequest",
       "response": "RuntimeQueryActionResponse",
-      "caller": "authenticated Plugin instance",
+      "caller": "runtime internal dispatcher/test only; external plugins submit/query/cancel on PluginBridge.Connect",
       "permission": "action.execute",
       "risk": "online",
       "mutating": false,
@@ -689,7 +690,8 @@
       "server_streaming": false,
       "status": "not_implemented",
       "max_deadline_ms": 5000,
-      "requires_idempotency_key": false
+      "requires_idempotency_key": false,
+      "exposure": "internal_dispatcher"
     },
     {
       "service": "RuntimeService",
@@ -697,7 +699,7 @@
       "file": "runtime.proto",
       "request": "RuntimeCancelActionRequest",
       "response": "RuntimeCancelActionResponse",
-      "caller": "authenticated Plugin instance",
+      "caller": "runtime internal dispatcher/test only; external plugins submit/query/cancel on PluginBridge.Connect",
       "permission": "action.execute",
       "risk": "online",
       "mutating": true,
@@ -706,7 +708,8 @@
       "server_streaming": false,
       "status": "not_implemented",
       "max_deadline_ms": 30000,
-      "requires_idempotency_key": true
+      "requires_idempotency_key": true,
+      "exposure": "internal_dispatcher"
     },
     {
       "service": "RuntimeService",

@@ -12,6 +12,10 @@
 
 Action 执行日志使用独立本机 SQLite 文件（默认 OUTBOX_PATH 加 .actions），按 action_id 和内容 fingerprint 去重；执行前持久化占用，终态保存后才回传。正常重投返回原结果。平台调用超时、取消或进程在调用后退出时保留 ACCEPTED/未知，不重复调用平台；Core 可查询并最终按 deadline 过期。此策略避免重复副作用，但不能提供平台不支持的端到端 exactly-once。无已知平台结果时不伪造 FAILED。日志容量有上限，终态保留七天，未终态不自动删除。
 
+## P07 Adapter Action 日志与回执（目标，未实现）
+
+P07 目标适配器在既有 action journal 上补 `dispatch_attempt_id/dispatch_sequence` 关联：收到 `CoreToAdapter.action` 先持久登记（action_id+内容 hash+attempt）再调平台；终态用 `action_result`（`ActionResult.execution_outcome`+attempt）上报，平台调用后结果未知用 `action_evidence`（`UNKNOWN`）上报，收到 `CoreToAdapter.action_receipt` 的 `RECORDED/DUPLICATE/EVIDENCE_ONLY` 才标记已上报，`CONFLICT` 保留证据等待人工/下次校验。迟到结果在 Runtime 已 EXPIRED 时只作证据，不重发平台；同一 action_id 重投先返回已知结果/未知，绝不重复执行。已完成但结果丢失后重连仍按原 action_id 上报；旧 adapter 实例未知执行不跨实例接管。以上为契约冻结，实现随 P07c。
+
 ## 责任
 
 Python 适配器是第一种渠道适配器，负责连接 NapCatQQ，并把 OneBot V11 转换成 KiaraBot 统一协议。

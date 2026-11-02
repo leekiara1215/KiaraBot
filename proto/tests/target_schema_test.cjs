@@ -104,4 +104,19 @@ const grant = {principal_id: 'person', role: 'ROLE_VIEWER', scope: {resources: [
 check('TargetIdentitySetAssignmentRequest', {assignment: grant}, true);
 check('TargetIdentitySetAssignmentRequest', {assignment: grant, expected_version: '1'}, false);
 check('TargetIdentitySetAssignmentRequest', {assignment: grant, assignment_id: '11111111-1111-4111-8111-111111111111', expected_version: '1'}, true);
+const actionMetadata = {
+  action_id: 'action', owner_instance_id: 'instance', account_id: 'account', status: 'ACCEPTED',
+  execution_outcome: 'EXECUTION_NOT_STARTED', updated_at: '2026-11-01T00:00:00Z',
+  kind: 'ACTION_KIND_SEND_MESSAGE', target_account_id: 'account', target_conversation_id: 'conversation',
+  created_at: '2026-11-01T00:00:00Z', deadline: '2026-11-01T00:05:00Z', retain_until: '2026-11-08T00:00:00Z',
+  idempotency_key: 'key',
+};
+check('TargetActionMetadata', actionMetadata, true);
+const missingKind = {...actionMetadata}; delete missingKind.kind; check('TargetActionMetadata', missingKind, false);
+check('ExecutionOutcome', 'EXECUTION_UNKNOWN', true);
+check('ExecutionOutcome', 'UNKNOWN', false);
+check('ActionResult', {action_id: 'action', status: 'ACCEPTED', execution_outcome: 'EXECUTION_NOT_STARTED'}, true);
+check('ActionResult', {action_id: 'action', status: 'ACCEPTED', execution_outcome: 'EXECUTION_NOT_REAL'}, false);
+check('ActionResult', {action_id: 'action', status: 'SUCCEEDED', completed_at: '2026-11-01T00:00:00Z'}, true);
+check('ActionResult', {action_id: 'action', status: 'FAILED', completed_at: '2026-11-01T00:00:00Z'}, false);
 console.log('Target schemas reject missing identity, empty result, zero generation and uint64 overflow; valid fixtures pass');

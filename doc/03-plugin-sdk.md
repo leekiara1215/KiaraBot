@@ -20,6 +20,10 @@ plugins/ai-reply 示例仅对 /ai 前缀纯文本事件应答，通过 SDK 存�
 
 Context 提供 submit_action(ActionEnvelope)、query_action(action_id 或 idempotency_key) 与 cancel_action(action_id)。使用生成类型，自动创建每次调用的 request_id，只有 action.result.v1 协商成功后才发送；未协商本地 CAPABILITY_NOT_SUPPORTED。读取响应独立于事件回调，回调中调用 Action 不会阻塞接收器。断开/超时抛稳定 PluginError，不能把未知结果包装成 FAILED；调用者重连后用原幂等键查询。SDK 不自动重发可能已有副作用的请求。
 
+## P07 Action 客户端（目标，未实现）
+
+P07 目标将 Action 客户端固定在 `PluginBridge`：submit/action_query/action_cancel 与 `action_response` 保持一问一答，`action.result.v1` 协商后才可用；unary RuntimeService Action 方法仅 internal dispatcher，SDK 不使用。`ActionResult` 增加 `execution_outcome`：`ACCEPTED` 为 `NOT_STARTED`（未派发）或 `UNKNOWN`（已派发、结果未知），`EXPIRED` 的 `UNKNOWN` 表示平台可能已执行；SDK 不得把未知包成 FAILED，也不得自动重发可能已有副作用的请求，重连后用同一 action_id/idempotency_key 查询。每-kind 权限使用已冻结 Permission 枚举值（41–46，见 `doc/01-contracts.md`），`schedule_task` 继续拒绝。以上为契约冻结，实现随 P07b。
+
 ## T03b Python SDK 与进程生命周期
 
 `sdk/python` 提供 `Plugin.on_start(context)`、`on_event(EventEnvelope, context)`、`on_stop(reason)` 和本机 gRPC runner，事件类型直接使用生成协议。插件自行实现业务幂等；SDK 不把网络 ACK 当作 Action 完成。清单由 protobuf JSON 解析并校验现行 T03a 子集，不导入 Core 或 NoneBot。

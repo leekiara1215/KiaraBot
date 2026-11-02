@@ -206,6 +206,10 @@ REST 不可变分页用于一致列表；WebSocket 是资源状态刷新通知�
 - **投递尝试**：沿用 P01 租约规则。`delivery` 身份为 `(event_id, instance_id)`，`delivery_id` 字段取 `event_id`；`ReplayDelivery.expected_version` P06 必须 0/未设置；重放只重置目标实例、保留 event_id、新 trace/attempt。ACK/Renew 必须以当前 attempt+fence 条件写；当前 active 成功 ACK=`DELIVERY_ACKNOWLEDGED`，同 attempt 重复成功=`DELIVERY_DUPLICATE`，旧/过期 attempt=`DELIVERY_STALE`（不确认新尝试），错误 ACK=`DELIVERY_REJECTED`（retryable 决定退避或死信），Renew 成功/重发=`DELIVERY_RENEWED`。
 - **超时与背压**：`check_dependencies` 每秒有界 sweep 把过期 attempt 记一次可重试失败（1/2/4/8/16s ±20%，5 次后死信）；执行不持有 UoW 等网络。入站容量不足按 target 语义返回可重试 `RATE_LIMITED` 并关闭本次流，Adapter 保留未确认事件重投；`semantic.bridge.*` 在 P06 完成前保持 not_implemented。
 
+### P07 目标 Action 语义（已冻结，未实现）
+
+P06 之后插件 Action 只走 `PluginBridge` 流帧、适配器执行只走 `AdapterBridge` 流帧；unary Action 方法为 internal dispatcher（`exposure=internal_dispatcher`），不对外。Runtime 受理必须原子写入 Action 记录/幂等索引/配额窗口/日预算/审计并提交后才派发；任何提交失败不调平台。派发前再复核权限、账号/白名单/开关、能力与 deadline，条件写 `dispatched`+`dispatch_attempt_id` 后才发流帧。适配器先本地 journal 登记再调平台，终态结果用 `action_result` 上报、未知/未执行用 `action_evidence` 上报、Runtime 用 `action_receipt` 确认；Action 已 EXPIRED 的迟到结果只追加证据不改终态，已派发未知不跨 adapter 实例重派。取消只对未派发 ACCEPTED 生效，派发后 CONFLICT；查询超时不改状态、`NOT_FOUND` 不证明未执行。终态 168 小时保留；控制查询必须显式账号 scope + `action.inspect`，插件查询限制自身 owner。详细状态×执行已知性矩阵、回执/证据语义、权限词表与配额/策略见 `doc/01-contracts.md` 的 P07 目标 Action 契约节。
+
 ### 目标管理、存储和异步交接
 
 期望配置、Host进程事实、协议注册与配置应用分层；旧 desired_version 或 execution_generation 观察不能覆盖新状态。Host离线不是已停止证据，不允许盲跨主机接管。私有 namespace 绑定稳定实例，换连接不重建；共享写条件版本，TTL 重放不续期。默认私有/共享各1024键/1MiB、单值64KiB、安装聚合8192键/8MiB；成功收据实例10000/安装80000，七天内不淘汰。一次性任务实例1024/安装8192；COMPLETED 仅 Runtime 已持久入队，确认丢失重发同 occurrence/message ID。

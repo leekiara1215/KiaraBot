@@ -1698,7 +1698,14 @@
       "semantic.stream.plugin_updated_health_state": "not_implemented",
       "semantic.bridge.connection_authorization": "not_implemented",
       "semantic.bridge.external_listener": "not_implemented",
-      "semantic.bridge.plugin_delivery_lease": "not_implemented"
+      "semantic.bridge.plugin_delivery_lease": "not_implemented",
+      "semantic.action.result_execution_outcome": "not_implemented",
+      "semantic.action.dispatch_attempt_correlation": "not_implemented",
+      "semantic.action.evidence_late_result": "not_implemented",
+      "semantic.action.control_query_scope": "not_implemented",
+      "semantic.action.permission_vocabulary": "not_implemented",
+      "semantic.action.quota_persistence": "not_implemented",
+      "semantic.action.policy_gate": "not_implemented"
     }
   },
   "evidence": {
@@ -4898,6 +4905,27 @@
     ],
     "Permission.PERMISSION_REQUEST_APPROVE": [
       "reports/modules/architecture-contracts.md"
+    ],
+    "semantic.action.result_execution_outcome": [
+      "core/src/application/target/runtime_application.cpp"
+    ],
+    "semantic.action.dispatch_attempt_correlation": [
+      "core/src/application/target/runtime_application.cpp"
+    ],
+    "semantic.action.evidence_late_result": [
+      "core/src/application/target/runtime_application.cpp"
+    ],
+    "semantic.action.control_query_scope": [
+      "core/src/application/target/runtime_application.cpp"
+    ],
+    "semantic.action.permission_vocabulary": [
+      "core/src/application/target/runtime_application.cpp"
+    ],
+    "semantic.action.quota_persistence": [
+      "core/src/application/target/runtime_application.cpp"
+    ],
+    "semantic.action.policy_gate": [
+      "core/src/application/target/runtime_application.cpp"
     ]
   },
   "vocabulary": {
