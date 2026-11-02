@@ -23,6 +23,51 @@ T03a 新增 CoreToPlugin.error（oneof 字段 6），承载注册之后的终止
 | `IdentityRegisterPrincipalRequest.context`、`IdentityRegisterPrincipalRequest.principal_kind`、`IdentityRegisterPrincipalRequest.binding`、`IdentityRegisterPrincipalRequest.allowed_services`、`IdentityRegisterPrincipalResponse.principal`、`IdentityRegisterPrincipalResponse.initial_credential`、`IdentityRotateCredentialRequest.context`、`IdentityRotateCredentialRequest.credential_id`、`IdentityRotateCredentialRequest.expected_version`、`IdentityRotateCredentialResponse.delivery`、`IdentityRevokeCredentialRequest.context`、`IdentityRevokeCredentialRequest.credential_id`、`IdentityRevokeCredentialRequest.expected_version`、`IdentityRevokeCredentialResponse.version`、`IdentityGetPrincipalStatusRequest.context`、`IdentityGetPrincipalStatusRequest.principal_id`、`IdentityGetPrincipalStatusResponse.principal`、`IdentityGetCredentialStatusRequest.context`、`IdentityGetCredentialStatusRequest.credential_id`、`IdentityGetCredentialStatusResponse.credential`、`CredentialDelivery.credential_id`、`CredentialDelivery.version`、`CredentialDelivery.new_secret`、`CredentialDelivery.delivery_receipt_id`、`CredentialDelivery.expires_at`、`CredentialStatus.credential_id`、`CredentialStatus.principal_id`、`CredentialStatus.binding`、`CredentialStatus.version`、`CredentialStatus.state`、`CredentialStatus.created_at`、`CredentialStatus.expires_at`、`CredentialStatus.checked_at` | implemented | P04-A target-scope字段：gRPC边界转换、持久化与投影均由Identity实现；HTTP操作面仍标not_implemented |
 | `IdentityWatchInvalidationsResponse.resync_required` | implemented | P04 失效流断档必须显式要求全量快照；生产 Identity RPC 投影，见 P04-B 记录 |
 | `IdentityWatchInvalidationsResponse.cursor` | implemented | resync 信号携带持久 epoch/sequence 水位；生产 Identity RPC 投影，见 P04-B 记录 |
+| `RuntimeGetOperationRequest` | implemented | P13a/P13c：Runtime 生命周期应用/RPC/参与者进度（P13 target 证据见模块报告） |
+| `RuntimeGetOperationResponse` | implemented | P13a/P13c：Runtime 生命周期应用/RPC/参与者进度（P13 target 证据见模块报告） |
+| `RuntimeBeginDeleteRequest` | implemented | P13a/P13c：Runtime 生命周期应用/RPC/参与者进度（P13 target 证据见模块报告） |
+| `RuntimeBeginDeleteResponse` | implemented | P13a/P13c：Runtime 生命周期应用/RPC/参与者进度（P13 target 证据见模块报告） |
+| `RuntimeRestoreResourceRequest` | implemented | P13a/P13c：Runtime 生命周期应用/RPC/参与者进度（P13 target 证据见模块报告） |
+| `RuntimeRestoreResourceResponse` | implemented | P13a/P13c：Runtime 生命周期应用/RPC/参与者进度（P13 target 证据见模块报告） |
+| `OperationRef` | implemented | P13a/P13c：Runtime 生命周期应用/RPC/参与者进度（P13 target 证据见模块报告） |
+| `OperationProgress` | implemented | P13a/P13c：Runtime 生命周期应用/RPC/参与者进度（P13 target 证据见模块报告） |
+| `Operation` | implemented | P13a/P13c：Runtime 生命周期应用/RPC/参与者进度（P13 target 证据见模块报告） |
+| `RuntimeGetOperationRequest.context` | implemented | P13a/P13c：Runtime 生命周期应用/RPC/参与者进度（P13 target 证据见模块报告） |
+| `RuntimeGetOperationRequest.operation` | implemented | P13a/P13c：Runtime 生命周期应用/RPC/参与者进度（P13 target 证据见模块报告） |
+| `RuntimeGetOperationResponse.operation` | implemented | P13a/P13c：Runtime 生命周期应用/RPC/参与者进度（P13 target 证据见模块报告） |
+| `RuntimeBeginDeleteRequest.context` | implemented | P13a/P13c：Runtime 生命周期应用/RPC/参与者进度（P13 target 证据见模块报告） |
+| `RuntimeBeginDeleteRequest.resource` | implemented | P13a/P13c：Runtime 生命周期应用/RPC/参与者进度（P13 target 证据见模块报告） |
+| `RuntimeBeginDeleteRequest.expected_version` | implemented | P13a/P13c：Runtime 生命周期应用/RPC/参与者进度（P13 target 证据见模块报告） |
+| `RuntimeBeginDeleteResponse.operation` | implemented | P13a/P13c：Runtime 生命周期应用/RPC/参与者进度（P13 target 证据见模块报告） |
+| `RuntimeRestoreResourceRequest.context` | implemented | P13a/P13c：Runtime 生命周期应用/RPC/参与者进度（P13 target 证据见模块报告） |
+| `RuntimeRestoreResourceRequest.resource` | implemented | P13a/P13c：Runtime 生命周期应用/RPC/参与者进度（P13 target 证据见模块报告） |
+| `RuntimeRestoreResourceRequest.expected_version` | implemented | P13a/P13c：Runtime 生命周期应用/RPC/参与者进度（P13 target 证据见模块报告） |
+| `RuntimeRestoreResourceResponse.operation` | implemented | P13a/P13c：Runtime 生命周期应用/RPC/参与者进度（P13 target 证据见模块报告） |
+| `OperationRef.owner_service` | implemented | P13a/P13c：Runtime 生命周期应用/RPC/参与者进度（P13 target 证据见模块报告） |
+| `OperationRef.operation_id` | implemented | P13a/P13c：Runtime 生命周期应用/RPC/参与者进度（P13 target 证据见模块报告） |
+| `OperationRef.resource` | implemented | P13a/P13c：Runtime 生命周期应用/RPC/参与者进度（P13 target 证据见模块报告） |
+| `OperationProgress.participant` | implemented | P13a/P13c：Runtime 生命周期应用/RPC/参与者进度（P13 target 证据见模块报告） |
+| `OperationProgress.state` | implemented | P13a/P13c：Runtime 生命周期应用/RPC/参与者进度（P13 target 证据见模块报告） |
+| `OperationProgress.reason` | implemented | P13a/P13c：Runtime 生命周期应用/RPC/参与者进度（P13 target 证据见模块报告） |
+| `OperationProgress.next_attempt_at` | implemented | P13a/P13c：Runtime 生命周期应用/RPC/参与者进度（P13 target 证据见模块报告） |
+| `Operation.ref` | implemented | P13a/P13c：Runtime 生命周期应用/RPC/参与者进度（P13 target 证据见模块报告） |
+| `Operation.version` | implemented | P13a/P13c：Runtime 生命周期应用/RPC/参与者进度（P13 target 证据见模块报告） |
+| `Operation.state` | implemented | P13a/P13c：Runtime 生命周期应用/RPC/参与者进度（P13 target 证据见模块报告） |
+| `Operation.execution_outcome` | implemented | P13a/P13c：Runtime 生命周期应用/RPC/参与者进度（P13 target 证据见模块报告） |
+| `Operation.participants` | implemented | P13a/P13c：Runtime 生命周期应用/RPC/参与者进度（P13 target 证据见模块报告） |
+| `Operation.observed_at` | implemented | P13a/P13c：Runtime 生命周期应用/RPC/参与者进度（P13 target 证据见模块报告） |
+| `Operation.reason` | implemented | P13a/P13c：Runtime 生命周期应用/RPC/参与者进度（P13 target 证据见模块报告） |
+| `Operation.next_attempt_at` | implemented | P13a/P13c：Runtime 生命周期应用/RPC/参与者进度（P13 target 证据见模块报告） |
+| `Operation.stalled` | implemented | P13a/P13c：Runtime 生命周期应用/RPC/参与者进度（P13 target 证据见模块报告） |
+| `OperationState.OPERATION_STATE_UNSPECIFIED` | implemented | P13a/P13c：Runtime 生命周期应用/RPC/参与者进度（P13 target 证据见模块报告） |
+| `OperationState.OPERATION_ACCEPTED` | implemented | P13a/P13c：Runtime 生命周期应用/RPC/参与者进度（P13 target 证据见模块报告） |
+| `OperationState.OPERATION_RUNNING` | implemented | P13a/P13c：Runtime 生命周期应用/RPC/参与者进度（P13 target 证据见模块报告） |
+| `OperationState.OPERATION_BLOCKED` | implemented | P13a/P13c：Runtime 生命周期应用/RPC/参与者进度（P13 target 证据见模块报告） |
+| `OperationState.OPERATION_SUCCEEDED` | implemented | P13a/P13c：Runtime 生命周期应用/RPC/参与者进度（P13 target 证据见模块报告） |
+| `OperationState.OPERATION_FAILED` | implemented | P13a/P13c：Runtime 生命周期应用/RPC/参与者进度（P13 target 证据见模块报告） |
+| `OperationState.OPERATION_CANCELLED` | implemented | P13a/P13c：Runtime 生命周期应用/RPC/参与者进度（P13 target 证据见模块报告） |
+| `OperationState.OPERATION_EXPIRED` | implemented | P13a/P13c：Runtime 生命周期应用/RPC/参与者进度（P13 target 证据见模块报告） |
+| `RuntimeBeginDeleteRequest/Response`、`RuntimeRestoreResourceRequest/Response`、`RuntimeGetOperationRequest/Response`、`Operation`、`OperationRef`、`OperationProgress` 及其字段、`OperationState.*`、`operations.getOperation` | implemented | P13a/P13c：Runtime 生命周期 BeginDelete/Restore/GetOperation 应用+RPC+参与者进度已接线，真 PG16.4 应用测试与真实双进程 Runtime↔Identity e2e 覆盖；Host/Scheduler 参与者真实完成需 P08b-3b/P10b 命令回执，未覆盖保持 blocked 语义 |
 
 | `AdapterBridge.Connect`、`PluginBridge.Connect` | implemented | P06 外部 Bridge 两流：真实 TLS gRPC + 真实 Runtime/PG 进程验收注册、fence/proof、refresh、事件投递与停机；HostBridge 仍 not_implemented |
 | `semantic.bridge.connection_authorization`、`semantic.bridge.external_listener`、`semantic.bridge.plugin_delivery_lease` | implemented | P06：bootstrap→ConnectionAuthorization/refresh、server-verified TLS 外部监听、插件 attempt 租约/ACK/Renew |

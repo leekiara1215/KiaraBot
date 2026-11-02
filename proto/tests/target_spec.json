@@ -939,7 +939,7 @@
       "idempotency": "none",
       "deadline_ms": 2000,
       "server_streaming": false,
-      "status": "not_implemented",
+      "status": "implemented",
       "max_deadline_ms": 5000,
       "requires_idempotency_key": false,
       "scope_kinds": [
@@ -997,7 +997,7 @@
       "idempotency": "required",
       "deadline_ms": 5000,
       "server_streaming": false,
-      "status": "not_implemented",
+      "status": "implemented",
       "max_deadline_ms": 30000,
       "requires_idempotency_key": true,
       "scope_kinds": [
@@ -1021,7 +1021,7 @@
       "idempotency": "required",
       "deadline_ms": 5000,
       "server_streaming": false,
-      "status": "not_implemented",
+      "status": "implemented",
       "max_deadline_ms": 30000,
       "requires_idempotency_key": true,
       "scope_kinds": [

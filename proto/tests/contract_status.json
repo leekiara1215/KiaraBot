@@ -5783,7 +5783,8 @@
           "operations.enableModel": "implemented",
           "operations.getModelCallStatus": "implemented",
           "operations.resolveModelCall": "implemented",
-          "operations.listModels": "implemented"
+          "operations.listModels": "implemented",
+          "operations.getOperation": "implemented"
         },
         "proto_messages": {
           "IdentityAuditFilter": "implemented",
@@ -5879,7 +5880,16 @@
           "ModelResolveModelCallRequest": "implemented",
           "ModelResolveModelCallResponse": "implemented",
           "ModelGatewayChatRequest": "implemented",
-          "ModelGatewayChatResponse": "implemented"
+          "ModelGatewayChatResponse": "implemented",
+          "RuntimeGetOperationRequest": "implemented",
+          "RuntimeGetOperationResponse": "implemented",
+          "RuntimeBeginDeleteRequest": "implemented",
+          "RuntimeBeginDeleteResponse": "implemented",
+          "RuntimeRestoreResourceRequest": "implemented",
+          "RuntimeRestoreResourceResponse": "implemented",
+          "OperationRef": "implemented",
+          "OperationProgress": "implemented",
+          "Operation": "implemented"
         },
         "proto_fields": {
           "IdentityAuditFilter.scope": "implemented",
@@ -6348,7 +6358,34 @@
           "ModelResolveModelCallRequest.logical_call_id": "implemented",
           "ModelResolveModelCallRequest.expected_version": "implemented",
           "ModelResolveModelCallRequest.disposition": "implemented",
-          "ModelResolveModelCallResponse.call": "implemented"
+          "ModelResolveModelCallResponse.call": "implemented",
+          "RuntimeGetOperationRequest.context": "implemented",
+          "RuntimeGetOperationRequest.operation": "implemented",
+          "RuntimeGetOperationResponse.operation": "implemented",
+          "RuntimeBeginDeleteRequest.context": "implemented",
+          "RuntimeBeginDeleteRequest.resource": "implemented",
+          "RuntimeBeginDeleteRequest.expected_version": "implemented",
+          "RuntimeBeginDeleteResponse.operation": "implemented",
+          "RuntimeRestoreResourceRequest.context": "implemented",
+          "RuntimeRestoreResourceRequest.resource": "implemented",
+          "RuntimeRestoreResourceRequest.expected_version": "implemented",
+          "RuntimeRestoreResourceResponse.operation": "implemented",
+          "OperationRef.owner_service": "implemented",
+          "OperationRef.operation_id": "implemented",
+          "OperationRef.resource": "implemented",
+          "OperationProgress.participant": "implemented",
+          "OperationProgress.state": "implemented",
+          "OperationProgress.reason": "implemented",
+          "OperationProgress.next_attempt_at": "implemented",
+          "Operation.ref": "implemented",
+          "Operation.version": "implemented",
+          "Operation.state": "implemented",
+          "Operation.execution_outcome": "implemented",
+          "Operation.participants": "implemented",
+          "Operation.observed_at": "implemented",
+          "Operation.reason": "implemented",
+          "Operation.next_attempt_at": "implemented",
+          "Operation.stalled": "implemented"
         },
         "bridge_methods": {
           "AdapterBridge.Connect": "implemented",
@@ -6405,7 +6442,15 @@
           "ModelChatDisposition.MODEL_CHAT_DISPOSITION_UNSPECIFIED": "implemented",
           "ModelChatDisposition.FRESH_RESULT": "implemented",
           "ModelChatDisposition.REPLAY_IN_PROGRESS": "implemented",
-          "ModelChatDisposition.REPLAY_TERMINAL": "implemented"
+          "ModelChatDisposition.REPLAY_TERMINAL": "implemented",
+          "OperationState.OPERATION_STATE_UNSPECIFIED": "implemented",
+          "OperationState.OPERATION_ACCEPTED": "implemented",
+          "OperationState.OPERATION_RUNNING": "implemented",
+          "OperationState.OPERATION_BLOCKED": "implemented",
+          "OperationState.OPERATION_SUCCEEDED": "implemented",
+          "OperationState.OPERATION_FAILED": "implemented",
+          "OperationState.OPERATION_CANCELLED": "implemented",
+          "OperationState.OPERATION_EXPIRED": "implemented"
         },
         "event_payloads": {
           "EventEnvelope.message_received": "implemented"
@@ -9548,6 +9593,278 @@
           "tests/architecture/p11_control_model_rest.py",
           "core/tests/platform/model_rpc_test.cpp",
           "core/tests/architecture/model_gateway_application_test.cpp"
+        ],
+        "proto_messages:RuntimeGetOperationRequest": [
+          "core/src/application/target/runtime_resource_application.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/tests/architecture/runtime_resource_application_test.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "proto_messages:RuntimeGetOperationResponse": [
+          "core/src/application/target/runtime_resource_application.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/tests/architecture/runtime_resource_application_test.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "proto_messages:RuntimeBeginDeleteRequest": [
+          "core/src/application/target/runtime_resource_application.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/tests/architecture/runtime_resource_application_test.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "proto_messages:RuntimeBeginDeleteResponse": [
+          "core/src/application/target/runtime_resource_application.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/tests/architecture/runtime_resource_application_test.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "proto_messages:RuntimeRestoreResourceRequest": [
+          "core/src/application/target/runtime_resource_application.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/tests/architecture/runtime_resource_application_test.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "proto_messages:RuntimeRestoreResourceResponse": [
+          "core/src/application/target/runtime_resource_application.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/tests/architecture/runtime_resource_application_test.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "proto_messages:OperationRef": [
+          "core/src/application/target/runtime_resource_application.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/tests/architecture/runtime_resource_application_test.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "proto_messages:OperationProgress": [
+          "core/src/application/target/runtime_resource_application.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/tests/architecture/runtime_resource_application_test.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "proto_messages:Operation": [
+          "core/src/application/target/runtime_resource_application.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/tests/architecture/runtime_resource_application_test.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "proto_fields:RuntimeGetOperationRequest.context": [
+          "core/src/application/target/runtime_resource_application.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/tests/architecture/runtime_resource_application_test.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "proto_fields:RuntimeGetOperationRequest.operation": [
+          "core/src/application/target/runtime_resource_application.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/tests/architecture/runtime_resource_application_test.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "proto_fields:RuntimeGetOperationResponse.operation": [
+          "core/src/application/target/runtime_resource_application.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/tests/architecture/runtime_resource_application_test.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "proto_fields:RuntimeBeginDeleteRequest.context": [
+          "core/src/application/target/runtime_resource_application.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/tests/architecture/runtime_resource_application_test.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "proto_fields:RuntimeBeginDeleteRequest.resource": [
+          "core/src/application/target/runtime_resource_application.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/tests/architecture/runtime_resource_application_test.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "proto_fields:RuntimeBeginDeleteRequest.expected_version": [
+          "core/src/application/target/runtime_resource_application.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/tests/architecture/runtime_resource_application_test.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "proto_fields:RuntimeBeginDeleteResponse.operation": [
+          "core/src/application/target/runtime_resource_application.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/tests/architecture/runtime_resource_application_test.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "proto_fields:RuntimeRestoreResourceRequest.context": [
+          "core/src/application/target/runtime_resource_application.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/tests/architecture/runtime_resource_application_test.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "proto_fields:RuntimeRestoreResourceRequest.resource": [
+          "core/src/application/target/runtime_resource_application.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/tests/architecture/runtime_resource_application_test.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "proto_fields:RuntimeRestoreResourceRequest.expected_version": [
+          "core/src/application/target/runtime_resource_application.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/tests/architecture/runtime_resource_application_test.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "proto_fields:RuntimeRestoreResourceResponse.operation": [
+          "core/src/application/target/runtime_resource_application.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/tests/architecture/runtime_resource_application_test.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "proto_fields:OperationRef.owner_service": [
+          "core/src/application/target/runtime_resource_application.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/tests/architecture/runtime_resource_application_test.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "proto_fields:OperationRef.operation_id": [
+          "core/src/application/target/runtime_resource_application.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/tests/architecture/runtime_resource_application_test.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "proto_fields:OperationRef.resource": [
+          "core/src/application/target/runtime_resource_application.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/tests/architecture/runtime_resource_application_test.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "proto_fields:OperationProgress.participant": [
+          "core/src/application/target/runtime_resource_application.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/tests/architecture/runtime_resource_application_test.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "proto_fields:OperationProgress.state": [
+          "core/src/application/target/runtime_resource_application.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/tests/architecture/runtime_resource_application_test.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "proto_fields:OperationProgress.reason": [
+          "core/src/application/target/runtime_resource_application.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/tests/architecture/runtime_resource_application_test.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "proto_fields:OperationProgress.next_attempt_at": [
+          "core/src/application/target/runtime_resource_application.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/tests/architecture/runtime_resource_application_test.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "proto_fields:Operation.ref": [
+          "core/src/application/target/runtime_resource_application.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/tests/architecture/runtime_resource_application_test.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "proto_fields:Operation.version": [
+          "core/src/application/target/runtime_resource_application.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/tests/architecture/runtime_resource_application_test.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "proto_fields:Operation.state": [
+          "core/src/application/target/runtime_resource_application.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/tests/architecture/runtime_resource_application_test.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "proto_fields:Operation.execution_outcome": [
+          "core/src/application/target/runtime_resource_application.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/tests/architecture/runtime_resource_application_test.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "proto_fields:Operation.participants": [
+          "core/src/application/target/runtime_resource_application.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/tests/architecture/runtime_resource_application_test.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "proto_fields:Operation.observed_at": [
+          "core/src/application/target/runtime_resource_application.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/tests/architecture/runtime_resource_application_test.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "proto_fields:Operation.reason": [
+          "core/src/application/target/runtime_resource_application.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/tests/architecture/runtime_resource_application_test.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "proto_fields:Operation.next_attempt_at": [
+          "core/src/application/target/runtime_resource_application.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/tests/architecture/runtime_resource_application_test.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "proto_fields:Operation.stalled": [
+          "core/src/application/target/runtime_resource_application.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/tests/architecture/runtime_resource_application_test.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "enum_values:OperationState.OPERATION_STATE_UNSPECIFIED": [
+          "core/src/application/target/runtime_resource_application.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/tests/architecture/runtime_resource_application_test.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "enum_values:OperationState.OPERATION_ACCEPTED": [
+          "core/src/application/target/runtime_resource_application.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/tests/architecture/runtime_resource_application_test.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "enum_values:OperationState.OPERATION_RUNNING": [
+          "core/src/application/target/runtime_resource_application.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/tests/architecture/runtime_resource_application_test.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "enum_values:OperationState.OPERATION_BLOCKED": [
+          "core/src/application/target/runtime_resource_application.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/tests/architecture/runtime_resource_application_test.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "enum_values:OperationState.OPERATION_SUCCEEDED": [
+          "core/src/application/target/runtime_resource_application.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/tests/architecture/runtime_resource_application_test.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "enum_values:OperationState.OPERATION_FAILED": [
+          "core/src/application/target/runtime_resource_application.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/tests/architecture/runtime_resource_application_test.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "enum_values:OperationState.OPERATION_CANCELLED": [
+          "core/src/application/target/runtime_resource_application.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/tests/architecture/runtime_resource_application_test.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "enum_values:OperationState.OPERATION_EXPIRED": [
+          "core/src/application/target/runtime_resource_application.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/tests/architecture/runtime_resource_application_test.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "operations:operations.getOperation": [
+          "control/api/src/target/owner_gateway.cpp",
+          "control/api/tests/owner_gateway_test.cpp",
+          "core/src/application/target/runtime_resource_application.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py",
+          "core/tests/architecture/runtime_resource_application_test.cpp"
         ]
       }
     }
