@@ -90,7 +90,7 @@ scripts/ops/tests/ops_scripts_test.sh
 - [ ] 两主机/跨主机演练是否在本次发布范围外；若在外，发布说明必须明确“未验证”。
 - [ ] `release-gated` Environment required reviewers 名单与 tag 保护规则。
 
-## 7. 当前结论（2026-11-02，HEAD b4adf9c）
+## 7. 当前结论（P14e QA：2026-11-02，基线 HEAD 439fb9e；QA 期间 main 已推进至 937acb8/25e24ce，release 必须以 release SHA 重跑）
 
 | 交付类别 | 状态 |
 |---|---|

@@ -2,7 +2,7 @@
 
 - 版本：v1.3
 - 日期：2026-11-02
-- 状态：P00–P14 实现主体已合入 main（基线 `b4adf9c`）；阶段退出/发布证据矩阵见 [P14d 矩阵](27-phase-exit-evidence.md)，发布门禁见 [P14d 发布清单](28-p14d-release-checklist.md)。单机 Docker Compose、两主机演练、远端 CI 与正式发布仍未验收，不能标记阶段“已退出”。
+- 状态：P00–P14 实现主体已合入 main（基线 `439fb9e`（P14e QA；QA 期间 main 已推进至 `937acb8`/`25e24ce`，以 release SHA 为准））；阶段退出/发布证据矩阵见 [P14d 矩阵](27-phase-exit-evidence.md)，发布门禁见 [P14d 发布清单](28-p14d-release-checklist.md)。单机 Docker Compose、两主机演练、远端 CI 与正式发布仍未验收，不能标记阶段“已退出”。
 - 依据：[方向基线](19-architecture-direction-baseline.md)、[设计总览](20-detailed-architecture-design.md)、[通信方法](21-service-contract-design.md)、[事务与初始化](22-transactions-and-migration-design.md)
 - 当前授权：单机真实QQ群聊首轮已通过，用户要求关闭运行、记录已确认接入方向并推送；本次不继续开发。下一轮按[接入设计](26-real-qq-onboarding.md)独立推进，插件机制、完整账号管理、多主机等非核心内容继续后移。保留独立提交、主对话审查及换机交接；本文件保留后续目标架构迁移路线，未达到退出条件的阶段不能标为完成。
 
