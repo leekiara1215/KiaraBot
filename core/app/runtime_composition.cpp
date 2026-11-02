@@ -280,6 +280,23 @@ compose_runtime_service(const platform::ProcessConfig& config) {
     if (!state->application) {
       return unavailable();
     }
+    // Bridge maintenance runs on the bounded once-per-second dependency hook: expire dispatcher
+    // leases, advance retries/dead letters and claim/push due deliveries for connected plugins.
+    {
+      auto base = std::move(result.check_dependencies);
+      result.check_dependencies = [base = std::move(base), state]() mutable -> target::Status {
+        if (base) {
+          auto checked = base();
+          if (std::holds_alternative<target::Failure>(checked)) {
+            return checked;
+          }
+        }
+        if (!state->bridge) {
+          return std::monostate{};
+        }
+        return state->bridge->maintenance();
+      };
+    }
     auto* application = state->application;
     auto configure = std::move(result.configure_rpc);
     result.configure_rpc = [configure = std::move(configure), state,
@@ -330,6 +347,12 @@ compose_runtime_service(const platform::ProcessConfig& config) {
       return rpc.add_bridge_service(
           target::Service::Runtime,
           std::move(std::get<std::unique_ptr<v1::PluginBridge::Service>>(plugin_bridge)));
+    };
+    result.before_stop = [state]() -> target::Status {
+      if (!state->bridge) {
+        return std::monostate{};
+      }
+      return state->bridge->shutdown_notice();
     };
     result.application = std::make_unique<RuntimeReadiness>(std::move(result.application), state);
     return std::move(result);

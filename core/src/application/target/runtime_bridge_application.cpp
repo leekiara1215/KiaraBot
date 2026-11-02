@@ -2,15 +2,18 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <map>
 #include <mutex>
 #include <optional>
+#include <set>
 #include <string>
 #include <string_view>
 #include <utility>
 #include <vector>
 
 #include "kiarabot/core/domain/target/runtime_rules.hpp"
+#include "kiarabot/core/ports/target/business_ports.hpp"
 
 namespace kiarabot::core::target {
 namespace {
@@ -335,6 +338,22 @@ public:
         return *failure;
       }
       bridge.authorization = std::move(std::get<BridgeAuthorization>(issued));
+      {
+        std::lock_guard<std::mutex> lock(mutex_);
+        PluginProfile profile;
+        profile.ordered = request.manifest.ordered;
+        for (const auto& capability : request.manifest.capabilities) {
+          for (const auto payload :
+               {EventPayloadKind::MessageReceived, EventPayloadKind::MessageSent,
+                EventPayloadKind::GroupMemberChanged, EventPayloadKind::FriendRequest,
+                EventPayloadKind::AdapterStatusChanged}) {
+            if (capability == event_subscription(payload)) {
+              profile.subscriptions.insert(std::string{event_subscription(payload)});
+            }
+          }
+        }
+        plugin_profiles_[instance.value] = std::move(profile);
+      }
       return bridge;
     } catch (const std::bad_alloc&) {
       return unavailable();
@@ -489,7 +508,373 @@ public:
     return true;
   }
 
+  Outcome<BridgeEventAck> ingest_event(const InstanceId& adapter_instance,
+                                       const BridgeEventIngress& ingress) override {
+    auto fingerprint = secrets_.sha256(ingress.serialized_envelope);
+    if (const auto* failure = std::get_if<Failure>(&fingerprint)) {
+      return *failure;
+    }
+    EventRecord event;
+    event.key = EventKey{ResourceId{ingress.adapter_id}, ingress.event_id};
+    event.fingerprint = std::get<Sha256Digest>(fingerprint);
+    event.conversation =
+        ConversationKey{ResourceId{ingress.adapter_id}, ResourceId{ingress.account_id},
+                        ingress.conversation_id, ingress.conversation_type};
+    event.payload = ingress.payload;
+    event.has_conversation = ingress.has_conversation;
+    event.has_sequence = ingress.sequence.has_value() && *ingress.sequence != 0;
+    if (event.has_sequence) {
+      event.sequence = ingress.sequence;
+    }
+    event.serialized_envelope = ingress.serialized_envelope;
+    event.occurred_at = ingress.occurred_at;
+    event.retain_until = ingress.occurred_at + std::chrono::hours{24 * 7};
+    const auto subscription = event_subscription(ingress.payload);
+    std::vector<DeliveryRecord> targets;
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      for (const auto& [instance_value, profile] : plugin_profiles_) {
+        if (subscription.empty() || profile.subscriptions.count(std::string{subscription}) == 0) {
+          continue;
+        }
+        targets.push_back(DeliveryRecord{
+            DeliveryKey{event.key, InstanceId{instance_value}}, profile.ordered,
+            ingress.trace_id.empty() ? ingress.event_id : ingress.trace_id, 0, std::nullopt});
+      }
+    }
+    try {
+      auto begun = transactions_.begin();
+      if (const auto* failure = std::get_if<Failure>(&begun)) {
+        return *failure;
+      }
+      auto work = std::move(std::get<std::unique_ptr<RuntimeUnitOfWork>>(begun));
+      if (!work) {
+        return internal_failure();
+      }
+      auto accepted = work->events().accept(event, targets, EventCapacityLimits{});
+      if (const auto* rejected = std::get_if<Failure>(&accepted)) {
+        work->rollback();
+        BridgeEventAck ack;
+        ack.status = BridgeAckStatus::Rejected;
+        ack.failure = *rejected;
+        if (rejected->code == ErrorCode::RateLimited) {
+          ack.retry_after_ms = 1000;
+        }
+        return ack;
+      }
+      if (work->commit() != CommitResult::Committed) {
+        return runtime_conflict_failure();
+      }
+      const auto& result = std::get<EventAcceptanceResult>(accepted);
+      BridgeEventAck ack;
+      if (result.duplicate) {
+        ack.status = BridgeAckStatus::Duplicate;
+      } else if (result.sequence.verdict == SequenceVerdict::OutOfOrder) {
+        ack.status = BridgeAckStatus::Rejected;
+        ack.failure = bridge_failure(ErrorCode::Conflict, Recovery::ReadCurrent);
+      } else {
+        ack.status = BridgeAckStatus::Persisted;
+      }
+      (void)adapter_instance;
+      return ack;
+    } catch (const std::bad_alloc&) {
+      return unavailable();
+    } catch (...) {
+      return internal_failure();
+    }
+  }
+
+  Status attach_plugin_delivery(const InstanceId& instance, const DeliverySink& sink) override {
+    if (!sink) {
+      return invalid_runtime_input();
+    }
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto entry = sinks_.find(instance.value);
+    if (entry == sinks_.end()) {
+      sinks_.emplace(instance.value, SinkEntry{sink, {}, std::nullopt});
+    } else {
+      entry->second.sink = sink;
+    }
+    return std::monostate{};
+  }
+
+  void detach_plugin_delivery(const InstanceId& instance,
+                              ConnectionGeneration connection_generation) override {
+    std::lock_guard<std::mutex> lock(mutex_);
+    const auto entry = sinks_.find(instance.value);
+    if (entry != sinks_.end() &&
+        (!entry->second.connection_generation ||
+         entry->second.connection_generation->value == connection_generation.value)) {
+      sinks_.erase(entry);
+    }
+    const auto refreshed = current_.find(bridge_key(BridgePeerKind::Plugin, instance));
+    if (refreshed != current_.end() &&
+        refreshed->second.fence.connection_generation == connection_generation) {
+      current_.erase(refreshed);
+      plugin_profiles_.erase(instance.value);
+    }
+  }
+
+  Status maintenance() override {
+    struct Pending {
+      InstanceId instance;
+      std::vector<DeliveryClaim> claims;
+    };
+    try {
+      std::vector<Pending> pending;
+      auto begun = transactions_.begin();
+      if (const auto* failure = std::get_if<Failure>(&begun)) {
+        return transient(*failure);
+      }
+      auto work = std::move(std::get<std::unique_ptr<RuntimeUnitOfWork>>(begun));
+      if (!work) {
+        return internal_failure();
+      }
+      auto sampled = work->current_time();
+      if (const auto* failure = std::get_if<Failure>(&sampled)) {
+        work->rollback();
+        return transient(*failure);
+      }
+      const auto now = std::get<TimePoint>(sampled);
+      auto entropy = secrets_.opaque_secret();
+      if (const auto* failure = std::get_if<Failure>(&entropy)) {
+        work->rollback();
+        return transient(*failure);
+      }
+      const auto& bytes = std::get<std::array<std::byte, 32>>(entropy);
+      const auto jitter = static_cast<double>(static_cast<unsigned char>(bytes[0])) / 255.0;
+      auto swept = work->events().sweep(now, RetryPolicy{}, jitter);
+      if (const auto* failure = std::get_if<Failure>(&swept)) {
+        work->rollback();
+        return transient(*failure);
+      }
+      std::vector<InstanceId> connected;
+      {
+        std::lock_guard<std::mutex> lock(mutex_);
+        for (const auto& [instance_value, entry] : sinks_) {
+          (void)entry;
+          connected.push_back(InstanceId{instance_value});
+        }
+      }
+      for (const auto& instance : connected) {
+        auto found = work->instances().find(instance);
+        if (const auto* failure = std::get_if<Failure>(&found)) {
+          work->rollback();
+          return transient(*failure);
+        }
+        const auto record = std::get<std::optional<PluginInstance>>(found);
+        if (!record || !record->current || record->state != LifecycleState::Active) {
+          continue;
+        }
+        DeliveryClaimRequest request;
+        request.instance = instance;
+        request.fence = *record->current;
+        request.limit = 4;
+        request.lease = kDeliveryLease;
+        request.now = now;
+        for (std::size_t index = 0; index < request.limit; ++index) {
+          auto id = ids_.snapshot_id();
+          if (const auto* failure = std::get_if<Failure>(&id)) {
+            work->rollback();
+            return transient(*failure);
+          }
+          request.attempt_ids.push_back(AttemptId{std::get<std::string>(id)});
+        }
+        auto claimed = work->events().claim(request);
+        if (const auto* failure = std::get_if<Failure>(&claimed)) {
+          work->rollback();
+          return transient(*failure);
+        }
+        auto claims = std::move(std::get<std::vector<DeliveryClaim>>(claimed));
+        if (!claims.empty()) {
+          pending.push_back(Pending{instance, std::move(claims)});
+        }
+      }
+      if (work->commit() != CommitResult::Committed) {
+        return transient(runtime_conflict_failure());
+      }
+      for (auto& group : pending) {
+        DeliverySink sink;
+        {
+          std::lock_guard<std::mutex> lock(mutex_);
+          const auto entry = sinks_.find(group.instance.value);
+          if (entry == sinks_.end()) {
+            continue;
+          }
+          sinks_[group.instance.value].connection_generation =
+              ConnectionGeneration{group.claims.front().attempt.fence.connection_generation};
+          for (const auto& claim : group.claims) {
+            sinks_[group.instance.value].attempts[claim.attempt.attempt.value] =
+                claim.attempt.delivery;
+          }
+          sink = entry->second.sink;
+        }
+        for (const auto& claim : group.claims) {
+          (void)sink(claim.event, claim.attempt, claim.trace_id);
+        }
+      }
+      return std::monostate{};
+    } catch (const std::bad_alloc&) {
+      return transient(unavailable());
+    } catch (...) {
+      return internal_failure();
+    }
+  }
+
+  Status attach_shutdown_sink(BridgePeerKind kind, const InstanceId& instance,
+                              const ShutdownSink& sink) override {
+    if (!sink) {
+      return invalid_runtime_input();
+    }
+    std::lock_guard<std::mutex> lock(mutex_);
+    shutdown_sinks_[bridge_key(kind, instance)] = sink;
+    return std::monostate{};
+  }
+
+  void detach_shutdown_sink(BridgePeerKind kind, const InstanceId& instance) override {
+    std::lock_guard<std::mutex> lock(mutex_);
+    shutdown_sinks_.erase(bridge_key(kind, instance));
+  }
+
+  Status shutdown_notice() override {
+    std::vector<ShutdownSink> sinks;
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      sinks.reserve(shutdown_sinks_.size());
+      for (const auto& [key, sink] : shutdown_sinks_) {
+        (void)key;
+        sinks.push_back(sink);
+      }
+    }
+    Status result = std::monostate{};
+    for (const auto& sink : sinks) {
+      const auto sent = sink();
+      if (const auto* failure = std::get_if<Failure>(&sent)) {
+        result = *failure;
+      }
+    }
+    return result;
+  }
+
+  Outcome<DeliveryReceipt> acknowledge_delivery(const InstanceId& instance,
+                                                const BridgeAttemptRef& supplied, bool accepted,
+                                                std::optional<Failure> failure,
+                                                bool retryable) override {
+    DeliveryAcknowledgement acknowledgement;
+    acknowledgement.accepted = accepted;
+    acknowledgement.failure = std::move(failure);
+    acknowledgement.retryable = retryable;
+    return settle_delivery(instance, supplied, acknowledgement);
+  }
+
+  Outcome<DeliveryReceipt> renew_delivery(const InstanceId& instance,
+                                          const BridgeAttemptRef& supplied) override {
+    return settle_delivery(instance, supplied, std::nullopt);
+  }
+
 private:
+  static Status transient(const Failure& failure) {
+    if (failure.code == ErrorCode::Conflict || failure.code == ErrorCode::UpstreamUnavailable ||
+        failure.code == ErrorCode::Timeout) {
+      return std::monostate{};
+    }
+    return failure;
+  }
+
+  DeliveryReceipt stale_receipt(const BridgeAttemptRef& supplied) {
+    DeliveryReceipt receipt;
+    receipt.attempt.attempt = supplied.attempt;
+    receipt.attempt.fence.instance = supplied.fence.instance;
+    receipt.attempt.fence.runtime_epoch = supplied.fence.runtime_epoch;
+    receipt.attempt.fence.execution_generation = supplied.fence.execution_generation;
+    receipt.attempt.fence.connection_generation = supplied.fence.connection_generation;
+    receipt.attempt.started_at = TimePoint{};
+    receipt.attempt.lease_until = TimePoint{};
+    receipt.disposition = DeliveryDisposition::Stale;
+    receipt.failure = bridge_failure(ErrorCode::Conflict, Recovery::ReadCurrent);
+    receipt.observed_at = TimePoint{std::chrono::duration_cast<std::chrono::nanoseconds>(
+        std::chrono::system_clock::now().time_since_epoch())};
+    return receipt;
+  }
+
+  Outcome<DeliveryReceipt> settle_delivery(const InstanceId& instance,
+                                           const BridgeAttemptRef& supplied,
+                                           std::optional<DeliveryAcknowledgement> acknowledgement) {
+    DeliveryKey delivery;
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      const auto entry = sinks_.find(instance.value);
+      if (entry == sinks_.end()) {
+        return stale_receipt(supplied);
+      }
+      const auto attempt = entry->second.attempts.find(supplied.attempt.value);
+      if (attempt == entry->second.attempts.end()) {
+        return stale_receipt(supplied);
+      }
+      delivery = attempt->second;
+    }
+    try {
+      auto begun = transactions_.begin();
+      if (const auto* failure = std::get_if<Failure>(&begun)) {
+        return *failure;
+      }
+      auto work = std::move(std::get<std::unique_ptr<RuntimeUnitOfWork>>(begun));
+      if (!work) {
+        return internal_failure();
+      }
+      auto sampled = work->current_time();
+      if (const auto* failure = std::get_if<Failure>(&sampled)) {
+        return *failure;
+      }
+      const auto now = std::get<TimePoint>(sampled);
+      auto found = work->instances().find(instance);
+      if (const auto* failure = std::get_if<Failure>(&found)) {
+        return *failure;
+      }
+      const auto record = std::get<std::optional<PluginInstance>>(found);
+      if (!record || !record->current || record->state != LifecycleState::Active ||
+          record->current->runtime_epoch.value != supplied.fence.runtime_epoch.value ||
+          record->current->execution_generation.value !=
+              supplied.fence.execution_generation.value ||
+          record->current->connection_generation.value !=
+              supplied.fence.connection_generation.value) {
+        return stale_receipt(supplied);
+      }
+      DeliveryAttempt attempt;
+      attempt.delivery = delivery;
+      attempt.attempt = supplied.attempt;
+      attempt.fence = *record->current;
+      attempt.started_at = now;
+      attempt.lease_until = now;
+      Outcome<DeliveryReceipt> receipt = stale_receipt(supplied);
+      if (acknowledgement) {
+        acknowledgement->attempt = attempt;
+        receipt = work->events().acknowledge(*acknowledgement, now);
+      } else {
+        receipt = work->events().renew(attempt, now);
+      }
+      if (const auto* failure = std::get_if<Failure>(&receipt)) {
+        work->rollback();
+        return *failure;
+      }
+      if (work->commit() != CommitResult::Committed) {
+        return runtime_conflict_failure();
+      }
+      if (acknowledgement) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        const auto entry = sinks_.find(instance.value);
+        if (entry != sinks_.end()) {
+          entry->second.attempts.erase(supplied.attempt.value);
+        }
+      }
+      return receipt;
+    } catch (const std::bad_alloc&) {
+      return unavailable();
+    } catch (...) {
+      return internal_failure();
+    }
+  }
+
   Outcome<ResolvedBootstrap> resolve_bootstrap(BridgePeerKind kind, std::string_view bearer) {
     if (bearer.size() < 32 || bearer.size() > 4096 ||
         !std::all_of(bearer.begin(), bearer.end(),
@@ -592,6 +977,16 @@ private:
     return *epoch_;
   }
 
+  struct PluginProfile {
+    bool ordered = false;
+    std::set<std::string> subscriptions;
+  };
+  struct SinkEntry {
+    DeliverySink sink;
+    std::map<std::string, DeliveryKey> attempts;
+    std::optional<ConnectionGeneration> connection_generation;
+  };
+
   RuntimeUnitOfWorkFactory& transactions_;
   RuntimeIdPort& ids_;
   RuntimeSecretPort& secrets_;
@@ -599,6 +994,9 @@ private:
   std::vector<std::string> supported_features_;
   mutable std::mutex mutex_;
   std::map<std::string, BridgeAuthorization> current_;
+  std::map<std::string, PluginProfile> plugin_profiles_;
+  std::map<std::string, ShutdownSink> shutdown_sinks_;
+  std::map<std::string, SinkEntry> sinks_;
   std::optional<RuntimeEpoch> epoch_;
 };
 

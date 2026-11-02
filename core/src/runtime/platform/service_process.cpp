@@ -290,6 +290,11 @@ int run_service(target::Service service, const ServiceComposer& compose, int arg
         serve_probe(listener.get(), application);
       }
     }
+    if (composition.before_stop &&
+        std::holds_alternative<target::Failure>(composition.before_stop())) {
+      std::cerr << "operation=stop outcome=failed reason=graceful_stop_failed\n";
+      return 1;
+    }
     return 0;
   } catch (...) {
     std::cerr << "operation=start outcome=failed reason=process_failure\n";

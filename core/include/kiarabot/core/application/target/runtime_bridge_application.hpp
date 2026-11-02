@@ -2,6 +2,7 @@
 
 #include <array>
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
@@ -9,6 +10,7 @@
 
 #include "kiarabot/core/application/target/runtime_resource_application.hpp"
 #include "kiarabot/core/domain/target/bridge_rules.hpp"
+#include "kiarabot/core/domain/target/event_delivery.hpp"
 #include "kiarabot/core/ports/target/runtime_ids.hpp"
 #include "kiarabot/core/ports/target/runtime_secrets.hpp"
 #include "kiarabot/core/ports/target/unit_of_work.hpp"
@@ -57,6 +59,47 @@ struct BridgePluginRegistration {
   std::optional<std::uint64_t> execution_generation;
   std::string bearer_credential;
 };
+
+// Decoded inbound adapter event frame. The transport converts the wire envelope once and keeps
+// `serialized_envelope` byte-exact for durable storage; the application only derives the four-tuple
+// conversation key, payload kind, sequence and trace correlation.
+struct BridgeEventIngress {
+  std::string adapter_id;
+  std::string account_id;
+  std::string event_id;
+  std::string trace_id;
+  EventPayloadKind payload = EventPayloadKind::MessageReceived;
+  bool has_conversation = false;
+  std::string conversation_id;
+  ConversationKey::Kind conversation_type = ConversationKey::Kind::Unspecified;
+  std::optional<std::uint64_t> sequence;
+  TimePoint occurred_at;
+  std::string serialized_envelope;
+};
+
+enum class BridgeAckStatus { Persisted, Duplicate, Rejected };
+struct BridgeEventAck {
+  BridgeAckStatus status = BridgeAckStatus::Rejected;
+  std::optional<Failure> failure;
+  std::uint32_t retry_after_ms = 0;
+};
+
+// Wire-supplied attempt identity for ACK/Renew. The transport never supplies internal execution or
+// connection ids; the application resolves them from the persisted current instance fence.
+struct BridgeAttemptRef {
+  std::string event_id;
+  AttemptId attempt;
+  BridgeFence fence;
+};
+
+// Push callback used by the central dispatcher to hand one claimed delivery to its plugin stream.
+// Returns a Failure when the stream could not accept the frame; the lease then expires and the
+// normal sweep/retry path redelivers it.
+using DeliverySink = std::function<Status(const EventRecord& event, const DeliveryAttempt& attempt,
+                                          std::string_view trace_id)>;
+// Bounded graceful-shutdown notice callback. Writes exactly one ShutdownNotice frame on the
+// current stream; the transport remains responsible for closing the stream.
+using ShutdownSink = std::function<Status()>;
 
 struct BridgeRegistrationResult {
   InstanceId assigned_instance_id;
@@ -109,6 +152,32 @@ public:
   // Idempotent cleanup after the stream ends; only removes the still-current connection.
   virtual Status disconnect(BridgePeerKind kind, const InstanceId& instance,
                             ConnectionGeneration connection_generation) = 0;
+  // Adapter event frame -> durable inbox acceptance. Fan-out targets are the currently connected
+  // plugin sessions whose manifest declares the matching event capability; the ordered flag is the
+  // subscription snapshot at acceptance time.
+  virtual Outcome<BridgeEventAck> ingest_event(const InstanceId& adapter_instance,
+                                               const BridgeEventIngress& ingress) = 0;
+  // Register/remove the push sink of one accepted plugin connection. The central dispatcher
+  // claims due deliveries for the persisted instance fence and pushes them through this sink.
+  virtual Status attach_plugin_delivery(const InstanceId& instance, const DeliverySink& sink) = 0;
+  virtual void detach_plugin_delivery(const InstanceId& instance,
+                                      ConnectionGeneration connection_generation) = 0;
+  // Bounded periodic work run by the composition maintenance hook: expiry sweep plus one claim
+  // round for every connected plugin sink, then push outside the transaction.
+  virtual Status maintenance() = 0;
+  // Graceful shutdown: send one bounded ShutdownNotice to every accepted peer. Returns after the
+  // notices were attempted; in-flight work is bounded by the transport drain budget.
+  virtual Status attach_shutdown_sink(BridgePeerKind kind, const InstanceId& instance,
+                                      const ShutdownSink& sink) = 0;
+  virtual void detach_shutdown_sink(BridgePeerKind kind, const InstanceId& instance) = 0;
+  virtual Status shutdown_notice() = 0;
+  // Plugin ACK/Renew for one claimed attempt. Unknown/stale attempt ids map to DELIVERY_STALE and
+  // never confirm another attempt.
+  virtual Outcome<DeliveryReceipt>
+  acknowledge_delivery(const InstanceId& instance, const BridgeAttemptRef& supplied, bool accepted,
+                       std::optional<Failure> failure, bool retryable) = 0;
+  virtual Outcome<DeliveryReceipt> renew_delivery(const InstanceId& instance,
+                                                  const BridgeAttemptRef& supplied) = 0;
   // Authoritative database UTC sample used by the transport for frame/refresh expiry checks.
   virtual Outcome<TimePoint> current_time() = 0;
   virtual bool available() const = 0;

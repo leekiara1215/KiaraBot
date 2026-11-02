@@ -3,6 +3,8 @@
 #include <array>
 #include <chrono>
 #include <cstddef>
+#include <iostream>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -11,6 +13,7 @@
 
 #include "kiarabot/core/runtime/platform/target_codec.hpp"
 #include "kiarabot/v1/adapters.pb.h"
+#include "kiarabot/v1/events.pb.h"
 #include "kiarabot/v1/plugins.pb.h"
 #include "kiarabot/v1/services.pb.h"
 
@@ -34,9 +37,9 @@ grpc::StatusCode status_of(target::ErrorCode code) {
   }
   return grpc::StatusCode::UNKNOWN;
 }
-v1::Error wire_error(target::ErrorCode code, std::string_view request_id,
-                     std::string_view trace_id) {
-  auto made = codec::make_error(code, request_id, trace_id, false);
+v1::Error wire_error(target::ErrorCode code, std::string_view request_id, std::string_view trace_id,
+                     bool retryable = false) {
+  auto made = codec::make_error(code, request_id, trace_id, retryable);
   if (const auto* value = std::get_if<v1::Error>(&made)) {
     return *value;
   }
@@ -128,6 +131,7 @@ template <typename Ack> void fill_heartbeat_ack(Ack* ack) {
 struct StreamState {
   target::BridgePeerKind kind = target::BridgePeerKind::Adapter;
   target::BridgeAuthorization authorization;
+  std::string adapter_id;
   target::TimePoint sampled_at;
   bool sampled = false;
 };
@@ -197,6 +201,146 @@ target::Outcome<target::BridgeAuthorization>
 refresh(target::RuntimeBridgeApplication& application, StreamState& state,
         const v1::RefreshConnectionAuthorization& wire);
 
+target::Outcome<target::BridgeEventIngress>
+event_ingress(const v1::EventEnvelope& envelope, const target::InstanceId& adapter_instance,
+              std::string_view adapter_id) {
+  if (envelope.event_id().empty() || envelope.event_id().size() > 256 ||
+      envelope.schema_version() != "kiarabot.v1" || !envelope.has_occurred_at() ||
+      envelope.source().adapter_id().empty() || envelope.source().account_id().empty() ||
+      envelope.source().adapter_id() != adapter_id) {
+    return failure(target::ErrorCode::InvalidArgument);
+  }
+  auto occurred = codec::from_wire(envelope.occurred_at());
+  if (const auto* rejected = std::get_if<target::Failure>(&occurred)) {
+    return *rejected;
+  }
+  if (!envelope.source().adapter_instance_id().empty() &&
+      envelope.source().adapter_instance_id() != adapter_instance.value) {
+    return failure(target::ErrorCode::PermissionDenied);
+  }
+  target::BridgeEventIngress ingress;
+  ingress.adapter_id = envelope.source().adapter_id();
+  ingress.account_id = envelope.source().account_id();
+  ingress.event_id = envelope.event_id();
+  ingress.trace_id = envelope.trace_id();
+  ingress.occurred_at = std::get<target::TimePoint>(occurred);
+  if (envelope.sequence() != 0) {
+    ingress.sequence = envelope.sequence();
+  }
+  switch (envelope.payload_case()) {
+  case v1::EventEnvelope::kMessageReceived: {
+    ingress.payload = target::EventPayloadKind::MessageReceived;
+    const auto& conversation = envelope.message_received().conversation();
+    ingress.has_conversation = !conversation.id().empty();
+    ingress.conversation_id = conversation.id();
+    ingress.conversation_type = conversation.type() == v1::ConversationRef::GROUP
+                                    ? target::ConversationKey::Kind::Group
+                                : conversation.type() == v1::ConversationRef::PRIVATE
+                                    ? target::ConversationKey::Kind::Private
+                                    : target::ConversationKey::Kind::Unspecified;
+    break;
+  }
+  case v1::EventEnvelope::kMessageSent: {
+    ingress.payload = target::EventPayloadKind::MessageSent;
+    const auto& conversation = envelope.message_sent().conversation();
+    ingress.has_conversation = !conversation.id().empty();
+    ingress.conversation_id = conversation.id();
+    ingress.conversation_type = conversation.type() == v1::ConversationRef::GROUP
+                                    ? target::ConversationKey::Kind::Group
+                                : conversation.type() == v1::ConversationRef::PRIVATE
+                                    ? target::ConversationKey::Kind::Private
+                                    : target::ConversationKey::Kind::Unspecified;
+    break;
+  }
+  case v1::EventEnvelope::kGroupMemberChanged:
+    ingress.payload = target::EventPayloadKind::GroupMemberChanged;
+    break;
+  case v1::EventEnvelope::kFriendRequest:
+    ingress.payload = target::EventPayloadKind::FriendRequest;
+    break;
+  case v1::EventEnvelope::kAdapterStatusChanged:
+    ingress.payload = target::EventPayloadKind::AdapterStatusChanged;
+    break;
+  default:
+    return failure(target::ErrorCode::CapabilityNotSupported);
+  }
+  if (ingress.trace_id.empty()) {
+    ingress.trace_id = ingress.event_id;
+  }
+  if (!envelope.SerializeToString(&ingress.serialized_envelope)) {
+    return failure(target::ErrorCode::Internal);
+  }
+  return ingress;
+}
+std::optional<target::Failure> failure_from_wire(const v1::Error& error) {
+  auto code = codec::from_wire(error.code());
+  if (const auto* mapped = std::get_if<target::ErrorCode>(&code)) {
+    return target::Failure{*mapped,
+                           target::Acceptance::NotAccepted,
+                           error.retryable() ? target::Recovery::Backoff
+                                             : target::Recovery::Diagnose,
+                           {},
+                           {}};
+  }
+  return std::nullopt;
+}
+v1::DeliveryAttempt attempt_to_wire(const target::DeliveryAttempt& attempt) {
+  v1::DeliveryAttempt wire;
+  wire.set_event_id(attempt.delivery.event.event_id);
+  wire.set_attempt_id(attempt.attempt.value);
+  fence_to_wire(target::BridgeFence{attempt.fence.instance, attempt.fence.runtime_epoch,
+                                    attempt.fence.execution_generation,
+                                    attempt.fence.connection_generation},
+                wire.mutable_fence());
+  if (auto started = codec::to_wire(attempt.started_at);
+      std::holds_alternative<google::protobuf::Timestamp>(started)) {
+    *wire.mutable_started_at() = std::get<google::protobuf::Timestamp>(started);
+  }
+  if (auto lease = codec::to_wire(attempt.lease_until);
+      std::holds_alternative<google::protobuf::Timestamp>(lease)) {
+    *wire.mutable_lease_until() = std::get<google::protobuf::Timestamp>(lease);
+  }
+  wire.set_attempt_number(attempt.attempt_number);
+  return wire;
+}
+target::Outcome<target::BridgeAttemptRef> attempt_from_wire(const v1::DeliveryAttempt& wire) {
+  if (wire.event_id().empty() || wire.attempt_id().empty() || !wire.has_fence()) {
+    return failure(target::ErrorCode::InvalidArgument);
+  }
+  auto fence = fence_from_wire(wire.fence());
+  if (const auto* rejected = std::get_if<target::Failure>(&fence)) {
+    return *rejected;
+  }
+  return target::BridgeAttemptRef{wire.event_id(), target::AttemptId{wire.attempt_id()},
+                                  std::get<target::BridgeFence>(fence)};
+}
+void receipt_to_wire(const target::DeliveryReceipt& receipt, v1::DeliveryReceipt* wire) {
+  *wire->mutable_attempt() = attempt_to_wire(receipt.attempt);
+  switch (receipt.disposition) {
+  case target::DeliveryDisposition::Acknowledged:
+    wire->set_disposition(v1::DELIVERY_ACKNOWLEDGED);
+    break;
+  case target::DeliveryDisposition::Duplicate:
+    wire->set_disposition(v1::DELIVERY_DUPLICATE);
+    break;
+  case target::DeliveryDisposition::Renewed:
+    wire->set_disposition(v1::DELIVERY_RENEWED);
+    break;
+  case target::DeliveryDisposition::Rejected:
+    wire->set_disposition(v1::DELIVERY_REJECTED);
+    break;
+  case target::DeliveryDisposition::Stale:
+  default:
+    wire->set_disposition(v1::DELIVERY_STALE);
+    break;
+  }
+  if (receipt.failure) {
+    auto* failure_wire = wire->mutable_failure();
+    *failure_wire->mutable_error() =
+        wire_error(receipt.failure->code, receipt.attempt.delivery.event.event_id, {});
+  }
+}
+
 class AdapterBridgeImpl final : public v1::AdapterBridge::Service {
 public:
   explicit AdapterBridgeImpl(target::RuntimeBridgeApplication& application)
@@ -239,7 +383,8 @@ public:
       return rejected_status(*rejected);
     }
     const auto& result = std::get<target::BridgeRegistrationResult>(outcome);
-    StreamState state{target::BridgePeerKind::Adapter, result.authorization, {}, false};
+    StreamState state{
+        target::BridgePeerKind::Adapter, result.authorization, command.adapter.value, {}, false};
     {
       v1::CoreToAdapter response;
       auto* registered_response = response.mutable_register_result();
@@ -252,10 +397,27 @@ public:
                            registered_response->mutable_effective_capabilities());
       authorization_to_wire(result.authorization, registered_response->mutable_authorization());
       fence_to_wire(result.authorization.fence, response.mutable_fence());
-      if (!stream->Write(response)) {
+      if (!write(*stream, response)) {
         return grpc::Status::OK;
       }
     }
+    const auto shutdown_fence = state.authorization.fence;
+    application_.attach_shutdown_sink(target::BridgePeerKind::Adapter, shutdown_fence.instance,
+                                      [this, stream, shutdown_fence]() -> target::Status {
+                                        v1::CoreToAdapter notice;
+                                        fence_to_wire(shutdown_fence, notice.mutable_fence());
+                                        notice.mutable_shutdown()->set_reason("shutdown");
+                                        notice.mutable_shutdown()->set_drain_timeout_ms(1000);
+                                        if (!write(*stream, notice)) {
+                                          return target::Failure{
+                                              target::ErrorCode::UpstreamUnavailable,
+                                              target::Acceptance::NotAccepted,
+                                              target::Recovery::Backoff,
+                                              {},
+                                              {}};
+                                        }
+                                        return target::Status{std::monostate{}};
+                                      });
     grpc::Status status = grpc::Status::OK;
     while (!context->IsCancelled()) {
       v1::AdapterToCore frame;
@@ -274,7 +436,7 @@ public:
         fence_to_wire(state.authorization.fence, response.mutable_fence());
         fill_heartbeat_ack(response.mutable_heartbeat_ack());
         state.sampled = false;
-        if (!stream->Write(response)) {
+        if (!write(*stream, response)) {
           break;
         }
       } else if (body == v1::AdapterToCore::kRefreshAuthorization) {
@@ -292,7 +454,7 @@ public:
           *result->mutable_error() =
               wire_error(rejected->code, frame.refresh_authorization().request_id(), {});
           state.sampled = false;
-          if (!stream->Write(response)) {
+          if (!write(*stream, response)) {
             break;
           }
           status = rejected_status(*rejected);
@@ -305,25 +467,82 @@ public:
         auto* result = response.mutable_authorization_result();
         result->set_request_id(frame.refresh_authorization().request_id());
         authorization_to_wire(state.authorization, result->mutable_authorization());
-        if (!stream->Write(response)) {
+        if (!write(*stream, response)) {
           break;
         }
       } else if (body == v1::AdapterToCore::kRegister) {
         status = {grpc::StatusCode::INVALID_ARGUMENT, "duplicate registration frame"};
         break;
+      } else if (body == v1::AdapterToCore::kEvent) {
+        auto ingress =
+            event_ingress(frame.event(), state.authorization.fence.instance, state.adapter_id);
+        if (const auto* rejected = std::get_if<target::Failure>(&ingress)) {
+          v1::CoreToAdapter response;
+          fence_to_wire(state.authorization.fence, response.mutable_fence());
+          auto* ack = response.mutable_event_ack();
+          ack->set_event_id(frame.event().event_id());
+          ack->set_trace_id(frame.event().trace_id());
+          ack->set_status(v1::AdapterEventAck::REJECTED);
+          *ack->mutable_error() =
+              wire_error(rejected->code, frame.event().event_id(), frame.event().trace_id());
+          if (!write(*stream, response)) {
+            break;
+          }
+          continue;
+        }
+        auto acknowledged = application_.ingest_event(
+            state.authorization.fence.instance, std::get<target::BridgeEventIngress>(ingress));
+        if (const auto* rejected = std::get_if<target::Failure>(&acknowledged)) {
+          status = rejected_status(*rejected);
+          break;
+        }
+        const auto& ack_result = std::get<target::BridgeEventAck>(acknowledged);
+        v1::CoreToAdapter response;
+        fence_to_wire(state.authorization.fence, response.mutable_fence());
+        auto* ack = response.mutable_event_ack();
+        ack->set_event_id(frame.event().event_id());
+        ack->set_trace_id(frame.event().trace_id());
+        switch (ack_result.status) {
+        case target::BridgeAckStatus::Persisted:
+          ack->set_status(v1::AdapterEventAck::PERSISTED);
+          break;
+        case target::BridgeAckStatus::Duplicate:
+          ack->set_status(v1::AdapterEventAck::DUPLICATE);
+          break;
+        case target::BridgeAckStatus::Rejected:
+          ack->set_status(v1::AdapterEventAck::REJECTED);
+          break;
+        }
+        if (ack_result.failure) {
+          *ack->mutable_error() = wire_error(ack_result.failure->code, frame.event().event_id(),
+                                             frame.event().trace_id());
+          if (ack_result.retry_after_ms) {
+            ack->set_retry_after_ms(ack_result.retry_after_ms);
+          }
+        }
+        if (!write(*stream, response)) {
+          break;
+        }
       } else {
-        // Adapter event/action_result frames are wired in the event-delivery increment.
         status = {grpc::StatusCode::INVALID_ARGUMENT, "unsupported bridge frame"};
         break;
       }
     }
+    application_.detach_shutdown_sink(target::BridgePeerKind::Adapter,
+                                      state.authorization.fence.instance);
     application_.disconnect(target::BridgePeerKind::Adapter, state.authorization.fence.instance,
                             state.authorization.fence.connection_generation);
     return status;
   }
 
 private:
+  bool write(grpc::ServerReaderWriter<v1::CoreToAdapter, v1::AdapterToCore>& stream,
+             const v1::CoreToAdapter& frame) {
+    std::lock_guard<std::mutex> lock(write_mutex_);
+    return stream.Write(frame);
+  }
   target::RuntimeBridgeApplication& application_;
+  std::mutex write_mutex_;
 };
 
 class PluginBridgeImpl final : public v1::PluginBridge::Service {
@@ -375,7 +594,7 @@ public:
       return rejected_status(*rejected);
     }
     const auto& result = std::get<target::BridgeRegistrationResult>(outcome);
-    StreamState state{target::BridgePeerKind::Plugin, result.authorization, {}, false};
+    StreamState state{target::BridgePeerKind::Plugin, result.authorization, {}, {}, false};
     {
       v1::CoreToPlugin response;
       auto* registered_response = response.mutable_register_result();
@@ -390,10 +609,56 @@ public:
       fence_to_wire(result.authorization.fence, registered_response->mutable_fence());
       authorization_to_wire(result.authorization, registered_response->mutable_authorization());
       fence_to_wire(result.authorization.fence, response.mutable_fence());
-      if (!stream->Write(response)) {
+      if (!write(*stream, response)) {
         return grpc::Status::OK;
       }
     }
+    const auto delivered_instance = result.authorization.fence.instance;
+    target::DeliverySink delivery_sink = [this, stream](const target::EventRecord& event,
+                                                        const target::DeliveryAttempt& attempt,
+                                                        std::string_view) -> target::Status {
+      v1::EventEnvelope envelope;
+      if (!envelope.ParseFromString(event.serialized_envelope)) {
+        return target::Failure{target::ErrorCode::Internal,
+                               target::Acceptance::NotAccepted,
+                               target::Recovery::Diagnose,
+                               {},
+                               {}};
+      }
+      v1::CoreToPlugin frame;
+      fence_to_wire(target::BridgeFence{attempt.fence.instance, attempt.fence.runtime_epoch,
+                                        attempt.fence.execution_generation,
+                                        attempt.fence.connection_generation},
+                    frame.mutable_fence());
+      frame.mutable_delivery_attempt()->CopyFrom(attempt_to_wire(attempt));
+      *frame.mutable_event() = std::move(envelope);
+      if (!write(*stream, frame)) {
+        return target::Failure{target::ErrorCode::UpstreamUnavailable,
+                               target::Acceptance::NotAccepted,
+                               target::Recovery::Backoff,
+                               {},
+                               {}};
+      }
+      return std::monostate{};
+    };
+    application_.attach_plugin_delivery(delivered_instance, delivery_sink);
+    const auto shutdown_fence = state.authorization.fence;
+    application_.attach_shutdown_sink(target::BridgePeerKind::Plugin, delivered_instance,
+                                      [this, stream, shutdown_fence]() -> target::Status {
+                                        v1::CoreToPlugin notice;
+                                        fence_to_wire(shutdown_fence, notice.mutable_fence());
+                                        notice.mutable_shutdown()->set_reason("shutdown");
+                                        notice.mutable_shutdown()->set_drain_timeout_ms(1000);
+                                        if (!write(*stream, notice)) {
+                                          return target::Failure{
+                                              target::ErrorCode::UpstreamUnavailable,
+                                              target::Acceptance::NotAccepted,
+                                              target::Recovery::Backoff,
+                                              {},
+                                              {}};
+                                        }
+                                        return target::Status{std::monostate{}};
+                                      });
     grpc::Status status = grpc::Status::OK;
     while (!context->IsCancelled()) {
       v1::PluginToCore frame;
@@ -412,7 +677,7 @@ public:
         fence_to_wire(state.authorization.fence, response.mutable_fence());
         fill_heartbeat_ack(response.mutable_heartbeat_ack());
         state.sampled = false;
-        if (!stream->Write(response)) {
+        if (!write(*stream, response)) {
           break;
         }
       } else if (body == v1::PluginToCore::kRefreshAuthorization) {
@@ -430,7 +695,7 @@ public:
           *result->mutable_error() =
               wire_error(rejected->code, frame.refresh_authorization().request_id(), {});
           state.sampled = false;
-          if (!stream->Write(response)) {
+          if (!write(*stream, response)) {
             break;
           }
           status = rejected_status(*rejected);
@@ -443,29 +708,89 @@ public:
         auto* result = response.mutable_authorization_result();
         result->set_request_id(frame.refresh_authorization().request_id());
         authorization_to_wire(state.authorization, result->mutable_authorization());
-        if (!stream->Write(response)) {
+        if (!write(*stream, response)) {
+          break;
+        }
+      } else if (body == v1::PluginToCore::kEventAck) {
+        auto reference = attempt_from_wire(frame.event_ack().attempt());
+        if (const auto* rejected = std::get_if<target::Failure>(&reference)) {
+          status = rejected_status(*rejected);
+          break;
+        }
+        const auto& ack_wire = frame.event_ack();
+        std::optional<target::Failure> failure;
+        if (ack_wire.has_error()) {
+          failure = failure_from_wire(ack_wire.error());
+          if (!failure) {
+            status = {grpc::StatusCode::INVALID_ARGUMENT, "invalid error code"};
+            break;
+          }
+        }
+        if (!ack_wire.accepted() && !failure) {
+          status = {grpc::StatusCode::INVALID_ARGUMENT, "rejected ack requires an error"};
+          break;
+        }
+        auto receipt = application_.acknowledge_delivery(
+            state.authorization.fence.instance, std::get<target::BridgeAttemptRef>(reference),
+            ack_wire.accepted(), failure, ack_wire.has_error() && ack_wire.error().retryable());
+        if (const auto* rejected = std::get_if<target::Failure>(&receipt)) {
+          status = rejected_status(*rejected);
+          break;
+        }
+        v1::CoreToPlugin response;
+        fence_to_wire(state.authorization.fence, response.mutable_fence());
+        receipt_to_wire(std::get<target::DeliveryReceipt>(receipt),
+                        response.mutable_delivery_receipt());
+        if (!write(*stream, response)) {
+          break;
+        }
+      } else if (body == v1::PluginToCore::kRenewDelivery) {
+        auto reference = attempt_from_wire(frame.renew_delivery());
+        if (const auto* rejected = std::get_if<target::Failure>(&reference)) {
+          status = rejected_status(*rejected);
+          break;
+        }
+        auto receipt = application_.renew_delivery(state.authorization.fence.instance,
+                                                   std::get<target::BridgeAttemptRef>(reference));
+        if (const auto* rejected = std::get_if<target::Failure>(&receipt)) {
+          status = rejected_status(*rejected);
+          break;
+        }
+        v1::CoreToPlugin response;
+        fence_to_wire(state.authorization.fence, response.mutable_fence());
+        receipt_to_wire(std::get<target::DeliveryReceipt>(receipt),
+                        response.mutable_delivery_receipt());
+        if (!write(*stream, response)) {
           break;
         }
       } else if (body == v1::PluginToCore::kRegister) {
         status = {grpc::StatusCode::INVALID_ARGUMENT, "duplicate registration frame"};
         break;
       } else {
-        // Event ACK / renew / action frames are wired in the event-delivery increment.
         v1::CoreToPlugin response;
         fence_to_wire(state.authorization.fence, response.mutable_fence());
         *response.mutable_error() = wire_error(target::ErrorCode::CapabilityNotSupported, {}, {});
-        if (!stream->Write(response)) {
+        if (!write(*stream, response)) {
           break;
         }
       }
     }
+    application_.detach_plugin_delivery(delivered_instance,
+                                        state.authorization.fence.connection_generation);
+    application_.detach_shutdown_sink(target::BridgePeerKind::Plugin, delivered_instance);
     application_.disconnect(target::BridgePeerKind::Plugin, state.authorization.fence.instance,
                             state.authorization.fence.connection_generation);
     return status;
   }
 
 private:
+  bool write(grpc::ServerReaderWriter<v1::CoreToPlugin, v1::PluginToCore>& stream,
+             const v1::CoreToPlugin& frame) {
+    std::lock_guard<std::mutex> lock(write_mutex_);
+    return stream.Write(frame);
+  }
   target::RuntimeBridgeApplication& application_;
+  std::mutex write_mutex_;
 };
 
 target::Outcome<target::BridgeAuthorization>

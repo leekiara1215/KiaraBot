@@ -21,9 +21,11 @@ struct ServiceComposition {
   ServiceComposition(std::unique_ptr<target::ServiceReadinessPort> application_value,
                      std::function<target::Status()> dependencies = {},
                      std::function<target::Status(ServiceRpc&)> rpc_configuration = {},
-                     std::unique_ptr<ServiceEndpoint> endpoint_value = {})
+                     std::unique_ptr<ServiceEndpoint> endpoint_value = {},
+                     std::function<target::Status()> before_stop_value = {})
       : check_dependencies(std::move(dependencies)), configure_rpc(std::move(rpc_configuration)),
-        application(std::move(application_value)), endpoint(std::move(endpoint_value)) {}
+        application(std::move(application_value)), endpoint(std::move(endpoint_value)),
+        before_stop(std::move(before_stop_value)) {}
   // Outer-only maintenance. Own captured resources until RPC/socket shutdown completes.
   // Called before listening and once per second on the process thread; must be bounded.
   // Failure ends this process (1); handle transient busy separately in the composition root.
@@ -35,6 +37,9 @@ struct ServiceComposition {
   std::unique_ptr<target::ServiceReadinessPort> application;
   // Declared last: endpoint stops before the application and captured dependencies die.
   std::unique_ptr<ServiceEndpoint> endpoint;
+  // Bounded outer-only graceful-stop hook, called after the stop signal and before RPC shutdown.
+  // It must not block indefinitely; the gRPC shutdown deadline remains the hard bound.
+  std::function<target::Status()> before_stop;
 };
 using ServiceComposer = std::function<target::Outcome<ServiceComposition>(const ProcessConfig&)>;
 

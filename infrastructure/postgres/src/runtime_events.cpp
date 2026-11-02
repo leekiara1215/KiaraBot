@@ -85,7 +85,9 @@ target::EventRecord read_event(const pqxx::row& row) {
   if (event.has_sequence) {
     event.sequence = row["sequence"].as<std::uint64_t>();
   }
-  event.serialized_envelope = row["serialized_envelope"].as<std::string>();
+  const auto envelope_bytes = row["serialized_envelope"].as<pqxx::bytes>();
+  event.serialized_envelope.assign(reinterpret_cast<const char*>(envelope_bytes.data()),
+                                   envelope_bytes.size());
   event.occurred_at = time_field(row, "occurred_at");
   if (!row["retain_until"].is_null()) {
     event.retain_until = time_field(row, "retain_until");
@@ -140,6 +142,7 @@ target::DeliveryAttempt read_attempt(const pqxx::row& row) {
       {row["connection_id"].as<std::string>()}, {row["connection_generation"].as<std::uint64_t>()}};
   attempt.started_at = time_field(row, "started_at");
   attempt.lease_until = time_field(row, "lease_until");
+  attempt.attempt_number = row["attempt_number"].as<std::uint32_t>();
   return attempt;
 }
 target::AttemptState attempt_state(int value) {
@@ -242,7 +245,7 @@ RuntimeEvents::accept(const target::EventRecord& event,
       sql_,
       [&](pqxx::transaction_base& transaction) -> target::Outcome<target::EventAcceptanceResult> {
         if (!valid_id(event.key.source.value) || !valid_id(event.key.event_id) ||
-            !valid_text_field(event.serialized_envelope, 1024 * 1024)) {
+            event.serialized_envelope.size() > 1024 * 1024) {
           return invalid();
         }
         std::vector<target::InstanceId> instances;
@@ -336,7 +339,7 @@ RuntimeEvents::accept(const target::EventRecord& event,
                          target::conversation_key_text(event.conversation),
                          static_cast<int>(event.payload), event.has_conversation,
                          event.has_sequence ? event.sequence : std::optional<std::uint64_t>{},
-                         event.has_sequence, event.serialized_envelope,
+                         event.has_sequence, pqxx::binarystring{event.serialized_envelope},
                          timestamp(event.occurred_at), terminal ? 1 : 0});
         const auto conversation_key = target::conversation_key_text(event.conversation);
         for (const auto& target : targets) {
@@ -413,8 +416,9 @@ RuntimeEvents::claim(const target::DeliveryClaimRequest& request) {
                            static_cast<int>(attempt_number), attempt_id.value,
                            row["instance"].as<std::string>()});
           target::DeliveryClaim claim;
-          claim.attempt = {read_delivery_record(row).delivery, attempt_id, request.fence,
-                           request.now, request.now + request.lease};
+          claim.attempt = {
+              read_delivery_record(row).delivery, attempt_id,    request.fence, request.now,
+              request.now + request.lease,        attempt_number};
           claim.event = read_event(row);
           claim.trace_id = row["trace_id"].as<std::string>();
           claim.ordered = row["ordered"].as<bool>();

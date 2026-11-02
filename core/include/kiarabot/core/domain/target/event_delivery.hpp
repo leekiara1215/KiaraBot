@@ -33,6 +33,8 @@ struct DeliveryAttempt {
   Fence fence;
   TimePoint started_at;
   TimePoint lease_until;
+  // 1-based dispatch counter for this delivery target; the wire lease carries it for the SDK.
+  std::uint32_t attempt_number = 1;
 };
 
 // Target P06 event/delivery rules shared by the Runtime application and the PG adapter.
