@@ -79,6 +79,8 @@ struct Store {
   std::vector<t::CommandReceipt> receipts;
   std::vector<t::EncryptedSecretReceipt> secret_receipts;
   IdMap<t::SubjectId, t::AuthorizationState> authorizations;
+  std::optional<t::InvalidationStreamState> invalidation_stream;
+  std::vector<t::InvalidationRecord> invalidations;
   std::vector<t::ExactAssignment> assignments;
   std::vector<t::AuditEntry> audits;
   std::vector<t::TimePoint> now_script;
@@ -403,12 +405,59 @@ public:
 // Scripted single-transaction UoW: all repositories write a private snapshot; only an explicit
 // Committed result publishes it to the durable fixture store. Rollback, unknown commit and any
 // dependency failure therefore leave the durable fixture unchanged.
+class Invalidations final : public t::IdentityInvalidationRepository {
+public:
+  explicit Invalidations(Store& store) : store_(store) {}
+  t::Outcome<std::optional<t::InvalidationStreamState>> state() override {
+    return store_.invalidation_stream;
+  }
+  t::Status initialize(const t::InvalidationStreamState& state) override {
+    if (!store_.invalidation_stream) {
+      store_.invalidation_stream = state;
+    }
+    return std::monostate{};
+  }
+  t::Outcome<std::optional<std::uint64_t>> oldest_sequence(const std::string&) override {
+    if (store_.invalidations.empty()) {
+      return std::optional<std::uint64_t>{};
+    }
+    return std::optional<std::uint64_t>{store_.invalidations.front().sequence};
+  }
+  t::Outcome<std::vector<t::InvalidationRecord>>
+  read_after(const std::string& epoch, std::uint64_t sequence, std::size_t limit) override {
+    std::vector<t::InvalidationRecord> result;
+    for (const auto& record : store_.invalidations) {
+      if (record.epoch == epoch && record.sequence > sequence && result.size() < limit) {
+        result.push_back(record);
+      }
+    }
+    return result;
+  }
+  t::Outcome<t::InvalidationRecord> append(const t::InvalidationEvent& event,
+                                           t::TimePoint now) override {
+    if (!store_.invalidation_stream) {
+      return t::Failure{
+          t::ErrorCode::Conflict, t::Acceptance::NotAccepted, t::Recovery::ReadCurrent, {}, {}};
+    }
+    const auto sequence = ++store_.invalidation_stream->next_sequence;
+    const t::InvalidationRecord record{store_.invalidation_stream->epoch, sequence, event, now};
+    store_.invalidations.push_back(record);
+    return record;
+  }
+  t::Outcome<std::size_t> prune(t::TimePoint, std::size_t) override {
+    return std::size_t{0};
+  }
+
+private:
+  Store& store_;
+};
 class Work final : public t::IdentitySecurityUnitOfWork {
 public:
   Work(Store& store)
       : store_(store), local_(store), principals_(local_), credentials_(local_), base_sessions_(),
         grants_(), authorizations_(local_), assignments_(local_), receipts_(local_),
-        secret_receipts_(local_), journal_(local_), operations_(), bootstrap_() {}
+        secret_receipts_(local_), journal_(local_), operations_(), bootstrap_(),
+        invalidations_(store_) {}
   t::Outcome<t::TimePoint> current_time() override {
     if (!store_.now_script.empty() && store_.now_index < store_.now_script.size()) {
       return store_.now_script[store_.now_index++];
@@ -468,6 +517,9 @@ public:
   t::IdentityBootstrapRepository& bootstrap() override {
     return bootstrap_;
   }
+  t::IdentityInvalidationRepository* invalidations() noexcept override {
+    return &invalidations_;
+  }
 
 private:
   Store& store_;
@@ -484,6 +536,7 @@ private:
   Journal journal_;
   Operations operations_;
   Bootstrap bootstrap_;
+  Invalidations invalidations_;
 };
 class Factory final : public t::IdentitySecurityUnitOfWorkFactory {
 public:

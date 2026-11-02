@@ -12,8 +12,8 @@
 #include "kiarabot/core/application/target/identity_application.hpp"
 #include "kiarabot/core/application/target/identity_assignment_application.hpp"
 #include "kiarabot/core/application/target/identity_authorization_application.hpp"
-#include "kiarabot/core/application/target/identity_invalidation_application.hpp"
 #include "kiarabot/core/application/target/identity_delegation_application.hpp"
+#include "kiarabot/core/application/target/identity_invalidation_application.hpp"
 #include "kiarabot/core/application/target/identity_principal_application.hpp"
 #include "kiarabot/core/application/target/identity_security_application.hpp"
 #include "kiarabot/core/application/target/identity_verification_keys_application.hpp"
@@ -335,8 +335,8 @@ target::Outcome<platform::ServiceComposition> configured(const platform::Process
   if (const auto* error = std::get_if<target::Failure>(&methods)) {
     return *error;
   }
-  dependencies->authorization_methods = std::move(
-      std::get<std::unique_ptr<target::AuthorizationMethodPolicyPort>>(methods));
+  dependencies->authorization_methods =
+      std::move(std::get<std::unique_ptr<target::AuthorizationMethodPolicyPort>>(methods));
   if (!dependencies->authorization_methods) {
     return detail::database_unavailable();
   }
@@ -344,8 +344,8 @@ target::Outcome<platform::ServiceComposition> configured(const platform::Process
   if (const auto* error = std::get_if<target::Failure>(&assignment_fingerprints)) {
     return *error;
   }
-  dependencies->assignment_fingerprints = std::move(
-      std::get<std::unique_ptr<target::IdentityAssignmentFingerprintPort>>(
+  dependencies->assignment_fingerprints =
+      std::move(std::get<std::unique_ptr<target::IdentityAssignmentFingerprintPort>>(
           assignment_fingerprints));
   if (!dependencies->tokens || !dependencies->receipts || !dependencies->delegations ||
       !dependencies->certificates || !dependencies->principal_fingerprints ||
@@ -446,9 +446,8 @@ target::Outcome<platform::ServiceComposition> configured(const platform::Process
   }
   // Invalidation stream/snapshot read the SAME security factory and durable log; a missing store
   // fails every call instead of fabricating an empty stream or snapshot.
-  auto invalidation =
-      target::make_identity_invalidation_application(*dependencies->transactions,
-                                                     *dependencies->random, {.batch = 32});
+  auto invalidation = target::make_identity_invalidation_application(
+      *dependencies->transactions, *dependencies->random, {.batch = 32});
   if (const auto* error = std::get_if<target::Failure>(&invalidation)) {
     return *error;
   }

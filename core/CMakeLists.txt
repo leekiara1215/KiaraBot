@@ -183,6 +183,8 @@ add_test(NAME p04_identity_assignment_application COMMAND kiarabot_identity_assi
 set_tests_properties(p04_identity_assignment_application PROPERTIES
   LABELS "p04;unit;security" TIMEOUT 10)
 
+target_link_libraries(kiarabot_identity_principal_application PRIVATE
+  kiarabot_identity_invalidation_application)
 add_executable(kiarabot_identity_invalidation_application_test
   tests/architecture/identity_invalidation_application_test.cpp)
 target_link_libraries(kiarabot_identity_invalidation_application_test PRIVATE

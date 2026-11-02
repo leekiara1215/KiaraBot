@@ -508,6 +508,7 @@ bool resync_cursor(const t::InvalidationWatermark& watermark, std::span<const t:
                             std::vector<t::ResourceRef>(scope.begin(), scope.end()),
                             watermark.sequence},
       output);
+}
 // Principal/credential management projections. They never invent roles, scope, expiry or a
 // secret; every field comes from a committed application result.
 t::Outcome<t::PrincipalKind> principal_kind(std::string_view value) {

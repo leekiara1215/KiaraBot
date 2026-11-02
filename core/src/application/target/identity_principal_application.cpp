@@ -9,6 +9,7 @@
 #include <utility>
 
 #include "identity_security_application_detail.hpp"
+#include "kiarabot/core/application/target/identity_invalidation_application.hpp"
 #include "kiarabot/core/domain/target/identity_credential_rules.hpp"
 #include "kiarabot/core/domain/target/identity_state_rules.hpp"
 
@@ -740,6 +741,50 @@ public:
       }
       auto saved = work.transaction->credentials().save(revoked, credential->ref.version);
       if (const auto* error = std::get_if<Failure>(&saved)) {
+        return *error;
+      }
+      // Same physical transaction: advance the subject authorization watermark and append the
+      // bounded invalidation fact so stream/snapshot consumers converge on the revoked credential.
+      auto authorization = work.transaction->authorizations().find(revoked.subject);
+      if (const auto* error = std::get_if<Failure>(&authorization)) {
+        return *error;
+      }
+      const auto& current_authorization =
+          std::get<std::optional<AuthorizationState>>(authorization);
+      ResourceVersion authorization_version{1};
+      if (current_authorization) {
+        if (current_authorization->subject != revoked.subject ||
+            current_authorization->version.value == 0) {
+          return internal();
+        }
+        auto advanced = assignment_changed(*current_authorization, current_authorization->version);
+        if (const auto* error = std::get_if<Failure>(&advanced)) {
+          return *error;
+        }
+        const auto& next_authorization = std::get<AuthorizationState>(advanced);
+        auto saved_authorization = work.transaction->authorizations().save(
+            next_authorization, current_authorization->version);
+        if (const auto* error = std::get_if<Failure>(&saved_authorization)) {
+          return *error;
+        }
+        authorization_version = next_authorization.version;
+      } else {
+        // First materialized authority for this subject (e.g. a freshly registered workload):
+        // initialize the watermark in the same transaction as the credential revocation.
+        auto created = work.transaction->authorizations().save(
+            AuthorizationState{revoked.subject, authorization_version, true}, std::nullopt);
+        if (const auto* error = std::get_if<Failure>(&created)) {
+          return *error;
+        }
+      }
+      auto invalidation = append_identity_invalidation(
+          *work.transaction, dependencies_.random,
+          InvalidationEvent{revoked.subject,
+                            authorization_version,
+                            {{ResourceKind::Principal, ResourceId{revoked.subject.value}}},
+                            false},
+          work.now);
+      if (const auto* error = std::get_if<Failure>(&invalidation)) {
         return *error;
       }
       auto receipt = work.transaction->receipts().insert(
