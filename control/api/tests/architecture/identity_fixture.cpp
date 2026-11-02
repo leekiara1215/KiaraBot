@@ -95,8 +95,7 @@ std::optional<std::pair<std::int64_t, std::string>> audit_token(std::string_view
   }
   return std::pair{nanos, std::string{value.substr(colon + 1)}};
 }
-std::vector<AuditRow>
-filter_rows(const wire::IdentityAuditFilter& filter) {
+std::vector<AuditRow> filter_rows(const wire::IdentityAuditFilter& filter) {
   std::vector<AuditRow> rows;
   const auto cursor = filter.page().page_token().empty()
                           ? std::optional<std::pair<std::int64_t, std::string>>{}
@@ -105,9 +104,8 @@ filter_rows(const wire::IdentityAuditFilter& filter) {
     if (!filter.actor().empty() && row.actor != filter.actor()) {
       continue;
     }
-    if (filter.has_resource() &&
-        (filter.resource().kind() != wire::RESOURCE_CATALOG ||
-         filter.resource().id() != "catalog")) {
+    if (filter.has_resource() && (filter.resource().kind() != wire::RESOURCE_CATALOG ||
+                                  filter.resource().id() != "catalog")) {
       continue;
     }
     if (filter.has_occurred_from() && row.nanos < timestamp_nanos(filter.occurred_from())) {
@@ -116,8 +114,8 @@ filter_rows(const wire::IdentityAuditFilter& filter) {
     if (filter.has_occurred_until() && row.nanos >= timestamp_nanos(filter.occurred_until())) {
       continue;
     }
-    if (cursor && (row.nanos > cursor->first ||
-                   (row.nanos == cursor->first && row.id >= cursor->second))) {
+    if (cursor &&
+        (row.nanos > cursor->first || (row.nanos == cursor->first && row.id >= cursor->second))) {
       continue;
     }
     rows.push_back(row);
@@ -355,8 +353,7 @@ public:
     // P12c: Control reads health over an empty catalog scope, principals over an empty scope and
     // creates installations over the catalog plugin scope; these are authority checks at Identity,
     // not wildcard grants.
-    if (input->audience() == "control" &&
-        input->permissions(0) == wire::PERMISSION_HEALTH_READ &&
+    if (input->audience() == "control" && input->permissions(0) == wire::PERMISSION_HEALTH_READ &&
         input->scope().resources_size() == 0) {
       return empty_scope_proof("fixture-health-proof");
     }
@@ -365,8 +362,7 @@ public:
         input->permissions(0) == wire::PERMISSION_IDENTITY_PRINCIPAL_READ &&
         input->scope().resources_size() == 0;
     const bool catalog_plugin_delegation =
-        input->audience() == "runtime" &&
-        input->permissions(0) == wire::PERMISSION_PLUGIN_MANAGE &&
+        input->audience() == "runtime" && input->permissions(0) == wire::PERMISSION_PLUGIN_MANAGE &&
         input->scope().resources_size() == 0;
     if (principal_delegation || catalog_plugin_delegation) {
       return empty_scope_proof("fixture-principal-proof");
@@ -392,11 +388,11 @@ public:
                                    input->permissions(0) == wire::PERMISSION_MODEL_READ ||
                                    input->permissions(0) == wire::PERMISSION_MODEL_CALL_INSPECT ||
                                    input->permissions(0) == wire::PERMISSION_RESOURCE_READ);
-    const bool audit_log_delegation =
-        input->audience() == "runtime" && resource.kind() == wire::RESOURCE_CATALOG &&
-        resource.id() == "control" &&
-        (input->permissions(0) == wire::PERMISSION_LOG_READ ||
-         input->permissions(0) == wire::PERMISSION_AUDIT_READ);
+    const bool audit_log_delegation = input->audience() == "runtime" &&
+                                      resource.kind() == wire::RESOURCE_CATALOG &&
+                                      resource.id() == "control" &&
+                                      (input->permissions(0) == wire::PERMISSION_LOG_READ ||
+                                       input->permissions(0) == wire::PERMISSION_AUDIT_READ);
     // P12f matrix: the Runtime/Scheduler owners are reached with a Control-issued delegation for
     // the same sensitive permission and the explicit resource scope; Identity still rechecks it.
     const bool runtime_delegation =
@@ -410,19 +406,18 @@ public:
          input->permissions(0) == wire::PERMISSION_TASK_READ ||
          input->permissions(0) == wire::PERMISSION_ACTION_INSPECT ||
          input->permissions(0) == wire::PERMISSION_RESOURCE_READ);
-    const bool scheduler_delegation =
-        input->audience() == "scheduler" &&
-        (input->permissions(0) == wire::PERMISSION_TASK_READ ||
-         input->permissions(0) == wire::PERMISSION_TASK_SCHEDULE);
-    if (!identity_delegation && !model_delegation && !audit_log_delegation &&
-        !runtime_delegation && !scheduler_delegation) {
+    const bool scheduler_delegation = input->audience() == "scheduler" &&
+                                      (input->permissions(0) == wire::PERMISSION_TASK_READ ||
+                                       input->permissions(0) == wire::PERMISSION_TASK_SCHEDULE);
+    if (!identity_delegation && !model_delegation && !audit_log_delegation && !runtime_delegation &&
+        !scheduler_delegation) {
       return error(wire::PERMISSION_DENIED, grpc::StatusCode::PERMISSION_DENIED, input->context());
     }
     output->mutable_delegation()->set_proof(
         std::string{model_delegation ? "fixture-model-proof:"
                     : (audit_log_delegation || runtime_delegation || scheduler_delegation)
-                          ? "fixture-runtime-proof:"
-                          : "fixture-proof:"} +
+                        ? "fixture-runtime-proof:"
+                        : "fixture-proof:"} +
         resource.id());
     output->mutable_delegation()->set_audience("identity");
     output->mutable_delegation()->mutable_expires_at()->set_seconds(kChecked + 30);
@@ -440,8 +435,7 @@ public:
     output->mutable_checked_at()->set_seconds(kChecked);
     return grpc::Status::OK;
   }
-  grpc::Status ListAudit(grpc::ServerContext*,
-                         const wire::IdentityListAuditRequest* input,
+  grpc::Status ListAudit(grpc::ServerContext*, const wire::IdentityListAuditRequest* input,
                          wire::IdentityListAuditResponse* output) override {
     if (!input->has_filter() || input->filter().scope().resources_size() != 1) {
       return error(wire::INVALID_ARGUMENT, grpc::StatusCode::INVALID_ARGUMENT, input->context());

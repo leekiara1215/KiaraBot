@@ -156,6 +156,10 @@ class ScopeTest(unittest.TestCase):
                      if effective_status(registry, 'target', category, key) == 'implemented'}
         expected = {('operations', 'operations.getProcessLiveness'),
                     ('operations', 'operations.getProcessReadiness'),
+                    ('operations', 'operations.listAuditEntries'),
+                    ('operations', 'operations.listLogs'),
+                    ('operations', 'operations.beginDeleteResource'),
+                    ('operations', 'operations.restoreResource'),
                     ('proto_messages', 'CredentialDelivery'),
                     ('proto_messages', 'CredentialStatus'),
                     ('proto_messages', 'IdentityGetCredentialStatusRequest'),

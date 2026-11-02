@@ -551,7 +551,7 @@ paths:
       x-permission: audit.read
       x-owner-rpc: { identity: IdentityService.ListAudit, runtime: RuntimeService.ListAudit }
       x-owner-permissions: { identity: audit.read, runtime: audit.read }
-      x-contract-status: implemented
+      x-contract-status: not_implemented
       summary: Query audit entries
       description: >-
         Control read-only aggregate of owner-service audit facts; requires the distinct audit.read
@@ -795,7 +795,7 @@ paths:
       x-permission: log.read
       x-owner-rpc: { identity: IdentityService.ListLogs, runtime: RuntimeService.ListLogs }
       x-owner-permissions: { identity: log.read, runtime: log.read }
-      x-contract-status: implemented
+      x-contract-status: not_implemented
       summary: Query redacted structured logs
       description: >-
         Control read-only aggregate of redacted structured logs; requires the distinct log.read
@@ -1621,7 +1621,7 @@ paths:
     post:
       operationId: beginDeleteResource
       summary: Runtime BeginDelete
-      x-contract-status: implemented
+      x-contract-status: not_implemented
       x-owner-service: runtime
       x-owner-rpc: RuntimeService.BeginDelete
       x-permission: resource.manage
@@ -1690,7 +1690,7 @@ paths:
     post:
       operationId: restoreResource
       summary: Runtime RestoreResource
-      x-contract-status: implemented
+      x-contract-status: not_implemented
       x-owner-service: runtime
       x-owner-rpc: RuntimeService.RestoreResource
       x-permission: resource.manage

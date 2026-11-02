@@ -81,8 +81,8 @@ P10 Scheduler 的 domain/RPC/PG16.4/三进程 mTLS 交接已本地实测通过�
 | `CoreToAdapter.shutdown`、`CoreToPlugin.shutdown`、`ShutdownNotice.reason`、`ShutdownNotice.drain_timeout_ms`、`semantic.transport.graceful_shutdown` | implemented | P06 生产 Runtime：停止信号后向活动 bridge 流发送有界 ShutdownNotice（drain_timeout_ms=1000），真实 TLS 验收断言客户端收到该帧；reference 不发送 |
 
 | `EventEnvelope.message_received` | implemented | P06 target：真实 NoneBot Adapter bridge client 生成、Runtime inbox 接收并 fan-out 给真实 SDK 插件；ACL/lease/ACK 见 p06_client_e2e |
-| `operations.listAuditEntries`、`operations.listLogs` | implemented | P12c-6 Control 只读聚合 Identity/Runtime ListAudit/ListLogs（真实 TLS 401/400/403/503 验收 + gateway 合并/分页/过滤单测）；owner 数据与保留仍归各服务，WS logs 频道延期 |
-| `operations.beginDeleteResource`、`operations.restoreResource` | implemented | P12c-7 Control REST 生命周期删除/恢复：runtime owner 委托（resource.manage；account 用 account.manage）、显式 resource scope、Idempotency-Key+expected_version、202+operation ref、BLOCKED 非失败；P13a Runtime 语义 + Control gateway 单测/真实 TLS 拒绝验收 |
+| `operations.listAuditEntries`、`operations.listLogs` | implemented | P12c-6 Control 只读聚合 Identity/Runtime ListAudit/ListLogs（真实 TLS 401/400/403/503 验收 + gateway 合并/分页/过滤单测）；owner 数据与保留仍归各服务，WS logs 频道延期。OpenAPI 该 4 个带 `x-owner-rpc` 的 REST operation 仍按 target_api 规则标 `x-contract-status: not_implemented`（target 转发已实现，REST 契约 marker 不标 implemented） |
+| `operations.beginDeleteResource`、`operations.restoreResource` | implemented | P12c-7 Control REST 生命周期删除/恢复：runtime owner 委托（resource.manage；account 用 account.manage）、显式 resource scope、Idempotency-Key+expected_version、202+operation ref、BLOCKED 非失败；P13a Runtime 语义 + Control gateway 单测/真实 TLS 拒绝验收。OpenAPI REST marker 按 target_api 规则保持 `x-contract-status: not_implemented` |
 
 
 
