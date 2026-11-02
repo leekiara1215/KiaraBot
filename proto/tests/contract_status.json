@@ -1845,7 +1845,14 @@
       "semantic.scheduler.owner_derivation": "not_implemented",
       "semantic.scheduler.cancel_window": "not_implemented",
       "semantic.scheduler.handoff_expiry": "not_implemented",
-      "semantic.scheduler.timer_occurrence_identity": "not_implemented"
+      "semantic.scheduler.timer_occurrence_identity": "not_implemented",
+      "semantic.model.two_phase_unknown": "not_implemented",
+      "semantic.model.duplicate_call_replay": "not_implemented",
+      "semantic.model.request_hash": "not_implemented",
+      "semantic.model.secret_rotation_pinning": "not_implemented",
+      "semantic.model.provider_error_mapping": "not_implemented",
+      "semantic.model.usage_known_billing": "not_implemented",
+      "semantic.model.instance_delegation": "not_implemented"
     }
   },
   "evidence": {
@@ -5479,6 +5486,27 @@
       "core/src/application/target/model_application.cpp"
     ],
     "ModelCallDisposition.ABANDONED": [
+      "core/src/application/target/model_application.cpp"
+    ],
+    "semantic.model.two_phase_unknown": [
+      "core/src/application/target/model_application.cpp"
+    ],
+    "semantic.model.duplicate_call_replay": [
+      "core/src/application/target/model_application.cpp"
+    ],
+    "semantic.model.request_hash": [
+      "core/src/application/target/model_application.cpp"
+    ],
+    "semantic.model.secret_rotation_pinning": [
+      "core/src/application/target/model_application.cpp"
+    ],
+    "semantic.model.provider_error_mapping": [
+      "core/src/application/target/model_application.cpp"
+    ],
+    "semantic.model.usage_known_billing": [
+      "core/src/application/target/model_application.cpp"
+    ],
+    "semantic.model.instance_delegation": [
       "core/src/application/target/model_application.cpp"
     ]
   },
