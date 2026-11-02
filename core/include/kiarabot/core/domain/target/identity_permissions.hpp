@@ -58,10 +58,12 @@ enum class Permission : std::uint16_t {
   RequestApprove,
   // P09 shared-namespace read (wire 47); only the boundary conversion is added for now.
   NamespaceRead,
-  // P12 sensitive-read permissions (wire 48/49). Control checks them through Identity
-  // delegations; the internal enum only needs the boundary conversion.
+  // P12 sensitive-read permissions (wire 48/49) and authorized health read (wire 50). Control
+  // checks them through Identity delegations; the internal enum only needs the boundary
+  // conversion.
   LogRead,
-  AuditRead
+  AuditRead,
+  HealthRead
 };
 
 } // namespace kiarabot::core::target
