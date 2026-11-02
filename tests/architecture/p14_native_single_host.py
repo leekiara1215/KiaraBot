@@ -253,7 +253,8 @@ def prepare(root, enrolled):
                    {'kind': 'RESOURCE_INSTANCE', 'id': instance}]},
         {'assignment_id': str(uuid.uuid4()), 'permissions': ['model.read'],
          'scope': [{'kind': 'RESOURCE_MODEL', 'id': model_id}]}])
-    STATE.update(tls=tls_root, account=account, installation=installation, instance=instance,
+    STATE.update(administrator_id=enrolled['administrator_id'],
+                 tls=tls_root, account=account, installation=installation, instance=instance,
                  model_id=model_id, scheduler_principal=scheduler_principal,
                  model_principal=model_principal)
     # Mirror the business grants on the Control platform peer: owner applications authorize the
@@ -489,6 +490,10 @@ def run_checks(root, https_port, configs, binaries, children, endpoints):
     STATE['matrix'] = matrix
 
     def record(label, status, body, outcome):
+        if os.environ.get('KIARABOT_P14F_DUMP_MATRIX'):
+            print(f'P14f matrix-detail: {label} status={status} outcome={outcome} '
+                  f'body={str(body)[:400]}', flush=True)
+
         if outcome != 'success' and os.environ.get('KIARABOT_P14F_DUMP_LOGS'):
             import select as select_module
             for name in ('identity', 'control'):
@@ -564,7 +569,7 @@ def run_checks(root, https_port, configs, binaries, children, endpoints):
            'success' if success else classify(status, False, ('INVALID_ARGUMENT',)))
 
     for path, label in (('/api/v1/logs', 'logs'), ('/api/v1/audit', 'audit')):
-        target = f'{path}?page_size=1&actor=administrator'
+        target = f'{path}?page_size=1&actor=' + STATE['administrator_id']
         status, body = request('GET', target, token=token)
         success = status == 200 and isinstance(body.get('items'), list) and 'page' in body
         record(label, status, body,
@@ -572,7 +577,7 @@ def run_checks(root, https_port, configs, binaries, children, endpoints):
                classify(status, False, ('INVALID_ARGUMENT',),
                         stable_ok_codes=('NOT_FOUND',)))
 
-    status, body = request('GET', '/api/v1/tasks?scope=' +
+    status, body = request('GET', '/api/v1/tasks?page_size=10&scope=' +
                            urllib.parse.quote(scope_installation), token=token)
     success = status == 200 and isinstance(body.get('items'), list)
     record('tasks_list', status, body,
@@ -580,7 +585,7 @@ def run_checks(root, https_port, configs, binaries, children, endpoints):
            classify(status, False, ('INVALID_ARGUMENT',), stable_ok_codes=('NOT_FOUND',)))
     matrix.append(('task_get_cancel', 'skipped:no-seeded-task'))
 
-    status, body = request('GET', '/api/v1/models?scope=' +
+    status, body = request('GET', '/api/v1/models?page_size=10&scope=' +
                            urllib.parse.quote(scope_model), token=token)
     success = status == 200 and isinstance(body.get('items', body.get('models')), list)
     record('models', status, body,
