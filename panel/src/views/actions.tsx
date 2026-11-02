@@ -3,10 +3,9 @@ import { type ActionResult, type ApiClient } from '../api/client';
 import { ActionFeedback, describeError, FailureNotice, formatTime, label, StateTag, useAction, type Failure } from '../ui';
 
 /**
- * Action 查询接线占位。api/openapi.yaml 把 `getActionResult` 与
- * `getActionByIdempotencyKey` 标记为 `x-contract-status: not_implemented`：
- * v1 Core 不创建 control 拥有的 Action 记录，两个查询对任何调用方都返回
- * NOT_FOUND。面板不伪造数据，只展示结果或明确错误态。
+ * Action 查询已接线到 Control → RuntimeService.QueryActionResult
+ * （getActionResult / getActionByIdempotencyKey）。不存在、不可见或已过期结果返回
+ * NOT_FOUND；面板不伪造数据，只展示结果或明确错误态。
  */
 export function ActionsView({ api, permissions }: { api: ApiClient; permissions: string[] }) {
   const [actionId, setActionId] = useState('');
@@ -23,7 +22,7 @@ export function ActionsView({ api, permissions }: { api: ApiClient; permissions:
       catch (error) {
         const parsed = describeError(error);
         setFailure(parsed.kind === 'not-found'
-          ? { ...parsed, title: '未找到（契约标记 not_implemented）', detail: 'v1 REST Action 查询尚未接线：契约声明该操作对所有调用方返回 NOT_FOUND，这不代表动作失败；请以插件桥接的 Action 查询为准。' }
+          ? { ...parsed, title: '未找到（NOT_FOUND）', detail: 'Runtime QueryActionResult 对不存在/不可见/过期结果返回 NOT_FOUND，这不代表动作执行失败；请核对 action_id 或幂等键。' }
           : parsed);
         throw error;
       }
@@ -39,8 +38,8 @@ export function ActionsView({ api, permissions }: { api: ApiClient; permissions:
         </div>
         <div className="panel-body">
           <div role="note" className="contract-note">
-            契约状态 not_implemented：`GET /actions/{'{actionId}'}` 与 `GET /actions/by-idempotency-key` 已进入 OpenAPI，
-            但 v1 Core 尚未产生 control 拥有的 Action 记录，两个查询当前都返回 NOT_FOUND。本页只做接线与错误态展示，不伪造结果。
+            `GET /actions/{'{actionId}'}` 与 `GET /actions/by-idempotency-key` 经 Control 映射到 RuntimeService.QueryActionResult
+            （action.inspect + 显式 account scope）；不存在/不可见/过期结果返回 NOT_FOUND。本页不伪造结果，幂等键不回显/不记录。
           </div>
           <div className="query-grid">
             <form className="query-form" onSubmit={(event) => { event.preventDefault(); run('按 action_id 查询', () => api.action(actionId)); }}>

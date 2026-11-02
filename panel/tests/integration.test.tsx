@@ -125,13 +125,13 @@ describe('sessions and action lookup', () => {
     expect(server.requests.some((path) => path.endsWith('/revoke'))).toBe(true);
   });
 
-  it('shows the not_implemented explanation for Action queries', async () => {
+  it('shows the NOT_FOUND explanation for Action queries', async () => {
     const server = new MockServer();
     await login(server);
     navigate('动作');
     fireEvent.change(screen.getByLabelText('action_id'), { target: { value: 'action-1' } });
     fireEvent.click(screen.getByRole('button', { name: '按 ID 查询' }));
-    expect(await screen.findByText('未找到（契约标记 not_implemented）')).toBeInTheDocument();
+    expect(await screen.findByText('未找到（NOT_FOUND）')).toBeInTheDocument();
     expect(server.requests).toContain('/actions/action-1');
   });
 });

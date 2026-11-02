@@ -239,7 +239,7 @@ describe('P12d-3 instance facts, health auth, TaskSummary', () => {
     const api = new ApiClient(server.fetch);
     api.setToken('mock-access-token-0123456789');
     render(<P12LiveView page="p12-health" api={api} permissions={['health.read']} revision={0} />);
-    expect(await screen.findByText(/健康聚合暂未实现（HTTP 503 CAPABILITY_NOT_SUPPORTED）/)).toBeInTheDocument();
+    expect(await screen.findByText(/健康聚合不可用（HTTP 503 CAPABILITY_NOT_SUPPORTED\/UNIMPLEMENTED）/)).toBeInTheDocument();
     expect(screen.queryByText(/Identity 未就绪：受权健康聚合返回 503/)).not.toBeInTheDocument();
   });
 
@@ -273,7 +273,7 @@ describe('P12d-5 lifecycle delete/restore', () => {
     expect(server.requests.some((path) => path.startsWith('/operations/runtime/operation-lifecycle-01'))).toBe(true);
   });
 
-  it('keeps lifecycle explicit when P12c-7 REST is not wired (404)', async () => {
+  it('keeps lifecycle explicit when delete/restore REST is unavailable (404)', async () => {
     const server = new MockServer();
     server.failures.set('/resources/RESOURCE_INSTANCE/x/restore', { status: 404, code: 'NOT_FOUND' });
     const api = new ApiClient(server.fetch);
@@ -281,7 +281,7 @@ describe('P12d-5 lifecycle delete/restore', () => {
     render(<P12LiveView page="p12-installations" api={api} permissions={['plugin.read', 'plugin.manage']} revision={0} />);
     fireEvent.change(screen.getByLabelText('生命周期 resource ID'), { target: { value: 'x' } });
     fireEvent.click(screen.getByRole('button', { name: '恢复资源' }));
-    expect(await screen.findByText(/P12c-7 后端未实现/)).toBeInTheDocument();
+    expect(await screen.findByText(/删除\/恢复当前不可用/)).toBeInTheDocument();
     expect(screen.queryByText('状态成功')).not.toBeInTheDocument();
   });
 });

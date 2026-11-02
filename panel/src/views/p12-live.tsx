@@ -1,12 +1,12 @@
 /**
  * P12 live management pages.
  *
- * These pages consume the P12a contract through ApiClient. Some target endpoints
- * remain not_implemented/404-501; the pages keep that state explicit (P12c 未接线)
- * and never fabricate success. Locked
- * semantics: a NOT_FOUND action result is displayed as "未找到", not as an
- * execution failure; secrets are never displayed (only configured/version
- * markers); logs/audit queries are a declared P12 phase-2 deferral.
+ * These pages consume the P12a contract through ApiClient. Owner-backed routes are
+ * wired by P12c/P14f-i; if a specific endpoint is unavailable the pages keep a stable
+ * error state and never fabricate success. Locked semantics: a NOT_FOUND action result
+ * is displayed as "未找到", not as an execution failure; secrets are never displayed
+ * (only configured/version markers); logs/audit use the P12e/P14l owner aggregation
+ * with opaque keyset tokens.
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type {
@@ -173,8 +173,8 @@ function PermissionGate({ permissions, required, children }: {
 
 function BackendBanner({ pending }: { pending: boolean }) {
   if (!pending) return null;
-  return <div className="failure"><strong>P12c 后端未实现 / 契约已声明但 handler 未接线</strong>
-    <p>本页已按 P12a 契约发起请求；Control 返回 404/501 时保持显式状态，不伪造成功。后端接入后无需改 Panel。</p></div>;
+  return <div className="failure"><strong>后端未接线 / 当前不可用</strong>
+    <p>本页已按 P12a 契约发起请求；Control 返回 404/501/503 时保持显式状态，不伪造成功。</p></div>;
 }
 
 function TableCard({ title, eyebrow, count, columns, rows }: {
@@ -351,7 +351,7 @@ function LifecyclePanel({ api }: { api: ApiClient }) {
     }
   };
   return <section className="table-card"><div className="table-head"><div>
-    <p className="eyebrow">LIFECYCLE · DELETE / RESTORE · P12c-7</p><h2>资源删除与恢复（operation 进度）</h2></div></div>
+    <p className="eyebrow">LIFECYCLE · DELETE / RESTORE</p><h2>资源删除与恢复（operation 进度）</h2></div></div>
     <p className="muted">删除/恢复是异步命令：HTTP 200/202 只是受理。BLOCKED（受阻）不是失败；只有 operation 终态才能显示完成/失败。删除后 30 天内可恢复（P13a 保留语义），超过窗口不得假设可恢复；CONFLICT（409）表示版本/状态冲突，请重新读取后再试。</p>
     <div className="row-actions">
       <label>resourceKind<select aria-label="生命周期 resourceKind" value={kind} onChange={(event) => setKind(event.target.value)}>
@@ -368,8 +368,8 @@ function LifecyclePanel({ api }: { api: ApiClient }) {
       <button className="secondary" onClick={() => void act('delete')} disabled={!resourceId || !parsedScope}>删除资源</button>
       <button className="secondary" onClick={() => void act('restore')} disabled={!resourceId || !parsedScope}>恢复资源</button>
     </div>
-    {pending && <div className="failure"><strong>P12c-7 后端未实现 / 契约已声明但 handler 未接线</strong>
-      <p>删除/恢复 REST 当前返回 404/501；Panel 保持显式待后端，不伪造删除/恢复成功。P12c-7 接线后按 operation 终态复验 BLOCKED/409/30 天恢复窗。</p></div>}
+    {pending && <div className="failure"><strong>删除/恢复当前不可用（后端 404/501/503）</strong>
+      <p>Panel 保持显式不可用状态，不伪造删除/恢复成功；后端可用后按 operation 终态展示 BLOCKED/409/30 天恢复窗。</p></div>}
     {notice && <p className="success">{notice}</p>}{failure && <FailureNotice failure={failure} />}
     <OperationTracker api={api} operation={operation} scope={parsedScope} />
   </section>;
@@ -510,7 +510,7 @@ function InstallationsPage({ api, revision }: { api: ApiClient; revision: number
     <section className="table-card"><div className="table-head"><div><p className="eyebrow">LIVE · CATALOG LIST</p><h2>插件安装（目标 Runtime）</h2></div>
       <span className="count">{installations.value?.installations.length ?? 0} 条</span></div>
       <div className="row-actions"><CatalogField id={catalogId} onChange={(value) => { setCatalogId(value); setPageToken(undefined); }} /></div>
-      <p className="muted">ListInstallations 要求显式 catalog（RESOURCE_CATALOG）；缺少 catalog 时后端返回 400。实例 plugin-state/configuration 使用 P12c-5 对象路径；旧 /plugins enable|config 不复用（未冻结），保持待 P12a。</p>
+      <p className="muted">ListInstallations 要求显式 catalog（RESOURCE_CATALOG）；缺少 catalog 时后端返回 400。实例 plugin-state/configuration 使用 P12c-5 对象路径；旧 /plugins enable|config 按 P12a 决定不复用。</p>
       <TableCard title="安装列表" eyebrow="LIVE · LIST INSTALLATIONS" columns={['安装 ID', '插件类型', '版本', '生命周期']}
         rows={(installations.value?.installations ?? []).map((item) => [item.installation_id, item.plugin_type_id, item.version, pretty(item.state)])} />
       <div className="pagination">{pageToken && <button className="secondary" onClick={() => setPageToken(undefined)}>返回首页</button>}
@@ -725,7 +725,7 @@ function ModelsPage({ api, permissions, revision }: { api: ApiClient; permission
     ]} />}
     {!canManage && <PermissionGate permissions={permissions} required="model.manage" children={<p className="empty">当前角色只有只读元数据视图，完整配置/更新被 model.manage 门禁隐藏。</p>} />}
     {configuration && <section className="table-card"><div className="table-head"><div><p className="eyebrow">CONFIGURATION · NO CREDENTIALS</p><h2>模型配置与密钥状态</h2></div></div>
-      <p className="muted">secret_configured={String(configuration.secret_configured)}；密钥内容与版本不进入 Panel，轮换不在此页提交。Disable/Enable 端点当前未在契约声明，保持待 P12a，不自造端点。</p>
+      <p className="muted">secret_configured={String(configuration.secret_configured)}；密钥内容与版本不进入 Panel，轮换不在此页提交。模型 Disable/Enable REST 已由 P11d/P14g 接线；本页只读配置/密钥状态，不在该页提交启停，不伪造端点。</p>
       <div className="table-wrap"><table><tbody>
         <tr><th>model_id</th><td>{configuration.config.model_id}</td></tr>
         <tr><th>alias</th><td><input aria-label="模型 alias" value={form.alias} onChange={(event) => setForm({ ...form, alias: event.target.value })} /></td></tr>
@@ -784,8 +784,8 @@ function HealthBoard({ api, revision }: { api: ApiClient; revision: number }) {
       <p>{healthConsent.title}。这是权限/会话问题，不代表服务不健康；匿名 /health/live 与 /health/ready 探针仍可单独查看。</p>
     </div>}
     {unimplemented && <div role="alert" className="failure unavailable">
-      <strong>健康聚合暂未实现（HTTP 503 CAPABILITY_NOT_SUPPORTED）</strong>
-      <p>受权 /api/v1/health 仍未实现或该能力不可用；匿名 live/ready 探针继续显示。不能把它当作 Identity UNHEALTHY，也不能伪造四个依赖状态。</p>
+      <strong>健康聚合不可用（HTTP 503 CAPABILITY_NOT_SUPPORTED/UNIMPLEMENTED）</strong>
+      <p>受权 /api/v1/health 当前返回能力不可用；匿名 live/ready 探针继续显示。不能把它当作 Identity UNHEALTHY，也不能伪造四个依赖状态。</p>
     </div>}
     {identityUnavailable && <div role="alert" className="failure unavailable">
       <strong>Identity 未就绪：受权健康聚合返回 503</strong>
@@ -823,7 +823,7 @@ function OverviewPage({ api, permissions, revision }: { api: ApiClient; permissi
     <HealthBoard api={api} revision={revision} />
     <TableCard title="Q1–Q8 口径落地" eyebrow="DECISIONS" columns={['决策', '落地']} rows={[
       ['Q1 Action', 'QueryActionResult → 动作页；NOT_FOUND 显示未找到，不推断失败'],
-      ['Q2 日志/审计', 'P12e 未合入前 503 显示「数据源暂不可用」；合入后按 occurred_at+ID 分页令牌消费'],
+      ['Q2 日志/审计', 'P12e/P14l 已接线：按 occurred_at+ID/owner 分页令牌消费；仅 owner 源不可用时显示 503「数据源暂不可用」'],
       ['Q3 groups', '不使用旧 /groups；群白名单走 ActionPolicy'],
       ['Q4 主体', 'ListPrincipals 人类主体目录已接线（权限/503 显式）'],
       ['Q5 健康', 'live/ready 探针 + 四依赖聚合；DEGRADED(200) 与 Identity 异常(503) 区分'],
