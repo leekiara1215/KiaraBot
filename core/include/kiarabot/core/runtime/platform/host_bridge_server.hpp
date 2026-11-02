@@ -62,11 +62,12 @@ struct HostBridgeServerDependencies {
 target::Outcome<std::unique_ptr<v1::HostBridge::Service>>
 make_host_bridge(HostBridgeServerDependencies dependencies);
 
-// Deployment-convenience composition used by runtime_composition until the P08b-2c PG wiring
-// lands: the certificate allowlist plus host/connection records are kept in process memory and
-// the runtime epoch/connection generation come from the process id port. Registration state is
-// therefore NOT durable across Runtime restart; P08b-2c replaces this store with the PG
-// HostRegistrationPort implementation.
+// Deployment-convenience composition used by runtime_composition. The PG HostRegistrationPort
+// and its real-PG fixture landed with P08b-2c, but this helper still owns an in-process
+// InMemoryHostStore for the certificate allowlist and host/connection records; runtime_composition
+// has not switched the HostBridge registration path to the PG port yet. Registration state is
+// therefore still NOT durable across Runtime restart. Durable command/receipt/observation
+// persistence is passed separately through HostBridgePersistence (P08b-3a/3b).
 target::Outcome<std::unique_ptr<v1::HostBridge::Service>> make_deployment_host_bridge(
     target::RuntimeIdPort& ids, std::vector<target::HostCertificateBinding> allowlist,
     HostBridgeCallbacks callbacks = {}, HostBridgePersistence persistence = {});
