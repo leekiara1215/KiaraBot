@@ -1135,3 +1135,19 @@ probe_listen/grpc_listen/tls），并额外要求 Host-only 的 `host` 对象（
 - 当前验证范围：P08a 用 in-process fake Runtime bridge 与 fake supervisor 覆盖注册/fence/心跳/
   resync/命令回执/观察/恢复；真实 Runtime Bridge 监听（P06a-2）与 Host 受管配置的端到端验收
   尚未执行，不能据此宣称 T11b 或真实部署通过。
+
+### Host 离线启动与注册重试（P08a 回归修复，2026-11-02）
+
+`kiarabot-plugin-host` 在 Runtime HostBridge 不可达时必须仍能启动：Host 入口先打开本地
+SQLite journal、恢复受管执行、启动探针/gRPC 监听，然后由 HostBridge client 在后台以有界指数
+退避（200ms→5s）持续尝试连接 Runtime 内部 mTLS `grpc_listen` 并完成注册。启动阶段不伪造
+“已注册”：readiness 在 Runtime 不可达期间为 false（`/health/ready`=503 UNHEALTHY），
+`/health/live`=200；Runtime 恢复后注册成功、读到 Runtime 分配的 fence 并通过
+`bridge_ready` 补发积压的 execution observations，readiness 转为 true。离线不等于受管进程
+已停止：Host 不会伪造 stopped/FAILED，也不会在启动失败时删除 journal。
+
+P02 生命周期 fixture 因此为 host 提供合法 `host` 材料（临时 `sqlite_path`/
+`credential_directory`、dummy package/profile、`runtime_endpoint=127.0.0.1:1` 不可达），只验证
+进程存活、probe/readiness 语义和 mTLS 未实现方法行为，不启动任何受管实例。Host 的重试循环
+在进程停止（SIGINT/SIGTERM）时通过取消在途流并 join 连接/写/心跳线程退出；未注册期间
+`send_observation`/`send_receipt` 返回 `UNAVAILABLE`，观察仍保留在 journal 中等待重连补发。

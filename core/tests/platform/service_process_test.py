@@ -34,6 +34,33 @@ def main(*arguments):
             if name == "runtime":
                 # P06 external bridge listener: server-verified TLS, owner services stay mTLS-only.
                 value["bridge_listen"] = "127.0.0.1:0"
+            if name == "host":
+                # P08a Host material: a Host starts with Runtime offline (readiness=false) and
+                # retries HostBridge registration; this fixture never launches managed instances.
+                host_root = root / f"host-{probe}-{grpc}"
+                credentials = host_root / "credentials"
+                credentials.mkdir(parents=True)
+                value["host"] = {
+                    "host_id": "host-a",
+                    "sqlite_path": str(host_root / "host.sqlite"),
+                    "runtime_endpoint": "127.0.0.1:1",
+                    "credential_directory": str(credentials),
+                    "packages": [{
+                        "plugin_type_id": "observer",
+                        "root": "/opt/kiarabot/packages/observer",
+                        "sha256": "a" * 64,
+                        "launch_profile": "python",
+                        "allowed_argument_names": ["instance"],
+                    }],
+                    "profiles": [{
+                        "name": "python",
+                        "executable": "/opt/kiarabot/.venv/bin/python",
+                        "fixed_arguments": ["-m", "kiarabot_sdk"],
+                        "allowed_environment_names": ["PYTHONUNBUFFERED"],
+                        "credential_environment": "KIARABOT_PLUGIN_BOOTSTRAP",
+                    }],
+                    "environment": {},
+                }
             path = root / f"{name}-{probe}-{grpc}.json"
             path.write_text(json.dumps(value))
             return path

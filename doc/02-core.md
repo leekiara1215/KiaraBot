@@ -1310,3 +1310,12 @@ tasks/occurrences 的观察列、quota counter 表和 due/owner 索引（需要�
 并与 database_test/manifest 同步，留待下一增量）；当前 v7 与 v6 的关系集合一致。RPC 组合根
 与 SchedulerService 监听（P02 当前仍为 readiness 桩）尚未接线，真实 Runtime 调用/授权链路
 （Identity delegation）同样留待后续阶段。
+
+### P08a 离线启动补充（2026-11-02 回归修复）
+
+HostBridge client 的注册改为后台有界重试：`HostService::start()` 在 Runtime 不可达时仍成功
+（journal 打开、执行恢复、探针就绪），readiness 由 `bridge.registered()` 决定并保持 false；
+注册成功后 fence 接管、`bridge_ready` 触发 pending observations 补发。连接丢失后 client 重新
+进入注册循环，不伪造 registered/stopped；仅配置非法（缺失/格式错误 host 材料、无 host_id/
+凭据）才让启动失败。P02 生命周期测试使用不可达 `runtime_endpoint` 验证“离线进程存活 +
+readiness=false + 可恢复注册”。
