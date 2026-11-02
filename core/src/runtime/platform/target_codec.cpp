@@ -99,7 +99,15 @@ constexpr std::array kPermissions{
     std::pair{target::Permission::PluginRead, v1::PERMISSION_PLUGIN_READ},
     std::pair{target::Permission::AdapterRead, v1::PERMISSION_ADAPTER_READ},
     std::pair{target::Permission::PluginConfigRead, v1::PERMISSION_PLUGIN_CONFIG_READ},
-    std::pair{target::Permission::MessageRead, v1::PERMISSION_MESSAGE_READ}};
+    std::pair{target::Permission::MessageRead, v1::PERMISSION_MESSAGE_READ},
+    // P07 per-kind Action permissions (wire 41-46); every other new P07 wire enum has no
+    // internal consumer or boundary conversion and is deliberately not translated here.
+    std::pair{target::Permission::MessageSend, v1::PERMISSION_MESSAGE_SEND},
+    std::pair{target::Permission::MessageReact, v1::PERMISSION_MESSAGE_REACT},
+    std::pair{target::Permission::MessageDelete, v1::PERMISSION_MESSAGE_DELETE},
+    std::pair{target::Permission::MemberMute, v1::PERMISSION_MEMBER_MUTE},
+    std::pair{target::Permission::MemberKick, v1::PERMISSION_MEMBER_KICK},
+    std::pair{target::Permission::RequestApprove, v1::PERMISSION_REQUEST_APPROVE}};
 
 struct ErrorMapping {
   target::ErrorCode internal;

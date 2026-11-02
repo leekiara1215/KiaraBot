@@ -82,7 +82,14 @@ void test_permissions() {
       std::pair{target::Permission::PluginRead, wire::PERMISSION_PLUGIN_READ},
       std::pair{target::Permission::AdapterRead, wire::PERMISSION_ADAPTER_READ},
       std::pair{target::Permission::PluginConfigRead, wire::PERMISSION_PLUGIN_CONFIG_READ},
-      std::pair{target::Permission::MessageRead, wire::PERMISSION_MESSAGE_READ}};
+      std::pair{target::Permission::MessageRead, wire::PERMISSION_MESSAGE_READ},
+      // P07 per-kind Action permissions (wire 41-46) must round-trip exactly like the rest.
+      std::pair{target::Permission::MessageSend, wire::PERMISSION_MESSAGE_SEND},
+      std::pair{target::Permission::MessageReact, wire::PERMISSION_MESSAGE_REACT},
+      std::pair{target::Permission::MessageDelete, wire::PERMISSION_MESSAGE_DELETE},
+      std::pair{target::Permission::MemberMute, wire::PERMISSION_MEMBER_MUTE},
+      std::pair{target::Permission::MemberKick, wire::PERMISSION_MEMBER_KICK},
+      std::pair{target::Permission::RequestApprove, wire::PERMISSION_REQUEST_APPROVE}};
   expect(permissions.size() ==
          static_cast<std::size_t>(wire::Permission_descriptor()->value_count() - 1));
   for (const auto& [internal, external] : permissions) {
