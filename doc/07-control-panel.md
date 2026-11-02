@@ -147,3 +147,13 @@ mock 覆盖：登录/刷新、`/auth/me`、会话列表与撤销、9 个资源�
 - `message.updated` 的 payload 只有 `message_id`、`conversation_id`、`direction`，v1 只产生 `received`，不含消息正文。频道没有 REST 消息投影，因此面板收到事件时只触发既有视图刷新（与 `log/adapter/plugin/task.updated` 相同的刷新路径），不新增消息页面、不缓存或重建消息历史，也不展示正文。
 - 订阅要求每用户显式 `message.read`（admin/operator/viewer 默认都不持有）；未授予时服务端仍以 4403 关闭，面板按终止性失败提示并停止重连。
 - 测试：`panel/tests/integration.test.tsx` 的已知事件刷新用例增加一次 mock `message.updated` 投递断言（被接受并触发刷新），并保留未知事件不触发的断言；未新增 UI。
+
+## P12b Panel 管理面预研骨架（2026-11-02）
+
+- 状态：**骨架/类型/mock 预览完成，未接真实后端**。本段只新增 Panel 侧 target 管理面预览；未修改 `api/`、`proto/`、`control/`、`core/`，未接 live 请求，未新增 UI 依赖。生产管理页接线等待 P12 与 Q1–Q8 决策。
+- 范围：`panel/src/p12/catalog.ts`（页面/契约/依赖声明）、`panel/src/p12/fixtures.ts`（`Schemas['Target*']` 约束的 mock fixture）、`panel/src/views/p12-preview.tsx`（骨架渲染）、`panel/src/App.tsx`（独立「P12 预览（未接线）」导航分组）、`panel/src/api/client.ts`（target `operation()` 描述符与 target 类型别名）、`panel/scripts/check-contracts.mjs`（漂移检查扩展）、`panel/tests/p12-preview.test.tsx`。
+- 页面：P12 预研总览（Q1–Q8 依赖矩阵）、账号、安装与实例、操作进度、任务（目标记录）、模型配置（只读）、健康与探针，共 7 页。每页展示 target 端点（method/path/operationId/权限/契约状态）、mock fixture 表格与所依赖决策；页面统一标记「P12 预研 · 未接线」。
+- 契约与数据边界：所有端点经 `operation()` 声明并受生成 `paths` 类型与 `check:contracts` 双重校验；target 端点仍为 `x-contract-status: not_implemented`，脚本固定其状态防止误标。fixture 用 `Schemas['TargetAccountRecord']` 等 target 类型约束，仅 mock 模式渲染；live 模式显示「未接线」说明，不向 target 端点发请求。现网 reference 页面（总览/插件/权限/日志/审计/动作等）行为不变。
+- 未实现（交接项）：账号详情/停用/绑定，安装与实例启停/配置交互，operation 轮询与进度推送，任务详情/取消，模型配置读取与密钥轮换，健康组件聚合，以及 Q1–Q8 相关的动作查询、审计/日志归属、群白名单、主体目录、权限词表、v1 plugins 迁移与 P12 完成度口径——全部等待用户决策后接线。
+- Q1–Q8 依赖：Q1 动作查询授权；Q2 审计/日志查询归属；Q3 groups/群白名单语义；Q4 ListPrincipals 主体目录；Q5 健康聚合契约；Q6 v1 `/plugins*` 迁移；Q7 新权限词表与固定角色；Q8 P12 完成度口径。页面与决策的映射见 `panel/src/p12/catalog.ts` 的 `DECISIONS`，预览页直接展示。
+- 检查（本机实际运行）：`npm test -- --run` 27 passed / 2 skipped；`npm run lint` 通过；`npm run check:contracts` 通过（34 个 panel 端点、5 个 known events，含 P12 端点状态/目录引用/fixture target 类型断言）；`npm run build` 通过。真实服务/真实 Host 未运行。
