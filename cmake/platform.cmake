@@ -51,6 +51,13 @@ foreach(SERVICE identity runtime plugin_host scheduler model)
   kiarabot_platform_warnings(kiarabot_${SERVICE}_application)
 endforeach()
 
+add_library(kiarabot_scheduler_rpc STATIC
+  ${CMAKE_SOURCE_DIR}/core/src/runtime/platform/scheduler_rpc.cpp)
+target_include_directories(kiarabot_scheduler_rpc PUBLIC ${CMAKE_SOURCE_DIR}/core/include)
+target_link_libraries(kiarabot_scheduler_rpc PUBLIC kiarabot_scheduler_service kiarabot_proto
+  kiarabot_target_codec)
+kiarabot_platform_warnings(kiarabot_scheduler_rpc)
+
 add_library(kiarabot_scheduler_service STATIC
   ${CMAKE_SOURCE_DIR}/core/src/application/target/scheduler_rules.cpp
   ${CMAKE_SOURCE_DIR}/core/src/application/target/scheduler_service.cpp)
@@ -100,6 +107,13 @@ if(UNIX)
   add_test(NAME p08_host_process COMMAND kiarabot_host_process_test)
   set_tests_properties(p08_host_process PROPERTIES LABELS "p08;unit;fault" TIMEOUT 30)
 endif()
+
+add_executable(kiarabot_scheduler_rpc_test
+  ${CMAKE_SOURCE_DIR}/core/tests/platform/scheduler_rpc_test.cpp)
+target_link_libraries(kiarabot_scheduler_rpc_test PRIVATE kiarabot_scheduler_rpc)
+kiarabot_platform_warnings(kiarabot_scheduler_rpc_test)
+add_test(NAME p10_scheduler_rpc COMMAND kiarabot_scheduler_rpc_test)
+set_tests_properties(p10_scheduler_rpc PROPERTIES LABELS "p10;integration;fault" TIMEOUT 60)
 
 add_library(kiarabot_host_bridge STATIC
   ${CMAKE_SOURCE_DIR}/core/src/runtime/platform/host_bridge_client.cpp)

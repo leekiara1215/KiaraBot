@@ -30,15 +30,15 @@ void append_i32(std::vector<std::byte>& out, std::int32_t value) {
   append_u64(out, static_cast<std::uint64_t>(static_cast<std::uint32_t>(value)));
 }
 bool printable(std::string_view value) {
-  return std::all_of(value.begin(), value.end(), [](unsigned char character) {
-    return character >= 32 && character < 127;
-  });
+  return std::all_of(value.begin(), value.end(),
+                     [](unsigned char character) { return character >= 32 && character < 127; });
 }
 
 } // namespace
 
 Failure scheduler_invalid(Recovery recovery) {
-  return {ErrorCode::InvalidArgument, Acceptance::NotAccepted, recovery, std::nullopt, std::nullopt};
+  return {ErrorCode::InvalidArgument, Acceptance::NotAccepted, recovery, std::nullopt,
+          std::nullopt};
 }
 Failure scheduler_conflict() {
   return {ErrorCode::Conflict, Acceptance::NotAccepted, Recovery::ReadCurrent, std::nullopt,
@@ -93,8 +93,7 @@ bool occurrence_terminal(OperationState state) {
 Outcome<TimePoint> resolve_run_at(const TaskCreationInput& input, SchedulerTimeZonePort& zones,
                                   TimePoint now, std::chrono::hours horizon) {
   if (!task_id_text(input.task_id) || (input.run_at.has_value() == input.local_time.has_value()) ||
-      input.payload.size() > kMaximumPayloadBytes || !canonical_id(input.target.adapter.value) ||
-      !canonical_id(input.target.account.value) || input.target.conversation_id.empty() ||
+      input.payload.size() > kMaximumPayloadBytes || input.target.conversation_id.empty() ||
       input.target.conversation_id.size() > 128 || !printable(input.target.conversation_id)) {
     return scheduler_invalid();
   }
@@ -128,8 +127,7 @@ Sha256Digest creation_fingerprint(const TaskCreationInput& input) {
   canonical.insert(canonical.end(), input.payload.begin(), input.payload.end());
   append_i32(canonical, input.run_at ? 1 : 0);
   if (input.run_at) {
-    append_u64(canonical, static_cast<std::uint64_t>(
-                              input.run_at->time_since_epoch().count()));
+    append_u64(canonical, static_cast<std::uint64_t>(input.run_at->time_since_epoch().count()));
   } else {
     append_i32(canonical, input.local_time->year);
     append_i32(canonical, input.local_time->month);

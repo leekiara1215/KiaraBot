@@ -97,6 +97,14 @@ int main(int argc, char* argv[]) {
       result.error_code() == grpc::StatusCode::UNIMPLEMENTED) {
     return 0;
   }
+  // P10a wires the real SchedulerService adapter but not the Identity delegation chain yet, so its
+  // fail-closed authorizer rejects authenticated probes with UNAUTHENTICATED instead of the
+  // generated-stub UNIMPLEMENTED. Both prove the listener is up without accepting a command.
+  if (authenticated && service == "scheduler" &&
+      (result.error_code() == grpc::StatusCode::UNAUTHENTICATED ||
+       result.error_code() == grpc::StatusCode::INVALID_ARGUMENT)) {
+    return 0;
+  }
   if (!authenticated && (result.error_code() == grpc::StatusCode::UNAVAILABLE ||
                          result.error_code() == grpc::StatusCode::UNAUTHENTICATED)) {
     return 0;

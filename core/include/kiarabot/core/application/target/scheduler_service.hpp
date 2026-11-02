@@ -10,6 +10,7 @@
 #include <utility>
 #include <vector>
 
+#include "kiarabot/core/application/target/scheduler_commands.hpp"
 #include "kiarabot/core/domain/target/persistence.hpp"
 #include "kiarabot/core/domain/target/scheduler_rules.hpp"
 #include "kiarabot/core/domain/target/service_records.hpp"
@@ -47,11 +48,14 @@ struct SchedulerServiceDependencies {
   std::chrono::hours horizon{kTaskHorizon};
   std::size_t instance_capacity{kInstanceTaskCapacity};
   std::size_t installation_capacity{kInstallationTaskCapacity};
+  // Composition-root owned bundle (factory/ids/zones). The application stores it so the borrowed
+  // references above stay valid for the whole service lifetime.
+  std::shared_ptr<void> keep_alive;
 };
 
 // P10a Scheduler application. Owns one-shot task/occurrence rules and the durable trigger outbox
 // intent; Runtime AcceptTimerTrigger wiring and plugin callback completion stay in P10b.
-class SchedulerService final : public ServiceReadinessPort {
+class SchedulerService final : public ServiceReadinessPort, public SchedulerCommandHandler {
 public:
   explicit SchedulerService(SchedulerServiceDependencies dependencies);
   SchedulerService(const SchedulerService&) = delete;
@@ -61,24 +65,24 @@ public:
   ServiceReadiness readiness() const override;
 
   Outcome<ScheduledTask> create_task(const SchedulerCommandContext& context,
-                                     const TaskCreationInput& input);
+                                     const TaskCreationInput& input) override;
   Outcome<ScheduledTask> cancel_task(const SchedulerCommandContext& context,
-                                     std::string_view task_id);
+                                     std::string_view task_id) override;
   Outcome<ScheduledTask> get_task(const SchedulerCommandContext& context,
-                                  std::string_view task_id);
+                                  std::string_view task_id) override;
   Outcome<SchedulerListPage> list_tasks(const SchedulerCommandContext& context,
                                         std::optional<TaskState> state, std::uint32_t page_size,
-                                        std::string_view page_token);
+                                        std::string_view page_token) override;
   Outcome<Occurrence> get_occurrence(const SchedulerCommandContext& context,
-                                     std::string_view occurrence_id);
+                                     std::string_view occurrence_id) override;
   Outcome<Operation> get_operation(const SchedulerCommandContext& context,
-                                   const OperationRef& operation);
+                                   const OperationRef& operation) override;
 
   // Maintenance/trigger handoff. The due sweep only persists intent + outbox (no Runtime/plugin
   // calls); P10b claims the outbox, calls Runtime.AcceptTimerTrigger and confirms the receipt.
   Outcome<std::size_t> due_sweep(TimePoint now, std::size_t limit);
   Outcome<std::vector<SchedulerTriggerClaim>> claim_triggers(TimePoint now, std::size_t limit,
-                                                            std::chrono::seconds lease);
+                                                             std::chrono::seconds lease);
   Outcome<Occurrence> confirm_trigger_accepted(const OutboxClaim& claim,
                                                std::string_view accepted_event_id, TimePoint now);
   Outcome<std::size_t> expire_stale_triggers(TimePoint now, std::size_t limit);

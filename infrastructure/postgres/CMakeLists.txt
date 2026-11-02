@@ -124,3 +124,11 @@ if(UNIX)
   set_tests_properties(p03_service_database PROPERTIES LABELS "p03;integration;fault" TIMEOUT 120
     ENVIRONMENT "KIARABOT_TEST_PG_BIN=${KIARABOT_TEST_PG_BIN};KIARABOT_SERVICE_BIN_DIR=$<TARGET_FILE_DIR:kiarabot-identity>;PATH=${P03_PYTHON_BIN_DIR}:${P03_OPENSSL_BIN_DIR}:$ENV{PATH}")
 endif()
+
+# P10a Scheduler composition root: real PG factory + IANA resolver + unary RPC + maintenance.
+if(TARGET kiarabot-scheduler AND TARGET kiarabot_scheduler_rpc)
+  target_sources(kiarabot-scheduler PRIVATE
+    ${CMAKE_SOURCE_DIR}/core/app/scheduler_composition.cpp)
+  target_link_libraries(kiarabot-scheduler PRIVATE
+    kiarabot_scheduler_rpc kiarabot_scheduler_service kiarabot_postgres OpenSSL::Crypto)
+endif()

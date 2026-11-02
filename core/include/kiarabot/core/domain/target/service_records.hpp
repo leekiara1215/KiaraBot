@@ -68,6 +68,9 @@ struct PluginInstallation {
   // JSON/protobuf. Rejection/validation of manifest schema stays at the trusted boundary.
   std::vector<std::byte> manifest{};
 };
+// The wire TaskRecord.target carries only conversation id/type; adapter/account are legacy
+// internal storage fields, blank for Scheduler-created tasks until P10b resolves the target from
+// the owner instance's Runtime binding.
 struct ConversationKey {
   ResourceId adapter;
   ResourceId account;
