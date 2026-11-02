@@ -1458,292 +1458,297 @@ public:
           return write(*stream, response);
         };
         if (options_.storage && host.operation_case() != v1::HostRequest::kModelChat) {
-        if (!bridge_uuid(host.request_id()) || !bridge_uuid(host.trace_id())) {
-          if (!reject(target::ErrorCode::InvalidArgument)) {
-            break;
-          }
-          continue;
-        }
-        const auto installed = application_.plugin_profile(state.authorization.fence.instance);
-        if (const auto* rejected = std::get_if<target::Failure>(&installed)) {
-          if (!reject(rejected->code, rejected->recovery == target::Recovery::Backoff)) {
-            break;
-          }
-          continue;
-        }
-        const auto& profile =
-            std::get<target::RuntimeBridgeApplication::BridgePluginProfile>(installed);
-        if (std::find(profile.permissions.begin(), profile.permissions.end(),
-                      "storage.namespace") == profile.permissions.end()) {
-          if (!reject(target::ErrorCode::PermissionDenied)) {
-            break;
-          }
-          continue;
-        }
-        const v1::NamespaceScope* wire_scope = nullptr;
-        const google::protobuf::Message* operation = nullptr;
-        target::RequestedScopeKind requested = target::RequestedScopeKind::DefaultPrivate;
-        std::string method;
-        bool mutating = true;
-        switch (host.operation_case()) {
-        case v1::HostRequest::kStorageGet:
-          wire_scope = host.storage_get().has_scope() ? &host.storage_get().scope() : nullptr;
-          operation = &host.storage_get();
-          method = "plugin.storage.get";
-          mutating = false;
-          break;
-        case v1::HostRequest::kStorageSet:
-          wire_scope = host.storage_set().has_scope() ? &host.storage_set().scope() : nullptr;
-          operation = &host.storage_set();
-          method = "plugin.storage.set";
-          break;
-        case v1::HostRequest::kStorageDelete:
-          wire_scope =
-              host.storage_delete().has_scope() ? &host.storage_delete().scope() : nullptr;
-          operation = &host.storage_delete();
-          method = "plugin.storage.delete";
-          break;
-        case v1::HostRequest::kStorageCompareAndSet:
-          wire_scope = host.storage_compare_and_set().has_scope()
-                           ? &host.storage_compare_and_set().scope()
-                           : nullptr;
-          operation = &host.storage_compare_and_set();
-          method = "plugin.storage.compare_and_set";
-          break;
-        default:
-          if (!reject(target::ErrorCode::CapabilityNotSupported)) {
-            break;
-          }
-          continue;
-        }
-        target::InstallationId shared_installation;
-        if (wire_scope != nullptr) {
-          switch (wire_scope->scope_case()) {
-          case v1::NamespaceScope::SCOPE_NOT_SET:
-          case v1::NamespaceScope::kInstancePrivate:
-            if (wire_scope->scope_case() == v1::NamespaceScope::kInstancePrivate &&
-                !wire_scope->instance_private()) {
-              if (!reject(target::ErrorCode::InvalidArgument)) {
-                break;
-              }
-              continue;
+          if (!bridge_uuid(host.request_id()) || !bridge_uuid(host.trace_id())) {
+            if (!reject(target::ErrorCode::InvalidArgument)) {
+              break;
             }
-            break;
-          case v1::NamespaceScope::kInstallationShared:
-            if (!wire_scope->installation_shared() || !profile.installation) {
-              if (!reject(profile.installation ? target::ErrorCode::InvalidArgument
-                                               : target::ErrorCode::PermissionDenied)) {
-                break;
-              }
-              continue;
+            continue;
+          }
+          const auto installed = application_.plugin_profile(state.authorization.fence.instance);
+          if (const auto* rejected = std::get_if<target::Failure>(&installed)) {
+            if (!reject(rejected->code, rejected->recovery == target::Recovery::Backoff)) {
+              break;
             }
-            requested = target::RequestedScopeKind::InstallationShared;
-            shared_installation = *profile.installation;
+            continue;
+          }
+          const auto& profile =
+              std::get<target::RuntimeBridgeApplication::BridgePluginProfile>(installed);
+          if (std::find(profile.permissions.begin(), profile.permissions.end(),
+                        "storage.namespace") == profile.permissions.end()) {
+            if (!reject(target::ErrorCode::PermissionDenied)) {
+              break;
+            }
+            continue;
+          }
+          const v1::NamespaceScope* wire_scope = nullptr;
+          const google::protobuf::Message* operation = nullptr;
+          target::RequestedScopeKind requested = target::RequestedScopeKind::DefaultPrivate;
+          std::string method;
+          bool mutating = true;
+          switch (host.operation_case()) {
+          case v1::HostRequest::kStorageGet:
+            wire_scope = host.storage_get().has_scope() ? &host.storage_get().scope() : nullptr;
+            operation = &host.storage_get();
+            method = "plugin.storage.get";
+            mutating = false;
             break;
-          case v1::NamespaceScope::kInstallationSharedId:
-            // Plugin frames never self-report a namespace id; it is derived from the registered
-            // installation. Only Runtime internal dispatcher frames may use the explicit id.
+          case v1::HostRequest::kStorageSet:
+            wire_scope = host.storage_set().has_scope() ? &host.storage_set().scope() : nullptr;
+            operation = &host.storage_set();
+            method = "plugin.storage.set";
+            break;
+          case v1::HostRequest::kStorageDelete:
+            wire_scope =
+                host.storage_delete().has_scope() ? &host.storage_delete().scope() : nullptr;
+            operation = &host.storage_delete();
+            method = "plugin.storage.delete";
+            break;
+          case v1::HostRequest::kStorageCompareAndSet:
+            wire_scope = host.storage_compare_and_set().has_scope()
+                             ? &host.storage_compare_and_set().scope()
+                             : nullptr;
+            operation = &host.storage_compare_and_set();
+            method = "plugin.storage.compare_and_set";
+            break;
+          default:
             if (!reject(target::ErrorCode::CapabilityNotSupported)) {
               break;
             }
             continue;
           }
-        }
-        const target::ResourceRef authorization_resource =
-            requested == target::RequestedScopeKind::InstallationShared
-                ? target::ResourceRef{target::ResourceKind::Installation,
-                                      {shared_installation.value}}
-                : target::ResourceRef{target::ResourceKind::Instance,
-                                      {state.authorization.fence.instance.value}};
-        auto sampled = application_.current_time();
-        if (const auto* rejected = std::get_if<target::Failure>(&sampled)) {
-          if (!reject(rejected->code, rejected->recovery == target::Recovery::Backoff)) {
+          target::InstallationId shared_installation;
+          if (wire_scope != nullptr) {
+            switch (wire_scope->scope_case()) {
+            case v1::NamespaceScope::SCOPE_NOT_SET:
+            case v1::NamespaceScope::kInstancePrivate:
+              if (wire_scope->scope_case() == v1::NamespaceScope::kInstancePrivate &&
+                  !wire_scope->instance_private()) {
+                if (!reject(target::ErrorCode::InvalidArgument)) {
+                  break;
+                }
+                continue;
+              }
+              break;
+            case v1::NamespaceScope::kInstallationShared:
+              if (!wire_scope->installation_shared() || !profile.installation) {
+                if (!reject(profile.installation ? target::ErrorCode::InvalidArgument
+                                                 : target::ErrorCode::PermissionDenied)) {
+                  break;
+                }
+                continue;
+              }
+              requested = target::RequestedScopeKind::InstallationShared;
+              shared_installation = *profile.installation;
+              break;
+            case v1::NamespaceScope::kInstallationSharedId:
+              // Plugin frames never self-report a namespace id; it is derived from the registered
+              // installation. Only Runtime internal dispatcher frames may use the explicit id.
+              if (!reject(target::ErrorCode::CapabilityNotSupported)) {
+                break;
+              }
+              continue;
+            }
+          }
+          const target::ResourceRef authorization_resource =
+              requested == target::RequestedScopeKind::InstallationShared
+                  ? target::ResourceRef{target::ResourceKind::Installation,
+                                        {shared_installation.value}}
+                  : target::ResourceRef{target::ResourceKind::Instance,
+                                        {state.authorization.fence.instance.value}};
+          auto sampled = application_.current_time();
+          if (const auto* rejected = std::get_if<target::Failure>(&sampled)) {
+            if (!reject(rejected->code, rejected->recovery == target::Recovery::Backoff)) {
+              break;
+            }
+            continue;
+          }
+          const auto now = std::get<target::TimePoint>(sampled);
+          target::TimePoint deadline = now + std::chrono::seconds{30};
+          if (host.has_deadline()) {
+            const auto decoded = codec::from_wire(host.deadline());
+            const auto* value = std::get_if<target::TimePoint>(&decoded);
+            if (!value) {
+              if (!reject(target::ErrorCode::InvalidArgument)) {
+                break;
+              }
+              continue;
+            }
+            deadline = *value;
+          }
+          target::StorageCommandContext context;
+          context.authentication.subject = {state.authorization.fence.instance.value};
+          context.authentication.direct_peer =
+              target::PluginPeer{state.authorization.fence.instance,
+                                 target::SubjectId{state.authorization.fence.instance.value}};
+          context.authentication.audience = target::Service::Runtime;
+          context.authentication.actors = {context.authentication.subject};
+          context.authentication.scopes = {{authorization_resource, "storage.namespace"}};
+          context.authentication.authorization_version = {
+              state.authorization.authorization_version};
+          context.authentication.verified_at = state.authorization.issued_at;
+          context.authentication.expires_at = state.authorization.expires_at;
+          context.request_id = host.request_id();
+          context.trace_id = host.trace_id();
+          context.method = method;
+          context.idempotency_key = host.idempotency_key();
+          context.deadline = deadline;
+          context.instance = state.authorization.fence.instance;
+          context.requested = requested;
+          context.bridge_authorization =
+              target::RuntimeAuthorizationDecision{true,
+                                                   context.authentication.subject,
+                                                   target::Permission::StorageNamespace,
+                                                   {authorization_resource},
+                                                   {state.authorization.authorization_version},
+                                                   now,
+                                                   std::nullopt};
+          if (mutating) {
+            context.fingerprint = storage_fingerprint(*operation);
+          }
+          const auto reject_failure = [&](const target::Failure& failure) {
+            return reject(failure.code, failure.recovery == target::Recovery::Backoff);
+          };
+          if (host.operation_case() == v1::HostRequest::kStorageGet) {
+            auto found = options_.storage->get_storage({context, host.storage_get().key()});
+            if (const auto* rejected = std::get_if<target::Failure>(&found)) {
+              if (!reject_failure(*rejected)) {
+                break;
+              }
+              continue;
+            }
+            const auto& entry = std::get<target::StorageEntryResult>(found);
+            auto* wire = host_response->mutable_storage_get();
+            wire->set_value(entry.value.bytes.data(), entry.value.bytes.size());
+            wire->set_version(entry.value.version.value);
+            if (entry.value.expires_at &&
+                !time_to_wire(*entry.value.expires_at, wire->mutable_expires_at())) {
+              if (!reject(target::ErrorCode::Internal)) {
+                break;
+              }
+              continue;
+            }
+          } else if (host.operation_case() == v1::HostRequest::kStorageSet) {
+            std::optional<target::TimePoint> expires;
+            if (host.storage_set().has_expires_at()) {
+              const auto decoded = codec::from_wire(host.storage_set().expires_at());
+              const auto* value = std::get_if<target::TimePoint>(&decoded);
+              if (!value) {
+                if (!reject(target::ErrorCode::InvalidArgument)) {
+                  break;
+                }
+                continue;
+              }
+              expires = *value;
+            }
+            std::optional<target::CompareCondition> condition;
+            if (host.storage_set().has_condition()) {
+              condition = storage_condition_from_wire(host.storage_set().condition());
+              if (!condition) {
+                if (!reject(target::ErrorCode::InvalidArgument)) {
+                  break;
+                }
+                continue;
+              }
+            }
+            const auto& bytes = host.storage_set().value();
+            std::vector<std::byte> value(bytes.size());
+            std::memcpy(value.data(), bytes.data(), bytes.size());
+            auto written = options_.storage->set_storage(
+                {context, host.storage_set().key(), std::move(value), expires, condition});
+            if (const auto* rejected = std::get_if<target::Failure>(&written)) {
+              if (!reject_failure(*rejected)) {
+                break;
+              }
+              continue;
+            }
+            const auto& entry = std::get<target::StorageEntryResult>(written);
+            auto* wire = host_response->mutable_storage_set();
+            wire->set_version(entry.value.version.value);
+            if (entry.value.expires_at &&
+                !time_to_wire(*entry.value.expires_at, wire->mutable_expires_at())) {
+              if (!reject(target::ErrorCode::Internal)) {
+                break;
+              }
+              continue;
+            }
+          } else if (host.operation_case() == v1::HostRequest::kStorageDelete) {
+            std::optional<target::CompareCondition> condition;
+            if (host.storage_delete().has_condition()) {
+              condition = storage_condition_from_wire(host.storage_delete().condition());
+              if (!condition) {
+                if (!reject(target::ErrorCode::InvalidArgument)) {
+                  break;
+                }
+                continue;
+              }
+            }
+            auto removed =
+                options_.storage->delete_storage({context, host.storage_delete().key(), condition});
+            if (const auto* rejected = std::get_if<target::Failure>(&removed)) {
+              if (!reject_failure(*rejected)) {
+                break;
+              }
+              continue;
+            }
+            const auto& result = std::get<target::StorageDeleteResult>(removed);
+            auto* wire = host_response->mutable_storage_delete();
+            wire->set_deleted(result.deleted);
+            if (result.version) {
+              wire->set_version(result.version->value);
+            }
+          } else {
+            std::optional<target::TimePoint> expires;
+            if (host.storage_compare_and_set().has_expires_at()) {
+              const auto decoded = codec::from_wire(host.storage_compare_and_set().expires_at());
+              const auto* value = std::get_if<target::TimePoint>(&decoded);
+              if (!value) {
+                if (!reject(target::ErrorCode::InvalidArgument)) {
+                  break;
+                }
+                continue;
+              }
+              expires = *value;
+            }
+            if (!host.storage_compare_and_set().has_condition()) {
+              if (!reject(target::ErrorCode::InvalidArgument)) {
+                break;
+              }
+              continue;
+            }
+            auto condition =
+                storage_condition_from_wire(host.storage_compare_and_set().condition());
+            if (!condition) {
+              if (!reject(target::ErrorCode::InvalidArgument)) {
+                break;
+              }
+              continue;
+            }
+            const auto& bytes = host.storage_compare_and_set().value();
+            std::vector<std::byte> value(bytes.size());
+            std::memcpy(value.data(), bytes.data(), bytes.size());
+            auto written = options_.storage->compare_and_set_storage(
+                {context, host.storage_compare_and_set().key(), std::move(value), *condition,
+                 expires});
+            if (const auto* rejected = std::get_if<target::Failure>(&written)) {
+              if (!reject_failure(*rejected)) {
+                break;
+              }
+              continue;
+            }
+            const auto& entry = std::get<target::StorageEntryResult>(written);
+            if (!storage_entry_to_wire(
+                    entry.value, host.storage_compare_and_set().key(),
+                    host_response->mutable_storage_compare_and_set()->mutable_entry())) {
+              if (!reject(target::ErrorCode::Internal)) {
+                break;
+              }
+              continue;
+            }
+          }
+          if (!write(*stream, response)) {
             break;
           }
           continue;
-        }
-        const auto now = std::get<target::TimePoint>(sampled);
-        target::TimePoint deadline = now + std::chrono::seconds{30};
-        if (host.has_deadline()) {
-          const auto decoded = codec::from_wire(host.deadline());
-          const auto* value = std::get_if<target::TimePoint>(&decoded);
-          if (!value) {
-            if (!reject(target::ErrorCode::InvalidArgument)) {
-              break;
-            }
-            continue;
-          }
-          deadline = *value;
-        }
-        target::StorageCommandContext context;
-        context.authentication.subject = {state.authorization.fence.instance.value};
-        context.authentication.direct_peer =
-            target::PluginPeer{state.authorization.fence.instance,
-                               target::SubjectId{state.authorization.fence.instance.value}};
-        context.authentication.audience = target::Service::Runtime;
-        context.authentication.actors = {context.authentication.subject};
-        context.authentication.scopes = {{authorization_resource, "storage.namespace"}};
-        context.authentication.authorization_version = {state.authorization.authorization_version};
-        context.authentication.verified_at = state.authorization.issued_at;
-        context.authentication.expires_at = state.authorization.expires_at;
-        context.request_id = host.request_id();
-        context.trace_id = host.trace_id();
-        context.method = method;
-        context.idempotency_key = host.idempotency_key();
-        context.deadline = deadline;
-        context.instance = state.authorization.fence.instance;
-        context.requested = requested;
-        context.bridge_authorization =
-            target::RuntimeAuthorizationDecision{true,
-                                                 context.authentication.subject,
-                                                 target::Permission::StorageNamespace,
-                                                 {authorization_resource},
-                                                 {state.authorization.authorization_version},
-                                                 now,
-                                                 std::nullopt};
-        if (mutating) {
-          context.fingerprint = storage_fingerprint(*operation);
-        }
-        const auto reject_failure = [&](const target::Failure& failure) {
-          return reject(failure.code, failure.recovery == target::Recovery::Backoff);
-        };
-        if (host.operation_case() == v1::HostRequest::kStorageGet) {
-          auto found = options_.storage->get_storage({context, host.storage_get().key()});
-          if (const auto* rejected = std::get_if<target::Failure>(&found)) {
-            if (!reject_failure(*rejected)) {
-              break;
-            }
-            continue;
-          }
-          const auto& entry = std::get<target::StorageEntryResult>(found);
-          auto* wire = host_response->mutable_storage_get();
-          wire->set_value(entry.value.bytes.data(), entry.value.bytes.size());
-          wire->set_version(entry.value.version.value);
-          if (entry.value.expires_at &&
-              !time_to_wire(*entry.value.expires_at, wire->mutable_expires_at())) {
-            if (!reject(target::ErrorCode::Internal)) {
-              break;
-            }
-            continue;
-          }
-        } else if (host.operation_case() == v1::HostRequest::kStorageSet) {
-          std::optional<target::TimePoint> expires;
-          if (host.storage_set().has_expires_at()) {
-            const auto decoded = codec::from_wire(host.storage_set().expires_at());
-            const auto* value = std::get_if<target::TimePoint>(&decoded);
-            if (!value) {
-              if (!reject(target::ErrorCode::InvalidArgument)) {
-                break;
-              }
-              continue;
-            }
-            expires = *value;
-          }
-          std::optional<target::CompareCondition> condition;
-          if (host.storage_set().has_condition()) {
-            condition = storage_condition_from_wire(host.storage_set().condition());
-            if (!condition) {
-              if (!reject(target::ErrorCode::InvalidArgument)) {
-                break;
-              }
-              continue;
-            }
-          }
-          const auto& bytes = host.storage_set().value();
-          std::vector<std::byte> value(bytes.size());
-          std::memcpy(value.data(), bytes.data(), bytes.size());
-          auto written = options_.storage->set_storage(
-              {context, host.storage_set().key(), std::move(value), expires, condition});
-          if (const auto* rejected = std::get_if<target::Failure>(&written)) {
-            if (!reject_failure(*rejected)) {
-              break;
-            }
-            continue;
-          }
-          const auto& entry = std::get<target::StorageEntryResult>(written);
-          auto* wire = host_response->mutable_storage_set();
-          wire->set_version(entry.value.version.value);
-          if (entry.value.expires_at &&
-              !time_to_wire(*entry.value.expires_at, wire->mutable_expires_at())) {
-            if (!reject(target::ErrorCode::Internal)) {
-              break;
-            }
-            continue;
-          }
-        } else if (host.operation_case() == v1::HostRequest::kStorageDelete) {
-          std::optional<target::CompareCondition> condition;
-          if (host.storage_delete().has_condition()) {
-            condition = storage_condition_from_wire(host.storage_delete().condition());
-            if (!condition) {
-              if (!reject(target::ErrorCode::InvalidArgument)) {
-                break;
-              }
-              continue;
-            }
-          }
-          auto removed =
-              options_.storage->delete_storage({context, host.storage_delete().key(), condition});
-          if (const auto* rejected = std::get_if<target::Failure>(&removed)) {
-            if (!reject_failure(*rejected)) {
-              break;
-            }
-            continue;
-          }
-          const auto& result = std::get<target::StorageDeleteResult>(removed);
-          auto* wire = host_response->mutable_storage_delete();
-          wire->set_deleted(result.deleted);
-          if (result.version) {
-            wire->set_version(result.version->value);
-          }
-        } else {
-          std::optional<target::TimePoint> expires;
-          if (host.storage_compare_and_set().has_expires_at()) {
-            const auto decoded = codec::from_wire(host.storage_compare_and_set().expires_at());
-            const auto* value = std::get_if<target::TimePoint>(&decoded);
-            if (!value) {
-              if (!reject(target::ErrorCode::InvalidArgument)) {
-                break;
-              }
-              continue;
-            }
-            expires = *value;
-          }
-          if (!host.storage_compare_and_set().has_condition()) {
-            if (!reject(target::ErrorCode::InvalidArgument)) {
-              break;
-            }
-            continue;
-          }
-          auto condition =
-              storage_condition_from_wire(host.storage_compare_and_set().condition());
-          if (!condition) {
-            if (!reject(target::ErrorCode::InvalidArgument)) {
-              break;
-            }
-            continue;
-          }
-          const auto& bytes = host.storage_compare_and_set().value();
-          std::vector<std::byte> value(bytes.size());
-          std::memcpy(value.data(), bytes.data(), bytes.size());
-          auto written =
-              options_.storage->compare_and_set_storage({context, host.storage_compare_and_set().key(),
-                                                 std::move(value), *condition, expires});
-          if (const auto* rejected = std::get_if<target::Failure>(&written)) {
-            if (!reject_failure(*rejected)) {
-              break;
-            }
-            continue;
-          }
-          const auto& entry = std::get<target::StorageEntryResult>(written);
-          if (!storage_entry_to_wire(
-                  entry.value, host.storage_compare_and_set().key(),
-                  host_response->mutable_storage_compare_and_set()->mutable_entry())) {
-            if (!reject(target::ErrorCode::Internal)) {
-              break;
-            }
-            continue;
-          }
-        }
         }
         const auto grant = std::find(state.permissions.begin(), state.permissions.end(),
                                      "model.chat") != state.permissions.end();
