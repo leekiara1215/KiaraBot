@@ -22,9 +22,9 @@ namespace kiarabot::core::platform {
 using HostPeerCertificateResolver =
     std::function<target::Outcome<std::string>(grpc::ServerContext&)>;
 
-// P08b-3 command/receipt/observation pipelines are not implemented yet. The P08b-2b server
-// validates and optionally forwards frames through these hooks; a null hook means transport
-// validation only (never a fabricated durable acknowledgement).
+// P08b-3 command/receipt/observation pipelines are implemented through the persistence hooks
+// below (P08b-3a); these callbacks remain optional in-process hooks for tests/composition. A null
+// hook and null persistence mean transport validation only, never a fabricated durable ack.
 struct HostBridgeCallbacks {
   std::function<target::Status(const v1::HostReportInventoryRequest&)> inventory;
   std::function<target::Status(const v1::HostCommandReceipt&)> receipt;

@@ -1,9 +1,9 @@
 /**
  * P12 live management pages.
  *
- * These pages consume the P12a contract through ApiClient. Until the P12c
- * Control backend lands the target endpoints may answer 404/501; the pages keep
- * that state explicit (P12c 后端未实现) and never fabricate success. Locked
+ * These pages consume the P12a contract through ApiClient. Some target endpoints
+ * remain not_implemented/404-501; the pages keep that state explicit (P12c 未接线)
+ * and never fabricate success. Locked
  * semantics: a NOT_FOUND action result is displayed as "未找到", not as an
  * execution failure; secrets are never displayed (only configured/version
  * markers); logs/audit queries are a declared P12 phase-2 deferral.
