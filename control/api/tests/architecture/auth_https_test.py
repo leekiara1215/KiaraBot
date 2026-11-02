@@ -316,7 +316,10 @@ def main(control, fixture, model_fixture=None, owner_fixture=None, runtime_fixtu
                 assert status == 200 and body['model']['model_id'] == model_id, (status, body)
                 status, body, _ = request('GET', '/api/v1/models?scope=' + model_scope,
                                           headers=auth_header)
-                assert status == 200 and body['models'][0]['model_id'] == model_id, (status, body)
+                assert status == 200 and body['items'][0]['id'] == model_id and \
+                    body['items'][0]['name'] == 'default' and \
+                    body['items'][0]['state'] == 'LIFECYCLE_ACTIVE' and \
+                    'page' in body and 'models' not in body, (status, body)
                 update = {'config': {
                     'model_id': model_id, 'alias': 'default', 'provider_kind': 'openai_chat_completions',
                     'endpoint': 'https://api.example.invalid/v1', 'provider_model': 'fixture-model',

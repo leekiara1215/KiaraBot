@@ -1303,9 +1303,15 @@ void model_management_surface() {
           "metadata delegation is model.read");
   auto listed =
       gateway.handle(request("GET", "/api/v1/models" + model_scope_query() + "&page_size=1"));
-  require(listed && listed->status == 200 && listed->body.find("\"models\"") != std::string::npos &&
+  require(listed && listed->status == 200 &&
+              listed->body.find("\"items\":[") != std::string::npos &&
+              listed->body.find("\"id\":\"model-1\"") != std::string::npos &&
+              listed->body.find("\"name\":\"default\"") != std::string::npos &&
+              listed->body.find("\"state\":\"LIFECYCLE_ACTIVE\"") != std::string::npos &&
+              listed->body.find("\"page\":{") != std::string::npos &&
+              listed->body.find("\"models\"") == std::string::npos &&
               model.list_request.scope().resources_size() == 1,
-          "model metadata list forwarded");
+          "model list projects OpenAPI ModelPage items/page");
   auto runtime_operation = gateway.handle(
       request("GET", "/api/v1/operations/runtime/operation-1?scope=" + model_scope_json()));
   require(runtime_operation && runtime_operation->status == 200 &&

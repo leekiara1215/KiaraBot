@@ -217,6 +217,22 @@ Json task_page_json(const wire::SchedulerListTasksResponse& response) {
   }
   return {{"items", std::move(items)}, {"page", std::move(page)}};
 }
+Json model_page_json(const wire::ModelListModelMetadataResponse& response) {
+  // OpenAPI ModelPage(GenericResource items + PageInfo) instead of the raw proto
+  // {"models":[...]} shape. Only the documented display fields are exposed.
+  Json items = Json::array();
+  for (const auto& model : response.models()) {
+    Json item{{"id", model.model_id()}};
+    item["name"] = model.alias().empty() ? model.model_id() : model.alias();
+    item["state"] = wire::LifecycleState_Name(model.state());
+    items.push_back(std::move(item));
+  }
+  Json page{{"page_size", response.page().page_size()}};
+  if (!response.page().next_page_token().empty()) {
+    page["next_page_token"] = response.page().next_page_token();
+  }
+  return {{"items", std::move(items)}, {"page", std::move(page)}};
+}
 Json state_json(const wire::VersionedResourceState& state) {
   Json value{
       {"resource",
@@ -1965,15 +1981,8 @@ std::optional<OwnerHttpResult> OwnerGateway::handle(const OwnerHttpRequest& requ
             owner_http_status(failure->code),
             owner_error_body(failure->code, request_id, trace_id, failure->retryable)};
       }
-      google::protobuf::util::JsonPrintOptions options;
-      options.preserve_proto_field_names = true;
-      std::string body;
-      if (!google::protobuf::util::MessageToJsonString(
-               std::get<wire::ModelListModelMetadataResponse>(result), &body, options)
-               .ok()) {
-        return OwnerHttpResult{500, owner_error_body(wire::INTERNAL, request_id, trace_id, false)};
-      }
-      return OwnerHttpResult{200, body};
+      return OwnerHttpResult{
+          200, model_page_json(std::get<wire::ModelListModelMetadataResponse>(result)).dump()};
     }
     constexpr std::string_view kModels = "/api/v1/models/";
     if (path.starts_with(kModels)) {
