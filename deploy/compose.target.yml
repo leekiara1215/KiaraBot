@@ -1,0 +1,25 @@
+# P14a-2 default target deployment: single-host Docker Compose (user-confirmed default).
+#
+# Single host runs PostgreSQL, the four data/control-plane services, Control API, Panel and
+# the execution plane (Plugin Host + Adapter). Each service remains its own container with
+# its own TLS material, credentials and database permission boundary; only loopback ports
+# are published. Docker Compose >= 2.24 is required for `include`.
+#
+# Start the single-host stack:
+#   docker compose --env-file deploy/target.env -f deploy/compose.target.yml \
+#     --profile exec up -d
+# The explicit `init` profile is one-shot and is never started by `up -d`:
+#   docker compose --env-file deploy/target.env -f deploy/compose.target.yml \
+#     --profile init run --rm init-identity
+#
+# Optional two-host topology (deferred; cross-host fault drills not validated):
+#   Host-A: compose.infra.yml + compose.core.yml
+#   Host-B: compose.exec.yml --profile host --profile adapter (or split host/adapter)
+# The profiles "host"/"adapter" in compose.exec.yml exist for that optional split; the
+# single-host default uses the combined "exec" profile.
+name: ${COMPOSE_PROJECT_NAME:-kiarabot-target}
+
+include:
+  - compose.infra.yml
+  - compose.core.yml
+  - compose.exec.yml

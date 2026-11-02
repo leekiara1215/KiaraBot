@@ -1,5 +1,3 @@
-name: ${COMPOSE_PROJECT_NAME:-kiarabot-target}
-
 # Target deployment infrastructure (P14a): PostgreSQL 16.4 cluster hosting the four
 # private logical databases (identity/runtime/scheduler/model). This file does NOT
 # create roles/databases or run schema DDL automatically:

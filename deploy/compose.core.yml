@@ -1,5 +1,3 @@
-name: ${COMPOSE_PROJECT_NAME:-kiarabot-target}
-
 # Target control/data plane (P14a): Identity, Runtime, Scheduler, Model, Control and
 # Panel. It assumes PostgreSQL was started by deploy/compose.infra.yml (or an external
 # PostgreSQL service) and the databases were explicitly initialized. No container in
