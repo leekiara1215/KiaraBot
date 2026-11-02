@@ -151,6 +151,15 @@ def main(control, fixture):
                 headers={'Authorization': 'Bearer ' + ACCESS, 'Idempotency-Key': KEY})
             assert status in (403, 503), (status, body)
             assert body['code'] in ('PERMISSION_DENIED', 'UPSTREAM_UNAVAILABLE'), body
+            operation_scope = urllib.parse.quote(json.dumps({'resources': [
+                {'kind': 'RESOURCE_ACCOUNT', 'id': SESSION}]}))
+            for owner in ('runtime', 'scheduler', 'model'):
+                status, body, _ = request(
+                    'GET', f'/api/v1/operations/{owner}/{SESSION}?scope={operation_scope}',
+                    headers={'Authorization': 'Bearer ' + ACCESS})
+                assert status in (400, 403, 503), (owner, status, body)
+                assert body['code'] in ('INVALID_ARGUMENT', 'PERMISSION_DENIED',
+                                        'UPSTREAM_UNAVAILABLE'), (owner, body)
             scope = urllib.parse.quote(json.dumps({'resources': [
                 {'kind': 'RESOURCE_ACCOUNT', 'id': SESSION}]}))
             status, body, _ = request(

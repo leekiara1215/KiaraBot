@@ -505,3 +505,27 @@ P12c 在独立 Control 进程的 HTTPS 边界新增 owner-backed 转发层（`co
 - 尚未实现（后续批次）：实例级插件 enable/disable/config REST（不映射旧 `/plugins/{id}/enable`，
   操作对象必须明确为实例；需要 Host/插件确认状态来源）、WS/异步 operation 快照与断流恢复、
   operation 查询 REST、模型管理 REST（P11d/ref-infra）、日志/审计权威来源。
+
+### P12c-4 已实现（2026-11-02）
+
+- **operation 快照 REST**：`GET /api/v1/operations/{ownerService}/{operationId}`（ownerService ∈
+  runtime/scheduler/model）按路径只路由到该 owner 的 `GetOperation`，经一次性 Identity 委托
+  （runtime/model=`resource.read`、scheduler=`task.read`）与 mTLS 调用；`scope` 必填（恰一个资源），
+  owner 以“存储的 operation 资源”做授权、客户端 scope 不能重标定。响应 `{"operation": {...}}` 含
+  ref/version(string)/state/execution_outcome/participants[]/observed_at/reason/next_attempt_at/stalled；
+  缺失/不可见→404 NOT_FOUND；200 只表示权威快照，绝不等于完成。Panel 对 202/200+operation 的写操作
+  应轮询该端点。
+- **schema 对齐**：tasks 列表改为 OpenAPI `TaskPage`（`items[{id,name,state,created_at}]` +
+  `page{page_size,next_page_token}`），不再直接透传 proto `tasks/page`；instance config GET 已是
+  `{"config": {instance,desired_version,values,applied_version,apply_state,...}}`，与
+  `TargetRuntimeGetInstanceConfigResponse` 一致（uint64 版本仍为 JSON number，浏览器端需按字符串处理，
+  已记录为 P12a/P12d 对齐项）。
+- **WS/断流恢复**：独立 Control 目标进程目前只提供 HTTPS，尚无目标 WS 服务端（reference WS 不代表
+  target 能力）；本批先把**权威 REST operation 快照**作为 resync 数据源落地。WS operation 进度事件/
+  RESYNC_REQUIRED 仍为 not_implemented，需 P12a 定义 target WS 承载与发布者、P12d 对接后实现；客户端
+  断流后应重新拉取 operation/资源 REST 快照，不得据旧流推断完成。
+- **实例级插件 enable/config**：P12a/OpenAPI 仅保留旧 `/plugins/{id}/*`（不得机械映射到实例），尚无
+  冻结的实例级路径；本批**未实现**，需 P12a 补 `/installations/{id}/instances` 下的启用/禁用与配置
+  应用状态投影（Runtime 期望 / Host 观察 / 插件 ACK 三类事实分离）。旧 `/plugins` 路径保持非目标语义。
+- 测试：gateway 单测覆盖三 owner 分支/权限映射/404/409/scope 必填/participants+stalled 字段/TaskPage
+  形状；p04 真实 TLS 验收新增三个 owner operation 查询的稳定拒绝/不可用断言。
