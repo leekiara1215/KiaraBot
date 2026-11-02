@@ -90,7 +90,7 @@ scripts/ops/tests/ops_scripts_test.sh
 - [ ] 两主机/跨主机演练是否在本次发布范围外；若在外，发布说明必须明确“未验证”。
 - [ ] `release-gated` Environment required reviewers 名单与 tag 保护规则。
 
-## 7. 当前结论（P14n 最终刷新：2026-11-03，基线 HEAD e83a988，final gate 147/147）
+## 7. 当前结论（P14o 最终刷新：2026-11-03，基线 HEAD 23aa6ab，final gate 148/148）
 
 | 交付类别 | 状态 |
 |---|---|
@@ -99,7 +99,7 @@ scripts/ops/tests/ops_scripts_test.sh
 | 远端 CI | **未运行**：workflow/本地静态检查已合入，`gh` 未认证，未触发 GitHub Actions |
 | 正式发布 | **未就绪**：无推送/签名镜像、无 release artifact，需先完成本清单第 2–4 节 |
 
-最终证据：`build/env/recheck-full-locked.sh` 在 `e83a988` 真实跑 full-locked build + **147/147 CTest passed**（`build/logs/recheck-ctest-035852.log`）；原生五进程+PG16.4 矩阵最终 **9 success + 1 stable-ok + 0 known-gap**。P10m 修复了优雅停机 SIGSEGV（OpenSSL atexit 竞态），final gate 以此为基础。
-待用户决策仍为：P13 方案 A/C、P05b 委托语义、P12 host operation/bootstrap_credential 字段级；环境项为 QQ/外部 Provider/生产 CA/密钥托管/备份离站/Docker/两主机/远端 CI/正式发布。详见 [P14n 交付状态](../reports/modules/architecture-delivery-status.md) 与 [阶段矩阵](27-phase-exit-evidence.md)。
+最终证据：`build/env/recheck-full-locked.sh` 在 `23aa6ab` 真实跑 full-locked build + **148/148 CTest passed**（`build/logs/recheck-ctest-050454.log`，684.68s；新增 `p13_joint_delete_e2e` 36.88s）；首跑 `sqlite_runtime_store` flake 已定性（孤立 14/14、全量重跑 148/148）。原生五进程+PG16.4 矩阵最终 **9 success + 1 stable-ok + 0 known-gap**。P10m 修复优雅停机 SIGSEGV（OpenSSL atexit 竞态）并完成 p10 抽验；P13g 提供 test-only 联合 e2e，但非生产退出证据。
+待用户决策仍为：P13 生产授权（A/B；C test-only 已提供但不等于生产退出）、P05b 委托语义、P12 host operation/bootstrap_credential 字段级；环境项为 QQ/外部 Provider/生产 CA/密钥托管/备份离站/Docker/两主机/远端 CI/正式发布。详见 [P14o 交付状态](../reports/modules/architecture-delivery-status.md) 与 [阶段矩阵](27-phase-exit-evidence.md)。
 
 本清单不能由 AI/文档提交替代真实环境验收；任何一项未完成时发布说明必须保留对应“未验证/延期/缺口”。

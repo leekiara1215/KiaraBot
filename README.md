@@ -78,7 +78,7 @@ Host/Adapter                       各自本地 SQLite 可靠执行/发送日志
 
 ## 当前状态
 
-**2026-11-03 目标架构状态**：P00–P14 的实现已基本合入 main（P14n 最终基线 `e83a988`，final gate **147/147**；P10m 优雅停机修复后原生五进程栈矩阵 **9 success + 1 stable-ok + 0 known-gap**），
+**2026-11-03 目标架构状态**：P00–P14 的实现已基本合入 main（P14o 最终基线 `23aa6ab`，final gate **148/148**；P10m 优雅停机修复、P13g test-only 联合 e2e 后原生五进程栈矩阵 **9 success + 1 stable-ok + 0 known-gap**），
 但“实现合入”“已实测”“待验收/未验证”“正式发布”必须分开看。统一证据矩阵与发布门禁见
 [阶段退出证据](doc/27-phase-exit-evidence.md)、[P14n 发布清单](doc/28-p14d-release-checklist.md)；
 CI/发布流水线配置见 [CI/CD 文档](doc/12-ci-cd.md)。
@@ -94,7 +94,7 @@ CI/发布流水线配置见 [CI/CD 文档](doc/12-ci-cd.md)。
 PluginBridge/AdapterBridge 真实 TLS 事件→插件→Action；Scheduler 定时交接；Namespace/Storage CAS；
 Model 两次事务/Provider/UNKNOWN 边界；Host 期望状态与进程桥；Control owner REST/健康/operation 快照；
 P13 生命周期清理与 Host/SDK drain；P14f/i/j/k/l/m 原生单机栈矩阵 9 success+1 stable-ok+0 known-gap；
-P12j Panel client 严格 live 通过。P13 退出仍未通过（待用户决策 A/C）；P05b 委托语义、P12 host operation/
+P12j Panel client 严格 live 通过。P13 生产退出仍未通过（test-only 证据已具备，待用户决策生产授权 A/B）；P05b 委托语义、P12 host operation/
 bootstrap_credential 字段级待决策；P14 Docker/Compose、两主机、远端 CI、正式发布仍未验收；真实 QQ/NapCat、
 真实模型 Provider 只在用户环境单独验证，不能用 fake 结果替代。最终索引见
 [P14n 交付状态](reports/modules/architecture-delivery-status.md)。
@@ -111,7 +111,7 @@ bootstrap_credential 字段级待决策；P14 Docker/Compose、两主机、远�
   Docker/Compose、两主机、真实 QQ/模型未运行。
 - **尚未完成或未验收**：单机 Docker Compose 实际启动/healthcheck/官方 PG digest；两主机与跨主机
   断网恢复；远端 CI 手动/自动运行；GHCR 推送+cosign 签名+SBOM 发布、签名验签；P05b 委托深链路；
-  P13 方案 A/C；P12 host operation/bootstrap_credential 字段级；真实 QQ/NapCat 与真实模型 Provider 联调；
+  P13 生产授权 A/B；P12 host operation/bootstrap_credential 字段级；真实 QQ/NapCat 与真实模型 Provider 联调；
   生产规模 RTO、备份离站/KMS、指标/告警/集中日志。
 - **远端 CI 与发布**：GitHub Actions 触发器已恢复但默认由仓库变量 `CI_AUTO_ENABLED` 门控；
   `release.yml` 仅允许受保护 `release-gated` 环境 + `RELEASE_PUSH_ENABLED`/`RELEASE_COSIGN_KEYLESS`
