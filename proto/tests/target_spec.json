@@ -1171,13 +1171,15 @@
       "idempotency": "required",
       "deadline_ms": 5000,
       "server_streaming": false,
-      "status": "not_implemented",
+      "status": "implemented",
       "max_deadline_ms": 30000,
       "requires_idempotency_key": true,
       "scope_kinds": [
         "RESOURCE_TASK",
         "RESOURCE_INSTANCE"
-      ]
+      ],
+      "exposure": "wire",
+      "status_note": "P10g: P10a Scheduler application/PG v9 + owner mTLS SchedulerService RPC implemented; evidence p10_scheduler_service/rpc/identity, p10_postgres_scheduler, p10_timer_e2e; target real-environment gaps recorded in reports/modules/architecture-p10-scheduler.md"
     },
     {
       "service": "SchedulerService",
@@ -1192,13 +1194,15 @@
       "idempotency": "required",
       "deadline_ms": 5000,
       "server_streaming": false,
-      "status": "not_implemented",
+      "status": "implemented",
       "max_deadline_ms": 30000,
       "requires_idempotency_key": true,
       "scope_kinds": [
         "RESOURCE_TASK",
         "RESOURCE_INSTANCE"
-      ]
+      ],
+      "exposure": "wire",
+      "status_note": "P10g: P10a Scheduler application/PG v9 + owner mTLS SchedulerService RPC implemented; evidence p10_scheduler_service/rpc/identity, p10_postgres_scheduler, p10_timer_e2e; target real-environment gaps recorded in reports/modules/architecture-p10-scheduler.md"
     },
     {
       "service": "SchedulerService",
@@ -1213,13 +1217,15 @@
       "idempotency": "none",
       "deadline_ms": 2000,
       "server_streaming": false,
-      "status": "not_implemented",
+      "status": "implemented",
       "max_deadline_ms": 5000,
       "requires_idempotency_key": false,
       "scope_kinds": [
         "RESOURCE_TASK",
         "RESOURCE_INSTANCE"
-      ]
+      ],
+      "exposure": "wire",
+      "status_note": "P10g: P10a Scheduler application/PG v9 + owner mTLS SchedulerService RPC implemented; evidence p10_scheduler_service/rpc/identity, p10_postgres_scheduler, p10_timer_e2e; target real-environment gaps recorded in reports/modules/architecture-p10-scheduler.md"
     },
     {
       "service": "SchedulerService",
@@ -1234,13 +1240,15 @@
       "idempotency": "none",
       "deadline_ms": 2000,
       "server_streaming": false,
-      "status": "not_implemented",
+      "status": "implemented",
       "max_deadline_ms": 5000,
       "requires_idempotency_key": false,
       "scope_kinds": [
         "RESOURCE_TASK",
         "RESOURCE_INSTANCE"
-      ]
+      ],
+      "exposure": "wire",
+      "status_note": "P10g: P10a Scheduler application/PG v9 + owner mTLS SchedulerService RPC implemented; evidence p10_scheduler_service/rpc/identity, p10_postgres_scheduler, p10_timer_e2e; target real-environment gaps recorded in reports/modules/architecture-p10-scheduler.md"
     },
     {
       "service": "SchedulerService",
@@ -1255,13 +1263,15 @@
       "idempotency": "none",
       "deadline_ms": 2000,
       "server_streaming": false,
-      "status": "not_implemented",
+      "status": "implemented",
       "max_deadline_ms": 5000,
       "requires_idempotency_key": false,
       "scope_kinds": [
         "RESOURCE_TASK",
         "RESOURCE_INSTANCE"
-      ]
+      ],
+      "exposure": "wire",
+      "status_note": "P10g: P10a Scheduler application/PG v9 + owner mTLS SchedulerService RPC implemented; evidence p10_scheduler_service/rpc/identity, p10_postgres_scheduler, p10_timer_e2e; target real-environment gaps recorded in reports/modules/architecture-p10-scheduler.md"
     },
     {
       "service": "SchedulerService",
@@ -1276,13 +1286,15 @@
       "idempotency": "none",
       "deadline_ms": 2000,
       "server_streaming": false,
-      "status": "not_implemented",
+      "status": "implemented",
       "max_deadline_ms": 5000,
       "requires_idempotency_key": false,
       "scope_kinds": [
         "RESOURCE_TASK",
         "RESOURCE_INSTANCE"
-      ]
+      ],
+      "exposure": "wire",
+      "status_note": "P10g: P10a Scheduler application/PG v9 + owner mTLS SchedulerService RPC implemented; evidence p10_scheduler_service/rpc/identity, p10_postgres_scheduler, p10_timer_e2e; target real-environment gaps recorded in reports/modules/architecture-p10-scheduler.md"
     },
     {
       "service": "ModelService",
@@ -1797,8 +1809,7 @@
       "requires_idempotency_key": true,
       "exposure": "wire",
       "status_note": "P11a/b/c Model service production RPC + P11d Control REST forwarding evidence; REST Control operation status remains separately registered"
-    }
-    ,
+    },
     {
       "service": "IdentityService",
       "method": "ListAudit",
@@ -1816,8 +1827,7 @@
       "max_deadline_ms": 5000,
       "requires_idempotency_key": false,
       "status_note": "P12e read-only owner audit/log projection: pure application + real PG16.4 keyset pagination/filter/redaction tests + owner RPC adapter; Control REST aggregation remains not_implemented (P12c)"
-    }
-,
+    },
     {
       "service": "IdentityService",
       "method": "ListLogs",
@@ -1835,8 +1845,7 @@
       "max_deadline_ms": 5000,
       "requires_idempotency_key": false,
       "status_note": "P12e read-only owner audit/log projection: pure application + real PG16.4 keyset pagination/filter/redaction tests + owner RPC adapter; Control REST aggregation remains not_implemented (P12c)"
-    }
-,
+    },
     {
       "service": "RuntimeService",
       "method": "ListAudit",
@@ -1854,8 +1863,7 @@
       "max_deadline_ms": 5000,
       "requires_idempotency_key": false,
       "status_note": "P12e read-only owner audit/log projection: pure application + real PG16.4 keyset pagination/filter/redaction tests + owner RPC adapter; Control REST aggregation remains not_implemented (P12c)"
-    }
-,
+    },
     {
       "service": "RuntimeService",
       "method": "ListLogs",
