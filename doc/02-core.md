@@ -1526,3 +1526,7 @@ P13 target 翻转（证据：P13a 应用/PG/RPC + 真实 Runtime↔Identity e2e 
 - operation/participant 进度仍只由现有 `GetOperation`（participants schema 含 state/reason/next_attempt_at）投影；BLOCKED/UNKNOWN 不映射成全局成功。
 - begin_delete/restore 等命令仍写现有 owner 审计（`ListAudit` 可按 resource/时间过滤）；`ListLogs` 是审计的脱敏投影，不新增业务日志表。
 - 容量/租约/积压通过现有 owner 表只读 SQL 核对（见 doc/08 P13d 排障步骤）；Metrics/告警、集中日志和真实生产规模仍是 P14/环境项。
+
+### P09f Storage/Namespace 退出证据（2026-11-02）
+
+P09 storage 退出证据以现有测试为准：`p09a_runtime_storage_application`（application 层 scope/condition/TTL/quota/receipt/成员 gate/管理 operation）、`p09_postgres_storage_records`（owned PG16.4 四表/CAS/收据重放/成员/配额/禁用/重启持久）、`p06_bridge_acceptance` P09b 段（真 TLS PluginBridge `HostRequest.storage_*` 帧：私有/共享 scope、CAS/stale、TTL/重放不续 TTL、过期、配额 RATE_LIMITED、显式 installation_shared_id 拒绝、共享成员/禁用）。target 仅翻转有上述证据的 message/field/semantic；unary `Runtime*Storage*` 为 internal_dispatcher，PluginBridge 帧是插件唯一对外 storage 面。quota 多连接横压、storage 断线重连专项和共享成员删除不误删他人数据的直接断言仍待补；真实生产规模/长时保留待 P14 环境。

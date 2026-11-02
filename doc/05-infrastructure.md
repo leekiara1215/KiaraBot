@@ -577,3 +577,5 @@ PG 回调：注册/心跳时按当前 generation 从 outbox 下发，receipt 条
 observation 按序去重写入；30s 未回执转 Unknown、7d/30d 保留清理挂在 P13a 60s 清理批次。
 
 保留期：逻辑删除后非秘密内容 30 天可恢复；最小墓碑/必要审计 180 天，ID 永不复用；操作记录由 lifecycle 显式设置 `retain_until` 后才可清理（P05 普通 operation 无保留期限，不误删）；清理每 60 秒有界批次执行，未决 receipts/inbox/outbox 不提前清理，清理单项失败只告警不撤销业务 gate。墓碑与参与者均为 owner-local 表，不跨库级联、不新增服务边界。`HostJournal::prune` 的 Host 侧调用属 P13b。
+
+P09f（2026-11-02）：Runtime storage/PG 证据已复核——`p09_postgres_storage_records` 真 PG16.4 owned cluster 覆盖 namespace/values/members/quota 四表、条件 CAS、收据重放不续 TTL、TTL 过期与重启持久；`p06_bridge_acceptance` 真 TLS/PG storage 帧矩阵覆盖私有/共享 scope 与稳定错误码。未覆盖真实生产规模、满盘和多 writer 配额横压，留 P14 环境；unary storage RPC 为 internal_dispatcher，不部署对外。

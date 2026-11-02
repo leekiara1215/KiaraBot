@@ -305,3 +305,7 @@ receipt/observation 仍由 HostBridge 后续事务推进；Runtime 重启只重�
 ## P13d 清理批次失败与观测边界（2026-11-02）
 
 60 秒保留批次在同一次 owner UoW 内执行多个 prune（receipts、journal、outbox、audit、host_commands、operations、storage receipts）：任一 prune 返回错误只置 `LifecycleMaintenance.cleanup_failed=true` 并让整轮提交（计数/其他 prune 成功项保留），不删除未决/未终态记录；Runtime dependency hook 不因单次清理失败退出，仅在日志写 `operation=lifecycle_maintenance outcome=degraded cleanup_failed=true` 供告警检索。operation 的 blocked/UNKNOWN 仍以 GetOperation participants 为准，清理失败不会把 operation 改成成功；真实满盘/长时积压需 P14c 环境手动注入验证，应用测试用故障 prune 覆盖代码路径。
+
+## P09f storage 事务/证据边界（2026-11-02）
+
+Runtime storage 以 owner 私有 PG 四表与 `command_receipts` 同 UoW 实现：私有 namespace 惰性建行、条件写 CAS、TTL 过期同事务调整 namespace/installation 计数器、配额准入按 namespace→installation 固定顺序条件更新、共享 namespace/成员 gate 与收据重放（同键同 fingerprint 回原快照，不续 TTL）。真 PG16.4 与真 TLS bridge 矩阵已覆盖上述路径（p09_postgres_storage_records、p06_bridge_acceptance）。边界：unary storage RPC 仅 internal_dispatcher，对外 storage 面为 PluginBridge 帧；多 writer 配额横压、跨连接补报专项与共享成员删除不误删他人数据的直接集成断言尚未实测，需后续 P09/P13 交叉测试；target 未翻转项不因本证据自动改变。
