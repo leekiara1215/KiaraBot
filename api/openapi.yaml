@@ -88,9 +88,9 @@ x-control-policy:
     INTERNAL: {grpc: INTERNAL, http: 500}
   default_authorization: deny
   roles:
-    admin: [session.read, session.revoke, health.read, adapter.read, plugin.read, plugin.manage, plugin.config.read, plugin.config.write, bot.read, model.read, group.read, task.read, action.read, log.read, audit.read, user.read]
-    operator: [session.read, session.revoke, health.read, adapter.read, plugin.read, plugin.manage, plugin.config.read, plugin.config.write, bot.read, model.read, group.read, task.read, action.read, log.read]
-    viewer: [session.read, session.revoke, health.read, adapter.read, plugin.read, bot.read, model.read, group.read, task.read, action.read]
+    admin: [session.read, session.revoke, health.read, adapter.read, plugin.read, plugin.manage, plugin.config.read, plugin.config.write, bot.read, model.read, group.read, task.read, log.read, audit.read, user.read]
+    operator: [session.read, session.revoke, health.read, adapter.read, plugin.read, plugin.manage, plugin.config.read, plugin.config.write, bot.read, model.read, group.read, task.read, log.read]
+    viewer: [session.read, session.revoke, health.read, adapter.read, plugin.read, bot.read, model.read, group.read, task.read]
   role_notes: >-
     Roles are explicit permission lists, not wildcard grants. No default role,
     including admin, receives message.read: the WebSocket messages channel
@@ -120,7 +120,12 @@ x-control-policy:
     last_page: Omit next_page_token.
     stream: Subscribe and receive SESSION_READY before fetching REST snapshots; buffer stream events during snapshot fetch and refresh affected resources afterwards.
   action_results:
-    query_scope: Authenticated caller; the REST query reads the same Action records as the PluginBridge ActionRouter lookup.
+    query_scope: >-
+      Explicitly scoped Control principal: the caller must pass a RESOURCE_ACCOUNT scope and hold
+      action.inspect on that exact account; the server re-checks current Identity authorization.
+      The query reads the same authoritative Action records as the PluginBridge owner-scoped query.
+    query_permission: action.inspect
+    plugin_query_scope: Authenticated plugin instance; owner-scoped to its own Action ids/idempotency keys.
     terminal_retention_seconds: 604800
     retention_minimum_seconds: 86400
     retained_from: last state update
@@ -568,20 +573,36 @@ paths:
   /actions/by-idempotency-key:
     get:
       operationId: getActionByIdempotencyKey
-      x-permission: action.read
+      x-owner-service: runtime
+      x-owner-rpc: RuntimeService.QueryActionResult
+      x-permission: action.inspect
       x-contract-status: not_implemented
       summary: Find an action result using its idempotency key
       description: >-
-        Contract status not_implemented: v1 Core does not create control-owned
-        Action records, so this operation returns NOT_FOUND for every caller
-        until the control-api branch wires the shared Action record set. Intended
-        semantics once wired: the key is scoped to the authenticated caller and
+        Target mapping to RuntimeService.QueryActionResult (Control wiring remains
+        not_implemented until P12): the caller must hold action.inspect on the
+        exact account passed as scope, and owner_instance identifies the plugin
+        instance whose business idempotency namespace the key belongs to. The key
         must not be logged; missing, expired (terminal results are retained for
         604800 seconds from the last state update) or invisible results return
         NOT_FOUND; an ACCEPTED action whose deadline has passed is returned as
         EXPIRED with error.code TIMEOUT; a query timeout does not imply action
         failure.
-      parameters: [{ $ref: '#/components/parameters/ActionLookupKey' }]
+      parameters:
+      - $ref: '#/components/parameters/ActionLookupKey'
+      - name: owner_instance
+        in: query
+        required: true
+        description: Owning plugin instance of the idempotency key (business idempotency is per owner).
+        schema: { type: string, minLength: 1 }
+      - name: scope
+        in: query
+        required: true
+        description: Explicit RESOURCE_ACCOUNT scope; checked by the owner. No role wildcard.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TargetResourceScope'
       responses:
         '200': { $ref: '#/components/responses/ActionResult' }
         '400': { $ref: '#/components/responses/BadRequest' }
@@ -595,19 +616,30 @@ paths:
   /actions/{actionId}:
     get:
       operationId: getActionResult
-      x-permission: action.read
+      x-owner-service: runtime
+      x-owner-rpc: RuntimeService.QueryActionResult
+      x-permission: action.inspect
       x-contract-status: not_implemented
       summary: Get an action result by ID
       description: >-
-        Contract status not_implemented: v1 Core does not create control-owned
-        Action records, so this operation returns NOT_FOUND for every caller
-        until the control-api branch wires the shared Action record set. Intended
-        semantics once wired: missing, expired (terminal results are retained for
-        604800 seconds from the last state update) or invisible results return
-        NOT_FOUND; an ACCEPTED action whose deadline has passed is returned as
-        EXPIRED with error.code TIMEOUT. The literal by-idempotency-key is
-        reserved for key lookup.
-      parameters: [{ $ref: '#/components/parameters/ActionId' }]
+        Target mapping to RuntimeService.QueryActionResult (Control wiring remains
+        not_implemented until P12): the caller must hold action.inspect on the
+        exact account passed as scope. Missing, expired (terminal results are
+        retained for 604800 seconds from the last state update) or invisible
+        results return NOT_FOUND; an ACCEPTED action whose deadline has passed is
+        returned as EXPIRED with error.code TIMEOUT; a query timeout does not
+        imply action failure. The literal by-idempotency-key is reserved for key
+        lookup.
+      parameters:
+      - $ref: '#/components/parameters/ActionId'
+      - name: scope
+        in: query
+        required: true
+        description: Explicit RESOURCE_ACCOUNT scope; checked by the owner. No role wildcard.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TargetResourceScope'
       responses:
         '200': { $ref: '#/components/responses/ActionResult' }
         '400': { $ref: '#/components/responses/BadRequest' }
@@ -3012,18 +3044,26 @@ components:
     ActionStatus:
       type: string
       enum: [ACTION_STATUS_UNSPECIFIED, ACCEPTED, SUCCEEDED, FAILED, EXPIRED, CANCELLED]
+    ExecutionOutcome:
+      type: string
+      enum: [EXECUTION_OUTCOME_UNSPECIFIED, EXECUTION_NOT_STARTED, EXECUTION_KNOWN_SUCCEEDED, EXECUTION_KNOWN_FAILED, EXECUTION_UNKNOWN]
     ActionResult:
       type: object
       required: [action_id, status]
       description: >-
-        ACCEPTED is pending and nonterminal. Terminal results are retained for
-        604800 seconds from the last state update; missing, expired or invisible
-        records return NOT_FOUND. An ACCEPTED record whose deadline has passed
-        reads as EXPIRED with error.code TIMEOUT. REST query wiring is
-        not_implemented in v1 (see x-control-policy action_results).
+        ACCEPTED is pending and nonterminal. execution_outcome states whether the
+        platform execution is known: ACCEPTED is NOT_STARTED or UNKNOWN, SUCCEEDED
+        is KNOWN_SUCCEEDED, FAILED is KNOWN_FAILED with error, EXPIRED is
+        NOT_STARTED (never dispatched) or UNKNOWN (may have executed), CANCELLED is
+        NOT_STARTED. Terminal results are retained for 604800 seconds from the last
+        state update; missing, expired or invisible records return NOT_FOUND. An
+        ACCEPTED record whose deadline has passed reads as EXPIRED with
+        error.code TIMEOUT. REST query wiring is not_implemented in v1 (see
+        x-control-policy action_results).
       properties:
         action_id: { type: string }
         status: { $ref: '#/components/schemas/ActionStatus' }
+        execution_outcome: { $ref: '#/components/schemas/ExecutionOutcome' }
         platform_message_id: { type: string }
         error: { $ref: '#/components/schemas/Error' }
         completed_at: { type: string, format: date-time }
@@ -3907,6 +3947,39 @@ components:
         updated_at:
           type: string
           format: date-time
+        kind:
+          type: string
+          enum:
+          - ACTION_KIND_UNSPECIFIED
+          - ACTION_KIND_SEND_MESSAGE
+          - ACTION_KIND_REACT_MESSAGE
+          - ACTION_KIND_DELETE_MESSAGE
+          - ACTION_KIND_MUTE_MEMBER
+          - ACTION_KIND_KICK_MEMBER
+          - ACTION_KIND_APPROVE_REQUEST
+        target_account_id:
+          type: string
+          minLength: 1
+        target_conversation_id:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        deadline:
+          type: string
+          format: date-time
+        retain_until:
+          type: string
+          format: date-time
+        idempotency_key:
+          type: string
+          minLength: 1
+        platform_message_id:
+          type: string
+        dispatch_attempt_id:
+          type: string
+        error:
+          "$ref": "#/components/schemas/TargetError"
       x-contract-status: not_implemented
       required:
       - action_id
@@ -3915,6 +3988,13 @@ components:
       - status
       - execution_outcome
       - updated_at
+      - kind
+      - target_account_id
+      - target_conversation_id
+      - created_at
+      - deadline
+      - retain_until
+      - idempotency_key
     TargetSnapshotPage:
       type: object
       additionalProperties: false

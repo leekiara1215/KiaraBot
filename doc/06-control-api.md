@@ -167,6 +167,8 @@ REST 的 `Error.code`、健康状态、插件状态和 Action 状态分别引用
 
 `GET /actions/{actionId}` 按 ID 查询；`GET /actions/by-idempotency-key` 使用 `Idempotency-Key` 请求头，在已认证调用方的授权范围内查询，密钥不得写入日志。`by-idempotency-key` 为保留路径段。两者返回 `ActionResult`：`action_id` 和 `status` 必填；`ACCEPTED` 未终结，`SUCCEEDED`、`FAILED`、`EXPIRED`、`CANCELLED` 已终结，终结结果必须有 `completed_at`，`FAILED` 必须有 `error`。终结结果保留 7 天。
 
+目标契约为（P07 冻结，Control 接线仍为 not_implemented，P12 接线）：两条查询映射 `RuntimeService.QueryActionResult`，caller 是持 `action.inspect` 的 scoped Control；必须带显式 `scope`（恰含一个 `RESOURCE_ACCOUNT` 的 `ResourceScope`，服务端在线校验），`by-idempotency-key` 还必须带 `owner_instance`（业务幂等按插件实例隔离），否则 `INVALID_ARGUMENT`；不存在/不可见/超保留统一 `NOT_FOUND`，`ACCEPTED` 且已过 deadline 读取为 `EXPIRED` + `error.code=TIMEOUT`，查询超时不改变状态。响应增加 `execution_outcome`（`EXECUTION_NOT_STARTED`/`EXECUTION_KNOWN_SUCCEEDED`/`EXECUTION_KNOWN_FAILED`/`EXECUTION_UNKNOWN`）区分平台执行是否已知；插件仍经 `PluginBridge` owner-scoped 查询，不走 REST。目标角色表中不保留 `action.read`，Action 查询只认显式 `action.inspect` 资源授予（admin 不隐式越权）。
+
 查询错误使用统一 Error：400 `INVALID_ARGUMENT`、401 `UNAUTHENTICATED`、403 `PERMISSION_DENIED`、404 `NOT_FOUND`（包括不存在、已过期和不可见）、429 `RATE_LIMITED`、500 `INTERNAL`、503 `UPSTREAM_UNAVAILABLE`、504 `TIMEOUT`。查询超时不代表 Action 执行失败。
 
 ## 历史：协议交接时的下游实施要求
