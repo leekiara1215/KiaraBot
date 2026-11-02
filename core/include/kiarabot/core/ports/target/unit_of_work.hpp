@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "kiarabot/core/domain/target/persistence.hpp"
+#include "kiarabot/core/ports/target/namespace_ports.hpp"
 
 namespace kiarabot::core::target {
 
@@ -163,6 +164,21 @@ public:
   virtual ActionQuotaRepository& action_quota() = 0;
   virtual ActionPolicyRepository& action_policies() = 0;
   virtual ActionEvidenceRepository& action_evidence() = 0;
+  // P09 storage/shared-namespace groups. Phase-1 defaults fail closed so an adapter that has not
+  // implemented P09 never reports a fake empty namespace; P09 phase 2 overrides them with PG
+  // implementations after P07a-A lands. They borrow this same UoW, never commit.
+  virtual NamespaceRepository& namespaces() {
+    return namespace_ports_detail::unsupported_namespaces();
+  }
+  virtual SharedNamespaceRepository& shared_namespaces() {
+    return namespace_ports_detail::unsupported_shared_namespaces();
+  }
+  virtual NamespaceQuotaRepository& namespace_quota() {
+    return namespace_ports_detail::unsupported_namespace_quota();
+  }
+  virtual StorageReceiptRepository& storage_receipts() {
+    return namespace_ports_detail::unsupported_storage_receipts();
+  }
 };
 class SchedulerUnitOfWork : public UnitOfWork {
 public:
@@ -170,8 +186,7 @@ public:
   virtual Repository<MessageId, Occurrence>& occurrences() = 0;
   // Owner-scoped projections for typed queries and maintenance. Adapters implement these with
   // owner/due indexes; the default fails closed so a partial adapter cannot silently list all rows.
-  virtual Outcome<std::vector<ScheduledTask>> list_tasks(const InstanceId& owner,
-                                                         std::size_t limit,
+  virtual Outcome<std::vector<ScheduledTask>> list_tasks(const InstanceId& owner, std::size_t limit,
                                                          const std::string& after) {
     (void)owner;
     (void)limit;
@@ -180,8 +195,8 @@ public:
                    std::nullopt, std::nullopt};
   }
   // Non-terminal task counts per instance and per installation for the frozen 1024/8192 limits.
-  virtual Outcome<std::pair<std::size_t, std::size_t>> count_tasks(const InstanceId& owner,
-                                                                   const InstallationId& installation) {
+  virtual Outcome<std::pair<std::size_t, std::size_t>>
+  count_tasks(const InstanceId& owner, const InstallationId& installation) {
     (void)owner;
     (void)installation;
     return Failure{ErrorCode::CapabilityNotSupported, Acceptance::NotAccepted, Recovery::Diagnose,
@@ -193,9 +208,8 @@ public:
     return Failure{ErrorCode::CapabilityNotSupported, Acceptance::NotAccepted, Recovery::Diagnose,
                    std::nullopt, std::nullopt};
   }
-  virtual Outcome<std::vector<Occurrence>> list_occurrences(const InstanceId& owner,
-                                                            std::size_t limit,
-                                                            const std::string& after) {
+  virtual Outcome<std::vector<Occurrence>>
+  list_occurrences(const InstanceId& owner, std::size_t limit, const std::string& after) {
     (void)owner;
     (void)limit;
     (void)after;

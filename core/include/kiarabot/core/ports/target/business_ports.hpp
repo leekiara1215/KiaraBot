@@ -10,6 +10,8 @@
 
 #include "kiarabot/core/domain/target/action_rules.hpp"
 #include "kiarabot/core/domain/target/event_delivery.hpp"
+#include "kiarabot/core/domain/target/namespace_rules.hpp"
+#include "kiarabot/core/ports/target/namespace_ports.hpp"
 #include "kiarabot/core/ports/target/unit_of_work.hpp"
 
 namespace kiarabot::core::target {
@@ -189,32 +191,6 @@ public:
   virtual Status append(const ActionEvidenceRecord& evidence) = 0;
   virtual Outcome<std::vector<ActionEvidenceRecord>> list(const ActionId& action_id) = 0;
   virtual Outcome<std::size_t> prune(TimePoint now, std::size_t limit) = 0;
-};
-struct PrivateNamespace {
-  InstanceId instance;
-};
-struct SharedNamespace {
-  InstallationId installation;
-  ResourceId shared_namespace;
-};
-using NamespaceScope = std::variant<PrivateNamespace, SharedNamespace>;
-struct ExpectedAbsent {};
-using CompareCondition = std::variant<ExpectedAbsent, ResourceVersion>;
-struct NamespaceValue {
-  std::vector<std::byte> bytes;
-  ResourceVersion version;
-  std::optional<TimePoint> expires_at;
-};
-class NamespaceRepository {
-public:
-  virtual ~NamespaceRepository() = default;
-  virtual Outcome<std::optional<NamespaceValue>> get(const NamespaceScope& scope,
-                                                     const std::string& key, TimePoint now) = 0;
-  // Scope is server-resolved after authorization; CAS/membership/quota/receipt share the UoW.
-  virtual Outcome<ResourceVersion> compare_exchange(const NamespaceScope& scope,
-                                                    const std::string& key,
-                                                    const CompareCondition& expected,
-                                                    const NamespaceValue& value) = 0;
 };
 class OccurrenceRepository {
 public:
