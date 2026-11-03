@@ -382,3 +382,12 @@ permission/resource 的 exact assignment。允许的 permission：model.chat/mod
 在识别该模式时以管理员来源做在线 origin/assignment 校验，并继续校验实例 principal/binding。
 该语义仅用于 hops1 父委托及其 hops2 子委托，不改变 Model/Scheduler owner 验证；签发成功写
 Identity audit（`IdentityIssueDelegation/InstanceParent`），失败不写成功审计。
+
+### P05b-6 sealed delegation file delivery
+
+No proto/API change. Identity remains the signer; Control/deployment obtains an administrator
+session token via Control login and calls the existing P05b-2 `IssueDelegation(instance_id=...)`
+with Control's mTLS leaf. The returned hops1 proof is sealed into a 0600 regular file (atomic
+write/rename) for Runtime to read; the file is not a trust root, and Runtime must still Exchange
+and let owners call `CheckAuthorization` online. File fields and reader rules are frozen in
+`reports/analysis/p05b6-sealed-delegation-file.md`.

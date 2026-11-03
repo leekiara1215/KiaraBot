@@ -350,3 +350,9 @@ maintenance 在短 UoW 外调用 participant，participant 通过独立 platform
 ListTasks/CancelTask（RESOURCE_INSTANCE 精确 scope），随后应用阶段再开短 UoW 更新 participant
 状态；离线/UNKNOWN 保持 Blocked，不写伪完成。安装级删除不在批准范围，保持 Blocked。真实
 Scheduler 平台授权由 P13h-1 提供，P13h-3 联合验收。
+
+## P05b-6 sealed 文件写入边界（2026-11-03）
+
+sealed delegation 文件不属于数据库事务：签发是 Identity 无状态签名，写入用同目录临时文件
+`fsync` + `rename` + 目录 `fsync`，失败不修改旧文件/不留下临时文件；不引入持久化表、迁移或
+outbox。撤销/替换以 Identity 在线检查与文件 TTL 为准，文件内容不进入数据库。

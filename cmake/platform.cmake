@@ -340,7 +340,7 @@ add_test(NAME p05_runtime_identity_e2e COMMAND "${KIARABOT_TARGET_PYTHON}"
   --test-argument $<TARGET_FILE:kiarabot-identity>
   --test-argument $<TARGET_FILE:kiarabot-runtime>)
 set_tests_properties(p05_runtime_identity_e2e PROPERTIES
-  LABELS "p05;p04;p12;p14;integration;security;fault" TIMEOUT 180
+  LABELS "p05;p05b;p04;p12;p14;integration;security;fault" TIMEOUT 180
   ENVIRONMENT "PATH=${RUNTIME_E2E_OPENSSL_BIN_DIR}:${RUNTIME_E2E_PYTHON_BIN_DIR}:$ENV{PATH};PYTHONPATH=${CMAKE_SOURCE_DIR}/sdk/python/build/generated")
 
 add_test(NAME p05b_sealed_delegation_file COMMAND "${KIARABOT_TARGET_PYTHON}"

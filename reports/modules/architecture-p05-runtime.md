@@ -179,3 +179,15 @@ origin/permission 在线校验并校验实例 binding；普通 delegation 不变
 `p05_runtime_identity_e2e` 覆盖正例（父委托→Runtime 叶 Exchange hops2）与非管理员/无 binding/
 错 permission/证书不匹配/跨实例/撤销/过期 ttl 断言。未完成：Runtime 获取/刷新与 Exchange
 生产 provider（P05b-4/5）、真实 Model/Scheduler 链。
+
+## P05b-6 sealed 实例父委托文件（2026-11-03）
+
+交付：`scripts/deploy/instance-delegation-refresh` + `scripts/deploy/sealed_delegation.py` +
+`deploy/instance-delegation-refresh.example.json`。管理员 access token（stdin/0600 file）经
+Control 登录取得，工具用 Control mTLS 叶调用 Identity `IssueDelegation(instance_id=...)`，
+原子写 0600 regular JSON（fsync+rename+dir fsync，拒绝符号链接/错误 owner/模式/未授权/错误
+instance），支持 `--once`/`--interval<56s`。Runtime 读取侧 helper 校验 schema/instance/
+installation/audience/白名单/TTL/未过期，文件不是签名信任根；P05b-4/5 provider 接入点。
+测试：`p05b_sealed_delegation_file`（单元）与 `p05_runtime_identity_e2e`（真 PG16.4+mTLS
+管理员触发→文件→reader；错误 instance、未授权、符号链接、幂等刷新）。未做：Runtime 自动
+读取/刷新 provider、多主机内部通道、真实 Model/Scheduler 下游。

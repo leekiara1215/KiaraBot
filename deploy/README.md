@@ -122,3 +122,12 @@ docker compose --env-file deploy/target.env -f deploy/compose.exec.yml up -d
 | 正式发布 | **未就绪**（官方 PG 镜像 digest、Compose 验收、主机/秘密托管、保留离站/密钥托管待确认） |
 
 剩余待用户确认：备份保留周期、离站位置/频率、密钥托管方式（KMS/离线/分片）。
+
+## P05b-6 instance delegation sealed file
+
+Refresh tool: `scripts/deploy/instance-delegation-refresh`. It reads administrator access token
+from stdin (`--token-stdin`) or a 0600 `--token-file`, calls Identity IssueDelegation using
+Control mTLS credentials, and atomically replaces a 0600 regular file under `output_dir`. The
+Runtime container receives that directory as a shared (read-only) volume on the same host.
+`--interval` must be below the 56s TTL (e.g. 20s); expired/missing files must leave Runtime
+fail-closed. See `reports/analysis/p05b6-sealed-delegation-file.md` for the full contract.

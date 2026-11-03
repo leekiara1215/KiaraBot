@@ -609,3 +609,15 @@ P09f（2026-11-02）：Runtime storage/PG 证据已复核——`p09_postgres_sto
 ## P11f Model 基础设施证据（2026-11-02）
 
 P11 实测覆盖 p11_model_http_provider（真实 loopback HTTP provider fixture、stream=false、重定向/畸形/超大/超时/429 映射）、p11_model_secret_crypto（AEAD/版本固定/轮换）、p11_model_identity_client/runtime_model_client/model_bridge/rpc 与 p11_control_model_rest；真 PG16.4 p03 fixture 2/2 通过。真实外部 Provider 付费联调与目标六服务栈 live 仍待环境；Model readiness composition 级真实 TLS harness 未验收。
+
+## P05b-6 实例父委托 sealed 文件（2026-11-03）
+
+单机部署通过共享卷交付 Identity 父委托：Control/部署侧以管理员 access token 调用
+`Identity.IssueDelegation(instance_id=...)`，由 `scripts/deploy/instance-delegation-refresh`
+原子写 `instance-delegation-<instance_id>.json`（0600 regular，非符号链接）到部署配置目录
+（如 `/run/kiarabot/delegations`，目录 0700），Runtime 容器以同一卷只读挂载。Runtime 读取后
+仍须经 ExchangeDelegation/CheckAuthorization 在线验证，文件本身不是信任根。
+
+刷新进程与 Runtime 必须位于同一主机/用户可见卷；禁止通过 HTTP 暴露该目录。多主机部署暂不
+支持共享卷交付，后续通过内部 mTLS 通道扩展，不改变文件 JSON/安全语义。详见
+`reports/analysis/p05b6-sealed-delegation-file.md`。

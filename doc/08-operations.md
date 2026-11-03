@@ -1681,3 +1681,18 @@ operation BLOCKED（participant reason 可查 GetOperation），不会把“无�
 测试：`p13_scheduler_lifecycle`、`p10_scheduler_task_client`；`p13_joint_delete_e2e` 为真
 Runtime/PG 的 test-only 注入端口证据。真实 Runtime→Scheduler 平台授权链待 P13h-1 合入后由 P13h-3
 联合验收，不得以注入端口结果宣称生产授权已验收。
+
+## P05b-6 sealed 实例父委托刷新（2026-11-03）
+
+1. 管理员通过 Control 登录取得短期 access token（stdin 或 0600 文件；不写 argv/日志）。
+2. 以 Control mTLS 证书运行刷新工具：
+   `scripts/deploy/instance-delegation-refresh --config /etc/kiarabot/instance-delegation.json --once`
+   或 `--interval 20`（必须 <56s）。配置/凭据/私钥 0600，输出目录为部署配置目录。
+3. 工具原子替换 `instance-delegation-<instance_id>.json`；失败保留旧文件。Runtime 读取侧
+   校验 regular/非符号链接/0600/owner、JSON schema、instance/installation、audience、
+   权限/scope 白名单、`0<exp-iat<=56` 和未过期；过期或刷新失败一律 fail-closed（稳定
+   UNAUTHENTICATED，不伪造成功）。
+4. 撤销管理员 session/credential/assignment 或实例 principal 状态后，下一次刷新/在线校验
+   失败；不提供文件级 revoke。多主机暂用单机共享卷，后续内部通道扩展。
+   reader 格式/严格校验由 `scripts/deploy/sealed_delegation.py` 提供，Runtime provider
+   接入点为 P05b-4/P05b-5。
