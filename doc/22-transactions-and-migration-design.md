@@ -356,3 +356,8 @@ Scheduler 平台授权由 P13h-1 提供，P13h-3 联合验收。
 sealed delegation 文件不属于数据库事务：签发是 Identity 无状态签名，写入用同目录临时文件
 `fsync` + `rename` + 目录 `fsync`，失败不修改旧文件/不留下临时文件；不引入持久化表、迁移或
 outbox。撤销/替换以 Identity 在线检查与文件 TTL 为准，文件内容不进入数据库。
+
+P05b-5/P05b-6 联测更新（2026-11-03，main=9311d2c）：Runtime sealed reader 已对齐 P05b-6 冻结
+envelope；真实 Identity/Scheduler/PG 联测中 Exchange 成功，但 Identity 对实例子委托的
+`CheckAuthorization` 稳定返回 UNAUTHENTICATED，Scheduler CreateTask 因此不可用。该阻塞属
+P05b-2/P13h 授权语义，不是事务/迁移问题；修复前不宣称 P10k 真实 Scheduler 链可用。

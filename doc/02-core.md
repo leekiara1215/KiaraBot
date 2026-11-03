@@ -1582,16 +1582,20 @@ Runtime，plugin 查询终态。重复平台帧不产生第二事件/Action，ad
 
 Runtime `PluginBridge` 现在消费 `HostRequest.task_create/task_get/task_cancel`：从已认证 P06 会话派生 instance/installation，校验注册 profile 的 `host.tasks.v1`、`task.schedule`/`task.read` 权限及 `event.timer.triggered` 订阅，校验 request/trace/idempotency、task_id/目标对话/payload 上限，稳定映射 `HostResponse.task_*` 与 wire 错误码；客户端自报 owner/installation 一律不采纳。
 
-新增 `RuntimeTaskApplication`（`core/src/application/target/runtime_task_application.cpp`）和 `SchedulerTaskPort`（`core/include/kiarabot/core/ports/target/scheduler_task.hpp`）；组合根可选配置 `scheduler_endpoint` 并装配 `SchedulerTaskClient` typed client（参考 RuntimeModelClient）。P05b-5 已按用户选择的 **B1 sealed 短期文件**实现 Runtime 侧来源骨架：配置
+新增 `RuntimeTaskApplication`（`core/src/application/target/runtime_task_application.cpp`）和 `SchedulerTaskPort`（`core/include/kiarabot/core/ports/target/scheduler_task.hpp`）；组合根可选配置 `scheduler_endpoint` 并装配 `SchedulerTaskClient` typed client（参考 RuntimeModelClient）。P05b-5 已按用户选择的 **B1 sealed 短期文件**实现 Runtime 侧来源：配置
 `instance_delegation_sealed_file`（Runtime-only，部署/Control 侧写入，0600 regular 非符号链接、
-原子写）时，`SealedInstanceDelegationSource` 读取并校验 instance/installation/audience=runtime/
-permissions/scope/issued_at/expires_at（≤56s）/token，再经 `RuntimeIdentityClient::ExchangeDelegation`
-换 audience=scheduler、hops=2、Runtime 叶绑定的子委托；provider 只缓存不超过子委托到期的证明，绝不
-缓存/延长父 token。缺失/过期/篡改/跨实例/错误证书/Identity 不可达一律 fail-closed，未配置时
-composition 仍注入 `unavailable_scheduler_task_delegation()`。sealed 文件的 Control/部署写入/刷新
-工具与精确 JSON 规范由 P05b-6（ref-infra）提供；**正向 Runtime→真实 Scheduler 链在 P05b-6 合入并
-联测前不作验收**，当前只有 source/provider/client 单测与负例。测试注入 fake `SchedulerTaskPort`
-仍覆盖成功/拒绝/幂等/取消/CONFLICT/超时。未改 proto、权限或 RPC。**待确认**：冻结的
+原子写）时，`SealedInstanceDelegationSource` 按 P05b-6 冻结 envelope 校验 schema/instance/
+installation/audience=runtime/permissions/scope/issued_at/expires_at（≤56s）/ttl_seconds/
+delegation_proof（JWT 三段且内层 iat/exp 与 envelope 一致），再经
+`RuntimeIdentityClient::ExchangeDelegation` 换 audience=scheduler、hops=2、Runtime 叶绑定的子委托；
+provider 只缓存不超过子委托到期的证明，绝不缓存/延长父 token。缺失/过期/篡改/跨实例/错误证书/
+Identity 不可达一律 fail-closed，未配置时 composition 仍注入
+`unavailable_scheduler_task_delegation()`。P05b-6 的 Control/部署写入/刷新工具与规范已合入。
+**正向链联测受阻**：真实 Identity 对 Exchange 得到的实例子委托执行 `CheckAuthorization` 时稳定返回
+`UNAUTHENTICATED`（Python 直接 CheckAuthorization 与 Scheduler CreateTask 均复现，Exchange 本身成功）；
+在 P05b-2/P13h 侧修复该 CheckAuthorization 语义前，不宣称 Runtime→真实 Scheduler 成功链，也不
+把 sealed/provider 单测当作正向证据。测试注入 fake `SchedulerTaskPort` 仍覆盖成功/拒绝/幂等/取消/
+CONFLICT/超时。未改 proto、权限或 RPC。**待确认**：冻结的
 `TaskCreateRequest` 只带 `target_conversation` 字符串、不带会话类型；P10k 暂按 GROUP 构造 Scheduler
 `ConversationKey`，需用户确认任务目标是否允许私聊或如何在 wire 上表达类型（否则私聊任务的事件
 target 类型可能不准确）。
