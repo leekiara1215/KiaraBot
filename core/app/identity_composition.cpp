@@ -516,9 +516,9 @@ target::Outcome<platform::ServiceComposition> configured(const platform::Process
              .exchange = &observed->exchange(),
              .principal = &observed->principal(),
              .authorization = &observed->authorization(),
+             .audit = &observed->audit(),
              .assignments = &observed->assignments(),
              .invalidation = &observed->invalidation(),
-             .audit = &observed->audit(),
              .principal_directory = &observed->principal_directory()});
         if (const auto* error = std::get_if<target::Failure>(&adapter)) {
           return *error;
