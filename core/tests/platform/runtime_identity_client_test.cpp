@@ -135,7 +135,8 @@ void decode_tests() {
 }
 class FakeIdentity final : public v1::IdentityService::Service {
 public:
-  explicit FakeIdentity(bool allow) : allow_(allow) {}
+  explicit FakeIdentity(bool allow, std::chrono::milliseconds exchange_delay = {})
+      : allow_(allow), exchange_delay_(exchange_delay) {}
   grpc::Status CheckAuthorization(grpc::ServerContext*,
                                   const v1::IdentityCheckAuthorizationRequest* request,
                                   v1::IdentityCheckAuthorizationResponse* response) override {
@@ -162,6 +163,9 @@ public:
                                   v1::IdentityExchangeDelegationResponse* response) override {
     ++exchanges;
     exchange_request = *request;
+    if (exchange_delay_.count() > 0) {
+      std::this_thread::sleep_for(exchange_delay_);
+    }
     auto* proof = response->mutable_delegation();
     proof->set_proof("child-proof");
     proof->set_audience(request->audience());
@@ -180,9 +184,11 @@ public:
 
 private:
   bool allow_;
+  std::chrono::milliseconds exchange_delay_;
 };
 struct Server {
-  explicit Server(bool allow) : service(allow) {
+  explicit Server(bool allow, std::chrono::milliseconds exchange_delay = {})
+      : service(allow, exchange_delay) {
     grpc::ServerBuilder builder;
     builder.AddListeningPort("127.0.0.1:0", grpc::InsecureServerCredentials(), &port);
     builder.RegisterService(&service);
@@ -278,6 +284,37 @@ void check_tests() {
               server.service.exchange_request.permissions_size() == 1 &&
               server.service.exchange_request.client_certificate_sha256().size() == 32,
           "exchange request wire contract incomplete");
+  }
+  {
+    // ExchangeDelegation has its own budget: a 700ms Identity exchange exceeds the 500ms hot-path
+    // check budget but must still succeed (production bug: reused 500ms budget timed out on the
+    // second authorization pass and surfaced InvalidArgument/UNAUTHENTICATED).
+    Server server(true, std::chrono::milliseconds{700});
+    auto identity = client(server.port);
+    const auto exchanged = identity->exchange_delegation(
+        "parent-proof", t::Service::Model, {t::ResourceRef{t::ResourceKind::Model, {kResource}}},
+        {t::Permission::ModelChat}, digest());
+    check(std::holds_alternative<kiarabot::core::platform::ExchangedDelegation>(exchanged),
+          "exchange delegation used hot-path budget and timed out");
+    check(server.service.exchanges == 1, "slow exchange was not attempted");
+  }
+  {
+    // Invalid delegation budgets are rejected at construction (never silently widened/unbounded).
+    auto zero = kiarabot::core::platform::RuntimeIdentityClient::create(
+        {"127.0.0.1:1", grpc::InsecureChannelCredentials(), std::chrono::milliseconds{500},
+         std::chrono::milliseconds{1000}, std::chrono::milliseconds{0},
+         std::chrono::milliseconds{5000}});
+    check(std::holds_alternative<t::Failure>(zero), "zero delegation budget accepted");
+    auto inverted = kiarabot::core::platform::RuntimeIdentityClient::create(
+        {"127.0.0.1:1", grpc::InsecureChannelCredentials(), std::chrono::milliseconds{500},
+         std::chrono::milliseconds{1000}, std::chrono::milliseconds{3000},
+         std::chrono::milliseconds{2000}});
+    check(std::holds_alternative<t::Failure>(inverted), "inverted delegation budget accepted");
+    auto unbounded = kiarabot::core::platform::RuntimeIdentityClient::create(
+        {"127.0.0.1:1", grpc::InsecureChannelCredentials(), std::chrono::milliseconds{500},
+         std::chrono::milliseconds{1000}, std::chrono::milliseconds{2000},
+         std::chrono::milliseconds{60000}});
+    check(std::holds_alternative<t::Failure>(unbounded), "unbounded delegation budget accepted");
   }
   {
     // No listener: the owner client fails closed with an upstream failure, never an allow.

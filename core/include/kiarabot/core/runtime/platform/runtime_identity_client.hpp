@@ -18,9 +18,15 @@ struct RuntimeIdentityClientOptions {
   // Production composition passes mTLS channel credentials built from the Runtime service TLS
   // material; tests may pass insecure credentials for a loopback fake Identity server.
   std::shared_ptr<grpc::ChannelCredentials> channel_credentials;
-  // Total per-check budget; production is 500ms with a 1s maximum.
+  // Total per-check budget for the hot-path CheckAuthorization; production is 500ms/1s.
   std::chrono::milliseconds budget{500};
   std::chrono::milliseconds maximum_budget{1000};
+  // ExchangeDelegation performs two online authorization passes plus signing; it must not reuse the
+  // 500ms hot-path budget or the second pass can exceed the request deadline (Identity then returns
+  // InvalidArgument before audit, even though the wire/envelope/certificate are valid). Keep a
+  // separate, bounded delegation budget.
+  std::chrono::milliseconds delegation_budget{2000};
+  std::chrono::milliseconds delegation_maximum_budget{5000};
 };
 
 // Decoded, NOT cryptographically verified delegation claims. Runtime treats these as request

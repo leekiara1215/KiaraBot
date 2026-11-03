@@ -375,7 +375,10 @@ RuntimeIdentityClient::~RuntimeIdentityClient() = default;
 target::Outcome<std::unique_ptr<RuntimeIdentityClient>>
 RuntimeIdentityClient::create(RuntimeIdentityClientOptions options) {
   if (options.endpoint.empty() || !options.channel_credentials || options.budget.count() <= 0 ||
-      options.maximum_budget.count() <= 0 || options.budget > options.maximum_budget) {
+      options.maximum_budget.count() <= 0 || options.budget > options.maximum_budget ||
+      options.delegation_budget.count() <= 0 || options.delegation_maximum_budget.count() <= 0 ||
+      options.delegation_budget > options.delegation_maximum_budget ||
+      options.delegation_maximum_budget > std::chrono::seconds{30}) {
     return failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput);
   }
   try {
@@ -526,7 +529,8 @@ RuntimeIdentityClient::exchange_delegation(std::string_view parent_proof, target
     // per-attempt transport key, not a durable command receipt.
     context->set_idempotency_key(random_uuid());
     const auto started = now();
-    auto deadline = started + std::min(options_.budget, options_.maximum_budget);
+    auto deadline =
+        started + std::min(options_.delegation_budget, options_.delegation_maximum_budget);
     if (!timestamp(deadline, context->mutable_deadline())) {
       return failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput);
     }
