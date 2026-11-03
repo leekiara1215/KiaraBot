@@ -1241,10 +1241,9 @@ Fence 不填 `execution_generation`：execution 表示一次由 Host 启动建�
 instance/runtime_epoch/connection_generation，内部 connection/execution ID 由所有者维护，
 边界匹配 wire 值后从权威注册记录解析，不能用客户端自报 ID 或当前代次替换旧值。
 
-**管理顺序**：先 RegisterAdapter 取得 assigned_instance_id，之后才允许 BindAdapter；
-注册只校验声明账号存在、可用且未绑定其他 adapter，不自动创建绑定。绑定/解绑是显式管理
-命令并保留 owner 版本；禁用账号或已删除资源 fail closed；同资源 expected_version 不匹配
-返回 CONFLICT，不覆盖。
+**管理顺序**：按 P06 A1，BindAdapter 可先为外部自管适配器建立绑定，再由 Bridge 完成首次注册。
+绑定/解绑是显式管理命令，保留绑定自身的版本。BindAdapter 若提供 expected_version，则当前绑定必须已存在且版本一致，否则返回 CONFLICT；
+未提供时仍按首次绑定或已解绑后的重新绑定处理。已生效绑定阻止重复绑定和账号禁用，禁用账号拒绝再次绑定。
 
 **List 语义**：Runtime List 是一次当前权威读取，跨页不冻结行集（与 Identity session
 snapshot 不同）。page token 由 Runtime 分配的不透明 id 表达，绑定查询条件、认证主体、

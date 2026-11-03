@@ -256,3 +256,16 @@ core dump/ptrace 边界写入 doc/05/08。未改 proto/契约。
 SetDesiredState 通过预期版本 CAS 更新运行意图，UpdateConfig 产生新期望配置版本。两者在相同请求身份重放时不重复写入；换新幂等键并提交旧版本时返回 CONFLICT。GetInstanceConfig 读回 PENDING、applied_version=0，未注册的实例没有运行 fence。上述验收不覆盖创建入口、注册后 execution/connection generation、插件 ACK 或 Host 实际执行。
 
 两条写 RPC 的完整回执仍待收尾。已观察到变更 request_id、保留幂等键的重试可能缺原 operation；重试不得披露不同资源的 operation。UpdateConfig 返回的 state.version/desired 还可能与同次提交后的实例权威状态不符。仅凭此组测试不能将两条写 RPC 整体登记为完成。
+
+## 2026-11-03 既有账号和适配器的目标 RPC 复验
+
+`p05_runtime_exact_accounts` 用隔离 PG16.4、生产 Runtime 与 Identity、Control 客户端证书和真实在线授权执行下列用例。夹具预置一个已存在的 Active 账号和一份已有适配器注册记录；账号更新、绑定、解绑、禁用全部经生产 RPC 提交。
+
+- `GetAccount` 读取指定账号及版本。拿相同委托读取另一个账号 ID 返回 PERMISSION_DENIED；`GetAdapter` 以独立的 ADAPTER 范围读取登记的资源 ID、实现名称、生命周期与版本，只有 ACCOUNT 范围的调用失败。
+- `UpdateAccount` 校验 ACCOUNT 范围的管理权限、旧版本冲突、同键重试的原结果以及同键异参冲突；`GetAccount` 回读更新后的名称和版本。
+- `BindAdapter` 成功后重放返回同一绑定及 operation；重放无秘密。未存在的绑定带非匹配预期版本、已解绑后用旧版本 1 尝试重绑，都返回 CONFLICT。用当前版本 2 重新绑定成功并递增到 3。只有读取权限的调用不能创建或撤销绑定。
+- `UnbindAdapter` 拒绝陈旧版本。解绑成功和同键重放返回同一绑定版本和 operation。活动绑定阻止 `DisableAccount`；解绑后只有具备管理权限并提供当前账号版本才能禁用。禁用结果可重放，读取返回 Disabled，后续更新与绑定均被拒绝。
+
+修复前的真实链路接受了对版本 2 的绑定提交 expected_version=1 的请求；修复后在写入及签发前检查显式条件。此项落实原有的单资源条件写约定，已同步 `doc/02-core.md`。未改变 proto/API 字段、错误码、授权范围、私有表或工具链。复验命令为 `ctest --test-dir build/full-locked -R '^p05_runtime_(exact_accounts|identity_e2e|resource_application)$' --output-on-failure`。
+
+本项只覆盖既有对象。CreateAccount、ListAccounts、ListAdapters 的创建与目录授权另行裁定；GetAdapter 对绑定列表的投影及首次 bootstrap 凭据的交付不由本项登记。

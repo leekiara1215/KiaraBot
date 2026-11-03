@@ -986,6 +986,10 @@ public:
             return *failure;
           }
           const auto binding_value = std::get<std::optional<AdapterBindingRecord>>(existing);
+          if (request.context.expected_version &&
+              (!binding_value || binding_value->version != *request.context.expected_version)) {
+            return runtime_conflict();
+          }
           // A1: an external self-managed adapter may be bound before its first bridge
           // registration creates the AdapterRecord. The bootstrap credential issued below is the
           // identity that the registration must present; a registered adapter still validates its

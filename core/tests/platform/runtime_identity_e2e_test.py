@@ -152,6 +152,9 @@ def prepare(root, enrolled):
         'scope': [{'kind': 'RESOURCE_CATALOG', 'id': 'control'}]})
     from runtime_instance_management_e2e import grant_existing_objects
     grant_existing_objects(enrolled, installation_id, instance_id)
+    if '--exact-accounts' in sys.argv[9:]:
+        import runtime_exact_accounts_test
+        STATE['adapter'] = runtime_exact_accounts_test.prepare(enrolled, account_id)
     STATE.update(account_id=account_id, instance_id=instance_id,
                  installation_id=installation_id,
                  manage_assignment=manage_assignment,
@@ -289,10 +292,11 @@ def scenario(root, port, pg_bin, binaries):
     identity_security_material(root)
     runtime_db, environment = runtime_database(root, pg_bin, port, sys.argv[3])
     account_id = STATE['account_id']
+    exact_accounts = '--exact-accounts' in sys.argv[9:]
     run_sql(({**environment[0], 'PGDATABASE': 'p03_runtime'}, environment[1]),
             f"INSERT INTO kiarabot.accounts "
             f"(id,platform,platform_account_id,display_name,version,state) VALUES "
-            f"('{account_id}','qq','10001','Alice',1,1);")
+            f"('{account_id}','qq','10001','Alice',1,{0 if exact_accounts else 1});")
     identity, identity_state = daemon(identity_binary, root / 'identity.json')
     runtime = None
     fallback = None
@@ -358,6 +362,15 @@ def scenario(root, port, pg_bin, binaries):
                     scope=platform_pb2.ResourceScope(resources=scope),
                     permissions=permissions,
                     client_certificate_sha256=leaf_fingerprint(tls)), timeout=10)
+
+            if exact_accounts:
+                import runtime_exact_accounts_test
+                runtime_exact_accounts_test.check(
+                    runtime_stub, issue_delegation,
+                    ({**environment[0], 'PGDATABASE': 'p03_runtime'}, environment[1]),
+                    account_id, STATE['adapter'])
+                print('P05 exact account and adapter owner RPCs passed')
+                return
 
             account_scope = platform_pb2.ResourceScope(resources=[
                 platform_pb2.ResourceRef(kind=platform_pb2.RESOURCE_ACCOUNT, id=account_id)])
@@ -1213,4 +1226,18 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    if '--exact-accounts' in sys.argv[9:]:
+        try:
+            main()
+        except Exception as error:
+            import grpc
+            import traceback
+            frames = traceback.extract_tb(error.__traceback__)
+            local = next((frame for frame in reversed(frames) if frame.filename.endswith(
+                'runtime_exact_accounts_test.py') and frame.name == 'check'), frames[-1])
+            result = error.code().name if isinstance(error, grpc.RpcError) else type(error).__name__
+            print(f'P05 exact resource failure at {Path(local.filename).name}:{local.lineno}: {result}',
+                  file=sys.stderr)
+            sys.exit(1)
+    else:
+        main()
