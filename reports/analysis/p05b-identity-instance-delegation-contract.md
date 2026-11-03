@@ -95,3 +95,37 @@ TTL：沿用 `kDelegationBodyLifetime=56s`，并取 session/credential/cert 最�
   撤销管理员 assignment 后 Exchange 拒绝、过期父委托拒绝。
 - 文档同步：doc/01、doc/21、本文件、P05 报告；P05b-4/5 解锁点：Runtime provider 可获取/刷新
   该父委托并 Exchange；P11/P10k 生产链路可继续。
+
+## 9. P05b-7 修正：model 权限 × RESOURCE_MODEL 交叉积（2026-11-03）
+
+P05b-2 初版要求 instance 父委托必须包含 RESOURCE_INSTANCE scope，且 RPC 把请求
+scope×permissions 展开成精确 tuple，导致 model-only 父委托（scope=[RESOURCE_MODEL],
+permissions=[model.chat,model.call.inspect]）被 `targets_instance` 拒绝，无法交付 P05b-4。
+
+修正后的合法形状互斥：
+- **task**：scope 至少含 `RESOURCE_INSTANCE/{instance_id}`，可加 INSTALLATION；permissions
+  仅 task.schedule/task.read；其他 instance id 拒绝。
+- **model**：scope 恰好一个 `RESOURCE_MODEL/{model_id}`，不得含 INSTANCE/INSTALLATION；
+  permissions 仅 model.chat/model.call.inspect；多个 Model id 或混合 kind 拒绝。
+- 两种形状的 subject 均由 `instance_id` 的 plugin principal binding 确定；管理员仍需对每个
+  permission/resource tuple 有 exact assignment（model 在 Model 资源，不要求 instance scope
+  交叉）；`resource.manage` 仍按目标实例校验；跨实例/跨模型/非白名单/TTL/证书/审计不变。
+- Exchange/CheckAuthorization 的实例父委托来源语义不变：model 父委托可正常换
+  audience=model hops2 子委托，owner=subject=实例。
+
+## 10. P05b-7：实例主体 hops2 子委托的 CheckAuthorization（2026-11-03）
+
+P05b-5 联测要求 Scheduler/Model 用 Exchange 得到的 hops2 子证明调用 Identity
+`CheckAuthorization`。该路径由 P05b-2 的实例来源分支支持，本任务补真实 owner 回归：
+
+- 识别：child.subject=实例 plugin principal；source credential/session 属于管理员（不是
+  child.subject）；actor_chain=[Control, Runtime]（business_hops=2）；direct_actor=Runtime，
+  client_certificate=Runtime 叶。
+- 校验：管理员 source credential/session 当前且在线；实例 principal Active 且
+  RESOURCE_INSTANCE binding；child.permissions 包含请求 permission/resource；管理员对该
+  permission/resource 的 exact assignment 仍有效；recipient 是实际 Scheduler/Model mTLS peer
+  且有 identity.authorization.check；scope 必须落在 child 的精确 binding 内，跨实例/跨模型
+  返回 allowed=false + PERMISSION_DENIED；过期/篡改/错误来源返回 UNAUTHENTICATED。
+- 不改变 wire 字段、Exchange 或 owner 验证语义；错误映射不使用自由文本。
+- 测试：真 PG16.4+mTLS 中 admin→task/model 父委托→Runtime 叶 Exchange→Scheduler/Model 叶
+  CheckAuthorization 正例；跨实例/跨模型、过期、非白名单、撤销、证书错误负例。

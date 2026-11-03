@@ -98,3 +98,27 @@ admin 密码、完整配置。错误消息不得回显文件内容。临时文�
 - 真 PG16.4+真 mTLS：管理员 token + Control 叶调用 Identity IssueDelegation → sealed 文件 →
   reader 校验；未授权/错误 instance 不产生文件；刷新替换后 reader 接受、旧文件失效。
 - 门禁：p05b/p05 label，contract 门禁，全量构建，`ctest -R 'p05|p04|p12|p03_postgres'`。
+
+## 9. P05b-7：Model scope 扩展（2026-11-03）
+
+P05b-4 发现 model.chat 父委托无法交付。sealed 文件与刷新工具扩展为**按 kind 分组**，不把
+task 与 model 权限混在同一 envelope/token（避免 Identity 的 scope×permission 交叉积）：
+
+| kind | permissions | scope | 默认文件 |
+| --- | --- | --- | --- |
+| task | task.schedule, task.read | INSTANCE/{instance_id} + INSTALLATION/{installation_id} | `instance-delegation-<instance>.json` |
+| model | model.chat, model.call.inspect | RESOURCE_MODEL/{model_id}（恰好一个） | `instance-delegation-<instance>-model.json` |
+
+- envelope 顶层继续包含 instance_id/installation_id/audience=runtime/issued_at/expires_at/
+  ttl_seconds/delegation_proof；model kind 的 scope 不要求 INSTANCE，但 instance_id 仍是
+  父委托的 subject 目标，必须与 Runtime 当前实例核对。
+- refresh 工具新增 `--scope-kind task|model`、`--model-id`、`--permissions`（逗号/重复；
+  model 默认 model.chat,model.call.inspect；task 默认 task.schedule,task.read），也支持配置文件
+  `scope_kind`/`model_id`/`permissions`。TTL/0600/原子写/审计不变。
+- reader `read_sealed_delegation` 增加 `expected_model`，并拒绝：task/model 权限混用、
+  model scope 与其他 kind 混合、多个 MODEL、缺失/错误 model_id、非白名单权限。
+- Identity 侧 model 父委托由 P05b-7 修正：instance_id 绑定用于 subject，model 权限的
+  resource 是 RESOURCE_MODEL；管理员 exact assignment 仍按 Model 资源，不要求 INSTANCE scope
+  交叉；task 路径不变。跨模型（管理员未授权 Model）与错误 model scope 拒绝。
+- 文件仍是 envelope，不是签名信任根；Runtime 读取 model kind 后必须用 ExchangeDelegation
+  换 audience=model 子委托，再由 Model 在线 CheckAuthorization。

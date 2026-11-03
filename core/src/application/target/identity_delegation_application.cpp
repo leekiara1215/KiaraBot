@@ -163,17 +163,34 @@ Outcome<IssuanceAuthority> authorize_issue(detail::Work& checkpoint,
     if (const auto* failure = std::get_if<Failure>(&manage)) {
       return *failure;
     }
+    // Two legal parent shapes, never a cross product mixing them:
+    //  - task: INSTANCE/{instance_id} plus optional INSTALLATION, task.schedule/task.read;
+    //  - model: exactly one RESOURCE_MODEL, model.chat/model.call.inspect. The target instance
+    //    comes from instance_id (the unique plugin binding), so model scopes do not need an
+    //    unrelated INSTANCE tuple; the administrator still needs exact MODEL assignments.
     bool targets_instance = false;
+    bool has_model = false;
+    std::set<ResourceId, bool (*)(const ResourceId&, const ResourceId&)> model_ids(
+        [](const ResourceId& left, const ResourceId& right) { return left.value < right.value; });
     for (const auto& binding : request.permissions) {
       if (!instance_parent_binding(binding, *request.instance_id)) {
         return rejected(ErrorCode::InvalidArgument, Recovery::CorrectInput);
       }
-      if (binding.resource.kind == ResourceKind::Instance &&
-          binding.resource.id == *request.instance_id) {
+      if (binding.resource.kind == ResourceKind::Instance) {
+        if (binding.resource.id != *request.instance_id) {
+          return rejected(ErrorCode::InvalidArgument, Recovery::CorrectInput);
+        }
         targets_instance = true;
+      } else if (binding.resource.kind == ResourceKind::Model) {
+        has_model = true;
+        model_ids.insert(binding.resource.id);
       }
     }
-    if (!targets_instance) {
+    if (has_model) {
+      if (targets_instance || model_ids.size() != 1) {
+        return rejected(ErrorCode::InvalidArgument, Recovery::CorrectInput);
+      }
+    } else if (!targets_instance) {
       return rejected(ErrorCode::InvalidArgument, Recovery::CorrectInput);
     }
     instance_subject = resolved->id;
