@@ -420,7 +420,7 @@ def scenario(root, port, pg_bin, binaries):
             else:
                 raise AssertionError('cross-scope assignment list accepted')
             from runtime_instance_management_e2e import verify as verify_existing_instances
-            replay_instance = verify_existing_instances(
+            replay_instance, instance_operation_id = verify_existing_instances(
                 runtime_stub, issue_delegation, postgres(root, pg_bin, port, 'p03_runtime'),
                 STATE['installation_id'], STATE['instance_id'], context, require, run_sql)
             proof = issue_delegation().delegation.proof
@@ -968,6 +968,17 @@ def scenario(root, port, pg_bin, binaries):
             require(len(operation.operation.participants) == 1 and
                     operation.operation.participants[0].participant == 'runtime',
                     'deletion participant progress projected')
+            # An account-scoped reference cannot expose an operation belonging to an instance.
+            mismatched_ref = platform_pb2.OperationRef()
+            mismatched_ref.CopyFrom(operation_ref)
+            mismatched_ref.operation_id = instance_operation_id
+            try:
+                runtime_stub.GetOperation(runtime_pb2.RuntimeGetOperationRequest(
+                    context=context(delegation=manage_proof), operation=mismatched_ref), timeout=10)
+            except grpc.RpcError as error:
+                require(error.code() == grpc.StatusCode.NOT_FOUND, 'mismatched operation reference')
+            else:
+                raise AssertionError('mismatched operation reference was accepted')
             restored = runtime_stub.RestoreResource(runtime_pb2.RuntimeRestoreResourceRequest(
                 context=context(delegation=manage_proof),
                 resource=platform_pb2.ResourceRef(kind=platform_pb2.RESOURCE_ACCOUNT,

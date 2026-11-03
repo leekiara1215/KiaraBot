@@ -119,4 +119,4 @@ def verify(stub, issue, runtime_sql, installation_id, instance_id, context, requ
         require(not result.HasField('operation') or result.operation == accepted.operation,
                 'retry must not disclose an operation for another resource')
 
-    return replay_with_foreign_id
+    return replay_with_foreign_id, accepted.operation.operation_id

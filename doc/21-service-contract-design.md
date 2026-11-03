@@ -263,7 +263,7 @@ Action元数据检查、日志/审计、消息元数据等额外敏感能力须�
 
 Runtime增加五类typed Get/List（Account/Installation/Instance/Adapter/Host）及GetInstanceConfig，复用已有record并补注册metadata/配置应用投影；默认2秒/5秒上限、在线授权。Get选择exact正确kind；List的ResourceRef catalog必须封闭RESOURCE_CATALOG且为离线登记runtime/资源族UUID，无all/祖先继承，只返回当前本人另获具体child grant的集合。PageRequest输入与SnapshotInfo输出分离，10分钟快照仍逐页核验当前授权版本；目录登记/可靠创建与本人发现的Identity契约随后补齐，现均未实现。
 
-P05 follow-up 补齐 Runtime 作为平台 peer 的离线注册与真实授权链：Runtime 的 exact 资源方法按上段语义标注 `scope_kinds`（Account/Adapter/Installation/Instance），Identity `CheckAuthorization` 据此校验当前委托与 assignment；未标注方法保持 fail closed，Create/List/GetResourceState/GetOperation 因尚无单一 exact scope 或应用仍传空 scope 不在本轮标注。Runtime/Scheduler/Model 的 principal、clientAuth 证书凭据与显式 assignment 由 `kiarabot-identity-bootstrap` 的 `platform_peers` 离线供给（见 doc/08），不新增匿名注册或 proto 字段。
+P05 follow-up 补齐 Runtime 作为平台 peer 的离线注册与真实授权链：Runtime 的 exact 资源方法按上段语义标注 `scope_kinds`（Account/Adapter/Installation/Instance），Identity `CheckAuthorization` 据此校验当前委托与 assignment；未标注方法保持 fail closed，GetOperation 后续已登记五类 Runtime 资源，要求请求引用与存储引用完全一致。Create/List/GetResourceState 因尚无单一 exact scope 或应用仍传空 scope 不在本轮标注。Runtime/Scheduler/Model 的 principal、clientAuth 证书凭据与显式 assignment 由 `kiarabot-identity-bootstrap` 的 `platform_peers` 离线供给（见 doc/08），不新增匿名注册或 proto 字段。
 
 ## Identity 当前投影与凭据状态（目标未实现）
 

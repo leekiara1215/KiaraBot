@@ -1312,8 +1312,8 @@ generation/有界 ShutdownNotice）。P06 target 登记中 bridge_methods、授�
   宽松 JSON number 猜测。真实双进程 mTLS/PG e2e（允许→撤销 assignment 拒绝→撤销凭据登录
   失败→Identity 停机 readiness=false→缺配置 fail closed）由 `p05_runtime_identity_e2e` 覆盖。
 - Runtime exact 资源方法通过 `scope_kinds` 标注（Account/Adapter/Installation/Instance）供
-  Identity descriptor-driven resolver 校验；未标注方法（Create/List/GetResourceState/
-  GetOperation 等）保持 fail closed，补标注必须同时补齐应用传入的 exact scope。
+  Identity descriptor-driven resolver 校验；GetOperation 支持账号、适配器、安装、实例、Host 五类精确资源，授权后查询持久化的 OperationRef。仅当 owner、ID 和资源全部匹配时读取参与者；不匹配返回 NOT_FOUND。
+  未标注方法（Create/List/GetResourceState 等）保持 fail closed，补标注必须同时补齐应用传入的 exact scope。
 
 **持久化说明**：新增 adapters/adapter_bindings/hosts/instance_configs/bridge_credentials 关系与
 installations.manifest、instances.desired 列在同一 Runtime 库 v1 初始化 schema 内创建。

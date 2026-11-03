@@ -1919,6 +1919,9 @@ public:
                                     return *failure;
                                   }
                                   auto operation = std::move(std::get<Operation>(found));
+                                  if (operation.ref != request.operation) {
+                                    return not_found();
+                                  }
                                   auto participants = work.operation_participants(operation.ref.id);
                                   if (const auto* failure = std::get_if<Failure>(&participants)) {
                                     // A partial P05 adapter may not implement the P13a participant
