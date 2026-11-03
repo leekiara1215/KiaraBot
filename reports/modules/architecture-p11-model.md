@@ -109,9 +109,13 @@ owner gateway/委托/错误映射沿用 P12c；本任务只新增 Model owner �
   SDK plugin over TLS PluginBridge + 真 Provider fixture；无 sealed 父委托时 plugin 收
   UNAUTHENTICATED(2)，Provider requests=0（通过）。
 - 正例 e2e（真实 managed `kiarabot-plugin-host` + 受管 SDK plugin + 真实
-  Identity/Runtime/Model + 本地 HTTP Provider 成功/Provider 错误矩阵）已在 CTest 注册并
-  **通过**（`p05b_model_chain_e2e`）；fail-closed 与 provider fixture 同时通过。P05b-9 修复
-  ExchangeDelegation 独立预算后 full matrix 全绿。
+  Identity/Runtime/Model + 本地 HTTP Provider）已在 CTest 注册并 **通过**
+  （`p05b_model_chain_e2e`）：success/usage/call record owner/no-secret、Provider
+  400/401/404/429/500/503/timeout/invalid_json、expired/cross-instance/forged-signature/
+  revoked-parent、Identity/Runtime 不可达 fail-closed 与 restored success；fail-closed 与
+  provider fixture 同时通过。P05b-9 修复 ExchangeDelegation 独立预算后 full matrix 全绿。
+  未覆盖：真实付费外部 Provider、目标六服务栈 live、替代 Runtime 叶证书的错误证书场景
+  （fixture 仅登记一个 Runtime peer，已用 forged signature/错误 origin 覆盖在线拒绝路径）。
 
 ### P05b-4 实现进展（2026-11-03，positive 链调试中）
 

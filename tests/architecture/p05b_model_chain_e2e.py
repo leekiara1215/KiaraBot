@@ -383,6 +383,9 @@ def after_bootstrap(root: Path) -> None:
         children.append(identity)
         require(identity_state.get('ready') == 'true', 'identity readiness')
         wait_probe(identity_config['probe_listen'])
+        STATE.update(identity_child=identity, identity_binary=identity_binary,
+                     identity_config=configs['identity'],
+                     identity_probe=identity_config['probe_listen'])
         model_log = (root / 'model.err').open('wb')
         model = subprocess.Popen([str(model_binary), '--config', str(configs['model'])],
                                  stdout=subprocess.PIPE, stderr=model_log)
@@ -411,6 +414,7 @@ def after_bootstrap(root: Path) -> None:
         except Exception:
             pass
         children.append(runtime)
+        STATE['runtime_child'] = runtime
         STATE['runtime_log'] = runtime_log
         wait_probe(endpoints['runtime_probe'])
 
@@ -448,6 +452,7 @@ def after_bootstrap(root: Path) -> None:
         print('P05b-4 stage: register instance principal', flush=True)
         instance_principal = register_instance_principal(
             identity_service, STATE['instance'], root, pg_bin, port)
+        STATE['instance_principal'] = instance_principal
         expect_success = STATE.get('mode') == 'expect-success'
         if expect_success:
             # P05b-7 production sealed writer: administrator access token feeds the real refresh
@@ -697,8 +702,8 @@ def run_plugin(root, bridge_endpoint, instance, bootstrap, tls, provider_state, 
         if refresh_parent is not None:
             refresh_parent()
 
-        def command(text, expected_ok=True, expected_code=None, timeout=30.0):
-            if refresh_parent is not None:
+        def command(text, expected_ok=True, expected_code=None, timeout=30.0, refresh=True):
+            if refresh_parent is not None and refresh:
                 refresh_parent()
             identifier = str(uuid.uuid4())
             with open(commands, 'a') as handle:
@@ -731,6 +736,26 @@ def run_plugin(root, bridge_endpoint, instance, bootstrap, tls, provider_state, 
                 time.sleep(0.05)
             raise Failure('plugin command timeout')
 
+        envelope_path = root / f'instance-delegation-{instance}-model.json'
+
+        def tamper_envelope(mutator):
+            original = envelope_path.read_text()
+            envelope = json.loads(original)
+            mutator(envelope)
+            envelope_path.write_text(json.dumps(envelope))
+            envelope_path.chmod(0o600)
+            return original
+
+        def restore_envelope(original):
+            envelope_path.write_text(original)
+            envelope_path.chmod(0o600)
+
+        def expect_failure(label, refresh=False):
+            value = command(label, expected_ok=False, refresh=refresh)
+            require(value.get('code') in (2, 3, 9),
+                    f'{label} stable fail-closed code: {value}')
+            return value
+
         if not expect_success:
             failed = command('no-parent-file', expected_ok=False)
             require(failed.get('code') in (2, 9),
@@ -745,13 +770,34 @@ def run_plugin(root, bridge_endpoint, instance, bootstrap, tls, provider_state, 
         require(success.get('text') == 'p05b-fixture reply', 'provider reply text')
         require(success.get('input_tokens') == 7 and success.get('output_tokens') == 5,
                 'provider usage tokens')
+        model_environment, model_pg = rt.postgres(Path(root), Path(STATE['pg_bin']),
+                                                  int(STATE['pg_port']), 'p03_model')
+        identity_environment, identity_pg = rt.postgres(Path(root), Path(STATE['pg_bin']),
+                                                        int(STATE['pg_port']), 'p03_identity')
+        owner = rt.run_sql((model_environment, model_pg),
+                           "SELECT owner FROM kiarabot.model_intents WHERE logical_call_id='" +
+                           success['id'] + "'")
+        require(owner == STATE['instance_principal'],
+                f'model call record owner={owner}, expected instance principal '
+                f'{STATE["instance_principal"]}')
+        binding = rt.run_sql(
+            (identity_environment, identity_pg),
+            "SELECT binding_id FROM kiarabot.principals WHERE id='" + owner + "'")
+        require(binding == instance, f'model call owner binding={binding}, expected {instance}')
+        secret_leak = rt.run_sql(
+            (model_environment, model_pg),
+            "SELECT count(*) FROM kiarabot.model_intents t WHERE logical_call_id='" +
+            success['id'] + "' AND position('p05b-fixture-secret' in t::text) > 0")
+        require(secret_leak == '0', 'provider secret leaked into Model call record')
         requests = [json.loads(line) for line in provider_state.read_text().splitlines()]
         require(requests and all(entry['auth_ok'] and entry['stream'] is False
                                  for entry in requests), 'provider auth/stream=false')
 
         # Provider error mapping through the real chain (stable Model/plugin codes).
-        matrix = [('status_401', 'UPSTREAM_UNAVAILABLE'), ('status_429', 'RATE_LIMITED'),
-                  ('status_500', 'UPSTREAM_UNAVAILABLE'), ('timeout', 'TIMEOUT'),
+        matrix = [('status_400', 'INVALID_ARGUMENT'), ('status_401', 'UPSTREAM_UNAVAILABLE'),
+                  ('status_404', 'CAPABILITY_NOT_SUPPORTED'),
+                  ('status_429', 'RATE_LIMITED'), ('status_500', 'UPSTREAM_UNAVAILABLE'),
+                  ('status_503', 'UPSTREAM_UNAVAILABLE'), ('timeout', 'TIMEOUT'),
                   ('invalid_json', 'UPSTREAM_UNAVAILABLE')]
         for mode, _expected in matrix:
             mode_file.write_text(mode + '\n')
@@ -759,6 +805,88 @@ def run_plugin(root, bridge_endpoint, instance, bootstrap, tls, provider_state, 
             require(value.get('code') not in (None, 0, -1), f'{mode} stable code')
         mode_file.write_text('success\n')
         command('restored-success')
+
+        # Sealed parent / authority lifecycle negatives, each with zero additional Provider calls.
+        provider_before = len(provider_state.read_text().splitlines())
+        # Runtime caches a child delegation briefly; wait it out so every negative really exercises
+        # the sealed parent/authority path instead of a cached proof.
+        time.sleep(6.0)
+        original = tamper_envelope(lambda value: value.update(expires_at=value['issued_at'] - 1,
+                                                              ttl_seconds=-1))
+        try:
+            expect_failure('expired-parent')
+        finally:
+            restore_envelope(original)
+        time.sleep(6.0)
+        original = tamper_envelope(
+            lambda value: value.update(instance_id=str(uuid.uuid4()),
+                                       installation_id=str(uuid.uuid4())))
+        try:
+            expect_failure('cross-instance-parent')
+        finally:
+            restore_envelope(original)
+        require(len(provider_state.read_text().splitlines()) == provider_before,
+                'parent negatives must not reach the HTTP Provider')
+
+        # Forged parent signature/wrong origin: the envelope shape is valid but Identity must reject
+        # the signed proof online; no Provider call may happen.
+        original = envelope_path.read_text()
+        forged = json.loads(original)
+        proof = forged['delegation_proof']
+        forged['delegation_proof'] = proof[:-4] + 'AAAA'
+        envelope_path.write_text(json.dumps(forged))
+        envelope_path.chmod(0o600)
+        time.sleep(6.0)
+        try:
+            expect_failure('forged-parent-signature')
+        finally:
+            restore_envelope(original)
+        time.sleep(6.0)
+
+        # Revoked sealed parent material: removing the deployment envelope must fail closed; the
+        # next authorized refresh restores service (mirrors credential/assignment revocation).
+        envelope_path.unlink()
+        time.sleep(6.0)
+        try:
+            expect_failure('revoked-parent-file')
+        finally:
+            refresh_parent()
+        command('after-revoke-restore')
+
+        # Identity unreachable: plugin observes a bounded fail-closed code, Provider untouched.
+        identity = STATE['identity_child']
+        stop(identity)
+        time.sleep(6.0)
+        try:
+            expect_failure('identity-unreachable')
+        finally:
+            restarted, restarted_state = daemon(Path(STATE['identity_binary']),
+                                                Path(STATE['identity_config']))
+            require(restarted_state.get('ready') == 'true', 'identity restart readiness')
+            wait_probe(STATE['identity_probe'])
+            STATE['identity_child'] = restarted
+        # The Runtime identity channel reconnects with gRPC backoff after Identity returns.
+        deadline = time.monotonic() + 25.0
+        while True:
+            refresh_parent()
+            try:
+                command('after-identity-restart')
+                break
+            except Failure:
+                if time.monotonic() >= deadline:
+                    raise
+                time.sleep(1.0)
+
+        # Runtime unreachable: the managed plugin must observe a bounded transport failure and the
+        # Provider request count must not move.
+        provider_before = len(provider_state.read_text().splitlines())
+        stop(STATE['runtime_child'])
+        try:
+            command('runtime-unreachable', expected_ok=False, timeout=15)
+        except Failure:
+            pass  # a clean transport error can surface as no result within the bounded deadline
+        require(len(provider_state.read_text().splitlines()) == provider_before,
+                'Runtime-unreachable must not reach the HTTP Provider')
         print('P05b model single chain: plugin->Runtime->Model->real HTTP provider passed')
     finally:
         if plugin.poll() is None:

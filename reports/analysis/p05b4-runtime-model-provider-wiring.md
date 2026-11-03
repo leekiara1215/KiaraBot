@@ -214,8 +214,11 @@ SKIP_RETURN_CODE 77），等 P05b-6 合入后去掉 gate 并跑 managed Host+SDK
 - rebase main b0386bb，cherry-pick P05b-9 66587e9（ExchangeDelegation 独立 2s/5s 预算）
   与 ddf643d；生产 composition 重接模型 sealed provider、per-request delegation、`host.model.v1`。
 - e2e 已使用真实 `kiarabot-plugin-host` 管理 SDK plugin：Host start command receipt 与
-  SQLite journal 断言通过后执行 model_chat；success + Provider 401/429/500/timeout/
-  invalid_json + restored success 全绿；fail-closed（无 sealed 父委托）code=UNAUTHENTICATED、
-  Provider 0 请求。
+  SQLite journal 断言通过后执行 model_chat；success（Model call record owner=实例 principal、
+  无 provider secret/usage 正确）+ Provider 400/401/404/429/500/503/timeout/invalid_json +
+  expired/cross-instance/forged-signature/revoked-parent + Identity/Runtime 不可达 fail-closed
+  + restored success 全绿；无 sealed 父委托 fail-closed code=UNAUTHENTICATED、Provider 0 请求。
+  未覆盖：替代 Runtime 叶证书的错误证书场景（fixture 单 Runtime peer，已覆盖 forged
+  signature/错误 origin 的在线拒绝）。
 - CTest：`p05b_model_chain_e2e`、`p05b_model_chain_fail_closed_e2e`、`p05b_provider_fixture`
   全 PASS；未覆盖付费外部 Provider/目标六服务栈 live（环境项）。
