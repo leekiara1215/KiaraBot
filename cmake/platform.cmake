@@ -633,6 +633,24 @@ if(EXISTS "${KIARABOT_TARGET_PYTHON}")
     LABELS "p05b;p11;integration;security;fault" TIMEOUT 420
     WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
     ENVIRONMENT "PATH=${RUNTIME_E2E_OPENSSL_BIN_DIR}:${RUNTIME_E2E_PYTHON_BIN_DIR}:$ENV{PATH};PYTHONPATH=${CMAKE_SOURCE_DIR}/sdk/python/build/generated")
+  # P05b-10: real SDK PluginBridge task_create/get/cancel -> Runtime ingress -> real Scheduler,
+  # with the P05b-6 sealed task parent, managed Host/SDK plugin and task-chain negative matrix.
+  add_test(NAME p05b_task_chain_e2e COMMAND "${KIARABOT_TARGET_PYTHON}"
+    "${CMAKE_SOURCE_DIR}/infrastructure/postgres/tests/run_database_test.py"
+    --pg-bin "${KIARABOT_TEST_PG_BIN}" --openssl "${KIARABOT_TEST_OPENSSL}"
+    --initializer $<TARGET_FILE:kiarabot-pg-initialize>
+    --test "${CMAKE_SOURCE_DIR}/tests/architecture/p05b_task_chain_e2e.py"
+    --test-argument $<TARGET_FILE:kiarabot-identity-bootstrap>
+    --test-argument "${KIARABOT_TEST_PG_BIN}"
+    --test-argument $<TARGET_FILE:kiarabot-identity>
+    --test-argument $<TARGET_FILE:kiarabot-runtime>
+    --test-argument $<TARGET_FILE:kiarabot-scheduler>
+    --test-argument $<TARGET_FILE:kiarabot_postgres_runtime_bridge_seed>
+    --test-argument $<TARGET_FILE:kiarabot-plugin-host>)
+  set_tests_properties(p05b_task_chain_e2e PROPERTIES
+    LABELS "p05b;p10;p05;p08;integration;security;fault" TIMEOUT 600
+    WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+    ENVIRONMENT "PATH=${RUNTIME_E2E_OPENSSL_BIN_DIR}:${RUNTIME_E2E_PYTHON_BIN_DIR}:$ENV{PATH};PYTHONPATH=${CMAKE_SOURCE_DIR}/sdk/python/build/generated")
   # Negative E2E: no sealed parent material -> Runtime must fail closed with a stable code and the
   # real HTTP Provider must record zero requests. Does not depend on the P05b-6 writer.
   add_test(NAME p05b_model_chain_fail_closed_e2e COMMAND "${KIARABOT_TARGET_PYTHON}"
