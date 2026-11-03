@@ -12,12 +12,17 @@
 
 namespace kiarabot::core::platform {
 
+// Per-request Model delegation proof for audience=model (hops=2 instance-subject child). The
+// request carries the authenticated instance id, so acquisition can be keyed by the real caller.
+using ModelDelegationProvider =
+    std::function<target::Outcome<std::string>(const target::RuntimeModelChatRequest&)>;
+
 struct RuntimeModelClientOptions {
   std::string endpoint;
   std::shared_ptr<grpc::ChannelCredentials> channel_credentials;
-  // Runtime's current delegation proof for audience=model. P05 delegation acquisition is not yet
-  // wired; the production composition installs a fail-closed provider until it is.
-  std::function<target::Outcome<std::string>()> delegation_provider;
+  // P05b-4: Runtime instance-parent acquisition + ExchangeDelegation provider. Missing/absent
+  // configuration keeps the fail-closed default; no proof means no Model call.
+  ModelDelegationProvider delegation_provider;
   std::chrono::milliseconds maximum_budget{30000};
 };
 
@@ -42,7 +47,7 @@ private:
   std::unique_ptr<v1::ModelService::Stub> stub_;
 };
 
-// Fail-closed provider used until P05 delegation acquisition exists: no proof means no call.
-std::function<target::Outcome<std::string>()> unavailable_model_delegation();
+// Fail-closed provider used until/unless P05 instance delegation acquisition is configured.
+ModelDelegationProvider unavailable_model_delegation();
 
 } // namespace kiarabot::core::platform

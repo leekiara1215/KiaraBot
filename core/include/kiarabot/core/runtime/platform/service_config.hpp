@@ -124,6 +124,14 @@ struct HostMaterial {
   std::vector<HostLaunchProfileMaterial> profiles;
   std::vector<std::pair<std::string, std::string>> environment;
 };
+// Runtime-only P05b-4: short-lived instance parent delegation material for Runtime -> Model.
+// `parent_proof_file` is deployment material written by the authorized Control administrator (B1);
+// the Runtime reads it, validates the instance/expiry, exchanges it, never logs/persists the proof.
+struct InstanceDelegationMaterial {
+  std::string parent_proof_file;
+  std::uint32_t refresh_margin_seconds = 8;
+  std::uint32_t cache_capacity = 128;
+};
 struct ProcessConfig {
   target::Service service;
   std::string probe_listen;
@@ -138,6 +146,8 @@ struct ProcessConfig {
   std::optional<std::string> identity_endpoint = std::nullopt;
   // Runtime-only: Model owner mTLS endpoint used for plugin host_request.model_chat ingress.
   std::optional<std::string> model_endpoint = std::nullopt;
+  // Runtime-only P05b-4: instance parent delegation source; absent keeps Model calls fail-closed.
+  std::optional<InstanceDelegationMaterial> instance_delegation = std::nullopt;
   // Runtime-only P10k/P13h-2: Scheduler owner mTLS endpoint for plugin task frames and the
   // lifecycle participant's platform-identity ListTasks/CancelTask. Absent keeps both paths
   // fail-closed (CapabilityNotSupported/UPSTREAM_UNAVAILABLE, never fabricated results).

@@ -396,12 +396,13 @@ target_link_libraries(kiarabot_runtime_rpc PUBLIC kiarabot_proto kiarabot_target
   PRIVATE kiarabot_runtime_resource_application OpenSSL::Crypto)
 
 add_library(kiarabot_runtime_model_client STATIC
-  ${CMAKE_SOURCE_DIR}/core/src/runtime/platform/runtime_model_client.cpp)
+  ${CMAKE_SOURCE_DIR}/core/src/runtime/platform/runtime_model_client.cpp
+  ${CMAKE_SOURCE_DIR}/core/src/runtime/platform/instance_model_delegation_provider.cpp)
 target_include_directories(kiarabot_runtime_model_client PUBLIC
   ${CMAKE_SOURCE_DIR}/core/include)
 kiarabot_platform_warnings(kiarabot_runtime_model_client)
 target_link_libraries(kiarabot_runtime_model_client PUBLIC kiarabot_proto
-  kiarabot_target_codec)
+  kiarabot_target_codec PRIVATE OpenSSL::Crypto nlohmann_json::nlohmann_json)
 
 add_library(kiarabot_model_rpc STATIC
   ${CMAKE_SOURCE_DIR}/core/src/runtime/platform/model_rpc.cpp)
@@ -417,6 +418,22 @@ target_link_libraries(kiarabot_runtime_model_client_test PRIVATE
 kiarabot_platform_warnings(kiarabot_runtime_model_client_test)
 add_test(NAME p11_runtime_model_client COMMAND kiarabot_runtime_model_client_test)
 set_tests_properties(p11_runtime_model_client PROPERTIES LABELS "p11;integration" TIMEOUT 30)
+
+add_executable(kiarabot_p05b_model_seed
+  ${CMAKE_SOURCE_DIR}/core/tests/platform/p05b_model_seed.cpp)
+target_link_libraries(kiarabot_p05b_model_seed PRIVATE
+  kiarabot_postgres kiarabot_identity_crypto OpenSSL::Crypto)
+kiarabot_platform_warnings(kiarabot_p05b_model_seed)
+
+add_executable(kiarabot_instance_model_delegation_provider_test
+  ${CMAKE_SOURCE_DIR}/core/tests/platform/instance_model_delegation_provider_test.cpp)
+target_link_libraries(kiarabot_instance_model_delegation_provider_test PRIVATE
+  kiarabot_runtime_model_client)
+kiarabot_platform_warnings(kiarabot_instance_model_delegation_provider_test)
+add_test(NAME p11_instance_model_delegation_provider
+  COMMAND kiarabot_instance_model_delegation_provider_test)
+set_tests_properties(p11_instance_model_delegation_provider
+  PROPERTIES LABELS "p05b;p11;unit;security" TIMEOUT 60)
 
 add_executable(kiarabot_model_identity_client_test
   ${CMAKE_SOURCE_DIR}/core/tests/platform/model_identity_client_test.cpp)
@@ -600,29 +617,50 @@ endif()
 
 # P05b-4 real local HTTP Provider fixture matrix (auth/stream=false/usage/4xx/429/5xx/timeout/
 # non-JSON). This is runnable before P05b-2: it only exercises the provider fixture itself.
-if(EXISTS "${CMAKE_SOURCE_DIR}/sdk/python/.venv/bin/python")
+if(EXISTS "${KIARABOT_TARGET_PYTHON}")
   add_test(NAME p05b_provider_fixture COMMAND
     "${KIARABOT_TARGET_PYTHON}" "${CMAKE_SOURCE_DIR}/tests/architecture/p05b_provider_fixture.py"
     --self-test)
   set_tests_properties(p05b_provider_fixture PROPERTIES
     LABELS "p05b;p11;unit;provider" TIMEOUT 60
     WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
-  # P05b-4 single-chain e2e scaffold. It is registered now but intentionally skips (exit 77)
-  # until P05b-2 (task-144) provides the instance-subject parent delegation and the success-chain
-  # orchestration is implemented; never register a fake positive pass.
-  add_test(NAME p05b_model_chain_e2e COMMAND
-    "${KIARABOT_TARGET_PYTHON}" "${CMAKE_SOURCE_DIR}/tests/architecture/p05b_model_chain_e2e.py"
-    --mode expect-fail-closed
-    --runtime $<TARGET_FILE:kiarabot-runtime>
-    --model $<TARGET_FILE:kiarabot-model>
-    --identity $<TARGET_FILE:kiarabot-identity>
+  # P05b-4 real P11 single chain: real Identity/Runtime/Model + real SDK plugin over TLS
+  # PluginBridge + the local real HTTP Provider fixture; owned-fixture driver supplies PG/PKI.
+  add_test(NAME p05b_model_chain_e2e COMMAND "${KIARABOT_TARGET_PYTHON}"
+    "${CMAKE_SOURCE_DIR}/infrastructure/postgres/tests/run_database_test.py"
+    --pg-bin "${KIARABOT_TEST_PG_BIN}" --openssl "${KIARABOT_TEST_OPENSSL}"
     --initializer $<TARGET_FILE:kiarabot-pg-initialize>
-    --openssl "${KIARABOT_TEST_OPENSSL}"
-    --pg-bin "${KIARABOT_TEST_PG_BIN}")
+    --test "${CMAKE_SOURCE_DIR}/tests/architecture/p05b_model_chain_e2e.py"
+    --test-argument $<TARGET_FILE:kiarabot-identity-bootstrap>
+    --test-argument "${KIARABOT_TEST_PG_BIN}"
+    --test-argument $<TARGET_FILE:kiarabot-identity>
+    --test-argument $<TARGET_FILE:kiarabot-runtime>
+    --test-argument $<TARGET_FILE:kiarabot-model>
+    --test-argument $<TARGET_FILE:kiarabot_postgres_runtime_bridge_seed>
+    --test-argument $<TARGET_FILE:kiarabot_p05b_model_seed>)
   set_tests_properties(p05b_model_chain_e2e PROPERTIES
-    LABELS "p05b;p11;integration;gated" TIMEOUT 600 SKIP_RETURN_CODE 77
+    LABELS "p05b;p11;integration;gated" TIMEOUT 420 SKIP_RETURN_CODE 77
     WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
-    ENVIRONMENT "PATH=${RUNTIME_E2E_OPENSSL_BIN_DIR}:${RUNTIME_E2E_PYTHON_BIN_DIR}:$ENV{PATH}")
+    ENVIRONMENT "PATH=${RUNTIME_E2E_OPENSSL_BIN_DIR}:${RUNTIME_E2E_PYTHON_BIN_DIR}:$ENV{PATH};PYTHONPATH=${CMAKE_SOURCE_DIR}/sdk/python/build/generated")
+  # Negative E2E: no sealed parent material -> Runtime must fail closed with a stable code and the
+  # real HTTP Provider must record zero requests. Does not depend on the P05b-6 writer.
+  add_test(NAME p05b_model_chain_fail_closed_e2e COMMAND "${KIARABOT_TARGET_PYTHON}"
+    "${CMAKE_SOURCE_DIR}/infrastructure/postgres/tests/run_database_test.py"
+    --pg-bin "${KIARABOT_TEST_PG_BIN}" --openssl "${KIARABOT_TEST_OPENSSL}"
+    --initializer $<TARGET_FILE:kiarabot-pg-initialize>
+    --test "${CMAKE_SOURCE_DIR}/tests/architecture/p05b_model_chain_e2e.py"
+    --test-argument $<TARGET_FILE:kiarabot-identity-bootstrap>
+    --test-argument "${KIARABOT_TEST_PG_BIN}"
+    --test-argument $<TARGET_FILE:kiarabot-identity>
+    --test-argument $<TARGET_FILE:kiarabot-runtime>
+    --test-argument $<TARGET_FILE:kiarabot-model>
+    --test-argument $<TARGET_FILE:kiarabot_postgres_runtime_bridge_seed>
+    --test-argument $<TARGET_FILE:kiarabot_p05b_model_seed>
+    --test-argument=--mode --test-argument=expect-fail-closed)
+  set_tests_properties(p05b_model_chain_fail_closed_e2e PROPERTIES
+    LABELS "p05b;p11;integration;security;fault" TIMEOUT 300
+    WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+    ENVIRONMENT "PATH=${RUNTIME_E2E_OPENSSL_BIN_DIR}:${RUNTIME_E2E_PYTHON_BIN_DIR}:$ENV{PATH};PYTHONPATH=${CMAKE_SOURCE_DIR}/sdk/python/build/generated")
 endif()
 # P11h preparation: real loopback HTTP Provider fixture contract checks (no managed chain).
 if(EXISTS "${CMAKE_SOURCE_DIR}/sdk/python/.venv/bin/python")

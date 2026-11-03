@@ -53,8 +53,8 @@ std::string random_uuid() {
 }
 } // namespace
 
-std::function<t::Outcome<std::string>()> unavailable_model_delegation() {
-  return []() -> t::Outcome<std::string> {
+ModelDelegationProvider unavailable_model_delegation() {
+  return [](const t::RuntimeModelChatRequest&) -> t::Outcome<std::string> {
     return failure(t::ErrorCode::Unauthenticated, t::Recovery::Authenticate);
   };
 }
@@ -95,7 +95,7 @@ RuntimeModelClient::chat(const t::RuntimeModelChatRequest& request, t::TimePoint
     if (deadline <= started) {
       return failure(t::ErrorCode::Timeout, t::Recovery::QuerySameIdentity, t::Acceptance::Unknown);
     }
-    auto delegation = options_.delegation_provider();
+    auto delegation = options_.delegation_provider(request);
     if (const auto* rejected = std::get_if<t::Failure>(&delegation)) {
       return *rejected;
     }
