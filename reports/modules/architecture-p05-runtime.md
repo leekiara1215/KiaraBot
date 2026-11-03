@@ -257,7 +257,6 @@ SetDesiredState 通过预期版本 CAS 更新运行意图，UpdateConfig 产生�
 
 两条写 RPC 的完整回执仍待收尾。已观察到变更 request_id、保留幂等键的重试可能缺原 operation；跨资源 operation 已在重试路径排除。同一实例内，若调用方把同一幂等键的 SetDesiredState 重试 request_id 改为随后 UpdateConfig 的 operation_id，隔离实测仍会返回该配置操作引用。资源匹配不足以恢复原始命令身份。UpdateConfig 返回的 state.version/desired 还可能与同次提交后的实例权威状态不符。仅凭此组测试不能将两条写 RPC 整体登记为完成。
 
-
 ## 2026-11-03 既有账号和适配器的目标 RPC 复验
 
 `p05_runtime_exact_accounts` 用隔离 PG16.4、生产 Runtime 与 Identity、Control 客户端证书和真实在线授权执行下列用例。夹具预置一个已存在的 Active 账号和一份已有适配器注册记录；账号更新、绑定、解绑、禁用全部经生产 RPC 提交。
@@ -276,3 +275,10 @@ SetDesiredState 通过预期版本 CAS 更新运行意图，UpdateConfig 产生�
 真实 PG/mTLS 复验中，GetAccount、GetAdapter 均以原有 UUID 配错误 kind 仍能读到记录。两者现返回 INVALID_ARGUMENT；两个成功响应均提供观察时间。UnbindAdapter 曾在正确账号与版本、错误适配器实例的情况下撤销实际绑定；现返回 CONFLICT，随后以原实例和未变版本仍可成功解绑。
 
 目标方法本轮登记 GetAccount、GetAdapter 和 UpdateAccount。UpdateAccount 更换 request_id、trace_id 后以同一幂等键重放，返回原账号快照。GetAdapter 的绑定列表仍无投影，登记只覆盖实际验证的字段。BindAdapter、UnbindAdapter、DisableAccount 首次调用均有 operation，同键换 request_id 后重试，资源快照仍在，原 operation 却丢失。三项 RPC 保留 not_implemented，首次 bootstrap 明文字段也保持原登记。
+
+### 尚待维护者确认的两项变更
+
+1. 创建和目录授权。拟将创建账号、校验清单和创建安装分别绑定到所属资源族的离线登记目录 UUID，创建实例绑定到精确的父安装。创建成功不会自动授予新资源的读写权限。列表沿用 doc/21 的两层核验，每页验证目录授权，再逐项验证独立子资源授权。新的 Identity 接口、存储登记方式与跨服务事务需要单独审查。
+2. 五项写操作的持久回执。拟在原业务事务中保存版本化的不可变结果，包含原 operation 引用；实例操作另保存提交时的版本、期望状态和观察时间。同键同参重试须在重新核验权限后返回原始业务结果，一次性 bootstrap 明文不得进入普通回执。旧回执无法由现有数据唯一重建时，升级预检应阻止切换。可停用受影响写入、保留旧版本的重试服务，等全部相关旧回执越过各自的 retain_until 后再切换（普通回执至少七天）。验收需覆盖更换 request_id、进程重启、其间资源已被后续命令修改、同键异参及旧格式升级预检。
+
+两项均为待确认方案。当前 GetOperation 已在读取参与者前比对已授权的请求引用与存储的完整引用。真实 mTLS/PG 回归验证了已获授权的账号不能读取归属实例的 operation，引用归属不符返回 NOT_FOUND。
