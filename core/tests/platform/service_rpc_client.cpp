@@ -4,6 +4,7 @@
 #include <string>
 
 #include <grpcpp/grpcpp.h>
+#include <openssl/crypto.h>
 
 #include "kiarabot/v1/host.grpc.pb.h"
 #include "kiarabot/v1/identity.grpc.pb.h"
@@ -17,6 +18,8 @@ namespace {
 class GrpcProcessLifetime final {
 public:
   GrpcProcessLifetime() {
+    // gRPC workers can still run OpenSSL RAND thread destructors during process exit.
+    (void)OPENSSL_init_crypto(OPENSSL_INIT_NO_ATEXIT, nullptr);
     grpc_init();
   }
   ~GrpcProcessLifetime() {

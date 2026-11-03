@@ -551,7 +551,7 @@ target_link_libraries(kiarabot-control PRIVATE kiarabot_control_application)
 set_target_properties(kiarabot-control PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 kiarabot_platform_warnings(kiarabot-control)
 add_executable(kiarabot_service_rpc_client ${CMAKE_SOURCE_DIR}/core/tests/platform/service_rpc_client.cpp)
-target_link_libraries(kiarabot_service_rpc_client PRIVATE kiarabot_proto)
+target_link_libraries(kiarabot_service_rpc_client PRIVATE kiarabot_proto OpenSSL::Crypto)
 kiarabot_platform_warnings(kiarabot_service_rpc_client)
 
 find_program(KIARABOT_TEST_OPENSSL openssl REQUIRED)
