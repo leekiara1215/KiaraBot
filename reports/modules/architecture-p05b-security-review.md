@@ -134,5 +134,6 @@ PluginBridge owner 派生与错误/日志面。**本评审未修改生产实现*
   释放时 OPENSSL_cleanse（allocator/core dump 限制仍属主机边界）。
 - **F-6 已加固**：Python sealed reader 增加可选 `expected_subject` 前置校验（`sub` 与预期实例
   principal 不一致即拒绝）；Runtime C++ reader 的等价 hooks 由后续 task-151 泛化。
-- F-1/F-2 不在本任务范围（评审中已分别记录；当前主线 cache key 已含 installation，TOCTOU
-  仍待独立修复）。
+- **Medium 全部处置**：F-1/F-2 已由 P05b-12 修复（cache key 加 installation；sealed reader
+  单 fd/no-follow 消除 TOCTOU）；P05b-13 完成 F-3/F-4/F-5/F-6 加固；F-5 残余 host/core dump/ptrace
+  边界属部署主机责任，已写入 doc/05/08。

@@ -1,10 +1,11 @@
 # KiaraBot P04–P14 阶段退出证据矩阵（P14t 最终刷新）
 
 - 版本：v1.3（2026-11-03，P14t 最终刷新）
-- 基线提交：`7b8fb0f`（main；P14t 最终刷新；final gate 见下）
+- 基线提交：`04f7044`（main；P14t/P05b-13 最终刷新；final gate 见下）
 - 用途：发布前统一回答“哪些已经实现、哪些已实测、哪些仍待验收/缺口/用户确认”，**不替代**各阶段原始报告与测试记录，也不把提交/文档存在当作阶段完成。
 - 相关文档：[发布清单](28-p14d-release-checklist.md)、[实施计划](23-implementation-plan.md)、[运维 runbook](08-operations.md)、[CI/CD](12-ci-cd.md)、[契约状态](01-contracts.md)、[最终交付状态](../reports/modules/architecture-delivery-status.md)。
-- 最终门禁：P14t checkpoint @7b8fb0f：**161/161 CTest passed @7b8fb0f**（`build/logs/recheck-ctest-155131.log`，1051.70s，2026-11-03 15:51:31→16:09:06；本轮一次全绿、无失败；此前 `1213790` gate 148/148（687.02s）的 `p02_core_process`/`p08_managed_host_e2e` 负载时序 flake 未复现）。P00n SQLite 写锁竞态已修（final gate sqlite 0.27s）；正式发布仍须在 release SHA 全量重跑并归档。
+- 最终门禁：previous checkpoint @7b8fb0f：**161/161 CTest passed @7b8fb0f**（`build/logs/recheck-ctest-155131.log`，1051.70s，2026-11-03 15:51:31→16:09:06；本轮一次全绿、无失败；此前 `1213790` gate 148/148（687.02s）的 `p02_core_process`/`p08_managed_host_e2e` 负载时序 flake 未复现）。P00n SQLite 写锁竞态已修（final gate sqlite 0.27s）；正式发布仍须在 release SHA 全量重跑并归档。
+- 最终 exact-HEAD 门禁：main `04f7044` 的 env 全量门禁运行中（`build/logs/recheck-ctest-162320.log`）；完成后回填准确 HEAD/总数/耗时/失败/孤立复验，本文件暂不写新数字。
 - 原生单机矩阵（P14m 后）：**success 9 + stable-ok 1 + known-gap 0**；`p14_native_single_host`/`p12j_panel_live` 在真实五进程 + PG16.4 + mTLS 栈上通过。
 
 ## 1. 状态定义
@@ -25,7 +26,7 @@
 | 阶段 | 状态 | 关键已实测证据（命令/测试/HEAD） | 待验收/已知缺口 | 待用户决策/环境 |
 |---|---|---|---|---|
 | P04 Identity/Control 认证 | 退出通过（本机） | `ctest -R 'p04_'`；`p04_identity_application`、`p04_identity_rpc`、`p04_control_auth_https`、`p04_identity_daemon_tls_expiry`；P04f/P05f 历史证据后保持绿；final gate 161/161@7b8fb0f | 生产 CA/密钥托管、真实 QQ 登录态复验属环境项 | CA/secret manager、生产证书轮换 |
-| P05 Runtime 资源/授权链 | **B1 链完成**（P05b-2/5/6/7/8/9/4/12）；安全评审 0 Critical/High，F-1/F-2 已修、F-3 加固中 | `p05b_task_chain_e2e`、`p05b_model_chain_e2e`、`p05b_model_chain_fail_closed_e2e`、`p05b_provider_fixture`、`p05_runtime_identity_e2e`；`reports/modules/architecture-p05b*` | 真实多实例/多安装规模压测；F-3/F-4/F-5/F-6 加固（P05b-13 in_progress）；生产部署环境 | **P05b B1 已批准并完成本机链**；P11 真实 Provider 验收范围已批；跨主机/生产 CA/密钥 |
+| P05 Runtime 资源/授权链 | **B1 链完成**（P05b-2/5/6/7/8/9/4/12）；安全评审 0 Critical/High，Medium 全部处置：F-1/F-2 已修、F-3/F-4/F-5/F-6 已加固（P05b-13；F-5 host/core 边界文档化） | `p05b_task_chain_e2e`、`p05b_model_chain_e2e`、`p05b_model_chain_fail_closed_e2e`、`p05b_provider_fixture`、`p05_runtime_identity_e2e`；`reports/modules/architecture-p05b*` | 真实多实例/多安装规模压测；F-5 残余 host/core dump/ptrace 边界（已文档化，主机责任）；生产部署环境 | **P05b B1 已批准并完成本机链**；P11 真实 Provider 验收范围已批；跨主机/生产 CA/密钥 |
 | P06 事件/投递/SDK/Adapter | 退出通过（本机/真实进程） | `p06_bridge_acceptance`、`p06_client_e2e`、`p06_postgres_runtime_events`、`p07_adapter_e2e` P06g 全总线（真实 adapter+Runtime+受管 SDK plugin） | 真实 QQ/NapCat 长期稳定性/网络抖动；真实平台链路人工验收 | QQ/NapCat 环境；P05b 相关下游委托 |
 | P07 Action/配额/执行 | **退出通过（P07f-2）** | `p07_action_rules`、`p07_postgres_action_records`、`p07_adapter_e2e`、`p06_bridge_acceptance`、`p12_control_owner_gateway`；SDK action pytest | 真实平台 reaction API、Control `listActionMetadata` REST 未接线（环境/后续能力，不阻塞 target 契约退出） | 真实平台动作（Mute/Kick/撤回/审批）环境项 |
 | P08 Host/期望状态/配置 | **退出通过（P08f）** | `p08_host_*`、`p08_postgres_host_registration`、`p08_host_bridge_e2e`、`p13_host_sdk_drain`；真实 TLS HostBridge | 真实受管进程/Docker Compose 生命周期；Host/插件 ACK 与 Runtime/Control 三类事实的 Compose 端到端 | Docker Compose 环境；跨主机 |
@@ -81,7 +82,7 @@
 | 项 | 决策 | 实施/验收状态 | 说明 |
 |---|---|---|---|
 | P13 | 限定批准 A：Scheduler mTLS 平台身份+白名单+显式授权，仅 ListTasks/CancelTask；ListTasks 限目标实例、CancelTask 核对归属、跨实例/跨安装拒绝；生产验收等真实 Host 回执+Scheduler cleanup→DELETED，UNKNOWN/离线 BLOCKED，Restore 不重建任务/租约 | **生产退出 PASS（本验收范围）**：`p13h3_joint_delete_production_e2e`；P13h-1/2 证据已合入 | 残余：真实 Host UNKNOWN 注入、Scheduler 完全离线主链引用既有证据、多主机/满盘/生产规模属 P14 环境 |
-| P05b / P11 / P10k | 批准 B1（Control 管理员触发实例主体父委托）；P11 验收真实 managed plugin+真实 HTTP Provider fixture（非 fake port）+撤销/过期/跨实例负例；P10k 同批解锁 | **B1 链完成；P11 独立验收 PASS（37/37 相关回归）；P10k 真实 Scheduler 任务链 PASS**；安全评审 0 Critical/High，Medium F-1/F-2 已修，F-3/F-4/F-5/F-6 加固中（P05b-13） | 真实付费外部 Provider、目标部署环境、部署级错误 Runtime 叶证书、Model Update/RotateProviderSecret scope_kinds 仍为环境/契约项 |
+| P05b / P11 / P10k | 批准 B1（Control 管理员触发实例主体父委托）；P11 验收真实 managed plugin+真实 HTTP Provider fixture（非 fake port）+撤销/过期/跨实例负例；P10k 同批解锁 | **B1 链完成；P11 独立验收 PASS（37/37 相关回归）；P10k 真实 Scheduler 任务链 PASS**；安全评审 0 Critical/High，Medium 全部处置：F-1/F-2 已修、F-3/F-4/F-5/F-6 已加固（P05b-13；F-5 host/core 边界文档化） | 真实付费外部 Provider、目标部署环境、部署级错误 Runtime 叶证书、Model Update/RotateProviderSecret scope_kinds 仍为环境/契约项 |
 | P12 | host operation/bootstrap_credential 字段级缺口保持 `not_implemented`（用户确认），只文档化、不扩契约 | 无新增实现任务；契约/文档保持 not_implemented | 不是完成；后续需用户另批契约 |
 | P14 | 用户准备 Docker 与 `gh` 登录，之后继续 Compose/CI/release 验收 | 单机 Docker Compose、远端 CI、正式发布仍未运行 | 环境项，不以文档替代验收 |
 | 两主机/跨主机 | 用户确认可选、延期 | 未做 | 延期 |
