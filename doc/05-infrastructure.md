@@ -691,7 +691,6 @@ revoked sealed parent、Identity 不可达与 Runtime 不可达的 fail-closed�
 与目标六服务栈 live 仍属 T07b/P14 环境项；managed Host+P08e 组合由后续矩阵补齐。
 
 
-
 ### P05b-12 安全评审 F-1/F-2 修复
 
 - **F-1**：`RuntimeInstanceDelegationProvider` 缓存 key 加入 installation（task/model 均），因此
@@ -701,3 +700,4 @@ revoked sealed parent、Identity 不可达与 Runtime 不可达的 fail-closed�
   regular/0600/owner/1..64KiB，再从该 fd 读取并在读取后复核 dev/inode/size；不再按路径
   `ifstream` 重开，消除“校验后被替换”的 TOCTOU。符号链接/错 owner/mode/超限/读取期间变化
   均 fail-closed。
+P11h（2026-11-03）：独立 managed Host→Runtime→Model→真实本地 HTTP Provider 验收固化在 `p11h_managed_model_e2e` / `p11h_model_chain_fail_closed` / `p11h_provider_fixture`（p11h;p11 标签，独立 owned PG16.4/TLS fixture，canonical P05b-4 provider fixture 14 modes、P05b-8 sealed reader、P05b-9 ExchangeDelegation 2s/5s budget）。真实付费外部 Provider、六服务 Docker/跨主机部署、替代 Runtime 叶证书的真实部署级负例仍待环境；本地 loopback provider 不宣称外部计费/配额。

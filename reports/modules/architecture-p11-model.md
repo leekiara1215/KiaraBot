@@ -138,3 +138,14 @@ owner gateway/委托/错误映射沿用 P12c；本任务只新增 Model owner �
 - 发现契约缺口：Model `UpdateModel`/`RotateProviderSecret` 缺 proto `scope_kinds`，真实
   Control 管理 RPC 无法通过 Identity CheckAuthorization；e2e 暂用 test-only seed helper 写入
   真实 Model DB，契约缺口上报。
+
+## P11h 独立 managed Host → Runtime → Model → 真实 Provider 验收（2026-11-03，main ddf643d 后 8455533）
+
+- 独立 CTest（p11h;p11;integration;security;fault，自有 PG16.4/TLS/进程 fixture，不引用 build-deploy 分支）：
+  - `p11h_managed_model_e2e`（约 75–85s PASS）：真实 `kiarabot-plugin-host` 启动 managed SDK 子进程 → 真实 TLS PluginBridge → Runtime → Model → canonical P05b-4 本地真实 HTTP Provider；断言 Host start receipt/Host journal execution、插件注册、model_chat 文本/usage、call record owner=插件实例、Provider 请求 auth+stream=false、无 secret 泄漏；Provider 400/401/404/429/500/503/timeout/invalid_json 与撤销/过期/跨实例/伪造签名/Runtime、Identity 不可达均稳定拒绝、Provider 请求不增、无伪成功。
+  - `p11h_model_chain_fail_closed`（约 9–11s PASS）：无 sealed 父委托时 plugin 收稳定 UNAUTHENTICATED，Provider requests=0。
+  - `p11h_provider_fixture`（约 4.1s PASS）：canonical P05b-4 fixture 14 modes（鉴权/stream=false/usage/4xx/429/5xx/timeout/非 JSON）。
+- 回归（main@b2c3886 最终 rebase）：`ctest -R 'p11|p05|p08|p06|p03_postgres'` **37/37 passed**（393.00s）；P11h 自身 3/3 全过（managed 约 71–74s、fail_closed 约 9–11s、provider_fixture 约 4.1s）。此前一次中间运行 p11h managed 与 p08_managed_host_e2e 曾出现瞬时失败（p08 为本机沙箱执行 `ps` 受限、managed 重跑通过），均非实现回归；最终序列与全 range 全绿。full-locked 构建通过。
+- 依赖状态：P05b-9 ExchangeDelegation 独立 2s/5s budget、P05b-8 `acquire_model`/`model_chat_delegation`、P05b-4 RuntimeModelClient/host.model.v1/canonical fixture 均已合并；本验收独立执行同一真实驱动并校验显式 positive/fail-closed marker。
+- 未覆盖/环境项：真实付费外部 Provider（计费/配额/外部网络）；Docker Compose 六服务栈与跨主机；替代 Runtime 叶证书的部署级错误证书场景（驱动有 forged-signature/错误 origin 在线拒绝，但 fixture 只登记一个 Runtime peer）；P05b-4 已记录的 Model Update/RotateProviderSecret proto `scope_kinds` 契约缺口仍属后续（e2e 用 test-only seed helper）。
+- P11 退出判断：本地真实依赖的 managed Host 单链路正/负矩阵已独立通过；真实付费 Provider 与目标部署环境仍是待环境项，不构成实现缺失。

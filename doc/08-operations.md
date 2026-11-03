@@ -1764,10 +1764,10 @@ BLOCKED（instance DELETING），不得手工改写 PG 或伪造 receipt。Sched
 
 
 
-
 ## P05b-12 sealed reader/cache 加固
 
 sealed 文件读取现在是单 fd O_NOFOLLOW + fstat 校验后从同一 fd 读取，部署侧替换文件必须是
 完整原子 rename；运行中同 UID 写者无法通过“校验后换文件”绕过 regular/0600/owner 检查。
 Runtime provider 缓存 key 含 instance/installation/model/permission，跨 installation 不会
 复用 child proof；刷新/替换 sealed 文件后无需重启 Runtime，但旧缓存最多保留其短 TTL。
+P11h（2026-11-03）：P11 部署前独立验收命令 `ctest -R 'p11h'`（或 `ctest -R 'p11|p05|p08|p06|p03_postgres'`）：p11h_managed_model_e2e（真实 managed Host+SDK 子进程→Runtime→Model→本地 HTTP Provider，约 73–75s）、p11h_model_chain_fail_closed（约 9–11s）、p11h_provider_fixture（约 4.1s）；矩阵覆盖 Provider success/400/401/404/429/500/503/timeout/invalid_json、父委托撤销/过期/跨实例/伪造签名、Runtime/Identity 不可达、call record owner=插件实例、无 secret 日志。真实付费 Provider、外部网络/计费审计、Docker 六服务栈与跨主机仍属环境/部署项；Provider 故障不得手工改 call record 为成功，UNKNOWN 按 P11 语义查询/处置。
