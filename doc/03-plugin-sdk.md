@@ -258,7 +258,8 @@ member.mute         提交 mute_member Action（受白名单/每日预算门禁�
 member.kick         提交 kick_member Action（受白名单/每日预算门禁）
 model.chat          host.model.v1 model_chat
 storage.namespace   host.storage.v1
-task.schedule       host.tasks.v1 与 event.timer.triggered 订阅
+task.schedule       host.tasks.v1 create/cancel 与 event.timer.triggered 订阅
+task.read           host.tasks.v1 task_get
 member.read         event.group.member.changed
 request.read        event.friend.request
 request.approve     提交 approve_request Action（好友请求审批）
@@ -329,7 +330,7 @@ class Example(Plugin):
 
 Storage（P09c）：SDK 的 storage_get/set/delete 帧增加 scope/condition 与 version/expires_at 响应，并新增 compare-and-set（HostRequest/HostResponse oneof 第 17 项）。私有空间可省略 scope（=instance_private），共享用 `installation_shared=true`（服务端解析，插件不知道 namespace ID）；私有 Set 必须缺 condition，共享 Set/Delete/CAS 必须带 condition（absent=create、version=update/delete）。TTL 为绝对 UTC、未来 ≤30 天；冲突返回 CONFLICT 且只带授权范围 current_version；不跨实例串响应、重放不续 TTL。SDK 不自动重试有副作用的写，超时用同幂等键查询。
 
-Task（P10c SDK 侧已实现，2026-11-02）：沿用 `task_create`/`task_get`/`task_cancel` 的 `HostRequest` 帧（oneof 14/15/16），`TaskResponse` 含 version/occurrence_id。**冻结 proto 没有 task_list 帧**（`SchedulerService.ListTasks` 是 Control/Runtime wire RPC，插件不可调用），因此 `Context` 不提供 `list_tasks`；doc/03 早先的“list 未实现（协议无列表操作）”保持有效。SDK 本地预检：task_id 1–128 `[A-Za-z0-9._-]`、目标会话 1–256 UTF-8 字节、payload ≤64 KiB、`HostRequest.idempotency_key` 合规；创建必须 `task.schedule` 权限 + `event.timer.triggered` 订阅（缺失分别 `PERMISSION_DENIED`/`CAPABILITY_NOT_SUPPORTED`），查询/取消需 `task.schedule`；未协商 `host.tasks.v1` 本地 `CAPABILITY_NOT_SUPPORTED`。`run_at` 仅接受 aware UTC 且明显过去的调用本地拒绝；`local_time` 只做字段/日历/时区语法校验（1970–2100、DST gap/fold 与未知时区仍由 Scheduler 判定，SDK 不做时区换算）。task_id 是业务身份、幂等键是命令幂等：同 task_id 异内容 CONFLICT、同内容返回当前状态；超时/断线为未知结果，SDK 不自动重试有副作用的 create/cancel，调用者用同一幂等键重试或查询。Create 返回 PENDING；COMPLETED 只表示 TimerTriggered 已持久入队，不代表插件回调成功/ACK；取消仅在未产生触发意图前成功，交接开始/终态返回 CONFLICT（SDK 保留稳定码与 retryable）。辅助函数 `kiarabot_sdk.is_task_terminal`/`task_handed_off` 供插件判断状态。
+Task（P10c SDK 侧已实现，2026-11-02）：沿用 `task_create`/`task_get`/`task_cancel` 的 `HostRequest` 帧（oneof 14/15/16），`TaskResponse` 含 version/occurrence_id。**冻结 proto 没有 task_list 帧**（`SchedulerService.ListTasks` 是 Control/Runtime wire RPC，插件不可调用），因此 `Context` 不提供 `list_tasks`；doc/03 早先的“list 未实现（协议无列表操作）”保持有效。SDK 本地预检：task_id 1–128 `[A-Za-z0-9._-]`、目标会话 1–256 UTF-8 字节、payload ≤64 KiB、`HostRequest.idempotency_key` 合规；创建必须 `task.schedule` 权限 + `event.timer.triggered` 订阅（缺失分别 `PERMISSION_DENIED`/`CAPABILITY_NOT_SUPPORTED`），查询需 `task.read`、取消需 `task.schedule`；未协商 `host.tasks.v1` 本地 `CAPABILITY_NOT_SUPPORTED`。`run_at` 仅接受 aware UTC 且明显过去的调用本地拒绝；`local_time` 只做字段/日历/时区语法校验（1970–2100、DST gap/fold 与未知时区仍由 Scheduler 判定，SDK 不做时区换算）。task_id 是业务身份、幂等键是命令幂等：同 task_id 异内容 CONFLICT、同内容返回当前状态；超时/断线为未知结果，SDK 不自动重试有副作用的 create/cancel，调用者用同一幂等键重试或查询。Create 返回 PENDING；COMPLETED 只表示 TimerTriggered 已持久入队，不代表插件回调成功/ACK；取消仅在未产生触发意图前成功，交接开始/终态返回 CONFLICT（SDK 保留稳定码与 retryable）。辅助函数 `kiarabot_sdk.is_task_terminal`/`task_handed_off` 供插件判断状态。
 
 ## P11 Model 调用客户端（目标，未实现）
 
@@ -388,3 +389,9 @@ fail-closed。managed Host/P08e 组合与真实付费 Provider 仍待补；dispo
 P10j（2026-11-02）：SDK task_create/get/cancel 在真实 TLS PluginBridge fixture 上通过端到端协议验收（`p10_sdk_tasks_e2e`：create/get/cancel/幂等/COMPLETED=入队/capacity RATE_LIMITED/DST gap+未知 zone INVALID_ARGUMENT/跨实例 NOT_FOUND）。但生产 Runtime 的 PluginBridge `HostRequest` 尚无 task 帧消费分支（只处理 storage/model），SDK→真实 Runtime→Scheduler 全链路当前不可用；P14f 原生五进程栈虽通过，但 harness 不含 PluginBridge/SDK 任务帧。真实宿主 task ingress、tzdata 缺失 readiness、真实平台触发与生产委托来源待后续；不要把 fake Owner 结果当作原生栈通过。
 
 P11h（2026-11-03，独立验收）：真实 managed plugin（`kiarabot-plugin-host` 启动的 SDK 子进程，非测试直接拉起）→真实 TLS PluginBridge→真实 Runtime→真实 Model→本地真实 HTTP Provider 的 P11 单链路已通过独立 CTest `p11h_managed_model_e2e`（p11h;p11;integration;security;fault，约 75–85s）：provider success 返回文本/usage，call record owner=插件实例且无 secret 泄漏，Provider 400/401/404/429/500/503/timeout/invalid_json 与父委托撤销/过期/跨实例/伪造签名/Runtime、Identity 不可达均稳定拒绝且不落伪成功；无 sealed 父委托时 fail-closed 由 `p11h_model_chain_fail_closed` 独立复验（约 9–11s），canonical Provider fixture `p11h_provider_fixture` 约 4.1s。P11h CTest 复用合并 main 的 canonical P05b-4 real-chain driver（自有 PG16.4/TLS/进程 fixture，不引用 build-deploy 分支），断言 driver 的显式正/负 marker；真实付费外部 Provider 与 Docker 六服务栈仍属环境项。
+### P05b-10 task plugin 权限与真实链路（2026-11-03）
+
+插件权限词汇表新增 `task.read`，与既有 `task.schedule` 一起允许 plugin 声明并调用
+`task_get`；真实 Runtime 对 task_create/get/cancel 分别校验 task.schedule/task.read/
+task.schedule，并要求 create 声明 `event.timer.triggered`。SDK task 方法在真实 PluginBridge
+与真实 Scheduler 下通过 `p05b_task_chain_e2e` 验证；不再仅依赖 fake Scheduler fixture。

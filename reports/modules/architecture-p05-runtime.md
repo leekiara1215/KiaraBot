@@ -232,3 +232,12 @@ Identity audit 无 ExchangeDelegation 记录，说明在 application 前被拒�
 无 proto/RPC/权限/配置字段变更。`p05_runtime_identity_client` 增加 700ms 慢 Exchange 单测与
 非法预算负例；build-deploy 已验证同设计下完整 model chain 正向矩阵与 fail-closed fixture 通过。
 详见 `reports/modules/architecture-p05b9-exchange-delegation-budget.md`。
+
+## P05b-10 真实 task PluginBridge 单链（2026-11-03）
+
+新增 `tests/architecture/p05b_task_chain_e2e.py`：真实 Identity/Runtime/Scheduler + managed
+SDK plugin；sealed task envelope 由 refresh 工具写入；SDK `task_create/get/cancel` 经真实
+PluginBridge、Runtime ingress 到真实 Scheduler。验证 owner/installation/空 account、幂等回放、
+取消窗口、COMPLETED、跨实例、Scheduler 离线、sealed 缺失、无 scheduler_endpoint fail-closed。
+修复 plugin profile timer subscription 与 `task.read` 权限词汇表。未扩 proto；真实 QQ/平台
+触发与重连矩阵未覆盖。

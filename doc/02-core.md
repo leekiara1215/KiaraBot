@@ -1696,3 +1696,14 @@ operation；Restore 不重建 task/凭据/租约；跨实例 task 不受影响�
 - 账号归属契约澄清：冻结 SchedulerService.CreateTask 不带 account 字段，任务行 `account` 为
   空；e2e 只断言可验证的 `owner`=instance、`installation`，不从 instance/account 推导或伪造
   account。跨实例隔离以 task owner/scope 断言。
+
+### P05b-10 真实 SDK PluginBridge 任务链（2026-11-03）
+
+Runtime 生产 PluginBridge `HostRequest.task_create/get/cancel` 已与真实 Scheduler 单进程联通：
+插件任务帧通过 Runtime task ingress，经 P05b-6 sealed task 父委托/Exchange 换取 Scheduler
+child proof，再调用真实 `SchedulerService.CreateTask/GetTask/CancelTask`。任务行归属由
+`owner`（实例）、`installation` 和空 `account`（冻结 CreateTask 不带 account）断言；相同
+idempotency 内容回放、不同内容冲突、取消窗口、COMPLETED 仅证明已入队、跨实例 NOT_FOUND，
+以及 Scheduler 离线/缺失 scheduler_endpoint 的稳定 fail-closed 均有 e2e 覆盖。
+修复暴露缺陷：Runtime plugin profile 现识别 `event.timer.triggered` 订阅；插件权限词汇表
+补充 `task.read`（与 Runtime task_get 的权限检查一致）。未扩 proto。

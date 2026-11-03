@@ -1771,3 +1771,11 @@ sealed 文件读取现在是单 fd O_NOFOLLOW + fstat 校验后从同一 fd 读�
 Runtime provider 缓存 key 含 instance/installation/model/permission，跨 installation 不会
 复用 child proof；刷新/替换 sealed 文件后无需重启 Runtime，但旧缓存最多保留其短 TTL。
 P11h（2026-11-03）：P11 部署前独立验收命令 `ctest -R 'p11h'`（或 `ctest -R 'p11|p05|p08|p06|p03_postgres'`）：p11h_managed_model_e2e（真实 managed Host+SDK 子进程→Runtime→Model→本地 HTTP Provider，约 73–75s）、p11h_model_chain_fail_closed（约 9–11s）、p11h_provider_fixture（约 4.1s）；矩阵覆盖 Provider success/400/401/404/429/500/503/timeout/invalid_json、父委托撤销/过期/跨实例/伪造签名、Runtime/Identity 不可达、call record owner=插件实例、无 secret 日志。真实付费 Provider、外部网络/计费审计、Docker 六服务栈与跨主机仍属环境/部署项；Provider 故障不得手工改 call record 为成功，UNKNOWN 按 P11 语义查询/处置。
+## P05b-10 真实任务链与 sealed task 运维要点（2026-11-03）
+
+运行 `p05b_task_chain_e2e` 需要真 PG16.4 四库、Identity/Runtime/Scheduler、plugin-host 与
+受管 SDK plugin；Runtime 配置 `scheduler_endpoint` + `instance_delegation_sealed_file`
+（P05b-6 task envelope）。sealed 父委托缺失/过期、Scheduler 离线或无 scheduler_endpoint 时
+任务帧稳定失败（retryable 不伪造成功）；刷新周期仍须 <56s。任务归属用 owner/installation，
+account 为空是冻结契约。该 e2e 的 sealed 任务 envelope 由真实 refresh 工具生成，不注入
+provider。

@@ -249,3 +249,17 @@ OpenSSL 全局清理；停机状态机/信号路径/RPC/DB 语义未改。`p10_t
 实测：修复前 4 次循环中 1 次 `runtime before expiry` SIGSEGV；修复后 12 次完整 e2e 无此崩溃，
 新增循环测试连续 5 次完整 e2e（50 次停机）全 exit 0。另观察到与本缺陷无关的既有测试时序
 flaky（lost-confirm 完成等待、runtime 重启后一次 UNAUTHENTICATED），未在本任务修改。
+
+## P05b-10 真实 SDK PluginBridge 任务链验收（2026-11-03）
+
+生产 e2e `p05b_task_chain_e2e`（label p10/p05b）：真 PG16.4 四库、真 Identity/Runtime/
+Scheduler、真实 plugin-host + 受管 SDK plugin；P05b-6 refresh 工具写 task sealed 文件→Runtime
+sealed provider→PluginBridge `task_create/get/cancel`→Runtime ingress→真实 Scheduler RPC。
+覆盖：task owner=实例/installation、account 空、同 idempotency 回放、不同内容/key 冲突、
+取消与重复取消、COMPLETED（已入队，cancel CONFLICT）、跨实例 NOT_FOUND、Scheduler 离线
+retryable fail-closed、sealed 缺失（等待 provider 缓存过期后）不创建任务、无
+scheduler_endpoint readiness false；Host/插件生命周期与任务链共存（真实 Host start receipt +
+journal execution）。修复：Runtime plugin profile 的 `event.timer.triggered` 订阅、插件权限
+词汇表 `task.read`。
+P10k 退出判定：**通过（本任务验收范围）**；未覆盖真实 QQ 触发、Scheduler 拒绝(denied)专用
+变体、Host/PluginBridge 重连与 sealed 过期文件注入，保留为环境/后续项。

@@ -393,3 +393,11 @@ ExchangeDelegation 使用独立的 bounded 2s/5s 上限，避免热路径预算�
 无 schema/迁移变化，Budget 是进程内配置而非数据库状态。
 
 
+
+## P05b-10 sealed task provider 与任务 ingress（2026-11-03）
+
+Runtime `RuntimeInstanceDelegationProvider` 从 sealed task envelope 读取父委托，为 task 权限
+换取 scheduler hops2 child proof；provider 缓存受父/子 TTL 和下限约束，不写回 envelope。
+PluginBridge task 帧经 RuntimeTaskApplication→SchedulerTaskClient→真实 Scheduler RPC；Scheduler
+CreateTask 幂等由 task_id/idempotency receipt 保证，COMPLETED 仅证明 TimerTriggered 事件入队。
+无 scheduler_endpoint 时 Runtime readiness 为 false 且任务帧 fail-closed。
