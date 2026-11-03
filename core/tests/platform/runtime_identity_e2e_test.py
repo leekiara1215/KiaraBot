@@ -150,6 +150,8 @@ def prepare(root, enrolled):
         'assignment_id': str(uuid.uuid4()),
         'permissions': ['log.read', 'audit.read'],
         'scope': [{'kind': 'RESOURCE_CATALOG', 'id': 'control'}]})
+    from runtime_instance_management_e2e import grant_existing_objects
+    grant_existing_objects(enrolled, installation_id, instance_id)
     STATE.update(account_id=account_id, instance_id=instance_id,
                  installation_id=installation_id,
                  manage_assignment=manage_assignment,
@@ -404,6 +406,11 @@ def scenario(root, port, pg_bin, binaries):
                         'cross-scope assignment list denied')
             else:
                 raise AssertionError('cross-scope assignment list accepted')
+            from runtime_instance_management_e2e import verify as verify_existing_instances
+            verify_existing_instances(runtime_stub, issue_delegation,
+                                      postgres(root, pg_bin, port, 'p03_runtime'),
+                                      STATE['installation_id'], STATE['instance_id'],
+                                      context, require, run_sql)
             proof = issue_delegation().delegation.proof
             require(bool(proof), 'delegation proof')
 

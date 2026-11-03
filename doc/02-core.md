@@ -565,9 +565,9 @@ ServiceComposition/ServiceComposer属于外层platform，承接已验证ProcessC
 原借用application入口继续使用同一实现；组合器先于监听、后于信号屏蔽，资源覆盖RPC
 退出且比application更晚销毁。明确依赖失效会有界结束进程；不自动升级schema或改ready。
 
-### Runtime typed读取目标接口（未实现）
+### Runtime typed 读取目标接口
 
-Account/Installation/Instance/Adapter/Host各有Get/List，另有GetInstanceConfig；Runtime拥有资源配置/注册目录投影，Host实际进程事实仍归Host。输入exact资源或有限登记目录、PageRequest，输出typed record/SnapshotInfo或完整配置应用投影，默认2秒/最多5秒。当前Identity授权与child独立grant决定结果，不跨库读取身份表；错误/不可见与依赖失败分别NOT_FOUND/UPSTREAM_UNAVAILABLE。目录不继承child授权、未完成配置不算ready；target尚无生产实现。
+Account/Installation/Instance/Adapter/Host各有Get/List，另有GetInstanceConfig；Runtime拥有资源配置/注册目录投影，Host实际进程事实仍归Host。输入exact资源或有限登记目录、PageRequest，输出typed record/SnapshotInfo或完整配置应用投影，默认2秒/最多5秒。当前Identity授权与child独立grant决定结果，不跨库读取身份表；错误/不可见与依赖失败分别NOT_FOUND/UPSTREAM_UNAVAILABLE。目录不继承 child 授权，未完成配置不算 ready。GetInstallation 只接受 `RESOURCE_INSTALLATION`，GetInstance 和 GetInstanceConfig 只接受 `RESOURCE_INSTANCE`；其他合法种类携同一 ID 也返回 INVALID_ARGUMENT。三条精确读取已用既有安装/实例 fixture 验证真实 Runtime→Identity 在线授权、PG 投影及跨资源拒绝。目录列表和创建能力独立验收。
 
 ### 目标时间的跨平台纳秒表示
 

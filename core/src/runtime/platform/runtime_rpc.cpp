@@ -1264,7 +1264,7 @@ public:
     auto& context = std::get<Prepared>(query);
     const auto reference = codec::from_wire(request->resource());
     const auto* wire = std::get_if<t::ResourceRef>(&reference);
-    if (!wire) {
+    if (!wire || wire->kind != t::ResourceKind::Installation) {
       return error_status(failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput),
                           context.request, context.trace);
     }
@@ -1351,7 +1351,7 @@ public:
     auto& context = std::get<Prepared>(query);
     const auto reference = codec::from_wire(request->resource());
     const auto* wire = std::get_if<t::ResourceRef>(&reference);
-    if (!wire) {
+    if (!wire || wire->kind != t::ResourceKind::Instance) {
       return error_status(failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput),
                           context.request, context.trace);
     }
@@ -1410,7 +1410,7 @@ public:
     auto& context = std::get<Prepared>(query);
     const auto reference = codec::from_wire(request->resource());
     const auto* wire = std::get_if<t::ResourceRef>(&reference);
-    if (!wire) {
+    if (!wire || wire->kind != t::ResourceKind::Instance) {
       return error_status(failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput),
                           context.request, context.trace);
     }
