@@ -140,6 +140,26 @@ kiarabot_platform_warnings(kiarabot_scheduler_identity_client_test)
 add_test(NAME p10_scheduler_identity COMMAND kiarabot_scheduler_identity_client_test)
 set_tests_properties(p10_scheduler_identity PROPERTIES LABELS "p10;unit;security" TIMEOUT 30)
 
+add_executable(kiarabot_sealed_instance_delegation_source_test
+  ${CMAKE_SOURCE_DIR}/core/tests/platform/sealed_instance_delegation_source_test.cpp)
+target_link_libraries(kiarabot_sealed_instance_delegation_source_test PRIVATE
+  kiarabot_runtime_identity_client)
+kiarabot_platform_warnings(kiarabot_sealed_instance_delegation_source_test)
+add_test(NAME p05_sealed_delegation_source
+  COMMAND kiarabot_sealed_instance_delegation_source_test)
+set_tests_properties(p05_sealed_delegation_source PROPERTIES
+  LABELS "p05;p10;unit;security" TIMEOUT 30)
+
+add_executable(kiarabot_instance_delegation_provider_test
+  ${CMAKE_SOURCE_DIR}/core/tests/platform/instance_delegation_provider_test.cpp)
+target_link_libraries(kiarabot_instance_delegation_provider_test PRIVATE
+  kiarabot_runtime_identity_client kiarabot_scheduler_task_client OpenSSL::Crypto)
+kiarabot_platform_warnings(kiarabot_instance_delegation_provider_test)
+add_test(NAME p05_instance_delegation_provider
+  COMMAND kiarabot_instance_delegation_provider_test)
+set_tests_properties(p05_instance_delegation_provider PROPERTIES
+  LABELS "p05;p10;unit;security" TIMEOUT 30)
+
 add_executable(kiarabot_scheduler_task_client_test
   ${CMAKE_SOURCE_DIR}/core/tests/platform/scheduler_task_client_test.cpp)
 target_link_libraries(kiarabot_scheduler_task_client_test PRIVATE
@@ -344,7 +364,9 @@ target_link_libraries(kiarabot_model_identity_client PUBLIC kiarabot_proto
   PRIVATE kiarabot_target_codec kiarabot_service_process nlohmann_json::nlohmann_json)
 
 add_library(kiarabot_runtime_identity_client STATIC
-  ${CMAKE_SOURCE_DIR}/core/src/runtime/platform/runtime_identity_client.cpp)
+  ${CMAKE_SOURCE_DIR}/core/src/runtime/platform/runtime_identity_client.cpp
+  ${CMAKE_SOURCE_DIR}/core/src/runtime/platform/instance_delegation_provider.cpp
+  ${CMAKE_SOURCE_DIR}/core/src/runtime/platform/sealed_instance_delegation_source.cpp)
 target_include_directories(kiarabot_runtime_identity_client PUBLIC
   ${CMAKE_SOURCE_DIR}/core/include)
 kiarabot_platform_warnings(kiarabot_runtime_identity_client)
