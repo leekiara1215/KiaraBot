@@ -85,7 +85,7 @@ CI/发布流水线配置见 [CI/CD 文档](doc/12-ci-cd.md)。
 
 | 交付类别 | 当前状态 |
 |---|---|
-| 单机部署（默认目标） | **未验收**：单主机 Compose/脚本已完成离线检查，本机无 Docker，未执行 compose 启动、官方 PG16 镜像初始化/迁移/恢复 |
+| 单机部署（默认目标） | **本地六服务通过**：官方 PostgreSQL 16.4 四库初始化、六个业务容器及 Panel 就绪、HTTPS 管理调用和四库备份恢复已实测 |
 | 跨主机演练 | **延期/未验证**（用户确认两主机为可选项，网络分区/TLS/撤销/重连未演练） |
 | 远端 CI | **未运行**：GitHub Actions workflow/本地静态检查已就绪，自动触发默认由 `CI_AUTO_ENABLED` 门控；需先手动 workflow_dispatch 跑绿 full-locked |
 | 正式发布 | **未就绪**：GHCR/SBOM/cosign 骨架已合入但未推送签名镜像，需完成 release 环境/凭据/审批与发布清单 |
@@ -95,7 +95,7 @@ PluginBridge/AdapterBridge 真实 TLS 事件→插件→Action；Scheduler 定�
 Model 两次事务/Provider/UNKNOWN 边界；Host 期望状态与进程桥；Control owner REST/健康/operation 快照；
 P13 生命周期清理与 Host/SDK drain；P14f/i/j/k/l/m 原生单机栈矩阵 9 success+1 stable-ok+0 known-gap；
 P12j Panel client 严格 live 通过。P13 生产退出通过（本验收范围；多主机/满盘/生产规模仍环境项）；P11 独立验收通过；P10k 真实 Scheduler 任务链通过；P05b B1 链完成；安全评审 0 Critical/High，Medium 全部处置（F-1/F-2 已修，F-3/F-4/F-5/F-6 已加固；F-5 host/core 边界文档化）；P12 host operation/
-bootstrap_credential 字段级待决策；P14 Docker/Compose、两主机、远端 CI、正式发布仍未验收；真实 QQ/NapCat、
+bootstrap_credential 按已确认范围保留；P14 单机 Compose 已验证，两主机、远端 CI 和正式发布仍未验收；真实 QQ/NapCat、
 真实模型 Provider 只在用户环境单独验证，不能用 fake 结果替代。最终索引见
 [P14t 交付状态](reports/modules/architecture-delivery-status.md)。
 旧 `core/reference/` 一体化闭环与部署说明保留为 reference 证据，不代表六服务生产可用。
