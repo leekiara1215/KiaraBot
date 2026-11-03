@@ -2158,3 +2158,14 @@ P00p 只核对注释与本文 target 状态，不翻转任何契约。已实现�
   operation 快照是当前唯一 resync 源。
 
 证据与缺口以对应模块报告为准；本注记不改变任何契约状态。
+
+### P05b-2/B1 delegation issuance compatibility
+
+`IdentityIssueDelegationRequest.instance_id` is a backward-compatible optional field. Empty keeps
+the legacy administrator-subject issuance exactly. Non-empty is accepted only for audience
+`runtime`, only from an authorized Control administrator session, and resolves the subject from
+the unique plugin principal bound to `RESOURCE_INSTANCE/{instance_id}`; no caller-supplied subject
+principal id exists. Permission/resource tuples are whitelisted and must also be covered by the
+administrator's exact assignments plus `resource.manage` on the instance. Claims keep
+`business_hops=1`, source credential/session of the administrator, subject of the instance, and
+`expires_at-issued_at<=56s`. Exchange keeps its existing hops2 narrowing and owner verification.

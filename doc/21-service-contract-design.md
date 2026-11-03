@@ -369,3 +369,16 @@ ListTasks/CancelTask）、B（实例主体父委托签发，需用户批准）�
 ## P05f 契约核对状态（2026-11-02，main@439fb9e）
 
 P04/P05 设计语义未变；P05f 只补退出证据与 target 状态核对。本机验证：`p04_identity_*` 28/28、`p05_runtime_*` 4/4（含真实双进程 mTLS/PG16.4）、`p04_control_auth_https`、`p03_postgres_database`、P02 相关 12 项，合计 46/46。target 仅 Identity 7/23、Runtime 10/55 方法登记 implemented；P04 认证链/P05 资源方法/ListPrincipals 未翻原因与 `bootstrap_credential` 字段级、P05b 委托、host operation 缺口见 P04/P05 模块报告 P05f 段。设计文档不因此修改 wire/权限/委托规则。
+
+### P05b-2/B1 Identity 实例主体父委托（2026-11-03）
+
+`IdentityIssueDelegationRequest` 新增可选 `instance_id`（字段 7），仅 Control 管理员会话可为
+已注册 plugin principal（binding=`RESOURCE_INSTANCE/{instance_id}`）签发 audience=`runtime`、
+TTL≤56s 的父委托。instance_id 是资源 id，不提供任意 subject 参数；subject 必须由唯一 binding
+解析。管理员仍需 `identity.delegation.issue`、实例 `resource.manage` 以及每个 whitelist
+permission/resource 的 exact assignment。允许的 permission：model.chat/model.call.inspect
+（RESOURCE_MODEL）与 task.schedule/task.read（目标 RESOURCE_INSTANCE 或安装范围）。
+父委托的 source credential/session 仍属于管理员，subject 为实例；Exchange/CheckAuthorization
+在识别该模式时以管理员来源做在线 origin/assignment 校验，并继续校验实例 principal/binding。
+该语义仅用于 hops1 父委托及其 hops2 子委托，不改变 Model/Scheduler owner 验证；签发成功写
+Identity audit（`IdentityIssueDelegation/InstanceParent`），失败不写成功审计。
