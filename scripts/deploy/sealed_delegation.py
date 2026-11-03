@@ -67,6 +67,7 @@ def decode_proof(token: str) -> dict:
 def validate_document(document: dict, *, expected_instance: str | None = None,
                       expected_installation: str | None = None,
                       expected_model: str | None = None,
+                      expected_subject: str | None = None,
                       now: float | None = None, max_ttl: int = MAX_TTL_SECONDS) -> dict:
     if not isinstance(document, dict):
         _fail('document is not an object')
@@ -144,6 +145,8 @@ def validate_document(document: dict, *, expected_instance: str | None = None,
         _fail('proof timestamps do not match envelope')
     if claims.get('sub') is None:
         _fail('proof subject is missing')
+    if expected_subject is not None and claims.get('sub') != expected_subject:
+        _fail('proof subject does not match the expected instance principal')
     current = int(time.time()) if now is None else int(now)
     if expires_at <= current:
         _fail('delegation file is expired')
@@ -218,6 +221,7 @@ def atomic_write_sealed(path: str, document: dict, *, owner_uid: int | None = No
 def read_sealed_delegation(path: str, *, expected_instance: str | None = None,
                            expected_installation: str | None = None,
                            expected_model: str | None = None,
+                           expected_subject: str | None = None,
                            expected_owner: int | None = None, now: float | None = None,
                            max_ttl: int = MAX_TTL_SECONDS) -> dict:
     """Strict Runtime-side reader. It validates the envelope; it never verifies the signature."""
@@ -244,7 +248,8 @@ def read_sealed_delegation(path: str, *, expected_instance: str | None = None,
         raise SealedDelegationError('sealed file is not valid JSON') from error
     return validate_document(document, expected_instance=expected_instance,
                              expected_installation=expected_installation,
-                             expected_model=expected_model, now=now, max_ttl=max_ttl)
+                             expected_model=expected_model, expected_subject=expected_subject,
+                             now=now, max_ttl=max_ttl)
 
 
 def file_name(instance_id: str, kind: str = 'task') -> str:

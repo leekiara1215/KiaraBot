@@ -64,17 +64,54 @@ def _config(path: str) -> dict:
     return value
 
 
-def _token(config: dict, token_file: str | None, stdin_token: str | None) -> str:
+def _token_expiry(token: str) -> int | None:
+    """Best-effort JWT exp check. Opaque tokens are bounded by max token age instead."""
+    try:
+        _, payload, _ = token.split('.')
+        import base64, json
+        claims = json.loads(base64.urlsafe_b64decode(payload + '=' * (-len(payload) % 4)))
+        value = claims.get('exp')
+        return int(value) if isinstance(value, int) and not isinstance(value, bool) else None
+    except Exception:
+        return None
+
+
+def _token(config: dict, token_file: str | None, stdin_token: str | None,
+           max_age_seconds: float) -> str:
+    source_mtime = None
     if stdin_token is not None:
         token = stdin_token.strip()
     else:
         path = token_file or config.get('token_file')
         if not isinstance(path, str) or not path:
             raise sealed_delegation.SealedDelegationError('admin token source is required')
+        try:
+            source_mtime = os.lstat(path).st_mtime
+        except OSError as error:
+            raise sealed_delegation.SealedDelegationError('admin token unavailable') from error
         token = _require_private_regular(path, 'admin token').decode('ascii', 'strict').strip()
+        age = time.time() - source_mtime
+        if age > max_age_seconds:
+            raise sealed_delegation.SealedDelegationError(
+                'token_age_exceeded; reauthenticate Control admin and write a fresh 0600 token')
     if not token or any(character in token for character in '\r\n\x00'):
         raise sealed_delegation.SealedDelegationError('admin token is invalid')
+    expiry = _token_expiry(token)
+    if expiry is not None:
+        if expiry <= int(time.time()):
+            raise sealed_delegation.SealedDelegationError(
+                'token_expired; reauthenticate Control admin and write a fresh 0600 token')
+        if expiry - time.time() > max_age_seconds:
+            raise sealed_delegation.SealedDelegationError(
+                'token_max_age_exceeded; obtain a shorter-lived admin token')
     return token
+
+
+def _reauth_hint() -> None:
+    print('instance-delegation-refresh stopped: administrator session/token is no longer valid; '
+          'reauthenticate Control admin, write a fresh 0600 token file, and restart the refresher '
+          '(minimum-privilege refresher principal; alert on this line)', file=sys.stderr,
+          flush=True)
 
 
 def _permission_values(names: list[str], policy) -> list[int]:
@@ -206,6 +243,8 @@ def main() -> int:
     parser.add_argument('--model-id')
     parser.add_argument('--permissions', action='append',
                         help='comma/repeated permission names; omitted uses kind defaults')
+    parser.add_argument('--max-token-age', type=float, default=1800.0,
+                        help='maximum administrator token age/remaining lifetime (seconds)')
     parser.add_argument('--once', action='store_true')
     parser.add_argument('--interval', type=float)
     arguments = parser.parse_args()
@@ -214,11 +253,13 @@ def main() -> int:
     interval = arguments.interval
     if interval is not None and not 0 < interval < 56:
         parser.error('--interval must be >0 and <56 seconds')
+    if not 0 < arguments.max_token_age <= 86400:
+        parser.error('--max-token-age must be >0 and <=86400 seconds')
     stdin_token = sys.stdin.readline().strip() if arguments.token_stdin else None
     try:
         config = _config(arguments.config)
         kind, permission_names, model_id = _selection(config, arguments)
-        token = _token(config, arguments.token_file, stdin_token)
+        token = _token(config, arguments.token_file, stdin_token, arguments.max_token_age)
         if interval is None:
             output = _refresh(config, token, kind, permission_names, model_id)
             print(f'instance_id={config["instance_id"]} kind={kind} path={output} '
@@ -232,13 +273,23 @@ def main() -> int:
                       flush=True)
             except sealed_delegation.SealedDelegationError as error:
                 _stable_error(str(error))
+                if 'UNAUTHENTICATED' in str(error) or 'PERMISSION_DENIED' in str(error):
+                    _reauth_hint()
+                    return 1
             time.sleep(interval)
             try:
-                token = _token(config, arguments.token_file, None)
+                token = _token(config, arguments.token_file, None,
+                               arguments.max_token_age)
             except sealed_delegation.SealedDelegationError as error:
                 _stable_error(str(error))
+                _reauth_hint()
+                return 1
     except sealed_delegation.SealedDelegationError as error:
         _stable_error(str(error))
+        if any(marker in str(error) for marker in
+               ('token_expired', 'token_age_exceeded', 'token_max_age_exceeded',
+                'UNAUTHENTICATED', 'PERMISSION_DENIED')):
+            _reauth_hint()
         return 1
     except Exception:
         _stable_error('unexpected')

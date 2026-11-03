@@ -352,6 +352,11 @@ set_tests_properties(p05_runtime_identity_e2e PROPERTIES
 
 add_test(NAME p05b_sealed_delegation_file COMMAND "${KIARABOT_TARGET_PYTHON}"
   "${CMAKE_SOURCE_DIR}/tests/architecture/p05b_sealed_delegation_test.py")
+add_test(NAME p05b_refresh_tool COMMAND "${KIARABOT_TARGET_PYTHON}"
+  "${CMAKE_SOURCE_DIR}/tests/architecture/p05b_refresh_tool_test.py")
+set_tests_properties(p05b_refresh_tool PROPERTIES
+  LABELS "p05b;p05;unit;security" TIMEOUT 60
+  ENVIRONMENT "PYTHONPATH=${CMAKE_SOURCE_DIR}/scripts/deploy")
 set_tests_properties(p05b_sealed_delegation_file PROPERTIES
   LABELS "p05b;p05;unit;security" TIMEOUT 60
   ENVIRONMENT "PYTHONPATH=${CMAKE_SOURCE_DIR}/scripts/deploy")

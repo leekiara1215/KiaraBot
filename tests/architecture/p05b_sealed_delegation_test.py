@@ -159,6 +159,12 @@ class SealedDelegationTest(unittest.TestCase):
         self.assertEqual(sealed.file_name('instance', 'model'),
                          'instance-delegation-instance-model.json')
 
+    def test_optional_expected_subject(self):
+        value = document()
+        sealed.validate_document(value, expected_subject='11111111-1111-4111-8111-111111111111')
+        with self.assertRaises(sealed.SealedDelegationError):
+            sealed.validate_document(value, expected_subject='wrong-principal')
+
     def test_sealed_document_does_not_contain_plaintext_secret_words(self):
         sealed.atomic_write_sealed(str(self.path), document())
         content = self.path.read_text()
