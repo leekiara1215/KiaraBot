@@ -2,7 +2,7 @@
 
 - 日期：2026-11-03；worktree `.worktrees/p14n`，branch `codex/p14n`，基线 `1213790`（main；P14o 刷新）。
 - 任务：只刷新最终证据矩阵/交付口径，不修改实现、契约或部署脚本；`doc/18` 冻结基线只读。
-- 结论：**实现与测试证据已收口到可交付审查状态；单机 Docker Compose、两主机、远端 CI、正式发布仍属未验收环境项；P13 生产未退出（test-only 证据已具备）、P05b/P12 host operation/bootstrap_credential 待用户决策。不得把本报告当作“已发布/全部验收”声明。**
+- 结论：**实现与测试证据已收口到可交付审查状态；单机 Docker Compose、两主机、远端 CI、正式发布仍属未验收环境项。用户 2026-11-03 已决策：P13 限定 A 已批（P13h-1/2/3 实施中，生产未退出）、P05b B1 已批（P05b-2/4/5、P11h 实施中，单链路未验收）、P12 缺口保持 not_implemented（用户确认）、P14 Docker/gh 环境用户准备中。不得把本报告当作“已发布/全部验收”声明。**
 
 ## 1. 最终门禁与修复
 
@@ -24,7 +24,7 @@
 - 真实 PG16.4 + 真 mTLS Runtime + fake HostBridge 客户端 + 注入 fake Scheduler participant（P13f 方案 C）。
 - 覆盖：BeginDelete→participants（runtime Succeeded/host+scheduler Accepted）→Host stop receipt/Scheduler done→Blocked→Done→operation Succeeded/instance DELETED；重复 BeginDelete 同幂等键返回同 operation；Host 离线保持 Blocked/DELETING 不伪造 DELETED，重连后完成；Host receipt=UNKNOWN 保持 Blocked；fake Scheduler unknown/offline 保持 Blocked、done 后完成；Restore 恢复 Active、`bridge_credentials` 仍 revoked（PG 断言）、fake Scheduler 任务/租约不重建、Restore operation 只有 runtime participant、再次 BeginDelete 重新调度并完成。
 - 暴露并修复：HostCommand identity 增加 instance version，避免 Restore 后再次删除复用旧 StopExecution receipt 误判 Done（生产运行时行为修复，无 proto/权限变更）。
-- **边界**：fake Scheduler 内部建模 ListTasks；生产 participant 端口只有 cancel_tasks；Scheduler 私有库任务/租约断言未在本 harness。**P13 生产退出仍未通过**（P13f A/B 待用户决策），不得把本 test-only e2e 当生产授权证据。
+- **边界**：fake Scheduler 内部建模 ListTasks；生产 participant 端口只有 cancel_tasks；Scheduler 私有库任务/租约断言未在本 harness。**P13 生产退出仍未通过**（用户已批限定 A，P13h-1/2/3 实施中；B 未批准），不得把本 test-only e2e 当生产授权证据。
 
 ## 2. 阶段状态（详见 [doc/27](../../doc/27-phase-exit-evidence.md)）
 
@@ -32,15 +32,15 @@
 |---|---|---|
 | P00–P03 工具链/契约/PG | 前置基线通过 | `p01_*`、`p02_core_process`、`p03_postgres_database`、`sqlite_runtime_store`（P00n 竞态修复）；contract 门禁；`doc/11` |
 | P04 Identity/Control 认证 | 退出通过（本机） | `p04_identity_*`、`p04_control_auth_https`、`doc/06` |
-| P05 Runtime 资源/授权链 | 范围完成；P05b 待决策 | `p05_runtime_*`、`p05_runtime_identity_e2e`、[P05 报告](architecture-p05-runtime.md) |
+| P05 Runtime 资源/授权链 | 范围完成；P05b B1 已批，P05b-2/4/5 实施中 | `p05_runtime_*`、`p05_runtime_identity_e2e`、[P05 报告](architecture-p05-runtime.md) |
 | P06 事件/投递/SDK/Adapter | 退出通过（本机/真实进程） | `p06_bridge_acceptance`、`p06_client_e2e`、P06g `p07_adapter_e2e`、P06h UNKNOWN/EXPIRED/reconnect、[P06 报告](architecture-p06-event-delivery.md) |
 | P07 Action/配额/执行 | 退出通过（P07f-2） | `p07_action_rules`、`p07_postgres_action_records`、`p07_adapter_e2e`、[P07 报告](architecture-p07-action.md) |
 | P08 Host/期望状态/配置 | 退出通过（P08f） | `p08_host_*`、`p08_host_bridge_e2e`、`p13_host_sdk_drain`、[P08 报告](architecture-p08-host.md) |
 | P09 Namespace/Storage | 范围完成/部分环境项 | `p09_postgres_storage_records`、`p09a_runtime_storage_application`、[P09 报告](architecture-p09-storage.md) |
 | P10 Scheduler/定时交接 | 退出通过（P10m 后） | `p10_scheduler_*`、`p10_scheduler_rest`、`p10_timer_e2e`、P10m 段 |
-| P11 Model 网关 | 分层证据退出（单链待 P05b 决策） | `p11_model_*`、`p11_control_model_rest`、[P11 报告](architecture-p11-model.md) |
-| P12 Control/Panel | **范围完成** | `p12_control_owner_gateway`、`p12l` principals、`p12j_panel_live`、[P12l](architecture-p12l-identity-principals.md)/[P12j](architecture-p12j-panel-live.md) |
-| P13 生命周期/可观测 | **test-only 证据已具备；生产未退出** | `p13_runtime_lifecycle`、`p13_host_sdk_drain`、**`p13_joint_delete_e2e`**（38.59s，test-only；BeginDelete→Blocked→Done→DELETED/Restore 不复活/Host 离线/UNKNOWN Blocked；HostCommand identity 修复）、[P13f 决策](architecture-p13f-exit-decision.md) |
+| P11 Model 网关 | 分层证据退出；真实 Provider 验收范围已批，P11h 待依赖 | `p11_model_*`、`p11_control_model_rest`、[P11 报告](architecture-p11-model.md) |
+| P12 Control/Panel | **范围完成**；P12 host operation/bootstrap_credential 保持 not_implemented | `p12_control_owner_gateway`、`p12l` principals、`p12j_panel_live`、[P12l](architecture-p12l-identity-principals.md)/[P12j](architecture-p12j-panel-live.md) |
+| P13 生命周期/可观测 | A 已批限范围；P13h-1/2/3 实施中；生产未退出 | `p13_runtime_lifecycle`、`p13_host_sdk_drain`、**`p13_joint_delete_e2e`**（38.59s，test-only；BeginDelete→Blocked→Done→DELETED/Restore 不复活/Host 离线/UNKNOWN Blocked；HostCommand identity 修复）、[P13f 决策](architecture-p13f-exit-decision.md) |
 | P14 部署/故障/交付 | 材料/原生矩阵完成；环境未验收 | final gate、P14f/i/j/k/l/m 报告、`doc/08`、`target-smoke`/`target-drill`/`check-workflows` |
 
 ## 3. 未验收清单（不得混写）
@@ -56,11 +56,17 @@
 | 生产 CA/密钥托管 | 待用户决策 | CA/root key 托管、轮换/吊销、KMS/离线/分片 |
 | 备份保留/离站 | 待用户决策 | 保留周期、离站位置/频率、生产数据量恢复演练 |
 
-## 4. 待用户决策
+## 4. 用户决策与实施状态（2026-11-03）
 
-1. **P13 生产授权（A/B）**：A 平台 peer 豁免扩展到 Scheduler ListTasks/CancelTask（需确认；严格 owner/instance scope）；B 不推荐；C test-only 联合 e2e 已由 P13g 提供（`p13_joint_delete_e2e`），但**不等于生产退出**，P13 仍不得标生产通过。
-2. **P05b 委托语义**：Runtime 以何种 parent proof/Exchange 获取 audience=model/下游实例委托；生产 delegation provider 当前 fail-closed，决定 P11 单链与 P10 真实委托。
-3. **P12 host operation/bootstrap_credential**：Host 未知 operation 错误码契约（当前 INVALID_ARGUMENT vs 契约 CAPABILITY_NOT_SUPPORTED）与 `bootstrap_credential` 字段级 target/消费闭环；是否作为发布前门槛。
+登记文件：[user-decisions-2026-11-03.md](../analysis/user-decisions-2026-11-03.md)。**已批准/已派发不等于完成。**
+
+| 项 | 决策 | 实施状态 | 未经允许不得宣称 |
+|---|---|---|---|
+| P13 | 限定批准 A：Scheduler mTLS+白名单+显式授权，仅 ListTasks/CancelTask；ListTasks 限目标实例、CancelTask 核对归属、跨实例/跨安装拒绝；生产验收等真实 Host 回执+Scheduler cleanup→DELETED，UNKNOWN/离线 BLOCKED，Restore 不重建任务/租约 | task-140 pending、task-141 in_progress、task-143 blocked_by 140/141 | P13 生产退出 |
+| P05b / P11 | 批准 B1（Control 管理员触发实例主体父委托，Identity 签发扩展）；P11 验收真实 managed plugin+真实 HTTP Provider fixture（非 fake port）+撤销/过期/跨实例负例；P10k 同批解锁 | task-144 in_progress；task-145/146/147 pending，分别 blocked_by 144/145 | P05b 单链/P11 真实验收完成；真实付费外部 Provider（T07b）仍环境项 |
+| P12 | host operation/bootstrap_credential 字段级缺口保持 not_implemented（用户确认），只文档化、不扩契约 | 无新增实现任务；按 not_implemented | P12 缺口完成 |
+| P14 | 用户准备 Docker 与 gh 登录，之后继续 Compose/CI/release | 单机 Docker Compose、远端 CI、正式发布仍未运行 | P14 环境验收完成 |
+| 两主机 | 用户确认可选、延期 | 未做 | 跨主机验收 |
 
 ## 5. 一致性核对
 

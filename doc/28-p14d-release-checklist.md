@@ -100,6 +100,6 @@ scripts/ops/tests/ops_scripts_test.sh
 | 正式发布 | **未就绪**：无推送/签名镜像、无 release artifact，需先完成本清单第 2–4 节 |
 
 最终证据（exact HEAD）：`build/env/recheck-full-locked.sh` 在 `1213790` 真实跑 full-locked build + **148/148 CTest passed**（`build/logs/recheck-ctest-064402.log`，687.02s；首跑 146/148 的两项负载时序 flake 孤立 5/5、3/3 通过；此前干净门禁 `a1a33d1`/148-148；新增 `p13_joint_delete_e2e` 38.59s）；首跑 `sqlite_runtime_store` flake 已由 P00n 根因修复（双连接写锁竞争；final gate sqlite 0.27s；此前孤立 14/14、全量重跑 148/148）。P06h 补齐真实 adapter 链 UNKNOWN/EXPIRED/重连证据；原生五进程+PG16.4 矩阵最终 **9 success + 1 stable-ok + 0 known-gap**。P10m 修复优雅停机 SIGSEGV（OpenSSL atexit 竞态）并完成 p10 抽验；P13g 提供 test-only 联合 e2e，但非生产退出证据。
-待用户决策仍为：P13 生产授权（A/B；C test-only 已提供但不等于生产退出）、P05b 委托语义、P12 host operation/bootstrap_credential 字段级；环境项为 QQ/外部 Provider/生产 CA/密钥托管/备份离站/Docker/两主机/远端 CI/正式发布。详见 [P14q 交付状态](../reports/modules/architecture-delivery-status.md) 与 [阶段矩阵](27-phase-exit-evidence.md)。
+用户 2026-11-03 决策：P13 **限定 A 已批准**（仅 ListTasks/CancelTask，P13h-1/2/3 实施中，生产验收未完成）；P05b **B1 已批准**（P05b-2/4/5、P11h 实施中，单链路未验收）；P12 host operation/bootstrap_credential **保持 not_implemented**（用户确认，不扩契约）；P14 Docker/gh 环境用户准备中。环境项仍为 QQ/外部 Provider/生产 CA/密钥托管/备份离站/Docker/两主机/远端 CI/正式发布。决策登记见 [用户决策注册](../reports/analysis/user-decisions-2026-11-03.md)，详见 [P14q 交付状态](../reports/modules/architecture-delivery-status.md) 与 [阶段矩阵](27-phase-exit-evidence.md)。
 
 本清单不能由 AI/文档提交替代真实环境验收；任何一项未完成时发布说明必须保留对应“未验证/延期/缺口”。
