@@ -289,9 +289,8 @@ inline std::uint32_t model_timeout_budget(std::uint32_t configured_ms, TimePoint
       remaining.count() <= 0 ? 0ULL : static_cast<std::uint64_t>(remaining.count());
   // Leave a bounded margin so the response and txn2 can still complete inside the RPC budget.
   const auto usable = bounded > 100 ? bounded - 100 : 0ULL;
-  const auto configured = static_cast<std::uint64_t>(configured_ms);
   return static_cast<std::uint32_t>(
-      std::min({configured, usable, static_cast<std::uint64_t>(kModelMaximumTimeoutMs)}));
+      std::min<std::uint64_t>({configured_ms, usable, kModelMaximumTimeoutMs}));
 }
 
 // Canonical byte encoding used for the durable duplicate-call fingerprint. It intentionally
