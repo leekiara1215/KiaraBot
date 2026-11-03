@@ -553,3 +553,30 @@ if(EXISTS "${CMAKE_SOURCE_DIR}/sdk/python/.venv/bin/python")
     WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
     ENVIRONMENT "PYTHONPATH=${CMAKE_SOURCE_DIR}/sdk/python/src:${CMAKE_SOURCE_DIR}/sdk/python/build/generated;PATH=${RUNTIME_E2E_OPENSSL_BIN_DIR}:$ENV{PATH}")
 endif()
+
+# P05b-4 real local HTTP Provider fixture matrix (auth/stream=false/usage/4xx/429/5xx/timeout/
+# non-JSON). This is runnable before P05b-2: it only exercises the provider fixture itself.
+if(EXISTS "${CMAKE_SOURCE_DIR}/sdk/python/.venv/bin/python")
+  add_test(NAME p05b_provider_fixture COMMAND
+    "${KIARABOT_TARGET_PYTHON}" "${CMAKE_SOURCE_DIR}/tests/architecture/p05b_provider_fixture.py"
+    --self-test)
+  set_tests_properties(p05b_provider_fixture PROPERTIES
+    LABELS "p05b;p11;unit;provider" TIMEOUT 60
+    WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+  # P05b-4 single-chain e2e scaffold. It is registered now but intentionally skips (exit 77)
+  # until P05b-2 (task-144) provides the instance-subject parent delegation and the success-chain
+  # orchestration is implemented; never register a fake positive pass.
+  add_test(NAME p05b_model_chain_e2e COMMAND
+    "${KIARABOT_TARGET_PYTHON}" "${CMAKE_SOURCE_DIR}/tests/architecture/p05b_model_chain_e2e.py"
+    --mode expect-fail-closed
+    --runtime $<TARGET_FILE:kiarabot-runtime>
+    --model $<TARGET_FILE:kiarabot-model>
+    --identity $<TARGET_FILE:kiarabot-identity>
+    --initializer $<TARGET_FILE:kiarabot-pg-initialize>
+    --openssl "${KIARABOT_TEST_OPENSSL}"
+    --pg-bin "${KIARABOT_TEST_PG_BIN}")
+  set_tests_properties(p05b_model_chain_e2e PROPERTIES
+    LABELS "p05b;p11;integration;gated" TIMEOUT 600 SKIP_RETURN_CODE 77
+    WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+    ENVIRONMENT "PATH=${RUNTIME_E2E_OPENSSL_BIN_DIR}:${RUNTIME_E2E_PYTHON_BIN_DIR}:$ENV{PATH}")
+endif()
