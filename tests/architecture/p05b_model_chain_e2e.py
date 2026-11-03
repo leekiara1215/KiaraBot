@@ -627,6 +627,7 @@ def run_plugin(root, bridge_endpoint, instance, bootstrap, tls, provider_state, 
             print('P05b model chain fail-closed E2E passed: stable '
                   f'code={failed.get("code")}, provider requests=0')
             return
+        time.sleep(2.0)
         success = command('hello')
         require(success.get('text') == 'p05b-fixture reply', 'provider reply text')
         require(success.get('input_tokens') == 7 and success.get('output_tokens') == 5,
