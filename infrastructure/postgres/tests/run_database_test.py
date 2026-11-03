@@ -34,8 +34,10 @@ def main():
     environment = {key: value for key, value in os.environ.items() if not key.startswith('PG')}
     environment['LC_ALL'] = 'C'
 
-    def run(command, timeout=45, expected=0):
+    def run(command, timeout=45, expected=0, allow_skip=False):
         result = subprocess.run(command, env=environment, capture_output=True, timeout=timeout)
+        if allow_skip and result.returncode == 77:
+            return result
         if result.returncode != expected:
             if Path(command[0]).name in (*driver_names, 'identity_bootstrap_test.py', 'identity_daemon_http_test.py'):
                 for line in result.stderr.decode(errors='replace').splitlines():
@@ -123,7 +125,10 @@ def main():
             # budget (restart/lease/expiry matrix); the compiled driver and its ctest TIMEOUT still
             # bound the run.
             output = run([str(test), str(root), str(port), str(args.initializer.resolve()),
-                          str(proxy.port), *args.test_argument], timeout=180)
+                          str(proxy.port), *args.test_argument], timeout=180, allow_skip=True)
+            if output.returncode == 77:
+                print('SKIP: owned-fixture driver dependency gate (77)', flush=True)
+                raise SystemExit(77)
             print(output.stdout.decode(), end='')
     finally:
         # No TemporaryDirectory auto-deletion: unknown ownership or failed bounded stop must
