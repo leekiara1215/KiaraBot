@@ -105,11 +105,6 @@ def prepare(root, enrolled):
     _mint_platform_peer(root, enrolled, 'scheduler', 'spiffe://kiarabot/scheduler-test')
     _mint_platform_peer(root, enrolled, 'model', 'spiffe://kiarabot/model-test')
     account_id, admin = str(uuid.uuid4()), enrolled['administrator_id']
-    account_read_assignment = str(uuid.uuid4())
-    enrolled['administrator_assignments'].append({
-        'assignment_id': account_read_assignment,
-        'permissions': ['account.read', 'account.manage', 'resource.manage', 'resource.read'],
-        'scope': [{'kind': 'RESOURCE_ACCOUNT', 'id': account_id}]})
     instance_id, installation_id = str(uuid.uuid4()), str(uuid.uuid4())
     model_id = str(uuid.uuid4())
     manage_assignment = str(uuid.uuid4())
@@ -141,9 +136,9 @@ def prepare(root, enrolled):
     runtime_assignment = enrolled['platform_peers'][0]['assignments'][0]
     runtime_assignment['permissions'].append('identity.delegation.issue')
     enrolled['control_assignments'].extend([
-        {'assignment_id': str(uuid.uuid4()), 'permissions': ['identity.assignment.manage'],
+        {'assignment_id': str(uuid.uuid4()), 'permissions': ['identity.assignment.manage', 'identity.assignment.read'],
          'scope': [{'kind': 'RESOURCE_ACCOUNT', 'id': account_id}]},
-        {'assignment_id': str(uuid.uuid4()), 'permissions': ['identity.principal.manage'],
+        {'assignment_id': str(uuid.uuid4()), 'permissions': ['identity.principal.manage', 'identity.assignment.read'],
          'scope': [{'kind': 'RESOURCE_PRINCIPAL', 'id': admin}]}])
     # P14m: the delegated subject must hold the exact catalog-scope sensitive reads so a real
     # Control-issued runtime delegation for ListAudit/ListLogs is authorized by Identity.
@@ -156,8 +151,7 @@ def prepare(root, enrolled):
                  manage_assignment=manage_assignment,
                  instance_task_assignment=instance_task_assignment,
                  installation_task_assignment=installation_task_assignment,
-                 model_id=model_id, model_assignment=model_assignment,
-                 account_read_assignment=account_read_assignment)
+                 model_id=model_id, model_assignment=model_assignment)
 
 
 
@@ -347,6 +341,53 @@ def scenario(root, port, pg_bin, binaries):
                     permissions=permissions,
                     client_certificate_sha256=leaf_fingerprint(tls)), timeout=10)
 
+            account_scope = platform_pb2.ResourceScope(resources=[
+                platform_pb2.ResourceRef(kind=platform_pb2.RESOURCE_ACCOUNT, id=account_id)])
+            create = identity_pb2.IdentitySetAssignmentRequest(
+                context=context(), assignment=identity_pb2.AssignmentSpec(
+                    principal_id=enrolled_admin_principal, scope=account_scope,
+                    permissions=[policy_pb2.PERMISSION_ACCOUNT_READ]))
+            assignment = identity_stub.SetAssignment(create, timeout=10).assignment
+            require(bool(assignment.assignment_id) and assignment.version == 1 and
+                    assignment.principal_id == enrolled_admin_principal and
+                    assignment.scope == account_scope, 'create scoped assignment')
+            require(identity_stub.SetAssignment(create, timeout=10).assignment == assignment,
+                    'retry create returns the original grant')
+            update = identity_pb2.IdentitySetAssignmentRequest()
+            update.CopyFrom(create)
+            update.assignment.permissions.extend([policy_pb2.PERMISSION_ACCOUNT_MANAGE,
+                                                 policy_pb2.PERMISSION_RESOURCE_MANAGE,
+                                                 policy_pb2.PERMISSION_RESOURCE_READ])
+            update.context.CopyFrom(context())
+            update.assignment_id = assignment.assignment_id
+            update.expected_version = 1
+            updated = identity_stub.SetAssignment(update, timeout=10).assignment
+            require(updated.assignment_id == assignment.assignment_id and updated.version == 2,
+                    'update grant advances version')
+            update.context.CopyFrom(context())
+            try:
+                identity_stub.SetAssignment(update, timeout=10)
+            except grpc.RpcError as error:
+                require(error.code() == grpc.StatusCode.ABORTED, 'stale assignment version')
+            else:
+                raise AssertionError('stale assignment update accepted')
+
+            def list_account_grants(scope):
+                return identity_stub.ListAssignments(identity_pb2.IdentityListAssignmentsRequest(
+                    context=context(), principal_id=enrolled_admin_principal, scope=scope),
+                    timeout=10).assignments
+
+            listed = list_account_grants(account_scope)
+            require(len(listed) == 1 and listed[0] == updated, 'list exact updated assignment')
+            try:
+                list_account_grants(platform_pb2.ResourceScope(resources=[
+                    platform_pb2.ResourceRef(kind=platform_pb2.RESOURCE_ACCOUNT,
+                                             id=str(uuid.uuid4()))]))
+            except grpc.RpcError as error:
+                require(error.code() == grpc.StatusCode.PERMISSION_DENIED,
+                        'cross-scope assignment list denied')
+            else:
+                raise AssertionError('cross-scope assignment list accepted')
             proof = issue_delegation().delegation.proof
             require(bool(proof), 'delegation proof')
 
@@ -905,9 +946,14 @@ def scenario(root, port, pg_bin, binaries):
             require(get_account().account.account_id == account_id,
                     'restored account remains readable')
 
-            identity_stub.RevokeAssignment(identity_pb2.IdentityRevokeAssignmentRequest(
-                context=context(), assignment_id=STATE['account_read_assignment'],
-                expected_version=1), timeout=10)
+            revoke = identity_pb2.IdentityRevokeAssignmentRequest(
+                context=context(), assignment_id=assignment.assignment_id, expected_version=2)
+            require(identity_stub.RevokeAssignment(revoke, timeout=10).version == 3,
+                    'revoke advances assignment version')
+            require(identity_stub.RevokeAssignment(revoke, timeout=10).version == 3,
+                    'revoke retry returns original version')
+            require(not list_account_grants(account_scope), 'revoked assignment is no longer listed')
+
             denied = None
             try:
                 get_account()
@@ -1003,6 +1049,34 @@ def scenario(root, port, pg_bin, binaries):
                 login_denied = error.code()
             require(login_denied == grpc.StatusCode.UNAUTHENTICATED,
                     'revoked administrator credential rejected')
+
+            # The control peer must still be verified against live Identity storage on a
+            # receipt replay. Only the owned fixture's Identity DB role loses login.
+            run_sql(identity_sql, 'ALTER ROLE p03_identity_runtime NOLOGIN')
+            try:
+                run_sql(identity_sql, "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
+                                     "WHERE usename='p03_identity_runtime' AND datname='p03_identity'")
+                list_request = identity_pb2.IdentityListAssignmentsRequest(
+                    principal_id=enrolled_admin_principal, scope=account_scope)
+                for rpc, req in [(identity_stub.ListAssignments, list_request),
+                                 (identity_stub.SetAssignment, create),
+                                 (identity_stub.RevokeAssignment, revoke)]:
+                    old_key = req.context.idempotency_key
+                    req.context.CopyFrom(context())
+                    if old_key:
+                        req.context.idempotency_key = old_key
+                    try:
+                        rpc(req, timeout=5)
+                    except grpc.RpcError as error:
+                        detail = dict(error.trailing_metadata()).get('grpc-status-details-bin')
+                        require(error.code() == grpc.StatusCode.UNAVAILABLE and detail and
+                                platform_pb2.RpcFailure.FromString(detail).error.code ==
+                                common_pb2.UPSTREAM_UNAVAILABLE,
+                                'assignment dependency rejection must carry upstream failure')
+                    else:
+                        raise AssertionError('assignment RPC succeeded without Identity storage')
+            finally:
+                run_sql(identity_sql, 'ALTER ROLE p03_identity_runtime LOGIN')
 
             identity.send_signal(signal.SIGTERM)
             require(identity.wait(timeout=10) == 0, 'identity graceful stop')
