@@ -908,6 +908,25 @@ class ScopeTest(unittest.TestCase):
             ('proto_fields', 'IdentityListPrincipalsResponse.checked_at'),
             ('operations', 'operations.listPrincipals')
         }
+        session_messages = {
+            'IdentityLoginRequest': 'context username password',
+            'IdentityLoginResponse': 'tokens checked_at',
+            'IdentityRefreshSessionRequest': 'context refresh_token',
+            'IdentityRefreshSessionResponse': 'tokens checked_at',
+            'IdentityValidateSessionRequest': 'context access_token',
+            'IdentityValidateSessionResponse': 'principal session assignments authorization_version checked_at',
+            'IdentityGetPrincipalRequest': 'context access_token',
+            'IdentityGetPrincipalResponse': 'principal assignments authorization_version checked_at',
+            'IdentityListSessionsRequest': 'context principal_id page',
+            'IdentityListSessionsResponse': 'sessions page checked_at',
+            'IdentityRevokeSessionRequest': 'context session_id',
+            'IdentityRevokeSessionResponse': 'session checked_at',
+            'SessionRecord': 'session_id principal_id rotation expires_at revoked created_at',
+            'TokenPair': 'session_id access_token refresh_token access_expires_at refresh_expires_at rotation',
+        }
+        for message, fields in session_messages.items():
+            expected.add(('proto_messages', message))
+            expected.update(('proto_fields', message + '.' + field) for field in fields.split())
         self.assertEqual(available, expected)
         self.assertEqual(effective_status(registry, 'reference', 'action_payloads', 'ActionEnvelope.send_message'), 'implemented')
         self.assertEqual(effective_status(registry, 'target', 'action_payloads', 'ActionEnvelope.send_message'), 'implemented')

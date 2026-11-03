@@ -409,6 +409,9 @@ access proof and SHA-256 of the actual outbound Control leaf certificate bind th
 delegation; audience is identity. Only Identity decides self-service/other-resource
 visibility and grants. Browser actor/context/fingerprint fields are rejected.
 
+Identity orders the full session snapshot by ascending creation time and then session ID
+before it returns the first page. Login can generate session IDs in any order.
+
 JSON accepts only the declared flat string fields, rejects duplicate/unknown keys,
 wrong types, nested objects/arrays and invalid bounds. Pagination accepts only
 page_size (1–100, default 20) and opaque page_token, rejects duplicates and invalid

@@ -122,6 +122,20 @@ P10 Scheduler 的 domain/RPC/PG16.4/三进程 mTLS 交接已本地实测通过�
 | `ActionEnvelope.react_message`、`ActionEnvelope.delete_message`、`ActionEnvelope.mute_member`、`ActionEnvelope.kick_member`、`ActionEnvelope.approve_request` | implemented | P07f-2 target flip：ActionEnvelope 五种 payload oneof 的 target producer/consumer 已实现 |
 | `operations.getActionPolicy`、`operations.updateActionPolicy` | implemented | P07f-2 target flip：RuntimeService Get/UpdateActionPolicy owner 方法已接线；Control REST operation 仍 not_implemented |
 | `IdentityPrincipalSummary`、`IdentityListPrincipalsRequest`、`IdentityListPrincipalsResponse`、`IdentityPrincipalSummary.principal_id`、`IdentityPrincipalSummary.binding`、`IdentityPrincipalSummary.principal_kind`、`IdentityPrincipalSummary.version`、`IdentityPrincipalSummary.state`、`IdentityPrincipalSummary.roles`、`IdentityListPrincipalsRequest.context`、`IdentityListPrincipalsRequest.page`、`IdentityListPrincipalsRequest.state_filter`、`IdentityListPrincipalsResponse.principals`、`IdentityListPrincipalsResponse.page`、`IdentityListPrincipalsResponse.checked_at`、`operations.listPrincipals` | implemented | P12l：Identity `ListPrincipals` 人类主体目录（Control platform peer、identity.principal.read、获授资源范围过滤、principal-id keyset 分页、checked_at/roles）经真实 PG16.4 + 真 mTLS RPC fixture 与 Control 转发验收；OpenAPI x-target-contract-status 按认证投影规则仍 not_implemented，REST x-contract-status 已翻 |
+| `IdentityLoginRequest`、`IdentityLoginRequest.context`、`IdentityLoginRequest.username`、`IdentityLoginRequest.password` | implemented | P04 会话 RPC，真实 Control mTLS、Identity、PG 与字段边界测试。 |
+| `IdentityLoginResponse`、`IdentityLoginResponse.tokens`、`IdentityLoginResponse.checked_at` | implemented | P04 会话 RPC，真实 Control mTLS、Identity、PG 与字段边界测试。 |
+| `IdentityRefreshSessionRequest`、`IdentityRefreshSessionRequest.context`、`IdentityRefreshSessionRequest.refresh_token` | implemented | P04 会话 RPC，真实 Control mTLS、Identity、PG 与字段边界测试。 |
+| `IdentityRefreshSessionResponse`、`IdentityRefreshSessionResponse.tokens`、`IdentityRefreshSessionResponse.checked_at` | implemented | P04 会话 RPC，真实 Control mTLS、Identity、PG 与字段边界测试。 |
+| `IdentityValidateSessionRequest`、`IdentityValidateSessionRequest.context`、`IdentityValidateSessionRequest.access_token` | implemented | P04 会话 RPC，真实 Control mTLS、Identity、PG 与字段边界测试。 |
+| `IdentityValidateSessionResponse`、`IdentityValidateSessionResponse.principal`、`IdentityValidateSessionResponse.session`、`IdentityValidateSessionResponse.assignments`、`IdentityValidateSessionResponse.authorization_version`、`IdentityValidateSessionResponse.checked_at` | implemented | P04 会话 RPC，真实 Control mTLS、Identity、PG 与字段边界测试。 |
+| `IdentityGetPrincipalRequest`、`IdentityGetPrincipalRequest.context`、`IdentityGetPrincipalRequest.access_token` | implemented | P04 会话 RPC，真实 Control mTLS、Identity、PG 与字段边界测试。 |
+| `IdentityGetPrincipalResponse`、`IdentityGetPrincipalResponse.principal`、`IdentityGetPrincipalResponse.assignments`、`IdentityGetPrincipalResponse.authorization_version`、`IdentityGetPrincipalResponse.checked_at` | implemented | P04 会话 RPC，真实 Control mTLS、Identity、PG 与字段边界测试。 |
+| `IdentityListSessionsRequest`、`IdentityListSessionsRequest.context`、`IdentityListSessionsRequest.principal_id`、`IdentityListSessionsRequest.page` | implemented | P04 会话 RPC，真实 Control mTLS、Identity、PG 与字段边界测试。 |
+| `IdentityListSessionsResponse`、`IdentityListSessionsResponse.sessions`、`IdentityListSessionsResponse.page`、`IdentityListSessionsResponse.checked_at` | implemented | P04 会话 RPC，真实 Control mTLS、Identity、PG 与字段边界测试。 |
+| `IdentityRevokeSessionRequest`、`IdentityRevokeSessionRequest.context`、`IdentityRevokeSessionRequest.session_id` | implemented | P04 会话 RPC，真实 Control mTLS、Identity、PG 与字段边界测试。 |
+| `IdentityRevokeSessionResponse`、`IdentityRevokeSessionResponse.session`、`IdentityRevokeSessionResponse.checked_at` | implemented | P04 会话 RPC，真实 Control mTLS、Identity、PG 与字段边界测试。 |
+| `SessionRecord`、`SessionRecord.session_id`、`SessionRecord.principal_id`、`SessionRecord.rotation`、`SessionRecord.expires_at`、`SessionRecord.revoked`、`SessionRecord.created_at` | implemented | P04 会话 RPC，真实 Control mTLS、Identity、PG 与字段边界测试。 |
+| `TokenPair`、`TokenPair.session_id`、`TokenPair.access_token`、`TokenPair.refresh_token`、`TokenPair.access_expires_at`、`TokenPair.refresh_expires_at`、`TokenPair.rotation` | implemented | P04 会话 RPC，真实 Control mTLS、Identity、PG 与字段边界测试。 |
 <!-- execution-scopes:end -->
 
 **P13h-1 Scheduler 平台 peer 授权语义注记（2026-11-03）**：`SchedulerService.ListTasks` 与
@@ -2015,6 +2029,8 @@ Login、RefreshSession、RotateCredential、RevokeSession 等既有幂等/恢复
 成功必须是应用已提交结果，局部完整投影后才返回；checked_at/created_at/expiry/version来自应用，不补本机时间或token iat。缺持久binding、时间、版本或不合法token结果返回Internal，不造占位。Assignment投影调用Core project_assignment，固定角色显示权限调用default_role_allows；不跨assignment拼scope，角色行必须同role无explicit，explicit行各资源权限集合必须相同，无法无损表达则Internal。角色与权限仅显示并集，真正授权仍依赖逐条exact绑定。List输入拒绝expires_at/next_page_token等输出字段，opaque page_token可单独续页，显式snapshot_id须合法且与cursor绑定，当前权限/快照恢复由应用裁定。
 
 Core Failure无损映射RpcFailure的acceptance/recovery/operation/retry_after，未持有的current_version不伪造。ReadCurrent→RESYNC_SNAPSHOT、Backoff→RETRY_SAME_ID、QuerySameIdentity→QUERY_SAME_INTENT、Diagnose→MANUAL_REVIEW；Unknown保留Unknown，不得携带换新身份/修正输入重做副作用建议。畸形应用失败或投影保守返回Internal/Unknown及原身份查询，决不假称NotAccepted。标准grpc-status-details-bin仅RpcFailure，无Error-only回退。
+
+P04 会话验收使用 PostgreSQL、真实 Identity 和注册的 Control 客户端证书。Control HTTPS 验证登录、刷新、当前会话、会话列表和撤销。刷新后旧 access token 返回 401，撤销后 access 和 refresh token 均返回 401，撤销不存在的会话返回 404。独立的 mTLS 客户端验证 GetPrincipal 的当前主体、授予和授权版本，并检查无效 access token 返回 UNAUTHENTICATED。ListSessions 的快照按 (created_at, session_id) 升序，分页前固定顺序。
 
 六方法RPC恢复补正：同键Login/Refresh恢复已提交的原TokenPair时，access已过期但refresh仍有效可原样返回（checked_at可能已超过access期限，Control剩余TTL clamp至0），不重新签发或延长任何期限。ListSessions接受仅opaque page_token的续页，不要求浏览器另传snapshot_id；输出字段仍禁止作为输入。
 

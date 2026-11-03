@@ -448,6 +448,9 @@ def run_checks(root, https_port, configs, binaries, children, endpoints):
     status, refreshed = request('POST', '/api/v1/auth/refresh',
                                 {'refresh_token': tokens['refresh_token']}, idempotency=True)
     require(status == 200 and refreshed.get('access_token'), 'session refresh')
+    status, denied = request('GET', '/api/v1/auth/me', token=token)
+    require(status == 401 and denied.get('code') == 'UNAUTHENTICATED',
+            f'old access token after refresh status={status}')
     token = refreshed['access_token']
     status, unauthenticated = request('GET', '/api/v1/health')
     require(status == 401 and unauthenticated.get('code') == 'UNAUTHENTICATED',
@@ -896,6 +899,17 @@ def run_checks(root, https_port, configs, binaries, children, endpoints):
                 break
             time.sleep(0.2)
         require(recovered, 'aggregate health recovers after identity restart')
+    stage('session lifecycle after Identity restart')
+    status, current = request('GET', '/api/v1/auth/me', token=token)
+    require(status == 200 and current['user_id'] == STATE['administrator_id'],
+            f'current session after login status={status}')
+    session_id = current['session_id']
+    status, page = request('GET', '/api/v1/auth/sessions?page_size=100', token=token)
+    require(status == 200 and any(item['session_id'] == session_id and item['state'] == 'ACTIVE'
+                                  for item in page['items']), f'list own sessions status={status}')
+    status, missing = request('POST', f'/api/v1/auth/sessions/{uuid.uuid4()}/revoke',
+                              token=token, idempotency=True)
+    require(status == 404 and missing.get('code') == 'NOT_FOUND', f'unknown session status={status}')
     stage('runtime outage')
     require(stop(children['runtime']) == 0, 'runtime graceful stop')
     status, degraded = request('GET', '/api/v1/health', token=token)
@@ -928,6 +942,17 @@ def run_checks(root, https_port, configs, binaries, children, endpoints):
                 break
             time.sleep(0.2)
         require(recovered, 'aggregate health recovers after runtime restart')
+    stage('session revocation')
+    status, _ = request('POST', f'/api/v1/auth/sessions/{session_id}/revoke',
+                        token=token, idempotency=True)
+    require(status == 204, f'revoke own session status={status}')
+    status, denied = request('GET', '/api/v1/auth/me', token=token)
+    require(status == 401 and denied.get('code') == 'UNAUTHENTICATED',
+            f'revoked access token status={status}')
+    status, denied = request('POST', '/api/v1/auth/refresh', {'refresh_token': tokens['refresh_token']},
+                             idempotency=True)
+    require(status == 401 and denied.get('code') == 'UNAUTHENTICATED',
+            f'revoked refresh token status={status}')
     if os.environ.get('KIARABOT_P14F_DUMP_LOGS'):
         import select as select_module
         for name in ('identity', 'control'):

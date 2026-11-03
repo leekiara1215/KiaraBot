@@ -206,7 +206,7 @@ public:
               transaction.exec("SELECT id,subject,created_at,refresh_expires_at,rotation,"
                                "version,revoked,control_subject,control_credential FROM "
                                "kiarabot.session_security WHERE subject=$1 "
-                               "ORDER BY id LIMIT $2",
+                               "ORDER BY created_at,id LIMIT $2",
                                pqxx::params{subject.value, max_records + 1});
           if (static_cast<std::size_t>(rows.size()) > max_records) {
             return target::rejected(target::ErrorCode::RateLimited, target::Recovery::Backoff);

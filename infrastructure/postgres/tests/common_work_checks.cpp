@@ -363,7 +363,8 @@ void check_identity_sessions(Database& database) {
     auto sessions = detail::session_security_repository(*access.sql);
     take(sessions->save(session, {}, {}));
     auto other = session;
-    other.id = {"security-live-session-2"};
+    other.id = {"earlier-sorting-id"};
+    other.created_at += std::chrono::nanoseconds{1};
     other.access.tag.bytes[0] = std::byte{2};
     other.refresh.tag.bytes[0] = std::byte{3};
     take(sessions->save(other, {}, {}));
@@ -419,8 +420,9 @@ void check_identity_sessions(Database& database) {
     auto access = take(detail::DatabaseAccess::begin(database));
     auto sessions = detail::session_security_repository(*access.sql);
     const auto metadata = take(sessions->list_metadata(session.subject, 2));
-    check(metadata.size() == 2 && metadata[0].created_at == session.created_at &&
-              metadata[0].rotation == 2 && metadata[0].version.value == 2,
+    check(metadata.size() == 2 && metadata[0].id == session.id &&
+              metadata[0].created_at == session.created_at && metadata[0].rotation == 2 &&
+              metadata[0].version.value == 2,
           "bounded session metadata lost immutable fields/current version");
     access.work->rollback();
   }

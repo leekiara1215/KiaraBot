@@ -5924,7 +5924,21 @@
           "AuthorizationDecision": "implemented",
           "IdentityGetVerificationKeysRequest": "implemented",
           "IdentityGetVerificationKeysResponse": "implemented",
-          "VerificationKey": "implemented"
+          "VerificationKey": "implemented",
+          "IdentityLoginRequest": "implemented",
+          "IdentityLoginResponse": "implemented",
+          "IdentityRefreshSessionRequest": "implemented",
+          "IdentityRefreshSessionResponse": "implemented",
+          "IdentityValidateSessionRequest": "implemented",
+          "IdentityValidateSessionResponse": "implemented",
+          "IdentityGetPrincipalRequest": "implemented",
+          "IdentityGetPrincipalResponse": "implemented",
+          "IdentityListSessionsRequest": "implemented",
+          "IdentityListSessionsResponse": "implemented",
+          "IdentityRevokeSessionRequest": "implemented",
+          "IdentityRevokeSessionResponse": "implemented",
+          "SessionRecord": "implemented",
+          "TokenPair": "implemented"
         },
         "proto_fields": {
           "IdentityAuditFilter.scope": "implemented",
@@ -6475,7 +6489,51 @@
           "VerificationKey.key_id": "implemented",
           "VerificationKey.ed25519_public_key": "implemented",
           "VerificationKey.version": "implemented",
-          "VerificationKey.valid_until": "implemented"
+          "VerificationKey.valid_until": "implemented",
+          "SessionRecord.session_id": "implemented",
+          "SessionRecord.principal_id": "implemented",
+          "SessionRecord.rotation": "implemented",
+          "SessionRecord.expires_at": "implemented",
+          "SessionRecord.revoked": "implemented",
+          "TokenPair.session_id": "implemented",
+          "TokenPair.access_token": "implemented",
+          "TokenPair.refresh_token": "implemented",
+          "TokenPair.access_expires_at": "implemented",
+          "TokenPair.refresh_expires_at": "implemented",
+          "TokenPair.rotation": "implemented",
+          "IdentityLoginRequest.context": "implemented",
+          "IdentityLoginRequest.username": "implemented",
+          "IdentityLoginRequest.password": "implemented",
+          "IdentityLoginResponse.tokens": "implemented",
+          "IdentityRefreshSessionRequest.context": "implemented",
+          "IdentityRefreshSessionRequest.refresh_token": "implemented",
+          "IdentityRefreshSessionResponse.tokens": "implemented",
+          "IdentityValidateSessionRequest.context": "implemented",
+          "IdentityValidateSessionRequest.access_token": "implemented",
+          "IdentityValidateSessionResponse.principal": "implemented",
+          "IdentityValidateSessionResponse.session": "implemented",
+          "IdentityGetPrincipalRequest.context": "implemented",
+          "IdentityGetPrincipalRequest.access_token": "implemented",
+          "IdentityGetPrincipalResponse.principal": "implemented",
+          "IdentityListSessionsRequest.context": "implemented",
+          "IdentityListSessionsRequest.principal_id": "implemented",
+          "IdentityListSessionsRequest.page": "implemented",
+          "IdentityListSessionsResponse.sessions": "implemented",
+          "IdentityListSessionsResponse.page": "implemented",
+          "IdentityRevokeSessionRequest.context": "implemented",
+          "IdentityRevokeSessionRequest.session_id": "implemented",
+          "IdentityRevokeSessionResponse.session": "implemented",
+          "SessionRecord.created_at": "implemented",
+          "IdentityLoginResponse.checked_at": "implemented",
+          "IdentityRefreshSessionResponse.checked_at": "implemented",
+          "IdentityValidateSessionResponse.assignments": "implemented",
+          "IdentityValidateSessionResponse.authorization_version": "implemented",
+          "IdentityValidateSessionResponse.checked_at": "implemented",
+          "IdentityGetPrincipalResponse.assignments": "implemented",
+          "IdentityGetPrincipalResponse.authorization_version": "implemented",
+          "IdentityGetPrincipalResponse.checked_at": "implemented",
+          "IdentityListSessionsResponse.checked_at": "implemented",
+          "IdentityRevokeSessionResponse.checked_at": "implemented"
         },
         "bridge_methods": {
           "AdapterBridge.Connect": "implemented",
@@ -11713,6 +11771,354 @@
         "proto_fields:VerificationKey.valid_until": [
           "core/src/runtime/platform/identity_rpc.cpp",
           "core/tests/platform/identity_keys_daemon_client.cpp"
+        ],
+        "proto_messages:IdentityLoginRequest": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/src/application/target/identity_security_application.cpp",
+          "core/tests/platform/identity_rpc_test.cpp",
+          "tests/architecture/p14_native_single_host.py"
+        ],
+        "proto_messages:IdentityLoginResponse": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/src/application/target/identity_security_application.cpp",
+          "core/tests/platform/identity_rpc_test.cpp",
+          "tests/architecture/p14_native_single_host.py"
+        ],
+        "proto_messages:IdentityRefreshSessionRequest": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/src/application/target/identity_security_application.cpp",
+          "core/tests/platform/identity_rpc_test.cpp",
+          "tests/architecture/p14_native_single_host.py"
+        ],
+        "proto_messages:IdentityRefreshSessionResponse": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/src/application/target/identity_security_application.cpp",
+          "core/tests/platform/identity_rpc_test.cpp",
+          "tests/architecture/p14_native_single_host.py"
+        ],
+        "proto_messages:IdentityValidateSessionRequest": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/src/application/target/identity_security_application.cpp",
+          "core/tests/platform/identity_rpc_test.cpp",
+          "tests/architecture/p14_native_single_host.py"
+        ],
+        "proto_messages:IdentityValidateSessionResponse": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/src/application/target/identity_security_application.cpp",
+          "core/tests/platform/identity_rpc_test.cpp",
+          "tests/architecture/p14_native_single_host.py"
+        ],
+        "proto_messages:IdentityGetPrincipalRequest": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/src/application/target/identity_security_application.cpp",
+          "core/tests/platform/identity_rpc_test.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "proto_messages:IdentityGetPrincipalResponse": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/src/application/target/identity_security_application.cpp",
+          "core/tests/platform/identity_rpc_test.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "proto_messages:IdentityListSessionsRequest": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/src/application/target/identity_security_application.cpp",
+          "core/tests/platform/identity_rpc_test.cpp",
+          "tests/architecture/p14_native_single_host.py"
+        ],
+        "proto_messages:IdentityListSessionsResponse": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/src/application/target/identity_security_application.cpp",
+          "core/tests/platform/identity_rpc_test.cpp",
+          "tests/architecture/p14_native_single_host.py"
+        ],
+        "proto_messages:IdentityRevokeSessionRequest": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/src/application/target/identity_security_application.cpp",
+          "core/tests/platform/identity_rpc_test.cpp",
+          "tests/architecture/p14_native_single_host.py"
+        ],
+        "proto_messages:IdentityRevokeSessionResponse": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/src/application/target/identity_security_application.cpp",
+          "core/tests/platform/identity_rpc_test.cpp",
+          "tests/architecture/p14_native_single_host.py"
+        ],
+        "proto_messages:SessionRecord": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/src/application/target/identity_security_application.cpp",
+          "core/tests/platform/identity_rpc_test.cpp",
+          "tests/architecture/p14_native_single_host.py"
+        ],
+        "proto_messages:TokenPair": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/src/application/target/identity_security_application.cpp",
+          "core/tests/platform/identity_rpc_test.cpp",
+          "tests/architecture/p14_native_single_host.py"
+        ],
+        "proto_fields:SessionRecord.session_id": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/src/application/target/identity_security_application.cpp",
+          "core/tests/platform/identity_rpc_test.cpp",
+          "tests/architecture/p14_native_single_host.py"
+        ],
+        "proto_fields:SessionRecord.principal_id": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/src/application/target/identity_security_application.cpp",
+          "core/tests/platform/identity_rpc_test.cpp",
+          "tests/architecture/p14_native_single_host.py"
+        ],
+        "proto_fields:SessionRecord.rotation": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/src/application/target/identity_security_application.cpp",
+          "core/tests/platform/identity_rpc_test.cpp",
+          "tests/architecture/p14_native_single_host.py"
+        ],
+        "proto_fields:SessionRecord.expires_at": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/src/application/target/identity_security_application.cpp",
+          "core/tests/platform/identity_rpc_test.cpp",
+          "tests/architecture/p14_native_single_host.py"
+        ],
+        "proto_fields:SessionRecord.revoked": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/src/application/target/identity_security_application.cpp",
+          "core/tests/platform/identity_rpc_test.cpp",
+          "tests/architecture/p14_native_single_host.py"
+        ],
+        "proto_fields:TokenPair.session_id": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/src/application/target/identity_security_application.cpp",
+          "core/tests/platform/identity_rpc_test.cpp",
+          "tests/architecture/p14_native_single_host.py"
+        ],
+        "proto_fields:TokenPair.access_token": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/src/application/target/identity_security_application.cpp",
+          "core/tests/platform/identity_rpc_test.cpp",
+          "tests/architecture/p14_native_single_host.py"
+        ],
+        "proto_fields:TokenPair.refresh_token": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/src/application/target/identity_security_application.cpp",
+          "core/tests/platform/identity_rpc_test.cpp",
+          "tests/architecture/p14_native_single_host.py"
+        ],
+        "proto_fields:TokenPair.access_expires_at": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/src/application/target/identity_security_application.cpp",
+          "core/tests/platform/identity_rpc_test.cpp",
+          "tests/architecture/p14_native_single_host.py"
+        ],
+        "proto_fields:TokenPair.refresh_expires_at": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/src/application/target/identity_security_application.cpp",
+          "core/tests/platform/identity_rpc_test.cpp",
+          "tests/architecture/p14_native_single_host.py"
+        ],
+        "proto_fields:TokenPair.rotation": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/src/application/target/identity_security_application.cpp",
+          "core/tests/platform/identity_rpc_test.cpp",
+          "tests/architecture/p14_native_single_host.py"
+        ],
+        "proto_fields:IdentityLoginRequest.context": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/src/application/target/identity_security_application.cpp",
+          "core/tests/platform/identity_rpc_test.cpp",
+          "tests/architecture/p14_native_single_host.py"
+        ],
+        "proto_fields:IdentityLoginRequest.username": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/src/application/target/identity_security_application.cpp",
+          "core/tests/platform/identity_rpc_test.cpp",
+          "tests/architecture/p14_native_single_host.py"
+        ],
+        "proto_fields:IdentityLoginRequest.password": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/src/application/target/identity_security_application.cpp",
+          "core/tests/platform/identity_rpc_test.cpp",
+          "tests/architecture/p14_native_single_host.py"
+        ],
+        "proto_fields:IdentityLoginResponse.tokens": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/src/application/target/identity_security_application.cpp",
+          "core/tests/platform/identity_rpc_test.cpp",
+          "tests/architecture/p14_native_single_host.py"
+        ],
+        "proto_fields:IdentityRefreshSessionRequest.context": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/src/application/target/identity_security_application.cpp",
+          "core/tests/platform/identity_rpc_test.cpp",
+          "tests/architecture/p14_native_single_host.py"
+        ],
+        "proto_fields:IdentityRefreshSessionRequest.refresh_token": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/src/application/target/identity_security_application.cpp",
+          "core/tests/platform/identity_rpc_test.cpp",
+          "tests/architecture/p14_native_single_host.py"
+        ],
+        "proto_fields:IdentityRefreshSessionResponse.tokens": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/src/application/target/identity_security_application.cpp",
+          "core/tests/platform/identity_rpc_test.cpp",
+          "tests/architecture/p14_native_single_host.py"
+        ],
+        "proto_fields:IdentityValidateSessionRequest.context": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/src/application/target/identity_security_application.cpp",
+          "core/tests/platform/identity_rpc_test.cpp",
+          "tests/architecture/p14_native_single_host.py"
+        ],
+        "proto_fields:IdentityValidateSessionRequest.access_token": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/src/application/target/identity_security_application.cpp",
+          "core/tests/platform/identity_rpc_test.cpp",
+          "tests/architecture/p14_native_single_host.py"
+        ],
+        "proto_fields:IdentityValidateSessionResponse.principal": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/src/application/target/identity_security_application.cpp",
+          "core/tests/platform/identity_rpc_test.cpp",
+          "tests/architecture/p14_native_single_host.py"
+        ],
+        "proto_fields:IdentityValidateSessionResponse.session": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/src/application/target/identity_security_application.cpp",
+          "core/tests/platform/identity_rpc_test.cpp",
+          "tests/architecture/p14_native_single_host.py"
+        ],
+        "proto_fields:IdentityGetPrincipalRequest.context": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/src/application/target/identity_security_application.cpp",
+          "core/tests/platform/identity_rpc_test.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "proto_fields:IdentityGetPrincipalRequest.access_token": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/src/application/target/identity_security_application.cpp",
+          "core/tests/platform/identity_rpc_test.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "proto_fields:IdentityGetPrincipalResponse.principal": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/src/application/target/identity_security_application.cpp",
+          "core/tests/platform/identity_rpc_test.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "proto_fields:IdentityListSessionsRequest.context": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/src/application/target/identity_security_application.cpp",
+          "core/tests/platform/identity_rpc_test.cpp",
+          "tests/architecture/p14_native_single_host.py"
+        ],
+        "proto_fields:IdentityListSessionsRequest.principal_id": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/src/application/target/identity_security_application.cpp",
+          "core/tests/platform/identity_rpc_test.cpp",
+          "tests/architecture/p14_native_single_host.py"
+        ],
+        "proto_fields:IdentityListSessionsRequest.page": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/src/application/target/identity_security_application.cpp",
+          "core/tests/platform/identity_rpc_test.cpp",
+          "tests/architecture/p14_native_single_host.py"
+        ],
+        "proto_fields:IdentityListSessionsResponse.sessions": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/src/application/target/identity_security_application.cpp",
+          "core/tests/platform/identity_rpc_test.cpp",
+          "tests/architecture/p14_native_single_host.py"
+        ],
+        "proto_fields:IdentityListSessionsResponse.page": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/src/application/target/identity_security_application.cpp",
+          "core/tests/platform/identity_rpc_test.cpp",
+          "tests/architecture/p14_native_single_host.py"
+        ],
+        "proto_fields:IdentityRevokeSessionRequest.context": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/src/application/target/identity_security_application.cpp",
+          "core/tests/platform/identity_rpc_test.cpp",
+          "tests/architecture/p14_native_single_host.py"
+        ],
+        "proto_fields:IdentityRevokeSessionRequest.session_id": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/src/application/target/identity_security_application.cpp",
+          "core/tests/platform/identity_rpc_test.cpp",
+          "tests/architecture/p14_native_single_host.py"
+        ],
+        "proto_fields:IdentityRevokeSessionResponse.session": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/src/application/target/identity_security_application.cpp",
+          "core/tests/platform/identity_rpc_test.cpp",
+          "tests/architecture/p14_native_single_host.py"
+        ],
+        "proto_fields:SessionRecord.created_at": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/src/application/target/identity_security_application.cpp",
+          "core/tests/platform/identity_rpc_test.cpp",
+          "tests/architecture/p14_native_single_host.py"
+        ],
+        "proto_fields:IdentityLoginResponse.checked_at": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/src/application/target/identity_security_application.cpp",
+          "core/tests/platform/identity_rpc_test.cpp",
+          "tests/architecture/p14_native_single_host.py"
+        ],
+        "proto_fields:IdentityRefreshSessionResponse.checked_at": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/src/application/target/identity_security_application.cpp",
+          "core/tests/platform/identity_rpc_test.cpp",
+          "tests/architecture/p14_native_single_host.py"
+        ],
+        "proto_fields:IdentityValidateSessionResponse.assignments": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/src/application/target/identity_security_application.cpp",
+          "core/tests/platform/identity_rpc_test.cpp",
+          "tests/architecture/p14_native_single_host.py"
+        ],
+        "proto_fields:IdentityValidateSessionResponse.authorization_version": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/src/application/target/identity_security_application.cpp",
+          "core/tests/platform/identity_rpc_test.cpp",
+          "tests/architecture/p14_native_single_host.py"
+        ],
+        "proto_fields:IdentityValidateSessionResponse.checked_at": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/src/application/target/identity_security_application.cpp",
+          "core/tests/platform/identity_rpc_test.cpp",
+          "tests/architecture/p14_native_single_host.py"
+        ],
+        "proto_fields:IdentityGetPrincipalResponse.assignments": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/src/application/target/identity_security_application.cpp",
+          "core/tests/platform/identity_rpc_test.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "proto_fields:IdentityGetPrincipalResponse.authorization_version": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/src/application/target/identity_security_application.cpp",
+          "core/tests/platform/identity_rpc_test.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "proto_fields:IdentityGetPrincipalResponse.checked_at": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/src/application/target/identity_security_application.cpp",
+          "core/tests/platform/identity_rpc_test.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "proto_fields:IdentityListSessionsResponse.checked_at": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/src/application/target/identity_security_application.cpp",
+          "core/tests/platform/identity_rpc_test.cpp",
+          "tests/architecture/p14_native_single_host.py"
+        ],
+        "proto_fields:IdentityRevokeSessionResponse.checked_at": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/src/application/target/identity_security_application.cpp",
+          "core/tests/platform/identity_rpc_test.cpp",
+          "tests/architecture/p14_native_single_host.py"
         ]
       }
     }

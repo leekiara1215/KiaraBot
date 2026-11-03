@@ -111,7 +111,9 @@ CoreToAdapter 新增 oneof event_ack=4，类型 AdapterEventAck；原字段编�
 
 Runtime typed读取补全为五类Get/List（Account/Installation/Instance/Adapter/Host）及GetInstanceConfig。Get使用该方法固定kind的exact ResourceRef；List必须给已登记RESOURCE_CATALOG UUID，仅发现当前调用方另获独立child grant的资源，不继承目录权限。新列表输入PageRequest，输出SnapshotInfo，禁止client传server快照字段。账号/插件/适配器/配置读权限是封闭枚举；全部新增类型和方法尚未生产实现。
 
-## Identity 当前投影与凭据状态（目标未实现）
+## Identity 当前投影与凭据状态
+
+Login、RefreshSession、ValidateSession、GetPrincipal、ListSessions、RevokeSession 已通过本地真实 Identity 服务、注册的 Control 证书和 PostgreSQL 验收。十二个请求/响应及 SessionRecord、TokenPair 的字段证据见 `tests/contract_status.json` 的 target 登记。
 
 Identity 的 ValidateSession/GetPrincipal 返回当前主体的逐条 AssignmentRecord、authorization_version 和权威 UTC checked_at。每条绑定独立计算权限与 exact scope，不能把显示 roles/permissions 与全部 scope 做笛卡尔积授权；PrincipalRecord.roles/display_permissions 仅是当前绑定的显示并集。固定角色只用于 human；显式权限使用 role=UNSPECIFIED 加非空、去重的封闭 Permission 列表，两种授予依据不能混用。message.read/action.inspect 等敏感权限不由默认角色或创建资源自动授予。空 scope 不代表全局。
 

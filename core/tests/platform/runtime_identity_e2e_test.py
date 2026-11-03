@@ -329,6 +329,18 @@ def scenario(root, port, pg_bin, binaries):
                 context=context(), username='administrator', password=password), timeout=10)
             access = tokens.tokens.access_token
             require(bool(access), 'login access token')
+            principal = identity_stub.GetPrincipal(identity_pb2.IdentityGetPrincipalRequest(
+                context=context(), access_token=access), timeout=10)
+            require(principal.principal.principal_id == enrolled_admin_principal and
+                    principal.authorization_version > 0 and principal.assignments and
+                    principal.HasField('checked_at'), 'current principal and checked assignments')
+            try:
+                identity_stub.GetPrincipal(identity_pb2.IdentityGetPrincipalRequest(
+                    context=context(), access_token='unknown-access-token'), timeout=10)
+            except grpc.RpcError as error:
+                require(error.code() == grpc.StatusCode.UNAUTHENTICATED, 'unknown principal token')
+            else:
+                raise RuntimeError('GetPrincipal accepted an unknown access token')
 
             def issue_delegation(permissions=None, scope=None):
                 if permissions is None:

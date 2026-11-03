@@ -18,7 +18,7 @@ message PrincipalRecord {
   repeated Permission display_permissions = 8;
 }
 
-// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+// CONTRACT_STATUS: not_implemented - historical reference. Target session RPC evidence is in contract_status.json.
 message SessionRecord {
   string session_id = 1;
   string principal_id = 2;
@@ -29,7 +29,7 @@ message SessionRecord {
   google.protobuf.Timestamp created_at = 6;
 }
 
-// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+// CONTRACT_STATUS: not_implemented - historical reference. Target session RPC evidence is in contract_status.json.
 message TokenPair {
   string session_id = 1;
   string access_token = 2;
@@ -98,38 +98,38 @@ message VerificationKey {
   google.protobuf.Timestamp valid_until = 4;
 }
 
-// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+// CONTRACT_STATUS: not_implemented - historical reference. Target session RPC evidence is in contract_status.json.
 message IdentityLoginRequest {
   RequestContext context = 1;
   string username = 2;
   string password = 3;
 }
 
-// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+// CONTRACT_STATUS: not_implemented - historical reference. Target session RPC evidence is in contract_status.json.
 message IdentityLoginResponse {
   TokenPair tokens = 1;
   google.protobuf.Timestamp checked_at = 2;
 }
 
-// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+// CONTRACT_STATUS: not_implemented - historical reference. Target session RPC evidence is in contract_status.json.
 message IdentityRefreshSessionRequest {
   RequestContext context = 1;
   string refresh_token = 2;
 }
 
-// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+// CONTRACT_STATUS: not_implemented - historical reference. Target session RPC evidence is in contract_status.json.
 message IdentityRefreshSessionResponse {
   TokenPair tokens = 1;
   google.protobuf.Timestamp checked_at = 2;
 }
 
-// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+// CONTRACT_STATUS: not_implemented - historical reference. Target session RPC evidence is in contract_status.json.
 message IdentityValidateSessionRequest {
   RequestContext context = 1;
   string access_token = 2;
 }
 
-// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+// CONTRACT_STATUS: not_implemented - historical reference. Target session RPC evidence is in contract_status.json.
 message IdentityValidateSessionResponse {
   PrincipalRecord principal = 1;
   SessionRecord session = 2;
@@ -138,13 +138,13 @@ message IdentityValidateSessionResponse {
   google.protobuf.Timestamp checked_at = 5;
 }
 
-// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+// CONTRACT_STATUS: not_implemented - historical reference. Target session RPC evidence is in contract_status.json.
 message IdentityGetPrincipalRequest {
   RequestContext context = 1;
   string access_token = 2;
 }
 
-// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+// CONTRACT_STATUS: not_implemented - historical reference. Target session RPC evidence is in contract_status.json.
 message IdentityGetPrincipalResponse {
   PrincipalRecord principal = 1;
   repeated AssignmentRecord assignments = 2;
@@ -152,27 +152,27 @@ message IdentityGetPrincipalResponse {
   google.protobuf.Timestamp checked_at = 4;
 }
 
-// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+// CONTRACT_STATUS: not_implemented - historical reference. Target session RPC evidence is in contract_status.json.
 message IdentityListSessionsRequest {
   RequestContext context = 1;
   string principal_id = 2;
   SnapshotPage page = 3;
 }
 
-// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+// CONTRACT_STATUS: not_implemented - historical reference. Target session RPC evidence is in contract_status.json.
 message IdentityListSessionsResponse {
   repeated SessionRecord sessions = 1;
   SnapshotPage page = 2;
   google.protobuf.Timestamp checked_at = 3;
 }
 
-// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+// CONTRACT_STATUS: not_implemented - historical reference. Target session RPC evidence is in contract_status.json.
 message IdentityRevokeSessionRequest {
   RequestContext context = 1;
   string session_id = 2;
 }
 
-// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+// CONTRACT_STATUS: not_implemented - historical reference. Target session RPC evidence is in contract_status.json.
 message IdentityRevokeSessionResponse {
   SessionRecord session = 1;
   google.protobuf.Timestamp checked_at = 2;
