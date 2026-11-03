@@ -97,3 +97,19 @@ owner gateway/委托/错误映射沿用 P12c；本任务只新增 Model owner �
 - 已实测：Model owner RPC/应用/PG/HTTP provider/secret AEAD/Identity caller/Runtime client/PluginBridge fixture/Control Model REST；真 PG16.4 p03 fixture；SDK 非 target model 单测。
 - 待环境：真实外部 Provider 付费联调（T07b/用户环境，未执行每次调用与计费核对）；真实插件→Runtime→Model→Provider 单链路 e2e（P05b 委托审批/用户确认）；readiness composition 级真实 TLS harness（当前为组件/单进程 fixture）；目标六服务栈真实 live（本机未启动全目标栈）。
 - 需 Lead/契约 owner 复核：P12c-6 ListAudit target_spec 与 proto scope_kinds 不一致导致 p01_target_roundtrip 红；OpenAPI Model REST 的 inline not_implemented 与 P11d-2 e2e 证据不一致。
+
+### P05b-4 单链路准备与负例 e2e（2026-11-03）
+
+- 真实本地 HTTP Provider fixture（`tests/architecture/p05b_provider_fixture.py`，CTest
+  `p05b_provider_fixture`）：鉴权、stream=false、usage、400/401/404/429(Retry-After)/5xx/
+  timeout/非 JSON/坏 choices/tool_calls 等 14 modes，self-test 16 checks 通过。
+- Runtime→Model delegation provider（sealed parent file → Exchange hops2 → Model）已实现；
+  HostBridge/PluginBridge 通过 `host.model.v1` feature advertise 解锁 model_chat。
+- **真实负例 e2e**（`p05b_model_chain_fail_closed_e2e`）：真实 Identity/Runtime/Model + 真实
+  SDK plugin over TLS PluginBridge + 真 Provider fixture；无 sealed 父委托时 plugin 收
+  UNAUTHENTICATED(2)，Provider requests=0（通过）。
+- 正例 e2e（managed Host+SDK plugin+真实 Provider 成功/撤销/过期/跨实例/错误证书）在
+  P05b-6 sealed 文件 writer/刷新合入前 **gated skip**；不把负例/分段证据当单链路验收。
+- 发现契约缺口：Model `UpdateModel`/`RotateProviderSecret` 缺 proto `scope_kinds`，真实
+  Control 管理 RPC 无法通过 Identity CheckAuthorization；e2e 暂用 test-only seed helper 写入
+  真实 Model DB，契约缺口上报。

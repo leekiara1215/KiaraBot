@@ -168,3 +168,26 @@ class RuntimeInstanceDelegationSource {
     `SKIP_RETURN_CODE 77`），不会产生 fake pass；
   - provider fixture 自测与 fail-closed 断言已就绪，作为本轮可运行证据。
 - P05b-4 正式实现开始条件：P05b-2 合入 + Lead ping。
+
+## 7. 实现进展（2026-11-03，用户选 B / P05b-6 前）
+
+用户选择 **B：sealed 短期文件 + Control/部署刷新**（无 proto 变更）；P05b-6 由 ref-infra 并行
+实现 writer/刷新。本分支已完成：
+
+- `InstanceParentDelegationSource` sealed-file reader（0600/属主/lstat 非符号链接/≤256KiB/
+  schema/instance/subject/TTL≤56s/过期拒绝）；
+- `InstanceModelExchangePort`（真实 Identity ExchangeDelegation mTLS；Runtime 叶指纹；
+  audience=model/hops2 校验）；
+- `InstanceModelDelegationProvider`（有界缓存/refresh margin/single-flight/fail-closed）；
+- RuntimeModelClient per-request delegation provider 签名；
+- 生产 composition `instance_delegation` 配置接线、`host.model.v1` feature advertise；
+- test-only Model DB seed helper（因 `UpdateModel`/`RotateProviderSecret` 缺 scope_kinds，
+  真实 Control 管理链路仍不可用，该缺口已上报，未改 proto）；
+- **Identity 最小修复**：纯 Model 权限实例父委托允许无 RESOURCE_INSTANCE binding（之前
+  scope×permissions 交叉积使 model-only 父委托不可签发；subject 仍由 instance_id 唯一 plugin
+  principal 解析；Scheduler 父委托要求不变），需 P05b-2 owner/契约文档复核。
+
+**e2e 状态**：负例 `p05b_model_chain_fail_closed_e2e` 已通过（无 sealed 父委托 →
+UNAUTHENTICATED(2)、Provider requests=0）。正例保持 gated skip（`p05b_model_chain_e2e`，
+SKIP_RETURN_CODE 77），等 P05b-6 合入后去掉 gate 并跑 managed Host+SDK plugin+真实 Provider
+成功/撤销/过期/跨实例/错误证书矩阵；不伪跑正向链。
