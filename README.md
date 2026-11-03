@@ -107,11 +107,11 @@ bootstrap_credential 字段级待决策；P14 Docker/Compose、两主机、远�
   P13 生命周期清理/drain；P14 部署文件/CI/备份恢复 runbook。
 - **已实测（本机真实依赖/loopback 假服务）**：真实 PG16.4 的事务/投递/存储/调度/Action 测试；
   真实 TLS gRPC Bridge/Control 认证验收；P14c 本地备份/恢复故障矩阵（`scripts/ops/target-drill.sh`，
-  RPO=0s、RTO≈4.6–12.1s，小数据量）；P14b-2 workflow 本地 YAML/门禁静态检查。远端 Actions、
-  Docker/Compose、两主机、真实 QQ/模型未运行。
+  RPO=0s、RTO≈4.6–12.1s，小数据量）；P14b-2 workflow 本地 YAML/门禁静态检查。Colima 上官方 PG16.4 已通过 TLS、四库初始化及备份恢复；
+  Adapter 镜像已通过真实 QQ/NapCat 的只读鉴权。Model 配置更新与 Provider 密钥轮换已通过真实 Control→Identity→Model 同模型允许、跨模型拒绝测试。
 - **尚未完成或未验收（P14t 收敛）**：Docker Compose 六服务栈；两主机/断网演练（延期）；远端 CI/release；
-  真实 QQ/NapCat；真实付费外部 Provider；生产 CA/密钥托管、备份离站；部署级错误 Runtime 叶证书场景；
-  Model Update/RotateProviderSecret proto `scope_kinds` 契约缺口；P12 host operation/bootstrap_credential
+  目标 Runtime 与真实 QQ 的注册、收发及断连恢复；真实付费外部 Provider；生产 CA/密钥托管、备份离站；部署级错误 Runtime 叶证书场景。
+  P12 host operation/bootstrap_credential
   按用户确认保持 not_implemented。
 - **远端 CI 与发布**：GitHub Actions 触发器已恢复但默认由仓库变量 `CI_AUTO_ENABLED` 门控；
   `release.yml` 仅允许受保护 `release-gated` 环境 + `RELEASE_PUSH_ENABLED`/`RELEASE_COSIGN_KEYLESS`

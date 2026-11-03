@@ -148,4 +148,5 @@ owner gateway/委托/错误映射沿用 P12c；本任务只新增 Model owner �
 - 回归（main@b2c3886 最终 rebase）：`ctest -R 'p11|p05|p08|p06|p03_postgres'` **37/37 passed**（393.00s）；P11h 自身 3/3 全过（managed 约 71–74s、fail_closed 约 9–11s、provider_fixture 约 4.1s）。此前一次中间运行 p11h managed 与 p08_managed_host_e2e 曾出现瞬时失败（p08 为本机沙箱执行 `ps` 受限、managed 重跑通过），均非实现回归；最终序列与全 range 全绿。full-locked 构建通过。
 - 依赖状态：P05b-9 ExchangeDelegation 独立 2s/5s budget、P05b-8 `acquire_model`/`model_chat_delegation`、P05b-4 RuntimeModelClient/host.model.v1/canonical fixture 均已合并；本验收独立执行同一真实驱动并校验显式 positive/fail-closed marker。
 - 未覆盖/环境项：真实付费外部 Provider（计费/配额/外部网络）；Docker Compose 六服务栈与跨主机；替代 Runtime 叶证书的部署级错误证书场景（驱动有 forged-signature/错误 origin 在线拒绝，但 fixture 只登记一个 Runtime peer）；P05b-4 已记录的 Model Update/RotateProviderSecret proto `scope_kinds` 契约缺口仍属后续（e2e 用 test-only seed helper）。
+- 后续 `p14_native_single_host` 已验证两条 Model 管理 RPC 的精确模型授权，见[阶段退出证据矩阵](../../doc/27-phase-exit-evidence.md)。
 - P11 退出判断：本地真实依赖的 managed Host 单链路正/负矩阵已独立通过；真实付费 Provider 与目标部署环境仍是待环境项，不构成实现缺失。

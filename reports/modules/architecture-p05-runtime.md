@@ -203,7 +203,7 @@ installation/audience/白名单/TTL/未过期，文件不是签名信任根；P0
 - e2e：真 PG16.4+mTLS model 签发→Runtime 叶 Exchange audience=model hops2；sealed model 文件
   reader/幂等；错误 model scope、混合 scope、model.manage、撤销模型 assignment 负例。
 - 解锁：P05b-4/C++ reader 可读取 model envelope 并 Exchange；UpdateModel/RotateProviderSecret
-  缺 scope_kinds 是独立契约缺口（未修）。
+  当时缺少 scope_kinds。后续 `p14_native_single_host` 已验证两条 Model 管理 RPC 的精确模型授权，见[阶段退出证据矩阵](../../doc/27-phase-exit-evidence.md)。
 
 ## P05b-7 CheckAuthorization 下游解锁矩阵（2026-11-03）
 
