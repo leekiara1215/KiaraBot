@@ -105,7 +105,9 @@ v1::ScheduledTaskState task_state_wire(t::TaskState state) {
   }
   return v1::SCHEDULED_TASK_STATE_UNSPECIFIED;
 }
-t::Outcome<std::string> delegation_proof(const SchedulerTaskClientOptions& options) {
+t::Outcome<std::string> delegation_proof(const SchedulerTaskClientOptions& options,
+                                         const t::SchedulerTaskContext& context,
+                                         t::Permission permission) {
   if (options.platform_identity) {
     // P13h-1 authorizes ListTasks/CancelTask from the Runtime platform mTLS peer and explicit
     // instance scope; no user delegation is sent on this path.
@@ -114,7 +116,7 @@ t::Outcome<std::string> delegation_proof(const SchedulerTaskClientOptions& optio
   if (!options.delegation_provider) {
     return failure(t::ErrorCode::Unauthenticated, t::Recovery::Authenticate);
   }
-  auto delegated = options.delegation_provider();
+  auto delegated = options.delegation_provider(context, permission);
   if (const auto* rejected = std::get_if<t::Failure>(&delegated)) {
     return *rejected;
   }
@@ -169,8 +171,8 @@ t::Outcome<t::ScheduledTask> decode(const v1::TaskRecord& wire) {
 }
 } // namespace
 
-std::function<t::Outcome<std::string>()> unavailable_scheduler_task_delegation() {
-  return []() -> t::Outcome<std::string> {
+SchedulerTaskClientOptions::DelegationProvider unavailable_scheduler_task_delegation() {
+  return [](const t::SchedulerTaskContext&, t::Permission) -> t::Outcome<std::string> {
     return failure(t::ErrorCode::Unauthenticated, t::Recovery::Authenticate);
   };
 }
@@ -204,7 +206,7 @@ SchedulerTaskClient::create_task(const t::SchedulerTaskContext& context,
       input.target.conversation_id.empty() || (!input.run_at && !input.local_time)) {
     return failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput);
   }
-  auto delegation = delegation_proof(options_);
+  auto delegation = delegation_proof(options_, context, t::Permission::TaskSchedule);
   if (const auto* rejected = std::get_if<t::Failure>(&delegation)) {
     return *rejected;
   }
@@ -250,7 +252,7 @@ t::Outcome<t::ScheduledTask> SchedulerTaskClient::get_task(const t::SchedulerTas
   if (!valid_wire_task_id(task_id)) {
     return failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput);
   }
-  auto delegation = delegation_proof(options_);
+  auto delegation = delegation_proof(options_, context, t::Permission::TaskRead);
   if (const auto* rejected = std::get_if<t::Failure>(&delegation)) {
     return *rejected;
   }
@@ -278,7 +280,7 @@ SchedulerTaskClient::cancel_task(const t::SchedulerTaskContext& context, std::st
   if (!valid_wire_task_id(task_id)) {
     return failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput);
   }
-  auto delegation = delegation_proof(options_);
+  auto delegation = delegation_proof(options_, context, t::Permission::TaskSchedule);
   if (const auto* rejected = std::get_if<t::Failure>(&delegation)) {
     return *rejected;
   }
@@ -308,7 +310,7 @@ SchedulerTaskClient::list_tasks(const t::SchedulerTaskContext& context,
       page_size == 0 || page_size > 100) {
     return failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput);
   }
-  auto delegation = delegation_proof(options_);
+  auto delegation = delegation_proof(options_, context, t::Permission::TaskRead);
   if (const auto* rejected = std::get_if<t::Failure>(&delegation)) {
     return *rejected;
   }

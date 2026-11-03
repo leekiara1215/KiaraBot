@@ -142,6 +142,10 @@ struct ProcessConfig {
   // lifecycle participant's platform-identity ListTasks/CancelTask. Absent keeps both paths
   // fail-closed (CapabilityNotSupported/UPSTREAM_UNAVAILABLE, never fabricated results).
   std::optional<std::string> scheduler_endpoint = std::nullopt;
+  // P05b-5/B1: Runtime-only sealed short-lived instance-parent delegation file. The Control/
+  // deployment refresher owns writes; Runtime validates 0600 regular-file/JSON/expiry/instance/
+  // permission and exchanges the token, never caches it beyond expiry. Absent keeps fail-closed.
+  std::optional<std::string> instance_delegation_sealed_file = std::nullopt;
   // Scheduler-only: Runtime internal mTLS endpoint used to deliver TimerTriggered handoffs.
   std::optional<std::string> runtime_endpoint = std::nullopt;
   // Host-only: deployment identity, package/profile allowlists and local journal path.

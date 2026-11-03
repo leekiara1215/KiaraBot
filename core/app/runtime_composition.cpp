@@ -26,12 +26,14 @@
 #include "kiarabot/core/application/target/runtime_storage_application.hpp"
 #include "kiarabot/core/application/target/runtime_task_application.hpp"
 #include "kiarabot/core/runtime/platform/host_bridge_server.hpp"
+#include "kiarabot/core/runtime/platform/instance_delegation_provider.hpp"
 #include "kiarabot/core/runtime/platform/peer_certificate.hpp"
 #include "kiarabot/core/runtime/platform/runtime_bridge.hpp"
 #include "kiarabot/core/runtime/platform/runtime_identity_client.hpp"
 #include "kiarabot/core/runtime/platform/runtime_model_client.hpp"
 #include "kiarabot/core/runtime/platform/runtime_rpc.hpp"
 #include "kiarabot/core/runtime/platform/scheduler_task_client.hpp"
+#include "kiarabot/core/runtime/platform/sealed_instance_delegation_source.hpp"
 #include "kiarabot/core/runtime/platform/service_rpc.hpp"
 #include "kiarabot/infrastructure/postgres/factories.hpp"
 #include "postgres_service.hpp"
@@ -316,6 +318,7 @@ struct State {
   std::unique_ptr<target::RuntimeBridgeApplication> bridge;
   std::unique_ptr<target::HostLifecycleParticipantPort> host_lifecycle;
   std::unique_ptr<platform::RuntimeModelClient> model_client;
+  std::unique_ptr<platform::RuntimeInstanceDelegationProvider> instance_delegation;
   std::unique_ptr<target::SchedulerTaskPort> scheduler_tasks;
   std::unique_ptr<target::SchedulerTaskPort> scheduler_lifecycle_tasks;
   std::unique_ptr<target::SchedulerLifecycleParticipantPort> scheduler_lifecycle;
@@ -464,9 +467,37 @@ compose_runtime_service(const platform::ProcessConfig& config) {
             ssl.pem_root_certs = config.tls.ca;
             ssl.pem_cert_chain = config.tls.certificate;
             ssl.pem_private_key = config.tls.private_key;
+            platform::SchedulerTaskClientOptions::DelegationProvider task_delegation =
+                platform::unavailable_scheduler_task_delegation();
+            if (config.instance_delegation_sealed_file) {
+              // B1 sealed short-lived material from Control/deployment. Runtime only validates and
+              // exchanges it; no token is invented, extended or written back.
+              if (!state->identity_client) {
+                return {};
+              }
+              auto source = platform::SealedInstanceDelegationSource::create(
+                  {*config.instance_delegation_sealed_file});
+              if (const auto* failure = std::get_if<target::Failure>(&source)) {
+                return {};
+              }
+              std::shared_ptr<platform::InstanceParentDelegationSource> parent_source(std::move(
+                  std::get<std::unique_ptr<platform::SealedInstanceDelegationSource>>(source)));
+              auto provider = platform::RuntimeInstanceDelegationProvider::create(
+                  {std::move(parent_source), config.tls.certificate, state->identity_client.get(),
+                   std::chrono::milliseconds{5000}});
+              if (const auto* failure = std::get_if<target::Failure>(&provider)) {
+                return {};
+              }
+              state->instance_delegation = std::move(
+                  std::get<std::unique_ptr<platform::RuntimeInstanceDelegationProvider>>(provider));
+              auto* instance_delegation = state->instance_delegation.get();
+              task_delegation = [instance_delegation](const target::SchedulerTaskContext& context,
+                                                      target::Permission permission) {
+                return instance_delegation->scheduler_task_delegation(context, permission);
+              };
+            }
             auto client = platform::SchedulerTaskClient::create(
-                {*config.scheduler_endpoint, grpc::SslCredentials(ssl),
-                 platform::unavailable_scheduler_task_delegation(),
+                {*config.scheduler_endpoint, grpc::SslCredentials(ssl), task_delegation,
                  std::chrono::milliseconds{5000}});
             if (const auto* failure = std::get_if<target::Failure>(&client)) {
               return {};

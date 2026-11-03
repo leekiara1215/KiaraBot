@@ -39,6 +39,10 @@ decode_delegation_claims(std::string_view proof, const target::Sha256Digest& lea
 // RuntimeAuthorizationPort (online current authority) and the PeerAuthorizer (verified delegation
 // metadata + actual inbound certificate binding). Failures are stable, fail-closed and never
 // become an allow; availability reflects the transport channel only.
+struct ExchangedDelegation {
+  std::string proof;
+  target::TimePoint expires_at;
+};
 class RuntimeIdentityClient final : public target::RuntimeAuthorizationPort {
 public:
   static target::Outcome<std::unique_ptr<RuntimeIdentityClient>>
@@ -55,6 +59,15 @@ public:
   // still decide every business permission in check().
   target::Outcome<target::AuthenticationContext> authenticate(grpc::ServerContext& transport,
                                                               const v1::RequestContext& request);
+  // P05b-5: Runtime uses its real mTLS leaf as the Exchange caller certificate and asks Identity
+  // to turn a short-lived instance-parent proof (subject=plugin instance, audience=runtime, hops1)
+  // into an audience=scheduler hops2 child proof. The returned proof is opaque; the caller keeps
+  // it in memory only and the Scheduler still verifies/authorizes it online.
+  target::Outcome<ExchangedDelegation>
+  exchange_delegation(std::string_view parent_proof, target::Service audience,
+                      const std::vector<target::ResourceRef>& scope,
+                      const std::vector<target::Permission>& permissions,
+                      const target::Sha256Digest& caller_certificate);
 
 private:
   explicit RuntimeIdentityClient(RuntimeIdentityClientOptions options);

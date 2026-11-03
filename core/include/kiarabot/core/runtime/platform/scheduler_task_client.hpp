@@ -11,6 +11,7 @@
 #include <grpcpp/grpcpp.h>
 #include <kiarabot/v1/scheduler.grpc.pb.h>
 
+#include "kiarabot/core/domain/target/identity_permissions.hpp"
 #include "kiarabot/core/ports/target/scheduler_task.hpp"
 
 namespace kiarabot::core::platform {
@@ -21,7 +22,9 @@ struct SchedulerTaskClientOptions {
   // Runtime's current delegation proof for audience=scheduler (plugin task path). P05b-class
   // delegation acquisition is not yet confirmed; production composition installs a fail-closed
   // provider until it is. The P13h-2 lifecycle client instead sets platform_identity below.
-  std::function<target::Outcome<std::string>()> delegation_provider;
+  using DelegationProvider = std::function<target::Outcome<std::string>(
+      const target::SchedulerTaskContext&, target::Permission)>;
+  DelegationProvider delegation_provider;
   std::chrono::milliseconds maximum_budget{5000};
   // P13h-2: true selects the Runtime mTLS platform identity path (no user delegation) used only
   // for ListTasks/CancelTask by the lifecycle participant. Scheduler P13h-1 authorizes exactly
@@ -60,6 +63,6 @@ private:
 };
 
 // Fail-closed provider used until Runtime delegation acquisition for Scheduler exists.
-std::function<target::Outcome<std::string>()> unavailable_scheduler_task_delegation();
+SchedulerTaskClientOptions::DelegationProvider unavailable_scheduler_task_delegation();
 
 } // namespace kiarabot::core::platform

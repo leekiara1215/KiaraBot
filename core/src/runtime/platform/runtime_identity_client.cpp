@@ -486,6 +486,102 @@ RuntimeIdentityClient::check(const target::RuntimeAuthorizationRequest& request)
   }
 }
 
+target::Outcome<ExchangedDelegation>
+RuntimeIdentityClient::exchange_delegation(std::string_view parent_proof, target::Service audience,
+                                           const std::vector<target::ResourceRef>& scope,
+                                           const std::vector<target::Permission>& permissions,
+                                           const target::Sha256Digest& caller_certificate) {
+  try {
+    if (parent_proof.empty() || parent_proof.size() > 32768 || scope.empty() ||
+        permissions.empty() || !stub_) {
+      return unauthenticated();
+    }
+    for (const unsigned char character : parent_proof) {
+      if (character < 33 || character > 126) {
+        return unauthenticated();
+      }
+    }
+    std::string_view audience_text;
+    switch (audience) {
+    case target::Service::Model:
+      audience_text = "model";
+      break;
+    case target::Service::Scheduler:
+      audience_text = "scheduler";
+      break;
+    default:
+      return failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput);
+    }
+    v1::IdentityExchangeDelegationRequest input;
+    auto* context = input.mutable_context();
+    const auto request_id = random_uuid();
+    const auto trace_id = random_uuid();
+    if (request_id.empty() || trace_id.empty()) {
+      return unavailable();
+    }
+    context->set_request_id(request_id);
+    context->set_trace_id(trace_id);
+    const auto started = now();
+    auto deadline = started + std::min(options_.budget, options_.maximum_budget);
+    if (!timestamp(deadline, context->mutable_deadline())) {
+      return failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput);
+    }
+    input.set_parent_proof(std::string{parent_proof});
+    input.set_audience(std::string{audience_text});
+    for (const auto& resource : scope) {
+      const auto encoded = codec::to_wire(resource);
+      const auto* wire = std::get_if<v1::ResourceRef>(&encoded);
+      if (!wire) {
+        return failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput);
+      }
+      *input.mutable_scope()->add_resources() = *wire;
+    }
+    for (const auto permission : permissions) {
+      const auto encoded = codec::to_wire(permission);
+      const auto* wire = std::get_if<v1::Permission>(&encoded);
+      if (!wire) {
+        return failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput);
+      }
+      input.add_permissions(*wire);
+    }
+    input.set_client_certificate_sha256(
+        std::string(reinterpret_cast<const char*>(caller_certificate.bytes.data()),
+                    caller_certificate.bytes.size()));
+    grpc::ClientContext call;
+    call.set_deadline(std::chrono::system_clock::time_point{
+        std::chrono::duration_cast<std::chrono::system_clock::duration>(
+            deadline.time_since_epoch())});
+    v1::IdentityExchangeDelegationResponse output;
+    const auto status = stub_->ExchangeDelegation(&call, input, &output);
+    if (!status.ok()) {
+      return grpc_failure(status);
+    }
+    if (!output.has_delegation() || output.delegation().proof().empty() ||
+        output.delegation().proof().size() > 32768 ||
+        output.delegation().audience() != audience_text) {
+      return failure(t::ErrorCode::Internal, t::Recovery::QuerySameIdentity,
+                     t::Acceptance::Unknown);
+    }
+    const auto expires = codec::from_wire(output.delegation().expires_at());
+    const auto* expires_at = std::get_if<t::TimePoint>(&expires);
+    if (!expires_at || *expires_at <= now()) {
+      return unauthenticated();
+    }
+    if (output.delegation().business_hops() != 2) {
+      return failure(t::ErrorCode::Internal, t::Recovery::QuerySameIdentity,
+                     t::Acceptance::Unknown);
+    }
+    ExchangedDelegation result;
+    result.proof = output.delegation().proof();
+    result.expires_at = *expires_at;
+    return result;
+  } catch (const std::bad_alloc&) {
+    return unavailable();
+  } catch (...) {
+    return failure(t::ErrorCode::Internal, t::Recovery::QuerySameIdentity, t::Acceptance::Unknown);
+  }
+}
+
 target::Outcome<target::AuthenticationContext>
 RuntimeIdentityClient::authenticate(grpc::ServerContext& transport,
                                     const v1::RequestContext& request) {
