@@ -378,6 +378,101 @@ def scenario(root, port, pg_bin, binaries):
             finally:
                 runtime_channel.close()
 
+            # ---- P05b-6: admin trigger -> sealed file -> strict reader ----
+            sealed_dir = root / 'delegations'
+            sealed_dir.mkdir(mode=0o700)
+            token_file = root / 'admin-token'
+            token_file.write_text(access + '\n')
+            token_file.chmod(0o600)
+            sealed_config = {
+                'identity_endpoint': identity_endpoint,
+                'ca_file': str(tls / 'ca.pem'),
+                'control_certificate_file': str(tls / 'control.pem'),
+                'control_private_key_file': str(tls / 'control.key'),
+                'instance_id': instance_id,
+                'installation_id': installation_id,
+                'output_dir': str(sealed_dir),
+                'token_file': str(token_file),
+            }
+            sealed_config_file = root / 'sealed-refresh.json'
+            sealed_config_file.write_text(json.dumps(sealed_config))
+            sealed_config_file.chmod(0o600)
+            refresh_tool = REPO / 'scripts/deploy/instance-delegation-refresh'
+            refresh = subprocess.run(
+                [sys.executable, str(refresh_tool), '--config', str(sealed_config_file),
+                 '--once'], env=os.environ.copy(), capture_output=True, text=True, timeout=30)
+            require(refresh.returncode == 0,
+                    f'sealed refresh failed: {refresh.stderr.strip()[-200:]}')
+            sealed_path = sealed_dir / ('instance-delegation-' + instance_id + '.json')
+            sys.path.insert(0, str(REPO / 'scripts/deploy'))
+            import sealed_delegation
+            first_sealed = sealed_delegation.read_sealed_delegation(
+                str(sealed_path), expected_instance=instance_id,
+                expected_installation=installation_id)
+            require(first_sealed['expires_at'] - first_sealed['issued_at'] <= 56,
+                    'sealed file TTL')
+            require(access not in refresh.stdout and access not in refresh.stderr,
+                    'sealed tool leaked admin token')
+            # Idempotent refresh: same file path, valid content, no temporary residue.
+            second = subprocess.run(
+                [sys.executable, str(refresh_tool), '--config', str(sealed_config_file),
+                 '--once'], env=os.environ.copy(), capture_output=True, text=True, timeout=30)
+            require(second.returncode == 0, 'sealed refresh not idempotent')
+            require(sealed_delegation.read_sealed_delegation(
+                str(sealed_path), expected_instance=instance_id)['instance_id'] == instance_id,
+                'sealed refresh replaced with invalid content')
+            require(sorted(entry.name for entry in sealed_dir.iterdir()) ==
+                    ['instance-delegation-' + instance_id + '.json'],
+                    'sealed refresh left temporary files')
+            # Wrong instance must be rejected by Identity and must not create a file.
+            wrong_config = dict(sealed_config)
+            wrong_instance = str(uuid.uuid4())
+            wrong_config['instance_id'] = wrong_instance
+            wrong_path = root / 'sealed-wrong.json'
+            wrong_path.write_text(json.dumps(wrong_config))
+            wrong_path.chmod(0o600)
+            wrong_run = subprocess.run(
+                [sys.executable, str(refresh_tool), '--config', str(wrong_path), '--once'],
+                env=os.environ.copy(), capture_output=True, text=True, timeout=30)
+            require(wrong_run.returncode != 0, 'wrong instance sealed refresh must fail')
+            require(not (sealed_dir / ('instance-delegation-' + wrong_instance + '.json')).exists(),
+                    'wrong instance created a sealed file')
+            # Unauthorized token must not replace the valid file.
+            bad_token = root / 'bad-token'
+            bad_token.write_text('not-an-admin-token\n')
+            bad_token.chmod(0o600)
+            bad_config = dict(sealed_config)
+            bad_config['token_file'] = str(bad_token)
+            bad_path = root / 'sealed-bad-token.json'
+            bad_path.write_text(json.dumps(bad_config))
+            bad_path.chmod(0o600)
+            before_bad = sealed_path.read_bytes()
+            bad_run = subprocess.run(
+                [sys.executable, str(refresh_tool), '--config', str(bad_path), '--once'],
+                env=os.environ.copy(), capture_output=True, text=True, timeout=30)
+            require(bad_run.returncode != 0, 'unauthorized sealed refresh must fail')
+            require(sealed_path.read_bytes() == before_bad,
+                    'unauthorized sealed refresh replaced the valid file')
+            # Existing symlink target must be rejected without following/replacing it.
+            link_dir = root / 'delegations-link'
+            link_dir.mkdir(mode=0o700)
+            victim = root / 'victim'
+            victim.write_text('{}')
+            victim.chmod(0o600)
+            link_path = link_dir / ('instance-delegation-' + instance_id + '.json')
+            link_path.symlink_to(victim)
+            link_config = dict(sealed_config)
+            link_config['output_dir'] = str(link_dir)
+            link_config_path = root / 'sealed-link.json'
+            link_config_path.write_text(json.dumps(link_config))
+            link_config_path.chmod(0o600)
+            link_run = subprocess.run(
+                [sys.executable, str(refresh_tool), '--config', str(link_config_path), '--once'],
+                env=os.environ.copy(), capture_output=True, text=True, timeout=30)
+            require(link_run.returncode != 0, 'symlink sealed target must be rejected')
+            require(victim.read_text() == '{}' and link_path.is_symlink(),
+                    'symlink target was followed or replaced')
+
             # Negative: whitelist rejects model.chat bound to an instance resource.
             wrong_permission = None
             try:

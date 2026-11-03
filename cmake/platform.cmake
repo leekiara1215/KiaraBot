@@ -343,6 +343,12 @@ set_tests_properties(p05_runtime_identity_e2e PROPERTIES
   LABELS "p05;p04;p12;p14;integration;security;fault" TIMEOUT 180
   ENVIRONMENT "PATH=${RUNTIME_E2E_OPENSSL_BIN_DIR}:${RUNTIME_E2E_PYTHON_BIN_DIR}:$ENV{PATH};PYTHONPATH=${CMAKE_SOURCE_DIR}/sdk/python/build/generated")
 
+add_test(NAME p05b_sealed_delegation_file COMMAND "${KIARABOT_TARGET_PYTHON}"
+  "${CMAKE_SOURCE_DIR}/tests/architecture/p05b_sealed_delegation_test.py")
+set_tests_properties(p05b_sealed_delegation_file PROPERTIES
+  LABELS "p05b;p05;unit;security" TIMEOUT 60
+  ENVIRONMENT "PYTHONPATH=${CMAKE_SOURCE_DIR}/scripts/deploy")
+
 add_test(NAME p03_service_composition COMMAND "${KIARABOT_TARGET_PYTHON}"
   ${CMAKE_SOURCE_DIR}/core/tests/platform/service_composition_test.py
   $<TARGET_FILE:kiarabot_service_composition_driver> $<TARGET_FILE:kiarabot_service_rpc_client>)
