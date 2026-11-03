@@ -120,6 +120,16 @@ P10 Scheduler 的 domain/RPC/PG16.4/三进程 mTLS 交接已本地实测通过�
 | `IdentityPrincipalSummary`、`IdentityListPrincipalsRequest`、`IdentityListPrincipalsResponse`、`IdentityPrincipalSummary.principal_id`、`IdentityPrincipalSummary.binding`、`IdentityPrincipalSummary.principal_kind`、`IdentityPrincipalSummary.version`、`IdentityPrincipalSummary.state`、`IdentityPrincipalSummary.roles`、`IdentityListPrincipalsRequest.context`、`IdentityListPrincipalsRequest.page`、`IdentityListPrincipalsRequest.state_filter`、`IdentityListPrincipalsResponse.principals`、`IdentityListPrincipalsResponse.page`、`IdentityListPrincipalsResponse.checked_at`、`operations.listPrincipals` | implemented | P12l：Identity `ListPrincipals` 人类主体目录（Control platform peer、identity.principal.read、获授资源范围过滤、principal-id keyset 分页、checked_at/roles）经真实 PG16.4 + 真 mTLS RPC fixture 与 Control 转发验收；OpenAPI x-target-contract-status 按认证投影规则仍 not_implemented，REST x-contract-status 已翻 |
 <!-- execution-scopes:end -->
 
+**P13h-1 Scheduler 平台 peer 授权语义注记（2026-11-03）**：`SchedulerService.ListTasks` 与
+`CancelTask` 在原有 “Runtime with instance delegation or scoped Control” caller 之外，新增
+**仅这两个方法**的 Runtime 平台 peer 路径：真实入站 mTLS 叶 SAN `spiffe://kiarabot/runtime…`
+命中 Scheduler 部署级 `runtime_peers` allowlist（证书 SHA-256 + instance/installation/account +
+`task.read`/`task.schedule`）后，不需要用户 delegation；ListTasks 只返回该 instance 且同
+installation/account 的任务，CancelTask 额外核对 task owner/installation/account，跨实例/
+跨安装/跨账号拒绝。其他 Scheduler 方法、以及这两个方法的 Control/用户 delegation 路径保持原
+语义。无新增 proto 字段/权限编号/RPC 集合。
+
+
 ### P12k REST marker 审计（2026-11-02，main@3f43c8f）
 
 REST `x-contract-status` 不是 target 执行范围的第二份状态：带 `x-owner-rpc` 的 operation 按

@@ -1620,3 +1620,17 @@ BeginDelete 同幂等键幂等；Restore 不复活 bridge credential/（test fak
 再次 BeginDelete 会重新调度 participants。命令快照 identity 现包含实例 version，避免恢复后
 复用上一轮 StopExecution receipt 误判 Done。该 e2e 明确 non-production，不能作为 P13 生产
 退出证据。
+
+
+### P13h-1 Scheduler 受限 Runtime 平台 peer 授权（2026-11-03）
+
+Scheduler 对 Runtime 平台 peer 开放且仅开放 `ListTasks`/`CancelTask` 两个方法：真实入站 mTLS
+叶证书必须带 `spiffe://kiarabot/runtime…` URI SAN 且 DER SHA-256 命中 Scheduler 配置
+`runtime_peers` 的显式项；每项绑定 instance/installation/account 与 `task.read`/`task.schedule`
+能力。平台路径不要求用户 delegation（P10b-2 platform peer 语义的对称收窄），但必须
+`ResourceScope` 恰好一个 `RESOURCE_INSTANCE` 且等于配置实例；ListTasks 只返回该实例且同
+installation/account 的活动任务，CancelTask 在既有 owner/task_id 查询后复核
+installation/account，跨实例/跨安装/跨账号返回 NOT_FOUND（不泄露存在性），缺能力返回
+PERMISSION_DENIED。其他四个 Scheduler 方法、以及这两个方法的 Control/用户 delegation 路径
+保持原有 authorizer；未命中 allowlist 的证书回退 delegation 路径并最终 fail-closed。无新增
+proto 字段/权限编号/RPC 集合；`runtime_peers` 为空时平台路径关闭。

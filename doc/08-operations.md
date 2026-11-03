@@ -1639,3 +1639,22 @@ adapter 平台调用中崩溃重启后，同 OUTBOX journal 的 claimed 记录�
 并在重连后补报（Action 保持非 known-success、平台侧不重复执行）；重复/乱序平台 message frame
 只产生一个 Runtime 事件及投递 target。验证入口为测试 harness；生产运行仍按超时/未知语义
 fail-closed，不自动重试副作用。
+
+
+## P13h-1 Scheduler Runtime 平台 peer allowlist（2026-11-03）
+
+Scheduler 配置新增可选 `runtime_peers`（仅 Scheduler，schema v1 严格校验）：
+
+```json
+"runtime_peers": [{
+  "certificate_sha256": "<runtime TLS leaf DER SHA-256, 64 lowercase hex>",
+  "instance_id": "<uuid>", "installation_id": "<uuid>", "account_id": "<uuid>",
+  "permissions": ["task.read", "task.schedule"]
+}]
+```
+
+部署要求：Runtime 平台身份先按 Identity `platform_peers` 离线注册；Scheduler allowlist 再显式
+授权具体实例/安装/账号与可调用的两个方法能力。ListTasks 需要 `task.read`，CancelTask 需要
+`task.schedule`；allowlist 为空或不含证书时平台路径 fail-closed，未注册证书无用户 delegation
+时 UNAUTHENTICATED。该配置不改变 Control/用户 delegation 旧路径。生产联合验收仍要求
+BeginDelete 等真实 Host 回执 + Scheduler 清理完成后才 DELETED（P13h-3）。

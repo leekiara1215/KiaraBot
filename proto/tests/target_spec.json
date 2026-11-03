@@ -1202,7 +1202,7 @@
         "RESOURCE_INSTANCE"
       ],
       "exposure": "wire",
-      "status_note": "P10g: P10a Scheduler application/PG v9 + owner mTLS SchedulerService RPC implemented; evidence p10_scheduler_service/rpc/identity, p10_postgres_scheduler, p10_timer_e2e; target real-environment gaps recorded in reports/modules/architecture-p10-scheduler.md"
+      "status_note": "P10g: P10a Scheduler application/PG v9 + owner mTLS SchedulerService RPC implemented; evidence p10_scheduler_service/rpc/identity, p10_postgres_scheduler, p10_timer_e2e; target real-environment gaps recorded in reports/modules/architecture-p10-scheduler.md P13h-1: caller also accepts an mTLS-verified Runtime platform peer only for this method, restricted to deployment-authorized exact instance/installation/account; no user delegation on that path, Control/user delegation semantics unchanged."
     },
     {
       "service": "SchedulerService",
@@ -1248,7 +1248,7 @@
         "RESOURCE_INSTANCE"
       ],
       "exposure": "wire",
-      "status_note": "P10g: P10a Scheduler application/PG v9 + owner mTLS SchedulerService RPC implemented; evidence p10_scheduler_service/rpc/identity, p10_postgres_scheduler, p10_timer_e2e; target real-environment gaps recorded in reports/modules/architecture-p10-scheduler.md"
+      "status_note": "P10g: P10a Scheduler application/PG v9 + owner mTLS SchedulerService RPC implemented; evidence p10_scheduler_service/rpc/identity, p10_postgres_scheduler, p10_timer_e2e; target real-environment gaps recorded in reports/modules/architecture-p10-scheduler.md P13h-1: caller also accepts an mTLS-verified Runtime platform peer only for this method, restricted to deployment-authorized exact instance/installation/account; no user delegation on that path, Control/user delegation semantics unchanged."
     },
     {
       "service": "SchedulerService",

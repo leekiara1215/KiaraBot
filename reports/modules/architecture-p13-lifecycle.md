@@ -25,7 +25,7 @@
 | 保留期与配额（30/180 天、60s 批次、period 配额） | 已实测（应用/PG）；生产规模待环境 | `p13_runtime_lifecycle`、`p03_postgres_database`、`p07`/`p09` 配额测试；长周期/生产数据量未验证 |
 | Host/SDK drain 与 UNKNOWN 不伪 stopped | 已实测 | `p13_host_sdk_drain`（真实 Host+SDK SIGTERM/SIGKILL/重启/journal） |
 | Host participant outbox 收敛 | 部分实测 | `p13_runtime_lifecycle` fake receipt BLOCKED→Done/UNKNOWN；`p08_host_bridge_e2e`（P13e live Stop/Drain 帧 + PG receipt）；**缺 BeginDelete→真实 Host receipt 单链** |
-| Scheduler participant 真实 ListTasks/CancelTask | **未验收（仅 fake 语义）** | `p13_runtime_lifecycle` fake 端口 BLOCKED→Done/离线/超时；生产 composition 未注入 participant，Scheduler 委托未确认（P13f 方案 A/B） |
+| Scheduler participant 真实 ListTasks/CancelTask | **部分实现（P13h-1 Scheduler 侧平台 peer 授权）** | Scheduler 已支持 Runtime 平台 peer 的受限 ListTasks/CancelTask（mTLS+SAN+部署实例 allowlist+归属校验）；Runtime 生产 participant 注入与真实 BeginDelete 联合链路仍待 P13h-3 |
 | BeginDelete/Restore 与真实 Host 单链到 DELETED | **未验收** | 依赖 Scheduler participant 生产路径；P13e 记录 |
 | 跨主机/真实平台故障/生产规模 | 未验收 | P14 环境项 |
 | 指标/告警/集中日志 | 部分实现（最小观测行/审计查询），集中 metrics/告警未交付 | P13d/doc/08 |
