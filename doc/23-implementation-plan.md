@@ -4,7 +4,8 @@
 - 日期：2026-11-02
 - 状态：P00–P14 实现主体已合入 main（P14t/P05b-13 最终基线 `04f7044`；P13 生产退出 PASS（本验收范围）、P11 独立验收 PASS、P10k 真实 Scheduler 任务链 PASS、P05b B1 链完成（安全评审 0 Critical/High；Medium 全部处置：F-1/F-2 已修、F-3/F-4/F-5/F-6 已加固；F-5 host/core 边界文档化）；previous gate **161/161@7b8fb0f/1051.70s**；final exact-HEAD gate @04f7044：**161/162 CTest passed，1025.87s**（`build/logs/recheck-ctest-162320.log`，2026-11-03 16:23:19→16:40:30）；唯一失败 `p08_managed_host_e2e` 35.77s（psql SSL negotiation invalid response，套件负载下时序问题）；孤立复跑 **2/2 Passed 58.64s/56.72s**（Lead 57.39s），判定负载时序 flake，不是断言/实现回归；原生单机栈矩阵 **9 success+1 stable-ok+0 known-gap**）；阶段退出/发布证据矩阵见 [P14t 矩阵](27-phase-exit-evidence.md)，发布门禁见 [P14t 发布清单](28-p14d-release-checklist.md)，最终状态索引见 [P14t 交付状态](../reports/modules/architecture-delivery-status.md)。单机 Docker Compose 六服务已通过本地门禁。两主机/断网、远端 CI/release、真实 QQ/NapCat、真实付费 Provider、生产 CA/密钥/备份离站、部署级错误 Runtime 叶证书仍未验收；P12 host operation/bootstrap_credential 保持 not_implemented（用户确认）；P14 本机 Docker 已就绪，gh 登录暂缓。
 - 依据：[方向基线](19-architecture-direction-baseline.md)、[设计总览](20-detailed-architecture-design.md)、[通信方法](21-service-contract-design.md)、[事务与初始化](22-transactions-and-migration-design.md)
-- 当前授权：单机真实QQ群聊首轮已通过，用户要求关闭运行、记录已确认接入方向并推送；本次不继续开发。下一轮按[接入设计](26-real-qq-onboarding.md)独立推进，插件机制、完整账号管理、多主机等非核心内容继续后移。保留独立提交、主对话审查及换机交接；本文件保留后续目标架构迁移路线，未达到退出条件的阶段不能标为完成。
+- 当前执行（2026-11-03）：按 P04–P14 顺序复验尚未关闭的能力，使用独立 git worktree 并行实施，由 Lead 审查、验证和本地提交。GitHub 登录和推送暂缓。协议/API 语义、模块或服务边界、存储模型、工具链基线变更先由维护者确认。
+- 当前进度：P04 本地收尾门禁通过，P05 正在逐项复验。真实 QQ 测试号已登录，NapCat 状态可读；目标 Runtime 绑定及消息闭环尚待验收。DeepSeek 已登记为禁用配置，付费调用待凭据及预算。详见 [Identity 收尾](../reports/modules/architecture-p04-identity.md) 与 [Runtime 资源](../reports/modules/architecture-p05-runtime.md)。
 
 ## 0. 2026-11-02 P14d 阶段状态汇总
 
@@ -60,8 +61,8 @@ P00–P02 在同一集成工作分支形成目标构建基线；P01 的契约生
 | P01 | 统一目标 proto/API 与内部公共接口 | P00 | 基线完整门禁通过；后续补全契约按各能力另验收 |
 | P02 | 六进程、分层构建与阶段测试门禁 | P01 | 已通过本机完整构建、六进程/图隔离、全仓静态分析和统一门禁 |
 | P03 | 私有 PostgreSQL 库、UoW、收据、outbox/inbox、显式初始化 | P02 | 本机固定环境统一门禁通过：四库typed仓储、原子收据/交接、提交未知及四daemon接线已实测；后续缺陷独立修复 |
-| P04 | Identity 全链路与 Control 最小认证入口 | P03 | 开发中：安全端口已集成，权限/会话应用、安全仓储、crypto及Control认证入口并行实现 |
-| P05 | Runtime 账号/插件资源、代次与注册 | P04 | 未开始 |
+| P04 | Identity 全链路与 Control 最小认证入口 | P03 | 本地收尾通过：23 个 Identity 方法已登记，46/46 集成检查通过；浏览器 WebSocket 空闲撤销另在 P12 验收 |
+| P05 | Runtime 账号/插件资源、代次与注册 | P04 | 精确资源查询和单进程连接替换已复验；目录授权、写操作完整回执与跨重启 Host 注册仍有缺口 |
 | P06 | Adapter 事件→Runtime→Plugin，尝试与续租 | P05 | 未开始 |
 | P07 | SDK Action→Runtime→Adapter→平台替身闭环 | P06 | 未开始 |
 | P08 | 插件宿主、期望状态与配置应用闭环 | P05、P06 | 未开始 |
@@ -70,7 +71,7 @@ P00–P02 在同一集成工作分支形成目标构建基线；P01 的契约生
 | P11 | Model 配置/密钥及调用前后记账 | P05、P03、P04 | 未开始 |
 | P12 | Control 与 Panel 核心运行管理全部接线 | P07–P11 | 未开始 |
 | P13 | 生命周期协调、分类清理与容量观测 | P07–P12 | 已实现 P13a–P13e（含 HostBridge live stop/drain 与共享删除隔离）与 P13g test-only 联合 e2e；用户已批准**限定方案 A**（仅 Scheduler ListTasks/CancelTask，mTLS+白名单+显式授权），P13h-1/2/3 实施中，**生产验收未完成**；生产 Scheduler 委托、真实 Host 回执单链、真实满盘/跨主机仍待验收 |
-| P14 | 跨主机部署、故障矩阵、恢复及统一发布验收 | P13 | 未开始 |
+| P14 | 跨主机部署、故障矩阵、恢复及统一发布验收 | P13 | 本机六服务 Compose 及隔离 PG 备份恢复通过；两主机、生产 CA、离站备份及远端发布仍待验收 |
 
 推荐单人执行顺序为表中顺序。多人实施时，P08/P09/P10/P11 可在公共契约与相应前置通过后分别推进；P12 页面骨架可提前开发，但真实能力完成必须等待业务所有者。并行对话与工作区分配见 [执行记录](../reports/execution/2026-11-01-architecture-parallel.md)；按依赖逐波启动，不让业务线程自行发明共享协议。
 
