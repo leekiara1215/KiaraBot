@@ -71,6 +71,19 @@ std::string document(std::int64_t issued, std::int64_t expires, std::string inst
          ",\"ttl_seconds\":" + std::to_string(expires - issued) + ",\"delegation_proof\":\"" +
          proof + "\"}";
 }
+std::string model_document(std::int64_t issued, std::int64_t expires,
+                           std::string model = "66666666-6666-4666-8666-666666666666",
+                           std::string permissions = R"(["model.chat","model.call.inspect"])") {
+  const auto proof = proof_token(issued, expires);
+  return std::string{"{\"schema_version\":1,\"instance_id\":\""} + kInstance +
+         "\",\"installation_id\":\"" + kInstallation +
+         "\",\"audience\":\"runtime\",\"permissions\":" + permissions +
+         ",\"scope\":[{\"kind\":\"RESOURCE_MODEL\",\"id\":\"" + model +
+         "\"}],\"issued_at\":" + std::to_string(issued) +
+         ",\"expires_at\":" + std::to_string(expires) +
+         ",\"ttl_seconds\":" + std::to_string(expires - issued) + ",\"delegation_proof\":\"" +
+         proof + "\"}";
+}
 t::SchedulerTaskContext context(std::string instance = kInstance) {
   t::SchedulerTaskContext value;
   value.owner = t::InstanceId{std::move(instance)};
@@ -170,7 +183,30 @@ int main() {
                  t::ErrorCode::Unauthenticated),
       "missing file rejected");
 
+  const auto model_path = directory / "instance-delegation-model.json";
+  auto model_source =
+      platform::SealedInstanceDelegationSource::create({path.string(), model_path.string()});
+  check(!std::holds_alternative<t::Failure>(model_source), "model source create");
+  auto& model_reader =
+      *std::get<std::unique_ptr<platform::SealedInstanceDelegationSource>>(model_source);
+  constexpr auto kModel = "66666666-6666-4666-8666-666666666666";
+  write(model_path, model_document(now, now + 30));
+  auto valid_model = model_reader.acquire_model(context(), kModel, t::Permission::ModelChat);
+  check(!std::holds_alternative<t::Failure>(valid_model), "valid model sealed proof returned");
+  check(failure_is(model_reader.acquire_model(context(), "77777777-7777-4777-8777-777777777777",
+                                              t::Permission::ModelChat),
+                   t::ErrorCode::Unauthenticated),
+        "cross-model scope rejected");
+  write(model_path, model_document(now, now + 30, kModel, R"(["model.chat","task.read"])"));
+  check(failure_is(model_reader.acquire_model(context(), kModel, t::Permission::ModelChat),
+                   t::ErrorCode::Unauthenticated),
+        "mixed task/model permissions rejected");
+  write(model_path, document(now, now + 30));
+  check(failure_is(model_reader.acquire_model(context(), kModel, t::Permission::ModelChat),
+                   t::ErrorCode::Unauthenticated),
+        "task envelope rejected by model reader");
+
   std::filesystem::remove_all(directory);
-  std::cout << "P05b-5 sealed delegation source matrix passed\n";
+  std::cout << "P05b-8 sealed delegation source matrix passed\n";
   return 0;
 }

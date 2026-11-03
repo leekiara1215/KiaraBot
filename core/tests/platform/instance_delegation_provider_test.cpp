@@ -71,9 +71,16 @@ public:
   t::Outcome<platform::InstanceParentDelegation> acquire(const t::SchedulerTaskContext&,
                                                          t::Permission) override {
     ++calls;
-    if (failure) {
+    if (failure)
       return *failure;
-    }
+    return platform::InstanceParentDelegation{proof, platform::delegation_provider_now() +
+                                                         std::chrono::seconds{30}};
+  }
+  t::Outcome<platform::InstanceParentDelegation>
+  acquire_model(const t::SchedulerTaskContext&, std::string_view, t::Permission) override {
+    ++calls;
+    if (failure)
+      return *failure;
     return platform::InstanceParentDelegation{proof, platform::delegation_provider_now() +
                                                          std::chrono::seconds{30}};
   }
@@ -91,15 +98,19 @@ public:
     if (reject) {
       return grpc::Status(grpc::StatusCode::PERMISSION_DENIED, "rejected");
     }
-    if (request->scope().resources_size() != 2 || request->scope().resources(0).id() != kInstance ||
-        request->scope().resources(1).id() != kInstallation ||
+    const bool model = request->audience() == "model";
+    if ((!model && (request->scope().resources_size() != 2 ||
+                    request->scope().resources(0).id() != kInstance ||
+                    request->scope().resources(1).id() != kInstallation)) ||
+        (model && (request->scope().resources_size() != 1 ||
+                   request->scope().resources(0).kind() != v1::RESOURCE_MODEL)) ||
         request->client_certificate_sha256().size() != 32 ||
         request->parent_proof() != "parent-proof") {
       return grpc::Status(grpc::StatusCode::UNAUTHENTICATED, "bad exchange request");
     }
     auto* proof = response->mutable_delegation();
-    proof->set_proof("child-proof");
-    proof->set_audience("scheduler");
+    proof->set_proof(model ? "model-child-proof" : "child-proof");
+    proof->set_audience(request->audience());
     proof->set_business_hops(2);
     auto* expires = proof->mutable_expires_at();
     const auto seconds = std::chrono::duration_cast<std::chrono::seconds>(
@@ -203,6 +214,22 @@ int main() {
   const auto cached = delegation->scheduler_task_delegation(context(), t::Permission::TaskRead);
   check(!std::holds_alternative<t::Failure>(cached) && identity_service.calls == 3,
         "short cache avoids repeated exchange");
+
+  constexpr auto kModel = "66666666-6666-4666-8666-666666666666";
+  const auto model = delegation->model_chat_delegation(context(), kModel, t::Permission::ModelChat);
+  check(!std::holds_alternative<t::Failure>(model) &&
+            std::get<std::string>(model) == "model-child-proof",
+        "model parent exchange returns model child proof");
+  const auto model_cached =
+      delegation->model_chat_delegation(context(), kModel, t::Permission::ModelChat);
+  check(!std::holds_alternative<t::Failure>(model_cached) && identity_service.calls == 4,
+        "model cache avoids repeated exchange");
+  identity_service.reject = true;
+  check(failure_is(delegation->model_chat_delegation(
+                       context(), "77777777-7777-4777-8777-777777777777", t::Permission::ModelChat),
+                   t::ErrorCode::PermissionDenied),
+        "cross-model denial preserved");
+  identity_service.reject = false;
 
   // Different instance must not reuse the cached proof or be silently accepted; the fake server
   // rejects the mismatched scope and the provider surfaces the denial.
