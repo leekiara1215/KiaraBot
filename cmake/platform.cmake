@@ -627,7 +627,8 @@ if(EXISTS "${KIARABOT_TARGET_PYTHON}")
     --test-argument $<TARGET_FILE:kiarabot-runtime>
     --test-argument $<TARGET_FILE:kiarabot-model>
     --test-argument $<TARGET_FILE:kiarabot_postgres_runtime_bridge_seed>
-    --test-argument $<TARGET_FILE:kiarabot_p05b_model_seed>)
+    --test-argument $<TARGET_FILE:kiarabot_p05b_model_seed>
+    --test-argument $<TARGET_FILE:kiarabot-plugin-host>)
   set_tests_properties(p05b_model_chain_e2e PROPERTIES
     LABELS "p05b;p11;integration;security;fault" TIMEOUT 420
     WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
@@ -646,6 +647,7 @@ if(EXISTS "${KIARABOT_TARGET_PYTHON}")
     --test-argument $<TARGET_FILE:kiarabot-model>
     --test-argument $<TARGET_FILE:kiarabot_postgres_runtime_bridge_seed>
     --test-argument $<TARGET_FILE:kiarabot_p05b_model_seed>
+    --test-argument $<TARGET_FILE:kiarabot-plugin-host>
     --test-argument=--mode --test-argument=expect-fail-closed)
   set_tests_properties(p05b_model_chain_fail_closed_e2e PROPERTIES
     LABELS "p05b;p11;integration;security;fault" TIMEOUT 300

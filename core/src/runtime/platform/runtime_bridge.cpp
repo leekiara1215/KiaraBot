@@ -1,11 +1,11 @@
 #include "kiarabot/core/runtime/platform/runtime_bridge.hpp"
 
 #include <algorithm>
-#include <cstdio>
 #include <array>
 #include <atomic>
 #include <chrono>
 #include <cstddef>
+#include <cstdio>
 #include <future>
 #include <iostream>
 #include <mutex>
@@ -1981,13 +1981,12 @@ public:
             const auto& profile =
                 std::get<target::RuntimeBridgeApplication::BridgePluginProfile>(installed_profile);
             if (!profile.installation) {
-              *host_response->mutable_error() = wire_error(
-                  target::ErrorCode::PermissionDenied, host.request_id(), host.trace_id());
+              *host_response->mutable_error() = wire_error(target::ErrorCode::PermissionDenied,
+                                                           host.request_id(), host.trace_id());
             } else if (command.logical_call_id.empty() || command.model.empty() ||
                        command.messages.empty()) {
-              *host_response->mutable_error() =
-                  wire_error(target::ErrorCode::InvalidArgument, host.request_id(),
-                             host.trace_id());
+              *host_response->mutable_error() = wire_error(target::ErrorCode::InvalidArgument,
+                                                           host.request_id(), host.trace_id());
             } else {
               command.installation = *profile.installation;
               auto reply = options_.model->chat(command, *parsed);

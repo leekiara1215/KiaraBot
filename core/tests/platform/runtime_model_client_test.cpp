@@ -101,12 +101,11 @@ std::unique_ptr<p::RuntimeModelClient> client_for(const std::string& endpoint,
                                                   bool delegation_available = true) {
   auto created = p::RuntimeModelClient::create(
       {endpoint, grpc::InsecureChannelCredentials(),
-       delegation_available
-           ? p::ModelDelegationProvider{[](const t::RuntimeModelChatRequest&)
-                                            -> t::Outcome<std::string> {
-               return std::string{"delegation-proof"};
-             }}
-           : p::unavailable_model_delegation(),
+       delegation_available ? p::ModelDelegationProvider{[](const t::RuntimeModelChatRequest&)
+                                                             -> t::Outcome<std::string> {
+         return std::string{"delegation-proof"};
+       }}
+                            : p::unavailable_model_delegation(),
        30000ms});
   require(std::holds_alternative<std::unique_ptr<p::RuntimeModelClient>>(created), "client create");
   return std::move(std::get<std::unique_ptr<p::RuntimeModelClient>>(created));

@@ -105,8 +105,8 @@ RuntimeModelClient::chat(const t::RuntimeModelChatRequest& request, t::TimePoint
     }
     v1::ModelGatewayChatRequest input;
     auto* context = input.mutable_context();
-    const std::string request_id = request.request_id.empty() ? request.logical_call_id
-                                                              : request.request_id;
+    const std::string request_id =
+        request.request_id.empty() ? request.logical_call_id : request.request_id;
     context->set_request_id(request_id);
     // Model requires both transport identifiers to be canonical UUIDs; the plugin host request
     // carries one id, so reuse it as the trace id rather than sending an empty value.

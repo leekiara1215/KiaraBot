@@ -659,3 +659,32 @@ composition 的 Identity client 以 500ms/1s 创建，导致 Exchange 在 Identi
 现 `RuntimeIdentityClientOptions` 增加仅用于 Exchange 的 `delegation_budget`（默认 2s）/
 `delegation_maximum_budget`（默认 5s），`create()` 校验 >0 且 budget<=maximum<=30s；CheckAuthorization
 仍用 500ms/1s。无 proto/RPC/权限/配置字段变更，sealed task/model provider 无需改配置。
+
+### P05b-4 Runtime→Model 单链路组合根（2026-11-03）
+
+P05b-4 在 P05b-8 共享 provider 之上完成生产接线：Runtime composition 在 task 或 model
+sealed 文件配置存在时创建同一个 `RuntimeInstanceDelegationProvider`；`RuntimeModelClient`
+改为 per-request delegation provider，请求携带经插件 profile 权威解析的 installation 和
+logical_call_id，provider 只对当前 model/instance/installation 取子委托。PluginBridge 向插件
+advertise `host.model.v1`，`HostRequest.model_chat` 仅在插件获授 `model.chat` 后进入 Model。
+
+修复的集成缺陷（有真实 e2e 证据）：
+- SDK `PluginContext.model_chat` 曾二次读取 `HostResponse.host_response`；`_call` 已解包
+  HostResponse，导致 Model/Provider 成功后插件仍抛错。按 `HostResponse.model_chat
+  (ModelChatResponse)` 直接返回。
+- RuntimeModelClient 发 `ModelGatewayChatRequest` 时曾缺 trace_id/idempotency_key，Model 在
+  Provider 前以 INVALID_ARGUMENT/TIMEOUT 拒绝；现 trace_id 取 request_id、
+  idempotency_key 取 logical_call_id。
+- PluginBridge profile 的 installation 原取自可省略的注册帧 `installation_id`，改由已认证
+  bootstrap 解析出的 instance.installation 权威赋值；缺 installation 一律 PERMISSION_DENIED。
+- `RuntimeIdentityClient` 的 CheckAuthorization 热路径预算为 500ms/1s；ExchangeDelegation
+  需要两遍在线授权 + 签名，沿用热路径预算会在第二遍授权时耗尽 request deadline 并得到
+  InvalidArgument。Exchange 使用独立的 bounded `delegation_budget`（默认 2s / max 5s），
+  CheckAuthorization 预算不变；Identity 仍按 request context deadline 做最终校验。
+
+证据：真实 Identity/Runtime/Model + 真实 TLS PluginBridge SDK plugin + 本地真实 HTTP Provider
+e2e `p05b_model_chain_e2e` 覆盖 success（reply/usage/auth/stream=false）、Provider
+401/429/500/timeout/invalid_json 稳定错误映射、restored success；无 sealed 父委托的
+`p05b_model_chain_fail_closed_e2e` 保持 UNAUTHENTICATED 且 Provider 0 请求。付费外部 Provider
+与目标六服务栈 live 仍属 T07b/P14 环境项；managed Host+P08e 组合由后续矩阵补齐。
+

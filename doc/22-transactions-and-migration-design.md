@@ -382,3 +382,14 @@ P05b-9（2026-11-03）：ExchangeDelegation 的 Runtime client 独立 2s/5s 预�
 再次 BeginDelete 生成新的 HostCommand identity（含 instance version）并重新调度；Scheduler
 task 的 `account` 为空（CreateTask 契约不带 account），归属以 owner/installation 为权威。
 不新增迁移；清理仍按既有 30/180 天和 receipt 保留策略执行。
+
+## P05b-4 Runtime→Model 委托事务边界（2026-11-03）
+
+Runtime→Model 的 sealed 父委托读取和 Identity ExchangeDelegation 不在 Runtime 本地事务内：
+Exchange 由 Identity 的两次授权读 + 签名完成，Runtime 只把子委托作为一次 Model 请求的调用
+上下文；Model 的 call intent/result 仍按 P11 两事务语义持久化，Runtime 不写本地 Model 调用
+表、不把远程结果当本地事务提交。CheckAuthorization 保持 500ms/1s 热路径预算，
+ExchangeDelegation 使用独立的 bounded 2s/5s 上限，避免热路径预算误杀两遍在线授权的换证；
+无 schema/迁移变化，Budget 是进程内配置而非数据库状态。
+
+

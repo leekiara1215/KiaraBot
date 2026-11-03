@@ -419,6 +419,33 @@ compose_runtime_service(const platform::ProcessConfig& config) {
           }
           state->host_lifecycle = std::move(
               std::get<std::unique_ptr<target::HostLifecycleParticipantPort>>(host_lifecycle));
+          // Shared B1 sealed source/provider for task and model envelopes. Runtime only validates
+          // and exchanges the material; no token is invented, extended or written back. Model-only
+          // deployments configure just model_instance_delegation_sealed_file.
+          if (config.instance_delegation_sealed_file ||
+              config.model_instance_delegation_sealed_file) {
+            if (!state->identity_client) {
+              return {};
+            }
+            const auto& task_path = config.instance_delegation_sealed_file;
+            const auto& model_path = config.model_instance_delegation_sealed_file;
+            const std::string primary_path = task_path ? *task_path : *model_path;
+            auto source = platform::SealedInstanceDelegationSource::create(
+                {primary_path, model_path.value_or("")});
+            if (const auto* failure = std::get_if<target::Failure>(&source)) {
+              return {};
+            }
+            std::shared_ptr<platform::InstanceParentDelegationSource> parent_source(std::move(
+                std::get<std::unique_ptr<platform::SealedInstanceDelegationSource>>(source)));
+            auto provider = platform::RuntimeInstanceDelegationProvider::create(
+                {std::move(parent_source), config.tls.certificate, state->identity_client.get(),
+                 std::chrono::milliseconds{5000}});
+            if (const auto* failure = std::get_if<target::Failure>(&provider)) {
+              return {};
+            }
+            state->instance_delegation = std::move(
+                std::get<std::unique_ptr<platform::RuntimeInstanceDelegationProvider>>(provider));
+          }
           if (config.scheduler_endpoint) {
             grpc::SslCredentialsOptions ssl;
             ssl.pem_root_certs = config.tls.ca;
@@ -426,28 +453,7 @@ compose_runtime_service(const platform::ProcessConfig& config) {
             ssl.pem_private_key = config.tls.private_key;
             platform::SchedulerTaskClientOptions::DelegationProvider task_delegation =
                 platform::unavailable_scheduler_task_delegation();
-            if (config.instance_delegation_sealed_file) {
-              // B1 sealed short-lived material from Control/deployment. Runtime only validates and
-              // exchanges it; no token is invented, extended or written back.
-              if (!state->identity_client) {
-                return {};
-              }
-              auto source = platform::SealedInstanceDelegationSource::create(
-                  {*config.instance_delegation_sealed_file,
-                   config.model_instance_delegation_sealed_file.value_or("")});
-              if (const auto* failure = std::get_if<target::Failure>(&source)) {
-                return {};
-              }
-              std::shared_ptr<platform::InstanceParentDelegationSource> parent_source(std::move(
-                  std::get<std::unique_ptr<platform::SealedInstanceDelegationSource>>(source)));
-              auto provider = platform::RuntimeInstanceDelegationProvider::create(
-                  {std::move(parent_source), config.tls.certificate, state->identity_client.get(),
-                   std::chrono::milliseconds{5000}});
-              if (const auto* failure = std::get_if<target::Failure>(&provider)) {
-                return {};
-              }
-              state->instance_delegation = std::move(
-                  std::get<std::unique_ptr<platform::RuntimeInstanceDelegationProvider>>(provider));
+            if (state->instance_delegation) {
               auto* instance_delegation = state->instance_delegation.get();
               task_delegation = [instance_delegation](const target::SchedulerTaskContext& context,
                                                       target::Permission permission) {
@@ -535,7 +541,7 @@ compose_runtime_service(const platform::ProcessConfig& config) {
                  *state->secrets,
                  *state->application,
                  state->action_application,
-                 {"plugin.config.v1", "action.result.v1", "host.tasks.v1"}});
+                 {"plugin.config.v1", "action.result.v1", "host.tasks.v1", "host.model.v1"}});
             if (const auto* failure = std::get_if<target::Failure>(&bridge)) {
               return {};
             }
@@ -544,9 +550,28 @@ compose_runtime_service(const platform::ProcessConfig& config) {
               ssl.pem_root_certs = config.tls.ca;
               ssl.pem_cert_chain = config.tls.certificate;
               ssl.pem_private_key = config.tls.private_key;
+              platform::ModelDelegationProvider model_delegation =
+                  platform::unavailable_model_delegation();
+              if (state->instance_delegation) {
+                auto* instance_delegation = state->instance_delegation.get();
+                model_delegation = [instance_delegation](
+                                       const target::RuntimeModelChatRequest& request) {
+                  target::SchedulerTaskContext context;
+                  context.owner = request.instance;
+                  context.installation = request.installation;
+                  context.request_id = request.request_id;
+                  context.trace_id = request.request_id;
+                  context.idempotency_key = request.logical_call_id;
+                  context.deadline =
+                      target::TimePoint{std::chrono::duration_cast<std::chrono::nanoseconds>(
+                          std::chrono::system_clock::now().time_since_epoch())};
+                  return instance_delegation->model_chat_delegation(context, request.model,
+                                                                    target::Permission::ModelChat);
+                };
+              }
               auto model_client = platform::RuntimeModelClient::create(
-                  {*config.model_endpoint, grpc::SslCredentials(ssl),
-                   platform::unavailable_model_delegation(), std::chrono::milliseconds{30000}});
+                  {*config.model_endpoint, grpc::SslCredentials(ssl), std::move(model_delegation),
+                   std::chrono::milliseconds{30000}});
               if (const auto* failure = std::get_if<target::Failure>(&model_client)) {
                 return {};
               }

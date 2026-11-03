@@ -1740,3 +1740,23 @@ participants 全 Done 后才 DELETED；Host UNKNOWN、Scheduler Cancel 被拒时
 BLOCKED（instance DELETING），不得手工改写 PG 或伪造 receipt。Scheduler 任务无 account 字段
 （`account` 为空），运维归属依据 owner=实例/installation；不要以 account 作为删除 scope。
 恢复授权/链接后 maintenance 自动重试完成；重复 BeginDelete 同 key 幂等。
+
+## P05b-4 Runtime→Model sealed model 单链路运行项
+
+- Runtime 需要同时配置真实 Model gRPC endpoint（`model_endpoint`）与 PluginBridge 监听；
+  model 父委托使用 `model_instance_delegation_sealed_file`（或由 task 路径推导
+  `-model.json`）。sealed 文件仍按 P05b-6/P05b-7 刷新，TTL≤56s，刷新进程必须与 Runtime
+  共享卷/用户；刷新失败或文件过期时 model_chat 稳定 UNAUTHENTICATED/UNAVAILABLE，不缓存
+  超期父 token、不退回任何内置 Provider。
+- PluginBridge 只有在 Runtime 支持并 advertise `host.model.v1`、且插件 profile 权限包含
+  `model.chat` 时才接受 `HostRequest.model_chat`；插件 installation 由 bootstrap 解析的
+  instance 权威确定，注册帧自报值不能覆盖。
+- Runtime 出站 Identity CheckAuthorization 仍是 500ms/1s 热路径预算；ExchangeDelegation
+  使用独立 2s/5s 等待上限（代码内 bounded option，不是新配置字段）。Identity 在线失败时
+  调用 fail-closed，不重试成未知计费：Model 调用结果未知时按 logical_call_id 查询。
+- 验证：`p05b_model_chain_e2e`（真实 Identity/Runtime/Model/SDK PluginBridge/HTTP Provider
+  正链 + Provider 错误矩阵）与 `p05b_model_chain_fail_closed_e2e`、`p05b_provider_fixture`。
+  managed Host/P08e 组合与真实付费 Provider 仍属未覆盖环境项；不得把本机 fixture 结果当作
+  目标六服务栈 live 验收。
+
+

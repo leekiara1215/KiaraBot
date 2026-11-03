@@ -81,8 +81,8 @@ int main(int argc, char* argv[]) {
                    static_cast<int>(nonce.size())) != 1) {
       return 1;
     }
-    const std::span<const std::byte> plaintext{
-        reinterpret_cast<const std::byte*>(secret.data()), secret.size()};
+    const std::span<const std::byte> plaintext{reinterpret_cast<const std::byte*>(secret.data()),
+                                               secret.size()};
     const auto aad = t::model_secret_aad(model_id, t::ResourceVersion{1}, root_key_version);
     auto sealed = std::get<std::unique_ptr<t::ModelSecretCryptoPort>>(crypto_port)
                       ->seal(t::SecretView{plaintext}, aad, nonce);
@@ -90,8 +90,8 @@ int main(int argc, char* argv[]) {
       return static_cast<int>(rejected->code);
     }
     const auto& ciphertext = std::get<std::vector<std::byte>>(sealed);
-    std::cout << "{\"nonce\":\"" << to_hex(nonce) << "\",\"sealed\":\""
-              << to_hex(ciphertext) << "\"}\n";
+    std::cout << "{\"nonce\":\"" << to_hex(nonce) << "\",\"sealed\":\"" << to_hex(ciphertext)
+              << "\"}\n";
     return 0;
   } catch (const std::exception& error) {
     std::cerr << "p05b model seed failed: " << error.what() << '\n';

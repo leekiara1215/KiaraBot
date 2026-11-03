@@ -22,6 +22,7 @@ import os
 from pathlib import Path
 import secrets
 import select
+import sqlite3
 import signal
 import socket
 import ssl
@@ -309,6 +310,7 @@ def after_bootstrap(root: Path) -> None:
     model_binary = Path(sys.argv[9]).resolve()
     seed_binary = Path(sys.argv[10]).resolve()
     model_seed_binary = Path(sys.argv[11]).resolve()
+    host_binary = Path(sys.argv[12]).resolve()
     tls = STATE['tls']
     ca = str(tls / 'ca.pem')
     databases = {service: p14.create_database(root, pg_bin, port, initializer, service)
@@ -332,6 +334,9 @@ def after_bootstrap(root: Path) -> None:
         'database': databases['model'], 'identity_endpoint': identity_endpoint,
         'model_security': {'root_key_file': {'id': 'model-root-v1', 'file': str(root_key)},
                            'key_version': 1}}
+    p14.write_leaf(tls, 'host', 'spiffe://kiarabot/host-a')
+    host_fingerprint = hashlib.sha256(
+        ssl.PEM_cert_to_DER_cert((tls / 'host.pem').read_text())).hexdigest()
     parent_file = root / f'instance-delegation-{STATE["instance"]}-model.json'
     runtime_config = {
         'schema_version': 1, 'service': 'runtime',
@@ -341,7 +346,8 @@ def after_bootstrap(root: Path) -> None:
                 'private_key_file': str(tls / 'runtime.key'), 'ca_file': ca},
         'database': databases['runtime'], 'identity_endpoint': identity_endpoint,
         'model_endpoint': endpoints['model_grpc'],
-        'model_instance_delegation_sealed_file': str(parent_file)}
+        'model_instance_delegation_sealed_file': str(parent_file),
+        'hosts': [{'host_id': 'host-a', 'certificate_sha256': host_fingerprint}]}
     configs = {'identity': root / 'identity.json', 'model': root / 'model.json',
                'runtime': root / 'runtime.json'}
     write_json(configs['model'], model_config)
@@ -485,6 +491,9 @@ def after_bootstrap(root: Path) -> None:
             # the HTTP Provider and the plugin must observe a stable failure.
             require(not parent_file.exists(), 'fail-closed parent file must not exist')
         print('P05b-4 stage: plugin chain', flush=True)
+        STATE.update(pg_bin=str(pg_bin), pg_port=port, host_binary=host_binary,
+                     runtime_grpc=endpoints['runtime_grpc'],
+                     bridge=endpoints['bridge'], installation=STATE['installation'])
         run_plugin(root, endpoints['bridge'], STATE['instance'], plugin_bootstrap, tls,
                    provider_state, provider_mode, model_id, expect_success)
     finally:
@@ -517,6 +526,99 @@ def after_bootstrap(root: Path) -> None:
                 stop(child)
             except Exception:
                 pass
+
+
+def free_port():
+    import socket
+    with socket.socket() as probe:
+        probe.bind(('127.0.0.1', 0))
+        return probe.getsockname()[1]
+
+
+def managed_host_config(root, package, manifest, tls, bridge_endpoint, instance, installation,
+                        bootstrap):
+    credentials = root / 'credentials'
+    credentials.mkdir(mode=0o700, exist_ok=True)
+    response = json.dumps({'instance': {'instance_id': instance},
+                           'bootstrap_credential': bootstrap})
+    helper = REPO / 'scripts/deploy/target_host_credential.py'
+    result = subprocess.run([sys.executable, str(helper), 'store', '--directory',
+                             str(credentials)], input=response, text=True,
+                            capture_output=True)
+    require(result.returncode == 0, 'host credential helper failed: ' +
+            str(result.stderr)[-400:])
+    environment_names = ['PYTHONPATH', 'PLUGIN_CORE_ENDPOINT', 'PLUGIN_TLS_ROOT',
+                         'PLUGIN_INSTANCE_ID', 'PLUGIN_IO_TIMEOUT',
+                         'PLUGIN_HEARTBEAT_INTERVAL', 'PLUGIN_RETRY_DELAY',
+                         'KIARABOT_PLUGIN_BOOTSTRAP']
+    environment = {
+        'PYTHONPATH': os.pathsep.join([str(REPO / 'sdk/python/src'),
+                                       str(REPO / 'sdk/python/build/generated'),
+                                       str(package)]),
+        'PLUGIN_CORE_ENDPOINT': bridge_endpoint,
+        'PLUGIN_TLS_ROOT': str(tls / 'ca.pem'),
+        'PLUGIN_INSTANCE_ID': instance,
+        'PLUGIN_IO_TIMEOUT': '3', 'PLUGIN_HEARTBEAT_INTERVAL': '0.2',
+        'PLUGIN_RETRY_DELAY': '0.1'}
+    runner = root / 'run_plugin.sh'
+    runner.write_text('#!/bin/sh\nexec "' + sys.executable + '" -m kiarabot_sdk "$@" '
+                      '>>"' + str(root / 'plugin.log') + '" 2>&1\n')
+    runner.chmod(0o700)
+    config = {
+        'schema_version': 1, 'service': 'plugin-host',
+        'probe_listen': f'127.0.0.1:{free_port()}',
+        'grpc_listen': f'127.0.0.1:{free_port()}',
+        'tls': {'certificate_file': str(tls / 'host.pem'),
+                'private_key_file': str(tls / 'host.key'),
+                'ca_file': str(tls / 'ca.pem')},
+        'host': {'host_id': 'host-a', 'sqlite_path': str(root / 'host.sqlite'),
+                 'runtime_endpoint': f'127.0.0.1:{STATE["runtime_grpc"].rsplit(":", 1)[1]}',
+                 'credential_directory': str(credentials),
+                 'packages': [{'plugin_type_id': 'event-observer', 'root': str(package),
+                               'sha256': 'a' * 64, 'launch_profile': 'python',
+                               'allowed_argument_names': ['--manifest']}],
+                 'profiles': [{'name': 'python', 'executable': str(runner),
+                               'fixed_arguments': [str(runner)],
+                               'allowed_environment_names': environment_names,
+                               'credential_environment': 'KIARABOT_PLUGIN_BOOTSTRAP'}],
+                 'environment': environment}}
+    path = root / 'host.json'
+    path.write_text(json.dumps(config))
+    path.chmod(0o600)
+    return path
+
+
+def seed_managed_start(root, manifest, instance, installation, pg_bin, port):
+    environment, pg = rt.postgres(root, pg_bin, port, 'p03_runtime')
+    arguments = ['--manifest=' + str(manifest)]
+    names = ['PYTHONPATH', 'PLUGIN_CORE_ENDPOINT', 'PLUGIN_TLS_ROOT', 'PLUGIN_INSTANCE_ID',
+             'PLUGIN_IO_TIMEOUT', 'PLUGIN_HEARTBEAT_INTERVAL', 'PLUGIN_RETRY_DELAY',
+             'KIARABOT_PLUGIN_BOOTSTRAP']
+    now_sql = '(extract(epoch from clock_timestamp())*1000000000)::bigint'
+    args_sql = 'ARRAY[' + ','.join("'" + value.replace("'", "''") + "'"
+                                   for value in arguments) + ']'
+    env_sql = 'ARRAY[' + ','.join("'" + value + "'" for value in names) + ']'
+    payload = hashlib.sha256(b'p05b4-managed-start').hexdigest()
+    statement = (
+        "INSERT INTO kiarabot.host_commands(command_id,host_id,instance_id,installation_id,"
+        "kind,execution_generation,desired_version,desired_state,package_sha256,"
+        "launch_profile,arguments,environment_names,payload_sha256,state,created_at,updated_at) "
+        "VALUES('hc-p05b4-start','host-a','" + instance + "','" + installation + "',1,1,1,0,"
+        "repeat('a',64),'python'," + args_sql + ',' + env_sql + ",'" + payload + "',0," +
+        now_sql + ',' + now_sql + ");")
+    reply = subprocess.run([str(pg / 'psql'), '-X', '-qAt', '-v', 'ON_ERROR_STOP=1'],
+                           input=statement, text=True, env=environment, capture_output=True,
+                           timeout=15)
+    require(reply.returncode == 0, 'managed host command seed: ' +
+            ' '.join(str(reply.stderr).split())[-500:])
+
+
+def start_managed_host(root, host_binary):
+    log = (root / 'host.err').open('wb')
+    host = subprocess.Popen([str(host_binary), '--config', str(root / 'host.json')],
+                            cwd=root, stdout=subprocess.DEVNULL, stderr=log)
+    host._p05b_log = log  # keep the file handle alive for the process lifetime
+    return host
 
 
 def run_plugin(root, bridge_endpoint, instance, bootstrap, tls, provider_state, mode_file,
@@ -573,19 +675,24 @@ def run_plugin(root, bridge_endpoint, instance, bootstrap, tls, provider_state, 
                 'isolation': 'process', 'permissions': ['model.chat']}
     manifest_path = package / 'plugin.json'
     manifest_path.write_text(json.dumps(manifest))
-    env = {key: value for key, value in os.environ.items()}
-    env.update({'PYTHONPATH': os.pathsep.join([str(REPO / 'sdk/python/src'),
-                                                str(REPO / 'sdk/python/build/generated'),
-                                                str(package)]),
-                'PLUGIN_CORE_ENDPOINT': bridge_endpoint, 'PLUGIN_TLS_ROOT': str(tls / 'ca.pem'),
-                'PLUGIN_INSTANCE_ID': instance, 'PLUGIN_IO_TIMEOUT': '3',
-                'PLUGIN_HEARTBEAT_INTERVAL': '0.2', 'PLUGIN_RETRY_DELAY': '0.1',
-                'KIARABOT_PLUGIN_BOOTSTRAP': bootstrap})
-    log = (root / 'plugin.log').open('w')
-    plugin = subprocess.Popen([sys.executable, '-m', 'kiarabot_sdk', '--manifest',
-                               str(manifest_path)], env=env, cwd=root, stdout=log, stderr=log)
+    managed_host_config(root, package, manifest_path, tls, bridge_endpoint, instance,
+                        STATE['installation'], bootstrap)
+    seed_managed_start(root, manifest_path, instance, STATE['installation'],
+                       Path(STATE['pg_bin']), STATE['pg_port'])
+    plugin = start_managed_host(root, Path(STATE['host_binary']))
     try:
         wait_for_plugin(plugin, ready, root)
+        # Prove the plugin was launched by the real managed Host, not by the test: the Runtime host
+        # command must be receipted and the Host journal must hold a managed execution.
+        environment, pg_bin = rt.postgres(Path(root), Path(STATE['pg_bin']),
+                                       int(STATE['pg_port']), 'p03_runtime')
+        receipt = rt.run_sql((environment, pg_bin),
+                             "SELECT state,receipt_persisted FROM kiarabot.host_commands "
+                             "WHERE command_id='hc-p05b4-start'")
+        require(receipt.startswith('2|t'), f'managed host start receipt: {receipt}')
+        with sqlite3.connect(root / 'host.sqlite') as journal:
+            executions = journal.execute('SELECT count(*) FROM managed_executions').fetchone()[0]
+        require(executions >= 1, 'managed host journal execution')
         refresh_parent = STATE.get('refresh_parent')
         if refresh_parent is not None:
             refresh_parent()
@@ -657,11 +764,13 @@ def run_plugin(root, bridge_endpoint, instance, bootstrap, tls, provider_state, 
         if plugin.poll() is None:
             plugin.send_signal(signal.SIGTERM)
             try:
-                plugin.wait(timeout=10)
+                plugin.wait(timeout=15)
             except subprocess.TimeoutExpired:
                 plugin.kill()
                 plugin.wait(timeout=5)
-        log.close()
+        log_handle = getattr(plugin, '_p05b_log', None)
+        if log_handle is not None:
+            log_handle.close()
 
 
 def wait_for_plugin(plugin, ready, root):
