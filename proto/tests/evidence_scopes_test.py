@@ -173,6 +173,18 @@ class ScopeTest(unittest.TestCase):
                     ('proto_messages', 'IdentityRevokeCredentialResponse'),
                     ('proto_messages', 'IdentityRotateCredentialRequest'),
                     ('proto_messages', 'IdentityRotateCredentialResponse')}
+        expected.add(('proto_messages', 'HostRegisterHostResponse'))
+        host_bridge_fields = {
+            'HostRegisterHostRequest': 'host',
+            'HostRegisterHostResponse': 'host fence',
+            'HostRecord': 'host_id version capabilities observed_at',
+            'HostToRuntime': 'registration fence heartbeat',
+            'RuntimeToHost': 'registered fence heartbeat_ack',
+            'HostHeartbeat': 'sent_at',
+            'HostHeartbeatAck': 'fence received_at heartbeat_interval_seconds',
+        }
+        for message, fields in host_bridge_fields.items():
+            expected.update(('proto_fields', message + '.' + field) for field in fields.split())
         expected |= {('proto_fields', 'CredentialDelivery.credential_id'), ('proto_fields', 'CredentialDelivery.version'), ('proto_fields', 'CredentialDelivery.new_secret')}
         expected |= {('proto_fields', 'CredentialDelivery.delivery_receipt_id'), ('proto_fields', 'CredentialDelivery.expires_at'), ('proto_fields', 'CredentialStatus.credential_id')}
         expected |= {('proto_fields', 'CredentialStatus.principal_id'), ('proto_fields', 'CredentialStatus.binding'), ('proto_fields', 'CredentialStatus.version')}

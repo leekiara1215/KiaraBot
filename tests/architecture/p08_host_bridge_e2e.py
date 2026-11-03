@@ -174,7 +174,7 @@ async def main_async(args) -> None:
             stream = stub.Connect()
             registration = host_pb2.HostToRuntime(
                 registration=host_pb2.HostRegisterHostRequest(
-                    host=host_pb2.HostRecord(host_id='host-a')))
+                    host=host_pb2.HostRecord(host_id='host-a', capabilities=['host.process.v1'])))
             async with grpc.aio.secure_channel(endpoint, grpc.ssl_channel_credentials(
                     root_certificates=pki.ca.certificate.read_bytes(),
                     private_key=wrong_leaf.key.read_bytes(),
@@ -186,6 +186,10 @@ async def main_async(args) -> None:
             await stream.write(registration)
             registered = await read_labeled(stream, 'registration response')
             require(registered.WhichOneof('body') == 'registered', 'registration rejected')
+            host = registered.registered.host
+            require(host.host_id == 'host-a' and host.version == 1 and
+                    list(host.capabilities) == ['host.process.v1'] and host.observed_at.seconds > 0,
+                    'registered Host metadata')
             fence = registered.registered.fence
             require(fence.instance_id == 'host-a' and fence.connection_generation == 1,
                     'unexpected registration fence')
@@ -223,7 +227,11 @@ async def main_async(args) -> None:
             await stream.write(host_pb2.HostToRuntime(
                 fence=fence, heartbeat=host_pb2.HostHeartbeat(fence=fence, sent_at=heartbeat)))
             ack = await read_labeled(stream, 'heartbeat ack 1')
-            require(ack.WhichOneof('body') == 'heartbeat_ack', 'heartbeat ack missing')
+            require(ack.WhichOneof('body') == 'heartbeat_ack' and ack.fence == fence and
+                    ack.heartbeat_ack.fence == fence and
+                    ack.heartbeat_ack.received_at.ToNanoseconds() >= heartbeat.ToNanoseconds() and
+                    ack.heartbeat_ack.heartbeat_interval_seconds == 5,
+                    'heartbeat acknowledgement must identify the current connection and receipt time')
             # Duplicate observation must be accepted idempotently and not create a second row.
             await stream.write(observation)
             # P13e: stop/drain commands seeded while the Host connection is live are dispatched

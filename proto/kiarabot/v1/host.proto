@@ -65,10 +65,10 @@ message HostRegisterHostRequest {
   HostRecord host = 2;
 }
 
-// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+// CONTRACT_STATUS: not_implemented - historical reference. Target: implemented on HostBridge.
 message HostRegisterHostResponse {
   HostRecord host = 1;
-  // CONTRACT_STATUS: not_implemented - P08 target declaration, no producer.
+  // CONTRACT_STATUS: not_implemented - historical reference. Target: assigned during registration.
   // Connection-scoped Fence assigned by Runtime: instance_id carries host_id,
   // execution_generation must be absent, connection_generation/runtime_epoch are
   // authoritative for every subsequent HostToRuntime/RuntimeToHost frame.

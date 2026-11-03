@@ -5798,6 +5798,7 @@
           "operations.listPrincipals": "implemented"
         },
         "proto_messages": {
+          "HostRegisterHostResponse": "implemented",
           "IdentityAuditFilter": "implemented",
           "IdentityAuditRecord": "implemented",
           "IdentityListAuditRequest": "implemented",
@@ -5957,6 +5958,23 @@
           "AuthorizationSnapshot": "implemented"
         },
         "proto_fields": {
+          "HostRegisterHostRequest.host": "implemented",
+          "HostRegisterHostResponse.host": "implemented",
+          "HostRegisterHostResponse.fence": "implemented",
+          "HostRecord.host_id": "implemented",
+          "HostRecord.version": "implemented",
+          "HostRecord.capabilities": "implemented",
+          "HostRecord.observed_at": "implemented",
+          "HostToRuntime.registration": "implemented",
+          "HostToRuntime.fence": "implemented",
+          "HostToRuntime.heartbeat": "implemented",
+          "RuntimeToHost.registered": "implemented",
+          "RuntimeToHost.fence": "implemented",
+          "RuntimeToHost.heartbeat_ack": "implemented",
+          "HostHeartbeat.sent_at": "implemented",
+          "HostHeartbeatAck.fence": "implemented",
+          "HostHeartbeatAck.received_at": "implemented",
+          "HostHeartbeatAck.heartbeat_interval_seconds": "implemented",
           "IdentityAuditFilter.scope": "implemented",
           "IdentityAuditFilter.occurred_from": "implemented",
           "IdentityAuditFilter.occurred_until": "implemented",
@@ -6690,6 +6708,96 @@
         }
       },
       "evidence": {
+        "proto_fields:HostRegisterHostRequest.host": [
+          "core/src/runtime/platform/host_bridge_server.cpp",
+          "core/src/runtime/platform/host_bridge_client.cpp",
+          "tests/architecture/p08_host_bridge_e2e.py"
+        ],
+        "proto_fields:HostRegisterHostResponse.host": [
+          "core/src/runtime/platform/host_bridge_server.cpp",
+          "core/src/runtime/platform/host_bridge_client.cpp",
+          "tests/architecture/p08_host_bridge_e2e.py"
+        ],
+        "proto_fields:HostRegisterHostResponse.fence": [
+          "core/src/runtime/platform/host_bridge_server.cpp",
+          "core/src/runtime/platform/host_bridge_client.cpp",
+          "tests/architecture/p08_host_bridge_e2e.py"
+        ],
+        "proto_fields:HostRecord.host_id": [
+          "core/src/runtime/platform/host_bridge_server.cpp",
+          "core/src/runtime/platform/host_bridge_client.cpp",
+          "tests/architecture/p08_host_bridge_e2e.py"
+        ],
+        "proto_fields:HostRecord.version": [
+          "core/src/runtime/platform/host_bridge_server.cpp",
+          "core/src/runtime/platform/host_bridge_client.cpp",
+          "tests/architecture/p08_host_bridge_e2e.py"
+        ],
+        "proto_fields:HostRecord.capabilities": [
+          "core/src/runtime/platform/host_bridge_server.cpp",
+          "core/src/runtime/platform/host_bridge_client.cpp",
+          "tests/architecture/p08_host_bridge_e2e.py"
+        ],
+        "proto_fields:HostRecord.observed_at": [
+          "core/src/runtime/platform/host_bridge_server.cpp",
+          "core/src/runtime/platform/host_bridge_client.cpp",
+          "tests/architecture/p08_host_bridge_e2e.py"
+        ],
+        "proto_fields:HostToRuntime.registration": [
+          "core/src/runtime/platform/host_bridge_server.cpp",
+          "core/src/runtime/platform/host_bridge_client.cpp",
+          "tests/architecture/p08_host_bridge_e2e.py"
+        ],
+        "proto_fields:HostToRuntime.fence": [
+          "core/src/runtime/platform/host_bridge_server.cpp",
+          "core/src/runtime/platform/host_bridge_client.cpp",
+          "tests/architecture/p08_host_bridge_e2e.py"
+        ],
+        "proto_fields:HostToRuntime.heartbeat": [
+          "core/src/runtime/platform/host_bridge_server.cpp",
+          "core/src/runtime/platform/host_bridge_client.cpp",
+          "tests/architecture/p08_host_bridge_e2e.py"
+        ],
+        "proto_fields:RuntimeToHost.registered": [
+          "core/src/runtime/platform/host_bridge_server.cpp",
+          "core/src/runtime/platform/host_bridge_client.cpp",
+          "tests/architecture/p08_host_bridge_e2e.py"
+        ],
+        "proto_fields:RuntimeToHost.fence": [
+          "core/src/runtime/platform/host_bridge_server.cpp",
+          "core/src/runtime/platform/host_bridge_client.cpp",
+          "tests/architecture/p08_host_bridge_e2e.py"
+        ],
+        "proto_fields:RuntimeToHost.heartbeat_ack": [
+          "core/src/runtime/platform/host_bridge_server.cpp",
+          "core/src/runtime/platform/host_bridge_client.cpp",
+          "tests/architecture/p08_host_bridge_e2e.py"
+        ],
+        "proto_fields:HostHeartbeat.sent_at": [
+          "core/src/runtime/platform/host_bridge_server.cpp",
+          "core/src/runtime/platform/host_bridge_client.cpp",
+          "tests/architecture/p08_host_bridge_e2e.py"
+        ],
+        "proto_fields:HostHeartbeatAck.fence": [
+          "core/src/runtime/platform/host_bridge_server.cpp",
+          "core/src/runtime/platform/host_bridge_client.cpp",
+          "tests/architecture/p08_host_bridge_e2e.py"
+        ],
+        "proto_fields:HostHeartbeatAck.received_at": [
+          "core/src/runtime/platform/host_bridge_server.cpp",
+          "core/src/runtime/platform/host_bridge_client.cpp",
+          "tests/architecture/p08_host_bridge_e2e.py"
+        ],
+        "proto_fields:HostHeartbeatAck.heartbeat_interval_seconds": [
+          "core/src/runtime/platform/host_bridge_server.cpp",
+          "core/src/runtime/platform/host_bridge_client.cpp",
+          "tests/architecture/p08_host_bridge_e2e.py"
+        ],
+        "proto_messages:HostRegisterHostResponse": [
+          "core/src/runtime/platform/host_bridge_server.cpp",
+          "core/src/runtime/platform/host_bridge_client.cpp",
+          "tests/architecture/p08_host_bridge_e2e.py"
+        ],
         "proto_messages:IdentityAuditFilter": [
           "core/src/application/target/identity_audit_application.cpp",
           "core/src/application/target/runtime_audit_application.cpp",

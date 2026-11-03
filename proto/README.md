@@ -111,6 +111,8 @@ CoreToAdapter 新增 oneof event_ack=4，类型 AdapterEventAck；原字段编�
 
 Runtime typed读取补全为五类Get/List（Account/Installation/Instance/Adapter/Host）及GetInstanceConfig。Get使用该方法固定kind的exact ResourceRef；List必须给已登记RESOURCE_CATALOG UUID，仅发现当前调用方另获独立child grant的资源，不继承目录权限。新列表输入PageRequest，输出SnapshotInfo，禁止client传server快照字段。账号/插件/适配器/配置读权限是封闭枚举；全部新增类型和方法尚未生产实现。
 
+HostBridge 的注册响应与已验证的心跳字段按 `tests/contract_status.json` 中的 target 字段逐项登记。该登记限于 Runtime 当前进程内的连接替换；目录查询、跨重启持久登记和 HostService 的逻辑方法另行验收。
+
 ## Identity 当前投影与凭据状态
 
 Login、RefreshSession、ValidateSession、GetPrincipal、ListSessions、RevokeSession 已通过本地真实 Identity 服务、注册的 Control 证书和 PostgreSQL 验收。十二个请求/响应及 SessionRecord、TokenPair 的字段证据见 `tests/contract_status.json` 的 target 登记。
