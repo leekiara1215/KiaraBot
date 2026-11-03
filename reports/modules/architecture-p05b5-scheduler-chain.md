@@ -29,17 +29,21 @@
 | Python Runtime 证书 ExchangDelegation(parent, audience=scheduler, instance+installation scope, task.schedule) | **成功**，子证明 subject=实例、aud=scheduler、hops=2、actor_chain=[Control,Runtime] |
 | Python 直接 Identity `CheckAuthorization(subject_proof=child, method=SchedulerService/CreateTask, scope=INSTANCE)` | **UNAUTHENTICATED** |
 | Python Scheduler `CreateTask`（带同一 child proof） | **PERMISSION_DENIED**（另一次运行出现 TIMEOUT） |
-| Runtime C++ provider Exchange（同一 sealed 文件/Runtime 叶） | Exchange RPC 返回 UNAUTHENTICATED（C++ debug 仅在本地验证，不提交） |
+| Runtime C++ provider Exchange（同一 sealed 文件/Runtime 叶） | 初次 **UNAUTHENTICATED**；根因为 C++ 请求缺少 `RequestContext.idempotency_key`（Identity 实际要求非空），补 key 后 C++ Exchange **成功**（本地 diagnostic，不提交失败断言） |
 
-结论：sealed reader/Exchange 本身可成功；阻塞在 **Identity 对 Exchange 产生的实例主体子委托的
-`CheckAuthorization` 语义**（P05b-2 遗留：e2e 只验证了 Exchange，未验证下游 owner 的
-CheckAuthorization）。Scheduler 的 `installation_from`/权限检查因此拿不到可用决定；这不是
-sealed 格式或 Runtime provider 的单独问题。
+结论：
+1. **C++ Exchange UNAUTHENTICATED 是 client bug**：`RuntimeIdentityClient::exchange_delegation`
+   未设置 `RequestContext.idempotency_key`；Identity 的 Exchange 实际要求该字段非空（尽管 proto
+   `requires_idempotency=false`）。已修复并补单测，C++ Exchange 与 Python 一样成功。
+2. 剩余阻塞是 **Identity 对 Exchange 产生的实例主体子委托的 `CheckAuthorization` 语义**：
+   `CheckAuthorization(subject_proof=child, method=SchedulerService/CreateTask, scope=INSTANCE)`
+   稳定 UNAUTHENTICATED，Scheduler CreateTask 因此 PERMISSION_DENIED；属 P05b-2 遗留，已并入
+   P05b-7（task-150）修复范围。
 
 ## 3. 未完成/下一步
 
-- 需 P05b-2/P13h 负责方修复 Instance-parent child `CheckAuthorization`（source=admin、
-  subject=instance、scope=INSTANCE、permission=task.schedule 时返回 allowed），再跑真
-  SDK PluginBridge→Runtime→真实 Scheduler 成功链与撤销/过期/错误证书/离线矩阵。
+- 已修复并提交 C++ Exchange 的 idempotency-key client bug；Exchange 正向可复现成功。
+- 待 P05b-7（task-150）修复 child `CheckAuthorization` 后，再跑真 SDK PluginBridge→Runtime→
+  真实 Scheduler 成功链与撤销/过期/错误证书/离线矩阵。
 - 本 worktree 未提交任何“正向成功”测试/断言；negative/fail-closed 与 reader 对齐保留。
 - P05b-7/model 泛化不在本任务范围。
