@@ -1,0 +1,213 @@
+#!/usr/bin/env python3
+"""P05b-6 deployment refresh for sealed Identity instance-parent delegations.
+
+Admin authentication is an access token from Control administrator login (stdin or a 0600 file);
+this tool never accepts credentials in argv, never logs them, and calls Identity.IssueDelegation
+with Control's mTLS leaf. Output is an atomically replaced 0600 sealed JSON file. No proto/API
+change; Runtime verifies the proof online through Exchange/CheckAuthorization.
+"""
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import os
+import stat
+import sys
+import time
+import uuid
+
+import sealed_delegation
+
+
+def _stable_error(text: str) -> None:
+    # Never include tokens, passwords, JWT or raw server messages.
+    print('instance-delegation-refresh error=' + text, file=sys.stderr, flush=True)
+
+
+def _require_regular(path: str, label: str, *, private: bool) -> bytes:
+    try:
+        info = os.lstat(path)
+    except OSError as error:
+        raise sealed_delegation.SealedDelegationError(f'{label} unavailable') from error
+    if stat.S_ISLNK(info.st_mode) or not stat.S_ISREG(info.st_mode):
+        raise sealed_delegation.SealedDelegationError(f'{label} must be a regular file')
+    if info.st_uid != os.geteuid():
+        raise sealed_delegation.SealedDelegationError(f'{label} owner mismatch')
+    if private and stat.S_IMODE(info.st_mode) != 0o600:
+        raise sealed_delegation.SealedDelegationError(f'{label} mode must be 0600')
+    if info.st_size <= 0 or info.st_size > 16 * 1024:
+        raise sealed_delegation.SealedDelegationError(f'{label} size is invalid')
+    with open(path, 'rb') as handle:
+        return handle.read()
+
+
+def _require_private_regular(path: str, label: str) -> bytes:
+    return _require_regular(path, label, private=True)
+
+
+def _config(path: str) -> dict:
+    raw = _require_private_regular(path, 'config')
+    try:
+        value = json.loads(raw.decode('utf-8'))
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise sealed_delegation.SealedDelegationError('config is not valid JSON') from error
+    required = {'identity_endpoint', 'ca_file', 'control_certificate_file',
+                'control_private_key_file', 'instance_id', 'installation_id', 'output_dir'}
+    if not isinstance(value, dict) or not required.issubset(value):
+        raise sealed_delegation.SealedDelegationError('config fields are incomplete')
+    for key in required - {'output_dir'}:
+        if not isinstance(value[key], str) or not value[key]:
+            raise sealed_delegation.SealedDelegationError(f'config {key} is invalid')
+    if not isinstance(value['output_dir'], str) or not os.path.isabs(value['output_dir']):
+        raise sealed_delegation.SealedDelegationError('config output_dir must be absolute')
+    return value
+
+
+def _token(config: dict, token_file: str | None, stdin_token: str | None) -> str:
+    if stdin_token is not None:
+        token = stdin_token.strip()
+    else:
+        path = token_file or config.get('token_file')
+        if not isinstance(path, str) or not path:
+            raise sealed_delegation.SealedDelegationError('admin token source is required')
+        token = _require_private_regular(path, 'admin token').decode('ascii', 'strict').strip()
+    if not token or any(character in token for character in '\r\n\x00'):
+        raise sealed_delegation.SealedDelegationError('admin token is invalid')
+    return token
+
+
+def _permission_values(names: list[str], policy) -> list[int]:
+    mapping = {
+        'task.schedule': policy.PERMISSION_TASK_SCHEDULE,
+        'task.read': policy.PERMISSION_TASK_READ,
+    }
+    if not names or len(names) > 8:
+        raise sealed_delegation.SealedDelegationError('permissions are invalid')
+    values = []
+    for name in names:
+        if name not in mapping:
+            raise sealed_delegation.SealedDelegationError('permissions are invalid')
+        values.append(mapping[name])
+    return values
+
+
+def _fingerprint(certificate: bytes) -> bytes:
+    import ssl
+    der = ssl.PEM_cert_to_DER_cert(certificate.decode('ascii'))
+    return hashlib.sha256(der).digest()
+
+
+def _refresh(config: dict, token: str) -> str:
+    import grpc
+    from google.protobuf.timestamp_pb2 import Timestamp
+    from kiarabot.v1 import identity_pb2, identity_pb2_grpc, platform_pb2, policy_pb2
+
+    instance_id = config['instance_id']
+    installation_id = config['installation_id']
+    if len({instance_id, installation_id}) != 2:
+        raise sealed_delegation.SealedDelegationError('instance and installation must differ')
+    permissions = _permission_values(config.get('permissions', ['task.schedule', 'task.read']),
+                                     policy_pb2)
+    certificate = _require_regular(config['control_certificate_file'],
+                                   'control certificate', private=False)
+    private_key = _require_private_regular(config['control_private_key_file'],
+                                           'control private key')
+    ca = _require_regular(config['ca_file'], 'CA', private=False)
+    credentials = grpc.ssl_channel_credentials(
+        root_certificates=ca, private_key=private_key, certificate_chain=certificate)
+    endpoint = config['identity_endpoint']
+    channel = grpc.secure_channel(endpoint, credentials)
+    try:
+        stub = identity_pb2_grpc.IdentityServiceStub(channel)
+        resource_scope = platform_pb2.ResourceScope(resources=[
+            platform_pb2.ResourceRef(kind=platform_pb2.RESOURCE_INSTANCE, id=instance_id),
+            platform_pb2.ResourceRef(kind=platform_pb2.RESOURCE_INSTALLATION,
+                                     id=installation_id)])
+        context = platform_pb2.RequestContext(
+            request_id=str(uuid.uuid4()), trace_id=str(uuid.uuid4()),
+            idempotency_key=str(uuid.uuid4()))
+        deadline = Timestamp()
+        deadline.FromNanoseconds(int((time.time() + 10) * 1_000_000_000))
+        context.deadline.CopyFrom(deadline)
+        request = identity_pb2.IdentityIssueDelegationRequest(
+            context=context, subject_proof=token, audience='runtime', scope=resource_scope,
+            permissions=permissions, client_certificate_sha256=_fingerprint(certificate),
+            instance_id=instance_id)
+        reply = stub.IssueDelegation(request, timeout=10)
+        proof = reply.delegation.proof
+        claims = sealed_delegation.decode_proof(proof)
+        issued_at = claims.get('iat')
+        expires_at = claims.get('exp')
+        if not isinstance(issued_at, int) or not isinstance(expires_at, int):
+            raise sealed_delegation.SealedDelegationError('proof timestamps are invalid')
+        document = {
+            'schema_version': sealed_delegation.SCHEMA_VERSION,
+            'instance_id': instance_id,
+            'installation_id': installation_id,
+            'audience': sealed_delegation.AUDIENCE,
+            'permissions': list(config.get('permissions', ['task.schedule', 'task.read'])),
+            'scope': [
+                {'kind': 'RESOURCE_INSTANCE', 'id': instance_id},
+                {'kind': 'RESOURCE_INSTALLATION', 'id': installation_id},
+            ],
+            'issued_at': issued_at,
+            'expires_at': expires_at,
+            'ttl_seconds': expires_at - issued_at,
+            'delegation_proof': proof,
+        }
+        output = os.path.join(config['output_dir'],
+                              sealed_delegation.file_name(instance_id))
+        sealed_delegation.atomic_write_sealed(output, document)
+        return output
+    except grpc.RpcError as error:
+        code = getattr(error.code(), 'name', 'UNAVAILABLE')
+        raise sealed_delegation.SealedDelegationError('identity_' + code) from error
+    finally:
+        channel.close()
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--config', required=True)
+    parser.add_argument('--token-file')
+    parser.add_argument('--token-stdin', action='store_true')
+    parser.add_argument('--once', action='store_true')
+    parser.add_argument('--interval', type=float)
+    arguments = parser.parse_args()
+    if arguments.once and arguments.interval is not None:
+        parser.error('--once and --interval are mutually exclusive')
+    interval = arguments.interval
+    if interval is not None and not 0 < interval < 56:
+        parser.error('--interval must be >0 and <56 seconds')
+    stdin_token = sys.stdin.readline().strip() if arguments.token_stdin else None
+    try:
+        config = _config(arguments.config)
+        token = _token(config, arguments.token_file, stdin_token)
+        if interval is None:
+            output = _refresh(config, token)
+            print(f'instance_id={config["instance_id"]} path={output} status=refreshed',
+                  flush=True)
+            return 0
+        while True:
+            try:
+                output = _refresh(config, token)
+                print(f'instance_id={config["instance_id"]} path={output} status=refreshed',
+                      flush=True)
+            except sealed_delegation.SealedDelegationError as error:
+                _stable_error(str(error))
+            time.sleep(interval)
+            try:
+                token = _token(config, arguments.token_file, None)
+            except sealed_delegation.SealedDelegationError as error:
+                _stable_error(str(error))
+    except sealed_delegation.SealedDelegationError as error:
+        _stable_error(str(error))
+        return 1
+    except Exception:
+        _stable_error('unexpected')
+        return 1
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())
