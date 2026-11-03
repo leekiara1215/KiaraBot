@@ -22,9 +22,9 @@ P11/P10k 生产链路属 P05b-4/5。
 - 当 `instance_id` 非空：
   - `audience` 必须为 `runtime`；
   - subject 只能由 `instance_id` 唯一绑定解析，**禁止任何 subject/subject_id 参数**；
-  - claims：`subject`=实例 principal id，`direct_actor`=Control 管理员 principal，
-    `actor_chain=[管理员]`，`business_hops=1`，`source_credential/source_session`=管理员当前
-    credential/session，`client_certificate`=Control 叶指纹；
+  - claims：`subject`=实例 principal id，`direct_actor`=实际 Control platform peer principal，
+    `actor_chain=[Control platform peer]`，`business_hops=1`，`source_credential/source_session`
+    =管理员当前 credential/session（登录主体），`client_certificate`=Control 叶指纹；
   - 未配置/未授权/无绑定一律 fail-closed，稳定 `PERMISSION_DENIED`/`NOT_FOUND`/
     `UNAUTHENTICATED`/`INVALID_ARGUMENT`，不签发。
 - 现有 Control 管理员主体委托路径不变（`instance_id` 为空）。
@@ -55,9 +55,9 @@ TTL：沿用 `kDelegationBodyLifetime=56s`，并取 session/credential/cert 最�
 `require_delegation_origin_current` 的 “source credential subject==claims.subject” 假设冲突。
 最小扩展：
 - 识别条件：claims.subject principal 为 `kind=plugin` 且 binding=`RESOURCE_INSTANCE`，且
-  source credential/session 的 subject == `claims.actor_chain.front()`（父 hops1=Control 管理员；
-  子 hops2=同一 Control 管理员），且 `claims.business_hops∈{1,2}`。
-- 该模式下，source origin/assignment/authorization_version 以管理员主体为准；实例 principal
+  source credential/session 的 subject 是一个当前 Human 管理员会话（不是 claims.subject），
+  `claims.actor_chain.front()` 是该 Control platform peer，且 `claims.business_hops∈{1,2}`。
+- 该模式下，source origin/assignment/authorization_version 以管理员登录主体为准；实例 principal
   只作为 subject/owner 标识，另校验其 binding/状态；`CheckAuthorization` 仍要求实例当前
   authorization watermark 并返回稳定结果。
 - 其他 delegation（普通人类主体）保持原校验，不允许任意 subject 与 source 分离。

@@ -166,3 +166,16 @@ ctest --test-dir build/full-locked \
 ### 4. 门禁（HEAD `439fb9e`）
 
 `check_implementation_status.py`、`target_api_test.rb`、`evidence_scopes_test.py`、`check_contracts.sh`（descriptor compatibility）全部 PASS；本次未改 proto/OpenAPI/contract_status，无新增契约漂移。
+
+## P05b-2 Identity 实例主体父委托（B1，2026-11-03）
+
+契约：`reports/analysis/p05b-identity-instance-delegation-contract.md`；wire 新增可选
+`IdentityIssueDelegationRequest.instance_id`。Identity 签发支持 Control 管理员为已注册
+plugin principal（RESOURCE_INSTANCE binding）签 audience=runtime、TTL≤56s、hops1 父委托；
+管理员需 `identity.delegation.issue`、实例 `resource.manage` 与每个 whitelist 权限的 exact
+assignment；scope/permission 白名单与跨实例拒绝；签发写 audit。Exchange/CheckAuthorization
+识别 source credential/session=管理员、subject=实例的父子委托，用管理员 authority 做
+origin/permission 在线校验并校验实例 binding；普通 delegation 不变。真 PG16.4+mTLS e2e
+`p05_runtime_identity_e2e` 覆盖正例（父委托→Runtime 叶 Exchange hops2）与非管理员/无 binding/
+错 permission/证书不匹配/跨实例/撤销/过期 ttl 断言。未完成：Runtime 获取/刷新与 Exchange
+生产 provider（P05b-4/5）、真实 Model/Scheduler 链。
