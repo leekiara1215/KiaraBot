@@ -1022,6 +1022,46 @@ class ScopeTest(unittest.TestCase):
         }.items():
             expected.add(('proto_messages', message))
             expected.update(('proto_fields', f'{message}.{field}') for field in fields.split())
+        expected.update({
+            ('proto_messages', 'RuntimeGetAccountRequest'),
+            ('proto_fields', 'RuntimeGetAccountRequest.context'),
+            ('proto_fields', 'RuntimeGetAccountRequest.resource'),
+            ('proto_messages', 'RuntimeGetAccountResponse'),
+            ('proto_fields', 'RuntimeGetAccountResponse.account'),
+            ('proto_fields', 'RuntimeGetAccountResponse.observed_at'),
+            ('proto_messages', 'RuntimeGetAdapterRequest'),
+            ('proto_fields', 'RuntimeGetAdapterRequest.context'),
+            ('proto_fields', 'RuntimeGetAdapterRequest.resource'),
+            ('proto_messages', 'RuntimeGetAdapterResponse'),
+            ('proto_fields', 'RuntimeGetAdapterResponse.adapter'),
+            ('proto_fields', 'RuntimeGetAdapterResponse.observed_at'),
+            ('proto_messages', 'RuntimeUpdateAccountRequest'),
+            ('proto_fields', 'RuntimeUpdateAccountRequest.context'),
+            ('proto_fields', 'RuntimeUpdateAccountRequest.account_id'),
+            ('proto_fields', 'RuntimeUpdateAccountRequest.display_name'),
+            ('proto_fields', 'RuntimeUpdateAccountRequest.expected_version'),
+            ('proto_messages', 'RuntimeUpdateAccountResponse'),
+            ('proto_fields', 'RuntimeUpdateAccountResponse.account'),
+            ('proto_messages', 'AccountRecord'),
+            ('proto_fields', 'AccountRecord.account_id'),
+            ('proto_fields', 'AccountRecord.platform'),
+            ('proto_fields', 'AccountRecord.platform_account_id'),
+            ('proto_fields', 'AccountRecord.display_name'),
+            ('proto_fields', 'AccountRecord.version'),
+            ('proto_fields', 'AccountRecord.state'),
+            ('proto_messages', 'AdapterRecord'),
+            ('proto_fields', 'AdapterRecord.resource'),
+            ('proto_fields', 'AdapterRecord.version'),
+            ('proto_fields', 'AdapterRecord.last_registration'),
+            ('proto_fields', 'AdapterRecord.last_registered_at'),
+            ('proto_fields', 'AdapterRecord.observed_at'),
+            ('proto_fields', 'AdapterRecord.current_fence'),
+            ('proto_fields', 'AdapterRecord.lifecycle'),
+            ('proto_messages', 'AdapterRegistrationMetadata'),
+            ('proto_fields', 'AdapterRegistrationMetadata.implementation'),
+            ('proto_fields', 'AdapterRegistrationMetadata.implementation_version'),
+            ('proto_fields', 'AdapterRegistrationMetadata.protocol_version'),
+        })
         self.assertEqual(available, expected)
         self.assertEqual(effective_status(registry, 'reference', 'action_payloads', 'ActionEnvelope.send_message'), 'implemented')
         self.assertEqual(effective_status(registry, 'target', 'action_payloads', 'ActionEnvelope.send_message'), 'implemented')

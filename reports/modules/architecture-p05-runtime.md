@@ -270,3 +270,9 @@ SetDesiredState 通过预期版本 CAS 更新运行意图，UpdateConfig 产生�
 修复前的真实链路接受了对版本 2 的绑定提交 expected_version=1 的请求；修复后在写入及签发前检查显式条件。此项落实原有的单资源条件写约定，已同步 `doc/02-core.md`。未改变 proto/API 字段、错误码、授权范围、私有表或工具链。复验命令为 `ctest --test-dir build/full-locked -R '^p05_runtime_(exact_accounts|identity_e2e|resource_application)$' --output-on-failure`。
 
 本项只覆盖既有对象。CreateAccount、ListAccounts、ListAdapters 的创建与目录授权另行裁定；GetAdapter 对绑定列表的投影及首次 bootstrap 凭据的交付不由本项登记。
+
+### 按重试身份和资源种类核对登记
+
+真实 PG/mTLS 复验中，GetAccount、GetAdapter 均以原有 UUID 配错误 kind 仍能读到记录。两者现返回 INVALID_ARGUMENT；两个成功响应均提供观察时间。UnbindAdapter 曾在正确账号与版本、错误适配器实例的情况下撤销实际绑定；现返回 CONFLICT，随后以原实例和未变版本仍可成功解绑。
+
+目标方法本轮登记 GetAccount、GetAdapter 和 UpdateAccount。UpdateAccount 更换 request_id、trace_id 后以同一幂等键重放，返回原账号快照。GetAdapter 的绑定列表仍无投影，登记只覆盖实际验证的字段。BindAdapter、UnbindAdapter、DisableAccount 首次调用均有 operation，同键换 request_id 后重试，资源快照仍在，原 operation 却丢失。三项 RPC 保留 not_implemented，首次 bootstrap 明文字段也保持原登记。

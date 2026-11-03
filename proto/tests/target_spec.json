@@ -385,12 +385,13 @@
       "idempotency": "required",
       "deadline_ms": 5000,
       "server_streaming": false,
-      "status": "not_implemented",
+      "status": "implemented",
       "max_deadline_ms": 30000,
       "requires_idempotency_key": true,
       "scope_kinds": [
         "RESOURCE_ACCOUNT"
-      ]
+      ],
+      "status_note": "P05 existing account/adapter exact scope, production PG16.4 + mTLS Identity and Runtime; field coverage is registered separately."
     },
     {
       "service": "RuntimeService",
@@ -410,7 +411,8 @@
       "requires_idempotency_key": true,
       "scope_kinds": [
         "RESOURCE_ACCOUNT"
-      ]
+      ],
+      "status_note": "P05 authorized first call and CAS verified; replay with a new request_id does not restore the original operation. Target remains incomplete."
     },
     {
       "service": "RuntimeService",
@@ -430,7 +432,8 @@
       "requires_idempotency_key": true,
       "scope_kinds": [
         "RESOURCE_ACCOUNT"
-      ]
+      ],
+      "status_note": "P05 authorized first call and CAS verified; replay with a new request_id does not restore the original operation. Target remains incomplete."
     },
     {
       "service": "RuntimeService",
@@ -450,7 +453,8 @@
       "requires_idempotency_key": true,
       "scope_kinds": [
         "RESOURCE_ACCOUNT"
-      ]
+      ],
+      "status_note": "P05 authorized first call and CAS verified; replay with a new request_id does not restore the original operation. Target remains incomplete."
     },
     {
       "service": "RuntimeService",
@@ -1517,11 +1521,12 @@
       "deadline_ms": 2000,
       "max_deadline_ms": 5000,
       "server_streaming": false,
-      "status": "not_implemented",
+      "status": "implemented",
       "requires_idempotency_key": false,
       "scope_kinds": [
         "RESOURCE_ACCOUNT"
-      ]
+      ],
+      "status_note": "P05 existing account/adapter exact scope, production PG16.4 + mTLS Identity and Runtime; field coverage is registered separately."
     },
     {
       "service": "RuntimeService",
@@ -1630,11 +1635,12 @@
       "deadline_ms": 2000,
       "max_deadline_ms": 5000,
       "server_streaming": false,
-      "status": "not_implemented",
+      "status": "implemented",
       "requires_idempotency_key": false,
       "scope_kinds": [
         "RESOURCE_ADAPTER"
-      ]
+      ],
+      "status_note": "P05 existing account/adapter exact scope, production PG16.4 + mTLS Identity and Runtime; field coverage is registered separately."
     },
     {
       "service": "RuntimeService",

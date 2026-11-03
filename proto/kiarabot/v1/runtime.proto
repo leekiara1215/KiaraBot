@@ -11,7 +11,7 @@ import "kiarabot/v1/events.proto";
 import "kiarabot/v1/actions.proto";
 import "kiarabot/v1/host.proto";
 
-// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+// CONTRACT_STATUS: not_implemented - historical reference; see target execution scope.
 message AccountRecord {
   string account_id = 1;
   string platform = 2;
@@ -108,7 +108,7 @@ message RuntimeCreateAccountResponse {
   AccountRecord account = 1;
 }
 
-// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+// CONTRACT_STATUS: not_implemented - historical reference; see target execution scope.
 message RuntimeUpdateAccountRequest {
   RequestContext context = 1;
   string account_id = 2;
@@ -116,7 +116,7 @@ message RuntimeUpdateAccountRequest {
   optional uint64 expected_version = 4;
 }
 
-// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+// CONTRACT_STATUS: not_implemented - historical reference; see target execution scope.
 message RuntimeUpdateAccountResponse {
   AccountRecord account = 1;
 }
@@ -685,7 +685,7 @@ message RuntimeUpdateActionPolicyResponse {
   ActionPolicy policy = 1;
 }
 
-// CONTRACT_STATUS: not_implemented - target typed resource query, producer pending.
+// CONTRACT_STATUS: not_implemented - historical reference; see target execution scope.
 message AdapterRegistrationMetadata {
   string implementation = 1;
   string implementation_version = 2;
@@ -694,7 +694,7 @@ message AdapterRegistrationMetadata {
   repeated Capability effective_capabilities = 5;
 }
 
-// CONTRACT_STATUS: not_implemented - target typed resource query, producer pending.
+// CONTRACT_STATUS: not_implemented - historical reference; see target execution scope.
 message AdapterRecord {
   ResourceRef resource = 1;
   uint64 version = 2;
@@ -738,13 +738,13 @@ message InstanceConfiguration {
   google.protobuf.Timestamp observed_at = 9;
 }
 
-// CONTRACT_STATUS: not_implemented - target typed resource query, producer pending.
+// CONTRACT_STATUS: not_implemented - historical reference; see target execution scope.
 message RuntimeGetAccountRequest {
   RequestContext context = 1;
   ResourceRef resource = 2;
 }
 
-// CONTRACT_STATUS: not_implemented - target typed resource query, producer pending.
+// CONTRACT_STATUS: not_implemented - historical reference; see target execution scope.
 message RuntimeGetAccountResponse {
   AccountRecord account = 1;
   google.protobuf.Timestamp observed_at = 2;
@@ -813,13 +813,13 @@ message RuntimeListInstancesResponse {
   SnapshotInfo snapshot = 2;
 }
 
-// CONTRACT_STATUS: not_implemented - target typed resource query, producer pending.
+// CONTRACT_STATUS: not_implemented - historical reference; see target execution scope.
 message RuntimeGetAdapterRequest {
   RequestContext context = 1;
   ResourceRef resource = 2;
 }
 
-// CONTRACT_STATUS: not_implemented - target typed resource query, producer pending.
+// CONTRACT_STATUS: not_implemented - historical reference; see target execution scope.
 message RuntimeGetAdapterResponse {
   AdapterRecord adapter = 1;
   google.protobuf.Timestamp observed_at = 2;

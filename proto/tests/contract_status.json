@@ -5965,7 +5965,16 @@
           "VersionedResourceState": "implemented",
           "RuntimeGetInstanceConfigRequest": "implemented",
           "RuntimeGetInstanceConfigResponse": "implemented",
-          "InstanceConfiguration": "implemented"
+          "InstanceConfiguration": "implemented",
+          "RuntimeGetAccountRequest": "implemented",
+          "RuntimeGetAccountResponse": "implemented",
+          "RuntimeGetAdapterRequest": "implemented",
+          "RuntimeGetAdapterResponse": "implemented",
+          "RuntimeUpdateAccountRequest": "implemented",
+          "RuntimeUpdateAccountResponse": "implemented",
+          "AccountRecord": "implemented",
+          "AdapterRecord": "implemented",
+          "AdapterRegistrationMetadata": "implemented"
         },
         "proto_fields": {
           "HostRegisterHostRequest.host": "implemented",
@@ -6661,7 +6670,36 @@
           "InstanceConfiguration.values": "implemented",
           "InstanceConfiguration.applied_version": "implemented",
           "InstanceConfiguration.apply_state": "implemented",
-          "InstanceConfiguration.observed_at": "implemented"
+          "InstanceConfiguration.observed_at": "implemented",
+          "RuntimeGetAccountRequest.context": "implemented",
+          "RuntimeGetAccountRequest.resource": "implemented",
+          "RuntimeGetAccountResponse.account": "implemented",
+          "RuntimeGetAccountResponse.observed_at": "implemented",
+          "RuntimeGetAdapterRequest.context": "implemented",
+          "RuntimeGetAdapterRequest.resource": "implemented",
+          "RuntimeGetAdapterResponse.adapter": "implemented",
+          "RuntimeGetAdapterResponse.observed_at": "implemented",
+          "RuntimeUpdateAccountRequest.context": "implemented",
+          "RuntimeUpdateAccountRequest.account_id": "implemented",
+          "RuntimeUpdateAccountRequest.display_name": "implemented",
+          "RuntimeUpdateAccountRequest.expected_version": "implemented",
+          "RuntimeUpdateAccountResponse.account": "implemented",
+          "AccountRecord.account_id": "implemented",
+          "AccountRecord.platform": "implemented",
+          "AccountRecord.platform_account_id": "implemented",
+          "AccountRecord.display_name": "implemented",
+          "AccountRecord.version": "implemented",
+          "AccountRecord.state": "implemented",
+          "AdapterRecord.resource": "implemented",
+          "AdapterRecord.version": "implemented",
+          "AdapterRecord.last_registration": "implemented",
+          "AdapterRecord.last_registered_at": "implemented",
+          "AdapterRecord.observed_at": "implemented",
+          "AdapterRecord.current_fence": "implemented",
+          "AdapterRecord.lifecycle": "implemented",
+          "AdapterRegistrationMetadata.implementation": "implemented",
+          "AdapterRegistrationMetadata.implementation_version": "implemented",
+          "AdapterRegistrationMetadata.protocol_version": "implemented"
         },
         "bridge_methods": {
           "AdapterBridge.Connect": "implemented",
@@ -12797,6 +12835,158 @@
         "proto_fields:InstanceConfiguration.observed_at": [
           "core/src/runtime/platform/runtime_rpc.cpp",
           "core/tests/platform/runtime_instance_management_e2e.py"
+        ],
+        "proto_messages:RuntimeGetAccountRequest": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/tests/platform/runtime_exact_accounts_test.py"
+        ],
+        "proto_fields:RuntimeGetAccountRequest.context": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/tests/platform/runtime_exact_accounts_test.py"
+        ],
+        "proto_fields:RuntimeGetAccountRequest.resource": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/tests/platform/runtime_exact_accounts_test.py"
+        ],
+        "proto_messages:RuntimeGetAccountResponse": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/tests/platform/runtime_exact_accounts_test.py"
+        ],
+        "proto_fields:RuntimeGetAccountResponse.account": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/tests/platform/runtime_exact_accounts_test.py"
+        ],
+        "proto_fields:RuntimeGetAccountResponse.observed_at": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/tests/platform/runtime_exact_accounts_test.py"
+        ],
+        "proto_messages:RuntimeGetAdapterRequest": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/tests/platform/runtime_exact_accounts_test.py"
+        ],
+        "proto_fields:RuntimeGetAdapterRequest.context": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/tests/platform/runtime_exact_accounts_test.py"
+        ],
+        "proto_fields:RuntimeGetAdapterRequest.resource": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/tests/platform/runtime_exact_accounts_test.py"
+        ],
+        "proto_messages:RuntimeGetAdapterResponse": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/tests/platform/runtime_exact_accounts_test.py"
+        ],
+        "proto_fields:RuntimeGetAdapterResponse.adapter": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/tests/platform/runtime_exact_accounts_test.py"
+        ],
+        "proto_fields:RuntimeGetAdapterResponse.observed_at": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/tests/platform/runtime_exact_accounts_test.py"
+        ],
+        "proto_messages:RuntimeUpdateAccountRequest": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/tests/platform/runtime_exact_accounts_test.py"
+        ],
+        "proto_fields:RuntimeUpdateAccountRequest.context": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/tests/platform/runtime_exact_accounts_test.py"
+        ],
+        "proto_fields:RuntimeUpdateAccountRequest.account_id": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/tests/platform/runtime_exact_accounts_test.py"
+        ],
+        "proto_fields:RuntimeUpdateAccountRequest.display_name": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/tests/platform/runtime_exact_accounts_test.py"
+        ],
+        "proto_fields:RuntimeUpdateAccountRequest.expected_version": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/tests/platform/runtime_exact_accounts_test.py"
+        ],
+        "proto_messages:RuntimeUpdateAccountResponse": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/tests/platform/runtime_exact_accounts_test.py"
+        ],
+        "proto_fields:RuntimeUpdateAccountResponse.account": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/tests/platform/runtime_exact_accounts_test.py"
+        ],
+        "proto_messages:AccountRecord": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/tests/platform/runtime_exact_accounts_test.py"
+        ],
+        "proto_fields:AccountRecord.account_id": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/tests/platform/runtime_exact_accounts_test.py"
+        ],
+        "proto_fields:AccountRecord.platform": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/tests/platform/runtime_exact_accounts_test.py"
+        ],
+        "proto_fields:AccountRecord.platform_account_id": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/tests/platform/runtime_exact_accounts_test.py"
+        ],
+        "proto_fields:AccountRecord.display_name": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/tests/platform/runtime_exact_accounts_test.py"
+        ],
+        "proto_fields:AccountRecord.version": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/tests/platform/runtime_exact_accounts_test.py"
+        ],
+        "proto_fields:AccountRecord.state": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/tests/platform/runtime_exact_accounts_test.py"
+        ],
+        "proto_messages:AdapterRecord": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/tests/platform/runtime_exact_accounts_test.py"
+        ],
+        "proto_fields:AdapterRecord.resource": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/tests/platform/runtime_exact_accounts_test.py"
+        ],
+        "proto_fields:AdapterRecord.version": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/tests/platform/runtime_exact_accounts_test.py"
+        ],
+        "proto_fields:AdapterRecord.last_registration": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/tests/platform/runtime_exact_accounts_test.py"
+        ],
+        "proto_fields:AdapterRecord.last_registered_at": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/tests/platform/runtime_exact_accounts_test.py"
+        ],
+        "proto_fields:AdapterRecord.observed_at": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/tests/platform/runtime_exact_accounts_test.py"
+        ],
+        "proto_fields:AdapterRecord.current_fence": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/tests/platform/runtime_exact_accounts_test.py"
+        ],
+        "proto_fields:AdapterRecord.lifecycle": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/tests/platform/runtime_exact_accounts_test.py"
+        ],
+        "proto_messages:AdapterRegistrationMetadata": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/tests/platform/runtime_exact_accounts_test.py"
+        ],
+        "proto_fields:AdapterRegistrationMetadata.implementation": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/tests/platform/runtime_exact_accounts_test.py"
+        ],
+        "proto_fields:AdapterRegistrationMetadata.implementation_version": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/tests/platform/runtime_exact_accounts_test.py"
+        ],
+        "proto_fields:AdapterRegistrationMetadata.protocol_version": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/tests/platform/runtime_exact_accounts_test.py"
         ]
       }
     }
