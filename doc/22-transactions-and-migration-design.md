@@ -357,11 +357,10 @@ sealed delegation 文件不属于数据库事务：签发是 Identity 无状态�
 `fsync` + `rename` + 目录 `fsync`，失败不修改旧文件/不留下临时文件；不引入持久化表、迁移或
 outbox。撤销/替换以 Identity 在线检查与文件 TTL 为准，文件内容不进入数据库。
 
-P05b-5/P05b-6 联测更新（2026-11-03，main=9311d2c）：Runtime sealed reader 已对齐 P05b-6 冻结
-envelope；C++ Exchange 缺 `RequestContext.idempotency_key` 的 client bug 已修复并补单测，C++/Python
-Exchange 均成功。剩余阻塞是 Identity 对实例子委托的 `CheckAuthorization` 稳定 UNAUTHENTICATED，
-Scheduler CreateTask 因此不可用；已并入 P05b-7（task-150）。该阻塞属授权语义，不是事务/迁移问题；
-修复前不宣称 P10k 真实 Scheduler 链可用。
+P05b-5/P05b-6 联测更新（2026-11-03，main=241f983）：Runtime sealed reader 已对齐 P05b-6
+envelope；C++ Exchange idempotency 与 Scheduler B1 owner 派生修复后，`p10_timer_e2e` 已真实跑通
+Runtime provider/Exchange→Scheduler Create/Get/Cancel（owner=实例、幂等、跨实例/离线 fail-closed）。
+无新表/事务；插件 Bridge→Runtime 组合单链路仍待 Host harness。
 ## P05b-7 sealed model 文件（2026-11-03）
 
 Model 父委托 sealed 文件与 task 文件相同的原子写入/旧文件保留语义，按 kind 分文件；签发仍是

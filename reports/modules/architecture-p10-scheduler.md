@@ -214,10 +214,11 @@ task_create/get/cancel，校验认证 instance/owner/installation、`host.tasks.
 `scheduler_endpoint` 已接线。**真实 Runtime→Scheduler delegation 来源已由用户选择 B1 sealed 短期文件**：P05b-5 实现
 Runtime reader/provider（配置 `instance_delegation_sealed_file`，校验 0600 regular 非符号链接 /
 instance+installation+audience/permissions/scope / ≤56s TTL / token，经 ExchangeDelegation 换
-audience=scheduler hops2 子委托，失败/过期/篡改/跨实例/证书错误 fail-closed）；P05b-6 的写入/刷新工具与规范已合入，Runtime reader 已按规范对齐；C++ Exchange 缺 idempotency
-key 的 client bug 已修复（C++/Python Exchange 均成功）。真实链联测（P05b-5）仍在 Identity 对 Exchange
-实例子委托的 `CheckAuthorization` 处稳定 `UNAUTHENTICATED`（Scheduler CreateTask 因此拒绝），已并入
-P05b-7（task-150）修复；修复前不宣称 P10k 真实 Scheduler 链可用。provider 未配置/失败时仍 fail-closed，不伪造成功。真实 TLS PluginBridge 夹具（P10k 扩展 `p11_model_bridge`，labels p10/p06/p11）
+audience=scheduler hops2 子委托，失败/过期/篡改/跨实例/证书错误 fail-closed）；P05b-6 的写入/刷新工具与规范已合入，Runtime reader 已对齐；C++ Exchange idempotency 与
+Scheduler B1 owner 派生修复后，`p10_timer_e2e` 扩展已用 sealed task 文件真实跑通 Runtime
+provider/Exchange→Scheduler Create/Get/Cancel、owner=实例、幂等 replay、跨实例/离线 fail-closed。
+真实 SDK PluginBridge→Runtime 组合单链路仍待 Host/P08e harness 验收；在此之前 SDK 任务生产可用
+不整体宣称。provider 未配置/失败时仍 fail-closed，不伪造成功。真实 TLS PluginBridge 夹具（P10k 扩展 `p11_model_bridge`，labels p10/p06/p11）
 验证 ingress→application→fake port 的成功/权限/幂等/取消/CONFLICT/超时/provider fail-closed。
 因此 SDK→真实 Runtime→真实 Scheduler 的成功链仍待“委托来源确认 + 真 Scheduler 联测”，
 不能宣称 P10 原生成功链验收通过。另：冻结 `TaskCreateRequest` 只带 `target_conversation` 字符串、

@@ -1589,7 +1589,10 @@ UNKNOWN/EXPIRED 单链迟到证据属剩余环境/验收项。
 
 ## P10k Runtime task 帧与 Scheduler 端口（2026-11-03）
 
-Runtime 可选配置 `scheduler_endpoint`（host:port，仅 Runtime，mTLS 复用服务证书/CA）用于插件 task 帧调用 SchedulerService.Create/Get/CancelTask。配置缺失时 PluginBridge task 帧稳定 `CAPABILITY_NOT_SUPPORTED`。P05b-5/B1 另可选配置 `instance_delegation_sealed_file`（部署/Control 写入的短期 sealed JSON，0600 regular 非符号链接、原子写）：Runtime 校验 instance/installation/audience=runtime/permissions/scope/issued_at/expires_at（≤56s）/token 后经 Identity ExchangeDelegation 换取 audience=scheduler hops2 子委托；过期/缺失/篡改/跨实例/错误证书/Identity 不可达稳定 `UNAUTHENTICATED`/`UPSTREAM_UNAVAILABLE`/`PERMISSION_DENIED`，不缓存超期 token、不伪造成功。P05b-6 的 Control/部署写入与刷新工具及规范已合入，Runtime reader 已按该规范对齐；C++ Exchange 的 idempotency-key client bug 已修复。真实链联测仍发现 Identity 对 Exchange 实例子委托 `CheckAuthorization` 返回 `UNAUTHENTICATED`，P05b-7（task-150）修复前 task 帧不得宣称生产可用（provider 仍 fail-closed）。readiness 不因该可选端点/文件缺失而整体 false，但 task 能力不可用；Owner/installation 由已认证 PluginBridge 会话派生，sealed 文件不匹配即拒绝。
+Runtime 可选配置 `scheduler_endpoint`（host:port，仅 Runtime，mTLS 复用服务证书/CA）用于插件 task 帧调用 SchedulerService.Create/Get/CancelTask。配置缺失时 PluginBridge task 帧稳定 `CAPABILITY_NOT_SUPPORTED`。P05b-5/B1 另可选配置 `instance_delegation_sealed_file`（部署/Control 写入的短期 sealed JSON，0600 regular 非符号链接、原子写）：Runtime 校验 instance/installation/audience=runtime/permissions/scope/issued_at/expires_at（≤56s）/token 后经 Identity ExchangeDelegation 换取 audience=scheduler hops2 子委托；过期/缺失/篡改/跨实例/错误证书/Identity 不可达稳定 `UNAUTHENTICATED`/`UPSTREAM_UNAVAILABLE`/`PERMISSION_DENIED`，不缓存超期 token、不伪造成功。P05b-6 的写入/刷新工具与规范已合入，Runtime reader 已对齐；C++ Exchange idempotency bug 与
+Scheduler B1 owner 派生（INSTANCE delegation scope；delegated 请求不走 platform-peer allowlist）
+已修复。真 PG/真 mTLS e2e 已跑通 Runtime→Scheduler Create/Get/Cancel、幂等/取消窗口、跨实例/
+离线 fail-closed；真实 SDK PluginBridge→Runtime 组合单链路仍待 Host/P08e harness 验收。readiness 不因该可选端点/文件缺失而整体 false，但 task 能力不可用；Owner/installation 由已认证 PluginBridge 会话派生，sealed 文件不匹配即拒绝。
 ## P12l：主体目录运维口径（2026-11-03）
 
 - `GET /api/v1/principals` 依赖 Control→Identity 的 `identity.principal.read` assignment；Control

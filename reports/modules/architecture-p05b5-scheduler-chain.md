@@ -1,49 +1,50 @@
-# P05b-5：P10k 真实 Scheduler 委托链联测记录（2026-11-03）
+# P05b-5：P10k 真实 Scheduler 委托链（2026-11-03）
 
-- 基线：main=`9311d2c`（P05b-6 已合入）；worktree `.worktrees/p05b5`；本报告记录 Runtime reader
-  与 P05b-6 规范对齐及真实链联测结果。**未宣称 P10k 真实 Scheduler 成功链完成。**
-- 非目标：不修改 Model 侧 sealed/generalization（P05b-7 由 ref-infra 负责），不扩 proto/RPC。
+- 基线：main=`241f983`（P05b-7 已合入）；worktree `.worktrees/p05b5`。
+- 结论：**Runtime provider/Exchange→真实 Scheduler Create/Get/Cancel 正向链已实测通过**；SDK
+  PluginBridge ingress 的完整单进程链路仍待接 Host harness（见 §4）。未改 proto/RPC/权限。
 
-## 1. 已完成
+## 1. 实现/修复
 
-1. `SealedInstanceDelegationSource` 按 P05b-6 冻结 envelope 对齐：`schema_version=1` 精确字段集，
-   `instance_id/installation_id/audience=runtime/permissions/scope/issued_at/expires_at/
-   ttl_seconds/delegation_proof`；proof 必须三段 JWT 且内层 `iat/exp` 与 envelope 一致；
-   0600 regular 非符号链接、owner=euid、64KiB 上限；跨实例/跨安装/权限/audience/TTL/过期/
-   畸形 JSON/权限位/symlink 全部 fail-closed。
-2. `RuntimeIdentityClient::exchange_delegation` + `RuntimeInstanceDelegationProvider`：
-   parent token 经 Identity Exchange 换 scheduler hops2 子证明，绑定 Runtime mTLS 叶；子证明缓存
-   不超过其到期，父 token 不缓存/不延长；provider 只在配置 sealed 文件时接入 P10k task client。
-3. 单测：`p05_sealed_delegation_source`（P05b-6 schema 正负例）、
-   `p05_instance_delegation_provider`（source 缺失/不可用/空 parent/Identity 拒绝/过期子证明/
-   跨实例/坏证书）；全量构建通过，`ctest -R 'p10|p05|p06|p03_postgres'` 19/19。
+1. `RuntimeIdentityClient::exchange_delegation`：parent proof→Identity Exchange audience=scheduler
+   hops2；补 `RequestContext.idempotency_key`（此前 C++ 缺 key 导致 UNAUTHENTICATED）。
+2. `SealedInstanceDelegationSource`：按 P05b-6 envelope（0600/原子/instance+installation/
+   audience=runtime/permissions/scope/≤56s/JWT iat-exp 一致）读取；provider 只缓存子证明到期。
+3. Scheduler 侧 B1 接线修复：
+   - `SchedulerIdentityClient` 从 delegation 的 `RESOURCE_INSTANCE` scope 派生 owner，而不是
+     plugin principal subject；INSTANCE scope 缺失时保留 subject 回退（legacy）。
+   - `prepare_platform_peer` 对**携带 delegation 的请求**返回 nullopt，交给正常 delegation
+     校验；避免 Runtime platform-peer allowlist 吞掉 P10k 插件 task 请求（P13h 生命周期路径无
+     delegation，保持 platform-peer）。
+   - CheckAuthorization 的 fallback scope 使用派生 instance 资源 id（此前误用 subject）。
+   以上不改变 P13h lifecycle 语义；P13 rank/platform-peer 测试继续通过。
 
-## 2. 真实链联测结果（阻塞）
+## 2. 真实验证（真 PG16.4 + 真 mTLS Identity/Scheduler/Runtime）
 
-使用 P05b-6 的 `scripts/deploy/instance-delegation-refresh` + 真 PG16.4/真 Identity/真 Scheduler
-（p10_timer harness 扩展，未提交失败测试代码）：
+`p10_timer_e2e`（p10/p05/p13 标签）扩展块使用 P05b-6 refresh tool 生成的 task sealed 文件，
+经 Runtime provider/Exchange（Runtime 叶）→**真实 Scheduler RPC**：
 
-| 步骤 | 结果 |
+| 场景 | 结果 |
 |---|---|
-| admin token + Control mTLS -> Identity IssueDelegation(instance_id) -> sealed 文件 | **成功**（P05b-6 e2e 已覆盖） |
-| Python Runtime 证书 ExchangDelegation(parent, audience=scheduler, instance+installation scope, task.schedule) | **成功**，子证明 subject=实例、aud=scheduler、hops=2、actor_chain=[Control,Runtime] |
-| Python 直接 Identity `CheckAuthorization(subject_proof=child, method=SchedulerService/CreateTask, scope=INSTANCE)` | **UNAUTHENTICATED** |
-| Python Scheduler `CreateTask`（带同一 child proof） | **PERMISSION_DENIED**（另一次运行出现 TIMEOUT） |
-| Runtime C++ provider Exchange（同一 sealed 文件/Runtime 叶） | 初次 **UNAUTHENTICATED**；根因为 C++ 请求缺少 `RequestContext.idempotency_key`（Identity 实际要求非空），补 key 后 C++ Exchange **成功**（本地 diagnostic，不提交失败断言） |
+| sealed 文件（admin token→Identity IssueDelegation） | 成功 |
+| Runtime C++ Exchange（parent→audience=scheduler hops2） | 成功（同 token 与 Python 请求 wire 对齐，idempotency 修复） |
+| Scheduler CreateTask | 成功；任务行 owner=实例资源 UUID |
+| Scheduler GetTask | 成功 |
+| Scheduler CancelTask（取消窗口内 pending） | 成功，任务行 Cancelled |
+| 同 idempotency key/content replay | 成功且 Scheduler 任务行仍为 1（不重复创建） |
+| 跨实例 sealed 文件 | fail-closed（reader instance 不匹配，无 Scheduler 任务） |
+| Scheduler 离线（错误 endpoint） | fail-closed（不产生任务） |
+| 编译/回归 | 全量构建；`ctest -R 'p10|p05|p06|p03_postgres'` 通过；P10m shutdown 回归保留 |
 
-结论：
-1. **C++ Exchange UNAUTHENTICATED 是 client bug**：`RuntimeIdentityClient::exchange_delegation`
-   未设置 `RequestContext.idempotency_key`；Identity 的 Exchange 实际要求该字段非空（尽管 proto
-   `requires_idempotency=false`）。已修复并补单测，C++ Exchange 与 Python 一样成功。
-2. 剩余阻塞是 **Identity 对 Exchange 产生的实例主体子委托的 `CheckAuthorization` 语义**：
-   `CheckAuthorization(subject_proof=child, method=SchedulerService/CreateTask, scope=INSTANCE)`
-   稳定 UNAUTHENTICATED，Scheduler CreateTask 因此 PERMISSION_DENIED；属 P05b-2 遗留，已并入
-   P05b-7（task-150）修复范围。
+撤销/过期/错误证书：P05b-7 的 `p05_runtime_identity_e2e` 已覆盖撤销后 Exchange/Check 拒绝、
+过期 child 拒绝、错误证书；sealed reader 单测覆盖过期/篡改/TTL/权限/实例不匹配。本次 e2e 未重复
+销毁管理员 assignment（p10_timer 共享 fixture 顺序限制），以这些专项矩阵为准。
 
-## 3. 未完成/下一步
+## 3. 未完成
 
-- 已修复并提交 C++ Exchange 的 idempotency-key client bug；Exchange 正向可复现成功。
-- 待 P05b-7（task-150）修复 child `CheckAuthorization` 后，再跑真 SDK PluginBridge→Runtime→
-  真实 Scheduler 成功链与撤销/过期/错误证书/离线矩阵。
-- 本 worktree 未提交任何“正向成功”测试/断言；negative/fail-closed 与 reader 对齐保留。
-- P05b-7/model 泛化不在本任务范围。
+- **真实 SDK plugin Bridge→Runtime→Scheduler 单链路**尚未在新 harness 合并运行：当前 e2e 直接
+  构造 Runtime provider/client（与生产 Runtime 相同组件），P10k PluginBridge ingress 仍由
+  `p10_sdk_tasks_e2e`（fake Scheduler owner）覆盖。两者组合需要在 Host/P08e harness 中新增
+  Scheduler + sealed 文件 + plugin task 调用，属后续 P10k 单链路验收。
+- COMPLETED=已入队 在既有 P10 timer e2e 覆盖，但未通过本 sealed delegation 任务路径重跑。
+- 真实付费 Provider/跨主机等环境项不受影响。

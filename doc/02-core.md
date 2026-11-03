@@ -1591,11 +1591,12 @@ delegation_proof（JWT 三段且内层 iat/exp 与 envelope 一致），再经
 provider 只缓存不超过子委托到期的证明，绝不缓存/延长父 token。缺失/过期/篡改/跨实例/错误证书/
 Identity 不可达一律 fail-closed，未配置时 composition 仍注入
 `unavailable_scheduler_task_delegation()`。P05b-6 的 Control/部署写入/刷新工具与规范已合入。
-**正向链联测**：C++ Exchange 最初 `UNAUTHENTICATED` 的根因是 Runtime 请求缺少
-`RequestContext.idempotency_key`（Identity Exchange 实际要求非空），已修复并补单测，C++ 与 Python
-Exchange 均可成功。剩余阻塞是真实 Identity 对 Exchange 实例子委托的 `CheckAuthorization` 稳定返回
-`UNAUTHENTICATED`（Scheduler CreateTask 因此拒绝）；该语义已并入 P05b-7（task-150）修复。在
-P05b-7 合入前不宣称 Runtime→真实 Scheduler 成功链，也不把 sealed/provider 单测当作正向证据。测试注入 fake `SchedulerTaskPort` 仍覆盖成功/拒绝/幂等/取消/
+**正向链联测（P05b-7 后）**：C++ Exchange 缺 `RequestContext.idempotency_key` 的 client bug 已
+修复；Scheduler 侧 B1 接线修正为从 delegation 的 `RESOURCE_INSTANCE` scope 派生 owner（subject 是
+plugin principal，不是 instance 资源 id），并让携带 delegation 的请求绕过 platform-peer allowlist
+（P13h 生命周期路径无 delegation，保持原语义）。`p10_timer_e2e` 扩展已用 P05b-6 sealed task 文件
+真实跑通 Runtime provider/Exchange→Scheduler Create/Get/Cancel、owner=实例、幂等 replay、跨实例
+与离线 fail-closed；仍未在 Host/P08e harness 组合真实 SDK plugin Bridge ingress（见 P05b-5 报告）。测试注入 fake `SchedulerTaskPort` 仍覆盖成功/拒绝/幂等/取消/
 CONFLICT/超时。未改 proto、权限或 RPC。**待确认**：冻结的
 `TaskCreateRequest` 只带 `target_conversation` 字符串、不带会话类型；P10k 暂按 GROUP 构造 Scheduler
 `ConversationKey`，需用户确认任务目标是否允许私聊或如何在 wire 上表达类型（否则私聊任务的事件
