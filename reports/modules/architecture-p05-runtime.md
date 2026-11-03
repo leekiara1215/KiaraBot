@@ -191,3 +191,29 @@ installation/audience/白名单/TTL/未过期，文件不是签名信任根；P0
 测试：`p05b_sealed_delegation_file`（单元）与 `p05_runtime_identity_e2e`（真 PG16.4+mTLS
 管理员触发→文件→reader；错误 instance、未授权、符号链接、幂等刷新）。未做：Runtime 自动
 读取/刷新 provider、多主机内部通道、真实 Model/Scheduler 下游。
+
+## P05b-7 model sealed 委托与 Identity 交叉积修正（2026-11-03）
+
+- Identity 实例父委托新增 model-only 形状：subject 仍由 instance_id binding 解析；scope 恰好
+  一个 RESOURCE_MODEL，permissions model.chat/model.call.inspect；管理员 exact assignment 按
+  Model 资源，不要求 INSTANCE 交叉；task 形状不变；混合/跨模型/多 Model/非白名单拒绝。
+- sealed 文件/工具按 kind 分组：task 默认旧文件名，model 为
+  `instance-delegation-<instance>-model.json`；refresh 工具支持 `--scope-kind/--model-id/
+  --permissions`；reader 增加 `expected_model` 并拒绝混合 envelope；TTL/0600/原子/审计不变。
+- e2e：真 PG16.4+mTLS model 签发→Runtime 叶 Exchange audience=model hops2；sealed model 文件
+  reader/幂等；错误 model scope、混合 scope、model.manage、撤销模型 assignment 负例。
+- 解锁：P05b-4/C++ reader 可读取 model envelope 并 Exchange；UpdateModel/RotateProviderSecret
+  缺 scope_kinds 是独立契约缺口（未修）。
+
+## P05b-7 CheckAuthorization 下游解锁矩阵（2026-11-03）
+
+真 PG16.4+mTLS e2e 覆盖：
+- Scheduler owner 叶 CheckAuthorization(`kiarabot.v1.SchedulerService/CreateTask`, scope
+  INSTANCE)：task child（INSTANCE+INSTALLATION 与 minimal INSTANCE-only）allowed=true；跨实例
+  scope 返回 allowed=false/PERMISSION_DENIED；结构过期 child 返回 UNAUTHENTICATED。
+- Model owner 叶 CheckAuthorization(`kiarabot.v1.ModelService/Chat`, scope RESOURCE_MODEL)：
+  model child allowed=true；跨模型 scope 拒绝。
+- 父委托仍由管理员 exact assignment 控制；撤销后 Exchange/Check 失败。该回归证明 Scheduler/
+  Model 下游对 B1 hops2 子委托的在线授权链可用，P05b-5 可继续 CreateTask 真实链。若调用方
+  使用 Runtime 叶调用 CheckAuthorization，Identity 会按 recipient owner 规则拒绝
+  (UNAUTHENTICATED)，必须由实际 Scheduler/Model mTLS peer 发起。

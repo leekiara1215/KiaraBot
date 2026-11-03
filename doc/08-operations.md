@@ -1696,3 +1696,17 @@ Runtime/PG 的 test-only 注入端口证据。真实 Runtime→Scheduler 平台�
    失败；不提供文件级 revoke。多主机暂用单机共享卷，后续内部通道扩展。
    reader 格式/严格校验由 `scripts/deploy/sealed_delegation.py` 提供，Runtime provider
    接入点为 P05b-4/P05b-5。
+
+### P05b-7 model 刷新
+
+`scripts/deploy/instance-delegation-refresh --scope-kind model --model-id <model-uuid> --once`
+（或配置 `"scope_kind":"model","model_id":...`）生成 model sealed 文件；默认权限
+model.chat,model.call.inspect，可用 `--permissions` 覆盖。task 刷新默认行为不变；
+`--interval` 对两种 kind 都要求 <56s。错误 model/跨模型/混合 scope 拒绝且不替换文件。
+
+### P05b-7 下游 CheckAuthorization 验证
+
+Scheduler/Model 必须使用自己的 mTLS 叶调用 Identity.CheckAuthorization；Runtime 叶不能替代
+owner 叶（会因 recipient 规则 UNAUTHENTICATED）。Sealed task/model 文件被读取并 Exchange 后，
+下游应观察 allowed=true；跨实例/跨模型返回 PERMISSION_DENIED，过期/篡改返回
+UNAUTHENTICATED，Runtime 必须 fail-closed。

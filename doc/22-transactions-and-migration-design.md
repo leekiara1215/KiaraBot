@@ -362,3 +362,8 @@ envelope；C++ Exchange 缺 `RequestContext.idempotency_key` 的 client bug 已�
 Exchange 均成功。剩余阻塞是 Identity 对实例子委托的 `CheckAuthorization` 稳定 UNAUTHENTICATED，
 Scheduler CreateTask 因此不可用；已并入 P05b-7（task-150）。该阻塞属授权语义，不是事务/迁移问题；
 修复前不宣称 P10k 真实 Scheduler 链可用。
+## P05b-7 sealed model 文件（2026-11-03）
+
+Model 父委托 sealed 文件与 task 文件相同的原子写入/旧文件保留语义，按 kind 分文件；签发仍是
+Identity 无状态签名，不进入数据库事务；混用 task/model 会导致非法 scope×permission 交叉积而
+被拒绝，因此必须分组交付。

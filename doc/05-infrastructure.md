@@ -621,3 +621,10 @@ P11 实测覆盖 p11_model_http_provider（真实 loopback HTTP provider fixture
 刷新进程与 Runtime 必须位于同一主机/用户可见卷；禁止通过 HTTP 暴露该目录。多主机部署暂不
 支持共享卷交付，后续通过内部 mTLS 通道扩展，不改变文件 JSON/安全语义。详见
 `reports/analysis/p05b6-sealed-delegation-file.md`。
+
+### P05b-7 model sealed 文件
+
+除 task 文件外，部署可为同一实例生成 model 父委托文件：
+`instance-delegation-<instance_id>-model.json`（RESOURCE_MODEL/model.chat/model.call.inspect），
+与 task 文件分开原子写入同一共享卷；Runtime 按需读取对应 kind。model 文件仍须 Online
+Exchange/CheckAuthorization，不可仅凭文件接受模型调用。

@@ -391,3 +391,23 @@ with Control's mTLS leaf. The returned hops1 proof is sealed into a 0600 regular
 write/rename) for Runtime to read; the file is not a trust root, and Runtime must still Exchange
 and let owners call `CheckAuthorization` online. File fields and reader rules are frozen in
 `reports/analysis/p05b6-sealed-delegation-file.md`.
+
+### P05b-7 model parent delegation shape
+
+An instance-subject parent delegation may be task-scoped (INSTANCE/INSTALLATION with
+task.schedule/task.read) or model-scoped (exactly one RESOURCE_MODEL with
+model.chat/model.call.inspect). The subject still comes only from the instance_id binding, and
+the administrator still needs exact assignments for every permission/resource tuple; a model
+parent does not require an INSTANCE scope tuple. Mixing task/model shapes, multiple model ids,
+cross-instance task scope and non-whitelisted permissions are rejected. Exchange/owner semantics
+are unchanged.
+
+### P05b-7 instance-subject hops2 CheckAuthorization
+
+Scheduler/Model callers verify an exchanged child proof through Identity.CheckAuthorization over
+their own actual mTLS peer. Identity recognizes the instance-subject origin (subject=instance,
+source credential/session=administrator, actor_chain=[Control,Runtime], hops2), rechecks the
+administrator's current exact authority and the instance principal binding, and authorizes the
+requested method permission/scope. Cross-instance/cross-model scope yields decision denied with
+PERMISSION_DENIED; expired/tampered or wrong recipient remains UNAUTHENTICATED. Wire fields are
+unchanged.

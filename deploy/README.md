@@ -131,3 +131,7 @@ Control mTLS credentials, and atomically replaces a 0600 regular file under `out
 Runtime container receives that directory as a shared (read-only) volume on the same host.
 `--interval` must be below the 56s TTL (e.g. 20s); expired/missing files must leave Runtime
 fail-closed. See `reports/analysis/p05b6-sealed-delegation-file.md` for the full contract.
+
+Model-scoped parent delegation: use `--scope-kind model --model-id <uuid>` (or the
+`scope_kind`/`model_id` config fields). It writes `instance-delegation-<instance>-model.json`
+with RESOURCE_MODEL scope; task and model envelopes are separate files and never mixed.
