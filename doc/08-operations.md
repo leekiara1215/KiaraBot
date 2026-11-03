@@ -1722,3 +1722,13 @@ Runtime 可选 `instance_delegation_sealed_file`（task）与
 原子写入的 0600 文件。未显式配置 model 路径时 Runtime 从 task 路径推导
 `instance-delegation-<instance>-model.json`。task/model 权限与 scope 必须分开，混合/跨模型/
 跨实例/过期/tamper 一律 UNAUTHENTICATED。刷新频率仍须 <56s；文件交付/多主机限制见 P05b-6。
+
+## P05b-9 ExchangeDelegation deadline 预算（2026-11-03）
+
+若 production Runtime 用 sealed parent 调 Identity ExchangeDelegation 返回
+InvalidArgument/UNAUTHENTICATED，而同一 parent/证书由测试侧直连成功，先检查 Runtime Identity client
+的 Exchange 预算：Exchange 需要两次在线授权+签名，不能沿用 CheckAuthorization 的 500ms 热路径。
+P05b-9 后 `RuntimeIdentityClientOptions.delegation_budget/delegation_maximum_budget` 默认 2s/5s，
+只影响 Exchange；CheckAuthorization 仍 500ms/1s。无需新增配置；若人为覆盖，两者必须 >0、
+budget<=maximum 且 maximum<=30s，否则启动失败。Identity 收到的请求仍按 RPC effective deadline
+（`min(requested, now+5s)`）执行；不要把该预算误当成 wire 契约字段。

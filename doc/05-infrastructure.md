@@ -647,3 +647,15 @@ schema/instance/installation/audience/ttl/proof 时间戳，任何混合/越权/
 `audience=model`、单 MODEL scope 请求 Exchange，缓存键含 kind/model/permission，且只缓存到
 子委托/父委托/56s 上限较早者；task 路径保持原 Scheduler 行为。Model 客户端/组合根接线由
 P05b-4 完成，本任务不实现 Model provider。
+
+## P05b-9 Runtime Identity client 的 ExchangeDelegation 预算（2026-11-03）
+
+`RuntimeIdentityClient` 的 `CheckAuthorization` 使用生产热路径预算 500ms/最大1s；`ExchangeDelegation`
+需要两次在线授权（parent/source + child/final）和签名，不能复用该热路径预算。此前生产
+composition 的 Identity client 以 500ms/1s 创建，导致 Exchange 在 Identity 进入 application 前
+因 deadline 耗尽被拒（表现为 InvalidArgument/UNAUTHENTICATED 且无 ExchangeDelegation 审计），
+而测试侧长 deadline 直连成功。
+
+现 `RuntimeIdentityClientOptions` 增加仅用于 Exchange 的 `delegation_budget`（默认 2s）/
+`delegation_maximum_budget`（默认 5s），`create()` 校验 >0 且 budget<=maximum<=30s；CheckAuthorization
+仍用 500ms/1s。无 proto/RPC/权限/配置字段变更，sealed task/model provider 无需改配置。

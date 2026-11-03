@@ -420,3 +420,10 @@ permission)`），provider 增加 `model_chat_delegation(context, model_id, perm
 Exchange audience 分别固定 Scheduler/Model，scope 分别为 INSTANCE(+INSTALLATION)/单 MODEL，
 权限由用途选择。这样 P05b-4 可直接复用同一 sealed reader，不再自建 Model 专用副本。无 proto/
 权限编号/RPC 变化；真实 Model client 接线仍由 P05b-4 完成。
+
+## P05b-9 ExchangeDelegation 时限（Runtime 内部实现，2026-11-03）
+
+ExchangeDelegation 的 RPC 契约未变；Runtime→Identity client 为 Exchange 使用独立
+`delegation_budget`（默认 2s，最大 5s），区别于 CheckAuthorization 的 500ms/1s 热路径预算。
+Identity 仍按请求 effective deadline（requested 与 now+5s 取小）执行；不要把 client 预算写成
+proto 字段或对调用方可见的契约承诺。

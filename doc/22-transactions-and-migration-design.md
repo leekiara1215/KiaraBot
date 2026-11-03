@@ -371,3 +371,7 @@ Identity 无状态签名，不进入数据库事务；混用 task/model 会导�
 **P05b-8（2026-11-03）**：sealed 父委托读取泛化为 task/model 两类 envelope；Runtime 只在校验
 后通过 Identity Exchange 换子委托，交换不在本地事务内，也不缓存父 token。模型调用链的
 客户端/组合根接入由 P05b-4 负责，本任务不改变事务边界或 schema。
+
+P05b-9（2026-11-03）：ExchangeDelegation 的 Runtime client 独立 2s/5s 预算不涉及事务/迁移；
+修复的是 production Identity client 复用 500ms CheckAuthorization 热路径预算导致 Exchange 在
+进入 Identity application 前被 deadline 拒绝的问题。

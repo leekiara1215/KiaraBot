@@ -217,3 +217,18 @@ installation/audience/白名单/TTL/未过期，文件不是签名信任根；P0
   Model 下游对 B1 hops2 子委托的在线授权链可用，P05b-5 可继续 CreateTask 真实链。若调用方
   使用 Runtime 叶调用 CheckAuthorization，Identity 会按 recipient owner 规则拒绝
   (UNAUTHENTICATED)，必须由实际 Scheduler/Model mTLS peer 发起。
+
+## P05b-9 production ExchangeDelegation budget 根因（2026-11-03）
+
+build-deploy P05b-4 的 production Runtime sealed model chain：ExchangeDelegation 返回
+InvalidArgument/UNAUTHENTICATED，而测试侧长 deadline 直连成功。对照证据（`/tmp/p05b9-handoff`）：
+wire、sealed envelope、Runtime 叶指纹（Identity 实测 peer_cert==request_cert）、context 均合法；
+Identity audit 无 ExchangeDelegation 记录，说明在 application 前被拒。根因是
+`RuntimeIdentityClient` 的 Exchange 复用了 CheckAuthorization 的 500ms/1s 热路径预算；Exchange
+需要两次在线授权+签名，production 负载下第二次授权前 deadline 已耗尽。
+
+修复：`RuntimeIdentityClientOptions` 增加 `delegation_budget{2000}`/
+`delegation_maximum_budget{5000}`（仅 Exchange；Check 保持 500ms/1s），create 校验有界；
+无 proto/RPC/权限/配置字段变更。`p05_runtime_identity_client` 增加 700ms 慢 Exchange 单测与
+非法预算负例；build-deploy 已验证同设计下完整 model chain 正向矩阵与 fail-closed fixture 通过。
+详见 `reports/modules/architecture-p05b9-exchange-delegation-budget.md`。
