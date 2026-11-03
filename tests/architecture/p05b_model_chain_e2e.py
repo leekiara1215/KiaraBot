@@ -461,13 +461,22 @@ def after_bootstrap(root: Path) -> None:
                 'installation_id': STATE['installation'],
                 'output_dir': str(root),
                 'token_file': str(token_file)})
-            refresh = subprocess.run(
+            # Long-running deployment refresher: the sealed parent has a 56s contract TTL and the
+            # negative matrix below legitimately runs longer, so the real tool must keep refreshing
+            # it exactly as a deployment sidecar would.
+            refresh = subprocess.Popen(
                 [sys.executable, 'instance-delegation-refresh', '--config',
                  str(refresh_config), '--token-file', str(token_file), '--scope-kind', 'model',
-                 '--model-id', model_id, '--once'], cwd=REPO / 'scripts/deploy',
-                capture_output=True, timeout=60)
-            require(refresh.returncode == 0,
-                    'sealed model refresh: ' + refresh.stderr.decode(errors='replace')[-500:])
+                 '--model-id', model_id, '--interval', '5'],
+                cwd=REPO / 'scripts/deploy', stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE)
+            children.append(refresh)
+            deadline = time.monotonic() + 20.0
+            while not parent_file.is_file() and time.monotonic() < deadline:
+                if refresh.poll() is not None:
+                    detail = refresh.stderr.read(800).decode(errors='replace')
+                    raise Failure('sealed model refresh exited: ' + ' '.join(detail.split()))
+                time.sleep(0.05)
             require(parent_file.is_file(), 'sealed model envelope written')
             require(parent_file.stat().st_mode & 0o777 == 0o600, 'sealed envelope 0600')
         else:
@@ -540,15 +549,15 @@ def run_plugin(root, bridge_endpoint, instance, bootstrap, tls, provider_state, 
         '                        reply = await context.model_chat(\n'
         '                            command.get("model", ' + repr(model_id) + '),\n'
         '                            [{"role": "user", "text": command["text"]}],\n'
-        '                            logical_call_id=command["id"], timeout=4.0)\n'
-        '                        result.update(ok=True, text=reply.result.text,\n'
-        '                                      input_tokens=reply.result.input_tokens,\n'
-        '                                      output_tokens=reply.result.output_tokens)\n'
+        '                            logical_call_id=command["id"], timeout=12.0)\n'
+        '                        result.update(ok=True, text=reply.text,\n'
+        '                                      input_tokens=reply.input_tokens,\n'
+        '                                      output_tokens=reply.output_tokens)\n'
         '                    except PluginError as error:\n'
         '                        result.update(ok=False, code=int(error.code),\n'
         '                                      retryable=bool(error.retryable))\n'
         '                    except Exception as error:\n'
-        '                        result.update(ok=False, code=-1, detail=str(error)[:120])\n'
+        '                        result.update(ok=False, code=-1, detail=repr(error)[:300])\n'
         '                    with open(' + repr(str(results)) + ', "a") as handle:\n'
         '                        handle.write(json.dumps(result) + "\\n")\n'
         '                seen = len(lines)\n'

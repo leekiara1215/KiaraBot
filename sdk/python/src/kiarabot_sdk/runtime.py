@@ -153,7 +153,8 @@ class Context:
                                                            common.UPSTREAM_UNAVAILABLE,
                                                            common.TIMEOUT)
             raise PluginError(error.code, retryable) from None
-        result = response.host_response
+        # _call/_rpc resolves host requests to the HostResponse itself, not the enclosing frame.
+        result = response
         if result.HasField('error'):
             raise PluginError(result.error.code, result.error.retryable)
         return result.model_chat
