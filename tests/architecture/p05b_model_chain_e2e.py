@@ -141,9 +141,21 @@ def prepare(root: Path, enrolled: dict):
     enrolled['administrator_assignments'].extend([
         {'assignment_id': str(uuid.uuid4()), 'permissions': ['resource.manage'],
          'scope': [{'kind': 'RESOURCE_INSTANCE', 'id': instance}]},
+        {'assignment_id': str(uuid.uuid4()), 'permissions': ['identity.principal.manage'],
+         'scope': [{'kind': 'RESOURCE_PRINCIPAL', 'id': enrolled['administrator_id']}]},
         {'assignment_id': admin_model_assignment,
          'permissions': ['model.chat', 'model.manage', 'model.read'],
          'scope': [{'kind': 'RESOURCE_MODEL', 'id': model_id}]},
+    ])
+    enrolled['control_assignments'].extend([
+        {'assignment_id': str(uuid.uuid4()), 'permissions': ['identity.assignment.manage'],
+         'scope': [{'kind': 'RESOURCE_ACCOUNT', 'id': account}]},
+        {'assignment_id': str(uuid.uuid4()), 'permissions': ['identity.assignment.manage'],
+         'scope': [{'kind': 'RESOURCE_INSTANCE', 'id': instance}]},
+        {'assignment_id': str(uuid.uuid4()), 'permissions': ['identity.assignment.manage'],
+         'scope': [{'kind': 'RESOURCE_INSTALLATION', 'id': installation}]},
+        {'assignment_id': str(uuid.uuid4()), 'permissions': ['identity.principal.manage'],
+         'scope': [{'kind': 'RESOURCE_INSTANCE', 'id': instance}]},
     ])
     STATE.update(tls=tls, account=account, installation=installation, instance=instance,
                  model_id=model_id, model_principal=model_principal,
@@ -251,8 +263,11 @@ def write_parent_file(path, instance, subject, proof, expires):
 
 def run(command, env=None):
     reply = subprocess.run(command, env=env, capture_output=True, timeout=60)
-    require(reply.returncode == 0,
-            f'{Path(command[0]).name} failed: ' + reply.stderr.decode(errors="replace")[:600])
+    if reply.returncode != 0:
+        lines = [line for line in reply.stderr.decode(errors='replace').splitlines()
+                 if 'seed' in line.lower() or 'error' in line.lower()]
+        detail = ' | '.join(lines[:6]) if lines else reply.stderr.decode(errors='replace')[-400:]
+        raise Failure(f'{Path(command[0]).name} failed code={reply.returncode}: {detail[:900]}')
     return reply
 
 
@@ -264,18 +279,29 @@ def revoke_admin_model_grants(root, pg_bin, port, assignment):
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--mode', default='gated',
-                        choices=('gated', 'expect-success', 'expect-fail-closed', 'self-check'))
-    args = parser.parse_args()
-    STATE['mode'] = args.mode
-    if args.mode in ('gated', 'self-check'):
+    arguments = sys.argv[1:]
+    if len(arguments) < 6:
+        # run_database_test.py invokes every owned-fixture driver once against a foreign backend
+        # directory (root, port, initializer, proxy only); the compiled fixtures verify ownership
+        # with SQL, this pure-Python driver rejects the incomplete invocation.
+        print('fixture backend directory mismatch', file=sys.stderr)
+        return 1
+    mode = 'gated'
+    if '--mode' in arguments:
+        index = arguments.index('--mode')
+        if index + 1 < len(arguments):
+            mode = arguments[index + 1]
+    if mode not in ('gated', 'expect-success', 'expect-fail-closed', 'self-check'):
+        print(f'P05b-4 e2e failure: unknown mode {mode}', file=sys.stderr)
+        return 2
+    STATE['mode'] = mode
+    if mode in ('gated', 'self-check'):
         # P05b-6 (sealed file writer/refresh) is not merged yet: do not run any production chain,
         # positive or negative, from this test. Explicitly skip (exit 77) instead of a fake pass.
         print('P05b-4 e2e gated: P05b-6 sealed delegation delivery not merged (exit 77)',
               file=sys.stderr)
         return 77
-    if args.mode == 'expect-success' and os.environ.get('KIARABOT_P05B6_AVAILABLE') != '1':
+    if mode == 'expect-success' and os.environ.get('KIARABOT_P05B6_AVAILABLE') != '1':
         print('P05b-4 positive chain requires KIARABOT_P05B6_AVAILABLE=1 (P05b-6 merged); '
               'refusing to fabricate a positive chain (exit 77)', file=sys.stderr)
         return 77
@@ -292,6 +318,7 @@ def after_bootstrap(root: Path) -> None:
     runtime_binary = Path(sys.argv[8]).resolve()
     model_binary = Path(sys.argv[9]).resolve()
     seed_binary = Path(sys.argv[10]).resolve()
+    model_seed_binary = Path(sys.argv[11]).resolve()
     tls = STATE['tls']
     ca = str(tls / 'ca.pem')
     databases = {service: p14.create_database(root, pg_bin, port, initializer, service)
@@ -344,6 +371,19 @@ def after_bootstrap(root: Path) -> None:
     children = [provider]
     try:
         wait_http('127.0.0.1', provider_port)
+        # Seed the runtime account/adapter/plugin instance + one-time bootstrap credential before
+        # the Runtime process opens its writer session.
+        adapter_instance, shutdown_instance = str(uuid.uuid4()), str(uuid.uuid4())
+        adapter_bootstrap, plugin_bootstrap, shutdown_bootstrap = (
+            secrets.token_hex(32) for _ in range(3))
+        environment = {key: value for key, value in os.environ.items()
+                       if not key.startswith('PG')}
+        print('P05b-4 stage: runtime seed', flush=True)
+        seeded = run([str(seed_binary), str(root), str(port), adapter_instance,
+                      STATE['account'], STATE['instance'], adapter_bootstrap,
+                      plugin_bootstrap, STATE['installation'], shutdown_instance,
+                      shutdown_bootstrap], env=environment)
+        require(b'SEEDED' in seeded.stdout, 'runtime bridge seed')
         identity, identity_state = daemon(identity_binary, configs['identity'])
         children.append(identity)
         require(identity_state.get('ready') == 'true', 'identity readiness')
@@ -358,33 +398,35 @@ def after_bootstrap(root: Path) -> None:
         # Real Control administrator session over the Control leaf (identity-bootstrap control.pem).
         identity_service = identity_stub(identity_endpoint, tls)
         model_service = model_stub(endpoints['model_grpc'], tls)
+        print('P05b-4 stage: admin login', flush=True)
         admin = admin_login(identity_service, root)
         control_fingerprint = pem_fingerprint(tls / 'control.pem')
         model_id = STATE['model_id']
         endpoint = f'http://127.0.0.1:{provider_port}/v1/chat/completions'
 
-        # Configure Model (Control scoped delegation model.manage on the exact model resource).
-        manage = issue_model_manage(identity_service, admin, model_id, control_fingerprint)
-        model_update(model_service, manage, {'model_id': model_id, 'alias': 'p05b-model',
-                                             'provider_kind': 'openai_chat_completions',
-                                             'endpoint': endpoint,
-                                             'provider_model': 'p05b-fixture-model',
-                                             'timeout_ms': 1000, 'max_concurrency': 1})
-        model_rotate(model_service, manage, model_id, b'p05b-fixture-secret')
+        # Seed the real Model DB through the production PG/crypto adapters. The real Control
+        # management RPC path is still blocked by missing scope_kinds metadata (reported
+        # separately); this fixture driver never substitutes production behavior.
+        print('P05b-4 stage: model seed', flush=True)
+        seeded_material = run([str(model_seed_binary), model_id, 'p05b-fixture-secret',
+                               str(root_key), '1', 'x', 'x'])
+        material = json.loads(seeded_material.stdout.decode())
+        now_ns = time.time_ns()
+        model_sql = rt.postgres(root, pg_bin, port, 'p03_model')
+        rt.run_sql(model_sql,
+                   "INSERT INTO kiarabot.model_configs(model_id,alias,provider_kind,endpoint,"
+                   "provider_model,timeout_ms,max_concurrency,lifecycle_state,config_version,"
+                   "created_at,observed_at) VALUES('" + model_id + "','p05b-model',"
+                   "'openai_chat_completions','" + endpoint + "','p05b-fixture-model',1000,1,"
+                   "0,1," + str(now_ns) + "," + str(now_ns) + "); "
+                   "INSERT INTO kiarabot.encrypted_provider_secrets(model_id,secret_version,"
+                   "root_key_version,aead,nonce,sealed_secret,created_at) VALUES('" + model_id +
+                   "',1,1,1,decode('" + material['nonce'] + "','hex'),decode('" +
+                   material['sealed'] + "','hex')," + str(now_ns) + ");")
 
-        # Seed the runtime account/adapter/plugin instance + one-time bootstrap credential.
-        adapter_instance, shutdown_instance = str(uuid.uuid4()), str(uuid.uuid4())
-        adapter_bootstrap, plugin_bootstrap, shutdown_bootstrap = (
-            secrets.token_hex(32) for _ in range(3))
-        environment = {key: value for key, value in os.environ.items()
-                       if not key.startswith('PG')}
-        seeded = run([str(seed_binary), str(root), str(port), adapter_instance,
-                         STATE['account'], STATE['instance'], adapter_bootstrap,
-                         plugin_bootstrap, STATE['installation'], shutdown_instance,
-                         shutdown_bootstrap], env=environment)
-        require(b'SEEDED' in seeded.stdout, 'runtime bridge seed')
 
         # Register the plugin instance principal in Identity (P05b-2 B1 source of subject).
+        print('P05b-4 stage: register instance principal', flush=True)
         instance_principal = register_instance_principal(
             identity_service, STATE['instance'], root, pg_bin, port)
         expect_success = STATE.get('mode') == 'expect-success'
@@ -400,6 +442,7 @@ def after_bootstrap(root: Path) -> None:
             # Fail-closed E2E: sealed parent material is absent; Runtime must never reach Model or
             # the HTTP Provider and the plugin must observe a stable failure.
             require(not parent_file.exists(), 'fail-closed parent file must not exist')
+        print('P05b-4 stage: plugin chain', flush=True)
         run_plugin(root, endpoints['bridge'], STATE['instance'], plugin_bootstrap, tls,
                    provider_state, provider_mode, model_id, expect_success)
     finally:
@@ -461,7 +504,7 @@ def run_plugin(root, bridge_endpoint, instance, bootstrap, tls, provider_state, 
     manifest = {'id': 'p05b.model.plugin', 'name': 'P05b model plugin', 'version': '0.1.0',
                 'api_version': 'kiarabot.plugin.v1', 'runtime': 'python-rpc',
                 'entrypoint': 'subject:create', 'capabilities': [],
-                'permissions': ['model.chat']}
+                'isolation': 'process', 'permissions': ['model.chat']}
     manifest_path = package / 'plugin.json'
     manifest_path.write_text(json.dumps(manifest))
     env = {key: value for key, value in os.environ.items()}
@@ -542,17 +585,26 @@ def wait_for_plugin(plugin, ready, root):
     deadline = time.monotonic() + 25.0
     while time.monotonic() < deadline:
         if plugin.poll() is not None:
-            raise Failure(f'plugin exited early: {plugin.returncode}')
+            log = (root / 'plugin.log').read_text(errors='replace')[:2500]
+            raise Failure(f'plugin exited early: {plugin.returncode}: {" ".join(log.split())[:2000]}')
         if ready.exists():
             return
         time.sleep(0.05)
-    log = (root / 'plugin.log').read_text(errors='replace')[-1500:]
+    log = (root / 'plugin.log').read_text(errors='replace')[:2500]
     raise Failure(f'plugin never registered: {log}')
 
 
 if __name__ == '__main__':
     try:
         raise SystemExit(main())
-    except Failure as error:
-        print(f'P05b-4 e2e failure: {error}', file=sys.stderr)
+    except SystemExit:
+        raise
+    except Exception as error:  # noqa: BLE001 - one bounded redacted diagnostic line
+        import traceback
+        frames = traceback.extract_tb(sys.exc_info()[2])
+        location = ' <- '.join(f'{frame.filename.rsplit("/", 1)[-1]}:{frame.lineno}'
+                               for frame in frames[-4:])
+        message = ' '.join(str(error).split())
+        print(f'P05b-4 e2e failure: {type(error).__name__}: {message[:800]} at {location}',
+              file=sys.stderr)
         raise SystemExit(1)
