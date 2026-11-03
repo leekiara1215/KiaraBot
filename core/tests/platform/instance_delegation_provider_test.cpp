@@ -77,14 +77,19 @@ public:
                                                          std::chrono::seconds{30}};
   }
   t::Outcome<platform::InstanceParentDelegation>
-  acquire_model(const t::SchedulerTaskContext&, std::string_view, t::Permission) override {
+  acquire_model(const t::SchedulerTaskContext& context, std::string_view, t::Permission) override {
     ++calls;
     if (failure)
       return *failure;
+    if (expected_installation && context.installation != *expected_installation) {
+      return t::Failure{t::ErrorCode::Unauthenticated, t::Acceptance::NotAccepted,
+                        t::Recovery::Authenticate, std::nullopt, std::nullopt};
+    }
     return platform::InstanceParentDelegation{proof, platform::delegation_provider_now() +
                                                          std::chrono::seconds{30}};
   }
   int calls = 0;
+  std::optional<t::InstallationId> expected_installation;
   std::string proof = "parent-proof";
   std::optional<t::Failure> failure;
 };
@@ -145,10 +150,11 @@ private:
   std::string endpoint_;
 };
 
-t::SchedulerTaskContext context(std::string instance = kInstance) {
+t::SchedulerTaskContext context(std::string instance = kInstance,
+                                std::string installation = kInstallation) {
   t::SchedulerTaskContext value;
   value.owner = t::InstanceId{std::move(instance)};
-  value.installation = t::InstallationId{kInstallation};
+  value.installation = t::InstallationId{std::move(installation)};
   value.request_id = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
   value.trace_id = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
   value.deadline = platform::delegation_provider_now() + std::chrono::seconds{2};
@@ -230,6 +236,21 @@ int main() {
                    t::ErrorCode::PermissionDenied),
         "cross-model denial preserved");
   identity_service.reject = false;
+
+  // F-1: same instance with a different installation must not hit the cached task proof; the
+  // fake Identity rejects the mismatched INSTALLATION scope, proving the source/Exchange path ran.
+  check(failure_is(delegation->scheduler_task_delegation(
+                       context(kInstance, "44444444-4444-4444-8444-444444444444"),
+                       t::Permission::TaskRead),
+                   t::ErrorCode::Unauthenticated),
+        "same instance changed installation does not reuse cache");
+  source->expected_installation = t::InstallationId{kInstallation};
+  check(failure_is(delegation->model_chat_delegation(
+                       context(kInstance, "44444444-4444-4444-8444-444444444444"), kModel,
+                       t::Permission::ModelChat),
+                   t::ErrorCode::Unauthenticated),
+        "same instance changed installation does not reuse model cache");
+  source->expected_installation.reset();
 
   // Different instance must not reuse the cached proof or be silently accepted; the fake server
   // rejects the mismatched scope and the provider surfaces the denial.

@@ -206,6 +206,20 @@ int main() {
                    t::ErrorCode::Unauthenticated),
         "task envelope rejected by model reader");
 
+  // F-2 regression: once constructed, replace the path itself with a symlink; the reader must
+  // still fail closed (the fix reads one O_NOFOLLOW fd instead of reopening the path).
+  const auto replacement = directory / "replacement.json";
+  write(replacement, document(now, now + 30));
+  auto replacement_source = platform::SealedInstanceDelegationSource::create({path.string()});
+  check(!std::holds_alternative<t::Failure>(replacement_source), "replacement source construct");
+  std::filesystem::remove(path);
+  std::filesystem::create_symlink(replacement, path);
+  check(failure_is(
+            std::get<std::unique_ptr<platform::SealedInstanceDelegationSource>>(replacement_source)
+                ->acquire(context(), t::Permission::TaskSchedule),
+            t::ErrorCode::Unauthenticated),
+        "path replaced by symlink rejected");
+
   std::filesystem::remove_all(directory);
   std::cout << "P05b-8 sealed delegation source matrix passed\n";
   return 0;
