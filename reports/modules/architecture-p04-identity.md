@@ -1,5 +1,13 @@
 # P04 Identity首接口与纯规则实施记录
 
+## P04 本地收尾复验（2026-11-03）
+
+IdentityService 的 23 个方法已逐项登记 target 证据，字段状态以各自的 override 为准。集成门禁 `ctest --test-dir build/full-locked --output-on-failure -R 'p04_|^p05_runtime_identity_e2e$|^p03_postgres_database$|^p14_native_single_host$'` 通过 46/46，耗时 159.39 秒。descriptor 兼容性、旧版读取器和证据清单一致性检查通过。
+
+- 会话测试覆盖实际登录、刷新、撤销、Identity 停服返回 503 及重启后的有效性。多会话按创建时间和会话 ID 排序。
+- Assignment 读写通过真实 PG/mTLS 验证权限、版本、幂等与撤销。多资源订阅遇到局部变更后，可按原订阅范围读取快照并续订。
+- 真实 daemon 验证凭据轮换、重启后重放及撤销。数据库失效时进程按既有约定退出，依赖恢复后可重新启动。生产 CA 和跨主机分区仍待部署验收。目标浏览器 WebSocket 的一秒撤销要求归 P12；目前只有 reference 测试覆盖。
+
 基点为已审阅P03公共端口/规则和独立ns/Catalog修正；分支codex/p03-core-ports。
 本轮获父授权新增typed安全模型/crypto-clock-random ports与纯policy；生产接线等P03关闭。
 不改P03 unit_of_work.hpp的ABI/纯虚集合，不实现SQL/传输/密码算法，不启动新进程或假ready。
