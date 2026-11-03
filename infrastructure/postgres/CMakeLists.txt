@@ -8,7 +8,8 @@ add_library(kiarabot_postgres STATIC
   src/host_registration.cpp src/host_command_outbox.cpp)
 target_include_directories(kiarabot_postgres PUBLIC
   include ${CMAKE_SOURCE_DIR}/core/include)
-target_link_libraries(kiarabot_postgres PRIVATE libpqxx::pqxx Threads::Threads)
+# Keep the native libpq target and its transitive TLS libraries in static link order.
+target_link_libraries(kiarabot_postgres PRIVATE libpqxx::pqxx PostgreSQL::PostgreSQL Threads::Threads)
 kiarabot_platform_warnings(kiarabot_postgres)
 
 # These composition roots exist only in the root proto/full build, like this adapter.
