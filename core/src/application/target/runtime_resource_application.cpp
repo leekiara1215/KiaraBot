@@ -640,7 +640,11 @@ mutate(RuntimeUnitOfWorkFactory& transactions, const CommandContext& context,
         return std::nullopt;
       }
       const auto operation = std::move(std::get<std::optional<Operation>>(stored));
-      return operation ? std::optional<OperationRef>{operation->ref} : std::nullopt;
+      if (!operation || operation->ref.owner != Service::Runtime ||
+          operation->ref.resource != resource) {
+        return std::nullopt;
+      }
+      return operation->ref;
     };
     auto found = work->receipts().find(receipt_key(context, resource));
     if (const auto* failure = std::get_if<Failure>(&found)) {

@@ -65,6 +65,7 @@ def verify(stub, issue, runtime_sql, installation_id, instance_id, context, requ
     require(accepted.instance.state.desired == p.DESIRED_RUNNING and
             accepted.instance.state.version == 2 and not accepted.instance.state.HasField('fence') and
             accepted.operation.resource == inst, 'desired intent cannot synthesize an execution')
+    original_key = desired.context.idempotency_key
     replay = stub.SetDesiredState(desired, timeout=5)
     require(replay.operation == accepted.operation and replay.instance.state.version == 2,
             'replay retains operation and resource version')
@@ -99,3 +100,16 @@ def verify(stub, issue, runtime_sql, installation_id, instance_id, context, requ
         rejected(call, req, grpc.StatusCode.PERMISSION_DENIED)
     desired.instance_id = foreign
     rejected(stub.SetDesiredState, desired, grpc.StatusCode.PERMISSION_DENIED)
+
+    def replay_with_foreign_id(operation_id):
+        desired.instance_id = instance_id
+        desired.context.CopyFrom(ctx(inst, perm.PERMISSION_PLUGIN_MANAGE))
+        desired.context.idempotency_key = original_key
+        desired.context.request_id = operation_id
+        result = stub.SetDesiredState(desired, timeout=5)
+        require(result.instance.instance_id == instance_id and result.instance.state.version == 2,
+                'retry returns the immutable original instance snapshot')
+        require(not result.HasField('operation') or result.operation == accepted.operation,
+                'retry must not disclose an operation for another resource')
+
+    return replay_with_foreign_id

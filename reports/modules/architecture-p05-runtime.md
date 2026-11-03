@@ -248,3 +248,11 @@ refresh 工具 token 生命周期（`--max-token-age`、过期/权限失败停�
 per-key single-flight（并发仅 1 次 Exchange）、缓存 proof best-effort 清零、reader 可选
 `expected_subject` 校验；测试 `p05b_refresh_tool`、`p05_instance_delegation_provider`。主机
 core dump/ptrace 边界写入 doc/05/08。未改 proto/契约。
+
+### P05 既有安装与实例的精确资源管理复验
+
+`p05_runtime_identity_e2e` 通过 Control 测试证书向真实 Runtime 发起 RPC，由真实 Identity 在线授权，读写隔离的 PostgreSQL 16.4。fixture 只预置已有安装和外部管理的实例。GetInstallation、GetInstance、GetInstanceConfig 验证精确 UUID 的读取、同 UUID 错误资源种类的 INVALID_ARGUMENT、跨资源 PERMISSION_DENIED；配置尚未写入时返回 NOT_FOUND。
+
+SetDesiredState 通过预期版本 CAS 更新运行意图，UpdateConfig 产生新期望配置版本。两者在相同请求身份重放时不重复写入；换新幂等键并提交旧版本时返回 CONFLICT。GetInstanceConfig 读回 PENDING、applied_version=0，未注册的实例没有运行 fence。上述验收不覆盖创建入口、注册后 execution/connection generation、插件 ACK 或 Host 实际执行。
+
+两条写 RPC 的完整回执仍待收尾。已观察到变更 request_id、保留幂等键的重试可能缺原 operation；重试不得披露不同资源的 operation。UpdateConfig 返回的 state.version/desired 还可能与同次提交后的实例权威状态不符。仅凭此组测试不能将两条写 RPC 整体登记为完成。

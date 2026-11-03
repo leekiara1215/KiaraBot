@@ -407,10 +407,9 @@ def scenario(root, port, pg_bin, binaries):
             else:
                 raise AssertionError('cross-scope assignment list accepted')
             from runtime_instance_management_e2e import verify as verify_existing_instances
-            verify_existing_instances(runtime_stub, issue_delegation,
-                                      postgres(root, pg_bin, port, 'p03_runtime'),
-                                      STATE['installation_id'], STATE['instance_id'],
-                                      context, require, run_sql)
+            replay_instance = verify_existing_instances(
+                runtime_stub, issue_delegation, postgres(root, pg_bin, port, 'p03_runtime'),
+                STATE['installation_id'], STATE['instance_id'], context, require, run_sql)
             proof = issue_delegation().delegation.proof
             require(bool(proof), 'delegation proof')
 
@@ -948,6 +947,7 @@ def scenario(root, port, pg_bin, binaries):
                 expected_version=1), timeout=10)
             operation_ref = deleted.operation
             require(bool(operation_ref.operation_id), 'BeginDelete accepted operation')
+            replay_instance(operation_ref.operation_id)
             operation = runtime_stub.GetOperation(runtime_pb2.RuntimeGetOperationRequest(
                 context=context(delegation=manage_proof), operation=operation_ref), timeout=10)
             require(operation.operation.state == platform_pb2.OPERATION_SUCCEEDED,
