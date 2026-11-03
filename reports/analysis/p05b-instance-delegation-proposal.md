@@ -361,3 +361,62 @@ Model/Scheduler；下游保持现有验证 + 在线 `CheckAuthorization`，owner
   Scheduler participant 仍为 null。
 - 本文只读设计：未修改 proto/权限/实现；所有“未来任务”需用户批准并按 AGENTS.md 文档顺序
   先契约后实现。
+
+## 10. 附录 B：验收命令与证据映射（供批准后执行）
+
+### 10.1 只读检查（本文交付）
+
+```bash
+git diff --check
+git status --short
+# 基线证据复跑（不改代码）：
+ctest --preset full-locked -N -R 'p05_runtime_identity|p11_model_bridge|p10_sdk_tasks_e2e|p13_joint_delete_e2e'
+```
+
+### 10.2 任务→命令→预期证据
+
+| 任务 | 复跑命令（批准后） | 预期证据 |
+| --- | --- | --- |
+| P05b-1 | 契约 review / `python3 proto/tests/check_implementation_status.py` | Identity 实例签发语义获批 + proto/文档一致，无未批准 wire 变更 |
+| P05b-2 | `ctest -R 'p04_identity|p05_runtime_identity'` | 实例父委托正/负例、TTL/证书/scope/撤销、真 PG+mTLS；无 secret 落日志 |
+| P05b-3 | `ctest -R 'p13_joint_delete_e2e|p13_'` + 生产组合 e2e | 真实 Host receipt + 真实 Scheduler 清理 → DELETED；UNKNOWN/offline 保持 BLOCKED；Restore 不重建 |
+| P05b-4 | `ctest -R 'p11_model_bridge|p11_'` + 新 P11 单链路 e2e | 真实 managed plugin→Runtime→Model→真实 HTTP Provider fixture；owner=实例；撤销/过期/跨实例拒绝 |
+| P05b-5 | `ctest -R 'p10_|p10_sdk_tasks_e2e'` + 新真实 Scheduler e2e | plugin task create/get/cancel 真实 Scheduler 成功链；跨实例 NOT_FOUND；撤销/离线 fail-closed |
+| P05b-6 | `ctest --preset full-locked -L p05b`（新增标签）+ 文档核对 | 新 e2e 进 CTest/门禁；doc/01/21/27 与报告同步；无伪造 target 翻转 |
+
+### 10.3 P11 单链路 e2e 设计（P05b-4 验收）
+
+1. 启动真实 Identity（mTLS/PG16.4）、真实 Runtime（bridge + scheduler/model endpoints）、
+   真实 Model（真实 HTTP Provider fixture：本地支持成功/429/5xx/慢响应），注册 managed
+   plugin 的 instance principal（RESOURCE_INSTANCE binding + model.chat/task 授权）。
+2. Host 侧建立真实 PluginBridge 会话（mTLS 插件证书），发送 `HostRequest.model_chat`；
+   Runtime 获取实例父委托 → Exchange 成 audience=model hops=2 → Model 验签/在线
+   CheckAuthorization → Provider 调用 → 返回 `HostResponse.model_chat`。
+3. 断言：结果内容、call record 的 owner=插件实例、usage/billing 事实、审计/日志无 delegation
+   secret；撤销实例授权/过期父委托/错误 client_certificate/跨实例请求均稳定拒绝且不调用
+   Provider；Identity/Model 不可达 fail-closed。
+4. 证据：测试日志 + 目标调用记录（owner/trace）加入 P11 报告；不把 fake port 计入验收。
+
+### 10.4 P13 生产 e2e 设计（P05b-3 验收）
+
+1. 真实 Runtime（生产 composition，非 `KIARABOT_P13G_TEST_COMPOSITION`）+ 真实 PG16.4 +
+   真实 HostBridge 客户端（真 receipt：KnownSucceeded/UNKNOWN）+ 真实 Scheduler
+   （mTLS/PG，ListTasks/CancelTask 平台 peer allowlist/capability）。
+2. BeginDelete → 初始 participants（host/scheduler Accepted）→ Host 回执到终态且 Scheduler
+   清理 Done → participants 全 Done → operation Succeeded、instance DELETED。
+3. 断言：Host UNKNOWN/offline、Scheduler offline/denied/Blocked 时保持 BLOCKED；Restore
+   恢复 Active 且不重建已被清理的任务/租约；跨实例/跨安装任务不被错误取消。
+4. 只有通过本 e2e 才允许 P13 报告从“生产未验收”改为通过；test-only P13g 保留为回归。
+
+### 10.5 P10k 真实 Scheduler e2e 设计（P05b-5 验收）
+
+真实 plugin 经 Bridge 发 task_create/get/cancel；Runtime 使用批准后的实例委托来源调用真实
+Scheduler（真 PG/mTLS）；断言 owner_instance/installation 派生、幂等/跨实例 NOT_FOUND、
+撤销/离线 fail-closed；替换生产 `unavailable_scheduler_task_delegation()` 注入并保留
+fail-closed 开关。完成后更新 P10k 报告与 P10 退出证据。
+
+### 10.6 明确不覆盖（方案批准后仍需环境/时间）
+
+- 真实外部 Provider 付费联调与计费核对（T07b/用户环境）。
+- 真实 QQ/NapCat 平台长期稳定性、跨主机网络分区/证书轮换演练、生产 CA/密钥托管。
+- 目标六服务 Docker Compose 单机与两主机 live 验收（P14 环境项）。
