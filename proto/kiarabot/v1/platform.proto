@@ -131,7 +131,7 @@ message Fence {
   string runtime_epoch = 4;
 }
 
-// CONTRACT_STATUS: not_implemented - target P01, producer pending.
+// CONTRACT_STATUS: not_implemented - historical reference; see target execution scope.
 message StreamCursor {
   string source_service = 1;
   string epoch = 2;

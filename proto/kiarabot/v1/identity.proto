@@ -5,7 +5,7 @@ import "kiarabot/v1/common.proto";
 import "kiarabot/v1/platform.proto";
 import "kiarabot/v1/policy.proto";
 
-// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+// CONTRACT_STATUS: not_implemented - historical reference; see target execution scope.
 message PrincipalRecord {
   string principal_id = 1;
   ResourceRef binding = 2;
@@ -48,7 +48,7 @@ message CredentialDelivery {
   google.protobuf.Timestamp expires_at = 5;
 }
 
-// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+// CONTRACT_STATUS: not_implemented - historical reference; see target execution scope.
 message AssignmentRecord {
   string assignment_id = 1;
   string principal_id = 2;
@@ -74,7 +74,7 @@ message AuthorizationDecision {
   Error denial = 4;
 }
 
-// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+// CONTRACT_STATUS: not_implemented - historical reference; see target execution scope.
 message InvalidationRecord {
   StreamCursor cursor = 1;
   string principal_id = 2;
@@ -83,7 +83,7 @@ message InvalidationRecord {
   bool resync_required = 5;
 }
 
-// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+// CONTRACT_STATUS: not_implemented - historical reference; see target execution scope.
 message AuthorizationSnapshot {
   StreamCursor cursor = 1;
   repeated AssignmentRecord assignments = 2;
@@ -305,7 +305,7 @@ message IdentityCheckAuthorizationResponse {
   AuthorizationDecision decision = 1;
 }
 
-// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+// CONTRACT_STATUS: not_implemented - historical reference; see target execution scope.
 message IdentityListAssignmentsRequest {
   RequestContext context = 1;
   string principal_id = 2;
@@ -313,13 +313,13 @@ message IdentityListAssignmentsRequest {
   SnapshotPage page = 4;
 }
 
-// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+// CONTRACT_STATUS: not_implemented - historical reference; see target execution scope.
 message IdentityListAssignmentsResponse {
   repeated AssignmentRecord assignments = 1;
   SnapshotPage page = 2;
 }
 
-// CONTRACT_STATUS: not_implemented - requested basis, never trusted as an authorization decision.
+// CONTRACT_STATUS: not_implemented - historical reference; see target execution scope.
 message AssignmentSpec {
   string principal_id = 1;
   // Nonzero only for a human fixed-role grant; then permissions must be empty.
@@ -329,7 +329,7 @@ message AssignmentSpec {
   ResourceScope scope = 4;
 }
 
-// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+// CONTRACT_STATUS: not_implemented - historical reference; see target execution scope.
 message IdentitySetAssignmentRequest {
   RequestContext context = 1;
   AssignmentSpec assignment = 2;
@@ -338,31 +338,31 @@ message IdentitySetAssignmentRequest {
   string assignment_id = 4;
 }
 
-// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+// CONTRACT_STATUS: not_implemented - historical reference; see target execution scope.
 message IdentitySetAssignmentResponse {
   AssignmentRecord assignment = 1;
 }
 
-// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+// CONTRACT_STATUS: not_implemented - historical reference; see target execution scope.
 message IdentityRevokeAssignmentRequest {
   RequestContext context = 1;
   string assignment_id = 2;
   optional uint64 expected_version = 3;
 }
 
-// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+// CONTRACT_STATUS: not_implemented - historical reference; see target execution scope.
 message IdentityRevokeAssignmentResponse {
   uint64 version = 1;
 }
 
-// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+// CONTRACT_STATUS: not_implemented - historical reference; see target execution scope.
 message IdentityWatchInvalidationsRequest {
   RequestContext context = 1;
   ResourceScope scope = 2;
   StreamCursor cursor = 3;
 }
 
-// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+// CONTRACT_STATUS: not_implemented - historical reference; see target execution scope.
 message IdentityWatchInvalidationsResponse {
   InvalidationRecord invalidation = 1;
   // CONTRACT_STATUS: not_implemented - P04 target declaration, producer pending.
@@ -374,14 +374,14 @@ message IdentityWatchInvalidationsResponse {
   StreamCursor cursor = 3;
 }
 
-// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+// CONTRACT_STATUS: not_implemented - historical reference; see target execution scope.
 message IdentityGetAuthorizationSnapshotRequest {
   RequestContext context = 1;
   ResourceScope scope = 2;
   StreamCursor after = 3;
 }
 
-// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+// CONTRACT_STATUS: not_implemented - historical reference; see target execution scope.
 message IdentityGetAuthorizationSnapshotResponse {
   AuthorizationSnapshot snapshot = 1;
 }

@@ -5938,7 +5938,23 @@
           "IdentityRevokeSessionRequest": "implemented",
           "IdentityRevokeSessionResponse": "implemented",
           "SessionRecord": "implemented",
-          "TokenPair": "implemented"
+          "TokenPair": "implemented",
+          "IdentityListAssignmentsRequest": "implemented",
+          "IdentityListAssignmentsResponse": "implemented",
+          "PrincipalRecord": "implemented",
+          "AssignmentRecord": "implemented",
+          "IdentitySetAssignmentRequest": "implemented",
+          "IdentitySetAssignmentResponse": "implemented",
+          "AssignmentSpec": "implemented",
+          "IdentityRevokeAssignmentRequest": "implemented",
+          "IdentityRevokeAssignmentResponse": "implemented",
+          "IdentityWatchInvalidationsRequest": "implemented",
+          "IdentityWatchInvalidationsResponse": "implemented",
+          "InvalidationRecord": "implemented",
+          "StreamCursor": "implemented",
+          "IdentityGetAuthorizationSnapshotRequest": "implemented",
+          "IdentityGetAuthorizationSnapshotResponse": "implemented",
+          "AuthorizationSnapshot": "implemented"
         },
         "proto_fields": {
           "IdentityAuditFilter.scope": "implemented",
@@ -6533,7 +6549,58 @@
           "IdentityGetPrincipalResponse.authorization_version": "implemented",
           "IdentityGetPrincipalResponse.checked_at": "implemented",
           "IdentityListSessionsResponse.checked_at": "implemented",
-          "IdentityRevokeSessionResponse.checked_at": "implemented"
+          "IdentityRevokeSessionResponse.checked_at": "implemented",
+          "IdentityListAssignmentsRequest.context": "implemented",
+          "IdentityListAssignmentsRequest.principal_id": "implemented",
+          "IdentityListAssignmentsRequest.scope": "implemented",
+          "IdentityListAssignmentsRequest.page": "implemented",
+          "IdentityListAssignmentsResponse.assignments": "implemented",
+          "IdentityListAssignmentsResponse.page": "implemented",
+          "PrincipalRecord.principal_id": "implemented",
+          "PrincipalRecord.binding": "implemented",
+          "PrincipalRecord.principal_kind": "implemented",
+          "PrincipalRecord.version": "implemented",
+          "PrincipalRecord.state": "implemented",
+          "PrincipalRecord.roles": "implemented",
+          "PrincipalRecord.display_permissions": "implemented",
+          "AssignmentRecord.assignment_id": "implemented",
+          "AssignmentRecord.principal_id": "implemented",
+          "AssignmentRecord.role": "implemented",
+          "AssignmentRecord.permissions": "implemented",
+          "AssignmentRecord.scope": "implemented",
+          "AssignmentRecord.version": "implemented",
+          "IdentitySetAssignmentRequest.context": "implemented",
+          "IdentitySetAssignmentRequest.assignment": "implemented",
+          "IdentitySetAssignmentRequest.expected_version": "implemented",
+          "IdentitySetAssignmentRequest.assignment_id": "implemented",
+          "IdentitySetAssignmentResponse.assignment": "implemented",
+          "AssignmentSpec.principal_id": "implemented",
+          "AssignmentSpec.role": "implemented",
+          "AssignmentSpec.permissions": "implemented",
+          "AssignmentSpec.scope": "implemented",
+          "IdentityRevokeAssignmentRequest.context": "implemented",
+          "IdentityRevokeAssignmentRequest.assignment_id": "implemented",
+          "IdentityRevokeAssignmentRequest.expected_version": "implemented",
+          "IdentityRevokeAssignmentResponse.version": "implemented",
+          "IdentityWatchInvalidationsRequest.context": "implemented",
+          "IdentityWatchInvalidationsRequest.scope": "implemented",
+          "IdentityWatchInvalidationsRequest.cursor": "implemented",
+          "IdentityWatchInvalidationsResponse.invalidation": "implemented",
+          "InvalidationRecord.cursor": "implemented",
+          "InvalidationRecord.principal_id": "implemented",
+          "InvalidationRecord.authorization_version": "implemented",
+          "InvalidationRecord.scope": "implemented",
+          "StreamCursor.source_service": "implemented",
+          "StreamCursor.epoch": "implemented",
+          "StreamCursor.scope": "implemented",
+          "StreamCursor.sequence": "implemented",
+          "IdentityGetAuthorizationSnapshotRequest.context": "implemented",
+          "IdentityGetAuthorizationSnapshotRequest.scope": "implemented",
+          "IdentityGetAuthorizationSnapshotRequest.after": "implemented",
+          "IdentityGetAuthorizationSnapshotResponse.snapshot": "implemented",
+          "AuthorizationSnapshot.cursor": "implemented",
+          "AuthorizationSnapshot.assignments": "implemented",
+          "AuthorizationSnapshot.authorization_version": "implemented"
         },
         "bridge_methods": {
           "AdapterBridge.Connect": "implemented",
@@ -12119,6 +12186,294 @@
           "core/src/application/target/identity_security_application.cpp",
           "core/tests/platform/identity_rpc_test.cpp",
           "tests/architecture/p14_native_single_host.py"
+        ],
+        "proto_messages:IdentityListAssignmentsRequest": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "proto_fields:IdentityListAssignmentsRequest.context": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "proto_fields:IdentityListAssignmentsRequest.principal_id": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "proto_fields:IdentityListAssignmentsRequest.scope": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "proto_fields:IdentityListAssignmentsRequest.page": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "proto_messages:IdentityListAssignmentsResponse": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "proto_fields:IdentityListAssignmentsResponse.assignments": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "proto_fields:IdentityListAssignmentsResponse.page": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "proto_messages:PrincipalRecord": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py",
+          "core/tests/platform/identity_rpc_test.cpp"
+        ],
+        "proto_fields:PrincipalRecord.principal_id": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py",
+          "core/tests/platform/identity_rpc_test.cpp"
+        ],
+        "proto_fields:PrincipalRecord.binding": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py",
+          "core/tests/platform/identity_rpc_test.cpp"
+        ],
+        "proto_fields:PrincipalRecord.principal_kind": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py",
+          "core/tests/platform/identity_rpc_test.cpp"
+        ],
+        "proto_fields:PrincipalRecord.version": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py",
+          "core/tests/platform/identity_rpc_test.cpp"
+        ],
+        "proto_fields:PrincipalRecord.state": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py",
+          "core/tests/platform/identity_rpc_test.cpp"
+        ],
+        "proto_fields:PrincipalRecord.roles": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py",
+          "core/tests/platform/identity_rpc_test.cpp"
+        ],
+        "proto_fields:PrincipalRecord.display_permissions": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py",
+          "core/tests/platform/identity_rpc_test.cpp"
+        ],
+        "proto_messages:AssignmentRecord": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py",
+          "core/tests/platform/identity_rpc_test.cpp"
+        ],
+        "proto_fields:AssignmentRecord.assignment_id": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py",
+          "core/tests/platform/identity_rpc_test.cpp"
+        ],
+        "proto_fields:AssignmentRecord.principal_id": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py",
+          "core/tests/platform/identity_rpc_test.cpp"
+        ],
+        "proto_fields:AssignmentRecord.role": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py",
+          "core/tests/platform/identity_rpc_test.cpp"
+        ],
+        "proto_fields:AssignmentRecord.permissions": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py",
+          "core/tests/platform/identity_rpc_test.cpp"
+        ],
+        "proto_fields:AssignmentRecord.scope": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py",
+          "core/tests/platform/identity_rpc_test.cpp"
+        ],
+        "proto_fields:AssignmentRecord.version": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py",
+          "core/tests/platform/identity_rpc_test.cpp"
+        ],
+        "proto_messages:IdentitySetAssignmentRequest": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "proto_fields:IdentitySetAssignmentRequest.context": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "proto_fields:IdentitySetAssignmentRequest.assignment": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "proto_fields:IdentitySetAssignmentRequest.expected_version": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "proto_fields:IdentitySetAssignmentRequest.assignment_id": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "proto_messages:IdentitySetAssignmentResponse": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "proto_fields:IdentitySetAssignmentResponse.assignment": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "proto_messages:AssignmentSpec": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py",
+          "core/tests/platform/identity_rpc_test.cpp"
+        ],
+        "proto_fields:AssignmentSpec.principal_id": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py",
+          "core/tests/platform/identity_rpc_test.cpp"
+        ],
+        "proto_fields:AssignmentSpec.role": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py",
+          "core/tests/platform/identity_rpc_test.cpp"
+        ],
+        "proto_fields:AssignmentSpec.permissions": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py",
+          "core/tests/platform/identity_rpc_test.cpp"
+        ],
+        "proto_fields:AssignmentSpec.scope": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py",
+          "core/tests/platform/identity_rpc_test.cpp"
+        ],
+        "proto_messages:IdentityRevokeAssignmentRequest": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "proto_fields:IdentityRevokeAssignmentRequest.context": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "proto_fields:IdentityRevokeAssignmentRequest.assignment_id": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "proto_fields:IdentityRevokeAssignmentRequest.expected_version": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "proto_messages:IdentityRevokeAssignmentResponse": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "proto_fields:IdentityRevokeAssignmentResponse.version": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "proto_messages:IdentityWatchInvalidationsRequest": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "proto_fields:IdentityWatchInvalidationsRequest.context": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "proto_fields:IdentityWatchInvalidationsRequest.scope": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "proto_fields:IdentityWatchInvalidationsRequest.cursor": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "proto_messages:IdentityWatchInvalidationsResponse": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "proto_fields:IdentityWatchInvalidationsResponse.invalidation": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "proto_messages:InvalidationRecord": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "proto_fields:InvalidationRecord.cursor": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "proto_fields:InvalidationRecord.principal_id": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "proto_fields:InvalidationRecord.authorization_version": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "proto_fields:InvalidationRecord.scope": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "proto_messages:StreamCursor": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "proto_fields:StreamCursor.source_service": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "proto_fields:StreamCursor.epoch": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "proto_fields:StreamCursor.scope": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "proto_fields:StreamCursor.sequence": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "proto_messages:IdentityGetAuthorizationSnapshotRequest": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "proto_fields:IdentityGetAuthorizationSnapshotRequest.context": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "proto_fields:IdentityGetAuthorizationSnapshotRequest.scope": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "proto_fields:IdentityGetAuthorizationSnapshotRequest.after": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "proto_messages:IdentityGetAuthorizationSnapshotResponse": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "proto_fields:IdentityGetAuthorizationSnapshotResponse.snapshot": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "proto_messages:AuthorizationSnapshot": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "proto_fields:AuthorizationSnapshot.cursor": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "proto_fields:AuthorizationSnapshot.assignments": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "proto_fields:AuthorizationSnapshot.authorization_version": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
         ]
       }
     }

@@ -260,9 +260,10 @@
       "idempotency": "none",
       "deadline_ms": 2000,
       "server_streaming": false,
-      "status": "not_implemented",
+      "status": "implemented",
       "max_deadline_ms": 5000,
-      "requires_idempotency_key": false
+      "requires_idempotency_key": false,
+      "status_note": "P04 production Identity + PostgreSQL 16.4 over mTLS: core/tests/platform/runtime_identity_e2e_test.py"
     },
     {
       "service": "IdentityService",
@@ -277,9 +278,10 @@
       "idempotency": "required",
       "deadline_ms": 5000,
       "server_streaming": false,
-      "status": "not_implemented",
+      "status": "implemented",
       "max_deadline_ms": 30000,
-      "requires_idempotency_key": true
+      "requires_idempotency_key": true,
+      "status_note": "P04 production Identity + PostgreSQL 16.4 over mTLS: core/tests/platform/runtime_identity_e2e_test.py"
     },
     {
       "service": "IdentityService",
@@ -294,9 +296,10 @@
       "idempotency": "required",
       "deadline_ms": 5000,
       "server_streaming": false,
-      "status": "not_implemented",
+      "status": "implemented",
       "max_deadline_ms": 30000,
-      "requires_idempotency_key": true
+      "requires_idempotency_key": true,
+      "status_note": "P04 production Identity + PostgreSQL 16.4 over mTLS: core/tests/platform/runtime_identity_e2e_test.py"
     },
     {
       "service": "IdentityService",
@@ -311,9 +314,10 @@
       "idempotency": "none",
       "deadline_ms": 2000,
       "server_streaming": true,
-      "status": "not_implemented",
+      "status": "implemented",
       "max_deadline_ms": 5000,
-      "requires_idempotency_key": false
+      "requires_idempotency_key": false,
+      "status_note": "P04 production Identity + PostgreSQL 16.4 over mTLS: core/tests/platform/runtime_identity_e2e_test.py"
     },
     {
       "service": "IdentityService",
@@ -328,9 +332,10 @@
       "idempotency": "none",
       "deadline_ms": 2000,
       "server_streaming": false,
-      "status": "not_implemented",
+      "status": "implemented",
       "max_deadline_ms": 5000,
-      "requires_idempotency_key": false
+      "requires_idempotency_key": false,
+      "status_note": "P04 production Identity + PostgreSQL 16.4 over mTLS: core/tests/platform/runtime_identity_e2e_test.py"
     },
     {
       "service": "IdentityService",
