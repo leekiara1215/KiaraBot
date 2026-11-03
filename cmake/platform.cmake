@@ -654,26 +654,50 @@ if(EXISTS "${KIARABOT_TARGET_PYTHON}")
     WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
     ENVIRONMENT "PATH=${RUNTIME_E2E_OPENSSL_BIN_DIR}:${RUNTIME_E2E_PYTHON_BIN_DIR}:$ENV{PATH};PYTHONPATH=${CMAKE_SOURCE_DIR}/sdk/python/build/generated")
 endif()
-# P11h preparation: real loopback HTTP Provider fixture contract checks (no managed chain).
-if(EXISTS "${CMAKE_SOURCE_DIR}/sdk/python/.venv/bin/python")
-  add_test(NAME p11_http_provider_fixture COMMAND
-    "${KIARABOT_TARGET_PYTHON}" "${CMAKE_SOURCE_DIR}/tests/architecture/p11_http_provider_fixture.py"
-    --self-test)
-  set_tests_properties(p11_http_provider_fixture PROPERTIES
-    LABELS "p11;unit;fault" TIMEOUT 30)
-endif()
 
-# DRAFT (P11h dependency P05b-4 still merging): P05b-8 already provides
-# InstanceParentDelegationSource::acquire_model + RuntimeInstanceDelegationProvider::
-# model_chat_delegation + model_instance_delegation_sealed_file. Do not enable before P05b-4 wires
-# RuntimeModelClient to that provider, adds host.model.v1 to the bridge supported features and
-# ships the canonical real HTTP provider fixture. P05b-9 already gives ExchangeDelegation its
-# separate 2s/5s Identity client budget, so no P11h config field is needed; P05b-4 CTests are
-# expected to be p05b_model_chain_e2e/p05b_model_chain_fail_closed_e2e/p05b_provider_fixture. The eventual test command must pass
-# the real Runtime/model/host binaries plus the P05b-4 provider mode/state files:
-#   add_test(NAME p11h_managed_model_e2e COMMAND "${KIARABOT_TARGET_PYTHON}"
-#     "${CMAKE_SOURCE_DIR}/tests/architecture/p11h_managed_model_e2e.py"
-#     --runtime $<TARGET_FILE:kiarabot-runtime> --model $<TARGET_FILE:kiarabot-model>
-#     --host $<TARGET_FILE:kiarabot-plugin-host> --provider-mode-file <tmp> ...)
-#   set_tests_properties(p11h_managed_model_e2e PROPERTIES
-#     LABELS "p11;integration;fault" TIMEOUT 300)
+# P11h independent acceptance: separate CTest invocations of the merged P05b-4 real chain
+# (canonical p05b_provider_fixture + managed Host mode + sealed P05b-8 reader + P05b-9 budgets).
+# Each test owns its own PG16.4/TLS fixture; no build-deploy branch artifact is referenced.
+if(EXISTS "${KIARABOT_TARGET_PYTHON}")
+  add_test(NAME p11h_managed_model_e2e COMMAND "${KIARABOT_TARGET_PYTHON}"
+    "${CMAKE_SOURCE_DIR}/infrastructure/postgres/tests/run_database_test.py"
+    --pg-bin "${KIARABOT_TEST_PG_BIN}" --openssl "${KIARABOT_TEST_OPENSSL}"
+    --initializer $<TARGET_FILE:kiarabot-pg-initialize>
+    --test "${CMAKE_SOURCE_DIR}/tests/architecture/p11h_managed_model_e2e.py"
+    --test-argument $<TARGET_FILE:kiarabot-identity-bootstrap>
+    --test-argument "${KIARABOT_TEST_PG_BIN}"
+    --test-argument $<TARGET_FILE:kiarabot-identity>
+    --test-argument $<TARGET_FILE:kiarabot-runtime>
+    --test-argument $<TARGET_FILE:kiarabot-model>
+    --test-argument $<TARGET_FILE:kiarabot_postgres_runtime_bridge_seed>
+    --test-argument $<TARGET_FILE:kiarabot_p05b_model_seed>
+    --test-argument $<TARGET_FILE:kiarabot-plugin-host>)
+  set_tests_properties(p11h_managed_model_e2e PROPERTIES
+    LABELS "p11h;p11;integration;security;fault" TIMEOUT 420
+    WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+    ENVIRONMENT "PATH=${RUNTIME_E2E_OPENSSL_BIN_DIR}:${RUNTIME_E2E_PYTHON_BIN_DIR}:$ENV{PATH};PYTHONPATH=${CMAKE_SOURCE_DIR}/sdk/python/build/generated")
+  add_test(NAME p11h_model_chain_fail_closed COMMAND "${KIARABOT_TARGET_PYTHON}"
+    "${CMAKE_SOURCE_DIR}/infrastructure/postgres/tests/run_database_test.py"
+    --pg-bin "${KIARABOT_TEST_PG_BIN}" --openssl "${KIARABOT_TEST_OPENSSL}"
+    --initializer $<TARGET_FILE:kiarabot-pg-initialize>
+    --test "${CMAKE_SOURCE_DIR}/tests/architecture/p11h_managed_model_e2e.py"
+    --test-argument $<TARGET_FILE:kiarabot-identity-bootstrap>
+    --test-argument "${KIARABOT_TEST_PG_BIN}"
+    --test-argument $<TARGET_FILE:kiarabot-identity>
+    --test-argument $<TARGET_FILE:kiarabot-runtime>
+    --test-argument $<TARGET_FILE:kiarabot-model>
+    --test-argument $<TARGET_FILE:kiarabot_postgres_runtime_bridge_seed>
+    --test-argument $<TARGET_FILE:kiarabot_p05b_model_seed>
+    --test-argument $<TARGET_FILE:kiarabot-plugin-host>
+    --test-argument=--mode --test-argument=expect-fail-closed)
+  set_tests_properties(p11h_model_chain_fail_closed PROPERTIES
+    LABELS "p11h;p11;integration;security;fault" TIMEOUT 300
+    WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+    ENVIRONMENT "PATH=${RUNTIME_E2E_OPENSSL_BIN_DIR}:${RUNTIME_E2E_PYTHON_BIN_DIR}:$ENV{PATH};PYTHONPATH=${CMAKE_SOURCE_DIR}/sdk/python/build/generated")
+
+  add_test(NAME p11h_provider_fixture COMMAND "${KIARABOT_TARGET_PYTHON}"
+    "${CMAKE_SOURCE_DIR}/tests/architecture/p05b_provider_fixture.py" --self-test)
+  set_tests_properties(p11h_provider_fixture PROPERTIES
+    LABELS "p11h;p11;unit;provider" TIMEOUT 60
+    WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+endif()
