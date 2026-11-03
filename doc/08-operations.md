@@ -1658,3 +1658,26 @@ Scheduler 配置新增可选 `runtime_peers`（仅 Scheduler，schema v1 严格�
 `task.schedule`；allowlist 为空或不含证书时平台路径 fail-closed，未注册证书无用户 delegation
 时 UNAUTHENTICATED。该配置不改变 Control/用户 delegation 旧路径。生产联合验收仍要求
 BeginDelete 等真实 Host 回执 + Scheduler 清理完成后才 DELETED（P13h-3）。
+## P13h-2 Runtime→Scheduler 生命周期任务取消（2026-11-03）
+
+Runtime 配置 `scheduler_endpoint` 时，除 P10k 插件任务客户端外还会创建生命周期专用
+`SchedulerTaskClient`（platform identity、无用户 delegation）。实例 BeginDelete 的 Scheduler
+participant 只对目标实例执行 bounded `ListTasks(state=PENDING)` 和逐任务 `CancelTask`；scope 恰为
+一个 `RESOURCE_INSTANCE`，不会跨实例/跨安装取消。该路径依赖 Scheduler P13h-1 的 Runtime platform
+peer（mTLS SAN/allowlist/显式 ListTasks+CancelTask capability）；未配置/未授权/离线/超时均保持
+operation BLOCKED（participant reason 可查 GetOperation），不会把“无法确认”当“已取消”。
+
+运维要点：
+- `scheduler_endpoint` 缺失 — Scheduler participant 始终 BLOCKED，实例删除不能完成（fail-closed）。
+- 401/403/UNAUTHENTICATED/PERMISSION_DENIED — 检查 Runtime 客户端证书 SAN、Scheduler 的 Runtime
+  platform peer allowlist 与显式 capability；不要为了让删除完成而绕过 Lifecycle participant。
+- TIMEOUT/UNAVAILABLE/UNKNOWN — 保持 BLOCKED，由 lifecycle maintenance 重试；恢复后重新 ListTasks
+  再取消，不伪造 done。
+- RESOURCE_INSTALLATION 删除 — 方案 A 仅批准 instance scope；Scheduler participant 返回
+  BLOCKED(CapabilityNotSupported)，不做跨实例枚举，需产品决策后再扩展。
+- Restore 不重建任务/租约；恢复后再次 BeginDelete 会重新调度 Scheduler participant。
+- 无新增配置字段或 RPC；Scheduler 侧 allowlist/capability 是 P13h-1 部署项，参见其运维文档。
+
+测试：`p13_scheduler_lifecycle`、`p10_scheduler_task_client`；`p13_joint_delete_e2e` 为真
+Runtime/PG 的 test-only 注入端口证据。真实 Runtime→Scheduler 平台授权链待 P13h-1 合入后由 P13h-3
+联合验收，不得以注入端口结果宣称生产授权已验收。

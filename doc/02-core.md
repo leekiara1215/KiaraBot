@@ -1634,3 +1634,28 @@ installation/account，跨实例/跨安装/跨账号返回 NOT_FOUND（不泄露
 PERMISSION_DENIED。其他四个 Scheduler 方法、以及这两个方法的 Control/用户 delegation 路径
 保持原有 authorizer；未命中 allowlist 的证书回退 delegation 路径并最终 fail-closed。无新增
 proto 字段/权限编号/RPC 集合；`runtime_peers` 为空时平台路径关闭。
+### P13h-2 Scheduler participant 生产接线（方案 A 限定范围，2026-11-03）
+
+Runtime 组合根在配置 `scheduler_endpoint` 时创建两个独立的 `SchedulerTaskClient`：P10k 插件任务
+client 保持原 delegation 路径（当前 fail-closed）；P13h-2 生命周期 client 使用 `platform_identity`
+模式，不携带用户 delegation，仅调用 `ListTasks`/`CancelTask` 并以恰一个 `RESOURCE_INSTANCE` 的
+显式 scope 指向待删除实例。Scheduler 侧由 P13h-1 的 Runtime platform peer 分支负责 mTLS SAN/
+allowlist/显式 capability 授权；Runtime 不新增 proto/RPC/权限字段，也不复用插件任务 client 的委托。
+
+生产 `RuntimeSchedulerLifecycleParticipant` 在维护线程外执行：实例 BeginDelete 的 scheduler
+participant 先按目标 instance `ListTasks(state=PENDING)`；只对 `task.owner_instance == 目标实例`
+的 pending task 调用 `CancelTask`（跨实例/跨安装一律不取消，Scheduler 侧另有 owner/scope 校验）；
+成功后 participant Done；ListTasks/CancelTask 的离线、超时、UNKNOWN、权限失败保持 BLOCKED 并记录
+reason，绝不以“无任务/已取消”伪造完成。无 `scheduler_endpoint` 时 participant 不注入，沿用
+原有 BLOCKED fail-closed 语义。
+
+Restore 不重建 Scheduler 任务、不增加 scheduler participant，只恢复 Runtime 资源；任务/租约不会
+因恢复复活。安装级（RESOURCE_INSTALLATION）删除的 Scheduler 范围不在用户批准的 instance-scoped
+方案 A 内：生产 participant 返回 BLOCKED(CapabilityNotSupported)，不做跨实例枚举/取消，待后续决策。
+
+验证：`p13_scheduler_lifecycle`（fake worker 端口矩阵：跨实例不取消、pending-only、离线/超时
+保持 BLOCKED、安装级 fail-closed）；`p10_scheduler_task_client`（本地 gRPC fixture 断言
+ListTasks/CancelTask 无 delegation、显式 instance scope、CancelTask idempotency key）；
+`p13_joint_delete_e2e` 以真 PG16.4 + 真 mTLS Runtime + 注入 fake SchedulerTaskPort 跑真实
+组合根的 BeginDelete/Restore 协调（测试构建专用；P13h-1 合入后由 P13h-3 跑真实
+Runtime→Scheduler 平台授权链）。

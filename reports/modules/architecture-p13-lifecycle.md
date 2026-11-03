@@ -71,3 +71,39 @@
 cancel_tasks；未新增方法）；任务/租约的 PG 断言在 Scheduler 私有库未包含于本 harness，当前以
 fake Scheduler 状态文件断言未重建；生产 Scheduler 委托、真实 Host 回执单链仍未验收。
 P13 退出判定：test-only 联合链路通过；**生产退出仍未通过**（P13f A/B 待用户确认）。
+
+## P13h-2 Scheduler participant 生产接线（2026-11-03，main@fa3030c）
+
+用户已批准 P13 方案 A 的限定范围：仅 `ListTasks`/`CancelTask`、Runtime mTLS platform identity +
+Scheduler 部署 allowlist + 显式 capability、只返回目标实例任务、CancelTask 核对归属、跨实例/
+跨安装拒绝。本任务实现 Runtime 侧，Scheduler 侧 P13h-1 由 drift 并行完成；P13h-3 联合验收在两者
+合入后进行。
+
+已实现：
+- `SchedulerTaskClient` 新增 platform-identity 模式（无用户 delegation）与分页 `list_tasks`
+  （`RESOURCE_INSTANCE` 精确 scope、state=PENDING、bounded pages）；`CancelTask` context 携带
+  幂等键；P10k 插件任务 client 的 delegated 路径保持独立、未放宽。
+- 生产 `RuntimeSchedulerLifecycleParticipant`：实例 BeginDelete 时 list 目标实例 pending 任务，
+  仅取消 `task.owner_instance == 目标实例` 的任务；list/cancel 失败（离线/超时/UNKNOWN/权限）
+  保持 Blocked；成功且无 pending 任务才 Done；跨实例任务绝不取消。
+- Runtime composition 在 `scheduler_endpoint` 存在时创建独立生命周期 client 并注入 participant；
+  无 endpoint 时保持原有 Blocked fail-closed。Restore 不重启 Scheduler 任务/租约，不增加
+  scheduler participant。安装级删除不在批准范围，participant 返回
+  Blocked(CapabilityNotSupported)，不做跨实例枚举。
+- 测试：
+  - `p13_scheduler_lifecycle`（新 unit matrix，伪 SchedulerTaskPort）：目标 pending 才取消、
+    跨实例/运行中任务不取消、空列表 Done、List 离线/超时与 Cancel 超时保持 Blocked、安装级
+    fail-closed、Cancel 携带幂等键。
+  - `p10_scheduler_task_client`（本地 gRPC fixture）：platform 模式 ListTasks/CancelTask 无
+    delegation、显式 instance scope、Pending filter、CancelTask 幂等键转发；client 不依赖真实
+    Identity。
+  - `p13_joint_delete_e2e` 已把 test-only fake Scheduler 端口接入生产 participant，在真
+    PG16.4 + 真 mTLS Runtime 上复跑 BeginDelete/Restore 协调（注入端口，标注为 test-only）。
+- 文档：doc/02/08/22 增加生产路径、运维/失败语义、事务边界；不改 proto/权限/RPC。
+
+未完成/待后续：
+- P13h-1 Scheduler 平台 peer 授权链未在本 worktree 合入：本任务无法跑真实 Runtime→Scheduler
+  授权成功链；P13h-3 在两者合入后做联合 e2e（真 Scheduler + 真 Runtime/PG）。
+- 安装级删除的 Scheduler 取消仍 Blocked（批准范围仅 instance scope），需产品后续决策。
+- 真实 Scheduler 任务 >100 的分页、平台 peer 证书轮换/撤销传播、生产规模/跨主机仍待环境或
+  P13h-1/P13h-3 证据；当前仅本地 bounded list 与注入端口矩阵。

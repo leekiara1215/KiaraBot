@@ -291,7 +291,7 @@ keyset 查询，提交/回滚不产生写、审计或 outbox；查询失败不�
 
 ## P13c 生命周期 participant 与 target 登记（实现记录，2026-11-02）
 
-P13a 的 Host 参与者端口现接到 P08b-3 Runtime host_command outbox：维护轮次在 UoW 外调用 participant，participant 自己开短 UoW 写/读取 StopExecution 命令（确定性 command_id，重放幂等），只把 `receipt_persisted && receipt_outcome∈{KnownSucceeded,KnownFailed}` 当 Done；Pending/Dispatched/Unknown/拒绝保持 blocked，避免把 Host 未确认状态写成 stopped。P08b-3b 下发/回执接通后无需改 Runtime 应用层即可收敛。Scheduler 参与者仍通过实例委托的 ListTasks/CancelTask 端口预留，真实 delegation/endpoint 未配置时 BLOCKED。target 登记按证据翻转 Runtime 生命周期 RPC 与 Operation/OperationProgress/OperationState；未覆盖的 Host/Scheduler 真实完成、Control REST delete/restore 保持 not_implemented。
+P13a 的 Host 参与者端口现接到 P08b-3 Runtime host_command outbox：维护轮次在 UoW 外调用 participant，participant 自己开短 UoW 写/读取 StopExecution 命令（确定性 command_id，重放幂等），只把 `receipt_persisted && receipt_outcome∈{KnownSucceeded,KnownFailed}` 当 Done；Pending/Dispatched/Unknown/拒绝保持 blocked，避免把 Host 未确认状态写成 stopped。P08b-3b 下发/回执接通后无需改 Runtime 应用层即可收敛。Scheduler 参与者仍通过实例委托的 ListTasks/CancelTask 端口预留，真实 delegation/endpoint 未配置时 BLOCKED。P13h-2（方案 A 限定）将生产路径改为 Runtime platform mTLS + 显式 instance scope 的 ListTasks/CancelTask（无新增事务/表；网络调用仍在每个维护轮次 UoW 之外，participant 只把 Done/Blocked 回写 operation participants）。target 登记按证据翻转 Runtime 生命周期 RPC 与 Operation/OperationProgress/OperationState；未覆盖的 Host/Scheduler 真实完成、Control REST delete/restore 保持 not_implemented。
 
 ## P08d bootstrap 凭据文件与 Delete 命令快照（2026-11-02）
 
@@ -338,3 +338,10 @@ Host command 的确定性 identity 除 instance/host/generation/desired_version/
 再次 BeginDelete 会生成新的 StopExecution 命令，不会复用上一轮已 receipt 的旧命令并误判
 Host participant 已完成。旧命令仍保留用于审计/清理；UNKNOWN/未回执命令保持 Blocked。
 P13g 的 fake Scheduler participant 只在 test-only Runtime 构建中注入，生产委托/授权语义不变。
+
+
+P13h-2（2026-11-03）：Scheduler participant 生产接线不新增表/迁移/事务边界。实例 BeginDelete 的
+maintenance 在短 UoW 外调用 participant，participant 通过独立 platform-identity client 做
+ListTasks/CancelTask（RESOURCE_INSTANCE 精确 scope），随后应用阶段再开短 UoW 更新 participant
+状态；离线/UNKNOWN 保持 Blocked，不写伪完成。安装级删除不在批准范围，保持 Blocked。真实
+Scheduler 平台授权由 P13h-1 提供，P13h-3 联合验收。
