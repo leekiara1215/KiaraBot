@@ -121,3 +121,18 @@ PluginBridge owner 派生与错误/日志面。**本评审未修改生产实现*
 4. F-4/F-5/F-6 —— Low/Info 加固，可随部署硬化批次做。
 
 本报告不宣称 B1 已通过第三方安全审计；仅覆盖上述代码/契约/最小场景。
+
+## 7. P05b-13 修复状态（2026-11-03）
+
+- **F-3 已修复**：refresh 工具支持 `--max-token-age`、token 文件 mtime/JWT exp 校验、每轮重读、
+  `UNAUTHENTICATED`/`PERMISSION_DENIED` 停止并输出重认证运维提示；单测
+  `p05b_refresh_tool` 覆盖 expired/over-age/stale token。最小权限 refresher principal 与告警
+  写入 doc/05/08。
+- **F-4 已修复**：`RuntimeInstanceDelegationProvider` 增加 per-key single-flight；并发单测
+  `p05_instance_delegation_provider` 验证 8 并发只产生 1 次 source/Exchange。
+- **F-5 已文档化+最小缓解**：host core dump/ptrace 边界写入 doc/05/08；provider 缓存 proof
+  释放时 OPENSSL_cleanse（allocator/core dump 限制仍属主机边界）。
+- **F-6 已加固**：Python sealed reader 增加可选 `expected_subject` 前置校验（`sub` 与预期实例
+  principal 不一致即拒绝）；Runtime C++ reader 的等价 hooks 由后续 task-151 泛化。
+- F-1/F-2 不在本任务范围（评审中已分别记录；当前主线 cache key 已含 installation，TOCTOU
+  仍待独立修复）。

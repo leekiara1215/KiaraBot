@@ -241,3 +241,10 @@ PluginBridge、Runtime ingress 到真实 Scheduler。验证 owner/installation/�
 取消窗口、COMPLETED、跨实例、Scheduler 离线、sealed 缺失、无 scheduler_endpoint fail-closed。
 修复 plugin profile timer subscription 与 `task.read` 权限词汇表。未扩 proto；真实 QQ/平台
 触发与重连矩阵未覆盖。
+
+## P05b-13 安全加固（2026-11-03）
+
+refresh 工具 token 生命周期（`--max-token-age`、过期/权限失败停止+重认证提示）、provider
+per-key single-flight（并发仅 1 次 Exchange）、缓存 proof best-effort 清零、reader 可选
+`expected_subject` 校验；测试 `p05b_refresh_tool`、`p05_instance_delegation_provider`。主机
+core dump/ptrace 边界写入 doc/05/08。未改 proto/契约。

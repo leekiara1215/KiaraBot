@@ -1779,3 +1779,10 @@ P11h（2026-11-03）：P11 部署前独立验收命令 `ctest -R 'p11h'`（或 `
 任务帧稳定失败（retryable 不伪造成功）；刷新周期仍须 <56s。任务归属用 owner/installation，
 account 为空是冻结契约。该 e2e 的 sealed 任务 envelope 由真实 refresh 工具生成，不注入
 provider。
+
+## P05b-13 refresh 停止告警与最小权限（2026-11-03）
+
+告警建议：
+- `instance-delegation-refresh` 输出 `token_expired|token_age_exceeded|token_max_age_exceeded|identity_UNAUTHENTICATED|identity_PERMISSION_DENIED` 且退出非零时，触发“委托刷新停止”告警；按文案提示重新登录 Control 管理员、生成新的 0600 token 文件并重启 refresher。
+- refresher principal 只授予 `identity.delegation.issue`、目标实例 `resource.manage` 与白名单任务权限；不要使用通用高权管理员 token，`--max-token-age` 建议 300s（必须小于部署 token TTL 与委托刷新周期上限 56s 的运维预算）。
+- Runtime host 需 `ulimit -c 0`/禁用 core dump、限制 ptrace；sealed token 是短期秘密但仍驻留内存。

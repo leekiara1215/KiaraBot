@@ -701,3 +701,15 @@ revoked sealed parent、Identity 不可达与 Runtime 不可达的 fail-closed�
   `ifstream` 重开，消除“校验后被替换”的 TOCTOU。符号链接/错 owner/mode/超限/读取期间变化
   均 fail-closed。
 P11h（2026-11-03）：独立 managed Host→Runtime→Model→真实本地 HTTP Provider 验收固化在 `p11h_managed_model_e2e` / `p11h_model_chain_fail_closed` / `p11h_provider_fixture`（p11h;p11 标签，独立 owned PG16.4/TLS fixture，canonical P05b-4 provider fixture 14 modes、P05b-8 sealed reader、P05b-9 ExchangeDelegation 2s/5s budget）。真实付费外部 Provider、六服务 Docker/跨主机部署、替代 Runtime 叶证书的真实部署级负例仍待环境；本地 loopback provider 不宣称外部计费/配额。
+
+## P05b-13 安全加固：refresh token 生命周期与主机边界（2026-11-03）
+
+`instance-delegation-refresh` 新增 `--max-token-age SECONDS`（默认 1800，部署建议 ≤300）：
+启动及每轮重新读取 token 时校验 token 文件 mtime/同源 JWT `exp`，过期或超过最大年龄即停止
+并以非零退出，输出 `token_expired`/`token_age_exceeded`/`token_max_age_exceeded` 与
+重新认证操作提示。循环中收到 `UNAUTHENTICATED`/`PERMISSION_DENIED` 同样停止，不无限重试。
+部署应为 refresher 使用**最小权限 principal/管理员会话**（仅 identity.delegation.issue +
+目标实例 resource.manage/任务授权），短 TTL token 存 0600 文件并由外部登录/轮换刷新；告警规则
+匹配 stopped 稳定文案。Runtime provider 增加 per-instance/permission single-flight，避免并发
+Exchange 放大；缓存 child proof 释放时 best-effort OPENSSL_cleanse。sealed JWT 仍会驻留进程
+内存，主机必须禁用 core dump/限制 ptrace（容器可配 `ulimit -c 0`、`core_pattern`、只读卷）。
