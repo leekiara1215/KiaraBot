@@ -211,9 +211,12 @@ P10j 报告的“Runtime 无 task 帧消费”已由 P10k 修复：`runtime_brid
 task_create/get/cancel，校验认证 instance/owner/installation、`host.tasks.v1`、
 `task.schedule`/`task.read`、`event.timer.triggered` 与幂等/输入上限，经新增
 `RuntimeTaskApplication` 调用 `SchedulerTaskPort`；`SchedulerTaskClient` typed client 与可选
-`scheduler_endpoint` 已接线。**真实 Runtime→Scheduler delegation 来源尚未确认（P05b 同类）**，
-生产 composition 注入 fail-closed provider，调用稳定返回 `UNAUTHENTICATED`/`UPSTREAM_UNAVAILABLE`，
-不会伪造成功。真实 TLS PluginBridge 夹具（P10k 扩展 `p11_model_bridge`，labels p10/p06/p11）
+`scheduler_endpoint` 已接线。**真实 Runtime→Scheduler delegation 来源已由用户选择 B1 sealed 短期文件**：P05b-5 实现
+Runtime reader/provider（配置 `instance_delegation_sealed_file`，校验 0600 regular 非符号链接 /
+instance+installation+audience/permissions/scope / ≤56s TTL / token，经 ExchangeDelegation 换
+audience=scheduler hops2 子委托，失败/过期/篡改/跨实例/证书错误 fail-closed）；Control/部署写入/刷新
+工具与精确 JSON 规范仍由 P05b-6（ref-infra）实施，**P05b-6 合入并跑通真实 Scheduler 链前不宣称 P10k
+生产可用**。provider 未配置时仍 fail-closed，不伪造成功。真实 TLS PluginBridge 夹具（P10k 扩展 `p11_model_bridge`，labels p10/p06/p11）
 验证 ingress→application→fake port 的成功/权限/幂等/取消/CONFLICT/超时/provider fail-closed。
 因此 SDK→真实 Runtime→真实 Scheduler 的成功链仍待“委托来源确认 + 真 Scheduler 联测”，
 不能宣称 P10 原生成功链验收通过。另：冻结 `TaskCreateRequest` 只带 `target_conversation` 字符串、

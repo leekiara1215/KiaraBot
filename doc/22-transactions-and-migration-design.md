@@ -329,7 +329,12 @@ HostBridge StopExecution/DrainHost 命令仍是 Runtime outbox 的持久快照�
 其他 installation 的 namespace 行不受影响；成员撤销只删 membership，不删共享值或其他成员数据。
 
 
-**P10k（2026-11-03）**：PluginBridge task_create/get/cancel ingress 只做认证/能力/输入校验后调用 `RuntimeTaskApplication`→`SchedulerTaskPort`，Runtime 不写本地任务表；Scheduler owner 在自身 UoW 内持久化并返回 TaskRecord，Runtime 不把远程结果当本地事务。生产 composition 的 Scheduler delegation provider 当前 fail-closed（`UNAUTHENTICATED`/`UPSTREAM_UNAVAILABLE`），缺失 `scheduler_endpoint` 时 `CAPABILITY_NOT_SUPPORTED`；不伪造 task 成功。真实 Runtime→Scheduler 委托来源仍是待确认项。
+**P10k（2026-11-03）**：PluginBridge task_create/get/cancel ingress 只做认证/能力/输入校验后调用 `RuntimeTaskApplication`→`SchedulerTaskPort`，Runtime 不写本地任务表；Scheduler owner 在自身 UoW 内持久化并返回 TaskRecord，Runtime 不把远程结果当本地事务。P05b-5 增加 Runtime-only sealed 父委托 reader（B1，无新表/事务：文件读取与 Identity
+Exchange 均在业务 UoW 外，Scheduler owner 仍在自身 UoW 持久化任务）；配置
+`instance_delegation_sealed_file` 缺失/过期/篡改时 provider fail-closed
+（`UNAUTHENTICATED`/`UPSTREAM_UNAVAILABLE`），缺失 `scheduler_endpoint` 时
+`CAPABILITY_NOT_SUPPORTED`；不伪造 task 成功。Control/部署写入/刷新工具（P05b-6）未合入前不宣称
+真实 Runtime→Scheduler 链可用。
 
 ## P13g 生命周期命令快照与重删（2026-11-03）
 

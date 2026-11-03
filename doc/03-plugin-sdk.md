@@ -20,7 +20,7 @@ reference 冻结轨说明：`control/api/tests/test_config_delivery.py` 中启�
 
 ## T06c 任务客户端
 
-P10k 后真实 Runtime PluginBridge 已消费这三类 task 帧（校验认证 instance/owner、host.tasks.v1、task.schedule/task.read 与 event.timer.triggered），并映射到 RuntimeTaskApplication→SchedulerTaskPort；但 Runtime→Scheduler 的生产 delegation 来源仍未确认，当前 composition 的 provider fail-closed（UNAUTHENTICATED/UPSTREAM_UNAVAILABLE），SDK 侧成功语义需待该配置接通。Context.task_create(task_id, target_conversation, payload, idempotency_key, run_at=UTC datetime 或 local_time=LocalTaskTime 字段字典)、task_get(task_id)、task_cancel(task_id, idempotency_key) 使用 host.tasks.v1，默认五秒 deadline。必须获授 task.schedule；创建还需 event.timer.triggered 订阅。返回生成的 TaskResponse；本地时间不猜测 DST，详见 doc/05-infrastructure.md。任务身份来自注册会话，不接受自报 owner；事件仅交给创建插件。COMPLETED 代表 TimerTriggered 已入队，回调仍可能重复，消费者按 task_id 幂等。
+P10k 后真实 Runtime PluginBridge 已消费这三类 task 帧（校验认证 instance/owner、host.tasks.v1、task.schedule/task.read 与 event.timer.triggered），并映射到 RuntimeTaskApplication→SchedulerTaskPort；P05b-5 已实现 B1 sealed 短期父委托的 Runtime reader 与 Exchange provider，但 Control/部署侧写入/刷新工具（P05b-6）合入并跑通真实 Scheduler 链前，provider 仍按配置缺失/失败 fail-closed（UNAUTHENTICATED/UPSTREAM_UNAVAILABLE），SDK 成功语义不得据此宣称生产可用。Context.task_create(task_id, target_conversation, payload, idempotency_key, run_at=UTC datetime 或 local_time=LocalTaskTime 字段字典)、task_get(task_id)、task_cancel(task_id, idempotency_key) 使用 host.tasks.v1，默认五秒 deadline。必须获授 task.schedule；创建还需 event.timer.triggered 订阅。返回生成的 TaskResponse；本地时间不猜测 DST，详见 doc/05-infrastructure.md。任务身份来自注册会话，不接受自报 owner；事件仅交给创建插件。COMPLETED 代表 TimerTriggered 已入队，回调仍可能重复，消费者按 task_id 幂等。
 
 ## T06b 模型客户端
 

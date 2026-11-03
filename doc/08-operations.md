@@ -1589,7 +1589,7 @@ UNKNOWN/EXPIRED 单链迟到证据属剩余环境/验收项。
 
 ## P10k Runtime task 帧与 Scheduler 端口（2026-11-03）
 
-Runtime 可选配置 `scheduler_endpoint`（host:port，仅 Runtime，mTLS 复用服务证书/CA）用于插件 task 帧调用 SchedulerService.Create/Get/CancelTask。配置缺失时 PluginBridge task 帧稳定 `CAPABILITY_NOT_SUPPORTED`；配置存在但委托获取未确认时调用返回 `UNAUTHENTICATED`/`UPSTREAM_UNAVAILABLE`，不做本地假成功。readiness 不因该可选端点缺失而整体 false，但 task 能力不可用；Owner/installation 由已认证 PluginBridge 会话派生。真实委托来源待用户确认，见 P10 报告。
+Runtime 可选配置 `scheduler_endpoint`（host:port，仅 Runtime，mTLS 复用服务证书/CA）用于插件 task 帧调用 SchedulerService.Create/Get/CancelTask。配置缺失时 PluginBridge task 帧稳定 `CAPABILITY_NOT_SUPPORTED`。P05b-5/B1 另可选配置 `instance_delegation_sealed_file`（部署/Control 写入的短期 sealed JSON，0600 regular 非符号链接、原子写）：Runtime 校验 instance/installation/audience=runtime/permissions/scope/issued_at/expires_at（≤56s）/token 后经 Identity ExchangeDelegation 换取 audience=scheduler hops2 子委托；过期/缺失/篡改/跨实例/错误证书/Identity 不可达稳定 `UNAUTHENTICATED`/`UPSTREAM_UNAVAILABLE`/`PERMISSION_DENIED`，不缓存超期 token、不伪造成功。Control/部署写入与刷新工具及精确文件规范由 P05b-6 提供；在 P05b-6 合入并跑通真实 Scheduler 链前，task 帧不得宣称生产可用。readiness 不因该可选端点/文件缺失而整体 false，但 task 能力不可用；Owner/installation 由已认证 PluginBridge 会话派生，sealed 文件不匹配即拒绝。
 ## P12l：主体目录运维口径（2026-11-03）
 
 - `GET /api/v1/principals` 依赖 Control→Identity 的 `identity.principal.read` assignment；Control
