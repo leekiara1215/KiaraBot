@@ -1,14 +1,14 @@
 # P14n 最终交付状态与证据索引
 
-- 日期：2026-11-03；worktree `.worktrees/p14n`，branch `codex/p14n`，基线 `04f7044`（main；P14t/P05b-13；previous checkpoint 通过，最终 exact-HEAD gate 运行中）。
+- 日期：2026-11-03；worktree `.worktrees/p14n`，branch `codex/p14n`，基线 `04f7044`（main；P14t/P05b-13；最终门禁 161/162 + p08 负载 flake 孤立通过）。
 - 任务：只刷新最终证据矩阵/交付口径，不修改实现、契约或部署脚本；`doc/18` 冻结基线只读。
-- 结论：**P13 生产退出 PASS（本验收范围）、P11 独立验收 PASS、P10k 真实 Scheduler 任务链 PASS、P05b B1 链完成（安全评审 0 Critical/High；Medium 全部处置：F-1/F-2 已修、F-3/F-4/F-5/F-6 已加固；F-5 host/core 边界文档化）。剩余未验收收敛为 8 项环境/契约项；P12 host operation/bootstrap_credential 按用户确认保持 not_implemented。P14 checkpoint @7b8fb0f 已通过：**161/161 CTest passed @7b8fb0f**（`build/logs/recheck-ctest-155131.log`，1051.70s，2026-11-03 15:51:31→16:09:06；本轮一次全绿、无失败；此前 `1213790` gate 148/148（687.02s）的 `p02_core_process`/`p08_managed_host_e2e` 负载时序 flake 未复现）；不得把本报告当作“已发布/全部验收”声明。**
+- 结论：**P13 生产退出 PASS（本验收范围）、P11 独立验收 PASS、P10k 真实 Scheduler 任务链 PASS、P05b B1 链完成（安全评审 0 Critical/High；Medium 全部处置：F-1/F-2 已修、F-3/F-4/F-5/F-6 已加固；F-5 host/core 边界文档化）。剩余未验收收敛为 8 项环境/契约项；P12 host operation/bootstrap_credential 按用户确认保持 not_implemented。previous checkpoint 161/161@7b8fb0f/1051.70s；final exact-HEAD gate @04f7044：**161/162 CTest passed，1025.87s**（`build/logs/recheck-ctest-162320.log`，2026-11-03 16:23:19→16:40:30）；唯一失败 `p08_managed_host_e2e` 35.77s（psql SSL negotiation invalid response，套件负载下时序问题）；孤立复跑 **2/2 Passed 58.64s/56.72s**（Lead 57.39s），判定负载时序 flake，不是断言/实现回归。此前 161/161@7b8fb0f/1051.70s。 不得把本报告当作“已发布/全部验收”声明。**
 
 ## 1. 最终门禁与修复
 
 | 项 | 结果 |
 |---|---|
-| full-locked build + CTest | previous checkpoint **161/161 CTest passed @7b8fb0f**（`build/logs/recheck-ctest-155131.log`，1051.70s，2026-11-03 15:51:31→16:09:06；本轮一次全绿、无失败；此前 `1213790` gate 148/148（687.02s）的 `p02_core_process`/`p08_managed_host_e2e` 负载时序 flake 未复现）。**最终 exact-HEAD gate @04f7044 由 env 运行中（`build/logs/recheck-ctest-162320.log`），结果回填前不写新数字。** |
+| full-locked build + CTest | exact-HEAD gate @04f7044：**161/162 CTest passed，1025.87s**（`build/logs/recheck-ctest-162320.log`，2026-11-03 16:23:19→16:40:30）；唯一失败 `p08_managed_host_e2e` 35.77s（psql SSL negotiation invalid response，套件负载下时序问题）；孤立复跑 **2/2 Passed 58.64s/56.72s**（Lead 57.39s），判定负载时序 flake，不是断言/实现回归。此前 161/161@7b8fb0f/1051.70s。 |
 | P10m 优雅停机 SIGSEGV | **已修复**：OpenSSL 3 `OPENSSL_cleanup` atexit 与 gRPC worker 线程 TLS 析构竞态；`run_service` 使用 `OPENSSL_INIT_NO_ATEXIT`。修复前受控诊断 4 次循环 1 次 exit -11；修复后新增 10 次“8192 filler→SIGTERM→Runtime 重启”循环，连续 5 次完整 e2e（50 次停机）exit 0，另 12 次完整 e2e 无崩溃。提交 `6bff2c9`/`532b1d3`/`e83a988` |
 | 原生单机栈（P14f/i/j/k/l/m） | 真实 Identity/Runtime/Scheduler/Model/Control 五进程 + owned PG16.4 + 临时 PKI + Control HTTPS；最终 **success 9 + stable-ok 1 + known-gap 0**（health/principals/logs/audit/tasks_list/models/action_query/delete/restore success；action_policy GET stable-ok 404；无 known-gap） |
 | Panel API client live（P12j） | 严格模式 `KIARABOT_P12J_EXPECT_FIXED=1` PASS：受权 `/api/v1/health` 200 HEALTHY 四 owner；login/refresh/401/400；其余 owner 按当时 known-gap/capability-gap 口径记录，最终由 P14 原生矩阵收口 |
@@ -73,7 +73,7 @@
 | P13 | 限定批准 A（Scheduler mTLS+白名单+显式授权，仅 ListTasks/CancelTask；instance/task 归属；真实 Host 回执+Scheduler cleanup→DELETED，UNKNOWN/离线 BLOCKED，Restore 不重建任务/租约） | **生产退出 PASS（本验收范围）**：`p13h3_joint_delete_production_e2e`；P13h-1/2 证据已合入 | 残余多主机/满盘/生产规模、真实 Host UNKNOWN 进程注入属环境项 |
 | P05b / P11 / P10k | 批准 B1；P11 验收真实 managed plugin+真实 HTTP Provider fixture+负例；P10k 同批解锁 | **B1 链完成；P11 独立验收 PASS（37/37 相关回归）；P10k 真实 Scheduler 任务链 PASS**；安全评审 0 Critical/High，Medium 全部处置（F-1/F-2 已修，F-3/F-4/F-5/F-6 已加固；F-5 host/core 边界文档化） | 真实付费 Provider、目标部署环境、部署级错误 Runtime 叶证书、Model Update/RotateProviderSecret scope_kinds 仍为环境/契约项 |
 | P12 | host operation/bootstrap_credential 保持 not_implemented（用户确认），只文档化、不扩契约 | 无新增实现任务；按 not_implemented | 不是完成 |
-| P14 | 用户准备 Docker 与 gh 登录，之后继续 Compose/CI/release | 单机 Docker Compose、远端 CI、正式发布仍未运行；previous checkpoint @7b8fb0f 已通过：161/161/1051.70s；最终 exact-HEAD @04f7044 env 运行中 | 不以文档替代验收 |
+| P14 | 用户准备 Docker 与 gh 登录，之后继续 Compose/CI/release | 单机 Docker Compose、远端 CI、正式发布仍未运行；previous checkpoint @7b8fb0f 161/161/1051.70s；final @04f7044 161/162/1025.87s，p08 负载 flake 孤立 2/2 通过 | 不以文档替代验收 |
 
 ## 5. 一致性核对
 
@@ -81,7 +81,7 @@
 - 交付文档相对链接：0 missing（README/doc/23/27/28/08/本报告）。
 - 脚本/命令路径：`build/env/recheck-full-locked.sh`、`scripts/deploy/target-smoke.sh`、`scripts/ops/tests/ops_scripts_test.sh`、`scripts/ci/check-workflows.sh`、`scripts/deploy/tests/target_rotate_test.sh` 等在 P14e 已实跑；本任务只复核路径。
 - 秘密扫描：tracked 文件无真实私钥/云 token；仅 identity_crypto 的 PEM 头字符串常量。
-- 口径检查：doc/27/28/README/doc/23 基线统一 `7b8fb0f`；checkpoint 161/161@7b8fb0f 已通过；P00n、P06h、P10m、P13 生产退出 PASS、P11 独立验收 PASS、P10k 真实链 PASS、P05b B1 完成、P12 not_implemented、P14 环境项在各文档一致；此前 gate 148/148@1213790 与当前 checkpoint 161/161@7b8fb0f 均按实际日志记录。
+- 口径检查：doc/27/28/README/doc/23 基线统一 `04f7044`；final 161/162@04f7044（p08 负载 flake 孤立通过）已回填；P00n、P06h、P10m、P13 生产退出 PASS、P11 独立验收 PASS、P10k 真实链 PASS、P05b B1 完成、P12 not_implemented、P14 环境项在各文档一致；此前 gate 148/148@1213790 与当前 checkpoint 161/161@7b8fb0f 均按实际日志记录。
 
 ## 6. 未做/限制
 
