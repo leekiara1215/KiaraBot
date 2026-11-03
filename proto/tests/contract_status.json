@@ -5913,7 +5913,18 @@
           "RuntimeUpdateActionPolicyResponse": "implemented",
           "IdentityPrincipalSummary": "implemented",
           "IdentityListPrincipalsRequest": "implemented",
-          "IdentityListPrincipalsResponse": "implemented"
+          "IdentityListPrincipalsResponse": "implemented",
+          "IdentityIssueDelegationRequest": "implemented",
+          "IdentityIssueDelegationResponse": "implemented",
+          "DelegationProof": "implemented",
+          "IdentityExchangeDelegationRequest": "implemented",
+          "IdentityExchangeDelegationResponse": "implemented",
+          "IdentityCheckAuthorizationRequest": "implemented",
+          "IdentityCheckAuthorizationResponse": "implemented",
+          "AuthorizationDecision": "implemented",
+          "IdentityGetVerificationKeysRequest": "implemented",
+          "IdentityGetVerificationKeysResponse": "implemented",
+          "VerificationKey": "implemented"
         },
         "proto_fields": {
           "IdentityAuditFilter.scope": "implemented",
@@ -6427,7 +6438,44 @@
           "IdentityListPrincipalsRequest.state_filter": "implemented",
           "IdentityListPrincipalsResponse.principals": "implemented",
           "IdentityListPrincipalsResponse.page": "implemented",
-          "IdentityListPrincipalsResponse.checked_at": "implemented"
+          "IdentityListPrincipalsResponse.checked_at": "implemented",
+          "IdentityIssueDelegationRequest.context": "implemented",
+          "IdentityIssueDelegationRequest.subject_proof": "implemented",
+          "IdentityIssueDelegationRequest.audience": "implemented",
+          "IdentityIssueDelegationRequest.scope": "implemented",
+          "IdentityIssueDelegationRequest.permissions": "implemented",
+          "IdentityIssueDelegationRequest.client_certificate_sha256": "implemented",
+          "IdentityIssueDelegationRequest.instance_id": "implemented",
+          "IdentityIssueDelegationResponse.delegation": "implemented",
+          "DelegationProof.proof": "implemented",
+          "DelegationProof.audience": "implemented",
+          "DelegationProof.expires_at": "implemented",
+          "DelegationProof.business_hops": "implemented",
+          "IdentityExchangeDelegationRequest.context": "implemented",
+          "IdentityExchangeDelegationRequest.parent_proof": "implemented",
+          "IdentityExchangeDelegationRequest.audience": "implemented",
+          "IdentityExchangeDelegationRequest.scope": "implemented",
+          "IdentityExchangeDelegationRequest.permissions": "implemented",
+          "IdentityExchangeDelegationRequest.client_certificate_sha256": "implemented",
+          "IdentityExchangeDelegationResponse.delegation": "implemented",
+          "IdentityCheckAuthorizationRequest.context": "implemented",
+          "IdentityCheckAuthorizationRequest.subject_proof": "implemented",
+          "IdentityCheckAuthorizationRequest.full_method": "implemented",
+          "IdentityCheckAuthorizationRequest.scope": "implemented",
+          "IdentityCheckAuthorizationRequest.known_authorization_version": "implemented",
+          "IdentityCheckAuthorizationResponse.decision": "implemented",
+          "AuthorizationDecision.allowed": "implemented",
+          "AuthorizationDecision.authorization_version": "implemented",
+          "AuthorizationDecision.checked_at": "implemented",
+          "AuthorizationDecision.denial": "implemented",
+          "IdentityGetVerificationKeysRequest.context": "implemented",
+          "IdentityGetVerificationKeysRequest.known_key_version": "implemented",
+          "IdentityGetVerificationKeysResponse.keys": "implemented",
+          "IdentityGetVerificationKeysResponse.version": "implemented",
+          "VerificationKey.key_id": "implemented",
+          "VerificationKey.ed25519_public_key": "implemented",
+          "VerificationKey.version": "implemented",
+          "VerificationKey.valid_until": "implemented"
         },
         "bridge_methods": {
           "AdapterBridge.Connect": "implemented",
@@ -11473,6 +11521,198 @@
           "core/src/runtime/platform/identity_rpc.cpp",
           "core/src/application/target/identity_principal_directory_application.cpp",
           "core/tests/platform/identity_rpc_test.cpp"
+        ],
+        "proto_messages:IdentityIssueDelegationRequest": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "proto_fields:IdentityIssueDelegationRequest.context": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "proto_fields:IdentityIssueDelegationRequest.subject_proof": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "proto_fields:IdentityIssueDelegationRequest.audience": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "proto_fields:IdentityIssueDelegationRequest.scope": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "proto_fields:IdentityIssueDelegationRequest.permissions": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "proto_fields:IdentityIssueDelegationRequest.client_certificate_sha256": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "proto_fields:IdentityIssueDelegationRequest.instance_id": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "proto_messages:IdentityIssueDelegationResponse": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "proto_fields:IdentityIssueDelegationResponse.delegation": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "proto_messages:DelegationProof": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "proto_fields:DelegationProof.proof": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "proto_fields:DelegationProof.audience": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "proto_fields:DelegationProof.expires_at": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "proto_fields:DelegationProof.business_hops": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "proto_messages:IdentityExchangeDelegationRequest": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "proto_fields:IdentityExchangeDelegationRequest.context": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "proto_fields:IdentityExchangeDelegationRequest.parent_proof": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "proto_fields:IdentityExchangeDelegationRequest.audience": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "proto_fields:IdentityExchangeDelegationRequest.scope": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "proto_fields:IdentityExchangeDelegationRequest.permissions": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "proto_fields:IdentityExchangeDelegationRequest.client_certificate_sha256": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "proto_messages:IdentityExchangeDelegationResponse": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "proto_fields:IdentityExchangeDelegationResponse.delegation": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "proto_messages:IdentityCheckAuthorizationRequest": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "proto_fields:IdentityCheckAuthorizationRequest.context": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "proto_fields:IdentityCheckAuthorizationRequest.subject_proof": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "proto_fields:IdentityCheckAuthorizationRequest.full_method": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "proto_fields:IdentityCheckAuthorizationRequest.scope": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "proto_fields:IdentityCheckAuthorizationRequest.known_authorization_version": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "proto_messages:IdentityCheckAuthorizationResponse": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "proto_fields:IdentityCheckAuthorizationResponse.decision": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "proto_messages:AuthorizationDecision": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "proto_fields:AuthorizationDecision.allowed": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "proto_fields:AuthorizationDecision.authorization_version": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "proto_fields:AuthorizationDecision.checked_at": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "proto_fields:AuthorizationDecision.denial": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "proto_messages:IdentityGetVerificationKeysRequest": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/identity_keys_daemon_client.cpp"
+        ],
+        "proto_fields:IdentityGetVerificationKeysRequest.context": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/identity_keys_daemon_client.cpp"
+        ],
+        "proto_fields:IdentityGetVerificationKeysRequest.known_key_version": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/identity_keys_daemon_client.cpp"
+        ],
+        "proto_messages:IdentityGetVerificationKeysResponse": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/identity_keys_daemon_client.cpp"
+        ],
+        "proto_fields:IdentityGetVerificationKeysResponse.keys": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/identity_keys_daemon_client.cpp"
+        ],
+        "proto_fields:IdentityGetVerificationKeysResponse.version": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/identity_keys_daemon_client.cpp"
+        ],
+        "proto_messages:VerificationKey": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/identity_keys_daemon_client.cpp"
+        ],
+        "proto_fields:VerificationKey.key_id": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/identity_keys_daemon_client.cpp"
+        ],
+        "proto_fields:VerificationKey.ed25519_public_key": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/identity_keys_daemon_client.cpp"
+        ],
+        "proto_fields:VerificationKey.version": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/identity_keys_daemon_client.cpp"
+        ],
+        "proto_fields:VerificationKey.valid_until": [
+          "core/src/runtime/platform/identity_rpc.cpp",
+          "core/tests/platform/identity_keys_daemon_client.cpp"
         ]
       }
     }

@@ -58,7 +58,7 @@ message AssignmentRecord {
   uint64 version = 6;
 }
 
-// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+// CONTRACT_STATUS: not_implemented - reference scope; target implementation is registered separately.
 message DelegationProof {
   string proof = 1;
   string audience = 2;
@@ -66,7 +66,7 @@ message DelegationProof {
   uint32 business_hops = 4;
 }
 
-// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+// CONTRACT_STATUS: not_implemented - reference scope; target implementation is registered separately.
 message AuthorizationDecision {
   bool allowed = 1;
   uint64 authorization_version = 2;
@@ -90,7 +90,7 @@ message AuthorizationSnapshot {
   uint64 authorization_version = 3;
 }
 
-// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+// CONTRACT_STATUS: not_implemented - reference scope; target implementation is registered separately.
 message VerificationKey {
   string key_id = 1;
   bytes ed25519_public_key = 2;
@@ -257,7 +257,7 @@ message IdentityListPrincipalsResponse {
   google.protobuf.Timestamp checked_at = 3;
 }
 
-// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+// CONTRACT_STATUS: not_implemented - reference scope; target implementation is registered separately.
 message IdentityIssueDelegationRequest {
   RequestContext context = 1;
   string subject_proof = 2;
@@ -271,12 +271,12 @@ message IdentityIssueDelegationRequest {
   string instance_id = 7;
 }
 
-// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+// CONTRACT_STATUS: not_implemented - reference scope; target implementation is registered separately.
 message IdentityIssueDelegationResponse {
   DelegationProof delegation = 1;
 }
 
-// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+// CONTRACT_STATUS: not_implemented - reference scope; target implementation is registered separately.
 message IdentityExchangeDelegationRequest {
   RequestContext context = 1;
   string parent_proof = 2;
@@ -286,12 +286,12 @@ message IdentityExchangeDelegationRequest {
   bytes client_certificate_sha256 = 6;
 }
 
-// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+// CONTRACT_STATUS: not_implemented - reference scope; target implementation is registered separately.
 message IdentityExchangeDelegationResponse {
   DelegationProof delegation = 1;
 }
 
-// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+// CONTRACT_STATUS: not_implemented - reference scope; target implementation is registered separately.
 message IdentityCheckAuthorizationRequest {
   RequestContext context = 1;
   string subject_proof = 2;
@@ -300,7 +300,7 @@ message IdentityCheckAuthorizationRequest {
   optional uint64 known_authorization_version = 5;
 }
 
-// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+// CONTRACT_STATUS: not_implemented - reference scope; target implementation is registered separately.
 message IdentityCheckAuthorizationResponse {
   AuthorizationDecision decision = 1;
 }
@@ -386,13 +386,13 @@ message IdentityGetAuthorizationSnapshotResponse {
   AuthorizationSnapshot snapshot = 1;
 }
 
-// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+// CONTRACT_STATUS: not_implemented - reference scope; target implementation is registered separately.
 message IdentityGetVerificationKeysRequest {
   RequestContext context = 1;
   optional uint64 known_key_version = 2;
 }
 
-// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+// CONTRACT_STATUS: not_implemented - reference scope; target implementation is registered separately.
 message IdentityGetVerificationKeysResponse {
   repeated VerificationKey keys = 1;
   uint64 version = 2;

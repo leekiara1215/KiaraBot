@@ -636,10 +636,13 @@ def scenario(root, port, pg_bin, binaries):
                         full_method='kiarabot.v1.ModelService/Chat',
                         scope=platform_pb2.ResourceScope(resources=model_scope)),
                     timeout=10).decision
-                require(model_allowed.allowed, 'model child proof CheckAuthorization allowed')
+                require(model_allowed.allowed and model_allowed.authorization_version > 0 and
+                        model_allowed.HasField('checked_at') and model_allowed.checked_at.seconds > 0,
+                        'model child proof CheckAuthorization allowed with current version and time')
                 model_wrong = model_identity.CheckAuthorization(
                     identity_pb2.IdentityCheckAuthorizationRequest(
                         context=context(), subject_proof=model_child,
+                        known_authorization_version=model_allowed.authorization_version,
                         full_method='kiarabot.v1.ModelService/Chat',
                         scope=platform_pb2.ResourceScope(resources=[
                             platform_pb2.ResourceRef(kind=platform_pb2.RESOURCE_MODEL,

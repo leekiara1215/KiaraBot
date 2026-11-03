@@ -27,6 +27,8 @@ cmake --build build --target kiarabot_proto
 
 `ModelService.UpdateModel` 与 `RotateProviderSecret` 的方法描述符均声明 `scope_kinds = RESOURCE_MODEL`。在线授权绑定请求中的模型 ID，并要求 `model.manage`。
 
+Identity 的 `IssueDelegation`、`ExchangeDelegation`、`CheckAuthorization` 和 `GetVerificationKeys` 已在 target 范围登记。对应证据覆盖短期委托换取、证书绑定、精确资源授权和受权平台读取公钥。
+
 ## 生成 Python 代码
 
 ```bash
