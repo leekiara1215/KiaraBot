@@ -187,4 +187,94 @@ make_runtime_host_lifecycle_participant(RuntimeUnitOfWorkFactory& transactions,
   }
 }
 
+namespace {
+LifecycleParticipantResult scheduler_blocked(ErrorCode code) {
+  return {LifecycleParticipantDisposition::Blocked, code, std::nullopt};
+}
+LifecycleParticipantResult scheduler_done() {
+  return {LifecycleParticipantDisposition::Done, std::nullopt, std::nullopt};
+}
+class RuntimeSchedulerLifecycleParticipant final : public SchedulerLifecycleParticipantPort {
+public:
+  RuntimeSchedulerLifecycleParticipant(SchedulerTaskPort& scheduler_tasks, RuntimeIdPort& ids)
+      : scheduler_tasks_(scheduler_tasks), ids_(ids) {}
+
+  LifecycleParticipantResult cancel_tasks(const ResourceRef& resource) override {
+    if (resource.kind == ResourceKind::Installation) {
+      // Approved scope A is instance-scoped ListTasks/CancelTask only. Enumerating an
+      // installation would cross instances, so keep the operation Blocked instead of faking a
+      // complete cancellation or issuing a forbidden cross-instance query.
+      return scheduler_blocked(ErrorCode::CapabilityNotSupported);
+    }
+    if (resource.kind != ResourceKind::Instance || resource.id.value.empty()) {
+      return scheduler_blocked(ErrorCode::InvalidArgument);
+    }
+    const InstanceId owner{resource.id.value};
+    const auto request = ids_.operation_id();
+    if (const auto* failure = std::get_if<Failure>(&request)) {
+      return scheduler_blocked(failure->code);
+    }
+    const auto trace = ids_.operation_id();
+    if (const auto* failure = std::get_if<Failure>(&trace)) {
+      return scheduler_blocked(failure->code);
+    }
+    const auto idempotency = ids_.operation_id();
+    if (const auto* failure = std::get_if<Failure>(&idempotency)) {
+      return scheduler_blocked(failure->code);
+    }
+    const auto now = TimePoint{std::chrono::duration_cast<std::chrono::nanoseconds>(
+        std::chrono::system_clock::now().time_since_epoch())};
+    SchedulerTaskContext context;
+    context.owner = owner;
+    context.request_id = std::get<OperationId>(request).value;
+    context.trace_id = std::get<OperationId>(trace).value;
+    context.idempotency_key = std::get<OperationId>(idempotency).value;
+    context.deadline = now + std::chrono::seconds{2};
+    auto listed = scheduler_tasks_.list_tasks(context, TaskState::Pending, 100);
+    if (const auto* failure = std::get_if<Failure>(&listed)) {
+      return scheduler_blocked(failure->code);
+    }
+    for (const auto& task : std::get<std::vector<ScheduledTask>>(listed)) {
+      if (task.key.owner != owner || task.state != TaskState::Pending) {
+        // Defence in depth: the Scheduler side filters by instance scope, but Runtime never
+        // cancels a task that does not belong to this exact instance.
+        continue;
+      }
+      auto cancel_context = context;
+      const auto cancel_key = ids_.operation_id();
+      if (const auto* failure = std::get_if<Failure>(&cancel_key)) {
+        return scheduler_blocked(failure->code);
+      }
+      cancel_context.idempotency_key = std::get<OperationId>(cancel_key).value;
+      auto cancelled = scheduler_tasks_.cancel_task(cancel_context, task.key.task_id);
+      if (const auto* failure = std::get_if<Failure>(&cancelled)) {
+        // Conflict/NotFound can mean the task started or another actor changed it; keep the
+        // operation Blocked so the next maintenance round re-lists instead of claiming success.
+        return scheduler_blocked(failure->code);
+      }
+    }
+    return scheduler_done();
+  }
+
+private:
+  SchedulerTaskPort& scheduler_tasks_;
+  RuntimeIdPort& ids_;
+};
+} // namespace
+
+Outcome<std::unique_ptr<SchedulerLifecycleParticipantPort>>
+make_runtime_scheduler_lifecycle_participant(SchedulerTaskPort& scheduler_tasks,
+                                             RuntimeIdPort& ids) {
+  try {
+    return std::unique_ptr<SchedulerLifecycleParticipantPort>(
+        std::make_unique<RuntimeSchedulerLifecycleParticipant>(scheduler_tasks, ids));
+  } catch (const std::bad_alloc&) {
+    return Failure{ErrorCode::UpstreamUnavailable, Acceptance::NotAccepted, Recovery::Backoff,
+                   std::nullopt, std::nullopt};
+  } catch (...) {
+    return Failure{ErrorCode::Internal, Acceptance::NotAccepted, Recovery::Diagnose, std::nullopt,
+                   std::nullopt};
+  }
+}
+
 } // namespace kiarabot::core::target

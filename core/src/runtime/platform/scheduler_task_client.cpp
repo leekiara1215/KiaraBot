@@ -2,10 +2,12 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cstdint>
 #include <cstring>
 #include <optional>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include <kiarabot/v1/common.pb.h>
 #include <kiarabot/v1/runtime.pb.h>
@@ -86,12 +88,51 @@ v1::ConversationRef::Type conversation_type(t::ConversationKey::Kind kind) {
   return kind == t::ConversationKey::Kind::Group ? v1::ConversationRef::GROUP
                                                  : v1::ConversationRef::PRIVATE;
 }
+v1::ScheduledTaskState task_state_wire(t::TaskState state) {
+  switch (state) {
+  case t::TaskState::Pending:
+    return v1::SCHEDULED_TASK_PENDING;
+  case t::TaskState::Running:
+    return v1::SCHEDULED_TASK_RUNNING;
+  case t::TaskState::Retrying:
+    return v1::SCHEDULED_TASK_RETRYING;
+  case t::TaskState::Completed:
+    return v1::SCHEDULED_TASK_COMPLETED;
+  case t::TaskState::Failed:
+    return v1::SCHEDULED_TASK_FAILED;
+  case t::TaskState::Cancelled:
+    return v1::SCHEDULED_TASK_CANCELLED;
+  }
+  return v1::SCHEDULED_TASK_STATE_UNSPECIFIED;
+}
+t::Outcome<std::string> delegation_proof(const SchedulerTaskClientOptions& options) {
+  if (options.platform_identity) {
+    // P13h-1 authorizes ListTasks/CancelTask from the Runtime platform mTLS peer and explicit
+    // instance scope; no user delegation is sent on this path.
+    return std::string{};
+  }
+  if (!options.delegation_provider) {
+    return failure(t::ErrorCode::Unauthenticated, t::Recovery::Authenticate);
+  }
+  auto delegated = options.delegation_provider();
+  if (const auto* rejected = std::get_if<t::Failure>(&delegated)) {
+    return *rejected;
+  }
+  auto& proof = std::get<std::string>(delegated);
+  if (proof.empty() || proof.size() > 32768) {
+    return failure(t::ErrorCode::Unauthenticated, t::Recovery::Authenticate);
+  }
+  return proof;
+}
 bool encode_context(v1::RequestContext* wire, const t::SchedulerTaskContext& context,
                     std::chrono::milliseconds budget) {
   const auto now = t::TimePoint{std::chrono::duration_cast<std::chrono::nanoseconds>(
       std::chrono::system_clock::now().time_since_epoch())};
   wire->set_request_id(context.request_id);
   wire->set_trace_id(context.trace_id);
+  if (!context.idempotency_key.empty()) {
+    wire->set_idempotency_key(context.idempotency_key);
+  }
   return timestamp(std::min(context.deadline, now + budget), wire->mutable_deadline());
 }
 void scope(v1::ResourceScope* wire, const t::SchedulerTaskContext& context) {
@@ -141,7 +182,8 @@ SchedulerTaskClient::SchedulerTaskClient(SchedulerTaskClientOptions options)
 
 t::Outcome<std::unique_ptr<SchedulerTaskClient>>
 SchedulerTaskClient::create(SchedulerTaskClientOptions options) {
-  if (options.endpoint.empty() || !options.channel_credentials || !options.delegation_provider ||
+  if (options.endpoint.empty() || !options.channel_credentials ||
+      (!options.platform_identity && !options.delegation_provider) ||
       options.maximum_budget <= std::chrono::milliseconds::zero() ||
       options.maximum_budget > std::chrono::seconds{30}) {
     return failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput);
@@ -162,19 +204,17 @@ SchedulerTaskClient::create_task(const t::SchedulerTaskContext& context,
       input.target.conversation_id.empty() || (!input.run_at && !input.local_time)) {
     return failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput);
   }
-  auto delegation = options_.delegation_provider();
+  auto delegation = delegation_proof(options_);
   if (const auto* rejected = std::get_if<t::Failure>(&delegation)) {
     return *rejected;
-  }
-  auto& proof = std::get<std::string>(delegation);
-  if (proof.empty() || proof.size() > 32768) {
-    return failure(t::ErrorCode::Unauthenticated, t::Recovery::Authenticate);
   }
   v1::SchedulerCreateTaskRequest wire;
   if (!encode_context(wire.mutable_context(), context, options_.maximum_budget)) {
     return failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput);
   }
-  wire.mutable_context()->set_delegation(proof);
+  if (!std::get<std::string>(delegation).empty()) {
+    wire.mutable_context()->set_delegation(std::get<std::string>(delegation));
+  }
   wire.set_task_id(input.task_id);
   auto* target = wire.mutable_target();
   target->set_id(input.target.conversation_id);
@@ -210,19 +250,17 @@ t::Outcome<t::ScheduledTask> SchedulerTaskClient::get_task(const t::SchedulerTas
   if (!valid_wire_task_id(task_id)) {
     return failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput);
   }
-  auto delegation = options_.delegation_provider();
+  auto delegation = delegation_proof(options_);
   if (const auto* rejected = std::get_if<t::Failure>(&delegation)) {
     return *rejected;
-  }
-  auto& proof = std::get<std::string>(delegation);
-  if (proof.empty() || proof.size() > 32768) {
-    return failure(t::ErrorCode::Unauthenticated, t::Recovery::Authenticate);
   }
   v1::SchedulerGetTaskRequest wire;
   if (!encode_context(wire.mutable_context(), context, options_.maximum_budget)) {
     return failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput);
   }
-  wire.mutable_context()->set_delegation(proof);
+  if (!std::get<std::string>(delegation).empty()) {
+    wire.mutable_context()->set_delegation(std::get<std::string>(delegation));
+  }
   wire.set_task_id(std::string{task_id});
   scope(wire.mutable_scope(), context);
   grpc::ClientContext call;
@@ -240,19 +278,17 @@ SchedulerTaskClient::cancel_task(const t::SchedulerTaskContext& context, std::st
   if (!valid_wire_task_id(task_id)) {
     return failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput);
   }
-  auto delegation = options_.delegation_provider();
+  auto delegation = delegation_proof(options_);
   if (const auto* rejected = std::get_if<t::Failure>(&delegation)) {
     return *rejected;
-  }
-  auto& proof = std::get<std::string>(delegation);
-  if (proof.empty() || proof.size() > 32768) {
-    return failure(t::ErrorCode::Unauthenticated, t::Recovery::Authenticate);
   }
   v1::SchedulerCancelTaskRequest wire;
   if (!encode_context(wire.mutable_context(), context, options_.maximum_budget)) {
     return failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput);
   }
-  wire.mutable_context()->set_delegation(proof);
+  if (!std::get<std::string>(delegation).empty()) {
+    wire.mutable_context()->set_delegation(std::get<std::string>(delegation));
+  }
   wire.set_task_id(std::string{task_id});
   scope(wire.mutable_scope(), context);
   grpc::ClientContext call;
@@ -263,6 +299,59 @@ SchedulerTaskClient::cancel_task(const t::SchedulerTaskContext& context, std::st
     return grpc_failure(status);
   }
   return decode(response.task());
+}
+
+t::Outcome<std::vector<t::ScheduledTask>>
+SchedulerTaskClient::list_tasks(const t::SchedulerTaskContext& context,
+                                std::optional<t::TaskState> state, std::size_t page_size) {
+  if (context.owner.value.empty() || context.request_id.empty() || context.trace_id.empty() ||
+      page_size == 0 || page_size > 100) {
+    return failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput);
+  }
+  auto delegation = delegation_proof(options_);
+  if (const auto* rejected = std::get_if<t::Failure>(&delegation)) {
+    return *rejected;
+  }
+  std::vector<t::ScheduledTask> tasks;
+  std::string page_token;
+  // The lifecycle participant needs the complete pending set for one instance; follow the
+  // owner's bounded snapshot pages rather than silently truncating at one page.
+  for (std::size_t page = 0; page < 64; ++page) {
+    v1::SchedulerListTasksRequest wire;
+    if (!encode_context(wire.mutable_context(), context, options_.maximum_budget)) {
+      return failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput);
+    }
+    if (!std::get<std::string>(delegation).empty()) {
+      wire.mutable_context()->set_delegation(std::get<std::string>(delegation));
+    }
+    scope(wire.mutable_scope(), context);
+    wire.mutable_page()->set_page_size(static_cast<std::uint32_t>(page_size));
+    if (!page_token.empty()) {
+      wire.mutable_page()->set_page_token(page_token);
+    }
+    if (state) {
+      wire.set_state(task_state_wire(*state));
+    }
+    grpc::ClientContext call;
+    call.set_deadline(std::chrono::system_clock::now() + options_.maximum_budget);
+    v1::SchedulerListTasksResponse response;
+    const auto status = stub_->ListTasks(&call, wire, &response);
+    if (!status.ok()) {
+      return grpc_failure(status);
+    }
+    for (const auto& record : response.tasks()) {
+      auto decoded = decode(record);
+      if (const auto* rejected = std::get_if<t::Failure>(&decoded)) {
+        return *rejected;
+      }
+      tasks.push_back(std::move(std::get<t::ScheduledTask>(decoded)));
+    }
+    if (!response.has_page() || response.page().next_page_token().empty()) {
+      break;
+    }
+    page_token = response.page().next_page_token();
+  }
+  return tasks;
 }
 
 } // namespace kiarabot::core::platform

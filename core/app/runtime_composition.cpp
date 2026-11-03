@@ -202,9 +202,9 @@ public:
     return decision;
   }
 };
-class P13gSchedulerLifecycle final : public target::SchedulerLifecycleParticipantPort {
+class P13gSchedulerTaskPort final : public target::SchedulerTaskPort {
 public:
-  P13gSchedulerLifecycle() {
+  P13gSchedulerTaskPort() {
     if (const char* value = std::getenv("KIARABOT_P13G_SCHEDULER_MODE")) {
       mode_ = value;
     }
@@ -215,9 +215,55 @@ public:
       mode_path_ = value;
     }
   }
-  target::LifecycleParticipantResult
-  cancel_tasks(const target::ResourceRef& resource) override {
-    record("cancel " + resource.id.value);
+  bool available() const override {
+    return true;
+  }
+  target::Outcome<target::ScheduledTask> create_task(const target::SchedulerTaskContext&,
+                                                     const target::TaskCreationInput&) override {
+    return failure();
+  }
+  target::Outcome<target::ScheduledTask> get_task(const target::SchedulerTaskContext&,
+                                                  std::string_view) override {
+    return failure();
+  }
+  target::Outcome<std::vector<target::ScheduledTask>>
+  list_tasks(const target::SchedulerTaskContext& context, std::optional<target::TaskState>,
+             std::size_t) override {
+    record("list " + context.owner.value);
+    if (!check_mode()) {
+      return failure();
+    }
+    // The test-only port models exactly one pending task owned by the target instance; the real
+    // client/authorization matrix is covered by P13h-1/P13h-3.
+    target::ScheduledTask task;
+    task.key = {context.owner, "p13g-task"};
+    task.state = target::TaskState::Pending;
+    task.run_at = now() + std::chrono::seconds{60};
+    return std::vector<target::ScheduledTask>{task};
+  }
+  target::Outcome<target::ScheduledTask> cancel_task(const target::SchedulerTaskContext& context,
+                                                     std::string_view task_id) override {
+    record("cancel " + context.owner.value + " " + std::string{task_id});
+    if (!check_mode()) {
+      return failure();
+    }
+    target::ScheduledTask task;
+    task.key = {context.owner, std::string{task_id}};
+    task.state = target::TaskState::Cancelled;
+    task.run_at = now() + std::chrono::seconds{60};
+    return task;
+  }
+
+private:
+  static target::TimePoint now() {
+    return target::TimePoint{std::chrono::duration_cast<std::chrono::nanoseconds>(
+        std::chrono::system_clock::now().time_since_epoch())};
+  }
+  static target::Failure failure() {
+    return {target::ErrorCode::CapabilityNotSupported, target::Acceptance::NotAccepted,
+            target::Recovery::Diagnose, std::nullopt, std::nullopt};
+  }
+  bool check_mode() {
     if (!mode_path_.empty()) {
       std::ifstream mode_input(mode_path_);
       std::string current;
@@ -225,18 +271,8 @@ public:
         mode_ = current;
       }
     }
-    if (mode_ == "offline") {
-      return {target::LifecycleParticipantDisposition::Blocked,
-              target::ErrorCode::UpstreamUnavailable, p13g_now() + std::chrono::seconds{5}};
-    }
-    if (mode_ == "unknown") {
-      return {target::LifecycleParticipantDisposition::Blocked,
-              target::ErrorCode::UpstreamUnavailable, p13g_now() + std::chrono::seconds{5}};
-    }
-    return {target::LifecycleParticipantDisposition::Done, std::nullopt, std::nullopt};
+    return mode_ == "done";
   }
-
-private:
   void record(std::string_view line) {
     if (state_path_.empty()) {
       return;
@@ -247,6 +283,22 @@ private:
   std::string mode_ = "done";
   std::string state_path_;
   std::string mode_path_;
+};
+
+class P13gSchedulerLifecycle final : public target::SchedulerLifecycleParticipantPort {
+public:
+  P13gSchedulerLifecycle(target::SchedulerTaskPort& tasks, target::RuntimeIdPort& ids)
+      : participant_(target::make_runtime_scheduler_lifecycle_participant(tasks, ids)) {}
+  target::LifecycleParticipantResult cancel_tasks(const target::ResourceRef& resource) override {
+    if (const auto* failure = std::get_if<target::Failure>(&participant_)) {
+      return {target::LifecycleParticipantDisposition::Blocked, failure->code, std::nullopt};
+    }
+    return std::get<std::unique_ptr<target::SchedulerLifecycleParticipantPort>>(participant_)
+        ->cancel_tasks(resource);
+  }
+
+private:
+  target::Outcome<std::unique_ptr<target::SchedulerLifecycleParticipantPort>> participant_;
 };
 #endif
 
@@ -265,9 +317,12 @@ struct State {
   std::unique_ptr<target::HostLifecycleParticipantPort> host_lifecycle;
   std::unique_ptr<platform::RuntimeModelClient> model_client;
   std::unique_ptr<target::SchedulerTaskPort> scheduler_tasks;
+  std::unique_ptr<target::SchedulerTaskPort> scheduler_lifecycle_tasks;
+  std::unique_ptr<target::SchedulerLifecycleParticipantPort> scheduler_lifecycle;
   std::unique_ptr<target::RuntimeTaskApplication> task_application;
 #ifdef KIARABOT_P13G_TEST_COMPOSITION
   std::unique_ptr<P13gAuthorization> p13g_authorization;
+  std::unique_ptr<P13gSchedulerTaskPort> p13g_scheduler_tasks;
   std::unique_ptr<P13gSchedulerLifecycle> p13g_scheduler;
 #endif
 };
@@ -350,7 +405,9 @@ compose_runtime_service(const platform::ProcessConfig& config) {
 #ifdef KIARABOT_P13G_TEST_COMPOSITION
           state->p13g_authorization = std::make_unique<P13gAuthorization>();
           state->authorization = state->p13g_authorization.get();
-          state->p13g_scheduler = std::make_unique<P13gSchedulerLifecycle>();
+          state->p13g_scheduler_tasks = std::make_unique<P13gSchedulerTaskPort>();
+          state->p13g_scheduler =
+              std::make_unique<P13gSchedulerLifecycle>(*state->p13g_scheduler_tasks, *state->ids);
 #endif
           auto host_lifecycle =
               target::make_runtime_host_lifecycle_participant(factory, *state->secrets);
@@ -371,9 +428,9 @@ compose_runtime_service(const platform::ProcessConfig& config) {
 #ifdef KIARABOT_P13G_TEST_COMPOSITION
                state->p13g_scheduler.get()
 #else
-               nullptr
+               state->scheduler_lifecycle.get()
 #endif
-           });
+              });
           if (const auto* failure = std::get_if<target::Failure>(&built)) {
             return {};
           }
@@ -416,6 +473,26 @@ compose_runtime_service(const platform::ProcessConfig& config) {
             }
             state->scheduler_tasks =
                 std::move(std::get<std::unique_ptr<platform::SchedulerTaskClient>>(client));
+            // P13h-2: separate platform-identity client for the lifecycle participant. It sends
+            // no user delegation and uses only ListTasks/CancelTask with the explicit instance
+            // scope; the plugin task client above keeps its delegated (currently fail-closed)
+            // path. Scheduler P13h-1 authorizes exactly these two methods for the Runtime peer.
+            auto lifecycle_client = platform::SchedulerTaskClient::create(
+                {*config.scheduler_endpoint, grpc::SslCredentials(ssl), nullptr,
+                 std::chrono::milliseconds{2000}, true});
+            if (const auto* failure = std::get_if<target::Failure>(&lifecycle_client)) {
+              return {};
+            }
+            state->scheduler_lifecycle_tasks = std::move(
+                std::get<std::unique_ptr<platform::SchedulerTaskClient>>(lifecycle_client));
+            auto scheduler_lifecycle = target::make_runtime_scheduler_lifecycle_participant(
+                *state->scheduler_lifecycle_tasks, *state->ids);
+            if (const auto* failure = std::get_if<target::Failure>(&scheduler_lifecycle)) {
+              return {};
+            }
+            state->scheduler_lifecycle =
+                std::move(std::get<std::unique_ptr<target::SchedulerLifecycleParticipantPort>>(
+                    scheduler_lifecycle));
           }
           state->task_application = std::make_unique<target::RuntimeTaskApplication>(
               target::RuntimeTaskApplicationDependencies{state->scheduler_tasks.get()});
@@ -529,8 +606,9 @@ compose_runtime_service(const platform::ProcessConfig& config) {
         options.authorize = fail_closed_authorizer();
       }
 #ifdef KIARABOT_P13G_TEST_COMPOSITION
-      options.authorize = [](grpc::ServerContext&, const v1::RequestContext&)
-          -> target::Outcome<target::AuthenticationContext> {
+      options.authorize =
+          [](grpc::ServerContext&,
+             const v1::RequestContext&) -> target::Outcome<target::AuthenticationContext> {
         const auto now = p13g_now();
         return target::AuthenticationContext{
             target::SubjectId{"77777777-7777-4777-8777-777777777777"},

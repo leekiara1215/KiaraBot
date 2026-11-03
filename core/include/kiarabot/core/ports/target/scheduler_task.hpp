@@ -1,7 +1,10 @@
 #pragma once
 
+#include <cstddef>
+#include <optional>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include "kiarabot/core/domain/target/scheduler_rules.hpp"
 #include "kiarabot/core/domain/target/service_records.hpp"
@@ -32,6 +35,14 @@ public:
                                           std::string_view task_id) = 0;
   virtual Outcome<ScheduledTask> cancel_task(const SchedulerTaskContext& context,
                                              std::string_view task_id) = 0;
+  // P13h-2 lifecycle read path. Only the Runtime lifecycle participant uses this with the
+  // explicit RESOURCE_INSTANCE scope; plugin task ingress keeps the three typed operations above.
+  // Default is fail-closed so partial adapters never observe an empty successful task list.
+  virtual Outcome<std::vector<ScheduledTask>> list_tasks(const SchedulerTaskContext&,
+                                                         std::optional<TaskState>, std::size_t) {
+    return Failure{ErrorCode::CapabilityNotSupported, Acceptance::NotAccepted, Recovery::Diagnose,
+                   std::nullopt, std::nullopt};
+  }
 };
 
 } // namespace kiarabot::core::target
