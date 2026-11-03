@@ -1,10 +1,11 @@
 # KiaraBot P04–P14 阶段退出证据矩阵（P14t 最终刷新）
 
 - 版本：v1.3（2026-11-03，P14t 最终刷新）
-- 基线提交：`04f7044`（main；P14t/P05b-13 最终刷新；final gate 见下）
+- 基线提交：`ce7993a`（main；P14t/P05b-13 最终文档刷新；final gate 见下）
 - 用途：发布前统一回答“哪些已经实现、哪些已实测、哪些仍待验收/缺口/用户确认”，**不替代**各阶段原始报告与测试记录，也不把提交/文档存在当作阶段完成。
 - 相关文档：[发布清单](28-p14d-release-checklist.md)、[实施计划](23-implementation-plan.md)、[运维 runbook](08-operations.md)、[CI/CD](12-ci-cd.md)、[契约状态](01-contracts.md)、[最终交付状态](../reports/modules/architecture-delivery-status.md)。
 - 最终门禁：previous checkpoint @7b8fb0f：**161/161 CTest passed @7b8fb0f**（`build/logs/recheck-ctest-155131.log`，1051.70s，2026-11-03 15:51:31→16:09:06；本轮一次全绿、无失败；此前 `1213790` gate 148/148（687.02s）的 `p02_core_process`/`p08_managed_host_e2e` 负载时序 flake 未复现）。P00n SQLite 写锁竞态已修（final gate sqlite 0.27s）；正式发布仍须在 release SHA 全量重跑并归档。
+- 最终门禁：final HEAD @ce7993a（docs-only 之上最终文档）：**161/162 CTest passed**（`build/logs/recheck-ctest-164849.log`，2026-11-03 17:09:27→17:26:37）；唯一失败 `control_http_websocket_acceptance` 71.48s（WebSocket handshake 超时，套件负载下），孤立复跑 **Passed 53.86s**，判定负载时序 flake。
 - 最终门禁：exact-HEAD gate @04f7044：**161/162 CTest passed，1025.87s**（`build/logs/recheck-ctest-162320.log`，2026-11-03 16:23:19→16:40:30）；唯一失败 `p08_managed_host_e2e` 35.77s（psql SSL negotiation invalid response，套件负载下时序问题）；孤立复跑 **2/2 Passed 58.64s/56.72s**（Lead 57.39s），判定负载时序 flake，不是断言/实现回归。此前 161/161@7b8fb0f/1051.70s。
 - 原生单机矩阵（P14m 后）：**success 9 + stable-ok 1 + known-gap 0**；`p14_native_single_host`/`p12j_panel_live` 在真实五进程 + PG16.4 + mTLS 栈上通过。
 

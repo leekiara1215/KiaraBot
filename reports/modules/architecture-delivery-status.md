@@ -1,6 +1,6 @@
 # P14n 最终交付状态与证据索引
 
-- 日期：2026-11-03；worktree `.worktrees/p14n`，branch `codex/p14n`，基线 `04f7044`（main；P14t/P05b-13；最终门禁 161/162 + p08 负载 flake 孤立通过）。
+- 日期：2026-11-03；worktree `.worktrees/p14n`，branch `codex/p14n`，基线 `ce7993a`（main；P14t/P05b-13；final HEAD 门禁 161/162 + `control_http_websocket_acceptance` 负载 flake 孤立通过；exact-HEAD `04f7044` 门禁 161/162 + p08 负载 flake 孤立通过）。
 - 任务：只刷新最终证据矩阵/交付口径，不修改实现、契约或部署脚本；`doc/18` 冻结基线只读。
 - 结论：**P13 生产退出 PASS（本验收范围）、P11 独立验收 PASS、P10k 真实 Scheduler 任务链 PASS、P05b B1 链完成（安全评审 0 Critical/High；Medium 全部处置：F-1/F-2 已修、F-3/F-4/F-5/F-6 已加固；F-5 host/core 边界文档化）。剩余未验收收敛为 8 项环境/契约项；P12 host operation/bootstrap_credential 按用户确认保持 not_implemented。previous checkpoint 161/161@7b8fb0f/1051.70s；final exact-HEAD gate @04f7044：**161/162 CTest passed，1025.87s**（`build/logs/recheck-ctest-162320.log`，2026-11-03 16:23:19→16:40:30）；唯一失败 `p08_managed_host_e2e` 35.77s（psql SSL negotiation invalid response，套件负载下时序问题）；孤立复跑 **2/2 Passed 58.64s/56.72s**（Lead 57.39s），判定负载时序 flake，不是断言/实现回归。此前 161/161@7b8fb0f/1051.70s。 不得把本报告当作“已发布/全部验收”声明。**
 
