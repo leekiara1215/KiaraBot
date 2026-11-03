@@ -1086,7 +1086,7 @@ public:
     auto& context = std::get<Prepared>(query);
     const auto reference = codec::from_wire(request->resource());
     const auto* wire = std::get_if<t::ResourceRef>(&reference);
-    if (!wire) {
+    if (!wire || wire->kind != t::ResourceKind::Account) {
       return error_status(failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput),
                           context.request, context.trace);
     }
@@ -1094,7 +1094,8 @@ public:
     if (const auto* rejected = std::get_if<t::Failure>(&found)) {
       return fail(context, *rejected);
     }
-    if (!account(std::get<t::BotAccount>(found), response->mutable_account())) {
+    if (!account(std::get<t::BotAccount>(found), response->mutable_account()) ||
+        !timestamp(now(), response->mutable_observed_at())) {
       return error_status(internal_failure(), context.request, context.trace);
     }
     return grpc::Status::OK;
@@ -1177,8 +1178,12 @@ public:
         request->has_expected_version()
             ? std::optional<t::ResourceVersion>{t::ResourceVersion{request->expected_version()}}
             : std::nullopt;
+    const auto& binding = request->binding();
     auto bound = application_.unbind_adapter(
-        {context.command, t::ResourceId{request->binding().account_id()}});
+        {context.command, t::ResourceId{binding.account_id()},
+         binding.adapter_instance_id().empty()
+             ? std::nullopt
+             : std::optional{t::InstanceId{binding.adapter_instance_id()}}});
     if (const auto* rejected = std::get_if<t::Failure>(&bound)) {
       return fail(context, *rejected);
     }
@@ -1636,7 +1641,7 @@ public:
     auto& context = std::get<Prepared>(query);
     const auto reference = codec::from_wire(request->resource());
     const auto* wire = std::get_if<t::ResourceRef>(&reference);
-    if (!wire) {
+    if (!wire || wire->kind != t::ResourceKind::Adapter) {
       return error_status(failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput),
                           context.request, context.trace);
     }

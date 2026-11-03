@@ -1057,6 +1057,9 @@ public:
           if (!binding) {
             return not_found();
           }
+          if (request.adapter_instance && *request.adapter_instance != binding->adapter_instance) {
+            return runtime_conflict();
+          }
           if (const auto failure =
                   status_failure(validate_unbind(*binding, request.context.expected_version))) {
             return *failure;

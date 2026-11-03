@@ -1243,7 +1243,7 @@ instance/runtime_epoch/connection_generation，内部 connection/execution ID �
 
 **管理顺序**：按 P06 A1，BindAdapter 可先为外部自管适配器建立绑定，再由 Bridge 完成首次注册。
 绑定/解绑是显式管理命令，保留绑定自身的版本。BindAdapter 若提供 expected_version，则当前绑定必须已存在且版本一致，否则返回 CONFLICT；
-未提供时仍按首次绑定或已解绑后的重新绑定处理。已生效绑定阻止重复绑定和账号禁用，禁用账号拒绝再次绑定。
+未提供时仍按首次绑定或已解绑后的重新绑定处理。UnbindAdapter 若指定 adapter_instance_id，该实例必须与当前绑定匹配；不匹配时返回 CONFLICT 并保留绑定。已生效绑定阻止重复绑定和账号禁用，禁用账号拒绝再次绑定。
 
 **List 语义**：Runtime List 是一次当前权威读取，跨页不冻结行集（与 Identity session
 snapshot 不同）。page token 由 Runtime 分配的不透明 id 表达，绑定查询条件、认证主体、

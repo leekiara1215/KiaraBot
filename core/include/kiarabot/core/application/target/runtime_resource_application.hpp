@@ -124,6 +124,7 @@ struct BindAdapterRequest {
 struct UnbindAdapterRequest {
   CommandContext context;
   ResourceId account;
+  std::optional<InstanceId> adapter_instance = std::nullopt;
 };
 struct AdapterRegistrationCommand {
   // Direct adapter peer authentication is boundary-owned; the command carries the trusted result.
