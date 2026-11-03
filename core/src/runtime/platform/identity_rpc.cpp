@@ -1340,8 +1340,17 @@ public:
                      return failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput);
                    }
                  }
+                 std::optional<t::ResourceId> instance_id;
+                 if (!request->instance_id().empty()) {
+                   if (request->instance_id().size() > 128 ||
+                       request->audience() != "runtime") {
+                     return failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput);
+                   }
+                   instance_id = t::ResourceId{request->instance_id()};
+                 }
                  t::IssueIdentityDelegationRequest input{
-                     {context, peer, secret(request->subject_proof())}, *service, {}};
+                     {context, peer, secret(request->subject_proof())}, *service, {},
+                     std::move(instance_id)};
                  input.permissions.reserve(resources.size() * permissions.size());
                  for (const auto& resource : resources) {
                    for (const auto permission : permissions) {

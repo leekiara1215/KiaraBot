@@ -456,4 +456,43 @@ std::unique_ptr<target::IdentityCredentialRepository> credential_repository(SqlW
 std::unique_ptr<target::IdentityBootstrapRepository> bootstrap_repository(SqlWork& sql) {
   return std::make_unique<Bootstrap>(sql);
 }
+class PrincipalBindingRepository final : public target::IdentityPrincipalBindingRepository {
+public:
+  explicit PrincipalBindingRepository(SqlWork& sql) : sql_(sql) {}
+  target::Outcome<std::optional<target::Principal>>
+  by_binding(const target::ResourceRef& binding) override {
+    return identity::query<std::optional<target::Principal>>(
+        sql_, [&](pqxx::transaction_base& transaction)
+                  -> target::Outcome<std::optional<target::Principal>> {
+          if (!valid_sql_text(binding.id.value) ||
+              static_cast<int>(binding.kind) < 0 ||
+              static_cast<int>(binding.kind) > 15) {
+            return identity::invalid();
+          }
+          const auto rows = transaction.exec(
+              "SELECT id,kind,binding_kind,binding_id,version,state FROM kiarabot.principals "
+              "WHERE binding_kind=$1 AND binding_id=$2",
+              pqxx::params{static_cast<int>(binding.kind), binding.id.value});
+          if (rows.empty()) {
+            return std::optional<target::Principal>{};
+          }
+          const auto row = rows.one_row();
+          return std::optional<target::Principal>{target::Principal{
+              {row["id"].template as<std::string>()},
+              static_cast<target::PrincipalKind>(row["kind"].template as<int>()),
+              target::ResourceRef{static_cast<target::ResourceKind>(
+                                      row["binding_kind"].template as<int>()),
+                                  {row["binding_id"].template as<std::string>()}},
+              {row["version"].template as<std::uint64_t>()},
+              static_cast<target::LifecycleState>(row["state"].template as<int>())}};
+        });
+  }
+
+private:
+  SqlWork& sql_;
+};
+std::unique_ptr<core::target::IdentityPrincipalBindingRepository>
+principal_binding_repository(SqlWork& sql) {
+  return std::make_unique<PrincipalBindingRepository>(sql);
+}
 } // namespace kiarabot::infrastructure::postgres::detail

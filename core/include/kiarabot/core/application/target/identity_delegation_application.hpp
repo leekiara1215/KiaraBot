@@ -9,6 +9,9 @@ struct IssueIdentityDelegationRequest {
   Service audience;
   // Exact tuples: adapters expand the validated wire permission/scope product once.
   std::vector<PermissionBinding> permissions;
+  // B1 controlled instance-parent issuance. Empty keeps the legacy admin-subject behavior; when
+  // set, subject is resolved from the unique plugin principal bound to RESOURCE_INSTANCE/{id}.
+  std::optional<ResourceId> instance_id;
 };
 struct IdentityDelegationReply {
   OwnedSecret proof;

@@ -963,6 +963,7 @@
       "IdentityIssueDelegationRequest.scope": "not_implemented",
       "IdentityIssueDelegationRequest.permissions": "not_implemented",
       "IdentityIssueDelegationRequest.client_certificate_sha256": "not_implemented",
+      "IdentityIssueDelegationRequest.instance_id": "implemented",
       "IdentityIssueDelegationResponse.delegation": "not_implemented",
       "IdentityExchangeDelegationRequest.context": "not_implemented",
       "IdentityExchangeDelegationRequest.parent_proof": "not_implemented",

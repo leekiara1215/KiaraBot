@@ -99,6 +99,29 @@ inline Status require_delegation_origin_current(const DelegationClaims& claims,
   }
   return std::monostate{};
 }
+// P05b-2/B1: a controlled instance-parent delegation has subject=instance principal while the
+// signed source credential/session belong to the Control administrator at actor_chain.front().
+// Callers must separately verify the subject principal is a plugin with an exact RESOURCE_INSTANCE
+// binding; this helper only re-reads the administrator's signed provenance online.
+inline Status require_delegation_instance_source_current(
+    const DelegationClaims& claims, const Principal& source_principal,
+    const CredentialVersionRecord& source_credential, const SessionSecurity* source_session,
+    TimePoint now) {
+  if (std::holds_alternative<Failure>(validate_delegation_origin(claims)) ||
+      source_principal.kind != PrincipalKind::Human || claims.subject == source_principal.id ||
+      claims.actor_chain.size() != claims.business_hops || claims.actor_chain.empty() ||
+      (claims.business_hops != 1 && claims.business_hops != 2) || !claims.source_session ||
+      !source_session || source_session->id != *claims.source_session) {
+    return authentication_rejected();
+  }
+  const auto credential =
+      require_current_credential(source_principal, source_credential, claims.source_credential, now);
+  if (std::holds_alternative<Failure>(credential)) {
+    return credential;
+  }
+  return require_session_current(source_principal, source_credential, *source_session,
+                                 TokenPurpose::Access, now);
+}
 inline bool same_token_verifier(const TokenVerifier& left, const TokenVerifier& right) {
   // Compare already authenticated metadata/index values, not raw secret equality/crypto
   // verification.

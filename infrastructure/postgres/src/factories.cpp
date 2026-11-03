@@ -642,6 +642,7 @@ public:
       : common_(std::move(common)), principals_(work(), detail::RecordKind::Principal),
         sessions_(work(), detail::RecordKind::Session), grants_(work(), detail::RecordKind::Grant),
         authorizations_(work()), credentials_(detail::credential_repository(*common_.sql)),
+        principal_bindings_(detail::principal_binding_repository(*common_.sql)),
         security_(detail::session_security_repository(*common_.sql)),
         assignments_(detail::exact_assignment_repository(*common_.sql)),
         secrets_(detail::secret_receipt_repository(*common_.sql)),
@@ -679,6 +680,9 @@ public:
   }
   target::IdentityCredentialRepository& credentials() override {
     return *credentials_;
+  }
+  target::IdentityPrincipalBindingRepository* principal_bindings() noexcept override {
+    return principal_bindings_.get();
   }
   target::IdentitySessionSecurityRepository& session_security() override {
     return *security_;
@@ -720,6 +724,7 @@ private:
   LiveRepository<target::AssignmentId, target::ResourceGrant> grants_;
   AuthorizationRepository authorizations_;
   std::unique_ptr<target::IdentityCredentialRepository> credentials_;
+  std::unique_ptr<target::IdentityPrincipalBindingRepository> principal_bindings_;
   std::unique_ptr<target::IdentitySessionSecurityRepository> security_;
   std::unique_ptr<target::IdentityExactAssignmentRepository> assignments_;
   std::unique_ptr<target::IdentitySecretReceiptRepository> secrets_;

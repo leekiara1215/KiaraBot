@@ -9,6 +9,8 @@ namespace kiarabot::infrastructure::postgres::detail {
 
 // These repositories borrow the provided SQL access and cannot outlive its owning common UoW.
 std::unique_ptr<core::target::IdentityCredentialRepository> credential_repository(SqlWork& sql);
+std::unique_ptr<core::target::IdentityPrincipalBindingRepository>
+principal_binding_repository(SqlWork& sql);
 std::unique_ptr<core::target::IdentityBootstrapRepository> bootstrap_repository(SqlWork& sql);
 std::unique_ptr<core::target::IdentitySessionSecurityRepository>
 session_security_repository(SqlWork& sql);

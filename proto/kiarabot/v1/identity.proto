@@ -265,6 +265,10 @@ message IdentityIssueDelegationRequest {
   ResourceScope scope = 4;
   repeated Permission permissions = 5;
   bytes client_certificate_sha256 = 6;
+  // P05b-2/B1: controlled instance-parent issuance. When set, subject is resolved from the unique
+  // plugin principal bound to RESOURCE_INSTANCE/{instance_id}; callers can never pass a subject id.
+  // Only an authorized Control administrator session can use it; absent keeps legacy behavior.
+  string instance_id = 7;
 }
 
 // CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.

@@ -20,7 +20,26 @@ struct IssuanceAuthority {
   TimePoint latest_expiry;
   CredentialVersionRef control_credential;
   ResourceVersion control_authorization_version;
+  // B1: when present the signed subject is this instance principal, resolved from its unique
+  // RESOURCE_INSTANCE binding; source credential/session remain the authorizing administrator.
+  std::optional<SubjectId> instance_subject;
 };
+bool instance_parent_binding(const PermissionBinding& binding, const ResourceId& instance) {
+  if (binding.resource.kind == ResourceKind::Instance && binding.resource.id != instance) {
+    return false;
+  }
+  switch (binding.permission) {
+  case Permission::ModelChat:
+  case Permission::ModelCallInspect:
+    return binding.resource.kind == ResourceKind::Model;
+  case Permission::TaskSchedule:
+  case Permission::TaskRead:
+    return binding.resource.kind == ResourceKind::Instance ||
+           binding.resource.kind == ResourceKind::Installation;
+  default:
+    return false;
+  }
+}
 Outcome<MessageId> proof_id(RandomPort& random) {
   auto generated = random.bytes(16);
   if (const auto* failure = std::get_if<Failure>(&generated)) {
@@ -119,6 +138,46 @@ Outcome<IssuanceAuthority> authorize_issue(detail::Work& checkpoint,
     return *failure;
   }
   const auto& assignments = source_authority.assignments;
+  std::optional<SubjectId> instance_subject;
+  if (request.instance_id) {
+    if (request.audience != Service::Runtime) {
+      return rejected(ErrorCode::InvalidArgument, Recovery::CorrectInput);
+    }
+    const ResourceRef instance_binding{ResourceKind::Instance, *request.instance_id};
+    auto* bindings = work.principal_bindings();
+    if (bindings == nullptr) {
+      return rejected(ErrorCode::UpstreamUnavailable, Recovery::Diagnose);
+    }
+    auto instance_principal = bindings->by_binding(instance_binding);
+    if (const auto* failure = std::get_if<Failure>(&instance_principal)) {
+      return *failure;
+    }
+    const auto& resolved = std::get<std::optional<Principal>>(instance_principal);
+    if (!resolved || resolved->kind != PrincipalKind::Plugin ||
+        resolved->state != LifecycleState::Active || !resolved->binding ||
+        *resolved->binding != instance_binding) {
+      return rejected(ErrorCode::NotFound, Recovery::CorrectInput);
+    }
+    const auto manage = authorize_exact(*principal, Permission::ResourceManage, instance_binding,
+                                        assignments);
+    if (const auto* failure = std::get_if<Failure>(&manage)) {
+      return *failure;
+    }
+    bool targets_instance = false;
+    for (const auto& binding : request.permissions) {
+      if (!instance_parent_binding(binding, *request.instance_id)) {
+        return rejected(ErrorCode::InvalidArgument, Recovery::CorrectInput);
+      }
+      if (binding.resource.kind == ResourceKind::Instance &&
+          binding.resource.id == *request.instance_id) {
+        targets_instance = true;
+      }
+    }
+    if (!targets_instance) {
+      return rejected(ErrorCode::InvalidArgument, Recovery::CorrectInput);
+    }
+    instance_subject = resolved->id;
+  }
   for (const auto& binding : request.permissions) {
     Status allowed;
     if (binding.permission == Permission::IdentitySessionRead &&
@@ -155,7 +214,7 @@ Outcome<IssuanceAuthority> authorize_issue(detail::Work& checkpoint,
     return *failure;
   }
   return IssuanceAuthority{session->credential, checkpoint.now, latest, control.credential.ref,
-                           control.subject.authorization.version};
+                           control.subject.authorization.version, instance_subject};
 }
 } // namespace
 
@@ -235,9 +294,12 @@ IdentityDelegationApplication::issue_delegation(const IssueIdentityDelegationReq
     if (const auto* failure = std::get_if<Failure>(&identifier)) {
       return *failure;
     }
+    const SubjectId subject = state.instance_subject
+                                  ? *state.instance_subject
+                                  : std::get<ValidatedSession>(validated).principal.id;
     DelegationClaims claims{options_.issuer,
                             request.audience,
-                            std::get<ValidatedSession>(validated).principal.id,
+                            subject,
                             control->subject,
                             {control->subject},
                             request.permissions,
@@ -267,8 +329,10 @@ IdentityDelegationApplication::issue_delegation(const IssueIdentityDelegationReq
       return *failure;
     }
     const auto& checked = std::get<ValidatedSession>(current);
+    const SubjectId expected_subject =
+        state.instance_subject ? *state.instance_subject : checked.principal.id;
     if (checked.authorization_version != claims.authorization_version ||
-        checked.principal.id != claims.subject || checked.session.id != claims.source_session ||
+        expected_subject != claims.subject || checked.session.id != claims.source_session ||
         checked.session.version != std::get<ValidatedSession>(validated).session.version ||
         checked.session.rotation != std::get<ValidatedSession>(validated).session.rotation ||
         checked.checked_at >= expires_at || checked.checked_at >= request.source.context.deadline) {
@@ -288,6 +352,30 @@ IdentityDelegationApplication::issue_delegation(const IssueIdentityDelegationReq
     }
     if (final.checked_at >= expires_at) {
       return authentication_rejected();
+    }
+    if (state.instance_subject) {
+      // B1 security audit: the instance-parent issuance is recorded in the owner audit journal
+      // without proof/session material. A failed audit write must not return a usable proof.
+      auto opened = detail::begin(transactions_, request.source.context);
+      if (const auto* failure = std::get_if<Failure>(&opened)) {
+        return *failure;
+      }
+      auto& audited = std::get<detail::Work>(opened);
+      auto appended = audited.transaction->journal().append_audit(AuditEntry{
+          std::get<ValidatedSession>(validated).principal.id,
+          ResourceRef{ResourceKind::Instance, *request.instance_id},
+          request.source.context.request_id,
+          request.source.context.trace_id,
+          "IdentityIssueDelegation/InstanceParent",
+          std::nullopt,
+          {1},
+          final.checked_at});
+      if (const auto* failure = std::get_if<Failure>(&appended)) {
+        return *failure;
+      }
+      if (audited.transaction->commit() != CommitResult::Committed) {
+        return rejected(ErrorCode::UpstreamUnavailable, Recovery::Backoff);
+      }
     }
     return IdentityDelegationReply{std::move(std::get<OwnedSecret>(signed_proof)),
                                    std::move(claims), final.checked_at};

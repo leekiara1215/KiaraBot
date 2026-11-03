@@ -88,7 +88,10 @@ public:
         admin_(*dependencies_->transactions, *dependencies_->certificates),
         issuer_(*sessions_, *dependencies_->transactions, *dependencies_->delegations,
                 *dependencies_->random, dependencies_->clock,
-                {material.issuer, {material.delegation_key.id}}) {}
+                {material.issuer, {material.delegation_key.id}}),
+        exchange_(*dependencies_->transactions, *dependencies_->delegations,
+                  *dependencies_->random, dependencies_->clock,
+                  {material.issuer, {material.delegation_key.id}}) {}
   target::Service service() const noexcept override {
     return target::Service::Identity;
   }
@@ -143,6 +146,9 @@ public:
   target::IdentityDelegationApplication& issuer() {
     return issuer_;
   }
+  target::IdentityExchangeApplication& exchange() {
+    return exchange_;
+  }
 
 private:
   // Reverse destruction releases issuer -> admin -> keys -> principal -> sessions -> dependencies.
@@ -157,6 +163,7 @@ private:
   std::unique_ptr<target::IdentityPrincipalDirectoryApplication> principal_directory_;
   target::IdentityAdminApplication admin_;
   target::IdentityDelegationApplication issuer_;
+  target::IdentityExchangeApplication exchange_;
 };
 target::Outcome<target::PasswordVerifier> dummy_password(Dependencies& dependencies) {
   auto generated = dependencies.random->bytes(32);
@@ -506,7 +513,7 @@ target::Outcome<platform::ServiceComposition> configured(const platform::Process
             observed->sessions(), std::move(gated), &observed->issuer(),
             [dependencies] { return dependencies->clock.invocation_deadline(); },
             {.verification_keys = &observed->verification_keys(),
-             .exchange = nullptr,
+             .exchange = &observed->exchange(),
              .principal = &observed->principal(),
              .authorization = &observed->authorization(),
              .assignments = &observed->assignments(),

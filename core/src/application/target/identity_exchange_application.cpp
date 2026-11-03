@@ -129,19 +129,47 @@ Outcome<SourceAuthority> source_authority(IdentitySecurityUnitOfWork& work,
     }
     session = std::get<detail::SessionAuthority>(found).session;
   }
-  auto owner = detail::credential_owner_binding(authority.principal, *credential);
-  if (const auto* error = std::get_if<Failure>(&owner)) {
-    return *error;
+  // B1 instance-parent delegation: the subject is the plugin instance, while the signed source
+  // credential/session belong to the Control administrator. Re-read the administrator provenance
+  // and use its authority for permission narrowing; the instance binding is checked here.
+  const bool instance_parent =
+      authority.principal.kind == PrincipalKind::Plugin && authority.principal.binding &&
+      authority.principal.binding->kind == ResourceKind::Instance &&
+      credential->subject != parent.subject;
+  detail::SubjectAuthority* effective = &authority;
+  detail::SubjectAuthority source_authority;
+  if (instance_parent) {
+    auto source = detail::read_subject(work, credential->subject);
+    if (const auto* error = std::get_if<Failure>(&source)) {
+      return *error;
+    }
+    source_authority = std::move(std::get<detail::SubjectAuthority>(source));
+    auto valid = require_delegation_instance_source_current(
+        parent, source_authority.principal, *credential, session ? &*session : nullptr, now);
+    if (const auto* error = std::get_if<Failure>(&valid)) {
+      return *error;
+    }
+    if (parent.business_hops != 1 ||
+        authority.principal.state != LifecycleState::Active ||
+        parent.authorization_version != source_authority.authorization.version) {
+      return authentication_rejected();
+    }
+    effective = &source_authority;
+  } else {
+    auto owner = detail::credential_owner_binding(authority.principal, *credential);
+    if (const auto* error = std::get_if<Failure>(&owner)) {
+      return *error;
+    }
+    auto current = require_delegation_origin_current(parent, authority.principal, *credential,
+                                                     session ? &*session : nullptr, now);
+    if (const auto* error = std::get_if<Failure>(&current)) {
+      return *error;
+    }
+    if (parent.authorization_version != authority.authorization.version) {
+      return authentication_rejected();
+    }
   }
-  auto current = require_delegation_origin_current(parent, authority.principal, *credential,
-                                                   session ? &*session : nullptr, now);
-  if (const auto* error = std::get_if<Failure>(&current)) {
-    return *error;
-  }
-  if (parent.authorization_version != authority.authorization.version) {
-    return authentication_rejected();
-  }
-  return SourceAuthority{std::move(authority), *credential, std::move(session)};
+  return SourceAuthority{std::move(*effective), *credential, std::move(session)};
 }
 Status current_version(IdentitySecurityUnitOfWork& work, const detail::SubjectAuthority& subject) {
   auto found = work.authorizations().find(subject.principal.id);

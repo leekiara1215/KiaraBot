@@ -44,6 +44,14 @@ public:
   virtual Status save(const CredentialVersionRecord& record,
                       std::optional<ResourceVersion> expected) = 0;
 };
+// P05b-2 controlled instance-parent issuance: resolve the unique plugin principal for an exact
+// resource binding. This is a lookup only, never an authorization grant.
+class IdentityPrincipalBindingRepository {
+public:
+  virtual ~IdentityPrincipalBindingRepository() = default;
+  virtual Outcome<std::optional<Principal>> by_binding(const ResourceRef& binding) = 0;
+};
+
 class IdentitySessionSecurityRepository {
 public:
   virtual ~IdentitySessionSecurityRepository() = default;
@@ -163,6 +171,9 @@ public:
     return Service::Identity;
   }
   virtual IdentityCredentialRepository& credentials() = 0;
+  virtual IdentityPrincipalBindingRepository* principal_bindings() noexcept {
+    return nullptr;
+  }
   virtual IdentitySessionSecurityRepository& session_security() = 0;
   virtual IdentityExactAssignmentRepository& exact_assignments() = 0;
   virtual IdentitySecretReceiptRepository& secret_receipts() = 0;

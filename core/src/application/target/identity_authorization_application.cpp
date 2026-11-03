@@ -189,21 +189,53 @@ private:
       }
       session = std::get<std::optional<SessionSecurity>>(found);
     }
-    auto valid = require_delegation_origin_current(claims, authority.principal, *source,
-                                                   session ? &*session : nullptr, work.now);
-    if (const auto* error = std::get_if<Failure>(&valid)) {
-      return *error;
+    // B1: instance-subject delegation source credential/session belong to the administrator at
+    // actor_chain.front(), not to the instance principal. Re-read that administrator authority and
+    // use it for permission checks; still require the instance principal/binding to be current.
+    const bool instance_subject =
+        authority.principal.kind == PrincipalKind::Plugin && authority.principal.binding &&
+        authority.principal.binding->kind == ResourceKind::Instance &&
+        source->subject != claims.subject;
+    std::optional<detail::SubjectAuthority> effective_authority;
+    const detail::SubjectAuthority* effective = &authority;
+    Status valid = std::monostate{};
+    if (instance_subject) {
+      auto administrator = detail::read_subject(*work.transaction, source->subject);
+      if (const auto* error = std::get_if<Failure>(&administrator)) {
+        return *error;
+      }
+      effective_authority = std::move(std::get<detail::SubjectAuthority>(administrator));
+      auto instance_current = require_delegation_instance_source_current(
+          claims, effective_authority->principal, *source, session ? &*session : nullptr,
+          work.now);
+      if (const auto* error = std::get_if<Failure>(&instance_current)) {
+        return *error;
+      }
+      if (authority.principal.state != LifecycleState::Active ||
+          claims.business_hops < 1 || claims.business_hops > 2) {
+        return authentication_rejected();
+      }
+      effective = &*effective_authority;
+    } else {
+      valid = require_delegation_origin_current(claims, authority.principal, *source,
+                                                session ? &*session : nullptr, work.now);
+      if (const auto* error = std::get_if<Failure>(&valid)) {
+        return *error;
+      }
+      valid = detail::credential_owner_binding(authority.principal, *source);
+      if (const auto* error = std::get_if<Failure>(&valid)) {
+        return *error;
+      }
     }
-    valid = detail::credential_owner_binding(authority.principal, *source);
-    if (const auto* error = std::get_if<Failure>(&valid)) {
-      return *error;
-    }
-    if (claims.authorization_version != authority.authorization.version ||
+    if (claims.authorization_version != effective->authorization.version ||
         work.now < claims.not_before || work.now >= claims.expires_at) {
       return authentication_rejected();
     }
-    result.version = authority.authorization.version;
+    result.version = effective->authorization.version;
     record(result, authority, *source);
+    if (instance_subject) {
+      record(result, *effective, *source);
+    }
     if (session) {
       auto original = detail::read_session_control(*work.transaction, *session, work.now);
       if (const auto* error = std::get_if<Failure>(&original)) {
@@ -263,7 +295,8 @@ private:
         result.allowed = false;
       }
       auto authorized =
-          authorize_exact(authority.principal, policy.permission, resource, authority.assignments);
+          authorize_exact(effective->principal, policy.permission, resource,
+                          effective->assignments);
       if (const auto* error = std::get_if<Failure>(&authorized)) {
         if (error->code != ErrorCode::PermissionDenied) {
           return *error;
