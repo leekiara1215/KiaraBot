@@ -327,103 +327,101 @@ public:
         }
         continue;
       }
-      if (body == v1::HostToRuntime::kInventory) {
-        if (frame.inventory().host_id() != fence.host.value) {
-          send_failure(stream, conflict(), fence, frame_request_id, frame_trace_id);
-          return grpc::Status::OK;
-        }
-        t::Status handled = std::monostate{};
-        if (dependencies_.callbacks.inventory) {
-          handled = dependencies_.callbacks.inventory(frame.inventory());
-        }
-        if (const auto* rejected = std::get_if<t::Failure>(&handled)) {
-          send_failure(stream, *rejected, fence, frame_request_id, frame_trace_id);
-          return grpc::Status::OK;
-        }
-        continue;
+      auto handled = handle_report(frame, fence);
+      if (const auto* rejected = std::get_if<t::Failure>(&handled)) {
+        send_failure(stream, *rejected, fence, frame_request_id, frame_trace_id);
+        return grpc::Status::OK;
       }
-      if (body == v1::HostToRuntime::kReceipt) {
-        const auto& receipt = frame.receipt();
-        if (!valid_identifier(receipt.command_id())) {
-          send_failure(stream, invalid_argument(), fence, frame_request_id, frame_trace_id);
-          return grpc::Status::OK;
-        }
-        if (dependencies_.persistence.receipt) {
-          std::optional<t::ExecutionOutcome> outcome;
-          std::optional<std::string> marker;
-          if (receipt.has_execution()) {
-            outcome = execution_outcome(receipt.execution().outcome());
-            if (!receipt.execution().process_marker().empty()) {
-              marker = receipt.execution().process_marker();
-            }
-          }
-          const auto persisted =
-              dependencies_.persistence.receipt(receipt.command_id(), fence.connection_generation,
-                                                receipt.persisted(), outcome, marker);
-          if (const auto* rejected = std::get_if<t::Failure>(&persisted)) {
-            send_failure(stream, *rejected, fence, frame_request_id, frame_trace_id);
-            return grpc::Status::OK;
-          }
-        }
-        t::Status handled = std::monostate{};
-        if (dependencies_.callbacks.receipt) {
-          handled = dependencies_.callbacks.receipt(receipt);
-        }
-        if (const auto* rejected = std::get_if<t::Failure>(&handled)) {
-          send_failure(stream, *rejected, fence, frame_request_id, frame_trace_id);
-          return grpc::Status::OK;
-        }
-        continue;
-      }
-      if (body == v1::HostToRuntime::kObservation) {
-        const auto& observation = frame.observation();
-        if (!observation.has_execution() || observation.execution().host_id() != fence.host.value ||
-            !valid_identifier(observation.execution().instance_id()) || !observation.has_cursor() ||
-            observation.cursor().sequence() == 0 ||
-            observation.cursor().epoch() != fence.runtime_epoch ||
-            observation.execution().execution_generation() == 0) {
-          send_failure(stream, invalid_argument(), fence, frame_request_id, frame_trace_id);
-          return grpc::Status::OK;
-        }
-        if (dependencies_.persistence.observation) {
-          t::HostObservationRecord record;
-          record.host_id = fence.host.value;
-          record.connection_generation = fence.connection_generation;
-          record.sequence = observation.cursor().sequence();
-          record.instance_id = observation.execution().instance_id();
-          record.execution_generation = observation.execution().execution_generation();
-          record.outcome = execution_outcome(observation.execution().outcome());
-          record.process_marker = observation.execution().process_marker();
-          record.command_id = observation.execution().command_id();
-          t::TimePoint observed_at;
-          if (!timestamp_to_time(observation.execution().observed_at(), &observed_at)) {
-            send_failure(stream, invalid_argument(), fence, frame_request_id, frame_trace_id);
-            return grpc::Status::OK;
-          }
-          record.observed_at = observed_at;
-          const auto stored = dependencies_.persistence.observation(record);
-          if (const auto* rejected = std::get_if<t::Failure>(&stored)) {
-            send_failure(stream, *rejected, fence, frame_request_id, frame_trace_id);
-            return grpc::Status::OK;
-          }
-        }
-        t::Status handled = std::monostate{};
-        if (dependencies_.callbacks.observation) {
-          handled = dependencies_.callbacks.observation(observation);
-        }
-        if (const auto* rejected = std::get_if<t::Failure>(&handled)) {
-          send_failure(stream, *rejected, fence, frame_request_id, frame_trace_id);
-          return grpc::Status::OK;
-        }
-        continue;
-      }
-      send_failure(stream, invalid_argument(), fence, frame_request_id, frame_trace_id);
-      return grpc::Status::OK;
     }
     return grpc::Status::OK;
   }
 
 private:
+  t::Status handle_report(const v1::HostToRuntime& frame, const t::HostFence& fence) {
+    // A superseded stream may still be open and present its own formerly valid fence.
+    // Serialize the current-fence check and report persistence with registration.
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto current = dependencies_.registration.connection(fence.host);
+    if (const auto* rejected = std::get_if<t::Failure>(&current)) {
+      return *rejected;
+    }
+    const auto& connection = std::get<std::optional<t::HostConnectionState>>(current);
+    if (!connection || connection->fence != fence) {
+      return conflict();
+    }
+    const auto body = frame.body_case();
+    if (body == v1::HostToRuntime::kInventory) {
+      if (frame.inventory().host_id() != fence.host.value) {
+        return conflict();
+      }
+      if (dependencies_.callbacks.inventory) {
+        return dependencies_.callbacks.inventory(frame.inventory());
+      }
+      return std::monostate{};
+    }
+    if (body == v1::HostToRuntime::kReceipt) {
+      const auto& receipt = frame.receipt();
+      if (!valid_identifier(receipt.command_id())) {
+        return invalid_argument();
+      }
+      if (dependencies_.persistence.receipt) {
+        std::optional<t::ExecutionOutcome> outcome;
+        std::optional<std::string> marker;
+        if (receipt.has_execution()) {
+          outcome = execution_outcome(receipt.execution().outcome());
+          if (!receipt.execution().process_marker().empty()) {
+            marker = receipt.execution().process_marker();
+          }
+        }
+        const auto persisted =
+            dependencies_.persistence.receipt(receipt.command_id(), fence.connection_generation,
+                                              receipt.persisted(), outcome, marker);
+        if (const auto* rejected = std::get_if<t::Failure>(&persisted)) {
+          return *rejected;
+        }
+      }
+      if (dependencies_.callbacks.receipt) {
+        return dependencies_.callbacks.receipt(receipt);
+      }
+      return std::monostate{};
+    }
+    if (body == v1::HostToRuntime::kObservation) {
+      const auto& observation = frame.observation();
+      if (!observation.has_execution() || observation.execution().host_id() != fence.host.value ||
+          !valid_identifier(observation.execution().instance_id()) || !observation.has_cursor() ||
+          observation.cursor().sequence() == 0 ||
+          observation.cursor().epoch() != fence.runtime_epoch ||
+          observation.execution().execution_generation() == 0) {
+        return invalid_argument();
+      }
+      if (dependencies_.persistence.observation) {
+        t::HostObservationRecord record;
+        record.host_id = fence.host.value;
+        record.connection_generation = fence.connection_generation;
+        record.sequence = observation.cursor().sequence();
+        record.instance_id = observation.execution().instance_id();
+        record.execution_generation = observation.execution().execution_generation();
+        record.outcome = execution_outcome(observation.execution().outcome());
+        record.process_marker = observation.execution().process_marker();
+        record.command_id = observation.execution().command_id();
+        t::TimePoint observed_at;
+        if (!timestamp_to_time(observation.execution().observed_at(), &observed_at)) {
+          return invalid_argument();
+        }
+        record.observed_at = observed_at;
+        const auto stored = dependencies_.persistence.observation(record);
+        if (const auto* rejected = std::get_if<t::Failure>(&stored)) {
+          return *rejected;
+        }
+      }
+      if (dependencies_.callbacks.observation) {
+        return dependencies_.callbacks.observation(observation);
+      }
+      return std::monostate{};
+    }
+    return invalid_argument();
+  }
+
   bool dispatch_pending(grpc::ServerReaderWriter<v1::RuntimeToHost, v1::HostToRuntime>* stream,
                         const t::HostFence& fence) {
     if (!dependencies_.persistence.pending) {

@@ -129,6 +129,7 @@ async def main_async(args) -> None:
         with TestPki(Path(args.openssl).resolve()) as pki:
             server_leaf = pki.servers['runtime']
             host_leaf = pki.client
+            wrong_leaf = pki.issue('unregistered-host')
             host_der = subprocess.check_output(
                 [args.openssl, 'x509', '-in', str(host_leaf.certificate), '-outform', 'der'])
             fingerprint = hashlib.sha256(host_der).hexdigest()
@@ -174,6 +175,14 @@ async def main_async(args) -> None:
             registration = host_pb2.HostToRuntime(
                 registration=host_pb2.HostRegisterHostRequest(
                     host=host_pb2.HostRecord(host_id='host-a')))
+            async with grpc.aio.secure_channel(endpoint, grpc.ssl_channel_credentials(
+                    root_certificates=pki.ca.certificate.read_bytes(),
+                    private_key=wrong_leaf.key.read_bytes(),
+                    certificate_chain=wrong_leaf.certificate.read_bytes())) as wrong_channel:
+                denied = host_grpc.HostBridgeStub(wrong_channel).Connect(timeout=5)
+                await denied.write(registration)
+                require(await denied.code() == grpc.StatusCode.PERMISSION_DENIED,
+                        'trusted certificate outside Host allowlist must be refused')
             await stream.write(registration)
             registered = await read_labeled(stream, 'registration response')
             require(registered.WhichOneof('body') == 'registered', 'registration rejected')
@@ -264,21 +273,29 @@ async def main_async(args) -> None:
             require(fixture.psql(Path(args.pg_bin), root, port, runtime_password,
                                  COUNT_QUERY).stdout.decode().strip() == '1',
                     'observation not deduplicated')
-            await stream.done_writing()
-            # Reconnect gets a new connection generation; an old fence must be rejected.
+            # Keep the old connection alive while the replacement registers.
+            old_stream = stream
             stream = stub.Connect()
             await stream.write(registration)
             second = await read_labeled(stream, 'second registration response')
             require(second.WhichOneof('body') == 'registered', 'second registration rejected')
             require(second.registered.fence.connection_generation == 2,
                     'second generation not advanced')
+            observation.observation.cursor.sequence = 2
+            await old_stream.write(observation)
+            rejected = await read_labeled(old_stream, 'superseded connection observation')
+            require(rejected.WhichOneof('body') == 'failure' and
+                    rejected.failure.error.code == common.CONFLICT,
+                    'superseded connection must not publish an observation')
+            await old_stream.done_writing()
             old_heartbeat = Timestamp()
             old_heartbeat.GetCurrentTime()
             await stream.write(host_pb2.HostToRuntime(
                 fence=fence,
                 heartbeat=host_pb2.HostHeartbeat(fence=fence, sent_at=old_heartbeat)))
             rejected = await read_labeled(stream, 'old fence rejection')
-            require(rejected.WhichOneof('body') == 'failure',
+            require(rejected.WhichOneof('body') == 'failure' and
+                    rejected.failure.error.code == common.CONFLICT,
                     f'old fence was not rejected: {rejected.WhichOneof("body")}')
             await stream.done_writing()
             await channel.close()
