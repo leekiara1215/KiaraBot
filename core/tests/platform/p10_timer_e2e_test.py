@@ -135,11 +135,30 @@ def prepare(root, enrolled):
         'assignment_id': str(uuid.uuid4()), 'permissions': ['identity.assignment.manage'],
         'scope': [{'kind': 'RESOURCE_INSTALLATION', 'id': installation},
                   {'kind': 'RESOURCE_INSTANCE', 'id': instance}]})
+    p05b5_instance, p05b5_installation = str(uuid.uuid4()), str(uuid.uuid4())
+    # Insert before the existing task grant: the historical timer revocation test revokes the last
+    # task.schedule assignment it finds, which must remain that original grant.
+    enrolled['administrator_assignments'].insert(0, {
+        'assignment_id': str(uuid.uuid4()),
+        'permissions': ['task.schedule', 'task.read'],
+        'scope': [{'kind': 'RESOURCE_INSTALLATION', 'id': p05b5_installation},
+                  {'kind': 'RESOURCE_INSTANCE', 'id': p05b5_instance}]})
+    enrolled['administrator_assignments'].append({
+        'assignment_id': str(uuid.uuid4()), 'permissions': ['resource.manage'],
+        'scope': [{'kind': 'RESOURCE_INSTANCE', 'id': p05b5_instance}]})
+    enrolled['control_assignments'].extend([
+        {'assignment_id': str(uuid.uuid4()), 'permissions': ['identity.principal.manage'],
+         'scope': [{'kind': 'RESOURCE_INSTANCE', 'id': p05b5_instance}]},
+        {'assignment_id': str(uuid.uuid4()), 'permissions': ['identity.assignment.manage'],
+         'scope': [{'kind': 'RESOURCE_INSTANCE', 'id': p05b5_instance}]}])
+    runtime_assignment = enrolled['platform_peers'][0]['assignments'][0]
+    runtime_assignment['permissions'].append('identity.delegation.issue')
     STATE.update(installation=installation, instance=instance, task=task,
-                 scheduler_san=SAN, account=str(uuid.uuid4()))
+                 scheduler_san=SAN, account=str(uuid.uuid4()),
+                 p05b5_instance=p05b5_instance, p05b5_installation=p05b5_installation)
 
 
-def scenario(root, port, pg_bin, binaries):
+def scenario(root, port, pg_bin, binaries, client_bin):
     identity_binary, runtime_binary, scheduler_binary, initializer = binaries
     tls = root / 'bootstrap-tls'
     rt.identity_security_material(root)
@@ -221,6 +240,83 @@ def scenario(root, port, pg_bin, binaries):
             access = identity_stub.Login(identity_pb2.IdentityLoginRequest(
                 context=rt.context(), username='administrator', password=password),
                 timeout=10).tokens.access_token
+            # ---- P05b-5/B1: sealed parent -> Runtime provider/Exchange -> real Scheduler tasks.
+            p05b5_instance = STATE['p05b5_instance']
+            p05b5_installation = STATE['p05b5_installation']
+            registered = identity_stub.RegisterPrincipal(
+                identity_pb2.IdentityRegisterPrincipalRequest(
+                    context=rt.context(), principal_kind='plugin',
+                    binding=platform_pb2.ResourceRef(kind=platform_pb2.RESOURCE_INSTANCE,
+                                                     id=p05b5_instance),
+                    allowed_services=['runtime']), timeout=10)
+            require(bool(registered.principal.principal_id), 'P05b-5 instance principal')
+            identity_db_env = rt.postgres(root, pg_bin, port, 'p03_identity')
+            rt.run_sql(identity_db_env,
+                       "UPDATE kiarabot.principals SET state=0 WHERE id='" +
+                       registered.principal.principal_id + "'; "
+                       "INSERT INTO kiarabot.authorizations(subject,version,invalidation_dirty) "
+                       "VALUES('" + registered.principal.principal_id +
+                       "',1,false) ON CONFLICT (subject) DO NOTHING;")
+            sealed_dir = root / 'p05b5-delegations'
+            sealed_dir.mkdir(mode=0o700)
+            token_file = root / 'p05b5-admin-token'
+            token_file.write_text(access + '\n')
+            token_file.chmod(0o600)
+            sealed_config = {
+                'identity_endpoint': identity_endpoint, 'ca_file': str(tls / 'ca.pem'),
+                'control_certificate_file': str(tls / 'control.pem'),
+                'control_private_key_file': str(tls / 'control.key'),
+                'instance_id': p05b5_instance, 'installation_id': p05b5_installation,
+                'output_dir': str(sealed_dir), 'token_file': str(token_file)}
+            sealed_config_file = root / 'p05b5-sealed-refresh.json'
+            sealed_config_file.write_text(json.dumps(sealed_config))
+            sealed_config_file.chmod(0o600)
+            refresh_tool = REPO / 'scripts/deploy/instance-delegation-refresh'
+            refreshed = subprocess.run(
+                [sys.executable, str(refresh_tool), '--config', str(sealed_config_file),
+                 '--once'], env=os.environ.copy(), capture_output=True, text=True, timeout=30)
+            require(refreshed.returncode == 0,
+                    f'P05b-5 sealed refresh failed: {refreshed.stderr.strip()[-300:]}')
+            sealed_path = sealed_dir / ('instance-delegation-' + p05b5_instance + '.json')
+            scheduler_db_env = rt.postgres(root, pg_bin, port, 'p03_scheduler')
+
+            def p05b5_client(instance_arg, scheduler_arg, sealed_arg, task_arg, mode='create'):
+                return subprocess.run(
+                    [client_bin, identity_endpoint, scheduler_arg, str(tls), str(sealed_arg),
+                     instance_arg, p05b5_installation, task_arg, mode],
+                    env=os.environ.copy(), capture_output=True, text=True, timeout=30)
+
+            positive = p05b5_client(p05b5_instance, scheduler_endpoint, sealed_path,
+                                    'p05b5-task-1')
+            require(positive.returncode == 0,
+                    f'P05b-5 positive chain failed: {positive.stdout.strip()} '
+                    f'{positive.stderr.strip()[-300:]}')
+            require('owner=' + p05b5_instance in positive.stdout,
+                    'P05b-5 positive chain owner mismatch')
+            require(rt.run_sql(scheduler_db_env,
+                              "SELECT count(*) FROM kiarabot.tasks WHERE owner='" +
+                              p05b5_instance + "' AND task_id='p05b5-task-1';") == '1',
+                    'P05b-5 Scheduler task row owner=instance')
+            # Same key/content create replay is idempotent at the Scheduler owner.
+            idem = p05b5_client(p05b5_instance, scheduler_endpoint, sealed_path,
+                                'p05b5-task-idem', 'idempotent')
+            require(idem.returncode == 0,
+                    f'P05b-5 idempotent replay failed: {idem.stderr.strip()[-300:]}')
+            require(rt.run_sql(scheduler_db_env,
+                              "SELECT count(*) FROM kiarabot.tasks WHERE owner='" +
+                              p05b5_instance + "' AND task_id='p05b5-task-idem';") == '1',
+                    'P05b-5 idempotent replay duplicated Scheduler task')
+            cross = p05b5_client(str(uuid.uuid4()), scheduler_endpoint, sealed_path,
+                                 'p05b5-task-cross')
+            require(cross.returncode != 0, 'P05b-5 cross-instance sealed file must fail')
+            require(rt.run_sql(scheduler_db_env,
+                              "SELECT count(*) FROM kiarabot.tasks WHERE task_id="
+                              "'p05b5-task-cross';") == '0',
+                    'P05b-5 cross-instance created a task')
+            offline = p05b5_client(p05b5_instance, '127.0.0.1:1', sealed_path,
+                                   'p05b5-task-offline')
+            require(offline.returncode != 0, 'P05b-5 offline Scheduler must fail closed')
+
             resources = [platform_pb2.ResourceRef(kind=platform_pb2.RESOURCE_INSTALLATION,
                                                  id=STATE['installation']),
                          platform_pb2.ResourceRef(kind=platform_pb2.RESOURCE_INSTANCE,
@@ -741,7 +837,8 @@ def scenario(root, port, pg_bin, binaries):
 def main():
     bootstrap_fixture.main(prepare=prepare, after_bootstrap=lambda root: scenario(
         root, int(sys.argv[2]), Path(sys.argv[6]),
-        [str(Path(value).resolve()) for value in sys.argv[7:10]] + [sys.argv[3]]))
+        [str(Path(value).resolve()) for value in sys.argv[7:10]] + [sys.argv[3]],
+        str(Path(sys.argv[10]).resolve())))
 
 
 if __name__ == '__main__':

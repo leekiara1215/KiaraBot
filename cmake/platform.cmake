@@ -316,6 +316,12 @@ set_tests_properties(p05_runtime_identity_client PROPERTIES
 # the Runtime platform peer, real mTLS daemons and real delegation/CheckAuthorization decisions.
 get_filename_component(RUNTIME_E2E_PYTHON_BIN_DIR "${KIARABOT_TARGET_PYTHON}" DIRECTORY)
 get_filename_component(RUNTIME_E2E_OPENSSL_BIN_DIR "${KIARABOT_TEST_OPENSSL}" DIRECTORY)
+add_executable(kiarabot_scheduler_delegation_e2e_client
+  ${CMAKE_SOURCE_DIR}/core/tests/platform/scheduler_delegation_e2e_client.cpp)
+target_link_libraries(kiarabot_scheduler_delegation_e2e_client PRIVATE
+  kiarabot_runtime_identity_client kiarabot_scheduler_task_client OpenSSL::Crypto)
+kiarabot_platform_warnings(kiarabot_scheduler_delegation_e2e_client)
+
 add_test(NAME p10_timer_e2e COMMAND "${KIARABOT_TARGET_PYTHON}"
   "${CMAKE_SOURCE_DIR}/infrastructure/postgres/tests/run_database_test.py"
   --pg-bin "${KIARABOT_TEST_PG_BIN}" --openssl "${KIARABOT_TEST_OPENSSL}"
@@ -325,7 +331,8 @@ add_test(NAME p10_timer_e2e COMMAND "${KIARABOT_TARGET_PYTHON}"
   --test-argument "${KIARABOT_TEST_PG_BIN}"
   --test-argument $<TARGET_FILE:kiarabot-identity>
   --test-argument $<TARGET_FILE:kiarabot-runtime>
-  --test-argument $<TARGET_FILE:kiarabot-scheduler>)
+  --test-argument $<TARGET_FILE:kiarabot-scheduler>
+  --test-argument $<TARGET_FILE:kiarabot_scheduler_delegation_e2e_client>)
 set_tests_properties(p10_timer_e2e PROPERTIES
   LABELS "p10;p13;p05;p06;integration;security;fault" TIMEOUT 360
   ENVIRONMENT "PATH=${RUNTIME_E2E_OPENSSL_BIN_DIR}:${RUNTIME_E2E_PYTHON_BIN_DIR}:$ENV{PATH};PYTHONPATH=${CMAKE_SOURCE_DIR}/sdk/python/build/generated")
