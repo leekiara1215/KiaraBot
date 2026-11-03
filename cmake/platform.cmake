@@ -246,6 +246,7 @@ kiarabot_platform_warnings(kiarabot_inner_headers)
 set(KIARABOT_TARGET_PYTHON "${CMAKE_SOURCE_DIR}/sdk/python/.venv/bin/python" CACHE FILEPATH
   "Locked SDK Python used for target generation and round-trip verification")
 add_custom_command(OUTPUT "${CMAKE_BINARY_DIR}/generated/python.stamp"
+  COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/generated"
   COMMAND "${KIARABOT_TARGET_PYTHON}" "${CMAKE_SOURCE_DIR}/sdk/python/tools/generate_proto.py"
   COMMAND ${CMAKE_COMMAND} -E touch "${CMAKE_BINARY_DIR}/generated/python.stamp"
   DEPENDS ${KIARABOT_PROTO_SOURCES} "${CMAKE_SOURCE_DIR}/sdk/python/tools/generate_proto.py"
