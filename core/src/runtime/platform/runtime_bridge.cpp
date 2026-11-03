@@ -1,6 +1,7 @@
 #include "kiarabot/core/runtime/platform/runtime_bridge.hpp"
 
 #include <algorithm>
+#include <cstdio>
 #include <array>
 #include <atomic>
 #include <chrono>
@@ -1971,27 +1972,37 @@ public:
           for (const auto& message : chat.messages()) {
             command.messages.push_back({message.role(), message.text()});
           }
-          if (command.logical_call_id.empty() || command.model.empty() ||
-              command.messages.empty()) {
+          const auto installed_profile =
+              application_.plugin_profile(state.authorization.fence.instance);
+          if (const auto* rejected = std::get_if<target::Failure>(&installed_profile)) {
             *host_response->mutable_error() =
-                wire_error(target::ErrorCode::InvalidArgument, host.request_id(), host.trace_id());
+                wire_error(rejected->code, host.request_id(), host.trace_id());
           } else {
-            auto reply = options_.model->chat(command, *parsed);
-            if (const auto* failure = std::get_if<target::Failure>(&reply)) {
-              const bool retryable = failure->recovery == target::Recovery::QuerySameIdentity ||
-                                     failure->code == target::ErrorCode::RateLimited;
+            const auto& profile =
+                std::get<target::RuntimeBridgeApplication::BridgePluginProfile>(installed_profile);
+            if (!profile.installation) {
+              *host_response->mutable_error() = wire_error(
+                  target::ErrorCode::PermissionDenied, host.request_id(), host.trace_id());
+            } else if (command.logical_call_id.empty() || command.model.empty() ||
+                       command.messages.empty()) {
               *host_response->mutable_error() =
-                  wire_error(failure->code, host.request_id(), host.trace_id(), retryable);
-              if (failure->retry_after) {
-                // Host wire has no retry_after field; the stable RATE_LIMITED code+bounded
-                // retryable flag is the frozen contract.
-              }
+                  wire_error(target::ErrorCode::InvalidArgument, host.request_id(),
+                             host.trace_id());
             } else {
-              const auto& value = std::get<target::RuntimeModelChatReply>(reply);
-              auto* result = host_response->mutable_model_chat();
-              result->set_text(value.text);
-              result->set_input_tokens(value.input_tokens);
-              result->set_output_tokens(value.output_tokens);
+              command.installation = *profile.installation;
+              auto reply = options_.model->chat(command, *parsed);
+              if (const auto* failure = std::get_if<target::Failure>(&reply)) {
+                const bool retryable = failure->recovery == target::Recovery::QuerySameIdentity ||
+                                       failure->code == target::ErrorCode::RateLimited;
+                *host_response->mutable_error() =
+                    wire_error(failure->code, host.request_id(), host.trace_id(), retryable);
+              } else {
+                const auto& value = std::get<target::RuntimeModelChatReply>(reply);
+                auto* result = host_response->mutable_model_chat();
+                result->set_text(value.text);
+                result->set_input_tokens(value.input_tokens);
+                result->set_output_tokens(value.output_tokens);
+              }
             }
           }
         }

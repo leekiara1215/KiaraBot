@@ -365,7 +365,9 @@ public:
         std::lock_guard<std::mutex> lock(mutex_);
         PluginProfile profile;
         profile.ordered = request.manifest.ordered;
-        profile.installation = request.installation_id;
+        // The authenticated bootstrap already resolved the instance; its installation is the
+        // authoritative owner installation. The registration frame may omit installation_id.
+        profile.installation = current->installation;
         profile.permissions = request.manifest.permissions;
         profile.enabled_features = bridge.enabled_features;
         for (const auto& capability : request.manifest.capabilities) {

@@ -14,6 +14,9 @@ namespace kiarabot::core::target {
 // after an unknown outcome MUST reuse the same logical_call_id, so this port never generates one.
 struct RuntimeModelChatRequest {
   InstanceId instance;
+  // Authenticated bridge profile's installation; the sealed model parent envelope binds it even
+  // though the exchanged child scope is model-only (P05b-4).
+  InstallationId installation;
   std::string request_id;
   std::string logical_call_id;
   std::string model;

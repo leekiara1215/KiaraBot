@@ -396,8 +396,7 @@ target_link_libraries(kiarabot_runtime_rpc PUBLIC kiarabot_proto kiarabot_target
   PRIVATE kiarabot_runtime_resource_application OpenSSL::Crypto)
 
 add_library(kiarabot_runtime_model_client STATIC
-  ${CMAKE_SOURCE_DIR}/core/src/runtime/platform/runtime_model_client.cpp
-  ${CMAKE_SOURCE_DIR}/core/src/runtime/platform/instance_model_delegation_provider.cpp)
+  ${CMAKE_SOURCE_DIR}/core/src/runtime/platform/runtime_model_client.cpp)
 target_include_directories(kiarabot_runtime_model_client PUBLIC
   ${CMAKE_SOURCE_DIR}/core/include)
 kiarabot_platform_warnings(kiarabot_runtime_model_client)
@@ -425,15 +424,6 @@ target_link_libraries(kiarabot_p05b_model_seed PRIVATE
   kiarabot_postgres kiarabot_identity_crypto OpenSSL::Crypto)
 kiarabot_platform_warnings(kiarabot_p05b_model_seed)
 
-add_executable(kiarabot_instance_model_delegation_provider_test
-  ${CMAKE_SOURCE_DIR}/core/tests/platform/instance_model_delegation_provider_test.cpp)
-target_link_libraries(kiarabot_instance_model_delegation_provider_test PRIVATE
-  kiarabot_runtime_model_client)
-kiarabot_platform_warnings(kiarabot_instance_model_delegation_provider_test)
-add_test(NAME p11_instance_model_delegation_provider
-  COMMAND kiarabot_instance_model_delegation_provider_test)
-set_tests_properties(p11_instance_model_delegation_provider
-  PROPERTIES LABELS "p05b;p11;unit;security" TIMEOUT 60)
 
 add_executable(kiarabot_model_identity_client_test
   ${CMAKE_SOURCE_DIR}/core/tests/platform/model_identity_client_test.cpp)
@@ -639,7 +629,7 @@ if(EXISTS "${KIARABOT_TARGET_PYTHON}")
     --test-argument $<TARGET_FILE:kiarabot_postgres_runtime_bridge_seed>
     --test-argument $<TARGET_FILE:kiarabot_p05b_model_seed>)
   set_tests_properties(p05b_model_chain_e2e PROPERTIES
-    LABELS "p05b;p11;integration;gated" TIMEOUT 420 SKIP_RETURN_CODE 77
+    LABELS "p05b;p11;integration;security;fault" TIMEOUT 420
     WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
     ENVIRONMENT "PATH=${RUNTIME_E2E_OPENSSL_BIN_DIR}:${RUNTIME_E2E_PYTHON_BIN_DIR}:$ENV{PATH};PYTHONPATH=${CMAKE_SOURCE_DIR}/sdk/python/build/generated")
   # Negative E2E: no sealed parent material -> Runtime must fail closed with a stable code and the

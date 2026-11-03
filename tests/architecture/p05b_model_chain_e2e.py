@@ -144,7 +144,7 @@ def prepare(root: Path, enrolled: dict):
         {'assignment_id': str(uuid.uuid4()), 'permissions': ['identity.principal.manage'],
          'scope': [{'kind': 'RESOURCE_PRINCIPAL', 'id': enrolled['administrator_id']}]},
         {'assignment_id': admin_model_assignment,
-         'permissions': ['model.chat', 'model.manage', 'model.read'],
+         'permissions': ['model.chat', 'model.call.inspect', 'model.manage', 'model.read'],
          'scope': [{'kind': 'RESOURCE_MODEL', 'id': model_id}]},
     ])
     enrolled['control_assignments'].extend([
@@ -286,7 +286,7 @@ def main() -> int:
         # with SQL, this pure-Python driver rejects the incomplete invocation.
         print('fixture backend directory mismatch', file=sys.stderr)
         return 1
-    mode = 'gated'
+    mode = 'expect-success'
     if '--mode' in arguments:
         index = arguments.index('--mode')
         if index + 1 < len(arguments):
@@ -295,16 +295,6 @@ def main() -> int:
         print(f'P05b-4 e2e failure: unknown mode {mode}', file=sys.stderr)
         return 2
     STATE['mode'] = mode
-    if mode in ('gated', 'self-check'):
-        # P05b-6 (sealed file writer/refresh) is not merged yet: do not run any production chain,
-        # positive or negative, from this test. Explicitly skip (exit 77) instead of a fake pass.
-        print('P05b-4 e2e gated: P05b-6 sealed delegation delivery not merged (exit 77)',
-              file=sys.stderr)
-        return 77
-    if mode == 'expect-success' and os.environ.get('KIARABOT_P05B6_AVAILABLE') != '1':
-        print('P05b-4 positive chain requires KIARABOT_P05B6_AVAILABLE=1 (P05b-6 merged); '
-              'refusing to fabricate a positive chain (exit 77)', file=sys.stderr)
-        return 77
     bootstrap_fixture.main(control_server_certificate=False, prepare=prepare,
                            after_bootstrap=after_bootstrap)
     return 0
@@ -342,7 +332,7 @@ def after_bootstrap(root: Path) -> None:
         'database': databases['model'], 'identity_endpoint': identity_endpoint,
         'model_security': {'root_key_file': {'id': 'model-root-v1', 'file': str(root_key)},
                            'key_version': 1}}
-    parent_file = root / 'instance-parent.json'
+    parent_file = root / f'instance-delegation-{STATE["instance"]}-model.json'
     runtime_config = {
         'schema_version': 1, 'service': 'runtime',
         'probe_listen': endpoints['runtime_probe'], 'grpc_listen': endpoints['runtime_grpc'],
@@ -351,8 +341,7 @@ def after_bootstrap(root: Path) -> None:
                 'private_key_file': str(tls / 'runtime.key'), 'ca_file': ca},
         'database': databases['runtime'], 'identity_endpoint': identity_endpoint,
         'model_endpoint': endpoints['model_grpc'],
-        'instance_delegation': {'parent_proof_file': str(parent_file),
-                                'refresh_margin_seconds': 55, 'cache_capacity': 16}}
+        'model_instance_delegation_sealed_file': str(parent_file)}
     configs = {'identity': root / 'identity.json', 'model': root / 'model.json',
                'runtime': root / 'runtime.json'}
     write_json(configs['model'], model_config)
@@ -388,11 +377,35 @@ def after_bootstrap(root: Path) -> None:
         children.append(identity)
         require(identity_state.get('ready') == 'true', 'identity readiness')
         wait_probe(identity_config['probe_listen'])
-        model, model_state = daemon(model_binary, configs['model'])
+        model_log = (root / 'model.err').open('wb')
+        model = subprocess.Popen([str(model_binary), '--config', str(configs['model'])],
+                                 stdout=subprocess.PIPE, stderr=model_log)
+        model_state = {}
+        for _ in range(2):
+            text = p14.line(model)
+            if '=' in text:
+                model_state.update(
+                    dict(item.split('=', 1) for item in text.split() if '=' in item))
+            if 'ready' in model_state:
+                break
         children.append(model)
         wait_probe(endpoints['model_probe'])
-        runtime, runtime_state = daemon(runtime_binary, configs['runtime'])
+        runtime_log = (root / 'runtime.err').open('wb')
+        runtime = subprocess.Popen([str(runtime_binary), '--config', str(configs['runtime'])],
+                                   stdout=subprocess.PIPE, stderr=runtime_log)
+        try:
+            runtime_state = {}
+            for _ in range(2):
+                text = p14.line(runtime)
+                if '=' in text:
+                    runtime_state.update(
+                        dict(item.split('=', 1) for item in text.split() if '=' in item))
+                if 'ready' in runtime_state:
+                    break
+        except Exception:
+            pass
         children.append(runtime)
+        STATE['runtime_log'] = runtime_log
         wait_probe(endpoints['runtime_probe'])
 
         # Real Control administrator session over the Control leaf (identity-bootstrap control.pem).
@@ -431,13 +444,32 @@ def after_bootstrap(root: Path) -> None:
             identity_service, STATE['instance'], root, pg_bin, port)
         expect_success = STATE.get('mode') == 'expect-success'
         if expect_success:
-            # Issue the B1 model-only instance parent delegation (real Control admin session).
-            parent = issue_instance_parent_model(
-                identity_service, admin, instance_principal, STATE['instance'], model_id,
-                control_fingerprint)
-            claims = token_claims(parent)
-            write_parent_file(parent_file, STATE['instance'], instance_principal, parent,
-                              claims['exp'])
+            # P05b-7 production sealed writer: administrator access token feeds the real refresh
+            # tool, which issues the model-only instance parent through Control mTLS and writes the
+            # 0600 envelope atomically. Runtime only validates/exchanges it.
+            print('P05b-4 stage: sealed model envelope', flush=True)
+            token_file = root / 'admin.token'
+            token_file.write_text(admin + '\n')
+            token_file.chmod(0o600)
+            refresh_config = root / 'delegation-refresh.json'
+            write_json(refresh_config, {
+                'identity_endpoint': identity_endpoint,
+                'ca_file': str(tls / 'ca.pem'),
+                'control_certificate_file': str(tls / 'control.pem'),
+                'control_private_key_file': str(tls / 'control.key'),
+                'instance_id': STATE['instance'],
+                'installation_id': STATE['installation'],
+                'output_dir': str(root),
+                'token_file': str(token_file)})
+            refresh = subprocess.run(
+                [sys.executable, 'instance-delegation-refresh', '--config',
+                 str(refresh_config), '--token-file', str(token_file), '--scope-kind', 'model',
+                 '--model-id', model_id, '--once'], cwd=REPO / 'scripts/deploy',
+                capture_output=True, timeout=60)
+            require(refresh.returncode == 0,
+                    'sealed model refresh: ' + refresh.stderr.decode(errors='replace')[-500:])
+            require(parent_file.is_file(), 'sealed model envelope written')
+            require(parent_file.stat().st_mode & 0o777 == 0o600, 'sealed envelope 0600')
         else:
             # Fail-closed E2E: sealed parent material is absent; Runtime must never reach Model or
             # the HTTP Provider and the plugin must observe a stable failure.
@@ -446,6 +478,30 @@ def after_bootstrap(root: Path) -> None:
         run_plugin(root, endpoints['bridge'], STATE['instance'], plugin_bootstrap, tls,
                    provider_state, provider_mode, model_id, expect_success)
     finally:
+        import select as select_module
+        for child in children:
+            if child.stderr is not None:
+                text = ''
+                try:
+                    while select_module.select([child.stderr], [], [], 0)[0]:
+                        chunk = os.read(child.stderr.fileno(), 8192)
+                        if not chunk:
+                            break
+                        text += chunk.decode(errors='replace')
+                except Exception:
+                    pass
+                if text.strip():
+                    print('P05b-4 stage: service stderr: ' + ' '.join(text.split())[-2000:],
+                          file=sys.stderr)
+        log_path = root / 'runtime.err'
+        if log_path.is_file():
+            print('P05b-4 stage: runtime log: ' + ' '.join(
+                log_path.read_text(errors='replace').split())[-2500:], file=sys.stderr)
+        for name in ('model', 'runtime'):
+            path = root / (name + '.err')
+            if path.is_file():
+                print(f'P05b-4 stage: {name} stderr: ' + ' '.join(
+                    path.read_text(errors='replace').split())[-3000:], file=sys.stderr)
         for child in reversed(children):
             try:
                 stop(child)
@@ -532,7 +588,18 @@ def run_plugin(root, bridge_endpoint, instance, bootstrap, tls, provider_state, 
                         value = json.loads(line)
                         if value.get('id') == identifier:
                             if expected_ok:
-                                require(value.get('ok') is True, f'plugin chat failed: {value}')
+                                if value.get('ok') is not True:
+                                    provider = ''
+                                    if provider_state.is_file():
+                                        provider = provider_state.read_text()[:600]
+                                    log = ''
+                                    try:
+                                        log = (root / 'plugin.log').read_text(errors='replace')
+                                    except Exception:
+                                        pass
+                                    raise Failure(
+                                        f'plugin chat failed: {value}; provider={provider}; '
+                                        f'log={" ".join(log.split())[-1200:]}')
                             else:
                                 require(value.get('ok') is False, f'expected failure: {value}')
                                 if expected_code is not None:
