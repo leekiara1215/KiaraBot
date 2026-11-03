@@ -1,16 +1,14 @@
 #!/usr/bin/env python3
-"""P13h-3 step 1: independent production harness skeleton (real PG16.4 Runtime/Host/SDK).
+"""P13h-3 production joint lifecycle e2e: real Identity/Runtime/Scheduler/Host/plugin.
 
-Reuses the P08e managed-host setup and additionally starts real Identity and Scheduler
-processes (no shared p10 bootstrap root). Step 1 asserts instance creation, a real P08 Host
-receipt and managed plugin lifetime only; lifecycle assertions are added in step 2.
-
-The test drives the frozen managed-host path with real processes: a disposable PG16.4
-cluster, a real mTLS Runtime, the real kiarabot-plugin-host binary and the shipped Python
-SDK runner as the managed child. It asserts Runtime host_commands/host_observations and the
-Host SQLite journal, plugin registration, stop/drain, Host restart and credential hygiene.
-
-Requires the built host/seed binaries and generated Python protos (ctest supplies them).
+Owned-fixture driver (run_database_test.py) supplies: root, PG port, initializer, proxy, then
+identity-bootstrap, pg-bin, identity, runtime, scheduler, runtime-bridge-seed, plugin-host binaries.
+Real offline enrollment (Control administrator, Runtime/Scheduler platform peers, exact grants),
+real mTLS Identity/Runtime/Scheduler processes, real plugin-host + managed SDK plugin, real
+SchedulerService CreateTask seeding, then instance BeginDelete: BLOCKED while Host receipt is
+pending and Scheduler cleanup is unavailable; real Host StopExecution receipt + Runtime
+ListTasks/CancelTask cleanup -> participants Done -> operation DELETED (PG assertions); Restore
+does not recreate tasks; repeated BeginDelete is idempotent; cross-instance tasks are untouched.
 """
 from __future__ import annotations
 
@@ -24,22 +22,33 @@ import secrets
 import select
 import signal
 import sqlite3
+import ssl
 import subprocess
 import sys
 import tempfile
 import time
-import urllib.request
+import traceback
+import uuid
 
-ADAPTER_INSTANCE = '33333333-3333-4333-8333-333333333333'
+REPO = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(REPO / 'core/tests/platform'))
+sys.path.insert(0, str(REPO / 'tests/architecture'))
+import identity_bootstrap_test as bootstrap_fixture  # noqa: E402
+import runtime_identity_e2e_test as rt  # noqa: E402
+import p14_native_single_host as p14  # noqa: E402
+
 ACCOUNT = '11111111-1111-4111-8111-111111111111'
-PLUGIN_INSTANCE = '44444444-4444-4444-8444-444444444444'
+INSTANCE = '44444444-4444-4444-8444-444444444444'
 INSTALLATION = '55555555-5555-4555-8555-555555555555'
+ADAPTER_INSTANCE = '33333333-3333-4333-8333-333333333333'
+SHUTDOWN_INSTANCE = 'a1a1a1a1-a1a1-4a1a-8a1a-a1a1a1a1a1a1'
 ADAPTER_BOOTSTRAP = 'a' * 64
 PLUGIN_BOOTSTRAP = 'b' * 64
-SHUTDOWN_INSTANCE = 'a1a1a1a1-a1a1-4a1a-8a1a-a1a1a1a1a1a1'
 SHUTDOWN_BOOTSTRAP = 'c' * 64
-HANGING_INSTANCE = '77777777-7777-4777-8777-777777777777'
 HOST_ID = 'host-a'
+SAN_SCHEDULER = 'spiffe://kiarabot/scheduler-test'
+SAN_HOST = 'spiffe://kiarabot/host-a'
+STATE: dict = {}
 
 
 class Failure(RuntimeError):
@@ -51,91 +60,514 @@ def require(condition, label):
         raise Failure(label)
 
 
-def load_fixture(repo: Path):
-    sys.path.insert(0, str(repo / 'tests/architecture'))
-    import p06_bridge_acceptance as fixture
-    return fixture
+def stage(name):
+    print(f'P13h-3 stage: {name}', file=sys.stderr, flush=True)
 
 
-def load_protos(repo: Path):
-    for path in (repo / 'sdk/python/build/generated', repo / 'sdk/python/src'):
-        require(path.is_dir(), f'missing proto path: {path}')
-        sys.path.insert(0, str(path))
-    from kiarabot.v1 import host_pb2, platform_pb2
-    return host_pb2, platform_pb2
+def prepare(root: Path, enrolled: dict):
+    stage('prepare enrollment grants')
+    tls = root / 'bootstrap-tls'
+    p14.write_leaf(tls, 'scheduler', SAN_SCHEDULER)
+    scheduler_principal, scheduler_credential = str(uuid.uuid4()), str(uuid.uuid4())
+    enrolled['platform_peers'].append({
+        'service': 'scheduler', 'principal_id': scheduler_principal,
+        'credential_id': scheduler_credential,
+        'certificate_chain_file': str(tls / 'scheduler.pem'), 'san': SAN_SCHEDULER,
+        'assignments': [{'assignment_id': str(uuid.uuid4()),
+                         'permissions': ['identity.authorization.check'],
+                         'scope': [{'kind': 'RESOURCE_PRINCIPAL', 'id': scheduler_principal}]}]})
+    # Runtime identity client also issues ExchangeDelegation for Scheduler task seeding.
+    runtime_assignment = enrolled['platform_peers'][0]['assignments'][0]
+    runtime_assignment['permissions'].append('identity.delegation.issue')
+    enrolled['administrator_assignments'].extend([
+        {'assignment_id': str(uuid.uuid4()), 'permissions': ['resource.manage'],
+         'scope': [{'kind': 'RESOURCE_INSTANCE', 'id': INSTANCE}]},
+        {'assignment_id': str(uuid.uuid4()), 'permissions': ['resource.manage'],
+         'scope': [{'kind': 'RESOURCE_INSTANCE', 'id': SHUTDOWN_INSTANCE}]},
+        {'assignment_id': str(uuid.uuid4()), 'permissions': ['task.schedule', 'task.read'],
+         'scope': [{'kind': 'RESOURCE_INSTANCE', 'id': INSTANCE},
+                   {'kind': 'RESOURCE_INSTALLATION', 'id': INSTALLATION}]},
+        {'assignment_id': str(uuid.uuid4()), 'permissions': ['task.schedule', 'task.read'],
+         'scope': [{'kind': 'RESOURCE_INSTANCE', 'id': SHUTDOWN_INSTANCE},
+                   {'kind': 'RESOURCE_INSTALLATION', 'id': INSTALLATION}]},
+        {'assignment_id': str(uuid.uuid4()), 'permissions': ['identity.principal.manage'],
+         'scope': [{'kind': 'RESOURCE_PRINCIPAL', 'id': enrolled['administrator_id']}]},
+    ])
+    enrolled['control_assignments'].extend([
+        {'assignment_id': str(uuid.uuid4()), 'permissions': ['identity.assignment.manage'],
+         'scope': [{'kind': 'RESOURCE_ACCOUNT', 'id': ACCOUNT}]},
+        {'assignment_id': str(uuid.uuid4()), 'permissions': ['identity.assignment.manage'],
+         'scope': [{'kind': 'RESOURCE_INSTANCE', 'id': INSTANCE}]},
+        {'assignment_id': str(uuid.uuid4()), 'permissions': ['identity.assignment.manage'],
+         'scope': [{'kind': 'RESOURCE_INSTALLATION', 'id': INSTALLATION}]},
+        {'assignment_id': str(uuid.uuid4()), 'permissions': ['identity.principal.manage'],
+         'scope': [{'kind': 'RESOURCE_INSTANCE', 'id': INSTANCE}]},
+        {'assignment_id': str(uuid.uuid4()), 'permissions': ['identity.principal.manage'],
+         'scope': [{'kind': 'RESOURCE_INSTANCE', 'id': SHUTDOWN_INSTANCE}]},
+    ])
+    STATE.update(tls=tls, identity_principal=None)
+
+
+def free_endpoint():
+    return p14.free_endpoint()
 
 
 def free_port():
-    import socket
-    with socket.socket() as probe:
-        probe.bind(('127.0.0.1', 0))
-        return probe.getsockname()[1]
+    return int(p14.free_endpoint().rsplit(':', 1)[1])
 
 
-def openssl(openssl_path, *arguments, cwd):
-    subprocess.run([openssl_path, *arguments], cwd=cwd, check=True,
-                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+def write_json(path: Path, value: dict):
+    path.write_text(json.dumps(value))
+    path.chmod(0o600)
 
 
-def generate_host_cert(openssl_path, pki, directory: Path):
-    """CA-signed Host leaf with both serverAuth and clientAuth (own TLS + HostBridge client)."""
-    directory.mkdir(mode=0o700, exist_ok=True)
-    openssl(openssl_path, 'req', '-new', '-newkey', 'rsa:2048', '-nodes', '-subj', '/CN=host-a',
-            '-keyout', 'host.key', '-out', 'host.csr', cwd=directory)
-    (directory / 'host.ext').write_text(
-        'basicConstraints=critical,CA:FALSE\n'
-        'keyUsage=critical,digitalSignature\n'
-        'extendedKeyUsage=clientAuth,serverAuth\n'
-        'subjectAltName=DNS:localhost,IP:127.0.0.1\n')
-    openssl(openssl_path, 'x509', '-req', '-in', 'host.csr', '-CA', str(pki.ca.certificate),
-            '-CAkey', str(pki.ca.key), '-CAcreateserial', '-days', '1',
-            '-extfile', 'host.ext', '-out', 'host.pem', cwd=directory)
-    (directory / 'host.key').chmod(0o600)
-    return directory / 'host.pem', directory / 'host.key'
+def grpc_modules():
+    import grpc
+    from kiarabot.v1 import (identity_pb2, identity_pb2_grpc, model_pb2, model_pb2_grpc,
+                             platform_pb2, policy_pb2, runtime_pb2, runtime_pb2_grpc,
+                             scheduler_pb2, scheduler_pb2_grpc)
+    return (grpc, identity_pb2, identity_pb2_grpc, platform_pb2, policy_pb2,
+            runtime_pb2, runtime_pb2_grpc, scheduler_pb2, scheduler_pb2_grpc)
 
 
-def start_process(command, cwd, stderr_path, ready_line=None):
-    env = {key: value for key, value in os.environ.items()
-           if not key.startswith(('KIARABOT_', 'CORE_', 'ONEBOT_', 'PG', 'PLUGIN_'))}
-    error_file = stderr_path.open('wb')
-    process = subprocess.Popen(command, cwd=cwd, env=env, stdout=subprocess.PIPE,
-                               stderr=error_file, start_new_session=True)
-    if ready_line is not None:
-        if not select.select([process.stdout], [], [], 30)[0]:
-            raise Failure('process did not report startup: ' + ' '.join(map(str, command)))
-        line = process.stdout.readline().decode(errors='replace').strip()
-        if ready_line not in line:
-            raise Failure(f'process startup line missing {ready_line!r}: {line[:300]}')
-    return process, error_file
+def channel(endpoint, tls, certificate='control.pem', key='control.key'):
+    grpc, *_ = grpc_modules()
+    return grpc.secure_channel(endpoint, grpc.ssl_channel_credentials(
+        root_certificates=(tls / 'ca.pem').read_bytes(),
+        private_key=(tls / key).read_bytes(),
+        certificate_chain=(tls / certificate).read_bytes()))
+
+
+def context(seconds=30, delegation='', idempotency=''):
+    grpc, _, _, platform_pb2, *_ = grpc_modules()
+    from google.protobuf.timestamp_pb2 import Timestamp
+    stamp = Timestamp()
+    stamp.FromNanoseconds(int((time.time() + seconds) * 1_000_000_000))
+    value = platform_pb2.RequestContext(request_id=str(uuid.uuid4()),
+                                        trace_id=str(uuid.uuid4()), deadline=stamp,
+                                        idempotency_key=idempotency or str(uuid.uuid4()))
+    if delegation:
+        value.delegation = delegation
+    return value
+
+
+def run(command, env=None, timeout=90):
+    reply = subprocess.run(command, env=env, capture_output=True, timeout=timeout)
+    require(reply.returncode == 0,
+            f'{Path(command[0]).name} failed code={reply.returncode}: '
+            + reply.stderr.decode(errors='replace')[-700:])
+    return reply
+
+
+def daemon(binary: Path, config: Path):
+    return p14.daemon(binary, config)
+
+
+def wait_probe(endpoint, timeout=20.0):
+    require(rt.wait_ready(int(endpoint.rsplit(':', 1)[1]), True, timeout),
+            f'readiness {endpoint}')
+
+
+def wait_probe_or_dump(child, name, endpoint, timeout=20.0):
+    try:
+        wait_probe(endpoint, timeout)
+    except Failure:
+        import select as select_module
+        text = ''
+        while select_module.select([child.stderr], [], [], 0)[0]:
+            chunk = os.read(child.stderr.fileno(), 8192)
+            if not chunk:
+                break
+            text += chunk.decode(errors='replace')
+        print(f'P13h-3 {name} startup stderr: {" ".join(text.split())[-1200:]}',
+              file=sys.stderr, flush=True)
+        raise
+
+
+def identity_login(stub, root):
+    _, identity_pb2, _, *_ = grpc_modules()
+    password = (root / 'admin-password').read_text().strip()
+    reply = stub.Login(identity_pb2.IdentityLoginRequest(context=context(20),
+                                                         username='administrator',
+                                                         password=password), timeout=10)
+    require(bool(reply.tokens.access_token), 'admin login')
+    return reply.tokens.access_token
+
+
+def insert_instance_principal(instance, root, pg_bin, port):
+    # Fixture shortcut: the instance principal id must equal the instance resource id so the
+    # frozen Scheduler owner-from-subject rule and the platform-scope lifecycle rule agree.
+    environment, pg = rt.postgres(root, pg_bin, port, 'p03_identity')
+    rt.run_sql((environment, pg),
+               "INSERT INTO kiarabot.principals(id,kind,binding_kind,binding_id,version,state) "
+               "VALUES('" + instance + "',3,4,'" + instance + "',1,0) "
+               "ON CONFLICT (id) DO NOTHING; "
+               "INSERT INTO kiarabot.authorizations(subject,version,invalidation_dirty) "
+               "VALUES('" + instance + "',1,false) ON CONFLICT (subject) DO NOTHING;")
+    return instance
+
+
+def pem_fingerprint(path: Path) -> bytes:
+    return hashlib.sha256(ssl.PEM_cert_to_DER_cert(path.read_text())).digest()
+
+
+def issue_parent(stub, access, instance, permissions, scope, fingerprint):
+    _, identity_pb2, _, platform_pb2, *_ = grpc_modules()
+    reply = stub.IssueDelegation(identity_pb2.IdentityIssueDelegationRequest(
+        context=context(30), subject_proof=access, audience='runtime',
+        scope=platform_pb2.ResourceScope(resources=scope),
+        permissions=permissions, client_certificate_sha256=fingerprint,
+        instance_id=instance), timeout=10)
+    require(bool(reply.delegation.proof), 'parent delegation')
+    return reply.delegation.proof
+
+
+def exchange(stub, parent, scope, permissions, fingerprint):
+    _, identity_pb2, _, platform_pb2, policy_pb2 = grpc_modules()[:5]
+    reply = stub.ExchangeDelegation(identity_pb2.IdentityExchangeDelegationRequest(
+        context=context(20), parent_proof=parent, audience='scheduler',
+        scope=platform_pb2.ResourceScope(resources=scope), permissions=permissions,
+        client_certificate_sha256=fingerprint), timeout=10)
+    require(bool(reply.delegation.proof), 'scheduler child delegation')
+    return reply.delegation.proof
+
+
+def create_task(stub, delegation, instance, task_id, when_seconds=3600):
+    _, _, _, platform_pb2, policy_pb2, _, _, scheduler_pb2, _ = grpc_modules()
+    from google.protobuf.timestamp_pb2 import Timestamp
+    from kiarabot.v1 import common_pb2
+    scope = platform_pb2.ResourceScope(resources=[
+        platform_pb2.ResourceRef(kind=platform_pb2.RESOURCE_INSTANCE, id=instance)])
+    target = common_pb2.ConversationRef(type=common_pb2.ConversationRef.GROUP, id='p13h3-group')
+    when = Timestamp()
+    when.FromNanoseconds(int((time.time() + when_seconds) * 1_000_000_000))
+    reply = stub.CreateTask(scheduler_pb2.SchedulerCreateTaskRequest(
+        context=context(20, delegation, str(uuid.uuid4())), task_id=task_id, target=target,
+        payload=b'{}', run_at=when), timeout=15)
+    return reply.task
 
 
 def stop_process(process):
-    if process is None or process.poll() is not None:
-        return
-    process.send_signal(signal.SIGTERM)
-    try:
-        process.wait(timeout=10)
-    except subprocess.TimeoutExpired:
-        process.kill()
-        process.wait(timeout=5)
+    p14.stop(process)
 
 
-def wait_until(predicate, label, timeout=75.0, interval=0.05):
-    deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
-        if predicate():
-            return
-        time.sleep(interval)
-    raise Failure(f'{label}: timed out after {timeout}s')
+def open_sqlite(path: Path):
+    return sqlite3.connect(path)
 
 
 def sqlite_rows(path: Path, query: str):
-    connection = sqlite3.connect(path)
-    try:
-        return connection.execute(query).fetchall()
-    finally:
-        connection.close()
+    with sqlite3.connect(path) as database:
+        return database.execute(query).fetchall()
 
+
+async def main_async(args) -> None:
+    _ = args
+    bootstrap_fixture.main(control_server_certificate=False, prepare=prepare,
+                           after_bootstrap=after_bootstrap)
+
+
+def after_bootstrap(root: Path) -> None:
+    stage('after bootstrap start')
+    pg_bin = Path(sys.argv[6]).resolve()
+    port = int(sys.argv[2])
+    initializer = str(Path(sys.argv[3]).resolve())
+    identity_binary = Path(sys.argv[7]).resolve()
+    runtime_binary = Path(sys.argv[8]).resolve()
+    scheduler_binary = Path(sys.argv[9]).resolve()
+    seed_binary = Path(sys.argv[10]).resolve()
+    host_binary = Path(sys.argv[11]).resolve()
+    tls = STATE['tls']
+    ca = str(tls / 'ca.pem')
+    stage('create service databases')
+    databases = {service: p14.create_database(root, pg_bin, port, initializer, service)
+                 for service in ('runtime', 'scheduler', 'model')}
+    rt.identity_security_material(root)
+    identity_config = json.loads((root / 'identity.json').read_text())
+    identity_config['probe_listen'] = free_endpoint()
+    identity_config['grpc_listen'] = free_endpoint()
+    write_json(root / 'identity.json', identity_config)
+    identity_endpoint = identity_config['grpc_listen']
+
+    stage('host certificate')
+    p14.write_leaf(tls, 'host', SAN_HOST)
+    host_fingerprint = pem_fingerprint(tls / 'host.pem').hex()
+    runtime_fingerprint = pem_fingerprint(tls / 'runtime.pem').hex()
+    runtime_probe, runtime_grpc = free_endpoint(), free_endpoint()
+    bridge = free_endpoint()
+    scheduler_probe, scheduler_grpc = free_endpoint(), free_endpoint()
+    scheduler_config = {
+        'schema_version': 1, 'service': 'scheduler',
+        'probe_listen': scheduler_probe, 'grpc_listen': scheduler_grpc,
+        'tls': {'certificate_file': str(tls / 'scheduler.pem'),
+                'private_key_file': str(tls / 'scheduler.key'), 'ca_file': ca},
+        'database': databases['scheduler'], 'identity_endpoint': identity_endpoint,
+        'runtime_endpoint': runtime_grpc,
+        'runtime_peers': [{'certificate_sha256': runtime_fingerprint,
+                           'instance_id': INSTANCE, 'installation_id': INSTALLATION,
+                           'account_id': ACCOUNT,
+                           'permissions': ['task.read', 'task.schedule']}]}
+    runtime_config = {
+        'schema_version': 1, 'service': 'runtime',
+        'probe_listen': runtime_probe, 'grpc_listen': runtime_grpc,
+        'bridge_listen': bridge,
+        'tls': {'certificate_file': str(tls / 'runtime.pem'),
+                'private_key_file': str(tls / 'runtime.key'), 'ca_file': ca},
+        'database': databases['runtime'], 'identity_endpoint': identity_endpoint,
+        'scheduler_endpoint': scheduler_grpc,
+        'hosts': [{'host_id': HOST_ID, 'certificate_sha256': host_fingerprint}]}
+    write_json(root / 'scheduler.json', scheduler_config)
+    write_json(root / 'runtime.json', runtime_config)
+
+    environment = {key: value for key, value in os.environ.items() if not key.startswith('PG')}
+    stage('runtime seed')
+    run([str(seed_binary), str(root), str(port), ADAPTER_INSTANCE, ACCOUNT, INSTANCE,
+         ADAPTER_BOOTSTRAP, PLUGIN_BOOTSTRAP, INSTALLATION, SHUTDOWN_INSTANCE,
+         SHUTDOWN_BOOTSTRAP], env=environment)
+
+    children = {}
+    try:
+        stage('identity start')
+        identity, state = daemon(identity_binary, root / 'identity.json')
+        children['identity'] = identity
+        require(state.get('ready') == 'true', 'identity readiness')
+        wait_probe(identity_config['probe_listen'])
+        stage('runtime start')
+        runtime, runtime_state = daemon(runtime_binary, root / 'runtime.json')
+        children['runtime'] = runtime
+        wait_probe_or_dump(runtime, 'runtime', runtime_probe)
+        stage('scheduler start')
+        scheduler, _ = daemon(scheduler_binary, root / 'scheduler.json')
+        children['scheduler'] = scheduler
+        wait_probe_or_dump(scheduler, 'scheduler', scheduler_probe)
+
+        identity_channel = channel(identity_endpoint, tls)
+        from kiarabot.v1 import common_pb2
+        _, identity_pb2, identity_grpc, platform_pb2, policy_pb2, runtime_pb2, runtime_grpc_pb, \
+            scheduler_pb2, scheduler_grpc_pb = grpc_modules()
+        identity_stub = identity_grpc.IdentityServiceStub(identity_channel)
+        runtime_channel = channel(runtime_grpc, tls)
+        runtime_stub = runtime_grpc_pb.RuntimeServiceStub(runtime_channel)
+        runtime_identity_channel = channel(identity_endpoint, tls, 'runtime.pem', 'runtime.key')
+        runtime_identity_stub = identity_grpc.IdentityServiceStub(runtime_identity_channel)
+        scheduler_channel = channel(scheduler_grpc, tls, 'runtime.pem', 'runtime.key')
+        scheduler_stub = scheduler_grpc_pb.SchedulerServiceStub(scheduler_channel)
+        admin = identity_login(identity_stub, root)
+        plugin_principal = insert_instance_principal(INSTANCE, root, pg_bin, port)
+        shutdown_principal = insert_instance_principal(SHUTDOWN_INSTANCE, root, pg_bin, port)
+
+        task_scope = [platform_pb2.ResourceRef(kind=platform_pb2.RESOURCE_INSTANCE, id=INSTANCE),
+                      platform_pb2.ResourceRef(kind=platform_pb2.RESOURCE_INSTALLATION,
+                                               id=INSTALLATION)]
+        parent = issue_parent(identity_stub, admin, INSTANCE,
+                              [policy_pb2.PERMISSION_TASK_SCHEDULE, policy_pb2.PERMISSION_TASK_READ],
+                              task_scope, pem_fingerprint(tls / 'control.pem'))
+        child = exchange(runtime_identity_stub, parent, task_scope,
+                         [policy_pb2.PERMISSION_TASK_SCHEDULE, policy_pb2.PERMISSION_TASK_READ],
+                         pem_fingerprint(tls / 'runtime.pem'))
+        scheduler_identity_channel = channel(identity_endpoint, tls, 'scheduler.pem',
+                                               'scheduler.key')
+        scheduler_identity_stub = identity_grpc.IdentityServiceStub(scheduler_identity_channel)
+        check = scheduler_identity_stub.CheckAuthorization(
+            identity_pb2.IdentityCheckAuthorizationRequest(
+                context=context(20), subject_proof=child,
+                full_method='kiarabot.v1.SchedulerService/CreateTask',
+                scope=platform_pb2.ResourceScope(resources=[
+                    platform_pb2.ResourceRef(kind=platform_pb2.RESOURCE_INSTANCE,
+                                             id=INSTANCE)])), timeout=10)
+        print('P13h-3 stage: CreateTask authorization '
+              f'allowed={check.decision.allowed} version={check.decision.authorization_version}',
+              file=sys.stderr, flush=True)
+        create_task(scheduler_stub, child, INSTANCE, 'p13h3-target-task')
+        shutdown_scope = [platform_pb2.ResourceRef(kind=platform_pb2.RESOURCE_INSTANCE,
+                                                   id=SHUTDOWN_INSTANCE),
+                          platform_pb2.ResourceRef(kind=platform_pb2.RESOURCE_INSTALLATION,
+                                                   id=INSTALLATION)]
+        shutdown_parent = issue_parent(identity_stub, admin, SHUTDOWN_INSTANCE,
+                                       [policy_pb2.PERMISSION_TASK_SCHEDULE,
+                                        policy_pb2.PERMISSION_TASK_READ],
+                                       shutdown_scope, pem_fingerprint(tls / 'control.pem'))
+        shutdown_child = exchange(runtime_identity_stub, shutdown_parent, shutdown_scope,
+                                  [policy_pb2.PERMISSION_TASK_SCHEDULE,
+                                   policy_pb2.PERMISSION_TASK_READ],
+                                  pem_fingerprint(tls / 'runtime.pem'))
+        create_task(scheduler_stub, shutdown_child, SHUTDOWN_INSTANCE, 'p13h3-cross-task')
+
+        stage('seed scheduler tasks')
+        package, manifest, plugin_started, plugin_stopped = write_package(root, REPO)
+        host_config_path, credentials, journal = host_config(
+            root, REPO, f'127.0.0.1:{runtime_grpc.rsplit(":", 1)[1]}', bridge,
+            package, manifest, tls / 'ca.pem', tls / 'host.pem', tls / 'host.key')
+        # Seed the start command for the managed plugin (real plugin-host executes it).
+        environment = {key: value for key, value in os.environ.items() if not key.startswith('PG')}
+        seed_host_start(pg_bin, root, port, manifest)
+        stage('host start')
+        host = start_process([str(host_binary), '--config', str(host_config_path)], root,
+                             root / 'host.err')
+        children['host'] = host
+        wait_until(lambda: plugin_started.is_file(), 'managed plugin start', timeout=60)
+        require(plugin_started.read_text() == 'started', 'plugin start marker')
+
+        instance_state = lambda: runtime_sql(pg_bin, root, port,
+                                            f"SELECT state,version FROM kiarabot.instances "
+                                            f"WHERE id='{INSTANCE}'").strip()
+        runtime_sql(pg_bin, root, port,
+                    "UPDATE kiarabot.instances SET host='host-a' WHERE id='" + INSTANCE + "';")
+        require(instance_state().startswith('0|'), f'instance active before delete: {instance_state()}')
+        version = int(instance_state().split('|')[1])
+        delegation = issue_admin_runtime(identity_stub, admin, INSTANCE,
+                                         pem_fingerprint(tls / 'control.pem'))
+        # Offline both participants: Host cannot deliver StopExecution and Scheduler cannot clean.
+        stop_process(host)
+        children.pop('host', None)
+        # The managed SDK child may survive a Host SIGTERM; stop it so it cannot keep heartbeating
+        # and bumping the instance version while BeginDelete's CAS runs.
+        try:
+            journal_path = root / 'host.sqlite'
+            rows = sqlite_rows(journal_path, 'SELECT pid FROM managed_executions ORDER BY rowid DESC')
+            for (child_pid,) in rows[:1]:
+                if child_pid:
+                    try:
+                        os.kill(int(child_pid), signal.SIGKILL)
+                    except OSError:
+                        pass
+        except Exception as error:  # noqa: BLE001
+            print('P13h-3 stage: child cleanup ' + str(error), file=sys.stderr, flush=True)
+        time.sleep(1.0)
+        stop_process(scheduler)
+        children.pop('scheduler', None)
+        require(instance_state().startswith('0|'), f'instance active before delete: {instance_state()}')
+        version = int(instance_state().split('|')[1])
+        stage('begin delete offline')
+        print('P13h-3 stage: instance row before delete ' + runtime_sql(
+            pg_bin, root, port,
+            f"SELECT state,version,host,desired FROM kiarabot.instances WHERE id='{INSTANCE}'"),
+            file=sys.stderr, flush=True)
+        print('P13h-3 stage: tombstones ' + runtime_sql(
+            pg_bin, root, port,
+            f"SELECT count(*) FROM kiarabot.lifecycle_tombstones "
+            f"WHERE resource_id='{INSTANCE}'"), file=sys.stderr, flush=True)
+        first = None
+        last_error = None
+        for attempt in range(5):
+            try:
+                first = begin_delete(runtime_stub, delegation, INSTANCE, version,
+                                     'p13h3-delete-key-0001')
+                break
+            except Exception as error:  # noqa: BLE001
+                last_error = error
+                time.sleep(0.3)
+        if first is None:
+            print('P13h-3 stage: begin delete retries exhausted: ' + str(last_error),
+                  file=sys.stderr, flush=True)
+            raise Failure('BeginDelete conflict')
+        require(bool(first.operation.operation_id), 'first BeginDelete operation')
+        require('p13h3-target-task' in scheduler_task_states(pg_bin, root, port),
+                'scheduler task seeded')
+        blocked = wait_operation(runtime_sql, pg_bin, root, port, first.operation.operation_id,
+                                 lambda state, parts: _blocked_participants(state, parts),
+                                 'blocked participants', timeout=45)
+        # Idempotent repeat with the same key returns the same operation.
+        second = begin_delete(runtime_stub, delegation, INSTANCE, version, 'p13h3-delete-key-0001')
+        require(second.operation.operation_id == first.operation.operation_id,
+                'idempotent BeginDelete operation')
+        print(f'P13h-3 blocked state: {blocked}', flush=True)
+        # Real Host returns; real Scheduler comes back and Runtime cleans target tasks.
+        stage('host return')
+        host = start_process([str(host_binary), '--config', str(host_config_path)], root,
+                             root / 'host-return.err')
+        children['host'] = host
+        scheduler, _ = daemon(scheduler_binary, root / 'scheduler.json')
+        children['scheduler'] = scheduler
+        wait_probe(scheduler_probe)
+        try:
+            listed = scheduler_stub.ListTasks(scheduler_pb2.SchedulerListTasksRequest(
+                context=context(20), scope=platform_pb2.ResourceScope(resources=[
+                    platform_pb2.ResourceRef(kind=platform_pb2.RESOURCE_INSTANCE,
+                                             id=INSTANCE)]),
+                page=platform_pb2.SnapshotPage(page_size=10)), timeout=10)
+            print('P13h-3 stage: platform ListTasks ok tasks=' + str(len(listed.tasks)),
+                  file=sys.stderr, flush=True)
+            pending_list = scheduler_stub.ListTasks(scheduler_pb2.SchedulerListTasksRequest(
+                context=context(20), scope=platform_pb2.ResourceScope(resources=[
+                    platform_pb2.ResourceRef(kind=platform_pb2.RESOURCE_INSTANCE,
+                                             id=INSTANCE)]),
+                page=platform_pb2.SnapshotPage(page_size=10),
+                state=common_pb2.SCHEDULED_TASK_PENDING), timeout=10)
+            print('P13h-3 stage: platform ListTasks pending=' + str(len(pending_list.tasks)),
+                  file=sys.stderr, flush=True)
+        except Exception as error:  # noqa: BLE001
+            print('P13h-3 stage: platform ListTasks failed ' + ' '.join(str(error).split())[:300],
+                  file=sys.stderr, flush=True)
+        print('P13h-3 stage: host commands ' + runtime_sql(
+            pg_bin, root, port,
+            f"SELECT command_id,kind,state,receipt_persisted,receipt_outcome "
+            f"FROM kiarabot.host_commands WHERE instance_id='{INSTANCE}' ORDER BY kind"),
+            file=sys.stderr, flush=True)
+        print('P13h-3 stage: scheduler tasks ' + str(scheduler_task_states(pg_bin, root, port)),
+              file=sys.stderr, flush=True)
+        print('P13h-3 stage: participants ' + runtime_sql(
+            pg_bin, root, port,
+            f"SELECT participant,state,reason,next_attempt, "
+            f"(next_attempt/1000000000.0 - extract(epoch from clock_timestamp()))::bigint "
+            f"AS seconds_left FROM kiarabot.operation_participants "
+            f"WHERE operation_id='{first.operation.operation_id}' ORDER BY participant"),
+            file=sys.stderr, flush=True)
+        deleted = wait_operation(runtime_sql, pg_bin, root, port,
+                                 first.operation.operation_id,
+                                 lambda state, parts: state == 3 and
+                                 all(part[1] == 3 for part in parts), 'deleted operation',
+                                 timeout=90)
+        print('P13h-3 stage: final participants ' + runtime_sql(
+            pg_bin, root, port,
+            f"SELECT participant,state,reason FROM kiarabot.operation_participants "
+            f"WHERE operation_id='{first.operation.operation_id}' ORDER BY participant"),
+            file=sys.stderr, flush=True)
+        print('P13h-3 stage: final scheduler tasks ' + str(scheduler_task_states(pg_bin, root, port)),
+              file=sys.stderr, flush=True)
+        require(instance_state().startswith('3|'), f'instance deleted: {instance_state()}')
+        require(host_command_receipted(pg_bin, root, port, INSTANCE),
+                'Host StopExecution receipt persisted')
+        require(scheduler_task_states(pg_bin, root, port).get('p13h3-target-task') in (5, None),
+                'target scheduler task must be Cancelled/removed')
+        require(scheduler_task_states(pg_bin, root, port).get('p13h3-cross-task') == 0,
+                'cross-instance scheduler task must stay Pending')
+        # Restore revives the instance and never recreates tasks/leases.
+        restore = restore_resource(runtime_stub, delegation, INSTANCE, version)
+        require(bool(restore.operation.operation_id), 'Restore operation')
+        wait_until(lambda: instance_state().startswith('0|'), 'instance restored', timeout=60)
+        require(scheduler_task_states(pg_bin, root, port).get('p13h3-target-task') in (5, None),
+                'restore recreated target task')
+        print(f'P13h-3 production joint delete e2e passed: {deleted}', flush=True)
+    finally:
+        for name, child in list(children.items()):
+            try:
+                stop_process(child)
+            except Exception:
+                pass
+        import select as select_module
+        for name, child in list(children.items()):
+            if child is not None and child.stderr is not None:
+                text = ''
+                try:
+                    while select_module.select([child.stderr], [], [], 0)[0]:
+                        chunk = os.read(child.stderr.fileno(), 8192)
+                        if not chunk:
+                            break
+                        text += chunk.decode(errors='replace')
+                except Exception:
+                    pass
+                if text.strip():
+                    print(f'P13h-3 {name} stderr: ' + ' '.join(text.split())[-2000:],
+                          file=sys.stderr)
+        for name in ('host.err', 'host-return.err', 'runtime.err', 'scheduler.err', 'identity.err',
+                     'plugin.log'):
+            path = root / name
+            if path.is_file():
+                print(f'P13h-3 {name}: ' + path.read_text(errors='replace')[-2500:],
+                      file=sys.stderr)
+
+
+# ---- host/plugin helpers (adapted from the P08e/P13h-3 step-1 harness) ----
 
 def write_package(directory: Path, repo: Path):
     package = directory / 'package'
@@ -152,10 +584,6 @@ def write_package(directory: Path, repo: Path):
         f'        Path({str(started)!r}).write_text("started")\n'
         '    async def on_stop(self, reason):\n'
         f'        Path({str(stopped)!r}).write_text(str(reason))\n'
-        '    async def on_config(self, config, context):\n'
-        f'        Path({str(applied)!r}).open("a").write(json.dumps(dict(\n'
-        '            version=config.version, config_version=config.config_version,\n'
-        '            delivery_id=config.delivery_id, values=dict(config.values))) + "\\n")\n'
         'def create():\n'
         '    return Subject()\n')
     manifest = json.loads((repo / 'plugins/event-observer/plugin.json').read_text())
@@ -169,15 +597,20 @@ def host_config(directory: Path, repo: Path, runtime_endpoint: str, bridge_endpo
                 package: Path, manifest: Path, ca: Path, host_cert: Path, host_key: Path):
     credentials = directory / 'credentials'
     credentials.mkdir(mode=0o700, exist_ok=True)
-    # P08d deployment helper writes the one-time credential file (0600, no argv/stdout leak).
-    response = json.dumps({'instance': {'instance_id': PLUGIN_INSTANCE},
+    response = json.dumps({'instance': {'instance_id': INSTANCE},
                            'bootstrap_credential': PLUGIN_BOOTSTRAP})
     helper = repo / 'scripts/deploy/target_host_credential.py'
-    result = subprocess.run([sys.executable, str(helper), 'store', '--directory', str(credentials)],
-                            input=response, text=True, capture_output=True, check=False)
-    require(result.returncode == 0, f'credential helper failed: {result.stderr[:500]}')
-    require(PLUGIN_BOOTSTRAP not in result.stdout + result.stderr,
-            'credential helper leaked plaintext')
+    result = subprocess.run([sys.executable, str(helper), 'store', '--directory',
+                             str(credentials)], input=response, text=True,
+                            capture_output=True, env={**os.environ}, timeout=20)
+    require(result.returncode == 0, f'credential helper failed: {result.stderr[-400:]}')
+    return (store_credential(directory, repo, runtime_endpoint, bridge_endpoint, package,
+                             manifest, ca, host_cert, host_key, credentials),
+            credentials, directory / 'host.sqlite')
+
+
+def store_credential(directory, repo, runtime_endpoint, bridge_endpoint, package, manifest,
+                     ca, host_cert, host_key, credentials):
     environment_names = ['PYTHONPATH', 'PLUGIN_CORE_ENDPOINT', 'PLUGIN_TLS_ROOT',
                          'PLUGIN_INSTANCE_ID', 'PLUGIN_IO_TIMEOUT', 'PLUGIN_HEARTBEAT_INTERVAL',
                          'PLUGIN_RETRY_DELAY', 'KIARABOT_PLUGIN_BOOTSTRAP']
@@ -185,480 +618,199 @@ def host_config(directory: Path, repo: Path, runtime_endpoint: str, bridge_endpo
         'PYTHONPATH': os.pathsep.join([str(repo / 'sdk/python/src'),
                                        str(repo / 'sdk/python/build/generated'),
                                        str(package)]),
-        'PLUGIN_CORE_ENDPOINT': bridge_endpoint,
-        'PLUGIN_TLS_ROOT': str(ca),
-        'PLUGIN_INSTANCE_ID': PLUGIN_INSTANCE,
-        'PLUGIN_IO_TIMEOUT': '2', 'PLUGIN_HEARTBEAT_INTERVAL': '0.2',
-        'PLUGIN_RETRY_DELAY': '0.1',
-    }
+        'PLUGIN_CORE_ENDPOINT': bridge_endpoint, 'PLUGIN_TLS_ROOT': str(ca),
+        'PLUGIN_INSTANCE_ID': INSTANCE, 'PLUGIN_IO_TIMEOUT': '2',
+        'PLUGIN_HEARTBEAT_INTERVAL': '0.2', 'PLUGIN_RETRY_DELAY': '0.1'}
     runner = directory / 'run_plugin.sh'
-    runner.write_text(
-        '#!/bin/sh\n'
-        f'exec "{sys.executable}" -m kiarabot_sdk "$@" >>"{directory / "plugin.log"}" 2>&1\n')
+    runner.write_text('#!/bin/sh\nexec "' + sys.executable + '" -m kiarabot_sdk "$@" '
+                      '>>"' + str(directory / 'plugin.log') + '" 2>&1\n')
     runner.chmod(0o700)
-    hanging_root = directory / 'hanging-package'
-    hanging_root.mkdir(mode=0o700, exist_ok=True)
     config = {
         'schema_version': 1, 'service': 'plugin-host',
-        'probe_listen': f'127.0.0.1:{free_port()}',
-        'grpc_listen': f'127.0.0.1:{free_port()}',
+        'probe_listen': f'127.0.0.1:{free_port()}', 'grpc_listen': f'127.0.0.1:{free_port()}',
         'tls': {'certificate_file': str(host_cert), 'private_key_file': str(host_key),
                 'ca_file': str(ca)},
-        'host': {
-            'host_id': HOST_ID, 'sqlite_path': str(directory / 'host.sqlite'),
-            'runtime_endpoint': runtime_endpoint,
-            'credential_directory': str(credentials),
-            'packages': [
-                {'plugin_type_id': 'event-observer', 'root': str(package),
-                 'sha256': 'a' * 64, 'launch_profile': 'python',
-                 'allowed_argument_names': ['--manifest']},
-                {'plugin_type_id': 'hanging', 'root': str(hanging_root),
-                 'sha256': 'b' * 64, 'launch_profile': 'hanging',
-                 'allowed_argument_names': []}],
-            'profiles': [
-                {'name': 'python', 'executable': str(runner),
-                 'fixed_arguments': [str(runner)],
-                 'allowed_environment_names': environment_names,
-                 'credential_environment': 'KIARABOT_PLUGIN_BOOTSTRAP'},
-                {'name': 'hanging', 'executable': '/bin/sh',
-                 'fixed_arguments': ['/bin/sh', '-c',
-                                     'trap "" TERM; while :; do sleep 1; done'],
-                 'allowed_environment_names': [], 'credential_environment': None}],
-            'environment': environment,
-        },
-    }
+        'host': {'host_id': HOST_ID, 'sqlite_path': str(directory / 'host.sqlite'),
+                 'runtime_endpoint': runtime_endpoint,
+                 'credential_directory': str(credentials),
+                 'packages': [{'plugin_type_id': 'event-observer', 'root': str(package),
+                               'sha256': 'a' * 64, 'launch_profile': 'python',
+                               'allowed_argument_names': ['--manifest']}],
+                 'profiles': [{'name': 'python', 'executable': str(runner),
+                               'fixed_arguments': [str(runner)],
+                               'allowed_environment_names': environment_names,
+                               'credential_environment': 'KIARABOT_PLUGIN_BOOTSTRAP'}],
+                 'environment': environment}}
     path = directory / 'host.json'
     path.write_text(json.dumps(config))
     path.chmod(0o600)
-    return path, credentials
+    return path
 
 
-def _pid_gone(pid: int) -> bool:
-    # Host should reap the child; accept a zombie as exited too (not running) so a Host-side
-    # reap race cannot turn a real process exit into a test failure.
+def start_process(command, cwd: Path, stderr_path: Path):
+    error_file = stderr_path.open('wb')
+    process = subprocess.Popen(command, cwd=cwd, stdout=subprocess.PIPE, stderr=error_file,
+                               env={key: value for key, value in os.environ.items()})
+    return process
+
+
+def seed_host_start(pg_bin: Path, root: Path, port: int, manifest: Path):
+    environment, pg = rt.postgres(root, pg_bin, port, 'p03_runtime')
+    runtime_password = (root / 'password-p03_runtime_runtime').read_text().strip()
+    now_sql = '(extract(epoch from clock_timestamp())*1000000000)::bigint'
+    args_sql = "'--manifest=" + str(manifest).replace("'", "''") + "'"
+    env_sql = ("ARRAY['PYTHONPATH','PLUGIN_CORE_ENDPOINT','PLUGIN_TLS_ROOT',"
+               "'PLUGIN_INSTANCE_ID','PLUGIN_IO_TIMEOUT','PLUGIN_HEARTBEAT_INTERVAL',"
+               "'PLUGIN_RETRY_DELAY','KIARABOT_PLUGIN_BOOTSTRAP']")
+    statement = ("INSERT INTO kiarabot.host_commands(command_id,host_id,instance_id,installation_id,"
+                 "kind,execution_generation,desired_version,desired_state,package_sha256,"
+                 "launch_profile,arguments,environment_names,payload_sha256,state,created_at,updated_at) "
+                 "VALUES('hc-p13h3-start','host-a','" + INSTANCE + "','" + INSTALLATION + "',1,1,1,0,"
+                 "repeat('a',64),'python',ARRAY[" + args_sql + "]," + env_sql +
+                 ",repeat('b',64),0," + now_sql + "," + now_sql + ");")
+    reply = subprocess.run([str(pg / 'psql'), '-X', '-qAt', '-v', 'ON_ERROR_STOP=1'],
+                           input=statement, text=True, env=environment,
+                           capture_output=True, timeout=15)
+    if reply.returncode != 0:
+        print('P13h-3 host seed SQL: ' + ' '.join(reply.stderr.split())[:800],
+              file=sys.stderr, flush=True)
+        raise Failure('host seed SQL')
+
+
+def wait_until(predicate, label, timeout=45.0):
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if predicate():
+            return
+        time.sleep(0.1)
+    raise Failure(f'timeout: {label}')
+
+
+def runtime_sql(pg_bin: Path, root: Path, port: int, statement: str) -> str:
+    environment, pg = rt.postgres(root, pg_bin, port, 'p03_runtime')
     try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return True
-    result = subprocess.run(['ps', '-o', 'stat=', '-p', str(pid)], capture_output=True,
-                            text=True, check=False)
-    state = result.stdout.strip()
-    return not state or state.startswith('Z')
-
-
-async def main_async(args) -> None:
-    repo = Path(args.repo_source).resolve()
-    fixture = load_fixture(repo)
-    host_pb2, platform = load_protos(repo)
-    from fixtures import TestPki
-
-    root = Path(tempfile.mkdtemp(prefix='kiarabot-p08e-')).resolve()
-    root.chmod(0o700)
-    runtime = host = None
-    runtime_err = host_err = None
-    identity = scheduler = None
-    identity_err = scheduler_err = None
-    try:
-        port = fixture.start_postgres(Path(args.pg_bin).resolve(), root,
-                                      Path(args.openssl).resolve(), None)
-        admin = (root / 'password').read_text().strip()
-        env = {key: value for key, value in os.environ.items() if not key.startswith('PG')}
-        env['PGPASSWORD'] = admin
-        env['LC_ALL'] = 'C'
-        admin_dsn = (f'host=localhost port={port} dbname=postgres user=p03_admin '
-                     f'sslmode=verify-full sslrootcert={root / "server.pem"}')
-        runtime_password = (root / 'password-p03_runtime_runtime').read_text().strip()
-        migration_password = (root / 'password-p03_runtime_migration').read_text().strip()
-        psql_admin = [Path(args.pg_bin) / 'psql', admin_dsn, '-tA', '-v',
-                      'ON_ERROR_STOP=1', '-c']
-        fixture.run([*psql_admin,
-                     f"CREATE ROLE p03_runtime_migration LOGIN NOINHERIT NOSUPERUSER "
-                     f"NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS PASSWORD "
-                     f"{fixture.quote_sql(migration_password)}"], env=env)
-        fixture.run([*psql_admin,
-                     f"CREATE ROLE p03_runtime_runtime LOGIN NOINHERIT NOSUPERUSER "
-                     f"NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS PASSWORD "
-                     f"{fixture.quote_sql(runtime_password)}"], env=env)
-        fixture.run([*psql_admin, 'CREATE DATABASE p03_runtime OWNER p03_runtime_migration'],
-                    env=env)
-        fixture.run([*psql_admin, 'REVOKE ALL ON DATABASE p03_runtime FROM PUBLIC'], env=env)
-        fixture.run([*psql_admin,
-                     'GRANT CONNECT ON DATABASE p03_runtime TO p03_runtime_runtime'], env=env)
-        fixture.run([args.initializer, '--initialize-empty', 'runtime', 'localhost', str(port),
-                     'p03_runtime', 'p03_runtime_migration', 'p03_runtime_runtime',
-                     str(root / 'server.pem'), str(root / 'password-p03_runtime_migration')],
-                    env=env)
-        seeded = fixture.run([args.seed, str(root), str(port), ADAPTER_INSTANCE, ACCOUNT,
-                              PLUGIN_INSTANCE, ADAPTER_BOOTSTRAP, PLUGIN_BOOTSTRAP, INSTALLATION,
-                              SHUTDOWN_INSTANCE, SHUTDOWN_BOOTSTRAP], env=env)
-        require(b'SEEDED' in seeded.stdout, 'P06 seed driver failed')
-
-        with TestPki(Path(args.openssl).resolve()) as pki:
-            identity_probe, identity_grpc = free_port(), free_port()
-            scheduler_probe, scheduler_grpc = free_port(), free_port()
-            identity_config = {
-                'schema_version': 1, 'service': 'identity',
-                'probe_listen': f'127.0.0.1:{identity_probe}',
-                'grpc_listen': f'127.0.0.1:{identity_grpc}',
-                'tls': {'certificate_file': str(pki.servers['identity'].certificate),
-                        'private_key_file': str(pki.servers['identity'].key),
-                        'ca_file': str(pki.ca.certificate)}}
-            scheduler_config = {
-                'schema_version': 1, 'service': 'scheduler',
-                'probe_listen': f'127.0.0.1:{scheduler_probe}',
-                'grpc_listen': f'127.0.0.1:{scheduler_grpc}',
-                'tls': {'certificate_file': str(pki.servers['scheduler'].certificate),
-                        'private_key_file': str(pki.servers['scheduler'].key),
-                        'ca_file': str(pki.ca.certificate)}}
-            for name, config in (('identity', identity_config), ('scheduler', scheduler_config)):
-                path = root / f'{name}.json'
-                path.write_text(json.dumps(config))
-                path.chmod(0o600)
-            identity, identity_err = start_process(
-                [args.identity, '--config', str(root / 'identity.json')], root,
-                root / 'identity.err', 'probe_port=')
-            scheduler, scheduler_err = start_process(
-                [args.scheduler, '--config', str(root / 'scheduler.json')], root,
-                root / 'scheduler.err', 'probe_port=')
-            real_processes = [identity, scheduler]
-            try:
-                print('P13h-3 step1: real Identity/Scheduler processes started', flush=True)
-            except BaseException:
-                for process in real_processes:
-                    stop_process(process)
-                identity_err.close()
-                scheduler_err.close()
-                raise
-
-        with TestPki(Path(args.openssl).resolve()) as pki:
-            server_leaf = pki.servers['runtime']
-            host_cert, host_key = generate_host_cert(
-                Path(args.openssl), pki, pki.root / 'host')
-            host_der = subprocess.check_output(
-                [args.openssl, 'x509', '-in', str(host_cert), '-outform', 'der'])
-            fingerprint = hashlib.sha256(host_der).hexdigest()
-            probe_port, grpc_port, bridge_port = free_port(), free_port(), free_port()
-            runtime_config = {
-                'schema_version': 1, 'service': 'runtime',
-                'probe_listen': f'127.0.0.1:{probe_port}',
-                'grpc_listen': f'127.0.0.1:{grpc_port}',
-                'bridge_listen': f'127.0.0.1:{bridge_port}',
-                'tls': {'certificate_file': str(server_leaf.certificate),
-                        'private_key_file': str(server_leaf.key),
-                        'ca_file': str(pki.ca.certificate)},
-                'database': {'host': 'localhost', 'port': port, 'name': 'p03_runtime',
-                             'migration_role': 'p03_runtime_migration',
-                             'runtime_role': 'p03_runtime_runtime',
-                             'password_file': str(root / 'password-p03_runtime_runtime'),
-                             'ca_file': str(root / 'server.pem')},
-                'hosts': [{'host_id': HOST_ID, 'certificate_sha256': fingerprint}],
-            }
-            runtime_config_path = root / 'runtime.json'
-            runtime_config_path.write_text(json.dumps(runtime_config))
-            runtime_config_path.chmod(0o600)
-            runtime, runtime_err = start_process(
-                [args.runtime, '--config', str(runtime_config_path)], root,
-                root / 'runtime.err', 'grpc_port=')
-            # start_process consumes the one startup line; the configured port is known.
-            require(grpc_port > 0, 'runtime grpc port')
-
-            package, manifest, plugin_started, plugin_stopped = write_package(root, repo)
-            host_config_path, credentials = host_config(
-                root, repo, f'127.0.0.1:{grpc_port}', f'127.0.0.1:{bridge_port}',
-                package, manifest, pki.ca.certificate, host_cert, host_key)
-            now_sql = '(extract(epoch from clock_timestamp())*1000000000)::bigint'
-            args_sql = "'--manifest=" + str(manifest).replace("'", "''") + "'"
-            env_sql = ("ARRAY['PYTHONPATH','PLUGIN_CORE_ENDPOINT','PLUGIN_TLS_ROOT',"
-                       "'PLUGIN_INSTANCE_ID','PLUGIN_IO_TIMEOUT','PLUGIN_HEARTBEAT_INTERVAL',"
-                       "'PLUGIN_RETRY_DELAY','KIARABOT_PLUGIN_BOOTSTRAP']")
-
-            def sql_array(values):
-                if not values:
-                    return 'ARRAY[]::text[]'
-                return 'ARRAY[' + ','.join(
-                    "'" + value.replace("'", "''") + "'" for value in values) + ']'
-
-            def seed_command(command_id, instance, kind, generation, desired_version,
-                             package_sha, launch_profile, arguments, environment_names):
-                payload = hashlib.sha256(command_id.encode()).hexdigest()
-                fixture.psql(
-                    Path(args.pg_bin), root, port, runtime_password,
-                    "INSERT INTO kiarabot.host_commands("
-                    "command_id,host_id,instance_id,installation_id,kind,"
-                    "execution_generation,desired_version,desired_state,package_sha256,"
-                    "launch_profile,arguments,environment_names,payload_sha256,state,"
-                    "created_at,updated_at) VALUES('" + command_id + "','host-a','" + instance +
-                    "','" + INSTALLATION + "'," + str(kind) + "," + str(generation) + "," +
-                    str(desired_version) + ",0,'" + package_sha + "','" + launch_profile +
-                    "'," + sql_array(arguments) + "," + sql_array(environment_names) + ",'" +
-                    payload + "',0," + now_sql + "," + now_sql + ")")
-
-            def receipt_of(command_id):
-                return fixture.psql(
-                    Path(args.pg_bin), root, port, runtime_password,
-                    "SELECT state,receipt_persisted FROM kiarabot.host_commands "
-                    "WHERE command_id='" + command_id + "'").stdout.decode().strip()
-
-            def execution_count():
-                return sqlite_rows(journal, 'SELECT count(*) FROM managed_executions')[0][0]
-            fixture.psql(Path(args.pg_bin), root, port, runtime_password,
-                         "INSERT INTO kiarabot.host_commands("
-                         "command_id,host_id,instance_id,installation_id,kind,"
-                         "execution_generation,desired_version,desired_state,package_sha256,"
-                         "launch_profile,arguments,environment_names,payload_sha256,state,"
-                         "created_at,updated_at) "
-                         "VALUES('hc-p08e-start','host-a','" + PLUGIN_INSTANCE + "','" +
-                         INSTALLATION + "',1,1,1,0,repeat('a',64),'python',"
-                         f"ARRAY[{args_sql}],{env_sql},repeat('b',64),0,{now_sql},{now_sql})")
-            host, host_err = start_process(
-                [args.host_binary, '--config', str(host_config_path)], root,
-                root / 'host.err', None)
-
-            def command_state():
-                return fixture.psql(Path(args.pg_bin), root, port, runtime_password,
-                                    "SELECT state,receipt_persisted FROM kiarabot.host_commands "
-                                    "WHERE command_id='hc-p08e-start'").stdout.decode().strip()
-
-            wait_until(lambda: command_state().startswith('2|t'), 'start command receipt')
-            def observation_count():
-                return fixture.psql(Path(args.pg_bin), root, port, runtime_password,
-                                    "SELECT count(*) FROM kiarabot.host_observations "
-                                    f"WHERE host_id='host-a' AND instance_id='{PLUGIN_INSTANCE}'"
-                                    ).stdout.decode().strip()
-            wait_until(lambda: observation_count() != '0', 'host observation')
-            wait_until(lambda: plugin_started.is_file(), 'SDK plugin start/registration')
-            require(plugin_started.read_text() == 'started',
-                    'SDK plugin start marker content')
-            journal = root / 'host.sqlite'
-            require(journal.is_file(), 'Host SQLite journal missing')
-            executions = sqlite_rows(journal, 'SELECT pid,state,outcome FROM managed_executions')
-            require(executions, 'Host journal has no managed execution')
-            pid = int(executions[0][0])
-            require(pid > 0, 'managed plugin pid missing')
-            os.kill(pid, 0)
-            require((credentials / f'{PLUGIN_INSTANCE}.bootstrap').stat().st_mode & 0o777 == 0o600,
-                    'credential file mode')
-            log_text = (root / 'host.err').read_text(errors='replace')
-            for stream in (root / 'runtime.err', root / 'plugin.log'):
-                log_text += stream.read_text(errors='replace')
-            require(PLUGIN_BOOTSTRAP not in log_text, 'bootstrap credential leaked to logs')
-
-            # Stop command: Host must terminate the real child and report a terminal outcome.
-            fixture.psql(Path(args.pg_bin), root, port, runtime_password,
-                         "INSERT INTO kiarabot.host_commands("
-                         "command_id,host_id,instance_id,installation_id,kind,"
-                         "execution_generation,desired_version,desired_state,package_sha256,"
-                         "launch_profile,payload_sha256,state,created_at,updated_at) "
-                         "VALUES('hc-p08e-stop','host-a','" + PLUGIN_INSTANCE + "','" +
-                         INSTALLATION + "',2,1,1,1,repeat('a',64),'python',"
-                         f"repeat('c',64),0,{now_sql},{now_sql})")
-            wait_until(lambda: fixture.psql(
-                Path(args.pg_bin), root, port, runtime_password,
-                "SELECT state FROM kiarabot.host_commands WHERE "
-                "command_id='hc-p08e-stop'").stdout.decode().strip() == '2', 'stop receipt')
-            try:
-                wait_until(lambda: _pid_gone(pid), 'plugin child exit')
-                wait_until(lambda: plugin_stopped.is_file(), 'SDK plugin on_stop hook')
-            except BaseException:
-                for table in ('command_journal', 'managed_executions', 'execution_observations'):
-                    try:
-                        rows = sqlite_rows(journal, f'SELECT * FROM {table}')
-                    except Exception as query_error:  # noqa: BLE001
-                        rows = f'query failed: {query_error}'
-                    print(f'P08e debug {table}: {rows}', file=sys.stderr)
-                print('P08e debug commands: ' + fixture.psql(
-                    Path(args.pg_bin), root, port, runtime_password,
-                    'SELECT command_id,kind,state,connection_generation,receipt_persisted '
-                    'FROM kiarabot.host_commands ORDER BY command_id'
-                ).stdout.decode(errors='replace'), file=sys.stderr)
-                print('P08e debug observations: ' + fixture.psql(
-                    Path(args.pg_bin), root, port, runtime_password,
-                    'SELECT connection_generation,sequence,instance_id,execution_generation,outcome '
-                    'FROM kiarabot.host_observations ORDER BY sequence'
-                ).stdout.decode(errors='replace'), file=sys.stderr)
-                raise
-            outcomes = sqlite_rows(journal, 'SELECT outcome FROM managed_executions')
-            require(outcomes and outcomes[0][0] != 0, 'managed execution outcome not updated')
-            stop_process(host)
-            host_err.close()
-            host = host_err = None
-
-            # Host restart: journal survives, command receipts are not replayed/spawned again.
-            host, host_err = start_process(
-                [args.host_binary, '--config', str(host_config_path)], root,
-                root / 'host-restart.err', None)
-            time.sleep(2.0)
-            executions_after = sqlite_rows(journal, 'SELECT count(*) FROM managed_executions')
-            require(executions_after[0][0] == len(executions),
-                    'Host restart spawned a duplicate execution')
-            require(command_state().startswith('2|t'), 'restart lost receipt state')
-            # Drain command reaches the real Host after restart and is journaled/receipted.
-            fixture.psql(Path(args.pg_bin), root, port, runtime_password,
-                         "INSERT INTO kiarabot.host_commands("
-                         "command_id,host_id,instance_id,installation_id,kind,"
-                         "execution_generation,desired_version,desired_state,package_sha256,"
-                         "launch_profile,payload_sha256,state,created_at,updated_at) "
-                         "VALUES('hc-p08e-drain','host-a','" + PLUGIN_INSTANCE + "','" +
-                         INSTALLATION + "',3,1,1,1,repeat('a',64),'python',"
-                         f"repeat('d',64),0,{now_sql},{now_sql})")
-            wait_until(lambda: fixture.psql(
-                Path(args.pg_bin), root, port, runtime_password,
-                "SELECT state FROM kiarabot.host_commands WHERE "
-                "command_id='hc-p08e-drain'").stdout.decode().strip() == '2', 'drain receipt')
-            drain_rows = sqlite_rows(
-                journal, "SELECT state FROM command_journal WHERE command_id='hc-p08e-drain'")
-            require(drain_rows and drain_rows[0][0] == 2, 'Host drain journal state')
-
-            # Whitelist rejection matrix: invalid package digest / argument name / env name must
-            # be rejected by the Host before spawning, with receipt persisted=false and no journal or
-            # execution row. UNKNOWN/not-spawned must never look like a stopped process.
-            executions_before = execution_count()
-            manifest_argument = f'--manifest={manifest}'
-            rejections = [
-                ('hc-p08e-bad-package', 'e' * 64, 'python', [manifest_argument],
-                 ['PYTHONPATH', 'PLUGIN_CORE_ENDPOINT']),
-                ('hc-p08e-bad-argument', 'a' * 64, 'python', ['--evil=value'],
-                 ['PYTHONPATH', 'PLUGIN_CORE_ENDPOINT']),
-                ('hc-p08e-bad-env', 'a' * 64, 'python', [manifest_argument], ['EVIL']),
-            ]
-            for command_id, package_sha, profile, arguments, environment in rejections:
-                seed_command(command_id, PLUGIN_INSTANCE, 1, 1, 1, package_sha, profile,
-                             arguments, environment)
-                wait_until(lambda cid=command_id: receipt_of(cid).startswith('2|'),
-                           f'{command_id} receipt')
-                require(receipt_of(command_id) == '2|f',
-                        f'{command_id} was not rejected by the Host')
-                require(execution_count() == executions_before,
-                        f'{command_id} spawned a process despite whitelist rejection')
-                require(not sqlite_rows(
-                    journal, f"SELECT 1 FROM command_journal WHERE command_id='{command_id}'"),
-                    f'{command_id} reached the Host command journal')
-
-            # Host kill with a live managed child: the journal must be recovered on restart and
-            # the same command must not spawn a duplicate process.
-            seed_command('hc-p08e-gen2', PLUGIN_INSTANCE, 1, 2, 2, 'a' * 64, 'python',
-                         [manifest_argument], ['PYTHONPATH', 'PLUGIN_CORE_ENDPOINT',
-                                               'PLUGIN_TLS_ROOT', 'PLUGIN_INSTANCE_ID',
-                                               'PLUGIN_IO_TIMEOUT', 'PLUGIN_HEARTBEAT_INTERVAL',
-                                               'PLUGIN_RETRY_DELAY',
-                                               'KIARABOT_PLUGIN_BOOTSTRAP'])
-            wait_until(lambda: receipt_of('hc-p08e-gen2') == '2|t', 'gen2 apply receipt')
-            wait_until(lambda: execution_count() == executions_before + 1, 'gen2 spawn')
-            gen2 = sqlite_rows(
-                journal, "SELECT pid FROM managed_executions WHERE instance_id='" +
-                PLUGIN_INSTANCE + "' AND execution_generation=2")[0][0]
-            require(gen2 > 0 and os.kill(gen2, 0) is None, 'gen2 child not alive')
-            host.send_signal(signal.SIGKILL)
-            host.wait(timeout=10)
-            host_err.close()
-            host = host_err = None
-            require(os.kill(gen2, 0) is None, 'child did not survive Host SIGKILL')
-            host, host_err = start_process(
-                [args.host_binary, '--config', str(host_config_path)], root,
-                root / 'host-kill-restart.err', None)
-            time.sleep(3.0)
-            require(execution_count() == executions_before + 1,
-                    'Host restart after SIGKILL spawned a duplicate execution')
-            require(os.kill(gen2, 0) is None, 'recovered child was not preserved')
-            seed_command('hc-p08e-gen2-stop', PLUGIN_INSTANCE, 2, 2, 2, 'a' * 64, 'python',
-                         [], [])
-            wait_until(lambda: receipt_of('hc-p08e-gen2-stop') == '2|t', 'gen2 stop receipt')
-            wait_until(lambda: _pid_gone(gen2), 'gen2 child exit')
-
-            # TERM grace -> KILL boundary: a process that ignores SIGTERM must be KILLed after the
-            # Host's bounded grace and still reported terminal (not left UNKNOWN).
-            seed_command('hc-p08e-hanging-start', HANGING_INSTANCE, 1, 1, 1, 'b' * 64, 'hanging',
-                         [], [])
-            wait_until(lambda: receipt_of('hc-p08e-hanging-start') == '2|t',
-                       'hanging start receipt')
-            hanging_pid = sqlite_rows(
-                journal, "SELECT pid FROM managed_executions WHERE instance_id='" +
-                HANGING_INSTANCE + "'")[0][0]
-            require(hanging_pid > 0 and os.kill(hanging_pid, 0) is None,
-                    'hanging child not alive')
-            stop_started = time.monotonic()
-            seed_command('hc-p08e-hanging-stop', HANGING_INSTANCE, 2, 1, 1, 'b' * 64, 'hanging',
-                         [], [])
-            wait_until(lambda: receipt_of('hc-p08e-hanging-stop') == '2|t',
-                       'hanging stop receipt', timeout=20.0)
-            wait_until(lambda: _pid_gone(hanging_pid), 'hanging child killed')
-            elapsed = time.monotonic() - stop_started
-            require(elapsed >= 4.0, f'Host KILL boundary too fast: {elapsed:.2f}s')
-            hanging_row = sqlite_rows(
-                journal, "SELECT state,outcome FROM managed_executions WHERE instance_id='" +
-                HANGING_INSTANCE + "'")[0]
-            require(hanging_row[0] == 3 and hanging_row[1] != 4,
-                    'hanging execution not terminal/KnownSucceeded after KILL')
-
-            # Command arriving while the Host is down is replayed exactly once on restart.
-            stop_process(host)
-            host_err.close()
-            host = host_err = None
-            executions_before_replay = execution_count()
-            seed_command('hc-p08e-down-start', PLUGIN_INSTANCE, 1, 3, 3, 'a' * 64, 'python',
-                         [manifest_argument], ['PYTHONPATH', 'PLUGIN_CORE_ENDPOINT',
-                                               'PLUGIN_TLS_ROOT', 'PLUGIN_INSTANCE_ID',
-                                               'PLUGIN_IO_TIMEOUT', 'PLUGIN_HEARTBEAT_INTERVAL',
-                                               'PLUGIN_RETRY_DELAY',
-                                               'KIARABOT_PLUGIN_BOOTSTRAP'])
-            time.sleep(0.5)
-            require(receipt_of('hc-p08e-down-start') == '0|',
-                    'command dispatched while Host was down')
-            host, host_err = start_process(
-                [args.host_binary, '--config', str(host_config_path)], root,
-                root / 'host-replay.err', None)
-            wait_until(lambda: receipt_of('hc-p08e-down-start') == '2|t',
-                       'down-start replay receipt')
-            wait_until(lambda: execution_count() == executions_before_replay + 1,
-                       'down-start replay spawn')
-            require(execution_count() == executions_before_replay + 1,
-                    'down-start command spawned more than once')
-            print('P08 managed host e2e: PASS')
-    except BaseException:
-        for path in (root / 'runtime.err', root / 'host.err', root / 'host-restart.err',
-                     root / 'plugin.log'):
-            if path.is_file():
-                print(f'P08e {path.name}:\n' + path.read_text(errors='replace')[-4000:],
-                      file=sys.stderr)
+        return rt.run_sql((environment, pg), statement)
+    except Exception:
+        print('P13h-3 stage: runtime SQL failed: ' + ' '.join(statement.split())[:500],
+              file=sys.stderr, flush=True)
+        reply = subprocess.run([str(pg / 'psql'), '-X', '-qAt', '-v', 'ON_ERROR_STOP=1'],
+                               input=statement, text=True, env=environment,
+                               capture_output=True, timeout=15)
+        print('P13h-3 stage: runtime SQL error rc=' + str(reply.returncode) + ': ' + str(reply.stderr)[-1500:],
+              file=sys.stderr, flush=True)
         raise
-    finally:
-        stop_process(scheduler)
-        stop_process(identity)
-        for stream in (scheduler_err, identity_err):
-            if stream is not None:
-                stream.close()
-        stop_process(host)
-        stop_process(runtime)
-        for stream in (host_err, runtime_err):
-            if stream is not None:
-                stream.close()
-        fixture = load_fixture(Path(args.repo_source).resolve())
-        with __import__('contextlib').suppress(Exception):
-            fixture.run([Path(args.pg_bin) / 'pg_ctl', '-D', str(root / 'data'), '-m',
-                         'immediate', '-w', '-t', '20', 'stop'], timeout=30,
-                        env={key: value for key, value in os.environ.items()
-                             if not key.startswith('PG')})
-        import shutil
-        shutil.rmtree(root, ignore_errors=True)
+
+
+def scheduler_task_states(pg_bin: Path, root: Path, port: int) -> dict:
+    environment, pg = rt.postgres(root, pg_bin, port, 'p03_scheduler')
+    rows = rt.run_sql((environment, pg),
+                      "SELECT task_id,state FROM kiarabot.tasks ORDER BY task_id").splitlines()
+    result = {}
+    for row in rows:
+        task_id, state = row.split('|')
+        result[task_id] = int(state)
+    return result
+
+
+def host_command_receipted(pg_bin: Path, root: Path, port: int, instance: str) -> bool:
+    rows = runtime_sql(pg_bin, root, port,
+                       "SELECT kind,state,receipt_persisted FROM kiarabot.host_commands "
+                       "WHERE instance_id='" + instance + "' ORDER BY kind")
+    values = [line.split('|') for line in rows.splitlines() if line]
+    return any(kind == '2' and state == '2' and persisted == 't'
+               for kind, state, persisted in values)
+
+
+def _blocked_participants(state, parts):
+    by_name = dict(parts)
+    return (state == 2 and by_name.get('runtime') == 3 and
+            by_name.get('scheduler') in (0, 1, 2) and by_name.get('host') in (0, 1, 2))
+
+
+def wait_operation(query, pg_bin, root, port, operation_id,
+                   predicate, label, timeout=60):
+    last = None
+
+    last_rows = []
+
+    def check():
+        nonlocal last
+        state = query(pg_bin, root, port,
+                      "SELECT state FROM kiarabot.operations WHERE id='" + operation_id + "'").strip()
+        rows = query(pg_bin, root, port,
+                     "SELECT participant,state,reason,next_attempt, "
+                     "(next_attempt/1000000000.0 - extract(epoch from clock_timestamp()))::bigint "
+                     "FROM kiarabot.operation_participants WHERE operation_id='" +
+                     operation_id + "' ORDER BY participant").splitlines()
+        parts = []
+        for row in rows:
+            if not row:
+                continue
+            values = row.split('|')
+            participant, value = values[0], values[1]
+            parts.append((participant, int(value)))
+        if parts:
+            last_rows = rows
+        last = (state, parts)
+        try:
+            return predicate(int(state), parts)
+        except (TypeError, ValueError):
+            return False
+
+    try:
+        wait_until(check, label, timeout=timeout)
+    except Failure:
+        raise Failure(f'{label}: last={last}') from None
+    return last
+
+
+def issue_admin_runtime(identity_stub, access, instance, fingerprint):
+    _, identity_pb2, _, platform_pb2, policy_pb2, *_ = grpc_modules()
+    reply = identity_stub.IssueDelegation(identity_pb2.IdentityIssueDelegationRequest(
+        context=context(30), subject_proof=access, audience='runtime',
+        scope=platform_pb2.ResourceScope(resources=[
+            platform_pb2.ResourceRef(kind=platform_pb2.RESOURCE_INSTANCE, id=instance)]),
+        permissions=[policy_pb2.PERMISSION_RESOURCE_MANAGE],
+        client_certificate_sha256=fingerprint), timeout=10)
+    require(bool(reply.delegation.proof), 'admin runtime resource.manage delegation')
+    return reply.delegation.proof
+
+
+def begin_delete(runtime_stub, delegation, instance, version, key):
+    _, _, _, platform_pb2, _, runtime_pb2, *_ = grpc_modules()
+    from google.protobuf.timestamp_pb2 import Timestamp
+    request = runtime_pb2.RuntimeBeginDeleteRequest(
+        context=context(30, delegation, key),
+        resource=platform_pb2.ResourceRef(kind=platform_pb2.RESOURCE_INSTANCE, id=instance))
+    return runtime_stub.BeginDelete(request, timeout=20)
+
+
+def restore_resource(runtime_stub, delegation, instance, version):
+    _, _, _, platform_pb2, _, runtime_pb2, *_ = grpc_modules()
+    request = runtime_pb2.RuntimeRestoreResourceRequest(
+        context=context(30, delegation),
+        resource=platform_pb2.ResourceRef(kind=platform_pb2.RESOURCE_INSTANCE, id=instance))
+    return runtime_stub.RestoreResource(request, timeout=20)
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--identity', required=True)
-    parser.add_argument('--scheduler', required=True)
-    parser.add_argument('--runtime', required=True)
-    parser.add_argument('--host-binary', required=True)
-    parser.add_argument('--seed', required=True)
-    parser.add_argument('--initializer', required=True)
-    parser.add_argument('--openssl', required=True)
-    parser.add_argument('--pg-bin', required=True)
-    parser.add_argument('--repo-source', required=True)
-    args = parser.parse_args()
+    arguments = sys.argv[1:]
+    if len(arguments) < 6:
+        print('fixture backend directory mismatch', file=sys.stderr)
+        return 1
     try:
-        asyncio.run(main_async(args))
+        print('P13h-3 stage: argv=' + ' '.join(sys.argv[1:6]), file=sys.stderr, flush=True)
+        asyncio.run(main_async(argparse.Namespace()))
         return 0
+    except SystemExit:
+        raise
     except Exception as error:  # noqa: BLE001
-        print(f'P08e managed host e2e FAILED: {type(error).__name__}: {error}', file=sys.stderr)
+        frames = traceback.extract_tb(sys.exc_info()[2])
+        location = ' <- '.join(f'{frame.filename.rsplit("/", 1)[-1]}:{frame.lineno}'
+                               for frame in frames[-3:])
+        message = ' '.join(str(error).split())
+        print(f'P13h-3 production joint e2e failure: {type(error).__name__}: '
+              f'{message[:1200]} at {location}', file=sys.stderr)
         return 1
 
 

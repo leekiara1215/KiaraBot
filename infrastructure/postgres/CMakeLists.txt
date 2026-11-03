@@ -111,19 +111,24 @@ if(UNIX)
     --repo-source "${CMAKE_SOURCE_DIR}")
   set_tests_properties(p08_managed_host_e2e PROPERTIES
     LABELS "p08;p13;integration;fault" TIMEOUT 300)
+  # P13h-3 production joint lifecycle e2e: owned fixture driver supplies real PG16.4/PKI/
+  # bootstrap; real Identity/Runtime/Scheduler + real plugin-host/managed SDK plugin.
   add_test(NAME p13h3_joint_delete_production_e2e COMMAND "${KIARABOT_TARGET_PYTHON}"
-    "${CMAKE_SOURCE_DIR}/tests/architecture/p13h3_joint_delete_production_e2e.py"
-    --identity $<TARGET_FILE:kiarabot-identity>
-    --scheduler $<TARGET_FILE:kiarabot-scheduler>
-    --runtime $<TARGET_FILE:kiarabot-runtime>
-    --host-binary $<TARGET_FILE:kiarabot-plugin-host>
-    --seed $<TARGET_FILE:kiarabot_postgres_runtime_bridge_seed>
+    "${CMAKE_SOURCE_DIR}/infrastructure/postgres/tests/run_database_test.py"
+    --pg-bin "${KIARABOT_TEST_PG_BIN}" --openssl "${KIARABOT_TEST_OPENSSL}"
     --initializer $<TARGET_FILE:kiarabot-pg-initialize>
-    --openssl "${KIARABOT_TEST_OPENSSL}"
-    --pg-bin "${KIARABOT_TEST_PG_BIN}"
-    --repo-source "${CMAKE_SOURCE_DIR}")
+    --test "${CMAKE_SOURCE_DIR}/tests/architecture/p13h3_joint_delete_production_e2e.py"
+    --test-argument $<TARGET_FILE:kiarabot-identity-bootstrap>
+    --test-argument "${KIARABOT_TEST_PG_BIN}"
+    --test-argument $<TARGET_FILE:kiarabot-identity>
+    --test-argument $<TARGET_FILE:kiarabot-runtime>
+    --test-argument $<TARGET_FILE:kiarabot-scheduler>
+    --test-argument $<TARGET_FILE:kiarabot_postgres_runtime_bridge_seed>
+    --test-argument $<TARGET_FILE:kiarabot-plugin-host>)
   set_tests_properties(p13h3_joint_delete_production_e2e PROPERTIES
-    LABELS "p13;p08;p10;integration;fault" TIMEOUT 300)
+    LABELS "p13;p08;p10;integration;security;fault" TIMEOUT 420
+    WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+    ENVIRONMENT "PATH=${RUNTIME_E2E_OPENSSL_BIN_DIR}:${RUNTIME_E2E_PYTHON_BIN_DIR}:$ENV{PATH};PYTHONPATH=${CMAKE_SOURCE_DIR}/sdk/python/build/generated")
   add_test(NAME p06_bridge_acceptance COMMAND "${KIARABOT_TARGET_PYTHON}"
     "${CMAKE_SOURCE_DIR}/tests/architecture/p06_bridge_acceptance.py"
     --runtime $<TARGET_FILE:kiarabot-runtime>
