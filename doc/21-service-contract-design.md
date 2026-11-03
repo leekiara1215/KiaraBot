@@ -357,6 +357,15 @@ scheduler.proto 增加既有 `scope_kinds` 注释（TASK/INSTANCE），供 Ident
 解析方法策略；未新增 proto 字段、权限或 wire 语义。Identity 侧签发需要同时包含 Installation
 与 Instance scope（Runtime/Scheduler 的精确 scope 校验依赖该组合）。
 
+### P05b 实例委托方案（只读分析，待用户决策，2026-11-03）
+
+P05b 分析见
+[reports/analysis/p05b-instance-delegation-proposal.md](../reports/analysis/p05b-instance-delegation-proposal.md)：
+当前冻结委托链无法表达“插件实例主体”（IssueDelegation subject 恒为登录 principal），
+Runtime→Model/Scheduler 生产 provider 保持 fail-closed；候选方案 A（平台 peer，P13 已批仅
+ListTasks/CancelTask）、B（实例主体父委托签发，需用户批准）、C（长凭据/缓存，不推荐）。
+**批准前本文件 wire/caller/owner 语义不变，不因该分析修改 proto、权限或实现。**
+
 ## P05f 契约核对状态（2026-11-02，main@439fb9e）
 
 P04/P05 设计语义未变；P05f 只补退出证据与 target 状态核对。本机验证：`p04_identity_*` 28/28、`p05_runtime_*` 4/4（含真实双进程 mTLS/PG16.4）、`p04_control_auth_https`、`p03_postgres_database`、P02 相关 12 项，合计 46/46。target 仅 Identity 7/23、Runtime 10/55 方法登记 implemented；P04 认证链/P05 资源方法/ListPrincipals 未翻原因与 `bootstrap_credential` 字段级、P05b 委托、host operation 缺口见 P04/P05 模块报告 P05f 段。设计文档不因此修改 wire/权限/委托规则。
