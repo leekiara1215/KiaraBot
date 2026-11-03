@@ -580,3 +580,20 @@ if(EXISTS "${CMAKE_SOURCE_DIR}/sdk/python/.venv/bin/python")
     WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
     ENVIRONMENT "PATH=${RUNTIME_E2E_OPENSSL_BIN_DIR}:${RUNTIME_E2E_PYTHON_BIN_DIR}:$ENV{PATH}")
 endif()
+# P11h preparation: real loopback HTTP Provider fixture contract checks (no managed chain).
+if(EXISTS "${CMAKE_SOURCE_DIR}/sdk/python/.venv/bin/python")
+  add_test(NAME p11_http_provider_fixture COMMAND
+    "${KIARABOT_TARGET_PYTHON}" "${CMAKE_SOURCE_DIR}/tests/architecture/p11_http_provider_fixture.py"
+    --self-test)
+  set_tests_properties(p11_http_provider_fixture PROPERTIES
+    LABELS "p11;unit;fault" TIMEOUT 30)
+endif()
+
+# DRAFT (P11h dependency task-145/P05b-4 not merged yet): do not enable before the Runtime
+# instance-delegation provider and host.model.v1 bridge feature are available. The eventual test
+# command must pass the real Runtime/model/host binaries and provider fixture endpoint:
+#   add_test(NAME p11h_managed_model_e2e COMMAND "${KIARABOT_TARGET_PYTHON}"
+#     "${CMAKE_SOURCE_DIR}/tests/architecture/p11h_managed_model_e2e.py"
+#     --runtime $<TARGET_FILE:kiarabot-runtime> ... )
+#   set_tests_properties(p11h_managed_model_e2e PROPERTIES
+#     LABELS "p11;integration;fault" TIMEOUT 300)
