@@ -411,3 +411,12 @@ administrator's current exact authority and the instance principal binding, and 
 requested method permission/scope. Cross-instance/cross-model scope yields decision denied with
 PERMISSION_DENIED; expired/tampered or wrong recipient remains UNAUTHENTICATED. Wire fields are
 unchanged.
+
+
+### P05b-8 sealed reader/provider API（task+model 泛化）
+
+`SealedInstanceDelegationSource` 增加 model envelope 读取（`acquire_model(context, model_id,
+permission)`），provider 增加 `model_chat_delegation(context, model_id, permission)`；内部
+Exchange audience 分别固定 Scheduler/Model，scope 分别为 INSTANCE(+INSTALLATION)/单 MODEL，
+权限由用途选择。这样 P05b-4 可直接复用同一 sealed reader，不再自建 Model 专用副本。无 proto/
+权限编号/RPC 变化；真实 Model client 接线仍由 P05b-4 完成。

@@ -628,3 +628,22 @@ P11 实测覆盖 p11_model_http_provider（真实 loopback HTTP provider fixture
 `instance-delegation-<instance_id>-model.json`（RESOURCE_MODEL/model.chat/model.call.inspect），
 与 task 文件分开原子写入同一共享卷；Runtime 按需读取对应 kind。model 文件仍须 Online
 Exchange/CheckAuthorization，不可仅凭文件接受模型调用。
+
+
+### P05b-8 sealed reader 泛化（task+model）
+
+Runtime 的 `SealedInstanceDelegationSource` 现在同时读取两类父委托文件：
+
+- task：`instance-delegation-<instance>.json`，权限仅 `task.schedule/task.read`，
+  scope 必须是该 instance（可选 installation），不能含 MODEL；
+- model：`instance-delegation-<instance>-model.json`，权限仅
+  `model.chat/model.call.inspect`，scope 必须**恰好一个** `RESOURCE_MODEL` 且 id 等于请求
+  model；不能混入 task 权限/其他 scope。
+
+两类文件各自原子写入同一部署卷，Runtime 不创建/不扩展；仍校验 0600 regular/非符号链接/owner、
+schema/instance/installation/audience/ttl/proof 时间戳，任何混合/越权/过期/篡改 fail-closed。
+配置新增 Runtime-only `model_instance_delegation_sealed_file`；缺省时按 task 路径推导
+`-model.json` 兄弟路径。`RuntimeInstanceDelegationProvider::model_chat_delegation` 以
+`audience=model`、单 MODEL scope 请求 Exchange，缓存键含 kind/model/permission，且只缓存到
+子委托/父委托/56s 上限较早者；task 路径保持原 Scheduler 行为。Model 客户端/组合根接线由
+P05b-4 完成，本任务不实现 Model provider。

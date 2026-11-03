@@ -1710,3 +1710,12 @@ Scheduler/Model 必须使用自己的 mTLS 叶调用 Identity.CheckAuthorization
 owner 叶（会因 recipient 规则 UNAUTHENTICATED）。Sealed task/model 文件被读取并 Exchange 后，
 下游应观察 allowed=true；跨实例/跨模型返回 PERMISSION_DENIED，过期/篡改返回
 UNAUTHENTICATED，Runtime 必须 fail-closed。
+
+
+## P05b-8 sealed task/model 文件配置
+
+Runtime 可选 `instance_delegation_sealed_file`（task）与
+`model_instance_delegation_sealed_file`（model）；两者都是 Runtime-only、绝对路径、部署刷新器
+原子写入的 0600 文件。未显式配置 model 路径时 Runtime 从 task 路径推导
+`instance-delegation-<instance>-model.json`。task/model 权限与 scope 必须分开，混合/跨模型/
+跨实例/过期/tamper 一律 UNAUTHENTICATED。刷新频率仍须 <56s；文件交付/多主机限制见 P05b-6。

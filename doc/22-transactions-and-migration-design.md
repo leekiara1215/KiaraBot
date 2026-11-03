@@ -367,3 +367,8 @@ Scheduler CreateTask 因此不可用；已并入 P05b-7（task-150）。该阻�
 Model 父委托 sealed 文件与 task 文件相同的原子写入/旧文件保留语义，按 kind 分文件；签发仍是
 Identity 无状态签名，不进入数据库事务；混用 task/model 会导致非法 scope×permission 交叉积而
 被拒绝，因此必须分组交付。
+
+
+**P05b-8（2026-11-03）**：sealed 父委托读取泛化为 task/model 两类 envelope；Runtime 只在校验
+后通过 Identity Exchange 换子委托，交换不在本地事务内，也不缓存父 token。模型调用链的
+客户端/组合根接入由 P05b-4 负责，本任务不改变事务边界或 schema。
