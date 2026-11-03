@@ -482,10 +482,10 @@ bool record_visible(const t::InvalidationRecord& record,
   return false;
 }
 bool encode_invalidation(const t::InvalidationRecord& record,
-                         std::span<const t::ResourceRef> subscribed,
+                         const std::vector<t::ResourceRef>& subscribed,
                          v1::InvalidationRecord* output) {
   const auto wire_cursor = t::InvalidationCursor{std::string{t::kInvalidationSourceService},
-                                                 record.epoch, record.event.scope, record.sequence};
+                                                 record.epoch, subscribed, record.sequence};
   if (!encode_cursor(wire_cursor, output->mutable_cursor())) {
     return false;
   }

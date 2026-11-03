@@ -141,7 +141,8 @@ def prepare(root, enrolled):
                          'identity.invalidation.read'],
          'scope': [{'kind': 'RESOURCE_ACCOUNT', 'id': account_id}]},
         {'assignment_id': str(uuid.uuid4()),
-         'permissions': ['identity.principal.manage', 'identity.assignment.read'],
+         'permissions': ['identity.principal.manage', 'identity.assignment.read',
+                         'identity.invalidation.read'],
          'scope': [{'kind': 'RESOURCE_PRINCIPAL', 'id': admin}]}])
     # P14m: the delegated subject must hold the exact catalog-scope sensitive reads so a real
     # Control-issued runtime delegation for ListAudit/ListLogs is authorized by Identity.
@@ -975,12 +976,15 @@ def scenario(root, port, pg_bin, binaries):
                     identity_pb2.IdentityGetAuthorizationSnapshotRequest(
                         context=context(), scope=scope, after=after), timeout=5).snapshot
 
-            resync = watch_one(account_scope)
+            subscribed = platform_pb2.ResourceScope(resources=[
+                *account_scope.resources, platform_pb2.ResourceRef(
+                    kind=platform_pb2.RESOURCE_PRINCIPAL, id=enrolled_admin_principal)])
+            resync = watch_one(subscribed)
             require(resync.resync_required and resync.HasField('cursor') and
                     not resync.HasField('invalidation'), 'fresh watch signals full resync')
-            initial = snapshot(account_scope, resync.cursor)
+            initial = snapshot(subscribed, resync.cursor)
             require(initial.cursor.epoch == resync.cursor.epoch and
-                    initial.cursor.scope == account_scope and
+                    initial.cursor.scope == subscribed and
                     any(row == updated for row in initial.assignments),
                     'snapshot includes current grant at its scoped watermark')
             other_scope = platform_pb2.ResourceScope(resources=[platform_pb2.ResourceRef(
@@ -1002,14 +1006,15 @@ def scenario(root, port, pg_bin, binaries):
                     'revoke retry returns original version')
             require(not list_account_grants(account_scope), 'revoked assignment is no longer listed')
 
-            change = watch_one(account_scope, initial.cursor)
+            change = watch_one(subscribed, initial.cursor)
             require(change.HasField('invalidation') and not change.resync_required and
                     change.invalidation.principal_id == enrolled_admin_principal and
                     change.invalidation.scope == account_scope and
+                    change.invalidation.cursor.scope == subscribed and
                     change.invalidation.cursor.sequence > initial.cursor.sequence and
                     change.invalidation.authorization_version > 0,
                     'watch resumes at the revoke invalidation')
-            current = snapshot(account_scope, change.invalidation.cursor)
+            current = snapshot(subscribed, change.invalidation.cursor)
             require(current.cursor.sequence >= change.invalidation.cursor.sequence and
                     not any(row.assignment_id == assignment.assignment_id
                             for row in current.assignments), 'revoked grant absent from snapshot')
@@ -1100,6 +1105,12 @@ def scenario(root, port, pg_bin, binaries):
             identity_stub.RevokeCredential(identity_pb2.IdentityRevokeCredentialRequest(
                 context=context(), credential_id=admin_credential,
                 expected_version=1), timeout=10)
+            next_change = watch_one(subscribed, change.invalidation.cursor)
+            require(next_change.HasField('invalidation') and
+                    next_change.invalidation.cursor.scope == subscribed and
+                    next_change.invalidation.cursor.sequence > change.invalidation.cursor.sequence and
+                    next_change.invalidation.principal_id == enrolled_admin_principal,
+                    'multi-resource watch resumes after a single-resource event')
             login_denied = None
             try:
                 identity_stub.Login(identity_pb2.IdentityLoginRequest(
