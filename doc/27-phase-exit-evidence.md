@@ -4,7 +4,7 @@
 - 基线提交：`7b8fb0f`（main；P14t 最终刷新；final gate 见下）
 - 用途：发布前统一回答“哪些已经实现、哪些已实测、哪些仍待验收/缺口/用户确认”，**不替代**各阶段原始报告与测试记录，也不把提交/文档存在当作阶段完成。
 - 相关文档：[发布清单](28-p14d-release-checklist.md)、[实施计划](23-implementation-plan.md)、[运维 runbook](08-operations.md)、[CI/CD](12-ci-cd.md)、[契约状态](01-contracts.md)、[最终交付状态](../reports/modules/architecture-delivery-status.md)。
-- 最终门禁：此前 exact-HEAD gate **148/148@1213790**（`build/logs/recheck-ctest-064402.log`，687.02s；首跑 146/148 两项负载时序 flake 孤立 5/5、3/3 通过；`a1a33d1` 此前干净门禁 148/148/708.53s）。**P14t checkpoint `7b8fb0f` 由 env 运行中（日志 `build/logs/recheck-ctest-155131.log`，已注册 161 tests）；完成后回填准确 HEAD/总数/耗时/失败/孤立复验，本文件暂不写新数字。** P00n SQLite 写锁竞态已修（final gate sqlite 0.27s）；正式发布仍须在 release SHA 全量重跑并归档。
+- 最终门禁：P14t checkpoint @7b8fb0f：**161/161 CTest passed @7b8fb0f**（`build/logs/recheck-ctest-155131.log`，1051.70s，2026-11-03 15:51:31→16:09:06；本轮一次全绿、无失败；此前 `1213790` gate 148/148（687.02s）的 `p02_core_process`/`p08_managed_host_e2e` 负载时序 flake 未复现）。P00n SQLite 写锁竞态已修（final gate sqlite 0.27s）；正式发布仍须在 release SHA 全量重跑并归档。
 - 原生单机矩阵（P14m 后）：**success 9 + stable-ok 1 + known-gap 0**；`p14_native_single_host`/`p12j_panel_live` 在真实五进程 + PG16.4 + mTLS 栈上通过。
 
 ## 1. 状态定义
@@ -24,7 +24,7 @@
 
 | 阶段 | 状态 | 关键已实测证据（命令/测试/HEAD） | 待验收/已知缺口 | 待用户决策/环境 |
 |---|---|---|---|---|
-| P04 Identity/Control 认证 | 退出通过（本机） | `ctest -R 'p04_'`；`p04_identity_application`、`p04_identity_rpc`、`p04_control_auth_https`、`p04_identity_daemon_tls_expiry`；P04f/P05f 历史证据后保持绿；final gate 148/148@1213790 | 生产 CA/密钥托管、真实 QQ 登录态复验属环境项 | CA/secret manager、生产证书轮换 |
+| P04 Identity/Control 认证 | 退出通过（本机） | `ctest -R 'p04_'`；`p04_identity_application`、`p04_identity_rpc`、`p04_control_auth_https`、`p04_identity_daemon_tls_expiry`；P04f/P05f 历史证据后保持绿；final gate 161/161@7b8fb0f | 生产 CA/密钥托管、真实 QQ 登录态复验属环境项 | CA/secret manager、生产证书轮换 |
 | P05 Runtime 资源/授权链 | **B1 链完成**（P05b-2/5/6/7/8/9/4/12）；安全评审 0 Critical/High，F-1/F-2 已修、F-3 加固中 | `p05b_task_chain_e2e`、`p05b_model_chain_e2e`、`p05b_model_chain_fail_closed_e2e`、`p05b_provider_fixture`、`p05_runtime_identity_e2e`；`reports/modules/architecture-p05b*` | 真实多实例/多安装规模压测；F-3/F-4/F-5/F-6 加固（P05b-13 in_progress）；生产部署环境 | **P05b B1 已批准并完成本机链**；P11 真实 Provider 验收范围已批；跨主机/生产 CA/密钥 |
 | P06 事件/投递/SDK/Adapter | 退出通过（本机/真实进程） | `p06_bridge_acceptance`、`p06_client_e2e`、`p06_postgres_runtime_events`、`p07_adapter_e2e` P06g 全总线（真实 adapter+Runtime+受管 SDK plugin） | 真实 QQ/NapCat 长期稳定性/网络抖动；真实平台链路人工验收 | QQ/NapCat 环境；P05b 相关下游委托 |
 | P07 Action/配额/执行 | **退出通过（P07f-2）** | `p07_action_rules`、`p07_postgres_action_records`、`p07_adapter_e2e`、`p06_bridge_acceptance`、`p12_control_owner_gateway`；SDK action pytest | 真实平台 reaction API、Control `listActionMetadata` REST 未接线（环境/后续能力，不阻塞 target 契约退出） | 真实平台动作（Mute/Kick/撤回/审批）环境项 |
@@ -34,7 +34,7 @@
 | P11 Model 网关 | **独立验收通过（本地真实依赖）** | **P11h**：`p11h_managed_model_e2e`（真实 managed Host+SDK plugin→PluginBridge→Runtime→Model→真实 HTTP Provider 正/负矩阵）、`p11h_model_chain_fail_closed`、`p11h_provider_fixture`；相关回归 **37/37 passed**（p11|p05|p08|p06|p03_postgres）；p11 9/9、p03 真 PG 2/2、contract gate PASS | 真实付费外部 Provider（T07b，计费/配额/外部网络）；目标部署环境；streaming 明确不做 | **P11 独立验收通过**；真实付费 Provider/目标部署环境待环境；Model Update/RotateProviderSecret proto scope_kinds 契约缺口保留 |
 | P12 Control/Panel | **范围完成**（P12l/P12j/P14g-i）；host operation/bootstrap_credential 保持 not_implemented | `p12_control_owner_gateway`、`p04_control_auth_https`、`p12l` principals、`p12j_panel_live` 严格模式 PASS；原生 Control `/api/v1/health` 200 HEALTHY；P14g occurrence/readiness、P14l/P14m audit/log 修复 | 真实 Panel 浏览器 live 全批准入口；真实四依赖健康环境；host operation/bootstrap_credential 字段级证据待决策 | **P12 host operation / bootstrap_credential 保持 not_implemented（用户确认，不扩契约）**；Docker/跨主机 |
 | P13 生命周期/可观测 | **生产退出通过（本验收范围）** | **`p13h3_joint_delete_production_e2e`**：真 PG16.4 四库+真 Identity bootstrap+真 mTLS Runtime/Scheduler+真 plugin-host+受管 SDK 插件；BeginDelete→真实 Host receipt+Scheduler ListTasks/CancelTask→全 Done→DELETED、Host UNKNOWN/离线 BLOCKED、Scheduler denied BLOCKED、Restore 不重建 task/凭据/租约、再次 BeginDelete 重新调度、跨实例任务不受影响；P13h-1 `p10_timer_e2e` platform-peer 矩阵、P13h-2 `p13_scheduler_lifecycle`/`p10_scheduler_task_client` | 真实 Host UNKNOWN 注入（当前 HostBridge 测试客户端）、Scheduler 完全离线主链引用既有生产证据、P14 多主机/真实满盘/生产规模 | **P13 生产退出通过（本验收范围）**；B 未批准；多主机/满盘/生产规模待 P14 环境 |
-| P14 部署/故障/交付 | 交付材料/原生矩阵完成；checkpoint 门禁进行中 | 此前 exact-HEAD gate **148/148@1213790**（687.02s）；P14f/i/j/k/l/m 原生栈矩阵 9 success+1 stable-ok+0 known-gap；P13/P11/P10k/P05b 通过证据见各行；checkpoint `7b8fb0f` env 运行中（结果回填） | 单机 Docker Compose 六服务栈、两主机/断网、远端 CI/release；真实 QQ/NapCat、真实付费 Provider、生产 CA/密钥/备份离站；部署级错误 Runtime 叶证书；Model Update/RotateProviderSecret proto scope_kinds 契约缺口 | Docker/两主机/远端 CI/Release 环境（用户准备 Docker/gh 中）；QQ/Provider/CA/密钥/备份离站 |
+| P14 部署/故障/交付 | 交付材料/原生矩阵完成；**checkpoint 门禁通过** | **161/161 CTest passed @7b8fb0f**（`build/logs/recheck-ctest-155131.log`，1051.70s，2026-11-03 15:51:31→16:09:06；本轮一次全绿、无失败；此前 `1213790` gate 148/148（687.02s）的 `p02_core_process`/`p08_managed_host_e2e` 负载时序 flake 未复现）；P14f/i/j/k/l/m 原生栈矩阵 9 success+1 stable-ok+0 known-gap；P13/P11/P10k/P05b 通过证据见各行 | 单机 Docker Compose 六服务栈、两主机/断网、远端 CI/release；真实 QQ/NapCat、真实付费 Provider、生产 CA/密钥/备份离站；部署级错误 Runtime 叶证书；Model Update/RotateProviderSecret proto scope_kinds 契约缺口 | Docker/两主机/远端 CI/Release 环境（用户准备 Docker/gh 中）；QQ/Provider/CA/密钥/备份离站 |
 
 > P00–P03（工具链、契约、PG/UoW/初始化）作为前置基线已由 `p03_postgres_database`、`p02_core_process`、`p01_*`、contract 门禁覆盖，证据见 [architecture-p02-acceptance.md](../reports/modules/architecture-p02-acceptance.md)、[architecture-p03-postgres.md](../reports/modules/architecture-p03-postgres.md)、`doc/11`。
 
@@ -42,7 +42,7 @@
 
 - **修复前**：`p10_timer_e2e` 在 8192 tasks/expiry churn 后 SIGTERM Runtime 偶发失败约 1/3（17–18s；受控诊断 4 次循环中 1 次），退出码 -11，backtrace 为 OpenSSL `EVP_RAND_CTX_free`/`init_thread_stop` atexit 竞争。
 - **根因**：OpenSSL 3 `OPENSSL_cleanup` 在 atexit 释放 RAND 状态，gRPC/service worker 线程在进程 teardown 后段退出，TLS 析构访问已释放状态。修复：共用 `run_service` 早期 `OPENSSL_init_crypto(OPENSSL_INIT_NO_ATEXIT)`，不注册退出期全局清理；停机状态机/信号/RPC/DB 语义不变。
-- **修复后**：`p10_timer_e2e` 新增 10 次“8192 filler 插入/删除→SIGTERM→Runtime 重启”循环；连续 5 次完整 e2e（50 次停机）全 exit 0，另 12 次完整 e2e 无崩溃；final gate **148/148@1213790** 包含 `p10_timer_e2e`/p10 抽验通过。提交：`6bff2c9` fix、`532b1d3` test、`e83a988` docs。
+- **修复后**：`p10_timer_e2e` 新增 10 次“8192 filler 插入/删除→SIGTERM→Runtime 重启”循环；连续 5 次完整 e2e（50 次停机）全 exit 0，另 12 次完整 e2e 无崩溃；final gate **161/161@7b8fb0f** 包含 `p10_timer_e2e`/p10 抽验通过。提交：`6bff2c9` fix、`532b1d3` test、`e83a988` docs。
 - **P00n SQLite 竞态修复**：首跑 `sqlite_runtime_store` 偶发双 Conflict（两个独立 SQLite 连接读同一 revision 后竞争 UPDATE，无 busy timeout 导致双双 `SQLITE_BUSY`）；修复为对 peer writer 最多等待 50ms + 显式 ready latch，WHERE revision 仍决定唯一 winner。final gate `sqlite_runtime_store` Passed 0.27s；正式 release SHA 仍需重跑全量并归档。
 - **P06h 真实链补齐**：`p07_adapter_e2e` 扩展 fake OneBot 平台延迟、PG deadline 过期→EXPIRED、迟到 ActionResult 仅写 evidence、SIGKILL adapter 后 recover 生成 UNKNOWN evidence 补报；重复平台帧不新增事件、乱序事件不重复 target。真实 QQ/NapCat 仍需环境。
 

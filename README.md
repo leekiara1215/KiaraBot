@@ -78,7 +78,7 @@ Host/Adapter                       各自本地 SQLite 可靠执行/发送日志
 
 ## 当前状态
 
-**2026-11-03 目标架构状态**：P00–P14 的实现已基本合入 main（P14t 最终基线 `7b8fb0f`（P13 生产退出 PASS、P11 独立验收 PASS、P10k 真实 Scheduler 任务链 PASS、P05b B1 链完成；安全评审 0 Critical/High；此前 final gate 148/148@1213790，checkpoint @7b8fb0f 由 env 运行中）原生五进程栈矩阵 **9 success + 1 stable-ok + 0 known-gap**），
+**2026-11-03 目标架构状态**：P00–P14 的实现已基本合入 main（P14t 最终基线 `7b8fb0f`（P13 生产退出 PASS、P11 独立验收 PASS、P10k 真实 Scheduler 任务链 PASS、P05b B1 链完成；安全评审 0 Critical/High；final gate **161/161 CTest passed @7b8fb0f**（`build/logs/recheck-ctest-155131.log`，1051.70s，2026-11-03 15:51:31→16:09:06；本轮一次全绿、无失败；此前 `1213790` gate 148/148（687.02s）的 `p02_core_process`/`p08_managed_host_e2e` 负载时序 flake 未复现））原生五进程栈矩阵 **9 success + 1 stable-ok + 0 known-gap**），
 但“实现合入”“已实测”“待验收/未验证”“正式发布”必须分开看。统一证据矩阵与发布门禁见
 [阶段退出证据](doc/27-phase-exit-evidence.md)、[P14t 发布清单](doc/28-p14d-release-checklist.md)；
 CI/发布流水线配置见 [CI/CD 文档](doc/12-ci-cd.md)。
