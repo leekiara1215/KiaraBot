@@ -54,16 +54,36 @@ bool canonical_uuid(std::string_view value) {
   }
   return true;
 }
-bool regular_private_file(const std::string& path) {
-  struct stat status {};
+std::optional<std::string> read_private_file(const std::string& path) {
   const int descriptor = ::open(path.c_str(), O_RDONLY | O_NOFOLLOW | O_CLOEXEC);
   if (descriptor < 0) {
-    return false;
+    return std::nullopt;
   }
-  const bool valid = ::fstat(descriptor, &status) == 0 && S_ISREG(status.st_mode) &&
-                     (status.st_mode & 07777) == 0600 && status.st_uid == ::geteuid();
+  struct stat before {};
+  if (::fstat(descriptor, &before) != 0 || !S_ISREG(before.st_mode) ||
+      (before.st_mode & 07777) != 0600 || before.st_uid != ::geteuid() || before.st_size <= 0 ||
+      before.st_size > static_cast<off_t>(kMaximumFile)) {
+    ::close(descriptor);
+    return std::nullopt;
+  }
+  std::string raw(static_cast<std::size_t>(before.st_size), '\0');
+  std::size_t offset = 0;
+  while (offset < raw.size()) {
+    const auto count = ::read(descriptor, raw.data() + offset, raw.size() - offset);
+    if (count <= 0) {
+      ::close(descriptor);
+      return std::nullopt;
+    }
+    offset += static_cast<std::size_t>(count);
+  }
+  struct stat after {};
+  const bool stable = ::fstat(descriptor, &after) == 0 && after.st_dev == before.st_dev &&
+                      after.st_ino == before.st_ino && after.st_size == before.st_size;
   ::close(descriptor);
-  return valid;
+  if (!stable) {
+    return std::nullopt;
+  }
+  return raw;
 }
 std::optional<std::string> base64url_decode(std::string_view input) {
   static constexpr char kAlphabet[] =
@@ -213,18 +233,14 @@ read_sealed_delegation(const std::string& path, bool model_kind,
                        t::Permission permission) {
   try {
     if (context.owner.value.empty() || context.installation.value.empty() ||
-        (model_kind ? !model_permission(permission) : !task_permission(permission)) ||
-        !regular_private_file(path)) {
+        (model_kind ? !model_permission(permission) : !task_permission(permission))) {
       return unauthenticated();
     }
-    std::ifstream input(path, std::ios::binary);
-    if (!input) {
+    auto raw_value = read_private_file(path);
+    if (!raw_value) {
       return unauthenticated();
     }
-    std::string raw((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
-    if (raw.empty() || raw.size() > kMaximumFile) {
-      return unauthenticated();
-    }
+    const std::string& raw = *raw_value;
     const auto document = Json::parse(raw, nullptr, false);
     if (document.is_discarded() || !document.is_object()) {
       return unauthenticated();
@@ -309,11 +325,9 @@ read_sealed_delegation(const std::string& path, bool model_kind,
       if (!has_model_scope || scope.size() != 1) {
         return unauthenticated();
       }
-    } else if (!has_instance || scope.size() > 2 || !has_installation && scope.size() > 1) {
+    } else if (!has_instance || scope.size() > 2 || (!has_installation && scope.size() > 1)) {
       // Task envelope requires INSTANCE; INSTALLATION is optional but, when present, must match.
-      if (!has_instance) {
-        return unauthenticated();
-      }
+      return unauthenticated();
     }
     if (model_kind) {
       if (model_id.empty() || !canonical_uuid(model_id)) {

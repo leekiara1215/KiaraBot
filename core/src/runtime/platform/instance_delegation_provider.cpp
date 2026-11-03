@@ -23,9 +23,10 @@ t::Failure failure(t::ErrorCode code, t::Recovery recovery = t::Recovery::Diagno
 t::Failure unauthenticated() {
   return failure(t::ErrorCode::Unauthenticated, t::Recovery::Authenticate);
 }
-std::string cache_key(std::string_view kind, const std::string& instance, std::string_view model,
+std::string cache_key(std::string_view kind, const std::string& instance,
+                      const std::string& installation, std::string_view model,
                       t::Permission permission) {
-  return std::string{kind} + "|" + instance + "|" + std::string{model} + "|" +
+  return std::string{kind} + "|" + instance + "|" + installation + "|" + std::string{model} + "|" +
          std::to_string(static_cast<int>(permission));
 }
 std::optional<t::Sha256Digest> certificate_fingerprint(std::string_view pem) {
@@ -89,7 +90,8 @@ RuntimeInstanceDelegationProvider::scheduler_task_delegation(const t::SchedulerT
       (permission != t::Permission::TaskSchedule && permission != t::Permission::TaskRead)) {
     return failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput);
   }
-  const auto key = cache_key("task", context.owner.value, {}, permission);
+  const auto key =
+      cache_key("task", context.owner.value, context.installation.value, {}, permission);
   const auto now = delegation_provider_now();
   {
     std::lock_guard lock(mutex_);
@@ -131,10 +133,10 @@ RuntimeInstanceDelegationProvider::scheduler_task_delegation(const t::SchedulerT
   }
   {
     std::lock_guard lock(mutex_);
-    cache_[key] = Cached{child.proof, expires_at};
+    cache_[key] = Cached{child.proof, expires_at, context.installation.value};
     if (cache_.size() > 256) {
       cache_.clear();
-      cache_[key] = Cached{child.proof, expires_at};
+      cache_[key] = Cached{child.proof, expires_at, context.installation.value};
     }
   }
   return child.proof;
@@ -146,7 +148,8 @@ t::Outcome<std::string> RuntimeInstanceDelegationProvider::model_chat_delegation
       (permission != t::Permission::ModelChat && permission != t::Permission::ModelCallInspect)) {
     return failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput);
   }
-  const auto key = cache_key("model", context.owner.value, model_id, permission);
+  const auto key =
+      cache_key("model", context.owner.value, context.installation.value, model_id, permission);
   const auto now = delegation_provider_now();
   {
     std::lock_guard lock(mutex_);
@@ -185,10 +188,10 @@ t::Outcome<std::string> RuntimeInstanceDelegationProvider::model_chat_delegation
   }
   {
     std::lock_guard lock(mutex_);
-    cache_[key] = Cached{child.proof, expires_at};
+    cache_[key] = Cached{child.proof, expires_at, context.installation.value};
     if (cache_.size() > 256) {
       cache_.clear();
-      cache_[key] = Cached{child.proof, expires_at};
+      cache_[key] = Cached{child.proof, expires_at, context.installation.value};
     }
   }
   return child.proof;

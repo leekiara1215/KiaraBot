@@ -77,6 +77,7 @@ private:
   struct Cached {
     std::string proof;
     target::TimePoint expires_at;
+    std::string installation;
   };
   std::unordered_map<std::string, Cached> cache_;
 };
