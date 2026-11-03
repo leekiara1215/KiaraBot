@@ -51,6 +51,16 @@ def document(instance_id='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
     }
 
 
+def model_document(instance_id='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+                   installation_id='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+                   model_id='cccccccc-cccc-4ccc-8ccc-cccccccccccc', now=None, ttl=56):
+    now = int(time.time()) if now is None else int(now)
+    value = document(instance_id=instance_id, installation_id=installation_id, now=now, ttl=ttl)
+    value['permissions'] = ['model.chat', 'model.call.inspect']
+    value['scope'] = [{'kind': 'RESOURCE_MODEL', 'id': model_id}]
+    return value
+
+
 class SealedDelegationTest(unittest.TestCase):
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory(prefix='kiarabot-p05b6-')
@@ -129,6 +139,25 @@ class SealedDelegationTest(unittest.TestCase):
         self.assertEqual(self.path.read_text(), old)
         self.assertEqual([entry.name for entry in self.root.iterdir()],
                          ['instance-delegation.json'])
+
+    def test_model_document_and_expected_model(self):
+        sealed.atomic_write_sealed(str(self.path), model_document())
+        value = sealed.read_sealed_delegation(
+            str(self.path), expected_instance='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+            expected_model='cccccccc-cccc-4ccc-8ccc-cccccccccccc')
+        self.assertEqual(value['permissions'], ['model.chat', 'model.call.inspect'])
+        with self.assertRaises(sealed.SealedDelegationError):
+            sealed.read_sealed_delegation(str(self.path), expected_model='wrong-model')
+        bad = model_document()
+        bad['scope'].append({'kind': 'RESOURCE_INSTANCE', 'id': bad['instance_id']})
+        with self.assertRaises(sealed.SealedDelegationError):
+            sealed.validate_document(bad)
+        mixed = document()
+        mixed['permissions'] = ['task.schedule', 'model.chat']
+        with self.assertRaises(sealed.SealedDelegationError):
+            sealed.validate_document(mixed)
+        self.assertEqual(sealed.file_name('instance', 'model'),
+                         'instance-delegation-instance-model.json')
 
     def test_sealed_document_does_not_contain_plaintext_secret_words(self):
         sealed.atomic_write_sealed(str(self.path), document())

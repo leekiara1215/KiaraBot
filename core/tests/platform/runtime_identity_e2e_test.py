@@ -70,8 +70,40 @@ def wait_ready(port, expected, timeout=15.0):
     return False
 
 
+def _mint_platform_peer(root, enrolled, service, san):
+    """Mint a test-only mTLS peer signed by the owned fixture CA for CheckAuthorization."""
+    tls = root / 'bootstrap-tls'
+    name = service
+    extension = tls / f'{name}.ext'
+    extension.write_text(f'subjectAltName=URI:{san}\nextendedKeyUsage=clientAuth\n'
+                         'basicConstraints=critical,CA:FALSE\nkeyUsage=critical,digitalSignature\n'
+                         'subjectKeyIdentifier=hash\nauthorityKeyIdentifier=keyid:always\n')
+    key, csr, certificate = tls / f'{name}.key', tls / f'{name}.csr', tls / f'{name}.pem'
+    commands = [
+        ['req', '-newkey', 'ec', '-pkeyopt', 'ec_paramgen_curve:P-256', '-nodes',
+         '-subj', f'/CN={service}', '-keyout', str(key), '-out', str(csr)],
+        ['x509', '-req', '-in', str(csr), '-CA', str(tls / 'ca.pem'), '-CAkey',
+         str(tls / 'ca.key'), '-CAcreateserial', '-days', '1', '-extfile', str(extension),
+         '-out', str(certificate)],
+    ]
+    for arguments in commands:
+        done = subprocess.run(['openssl', *arguments], cwd=tls, capture_output=True, timeout=10)
+        require(done.returncode == 0, f'{service} peer certificate generation')
+    key.chmod(0o600)
+    principal, credential = str(uuid.uuid4()), str(uuid.uuid4())
+    enrolled['platform_peers'].append({
+        'service': service, 'principal_id': principal, 'credential_id': credential,
+        'certificate_chain_file': str(certificate), 'san': san,
+        'assignments': [{
+            'assignment_id': str(uuid.uuid4()),
+            'permissions': ['identity.authorization.check'],
+            'scope': [{'kind': 'RESOURCE_PRINCIPAL', 'id': principal}]}]})
+
+
 def prepare(root, enrolled):
     """Add the business grant the delegation will carry and Control's management grants."""
+    _mint_platform_peer(root, enrolled, 'scheduler', 'spiffe://kiarabot/scheduler-test')
+    _mint_platform_peer(root, enrolled, 'model', 'spiffe://kiarabot/model-test')
     account_id, admin = str(uuid.uuid4()), enrolled['administrator_id']
     account_read_assignment = str(uuid.uuid4())
     enrolled['administrator_assignments'].append({
@@ -79,12 +111,16 @@ def prepare(root, enrolled):
         'permissions': ['account.read', 'account.manage', 'resource.manage', 'resource.read'],
         'scope': [{'kind': 'RESOURCE_ACCOUNT', 'id': account_id}]})
     instance_id, installation_id = str(uuid.uuid4()), str(uuid.uuid4())
+    model_id = str(uuid.uuid4())
     manage_assignment = str(uuid.uuid4())
     instance_task_assignment = str(uuid.uuid4())
     installation_task_assignment = str(uuid.uuid4())
+    model_assignment = str(uuid.uuid4())
     enrolled['administrator_assignments'].extend([
         {'assignment_id': manage_assignment, 'permissions': ['resource.manage'],
          'scope': [{'kind': 'RESOURCE_INSTANCE', 'id': instance_id}]},
+        {'assignment_id': model_assignment, 'permissions': ['model.chat', 'model.call.inspect'],
+         'scope': [{'kind': 'RESOURCE_MODEL', 'id': model_id}]},
         {'assignment_id': instance_task_assignment,
          'permissions': ['task.schedule', 'task.read'],
          'scope': [{'kind': 'RESOURCE_INSTANCE', 'id': instance_id}]},
@@ -97,7 +133,9 @@ def prepare(root, enrolled):
         {'assignment_id': str(uuid.uuid4()), 'permissions': ['identity.assignment.manage'],
          'scope': [{'kind': 'RESOURCE_INSTANCE', 'id': instance_id}]},
         {'assignment_id': str(uuid.uuid4()), 'permissions': ['identity.assignment.manage'],
-         'scope': [{'kind': 'RESOURCE_INSTALLATION', 'id': installation_id}]}])
+         'scope': [{'kind': 'RESOURCE_INSTALLATION', 'id': installation_id}]},
+        {'assignment_id': str(uuid.uuid4()), 'permissions': ['identity.assignment.manage'],
+         'scope': [{'kind': 'RESOURCE_MODEL', 'id': model_id}]}])
     # Exchange requires the actual Runtime delegator's own explicit issuance capability. Keep the
     # single bootstrap assignment (fixture asserts exactly one) and add the permission tuple.
     runtime_assignment = enrolled['platform_peers'][0]['assignments'][0]
@@ -118,6 +156,7 @@ def prepare(root, enrolled):
                  manage_assignment=manage_assignment,
                  instance_task_assignment=instance_task_assignment,
                  installation_task_assignment=installation_task_assignment,
+                 model_id=model_id, model_assignment=model_assignment,
                  account_read_assignment=account_read_assignment)
 
 
@@ -280,8 +319,8 @@ def scenario(root, port, pg_bin, binaries):
 
         import grpc
         from google.protobuf import timestamp_pb2
-        from kiarabot.v1 import (identity_pb2, identity_pb2_grpc, platform_pb2, policy_pb2,
-                                 runtime_pb2, runtime_pb2_grpc)
+        from kiarabot.v1 import (common_pb2, identity_pb2, identity_pb2_grpc, platform_pb2,
+                                 policy_pb2, runtime_pb2, runtime_pb2_grpc)
         identity_channel = channel(identity_endpoint, tls)
         runtime_endpoint = '127.0.0.1:' + runtime_state['grpc_port']
         runtime_channel = channel(runtime_endpoint, tls)
@@ -378,6 +417,85 @@ def scenario(root, port, pg_bin, binaries):
             finally:
                 runtime_channel.close()
 
+            scheduler_channel = channel(identity_endpoint, tls, 'scheduler.pem', 'scheduler.key')
+            try:
+                scheduler_identity = identity_pb2_grpc.IdentityServiceStub(scheduler_channel)
+                instance_scope = platform_pb2.ResourceScope(resources=[
+                    platform_pb2.ResourceRef(kind=platform_pb2.RESOURCE_INSTANCE,
+                                             id=instance_id)])
+                allowed = scheduler_identity.CheckAuthorization(
+                    identity_pb2.IdentityCheckAuthorizationRequest(
+                        context=context(), subject_proof=child,
+                        full_method='kiarabot.v1.SchedulerService/CreateTask',
+                        scope=platform_pb2.ResourceScope(resources=[
+                            platform_pb2.ResourceRef(kind=platform_pb2.RESOURCE_INSTANCE,
+                                                     id=instance_id)])), timeout=10).decision
+                require(allowed.allowed, 'scheduler child proof CheckAuthorization allowed')
+                wrong_scope = scheduler_identity.CheckAuthorization(
+                    identity_pb2.IdentityCheckAuthorizationRequest(
+                        context=context(), subject_proof=child,
+                        full_method='kiarabot.v1.SchedulerService/CreateTask',
+                        scope=platform_pb2.ResourceScope(resources=[
+                            platform_pb2.ResourceRef(kind=platform_pb2.RESOURCE_INSTANCE,
+                                                     id=str(uuid.uuid4()))])), timeout=10).decision
+                require(not wrong_scope.allowed and
+                        wrong_scope.denial.code == common_pb2.PERMISSION_DENIED,
+                        'scheduler child cross-instance scope denied')
+                # Minimal Scheduler shape: task.schedule only, INSTANCE scope only.
+                short_parent = identity_stub.IssueDelegation(
+                    identity_pb2.IdentityIssueDelegationRequest(
+                        context=context(), subject_proof=access, audience='runtime',
+                        scope=platform_pb2.ResourceScope(resources=[
+                            platform_pb2.ResourceRef(kind=platform_pb2.RESOURCE_INSTANCE,
+                                                     id=instance_id)]),
+                        permissions=[policy_pb2.PERMISSION_TASK_SCHEDULE],
+                        client_certificate_sha256=leaf_fingerprint(tls),
+                        instance_id=instance_id), timeout=10).delegation.proof
+                short_channel = channel(identity_endpoint, tls, 'runtime.pem', 'runtime.key')
+                try:
+                    short_child = identity_pb2_grpc.IdentityServiceStub(
+                        short_channel).ExchangeDelegation(
+                        identity_pb2.IdentityExchangeDelegationRequest(
+                            context=context(), parent_proof=short_parent, audience='scheduler',
+                            scope=platform_pb2.ResourceScope(resources=[
+                                platform_pb2.ResourceRef(kind=platform_pb2.RESOURCE_INSTANCE,
+                                                         id=instance_id)]),
+                            permissions=[policy_pb2.PERMISSION_TASK_SCHEDULE],
+                            client_certificate_sha256=leaf_fingerprint_file(tls, 'runtime.pem')),
+                        timeout=10).delegation.proof
+                finally:
+                    short_channel.close()
+                short_allowed = scheduler_identity.CheckAuthorization(
+                    identity_pb2.IdentityCheckAuthorizationRequest(
+                        context=context(), subject_proof=short_child,
+                        full_method='kiarabot.v1.SchedulerService/CreateTask',
+                        scope=instance_scope), timeout=10).decision
+                require(short_allowed.allowed,
+                        'minimal scheduler child INSTANCE/task.schedule allowed')
+                # Structurally expired child proof must fail closed before decisions.
+                header, payload, signature = short_child.split('.')
+                expired_claims = json.loads(base64.urlsafe_b64decode(
+                    payload + '=' * (-len(payload) % 4)))
+                expired_claims['iat'] = expired_claims['nbf'] = expired_claims['exp'] = 1
+                expired_payload = base64.urlsafe_b64encode(
+                    json.dumps(expired_claims, separators=(',', ':')).encode()
+                ).rstrip(b'=').decode()
+                expired_child = header + '.' + expired_payload + '.' + signature
+                expired_denied = None
+                try:
+                    scheduler_identity.CheckAuthorization(
+                        identity_pb2.IdentityCheckAuthorizationRequest(
+                            context=context(), subject_proof=expired_child,
+                            full_method='kiarabot.v1.SchedulerService/CreateTask',
+                            scope=instance_scope), timeout=10)
+                except grpc.RpcError as error:
+                    expired_denied = error.code()
+                require(expired_denied in (grpc.StatusCode.UNAUTHENTICATED,
+                                           grpc.StatusCode.PERMISSION_DENIED),
+                        'expired child proof CheckAuthorization fail-closed')
+            finally:
+                scheduler_channel.close()
+
             # ---- P05b-6: admin trigger -> sealed file -> strict reader ----
             sealed_dir = root / 'delegations'
             sealed_dir.mkdir(mode=0o700)
@@ -472,6 +590,161 @@ def scenario(root, port, pg_bin, binaries):
             require(link_run.returncode != 0, 'symlink sealed target must be rejected')
             require(victim.read_text() == '{}' and link_path.is_symlink(),
                     'symlink target was followed or replaced')
+
+            # ---- P05b-7: model.parent delegation and model.sealed file ----
+            model_id = STATE['model_id']
+            model_scope = [platform_pb2.ResourceRef(kind=platform_pb2.RESOURCE_MODEL,
+                                                    id=model_id)]
+            model_permissions = [policy_pb2.PERMISSION_MODEL_CHAT,
+                                 policy_pb2.PERMISSION_MODEL_CALL_INSPECT]
+            model_parent = identity_stub.IssueDelegation(
+                identity_pb2.IdentityIssueDelegationRequest(
+                    context=context(), subject_proof=access, audience='runtime',
+                    scope=platform_pb2.ResourceScope(resources=model_scope),
+                    permissions=model_permissions,
+                    client_certificate_sha256=leaf_fingerprint(tls),
+                    instance_id=instance_id), timeout=10).delegation.proof
+            model_claims = claims_of(model_parent)
+            require(model_claims['sub'] == instance_principal and
+                    model_claims['aud'] == 'runtime' and
+                    model_claims['delegation']['business_hops'] == '1' and
+                    model_claims['exp'] - model_claims['iat'] <= 56,
+                    'model parent claims subject/audience/TTL')
+            runtime_channel = channel(identity_endpoint, tls, 'runtime.pem', 'runtime.key')
+            try:
+                model_child = identity_pb2_grpc.IdentityServiceStub(runtime_channel).ExchangeDelegation(
+                    identity_pb2.IdentityExchangeDelegationRequest(
+                        context=context(), parent_proof=model_parent, audience='model',
+                        scope=platform_pb2.ResourceScope(resources=model_scope),
+                        permissions=model_permissions,
+                        client_certificate_sha256=leaf_fingerprint_file(tls, 'runtime.pem')),
+                    timeout=10).delegation.proof
+                model_child_claims = claims_of(model_child)
+                require(model_child_claims['sub'] == instance_principal and
+                        model_child_claims['aud'] == 'model' and
+                        model_child_claims['delegation']['business_hops'] == '2',
+                        'model parent exchanges to model hops2 child')
+            finally:
+                runtime_channel.close()
+
+            model_channel = channel(identity_endpoint, tls, 'model.pem', 'model.key')
+            try:
+                model_identity = identity_pb2_grpc.IdentityServiceStub(model_channel)
+                model_allowed = model_identity.CheckAuthorization(
+                    identity_pb2.IdentityCheckAuthorizationRequest(
+                        context=context(), subject_proof=model_child,
+                        full_method='kiarabot.v1.ModelService/Chat',
+                        scope=platform_pb2.ResourceScope(resources=model_scope)),
+                    timeout=10).decision
+                require(model_allowed.allowed, 'model child proof CheckAuthorization allowed')
+                model_wrong = model_identity.CheckAuthorization(
+                    identity_pb2.IdentityCheckAuthorizationRequest(
+                        context=context(), subject_proof=model_child,
+                        full_method='kiarabot.v1.ModelService/Chat',
+                        scope=platform_pb2.ResourceScope(resources=[
+                            platform_pb2.ResourceRef(kind=platform_pb2.RESOURCE_MODEL,
+                                                     id=str(uuid.uuid4()))])), timeout=10).decision
+                require(not model_wrong.allowed and
+                        model_wrong.denial.code == common_pb2.PERMISSION_DENIED,
+                        'model child cross-model scope denied')
+            finally:
+                model_channel.close()
+
+            model_dir = root / 'delegations-model'
+            model_dir.mkdir(mode=0o700)
+            model_config = dict(sealed_config)
+            model_config.update({'output_dir': str(model_dir), 'scope_kind': 'model',
+                                 'model_id': model_id,
+                                 'permissions': ['model.chat', 'model.call.inspect']})
+            model_config_path = root / 'sealed-model.json'
+            model_config_path.write_text(json.dumps(model_config))
+            model_config_path.chmod(0o600)
+            model_run = subprocess.run(
+                [sys.executable, str(refresh_tool), '--config', str(model_config_path), '--once'],
+                env=os.environ.copy(), capture_output=True, text=True, timeout=30)
+            require(model_run.returncode == 0,
+                    f'model sealed refresh failed: {model_run.stderr.strip()[-200:]}')
+            model_file = model_dir / ('instance-delegation-' + instance_id + '-model.json')
+            model_sealed = sealed_delegation.read_sealed_delegation(
+                str(model_file), expected_instance=instance_id, expected_model=model_id)
+            require(model_sealed['permissions'] == ['model.chat', 'model.call.inspect'] and
+                    model_sealed['scope'] == [{'kind': 'RESOURCE_MODEL', 'id': model_id}],
+                    'model sealed envelope shape')
+            model_again = subprocess.run(
+                [sys.executable, str(refresh_tool), '--config', str(model_config_path), '--once'],
+                env=os.environ.copy(), capture_output=True, text=True, timeout=30)
+            require(model_again.returncode == 0, 'model sealed refresh not idempotent')
+            require(sorted(entry.name for entry in model_dir.iterdir()) == [model_file.name],
+                    'model refresh left temporary files')
+
+            # Negative: an unassigned model scope is denied; mixed/non-whitelisted shapes fail.
+            foreign_model = None
+            try:
+                identity_stub.IssueDelegation(identity_pb2.IdentityIssueDelegationRequest(
+                    context=context(), subject_proof=access, audience='runtime',
+                    scope=platform_pb2.ResourceScope(resources=[
+                        platform_pb2.ResourceRef(kind=platform_pb2.RESOURCE_MODEL,
+                                                 id=str(uuid.uuid4()))]),
+                    permissions=[policy_pb2.PERMISSION_MODEL_CHAT],
+                    client_certificate_sha256=leaf_fingerprint(tls),
+                    instance_id=instance_id), timeout=10)
+            except grpc.RpcError as error:
+                foreign_model = error.code()
+            require(foreign_model in (grpc.StatusCode.PERMISSION_DENIED,
+                                      grpc.StatusCode.INVALID_ARGUMENT),
+                    'foreign model scope rejected')
+            mixed_model = None
+            try:
+                identity_stub.IssueDelegation(identity_pb2.IdentityIssueDelegationRequest(
+                    context=context(), subject_proof=access, audience='runtime',
+                    scope=platform_pb2.ResourceScope(resources=[
+                        *model_scope,
+                        platform_pb2.ResourceRef(kind=platform_pb2.RESOURCE_INSTANCE,
+                                                 id=instance_id)]),
+                    permissions=[policy_pb2.PERMISSION_MODEL_CHAT],
+                    client_certificate_sha256=leaf_fingerprint(tls),
+                    instance_id=instance_id), timeout=10)
+            except grpc.RpcError as error:
+                mixed_model = error.code()
+            require(mixed_model in (grpc.StatusCode.INVALID_ARGUMENT,
+                                    grpc.StatusCode.PERMISSION_DENIED),
+                    'mixed model/instance scope rejected')
+            model_manage = None
+            try:
+                identity_stub.IssueDelegation(identity_pb2.IdentityIssueDelegationRequest(
+                    context=context(), subject_proof=access, audience='runtime',
+                    scope=platform_pb2.ResourceScope(resources=model_scope),
+                    permissions=[policy_pb2.PERMISSION_MODEL_MANAGE],
+                    client_certificate_sha256=leaf_fingerprint(tls),
+                    instance_id=instance_id), timeout=10)
+            except grpc.RpcError as error:
+                model_manage = error.code()
+            require(model_manage in (grpc.StatusCode.INVALID_ARGUMENT,
+                                     grpc.StatusCode.PERMISSION_DENIED),
+                    'non-whitelisted model permission rejected')
+            # Revoke the model grant and verify Exchange of the old model parent fails.
+            identity_stub.RevokeAssignment(identity_pb2.IdentityRevokeAssignmentRequest(
+                context=context(), assignment_id=STATE['model_assignment'],
+                expected_version=1), timeout=10)
+            model_revoked = None
+            try:
+                runtime_channel = channel(identity_endpoint, tls, 'runtime.pem', 'runtime.key')
+                try:
+                    identity_pb2_grpc.IdentityServiceStub(runtime_channel).ExchangeDelegation(
+                        identity_pb2.IdentityExchangeDelegationRequest(
+                            context=context(), parent_proof=model_parent, audience='model',
+                            scope=platform_pb2.ResourceScope(resources=model_scope),
+                            permissions=model_permissions,
+                            client_certificate_sha256=leaf_fingerprint_file(tls,
+                                                                           'runtime.pem')),
+                        timeout=10)
+                finally:
+                    runtime_channel.close()
+            except grpc.RpcError as error:
+                model_revoked = error.code()
+            require(model_revoked in (grpc.StatusCode.PERMISSION_DENIED,
+                                      grpc.StatusCode.UNAUTHENTICATED),
+                    'revoked model grant blocks Exchange')
 
             # Negative: whitelist rejects model.chat bound to an instance resource.
             wrong_permission = None

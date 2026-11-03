@@ -16,8 +16,9 @@ MAX_FILE_BYTES = 64 * 1024
 MAX_TTL_SECONDS = 56
 SCHEMA_VERSION = 1
 AUDIENCE = 'runtime'
-ALLOWED_PERMISSIONS = frozenset({'task.schedule', 'task.read', 'model.chat',
-                                 'model.call.inspect'})
+TASK_PERMISSIONS = frozenset({'task.schedule', 'task.read'})
+MODEL_PERMISSIONS = frozenset({'model.chat', 'model.call.inspect'})
+ALLOWED_PERMISSIONS = TASK_PERMISSIONS | MODEL_PERMISSIONS
 ALLOWED_SCOPE_KINDS = frozenset({'RESOURCE_INSTANCE', 'RESOURCE_INSTALLATION',
                                  'RESOURCE_MODEL'})
 
@@ -65,6 +66,7 @@ def decode_proof(token: str) -> dict:
 
 def validate_document(document: dict, *, expected_instance: str | None = None,
                       expected_installation: str | None = None,
+                      expected_model: str | None = None,
                       now: float | None = None, max_ttl: int = MAX_TTL_SECONDS) -> dict:
     if not isinstance(document, dict):
         _fail('document is not an object')
@@ -90,11 +92,15 @@ def validate_document(document: dict, *, expected_instance: str | None = None,
             any(not isinstance(item, str) or item not in ALLOWED_PERMISSIONS
                 for item in permissions)):
         _fail('permissions are not whitelisted')
+    task_permissions = {item for item in permissions if item in TASK_PERMISSIONS}
+    model_permissions = {item for item in permissions if item in MODEL_PERMISSIONS}
+    if task_permissions and model_permissions:
+        _fail('task and model permissions must use separate sealed files')
     scope = document['scope']
     if not isinstance(scope, list) or not scope or len(scope) > 8:
         _fail('invalid scope')
     seen = set()
-    has_instance = False
+    kinds = set()
     for entry in scope:
         if (not isinstance(entry, dict) or set(entry) != {'kind', 'id'} or
                 entry['kind'] not in ALLOWED_SCOPE_KINDS or
@@ -104,12 +110,26 @@ def validate_document(document: dict, *, expected_instance: str | None = None,
         if key in seen:
             _fail('duplicate scope entry')
         seen.add(key)
-        if entry['kind'] == 'RESOURCE_INSTANCE':
-            if entry['id'] != document['instance_id']:
-                _fail('scope contains a different instance')
-            has_instance = True
-    if not has_instance:
-        _fail('scope must include the target instance')
+        kinds.add(entry['kind'])
+        if entry['kind'] == 'RESOURCE_INSTANCE' and entry['id'] != document['instance_id']:
+            _fail('scope contains a different instance')
+    if task_permissions:
+        if not task_permissions == set(permissions):
+            _fail('task permissions must be the only permissions')
+        if 'RESOURCE_INSTANCE' not in kinds or 'RESOURCE_MODEL' in kinds:
+            _fail('task sealed file requires INSTANCE scope (and optional INSTALLATION)')
+        if kinds - {'RESOURCE_INSTANCE', 'RESOURCE_INSTALLATION'}:
+            _fail('task sealed file has an unrelated scope kind')
+    elif model_permissions:
+        if not model_permissions == set(permissions):
+            _fail('model permissions must be the only permissions')
+        model_entries = [entry for entry in scope if entry['kind'] == 'RESOURCE_MODEL']
+        if len(model_entries) != 1 or len(scope) != 1:
+            _fail('model sealed file requires exactly one MODEL scope and no other scope')
+        if expected_model is not None and model_entries[0]['id'] != expected_model:
+            _fail('scope model does not match requested model')
+    else:
+        _fail('permissions are not whitelisted')
     issued_at, expires_at = document['issued_at'], document['expires_at']
     if (isinstance(issued_at, bool) or isinstance(expires_at, bool) or
             not isinstance(issued_at, int) or not isinstance(expires_at, int)):
@@ -197,6 +217,7 @@ def atomic_write_sealed(path: str, document: dict, *, owner_uid: int | None = No
 
 def read_sealed_delegation(path: str, *, expected_instance: str | None = None,
                            expected_installation: str | None = None,
+                           expected_model: str | None = None,
                            expected_owner: int | None = None, now: float | None = None,
                            max_ttl: int = MAX_TTL_SECONDS) -> dict:
     """Strict Runtime-side reader. It validates the envelope; it never verifies the signature."""
@@ -222,9 +243,10 @@ def read_sealed_delegation(path: str, *, expected_instance: str | None = None,
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
         raise SealedDelegationError('sealed file is not valid JSON') from error
     return validate_document(document, expected_instance=expected_instance,
-                             expected_installation=expected_installation, now=now,
-                             max_ttl=max_ttl)
+                             expected_installation=expected_installation,
+                             expected_model=expected_model, now=now, max_ttl=max_ttl)
 
 
-def file_name(instance_id: str) -> str:
-    return 'instance-delegation-' + instance_id + '.json'
+def file_name(instance_id: str, kind: str = 'task') -> str:
+    suffix = '' if kind == 'task' else '-' + kind
+    return 'instance-delegation-' + instance_id + suffix + '.json'
