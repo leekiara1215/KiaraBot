@@ -690,3 +690,14 @@ revoked sealed parent、Identity 不可达与 Runtime 不可达的 fail-closed�
 无 sealed 父委托的 `p05b_model_chain_fail_closed_e2e` 保持 UNAUTHENTICATED 且 Provider 0 请求。付费外部 Provider
 与目标六服务栈 live 仍属 T07b/P14 环境项；managed Host+P08e 组合由后续矩阵补齐。
 
+
+
+### P05b-12 安全评审 F-1/F-2 修复
+
+- **F-1**：`RuntimeInstanceDelegationProvider` 缓存 key 加入 installation（task/model 均），因此
+  同一 instance 但 installation 不同的请求不会命中旧 child proof，会重新读取 sealed 文件并
+  Exchange；缓存项也记录 installation 供审计。原有同 instance/同 installation 的短缓存行为保留。
+- **F-2**：sealed reader 改为单次 `open(O_RDONLY|O_NOFOLLOW|O_CLOEXEC)`，先 `fstat` 校验
+  regular/0600/owner/1..64KiB，再从该 fd 读取并在读取后复核 dev/inode/size；不再按路径
+  `ifstream` 重开，消除“校验后被替换”的 TOCTOU。符号链接/错 owner/mode/超限/读取期间变化
+  均 fail-closed。

@@ -1763,3 +1763,11 @@ BLOCKED（instance DELETING），不得手工改写 PG 或伪造 receipt。Sched
   目标六服务栈 live 验收。
 
 
+
+
+## P05b-12 sealed reader/cache 加固
+
+sealed 文件读取现在是单 fd O_NOFOLLOW + fstat 校验后从同一 fd 读取，部署侧替换文件必须是
+完整原子 rename；运行中同 UID 写者无法通过“校验后换文件”绕过 regular/0600/owner 检查。
+Runtime provider 缓存 key 含 instance/installation/model/permission，跨 installation 不会
+复用 child proof；刷新/替换 sealed 文件后无需重启 Runtime，但旧缓存最多保留其短 TTL。
