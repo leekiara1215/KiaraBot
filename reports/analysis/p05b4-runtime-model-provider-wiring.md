@@ -1,8 +1,9 @@
 # P05b-4：Runtime → Model 实例委托 provider 接线设计（待 P05b-2 合入后实现）
 
 - 日期：2026-11-03
-- 状态：**前置设计/准备**。P05b-2（task-144，Identity 实例主体父委托签发，ref-infra）
-  合入前只准备 harness/Provider fixture/fail-closed 断言，不实现正向生产链、不伪跑 e2e。
+- 状态：**实现进行中（WIP）**。P05b-7/P05b-8 已合入并改用共享 sealed provider；positive
+  e2e 走通到 Model/真实 HTTP Provider，但 Runtime→Identity ExchangeDelegation 仍失败，已交
+  P05b-9/task-152 诊断；fail-closed e2e 通过，正链不作为验收证据。
 - 基线：main=`ea318d5`；关联：`reports/analysis/p05b-instance-delegation-proposal.md`
   §7 P05b-4、`reports/modules/architecture-p11-model.md`、`architecture-p05-runtime.md`。
 - 非目标：本文不改实现在线行为；proto/权限不变；P05b-2 的签发接口语义由 task-144 决定。
@@ -191,3 +192,19 @@ class RuntimeInstanceDelegationSource {
 UNAUTHENTICATED(2)、Provider requests=0）。正例保持 gated skip（`p05b_model_chain_e2e`，
 SKIP_RETURN_CODE 77），等 P05b-6 合入后去掉 gate 并跑 managed Host+SDK plugin+真实 Provider
 成功/撤销/过期/跨实例/错误证书矩阵；不伪跑正向链。
+
+
+## 9. 当前实现状态（2026-11-03 13:15，WIP）
+
+- 分支 codex/p05b4 已 rebase main d875837；删除本分支重复 Model sealed reader/provider，
+  生产 composition 使用共享 `SealedInstanceDelegationSource` +
+  `RuntimeInstanceDelegationProvider::model_chat_delegation`。
+- 真实正链已到 PluginBridge→Runtime→Model→HTTP Provider（Provider 记录 plugin 请求）；
+  修复 SDK model_chat 响应误读、Model.Chat trace/idempotency、插件 profile installation 权威
+  来源三个真实缺陷。
+- 阻塞：Runtime 进程发起 Identity.ExchangeDelegation 时 Identity 返回 InvalidArgument
+  （gRPC UNAUTHENTICATED；audience=model、单 RESOURCE_MODEL、model.chat），Identity
+  audit 无 ExchangeDelegation 记录；同一 sealed envelope + 同一 runtime leaf 由测试直连则
+  成功。最小复现、envelope、证书指纹、配置与 Identity audit 已交 P05b-9/core-target。
+- 待 P05b-9 修复合入后：rebase、managed Host+SDK plugin 正/负矩阵、激活 CTest 证据、
+  doc/03/05/08/22+P11 报告、全量构建与 p11/p05/p08/p06/p03_postgres 门禁。
