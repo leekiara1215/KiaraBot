@@ -16,7 +16,11 @@ namespace kiarabot::core::platform {
 // Timestamps are RFC3339 UTC strings; expires_at-issued_at must be <=56s. The token is the opaque
 // parent delegation; Identity still verifies its signature/origin on every Exchange.
 struct SealedInstanceDelegationSourceOptions {
+  // Task envelope path: instance-delegation-<instance>.json
   std::string path;
+  // Model envelope path: instance-delegation-<instance>-model.json. When empty, the sibling path
+  // is derived from `path` by inserting "-model" before the final ".json".
+  std::string model_path;
 };
 class SealedInstanceDelegationSource final : public InstanceParentDelegationSource {
 public:
@@ -28,9 +32,16 @@ public:
 
   target::Outcome<InstanceParentDelegation> acquire(const target::SchedulerTaskContext& context,
                                                     target::Permission permission) override;
+  // P05b-8: model envelope (RESOURCE_MODEL + model.chat/model.call.inspect). The model id is
+  // checked against the single MODEL scope; instance/installation still bind the authenticated
+  // bridge context even though the exchange scope is model-only.
+  target::Outcome<InstanceParentDelegation>
+  acquire_model(const target::SchedulerTaskContext& context, std::string_view model_id,
+                target::Permission permission) override;
 
 private:
   explicit SealedInstanceDelegationSource(SealedInstanceDelegationSourceOptions options);
   std::string path_;
+  std::string model_path_;
 };
 } // namespace kiarabot::core::platform

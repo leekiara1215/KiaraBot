@@ -476,7 +476,8 @@ compose_runtime_service(const platform::ProcessConfig& config) {
                 return {};
               }
               auto source = platform::SealedInstanceDelegationSource::create(
-                  {*config.instance_delegation_sealed_file});
+                  {*config.instance_delegation_sealed_file,
+                   config.model_instance_delegation_sealed_file.value_or("")});
               if (const auto* failure = std::get_if<target::Failure>(&source)) {
                 return {};
               }

@@ -23,8 +23,10 @@ t::Failure failure(t::ErrorCode code, t::Recovery recovery = t::Recovery::Diagno
 t::Failure unauthenticated() {
   return failure(t::ErrorCode::Unauthenticated, t::Recovery::Authenticate);
 }
-std::string cache_key(const std::string& instance, t::Permission permission) {
-  return instance + "|" + std::to_string(static_cast<int>(permission));
+std::string cache_key(std::string_view kind, const std::string& instance, std::string_view model,
+                      t::Permission permission) {
+  return std::string{kind} + "|" + instance + "|" + std::string{model} + "|" +
+         std::to_string(static_cast<int>(permission));
 }
 std::optional<t::Sha256Digest> certificate_fingerprint(std::string_view pem) {
   BIO* raw = BIO_new_mem_buf(pem.data(), static_cast<int>(pem.size()));
@@ -80,12 +82,21 @@ RuntimeInstanceDelegationProvider::create(InstanceDelegationProviderOptions opti
   }
 }
 
-t::Outcome<ExchangedDelegation>
-RuntimeInstanceDelegationProvider::exchange(const t::SchedulerTaskContext& context,
-                                            t::Permission permission) {
+t::Outcome<std::string>
+RuntimeInstanceDelegationProvider::scheduler_task_delegation(const t::SchedulerTaskContext& context,
+                                                             t::Permission permission) {
   if (context.owner.value.empty() || context.installation.value.empty() ||
       (permission != t::Permission::TaskSchedule && permission != t::Permission::TaskRead)) {
     return failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput);
+  }
+  const auto key = cache_key("task", context.owner.value, {}, permission);
+  const auto now = delegation_provider_now();
+  {
+    std::lock_guard lock(mutex_);
+    const auto found = cache_.find(key);
+    if (found != cache_.end() && found->second.expires_at > now) {
+      return found->second.proof;
+    }
   }
   auto parent = options_.source->acquire(context, permission);
   if (const auto* rejected = std::get_if<t::Failure>(&parent)) {
@@ -106,18 +117,36 @@ RuntimeInstanceDelegationProvider::exchange(const t::SchedulerTaskContext& conte
   std::vector<t::ResourceRef> scope{
       t::ResourceRef{t::ResourceKind::Instance, t::ResourceId{context.owner.value}},
       t::ResourceRef{t::ResourceKind::Installation, t::ResourceId{context.installation.value}}};
-  return options_.identity->exchange_delegation(delegation.token, t::Service::Scheduler, scope,
-                                                {permission}, leaf_fingerprint_);
+  auto exchanged = options_.identity->exchange_delegation(delegation.token, t::Service::Scheduler,
+                                                          scope, {permission}, leaf_fingerprint_);
+  if (const auto* rejected = std::get_if<t::Failure>(&exchanged)) {
+    return *rejected;
+  }
+  const auto& child = std::get<ExchangedDelegation>(exchanged);
+  const auto expires_at =
+      std::min({now + options_.cache_ttl, child.expires_at, delegation.expires_at,
+                delegation_provider_now() + std::chrono::seconds{56}});
+  if (expires_at <= delegation_provider_now()) {
+    return unauthenticated();
+  }
+  {
+    std::lock_guard lock(mutex_);
+    cache_[key] = Cached{child.proof, expires_at};
+    if (cache_.size() > 256) {
+      cache_.clear();
+      cache_[key] = Cached{child.proof, expires_at};
+    }
+  }
+  return child.proof;
 }
 
-t::Outcome<std::string>
-RuntimeInstanceDelegationProvider::scheduler_task_delegation(const t::SchedulerTaskContext& context,
-                                                             t::Permission permission) {
-  if (context.owner.value.empty() || context.installation.value.empty() ||
-      (permission != t::Permission::TaskSchedule && permission != t::Permission::TaskRead)) {
+t::Outcome<std::string> RuntimeInstanceDelegationProvider::model_chat_delegation(
+    const t::SchedulerTaskContext& context, std::string_view model_id, t::Permission permission) {
+  if (context.owner.value.empty() || context.installation.value.empty() || model_id.empty() ||
+      (permission != t::Permission::ModelChat && permission != t::Permission::ModelCallInspect)) {
     return failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput);
   }
-  const auto key = cache_key(context.owner.value, permission);
+  const auto key = cache_key("model", context.owner.value, model_id, permission);
   const auto now = delegation_provider_now();
   {
     std::lock_guard lock(mutex_);
@@ -126,25 +155,43 @@ RuntimeInstanceDelegationProvider::scheduler_task_delegation(const t::SchedulerT
       return found->second.proof;
     }
   }
-  auto exchanged = exchange(context, permission);
+  auto parent = options_.source->acquire_model(context, model_id, permission);
+  if (const auto* rejected = std::get_if<t::Failure>(&parent)) {
+    return *rejected;
+  }
+  auto& delegation = std::get<InstanceParentDelegation>(parent);
+  if (delegation.expires_at <= delegation_provider_now() || delegation.token.empty() ||
+      delegation.token.size() > 32768) {
+    return unauthenticated();
+  }
+  for (const unsigned char character : delegation.token) {
+    if (character < 33 || character > 126) {
+      return unauthenticated();
+    }
+  }
+  std::vector<t::ResourceRef> scope{
+      t::ResourceRef{t::ResourceKind::Model, t::ResourceId{std::string{model_id}}}};
+  auto exchanged = options_.identity->exchange_delegation(delegation.token, t::Service::Model,
+                                                          scope, {permission}, leaf_fingerprint_);
   if (const auto* rejected = std::get_if<t::Failure>(&exchanged)) {
     return *rejected;
   }
-  const auto& delegation = std::get<ExchangedDelegation>(exchanged);
-  const auto expires_at = std::min({now + options_.cache_ttl, delegation.expires_at,
-                                    delegation_provider_now() + std::chrono::seconds{56}});
+  const auto& child = std::get<ExchangedDelegation>(exchanged);
+  const auto expires_at =
+      std::min({now + options_.cache_ttl, child.expires_at, delegation.expires_at,
+                delegation_provider_now() + std::chrono::seconds{56}});
   if (expires_at <= delegation_provider_now()) {
     return unauthenticated();
   }
   {
     std::lock_guard lock(mutex_);
-    cache_[key] = Cached{delegation.proof, expires_at};
+    cache_[key] = Cached{child.proof, expires_at};
     if (cache_.size() > 256) {
       cache_.clear();
-      cache_[key] = Cached{delegation.proof, expires_at};
+      cache_[key] = Cached{child.proof, expires_at};
     }
   }
-  return delegation.proof;
+  return child.proof;
 }
 
 } // namespace kiarabot::core::platform

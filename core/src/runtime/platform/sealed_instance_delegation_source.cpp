@@ -158,15 +158,43 @@ std::optional<t::ResourceRef> resource_from_json(const Json& value) {
 }
 } // namespace
 
+namespace {
+std::string derive_model_path(const std::string& path) {
+  static constexpr std::string_view kSuffix = ".json";
+  if (path.size() > kSuffix.size() &&
+      std::string_view{path}.substr(path.size() - kSuffix.size()) == kSuffix) {
+    return path.substr(0, path.size() - kSuffix.size()) + "-model" + std::string{kSuffix};
+  }
+  return path + "-model";
+}
+std::optional<t::ResourceKind> kind_from_json(const Json& value) {
+  if (!value.is_object() || value.size() != 2 || !value.contains("kind") || !value.contains("id") ||
+      !value["kind"].is_string() || !value["id"].is_string()) {
+    return std::nullopt;
+  }
+  v1::ResourceKind wire_kind = v1::RESOURCE_KIND_UNSPECIFIED;
+  if (!v1::ResourceKind_Parse(value["kind"].get<std::string>(), &wire_kind)) {
+    return std::nullopt;
+  }
+  const auto decoded = target_codec::from_wire(wire_kind);
+  if (const auto* kind = std::get_if<t::ResourceKind>(&decoded)) {
+    return *kind;
+  }
+  return std::nullopt;
+}
+} // namespace
+
 SealedInstanceDelegationSource::SealedInstanceDelegationSource(
     SealedInstanceDelegationSourceOptions options)
-    : path_(std::move(options.path)) {}
+    : path_(std::move(options.path)),
+      model_path_(options.model_path.empty() ? derive_model_path(path_)
+                                             : std::move(options.model_path)) {}
 
 SealedInstanceDelegationSource::~SealedInstanceDelegationSource() = default;
 
 target::Outcome<std::unique_ptr<SealedInstanceDelegationSource>>
 SealedInstanceDelegationSource::create(SealedInstanceDelegationSourceOptions options) {
-  if (options.path.empty() || options.path.size() > 4096) {
+  if (options.path.empty() || options.path.size() > 4096 || options.model_path.size() > 4096) {
     return failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput);
   }
   try {
@@ -180,14 +208,16 @@ SealedInstanceDelegationSource::create(SealedInstanceDelegationSourceOptions opt
 }
 
 target::Outcome<InstanceParentDelegation>
-SealedInstanceDelegationSource::acquire(const t::SchedulerTaskContext& context,
-                                        t::Permission permission) {
+read_sealed_delegation(const std::string& path, bool model_kind,
+                       const t::SchedulerTaskContext& context, std::string_view model_id,
+                       t::Permission permission) {
   try {
     if (context.owner.value.empty() || context.installation.value.empty() ||
-        !task_permission(permission) || !regular_private_file(path_)) {
+        (model_kind ? !model_permission(permission) : !task_permission(permission)) ||
+        !regular_private_file(path)) {
       return unauthenticated();
     }
-    std::ifstream input(path_, std::ios::binary);
+    std::ifstream input(path, std::ios::binary);
     if (!input) {
       return unauthenticated();
     }
@@ -223,6 +253,8 @@ SealedInstanceDelegationSource::acquire(const t::SchedulerTaskContext& context,
       return unauthenticated();
     }
     std::vector<t::Permission> permissions;
+    bool has_task = false;
+    bool has_model = false;
     for (const auto& entry : document["permissions"]) {
       if (!entry.is_string()) {
         return unauthenticated();
@@ -235,12 +267,16 @@ SealedInstanceDelegationSource::acquire(const t::SchedulerTaskContext& context,
         return unauthenticated();
       }
       permissions.push_back(*decoded);
+      has_task = has_task || task_permission(*decoded);
+      has_model = has_model || model_permission(*decoded);
     }
-    if (std::find(permissions.begin(), permissions.end(), permission) == permissions.end()) {
+    if ((has_task && has_model) || (model_kind && !has_model) || (!model_kind && !has_task) ||
+        std::find(permissions.begin(), permissions.end(), permission) == permissions.end()) {
       return unauthenticated();
     }
     bool has_instance = false;
     bool has_installation = false;
+    bool has_model_scope = false;
     std::vector<t::ResourceRef> scope;
     for (const auto& entry : document["scope"]) {
       const auto decoded = resource_from_json(entry);
@@ -253,9 +289,13 @@ SealedInstanceDelegationSource::acquire(const t::SchedulerTaskContext& context,
       if (decoded->kind == t::ResourceKind::Installation && decoded->id.value != installation) {
         return unauthenticated();
       }
-      if (decoded->kind != t::ResourceKind::Instance &&
-          decoded->kind != t::ResourceKind::Installation &&
-          decoded->kind != t::ResourceKind::Model) {
+      if (decoded->kind == t::ResourceKind::Model) {
+        has_model_scope = true;
+        if (!model_kind || decoded->id.value != model_id) {
+          return unauthenticated();
+        }
+      } else if (decoded->kind != t::ResourceKind::Instance &&
+                 decoded->kind != t::ResourceKind::Installation) {
         return unauthenticated();
       }
       if (std::find(scope.begin(), scope.end(), *decoded) != scope.end()) {
@@ -265,8 +305,20 @@ SealedInstanceDelegationSource::acquire(const t::SchedulerTaskContext& context,
       has_instance = has_instance || decoded->kind == t::ResourceKind::Instance;
       has_installation = has_installation || decoded->kind == t::ResourceKind::Installation;
     }
-    if (!has_instance || !has_installation) {
-      return unauthenticated();
+    if (model_kind) {
+      if (!has_model_scope || scope.size() != 1) {
+        return unauthenticated();
+      }
+    } else if (!has_instance || scope.size() > 2 || !has_installation && scope.size() > 1) {
+      // Task envelope requires INSTANCE; INSTALLATION is optional but, when present, must match.
+      if (!has_instance) {
+        return unauthenticated();
+      }
+    }
+    if (model_kind) {
+      if (model_id.empty() || !canonical_uuid(model_id)) {
+        return unauthenticated();
+      }
     }
     const auto issued = document["issued_at"].get<std::int64_t>();
     const auto expires = document["expires_at"].get<std::int64_t>();
@@ -296,6 +348,18 @@ SealedInstanceDelegationSource::acquire(const t::SchedulerTaskContext& context,
   } catch (...) {
     return unauthenticated();
   }
+}
+
+target::Outcome<InstanceParentDelegation>
+SealedInstanceDelegationSource::acquire(const t::SchedulerTaskContext& context,
+                                        t::Permission permission) {
+  return read_sealed_delegation(path_, false, context, {}, permission);
+}
+
+target::Outcome<InstanceParentDelegation>
+SealedInstanceDelegationSource::acquire_model(const t::SchedulerTaskContext& context,
+                                              std::string_view model_id, t::Permission permission) {
+  return read_sealed_delegation(model_path_, true, context, model_id, permission);
 }
 
 } // namespace kiarabot::core::platform

@@ -695,6 +695,17 @@ ConfigResult load_service_config(const std::string& path, target::Service servic
       }
       keys.insert("instance_delegation_sealed_file");
     }
+    if (document.contains("model_instance_delegation_sealed_file")) {
+      if (service != target::Service::Runtime ||
+          !document["model_instance_delegation_sealed_file"].is_string()) {
+        return ConfigFailure{2, "invalid_model_instance_delegation_sealed_file_config"};
+      }
+      const auto path = document["model_instance_delegation_sealed_file"].get<std::string>();
+      if (path.empty() || path.size() > 4096) {
+        return ConfigFailure{2, "invalid_model_instance_delegation_sealed_file_config"};
+      }
+      keys.insert("model_instance_delegation_sealed_file");
+    }
     if (document.contains("runtime_endpoint")) {
       if (service != target::Service::Scheduler || !document["runtime_endpoint"].is_string() ||
           !endpoint_valid(document["runtime_endpoint"].get<std::string>())) {
@@ -827,6 +838,10 @@ ConfigResult load_service_config(const std::string& path, target::Service servic
     if (document.contains("instance_delegation_sealed_file")) {
       config.instance_delegation_sealed_file =
           document["instance_delegation_sealed_file"].get<std::string>();
+    }
+    if (document.contains("model_instance_delegation_sealed_file")) {
+      config.model_instance_delegation_sealed_file =
+          document["model_instance_delegation_sealed_file"].get<std::string>();
     }
     if (document.contains("model_endpoint")) {
       if (service != target::Service::Runtime || !document["model_endpoint"].is_string() ||

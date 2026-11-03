@@ -33,6 +33,11 @@ public:
   // requested owner permission, and must never extend or cache a token beyond its own expiry.
   virtual target::Outcome<InstanceParentDelegation>
   acquire(const target::SchedulerTaskContext& context, target::Permission permission) = 0;
+  // P05b-8 model envelope source. Implementations must validate RESOURCE_MODEL scope exactly and
+  // never mix task/model permissions.
+  virtual target::Outcome<InstanceParentDelegation>
+  acquire_model(const target::SchedulerTaskContext& context, std::string_view model_id,
+                target::Permission permission) = 0;
 };
 struct InstanceDelegationProviderOptions {
   std::shared_ptr<InstanceParentDelegationSource> source;
@@ -55,12 +60,16 @@ public:
   target::Outcome<std::string>
   scheduler_task_delegation(const target::SchedulerTaskContext& context,
                             target::Permission permission);
+  // P05b-8 generalized model delegation for P05b-4: parent envelope is model-only, Exchange
+  // audience=model with exactly one RESOURCE_MODEL scope; child proof cache key includes model id
+  // and expires no later than the child delegation/profile TTL.
+  target::Outcome<std::string> model_chat_delegation(const target::SchedulerTaskContext& context,
+                                                     std::string_view model_id,
+                                                     target::Permission permission);
 
 private:
   RuntimeInstanceDelegationProvider(InstanceDelegationProviderOptions options,
                                     target::Sha256Digest leaf_fingerprint);
-  target::Outcome<ExchangedDelegation> exchange(const target::SchedulerTaskContext& context,
-                                                target::Permission permission);
 
   InstanceDelegationProviderOptions options_;
   target::Sha256Digest leaf_fingerprint_;

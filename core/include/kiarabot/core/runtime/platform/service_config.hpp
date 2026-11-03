@@ -146,6 +146,9 @@ struct ProcessConfig {
   // deployment refresher owns writes; Runtime validates 0600 regular-file/JSON/expiry/instance/
   // permission and exchanges the token, never caches it beyond expiry. Absent keeps fail-closed.
   std::optional<std::string> instance_delegation_sealed_file = std::nullopt;
+  // P05b-8 Runtime-only: optional model sealed parent file. Absent derives the sibling
+  // instance-delegation-<instance>-model.json from the task path for P05b-4 integration.
+  std::optional<std::string> model_instance_delegation_sealed_file = std::nullopt;
   // Scheduler-only: Runtime internal mTLS endpoint used to deliver TimerTriggered handoffs.
   std::optional<std::string> runtime_endpoint = std::nullopt;
   // Host-only: deployment identity, package/profile allowlists and local journal path.
