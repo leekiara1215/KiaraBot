@@ -60,6 +60,17 @@ if(UNIX)
       LABELS "p04;integration;security;fault" TIMEOUT 120
       ENVIRONMENT "PATH=${BOOTSTRAP_OPENSSL_BIN_DIR}:${BOOTSTRAP_PYTHON_BIN_DIR}:$ENV{PATH}")
   endforeach()
+  add_test(NAME p04_identity_daemon_credentials COMMAND "${KIARABOT_TARGET_PYTHON}"
+    "${CMAKE_SOURCE_DIR}/infrastructure/postgres/tests/run_database_test.py"
+    --pg-bin "${KIARABOT_TEST_PG_BIN}" --openssl "${KIARABOT_TEST_OPENSSL}"
+    --initializer $<TARGET_FILE:kiarabot-pg-initialize>
+    --test "${CMAKE_SOURCE_DIR}/core/tests/platform/identity_credential_daemon_test.py"
+    --test-argument $<TARGET_FILE:kiarabot-identity-bootstrap>
+    --test-argument "${KIARABOT_TEST_PG_BIN}"
+    --test-argument $<TARGET_FILE:kiarabot-identity>)
+  set_tests_properties(p04_identity_daemon_credentials PROPERTIES
+    LABELS "p04;integration;security;fault" TIMEOUT 120
+    ENVIRONMENT "PATH=${BOOTSTRAP_OPENSSL_BIN_DIR}:${BOOTSTRAP_PYTHON_BIN_DIR}:$ENV{PATH};PYTHONPATH=${CMAKE_SOURCE_DIR}/sdk/python/build/generated")
   add_test(NAME p04_identity_daemon_http COMMAND "${KIARABOT_TARGET_PYTHON}"
     "${CMAKE_SOURCE_DIR}/infrastructure/postgres/tests/run_database_test.py"
     --pg-bin "${KIARABOT_TEST_PG_BIN}" --openssl "${KIARABOT_TEST_OPENSSL}"

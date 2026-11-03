@@ -132,3 +132,16 @@ API 的 HTTP 操作面（`/principals` 等）仍为 `not_implemented`，本次�
 - 与 P04-B 共享的 `identity_rpc.cpp/.hpp`、`identity_composition.cpp`、
   `contract_status.json` 仅追加本能力的 handler/option/evidence；集成时按 Lead 顺序
   rebase，冲突由 Lead 协调。
+
+## 2026-11-03 目标进程凭据退出复验
+
+`p04_identity_daemon_credentials` 使用临时 PG16.4、离线 bootstrap、带部署 CA 的 mTLS 客户端与生产 Identity 二进制。测试在 RPC 创建的同一工作负载主体上执行以下断言。
+
+- RegisterPrincipal 创建 Pending 凭据。首次 RotateCredential 后，GetCredentialStatus 返回 Active；进程重启后以原幂等键重放注册得到原来的 Pending 快照，重放轮换得到同一密文收据还原的交付结果。PG 中持久化的密文不含返回的明文。
+- 相同注册键改变受众得到 ABORTED。缺少绑定范围授权的另一个已登记 mTLS peer 重放轮换得到 NOT_FOUND，不能取走秘密。证书绑定轮换返回 UNIMPLEMENTED。RevokeCredential 同键重放保持原版本，撤销后读取状态为 Revoked，重放旧轮换返回 ABORTED。
+- 对 bootstrap 管理员的 Password 执行轮换，旧密码登录返回 UNAUTHENTICATED。用新密码成功登录并验证会话，撤销该版本后登录与会话验证均返回 UNAUTHENTICATED。进程输出检查覆盖已交付秘密和本次签发的会话材料。
+- 中断 PG writer 会话并拒绝新连接，Identity 退出 1，readiness 端点停止响应；依赖未恢复时再次启动仍拒绝就绪。恢复连接并启动新进程后，Identity 就绪且保持先前的撤销版本。
+
+复验命令为 `ctest --test-dir build/full-locked -R '^p04_identity_daemon_(credentials|tls_expiry|tls_cross_expiry)$' -j2 --output-on-failure`。三个用例使用独立临时库和测试证书，覆盖真实服务调用、证书到期及跨越到期时刻的在途登录。
+
+本次增加测试、CTest 注册和脱敏错误定位。五个管理/查询 RPC 的 target 登记已为 implemented，生产 CA 签发及托管仍须在获准环境验证。未改变公共接口、错误、状态、配置或存储定义，因此只补充本能力的测试记录，不更新 doc/01、运维契约或冻结基线。

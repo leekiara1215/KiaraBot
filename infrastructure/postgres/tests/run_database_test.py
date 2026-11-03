@@ -39,9 +39,10 @@ def main():
         if allow_skip and result.returncode == 77:
             return result
         if result.returncode != expected:
-            if Path(command[0]).name in (*driver_names, 'identity_bootstrap_test.py', 'identity_daemon_http_test.py'):
+            if Path(command[0]).name in (*driver_names, 'identity_bootstrap_test.py', 'identity_daemon_http_test.py',
+                                          'identity_credential_daemon_test.py'):
                 for line in result.stderr.decode(errors='replace').splitlines():
-                    if line.startswith(('P03 assertion: ', 'P08 assertion: ', 'P10 ',
+                    if line.startswith(('P03 assertion: ', 'P04 credential check failed at ', 'P08 assertion: ', 'P10 ',
                                           'P14 native single-host', 'P13h-3 ',
                                           'P05b-4 e2e failure: ', 'P05b-4 stage: ')):
                         print(line, flush=True)
