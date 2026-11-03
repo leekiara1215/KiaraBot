@@ -419,49 +419,6 @@ compose_runtime_service(const platform::ProcessConfig& config) {
           }
           state->host_lifecycle = std::move(
               std::get<std::unique_ptr<target::HostLifecycleParticipantPort>>(host_lifecycle));
-          auto built = target::make_runtime_resource_application(
-              {factory,
-               *state->ids,
-               *state->secrets,
-               *state->authorization,
-               {"action.send_message.text.v1", "action.react_message.v1",
-                "action.delete_message.v1", "action.mute_member.v1", "action.kick_member.v1",
-                "action.approve_request.v1"},
-               state->host_lifecycle.get(),
-#ifdef KIARABOT_P13G_TEST_COMPOSITION
-               state->p13g_scheduler.get()
-#else
-               state->scheduler_lifecycle.get()
-#endif
-              });
-          if (const auto* failure = std::get_if<target::Failure>(&built)) {
-            return {};
-          }
-          auto application =
-              std::move(std::get<std::unique_ptr<target::RuntimeResourceApplication>>(built));
-          state->application = application.get();
-          auto audit = target::make_runtime_audit_application({factory, *state->authorization});
-          if (const auto* failure = std::get_if<target::Failure>(&audit)) {
-            return {};
-          }
-          state->audit =
-              std::move(std::get<std::unique_ptr<target::RuntimeAuditApplication>>(audit));
-          auto action = target::make_runtime_action_application(
-              {factory, *state->ids, *state->secrets, state->authorization,
-               target::ActionCapacity{}, target::ActionQuotaLimits{}});
-          if (const auto* failure = std::get_if<target::Failure>(&action)) {
-            return {};
-          }
-          state->actions =
-              std::move(std::get<std::unique_ptr<target::RuntimeActionApplication>>(action));
-          state->action_application = state->actions.get();
-          auto storage = target::make_runtime_storage_application(
-              {factory, *state->ids, *state->authorization});
-          if (const auto* failure = std::get_if<target::Failure>(&storage)) {
-            return {};
-          }
-          state->storage =
-              std::move(std::get<std::unique_ptr<target::RuntimeStorageApplication>>(storage));
           if (config.scheduler_endpoint) {
             grpc::SslCredentialsOptions ssl;
             ssl.pem_root_certs = config.tls.ca;
@@ -526,6 +483,49 @@ compose_runtime_service(const platform::ProcessConfig& config) {
                 std::move(std::get<std::unique_ptr<target::SchedulerLifecycleParticipantPort>>(
                     scheduler_lifecycle));
           }
+          auto built = target::make_runtime_resource_application(
+              {factory,
+               *state->ids,
+               *state->secrets,
+               *state->authorization,
+               {"action.send_message.text.v1", "action.react_message.v1",
+                "action.delete_message.v1", "action.mute_member.v1", "action.kick_member.v1",
+                "action.approve_request.v1"},
+               state->host_lifecycle.get(),
+#ifdef KIARABOT_P13G_TEST_COMPOSITION
+               state->p13g_scheduler.get()
+#else
+               state->scheduler_lifecycle.get()
+#endif
+              });
+          if (const auto* failure = std::get_if<target::Failure>(&built)) {
+            return {};
+          }
+          auto application =
+              std::move(std::get<std::unique_ptr<target::RuntimeResourceApplication>>(built));
+          state->application = application.get();
+          auto audit = target::make_runtime_audit_application({factory, *state->authorization});
+          if (const auto* failure = std::get_if<target::Failure>(&audit)) {
+            return {};
+          }
+          state->audit =
+              std::move(std::get<std::unique_ptr<target::RuntimeAuditApplication>>(audit));
+          auto action = target::make_runtime_action_application(
+              {factory, *state->ids, *state->secrets, state->authorization,
+               target::ActionCapacity{}, target::ActionQuotaLimits{}});
+          if (const auto* failure = std::get_if<target::Failure>(&action)) {
+            return {};
+          }
+          state->actions =
+              std::move(std::get<std::unique_ptr<target::RuntimeActionApplication>>(action));
+          state->action_application = state->actions.get();
+          auto storage = target::make_runtime_storage_application(
+              {factory, *state->ids, *state->authorization});
+          if (const auto* failure = std::get_if<target::Failure>(&storage)) {
+            return {};
+          }
+          state->storage =
+              std::move(std::get<std::unique_ptr<target::RuntimeStorageApplication>>(storage));
           state->task_application = std::make_unique<target::RuntimeTaskApplication>(
               target::RuntimeTaskApplicationDependencies{state->scheduler_tasks.get()});
           if (config.bridge_listen) {
