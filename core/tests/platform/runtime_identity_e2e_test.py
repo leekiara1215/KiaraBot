@@ -73,10 +73,35 @@ def wait_ready(port, expected, timeout=15.0):
 def prepare(root, enrolled):
     """Add the business grant the delegation will carry and Control's management grants."""
     account_id, admin = str(uuid.uuid4()), enrolled['administrator_id']
+    account_read_assignment = str(uuid.uuid4())
     enrolled['administrator_assignments'].append({
-        'assignment_id': str(uuid.uuid4()),
+        'assignment_id': account_read_assignment,
         'permissions': ['account.read', 'account.manage', 'resource.manage', 'resource.read'],
         'scope': [{'kind': 'RESOURCE_ACCOUNT', 'id': account_id}]})
+    instance_id, installation_id = str(uuid.uuid4()), str(uuid.uuid4())
+    manage_assignment = str(uuid.uuid4())
+    instance_task_assignment = str(uuid.uuid4())
+    installation_task_assignment = str(uuid.uuid4())
+    enrolled['administrator_assignments'].extend([
+        {'assignment_id': manage_assignment, 'permissions': ['resource.manage'],
+         'scope': [{'kind': 'RESOURCE_INSTANCE', 'id': instance_id}]},
+        {'assignment_id': instance_task_assignment,
+         'permissions': ['task.schedule', 'task.read'],
+         'scope': [{'kind': 'RESOURCE_INSTANCE', 'id': instance_id}]},
+        {'assignment_id': installation_task_assignment,
+         'permissions': ['task.schedule', 'task.read'],
+         'scope': [{'kind': 'RESOURCE_INSTALLATION', 'id': installation_id}]}])
+    enrolled['control_assignments'].extend([
+        {'assignment_id': str(uuid.uuid4()), 'permissions': ['identity.principal.manage'],
+         'scope': [{'kind': 'RESOURCE_INSTANCE', 'id': instance_id}]},
+        {'assignment_id': str(uuid.uuid4()), 'permissions': ['identity.assignment.manage'],
+         'scope': [{'kind': 'RESOURCE_INSTANCE', 'id': instance_id}]},
+        {'assignment_id': str(uuid.uuid4()), 'permissions': ['identity.assignment.manage'],
+         'scope': [{'kind': 'RESOURCE_INSTALLATION', 'id': installation_id}]}])
+    # Exchange requires the actual Runtime delegator's own explicit issuance capability. Keep the
+    # single bootstrap assignment (fixture asserts exactly one) and add the permission tuple.
+    runtime_assignment = enrolled['platform_peers'][0]['assignments'][0]
+    runtime_assignment['permissions'].append('identity.delegation.issue')
     enrolled['control_assignments'].extend([
         {'assignment_id': str(uuid.uuid4()), 'permissions': ['identity.assignment.manage'],
          'scope': [{'kind': 'RESOURCE_ACCOUNT', 'id': account_id}]},
@@ -88,8 +113,12 @@ def prepare(root, enrolled):
         'assignment_id': str(uuid.uuid4()),
         'permissions': ['log.read', 'audit.read'],
         'scope': [{'kind': 'RESOURCE_CATALOG', 'id': 'control'}]})
-    STATE.update(account_id=account_id,
-                 account_read_assignment=enrolled['administrator_assignments'][1]['assignment_id'])
+    STATE.update(account_id=account_id, instance_id=instance_id,
+                 installation_id=installation_id,
+                 manage_assignment=manage_assignment,
+                 instance_task_assignment=instance_task_assignment,
+                 installation_task_assignment=installation_task_assignment,
+                 account_read_assignment=account_read_assignment)
 
 
 
@@ -206,9 +235,18 @@ def leaf_fingerprint(tls):
     return hashlib.sha256(der).digest()
 
 
+def leaf_fingerprint_file(tls, name):
+    der = ssl.PEM_cert_to_DER_cert((tls / name).read_text())
+    return hashlib.sha256(der).digest()
+
+
 def scenario(root, port, pg_bin, binaries):
     identity_binary, runtime_binary = binaries
     tls = root / 'bootstrap-tls'
+    enrollment = json.loads((root / 'enrollment.json').read_text())
+    enrolled_admin_principal = enrollment['administrator_id']
+    enrolled_control_principal = enrollment['control_id']
+    enrolled_runtime_principal = enrollment['platform_peers'][0]['principal_id']
     identity_security_material(root)
     runtime_db, environment = runtime_database(root, pg_bin, port, sys.argv[3])
     account_id = STATE['account_id']
@@ -272,6 +310,185 @@ def scenario(root, port, pg_bin, binaries):
 
             proof = issue_delegation().delegation.proof
             require(bool(proof), 'delegation proof')
+
+            # ---- P05b-2/B1: Control administrator issues an instance-subject parent delegation.
+            import base64
+            def claims_of(token):
+                _, payload, _ = token.split('.')
+                return json.loads(base64.urlsafe_b64decode(payload + '=' * (-len(payload) % 4)))
+
+            instance_id = STATE['instance_id']
+            installation_id = STATE['installation_id']
+            registered = identity_stub.RegisterPrincipal(
+                identity_pb2.IdentityRegisterPrincipalRequest(
+                    context=context(), principal_kind='plugin',
+                    binding=platform_pb2.ResourceRef(kind=platform_pb2.RESOURCE_INSTANCE,
+                                                     id=instance_id),
+                    allowed_services=['runtime']), timeout=10)
+            instance_principal = registered.principal.principal_id
+            require(bool(instance_principal), 'instance principal registration')
+            identity_sql = postgres(root, pg_bin, port, 'p03_identity')
+            run_sql(identity_sql, "UPDATE kiarabot.principals SET state=0 WHERE id='" +
+                    instance_principal + "'; "
+                    "INSERT INTO kiarabot.authorizations(subject,version,invalidation_dirty) "
+                    "VALUES('" + instance_principal + "',1,false) ON CONFLICT (subject) DO NOTHING;")
+
+            scope = [platform_pb2.ResourceRef(kind=platform_pb2.RESOURCE_INSTANCE, id=instance_id),
+                     platform_pb2.ResourceRef(kind=platform_pb2.RESOURCE_INSTALLATION,
+                                              id=installation_id)]
+            permissions = [policy_pb2.PERMISSION_TASK_SCHEDULE, policy_pb2.PERMISSION_TASK_READ]
+            parent = identity_stub.IssueDelegation(identity_pb2.IdentityIssueDelegationRequest(
+                context=context(), subject_proof=access, audience='runtime',
+                scope=platform_pb2.ResourceScope(resources=scope), permissions=permissions,
+                client_certificate_sha256=leaf_fingerprint(tls),
+                instance_id=instance_id), timeout=10).delegation.proof
+            require(bool(parent), 'instance parent delegation proof')
+            parent_claims = claims_of(parent)
+            parent_body = parent_claims['delegation']
+            require(parent_claims['sub'] == instance_principal and
+                    parent_claims['aud'] == 'runtime' and
+                    parent_body['direct_actor'] == enrolled_control_principal and
+                    parent_body['actor_chain'] == [enrolled_control_principal] and
+                    parent_body['business_hops'] == '1' and
+                    parent_claims['exp'] - parent_claims['iat'] <= 56,
+                    'instance parent claims subject/audience/actor/TTL')
+            audit_rows = run_sql(identity_sql,
+                                 "SELECT count(*) FROM kiarabot.audit_entries WHERE "
+                                 "method='IdentityIssueDelegation/InstanceParent'")
+            require(int(audit_rows or '0') >= 1, 'instance parent issuance audited')
+
+            runtime_channel = channel(identity_endpoint, tls, 'runtime.pem', 'runtime.key')
+            try:
+                runtime_identity = identity_pb2_grpc.IdentityServiceStub(runtime_channel)
+                child = runtime_identity.ExchangeDelegation(
+                    identity_pb2.IdentityExchangeDelegationRequest(
+                        context=context(), parent_proof=parent, audience='scheduler',
+                        scope=platform_pb2.ResourceScope(resources=scope),
+                        permissions=permissions,
+                        client_certificate_sha256=leaf_fingerprint_file(tls, 'runtime.pem')),
+                    timeout=10).delegation.proof
+                child_claims = claims_of(child)
+                child_body = child_claims['delegation']
+                require(child_claims['sub'] == instance_principal and
+                        child_claims['aud'] == 'scheduler' and
+                        child_body['business_hops'] == '2' and
+                        child_body['actor_chain'] == [enrolled_control_principal,
+                                                      enrolled_runtime_principal],
+                        'instance parent exchanges to hops2 instance-subject child')
+            finally:
+                runtime_channel.close()
+
+            # Negative: whitelist rejects model.chat bound to an instance resource.
+            wrong_permission = None
+            try:
+                identity_stub.IssueDelegation(identity_pb2.IdentityIssueDelegationRequest(
+                    context=context(), subject_proof=access, audience='runtime',
+                    scope=platform_pb2.ResourceScope(resources=[
+                        platform_pb2.ResourceRef(kind=platform_pb2.RESOURCE_INSTANCE,
+                                                 id=instance_id)]),
+                    permissions=[policy_pb2.PERMISSION_MODEL_CHAT],
+                    client_certificate_sha256=leaf_fingerprint(tls),
+                    instance_id=instance_id), timeout=10)
+            except grpc.RpcError as error:
+                wrong_permission = error.code()
+            require(wrong_permission in (grpc.StatusCode.INVALID_ARGUMENT,
+                                         grpc.StatusCode.PERMISSION_DENIED),
+                    'instance parent non-whitelisted permission rejected')
+
+            # Negative: revoking the administrator's exact grant invalidates a later Exchange.
+            identity_stub.RevokeAssignment(identity_pb2.IdentityRevokeAssignmentRequest(
+                context=context(), assignment_id=STATE['instance_task_assignment'],
+                expected_version=1), timeout=10)
+            revoked_exchange = None
+            try:
+                runtime_channel = channel(identity_endpoint, tls, 'runtime.pem', 'runtime.key')
+                try:
+                    identity_pb2_grpc.IdentityServiceStub(runtime_channel).ExchangeDelegation(
+                        identity_pb2.IdentityExchangeDelegationRequest(
+                            context=context(), parent_proof=parent, audience='scheduler',
+                            scope=platform_pb2.ResourceScope(resources=scope),
+                            permissions=permissions,
+                            client_certificate_sha256=leaf_fingerprint_file(tls,
+                                                                           'runtime.pem')),
+                        timeout=10)
+                finally:
+                    runtime_channel.close()
+            except grpc.RpcError as error:
+                revoked_exchange = error.code()
+            require(revoked_exchange in (grpc.StatusCode.PERMISSION_DENIED,
+                                         grpc.StatusCode.UNAUTHENTICATED),
+                    'revoked administrator grant blocks Exchange')
+
+            # Negative: a non-authorized administrator scope cannot mint another parent.
+            identity_stub.RevokeAssignment(identity_pb2.IdentityRevokeAssignmentRequest(
+                context=context(), assignment_id=STATE['manage_assignment'],
+                expected_version=1), timeout=10)
+            unauthorized_issue = None
+            try:
+                identity_stub.IssueDelegation(identity_pb2.IdentityIssueDelegationRequest(
+                    context=context(), subject_proof=access, audience='runtime',
+                    scope=platform_pb2.ResourceScope(resources=scope), permissions=permissions,
+                    client_certificate_sha256=leaf_fingerprint(tls),
+                    instance_id=instance_id), timeout=10)
+            except grpc.RpcError as error:
+                unauthorized_issue = error.code()
+            require(unauthorized_issue in (grpc.StatusCode.PERMISSION_DENIED,
+                                           grpc.StatusCode.UNAUTHENTICATED),
+                    'non-authorized administrator cannot mint instance parent')
+
+            # Negative: wrong certificate binding on issuance is rejected before signing.
+            wrong_cert = None
+            try:
+                identity_stub.IssueDelegation(identity_pb2.IdentityIssueDelegationRequest(
+                    context=context(), subject_proof=access, audience='runtime',
+                    scope=platform_pb2.ResourceScope(resources=scope), permissions=permissions,
+                    client_certificate_sha256=leaf_fingerprint_file(tls, 'runtime.pem'),
+                    instance_id=instance_id), timeout=10)
+            except grpc.RpcError as error:
+                wrong_cert = error.code()
+            require(wrong_cert == grpc.StatusCode.INVALID_ARGUMENT,
+                    'instance parent wrong certificate rejected')
+
+            # Negative: nonexistent instance binding (no arbitrary subject parameter exists).
+            missing = None
+            try:
+                identity_stub.IssueDelegation(identity_pb2.IdentityIssueDelegationRequest(
+                    context=context(), subject_proof=access, audience='runtime',
+                    scope=platform_pb2.ResourceScope(resources=[
+                        platform_pb2.ResourceRef(kind=platform_pb2.RESOURCE_INSTANCE,
+                                                 id=str(uuid.uuid4()))]),
+                    permissions=[policy_pb2.PERMISSION_TASK_READ],
+                    client_certificate_sha256=leaf_fingerprint(tls),
+                    instance_id=str(uuid.uuid4())), timeout=10)
+            except grpc.RpcError as error:
+                missing = error.code()
+            require(missing in (grpc.StatusCode.NOT_FOUND, grpc.StatusCode.PERMISSION_DENIED),
+                    'instance parent missing binding rejected')
+
+            # Negative: cross-instance / non-whitelisted scope.
+            cross = None
+            try:
+                identity_stub.IssueDelegation(identity_pb2.IdentityIssueDelegationRequest(
+                    context=context(), subject_proof=access, audience='runtime',
+                    scope=platform_pb2.ResourceScope(resources=[
+                        platform_pb2.ResourceRef(kind=platform_pb2.RESOURCE_INSTANCE,
+                                                 id=instance_id),
+                        platform_pb2.ResourceRef(kind=platform_pb2.RESOURCE_INSTANCE,
+                                                 id=str(uuid.uuid4()))]),
+                    permissions=[policy_pb2.PERMISSION_TASK_READ],
+                    client_certificate_sha256=leaf_fingerprint(tls),
+                    instance_id=instance_id), timeout=10)
+            except grpc.RpcError as error:
+                cross = error.code()
+            require(cross in (grpc.StatusCode.INVALID_ARGUMENT, grpc.StatusCode.PERMISSION_DENIED),
+                    'instance parent cross-instance scope rejected')
+
+            # B1 negatives changed the administrator's authorization version; re-mint the legacy
+            # account delegation for the remaining P13/P14 assertions.
+            proof = issue_delegation().delegation.proof
+            require(bool(proof), 'post-B1 account delegation proof')
+
+            # ---- end P05b-2/B1 positive/negative issuance ----
 
             def get_account():
                 return runtime_stub.GetAccount(runtime_pb2.RuntimeGetAccountRequest(
