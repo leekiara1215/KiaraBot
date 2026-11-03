@@ -74,7 +74,8 @@ class ModelFixture final : public wire::ModelService::Service {
   grpc::Status UpdateModel(grpc::ServerContext*, const wire::ModelUpdateModelRequest* input,
                            wire::ModelUpdateModelResponse* output) override {
     if (!delegated(input->context()) || !input->has_config() ||
-        input->config().model_id() != kModel) {
+        input->config().model_id() != kModel ||
+        input->context().idempotency_key() != "model-update-key-1") {
       return reject(input->context());
     }
     metadata(output->mutable_model());
@@ -102,7 +103,7 @@ class ModelFixture final : public wire::ModelService::Service {
                                     const wire::ModelRotateProviderSecretRequest* input,
                                     wire::ModelRotateProviderSecretResponse* output) override {
     if (!delegated(input->context()) || input->model_id() != kModel ||
-        input->new_secret().empty()) {
+        input->new_secret().empty() || input->context().idempotency_key() != "model-secret-key-1") {
       return reject(input->context());
     }
     output->set_version(9);

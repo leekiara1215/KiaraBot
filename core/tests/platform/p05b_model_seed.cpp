@@ -1,9 +1,9 @@
 // P05b-4 test-only Model provider seeding (fixture driver, not a production write path).
 //
-// The real Control management RPCs (UpdateModel/RotateProviderSecret) are still blocked by
-// missing scope_kinds metadata, so the e2e seeds the real Model database directly. This helper
-// only performs the production crypto sealing (root-key XChaCha20-Poly1305 with the frozen AAD)
-// and prints nonce/ciphertext as hex; the e2e applies plain INSERTs to the owned Model PG database.
+// P05b isolates the plugin-to-provider chain; p14_native_single_host covers Control writes.
+// This helper only performs the production crypto sealing (root-key XChaCha20-Poly1305 with the
+// frozen AAD) and prints nonce/ciphertext as hex; the e2e applies plain INSERTs to the owned Model
+// PG database.
 #include <array>
 #include <cstddef>
 #include <cstdint>

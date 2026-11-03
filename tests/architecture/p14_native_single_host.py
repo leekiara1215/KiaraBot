@@ -12,6 +12,7 @@ Invoked by run_database_test.py as an owned-fixture driver; never accepts an
 external DSN or production endpoint. This is an acceptance harness, not a
 replacement for the Docker Compose single-host deployment.
 """
+import base64
 import http.client
 import json
 import os
@@ -251,7 +252,7 @@ def prepare(root, enrolled):
         {'assignment_id': str(uuid.uuid4()), 'permissions': ['task.read'],
          'scope': [{'kind': 'RESOURCE_INSTALLATION', 'id': installation},
                    {'kind': 'RESOURCE_INSTANCE', 'id': instance}]},
-        {'assignment_id': str(uuid.uuid4()), 'permissions': ['model.read'],
+        {'assignment_id': str(uuid.uuid4()), 'permissions': ['model.read', 'model.manage'],
          'scope': [{'kind': 'RESOURCE_MODEL', 'id': model_id}]}])
     STATE.update(administrator_id=enrolled['administrator_id'],
                  tls=tls_root, account=account, installation=installation, instance=instance,
@@ -273,7 +274,7 @@ def prepare(root, enrolled):
             (['task.read'],
              [{'kind': 'RESOURCE_INSTALLATION', 'id': installation},
               {'kind': 'RESOURCE_INSTANCE', 'id': instance}]),
-            (['model.read'], [{'kind': 'RESOURCE_MODEL', 'id': model_id}])):
+            (['model.read', 'model.manage'], [{'kind': 'RESOURCE_MODEL', 'id': model_id}])):
         enrolled['control_assignments'].append({
             'assignment_id': str(uuid.uuid4()), 'permissions': permissions, 'scope': scope})
 
@@ -485,6 +486,28 @@ def run_checks(root, https_port, configs, binaries, children, endpoints):
         'model': int(endpoints['model_probe'].rsplit(':', 1)[1])}
     for name, probe_port in probe_targets.items():
         require(rt.wait_ready(probe_port, True, 20.0), f'{name} /health/ready HEALTHY')
+    stage('scoped Model management over Control HTTPS')
+    for model_id in (str(uuid.uuid4()), STATE['model_id']):
+        authorized = model_id == STATE['model_id']
+        path = '/api/v1/models/' + model_id
+        config = {'model_id': model_id, 'alias': 'p14-model', 'provider_model': 'test-model',
+                  'provider_kind': 'openai_chat_completions', 'endpoint': 'https://example.invalid/v1',
+                  'timeout_ms': 1000, 'max_concurrency': 1}
+        status, updated = request('PUT', path, {'config': config}, token, idempotency=True)
+        if authorized:
+            require(status == 200 and updated['model']['model_id'] == model_id,
+                    f'UpdateModel exact scope status={status} code={updated.get("code")}')
+        else:
+            require(status == 403 and updated.get('code') == 'PERMISSION_DENIED',
+                    f'UpdateModel cross-model rejection status={status}')
+        rotation = {'model_id': model_id, 'new_secret': base64.b64encode(secrets.token_hex(32).encode()).decode()}
+        status, rotated = request('PUT', path + '/secret', rotation, token, idempotency=True)
+        if authorized:
+            require(status == 200 and rotated == {'version': '1'},
+                    f'RotateProviderSecret exact scope status={status} code={rotated.get("code")}')
+        else:
+            require(status == 403 and rotated.get('code') == 'PERMISSION_DENIED',
+                    f'RotateProviderSecret cross-model rejection status={status}')
     stage('owner-backed success-chain matrix')
     matrix = []
     STATE['matrix'] = matrix

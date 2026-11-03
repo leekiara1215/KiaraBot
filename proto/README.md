@@ -25,6 +25,8 @@ cmake --build build --target kiarabot_proto
 
 协议兼容性检查器由 `kiarabot_descriptor_compatibility` 构建目标提供。它读取当前 descriptor 和上一版本 descriptor，按文件名、语法/包名、消息字段编号及完整字段元数据、oneof、嵌套类型、扩展/保留范围、枚举值和 gRPC 方法签名与选项进行语义比较；不比较 descriptor 二进制序列化结果。新增字段和枚举值允许；**方法新增既有 custom option（如 `scope_kinds`）属 additive 兼容**，但同一 option 号的值改变或删除仍失败；删除或改变其他已发布定义同样会失败。
 
+`ModelService.UpdateModel` 与 `RotateProviderSecret` 的方法描述符均声明 `scope_kinds = RESOURCE_MODEL`。在线授权绑定请求中的模型 ID，并要求 `model.manage`。
+
 ## 生成 Python 代码
 
 ```bash

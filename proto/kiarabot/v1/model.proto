@@ -252,6 +252,7 @@ service ModelService {
     option (default_deadline_ms) = 5000;
     option (max_deadline_ms) = 30000;
     option (requires_online_authorization) = true;
+    option (scope_kinds) = RESOURCE_MODEL;
   }
   rpc RotateProviderSecret(ModelRotateProviderSecretRequest) returns (ModelRotateProviderSecretResponse) {
     option (required_permission) = PERMISSION_MODEL_MANAGE;
@@ -259,6 +260,7 @@ service ModelService {
     option (default_deadline_ms) = 5000;
     option (max_deadline_ms) = 30000;
     option (requires_online_authorization) = true;
+    option (scope_kinds) = RESOURCE_MODEL;
   }
   rpc Chat(ModelGatewayChatRequest) returns (ModelGatewayChatResponse) {
     option (required_permission) = PERMISSION_MODEL_CHAT;

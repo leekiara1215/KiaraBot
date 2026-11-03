@@ -1351,6 +1351,9 @@
       "status": "implemented",
       "max_deadline_ms": 30000,
       "requires_idempotency_key": true,
+      "scope_kinds": [
+        "RESOURCE_MODEL"
+      ],
       "status_note": "P11a/b/c Model service production RPC + P11d Control REST forwarding evidence; REST Control operation status remains separately registered"
     },
     {
@@ -1369,6 +1372,9 @@
       "status": "implemented",
       "max_deadline_ms": 30000,
       "requires_idempotency_key": true,
+      "scope_kinds": [
+        "RESOURCE_MODEL"
+      ],
       "status_note": "P11a/b/c Model service production RPC + P11d Control REST forwarding evidence; REST Control operation status remains separately registered"
     },
     {

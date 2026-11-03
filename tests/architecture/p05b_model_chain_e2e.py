@@ -427,9 +427,8 @@ def after_bootstrap(root: Path) -> None:
         model_id = STATE['model_id']
         endpoint = f'http://127.0.0.1:{provider_port}/v1/chat/completions'
 
-        # Seed the real Model DB through the production PG/crypto adapters. The real Control
-        # management RPC path is still blocked by missing scope_kinds metadata (reported
-        # separately); this fixture driver never substitutes production behavior.
+        # Seed the real Model DB through the production PG/crypto adapters. The separate p14_native_single_host
+        # test exercises Control HTTPS and the real online management authorization path.
         print('P05b-4 stage: model seed', flush=True)
         seeded_material = run([str(model_seed_binary), model_id, 'p05b-fixture-secret',
                                str(root_key), '1', 'x', 'x'])

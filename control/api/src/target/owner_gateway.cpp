@@ -2011,8 +2011,9 @@ std::optional<OwnerHttpResult> OwnerGateway::handle(const OwnerHttpRequest& requ
         resource->set_id(std::string{model_id});
         return scope;
       }();
+      const auto idempotency = header(request, "idempotency-key");
       const auto require_idempotency = [&]() -> std::optional<OwnerHttpResult> {
-        if (!header(request, "idempotency-key")) {
+        if (!idempotency || idempotency->empty()) {
           return OwnerHttpResult{
               400, owner_error_body(wire::INVALID_ARGUMENT, request_id, trace_id, false)};
         }
@@ -2076,6 +2077,7 @@ std::optional<OwnerHttpResult> OwnerGateway::handle(const OwnerHttpRequest& requ
           return invalid();
         }
         fill_context(input.mutable_context(), request, request_id, trace_id);
+        input.mutable_context()->set_idempotency_key(*idempotency);
         auto delegation = dispatch(wire::PERMISSION_MODEL_MANAGE, *model_scope);
         if (const auto* failure = std::get_if<OwnerFailure>(&delegation)) {
           return fail(*failure);
@@ -2165,6 +2167,7 @@ std::optional<OwnerHttpResult> OwnerGateway::handle(const OwnerHttpRequest& requ
           return invalid();
         }
         fill_context(input.mutable_context(), request, request_id, trace_id);
+        input.mutable_context()->set_idempotency_key(*idempotency);
         auto delegation = dispatch(wire::PERMISSION_MODEL_MANAGE, *model_scope);
         if (const auto* failure = std::get_if<OwnerFailure>(&delegation)) {
           return fail(*failure);

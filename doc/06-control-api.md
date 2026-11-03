@@ -748,6 +748,10 @@ P14k 原生栈发现 Identity `CheckAuthorization` 对 4 个 owner 方法返回 
 - 解锁：P14l 可复跑原生 models/action_policy/action_query owner 链；本项不改变任何 wire 字段、
   权限或 RPC，上一层的 Control REST marker/错误映射不变。
 
+## Model 配置更新及 Provider 密钥轮换
+
+Model 配置更新及 Provider 密钥轮换在 Control 转发后按对应 owner RPC 的 `RESOURCE_MODEL` 描述符在线核验；Control 调用者及委托主体须对路径中的模型具有 `model.manage`。两条 PUT 均将 HTTP `Idempotency-Key` 原样写入 owner 请求上下文。
+
 ## P14m：/logs /audit Runtime 源 401 修复（2026-11-03）
 
 native 栈 Control `/logs` `/audit` 的 Runtime 源曾稳定 UNAUTHENTICATED：Runtime 委派 claim
