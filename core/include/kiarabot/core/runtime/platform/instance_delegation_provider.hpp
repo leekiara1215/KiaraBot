@@ -2,6 +2,8 @@
 
 #include <chrono>
 #include <cstddef>
+#include <functional>
+#include <future>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -80,6 +82,11 @@ private:
     std::string installation;
   };
   std::unordered_map<std::string, Cached> cache_;
+  // F-4: one in-flight Exchange per cache key. Waiters share the leader's result; the leader
+  // removes the entry before publishing so a later call can start a fresh attempt after failure.
+  std::unordered_map<std::string, std::shared_future<target::Outcome<std::string>>> inflight_;
+  target::Outcome<std::string> single_flight(
+      const std::string& key, const std::function<target::Outcome<std::string>()>& loader);
 };
 target::TimePoint delegation_provider_now();
 

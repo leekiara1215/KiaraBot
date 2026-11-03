@@ -4,9 +4,11 @@
 #include <new>
 #include <optional>
 #include <string_view>
+#include <future>
 #include <utility>
 #include <vector>
 
+#include <openssl/crypto.h>
 #include <openssl/evp.h>
 #include <openssl/pem.h>
 #include <openssl/x509.h>
@@ -60,7 +62,26 @@ RuntimeInstanceDelegationProvider::RuntimeInstanceDelegationProvider(
     InstanceDelegationProviderOptions options, t::Sha256Digest leaf_fingerprint)
     : options_(std::move(options)), leaf_fingerprint_(leaf_fingerprint) {}
 
-RuntimeInstanceDelegationProvider::~RuntimeInstanceDelegationProvider() = default;
+namespace {
+// F-5 best-effort: cached child proofs are short-lived secrets; overwrite their buffer before
+// releasing capacity. This cannot erase allocator copies or core dumps; deployment guidance still
+// requires disabled core dumps / restricted ptrace on the host trust boundary.
+void zeroize(std::string& secret) {
+  if (!secret.empty()) {
+    OPENSSL_cleanse(secret.data(), secret.size());
+  }
+  secret.clear();
+}
+} // namespace
+
+RuntimeInstanceDelegationProvider::~RuntimeInstanceDelegationProvider() {
+  std::lock_guard lock(mutex_);
+  for (auto& [key, cached] : cache_) {
+    (void)key;
+    zeroize(cached.proof);
+  }
+  cache_.clear();
+}
 
 t::Outcome<std::unique_ptr<RuntimeInstanceDelegationProvider>>
 RuntimeInstanceDelegationProvider::create(InstanceDelegationProviderOptions options) {
@@ -83,6 +104,41 @@ RuntimeInstanceDelegationProvider::create(InstanceDelegationProviderOptions opti
   }
 }
 
+t::Outcome<std::string> RuntimeInstanceDelegationProvider::single_flight(
+    const std::string& key, const std::function<t::Outcome<std::string>()>& loader) {
+  std::shared_future<t::Outcome<std::string>> waiter;
+  std::promise<t::Outcome<std::string>> promise;
+  bool leader = false;
+  {
+    std::lock_guard lock(mutex_);
+    const auto found = inflight_.find(key);
+    if (found != inflight_.end()) {
+      waiter = found->second;
+    } else {
+      waiter = promise.get_future().share();
+      inflight_.emplace(key, waiter);
+      leader = true;
+    }
+  }
+  if (!leader) {
+    return waiter.get();
+  }
+  t::Outcome<std::string> result = failure(t::ErrorCode::Internal);
+  try {
+    result = loader();
+  } catch (const std::bad_alloc&) {
+    result = failure(t::ErrorCode::UpstreamUnavailable, t::Recovery::Backoff);
+  } catch (...) {
+    result = failure(t::ErrorCode::Internal);
+  }
+  {
+    std::lock_guard lock(mutex_);
+    inflight_.erase(key);
+  }
+  promise.set_value(result);
+  return result;
+}
+
 t::Outcome<std::string>
 RuntimeInstanceDelegationProvider::scheduler_task_delegation(const t::SchedulerTaskContext& context,
                                                              t::Permission permission) {
@@ -100,46 +156,62 @@ RuntimeInstanceDelegationProvider::scheduler_task_delegation(const t::SchedulerT
       return found->second.proof;
     }
   }
-  auto parent = options_.source->acquire(context, permission);
-  if (const auto* rejected = std::get_if<t::Failure>(&parent)) {
-    return *rejected;
-  }
-  auto& delegation = std::get<InstanceParentDelegation>(parent);
-  if (delegation.expires_at <= delegation_provider_now()) {
-    return unauthenticated();
-  }
-  if (delegation.token.empty() || delegation.token.size() > 32768) {
-    return unauthenticated();
-  }
-  for (const unsigned char character : delegation.token) {
-    if (character < 33 || character > 126) {
+  return single_flight(key, [this, &context, permission, key]() -> t::Outcome<std::string> {
+    {
+      std::lock_guard lock(mutex_);
+      const auto found = cache_.find(key);
+      if (found != cache_.end() && found->second.expires_at > delegation_provider_now()) {
+        return found->second.proof;
+      }
+    }
+    auto parent = options_.source->acquire(context, permission);
+    if (const auto* rejected = std::get_if<t::Failure>(&parent)) {
+      return *rejected;
+    }
+    auto& delegation = std::get<InstanceParentDelegation>(parent);
+    const auto started = delegation_provider_now();
+    if (delegation.expires_at <= started) {
       return unauthenticated();
     }
-  }
-  std::vector<t::ResourceRef> scope{
-      t::ResourceRef{t::ResourceKind::Instance, t::ResourceId{context.owner.value}},
-      t::ResourceRef{t::ResourceKind::Installation, t::ResourceId{context.installation.value}}};
-  auto exchanged = options_.identity->exchange_delegation(delegation.token, t::Service::Scheduler,
-                                                          scope, {permission}, leaf_fingerprint_);
-  if (const auto* rejected = std::get_if<t::Failure>(&exchanged)) {
-    return *rejected;
-  }
-  const auto& child = std::get<ExchangedDelegation>(exchanged);
-  const auto expires_at =
-      std::min({now + options_.cache_ttl, child.expires_at, delegation.expires_at,
-                delegation_provider_now() + std::chrono::seconds{56}});
-  if (expires_at <= delegation_provider_now()) {
-    return unauthenticated();
-  }
-  {
-    std::lock_guard lock(mutex_);
-    cache_[key] = Cached{child.proof, expires_at, context.installation.value};
-    if (cache_.size() > 256) {
-      cache_.clear();
-      cache_[key] = Cached{child.proof, expires_at, context.installation.value};
+    if (delegation.token.empty() || delegation.token.size() > 32768) {
+      return unauthenticated();
     }
-  }
-  return child.proof;
+    for (const unsigned char character : delegation.token) {
+      if (character < 33 || character > 126) {
+        return unauthenticated();
+      }
+    }
+    std::vector<t::ResourceRef> scope{
+        t::ResourceRef{t::ResourceKind::Instance, t::ResourceId{context.owner.value}},
+        t::ResourceRef{t::ResourceKind::Installation, t::ResourceId{context.installation.value}}};
+    auto exchanged = options_.identity->exchange_delegation(
+        delegation.token, t::Service::Scheduler, scope, {permission}, leaf_fingerprint_);
+    if (const auto* rejected = std::get_if<t::Failure>(&exchanged)) {
+      return *rejected;
+    }
+    const auto& child = std::get<ExchangedDelegation>(exchanged);
+    const auto expires_at =
+        std::min({started + options_.cache_ttl, child.expires_at, delegation.expires_at,
+                  delegation_provider_now() + std::chrono::seconds{56}});
+    if (expires_at <= delegation_provider_now()) {
+      return unauthenticated();
+    }
+    {
+      std::lock_guard lock(mutex_);
+      auto& slot = cache_[key];
+      zeroize(slot.proof);
+      slot = Cached{child.proof, expires_at, context.installation.value};
+      if (cache_.size() > 256) {
+        for (auto& [old_key, old] : cache_) {
+          (void)old_key;
+          zeroize(old.proof);
+        }
+        cache_.clear();
+        cache_[key] = Cached{child.proof, expires_at, context.installation.value};
+      }
+    }
+    return child.proof;
+  });
 }
 
 t::Outcome<std::string> RuntimeInstanceDelegationProvider::model_chat_delegation(
@@ -158,43 +230,60 @@ t::Outcome<std::string> RuntimeInstanceDelegationProvider::model_chat_delegation
       return found->second.proof;
     }
   }
-  auto parent = options_.source->acquire_model(context, model_id, permission);
-  if (const auto* rejected = std::get_if<t::Failure>(&parent)) {
-    return *rejected;
-  }
-  auto& delegation = std::get<InstanceParentDelegation>(parent);
-  if (delegation.expires_at <= delegation_provider_now() || delegation.token.empty() ||
-      delegation.token.size() > 32768) {
-    return unauthenticated();
-  }
-  for (const unsigned char character : delegation.token) {
-    if (character < 33 || character > 126) {
+  return single_flight(key, [this, &context, model_id, permission, key]()
+                           -> t::Outcome<std::string> {
+    {
+      std::lock_guard lock(mutex_);
+      const auto found = cache_.find(key);
+      if (found != cache_.end() && found->second.expires_at > delegation_provider_now()) {
+        return found->second.proof;
+      }
+    }
+    auto parent = options_.source->acquire_model(context, model_id, permission);
+    if (const auto* rejected = std::get_if<t::Failure>(&parent)) {
+      return *rejected;
+    }
+    auto& delegation = std::get<InstanceParentDelegation>(parent);
+    const auto started = delegation_provider_now();
+    if (delegation.expires_at <= started || delegation.token.empty() ||
+        delegation.token.size() > 32768) {
       return unauthenticated();
     }
-  }
-  std::vector<t::ResourceRef> scope{
-      t::ResourceRef{t::ResourceKind::Model, t::ResourceId{std::string{model_id}}}};
-  auto exchanged = options_.identity->exchange_delegation(delegation.token, t::Service::Model,
-                                                          scope, {permission}, leaf_fingerprint_);
-  if (const auto* rejected = std::get_if<t::Failure>(&exchanged)) {
-    return *rejected;
-  }
-  const auto& child = std::get<ExchangedDelegation>(exchanged);
-  const auto expires_at =
-      std::min({now + options_.cache_ttl, child.expires_at, delegation.expires_at,
-                delegation_provider_now() + std::chrono::seconds{56}});
-  if (expires_at <= delegation_provider_now()) {
-    return unauthenticated();
-  }
-  {
-    std::lock_guard lock(mutex_);
-    cache_[key] = Cached{child.proof, expires_at, context.installation.value};
-    if (cache_.size() > 256) {
-      cache_.clear();
-      cache_[key] = Cached{child.proof, expires_at, context.installation.value};
+    for (const unsigned char character : delegation.token) {
+      if (character < 33 || character > 126) {
+        return unauthenticated();
+      }
     }
-  }
-  return child.proof;
+    std::vector<t::ResourceRef> scope{
+        t::ResourceRef{t::ResourceKind::Model, t::ResourceId{std::string{model_id}}}};
+    auto exchanged = options_.identity->exchange_delegation(
+        delegation.token, t::Service::Model, scope, {permission}, leaf_fingerprint_);
+    if (const auto* rejected = std::get_if<t::Failure>(&exchanged)) {
+      return *rejected;
+    }
+    const auto& child = std::get<ExchangedDelegation>(exchanged);
+    const auto expires_at =
+        std::min({started + options_.cache_ttl, child.expires_at, delegation.expires_at,
+                  delegation_provider_now() + std::chrono::seconds{56}});
+    if (expires_at <= delegation_provider_now()) {
+      return unauthenticated();
+    }
+    {
+      std::lock_guard lock(mutex_);
+      auto& slot = cache_[key];
+      zeroize(slot.proof);
+      slot = Cached{child.proof, expires_at, context.installation.value};
+      if (cache_.size() > 256) {
+        for (auto& [old_key, old] : cache_) {
+          (void)old_key;
+          zeroize(old.proof);
+        }
+        cache_.clear();
+        cache_[key] = Cached{child.proof, expires_at, context.installation.value};
+      }
+    }
+    return child.proof;
+  });
 }
 
 } // namespace kiarabot::core::platform

@@ -3,12 +3,15 @@
 // the fail-closed skeleton: no source/missing/expired/wrong-scope/denied parent never reaches a
 // Scheduler call and never fabricates a child proof. It is not positive production-chain evidence.
 #include <array>
+#include <atomic>
 #include <chrono>
 #include <cstdlib>
 #include <iostream>
 #include <memory>
 #include <optional>
 #include <string>
+#include <thread>
+#include <vector>
 
 #include <grpcpp/grpcpp.h>
 #include <openssl/evp.h>
@@ -99,18 +102,22 @@ public:
   grpc::Status ExchangeDelegation(grpc::ServerContext*,
                                   const v1::IdentityExchangeDelegationRequest* request,
                                   v1::IdentityExchangeDelegationResponse* response) override {
+    if (delay_ms.load() > 0) {
+      std::this_thread::sleep_for(std::chrono::milliseconds{delay_ms.load()});
+    }
     ++calls;
     if (reject) {
       return grpc::Status(grpc::StatusCode::PERMISSION_DENIED, "rejected");
     }
     const bool model = request->audience() == "model";
-    if ((!model && (request->scope().resources_size() != 2 ||
-                    request->scope().resources(0).id() != kInstance ||
-                    request->scope().resources(1).id() != kInstallation)) ||
-        (model && (request->scope().resources_size() != 1 ||
-                   request->scope().resources(0).kind() != v1::RESOURCE_MODEL)) ||
-        request->client_certificate_sha256().size() != 32 ||
-        request->parent_proof() != "parent-proof") {
+    const bool bad = (!model && (request->scope().resources_size() != 2 ||
+                                 request->scope().resources(0).id() != kInstance ||
+                                 request->scope().resources(1).id() != kInstallation)) ||
+                     (model && (request->scope().resources_size() != 1 ||
+                                request->scope().resources(0).kind() != v1::RESOURCE_MODEL)) ||
+                     request->client_certificate_sha256().size() != 32 ||
+                     request->parent_proof() != "parent-proof";
+    if (!permissive.load() && bad) {
       return grpc::Status(grpc::StatusCode::UNAUTHENTICATED, "bad exchange request");
     }
     auto* proof = response->mutable_delegation();
@@ -123,7 +130,9 @@ public:
     expires->set_seconds(static_cast<std::int64_t>(seconds.count()) + (expired ? -30 : 30));
     return grpc::Status::OK;
   }
-  int calls = 0;
+  std::atomic<int> calls{0};
+  std::atomic<int> delay_ms{0};
+  std::atomic<bool> permissive{false};
   bool reject = false;
   bool expired = false;
 };
@@ -259,6 +268,36 @@ int main() {
                        context("33333333-3333-4333-8333-333333333333"), t::Permission::TaskRead),
                    t::ErrorCode::PermissionDenied),
         "cross-instance denial preserved");
+
+  // F-4: concurrent cache misses for the same instance/permission must single-flight to exactly
+  // one source read and one Identity Exchange; every waiter observes the leader's proof.
+  identity_service.reject = false;
+  const auto calls_before = identity_service.calls.load();
+  const auto source_before = source->calls;
+  identity_service.delay_ms = 200;
+  identity_service.permissive = true;
+  std::atomic<int> successes{0};
+  std::vector<std::thread> callers;
+  const auto concurrent = context();
+  for (int index = 0; index < 8; ++index) {
+    callers.emplace_back([&] {
+      const auto result = delegation->scheduler_task_delegation(
+          concurrent, t::Permission::TaskSchedule);
+      if (!std::holds_alternative<t::Failure>(result) &&
+          std::get<std::string>(result) == "child-proof") {
+        ++successes;
+      }
+    });
+  }
+  for (auto& caller : callers) {
+    caller.join();
+  }
+  identity_service.delay_ms = 0;
+  identity_service.permissive = false;
+  check(successes.load() == 8, "single-flight waiters all receive the leader proof");
+  check(identity_service.calls.load() == calls_before + 1,
+        "single-flight performs exactly one Exchange");
+  check(source->calls == source_before + 1, "single-flight performs exactly one source read");
 
   auto bad_cert = platform::RuntimeInstanceDelegationProvider::create(
       {source, "not-a-certificate", identity_client.get(), std::chrono::milliseconds{10000}});
