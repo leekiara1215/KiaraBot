@@ -2,7 +2,7 @@
 
 - 版本：v1.3
 - 日期：2026-11-02
-- 状态：P00–P14 实现主体已合入 main（P14q 最终基线 `1213790`，final gate **148/148**；P00n SQLite 写锁竞态修复、P06h 真实链 UNKNOWN/EXPIRED/重连补齐、P10m 优雅停机修复+p10 抽验、P13g test-only 联合 e2e；原生单机栈矩阵 **9 success+1 stable-ok+0 known-gap**）；阶段退出/发布证据矩阵见 [P14n 矩阵](27-phase-exit-evidence.md)，发布门禁见 [P14n 发布清单](28-p14d-release-checklist.md)，最终状态索引见 [P14q 交付状态](../reports/modules/architecture-delivery-status.md)。单机 Docker Compose、两主机演练、远端 CI 与正式发布仍未验收；P13 生产退出未通过（test-only 证据已具备）、P05b/P12 host operation/bootstrap_credential 待用户决策，不能标记阶段全部“已退出”。
+- 状态：P00–P14 实现主体已合入 main（P14q 最终基线 `1213790`，final gate **148/148**；P00n SQLite 写锁竞态修复、P06h 真实链 UNKNOWN/EXPIRED/重连补齐、P10m 优雅停机修复+p10 抽验、P13g test-only 联合 e2e；原生单机栈矩阵 **9 success+1 stable-ok+0 known-gap**）；阶段退出/发布证据矩阵见 [P14n 矩阵](27-phase-exit-evidence.md)，发布门禁见 [P14n 发布清单](28-p14d-release-checklist.md)，最终状态索引见 [P14q 交付状态](../reports/modules/architecture-delivery-status.md)。单机 Docker Compose、两主机演练、远端 CI 与正式发布仍未验收。用户 2026-11-03 决策：P13 批准限定方案 A（仅 ListTasks/CancelTask；P13h-1/2/3 实施中，生产验收未完成）；P05b 批准 B1（P05b-2/4/5、P11h 实施中）；P12 host operation/bootstrap_credential 保持 not_implemented（用户确认）；P14 Docker/gh 环境用户准备中。仍不能标记相关阶段“已退出”。
 - 依据：[方向基线](19-architecture-direction-baseline.md)、[设计总览](20-detailed-architecture-design.md)、[通信方法](21-service-contract-design.md)、[事务与初始化](22-transactions-and-migration-design.md)
 - 当前授权：单机真实QQ群聊首轮已通过，用户要求关闭运行、记录已确认接入方向并推送；本次不继续开发。下一轮按[接入设计](26-real-qq-onboarding.md)独立推进，插件机制、完整账号管理、多主机等非核心内容继续后移。保留独立提交、主对话审查及换机交接；本文件保留后续目标架构迁移路线，未达到退出条件的阶段不能标为完成。
 
@@ -16,7 +16,7 @@
 |---|---|
 | 已完成实现（合入 main，按阶段退出矩阵有测试/报告支撑） | P00–P14 主体：工具链/契约/PG/UoW；Identity/Control 认证；Runtime 资源与授权链；Bridge/投递/SDK/Adapter；Action/配额；Host 期望状态与进程桥；Storage/namespace；Scheduler；Model 网关/Provider/调用者校验；Control owner REST/健康/operation 快照；P13 生命周期清理与 drain；P14 部署文件/CI/备份恢复 runbook |
 | 已实测（真实依赖/本机真实进程） | 真实 PG16.4 事务/投递/存储/调度/Action；真实 TLS Bridge/Control 认证；P14c 本地备份/恢复故障矩阵（RPO=0s、RTO≈4.6–12.1s，小数据量）；P14b-2 workflow 本地静态检查 |
-| 待验收（实现有，验收环境/链路未满足） | 单机 Docker Compose 启动/healthcheck/官方 PG 镜像；P14c 生产数据量 RTO；Control/Panel live 全批准入口与断流恢复；Host/插件 ACK 与三类事实的真实 Compose 链；P05b Runtime 下游实例委托深链路（P11 单链路 e2e 受阻） |
+| 待验收（实现有，验收环境/链路未满足） | 单机 Docker Compose 启动/healthcheck/官方 PG 镜像；P14c 生产数据量 RTO；Control/Panel live 全批准入口与断流恢复；Host/插件 ACK 与三类事实的真实 Compose 链；P05b 深链路（用户已批准 B1，P05b-2/4/5 实施中，单链路未验收） |
 | 延期/未验证（用户已确认或明确排除） | 两主机/跨主机断网演练（默认单主机，延期）；target Control WS（P12a-2 延期，REST operation 快照为 resync 源）；streaming Model（明确不做）；真实模型/真实 QQ 联调（环境/授权单独执行） |
 | 未运行/未就绪 | 远端 GitHub Actions（`gh` 未认证，未 workflow_dispatch）；GHCR 推送/签名/SBOM 发布；正式 release（Environment/凭据/审批未配置）；真实生产部署 |
 
@@ -69,7 +69,7 @@ P00–P02 在同一集成工作分支形成目标构建基线；P01 的契约生
 | P10 | Scheduler 一次性任务及可靠触发 | P06、P03、P04 | 已实现 P10a–P10c、本地实测（ctest p10 5/5、p03_postgres 1/1、SDK tasks pytest 43 passed）并完成 P10g target 登记（6 方法/14 消息/52 字段/4 semantic）；3 个 Control REST 任务 operation 因无限定目录 target 测试未翻；真实环境项见 [architecture-p10-scheduler.md](../reports/modules/architecture-p10-scheduler.md) |
 | P11 | Model 配置/密钥及调用前后记账 | P05、P03、P04 | 未开始 |
 | P12 | Control 与 Panel 核心运行管理全部接线 | P07–P11 | 未开始 |
-| P13 | 生命周期协调、分类清理与容量观测 | P07–P12 | 已实现 P13a–P13e（含 HostBridge live stop/drain 与共享删除隔离）；Scheduler participant 生产委托与 BeginDelete→真实 Host 单链未验收，决策见 reports/modules/architecture-p13f-exit-decision.md；真实满盘/跨主机待 P14 环境 |
+| P13 | 生命周期协调、分类清理与容量观测 | P07–P12 | 已实现 P13a–P13e（含 HostBridge live stop/drain 与共享删除隔离）与 P13g test-only 联合 e2e；用户已批准**限定方案 A**（仅 Scheduler ListTasks/CancelTask，mTLS+白名单+显式授权），P13h-1/2/3 实施中，**生产验收未完成**；生产 Scheduler 委托、真实 Host 回执单链、真实满盘/跨主机仍待验收 |
 | P14 | 跨主机部署、故障矩阵、恢复及统一发布验收 | P13 | 未开始 |
 
 推荐单人执行顺序为表中顺序。多人实施时，P08/P09/P10/P11 可在公共契约与相应前置通过后分别推进；P12 页面骨架可提前开发，但真实能力完成必须等待业务所有者。并行对话与工作区分配见 [执行记录](../reports/execution/2026-11-01-architecture-parallel.md)；按依赖逐波启动，不让业务线程自行发明共享协议。
@@ -320,6 +320,8 @@ PG Repository/COMMIT/锁/并发测试缺少真实 PG 时失败并报告原因，
   operation/delete-restore 的 200/202 与 401/400/403/409/503；修复 owner gRPC ABORTED 等未映射导致
   CONFLICT 降级 503 的真实缺陷。未验收：目标六服务真实栈、Panel 浏览器真实 HTTP、WebSocket 频道（延期）、
   `listActionMetadata`/operation host owner 契约缺口；详见 [P12f 报告](../reports/modules/architecture-control-panel.md)。
+- **P12 用户决策（2026-11-03）**：P12 host operation 与 bootstrap_credential 字段级缺口**保持 not_implemented**（用户确认），只文档化、不扩展契约；`semantic.host.unknown_operation_error` 与 bootstrap_credential 消费闭环不作为本轮发布前实现门槛。P12 其余范围状态不变。
+
 
 
 
@@ -336,7 +338,7 @@ PG Repository/COMMIT/锁/并发测试缺少真实 PG 时失败并报告原因，
 完整决策包/证据矩阵见 `reports/modules/architecture-p13f-exit-decision.md` 与
 `reports/modules/architecture-p13-lifecycle.md`；本任务只读，不改代码/契约。
 
-**P13 退出判定：未通过。** 已实测：重复删除/恢复（`p13_runtime_lifecycle`、
+**P13 退出判定（用户 2026-11-03 决策前）：未通过。** 用户随后批准**限定方案 A**（仅 ListTasks/CancelTask），P13h-1/2/3 实施中，生产验收仍未完成；已实测：重复删除/恢复（`p13_runtime_lifecycle`、
 `p05_runtime_identity_e2e`）、共享 namespace/member 删除隔离（`p06_bridge_acceptance` P13e）、
 Host/SDK drain 与 UNKNOWN 不伪 stopped（`p13_host_sdk_drain`）、清理 fault（缺真实满盘）、
 未决记录保留、30/180 天与 60s 批次、HostBridge live stop/drain 帧（`p08_host_bridge_e2e`）。
@@ -383,7 +385,7 @@ ListTasks/CancelTask（当前仅注入 fake 端口 BLOCKED→Done）；跨主机
 - [ ] [CTest] 所有跨边界契约、错误、权限、状态在唯一来源登记，生成/解析/跨语言验证通过。
 - [ ] [CTest/人工] 内层无Protobuf/JSON/HTTP/SQL依赖，数据库私有权限和运行/迁移身份实际验证。
 - [ ] [CTest] 真实PG事务测试通过，四类业务库及两侧SQLite日志恢复通过。
-- [ ] [CTest+决策] 消息→插件→Action、配置应用、CAS、定时触发、模型未知结果、生命周期全部闭环（P13 生产退出/P05b 仍待决策）。
+- [ ] [CTest+决策] 消息→插件→Action、配置应用、CAS、定时触发、模型未知结果、生命周期全部闭环（P13 生产退出；P05b 单链路；用户已批 A/B1，相关任务实施中，未完成）。
 - [ ] [CTest/部分] 60秒授权上界、高风险在线核验、浏览器REST/WS撤销、秘密不泄露均有故障测试（WS 目标频道延期）。
 - [ ] [人工审查] 旧协议桥接/快照中心/双写路径移除；旧行为不变量已迁为目标测试，不通过删断言凑绿（reference 兼容层保留需人工确认）。
 - [ ] [CTest+独立门禁] full构建、CTest、格式、tidy、边界、API/协议、Python与Panel门禁完整覆盖新增目录，无缺前置导致的静默skip。
@@ -400,6 +402,8 @@ ListTasks/CancelTask（当前仅注入 fake 端口 BLOCKED→Done）；跨主机
 
 证据矩阵见 `reports/modules/architecture-p11-model.md` P11f 段：p11 9/9、p03 真 PG 2/2、SDK 141 passed/23 skipped（Model target e2e deferred）、契约状态 gate PASS。P11 owner/应用/Provider/管理 REST 证据齐备；未验收：真实外部 Provider（T07b）、真实插件→Runtime→Model→Provider 单链路（P05b 待用户确认委托）、readiness composition 真实 TLS harness、目标栈 live。另有 OpenAPI Model REST 状态与 p01_target_roundtrip 的 ListAudit scope_kinds 契约不一致，需 Lead/契约 owner 复核；本任务不改实现/契约。
 
+**P05b/P11 用户决策（2026-11-03）**：用户批准 P05b B1（Control 管理员触发实例主体父委托，Identity 签发扩展），P11 验收要求真实 managed plugin + 真实 HTTP Provider fixture（非 fake port）+撤销/过期/跨实例负例；P05b-2/4/5 与 P11h 已派发/实施中，**单链路尚未验收**；真实付费外部 Provider（T07b）仍为环境项。详见 [用户决策注册](../reports/analysis/user-decisions-2026-11-03.md)。
+
 
 ## P14n 阶段状态（历史，已被 P14o 刷新；2026-11-03，main=e83a988）
 
@@ -410,16 +414,26 @@ ListTasks/CancelTask（当前仅注入 fake 端口 BLOCKED→Done）；跨主机
 - **final gate（当时）**：`build/env/recheck-full-locked.sh` 在 `e83a988` 实跑 full-locked build + **147/147 CTest passed**（`build/logs/recheck-ctest-035852.log`，2026-11-03）；现由 P14q 刷新为 **148/148@1213790**。
 - **P10m**：修复优雅停机 OpenSSL atexit RAND 竞态 SIGSEGV；连续 5 次完整 `p10_timer_e2e`（50 次停机）exit 0，final gate 以此为基础。
 - **原生单机矩阵（P14f/i/j/k/l/m）**：真实五进程 + PG16.4 + mTLS，最终 **success 9 + stable-ok 1 + known-gap 0**；P14m 修复 Runtime 审计源委派 claim 校验（permission 上限/ Catalog id）。
-- **阶段状态**：P07/P08/P10 退出通过；P12 范围完成；P11 分层证据退出（P05b 单链待决策）；P13 **未通过**（决策包 A/C）；P04–P06/P09 主体已实现/本机实测，残余环境项保留。
-- **待用户决策**：P13 方案 A/C、P05b 委托语义、P12 host operation/bootstrap_credential 字段级。
+- **阶段状态**：P07/P08/P10 退出通过；P12 范围完成（host operation/bootstrap_credential 保持 not_implemented）；P11 分层证据退出（用户已批真实 Provider 验收范围，P11h 待依赖）；P13 **生产未退出**（用户已批限定 A，P13h-1/2/3 实施中）；P04–P06/P09 主体已实现/本机实测，残余环境项保留。
+- **用户决策（2026-11-03）**：P13 限定 A 已批（P13h-1/2/3 实施中）；P05b B1 已批（P05b-2/4/5、P11h 实施中）；P12 host operation/bootstrap_credential 保持 not_implemented；P14 Docker/gh 环境用户准备中。见下方决策注册段。
 - **环境/未验收**：单机 Docker Compose、两主机/跨主机、远端 CI、正式发布、真实 QQ/NapCat、真实外部 Model Provider、生产 CA/密钥托管、备份保留/离站。
 
 
 ## P14o 阶段记录（历史；main=23aa6ab，后续由 P14q 刷新）
 
-本任务是 P14n 后的文档刷新：P14o 时 final gate **148/148@23aa6ab**（`build/logs/recheck-ctest-050454.log`，684.68s），新增 `p13_joint_delete_e2e` 36.88s；之后 P00n 定位并修复 `sqlite_runtime_store` 首跑 flake 的 SQLite 双连接写锁竞态，P14q 已刷新到 1213790/687.02s。P10m 优雅停机 SIGSEGV 修复与 p10 抽验通过。P13g 提供 **test-only** 联合生命周期 e2e：BeginDelete→Blocked→Done→DELETED、Restore 不复活凭据、Host 离线/UNKNOWN 保持 Blocked、重复 BeginDelete 幂等；HostCommand identity 增加 instance version 修复复用旧 receipt。该证据**不改变 P13 生产退出未通过**，生产 Scheduler 授权/委托（P13f A/B）仍待用户决策。完整清单见 [architecture-delivery-status.md](../reports/modules/architecture-delivery-status.md)。
+本任务是 P14n 后的文档刷新：P14o 时 final gate **148/148@23aa6ab**（`build/logs/recheck-ctest-050454.log`，684.68s），新增 `p13_joint_delete_e2e` 36.88s；之后 P00n 定位并修复 `sqlite_runtime_store` 首跑 flake 的 SQLite 双连接写锁竞态，P14q 已刷新到 1213790/687.02s。P10m 优雅停机 SIGSEGV 修复与 p10 抽验通过。P13g 提供 **test-only** 联合生命周期 e2e：BeginDelete→Blocked→Done→DELETED、Restore 不复活凭据、Host 离线/UNKNOWN 保持 Blocked、重复 BeginDelete 幂等；HostCommand identity 增加 instance version 修复复用旧 receipt。该证据**不改变 P13 生产退出未通过**；后续用户已批 P13 限定 A 与 P05b B1，P13h/P05b 任务实施中。完整清单见 [architecture-delivery-status.md](../reports/modules/architecture-delivery-status.md)。
 
 
 ## P14q 最终基线刷新（2026-11-03，main=1213790）
 
-本任务把交付证据刷到 `1213790`：final gate **148/148/687.02s**（`build/logs/recheck-ctest-064402.log`；p10_timer 50.48s、p07_adapter_e2e 29.19s、p13_joint_delete_e2e 38.59s、p14_native_single_host 13.09s、sqlite_runtime_store 0.27s）。P00n 修复 SQLite 双连接 CAS 写锁竞态（50ms peer wait + ready latch；首跑 flake 根因消除）；P06h 补齐真实 adapter 链 UNKNOWN/EXPIRED 迟到与 adapter 重连 UNKNOWN evidence；P10m 优雅停机 SIGSEGV 修复与 p10 抽验；P13g test-only 联合 e2e 已具备（生产授权仍待用户决策）。P14 待验收口径不变：Docker Compose、两主机、远端 CI、正式发布均未验收。面板/SDK 过期文案已同步清理（仅事实性文案，不改行为/契约）。
+本任务把交付证据刷到 `1213790`：final gate **148/148/687.02s**（`build/logs/recheck-ctest-064402.log`；p10_timer 50.48s、p07_adapter_e2e 29.19s、p13_joint_delete_e2e 38.59s、p14_native_single_host 13.09s、sqlite_runtime_store 0.27s）。P00n 修复 SQLite 双连接 CAS 写锁竞态（50ms peer wait + ready latch；首跑 flake 根因消除）；P06h 补齐真实 adapter 链 UNKNOWN/EXPIRED 迟到与 adapter 重连 UNKNOWN evidence；P10m 优雅停机 SIGSEGV 修复与 p10 抽验；P13g test-only 联合 e2e 已具备；用户已批限定 A，P13h-1/2/3 实施中，生产验收未完成。P14 待验收口径不变：Docker Compose、两主机、远端 CI、正式发布均未验收。面板/SDK 过期文案已同步清理（仅事实性文案，不改行为/契约）。
+
+
+## 2026-11-03 用户决策注册与实施状态
+
+用户决策已登记到 [reports/analysis/user-decisions-2026-11-03.md](../reports/analysis/user-decisions-2026-11-03.md)；本计划状态只同步口径，不提前宣称完成：
+
+- **P13**：批准限定 A（Scheduler mTLS 平台身份+白名单+显式授权，仅 `ListTasks`/`CancelTask`；ListTasks 限目标实例、CancelTask 核对归属、跨实例/跨安装拒绝）。P13h-1（task-140，pending）、P13h-2（task-141，in_progress）、P13h-3（task-143，blocked_by 140/141）实施中；生产联合验收要求真实 Host 回执+Scheduler 清理 Done 后才 DELETED，UNKNOWN/离线 BLOCKED，Restore 不重建任务/租约。**P13 生产退出仍未完成。**
+- **P05b**：批准 B1（Control 管理员触发实例主体父委托，Identity 签发扩展）。P05b-2（task-144，in_progress）、P05b-4（task-145，blocked_by 144）、P05b-5（task-147，blocked_by 144）、P11h（task-146，blocked_by 145）实施中/待依赖；P11 验收要求真实 managed plugin + 真实 HTTP Provider fixture（非 fake port）+撤销/过期/跨实例负例；真实付费外部 Provider（T07b）仍为环境项。**单链路未验收。**
+- **P12**：host operation/bootstrap_credential 字段级缺口保持 `not_implemented`（用户确认），不扩契约；P12 其余范围状态不变。
+- **P14**：用户将准备 Docker 与 `gh` 登录，之后继续 Compose/CI/release 验收；当前单机 Docker Compose、两主机、远端 CI、正式发布仍未验收。
