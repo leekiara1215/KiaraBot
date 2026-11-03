@@ -28,7 +28,7 @@ message AdapterBinding {
   uint64 version = 3;
 }
 
-// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+// CONTRACT_STATUS: not_implemented - historical reference; see target execution scope.
 message InstallationRecord {
   string installation_id = 1;
   string plugin_type_id = 2;
@@ -37,7 +37,7 @@ message InstallationRecord {
   LifecycleState state = 5;
 }
 
-// CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
+// CONTRACT_STATUS: not_implemented - historical reference; see target execution scope.
 message InstanceRecord {
   string instance_id = 1;
   string installation_id = 2;
@@ -725,7 +725,7 @@ enum ConfigApplyState {
   CONFIG_APPLY_UNAVAILABLE = 4;
 }
 
-// CONTRACT_STATUS: not_implemented - target typed resource query, producer pending.
+// CONTRACT_STATUS: not_implemented - historical reference; see target execution scope.
 message InstanceConfiguration {
   ResourceRef instance = 1;
   uint64 desired_version = 2;
@@ -763,13 +763,13 @@ message RuntimeListAccountsResponse {
   SnapshotInfo snapshot = 2;
 }
 
-// CONTRACT_STATUS: not_implemented - target typed resource query, producer pending.
+// CONTRACT_STATUS: not_implemented - historical reference; see target execution scope.
 message RuntimeGetInstallationRequest {
   RequestContext context = 1;
   ResourceRef resource = 2;
 }
 
-// CONTRACT_STATUS: not_implemented - target typed resource query, producer pending.
+// CONTRACT_STATUS: not_implemented - historical reference; see target execution scope.
 message RuntimeGetInstallationResponse {
   InstallationRecord installation = 1;
   google.protobuf.Timestamp observed_at = 2;
@@ -788,13 +788,13 @@ message RuntimeListInstallationsResponse {
   SnapshotInfo snapshot = 2;
 }
 
-// CONTRACT_STATUS: not_implemented - target typed resource query, producer pending.
+// CONTRACT_STATUS: not_implemented - historical reference; see target execution scope.
 message RuntimeGetInstanceRequest {
   RequestContext context = 1;
   ResourceRef resource = 2;
 }
 
-// CONTRACT_STATUS: not_implemented - target typed resource query, producer pending.
+// CONTRACT_STATUS: not_implemented - historical reference; see target execution scope.
 message RuntimeGetInstanceResponse {
   InstanceRecord instance = 1;
   google.protobuf.Timestamp observed_at = 2;
@@ -863,13 +863,13 @@ message RuntimeListHostsResponse {
   SnapshotInfo snapshot = 2;
 }
 
-// CONTRACT_STATUS: not_implemented - target typed resource query, producer pending.
+// CONTRACT_STATUS: not_implemented - historical reference; see target execution scope.
 message RuntimeGetInstanceConfigRequest {
   RequestContext context = 1;
   ResourceRef resource = 2;
 }
 
-// CONTRACT_STATUS: not_implemented - target typed resource query, producer pending.
+// CONTRACT_STATUS: not_implemented - historical reference; see target execution scope.
 message RuntimeGetInstanceConfigResponse {
   InstanceConfiguration config = 1;
 }

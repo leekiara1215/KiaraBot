@@ -255,7 +255,8 @@ core dump/ptrace 边界写入 doc/05/08。未改 proto/契约。
 
 SetDesiredState 通过预期版本 CAS 更新运行意图，UpdateConfig 产生新期望配置版本。两者在相同请求身份重放时不重复写入；换新幂等键并提交旧版本时返回 CONFLICT。GetInstanceConfig 读回 PENDING、applied_version=0，未注册的实例没有运行 fence。上述验收不覆盖创建入口、注册后 execution/connection generation、插件 ACK 或 Host 实际执行。
 
-两条写 RPC 的完整回执仍待收尾。已观察到变更 request_id、保留幂等键的重试可能缺原 operation；重试不得披露不同资源的 operation。UpdateConfig 返回的 state.version/desired 还可能与同次提交后的实例权威状态不符。仅凭此组测试不能将两条写 RPC 整体登记为完成。
+两条写 RPC 的完整回执仍待收尾。已观察到变更 request_id、保留幂等键的重试可能缺原 operation；跨资源 operation 已在重试路径排除。同一实例内，若调用方把同一幂等键的 SetDesiredState 重试 request_id 改为随后 UpdateConfig 的 operation_id，隔离实测仍会返回该配置操作引用。资源匹配不足以恢复原始命令身份。UpdateConfig 返回的 state.version/desired 还可能与同次提交后的实例权威状态不符。仅凭此组测试不能将两条写 RPC 整体登记为完成。
+
 
 ## 2026-11-03 既有账号和适配器的目标 RPC 复验
 

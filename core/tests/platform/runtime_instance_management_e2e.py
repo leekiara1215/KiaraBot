@@ -47,12 +47,19 @@ def verify(stub, issue, runtime_sql, installation_id, instance_id, context, requ
     installed = stub.GetInstallation(get_install, timeout=5)
     require(installed.installation.manifest == manifest and installed.installation.version == 1 and
             installed.installation.installation_id == installation_id and
+            installed.installation.plugin_type_id == plugin_type and
+            installed.installation.state == p.LIFECYCLE_ACTIVE and
             installed.HasField('observed_at'), 'existing installation projection')
     get_instance = r.RuntimeGetInstanceRequest(context=ctx(inst, perm.PERMISSION_PLUGIN_READ),
                                                 resource=inst)
-    prior = stub.GetInstance(get_instance, timeout=5).instance
+    read = stub.GetInstance(get_instance, timeout=5)
+    require(read.HasField('observed_at'), 'instance query observation')
+    prior = read.instance
     require(prior.instance_id == instance_id and prior.installation_id == installation_id and
-            prior.externally_managed and prior.state.desired == p.DESIRED_STOPPED and
+            prior.externally_managed and prior.state.resource == inst and
+            prior.state.desired == p.DESIRED_STOPPED and prior.state.lifecycle == p.LIFECYCLE_ACTIVE and
+            prior.state.HasField('observed_at') and
+            prior.state.desired_config_version == 1 and prior.state.applied_config_version == 0 and
             prior.state.version == 1 and not prior.state.HasField('fence'), 'existing instance')
     get_config = r.RuntimeGetInstanceConfigRequest(context=ctx(inst, perm.PERMISSION_PLUGIN_CONFIG_READ),
                                                     resource=inst)
@@ -83,7 +90,7 @@ def verify(stub, issue, runtime_sql, installation_id, instance_id, context, requ
     rejected(stub.UpdateConfig, patch, grpc.StatusCode.ABORTED)
     cfg = stub.GetInstanceConfig(get_config, timeout=5).config
     require(cfg.values == patch.config and cfg.instance == inst and cfg.desired_version == 2 and
-            cfg.applied_version == 0 and cfg.apply_state == r.CONFIG_APPLY_PENDING and
+            cfg.applied_version == 0 and cfg.apply_state == r.CONFIG_APPLY_PENDING and cfg.HasField('observed_at') and
             not cfg.HasField('fence'), 'config stays pending until a fenced ACK')
     require(stub.GetInstance(get_instance, timeout=5).instance.state.version == 3,
             'same-key replay and stale writes do not advance version')

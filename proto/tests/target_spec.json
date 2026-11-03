@@ -1554,11 +1554,12 @@
       "deadline_ms": 2000,
       "max_deadline_ms": 5000,
       "server_streaming": false,
-      "status": "not_implemented",
+      "status": "implemented",
       "requires_idempotency_key": false,
       "scope_kinds": [
         "RESOURCE_INSTALLATION"
-      ]
+      ],
+      "status_note": "P05 existing objects, production Runtime/Identity mTLS + PostgreSQL: core/tests/platform/runtime_instance_management_e2e.py"
     },
     {
       "service": "RuntimeService",
@@ -1591,11 +1592,12 @@
       "deadline_ms": 2000,
       "max_deadline_ms": 5000,
       "server_streaming": false,
-      "status": "not_implemented",
+      "status": "implemented",
       "requires_idempotency_key": false,
       "scope_kinds": [
         "RESOURCE_INSTANCE"
-      ]
+      ],
+      "status_note": "P05 existing objects, production Runtime/Identity mTLS + PostgreSQL: core/tests/platform/runtime_instance_management_e2e.py"
     },
     {
       "service": "RuntimeService",
@@ -1699,11 +1701,12 @@
       "deadline_ms": 2000,
       "max_deadline_ms": 5000,
       "server_streaming": false,
-      "status": "not_implemented",
+      "status": "implemented",
       "requires_idempotency_key": false,
       "scope_kinds": [
         "RESOURCE_INSTANCE"
-      ]
+      ],
+      "status_note": "P05 existing objects, production Runtime/Identity mTLS + PostgreSQL: core/tests/platform/runtime_instance_management_e2e.py"
     },
     {
       "service": "IdentityService",

@@ -29,6 +29,8 @@ cmake --build build --target kiarabot_proto
 
 Identity 的 `IssueDelegation`、`ExchangeDelegation`、`CheckAuthorization` 和 `GetVerificationKeys` 已在 target 范围登记。对应证据覆盖短期委托换取、证书绑定、精确资源授权和受权平台读取公钥。Assignment 创建、更新、撤销、失效流和授权快照也已通过真实 mTLS/PG 验证。事件表示失效资源，游标保存完整订阅范围以便续订。
 
+Runtime 的 GetInstallation、GetInstance、GetInstanceConfig 已通过既有资源的生产 mTLS/PG 精确读取验收。目录列表、创建及管理写入回执独立登记。
+
 ## 生成 Python 代码
 
 ```bash

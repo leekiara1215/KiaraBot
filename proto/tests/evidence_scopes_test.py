@@ -1008,6 +1008,20 @@ class ScopeTest(unittest.TestCase):
             ('proto_fields', 'AuthorizationSnapshot.assignments'),
             ('proto_fields', 'AuthorizationSnapshot.authorization_version'),
         }
+        for message, fields in {
+            'RuntimeGetInstallationRequest': 'context resource',
+            'RuntimeGetInstallationResponse': 'installation observed_at',
+            'InstallationRecord': 'installation_id plugin_type_id manifest version state',
+            'RuntimeGetInstanceRequest': 'context resource',
+            'RuntimeGetInstanceResponse': 'instance observed_at',
+            'InstanceRecord': 'instance_id installation_id externally_managed state',
+            'VersionedResourceState': 'resource version lifecycle desired desired_config_version applied_config_version observed_at',
+            'RuntimeGetInstanceConfigRequest': 'context resource',
+            'RuntimeGetInstanceConfigResponse': 'config',
+            'InstanceConfiguration': 'instance desired_version values applied_version apply_state observed_at',
+        }.items():
+            expected.add(('proto_messages', message))
+            expected.update(('proto_fields', f'{message}.{field}') for field in fields.split())
         self.assertEqual(available, expected)
         self.assertEqual(effective_status(registry, 'reference', 'action_payloads', 'ActionEnvelope.send_message'), 'implemented')
         self.assertEqual(effective_status(registry, 'target', 'action_payloads', 'ActionEnvelope.send_message'), 'implemented')

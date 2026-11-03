@@ -5955,7 +5955,17 @@
           "StreamCursor": "implemented",
           "IdentityGetAuthorizationSnapshotRequest": "implemented",
           "IdentityGetAuthorizationSnapshotResponse": "implemented",
-          "AuthorizationSnapshot": "implemented"
+          "AuthorizationSnapshot": "implemented",
+          "RuntimeGetInstallationRequest": "implemented",
+          "RuntimeGetInstallationResponse": "implemented",
+          "InstallationRecord": "implemented",
+          "RuntimeGetInstanceRequest": "implemented",
+          "RuntimeGetInstanceResponse": "implemented",
+          "InstanceRecord": "implemented",
+          "VersionedResourceState": "implemented",
+          "RuntimeGetInstanceConfigRequest": "implemented",
+          "RuntimeGetInstanceConfigResponse": "implemented",
+          "InstanceConfiguration": "implemented"
         },
         "proto_fields": {
           "HostRegisterHostRequest.host": "implemented",
@@ -6618,7 +6628,40 @@
           "IdentityGetAuthorizationSnapshotResponse.snapshot": "implemented",
           "AuthorizationSnapshot.cursor": "implemented",
           "AuthorizationSnapshot.assignments": "implemented",
-          "AuthorizationSnapshot.authorization_version": "implemented"
+          "AuthorizationSnapshot.authorization_version": "implemented",
+          "RuntimeGetInstallationRequest.context": "implemented",
+          "RuntimeGetInstallationRequest.resource": "implemented",
+          "RuntimeGetInstallationResponse.installation": "implemented",
+          "RuntimeGetInstallationResponse.observed_at": "implemented",
+          "InstallationRecord.installation_id": "implemented",
+          "InstallationRecord.plugin_type_id": "implemented",
+          "InstallationRecord.manifest": "implemented",
+          "InstallationRecord.version": "implemented",
+          "InstallationRecord.state": "implemented",
+          "RuntimeGetInstanceRequest.context": "implemented",
+          "RuntimeGetInstanceRequest.resource": "implemented",
+          "RuntimeGetInstanceResponse.instance": "implemented",
+          "RuntimeGetInstanceResponse.observed_at": "implemented",
+          "InstanceRecord.instance_id": "implemented",
+          "InstanceRecord.installation_id": "implemented",
+          "InstanceRecord.externally_managed": "implemented",
+          "InstanceRecord.state": "implemented",
+          "VersionedResourceState.resource": "implemented",
+          "VersionedResourceState.version": "implemented",
+          "VersionedResourceState.lifecycle": "implemented",
+          "VersionedResourceState.desired": "implemented",
+          "VersionedResourceState.desired_config_version": "implemented",
+          "VersionedResourceState.applied_config_version": "implemented",
+          "VersionedResourceState.observed_at": "implemented",
+          "RuntimeGetInstanceConfigRequest.context": "implemented",
+          "RuntimeGetInstanceConfigRequest.resource": "implemented",
+          "RuntimeGetInstanceConfigResponse.config": "implemented",
+          "InstanceConfiguration.instance": "implemented",
+          "InstanceConfiguration.desired_version": "implemented",
+          "InstanceConfiguration.values": "implemented",
+          "InstanceConfiguration.applied_version": "implemented",
+          "InstanceConfiguration.apply_state": "implemented",
+          "InstanceConfiguration.observed_at": "implemented"
         },
         "bridge_methods": {
           "AdapterBridge.Connect": "implemented",
@@ -12582,6 +12625,178 @@
         "proto_fields:AuthorizationSnapshot.authorization_version": [
           "core/src/runtime/platform/identity_rpc.cpp",
           "core/tests/platform/runtime_identity_e2e_test.py"
+        ],
+        "proto_messages:RuntimeGetInstallationRequest": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/tests/platform/runtime_instance_management_e2e.py"
+        ],
+        "proto_fields:RuntimeGetInstallationRequest.context": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/tests/platform/runtime_instance_management_e2e.py"
+        ],
+        "proto_fields:RuntimeGetInstallationRequest.resource": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/tests/platform/runtime_instance_management_e2e.py"
+        ],
+        "proto_messages:RuntimeGetInstallationResponse": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/tests/platform/runtime_instance_management_e2e.py"
+        ],
+        "proto_fields:RuntimeGetInstallationResponse.installation": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/tests/platform/runtime_instance_management_e2e.py"
+        ],
+        "proto_fields:RuntimeGetInstallationResponse.observed_at": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/tests/platform/runtime_instance_management_e2e.py"
+        ],
+        "proto_messages:InstallationRecord": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/tests/platform/runtime_instance_management_e2e.py"
+        ],
+        "proto_fields:InstallationRecord.installation_id": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/tests/platform/runtime_instance_management_e2e.py"
+        ],
+        "proto_fields:InstallationRecord.plugin_type_id": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/tests/platform/runtime_instance_management_e2e.py"
+        ],
+        "proto_fields:InstallationRecord.manifest": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/tests/platform/runtime_instance_management_e2e.py"
+        ],
+        "proto_fields:InstallationRecord.version": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/tests/platform/runtime_instance_management_e2e.py"
+        ],
+        "proto_fields:InstallationRecord.state": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/tests/platform/runtime_instance_management_e2e.py"
+        ],
+        "proto_messages:RuntimeGetInstanceRequest": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/tests/platform/runtime_instance_management_e2e.py"
+        ],
+        "proto_fields:RuntimeGetInstanceRequest.context": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/tests/platform/runtime_instance_management_e2e.py"
+        ],
+        "proto_fields:RuntimeGetInstanceRequest.resource": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/tests/platform/runtime_instance_management_e2e.py"
+        ],
+        "proto_messages:RuntimeGetInstanceResponse": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/tests/platform/runtime_instance_management_e2e.py"
+        ],
+        "proto_fields:RuntimeGetInstanceResponse.instance": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/tests/platform/runtime_instance_management_e2e.py"
+        ],
+        "proto_fields:RuntimeGetInstanceResponse.observed_at": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/tests/platform/runtime_instance_management_e2e.py"
+        ],
+        "proto_messages:InstanceRecord": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/tests/platform/runtime_instance_management_e2e.py"
+        ],
+        "proto_fields:InstanceRecord.instance_id": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/tests/platform/runtime_instance_management_e2e.py"
+        ],
+        "proto_fields:InstanceRecord.installation_id": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/tests/platform/runtime_instance_management_e2e.py"
+        ],
+        "proto_fields:InstanceRecord.externally_managed": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/tests/platform/runtime_instance_management_e2e.py"
+        ],
+        "proto_fields:InstanceRecord.state": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/tests/platform/runtime_instance_management_e2e.py"
+        ],
+        "proto_messages:VersionedResourceState": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/tests/platform/runtime_instance_management_e2e.py"
+        ],
+        "proto_fields:VersionedResourceState.resource": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/tests/platform/runtime_instance_management_e2e.py"
+        ],
+        "proto_fields:VersionedResourceState.version": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/tests/platform/runtime_instance_management_e2e.py"
+        ],
+        "proto_fields:VersionedResourceState.lifecycle": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/tests/platform/runtime_instance_management_e2e.py"
+        ],
+        "proto_fields:VersionedResourceState.desired": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/tests/platform/runtime_instance_management_e2e.py"
+        ],
+        "proto_fields:VersionedResourceState.desired_config_version": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/tests/platform/runtime_instance_management_e2e.py"
+        ],
+        "proto_fields:VersionedResourceState.applied_config_version": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/tests/platform/runtime_instance_management_e2e.py"
+        ],
+        "proto_fields:VersionedResourceState.observed_at": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/tests/platform/runtime_instance_management_e2e.py"
+        ],
+        "proto_messages:RuntimeGetInstanceConfigRequest": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/tests/platform/runtime_instance_management_e2e.py"
+        ],
+        "proto_fields:RuntimeGetInstanceConfigRequest.context": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/tests/platform/runtime_instance_management_e2e.py"
+        ],
+        "proto_fields:RuntimeGetInstanceConfigRequest.resource": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/tests/platform/runtime_instance_management_e2e.py"
+        ],
+        "proto_messages:RuntimeGetInstanceConfigResponse": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/tests/platform/runtime_instance_management_e2e.py"
+        ],
+        "proto_fields:RuntimeGetInstanceConfigResponse.config": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/tests/platform/runtime_instance_management_e2e.py"
+        ],
+        "proto_messages:InstanceConfiguration": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/tests/platform/runtime_instance_management_e2e.py"
+        ],
+        "proto_fields:InstanceConfiguration.instance": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/tests/platform/runtime_instance_management_e2e.py"
+        ],
+        "proto_fields:InstanceConfiguration.desired_version": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/tests/platform/runtime_instance_management_e2e.py"
+        ],
+        "proto_fields:InstanceConfiguration.values": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/tests/platform/runtime_instance_management_e2e.py"
+        ],
+        "proto_fields:InstanceConfiguration.applied_version": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/tests/platform/runtime_instance_management_e2e.py"
+        ],
+        "proto_fields:InstanceConfiguration.apply_state": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/tests/platform/runtime_instance_management_e2e.py"
+        ],
+        "proto_fields:InstanceConfiguration.observed_at": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/tests/platform/runtime_instance_management_e2e.py"
         ]
       }
     }

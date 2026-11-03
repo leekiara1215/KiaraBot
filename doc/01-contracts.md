@@ -37,6 +37,16 @@ P10 Scheduler 的 domain/RPC/PG16.4/三进程 mTLS 交接已本地实测通过�
 | `IdentityGetAuthorizationSnapshotRequest`、`IdentityGetAuthorizationSnapshotRequest.context`、`IdentityGetAuthorizationSnapshotRequest.scope`、`IdentityGetAuthorizationSnapshotRequest.after`、`IdentityGetAuthorizationSnapshotResponse`、`IdentityGetAuthorizationSnapshotResponse.snapshot`、`AuthorizationSnapshot`、`AuthorizationSnapshot.cursor`、`AuthorizationSnapshot.assignments`、`AuthorizationSnapshot.authorization_version` | implemented | P04 Identity.GetAuthorizationSnapshot 与作用域投影，真实 mTLS/PG。 |
 | `IdentityWatchInvalidationsResponse.resync_required` | implemented | P04 失效流断档必须显式要求全量快照；生产 Identity RPC 投影，见 P04-B 记录 |
 | `IdentityWatchInvalidationsResponse.cursor` | implemented | resync 信号携带持久 epoch/sequence 水位；生产 Identity RPC 投影，见 P04-B 记录 |
+| `RuntimeGetInstallationRequest`、`RuntimeGetInstallationRequest.context`、`RuntimeGetInstallationRequest.resource` | implemented | P05 既有安装与实例的精确读取，真实 Runtime/Identity mTLS 与 PG。 |
+| `RuntimeGetInstallationResponse`、`RuntimeGetInstallationResponse.installation`、`RuntimeGetInstallationResponse.observed_at` | implemented | P05 既有安装与实例的精确读取，真实 Runtime/Identity mTLS 与 PG。 |
+| `InstallationRecord`、`InstallationRecord.installation_id`、`InstallationRecord.plugin_type_id`、`InstallationRecord.manifest`、`InstallationRecord.version`、`InstallationRecord.state` | implemented | P05 既有安装与实例的精确读取，真实 Runtime/Identity mTLS 与 PG。 |
+| `RuntimeGetInstanceRequest`、`RuntimeGetInstanceRequest.context`、`RuntimeGetInstanceRequest.resource` | implemented | P05 既有安装与实例的精确读取，真实 Runtime/Identity mTLS 与 PG。 |
+| `RuntimeGetInstanceResponse`、`RuntimeGetInstanceResponse.instance`、`RuntimeGetInstanceResponse.observed_at` | implemented | P05 既有安装与实例的精确读取，真实 Runtime/Identity mTLS 与 PG。 |
+| `InstanceRecord`、`InstanceRecord.instance_id`、`InstanceRecord.installation_id`、`InstanceRecord.externally_managed`、`InstanceRecord.state` | implemented | P05 既有安装与实例的精确读取，真实 Runtime/Identity mTLS 与 PG。 |
+| `VersionedResourceState`、`VersionedResourceState.resource`、`VersionedResourceState.version`、`VersionedResourceState.lifecycle`、`VersionedResourceState.desired`、`VersionedResourceState.desired_config_version`、`VersionedResourceState.applied_config_version`、`VersionedResourceState.observed_at` | implemented | P05 既有安装与实例的精确读取，真实 Runtime/Identity mTLS 与 PG。 |
+| `RuntimeGetInstanceConfigRequest`、`RuntimeGetInstanceConfigRequest.context`、`RuntimeGetInstanceConfigRequest.resource` | implemented | P05 既有安装与实例的精确读取，真实 Runtime/Identity mTLS 与 PG。 |
+| `RuntimeGetInstanceConfigResponse`、`RuntimeGetInstanceConfigResponse.config` | implemented | P05 既有安装与实例的精确读取，真实 Runtime/Identity mTLS 与 PG。 |
+| `InstanceConfiguration`、`InstanceConfiguration.instance`、`InstanceConfiguration.desired_version`、`InstanceConfiguration.values`、`InstanceConfiguration.applied_version`、`InstanceConfiguration.apply_state`、`InstanceConfiguration.observed_at` | implemented | P05 既有安装与实例的精确读取，真实 Runtime/Identity mTLS 与 PG。 |
 | `RuntimeGetOperationRequest` | implemented | P13a/P13c：Runtime 生命周期应用/RPC/参与者进度（P13 target 证据见模块报告） |
 | `RuntimeGetOperationResponse` | implemented | P13a/P13c：Runtime 生命周期应用/RPC/参与者进度（P13 target 证据见模块报告） |
 | `RuntimeBeginDeleteRequest` | implemented | P13a/P13c：Runtime 生命周期应用/RPC/参与者进度（P13 target 证据见模块报告） |
