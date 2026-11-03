@@ -29,6 +29,10 @@ struct SchedulerCommandContext {
   std::string trace_id;
   TimePoint deadline;
   std::string idempotency_key;
+  // P13h-1: set only by the Scheduler platform-peer boundary for Runtime ListTasks/CancelTask.
+  // account is the deployment-authorized account for the instance; both are never client input.
+  bool platform_peer = false;
+  std::optional<ResourceId> account;
 };
 
 struct SchedulerListPage {

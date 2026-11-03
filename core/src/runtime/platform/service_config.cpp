@@ -158,6 +158,68 @@ bool host_profile_shape(const nlohmann::json& value) {
               ? host_name(value["credential_environment"], 128)
               : value["credential_environment"].is_null());
 }
+bool canonical_hex(const nlohmann::json& value) {
+  if (!value.is_string()) {
+    return false;
+  }
+  const auto text = value.get<std::string>();
+  return text.size() == 64 && std::all_of(text.begin(), text.end(), [](char character) {
+           return (character >= '0' && character <= '9') || (character >= 'a' && character <= 'f');
+         });
+}
+bool canonical_uuid_text(const nlohmann::json& value) {
+  if (!value.is_string()) {
+    return false;
+  }
+  const auto text = value.get<std::string>();
+  if (text.size() != 36) {
+    return false;
+  }
+  for (std::size_t index = 0; index < text.size(); ++index) {
+    const char character = text[index];
+    if (index == 8 || index == 13 || index == 18 || index == 23) {
+      if (character != '-')
+        return false;
+    } else if (!((character >= '0' && character <= '9') || (character >= 'a' && character <= 'f') ||
+                 (character >= 'A' && character <= 'F'))) {
+      return false;
+    }
+  }
+  return true;
+}
+bool runtime_peers_shape(const nlohmann::json& value) {
+  if (!value.is_array() || value.size() > 64) {
+    return false;
+  }
+  std::set<std::string> certificates;
+  for (const auto& entry : value) {
+    if (!entry.is_object() ||
+        !exact_keys(entry, {"certificate_sha256", "instance_id", "installation_id", "account_id",
+                            "permissions"}) ||
+        !canonical_hex(entry["certificate_sha256"]) || !canonical_uuid_text(entry["instance_id"]) ||
+        !canonical_uuid_text(entry["installation_id"]) ||
+        !canonical_uuid_text(entry["account_id"]) || !entry["permissions"].is_array() ||
+        entry["permissions"].empty() || entry["permissions"].size() > 2) {
+      return false;
+    }
+    const auto certificate = entry["certificate_sha256"].get<std::string>();
+    if (!certificates.insert(certificate).second) {
+      return false;
+    }
+    std::set<std::string> permissions;
+    for (const auto& permission : entry["permissions"]) {
+      if (!permission.is_string())
+        return false;
+      const auto name = permission.get<std::string>();
+      if (name != "task.read" && name != "task.schedule")
+        return false;
+      if (!permissions.insert(name).second)
+        return false;
+    }
+  }
+  return true;
+}
+
 bool host_peers_shape(const nlohmann::json& value) {
   if (!value.is_array() || value.size() > 64) {
     return false;
@@ -647,6 +709,13 @@ ConfigResult load_service_config(const std::string& path, target::Service servic
       }
       keys.insert("hosts");
     }
+    if (document.contains("runtime_peers")) {
+      if (service != target::Service::Scheduler ||
+          !runtime_peers_shape(document["runtime_peers"])) {
+        return ConfigFailure{2, "invalid_runtime_peers_config"};
+      }
+      keys.insert("runtime_peers");
+    }
     if (document.contains("database")) {
       if (service == target::Service::Control || service == target::Service::Host ||
           !database_shape(document["database"])) {
@@ -686,6 +755,19 @@ ConfigResult load_service_config(const std::string& path, target::Service servic
       for (const auto& entry : document["hosts"]) {
         config.hosts.push_back(
             {entry["host_id"].get<std::string>(), entry["certificate_sha256"].get<std::string>()});
+      }
+    }
+    if (document.contains("runtime_peers")) {
+      for (const auto& entry : document["runtime_peers"]) {
+        SchedulerRuntimePeerMaterial peer{entry["certificate_sha256"].get<std::string>(),
+                                          entry["instance_id"].get<std::string>(),
+                                          entry["installation_id"].get<std::string>(),
+                                          entry["account_id"].get<std::string>(),
+                                          {}};
+        for (const auto& permission : entry["permissions"]) {
+          peer.permissions.push_back(permission.get<std::string>());
+        }
+        config.runtime_peers.push_back(std::move(peer));
       }
     }
     if (document.contains("control_api")) {

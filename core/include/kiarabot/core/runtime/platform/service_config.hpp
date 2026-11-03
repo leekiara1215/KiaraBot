@@ -105,6 +105,16 @@ struct HostPeerMaterial {
   std::string host_id;
   std::string certificate_sha256;
 };
+// P13h-1 Scheduler-only deployment authorization for the Runtime platform peer. Identity
+// platform_peers remains the registration/rotation source; this explicit instance-level allowlist
+// is required before ListTasks/CancelTask are exposed to the Runtime peer.
+struct SchedulerRuntimePeerMaterial {
+  std::string certificate_sha256;
+  std::string instance_id;
+  std::string installation_id;
+  std::string account_id;
+  std::vector<std::string> permissions;
+};
 struct HostMaterial {
   std::string host_id;
   std::string sqlite_path;
@@ -142,6 +152,9 @@ struct ProcessConfig {
   // Runtime-only P08 HostBridge certificate allowlist. Empty means no Host may register
   // (fail closed); entries are deployment configuration, never wire input.
   std::vector<HostPeerMaterial> hosts;
+  // Scheduler-only: Runtime platform-peer instance grants for ListTasks/CancelTask. Empty keeps
+  // the platform path fail-closed; Control/user delegation callers are unaffected.
+  std::vector<SchedulerRuntimePeerMaterial> runtime_peers;
 };
 struct ConfigFailure {
   int exit_code;

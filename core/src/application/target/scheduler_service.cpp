@@ -227,7 +227,10 @@ Outcome<ScheduledTask> SchedulerService::cancel_task(const SchedulerCommandConte
     return not_found();
   }
   auto task = *stored_task;
-  if (task.key.owner != context.owner) {
+  if (task.key.owner != context.owner ||
+      (context.platform_peer && (task.installation != context.installation ||
+                                 (context.account && !task.target.account.value.empty() &&
+                                  task.target.account != *context.account)))) {
     uow->rollback();
     return not_found();
   }
@@ -313,6 +316,13 @@ Outcome<SchedulerListPage> SchedulerService::list_tasks(const SchedulerCommandCo
   auto tasks = std::get<std::vector<ScheduledTask>>(listed);
   SchedulerListPage page;
   for (auto& task : tasks) {
+    if (context.platform_peer && (task.installation != context.installation ||
+                                  (context.account && !task.target.account.value.empty() &&
+                                   task.target.account != *context.account))) {
+      // A Runtime platform peer may only observe its deployment-authorized instance/installation/
+      // account; any mismatched row is withheld rather than exposed or turned into an error.
+      continue;
+    }
     if (state && task.state != *state) {
       continue;
     }

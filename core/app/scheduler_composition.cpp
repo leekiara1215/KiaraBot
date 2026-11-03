@@ -7,6 +7,7 @@
 #include <filesystem>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -14,6 +15,7 @@
 #include <openssl/rand.h>
 
 #include "kiarabot/core/application/target/scheduler_service.hpp"
+#include "kiarabot/core/runtime/platform/peer_certificate.hpp"
 #include "kiarabot/core/runtime/platform/scheduler_identity_client.hpp"
 #include "kiarabot/core/runtime/platform/scheduler_rpc.hpp"
 #include "kiarabot/core/runtime/platform/scheduler_runtime_client.hpp"
@@ -290,6 +292,57 @@ target::Outcome<platform::ServiceComposition> compose(const platform::ProcessCon
       target::kInstallationTaskCapacity, runtime_client.get(), keep_alive});
 
   platform::SchedulerRpcOptions rpc_options;
+  if (!config.runtime_peers.empty()) {
+    rpc_options.platform_peer = [peers = config.runtime_peers](grpc::ServerContext& transport,
+                                                               std::string_view method,
+                                                               const v1::ResourceScope* scope)
+        -> target::Outcome<std::optional<platform::SchedulerPlatformPeer>> {
+      if (!method.ends_with("/ListTasks") && !method.ends_with("/CancelTask")) {
+        return std::optional<platform::SchedulerPlatformPeer>{};
+      }
+      auto evidence = platform::extract_peer_certificate(*transport.auth_context());
+      if (const auto* rejected = std::get_if<target::Failure>(&evidence)) {
+        return std::optional<platform::SchedulerPlatformPeer>{};
+      }
+      const auto& certificate = std::get<platform::PeerCertificateEvidence>(evidence);
+      bool runtime_san = false;
+      for (const auto& san : certificate.uri_sans) {
+        if (san.starts_with("spiffe://kiarabot/runtime")) {
+          runtime_san = true;
+          break;
+        }
+      }
+      static constexpr char kHex[] = "0123456789abcdef";
+      std::string fingerprint;
+      fingerprint.reserve(64);
+      for (const auto byte : certificate.leaf_fingerprint.bytes) {
+        const auto value = static_cast<unsigned char>(byte);
+        fingerprint.push_back(kHex[value >> 4]);
+        fingerprint.push_back(kHex[value & 0x0f]);
+      }
+      for (const auto& peer : peers) {
+        if (peer.certificate_sha256 != fingerprint) {
+          continue;
+        }
+        if (!runtime_san) {
+          // An allowlisted fingerprint claiming a non-Runtime SAN is a configuration/identity
+          // mismatch: fail closed instead of falling back to the delegated caller path.
+          return failure(target::ErrorCode::Unauthenticated, target::Recovery::Authenticate);
+        }
+        platform::SchedulerPlatformPeer result;
+        result.instance = target::InstanceId{peer.instance_id};
+        result.installation = target::InstallationId{peer.installation_id};
+        result.account = target::ResourceId{peer.account_id};
+        for (const auto& permission : peer.permissions) {
+          result.task_read = result.task_read || permission == "task.read";
+          result.task_schedule = result.task_schedule || permission == "task.schedule";
+        }
+        return std::optional<platform::SchedulerPlatformPeer>{std::move(result)};
+      }
+      // Unregistered certificate: leave the legacy delegated-authorizer path to decide.
+      return std::optional<platform::SchedulerPlatformPeer>{};
+    };
+  }
   rpc_options.authorize =
       [identity_client](
           grpc::ServerContext& transport, const v1::RequestContext& request,

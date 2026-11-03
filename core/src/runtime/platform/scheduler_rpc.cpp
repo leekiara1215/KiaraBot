@@ -460,6 +460,66 @@ t::Outcome<Prepared> prepare(grpc::ServerContext& transport, const v1::RequestCo
   return prepared;
 }
 
+t::Outcome<std::optional<Prepared>>
+prepare_platform_peer(grpc::ServerContext& transport, const v1::RequestContext& input,
+                      std::string_view method, const v1::ResourceScope* scope, bool idempotent,
+                      const SchedulerRpcOptions& options) {
+  if (!options.platform_peer) {
+    return std::optional<Prepared>{};
+  }
+  auto peer = options.platform_peer(transport, method, scope);
+  if (const auto* rejected = std::get_if<t::Failure>(&peer)) {
+    return *rejected;
+  }
+  auto selected = std::get<std::optional<SchedulerPlatformPeer>>(peer);
+  if (!selected) {
+    return std::optional<Prepared>{};
+  }
+  if (!canonical_uuid(input.request_id()) || !canonical_uuid(input.trace_id()) ||
+      !input.has_deadline()) {
+    return failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput);
+  }
+  const auto decoded = codec::from_wire(input.deadline());
+  const auto* requested = std::get_if<t::TimePoint>(&decoded);
+  if (!requested) {
+    return failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput);
+  }
+  auto effective = std::min(*requested, now() + std::chrono::seconds{30});
+  if (effective <= now() || transport.IsCancelled()) {
+    return failure(t::ErrorCode::Timeout, t::Recovery::QuerySameIdentity);
+  }
+  if (idempotent && !safe_key(input.idempotency_key())) {
+    return failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput);
+  }
+  const bool list = method.ends_with("/ListTasks");
+  const bool cancel = method.ends_with("/CancelTask");
+  if (!list && !cancel) {
+    return failure(t::ErrorCode::Unauthenticated, t::Recovery::Authenticate);
+  }
+  if ((list && !selected->task_read) || (cancel && !selected->task_schedule)) {
+    return failure(t::ErrorCode::PermissionDenied, t::Recovery::ReadCurrent);
+  }
+  if (scope == nullptr || scope->resources_size() != 1 ||
+      scope->resources(0).kind() != v1::RESOURCE_INSTANCE ||
+      scope->resources(0).id() != selected->instance.value) {
+    return failure(t::ErrorCode::PermissionDenied, t::Recovery::ReadCurrent);
+  }
+  Prepared prepared;
+  prepared.request = input.request_id();
+  prepared.trace = input.trace_id();
+  prepared.command.owner = selected->instance;
+  prepared.command.installation = selected->installation;
+  prepared.command.account = selected->account;
+  prepared.command.platform_peer = true;
+  prepared.command.request_id = prepared.request;
+  prepared.command.trace_id = prepared.trace;
+  prepared.command.deadline = effective;
+  if (idempotent) {
+    prepared.command.idempotency_key = input.idempotency_key();
+  }
+  return std::optional<Prepared>{std::move(prepared)};
+}
+
 class SchedulerRpc final : public v1::SchedulerService::Service {
 public:
   SchedulerRpc(t::SchedulerCommandHandler& application, SchedulerRpcOptions options)
@@ -515,14 +575,25 @@ public:
   grpc::Status CancelTask(grpc::ServerContext* context_,
                           const v1::SchedulerCancelTaskRequest* request,
                           v1::SchedulerCancelTaskResponse* response) override {
-    const auto prepared =
-        prepare(*context_, request->context(), "kiarabot.v1.SchedulerService/CancelTask",
-                &request->scope(), true, options_);
-    if (const auto* rejected = std::get_if<t::Failure>(&prepared)) {
+    auto platform = prepare_platform_peer(*context_, request->context(),
+                                          "kiarabot.v1.SchedulerService/CancelTask",
+                                          &request->scope(), true, options_);
+    if (const auto* rejected = std::get_if<t::Failure>(&platform)) {
       return error_status(*rejected, request->context().request_id(),
                           request->context().trace_id());
     }
-    const auto& command = std::get<Prepared>(prepared);
+    std::optional<Prepared> selected = std::get<std::optional<Prepared>>(std::move(platform));
+    if (!selected) {
+      const auto prepared =
+          prepare(*context_, request->context(), "kiarabot.v1.SchedulerService/CancelTask",
+                  &request->scope(), true, options_);
+      if (const auto* rejected = std::get_if<t::Failure>(&prepared)) {
+        return error_status(*rejected, request->context().request_id(),
+                            request->context().trace_id());
+      }
+      selected = std::get<Prepared>(prepared);
+    }
+    const auto& command = *selected;
     auto cancelled = application_.cancel_task(command.command, request->task_id());
     if (const auto* rejected = std::get_if<t::Failure>(&cancelled)) {
       return error_status(*rejected, command.request, command.trace);
@@ -558,14 +629,25 @@ public:
   grpc::Status ListTasks(grpc::ServerContext* context_,
                          const v1::SchedulerListTasksRequest* request,
                          v1::SchedulerListTasksResponse* response) override {
-    const auto prepared =
-        prepare(*context_, request->context(), "kiarabot.v1.SchedulerService/ListTasks",
-                &request->scope(), false, options_);
-    if (const auto* rejected = std::get_if<t::Failure>(&prepared)) {
+    auto platform = prepare_platform_peer(*context_, request->context(),
+                                          "kiarabot.v1.SchedulerService/ListTasks",
+                                          &request->scope(), false, options_);
+    if (const auto* rejected = std::get_if<t::Failure>(&platform)) {
       return error_status(*rejected, request->context().request_id(),
                           request->context().trace_id());
     }
-    const auto& command = std::get<Prepared>(prepared);
+    std::optional<Prepared> selected = std::get<std::optional<Prepared>>(std::move(platform));
+    if (!selected) {
+      const auto prepared =
+          prepare(*context_, request->context(), "kiarabot.v1.SchedulerService/ListTasks",
+                  &request->scope(), false, options_);
+      if (const auto* rejected = std::get_if<t::Failure>(&prepared)) {
+        return error_status(*rejected, request->context().request_id(),
+                            request->context().trace_id());
+      }
+      selected = std::get<Prepared>(prepared);
+    }
+    const auto& command = *selected;
     std::optional<t::TaskState> state;
     if (request->has_state()) {
       state = task_state_from_wire(request->state());
