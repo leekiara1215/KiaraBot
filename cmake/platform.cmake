@@ -663,11 +663,17 @@ if(EXISTS "${CMAKE_SOURCE_DIR}/sdk/python/.venv/bin/python")
     LABELS "p11;unit;fault" TIMEOUT 30)
 endif()
 
-# DRAFT (P11h dependency task-145/P05b-4 not merged yet): do not enable before the Runtime
-# instance-delegation provider and host.model.v1 bridge feature are available. The eventual test
-# command must pass the real Runtime/model/host binaries and provider fixture endpoint:
+# DRAFT (P11h dependency P05b-4 still merging): P05b-8 already provides
+# InstanceParentDelegationSource::acquire_model + RuntimeInstanceDelegationProvider::
+# model_chat_delegation + model_instance_delegation_sealed_file. Do not enable before P05b-4 wires
+# RuntimeModelClient to that provider, adds host.model.v1 to the bridge supported features and
+# ships the canonical real HTTP provider fixture. P05b-9 already gives ExchangeDelegation its
+# separate 2s/5s Identity client budget, so no P11h config field is needed; P05b-4 CTests are
+# expected to be p05b_model_chain_e2e/p05b_model_chain_fail_closed_e2e/p05b_provider_fixture. The eventual test command must pass
+# the real Runtime/model/host binaries plus the P05b-4 provider mode/state files:
 #   add_test(NAME p11h_managed_model_e2e COMMAND "${KIARABOT_TARGET_PYTHON}"
 #     "${CMAKE_SOURCE_DIR}/tests/architecture/p11h_managed_model_e2e.py"
-#     --runtime $<TARGET_FILE:kiarabot-runtime> ... )
+#     --runtime $<TARGET_FILE:kiarabot-runtime> --model $<TARGET_FILE:kiarabot-model>
+#     --host $<TARGET_FILE:kiarabot-plugin-host> --provider-mode-file <tmp> ...)
 #   set_tests_properties(p11h_managed_model_e2e PROPERTIES
 #     LABELS "p11;integration;fault" TIMEOUT 300)
