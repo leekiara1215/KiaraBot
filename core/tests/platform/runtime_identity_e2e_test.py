@@ -136,9 +136,12 @@ def prepare(root, enrolled):
     runtime_assignment = enrolled['platform_peers'][0]['assignments'][0]
     runtime_assignment['permissions'].append('identity.delegation.issue')
     enrolled['control_assignments'].extend([
-        {'assignment_id': str(uuid.uuid4()), 'permissions': ['identity.assignment.manage', 'identity.assignment.read'],
+        {'assignment_id': str(uuid.uuid4()),
+         'permissions': ['identity.assignment.manage', 'identity.assignment.read',
+                         'identity.invalidation.read'],
          'scope': [{'kind': 'RESOURCE_ACCOUNT', 'id': account_id}]},
-        {'assignment_id': str(uuid.uuid4()), 'permissions': ['identity.principal.manage', 'identity.assignment.read'],
+        {'assignment_id': str(uuid.uuid4()),
+         'permissions': ['identity.principal.manage', 'identity.assignment.read'],
          'scope': [{'kind': 'RESOURCE_PRINCIPAL', 'id': admin}]}])
     # P14m: the delegated subject must hold the exact catalog-scope sensitive reads so a real
     # Control-issued runtime delegation for ListAudit/ListLogs is authorized by Identity.
@@ -946,6 +949,39 @@ def scenario(root, port, pg_bin, binaries):
             require(get_account().account.account_id == account_id,
                     'restored account remains readable')
 
+            def watch_one(scope, cursor=None):
+                request = identity_pb2.IdentityWatchInvalidationsRequest(
+                    context=context(), scope=scope, cursor=cursor)
+                watch = identity_stub.WatchInvalidations(request, timeout=5)
+                try:
+                    return next(watch)
+                finally:
+                    watch.cancel()
+
+            def snapshot(scope, after=None):
+                return identity_stub.GetAuthorizationSnapshot(
+                    identity_pb2.IdentityGetAuthorizationSnapshotRequest(
+                        context=context(), scope=scope, after=after), timeout=5).snapshot
+
+            resync = watch_one(account_scope)
+            require(resync.resync_required and resync.HasField('cursor') and
+                    not resync.HasField('invalidation'), 'fresh watch signals full resync')
+            initial = snapshot(account_scope, resync.cursor)
+            require(initial.cursor.epoch == resync.cursor.epoch and
+                    initial.cursor.scope == account_scope and
+                    any(row == updated for row in initial.assignments),
+                    'snapshot includes current grant at its scoped watermark')
+            other_scope = platform_pb2.ResourceScope(resources=[platform_pb2.ResourceRef(
+                kind=platform_pb2.RESOURCE_ACCOUNT, id=str(uuid.uuid4()))])
+            for read in (watch_one, snapshot):
+                for cursor, expected in [(None, grpc.StatusCode.PERMISSION_DENIED),
+                                         (initial.cursor, grpc.StatusCode.INVALID_ARGUMENT)]:
+                    try:
+                        read(other_scope, cursor)
+                    except grpc.RpcError as error:
+                        require(error.code() == expected, 'invalid subscription scope rejected')
+                    else:
+                        raise AssertionError('invalid subscription scope accepted')
             revoke = identity_pb2.IdentityRevokeAssignmentRequest(
                 context=context(), assignment_id=assignment.assignment_id, expected_version=2)
             require(identity_stub.RevokeAssignment(revoke, timeout=10).version == 3,
@@ -954,6 +990,17 @@ def scenario(root, port, pg_bin, binaries):
                     'revoke retry returns original version')
             require(not list_account_grants(account_scope), 'revoked assignment is no longer listed')
 
+            change = watch_one(account_scope, initial.cursor)
+            require(change.HasField('invalidation') and not change.resync_required and
+                    change.invalidation.principal_id == enrolled_admin_principal and
+                    change.invalidation.scope == account_scope and
+                    change.invalidation.cursor.sequence > initial.cursor.sequence and
+                    change.invalidation.authorization_version > 0,
+                    'watch resumes at the revoke invalidation')
+            current = snapshot(account_scope, change.invalidation.cursor)
+            require(current.cursor.sequence >= change.invalidation.cursor.sequence and
+                    not any(row.assignment_id == assignment.assignment_id
+                            for row in current.assignments), 'revoked grant absent from snapshot')
             denied = None
             try:
                 get_account()
