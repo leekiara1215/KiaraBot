@@ -27,6 +27,24 @@ void check(bool passed, const char* scenario) {
     std::exit(1);
   }
 }
+bool canonical_uuid(std::string_view value) {
+  if (value.size() != 36) {
+    return false;
+  }
+  for (std::size_t index = 0; index < value.size(); ++index) {
+    const char character = value[index];
+    if (index == 8 || index == 13 || index == 18 || index == 23) {
+      if (character != '-') {
+        return false;
+      }
+      continue;
+    }
+    if (!((character >= '0' && character <= '9') || (character >= 'a' && character <= 'f'))) {
+      return false;
+    }
+  }
+  return true;
+}
 constexpr auto kSubject = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 constexpr auto kActor = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 constexpr auto kToken = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
@@ -139,8 +157,26 @@ public:
     }
     return grpc::Status::OK;
   }
+  grpc::Status ExchangeDelegation(grpc::ServerContext*,
+                                  const v1::IdentityExchangeDelegationRequest* request,
+                                  v1::IdentityExchangeDelegationResponse* response) override {
+    ++exchanges;
+    exchange_request = *request;
+    auto* proof = response->mutable_delegation();
+    proof->set_proof("child-proof");
+    proof->set_audience(request->audience());
+    proof->set_business_hops(2);
+    const auto encoded =
+        kiarabot::core::platform::target_codec::to_wire(now() + std::chrono::seconds{30});
+    if (const auto* wire = std::get_if<google::protobuf::Timestamp>(&encoded)) {
+      *proof->mutable_expires_at() = *wire;
+    }
+    return grpc::Status::OK;
+  }
   std::string last_proof;
   std::string last_method;
+  int exchanges = 0;
+  v1::IdentityExchangeDelegationRequest exchange_request;
 
 private:
   bool allow_;
@@ -216,6 +252,32 @@ void check_tests() {
                                                            now() + std::chrono::seconds{2})))
                       .code == t::ErrorCode::PermissionDenied,
           "denied online authorization was treated as a grant");
+  }
+  {
+    Server server(true);
+    auto identity = client(server.port);
+    const auto exchanged =
+        identity->exchange_delegation("parent-proof", t::Service::Scheduler,
+                                      {t::ResourceRef{t::ResourceKind::Instance, {kResource}}},
+                                      {t::Permission::TaskSchedule}, digest());
+    check(std::holds_alternative<kiarabot::core::platform::ExchangedDelegation>(exchanged),
+          "exchange delegation failed");
+    const auto& value = std::get<kiarabot::core::platform::ExchangedDelegation>(exchanged);
+    check(value.proof == "child-proof", "exchange proof mismatch");
+    check(server.service.exchanges == 1 &&
+              server.service.exchange_request.context().idempotency_key().size() >= 16 &&
+              std::all_of(
+                  server.service.exchange_request.context().idempotency_key().begin(),
+                  server.service.exchange_request.context().idempotency_key().end(),
+                  [](unsigned char character) { return character >= 33 && character < 127; }) &&
+              canonical_uuid(server.service.exchange_request.context().request_id()) &&
+              canonical_uuid(server.service.exchange_request.context().trace_id()) &&
+              server.service.exchange_request.audience() == "scheduler" &&
+              server.service.exchange_request.parent_proof() == "parent-proof" &&
+              server.service.exchange_request.scope().resources_size() == 1 &&
+              server.service.exchange_request.permissions_size() == 1 &&
+              server.service.exchange_request.client_certificate_sha256().size() == 32,
+          "exchange request wire contract incomplete");
   }
   {
     // No listener: the owner client fails closed with an upstream failure, never an allow.

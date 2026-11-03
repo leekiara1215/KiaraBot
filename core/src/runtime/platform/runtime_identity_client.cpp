@@ -521,6 +521,10 @@ RuntimeIdentityClient::exchange_delegation(std::string_view parent_proof, target
     }
     context->set_request_id(request_id);
     context->set_trace_id(trace_id);
+    // Identity ExchangeDelegation requires a non-empty idempotency key on the wire even though the
+    // RPC option says requires_idempotency=false; omitting it yields UNAUTHENTICATED. This is a
+    // per-attempt transport key, not a durable command receipt.
+    context->set_idempotency_key(random_uuid());
     const auto started = now();
     auto deadline = started + std::min(options_.budget, options_.maximum_budget);
     if (!timestamp(deadline, context->mutable_deadline())) {
