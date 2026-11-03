@@ -861,10 +861,14 @@ def run_checks(root, https_port, configs, binaries, children, endpoints):
     p12j_panel_matrix(request, token, password)
     stage('identity outage')
     require(stop(children['identity']) == 0, 'identity graceful stop')
-    status, _ = request('POST', '/api/v1/auth/login',
-                        {'username': 'administrator', 'password': password},
-                        idempotency=True)
-    require(status in (401, 500, 503), 'login fails closed without Identity')
+    status, unavailable = request('POST', '/api/v1/auth/login',
+                                  {'username': 'administrator', 'password': password},
+                                  idempotency=True)
+    require(status == 503 and unavailable.get('code') == 'UPSTREAM_UNAVAILABLE',
+            f'login while Identity is offline status={status}')
+    status, unavailable = request('GET', '/api/v1/auth/me', token=token)
+    require(status == 503 and unavailable.get('code') == 'UPSTREAM_UNAVAILABLE',
+            f'previously validated token while Identity is offline status={status}')
     status, unavailable = request('GET', '/api/v1/health', token=token)
     require(status in (400, 401, 403, 503), 'dependency health fails closed without Identity')
     require(isinstance(unavailable, dict) and
@@ -876,6 +880,7 @@ def run_checks(root, https_port, configs, binaries, children, endpoints):
     require(rt.wait_ready(int(json.loads(configs['identity'].read_text())['probe_listen']
                               .rsplit(':', 1)[1]), True, 20.0), 'identity restart readiness')
     deadline = time.monotonic() + 15.0
+    rotated_access = tokens['access_token']
     status, tokens = 0, None
     while time.monotonic() < deadline:
         status, tokens = request('POST', '/api/v1/auth/login',
@@ -886,6 +891,12 @@ def run_checks(root, https_port, configs, binaries, children, endpoints):
         time.sleep(0.2)
     require(status == 200 and tokens.get('access_token'),
             f'login recovers after identity restart status={status}')
+    status, current = request('GET', '/api/v1/auth/me', token=token)
+    require(status == 200 and current['user_id'] == STATE['administrator_id'],
+            f'active session survives Identity restart status={status}')
+    status, denied = request('GET', '/api/v1/auth/me', token=rotated_access)
+    require(status == 401 and denied.get('code') == 'UNAUTHENTICATED',
+            f'rotated token remains invalid after Identity restart status={status}')
     token = tokens['access_token']
     require(rt.wait_ready(STATE['identity_probe'], True, 20.0),
             'identity readiness recovers')
