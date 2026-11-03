@@ -329,6 +329,19 @@ add_test(NAME p13_runtime_lifecycle COMMAND kiarabot_runtime_resource_applicatio
 set_tests_properties(p13_runtime_lifecycle PROPERTIES
   LABELS "p13;unit;fault" TIMEOUT 30)
 
+# P13h-2 production Scheduler lifecycle participant application matrix (fake Scheduler port).
+add_executable(kiarabot_runtime_scheduler_lifecycle_test
+  tests/architecture/runtime_scheduler_lifecycle_participant_test.cpp)
+target_link_libraries(kiarabot_runtime_scheduler_lifecycle_test PRIVATE
+  kiarabot_runtime_resource_application)
+target_compile_options(kiarabot_runtime_scheduler_lifecycle_test PRIVATE
+  $<$<CXX_COMPILER_ID:AppleClang,Clang,GNU>:-Wall -Wextra -Wpedantic -UNDEBUG>
+  $<$<CXX_COMPILER_ID:MSVC>:/UNDEBUG>)
+add_test(NAME p13_scheduler_lifecycle
+  COMMAND kiarabot_runtime_scheduler_lifecycle_test)
+set_tests_properties(p13_scheduler_lifecycle PROPERTIES
+  LABELS "p13;unit;fault" TIMEOUT 30)
+
 # P09a Runtime storage/shared-namespace domain+application (phase 1: no PG; ports fail closed
 # until the P07a-A-based PG phase lands). Pure application owns authorization, CAS/condition,
 # quota, receipt replay and audit ordering.

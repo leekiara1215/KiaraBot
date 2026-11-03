@@ -140,6 +140,15 @@ kiarabot_platform_warnings(kiarabot_scheduler_identity_client_test)
 add_test(NAME p10_scheduler_identity COMMAND kiarabot_scheduler_identity_client_test)
 set_tests_properties(p10_scheduler_identity PROPERTIES LABELS "p10;unit;security" TIMEOUT 30)
 
+add_executable(kiarabot_scheduler_task_client_test
+  ${CMAKE_SOURCE_DIR}/core/tests/platform/scheduler_task_client_test.cpp)
+target_link_libraries(kiarabot_scheduler_task_client_test PRIVATE
+  kiarabot_scheduler_task_client kiarabot_proto)
+kiarabot_platform_warnings(kiarabot_scheduler_task_client_test)
+add_test(NAME p10_scheduler_task_client COMMAND kiarabot_scheduler_task_client_test)
+set_tests_properties(p10_scheduler_task_client PROPERTIES
+  LABELS "p10;p13;unit;integration" TIMEOUT 30)
+
 add_executable(kiarabot_scheduler_rpc_test
   ${CMAKE_SOURCE_DIR}/core/tests/platform/scheduler_rpc_test.cpp)
 target_link_libraries(kiarabot_scheduler_rpc_test PRIVATE kiarabot_scheduler_rpc)
