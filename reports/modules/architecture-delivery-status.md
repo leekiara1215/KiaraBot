@@ -1,9 +1,11 @@
 # P14n 最终交付状态与证据索引
 
+2026-11-03 本轮工作树（基于 `254f017`）full-locked 构建通过。全量 CTest 首轮 160/162（1040.38 秒），`p10_timer_e2e` 和 `p02_core_process` 失败；仅重跑这两项，2/2 通过（81.06 秒）。下列带提交号的门禁保留各自历史结果。
+
 - 2026-11-03 最终 HEAD `333823d` 离线复核：`scripts/ci/check-workflows.sh` PASS（gh 未认证，未触发远端）、`scripts/deploy/target-smoke.sh` PASS（离线结构检查；Docker 行为 UNVERIFIED）、`scripts/ops/tests/ops_scripts_test.sh` PASS、`scripts/deploy/tests/target_rotate_test.sh` PASS、`scripts/run-ci-local.sh test --self-test` PASS；final gate 161/162（`control_http_websocket_acceptance` 负载 flake 孤立 Passed 53.86s）。
 - 日期：2026-11-03；worktree `.worktrees/p14n`，branch `codex/p14n`，基线 `ce7993a`（main；P14t/P05b-13；final HEAD 门禁 161/162 + `control_http_websocket_acceptance` 负载 flake 孤立通过；exact-HEAD `04f7044` 门禁 161/162 + p08 负载 flake 孤立通过）。
 - 任务：只刷新最终证据矩阵/交付口径，不修改实现、契约或部署脚本；`doc/18` 冻结基线只读。
-- 结论：**P13 生产退出 PASS（本验收范围）、P11 独立验收 PASS、P10k 真实 Scheduler 任务链 PASS、P05b B1 链完成（安全评审 0 Critical/High；Medium 全部处置：F-1/F-2 已修、F-3/F-4/F-5/F-6 已加固；F-5 host/core 边界文档化）。剩余未验收收敛为 8 项环境/契约项；P12 host operation/bootstrap_credential 按用户确认保持 not_implemented。previous checkpoint 161/161@7b8fb0f/1051.70s；final exact-HEAD gate @04f7044：**161/162 CTest passed，1025.87s**（`build/logs/recheck-ctest-162320.log`，2026-11-03 16:23:19→16:40:30）；唯一失败 `p08_managed_host_e2e` 35.77s（psql SSL negotiation invalid response，套件负载下时序问题）；孤立复跑 **2/2 Passed 58.64s/56.72s**（Lead 57.39s），判定负载时序 flake，不是断言/实现回归。此前 161/161@7b8fb0f/1051.70s。 不得把本报告当作“已发布/全部验收”声明。**
+- 结论：**P13 生产退出 PASS（本验收范围）、P11 独立验收 PASS、P10k 真实 Scheduler 任务链 PASS、P05b B1 链完成（安全评审 0 Critical/High；Medium 全部处置：F-1/F-2 已修、F-3/F-4/F-5/F-6 已加固；F-5 host/core 边界文档化）。剩余未验收收敛为 7 项；P12 host operation/bootstrap_credential 按用户确认保持 not_implemented。previous checkpoint 161/161@7b8fb0f/1051.70s；final exact-HEAD gate @04f7044：**161/162 CTest passed，1025.87s**（`build/logs/recheck-ctest-162320.log`，2026-11-03 16:23:19→16:40:30）；唯一失败 `p08_managed_host_e2e` 35.77s（psql SSL negotiation invalid response，套件负载下时序问题）；孤立复跑 **2/2 Passed 58.64s/56.72s**（Lead 57.39s），判定负载时序 flake，不是断言/实现回归。此前 161/161@7b8fb0f/1051.70s。 不得把本报告当作“已发布/全部验收”声明。**
 
 ## 1. 最终门禁与修复
 
@@ -33,7 +35,7 @@
 - **P11 独立验收 PASS**：`p11h_managed_model_e2e`（真实 managed Host+SDK plugin→PluginBridge→Runtime→Model→真实 HTTP Provider 正/负矩阵）、`p11h_model_chain_fail_closed`、`p11h_provider_fixture`；相关回归 37/37（p11|p05|p08|p06|p03_postgres）。真实付费外部 Provider/目标部署环境仍环境项。
 - **P10k 真实 Scheduler 任务链 PASS**：`p05b_task_chain_e2e`（真 PG16.4 四库+真 Identity/Runtime/Scheduler+managed plugin）：PluginBridge task_create/get/cancel→Runtime→真 Scheduler；owner=instance/installation、account 空、幂等 replay、取消/重复取消、COMPLETED=cancel CONFLICT、跨实例 NOT_FOUND、Scheduler 离线 fail-closed、Host/插件生命周期共存。真实 QQ/平台触发仍环境项。
 - **P05b B1 链完成**：P05b-2/5/6/7/8/9/4/12；P05b-11 安全评审 **0 Critical/High**；P05b-12/13 处置全部 Medium：F-1 cache installation、F-2 sealed TOCTOU 已修；F-3 refresh token 最大年龄/重认证停止、F-4 per-key single-flight、F-5 OPENSSL_cleanse+host/core 边界文档化、F-6 expected_subject 已加固。
-- **未验收 8 项**：Docker Compose 六服务栈；两主机/断网；远端 CI/release；真实 QQ/NapCat；真实付费外部 Provider；生产 CA/密钥/备份离站；部署级错误 Runtime 叶证书；Model Update/RotateProviderSecret `scope_kinds` 契约缺口。
+- **未验收 7 项**：Docker Compose 六服务栈；两主机/断网；远端 CI/release；真实 QQ/NapCat；真实付费外部 Provider；生产 CA/密钥/备份离站；部署级错误 Runtime 叶证书。
 
 ## 2. 阶段状态（详见 [doc/27](../../doc/27-phase-exit-evidence.md)）
 
@@ -52,18 +54,18 @@
 | P13 生命周期/可观测 | A 已批限范围；P13h-1/2/3 实施中；生产未退出 | `p13_runtime_lifecycle`、`p13_host_sdk_drain`、**`p13_joint_delete_e2e`**（38.59s，test-only；BeginDelete→Blocked→Done→DELETED/Restore 不复活/Host 离线/UNKNOWN Blocked；HostCommand identity 修复）、[P13f 决策](architecture-p13f-exit-decision.md) |
 | P14 部署/故障/交付 | 材料/原生矩阵完成；环境未验收 | final gate、P14f/i/j/k/l/m 报告、`doc/08`、`target-smoke`/`target-drill`/`check-workflows` |
 
-## 3. 未验收清单（P14t 收敛）
+## 3. 后续验收项及进度
 
 | 类别 | 状态 | 退出条件/说明 |
 |---|---|---|
-| 单机 Docker Compose 六服务栈 | **未验收** | Linux Docker：六服务镜像 build、compose config/up、官方 PG16.4 初始化/迁移/healthcheck、非 root/只读/秘密挂载、备份恢复 |
+| 单机 Docker Compose 六服务栈 | **部分已验收** | Colima 上官方 PostgreSQL 16.4 已 healthy，verify-full TLS 成功，明文 TCP 被拒。主机版初始化器初始化四库 schema，逐库 dump/restore 后 schema 版本和表数一致。Panel、Adapter 镜像已构建；六个业务容器共同启动与健康检查仍待验证。 |
 | 两主机/断网演练 | **延期**（用户确认可选） | 两主机拓扑、网络分区、TLS/撤销/重连、协调恢复 |
 | 远端 CI / release | **未运行/未就绪** | GitHub Actions workflow_dispatch 未运行；无 release SHA 全量归档、签名镜像、SBOM/cosign、release-gated Environment |
-| 真实 QQ/NapCat | 待环境 | 平台长期稳定性/网络抖动/reaction API；P10k 真实平台触发 |
-| 真实付费外部 Model Provider | 待环境 | T07b 付费联调/计费核对；P11h 使用本地真实 HTTP Provider fixture，不等于生产 Provider |
+| 真实 QQ/NapCat | **登录与只读鉴权通过** | 从目标 Adapter 镜像经 Compose 网络调用真实 OneBot 的 get_status 和 get_login_info 成功；目标 Runtime 注册、会话收发及断连恢复仍待验证。 |
+| 真实付费外部 Model Provider | 待 API Key 和费用上限 | DeepSeek 模型配置已准备。匿名 GET /models 返回 401；付费推理与计费核对仍待验证。 |
 | 生产 CA/密钥托管、备份离站 | 待用户环境/决策 | CA/root key 托管、轮换/吊销/KMS；备份保留周期、离站位置/频率、生产数据量恢复演练 |
 | 部署级错误 Runtime 叶证书 | **未验收** | P11h forged signature/错误 origin 在线拒绝已覆盖，但 fixture 仅登记一个 Runtime peer；替代 Runtime 叶证书的部署级错误证书未验证 |
-| Model Update/RotateProviderSecret `scope_kinds` 契约缺口 | **已知缺口** | proto 缺 scope_kinds，真实 Control 管理 RPC 无法经 Identity CheckAuthorization；e2e 用 test-only seed helper 绕过，不扩契约 |
+| Model Update/RotateProviderSecret `scope_kinds` | **已验收** | `p14_native_single_host` 从 Control HTTPS 发起，两条 RPC 均经真实 Identity 授权。目标模型 HTTP 200，跨模型 HTTP 403 `PERMISSION_DENIED`。 |
 
 ## 4. 用户决策与实施状态（2026-11-03）
 
@@ -72,9 +74,9 @@
 | 项 | 决策 | 实施/验收状态 | 说明 |
 |---|---|---|---|
 | P13 | 限定批准 A（Scheduler mTLS+白名单+显式授权，仅 ListTasks/CancelTask；instance/task 归属；真实 Host 回执+Scheduler cleanup→DELETED，UNKNOWN/离线 BLOCKED，Restore 不重建任务/租约） | **生产退出 PASS（本验收范围）**：`p13h3_joint_delete_production_e2e`；P13h-1/2 证据已合入 | 残余多主机/满盘/生产规模、真实 Host UNKNOWN 进程注入属环境项 |
-| P05b / P11 / P10k | 批准 B1；P11 验收真实 managed plugin+真实 HTTP Provider fixture+负例；P10k 同批解锁 | **B1 链完成；P11 独立验收 PASS（37/37 相关回归）；P10k 真实 Scheduler 任务链 PASS**；安全评审 0 Critical/High，Medium 全部处置（F-1/F-2 已修，F-3/F-4/F-5/F-6 已加固；F-5 host/core 边界文档化） | 真实付费 Provider、目标部署环境、部署级错误 Runtime 叶证书、Model Update/RotateProviderSecret scope_kinds 仍为环境/契约项 |
+| P05b / P11 / P10k | 批准 B1；P11 验收真实 managed plugin+真实 HTTP Provider fixture+负例；P10k 同批解锁 | **B1 链完成；P11 独立验收 PASS（37/37 相关回归）；P10k 真实 Scheduler 任务链 PASS**；安全评审 0 Critical/High，Medium 全部处置（F-1/F-2 已修，F-3/F-4/F-5/F-6 已加固；F-5 host/core 边界文档化） | 真实付费 Provider、目标部署环境、部署级错误 Runtime 叶证书仍待验收 |
 | P12 | host operation/bootstrap_credential 保持 not_implemented（用户确认），只文档化、不扩契约 | 无新增实现任务；按 not_implemented | 不是完成 |
-| P14 | 用户准备 Docker 与 gh 登录，之后继续 Compose/CI/release | 单机 Docker Compose、远端 CI、正式发布仍未运行；previous checkpoint @7b8fb0f 161/161/1051.70s；final @04f7044 161/162/1025.87s，p08 负载 flake 孤立 2/2 通过 | 不以文档替代验收 |
+| P14 | 本机 Docker 已就绪，GitHub 登录暂缓 | Compose 数据层已实测，六服务容器验收进行中 | 远端 CI/release、生产 CA/密钥托管与离站备份待验收 |
 
 ## 5. 一致性核对
 
@@ -84,7 +86,7 @@
 - 秘密扫描：tracked 文件无真实私钥/云 token；仅 identity_crypto 的 PEM 头字符串常量。
 - 口径检查：doc/27/28/README/doc/23 基线统一 `04f7044`；final 161/162@04f7044（p08 负载 flake 孤立通过）已回填；P00n、P06h、P10m、P13 生产退出 PASS、P11 独立验收 PASS、P10k 真实链 PASS、P05b B1 完成、P12 not_implemented、P14 环境项在各文档一致；此前 gate 148/148@1213790 与当前 checkpoint 161/161@7b8fb0f 均按实际日志记录。
 
-## 6. 未做/限制
+## 6. P14n 文档复核范围（历史）
 
 - 本任务只改文档，无 build/test 重跑（final gate 证据由 Lead 提供；本地未重跑 148 项）；文档校验为链接/路径/秘密/一致性静态检查。P13g 证据来自 `p13_joint_delete_e2e` test-only 标签与 P13g 报告，不把它当生产退出证据。
 - 未执行 Docker/两主机/远端 CI/release，未接真实 QQ/Provider；不能以本报告替代这些环境验收。
