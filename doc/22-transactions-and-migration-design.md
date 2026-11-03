@@ -375,3 +375,10 @@ Identity 无状态签名，不进入数据库事务；混用 task/model 会导�
 P05b-9（2026-11-03）：ExchangeDelegation 的 Runtime client 独立 2s/5s 预算不涉及事务/迁移；
 修复的是 production Identity client 复用 500ms CheckAuthorization 热路径预算导致 Exchange 在
 进入 Identity application 前被 deadline 拒绝的问题。
+## P13h-3 生产删除与 receipt 语义（2026-11-03）
+
+生产 e2e 验证：Host command receipt（含 UNKNOWN）通过生产 HostBridge 落 PG，participants
+维护在独立 owner 表；Scheduler 拒绝/离线时保持 BLOCKED，不提前删除 instance/任务；Restore 后
+再次 BeginDelete 生成新的 HostCommand identity（含 instance version）并重新调度；Scheduler
+task 的 `account` 为空（CreateTask 契约不带 account），归属以 owner/installation 为权威。
+不新增迁移；清理仍按既有 30/180 天和 receipt 保留策略执行。

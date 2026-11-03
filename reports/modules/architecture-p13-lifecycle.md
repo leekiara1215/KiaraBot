@@ -107,3 +107,24 @@ Scheduler 部署 allowlist + 显式 capability、只返回目标实例任务、C
 - 安装级删除的 Scheduler 取消仍 Blocked（批准范围仅 instance scope），需产品后续决策。
 - 真实 Scheduler 任务 >100 的分页、平台 peer 证书轮换/撤销传播、生产规模/跨主机仍待环境或
   P13h-1/P13h-3 证据；当前仅本地 bounded list 与注入端口矩阵。
+
+## P13h-3 生产联合验收证据（2026-11-03，main b0386bb + 本分支）
+
+生产 e2e `p13h3_joint_delete_production_e2e`（真 PG16.4 四库、真实 Identity bootstrap、
+真实 mTLS Runtime/Scheduler、真实 plugin-host + 受管 SDK 插件）：
+
+| 验收点 | 结果 |
+| --- | --- |
+| BeginDelete→Host/Scheduler participants BLOCKED→Host receipt→Scheduler ListTasks/CancelTask→全 Done→DELETED | 通过（生产进程/PG） |
+| 重复 BeginDelete 同 idempotency key | 同一 operation |
+| Host UNKNOWN receipt | Host participant 保持 BLOCKED，operation 不完成，instance DELETING |
+| Scheduler Cancel 拒绝（缺 task.schedule，ListTasks 可读） | Scheduler participant BLOCKED；恢复授权后完成 |
+| Scheduler 离线 | 主链既有生产证据（本分支矩阵的 offline 变体由 Build-Deploy 主链覆盖；denied 变体本分支实测） |
+| Restore 不重建 task/凭据/租约 | 通过（PG 断言） |
+| Restore 后再次 BeginDelete 重新调度 | 通过，再次 DELETED |
+| 跨实例 task 不受影响 | 通过（pending 保持） |
+| account 归属 | 冻结 CreateTask 无 account，任务行 `account` 空；断言 owner=instance、installation，不伪造 account |
+
+**P13 生产退出判定：通过（本验收范围）**。主链与关键负例均在生产进程/真 PG/mTLS 上实测；
+残余 P14 环境项（多主机、真实磁盘满/生产规模、Host UNKNOWN 使用 HostBridge 测试客户端而非
+真实 Host 进程执行 UNKNOWN）不阻塞本任务验收，后续环境任务继续跟踪。

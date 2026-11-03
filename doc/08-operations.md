@@ -1732,3 +1732,11 @@ P05b-9 后 `RuntimeIdentityClientOptions.delegation_budget/delegation_maximum_bu
 只影响 Exchange；CheckAuthorization 仍 500ms/1s。无需新增配置；若人为覆盖，两者必须 >0、
 budget<=maximum 且 maximum<=30s，否则启动失败。Identity 收到的请求仍按 RPC effective deadline
 （`min(requested, now+5s)`）执行；不要把该预算误当成 wire 契约字段。
+## P13h-3 生产删除矩阵运维要点（2026-11-03）
+
+生产联合 e2e `p13h3_joint_delete_production_e2e` 覆盖真实四库/Identity/Runtime/Scheduler/
+plugin-host/SDK plugin：BeginDelete 必须等待 Host StopExecution 回执与 Scheduler 任务清理，
+participants 全 Done 后才 DELETED；Host UNKNOWN、Scheduler Cancel 被拒时 operation 保持
+BLOCKED（instance DELETING），不得手工改写 PG 或伪造 receipt。Scheduler 任务无 account 字段
+（`account` 为空），运维归属依据 owner=实例/installation；不要以 account 作为删除 scope。
+恢复授权/链接后 maintenance 自动重试完成；重复 BeginDelete 同 key 幂等。

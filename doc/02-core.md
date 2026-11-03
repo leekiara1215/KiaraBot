@@ -1677,3 +1677,22 @@ ListTasks/CancelTask 无 delegation、显式 instance scope、CancelTask idempot
 `p13_joint_delete_e2e` 以真 PG16.4 + 真 mTLS Runtime + 注入 fake SchedulerTaskPort 跑真实
 组合根的 BeginDelete/Restore 协调（测试构建专用；P13h-1 合入后由 P13h-3 跑真实
 Runtime→Scheduler 平台授权链）。
+
+### P13h-3 生产联合验收与剩余矩阵（2026-11-03）
+
+生产链路：真 PG16.4 四库 + Identity bootstrap/真实 mTLS Runtime/Scheduler + 真实
+`kiarabot-plugin-host`/受管 SDK 插件。实例 BeginDelete 初始 participants 等待真实 Host
+StopExecution 回执和 Scheduler 任务清理；Host Receipted 且 Scheduler ListTasks/CancelTask
+完成后 participants 全 Done、operation Succeeded/instance DELETED；重复 BeginDelete 返回同一
+operation；Restore 不重建 task/凭据/租约；跨实例 task 不受影响。
+
+补充负例（同一生产 e2e）：
+- Host 返回 UNKNOWN receipt：Host participant 保持 BLOCKED，operation 不完成、instance 停在
+  DELETING；不伪 Done。
+- Scheduler 拒绝 CancelTask（Runtime platform peer 缺 task.schedule，但 ListTasks 仍可读）：
+  Scheduler participant 保持 BLOCKED；恢复授权后下一轮清理完成。
+- Restore 后再次 BeginDelete 会重新生成 host/scheduler participants，并由真实 Host receipt +
+  Scheduler 清理再次到 DELETED。
+- 账号归属契约澄清：冻结 SchedulerService.CreateTask 不带 account 字段，任务行 `account` 为
+  空；e2e 只断言可验证的 `owner`=instance、`installation`，不从 instance/account 推导或伪造
+  account。跨实例隔离以 task owner/scope 断言。
