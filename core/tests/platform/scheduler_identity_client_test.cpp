@@ -37,6 +37,7 @@ public:
 };
 constexpr auto kSubject = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 constexpr auto kInstallation = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+constexpr auto kInstance = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
 constexpr auto kActor = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
 constexpr auto kToken = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
 constexpr auto kResource = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
@@ -87,13 +88,17 @@ Json permission_entry(t::Permission permission, t::ResourceKind kind, std::strin
                       std::to_string(static_cast<int>(kind)), std::move(id)});
 }
 std::string token(t::TimePoint moment, std::string_view audience, std::string certificate,
-                  bool include_installation = true) {
+                  bool include_installation = true, bool include_instance = false) {
   Json permissions = Json::array();
   permissions.push_back(
       permission_entry(t::Permission::TimerAccept, t::ResourceKind::Task, kResource));
   if (include_installation) {
     permissions.push_back(
         permission_entry(t::Permission::TimerAccept, t::ResourceKind::Installation, kInstallation));
+  }
+  if (include_instance) {
+    permissions.push_back(
+        permission_entry(t::Permission::TimerAccept, t::ResourceKind::Instance, kInstance));
   }
   Json delegation{{"direct_actor", kActor},
                   {"actor_chain", Json::array({kActor})},
@@ -194,7 +199,7 @@ void run() {
     Server server(true);
     auto identity = client(server.port);
     const auto leaf = digest();
-    const auto proof = token(now(), "scheduler", hex(leaf));
+    const auto proof = token(now(), "scheduler", hex(leaf), true, true);
     v1::ResourceScope scope;
     auto* resource = scope.add_resources();
     resource->set_kind(v1::RESOURCE_INSTALLATION);
@@ -204,7 +209,7 @@ void run() {
     check(std::holds_alternative<t::SchedulerCommandContext>(verified),
           "allowed scheduler delegation rejected");
     const auto& command = std::get<t::SchedulerCommandContext>(verified);
-    check(command.owner.value == kSubject && command.installation.value == kInstallation &&
+    check(command.owner.value == kInstance && command.installation.value == kInstallation &&
               command.request_id == kToken && command.idempotency_key == std::string(16, 'k'),
           "owner/installation/request projection lost");
     check(server.service.calls == 1 &&

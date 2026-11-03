@@ -101,6 +101,31 @@ t::Failure grpc_failure(const grpc::Status& status) {
                       t::Recovery::QuerySameIdentity, std::nullopt, std::nullopt};
   }
 }
+// B1 instance-parent child delegations bind the target RESOURCE_INSTANCE scope separately from the
+// (plugin) principal subject. Legacy human delegations may omit it; fall back to the subject only
+// when no instance scope exists. Conflicting instance scopes are rejected.
+target::Outcome<t::InstanceId> instance_from(const t::AuthenticationContext& authentication) {
+  std::optional<t::InstanceId> instance;
+  for (const auto& scope : authentication.scopes) {
+    if (scope.resource.kind != t::ResourceKind::Instance) {
+      continue;
+    }
+    if (!canonical_uuid(scope.resource.id.value)) {
+      return unauthenticated();
+    }
+    if (instance && instance->value != scope.resource.id.value) {
+      return unauthenticated();
+    }
+    instance = t::InstanceId{scope.resource.id.value};
+  }
+  if (!instance) {
+    if (!canonical_uuid(authentication.subject.value)) {
+      return unauthenticated();
+    }
+    return t::InstanceId{authentication.subject.value};
+  }
+  return *instance;
+}
 // Derive the installation owner from the delegation permission bindings. The frozen delegation
 // claim has no dedicated installation field; the issuer must bind an Installation resource scope
 // for task delegation (Runtime/Identity convention). Absence is reported, never guessed.
@@ -174,6 +199,11 @@ SchedulerIdentityClient::verify(std::string_view proof, const t::Sha256Digest& l
     if (const auto* rejected = std::get_if<t::Failure>(&installation)) {
       return *rejected;
     }
+    auto instance = instance_from(authentication);
+    if (const auto* rejected = std::get_if<t::Failure>(&instance)) {
+      return *rejected;
+    }
+    const auto instance_value = std::get<t::InstanceId>(instance).value;
     if (!stub_) {
       return unavailable();
     }
@@ -210,15 +240,15 @@ SchedulerIdentityClient::verify(std::string_view proof, const t::Sha256Digest& l
       if (input.scope().resources_size() == 0) {
         auto* resource = input.mutable_scope()->add_resources();
         resource->set_kind(v1::RESOURCE_INSTANCE);
-        resource->set_id(authentication.subject.value);
+        resource->set_id(instance_value);
       }
     } else {
       // Identity requires a non-empty exact scope for current-authorization. CreateTask/ListTasks
-      // requests carry no ResourceScope; bind the owner instance derived from the delegated
-      // subject.
+      // requests carry no ResourceScope; bind the owner instance derived from the delegation
+      // INSTANCE scope (B1 principal subject is not the instance resource id).
       auto* resource = input.mutable_scope()->add_resources();
       resource->set_kind(v1::RESOURCE_INSTANCE);
-      resource->set_id(authentication.subject.value);
+      resource->set_id(instance_value);
     }
     input.set_known_authorization_version(authentication.authorization_version.value);
     v1::IdentityCheckAuthorizationResponse output;
@@ -251,7 +281,7 @@ SchedulerIdentityClient::verify(std::string_view proof, const t::Sha256Digest& l
                         t::Recovery::QuerySameIdentity, std::nullopt, std::nullopt};
     }
     t::SchedulerCommandContext command;
-    command.owner = t::InstanceId{authentication.subject.value};
+    command.owner = t::InstanceId{instance_value};
     command.installation = std::get<t::InstallationId>(installation);
     command.request_id = request.request_id();
     command.trace_id = request.trace_id();

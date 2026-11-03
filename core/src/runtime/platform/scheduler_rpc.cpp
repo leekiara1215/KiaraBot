@@ -467,6 +467,13 @@ prepare_platform_peer(grpc::ServerContext& transport, const v1::RequestContext& 
   if (!options.platform_peer) {
     return std::optional<Prepared>{};
   }
+  // P05b-5: the platform-peer allowlist is reserved for the delegation-free lifecycle path
+  // (P13h). A request carrying a user/instance delegation must be authorized through the normal
+  // delegation path instead; otherwise CancelTask/ListTasks plugin calls would be silently
+  // reattributed to the deployment allowlist entry and lose the delegation subject/scope.
+  if (!input.delegation().empty()) {
+    return std::optional<Prepared>{};
+  }
   auto peer = options.platform_peer(transport, method, scope);
   if (const auto* rejected = std::get_if<t::Failure>(&peer)) {
     return *rejected;
