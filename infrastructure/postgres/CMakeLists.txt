@@ -126,7 +126,7 @@ if(UNIX)
     --test-argument $<TARGET_FILE:kiarabot_postgres_runtime_bridge_seed>
     --test-argument $<TARGET_FILE:kiarabot-plugin-host>)
   set_tests_properties(p13h3_joint_delete_production_e2e PROPERTIES
-    LABELS "p13;p08;p10;integration;security;fault" TIMEOUT 420
+    LABELS "p13;p13h3;p08;p10;integration;security;fault" TIMEOUT 900
     WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
     ENVIRONMENT "PATH=${RUNTIME_E2E_OPENSSL_BIN_DIR}:${RUNTIME_E2E_PYTHON_BIN_DIR}:$ENV{PATH};PYTHONPATH=${CMAKE_SOURCE_DIR}/sdk/python/build/generated")
   add_test(NAME p06_bridge_acceptance COMMAND "${KIARABOT_TARGET_PYTHON}"

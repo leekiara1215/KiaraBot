@@ -42,6 +42,7 @@ INSTANCE = '44444444-4444-4444-8444-444444444444'
 INSTALLATION = '55555555-5555-4555-8555-555555555555'
 ADAPTER_INSTANCE = '33333333-3333-4333-8333-333333333333'
 SHUTDOWN_INSTANCE = 'a1a1a1a1-a1a1-4a1a-8a1a-a1a1a1a1a1a1'
+UNKNOWN_INSTANCE = 'b2b2b2b2-b2b2-4b2b-8b2b-b2b2b2b2b2b2'
 ADAPTER_BOOTSTRAP = 'a' * 64
 PLUGIN_BOOTSTRAP = 'b' * 64
 SHUTDOWN_BOOTSTRAP = 'c' * 64
@@ -84,6 +85,8 @@ def prepare(root: Path, enrolled: dict):
          'scope': [{'kind': 'RESOURCE_INSTANCE', 'id': INSTANCE}]},
         {'assignment_id': str(uuid.uuid4()), 'permissions': ['resource.manage'],
          'scope': [{'kind': 'RESOURCE_INSTANCE', 'id': SHUTDOWN_INSTANCE}]},
+        {'assignment_id': str(uuid.uuid4()), 'permissions': ['resource.manage'],
+         'scope': [{'kind': 'RESOURCE_INSTANCE', 'id': UNKNOWN_INSTANCE}]},
         {'assignment_id': str(uuid.uuid4()), 'permissions': ['task.schedule', 'task.read'],
          'scope': [{'kind': 'RESOURCE_INSTANCE', 'id': INSTANCE},
                    {'kind': 'RESOURCE_INSTALLATION', 'id': INSTALLATION}]},
@@ -317,6 +320,7 @@ def after_bootstrap(root: Path) -> None:
         'hosts': [{'host_id': HOST_ID, 'certificate_sha256': host_fingerprint}]}
     write_json(root / 'scheduler.json', scheduler_config)
     write_json(root / 'runtime.json', runtime_config)
+    STATE.update(tls=tls, runtime_grpc=runtime_grpc, scheduler_probe=scheduler_probe)
 
     environment = {key: value for key, value in os.environ.items() if not key.startswith('PG')}
     stage('runtime seed')
@@ -391,6 +395,18 @@ def after_bootstrap(root: Path) -> None:
                                    policy_pb2.PERMISSION_TASK_READ],
                                   pem_fingerprint(tls / 'runtime.pem'))
         create_task(scheduler_stub, shutdown_child, SHUTDOWN_INSTANCE, 'p13h3-cross-task')
+        scheduler_environment, scheduler_pg = rt.postgres(root, pg_bin, port, 'p03_scheduler')
+        task_rows = rt.run_sql(
+            (scheduler_environment, scheduler_pg),
+            "SELECT task_id,owner,installation,account FROM kiarabot.tasks "
+            "ORDER BY task_id").splitlines()
+        print('P13h-3 stage: scheduler task rows ' + ';'.join(task_rows),
+              file=sys.stderr, flush=True)
+        target_row = next(row for row in task_rows if row.startswith('p13h3-target-task|'))
+        target_task_id, target_owner, target_installation, target_account = target_row.split('|')
+        require(target_owner == INSTANCE and target_installation == INSTALLATION and
+                target_account == '',
+                'frozen CreateTask owner/installation present and account empty')
 
         stage('seed scheduler tasks')
         package, manifest, plugin_started, plugin_stopped = write_package(root, REPO)
@@ -433,8 +449,15 @@ def after_bootstrap(root: Path) -> None:
         except Exception as error:  # noqa: BLE001
             print('P13h-3 stage: child cleanup ' + str(error), file=sys.stderr, flush=True)
         time.sleep(1.0)
+        # Scheduler is online but denied CancelTask: keep the task readable while removing
+        # task.schedule from the Runtime platform peer. The participant stays BLOCKED with a
+        # stable authorization failure instead of a transport failure.
         stop_process(scheduler)
         children.pop('scheduler', None)
+        set_scheduler_permissions(root, ['task.read'])
+        scheduler, _ = daemon(scheduler_binary, root / 'scheduler.json')
+        children['scheduler'] = scheduler
+        wait_probe(scheduler_probe)
         require(instance_state().startswith('0|'), f'instance active before delete: {instance_state()}')
         version = int(instance_state().split('|')[1])
         stage('begin delete offline')
@@ -476,6 +499,9 @@ def after_bootstrap(root: Path) -> None:
         host = start_process([str(host_binary), '--config', str(host_config_path)], root,
                              root / 'host-return.err')
         children['host'] = host
+        set_scheduler_permissions(root, ['task.read', 'task.schedule'])
+        stop_process(scheduler)
+        children.pop('scheduler', None)
         scheduler, _ = daemon(scheduler_binary, root / 'scheduler.json')
         children['scheduler'] = scheduler
         wait_probe(scheduler_probe)
@@ -537,6 +563,70 @@ def after_bootstrap(root: Path) -> None:
         wait_until(lambda: instance_state().startswith('0|'), 'instance restored', timeout=60)
         require(scheduler_task_states(pg_bin, root, port).get('p13h3-target-task') in (5, None),
                 'restore recreated target task')
+
+        # ---- P13h-3 remaining matrix: re-delete and Host UNKNOWN. ----
+        stage('matrix stop real host')
+        stop_process(host)
+        children.pop('host', None)
+        stop_plugin_children(root)
+        time.sleep(0.8)
+
+        def delete_target(instance, key):
+            delegation = issue_admin_runtime(identity_stub, admin, instance,
+                                             pem_fingerprint(tls / 'control.pem'))
+            last = None
+            for _ in range(5):
+                try:
+                    operation = begin_delete(runtime_stub, delegation, instance, 1, key)
+                    require(bool(operation.operation.operation_id),
+                            f'{instance} deletion operation')
+                    return operation.operation.operation_id
+                except Exception as error:  # noqa: BLE001
+                    last = error
+                    time.sleep(0.4)
+            raise Failure(f'{instance} BeginDelete retries exhausted: {last}')
+
+        fake, fake_state = start_fake_host(root, 'known')
+        children['fake-known'] = fake
+        second_operation = delete_target(INSTANCE, 'p13h3-redelete-key-0002')
+        wait_until(fake_state.is_file, 're-delete Host stop', timeout=30)
+        wait_operation(runtime_sql, pg_bin, root, port, second_operation,
+                       lambda state, parts: state == 3 and all(part[1] == 3 for part in parts),
+                       're-delete DELETED', timeout=90)
+        require(instance_state().startswith('3|'), 're-delete instance DELETED')
+        stop_process(fake)
+        children.pop('fake-known', None)
+        stage('matrix re-delete DELETED')
+
+        insert_managed_instance(pg_bin, root, port, UNKNOWN_INSTANCE)
+        print('P13h-3 stage: unknown instance row ' + runtime_sql(
+            pg_bin, root, port,
+            f"SELECT state,version,host,desired,installation,plugin_type FROM kiarabot.instances "
+            f"WHERE id='{UNKNOWN_INSTANCE}'"), file=sys.stderr, flush=True)
+        fake, fake_state = start_fake_host(root, 'unknown')
+        children['fake-unknown'] = fake
+        unknown_operation = delete_target(UNKNOWN_INSTANCE, 'p13h3-unknown-key-0001')
+        wait_until(fake_state.is_file, 'unknown Host stop', timeout=30)
+        with open(fake_state, 'r', encoding='utf-8') as handle:
+            unknown_receipt = json.load(handle)
+        require(unknown_receipt['instance_id'] == UNKNOWN_INSTANCE, 'unknown Host stop instance')
+        wait_operation(runtime_sql, pg_bin, root, port, unknown_operation,
+                       lambda state, parts: _blocked_participants(state, parts),
+                       'unknown receipt blocked', timeout=60)
+        time.sleep(2.5)
+        require(runtime_sql(pg_bin, root, port,
+                            "SELECT state FROM kiarabot.operations WHERE id='" +
+                            unknown_operation + "'").strip() == '2',
+                'UNKNOWN receipt must not complete the operation')
+        require(runtime_sql(pg_bin, root, port,
+                            "SELECT state FROM kiarabot.instances WHERE id='" +
+                            UNKNOWN_INSTANCE + "'").strip() == '2',
+                'UNKNOWN receipt instance remains DELETING')
+        stop_process(fake)
+        children.pop('fake-unknown', None)
+        stage('matrix unknown BLOCKED')
+        require(scheduler_task_states(pg_bin, root, port).get('p13h3-cross-task') == 0,
+                'cross-instance task remains pending after matrix')
         print(f'P13h-3 production joint delete e2e passed: {deleted}', flush=True)
     finally:
         for name, child in list(children.items()):
@@ -652,6 +742,54 @@ def start_process(command, cwd: Path, stderr_path: Path):
     process = subprocess.Popen(command, cwd=cwd, stdout=subprocess.PIPE, stderr=error_file,
                                env={key: value for key, value in os.environ.items()})
     return process
+
+
+def insert_managed_instance(pg_bin: Path, root: Path, port: int, instance: str):
+    runtime_sql(pg_bin, root, port,
+                "INSERT INTO kiarabot.instances(id,installation,plugin_type,desired_version,"
+                "applied_config_version,fence_instance,runtime_epoch,execution_id,"
+                "execution_generation,connection_id,connection_generation,version,state,host,"
+                "desired) SELECT '" + instance + "',installation,plugin_type,1,0,"
+                "NULL,NULL,NULL,NULL,NULL,NULL,1,0,'" + HOST_ID + "',0 FROM kiarabot.instances "
+                "WHERE id='" + INSTANCE + "' ON CONFLICT (id) DO UPDATE SET state=0,host='" +
+                HOST_ID + "'")
+
+
+def start_fake_host(root: Path, mode: str):
+    ready = root / f'fake-host-{mode}.ready'
+    state = root / f'fake-host-{mode}.state'
+    for path in (ready, state):
+        if path.exists():
+            path.unlink()
+    tls = STATE['tls']
+    process = start_process([
+        sys.executable, str(REPO / 'tests/architecture/p13h3_fake_host.py'),
+        '--endpoint', STATE['runtime_grpc'], '--ca', str(tls / 'ca.pem'),
+        '--cert', str(tls / 'host.pem'), '--key', str(tls / 'host.key'),
+        '--host-id', HOST_ID, '--mode', mode, '--ready', str(ready), '--state', str(state)],
+        root, root / f'fake-host-{mode}.err')
+    wait_until(ready.is_file, f'fake host {mode} ready', timeout=30)
+    return process, state
+
+
+def stop_plugin_children(root: Path):
+    try:
+        journal_path = root / 'host.sqlite'
+        rows = sqlite_rows(journal_path, 'SELECT pid FROM managed_executions ORDER BY rowid DESC')
+        for (child_pid,) in rows[:1]:
+            if child_pid:
+                try:
+                    os.kill(int(child_pid), signal.SIGKILL)
+                except OSError:
+                    pass
+    except Exception:
+        pass
+
+
+def set_scheduler_permissions(root: Path, permissions: list[str]):
+    config = json.loads((root / 'scheduler.json').read_text())
+    config['runtime_peers'][0]['permissions'] = permissions
+    write_json(root / 'scheduler.json', config)
 
 
 def seed_host_start(pg_bin: Path, root: Path, port: int, manifest: Path):
