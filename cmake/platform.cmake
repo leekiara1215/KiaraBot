@@ -298,7 +298,7 @@ add_test(NAME p10_timer_e2e COMMAND "${KIARABOT_TARGET_PYTHON}"
   --test-argument $<TARGET_FILE:kiarabot-runtime>
   --test-argument $<TARGET_FILE:kiarabot-scheduler>)
 set_tests_properties(p10_timer_e2e PROPERTIES
-  LABELS "p10;p05;p06;integration;security;fault" TIMEOUT 360
+  LABELS "p10;p13;p05;p06;integration;security;fault" TIMEOUT 360
   ENVIRONMENT "PATH=${RUNTIME_E2E_OPENSSL_BIN_DIR}:${RUNTIME_E2E_PYTHON_BIN_DIR}:$ENV{PATH};PYTHONPATH=${CMAKE_SOURCE_DIR}/sdk/python/build/generated")
 
 add_test(NAME p05_runtime_identity_e2e COMMAND "${KIARABOT_TARGET_PYTHON}"

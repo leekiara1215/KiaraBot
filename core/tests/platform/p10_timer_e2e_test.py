@@ -12,6 +12,7 @@ import os
 from pathlib import Path
 import secrets
 import signal
+import ssl
 import subprocess
 import sys
 import time
@@ -51,6 +52,31 @@ def write_scheduler_certificate(tls_root):
     (tls_root / 'scheduler.key').chmod(0o600)
 
 
+def write_extra_runtime_certificate(tls_root, name, san):
+    extensions = tls_root / f'{name}.ext'
+    extensions.write_text(
+        f'subjectAltName=URI:{san},DNS:localhost,IP:127.0.0.1\n'
+        'extendedKeyUsage=clientAuth,serverAuth\nbasicConstraints=critical,CA:FALSE\n'
+        'keyUsage=critical,digitalSignature\nsubjectKeyIdentifier=hash\n'
+        'authorityKeyIdentifier=keyid:always\n')
+    commands = [
+        ['req', '-newkey', 'ec', '-pkeyopt', 'ec_paramgen_curve:P-256', '-nodes',
+         '-subj', f'/CN={name}', '-keyout', f'{name}.key', '-out', f'{name}.csr'],
+        ['x509', '-req', '-in', f'{name}.csr', '-CA', 'ca.pem', '-CAkey', 'ca.key',
+         '-CAcreateserial', '-days', '1', '-extfile', f'{name}.ext', '-out', f'{name}.pem'],
+    ]
+    for arguments in commands:
+        reply = subprocess.run(['openssl', *arguments], cwd=tls_root, capture_output=True,
+                               timeout=10)
+        require(reply.returncode == 0, f'{name} certificate generation')
+    (tls_root / f'{name}.key').chmod(0o600)
+
+
+def certificate_sha256(path):
+    der = ssl.PEM_cert_to_DER_cert(path.read_text())
+    return hashlib.sha256(der).hexdigest()
+
+
 def scheduler_database(root, pg_bin, port, initializer):
     migration, runtime = secrets.token_hex(32), secrets.token_hex(32)
     migration_file = root / 'password-p03_scheduler_migration'
@@ -84,6 +110,7 @@ def prepare(root, enrolled):
     """Extend the bootstrap fixture: enroll the Scheduler platform peer + task delegation grants."""
     tls_root = root / 'bootstrap-tls'
     write_scheduler_certificate(tls_root)
+    write_extra_runtime_certificate(tls_root, 'runtime-readonly', 'spiffe://kiarabot/runtime-readonly')
     installation = str(uuid.uuid4())
     # The frozen delegation claim has no installation/instance field; instance scopes are derived
     # from the delegated subject, so the fixture's owner instance is the delegated principal.
@@ -109,7 +136,7 @@ def prepare(root, enrolled):
         'scope': [{'kind': 'RESOURCE_INSTALLATION', 'id': installation},
                   {'kind': 'RESOURCE_INSTANCE', 'id': instance}]})
     STATE.update(installation=installation, instance=instance, task=task,
-                 scheduler_san=SAN)
+                 scheduler_san=SAN, account=str(uuid.uuid4()))
 
 
 def scenario(root, port, pg_bin, binaries):
@@ -149,7 +176,15 @@ def scenario(root, port, pg_bin, binaries):
                     'private_key_file': str(tls / 'scheduler.key'),
                     'ca_file': str(tls / 'ca.pem')},
             'database': scheduler_db, 'runtime_endpoint': runtime_endpoint,
-            'identity_endpoint': identity_endpoint}
+            'identity_endpoint': identity_endpoint,
+            'runtime_peers': [
+                {'certificate_sha256': certificate_sha256(tls / 'runtime.pem'),
+                 'instance_id': STATE['instance'], 'installation_id': STATE['installation'],
+                 'account_id': STATE['account'],
+                 'permissions': ['task.read', 'task.schedule']},
+                {'certificate_sha256': certificate_sha256(tls / 'runtime-readonly.pem'),
+                 'instance_id': STATE['instance'], 'installation_id': STATE['installation'],
+                 'account_id': STATE['account'], 'permissions': ['task.read']}]}
         scheduler_path = root / 'scheduler.json'
         scheduler_path.write_text(json.dumps(scheduler_config))
         scheduler_path.chmod(0o600)
@@ -171,6 +206,13 @@ def scenario(root, port, pg_bin, binaries):
         scheduler_channel = rt.channel('127.0.0.1:' + scheduler_state['grpc_port'], tls)
         scheduler_peer_channel = rt.channel(runtime_endpoint, tls, certificate='scheduler.pem',
                                             key='scheduler.key')
+        scheduler_endpoint = '127.0.0.1:' + scheduler_state['grpc_port']
+        runtime_scheduler_channel = rt.channel(scheduler_endpoint, tls, certificate='runtime.pem',
+                                               key='runtime.key')
+        readonly_scheduler_channel = rt.channel(scheduler_endpoint, tls,
+                                                certificate='runtime-readonly.pem',
+                                                key='runtime-readonly.key')
+        unregistered_scheduler_channel = rt.channel(scheduler_endpoint, tls)
         try:
             identity_stub = identity_pb2_grpc.IdentityServiceStub(identity_channel)
             scheduler_stub = scheduler_pb2_grpc.SchedulerServiceStub(scheduler_channel)
@@ -364,6 +406,124 @@ def scenario(root, port, pg_bin, binaries):
                         return
                     time.sleep(0.25)
                 raise RuntimeError('p10 timer matrix task never completed: ' + task_id)
+
+            # P13h-1: Runtime platform peer path, restricted to ListTasks/CancelTask and one
+            # deployment-authorized instance/installation/account. Other callers keep delegation.
+            p13_stub = scheduler_pb2_grpc.SchedulerServiceStub(runtime_scheduler_channel)
+            readonly_stub = scheduler_pb2_grpc.SchedulerServiceStub(readonly_scheduler_channel)
+            unregistered_stub = scheduler_pb2_grpc.SchedulerServiceStub(
+                unregistered_scheduler_channel)
+            instance_scope = platform_pb2.ResourceScope(resources=[
+                platform_pb2.ResourceRef(kind=platform_pb2.RESOURCE_INSTANCE,
+                                         id=STATE['instance'])])
+            platform_task = 'p13h1-platform'
+            created_platform = scheduler_stub.CreateTask(
+                scheduler_pb2.SchedulerCreateTaskRequest(
+                    context=rt.context(delegation=proof), task_id=platform_task,
+                    target=common_pb2.ConversationRef(id='conversation',
+                                                       type=common_pb2.ConversationRef.PRIVATE),
+                    payload=b'platform', run_at=rt.timestamp(60)), timeout=10)
+            require(created_platform.task.state == common_pb2.SCHEDULED_TASK_PENDING,
+                    'P13h-1 platform task pending')
+            listed = p13_stub.ListTasks(scheduler_pb2.SchedulerListTasksRequest(
+                context=rt.context(), scope=instance_scope), timeout=10)
+            listed_ids = [item.task_id for item in listed.tasks]
+            require(platform_task in listed_ids and
+                    all(item.owner_instance_id == STATE['instance'] for item in listed.tasks),
+                    'P13h-1 platform ListTasks returns target instance tasks only')
+            cancelled_platform = p13_stub.CancelTask(scheduler_pb2.SchedulerCancelTaskRequest(
+                context=rt.context(), task_id=platform_task, scope=instance_scope), timeout=10)
+            require(cancelled_platform.task.state == common_pb2.SCHEDULED_TASK_CANCELLED,
+                    'P13h-1 platform CancelTask allowed for owned task')
+            for label, request in [
+                    ('list cross-instance', lambda: p13_stub.ListTasks(
+                        scheduler_pb2.SchedulerListTasksRequest(
+                            context=rt.context(),
+                            scope=platform_pb2.ResourceScope(resources=[
+                                platform_pb2.ResourceRef(kind=platform_pb2.RESOURCE_INSTANCE,
+                                                         id=str(uuid.uuid4()))])), timeout=10)),
+                    ('cancel cross-instance', lambda: p13_stub.CancelTask(
+                        scheduler_pb2.SchedulerCancelTaskRequest(
+                            context=rt.context(), task_id=platform_task,
+                            scope=platform_pb2.ResourceScope(resources=[
+                                platform_pb2.ResourceRef(kind=platform_pb2.RESOURCE_INSTANCE,
+                                                         id=str(uuid.uuid4()))])), timeout=10)),
+                    ('missing instance scope', lambda: p13_stub.ListTasks(
+                        scheduler_pb2.SchedulerListTasksRequest(
+                            context=rt.context(),
+                            scope=platform_pb2.ResourceScope()), timeout=10))]:
+                denied = None
+                try:
+                    request()
+                except grpc.RpcError as error:
+                    denied = error.code()
+                require(denied == grpc.StatusCode.PERMISSION_DENIED,
+                        f'P13h-1 {label} must be PERMISSION_DENIED, got {denied}')
+            # Cross-installation/cross-account task rows are owned by the allowed instance but must
+            # never be listed or cancelled by this platform peer.
+            other_installation = str(uuid.uuid4())
+            other_account = str(uuid.uuid4())
+            query(scheduler_env,
+                  "INSERT INTO kiarabot.tasks(owner,task_id,installation,adapter,account,"
+                  "conversation_id,conversation_kind,payload,run_at,state,version,occurrence_id,"
+                  "cancel_requested,created_at,updated_at) VALUES "
+                  f"('{STATE['instance']}','p13h1-cross-install','{other_installation}','','',"
+                  "'conversation',1,''::bytea,9000000000000000000,0,1,'cross-occ-1',false,1,1),"
+                  f"('{STATE['instance']}','p13h1-cross-account','{STATE['installation']}','','"
+                  f"{other_account}','conversation',1,''::bytea,9000000000000000000,0,1,"
+                  "'cross-occ-2',false,1,1);")
+            listed = p13_stub.ListTasks(scheduler_pb2.SchedulerListTasksRequest(
+                context=rt.context(), scope=instance_scope), timeout=10)
+            listed_ids = [item.task_id for item in listed.tasks]
+            require('p13h1-cross-install' not in listed_ids and
+                    'p13h1-cross-account' not in listed_ids,
+                    'P13h-1 ListTasks withholds cross-installation/account tasks')
+            for task_id in ('p13h1-cross-install', 'p13h1-cross-account'):
+                denied = None
+                try:
+                    p13_stub.CancelTask(scheduler_pb2.SchedulerCancelTaskRequest(
+                        context=rt.context(), task_id=task_id, scope=instance_scope), timeout=10)
+                except grpc.RpcError as error:
+                    denied = error.code()
+                require(denied == grpc.StatusCode.NOT_FOUND,
+                        f'P13h-1 CancelTask {task_id} must be NOT_FOUND, got {denied}')
+            # Read-only grant can list but cannot cancel. ListTasks only observes active tasks,
+            # so keep one pending candidate after the previous cancel.
+            create_named('p13h1-readonly', 60)
+            readonly_page = readonly_stub.ListTasks(scheduler_pb2.SchedulerListTasksRequest(
+                context=rt.context(), scope=instance_scope), timeout=10)
+            require(any(item.task_id == 'p13h1-readonly' for item in readonly_page.tasks),
+                    'P13h-1 read-only platform peer may list target instance tasks')
+            denied = None
+            try:
+                readonly_stub.CancelTask(scheduler_pb2.SchedulerCancelTaskRequest(
+                    context=rt.context(), task_id=STATE['task'], scope=instance_scope), timeout=10)
+            except grpc.RpcError as error:
+                denied = error.code()
+            require(denied == grpc.StatusCode.PERMISSION_DENIED,
+                    'P13h-1 missing task.schedule must deny CancelTask')
+            # Unregistered certificate/direct legacy path without delegation fails closed; the
+            # platform path is not a wildcard for other Scheduler methods either.
+            for label, request in [
+                    ('unregistered list', lambda: unregistered_stub.ListTasks(
+                        scheduler_pb2.SchedulerListTasksRequest(
+                            context=rt.context(), scope=instance_scope), timeout=10)),
+                    ('runtime cert create', lambda: p13_stub.CreateTask(
+                        scheduler_pb2.SchedulerCreateTaskRequest(
+                            context=rt.context(), task_id='p13h1-forbidden',
+                            target=common_pb2.ConversationRef(
+                                id='conversation', type=common_pb2.ConversationRef.PRIVATE),
+                            payload=b'x', run_at=rt.timestamp(60)), timeout=10))]:
+                denied = None
+                try:
+                    request()
+                except grpc.RpcError as error:
+                    denied = error.code()
+                require(denied == grpc.StatusCode.UNAUTHENTICATED,
+                        f'P13h-1 {label} must be UNAUTHENTICATED, got {denied}')
+            query(scheduler_env,
+                  "DELETE FROM kiarabot.tasks WHERE task_id IN "
+                  "('p13h1-cross-install','p13h1-cross-account');")
 
             # Capacity: instance 1024 then installation 8192 both reject without over-creation.
             query(scheduler_env,

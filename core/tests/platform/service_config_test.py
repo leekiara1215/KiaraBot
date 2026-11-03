@@ -229,6 +229,29 @@ def main(driver, identity=None):
             expect(2, {**scheduler, 'runtime_endpoint': invalid}, service='scheduler')
         expect(2, {**config, 'runtime_endpoint': 'runtime.internal:7444'})
         expect(2, {**runtime, 'runtime_endpoint': 'runtime.internal:7444'}, service='runtime')
+        runtime_peer = {
+            'certificate_sha256': 'ab' * 32,
+            'instance_id': '11111111-1111-4111-8111-111111111111',
+            'installation_id': '22222222-2222-4222-8222-222222222222',
+            'account_id': '33333333-3333-4333-8333-333333333333',
+            'permissions': ['task.read', 'task.schedule']}
+        expect(0, {**scheduler, 'runtime_peers': [runtime_peer]}, service='scheduler')
+        for invalid in [
+                {**runtime_peer, 'certificate_sha256': 'AB' * 32},
+                {**runtime_peer, 'certificate_sha256': 'ab'},
+                {**runtime_peer, 'instance_id': 'not-a-uuid'},
+                {**runtime_peer, 'permissions': []},
+                {**runtime_peer, 'permissions': ['task.read', 'task.read']},
+                {**runtime_peer, 'permissions': ['task.manage']},
+                {k: v for k, v in runtime_peer.items() if k != 'account_id'},
+                {**runtime_peer, 'extra': True}]:
+            expect(2, {**scheduler, 'runtime_peers': [invalid]}, service='scheduler')
+        expect(2, {**scheduler, 'runtime_peers': [runtime_peer, runtime_peer]},
+               service='scheduler')
+        for service, name in [('runtime', 'runtime'), ('identity', 'identity'),
+                              ('model', 'model'), ('host', 'plugin-host')]:
+            value = {**config, 'service': name}
+            expect(2, {**value, 'runtime_peers': [runtime_peer]}, service=service)
         for service, name in [('identity', 'identity'), ('model', 'model'),
                               ('host', 'plugin-host'), ('control', 'control')]:
             value = {**config, 'service': name}
