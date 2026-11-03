@@ -499,7 +499,8 @@ def after_bootstrap(root: Path) -> None:
                      runtime_grpc=endpoints['runtime_grpc'],
                      bridge=endpoints['bridge'], installation=STATE['installation'])
         run_plugin(root, endpoints['bridge'], STATE['instance'], plugin_bootstrap, tls,
-                   provider_state, provider_mode, model_id, expect_success)
+                   provider_state, provider_mode, model_id, expect_success, identity_endpoint,
+                   endpoints['model_grpc'])
     finally:
         import select as select_module
         for child in children:
@@ -625,8 +626,51 @@ def start_managed_host(root, host_binary):
     return host
 
 
+def check_runtime_leaf_binding(tls, identity_endpoint, model_endpoint, parent, model_id, provider_state):
+    grpc, identity_pb, identity_rpc, model_pb, model_rpc, platform, policy = _grpc_modules()
+    alternate = 'unregistered-runtime'
+    p14.write_leaf(tls, alternate, 'spiffe://kiarabot/runtime-test')
+
+    def exchange(leaf):
+        with rt.channel(identity_endpoint, tls, leaf + '.pem', leaf + '.key') as channel:
+            grpc.channel_ready_future(channel).result(timeout=5)
+            return identity_rpc.IdentityServiceStub(channel).ExchangeDelegation(
+                identity_pb.IdentityExchangeDelegationRequest(
+                    context=rt.context(), parent_proof=parent, audience='model',
+                    scope=platform.ResourceScope(resources=[
+                        platform.ResourceRef(kind=platform.RESOURCE_MODEL, id=model_id)]),
+                    permissions=[policy.PERMISSION_MODEL_CHAT],
+                    client_certificate_sha256=pem_fingerprint(tls / (leaf + '.pem'))),
+                timeout=5).delegation.proof
+
+    def chat(leaf, child):
+        with rt.channel(model_endpoint, tls, leaf + '.pem', leaf + '.key') as channel:
+            grpc.channel_ready_future(channel).result(timeout=5)
+            return model_rpc.ModelServiceStub(channel).Chat(model_pb.ModelGatewayChatRequest(
+                context=rt.context(15, child), logical_call_id=str(uuid.uuid4()),
+                model_id=model_id, messages=[{'role': 'user', 'text': 'leaf binding probe'}]),
+                timeout=10)
+
+    child = exchange('runtime')
+    before = len(provider_state.read_text().splitlines())
+    require(chat('runtime', child).result.text == 'p05b-fixture reply', 'registered Runtime chat')
+    after = len(provider_state.read_text().splitlines())
+    require(after == before + 1, 'registered Runtime reaches Provider once')
+    for label, attempt in [('ExchangeDelegation', lambda: exchange(alternate)),
+                           ('Model.Chat', lambda: chat(alternate, child))]:
+        try:
+            attempt()
+        except grpc.RpcError as error:
+            require(error.code() == grpc.StatusCode.UNAUTHENTICATED,
+                    f'unregistered Runtime {label} rejected: {error.code()}')
+        else:
+            raise Failure(f'unregistered Runtime {label} was accepted')
+        require(len(provider_state.read_text().splitlines()) == after,
+                f'unregistered Runtime {label} reached Provider')
+
+
 def run_plugin(root, bridge_endpoint, instance, bootstrap, tls, provider_state, mode_file,
-               model_id, expect_success):
+               model_id, expect_success, identity_endpoint, model_endpoint):
     package = root / 'p05b-plugin'
     package.mkdir(exist_ok=True)
     commands = root / 'plugin-commands.jsonl'
@@ -791,6 +835,11 @@ def run_plugin(root, bridge_endpoint, instance, bootstrap, tls, provider_state, 
         requests = [json.loads(line) for line in provider_state.read_text().splitlines()]
         require(requests and all(entry['auth_ok'] and entry['stream'] is False
                                  for entry in requests), 'provider auth/stream=false')
+
+        refresh_parent()
+        check_runtime_leaf_binding(tls, identity_endpoint, model_endpoint,
+                                   json.loads(envelope_path.read_text())['delegation_proof'],
+                                   model_id, provider_state)
 
         # Provider error mapping through the real chain (stable Model/plugin codes).
         matrix = [('status_400', 'INVALID_ARGUMENT'), ('status_401', 'UPSTREAM_UNAVAILABLE'),

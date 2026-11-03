@@ -75,7 +75,7 @@
 | 真实 QQ/NapCat | **登录与只读鉴权通过** | 从目标 Adapter 镜像经 Compose 网络调用真实 OneBot 的 get_status 和 get_login_info 成功；目标 Runtime 注册、会话收发及断连恢复仍待验证。 |
 | 真实付费外部 Model Provider | 待 API Key 和费用上限 | DeepSeek 模型配置已准备。匿名 GET /models 返回 401；付费推理与计费核对仍待验证。 |
 | 生产 CA/密钥托管、备份离站 | 待用户环境/决策 | CA/root key 托管、轮换/吊销、KMS/离线/分片；备份保留周期、离站位置/频率、生产数据量恢复演练未定 |
-| 部署级错误 Runtime 叶证书 | **未验收** | P11h 以 forged signature/错误 origin 覆盖在线拒绝路径，但 fixture 只登记一个 Runtime peer；替代 Runtime 叶证书的部署级错误证书场景未验证 |
+| 部署级错误 Runtime 叶证书 | **原生目标进程通过；Compose 挂载复演待验证** | `p05b_model_chain_e2e` 使用两张同 CA、同 Runtime URI SAN 的叶证书。已登记叶换取子委托并成功调用 Model.Chat，HTTP Provider 新增一次请求；未登记叶建立 mTLS 通道后，ExchangeDelegation 和携同一子委托的 Model.Chat 均返回 UNAUTHENTICATED，Provider 计数不变。 |
 | Model Update/RotateProviderSecret `scope_kinds` | **已验收** | `p14_native_single_host` 从 Control HTTPS 发起，两条 RPC 均经真实 Identity 授权。目标模型 HTTP 200，跨模型 HTTP 403 `PERMISSION_DENIED`。 |
 
 ## 6. 用户决策与实施状态（2026-11-03，P14t）
