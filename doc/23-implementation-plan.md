@@ -2,7 +2,7 @@
 
 - 版本：v1.3
 - 日期：2026-11-02
-- 状态：P00–P14 实现主体已合入 main（P14q 最终基线 `1213790`，final gate **148/148**；P00n SQLite 写锁竞态修复、P06h 真实链 UNKNOWN/EXPIRED/重连补齐、P10m 优雅停机修复+p10 抽验、P13g test-only 联合 e2e；原生单机栈矩阵 **9 success+1 stable-ok+0 known-gap**）；阶段退出/发布证据矩阵见 [P14n 矩阵](27-phase-exit-evidence.md)，发布门禁见 [P14n 发布清单](28-p14d-release-checklist.md)，最终状态索引见 [P14q 交付状态](../reports/modules/architecture-delivery-status.md)。单机 Docker Compose、两主机演练、远端 CI 与正式发布仍未验收。用户 2026-11-03 决策：P13 批准限定方案 A（仅 ListTasks/CancelTask；P13h-1/2/3 实施中，生产验收未完成）；P05b 批准 B1（P05b-2/4/5、P11h 实施中）；P12 host operation/bootstrap_credential 保持 not_implemented（用户确认）；P14 Docker/gh 环境用户准备中。仍不能标记相关阶段“已退出”。
+- 状态：P00–P14 实现主体已合入 main（P14t 最终基线 `7b8fb0f`；P13 生产退出 PASS（本验收范围）、P11 独立验收 PASS、P10k 真实 Scheduler 任务链 PASS、P05b B1 链完成（安全评审 0 Critical/High；F-1/F-2 已修、F-3 加固中）；此前 final gate 148/148@1213790，checkpoint @7b8fb0f env 运行中；原生单机栈矩阵 **9 success+1 stable-ok+0 known-gap**）；阶段退出/发布证据矩阵见 [P14t 矩阵](27-phase-exit-evidence.md)，发布门禁见 [P14t 发布清单](28-p14d-release-checklist.md)，最终状态索引见 [P14t 交付状态](../reports/modules/architecture-delivery-status.md)。单机 Docker Compose 六服务栈、两主机/断网、远端 CI/release、真实 QQ/NapCat、真实付费 Provider、生产 CA/密钥/备份离站、部署级错误 Runtime 叶证书、Model Update/RotateProviderSecret scope_kinds 契约缺口仍未验收；P12 host operation/bootstrap_credential 保持 not_implemented（用户确认）；P14 Docker/gh 环境用户准备中。
 - 依据：[方向基线](19-architecture-direction-baseline.md)、[设计总览](20-detailed-architecture-design.md)、[通信方法](21-service-contract-design.md)、[事务与初始化](22-transactions-and-migration-design.md)
 - 当前授权：单机真实QQ群聊首轮已通过，用户要求关闭运行、记录已确认接入方向并推送；本次不继续开发。下一轮按[接入设计](26-real-qq-onboarding.md)独立推进，插件机制、完整账号管理、多主机等非核心内容继续后移。保留独立提交、主对话审查及换机交接；本文件保留后续目标架构迁移路线，未达到退出条件的阶段不能标为完成。
 
@@ -10,7 +10,7 @@
 
 按用户要求把“完成/未完成/延期”分开记录；本计划此前“P04 部分实现后暂停”的历史状态不再代表当前实现进度。
 完整证据、命令、测试名与缺口见 [P04–P14 阶段退出证据矩阵](27-phase-exit-evidence.md)；发布操作见
-[P14n 发布清单](28-p14d-release-checklist.md)。
+[P14t 发布清单](28-p14d-release-checklist.md)。
 
 | 分类 | 覆盖 |
 |---|---|
@@ -437,3 +437,12 @@ ListTasks/CancelTask（当前仅注入 fake 端口 BLOCKED→Done）；跨主机
 - **P05b**：批准 B1（Control 管理员触发实例主体父委托，Identity 签发扩展）。P05b-2（task-144，in_progress）、P05b-4（task-145，blocked_by 144）、P05b-5（task-147，blocked_by 144）、P11h（task-146，blocked_by 145）实施中/待依赖；P11 验收要求真实 managed plugin + 真实 HTTP Provider fixture（非 fake port）+撤销/过期/跨实例负例；真实付费外部 Provider（T07b）仍为环境项。**单链路未验收。**
 - **P12**：host operation/bootstrap_credential 字段级缺口保持 `not_implemented`（用户确认），不扩契约；P12 其余范围状态不变。
 - **P14**：用户将准备 Docker 与 `gh` 登录，之后继续 Compose/CI/release 验收；当前单机 Docker Compose、两主机、远端 CI、正式发布仍未验收。
+
+
+## P14t 最终证据刷新（2026-11-03，main=7b8fb0f）
+
+- **P13 生产退出 PASS（本验收范围）**：`p13h3_joint_delete_production_e2e`（真 PG16.4 四库+真 Identity bootstrap+真 mTLS Runtime/Scheduler+真 plugin-host+受管 SDK 插件）验证 BeginDelete→真实 Host receipt+Scheduler ListTasks/CancelTask→全 Done→DELETED、Host UNKNOWN/离线 BLOCKED、Scheduler denied BLOCKED、Restore 不重建 task/凭据/租约、再次 BeginDelete 重新调度、跨实例任务不受影响；残余真实 Host UNKNOWN 注入/多主机/满盘/生产规模属 P14 环境。
+- **P11 独立验收 PASS**：P11h `p11h_managed_model_e2e`/`p11h_model_chain_fail_closed`/`p11h_provider_fixture`，真实 managed Host+SDK plugin→PluginBridge→Runtime→Model→真实 HTTP Provider 正/负矩阵；相关回归 37/37。真实付费外部 Provider 仍环境项。
+- **P10k 真实 Scheduler 任务链 PASS**：`p05b_task_chain_e2e`，真实 managed SDK plugin Bridge task_create/get/cancel→Runtime→真 Scheduler；owner/installation、幂等/取消/COMPLETED、跨实例 NOT_FOUND、离线 fail-closed。
+- **P05b B1 链完成**：P05b-2/5/6/7/8/9/4/12；安全评审 0 Critical/High，Medium F-1/F-2 已修、F-3/F-4/F-5/F-6 加固中（P05b-13 in_progress）。
+- **未验收收敛**：Docker Compose 六服务栈、两主机/断网、远端 CI/release、真实 QQ/NapCat、真实付费 Provider、生产 CA/密钥/备份离站、部署级错误 Runtime 叶证书、Model Update/RotateProviderSecret `scope_kinds` 契约缺口。门禁数字：此前 `148/148@1213790`（687.02s），checkpoint `7b8fb0f` 由 env 运行中，完成后回填，不提前宣称新结果。

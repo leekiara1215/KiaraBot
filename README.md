@@ -78,9 +78,9 @@ Host/Adapter                       各自本地 SQLite 可靠执行/发送日志
 
 ## 当前状态
 
-**2026-11-03 目标架构状态**：P00–P14 的实现已基本合入 main（P14q 最终基线 `1213790`，final gate **148/148**（P00n SQLite 竞态修复、P06h 真实链补齐、P10m 优雅停机修复、P13g test-only e2e 后）原生五进程栈矩阵 **9 success + 1 stable-ok + 0 known-gap**），
+**2026-11-03 目标架构状态**：P00–P14 的实现已基本合入 main（P14t 最终基线 `7b8fb0f`（P13 生产退出 PASS、P11 独立验收 PASS、P10k 真实 Scheduler 任务链 PASS、P05b B1 链完成；安全评审 0 Critical/High；此前 final gate 148/148@1213790，checkpoint @7b8fb0f 由 env 运行中）原生五进程栈矩阵 **9 success + 1 stable-ok + 0 known-gap**），
 但“实现合入”“已实测”“待验收/未验证”“正式发布”必须分开看。统一证据矩阵与发布门禁见
-[阶段退出证据](doc/27-phase-exit-evidence.md)、[P14n 发布清单](doc/28-p14d-release-checklist.md)；
+[阶段退出证据](doc/27-phase-exit-evidence.md)、[P14t 发布清单](doc/28-p14d-release-checklist.md)；
 CI/发布流水线配置见 [CI/CD 文档](doc/12-ci-cd.md)。
 
 | 交付类别 | 当前状态 |
@@ -94,10 +94,10 @@ CI/发布流水线配置见 [CI/CD 文档](doc/12-ci-cd.md)。
 PluginBridge/AdapterBridge 真实 TLS 事件→插件→Action；Scheduler 定时交接；Namespace/Storage CAS；
 Model 两次事务/Provider/UNKNOWN 边界；Host 期望状态与进程桥；Control owner REST/健康/operation 快照；
 P13 生命周期清理与 Host/SDK drain；P14f/i/j/k/l/m 原生单机栈矩阵 9 success+1 stable-ok+0 known-gap；
-P12j Panel client 严格 live 通过。P13 生产退出仍未通过（test-only 证据已具备，待用户决策生产授权 A/B）；P05b 委托语义、P12 host operation/
+P12j Panel client 严格 live 通过。P13 生产退出通过（本验收范围；多主机/满盘/生产规模仍环境项）；P11 独立验收通过；P10k 真实 Scheduler 任务链通过；P05b B1 链完成（F-3 加固中）；P12 host operation/
 bootstrap_credential 字段级待决策；P14 Docker/Compose、两主机、远端 CI、正式发布仍未验收；真实 QQ/NapCat、
 真实模型 Provider 只在用户环境单独验证，不能用 fake 结果替代。最终索引见
-[P14q 交付状态](reports/modules/architecture-delivery-status.md)。
+[P14t 交付状态](reports/modules/architecture-delivery-status.md)。
 旧 `core/reference/` 一体化闭环与部署说明保留为 reference 证据，不代表六服务生产可用。
 
 - **已实现并纳入本机/定向门禁**：P02 六进程启停与身份边界；P03 PG 私有库/初始化/桌面 fixture；
@@ -109,10 +109,10 @@ bootstrap_credential 字段级待决策；P14 Docker/Compose、两主机、远�
   真实 TLS gRPC Bridge/Control 认证验收；P14c 本地备份/恢复故障矩阵（`scripts/ops/target-drill.sh`，
   RPO=0s、RTO≈4.6–12.1s，小数据量）；P14b-2 workflow 本地 YAML/门禁静态检查。远端 Actions、
   Docker/Compose、两主机、真实 QQ/模型未运行。
-- **尚未完成或未验收**：单机 Docker Compose 实际启动/healthcheck/官方 PG digest；两主机与跨主机
-  断网恢复；远端 CI 手动/自动运行；GHCR 推送+cosign 签名+SBOM 发布、签名验签；P05b 委托深链路；
-  P13 生产授权 A/B；P12 host operation/bootstrap_credential 字段级；真实 QQ/NapCat 与真实模型 Provider 联调；
-  生产规模 RTO、备份离站/KMS、指标/告警/集中日志。
+- **尚未完成或未验收（P14t 收敛）**：Docker Compose 六服务栈；两主机/断网演练（延期）；远端 CI/release；
+  真实 QQ/NapCat；真实付费外部 Provider；生产 CA/密钥托管、备份离站；部署级错误 Runtime 叶证书场景；
+  Model Update/RotateProviderSecret proto `scope_kinds` 契约缺口；P12 host operation/bootstrap_credential
+  按用户确认保持 not_implemented。
 - **远端 CI 与发布**：GitHub Actions 触发器已恢复但默认由仓库变量 `CI_AUTO_ENABLED` 门控；
   `release.yml` 仅允许受保护 `release-gated` 环境 + `RELEASE_PUSH_ENABLED`/`RELEASE_COSIGN_KEYLESS`
   时推送自建镜像到 `ghcr.io/leekiara1215`，SBOM+签名是发布门槛；release dry-run 与正式发布均未运行。
