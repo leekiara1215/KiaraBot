@@ -379,7 +379,7 @@ refresh只接受当前实际流、未过期未撤销的proof/refresh及正refres
 
 ## P11f Model SDK 状态（2026-11-02）
 
-P05b-4 后 SDK `model_chat` 已有真实 Identity/Runtime/Model + 真实 TLS PluginBridge + 本地
+P05b-4 后 SDK `model_chat` 已有真实 Identity/Runtime/Model + 真实 kiarabot-plugin-host 管理的 SDK plugin + 本地
 HTTP Provider 的成功/错误矩阵 e2e（`p05b_model_chain_e2e`）：SDK 收到 ModelChatResponse 的
 text/usage，Provider 401/429/500/timeout/畸形响应映射为稳定码，无 sealed 父委托时
 fail-closed。managed Host/P08e 组合与真实付费 Provider 仍待补；dispositions 不暴露给

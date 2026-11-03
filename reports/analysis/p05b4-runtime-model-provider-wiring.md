@@ -1,9 +1,8 @@
 # P05b-4：Runtime → Model 实例委托 provider 接线设计（待 P05b-2 合入后实现）
 
 - 日期：2026-11-03
-- 状态：**实现进行中（WIP）**。P05b-7/P05b-8 已合入并改用共享 sealed provider；positive
-  e2e 走通到 Model/真实 HTTP Provider，但 Runtime→Identity ExchangeDelegation 仍失败，已交
-  P05b-9/task-152 诊断；fail-closed e2e 通过，正链不作为验收证据。
+- 状态：**完成**。P05b-7/P05b-8 + P05b-9 已合入/rebase；真实 managed Host + 受管 SDK plugin
+  正链与 Provider 错误矩阵、fail-closed e2e 均通过；CTest `p05b_model_chain_e2e` 已激活。
 - 基线：main=`ea318d5`；关联：`reports/analysis/p05b-instance-delegation-proposal.md`
   §7 P05b-4、`reports/modules/architecture-p11-model.md`、`architecture-p05-runtime.md`。
 - 非目标：本文不改实现在线行为；proto/权限不变；P05b-2 的签发接口语义由 task-144 决定。
@@ -208,3 +207,15 @@ SKIP_RETURN_CODE 77），等 P05b-6 合入后去掉 gate 并跑 managed Host+SDK
   成功。最小复现、envelope、证书指纹、配置与 Identity audit 已交 P05b-9/core-target。
 - 待 P05b-9 修复合入后：rebase、managed Host+SDK plugin 正/负矩阵、激活 CTest 证据、
   doc/03/05/08/22+P11 报告、全量构建与 p11/p05/p08/p06/p03_postgres 门禁。
+
+
+## 10. 完成状态（2026-11-03）
+
+- rebase main b0386bb，cherry-pick P05b-9 66587e9（ExchangeDelegation 独立 2s/5s 预算）
+  与 ddf643d；生产 composition 重接模型 sealed provider、per-request delegation、`host.model.v1`。
+- e2e 已使用真实 `kiarabot-plugin-host` 管理 SDK plugin：Host start command receipt 与
+  SQLite journal 断言通过后执行 model_chat；success + Provider 401/429/500/timeout/
+  invalid_json + restored success 全绿；fail-closed（无 sealed 父委托）code=UNAUTHENTICATED、
+  Provider 0 请求。
+- CTest：`p05b_model_chain_e2e`、`p05b_model_chain_fail_closed_e2e`、`p05b_provider_fixture`
+  全 PASS；未覆盖付费外部 Provider/目标六服务栈 live（环境项）。

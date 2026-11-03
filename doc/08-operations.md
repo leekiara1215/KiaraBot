@@ -1754,8 +1754,8 @@ BLOCKED（instance DELETING），不得手工改写 PG 或伪造 receipt。Sched
 - Runtime 出站 Identity CheckAuthorization 仍是 500ms/1s 热路径预算；ExchangeDelegation
   使用独立 2s/5s 等待上限（代码内 bounded option，不是新配置字段）。Identity 在线失败时
   调用 fail-closed，不重试成未知计费：Model 调用结果未知时按 logical_call_id 查询。
-- 验证：`p05b_model_chain_e2e`（真实 Identity/Runtime/Model/SDK PluginBridge/HTTP Provider
-  正链 + Provider 错误矩阵）与 `p05b_model_chain_fail_closed_e2e`、`p05b_provider_fixture`。
+- 验证：`p05b_model_chain_e2e`（真实 Identity/Runtime/Model + 真实 kiarabot-plugin-host
+  管理的 SDK plugin/HTTP Provider 正链 + Provider 错误矩阵）与 `p05b_model_chain_fail_closed_e2e`、`p05b_provider_fixture`。
   managed Host/P08e 组合与真实付费 Provider 仍属未覆盖环境项；不得把本机 fixture 结果当作
   目标六服务栈 live 验收。
 

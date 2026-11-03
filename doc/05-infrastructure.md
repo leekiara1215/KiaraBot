@@ -682,7 +682,7 @@ advertise `host.model.v1`，`HostRequest.model_chat` 仅在插件获授 `model.c
   InvalidArgument。Exchange 使用独立的 bounded `delegation_budget`（默认 2s / max 5s），
   CheckAuthorization 预算不变；Identity 仍按 request context deadline 做最终校验。
 
-证据：真实 Identity/Runtime/Model + 真实 TLS PluginBridge SDK plugin + 本地真实 HTTP Provider
+证据：真实 Identity/Runtime/Model + 真实 `kiarabot-plugin-host` 执行受管 SDK plugin（Host start command receipt + Host journal 断言）+ 本地真实 HTTP Provider
 e2e `p05b_model_chain_e2e` 覆盖 success（reply/usage/auth/stream=false）、Provider
 401/429/500/timeout/invalid_json 稳定错误映射、restored success；无 sealed 父委托的
 `p05b_model_chain_fail_closed_e2e` 保持 UNAUTHENTICATED 且 Provider 0 请求。付费外部 Provider

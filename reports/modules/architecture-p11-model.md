@@ -108,11 +108,10 @@ owner gateway/委托/错误映射沿用 P12c；本任务只新增 Model owner �
 - **真实负例 e2e**（`p05b_model_chain_fail_closed_e2e`）：真实 Identity/Runtime/Model + 真实
   SDK plugin over TLS PluginBridge + 真 Provider fixture；无 sealed 父委托时 plugin 收
   UNAUTHENTICATED(2)，Provider requests=0（通过）。
-- 正例 e2e（managed Host+SDK plugin+真实 Provider 成功/撤销/过期/跨实例/错误证书）已从
-  **gated skip 解除**并在 CTest 注册（`p05b_model_chain_e2e`），但截至 2026-11-03 13:15
-  仍 **红**：Runtime→Identity ExchangeDelegation 对 sealed model parent 返回
-  InvalidArgument/UNAUTHENTICATED，转 P05b-9/task-152（core-target）诊断；不把负例/分段证据
-  当单链路验收。
+- 正例 e2e（真实 managed `kiarabot-plugin-host` + 受管 SDK plugin + 真实
+  Identity/Runtime/Model + 本地 HTTP Provider 成功/Provider 错误矩阵）已在 CTest 注册并
+  **通过**（`p05b_model_chain_e2e`）；fail-closed 与 provider fixture 同时通过。P05b-9 修复
+  ExchangeDelegation 独立预算后 full matrix 全绿。
 
 ### P05b-4 实现进展（2026-11-03，positive 链调试中）
 
@@ -128,10 +127,10 @@ owner gateway/委托/错误映射沿用 P12c；本任务只新增 Model owner �
   - RuntimeModelClient 未向 Model.Chat 发 trace_id/idempotency_key，Model 在 Provider 前
     拒绝请求；
   - 插件 profile 的 installation 原先取自可省略的注册帧字段，改为权威 instance.installation。
-- 真实正链在成功 runs 已走通 PluginBridge→Runtime→Model→真实 HTTP Provider（Provider 记录
-  请求、usage 正确）；仍间歇/持续失败于 Runtime→Identity ExchangeDelegation（identity
-  audit 无 ExchangeDelegation 记录，app code=1）。最小复现与 wire/证书/envelope 已交
-  P05b-9 core-target；修复合入后补齐 managed Host+SDK plugin 正/负矩阵、文档与门禁。
+- 真实正链已走通 managed Host→SDK plugin→PluginBridge→Runtime→Model→真实 HTTP Provider
+  （Provider 记录请求、usage 正确；Host start command receipt 与 Host journal 断言）。
+  Runtime→Identity ExchangeDelegation 的 500ms 热路径预算缺陷由 P05b-9 修复（独立 2s/5s），
+  本分支已 rebase/cherry-pick；full 正链与 fail-closed 均通过。
 - 发现契约缺口：Model `UpdateModel`/`RotateProviderSecret` 缺 proto `scope_kinds`，真实
   Control 管理 RPC 无法通过 Identity CheckAuthorization；e2e 暂用 test-only seed helper 写入
   真实 Model DB，契约缺口上报。
