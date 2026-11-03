@@ -81,3 +81,9 @@ P14f native single-host target stack smoke passed
 - **logs/audit/tasks/models/action/lifecycle**：P14j 正在对齐 Control 委派 scope/参数；本报告只证明当前稳定错误分类，不是成功。
 - Panel 浏览器真实渲染/交互未跑（本任务只验证 client HTTP 形状/错误映射）。
 - Docker Compose 单机、跨主机、远端 CI、正式发布未验收；真实 QQ/外部 Model Provider/Host/Adapter bridge 链路不在本矩阵。
+
+### P14 单机复验：Identity 时钟失效时的 readiness（2026-11-03）
+
+Identity 记录 `operation=identity_clock outcome=unavailable` 后，其容器 `/health/ready` 持续返回 503；同期 Control 容器探针与 Panel 代理的 Control HTTPS `/health/ready` 仍返回 200。Control 当前检查的是通往 Identity 的 gRPC 通道是否 READY。时钟失效时 Identity 仍保持监听，因此上述 200 只证实了连接状态。逐服务排查方式见 [运维记录](../../doc/08-operations.md)。
+
+跨服务读取 Identity 自身 readiness 仍待 P12 裁定。现有 HTTP probe 只监听容器回环，Control 的配置只提供 Identity 业务 endpoint。一个可审议的方案是在既有 mTLS endpoint 上允许受权的 Control 进程读取二值 readiness，并让 Control 在超时或下游未就绪时返回 503。采用前须确认访问边界和 API 语义；本次仅记录实测，未变更接口，也未验收权威跨服务探测。
