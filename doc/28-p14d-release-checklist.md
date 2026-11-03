@@ -94,13 +94,13 @@ scripts/ops/tests/ops_scripts_test.sh
 
 | 交付类别 | 状态 |
 |---|---|
-| 单机部署（默认目标） | **部分已验收**：官方 PG16.4 的容器健康、TLS、四库初始化及备份恢复已实测；六服务容器共同启动与业务健康检查待验证 |
+| 单机部署（默认目标） | **本地六服务通过**：四个 init 容器和 Identity 引导成功，六个业务容器与 Panel 同时 healthy；四库 ACL 和数据恢复已验证。 |
 | 跨主机演练 | **延期/未验证**（用户确认可选） |
 | 远端 CI | **未运行**：workflow/本地静态检查已合入，`gh` 未认证，未触发 GitHub Actions |
 | 正式发布 | **未就绪**：无推送/签名镜像、无 release artifact，需先完成本清单第 2–4 节 |
 
 最终证据：P13/P11/P10k/P05b 通过证据已合入；P14t checkpoint @7b8fb0f：**161/161 CTest passed @7b8fb0f**（`build/logs/recheck-ctest-155131.log`，1051.70s，2026-11-03 15:51:31→16:09:06；本轮一次全绿、无失败；此前 `1213790` gate 148/148（687.02s）的 `p02_core_process`/`p08_managed_host_e2e` 负载时序 flake 未复现）。首跑 `sqlite_runtime_store` flake 已由 P00n 根因修复（双连接写锁竞争；final gate sqlite 0.27s；此前孤立 14/14、全量重跑 148/148）。P06h 补齐真实 adapter 链 UNKNOWN/EXPIRED/重连证据；原生五进程+PG16.4 矩阵最终 **9 success + 1 stable-ok + 0 known-gap**。P10m 修复优雅停机 SIGSEGV（OpenSSL atexit 竞态）并完成 p10 抽验。P13 生产退出**PASS（本验收范围，`p13h3_joint_delete_production_e2e`）**；P11 独立验收**PASS（P11h，37/37 相关回归）**；P10k 真实 Scheduler 任务链**PASS（`p05b_task_chain_e2e`）**；P05b B1 链完成；安全评审 0 Critical/High，Medium 全部处置（F-1/F-2 已修，F-3/F-4/F-5/F-6 已加固；F-5 host/core 边界文档化）。最终 exact-HEAD gate @04f7044：**161/162 CTest passed，1025.87s**（`build/logs/recheck-ctest-162320.log`，2026-11-03 16:23:19→16:40:30）；唯一失败 `p08_managed_host_e2e` 35.77s（psql SSL negotiation invalid response，套件负载下时序问题）；孤立复跑 **2/2 Passed 58.64s/56.72s**（Lead 57.39s），判定负载时序 flake，不是断言/实现回归。此前 161/161@7b8fb0f/1051.70s。
 用户 2026-11-03 决策：P13 限定 A 已批准并**生产退出通过（本验收范围）**；P05b B1 已批准且**链完成**；P11 独立验收通过、P10k 真实 Scheduler 任务链通过；P12 host operation/bootstrap_credential 保持 not_implemented（用户确认，不扩契约）；P14 本机 Docker 已就绪，gh 登录暂缓。
-**剩余未验收收敛为**：Docker Compose 六服务栈、两主机/断网、远端 CI/release、真实 QQ/NapCat、真实付费外部 Provider、生产 CA/密钥/备份离站、部署级错误 Runtime 叶证书；两主机延期。决策登记见 [用户决策注册](../reports/analysis/user-decisions-2026-11-03.md)，详见 [P14q 交付状态](../reports/modules/architecture-delivery-status.md) 与 [阶段矩阵](27-phase-exit-evidence.md)。
+**剩余未验收收敛为**：两主机/断网、远端 CI/release、真实 QQ/NapCat、真实付费外部 Provider、生产 CA/密钥/备份离站、部署级错误 Runtime 叶证书；两主机延期。决策登记见 [用户决策注册](../reports/analysis/user-decisions-2026-11-03.md)，详见 [P14q 交付状态](../reports/modules/architecture-delivery-status.md) 与 [阶段矩阵](27-phase-exit-evidence.md)。
 
 本清单不能由 AI/文档提交替代真实环境验收；任何一项未完成时发布说明必须保留对应“未验证/延期/缺口”。

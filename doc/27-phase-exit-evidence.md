@@ -38,7 +38,7 @@
 | P11 Model 网关 | **独立验收通过（本地真实依赖）** | **P11h**：`p11h_managed_model_e2e`（真实 managed Host+SDK plugin→PluginBridge→Runtime→Model→真实 HTTP Provider 正/负矩阵）、`p11h_model_chain_fail_closed`、`p11h_provider_fixture`；相关回归 **37/37 passed**（p11|p05|p08|p06|p03_postgres）；p11 9/9、p03 真 PG 2/2、contract gate PASS | 真实付费外部 Provider（T07b，计费/配额/外部网络）；目标部署环境；streaming 明确不做 | **P11 独立验收通过**；真实付费 Provider/目标部署环境待环境；两条 Model 管理 RPC 的精确授权见下表 |
 | P12 Control/Panel | **范围完成**（P12l/P12j/P14g-i）；host operation/bootstrap_credential 保持 not_implemented | `p12_control_owner_gateway`、`p04_control_auth_https`、`p12l` principals、`p12j_panel_live` 严格模式 PASS；原生 Control `/api/v1/health` 200 HEALTHY；P14g occurrence/readiness、P14l/P14m audit/log 修复 | 真实 Panel 浏览器 live 全批准入口；真实四依赖健康环境；host operation/bootstrap_credential 字段级证据待决策 | **P12 host operation / bootstrap_credential 保持 not_implemented（用户确认，不扩契约）**；Docker/跨主机 |
 | P13 生命周期/可观测 | **生产退出通过（本验收范围）** | **`p13h3_joint_delete_production_e2e`**：真 PG16.4 四库+真 Identity bootstrap+真 mTLS Runtime/Scheduler+真 plugin-host+受管 SDK 插件；BeginDelete→真实 Host receipt+Scheduler ListTasks/CancelTask→全 Done→DELETED、Host UNKNOWN/离线 BLOCKED、Scheduler denied BLOCKED、Restore 不重建 task/凭据/租约、再次 BeginDelete 重新调度、跨实例任务不受影响；P13h-1 `p10_timer_e2e` platform-peer 矩阵、P13h-2 `p13_scheduler_lifecycle`/`p10_scheduler_task_client` | 真实 Host UNKNOWN 注入（当前 HostBridge 测试客户端）、Scheduler 完全离线主链引用既有生产证据、P14 多主机/真实满盘/生产规模 | **P13 生产退出通过（本验收范围）**；B 未批准；多主机/满盘/生产规模待 P14 环境 |
-| P14 部署/故障/交付 | 交付材料/原生矩阵完成；**final exact-HEAD 门禁已回填** | exact-HEAD gate @04f7044：**161/162 CTest passed，1025.87s**（`build/logs/recheck-ctest-162320.log`，2026-11-03 16:23:19→16:40:30）；唯一失败 `p08_managed_host_e2e` 35.77s（psql SSL negotiation invalid response，套件负载下时序问题）；孤立复跑 **2/2 Passed 58.64s/56.72s**（Lead 57.39s），判定负载时序 flake，不是断言/实现回归；P14f/i/j/k/l/m 原生栈矩阵 9 success+1 stable-ok+0 known-gap；P13/P11/P10k/P05b 通过证据见各行 | 单机 Docker Compose 六服务栈、两主机/断网、远端 CI/release；真实 QQ/NapCat、真实付费 Provider、生产 CA/密钥/备份离站；部署级错误 Runtime 叶证书 | Docker/两主机/远端 CI/Release 环境（本机 Docker 已就绪，gh 登录暂缓）；QQ/Provider/CA/密钥/备份离站 |
+| P14 部署/故障/交付 | 交付材料/原生矩阵完成；**final exact-HEAD 门禁已回填** | exact-HEAD gate @04f7044：**161/162 CTest passed，1025.87s**（`build/logs/recheck-ctest-162320.log`，2026-11-03 16:23:19→16:40:30）；唯一失败 `p08_managed_host_e2e` 35.77s（psql SSL negotiation invalid response，套件负载下时序问题）；孤立复跑 **2/2 Passed 58.64s/56.72s**（Lead 57.39s），判定负载时序 flake，不是断言/实现回归；P14f/i/j/k/l/m 原生栈矩阵 9 success+1 stable-ok+0 known-gap；P13/P11/P10k/P05b 通过证据见各行 | 单机 Docker Compose 六服务已通过本地门禁。两主机/断网、远端 CI/release；真实 QQ/NapCat、真实付费 Provider、生产 CA/密钥/备份离站；部署级错误 Runtime 叶证书 | Docker/两主机/远端 CI/Release 环境（本机 Docker 已就绪，gh 登录暂缓）；QQ/Provider/CA/密钥/备份离站 |
 
 > P00–P03（工具链、契约、PG/UoW/初始化）作为前置基线已由 `p03_postgres_database`、`p02_core_process`、`p01_*`、contract 门禁覆盖，证据见 [architecture-p02-acceptance.md](../reports/modules/architecture-p02-acceptance.md)、[architecture-p03-postgres.md](../reports/modules/architecture-p03-postgres.md)、`doc/11`。
 
@@ -69,11 +69,11 @@
 
 | 类别 | 状态 | 说明/退出条件 |
 |---|---|---|
-| 单机 Docker Compose 六服务栈 | **部分已验收** | Colima 上官方 PostgreSQL 16.4 已 healthy，verify-full TLS 成功，明文 TCP 被拒。主机版初始化器初始化四库 schema，逐库 dump/restore 后 schema 版本和表数一致。Panel、Adapter 镜像已构建；六个业务容器共同启动与健康检查仍待验证。 |
+| 单机 Docker Compose 六服务栈 | **六服务本地门禁通过** | 官方 PG16.4 上四个 init 容器成功，Identity 引导成功。六个业务容器和 Panel 同时 healthy，Panel 经 TLS 访问 Control 的 readiness 返回 HEALTHY，Control HTTPS 成功登记禁用的 DeepSeek 配置。 |
 | 两主机/断网演练 | **延期（用户确认可选）** | 两主机拓扑、网络分区、TLS/撤销/重连、协调恢复未验证 |
 | 远端 CI / release | **未运行/未就绪** | `gh` 未认证、GitHub Actions 未触发；正式发布无 release SHA 全量归档、无推送/签名镜像、无 SBOM/cosign/release-gated Environment |
 | 真实 QQ/NapCat | **登录与只读鉴权通过** | 从目标 Adapter 镜像经 Compose 网络调用真实 OneBot 的 get_status 和 get_login_info 成功；目标 Runtime 注册、会话收发及断连恢复仍待验证。 |
-| 真实付费外部 Model Provider | 待 API Key 和费用上限 | DeepSeek 模型配置已准备。匿名 GET /models 返回 401；付费推理与计费核对仍待验证。 |
+| 真实付费外部 Model Provider | 待 API Key 和费用上限 | Control HTTPS 已将 DeepSeek 配置登记为禁用。匿名 GET /models 返回 401；付费推理与计费核对仍待验证。 |
 | 生产 CA/密钥托管、备份离站 | 待用户环境/决策 | CA/root key 托管、轮换/吊销、KMS/离线/分片；备份保留周期、离站位置/频率、生产数据量恢复演练未定 |
 | 部署级错误 Runtime 叶证书 | **原生目标进程通过；Compose 挂载复演待验证** | `p05b_model_chain_e2e` 使用两张同 CA、同 Runtime URI SAN 的叶证书。已登记叶换取子委托并成功调用 Model.Chat，HTTP Provider 新增一次请求；未登记叶建立 mTLS 通道后，ExchangeDelegation 和携同一子委托的 Model.Chat 均返回 UNAUTHENTICATED，Provider 计数不变。 |
 | Model Update/RotateProviderSecret `scope_kinds` | **已验收** | `p14_native_single_host` 从 Control HTTPS 发起，两条 RPC 均经真实 Identity 授权。目标模型 HTTP 200，跨模型 HTTP 403 `PERMISSION_DENIED`。 |
