@@ -1308,7 +1308,11 @@ scripts/ops/target-backup.sh \
 
 产出 `target-<UTC>-<rand>/`，含：`postgres/{identity,runtime,scheduler,model}.dump`（`pg_dump -Fc` + schema_version/SHA-256）、`sqlite/{host,adapter-outbox[,adapter-actions]}.sqlite`（先 `wal_checkpoint(TRUNCATE)` 再 `VACUUM INTO`，`integrity_check`）、`material.tar.gz`（config/tls/secrets/host credentials）、`manifest.txt`。只有 manifest 写成功才算完整备份；失败会删除临时集，不发布部分备份。
 
+PG 以迁移角色按 `pg_stat_database.numbackends` 检查同库连接，扣除当前检查会话后须为零；即使其他连接属于 runtime 角色也会拒绝。备份与恢复都保留 kiarabot schema 和表的 ACL。目标集群须预建相同名称的迁移/运行角色、按源部署分配各数据库的 CONNECT 权限。旧版 `--no-privileges` 备份缺少 schema 授权，恢复预检会拒绝；可从源库重新备份，若只剩旧备份，请由 DBA 在隔离目标上恢复并按对应版本核对授权。公共 CA/证书保留部署文件读权限，私钥和 secrets 限制为 0600。
+
 环境文件至少包含：`PG_HOST/PG_PORT/PG_CA_FILE/PG_BIN`、四个 `<SERVICE>_DB`、`<SERVICE>_MIGRATION_ROLE`、`<SERVICE>_MIGRATION_PASSWORD_FILE`、`HOST_SQLITE_PATH`、`ADAPTER_OUTBOX_PATH`、可选 `ADAPTER_ACTIONS_PATH`/`HOST_CREDENTIAL_DIRECTORY`。`PG_CA_FILE` 用于连接 PG 的受信 CA，建议由算子保存在材料目录之外（恢复材料中的 CA 丢失时仍能连库恢复）。
+
+Docker 部署通过 PG 发布的回环端口执行这两个脚本时，备份主机须能读取连接 CA 和迁移凭据，同时直接访问已停机的 Host/Adapter SQLite 文件。命名卷的数据路径位于 Docker 主机；在 Colima 下应从 VM 或挂载对应卷的运维容器访问，不能用 macOS 上同名的空目录代替。恢复到新位置时，预建 SQLite 父目录，启动前用服务 UID 检查 SQLite 可读写、私钥可读、部署 CA 对 Panel 可读。
 
 保留/离站/密钥托管是待用户确认策略：脚本默认保留最近 7 份完整集；**不提供异地复制**，必须由算子将备份卷复制到独立受保护位置。
 
@@ -1322,7 +1326,7 @@ scripts/ops/target-restore.sh \
   --env /path/operator/target.env \
   --input /path/backups/target-20261102T121944Z-XXXX \
   --confirm \
-  --expect identity=14 --expect runtime=15 --expect scheduler=9 --expect model=8 \
+  --expect identity=15 --expect runtime=17 --expect scheduler=10 --expect model=9 \
   --verify-sql /path/operator/verify.sql
 ```
 
@@ -1384,7 +1388,7 @@ P13b（2026-11-02）：Host 进程 SIGTERM 走有界优雅收尾（活动受管�
 - 默认拓扑（用户确认）：单主机 Docker Compose，PG + Identity/Runtime/Scheduler/Model/Control/Panel + Plugin Host/Adapter 同机，各服务独立容器、TLS 材料、凭据文件与 DB 角色/权限边界。`deploy/compose.target.yml` include 三个组件文件；单机 `--profile exec`，一次性初始化 `--profile init`。两主机可选，Host-A=infra+core、Host-B=exec `--profile host --profile adapter`；跨主机断网/重连演练**延期并单独记录**（未验证）。
 - PostgreSQL：默认 `postgres:16.4-bookworm`（复现 P00）；release 用发布时 PG16 当前修订并固定 digest，`target-smoke.sh --release` 强制 `POSTGRES_IMAGE=postgres:<PG16>-bookworm@sha256:<64 hex>`，并同时校验 UBUNTU_BASE/服务镜像 digest、非 dev `KIARABOT_VERSION` 与 secrets 模式。full-locked CI 的 P00 源码构建不变。官方镜像的初始化/迁移/恢复步骤：启动 postgres → `--profile init run --rm init-*`（逐库、非原子）→ 显式迁移 → P14c 备份/恢复脚本；**本机无 Docker，实际未运行**。
 - 秘密：默认只读文件挂载（config/tls/secrets）；`target.env.example` 增加 `KIARABOT_SECRETS_DIR/MANIFEST` 与逐秘密路径，`deploy/secrets.manifest.example` 记录文件名/mode/消费者/轮换重启顺序。Docker secrets 为按需覆盖（`deploy/compose.docker-secrets.yml`，挂到 `/run/secrets`，选择时 config 路径需同步）。本期人工轮换，KMS/热轮换延期。
-- 2026-11-03 Colima 复验：`postgres:16.4-bookworm`（index digest `sha256:e62fbf9d3e2b49816a32c400ed2dba83e3b361e6833e624024309c35d334b412`）在隔离卷中 healthy。主机版 `kiarabot-pg-initialize` 通过 verify-full TLS 初始化四库，逐库 `pg_dump -Fc`、`pg_restore` 到新库后，schema 版本一致，Identity/Runtime/Scheduler/Model 分别为 52/57/32/32 张业务表。本项仅覆盖 PostgreSQL；全栈启动需独立验收。
+- 2026-11-03 Colima 复验：`postgres:16.4-bookworm`（index digest `sha256:e62fbf9d3e2b49816a32c400ed2dba83e3b361e6833e624024309c35d334b412`）在隔离卷中 healthy。主机版 `kiarabot-pg-initialize` 通过 verify-full TLS 初始化四库，逐库 `pg_dump -Fc`、`pg_restore` 到新库后，schema 版本一致，Identity/Runtime/Scheduler/Model 分别为 52/57/32/32 张业务表。随后使用两个独立的官方 PG16.4 空卷运行 `target-backup.sh` 和 `target-restore.sh`：四库恢复到了相同的 schema 版本（15/17/10/9）；每库 runtime 角色可读写代表性行，不能建表或连接其他业务库。Host/Adapter SQLite 探针行恢复成功，运行中的其他角色会话阻止备份和恢复；缺少 ACL 的旧集在修改目标材料前被拒绝。该演练使用临时凭据、证书和 SQLite 测试文件。
 - 单机 Compose 将 PG、初始化任务和业务容器接入同一项目网络，容器用 `postgres:5432` 连接。`deploy/postgres-target-hba.conf` 要求 Unix socket 和 TLS 连接使用 SCRAM，拒绝明文 TCP，六个 C++ 服务和初始化 tools 使用 `linux/amd64` 镜像，初始化任务在 tools 镜像中执行各自声明的命令。Control 的容器健康检查使用本容器 9080 端口的 HTTP probe，业务端口 8080 提供 HTTPS。Panel 使用部署 CA 和 DNS SAN `control` 验证该 HTTPS 上游。
 - 部署文件按消费者单独挂载。在线 owner 只持本库 runtime 密码；migration 密码仅供对应 init，admin 密码仅供 identity-bootstrap。Bootstrap 登记对端使用公开证书，不读取对端私钥。可选 Docker secrets 只是相同源文件的 `/run/secrets` 别名。运维须在 Docker 主机上将文件设为 0600、属主设为消费容器的 UID（PG 999、目标服务 10001），并用实际服务 UID 检查可读性。
 - Colima 在独立项目内以 Model/init-model 的 Compose 挂载、UID 10001 和探测镜像检查默认与 Docker secrets 两种模式：Model 可读本库 runtime 密码及根密钥，无法访问 migration/admin；init-model 可读本库 migration，无法访问 Model 根密钥与 runtime 密码。Panel 实际镜像代理临时 HTTPS 上游：正确 CA 和 SAN 返回 200，错误 CA 或主机名均返回 502。它们分别验证挂载边界与 HTTPS 校验，不等同整套业务就绪。

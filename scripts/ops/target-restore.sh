@@ -81,7 +81,10 @@ for svc in identity runtime scheduler model; do
   [[ "$version" =~ ^[1-9][0-9]*$ ]] || fail "manifest pg.$svc invalid version" 1
   [[ -f "$input/$rel" && ! -L "$input/$rel" ]] || fail "pg.$svc dump missing" 1
   [[ "$(checksum "$input/$rel")" == "$digest" ]] || fail "pg.$svc dump checksum mismatch" 1
-  eval "backup_$svc=\"$input/$rel\""
+  # Older sets made with --no-privileges cannot restore the runtime role's grants.
+  "$PG_BIN/pg_restore" --list "$input/$rel" | awk '/ ACL - SCHEMA kiarabot / {found=1} END {exit !found}' \
+    || fail "$svc dump lacks kiarabot grants; use a fresh ACL-preserving backup or recover grants offline with the DBA" 1
+  printf -v "backup_$svc" '%s' "$input/$rel"
 done
 for pair in "host:sqlite.host:${HOST_SQLITE_PATH}" "adapter-outbox:sqlite.adapter_outbox:${ADAPTER_OUTBOX_PATH}" \
             "adapter-actions:sqlite.adapter_actions:${ADAPTER_ACTIONS_PATH:-}"; do
@@ -106,7 +109,7 @@ done
 # Offline guard after preflight, before mutation. Any active client means a writer may be alive.
 for svc in identity runtime scheduler model; do
   db=$(value "pg.$svc.database")
-  active=$(psql_run "$svc" "$db" "SELECT count(*) FROM pg_stat_activity WHERE datname=current_database() AND pid<>pg_backend_pid() AND backend_type='client backend';" 2>/dev/null) \
+  active=$(other_connections "$svc" "$db" 2>/dev/null) \
     || fail "cannot inspect $svc database; is it available?" 1
   [[ "$active" == "0" ]] || fail "$svc database still has $active client connection(s); stop writers and retry" 1
 done
@@ -120,7 +123,7 @@ trap 'log "RESTORE FAILED after mutation began: a partial restore may exist; kee
 # --- material first (operator-owned files; no service is running) -------------------------------
 stage=$(mktemp -d "$root/.p14c-restore.XXXXXX")
 trap 'rm -rf -- "$stage"; log "RESTORE FAILED: partial restore may exist; keep services stopped"; exit 1' ERR
-tar -xzf "$input/$material_rel" -C "$stage"
+tar -xpzf "$input/$material_rel" -C "$stage"
 [[ -f "$stage/tls/ca.pem" && -f "$stage/secrets/model-root-key.hex" ]] || fail "material archive incomplete" 1
 mkdir -p -- "$root/config" "$root/tls" "$root/secrets"
 cp -a -- "$stage/config/." "$root/config/"
@@ -131,7 +134,7 @@ if [[ -d "$stage/host-credentials" ]]; then
   mkdir -p -- "$cred_target"
   cp -a -- "$stage/host-credentials/." "$cred_target/"
 fi
-find "$root/secrets" "$root/tls" -type f \( -name '*.pem' -o -name '*.key' -o -name '*.hex' \) -exec chmod 600 {} +
+protect_private_material "$root"
 log "material restored (config/tls/secrets/credentials)"
 
 # --- SQLite journals ---------------------------------------------------------------------------
@@ -152,7 +155,7 @@ fi
 # --- PostgreSQL: one explicit database at a time; no cross-service cascade ----------------------
 for svc in identity runtime scheduler model; do
   db=$(value "pg.$svc.database")
-  restore_env "$svc" --clean --if-exists --no-owner --no-privileges --exit-on-error \
+  restore_env "$svc" --clean --if-exists --no-owner --exit-on-error \
     --dbname="$db" "$(backup_value "$svc")" || fail "$svc pg_restore failed" 1
   actual=$(psql_run "$svc" "$db" "SELECT version FROM kiarabot.schema_versions WHERE singleton;") \
     || fail "$svc schema version read failed" 1

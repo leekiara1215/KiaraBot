@@ -26,7 +26,7 @@ usage: target-backup.sh --root DIR --env FILE --output DIR [--retain N] [--offli
   --offline       required confirmation that services/writers are stopped
 
 The backup is quiesced: RPO is zero for committed data if no writer ran after --offline.
-Missing material, a non-empty pg_stat_activity, a failed pg_dump/SQLite checkpoint, a
+Missing material, other database connections, a failed pg_dump/SQLite checkpoint, a
 checksum failure or an incomplete set aborts without publishing manifest.txt. No secrets
 are printed. Restore is explicit and never automatic.
 EOF
@@ -94,7 +94,7 @@ log "backup set $set_dir starting (offline/quiesced)"
 # silently take a cross-database backup while one service still accepts writes.
 for svc in identity runtime scheduler model; do
   db_var=$(service_db_var "$svc"); db="${!db_var}"
-  active=$(psql_run "$svc" "$db" "SELECT count(*) FROM pg_stat_activity WHERE datname=current_database() AND pid<>pg_backend_pid() AND backend_type='client backend';" 2>/dev/null) \
+  active=$(other_connections "$svc" "$db" 2>/dev/null) \
     || fail "cannot inspect $svc database; is it available?" 1
   [[ "$active" == "0" ]] || fail "$svc database still has $active client connection(s); stop writers and retry" 1
 done
@@ -107,7 +107,7 @@ for svc in identity runtime scheduler model; do
     || fail "cannot read $svc schema version" 1
   [[ "$version" =~ ^[1-9][0-9]*$ ]] || fail "$svc schema_versions is missing or invalid" 1
   dump="$set_dir/postgres/$svc.dump"
-  dump_env "$svc" --format=custom --no-owner --no-privileges --file="$dump" "$db" \
+  dump_env "$svc" --format=custom --no-owner --file="$dump" "$db" \
     || fail "$svc pg_dump failed" 1
   [[ -s "$dump" ]] || fail "$svc pg_dump produced an empty file" 1
   digest=$(checksum "$dump")
@@ -148,7 +148,7 @@ cp -a -- "$root/secrets" "$set_dir/material/secrets"
 if [[ -n "${HOST_CREDENTIAL_DIRECTORY:-}" ]]; then
   cp -a -- "$HOST_CREDENTIAL_DIRECTORY" "$set_dir/material/host-credentials"
 fi
-find "$set_dir/material" -type f -name '*.pem' -o -type f -name '*.key' -o -type f -name '*.hex' | while IFS= read -r secret; do chmod 600 "$secret"; done
+protect_private_material "$set_dir/material"
 tar -czf "$set_dir/material.tar.gz" -C "$set_dir/material" . || fail "material archive failed" 1
 material_sha=$(checksum "$set_dir/material.tar.gz")
 rm -rf -- "$set_dir/material"

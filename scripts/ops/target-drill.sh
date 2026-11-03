@@ -135,7 +135,7 @@ for svc in identity runtime scheduler model; do
 done
 
 expected_version() {
-  case "$1" in identity|runtime) echo 14 ;; scheduler) echo 9 ;; model) echo 8 ;; *) echo 0 ;; esac
+  case "$1" in identity) echo 15 ;; runtime) echo 17 ;; scheduler) echo 10 ;; model) echo 9 ;; *) echo 0 ;; esac
 }
 database_name() {
   case "$1" in identity) echo drill_identity ;; runtime) echo drill_runtime ;; scheduler) echo drill_scheduler ;; model) echo drill_model ;; esac
@@ -194,7 +194,10 @@ verify_all() {
     [[ "$version" == "$(expected_version "$svc")" ]] || fail "$stage: $svc schema $version != $(expected_version "$svc")" 1
     relations=$(psql_run "$svc" "$(database_name "$svc")" "SELECT count(*) FROM information_schema.tables WHERE table_schema='kiarabot';")
     ((relations >= 20)) || fail "$stage: $svc relation count $relations too small" 1
-    rows=$(psql_run "$svc" "$(database_name "$svc")" "SELECT count(*) FROM kiarabot.audit_entries WHERE actor='p14c-drill-$svc';")
+    rows=$(PGPASSWORD="${svc}-run-pass" PGSSLMODE=verify-full PGSSLROOTCERT="$PG_CA_FILE" \
+      "$PGBIN/psql" -XqAt -v ON_ERROR_STOP=1 -h localhost -p "$PORT" -U "drill_${svc}_runtime" \
+      -d "$(database_name "$svc")" -c "SELECT count(*) FROM kiarabot.audit_entries WHERE actor='p14c-drill-$svc';") \
+      || fail "$stage: runtime role lost access to $svc data" 1
     [[ "$rows" == "1" ]] || fail "$stage: $svc representative row missing ($rows)" 1
   done
   for item in "host:$ROOT/data/host/host.sqlite:3:journal" "adapter:$ROOT/data/adapter/outbox.db:2:outbox" "actions:$ROOT/data/adapter/actions.db:3:actions"; do
@@ -261,16 +264,16 @@ verify_all "post-credential-rotation"
 log "fault/rotation: new identity migration credential accepted, old rejected, fresh backup passed (service restart order documented; no daemons in data-layer drill)"
 
 # Fault 1: an active writer must block backup (offline guard), and no set is published.
-PGPASSWORD="$(cat "$ROOT/secrets/runtime-migration.pass")" PGSSLMODE=verify-full \
+PGPASSWORD="runtime-run-pass" PGSSLMODE=verify-full \
   PGSSLROOTCERT="$WORK/pg-ca.pem" "$PGBIN/psql" -X -q -h localhost -p "$PORT" \
-  -U drill_runtime_migration -d drill_runtime -c 'SELECT pg_sleep(6);' >/dev/null 2>&1 &
+  -U drill_runtime_runtime -d drill_runtime -c 'SELECT pg_sleep(6);' >/dev/null 2>&1 &
 writer=$!
 sleep 1
 if backup >"$WORK/backup-active.log" 2>&1; then fail "active-writer backup unexpectedly succeeded" 1; fi
 kill "$writer" 2>/dev/null || true; wait "$writer" 2>/dev/null || true
 # Wait for the backend to disappear so the next fault starts from a truly quiesced cluster.
 for _ in 1 2 3 4 5 6 7 8 9 10; do
-  active=$(psql_run runtime "$(database_name runtime)" "SELECT count(*) FROM pg_stat_activity WHERE datname=current_database() AND pid<>pg_backend_pid() AND backend_type='client backend';") || true
+  active=$(other_connections runtime "$(database_name runtime)") || true
   [[ "$active" == "0" ]] && break
   sleep 0.5
 done

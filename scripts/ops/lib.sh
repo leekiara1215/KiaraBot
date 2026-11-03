@@ -23,6 +23,17 @@ psql_run() {
   PGPASSWORD="$(cat "$pass")" PGSSLMODE=verify-full PGSSLROOTCERT="$PG_CA_FILE" \
     "$PG_BIN/psql" -X -qAt -v ON_ERROR_STOP=1 -h "$PG_HOST" -p "$PG_PORT" -U "$role" -d "$db" -c "$*"
 }
+# A migration role cannot see backend_type for sessions owned by the runtime role.
+# numbackends counts connections across roles; subtract only our own connection.
+other_connections() {
+  psql_run "$1" "$2" "SELECT numbackends - 1 FROM pg_stat_database WHERE datname=current_database();"
+}
+# The CA/leaf certificates may be shared by multiple service UIDs (notably Panel).
+# Preserve their deployed read mode. Tighten private material before publishing it.
+protect_private_material() {
+  find "$1/secrets" -type f -exec chmod 600 {} +
+  find "$1/tls" -type f \( -name '*.key' -o -exec grep -qE '^-----BEGIN ([[:alnum:]]+ )*PRIVATE KEY-----' {} \; \) -exec chmod 600 {} +
+}
 dump_env() {
   local service="$1"; shift
   local role_var pass_var role pass
