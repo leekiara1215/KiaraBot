@@ -37,7 +37,7 @@ RUN apt-get update \
         libtool openssl perl pkg-config python3 python3-pip python3-venv ruby unzip zip \
     && rm -rf /var/lib/apt/lists/*
 
-RUN git clone --quiet https://github.com/microsoft/vcpkg "$VCPKG_ROOT" \
+RUN git clone --quiet --filter=blob:none --no-checkout https://github.com/microsoft/vcpkg "$VCPKG_ROOT" \
     && git -C "$VCPKG_ROOT" checkout --quiet "$VCPKG_COMMIT" \
     && "$VCPKG_ROOT/bootstrap-vcpkg.sh" -disableMetrics
 
@@ -45,7 +45,8 @@ WORKDIR /src
 COPY dependencies/architecture ./dependencies/architecture
 # Install exactly the locked manifest; a classic port list cannot express
 # OpenSSL 3.5.0 EXACT / nlohmann_json 3.11.3 EXACT / libpqxx 7.10.0.
-RUN "$VCPKG_ROOT/vcpkg" install \
+RUN --mount=type=cache,id=kiarabot-vcpkg-downloads,target=/opt/vcpkg/downloads,sharing=locked \
+    "$VCPKG_ROOT/vcpkg" install \
         --x-manifest-root=/src/dependencies/architecture \
         --triplet=x64-linux \
         --x-install-root="$VCPKG_ROOT/installed" \
@@ -74,7 +75,7 @@ RUN cmake -S . -B build \
         -DVCPKG_TARGET_TRIPLET=x64-linux \
         -DPython3_EXECUTABLE=/src/sdk/python/.venv/bin/python \
         -DKIARABOT_TARGET_PYTHON=/src/sdk/python/.venv/bin/python \
-    && cmake --build build --parallel \
+    && cmake --build build --parallel 2 \
         --target kiarabot-control kiarabot-identity kiarabot-runtime \
                  kiarabot-plugin-host kiarabot-scheduler kiarabot-model \
                  kiarabot-pg-initialize kiarabot-identity-bootstrap
@@ -145,7 +146,7 @@ FROM runtime-base AS control
 ENV KIARABOT_SERVICE=control PROBE_PORT=9080 CONTROL_PORT=8080
 COPY --from=build /src/build/bin/kiarabot-control /usr/local/bin/kiarabot-control
 HEALTHCHECK --interval=10s --timeout=3s --retries=6 --start-period=30s \
-  CMD curl -fsS "http://127.0.0.1:${CONTROL_PORT}/health/live" >/dev/null || exit 1
+  CMD curl -fsS "http://127.0.0.1:${PROBE_PORT}/health/live" >/dev/null || exit 1
 ENTRYPOINT ["/usr/local/bin/kiarabot-control"]
 
 # Offline tools image: empty-database initializer + Identity bootstrap. It is
@@ -156,4 +157,4 @@ COPY --from=build /src/build/bin/kiarabot-identity-bootstrap /usr/local/bin/kiar
 COPY --from=build /src/build/infrastructure/postgres/kiarabot-pg-initialize /usr/local/bin/kiarabot-pg-initialize
 COPY scripts/deploy/ /usr/local/bin/deploy-scripts/
 USER 10001:10001
-ENTRYPOINT ["/usr/local/bin/kiarabot-pg-initialize"]
+CMD ["/usr/local/bin/kiarabot-pg-initialize"]

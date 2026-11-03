@@ -140,6 +140,8 @@ ghcr.io/leekiara1215/kiarabot-core:v1.0.0
 - 检查 workflow YAML、actionlint、手写 C++ 的 clang-format 和 dev 预设全部翻译单元的 clang-tidy；仓库内跟踪 `.sh` 的 `bash -n`；Redocly lint OpenAPI，AsyncAPI parser 拒绝错误诊断。
 - Gitleaks 扫描 Git 历史（使用仓库根 `.gitleaks.toml`，默认规则保持启用，只允许明确写成 `secret-key-must-not-leak`、`platform-test-token` 等测试占位值，避免测试夹具造成误报；真实凭据仍在扫描范围）；失败时上传 `gitleaks-report.json` 工件。npm audit 扫描 `scripts/ci/package-lock.json` 中锁定的 CI 工具及传递依赖。当前 npm audit **不覆盖** vcpkg 的 C++ 依赖：需另行接入能识别 vcpkg 已解析依赖的漏洞数据，不能将此检查描述为完整 C++ 依赖漏洞扫描。
 
+`contracts` 与 `full-build` 检出完整 vcpkg 历史，供版本清单读取历史 port tree（例如 boost-optional）。单提交浅克隆无法解析全部锁定依赖。
+
 CI 的 vcpkg registry/tool 固定为 `ce613c41372b23b1f51333815feb3edd87ef8a8b`（2025.04.09，Protobuf 29.3 / C++ runtime 5.29.3、gRPC 1.71.0）。Node 工具使用 `scripts/ci/package-lock.json`，版本固定为锁内 **22.14.0**（`scripts/toolchain/install-node.sh`，CI setup-node 精确版本）。版本升级需同时更新锁定来源并重新运行协议生成、兼容性和测试。CI 检查本身不能配置分支保护；仓库管理员需将所有 CI job 设为 `main` 的必需状态检查，并禁止绕过规则，才能阻止不兼容变更合并。新建分支或 force push 无法提供有效前一 SHA 时，push 的协议任务会失败，需要先提供可审计的比较基准。
 
 本地验证示例（需先安装对应工具和协议依赖）：

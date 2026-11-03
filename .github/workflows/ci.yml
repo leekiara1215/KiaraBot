@@ -86,6 +86,7 @@ jobs:
           repository: microsoft/vcpkg
           ref: ce613c41372b23b1f51333815feb3edd87ef8a8b # 2025.04.09
           path: .ci-vcpkg
+          fetch-depth: 0
           persist-credentials: false
       - name: Install build prerequisites
         run: |
@@ -421,6 +422,7 @@ jobs:
           repository: microsoft/vcpkg
           ref: ce613c41372b23b1f51333815feb3edd87ef8a8b # 2025.04.09
           path: .ci-vcpkg
+          fetch-depth: 0
           persist-credentials: false
       - name: Install build prerequisites
         run: |

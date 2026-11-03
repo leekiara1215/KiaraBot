@@ -28,6 +28,12 @@
 !deploy/
 !deploy/docker/
 !deploy/docker/**
+!sdk/
+!sdk/python/
+!sdk/python/pyproject.toml
+!sdk/python/uv.lock
+!sdk/python/tools/
+!sdk/python/tools/generate_proto.py
 !scripts/
 !scripts/deploy/
 !scripts/deploy/*.sh
@@ -47,3 +53,6 @@
 **/.venv
 **/generated
 **/dist
+# CMake configures both crypto targets when generating the suite build.
+!infrastructure/identity_crypto/src/token_crypto.cpp
+!infrastructure/identity_crypto/tests/token_crypto_test.cpp
