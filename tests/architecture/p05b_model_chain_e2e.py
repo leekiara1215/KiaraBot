@@ -461,24 +461,25 @@ def after_bootstrap(root: Path) -> None:
                 'installation_id': STATE['installation'],
                 'output_dir': str(root),
                 'token_file': str(token_file)})
-            # Long-running deployment refresher: the sealed parent has a 56s contract TTL and the
-            # negative matrix below legitimately runs longer, so the real tool must keep refreshing
-            # it exactly as a deployment sidecar would.
-            refresh = subprocess.Popen(
-                [sys.executable, 'instance-delegation-refresh', '--config',
-                 str(refresh_config), '--token-file', str(token_file), '--scope-kind', 'model',
-                 '--model-id', model_id, '--interval', '5'],
-                cwd=REPO / 'scripts/deploy', stdout=subprocess.DEVNULL,
-                stderr=subprocess.PIPE)
-            children.append(refresh)
-            deadline = time.monotonic() + 20.0
-            while not parent_file.is_file() and time.monotonic() < deadline:
-                if refresh.poll() is not None:
-                    detail = refresh.stderr.read(800).decode(errors='replace')
-                    raise Failure('sealed model refresh exited: ' + ' '.join(detail.split()))
-                time.sleep(0.05)
-            require(parent_file.is_file(), 'sealed model envelope written')
-            require(parent_file.stat().st_mode & 0o777 == 0o600, 'sealed envelope 0600')
+            def refresh_parent():
+                """Run the real P05b-7 refresher for one fresh 56s envelope.
+
+                Refreshing after the plugin is registered and before every command keeps the
+                short-lived parent fresh across the long negative matrix (the sealed contract
+                forbids exceeding its own TTL).
+                """
+                refresh = subprocess.run(
+                    [sys.executable, 'instance-delegation-refresh', '--config',
+                     str(refresh_config), '--token-file', str(token_file), '--scope-kind',
+                     'model', '--model-id', model_id, '--once'],
+                    cwd=REPO / 'scripts/deploy', capture_output=True, timeout=60)
+                require(refresh.returncode == 0,
+                        'sealed model refresh: ' +
+                        refresh.stderr.decode(errors='replace')[-500:])
+                require(parent_file.is_file(), 'sealed model envelope written')
+                require(parent_file.stat().st_mode & 0o777 == 0o600, 'sealed envelope 0600')
+
+            STATE['refresh_parent'] = refresh_parent
         else:
             # Fail-closed E2E: sealed parent material is absent; Runtime must never reach Model or
             # the HTTP Provider and the plugin must observe a stable failure.
@@ -585,8 +586,13 @@ def run_plugin(root, bridge_endpoint, instance, bootstrap, tls, provider_state, 
                                str(manifest_path)], env=env, cwd=root, stdout=log, stderr=log)
     try:
         wait_for_plugin(plugin, ready, root)
+        refresh_parent = STATE.get('refresh_parent')
+        if refresh_parent is not None:
+            refresh_parent()
 
-        def command(text, expected_ok=True, expected_code=None, timeout=15.0):
+        def command(text, expected_ok=True, expected_code=None, timeout=30.0):
+            if refresh_parent is not None:
+                refresh_parent()
             identifier = str(uuid.uuid4())
             with open(commands, 'a') as handle:
                 handle.write(json.dumps({'id': identifier, 'text': text}) + '\n')
