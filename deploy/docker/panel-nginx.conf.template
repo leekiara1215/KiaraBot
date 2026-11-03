@@ -1,8 +1,11 @@
 # Templates in /etc/nginx/templates are expanded by the nginx image entrypoint.
 # NGINX_ENVSUBST_FILTER=KIARABOT_ keeps nginx's own $variables untouched.
 server {
-    listen 127.0.0.1:${KIARABOT_PANEL_PORT};
+    listen ${KIARABOT_PANEL_BIND}:${KIARABOT_PANEL_PORT};
     server_name _;
+    proxy_ssl_server_name on;
+    proxy_ssl_verify on;
+    proxy_ssl_trusted_certificate ${KIARABOT_CONTROL_CA};
     root /usr/share/nginx/html;
     index index.html;
 
@@ -15,7 +18,7 @@ server {
     # Panel readiness follows control API readiness; the static server itself
     # does not need QQ/NapCat to be online.
     location = /health/ready {
-        proxy_pass http://${KIARABOT_CONTROL_HOST}:${KIARABOT_CONTROL_PORT}/health/ready;
+        proxy_pass ${KIARABOT_CONTROL_SCHEME}://${KIARABOT_CONTROL_HOST}:${KIARABOT_CONTROL_PORT}/health/ready;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_connect_timeout 2s;
@@ -23,7 +26,7 @@ server {
     }
 
     location /api/ {
-        proxy_pass http://${KIARABOT_CONTROL_HOST}:${KIARABOT_CONTROL_PORT};
+        proxy_pass ${KIARABOT_CONTROL_SCHEME}://${KIARABOT_CONTROL_HOST}:${KIARABOT_CONTROL_PORT};
         proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-Proto $scheme;
@@ -32,7 +35,7 @@ server {
     }
 
     location /ws/ {
-        proxy_pass http://${KIARABOT_CONTROL_HOST}:${KIARABOT_CONTROL_PORT};
+        proxy_pass ${KIARABOT_CONTROL_SCHEME}://${KIARABOT_CONTROL_HOST}:${KIARABOT_CONTROL_PORT};
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection "upgrade";

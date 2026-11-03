@@ -16,7 +16,7 @@ deploy/target/
     scheduler.json         # ProcessConfig: service=scheduler, database(scheduler), identity_endpoint
     model.json             # ProcessConfig: service=model, database(model), model_security, identity_endpoint
     plugin-host.json       # ProcessConfig: service=plugin-host, host{host_id,sqlite_path,runtime_endpoint,...}
-    control.json           # Control API config (listen/users/encryption_key), see deploy/control/control.example.json
+    control.json           # target Control ProcessConfig (tls, probe_listen, control_api)
     enrollment.json        # Identity offline enrollment input for kiarabot-identity-bootstrap
   tls/
     ca.pem                 # deployment CA used by owner mTLS / bridge client verification
@@ -24,7 +24,9 @@ deploy/target/
     runtime/{server.pem,server.key}
     scheduler/{server.pem,server.key}
     model/{server.pem,server.key}
-    host/{server.pem,server.key}
+    plugin-host/{server.pem,server.key}
+    control/{server.pem,server.key}
+    pg-ca.pem              # CA for verify-full PostgreSQL clients
     postgres/{server.crt,server.key,ca.crt}
     bridge-ca.pem          # CA the Adapter uses to verify the Runtime bridge certificate
   secrets/                 # files must be 0600, non-symlink, owned by the deployment user
@@ -38,7 +40,8 @@ deploy/target/
     model-migration.pass
     model-runtime.pass
     admin.pass             # Identity bootstrap administrator password
-    identity-verification-key.pem
+    token.hex, request.hex, receipt.hex    # Identity key files named by the generated config
+    delegation.pem, delegation.key       # Identity delegation public/private signing pair
     model-root-key.hex     # 32-byte hex, 0600; read once by Model
     adapter.bootstrap      # P05/P06 bootstrap credential for the external adapter
     onebot-access-token
@@ -51,3 +54,5 @@ deploy/target/
 checks the Compose/YAML/Dockerfile structure offline and, when Docker is available, runs
 `docker compose config` and an optional image build; it never initializes databases or
 starts services automatically.
+
+Containers mount only the files declared for their service. For custom key rings, enrollment peers or sealed Runtime/Model delegation files, mount each additional file read-only into its consumer and use that path in its config. Never mount the entire material root or store a CA signing key there.

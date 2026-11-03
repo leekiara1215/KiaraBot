@@ -77,7 +77,7 @@ target-rotate-secret: before rotating run an offline P14c backup:
   scripts/ops/target-backup.sh --root <material-root> --env <p14c env> --output <backups> --offline
 target-rotate-secret: planned restart order after replacement: ${order:-identity}
   docker compose --env-file deploy/target.env -f deploy/compose.target.yml --profile exec \\
-    restart ${order:-identity}   # then restart dependants in identity->runtime/scheduler/model->plugin-host->adapter->control->panel order
+    up -d --force-recreate --no-deps ${order:-identity}   # then recreate affected dependants in identity->runtime/scheduler/model->plugin-host->adapter->control->panel order
 target-rotate-secret: verify new credential works and old credential is rejected; keep the
   rotation backup and previous P14c backup until the observation window ends. KMS/hot rotation
   is deferred.
@@ -89,9 +89,14 @@ stamp=$(date -u +%Y%m%dT%H%M%SZ)
 backup="$target.rotate-$stamp.bak"
 cp -- "$target" "$backup"
 chmod 600 "$backup"
-tmp="$target.rotate.$$.tmp"
+tmp=$(mktemp "$target.rotate.XXXXXXXX")
 trap 'rm -f -- "$tmp"' EXIT
-cp -- "$value_file" "$tmp"
+# Single-file mounts inherit host ownership; do not silently replace a service-owned
+# credential with one owned by the operator running this script.
+cp -p -- "$target" "$tmp"
+owner() { stat -c '%u:%g' "$1" 2>/dev/null || stat -f '%u:%g' "$1"; }
+[[ "$(owner "$tmp")" == "$(owner "$target")" ]] || { echo "target-rotate-secret: could not preserve service owner" >&2; exit 1; }
+cat -- "$value_file" > "$tmp"
 chmod 600 "$tmp"
 mv -f -- "$tmp" "$target"
 trap - EXIT

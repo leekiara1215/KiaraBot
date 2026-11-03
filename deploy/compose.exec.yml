@@ -4,6 +4,7 @@
 # receive a private PostgreSQL credential.
 services:
   plugin-host:
+    platform: linux/amd64
     profiles: ["exec", "host"]
     image: ${KIARABOT_PLUGIN_HOST_IMAGE:-ghcr.io/leekiara1215/kiarabot/plugin-host:dev}
     build:
@@ -21,8 +22,9 @@ services:
       - "127.0.0.1:${KIARABOT_HOST_PROBE_PORT:-9085}:9085"
     volumes:
       - ${KIARABOT_CONFIG_DIR:-./target/config}/plugin-host.json:/etc/kiarabot/plugin-host.json:ro
-      - ${KIARABOT_TLS_DIR:-./target/tls}:/etc/kiarabot/tls:ro
-      - ${KIARABOT_SECRETS_DIR:-./target/secrets}:/etc/kiarabot/secrets:ro
+      - ${KIARABOT_TLS_DIR:-./target/tls}/ca.pem:/etc/kiarabot/tls/ca.pem:ro
+      - ${KIARABOT_TLS_DIR:-./target/tls}/plugin-host/server.pem:/etc/kiarabot/tls/plugin-host/server.pem:ro
+      - ${KIARABOT_TLS_DIR:-./target/tls}/plugin-host/server.key:/etc/kiarabot/tls/plugin-host/server.key:ro
       - ${KIARABOT_HOST_PACKAGES_DIR:-./target/packages}:/var/lib/kiarabot-host/packages:ro
       - ${KIARABOT_HOST_DATA_DIR:-./target/data/host}:/var/lib/kiarabot-host
     healthcheck:
@@ -61,6 +63,7 @@ services:
       ACCOUNT_ID: ${KIARABOT_ADAPTER_ACCOUNT_ID:?set ADAPTER_ACCOUNT_ID}
       OUTBOX_PATH: /var/lib/kiarabot-adapter/outbox.db
       HEALTH_PORT: "8081"
+      ONEBOT_SELF_ID: ${ONEBOT_SELF_ID:-}
       ONEBOT_WS_URL: ${ONEBOT_WS_URL:-ws://127.0.0.1:3001/}
       ONEBOT_ACCESS_TOKEN_FILE: /run/secrets/onebot-access-token
     secrets:
@@ -69,7 +72,7 @@ services:
     ports:
       - "127.0.0.1:${KIARABOT_ADAPTER_HEALTH_PORT:-8081}:8081"
     volumes:
-      - ${KIARABOT_TLS_DIR:-./target/tls}:/etc/kiarabot/tls:ro
+      - ${KIARABOT_TLS_DIR:-./target/tls}/bridge-ca.pem:/etc/kiarabot/tls/bridge-ca.pem:ro
       - kiarabot-adapter-outbox:/var/lib/kiarabot-adapter
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8081/health/ready >/dev/null"]

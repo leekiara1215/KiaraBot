@@ -12,8 +12,7 @@
 
 ## 重要声明（必须阅读）
 
-1. **本机没有 Docker**：P14a 只完成文件/结构/脚本实现；镜像构建、`docker compose config`、
-   Compose 启动、healthcheck、初始化与两主机运行**均未执行、未验证**。
+1. 单机 Compose 已通过配置解析；官方 PostgreSQL 的 TLS、四库初始化与恢复已单独复验。整套镜像启动、业务健康及外部渠道须分别验收；详见下方状态。
 2. **默认拓扑已确认：单主机 Docker Compose**（PG + 控制面 + 执行面同机，各服务独立
    容器/TLS/凭据/DB 权限边界）。两主机是可选拓扑，跨主机断网/重连演练**延期并单独记录**；
    见下方 P14a-2 段与 doc/08。
@@ -97,18 +96,27 @@ docker compose --env-file deploy/target.env -f deploy/compose.exec.yml up -d
 - full-locked CI 继续保留 P00 源码构建；本部署不重跑源码构建。
 - 以官方镜像验证初始化/迁移/恢复的步骤：`target-smoke --release` → 启动 postgres →
   `--profile init run --rm init-*` → 迁移工具（显式）→ P14c `scripts/ops/target-drill.sh`
-  是 P00 数据层演练；**本机无 Docker，官方镜像的 pull/初始化/迁移/恢复实际未运行**。
+  是 P00 数据层演练；Colima 官方 PG 容器上的四库初始化及恢复结果见 doc/08。
+
+六个 C++ 服务和 tools 镜像使用锁定的 `x64-linux` triplet，Compose 为这些服务选择 `linux/amd64`。Apple Silicon 上须启用 amd64 容器执行支持。
+
+目标 PostgreSQL 挂载 `postgres-target-hba.conf`，TCP 连接要求 TLS 与 SCRAM，服务客户端使用 `verify-full` 校验服务端。
+
+单机 Panel 在项目网络通过 HTTPS 访问 `control:8080`。Control 叶证书须含 DNS SAN `control`，Panel 的 UID 101 须可读挂载的公共 `tls/ca.pem`。Panel 端口只发布到宿主回环地址。
+
+真实 QQ 接入时，`ONEBOT_SELF_ID` 填平台数字账号，`KIARABOT_ADAPTER_ACCOUNT_ID` 填 Runtime 资源 UUID。`ONEBOT_WS_URL` 必须从 Adapter 容器内可达；容器回环地址仅适用于同一网络命名空间内的协议端。
 
 ### 秘密：文件挂载为主，Docker secrets 按需
 
-- 默认：`config/`、`tls/`、`secrets/` 通过只读文件挂载提供；不进入镜像，不写入 env。
+- 默认：从 `config/`、`tls/`、`secrets/` 中按消费方逐文件只读挂载。常驻服务不挂载迁移密码或管理员密码；身份 bootstrap 只读取本服务材料、管理员密码和登记所需的对端公共证书；不进入镜像，不写入 env。
   `target.env.example` 增加 secrets 目录/manifest 变量；`secrets.manifest.example` 记录
   文件名、0600、消费者与轮换重启顺序（不含真实值）。
 - 可选：`compose.docker-secrets.yml` 定义 Docker secrets 覆盖并将文件挂到 `/run/secrets/`；
-  选择该模式时服务 config JSON 的秘密路径需指向 `/run/secrets/<name>`（运维生成配置）。
+  与默认挂载共用同一源文件和消费方。使用别名时服务 config JSON 的秘密路径指向 `/run/secrets/<name>`（运维生成配置）。
+  单机 Compose 使用只读文件挂载，权限与属主取自 Docker 主机上的源文件。用服务运行 UID 准备 0600 文件（PG 为 999，目标服务为 10001）。Colima 的 Docker 主机是 Linux VM。可在容器内用 `stat -c "%u:%a" /run/secrets/<name>` 和 `test -r` 核对。
 - 人工轮换：`scripts/deploy/target-rotate-secret.sh --env deploy/target.env --name <name>
   --value-file <file> --confirm`，先做 P14c 离线备份，再按 Identity→Runtime/Scheduler/Model→
-  Host→Adapter→Control→Panel 顺序重启，验证新凭据可用/旧凭据失效。KMS/热轮换**延期**。
+  Host→Adapter→Control→Panel 顺序重建受影响容器（`up -d --force-recreate --no-deps <service>`，原子替换会改变单文件挂载的 inode），验证新凭据可用/旧凭据失效。KMS/热轮换**延期**。
 - 轮换脚本离线测试：`bash scripts/deploy/tests/target_rotate_test.sh`（manifest/原子替换/0600/备份/回滚检查）。
 
 ### 验收状态（不得混用）
@@ -116,10 +124,10 @@ docker compose --env-file deploy/target.env -f deploy/compose.exec.yml up -d
 | 类别 | 状态 |
 | --- | --- |
 | 单机数据层备份/恢复/故障演练（P00 PG16.4） | PASS（见 reports/p14c） |
-| 单主机 Docker Compose（默认部署形态） | **未验证**（本机无 Docker；YAML/profile/shell/release 规则已离线实测） |
+| 单主机 Docker Compose（默认部署形态） | 配置/PG 初始化和恢复已验证，完整业务栈健康待验 |
 | 两主机 + 跨主机断网/重连 | **延期并单独记录**（未验证） |
 | 远端 CI | 未运行远端 CI；P14b 入口存在 |
-| 正式发布 | **未就绪**（官方 PG 镜像 digest、Compose 验收、主机/秘密托管、保留离站/密钥托管待确认） |
+| 正式发布 | **未就绪**（发布镜像 digest、Compose 验收、主机/秘密托管、保留离站/密钥托管待确认） |
 
 剩余待用户确认：备份保留周期、离站位置/频率、密钥托管方式（KMS/离线/分片）。
 

@@ -1384,11 +1384,15 @@ P13b（2026-11-02）：Host 进程 SIGTERM 走有界优雅收尾（活动受管�
 - 默认拓扑（用户确认）：单主机 Docker Compose，PG + Identity/Runtime/Scheduler/Model/Control/Panel + Plugin Host/Adapter 同机，各服务独立容器、TLS 材料、凭据文件与 DB 角色/权限边界。`deploy/compose.target.yml` include 三个组件文件；单机 `--profile exec`，一次性初始化 `--profile init`。两主机可选，Host-A=infra+core、Host-B=exec `--profile host --profile adapter`；跨主机断网/重连演练**延期并单独记录**（未验证）。
 - PostgreSQL：默认 `postgres:16.4-bookworm`（复现 P00）；release 用发布时 PG16 当前修订并固定 digest，`target-smoke.sh --release` 强制 `POSTGRES_IMAGE=postgres:<PG16>-bookworm@sha256:<64 hex>`，并同时校验 UBUNTU_BASE/服务镜像 digest、非 dev `KIARABOT_VERSION` 与 secrets 模式。full-locked CI 的 P00 源码构建不变。官方镜像的初始化/迁移/恢复步骤：启动 postgres → `--profile init run --rm init-*`（逐库、非原子）→ 显式迁移 → P14c 备份/恢复脚本；**本机无 Docker，实际未运行**。
 - 秘密：默认只读文件挂载（config/tls/secrets）；`target.env.example` 增加 `KIARABOT_SECRETS_DIR/MANIFEST` 与逐秘密路径，`deploy/secrets.manifest.example` 记录文件名/mode/消费者/轮换重启顺序。Docker secrets 为按需覆盖（`deploy/compose.docker-secrets.yml`，挂到 `/run/secrets`，选择时 config 路径需同步）。本期人工轮换，KMS/热轮换延期。
+- 2026-11-03 Colima 复验：`postgres:16.4-bookworm`（index digest `sha256:e62fbf9d3e2b49816a32c400ed2dba83e3b361e6833e624024309c35d334b412`）在隔离卷中 healthy。主机版 `kiarabot-pg-initialize` 通过 verify-full TLS 初始化四库，逐库 `pg_dump -Fc`、`pg_restore` 到新库后，schema 版本一致，Identity/Runtime/Scheduler/Model 分别为 52/57/32/32 张业务表。本项仅覆盖 PostgreSQL；全栈启动需独立验收。
+- 单机 Compose 将 PG、初始化任务和业务容器接入同一项目网络，容器用 `postgres:5432` 连接。`deploy/postgres-target-hba.conf` 要求 Unix socket 和 TLS 连接使用 SCRAM，拒绝明文 TCP，六个 C++ 服务和初始化 tools 使用 `linux/amd64` 镜像，初始化任务在 tools 镜像中执行各自声明的命令。Control 的容器健康检查使用本容器 9080 端口的 HTTP probe，业务端口 8080 提供 HTTPS。Panel 使用部署 CA 和 DNS SAN `control` 验证该 HTTPS 上游。
+- 部署文件按消费者单独挂载。在线 owner 只持本库 runtime 密码；migration 密码仅供对应 init，admin 密码仅供 identity-bootstrap。Bootstrap 登记对端使用公开证书，不读取对端私钥。可选 Docker secrets 只是相同源文件的 `/run/secrets` 别名。运维须在 Docker 主机上将文件设为 0600、属主设为消费容器的 UID（PG 999、目标服务 10001），并用实际服务 UID 检查可读性。
+- Colima 在独立项目内以 Model/init-model 的 Compose 挂载、UID 10001 和探测镜像检查默认与 Docker secrets 两种模式：Model 可读本库 runtime 密码及根密钥，无法访问 migration/admin；init-model 可读本库 migration，无法访问 Model 根密钥与 runtime 密码。Panel 实际镜像代理临时 HTTPS 上游：正确 CA 和 SAN 返回 200，错误 CA 或主机名均返回 502。它们分别验证挂载边界与 HTTPS 校验，不等同整套业务就绪。
 - 人工轮换流程：先做 P14c 离线备份（`scripts/ops/target-backup.sh --offline`）→ 用
   `scripts/deploy/target-rotate-secret.sh --env deploy/target.env --name <name> --value-file <file> --confirm`
-  原子替换（0600、旧值备份、manifest 校验）→ 按 Identity→Runtime/Scheduler/Model→Host→Adapter→Control→Panel 顺序重启 → 验证新凭据可用/旧失效 → 观察窗口结束后再清理备份。脚本不自动重启容器、不访问 secret store；离线测试 `scripts/deploy/tests/target_rotate_test.sh`。
+  原子替换（0600、旧值备份、manifest 校验）→ 按 Identity→Runtime/Scheduler/Model→Host→Adapter→Control→Panel 顺序用 `up -d --no-deps --force-recreate <service>` 重建受影响容器以重绑新 inode → 验证新凭据可用/旧失效 → 观察窗口结束后再清理备份。脚本不自动重启容器、不访问 secret store；离线测试 `scripts/deploy/tests/target_rotate_test.sh`。
 - 检查（本机实际运行）：`scripts/deploy/target-smoke.sh` 通过（Compose YAML、target include、host/adapter profiles、官方 PG 默认、安全约束、shell 语法、rotate 测试、release 规则可离线校验）；`target-smoke --release` 对含 digests 的临时 env 通过、缺失 PG digest 失败（见提交说明）；`bash -n` 全部部署脚本；`scripts/deploy/tests/target_rotate_test.sh` PASS。
-- 未验证/未完成：Docker 构建/Compose 启动/healthcheck/官方 PG 镜像初始化/迁移/恢复、两主机与跨主机故障、真实秘密轮换后的容器按序重启（本机无 Docker，数据层轮换仅 P14c 演练覆盖）。
+- 未验证/未完成：完整套件镜像构建/启动及 healthcheck、两主机与跨主机故障、真实秘密轮换后的容器按序重建（数据层轮换仅 P14c 演练覆盖）。
 - 剩余待确认：备份保留/离站策略、密钥托管（KMS/离线/分片）；正式发布仍受官方 PG 镜像 digest/Compose 验收/秘密托管阻塞。
 ## P12e Identity/Runtime 只读审计/日志查询（2026-11-02）
 

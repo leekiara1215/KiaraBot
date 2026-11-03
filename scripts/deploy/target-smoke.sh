@@ -185,18 +185,22 @@ if ((docker_available)); then
     note "WARN: $env_file missing; using deploy/target.env.example for validation only"
     compose_env=(--env-file "$repo_root/deploy/target.env.example")
   fi
-  docker compose "${compose_env[@]}" -f "$repo_root/$target_compose" config -q \
-    || fail "docker compose config rejected the default single-host target compose"
-  docker compose "${compose_env[@]}" -f "$repo_root/$target_compose" \
-    -f "$repo_root/$secrets_override" config -q \
-    || fail "docker compose config rejected the optional docker secrets override"
+  for mode in files docker-secrets; do
+    compose_files=(-f "$repo_root/$target_compose")
+    if [[ "$mode" == docker-secrets ]]; then compose_files+=(-f "$repo_root/$secrets_override"); fi
+    docker compose "${compose_env[@]}" "${compose_files[@]}" --profile '*' config --format json \
+      | python3 "$repo_root/scripts/deploy/tests/target_mounts_test.py" \
+      || fail "invalid target project or credential exposure in $mode mode"
+  done
   note "docker compose config passed for target.yml (+ optional secrets override); services are NOT started"
   note "UNVERIFIED here: official postgres:16.4-bookworm image pull/init/migrate/restore (requires Docker)"
   if ((do_build)); then
+    suite_base=$(docker compose "${compose_env[@]}" -f "$repo_root/$target_compose" config --format json \
+      | python3 -c 'import json,sys; print(json.load(sys.stdin)["services"]["identity"]["build"]["args"]["UBUNTU_BASE"])')
     for service in identity runtime scheduler model plugin-host control; do
-      docker build -f "$repo_root/deploy/docker/suite.Dockerfile" \
+      docker build --platform linux/amd64 -f "$repo_root/deploy/docker/suite.Dockerfile" \
         --target "$service" \
-        --build-arg "UBUNTU_BASE=${UBUNTU_BASE:-ubuntu:24.04}" \
+        --build-arg "UBUNTU_BASE=$suite_base" \
         -t "kiarabot-${service}:local" "$repo_root" \
         || fail "docker build failed for target $service"
     done

@@ -24,10 +24,13 @@ RUN npm run build
 FROM nginxinc/nginx-unprivileged:1.27-alpine AS runtime
 
 USER root
-RUN apk add --no-cache curl
+RUN apk add --no-cache curl ca-certificates
 COPY --from=build /src/panel/dist /usr/share/nginx/html
 COPY deploy/docker/panel-nginx.conf.template /etc/nginx/templates/default.conf.template
 ENV KIARABOT_CONTROL_HOST=127.0.0.1 \
+    KIARABOT_PANEL_BIND=127.0.0.1 \
+    KIARABOT_CONTROL_SCHEME=http \
+    KIARABOT_CONTROL_CA=/etc/ssl/certs/ca-certificates.crt \
     KIARABOT_CONTROL_PORT=8080 \
     KIARABOT_PANEL_PORT=8082 \
     NGINX_ENVSUBST_FILTER=KIARABOT_
