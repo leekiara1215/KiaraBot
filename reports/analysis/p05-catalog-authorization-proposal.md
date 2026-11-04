@@ -38,6 +38,16 @@ Runtime 拥有资源族到目录 ID 的映射权威。Identity 继续拥有主�
 
 为支持这两次检查，五个 List 方法的 descriptor scope_kinds 必须分别含 RESOURCE_CATALOG 和该方法唯一 child kind。CreateAccount、ValidateManifest、CreateInstallation 只含 RESOURCE_CATALOG；CreateInstance 只含 RESOURCE_INSTALLATION。descriptor 的种类列表仅限制允许的资源种类。Runtime 应用仍须按方法验证目录族和授权检查顺序，不能把元数据中的两个种类解释成任一者足以放行整条列表。
 
+### 委托覆盖范围和本人发现
+
+child 检查复用当前 delegation。目录 grant 不会让 Identity.CheckAuthorization 接受 token 未覆盖的 child。Control 必须从 ValidateSession/GetPrincipal 已验证的逐条 AssignmentRecord 中选择目录及 child 资源，并仅以该方法的一种读权限签发委托。不能把显示权限并集和全部资源做笛卡尔积。
+
+一个 snapshot 的可见集合同时受当前真实 Assignment 和该委托的显式 child 范围约束。游标必须绑定规范化后的委托资源集合摘要，刷新成同权限同范围的新 proof 可以继续；改变范围集合必须重新建立快照。仅绑定 subject 和 authorization_version 不足以防止调用者在翻页时切换委托范围。
+
+推荐首轮管理面按现有签发器允许的资源数量上限显式分批。每批都含一个目录和明确 child 集合，独立快照、独立分页。界面应说明这是所选授权范围的查询，不能把某一批的末页冒充用户全部资源的末页。数量边界由现有签发校验决定，不能扩大 token 或 CheckAuthorization 的数量上限来掩盖缺口。
+
+如果产品要求单个不带 child 范围的目录 proof 自动发现本人所有独立 child grants，则现有委托模型不够。必须另审 Identity 的发现或逐对象授权接口，使 Identity 在检查当前主体时仍能约束 Runtime 的受限平台身份。本提案不把这条扩权当作已批准内容。实施可以先完成创建和明确范围的目录查询，完整本人目录发现仍记录为待后续契约项。
+
 ## 4. 线协议与 API 的最小改动
 
 建议给 RuntimeCreateAccountRequest 追加 ResourceRef catalog = 5，给 RuntimeValidateManifestRequest 追加 ResourceRef catalog = 3，给 RuntimeCreateInstallationRequest 追加 ResourceRef catalog = 4。编号须在实施时再经 descriptor 检查确认空闲。字段必须显式存在，kind 必须为 RESOURCE_CATALOG，ID 必须匹配当前方法的部署目录。CreateInstance 已有 installation_id，不新增字段。五个 List 请求已经有 catalog，不改字段编号。
