@@ -1720,3 +1720,7 @@ ListAccounts/ListInstallations/ListInstances/ListAdapters 每次先授权对应�
 首次列表通过 `begin_resource_snapshot()` 获取一致只读视图。PG 实现使用 REPEATABLE READ READ ONLY，加载全部有界候选后回滚释放视图，再执行在线子对象授权，避免在持有数据库事务时等待 Identity。其他适配器默认 CAPABILITY_NOT_SUPPORTED，不能把普通 read committed 伪装为快照。候选记录在进程内不可变共享，分页 token 绑定主体、方法及目录、页大小、规范委托资源权限集合、授权版本和原十分钟期限；相同权限与范围的新 proof 可重试，不能通过换 proof 扩大范围。重启或任一绑定失配返回 CONFLICT。
 
 预算为全局 1024 个快照、每主体 64 个、单快照 4096 条候选、全局 16384 条候选和 64 MiB 编码数据上界（实现按含动态字段的保守上界计费）。仅清理到期快照，不驱逐仍有效快照；任一预算超限返回 RATE_LIMITED，不把被截断的集合报告为末页。
+
+## Runtime 管理回执职责（2026-11-04）
+
+Core 定义中立 `RuntimeManagementReceipt` 和提交时 `ResourceState`，Runtime UoW 在原事务内读写附属回执；基础设施仅实现列映射、约束和原子存储。DisableAccount/BindAdapter/UnbindAdapter/SetDesiredState/UpdateConfig 重放原资源快照和 operation 引用；实例两项把已保存的完整状态交给 RPC 转换，配置版本不得冒充实例资源版本，STOPPED 不得转换为 Running。该分支不使用本次 request_id 查询操作；其余 mutate 调用的既有行为不因此获得完整回执承诺。每次重放仍经过当前在线授权。Runtime schema v18 仅接受新隔离空库，原地升级、旧活跃回执回填和旧库切换另审。

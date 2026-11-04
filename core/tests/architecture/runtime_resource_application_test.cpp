@@ -1328,6 +1328,9 @@ void mutation_replay_operation_flow() {
             std::get<t::AccountMutation>(first).operation.has_value(),
         "mutation did not return an accepted operation reference");
   const auto operation_id = std::get<t::AccountMutation>(first).operation->operation.id.value;
+  disable.context.request_id = context("retry", digest(60)).request_id;
+  disable.context.trace_id = context("retry", digest(60)).trace_id;
+  harness.store.operations.clear(); // A receipt must outlive a prunable operation projection.
   auto replay = harness.application->disable_account(disable);
   check(std::holds_alternative<t::AccountMutation>(replay) &&
             std::get<t::AccountMutation>(replay).operation.has_value() &&
@@ -1335,6 +1338,17 @@ void mutation_replay_operation_flow() {
         "idempotent replay lost the original operation reference");
   check(harness.store.accounts[account.id.value].state == t::LifecycleState::Disabled,
         "mutation effect missing");
+  harness.authorization.deny = true;
+  check(failure_is(harness.application->disable_account(disable), t::ErrorCode::PermissionDenied),
+        "revoked caller replayed a stored receipt");
+  harness.authorization.deny = false;
+  disable.context.fingerprint = digest(61);
+  check(failure_is(harness.application->disable_account(disable), t::ErrorCode::Conflict),
+        "same key different argument fingerprint replayed");
+  disable.context.fingerprint = digest(60);
+  harness.store.management_receipts.clear();
+  check(failure_is(harness.application->disable_account(disable), t::ErrorCode::Internal),
+        "missing supplement reconstructed an old result");
 }
 void installation_instance_flow(Harness& harness) {
   t::CreateInstallationRequest install{
@@ -1373,6 +1387,31 @@ void installation_instance_flow(Harness& harness) {
   check(std::holds_alternative<t::ConfigMutation>(configured) &&
             std::get<t::ConfigMutation>(configured).config.desired_version.value == 2,
         "config update did not advance the desired config version");
+  const auto original_config = std::get<t::ConfigMutation>(configured);
+  check(original_config.committed_state && original_config.committed_state->version.value == 3 &&
+            original_config.committed_state->desired == t::DesiredState::Stopped,
+        "config receipt did not retain committed STOPPED resource state");
+  auto subsequently_running = desired;
+  subsequently_running.context = context("runtime.set_desired_state", digest(62));
+  subsequently_running.context.expected_version = t::ResourceVersion{3};
+  subsequently_running.desired = t::DesiredState::Running;
+  check(std::holds_alternative<t::InstanceMutation>(
+            harness.application->apply_desired_state(subsequently_running)),
+        "subsequent desired state did not commit");
+  harness.store.now += std::chrono::seconds{1};
+  config.context.request_id = context("retry", digest(23)).request_id;
+  config.context.trace_id = context("retry", digest(23)).trace_id;
+  const auto original_again = harness.application->update_config(config);
+  check(std::holds_alternative<t::ConfigMutation>(original_again) &&
+            std::get<t::ConfigMutation>(original_again).operation->operation ==
+                original_config.operation->operation &&
+            std::get<t::ConfigMutation>(original_again).committed_state->version.value == 3 &&
+            std::get<t::ConfigMutation>(original_again).committed_state->desired ==
+                t::DesiredState::Stopped &&
+            std::get<t::ConfigMutation>(original_again).committed_state->observed_at ==
+                original_config.committed_state->observed_at,
+        "config replay rebuilt state from later resource or time");
+  harness.store.instances[id.value].desired = t::DesiredState::Stopped;
   t::InstanceConfigQuery fetch{context("runtime.get_instance_config", digest(24)), id};
   check(std::holds_alternative<t::InstanceConfiguration>(
             harness.application->get_instance_config(fetch)),

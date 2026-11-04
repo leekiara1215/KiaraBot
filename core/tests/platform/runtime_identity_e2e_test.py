@@ -363,12 +363,26 @@ def scenario(root, port, pg_bin, binaries):
                     permissions=permissions,
                     client_certificate_sha256=leaf_fingerprint(tls)), timeout=10)
 
+            def restart_runtime():
+                nonlocal runtime, runtime_channel, runtime_stub, probe_port
+                runtime.send_signal(signal.SIGTERM)
+                require(runtime.wait(timeout=10) == 0, 'runtime receipt restart clean stop')
+                runtime_channel.close()
+                runtime, restarted = daemon(runtime_binary, runtime_config)
+                children.append(runtime)
+                probe_port = int(restarted['probe_port'])
+                require(wait_ready(probe_port, True), 'runtime receipt restart ready')
+                runtime_channel = channel('127.0.0.1:' + restarted['grpc_port'], tls)
+                runtime_stub = runtime_pb2_grpc.RuntimeServiceStub(runtime_channel)
+
             if exact_accounts:
                 import runtime_exact_accounts_test
-                runtime_exact_accounts_test.check(
+                replay_accounts = runtime_exact_accounts_test.check(
                     runtime_stub, issue_delegation,
                     ({**environment[0], 'PGDATABASE': 'p03_runtime'}, environment[1]),
                     account_id, STATE['adapter'])
+                restart_runtime()
+                replay_accounts(runtime_stub)
                 print('P05 exact account and adapter owner RPCs passed')
                 return
 
@@ -423,6 +437,8 @@ def scenario(root, port, pg_bin, binaries):
             replay_instance, instance_operation_id = verify_existing_instances(
                 runtime_stub, issue_delegation, postgres(root, pg_bin, port, 'p03_runtime'),
                 STATE['installation_id'], STATE['instance_id'], context, require, run_sql)
+            restart_runtime()
+            replay_instance(instance_operation_id, runtime_stub)
             proof = issue_delegation().delegation.proof
             require(bool(proof), 'delegation proof')
 
@@ -960,7 +976,7 @@ def scenario(root, port, pg_bin, binaries):
                 expected_version=1), timeout=10)
             operation_ref = deleted.operation
             require(bool(operation_ref.operation_id), 'BeginDelete accepted operation')
-            replay_instance(operation_ref.operation_id)
+            replay_instance(operation_ref.operation_id, runtime_stub)
             operation = runtime_stub.GetOperation(runtime_pb2.RuntimeGetOperationRequest(
                 context=context(delegation=manage_proof), operation=operation_ref), timeout=10)
             require(operation.operation.state == platform_pb2.OPERATION_SUCCEEDED,

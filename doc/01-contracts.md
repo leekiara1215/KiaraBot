@@ -2216,3 +2216,7 @@ administrator's exact assignments plus `resource.manage` on the instance. Claims
 ## P05 approved catalog authorization (2026-11-04)
 
 CreateAccount.catalog=5, ValidateManifest.catalog=3 and CreateInstallation.catalog=4 are required RESOURCE_CATALOG references to the offline registered accounts/installations family UUID. CreateInstance authorizes its exact parent installation. ListAccounts/ListInstallations/ListInstances/ListAdapters/ListHosts authorize the registered family catalog and independently each exact child. Their scope_kinds contains CATALOG plus their single child kind, without inherited grants. Missing or malformed catalog is INVALID_ARGUMENT, wrong family or missing grant is PERMISSION_DENIED. Absent deployment catalog configuration keeps these capabilities unavailable. Method implementation status remains separately evidence-gated. Lists retain fixed ten-minute immutable snapshots, current authorization per page, and conflict on scope/version/subject changes or unknown cursors.
+
+## Runtime 五项管理写入回执（2026-11-04）
+
+`DisableAccount`、`BindAdapter`、`UnbindAdapter`、`SetDesiredState`、`UpdateConfig` 的成功回执在原保留期内返回原业务快照和原 `OperationRef`；同幂等键更换 request_id/trace_id/deadline 不改变原操作身份。重试仍按当前身份、权限和完整资源范围在线核验；同键异参维持 `CONFLICT`。实例两项同时重放提交时的完整 `VersionedResourceState`（包括原 observed_at、实例版本与 STOPPED/Running 意图），不读当前行重建。`BindAdapter` 普通回执不保存或再次交付 bootstrap 明文。附属回执缺失、未知版本或资源/owner 不匹配时拒绝，不按新 request_id 猜 operation。该保证限定这五项；其他方法继续遵守其独立回执契约。wire 字段及现有 ReplayResult 索引保持不变。

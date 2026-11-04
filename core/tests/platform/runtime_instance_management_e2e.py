@@ -82,6 +82,7 @@ def verify(stub, issue, runtime_sql, installation_id, instance_id, context, requ
     patch = r.RuntimeUpdateConfigRequest(context=ctx(inst, perm.PERMISSION_PLUGIN_MANAGE),
                                          resource=inst, expected_version=2)
     patch.config.update({'greeting': 'hello'})
+    saved_context_key = patch.context.idempotency_key
     saved = stub.UpdateConfig(patch, timeout=5)
     require(saved.operation.resource == inst and saved.state.desired_config_version == 2,
             'config update stages new desired version')
@@ -100,6 +101,18 @@ def verify(stub, issue, runtime_sql, installation_id, instance_id, context, requ
         req.resource.kind = p.RESOURCE_ACCOUNT
         rejected(call, req, grpc.StatusCode.INVALID_ARGUMENT)
         req.resource.kind = valid_kind
+    require(saved.state.version == 3 and saved.state.desired == p.DESIRED_RUNNING,
+            'config response carries committed instance version and intent')
+    stop = r.RuntimeSetDesiredStateRequest(context=ctx(inst, perm.PERMISSION_PLUGIN_MANAGE),
+                                           instance_id=instance_id, expected_version=3,
+                                           desired_state=p.DESIRED_STOPPED)
+    stopped = stub.SetDesiredState(stop, timeout=5)
+    stopped_patch = r.RuntimeUpdateConfigRequest(context=ctx(inst, perm.PERMISSION_PLUGIN_MANAGE),
+                                                resource=inst, expected_version=4)
+    stopped_patch.config.update({'greeting': 'stopped'})
+    stopped_config = stub.UpdateConfig(stopped_patch, timeout=5)
+    require(stopped_config.state.version == 5 and stopped_config.state.desired == p.DESIRED_STOPPED,
+            'config cannot report running for a stopped instance')
     foreign = str(uuid.uuid4())
     for call, req in [(stub.GetInstallation, get_install), (stub.GetInstance, get_instance),
                       (stub.GetInstanceConfig, get_config), (stub.UpdateConfig, patch)]:
@@ -108,15 +121,31 @@ def verify(stub, issue, runtime_sql, installation_id, instance_id, context, requ
     desired.instance_id = foreign
     rejected(stub.SetDesiredState, desired, grpc.StatusCode.PERMISSION_DENIED)
 
-    def replay_with_foreign_id(operation_id):
+    def replay_with_foreign_id(operation_id, new_stub=None):
         desired.instance_id = instance_id
         desired.context.CopyFrom(ctx(inst, perm.PERMISSION_PLUGIN_MANAGE))
         desired.context.idempotency_key = original_key
         desired.context.request_id = operation_id
-        result = stub.SetDesiredState(desired, timeout=5)
+        result = (new_stub or stub).SetDesiredState(desired, timeout=5)
         require(result.instance.instance_id == instance_id and result.instance.state.version == 2,
                 'retry returns the immutable original instance snapshot')
-        require(not result.HasField('operation') or result.operation == accepted.operation,
+        require(result.operation == accepted.operation,
                 'retry must not disclose an operation for another resource')
 
+        require(result.instance == accepted.instance, 'desired replay preserves the original state and time')
+        patch.context.CopyFrom(ctx(inst, perm.PERMISSION_PLUGIN_MANAGE))
+        patch.context.idempotency_key = saved_key
+        patch.context.request_id = str(uuid.uuid4())
+        patch.resource.CopyFrom(inst)
+        require((new_stub or stub).UpdateConfig(patch, timeout=5) == saved,
+                'config replay preserves state after subsequent mutations and restart')
+        stopped_key = stopped_patch.context.idempotency_key
+        stopped_patch.context.CopyFrom(ctx(inst, perm.PERMISSION_PLUGIN_MANAGE))
+        stopped_patch.context.idempotency_key = stopped_key
+        stopped_patch.context.request_id = str(uuid.uuid4())
+        require((new_stub or stub).UpdateConfig(stopped_patch, timeout=5) == stopped_config,
+                'stopped config replay preserves exact committed state')
+
+    saved_key = saved_context_key
+    replay_with_foreign_id(accepted.operation.operation_id)
     return replay_with_foreign_id, accepted.operation.operation_id

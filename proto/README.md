@@ -146,3 +146,7 @@ P12a-2（2026-11-02）：`policy.proto` 追加 `Permission.PERMISSION_HEALTH_REA
 ## P05 approved catalog authorization (2026-11-04)
 
 CreateAccount.catalog=5, ValidateManifest.catalog=3 and CreateInstallation.catalog=4 are required RESOURCE_CATALOG references to the offline registered accounts/installations family UUID. CreateInstance authorizes its exact parent installation. ListAccounts/ListInstallations/ListInstances/ListAdapters/ListHosts authorize the registered family catalog and independently each exact child. Their scope_kinds contains CATALOG plus their single child kind, without inherited grants. Missing or malformed catalog is INVALID_ARGUMENT, wrong family or missing grant is PERMISSION_DENIED. Absent deployment catalog configuration keeps these capabilities unavailable. Method implementation status remains separately evidence-gated. Lists retain fixed ten-minute immutable snapshots, current authorization per page, and conflict on scope/version/subject changes or unknown cursors.
+
+## Runtime 管理回执
+
+五项管理 RPC（DisableAccount、BindAdapter、UnbindAdapter、SetDesiredState、UpdateConfig）在有效保留窗内重放原资源结果、原 OperationRef 和实例提交状态，重试仍校验当前授权；BindAdapter 不重放 bootstrap 明文。本次修复不增加 wire 字段或重排共享 ReplayResult；Runtime schema v18 的附属回执仅做隔离新库验收，原地迁移另行审查。语义见 doc/01-contracts.md 与 doc/01-runtime-semantics.md。

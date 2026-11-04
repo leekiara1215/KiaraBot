@@ -137,3 +137,22 @@ def check(api, issue, database, account, adapter):
     assert api.DisableAccount(retire, timeout=5) == retired and get_account() == retired.account
     rejected(api.UpdateAccount, update(manage, retired.account.version, 'terminal'), grpc.StatusCode.ABORTED)
     rejected(api.BindAdapter, bind(manage), grpc.StatusCode.ABORTED)
+
+    def replay_receipts(new_api):
+        for method, request, expected in [(new_api.BindAdapter, create, first),
+                                           (new_api.UnbindAdapter, remove, removed),
+                                           (new_api.DisableAccount, retire, retired)]:
+            original_key = request.context.idempotency_key
+            fresh = issue([policy.PERMISSION_ACCOUNT_MANAGE], [account_ref]).delegation.proof
+            request.context.CopyFrom(ctx(20, fresh))
+            request.context.idempotency_key = original_key
+            request.context.request_id = str(uuid.uuid4())
+            request.context.trace_id = str(uuid.uuid4())
+            answer = method(request, timeout=5)
+            if method == new_api.BindAdapter:
+                assert answer.binding == expected.binding and not answer.bootstrap_credential
+            else:
+                assert answer == expected
+            assert answer.operation == expected.operation
+    replay_receipts(api)
+    return replay_receipts
