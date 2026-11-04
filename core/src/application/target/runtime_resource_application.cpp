@@ -683,15 +683,19 @@ mutate(RuntimeUnitOfWorkFactory& transactions, const CommandContext& context,
     }
     auto applied = effect(*work, now);
     if (const auto* failure = std::get_if<Failure>(&applied)) {
-      if (const auto audited =
-              append_audit(*work, context, resource, authorization_version, failure->code, now);
-          std::holds_alternative<Failure>(audited)) {
-        work->rollback();
-        return *failure;
-      }
-      const auto committed = work->commit();
-      if (committed == CommitResult::Unknown) {
-        return unknown_result();
+      // A pure dependency (crypto/id generation) may fail after a repository has written.
+      // Roll back the entire business transaction before recording the rejection separately.
+      // Neither rejection-audit failure nor its unknown commit turns a rejected command into
+      // an uncertain business effect: its business transaction has already been rolled back.
+      work->rollback();
+      auto audit_begun = transactions.begin();
+      if (auto* audit_work = std::get_if<std::unique_ptr<RuntimeUnitOfWork>>(&audit_begun);
+          audit_work && *audit_work) {
+        if (const auto audited = append_audit(**audit_work, context, resource,
+                                              authorization_version, failure->code, now);
+            !std::holds_alternative<Failure>(audited)) {
+          (void)(*audit_work)->commit();
+        }
       }
       return *failure;
     }
@@ -2893,8 +2897,8 @@ private:
   // trail rather than claiming completion.
   Outcome<Operation> accepted_operation(RuntimeUnitOfWork& work, const CommandContext& context,
                                         const ResourceRef& resource, TimePoint now) {
-    // The request identity is the operation identity for this owner command; a durable retry with
-    // the same RPC request identity therefore restores the same accepted operation reference.
+    // The first request identity allocates this operation identity. The five management methods
+    // persist that reference beside their success receipt, independently of later request IDs.
     if (!canonical(context.request_id)) {
       return invalid_runtime_input();
     }

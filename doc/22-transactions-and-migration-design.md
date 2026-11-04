@@ -405,3 +405,5 @@ CreateTask 幂等由 task_id/idempotency receipt 保证，COMPLETED 仅证明 Ti
 ## 2026-11-04 Runtime 管理回执
 
 用户已批准五项管理写入在 Runtime 同一事务中保存版本化附属回执、原 operation 引用和实例提交状态。附属行引用 command_receipts(result_id) ON DELETE CASCADE，普通回执不保存 bootstrap 明文。新建隔离数据库验收；现有部署数据库不得由启动流程自动升级。原地迁移另行审查。完整重放只在原 retain_until 内承诺，过期 UNKNOWN 仍需核对原操作。
+
+Runtime mutate 的 effect 返回失败时，先回滚整个业务 UoW，再用独立短 UoW 尝试追加拒绝审计。crypto/ID 等纯端口在写行后失败也不得留下资源、operation、命令或半份回执；拒绝审计失败或提交未知保留原命令错误，因为业务事务已回滚。
