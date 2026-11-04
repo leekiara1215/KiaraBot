@@ -2217,6 +2217,8 @@ administrator's exact assignments plus `resource.manage` on the instance. Claims
 
 CreateAccount.catalog=5, ValidateManifest.catalog=3 and CreateInstallation.catalog=4 are required RESOURCE_CATALOG references to the offline registered accounts/installations family UUID. CreateInstance authorizes its exact parent installation. ListAccounts/ListInstallations/ListInstances/ListAdapters/ListHosts authorize the registered family catalog and independently each exact child. Their scope_kinds contains CATALOG plus their single child kind, without inherited grants. Missing or malformed catalog is INVALID_ARGUMENT, wrong family or missing grant is PERMISSION_DENIED. Absent deployment catalog configuration keeps these capabilities unavailable. Method implementation status remains separately evidence-gated. Lists retain fixed ten-minute immutable snapshots, current authorization per page, and conflict on scope/version/subject changes or unknown cursors.
 
+P05 首页空 page_token 重试按同 subject/method/request_id 定位原十分钟快照，返回原记录事实与固定 snapshot_id/observed_at/expires_at，并重新授权。页大小、查询目录、委托范围或授权版本绑定失配返回 CONFLICT；新 request_id 建立新快照。该内部有界索引不增加线协议字段，不承诺进程重启后恢复。
+
 ## Runtime 五项管理写入回执（2026-11-04）
 
 `DisableAccount`、`BindAdapter`、`UnbindAdapter`、`SetDesiredState`、`UpdateConfig` 的成功回执在原保留期内返回原业务快照和原 `OperationRef`；同幂等键更换 request_id/trace_id/deadline 不改变原操作身份。重试仍按当前身份、权限和完整资源范围在线核验；同键异参维持 `CONFLICT`。实例两项同时重放提交时的完整 `VersionedResourceState`（包括原 observed_at、实例版本与 STOPPED/Running 意图），不读当前行重建。`BindAdapter` 普通回执不保存或再次交付 bootstrap 明文。附属回执缺失、未知版本或资源/owner 不匹配时拒绝，不按新 request_id 猜 operation。该保证限定这五项；其他方法继续遵守其独立回执契约。wire 字段及现有 ReplayResult 索引保持不变。

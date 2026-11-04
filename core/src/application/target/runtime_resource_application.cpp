@@ -2685,6 +2685,8 @@ private:
     std::string id;
     SubjectId subject;
     std::string query;
+    std::string first_request_id;
+    std::string first_page_key;
     std::vector<std::string> scope;
     ResourceVersion authorization_version;
     std::uint32_t page_size;
@@ -2759,6 +2761,24 @@ private:
     std::shared_ptr<const ResourceSnapshot> snapshot;
     std::size_t offset = 0;
     const auto scope = snapshot_scope(context.authentication);
+    const auto first_page_key =
+        context.authentication.subject.value + "|" + context.method + "|" + context.request_id;
+    const auto matches = [&](const ResourceSnapshot& value) {
+      return value.expires_at > now && value.subject == context.authentication.subject &&
+             value.query == query && value.authorization_version == authorization_version &&
+             value.page_size == page.page_size && value.scope == scope;
+    };
+    if (page.page_token.empty()) {
+      std::lock_guard lock(cursors_mutex_);
+      const auto replay = first_pages_.find(first_page_key);
+      if (replay != first_pages_.end()) {
+        const auto stored = snapshots_.find(replay->second);
+        if (stored == snapshots_.end() || !matches(*stored->second)) {
+          return stale_version();
+        }
+        snapshot = stored->second;
+      }
+    }
     if (!page.page_token.empty()) {
       const auto separator = page.page_token.find('.');
       if (separator == std::string::npos) {
@@ -2782,7 +2802,7 @@ private:
         return stale_version();
       }
       snapshot = found->second;
-    } else {
+    } else if (!snapshot) {
       auto allocated = ids_.snapshot_id();
       if (const auto* rejected = std::get_if<Failure>(&allocated)) {
         return *rejected;
@@ -2791,6 +2811,8 @@ private:
           std::make_shared<ResourceSnapshot>(ResourceSnapshot{std::get<std::string>(allocated),
                                                               context.authentication.subject,
                                                               std::string(query),
+                                                              context.request_id,
+                                                              first_page_key,
                                                               scope,
                                                               authorization_version,
                                                               page.page_size,
@@ -2799,7 +2821,8 @@ private:
                                                               {},
                                                               0});
       building->bytes = 1024 + 2 * (building->id.size() + building->subject.value.size() +
-                                    building->query.size());
+                                    building->query.size() + building->first_page_key.size() +
+                                    building->first_request_id.size());
       for (const auto& item : building->scope) {
         building->bytes += 32 + 2 * item.size();
       }
@@ -2827,27 +2850,40 @@ private:
         }
       }
       std::lock_guard lock(cursors_mutex_);
-      std::size_t count = 0;
-      std::size_t records = building->records.size();
-      std::size_t bytes = building->bytes;
-      for (auto it = snapshots_.begin(); it != snapshots_.end();) {
-        if (it->second->expires_at <= now) {
-          issued_offsets_.erase(it->first);
-          it = snapshots_.erase(it);
-        } else {
-          count += it->second->subject == building->subject;
-          records += it->second->records.size();
-          bytes += it->second->bytes;
-          ++it;
+      // A simultaneous first-page retry may already have published the same immutable view.
+      const auto replay = first_pages_.find(first_page_key);
+      if (replay != first_pages_.end()) {
+        const auto stored = snapshots_.find(replay->second);
+        if (stored == snapshots_.end() || !matches(*stored->second)) {
+          return stale_version();
         }
-      }
-      if (count >= kMaximumSubjectSnapshots || snapshots_.size() >= kMaximumSnapshots ||
-          records > kMaximumTotalSnapshotRecords || bytes > kMaximumSnapshotBytes) {
-        return failure(ErrorCode::RateLimited, Recovery::Backoff);
-      }
-      snapshot = building;
-      if (!snapshots_.emplace(building->id, building).second) {
-        return internal_failure();
+        snapshot = stored->second;
+      } else {
+        std::size_t count = 0;
+        std::size_t records = building->records.size();
+        std::size_t bytes = building->bytes;
+        for (auto it = snapshots_.begin(); it != snapshots_.end();) {
+          // An in-flight reader still retains these encoded bytes; reclaim only after it releases.
+          if (it->second->expires_at <= now && it->second.use_count() == 1) {
+            first_pages_.erase(it->second->first_page_key);
+            issued_offsets_.erase(it->first);
+            it = snapshots_.erase(it);
+          } else {
+            count += it->second->subject == building->subject;
+            records += it->second->records.size();
+            bytes += it->second->bytes;
+            ++it;
+          }
+        }
+        if (count >= kMaximumSubjectSnapshots || snapshots_.size() >= kMaximumSnapshots ||
+            records > kMaximumTotalSnapshotRecords || bytes > kMaximumSnapshotBytes) {
+          return failure(ErrorCode::RateLimited, Recovery::Backoff);
+        }
+        if (!snapshots_.emplace(building->id, building).second) {
+          return internal_failure();
+        }
+        first_pages_.emplace(first_page_key, building->id);
+        snapshot = building;
       }
     }
     // Release the consistent database view before online per-child Identity checks.
@@ -2954,6 +2990,7 @@ private:
   std::mutex cursors_mutex_;
   std::unordered_map<std::string, std::shared_ptr<const ResourceSnapshot>> snapshots_;
   std::unordered_map<std::string, std::set<std::size_t>> issued_offsets_;
+  std::unordered_map<std::string, std::string> first_pages_;
   RuntimeAuthorizationPort& authorization_;
   std::vector<std::string> supported_capabilities_;
   HostLifecycleParticipantPort* host_lifecycle_ = nullptr;

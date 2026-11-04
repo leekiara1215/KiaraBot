@@ -14,7 +14,7 @@ def prepare(enrollment, installation, account):
             'assignment_id': str(uuid.uuid4()), 'permissions': permissions,
             'scope': [{'kind': 'RESOURCE_CATALOG', 'id': CATALOGS[family]}]})
     enrollment['administrator_assignments'].append({
-        'assignment_id': str(uuid.uuid4()), 'permissions': ['account.read'],
+        'assignment_id': str(uuid.uuid4()), 'permissions': ['account.read', 'account.manage'],
         'scope': [{'kind': 'RESOURCE_ACCOUNT', 'id': account}]})
     enrollment['administrator_assignments'].append({
         'assignment_id': str(uuid.uuid4()), 'permissions': ['plugin.manage'],
@@ -47,8 +47,9 @@ def verify(api, issue, account, installation, instance, context, require):
     def ctx(permission, *scope):
         return context(delegation=issue([permission], list(scope)).delegation.proof)
 
-    def rejected(method, request, code):
-        request.context.CopyFrom(context(delegation=request.context.delegation))
+    def rejected(method, request, code, refresh_context=True):
+        if refresh_context:
+            request.context.CopyFrom(context(delegation=request.context.delegation))
         try:
             method(request, timeout=8)
         except grpc.RpcError as error:
@@ -85,6 +86,25 @@ def verify(api, issue, account, installation, instance, context, require):
     require([item.account_id for item in listed.accounts] == [account], 'catalog plus exact child list')
     require(listed.snapshot.expires_at.seconds - listed.snapshot.observed_at.seconds == 600,
             'catalog fixed ten minute snapshot')
+    # A lost first response retries with the same request_id and the original immutable facts.
+    changed = api.UpdateAccount(r.RuntimeUpdateAccountRequest(
+        context=ctx(perm.PERMISSION_ACCOUNT_MANAGE, ref(p.RESOURCE_ACCOUNT, account)),
+        account_id=account, expected_version=listed.accounts[0].version,
+        display_name='changed-after-snapshot'), timeout=8).account
+    require(changed.display_name == 'changed-after-snapshot', 'exact account mutation between list retries')
+    require(api.ListAccounts(accounts, timeout=20) == listed,
+            'same first-page request_id replays original rows and snapshot metadata')
+    rebound = r.RuntimeListAccountsRequest()
+    rebound.CopyFrom(accounts)
+    rebound.page.page_size = 2
+    rejected(api.ListAccounts, rebound, grpc.StatusCode.ABORTED, refresh_context=False)
+    fresh = r.RuntimeListAccountsRequest()
+    fresh.CopyFrom(accounts)
+    fresh.context.CopyFrom(ctx(perm.PERMISSION_ACCOUNT_READ, catalog('accounts'), ref(p.RESOURCE_ACCOUNT, account)))
+    current = api.ListAccounts(fresh, timeout=20)
+    require(current.snapshot.snapshot_id != listed.snapshot.snapshot_id and
+            current.accounts[0].display_name == changed.display_name,
+            'new first-page request_id establishes a fresh data view')
     accounts.context.CopyFrom(ctx(perm.PERMISSION_ACCOUNT_READ, catalog('accounts')))
     require(not api.ListAccounts(accounts, timeout=20).accounts, 'directory alone reveals no child')
     accounts.context.CopyFrom(ctx(perm.PERMISSION_ACCOUNT_READ, ref(p.RESOURCE_ACCOUNT, account)))

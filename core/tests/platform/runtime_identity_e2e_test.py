@@ -299,7 +299,7 @@ def scenario(root, port, pg_bin, binaries):
     run_sql(({**environment[0], 'PGDATABASE': 'p03_runtime'}, environment[1]),
             f"INSERT INTO kiarabot.accounts "
             f"(id,platform,platform_account_id,display_name,version,state) VALUES "
-            f"('{account_id}','qq','10001','Alice',1,{0 if exact_accounts else 1});")
+            f"('{account_id}','qq','10001','Alice',1,{0 if exact_accounts or '--catalog-only' in sys.argv[9:] else 1});")
     identity, identity_state = daemon(identity_binary, root / 'identity.json')
     runtime = None
     fallback = None

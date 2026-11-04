@@ -1544,6 +1544,33 @@ void pagination_flow(Harness& harness) {
   check(failure_is(harness.application->list_accounts(second), t::ErrorCode::Conflict),
         "snapshot accepted a changed authorization version");
   harness.authorization.version = 7;
+  const auto original_first = std::get<t::ListResult<t::BotAccount>>(page);
+  harness.store.accounts.at(original_first.items.front().id.value).display_name = "new-live-name";
+  auto first_retry = harness.application->list_accounts(first);
+  const auto& first_replayed = std::get<t::ListResult<t::BotAccount>>(first_retry);
+  check(first_replayed.snapshot.snapshot_id == original_first.snapshot.snapshot_id &&
+            first_replayed.snapshot.observed_at == original_first.snapshot.observed_at &&
+            first_replayed.snapshot.expires_at == original_first.snapshot.expires_at &&
+            first_replayed.items.front().display_name == original_first.items.front().display_name,
+        "same request_id first-page retry lost the original immutable snapshot");
+  auto rebound_first = first;
+  rebound_first.page.page_size = 1;
+  check(failure_is(harness.application->list_accounts(rebound_first), t::ErrorCode::Conflict),
+        "same request_id first-page retry accepted a changed page size");
+  rebound_first = first;
+  rebound_first.context.authentication.scopes.push_back(
+      {{t::ResourceKind::Account, {last_id}}, "account.read"});
+  check(failure_is(harness.application->list_accounts(rebound_first), t::ErrorCode::Conflict),
+        "same request_id first-page retry accepted changed scopes");
+  harness.authorization.version = 8;
+  check(failure_is(harness.application->list_accounts(first), t::ErrorCode::Conflict),
+        "same request_id first-page retry accepted changed authorization version");
+  harness.authorization.version = 7;
+  auto fresh_first = first;
+  fresh_first.context.request_id = context("runtime.list_accounts", digest(51)).request_id;
+  check(std::get<t::ListResult<t::BotAccount>>(harness.application->list_accounts(fresh_first))
+                .snapshot.snapshot_id != original_first.snapshot.snapshot_id,
+        "a new request_id reused the earlier first-page snapshot");
   // Per-item authorization filtering hides resources the caller is not granted.
   harness.authorization.denied_resources.insert(retried_page.items.front().id.value);
   auto filtered = harness.application->list_accounts(second);
@@ -1603,14 +1630,17 @@ void catalog_rejection_and_capacity_flow() {
   check(failure_is(harness.application->list_accounts(foreign), t::ErrorCode::PermissionDenied),
         "another family's catalog accepted");
   for (std::size_t index = 0; index < 64; ++index) {
+    query.context.request_id = context("runtime.list_accounts", digest(99)).request_id;
     check(std::holds_alternative<t::ListResult<t::BotAccount>>(
               harness.application->list_accounts(query)),
           "snapshot capacity rejected below configured limit");
   }
+  query.context.request_id = context("runtime.list_accounts", digest(99)).request_id;
   check(failure_is(harness.application->list_accounts(query), t::ErrorCode::RateLimited),
         "snapshot subject budget silently evicted a live snapshot");
   harness.store.now += 600s;
   query.context.deadline += 600s;
+  query.context.request_id = context("runtime.list_accounts", digest(99)).request_id;
   check(std::holds_alternative<t::ListResult<t::BotAccount>>(
             harness.application->list_accounts(query)),
         "expired snapshot budget was not reclaimed");

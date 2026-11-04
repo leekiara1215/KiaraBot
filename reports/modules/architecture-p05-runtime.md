@@ -315,3 +315,9 @@ Bridge 双连接隔离修复及 P06 容量重投集成后，主构建重新编�
 新增 `p05_runtime_catalog_e2e`，复用拥有者受控 PG16.4/TLS、真实 Identity 与 Runtime 进程。`ctest -R '^p05_runtime_catalog_e2e$' --output-on-failure` **1/1 passed（9.43 秒）**。离线仅供给目录及预置 exact 对象 grants，Runtime 数据夹具只预置既有对象；CreateAccount、ValidateManifest、CreateInstallation、父安装 CreateInstance 均经真实委托和 owner RPC 成功，四条 typed List 走真实目录及 child 授权；目录独有返回空、child 独有拒绝、缺失与错族目录拒绝、新建账号/安装/实例没有隐式 Get 权限均有断言。未通过 SQL 写入 Identity grant，未声明新资源授权供给闭环已完成。
 
 目录列表每次可有多个在线 Identity 检查，专用测试 transport 预算为 20 秒，RequestContext 仍为既有 30 秒。负例各生成新的 RequestContext，避免复用已到期请求身份；预期 gRPC 状态保持明确断言。已有综合 `p05_runtime_identity_e2e` 及 exact 管理断言均保留，独立目录模式不绕过该测试结果；Lead 在 receipt 集成且并行编译结束后统一重跑。Python 编译与 git diff --check 通过；本补证仍不自动翻 target 状态。
+
+### P05 首页重放及并发容量审查修正
+
+同 subject/method/request_id 的首页空 token 重试使用有界索引复用原快照，校验目录查询、page_size、委托范围及当前授权版本；绑定失配 CONFLICT，新 request_id 建立新视图。并发首次发布二次检查同请求索引；索引随快照到期清理，逐 child 在线授权不持缓存锁。过期但仍被在途页面持有的数据继续占容量，最后读者释放后才回收，防止重复释放 64 MiB 预算。
+
+新增单测覆盖同 request_id 重试在资源变更后仍返回原记录和固定 ID/时间，错误 page_size/scope/version 拒绝、新 request_id 新视图，以及更新后的独立 64 请求容量检查；resource application 和 P13 lifecycle 回归通过。真实目录用例追加 exact UpdateAccount 改数据后首页重试及新请求对比；本轮在 Identity IssueDelegation 的 10 秒 transport 预算处遇 DEADLINE_EXCEEDED（helper ctx，原业务断言未降低），等待无并行构建负载时重跑。此前目录基础真实链通过证据仍为 9.43 秒。

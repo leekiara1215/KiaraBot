@@ -283,6 +283,8 @@ CreateAccount、ValidateManifest 和 CreateInstallation 必须携带所属目录
 
 四种已有 typed 列表在一致只读事务中冻结候选记录、排序及观察时间，释放事务后逐项在线授权。分页仅移动不可变候选偏移，不重新读取实时行；原观察时间及十分钟到期时间固定。每页先检查目录授权，再检查 child；授权拒绝隐藏 child，依赖失败不能变为空页，授权版本变化、过期、重启或主体/目录/方法/页大小/委托范围失配返回 CONFLICT。快照保留纯数据及权限范围，不保留可复用 proof。预算及 fail-closed 端口说明见 doc/02-core.md 对应 P05 章节；达到容量返回 RATE_LIMITED，不能截断后宣称集合结束。ListHosts 的生产数据源仍待独立实现。
 
+同一主体/方法/request_id 的首页重放（空 page_token）保留首次事实、snapshot_id、observed_at 与 expires_at；保留期内请求绑定变化返回 CONFLICT。新 request_id 建立新首页，不能以相同请求身份得到更新后的实时视图。
+
 ## Runtime 管理命令重放（2026-11-04）
 
 五项管理写入（DisableAccount、BindAdapter、UnbindAdapter、SetDesiredState、UpdateConfig）将父回执、Runtime 专用附属回执、原业务版本、审计及已有 operation/Host 命令意图在同一 UoW 原子提交。附属表保存 format_version=1、方法/结果辨别信息、完整 Runtime OperationRef，以及实例提交状态；重试重验授权后按原身份恢复，原 operation 当前行被清理也不改变回执引用。提交未知沿用 UNKNOWN/同身份查询，不能换键重做。附属行在父回执过期清理或过期键替换时级联删除；retain_until 到期即不承诺完整回放，即使尚未物理清理。至少七天保留不保证过期 UNKNOWN 可安全重试，仍需人工核对原操作。
