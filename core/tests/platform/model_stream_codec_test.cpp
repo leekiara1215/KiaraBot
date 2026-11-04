@@ -31,6 +31,7 @@ t::ModelIntent call() {
   out.model = {"55555555-5555-4555-8555-555555555555"};
   out.config_version = {1};
   out.secret_version = {1};
+  out.state = t::ModelCallState::Started;
   out.may_have_billed = true;
   out.observed_at = t::TimePoint{std::chrono::seconds{1800000000}};
   return out;
@@ -63,6 +64,67 @@ bool accepted(const std::vector<v::ModelStreamEvent>& events, bool terminal = tr
   }
   return decoder.terminal_received() == terminal;
 }
+std::optional<t::ModelStreamTerminal>
+decoded_terminal(const std::vector<v::ModelStreamEvent>& events) {
+  p::ModelStreamDecoder decoder{kRequest, kLogical, kTrace};
+  std::optional<t::ModelStreamTerminal> result;
+  for (const auto& event : events) {
+    auto decoded = decoder.decode(event);
+    if (!std::holds_alternative<t::ModelStreamEvent>(decoded)) {
+      return std::nullopt;
+    }
+    const auto& value = std::get<t::ModelStreamEvent>(decoded);
+    if (const auto* terminal = std::get_if<t::ModelStreamTerminal>(&value.body)) {
+      result = *terminal;
+    }
+  }
+  if (!decoder.terminal_received()) {
+    return std::nullopt;
+  }
+  return result;
+}
+// Sizes drive one ordered attempt: started=0, deltas=1..N, terminal=N+1.
+std::vector<v::ModelStreamEvent> sized_stream(const std::vector<std::size_t>& sizes) {
+  auto events = fresh();
+  auto terminal = events.back();
+  events.resize(1); // keep only the started frame; terminal is rebuilt from the given sizes
+  std::uint64_t bytes = 0;
+  for (std::size_t index = 0; index < sizes.size(); ++index) {
+    events.push_back(encode({kRequest, kLogical, 1 + index, kTrace,
+                             t::ModelStreamDelta{std::string(sizes[index], 'a')}}));
+    bytes += sizes[index];
+  }
+  terminal.set_sequence(sizes.size() + 1);
+  terminal.mutable_terminal()->set_emitted_bytes(bytes);
+  terminal.mutable_terminal()->set_emitted_delta_count(sizes.size());
+  events.push_back(terminal);
+  return events;
+}
+std::vector<v::ModelStreamEvent> replay_stream() {
+  auto events = fresh();
+  events.erase(events.begin() + 1);
+  *events.front().mutable_started()->mutable_call() = events.back().terminal().call();
+  events.front().mutable_started()->set_disposition(v::MODEL_STREAM_REPLAY_TERMINAL);
+  auto* terminal = events.back().mutable_terminal();
+  events.back().set_sequence(1);
+  terminal->set_termination(v::MODEL_STREAM_REPLAY);
+  terminal->set_emitted_bytes(0);
+  terminal->set_emitted_delta_count(0);
+  return events;
+}
+v::ModelStreamEvent wire_delta(std::uint64_t sequence, std::string text) {
+  v::ModelStreamEvent event;
+  event.set_request_id(kRequest);
+  event.set_logical_call_id(kLogical);
+  event.set_trace_id(kTrace);
+  event.set_sequence(sequence);
+  event.mutable_delta()->set_text(std::move(text));
+  return event;
+}
+bool accepts_delta(std::string text) {
+  std::vector<v::ModelStreamEvent> events{fresh()[0], wire_delta(1, std::move(text))};
+  return accepted(events, false);
+}
 void cases() {
   require(accepted(fresh()));
   auto truncated = fresh();
@@ -70,15 +132,7 @@ void cases() {
   truncated.back().mutable_terminal()->set_finish_reason(v::MODEL_STREAM_FINISH_LENGTH);
   truncated.back().mutable_terminal()->set_partial(true);
   require(accepted(truncated));
-  auto replay = fresh();
-  replay.erase(replay.begin() + 1);
-  *replay.front().mutable_started()->mutable_call() = replay.back().terminal().call();
-  replay.front().mutable_started()->set_disposition(v::MODEL_STREAM_REPLAY_TERMINAL);
-  auto* terminal = replay.back().mutable_terminal();
-  replay.back().set_sequence(1);
-  terminal->set_termination(v::MODEL_STREAM_REPLAY);
-  terminal->set_emitted_bytes(0);
-  terminal->set_emitted_delta_count(0);
+  auto replay = replay_stream();
   require(accepted(replay));
   const auto failure = t::Failure{t::ErrorCode::PermissionDenied,
                                   t::Acceptance::NotAccepted,
@@ -143,10 +197,107 @@ void cases() {
   require(std::holds_alternative<t::Failure>(poisoned.decode(invalid)));
   require(std::holds_alternative<t::Failure>(poisoned.decode(fresh()[0])));
 }
+t::Failure failure_denied() {
+  return {t::ErrorCode::PermissionDenied,
+          t::Acceptance::NotAccepted,
+          t::Recovery::Authenticate,
+          {},
+          {}};
+}
+
+void boundaries() {
+  // Exact 4 KiB delta and the 64 KiB cumulative text bound are inclusive; one byte more is not.
+  require(accepted(sized_stream({4096})));
+  auto maximum = std::vector<std::size_t>(16, 4096);
+  require(accepted(sized_stream(maximum)));
+  maximum.push_back(1);
+  auto over = sized_stream(maximum);
+  require(!accepted(over));
+  // Strict UTF-8 at the delta boundary: lone/rejecting code units fail, 4-byte text is valid.
+  require(accepts_delta("\xe4\xb8\x96\xe7\x95\x8c"));
+  require(accepts_delta("\xf0\x9f\x98\x80"));
+  require(!accepts_delta(std::string{"\x80", 1}));
+  require(!accepts_delta(std::string{"\xc0\xaf", 2}));
+  require(!accepts_delta(std::string{"\xed\xa0\x80", 3}));
+  require(!accepts_delta(std::string{"\xe4\xb8", 2}));
+  require(!accepts_delta(std::string{"\xf5\x80\x80\x80", 4}));
+  require(!accepts_delta(std::string{"a\xf0\x9f", 3}));
+  require(!accepts_delta(std::string(4097, 'a')));
+  // started is exactly sequence 0 and the terminal follows the deltas; pre-start terminal is 0.
+  auto late_started = fresh();
+  late_started[0].set_sequence(1);
+  require(!accepted(late_started));
+  for (const auto termination :
+       {v::MODEL_STREAM_COMPLETED, v::MODEL_STREAM_TRUNCATED, v::MODEL_STREAM_REPLAY}) {
+    t::ModelStreamTerminal prestart;
+    prestart.usage.known = true;
+    prestart.may_have_billed = true;
+    auto encoded = encode({kRequest, kLogical, 0, kTrace, prestart});
+    encoded.mutable_terminal()->set_termination(termination);
+    require(!accepted({encoded}));
+  }
+  t::ModelStreamTerminal cancelled;
+  cancelled.termination = t::ModelStreamTermination::Cancelled;
+  cancelled.usage.known = true;
+  cancelled.may_have_billed = true;
+  require(accepted({encode({kRequest, kLogical, 0, kTrace, cancelled})}));
+  auto prestart_sequence = encode({kRequest, kLogical, 0, kTrace, cancelled});
+  prestart_sequence.set_sequence(1);
+  require(!accepted({prestart_sequence}));
+  // FAILED requires a structured RpcFailure; COMPLETED/TRUNCATED/REPLAY must not carry one.
+  auto failed_without_failure = fresh();
+  failed_without_failure.back().mutable_terminal()->set_termination(v::MODEL_STREAM_FAILED);
+  failed_without_failure.back().mutable_terminal()->set_partial(true);
+  require(!accepted(failed_without_failure));
+  // Replay admission never carries text and keeps the unchanged started snapshot.
+  auto replay_with_delta = replay_stream();
+  replay_with_delta.insert(replay_with_delta.begin() + 1, wire_delta(1, std::string{"x"}));
+  replay_with_delta.back().set_sequence(2);
+  require(!accepted(replay_with_delta));
+  auto replay_running = replay_stream();
+  auto* running_call = replay_running.front().mutable_started()->mutable_call();
+  running_call->set_state(v::OPERATION_RUNNING);
+  running_call->set_execution_outcome(v::EXECUTION_UNKNOWN);
+  running_call->set_may_have_billed(true);
+  require(!accepted(replay_running));
+  // No event may follow a terminal; a trailing delta is not silently ignored.
+  auto trailing = fresh();
+  trailing.push_back(wire_delta(3, std::string{"x"}));
+  require(!accepted(trailing));
+  // Bounded RATE_LIMITED Retry-After survives the failure codec; zero means absent, >60s invalid.
+  t::Failure rate{t::ErrorCode::RateLimited,
+                  t::Acceptance::NotAccepted,
+                  t::Recovery::Backoff,
+                  {},
+                  std::chrono::milliseconds{1000}};
+  auto encoded_rate = p::encode_model_stream_failure(rate, kRequest, kTrace);
+  require(std::holds_alternative<v::RpcFailure>(encoded_rate));
+  require(std::get<v::RpcFailure>(encoded_rate).context().retry_after_ms() == 1000);
+  auto correlated = fresh();
+  auto* correlated_terminal = correlated.back().mutable_terminal();
+  correlated_terminal->set_termination(v::MODEL_STREAM_FAILED);
+  correlated_terminal->set_partial(true);
+  *correlated_terminal->mutable_failure() = std::get<v::RpcFailure>(encoded_rate);
+  auto decoded = decoded_terminal(correlated);
+  require(decoded && decoded->failure && decoded->failure->retry_after &&
+          decoded->failure->retry_after->count() == 1000);
+  rate.retry_after = std::chrono::milliseconds{60001};
+  require(
+      std::holds_alternative<t::Failure>(p::encode_model_stream_failure(rate, kRequest, kTrace)));
+  auto no_retry = fresh();
+  auto* no_retry_terminal = no_retry.back().mutable_terminal();
+  no_retry_terminal->set_termination(v::MODEL_STREAM_FAILED);
+  no_retry_terminal->set_partial(true);
+  *no_retry_terminal->mutable_failure() =
+      std::get<v::RpcFailure>(p::encode_model_stream_failure(failure_denied(), kRequest, kTrace));
+  auto decoded_no_retry = decoded_terminal(no_retry);
+  require(decoded_no_retry && decoded_no_retry->failure && !decoded_no_retry->failure->retry_after);
+}
 } // namespace
 int main() {
   try {
     cases();
+    boundaries();
   } catch (const std::exception& e) {
     std::cerr << e.what() << '\n';
     return 1;

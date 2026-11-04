@@ -24,7 +24,7 @@ from .errors import PluginError
 from kiarabot.v1 import common_pb2 as common
 
 TARGET_FEATURES = ('action.result.v1', 'host.storage.v1', 'host.model.v1',
-                   'host.tasks.v1', 'plugin.config.v1')
+                   'host.model.stream.v1', 'host.tasks.v1', 'plugin.config.v1')
 #: Upper bound from the frozen contract: a ConnectionAuthorization nominally
 #: lives at most 56 seconds; the total budget including skew stays under 60 s.
 MAX_AUTHORIZATION_LIFETIME_SECONDS = 56.0

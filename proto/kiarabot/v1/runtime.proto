@@ -2,6 +2,7 @@ syntax = "proto3";
 package kiarabot.v1;
 import "google/protobuf/timestamp.proto";
 import "kiarabot/v1/common.proto";
+import "kiarabot/v1/observations.proto";
 import "kiarabot/v1/platform.proto";
 import "kiarabot/v1/policy.proto";
 import "kiarabot/v1/plugins.proto";
@@ -10,7 +11,6 @@ import "kiarabot/v1/adapters.proto";
 import "kiarabot/v1/events.proto";
 import "kiarabot/v1/actions.proto";
 import "kiarabot/v1/host.proto";
-import "kiarabot/v1/observations.proto";
 
 // CONTRACT_STATUS: not_implemented - historical reference; see target execution scope.
 message AccountRecord {
@@ -1526,6 +1526,28 @@ service RuntimeService {
     option (scope_kinds) = RESOURCE_INSTALLATION;
     option (scope_kinds) = RESOURCE_INSTANCE;
     option (scope_kinds) = RESOURCE_HOST;
+    option (requires_idempotency) = false;
+    option (default_deadline_ms) = 500;
+    option (max_deadline_ms) = 500;
+    option (requires_online_authorization) = true;
+  }
+  // CONTRACT_STATUS: not_implemented - v1.2 bounded owner log journal, producer pending.
+  // Control caller only; exact RESOURCE_CATALOG/control scope and current online
+  // log.read on every page. An empty page requires a confirmed owner source.
+  rpc ListLogChanges(ObservationChangesRequest) returns (LogChangesResponse) {
+    option (required_permission) = PERMISSION_LOG_READ;
+    option (scope_kinds) = RESOURCE_CATALOG;
+    option (requires_idempotency) = false;
+    option (default_deadline_ms) = 500;
+    option (max_deadline_ms) = 500;
+    option (requires_online_authorization) = true;
+  }
+  // CONTRACT_STATUS: not_implemented - v1.2 received-message metadata journal, producer pending.
+  // Control caller only; exact RESOURCE_ACCOUNT scope and current online
+  // message.read on every page. Never emits bodies, platform payloads or sent.
+  rpc ListMessageMetadataChanges(ObservationChangesRequest) returns (MessageMetadataChangesResponse) {
+    option (required_permission) = PERMISSION_MESSAGE_READ;
+    option (scope_kinds) = RESOURCE_ACCOUNT;
     option (requires_idempotency) = false;
     option (default_deadline_ms) = 500;
     option (max_deadline_ms) = 500;

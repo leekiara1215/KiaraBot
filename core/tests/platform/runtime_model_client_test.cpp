@@ -1,19 +1,26 @@
 // P11c Runtime -> Model typed client tests against a loopback fake ModelService.
+#include <atomic>
 #include <chrono>
+#include <functional>
 #include <iostream>
 #include <memory>
 #include <mutex>
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <thread>
 
 #include <grpcpp/grpcpp.h>
 
+#include "kiarabot/core/runtime/platform/model_stream_codec.hpp"
 #include "kiarabot/core/runtime/platform/runtime_model_client.hpp"
+#include "kiarabot/core/runtime/platform/target_codec.hpp"
 #include "kiarabot/v1/model.grpc.pb.h"
+#include "kiarabot/v1/model_stream.pb.h"
 
 namespace {
 namespace p = kiarabot::core::platform;
+namespace codec = kiarabot::core::platform::target_codec;
 namespace t = kiarabot::core::target;
 using namespace std::chrono_literals;
 
@@ -48,6 +55,19 @@ public:
     }
     return grpc::Status::OK;
   }
+  grpc::Status ChatStream(grpc::ServerContext*,
+                          const kiarabot::v1::ModelGatewayChatRequest* request,
+                          grpc::ServerWriter<kiarabot::v1::ModelStreamEvent>* writer) override {
+    std::lock_guard lock(mutex_);
+    calls_++;
+    logical_call_id_ = request->logical_call_id();
+    delegation_ = request->context().delegation();
+    idempotency_key_ = request->context().idempotency_key();
+    if (stream) {
+      return stream(*writer);
+    }
+    return grpc::Status(grpc::StatusCode::UNIMPLEMENTED, "");
+  }
   int calls() const {
     std::lock_guard lock(mutex_);
     return calls_;
@@ -68,7 +88,15 @@ private:
   grpc::StatusCode status_ = grpc::StatusCode::OK;
   std::string logical_call_id_;
   std::string delegation_;
+  std::string idempotency_key_;
   std::string model_id_;
+
+public:
+  std::function<grpc::Status(grpc::ServerWriter<kiarabot::v1::ModelStreamEvent>&)> stream;
+  std::string last_idempotency_key() const {
+    std::lock_guard lock(mutex_);
+    return idempotency_key_;
+  }
 };
 struct Server {
   explicit Server(FakeModel& fake) {
@@ -170,12 +198,211 @@ void failure_mapping() {
           "expired budget unknown");
 }
 
+constexpr char kStreamRequest[] = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+constexpr char kStreamLogical[] = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+constexpr char kStreamTrace[] = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+t::ModelIntent stream_call() {
+  t::ModelIntent value;
+  value.owner = {t::InstanceId{"22222222-2222-4222-8222-222222222222"}.value};
+  value.logical_call_id = kStreamLogical;
+  value.model = {"11111111-1111-4111-8111-111111111111"};
+  value.config_version = {1};
+  value.secret_version = {1};
+  value.state = t::ModelCallState::Started;
+  value.may_have_billed = true;
+  value.observed_at = t::TimePoint{std::chrono::seconds{1800000000}};
+  return value;
+}
+kiarabot::v1::ModelStreamEvent encoded(const t::ModelStreamEvent& event) {
+  auto value = p::encode_model_stream_event(event);
+  require(std::holds_alternative<kiarabot::v1::ModelStreamEvent>(value), "encode stream event");
+  return std::get<kiarabot::v1::ModelStreamEvent>(value);
+}
+std::vector<kiarabot::v1::ModelStreamEvent> completed_frames(std::string text = "reply") {
+  auto running = stream_call();
+  auto success = running;
+  success.state = t::ModelCallState::Succeeded;
+  success.usage_known = true;
+  success.input_tokens = 2;
+  success.output_tokens = 3;
+  t::ModelStreamTerminal terminal;
+  terminal.termination = t::ModelStreamTermination::Completed;
+  terminal.finish_reason = t::ModelStreamFinishReason::Stop;
+  terminal.emitted_bytes = text.size();
+  terminal.emitted_delta_count = 1;
+  terminal.call = success;
+  terminal.usage = {true, 2, 3};
+  return {encoded({kStreamRequest, kStreamLogical, 0, kStreamTrace,
+                   t::ModelStreamStarted{t::ModelStreamDisposition::Fresh, running}}),
+          encoded({kStreamRequest, kStreamLogical, 1, kStreamTrace, t::ModelStreamDelta{text}}),
+          encoded({kStreamRequest, kStreamLogical, 2, kStreamTrace, terminal})};
+}
+struct CollectingSink final : t::RuntimeModelStreamSink {
+  std::vector<t::ModelStreamEvent> events;
+  t::ModelStreamSinkResult next = t::ModelStreamSinkResult::Accepted;
+  t::ModelStreamSinkResult try_emit(const t::ModelStreamEvent& event) override {
+    if (next == t::ModelStreamSinkResult::Accepted) {
+      events.push_back(event);
+    }
+    return next;
+  }
+};
+t::RuntimeModelStreamRequest stream_request() {
+  t::RuntimeModelStreamRequest value;
+  value.instance = t::InstanceId{"22222222-2222-4222-8222-222222222222"};
+  value.request_id = kStreamRequest;
+  value.trace_id = kStreamTrace;
+  value.logical_call_id = kStreamLogical;
+  value.model = "default";
+  value.messages = {{"user", "hello"}};
+  return value;
+}
+void stream_success() {
+  FakeModel fake;
+  Server server(fake);
+  auto client = client_for(server.endpoint());
+  fake.stream = [](grpc::ServerWriter<kiarabot::v1::ModelStreamEvent>& writer) {
+    for (const auto& frame : completed_frames()) {
+      if (!writer.Write(frame)) {
+        return grpc::Status(grpc::StatusCode::CANCELLED, "");
+      }
+    }
+    return grpc::Status::OK;
+  };
+  CollectingSink sink;
+  std::stop_source cancellation;
+  auto result = client->chat_stream(stream_request(), sink, cancellation.get_token(), later(5s));
+  require(std::holds_alternative<t::RuntimeModelStreamResult>(result), "stream success");
+  const auto& value = std::get<t::RuntimeModelStreamResult>(result);
+  require(value.terminal && value.terminal->termination == t::ModelStreamTermination::Completed &&
+              sink.events.size() == 3 && value.received_bytes == 5 &&
+              value.received_delta_count == 1 && !value.cancelled_by_consumer,
+          "ordered terminal and local counters");
+  require(fake.last_idempotency_key().empty(), "stream attempt carries no unary idempotency key");
+}
+void stream_pre_start_rejection() {
+  FakeModel fake;
+  Server server(fake);
+  auto client = client_for(server.endpoint());
+  fake.stream = [](grpc::ServerWriter<kiarabot::v1::ModelStreamEvent>&) {
+    const t::Failure failure_value{t::ErrorCode::PermissionDenied,
+                                   t::Acceptance::NotAccepted,
+                                   t::Recovery::Authenticate,
+                                   {},
+                                   {}};
+    auto rpc = p::encode_model_stream_failure(failure_value, kStreamRequest, kStreamTrace);
+    auto status = codec::to_grpc_failure(std::get<kiarabot::v1::RpcFailure>(rpc));
+    return std::get<grpc::Status>(status);
+  };
+  CollectingSink sink;
+  std::stop_source cancellation;
+  auto result = client->chat_stream(stream_request(), sink, cancellation.get_token(), later(5s));
+  require(std::holds_alternative<t::Failure>(result), "pre-start rejection is a failure");
+  const auto& failure_value = std::get<t::Failure>(result);
+  require(failure_value.code == t::ErrorCode::PermissionDenied &&
+              failure_value.acceptance == t::Acceptance::NotAccepted &&
+              failure_value.recovery == t::Recovery::Authenticate && sink.events.empty(),
+          "structured trailer preserves acceptance/recovery");
+}
+void stream_lost_terminal_is_unknown() {
+  FakeModel fake;
+  Server server(fake);
+  auto client = client_for(server.endpoint());
+  fake.stream = [](grpc::ServerWriter<kiarabot::v1::ModelStreamEvent>& writer) {
+    const auto frames = completed_frames();
+    (void)writer.Write(frames[0]);
+    return grpc::Status(grpc::StatusCode::UNAVAILABLE, "");
+  };
+  CollectingSink sink;
+  std::stop_source cancellation;
+  auto result = client->chat_stream(stream_request(), sink, cancellation.get_token(), later(5s));
+  require(std::holds_alternative<t::Failure>(result), "missing terminal is not completion");
+  const auto& failure_value = std::get<t::Failure>(result);
+  require(failure_value.acceptance == t::Acceptance::Unknown &&
+              failure_value.recovery == t::Recovery::QuerySameIdentity &&
+              failure_value.code == t::ErrorCode::UpstreamUnavailable && !sink.events.empty(),
+          "unknown delivery with conservative recovery");
+}
+void stream_malformed_prefix_is_unknown() {
+  FakeModel fake;
+  Server server(fake);
+  auto client = client_for(server.endpoint());
+  fake.stream = [](grpc::ServerWriter<kiarabot::v1::ModelStreamEvent>& writer) {
+    auto frames = completed_frames();
+    frames[1].set_sequence(3);
+    (void)writer.Write(frames[0]);
+    (void)writer.Write(frames[1]);
+    return grpc::Status::OK;
+  };
+  CollectingSink sink;
+  std::stop_source cancellation;
+  auto result = client->chat_stream(stream_request(), sink, cancellation.get_token(), later(5s));
+  require(std::holds_alternative<t::Failure>(result) &&
+              std::get<t::Failure>(result).acceptance == t::Acceptance::Unknown,
+          "invalid sequence never fabricates success");
+}
+void stream_consumer_cancellation() {
+  FakeModel fake;
+  Server server(fake);
+  auto client = client_for(server.endpoint());
+  std::atomic<bool> release{false};
+  fake.stream = [&release](grpc::ServerWriter<kiarabot::v1::ModelStreamEvent>& writer) {
+    const auto frames = completed_frames();
+    (void)writer.Write(frames[0]);
+    while (!release.load()) {
+      std::this_thread::sleep_for(5ms);
+    }
+    return grpc::Status(grpc::StatusCode::OK, "");
+  };
+  CollectingSink sink;
+  std::stop_source cancellation;
+  std::thread stopper([&cancellation] {
+    while (!cancellation.stop_requested()) {
+      std::this_thread::sleep_for(20ms);
+      cancellation.request_stop();
+    }
+  });
+  auto result = client->chat_stream(stream_request(), sink, cancellation.get_token(), later(5s));
+  release.store(true);
+  stopper.join();
+  require(std::holds_alternative<t::RuntimeModelStreamResult>(result), "cancel is a delivery stop");
+  const auto& value = std::get<t::RuntimeModelStreamResult>(result);
+  require(value.cancelled_by_consumer && !value.terminal, "consumer cancel yields no terminal");
+}
+void stream_sink_cancelled() {
+  FakeModel fake;
+  Server server(fake);
+  auto client = client_for(server.endpoint());
+  fake.stream = [](grpc::ServerWriter<kiarabot::v1::ModelStreamEvent>& writer) {
+    for (const auto& frame : completed_frames()) {
+      if (!writer.Write(frame)) {
+        return grpc::Status(grpc::StatusCode::CANCELLED, "");
+      }
+    }
+    return grpc::Status::OK;
+  };
+  CollectingSink sink;
+  sink.next = t::ModelStreamSinkResult::Cancelled;
+  std::stop_source cancellation;
+  auto result = client->chat_stream(stream_request(), sink, cancellation.get_token(), later(5s));
+  require(std::holds_alternative<t::RuntimeModelStreamResult>(result) &&
+              std::get<t::RuntimeModelStreamResult>(result).cancelled_by_consumer &&
+              sink.events.empty(),
+          "slow/cancelled sink stops the attempt without a terminal");
+}
+
 } // namespace
 
 int main() {
   try {
     success_and_replay();
     failure_mapping();
+    stream_success();
+    stream_pre_start_rejection();
+    stream_lost_terminal_is_unknown();
+    stream_malformed_prefix_is_unknown();
+    stream_consumer_cancellation();
+    stream_sink_cancelled();
   } catch (const std::exception& error) {
     std::cerr << error.what() << '\n';
     return 1;

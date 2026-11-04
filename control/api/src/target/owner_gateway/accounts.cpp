@@ -47,8 +47,8 @@ std::optional<OwnerHttpResult> handle_accounts(const RequestContext& context, co
       }
       auto value =
           json_request_value(json_response(std::get<wire::RuntimeBindAdapterResponse>(result)));
-      value.erase("bootstrap_credential");
-      return OwnerHttpResult{200, value.dump()};
+      return deliver_bootstrap_response(context, ports, std::get<std::string>(delegation),
+                                        /*adapter=*/true, value);
     }
     if (method == "DELETE") {
       wire::RuntimeUnbindAdapterRequest input;

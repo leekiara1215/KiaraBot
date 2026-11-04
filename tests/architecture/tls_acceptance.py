@@ -99,9 +99,17 @@ def tls_acceptance(binaries, pki, directory):
                 implemented_rejection = (grpc.StatusCode.INVALID_ARGUMENT
                                          if service == 'scheduler'
                                          else grpc.StatusCode.UNIMPLEMENTED)
+                # v1.2 declared owner methods that have no production transport handler yet are
+                # registered not_implemented and still fall through to the generated stub. They are
+                # explicitly listed (never inferred from status alone: ListOperationChanges is also
+                # not_implemented but its real adapter rejects the empty probe with INVALID_ARGUMENT).
+                handlerless = {('scheduler', 'ListTaskChanges')}
                 for method in owner_methods:
                     path = '/kiarabot.v1.' + method['service'] + '/' + method['method']
-                    expected_rpc_error(grpc, channel, path, implemented_rejection,
+                    expected = (grpc.StatusCode.UNIMPLEMENTED
+                                if (service, method['method']) in handlerless
+                                else implemented_rejection)
+                    expected_rpc_error(grpc, channel, path, expected,
                                        streaming=method['server_streaming'])
                 if service == 'runtime':
                     for bridge in ('AdapterBridge', 'PluginBridge', 'HostBridge'):

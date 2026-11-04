@@ -3,6 +3,7 @@
 
 #include "common.hpp"
 #include "components.hpp"
+#include "kiarabot/core/application/target/runtime_resources/bootstrap.hpp"
 #include "kiarabot/core/domain/target/event_delivery.hpp"
 #include "kiarabot/core/domain/target/host_command_records.hpp"
 #include "mutation.hpp"
@@ -191,6 +192,7 @@ public:
     const auto id = std::get<InstanceId>(allocated);
     const ResourceRef receipt_scope{ResourceKind::Catalog, {"runtime-create-instance"}};
     std::optional<std::string> bootstrap_credential;
+    std::optional<BootstrapDeliveryRecord> delivery;
     auto result = mutate<PluginInstance>(
         transactions_, request.context, receipt_scope, authorization_version,
         [&](RuntimeUnitOfWork& work, TimePoint now) -> Outcome<PluginInstance> {
@@ -220,10 +222,31 @@ public:
           if (const auto* failure = std::get_if<Failure>(&saved)) {
             return *failure;
           }
-          // Managed instances also receive a one-time deployment bootstrap; the Host operator
-          // places it in the Host credential directory (0600) before starting the instance. The
-          // externally-managed P06 bridge path uses the same stored digest and response field.
-          if (request.externally_managed || request.host) {
+          const ResourceRef resource{ResourceKind::Instance, {id.value}};
+          if (!request.bootstrap_recipient_id.empty()) {
+            // Explicit opt-in: first issuance persists digest, real monotonic version, recipient
+            // binding and no-secret delivery intent with a Runtime-owned operation. The plaintext
+            // stays only in this response object.
+            auto operation = accepted_operation(work, request.context, resource, now);
+            if (const auto* failure = std::get_if<Failure>(&operation)) {
+              return *failure;
+            }
+            auto issued = issue_bootstrap_delivery(
+                work, ids_, secrets_, resource, BootstrapPeerFamily::Plugin, id.value,
+                request.bootstrap_recipient_id, std::get<Operation>(operation).ref, now);
+            if (const auto* failure = std::get_if<Failure>(&issued)) {
+              return *failure;
+            }
+            auto issue = std::move(std::get<std::optional<BootstrapDeliveryIssue>>(issued));
+            if (!issue) {
+              return failure(ErrorCode::Conflict, Recovery::ReadCurrent);
+            }
+            bootstrap_credential = std::move(issue->plaintext);
+            delivery = std::move(issue->delivery);
+          } else if (request.externally_managed || request.host) {
+            // Managed instances also receive a one-time deployment bootstrap; the Host operator
+            // places it in the Host credential directory (0600) before starting the instance. The
+            // externally-managed P06 bridge path uses the same stored digest and response field.
             auto issued = issue_bootstrap_credential(work, ids_, secrets_, id.value, now);
             if (const auto* failure = std::get_if<Failure>(&issued)) {
               return *failure;
@@ -244,7 +267,18 @@ public:
       return *failure;
     }
     auto mutation = std::move(std::get<Mutation<PluginInstance>>(result));
-    return InstanceCreation{std::move(mutation.value), std::move(bootstrap_credential)};
+    if (!delivery && !request.bootstrap_recipient_id.empty()) {
+      // Idempotent replay restores the current no-secret delivery metadata (never the plaintext).
+      const ResourceRef instance_resource{ResourceKind::Instance, {mutation.value.id.value}};
+      auto current = current_delivery_metadata(transactions_, request.context, instance_resource,
+                                               request.bootstrap_recipient_id);
+      if (const auto* rejected = std::get_if<Failure>(&current)) {
+        return *rejected;
+      }
+      delivery = std::move(std::get<std::optional<BootstrapDeliveryRecord>>(current));
+    }
+    return InstanceCreation{std::move(mutation.value), std::move(bootstrap_credential),
+                            std::move(delivery)};
   }
 
   Outcome<PluginInstance> get_instance(const InstanceQuery& request) override {

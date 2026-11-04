@@ -157,6 +157,10 @@ ModelStreamTerminal ModelGatewayApplication::chat_stream(const ModelChatCommand&
     refresh_output = authorize_output;
     if (admission.disposition != ModelChatDisposition::FreshResult) {
       terminal.termination = ModelStreamTermination::Replay;
+      // Pre-start revocation still rejects before any event. Once the frozen replay started frame
+      // is emitted the oracle only accepts an unchanged REPLAY terminal, so this path never waits
+      // for another authorization gate: the snapshot was authorized at admission and replay has no
+      // provider work, secret load, text or invocation mutation to release.
       if (auto rejected = authorize_output()) {
         terminal.termination = ModelStreamTermination::Failed;
         terminal.failure = *rejected;
@@ -166,12 +170,8 @@ ModelStreamTerminal ModelGatewayApplication::chat_stream(const ModelChatCommand&
                                    ? ModelStreamDisposition::ReplayInProgress
                                    : ModelStreamDisposition::ReplayTerminal;
       if (!emit(ModelStreamStarted{disposition, admission.call})) {
+        // The started frame never crossed, so a pre-start CANCELLED terminal is protocol-legal.
         terminal.termination = ModelStreamTermination::Cancelled;
-      }
-      // A replay contains no secret load, Provider work, text or invocation state mutation.
-      if (auto rejected = authorize_output()) {
-        terminal.termination = ModelStreamTermination::Failed;
-        terminal.failure = *rejected;
       }
       return finish();
     }

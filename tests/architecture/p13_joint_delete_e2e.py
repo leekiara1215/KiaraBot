@@ -140,9 +140,10 @@ async def main_async(args) -> None:
                  f"{fixture.quote_sql(PLUGIN_TYPE)},1,0,NULL,NULL,NULL,NULL,NULL,NULL,1,0,"
                  f"{fixture.quote_sql(HOST_ID)},0)")
             if credential:
-                psql("INSERT INTO kiarabot.bridge_credentials(id,resource_id,digest,created_at,revoked) "
+                psql("INSERT INTO kiarabot.bridge_credentials"
+                     "(id,resource_id,digest,created_at,revoked,version) "
                      f"VALUES ('cred-{instance}',{fixture.quote_sql(instance)},"
-                     "decode(repeat('ab',32),'hex'),1,false)")
+                     "decode(repeat('ab',32),'hex'),1,false,1)")
 
         def instance_row(instance: str):
             return psql("SELECT state,version FROM kiarabot.instances WHERE id=" +

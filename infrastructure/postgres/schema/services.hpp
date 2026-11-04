@@ -7,6 +7,7 @@
 #include "kiarabot/core/domain/target/foundation.hpp"
 #include "operation_observations.hpp"
 #include "runtime_actions.hpp"
+#include "runtime_bootstrap_deliveries.hpp"
 #include "runtime_events.hpp"
 #include "runtime_host_commands.hpp"
 #include "runtime_host_connections.hpp"
@@ -77,7 +78,10 @@ CREATE TABLE kiarabot.bridge_credentials (
   resource_id text NOT NULL CHECK(resource_id<>''),
   digest bytea NOT NULL CHECK(octet_length(digest)=32),
   created_at bigint NOT NULL,
-  revoked boolean NOT NULL DEFAULT false
+  revoked boolean NOT NULL DEFAULT false,
+  -- BOOT-02 persisted monotonic version; 0 is not storable so the bridge gate always has a real
+  -- current version. A reissue revokes the old row and inserts version+1 in the same transaction.
+  version kiarabot.uint64 NOT NULL CHECK(version>0)
 );
 CREATE UNIQUE INDEX bridge_credentials_active ON kiarabot.bridge_credentials(resource_id)
   WHERE NOT revoked;
@@ -103,6 +107,7 @@ CREATE INDEX lifecycle_tombstones_purge ON kiarabot.lifecycle_tombstones(state,p
     sql += kRuntimeHostConnections;
     sql += kRuntimeHostCommands;
     sql += kRuntimeStorage;
+    sql += kRuntimeBootstrapDeliveries;
     break;
   case core::target::Service::Scheduler:
     relation("tasks", "owner,task_id");

@@ -957,39 +957,50 @@ void host_gate_current_registration_and_exact_grant() {
       f.state.assignments.back().explicit_permissions.clear();
       f.state.assignments.pop_back();
     }
-    if (mutation == 2)
+    if (mutation == 2) {
       request.host.id.value = "another-host";
-    if (mutation == 3)
+    }
+    if (mutation == 3) {
       request.host_certificate.bytes[0] = std::byte{99};
-    if (mutation == 4)
+    }
+    if (mutation == 4) {
       f.state.credentials.back().state = t::CredentialState::Revoked;
-    if (mutation == 5)
+    }
+    if (mutation == 5) {
       f.state.principals.back().state = t::LifecycleState::Disabled;
+    }
     if (mutation == 6) {
       std::get<t::PlatformPeer>(request.recipient.binding.peer).service = t::Service::Control;
     }
-    if (mutation == 7)
+    if (mutation == 7) {
       f.state.assignments.erase(f.state.assignments.end() - 2);
+    }
     if (mutation == 8) {
       f.state.principals.back().binding =
           t::ResourceRef{t::ResourceKind::Principal, {"host-principal"}};
     }
-    if (mutation == 9)
+    if (mutation == 9) {
       f.state.credentials[2].state = t::CredentialState::Revoked;
-    if (mutation == 10)
+    }
+    if (mutation == 10) {
       request.context.deadline = f.state.now;
-    if (mutation == 11)
+    }
+    if (mutation == 11) {
       f.state.fail_begin = true;
+    }
     if (mutation == 12) {
       f.state.before_begin = [&] {
-        if (f.state.begins == 2)
+        if (f.state.begins == 2) {
           ++f.state.authorizations.back().version.value;
+        }
       };
     }
-    if (mutation == 13)
+    if (mutation == 13) {
       request.host.kind = t::ResourceKind::Principal;
-    if (mutation == 14)
+    }
+    if (mutation == 14) {
       f.clock.trusted = false;
+    }
     const auto result = f.app->check_host_gate_authorization(request);
     assert(f.crypto.calls == 0);
     if (mutation == 0 || mutation == 1) {

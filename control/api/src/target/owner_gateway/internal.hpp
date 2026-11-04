@@ -31,6 +31,8 @@ struct Ports {
   OperationPort* operations_;
   ModelManagementPort* model_;
   AuditLogSourcePort* audit_logs_;
+  SecretDeliveryApplication* secret_delivery_;
+  BootstrapRecipientsPort* bootstrap_recipients_;
 };
 
 // Created once per request; handlers preserve the original bearer, deadline and identifiers.
@@ -114,5 +116,11 @@ std::optional<OwnerHttpResult> handle_audit_logs(const RequestContext& context, 
 std::optional<OwnerHttpResult> handle_lifecycle(const RequestContext& context, const Ports& ports);
 std::optional<OwnerHttpResult> handle_models(const RequestContext& context, const Ports& ports);
 std::optional<OwnerHttpResult> handle_actions(const RequestContext& context, const Ports& ports);
+std::optional<OwnerHttpResult> handle_bootstrap(const RequestContext& context, const Ports& ports);
+// Applies the SecretDeliveryPort exactly once to a first-issue/reissue owner response, reports the
+// no-secret evidence to Runtime, and erases the internal bootstrap_credential before returning.
+OwnerHttpResult deliver_bootstrap_response(const RequestContext& context, const Ports& ports,
+                                           std::string_view delegation, bool adapter,
+                                           Json& response_value);
 
 } // namespace kiarabot::control::target::owner_gateway

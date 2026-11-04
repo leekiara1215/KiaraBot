@@ -250,6 +250,27 @@ bool host_peers_shape(const nlohmann::json& value) {
   }
   return true;
 }
+bool control_runtime_peers_shape(const nlohmann::json& value) {
+  if (!value.is_array() || value.size() > 8) {
+    return false;
+  }
+  std::set<std::string> certificates;
+  for (const auto& entry : value) {
+    if (!entry.is_object() || !exact_keys(entry, {"certificate_sha256"}) ||
+        !entry["certificate_sha256"].is_string()) {
+      return false;
+    }
+    const auto& certificate = entry["certificate_sha256"].get_ref<const std::string&>();
+    if (certificate.size() != 64 ||
+        !std::all_of(certificate.begin(), certificate.end(), [](char character) {
+          return (character >= '0' && character <= '9') || (character >= 'a' && character <= 'f');
+        }) ||
+        !certificates.insert(certificate).second) {
+      return false;
+    }
+  }
+  return true;
+}
 bool host_material_shape(const nlohmann::json& value) {
   if (!exact_keys(value, {"host_id", "sqlite_path", "runtime_endpoint", "credential_directory",
                           "packages", "profiles", "environment"}) ||
@@ -449,6 +470,17 @@ bool control_api_shape(const nlohmann::json& value) {
     }
     if (key == "websocket_allow_missing_origin") {
       if (!entry.is_boolean()) {
+        return false;
+      }
+      continue;
+    }
+    if (key == "secret_delivery_recipients") {
+      if (!entry.is_string()) {
+        return false;
+      }
+      const auto& path = entry.get_ref<const std::string&>();
+      if (path.empty() || path.size() > 4096 || path.front() != '/' ||
+          path.find('\0') != std::string::npos || path.find('\n') != std::string::npos) {
         return false;
       }
       continue;
@@ -851,6 +883,13 @@ ConfigResult load_service_config(const std::string& path, target::Service servic
       }
       keys.insert("runtime_peers");
     }
+    if (document.contains("control_runtime_peers")) {
+      if (service != target::Service::Runtime ||
+          !control_runtime_peers_shape(document["control_runtime_peers"])) {
+        return ConfigFailure{2, "invalid_control_runtime_peers_config"};
+      }
+      keys.insert("control_runtime_peers");
+    }
     if (document.contains("database")) {
       if (service == target::Service::Control || service == target::Service::Host ||
           !database_shape(document["database"])) {
@@ -910,6 +949,12 @@ ConfigResult load_service_config(const std::string& path, target::Service servic
         config.runtime_peers.push_back(std::move(peer));
       }
     }
+    if (document.contains("control_runtime_peers")) {
+      for (const auto& entry : document["control_runtime_peers"]) {
+        config.control_runtime_peers.push_back(
+            {entry["certificate_sha256"].get<std::string>()});
+      }
+    }
     if (document.contains("control_api")) {
       ControlApiMaterial control_material{
           document["control_api"]["listen"].get<std::string>(),
@@ -936,6 +981,10 @@ ConfigResult load_service_config(const std::string& path, target::Service servic
       }
       control_material.websocket_allow_missing_origin =
           document["control_api"].value("websocket_allow_missing_origin", false);
+      if (document["control_api"].contains("secret_delivery_recipients")) {
+        control_material.secret_delivery_recipients =
+            document["control_api"]["secret_delivery_recipients"].get<std::string>();
+      }
       config.control_api = std::move(control_material);
     }
     if (document.contains("model_security")) {

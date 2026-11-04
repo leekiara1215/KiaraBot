@@ -6,7 +6,7 @@ add_library(kiarabot_postgres STATIC
   src/identity_assignments.cpp src/identity_invalidations.cpp src/runtime_events.cpp
   src/model_store.cpp src/action_records.cpp src/storage_records.cpp
   src/host_registration.cpp src/host_command_outbox.cpp src/runtime_management_receipts.cpp
-  src/operation_observations.cpp)
+  src/operation_observations.cpp src/bootstrap_delivery_records.cpp)
 target_include_directories(kiarabot_postgres PUBLIC
   include ${CMAKE_SOURCE_DIR}/core/include)
 # Keep the native libpq target and its transitive TLS libraries in static link order.
@@ -35,6 +35,22 @@ if(UNIX)
     --initializer $<TARGET_FILE:kiarabot-pg-initialize>)
   set_tests_properties(ws02_postgres_operation_observations PROPERTIES
     LABELS "ws02;integration;fault" TIMEOUT 180)
+  # BOOT-02 real PG evidence: delivery intent/receipt CAS, version reissue and Control report
+  # idempotency/conflict on an owned PostgreSQL 16.4 fixture.
+  add_executable(kiarabot_postgres_bootstrap_delivery_test
+    tests/bootstrap_delivery_test.cpp)
+  target_link_libraries(kiarabot_postgres_bootstrap_delivery_test PRIVATE
+    kiarabot_postgres kiarabot_runtime_resource_application OpenSSL::Crypto libpqxx::pqxx)
+  target_include_directories(kiarabot_postgres_bootstrap_delivery_test SYSTEM PRIVATE
+    $<TARGET_PROPERTY:OpenSSL::Crypto,INTERFACE_INCLUDE_DIRECTORIES>)
+  kiarabot_platform_warnings(kiarabot_postgres_bootstrap_delivery_test)
+  add_test(NAME p05_postgres_bootstrap_delivery COMMAND "${KIARABOT_TARGET_PYTHON}"
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_database_test.py"
+    --pg-bin "${KIARABOT_TEST_PG_BIN}" --openssl "${KIARABOT_TEST_OPENSSL}"
+    --test $<TARGET_FILE:kiarabot_postgres_bootstrap_delivery_test>
+    --initializer $<TARGET_FILE:kiarabot-pg-initialize>)
+  set_tests_properties(p05_postgres_bootstrap_delivery PROPERTIES
+    LABELS "p05;boot;integration;fault" TIMEOUT 180)
   add_executable(kiarabot_identity_application_test
     tests/identity_application_test.cpp tests/identity_application_tls.cpp
     tests/identity_authorization_checks.cpp)

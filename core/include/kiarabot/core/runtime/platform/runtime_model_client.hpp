@@ -39,6 +39,10 @@ public:
   bool available() const noexcept override;
   target::Outcome<target::RuntimeModelChatReply>
   chat(const target::RuntimeModelChatRequest& request, target::TimePoint deadline) override;
+  target::Outcome<target::RuntimeModelStreamResult>
+  chat_stream(const target::RuntimeModelStreamRequest& request,
+              target::RuntimeModelStreamSink& sink, std::stop_token cancellation,
+              target::TimePoint deadline) override;
 
 private:
   explicit RuntimeModelClient(RuntimeModelClientOptions options);

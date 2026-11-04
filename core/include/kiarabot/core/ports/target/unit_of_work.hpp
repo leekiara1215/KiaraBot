@@ -13,6 +13,7 @@
 #include "kiarabot/core/ports/target/host_registration_ports.hpp"
 #include "kiarabot/core/ports/target/namespace_ports.hpp"
 #include "kiarabot/core/ports/target/operation_observation_ports.hpp"
+#include "kiarabot/core/ports/target/runtime_bootstrap_deliveries.hpp"
 
 namespace kiarabot::core::target {
 namespace host_ports_detail {
@@ -83,6 +84,28 @@ inline HostCommandOutbox& unsupported_host_commands() {
   return instance;
 }
 } // namespace host_ports_detail
+namespace bootstrap_ports_detail {
+class UnsupportedBootstrapDeliveries final : public BootstrapDeliveryRepository {
+public:
+  Outcome<std::optional<BootstrapDeliveryRecord>> find(const ResourceRef&,
+                                                       const std::string&) override {
+    return rejected(ErrorCode::UpstreamUnavailable);
+  }
+  Outcome<std::optional<BootstrapDeliveryRecord>> current(const ResourceRef&) override {
+    return rejected(ErrorCode::UpstreamUnavailable);
+  }
+  Status insert(const BootstrapDeliveryRecord&) override {
+    return rejected(ErrorCode::UpstreamUnavailable);
+  }
+  Status transition(const BootstrapDeliveryRecord&, BootstrapDeliveryState) override {
+    return rejected(ErrorCode::UpstreamUnavailable);
+  }
+};
+inline BootstrapDeliveryRepository& unsupported_bootstrap_deliveries() {
+  static UnsupportedBootstrapDeliveries instance;
+  return instance;
+}
+} // namespace bootstrap_ports_detail
 
 class EventRepository;
 class ActionRepository;
@@ -239,6 +262,10 @@ struct BridgeCredentialRecord {
   Sha256Digest digest;
   TimePoint created_at;
   bool revoked = false;
+  // BOOT-02 persisted monotonic credential version. The bridge current-version gate and delivery
+  // intent compare this value; legacy fixtures that materialize 0 normalize to the frozen
+  // kBridgeCredentialVersion (1) in the application, PG rows always store >= 1.
+  std::uint64_t version = 0;
 };
 class BridgeCredentialRepository {
 public:
@@ -250,8 +277,35 @@ public:
   // handshake. The plaintext token never reaches storage; an absent/revoked digest is an empty
   // optional, a storage fault is a Failure.
   virtual Outcome<std::optional<BridgeCredentialRecord>> by_digest(const Sha256Digest& digest) = 0;
+  // Highest persisted credential row for a resource, including revoked versions, so a reissue
+  // never reuses a version and never revives an old digest. Empty = no credential ever issued.
+  // Default adapters without version history stay fail-closed for reissue but keep legacy flows.
+  virtual Outcome<std::optional<BridgeCredentialRecord>> latest(const std::string& resource_id) {
+    auto active_value = active(resource_id);
+    if (const auto* failure = std::get_if<Failure>(&active_value)) {
+      return *failure;
+    }
+    if (!std::get<bool>(active_value)) {
+      return std::optional<BridgeCredentialRecord>{};
+    }
+    BridgeCredentialRecord legacy;
+    legacy.resource_id = resource_id;
+    legacy.created_at = TimePoint{};
+    legacy.version = 1;
+    return std::optional<BridgeCredentialRecord>{std::move(legacy)};
+  }
   virtual Status insert(const BridgeCredentialRecord& record) = 0;
   virtual Status revoke(const std::string& resource_id, TimePoint now) = 0;
+  // BOOT-02 reissue compare-and-set: revoke only the exact currently persisted version. Of two
+  // concurrent reissues the loser observes no matching active row and must fail CONFLICT instead of
+  // revoking the winner's successor. A storage fault is Failure, never a silent success.
+  virtual Status revoke_if_current(const std::string& resource_id, std::uint64_t expected_version,
+                                   TimePoint now) {
+    (void)resource_id;
+    (void)expected_version;
+    (void)now;
+    return rejected(ErrorCode::UpstreamUnavailable);
+  }
 };
 // Adapter instances are looked up by their stable adapter resource id or by the assigned instance
 // identity that the wire registration/heartbeat frames carry. Both reads belong to the same owner
@@ -278,6 +332,11 @@ public:
   virtual Repository<ResourceId, AdapterBindingRecord>& adapter_bindings() = 0;
   virtual AdapterRegistryRepository& adapters() = 0;
   virtual BridgeCredentialRepository& bridge_credentials() = 0;
+  // BOOT-02 delivery intent/receipt rows in the same owner transaction. Defaults fail closed so a
+  // partial adapter never fabricates a delivery or a delivery receipt.
+  virtual BootstrapDeliveryRepository& bootstrap_deliveries() {
+    return bootstrap_ports_detail::unsupported_bootstrap_deliveries();
+  }
   // Count active account bindings that still reference this adapter instance; used to revoke the
   // adapter bootstrap credential only when the last binding is removed.
   virtual Outcome<std::size_t> active_bindings(const InstanceId& adapter_instance) = 0;

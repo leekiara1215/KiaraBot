@@ -110,8 +110,8 @@ std::optional<OwnerHttpResult> handle_instances(const RequestContext& context, c
     }
     auto value =
         json_request_value(json_response(std::get<wire::RuntimeCreateInstanceResponse>(result)));
-    value.erase("bootstrap_credential");
-    return OwnerHttpResult{200, value.dump()};
+    return deliver_bootstrap_response(context, ports, std::get<std::string>(delegation),
+                                      /*adapter=*/false, value);
   }
   if (path.starts_with("/api/v1/installations/")) {
     const auto rest = path.substr(std::string{"/api/v1/installations/"}.size());

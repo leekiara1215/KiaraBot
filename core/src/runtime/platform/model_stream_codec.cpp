@@ -377,6 +377,19 @@ t::Outcome<v1::RpcFailure> encode_model_stream_failure(const t::Failure& failure
   }
 }
 
+std::optional<t::Failure> decode_model_stream_failure(const v1::RpcFailure& failure,
+                                                      std::string_view request_id,
+                                                      std::string_view trace_id) noexcept {
+  try {
+    v1::ModelStreamEvent event;
+    event.set_request_id(request_id.data(), request_id.size());
+    event.set_trace_id(trace_id.data(), trace_id.size());
+    return failure_value(failure, event);
+  } catch (...) {
+    return std::nullopt;
+  }
+}
+
 ModelStreamDecoder::ModelStreamDecoder(std::string request_id, std::string logical_call_id,
                                        std::string trace_id)
     : request_id_(std::move(request_id)), logical_call_id_(std::move(logical_call_id)),

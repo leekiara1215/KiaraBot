@@ -118,7 +118,7 @@ txn2仅能更新原STARTED版本，迟到worker不能覆盖恢复事实；重复
 C99、源码锁与许可component说明。wire字段/错误码/REST/WS均未变，proto、API、doc01及受保护
 基线无需修改；运维恢复描述由主代理/Host owner统一同步doc08，不并发编辑该主文。
 
-### STR-06 Model RPC接线（2026-11-04，实现中）
+### STR-06 Model RPC接线（2026-11-04，RPC/真实fixture已验收；Runtime/Bridge/SDK仍待STR-07/08）
 
 应用与真实PG首轮门禁3/3已通过（旧Chat1.01s、Stream4.03s、p03 PG20.05s，总25.10s，
 ctest-model-app-pg-first.log）。本切片实现已冻结ChatStream/Model ListOperationChanges，不新增wire字段。
@@ -132,7 +132,27 @@ ListOperationChanges复用共享OperationObservationApplication/prepare/encode�
 operation journal，不暴露Model文本，不进入Runtime-origin准入。生产Model配置同一mTLS凭据建立
 当前Identity观察授权client，并将ModelUoW仅经base端口回调注入观察应用。
 
-文档影响：更新本节、SDK尚未接线说明和基础设施验收证据；线协议/API/稳定错误码均未改变，
+验收（2026-11-04，串行锁定树实际运行）：
+`p11_streaming_model_codec`0.16s、`p11_streaming_model_rpc`1.89s、`p11_model_rpc`3.16s、
+`p11_model_identity_client`2.48s 全过；新增 `p11_streaming_model_rpc_e2e`7.59s 通过，使用真实
+自有PG16.4/TLS/Identity/Model进程与本地HTTP SSE：证明增量delta在Provider完成前到达客户端、
+complete只在`[DONE]`+txn2后出现、同logical id跨Chat/ChatStream只回replay且Provider恰1次、
+partial/length/429语义、Control/伪造证书/错误method被拒且Provider 0次、取消后PG落UNKNOWN
+（修复了fixture先放行Provider再检查的竞争）、观察journal的exact scope/typed cursor/撤权/
+Identity故障。日志`build/logs/capability-expansion/`（codec/rpc/e2e 各自 log）。
+严格解码器与 `proto/tests/model_stream_contract_rules.py` 逐条对齐；额外固定：started恰一次且
+sequence=0、terminal紧跟连续delta、replay零delta且terminal必须REPLAY、64KiB累计与4KiB帧边界、
+严格UTF-8、0字节`Retry-After`视为缺省（>60s拒绝）。若应用在replay started后因撤权/取消产生
+FAILED/CANCELLED terminal，严格解码器按冻结oracle拒收，RPC以结构化UNKNOWN结束、绝不下发成功
+或REPLAY；生产应用切片应避免在started后发非法terminal（该应用文件不属本切片，已报告统筹）。
+慢消费者的1秒写预算在环回gRPC上未能因果触发：单attempt受64KiB文本上限，客户端HTTP/2缓冲会
+吸收全部控制帧，即使约束read-ahead/write-buffer也不阻塞；本切片以取消+Provider worker join回归
+证明收尾，真实慢写预算保留给STR-09受管整链验证。已知契约缺口（非本切片文件）：`EnableModel`/
+`DisableModel`声明了required_permission但缺`scope_kinds=RESOURCE_MODEL`，descriptor策略解析出空
+scope kinds，生产Identity检查会以INVALID_ARGUMENT拒绝；fixture以显式SQL激活规避并报告统筹，
+该proto修复须由契约owner统一做并重跑生成/契约门禁。
+
+文档影响：更新本节、SDK尚未接线说明和基础设施验收证据；wire字段/API/稳定错误码均未改变，
 proto、API及doc01无需修改。doc18保持只读；功能协商须待Runtime/Bridge/SDK及真实链完成后启用。
 
 ## reference 首版实现记录（T 阶段）
@@ -1480,7 +1500,15 @@ pid+进程启动时间 marker；观察以 Host 本地单调 sequence 持久化�
 部署配置；受管实例 bootstrap 凭据由部署以 0600 文件放在 `credential_directory`
 （`<instance_id>.bootstrap`，uid=运行用户），只注入 profile 的 `credential_environment`，
 不持久化、不写日志、不进入观察。停止使用 TERM→10s 宽限→KILL；无法确认终止时 outcome 保持
-UNKNOWN 而不是“已停止”。Host 启动时恢复：marker 仍存活则认领 Running 并补观察；进程已消失但
+UNKNOWN 而不是“已停止”。终止确认只认本进程 supervisor 对本次 spawn 的原 owned child 的真实
+waitpid 退出事实：marker/pid 暂时可见、`alive`=false、进程消失、proc 信息读取失败、`kill`=-1
+（EPERM/ESRCH）都不能单独推断已停止；身份或 marker 不符、未登记 pid、signal 被拒而目标仍存活时
+一律返回 Failure（acceptance=Unknown、recovery=Backoff），由 HostService 保持
+`ManagedExecutionState::Unknown`/`ExecutionOutcome::Unknown`。仅当 waitpid 确认原 child 退出且未
+实际发出 KILL 时才记为非 forced；KILL 已发出且随后 waitpid 确认退出才记为 forced。macOS 上进程组
+leader 已退出但未 reap 时组 SIGKILL 返回 EPERM，该分支也只在随即 waitpid 确认原 child 退出时保守
+收敛为非 forced，不把 EPERM 本身当成功；已确认退出的重复停止是非 forced 成功且不重复发信号。
+Host 启动时恢复：marker 仍存活则认领 Running 并补观察；进程已消失但
 无已确认退出则上报 UNKNOWN；同一 execution_generation 永不重复 spawn。心跳 5s，Runtime 15s
 无心跳只影响在线投影，不改变 process_outcome 为 FAILED。
 

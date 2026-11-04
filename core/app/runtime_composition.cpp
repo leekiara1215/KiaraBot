@@ -315,6 +315,7 @@ struct State {
   std::unique_ptr<target::RuntimeActionApplication> actions;
   std::unique_ptr<target::RuntimeAuditApplication> audit;
   std::unique_ptr<target::OperationObservationApplication> observations;
+  std::unique_ptr<target::RuntimeBootstrapDeliveryApplication> bootstrap_delivery;
   target::RuntimeActionApplication* action_application = nullptr;
   std::unique_ptr<target::RuntimeBridgeApplication> bridge;
   std::unique_ptr<target::HostLifecycleParticipantPort> host_lifecycle;
@@ -547,6 +548,14 @@ compose_runtime_service(const platform::ProcessConfig& config) {
           }
           state->observations = std::move(
               std::get<std::unique_ptr<target::OperationObservationApplication>>(observations));
+          auto bootstrap =
+              target::runtime_resources_detail::make_runtime_bootstrap_delivery_application(
+                  {factory, *state->ids, *state->secrets, *state->authorization});
+          if (std::holds_alternative<target::Failure>(bootstrap)) {
+            return {};
+          }
+          state->bootstrap_delivery = std::move(
+              std::get<std::unique_ptr<target::RuntimeBootstrapDeliveryApplication>>(bootstrap));
           auto action = target::make_runtime_action_application(
               {factory, *state->ids, *state->secrets, state->authorization,
                target::ActionCapacity{}, target::ActionQuotaLimits{}});
@@ -671,8 +680,10 @@ compose_runtime_service(const platform::ProcessConfig& config) {
           target::HostCertificateBinding{host.host_id, host.certificate_sha256});
     }
     auto configure = std::move(result.configure_rpc);
+    auto control_peers = config.control_runtime_peers;
     result.configure_rpc = [configure = std::move(configure), state, application,
-                            host_allowlist = std::move(host_allowlist)](
+                            host_allowlist = std::move(host_allowlist),
+                            control_peers = std::move(control_peers)](
                                platform::ServiceRpc& rpc) mutable -> target::Status {
       if (configure) {
         auto configured = configure(rpc);
@@ -685,6 +696,46 @@ compose_runtime_service(const platform::ProcessConfig& config) {
       options.actions = state->action_application;
       options.audit = state->audit.get();
       options.observations = state->observations.get();
+      options.bootstrap = state->bootstrap_delivery.get();
+      // BOOT-02 Control platform peer: only the deployment-enrolled actual mTLS leaf fingerprint
+      // carrying the Control URI SAN may report/query delivery evidence. Empty allowlist leaves
+      // `options.control_peer` unset, so the runtime refuses those calls (fail closed).
+      if (!control_peers.empty()) {
+        const auto& allowed = control_peers;
+        options.control_peer =
+            [allowed](
+                grpc::ServerContext& transport) -> target::Outcome<platform::RuntimePlatformPeer> {
+          auto evidence = platform::extract_peer_certificate(*transport.auth_context());
+          if (const auto* rejected = std::get_if<target::Failure>(&evidence)) {
+            return *rejected;
+          }
+          const auto& certificate = std::get<platform::PeerCertificateEvidence>(evidence);
+          constexpr char kHex[] = "0123456789abcdef";
+          std::string fingerprint;
+          fingerprint.reserve(64);
+          for (const auto byte : certificate.leaf_fingerprint.bytes) {
+            const auto value = static_cast<unsigned char>(byte);
+            fingerprint.push_back(kHex[value >> 4]);
+            fingerprint.push_back(kHex[value & 0x0f]);
+          }
+          std::string san;
+          for (const auto& candidate : certificate.uri_sans) {
+            if (candidate.starts_with("spiffe://kiarabot/control")) {
+              san = candidate;
+              break;
+            }
+          }
+          const bool enrolled = std::find_if(allowed.begin(), allowed.end(), [&](const auto& peer) {
+                                  return peer.certificate_sha256 == fingerprint;
+                                }) != allowed.end();
+          if (san.empty() || !enrolled) {
+            return target::Failure{target::ErrorCode::PermissionDenied,
+                                   target::Acceptance::NotAccepted, target::Recovery::Authenticate,
+                                   std::nullopt, std::nullopt};
+          }
+          return platform::RuntimePlatformPeer{target::Service::Control, san};
+        };
+      }
       if (state->identity_client) {
         auto* client = state->identity_client.get();
         options.authorize = [client](grpc::ServerContext& transport,

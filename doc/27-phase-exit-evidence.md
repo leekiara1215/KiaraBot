@@ -39,6 +39,49 @@ HERR-03 已单独收口：只把 target 的 `semantic.host.request_operation_cla
 reference 状态和 blob 未改，其他新增能力未随之翻转。主代理复跑 registry 与 evidence 9/9 门禁通过；
 最终全工作区集成仍待执行。
 
+### 2026-11-04 续执行最终集成（lead 接管后实际结果）
+
+本轮在既有未提交工作区上继续，未 reset/revert/stash，未提交/推送/发布；`doc/18` 与 AGENTS 保护清单
+逐字节未改。实际分工与文件锁见[执行台账](plans/2026-11-04-capability-execution-ledger.md)。
+
+**契约**：v1.2 四 owner 查询冻结（10 消息/46 字段/+4 RPC），并同日完成一次精确缺陷修正
+（ModelService 7 个管理/查询方法补 `scope_kinds=RESOURCE_MODEL`）。最终 wire：**123 typed RPC、
+388 跨语言消息、31 wire golden**；最终 descriptor SHA-256 `26a8836136…`，对**真实起始 descriptor**
+（`build/logs/capability-expansion/baseline-descriptor.pb`）和 v1.1 冻结 descriptor 的 additive
+兼容均通过。`check_contracts.sh`（含 legacy reader、descriptor fixture）、enum/status/semantic/
+evidence/target-feature 门禁、OpenAPI/AsyncAPI/target API 与 reference 检查全部 exit 0。
+
+**构建与全量测试**：冻结源码后 `cmake --preset full-locked` configure + 全量构建（`-- -k`）exit 0
+（日志 `build/logs/final-acceptance/full-build*.log`，最后一轮为删除一个未使用 helper 后的重建）。
+全量 CTest 首轮 197 项：194 通过、3 失败；其中 `architecture_p02_tls` 是对 v1.2 新声明方法状态期望
+过期（无生产 handler 的 Scheduler.ListTaskChanges 应为 UNIMPLEMENTED），按真实实现修正测试期望后
+通过；第二轮全量：196/197，只剩以下两项真实失败（首轮失败同时保留）：
+- `p12_target_websocket_https` **失败**：真实 TLS WSS 已能跑到 resume/gap，但 Control 进程在
+  teardown 时 Beast `tcp_stream` 同时有 read+write pending 被析构 SIGABRT
+  （`basic_stream.hpp:132`），随后客户端 connection refused。属于未修复的真实缺陷，WS-04 不能标完成。
+- `p11_streaming_managed_model_e2e` **失败**：STR09 driver 首次真实运行在 model readiness 阶段
+  fixture 失败（6.55s，exit 1，`model stderr` 为空），受管插件 streaming 整链未验证。
+WS unit/store/schema、Host p08 四项、Identity p04/p05 真实链、STR06/STR07 组件与 Bridge fixture、
+BOOT 五项、p03/p06/p13 等其余 195 项通过。
+
+**质量门**：boundaries、architecture `--inner`/`--links`/`--database` 全 exit 0（本机缺 ripgrep，
+使用等价的 git 文件集 shim，脚本与差异说明见 `build/.agents/bin/rg` 与台账）；`git diff --check`
+exit 0；官方 `scripts/quality/check-format.sh` 在当前树仍失败，逐文件对比 HEAD 后**全部 28 个违规文件
+均为 HEAD 既有基线**（0 个本轮新增；新增/改动文件已单独 format 通过，记录
+`format-official2.log` 与 `format-baseline-classification.txt`）。专项 clang-tidy 16 个改动 TU：
+删除一个未使用 helper 后只剩 `runtime_composition.cpp` 在第二个 compile-database 变体下
+`foundation.hpp` 的 analyzer 既有告警（该 TU 第一变体干净）；全仓 tidy 未运行（历史基线 3 项失败 +
+时间窗限制，如实登记）。Python SDK 全量 pytest **189 passed / 23 skipped**（既有 flaky refresh 测试
+未计为通过，记录在案）；Panel lint/build/`check:contracts` exit 0，Panel 测试 **52 passed / 1 failed**
+且 panel/ 无本工作区改动（既有基线失败）。
+
+**切片实际状态**：HOST-02 完成；Identity v1.1 生产链本地+真实 e2e 通过；STR06 完成（含真实
+PG/TLS/HTTP SSE e2e）；STR07 组件级通过（Bridge fixture 13.77s）但 STR09 整链未验证；STR08 SDK 完成
+（未 advertise）；BOOT-02/03/04 模块与应用/PG/RPC/Control 编排通过模块测试，真实 Control→Runtime→
+sink→消费端整链与 BOOT-05 未执行；WS-04 传输/协议/store 编译与单元/真 schema 测试通过，真实 WSS
+仍有 teardown 缺陷，WS-05/06/07/08/09/10、v1.2 feeds（task-12）与 Panel 未开始。两主机/断网演练、
+真实 QQ、付费模型、发布均未执行。
+
 ### 上一轮：批准范围和任务拆分（2026-11-04）
 
 用户已批准目标 Control WS、模型 streaming、未知 Host 请求错误语义对齐、独立 host operation

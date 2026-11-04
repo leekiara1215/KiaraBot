@@ -201,4 +201,16 @@ service SchedulerService {
     option (max_deadline_ms) = 500;
     option (requires_online_authorization) = true;
   }
+  // CONTRACT_STATUS: not_implemented - v1.2 bounded owner task journal, producer pending.
+  // Control caller only; exact RESOURCE_TASK/RESOURCE_INSTANCE scope and current
+  // online task.read on every page; terminal states remain observable.
+  rpc ListTaskChanges(ObservationChangesRequest) returns (TaskChangesResponse) {
+    option (required_permission) = PERMISSION_TASK_READ;
+    option (scope_kinds) = RESOURCE_TASK;
+    option (scope_kinds) = RESOURCE_INSTANCE;
+    option (requires_idempotency) = false;
+    option (default_deadline_ms) = 500;
+    option (max_deadline_ms) = 500;
+    option (requires_online_authorization) = true;
+  }
 }

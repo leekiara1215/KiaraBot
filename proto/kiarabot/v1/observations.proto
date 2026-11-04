@@ -2,6 +2,7 @@ syntax = "proto3";
 package kiarabot.v1;
 
 import "google/protobuf/timestamp.proto";
+import "kiarabot/v1/common.proto";
 import "kiarabot/v1/platform.proto";
 
 // WS-01 target contract. All three messages and their owner RPCs remain
@@ -80,3 +81,169 @@ message OperationChangesResponse {
 //   PERMISSION_DENIED; do not reveal whether an inaccessible operation exists.
 //   TIMEOUT, UPSTREAM_UNAVAILABLE and RATE_LIMITED remain typed RpcFailure, never
 //   successful empty pages. All failures use existing ErrorCode/FailureContext.
+
+// ---------------------------------------------------------------------------
+// v1.2 target observation feeds (logs, tasks, received-message metadata).
+//
+// These are separate, read-only owner journal families. They never replace the
+// operation journal above and never expose audit payloads, task payload/target,
+// message bodies/platform raw payloads, configuration or credentials.
+// Each (owner, feed family) owns its own durable dataset epoch, commit-ordered
+// head and low-water mark. A cursor is valid for exactly one owner AND feed
+// family; a cursor issued for another family (or another durable dataset) is a
+// typed CONFLICT/NOT_ACCEPTED/RESYNC_SNAPSHOT, never a position in this feed.
+// A cursor is NOT an authorization capability: every page re-authorizes online
+// against the current exact scope. A successful empty page is only legal when
+// the owner source confirmed its committed head; TIMEOUT/UPSTREAM_UNAVAILABLE/
+// PERMISSION_DENIED never become empty pages.
+// Journal retention, low-water and epoch rotation follow the same normative
+// rules as the operation journal above.
+// CONTRACT_STATUS: not_implemented - v1.2 shared feed request; producer pending.
+message ObservationChangesRequest {
+  RequestContext context = 1;
+  // Required, 1..127 distinct exact resources canonicalized by (kind,id). No
+  // wildcard, inherited child grant or cross-assignment product. Log feeds:
+  // exactly RESOURCE_CATALOG/control. Message feeds: exact RESOURCE_ACCOUNT.
+  // Task feeds: exact RESOURCE_TASK or RESOURCE_INSTANCE. Every resource must
+  // be currently authorized for the method's permission on every page.
+  ResourceScope scope = 2;
+  // Absent: atomically capture this feed family's committed head, return no
+  // changes and next_cursor=head. Present: source_service must name the same
+  // owner AND feed family, scope must equal the canonical request scope, and
+  // epoch/sequence must be valid for that durable dataset.
+  optional StreamCursor cursor = 3;
+  // 0 means 32; otherwise 1..100. Larger values are INVALID_ARGUMENT.
+  uint32 page_size = 4;
+}
+
+// CONTRACT_STATUS: not_implemented - v1.2 redacted operation-log metadata; producer pending.
+// Safe projection only: no audit payload, free-form message, actor secrets,
+// session/refresh/delegation material or request bodies.
+message LogMetadata {
+  // Owner that persisted the entry: "identity" or "runtime".
+  string owner_service = 1;
+  // Stable owner log entry identity; opaque to clients.
+  string entry_id = 2;
+  // Closed set: DEBUG, INFO, WARN, ERROR. Any other value is a malformed
+  // producer; consumers must reject it instead of forwarding free text.
+  string severity = 3;
+  // Redacted component name.
+  string component = 4;
+  // Redacted owner method name.
+  string method = 5;
+  // Closed set: request.recorded, request.rejected.
+  string event = 6;
+  // Exact authorized resource the entry belongs to; never inferred from caller.
+  ResourceRef resource = 7;
+  // Correlation identifiers only; never a token, session, refresh or delegation.
+  string request_id = 8;
+  string trace_id = 9;
+  // Required UTC sampled by the owner's authoritative storage transaction.
+  google.protobuf.Timestamp occurred_at = 10;
+}
+
+// CONTRACT_STATUS: not_implemented - v1.2 log change feed; producer pending.
+message LogChange {
+  LogMetadata log = 1;
+  // Cursor of THIS change, strictly increasing in the owner's commit-ordered
+  // journal. Sequence gaps may belong to resources outside the requested scope.
+  StreamCursor cursor = 2;
+}
+
+// CONTRACT_STATUS: not_implemented - v1.2 log change feed; producer pending.
+message LogChangesResponse {
+  // At most effective page_size entries, strictly ordered by cursor.sequence.
+  repeated LogChange changes = 1;
+  // Required committed scan boundary for this feed family; safe to reuse only
+  // after consuming the entire page. Never disguises an unavailable source.
+  StreamCursor next_cursor = 2;
+  // More matching committed changes exist beyond next_cursor. False describes
+  // this read boundary only, not permanent completion.
+  bool has_more = 3;
+  // Required UTC sampled by the owner's authoritative storage transaction.
+  google.protobuf.Timestamp checked_at = 4;
+}
+
+// CONTRACT_STATUS: not_implemented - v1.2 safe task metadata projection; producer pending.
+// Terminal states are included; a task disappearing from a non-terminal REST
+// page must never hide its final state. Never TaskRecord.payload or .target.
+message TaskMetadata {
+  // Owner that persisted the task; always "scheduler".
+  string owner_service = 1;
+  string task_id = 2;
+  string owner_instance_id = 3;
+  // State name from common.proto ScheduledTaskState; terminal values included.
+  ScheduledTaskState state = 4;
+  uint64 version = 5;
+  google.protobuf.Timestamp updated_at = 6;
+  bool cancel_requested = 7;
+  optional string occurrence_id = 8;
+  // Stable closed ErrorCode when FAILED; never free-form text.
+  optional ErrorCode reason_code = 9;
+}
+
+// CONTRACT_STATUS: not_implemented - v1.2 task change feed; producer pending.
+message TaskChange {
+  TaskMetadata task = 1;
+  // Cursor of THIS change, strictly increasing in the commit-ordered journal.
+  StreamCursor cursor = 2;
+}
+
+// CONTRACT_STATUS: not_implemented - v1.2 task change feed; producer pending.
+message TaskChangesResponse {
+  repeated TaskChange changes = 1;
+  StreamCursor next_cursor = 2;
+  bool has_more = 3;
+  google.protobuf.Timestamp checked_at = 4;
+}
+
+// CONTRACT_STATUS: not_implemented - v1.2 received-message metadata; producer pending.
+// Only accepted inbound (received) facts: no message body/segments, no platform
+// raw payload or external platform IDs, no sent direction and no sent inference.
+message MessageMetadata {
+  // Owner that persisted the message; always "runtime".
+  string owner_service = 1;
+  // KiaraBot-internal stable message identity; never a platform raw message ID.
+  string message_id = 2;
+  // KiaraBot-internal stable conversation identity; never a platform raw ID.
+  string conversation_id = 3;
+  // Exact RESOURCE_ACCOUNT the accepted message belongs to.
+  string account_id = 4;
+  // Required UTC of the owner's accepted-message transaction.
+  google.protobuf.Timestamp received_at = 5;
+}
+
+// CONTRACT_STATUS: not_implemented - v1.2 message metadata change feed; producer pending.
+message MessageMetadataChange {
+  MessageMetadata message = 1;
+  // Cursor of THIS change, strictly increasing in the commit-ordered journal.
+  StreamCursor cursor = 2;
+}
+
+// CONTRACT_STATUS: not_implemented - v1.2 message metadata change feed; producer pending.
+message MessageMetadataChangesResponse {
+  repeated MessageMetadataChange changes = 1;
+  StreamCursor next_cursor = 2;
+  bool has_more = 3;
+  google.protobuf.Timestamp checked_at = 4;
+}
+
+// Normative v1.2 feed persistence and failure semantics:
+// - Append safe change rows in the SAME local UoW as the authoritative owner
+//   mutation; rollback publishes nothing. All owner write entry points must use
+//   the same feed append port so a main save path cannot silently omit events.
+// - Commit order comes from a per-family transactional counter/lock, never from
+//   nextval allocation order or wall-clock occurred_at ordering.
+// - Retention: at least 600 seconds bounded journal plus a persistent low-water
+//   mark; capacity eviction advances that mark explicitly. A gap is CONFLICT
+//   with NOT_ACCEPTED/RESYNC_SNAPSHOT, never a silent skip.
+// - A terminal/delete/cancel fact must be observable as a change; the feed does
+//   not depend on the resource still being enumerable by a REST snapshot query.
+// - Ordinary owner process restart preserves the family epoch; restore to older
+//   data, journal rebuild or sequence reset rotates the family epoch. Control
+//   restart invalidates its own stream sessions.
+// - Invalid scope/page size/owner/family is INVALID_ARGUMENT. Structurally
+//   valid but wrong-family/wrong-dataset/future/evicted cursor is CONFLICT with
+//   NOT_ACCEPTED or RESYNC_SNAPSHOT. No mutation occurs.
+// - New online authorization failure stays UNAUTHENTICATED/PERMISSION_DENIED and
+//   must not reveal whether an inaccessible entry exists.

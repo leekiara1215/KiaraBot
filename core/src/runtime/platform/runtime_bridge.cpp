@@ -4,14 +4,19 @@
 #include <array>
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <cstddef>
 #include <cstdio>
+#include <deque>
 #include <future>
 #include <iostream>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <string>
 #include <string_view>
+#include <thread>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -20,6 +25,7 @@
 #include "kiarabot/core/application/target/runtime_storage_application.hpp"
 #include "kiarabot/core/ports/target/runtime_model.hpp"
 #include "kiarabot/core/runtime/platform/host_request_shape.hpp"
+#include "kiarabot/core/runtime/platform/model_stream_codec.hpp"
 #include "kiarabot/core/runtime/platform/target_codec.hpp"
 #include "kiarabot/v1/adapters.pb.h"
 #include "kiarabot/v1/events.pb.h"
@@ -324,6 +330,8 @@ bool decode_plugin_action(const v1::ActionEnvelope& wire, const std::string& ser
 }
 
 // Shared post-registration loop state for one accepted stream.
+class PluginStreamHub;
+
 struct StreamState {
   target::BridgePeerKind kind = target::BridgePeerKind::Adapter;
   target::BridgeAuthorization authorization;
@@ -333,6 +341,8 @@ struct StreamState {
   // Negotiated registration grants; plugin host frames are only served when the exact permission
   // was granted at registration. Empty for adapters.
   std::vector<std::string> permissions;
+  std::vector<std::string> features;
+  std::shared_ptr<PluginStreamHub> streams;
 };
 
 target::Outcome<target::BridgeFence> frame_fence(const v1::Fence& wire, const std::string& proof,
@@ -697,7 +707,9 @@ public:
                       command.adapter.value,
                       {},
                       false,
-                      {}};
+                      {},
+                      {},
+                      nullptr};
     const auto stream_instance = result.authorization.fence.instance;
     const auto stream_generation = result.authorization.fence.connection_generation;
     bool shutdown_attached = false;
@@ -1123,6 +1135,433 @@ private:
   v1::CoreToPlugin frame_;
 };
 
+// ---------------------------------------------------------------------------
+// STR07: Runtime -> plugin Model streaming sessions.
+//
+// One session owns a strict Model-stream consumer (producer) and a serialized writer. The producer
+// never touches the gRPC stream: it only enqueues bounded wire frames; the writer performs the
+// bounded network writes (one-second budget) so a slow plugin consumer cancels the attempt instead
+// of blocking the reader/heartbeat/refresh/cancel loop. Admission (feature/permission/profile) is
+// done by the transport before start; this hub only owns limits and lifetime.
+class PluginStreamHub {
+public:
+  PluginStreamHub(std::weak_ptr<PluginStreamGuard> guard, target::RuntimeModelPort& model,
+                  std::atomic<std::size_t>& process_active, target::BridgeFence fence)
+      : guard_(std::move(guard)), model_(model), process_active_(process_active),
+        fence_(std::make_shared<target::BridgeFence>(std::move(fence))) {}
+  ~PluginStreamHub() {
+    shutdown();
+  }
+  PluginStreamHub(const PluginStreamHub&) = delete;
+  PluginStreamHub& operator=(const PluginStreamHub&) = delete;
+
+  void set_fence(const target::BridgeFence& fence) {
+    std::lock_guard lock(hub_mutex_);
+    *fence_ = fence;
+  }
+  // Refresh/rotate invalidates the previous connection delegation: every in-flight stream is
+  // cancelled and reports its terminal under the current fence.
+  void cancel_all() {
+    std::lock_guard lock(hub_mutex_);
+    for (const auto& [id, session] : sessions_) {
+      (void)id;
+      session->cancel.request_stop();
+      session->changed.notify_all();
+    }
+  }
+  void reap() {
+    std::vector<std::shared_ptr<Session>> finished;
+    {
+      std::lock_guard lock(hub_mutex_);
+      for (auto iterator = sessions_.begin(); iterator != sessions_.end();) {
+        const auto& session = iterator->second;
+        std::lock_guard session_lock{session->mutex};
+        if (session->producer_done && session->writer_done) {
+          finished_ids_.emplace_back(session->start_request_id, session->logical_call_id);
+          if (finished_ids_.size() > 64) {
+            finished_ids_.pop_front();
+          }
+          finished.push_back(session);
+          iterator = sessions_.erase(iterator);
+        } else {
+          ++iterator;
+        }
+      }
+    }
+    // Join outside the hub lock: a finishing thread may be inside write_event() waiting for that
+    // same lock. Sessions are only erased after both workers have finished.
+    for (auto& session : finished) {
+      join_session(session);
+    }
+  }
+  void shutdown() {
+    std::vector<std::shared_ptr<Session>> sessions;
+    {
+      std::lock_guard lock(hub_mutex_);
+      for (auto& [id, session] : sessions_) {
+        (void)id;
+        session->cancel.request_stop();
+        {
+          std::lock_guard session_lock{session->mutex};
+          session->hard_stop = true;
+        }
+        session->changed.notify_all();
+        sessions.push_back(session);
+      }
+      sessions_.clear();
+    }
+    for (auto& session : sessions) {
+      join_session(session);
+    }
+  }
+
+  target::Status start(const v1::HostRequest& host, const v1::ModelStreamStartRequest& start,
+                       const target::BridgeFence& fence, target::TimePoint deadline) {
+    reap();
+    {
+      std::lock_guard lock(hub_mutex_);
+      if (sessions_.size() >= target::kModelStreamMaximumConnectionCalls) {
+        return target::Failure{target::ErrorCode::RateLimited,
+                               target::Acceptance::NotAccepted,
+                               target::Recovery::Backoff,
+                               {},
+                               {}};
+      }
+      if (sessions_.find(host.request_id()) != sessions_.end()) {
+        return target::Failure{target::ErrorCode::InvalidArgument,
+                               target::Acceptance::NotAccepted,
+                               target::Recovery::CorrectInput,
+                               {},
+                               {}};
+      }
+      auto active = process_active_.load();
+      if (active >= target::kModelStreamMaximumProcessCalls) {
+        return target::Failure{target::ErrorCode::RateLimited,
+                               target::Acceptance::NotAccepted,
+                               target::Recovery::Backoff,
+                               {},
+                               {}};
+      }
+      auto session =
+          std::make_shared<Session>(host.request_id(), host.trace_id(), start.logical_call_id(),
+                                    fence.instance.value, deadline, &process_active_);
+      sessions_.emplace(session->start_request_id, session);
+      target::RuntimeModelStreamRequest request;
+      request.instance = fence.instance;
+      request.request_id = host.request_id();
+      request.trace_id = host.trace_id();
+      request.logical_call_id = start.logical_call_id();
+      request.model = start.model();
+      request.messages.reserve(static_cast<std::size_t>(start.messages_size()));
+      for (const auto& message : start.messages()) {
+        request.messages.push_back({message.role(), message.text()});
+      }
+      std::weak_ptr<Session> weak = session;
+      session->writer = std::jthread([this, weak] { drain(weak); });
+      session->producer =
+          std::jthread([this, weak, request = std::move(request)] { produce(weak, request); });
+    }
+    return std::monostate{};
+  }
+
+  v1::ModelStreamCancelDisposition cancel(std::string_view start_request_id,
+                                          std::string_view logical_call_id) {
+    std::lock_guard lock(hub_mutex_);
+    const auto found = sessions_.find(std::string{start_request_id});
+    if (found == sessions_.end()) {
+      const auto receipt = std::pair<std::string, std::string>{std::string{start_request_id},
+                                                               std::string{logical_call_id}};
+      for (const auto& finished : finished_ids_) {
+        if (finished == receipt) {
+          return v1::MODEL_STREAM_ALREADY_TERMINAL;
+        }
+      }
+      return v1::MODEL_STREAM_NOT_ACTIVE;
+    }
+    // Only the owning connection's plugin instance may address this attempt; another plugin's
+    // identical ids never reach this hub, and a rotated connection stays NOT_ACTIVE here.
+    if (found->second->logical_call_id != logical_call_id ||
+        found->second->instance != fence_->instance.value) {
+      return v1::MODEL_STREAM_NOT_ACTIVE;
+    }
+    const auto& session = found->second;
+    {
+      std::lock_guard session_lock{session->mutex};
+      // The terminal may already be produced and in flight; a cancel arriving after that point is
+      // reported as ALREADY_TERMINAL and never requests a second termination.
+      if (session->terminal_queued || session->terminal_written ||
+          (session->producer_done && !session->terminal_queued)) {
+        return v1::MODEL_STREAM_ALREADY_TERMINAL;
+      }
+    }
+    // Duplicate cancellation is harmless and returns the same local receipt.
+    session->cancel.request_stop();
+    session->changed.notify_all();
+    return v1::MODEL_STREAM_CANCELLATION_REQUESTED;
+  }
+
+private:
+  struct Session {
+    Session(std::string id, std::string trace, std::string logical, std::string owning_instance,
+            target::TimePoint deadline_at, std::atomic<std::size_t>* process)
+        : start_request_id(std::move(id)), trace_id(std::move(trace)),
+          logical_call_id(std::move(logical)), instance(std::move(owning_instance)),
+          deadline(deadline_at), process_active(process) {
+      if (process_active) {
+        process_active->fetch_add(1);
+      }
+    }
+    ~Session() {
+      // The hub joins both workers before erasing a session, so no join may happen here.
+      if (process_active) {
+        process_active->fetch_sub(1);
+      }
+    }
+    std::string start_request_id;
+    std::string trace_id;
+    std::string logical_call_id;
+    std::string instance;
+    target::TimePoint deadline;
+    std::atomic<std::size_t>* process_active = nullptr;
+    std::stop_source cancel;
+    std::mutex mutex;
+    std::condition_variable changed;
+    std::deque<v1::ModelStreamEvent> queue;
+    std::size_t queued_bytes = 0;
+    bool producer_done = false;
+    bool writer_done = false;
+    bool terminal_queued = false;
+    bool terminal_written = false;
+    bool hard_stop = false;
+    bool started_delivered = false;
+    std::uint64_t delivered_bytes = 0;
+    std::uint64_t delivered_deltas = 0;
+    std::jthread producer;
+    std::jthread writer;
+  };
+  class Sink final : public target::RuntimeModelStreamSink {
+  public:
+    explicit Sink(std::weak_ptr<Session> session) : session_(std::move(session)) {}
+    target::ModelStreamSinkResult try_emit(const target::ModelStreamEvent& event) override {
+      const auto session = session_.lock();
+      if (!session || session->cancel.stop_requested()) {
+        // The terminal control frame is still allowed after cancellation so the attempt has one
+        // authoritative local end; deltas are never appended after a stop request.
+        if (!std::holds_alternative<target::ModelStreamTerminal>(event.body)) {
+          return target::ModelStreamSinkResult::Cancelled;
+        }
+      }
+      auto encoded = encode_model_stream_event(event);
+      if (!std::holds_alternative<v1::ModelStreamEvent>(encoded)) {
+        return target::ModelStreamSinkResult::Cancelled;
+      }
+      auto wire = std::get<v1::ModelStreamEvent>(std::move(encoded));
+      const bool terminal = wire.has_terminal();
+      std::lock_guard lock{session->mutex};
+      const auto* delta = std::get_if<target::ModelStreamDelta>(&event.body);
+      const auto bytes = delta ? delta->text.size() : 0;
+      if (!terminal && (session->queue.size() >= target::kModelStreamMaximumQueuedFrames ||
+                        session->queued_bytes + bytes > target::kModelStreamMaximumQueuedBytes)) {
+        return target::ModelStreamSinkResult::Full;
+      }
+      if (terminal) {
+        session->terminal_queued = true;
+      } else {
+        session->queue.push_back(std::move(wire));
+        session->queued_bytes += bytes;
+        if (event.sequence == 0) {
+          session->started_delivered = true;
+        }
+        session->delivered_bytes += bytes;
+        if (delta) {
+          ++session->delivered_deltas;
+        }
+      }
+      session->changed.notify_all();
+      return target::ModelStreamSinkResult::Accepted;
+    }
+
+  private:
+    std::weak_ptr<Session> session_;
+  };
+  bool write_event(const v1::ModelStreamEvent& event) {
+    auto guard = guard_.lock();
+    if (!guard) {
+      return false;
+    }
+    v1::CoreToPlugin frame;
+    {
+      std::lock_guard lock(hub_mutex_);
+      fence_to_wire(*fence_, frame.mutable_fence());
+    }
+    *frame.mutable_model_stream_event() = event;
+    return bounded_write(guard, frame, std::chrono::milliseconds{1000});
+  }
+  bool write_host_error(std::string_view request_id, std::string_view trace_id,
+                        const target::Failure& failure) {
+    auto guard = guard_.lock();
+    if (!guard) {
+      return false;
+    }
+    v1::CoreToPlugin frame;
+    {
+      std::lock_guard lock(hub_mutex_);
+      fence_to_wire(*fence_, frame.mutable_fence());
+    }
+    auto* response = frame.mutable_host_response();
+    response->set_request_id(std::string{request_id});
+    *response->mutable_error() = wire_error(failure.code, request_id, trace_id,
+                                            failure.recovery == target::Recovery::Backoff ||
+                                                failure.code == target::ErrorCode::RateLimited);
+    return bounded_write(guard, frame, std::chrono::milliseconds{1000});
+  }
+  static void join_session(const std::shared_ptr<Session>& session) {
+    if (session->producer.joinable()) {
+      session->producer.join();
+    }
+    if (session->writer.joinable()) {
+      session->writer.join();
+    }
+  }
+  void finish_writer(const std::shared_ptr<Session>& session) {
+    {
+      std::lock_guard lock{session->mutex};
+      session->writer_done = true;
+    }
+    session->changed.notify_all();
+  }
+  void drain(std::weak_ptr<Session> weak) {
+    auto session = weak.lock();
+    if (!session) {
+      return;
+    }
+    for (;;) {
+      std::optional<v1::ModelStreamEvent> next;
+      bool finished = false;
+      {
+        std::unique_lock lock{session->mutex};
+        session->changed.wait_for(lock, std::chrono::milliseconds{10});
+        if (session->hard_stop) {
+          break;
+        }
+        if (session->cancel.stop_requested() && !session->terminal_queued) {
+          session->queue.clear();
+          session->queued_bytes = 0;
+        }
+        if (!session->queue.empty()) {
+          next = std::move(session->queue.front());
+          session->queue.pop_front();
+          session->queued_bytes -= next->has_delta() ? next->delta().text().size() : 0;
+        } else if (session->producer_done) {
+          finished = true;
+        }
+      }
+      if (finished) {
+        break;
+      }
+      if (!next) {
+        continue;
+      }
+      const bool terminal = next->has_terminal();
+      if (!write_event(*next)) {
+        session->cancel.request_stop();
+        break;
+      }
+      if (terminal) {
+        {
+          std::lock_guard lock{session->mutex};
+          session->terminal_written = true;
+        }
+        break;
+      }
+    }
+    finish_writer(session);
+  }
+  bool enqueue_terminal(const std::shared_ptr<Session>& session,
+                        const target::ModelStreamTerminal& terminal) {
+    target::ModelStreamEvent event{session->start_request_id, session->logical_call_id, 0,
+                                   session->trace_id, terminal};
+    {
+      std::lock_guard lock{session->mutex};
+      event.sequence = session->started_delivered ? session->delivered_deltas + 1 : 0;
+    }
+    auto encoded = encode_model_stream_event(event);
+    if (!std::holds_alternative<v1::ModelStreamEvent>(encoded)) {
+      return false;
+    }
+    std::lock_guard lock{session->mutex};
+    session->queue.push_back(std::get<v1::ModelStreamEvent>(std::move(encoded)));
+    session->terminal_queued = true;
+    session->changed.notify_all();
+    return true;
+  }
+  bool enqueue_cancelled(const std::shared_ptr<Session>& session) {
+    target::ModelStreamTerminal terminal;
+    terminal.termination = target::ModelStreamTermination::Cancelled;
+    {
+      std::lock_guard lock{session->mutex};
+      terminal.emitted_bytes = session->delivered_bytes;
+      terminal.emitted_delta_count = session->delivered_deltas;
+    }
+    terminal.partial = terminal.emitted_bytes != 0;
+    terminal.usage = {};
+    terminal.may_have_billed = true;
+    return enqueue_terminal(session, terminal);
+  }
+  void produce(std::weak_ptr<Session> weak, target::RuntimeModelStreamRequest request) {
+    auto session = weak.lock();
+    if (!session) {
+      return;
+    }
+    Sink sink{weak};
+    auto result = model_.chat_stream(request, sink, session->cancel.get_token(), session->deadline);
+    bool unknown = false;
+    bool pre_start = false;
+    if (const auto* failure = std::get_if<target::Failure>(&result)) {
+      {
+        std::lock_guard lock{session->mutex};
+        pre_start = !session->started_delivered;
+      }
+      if (pre_start) {
+        (void)write_host_error(session->start_request_id, session->trace_id, *failure);
+      } else {
+        unknown = true;
+      }
+    } else {
+      const auto& value = std::get<target::RuntimeModelStreamResult>(result);
+      if (value.terminal) {
+        unknown = !enqueue_terminal(session, *value.terminal);
+      } else if (value.cancelled_by_consumer) {
+        unknown = !enqueue_cancelled(session);
+      } else {
+        unknown = true;
+      }
+    }
+    {
+      std::lock_guard lock{session->mutex};
+      session->producer_done = true;
+    }
+    session->changed.notify_all();
+    if (unknown) {
+      // No terminal will ever be produced for this attempt: terminate the bridge connection so the
+      // plugin treats every in-flight delivery as unknown instead of waiting forever.
+      if (auto guard = guard_.lock()) {
+        if (guard->context) {
+          guard->context->TryCancel();
+        }
+      }
+    }
+  }
+
+  std::weak_ptr<PluginStreamGuard> guard_;
+  target::RuntimeModelPort& model_;
+  std::atomic<std::size_t>& process_active_;
+  std::mutex hub_mutex_;
+  std::shared_ptr<target::BridgeFence> fence_;
+  std::unordered_map<std::string, std::shared_ptr<Session>> sessions_;
+  std::deque<std::pair<std::string, std::string>> finished_ids_;
+};
+
 target::BridgePluginRegistration
 plugin_registration_from_wire(const v1::RegisterPluginRequest& registered,
                               const std::string& bearer) {
@@ -1393,8 +1832,13 @@ public:
       return grpc::Status::OK;
     }
     const auto& result = std::get<target::BridgeRegistrationResult>(outcome);
-    StreamState state{target::BridgePeerKind::Plugin, result.authorization, {}, {}, false,
-                      result.granted_permissions};
+    StreamState state{target::BridgePeerKind::Plugin, result.authorization,    {},     {}, false,
+                      result.granted_permissions,     result.enabled_features, nullptr};
+    if (options_.model) {
+      state.streams = std::make_shared<PluginStreamHub>(
+          std::weak_ptr<PluginStreamGuard>{stream_guard}, *options_.model, plugin_streams_,
+          state.authorization.fence);
+    }
     PluginConnection connection{application_, stream_guard, state.authorization.fence};
     {
       v1::CoreToPlugin response;
@@ -1441,6 +1885,9 @@ public:
         break;
       }
     }
+    if (state.streams) {
+      state.streams->shutdown();
+    }
     return status;
   }
 
@@ -1481,6 +1928,10 @@ private:
       return {false, status};
     }
     state.authorization = std::get<target::BridgeAuthorization>(refreshed);
+    if (state.streams) {
+      state.streams->set_fence(state.authorization.fence);
+      state.streams->cancel_all();
+    }
     state.sampled = false;
     v1::CoreToPlugin response;
     fence_to_wire(state.authorization.fence, response.mutable_fence());
@@ -1962,6 +2413,77 @@ private:
     }
     return reply.write();
   }
+  bool reject_stream_start(PluginHostReply& reply, target::ErrorCode code, bool retryable = false) {
+    return reply.reject(code, retryable);
+  }
+  bool handle_model_stream_start(StreamState& state, const v1::HostRequest& host,
+                                 PluginHostReply& reply) {
+    if (!state.streams || !options_.model) {
+      return reject_stream_start(reply, target::ErrorCode::CapabilityNotSupported);
+    }
+    const auto parsed_deadline = codec::from_wire(host.deadline());
+    const auto& start = host.model_stream_start();
+    if (!target::valid_model_identifier(host.request_id()) ||
+        !target::valid_model_identifier(host.trace_id()) ||
+        !target::valid_model_identifier(start.logical_call_id()) || start.model().empty() ||
+        start.model().size() > 256 || start.messages_size() < 1 ||
+        start.messages_size() > static_cast<int>(target::kModelMaximumMessages) ||
+        !std::holds_alternative<target::TimePoint>(parsed_deadline)) {
+      return reject_stream_start(reply, target::ErrorCode::InvalidArgument);
+    }
+    std::size_t input_bytes = 0;
+    for (const auto& message : start.messages()) {
+      if (message.text().size() > target::kModelMaximumRequestBytes - input_bytes ||
+          !target::valid_model_message_role(message.role()) ||
+          message.text().find('\0') != std::string::npos) {
+        return reject_stream_start(reply, target::ErrorCode::InvalidArgument);
+      }
+      input_bytes += message.text().size();
+    }
+    const auto profile = application_.plugin_profile(state.authorization.fence.instance);
+    if (const auto* rejected = std::get_if<target::Failure>(&profile)) {
+      return reject_stream_start(reply, rejected->code);
+    }
+    const auto& installed =
+        std::get<target::RuntimeBridgeApplication::BridgePluginProfile>(profile);
+    const auto admitted = target::admit_plugin_model_stream(state.authorization.fence.instance,
+                                                            installed, state.permissions);
+    if (const auto* rejected = std::get_if<target::Failure>(&admitted)) {
+      return reject_stream_start(reply, rejected->code,
+                                 rejected->recovery == target::Recovery::Backoff ||
+                                     rejected->code == target::ErrorCode::RateLimited);
+    }
+    const auto started = state.streams->start(host, start, state.authorization.fence,
+                                              std::get<target::TimePoint>(parsed_deadline));
+    if (const auto* rejected = std::get_if<target::Failure>(&started)) {
+      return reject_stream_start(reply, rejected->code,
+                                 rejected->recovery == target::Recovery::Backoff ||
+                                     rejected->code == target::ErrorCode::RateLimited);
+    }
+    // A successful start has no HostResponse: the attempt lifecycle is only model_stream_event.
+    return true;
+  }
+  bool handle_model_stream_cancel(StreamState& state, const v1::HostRequest& host,
+                                  PluginHostReply& reply) {
+    if (!state.streams) {
+      return reject_stream_start(reply, target::ErrorCode::CapabilityNotSupported);
+    }
+    const auto& cancel = host.model_stream_cancel();
+    const auto parsed_deadline = codec::from_wire(host.deadline());
+    if (!target::valid_model_identifier(host.request_id()) ||
+        !target::valid_model_identifier(cancel.start_request_id()) ||
+        !target::valid_model_identifier(cancel.logical_call_id()) ||
+        !std::holds_alternative<target::TimePoint>(parsed_deadline)) {
+      return reject_stream_start(reply, target::ErrorCode::InvalidArgument);
+    }
+    const auto disposition =
+        state.streams->cancel(cancel.start_request_id(), cancel.logical_call_id());
+    auto* receipt = reply.body()->mutable_model_stream_cancel();
+    receipt->set_start_request_id(cancel.start_request_id());
+    receipt->set_logical_call_id(cancel.logical_call_id());
+    receipt->set_disposition(disposition);
+    return reply.write();
+  }
   bool handle_host(StreamState& state, const v1::HostRequest& host,
                    const std::shared_ptr<PluginStreamGuard>& stream_guard) {
     PluginHostReply reply{state.authorization.fence, host, stream_guard};
@@ -1975,6 +2497,10 @@ private:
       return handle_task(state, host, reply);
     case v1::HostRequest::kModelChat:
       return handle_model(state, host, reply);
+    case v1::HostRequest::kModelStreamStart:
+      return handle_model_stream_start(state, host, reply);
+    case v1::HostRequest::kModelStreamCancel:
+      return handle_model_stream_cancel(state, host, reply);
     default:
       if (options_.storage) {
         return handle_storage(state, host, reply);
@@ -1985,6 +2511,9 @@ private:
 
   PluginFrameResult dispatch_frame(StreamState& state, const v1::PluginToCore& frame,
                                    const std::shared_ptr<PluginStreamGuard>& stream_guard) {
+    if (state.streams) {
+      state.streams->reap();
+    }
     switch (frame.body_case()) {
     case v1::PluginToCore::kHeartbeat:
       return handle_heartbeat(state, frame, stream_guard);
@@ -2014,6 +2543,8 @@ private:
 
   target::RuntimeBridgeApplication& application_;
   PluginBridgeOptions options_;
+  // Runtime process-wide active Model stream cap shared by every plugin connection.
+  std::atomic<std::size_t> plugin_streams_{0};
 };
 
 target::Outcome<target::BridgeAuthorization>

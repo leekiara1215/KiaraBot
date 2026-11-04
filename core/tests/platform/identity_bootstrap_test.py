@@ -13,8 +13,13 @@ import uuid
 from service_config_test import certificates
 
 
+# Filled only when the optional v1.1 Host enrollment is exercised. Test fixtures only; never a
+# credential, key or reusable proof.
+HOST_STATE = {}
+
+
 def main(*, control_server_certificate=False, after_bootstrap=None,
-         verification_catalog=None, prepare=None):
+         verification_catalog=None, prepare=None, host_enrollment=False):
     root = Path(sys.argv[1]).resolve()
     port, initializer = sys.argv[2:4]
     bootstrap = str(Path(sys.argv[5]).resolve())
@@ -132,6 +137,45 @@ def main(*, control_server_certificate=False, after_bootstrap=None,
             {'assignment_id': str(uuid.uuid4()),
              'permissions': ['identity.authorization.check'],
              'scope': [{'kind': 'RESOURCE_PRINCIPAL', 'id': runtime_principal}]}]}]
+    if host_enrollment:
+        # v1.1 Host enrollment: HostId is independent from PrincipalId and the peer must carry an
+        # explicit RESOURCE_HOST binding. host-1 has the exact host.execute grant; host-2 does not,
+        # so the real Identity gate must answer a denial decision instead of a fake allow.
+        HOST_STATE.clear()
+        for name, permissions in (('host-1', ['host.execute']), ('host-2', ['host.read'])):
+            extension = tls_root / f'{name}.ext'
+            extension.write_text(f'subjectAltName=URI:spiffe://kiarabot/{name}-test\n'
+                                 'extendedKeyUsage=clientAuth\n'
+                                 'basicConstraints=critical,CA:FALSE\n'
+                                 'keyUsage=critical,digitalSignature\n'
+                                 'subjectKeyIdentifier=hash\n'
+                                 'authorityKeyIdentifier=keyid:always\n')
+            for arguments in [
+                    ['req', '-newkey', 'ec', '-pkeyopt', 'ec_paramgen_curve:P-256', '-nodes',
+                     '-subj', f'/CN={name}', '-keyout', str(tls_root / f'{name}.key'),
+                     '-out', str(tls_root / f'{name}.csr')],
+                    ['x509', '-req', '-in', str(tls_root / f'{name}.csr'), '-CA',
+                     str(tls_root / 'ca.pem'), '-CAkey', str(tls_root / 'ca.key'),
+                     '-CAcreateserial', '-days', '1', '-extfile', str(extension),
+                     '-out', str(tls_root / f'{name}.pem')]]:
+                reply = subprocess.run(['openssl', *arguments], cwd=tls_root,
+                                       capture_output=True, timeout=5)
+                assert reply.returncode == 0, 'fixture host certificate generation failed'
+            (tls_root / f'{name}.key').chmod(0o600)
+            principal, credential = str(uuid.uuid4()), str(uuid.uuid4())
+            host_id, assignment = str(uuid.uuid4()), str(uuid.uuid4())
+            enrolled['platform_peers'].append({
+                'service': 'host', 'principal_id': principal, 'credential_id': credential,
+                'certificate_chain_file': str(tls_root / f'{name}.pem'),
+                'san': f'spiffe://kiarabot/{name}-test', 'host_id': host_id,
+                'assignments': [{'assignment_id': assignment, 'permissions': permissions,
+                                 'scope': [{'kind': 'RESOURCE_HOST', 'id': host_id}]}]})
+            HOST_STATE[name] = {
+                'principal_id': principal, 'credential_id': credential, 'host_id': host_id,
+                'assignment_id': assignment,
+                'certificate_file': str(tls_root / f'{name}.pem'),
+                'key_file': str(tls_root / f'{name}.key')}
+        assert HOST_STATE['host-1']['principal_id'] != HOST_STATE['host-1']['host_id']
     if prepare is not None:
         prepare(root, enrolled)
     if verification_catalog is not None:
@@ -198,6 +242,29 @@ def main(*, control_server_certificate=False, after_bootstrap=None,
     write(invalid_permission)
     run(command, 1)
     assert 'state=required version=1' in run(status_arguments)
+    if host_enrollment:
+        def peer_with(value, service):
+            return next(peer for peer in value['platform_peers'] if peer['service'] == service)
+
+        def host_tampered(mutate):
+            value = json.loads(json.dumps(enrolled))
+            mutate(peer_with(value, 'host'))
+            return value
+
+        write(host_tampered(lambda peer: peer.pop('host_id')))
+        run(command, 1)
+        assert 'state=required version=1' in run(status_arguments)
+        write(host_tampered(lambda peer: peer.__setitem__('host_id', '')))
+        run(command, 1)
+        assert 'state=required version=1' in run(status_arguments)
+        write(host_tampered(lambda peer: peer.__setitem__('host_id', 'h' * 129)))
+        run(command, 1)
+        assert 'state=required version=1' in run(status_arguments)
+        runtime_with_host = json.loads(json.dumps(enrolled))
+        peer_with(runtime_with_host, 'runtime')['host_id'] = str(uuid.uuid4())
+        write(runtime_with_host)
+        run(command, 1)
+        assert 'state=required version=1' in run(status_arguments)
     write(enrolled)
     assert 'outcome=committed state=consumed' in run(command)
     assert 'state=consumed version=2' in run(status_arguments)
@@ -206,6 +273,16 @@ def main(*, control_server_certificate=False, after_bootstrap=None,
     assert sql(f"SELECT count(*) FROM kiarabot.exact_assignments WHERE subject='{runtime_principal}';", 'p03_identity') == '1'
     assert sql("SELECT count(DISTINCT permission) FROM kiarabot.exact_permissions "
                "WHERE permission BETWEEN 41 AND 50;", 'p03_identity') == '10'
+    if host_enrollment:
+        for name in ('host-1', 'host-2'):
+            host = HOST_STATE[name]
+            assert sql(f"SELECT binding_kind||':'||binding_id FROM kiarabot.principals "
+                       f"WHERE id='{host['principal_id']}';", 'p03_identity') == \
+                '5:' + host['host_id']
+            assert sql(f"SELECT platform_service::text FROM kiarabot.credential_certificates "
+                       f"WHERE id='{host['credential_id']}';", 'p03_identity') == '2'
+            assert sql(f"SELECT count(*) FROM kiarabot.exact_assignments "
+                       f"WHERE subject='{host['principal_id']}';", 'p03_identity') == '1'
     assert 'CONFLICT' in run(command, 1)
     assert 'state=consumed version=2' in run(status_arguments)
     print('Real owned PG offline bootstrap, rejected enrollment, once-only state and redaction passed')

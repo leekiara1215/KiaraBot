@@ -232,7 +232,8 @@ public:
           BridgePeerKind::Adapter, result.adapter.current.instance,
           BridgeFence{result.adapter.current.instance, result.adapter.current.runtime_epoch,
                       ExecutionGeneration{1}, result.adapter.current.connection_generation},
-          result.adapter.last_registered_at, result.adapter.version.value);
+          result.adapter.last_registered_at, result.adapter.version.value,
+          bootstrap.credential.version);
       if (const auto* failure = std::get_if<Failure>(&issued)) {
         return *failure;
       }
@@ -362,7 +363,7 @@ public:
           issue_authorization(BridgePeerKind::Plugin, instance,
                               BridgeFence{instance, fence.runtime_epoch, fence.execution_generation,
                                           fence.connection_generation},
-                              now, current->version.value);
+                              now, current->version.value, bootstrap.credential.version);
       if (const auto* failure = std::get_if<Failure>(&issued)) {
         return *failure;
       }
@@ -434,11 +435,17 @@ public:
       if (now >= current.expires_at) {
         return unauthenticated();
       }
-      auto active = work->bridge_credentials().active(instance.value);
-      if (const auto* failure = std::get_if<Failure>(&active)) {
+      auto latest = work->bridge_credentials().latest(instance.value);
+      if (const auto* failure = std::get_if<Failure>(&latest)) {
         return *failure;
       }
-      if (!std::get<bool>(active)) {
+      const auto& credential = std::get<std::optional<BridgeCredentialRecord>>(latest);
+      const auto expected_version =
+          current.credential_version == 0 ? kBridgeCredentialVersion : current.credential_version;
+      const auto persisted_version =
+          credential ? (credential->version == 0 ? kBridgeCredentialVersion : credential->version)
+                     : 0;
+      if (!credential || credential->revoked || persisted_version != expected_version) {
         return unauthenticated();
       }
       std::uint64_t authorization_version = current.authorization_version;
@@ -476,7 +483,7 @@ public:
       renewed.proof = std::get<std::array<std::byte, 32>>(proof);
       renewed.refresh_credential = std::get<std::array<std::byte, 32>>(refresh_material);
       renewed.refresh_generation = current.refresh_generation + 1;
-      renewed.credential_version = current.credential_version;
+      renewed.credential_version = expected_version;
       renewed.authorization_version = authorization_version;
       renewed.issued_at = now;
       renewed.expires_at = now + kBridgeAuthorizationLifetime;
@@ -520,7 +527,7 @@ public:
     }
     // Bounded local authority refresh: revocation/disable/invalidation becomes effective within
     // kBridgeAuthorizationGateInterval (<=1s) even when the peer keeps sending valid proofs.
-    return authorization_gate(kind, current.fence.instance, now);
+    return authorization_gate(kind, current.fence.instance, current.credential_version, now);
   }
 
   Status disconnect(BridgePeerKind kind, const InstanceId& instance,
@@ -1068,12 +1075,14 @@ public:
   }
 
 private:
-  Status authorization_gate(BridgePeerKind kind, const InstanceId& instance, TimePoint now) {
+  Status authorization_gate(BridgePeerKind kind, const InstanceId& instance,
+                            std::uint64_t expected_version, TimePoint now) {
     const auto key = bridge_key(kind, instance);
     {
       std::lock_guard<std::mutex> lock(mutex_);
       const auto cached = gates_.find(key);
-      if (cached != gates_.end() && now >= cached->second.checked &&
+      if (cached != gates_.end() && cached->second.credential_version == expected_version &&
+          now >= cached->second.checked &&
           now - cached->second.checked < kBridgeAuthorizationGateInterval) {
         return cached->second.allowed ? Status{std::monostate{}} : permission_denied();
       }
@@ -1088,11 +1097,17 @@ private:
         return internal_failure();
       }
       bool allowed = false;
-      auto active = work->bridge_credentials().active(instance.value);
-      if (const auto* failure = std::get_if<Failure>(&active)) {
+      auto latest = work->bridge_credentials().latest(instance.value);
+      if (const auto* failure = std::get_if<Failure>(&latest)) {
         return *failure;
       }
-      if (std::get<bool>(active)) {
+      const auto& credential = std::get<std::optional<BridgeCredentialRecord>>(latest);
+      const auto normalized_version =
+          credential ? (credential->version == 0 ? kBridgeCredentialVersion : credential->version)
+                     : 0;
+      const auto required_version =
+          expected_version == 0 ? kBridgeCredentialVersion : expected_version;
+      if (credential && !credential->revoked && normalized_version == required_version) {
         if (kind == BridgePeerKind::Adapter) {
           auto adapter = work->adapters().by_instance(instance);
           if (const auto* failure = std::get_if<Failure>(&adapter)) {
@@ -1117,7 +1132,7 @@ private:
       work->rollback();
       {
         std::lock_guard<std::mutex> lock(mutex_);
-        gates_[key] = GateEntry{now, allowed};
+        gates_[key] = GateEntry{now, allowed, expected_version};
       }
       return allowed ? Status{std::monostate{}} : permission_denied();
     } catch (const std::bad_alloc&) {
@@ -1304,7 +1319,8 @@ private:
 
   Outcome<BridgeAuthorization> issue_authorization(BridgePeerKind kind, const InstanceId& instance,
                                                    BridgeFence fence, TimePoint issued_at,
-                                                   std::uint64_t authorization_version) {
+                                                   std::uint64_t authorization_version,
+                                                   std::uint64_t credential_version) {
     auto proof = secrets_.opaque_secret();
     if (const auto* failure = std::get_if<Failure>(&proof)) {
       return *failure;
@@ -1318,7 +1334,10 @@ private:
     authorization.proof = std::get<std::array<std::byte, 32>>(proof);
     authorization.refresh_credential = std::get<std::array<std::byte, 32>>(refresh);
     authorization.refresh_generation = 1;
-    authorization.credential_version = kBridgeCredentialVersion;
+    // The persisted credential version is authoritative; version 0 only appears for pre-version
+    // fixtures and normalizes to the frozen P06 bridge version.
+    authorization.credential_version =
+        credential_version == 0 ? kBridgeCredentialVersion : credential_version;
     authorization.authorization_version = std::max<std::uint64_t>(1, authorization_version);
     authorization.issued_at = issued_at;
     authorization.expires_at = issued_at + kBridgeAuthorizationLifetime;
@@ -1367,6 +1386,7 @@ private:
   struct GateEntry {
     TimePoint checked;
     bool allowed = false;
+    std::uint64_t credential_version = 0;
   };
 
   std::mutex& registration_slot(const std::string& instance) {

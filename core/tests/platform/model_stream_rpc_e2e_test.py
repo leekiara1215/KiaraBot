@@ -276,7 +276,8 @@ def scenario(root):
         running = runtime_model.ChatStream(active, timeout=10)
         require(next(running).HasField('started') and next(running).HasField('delta'), 'partial before cancel')
         running.cancel()
-        provider.release.set()
+        # The Provider stays blocked until the durable settlement is observed; releasing earlier
+        # would race a successful completion against the cancellation and mask a wrong state.
         sql = rt.postgres(root, pg_bin, port, 'p03_model')
         until = time.monotonic() + 4
         while time.monotonic() < until:
@@ -286,6 +287,7 @@ def scenario(root):
                 break
             time.sleep(.02)
         require(row == '3:true', 'hard cancellation settles UNKNOWN conservatively')
+        provider.release.set()
 
         STATE['stage'] = 'Model operation journal current scope'
         read = issue([policy.PERMISSION_RESOURCE_READ])
@@ -303,8 +305,8 @@ def scenario(root):
         admin_model.RotateProviderSecret(model.ModelRotateProviderSecretRequest(
             context=rt.context(15, manage), model_id=model_id, new_secret=b'str-local-fixture', expected_version=1), timeout=10)
         changes = admin_model.ListOperationChanges(observation(head.next_cursor), timeout=3)
-        require(changes.changes and all(item.operation.operation.owner_service == 'model' and
-                item.operation.operation.resource.id == model_id for item in changes.changes),
+        require(changes.changes and all(item.operation.ref.owner_service == 'model' and
+                item.operation.ref.resource.id == model_id for item in changes.changes),
                 'Model operation journal returns committed exact-scope management changes')
         denied(lambda: runtime_model.ListOperationChanges(observation(), timeout=3), {grpc.StatusCode.UNAUTHENTICATED, grpc.StatusCode.PERMISSION_DENIED})
         denied(lambda: admin_model.ListOperationChanges(observation(foreign_scope=True), timeout=3), {grpc.StatusCode.PERMISSION_DENIED})
@@ -313,8 +315,9 @@ def scenario(root):
         denied(lambda: admin_model.ListOperationChanges(gap, timeout=3), {grpc.StatusCode.ABORTED})
 
         STATE['stage'] = 'current grant revocation'
-        rt.run_sql(rt.postgres(root, pg_bin, port, 'p03_identity'),
-            "DELETE FROM kiarabot.exact_permissions WHERE assignment='" + STATE['read_assignment'] + "';")
+        admin_identity.RevokeAssignment(identity.IdentityRevokeAssignmentRequest(
+            context=rt.context(15), assignment_id=STATE['read_assignment'],
+            expected_version=1), timeout=10)
         denied(lambda: admin_model.ListOperationChanges(observation(), timeout=3),
                {grpc.StatusCode.PERMISSION_DENIED, grpc.StatusCode.UNAUTHENTICATED})
         STATE['stage'] = 'Identity dependency outage'

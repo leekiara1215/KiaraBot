@@ -172,6 +172,36 @@ def main(driver, identity=None):
             expect(2, {**control, 'control_api': {**endpoint, **update}}, service='control')
         expect(2, raw=json.dumps({**control, 'control_api': endpoint})[:-1] +
                ',"control_api":' + json.dumps(endpoint) + '}', service='control')
+        # Control WebSocket Origin allowlist: bare HTTPS origins only, bounded and deduplicated.
+        origin = 'https://panel.example:8443'
+        expect(0, {**control, 'control_api': {
+            **endpoint, 'websocket_origins': [origin, 'https://[::1]:8443',
+                                              'https://panel.example']}}, service='control')
+        expect(0, {**control, 'control_api': {**endpoint, 'websocket_origins': []}},
+               service='control')
+        expect(0, {**control, 'control_api': {**endpoint,
+                                              'websocket_allow_missing_origin': True}},
+               service='control')
+        for invalid_origin in [
+                'http://panel.example:8443', 'ws://panel.example', 'wss://panel.example',
+                'https://panel.example:8443/', 'https://panel.example:8443/path',
+                'https://panel.example:8443?verify=false', 'https://user@panel.example',
+                'https://*.example', 'https://panel.example:0', 'https://panel.example:65536',
+                'https://panel.example:', 'https://[::1]x', 'https://bad host',
+                'https://.example', 'https://example.', 'https:', 'https://panel.example:44a',
+                'https://PANEL.example', 'https://panel.example:8443#fragment']:
+            expect(2, {**control, 'control_api': {
+                **endpoint, 'websocket_origins': [invalid_origin]}}, service='control')
+        expect(2, {**control, 'control_api': {
+            **endpoint, 'websocket_origins': [origin, origin]}}, service='control')
+        expect(2, {**control, 'control_api': {
+            **endpoint, 'websocket_origins': [origin] * 33}}, service='control')
+        expect(2, {**control, 'control_api': {**endpoint, 'websocket_origins': origin}},
+               service='control')
+        expect(2, {**control, 'control_api': {
+            **endpoint, 'websocket_allow_missing_origin': 'true'}}, service='control')
+        expect(2, {**control, 'control_api': {
+            **endpoint, 'websocket_origins': [origin]}, 'extra': True}, service='control')
         runtime = {**config, 'service': 'runtime'}
         identity_endpoint = 'identity.internal:7443'
         expect(0, {**runtime, 'identity_endpoint': identity_endpoint}, service='runtime')
@@ -269,10 +299,19 @@ def main(driver, identity=None):
                 value.pop('grpc_listen')
             expect(2, {**value, 'runtime_endpoint': 'runtime.internal:7444'},
                    service=service)
-        # identity_endpoint belongs to Runtime/Scheduler/Model owner clients; other processes
-        # (identity itself, host, control) must reject it.
-        for service, name in [('identity', 'identity'), ('host', 'plugin-host'),
-                              ('control', 'control')]:
+        # identity_endpoint belongs to Runtime/Scheduler/Model/Host owner clients; the identity
+        # process itself and Control must reject it.
+        host = {**config, 'service': 'plugin-host'}
+        expect(0, {**host, 'identity_endpoint': identity_endpoint}, service='host')
+        for invalid in [{'identity_endpoint': 'https://identity:443'},
+                        {'identity_endpoint': 'identity:0'},
+                        {'identity_endpoint': 'identity:65536'},
+                        {'identity_endpoint': 'one,two:443'},
+                        {'identity_endpoint': 'x:443/path'},
+                        {'identity_endpoint': ':443'},
+                        {'identity_endpoint': 443}]:
+            expect(2, {**host, **invalid}, service='host')
+        for service, name in [('identity', 'identity'), ('control', 'control')]:
             value = {**config, 'service': name}
             if service == 'control':
                 value.pop('grpc_listen')

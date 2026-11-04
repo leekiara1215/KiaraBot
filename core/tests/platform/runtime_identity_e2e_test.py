@@ -144,6 +144,17 @@ def prepare(root, enrolled):
          'permissions': ['identity.principal.manage', 'identity.assignment.read',
                          'identity.invalidation.read'],
          'scope': [{'kind': 'RESOURCE_PRINCIPAL', 'id': admin}]}])
+    # v1.1 Host gate negative cases revoke the exact host.execute grant and Host credential
+    # through the real Control management surface; Control therefore needs management authority
+    # scoped to those Host resources (never a broader scope).
+    for peer in enrolled['platform_peers']:
+        if peer['service'] != 'host':
+            continue
+        enrolled['control_assignments'].append({
+            'assignment_id': str(uuid.uuid4()),
+            'permissions': ['identity.assignment.manage', 'identity.assignment.read',
+                            'identity.principal.manage'],
+            'scope': [{'kind': 'RESOURCE_HOST', 'id': peer['host_id']}]})
     # P14m: the delegated subject must hold the exact catalog-scope sensitive reads so a real
     # Control-issued runtime delegation for ListAudit/ListLogs is authorized by Identity.
     enrolled['administrator_assignments'].append({
@@ -1179,6 +1190,85 @@ def scenario(root, port, pg_bin, binaries):
             require(login_denied == grpc.StatusCode.UNAUTHENTICATED,
                     'revoked administrator credential rejected')
 
+            # ---- v1.1 Host gate: the real Identity service decides the narrow Runtime gate check
+            # over actual mTLS. Runtime's own certificate calls Identity; the Host leaf fingerprint
+            # and exact RESOURCE_HOST binding/grant are read from current Identity storage.
+            hosts = bootstrap_fixture.HOST_STATE
+            host_a, host_b = hosts['host-1'], hosts['host-2']
+            runtime_gate_channel = channel(identity_endpoint, tls, 'runtime.pem', 'runtime.key')
+            try:
+                runtime_gate_stub = identity_pb2_grpc.IdentityServiceStub(runtime_gate_channel)
+
+                def gate_request(host, certificate_name):
+                    der = ssl.PEM_cert_to_DER_cert(
+                        (tls / certificate_name).read_text())
+                    return identity_pb2.IdentityCheckHostGateAuthorizationRequest(
+                        context=context(),
+                        host=platform_pb2.ResourceRef(kind=platform_pb2.RESOURCE_HOST,
+                                                      id=host['host_id']),
+                        host_certificate_sha256=hashlib.sha256(der).digest())
+
+                def host_gate(host, certificate_name, stub=None):
+                    return (stub or runtime_gate_stub).CheckHostGateAuthorization(
+                        gate_request(host, certificate_name), timeout=10)
+
+                allowed = host_gate(host_a, 'host-1.pem')
+                require(allowed.decision.allowed and
+                        allowed.decision.authorization_version > 0 and
+                        allowed.decision.HasField('checked_at') and
+                        allowed.host_credential_version >= 1 and
+                        allowed.host_principal_version >= 1,
+                        'Host gate allows the exact current Host leaf and grant')
+                wrong_leaf = gate_request(host_a, 'host-1.pem')
+                wrong_leaf.host_certificate_sha256 = bytes(
+                    [wrong_leaf.host_certificate_sha256[0] ^ 1]) + \
+                    wrong_leaf.host_certificate_sha256[1:]
+                try:
+                    runtime_gate_stub.CheckHostGateAuthorization(wrong_leaf, timeout=10)
+                except grpc.RpcError as error:
+                    require(error.code() == grpc.StatusCode.UNAUTHENTICATED,
+                            'wrong Host leaf fingerprint denied')
+                else:
+                    raise AssertionError('wrong Host leaf fingerprint accepted')
+                try:
+                    host_gate(host_b, 'host-1.pem')
+                except grpc.RpcError as error:
+                    require(error.code() == grpc.StatusCode.UNAUTHENTICATED,
+                            'cross-Host certificate binding denied')
+                else:
+                    raise AssertionError('cross-Host certificate binding accepted')
+                missing = host_gate(host_b, 'host-2.pem')
+                require(not missing.decision.allowed and missing.decision.HasField('denial') and
+                        missing.decision.denial.code == common_pb2.PERMISSION_DENIED,
+                        'Host without exact host.execute gets a typed denial decision')
+                try:
+                    host_gate(host_a, 'host-1.pem', stub=identity_stub)
+                except grpc.RpcError as error:
+                    require(error.code() == grpc.StatusCode.UNAUTHENTICATED,
+                            'non-Runtime caller denied')
+                else:
+                    raise AssertionError('non-Runtime caller accepted')
+                identity_stub.RevokeAssignment(identity_pb2.IdentityRevokeAssignmentRequest(
+                    context=context(), assignment_id=host_a['assignment_id'],
+                    expected_version=1), timeout=10)
+                revoked = host_gate(host_a, 'host-1.pem')
+                require(not revoked.decision.allowed and revoked.decision.HasField('denial') and
+                        revoked.decision.denial.code == common_pb2.PERMISSION_DENIED,
+                        'revoked exact host.execute is denied')
+                identity_stub.RevokeCredential(identity_pb2.IdentityRevokeCredentialRequest(
+                    context=context(), credential_id=host_a['credential_id'],
+                    expected_version=1), timeout=10)
+                try:
+                    host_gate(host_a, 'host-1.pem')
+                except grpc.RpcError as error:
+                    require(error.code() == grpc.StatusCode.UNAUTHENTICATED,
+                            'revoked Host credential denied')
+                else:
+                    raise AssertionError('revoked Host credential accepted')
+                print('P05 Host gate over real mTLS/Identity storage passed')
+            finally:
+                runtime_gate_channel.close()
+
             # The control peer must still be verified against live Identity storage on a
             # receipt replay. Only the owned fixture's Identity DB role loses login.
             run_sql(identity_sql, 'ALTER ROLE p03_identity_runtime NOLOGIN')
@@ -1259,7 +1349,8 @@ def scenario(root, port, pg_bin, binaries):
 
 
 def main():
-    bootstrap_fixture.main(prepare=prepare, after_bootstrap=lambda root: scenario(
+    bootstrap_fixture.main(host_enrollment=True,
+                           prepare=prepare, after_bootstrap=lambda root: scenario(
         root, int(sys.argv[2]), Path(sys.argv[6]),
         [str(Path(value).resolve()) for value in sys.argv[7:9]]))
 

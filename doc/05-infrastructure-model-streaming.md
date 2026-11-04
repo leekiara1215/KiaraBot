@@ -140,3 +140,23 @@ ModelWork已直接持有ModelCallRepository，因此不需要修改factory或观
 `p11_streaming_model_application`、`p03_postgres_database`共3/3通过，总25.10s，记录
 `build/logs/capability-expansion/ctest-model-app-pg-first.log`。此证据涵盖应用与真实ModelStore恢复，
 RPC/Runtime/Bridge/SDK仍分切片验收，不能等同Provider到SDK闭环已经启用。
+
+## STR-06 Model RPC/真实 fixture 验收（2026-11-04）
+
+锁定树串行实际运行：`p11_streaming_model_codec`0.16s、`p11_streaming_model_rpc`1.89s、
+`p11_model_rpc`3.16s、`p11_model_identity_client`2.48s 全过；新增
+`p11_streaming_model_rpc_e2e` 7.59s 通过。记录在`build/logs/capability-expansion/`
+（`ctest-stream-str06-01.log`、`ctest-stream-e2e-03.log`，以及codec首轮失败
+`stream-codec-first-failure.log`）。e2e 使用真实自有PG16.4、TLS、Identity/Model进程与本地
+HTTP SSE Provider，经`run_database_test.py`独占fixture运行：增量先于Provider完成、完整成功
+须`[DONE]`+txn2、跨Chat/ChatStream同id仅replay且Provider恰一次、partial/length/429、
+Control/伪造证书拒绝且0请求、取消落UNKNOWN、观察journal exact scope/typed cursor/撤权与
+Identity故障。fixture不访问外部Provider、付费模型或QQ。
+
+codec 与 `proto/tests/model_stream_contract_rules.py` 对齐，并固定64KiB累计、4KiB帧、严格
+UTF-8、replay零delta且terminal必须REPLAY、0值Retry-After视为缺省（>60s拒绝）。慢消费者
+1秒写预算在环回gRPC无法因果触发（单attempt 64KiB上限被客户端H2缓冲吸收，约束read-ahead/
+write-buffer也无效），以取消传播+Provider worker join回归替代，真实慢写由STR-09受管整链验证。
+已知契约缺口：`EnableModel`/`DisableModel`缺`scope_kinds=RESOURCE_MODEL`，descriptor策略产空
+scope kinds导致生产Identity检查INVALID_ARGUMENT；本fixture以显式SQL激活规避并已报告统筹，
+需契约owner修复proto并重跑生成/契约门禁。本切片未改schema/manifest/journal。

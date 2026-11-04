@@ -331,6 +331,9 @@ def test_plugin_bridge_has_no_task_list_operation():
     fields = {field.name for field in request.DESCRIPTOR.oneofs_by_name['operation'].fields}
     assert fields == {'model_chat', 'storage_get', 'storage_set', 'storage_delete',
                       'task_create', 'task_cancel', 'task_get',
-                      'storage_compare_and_set'}
+                      'storage_compare_and_set',
+                      # Frozen STR-01 declarations (target not_implemented): an
+                      # ordered model stream start and its per-attempt cancel.
+                      'model_stream_start', 'model_stream_cancel'}
     assert not hasattr(plugins, 'TaskListRequest')
     assert not hasattr(Runner, 'list_tasks')

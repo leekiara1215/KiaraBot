@@ -24,9 +24,9 @@ async def check_parallel_ownership(sql, adapter_factory, plugin_factory, adapter
         INSERT INTO kiarabot.adapter_bindings(account,adapter_instance,version,state)
           SELECT '{account}','{adapter_instance}',1,state FROM kiarabot.adapter_bindings
           WHERE account='{primary_account}' AND adapter_instance='{primary_adapter}';
-        INSERT INTO kiarabot.bridge_credentials(id,resource_id,digest,created_at,revoked)
+        INSERT INTO kiarabot.bridge_credentials(id,resource_id,digest,created_at,revoked,version)
           VALUES ('{uuid.uuid4()}','{adapter_instance}',decode('{digest}','hex'),
-                  (extract(epoch from clock_timestamp())*1000000000)::bigint,false);
+                  (extract(epoch from clock_timestamp())*1000000000)::bigint,false,1);
         INSERT INTO kiarabot.installations(id,plugin_type,version,state,manifest)
           SELECT '{installation}',plugin_type,1,state,manifest FROM kiarabot.installations
           WHERE id='{primary_installation}';

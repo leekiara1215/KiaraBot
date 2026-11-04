@@ -12,6 +12,7 @@
 #include "kiarabot/core/domain/target/runtime_records.hpp"
 #include "kiarabot/core/domain/target/runtime_rules.hpp"
 #include "kiarabot/core/ports/target/runtime_authorization.hpp"
+#include "kiarabot/core/ports/target/runtime_bootstrap_deliveries.hpp"
 #include "kiarabot/core/ports/target/runtime_ids.hpp"
 #include "kiarabot/core/ports/target/runtime_secrets.hpp"
 #include "kiarabot/core/ports/target/service_readiness.hpp"
@@ -50,6 +51,10 @@ struct BindingMutation {
   // only in this response; Runtime stores only its SHA-256 digest. Empty when no new credential was
   // issued (already active) or for managed plugin instances.
   std::optional<std::string> bootstrap_credential;
+  // BOOT-02 no-secret delivery metadata for the explicit fixed recipient. Empty on the legacy
+  // omitted-recipient path, on an idempotent replay whose receipt does not store delivery state,
+  // and when the active credential already exists (an explicit reissue is then required).
+  std::optional<BootstrapDeliveryRecord> delivery;
 };
 struct AdapterRegistrationResult {
   AdapterRecord adapter;
@@ -69,6 +74,8 @@ struct InstanceMutation {
 struct InstanceCreation {
   PluginInstance instance;
   std::optional<std::string> bootstrap_credential;
+  // BOOT-02 no-secret delivery metadata; see BindingMutation::delivery for the empty cases.
+  std::optional<BootstrapDeliveryRecord> delivery;
 };
 struct ConfigMutation {
   InstanceConfiguration config;
@@ -109,6 +116,9 @@ struct BindAdapterRequest {
   CommandContext context;
   ResourceId account;
   InstanceId adapter_instance;
+  // Empty preserves the existing create/bind path with no delivery intent or deployment effect.
+  // Non-empty explicitly opts in to the fixed offline recipient and is validated before mutation.
+  std::string bootstrap_recipient_id;
 };
 struct UnbindAdapterRequest {
   CommandContext context;
@@ -181,6 +191,9 @@ struct CreateInstanceRequest {
   InstallationId installation;
   std::optional<ResourceId> host;
   bool externally_managed = false;
+  // Empty preserves the existing create/bind path with no delivery intent or deployment effect.
+  // Non-empty explicitly opts in to the fixed offline recipient and is validated before mutation.
+  std::string bootstrap_recipient_id;
 };
 struct InstanceQuery {
   CommandContext context;

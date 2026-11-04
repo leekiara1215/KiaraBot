@@ -234,6 +234,7 @@ message ModelResolveModelCallResponse {
 service ModelService {
   rpc GetModelMetadata(ModelGetModelMetadataRequest) returns (ModelGetModelMetadataResponse) {
     option (required_permission) = PERMISSION_MODEL_READ;
+    option (scope_kinds) = RESOURCE_MODEL;
     option (requires_idempotency) = false;
     option (default_deadline_ms) = 2000;
     option (max_deadline_ms) = 5000;
@@ -292,6 +293,7 @@ service ModelService {
   }
   rpc GetCallStatus(ModelGetCallStatusRequest) returns (ModelGetCallStatusResponse) {
     option (required_permission) = PERMISSION_MODEL_CALL_INSPECT;
+    option (scope_kinds) = RESOURCE_MODEL;
     option (requires_idempotency) = false;
     option (default_deadline_ms) = 2000;
     option (max_deadline_ms) = 5000;
@@ -299,6 +301,7 @@ service ModelService {
   }
   rpc GetOperation(ModelGetOperationRequest) returns (ModelGetOperationResponse) {
     option (required_permission) = PERMISSION_RESOURCE_READ;
+    option (scope_kinds) = RESOURCE_MODEL;
     option (requires_idempotency) = false;
     option (default_deadline_ms) = 2000;
     option (max_deadline_ms) = 5000;
@@ -317,6 +320,7 @@ service ModelService {
   }
   rpc GetModelConfiguration(ModelGetModelConfigurationRequest) returns (ModelGetModelConfigurationResponse) {
     option (required_permission) = PERMISSION_MODEL_MANAGE;
+    option (scope_kinds) = RESOURCE_MODEL;
     option (requires_idempotency) = false;
     option (default_deadline_ms) = 2000;
     option (max_deadline_ms) = 5000;
@@ -324,6 +328,7 @@ service ModelService {
   }
   rpc DisableModel(ModelDisableModelRequest) returns (ModelDisableModelResponse) {
     option (required_permission) = PERMISSION_MODEL_MANAGE;
+    option (scope_kinds) = RESOURCE_MODEL;
     option (requires_idempotency) = true;
     option (default_deadline_ms) = 5000;
     option (max_deadline_ms) = 30000;
@@ -331,6 +336,7 @@ service ModelService {
   }
   rpc EnableModel(ModelEnableModelRequest) returns (ModelEnableModelResponse) {
     option (required_permission) = PERMISSION_MODEL_MANAGE;
+    option (scope_kinds) = RESOURCE_MODEL;
     option (requires_idempotency) = true;
     option (default_deadline_ms) = 5000;
     option (max_deadline_ms) = 30000;
@@ -338,6 +344,7 @@ service ModelService {
   }
   rpc ResolveModelCall(ModelResolveModelCallRequest) returns (ModelResolveModelCallResponse) {
     option (required_permission) = PERMISSION_MODEL_MANAGE;
+    option (scope_kinds) = RESOURCE_MODEL;
     option (requires_idempotency) = true;
     option (default_deadline_ms) = 5000;
     option (max_deadline_ms) = 30000;

@@ -1847,7 +1847,10 @@ fsync。intent/receipt只保存固定身份、版本和受限摘要，绝不保�
 独立维护存储与既有Host执行journal同属Host，可使用同一SQLite文件的独立短事务连接；不访问四业务PG。
 维护operation/阶段/admission/命令幂等/audit/changes是本地权威，Runtime gate只有typed端口，真实backend
 和RPC接线尚待后续。维护关闭接纳先于Runtime禁派确认；重启保留Closed，未知执行不能被Restore/Resume
-清零。后台每次最多处理一个已冻结执行，TERM/KILL沿既有marker和白名单机制，不开放shell。
+清零。后台每次最多处理一个已冻结执行，TERM/KILL沿既有marker和白名单机制，不开放shell。终止成功只认
+本进程 supervisor 对原 owned child 的真实 waitpid 退出事实；marker 可见、alive=false、proc 信息
+失败或 SIGKILL 返回 EPERM/ESRCH 都不能当停止成功，无法确认时执行保持 Unknown/Blocked（细节见
+doc/02 P08a 执行语义）。
 
 operation changes复用统一Host owner cursor，scope仅自身RESOURCE_HOST，600秒有界窗口、持久epoch/
 sequence/low-water，operation及participants变更与append同事务。普通Host重启epoch不变；日志重建或恢复
@@ -1863,3 +1866,23 @@ v1.1 Host登记要求受控platform_peers中service=host时额外显式host_id�
 在线核验管理委托。Runtime使用实际TLS叶摘要调用受限Identity检查，并核对现有Host allowlist/fence。
 既有非Host enrollment不变，无新数据库/关系/DDL；已初始化Identity不能靠再次bootstrap覆盖登记，须沿
 正式受控注册流程处理。不得将CA/SAN或本地allowlist当作Identity grant，不存储Control bearer供后台恢复。
+
+## 2026-11-04 BOOT-02/04 bootstrap 交付运行配置与运维语义（实现接线，端到端未验收）
+
+- Runtime-only `control_runtime_peers: [{certificate_sha256}]`（≤8、唯一、小写 64-hex）：仅允许实际
+  入站 mTLS 叶指纹命中 allowlist 且叶带 `spiffe://kiarabot/control` URI SAN 的 Control peer 调用
+  `GetBootstrapDelivery`/`Reissue*`/`Report*`。未配置或未命中即 fail-closed（403/不隐式信任）。
+- Control-only `control_api.secret_delivery_recipients`：绝对路径的离线 recipient registry JSON。
+  交付根目录 0700 且属 Control UID，registry 与目录不得 group/world 可写；消费端只读挂载。
+  exact 条目含 `resource_id`+`peer_id`；kind-level 条目省略二者，文件名固定为
+  `<delivery resource id>.bootstrap`，客户端永远不能提供路径/URL/命令。
+- 唯一明文落点是 0600 文件；secret 不进入 argv、Compose 展开输出、日志、audit、receipt 或数据库。
+  `scripts/deploy/target_host_credential.py verify --managed` 校验 sink receipt 的 digest/version CAS；
+  `prune` 不删除已注册 active recipient。
+- 轮换只用显式 reissue+新交付；旧 digest/proof/refresh 在既有 ≤1s gate 内失效。report 响应丢失时
+  Control 对同一 receipt/version 幂等重试，Runtime 保持 PENDING（既不表示成功也不表示失败），收敛
+  依赖重试或显式 reissue；响应丢失先查 GetBootstrapDelivery 或用原幂等请求恢复 delivery_id。
+- 普通 REST/WS 不返回明文；managed plugin 由 Host 以白名单 env 注入，Adapter/外管插件走各自固定
+  部署目录，三种消费方不被混同。交付完成、插件注册、进程运行、配置生效是四种不同事实。
+- 验收状态：配置解析/校验、owner RPC、PG 意图/收据、deploy helper 与 sink 模块已有单元/模块测试；
+  真实 Control→Runtime→文件→消费端整链（BOOT-05）与运维演练尚未执行，属剩余缺口。

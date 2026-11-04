@@ -58,6 +58,22 @@ Status admit_plugin_model(const std::vector<std::string>& granted_permissions) {
   return std::monostate{};
 }
 
+Status admit_plugin_model_stream(const InstanceId& authenticated_instance,
+                                 const PluginCapabilityProfile& profile,
+                                 const std::vector<std::string>& granted_permissions) {
+  if (!bound_to(authenticated_instance, profile)) {
+    return denied(ErrorCode::Unauthenticated);
+  }
+  if (!contains(profile.features, "host.model.stream.v1") ||
+      !contains(profile.features, "host.model.v1")) {
+    return denied(ErrorCode::CapabilityNotSupported);
+  }
+  if (!contains(granted_permissions, "model.chat")) {
+    return denied(ErrorCode::PermissionDenied);
+  }
+  return std::monostate{};
+}
+
 Outcome<RuntimeModelChatReply>
 submit_plugin_model(RuntimeModelPort& model, const InstanceId& authenticated_instance,
                     const std::vector<std::string>& granted_permissions,

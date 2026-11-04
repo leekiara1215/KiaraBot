@@ -176,3 +176,17 @@ Identity核对当前Host证书/Principal及其存储的RESOURCE_HOST绑定，再
 AuthorizationDecision、Host credential/principal版本，不是可复用授权票据；Runtime仍核对实际TLS、
 HostBridge登记、当前fence及intent/version。旧CheckAuthorization仍强制delegation proof。新增契约登记
 not_implemented，生产接线与验收前不得宣称可用。Host enrollment的host_id显式绑定与PrincipalId独立。
+
+## 2026-11-04 v1.2 观察 feed（logs/tasks/messages，全部新增 target 未实现）
+
+`observations.proto` 追加 `ObservationChangesRequest` 与 `LogMetadata`/`LogChange`/`LogChangesResponse`、
+`TaskMetadata`/`TaskChange`/`TaskChangesResponse`、
+`MessageMetadata`/`MessageMetadataChange`/`MessageMetadataChangesResponse`。
+owner 方法：`IdentityService.ListLogChanges`、`RuntimeService.ListLogChanges`（`log.read`，
+`RESOURCE_CATALOG`/control）、`RuntimeService.ListMessageMetadataChanges`（`message.read`，
+`RESOURCE_ACCOUNT`）、`SchedulerService.ListTaskChanges`（`task.read`，`RESOURCE_TASK`/
+`RESOURCE_INSTANCE`），全部只读、无幂等键、默认/最大 500ms、online 授权、初始 not_implemented。
+每 owner+feed 独立持久 epoch/head/low-water，cursor 绑定 family 与 dataset；提交序用事务计数而非
+`nextval`，600 秒有界保留；三族只含封闭安全投影，无 audit payload、任务 payload/target、
+消息正文或平台原始包。契约 oracle：`tests/observation_feed_contract_test.py`；
+目标兼容检查仍以 `check_contracts.sh` 与 v1.1 descriptor 基线为准。

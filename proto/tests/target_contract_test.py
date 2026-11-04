@@ -12,6 +12,7 @@ from kiarabot.v1 import common_pb2, platform_pb2, policy_pb2, runtime_pb2, ident
 from resource_query_rules import runtime_query_valid
 from capability_expansion_contract_test import check_expansion_contract
 from model_stream_contract_test import check_model_stream_contract
+from observation_feed_contract_test import check_observation_feed_contract
 from host_gate_authorization_contract_test import check_host_gate_authorization_contract
 from identity_projection_rules import allows, validate_current_projection, session_state, access_seconds_remaining, assignment_command_valid
 
@@ -343,6 +344,7 @@ def main():
     check_expansion_contract()
     check_model_stream_contract()
     check_host_gate_authorization_contract()
+    check_observation_feed_contract()
     goldens = json.loads((ROOT / 'proto/tests/target_wire_goldens.json').read_text())
     assert goldens['schema_version'] == 1
     for fixture in goldens['fixtures']:

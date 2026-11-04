@@ -992,6 +992,128 @@ void exercise(w::IdentityService::Stub& stub, ApplicationFixture& app,
            w::CAPABILITY_NOT_SUPPORTED);
   require(app.calls.load() == before_unsupported);
 }
+// Transport-scoped fixture for the v1.1 Host gate RPC. The authorization decision itself belongs to
+// the pure application tests; this proves wire shape, verified-peer plumbing and stable decision/
+// error projection over real mTLS only.
+class HostGateFixture final : public t::IdentityAuthorizationApplication {
+public:
+  std::atomic<int> mode{0};
+  std::atomic<int> calls{0};
+  std::string last_host;
+  t::Sha256Digest last_fingerprint{};
+  t::Outcome<t::CheckAuthorizationReply>
+  check_authorization(const t::CheckAuthorizationRequest&) override {
+    return t::Failure{t::ErrorCode::CapabilityNotSupported, t::Acceptance::NotAccepted,
+                      t::Recovery::Diagnose, std::nullopt, std::nullopt};
+  }
+  t::Outcome<t::CheckHostGateAuthorizationReply>
+  check_host_gate_authorization(const t::CheckHostGateAuthorizationRequest& request) override {
+    ++calls;
+    last_host = request.host.id.value;
+    last_fingerprint = request.host_certificate;
+    const auto* peer = std::get_if<t::PlatformPeer>(&request.recipient.binding.peer);
+    require(peer && peer->service == t::Service::Control);
+    t::CheckHostGateAuthorizationReply reply{{true, {7}, kChecked, std::nullopt}, {3}, {5}};
+    switch (mode.load()) {
+    case 0:
+      return reply;
+    case 1:
+      reply.decision.allowed = false;
+      reply.decision.denial = t::Failure{t::ErrorCode::PermissionDenied, t::Acceptance::NotAccepted,
+                                         t::Recovery::Authenticate, std::nullopt, std::nullopt};
+      return reply;
+    case 2:
+      return t::Failure{t::ErrorCode::Unauthenticated, t::Acceptance::NotAccepted,
+                        t::Recovery::Authenticate, std::nullopt, std::nullopt};
+    case 3:
+      return t::Failure{t::ErrorCode::UpstreamUnavailable, t::Acceptance::NotAccepted,
+                        t::Recovery::Backoff, std::nullopt, std::nullopt};
+    case 4:
+      reply.decision.authorization_version = {0};
+      return reply;
+    case 5:
+      reply.decision.checked_at = {};
+      return reply;
+    case 6:
+      reply.decision.denial = t::Failure{t::ErrorCode::PermissionDenied, t::Acceptance::NotAccepted,
+                                         t::Recovery::Authenticate, std::nullopt, std::nullopt};
+      return reply;
+    case 7:
+      reply.decision.allowed = false;
+      return reply;
+    case 8:
+      reply.host_credential_version = {0};
+      return reply;
+    default:
+      reply.host_principal_version = {0};
+      return reply;
+    }
+  }
+};
+w::IdentityCheckHostGateAuthorizationRequest host_gate_wire_request() {
+  w::IdentityCheckHostGateAuthorizationRequest request;
+  request_context(request.mutable_context());
+  auto* host = request.mutable_host();
+  host->set_kind(w::RESOURCE_HOST);
+  host->set_id(kOther);
+  request.set_host_certificate_sha256(std::string(32, 'a'));
+  return request;
+}
+void exercise_host_gate(w::IdentityService::Stub& stub, HostGateFixture& app,
+                        std::atomic<int>& auth_mode) {
+  const std::string fingerprint(32, 'a');
+  auto request = host_gate_wire_request();
+  w::IdentityCheckHostGateAuthorizationResponse reply;
+  require(call(stub, &w::IdentityService::Stub::CheckHostGateAuthorization, request, &reply).ok());
+  require(app.calls.load() == 1 && app.last_host == kOther);
+  require(std::equal(
+      app.last_fingerprint.bytes.begin(), app.last_fingerprint.bytes.end(), fingerprint.begin(),
+      [](std::byte left, char right) { return left == static_cast<std::byte>(right); }));
+  require(reply.decision().allowed() && reply.decision().authorization_version() == 7 &&
+          reply.decision().checked_at().nanos() == 123456789 && !reply.decision().has_denial() &&
+          reply.host_credential_version() == 3 && reply.host_principal_version() == 5);
+  app.mode.store(1);
+  require(call(stub, &w::IdentityService::Stub::CheckHostGateAuthorization, request, &reply).ok());
+  require(!reply.decision().allowed() && reply.decision().has_denial() &&
+          reply.decision().denial().code() == w::PERMISSION_DENIED &&
+          reply.host_credential_version() == 3 && reply.host_principal_version() == 5);
+  const auto invalid_call = [&](const w::IdentityCheckHostGateAuthorizationRequest& bad,
+                                w::ErrorCode expected = w::INVALID_ARGUMENT) {
+    w::IdentityCheckHostGateAuthorizationResponse rejected_reply;
+    rejected(
+        call(stub, &w::IdentityService::Stub::CheckHostGateAuthorization, bad, &rejected_reply),
+        expected);
+  };
+  auto no_context = request;
+  no_context.clear_context();
+  invalid_call(no_context);
+  auto missing_host = request;
+  missing_host.clear_host();
+  invalid_call(missing_host);
+  auto short_fingerprint = request;
+  short_fingerprint.set_host_certificate_sha256(std::string(31, 'a'));
+  invalid_call(short_fingerprint);
+  auto long_fingerprint = request;
+  long_fingerprint.set_host_certificate_sha256(std::string(33, 'a'));
+  invalid_call(long_fingerprint);
+  auto wrong_kind = request;
+  wrong_kind.mutable_host()->set_kind(w::RESOURCE_PRINCIPAL);
+  invalid_call(wrong_kind);
+  app.mode.store(2);
+  invalid_call(request, w::UNAUTHENTICATED);
+  app.mode.store(3);
+  invalid_call(request, w::UPSTREAM_UNAVAILABLE);
+  for (int mode = 4; mode <= 9; ++mode) {
+    app.mode.store(mode);
+    invalid_call(request, w::INTERNAL);
+  }
+  app.mode.store(0);
+  auth_mode.store(1);
+  invalid_call(request, w::UNAUTHENTICATED);
+  auth_mode.store(0);
+  // Only calls that pass the wire shape and the verified mTLS peer reach the application.
+  require(app.calls.load() == 2 + 2 + 6);
+}
 // Read-only repository fixture for the production authenticator. Certificate parsing/verification
 // below uses the real OpenSSL adapter; this fixture does not claim PostgreSQL persistence proof.
 void exercise_invocation_deadline(w::IdentityService::Stub& stub, ApplicationFixture& app,
@@ -2544,6 +2666,22 @@ int main(int argc, char* argv[]) {
     require(auth_calls.load() == before);
     server->Shutdown();
     server->Wait();
+    HostGateFixture host_gate;
+    auto host_gate_service =
+        std::get<std::unique_ptr<w::IdentityService::Service>>(p::make_identity_rpc(
+            app, verifier, nullptr, lifecycle, p::IdentityRpcOptions{.authorization = &host_gate}));
+    grpc::ServerBuilder host_gate_builder;
+    int host_gate_port = 0;
+    host_gate_builder.RegisterService(host_gate_service.get());
+    host_gate_builder.AddListeningPort("127.0.0.1:0", grpc::SslServerCredentials(options),
+                                       &host_gate_port);
+    auto host_gate_server = host_gate_builder.BuildAndStart();
+    require(host_gate_server && host_gate_port > 0);
+    auto host_gate_stub = w::IdentityService::NewStub(grpc::CreateChannel(
+        "localhost:" + std::to_string(host_gate_port), grpc::SslCredentials(client)));
+    exercise_host_gate(*host_gate_stub, host_gate, auth_mode);
+    host_gate_server->Shutdown();
+    host_gate_server->Wait();
     auto principal_service =
         std::get<std::unique_ptr<w::IdentityService::Service>>(p::make_identity_rpc(
             app, verifier, nullptr, lifecycle, p::IdentityRpcOptions{.principal = &principal_app}));

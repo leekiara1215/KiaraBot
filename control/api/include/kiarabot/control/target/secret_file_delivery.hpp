@@ -11,6 +11,9 @@ namespace kiarabot::control::target {
 
 // Trusted composition input, never parsed from a delivery/HTTP request. One fixed peer per
 // recipient; Account bindings name the assigned adapter peer, Instance bindings name the plugin.
+// `resource.id` may be empty for a KIND-LEVEL recipient: it then accepts every resource of
+// `resource.kind` but keeps this fixed directory/owner and derives the installed file name from the
+// exact delivery resource id (`<resource_id>.bootstrap`). A non-empty id is exact and must match.
 struct SecretFileRecipient {
   std::string recipient_id;
   core::target::ResourceRef resource;

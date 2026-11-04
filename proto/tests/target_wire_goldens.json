@@ -467,7 +467,7 @@
         "logical_call_id": "11111111-1111-4111-8111-111111111111",
         "sequence": "1",
         "delta": {
-          "text": "你好"
+          "text": "\u4f60\u597d"
         }
       },
       "wire_hex": "0a2431313131313131312d313131312d343131312d383131312d313131313131313131313131122431313131313131312d313131312d343131312d383131312d3131313131313131313131311801220a776972652d74726163655a080a06e4bda0e5a5bd"
@@ -588,6 +588,118 @@
         "host_principal_version": "2"
       },
       "wire_hex": "0a0c080110071a060880b1ef860710031802"
+    },
+    {
+      "file": "observations.proto",
+      "message": "ObservationChangesRequest",
+      "json": {
+        "context": {
+          "request_id": "33333333-3333-4333-8333-333333333333",
+          "trace_id": "wire-trace",
+          "deadline": "2030-01-01T00:00:00Z"
+        },
+        "scope": {
+          "resources": [
+            {
+              "kind": "RESOURCE_CATALOG",
+              "id": "control"
+            }
+          ]
+        },
+        "page_size": 32
+      },
+      "wire_hex": "0a3a0a2433333333333333332d333333332d343333332d383333332d333333333333333333333333120a776972652d74726163651a060880b1ef8607120d0a0b08101207636f6e74726f6c2020"
+    },
+    {
+      "file": "observations.proto",
+      "message": "LogChange",
+      "json": {
+        "log": {
+          "owner_service": "runtime",
+          "entry_id": "entry-1111",
+          "severity": "INFO",
+          "component": "runtime.rpc",
+          "method": "ListLogs",
+          "event": "request.recorded",
+          "resource": {
+            "kind": "RESOURCE_CATALOG",
+            "id": "control"
+          },
+          "request_id": "11111111-1111-4111-8111-111111111111",
+          "trace_id": "wire-trace",
+          "occurred_at": "2026-11-04T10:00:00Z"
+        },
+        "cursor": {
+          "source_service": "runtime",
+          "epoch": "feed-epoch-1",
+          "scope": {
+            "resources": [
+              {
+                "kind": "RESOURCE_CATALOG",
+                "id": "control"
+              }
+            ]
+          },
+          "sequence": "7"
+        }
+      },
+      "wire_hex": "0a8b010a0772756e74696d65120a656e7472792d313131311a04494e464f220b72756e74696d652e7270632a084c6973744c6f67733210726571756573742e7265636f726465643a0b08101207636f6e74726f6c422431313131313131312d313131312d343131312d383131312d3131313131313131313131314a0a776972652d7472616365520608a084acd70612280a0772756e74696d65120c666565642d65706f63682d311a0d0a0b08101207636f6e74726f6c2007"
+    },
+    {
+      "file": "observations.proto",
+      "message": "TaskChange",
+      "json": {
+        "task": {
+          "owner_service": "scheduler",
+          "task_id": "22222222-2222-4222-8222-222222222222",
+          "owner_instance_id": "11111111-1111-4111-8111-111111111111",
+          "state": "SCHEDULED_TASK_COMPLETED",
+          "version": "3",
+          "updated_at": "2026-11-04T10:00:05Z",
+          "cancel_requested": false
+        },
+        "cursor": {
+          "source_service": "scheduler",
+          "epoch": "task-epoch-1",
+          "scope": {
+            "resources": [
+              {
+                "kind": "RESOURCE_TASK",
+                "id": "22222222-2222-4222-8222-222222222222"
+              }
+            ]
+          },
+          "sequence": "11"
+        }
+      },
+      "wire_hex": "0a630a097363686564756c6572122432323232323232322d323232322d343232322d383232322d3232323232323232323232321a2431313131313131312d313131312d343131312d383131312d31313131313131313131313120042803320608a584acd70612470a097363686564756c6572120c7461736b2d65706f63682d311a2a0a280808122432323232323232322d323232322d343232322d383232322d323232323232323232323232200b"
+    },
+    {
+      "file": "observations.proto",
+      "message": "MessageMetadataChange",
+      "json": {
+        "message": {
+          "owner_service": "runtime",
+          "message_id": "44444444-4444-4444-8444-444444444444",
+          "conversation_id": "55555555-5555-4555-8555-555555555555",
+          "account_id": "11111111-1111-4111-8111-111111111111",
+          "received_at": "2026-11-04T10:00:03Z"
+        },
+        "cursor": {
+          "source_service": "runtime",
+          "epoch": "message-epoch-1",
+          "scope": {
+            "resources": [
+              {
+                "kind": "RESOURCE_ACCOUNT",
+                "id": "11111111-1111-4111-8111-111111111111"
+              }
+            ]
+          },
+          "sequence": "5"
+        }
+      },
+      "wire_hex": "0a83010a0772756e74696d65122434343434343434342d343434342d343434342d383434342d3434343434343434343434341a2435353535353535352d353535352d343535352d383535352d353535353535353535353535222431313131313131312d313131312d343131312d383131312d3131313131313131313131312a0608a384acd70612480a0772756e74696d65120f6d6573736167652d65706f63682d311a2a0a280801122431313131313131312d313131312d343131312d383131312d3131313131313131313131312005"
     }
   ]
 }

@@ -12,6 +12,7 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -25,7 +26,9 @@
 #include "kiarabot/core/application/target/runtime_storage_application.hpp"
 #include "kiarabot/core/application/target/runtime_task_application.hpp"
 #include "kiarabot/core/ports/target/runtime_model.hpp"
+#include "kiarabot/core/runtime/platform/model_stream_codec.hpp"
 #include "kiarabot/core/runtime/platform/runtime_bridge.hpp"
+#include "kiarabot/v1/model_stream.pb.h"
 #include "kiarabot/v1/plugins.pb.h"
 #include "kiarabot/v1/services.pb.h"
 
@@ -310,6 +313,76 @@ struct FakeModel final : target::RuntimeModelPort {
     terminal.emplace(request.logical_call_id, reply);
     return reply;
   }
+  enum class StreamMode { Success, Blocking, Denied, Unknown };
+  StreamMode stream_mode = StreamMode::Success;
+  int stream_attempts = 0;
+  std::optional<target::RuntimeModelStreamRequest> last_stream_request;
+
+  target::Outcome<target::RuntimeModelStreamResult>
+  chat_stream(const target::RuntimeModelStreamRequest& request,
+              target::RuntimeModelStreamSink& sink, std::stop_token cancellation,
+              target::TimePoint) override {
+    ++stream_attempts;
+    last_stream_request = request;
+    if (stream_mode == StreamMode::Denied) {
+      return bridge_failure(target::ErrorCode::PermissionDenied);
+    }
+    if (stream_mode == StreamMode::Unknown) {
+      return bridge_failure(target::ErrorCode::UpstreamUnavailable, target::Acceptance::Unknown,
+                            target::Recovery::QuerySameIdentity);
+    }
+    target::ModelIntent call;
+    call.owner = {request.instance.value};
+    call.logical_call_id = request.logical_call_id;
+    call.model = {"11111111-1111-4111-8111-111111111111"};
+    call.config_version = {1};
+    call.secret_version = {1};
+    call.state = target::ModelCallState::Started;
+    call.may_have_billed = true;
+    call.observed_at = now();
+    target::ModelStreamEvent started{
+        request.request_id, request.logical_call_id, 0, request.trace_id,
+        target::ModelStreamStarted{target::ModelStreamDisposition::Fresh, call}};
+    if (sink.try_emit(started) != target::ModelStreamSinkResult::Accepted) {
+      return bridge_failure(target::ErrorCode::UpstreamUnavailable);
+    }
+    target::ModelStreamEvent delta{request.request_id, request.logical_call_id, 1, request.trace_id,
+                                   target::ModelStreamDelta{"answer"}};
+    if (sink.try_emit(delta) != target::ModelStreamSinkResult::Accepted) {
+      return bridge_failure(target::ErrorCode::UpstreamUnavailable);
+    }
+    if (stream_mode == StreamMode::Blocking) {
+      while (!cancellation.stop_requested()) {
+        std::this_thread::sleep_for(std::chrono::milliseconds{5});
+      }
+      target::RuntimeModelStreamResult stopped;
+      stopped.cancelled_by_consumer = true;
+      stopped.received_bytes = 6;
+      stopped.received_delta_count = 1;
+      return stopped;
+    }
+    call.state = target::ModelCallState::Succeeded;
+    call.usage_known = true;
+    call.input_tokens = 2;
+    call.output_tokens = 3;
+    target::ModelStreamTerminal terminal;
+    terminal.termination = target::ModelStreamTermination::Completed;
+    terminal.finish_reason = target::ModelStreamFinishReason::Stop;
+    terminal.emitted_bytes = 6;
+    terminal.emitted_delta_count = 1;
+    terminal.call = call;
+    terminal.usage = {true, 2, 3};
+    target::ModelStreamEvent done{request.request_id, request.logical_call_id, 2, request.trace_id,
+                                  terminal};
+    if (sink.try_emit(done) != target::ModelStreamSinkResult::Accepted) {
+      return bridge_failure(target::ErrorCode::UpstreamUnavailable);
+    }
+    target::RuntimeModelStreamResult result;
+    result.terminal = terminal;
+    result.received_bytes = 6;
+    result.received_delta_count = 1;
+    return result;
+  }
   bool available() const noexcept override {
     return true;
   }
@@ -483,11 +556,12 @@ struct PluginConnection {
   explicit PluginConnection(Fixture& fixture, std::string_view scenario,
                             std::vector<std::string> plugin_permissions = {"model.chat"},
                             std::vector<std::string> plugin_features = {"host.model.v1"},
-                            std::vector<std::string> plugin_capabilities = {})
+                            std::vector<std::string> plugin_capabilities = {},
+                            std::chrono::seconds transport_deadline = 20s)
       : case_name(scenario), application(fixture.app), permissions(std::move(plugin_permissions)),
         features(std::move(plugin_features)), capabilities(std::move(plugin_capabilities)) {
     context = std::make_unique<grpc::ClientContext>();
-    context->set_deadline(std::chrono::system_clock::now() + 20s);
+    context->set_deadline(std::chrono::system_clock::now() + transport_deadline);
     context->AddMetadata("authorization", "Bearer " + std::string(32, 'p'));
     stream = fixture.stub->Connect(context.get());
     wire::PluginToCore register_frame;
@@ -605,6 +679,35 @@ struct PluginConnection {
   }
 };
 
+constexpr char kStreamStartId[] = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
+constexpr char kStreamTraceId[] = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
+constexpr char kStreamCallId[] = "ffffffff-ffff-4fff-8fff-ffffffffffff";
+constexpr char kStreamCallId2[] = "99999999-9999-4999-8999-999999999999";
+wire::HostRequest stream_start_request(std::string request_id, std::string trace_id,
+                                       std::string logical, std::string text = "hello") {
+  wire::HostRequest request;
+  request.set_request_id(std::move(request_id));
+  request.set_trace_id(std::move(trace_id));
+  *request.mutable_deadline() = timestamp(now(), 5);
+  auto* start = request.mutable_model_stream_start();
+  start->set_model("default");
+  start->set_logical_call_id(std::move(logical));
+  auto* message = start->add_messages();
+  message->set_role("user");
+  message->set_text(std::move(text));
+  return request;
+}
+wire::HostRequest stream_cancel_request(std::string request_id, std::string start_request_id,
+                                        std::string logical) {
+  wire::HostRequest request;
+  request.set_request_id(std::move(request_id));
+  request.set_trace_id(std::string{kStreamTraceId});
+  *request.mutable_deadline() = timestamp(now(), 5);
+  auto* cancel = request.mutable_model_stream_cancel();
+  cancel->set_start_request_id(std::move(start_request_id));
+  cancel->set_logical_call_id(std::move(logical));
+  return request;
+}
 std::string raw_field(unsigned int tag, bool length_delimited = true) {
   unsigned int value = (tag << 3) | (length_delimited ? 2U : 0U);
   std::string bytes;
@@ -668,6 +771,189 @@ void host_request_shapes() {
   connection.close();
 }
 
+void streaming() {
+  // Ordered event delivery: start has no HostResponse, only model_stream_event frames.
+  Fixture fixture;
+  PluginConnection connection(fixture, "stream-success", {"model.chat"},
+                              {"host.model.v1", "host.model.stream.v1"}, {}, 8s);
+  require(connection.stream->Write(connection.frame(
+              stream_start_request(kStreamStartId, kStreamTraceId, kStreamCallId))),
+          "stream start frame");
+  std::vector<wire::CoreToPlugin> frames;
+  while (frames.size() < 3) {
+    wire::CoreToPlugin response;
+    require(connection.stream->Read(&response), "stream event read");
+    require(!response.has_host_response(), "successful stream start has no HostResponse");
+    frames.push_back(std::move(response));
+  }
+  require(frames[0].model_stream_event().has_started() &&
+              frames[0].model_stream_event().sequence() == 0 &&
+              frames[1].model_stream_event().has_delta() &&
+              frames[1].model_stream_event().sequence() == 1 &&
+              frames[2].model_stream_event().has_terminal() &&
+              frames[2].model_stream_event().sequence() == 2 &&
+              frames[2].model_stream_event().terminal().termination() ==
+                  wire::MODEL_STREAM_COMPLETED,
+          "ordered started/delta/terminal events");
+  for (const auto& frame : frames) {
+    require(frame.model_stream_event().request_id() == kStreamStartId &&
+                frame.model_stream_event().logical_call_id() == kStreamCallId &&
+                frame.model_stream_event().trace_id() == kStreamTraceId,
+            "attempt correlation on every event");
+    require(frame.fence().instance_id() == connection.instance,
+            "events carry the current connection fence");
+  }
+  require(fixture.model.stream_attempts == 1 && fixture.model.last_stream_request &&
+              fixture.model.last_stream_request->instance.value == connection.instance &&
+              fixture.model.last_stream_request->messages.size() == 1,
+          "stream request derives instance from the authenticated session");
+  connection.close();
+
+  // Feature not negotiated: failure precedes the model port.
+  Fixture no_feature;
+  PluginConnection unsupported(no_feature, "stream-feature-missing", {"model.chat"},
+                               {"host.model.v1"}, {}, 8s);
+  const auto unsupported_response =
+      unsupported.host(stream_start_request(kStreamStartId, kStreamTraceId, kStreamCallId));
+  require(unsupported_response.has_error() &&
+              unsupported_response.error().code() == wire::CAPABILITY_NOT_SUPPORTED &&
+              no_feature.model.stream_attempts == 0,
+          "missing host.model.stream.v1 feature rejected before the model port");
+  unsupported.close();
+
+  // Invalid start shape (non-UUID logical id) is rejected before the model port.
+  Fixture shape;
+  PluginConnection bad_shape(shape, "stream-invalid-shape", {"model.chat"},
+                             {"host.model.v1", "host.model.stream.v1"}, {}, 8s);
+  const auto bad =
+      bad_shape.host(stream_start_request(kStreamStartId, kStreamTraceId, "not-a-uuid"));
+  require(bad.has_error() && bad.error().code() == wire::INVALID_ARGUMENT &&
+              shape.model.stream_attempts == 0,
+          "invalid stream start rejected before the model port");
+  bad_shape.close();
+
+  // Pre-start Model rejection is a correlated HostResponse error, not a stream event.
+  Fixture denied_fixture;
+  denied_fixture.model.stream_mode = FakeModel::StreamMode::Denied;
+  PluginConnection denied(denied_fixture, "stream-pre-start-denied", {"model.chat"},
+                          {"host.model.v1", "host.model.stream.v1"}, {}, 8s);
+  const auto denied_response =
+      denied.host(stream_start_request(kStreamStartId, kStreamTraceId, kStreamCallId));
+  require(denied_response.has_error() &&
+              denied_response.error().code() == wire::PERMISSION_DENIED &&
+              denied_response.request_id() == kStreamStartId &&
+              denied_response.error().request_id() == kStreamStartId,
+          "pre-start rejection is a correlated HostResponse error");
+  denied.close();
+
+  // Cancel receipt + in-band CANCELLED terminal, duplicate and foreign cancel dispositions.
+  Fixture cancel_fixture;
+  cancel_fixture.model.stream_mode = FakeModel::StreamMode::Blocking;
+  PluginConnection cancel(cancel_fixture, "stream-cancel", {"model.chat"},
+                          {"host.model.v1", "host.model.stream.v1"}, {}, 8s);
+  require(cancel.stream->Write(
+              cancel.frame(stream_start_request(kStreamStartId, kStreamTraceId, kStreamCallId))),
+          "blocking stream start");
+  {
+    wire::CoreToPlugin started_frame;
+    require(cancel.stream->Read(&started_frame) && started_frame.model_stream_event().has_started(),
+            "started before cancel");
+  }
+  const auto receipt = cancel.host(
+      stream_cancel_request("aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee", kStreamStartId, kStreamCallId));
+  require(receipt.has_model_stream_cancel() &&
+              receipt.model_stream_cancel().disposition() ==
+                  wire::MODEL_STREAM_CANCELLATION_REQUESTED &&
+              receipt.model_stream_cancel().start_request_id() == kStreamStartId,
+          "cancel receipt is local and correlated");
+  {
+    wire::CoreToPlugin terminal_frame;
+    bool saw_terminal = false;
+    while (!saw_terminal && cancel.stream->Read(&terminal_frame)) {
+      if (!terminal_frame.has_model_stream_event()) {
+        continue;
+      }
+      const auto& event = terminal_frame.model_stream_event();
+      if (event.has_terminal()) {
+        require(event.terminal().termination() == wire::MODEL_STREAM_CANCELLED &&
+                    event.terminal().partial() && event.sequence() == 2 &&
+                    event.terminal().may_have_billed(),
+                "cancelled terminal preserves partial and billing facts");
+        saw_terminal = true;
+      }
+    }
+    require(saw_terminal, "cancel produces one in-band terminal");
+  }
+  const auto duplicate = cancel.host(
+      stream_cancel_request("aaaaaaaa-bbbb-4ccc-8eee-eeeeeeeeeeee", kStreamStartId, kStreamCallId));
+  require(duplicate.has_model_stream_cancel() &&
+              duplicate.model_stream_cancel().disposition() == wire::MODEL_STREAM_ALREADY_TERMINAL,
+          "duplicate cancel after terminal reports ALREADY_TERMINAL");
+  const auto foreign = cancel.host(stream_cancel_request("aaaaaaaa-bbbb-4ccc-8fff-eeeeeeeeeeee",
+                                                         kStreamStartId, kStreamCallId2));
+  require(foreign.has_model_stream_cancel() &&
+              foreign.model_stream_cancel().disposition() == wire::MODEL_STREAM_NOT_ACTIVE,
+          "foreign logical id cannot cancel another attempt");
+  cancel.close();
+
+  // Per-connection limit: the fifth concurrent stream is a retryable RATE_LIMITED refusal.
+  Fixture limit_fixture;
+  limit_fixture.model.stream_mode = FakeModel::StreamMode::Blocking;
+  PluginConnection limited(limit_fixture, "stream-connection-limit", {"model.chat"},
+                           {"host.model.v1", "host.model.stream.v1"}, {}, 8s);
+  for (int index = 0; index < 4; ++index) {
+    wire::HostRequest start = stream_start_request(
+        std::string{"11111111-1111-4111-8111-11111111111"} + static_cast<char>('0' + index),
+        std::string{"22222222-2222-4222-8222-22222222222"} + static_cast<char>('0' + index),
+        std::string{"33333333-3333-4333-8333-33333333333"} + static_cast<char>('0' + index));
+    require(limited.stream->Write(limited.frame(start)), "concurrent stream start");
+    wire::CoreToPlugin started_frame;
+    require(limited.stream->Read(&started_frame) &&
+                started_frame.model_stream_event().has_started(),
+            "each admitted stream starts");
+  }
+  const auto over_limit = limited.host(stream_start_request(
+      "44444444-4444-4444-8444-444444444445", "55555555-5555-4555-8555-555555555555",
+      "66666666-6666-4666-8666-666666666666"));
+  require(over_limit.has_error() && over_limit.error().code() == wire::RATE_LIMITED &&
+              over_limit.error().retryable(),
+          "fifth concurrent stream is a retryable RATE_LIMITED refusal");
+  limited.close();
+
+  // Two concurrent attempts (different plugin connections) keep independent correlation and never
+  // cross frames.
+  Fixture cross_first_fixture;
+  Fixture cross_second_fixture;
+  PluginConnection first(cross_first_fixture, "stream-first", {"model.chat"},
+                         {"host.model.v1", "host.model.stream.v1"}, {}, 8s);
+  PluginConnection second(cross_second_fixture, "stream-second", {"model.chat"},
+                          {"host.model.v1", "host.model.stream.v1"}, {}, 8s);
+  require(first.stream->Write(
+              first.frame(stream_start_request(kStreamStartId, kStreamTraceId, kStreamCallId))),
+          "first stream start");
+  require(second.stream->Write(second.frame(
+              stream_start_request("77777777-7777-4777-8777-777777777777",
+                                   "88888888-8888-4888-8888-888888888888", kStreamCallId2))),
+          "second stream start");
+  std::map<std::string, std::vector<wire::CoreToPlugin>> collected;
+  for (int index = 0; index < 6; ++index) {
+    wire::CoreToPlugin frame;
+    auto& reader = index % 2 == 0 ? first : second;
+    require(reader.stream->Read(&frame) && frame.has_model_stream_event(),
+            "concurrent stream event read");
+    collected[frame.model_stream_event().request_id()].push_back(std::move(frame));
+  }
+  require(collected.size() == 2, "two attempts stay independent");
+  for (const auto& [request_id, frames] : collected) {
+    (void)request_id;
+    require(frames.size() == 3 && frames[0].model_stream_event().has_started() &&
+                frames[1].model_stream_event().has_delta() &&
+                frames[2].model_stream_event().has_terminal(),
+            "each attempt has its own ordered prefix");
+  }
+  first.close();
+  second.close();
+}
 void run() {
   Fixture fixture;
   PluginConnection connection(fixture, "model-outcomes");
@@ -891,6 +1177,7 @@ int main() {
   try {
     host_request_shapes();
     run();
+    streaming();
   } catch (const std::exception& error) {
     std::cerr << error.what() << '\n';
     return 1;

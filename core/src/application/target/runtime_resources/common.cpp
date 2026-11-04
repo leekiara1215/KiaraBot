@@ -1,5 +1,7 @@
 #include "common.hpp"
 
+#include "kiarabot/core/application/target/runtime_resources/bootstrap.hpp"
+
 namespace kiarabot::core::target::runtime_resources_detail {
 Failure failure(ErrorCode code, Recovery recovery, Acceptance acceptance) {
   return {code, acceptance, recovery, std::nullopt, std::nullopt};
@@ -203,12 +205,19 @@ Outcome<Operation> accepted_operation(RuntimeUnitOfWork& work, const CommandCont
 Outcome<std::optional<std::string>>
 issue_bootstrap_credential(RuntimeUnitOfWork& work, RuntimeIdPort& ids, RuntimeSecretPort& secrets,
                            const std::string& resource_id, TimePoint now) {
-  auto active = work.bridge_credentials().active(resource_id);
-  if (const auto* failure = std::get_if<Failure>(&active)) {
+  // The persisted version is authoritative even on the legacy omitted-recipient path: a reissued
+  // credential must never reuse a version that an old proof/refresh could still present.
+  auto latest = work.bridge_credentials().latest(resource_id);
+  if (const auto* failure = std::get_if<Failure>(&latest)) {
     return *failure;
   }
-  if (std::get<bool>(active)) {
+  const auto& latest_record = std::get<std::optional<BridgeCredentialRecord>>(latest);
+  if (latest_record && !latest_record->revoked) {
     return std::nullopt;
+  }
+  auto version = next_bootstrap_credential_version(latest_record);
+  if (const auto* failure = std::get_if<Failure>(&version)) {
+    return *failure;
   }
   auto text = secrets.bootstrap_credential();
   if (const auto* failure = std::get_if<Failure>(&text)) {
@@ -222,8 +231,9 @@ issue_bootstrap_credential(RuntimeUnitOfWork& work, RuntimeIdPort& ids, RuntimeS
   if (const auto* failure = std::get_if<Failure>(&id)) {
     return *failure;
   }
-  BridgeCredentialRecord record{std::get<std::string>(id), resource_id,
-                                std::get<Sha256Digest>(digest), now, false};
+  BridgeCredentialRecord record{
+      std::get<std::string>(id),       resource_id, std::get<Sha256Digest>(digest), now, false,
+      std::get<std::uint64_t>(version)};
   const auto saved = work.bridge_credentials().insert(record);
   if (const auto* failure = std::get_if<Failure>(&saved)) {
     return *failure;

@@ -1,8 +1,16 @@
 #include "kiarabot/control/target/websocket_source_client.hpp"
 
+#include <algorithm>
+#include <array>
 #include <chrono>
+#include <cstdint>
+#include <memory>
 #include <mutex>
+#include <optional>
 #include <set>
+#include <string>
+#include <string_view>
+#include <utility>
 
 #include <grpcpp/grpcpp.h>
 #include <openssl/rand.h>
@@ -62,6 +70,20 @@ WebSocketFailure failed(const grpc::Status& status, const v1::RequestContext& re
   default:
     return {v1::INTERNAL, false};
   }
+}
+bool valid_identity(const WebSocketIdentity& identity) {
+  const auto sane = [](const core::target::TimePoint& value) {
+    const auto seconds = std::chrono::duration_cast<std::chrono::seconds>(value.time_since_epoch());
+    return seconds.count() >= 946684800 && seconds.count() < 7258118400;
+  };
+  return !identity.principal.empty() && identity.principal.size() <= 128 &&
+         std::all_of(identity.principal.begin(), identity.principal.end(),
+                     [](unsigned char c) { return c >= 32 && c <= 126; }) &&
+         identity.identity_session.size() >= 32 && identity.identity_session.size() <= 256 &&
+         std::all_of(identity.identity_session.begin(), identity.identity_session.end(),
+                     [](unsigned char c) { return c >= 32 && c <= 126; }) &&
+         identity.authorization_version != 0 && sane(identity.checked_at) &&
+         sane(identity.expires_at) && identity.expires_at > identity.checked_at;
 }
 class Client final : public WebSocketSourcePort {
 public:
@@ -140,7 +162,11 @@ public:
       }
       input.set_page_size(32);
       grpc::ClientContext call;
-      call.set_deadline(wall);
+      const auto remaining_micros = std::chrono::duration_cast<std::chrono::microseconds>(
+          wall - std::chrono::system_clock::now());
+      call.set_deadline(gpr_time_add(
+          gpr_now(GPR_CLOCK_MONOTONIC),
+          gpr_time_from_micros(std::max<std::int64_t>(remaining_micros.count(), 1), GPR_TIMESPAN)));
       struct Registration {
         Client& owner;
         grpc::ClientContext& context;
@@ -158,6 +184,9 @@ public:
       }
       WebSocketPoll result;
       result.identity = std::get<WebSocketIdentity>(validation);
+      if (!valid_identity(result.identity)) {
+        return WebSocketFailure{v1::INTERNAL, false};
+      }
       grpc::Status status;
       if (selection.owner == "runtime" && runtime_) {
         status = runtime_->ListOperationChanges(&call, input, &result.operations);
@@ -175,8 +204,11 @@ public:
       if (!page.has_next_cursor() || !page.has_checked_at() || page.changes_size() > 32 ||
           (page.has_more() && page.changes_size() == 0) ||
           page.next_cursor().source_service() != selection.owner ||
+          page.next_cursor().epoch().empty() ||
           !websocket_same_scope(page.next_cursor().scope(), selection.scope) ||
-          (cursor && (page.next_cursor().epoch() != cursor->epoch() ||
+          (cursor && (cursor->source_service() != selection.owner ||
+                      cursor->epoch() != page.next_cursor().epoch() ||
+                      !websocket_same_scope(cursor->scope(), selection.scope) ||
                       page.next_cursor().sequence() < cursor->sequence())) ||
           (!cursor && page.changes_size() != 0) ||
           !std::holds_alternative<std::string>(websocket_cursor_json(page.next_cursor())) ||
@@ -194,9 +226,6 @@ public:
           return WebSocketFailure{v1::INTERNAL, false};
         }
         sequence = change.cursor().sequence();
-      }
-      if (page.has_more() && sequence != page.next_cursor().sequence()) {
-        return WebSocketFailure{v1::INTERNAL, false};
       }
       if (std::chrono::steady_clock::now() >= deadline) {
         return WebSocketFailure{v1::TIMEOUT, false};

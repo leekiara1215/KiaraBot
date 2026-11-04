@@ -25,17 +25,18 @@ std::optional<OwnerHttpResult> OwnerGateway::handle(const OwnerHttpRequest& requ
     const owner_gateway::RequestContext context{
         request, std::string_view{request.target}.substr(0, separator),
         owner_gateway::request_identifier(request), owner_gateway::trace_identifier(request)};
-    const owner_gateway::Ports ports{delegation_, runtime_,    principals_, health_,    resources_,
-                                     tasks_,      operations_, model_,      audit_logs_};
+    const owner_gateway::Ports ports{delegation_, runtime_,         principals_,          health_,
+                                     resources_,  tasks_,           operations_,          model_,
+                                     audit_logs_, secret_delivery_, bootstrap_recipients_};
     // Preserve precedence: catalog reads precede command families; unmatched requests remain
     // available to the other HTTPS handlers. Each family retains its own method/error rules.
-    constexpr std::array<owner_gateway::Handler, 11> kHandlers{
-        owner_gateway::handle_health,    owner_gateway::handle_principals,
-        owner_gateway::handle_catalogs,  owner_gateway::handle_operations,
-        owner_gateway::handle_accounts,  owner_gateway::handle_instances,
-        owner_gateway::handle_tasks,     owner_gateway::handle_audit_logs,
-        owner_gateway::handle_lifecycle, owner_gateway::handle_models,
-        owner_gateway::handle_actions,
+    constexpr std::array<owner_gateway::Handler, 12> kHandlers{
+        owner_gateway::handle_health,     owner_gateway::handle_principals,
+        owner_gateway::handle_catalogs,   owner_gateway::handle_operations,
+        owner_gateway::handle_bootstrap,  owner_gateway::handle_accounts,
+        owner_gateway::handle_instances,  owner_gateway::handle_tasks,
+        owner_gateway::handle_audit_logs, owner_gateway::handle_lifecycle,
+        owner_gateway::handle_models,     owner_gateway::handle_actions,
     };
     for (const auto handler : kHandlers) {
       if (auto result = handler(context, ports)) {

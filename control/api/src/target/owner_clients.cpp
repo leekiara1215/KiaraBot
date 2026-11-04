@@ -168,7 +168,8 @@ class OwnerClients::Impl final : private DelegationPort,
 public:
   Impl(const std::string& identity_endpoint, const std::string& runtime_endpoint,
        const std::string& scheduler_endpoint, const std::string& model_endpoint,
-       const std::string& host_endpoint, const core::platform::TlsMaterial& tls) {
+       const std::string& host_endpoint, const core::platform::TlsMaterial& tls,
+       SecretDeliveryApplication* secret_delivery, BootstrapRecipientsPort* bootstrap_recipients) {
     grpc::SslCredentialsOptions ssl;
     ssl.pem_root_certs = tls.ca;
     ssl.pem_cert_chain = tls.certificate;
@@ -197,7 +198,7 @@ public:
         static_cast<IdentityPrincipalsPort*>(this), static_cast<HealthPort*>(this),
         static_cast<RuntimeResourcesPort*>(this), static_cast<SchedulerTasksPort*>(this),
         static_cast<OperationPort*>(this), static_cast<ModelManagementPort*>(this),
-        static_cast<AuditLogSourcePort*>(this));
+        static_cast<AuditLogSourcePort*>(this), secret_delivery, bootstrap_recipients);
   }
 
   std::optional<AuthHttpResponse> handle(const AuthHttpRequest& request) {
@@ -518,6 +519,31 @@ private:
   OwnerOutcome<wire::RuntimeBindAdapterResponse>
   bind_adapter(const wire::RuntimeBindAdapterRequest& input, std::string_view delegation) override {
     return unary(&wire::RuntimeService::Stub::BindAdapter, input, delegation);
+  }
+  OwnerOutcome<wire::RuntimeGetBootstrapDeliveryResponse>
+  get_bootstrap_delivery(const wire::RuntimeGetBootstrapDeliveryRequest& input,
+                         std::string_view delegation) override {
+    return unary(&wire::RuntimeService::Stub::GetBootstrapDelivery, input, delegation);
+  }
+  OwnerOutcome<wire::RuntimeReissueBootstrapResponse>
+  reissue_adapter_bootstrap(const wire::RuntimeReissueAdapterBootstrapRequest& input,
+                            std::string_view delegation) override {
+    return unary(&wire::RuntimeService::Stub::ReissueAdapterBootstrap, input, delegation);
+  }
+  OwnerOutcome<wire::RuntimeReissueBootstrapResponse>
+  reissue_plugin_bootstrap(const wire::RuntimeReissuePluginBootstrapRequest& input,
+                           std::string_view delegation) override {
+    return unary(&wire::RuntimeService::Stub::ReissuePluginBootstrap, input, delegation);
+  }
+  OwnerOutcome<wire::RuntimeGetBootstrapDeliveryResponse>
+  report_adapter_bootstrap_delivery(const wire::RuntimeReportAdapterBootstrapDeliveryRequest& input,
+                                    std::string_view delegation) override {
+    return unary(&wire::RuntimeService::Stub::ReportAdapterBootstrapDelivery, input, delegation);
+  }
+  OwnerOutcome<wire::RuntimeGetBootstrapDeliveryResponse>
+  report_plugin_bootstrap_delivery(const wire::RuntimeReportPluginBootstrapDeliveryRequest& input,
+                                   std::string_view delegation) override {
+    return unary(&wire::RuntimeService::Stub::ReportPluginBootstrapDelivery, input, delegation);
   }
   OwnerOutcome<wire::RuntimeUnbindAdapterResponse>
   unbind_adapter(const wire::RuntimeUnbindAdapterRequest& input,
@@ -934,9 +960,12 @@ private:
 OwnerClients::OwnerClients(const std::string& identity_endpoint,
                            const std::string& runtime_endpoint,
                            const std::string& scheduler_endpoint, const std::string& model_endpoint,
-                           const std::string& host_endpoint, const core::platform::TlsMaterial& tls)
+                           const std::string& host_endpoint, const core::platform::TlsMaterial& tls,
+                           SecretDeliveryApplication* secret_delivery,
+                           BootstrapRecipientsPort* bootstrap_recipients)
     : impl_(std::make_unique<Impl>(identity_endpoint, runtime_endpoint, scheduler_endpoint,
-                                   model_endpoint, host_endpoint, tls)) {}
+                                   model_endpoint, host_endpoint, tls, secret_delivery,
+                                   bootstrap_recipients)) {}
 OwnerClients::~OwnerClients() = default;
 
 std::optional<AuthHttpResponse> OwnerClients::handle(const AuthHttpRequest& request) {

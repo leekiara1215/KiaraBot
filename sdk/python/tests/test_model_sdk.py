@@ -19,10 +19,10 @@ async def test_generates_stable_logical_call_id():
 
     async def rpc(frame, timeout):
         sent.append(frame)
-        response = plugins.CoreToPlugin(host_response=plugins.HostResponse(
+        # _call/_rpc resolves a host request to the HostResponse itself.
+        return plugins.HostResponse(
             request_id=frame.host_request.request_id,
-            model_chat=plugins.ModelChatResponse(text='hi', input_tokens=2, output_tokens=3)))
-        return response
+            model_chat=plugins.ModelChatResponse(text='hi', input_tokens=2, output_tokens=3))
 
     result = await context(rpc).model_chat('default', [{'role': 'user', 'text': 'hello'}])
     assert result.text == 'hi'
@@ -41,9 +41,9 @@ async def test_retry_reuses_explicit_logical_call_id():
 
     async def rpc(frame, timeout):
         seen.append(frame.host_request.model_chat.logical_call_id)
-        return plugins.CoreToPlugin(host_response=plugins.HostResponse(
+        return plugins.HostResponse(
             request_id=frame.host_request.request_id,
-            model_chat=plugins.ModelChatResponse(text='done')))
+            model_chat=plugins.ModelChatResponse(text='done'))
 
     context(rpc)
     await context(rpc).model_chat('default', [{'role': 'user', 'text': 'hello'}],
@@ -84,9 +84,9 @@ async def test_unknown_outcome_stays_retryable_and_other_errors_do_not():
 
 async def test_host_error_is_returned_as_stable_code():
     async def rpc(frame, timeout):
-        return plugins.CoreToPlugin(host_response=plugins.HostResponse(
+        return plugins.HostResponse(
             request_id=frame.host_request.request_id,
-            error=common.Error(code=common.RATE_LIMITED, message='', retryable=True)))
+            error=common.Error(code=common.RATE_LIMITED, message='', retryable=True))
 
     with pytest.raises(PluginError) as limited:
         await context(rpc).model_chat('default', [{'role': 'user', 'text': 'x'}])

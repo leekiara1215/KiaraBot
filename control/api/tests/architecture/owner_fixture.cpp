@@ -56,8 +56,116 @@ void operation(wire::OperationRef* output, std::string_view id, std::string_view
   output->set_operation_id(std::string{id});
   *output->mutable_resource() = resource;
 }
+// WS-04 target stream fixtures. Scope resource ids select a deterministic journal script:
+// ...0001 live (one change per poll, then idle), ...0002 flood (32 wide changes per poll, bounded
+// at 5000) and ...0003 gap (typed CONFLICT+RESYNC after sequence 2). Other ids behave as an
+// empty, confirmed head so unrelated fixtures keep working.
+constexpr char kStreamLiveAccount[] = "aaaaaaaa-aaaa-4aaa-8aaa-000000000001";
+constexpr char kStreamFloodAccount[] = "aaaaaaaa-aaaa-4aaa-8aaa-000000000002";
+constexpr char kStreamGapAccount[] = "aaaaaaaa-aaaa-4aaa-8aaa-000000000003";
+constexpr char kStreamEpoch[] = "fixture-stream-epoch-1";
+constexpr std::uint64_t kStreamMaximum = 1000000;
+void stamp_now(google::protobuf::Timestamp* output) {
+  const auto now = std::chrono::system_clock::now();
+  const auto seconds = std::chrono::duration_cast<std::chrono::seconds>(now.time_since_epoch());
+  output->set_seconds(seconds.count());
+  output->set_nanos(0);
+}
+bool same_scope(const wire::ResourceScope& left, const wire::ResourceScope& right) {
+  if (left.resources_size() != right.resources_size()) {
+    return false;
+  }
+  for (int index = 0; index < left.resources_size(); ++index) {
+    if (left.resources(index).kind() != right.resources(index).kind() ||
+        left.resources(index).id() != right.resources(index).id()) {
+      return false;
+    }
+  }
+  return true;
+}
+grpc::Status stream_resync(const wire::RequestContext& context) {
+  wire::RpcFailure rpc;
+  rpc.mutable_context()->set_acceptance(wire::NOT_ACCEPTED);
+  rpc.mutable_context()->set_recovery(wire::RESYNC_SNAPSHOT);
+  rpc.mutable_error()->set_code(wire::CONFLICT);
+  rpc.mutable_error()->set_request_id(context.request_id());
+  rpc.mutable_error()->set_trace_id(context.trace_id());
+  rpc.mutable_error()->set_message("fixture-stream-cursor-gap");
+  return {grpc::StatusCode::ABORTED, "fixture-stream-cursor-gap", rpc.SerializeAsString()};
+}
+void stream_cursor(wire::StreamCursor* output, const wire::ResourceScope& scope,
+                   std::uint64_t sequence) {
+  output->set_source_service("runtime");
+  output->set_epoch(kStreamEpoch);
+  *output->mutable_scope() = scope;
+  output->set_sequence(sequence);
+}
+void stream_change(wire::OperationChange* output, const wire::ResourceScope& scope,
+                   std::uint64_t sequence, bool wide) {
+  auto* operation = output->mutable_operation();
+  operation->mutable_ref()->set_owner_service("runtime");
+  operation->mutable_ref()->set_operation_id("operation-" + std::to_string(sequence));
+  *operation->mutable_ref()->mutable_resource() = scope.resources(0);
+  operation->set_version(sequence + 1);
+  operation->set_state(wire::OPERATION_RUNNING);
+  operation->set_execution_outcome(wire::EXECUTION_UNKNOWN);
+  stamp_now(operation->mutable_observed_at());
+  if (wide) {
+    for (int index = 0; index < 16; ++index) {
+      auto* participant = operation->add_participants();
+      participant->set_participant("participant-" + std::to_string(index) + "-" +
+                                   std::string(80, 'p'));
+      participant->set_state(wire::OPERATION_RUNNING);
+    }
+  }
+  stream_cursor(output->mutable_cursor(), scope, sequence);
+}
+void stream_page(const wire::OperationChangesRequest& request,
+                 wire::OperationChangesResponse* output) {
+  const auto& scope = request.scope();
+  const std::string mode = scope.resources(0).id();
+  const std::uint64_t sequence =
+      request.has_cursor() ? request.cursor().sequence() : std::uint64_t{0};
+  std::uint64_t next = request.has_cursor() ? sequence : 0;
+  if (request.has_cursor() && sequence < kStreamMaximum) {
+    if (mode == kStreamFloodAccount) {
+      const auto count = std::min<std::uint64_t>(32, kStreamMaximum - sequence);
+      for (std::uint64_t offset = 1; offset <= count; ++offset) {
+        stream_change(output->add_changes(), scope, sequence + offset, true);
+      }
+      next = sequence + count;
+      output->set_has_more(true);
+    } else if ((mode == kStreamLiveAccount || mode == kStreamGapAccount) && sequence < 5) {
+      stream_change(output->add_changes(), scope, sequence + 1, false);
+      next = sequence + 1;
+    }
+  }
+  stream_cursor(output->mutable_next_cursor(), scope, next);
+  stamp_now(output->mutable_checked_at());
+}
 class FakeRuntime final : public wire::RuntimeService::Service {
 public:
+  grpc::Status ListOperationChanges(
+      grpc::ServerContext*, const wire::OperationChangesRequest* input,
+      wire::OperationChangesResponse* output) override {
+    if (!input->has_context() || !input->context().has_deadline() || !input->has_scope() ||
+        input->scope().resources_size() != 1 || input->page_size() > 100 ||
+        input->context().request_id().empty() || input->context().trace_id().empty()) {
+      return failure(wire::INVALID_ARGUMENT, grpc::StatusCode::INVALID_ARGUMENT, input->context());
+    }
+    const std::string mode = input->scope().resources(0).id();
+    if (mode == kStreamGapAccount && input->has_cursor() &&
+        input->cursor().sequence() >= 2) {
+      return stream_resync(input->context());
+    }
+    if (input->has_cursor() &&
+        (input->cursor().source_service() != "runtime" || input->cursor().epoch() != kStreamEpoch ||
+         !same_scope(input->cursor().scope(), input->scope()))) {
+      return failure(wire::INVALID_ARGUMENT, grpc::StatusCode::INVALID_ARGUMENT, input->context());
+    }
+    stream_page(*input, output);
+    return grpc::Status::OK;
+  }
   grpc::Status CreateAccount(grpc::ServerContext*, const wire::RuntimeCreateAccountRequest* input,
                              wire::RuntimeCreateAccountResponse* output) override {
     if (input->catalog().kind() != wire::RESOURCE_CATALOG ||

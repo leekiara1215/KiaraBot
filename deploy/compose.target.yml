@@ -23,3 +23,24 @@ include:
   - compose.infra.yml
   - compose.core.yml
   - compose.exec.yml
+
+# BOOT-04 controlled bootstrap delivery. Control is the only writer; Host and Adapter mount the
+# same delivery root read-only. Every recipient directory is a fixed offline mapping from
+# `deploy/control/secret-recipients.example.json`; no request can choose a path, URL, owner or
+# command. Secret plaintext appears only in the Control sink's 0600 `<peer>.bootstrap` files and in
+# the consumer's read-only mount; it is never in argv, Compose interpolation, images, or diagnostics.
+# The Plugin Host `host.credential_directory` config value must point at the consumer mount path.
+services:
+  control:
+    volumes:
+      - ${KIARABOT_DELIVERY_DIR:-./target/delivery}:/var/lib/kiarabot-control/delivery
+  plugin-host:
+    volumes:
+      - ${KIARABOT_DELIVERY_DIR:-./target/delivery}:/var/lib/kiarabot-host/credentials:ro
+  adapter:
+    environment:
+      # Existing deployments keep the isolated docker-secret file. Controlled delivery deployments
+      # set this to /run/secrets/delivery/<adapter_instance_id>.bootstrap (the fixed peer file).
+      BRIDGE_BOOTSTRAP_CREDENTIAL_FILE: ${KIARABOT_ADAPTER_BOOTSTRAP_CREDENTIAL_FILE:-/run/secrets/adapter-bootstrap}
+    volumes:
+      - ${KIARABOT_DELIVERY_DIR:-./target/delivery}:/run/secrets/delivery:ro

@@ -9,6 +9,9 @@
 
 namespace kiarabot::control::target {
 
+class SecretDeliveryApplication;
+class BootstrapRecipientsPort;
+
 // Real P12c owner adapters for the target Control process: Identity.IssueDelegation with the
 // caller's access token as subject proof, then the exact owner RPC over mTLS. The gateway itself
 // stays transport-neutral (unit tested); this class only supplies live ports.
@@ -16,7 +19,9 @@ class OwnerClients {
 public:
   OwnerClients(const std::string& identity_endpoint, const std::string& runtime_endpoint,
                const std::string& scheduler_endpoint, const std::string& model_endpoint,
-               const std::string& host_endpoint, const core::platform::TlsMaterial& tls);
+               const std::string& host_endpoint, const core::platform::TlsMaterial& tls,
+               SecretDeliveryApplication* secret_delivery = nullptr,
+               BootstrapRecipientsPort* bootstrap_recipients = nullptr);
   ~OwnerClients();
   OwnerClients(const OwnerClients&) = delete;
   OwnerClients& operator=(const OwnerClients&) = delete;

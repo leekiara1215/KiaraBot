@@ -1267,8 +1267,8 @@ void adapter_flow(Harness& harness) {
   check(failure_is(harness.application->heartbeat(heartbeat), t::ErrorCode::Unauthenticated),
         "pre-restart epoch heartbeat was accepted");
   // Explicit management binding after registration.
-  t::BindAdapterRequest bind{context("runtime.bind_adapter", digest(7)), account.id,
-                             result.adapter.current.instance};
+  t::BindAdapterRequest bind{
+      context("runtime.bind_adapter", digest(7)), account.id, result.adapter.current.instance, {}};
   bind.context.expected_version = std::nullopt;
   auto bound_result = harness.application->bind_adapter(bind);
   check(std::holds_alternative<t::BindingMutation>(bound_result),
@@ -1442,8 +1442,11 @@ void installation_instance_flow(Harness& harness) {
   check(std::holds_alternative<t::PluginInstallation>(created), "installation creation failed");
   const auto& installation = std::get<t::PluginInstallation>(created);
   check(installation.manifest.size() == 1, "installation manifest lost");
-  t::CreateInstanceRequest create{context("runtime.create_instance", digest(21)), installation.id,
-                                  t::ResourceId{kHost}, false};
+  t::CreateInstanceRequest create{context("runtime.create_instance", digest(21)),
+                                  installation.id,
+                                  t::ResourceId{kHost},
+                                  false,
+                                  {}};
   auto instance = harness.application->create_instance(create);
   check(std::holds_alternative<t::InstanceCreation>(instance), "instance creation failed");
   check(harness.authorization.last_scope &&
@@ -1506,8 +1509,8 @@ void installation_instance_flow(Harness& harness) {
         "resource state lost desired run state");
   // Externally-managed instances receive a one-time bootstrap credential; Runtime stores only the
   // digest and a second creation cannot reuse the plaintext.
-  t::CreateInstanceRequest external{context("runtime.create_instance", digest(26)), installation.id,
-                                    std::nullopt, true};
+  t::CreateInstanceRequest external{
+      context("runtime.create_instance", digest(26)), installation.id, std::nullopt, true, {}};
   auto external_result = harness.application->create_instance(external);
   check(std::holds_alternative<t::InstanceCreation>(external_result),
         "external instance creation failed");
@@ -1790,8 +1793,8 @@ void bridge_flow() {
 
   // A1: the account binding is created before the adapter's first bridge registration; BindAdapter
   // still issues the one-time bootstrap credential for the external identity.
-  t::BindAdapterRequest bind{context("runtime.bind_adapter", digest(30)), account.id,
-                             t::InstanceId{adapter_instance}};
+  t::BindAdapterRequest bind{
+      context("runtime.bind_adapter", digest(30)), account.id, t::InstanceId{adapter_instance}, {}};
   auto bound = harness.application->bind_adapter(bind);
   check(std::holds_alternative<t::BindingMutation>(bound),
         "A1 bind before adapter registration failed");
@@ -1889,8 +1892,8 @@ void bridge_flow() {
                                                      t::ResourceVersion{1},
                                                      t::LifecycleState::Active,
                                                      {}};
-  t::CreateInstanceRequest create{context("runtime.create_instance", digest(32)), installation,
-                                  std::nullopt, true};
+  t::CreateInstanceRequest create{
+      context("runtime.create_instance", digest(32)), installation, std::nullopt, true, {}};
   auto created = harness.application->create_instance(create);
   check(std::holds_alternative<t::InstanceCreation>(created),
         "externally-managed instance creation failed");

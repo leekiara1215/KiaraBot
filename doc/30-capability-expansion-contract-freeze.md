@@ -141,3 +141,48 @@ doc/01/运行语义及直接模块文档已同步。实际验证：独立 Python
 `identity-v11-roundtrip.log`；精确 proto SHA-256 为
 `4aa85a1897eeaf5365863635c70638c0d3e4c75cd1c97bff28a5ac848c9a651b`。
 上述通过仅放行生产身份链实现，不是 Host gate 已可用或维护全链完成证明。
+
+## 6. v1.2 观察 feed 契约冻结（2026-11-04，冻结通过）
+
+在 v1.1 之上追加第二组 additive 契约，仍全部登记 `not_implemented`：`observations.proto` 增加
+`ObservationChangesRequest` 与 logs/tasks/messages 三族安全 change/response 类型（10 个消息、
+46 个字段）；`identity.proto`/`runtime.proto` 各增加 `ListLogChanges`，
+`runtime.proto` 增加 `ListMessageMetadataChanges`，`scheduler.proto` 增加 `ListTaskChanges`。
+四方法均只读、无幂等键、默认/最大 500ms、`requires_online_authorization=true`，
+`log.read`+`RESOURCE_CATALOG`、`message.read`+`RESOURCE_ACCOUNT`、
+`task.read`+`RESOURCE_TASK`/`RESOURCE_INSTANCE`。`target_spec.json` 方法数 119→123；
+`contract_status.json` 新增 10 消息、46 字段、2 条 semantic rule
+（`semantic.observation.feed_family_isolation`、`semantic.observation.safe_change_projection`）；
+`target_wire_goldens.json` 27→31 组。原始 v1.1 descriptor（与 `identity-v11-descriptor.pb` 逐字节相同，
+SHA-256 `f16a1bc80d33c7db9d1c2239ee57c8e831ab0e2e0cf822409bf1183d6e14cd76`）作为兼容基线，
+v1.2 冻结 descriptor SHA-256 为 `6fdf83b6599b8cbaa71d0027daea076eba45c5eb79dbb46fa94f31f466f31735`。
+
+实际通过（命令与日志均在 `build/logs/capability-expansion/`）：
+`check_contracts.sh`（含 descriptor fixture 与 legacy Python reader，exit 0，日志 `v12-contracts-freeze.log`）；
+`check_enum_consistency.py`/`check_implementation_status.py`/`check_semantic_rules.py` exit 0；
+`target_contract_test.py` 跨语言 **123 RPC / 388 消息 / 31 golden** 通过（`v12-target-contract.log`）；
+`kiarabot_descriptor_compatibility` 对 v1.1 基线“Descriptor compatibility check passed”
+（exit 0）。新增契约 oracle `proto/tests/observation_feed_contract_test.py` 校验 request/response 必需
+边界、三族封闭安全字段集合、禁止泄漏字段、terminal 任务枚举与 cursor presence；其首轮因 oracle 自身
+写错字段声明顺序断言而失败，修正 oracle 后通过，不是契约内容放宽。本次无 OpenAPI/AsyncAPI 变化
+（v1.2 只增加 owner RPC，不新增 REST/WS wire 面），故未重跑 Node schema 门禁。
+
+放行范围：WS 工作流可按此 wire 实现四 owner 查询的持久 feed 与消费；生产语义仍须真实 PG/Identity/
+owner 进程实测后才可登记，本次冻结不是 feed 已实现的证据。公共生成：C++ 生成已随构建更新，
+Python bindings 由 canonical generator 重生成；生成物不提交。v1.2 wire 冻结后，v1.1 的
+119/378/27 计数只属于 v1.1，后续证据必须引用本次 123/388/31。
+
+### 6.1 v1.2 冻结后的精确缺陷修正（2026-11-04，同日第二次 wire 门禁）
+
+STR06 的受管 e2e 在真实 Identity 在线检查中发现既有 ModelService 有 7 个方法缺少
+`option (scope_kinds) = RESOURCE_MODEL`（GetModelMetadata、GetCallStatus、GetOperation、
+GetModelConfiguration、DisableModel、EnableModel、ResolveModelCall），这些方法各自的请求已携带
+单模型 `scope`/`model_id`，但 descriptor 策略为空会导致生产委派校验 INVALID_ARGUMENT。该缺陷只影响
+方法 options，不涉及 message/字段/enum 变更。lead 在同一权威源（`model.proto`）补齐 7 处注解，
+并在 `target_spec.json` 逐项镜像（target gate 以 descriptor 为权威，不允许静默不一致），随后：
+`protoc` descriptor 生成 exit 0；`check_contracts.sh`（含 legacy reader 与 descriptor fixture）
+exit 0；新 descriptor（SHA-256 `26a883613632b33b2a0edca8c6628e4c7d809be6d627006298c04cd02e1dc44a`）
+对第一次 v1.2 冻结 descriptor（`6fdf83b6…`）additive 兼容通过；跨语言 target gate 仍为
+**123 RPC / 388 消息 / 31 golden** 通过。日志：`v12b-contracts-fix.log`、
+`v12b-target-contract.log`、`v12-b*.pb`。此项是契约修正，不改变任何 RPC 的 permission、
+idempotency、deadline 或消息字节；生产实现仍须按真实 Identity 链验收后才登记。

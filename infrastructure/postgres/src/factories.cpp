@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "action_records.hpp"
+#include "bootstrap_delivery_records.hpp"
 #include "host_command_outbox.hpp"
 #include "host_registration.hpp"
 #include "identity_security.hpp"
@@ -168,6 +169,15 @@ public:
   target::Status revoke(const std::string& resource_id, target::TimePoint now) override {
     return detail::revoke_bridge_credentials(work_, resource_id, now);
   }
+  target::Outcome<std::optional<target::BridgeCredentialRecord>>
+  latest(const std::string& resource_id) override {
+    return detail::latest_bridge_credential(work_, resource_id);
+  }
+  target::Status revoke_if_current(const std::string& resource_id,
+                                   std::uint64_t expected_version,
+                                   target::TimePoint now) override {
+    return detail::revoke_bridge_credential_if_current(work_, resource_id, expected_version, now);
+  }
 
 private:
   target::UnitOfWork& work_;
@@ -318,7 +328,8 @@ public:
         action_evidence_(*common.sql), namespaces_(*common.sql), shared_namespaces_(*common.sql),
         namespace_quota_(*common.sql), storage_receipts_(*common.sql),
         host_registration_(work(), *common.sql, std::move(host_allowlist)),
-        host_commands_(*common.sql), management_sql_(*common.sql) {}
+        host_commands_(*common.sql), management_sql_(*common.sql),
+        bootstrap_deliveries_(*common.sql) {}
   target::Repository<target::ResourceId, target::BotAccount>& accounts() override {
     return accounts_;
   }
@@ -331,6 +342,9 @@ public:
   }
   target::BridgeCredentialRepository& bridge_credentials() override {
     return credentials_;
+  }
+  target::BootstrapDeliveryRepository& bootstrap_deliveries() override {
+    return bootstrap_deliveries_;
   }
   target::Outcome<std::size_t>
   active_bindings(const target::InstanceId& adapter_instance) override {
@@ -425,6 +439,7 @@ private:
   detail::HostRegistration host_registration_;
   detail::HostCommandOutbox host_commands_;
   detail::SqlWork& management_sql_;
+  detail::BootstrapDeliveryRecords bootstrap_deliveries_;
 };
 class RuntimeFactory final : public target::RuntimeUnitOfWorkFactory {
 public:

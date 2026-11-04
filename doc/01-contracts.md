@@ -1574,6 +1574,18 @@ P05 Runtime 资源方法、Identity ListPrincipals 等有本机测试证据但 t
 | `IdentityCheckHostGateAuthorizationResponse.host_principal_version` | not_implemented | 受限Host gate声明与规格oracle；等待真实Identity/Runtime验收。 |
 | `semantic.host.gate_authorization` | not_implemented | 受限Host gate声明与规格oracle；等待真实Identity/Runtime验收。 |
 
+| `ObservationChangesRequest`、`LogMetadata`、`LogChange`、`LogChangesResponse`、`TaskMetadata` | not_implemented | 2026-11-04 v1.2 观察 feed 声明与规格 oracle（`observation_feed_contract_test.py`）；无生产 feed/RPC 实现与验收证据，不能借用 v1.1 或 reference 证据。 |
+| `TaskChange`、`TaskChangesResponse`、`MessageMetadata`、`MessageMetadataChange`、`MessageMetadataChangesResponse` | not_implemented | 2026-11-04 v1.2 观察 feed 声明与规格 oracle（`observation_feed_contract_test.py`）；无生产 feed/RPC 实现与验收证据，不能借用 v1.1 或 reference 证据。 |
+| `ObservationChangesRequest.context`、`ObservationChangesRequest.scope`、`ObservationChangesRequest.cursor`、`ObservationChangesRequest.page_size`、`LogMetadata.owner_service` | not_implemented | 2026-11-04 v1.2 观察 feed 声明与规格 oracle（`observation_feed_contract_test.py`）；无生产 feed/RPC 实现与验收证据，不能借用 v1.1 或 reference 证据。 |
+| `LogMetadata.entry_id`、`LogMetadata.severity`、`LogMetadata.component`、`LogMetadata.method`、`LogMetadata.event` | not_implemented | 2026-11-04 v1.2 观察 feed 声明与规格 oracle（`observation_feed_contract_test.py`）；无生产 feed/RPC 实现与验收证据，不能借用 v1.1 或 reference 证据。 |
+| `LogMetadata.resource`、`LogMetadata.request_id`、`LogMetadata.trace_id`、`LogMetadata.occurred_at`、`LogChange.log` | not_implemented | 2026-11-04 v1.2 观察 feed 声明与规格 oracle（`observation_feed_contract_test.py`）；无生产 feed/RPC 实现与验收证据，不能借用 v1.1 或 reference 证据。 |
+| `LogChange.cursor`、`LogChangesResponse.changes`、`LogChangesResponse.next_cursor`、`LogChangesResponse.has_more`、`LogChangesResponse.checked_at` | not_implemented | 2026-11-04 v1.2 观察 feed 声明与规格 oracle（`observation_feed_contract_test.py`）；无生产 feed/RPC 实现与验收证据，不能借用 v1.1 或 reference 证据。 |
+| `TaskMetadata.owner_service`、`TaskMetadata.task_id`、`TaskMetadata.owner_instance_id`、`TaskMetadata.state`、`TaskMetadata.version` | not_implemented | 2026-11-04 v1.2 观察 feed 声明与规格 oracle（`observation_feed_contract_test.py`）；无生产 feed/RPC 实现与验收证据，不能借用 v1.1 或 reference 证据。 |
+| `TaskMetadata.updated_at`、`TaskMetadata.cancel_requested`、`TaskMetadata.occurrence_id`、`TaskMetadata.reason_code`、`TaskChange.task` | not_implemented | 2026-11-04 v1.2 观察 feed 声明与规格 oracle（`observation_feed_contract_test.py`）；无生产 feed/RPC 实现与验收证据，不能借用 v1.1 或 reference 证据。 |
+| `TaskChange.cursor`、`TaskChangesResponse.changes`、`TaskChangesResponse.next_cursor`、`TaskChangesResponse.has_more`、`TaskChangesResponse.checked_at` | not_implemented | 2026-11-04 v1.2 观察 feed 声明与规格 oracle（`observation_feed_contract_test.py`）；无生产 feed/RPC 实现与验收证据，不能借用 v1.1 或 reference 证据。 |
+| `MessageMetadata.owner_service`、`MessageMetadata.message_id`、`MessageMetadata.conversation_id`、`MessageMetadata.account_id`、`MessageMetadata.received_at` | not_implemented | 2026-11-04 v1.2 观察 feed 声明与规格 oracle（`observation_feed_contract_test.py`）；无生产 feed/RPC 实现与验收证据，不能借用 v1.1 或 reference 证据。 |
+| `MessageMetadataChange.message`、`MessageMetadataChange.cursor`、`MessageMetadataChangesResponse.changes`、`MessageMetadataChangesResponse.next_cursor`、`MessageMetadataChangesResponse.has_more` | not_implemented | 2026-11-04 v1.2 观察 feed 声明与规格 oracle（`observation_feed_contract_test.py`）；无生产 feed/RPC 实现与验收证据，不能借用 v1.1 或 reference 证据。 |
+| `MessageMetadataChangesResponse.checked_at`、`semantic.observation.feed_family_isolation`、`semantic.observation.safe_change_projection` | not_implemented | 2026-11-04 v1.2 观察 feed 声明与规格 oracle（`observation_feed_contract_test.py`）；无生产 feed/RPC 实现与验收证据，不能借用 v1.1 或 reference 证据。 |
 <!-- contract-status:end -->
 
 `/ws/messages` 自 2026-10-31（W5）起为 `implemented`：只有被私有控制配置显式授予 `message.read` 的用户可订阅，事件 `message.updated` 仅含消息元数据（`message_id`、`conversation_id`、`direction`；v1 只产生 `received`），不推送正文、没有 REST 消息投影、也不构成审计；任何默认角色（含 admin）都不持有 `message.read`。授权模型见 `doc/08-operations.md`。
@@ -2422,3 +2434,38 @@ Runtime仅对该请求使用allow结果，同时重查实际TLS、既有Host证�
 maintenance intent/version；不得缓存allow覆盖撤销。旧CheckAuthorization继续要求非空delegation proof，
 HostManagement人类请求仍复用该协议。新增字段/RPC及semantic.host.gate_authorization登记not_implemented，
 契约oracle不算生产证据。无REST/WS新增面，Scheduler受限A两方法范围不变。
+
+
+## 2026-11-04 v1.2：logs/tasks/messages 观察 feed 契约（登记未实现）
+
+v1.2 在 `observations.proto` 新增四个 owner 查询共用的 `ObservationChangesRequest` 与三族
+安全 change/response 类型：`LogMetadata`/`LogChange`/`LogChangesResponse`、
+`TaskMetadata`/`TaskChange`/`TaskChangesResponse`、
+`MessageMetadata`/`MessageMetadataChange`/`MessageMetadataChangesResponse`。
+`IdentityService.ListLogChanges`、`RuntimeService.ListLogChanges` 使用 `log.read`，scope 恰为
+`RESOURCE_CATALOG(control)`；`RuntimeService.ListMessageMetadataChanges` 使用 `message.read`，scope 恰为
+`RESOURCE_ACCOUNT`；`SchedulerService.ListTaskChanges` 使用 `task.read`，scope 恰为
+`RESOURCE_TASK`/`RESOURCE_INSTANCE`。四者均为只读、无幂等键、默认与最大 500ms、
+`requires_online_authorization=true`，初始状态 `not_implemented`。
+
+每个 `(owner, feed family)` 拥有独立持久 dataset epoch、提交序 head 与 low-water；cursor 同时绑定
+owner、feed family 与 dataset，跨 family 或恢复旧数据后的 cursor 是结构化
+`CONFLICT`+`NOT_ACCEPTED/RESYNC_SNAPSHOT`，不得解释为另一条流的位置。普通进程重启保留 epoch，
+restore/rebuild/reset 必须轮换；600 秒有界保留与容量淘汰显式推进 low-water。变化行与权威业务写入
+同一 UoW 原子提交，提交序来自每 family 事务计数/锁而非 `nextval` 分配顺序或 `occurred_at`；rollback
+不产生变化，回滚后的未知提交按原身份恢复。空成功页仅在 owner 成功确认 head 时合法，
+`TIMEOUT`/`UPSTREAM_UNAVAILABLE`/`PERMISSION_DENIED` 不得伪装为空页。
+
+三族投影是封闭安全子集：日志只有 entry id、发生时间、闭集 severity（DEBUG/INFO/WARN/ERROR）、
+闭集 event（request.recorded/request.rejected）、脱敏 component/method、资源与关联 ID，不含 audit
+原 payload、自由文本 message、actor 秘密或请求体；任务只有 task/owner_instance/state/version/
+updated_at/cancel_requested/可选 occurrence_id/可选稳定 ErrorCode，terminal 状态必须可观察，不含
+payload/target；消息只有 KiaraBot 内部 message/conversation/account id 与 received_at，仅表达已受理
+的 received 事实，无正文/分段/平台原始包/平台外部 ID，也不表达 sent。新增类型不改变 v1.1
+operation journal，也不新增 REST/WS wire 面；WS 频道沿用既有声明，生产 source 与 Control 接线另行
+实现验收。
+
+契约 oracle 覆盖 request 形状、response 必需边界、三族字段封闭集合与禁止泄漏字段、terminal 枚举与
+cursor presence；`check_contracts.sh`、target/policy/status/evidence 门禁与 v1.1 descriptor 基线兼容
+通过后才放行实现。witness：`proto/tests/observation_feed_contract_test.py`、
+`proto/tests/target_wire_goldens.json` 的四个 v1.2 fixture；这些证据只是契约，不是生产 feed 证据。

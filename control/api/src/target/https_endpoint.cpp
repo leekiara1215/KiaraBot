@@ -17,6 +17,7 @@
 #include <openssl/ssl.h>
 
 #include "kiarabot/control/target/identity_auth_client.hpp"
+#include "kiarabot/control/target/websocket_endpoint.hpp"
 
 namespace kiarabot::control::target {
 namespace {
@@ -26,6 +27,9 @@ namespace http = beast::http;
 using Tcp = asio::ip::tcp;
 using Error = boost::system::error_code;
 using Stream = beast::ssl_stream<beast::tcp_stream>;
+std::unique_ptr<WebSocketEndpoint> make_websocket_endpoint(
+    const core::platform::ProcessConfig& config, std::shared_ptr<IdentityAuthClient> client,
+    asio::io_context& io);
 core::target::Failure unavailable() {
   return {core::target::ErrorCode::UpstreamUnavailable,
           core::target::Acceptance::NotAccepted,
@@ -36,9 +40,10 @@ core::target::Failure unavailable() {
 class Session : public std::enable_shared_from_this<Session> {
 public:
   Session(Tcp::socket socket, asio::ssl::context& tls, asio::thread_pool& workers,
-          std::shared_ptr<IdentityAuthClient> client, std::function<void(Session*)> completed)
+          std::shared_ptr<IdentityAuthClient> client, WebSocketEndpoint* websocket,
+          std::function<void(Session*)> completed)
       : stream_(std::move(socket), tls), workers_(workers), client_(std::move(client)),
-        completed_(std::move(completed)) {
+        websocket_(websocket), completed_(std::move(completed)) {
     parser_.body_limit(1024 * 1024);
     parser_.header_limit(8192);
   }
@@ -64,6 +69,13 @@ public:
     beast::get_lowest_layer(stream_).socket().close(ignored);
     completed_(this);
   }
+  // The Upgrade request is already fully parsed. Ownership of the TLS stream moves to the target
+  // WebSocket boundary; the REST session must not read, write or close anything afterwards.
+  void upgrade(WebSocketSelection selection, http::request<http::string_body> request) {
+    auto stream = std::move(stream_);
+    completed_(this);
+    websocket_->accept(std::move(stream), std::move(request), std::move(selection));
+  }
 
 private:
   void read() {
@@ -83,6 +95,22 @@ private:
             return;
           }
           const auto& message = self->parser_.get();
+          // Beast's is_upgrade() is deliberately conservative (GET + tokens only), but an
+          // invalid method/version/headers still belongs to the structured Upgrade boundary, not
+          // to the generic REST route table.
+          const bool upgrade_hint =
+              beast::websocket::is_upgrade(message) ||
+              (!message[http::field::upgrade].empty() &&
+               !message[http::field::connection].empty());
+          if (upgrade_hint && self->websocket_ != nullptr) {
+            auto check = self->websocket_->check(message);
+            if (!check.accepted()) {
+              self->write(std::move(*check.rejection));
+              return;
+            }
+            self->upgrade(std::move(check.selection), message);
+            return;
+          }
           AuthHttpRequest input{std::string(message.method_string()),
                                 std::string(message.target()),
                                 {},
@@ -128,6 +156,7 @@ private:
   Stream stream_;
   asio::thread_pool& workers_;
   std::shared_ptr<IdentityAuthClient> client_;
+  WebSocketEndpoint* websocket_;
   std::function<void(Session*)> completed_;
   // Bound retained framing too: decoded body_limit alone cannot bound an unfinished chunk line.
   beast::flat_buffer buffer_{1024 * 1024 + 8192};
@@ -140,14 +169,14 @@ public:
   HttpsEndpoint(const core::platform::ProcessConfig& config,
                 std::shared_ptr<ControlReadiness> readiness)
       : tls_(asio::ssl::context::tls_server), acceptor_(io_), workers_(4),
-        readiness_(std::move(readiness)),
         client_(std::make_shared<IdentityAuthClient>(
             config.control_api->identity_endpoint,
             config.control_api->runtime_endpoint.value_or(""),
             config.control_api->scheduler_endpoint.value_or(""),
             config.control_api->model_endpoint.value_or(""),
             config.control_api->host_endpoint.value_or(""), config.tls)),
-        listen_(config.control_api->listen) {
+        websocket_(make_websocket_endpoint(config, client_, io_)),
+        readiness_(std::move(readiness)), listen_(config.control_api->listen) {
     tls_.set_options(asio::ssl::context::default_workarounds | asio::ssl::context::no_sslv2 |
                      asio::ssl::context::no_sslv3 | asio::ssl::context::no_tlsv1 |
                      asio::ssl::context::no_tlsv1_1);
@@ -161,6 +190,9 @@ public:
   }
   ~HttpsEndpoint() override {
     client_->cancel();
+    if (websocket_) {
+      websocket_->prepare_shutdown();
+    }
     if (thread_.joinable()) {
       asio::post(io_, [this] {
         Error ignored;
@@ -171,9 +203,31 @@ public:
         for (const auto& session : sessions) {
           session->close();
         }
-        io_.stop();
+        // Drain every target WebSocket session before the context stops. Destroying a
+        // beast::tcp_stream with both a read and a write still pending aborts the process, so
+        // shutdown must let the cancelled handlers run and the sessions erase themselves.
+        auto drain = std::make_shared<asio::steady_timer>(io_);
+        auto deadline = std::make_shared<std::chrono::steady_clock::time_point>(
+            std::chrono::steady_clock::now() + std::chrono::seconds{2});
+        auto wait = std::make_shared<std::function<void()>>();
+        *wait = [this, drain, deadline, wait] {
+          const bool drained = websocket_ == nullptr || websocket_->active_sockets() == 0;
+          if (!drained && std::chrono::steady_clock::now() < *deadline) {
+            drain->expires_after(std::chrono::milliseconds{25});
+            drain->async_wait([wait](const Error&) { (*wait)(); });
+            return;
+          }
+          // One quiescence turn lets the already-cancelled read/write handlers run before stop.
+          drain->expires_after(std::chrono::milliseconds{150});
+          drain->async_wait([this, drain](Error) { io_.stop(); });
+        };
+        (*wait)();
       });
       thread_.join();
+    }
+    if (websocket_) {
+      websocket_->finish_shutdown();
+      websocket_.reset();
     }
     workers_.stop();
     workers_.join();
@@ -231,7 +285,8 @@ private:
       }
       if (sessions_.size() < 64) {
         auto session = std::make_shared<Session>(
-            std::move(socket), tls_, workers_, client_, [this](Session* completed) {
+            std::move(socket), tls_, workers_, client_, websocket_.get(),
+            [this](Session* completed) {
               const auto found =
                   std::find_if(sessions_.begin(), sessions_.end(),
                                [completed](const auto& owned) { return owned.get() == completed; });
@@ -253,6 +308,7 @@ private:
   Tcp::acceptor acceptor_;
   asio::thread_pool workers_;
   std::shared_ptr<IdentityAuthClient> client_;
+  std::unique_ptr<WebSocketEndpoint> websocket_;
   std::shared_ptr<ControlReadiness> readiness_;
   std::string listen_;
   std::set<std::shared_ptr<Session>> sessions_;
@@ -260,6 +316,14 @@ private:
   bool started_ = false;
   std::thread thread_;
 };
+std::unique_ptr<WebSocketEndpoint> make_websocket_endpoint(
+    const core::platform::ProcessConfig& config, std::shared_ptr<IdentityAuthClient> client,
+    asio::io_context& io) {
+  WebSocketUpgradeConfig websocket;
+  websocket.origins = config.control_api->websocket_origins;
+  websocket.allow_missing_origin = config.control_api->websocket_allow_missing_origin;
+  return std::make_unique<WebSocketEndpoint>(std::move(websocket), std::move(client), config, io);
+}
 } // namespace
 std::unique_ptr<core::platform::ServiceEndpoint>
 make_https_endpoint(const core::platform::ProcessConfig& config,

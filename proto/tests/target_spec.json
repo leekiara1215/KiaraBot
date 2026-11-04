@@ -1341,7 +1341,10 @@
       "status": "implemented",
       "max_deadline_ms": 5000,
       "requires_idempotency_key": false,
-      "status_note": "P11a/b/c Model service production RPC + P11d Control REST forwarding evidence; REST Control operation status remains separately registered"
+      "status_note": "P11a/b/c Model service production RPC + P11d Control REST forwarding evidence; REST Control operation status remains separately registered",
+      "scope_kinds": [
+        "RESOURCE_MODEL"
+      ]
     },
     {
       "service": "ModelService",
@@ -1443,7 +1446,10 @@
       "status": "implemented",
       "max_deadline_ms": 5000,
       "requires_idempotency_key": false,
-      "status_note": "P11a/b/c Model service production RPC + P11d Control REST forwarding evidence; REST Control operation status remains separately registered"
+      "status_note": "P11a/b/c Model service production RPC + P11d Control REST forwarding evidence; REST Control operation status remains separately registered",
+      "scope_kinds": [
+        "RESOURCE_MODEL"
+      ]
     },
     {
       "service": "RuntimeService",
@@ -1503,7 +1509,10 @@
       "server_streaming": false,
       "status": "implemented",
       "requires_idempotency_key": false,
-      "status_note": "P11a/b/c Model service production RPC + P11d Control REST forwarding evidence; REST Control operation status remains separately registered"
+      "status_note": "P11a/b/c Model service production RPC + P11d Control REST forwarding evidence; REST Control operation status remains separately registered",
+      "scope_kinds": [
+        "RESOURCE_MODEL"
+      ]
     },
     {
       "service": "ModelService",
@@ -1521,7 +1530,10 @@
       "server_streaming": false,
       "status": "implemented",
       "requires_idempotency_key": false,
-      "status_note": "P11a/b/c Model service production RPC + P11d Control REST forwarding evidence; REST Control operation status remains separately registered"
+      "status_note": "P11a/b/c Model service production RPC + P11d Control REST forwarding evidence; REST Control operation status remains separately registered",
+      "scope_kinds": [
+        "RESOURCE_MODEL"
+      ]
     },
     {
       "service": "RuntimeService",
@@ -1848,7 +1860,10 @@
       "max_deadline_ms": 30000,
       "requires_idempotency_key": true,
       "exposure": "wire",
-      "status_note": "P11a/b/c Model service production RPC + P11d Control REST forwarding evidence; REST Control operation status remains separately registered"
+      "status_note": "P11a/b/c Model service production RPC + P11d Control REST forwarding evidence; REST Control operation status remains separately registered",
+      "scope_kinds": [
+        "RESOURCE_MODEL"
+      ]
     },
     {
       "service": "ModelService",
@@ -1867,7 +1882,10 @@
       "max_deadline_ms": 30000,
       "requires_idempotency_key": true,
       "exposure": "wire",
-      "status_note": "P11a/b/c Model service production RPC + P11d Control REST forwarding evidence; REST Control operation status remains separately registered"
+      "status_note": "P11a/b/c Model service production RPC + P11d Control REST forwarding evidence; REST Control operation status remains separately registered",
+      "scope_kinds": [
+        "RESOURCE_MODEL"
+      ]
     },
     {
       "service": "ModelService",
@@ -1886,7 +1904,10 @@
       "max_deadline_ms": 30000,
       "requires_idempotency_key": true,
       "exposure": "wire",
-      "status_note": "P11a/b/c Model service production RPC + P11d Control REST forwarding evidence; REST Control operation status remains separately registered"
+      "status_note": "P11a/b/c Model service production RPC + P11d Control REST forwarding evidence; REST Control operation status remains separately registered",
+      "scope_kinds": [
+        "RESOURCE_MODEL"
+      ]
     },
     {
       "service": "IdentityService",
@@ -2351,6 +2372,95 @@
       ],
       "exposure": "wire",
       "status_note": "v1.1 Host gate only; current Host leaf registration/binding and exact host.execute; no ordinary delegation bypass"
+    },
+    {
+      "service": "IdentityService",
+      "method": "ListLogChanges",
+      "file": "identity.proto",
+      "request": "ObservationChangesRequest",
+      "response": "LogChangesResponse",
+      "caller": "registered Control mTLS platform peer with current exact resource delegation",
+      "permission": "log.read",
+      "risk": "online",
+      "mutating": false,
+      "idempotency": "none",
+      "deadline_ms": 500,
+      "server_streaming": false,
+      "status": "not_implemented",
+      "max_deadline_ms": 500,
+      "requires_idempotency_key": false,
+      "scope_kinds": [
+        "RESOURCE_CATALOG"
+      ],
+      "exposure": "wire",
+      "status_note": "2026-11-04 v1.2 approved declaration only; no producer/consumer implementation evidence"
+    },
+    {
+      "service": "RuntimeService",
+      "method": "ListLogChanges",
+      "file": "runtime.proto",
+      "request": "ObservationChangesRequest",
+      "response": "LogChangesResponse",
+      "caller": "registered Control mTLS platform peer with current exact resource delegation",
+      "permission": "log.read",
+      "risk": "online",
+      "mutating": false,
+      "idempotency": "none",
+      "deadline_ms": 500,
+      "server_streaming": false,
+      "status": "not_implemented",
+      "max_deadline_ms": 500,
+      "requires_idempotency_key": false,
+      "scope_kinds": [
+        "RESOURCE_CATALOG"
+      ],
+      "exposure": "wire",
+      "status_note": "2026-11-04 v1.2 approved declaration only; no producer/consumer implementation evidence"
+    },
+    {
+      "service": "RuntimeService",
+      "method": "ListMessageMetadataChanges",
+      "file": "runtime.proto",
+      "request": "ObservationChangesRequest",
+      "response": "MessageMetadataChangesResponse",
+      "caller": "registered Control mTLS platform peer with current exact resource delegation",
+      "permission": "message.read",
+      "risk": "online",
+      "mutating": false,
+      "idempotency": "none",
+      "deadline_ms": 500,
+      "server_streaming": false,
+      "status": "not_implemented",
+      "max_deadline_ms": 500,
+      "requires_idempotency_key": false,
+      "scope_kinds": [
+        "RESOURCE_ACCOUNT"
+      ],
+      "exposure": "wire",
+      "status_note": "2026-11-04 v1.2 approved declaration only; no producer/consumer implementation evidence"
+    },
+    {
+      "service": "SchedulerService",
+      "method": "ListTaskChanges",
+      "file": "scheduler.proto",
+      "request": "ObservationChangesRequest",
+      "response": "TaskChangesResponse",
+      "caller": "registered Control mTLS platform peer with current exact resource delegation",
+      "permission": "task.read",
+      "risk": "online",
+      "mutating": false,
+      "idempotency": "none",
+      "deadline_ms": 500,
+      "server_streaming": false,
+      "status": "not_implemented",
+      "max_deadline_ms": 500,
+      "requires_idempotency_key": false,
+      "scope_kinds": [
+        "RESOURCE_TASK",
+        "RESOURCE_INSTANCE"
+      ],
+      "exposure": "wire",
+      "status_note": "2026-11-04 v1.2 approved declaration only; no producer/consumer implementation evidence"
     }
   ],
   "bridges": [

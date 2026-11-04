@@ -22,7 +22,8 @@ from pathlib import Path
 import grpc
 from google.protobuf.timestamp_pb2 import Timestamp
 from kiarabot.v1 import common_pb2 as common, events_pb2 as events, platform_pb2 as platform
-from kiarabot.v1 import plugins_pb2 as plugins, services_pb2_grpc as services
+from kiarabot.v1 import model_stream_pb2 as streaming, plugins_pb2 as plugins
+from kiarabot.v1 import services_pb2_grpc as services
 
 from .errors import PluginError
 
@@ -81,6 +82,13 @@ class FakeTargetRuntime(services.PluginBridgeServicer):
         self.refreshes = asyncio.Queue()
         self.heartbeats = asyncio.Queue()
         self.host_requests = asyncio.Queue()
+        # STR-01 stream fixture: start requests are answered by ordered
+        # model_stream_event frames (never a normal HostResponse). Cancel
+        # requests get an automatic typed receipt unless the test sets
+        # ``stream_cancel_disposition = None`` to answer manually.
+        self.stream_starts = asyncio.Queue()
+        self.stream_cancels = asyncio.Queue()
+        self.stream_cancel_disposition = streaming.MODEL_STREAM_CANCELLATION_REQUESTED
         self.actions = asyncio.Queue()
         # P07 Action fixture: when set, action/action_query/action_cancel frames are answered
         # automatically. policy(kind, request, sequence) -> None (drop) | {'result': ...} |
@@ -187,6 +195,18 @@ class FakeTargetRuntime(services.PluginBridgeServicer):
     async def send_frame(self, frame: plugins.CoreToPlugin) -> None:
         await self.outgoing.put(frame)
 
+    async def send_stream_event(self, event: streaming.ModelStreamEvent) -> None:
+        """Send one ordered model stream event on the current connection."""
+        await self.outgoing.put(plugins.CoreToPlugin(model_stream_event=event))
+
+    async def reject_stream_start(self, request: plugins.HostRequest, code: int,
+                                  *, retryable=False) -> None:
+        """Answer a not-admitted start with the one allowed pre-start HostResponse."""
+        await self.send_frame(plugins.CoreToPlugin(host_response=plugins.HostResponse(
+            request_id=request.request_id,
+            error=common.Error(code=code, message=common.ErrorCode.Name(code),
+                               request_id=request.request_id, retryable=retryable))))
+
     # -- connection --------------------------------------------------------
     async def Connect(self, requests, context):
         metadata = dict(context.invocation_metadata())
@@ -246,6 +266,20 @@ class FakeTargetRuntime(services.PluginBridgeServicer):
                         return
                 elif body == 'host_request':
                     self.host_requests.put_nowait(request.host_request)
+                    operation = request.host_request.WhichOneof('operation')
+                    if operation == 'model_stream_start':
+                        self.stream_starts.put_nowait(request.host_request)
+                    elif operation == 'model_stream_cancel':
+                        self.stream_cancels.put_nowait(request.host_request)
+                        if self.stream_cancel_disposition is not None:
+                            cancel = request.host_request.model_stream_cancel
+                            responses.put_nowait(plugins.CoreToPlugin(
+                                host_response=plugins.HostResponse(
+                                    request_id=request.host_request.request_id,
+                                    model_stream_cancel=streaming.ModelStreamCancelResponse(
+                                        start_request_id=cancel.start_request_id,
+                                        logical_call_id=cancel.logical_call_id,
+                                        disposition=self.stream_cancel_disposition))))
                 elif body in ('action', 'action_query', 'action_cancel'):
                     self.actions.put_nowait(request)
                     self.action_requests.append((body, request))

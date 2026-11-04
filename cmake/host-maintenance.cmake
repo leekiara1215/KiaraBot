@@ -25,3 +25,6 @@ if(KIARABOT_ENABLE_INFRASTRUCTURE AND KIARABOT_GENERATE_PROTO AND UNIX)
   add_test(NAME p08_host_maintenance COMMAND kiarabot_host_maintenance_test)
   set_tests_properties(p08_host_maintenance PROPERTIES LABELS "p08;host;integration;fault" TIMEOUT 30)
 endif()
+
+# HOST-03/04 host-management fragment is included by cmake/platform.cmake after
+# kiarabot_platform_warnings exists and the core targets are defined; keep this file ordering-safe.

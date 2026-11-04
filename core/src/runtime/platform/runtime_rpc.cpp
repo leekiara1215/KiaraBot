@@ -341,6 +341,35 @@ bool resource(const t::ResourceRef& value, v1::ResourceRef* output) {
   }
   return false;
 }
+bool bootstrap_state(t::BootstrapDeliveryState value, v1::BootstrapDeliveryState* out) {
+  switch (value) {
+  case t::BootstrapDeliveryState::Pending:
+    *out = v1::BOOTSTRAP_DELIVERY_PENDING;
+    return true;
+  case t::BootstrapDeliveryState::Delivered:
+    *out = v1::BOOTSTRAP_DELIVERY_DELIVERED;
+    return true;
+  case t::BootstrapDeliveryState::Unknown:
+    *out = v1::BOOTSTRAP_DELIVERY_UNKNOWN;
+    return true;
+  case t::BootstrapDeliveryState::Revoked:
+    *out = v1::BOOTSTRAP_DELIVERY_REVOKED;
+    return true;
+  }
+  return false;
+}
+bool bootstrap_reported_state(v1::BootstrapDeliveryState state, t::BootstrapDeliveryState* out) {
+  if (state == v1::BOOTSTRAP_DELIVERY_DELIVERED) {
+    *out = t::BootstrapDeliveryState::Delivered;
+    return true;
+  }
+  if (state == v1::BOOTSTRAP_DELIVERY_UNKNOWN) {
+    *out = t::BootstrapDeliveryState::Unknown;
+    return true;
+  }
+  // PENDING/REVOKED/UNSPECIFIED are runtime-owned facts; a report can never assert them.
+  return false;
+}
 bool component(const t::Capability& value, v1::Capability* output) {
   if (value.name.empty() || value.version.empty()) {
     return false;
@@ -1167,7 +1196,8 @@ public:
             : std::nullopt;
     auto bound =
         application_.bind_adapter({context.command, t::ResourceId{request->binding().account_id()},
-                                   t::InstanceId{request->binding().adapter_instance_id()}});
+                                   t::InstanceId{request->binding().adapter_instance_id()},
+                                   request->bootstrap_recipient_id()});
     if (const auto* rejected = std::get_if<t::Failure>(&bound)) {
       return fail(context, *rejected);
     }
@@ -1178,6 +1208,10 @@ public:
     wire->set_version(mutation.binding.version.value);
     if (mutation.bootstrap_credential) {
       response->set_bootstrap_credential(*mutation.bootstrap_credential);
+    }
+    if (mutation.delivery &&
+        !bootstrap_delivery(*mutation.delivery, response->mutable_delivery())) {
+      return error_status(internal_failure(), context.request, context.trace);
     }
     if (mutation.operation &&
         !operation_ref(mutation.operation->operation, response->mutable_operation())) {
@@ -1361,9 +1395,9 @@ public:
     if (!request->host_id().empty()) {
       host = t::ResourceId{request->host_id()};
     }
-    auto created = application_.create_instance({context.command,
-                                                 t::InstallationId{request->installation_id()},
-                                                 host, request->externally_managed()});
+    auto created = application_.create_instance(
+        {context.command, t::InstallationId{request->installation_id()}, host,
+         request->externally_managed(), request->bootstrap_recipient_id()});
     if (const auto* rejected = std::get_if<t::Failure>(&created)) {
       return fail(context, *rejected);
     }
@@ -1373,6 +1407,10 @@ public:
     }
     if (creation.bootstrap_credential) {
       response->set_bootstrap_credential(*creation.bootstrap_credential);
+    }
+    if (creation.delivery &&
+        !bootstrap_delivery(*creation.delivery, response->mutable_delivery())) {
+      return error_status(internal_failure(), context.request, context.trace);
     }
     return grpc::Status::OK;
   }
@@ -2254,6 +2292,214 @@ public:
     }
     if (!action_policy_wire(std::get<t::ActionPolicy>(policy), response->mutable_policy())) {
       return error_status(failure(t::ErrorCode::Internal), context.request, context.trace);
+    }
+    return grpc::Status::OK;
+  }
+
+  static bool control_peer(grpc::ServerContext& transport, const RuntimeRpcOptions& options,
+                           t::Failure* rejected_failure) {
+    if (!options.control_peer) {
+      *rejected_failure = failure(t::ErrorCode::PermissionDenied, t::Recovery::Authenticate);
+      return false;
+    }
+    auto peer = options.control_peer(transport);
+    if (const auto* rejected = std::get_if<t::Failure>(&peer)) {
+      *rejected_failure = *rejected;
+      return false;
+    }
+    if (std::get<RuntimePlatformPeer>(peer).service != t::Service::Control) {
+      *rejected_failure = failure(t::ErrorCode::PermissionDenied, t::Recovery::Authenticate);
+      return false;
+    }
+    return true;
+  }
+  static bool bootstrap_delivery(const t::BootstrapDeliveryRecord& value,
+                                 v1::BootstrapDelivery* output) {
+    v1::BootstrapDeliveryState state = v1::BOOTSTRAP_DELIVERY_STATE_UNSPECIFIED;
+    if (!bootstrap_state(value.state, &state)) {
+      return false;
+    }
+    output->set_delivery_id(value.delivery_id);
+    output->set_recipient_id(value.recipient_id);
+    output->set_credential_version(value.credential_version);
+    output->set_state(state);
+    return resource(value.resource, output->mutable_resource()) &&
+           operation_ref(value.operation, output->mutable_operation()) &&
+           timestamp(value.observed_at, output->mutable_observed_at());
+  }
+  grpc::Status GetBootstrapDelivery(grpc::ServerContext* transport,
+                                    const v1::RuntimeGetBootstrapDeliveryRequest* request,
+                                    v1::RuntimeGetBootstrapDeliveryResponse* response) override {
+    auto prepared =
+        prepare(*transport, request->context(), "kiarabot.v1.RuntimeService/GetBootstrapDelivery",
+                *request, false, options_);
+    if (const auto* rejected = std::get_if<t::Failure>(&prepared)) {
+      return error_status(*rejected, request->context().request_id(),
+                          request->context().trace_id());
+    }
+    auto& context = std::get<Prepared>(prepared);
+    t::Failure peer_failure;
+    if (!control_peer(*transport, options_, &peer_failure)) {
+      return error_status(peer_failure, context.request, context.trace);
+    }
+    if (options_.bootstrap == nullptr) {
+      return error_status(failure(t::ErrorCode::CapabilityNotSupported, t::Recovery::Diagnose),
+                          context.request, context.trace);
+    }
+    const auto decoded = codec::from_wire(request->resource());
+    const auto* resource = std::get_if<t::ResourceRef>(&decoded);
+    if (!resource || (resource->kind != t::ResourceKind::Account &&
+                      resource->kind != t::ResourceKind::Instance)) {
+      return error_status(failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput),
+                          context.request, context.trace);
+    }
+    auto found = options_.bootstrap->get({context.command, *resource, request->delivery_id()});
+    if (const auto* rejected = std::get_if<t::Failure>(&found)) {
+      return fail(context, *rejected);
+    }
+    if (!bootstrap_delivery(std::get<t::BootstrapDeliveryRecord>(found),
+                            response->mutable_delivery())) {
+      return error_status(internal_failure(), context.request, context.trace);
+    }
+    return grpc::Status::OK;
+  }
+  grpc::Status ReissueAdapterBootstrap(grpc::ServerContext* transport,
+                                       const v1::RuntimeReissueAdapterBootstrapRequest* request,
+                                       v1::RuntimeReissueBootstrapResponse* response) override {
+    auto prepared =
+        prepare(*transport, request->context(),
+                "kiarabot.v1.RuntimeService/ReissueAdapterBootstrap", *request, true, options_);
+    if (const auto* rejected = std::get_if<t::Failure>(&prepared)) {
+      return error_status(*rejected, request->context().request_id(),
+                          request->context().trace_id());
+    }
+    auto& context = std::get<Prepared>(prepared);
+    if (options_.bootstrap == nullptr) {
+      return error_status(failure(t::ErrorCode::CapabilityNotSupported, t::Recovery::Diagnose),
+                          context.request, context.trace);
+    }
+    t::ReissueBootstrapCommand command;
+    command.context = context.command;
+    command.resource = {t::ResourceKind::Account, {request->account_id()}};
+    command.recipient_id = request->recipient_id();
+    if (request->has_expected_credential_version()) {
+      command.expected_credential_version = request->expected_credential_version();
+    }
+    auto reissued = options_.bootstrap->reissue(command, t::BootstrapPeerFamily::Adapter);
+    if (const auto* rejected = std::get_if<t::Failure>(&reissued)) {
+      return fail(context, *rejected);
+    }
+    const auto& result = std::get<t::BootstrapReissueResult>(reissued);
+    if (!bootstrap_delivery(result.delivery, response->mutable_delivery()) ||
+        !operation(result.operation, response->mutable_operation(), now())) {
+      return error_status(internal_failure(), context.request, context.trace);
+    }
+    if (!result.plaintext.empty()) {
+      response->set_bootstrap_credential(result.plaintext);
+    }
+    return grpc::Status::OK;
+  }
+  grpc::Status ReissuePluginBootstrap(grpc::ServerContext* transport,
+                                      const v1::RuntimeReissuePluginBootstrapRequest* request,
+                                      v1::RuntimeReissueBootstrapResponse* response) override {
+    auto prepared =
+        prepare(*transport, request->context(), "kiarabot.v1.RuntimeService/ReissuePluginBootstrap",
+                *request, true, options_);
+    if (const auto* rejected = std::get_if<t::Failure>(&prepared)) {
+      return error_status(*rejected, request->context().request_id(),
+                          request->context().trace_id());
+    }
+    auto& context = std::get<Prepared>(prepared);
+    if (options_.bootstrap == nullptr) {
+      return error_status(failure(t::ErrorCode::CapabilityNotSupported, t::Recovery::Diagnose),
+                          context.request, context.trace);
+    }
+    t::ReissueBootstrapCommand command;
+    command.context = context.command;
+    command.resource = {t::ResourceKind::Instance, {request->instance_id()}};
+    command.recipient_id = request->recipient_id();
+    if (request->has_expected_credential_version()) {
+      command.expected_credential_version = request->expected_credential_version();
+    }
+    auto reissued = options_.bootstrap->reissue(command, t::BootstrapPeerFamily::Plugin);
+    if (const auto* rejected = std::get_if<t::Failure>(&reissued)) {
+      return fail(context, *rejected);
+    }
+    const auto& result = std::get<t::BootstrapReissueResult>(reissued);
+    if (!bootstrap_delivery(result.delivery, response->mutable_delivery()) ||
+        !operation(result.operation, response->mutable_operation(), now())) {
+      return error_status(internal_failure(), context.request, context.trace);
+    }
+    if (!result.plaintext.empty()) {
+      response->set_bootstrap_credential(result.plaintext);
+    }
+    return grpc::Status::OK;
+  }
+  grpc::Status
+  ReportAdapterBootstrapDelivery(grpc::ServerContext* transport,
+                                 const v1::RuntimeReportAdapterBootstrapDeliveryRequest* request,
+                                 v1::RuntimeGetBootstrapDeliveryResponse* response) override {
+    return report_bootstrap(transport, request, response, t::BootstrapPeerFamily::Adapter);
+  }
+  grpc::Status
+  ReportPluginBootstrapDelivery(grpc::ServerContext* transport,
+                                const v1::RuntimeReportPluginBootstrapDeliveryRequest* request,
+                                v1::RuntimeGetBootstrapDeliveryResponse* response) override {
+    return report_bootstrap(transport, request, response, t::BootstrapPeerFamily::Plugin);
+  }
+  template <typename Request>
+  grpc::Status report_bootstrap(grpc::ServerContext* transport, const Request* request,
+                                v1::RuntimeGetBootstrapDeliveryResponse* response,
+                                t::BootstrapPeerFamily family) {
+    auto prepared = prepare(*transport, request->context(),
+                            family == t::BootstrapPeerFamily::Adapter
+                                ? "kiarabot.v1.RuntimeService/ReportAdapterBootstrapDelivery"
+                                : "kiarabot.v1.RuntimeService/ReportPluginBootstrapDelivery",
+                            *request, true, options_);
+    if (const auto* rejected = std::get_if<t::Failure>(&prepared)) {
+      return error_status(*rejected, request->context().request_id(),
+                          request->context().trace_id());
+    }
+    auto& context = std::get<Prepared>(prepared);
+    t::Failure peer_failure;
+    if (!control_peer(*transport, options_, &peer_failure)) {
+      return error_status(peer_failure, context.request, context.trace);
+    }
+    if (options_.bootstrap == nullptr) {
+      return error_status(failure(t::ErrorCode::CapabilityNotSupported, t::Recovery::Diagnose),
+                          context.request, context.trace);
+    }
+    t::ReportBootstrapDeliveryCommand command;
+    command.context = context.command;
+    if constexpr (std::is_same_v<Request, v1::RuntimeReportAdapterBootstrapDeliveryRequest>) {
+      command.resource = {t::ResourceKind::Account, {request->account_id()}};
+    } else {
+      command.resource = {t::ResourceKind::Instance, {request->instance_id()}};
+    }
+    command.delivery_id = request->report().delivery_id();
+    command.recipient_id = request->report().recipient_id();
+    command.credential_version = request->report().credential_version();
+    command.receipt_id = request->report().receipt_id();
+    command.control_peer_authorized = true;
+    if (!bootstrap_reported_state(request->report().state(), &command.state)) {
+      return error_status(failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput),
+                          context.request, context.trace);
+    }
+    if (!request->report().has_observed_at()) {
+      return error_status(failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput),
+                          context.request, context.trace);
+    }
+    const auto observed = codec::from_wire(request->report().observed_at());
+    if (const auto* value = std::get_if<t::TimePoint>(&observed)) {
+      command.observed_at = *value;
+    }
+    auto reported = options_.bootstrap->report(command, family);
+    if (const auto* rejected = std::get_if<t::Failure>(&reported)) {
+      return fail(context, *rejected);
+    }
+    if (!bootstrap_delivery(std::get<t::BootstrapDeliveryRecord>(reported),
+                            response->mutable_delivery())) {
+      return error_status(internal_failure(), context.request, context.trace);
     }
     return grpc::Status::OK;
   }

@@ -2,6 +2,7 @@ syntax = "proto3";
 package kiarabot.v1;
 import "google/protobuf/timestamp.proto";
 import "kiarabot/v1/common.proto";
+import "kiarabot/v1/observations.proto";
 import "kiarabot/v1/platform.proto";
 import "kiarabot/v1/policy.proto";
 
@@ -700,6 +701,17 @@ service IdentityService {
     option (requires_idempotency) = false;
     option (default_deadline_ms) = 500;
     option (max_deadline_ms) = 1000;
+    option (requires_online_authorization) = true;
+  }
+  // CONTRACT_STATUS: not_implemented - v1.2 bounded owner log journal, producer pending.
+  // Control caller only; exact RESOURCE_CATALOG/control scope and current online
+  // log.read on every page. An empty page requires a confirmed owner source.
+  rpc ListLogChanges(ObservationChangesRequest) returns (LogChangesResponse) {
+    option (required_permission) = PERMISSION_LOG_READ;
+    option (scope_kinds) = RESOURCE_CATALOG;
+    option (requires_idempotency) = false;
+    option (default_deadline_ms) = 500;
+    option (max_deadline_ms) = 500;
     option (requires_online_authorization) = true;
   }
 }

@@ -917,3 +917,28 @@ expected_version不匹配CONFLICT。新版本必须恰为expected_version+1；�
 被版本CAS拒绝，不能覆盖新材料。IO在效果可能发生后失败返回ACCEPTANCE_UNKNOWN/QUERY_SAME_INTENT，
 忙锁为UPSTREAM_UNAVAILABLE/Backoff；路径/owner/模式边界fail-closed。该sink不创建秘密数据库、不实现
 加密协议，摘要只用外层成熟SHA-256适配器；文件与metadata均不由Control普通业务查询直接暴露。
+
+## 2026-11-04 BOOT-04 受控 bootstrap 交付面（实现已接线，端到端未验收）
+
+本条对应 v1.1 冻结的 OpenAPI operation（`x-contract-status` 仍为 not_implemented），描述 Control 侧
+已实现的受控交付编排语义；在 BOOT-05 真实 Control→Runtime→文件 sink→受限消费链验收前，不宣告可用。
+
+- GET `/api/v1/accounts/{id}/bootstrap-deliveries/{deliveryId}`、
+  GET `/api/v1/instances/{id}/bootstrap-deliveries/{deliveryId}`：`resource.read` + 精确资源 scope；
+  返回 `delivery{delivery_id, resource, recipient_id, credential_version, state, operation, observed_at}`。
+  不含 secret/digest/路径/env；错误资源或不可见一律 404（不泄露存在性）。
+- POST `/api/v1/accounts/{id}/bootstrap/reissue`、
+  POST `/api/v1/instances/{id}/bootstrap/reissue`：分别 `account.manage`/`plugin.manage` + 精确 scope +
+  `Idempotency-Key`；body `{recipient_id, expected_credential_version}` 两者必填且 version 必须等于当前
+  持久版本；返回 `{delivery, operation}`。未知 recipient 400，旧 expected version/同键异参 409，
+  managed instance 需要已确认停止或维护 gate，否则稳定拒绝。同键 replay 只回原 operation 与无秘密
+  delivery metadata。
+- BindAdapter/CreateInstance 的目标响应新增可空 `delivery`（无 secret）；一次性明文
+  `bootstrap_credential` 仍只出现在内部 RPC 响应并立即由 Control 剥离，普通 REST 任何路径（含首插与
+  replay）都不回显。响应丢失后可先经原幂等请求恢复 delivery_id，再 GetBootstrapDelivery/显式 reissue。
+- 错误码沿用既有映射：400/401/403/404/409/503/504；自由文本不替代稳定码。
+- 受控交付面默认关闭：Control 配置 `control_api.secret_delivery_recipients` 指向离线 recipient
+  registry（绝对路径 JSON）时才启用；缺失时只有 legacy 一次性 RPC 响应，不自动交付。
+
+验收状态：Control 编排、owner gateway 路由与 deploy helper 已实现并有单元/模块测试；
+真实 HTTPS Control + Runtime 签发 + 文件 sink + report 全链 e2e 尚未执行（BOOT-05，剩余缺口）。

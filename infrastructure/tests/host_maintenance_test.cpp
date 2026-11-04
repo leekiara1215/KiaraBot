@@ -1,6 +1,4 @@
-#include <cerrno>
 #include <chrono>
-#include <csignal>
 #include <fcntl.h>
 #include <filesystem>
 #include <iostream>
@@ -459,38 +457,7 @@ void real_managed_process(const char* executable) {
   const auto path = temporary.root / "host.sqlite";
   auto maintenance = store(path, clock);
   auto journal = h::make_sqlite_host_journal(path.string());
-  struct ObservedSupervisor final : t::ProcessSupervisor {
-    std::unique_ptr<t::ProcessSupervisor> delegate = t::make_posix_process_supervisor();
-    t::Outcome<SpawnResult> spawn(const t::ManagedProcessSpec& process) override {
-      return delegate->spawn(process);
-    }
-    bool alive(std::int64_t pid, std::string_view marker) override {
-      return delegate->alive(pid, marker);
-    }
-    t::Outcome<bool> terminate(std::int64_t pid, std::string_view marker,
-                               std::chrono::milliseconds grace) override {
-      const bool owned_group = ::getpgid(static_cast<pid_t>(pid)) == pid;
-      const bool before = delegate->alive(pid, marker);
-      errno = 0;
-      const int group_probe = ::kill(-static_cast<pid_t>(pid), 0);
-      const int group_errno = group_probe == 0 ? 0 : errno;
-      const auto started = std::chrono::steady_clock::now();
-      auto result = delegate->terminate(pid, marker, grace);
-      const int terminate_errno = errno;
-      if (const auto* error = std::get_if<t::Failure>(&result)) {
-        std::cerr << "fixture terminate failure code=" << static_cast<int>(error->code)
-                  << " own_group=" << owned_group << " alive_before=" << before
-                  << " group_probe_errno=" << group_errno << " errno=" << terminate_errno
-                  << " elapsed_ms="
-                  << std::chrono::duration_cast<std::chrono::milliseconds>(
-                         std::chrono::steady_clock::now() - started)
-                         .count()
-                  << '\n';
-      }
-      return result;
-    }
-  };
-  auto supervisor = std::make_unique<ObservedSupervisor>();
+  auto supervisor = t::make_posix_process_supervisor();
   t::HostIdentity identity{
       std::string{kHost},
       {{"fixture", temporary.root.string(), std::string(64, 'a'), "fixed-fixture", {}}},
@@ -556,9 +523,6 @@ void real_managed_process(const char* executable) {
           "known process stopped but uncommitted operation stays queryable unknown");
   sql(path, "DROP TRIGGER reject_after_stop;");
   const auto known = take(journal->find_execution({process.instance_id}, {1}));
-  std::cerr << "journal after rollback present=" << known.has_value()
-            << " state=" << (known ? static_cast<int>(known->state) : -1)
-            << " outcome=" << (known ? static_cast<int>(known->outcome) : -1) << '\n';
   require(known && known->state == t::ManagedExecutionState::Exited &&
               (known->outcome == t::ExecutionOutcome::KnownSucceeded ||
                known->outcome == t::ExecutionOutcome::KnownFailed),

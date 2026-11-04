@@ -2,12 +2,14 @@
 
 #include <cstdint>
 #include <map>
+#include <memory>
 #include <optional>
 #include <string>
 #include <string_view>
 #include <variant>
 #include <vector>
 
+#include "kiarabot/control/application/target/secret_delivery.hpp"
 #include "kiarabot/core/domain/target/foundation.hpp"
 #include "kiarabot/v1/identity.pb.h"
 #include "kiarabot/v1/model.pb.h"
@@ -123,6 +125,31 @@ public:
 
   virtual OwnerOutcome<kiarabot::v1::RuntimeBindAdapterResponse>
   bind_adapter(const kiarabot::v1::RuntimeBindAdapterRequest&, std::string_view) = 0;
+  virtual OwnerOutcome<kiarabot::v1::RuntimeGetBootstrapDeliveryResponse>
+  get_bootstrap_delivery(const kiarabot::v1::RuntimeGetBootstrapDeliveryRequest&,
+                         std::string_view) {
+    return OwnerFailure{kiarabot::v1::CAPABILITY_NOT_SUPPORTED, false};
+  }
+  virtual OwnerOutcome<kiarabot::v1::RuntimeReissueBootstrapResponse>
+  reissue_adapter_bootstrap(const kiarabot::v1::RuntimeReissueAdapterBootstrapRequest&,
+                            std::string_view) {
+    return OwnerFailure{kiarabot::v1::CAPABILITY_NOT_SUPPORTED, false};
+  }
+  virtual OwnerOutcome<kiarabot::v1::RuntimeReissueBootstrapResponse>
+  reissue_plugin_bootstrap(const kiarabot::v1::RuntimeReissuePluginBootstrapRequest&,
+                           std::string_view) {
+    return OwnerFailure{kiarabot::v1::CAPABILITY_NOT_SUPPORTED, false};
+  }
+  virtual OwnerOutcome<kiarabot::v1::RuntimeGetBootstrapDeliveryResponse>
+  report_adapter_bootstrap_delivery(
+      const kiarabot::v1::RuntimeReportAdapterBootstrapDeliveryRequest&, std::string_view) {
+    return OwnerFailure{kiarabot::v1::CAPABILITY_NOT_SUPPORTED, false};
+  }
+  virtual OwnerOutcome<kiarabot::v1::RuntimeGetBootstrapDeliveryResponse>
+  report_plugin_bootstrap_delivery(const kiarabot::v1::RuntimeReportPluginBootstrapDeliveryRequest&,
+                                   std::string_view) {
+    return OwnerFailure{kiarabot::v1::CAPABILITY_NOT_SUPPORTED, false};
+  }
   virtual OwnerOutcome<kiarabot::v1::RuntimeUnbindAdapterResponse>
   unbind_adapter(const kiarabot::v1::RuntimeUnbindAdapterRequest&, std::string_view) = 0;
   virtual OwnerOutcome<kiarabot::v1::RuntimeCreateInstallationResponse>
@@ -262,16 +289,37 @@ std::string owner_error_body(kiarabot::v1::ErrorCode code, std::string_view requ
 // Internal resource-family handlers share request correlation and stable error conversion;
 // authorization and business state remain with the existing delegation/owner ports.
 // Returns nullopt when the request belongs to another HTTPS handler.
+// Offline fixed-recipient registry predicate. Never derived from a delivery/HTTP request.
+class BootstrapRecipientsPort {
+public:
+  virtual ~BootstrapRecipientsPort() = default;
+  virtual bool known(std::string_view recipient_id,
+                     const kiarabot::v1::ResourceRef& resource) const = 0;
+};
+
+// BOOT-04 composition: parses the offline non-secret recipient registry (`schema`/`recipients`)
+// and builds the fixed-directory SecretDeliveryPort, its application and the recipient predicate.
+struct ControlBootstrapDelivery {
+  std::unique_ptr<SecretDeliveryPort> port;
+  std::unique_ptr<SecretDeliveryApplication> application;
+  std::unique_ptr<BootstrapRecipientsPort> recipients;
+};
+core::target::Outcome<ControlBootstrapDelivery>
+make_control_bootstrap_delivery(const std::string& registry_path);
+
 class OwnerGateway {
 public:
   OwnerGateway(DelegationPort& delegation, RuntimeActionsPort& runtime,
                IdentityPrincipalsPort* principals = nullptr, HealthPort* health = nullptr,
                RuntimeResourcesPort* resources = nullptr, SchedulerTasksPort* tasks = nullptr,
                OperationPort* operations = nullptr, ModelManagementPort* model = nullptr,
-               AuditLogSourcePort* audit_logs = nullptr)
+               AuditLogSourcePort* audit_logs = nullptr,
+               SecretDeliveryApplication* secret_delivery = nullptr,
+               BootstrapRecipientsPort* bootstrap_recipients = nullptr)
       : delegation_(delegation), runtime_(runtime), principals_(principals), health_(health),
         resources_(resources), tasks_(tasks), operations_(operations), model_(model),
-        audit_logs_(audit_logs) {}
+        audit_logs_(audit_logs), secret_delivery_(secret_delivery),
+        bootstrap_recipients_(bootstrap_recipients) {}
   std::optional<OwnerHttpResult> handle(const OwnerHttpRequest& request);
   // Health probes are local process facts plus the composition-provided readiness answer.
   static OwnerHttpResult live();
@@ -287,6 +335,8 @@ private:
   OperationPort* operations_;
   ModelManagementPort* model_;
   AuditLogSourcePort* audit_logs_;
+  SecretDeliveryApplication* secret_delivery_;
+  BootstrapRecipientsPort* bootstrap_recipients_;
 };
 
 } // namespace kiarabot::control::target

@@ -390,7 +390,17 @@
       "RuntimeSetHostAdmissionGateRequest": "not_implemented",
       "RuntimeSetHostAdmissionGateResponse": "not_implemented",
       "IdentityCheckHostGateAuthorizationRequest": "not_implemented",
-      "IdentityCheckHostGateAuthorizationResponse": "not_implemented"
+      "IdentityCheckHostGateAuthorizationResponse": "not_implemented",
+      "ObservationChangesRequest": "not_implemented",
+      "LogMetadata": "not_implemented",
+      "LogChange": "not_implemented",
+      "LogChangesResponse": "not_implemented",
+      "TaskMetadata": "not_implemented",
+      "TaskChange": "not_implemented",
+      "TaskChangesResponse": "not_implemented",
+      "MessageMetadata": "not_implemented",
+      "MessageMetadataChange": "not_implemented",
+      "MessageMetadataChangesResponse": "not_implemented"
     },
     "proto_fields": {
       "IdentityAuditFilter.scope": "implemented",
@@ -1797,7 +1807,53 @@
       "IdentityCheckHostGateAuthorizationRequest.host_certificate_sha256": "not_implemented",
       "IdentityCheckHostGateAuthorizationResponse.decision": "not_implemented",
       "IdentityCheckHostGateAuthorizationResponse.host_credential_version": "not_implemented",
-      "IdentityCheckHostGateAuthorizationResponse.host_principal_version": "not_implemented"
+      "IdentityCheckHostGateAuthorizationResponse.host_principal_version": "not_implemented",
+      "ObservationChangesRequest.context": "not_implemented",
+      "ObservationChangesRequest.scope": "not_implemented",
+      "ObservationChangesRequest.cursor": "not_implemented",
+      "ObservationChangesRequest.page_size": "not_implemented",
+      "LogMetadata.owner_service": "not_implemented",
+      "LogMetadata.entry_id": "not_implemented",
+      "LogMetadata.severity": "not_implemented",
+      "LogMetadata.component": "not_implemented",
+      "LogMetadata.method": "not_implemented",
+      "LogMetadata.event": "not_implemented",
+      "LogMetadata.resource": "not_implemented",
+      "LogMetadata.request_id": "not_implemented",
+      "LogMetadata.trace_id": "not_implemented",
+      "LogMetadata.occurred_at": "not_implemented",
+      "LogChange.log": "not_implemented",
+      "LogChange.cursor": "not_implemented",
+      "LogChangesResponse.changes": "not_implemented",
+      "LogChangesResponse.next_cursor": "not_implemented",
+      "LogChangesResponse.has_more": "not_implemented",
+      "LogChangesResponse.checked_at": "not_implemented",
+      "TaskMetadata.owner_service": "not_implemented",
+      "TaskMetadata.task_id": "not_implemented",
+      "TaskMetadata.owner_instance_id": "not_implemented",
+      "TaskMetadata.state": "not_implemented",
+      "TaskMetadata.version": "not_implemented",
+      "TaskMetadata.updated_at": "not_implemented",
+      "TaskMetadata.cancel_requested": "not_implemented",
+      "TaskMetadata.occurrence_id": "not_implemented",
+      "TaskMetadata.reason_code": "not_implemented",
+      "TaskChange.task": "not_implemented",
+      "TaskChange.cursor": "not_implemented",
+      "TaskChangesResponse.changes": "not_implemented",
+      "TaskChangesResponse.next_cursor": "not_implemented",
+      "TaskChangesResponse.has_more": "not_implemented",
+      "TaskChangesResponse.checked_at": "not_implemented",
+      "MessageMetadata.owner_service": "not_implemented",
+      "MessageMetadata.message_id": "not_implemented",
+      "MessageMetadata.conversation_id": "not_implemented",
+      "MessageMetadata.account_id": "not_implemented",
+      "MessageMetadata.received_at": "not_implemented",
+      "MessageMetadataChange.message": "not_implemented",
+      "MessageMetadataChange.cursor": "not_implemented",
+      "MessageMetadataChangesResponse.changes": "not_implemented",
+      "MessageMetadataChangesResponse.next_cursor": "not_implemented",
+      "MessageMetadataChangesResponse.has_more": "not_implemented",
+      "MessageMetadataChangesResponse.checked_at": "not_implemented"
     },
     "event_payloads": {
       "EventEnvelope.message_received": "implemented",
@@ -2186,7 +2242,9 @@
       "semantic.operations.change_journal": "not_implemented",
       "semantic.model.stream_delivery": "not_implemented",
       "semantic.model.stream_cancel_billing": "not_implemented",
-      "semantic.host.gate_authorization": "not_implemented"
+      "semantic.host.gate_authorization": "not_implemented",
+      "semantic.observation.feed_family_isolation": "not_implemented",
+      "semantic.observation.safe_change_projection": "not_implemented"
     }
   },
   "evidence": {
@@ -6592,6 +6650,182 @@
     "semantic.host.gate_authorization": [
       "doc/01-contracts.md",
       "doc/02-core.md"
+    ],
+    "ObservationChangesRequest": [
+      "proto/kiarabot/v1/observations.proto"
+    ],
+    "ObservationChangesRequest.context": [
+      "proto/kiarabot/v1/observations.proto"
+    ],
+    "ObservationChangesRequest.scope": [
+      "proto/kiarabot/v1/observations.proto"
+    ],
+    "ObservationChangesRequest.cursor": [
+      "proto/kiarabot/v1/observations.proto"
+    ],
+    "ObservationChangesRequest.page_size": [
+      "proto/kiarabot/v1/observations.proto"
+    ],
+    "LogMetadata": [
+      "proto/kiarabot/v1/observations.proto"
+    ],
+    "LogMetadata.owner_service": [
+      "proto/kiarabot/v1/observations.proto"
+    ],
+    "LogMetadata.entry_id": [
+      "proto/kiarabot/v1/observations.proto"
+    ],
+    "LogMetadata.severity": [
+      "proto/kiarabot/v1/observations.proto"
+    ],
+    "LogMetadata.component": [
+      "proto/kiarabot/v1/observations.proto"
+    ],
+    "LogMetadata.method": [
+      "proto/kiarabot/v1/observations.proto"
+    ],
+    "LogMetadata.event": [
+      "proto/kiarabot/v1/observations.proto"
+    ],
+    "LogMetadata.resource": [
+      "proto/kiarabot/v1/observations.proto"
+    ],
+    "LogMetadata.request_id": [
+      "proto/kiarabot/v1/observations.proto"
+    ],
+    "LogMetadata.trace_id": [
+      "proto/kiarabot/v1/observations.proto"
+    ],
+    "LogMetadata.occurred_at": [
+      "proto/kiarabot/v1/observations.proto"
+    ],
+    "LogChange": [
+      "proto/kiarabot/v1/observations.proto"
+    ],
+    "LogChange.log": [
+      "proto/kiarabot/v1/observations.proto"
+    ],
+    "LogChange.cursor": [
+      "proto/kiarabot/v1/observations.proto"
+    ],
+    "LogChangesResponse": [
+      "proto/kiarabot/v1/observations.proto"
+    ],
+    "LogChangesResponse.changes": [
+      "proto/kiarabot/v1/observations.proto"
+    ],
+    "LogChangesResponse.next_cursor": [
+      "proto/kiarabot/v1/observations.proto"
+    ],
+    "LogChangesResponse.has_more": [
+      "proto/kiarabot/v1/observations.proto"
+    ],
+    "LogChangesResponse.checked_at": [
+      "proto/kiarabot/v1/observations.proto"
+    ],
+    "TaskMetadata": [
+      "proto/kiarabot/v1/observations.proto"
+    ],
+    "TaskMetadata.owner_service": [
+      "proto/kiarabot/v1/observations.proto"
+    ],
+    "TaskMetadata.task_id": [
+      "proto/kiarabot/v1/observations.proto"
+    ],
+    "TaskMetadata.owner_instance_id": [
+      "proto/kiarabot/v1/observations.proto"
+    ],
+    "TaskMetadata.state": [
+      "proto/kiarabot/v1/observations.proto"
+    ],
+    "TaskMetadata.version": [
+      "proto/kiarabot/v1/observations.proto"
+    ],
+    "TaskMetadata.updated_at": [
+      "proto/kiarabot/v1/observations.proto"
+    ],
+    "TaskMetadata.cancel_requested": [
+      "proto/kiarabot/v1/observations.proto"
+    ],
+    "TaskMetadata.occurrence_id": [
+      "proto/kiarabot/v1/observations.proto"
+    ],
+    "TaskMetadata.reason_code": [
+      "proto/kiarabot/v1/observations.proto"
+    ],
+    "TaskChange": [
+      "proto/kiarabot/v1/observations.proto"
+    ],
+    "TaskChange.task": [
+      "proto/kiarabot/v1/observations.proto"
+    ],
+    "TaskChange.cursor": [
+      "proto/kiarabot/v1/observations.proto"
+    ],
+    "TaskChangesResponse": [
+      "proto/kiarabot/v1/observations.proto"
+    ],
+    "TaskChangesResponse.changes": [
+      "proto/kiarabot/v1/observations.proto"
+    ],
+    "TaskChangesResponse.next_cursor": [
+      "proto/kiarabot/v1/observations.proto"
+    ],
+    "TaskChangesResponse.has_more": [
+      "proto/kiarabot/v1/observations.proto"
+    ],
+    "TaskChangesResponse.checked_at": [
+      "proto/kiarabot/v1/observations.proto"
+    ],
+    "MessageMetadata": [
+      "proto/kiarabot/v1/observations.proto"
+    ],
+    "MessageMetadata.owner_service": [
+      "proto/kiarabot/v1/observations.proto"
+    ],
+    "MessageMetadata.message_id": [
+      "proto/kiarabot/v1/observations.proto"
+    ],
+    "MessageMetadata.conversation_id": [
+      "proto/kiarabot/v1/observations.proto"
+    ],
+    "MessageMetadata.account_id": [
+      "proto/kiarabot/v1/observations.proto"
+    ],
+    "MessageMetadata.received_at": [
+      "proto/kiarabot/v1/observations.proto"
+    ],
+    "MessageMetadataChange": [
+      "proto/kiarabot/v1/observations.proto"
+    ],
+    "MessageMetadataChange.message": [
+      "proto/kiarabot/v1/observations.proto"
+    ],
+    "MessageMetadataChange.cursor": [
+      "proto/kiarabot/v1/observations.proto"
+    ],
+    "MessageMetadataChangesResponse": [
+      "proto/kiarabot/v1/observations.proto"
+    ],
+    "MessageMetadataChangesResponse.changes": [
+      "proto/kiarabot/v1/observations.proto"
+    ],
+    "MessageMetadataChangesResponse.next_cursor": [
+      "proto/kiarabot/v1/observations.proto"
+    ],
+    "MessageMetadataChangesResponse.has_more": [
+      "proto/kiarabot/v1/observations.proto"
+    ],
+    "MessageMetadataChangesResponse.checked_at": [
+      "proto/kiarabot/v1/observations.proto"
+    ],
+    "semantic.observation.feed_family_isolation": [
+      "proto/kiarabot/v1/observations.proto",
+      "proto/tests/observation_feed_contract_test.py"
+    ],
+    "semantic.observation.safe_change_projection": [
+      "proto/kiarabot/v1/observations.proto",
+      "proto/tests/observation_feed_contract_test.py"
     ]
   },
   "vocabulary": {

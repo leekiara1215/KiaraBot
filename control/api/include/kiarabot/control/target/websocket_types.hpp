@@ -42,5 +42,16 @@ struct WebSocketPoll {
   WebSocketIdentity identity;
   v1::OperationChangesResponse operations;
 };
+// Frozen RESYNC_REQUIRED reasons. CURSOR_EXPIRED covers retained owner/Control replay loss and
+// conservative owner dataset gaps; INVALID_CURSOR is a locally invalid replay boundary;
+// SERVER_RESTART is a changed/failed Control stream process epoch.
+enum class WebSocketResyncReason { CursorExpired, InvalidCursor, ServerRestart };
+// Transport measurements used by the bounded retained store and session accounting.
+struct WebSocketEventRecord {
+  std::uint64_t sequence = 0;
+  std::string json;
+  std::optional<v1::StreamCursor> owner_cursor;
+  std::chrono::steady_clock::time_point retained_at{};
+};
 
 } // namespace kiarabot::control::target

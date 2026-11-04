@@ -790,3 +790,53 @@ add_test(NAME ws03_operation_observation_e2e COMMAND "${KIARABOT_TARGET_PYTHON}"
 set_tests_properties(ws03_operation_observation_e2e PROPERTIES
   LABELS "ws03;integration;security;fault" TIMEOUT 180
   ENVIRONMENT "PATH=${RUNTIME_E2E_OPENSSL_BIN_DIR}:${RUNTIME_E2E_PYTHON_BIN_DIR}:$ENV{PATH};PYTHONPATH=${CMAKE_SOURCE_DIR}/sdk/python/build/generated")
+
+# STR06: strict streaming codec + ChatStream/ListOperationChanges RPC. Owned by the streaming
+# work stream; included here because it extends the model RPC target and the Model composition.
+include(${CMAKE_CURRENT_LIST_DIR}/model-streaming-rpc.cmake)
+
+# STR09 provider fixture self-check (no real Runtime/Bridge dependency). The full managed streaming
+# chain test is registered once STR07 lands, per the streaming work plan.
+# STR09 full managed-plugin streaming chain (real owned PG/TLS/Runtime/Model/plugin-host with a
+# local gated SSE Provider). Registered once STR07 landed; the driver reports exit 3 only while the
+# bridge is unavailable and that is not counted as a pass.
+add_test(NAME p11_streaming_managed_model_e2e COMMAND "${KIARABOT_TARGET_PYTHON}"
+  "${CMAKE_SOURCE_DIR}/infrastructure/postgres/tests/run_database_test.py"
+  --pg-bin "${KIARABOT_TEST_PG_BIN}" --openssl "${KIARABOT_TEST_OPENSSL}"
+  --initializer $<TARGET_FILE:kiarabot-pg-initialize>
+  --test "${CMAKE_SOURCE_DIR}/tests/architecture/p11_streaming_managed_model_e2e.py"
+  --test-argument $<TARGET_FILE:kiarabot-identity-bootstrap>
+  --test-argument "${KIARABOT_TEST_PG_BIN}"
+  --test-argument $<TARGET_FILE:kiarabot-identity>
+  --test-argument $<TARGET_FILE:kiarabot-runtime>
+  --test-argument $<TARGET_FILE:kiarabot-model>
+  --test-argument $<TARGET_FILE:kiarabot_postgres_runtime_bridge_seed>
+  --test-argument $<TARGET_FILE:kiarabot_p05b_model_seed>
+  --test-argument $<TARGET_FILE:kiarabot-plugin-host>)
+set_tests_properties(p11_streaming_managed_model_e2e PROPERTIES
+  LABELS "p11;streaming;integration;security;fault" TIMEOUT 600
+  WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+  ENVIRONMENT "PATH=${RUNTIME_E2E_OPENSSL_BIN_DIR}:${RUNTIME_E2E_PYTHON_BIN_DIR}:$ENV{PATH};PYTHONPATH=${CMAKE_SOURCE_DIR}/sdk/python/build/generated")
+
+add_test(NAME p11_streaming_provider_fixture COMMAND
+  "${KIARABOT_TARGET_PYTHON}"
+  "${CMAKE_SOURCE_DIR}/tests/architecture/p11_streaming_managed_model_e2e.py" --self-check)
+set_tests_properties(p11_streaming_provider_fixture PROPERTIES
+  LABELS "p11;streaming;unit;provider" TIMEOUT 60
+  WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+
+# HOST-03/04: the Host management fragment defines targets that need kiarabot_platform_warnings and
+# the proto/core targets, so it is included here (not from core/CMakeLists.txt, which runs before the
+# platform helper definitions). The coordinator makes this unconditional at integration.
+if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/host-management.cmake")
+  include(${CMAKE_CURRENT_LIST_DIR}/host-management.cmake)
+endif()
+
+# Worker-owned optional fragments, integrated by the coordinator only. They are created by the
+# streaming/WS work streams; the coordinator makes these includes unconditional at integration.
+if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/model-streaming-runtime.cmake")
+  include(${CMAKE_CURRENT_LIST_DIR}/model-streaming-runtime.cmake)
+endif()
+if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/ws-feeds.cmake")
+  include(${CMAKE_CURRENT_LIST_DIR}/ws-feeds.cmake)
+endif()

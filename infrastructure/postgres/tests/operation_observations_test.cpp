@@ -491,9 +491,15 @@ void run(const std::filesystem::path& root, std::uint16_t port,
                 actual == std::filesystem::canonical(root / "data") && actual.parent_path() == root,
             "fixture backend directory mismatch");
   }
-  const std::array owners{t::Service::Runtime, t::Service::Scheduler, t::Service::Model};
-  const std::array<std::string, 3> names{"runtime", "scheduler", "model"};
+  // Describe mode measures every library including Identity (which has no operation journal);
+  // the normal suite still covers exactly the three journal owners.
+  const std::array owners{t::Service::Identity, t::Service::Runtime, t::Service::Scheduler,
+                          t::Service::Model};
+  const std::array<std::string, 4> names{"identity", "runtime", "scheduler", "model"};
   for (std::size_t index = 0; index < owners.size(); ++index) {
+    if (!describe && owners[index] == t::Service::Identity) {
+      continue;
+    }
     active_owner = owners[index];
     if (!verify.empty() && verify[0] != names[index]) {
       continue;

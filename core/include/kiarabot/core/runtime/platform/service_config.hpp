@@ -50,6 +50,10 @@ struct ControlApiMaterial {
   std::optional<std::string> host_endpoint;
   std::vector<std::string> websocket_origins{};
   bool websocket_allow_missing_origin = false;
+  // BOOT-04: absolute path to the offline non-secret recipient registry JSON. Absent disables the
+  // controlled delivery surface (the legacy one-time helper remains the only path). The file is
+  // parsed by the Control composition root; the client can never supply a path, URL or command.
+  std::optional<std::string> secret_delivery_recipients = std::nullopt;
 };
 // Trusted file references only; mature crypto loaders own secret allocation and key validation.
 struct IdentitySymmetricKeyFile {
@@ -118,6 +122,12 @@ struct SchedulerRuntimePeerMaterial {
   std::string account_id;
   std::vector<std::string> permissions;
 };
+// Runtime-only BOOT-02: exact offline enrollment of the Control platform peer allowed to report or
+// query controlled bootstrap delivery evidence. The fingerprint is the actual inbound mTLS leaf
+// SHA-256, never a wire field; empty keeps every delivery report/query fail-closed.
+struct ControlRuntimePeerMaterial {
+  std::string certificate_sha256;
+};
 struct HostMaterial {
   std::string host_id;
   std::string sqlite_path;
@@ -167,6 +177,9 @@ struct ProcessConfig {
   // Scheduler-only: Runtime platform-peer instance grants for ListTasks/CancelTask. Empty keeps
   // the platform path fail-closed; Control/user delegation callers are unaffected.
   std::vector<SchedulerRuntimePeerMaterial> runtime_peers;
+  // Runtime-only BOOT-02: Control platform peers that may report/query bootstrap delivery
+  // evidence; actual inbound mTLS leaf fingerprints, never wire input. Empty fails closed.
+  std::vector<ControlRuntimePeerMaterial> control_runtime_peers;
 };
 struct ConfigFailure {
   int exit_code;

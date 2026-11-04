@@ -9,6 +9,7 @@
 #include "kiarabot/core/application/target/runtime_action_application.hpp"
 #include "kiarabot/core/application/target/runtime_audit_application.hpp"
 #include "kiarabot/core/application/target/runtime_resource_application.hpp"
+#include "kiarabot/core/application/target/runtime_resources/bootstrap.hpp"
 #include "kiarabot/core/application/target/runtime_storage_application.hpp"
 #include "kiarabot/v1/runtime.grpc.pb.h"
 
@@ -52,6 +53,12 @@ struct RuntimeRpcOptions {
   // Optional process-level deadline bound (shared shutdown budget); expired -> TIMEOUT.
   std::function<target::Outcome<target::TimePoint>()> invocation_deadline;
   target::OperationObservationApplication* observations = nullptr;
+  // BOOT-02 typed controlled bootstrap delivery. Null keeps the five delivery methods at
+  // CAPABILITY_NOT_SUPPORTED instead of an accidental handler.
+  target::RuntimeBootstrapDeliveryApplication* bootstrap = nullptr;
+  // Verified Control platform peer: actual inbound mTLS leaf fingerprint plus explicit deployment
+  // allowlist. Absent means delivery reports/queries are refused (fail closed, never implicit).
+  RuntimePlatformPeerAuthorizer control_peer;
 };
 
 // Transport adapter for the P05 production unary surface: accounts, explicit bindings, plugin

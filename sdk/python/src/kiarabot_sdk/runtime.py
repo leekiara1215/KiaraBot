@@ -11,10 +11,12 @@ from pathlib import Path
 
 import grpc
 from google.protobuf.json_format import Parse, ParseError
-from kiarabot.v1 import common_pb2 as common, platform_pb2 as platform, plugins_pb2 as plugins
+from kiarabot.v1 import common_pb2 as common, model_stream_pb2 as streaming
+from kiarabot.v1 import platform_pb2 as platform, plugins_pb2 as plugins
 from kiarabot.v1 import services_pb2_grpc as services
 
-from . import actions as action_api, delivery, tasks as task_api, transport
+from . import actions as action_api, delivery, model_stream as stream_api
+from . import tasks as task_api, transport
 from .errors import PluginError
 
 logger = logging.getLogger(__name__)
@@ -158,6 +160,33 @@ class Context:
         if result.HasField('error'):
             raise PluginError(result.error.code, result.error.retryable)
         return result.model_chat
+
+    def model_stream(self, model, messages, *, logical_call_id=None,
+                     timeout=stream_api.DEFAULT_DEADLINE_SECONDS):
+        """Open one text stream attempt (negotiated ``host.model.stream.v1``).
+
+        Returns a :class:`~kiarabot_sdk.model_stream.ModelStream` async context
+        manager. ``logical_call_id`` is the stable business identity: generate a
+        fresh UUIDv4 for a new call and reuse the exact same value for a retry or
+        replay so Model returns replay metadata instead of calling the provider
+        again. ``timeout`` is this attempt's HostRequest deadline (seconds,
+        <=30). The optional feature is never implied by ``host.model.v1`` and the
+        current permission is the existing ``model.chat``.
+
+        An unsupported/not-negotiated feature fails locally with
+        ``CAPABILITY_NOT_SUPPORTED`` and a missing ``model.chat`` grant with
+        ``PERMISSION_DENIED``. ``model_chat(..., stream=True)`` keeps raising
+        ``CAPABILITY_NOT_SUPPORTED`` and points callers here (no return-type
+        change for the old API).
+        """
+        if not self._rpc:
+            raise PluginError(common.UPSTREAM_UNAVAILABLE, True)
+        if stream_api.STREAM_FEATURE not in self._features:
+            raise PluginError(common.CAPABILITY_NOT_SUPPORTED)
+        if stream_api.MODEL_PERMISSION not in self._permissions:
+            raise PluginError(common.PERMISSION_DENIED)
+        return stream_api.ModelStream(self._rpc, model, messages,
+                                      logical_call_id=logical_call_id, timeout=timeout)
 
     def _require_tasks(self, timeout, *, creating=False):
         """P10c task preflight: feature, plugin permission and (create) timer subscription."""
@@ -344,12 +373,29 @@ async def invoke(hook, timeout):
 
 
 class _Rpc:
-    """Callable closure used by :class:`Context` to multiplex stream RPC frames."""
+    """Callable closure used by :class:`Context` to multiplex stream RPC frames.
+
+    One-answer-one-question calls use the bounded ``pending`` future map. Model
+    text streams are independent: they are registered in ``streams`` before the
+    start frame is written and their ordered events never complete a
+    ``HostResponse`` future. A pre-start rejection may still arrive as one
+    ``HostResponse`` for the start ``request_id``; the session loop resolves
+    that into the stream registry instead of a pending call.
+    """
 
     def __init__(self, write, pending, expected):
         self._write, self._pending, self._expected = write, pending, expected
+        self.streams = stream_api.StreamRegistry()
+        self.streams.cancel_callback = self._cancel_callback
+        self._closed = False
+
+    @property
+    def closed(self) -> bool:
+        return self._closed
 
     async def __call__(self, frame, timeout):
+        if self._closed:
+            raise PluginError(common.UPSTREAM_UNAVAILABLE, True)
         if len(self._pending) >= 64:
             raise PluginError(common.RATE_LIMITED, True)
         request_id = getattr(frame, frame.WhichOneof('body')).request_id
@@ -382,6 +428,49 @@ class _Rpc:
                 future.cancel()
             elif not future.cancelled():
                 future.exception()  # Consume a disconnect racing with write failure.
+
+    async def start_stream(self, request, attempt):
+        """Write one ``model_stream_start`` and await admission.
+
+        Admission resolves from the ordered stream events (started or a
+        pre-start terminal) or from a pre-start HostResponse rejection. There is
+        no successful HostResponse completion for a start request.
+        """
+        if self._closed:
+            raise PluginError(common.UPSTREAM_UNAVAILABLE, True)
+        try:
+            async with asyncio.timeout(attempt.timeout):
+                await self._write(plugins.PluginToCore(host_request=request))
+                return await attempt.wait_admission()
+        except asyncio.TimeoutError:
+            raise PluginError(common.TIMEOUT, True) from None
+        except grpc.RpcError:
+            raise PluginError(common.UPSTREAM_UNAVAILABLE, True) from None
+
+    async def cancel_stream(self, start_request_id, logical_call_id, timeout):
+        """Send one cancel request and return the typed receipt."""
+        if self._closed:
+            raise PluginError(common.UPSTREAM_UNAVAILABLE, True)
+        request = plugins.HostRequest(
+            request_id=str(uuid.uuid4()),
+            trace_id=str(uuid.uuid4()),
+            idempotency_key='',
+            model_stream_cancel=streaming.ModelStreamCancelRequest(
+                start_request_id=start_request_id, logical_call_id=logical_call_id))
+        request.deadline.FromDatetime(datetime.now(timezone.utc) + timedelta(seconds=timeout))
+        response = await self(plugins.PluginToCore(host_request=request), timeout)
+        if response.HasField('error'):
+            raise PluginError(response.error.code, response.error.retryable)
+        return response.model_stream_cancel
+
+    async def _cancel_callback(self, start_request_id, logical_call_id):
+        return await self.cancel_stream(start_request_id, logical_call_id,
+                                        stream_api.DEFAULT_CANCEL_TIMEOUT)
+
+    async def aclose(self):
+        """Fail all in-flight streams as unknown delivery and join cancels."""
+        self._closed = True
+        await self.streams.close()
 
 
 class Runner:
@@ -467,6 +556,24 @@ class Runner:
         self._config_seen[ack.delivery_id] = (fingerprint, ack)
         if len(self._config_seen) > 32:
             del self._config_seen[next(iter(self._config_seen))]
+
+    @staticmethod
+    def _reject_stream_start(attempt, result):
+        """Resolve a pending stream start from one HostResponse.
+
+        A start attempt is normally answered by ordered ``model_stream_event``
+        frames. A HostResponse can only be a pre-start rejection or an unknown
+        outcome, so it must end the pending start instead of leaving it waiting
+        for events that will never arrive. It is never treated as stream success.
+        """
+        if attempt.started is not None:
+            attempt.fail_unknown('unexpected_host_response')
+            return
+        if result.HasField('error') and result.WhichOneof('result') is None:
+            attempt.reject_admission(
+                PluginError(result.error.code, result.error.retryable))
+        else:
+            attempt.reject_admission(PluginError(common.UPSTREAM_UNAVAILABLE, True))
 
     async def _session(self):
         self.context._permissions = frozenset()
@@ -708,10 +815,25 @@ class Runner:
                         continue
                     if kind == 'error':
                         raise PluginError(response.error.code, response.error.retryable)
+                    if kind == 'model_stream_event':
+                        # Ordered stream events have their own registry; they never
+                        # complete a HostResponse future. Dispatch is non-blocking so a
+                        # slow stream consumer cannot stall heartbeat/refresh/ACK here.
+                        rpc = self.context._rpc
+                        if rpc is not None:
+                            rpc.streams.dispatch(response.model_stream_event)
+                        continue
                     if kind == 'host_response':
                         result = response.host_response
                         future = pending.get(result.request_id)
                         if future is None or future.done():
+                            # A start request is answered by stream events, but a
+                            # pre-start rejection/unknown may arrive as a HostResponse.
+                            # Ending that pending stream is mandatory.
+                            rpc = self.context._rpc
+                            attempt = rpc.streams.find(result.request_id) if rpc else None
+                            if attempt is not None:
+                                self._reject_stream_start(attempt, result)
                             continue
                         if result.HasField('error') and result.WhichOneof('result') is None:
                             future.set_exception(PluginError(result.error.code, result.error.retryable))
@@ -752,10 +874,16 @@ class Runner:
                     with suppress(asyncio.TimeoutError):
                         await asyncio.wait_for(event_queue.join(), self.options.io_timeout)
             finally:
+                rpc = self.context._rpc
                 self.context._permissions = frozenset()
                 self.context._features = frozenset()
                 self.context._config = None
                 self.context._rpc = None
+                if rpc is not None:
+                    # End every in-flight stream as unknown delivery before the
+                    # transport is torn down; no stream may wait for a terminal
+                    # that this connection can no longer deliver.
+                    await rpc.aclose()
                 call.cancel()
                 for future in pending.values():
                     if not future.done():

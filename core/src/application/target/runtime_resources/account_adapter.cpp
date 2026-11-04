@@ -3,6 +3,7 @@
 
 #include "common.hpp"
 #include "components.hpp"
+#include "kiarabot/core/application/target/runtime_resources/bootstrap.hpp"
 #include "kiarabot/core/domain/target/event_delivery.hpp"
 #include "kiarabot/core/domain/target/host_command_records.hpp"
 #include "mutation.hpp"
@@ -253,6 +254,7 @@ public:
     const auto authorization_version =
         std::get<RuntimeAuthorizationDecision>(checked).authorization_version;
     std::optional<std::string> bootstrap_credential;
+    std::optional<BootstrapDeliveryRecord> delivery;
     auto result = mutate<AdapterBindingRecord>(
         transactions_, request.context, resource, authorization_version,
         [&](RuntimeUnitOfWork& work, TimePoint now) -> Outcome<AdapterBindingRecord> {
@@ -302,6 +304,26 @@ public:
           if (const auto* failure = std::get_if<Failure>(&operation)) {
             return *failure;
           }
+          if (!request.bootstrap_recipient_id.empty()) {
+            // Explicit opt-in: the first issuance persists the digest, the real monotonic version,
+            // the recipient binding and the no-secret delivery intent in this same UoW. An
+            // already-active credential is never re-exposed here; an explicit authorized reissue
+            // is the only way to obtain a new plaintext.
+            auto issued = issue_bootstrap_delivery(
+                work, ids_, secrets_, resource, BootstrapPeerFamily::Adapter,
+                request.adapter_instance.value, request.bootstrap_recipient_id,
+                std::get<Operation>(operation).ref, now);
+            if (const auto* failure = std::get_if<Failure>(&issued)) {
+              return *failure;
+            }
+            auto issue = std::move(std::get<std::optional<BootstrapDeliveryIssue>>(issued));
+            if (!issue) {
+              return failure(ErrorCode::Conflict, Recovery::ReadCurrent);
+            }
+            bootstrap_credential = std::move(issue->plaintext);
+            delivery = std::move(issue->delivery);
+            return binding;
+          }
           auto issued =
               issue_bootstrap_credential(work, ids_, secrets_, request.adapter_instance.value, now);
           if (const auto* failure = std::get_if<Failure>(&issued)) {
@@ -318,8 +340,18 @@ public:
       return *failure;
     }
     auto mutation = std::move(std::get<Mutation<AdapterBindingRecord>>(result));
+    if (!delivery && !request.bootstrap_recipient_id.empty()) {
+      // Idempotent replay restores the current no-secret delivery metadata (never the plaintext) so
+      // Control can recover the original delivery_id after a lost response.
+      auto current = current_delivery_metadata(transactions_, request.context, resource,
+                                               request.bootstrap_recipient_id);
+      if (const auto* rejected = std::get_if<Failure>(&current)) {
+        return *rejected;
+      }
+      delivery = std::move(std::get<std::optional<BootstrapDeliveryRecord>>(current));
+    }
     return BindingMutation{std::move(mutation.value), accepted(std::move(mutation.operation)),
-                           std::move(bootstrap_credential)};
+                           std::move(bootstrap_credential), std::move(delivery)};
   }
 
   Outcome<BindingMutation> unbind_adapter(const UnbindAdapterRequest& request) override {
@@ -386,7 +418,7 @@ public:
     }
     auto mutation = std::move(std::get<Mutation<AdapterBindingRecord>>(result));
     return BindingMutation{std::move(mutation.value), accepted(std::move(mutation.operation)),
-                           std::nullopt};
+                           std::nullopt, std::nullopt};
   }
 
   Outcome<AdapterRegistrationResult>

@@ -467,7 +467,9 @@ public:
                         ? "fixture-runtime-proof:"
                         : "fixture-proof:"} +
         resource.id());
-    output->mutable_delegation()->set_audience("identity");
+    // The production Identity RPC echoes the requested audience (identity_rpc.cpp). Keeping the
+    // fixture consistent lets Control's typed stream delegation validate the real wire shape.
+    output->mutable_delegation()->set_audience(input->audience());
     output->mutable_delegation()->mutable_expires_at()->set_seconds(kChecked + 30);
     return grpc::Status::OK;
   }

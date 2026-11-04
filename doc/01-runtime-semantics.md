@@ -332,3 +332,12 @@ v1.1 Host gate：每次Runtime处理SetHostAdmissionGate均通过Identity.CheckH
 当前实际TLS Host叶、存储Host绑定和精确host.execute；检查结果只服务本次请求，不是持久授权票据。
 依赖故障/超时不开放gate，不将operation UNKNOWN改为成功。Host后台只持久intent与版本，不持久Control
 bearer；重启后沿原intent重试并重新核定当前Host授权。原CheckAuthorization非空delegation语义不变。
+
+v1.2 观察 feed（logs/tasks/messages）：每 `(owner, feed family)` 独立持久 epoch/head/low-water，
+cursor 绑定 owner+family+dataset，跨 family/旧数据 cursor 为 CONFLICT+NOT_ACCEPTED/RESYNC_SNAPSHOT；
+普通 restart 保留 epoch，restore/rebuild/reset 轮换；600 秒有界保留，容量淘汰显式推进 low-water。
+变化行与权威业务写入同一 UoW 原子提交，提交序用事务计数/锁而非 nextval/occurred_at；rollback 不产生、
+未知提交按原身份恢复；空成功页仅在 owner 确认 head 时合法，依赖/权限失败不得伪空页。日志/任务/消息
+三族只暴露安全封闭投影：日志无 audit payload/自由 message/actor 秘密；任务无 payload/target 且终态可观察；
+消息仅 received 的内部 id 与时间，无正文/平台原始包/外部平台 ID/sent 推断。新 feed 不改变 v1.1
+operation journal 与既有 REST/WS 授权；cursor 不是授权能力，每页重核当前精确 scope。

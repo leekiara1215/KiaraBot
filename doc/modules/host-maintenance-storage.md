@@ -22,3 +22,8 @@ Begin：Accepted→LocalClosed→RuntimeClosed→Snapshot→逐执行Drain→Suc
 确认RuntimeOpen→本地Open+Succeeded；任一Unknown/依赖失败保持Closed/Blocked。Restore不恢复旧任务/
 凭据/租约；不存在“把未知执行状态清空后恢复”的捷径。既有HostService排空必须传播逐执行失败，而不是
 仅凭命令receipt完成标记推断已停止。
+
+进程终止证据：只有 supervisor 对本组合根 spawn 的原 owned child 取得真实 waitpid 退出事实（grace 内
+或 KILL 后）才把执行记为 Exited+Known*；身份/marker 不符、未登记 pid、目标仍存活、signal 被拒、proc
+信息失败或无法 reap 一律保持 Unknown/Blocked，不能由 alive=false 或 EPERM/ESRCH 推断已停止。重复停止
+一个已由 waitpid 确认退出的执行是非 forced 成功，不产生新信号副作用。

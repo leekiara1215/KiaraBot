@@ -103,3 +103,7 @@ kiarabot_platform_warnings(kiarabot_secret_delivery_test)
 add_test(NAME p12_secret_delivery COMMAND kiarabot_secret_delivery_test
   "${KIARABOT_TARGET_PYTHON}" "${CMAKE_SOURCE_DIR}/scripts/deploy/target_host_credential.py")
 set_tests_properties(p12_secret_delivery PROPERTIES LABELS "p12;unit;fault;security" TIMEOUT 30)
+
+# BOOT-04: the Control bootstrap-delivery TU and its BOOT-03 sink link are registered by
+# cmake/bootstrap-delivery.cmake (included after this file) so the BOOT work stream owns its new
+# source in a single place. Do not duplicate the source or the link here.

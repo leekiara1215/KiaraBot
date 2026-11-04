@@ -19,7 +19,9 @@
 唯一线协议是 `proto/kiarabot/v1/model_stream.proto`、`plugins.proto` 和 `model.proto`；本节描述
 已声明契约，不表示 Provider、Runtime、Bridge 或 SDK 已实现。旧 P11 的“不做streaming”保留历史作用域。
 基础设施Provider首切片的独立实现与实测见[流式Provider](05-infrastructure-model-streaming.md)；
-纯Model应用的事务、增量drain及恢复切片见[Core](02-core.md)；这些不启用SDK/PluginBridge协商，Model RPC接线正在STR-06独立验收，以下新SDK入口仍待实现，尚不协商host.model.stream.v1。
+纯Model应用的事务、增量drain及恢复切片见[Core](02-core.md)；Model RPC（ChatStream+ListOperationChanges）
+与真实TLS/PG/HTTP fixture 已在 STR-06 验收（见Core与基础设施文档），但 Runtime/Bridge/SDK 未接线，
+以下新SDK入口仍待 STR-08 实现，尚不协商host.model.stream.v1。
 
 新增能力 `host.model.stream.v1` 必须协商且获授 `model.chat`，不能由 `host.model.v1` 隐含启用。
 SDK新入口约定为 `Context.model_stream(model, messages, logical_call_id=..., timeout=...)`，
@@ -311,7 +313,7 @@ stop(reason)
 
 ### ModelService
 
-状态：**仅非流式已实现**（`Context.model_chat`，T06b；P11e 已用真实 TLS PluginBridge fixture 覆盖 target host_request ModelChatRequest/Response/ModelMessage 与 logical_call_id 重放）。模型 streaming 已于 2026-11-04 纳入[扩展计划](29-approved-capability-expansion-plan.md)，当前 `stream_chat` 仍未实现，协议尚无已实现的流式消息。插件提交模型请求，但不能获得模型 API Key；Provider、模型、超时、配额和重试由 Core 管理。
+状态：**仅非流式已实现**（`Context.model_chat`，T06b；P11e 已用真实 TLS PluginBridge fixture 覆盖 target host_request ModelChatRequest/Response/ModelMessage 与 logical_call_id 重放）。模型 streaming 已于 2026-11-04 纳入[扩展计划](29-approved-capability-expansion-plan.md)；Model 的 ChatStream RPC 与严格codec已在STR-06验收，但Runtime Model客户端、PluginBridge流调度与SDK async入口仍待STR-07/08，当前 `stream_chat` 仍未实现，HostResponse尚无已实现的流式消息。插件提交模型请求，但不能获得模型 API Key；Provider、模型、超时、配额和重试由 Core 管理。
 
 ### ConversationService
 
@@ -504,3 +506,32 @@ Task/Storage/Model应用。真正缺operation返回关联HostResponse.error=INVA
 retryable=false、result unset，流仍可继续合法调用。字段形状本身不代替各操作的内容/权限/时限校验。
 reference校验器及manifest保持原blob；本节只描述target实现。流式新operation在完整实现前仍按既有
 未支持行为拒绝，本切片不接入流式处理，也不提前advertise新feature。
+
+## 2026-11-04 模型 streaming SDK 入口与验收边界（实施后状态）
+
+`Context.model_stream(model, messages, *, logical_call_id=None, timeout=30.0)` 返回 `ModelStream`，
+需要独立协商 `host.model.stream.v1` 且获授 `model.chat`；旧 `model_chat` 返回类型不变，`stream=True`
+仍是 `CAPABILITY_NOT_SUPPORTED` 并提示改用新入口。`ModelStream` 支持 `async with`/`async for`
+（逐条产出 `ModelStreamDelta`）/`cancel()`/`aclose()`，暴露 `logical_call_id`、`started`、
+`terminal`、`termination`、`finish_reason`、`usage`、`may_have_billed`、`partial`、`partial_text`、
+已收字节/计数与 cancel receipt。
+
+流语义：start 前登记独立 stream registry；started=0、delta 1..N、terminal=N+1；pre-start 只有
+terminal=0。重复/乱序/gap/unknown oneof/关联错误不盲拼：终止该消费 attempt 为未知交付并保留本地
+partial，绝不伪造 COMPLETED。`COMPLETED` 需要完整连续 delta 加合法 terminal；TRUNCATED/FAILED/
+CANCELLED/REPLAY 各自 typed；usage known=false 的 0 不是免费；REPLAY 零 delta 且不重放正文；断线或
+缺 terminal 只表示交付未知，不推断 Provider 未执行/未计费。cancel 走独立 HostRequest，
+`HostResponse.model_stream_cancel` 的 receipt 只确认本连接内取消处理
+（CANCELLATION_REQUESTED/ALREADY_TERMINAL/NOT_ACTIVE），不替代 terminal、不证明未执行/未计费；
+asyncio 取消保留“已受理/已收 partial、交付未知”事实并 re-raise CancelledError。背压：reader 非阻塞
+分发，单流 32 帧/64KiB 队列满只本地终结该流并 best-effort cancel 一次，heartbeat/refresh/Action/ACK
+不受影响；本地 ≤4 active stream 与 Runtime 一致，超限 `RATE_LIMITED`。`PluginError` 增加 keyword-only
+`acceptance/recovery/retry_after_ms/partial/partial_text/usage/may_have_billed/logical_call_id/
+delivery_unknown/terminal/termination`，旧构造签名不变。
+
+验收边界：SDK 侧已用 fake host 帧与本仓库 TLS fixture 实测（SDK 全量 pytest 189 passed/23 skipped，
+另有既有 flaky `test_single_flight_refresh_rotates_proof_and_keeps_stream` 记录为基线问题）；Model
+ChatStream/RPC 与 Runtime Model 客户端/PluginBridge 流调度已分别由 STR-06 与 STR-07 组件级/真实 TLS
+fixture 证据覆盖；受管插件整链 STR-09 的 driver 已实现但本轮未执行。因此 `host.model.stream.v1`
+**不得 advertise**，SDK 单测通过不等于整链可用；真实受管 Provider→SDK 因果首段、取消/断连/撤权/
+重放/背压矩阵仍是剩余缺口。

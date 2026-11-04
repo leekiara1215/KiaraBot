@@ -56,3 +56,72 @@ checks the Compose/YAML/Dockerfile structure offline and, when Docker is availab
 starts services automatically.
 
 Containers mount only the files declared for their service. For custom key rings, enrollment peers or sealed Runtime/Model delegation files, mount each additional file read-only into its consumer and use that path in its config. Never mount the entire material root or store a CA signing key there.
+
+## BOOT-04 controlled bootstrap delivery (single host, 2026-11-04)
+
+Runtime never writes a Host filesystem and HostBridge has no credential delivery frame. In the
+controlled workflow the one-time bootstrap secret flows only through the Control delivery sink:
+
+```text
+Runtime credential intent + digest + version     (Runtime private PG, no plaintext)
+  -> Create/Bind response plaintext once in memory (never REST/WS/log/audit/receipt)
+  -> Control SecretDeliveryPort, fixed recipient  (0600 atomic file + no-secret intent/receipt)
+  -> read-only mount into Host / Adapter consumer (0600, owner = consumer UID)
+  -> white-listed credential environment -> SDK PluginBridge / Adapter bridge
+```
+
+`deploy/compose.target.yml` mounts `${KIARABOT_DELIVERY_DIR:-./target/delivery}` writable only into
+Control (`/var/lib/kiarabot-control/delivery`) and read-only into Plugin Host
+(`/var/lib/kiarabot-host/credentials`) and Adapter (`/run/secrets/delivery`). The Plugin Host
+`host.credential_directory` config value and `BRIDGE_BOOTSTRAP_CREDENTIAL_FILE` must point at the
+consumer-side mounts, not at the Control path.
+
+Fixed recipient registry:
+- `deploy/control/secret-recipients.example.json` is the offline, non-secret template. The Control
+  composition loads the operator copy (0600). Each entry maps one `recipient_id` to an exact
+  `resource_kind`/`resource_id`, the fixed peer file name `peer_id`, and the Control-side absolute
+  delivery directory.
+- A browser, plugin or delivery request can never supply a path, URL, owner, UID/GID, environment
+  value or command; it only selects an existing `recipient_id` (or omits it and gets the legacy
+  create/bind behavior).
+- A recipient entry with a non-empty `resource_id` is **exact**: only that Runtime resource may use it
+  (Adapter delivery validates the bound account id). An entry without `resource_id` is **kind-level**:
+  it accepts any resource of `resource_kind` in the same fixed directory/owner, and the installed file
+  name is derived from the exact delivery resource id (`<resource_id>.bootstrap`). Kind-level is the
+  normal way to pre-register a deployment target for managed plugin instances whose UUID is allocated
+  by Runtime at CreateInstance time; a reissue always names its exact resource again.
+- After a lost create/bind response, resend the same idempotent request: Runtime returns the current
+  no-secret delivery metadata (never the plaintext) so Control can recover the original `delivery_id`
+  and query/report it.
+- One recipient per exact resource and one file per peer. The file is
+  `<delivery_directory>/<peer_id>.bootstrap`, mode 0600, regular file, no symlinks/hardlinks.
+- Externally-managed plugins keep their own independent deployment secret and must not be placed in
+  the Host `credential_directory`; only Host-managed plugin instances use the Host mount. The adapter
+  keeps its own read-only bootstrap secret. QQ/NapCat passwords, Identity administrator passwords,
+  Host mTLS keys and business delegation material never enter this port.
+
+Operator verification (no secret or digest is printed):
+
+```bash
+# Deployment/Control side: full managed verification including receipt digest/version.
+scripts/deploy/target_host_credential.py verify \
+  --directory /var/lib/kiarabot-control/delivery/host-a/credentials \
+  --recipients /etc/kiarabot/control/secret-recipients.json --managed
+
+# Consumer side (read-only mount): 0600/owner/regular/single-link and recipient set only.
+scripts/deploy/target_host_credential.py verify \
+  --directory /var/lib/kiarabot-host/credentials \
+  --recipients /etc/kiarabot-host/secret-recipients.json --require-read-only
+
+# Never remove a registered active recipient. Fail closed on unexpected/stale peer files.
+scripts/deploy/target_host_credential.py prune \
+  --directory /var/lib/kiarabot-control/delivery/host-a/credentials \
+  --recipients /etc/kiarabot/control/secret-recipients.json
+```
+
+`verify --managed` cross-checks the target file SHA-256 against the no-secret sink receipt and
+requires the receipt's `credential_version` to match; a rotated delivery is only valid after an
+explicit authorized Runtime reissue produced the next version. The helper refuses `store` for any
+registered/controlled recipient or any directory that already has sink metadata, so a manual
+one-time RPC response cannot impersonate the controlled chain. Legacy deployments without
+recipients keep the previous `store --replace`/`prune --active` behavior; see P08d above.

@@ -74,6 +74,16 @@ core::target::Status insert_bridge_credential(core::target::UnitOfWork& work,
 core::target::Status revoke_bridge_credentials(core::target::UnitOfWork& work,
                                                const std::string& resource_id,
                                                core::target::TimePoint now);
+// BOOT-02 version CAS: revoke only when the active row still has the expected version. Returns
+// CONFLICT when another reissue already advanced it.
+core::target::Status revoke_bridge_credential_if_current(core::target::UnitOfWork& work,
+                                                         const std::string& resource_id,
+                                                         std::uint64_t expected_version,
+                                                         core::target::TimePoint now);
+// Highest persisted bootstrap credential row, including revoked history, for BOOT-02 monotonic
+// versions and the current-version bridge gate. Empty = resource never had a credential.
+core::target::Outcome<std::optional<core::target::BridgeCredentialRecord>>
+latest_bridge_credential(core::target::UnitOfWork& work, const std::string& resource_id);
 // Resolve the stable adapter resource id from an assigned adapter instance identity (unique key).
 core::target::Outcome<std::optional<core::target::ResourceId>>
 find_adapter_id(core::target::UnitOfWork& work, const core::target::InstanceId& instance);

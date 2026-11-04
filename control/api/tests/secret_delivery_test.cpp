@@ -358,6 +358,70 @@ void io_failure_and_busy() {
 }
 } // namespace
 
+void kind_level_recipients() {
+  Temporary root;
+  const auto owner_uid = static_cast<std::uint32_t>(::geteuid());
+  const auto owner_gid = static_cast<std::uint32_t>(::getegid());
+  const c::SecretFileRecipient kind_level{
+      "kind-recipient", {t::ResourceKind::Instance, {""}}, "", root.path.string(), owner_uid,
+      owner_gid};
+  auto port = take(c::make_secret_file_delivery({kind_level}));
+  c::SecretDeliveryApplication app{*port};
+  const auto identity_for = [](std::string_view instance, std::uint64_t version) {
+    return c::SecretDeliveryIdentity{"delivery-" + std::string{instance} + "-" +
+                                         std::to_string(version),
+                                     {t::ResourceKind::Instance, {std::string{instance}}},
+                                     "kind-recipient",
+                                     version};
+  };
+  const auto first = take(app.store({identity_for("instance-a", 1), 0, kFirst}));
+  require(first.state == c::SecretDeliveryState::Delivered, "kind-level first delivery");
+  require(read(root.path / "instance-a.bootstrap") == kFirst + "\n",
+          "kind-level file name derives from the exact resource id");
+  const auto other = take(app.store({identity_for("instance-b", 1), 0, kSecond}));
+  require(other.state == c::SecretDeliveryState::Delivered, "kind-level second resource delivery");
+  require(read(root.path / "instance-b.bootstrap") == kSecond + "\n",
+          "per-resource file is independent");
+  rejects(app.store(
+              {{"delivery-account", {t::ResourceKind::Account, {"account-a"}}, "kind-recipient", 1},
+               0,
+               kFirst}),
+          t::ErrorCode::PermissionDenied);
+  take(app.store({identity_for("instance-a", 2), 1, kSecond}));
+  rejects(app.store({identity_for("instance-a", 1), 0, kFirst}), t::ErrorCode::Conflict);
+  require(read(root.path / "instance-a.bootstrap") == kSecond + "\n",
+          "late old worker cannot overwrite a kind-level resource");
+
+  const c::SecretFileRecipient exact_a{
+      "exact-recipient", {t::ResourceKind::Instance, {"instance-c"}},
+      "instance-c",      root.path.string(),
+      owner_uid,         owner_gid};
+  auto exact_port = take(c::make_secret_file_delivery({exact_a}));
+  c::SecretDeliveryApplication exact_app{*exact_port};
+  rejects(
+      exact_app.store(
+          {{"delivery-mismatch", {t::ResourceKind::Instance, {"instance-d"}}, "exact-recipient", 1},
+           0,
+           kFirst}),
+      t::ErrorCode::PermissionDenied);
+
+  rejects(c::make_secret_file_delivery({kind_level,
+                                        {"kind-recipient-two",
+                                         {t::ResourceKind::Instance, {}},
+                                         "",
+                                         root.path.string(),
+                                         owner_uid,
+                                         owner_gid}}),
+          t::ErrorCode::InvalidArgument);
+  rejects(c::make_secret_file_delivery({{"kind-with-peer",
+                                         {t::ResourceKind::Instance, {}},
+                                         "peer",
+                                         root.path.string(),
+                                         owner_uid,
+                                         owner_gid}}),
+          t::ErrorCode::InvalidArgument);
+}
+
 int main(int argc, char* argv[]) {
   try {
     require(argc == 3, "test needs pinned Python and canonical helper arguments");
@@ -367,6 +431,7 @@ int main(int argc, char* argv[]) {
     crash_recovery();
     io_failure_and_busy();
     descriptor_exhaustion_is_bounded();
+    kind_level_recipients();
     std::cout << "Secret delivery module: CAS, actual crash/IO recovery, file boundaries and "
                  "helper compatibility passed\n";
   } catch (const std::exception& error) {

@@ -374,6 +374,70 @@ void peer_tests() {
         "CA alone without registration denies");
   factory.fail = true;
   check(error(app.registered_peer(request), t::ErrorCode::UpstreamUnavailable), "begin failure");
+  // v1.1 Host registration: the Host principal/credential bind the explicit RESOURCE_HOST(host_id),
+  // which is independent from the principal id. A Host certificate without that binding is never
+  // accepted as the current Host peer.
+  factory.fail = false;
+  t::Sha256Digest host_fingerprint;
+  host_fingerprint.bytes[0] = std::byte{7};
+  auto host_row = certificate(factory.script.now);
+  host_row.subject = {"host-principal"};
+  auto host_certificate = std::get<t::CertificateBinding>(host_row.material);
+  host_certificate.subject = {"host-principal"};
+  host_certificate.platform_service = t::Service::Host;
+  host_certificate.fingerprint = host_fingerprint;
+  host_row.material = host_certificate;
+  host_row.binding = t::ResourceRef{t::ResourceKind::Host, {"distinct-host-id"}};
+  factory.script.credentials.lookup =
+      [&]() -> t::Outcome<std::optional<t::CredentialVersionRecord>> {
+    return std::optional{host_row};
+  };
+  t::Principal host_principal{{"host-principal"},
+                              t::PrincipalKind::PlatformService,
+                              t::ResourceRef{t::ResourceKind::Host, {"distinct-host-id"}},
+                              {1},
+                              t::LifecycleState::Active};
+  factory.script.principals.read = [&](const auto&) -> t::Outcome<std::optional<t::Principal>> {
+    return std::optional{host_principal};
+  };
+  const t::PeerRegistrationRequest host_request{host_fingerprint, factory.script.now + 10s};
+  const auto host_peer = app.registered_peer(host_request);
+  check(std::holds_alternative<t::RegisteredPeer>(host_peer), "registered Host platform peer");
+  const auto* host_service =
+      std::get_if<t::PlatformPeer>(&std::get<t::RegisteredPeer>(host_peer).peer);
+  check(host_service && host_service->service == t::Service::Host &&
+            host_service->subject == host_principal.id &&
+            host_principal.binding->id.value != host_principal.id.value,
+        "HostId and PrincipalId stay independent in the registered peer");
+  auto self_bound = host_principal;
+  self_bound.binding = t::ResourceRef{t::ResourceKind::Principal, {"host-principal"}};
+  factory.script.principals.read = [&](const auto&) -> t::Outcome<std::optional<t::Principal>> {
+    return std::optional{self_bound};
+  };
+  check(error(app.registered_peer(host_request), t::ErrorCode::Internal),
+        "Host principal without RESOURCE_HOST binding is internal corruption");
+  factory.script.principals.read = [&](const auto&) -> t::Outcome<std::optional<t::Principal>> {
+    return std::optional{host_principal};
+  };
+  auto wrong_host = host_row;
+  wrong_host.binding = t::ResourceRef{t::ResourceKind::Host, {"other-host-id"}};
+  factory.script.credentials.lookup =
+      [&]() -> t::Outcome<std::optional<t::CredentialVersionRecord>> {
+    return std::optional{wrong_host};
+  };
+  check(error(app.registered_peer(host_request), t::ErrorCode::Internal),
+        "Host credential must bind the same RESOURCE_HOST as its principal");
+  factory.script.credentials.lookup =
+      [&]() -> t::Outcome<std::optional<t::CredentialVersionRecord>> {
+    return std::optional{host_row};
+  };
+  t::Principal human_host{
+      {"host-principal"}, t::PrincipalKind::Human, std::nullopt, {1}, t::LifecycleState::Active};
+  factory.script.principals.read = [&](const auto&) -> t::Outcome<std::optional<t::Principal>> {
+    return std::optional{human_host};
+  };
+  check(error(app.registered_peer(host_request), t::ErrorCode::Unauthenticated),
+        "Host certificate on a human principal is not a platform peer");
 }
 t::Sha256Digest digest(unsigned char seed) {
   t::Sha256Digest value;
@@ -395,6 +459,22 @@ t::PlatformPeerEnrollment runtime_peer(t::TimePoint now) {
         {},
         {{t::Permission::IdentityAuthorizationCheck, {t::ResourceKind::Principal, {"runtime"}}}},
         {1}}}};
+}
+t::PlatformPeerEnrollment host_peer(t::TimePoint now) {
+  const t::SubjectId principal{"host-principal"};
+  const t::ResourceId host_id{"distinct-host-id"};
+  t::CertificateBinding certificate = peer_certificate(t::Service::Host, principal, now);
+  certificate.fingerprint = digest(9);
+  return {t::Service::Host,
+          principal,
+          {"host-certificate"},
+          certificate,
+          {{{"host-assignment"},
+            principal,
+            {},
+            {{t::Permission::HostExecute, {t::ResourceKind::Host, host_id}}},
+            {1}}},
+          host_id};
 }
 t::OfflineIdentityBootstrap bootstrap_request(t::TimePoint now) {
   return {{"request", "trace", "", now + 10s},
@@ -534,12 +614,127 @@ void bootstrap_tests() {
   request = bootstrap_request(factory.script.now);
   request.platform_peers.front().service = t::Service::Host;
   check(error(app.bootstrap_offline(request), t::ErrorCode::InvalidArgument),
-        "only Runtime/Scheduler/Model platform peers enroll offline");
+        "Host platform peer requires its explicit host_id");
+  request = bootstrap_request(factory.script.now);
+  request.platform_peers.front().service = t::Service::Runtime;
+  request.platform_peers.front().host = t::ResourceId{"distinct-host-id"};
+  check(error(app.bootstrap_offline(request), t::ErrorCode::InvalidArgument),
+        "non-Host platform peers must not carry a host binding");
+}
+// Host enrollment is a distinct v1.1 path: the Host principal/credential bind
+// RESOURCE_HOST(host_id) while HostId stays independent from PrincipalId, and the explicit
+// host.execute grant targets that exact Host resource. Validation failures happen before the
+// once-only transaction starts.
+void host_enrollment_tests() {
+  Factory factory;
+  Certificates crypto(factory.script);
+  t::IdentityAdminApplication app(factory, crypto);
+  const auto now = factory.script.now;
+  auto request = bootstrap_request(now);
+  request.platform_peers = {host_peer(now)};
+  auto without_host = request;
+  without_host.platform_peers.front().host.reset();
+  check(error(app.bootstrap_offline(without_host), t::ErrorCode::InvalidArgument),
+        "Host enrollment without host_id is rejected");
+  auto empty_host = request;
+  empty_host.platform_peers.front().host = t::ResourceId{};
+  check(error(app.bootstrap_offline(empty_host), t::ErrorCode::InvalidArgument),
+        "Host enrollment with empty host_id is rejected");
+  auto long_host = request;
+  long_host.platform_peers.front().host = t::ResourceId{std::string(129, 'h')};
+  check(error(app.bootstrap_offline(long_host), t::ErrorCode::InvalidArgument),
+        "Host enrollment with oversized host_id is rejected");
+  auto duplicate_host = request;
+  auto second = host_peer(now);
+  second.principal = t::SubjectId{"host-principal-2"};
+  second.credential = t::CredentialId{"host-certificate-2"};
+  second.certificate = peer_certificate(t::Service::Host, second.principal, now);
+  second.certificate.fingerprint = digest(10);
+  second.assignments.front().subject = second.principal;
+  duplicate_host.platform_peers.push_back(second);
+  check(error(app.bootstrap_offline(duplicate_host), t::ErrorCode::InvalidArgument),
+        "two Host peers cannot share one host_id");
+  auto wrong_service = request;
+  wrong_service.platform_peers.front().certificate.platform_service = t::Service::Runtime;
+  check(error(app.bootstrap_offline(wrong_service), t::ErrorCode::InvalidArgument),
+        "Host host_id with a non-Host certificate is rejected");
+  auto host_for_runtime = request;
+  host_for_runtime.platform_peers.front().service = t::Service::Runtime;
+  check(error(app.bootstrap_offline(host_for_runtime), t::ErrorCode::InvalidArgument),
+        "host_id on a non-Host service is rejected");
+  int host_principals = 0;
+  int host_credentials = 0;
+  int host_assignments = 0;
+  int host_watermarks = 0;
+  factory.script.principals.write = [&](const auto& row, auto expected) -> t::Status {
+    check(!expected && factory.script.active == 1, "same UoW creates principals");
+    if (row.id.value == "host-principal") {
+      ++host_principals;
+      check(row.kind == t::PrincipalKind::PlatformService, "Host principal kind");
+      check(row.binding == t::ResourceRef{t::ResourceKind::Host, {"distinct-host-id"}},
+            "Host principal binds explicit RESOURCE_HOST");
+      check(row.binding->id.value != row.id.value, "HostId is independent from PrincipalId");
+    }
+    return std::monostate{};
+  };
+  factory.script.credentials.write = [&](const auto& row) -> t::Status {
+    if (row.subject.value == "host-principal") {
+      ++host_credentials;
+      check(row.binding == t::ResourceRef{t::ResourceKind::Host, {"distinct-host-id"}},
+            "Host credential binds the explicit RESOURCE_HOST");
+      check(std::get<t::CertificateBinding>(row.material).platform_service == t::Service::Host,
+            "Host certificate is a Host platform certificate");
+    }
+    check(row.state == t::CredentialState::Active && row.expires_at.has_value(),
+          "finite active credential");
+    return std::monostate{};
+  };
+  factory.script.credentials.login_write = [&](const auto& row) -> t::Status {
+    check(row.subject == request.administrator, "login references exact admin credential");
+    return std::monostate{};
+  };
+  factory.script.assignments.write = [&](const auto& row) -> t::Status {
+    if (row.subject.value == "host-principal") {
+      ++host_assignments;
+      check(row.explicit_permissions.size() == 1,
+            "Host enrollment keeps only the explicit host.execute grant");
+      const auto& grant = row.explicit_permissions.front();
+      check(grant.permission == t::Permission::HostExecute &&
+                grant.resource == t::ResourceRef{t::ResourceKind::Host, {"distinct-host-id"}},
+            "Host exact host.execute targets the enrolled host binding");
+    }
+    return std::monostate{};
+  };
+  factory.script.authorizations.write = [&](const auto& row, auto expected) -> t::Status {
+    check(!expected && row.version.value == 1 && row.invalidation_dirty,
+          "initial authority watermark");
+    if (row.subject.value == "host-principal") {
+      ++host_watermarks;
+    }
+    return std::monostate{};
+  };
+  int audits = 0;
+  factory.script.audit = [&](const auto& row) -> t::Status {
+    ++audits;
+    check(row.actor == request.administrator, "offline enrollment actor");
+    if (row.method == "BootstrapPlatformPeer") {
+      check(row.resource.kind == t::ResourceKind::Principal,
+            "platform peer audit is keyed by the enrolled principal");
+    }
+    return std::monostate{};
+  };
+  check(std::holds_alternative<t::IdentityBootstrapReply>(app.bootstrap_offline(request)),
+        "real Host enrollment commits once");
+  check(host_principals == 1 && host_credentials == 1 && host_assignments == 1 &&
+            host_watermarks == 1 && audits == 2 && factory.script.commits == 1 &&
+            factory.script.active == 0,
+        "Host enrollment persists its independent binding in the same once-only commit");
 }
 void delegation_tests();
 int main() {
   peer_tests();
   bootstrap_tests();
+  host_enrollment_tests();
   delegation_tests();
 }
 
@@ -699,7 +894,8 @@ void delegation_tests() {
   t::IssueIdentityDelegationRequest request{
       {{"request", "trace", "", now + 10s}, peer, {}},
       t::Service::Identity,
-      {{t::Permission::IdentitySessionRead, {t::ResourceKind::Principal, {"human"}}}}};
+      {{t::Permission::IdentitySessionRead, {t::ResourceKind::Principal, {"human"}}}},
+      {}};
   auto control_principal = t::Principal{{"control"},
                                         t::PrincipalKind::PlatformService,
                                         t::ResourceRef{t::ResourceKind::Principal, {"control"}},

@@ -106,8 +106,16 @@ void generated_contract_metadata() {
   assert(chat->owner == t::Service::Model);
   assert(chat->permission == t::Permission::ModelChat);
   assert(chat->scope_kinds.size() == 1 && chat->scope_kinds.front() == t::ResourceKind::Model);
-  // Unannotated method, unknown method, unknown service and a bridge stream fail closed as empty.
-  assert(!resolve_port(*resolver, "/kiarabot.v1.ModelService/GetCallStatus").has_value());
+  // Unannotated method (permission without any resource scope), unknown method, unknown service and
+  // a bridge stream fail closed as empty.
+  assert(!resolve_port(*resolver, "/kiarabot.v1.IdentityService/Login").has_value());
+  // v1.2 defect correction: the seven ModelService management/query methods now carry the exact
+  // RESOURCE_MODEL scope annotation, so the descriptor policy must expose it instead of empty.
+  const auto call_status = resolve_port(*resolver, "/kiarabot.v1.ModelService/GetCallStatus");
+  assert(call_status.has_value());
+  assert(call_status->owner == t::Service::Model);
+  assert(call_status->scope_kinds.size() == 1 &&
+         call_status->scope_kinds.front() == t::ResourceKind::Model);
   assert(!resolve_port(*resolver, "/kiarabot.v1.ModelService/NotAMethod").has_value());
   assert(!resolve_port(*resolver, "/kiarabot.v1.UnknownService/Method").has_value());
   assert(!resolve_port(*resolver, "/kiarabot.v1.HostBridge/Connect").has_value());

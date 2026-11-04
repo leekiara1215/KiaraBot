@@ -1194,16 +1194,19 @@ public:
             return error(target::ErrorCode::PermissionDenied);
           }
           const auto rows = exec(
-              "SELECT id,resource_id,digest,created_at,revoked FROM kiarabot.bridge_credentials "
-              "WHERE digest=$1 AND NOT revoked",
+              "SELECT id,resource_id,digest,created_at,revoked,version "
+              "FROM kiarabot.bridge_credentials WHERE digest=$1 AND NOT revoked",
               {digest(value)});
           if (rows.empty()) {
             return std::optional<target::BridgeCredentialRecord>{};
           }
           const auto row = rows.one_row();
-          return std::optional<target::BridgeCredentialRecord>{target::BridgeCredentialRecord{
-              row["id"].as<std::string>(), row["resource_id"].as<std::string>(),
-              read_digest(row["digest"]), time_field(row, "created_at"), false}};
+          target::BridgeCredentialRecord record{row["id"].as<std::string>(),
+                                                row["resource_id"].as<std::string>(),
+                                                read_digest(row["digest"]),
+                                                time_field(row, "created_at"), false};
+          record.version = row["version"].as<std::uint64_t>();
+          return std::optional<target::BridgeCredentialRecord>{std::move(record)};
         });
   }
   target::Outcome<bool> bridge_credential_active(const std::string& resource_id) {
@@ -1224,9 +1227,13 @@ public:
           !valid_sql_text(record.resource_id) || record.revoked) {
         return error(target::ErrorCode::InvalidArgument);
       }
-      exec("INSERT INTO kiarabot.bridge_credentials(id,resource_id,digest,created_at,revoked) "
-           "VALUES($1,$2,$3,$4,false)",
-           {record.id, record.resource_id, digest(record.digest), timestamp(record.created_at)});
+      // Legacy seeds/fixtures that materialize version 0 keep working and are stored as the frozen
+      // P06 bridge version 1; the column itself never stores 0.
+      const auto version = record.version == 0 ? std::uint64_t{1} : record.version;
+      exec("INSERT INTO kiarabot.bridge_credentials"
+           "(id,resource_id,digest,created_at,revoked,version) VALUES($1,$2,$3,$4,false,$5)",
+           {record.id, record.resource_id, digest(record.digest), timestamp(record.created_at),
+            version});
       return std::monostate{};
     });
   }
@@ -1242,6 +1249,51 @@ public:
            {resource_id});
       return std::monostate{};
     });
+  }
+  target::Status revoke_bridge_credential_if_current(const std::string& resource_id,
+                                                     std::uint64_t expected_version,
+                                                     target::TimePoint now) {
+    return invoke<std::monostate>([&]() -> target::Status {
+      (void)now;
+      if (owner() != target::Service::Runtime || resource_id.empty() ||
+          !valid_sql_text(resource_id) || expected_version == 0) {
+        return error(target::ErrorCode::InvalidArgument);
+      }
+      const auto rows = exec(
+          "UPDATE kiarabot.bridge_credentials SET revoked=true "
+          "WHERE resource_id=$1 AND NOT revoked AND version=$2 RETURNING id",
+          {resource_id, expected_version});
+      if (rows.empty()) {
+        return error(target::ErrorCode::Conflict);
+      }
+      return std::monostate{};
+    });
+  }
+  target::Outcome<std::optional<target::BridgeCredentialRecord>>
+  latest_bridge_credential(const std::string& resource_id) {
+    return invoke<std::optional<target::BridgeCredentialRecord>>(
+        [&]() -> target::Outcome<std::optional<target::BridgeCredentialRecord>> {
+          if (owner() != target::Service::Runtime || resource_id.empty() ||
+              !valid_sql_text(resource_id)) {
+            return error(target::ErrorCode::InvalidArgument);
+          }
+          const auto rows =
+              exec("SELECT id,resource_id,digest,created_at,revoked,version "
+                   "FROM kiarabot.bridge_credentials WHERE resource_id=$1 "
+                   "ORDER BY version DESC LIMIT 1",
+                   {resource_id});
+          if (rows.empty()) {
+            return std::optional<target::BridgeCredentialRecord>{};
+          }
+          const auto row = rows.one_row();
+          target::BridgeCredentialRecord record{row["id"].as<std::string>(),
+                                                row["resource_id"].as<std::string>(),
+                                                read_digest(row["digest"]),
+                                                time_field(row, "created_at"),
+                                                row["revoked"].as<bool>()};
+          record.version = row["version"].as<std::uint64_t>();
+          return std::optional<target::BridgeCredentialRecord>{std::move(record)};
+        });
   }
   target::Outcome<std::optional<target::ResourceId>>
   adapter_id_by_instance(const target::InstanceId& instance) {
@@ -1504,6 +1556,22 @@ target::Status revoke_bridge_credentials(target::UnitOfWork& work, const std::st
                                          target::TimePoint now) {
   if (auto* common = dynamic_cast<CommonWork*>(&work)) {
     return common->revoke_bridge_credentials(resource_id, now);
+  }
+  return error(target::ErrorCode::Internal);
+}
+target::Outcome<std::optional<target::BridgeCredentialRecord>>
+latest_bridge_credential(target::UnitOfWork& work, const std::string& resource_id) {
+  if (auto* common = dynamic_cast<CommonWork*>(&work)) {
+    return common->latest_bridge_credential(resource_id);
+  }
+  return error(target::ErrorCode::Internal);
+}
+target::Status revoke_bridge_credential_if_current(target::UnitOfWork& work,
+                                                   const std::string& resource_id,
+                                                   std::uint64_t expected_version,
+                                                   target::TimePoint now) {
+  if (auto* common = dynamic_cast<CommonWork*>(&work)) {
+    return common->revoke_bridge_credential_if_current(resource_id, expected_version, now);
   }
   return error(target::ErrorCode::Internal);
 }

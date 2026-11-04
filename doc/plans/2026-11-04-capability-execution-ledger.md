@@ -149,3 +149,140 @@ STR06未接CMake/未验证；Host终止KILL竞态未修，临时诊断仍在；I
 本次交接仅新增/修正文档，不修改产品代码。文档影响为提示词、交接和本台账；
 协议/API/模块运行行为未因交接变化，无需为交接重新生成或构建。
 交付检查限文档UTF-8/本地链接/末换行/尾空白、diff及交接文件可追踪性，产品检查未重跑。
+
+## 2026-11-04 续执行：lead 接管后的核对与首批实际结果
+
+**接管核对（实测）**：工作树干净于 `main @ bd9f2af`（上轮 WIP 已作为 checkpoint 提交，未回滚/未重置）；
+`build/env/p00-env.sh`、PG16.4、OpenSSL3.5、Node22.14、clang-format16.0.6、Python venv 均可用；
+无遗留独立构建/测试进程（上次 CTest 失败仅 `p08_host_maintenance`）。首轮全量构建 **实际失败**：
+`kiarabot_model_rpc_test` 链接缺 `serve_model_chat_stream`/`prepare_operation_observation`
+（STR06 源码未接 CMake，与交接风险一致，日志 `build/logs/capability-expansion/baseline-configure-build.log`）；
+该失败保留，不作为后续通过证据。随后 lead 预接 `cmake/model-streaming-rpc.cmake`（最终接线仍由
+streaming worker 补全并实测）。另一首轮失败：`kiarabot_model_stream_codec_test` 构建成功但运行报
+“stream codec assertion”；`kiarabot_model_stream_rpc_test` 尚未构建；均移交 streaming worker 修复，
+不再由 lead 改写。describe 基线：扩展 `kiarabot_postgres_operation_observations_test --describe-schema`
+使其覆盖 Identity，真实 owned PG16.4 实测 **I15/135 decc8401…、R19/162 3b472a7…、S11/91 1d2af0a…、
+M10/85 51d9e77…**，与 manifest 完全一致（`continuation-describe-baseline.log` +
+`continuation-describe-baseline-result.json`），证明任何 v1.2 DDL 前的 manifest 是真实的。
+
+**分工与锁**：五个持久 worker：`host`（task-1/2/8）、`streaming`（task-3/4）、`ws`（task-6/7/12）、
+`sdk`（task-5，STR09 另建）、`bootstrap`（task-13）；lead 独占 task-9/10/11 与共享文件。
+共享构建通过 `build/.agents/kb`（fcntl 文件锁）串行化；公共契约/registry、PG schema/UoW/manifest、
+公共聚合 CMake、公共生成目录由 lead 单一编辑。文档分工：doc/01/02/03/06/08/27 与 proto/README 由
+lead 收口，worker 提交要点；模块报告与各自 README 由 worker 写。
+
+**v1.2 契约冻结（lead 完成，实测通过）**：`observations.proto` 新增
+ObservationChangesRequest + logs/tasks/messages 三族 10 消息 46 字段；`identity.proto`/`runtime.proto`
+各加 ListLogChanges，`runtime.proto` 加 ListMessageMetadataChanges，`scheduler.proto` 加
+ListTaskChanges（log.read/RESOURCE_CATALOG、message.read/RESOURCE_ACCOUNT、
+task.read/RESOURCE_TASK|INSTANCE，只读、无幂等键、500ms 默认/最大、online）；`target_spec` 方法
+119→123；registry +10 消息/+46 字段/+2 semantic rule；goldens 27→31；新增契约 oracle
+`proto/tests/observation_feed_contract_test.py` 并接入 target gate。实际门禁：`check_contracts.sh`
+（含 legacy reader 与 descriptor fixture）exit 0；enum/status/semantic 三 gate exit 0；
+跨语言 **123 RPC / 388 消息 / 31 golden** 通过（`v12-target-contract.log`）；v1.2 descriptor
+（SHA-256 `6fdf83b6…`）对 v1.1 原 descriptor（`f16a1bc8…`，与 `identity-v11-descriptor.pb` 相同）
+additive 兼容通过。首轮失败保留：新 oracle 自分字段顺序断言写错，修 oracle 后通过，非契约放宽。
+v1.2 只增 owner RPC，无 OpenAPI/AsyncAPI 变化，故未重跑 Node API 门禁（记录为未运行及原因）。
+以上只放行 WS feed 实现，不是 feed/RPC 已实现证据；v1.1 的 119/378/27 计数不再用于 v1.2 声明。
+
+**进行中**：host 已定位 HOST-02 根因（Darwin 对 “leader 已退出未 reap 的僵尸进程组” SIGKILL 返回
+EPERM，grace 循环漏最后一次 reap）并开始修复；ws 开始 WS-04（protocol/source 编译错误已定位）；
+sdk 完成基线（4 failed / 137 passed / 23 skipped，均为冻结 wire 后的过期测试夹具，已授权修正并保留
+首轮日志）；bootstrap 开始 BOOT-04/02 独立切片；streaming 修 STR06。后续 PG DDL 按 BOOT → WS 串行
+窗口执行，每次真实 describe 后刷新 manifest。
+
+### 续执行检查点（2026-11-04 18:0x）
+
+- **HOST-02 修复完成（局部验收）**：host worker 用真实 waitpid/owned 执行追踪收敛非 forced 终止；
+  KILL EPERM 不再直接成功；移除 `host_process.cpp` 的 `std::cerr` 诊断。`p08_host_{maintenance,
+  process,service,journal}` 4/4 通过，`p08_host_process` 连续重复 20 次全过
+  （`ctest-host02-fix-final.log`、`ctest-host02-repeat20-final.log`）；专项 tidy 日志已生成，
+  最终全量门禁仍由 lead 跑。
+- **BOOT-02 第一个 PG 窗口（R19→R20）**：新增 `bootstrap_deliveries` 无秘密 intent/receipt 表与
+  `bridge_credentials.version` 持久版本列。真实 owned PG16.4 describe：Runtime
+  `d87a56d0ddcf7ccd8ebb91b56250dc94`/165（+3），I/S/M 不变；`bootstrap_delivery_intent` 首片
+  `p05_runtime_bootstrap_delivery` 1/1 通过（首轮 3 个编译错误与 bad_variant 失败日志保留）。
+  lead 修正 worker DDL 的 ResourceKind 取值（ACCOUNT=1/INSTANCE=5，非 0/4）。
+- **BOOT v3 版本 CAS**：新增 `BridgeCredentialRepository::revoke_if_current`（PG `UPDATE ...
+  WHERE NOT revoked AND version=$2 RETURNING`，0 行即 CONFLICT），并注册真实 PG 测试
+  `p05_postgres_bootstrap_delivery`；无 DDL。
+- **共享构建临时降级**：Control 的 `owner_gateway/bootstrap.cpp` 源注册暂时注释，因为其依赖的
+  owner_gateway 接口切片（P6/P7）尚未落；这会短暂让 `kiarabot_control_auth` 不包含 BOOT-04 交付
+  编排，属集成中间态，完成后 lead 恢复注册并跑 Control 回归。WS 的 WSS 构建因此不被阻塞。
+- WS-04 代码已落盘并成功构建首轮（WSS 独立 store/4 ws worker，Upgrade 只接已登记 GET 路由与精确
+  Origin，REST 路径未改）；单测首轮 2 个失败已修正待重跑。SDK STR08 实现完成并跑全量 pytest（首轮
+  4 failed 为冻结 wire 后的过期夹具，已授权修正，首轮日志保留）。以上均为 worker 自报，lead 尚未
+  复核其日志与最终 diff。
+
+### 续执行实测：全量构建通过、R20 schema 引发的既有回归修复（2026-11-04 18:2x–18:4x）
+
+- **全量构建（-k）exit 0**：`cmake --build build/full-locked -- -k` 完成（日志
+  `integration-full-build-round1.log`），当前工作区（含 BOOT-02 应用/PG/RPC/Control、STR06、
+  WS-04 新文件、SDK/Host 测试）所有目标均可编译；这是本轮第一次整树编译通过，但仍以最终冻结源码
+  后的全量构建/CTest 为准。此前首轮全量构建失败（STR06 未接线）记录保留。
+- **R20 schema 的既有回归修复**：BOOT-02 DDL 后两类共享回归被定位并修复，不是放宽断言：
+  (a) `p06_bridge_acceptance`/`p13_joint_delete_e2e` 的 Python fixture 直接 SQL INSERT
+  `bridge_credentials` 未带新 `version` 列（NOT NULL）→ 补显式 `version=1`；
+  (b) 所有链接 `kiarabot_postgres` 的旧二进制仍编入 R19 descriptor manifest → Runtime 打开 R20
+  数据库失败、启动无输出；重建 `kiarabot-pg-initialize`、`kiarabot-runtime-p13g`、
+  `kiarabot-{identity,scheduler,model,plugin-host}`、seeds 后 p03/p06/p13 均通过。
+  由此确立集成规则：每次 schema describe bump 后必须重建所有 PG 链接目标（最终全量构建覆盖）。
+- **HOST-02/Identity v1.1 生产链（worker 自测，lead 复核 diff/日志）**：p08_host 4/4 且
+  `p08_host_process` repeat-20 全过；Identity 单元 4/4 + `p05_runtime_identity_e2e` 18.02s +
+  `p04_identity_bootstrap` 3.91s 通过，覆盖真实 PG HostId≠PrincipalId 登记、CheckHostGateAuthorization
+  真实 mTLS allow/错叶/跨 Host/缺 grant/撤销/凭据撤销，以及 CLI Host enrollment 负例。
+  发现既有 latent defect：Identity `WatchInvalidations` poll 未按 scope 过滤，越 scope record 会让
+  handler 返回 INTERNAL；不属于本轮五项范围，登记为剩余缺口（e2e 已把 Host 撤销验证移到 watch 后）。
+- **STR06 与 Model RPC**：codec/RPC/旧 Chat/Identity 客户端 5/5 通过，新增
+  `p11_streaming_model_rpc_e2e`（真实 owned PG16.4/TLS/Identity/Model/本地 HTTP SSE）12.25s 通过；
+  首轮 codec 失败（测试 helper 未初始化 state）保留。e2e 发现并修复既有契约缺陷：
+  ModelService 7 个管理/查询方法缺 `scope_kinds=RESOURCE_MODEL`（见 doc/30 6.1，第二次 v1.2 wire
+  冻结 descriptor `26a88361…`，123 RPC/388 消息/31 golden 复跑通过）。
+- **SDK STR08**：新增 ModelStream async 消费；全量 pytest 189 passed/23 skipped（基线 4 failed 为
+  冻结 wire 后过期夹具，已授权修正并保留首轮日志）；11 项 targeted 55 passed/19 skipped；
+  `host.model.stream.v1` 仍未 advertise。已建 task-14（STR09 整链），骨架 + 真实 SSE Provider
+  fixture self-check 通过（`p11_streaming_provider_fixture` 已注册）。
+- **BOOT 全链窗口复核**：BOOT 回归 5/5 由 lead 独立复跑通过（含真实 PG 并发 CAS）；Control 受控
+  交付注册改由 `cmake/bootstrap-delivery.cmake` 单点持有，control-auth.cmake 无重复；P11
+  （https_endpoint 组合）仍归 WS。5a/5b 与 BOOT-05 继续。
+
+## 2026-11-04 最终集成验收（冻结后实测）
+
+冻结动作：五个 worker 接到冻结指令后停止编辑（streaming/WS/SDK/bootstrap 已逐一确认 inactive，
+host 在提交 host_management_rpc 可编译态后停止）；此后 lead 单独完成全部构建/测试/门禁与文档收口。
+
+实际命令与结果（日志均在 `build/logs/final-acceptance/`，首轮失败保留在
+`build/logs/capability-expansion/`）：
+- `kb configure`、全量 `kb build -- -k`：exit 0（`full-build.log`、最后重建 `full-build-final.log`）。
+- 全量 CTest 首轮 197 项：194 通过 / 3 失败（`full-ctest.log`）；失败：
+  `architecture_p02_tls`（v1.2 新方法与生产 handler 状态期望过期，修测试后通过）、
+  `p12_target_websocket_https`（真实 WS teardown asio 崩溃，未修）、
+  `p11_streaming_managed_model_e2e`（STR09 driver 首跑 model readiness fixture 失败，未修）。
+- 全量 CTest 第二轮 197 项：196 通过 / 2 失败（`full-ctest-rerun.log`），仅上述两项真实失败。
+- 契约门禁：`check_contracts.sh`、enum/status/semantic/evidence/target-feature、OpenAPI/AsyncAPI/
+  target API、`check-reference.py` 全部 exit 0；最终 descriptor `26a88361…` 对**真实起始
+  baseline-descriptor.pb** 与 v1.1 冻结 descriptor additive 兼容均通过；跨语言 target gate
+  **123 RPC / 388 消息 / 31 golden** 通过（`target-contract.log`）。
+- SDK：`pytest -q sdk/python/tests` → 189 passed / 23 skipped（`sdk-pytest.log`）。
+- Panel：lint/build/`check:contracts` exit 0；`npm test` 52 passed / 1 failed，且 `panel/` 无改动
+  （HEAD 既有失败）。
+- 架构：boundaries/`--inner`/`--links`/`--database` exit 0（本机无 ripgrep，使用等价文件集 shim；
+  `build/.agents/bin/rg`）。`git diff --check` exit 0。
+- 格式：官方 `check-format.sh` 仍失败（28 文件），逐文件对比 HEAD 后确认**全部为 HEAD 既有基线，
+  本轮新增违规 0**（`format-official2.log`、`format-baseline-classification.txt`）。
+- 专项 tidy：16 个改动 TU（含 WS/Bootstrap/Host/Streaming 新文件），删除 STR07 遗留未使用
+  `random_uuid` helper 后只剩 `runtime_composition.cpp` 第二个 compile-database 变体下的
+  `foundation.hpp` analyzer 既有告警；全仓 tidy 未运行（历史基线 + 时间窗，如实登记）。
+
+文档收口：doc/01-contracts（v1.2 章节与状态表）、doc/01-runtime-semantics（feed 语义）、
+doc/02-core（Host 终止确认语义、Model/Runtime streaming 由 worker 更新）、doc/03-plugin-sdk
+（streaming SDK 入口与验收边界）、doc/05-infrastructure-model-streaming（worker 更新）、
+doc/06-control-api 与 doc/08-operations（BOOT 交付 REST/配置/运维语义）、doc/30（v1.2 两次冻结与
+缺陷修正）、doc/27（本节新增最终集成小节）、执行台账（本文件）、模块 reports（worker 提交）。
+受保护 doc/18 与 AGENTS 未改。未提交、未推送、未发布。
+
+剩余缺口（不冒充通过）：WS 真实 WSS teardown 缺陷与 WS-05/06/07/08/09/10 未完成；v1.2 feeds +
+PG DDL/describe 窗口未实现（task-12 未开始）；STR09 受管插件 streaming 整链未验证；HOST-03/04 仅
+S1 通过、S2 无测试，Runtime gate/PG 持久化/Control host 路由未实现；BOOT-05 真实交付整链、
+受限消费端、P11 https_endpoint BOOT 段未完成；慢消费者 1s 写预算仅 code-path 记录；两主机/断网
+演练、真实 QQ、付费模型、发布未执行。

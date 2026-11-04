@@ -35,6 +35,11 @@ Status admit_plugin_storage(const InstanceId& authenticated_instance,
 // not fresh client declarations or a new authorization cache. Transport calls admission before wire
 // request conversion, and the application entry repeats it before invoking the Model port.
 Status admit_plugin_model(const std::vector<std::string>& granted_permissions);
+// Streaming additionally requires the negotiated feature and the same model.chat grant. The
+// transport owns the per-connection/process stream limits; this admission only answers authority.
+Status admit_plugin_model_stream(const InstanceId& authenticated_instance,
+                                 const PluginCapabilityProfile& profile,
+                                 const std::vector<std::string>& granted_permissions);
 Outcome<RuntimeModelChatReply>
 submit_plugin_model(RuntimeModelPort& model, const InstanceId& authenticated_instance,
                     const std::vector<std::string>& granted_permissions,

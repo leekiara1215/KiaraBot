@@ -225,8 +225,6 @@ Record decode_record(const std::string& text) {
 struct Binding {
   SecretFileRecipient recipient;
   FileDescriptor directory;
-  std::string target;
-  std::string prefix;
 };
 
 class SecretFileDelivery final : public SecretDeliveryPort {
@@ -247,19 +245,21 @@ public:
         return failure(core::ErrorCode::PermissionDenied);
       }
       auto& binding = *found;
-      auto lock = lock_peer(binding);
-      cleanup_temporaries(binding);
-      auto intent = read_record(binding, ".intent");
-      auto receipt = read_record(binding, ".receipt");
-      const auto head = current(binding, intent, receipt);
+      const auto prefix = prefix_name(binding, request.identity);
+      const auto target = target_name(binding, request.identity);
+      auto lock = lock_peer(binding, prefix);
+      cleanup_temporaries(binding, prefix);
+      auto intent = read_record(binding, prefix, ".intent");
+      auto receipt = read_record(binding, prefix, ".receipt");
+      const auto head = current(binding, request.identity, intent, receipt);
       const auto digest = sha256(request.secret);
       if (head && head->identity == request.identity) {
         if (head->digest != digest) {
           return failure(core::ErrorCode::Conflict);
         }
         uncertain = true;
-        if (target_matches(binding, *head)) {
-          return finish(binding, *head, intent.has_value());
+        if (target_matches(binding, target, *head)) {
+          return finish(binding, prefix, *head, intent.has_value());
         }
         if (!intent) {
           refuse(core::ErrorCode::Internal, true);
@@ -270,7 +270,7 @@ public:
         }
         // Validate an existing target before installing an intent; never overwrite an unmanaged
         // or unsafe pre-existing file merely because its name matches a configured peer.
-        const auto previous = read_file(binding.directory.get(), binding.target,
+        const auto previous = read_file(binding.directory.get(), target,
                                         binding.recipient.owner_uid, binding.recipient.owner_gid);
         if (!head && previous) {
           return failure(core::ErrorCode::Conflict);
@@ -279,13 +279,13 @@ public:
       Record next{request.identity, digest, {}};
       next.receipt_id = sha256(record_json(next).dump());
       uncertain = true;
-      atomic_write(binding, binding.prefix + ".intent", record_json(next).dump(), ::geteuid(),
-                   ::getegid());
+      atomic_write(binding, prefix, false, prefix + ".intent", record_json(next).dump(),
+                   ::geteuid(), ::getegid());
       checkpoint(SecretFilePhase::IntentDurable);
-      atomic_write(binding, binding.target, std::string{request.secret} + "\n",
+      atomic_write(binding, prefix, true, target, std::string{request.secret} + "\n",
                    binding.recipient.owner_uid, binding.recipient.owner_gid);
       checkpoint(SecretFilePhase::TargetDurable);
-      return finish(binding, next, true);
+      return finish(binding, prefix, next, true);
     } catch (const FileFailure& rejected) {
       auto result = rejected.value;
       if (uncertain && result.code != core::ErrorCode::Conflict) {
@@ -309,19 +309,22 @@ public:
         return failure(core::ErrorCode::PermissionDenied);
       }
       auto& binding = *found;
-      auto lock = lock_peer(binding);
-      cleanup_temporaries(binding);
-      const auto intent = read_record(binding, ".intent");
-      const auto receipt = read_record(binding, ".receipt");
-      const auto head = current(binding, intent, receipt);
+      const auto prefix = prefix_name(binding, identity);
+      const auto target = target_name(binding, identity);
+      auto lock = lock_peer(binding, prefix);
+      cleanup_temporaries(binding, prefix);
+      const auto intent = read_record(binding, prefix, ".intent");
+      const auto receipt = read_record(binding, prefix, ".receipt");
+      const auto head = current(binding, identity, intent, receipt);
       if (!head) {
         return std::optional<SecretDeliveryReceipt>{};
       }
       if (head->identity != identity) {
         return failure(core::ErrorCode::Conflict);
       }
-      if (target_matches(binding, *head)) {
-        return std::optional<SecretDeliveryReceipt>{finish(binding, *head, intent.has_value())};
+      if (target_matches(binding, target, *head)) {
+        return std::optional<SecretDeliveryReceipt>{finish(binding, prefix, *head,
+                                                           intent.has_value())};
       }
       return std::optional<SecretDeliveryReceipt>{
           SecretDeliveryReceipt{identity, SecretDeliveryState::Unknown, {}}};
@@ -335,18 +338,36 @@ public:
 private:
   Binding* locate(const SecretDeliveryIdentity& identity) {
     for (auto& binding : bindings_) {
-      if (binding.recipient.recipient_id == identity.recipient_id) {
-        if (binding.recipient.resource != identity.resource) {
-          return nullptr;
-        }
-        return &binding;
+      if (binding.recipient.recipient_id != identity.recipient_id) {
+        continue;
       }
+      if (kind_level(binding.recipient)) {
+        return binding.recipient.resource.kind == identity.resource.kind ? &binding : nullptr;
+      }
+      return binding.recipient.resource == identity.resource ? &binding : nullptr;
     }
     return nullptr;
   }
 
-  FileDescriptor lock_peer(const Binding& binding) {
-    const auto name = binding.prefix + ".lock";
+  // A kind-level recipient derives the fixed file/lock names from the exact delivery resource; an
+  // exact recipient uses its configured peer file name. The directory/owner never change.
+  static bool kind_level(const SecretFileRecipient& recipient) {
+    return recipient.resource.id.value.empty();
+  }
+  static std::string peer_name(const Binding& binding, const SecretDeliveryIdentity& identity) {
+    return kind_level(binding.recipient) ? identity.resource.id.value : binding.recipient.peer_id;
+  }
+  static std::string target_name(const Binding& binding,
+                                 const SecretDeliveryIdentity& identity) {
+    return peer_name(binding, identity) + ".bootstrap";
+  }
+  static std::string prefix_name(const Binding& binding,
+                                 const SecretDeliveryIdentity& identity) {
+    return ".delivery." + peer_name(binding, identity);
+  }
+
+  FileDescriptor lock_peer(const Binding& binding, const std::string& prefix) {
+    const auto name = prefix + ".lock";
     FileDescriptor lock{::openat(binding.directory.get(), name.c_str(),
                                  O_CREAT | O_RDWR | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK, 0600)};
     if (lock.get() < 0) {
@@ -363,16 +384,18 @@ private:
     return lock;
   }
 
-  std::optional<Record> read_record(const Binding& binding, std::string_view suffix) {
-    const auto text = read_file(binding.directory.get(), binding.prefix + std::string{suffix},
-                                ::geteuid(), ::getegid());
+  std::optional<Record> read_record(const Binding& binding, const std::string& prefix,
+                                    std::string_view suffix) {
+    const auto text =
+        read_file(binding.directory.get(), prefix + std::string{suffix}, ::geteuid(), ::getegid());
     return text ? std::optional<Record>{decode_record(*text)} : std::nullopt;
   }
 
-  std::optional<Record> current(const Binding& binding, const std::optional<Record>& intent,
+  std::optional<Record> current(const Binding& binding, const SecretDeliveryIdentity& identity,
+                                const std::optional<Record>& intent,
                                 const std::optional<Record>& receipt) {
     for (const auto* value : {&intent, &receipt}) {
-      if (*value && ((*value)->identity.resource != binding.recipient.resource ||
+      if (*value && ((*value)->identity.resource != identity.resource ||
                      (*value)->identity.recipient_id != binding.recipient.recipient_id)) {
         refuse(core::ErrorCode::Internal, true);
       }
@@ -386,8 +409,8 @@ private:
     return intent ? intent : receipt;
   }
 
-  bool target_matches(const Binding& binding, const Record& record) {
-    auto content = read_file(binding.directory.get(), binding.target, binding.recipient.owner_uid,
+  bool target_matches(const Binding& binding, const std::string& target, const Record& record) {
+    auto content = read_file(binding.directory.get(), target, binding.recipient.owner_uid,
                              binding.recipient.owner_gid);
     if (!content) {
       return false;
@@ -404,12 +427,13 @@ private:
     }
   }
 
-  SecretDeliveryReceipt finish(const Binding& binding, const Record& record, bool has_intent) {
+  SecretDeliveryReceipt finish(const Binding& binding, const std::string& prefix,
+                               const Record& record, bool has_intent) {
     if (has_intent) {
-      atomic_write(binding, binding.prefix + ".receipt", record_json(record).dump(), ::geteuid(),
-                   ::getegid());
+      atomic_write(binding, prefix, false, prefix + ".receipt", record_json(record).dump(),
+                   ::geteuid(), ::getegid());
       checkpoint(SecretFilePhase::ReceiptDurable);
-      if (::unlinkat(binding.directory.get(), (binding.prefix + ".intent").c_str(), 0) != 0 &&
+      if (::unlinkat(binding.directory.get(), (prefix + ".intent").c_str(), 0) != 0 &&
           errno != ENOENT) {
         refuse(core::ErrorCode::UpstreamUnavailable, true);
       }
@@ -418,10 +442,9 @@ private:
     return {record.identity, SecretDeliveryState::Delivered, record.receipt_id};
   }
 
-  void atomic_write(const Binding& binding, const std::string& name, const std::string& bytes,
-                    uid_t uid, gid_t gid) {
-    const bool target = name == binding.target;
-    const auto temporary = binding.prefix + (target ? ".tmp.target." : ".tmp.meta.") +
+  void atomic_write(const Binding& binding, const std::string& prefix, bool target,
+                    const std::string& name, const std::string& bytes, uid_t uid, gid_t gid) {
+    const auto temporary = prefix + (target ? ".tmp.target." : ".tmp.meta.") +
                            std::to_string(::getpid()) + "." + std::to_string(++temporary_sequence_);
     FileDescriptor file{::openat(binding.directory.get(), temporary.c_str(),
                                  O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC | O_NOFOLLOW, 0600)};
@@ -460,7 +483,7 @@ private:
     }
   }
 
-  void cleanup_temporaries(const Binding& binding) {
+  void cleanup_temporaries(const Binding& binding, const std::string& prefix) {
     // Independent directory stream; dup() would share its offset across repeated queries.
     FileDescriptor scan{::openat(binding.directory.get(), ".", O_RDONLY | O_DIRECTORY | O_CLOEXEC)};
     FileDescriptor duplicated{scan.get() < 0 ? -1 : ::dup(scan.get())};
@@ -474,17 +497,17 @@ private:
     const std::unique_ptr<DIR, decltype(&::closedir)> directory{raw, ::closedir};
     (void)duplicated.release(); // DIR owns this descriptor only after fdopendir succeeds.
     std::size_t count = 0;
-    const auto prefix = binding.prefix + ".tmp.";
+    const auto temporary_prefix = prefix + ".tmp.";
     while (const auto* entry = ::readdir(directory.get())) {
       const std::string name{entry->d_name};
-      if (!name.starts_with(prefix)) {
+      if (!name.starts_with(temporary_prefix)) {
         continue;
       }
       if (++count > 64) {
         refuse(core::ErrorCode::RateLimited);
       }
-      const bool target = name.starts_with(binding.prefix + ".tmp.target.");
-      if (!target && !name.starts_with(binding.prefix + ".tmp.meta.")) {
+      const bool target = name.starts_with(prefix + ".tmp.target.");
+      if (!target && !name.starts_with(prefix + ".tmp.meta.")) {
         refuse(core::ErrorCode::PermissionDenied);
       }
       const auto content = read_file(binding.directory.get(), name,
@@ -514,25 +537,54 @@ make_secret_file_delivery(std::vector<SecretFileRecipient> recipients,
     }
     std::vector<Binding> bindings;
     std::set<std::string> names;
-    std::set<std::tuple<std::uint64_t, std::uint64_t, std::string>> targets;
+    std::set<std::tuple<std::uint64_t, std::uint64_t, std::string>> exact_targets;
+    std::set<std::tuple<std::uint64_t, std::uint64_t, int>> kind_families;
     for (auto& recipient : recipients) {
-      const SecretDeliveryIdentity identity{recipient.peer_id, recipient.resource,
+      const bool kind_level_recipient = recipient.resource.id.value.empty();
+      // Kind-level recipients accept any resource of their family but keep this exact directory,
+      // owner and file convention; their identity is validated against a synthetic canonical id so
+      // only the recipient/family/directory are fixed here.
+      const auto identifier =
+          kind_level_recipient ? recipient.recipient_id : recipient.resource.id.value;
+      const SecretDeliveryIdentity identity{recipient.recipient_id,
+                                            {recipient.resource.kind, {identifier}},
                                             recipient.recipient_id, 1};
       if (!valid_delivery_identity(identity) || !names.insert(recipient.recipient_id).second) {
         refuse(core::ErrorCode::InvalidArgument);
       }
+      if (kind_level_recipient) {
+        if (recipient.resource.kind != core::ResourceKind::Account &&
+            recipient.resource.kind != core::ResourceKind::Instance) {
+          refuse(core::ErrorCode::InvalidArgument);
+        }
+        if (!recipient.peer_id.empty()) {
+          refuse(core::ErrorCode::InvalidArgument);
+        }
+      } else {
+        const SecretDeliveryIdentity peer_identity{recipient.peer_id, recipient.resource,
+                                                   recipient.recipient_id, 1};
+        if (!valid_delivery_identity(peer_identity)) {
+          refuse(core::ErrorCode::InvalidArgument);
+        }
+      }
       auto directory = open_directory(recipient.directory);
       struct stat info {};
-      if (::fstat(directory.get(), &info) != 0 ||
-          !targets
-               .emplace(static_cast<std::uint64_t>(info.st_dev),
-                        static_cast<std::uint64_t>(info.st_ino), recipient.peer_id)
-               .second) {
+      if (::fstat(directory.get(), &info) != 0) {
         refuse(core::ErrorCode::InvalidArgument);
       }
-      const auto peer = recipient.peer_id;
-      bindings.push_back(
-          {std::move(recipient), std::move(directory), peer + ".bootstrap", ".delivery." + peer});
+      const auto device = static_cast<std::uint64_t>(info.st_dev);
+      const auto inode = static_cast<std::uint64_t>(info.st_ino);
+      if (kind_level_recipient) {
+        if (!kind_families
+                 .emplace(device, inode,
+                          static_cast<int>(recipient.resource.kind))
+                 .second) {
+          refuse(core::ErrorCode::InvalidArgument);
+        }
+      } else if (!exact_targets.emplace(device, inode, recipient.peer_id).second) {
+        refuse(core::ErrorCode::InvalidArgument);
+      }
+      bindings.push_back({std::move(recipient), std::move(directory)});
     }
     return std::unique_ptr<SecretDeliveryPort>{
         std::make_unique<SecretFileDelivery>(std::move(bindings), checkpoint_for_testing)};
