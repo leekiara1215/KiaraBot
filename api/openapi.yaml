@@ -894,8 +894,9 @@ paths:
       x-permission: "account.read"
       x-mutating: false
       x-contract-status: "not_implemented"
-      description: "Exact registered catalog is required; return only the current subject independently granted child resources of this method kind. Catalog permission is not a grant to every child. Immutable 10 minute snapshot; no global totals or empty-scope wildcard."
+      description: "Exact registered catalog is required; return only the current subject independently granted child resources of this method kind. Catalog permission is not a grant to every child. Snapshot covers only the selected delegation child scope. Separate batches have independent pagination and do not imply global discovery. Immutable 10 minute snapshot; no global totals or empty-scope wildcard."
       parameters:
+        - {"name":"scope","in":"query","required":false,"description":"Explicit child selection for this independent snapshot, at most 127 exact child references. Omitted selection uses current same-permission assignments and fails RATE_LIMITED if it exceeds that limit. Catalog authorization is always checked separately.","content":{"application/json":{"schema":{"$ref":"#/components/schemas/ResourceScope"}}}}
         - {"name":"catalog","in":"query","required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/TargetCatalogRef"}}}}
         - {"$ref":"#/components/parameters/PageSize"}
         - {"$ref":"#/components/parameters/PageToken"}
@@ -1215,8 +1216,9 @@ paths:
       x-permission: "plugin.read"
       x-mutating: false
       x-contract-status: "not_implemented"
-      description: "Exact registered catalog is required; return only the current subject independently granted child resources of this method kind. Catalog permission is not a grant to every child. Immutable 10 minute snapshot; no global totals or empty-scope wildcard."
+      description: "Exact registered catalog is required; return only the current subject independently granted child resources of this method kind. Catalog permission is not a grant to every child. Snapshot covers only the selected delegation child scope. Separate batches have independent pagination and do not imply global discovery. Immutable 10 minute snapshot; no global totals or empty-scope wildcard."
       parameters:
+        - {"name":"scope","in":"query","required":false,"description":"Explicit child selection for this independent snapshot, at most 127 exact child references. Omitted selection uses current same-permission assignments and fails RATE_LIMITED if it exceeds that limit. Catalog authorization is always checked separately.","content":{"application/json":{"schema":{"$ref":"#/components/schemas/ResourceScope"}}}}
         - {"name":"catalog","in":"query","required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/TargetCatalogRef"}}}}
         - {"$ref":"#/components/parameters/PageSize"}
         - {"$ref":"#/components/parameters/PageToken"}
@@ -3325,8 +3327,9 @@ paths:
       x-permission: "plugin.read"
       x-mutating: false
       x-contract-status: "not_implemented"
-      description: "Exact registered catalog is required; return only the current subject independently granted child resources of this method kind. Catalog permission is not a grant to every child. Immutable 10 minute snapshot; no global totals or empty-scope wildcard."
+      description: "Exact registered catalog is required; return only the current subject independently granted child resources of this method kind. Catalog permission is not a grant to every child. Snapshot covers only the selected delegation child scope. Separate batches have independent pagination and do not imply global discovery. Immutable 10 minute snapshot; no global totals or empty-scope wildcard."
       parameters:
+        - {"name":"scope","in":"query","required":false,"description":"Explicit child selection for this independent snapshot, at most 127 exact child references. Omitted selection uses current same-permission assignments and fails RATE_LIMITED if it exceeds that limit. Catalog authorization is always checked separately.","content":{"application/json":{"schema":{"$ref":"#/components/schemas/ResourceScope"}}}}
         - {"name":"catalog","in":"query","required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/TargetCatalogRef"}}}}
         - {"$ref":"#/components/parameters/PageSize"}
         - {"$ref":"#/components/parameters/PageToken"}
@@ -3372,7 +3375,7 @@ paths:
       x-permission: "adapter.read"
       x-mutating: false
       x-contract-status: "not_implemented"
-      description: "Exact registered catalog is required; return only the current subject independently granted child resources of this method kind. Catalog permission is not a grant to every child. Immutable 10 minute snapshot; no global totals or empty-scope wildcard."
+      description: "Exact registered catalog is required; return only the current subject independently granted child resources of this method kind. Catalog permission is not a grant to every child. Snapshot covers only the selected delegation child scope. Separate batches have independent pagination and do not imply global discovery. Immutable 10 minute snapshot; no global totals or empty-scope wildcard."
       parameters:
         - {"name":"catalog","in":"query","required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/TargetCatalogRef"}}}}
         - {"$ref":"#/components/parameters/PageSize"}
@@ -3419,8 +3422,9 @@ paths:
       x-permission: "host.read"
       x-mutating: false
       x-contract-status: "not_implemented"
-      description: "Exact registered catalog is required; return only the current subject independently granted child resources of this method kind. Catalog permission is not a grant to every child. Immutable 10 minute snapshot; no global totals or empty-scope wildcard."
+      description: "Exact registered catalog is required; return only the current subject independently granted child resources of this method kind. Catalog permission is not a grant to every child. Snapshot covers only the selected delegation child scope. Separate batches have independent pagination and do not imply global discovery. Snapshot covers only the selected delegation child scope. Separate batches have independent pagination and do not imply global discovery. Immutable 10 minute snapshot; no global totals or empty-scope wildcard."
       parameters:
+        - {"name":"scope","in":"query","required":false,"description":"Explicit child selection for this independent snapshot, at most 127 exact child references. Omitted selection uses current same-permission assignments and fails RATE_LIMITED if it exceeds that limit. Catalog authorization is always checked separately.","content":{"application/json":{"schema":{"$ref":"#/components/schemas/ResourceScope"}}}}
         - {"name":"catalog","in":"query","required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/TargetCatalogRef"}}}}
         - {"$ref":"#/components/parameters/PageSize"}
         - {"$ref":"#/components/parameters/PageToken"}
@@ -3904,6 +3908,8 @@ components:
       type: object
       additionalProperties: false
       properties:
+        catalog:
+          "$ref": "#/components/schemas/TargetCatalogRef"
         platform:
           type: string
         platform_account_id:
@@ -3913,6 +3919,7 @@ components:
           type: string
       x-contract-status: not_implemented
       required:
+      - catalog
       - platform
       - platform_account_id
     TargetRuntimeCreateAccountResponse:
@@ -4121,6 +4128,8 @@ components:
       type: object
       additionalProperties: false
       properties:
+        catalog:
+          "$ref": "#/components/schemas/TargetCatalogRef"
         plugin_type_id:
           type: string
           minLength: 1
@@ -4128,6 +4137,7 @@ components:
           "$ref": "#/components/schemas/TargetPluginManifest"
       x-contract-status: not_implemented
       required:
+      - catalog
       - plugin_type_id
       - manifest
     TargetPluginManifest:
