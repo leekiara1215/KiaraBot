@@ -5986,7 +5986,26 @@
           "RuntimeUpdateAccountResponse": "implemented",
           "AccountRecord": "implemented",
           "AdapterRecord": "implemented",
-          "AdapterRegistrationMetadata": "implemented"
+          "AdapterRegistrationMetadata": "implemented",
+          "RuntimeCreateAccountRequest": "implemented",
+          "RuntimeCreateAccountResponse": "implemented",
+          "RuntimeCreateInstallationRequest": "implemented",
+          "RuntimeCreateInstallationResponse": "implemented",
+          "RuntimeCreateInstanceRequest": "implemented",
+          "RuntimeCreateInstanceResponse": "implemented",
+          "RuntimeListAccountsRequest": "implemented",
+          "RuntimeListAccountsResponse": "implemented",
+          "RuntimeListAdaptersRequest": "implemented",
+          "RuntimeListAdaptersResponse": "implemented",
+          "RuntimeListInstallationsRequest": "implemented",
+          "RuntimeListInstallationsResponse": "implemented",
+          "RuntimeListInstancesRequest": "implemented",
+          "RuntimeListInstancesResponse": "implemented",
+          "RuntimeValidateManifestRequest": "implemented",
+          "RuntimeValidateManifestResponse": "implemented",
+          "PageRequest": "implemented",
+          "PageInfo": "implemented",
+          "SnapshotInfo": "implemented"
         },
         "proto_fields": {
           "HostRegisterHostRequest.host": "implemented",
@@ -6711,7 +6730,56 @@
           "AdapterRecord.lifecycle": "implemented",
           "AdapterRegistrationMetadata.implementation": "implemented",
           "AdapterRegistrationMetadata.implementation_version": "implemented",
-          "AdapterRegistrationMetadata.protocol_version": "implemented"
+          "AdapterRegistrationMetadata.protocol_version": "implemented",
+          "PageInfo.next_page_token": "implemented",
+          "PageInfo.page_size": "implemented",
+          "PageRequest.page_size": "implemented",
+          "PageRequest.page_token": "implemented",
+          "RuntimeCreateAccountRequest.context": "implemented",
+          "RuntimeCreateAccountRequest.platform": "implemented",
+          "RuntimeCreateAccountRequest.platform_account_id": "implemented",
+          "RuntimeCreateAccountRequest.display_name": "implemented",
+          "RuntimeCreateAccountResponse.account": "implemented",
+          "RuntimeValidateManifestRequest.context": "implemented",
+          "RuntimeValidateManifestRequest.manifest": "implemented",
+          "RuntimeValidateManifestResponse.valid": "implemented",
+          "RuntimeCreateInstallationRequest.context": "implemented",
+          "RuntimeCreateInstallationRequest.plugin_type_id": "implemented",
+          "RuntimeCreateInstallationRequest.manifest": "implemented",
+          "RuntimeCreateInstallationResponse.installation": "implemented",
+          "RuntimeCreateInstanceRequest.context": "implemented",
+          "RuntimeCreateInstanceRequest.installation_id": "implemented",
+          "RuntimeCreateInstanceRequest.externally_managed": "implemented",
+          "RuntimeCreateInstanceResponse.instance": "implemented",
+          "SnapshotInfo.snapshot_id": "implemented",
+          "SnapshotInfo.observed_at": "implemented",
+          "SnapshotInfo.expires_at": "implemented",
+          "SnapshotInfo.authorization_version": "implemented",
+          "SnapshotInfo.owner_service": "implemented",
+          "SnapshotInfo.page": "implemented",
+          "RuntimeListAccountsRequest.context": "implemented",
+          "RuntimeListAccountsRequest.catalog": "implemented",
+          "RuntimeListAccountsRequest.page": "implemented",
+          "RuntimeListAccountsResponse.accounts": "implemented",
+          "RuntimeListAccountsResponse.snapshot": "implemented",
+          "RuntimeListInstallationsRequest.context": "implemented",
+          "RuntimeListInstallationsRequest.catalog": "implemented",
+          "RuntimeListInstallationsRequest.page": "implemented",
+          "RuntimeListInstallationsResponse.installations": "implemented",
+          "RuntimeListInstallationsResponse.snapshot": "implemented",
+          "RuntimeListInstancesRequest.context": "implemented",
+          "RuntimeListInstancesRequest.catalog": "implemented",
+          "RuntimeListInstancesRequest.page": "implemented",
+          "RuntimeListInstancesResponse.instances": "implemented",
+          "RuntimeListInstancesResponse.snapshot": "implemented",
+          "RuntimeListAdaptersRequest.context": "implemented",
+          "RuntimeListAdaptersRequest.catalog": "implemented",
+          "RuntimeListAdaptersRequest.page": "implemented",
+          "RuntimeListAdaptersResponse.adapters": "implemented",
+          "RuntimeListAdaptersResponse.snapshot": "implemented",
+          "RuntimeCreateAccountRequest.catalog": "implemented",
+          "RuntimeValidateManifestRequest.catalog": "implemented",
+          "RuntimeCreateInstallationRequest.catalog": "implemented"
         },
         "bridge_methods": {
           "AdapterBridge.Connect": "implemented",
@@ -12999,6 +13067,414 @@
         "proto_fields:AdapterRegistrationMetadata.protocol_version": [
           "core/src/runtime/platform/runtime_rpc.cpp",
           "core/tests/platform/runtime_exact_accounts_test.py"
+        ],
+        "proto_messages:RuntimeCreateAccountRequest": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_resource_application.cpp",
+          "core/tests/platform/runtime_catalog_management_e2e.py",
+          "core/tests/architecture/runtime_resource_application_test.cpp"
+        ],
+        "proto_messages:RuntimeCreateAccountResponse": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_resource_application.cpp",
+          "core/tests/platform/runtime_catalog_management_e2e.py",
+          "core/tests/architecture/runtime_resource_application_test.cpp"
+        ],
+        "proto_messages:RuntimeCreateInstallationRequest": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_resource_application.cpp",
+          "core/tests/platform/runtime_catalog_management_e2e.py",
+          "core/tests/architecture/runtime_resource_application_test.cpp"
+        ],
+        "proto_messages:RuntimeCreateInstallationResponse": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_resource_application.cpp",
+          "core/tests/platform/runtime_catalog_management_e2e.py",
+          "core/tests/architecture/runtime_resource_application_test.cpp"
+        ],
+        "proto_messages:RuntimeCreateInstanceRequest": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_resource_application.cpp",
+          "core/tests/platform/runtime_catalog_management_e2e.py",
+          "core/tests/architecture/runtime_resource_application_test.cpp"
+        ],
+        "proto_messages:RuntimeCreateInstanceResponse": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_resource_application.cpp",
+          "core/tests/platform/runtime_catalog_management_e2e.py",
+          "core/tests/architecture/runtime_resource_application_test.cpp"
+        ],
+        "proto_messages:RuntimeListAccountsRequest": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_resource_application.cpp",
+          "core/tests/platform/runtime_catalog_management_e2e.py",
+          "core/tests/architecture/runtime_resource_application_test.cpp"
+        ],
+        "proto_messages:RuntimeListAccountsResponse": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_resource_application.cpp",
+          "core/tests/platform/runtime_catalog_management_e2e.py",
+          "core/tests/architecture/runtime_resource_application_test.cpp"
+        ],
+        "proto_messages:RuntimeListAdaptersRequest": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_resource_application.cpp",
+          "core/tests/platform/runtime_catalog_management_e2e.py",
+          "core/tests/architecture/runtime_resource_application_test.cpp"
+        ],
+        "proto_messages:RuntimeListAdaptersResponse": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_resource_application.cpp",
+          "core/tests/platform/runtime_catalog_management_e2e.py",
+          "core/tests/architecture/runtime_resource_application_test.cpp"
+        ],
+        "proto_messages:RuntimeListInstallationsRequest": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_resource_application.cpp",
+          "core/tests/platform/runtime_catalog_management_e2e.py",
+          "core/tests/architecture/runtime_resource_application_test.cpp"
+        ],
+        "proto_messages:RuntimeListInstallationsResponse": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_resource_application.cpp",
+          "core/tests/platform/runtime_catalog_management_e2e.py",
+          "core/tests/architecture/runtime_resource_application_test.cpp"
+        ],
+        "proto_messages:RuntimeListInstancesRequest": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_resource_application.cpp",
+          "core/tests/platform/runtime_catalog_management_e2e.py",
+          "core/tests/architecture/runtime_resource_application_test.cpp"
+        ],
+        "proto_messages:RuntimeListInstancesResponse": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_resource_application.cpp",
+          "core/tests/platform/runtime_catalog_management_e2e.py",
+          "core/tests/architecture/runtime_resource_application_test.cpp"
+        ],
+        "proto_messages:RuntimeValidateManifestRequest": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_resource_application.cpp",
+          "core/tests/platform/runtime_catalog_management_e2e.py",
+          "core/tests/architecture/runtime_resource_application_test.cpp"
+        ],
+        "proto_messages:RuntimeValidateManifestResponse": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_resource_application.cpp",
+          "core/tests/platform/runtime_catalog_management_e2e.py",
+          "core/tests/architecture/runtime_resource_application_test.cpp"
+        ],
+        "proto_messages:PageRequest": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_resource_application.cpp",
+          "core/tests/platform/runtime_catalog_management_e2e.py",
+          "core/tests/architecture/runtime_resource_application_test.cpp"
+        ],
+        "proto_messages:PageInfo": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_resource_application.cpp",
+          "core/tests/platform/runtime_catalog_management_e2e.py",
+          "core/tests/architecture/runtime_resource_application_test.cpp"
+        ],
+        "proto_messages:SnapshotInfo": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_resource_application.cpp",
+          "core/tests/platform/runtime_catalog_management_e2e.py",
+          "core/tests/architecture/runtime_resource_application_test.cpp"
+        ],
+        "proto_fields:PageInfo.next_page_token": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_resource_application.cpp",
+          "core/tests/platform/runtime_catalog_management_e2e.py",
+          "core/tests/architecture/runtime_resource_application_test.cpp"
+        ],
+        "proto_fields:PageInfo.page_size": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_resource_application.cpp",
+          "core/tests/platform/runtime_catalog_management_e2e.py",
+          "core/tests/architecture/runtime_resource_application_test.cpp"
+        ],
+        "proto_fields:PageRequest.page_size": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_resource_application.cpp",
+          "core/tests/platform/runtime_catalog_management_e2e.py",
+          "core/tests/architecture/runtime_resource_application_test.cpp"
+        ],
+        "proto_fields:PageRequest.page_token": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_resource_application.cpp",
+          "core/tests/platform/runtime_catalog_management_e2e.py",
+          "core/tests/architecture/runtime_resource_application_test.cpp"
+        ],
+        "proto_fields:RuntimeCreateAccountRequest.context": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_resource_application.cpp",
+          "core/tests/platform/runtime_catalog_management_e2e.py",
+          "core/tests/architecture/runtime_resource_application_test.cpp"
+        ],
+        "proto_fields:RuntimeCreateAccountRequest.platform": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_resource_application.cpp",
+          "core/tests/platform/runtime_catalog_management_e2e.py",
+          "core/tests/architecture/runtime_resource_application_test.cpp"
+        ],
+        "proto_fields:RuntimeCreateAccountRequest.platform_account_id": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_resource_application.cpp",
+          "core/tests/platform/runtime_catalog_management_e2e.py",
+          "core/tests/architecture/runtime_resource_application_test.cpp"
+        ],
+        "proto_fields:RuntimeCreateAccountRequest.display_name": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_resource_application.cpp",
+          "core/tests/platform/runtime_catalog_management_e2e.py",
+          "core/tests/architecture/runtime_resource_application_test.cpp"
+        ],
+        "proto_fields:RuntimeCreateAccountResponse.account": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_resource_application.cpp",
+          "core/tests/platform/runtime_catalog_management_e2e.py",
+          "core/tests/architecture/runtime_resource_application_test.cpp"
+        ],
+        "proto_fields:RuntimeValidateManifestRequest.context": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_resource_application.cpp",
+          "core/tests/platform/runtime_catalog_management_e2e.py",
+          "core/tests/architecture/runtime_resource_application_test.cpp"
+        ],
+        "proto_fields:RuntimeValidateManifestRequest.manifest": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_resource_application.cpp",
+          "core/tests/platform/runtime_catalog_management_e2e.py",
+          "core/tests/architecture/runtime_resource_application_test.cpp"
+        ],
+        "proto_fields:RuntimeValidateManifestResponse.valid": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_resource_application.cpp",
+          "core/tests/platform/runtime_catalog_management_e2e.py",
+          "core/tests/architecture/runtime_resource_application_test.cpp"
+        ],
+        "proto_fields:RuntimeCreateInstallationRequest.context": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_resource_application.cpp",
+          "core/tests/platform/runtime_catalog_management_e2e.py",
+          "core/tests/architecture/runtime_resource_application_test.cpp"
+        ],
+        "proto_fields:RuntimeCreateInstallationRequest.plugin_type_id": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_resource_application.cpp",
+          "core/tests/platform/runtime_catalog_management_e2e.py",
+          "core/tests/architecture/runtime_resource_application_test.cpp"
+        ],
+        "proto_fields:RuntimeCreateInstallationRequest.manifest": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_resource_application.cpp",
+          "core/tests/platform/runtime_catalog_management_e2e.py",
+          "core/tests/architecture/runtime_resource_application_test.cpp"
+        ],
+        "proto_fields:RuntimeCreateInstallationResponse.installation": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_resource_application.cpp",
+          "core/tests/platform/runtime_catalog_management_e2e.py",
+          "core/tests/architecture/runtime_resource_application_test.cpp"
+        ],
+        "proto_fields:RuntimeCreateInstanceRequest.context": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_resource_application.cpp",
+          "core/tests/platform/runtime_catalog_management_e2e.py",
+          "core/tests/architecture/runtime_resource_application_test.cpp"
+        ],
+        "proto_fields:RuntimeCreateInstanceRequest.installation_id": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_resource_application.cpp",
+          "core/tests/platform/runtime_catalog_management_e2e.py",
+          "core/tests/architecture/runtime_resource_application_test.cpp"
+        ],
+        "proto_fields:RuntimeCreateInstanceRequest.externally_managed": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_resource_application.cpp",
+          "core/tests/platform/runtime_catalog_management_e2e.py",
+          "core/tests/architecture/runtime_resource_application_test.cpp"
+        ],
+        "proto_fields:RuntimeCreateInstanceResponse.instance": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_resource_application.cpp",
+          "core/tests/platform/runtime_catalog_management_e2e.py",
+          "core/tests/architecture/runtime_resource_application_test.cpp"
+        ],
+        "proto_fields:SnapshotInfo.snapshot_id": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_resource_application.cpp",
+          "core/tests/platform/runtime_catalog_management_e2e.py",
+          "core/tests/architecture/runtime_resource_application_test.cpp"
+        ],
+        "proto_fields:SnapshotInfo.observed_at": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_resource_application.cpp",
+          "core/tests/platform/runtime_catalog_management_e2e.py",
+          "core/tests/architecture/runtime_resource_application_test.cpp"
+        ],
+        "proto_fields:SnapshotInfo.expires_at": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_resource_application.cpp",
+          "core/tests/platform/runtime_catalog_management_e2e.py",
+          "core/tests/architecture/runtime_resource_application_test.cpp"
+        ],
+        "proto_fields:SnapshotInfo.authorization_version": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_resource_application.cpp",
+          "core/tests/platform/runtime_catalog_management_e2e.py",
+          "core/tests/architecture/runtime_resource_application_test.cpp"
+        ],
+        "proto_fields:SnapshotInfo.owner_service": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_resource_application.cpp",
+          "core/tests/platform/runtime_catalog_management_e2e.py",
+          "core/tests/architecture/runtime_resource_application_test.cpp"
+        ],
+        "proto_fields:SnapshotInfo.page": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_resource_application.cpp",
+          "core/tests/platform/runtime_catalog_management_e2e.py",
+          "core/tests/architecture/runtime_resource_application_test.cpp"
+        ],
+        "proto_fields:RuntimeListAccountsRequest.context": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_resource_application.cpp",
+          "core/tests/platform/runtime_catalog_management_e2e.py",
+          "core/tests/architecture/runtime_resource_application_test.cpp"
+        ],
+        "proto_fields:RuntimeListAccountsRequest.catalog": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_resource_application.cpp",
+          "core/tests/platform/runtime_catalog_management_e2e.py",
+          "core/tests/architecture/runtime_resource_application_test.cpp"
+        ],
+        "proto_fields:RuntimeListAccountsRequest.page": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_resource_application.cpp",
+          "core/tests/platform/runtime_catalog_management_e2e.py",
+          "core/tests/architecture/runtime_resource_application_test.cpp"
+        ],
+        "proto_fields:RuntimeListAccountsResponse.accounts": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_resource_application.cpp",
+          "core/tests/platform/runtime_catalog_management_e2e.py",
+          "core/tests/architecture/runtime_resource_application_test.cpp"
+        ],
+        "proto_fields:RuntimeListAccountsResponse.snapshot": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_resource_application.cpp",
+          "core/tests/platform/runtime_catalog_management_e2e.py",
+          "core/tests/architecture/runtime_resource_application_test.cpp"
+        ],
+        "proto_fields:RuntimeListInstallationsRequest.context": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_resource_application.cpp",
+          "core/tests/platform/runtime_catalog_management_e2e.py",
+          "core/tests/architecture/runtime_resource_application_test.cpp"
+        ],
+        "proto_fields:RuntimeListInstallationsRequest.catalog": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_resource_application.cpp",
+          "core/tests/platform/runtime_catalog_management_e2e.py",
+          "core/tests/architecture/runtime_resource_application_test.cpp"
+        ],
+        "proto_fields:RuntimeListInstallationsRequest.page": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_resource_application.cpp",
+          "core/tests/platform/runtime_catalog_management_e2e.py",
+          "core/tests/architecture/runtime_resource_application_test.cpp"
+        ],
+        "proto_fields:RuntimeListInstallationsResponse.installations": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_resource_application.cpp",
+          "core/tests/platform/runtime_catalog_management_e2e.py",
+          "core/tests/architecture/runtime_resource_application_test.cpp"
+        ],
+        "proto_fields:RuntimeListInstallationsResponse.snapshot": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_resource_application.cpp",
+          "core/tests/platform/runtime_catalog_management_e2e.py",
+          "core/tests/architecture/runtime_resource_application_test.cpp"
+        ],
+        "proto_fields:RuntimeListInstancesRequest.context": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_resource_application.cpp",
+          "core/tests/platform/runtime_catalog_management_e2e.py",
+          "core/tests/architecture/runtime_resource_application_test.cpp"
+        ],
+        "proto_fields:RuntimeListInstancesRequest.catalog": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_resource_application.cpp",
+          "core/tests/platform/runtime_catalog_management_e2e.py",
+          "core/tests/architecture/runtime_resource_application_test.cpp"
+        ],
+        "proto_fields:RuntimeListInstancesRequest.page": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_resource_application.cpp",
+          "core/tests/platform/runtime_catalog_management_e2e.py",
+          "core/tests/architecture/runtime_resource_application_test.cpp"
+        ],
+        "proto_fields:RuntimeListInstancesResponse.instances": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_resource_application.cpp",
+          "core/tests/platform/runtime_catalog_management_e2e.py",
+          "core/tests/architecture/runtime_resource_application_test.cpp"
+        ],
+        "proto_fields:RuntimeListInstancesResponse.snapshot": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_resource_application.cpp",
+          "core/tests/platform/runtime_catalog_management_e2e.py",
+          "core/tests/architecture/runtime_resource_application_test.cpp"
+        ],
+        "proto_fields:RuntimeListAdaptersRequest.context": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_resource_application.cpp",
+          "core/tests/platform/runtime_catalog_management_e2e.py",
+          "core/tests/architecture/runtime_resource_application_test.cpp"
+        ],
+        "proto_fields:RuntimeListAdaptersRequest.catalog": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_resource_application.cpp",
+          "core/tests/platform/runtime_catalog_management_e2e.py",
+          "core/tests/architecture/runtime_resource_application_test.cpp"
+        ],
+        "proto_fields:RuntimeListAdaptersRequest.page": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_resource_application.cpp",
+          "core/tests/platform/runtime_catalog_management_e2e.py",
+          "core/tests/architecture/runtime_resource_application_test.cpp"
+        ],
+        "proto_fields:RuntimeListAdaptersResponse.adapters": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_resource_application.cpp",
+          "core/tests/platform/runtime_catalog_management_e2e.py",
+          "core/tests/architecture/runtime_resource_application_test.cpp"
+        ],
+        "proto_fields:RuntimeListAdaptersResponse.snapshot": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_resource_application.cpp",
+          "core/tests/platform/runtime_catalog_management_e2e.py",
+          "core/tests/architecture/runtime_resource_application_test.cpp"
+        ],
+        "proto_fields:RuntimeCreateAccountRequest.catalog": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_resource_application.cpp",
+          "core/tests/platform/runtime_catalog_management_e2e.py",
+          "core/tests/architecture/runtime_resource_application_test.cpp"
+        ],
+        "proto_fields:RuntimeValidateManifestRequest.catalog": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_resource_application.cpp",
+          "core/tests/platform/runtime_catalog_management_e2e.py",
+          "core/tests/architecture/runtime_resource_application_test.cpp"
+        ],
+        "proto_fields:RuntimeCreateInstallationRequest.catalog": [
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_resource_application.cpp",
+          "core/tests/platform/runtime_catalog_management_e2e.py",
+          "core/tests/architecture/runtime_resource_application_test.cpp"
         ]
       }
     }
