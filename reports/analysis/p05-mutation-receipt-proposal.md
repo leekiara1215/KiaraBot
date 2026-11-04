@@ -12,13 +12,13 @@
 
 ## 建议的 Runtime 专用存储
 
-推荐为 Runtime 增加版本化的结果附属表，暂名 runtime_management_receipts。以 command_receipts.result_id 为主键及外键，并以父回执清理为生命周期边界。保持现有 ReplayResult variant 的索引和其他三个 owner 的编码方式。该方案比扩展共享 ReplayResult 多一种类型更局部，但仍属于待批准的存储模型变更。
+推荐为 Runtime 增加版本化的结果附属表，暂名 runtime_management_receipts。以 result_id 为主键，外键明确指向 command_receipts(result_id)，采用 ON DELETE CASCADE。父表该列已有 UNIQUE；不能只关联 replay_results。现有清理先删除 command_receipts 再删除 replay_results，附属表必须随父回执删除，覆盖定期清理和过期键替换两条路径。保持现有 ReplayResult variant 的索引和其他三个 owner 的编码方式。该方案比扩展共享 ReplayResult 多一种类型更局部，但仍属于待批准的存储模型变更。
 
 表保存 format_version=1、方法/结果类型辨别信息、原始 OperationRef 的 owner/operation_id/resource_kind/resource_id，以及必要的提交时状态。原资源快照仍保留在现有 replay_results 及对应结果表，附属表只补缺失信息。约束 operation owner 必须为 Runtime，引用资源必须匹配原结果和回执资源。五项成功写入必须同时存在父回执和完整附属记录。实现时需由 Runtime 专用仓储验证字段与方法组合，不能将任意 blob 视为合法回执。
 
 实例两项的状态快照完整覆盖 ResourceState 中实际输出的字段，包括 resource、version、lifecycle、desired、fence（可空）、registered、desired_config_version、applied_config_version、process_outcome、observed_at 和 source_service。Fence 保存原始各部分，空值保持空值。配置回执同时保留原 InstanceConfiguration；SetDesiredState 同时保留原 PluginInstance。两者的观察时间取原事务权威时间，重放不刷新观察时间，也不从当前行拼装。
 
-Core 增加 Runtime 专用中立回执值类型和仓储端口。ConfigMutation 提供已保存的 ResourceState，RPC 仅做协议转换。基础设施实现关系与 codec，不能决定状态。具体列类型、检查约束、实际 schema 版本和 descriptor 由实现前的 schema diff 固定，本文不预占版本号。
+Core 增加 Runtime 专用中立回执值类型和仓储端口。ConfigMutation 提供已保存的 ResourceState。InstanceMutation 或 SetDesiredState 专用结果也须提供原始状态，InstanceRecord.state 完整从回执转换，不能继续用 now() 重建 observed_at。PluginInstance 的安装和 Host 等信息也取原快照。RPC 仅做协议转换。基础设施实现关系与 codec，不能决定状态。具体列类型、检查约束、实际 schema 版本和 descriptor 由实现前的 schema diff 固定，本文不预占版本号。
 
 BindAdapter 首次可能返回 bootstrap 明文。该明文只在首次成功响应中交付，普通回执不保存它，也不使重试再次交付。操作引用和绑定快照可以持久重放。若首次明文丢失，沿用既有凭据生命周期处理，秘密恢复能力另行设计。
 
@@ -28,6 +28,8 @@ BindAdapter 首次可能返回 bootstrap 明文。该明文只在首次成功响
 2. 已有回执必须先核对 fingerprint。新格式回执读取不可变结果和原引用，不查询以本次 request_id 命名的 operation。记录不完整、版本未知或外键/资源不一致时拒绝继续，不补写猜测结果。
 3. 新命令依照现有 CAS 修改业务行，创建原 operation、Host 命令等已有副作用意图；同一 UoW 内保存业务快照、附属回执和审计。
 4. 只有提交确认成功才回成功。提交结果未知沿用 UNKNOWN/按原身份查询的现有语义；不得用新键重试副作用。并发同键由数据库唯一键和事务冲突保证一个提交，竞争失败者重新读取原回执。
+
+当前 find_receipt 在 retain_until 到期后即视作无回执，即使物理行尚未清理。完整重放只在有效保留窗内承诺；窗口外的未知意图不能据此安全重试。失联调用须人工核对原 operation 和副作用，不能仅因过期就由客户端自动重发。若要让服务端阻止过期同键重执行，需要另行批准 tombstone 或持久意图契约。迁移等待期限仅解决旧回执格式共存，不证明历史未知意图已得到处置。
 
 附属表不依赖可清理的 operation 当前行来重放引用。operation 进度表、Host 命令、投递和其他未决义务按各自保留条件清理。父回执过期时附属行一并清理，不能因新增表让原回执提前删除。下游数据库故障、容量上限和编码失败必须让事务整体失败。
 
@@ -45,13 +47,13 @@ BindAdapter 首次可能返回 bootstrap 明文。该明文只在首次成功响
 4. 确认清理不破坏未决义务，且没有旧 writer 后，用迁移身份在显式事务中新增 Runtime 附属表、约束和 schema 标识。服务运行身份没有 DDL 权限。迁移需检查准确旧版本和对象集合，失败回滚；重试只接受已完整迁移状态或准确旧状态，部分状态拒绝。
 5. 启动新 Runtime，校验 descriptor、权限和健康，再运行无外部副作用的验收。满足门禁后开放入口。其他三库不应因本地表新增被执行 DDL，但共享 schema 生成器是否改变其 descriptor 必须实测检查。
 
-回滚分两段。新格式首次写入前可停服务并在核对 schema 后回到旧部署。首次新格式写入后，旧版不能正确读取完整回执，禁止直接降级并开放 writer。此后优先前向修复；若恢复备份，必须协调业务数据和 Host/Adapter 日志的水位，并处理备份后已发生的副作用，不能只恢复一张表后重放命令。清空数据库或删除旧回执不属于本方案授权。
+回滚分两段。新格式首次写入前，旧 binary 也会拒绝新的 schema descriptor。回旧部署须成套恢复旧库与旧组件，或另行批准并验证逆迁移，后者要求附属表为空、没有其他新格式业务写入且旧 descriptor 可准确恢复。不能只替换 binary。首次新格式写入后，旧版不能正确读取完整回执，禁止直接降级并开放 writer。此后优先前向修复；若恢复备份，必须协调业务数据和 Host/Adapter 日志的水位，并处理备份后已发生的副作用，不能只恢复一张表后重放命令。清空数据库或删除旧回执不属于本方案授权。
 
 ## 验收和批准范围
 
 五项分别验证首次成功、同键同参换 request_id/trace_id、重启后重放、同键异参、不同主体、已撤权、CAS 冲突、资源被后续命令修改、配置在 STOPPED 实例提交后重放。绑定重放秘密字段必须为空。原 operation 引用保持一致，错误资源/owner 引用不可用。
 
-真实 PG 故障测试覆盖唯一键竞争、写父回执后故障、写附属表后故障、COMMIT 响应丢失、进程终止和重启。需要证明无孤儿回执、无重复业务版本、无重复 Host 命令。迁移测试覆盖旧活跃回执拒绝、到期但未清理记录、未决义务、超期清理后的切换、错误 schema、DDL 失败重试以及首次写入前后的回滚门禁。
+真实 PG 故障测试覆盖唯一键竞争、写父回执后故障、写附属表后故障、COMMIT 响应丢失、进程终止和重启。需要证明无孤儿回执、无重复业务版本、无重复 Host 命令。迁移测试覆盖旧活跃回执拒绝、到期但未清理记录、未决义务、超期清理后的切换、错误 schema、DDL 失败重试以及首次写入前后的回滚门禁。另测跨 retain_until 的逻辑过期、尚未物理清理的旧键、未知操作人工处置和两条级联清理路径。
 
 待批准的具体选择为 Runtime 专用附属表、五项原子保存完整回执、实例 RPC 消费原始状态，以及升级采用隔离新库验收还是额外实现保留数据的离线迁移工具。建议先批准存储实现与隔离空库验收，原地迁移作为独立任务评审。
 
