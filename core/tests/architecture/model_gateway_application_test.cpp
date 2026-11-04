@@ -18,21 +18,26 @@
 #include <string>
 #include <string_view>
 #include <thread>
-#include <unistd.h>
 #include <utility>
 #include <vector>
+
+#ifdef KIARABOT_TEST_MODEL_INFRASTRUCTURE
+#include <unistd.h>
 
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
+#endif
 
 #include "kiarabot/core/application/target/model_gateway_application.hpp"
 #include "kiarabot/core/domain/target/model_gateway.hpp"
 #include "kiarabot/core/ports/target/model_ports.hpp"
 #include "kiarabot/core/ports/target/unit_of_work.hpp"
+#ifdef KIARABOT_TEST_MODEL_INFRASTRUCTURE
 #include "kiarabot/infrastructure/identity_crypto/factories.hpp"
 #include "kiarabot/infrastructure/identity_crypto/model_secret_crypto.hpp"
 #include "kiarabot/infrastructure/model_http_provider.hpp"
+#endif
 
 namespace {
 namespace t = kiarabot::core::target;
@@ -746,6 +751,7 @@ void maintenance_and_authorization() {
           std::get<t::Failure>(status).code == t::ErrorCode::NotFound);
 }
 
+#ifdef KIARABOT_TEST_MODEL_INFRASTRUCTURE
 // ---------------------------------------------------------------------------------------------
 // P11b integration: real libcurl provider and real root-key AEAD against a loopback fake upstream,
 // with the P11a in-memory typed store to exercise the two transactions and failure persistence.
@@ -1054,6 +1060,8 @@ void http_unseal_failure_is_closed() {
           "unseal fault does not mark billed");
 }
 
+#endif // KIARABOT_TEST_MODEL_INFRASTRUCTURE
+
 } // namespace
 
 int main() {
@@ -1061,10 +1069,12 @@ int main() {
     management_and_chat();
     failures_keep_unknown();
     maintenance_and_authorization();
+#ifdef KIARABOT_TEST_MODEL_INFRASTRUCTURE
     http_success_and_pinning();
     http_mapping_integration();
     http_txn2_failure_keeps_unknown();
     http_unseal_failure_is_closed();
+#endif
   } catch (const std::exception& error) {
     std::cerr << error.what() << '\n';
     return 1;

@@ -54,6 +54,12 @@ add_executable(kiarabot_model_gateway_application_test
   tests/architecture/model_gateway_application_test.cpp)
 target_link_libraries(kiarabot_model_gateway_application_test PRIVATE
   kiarabot_model_gateway_application)
+# The protocol-enabled composition later links the real HTTP and identity-crypto adapters.
+# Keep the injected-port application assertions available in the dependency-light dev preset.
+if(KIARABOT_GENERATE_PROTO)
+  target_compile_definitions(kiarabot_model_gateway_application_test PRIVATE
+    KIARABOT_TEST_MODEL_INFRASTRUCTURE=1)
+endif()
 target_compile_options(kiarabot_model_gateway_application_test PRIVATE
   $<$<CXX_COMPILER_ID:AppleClang,Clang,GNU>:-Wall -Wextra -Wpedantic -UNDEBUG>
   $<$<CXX_COMPILER_ID:MSVC>:/UNDEBUG>)
