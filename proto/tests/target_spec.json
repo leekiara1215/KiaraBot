@@ -370,7 +370,10 @@
       "server_streaming": false,
       "status": "not_implemented",
       "max_deadline_ms": 30000,
-      "requires_idempotency_key": true
+      "requires_idempotency_key": true,
+      "scope_kinds": [
+        "RESOURCE_CATALOG"
+      ]
     },
     {
       "service": "RuntimeService",
@@ -525,7 +528,10 @@
       "server_streaming": false,
       "status": "not_implemented",
       "max_deadline_ms": 5000,
-      "requires_idempotency_key": false
+      "requires_idempotency_key": false,
+      "scope_kinds": [
+        "RESOURCE_CATALOG"
+      ]
     },
     {
       "service": "RuntimeService",
@@ -542,7 +548,10 @@
       "server_streaming": false,
       "status": "not_implemented",
       "max_deadline_ms": 30000,
-      "requires_idempotency_key": true
+      "requires_idempotency_key": true,
+      "scope_kinds": [
+        "RESOURCE_CATALOG"
+      ]
     },
     {
       "service": "RuntimeService",
@@ -559,7 +568,10 @@
       "server_streaming": false,
       "status": "not_implemented",
       "max_deadline_ms": 30000,
-      "requires_idempotency_key": true
+      "requires_idempotency_key": true,
+      "scope_kinds": [
+        "RESOURCE_INSTALLATION"
+      ]
     },
     {
       "service": "RuntimeService",
@@ -1543,7 +1555,11 @@
       "max_deadline_ms": 5000,
       "server_streaming": false,
       "status": "not_implemented",
-      "requires_idempotency_key": false
+      "requires_idempotency_key": false,
+      "scope_kinds": [
+        "RESOURCE_CATALOG",
+        "RESOURCE_ACCOUNT"
+      ]
     },
     {
       "service": "RuntimeService",
@@ -1581,7 +1597,11 @@
       "max_deadline_ms": 5000,
       "server_streaming": false,
       "status": "not_implemented",
-      "requires_idempotency_key": false
+      "requires_idempotency_key": false,
+      "scope_kinds": [
+        "RESOURCE_CATALOG",
+        "RESOURCE_INSTALLATION"
+      ]
     },
     {
       "service": "RuntimeService",
@@ -1619,7 +1639,11 @@
       "max_deadline_ms": 5000,
       "server_streaming": false,
       "status": "not_implemented",
-      "requires_idempotency_key": false
+      "requires_idempotency_key": false,
+      "scope_kinds": [
+        "RESOURCE_CATALOG",
+        "RESOURCE_INSTANCE"
+      ]
     },
     {
       "service": "RuntimeService",
@@ -1657,7 +1681,11 @@
       "max_deadline_ms": 5000,
       "server_streaming": false,
       "status": "not_implemented",
-      "requires_idempotency_key": false
+      "requires_idempotency_key": false,
+      "scope_kinds": [
+        "RESOURCE_CATALOG",
+        "RESOURCE_ADAPTER"
+      ]
     },
     {
       "service": "RuntimeService",
@@ -1691,7 +1719,11 @@
       "max_deadline_ms": 5000,
       "server_streaming": false,
       "status": "not_implemented",
-      "requires_idempotency_key": false
+      "requires_idempotency_key": false,
+      "scope_kinds": [
+        "RESOURCE_CATALOG",
+        "RESOURCE_HOST"
+      ]
     },
     {
       "service": "RuntimeService",

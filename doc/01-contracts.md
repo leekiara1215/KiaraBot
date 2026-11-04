@@ -2209,3 +2209,7 @@ principal id exists. Permission/resource tuples are whitelisted and must also be
 administrator's exact assignments plus `resource.manage` on the instance. Claims keep
 `business_hops=1`, source credential/session of the administrator, subject of the instance, and
 `expires_at-issued_at<=56s`. Exchange keeps its existing hops2 narrowing and owner verification.
+
+## P05 approved catalog authorization (2026-11-04)
+
+CreateAccount.catalog=5, ValidateManifest.catalog=3 and CreateInstallation.catalog=4 are required RESOURCE_CATALOG references to the offline registered accounts/installations family UUID. CreateInstance authorizes its exact parent installation. ListAccounts/ListInstallations/ListInstances/ListAdapters/ListHosts authorize the registered family catalog and independently each exact child. Their scope_kinds contains CATALOG plus their single child kind, without inherited grants. Missing or malformed catalog is INVALID_ARGUMENT, wrong family or missing grant is PERMISSION_DENIED. Absent deployment catalog configuration keeps these capabilities unavailable. Method implementation status remains separately evidence-gated. Lists retain fixed ten-minute immutable snapshots, current authorization per page, and conflict on scope/version/subject changes or unknown cursors.

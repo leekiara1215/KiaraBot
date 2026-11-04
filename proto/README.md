@@ -142,3 +142,7 @@ Login、RefreshSession、RotateCredential、RevokeSession 等既有幂等/恢复
 未来若引入配额扣减或一次性消费，必须先建立独立的幂等命令契约及事务收据。
 
 P12a-2（2026-11-02）：`policy.proto` 追加 `Permission.PERMISSION_HEALTH_READ = 50`（0–49 不变，内联 CONTRACT_STATUS not_implemented；匿名 live/ready 不使用，受权 `/api/v1/health` 使用）。target Control v1 的 WebSocket 帧整体保持 not_implemented，REST operation 快照是唯一 resync 权威；Instance 级启停/配置 REST 路径与 `/logs`、`/audit` 聚合语义登记在 `api/openapi.yaml`/`api/asyncapi.yaml` 与 doc/06。REST 转发实现与 owner RPC target 验收分层登记，不得用 REST 响应冒充 owner 完成。
+
+## P05 approved catalog authorization (2026-11-04)
+
+CreateAccount.catalog=5, ValidateManifest.catalog=3 and CreateInstallation.catalog=4 are required RESOURCE_CATALOG references to the offline registered accounts/installations family UUID. CreateInstance authorizes its exact parent installation. ListAccounts/ListInstallations/ListInstances/ListAdapters/ListHosts authorize the registered family catalog and independently each exact child. Their scope_kinds contains CATALOG plus their single child kind, without inherited grants. Missing or malformed catalog is INVALID_ARGUMENT, wrong family or missing grant is PERMISSION_DENIED. Absent deployment catalog configuration keeps these capabilities unavailable. Method implementation status remains separately evidence-gated. Lists retain fixed ten-minute immutable snapshots, current authorization per page, and conflict on scope/version/subject changes or unknown cursors.

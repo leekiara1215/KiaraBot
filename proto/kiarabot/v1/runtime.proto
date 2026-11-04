@@ -101,6 +101,8 @@ message RuntimeCreateAccountRequest {
   string platform = 2;
   string platform_account_id = 3;
   string display_name = 4;
+  // Exact deployment-registered resource-family catalog, required for this operation.
+  ResourceRef catalog = 5;
 }
 
 // CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
@@ -204,6 +206,8 @@ message RuntimePublishEventResponse {
 message RuntimeValidateManifestRequest {
   RequestContext context = 1;
   PluginManifest manifest = 2;
+  // Exact deployment-registered resource-family catalog, required for this operation.
+  ResourceRef catalog = 3;
 }
 
 // CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
@@ -217,6 +221,8 @@ message RuntimeCreateInstallationRequest {
   RequestContext context = 1;
   string plugin_type_id = 2;
   PluginManifest manifest = 3;
+  // Exact deployment-registered resource-family catalog, required for this operation.
+  ResourceRef catalog = 4;
 }
 
 // CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
@@ -946,6 +952,7 @@ service RuntimeService {
     option (default_deadline_ms) = 5000;
     option (max_deadline_ms) = 30000;
     option (requires_online_authorization) = true;
+    option (scope_kinds) = RESOURCE_CATALOG;
   }
   rpc UpdateAccount(RuntimeUpdateAccountRequest) returns (RuntimeUpdateAccountResponse) {
     option (required_permission) = PERMISSION_ACCOUNT_MANAGE;
@@ -1006,6 +1013,7 @@ service RuntimeService {
     option (default_deadline_ms) = 2000;
     option (max_deadline_ms) = 5000;
     option (requires_online_authorization) = true;
+    option (scope_kinds) = RESOURCE_CATALOG;
   }
   rpc CreateInstallation(RuntimeCreateInstallationRequest) returns (RuntimeCreateInstallationResponse) {
     option (required_permission) = PERMISSION_PLUGIN_MANAGE;
@@ -1013,6 +1021,7 @@ service RuntimeService {
     option (default_deadline_ms) = 5000;
     option (max_deadline_ms) = 30000;
     option (requires_online_authorization) = true;
+    option (scope_kinds) = RESOURCE_CATALOG;
   }
   rpc CreateInstance(RuntimeCreateInstanceRequest) returns (RuntimeCreateInstanceResponse) {
     option (required_permission) = PERMISSION_PLUGIN_MANAGE;
@@ -1020,6 +1029,7 @@ service RuntimeService {
     option (default_deadline_ms) = 5000;
     option (max_deadline_ms) = 30000;
     option (requires_online_authorization) = true;
+    option (scope_kinds) = RESOURCE_INSTALLATION;
   }
   rpc SetDesiredState(RuntimeSetDesiredStateRequest) returns (RuntimeSetDesiredStateResponse) {
     option (required_permission) = PERMISSION_PLUGIN_MANAGE;
@@ -1280,6 +1290,8 @@ service RuntimeService {
     option (default_deadline_ms) = 2000;
     option (max_deadline_ms) = 5000;
     option (requires_online_authorization) = true;
+    option (scope_kinds) = RESOURCE_CATALOG;
+    option (scope_kinds) = RESOURCE_ACCOUNT;
   }
   rpc GetInstallation(RuntimeGetInstallationRequest) returns (RuntimeGetInstallationResponse) {
     option (required_permission) = PERMISSION_PLUGIN_READ;
@@ -1295,6 +1307,8 @@ service RuntimeService {
     option (default_deadline_ms) = 2000;
     option (max_deadline_ms) = 5000;
     option (requires_online_authorization) = true;
+    option (scope_kinds) = RESOURCE_CATALOG;
+    option (scope_kinds) = RESOURCE_INSTALLATION;
   }
   rpc GetInstance(RuntimeGetInstanceRequest) returns (RuntimeGetInstanceResponse) {
     option (required_permission) = PERMISSION_PLUGIN_READ;
@@ -1310,6 +1324,8 @@ service RuntimeService {
     option (default_deadline_ms) = 2000;
     option (max_deadline_ms) = 5000;
     option (requires_online_authorization) = true;
+    option (scope_kinds) = RESOURCE_CATALOG;
+    option (scope_kinds) = RESOURCE_INSTANCE;
   }
   rpc GetAdapter(RuntimeGetAdapterRequest) returns (RuntimeGetAdapterResponse) {
     option (required_permission) = PERMISSION_ADAPTER_READ;
@@ -1325,6 +1341,8 @@ service RuntimeService {
     option (default_deadline_ms) = 2000;
     option (max_deadline_ms) = 5000;
     option (requires_online_authorization) = true;
+    option (scope_kinds) = RESOURCE_CATALOG;
+    option (scope_kinds) = RESOURCE_ADAPTER;
   }
   rpc GetHost(RuntimeGetHostRequest) returns (RuntimeGetHostResponse) {
     option (required_permission) = PERMISSION_HOST_READ;
@@ -1339,6 +1357,8 @@ service RuntimeService {
     option (default_deadline_ms) = 2000;
     option (max_deadline_ms) = 5000;
     option (requires_online_authorization) = true;
+    option (scope_kinds) = RESOURCE_CATALOG;
+    option (scope_kinds) = RESOURCE_HOST;
   }
   rpc GetInstanceConfig(RuntimeGetInstanceConfigRequest) returns (RuntimeGetInstanceConfigResponse) {
     option (required_permission) = PERMISSION_PLUGIN_CONFIG_READ;
