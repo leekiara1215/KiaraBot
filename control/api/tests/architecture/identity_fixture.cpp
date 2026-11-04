@@ -416,7 +416,8 @@ public:
       return empty_scope_proof("fixture-principal-proof");
     }
     if ((input->audience() != "identity" && input->audience() != "runtime" &&
-         input->audience() != "model" && input->audience() != "scheduler") ||
+         input->audience() != "model" && input->audience() != "scheduler" &&
+         input->audience() != "host") ||
         input->scope().resources_size() != 1) {
       return error(wire::PERMISSION_DENIED, grpc::StatusCode::PERMISSION_DENIED, input->context());
     }
@@ -457,12 +458,19 @@ public:
     const bool scheduler_delegation = input->audience() == "scheduler" &&
                                       (input->permissions(0) == wire::PERMISSION_TASK_READ ||
                                        input->permissions(0) == wire::PERMISSION_TASK_SCHEDULE);
+    // HOST-04: Host owner management is reached only with the exact host.read/host.execute
+    // permission and one RESOURCE_HOST scope; the owner still rechecks its stored resource.
+    const bool host_delegation = input->audience() == "host" &&
+                                 resource.kind() == wire::RESOURCE_HOST &&
+                                 (input->permissions(0) == wire::PERMISSION_HOST_READ ||
+                                  input->permissions(0) == wire::PERMISSION_HOST_EXECUTE);
     if (!identity_delegation && !model_delegation && !audit_log_delegation && !runtime_delegation &&
-        !scheduler_delegation) {
+        !scheduler_delegation && !host_delegation) {
       return error(wire::PERMISSION_DENIED, grpc::StatusCode::PERMISSION_DENIED, input->context());
     }
     output->mutable_delegation()->set_proof(
-        std::string{model_delegation ? "fixture-model-proof:"
+        std::string{host_delegation    ? "fixture-host-proof:"
+                    : model_delegation ? "fixture-model-proof:"
                     : (audit_log_delegation || runtime_delegation || scheduler_delegation)
                         ? "fixture-runtime-proof:"
                         : "fixture-proof:"} +

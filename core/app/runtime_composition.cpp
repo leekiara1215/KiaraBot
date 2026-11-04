@@ -19,17 +19,17 @@
 #include "kiarabot/core/application/target/runtime_application.hpp"
 #include "kiarabot/core/application/target/runtime_audit_application.hpp"
 #include "kiarabot/core/application/target/runtime_bridge_application.hpp"
+#include "kiarabot/core/application/target/runtime_host_application.hpp"
 #include "kiarabot/core/application/target/runtime_lifecycle_participants.hpp"
 #include "kiarabot/core/application/target/runtime_readiness.hpp"
 #include "kiarabot/core/application/target/runtime_resource_application.hpp"
 #include "kiarabot/core/application/target/runtime_storage_application.hpp"
 #include "kiarabot/core/application/target/runtime_task_application.hpp"
+#include "kiarabot/core/ports/target/host_registration_ports.hpp"
 #include "kiarabot/core/runtime/platform/host_bridge_server.hpp"
 #include "kiarabot/core/runtime/platform/instance_delegation_provider.hpp"
 #include "kiarabot/core/runtime/platform/peer_certificate.hpp"
 #include "kiarabot/core/runtime/platform/runtime_bridge.hpp"
-#include "kiarabot/core/application/target/runtime_host_application.hpp"
-#include "kiarabot/core/ports/target/host_registration_ports.hpp"
 #include "kiarabot/core/runtime/platform/runtime_identity_client.hpp"
 #include "kiarabot/core/runtime/platform/runtime_model_client.hpp"
 #include "kiarabot/core/runtime/platform/runtime_rpc.hpp"
@@ -317,6 +317,8 @@ struct State {
   std::unique_ptr<target::RuntimeActionApplication> actions;
   std::unique_ptr<target::RuntimeAuditApplication> audit;
   std::unique_ptr<target::OperationObservationApplication> observations;
+  std::unique_ptr<target::ObservationFeedApplication> log_changes;
+  std::unique_ptr<target::ObservationFeedApplication> message_changes;
   std::unique_ptr<target::RuntimeBootstrapDeliveryApplication> bootstrap_delivery;
   std::unique_ptr<target::HostFenceRegistry> host_fences;
   std::unique_ptr<target::SystemHostClockPort> host_gate_clock;
@@ -574,6 +576,49 @@ compose_runtime_service(const platform::ProcessConfig& config) {
           }
           state->observations = std::move(
               std::get<std::unique_ptr<target::OperationObservationApplication>>(observations));
+          const auto feed_query = [](target::UnitOfWork& work,
+                                     const target::ObservationFeedQuery& query) {
+            return work.query_observation_changes(query);
+          };
+          auto runtime_logs = target::make_observation_feed_application(
+              {target::Service::Runtime,
+               target::ObservationFamily::Logs,
+               [&factory]() -> target::Outcome<std::unique_ptr<target::UnitOfWork>> {
+                 auto begun = factory.begin();
+                 if (const auto* failure = std::get_if<target::Failure>(&begun)) {
+                   return *failure;
+                 }
+                 return std::unique_ptr<target::UnitOfWork>(
+                     std::move(std::get<std::unique_ptr<target::RuntimeUnitOfWork>>(begun)));
+               },
+               feed_query,
+               *state->authorization,
+               {}});
+          if (std::holds_alternative<target::Failure>(runtime_logs)) {
+            return {};
+          }
+          state->log_changes = std::move(
+              std::get<std::unique_ptr<target::ObservationFeedApplication>>(runtime_logs));
+          auto runtime_messages = target::make_observation_feed_application(
+              {target::Service::Runtime,
+               target::ObservationFamily::Messages,
+               [&factory]() -> target::Outcome<std::unique_ptr<target::UnitOfWork>> {
+                 auto begun = factory.begin();
+                 if (const auto* failure = std::get_if<target::Failure>(&begun)) {
+                   return *failure;
+                 }
+                 return std::unique_ptr<target::UnitOfWork>(
+                     std::move(std::get<std::unique_ptr<target::RuntimeUnitOfWork>>(begun)));
+               },
+               feed_query,
+               *state->authorization,
+               {}});
+          if (std::holds_alternative<target::Failure>(runtime_messages)) {
+            return {};
+          }
+          state->message_changes = std::move(
+              std::get<std::unique_ptr<target::ObservationFeedApplication>>(runtime_messages));
+
           auto bootstrap =
               target::runtime_resources_detail::make_runtime_bootstrap_delivery_application(
                   {factory, *state->ids, *state->secrets, *state->authorization});
@@ -727,6 +772,8 @@ compose_runtime_service(const platform::ProcessConfig& config) {
       options.actions = state->action_application;
       options.audit = state->audit.get();
       options.observations = state->observations.get();
+      options.log_changes = state->log_changes.get();
+      options.message_changes = state->message_changes.get();
       options.bootstrap = state->bootstrap_delivery.get();
       options.host_gate = state->host_gate.get();
       // BOOT-02 Control platform peer: only the deployment-enrolled actual mTLS leaf fingerprint

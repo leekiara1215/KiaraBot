@@ -45,6 +45,12 @@ bool append_resource_valid(t::ObservationFamily family, const t::ResourceRef& re
   if (!bounded_text(resource.id.value, 1, 256)) {
     return false;
   }
+  if (family == t::ObservationFamily::Logs) {
+    // A log row records the exact audit-entry resource (storage/namespace/instance/catalog/...);
+    // the request scope for this family is still exactly RESOURCE_CATALOG/control. Only the
+    // control catalog id is pinned here because it is the shared authorization catalog.
+    return resource.kind != t::ResourceKind::Catalog || resource.id.value == "control";
+  }
   switch (resource.kind) {
   case t::ResourceKind::Account:
   case t::ResourceKind::Adapter:
@@ -54,8 +60,6 @@ bool append_resource_valid(t::ObservationFamily family, const t::ResourceRef& re
   case t::ResourceKind::Task:
   case t::ResourceKind::Model:
     return true;
-  case t::ResourceKind::Catalog:
-    return family == t::ObservationFamily::Logs && resource.id.value == "control";
   default:
     return false;
   }
@@ -310,8 +314,7 @@ bool decode_payload(t::ObservationFamily family, std::string_view text,
 }
 } // namespace
 
-t::Status append_observation_changes(SqlWork& work, t::Service owner,
-                                     t::ObservationFamily family,
+t::Status append_observation_changes(SqlWork& work, t::Service owner, t::ObservationFamily family,
                                      const std::vector<t::ObservationFeedAppend>& changes) {
   if (changes.empty()) {
     return std::monostate{};
@@ -319,8 +322,8 @@ t::Status append_observation_changes(SqlWork& work, t::Service owner,
   const auto family_value = family_number(family);
   const bool owner_family =
       (owner == t::Service::Identity && family == t::ObservationFamily::Logs) ||
-      (owner == t::Service::Runtime && (family == t::ObservationFamily::Logs ||
-                                        family == t::ObservationFamily::Messages)) ||
+      (owner == t::Service::Runtime &&
+       (family == t::ObservationFamily::Logs || family == t::ObservationFamily::Messages)) ||
       (owner == t::Service::Scheduler && family == t::ObservationFamily::Tasks);
   if (family_value == 0 || !owner_family || changes.size() > 1000) {
     return t::rejected(t::ErrorCode::RateLimited, t::Recovery::Backoff);
@@ -330,8 +333,7 @@ t::Status append_observation_changes(SqlWork& work, t::Service owner,
     encoded.reserve(changes.size());
     for (const auto& change : changes) {
       t::ResourceRef resource;
-      if (!append_resource_valid(family, change.resource) ||
-          change.observed_at <= t::TimePoint{} ||
+      if (!append_resource_valid(family, change.resource) || change.observed_at <= t::TimePoint{} ||
           !valid_payload(family, change.payload, resource) || !(resource == change.resource)) {
         return invalid();
       }
@@ -360,8 +362,8 @@ t::Status append_observation_changes(SqlWork& work, t::Service owner,
   });
 }
 
-t::Outcome<t::ObservationFeedPage>
-query_observation_changes(SqlWork& work, t::Service owner, const t::ObservationFeedQuery& query) {
+t::Outcome<t::ObservationFeedPage> query_observation_changes(SqlWork& work, t::Service owner,
+                                                             const t::ObservationFeedQuery& query) {
   const auto family = query.family;
   auto scope = query.scope;
   const auto family_value = family_number(family);
@@ -472,7 +474,7 @@ query_observation_changes(SqlWork& work, t::Service owner, const t::ObservationF
 }
 
 t::Outcome<std::size_t> prune_observation_feeds(SqlWork& work, t::ObservationFamily family,
-                                               std::size_t limit) {
+                                                std::size_t limit) {
   const auto family_value = family_number(family);
   if (family_value == 0 || limit == 0 || limit > 1000) {
     return invalid();

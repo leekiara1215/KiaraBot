@@ -6,6 +6,7 @@
 
 #include <grpcpp/grpcpp.h>
 
+#include "kiarabot/core/application/target/observation_feed_application.hpp"
 #include "kiarabot/core/application/target/operation_observation_application.hpp"
 #include "kiarabot/core/application/target/scheduler_commands.hpp"
 #include "kiarabot/core/application/target/scheduler_service.hpp"
@@ -46,6 +47,8 @@ struct SchedulerRpcOptions {
   std::function<target::Outcome<target::TimePoint>()> invocation_deadline;
   // Dedicated Control read; never consults Runtime's lifecycle platform-peer path.
   target::OperationObservationApplication* observations = nullptr;
+  // v1.2 safe task metadata feed; absent keeps ListTaskChanges a typed unsupported rejection.
+  target::ObservationFeedApplication* task_changes = nullptr;
 };
 
 // Transport adapter for the frozen P10 SchedulerService surface: CreateTask/CancelTask/GetTask/

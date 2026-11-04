@@ -66,6 +66,38 @@ const Failure* status_failure(const Status& status) {
 template <typename Value> const Failure* outcome_failure(const Value& outcome) {
   return std::get_if<Failure>(&outcome);
 }
+// Safe scheduler task projection for the durable v1.2 task feed: metadata only, no task payload or
+// target package. Staged in the same UoW as the state mutation so rollback publishes nothing.
+const Failure* stage_task_feed(UnitOfWork& uow, const ScheduledTask& task) {
+  ObservationFeedAppend append;
+  append.resource = ResourceRef{ResourceKind::Task, ResourceId{task.key.task_id}};
+  TaskObservation observation;
+  observation.owner_instance_id = task.key.owner.value;
+  observation.task_id = task.key.task_id;
+  observation.state = static_cast<TaskFeedState>(static_cast<int>(task.state));
+  observation.version = task.version.value;
+  observation.updated_at = task.updated_at;
+  observation.cancel_requested = task.cancel_requested;
+  if (!task.occurrence.value.empty()) {
+    observation.occurrence_id = task.occurrence.value;
+  }
+  observation.reason_code = task.reason;
+  append.payload = std::move(observation);
+  append.observed_at = task.updated_at;
+  const auto appended = uow.append_observation_changes(ObservationFamily::Tasks, {append});
+  if (const auto* failure = status_failure(appended)) {
+    // A UoW adapter that does not implement the feed journal explicitly reports
+    // CapabilityNotSupported (the frozen default is not a silent empty journal). Treat that as
+    // "feed not enabled for this adapter" so legacy/fake adapters keep their pre-v1.2 behavior; the
+    // production PostgreSQL adapter implements the port, so business mutations there fail closed
+    // if a real journal append cannot be staged.
+    if (failure->code == ErrorCode::CapabilityNotSupported) {
+      return nullptr;
+    }
+    return failure;
+  }
+  return nullptr;
+}
 
 } // namespace
 
@@ -170,6 +202,10 @@ Outcome<ScheduledTask> SchedulerService::create_task(const SchedulerCommandConte
     uow->rollback();
     return *failed;
   }
+  if (const auto* failed = stage_task_feed(*uow, task)) {
+    uow->rollback();
+    return *failed;
+  }
   const auto committed = uow->commit();
   if (committed != CommitResult::Committed) {
     return commit_failure(committed);
@@ -260,6 +296,10 @@ Outcome<ScheduledTask> SchedulerService::cancel_task(const SchedulerCommandConte
                          now + kTriggerValidFor};
   const auto stored = uow->receipts().insert(written, ReceiptCapacity{});
   if (const auto* failed = outcome_failure(stored)) {
+    uow->rollback();
+    return *failed;
+  }
+  if (const auto* failed = stage_task_feed(*uow, task)) {
     uow->rollback();
     return *failed;
   }
@@ -494,6 +534,10 @@ Outcome<std::size_t> SchedulerService::due_sweep(TimePoint now, std::size_t limi
       task_uow->rollback();
       return *failed;
     }
+    if (const auto* failed = stage_task_feed(*task_uow, updated)) {
+      task_uow->rollback();
+      return *failed;
+    }
     const auto committed = task_uow->commit();
     if (committed != CommitResult::Committed) {
       return commit_failure(committed);
@@ -625,6 +669,10 @@ Outcome<Occurrence> SchedulerService::confirm_trigger_accepted(const OutboxClaim
       uow->rollback();
       return *failed;
     }
+    if (const auto* failed = stage_task_feed(*uow, updated)) {
+      uow->rollback();
+      return *failed;
+    }
   }
   const auto committed = uow->commit();
   if (committed != CommitResult::Committed) {
@@ -692,6 +740,10 @@ Outcome<std::size_t> SchedulerService::expire_stale_triggers(TimePoint now, std:
       updated.version = ResourceVersion{updated.version.value + 1};
       const auto saved_task = uow->tasks().save(updated, expected_task);
       if (const auto* failed = outcome_failure(saved_task)) {
+        uow->rollback();
+        return *failed;
+      }
+      if (const auto* failed = stage_task_feed(*uow, updated)) {
         uow->rollback();
         return *failed;
       }
@@ -840,6 +892,10 @@ Outcome<Occurrence> SchedulerService::fail_trigger(const OutboxClaim& claim, Err
     updated.version = ResourceVersion{updated.version.value + 1};
     const auto saved_task = uow->tasks().save(updated, expected_task);
     if (const auto* rejected = outcome_failure(saved_task)) {
+      uow->rollback();
+      return *rejected;
+    }
+    if (const auto* rejected = stage_task_feed(*uow, updated)) {
       uow->rollback();
       return *rejected;
     }

@@ -11,6 +11,7 @@
 #include <google/protobuf/util/json_util.h>
 #include <grpcpp/grpcpp.h>
 
+#include "kiarabot/v1/host.grpc.pb.h"
 #include "kiarabot/v1/runtime.grpc.pb.h"
 #include "kiarabot/v1/scheduler.grpc.pb.h"
 
@@ -145,17 +146,16 @@ void stream_page(const wire::OperationChangesRequest& request,
 }
 class FakeRuntime final : public wire::RuntimeService::Service {
 public:
-  grpc::Status ListOperationChanges(
-      grpc::ServerContext*, const wire::OperationChangesRequest* input,
-      wire::OperationChangesResponse* output) override {
+  grpc::Status ListOperationChanges(grpc::ServerContext*,
+                                    const wire::OperationChangesRequest* input,
+                                    wire::OperationChangesResponse* output) override {
     if (!input->has_context() || !input->context().has_deadline() || !input->has_scope() ||
         input->scope().resources_size() != 1 || input->page_size() > 100 ||
         input->context().request_id().empty() || input->context().trace_id().empty()) {
       return failure(wire::INVALID_ARGUMENT, grpc::StatusCode::INVALID_ARGUMENT, input->context());
     }
     const std::string mode = input->scope().resources(0).id();
-    if (mode == kStreamGapAccount && input->has_cursor() &&
-        input->cursor().sequence() >= 2) {
+    if (mode == kStreamGapAccount && input->has_cursor() && input->cursor().sequence() >= 2) {
       return stream_resync(input->context());
     }
     if (input->has_cursor() &&
@@ -521,6 +521,90 @@ public:
     return grpc::Status::OK;
   }
 };
+class FakeHost final : public wire::HostManagementService::Service {
+public:
+  grpc::Status GetMaintenance(grpc::ServerContext*, const wire::HostGetMaintenanceRequest* input,
+                              wire::HostGetMaintenanceResponse* output) override {
+    maintenance(output->mutable_maintenance(), input->host_id(), 4, wire::HOST_ADMISSION_OPEN);
+    return grpc::Status::OK;
+  }
+  grpc::Status BeginMaintenance(grpc::ServerContext*,
+                                const wire::HostBeginMaintenanceRequest* input,
+                                wire::HostMaintenanceResponse* output) override {
+    if (input->has_expected_version() && input->expected_version() == 9999) {
+      return failure(wire::CONFLICT, grpc::StatusCode::ABORTED, input->context());
+    }
+    if (input->has_expected_version() && input->expected_version() == 8888) {
+      return failure(wire::UPSTREAM_UNAVAILABLE, grpc::StatusCode::UNAVAILABLE, input->context());
+    }
+    maintenance(output->mutable_maintenance(), input->host_id(), 5, wire::HOST_ADMISSION_CLOSED);
+    auto* operation_out = output->mutable_operation();
+    operation_host(operation_out->mutable_ref(), "55555555-5555-4555-8555-555555555555",
+                   input->host_id());
+    operation_out->set_version(1);
+    operation_out->set_state(wire::OPERATION_ACCEPTED);
+    operation_out->set_execution_outcome(wire::EXECUTION_UNKNOWN);
+    operation_out->mutable_observed_at()->set_seconds(kNow);
+    return grpc::Status::OK;
+  }
+  grpc::Status ResumeAdmission(grpc::ServerContext*, const wire::HostResumeAdmissionRequest* input,
+                               wire::HostMaintenanceResponse* output) override {
+    maintenance(output->mutable_maintenance(), input->host_id(), 6, wire::HOST_ADMISSION_OPEN);
+    auto* operation_out = output->mutable_operation();
+    operation_host(operation_out->mutable_ref(), "66666666-6666-4666-8666-666666666666",
+                   input->host_id());
+    operation_out->set_version(1);
+    operation_out->set_state(wire::OPERATION_SUCCEEDED);
+    operation_out->set_execution_outcome(wire::EXECUTION_KNOWN_SUCCEEDED);
+    operation_out->mutable_observed_at()->set_seconds(kNow);
+    return grpc::Status::OK;
+  }
+  grpc::Status GetOperation(grpc::ServerContext*, const wire::HostGetOperationRequest* input,
+                            wire::HostGetOperationResponse* output) override {
+    auto* operation_out = output->mutable_operation();
+    *operation_out->mutable_ref() = input->operation();
+    operation_out->set_version(7);
+    operation_out->set_state(wire::OPERATION_BLOCKED);
+    operation_out->set_execution_outcome(wire::EXECUTION_UNKNOWN);
+    operation_out->mutable_observed_at()->set_seconds(kNow);
+    auto* participant = operation_out->add_participants();
+    participant->set_participant("managed_executions");
+    participant->set_state(wire::OPERATION_BLOCKED);
+    return grpc::Status::OK;
+  }
+  grpc::Status CancelOperation(grpc::ServerContext*, const wire::HostCancelOperationRequest* input,
+                               wire::HostGetOperationResponse* output) override {
+    auto* operation_out = output->mutable_operation();
+    *operation_out->mutable_ref() = input->operation();
+    operation_out->set_version(2);
+    operation_out->set_state(wire::OPERATION_CANCELLED);
+    operation_out->set_execution_outcome(wire::EXECUTION_UNKNOWN);
+    operation_out->mutable_observed_at()->set_seconds(kNow);
+    return grpc::Status::OK;
+  }
+  grpc::Status ListOperationChanges(grpc::ServerContext*, const wire::OperationChangesRequest*,
+                                    wire::OperationChangesResponse* output) override {
+    output->mutable_checked_at()->set_seconds(kNow);
+    return grpc::Status::OK;
+  }
+
+private:
+  static void maintenance(wire::HostMaintenanceRecord* output, const std::string& host_id,
+                          std::uint64_t version, wire::HostAdmissionState admission) {
+    output->set_host_id(host_id);
+    output->set_version(version);
+    output->set_admission(admission);
+    output->mutable_observed_at()->set_seconds(kNow);
+  }
+  static void operation_host(wire::OperationRef* output, const std::string& id,
+                             const std::string& host_id) {
+    output->set_owner_service("host");
+    output->set_operation_id(id);
+    output->mutable_resource()->set_kind(wire::RESOURCE_HOST);
+    output->mutable_resource()->set_id(host_id);
+  }
+};
+
 } // namespace
 
 int main(int argc, char* argv[]) {
@@ -536,8 +620,10 @@ int main(int argc, char* argv[]) {
   builder.AddListeningPort("127.0.0.1:0", grpc::SslServerCredentials(options), &port);
   FakeRuntime runtime;
   FakeScheduler scheduler;
+  FakeHost host;
   builder.RegisterService(&runtime);
   builder.RegisterService(&scheduler);
+  builder.RegisterService(&host);
   auto server = builder.BuildAndStart();
   if (!server) {
     return 1;

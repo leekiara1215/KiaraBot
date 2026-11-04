@@ -11,6 +11,7 @@
 
 #include "kiarabot/control/application/target/secret_delivery.hpp"
 #include "kiarabot/core/domain/target/foundation.hpp"
+#include "kiarabot/v1/host.pb.h"
 #include "kiarabot/v1/identity.pb.h"
 #include "kiarabot/v1/model.pb.h"
 #include "kiarabot/v1/policy.pb.h"
@@ -279,6 +280,38 @@ public:
   operation(const kiarabot::v1::ModelGetOperationRequest& request, std::string_view delegation) = 0;
 };
 
+// Host owner port (HOST-04): forwards exactly the frozen HostManagementService RPCs to the fixed
+// offline registered Host endpoint. Control never supplies an endpoint, synthesizes progress or
+// converts a transport failure into a completed maintenance operation.
+class HostManagementPort {
+public:
+  virtual ~HostManagementPort() = default;
+  virtual OwnerOutcome<kiarabot::v1::HostGetMaintenanceResponse>
+  get_maintenance(const kiarabot::v1::HostGetMaintenanceRequest&, std::string_view) {
+    return OwnerFailure{kiarabot::v1::CAPABILITY_NOT_SUPPORTED, false};
+  }
+  virtual OwnerOutcome<kiarabot::v1::HostMaintenanceResponse>
+  begin_maintenance(const kiarabot::v1::HostBeginMaintenanceRequest&, std::string_view) {
+    return OwnerFailure{kiarabot::v1::CAPABILITY_NOT_SUPPORTED, false};
+  }
+  virtual OwnerOutcome<kiarabot::v1::HostMaintenanceResponse>
+  resume_admission(const kiarabot::v1::HostResumeAdmissionRequest&, std::string_view) {
+    return OwnerFailure{kiarabot::v1::CAPABILITY_NOT_SUPPORTED, false};
+  }
+  virtual OwnerOutcome<kiarabot::v1::HostGetOperationResponse>
+  get_operation(const kiarabot::v1::HostGetOperationRequest&, std::string_view) {
+    return OwnerFailure{kiarabot::v1::CAPABILITY_NOT_SUPPORTED, false};
+  }
+  virtual OwnerOutcome<kiarabot::v1::HostGetOperationResponse>
+  cancel_operation(const kiarabot::v1::HostCancelOperationRequest&, std::string_view) {
+    return OwnerFailure{kiarabot::v1::CAPABILITY_NOT_SUPPORTED, false};
+  }
+  virtual OwnerOutcome<kiarabot::v1::OperationChangesResponse>
+  list_operation_changes(const kiarabot::v1::OperationChangesRequest&, std::string_view) {
+    return OwnerFailure{kiarabot::v1::CAPABILITY_NOT_SUPPORTED, false};
+  }
+};
+
 // Stable status/body helpers shared by the Control HTTPS boundary.
 unsigned int owner_http_status(kiarabot::v1::ErrorCode code);
 std::string owner_error_body(kiarabot::v1::ErrorCode code, std::string_view request_id,
@@ -315,11 +348,12 @@ public:
                OperationPort* operations = nullptr, ModelManagementPort* model = nullptr,
                AuditLogSourcePort* audit_logs = nullptr,
                SecretDeliveryApplication* secret_delivery = nullptr,
-               BootstrapRecipientsPort* bootstrap_recipients = nullptr)
+               BootstrapRecipientsPort* bootstrap_recipients = nullptr,
+               HostManagementPort* host_management = nullptr)
       : delegation_(delegation), runtime_(runtime), principals_(principals), health_(health),
         resources_(resources), tasks_(tasks), operations_(operations), model_(model),
         audit_logs_(audit_logs), secret_delivery_(secret_delivery),
-        bootstrap_recipients_(bootstrap_recipients) {}
+        bootstrap_recipients_(bootstrap_recipients), host_management_(host_management) {}
   std::optional<OwnerHttpResult> handle(const OwnerHttpRequest& request);
   // Health probes are local process facts plus the composition-provided readiness answer.
   static OwnerHttpResult live();
@@ -337,6 +371,7 @@ private:
   AuditLogSourcePort* audit_logs_;
   SecretDeliveryApplication* secret_delivery_;
   BootstrapRecipientsPort* bootstrap_recipients_;
+  HostManagementPort* host_management_;
 };
 
 } // namespace kiarabot::control::target

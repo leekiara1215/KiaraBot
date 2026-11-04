@@ -1390,7 +1390,9 @@ void check_audit_queries(Database& database, std::string_view service) {
                                                                                   : "owner"};
   const target::SubjectId actor{"11111111-1111-4111-8111-111111111111"};
   const target::SubjectId other{"22222222-2222-4222-8222-222222222222"};
-  const target::ResourceRef resource{target::ResourceKind::Catalog, {"p12e-audit-check"}};
+  // The v1.2 log feed only accepts an exact non-secret entry resource; a catalog resource is
+  // reserved for the authorized catalog/control scope, so the audit fixture uses an account.
+  const target::ResourceRef resource{target::ResourceKind::Account, {"p12e-audit-check"}};
   target::TimePoint base{};
   {
     auto work = begin(database);
@@ -1463,7 +1465,7 @@ void check_audit_queries(Database& database, std::string_view service) {
   }
   // Real SQL keyset consistency with duplicate occurred_at values: page through the whole
   // resource with limit 2 and assert every row appears exactly once, ties ordered by id DESC.
-  const target::ResourceRef tie_resource{target::ResourceKind::Catalog, {"p12e-audit-tie"}};
+  const target::ResourceRef tie_resource{target::ResourceKind::Account, {"p12e-audit-tie"}};
   target::TimePoint tie_base{};
   {
     auto work = begin(database);
@@ -1579,8 +1581,17 @@ void check_common(Database& database, const DatabaseConfig& config) {
       target::ErrorCode::Timeout,
       now};
   take(work->operations().save(operation, {}));
+  // v1.2 log feed appends the exact audit-entry resource; a catalog resource is reserved for the
+  // authorized catalog/control scope, so this synthetic audit row uses an account resource.
   take(work->journal().append_audit(
-      {{"actor"}, operation.ref.resource, "request", "trace", "create", {}, {kMaximum}, now}));
+      {{"actor"},
+       {target::ResourceKind::Account, {"audit-entry-resource"}},
+       "request",
+       "trace",
+       "create",
+       {},
+       {kMaximum},
+       now}));
   committed(*work);
   work = begin(database);
   check(!take(work->operations().find({"absent"})), "absence was not optional");
@@ -1671,7 +1682,7 @@ void check_common(Database& database, const DatabaseConfig& config) {
     lifecycle_work = begin(database);
     take(lifecycle_work->journal().append_audit(
         {{"actor"},
-         {target::ResourceKind::Catalog, {"audit-retention"}},
+         {target::ResourceKind::Account, {"audit-retention"}},
          "request",
          "trace",
          "cleanup",

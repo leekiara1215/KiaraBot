@@ -13,7 +13,9 @@
 #include <vector>
 
 #include "kiarabot/core/domain/target/event_delivery.hpp"
+#include "kiarabot/core/domain/target/observation_feed_identity.hpp"
 #include "kiarabot/core/domain/target/persistence.hpp"
+#include "observation_feeds.hpp"
 #include "record_codec.hpp"
 
 namespace kiarabot::infrastructure::postgres::detail {
@@ -344,6 +346,36 @@ RuntimeEvents::accept(const target::EventRecord& event,
                              reinterpret_cast<const std::byte*>(event.serialized_envelope.data()),
                              event.serialized_envelope.size()},
                          timestamp(event.occurred_at), terminal ? 1 : 0});
+        // v1.2 received-message metadata feed: only a NEW accepted inbound message appends one
+        // fact in this same transaction. The duplicate-fingerprint path returned above, so a
+        // replayed acceptance can never produce a second entry. Internal identities are the
+        // documented deterministic UUIDv5 derivations, never platform raw ids; no body, platform
+        // payload or sent inference is projected.
+        if (event.payload == target::EventPayloadKind::MessageReceived && event.has_conversation) {
+          const auto received =
+              transaction.exec("SELECT (extract(epoch FROM clock_timestamp())*1000000000)::bigint")
+                  .one_row()[0]
+                  .as<std::int64_t>();
+          target::MessageObservation message;
+          message.message_id = target::message_feed_id(event.conversation.account.value,
+                                                       event.key.source.value, event.key.event_id);
+          message.conversation_id =
+              target::conversation_feed_id(event.conversation.account.value, event.key.source.value,
+                                           event.conversation.conversation_id);
+          message.account_id = event.conversation.account.value;
+          message.received_at = target::TimePoint{std::chrono::nanoseconds{received}};
+          target::ObservationFeedAppend append;
+          append.resource = target::ResourceRef{
+              target::ResourceKind::Account, target::ResourceId{event.conversation.account.value}};
+          append.observed_at = message.received_at;
+          append.payload = std::move(message);
+          const auto appended =
+              ::kiarabot::infrastructure::postgres::detail::append_observation_changes(
+                  sql_, target::Service::Runtime, target::ObservationFamily::Messages, {append});
+          if (const auto* failure = std::get_if<target::Failure>(&appended)) {
+            return *failure;
+          }
+        }
         const auto conversation_key = target::conversation_key_text(event.conversation);
         for (const auto& target : targets) {
           const auto inserted = transaction.exec(

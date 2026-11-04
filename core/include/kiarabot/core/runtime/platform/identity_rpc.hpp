@@ -12,6 +12,7 @@
 #include "kiarabot/core/application/target/identity_delegation_application.hpp"
 #include "kiarabot/core/application/target/identity_exchange_application.hpp"
 #include "kiarabot/core/application/target/identity_invalidation_application.hpp"
+#include "kiarabot/core/application/target/identity_log_feed_application.hpp"
 #include "kiarabot/core/application/target/identity_principal_application.hpp"
 #include "kiarabot/core/application/target/identity_principal_directory_application.hpp"
 #include "kiarabot/core/application/target/identity_security_application.hpp"
@@ -49,6 +50,8 @@ struct IdentityRpcOptions {
   target::IdentityAuthorizationApplication* authorization = nullptr;
   // P12e read-only Control audit/log aggregation projection over this Identity database.
   target::IdentityAuditApplication* audit = nullptr;
+  // v1.2 redacted Identity log change feed; absent keeps ListLogChanges a typed unsupported reply.
+  target::IdentityLogFeedApplication* log_feed = nullptr;
   target::IdentityAssignmentApplication* assignments = nullptr;
   target::IdentityInvalidationApplication* invalidation = nullptr;
   // P12l read-only human principal directory (Control platform peer + identity.principal.read).

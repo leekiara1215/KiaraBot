@@ -341,14 +341,42 @@ public:
                                   entry.trace_id, entry.method})) {
         return error(target::ErrorCode::InvalidArgument);
       }
-      exec("INSERT INTO "
-           "kiarabot.audit_entries(actor,resource_kind,resource_id,request_id,trace_id,method,"
-           "rejection,authorization_version,occurred_at) "
-           "VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)",
-           {entry.actor.value, static_cast<int>(entry.resource.kind), entry.resource.id.value,
-            entry.request_id, entry.trace_id, entry.method,
-            entry.rejection ? std::optional<int>(static_cast<int>(*entry.rejection)) : std::nullopt,
-            entry.authorization_version.value, timestamp(entry.occurred_at)});
+      const auto rows = exec(
+          "INSERT INTO "
+          "kiarabot.audit_entries(actor,resource_kind,resource_id,request_id,trace_id,method,"
+          "rejection,authorization_version,occurred_at) "
+          "VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id",
+          {entry.actor.value, static_cast<int>(entry.resource.kind), entry.resource.id.value,
+           entry.request_id, entry.trace_id, entry.method,
+           entry.rejection ? std::optional<int>(static_cast<int>(*entry.rejection)) : std::nullopt,
+           entry.authorization_version.value, timestamp(entry.occurred_at)});
+      // v1.2 redacted log change feed: append in the same transaction as the authoritative audit
+      // row. Only Identity/Runtime own a log family; severity/event are frozen closed sets and no
+      // audit payload, actor secret or free text enters the feed.
+      if ((owner_ == target::Service::Identity || owner_ == target::Service::Runtime) &&
+          rows.size() == 1) {
+        target::LogObservation observation;
+        observation.owner = owner_;
+        observation.entry_id = std::to_string(rows.one_row()["id"].as<long long>());
+        observation.severity = entry.rejection ? "ERROR" : "INFO";
+        observation.component = owner_ == target::Service::Identity ? "identity" : "runtime";
+        observation.method = entry.method;
+        observation.event = entry.rejection ? "request.rejected" : "request.recorded";
+        observation.resource = entry.resource;
+        observation.request_id = entry.request_id;
+        observation.trace_id = entry.trace_id;
+        observation.occurred_at = entry.occurred_at;
+        target::ObservationFeedAppend append;
+        append.resource = entry.resource;
+        append.observed_at = entry.occurred_at;
+        append.payload = std::move(observation);
+        const auto appended =
+            ::kiarabot::infrastructure::postgres::detail::append_observation_changes(
+                *this, owner_, target::ObservationFamily::Logs, {append});
+        if (const auto* failure = std::get_if<target::Failure>(&appended)) {
+          return *failure;
+        }
+      }
       return std::monostate{};
     });
   }
@@ -647,19 +675,19 @@ public:
       return target::unsupported_lifecycle_read();
     }
     return ::kiarabot::infrastructure::postgres::detail::query_observation_changes(*this, owner_,
-                                                                                  query);
+                                                                                   query);
   }
-  target::Outcome<std::size_t>
-  prune_observation_changes(target::ObservationFamily family, std::size_t limit) override {
+  target::Outcome<std::size_t> prune_observation_changes(target::ObservationFamily family,
+                                                         std::size_t limit) override {
     if (!observed_owner() || !feed_family_owns(owner_, family)) {
       return target::unsupported_lifecycle_read();
     }
     return ::kiarabot::infrastructure::postgres::detail::prune_observation_feeds(*this, family,
-                                                                                limit);
+                                                                                 limit);
   }
-  target::Status append_observation_changes(
-      target::ObservationFamily family,
-      const std::vector<target::ObservationFeedAppend>& changes) override {
+  target::Status
+  append_observation_changes(target::ObservationFamily family,
+                             const std::vector<target::ObservationFeedAppend>& changes) override {
     if (!observed_owner()) {
       return target::unsupported_lifecycle_read();
     }
@@ -1233,18 +1261,16 @@ public:
           if (owner() != target::Service::Runtime) {
             return error(target::ErrorCode::PermissionDenied);
           }
-          const auto rows = exec(
-              "SELECT id,resource_id,digest,created_at,revoked,version "
-              "FROM kiarabot.bridge_credentials WHERE digest=$1 AND NOT revoked",
-              {digest(value)});
+          const auto rows = exec("SELECT id,resource_id,digest,created_at,revoked,version "
+                                 "FROM kiarabot.bridge_credentials WHERE digest=$1 AND NOT revoked",
+                                 {digest(value)});
           if (rows.empty()) {
             return std::optional<target::BridgeCredentialRecord>{};
           }
           const auto row = rows.one_row();
-          target::BridgeCredentialRecord record{row["id"].as<std::string>(),
-                                                row["resource_id"].as<std::string>(),
-                                                read_digest(row["digest"]),
-                                                time_field(row, "created_at"), false};
+          target::BridgeCredentialRecord record{
+              row["id"].as<std::string>(), row["resource_id"].as<std::string>(),
+              read_digest(row["digest"]), time_field(row, "created_at"), false};
           record.version = row["version"].as<std::uint64_t>();
           return std::optional<target::BridgeCredentialRecord>{std::move(record)};
         });
@@ -1299,10 +1325,9 @@ public:
           !valid_sql_text(resource_id) || expected_version == 0) {
         return error(target::ErrorCode::InvalidArgument);
       }
-      const auto rows = exec(
-          "UPDATE kiarabot.bridge_credentials SET revoked=true "
-          "WHERE resource_id=$1 AND NOT revoked AND version=$2 RETURNING id",
-          {resource_id, expected_version});
+      const auto rows = exec("UPDATE kiarabot.bridge_credentials SET revoked=true "
+                             "WHERE resource_id=$1 AND NOT revoked AND version=$2 RETURNING id",
+                             {resource_id, expected_version});
       if (rows.empty()) {
         return error(target::ErrorCode::Conflict);
       }
@@ -1317,20 +1342,17 @@ public:
               !valid_sql_text(resource_id)) {
             return error(target::ErrorCode::InvalidArgument);
           }
-          const auto rows =
-              exec("SELECT id,resource_id,digest,created_at,revoked,version "
-                   "FROM kiarabot.bridge_credentials WHERE resource_id=$1 "
-                   "ORDER BY version DESC LIMIT 1",
-                   {resource_id});
+          const auto rows = exec("SELECT id,resource_id,digest,created_at,revoked,version "
+                                 "FROM kiarabot.bridge_credentials WHERE resource_id=$1 "
+                                 "ORDER BY version DESC LIMIT 1",
+                                 {resource_id});
           if (rows.empty()) {
             return std::optional<target::BridgeCredentialRecord>{};
           }
           const auto row = rows.one_row();
-          target::BridgeCredentialRecord record{row["id"].as<std::string>(),
-                                                row["resource_id"].as<std::string>(),
-                                                read_digest(row["digest"]),
-                                                time_field(row, "created_at"),
-                                                row["revoked"].as<bool>()};
+          target::BridgeCredentialRecord record{
+              row["id"].as<std::string>(), row["resource_id"].as<std::string>(),
+              read_digest(row["digest"]), time_field(row, "created_at"), row["revoked"].as<bool>()};
           record.version = row["version"].as<std::uint64_t>();
           return std::optional<target::BridgeCredentialRecord>{std::move(record)};
         });
@@ -1421,6 +1443,12 @@ private:
   bool observed_owner() const noexcept {
     return owner_ == target::Service::Runtime || owner_ == target::Service::Scheduler ||
            owner_ == target::Service::Model;
+  }
+  // v1.2 observation feed ownership: Identity owns the redacted log family; Runtime owns logs and
+  // received-message metadata; Scheduler owns task metadata.
+  bool feed_owner() const noexcept {
+    return owner_ == target::Service::Identity || owner_ == target::Service::Runtime ||
+           owner_ == target::Service::Scheduler;
   }
   target::Status mark_operation_dirty(const target::OperationId& id) {
     if (observed_owner()) {

@@ -17,6 +17,7 @@
 
 #include "kiarabot/core/domain/target/identity_policy.hpp"
 #include "kiarabot/core/domain/target/identity_state_rules.hpp"
+#include "kiarabot/core/runtime/platform/observation_feed_rpc.hpp"
 #include "kiarabot/core/runtime/platform/peer_certificate.hpp"
 #include "kiarabot/core/runtime/platform/target_codec.hpp"
 
@@ -754,6 +755,48 @@ t::IdentityAuditCommand audit_command_for(const t::IdentityRequestContext& conte
                                           const AuditCommandInput& input) {
   return {context, peer, input.scope, input.query};
 }
+
+t::Outcome<t::ObservationFeedQuery> feed_query(const v1::ObservationChangesRequest& request,
+                                               const t::IdentityRequestContext& context) {
+  if (!request.has_scope() || request.scope().resources_size() != 1 || request.page_size() > 100) {
+    return failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput);
+  }
+  const auto decoded = codec::from_wire(request.scope().resources(0));
+  const auto* resource = std::get_if<t::ResourceRef>(&decoded);
+  if (!resource || resource->kind != t::ResourceKind::Catalog || resource->id.value != "control") {
+    return failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput);
+  }
+  t::ObservationFeedQuery result;
+  result.family = t::ObservationFamily::Logs;
+  result.scope = {*resource};
+  result.page_size = request.page_size();
+  if (request.has_cursor()) {
+    const auto& cursor = request.cursor();
+    if (cursor.source_service() != "identity" || !cursor.has_scope() ||
+        cursor.scope().resources_size() != 1 || cursor.epoch().empty() ||
+        cursor.epoch().size() > 128) {
+      return failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput);
+    }
+    const auto cursor_scope = codec::from_wire(cursor.scope().resources(0));
+    const auto* selected = std::get_if<t::ResourceRef>(&cursor_scope);
+    if (!selected || !(*selected == *resource)) {
+      return failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput);
+    }
+    result.cursor = t::ObservationFeedCursor{t::Service::Identity,
+                                             t::ObservationFamily::Logs,
+                                             cursor.epoch(),
+                                             {*selected},
+                                             cursor.sequence()};
+  }
+  const auto remaining =
+      std::chrono::duration_cast<std::chrono::nanoseconds>(context.deadline - now());
+  if (remaining <= std::chrono::nanoseconds::zero()) {
+    return failure(t::ErrorCode::Timeout, t::Recovery::Backoff);
+  }
+  result.deadline = std::chrono::steady_clock::now() +
+                    std::min(remaining, std::chrono::nanoseconds{std::chrono::milliseconds{500}});
+  return result;
+}
 std::optional<v1::FixedRole> fixed_role(t::FixedRole role) {
   switch (role) {
   case t::FixedRole::Admin:
@@ -812,7 +855,8 @@ public:
         verification_keys_(options.verification_keys), exchange_(options.exchange),
         principal_(options.principal), authorization_(options.authorization),
         assignments_(options.assignments), invalidation_(options.invalidation),
-        audit_(options.audit), principal_directory_(options.principal_directory) {}
+        audit_(options.audit), log_feed_(options.log_feed),
+        principal_directory_(options.principal_directory) {}
 
   grpc::Status Login(grpc::ServerContext* transport, const v1::IdentityLoginRequest* request,
                      v1::IdentityLoginResponse* response) override {
@@ -965,6 +1009,34 @@ public:
                  return output;
                });
   }
+  grpc::Status ListLogChanges(grpc::ServerContext* transport,
+                              const v1::ObservationChangesRequest* request,
+                              v1::LogChangesResponse* response) override {
+    return run(transport, request->has_context(), request->context(), response,
+               [&](const t::VerifiedPeer& peer,
+                   const t::IdentityRequestContext& context) -> t::Outcome<v1::LogChangesResponse> {
+                 if (!log_feed_ || !request->has_scope()) {
+                   return failure(t::ErrorCode::CapabilityNotSupported);
+                 }
+                 auto query = feed_query(*request, context);
+                 if (const auto* error = std::get_if<t::Failure>(&query)) {
+                   return *error;
+                 }
+                 auto page = log_feed_->list_log_changes(
+                     {context, peer, std::get<t::ObservationFeedQuery>(query)});
+                 if (const auto* error = std::get_if<t::Failure>(&page)) {
+                   return *error;
+                 }
+                 v1::LogChangesResponse output;
+                 auto encoded = encode_log_changes_page(std::get<t::ObservationFeedPage>(page),
+                                                        request->context(), output);
+                 if (const auto* error = std::get_if<t::Failure>(&encoded)) {
+                   return *error;
+                 }
+                 return output;
+               });
+  }
+
   grpc::Status ListSessions(grpc::ServerContext* transport,
                             const v1::IdentityListSessionsRequest* request,
                             v1::IdentityListSessionsResponse* response) override {
@@ -2277,6 +2349,7 @@ private:
   t::IdentityAssignmentApplication* assignments_;
   t::IdentityInvalidationApplication* invalidation_;
   t::IdentityAuditApplication* audit_;
+  t::IdentityLogFeedApplication* log_feed_;
   t::IdentityPrincipalDirectoryApplication* principal_directory_;
 };
 } // namespace

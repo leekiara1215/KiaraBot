@@ -1,7 +1,6 @@
 #include "kiarabot/core/runtime/platform/host_runtime_client.hpp"
 
 #include <cstdint>
-#include <cstdio>
 #include <mutex>
 #include <random>
 #include <string_view>
@@ -157,7 +156,6 @@ HostRuntimeClient::set_admission(const target::HostAdmissionGateRequest& request
   }
   auto fence = options_.fence();
   if (const auto* error = std::get_if<t::Failure>(&fence)) {
-    std::fprintf(stderr, "DBG gate fenceerr code=%d\n", static_cast<int>(error->code));
     return *error;
   }
   const auto& current = std::get<t::HostFence>(fence);
@@ -186,7 +184,6 @@ HostRuntimeClient::set_admission(const target::HostAdmissionGateRequest& request
       std::chrono::system_clock::now().time_since_epoch())};
   const auto deadline = started + options_.budget;
   if (!timestamp(deadline, context->mutable_deadline())) {
-    std::fprintf(stderr, "DBG gate timestamp fail\n");
     return failure(t::ErrorCode::Internal);
   }
   grpc::ClientContext client;
@@ -194,13 +191,9 @@ HostRuntimeClient::set_admission(const target::HostAdmissionGateRequest& request
   v1::RuntimeSetHostAdmissionGateResponse response;
   const auto status = stub_->SetHostAdmissionGate(&client, wire, &response);
   if (!status.ok()) {
-    std::fprintf(stderr, "DBG gate rpc err=%d\n", static_cast<int>(status.error_code()));
     return grpc_failure(status);
   }
   t::OperationRef echoed;
-  std::fprintf(stderr, "DBG gate echo host=%s mv=%llu gv=%llu adm=%d\n", response.host_id().c_str(),
-               (unsigned long long)response.maintenance_version(),
-               (unsigned long long)response.gate_version(), (int)response.admission());
   if (response.host_id() != current.host.value ||
       response.maintenance_version() != request.maintenance_version ||
       response.gate_version() == 0 ||

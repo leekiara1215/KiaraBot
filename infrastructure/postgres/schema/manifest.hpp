@@ -34,15 +34,16 @@ SELECT md5(string_agg(descriptor,E'\n' ORDER BY descriptor)) FROM (
 inline constexpr std::string_view descriptor(core::target::Service owner) {
   switch (owner) {
   case core::target::Service::Identity:
-    // v1.2 owner-local observation feed journal (logs family).
-    return "5ce460015b05a6557f576b19faa0290a";
+    // v1.2 owner-local observation feed journal (logs family; exact audit-entry resources).
+    return "1ff26df36e31a5468948032954dbbe8a";
   case core::target::Service::Runtime:
     // BOOT-02 bootstrap delivery intent/receipt + bridge credential version; HOST-03 Host
-    // admission gate row; v1.2 owner-local observation feed journal (logs + messages families).
-    return "b5f53a0b1372606210b174e124e96e31";
+    // admission gate row; v1.2 owner-local observation feed journal (logs + messages families;
+    // exact audit-entry resources).
+    return "3949bd1215a7acbf478758330e5ce015";
   case core::target::Service::Scheduler:
-    // v1.2 owner-local observation feed journal (tasks family).
-    return "f036ea3b2d80181268d281ee2876b1c3";
+    // v1.2 owner-local observation feed journal (tasks family; exact audit-entry resources).
+    return "82deb703aa774cd987361be76154e443";
   case core::target::Service::Model:
     // v1.2 model_intents error CHECK allows the domain InvalidArgument encoding (0).
     return "e556cdf66c22626e4a5b26f621fde42e";

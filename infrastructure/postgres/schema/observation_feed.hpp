@@ -26,7 +26,9 @@ INSERT INTO kiarabot.observation_feed_head(family,epoch) VALUES
 CREATE TABLE kiarabot.observation_feed_changes (
   family integer NOT NULL CHECK(family IN (1,2,3)),
   sequence kiarabot.uint64 NOT NULL CHECK(sequence>0),
-  resource_kind integer NOT NULL CHECK(resource_kind BETWEEN 0 AND 15),
+  -- Log feed rows carry the exact audit-entry resource (any concrete kind, including
+  -- RESOURCE_CATALOG=16); task/message rows derive Task/Account resources.
+  resource_kind integer NOT NULL CHECK(resource_kind BETWEEN 0 AND 16),
   resource_id text NOT NULL CHECK(octet_length(resource_id) BETWEEN 1 AND 256),
   observed_at bigint NOT NULL CHECK(observed_at>0),
   payload text NOT NULL CHECK(octet_length(payload) BETWEEN 2 AND 4096),

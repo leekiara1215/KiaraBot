@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/ usr / bin / env python3
 """HOST-04 real Host process maintenance e2e with controlled fake Runtime/Identity TLS services.
 
 The Host binary under test is the production `kiarabot-plugin-host` composition: it owns its
@@ -162,29 +162,19 @@ class FakeRuntime(runtime_pb2_grpc.RuntimeServiceServicer, host_pb2_grpc.HostBri
         self.connected = threading.Event()
 
     def SetHostAdmissionGate(self, request, context):
-        try:
-            return self._set_gate(request, context)
-        except Exception:  # noqa: BLE001
-            import traceback
-            traceback.print_exc(file=sys.stderr)
-            raise
-
-    def _set_gate(self, request, context):
         self.gate_calls.append(request)
-        if request.host_id != HOST_ID or request.fence.instance_id() != HOST_ID:
+        if request.host_id != HOST_ID or request.fence.instance_id != HOST_ID:
             context.abort(grpc.StatusCode.UNAUTHENTICATED, 'host/fence mismatch')
         if self.gate_mode == 'unavailable':
             context.abort(grpc.StatusCode.UNAVAILABLE, 'fixture gate unavailable')
         if self.gate_mode == 'lost_ack_once':
-            # Durably applied by the fake owner, but the first response is lost; the Host must
-            # retry under the same operation identity and converge on the same gate.
+#Durably applied by the fake owner, but the first response is lost; the Host must
+#retry under the same operation identity and converge on the same gate.
             self.gate_mode = 'ok'
             self.gate_version += 1
             self._gate_receipt = (request, self.gate_version)
             context.abort(grpc.StatusCode.UNAVAILABLE, 'fixture lost gate ack')
         self.gate_version += 1
-        print('GATE req host=' + request.host_id + ' mv=' + str(request.maintenance_version) +
-              ' gv=' + str(self.gate_version), file=sys.stderr, flush=True)
         return runtime_pb2.RuntimeSetHostAdmissionGateResponse(
             host_id=HOST_ID, gate_version=self.gate_version,
             maintenance_version=request.maintenance_version, admission=request.admission,
@@ -285,7 +275,7 @@ def host_config(root, artifacts, services_port, profile_executable, profile_argu
 
 def start_host(binary, config_path):
     child = subprocess.Popen([binary, '--config', str(config_path)], stdout=subprocess.PIPE,
-                             stderr=None, text=True)
+                             stderr=subprocess.PIPE, text=True)
     line = child.stdout.readline().strip()
     if 'service=plugin-host' not in line:
         detail = child.stderr.read().strip() if child.poll() is not None else ''
@@ -337,7 +327,7 @@ def get_operation(stub, operation):
 
 def scenario(binary, root, artifacts, services_port, fake_runtime, fake_identity):
     config = host_config(root, artifacts, services_port, '/bin/sh',
-                         ['-c', "trap '' TERM; while true; do sleep 1; done"])
+                         ['sh', '-c', "trap '' TERM; while true; do sleep 1; done"])
     config_path = root / 'host.json'
     config_path.write_text(json.dumps(config))
     config_path.chmod(0o600)
@@ -347,8 +337,7 @@ def scenario(binary, root, artifacts, services_port, fake_runtime, fake_identity
         if not fake_runtime.connected.wait(10.0):
             host.terminate()
             host.wait(timeout=10)
-            require(False, 'HostBridge registered with fake Runtime: ' +
-                    host.stderr.read().strip()[-300:])
+            require(False, 'HostBridge registered with fake Runtime')
         require(fake_runtime.apply_sent.wait(10.0), 'fake Runtime dispatched the apply command')
         wait_until(lambda: any(receipt.persisted for receipt in fake_runtime.receipts),
                    'managed plugin spawned and receipted')
@@ -373,11 +362,11 @@ def scenario(binary, root, artifacts, services_port, fake_runtime, fake_identity
                 item.participant + ':' + platform_pb2.OperationState.Name(item.state)
                 for item in finished.participants)
             require(finished.state == platform_pb2.OPERATION_SUCCEEDED,
-                    'maintenance operation succeeded')
+                    'maintenance operation succeeded' + detail)
             maintenance = get_maintenance(stub, artifacts)
             require(maintenance.admission == host_pb2.HOST_ADMISSION_CLOSED,
                     'admission closed after maintenance')
-            # Resume is an explicit new operation and reopens admission.
+#Resume is an explicit new operation and reopens admission.
             resumed = stub.ResumeAdmission(
                 host_pb2.HostResumeAdmissionRequest(
                     context=authorized_context(idempotent=True), host_id=HOST_ID,
@@ -393,8 +382,8 @@ def scenario(binary, root, artifacts, services_port, fake_runtime, fake_identity
             require(get_maintenance(stub, artifacts).admission == host_pb2.HOST_ADMISSION_OPEN,
                     'admission reopened by explicit resume')
 
-            # Lost gate ACK: the Runtime applied the gate but the response was lost. The Host must
-            # keep the operation BLOCKED/Unknown and only converge on a later retry.
+#Lost gate ACK : the Runtime applied the gate but the response was lost.The Host must
+#keep the operation BLOCKED / Unknown and only converge on a later retry.
             fake_runtime.gate_mode = 'lost_ack_once'
             lost = begin(stub, artifacts, grace_ms=500)
             lost_ref = lost.operation.ref
@@ -402,15 +391,24 @@ def scenario(binary, root, artifacts, services_port, fake_runtime, fake_identity
                                           platform_pb2.OPERATION_BLOCKED else None)(
                 get_operation(stub, lost_ref)), 'lost ACK keeps operation blocked')
             require(blocked.HasField('reason') and blocked.execution_outcome !=
-                    platform_pb2.EXECUTION_OUTCOME_KNOWN_SUCCEEDED,
+                    platform_pb2.EXECUTION_KNOWN_SUCCEEDED,
                     'lost ACK is not a false success')
             converged = wait_until(lambda: (lambda value: value if value.state ==
                                             platform_pb2.OPERATION_SUCCEEDED else None)(
                 get_operation(stub, lost_ref)), 'lost ACK retry converges')
             require(converged.state == platform_pb2.OPERATION_SUCCEEDED,
                     'same operation identity converges after gate ACK loss')
+            reopened = stub.ResumeAdmission(
+                host_pb2.HostResumeAdmissionRequest(
+                    context=authorized_context(idempotent=True), host_id=HOST_ID,
+                    expected_version=get_maintenance(stub, artifacts).version), timeout=10)
+            wait_until(lambda: (lambda value: value if value.state in (
+                platform_pb2.OPERATION_SUCCEEDED, platform_pb2.OPERATION_BLOCKED) else None)(
+                    get_operation(stub, reopened.operation.ref)), 'reopen after lost ACK converges')
+            require(get_maintenance(stub, artifacts).admission == host_pb2.HOST_ADMISSION_OPEN,
+                    'admission reopened before cancel-window check')
 
-            # Cancel window: a just-accepted operation may be cancelled before any gate effect.
+#Cancel window : a just - accepted operation may be cancelled before any gate effect.
             pending = begin(stub, artifacts, grace_ms=500)
             cancelled = stub.CancelOperation(
                 host_pb2.HostCancelOperationRequest(
@@ -422,7 +420,7 @@ def scenario(binary, root, artifacts, services_port, fake_runtime, fake_identity
                     'cancelled pre-effect operation leaves admission open')
         finally:
             channel.close()
-        # Restart persistence: an UNKNOWN/BLOCKED maintenance intent stays closed and queryable.
+#Restart persistence : an UNKNOWN / BLOCKED maintenance intent stays closed and queryable.
         fake_runtime.gate_mode = 'unavailable'
         host, host_port = start_host(binary, config_path)
         children.append(host)
@@ -432,7 +430,7 @@ def scenario(binary, root, artifacts, services_port, fake_runtime, fake_identity
         try:
             stub = host_pb2_grpc.HostManagementServiceStub(channel)
             maintenance = get_maintenance(stub, artifacts)
-            require(maintenance.admission == host_pb2.HOST_ADMISSION_CLOSED,
+            require(maintenance.admission == host_pb2.HOST_ADMISSION_OPEN,
                     'restart keeps the last durable admission state')
             failing = begin(stub, artifacts, grace_ms=500)
             blocked_ref = failing.operation.ref
@@ -440,7 +438,8 @@ def scenario(binary, root, artifacts, services_port, fake_runtime, fake_identity
                                           platform_pb2.OPERATION_BLOCKED else None)(
                 get_operation(stub, blocked_ref)), 'unavailable Runtime gate blocks bounded')
             require(blocked.state == platform_pb2.OPERATION_BLOCKED and
-                    blocked.execution_outcome != platform_pb2.EXECUTION_OUTCOME_KNOWN_SUCCEEDED,
+                    blocked.execution_outcome != platform_pb2.EXECUTION_KNOWN_SUCCEEDED and
+                    get_maintenance(stub, artifacts).admission == host_pb2.HOST_ADMISSION_CLOSED,
                     'Runtime gate outage never becomes a false success')
         finally:
             channel.close()

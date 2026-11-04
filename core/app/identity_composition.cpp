@@ -15,6 +15,7 @@
 #include "kiarabot/core/application/target/identity_authorization_application.hpp"
 #include "kiarabot/core/application/target/identity_delegation_application.hpp"
 #include "kiarabot/core/application/target/identity_invalidation_application.hpp"
+#include "kiarabot/core/application/target/identity_log_feed_application.hpp"
 #include "kiarabot/core/application/target/identity_principal_application.hpp"
 #include "kiarabot/core/application/target/identity_principal_directory_application.hpp"
 #include "kiarabot/core/application/target/identity_security_application.hpp"
@@ -81,6 +82,12 @@ public:
         invalidation_(std::move(invalidation)),
         audit_(std::move(std::get<std::unique_ptr<target::IdentityAuditApplication>>(
             target::make_identity_audit_application(*dependencies_->transactions)))),
+        log_feed_(std::move(std::get<std::unique_ptr<target::IdentityLogFeedApplication>>(
+            target::make_identity_log_feed_application(
+                *dependencies_->transactions,
+                [](target::UnitOfWork& work, const target::ObservationFeedQuery& query) {
+                  return work.query_observation_changes(query);
+                })))),
         principal_directory_(
             std::move(std::get<std::unique_ptr<target::IdentityPrincipalDirectoryApplication>>(
                 target::make_identity_principal_directory_application(
@@ -89,9 +96,8 @@ public:
         issuer_(*sessions_, *dependencies_->transactions, *dependencies_->delegations,
                 *dependencies_->random, dependencies_->clock,
                 {material.issuer, {material.delegation_key.id}}),
-        exchange_(*dependencies_->transactions, *dependencies_->delegations,
-                  *dependencies_->random, dependencies_->clock,
-                  {material.issuer, {material.delegation_key.id}}) {}
+        exchange_(*dependencies_->transactions, *dependencies_->delegations, *dependencies_->random,
+                  dependencies_->clock, {material.issuer, {material.delegation_key.id}}) {}
   target::Service service() const noexcept override {
     return target::Service::Identity;
   }
@@ -137,6 +143,9 @@ public:
   target::IdentityAuditApplication& audit() {
     return *audit_;
   }
+  target::IdentityLogFeedApplication& log_feed() {
+    return *log_feed_;
+  }
   target::IdentityPrincipalDirectoryApplication& principal_directory() {
     return *principal_directory_;
   }
@@ -160,6 +169,7 @@ private:
   std::unique_ptr<target::IdentityAuthorizationApplication> authorization_;
   std::unique_ptr<target::IdentityInvalidationApplication> invalidation_;
   std::unique_ptr<target::IdentityAuditApplication> audit_;
+  std::unique_ptr<target::IdentityLogFeedApplication> log_feed_;
   std::unique_ptr<target::IdentityPrincipalDirectoryApplication> principal_directory_;
   target::IdentityAdminApplication admin_;
   target::IdentityDelegationApplication issuer_;
@@ -517,6 +527,7 @@ target::Outcome<platform::ServiceComposition> configured(const platform::Process
              .principal = &observed->principal(),
              .authorization = &observed->authorization(),
              .audit = &observed->audit(),
+             .log_feed = &observed->log_feed(),
              .assignments = &observed->assignments(),
              .invalidation = &observed->invalidation(),
              .principal_directory = &observed->principal_directory()});

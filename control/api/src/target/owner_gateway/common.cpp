@@ -175,6 +175,18 @@ wire::ResourceScope account_scope(std::string_view id) {
   resource->set_id(std::string{id});
   return scope;
 }
+bool canonical_uuid(std::string_view value) {
+  return catalog_uuid(value);
+}
+
+wire::ResourceScope host_scope(std::string_view id) {
+  wire::ResourceScope scope;
+  auto* resource = scope.add_resources();
+  resource->set_kind(wire::RESOURCE_HOST);
+  resource->set_id(std::string{id});
+  return scope;
+}
+
 wire::ResourceScope instance_scope(std::string_view id) {
   wire::ResourceScope scope;
   auto* resource = scope.add_resources();

@@ -50,16 +50,15 @@ bool cursor_valid(const ObservationFeedCursor& cursor, const std::vector<Resourc
 }
 bool valid_page(const ObservationFeedPage& page, const ObservationFeedQuery& query) {
   if (page.next_cursor.owner != Service::Identity ||
-      page.next_cursor.family != ObservationFamily::Logs ||
-      page.next_cursor.scope != query.scope || page.next_cursor.epoch.empty() ||
-      page.checked_at <= TimePoint{} ||
+      page.next_cursor.family != ObservationFamily::Logs || page.next_cursor.scope != query.scope ||
+      page.next_cursor.epoch.empty() || page.checked_at <= TimePoint{} ||
       page.changes.size() > (query.page_size == 0 ? 32 : query.page_size) ||
       (page.has_more && page.changes.empty())) {
     return false;
   }
   auto sequence = query.cursor ? query.cursor->sequence : page.next_cursor.sequence;
-  if (query.cursor && (query.cursor->epoch != page.next_cursor.epoch ||
-                       sequence > page.next_cursor.sequence)) {
+  if (query.cursor &&
+      (query.cursor->epoch != page.next_cursor.epoch || sequence > page.next_cursor.sequence)) {
     return false;
   }
   if (!query.cursor && !page.changes.empty()) {
@@ -69,10 +68,8 @@ bool valid_page(const ObservationFeedPage& page, const ObservationFeedQuery& que
     const auto* log = std::get_if<LogObservation>(&change.payload);
     if (log == nullptr || (log->owner != Service::Identity && log->owner != Service::Runtime) ||
         log->occurred_at <= TimePoint{} || change.cursor.owner != Service::Identity ||
-        change.cursor.family != ObservationFamily::Logs ||
-        change.cursor.scope != query.scope ||
-        change.cursor.epoch != page.next_cursor.epoch ||
-        change.cursor.sequence <= sequence ||
+        change.cursor.family != ObservationFamily::Logs || change.cursor.scope != query.scope ||
+        change.cursor.epoch != page.next_cursor.epoch || change.cursor.sequence <= sequence ||
         change.cursor.sequence > page.next_cursor.sequence) {
       return false;
     }
@@ -92,8 +89,7 @@ public:
       auto input = command.query;
       if (input.family != ObservationFamily::Logs || input.page_size > 100 ||
           !control_scope(input.scope) ||
-          (input.cursor &&
-           !cursor_valid(*input.cursor, input.scope))) {
+          (input.cursor && !cursor_valid(*input.cursor, input.scope))) {
         return invalid();
       }
       auto opened = detail::begin(transactions_, command.context);
@@ -106,21 +102,21 @@ public:
         return *error;
       }
       const auto& authority = std::get<detail::PeerAuthority>(actor);
-      auto authorized =
-          authorize_exact(authority.subject.principal, Permission::LogRead, input.scope.front(),
-                          authority.subject.assignments);
+      auto authorized = authorize_exact(authority.subject.principal, Permission::LogRead,
+                                        input.scope.front(), authority.subject.assignments);
       if (const auto* error = std::get_if<Failure>(&authorized)) {
         return *error;
       }
-      auto checkpoint = detail::final_check(work, command.context, peer_valid_until(authority), true);
+      auto checkpoint =
+          detail::final_check(work, command.context, peer_valid_until(authority), true);
       if (const auto* error = std::get_if<Failure>(&checkpoint)) {
         return *error;
       }
       if (std::chrono::steady_clock::now() >= input.deadline) {
         return detail::failure(ErrorCode::Timeout, Recovery::Backoff);
       }
-      input.deadline =
-          std::min(input.deadline, std::chrono::steady_clock::now() + std::chrono::milliseconds{500});
+      input.deadline = std::min(input.deadline,
+                                std::chrono::steady_clock::now() + std::chrono::milliseconds{500});
       auto queried = query_(*work.transaction, input);
       work.transaction->rollback();
       if (const auto* error = std::get_if<Failure>(&queried)) {

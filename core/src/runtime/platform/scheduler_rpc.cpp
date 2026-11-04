@@ -11,6 +11,7 @@
 #include <string_view>
 #include <utility>
 
+#include "kiarabot/core/runtime/platform/observation_feed_rpc.hpp"
 #include "kiarabot/core/runtime/platform/operation_observation_rpc.hpp"
 #include "kiarabot/core/runtime/platform/target_codec.hpp"
 #include "kiarabot/v1/common.pb.h"
@@ -734,6 +735,39 @@ public:
     }
     if (!operation(std::get<t::Operation>(found), response->mutable_operation())) {
       return error_status(internal_failure(), command.request, command.trace);
+    }
+    return grpc::Status::OK;
+  }
+
+  // v1.2 safe Scheduler task metadata feed. Current online authorization happens in the pure
+  // application before the owner-local read-only UoW; terminal/deleted task facts are included.
+  grpc::Status ListTaskChanges(grpc::ServerContext* transport,
+                               const v1::ObservationChangesRequest* request,
+                               v1::TaskChangesResponse* response) override {
+    const auto prepared =
+        prepare_observation_feed(*transport, *request, t::Service::Scheduler,
+                                 t::ObservationFamily::Tasks, options_.invocation_deadline);
+    if (const auto* rejected = std::get_if<t::Failure>(&prepared)) {
+      return error_status(*rejected, request->context().request_id(),
+                          request->context().trace_id());
+    }
+    const auto& command = std::get<t::ObservationFeedCommand>(prepared);
+    if (!options_.task_changes) {
+      return error_status(failure(t::ErrorCode::CapabilityNotSupported), command.context.request_id,
+                          command.context.trace_id);
+    }
+    const auto found = options_.task_changes->query(command);
+    if (const auto* rejected = std::get_if<t::Failure>(&found)) {
+      return error_status(*rejected, command.context.request_id, command.context.trace_id);
+    }
+    if (transport->IsCancelled() || now() >= command.context.deadline) {
+      return error_status(failure(t::ErrorCode::Timeout, t::Recovery::Backoff),
+                          command.context.request_id, command.context.trace_id);
+    }
+    const auto encoded = encode_task_changes_page(std::get<t::ObservationFeedPage>(found),
+                                                  request->context(), *response);
+    if (const auto* rejected = std::get_if<t::Failure>(&encoded)) {
+      return error_status(*rejected, command.context.request_id, command.context.trace_id);
     }
     return grpc::Status::OK;
   }

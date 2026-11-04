@@ -11,8 +11,10 @@ inline constexpr int version(core::target::Service owner) {
   case core::target::Service::Identity:
     // P14h aligns exact_permissions/result_exact_permissions CHECK with wire Permission 1..50.
     // v1.2 adds the owner-local observation feed journal (logs family) and the shared
-    // model_intents error CHECK correction (InvalidArgument=0); shared result snapshot.
-    return 17;
+    // model_intents error CHECK correction (InvalidArgument=0); shared result snapshot. Feed
+    // journal rows carry exact log-entry resources (catalog included), so the storage CHECK spans
+    // every concrete ResourceKind.
+    return 18;
   case core::target::Service::Runtime:
     // P05 adds Runtime relations/columns, shared replay-result relations and the private
     // bridge_credentials relation; P06 adds the five event/delivery relations and A1's
@@ -28,16 +30,18 @@ inline constexpr int version(core::target::Service owner) {
     // delivery intent/receipt relation and the persisted bridge credential version; HOST-03 adds
     // the Runtime-owned Host admission gate row; v1.2 adds the owner-local observation feed
     // journal (logs + messages families) and the shared model_intents error CHECK correction.
-    // Empty-database schema only, no migration. Identity remains unchanged.
-    return 23;
+    // Empty-database schema only, no migration. Identity remains unchanged; feed journal rows
+    // carry exact log-entry resources (catalog included).
+    return 24;
   case core::target::Service::Scheduler:
     // P10a adds task/occurrence observation columns, the quota counter relation and due/owner
     // indexes; P07 adds the shared nullable audit target columns to every service schema. The
     // merged schema keeps version 9 (both prior increments were measured at Scheduler v8);
     // P14h aligns the shared result_exact_permissions CHECK with wire Permission 1..50.
     // WS-02 owner-local operation observation journal; v1.2 adds the owner-local observation
-    // feed journal (tasks family) and the shared model_intents error CHECK correction.
-    return 13;
+    // feed journal (tasks family) and the shared model_intents error CHECK correction; feed
+    // journal rows carry exact log-entry resources (catalog included).
+    return 14;
   case core::target::Service::Model:
     // P11a adds model_configs + encrypted_provider_secrets and extends model_intents with the
     // durable call facts (disposition/UNKNOWN resolution/usage); P07 adds the shared nullable

@@ -356,3 +356,38 @@ PluginBridge 刷新失败帧的 INTERNAL 与终止状态偏差仍待专项；格
 - 每次阶段完成或发布准备时更新本矩阵；只把有命令/测试记录/报告支撑的项标为“已实测”。
 - 用户确认项变化时同步 `doc/08`、`doc/12`、`doc/23` 与发布清单；`doc/18` 为冻结基线，只读不改。
 - 证据引用优先指向 `reports/modules/` 与 `ctest` 名称；测试改名/删除时必须同一变更更新本文件与发布清单。
+
+## 2026-11-04 第二轮收口：能力集成验收（冻结后）
+
+- **提交**：`7b092da`（v1.2 feed 契约 + 能力切片）、`88b652f`（真实 WSS teardown/P11/BOOT-05/Host 门禁）、
+  `1037cc5`（feed journal + Host gate + Panel + 产品缺陷修复）、本次收口提交（v1.2 写路径/composition/
+  Host S5/Panel 文档/验收证据）。
+- **全量构建**：`build/.agents/kb build -- -k` exit 0（`build/logs/final-acceptance/final2-build*.log`，
+  冻结后最终重建 `final2-build3.log`）。
+- **全量 CTest**：204 项 **203 通过 / 1 失败**（`build/logs/final-acceptance/final3-ctest.log`，
+  exit 8）。唯一失败 `p11_streaming_managed_model_e2e`（115.62s/单跑 121.88s，输出被 driver 框架
+  redact），剩余缺口与证据见下。第一轮 full2（198/204）失败为混合旧二进制配对 + 两处真实回归，
+  日志保留但不作为最终结论。
+- **契约/API/架构/证据门禁**：contracts（check_contracts/enum/implementation-status/semantic-rules/
+  evidence-scopes/target-feature-decl）、target 往返 + 与 baseline 和 Identity v1.1 descriptor 兼容、
+  openapi/asyncapi/target-api/reference、boundaries/inner/links/database、SDK pytest（189 passed/
+  23 skipped）全部 exit 0；Panel lint/build/contracts exit 0，Panel test 90 passed/1 failed（基线既有
+  `p12-live.test.tsx:131` stale 断言，未改）。格式门禁 28 个违规全部为 HEAD 已有基线、本次改动 0 新增
+  （`final2-format.log`、`final2-format-baseline.txt`）。
+- **本轮新增实测通过**：`ws12_observation_feed_journal`（真实 owned PG：同 UoW 回滚不发布/提交可见/
+  重复受理幂等/message 内部 ID 向量）、`ws12_observation_feed_application`、`ws12_observation_feed_identity`、
+  `p08_host_management_e2e`（真实 Host 进程，连续 2/2）、`p12_host_control_rest`（真实 Control + 真 TLS
+  owner/identity fixtures）、`p12_bootstrap_delivery_e2e`、`p12_target_websocket_https` 3/3、
+  `p03_postgres_database` 新 txn2 InvalidArgument 回归、`p13h3_joint_delete_production_e2e`（一致树
+  串行 4/4 + 并行复现）等。
+- **剩余缺口（如实）**：
+  1. STR09 受管 streaming 整链未全绿（唯一失败；driver 输出 redact，保留 fixture artifacts
+     `build/logs/final-acceptance/str09-artifacts/`；需按 gate 级诊断后收敛）。
+  2. v1.2 feed 的进程级端到端未全做：messages family 仅有真实 PG 仓储级幂等 append + runtime handler
+     与 composition 接线，无进程级 RPC+Control WS producer 验收；Identity/Scheduler feed RPC 为 handler
+     级 + PG 级验证，未跑进程 fixture 级；Control WS logs/tasks/messages producer（P3）未实现。
+  3. HOST-03/04：Runtime gate/S2/S3/S4/S5 已实现并单链验收（Host 进程 e2e、Control host REST），但
+     Control→真实 Host→Runtime 的单一组合链未验收，OpenAPI host 路由仍标 `not_implemented`。
+  4. BOOT-05 仍未覆盖：sink 后 ACK 丢失的确定性注入、delivery cancel（冻结契约无 RPC）。
+  5. 无两主机断网/主机迁移演练、真实 QQ 连接、付费模型调用、发布/推送；`register_plugin` 受管重连
+     修复的 host 绑定矩阵单测缺失（仅有 STR09 端到端证据）。

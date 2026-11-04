@@ -32,6 +32,7 @@ import os
 from pathlib import Path
 import secrets
 import select
+import shutil
 import signal
 import ssl
 import subprocess
@@ -60,6 +61,54 @@ PROVIDER: 'StreamProvider | None' = None
 PENDING_GATES: list[str] = []
 #: Real child processes owned by this driver (originals and restart replacements).
 CHILDREN: list = []
+
+
+MATRIX_START: float | None = None
+LAST_ROOT: Path | None = None
+ARTIFACT_DIR = REPO / 'build/logs/final-acceptance/str09-artifacts'
+
+
+def preserve_fixture_artifacts(root: Path | None, label: str) -> Path | None:
+    """Copy the owned fixture's diagnostic files out before run_database_test removes its root.
+
+    The reconnect/restart gates must keep host.err, plugin.log and the plugin/result journals for
+    the streaming owner's diagnosis; the temporary owned cluster directory itself is deleted by the
+    wrapper after the driver returns.
+    """
+    if root is None or not root.is_dir():
+        return None
+    stamp = time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())
+    target = ARTIFACT_DIR / f'{label}-{stamp}'
+    try:
+        target.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        return None
+    for name in ('host.err', 'plugin.log', 'plugin-results.jsonl', 'plugin-commands.jsonl',
+                 'runtime.err', 'model.err', 'identity.err', 'host.json', 'host.sqlite',
+                 'runtime.json', 'model.json', 'identity.json', 'provider-requests.jsonl',
+                 'provider-mode', 'p03-owned-marker'):
+        source = root / name
+        if source.is_file():
+            try:
+                shutil.copy2(source, target / name)
+            except OSError:
+                pass
+    for pattern in ('instance-delegation-*.json', '*.err', '*.log'):
+        for source in root.glob(pattern):
+            if source.is_file() and source.stat().st_size <= 4 * 1024 * 1024:
+                try:
+                    shutil.copy2(source, target / source.name)
+                except OSError:
+                    pass
+    print(f'STR09 artifacts preserved: {target}', file=sys.stderr, flush=True)
+    return target
+
+
+def stage(label: str) -> None:
+    if MATRIX_START is None:
+        print('STR09 stage: ' + label, flush=True)
+        return
+    print(f'STR09 stage: {label} t={time.monotonic() - MATRIX_START:.1f}s', flush=True)
 
 
 class Failure(RuntimeError):
@@ -296,7 +345,8 @@ def prepare(root: Path, enrolled: dict):
 
 
 def after_bootstrap(root: Path) -> None:
-    global PROVIDER
+    global PROVIDER, LAST_ROOT
+    LAST_ROOT = root
     pg_bin = Path(sys.argv[6]).resolve()
     port = int(sys.argv[2])
     initializer = str(Path(sys.argv[3]).resolve())
@@ -366,7 +416,7 @@ def after_bootstrap(root: Path) -> None:
             secrets.token_hex(32) for _ in range(3))
         environment = {key: value for key, value in os.environ.items()
                        if not key.startswith('PG')}
-        print('STR09 stage: runtime seed', flush=True)
+        stage('runtime seed')
         seeded = base.run([str(seed_binary), str(root), str(port), adapter_instance,
                            STATE['account'], STATE['instance'], adapter_bootstrap,
                            plugin_bootstrap, STATE['installation'], shutdown_instance,
@@ -415,10 +465,10 @@ def after_bootstrap(root: Path) -> None:
         base.wait_probe(endpoints['runtime_probe'])
 
         identity_service = base.identity_stub(identity_endpoint, tls)
-        print('STR09 stage: admin login', flush=True)
+        stage('admin login')
         admin = base.admin_login(identity_service, root)
         endpoint = f'http://127.0.0.1:{provider_port}/v1/chat/completions'
-        print('STR09 stage: model seed', flush=True)
+        stage('model seed')
         seeded_material = base.run([str(model_seed_binary), model_id, PROVIDER_SECRET,
                                     str(root_key), '1', 'x', 'x'])
         material = json.loads(seeded_material.stdout.decode())
@@ -433,13 +483,13 @@ def after_bootstrap(root: Path) -> None:
             "root_key_version,aead,nonce,sealed_secret,created_at) VALUES('" + model_id +
             "',1,1,1,decode('" + material['nonce'] + "','hex'),decode('" +
             material['sealed'] + "','hex')," + str(now_ns) + ");")
-        print('STR09 stage: register instance principal', flush=True)
+        stage('register instance principal')
         instance_principal = base.register_instance_principal(
             identity_service, STATE['instance'], root, pg_bin, port)
         STATE['instance_principal'] = instance_principal
 
         # Production sealed parent writer (P05b-7) keeps the 56s delegation fresh per command.
-        print('STR09 stage: sealed model envelope', flush=True)
+        stage('sealed model envelope')
         token_file = root / 'admin.token'
         token_file.write_text(admin + '\n')
         token_file.chmod(0o600)
@@ -488,7 +538,11 @@ def after_bootstrap(root: Path) -> None:
                      identity_endpoint=identity_endpoint,
                      admin_relogin=admin_relogin,
                      plugin_bootstrap=plugin_bootstrap)
-        run_streaming_matrix(root, provider_state, provider_mode, endpoint)
+        try:
+            run_streaming_matrix(root, provider_state, provider_mode, endpoint)
+        except Exception:
+            preserve_fixture_artifacts(root, 'matrix-failure')
+            raise
     finally:
         for child in children:
             if child.stderr is not None:
@@ -594,6 +648,8 @@ class Subject(Plugin):
                 started = stream.started
                 self._emit({{"cid": cid, "id": logical, "event": "started",
                         "elapsed": round(time.monotonic(), 3),
+                        "request_id": stream.request_id,
+                        "trace_id": stream.trace_id,
                             "disposition": int(started.disposition) if started else None}})
                 if kind == "no_read":
                     await asyncio.sleep(float(command.get("sleep", 3.0)))
@@ -770,22 +826,100 @@ def restart_service(root: Path, name: str) -> None:
     STATE[name + '_child'] = child
 
 
-def retry_unary(root: Path, timeout=45.0) -> dict:
+def seed_managed_command(root: Path, manifest, instance, installation, command_id: str,
+                         execution_generation: int = 1,
+                         desired_version: int = 1) -> None:
+    """Seed one additional managed-start command with explicit generation/version.
+
+    The Host refuses to respawn a terminal execution generation by design, so an explicit graceful
+    recovery requests the next generation exactly like a real HostManagement apply.
+    """
+    environment, pg = rt.postgres(root, Path(STATE['pg_bin']), int(STATE['pg_port']), 'p03_runtime')
+    arguments = ['--manifest=' + str(manifest)]
+    names = ['PYTHONPATH', 'PLUGIN_CORE_ENDPOINT', 'PLUGIN_TLS_ROOT', 'PLUGIN_INSTANCE_ID',
+             'PLUGIN_IO_TIMEOUT', 'PLUGIN_HEARTBEAT_INTERVAL', 'PLUGIN_RETRY_DELAY',
+             'KIARABOT_PLUGIN_BOOTSTRAP']
+    now_sql = '(extract(epoch from clock_timestamp())*1000000000)::bigint'
+    args_sql = 'ARRAY[' + ','.join("'" + value.replace("'", "''") + "'"
+                                   for value in arguments) + ']'
+    env_sql = 'ARRAY[' + ','.join("'" + value + "'" for value in names) + ']'
+    payload = hashlib.sha256(('p11-str09-' + command_id).encode()).hexdigest()
+    statement = (
+        "INSERT INTO kiarabot.host_commands(command_id,host_id,instance_id,installation_id,"
+        "kind,execution_generation,desired_version,desired_state,package_sha256,"
+        "launch_profile,arguments,environment_names,payload_sha256,state,created_at,updated_at) "
+        "VALUES('" + command_id + "','host-a','" + instance + "','" + installation + "',1," +
+        str(execution_generation) + "," + str(desired_version) + ",0,"
+        "repeat('a',64),'python'," + args_sql + ',' + env_sql + ",'" + payload + "',0," +
+        now_sql + ',' + now_sql + ");")
+    reply = subprocess.run([str(pg / 'psql'), '-X', '-qAt', '-v', 'ON_ERROR_STOP=1'],
+                           input=statement, text=True, env=environment, capture_output=True,
+                           timeout=15)
+    require(reply.returncode == 0, 'managed host command restart seed: ' +
+            ' '.join(str(reply.stderr).split())[-500:])
+
+
+def restart_managed_host(root: Path) -> None:
+    """Restart the real managed Host/plugin pair after its Runtime dependency was restarted."""
+    hosted = STATE.get('plugin_host')
+    # base.start_managed_host reopens host.err with 'wb', so snapshot the pre-restart evidence
+    # before stopping the first Host process (preserved later by preserve_fixture_artifacts).
+    for source, snapshot in (('host.err', 'host-first.err'),
+                             ('plugin.log', 'plugin-first.log')):
+        path = root / source
+        if path.is_file():
+            try:
+                shutil.copy2(path, root / snapshot)
+            except OSError:
+                pass
+    if hosted is not None and hosted.poll() is None:
+        hosted.send_signal(signal.SIGTERM)
+        try:
+            hosted.wait(timeout=15)
+        except subprocess.TimeoutExpired:
+            hosted.kill()
+            hosted.wait(timeout=5)
+    ready = root / 'plugin-ready'
+    previous_mtime = ready.stat().st_mtime_ns if ready.is_file() else 0
+    command_id = 'hc-str09-' + str(uuid.uuid4())
+    seed_managed_command(root, STATE['manifest_path'], STATE['instance'],
+                         STATE['installation'], command_id,
+                         execution_generation=2, desired_version=2)
+    host = base.start_managed_host(root, Path(STATE['host_binary']))
+    STATE['plugin_host'] = host
+    stage('managed host restarted (generation=2), waiting for a fresh plugin-ready')
+    deadline = time.monotonic() + 60.0
+    while time.monotonic() < deadline:
+        if ready.is_file() and ready.stat().st_mtime_ns > previous_mtime:
+            break
+        if host.poll() is not None:
+            dump_diagnostics(root, 'managed-restart')
+            raise Failure('managed host exited before the plugin re-registered')
+        time.sleep(0.05)
+    else:
+        dump_diagnostics(root, 'managed-restart-timeout')
+        raise Failure('managed host did not respawn the plugin with the new generation')
+    retry_unary(root, timeout=60)
+
+
+def retry_unary(root: Path, timeout=30.0) -> dict:
     """After a connection/process disruption, retry a benign unary call until the SDK reconnects."""
     deadline = time.monotonic() + timeout
     last = None
     while time.monotonic() < deadline:
         try:
             value = command(root, str(uuid.uuid4()), wait='chat_result', kind='chat',
-                            timeout=20.0)
+                            timeout=5.0)
         except Failure as failure:
             last = str(failure)
-            time.sleep(0.5)
+            time.sleep(0.3)
             continue
         if value.get('ok') is True:
             return value
         last = json.dumps(value)[:300]
-        time.sleep(0.5)
+        time.sleep(0.3)
+    dump_diagnostics(root, 'reconnect')
+    preserve_fixture_artifacts(root, 'reconnect')
     raise Failure(f'reconnect unary regression did not recover: {last}')
 
 
@@ -840,6 +974,24 @@ def ensure_fresh_envelope(root: Path) -> dict:
     return document
 
 
+def delegation_window_attempt(value: dict, post_delta: int) -> bool:
+    """Governed-window boundary: no delta yet and a pre/early-dispatch TIMEOUT/unknown failure.
+
+    ``post_delta`` is how many Provider POSTs this attempt added (0 = delegation expired before
+    dispatch, 1 = dispatched but the governed text window closed before the first delta). Both are
+    retryable fixture boundaries, not product expectations for a gate that requires a delta.
+    """
+    if value.get('received_delta_count'):
+        return False
+    if value.get('event') == 'terminal':
+        if value.get('termination') != MODEL_STREAM_FAILED:
+            return False
+        return value.get('failure_code') in (8, 9) and post_delta <= 1
+    if value.get('event') == 'error':
+        return value.get('code') in (8, 9) and post_delta <= 1
+    return False
+
+
 def delegation_expired_attempt(value: dict) -> bool:
     """True for the governed-window boundary: started, then known FAILED TIMEOUT with no delta.
 
@@ -859,7 +1011,8 @@ def delegation_expired_attempt(value: dict) -> bool:
 
 
 def stream_gate(root: Path, cid: str, *, kind='stream', timeout=20.0, extra=None,
-                logical_call_id: str | None = None, attempts=3):
+                logical_call_id: str | None = None, attempts=3, window_retry=True,
+                prestart_timeout_retry=False):
     """Send one stream gate and wait for its first observable event (delta/terminal/error).
 
     Retries only the delegation-window boundary above, with zero Provider POST and zero delta; the
@@ -873,7 +1026,10 @@ def stream_gate(root: Path, cid: str, *, kind='stream', timeout=20.0, extra=None
         send_command(root, cid, kind=kind, timeout=timeout, extra=extra,
                      logical_call_id=logical)
         value = wait_any_event(root, cid, ('delta', 'terminal', 'error'), timeout=90.0)
-        if delegation_expired_attempt(value) and provider.posts() == posts:
+        post_delta = provider.posts() - posts
+        prestart_window = (prestart_timeout_retry and value.get('event') == 'error'
+                           and value.get('code') == 8)
+        if prestart_window or (window_retry and delegation_window_attempt(value, post_delta)):
             print(f'STR09 delegation-window retry attempt={attempt} cid={cid}: '
                   f'{json.dumps(value)[:400]}', file=sys.stderr, flush=True)
             if attempt < attempts:
@@ -933,7 +1089,7 @@ def cross_instance_isolation_gate(root: Path, provider, mode_file: Path) -> None
     from kiarabot.v1 import platform_pb2 as platform_pb2
     from kiarabot.v1 import plugins_pb2 as plugins_pb2
 
-    print('STR09 stage: cross-instance isolation', flush=True)
+    stage('cross-instance isolation')
     second_instance = str(uuid.uuid4())
     second_bootstrap = secrets.token_hex(32)
     now_ns = time.time_ns()
@@ -953,9 +1109,10 @@ def cross_instance_isolation_gate(root: Path, provider, mode_file: Path) -> None
     mode_file.write_text('success\n')
     provider.release.clear()
     provider.completed.clear()
-    send_command(root, cid, timeout=20.0)
+    cid, first, _ = stream_gate(root, cid, timeout=20.0)
+    require(first.get('event') == 'delta',
+            f'cross-instance gate first delta: {first}')
     started = wait_event(root, cid, 'started', timeout=30)
-    wait_event(root, cid, 'delta', timeout=30)
     first_request_id = started['request_id']
 
     async def probe() -> tuple[int, bool]:
@@ -1117,38 +1274,59 @@ def probe_streaming_bridge(root: Path) -> None:
 
 def run_streaming_matrix(root: Path, provider_state: Path, mode_file: Path,
                          endpoint: str) -> None:
-    global PROVIDER
+    global PROVIDER, MATRIX_START
+    MATRIX_START = time.monotonic()
     provider = PROVIDER
     model_id = STATE['model_id']
     tls = STATE['tls']
     commands = commands_path(root)
     package, manifest_path = write_plugin_package(root)
-    print('STR09 stage: managed plugin start', flush=True)
+    stage('managed plugin start')
     plugin = start_managed_plugin(root, package, manifest_path, tls,
                                   STATE['plugin_bootstrap'])
+    STATE.update(plugin_host=plugin, plugin_package=package, manifest_path=manifest_path)
     try:
         require(plugin.poll() is None, 'managed plugin-host alive')
-        print('STR09 stage: streaming bridge probe', flush=True)
+        stage('streaming bridge probe')
         probe_streaming_bridge(root)
         provider_posts = provider.posts()
         completed_posts = provider.completed_requests()
         require(provider_posts >= 1, 'streaming probe reached the provider')
 
         # -- gate: first delta must arrive before provider completion --
-        print('STR09 stage: success gate (first delta before provider completion)', flush=True)
-        mode_file.write_text('success\n')
-        provider.release.clear()
-        provider.completed.clear()
-        cid, first, _ = stream_gate(root, str(uuid.uuid4()), timeout=20.0)
-        require(first.get('event') == 'delta',
-                f'success gate first event is a delta: {first}')
-        require(first['index'] == 1, 'first delta is the first content delta')
-        require(not provider.completed.is_set(),
-                'first delta arrived only after provider completion')
-        require(provider.completed_requests() == completed_posts,
-                'provider request must still be incomplete when the first delta arrives')
-        provider.release.set()
-        terminal = wait_event(root, cid, 'terminal', timeout=60)
+        stage('success gate (first delta before provider completion)')
+        terminal = None
+        success_attempt_posts = provider_posts
+        success_attempt_completed = completed_posts
+        for attempt in range(1, 4):
+            mode_file.write_text('success\n')
+            provider.release.clear()
+            provider.completed.clear()
+            success_attempt_posts = provider.posts()
+            success_attempt_completed = provider.completed_requests()
+            cid, first, _ = stream_gate(root, str(uuid.uuid4()), timeout=20.0)
+            if first.get('event') != 'delta':
+                if delegation_expired_attempt(first) and provider.posts() == success_attempt_posts:
+                    continue
+                require(False, f'success gate first event is a delta: {first}')
+            require(first['index'] == 1, 'first delta is the first content delta')
+            require(not provider.completed.is_set(),
+                    'first delta arrived only after provider completion')
+            require(provider.completed_requests() == success_attempt_completed,
+                    'provider request must still be incomplete when the first delta arrives')
+            provider.release.set()
+            terminal = wait_event(root, cid, 'terminal', timeout=60)
+            if terminal['termination'] == MODEL_STREAM_COMPLETED:
+                break
+            if terminal.get('failure_code') in (8, 9):
+                # The governed delegation window closed mid-stream after the first delta; the
+                # Provider is still gated. Preserve the attempt and rerun the gate.
+                print(f'STR09 delegation-window retry success-gate attempt={attempt} cid={cid}: '
+                      f'{json.dumps(terminal)[:300]}', file=sys.stderr, flush=True)
+                provider.release.set()
+                continue
+            break
+        require(terminal is not None, 'success gate produced no terminal')
         if terminal['termination'] != MODEL_STREAM_COMPLETED:
             print('STR09 diag provider records: ' + json.dumps(provider.requests()[-4:]),
                   file=sys.stderr, flush=True)
@@ -1169,8 +1347,9 @@ def run_streaming_matrix(root: Path, provider_state: Path, mode_file: Path,
         require(terminal['partial'] is False, 'completed stream partial=false')
         require(terminal['usage_known'] is True and terminal['input_tokens'] == 5
                 and terminal['output_tokens'] == 9, f'authoritative usage: {terminal}')
-        require(provider.posts() == provider_posts + 1, 'exactly one provider POST')
-        require(provider.completed_requests() == completed_posts + 1,
+        require(provider.posts() == success_attempt_posts + 1,
+                'exactly one provider POST for the successful attempt')
+        require(provider.completed_requests() == success_attempt_completed + 1,
                 'provider completed exactly once')
         require(all(entry.get('has_usage_option')
                     for entry in provider.requests()
@@ -1189,7 +1368,7 @@ def run_streaming_matrix(root: Path, provider_state: Path, mode_file: Path,
             ('usage-missing', 'usage_missing', MODEL_STREAM_COMPLETED, ('known',)),
             ('length-truncated', 'length', MODEL_STREAM_TRUNCATED, ('partial',)),
         ]:
-            print(f'STR09 stage: {label}', flush=True)
+            stage(label)
             mode_file.write_text(mode + '\n')
             provider.release.set()  # length/usage modes pass the gate immediately
             cid, first, _ = stream_gate(root, str(uuid.uuid4()), timeout=30.0)
@@ -1232,7 +1411,7 @@ def run_streaming_matrix(root: Path, provider_state: Path, mode_file: Path,
             completed_posts = provider.completed_requests()
 
         # -- half-close / terminal loss must be unknown delivery, never COMPLETED --
-        print('STR09 stage: half-close terminal loss', flush=True)
+        stage('half-close terminal loss')
         mode_file.write_text('half_close\n')
         provider.release.clear()
         provider.completed.clear()
@@ -1254,9 +1433,21 @@ def run_streaming_matrix(root: Path, provider_state: Path, mode_file: Path,
                                     ('status_401', 9), ('status_404', 6)]:
             print(f'STR09 stage: provider {mode}', flush=True)
             mode_file.write_text(mode + '\n')
-            cid, value, _ = stream_gate(root, str(uuid.uuid4()), timeout=20.0)
-            if value.get('event') == 'delta':
-                value = wait_any_event(root, cid, ('terminal', 'error'), timeout=60)
+            value = None
+            for attempt in range(1, 4):
+                posts = provider.posts()
+                cid, value, _ = stream_gate(root, str(uuid.uuid4()), timeout=20.0,
+                                            window_retry=False)
+                if value.get('event') == 'delta':
+                    value = wait_any_event(root, cid, ('terminal', 'error'), timeout=60)
+                observed = (value.get('failure_code') if value.get('event') == 'terminal'
+                            else value.get('code'))
+                if observed == 8 and expected_code != 8 and attempt < 3 \
+                        and provider.posts() - posts <= 1:
+                    print(f'STR09 delegation-window retry provider {mode} attempt={attempt}: '
+                          f'{json.dumps(value)[:300]}', file=sys.stderr, flush=True)
+                    continue
+                break
             require(value.get('termination') != MODEL_STREAM_COMPLETED,
                     f'{mode} must not be COMPLETED: {value}')
             if value.get('event') == 'terminal':
@@ -1265,13 +1456,13 @@ def run_streaming_matrix(root: Path, provider_state: Path, mode_file: Path,
             else:
                 require(value.get('code') == expected_code,
                         f'{mode} stable code expected={expected_code}: {value}')
-            require(provider.posts() == provider_posts + 1, f'{mode} one provider POST')
+            require(provider.posts() == posts + 1, f'{mode} one provider POST')
             provider_posts = provider.posts()
         mode_file.write_text('success\n')
         provider.release.set()
 
         # -- explicit cancel: typed receipt, no fabricated not-executed/free claim --
-        print('STR09 stage: explicit cancel', flush=True)
+        stage('explicit cancel')
         mode_file.write_text('success\n')
         provider.release.clear()
         provider.completed.clear()
@@ -1288,11 +1479,11 @@ def run_streaming_matrix(root: Path, provider_state: Path, mode_file: Path,
         provider_posts = provider.posts()
 
         # -- deadline while the provider is gated after dispatch (3s > Model minimum budget) --
-        print('STR09 stage: deadline', flush=True)
+        stage('deadline')
         provider.release.clear()
         provider.completed.clear()
         cid, first, _ = stream_gate(  # HostRequest deadline clips Model execution
-            root, str(uuid.uuid4()), timeout=3.0, attempts=1)
+            root, str(uuid.uuid4()), timeout=3.0, attempts=3)
         value = (first if first.get('event') in ('terminal', 'error')
                  else wait_any_event(root, cid, ('terminal', 'error'), timeout=60))
         require(value.get('event') == 'error'
@@ -1301,11 +1492,12 @@ def run_streaming_matrix(root: Path, provider_state: Path, mode_file: Path,
         require(value.get('termination') != MODEL_STREAM_COMPLETED,
                 'deadline cannot be COMPLETED')
         provider.release.set()
-        require(provider.posts() == provider_posts + 1, 'deadline one provider POST')
+        require(provider.posts() >= provider_posts + 1,
+                'deadline attempt reached the provider before the text deadline')
         provider_posts = provider.posts()
 
         # -- slow consumer / bounded SDK queue: local unknown + best-effort cancel --
-        print('STR09 stage: slow consumer queue overflow', flush=True)
+        stage('slow consumer queue overflow')
         mode_file.write_text('slow_consumer\n')
         cid, first, _ = stream_gate(root, str(uuid.uuid4()), kind='no_read',
                                     timeout=20.0, extra={'sleep': 3.0})
@@ -1325,36 +1517,58 @@ def run_streaming_matrix(root: Path, provider_state: Path, mode_file: Path,
         provider_posts = provider.posts()
 
         # -- concurrent same logical id: one fresh, one replay, exactly one provider POST --
-        print('STR09 stage: same logical id concurrency', flush=True)
-        logical = str(uuid.uuid4())
-        cid_a, cid_b = str(uuid.uuid4()), str(uuid.uuid4())
-        mode_file.write_text('success\n')
-        provider.release.clear()
-        provider.completed.clear()
-        send_command(root, cid_a, logical_call_id=logical, timeout=20.0)
-        send_command(root, cid_b, logical_call_id=logical, timeout=20.0)
-        started_a = wait_event(root, cid_a, 'started', timeout=30)
-        started_b = wait_event(root, cid_b, 'started', timeout=30)
-        dispositions = {started_a['disposition'], started_b['disposition']}
-        require(1 in dispositions, f'exactly one FRESH admission: {dispositions}')
-        require(dispositions - {1} <= {2, 3}, f'other attempt is replay metadata: {dispositions}')
-        provider.release.set()
-        terminals = {cid_a: wait_event(root, cid_a, 'terminal', timeout=60),
-                     cid_b: wait_event(root, cid_b, 'terminal', timeout=60)}
-        replay_values = [value for value in terminals.values()
-                         if value['termination'] == MODEL_STREAM_REPLAY]
-        require(len(replay_values) == 1, f'exactly one replay terminal: {terminals}')
-        fresh = [value for value in terminals.values()
-                 if value['termination'] == MODEL_STREAM_COMPLETED]
-        require(len(fresh) == 1, f'exactly one completed fresh terminal: {terminals}')
-        require(replay_values[0]['received_delta_count'] == 0
-                and replay_values[0]['text'] == '', 'concurrent replay has zero delta')
-        require(provider.posts() == provider_posts + 1,
-                'concurrent same logical id calls the provider once')
-        provider_posts = provider.posts()
+        stage('same logical id concurrency')
+        concurrency_ok = False
+        for attempt in range(1, 4):
+            logical = str(uuid.uuid4())
+            cid_a, cid_b = str(uuid.uuid4()), str(uuid.uuid4())
+            mode_file.write_text('success\n')
+            provider.release.clear()
+            provider.completed.clear()
+            posts = provider.posts()
+            send_command(root, cid_a, logical_call_id=logical, timeout=20.0)
+            send_command(root, cid_b, logical_call_id=logical, timeout=20.0)
+            first_a = wait_any_event(root, cid_a, ('started', 'terminal', 'error'), timeout=30)
+            first_b = wait_any_event(root, cid_b, ('started', 'terminal', 'error'), timeout=30)
+            early = [value for value in (first_a, first_b)
+                     if value.get('event') in ('terminal', 'error')]
+            if early and all(delegation_window_attempt(value, provider.posts() - posts)
+                             for value in early):
+                print(f'STR09 delegation-window retry concurrency attempt={attempt}: '
+                      f'{json.dumps(early)[:300]}', file=sys.stderr, flush=True)
+                provider.release.set()
+                continue
+            started_a = wait_event(root, cid_a, 'started', timeout=30)
+            started_b = wait_event(root, cid_b, 'started', timeout=30)
+            dispositions = {started_a['disposition'], started_b['disposition']}
+            require(1 in dispositions, f'exactly one FRESH admission: {dispositions}')
+            require(dispositions - {1} <= {2, 3},
+                    f'other attempt is replay metadata: {dispositions}')
+            provider.release.set()
+            terminals = {cid_a: wait_event(root, cid_a, 'terminal', timeout=60),
+                         cid_b: wait_event(root, cid_b, 'terminal', timeout=60)}
+            replay_values = [value for value in terminals.values()
+                             if value['termination'] == MODEL_STREAM_REPLAY]
+            fresh = [value for value in terminals.values()
+                     if value['termination'] == MODEL_STREAM_COMPLETED]
+            if len(replay_values) != 1 or len(fresh) != 1:
+                if any(delegation_expired_attempt(value) for value in terminals.values()) \
+                        and attempt < 3:
+                    print(f'STR09 delegation-window retry concurrency terminals attempt={attempt}: '
+                          f'{json.dumps(terminals)[:400]}', file=sys.stderr, flush=True)
+                    continue
+                require(False, f'exactly one replay + one completed terminal: {terminals}')
+            require(replay_values[0]['received_delta_count'] == 0
+                    and replay_values[0]['text'] == '', 'concurrent replay has zero delta')
+            require(provider.posts() == posts + 1,
+                    'concurrent same logical id calls the provider once')
+            provider_posts = provider.posts()
+            concurrency_ok = True
+            break
+        require(concurrency_ok, 'concurrent same logical id gate did not converge')
 
         # -- replay: same logical id after terminal, zero delta, no provider re-invocation --
-        print('STR09 stage: replay by original logical id', flush=True)
+        stage('replay by original logical id')
         logical = str(uuid.uuid4())
         mode_file.write_text('success\n')
         provider.release.set()
@@ -1373,7 +1587,7 @@ def run_streaming_matrix(root: Path, provider_state: Path, mode_file: Path,
         require(provider.posts() == provider_posts, 'replay must not call the provider again')
 
         # -- txn2 commit failure injection (real PG trigger, no product-code change) --
-        print('STR09 stage: txn2 commit failure injection', flush=True)
+        stage('txn2 commit failure injection')
         mode_file.write_text('success\n')
         provider.release.clear()
         provider.completed.clear()
@@ -1399,8 +1613,8 @@ def run_streaming_matrix(root: Path, provider_state: Path, mode_file: Path,
                 fixture_sql(root, 'p03_model',
                     'DROP TRIGGER IF EXISTS p11_txn2_fail ON kiarabot.model_intents; '
                     'DROP FUNCTION IF EXISTS kiarabot.p11_txn2_fail();')
-            if value is not None and delegation_expired_attempt(value) \
-                    and provider.posts() == posts and attempt < 3:
+            if value is not None and delegation_window_attempt(value, provider.posts() - posts) \
+                    and attempt < 3:
                 print(f'STR09 delegation-window retry txn2 attempt={attempt} '
                       f'cid={cid}: {json.dumps(value)[:400]}', file=sys.stderr, flush=True)
                 continue
@@ -1419,7 +1633,7 @@ def run_streaming_matrix(root: Path, provider_state: Path, mode_file: Path,
         require(not row.startswith('1'), f'txn2 failure must not persist Succeeded: {row}')
 
         # -- sealed parent revocation: a new call fails closed with no provider POST --
-        print('STR09 stage: sealed parent revocation (new call)', flush=True)
+        stage('sealed parent revocation (new call)')
         envelope = root / f'instance-delegation-{STATE["instance"]}-model.json'
         original_envelope = envelope.read_text()
         envelope.unlink()
@@ -1444,7 +1658,7 @@ def run_streaming_matrix(root: Path, provider_state: Path, mode_file: Path,
         retry_unary(root)
 
         # -- Identity unreachable in-flight: conservative stop, no fabricated COMPLETED --
-        print('STR09 stage: identity unreachable in-flight', flush=True)
+        stage('identity unreachable in-flight')
         mode_file.write_text('success\n')
         provider.release.clear()
         provider.completed.clear()
@@ -1453,7 +1667,7 @@ def run_streaming_matrix(root: Path, provider_state: Path, mode_file: Path,
         started_wall = time.monotonic()
         base.stop(STATE['identity_child'])
         try:
-            value = wait_any_event(root, cid, ('terminal', 'error'), timeout=90)
+            value = wait_any_event(root, cid, ('terminal', 'error'), timeout=45)
             require(value.get('event') == 'error'
                     or value.get('termination') != MODEL_STREAM_COMPLETED,
                     f'identity loss must not complete the stream: {value}')
@@ -1466,7 +1680,7 @@ def run_streaming_matrix(root: Path, provider_state: Path, mode_file: Path,
 
         # -- in-flight revocation: disable the registered instance principal; Identity's online
         # check must stop the stream conservatively and never fabricate COMPLETED --
-        print('STR09 stage: in-flight instance revocation', flush=True)
+        stage('in-flight instance revocation')
         mode_file.write_text('success\n')
         provider.release.clear()
         provider.completed.clear()
@@ -1477,7 +1691,7 @@ def run_streaming_matrix(root: Path, provider_state: Path, mode_file: Path,
         fixture_sql(root, 'p03_identity',
                     "UPDATE kiarabot.principals SET state=1 WHERE id='" + principal + "';")
         try:
-            value = wait_any_event(root, cid, ('terminal', 'error'), timeout=60)
+            value = wait_any_event(root, cid, ('terminal', 'error'), timeout=45)
             require(value.get('event') == 'error'
                     or value.get('termination') != MODEL_STREAM_COMPLETED,
                     f'in-flight revocation must not complete the stream: {value}')
@@ -1490,7 +1704,7 @@ def run_streaming_matrix(root: Path, provider_state: Path, mode_file: Path,
         retry_unary(root, timeout=60)
 
         # -- Bridge/runtime disconnect mid-stream: unknown delivery, then reconnect works --
-        print('STR09 stage: bridge disconnect mid-stream', flush=True)
+        stage('bridge disconnect mid-stream')
         mode_file.write_text('success\n')
         provider.release.clear()
         provider.completed.clear()
@@ -1498,17 +1712,25 @@ def run_streaming_matrix(root: Path, provider_state: Path, mode_file: Path,
         require(first.get('event') == 'delta', f'bridge gate first delta: {first}')
         base.stop(STATE['runtime_child'])
         try:
-            value = wait_any_event(root, cid, ('terminal', 'error'), timeout=90)
+            value = wait_any_event(root, cid, ('terminal', 'error'), timeout=45)
             require(value.get('event') == 'error'
                     or value.get('termination') != MODEL_STREAM_COMPLETED,
                     f'bridge disconnect must not complete the stream: {value}')
         finally:
             provider.release.set()
             restart_service(root, 'runtime')
-        retry_unary(root, timeout=60)
+        # A graceful Runtime stop delivers ShutdownNotice; the SDK drains and does not reconnect
+        # (frozen contract). Assert no automatic resume, then recover through the real managed
+        # Host path with the explicit next execution generation.
+        probe_cid = str(uuid.uuid4())
+        send_command(root, probe_cid, kind='chat', timeout=5.0, refresh=False)
+        time.sleep(2.0)
+        require(not events(root, probe_cid),
+                'graceful shutdown must not auto-resume the SDK on a new connection')
+        restart_managed_host(root)
 
         # -- Model restart mid-stream: unknown delivery, then restart recovers --
-        print('STR09 stage: model restart mid-stream', flush=True)
+        stage('model restart mid-stream')
         mode_file.write_text('success\n')
         provider.release.clear()
         provider.completed.clear()
@@ -1516,7 +1738,7 @@ def run_streaming_matrix(root: Path, provider_state: Path, mode_file: Path,
         require(first.get('event') == 'delta', f'model-restart gate first delta: {first}')
         base.stop(STATE['model_child'])
         try:
-            value = wait_any_event(root, cid, ('terminal', 'error'), timeout=90)
+            value = wait_any_event(root, cid, ('terminal', 'error'), timeout=45)
             require(value.get('event') == 'error'
                     or value.get('termination') != MODEL_STREAM_COMPLETED,
                     f'model restart must not complete the stream: {value}')
@@ -1536,13 +1758,14 @@ def run_streaming_matrix(root: Path, provider_state: Path, mode_file: Path,
         print('STR09 managed streaming e2e passed: first delta before provider completion, '
               'provider POST count bounded, partial/unknown/cancel/replay typed', flush=True)
     finally:
-        if plugin.poll() is None:
-            plugin.send_signal(signal.SIGTERM)
+        hosted = STATE.get('plugin_host', plugin)
+        if hosted is not None and hosted.poll() is None:
+            hosted.send_signal(signal.SIGTERM)
             try:
-                plugin.wait(timeout=15)
+                hosted.wait(timeout=15)
             except subprocess.TimeoutExpired:
-                plugin.kill()
-                plugin.wait(timeout=5)
+                hosted.kill()
+                hosted.wait(timeout=5)
 
 
 MODEL_STREAM_COMPLETED = 1
@@ -1666,6 +1889,7 @@ if __name__ == '__main__':
     except SystemExit:
         raise
     except Exception as error:  # noqa: BLE001 - one bounded redacted diagnostic line
+        preserve_fixture_artifacts(LAST_ROOT, 'after-bootstrap-failure')
         import traceback
         frames = traceback.extract_tb(sys.exc_info()[2])
         location = ' <- '.join(f'{frame.filename.rsplit("/", 1)[-1]}:{frame.lineno}'

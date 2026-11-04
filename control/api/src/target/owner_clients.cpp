@@ -22,6 +22,7 @@
 #include "kiarabot/control/target/owner_gateway.hpp"
 #include "kiarabot/core/domain/target/identity_policy.hpp"
 #include "kiarabot/core/runtime/platform/target_codec.hpp"
+#include "kiarabot/v1/host.grpc.pb.h"
 #include "kiarabot/v1/identity.grpc.pb.h"
 #include "kiarabot/v1/model.grpc.pb.h"
 #include "kiarabot/v1/runtime.grpc.pb.h"
@@ -164,7 +165,8 @@ class OwnerClients::Impl final : private DelegationPort,
                                  private SchedulerTasksPort,
                                  private OperationPort,
                                  private ModelManagementPort,
-                                 private AuditLogSourcePort {
+                                 private AuditLogSourcePort,
+                                 private HostManagementPort {
 public:
   Impl(const std::string& identity_endpoint, const std::string& runtime_endpoint,
        const std::string& scheduler_endpoint, const std::string& model_endpoint,
@@ -191,6 +193,7 @@ public:
     }
     if (!host_endpoint.empty()) {
       host_channel_ = grpc::CreateChannel(host_endpoint, credentials);
+      host_ = wire::HostManagementService::NewStub(host_channel_);
     }
     fingerprint_ = certificate_fingerprint(tls.certificate);
     gateway_ = std::make_unique<OwnerGateway>(
@@ -198,7 +201,8 @@ public:
         static_cast<IdentityPrincipalsPort*>(this), static_cast<HealthPort*>(this),
         static_cast<RuntimeResourcesPort*>(this), static_cast<SchedulerTasksPort*>(this),
         static_cast<OperationPort*>(this), static_cast<ModelManagementPort*>(this),
-        static_cast<AuditLogSourcePort*>(this), secret_delivery, bootstrap_recipients);
+        static_cast<AuditLogSourcePort*>(this), secret_delivery, bootstrap_recipients,
+        static_cast<HostManagementPort*>(this));
   }
 
   std::optional<AuthHttpResponse> handle(const AuthHttpRequest& request) {
@@ -787,6 +791,22 @@ private:
       }
       return output.operation();
     }
+    if (owner_service == "host") {
+      if (!host_) {
+        return OwnerFailure{wire::UPSTREAM_UNAVAILABLE, true};
+      }
+      wire::HostGetOperationRequest input;
+      set_context(input.mutable_context(), deadline);
+      *input.mutable_operation() = operation;
+      wire::HostGetOperationResponse output;
+      grpc::ClientContext call;
+      call.set_deadline(std::chrono::system_clock::now() + std::chrono::seconds{5});
+      const auto status = host_->GetOperation(&call, input, &output);
+      if (!status.ok()) {
+        return OwnerFailure{extract_error_code(status).value_or(wire::UPSTREAM_UNAVAILABLE), false};
+      }
+      return output.operation();
+    }
     if (owner_service == "model") {
       if (!model_) {
         return OwnerFailure{wire::UPSTREAM_UNAVAILABLE, true};
@@ -925,6 +945,72 @@ private:
         &wire::ModelService::Stub::GetOperation, request, delegation);
   }
 
+  OwnerOutcome<wire::HostGetMaintenanceResponse>
+  get_maintenance(const wire::HostGetMaintenanceRequest& request,
+                  std::string_view delegation) override {
+    return host_call<wire::HostGetMaintenanceRequest, wire::HostGetMaintenanceResponse>(
+        &wire::HostManagementService::Stub::GetMaintenance, request, delegation);
+  }
+  OwnerOutcome<wire::HostMaintenanceResponse>
+  begin_maintenance(const wire::HostBeginMaintenanceRequest& request,
+                    std::string_view delegation) override {
+    return host_call<wire::HostBeginMaintenanceRequest, wire::HostMaintenanceResponse>(
+        &wire::HostManagementService::Stub::BeginMaintenance, request, delegation);
+  }
+  OwnerOutcome<wire::HostMaintenanceResponse>
+  resume_admission(const wire::HostResumeAdmissionRequest& request,
+                   std::string_view delegation) override {
+    return host_call<wire::HostResumeAdmissionRequest, wire::HostMaintenanceResponse>(
+        &wire::HostManagementService::Stub::ResumeAdmission, request, delegation);
+  }
+  OwnerOutcome<wire::HostGetOperationResponse>
+  get_operation(const wire::HostGetOperationRequest& request,
+                std::string_view delegation) override {
+    return host_call<wire::HostGetOperationRequest, wire::HostGetOperationResponse>(
+        &wire::HostManagementService::Stub::GetOperation, request, delegation);
+  }
+  OwnerOutcome<wire::HostGetOperationResponse>
+  cancel_operation(const wire::HostCancelOperationRequest& request,
+                   std::string_view delegation) override {
+    return host_call<wire::HostCancelOperationRequest, wire::HostGetOperationResponse>(
+        &wire::HostManagementService::Stub::CancelOperation, request, delegation);
+  }
+  OwnerOutcome<wire::OperationChangesResponse>
+  list_operation_changes(const wire::OperationChangesRequest& request,
+                         std::string_view delegation) override {
+    return host_call<wire::OperationChangesRequest, wire::OperationChangesResponse>(
+        &wire::HostManagementService::Stub::ListOperationChanges, request, delegation);
+  }
+
+  template <typename Request, typename Response, typename Method>
+  OwnerOutcome<Response> host_call(Method method, Request request, std::string_view delegation) {
+    if (!host_) {
+      return OwnerFailure{wire::UPSTREAM_UNAVAILABLE, true};
+    }
+    request.mutable_context()->set_delegation(std::string{delegation});
+    Response output;
+    grpc::ClientContext call;
+    const auto remaining = codec::from_wire(request.context().deadline());
+    if (const auto* timestamp = std::get_if<core::target::TimePoint>(&remaining)) {
+      const auto now =
+          core::target::TimePoint{std::chrono::duration_cast<core::target::TimePoint::duration>(
+              std::chrono::system_clock::now().time_since_epoch())};
+      if (*timestamp > now) {
+        call.set_deadline(std::chrono::system_clock::time_point{
+            std::chrono::duration_cast<std::chrono::system_clock::duration>(
+                (std::chrono::system_clock::now() +
+                 core::target::TimePoint::duration{*timestamp - now})
+                    .time_since_epoch())});
+      }
+    }
+    const auto status = ((*host_).*method)(&call, request, &output);
+    if (!status.ok()) {
+      const auto code = extract_error_code(status);
+      return OwnerFailure{code.value_or(wire::UPSTREAM_UNAVAILABLE), false};
+    }
+    return output;
+  }
+
   HealthObservation observe() override {
     HealthObservation observation;
     observation.identity_ready =
@@ -954,6 +1040,7 @@ private:
   std::shared_ptr<grpc::Channel> model_channel_;
   std::unique_ptr<wire::ModelService::Stub> model_;
   std::shared_ptr<grpc::Channel> host_channel_;
+  std::unique_ptr<wire::HostManagementService::Stub> host_;
   std::optional<std::array<unsigned char, SHA256_DIGEST_LENGTH>> fingerprint_;
 };
 

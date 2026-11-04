@@ -299,7 +299,13 @@ public:
       if (!current) {
         return runtime_not_found();
       }
-      if (current->state != LifecycleState::Active || current->host.has_value()) {
+      // Managed plugin instances receive their instance-scoped, revocable bootstrap credential from
+      // the Host deployment path and reconnect to this same external bridge (Host spawns the plugin
+      // but never proxies its frames). The persisted host binding therefore does not forbid bridge
+      // registration: Active state, credential resolution/revocation, instance/installation and
+      // execution-generation checks stay authoritative. Rejecting host-bound instances here would
+      // permanently strand managed plugins after a Runtime restart.
+      if (current->state != LifecycleState::Active) {
         return permission_denied();
       }
       if (request.installation_id &&
@@ -465,7 +471,9 @@ public:
           return *failure;
         }
         const auto record = std::get<std::optional<PluginInstance>>(instance_record);
-        if (!record || record->state != LifecycleState::Active || record->host.has_value()) {
+        // Same rule as register_plugin: a host-bound managed instance still authorizes through its
+        // resolved snapshot/bootstrap identity when no registration record exists yet.
+        if (!record || record->state != LifecycleState::Active) {
           return unauthenticated();
         }
         authorization_version = std::max(authorization_version, record->version.value);
@@ -1126,7 +1134,7 @@ private:
             return *failure;
           }
           const auto record = std::get<std::optional<PluginInstance>>(found);
-          allowed = record && record->state == LifecycleState::Active && !record->host.has_value();
+          allowed = record && record->state == LifecycleState::Active;
         }
       }
       work->rollback();
@@ -1303,8 +1311,9 @@ private:
           return *failure;
         }
         const auto record_instance = std::get<std::optional<PluginInstance>>(instance_record);
-        if (!record_instance || record_instance->state != LifecycleState::Active ||
-            record_instance->host.has_value()) {
+        // Managed (host-bound) instances resolve their Host-delivered bootstrap credential here;
+        // revocation/expiry/resource-identity checks above remain the authorization facts.
+        if (!record_instance || record_instance->state != LifecycleState::Active) {
           return permission_denied();
         }
       }

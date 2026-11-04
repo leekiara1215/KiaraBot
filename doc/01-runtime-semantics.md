@@ -328,6 +328,10 @@ WS断线不重做管理写请求，operation.updated后读取权威REST；BLOCKE
 虚构重复字段检测；未来候选只来自operation分配区10..127，不是所有unknown字段。reference错误保持历史。
 
 
+受管插件（Host 部署并下发实例级可撤销 bootstrap 凭据）重连外部 PluginBridge 时，持久 host 绑定不是拒绝
+条件：连接/注册/心跳/claim/存储等仍以 Active 实例、凭据解析与撤销、instance/installation 和 execution
+generation 校验为准；host 绑定只描述 Host 归属，不能替代 bridge 授权事实。Runtime 重启后 Host 重新 apply
+会分配新 execution generation 并重新 spawn 插件，插件按同一实例身份重注册。
 v1.1 Host gate：每次Runtime处理SetHostAdmissionGate均通过Identity.CheckHostGateAuthorization在线核定
 当前实际TLS Host叶、存储Host绑定和精确host.execute；检查结果只服务本次请求，不是持久授权票据。
 依赖故障/超时不开放gate，不将operation UNKNOWN改为成功。Host后台只持久intent与版本，不持久Control
@@ -341,3 +345,11 @@ cursor 绑定 owner+family+dataset，跨 family/旧数据 cursor 为 CONFLICT+NO
 三族只暴露安全封闭投影：日志无 audit payload/自由 message/actor 秘密；任务无 payload/target 且终态可观察；
 消息仅 received 的内部 id 与时间，无正文/平台原始包/外部平台 ID/sent 推断。新 feed 不改变 v1.1
 operation journal 与既有 REST/WS 授权；cursor 不是授权能力，每页重核当前精确 scope。
+
+消息 feed 的内部身份是确定性派生、不可逆的 UUIDv5：`message_id = UUIDv5(ns_message, account |
+adapter_instance | platform_event_id)`、`conversation_id = UUIDv5(ns_conversation, account |
+adapter_instance | platform_conversation_id)`，分隔符为单元分隔符 0x1f；固定 namespace 与冻结测试向量
+入库，改动即 feed 身份破坏性变更。只对“新受理”的 received 事件追加一次，重复 fingerprint 不产生第二条；
+正文、平台原始包和平台 raw id 不进入 feed。日志 feed 的 `resource` 是 audit entry 的精确所属资源（可含
+存储 namespace 等非业务目录资源），而该家族请求 scope 仍固定为 RESOURCE_CATALOG/control，两者不得混用；
+任务 feed 由 Scheduler 在 create/cancel/due/confirm/expire/fail 等同 UoW 变更处投影，终态仍可观察。

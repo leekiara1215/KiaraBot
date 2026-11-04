@@ -161,3 +161,46 @@ CTest 输出重定向日志 `build/logs/final-acceptance/str09-round1.log`，dri
 已确认的 fixture 行为（在本轮可通过的真实阶段）：identity bootstrap、runtime seed、Identity
 daemon readiness、Model daemon 启动行、admin login、model seed、instance principal 注册、
 sealed 56s parent 写入、managed plugin-host 启动与 SDK 插件注册（注册本身成功）。
+
+## 9. 冻结过程与最终收口注意（2026-11-04）
+
+- reconnect gate 契约（经 host/streaming 复核）：Runtime 优雅 SIGTERM 会向已连 Bridge 发
+  ShutdownNotice，SDK 按冻结契约 drain 且不自动重连，这是预期；恢复必须经真实 managed Host
+  路径的新 apply（新 execution_generation）并等待新的 plugin-ready/Fence，然后再进行 unary。
+  fixture 已改为：断言 2s 内无自动恢复事件 → `execution_generation=2, desired_version=2` 的
+  managed 命令 → 等 plugin-ready 新 mtime（60s）→ retry unary。SIGKILL 自动重连属另一契约路径，
+  本轮未加用例以控制 180s wrapper 预算。
+- 失败证据保留：matrix/reconnect/after-bootstrap 失败时，`preserve_fixture_artifacts()` 把
+  host.err、plugin.log、plugin-results/commands.jsonl、runtime/model/identity err、
+  host.sqlite/json、sealed envelope、provider 记录复制到
+  `build/logs/final-acceptance/str09-artifacts/<label>-<UTC>/`；重启 Host 前的 host.err/plugin.log
+  另存为 host-first.err/plugin-first.log，避免 `wb` 重开丢失第一段证据。
+- 待核产品项（host 提出，非本 fixture）：Runtime bridge `register_plugin` 对
+  `instance.host.has_value()` 直接 PERMISSION_DENIED 与“受管实例用 Host 下发的实例级可撤销
+  bootstrap credential 重连”契约不一致；若 STR09 gen2 重启后插件重注册被拒，应先核该项。
+- 运行预算：run_database_test 内层对 driver 有 180s 超时；矩阵恢复/重试路径已按有界预算收紧，
+  保留 stage 计时行（`t=...s`）便于定位慢 gate。
+
+## 10. STR09 最终验收结果（2026-11-04，冻结后）
+
+- 最终命令：`build/.agents/kb ctest -R '^p11_streaming_managed_model_e2e$' --no-tests=error`
+  → **exit 0**，121.51s（日志 `build/logs/final-acceptance/str09-final-pass.log`）。
+- 直接 driver 同轮证据：`build/logs/final-acceptance/str09-final14-driver.log`（exit 0，
+  全 stage 计时、`STR09 pending gates: none`）。
+- 18 项矩阵全部真实执行通过（真实 owned PG16.4/TLS/Identity/Runtime/Model/plugin-host/本地
+  HTTP SSE Provider）：success 因果 gate（首个 delta 早于 Provider 完成，Provider POST 计数与
+  持久 model_intents 事实）、empty、usage-missing（usage_known=false/tokens=0/may_have_billed）、
+  length-truncated、half-close unknown delivery+partial、provider 429/500/400/401/404 稳定码、
+  显式 cancel receipt+非 COMPLETED、deadline、慢消费者队满、同 logical id 并发、
+  跨模式 replay（零 delta、无 Provider 重调）、txn2 注入失败、sealed-parent 撤权 fail-closed、
+  Identity 不可达 in-flight、in-flight instance 撤销、Bridge/Runtime 优雅断连（不自动恢复）
+  + 新 execution_generation 的受管恢复、Model 中途重启、跨实例隔离（真实 TLS PluginBridge
+  raw wire + NOT_ACTIVE + 无事件泄漏）。
+- 首轮/中途失败与归属（全部保留日志 str09-round*/repro*/final*）：
+  fixture：model ready=false 误判、插件本地异常未写 journal、SSE usage chunk 形状、half_close
+  模式漏配、reconnect 恢复序列（gen2/fresh ready/不自动恢复）、若干委派窗口与高负载时序
+  断言的受限重试；产品侧（对应 owner 已修）：Runtime bridge feature catalog 缺
+  host.model.stream.v1、stream start 未派生 installation、PG CHECK 拒绝 domain error 0、
+  Runtime→Model exchange 子委派寿命被 2s 网络期限封顶、audit→log feed 资源种类校验导致
+  identity-bootstrap INVALID_ARGUMENT、受管实例 register_plugin host-binding 误拒。
+- 无待补/未覆盖 gate；未使用 FakeHost、空流或 mock 切片代替真实链。

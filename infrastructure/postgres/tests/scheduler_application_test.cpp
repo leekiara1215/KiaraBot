@@ -296,7 +296,7 @@ void run(std::uint16_t port, const std::filesystem::path& root,
   pqxx::nontransaction schema_check(inspection);
   const auto version =
       schema_check.exec("SELECT version FROM kiarabot.schema_versions").one_row()[0].as<int>();
-  require(version == 11, "scheduler schema version must be 11");
+  require(version == 14, "scheduler schema version must be 14");
   const auto columns = schema_check.exec(
       "SELECT count(*) FROM information_schema.columns WHERE table_schema='kiarabot' AND "
       "((table_name='tasks' AND column_name IN ('cancel_requested','reason','created_at','"

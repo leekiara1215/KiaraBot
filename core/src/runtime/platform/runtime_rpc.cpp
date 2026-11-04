@@ -16,6 +16,7 @@
 #include <openssl/rand.h>
 #include <openssl/sha.h>
 
+#include "kiarabot/core/runtime/platform/observation_feed_rpc.hpp"
 #include "kiarabot/core/runtime/platform/operation_observation_rpc.hpp"
 #include "kiarabot/core/runtime/platform/peer_certificate.hpp"
 #include "kiarabot/core/runtime/platform/runtime_fence_codec.hpp"
@@ -1689,6 +1690,71 @@ public:
     }
     return grpc::Status::OK;
   }
+  // v1.2 safe Runtime log metadata feed; the pure application re-authorizes the exact
+  // catalog/control log.read scope before the read-only owner UoW.
+  grpc::Status ListLogChanges(grpc::ServerContext* transport,
+                              const v1::ObservationChangesRequest* request,
+                              v1::LogChangesResponse* response) override {
+    const auto prepared =
+        prepare_observation_feed(*transport, *request, t::Service::Runtime,
+                                 t::ObservationFamily::Logs, options_.invocation_deadline);
+    if (const auto* rejected = std::get_if<t::Failure>(&prepared)) {
+      return error_status(*rejected, request->context().request_id(),
+                          request->context().trace_id());
+    }
+    const auto& command = std::get<t::ObservationFeedCommand>(prepared);
+    if (!options_.log_changes) {
+      return error_status(failure(t::ErrorCode::CapabilityNotSupported), command.context.request_id,
+                          command.context.trace_id);
+    }
+    const auto found = options_.log_changes->query(command);
+    if (const auto* rejected = std::get_if<t::Failure>(&found)) {
+      return error_status(*rejected, command.context.request_id, command.context.trace_id);
+    }
+    if (transport->IsCancelled() || now() >= command.context.deadline) {
+      return error_status(failure(t::ErrorCode::Timeout, t::Recovery::Backoff),
+                          command.context.request_id, command.context.trace_id);
+    }
+    const auto encoded = encode_log_changes_page(std::get<t::ObservationFeedPage>(found),
+                                                 request->context(), *response);
+    if (const auto* rejected = std::get_if<t::Failure>(&encoded)) {
+      return error_status(*rejected, command.context.request_id, command.context.trace_id);
+    }
+    return grpc::Status::OK;
+  }
+  // v1.2 received-message metadata feed: self-contained metadata, never message content, platform
+  // payload or sent inference.
+  grpc::Status ListMessageMetadataChanges(grpc::ServerContext* transport,
+                                          const v1::ObservationChangesRequest* request,
+                                          v1::MessageMetadataChangesResponse* response) override {
+    const auto prepared =
+        prepare_observation_feed(*transport, *request, t::Service::Runtime,
+                                 t::ObservationFamily::Messages, options_.invocation_deadline);
+    if (const auto* rejected = std::get_if<t::Failure>(&prepared)) {
+      return error_status(*rejected, request->context().request_id(),
+                          request->context().trace_id());
+    }
+    const auto& command = std::get<t::ObservationFeedCommand>(prepared);
+    if (!options_.message_changes) {
+      return error_status(failure(t::ErrorCode::CapabilityNotSupported), command.context.request_id,
+                          command.context.trace_id);
+    }
+    const auto found = options_.message_changes->query(command);
+    if (const auto* rejected = std::get_if<t::Failure>(&found)) {
+      return error_status(*rejected, command.context.request_id, command.context.trace_id);
+    }
+    if (transport->IsCancelled() || now() >= command.context.deadline) {
+      return error_status(failure(t::ErrorCode::Timeout, t::Recovery::Backoff),
+                          command.context.request_id, command.context.trace_id);
+    }
+    const auto encoded = encode_message_metadata_changes_page(
+        std::get<t::ObservationFeedPage>(found), request->context(), *response);
+    if (const auto* rejected = std::get_if<t::Failure>(&encoded)) {
+      return error_status(*rejected, command.context.request_id, command.context.trace_id);
+    }
+    return grpc::Status::OK;
+  }
+
   grpc::Status GetOperation(grpc::ServerContext* transport,
                             const v1::RuntimeGetOperationRequest* request,
                             v1::RuntimeGetOperationResponse* response) override {

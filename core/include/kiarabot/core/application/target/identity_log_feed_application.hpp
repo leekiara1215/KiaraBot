@@ -3,8 +3,8 @@
 #include <functional>
 
 #include "kiarabot/core/application/target/identity_audit_application.hpp"
-#include "kiarabot/core/application/target/observation_feed_application.hpp"
 #include "kiarabot/core/application/target/identity_security_application.hpp"
+#include "kiarabot/core/application/target/observation_feed_application.hpp"
 #include "kiarabot/core/ports/target/unit_of_work.hpp"
 
 namespace kiarabot::core::target {

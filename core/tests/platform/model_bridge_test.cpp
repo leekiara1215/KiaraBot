@@ -771,6 +771,31 @@ void host_request_shapes() {
   connection.close();
 }
 
+void reconnect_unary_regression() {
+  // Reconnect after a Runtime restart re-registers the same instance and allocates a new
+  // connection generation. The unary HostResponse path must stay usable for the new fence.
+  Fixture fixture;
+  std::uint64_t first_generation = 0;
+  {
+    PluginConnection first(fixture, "reconnect-first", {"model.chat"}, {"host.model.v1"}, {}, 8s);
+    first_generation = first.authorization.fence().connection_generation();
+    const auto reply = first.host(first.chat_request("reconnect-call-1"));
+    require(!reply.has_error() && reply.has_model_chat() && reply.model_chat().text() == "answer",
+            "first unary before reconnect");
+    first.close();
+  }
+  fixture.app.cleanup.clear();
+  {
+    PluginConnection second(fixture, "reconnect-second", {"model.chat"}, {"host.model.v1"}, {}, 8s);
+    require(second.authorization.fence().connection_generation() == first_generation + 1,
+            "re-registration allocates a new connection generation");
+    const auto reply = second.host(second.chat_request("reconnect-call-2"));
+    require(!reply.has_error() && reply.has_model_chat() && reply.model_chat().text() == "answer",
+            "unary HostResponse routes after reconnect");
+    second.close();
+  }
+}
+
 void streaming() {
   // Ordered event delivery: start has no HostResponse, only model_stream_event frames.
   Fixture fixture;
@@ -1180,6 +1205,7 @@ int main() {
     host_request_shapes();
     run();
     streaming();
+    reconnect_unary_regression();
   } catch (const std::exception& error) {
     std::cerr << error.what() << '\n';
     return 1;

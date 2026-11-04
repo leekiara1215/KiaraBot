@@ -267,7 +267,7 @@ struct FakeResources final : target::RuntimeResourcesPort {
     auto* instance = response.mutable_instance();
     instance->set_instance_id(input.instance_id());
     instance->set_installation_id("installation-1");
-    instance->set_host_id("host-1");
+    instance->set_host_id("11111111-1111-4111-8111-111111111111");
     instance->set_externally_managed(false);
     auto* state = instance->mutable_state();
     state->mutable_resource()->set_kind(wire::RESOURCE_INSTANCE);
@@ -2005,6 +2005,266 @@ void missing_nested_instance_owner() {
   }
 }
 
+struct FakeHost final : target::HostManagementPort {
+  std::optional<target::OwnerFailure> failure;
+  int calls = 0;
+  std::string method;
+  wire::HostBeginMaintenanceRequest begin_request;
+  wire::HostCancelOperationRequest cancel_request;
+  wire::ResourceScope last_scope;
+  target::OwnerOutcome<wire::HostGetMaintenanceResponse>
+  get_maintenance(const wire::HostGetMaintenanceRequest& value,
+                  std::string_view delegation) override {
+    ++calls;
+    method = "get";
+    require(delegation == "delegation-proof", "host receives issued delegation");
+    require(value.host_id() == "11111111-1111-4111-8111-111111111111",
+            "host maintenance host id forwarded");
+    if (failure) {
+      return *failure;
+    }
+    wire::HostGetMaintenanceResponse output;
+    auto* record = output.mutable_maintenance();
+    record->set_host_id("11111111-1111-4111-8111-111111111111");
+    record->set_version(4);
+    record->set_admission(wire::HOST_ADMISSION_CLOSED);
+    record->mutable_operation()->set_owner_service("host");
+    record->mutable_operation()->set_operation_id("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa");
+    record->mutable_observed_at()->set_seconds(1'700'000'000);
+    return output;
+  }
+  target::OwnerOutcome<wire::HostMaintenanceResponse>
+  begin_maintenance(const wire::HostBeginMaintenanceRequest& value,
+                    std::string_view delegation) override {
+    ++calls;
+    method = "begin";
+    require(delegation == "delegation-proof", "host receives issued delegation");
+    require(value.host_id() == "11111111-1111-4111-8111-111111111111" &&
+                value.has_expected_version() && value.expected_version() == 3 &&
+                value.grace_ms() == 500,
+            "begin maintenance body forwarded exactly");
+    begin_request = value;
+    if (failure) {
+      return *failure;
+    }
+    wire::HostMaintenanceResponse output;
+    auto* record = output.mutable_maintenance();
+    record->set_host_id("11111111-1111-4111-8111-111111111111");
+    record->set_version(4);
+    record->set_admission(wire::HOST_ADMISSION_CLOSED);
+    record->mutable_observed_at()->set_seconds(1'700'000'000);
+    auto* operation = output.mutable_operation();
+    operation->mutable_ref()->set_owner_service("host");
+    operation->mutable_ref()->set_operation_id("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb");
+    *operation->mutable_ref()->mutable_resource() = value_host();
+    operation->set_version(1);
+    operation->set_state(wire::OPERATION_ACCEPTED);
+    operation->set_execution_outcome(wire::EXECUTION_UNKNOWN);
+    operation->mutable_observed_at()->set_seconds(1'700'000'000);
+    return output;
+  }
+  target::OwnerOutcome<wire::HostMaintenanceResponse>
+  resume_admission(const wire::HostResumeAdmissionRequest& value,
+                   std::string_view delegation) override {
+    ++calls;
+    method = "resume";
+    require(delegation == "delegation-proof", "host receives issued delegation");
+    require(value.host_id() == "11111111-1111-4111-8111-111111111111" &&
+                value.has_expected_version() && value.expected_version() == 4,
+            "resume admission body forwarded exactly");
+    if (failure) {
+      return *failure;
+    }
+    wire::HostMaintenanceResponse output;
+    auto* record = output.mutable_maintenance();
+    record->set_host_id("11111111-1111-4111-8111-111111111111");
+    record->set_version(5);
+    record->set_admission(wire::HOST_ADMISSION_OPEN);
+    record->mutable_observed_at()->set_seconds(1'700'000'000);
+    auto* operation = output.mutable_operation();
+    operation->mutable_ref()->set_owner_service("host");
+    operation->mutable_ref()->set_operation_id("cccccccc-cccc-4ccc-8ccc-cccccccccccc");
+    operation->set_version(1);
+    operation->set_state(wire::OPERATION_SUCCEEDED);
+    operation->set_execution_outcome(wire::EXECUTION_UNKNOWN);
+    operation->mutable_observed_at()->set_seconds(1'700'000'000);
+    return output;
+  }
+  target::OwnerOutcome<wire::HostGetOperationResponse>
+  get_operation(const wire::HostGetOperationRequest&, std::string_view) override {
+    ++calls;
+    method = "get_operation";
+    return target::OwnerFailure{wire::CAPABILITY_NOT_SUPPORTED, false};
+  }
+  target::OwnerOutcome<wire::HostGetOperationResponse>
+  cancel_operation(const wire::HostCancelOperationRequest& value,
+                   std::string_view delegation) override {
+    ++calls;
+    method = "cancel";
+    require(delegation == "delegation-proof", "host receives issued delegation");
+    require(value.operation().operation_id() == "dddddddd-dddd-4ddd-8ddd-dddddddddddd" &&
+                value.expected_version() == 2 && value.operation().owner_service() == "host",
+            "cancel operation body forwarded exactly");
+    cancel_request = value;
+    if (failure) {
+      return *failure;
+    }
+    wire::HostGetOperationResponse output;
+    auto* operation = output.mutable_operation();
+    operation->mutable_ref()->set_owner_service("host");
+    operation->mutable_ref()->set_operation_id(value.operation().operation_id());
+    operation->set_version(2);
+    operation->set_state(wire::OPERATION_CANCELLED);
+    operation->set_execution_outcome(wire::EXECUTION_UNKNOWN);
+    operation->mutable_observed_at()->set_seconds(1'700'000'000);
+    return output;
+  }
+  target::OwnerOutcome<wire::OperationChangesResponse>
+  list_operation_changes(const wire::OperationChangesRequest&, std::string_view) override {
+    ++calls;
+    method = "changes";
+    return target::OwnerOutcome<wire::OperationChangesResponse>{wire::OperationChangesResponse{}};
+  }
+  static wire::ResourceRef value_host() {
+    wire::ResourceRef resource;
+    resource.set_kind(wire::RESOURCE_HOST);
+    resource.set_id("11111111-1111-4111-8111-111111111111");
+    return resource;
+  }
+};
+
+std::string host_scope_json() {
+  return R"({"resources":[{"kind":"RESOURCE_HOST","id":"11111111-1111-4111-8111-111111111111"}]})";
+}
+std::string host_query() {
+  return "?scope=" + host_scope_json();
+}
+
+void host_management_surface() {
+  FakeDelegation delegation;
+  FakeRuntime runtime;
+  FakeHost host;
+  FakeOperations operations;
+  target::OwnerGateway gateway{delegation,  runtime, nullptr, nullptr, nullptr, nullptr,
+                               &operations, nullptr, nullptr, nullptr, nullptr, &host};
+
+  auto host_request = [](std::string method, std::string path) {
+    auto value = request(std::move(method), std::move(path));
+    value.headers["traceparent"] = "00-0123456789abcdef0123456789abcdef-0123456789abcdef-01";
+    return value;
+  };
+  auto maintenance = gateway.handle(
+      host_request("GET", "/api/v1/hosts/11111111-1111-4111-8111-111111111111/maintenance"));
+  require(maintenance && maintenance->status == 200 &&
+              maintenance->body.find("\"host_id\":\"11111111-1111-4111-8111-111111111111\"") !=
+                  std::string::npos &&
+              maintenance->body.find("\"version\":\"4\"") != std::string::npos &&
+              maintenance->body.find("\"admission\":\"HOST_ADMISSION_CLOSED\"") !=
+                  std::string::npos &&
+              maintenance->body.find("\"observed_at\"") != std::string::npos,
+          "host maintenance read projects the owner record");
+  require(delegation.calls == 1 && delegation.audience == "host" &&
+              delegation.permission == wire::PERMISSION_HOST_READ &&
+              delegation.last_scope.resources_size() == 1 &&
+              delegation.last_scope.resources(0).kind() == wire::RESOURCE_HOST &&
+              delegation.last_scope.resources(0).id() == "11111111-1111-4111-8111-111111111111",
+          "host maintenance read uses one exact host.read delegation");
+
+  auto begin_request =
+      host_request("POST", "/api/v1/hosts/11111111-1111-4111-8111-111111111111/maintenance");
+  begin_request.body = R"({"expected_version":"3","grace_ms":500})";
+  const auto begin = gateway.handle(begin_request);
+  require(begin && begin->status == 202 &&
+              begin->body.find("\"state\":\"OPERATION_ACCEPTED\"") != std::string::npos &&
+              begin->body.find("\"maintenance\":{") != std::string::npos,
+          "accepted maintenance begin is 202 with owner operation, not completed work");
+  require(delegation.calls == 2 && delegation.audience == "host" &&
+              delegation.permission == wire::PERMISSION_HOST_EXECUTE,
+          "begin maintenance delegation is host.execute");
+
+  auto resume_request =
+      host_request("POST", "/api/v1/hosts/11111111-1111-4111-8111-111111111111/resume");
+  resume_request.body = R"({"expected_version":"4"})";
+  const auto resume = gateway.handle(resume_request);
+  require(resume && resume->status == 200 &&
+              resume->body.find("\"state\":\"OPERATION_SUCCEEDED\"") != std::string::npos,
+          "completed resume is 200 with the owner snapshot");
+  require(delegation.calls == 3 && delegation.permission == wire::PERMISSION_HOST_EXECUTE,
+          "resume admission delegation is host.execute");
+
+  auto missing_key =
+      host_request("POST", "/api/v1/hosts/11111111-1111-4111-8111-111111111111/maintenance");
+  missing_key.headers.erase("idempotency-key");
+  missing_key.body = R"({"expected_version":"3"})";
+  require_failure(gateway.handle(missing_key), wire::INVALID_ARGUMENT, false,
+                  "host write requires idempotency key");
+  require(host.calls == 3 && delegation.calls == 3,
+          "invalid host write never reaches owner or delegation");
+
+  auto missing_version =
+      host_request("POST", "/api/v1/hosts/11111111-1111-4111-8111-111111111111/resume");
+  missing_version.body = R"({})";
+  require_failure(gateway.handle(missing_version), wire::INVALID_ARGUMENT, false,
+                  "resume requires expected version");
+
+  require_failure(gateway.handle(host_request("GET", "/api/v1/hosts/not-a-uuid/maintenance")),
+                  wire::INVALID_ARGUMENT, false, "malformed host id rejected before delegation");
+
+  host.failure = target::OwnerFailure{wire::CONFLICT, false};
+  require_failure(gateway.handle(host_request(
+                      "GET", "/api/v1/hosts/11111111-1111-4111-8111-111111111111/maintenance")),
+                  wire::CONFLICT, false, "host conflict maps to stable 409");
+  host.failure.reset();
+  host.failure = target::OwnerFailure{wire::UPSTREAM_UNAVAILABLE, true};
+  require_failure(gateway.handle(host_request(
+                      "GET", "/api/v1/hosts/11111111-1111-4111-8111-111111111111/maintenance")),
+                  wire::UPSTREAM_UNAVAILABLE, true, "host outage stays retryable 503");
+  host.failure.reset();
+
+  target::OwnerGateway no_host{delegation, runtime};
+  require_failure(no_host.handle(host_request(
+                      "GET", "/api/v1/hosts/11111111-1111-4111-8111-111111111111/maintenance")),
+                  wire::UPSTREAM_UNAVAILABLE, true,
+                  "missing registered host endpoint fails closed, never fabricated state");
+
+  auto cancel =
+      host_request("POST", "/api/v1/operations/host/dddddddd-dddd-4ddd-8ddd-dddddddddddd/cancel");
+  cancel.body = R"({"expected_version":"2","scope":)" + host_scope_json() + "}";
+  const auto cancelled = gateway.handle(cancel);
+  require(cancelled && cancelled->status == 200 &&
+              cancelled->body.find("\"state\":\"OPERATION_CANCELLED\"") != std::string::npos,
+          "host cancellation forwards the owner snapshot");
+  require(host.cancel_request.operation().resource().kind() == wire::RESOURCE_HOST &&
+              host.cancel_request.operation().resource().id() ==
+                  "11111111-1111-4111-8111-111111111111" &&
+              delegation.permission == wire::PERMISSION_HOST_EXECUTE,
+          "cancel scope is forwarded exactly under host.execute");
+
+  auto bad_scope =
+      host_request("POST", "/api/v1/operations/host/dddddddd-dddd-4ddd-8ddd-dddddddddddd/cancel");
+  bad_scope.body =
+      R"({"expected_version":"2","scope":{"resources":[{"kind":"RESOURCE_ACCOUNT","id":"11111111-1111-4111-8111-111111111111"}]}})";
+  require_failure(gateway.handle(bad_scope), wire::INVALID_ARGUMENT, false,
+                  "cancel scope must be exactly one RESOURCE_HOST");
+
+  const auto operation = gateway.handle(host_request(
+      "GET", "/api/v1/operations/host/eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee" + host_query()));
+  require(operation && operation->status == 200 && operations.owner == "host",
+          "host owner operation routes through the operation port");
+  require(delegation.permission == wire::PERMISSION_HOST_READ,
+          "host operation query uses host.read");
+  require_failure(
+      gateway.handle(host_request(
+          "GET", "/api/v1/operations/host/"
+                 "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee?scope=" +
+                     std::string{R"({"resources":[{"kind":"RESOURCE_MODEL","id":"model-1"}]})"})),
+      wire::INVALID_ARGUMENT, false, "host operation query rejects a non-host scope");
+
+  require(
+      !gateway.handle(host_request("GET", "/api/v1/hosts/11111111-1111-4111-8111-111111111111")),
+      "plain host projection is not an owner-gateway route");
+}
+
 } // namespace
 
 int main() {
@@ -2027,6 +2287,7 @@ int main() {
     validation_rules();
     model_management_surface();
     owner_route_inventory();
+    host_management_surface();
     head_and_unmatched_routes();
     pagination_and_request_context();
     model_mutation_idempotency_context();

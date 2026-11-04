@@ -308,6 +308,27 @@ target::Outcome<platform::ServiceComposition> compose(const platform::ProcessCon
     observations =
         std::move(std::get<std::unique_ptr<target::OperationObservationApplication>>(built));
   }
+  std::shared_ptr<target::ObservationFeedApplication> task_changes;
+  if (observation_identity) {
+    auto built = target::make_observation_feed_application(
+        {target::Service::Scheduler,
+         target::ObservationFamily::Tasks,
+         [factory]() -> target::Outcome<std::unique_ptr<target::UnitOfWork>> {
+           auto begun = factory->begin();
+           if (const auto* failure = std::get_if<target::Failure>(&begun))
+             return *failure;
+           return std::unique_ptr<target::UnitOfWork>(
+               std::move(std::get<std::unique_ptr<target::SchedulerUnitOfWork>>(begun)));
+         },
+         [](target::UnitOfWork& work, const target::ObservationFeedQuery& query) {
+           return work.query_observation_changes(query);
+         },
+         *observation_identity,
+         {}});
+    if (const auto* rejected = std::get_if<target::Failure>(&built))
+      return *rejected;
+    task_changes = std::move(std::get<std::unique_ptr<target::ObservationFeedApplication>>(built));
+  }
   struct KeepAlive {
     std::shared_ptr<target::SchedulerUnitOfWorkFactory> factory;
     std::shared_ptr<SchedulerZones> zones;
@@ -317,16 +338,18 @@ target::Outcome<platform::ServiceComposition> compose(const platform::ProcessCon
     std::shared_ptr<platform::SchedulerIdentityClient> identity_client;
     std::shared_ptr<platform::RuntimeIdentityClient> observation_identity;
     std::shared_ptr<target::OperationObservationApplication> observations;
+    std::shared_ptr<target::ObservationFeedApplication> task_changes;
   };
-  auto keep_alive =
-      std::make_shared<KeepAlive>(KeepAlive{factory, zones, ids, digests, runtime_client,
-                                            identity_client, observation_identity, observations});
+  auto keep_alive = std::make_shared<KeepAlive>(
+      KeepAlive{factory, zones, ids, digests, runtime_client, identity_client, observation_identity,
+                observations, task_changes});
   auto service = std::make_shared<target::SchedulerService>(target::SchedulerServiceDependencies{
       *factory, *ids, *zones, *digests, target::kTaskHorizon, target::kInstanceTaskCapacity,
       target::kInstallationTaskCapacity, runtime_client.get(), keep_alive});
 
   platform::SchedulerRpcOptions rpc_options;
   rpc_options.observations = observations.get();
+  rpc_options.task_changes = task_changes.get();
   if (!config.runtime_peers.empty()) {
     rpc_options.platform_peer = [peers = config.runtime_peers](grpc::ServerContext& transport,
                                                                std::string_view method,

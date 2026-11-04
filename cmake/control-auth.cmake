@@ -16,6 +16,7 @@ add_library(kiarabot_control_auth STATIC
   ${CMAKE_SOURCE_DIR}/control/api/src/target/owner_gateway/lifecycle.cpp
   ${CMAKE_SOURCE_DIR}/control/api/src/target/owner_gateway/models.cpp
   ${CMAKE_SOURCE_DIR}/control/api/src/target/owner_gateway/actions.cpp
+  ${CMAKE_SOURCE_DIR}/control/api/src/target/owner_gateway/hosts.cpp
   ${CMAKE_SOURCE_DIR}/control/api/src/target/owner_clients.cpp)
 target_include_directories(kiarabot_control_auth PUBLIC
   ${CMAKE_SOURCE_DIR}/core/include ${CMAKE_SOURCE_DIR}/control/api/include)
@@ -103,6 +104,16 @@ kiarabot_platform_warnings(kiarabot_secret_delivery_test)
 add_test(NAME p12_secret_delivery COMMAND kiarabot_secret_delivery_test
   "${KIARABOT_TARGET_PYTHON}" "${CMAKE_SOURCE_DIR}/scripts/deploy/target_host_credential.py")
 set_tests_properties(p12_secret_delivery PROPERTIES LABELS "p12;unit;fault;security" TIMEOUT 30)
+
+# HOST-04: real Control binary + real mTLS Identity/owner fixtures over the host management
+# REST surface (read snapshot / begin 202 / resume / operation query / cancel / error mapping).
+add_test(NAME p12_host_control_rest COMMAND "${KIARABOT_TARGET_PYTHON}"
+  ${CMAKE_SOURCE_DIR}/tests/architecture/p12_host_control_rest.py
+  $<TARGET_FILE:kiarabot-control> $<TARGET_FILE:kiarabot_control_identity_fixture>
+  $<TARGET_FILE:kiarabot_control_owner_fixture>)
+set_tests_properties(p12_host_control_rest PROPERTIES
+  LABELS "p12;host;control;integration;fault" TIMEOUT 90 RESOURCE_LOCK control_https
+  RUN_SERIAL TRUE ENVIRONMENT "PATH=${OPENSSL_BIN_DIR}:$ENV{PATH}")
 
 # BOOT-04: the Control bootstrap-delivery TU and its BOOT-03 sink link are registered by
 # cmake/bootstrap-delivery.cmake (included after this file) so the BOOT work stream owns its new

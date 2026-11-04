@@ -5,6 +5,7 @@
 
 #include <grpcpp/grpcpp.h>
 
+#include "kiarabot/core/application/target/observation_feed_application.hpp"
 #include "kiarabot/core/application/target/operation_observation_application.hpp"
 #include "kiarabot/core/application/target/runtime_action_application.hpp"
 #include "kiarabot/core/application/target/runtime_audit_application.hpp"
@@ -54,6 +55,10 @@ struct RuntimeRpcOptions {
   // Optional process-level deadline bound (shared shutdown budget); expired -> TIMEOUT.
   std::function<target::Outcome<target::TimePoint>()> invocation_deadline;
   target::OperationObservationApplication* observations = nullptr;
+  // v1.2 safe metadata feeds (logs and received-message metadata). Null keeps the handler a typed
+  // CAPABILITY_NOT_SUPPORTED instead of an accidental projector.
+  target::ObservationFeedApplication* log_changes = nullptr;
+  target::ObservationFeedApplication* message_changes = nullptr;
   // BOOT-02 typed controlled bootstrap delivery. Null keeps the five delivery methods at
   // CAPABILITY_NOT_SUPPORTED instead of an accidental handler.
   target::RuntimeBootstrapDeliveryApplication* bootstrap = nullptr;

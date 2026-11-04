@@ -286,3 +286,44 @@ PG DDL/describe 窗口未实现（task-12 未开始）；STR09 受管插件 stre
 S1 通过、S2 无测试，Runtime gate/PG 持久化/Control host 路由未实现；BOOT-05 真实交付整链、
 受限消费端、P11 https_endpoint BOOT 段未完成；慢消费者 1s 写预算仅 code-path 记录；两主机/断网
 演练、真实 QQ、付费模型、发布未执行。
+
+## 2026-11-04 第二轮续执行（提交 7b092da/88b652f/1037cc5 后）
+
+- WS-04 teardown SIGABRT 已真修（单 strand 状态机、pending 操作回栈后析构），
+  `p12_target_websocket_https` 连续 3 次通过；BOOT-04 Control 组合合入 `https_endpoint` 并由真实链验证
+  （`p12_bootstrap_delivery_e2e` 1/1，组合批 6/6）。
+- BOOT-05 真实链通过：seed（无 credential）+ 真实 Identity/Runtime/Control/私有 PG/文件 sink；
+  覆盖首次签发→sink→report→无秘密查询、无 recipient 兼容、幂等重放回填、reissue 版本递增/旧凭据撤销、
+  stale 409、unbind 后迟到 fail-closed、Control 重启持久、REST/子进程日志/PG 全库 canary。
+  未覆盖（剩余缺口）：sink 后 ACK 丢失注入、delivery cancel（冻结契约无 RPC）。
+- HOST-03/04：Runtime gate 全链（HostFenceRegistry/PG CAS/Identity v1.1 授权适配/`SetHostAdmissionGate`
+  RPC/composition 装配）+ S2 host_management_rpc 真实 mTLS 测试 + S3 真实 Host 进程 e2e
+  （`p08_host_management_e2e` 已注册，覆盖 Begin→gate→停止→SUCCEEDED/lost ACK→BLOCKED/Resume/重启持久）。
+- v1.2 feeds：owner-local journal（head/changes 两表，I/R/S 私有库）+ 纯应用/RPC 边界 + real-PG
+  driver；`ws12_observation_feed_application`/`_journal` 通过；post-DDL 真实 describe 刷新
+  I16/R22/S12→（含 Model error CHECK 修正）I17/R23/S13→（feed resource kinds 修正）**I18/R24/S14**；
+  M 11。所有 manifest 均为真实 owned PG16.4 describe 结果。
+- 产品缺陷修复（均为测试暴露、非放宽）：①ModelService 7 方法缺 scope_kinds（v1.2 wire 二次冻结）；
+  ②Runtime Identity client 将 2s 网络预算误当子委派寿命（长流被裁剪），分离 delegation_lifetime=30s；
+  ③`model_intents.error CHECK` 拒绝 domain InvalidArgument=0，HTTP-400 明确拒绝路径 txn2 失败；
+  ④v1.2 log feed 初始资源种类校验过严，导致 identity-bootstrap 审计写入 INVALID_ARGUMENT
+  （p05b/STR09 admin login 回归），已扩 resource_kind 并修正校验。
+- 质量/证据：全量构建绿；关键切片 10/10 通过；`p05b_model_chain_e2e` 复绿；
+  `p03_postgres_database`（含 InvalidArgument txn2 回归）通过；WSS/BOOT/feed/host e2e 均有首轮失败保留。
+- 进行中：WS feed 写路径（Identity log/Runtime message/Scheduler task）/composition/RPC handler；
+  HOST S5 Control host 路由与 register_plugin 受管重连语义；STR09 受管插件整链因 reconnect 语义待定。
+
+## 2026-11-04 冻结日最终验收（第二轮收口）
+
+- 代码冻结后 `kiarabot-pg-initialize`/服务二进制/测试全部重建；全量构建 exit 0。
+- 契约/枚举/实现状态/语义规则/证据 scope/feature 声明/target descriptor 往返 + 与 baseline 和
+  Identity v1.1 的兼容检查/api（OpenAPI/AsyncAPI/target/reference）/架构（boundaries/inner/links/
+  database）/SDK pytest 全部通过；格式门禁 28 个违规全部为 HEAD 已有基线、0 新增。
+- v1.2 feed 同一 UoW append 落点：Identity/Runtime audit→logs（`RETURNING id` + 封闭日志投影）、
+  Runtime received message→messages（确定性 UUIDv5 内部 id、重复 fingerprint 不重复）、Scheduler
+  六处 task 状态→tasks；PG 适配器实现 UoW feed port，未实现的 adapter 显式 CapabilityNotSupported。
+- 冻结测试暴露并修复的产品缺陷新增：⑤日志 feed 资源校验过严导致审计（identity-bootstrap/私存写入）
+  失败；⑥Scheduler feed append 对不支持 feed 的 UoW adapter 误判；⑦受管插件 bridge 的 host 绑定拒绝
+  导致 Runtime 重启后永久无法重连（已按契约删除 4 处 host.has_value 拒绝，保留其余授权校验）。
+- 最终全量 CTest 结果与逐项失败/通过证据见 `build/logs/final-acceptance/final3-ctest.log`；
+  第一轮失败日志 `final2-ctest.log`（混合旧二进制配对）保留，不作为最终结论。

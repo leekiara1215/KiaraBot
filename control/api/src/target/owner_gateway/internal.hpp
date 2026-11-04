@@ -33,6 +33,7 @@ struct Ports {
   AuditLogSourcePort* audit_logs_;
   SecretDeliveryApplication* secret_delivery_;
   BootstrapRecipientsPort* bootstrap_recipients_;
+  HostManagementPort* host_management_;
 };
 
 // Created once per request; handlers preserve the original bearer, deadline and identifiers.
@@ -63,7 +64,13 @@ wire::ResourceScope exact_scope(const wire::ResourceRef& resource);
 wire::ResourceScope control_catalog_scope();
 wire::ResourceScope account_scope(std::string_view id);
 wire::ResourceScope instance_scope(std::string_view id);
+wire::ResourceScope host_scope(std::string_view id);
+// Host ids are canonical lowercase UUID strings at every owner boundary; malformed path ids are
+// rejected before any delegation or owner call.
+bool canonical_uuid(std::string_view value);
 std::string json_time(const google::protobuf::Timestamp& value);
+// Shared owner operation projection (Control never synthesizes progress fields).
+Json operation_json(const wire::Operation& operation);
 Json json_request_value(const std::string& body);
 bool fill_context(wire::RequestContext* context, std::string_view request_id,
                   std::string_view trace_id, const OwnerHttpRequest& request);
@@ -115,6 +122,7 @@ std::optional<OwnerHttpResult> handle_tasks(const RequestContext& context, const
 std::optional<OwnerHttpResult> handle_audit_logs(const RequestContext& context, const Ports& ports);
 std::optional<OwnerHttpResult> handle_lifecycle(const RequestContext& context, const Ports& ports);
 std::optional<OwnerHttpResult> handle_models(const RequestContext& context, const Ports& ports);
+std::optional<OwnerHttpResult> handle_hosts(const RequestContext& context, const Ports& ports);
 std::optional<OwnerHttpResult> handle_actions(const RequestContext& context, const Ports& ports);
 std::optional<OwnerHttpResult> handle_bootstrap(const RequestContext& context, const Ports& ports);
 // Applies the SecretDeliveryPort exactly once to a first-issue/reissue owner response, reports the
