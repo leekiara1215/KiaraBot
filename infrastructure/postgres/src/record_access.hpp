@@ -28,7 +28,8 @@ struct CommonWorkAccess {
   SqlWork* sql;
 };
 struct DatabaseAccess {
-  static core::target::Outcome<CommonWorkAccess> begin(Database& database);
+  static core::target::Outcome<CommonWorkAccess> begin(Database& database,
+                                                       bool resource_snapshot = false);
 };
 
 // Closed infrastructure dispatch to concrete relation tables. Not a Core port or a blob store.

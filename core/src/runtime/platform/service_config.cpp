@@ -725,6 +725,36 @@ ConfigResult load_service_config(const std::string& path, target::Service servic
       }
       keys.insert("bridge_listen");
     }
+    if (document.contains("resource_catalogs")) {
+      const auto& catalogs = document["resource_catalogs"];
+      const std::set<std::string> families{"accounts", "installations", "instances", "adapters",
+                                           "hosts"};
+      std::set<std::string> identifiers;
+      if (service != target::Service::Runtime || !catalogs.is_object() ||
+          catalogs.size() != families.size()) {
+        return ConfigFailure{2, "invalid_resource_catalogs"};
+      }
+      for (const auto& [family, identifier] : catalogs.items()) {
+        if (!families.contains(family) || !identifier.is_string()) {
+          return ConfigFailure{2, "invalid_resource_catalogs"};
+        }
+        const auto text = identifier.get<std::string>();
+        if (text.size() != 36 || text[14] != '4' ||
+            std::string_view("89ab").find(text[19]) == std::string_view::npos ||
+            !identifiers.insert(text).second) {
+          return ConfigFailure{2, "invalid_resource_catalogs"};
+        }
+        for (std::size_t i = 0; i < text.size(); ++i) {
+          const bool separator = i == 8 || i == 13 || i == 18 || i == 23;
+          if (separator
+                  ? text[i] != '-'
+                  : !((text[i] >= '0' && text[i] <= '9') || (text[i] >= 'a' && text[i] <= 'f'))) {
+            return ConfigFailure{2, "invalid_resource_catalogs"};
+          }
+        }
+      }
+      keys.insert("resource_catalogs");
+    }
     if (document.contains("hosts")) {
       if (service != target::Service::Runtime || !host_peers_shape(document["hosts"])) {
         return ConfigFailure{2, "invalid_hosts_config"};
@@ -772,6 +802,11 @@ ConfigResult load_service_config(const std::string& path, target::Service servic
         return ConfigFailure{2, "invalid_bridge_listen_address"};
       }
       config.bridge_listen = bridge_listen;
+    }
+    if (document.contains("resource_catalogs")) {
+      for (const auto& [family, identifier] : document["resource_catalogs"].items()) {
+        config.resource_catalogs.emplace(family, identifier.get<std::string>());
+      }
     }
     if (document.contains("hosts")) {
       for (const auto& entry : document["hosts"]) {

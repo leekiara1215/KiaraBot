@@ -1710,3 +1710,13 @@ idempotency 内容回放、不同内容冲突、取消窗口、COMPLETED 仅证�
 以及 Scheduler 离线/缺失 scheduler_endpoint 的稳定 fail-closed 均有 e2e 覆盖。
 修复暴露缺陷：Runtime plugin profile 现识别 `event.timer.triggered` 订阅；插件权限词汇表
 补充 `task.read`（与 Runtime task_get 的权限检查一致）。未扩 proto。
+
+### P05 创建目录授权与不可变资源列表（2026-11-04）
+
+Runtime 组合根从只读部署配置 `resource_catalogs` 注入五族目录，Core 不接收配置解析器或数据库类型。CreateAccount 使用 accounts 目录的 ACCOUNT_MANAGE；ValidateManifest/CreateInstallation 使用 installations 目录的 PLUGIN_MANAGE；CreateInstance 使用父 INSTALLATION 的 PLUGIN_MANAGE。Core 校验目录种类、规范 UUID 和部署族映射，授权始终绑定实际调用主体及当前委托。目录授权不创建子资源 Assignment，不隐含新资源读写权限；新建后如何安全登记新资源 grant 仍属于后续 Identity 发现与供给工作。
+
+ListAccounts/ListInstallations/ListInstances/ListAdapters 每次先授权对应目录，再逐候选在线校验该方法读权限。PermissionDenied/NotFound 隐藏该候选；依赖故障使整页失败；候选授权版本变化返回 CONFLICT。父安装、另一个子对象或目录 grant 均不能替代当前子对象的显式 grant。ListHosts 仍缺生产 typed backing，本项仅登记其目录及 HOST 授权设计，不宣称完成实现。
+
+首次列表通过 `begin_resource_snapshot()` 获取一致只读视图。PG 实现使用 REPEATABLE READ READ ONLY，加载全部有界候选后回滚释放视图，再执行在线子对象授权，避免在持有数据库事务时等待 Identity。其他适配器默认 CAPABILITY_NOT_SUPPORTED，不能把普通 read committed 伪装为快照。候选记录在进程内不可变共享，分页 token 绑定主体、方法及目录、页大小、规范委托资源权限集合、授权版本和原十分钟期限；相同权限与范围的新 proof 可重试，不能通过换 proof 扩大范围。重启或任一绑定失配返回 CONFLICT。
+
+预算为全局 1024 个快照、每主体 64 个、单快照 4096 条候选、全局 16384 条候选和 64 MiB 编码数据上界（实现按含动态字段的保守上界计费）。仅清理到期快照，不驱逐仍有效快照；任一预算超限返回 RATE_LIMITED，不把被截断的集合报告为末页。

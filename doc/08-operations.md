@@ -1800,3 +1800,8 @@ provider。
 ## 2026-11-04 Runtime 管理回执
 
 用户已批准五项管理写入在 Runtime 同一事务中保存版本化附属回执、原 operation 引用和实例提交状态。附属行引用 command_receipts(result_id) ON DELETE CASCADE，普通回执不保存 bootstrap 明文。新建隔离数据库验收；现有部署数据库不得由启动流程自动升级。原地迁移另行审查。完整重放只在原 retain_until 内承诺，过期 UNKNOWN 仍需核对原操作。
+### P05 Runtime 资源目录部署配置
+
+仅 Runtime 接受顶层 `resource_catalogs`，值为封闭对象，必须且只能含 accounts、installations、instances、adapters、hosts，五值为互异的规范小写 UUIDv4。未知键、缺失键、重复 ID、非 UUIDv4 使配置加载以 exit 2 / `invalid_resource_catalogs` 拒绝。缺少整个对象可启动，但受影响的目录和创建方法保持 CAPABILITY_NOT_SUPPORTED；这不使既有 exact 方法绕过授权。
+
+目录身份由部署初始化源生成并长期保存，禁止进程重启时随机创建。Runtime 映射、Control 家族映射与 Identity 离线 enrollment 使用同一来源并分别显式赋权；灾备恢复保留三者一致。改目录 ID 不能替代撤权，映射变更按停写配置迁移处理。目录 grant 不含 child 权限，新资源的后续授权仍需合法供给流程。进程内快照重启丢失，旧 token 返回 CONFLICT，客户端应重新开始列表；每主体 64 / 全局 1024 快照、单快照 4096 / 全局 16384 候选及 64 MiB 保守计费上限耗尽返回 RATE_LIMITED，不驱逐有效 token。

@@ -431,6 +431,12 @@ template <typename Work> class LocalUnitOfWorkFactory {
 public:
   virtual ~LocalUnitOfWorkFactory() = default;
   virtual Outcome<std::unique_ptr<Work>> begin() = 0;
+  // Adapters explicitly opt into a consistent read-only view for immutable resource snapshots.
+  // An ordinary read-committed transaction is insufficient. Other owners need not implement it.
+  virtual Outcome<std::unique_ptr<Work>> begin_resource_snapshot() {
+    return Failure{
+        ErrorCode::CapabilityNotSupported, Acceptance::NotAccepted, Recovery::Diagnose, {}, {}};
+  }
 };
 using IdentityUnitOfWorkFactory = LocalUnitOfWorkFactory<IdentityUnitOfWork>;
 using RuntimeUnitOfWorkFactory = LocalUnitOfWorkFactory<RuntimeUnitOfWork>;

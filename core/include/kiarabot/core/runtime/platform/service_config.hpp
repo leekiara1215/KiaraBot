@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <map>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -160,6 +161,7 @@ struct ProcessConfig {
   // Runtime-only P08 HostBridge certificate allowlist. Empty means no Host may register
   // (fail closed); entries are deployment configuration, never wire input.
   std::vector<HostPeerMaterial> hosts;
+  std::map<std::string, std::string> resource_catalogs;
   // Scheduler-only: Runtime platform-peer instance grants for ListTasks/CancelTask. Empty keeps
   // the platform path fail-closed; Control/user delegation callers are unaffected.
   std::vector<SchedulerRuntimePeerMaterial> runtime_peers;

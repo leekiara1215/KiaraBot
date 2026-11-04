@@ -876,9 +876,15 @@ public:
       return error_status(*rejected, id, id);
     }
     auto& context = std::get<Prepared>(prepared);
+    if (const auto rejected = catalog(request->catalog())) {
+      return fail(context, *rejected);
+    }
     auto created =
-        application_.create_account({context.command, request->platform(),
-                                     request->platform_account_id(), request->display_name()});
+        application_.create_account({context.command,
+                                     request->platform(),
+                                     request->platform_account_id(),
+                                     request->display_name(),
+                                     {t::ResourceKind::Catalog, {request->catalog().id()}}});
     if (const auto* rejected = std::get_if<t::Failure>(&created)) {
       return fail(context, *rejected);
     }
@@ -940,8 +946,7 @@ public:
     return grpc::Status::OK;
   }
 
-  grpc::Status ListAudit(grpc::ServerContext* transport,
-                         const v1::RuntimeListAuditRequest* request,
+  grpc::Status ListAudit(grpc::ServerContext* transport, const v1::RuntimeListAuditRequest* request,
                          v1::RuntimeListAuditResponse* response) override {
     auto prepared = prepare(*transport, request->context(), "kiarabot.v1.RuntimeService/ListAudit",
                             *request, false, options_);
@@ -1012,8 +1017,7 @@ public:
     *response->mutable_checked_at() = *stamp;
     return grpc::Status::OK;
   }
-  grpc::Status ListLogs(grpc::ServerContext* transport,
-                        const v1::RuntimeListLogsRequest* request,
+  grpc::Status ListLogs(grpc::ServerContext* transport, const v1::RuntimeListLogsRequest* request,
                         v1::RuntimeListLogsResponse* response) override {
     auto prepared = prepare(*transport, request->context(), "kiarabot.v1.RuntimeService/ListLogs",
                             *request, false, options_);
@@ -1117,7 +1121,8 @@ public:
     t::PageRequest page;
     page.page_size = request->page().page_size();
     page.page_token = request->page().page_token();
-    auto listed = application_.list_accounts({context.command, page});
+    auto listed = application_.list_accounts(
+        {context.command, page, {t::ResourceKind::Catalog, {request->catalog().id()}}});
     if (const auto* rejected = std::get_if<t::Failure>(&listed)) {
       return fail(context, *rejected);
     }
@@ -1209,13 +1214,17 @@ public:
                           request->context().trace_id());
     }
     auto& context = std::get<Prepared>(prepared);
+    if (const auto rejected = catalog(request->catalog())) {
+      return fail(context, *rejected);
+    }
     std::vector<std::byte> manifest(request->manifest().ByteSizeLong());
     if (!manifest.empty() &&
         !request->manifest().SerializeToArray(reinterpret_cast<char*>(manifest.data()),
                                               static_cast<int>(manifest.size()))) {
       return error_status(internal_failure(), context.request, context.trace);
     }
-    auto validation = application_.validate_manifest({context.command, manifest});
+    auto validation = application_.validate_manifest(
+        {context.command, manifest, {t::ResourceKind::Catalog, {request->catalog().id()}}});
     if (const auto* rejected = std::get_if<t::Failure>(&validation)) {
       return fail(context, *rejected);
     }
@@ -1241,6 +1250,9 @@ public:
                           request->context().trace_id());
     }
     auto& context = std::get<Prepared>(prepared);
+    if (const auto rejected = catalog(request->catalog())) {
+      return fail(context, *rejected);
+    }
     std::vector<std::byte> manifest(request->manifest().ByteSizeLong());
     if (!manifest.empty() &&
         !request->manifest().SerializeToArray(reinterpret_cast<char*>(manifest.data()),
@@ -1248,7 +1260,10 @@ public:
       return error_status(internal_failure(), context.request, context.trace);
     }
     auto created =
-        application_.create_installation({context.command, request->plugin_type_id(), manifest});
+        application_.create_installation({context.command,
+                                          request->plugin_type_id(),
+                                          manifest,
+                                          {t::ResourceKind::Catalog, {request->catalog().id()}}});
     if (const auto* rejected = std::get_if<t::Failure>(&created)) {
       return fail(context, *rejected);
     }
@@ -1301,7 +1316,8 @@ public:
     t::PageRequest page;
     page.page_size = request->page().page_size();
     page.page_token = request->page().page_token();
-    auto listed = application_.list_installations({context.command, page});
+    auto listed = application_.list_installations(
+        {context.command, page, {t::ResourceKind::Catalog, {request->catalog().id()}}});
     if (const auto* rejected = std::get_if<t::Failure>(&listed)) {
       return fail(context, *rejected);
     }
@@ -1387,12 +1403,13 @@ public:
     t::PageRequest page;
     page.page_size = request->page().page_size();
     page.page_token = request->page().page_token();
-    auto listed = application_.list_instances({context.command, page});
+    auto listed = application_.list_instances(
+        {context.command, page, {t::ResourceKind::Catalog, {request->catalog().id()}}});
     if (const auto* rejected = std::get_if<t::Failure>(&listed)) {
       return fail(context, *rejected);
     }
     const auto& result = std::get<t::ListResult<t::PluginInstance>>(listed);
-    const auto observed = now();
+    const auto observed = result.snapshot.observed_at;
     for (const auto& item : result.items) {
       v1::InstanceRecord record;
       if (!instance(item, &record, observed)) {
@@ -1664,12 +1681,13 @@ public:
     t::PageRequest page;
     page.page_size = request->page().page_size();
     page.page_token = request->page().page_token();
-    auto listed = application_.list_adapters({context.command, page});
+    auto listed = application_.list_adapters(
+        {context.command, page, {t::ResourceKind::Catalog, {request->catalog().id()}}});
     if (const auto* rejected = std::get_if<t::Failure>(&listed)) {
       return fail(context, *rejected);
     }
     const auto& result = std::get<t::ListResult<t::AdapterRecord>>(listed);
-    const auto observed = now();
+    const auto observed = result.snapshot.observed_at;
     for (const auto& item : result.items) {
       v1::AdapterRecord record;
       if (!adapter(item, &record, observed, observed)) {

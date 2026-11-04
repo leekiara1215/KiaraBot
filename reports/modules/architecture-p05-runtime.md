@@ -299,3 +299,13 @@ Bridge 双连接隔离修复及 P06 容量重投集成后，主构建重新编�
 前一轮阶段全量回归 163/163 通过，1126.98 秒，执行期间包含其他集成变更，不能作为本次固定提交完整门禁。本轮新代码尚未重建进现有 Compose 镜像。
 
 文档影响限于上述两份待审方案、doc/02 中既有连接隔离规则与 P06 模块的背压验收报告。未改 wire、API schema、scope 或数据库，故修复无需变更 doc/01、doc/06、doc/22 的契约；已登记的兼容性检查保持原实测范围。方案本身通过 diff 和文档链接检查，实施前仍须按其列出的契约和迁移门禁验证。
+
+### P05 目录授权实现（2026-11-04，原生单测阶段）
+
+已按批准的 `reports/analysis/p05-catalog-authorization-proposal.md` 接线 Runtime 目录映射、三条 catalog 输入、父安装精确创建授权、四条 typed 列表的目录及 child 在线授权，并实现有界不可变十分钟快照。PG 快照使用独立 repeatable-read/read-only 事务，逐对象授权前释放数据库视图；ListHosts 仍缺 typed backing，新建资源的 Identity 授权供给流程仍未扩展。
+
+在独立 `build/catalog` 构建 Runtime、Identity、bootstrap、PG initializer、resource application test 与 service config driver 成功。`ctest -R '^(p05_runtime_resource_application|p13_runtime_lifecycle|p02_service_config)$'` **3/3 passed**；新增覆盖错族/缺失映射、subject/scope/授权版本绑定、记录冻结和原 TTL、未签发候选位置、64 个主体快照与 4097 候选预算拒绝。契约 implementation-status、semantic rules、enum consistency 三个 Python gate 均通过。变更 C++ 使用 clang-format 16.0.6；构建保留原有未使用变量/函数及 libpqxx deprecation 警告。
+
+真实 PG/Identity/Runtime e2e 尚未取得通过：一次离线 bootstrap TIMEOUT，后续在进入新增目录路径前，既有 `runtime_instance_management_e2e.py:76` SetDesiredState 重放遇 grpc DEADLINE_EXCEEDED。未降低断言、未扩大授权。目录真实联测将独立补证，target status 本提交不翻 implemented；receipt lane 集成后的全量复测由 Lead 继续。
+
+文档影响：proto、README、doc/01-contracts 已由前置契约提交同步，本提交更新 doc/01-runtime-semantics、doc/02-core、doc/08-operations 和批准提案状态。API/OpenAPI 与 doc/06 由 Control lane 负责同能力同步；不修改冻结 doc/18，不涉及 Adapter/SDK/Panel 协议或其他 owner 行为。

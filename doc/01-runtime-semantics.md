@@ -276,3 +276,9 @@ Identity IssueDelegation / ExchangeDelegation 的唯一线契约 requires_idempo
 CredentialDelivery。证明仍最多 56 秒正文期限与 2 秒时钟容差，业务跳数最多两跳。
 Login、RefreshSession、RotateCredential、RevokeSession 等既有幂等/恢复要求保持原契约。
 未来若引入配额扣减或一次性消费，必须先建立独立的幂等命令契约及事务收据。
+
+### P05 Runtime 目录列表快照
+
+CreateAccount、ValidateManifest 和 CreateInstallation 必须携带所属目录的 ResourceRef；CreateInstance 按父安装精确授权。新资源成功创建不派生任何 Identity grant。未配置目录映射时受影响方法返回 CAPABILITY_NOT_SUPPORTED，既有 exact 方法照常授权。
+
+四种已有 typed 列表在一致只读事务中冻结候选记录、排序及观察时间，释放事务后逐项在线授权。分页仅移动不可变候选偏移，不重新读取实时行；原观察时间及十分钟到期时间固定。每页先检查目录授权，再检查 child；授权拒绝隐藏 child，依赖失败不能变为空页，授权版本变化、过期、重启或主体/目录/方法/页大小/委托范围失配返回 CONFLICT。快照保留纯数据及权限范围，不保留可复用 proof。预算及 fail-closed 端口说明见 doc/02-core.md 对应 P05 章节；达到容量返回 RATE_LIMITED，不能截断后宣称集合结束。ListHosts 的生产数据源仍待独立实现。

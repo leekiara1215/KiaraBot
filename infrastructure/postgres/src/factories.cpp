@@ -425,7 +425,15 @@ public:
                           std::vector<target::HostCertificateBinding> host_allowlist = {})
       : database_(std::move(database)), host_allowlist_(std::move(host_allowlist)) {}
   target::Outcome<std::unique_ptr<target::RuntimeUnitOfWork>> begin() override {
-    auto begun = detail::DatabaseAccess::begin(*database_);
+    return begin_resource_work(false);
+  }
+  target::Outcome<std::unique_ptr<target::RuntimeUnitOfWork>> begin_resource_snapshot() override {
+    return begin_resource_work(true);
+  }
+
+private:
+  target::Outcome<std::unique_ptr<target::RuntimeUnitOfWork>> begin_resource_work(bool snapshot) {
+    auto begun = detail::DatabaseAccess::begin(*database_, snapshot);
     if (const auto* rejected = std::get_if<target::Failure>(&begun)) {
       return *rejected;
     }

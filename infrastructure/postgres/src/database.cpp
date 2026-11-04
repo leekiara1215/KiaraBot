@@ -406,8 +406,9 @@ core::target::Status Database::check_writer() {
   return std::monostate{};
 }
 
-core::target::Outcome<detail::CommonWorkAccess> detail::DatabaseAccess::begin(Database& database) {
-  return begin_common_access(database.impl_->session);
+core::target::Outcome<detail::CommonWorkAccess>
+detail::DatabaseAccess::begin(Database& database, bool resource_snapshot) {
+  return begin_common_access(database.impl_->session, resource_snapshot);
 }
 
 core::target::Outcome<std::unique_ptr<core::target::UnitOfWork>> Database::begin() {

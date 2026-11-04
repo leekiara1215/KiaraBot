@@ -1,6 +1,7 @@
 #include "kiarabot/core/application/target/runtime_resource_application.hpp"
 
 #include <algorithm>
+#include <charconv>
 #include <chrono>
 #include <cstddef>
 #include <functional>
@@ -212,9 +213,10 @@ Failure map_commit(CommitResult result) {
 template <typename Value>
 Outcome<Value>
 with_work(RuntimeUnitOfWorkFactory& transactions, const CommandContext& context,
-          const std::function<Outcome<Value>(RuntimeUnitOfWork&, TimePoint now)>& body) {
+          const std::function<Outcome<Value>(RuntimeUnitOfWork&, TimePoint now)>& body,
+          bool resource_snapshot = false) {
   try {
-    auto begun = transactions.begin();
+    auto begun = resource_snapshot ? transactions.begin_resource_snapshot() : transactions.begin();
     if (const auto* failure = std::get_if<Failure>(&begun)) {
       return *failure;
     }
@@ -772,7 +774,8 @@ public:
         secrets_(dependencies.secrets), authorization_(dependencies.authorization),
         supported_capabilities_(std::move(dependencies.supported_capabilities)),
         host_lifecycle_(dependencies.host_lifecycle),
-        scheduler_lifecycle_(dependencies.scheduler_lifecycle) {}
+        scheduler_lifecycle_(dependencies.scheduler_lifecycle),
+        resource_catalogs_(std::move(dependencies.resource_catalogs)) {}
 
   Service service() const noexcept override {
     return Service::Runtime;
@@ -789,9 +792,8 @@ public:
     if (const auto failure = status_failure(validate_command_context(request.context, true))) {
       return *failure;
     }
-    auto checked =
-        authorize(authorization_, request.context.authentication, Permission::AccountManage,
-                  request.context.method, {}, request.context.deadline);
+    auto checked = authorize_catalog(request.context, ResourceKind::Account, request.catalog,
+                                     Permission::AccountManage);
     if (const auto* failure = std::get_if<Failure>(&checked)) {
       return *failure;
     }
@@ -977,9 +979,8 @@ public:
     if (request.page.page_size == 0 || request.page.page_size > kMaximumPageSize) {
       return invalid_runtime_input();
     }
-    auto checked =
-        authorize(authorization_, request.context.authentication, Permission::AccountRead,
-                  request.context.method, {}, request.context.deadline);
+    auto checked = authorize_catalog(request.context, ResourceKind::Account, request.catalog,
+                                     Permission::AccountRead);
     if (const auto* failure = std::get_if<Failure>(&checked)) {
       return *failure;
     }
@@ -989,8 +990,8 @@ public:
         transactions_, request.context,
         [&](RuntimeUnitOfWork& work, TimePoint now) -> Outcome<ListResult<BotAccount>> {
           return list_page<BotAccount>(
-              work, request.context, request.page, "accounts", authorization_version, now,
-              Permission::AccountRead,
+              work, request.context, request.page, "accounts|" + request.catalog.id.value,
+              authorization_version, now, Permission::AccountRead,
               [](RuntimeUnitOfWork& unit, std::size_t limit, const std::string& after) {
                 return unit.list_accounts(limit, after);
               },
@@ -998,7 +999,8 @@ public:
                 return ResourceRef{ResourceKind::Account, value.id};
               },
               [](const BotAccount& value) -> const std::string& { return value.id.value; });
-        });
+        },
+        true);
   }
 
   Outcome<BindingMutation> bind_adapter(const BindAdapterRequest& request) override {
@@ -1449,9 +1451,8 @@ public:
     if (request.page.page_size == 0 || request.page.page_size > kMaximumPageSize) {
       return invalid_runtime_input();
     }
-    auto checked =
-        authorize(authorization_, request.context.authentication, Permission::AdapterRead,
-                  request.context.method, {}, request.context.deadline);
+    auto checked = authorize_catalog(request.context, ResourceKind::Adapter, request.catalog,
+                                     Permission::AdapterRead);
     if (const auto* failure = std::get_if<Failure>(&checked)) {
       return *failure;
     }
@@ -1461,8 +1462,8 @@ public:
         transactions_, request.context,
         [&](RuntimeUnitOfWork& work, TimePoint now) -> Outcome<ListResult<AdapterRecord>> {
           return list_page<AdapterRecord>(
-              work, request.context, request.page, "adapters", authorization_version, now,
-              Permission::AdapterRead,
+              work, request.context, request.page, "adapters|" + request.catalog.id.value,
+              authorization_version, now, Permission::AdapterRead,
               [](RuntimeUnitOfWork& unit, std::size_t limit, const std::string& after) {
                 return unit.list_adapters(limit, after);
               },
@@ -1470,16 +1471,16 @@ public:
                 return ResourceRef{ResourceKind::Adapter, value.adapter};
               },
               [](const AdapterRecord& value) -> const std::string& { return value.adapter.value; });
-        });
+        },
+        true);
   }
 
   Outcome<ManifestValidation> validate_manifest(const ValidateManifestCommand& request) override {
     if (const auto failure = status_failure(validate_command_context(request.context, false))) {
       return *failure;
     }
-    auto checked =
-        authorize(authorization_, request.context.authentication, Permission::PluginManage,
-                  request.context.method, {}, request.context.deadline);
+    auto checked = authorize_catalog(request.context, ResourceKind::Installation, request.catalog,
+                                     Permission::PluginManage);
     if (const auto* failure = std::get_if<Failure>(&checked)) {
       return *failure;
     }
@@ -1503,9 +1504,8 @@ public:
         request.manifest.size() > 64 * 1024) {
       return invalid_runtime_input();
     }
-    auto checked =
-        authorize(authorization_, request.context.authentication, Permission::PluginManage,
-                  request.context.method, {}, request.context.deadline);
+    auto checked = authorize_catalog(request.context, ResourceKind::Installation, request.catalog,
+                                     Permission::PluginManage);
     if (const auto* failure = std::get_if<Failure>(&checked)) {
       return *failure;
     }
@@ -1566,8 +1566,8 @@ public:
     if (request.page.page_size == 0 || request.page.page_size > kMaximumPageSize) {
       return invalid_runtime_input();
     }
-    auto checked = authorize(authorization_, request.context.authentication, Permission::PluginRead,
-                             request.context.method, {}, request.context.deadline);
+    auto checked = authorize_catalog(request.context, ResourceKind::Installation, request.catalog,
+                                     Permission::PluginRead);
     if (const auto* failure = std::get_if<Failure>(&checked)) {
       return *failure;
     }
@@ -1577,8 +1577,8 @@ public:
         transactions_, request.context,
         [&](RuntimeUnitOfWork& work, TimePoint now) -> Outcome<ListResult<PluginInstallation>> {
           return list_page<PluginInstallation>(
-              work, request.context, request.page, "installations", authorization_version, now,
-              Permission::PluginRead,
+              work, request.context, request.page, "installations|" + request.catalog.id.value,
+              authorization_version, now, Permission::PluginRead,
               [](RuntimeUnitOfWork& unit, std::size_t limit, const std::string& after) {
                 return unit.list_installations(limit, after);
               },
@@ -1586,7 +1586,8 @@ public:
                 return ResourceRef{ResourceKind::Installation, {value.id.value}};
               },
               [](const PluginInstallation& value) -> const std::string& { return value.id.value; });
-        });
+        },
+        true);
   }
 
   Outcome<ListResult<PluginInstance>> list_instances(const InstanceListQuery& request) override {
@@ -1596,8 +1597,8 @@ public:
     if (request.page.page_size == 0 || request.page.page_size > kMaximumPageSize) {
       return invalid_runtime_input();
     }
-    auto checked = authorize(authorization_, request.context.authentication, Permission::PluginRead,
-                             request.context.method, {}, request.context.deadline);
+    auto checked = authorize_catalog(request.context, ResourceKind::Instance, request.catalog,
+                                     Permission::PluginRead);
     if (const auto* failure = std::get_if<Failure>(&checked)) {
       return *failure;
     }
@@ -1607,8 +1608,8 @@ public:
         transactions_, request.context,
         [&](RuntimeUnitOfWork& work, TimePoint now) -> Outcome<ListResult<PluginInstance>> {
           return list_page<PluginInstance>(
-              work, request.context, request.page, "instances", authorization_version, now,
-              Permission::PluginRead,
+              work, request.context, request.page, "instances|" + request.catalog.id.value,
+              authorization_version, now, Permission::PluginRead,
               [](RuntimeUnitOfWork& unit, std::size_t limit, const std::string& after) {
                 return unit.list_instances(limit, after);
               },
@@ -1616,16 +1617,21 @@ public:
                 return ResourceRef{ResourceKind::Instance, {value.id.value}};
               },
               [](const PluginInstance& value) -> const std::string& { return value.id.value; });
-        });
+        },
+        true);
   }
 
   Outcome<InstanceCreation> create_instance(const CreateInstanceRequest& request) override {
     if (const auto failure = status_failure(validate_command_context(request.context, true))) {
       return *failure;
     }
+    if (!canonical(request.installation.value)) {
+      return invalid_runtime_input();
+    }
+    const ResourceRef parent{ResourceKind::Installation, {request.installation.value}};
     auto checked =
         authorize(authorization_, request.context.authentication, Permission::PluginManage,
-                  request.context.method, {}, request.context.deadline);
+                  request.context.method, {parent}, request.context.deadline);
     if (const auto* failure = std::get_if<Failure>(&checked)) {
       return *failure;
     }
@@ -2651,120 +2657,92 @@ public:
   }
 
 private:
-  // A current-authority read cursor: opaque runtime-assigned id bound to the authenticated subject,
-  // query family, authorization version and page size. It never persists a frozen row set (unlike
-  // Identity session snapshots) and is never a client-derivable offset.
-  struct PageCursor {
-    std::string snapshot_id;
+  Outcome<RuntimeAuthorizationDecision> authorize_catalog(const CommandContext& context,
+                                                          ResourceKind family,
+                                                          const ResourceRef& catalog,
+                                                          Permission permission) {
+    if (catalog.kind != ResourceKind::Catalog || !canonical(catalog.id.value)) {
+      return invalid_runtime_input();
+    }
+    const auto configured = resource_catalogs_.find(family);
+    if (configured == resource_catalogs_.end()) {
+      return failure(ErrorCode::CapabilityNotSupported);
+    }
+    if (configured->second != catalog.id) {
+      return failure(ErrorCode::PermissionDenied);
+    }
+    return authorize(authorization_, context.authentication, permission, context.method, {catalog},
+                     context.deadline);
+  }
+
+  // A stored row set is immutable. Tokens name a snapshot plus an immutable candidate offset;
+  // authorization is rechecked on every page and reusable proof bytes are never retained.
+  struct ResourceSnapshot {
+    std::string id;
     SubjectId subject;
     std::string query;
+    std::vector<std::string> scope;
     ResourceVersion authorization_version;
-    std::uint32_t page_size = 0;
-    std::string after;
+    std::uint32_t page_size;
+    TimePoint observed_at;
     TimePoint expires_at;
+    std::vector<ReplayResult> records;
+    std::size_t bytes = 0;
   };
-  static constexpr std::size_t kMaximumPageCursors = 1024;
-  static constexpr std::size_t kMaximumPageCursorsPerSubject = 64;
+  static constexpr std::size_t kMaximumSnapshots = 1024;
+  static constexpr std::size_t kMaximumSubjectSnapshots = 64;
+  static constexpr std::size_t kMaximumSnapshotRecords = 4096;
+  static constexpr std::size_t kMaximumTotalSnapshotRecords = 16384;
+  static constexpr std::size_t kMaximumSnapshotBytes = 64 * 1024 * 1024;
 
-  // Cursors are immutable: a page token names exactly one keyset position (after) plus the bound
-  // query/subject/authorization-version/page-size/window. A consumed token is never mutated, so a
-  // lost-response retry returns the same page instead of skipping rows, and two concurrent callers
-  // cannot advance each other's cursor.
-  Outcome<PageCursor> begin_page(const CommandContext& context, std::string_view query,
-                                 const ResourceVersion& authorization_version,
-                                 const PageRequest& page, TimePoint now) {
-    std::lock_guard lock(cursors_mutex_);
-    if (!page.page_token.empty()) {
-      const auto found = cursors_.find(page.page_token);
-      if (found == cursors_.end() || found->second.expires_at <= now ||
-          found->second.subject != context.authentication.subject || found->second.query != query ||
-          found->second.page_size != page.page_size ||
-          found->second.authorization_version != authorization_version) {
-        return Failure{
-            ErrorCode::Conflict, Acceptance::NotAccepted, Recovery::CorrectInput, {}, {}};
-      }
-      return found->second;
+  static std::vector<std::string> snapshot_scope(const AuthenticationContext& authentication) {
+    std::vector<std::string> scope;
+    for (const auto& item : authentication.scopes) {
+      scope.push_back(std::to_string(static_cast<int>(item.resource.kind)) + "/" +
+                      item.resource.id.value + "/" + item.permission);
     }
-    auto allocated = ids_.snapshot_id();
-    if (const auto* failure = std::get_if<Failure>(&allocated)) {
-      return *failure;
-    }
-    PageCursor cursor{std::get<std::string>(allocated),
-                      context.authentication.subject,
-                      std::string(query),
-                      authorization_version,
-                      page.page_size,
-                      {},
-                      now + kSnapshotLifetime};
-    prune_cursors_locked(now);
-    cursors_[cursor.snapshot_id] = cursor;
-    return cursor;
+    std::sort(scope.begin(), scope.end());
+    scope.erase(std::unique(scope.begin(), scope.end()), scope.end());
+    return scope;
   }
-  Outcome<std::string> publish_page(const CommandContext& context, std::string_view query,
-                                    const ResourceVersion& authorization_version,
-                                    std::uint32_t page_size, std::string after, TimePoint now) {
-    auto allocated = ids_.snapshot_id();
-    if (const auto* failure = std::get_if<Failure>(&allocated)) {
-      return *failure;
-    }
-    std::string token = std::get<std::string>(allocated);
-    std::lock_guard lock(cursors_mutex_);
-    prune_cursors_locked(now);
-    // Per-subject cap: one subject cannot occupy the whole bounded cursor pool.
-    std::size_t count = 0;
-    for (const auto& [key, cursor] : cursors_) {
-      (void)key;
-      if (cursor.subject == context.authentication.subject) {
-        ++count;
-      }
-    }
-    while (count >= kMaximumPageCursorsPerSubject) {
-      auto oldest = cursors_.end();
-      for (auto it = cursors_.begin(); it != cursors_.end(); ++it) {
-        if (it->second.subject != context.authentication.subject) {
-          continue;
-        }
-        if (oldest == cursors_.end() || it->second.expires_at < oldest->second.expires_at) {
-          oldest = it;
-        }
-      }
-      if (oldest == cursors_.end()) {
-        break;
-      }
-      cursors_.erase(oldest);
-      --count;
-    }
-    cursors_[token] = PageCursor{token,
-                                 context.authentication.subject,
-                                 std::string(query),
-                                 authorization_version,
-                                 page_size,
-                                 std::move(after),
-                                 now + kSnapshotLifetime};
-    return token;
+  // Conservative upper bounds include protobuf tags/length prefixes and all dynamic payload.
+  static std::size_t snapshot_bytes(const BotAccount& value) {
+    return 512 + 2 * (value.id.value.size() + value.platform.size() +
+                      value.platform_account_id.size() + value.display_name.size());
   }
-  void prune_cursors_locked(TimePoint now) {
-    for (auto it = cursors_.begin(); it != cursors_.end();) {
-      if (it->second.expires_at <= now) {
-        it = cursors_.erase(it);
-      } else {
-        ++it;
-      }
+  static std::size_t snapshot_bytes(const PluginInstallation& value) {
+    return 512 +
+           2 * (value.id.value.size() + value.plugin_type.value.size() + value.manifest.size());
+  }
+  static std::size_t snapshot_bytes(const PluginInstance& value) {
+    std::size_t size = 2048 + 2 * (value.id.value.size() + value.installation.value.size() +
+                                   value.plugin_type.value.size());
+    if (value.host) {
+      size += 2 * value.host->value.size();
     }
-    while (cursors_.size() > kMaximumPageCursors) {
-      auto oldest = std::min_element(cursors_.begin(), cursors_.end(),
-                                     [](const auto& left, const auto& right) {
-                                       return left.second.expires_at < right.second.expires_at;
-                                     });
-      cursors_.erase(oldest);
+    if (value.current) {
+      size +=
+          2 * (value.current->instance.value.size() + value.current->runtime_epoch.value.size() +
+               value.current->connection.value.size() + value.current->execution.value.size());
     }
+    return size;
+  }
+  static std::size_t snapshot_bytes(const AdapterRecord& value) {
+    std::size_t size =
+        2048 +
+        2 * (value.adapter.value.size() + value.registration.implementation.size() +
+             value.registration.implementation_version.size() +
+             value.registration.protocol_version.size() + value.current.instance.value.size() +
+             value.current.runtime_epoch.value.size() + value.current.connection.value.size());
+    for (const auto& capability : value.registration.declared_capabilities) {
+      size += 32 + 2 * (capability.name.size() + capability.version.size());
+    }
+    for (const auto& capability : value.registration.effective_capabilities) {
+      size += 32 + 2 * (capability.name.size() + capability.version.size());
+    }
+    return size;
   }
 
-  // Reads one current-authority page. `loader` performs an ascending keyset read after the given
-  // stable id; every candidate is then checked against current authorization for the exact
-  // resource, so a caller only ever sees resources it is currently granted (catalog permission does
-  // not grant children). Dependency or authorization faults fail the whole page instead of
-  // returning a silently truncated page.
   template <typename Value>
   Outcome<ListResult<Value>>
   list_page(RuntimeUnitOfWork& work, const CommandContext& context, const PageRequest& page,
@@ -2774,85 +2752,138 @@ private:
                                                             const std::string&)>& loader,
             const std::function<ResourceRef(const Value&)>& resource_of,
             const std::function<const std::string&(const Value&)>& id) {
-    auto cursor = begin_page(context, query, authorization_version, page, now);
-    if (const auto* failure = std::get_if<Failure>(&cursor)) {
-      return *failure;
-    }
-    const auto current_cursor = std::get<PageCursor>(cursor);
-    std::vector<Value> visible;
-    std::string after = current_cursor.after;
-    std::string resume_after = after;
-    bool more = false;
-    for (int batch = 0; batch < 32; ++batch) {
-      auto loaded = loader(work, std::size_t{current_cursor.page_size} + 1, after);
-      if (const auto* failure = std::get_if<Failure>(&loaded)) {
-        return *failure;
+    std::shared_ptr<const ResourceSnapshot> snapshot;
+    std::size_t offset = 0;
+    const auto scope = snapshot_scope(context.authentication);
+    if (!page.page_token.empty()) {
+      const auto separator = page.page_token.find('.');
+      if (separator == std::string::npos) {
+        return stale_version();
       }
-      auto raw = std::move(std::get<std::vector<Value>>(loaded));
-      if (raw.empty()) {
-        more = false;
-        break;
+      const auto position = std::string_view(page.page_token).substr(separator + 1);
+      auto parsed = std::from_chars(position.data(), position.data() + position.size(), offset);
+      if (parsed.ec != std::errc{} || parsed.ptr != position.data() + position.size() ||
+          position != std::to_string(offset)) {
+        return stale_version();
       }
-      const bool lookahead = raw.size() > current_cursor.page_size;
-      const std::string last_scanned = id(raw.back());
-      for (auto& item : raw) {
-        if (visible.size() > current_cursor.page_size) {
-          break;
-        }
-        auto allowed = authorize(authorization_, context.authentication, permission, context.method,
-                                 {resource_of(item)}, context.deadline);
-        if (const auto* failure = std::get_if<Failure>(&allowed)) {
-          if (failure->code == ErrorCode::PermissionDenied ||
-              failure->code == ErrorCode::NotFound) {
-            continue;
-          }
-          return *failure;
-        }
-        visible.push_back(std::move(item));
+      std::lock_guard lock(cursors_mutex_);
+      const auto found = snapshots_.find(page.page_token.substr(0, separator));
+      if (found == snapshots_.end() || found->second->expires_at <= now ||
+          found->second->subject != context.authentication.subject ||
+          found->second->query != query ||
+          found->second->authorization_version != authorization_version ||
+          found->second->page_size != page.page_size || found->second->scope != scope ||
+          offset >= found->second->records.size() || offset == 0 ||
+          !issued_offsets_[found->first].contains(offset)) {
+        return stale_version();
       }
-      resume_after = last_scanned;
-      if (visible.size() > current_cursor.page_size) {
-        more = true;
-        resume_after = id(visible[current_cursor.page_size - 1]);
-        break;
-      }
-      if (visible.size() == current_cursor.page_size) {
-        // The page is full: a lookahead row proves more data exists after the displayed page.
-        more = lookahead;
-        resume_after = id(visible.back());
-        break;
-      }
-      if (!lookahead) {
-        more = false;
-        break;
-      }
-      after = last_scanned;
-    }
-    ListResult<Value> result;
-    result.page.page_size = current_cursor.page_size;
-    result.snapshot.authorization_version = authorization_version;
-    result.snapshot.observed_at = now;
-    result.snapshot.expires_at = current_cursor.expires_at;
-    if (visible.size() > current_cursor.page_size) {
-      visible.resize(current_cursor.page_size);
-      more = true;
-    }
-    result.items = std::move(visible);
-    if (more) {
-      auto token = publish_page(context, query, authorization_version, current_cursor.page_size,
-                                resume_after, now);
-      if (const auto* failure = std::get_if<Failure>(&token)) {
-        return *failure;
-      }
-      result.page.next_page_token = std::get<std::string>(token);
-      result.snapshot.snapshot_id = result.page.next_page_token;
-      result.snapshot.expires_at = now + kSnapshotLifetime;
+      snapshot = found->second;
     } else {
       auto allocated = ids_.snapshot_id();
-      if (const auto* failure = std::get_if<Failure>(&allocated)) {
-        return *failure;
+      if (const auto* rejected = std::get_if<Failure>(&allocated)) {
+        return *rejected;
       }
-      result.snapshot.snapshot_id = std::get<std::string>(allocated);
+      auto building =
+          std::make_shared<ResourceSnapshot>(ResourceSnapshot{std::get<std::string>(allocated),
+                                                              context.authentication.subject,
+                                                              std::string(query),
+                                                              scope,
+                                                              authorization_version,
+                                                              page.page_size,
+                                                              now,
+                                                              now + kSnapshotLifetime,
+                                                              {},
+                                                              0});
+      building->bytes = 1024 + 2 * (building->id.size() + building->subject.value.size() +
+                                    building->query.size());
+      for (const auto& item : building->scope) {
+        building->bytes += 32 + 2 * item.size();
+      }
+      std::string after;
+      for (;;) {
+        auto loaded = loader(work, 1024, after);
+        if (const auto* rejected = std::get_if<Failure>(&loaded)) {
+          return *rejected;
+        }
+        auto values = std::move(std::get<std::vector<Value>>(loaded));
+        for (auto& value : values) {
+          if (id(value) <= after) {
+            return internal_failure();
+          }
+          after = id(value);
+          building->bytes += snapshot_bytes(value);
+          building->records.emplace_back(std::move(value));
+          if (building->records.size() > kMaximumSnapshotRecords ||
+              building->bytes > kMaximumSnapshotBytes) {
+            return failure(ErrorCode::RateLimited, Recovery::Backoff);
+          }
+        }
+        if (values.size() < 1024) {
+          break;
+        }
+      }
+      std::lock_guard lock(cursors_mutex_);
+      std::size_t count = 0;
+      std::size_t records = building->records.size();
+      std::size_t bytes = building->bytes;
+      for (auto it = snapshots_.begin(); it != snapshots_.end();) {
+        if (it->second->expires_at <= now) {
+          issued_offsets_.erase(it->first);
+          it = snapshots_.erase(it);
+        } else {
+          count += it->second->subject == building->subject;
+          records += it->second->records.size();
+          bytes += it->second->bytes;
+          ++it;
+        }
+      }
+      if (count >= kMaximumSubjectSnapshots || snapshots_.size() >= kMaximumSnapshots ||
+          records > kMaximumTotalSnapshotRecords || bytes > kMaximumSnapshotBytes) {
+        return failure(ErrorCode::RateLimited, Recovery::Backoff);
+      }
+      snapshot = building;
+      if (!snapshots_.emplace(building->id, building).second) {
+        return internal_failure();
+      }
+    }
+    // Release the consistent database view before online per-child Identity checks.
+    work.rollback();
+    ListResult<Value> result;
+    result.page.page_size = page.page_size;
+    result.snapshot.snapshot_id = snapshot->id;
+    result.snapshot.authorization_version = authorization_version;
+    result.snapshot.observed_at = snapshot->observed_at;
+    result.snapshot.expires_at = snapshot->expires_at;
+    for (std::size_t index = offset; index < snapshot->records.size(); ++index) {
+      const auto* value = std::get_if<Value>(&snapshot->records[index]);
+      if (!value) {
+        return internal_failure();
+      }
+      auto allowed = authorize(authorization_, context.authentication, permission, context.method,
+                               {resource_of(*value)}, context.deadline);
+      if (const auto* rejected = std::get_if<Failure>(&allowed)) {
+        if (rejected->code == ErrorCode::PermissionDenied ||
+            rejected->code == ErrorCode::NotFound) {
+          continue;
+        }
+        return *rejected;
+      }
+      if (std::get<RuntimeAuthorizationDecision>(allowed).authorization_version !=
+          authorization_version) {
+        return stale_version();
+      }
+      if (result.items.size() == page.page_size) {
+        {
+          std::lock_guard lock(cursors_mutex_);
+          if (!snapshots_.contains(snapshot->id)) {
+            return stale_version();
+          }
+          issued_offsets_[snapshot->id].insert(index);
+        }
+        result.page.next_page_token = snapshot->id + "." + std::to_string(index);
+        break;
+      }
+      result.items.push_back(*value);
     }
     return result;
   }
@@ -2917,12 +2948,14 @@ private:
   RuntimeIdPort& ids_;
   RuntimeSecretPort& secrets_;
   std::mutex cursors_mutex_;
-  std::unordered_map<std::string, PageCursor> cursors_;
+  std::unordered_map<std::string, std::shared_ptr<const ResourceSnapshot>> snapshots_;
+  std::unordered_map<std::string, std::set<std::size_t>> issued_offsets_;
   RuntimeAuthorizationPort& authorization_;
   std::vector<std::string> supported_capabilities_;
   HostLifecycleParticipantPort* host_lifecycle_ = nullptr;
   SchedulerLifecycleParticipantPort* scheduler_lifecycle_ = nullptr;
   std::size_t maintenance_round_ = 0;
+  std::map<ResourceKind, ResourceId> resource_catalogs_;
 };
 
 Outcome<std::unique_ptr<RuntimeResourceApplication>>

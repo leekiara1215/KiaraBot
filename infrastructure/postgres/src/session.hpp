@@ -18,8 +18,8 @@ struct Session {
   bool disabled = false;
   std::binary_semaphore permit{1};
 };
-core::target::Outcome<CommonWorkAccess>
-begin_common_access(const std::shared_ptr<Session>& session);
+core::target::Outcome<CommonWorkAccess> begin_common_access(const std::shared_ptr<Session>& session,
+                                                            bool resource_snapshot = false);
 core::target::Outcome<std::unique_ptr<core::target::UnitOfWork>>
 begin_common(const std::shared_ptr<Session>& session);
 

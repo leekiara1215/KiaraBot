@@ -865,6 +865,11 @@ public:
     return std::unique_ptr<t::RuntimeUnitOfWork>(std::make_unique<MemoryWork>(store_));
   }
 
+  t::Outcome<std::unique_ptr<t::RuntimeUnitOfWork>> begin_resource_snapshot() override {
+    // This single-thread fixture never mutates its store during a synchronous list read.
+    return begin();
+  }
+
 private:
   Store& store_;
 };
@@ -934,6 +939,8 @@ public:
   bool chain_available = true;
   bool invalid_binding = false;
   bool stale_decision = false;
+  std::uint64_t version = 7;
+  std::optional<t::ResourceRef> last_scope;
   std::set<std::string> denied_resources;
   bool available() const noexcept override {
     return chain_available && !unavailable;
@@ -950,7 +957,9 @@ public:
     decision.subject = request.authentication.subject;
     decision.permission = invalid_binding ? t::Permission::Unspecified : request.permission;
     decision.scope = request.scope;
-    decision.authorization_version = {7};
+    decision.authorization_version = {version};
+    if (!request.scope.empty())
+      last_scope = request.scope.front();
     decision.checked_at = stale_decision
                               ? t::TimePoint{std::chrono::seconds{1}}
                               : t::TimePoint{std::chrono::duration_cast<std::chrono::nanoseconds>(
@@ -1047,21 +1056,31 @@ struct Harness {
   LifecycleScheduler scheduler_lifecycle;
   std::unique_ptr<t::RuntimeResourceApplication> application;
   Harness() {
-    auto built = t::make_runtime_resource_application({factory,
-                                                       ids,
-                                                       secrets,
-                                                       authorization,
-                                                       {"action.send_message.text.v1"},
-                                                       &host_lifecycle,
-                                                       &scheduler_lifecycle});
+    auto built = t::make_runtime_resource_application(
+        {factory,
+         ids,
+         secrets,
+         authorization,
+         {"action.send_message.text.v1"},
+         &host_lifecycle,
+         &scheduler_lifecycle,
+         {{t::ResourceKind::Account, {"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1"}},
+          {t::ResourceKind::Installation, {"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2"}},
+          {t::ResourceKind::Instance, {"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa3"}},
+          {t::ResourceKind::Adapter, {"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa4"}},
+          {t::ResourceKind::Host, {"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa5"}}}});
     check(std::holds_alternative<std::unique_ptr<t::RuntimeResourceApplication>>(built),
           "application construction failed");
     application = std::move(std::get<std::unique_ptr<t::RuntimeResourceApplication>>(built));
   }
 };
 void create_account(Harness& harness, t::BotAccount* output = nullptr) {
-  t::CreateAccountRequest request{context("runtime.create_account", digest(1)), "qq", "10001",
-                                  "Bot"};
+  t::CreateAccountRequest request{
+      context("runtime.create_account", digest(1)),
+      "qq",
+      "10001",
+      "Bot",
+      {t::ResourceKind::Catalog, {"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1"}}};
   auto created = harness.application->create_account(request);
   check(std::holds_alternative<t::BotAccount>(created), "create account failed");
   if (output) {
@@ -1264,24 +1283,36 @@ void authorization_negative_flow() {
   // An invalid authorization decision binding (wrong permission) fails closed as an internal
   // upstream fault and performs no effect.
   harness.authorization.invalid_binding = true;
-  t::CreateAccountRequest request{context("runtime.create_account", digest(41)), "qq", "10002",
-                                  "Bot"};
+  t::CreateAccountRequest request{
+      context("runtime.create_account", digest(41)),
+      "qq",
+      "10002",
+      "Bot",
+      {t::ResourceKind::Catalog, {"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1"}}};
   const auto before = harness.store.accounts.size();
   check(failure_is(harness.application->create_account(request), t::ErrorCode::Internal),
         "mismatched authorization decision was treated as a grant");
   check(harness.store.accounts.size() == before, "invalid decision produced an effect");
   harness.authorization.invalid_binding = false;
   harness.authorization.stale_decision = true;
-  t::CreateAccountRequest stale{context("runtime.create_account", digest(43)), "qq", "10004",
-                                "Bot"};
+  t::CreateAccountRequest stale{
+      context("runtime.create_account", digest(43)),
+      "qq",
+      "10004",
+      "Bot",
+      {t::ResourceKind::Catalog, {"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1"}}};
   const auto stale_before = harness.store.accounts.size();
   check(failure_is(harness.application->create_account(stale), t::ErrorCode::Internal),
         "stale authorization decision was treated as a current grant");
   check(harness.store.accounts.size() == stale_before, "stale decision produced an effect");
   harness.authorization.stale_decision = false;
   // Expired command deadlines are rejected before any effect.
-  t::CreateAccountRequest expired{context("runtime.create_account", digest(42)), "qq", "10003",
-                                  "Bot"};
+  t::CreateAccountRequest expired{
+      context("runtime.create_account", digest(42)),
+      "qq",
+      "10003",
+      "Bot",
+      {t::ResourceKind::Catalog, {"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1"}}};
   expired.context.deadline = t::TimePoint{std::chrono::seconds{900}};
   check(failure_is(harness.application->create_account(expired), t::ErrorCode::Timeout),
         "expired command deadline was accepted");
@@ -1307,7 +1338,10 @@ void mutation_replay_operation_flow() {
 }
 void installation_instance_flow(Harness& harness) {
   t::CreateInstallationRequest install{
-      context("runtime.create_installation", digest(20)), "type", {std::byte{1}}};
+      context("runtime.create_installation", digest(20)),
+      "type",
+      {std::byte{1}},
+      {t::ResourceKind::Catalog, {"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2"}}};
   auto created = harness.application->create_installation(install);
   check(std::holds_alternative<t::PluginInstallation>(created), "installation creation failed");
   const auto& installation = std::get<t::PluginInstallation>(created);
@@ -1316,6 +1350,10 @@ void installation_instance_flow(Harness& harness) {
                                   t::ResourceId{kHost}, false};
   auto instance = harness.application->create_instance(create);
   check(std::holds_alternative<t::InstanceCreation>(instance), "instance creation failed");
+  check(harness.authorization.last_scope &&
+            harness.authorization.last_scope->kind == t::ResourceKind::Installation &&
+            harness.authorization.last_scope->id.value == installation.id.value,
+        "instance creation did not authorize its exact parent installation");
   const auto creation = std::get<t::InstanceCreation>(instance);
   check(creation.bootstrap_credential.has_value() && creation.bootstrap_credential->size() == 64,
         "managed instance missing one-time Host deployment bootstrap");
@@ -1371,8 +1409,12 @@ void installation_instance_flow(Harness& harness) {
 void authorization_flow() {
   Harness denied;
   denied.authorization.deny = true;
-  t::CreateAccountRequest request{context("runtime.create_account", digest(30)), "qq", "10001",
-                                  "Bot"};
+  t::CreateAccountRequest request{
+      context("runtime.create_account", digest(30)),
+      "qq",
+      "10001",
+      "Bot",
+      {t::ResourceKind::Catalog, {"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1"}}};
   check(failure_is(denied.application->create_account(request), t::ErrorCode::PermissionDenied),
         "denied authorization was accepted");
   check(denied.store.accounts.empty() && denied.store.commits == 0,
@@ -1386,20 +1428,27 @@ void authorization_flow() {
 void pagination_flow(Harness& harness) {
   for (int index = 0; index < 3; ++index) {
     t::CreateAccountRequest request{
-        context("runtime.create_account", digest(static_cast<std::uint8_t>(40 + index))), "qq",
-        std::to_string(20000 + index), "Bot"};
+        context("runtime.create_account", digest(static_cast<std::uint8_t>(40 + index))),
+        "qq",
+        std::to_string(20000 + index),
+        "Bot",
+        {t::ResourceKind::Catalog, {"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1"}}};
     request.context.authentication.subject = t::SubjectId{kSubject};
     check(std::holds_alternative<t::BotAccount>(harness.application->create_account(request)),
           "pagination fixture creation failed");
   }
-  t::AccountListQuery first{context("runtime.list_accounts", digest(50)), {2, {}}};
+  t::AccountListQuery first{context("runtime.list_accounts", digest(50)),
+                            {2, {}},
+                            {t::ResourceKind::Catalog, {"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1"}}};
   auto page = harness.application->list_accounts(first);
   check(std::holds_alternative<t::ListResult<t::BotAccount>>(page) &&
             std::get<t::ListResult<t::BotAccount>>(page).items.size() == 2 &&
             !std::get<t::ListResult<t::BotAccount>>(page).page.next_page_token.empty(),
         "first page did not return a bound next-page token");
   const auto token = std::get<t::ListResult<t::BotAccount>>(page).page.next_page_token;
-  t::AccountListQuery second{context("runtime.list_accounts", digest(50)), {2, token}};
+  t::AccountListQuery second{context("runtime.list_accounts", digest(50)),
+                             {2, token},
+                             {t::ResourceKind::Catalog, {"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1"}}};
   check(std::holds_alternative<t::ListResult<t::BotAccount>>(
             harness.application->list_accounts(second)),
         "second page rejected its own token");
@@ -1407,6 +1456,10 @@ void pagination_flow(Harness& harness) {
   forged.page.page_token = "00000000-0000-4000-8000-000000000000";
   check(failure_is(harness.application->list_accounts(forged), t::ErrorCode::Conflict),
         "forged page token was accepted");
+  auto changed_position = second;
+  changed_position.page.page_token = token.substr(0, token.find('.') + 1) + "1";
+  check(failure_is(harness.application->list_accounts(changed_position), t::ErrorCode::Conflict),
+        "unissued cursor position was accepted");
   auto wrong_size = second;
   wrong_size.page.page_size = 1;
   check(failure_is(harness.application->list_accounts(wrong_size), t::ErrorCode::Conflict),
@@ -1426,6 +1479,32 @@ void pagination_flow(Harness& harness) {
   check(retried_page.items.size() == original_page.items.size() &&
             retried_page.items.front().id.value == original_page.items.front().id.value,
         "page token retry advanced the cursor");
+  const auto window = retried_page.snapshot;
+  const auto last_id = retried_page.items.front().id.value;
+  const auto original_name = retried_page.items.front().display_name;
+  harness.store.accounts.at(last_id).display_name = "changed-after-snapshot";
+  harness.store.now += 60s;
+  auto immutable = harness.application->list_accounts(second);
+  check(std::get<t::ListResult<t::BotAccount>>(immutable).items.front().display_name ==
+                original_name &&
+            std::get<t::ListResult<t::BotAccount>>(immutable).snapshot.observed_at ==
+                window.observed_at &&
+            std::get<t::ListResult<t::BotAccount>>(immutable).snapshot.expires_at ==
+                window.expires_at,
+        "list snapshot changed rows or extended its window");
+  auto other_subject = second;
+  other_subject.context.authentication.subject = t::SubjectId{kPeer};
+  check(failure_is(harness.application->list_accounts(other_subject), t::ErrorCode::Conflict),
+        "snapshot accepted another subject");
+  auto changed_scope = second;
+  changed_scope.context.authentication.scopes.push_back(
+      {{t::ResourceKind::Account, {last_id}}, "account.read"});
+  check(failure_is(harness.application->list_accounts(changed_scope), t::ErrorCode::Conflict),
+        "snapshot accepted a changed delegation scope");
+  harness.authorization.version = 8;
+  check(failure_is(harness.application->list_accounts(second), t::ErrorCode::Conflict),
+        "snapshot accepted a changed authorization version");
+  harness.authorization.version = 7;
   // Per-item authorization filtering hides resources the caller is not granted.
   harness.authorization.denied_resources.insert(retried_page.items.front().id.value);
   auto filtered = harness.application->list_accounts(second);
@@ -1440,12 +1519,17 @@ void pagination_flow(Harness& harness) {
   Harness many;
   for (int index = 0; index < 105; ++index) {
     t::CreateAccountRequest request{
-        context("runtime.create_account", digest(static_cast<std::uint8_t>(index + 60))), "qq",
-        std::to_string(30000 + index), "Bot"};
+        context("runtime.create_account", digest(static_cast<std::uint8_t>(index + 60))),
+        "qq",
+        std::to_string(30000 + index),
+        "Bot",
+        {t::ResourceKind::Catalog, {"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1"}}};
     check(std::holds_alternative<t::BotAccount>(many.application->create_account(request)),
           "large pagination fixture creation failed");
   }
-  t::AccountListQuery page1{context("runtime.list_accounts", digest(90)), {100, {}}};
+  t::AccountListQuery page1{context("runtime.list_accounts", digest(90)),
+                            {100, {}},
+                            {t::ResourceKind::Catalog, {"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1"}}};
   auto first_big = many.application->list_accounts(page1);
   check(std::holds_alternative<t::ListResult<t::BotAccount>>(first_big) &&
             std::get<t::ListResult<t::BotAccount>>(first_big).items.size() == 100 &&
@@ -1453,12 +1537,52 @@ void pagination_flow(Harness& harness) {
         "first 100-row page did not fill or expose the next token");
   t::AccountListQuery page2{
       context("runtime.list_accounts", digest(91)),
-      {100, std::get<t::ListResult<t::BotAccount>>(first_big).page.next_page_token}};
+      {100, std::get<t::ListResult<t::BotAccount>>(first_big).page.next_page_token},
+      {t::ResourceKind::Catalog, {"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1"}}};
   auto second_big = many.application->list_accounts(page2);
   check(std::holds_alternative<t::ListResult<t::BotAccount>>(second_big) &&
             std::get<t::ListResult<t::BotAccount>>(second_big).items.size() == 5 &&
             std::get<t::ListResult<t::BotAccount>>(second_big).page.next_page_token.empty(),
         "keyset page 2 did not reach the remaining rows");
+}
+void catalog_rejection_and_capacity_flow() {
+  Harness harness;
+  t::AccountListQuery query{context("runtime.list_accounts", digest(99)),
+                            {1, {}},
+                            {t::ResourceKind::Catalog, {"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1"}}};
+  auto unconfigured = t::make_runtime_resource_application(
+      {harness.factory, harness.ids, harness.secrets, harness.authorization, {}});
+  auto& without_catalogs = std::get<std::unique_ptr<t::RuntimeResourceApplication>>(unconfigured);
+  check(failure_is(without_catalogs->list_accounts(query), t::ErrorCode::CapabilityNotSupported),
+        "missing deployment catalog mapping did not fail closed");
+  auto missing = query;
+  missing.catalog.id.value.clear();
+  check(failure_is(harness.application->list_accounts(missing), t::ErrorCode::InvalidArgument),
+        "missing catalog accepted");
+  auto foreign = query;
+  foreign.catalog.id.value = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2";
+  check(failure_is(harness.application->list_accounts(foreign), t::ErrorCode::PermissionDenied),
+        "another family's catalog accepted");
+  for (std::size_t index = 0; index < 64; ++index) {
+    check(std::holds_alternative<t::ListResult<t::BotAccount>>(
+              harness.application->list_accounts(query)),
+          "snapshot capacity rejected below configured limit");
+  }
+  check(failure_is(harness.application->list_accounts(query), t::ErrorCode::RateLimited),
+        "snapshot subject budget silently evicted a live snapshot");
+  harness.store.now += 600s;
+  query.context.deadline += 600s;
+  check(std::holds_alternative<t::ListResult<t::BotAccount>>(
+            harness.application->list_accounts(query)),
+        "expired snapshot budget was not reclaimed");
+  Harness large;
+  for (std::uint64_t index = 0; index <= 4096; ++index) {
+    t::BotAccount account;
+    account.id = {id_text(index + 1, 0x9000)};
+    large.store.accounts.emplace(account.id.value, account);
+  }
+  check(failure_is(large.application->list_accounts(query), t::ErrorCode::RateLimited),
+        "candidate row budget silently truncated a list");
 }
 void readiness_flow() {
   Harness harness;
@@ -1863,8 +1987,7 @@ void lifecycle_host_participant_flow() {
   const auto& command = harness.store.host_commands.begin()->second;
   check(command.kind == t::HostCommandKind::StopExecution && command.host_id == kHost &&
             command.instance_id == kLifecycleInstance &&
-            command.installation_id == installation.id.value &&
-            command.execution_generation == 1 &&
+            command.installation_id == installation.id.value && command.execution_generation == 1 &&
             command.desired_version == instance.desired_version.value &&
             command.desired_state == t::DesiredState::Stopped &&
             command.package_sha256.size() == 64 && command.launch_profile.empty() &&
@@ -1922,6 +2045,7 @@ int main() {
     Harness harness;
     pagination_flow(harness);
   }
+  catalog_rejection_and_capacity_flow();
   readiness_flow();
   {
     Harness harness;

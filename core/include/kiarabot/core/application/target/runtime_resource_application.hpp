@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <map>
 #include <memory>
 #include <optional>
 #include <string>
@@ -84,6 +85,7 @@ struct CreateAccountRequest {
   std::string platform;
   std::string platform_account_id;
   std::string display_name;
+  ResourceRef catalog{ResourceKind::Catalog, {}};
 };
 struct UpdateAccountRequest {
   CommandContext context;
@@ -101,6 +103,7 @@ struct AccountQuery {
 struct AccountListQuery {
   CommandContext context;
   PageRequest page;
+  ResourceRef catalog{ResourceKind::Catalog, {}};
 };
 struct BindAdapterRequest {
   CommandContext context;
@@ -151,15 +154,18 @@ struct AdapterQuery {
 struct AdapterListQuery {
   CommandContext context;
   PageRequest page;
+  ResourceRef catalog{ResourceKind::Catalog, {}};
 };
 struct ValidateManifestCommand {
   CommandContext context;
   std::vector<std::byte> manifest;
+  ResourceRef catalog{ResourceKind::Catalog, {}};
 };
 struct CreateInstallationRequest {
   CommandContext context;
   std::string plugin_type_id;
   std::vector<std::byte> manifest;
+  ResourceRef catalog{ResourceKind::Catalog, {}};
 };
 struct InstallationQuery {
   CommandContext context;
@@ -168,6 +174,7 @@ struct InstallationQuery {
 struct InstallationListQuery {
   CommandContext context;
   PageRequest page;
+  ResourceRef catalog{ResourceKind::Catalog, {}};
 };
 struct CreateInstanceRequest {
   CommandContext context;
@@ -182,6 +189,7 @@ struct InstanceQuery {
 struct InstanceListQuery {
   CommandContext context;
   PageRequest page;
+  ResourceRef catalog{ResourceKind::Catalog, {}};
 };
 struct InstanceConfigQuery {
   CommandContext context;
@@ -381,6 +389,7 @@ struct RuntimeResourceDependencies {
   // pointer is fail-closed (participant BLOCKED/retryable), never a fake successful stop/cancel.
   HostLifecycleParticipantPort* host_lifecycle = nullptr;
   SchedulerLifecycleParticipantPort* scheduler_lifecycle = nullptr;
+  std::map<ResourceKind, ResourceId> resource_catalogs{};
 };
 
 // Borrowed dependencies outlive every call; each call owns separate short UoWs.

@@ -166,11 +166,14 @@ class CommonWork final : public target::UnitOfWork,
                          public target::JournalRepository,
                          public target::Repository<target::OperationId, target::Operation> {
 public:
-  explicit CommonWork(std::shared_ptr<Session> session)
+  explicit CommonWork(std::shared_ptr<Session> session, bool resource_snapshot = false)
       : session_(std::move(session)), owner_(session_->owner),
         deadline_(std::chrono::steady_clock::now() + std::chrono::seconds(2)),
         budget_(session_->connection->sock(), deadline_),
         transaction_(std::make_unique<pqxx::work>(*session_->connection)) {
+    if (resource_snapshot) {
+      transaction_->exec("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY");
+    }
     transaction_->exec("SET LOCAL statement_timeout='2000ms'; SET LOCAL lock_timeout='250ms'; "
                        "SET LOCAL idle_in_transaction_session_timeout='2000ms'");
     const auto locks = transaction_->exec(
@@ -1470,7 +1473,8 @@ target::Status save_authorization(target::UnitOfWork& work, const target::Author
   return error(target::ErrorCode::Internal);
 }
 
-target::Outcome<CommonWorkAccess> begin_common_access(const std::shared_ptr<Session>& session) {
+target::Outcome<CommonWorkAccess> begin_common_access(const std::shared_ptr<Session>& session,
+                                                      bool resource_snapshot) {
   if (!session->permit.try_acquire_for(std::chrono::milliseconds(250))) {
     return error(target::ErrorCode::Conflict);
   }
@@ -1479,7 +1483,7 @@ target::Outcome<CommonWorkAccess> begin_common_access(const std::shared_ptr<Sess
     return error(target::ErrorCode::UpstreamUnavailable);
   }
   try {
-    auto work = std::make_unique<CommonWork>(session);
+    auto work = std::make_unique<CommonWork>(session, resource_snapshot);
     auto* sql = static_cast<SqlWork*>(work.get());
     return CommonWorkAccess{std::move(work), sql};
   } catch (...) {

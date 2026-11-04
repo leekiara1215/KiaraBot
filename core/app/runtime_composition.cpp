@@ -489,6 +489,19 @@ compose_runtime_service(const platform::ProcessConfig& config) {
                 std::move(std::get<std::unique_ptr<target::SchedulerLifecycleParticipantPort>>(
                     scheduler_lifecycle));
           }
+          std::map<target::ResourceKind, target::ResourceId> catalogs;
+          for (const auto& [family, kind] :
+               std::vector<std::pair<std::string, target::ResourceKind>>{
+                   {"accounts", target::ResourceKind::Account},
+                   {"installations", target::ResourceKind::Installation},
+                   {"instances", target::ResourceKind::Instance},
+                   {"adapters", target::ResourceKind::Adapter},
+                   {"hosts", target::ResourceKind::Host}}) {
+            const auto found = config.resource_catalogs.find(family);
+            if (found != config.resource_catalogs.end()) {
+              catalogs.emplace(kind, target::ResourceId{found->second});
+            }
+          }
           auto built = target::make_runtime_resource_application(
               {factory,
                *state->ids,
@@ -499,11 +512,11 @@ compose_runtime_service(const platform::ProcessConfig& config) {
                 "action.approve_request.v1"},
                state->host_lifecycle.get(),
 #ifdef KIARABOT_P13G_TEST_COMPOSITION
-               state->p13g_scheduler.get()
+               state->p13g_scheduler.get(),
 #else
-               state->scheduler_lifecycle.get()
+               state->scheduler_lifecycle.get(),
 #endif
-              });
+               std::move(catalogs)});
           if (const auto* failure = std::get_if<target::Failure>(&built)) {
             return {};
           }

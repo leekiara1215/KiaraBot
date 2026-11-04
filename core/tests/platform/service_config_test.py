@@ -111,6 +111,16 @@ def main(driver, identity=None):
         runtime = {**config, 'service': 'runtime'}
         expect(0, {**runtime, 'bridge_listen': '127.0.0.1:1'}, service='runtime')
         expect(0, {**runtime, 'bridge_listen': '127.0.0.1:0'}, service='runtime')
+        catalogs = {family: f'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa{index}'
+                    for index, family in enumerate(['accounts', 'installations', 'instances', 'adapters', 'hosts'], 1)}
+        expect(0, {**runtime, 'resource_catalogs': catalogs}, service='runtime')
+        for invalid_catalogs in [None, {}, {'accounts': catalogs['accounts']},
+                                 {**catalogs, 'extra': catalogs['accounts']},
+                                 {**catalogs, 'hosts': catalogs['accounts']},
+                                 {**catalogs, 'hosts': catalogs['hosts'].upper()},
+                                 {**catalogs, 'hosts': 'aaaaaaaa-aaaa-1aaa-8aaa-aaaaaaaaaaa5'}]:
+            expect(2, {**runtime, 'resource_catalogs': invalid_catalogs}, service='runtime')
+        expect(2, {**config, 'resource_catalogs': catalogs})
         host_peer = {'host_id': 'host-a',
                      'certificate_sha256': 'ab' * 32}
         expect(0, {**runtime, 'hosts': [host_peer]}, service='runtime')
