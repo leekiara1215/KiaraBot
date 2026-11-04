@@ -361,6 +361,9 @@ void run(const std::filesystem::path& root, std::uint16_t port,
       check_identity_security_schema(config);
     }
     pg::test::check_typed(runtime);
+    if (config.service == target::Service::Runtime) {
+      pg::test::check_runtime_management_receipts(runtime, config, root, proxy_port);
+    }
     if (config.service == target::Service::Identity) {
       pg::test::check_unknown_commit(runtime, root, proxy_port);
     }

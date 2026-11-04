@@ -41,32 +41,32 @@ class CommitReceiptProxy:
             while not self.stop.is_set():
                 try:
                     client, _ = self.listener.accept()
-                    break
                 except socket.timeout:
                     continue
-            else:
-                return
-            with client, socket.create_connection(('127.0.0.1', self.upstream_port), timeout=3) as upstream:
-                client.settimeout(2)
-                upstream.settimeout(2)
-                armed = False
-                command_forwarded = False
-                while not self.stop.is_set():
-                    if not armed and (self.root / 'drop-commit-arm').is_file():
-                        armed = True
-                        (self.root / 'drop-commit-ready').write_text('ready')
-                    readable, _, _ = select.select([client, upstream], [], [], 0.05)
-                    for source in readable:
-                        payload = source.recv(65536)
-                        if not payload:
-                            return
-                        if source is client:
-                            upstream.sendall(payload)
-                            command_forwarded = command_forwarded or armed
-                        elif command_forwarded:
-                            (self.root / 'commit-receipt-dropped').write_text('dropped')
-                            return  # PG sent COMMIT result; discard it and close both sockets.
-                        else:
-                            client.sendall(payload)
+                self._relay(client)
         except Exception as error:
             self.error = error
+
+    def _relay(self, client):
+        with client, socket.create_connection(('127.0.0.1', self.upstream_port), timeout=3) as upstream:
+            client.settimeout(2)
+            upstream.settimeout(2)
+            armed = False
+            command_forwarded = False
+            while not self.stop.is_set():
+                if not armed and (self.root / 'drop-commit-arm').is_file():
+                    armed = True
+                    (self.root / 'drop-commit-ready').write_text('ready')
+                readable, _, _ = select.select([client, upstream], [], [], 0.05)
+                for source in readable:
+                    payload = source.recv(65536)
+                    if not payload:
+                        return
+                    if source is client:
+                        upstream.sendall(payload)
+                        command_forwarded = command_forwarded or armed
+                    elif command_forwarded:
+                        (self.root / 'commit-receipt-dropped').write_text('dropped')
+                        return  # PG sent COMMIT result; discard it and close both sockets.
+                    else:
+                        client.sendall(payload)
