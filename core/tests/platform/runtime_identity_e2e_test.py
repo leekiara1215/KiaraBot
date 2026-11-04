@@ -150,6 +150,9 @@ def prepare(root, enrolled):
         'assignment_id': str(uuid.uuid4()),
         'permissions': ['log.read', 'audit.read'],
         'scope': [{'kind': 'RESOURCE_CATALOG', 'id': 'control'}]})
+    from runtime_catalog_management_e2e import prepare as prepare_catalogs
+    if '--catalog-only' in sys.argv[9:]:
+        prepare_catalogs(enrolled, installation_id, account_id)
     from runtime_instance_management_e2e import grant_existing_objects
     grant_existing_objects(enrolled, installation_id, instance_id)
     if '--exact-accounts' in sys.argv[9:]:
@@ -310,7 +313,8 @@ def scenario(root, port, pg_bin, binaries):
                   'tls': {'certificate_file': str(tls / 'runtime.pem'),
                           'private_key_file': str(tls / 'runtime.key'),
                           'ca_file': str(tls / 'ca.pem')},
-                  'database': runtime_db, 'identity_endpoint': identity_endpoint}
+                  'database': runtime_db, 'identity_endpoint': identity_endpoint,
+                  'resource_catalogs': __import__('runtime_catalog_management_e2e').CATALOGS}
         (tls / 'runtime.key').chmod(0o600)
         runtime_config = root / 'runtime.json'
         runtime_config.write_text(json.dumps(config))
@@ -374,6 +378,14 @@ def scenario(root, port, pg_bin, binaries):
                 require(wait_ready(probe_port, True), 'runtime receipt restart ready')
                 runtime_channel = channel('127.0.0.1:' + restarted['grpc_port'], tls)
                 runtime_stub = runtime_pb2_grpc.RuntimeServiceStub(runtime_channel)
+            if '--catalog-only' in sys.argv[9:]:
+                from runtime_catalog_management_e2e import seed_existing, verify as verify_catalogs
+                seed_existing(postgres(root, pg_bin, port, 'p03_runtime'),
+                              STATE['installation_id'], STATE['instance_id'], run_sql)
+                verify_catalogs(runtime_stub, issue_delegation, account_id, STATE['installation_id'],
+                                STATE['instance_id'], context, require)
+                print('P05 catalog real Identity/Runtime mTLS PostgreSQL checks passed')
+                return
 
             if exact_accounts:
                 import runtime_exact_accounts_test
@@ -1253,18 +1265,19 @@ def main():
 
 
 if __name__ == '__main__':
-    if '--exact-accounts' in sys.argv[9:]:
-        try:
-            main()
-        except Exception as error:
-            import grpc
-            import traceback
-            frames = traceback.extract_tb(error.__traceback__)
-            local = next((frame for frame in reversed(frames) if frame.filename.endswith(
-                'runtime_exact_accounts_test.py') and frame.name == 'check'), frames[-1])
-            result = error.code().name if isinstance(error, grpc.RpcError) else type(error).__name__
-            print(f'P05 exact resource failure at {Path(local.filename).name}:{local.lineno}: {result}',
-                  file=sys.stderr)
-            sys.exit(1)
-    else:
+    try:
         main()
+    except Exception as error:
+        import grpc
+        import traceback
+        frames = traceback.extract_tb(error.__traceback__)
+        local = next((frame for frame in reversed(frames) if frame.filename.endswith((
+            'runtime_exact_accounts_test.py', 'runtime_catalog_management_e2e.py',
+            'runtime_instance_management_e2e.py'))),
+            next((frame for frame in reversed(frames) if frame.filename.endswith((
+                'runtime_identity_e2e_test.py', 'identity_bootstrap_test.py'))), frames[-1]))
+        result = error.code().name if isinstance(error, grpc.RpcError) else type(error).__name__
+        # Never print exception text: RPC errors and fixture inputs can contain reusable secrets.
+        print(f'P05 exact resource failure at {Path(local.filename).name}:{local.lineno}: {result}',
+              file=sys.stderr)
+        sys.exit(1)

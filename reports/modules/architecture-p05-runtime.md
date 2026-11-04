@@ -309,3 +309,9 @@ Bridge 双连接隔离修复及 P06 容量重投集成后，主构建重新编�
 真实 PG/Identity/Runtime e2e 尚未取得通过：一次离线 bootstrap TIMEOUT，后续在进入新增目录路径前，既有 `runtime_instance_management_e2e.py:76` SetDesiredState 重放遇 grpc DEADLINE_EXCEEDED。未降低断言、未扩大授权。目录真实联测将独立补证，target status 本提交不翻 implemented；receipt lane 集成后的全量复测由 Lead 继续。
 
 文档影响：proto、README、doc/01-contracts 已由前置契约提交同步，本提交更新 doc/01-runtime-semantics、doc/02-core、doc/08-operations 和批准提案状态。API/OpenAPI 与 doc/06 由 Control lane 负责同能力同步；不修改冻结 doc/18，不涉及 Adapter/SDK/Panel 协议或其他 owner 行为。
+
+### P05 独立真实目录联测补证（2026-11-04）
+
+新增 `p05_runtime_catalog_e2e`，复用拥有者受控 PG16.4/TLS、真实 Identity 与 Runtime 进程。`ctest -R '^p05_runtime_catalog_e2e$' --output-on-failure` **1/1 passed（9.43 秒）**。离线仅供给目录及预置 exact 对象 grants，Runtime 数据夹具只预置既有对象；CreateAccount、ValidateManifest、CreateInstallation、父安装 CreateInstance 均经真实委托和 owner RPC 成功，四条 typed List 走真实目录及 child 授权；目录独有返回空、child 独有拒绝、缺失与错族目录拒绝、新建账号/安装/实例没有隐式 Get 权限均有断言。未通过 SQL 写入 Identity grant，未声明新资源授权供给闭环已完成。
+
+目录列表每次可有多个在线 Identity 检查，专用测试 transport 预算为 20 秒，RequestContext 仍为既有 30 秒。负例各生成新的 RequestContext，避免复用已到期请求身份；预期 gRPC 状态保持明确断言。已有综合 `p05_runtime_identity_e2e` 及 exact 管理断言均保留，独立目录模式不绕过该测试结果；Lead 在 receipt 集成且并行编译结束后统一重跑。Python 编译与 git diff --check 通过；本补证仍不自动翻 target 状态。
