@@ -6922,7 +6922,11 @@
           "operations.listAdapterInstances": "implemented",
           "operations.createAccount": "implemented",
           "operations.createInstallation": "implemented",
-          "operations.createInstance": "implemented"
+          "operations.createInstance": "implemented",
+          "operations.getHostMaintenance": "implemented",
+          "operations.beginHostMaintenance": "implemented",
+          "operations.resumeHostAdmission": "implemented",
+          "operations.cancelHostOperation": "implemented"
         },
         "proto_messages": {
           "HostRegisterHostResponse": "implemented",
@@ -7120,7 +7124,17 @@
           "RuntimeValidateManifestResponse": "implemented",
           "PageRequest": "implemented",
           "PageInfo": "implemented",
-          "SnapshotInfo": "implemented"
+          "SnapshotInfo": "implemented",
+          "ObservationChangesRequest": "implemented",
+          "LogMetadata": "implemented",
+          "LogChange": "implemented",
+          "LogChangesResponse": "implemented",
+          "TaskMetadata": "implemented",
+          "TaskChange": "implemented",
+          "TaskChangesResponse": "implemented",
+          "MessageMetadata": "implemented",
+          "MessageMetadataChange": "implemented",
+          "MessageMetadataChangesResponse": "implemented"
         },
         "proto_fields": {
           "HostRegisterHostRequest.host": "implemented",
@@ -7894,7 +7908,53 @@
           "RuntimeListAdaptersResponse.snapshot": "implemented",
           "RuntimeCreateAccountRequest.catalog": "implemented",
           "RuntimeValidateManifestRequest.catalog": "implemented",
-          "RuntimeCreateInstallationRequest.catalog": "implemented"
+          "RuntimeCreateInstallationRequest.catalog": "implemented",
+          "ObservationChangesRequest.context": "implemented",
+          "ObservationChangesRequest.scope": "implemented",
+          "ObservationChangesRequest.cursor": "implemented",
+          "ObservationChangesRequest.page_size": "implemented",
+          "LogMetadata.owner_service": "implemented",
+          "LogMetadata.entry_id": "implemented",
+          "LogMetadata.severity": "implemented",
+          "LogMetadata.component": "implemented",
+          "LogMetadata.method": "implemented",
+          "LogMetadata.event": "implemented",
+          "LogMetadata.resource": "implemented",
+          "LogMetadata.request_id": "implemented",
+          "LogMetadata.trace_id": "implemented",
+          "LogMetadata.occurred_at": "implemented",
+          "LogChange.log": "implemented",
+          "LogChange.cursor": "implemented",
+          "LogChangesResponse.changes": "implemented",
+          "LogChangesResponse.next_cursor": "implemented",
+          "LogChangesResponse.has_more": "implemented",
+          "LogChangesResponse.checked_at": "implemented",
+          "TaskMetadata.owner_service": "implemented",
+          "TaskMetadata.task_id": "implemented",
+          "TaskMetadata.owner_instance_id": "implemented",
+          "TaskMetadata.state": "implemented",
+          "TaskMetadata.version": "implemented",
+          "TaskMetadata.updated_at": "implemented",
+          "TaskMetadata.cancel_requested": "implemented",
+          "TaskMetadata.occurrence_id": "implemented",
+          "TaskMetadata.reason_code": "implemented",
+          "TaskChange.task": "implemented",
+          "TaskChange.cursor": "implemented",
+          "TaskChangesResponse.changes": "implemented",
+          "TaskChangesResponse.next_cursor": "implemented",
+          "TaskChangesResponse.has_more": "implemented",
+          "TaskChangesResponse.checked_at": "implemented",
+          "MessageMetadata.owner_service": "implemented",
+          "MessageMetadata.message_id": "implemented",
+          "MessageMetadata.conversation_id": "implemented",
+          "MessageMetadata.account_id": "implemented",
+          "MessageMetadata.received_at": "implemented",
+          "MessageMetadataChange.message": "implemented",
+          "MessageMetadataChange.cursor": "implemented",
+          "MessageMetadataChangesResponse.changes": "implemented",
+          "MessageMetadataChangesResponse.next_cursor": "implemented",
+          "MessageMetadataChangesResponse.has_more": "implemented",
+          "MessageMetadataChangesResponse.checked_at": "implemented"
         },
         "bridge_methods": {
           "AdapterBridge.Connect": "implemented",
@@ -7927,7 +7987,9 @@
           "semantic.scheduler.handoff_expiry": "implemented",
           "semantic.scheduler.timer_occurrence_identity": "implemented",
           "semantic.host.request_operation_classification": "implemented",
-          "semantic.host.unknown_operation_error": "implemented"
+          "semantic.host.unknown_operation_error": "implemented",
+          "semantic.observation.feed_family_isolation": "implemented",
+          "semantic.observation.safe_change_projection": "implemented"
         },
         "enum_values": {
           "DeliveryDisposition.DELIVERY_ACKNOWLEDGED": "implemented",
@@ -14667,6 +14729,552 @@
           "core/src/runtime/platform/runtime_bridge.cpp",
           "core/tests/platform/model_bridge_test.cpp",
           "reports/modules/architecture-host-bootstrap-slices.md"
+        ],
+        "operations:operations.getHostMaintenance": [
+          "core/src/application/target/host_maintenance.cpp",
+          "core/src/runtime/platform/host_management_rpc.cpp",
+          "tests/architecture/p12_host_control_chain_e2e.py",
+          "core/tests/platform/host_management_rpc_test.cpp"
+        ],
+        "operations:operations.beginHostMaintenance": [
+          "core/src/application/target/host_maintenance.cpp",
+          "core/src/runtime/platform/host_management_rpc.cpp",
+          "tests/architecture/p12_host_control_chain_e2e.py",
+          "core/tests/platform/host_management_rpc_test.cpp"
+        ],
+        "operations:operations.resumeHostAdmission": [
+          "core/src/application/target/host_maintenance.cpp",
+          "core/src/runtime/platform/host_management_rpc.cpp",
+          "tests/architecture/p12_host_control_chain_e2e.py",
+          "core/tests/platform/host_management_rpc_test.cpp"
+        ],
+        "operations:operations.cancelHostOperation": [
+          "core/src/application/target/host_maintenance.cpp",
+          "core/src/runtime/platform/host_management_rpc.cpp",
+          "tests/architecture/p12_host_control_chain_e2e.py",
+          "core/tests/platform/host_management_rpc_test.cpp"
+        ],
+        "proto_messages:ObservationChangesRequest": [
+          "core/src/runtime/platform/observation_feed_rpc.cpp",
+          "core/src/application/target/observation_feed_application.cpp",
+          "core/src/application/target/identity_log_feed_application.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/scheduler_service.cpp",
+          "tests/architecture/p04_identity_log_feed_e2e.py",
+          "tests/architecture/p05v12_owner_feed_e2e.py"
+        ],
+        "proto_messages:LogMetadata": [
+          "core/src/runtime/platform/observation_feed_rpc.cpp",
+          "core/src/application/target/observation_feed_application.cpp",
+          "core/src/application/target/identity_log_feed_application.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/scheduler_service.cpp",
+          "tests/architecture/p04_identity_log_feed_e2e.py",
+          "tests/architecture/p05v12_owner_feed_e2e.py"
+        ],
+        "proto_messages:LogChange": [
+          "core/src/runtime/platform/observation_feed_rpc.cpp",
+          "core/src/application/target/observation_feed_application.cpp",
+          "core/src/application/target/identity_log_feed_application.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/scheduler_service.cpp",
+          "tests/architecture/p04_identity_log_feed_e2e.py",
+          "tests/architecture/p05v12_owner_feed_e2e.py"
+        ],
+        "proto_messages:LogChangesResponse": [
+          "core/src/runtime/platform/observation_feed_rpc.cpp",
+          "core/src/application/target/observation_feed_application.cpp",
+          "core/src/application/target/identity_log_feed_application.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/scheduler_service.cpp",
+          "tests/architecture/p04_identity_log_feed_e2e.py",
+          "tests/architecture/p05v12_owner_feed_e2e.py"
+        ],
+        "proto_messages:TaskMetadata": [
+          "core/src/runtime/platform/observation_feed_rpc.cpp",
+          "core/src/application/target/observation_feed_application.cpp",
+          "core/src/application/target/identity_log_feed_application.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/scheduler_service.cpp",
+          "tests/architecture/p04_identity_log_feed_e2e.py",
+          "tests/architecture/p05v12_owner_feed_e2e.py"
+        ],
+        "proto_messages:TaskChange": [
+          "core/src/runtime/platform/observation_feed_rpc.cpp",
+          "core/src/application/target/observation_feed_application.cpp",
+          "core/src/application/target/identity_log_feed_application.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/scheduler_service.cpp",
+          "tests/architecture/p04_identity_log_feed_e2e.py",
+          "tests/architecture/p05v12_owner_feed_e2e.py"
+        ],
+        "proto_messages:TaskChangesResponse": [
+          "core/src/runtime/platform/observation_feed_rpc.cpp",
+          "core/src/application/target/observation_feed_application.cpp",
+          "core/src/application/target/identity_log_feed_application.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/scheduler_service.cpp",
+          "tests/architecture/p04_identity_log_feed_e2e.py",
+          "tests/architecture/p05v12_owner_feed_e2e.py"
+        ],
+        "proto_messages:MessageMetadata": [
+          "core/src/runtime/platform/observation_feed_rpc.cpp",
+          "core/src/application/target/observation_feed_application.cpp",
+          "core/src/application/target/identity_log_feed_application.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/scheduler_service.cpp",
+          "tests/architecture/p04_identity_log_feed_e2e.py",
+          "tests/architecture/p05v12_owner_feed_e2e.py"
+        ],
+        "proto_messages:MessageMetadataChange": [
+          "core/src/runtime/platform/observation_feed_rpc.cpp",
+          "core/src/application/target/observation_feed_application.cpp",
+          "core/src/application/target/identity_log_feed_application.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/scheduler_service.cpp",
+          "tests/architecture/p04_identity_log_feed_e2e.py",
+          "tests/architecture/p05v12_owner_feed_e2e.py"
+        ],
+        "proto_messages:MessageMetadataChangesResponse": [
+          "core/src/runtime/platform/observation_feed_rpc.cpp",
+          "core/src/application/target/observation_feed_application.cpp",
+          "core/src/application/target/identity_log_feed_application.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/scheduler_service.cpp",
+          "tests/architecture/p04_identity_log_feed_e2e.py",
+          "tests/architecture/p05v12_owner_feed_e2e.py"
+        ],
+        "proto_fields:ObservationChangesRequest.context": [
+          "core/src/runtime/platform/observation_feed_rpc.cpp",
+          "core/src/application/target/observation_feed_application.cpp",
+          "core/src/application/target/identity_log_feed_application.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/scheduler_service.cpp",
+          "tests/architecture/p04_identity_log_feed_e2e.py",
+          "tests/architecture/p05v12_owner_feed_e2e.py"
+        ],
+        "proto_fields:ObservationChangesRequest.scope": [
+          "core/src/runtime/platform/observation_feed_rpc.cpp",
+          "core/src/application/target/observation_feed_application.cpp",
+          "core/src/application/target/identity_log_feed_application.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/scheduler_service.cpp",
+          "tests/architecture/p04_identity_log_feed_e2e.py",
+          "tests/architecture/p05v12_owner_feed_e2e.py"
+        ],
+        "proto_fields:ObservationChangesRequest.cursor": [
+          "core/src/runtime/platform/observation_feed_rpc.cpp",
+          "core/src/application/target/observation_feed_application.cpp",
+          "core/src/application/target/identity_log_feed_application.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/scheduler_service.cpp",
+          "tests/architecture/p04_identity_log_feed_e2e.py",
+          "tests/architecture/p05v12_owner_feed_e2e.py"
+        ],
+        "proto_fields:ObservationChangesRequest.page_size": [
+          "core/src/runtime/platform/observation_feed_rpc.cpp",
+          "core/src/application/target/observation_feed_application.cpp",
+          "core/src/application/target/identity_log_feed_application.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/scheduler_service.cpp",
+          "tests/architecture/p04_identity_log_feed_e2e.py",
+          "tests/architecture/p05v12_owner_feed_e2e.py"
+        ],
+        "proto_fields:LogMetadata.owner_service": [
+          "core/src/runtime/platform/observation_feed_rpc.cpp",
+          "core/src/application/target/observation_feed_application.cpp",
+          "core/src/application/target/identity_log_feed_application.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/scheduler_service.cpp",
+          "tests/architecture/p04_identity_log_feed_e2e.py",
+          "tests/architecture/p05v12_owner_feed_e2e.py"
+        ],
+        "proto_fields:LogMetadata.entry_id": [
+          "core/src/runtime/platform/observation_feed_rpc.cpp",
+          "core/src/application/target/observation_feed_application.cpp",
+          "core/src/application/target/identity_log_feed_application.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/scheduler_service.cpp",
+          "tests/architecture/p04_identity_log_feed_e2e.py",
+          "tests/architecture/p05v12_owner_feed_e2e.py"
+        ],
+        "proto_fields:LogMetadata.severity": [
+          "core/src/runtime/platform/observation_feed_rpc.cpp",
+          "core/src/application/target/observation_feed_application.cpp",
+          "core/src/application/target/identity_log_feed_application.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/scheduler_service.cpp",
+          "tests/architecture/p04_identity_log_feed_e2e.py",
+          "tests/architecture/p05v12_owner_feed_e2e.py"
+        ],
+        "proto_fields:LogMetadata.component": [
+          "core/src/runtime/platform/observation_feed_rpc.cpp",
+          "core/src/application/target/observation_feed_application.cpp",
+          "core/src/application/target/identity_log_feed_application.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/scheduler_service.cpp",
+          "tests/architecture/p04_identity_log_feed_e2e.py",
+          "tests/architecture/p05v12_owner_feed_e2e.py"
+        ],
+        "proto_fields:LogMetadata.method": [
+          "core/src/runtime/platform/observation_feed_rpc.cpp",
+          "core/src/application/target/observation_feed_application.cpp",
+          "core/src/application/target/identity_log_feed_application.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/scheduler_service.cpp",
+          "tests/architecture/p04_identity_log_feed_e2e.py",
+          "tests/architecture/p05v12_owner_feed_e2e.py"
+        ],
+        "proto_fields:LogMetadata.event": [
+          "core/src/runtime/platform/observation_feed_rpc.cpp",
+          "core/src/application/target/observation_feed_application.cpp",
+          "core/src/application/target/identity_log_feed_application.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/scheduler_service.cpp",
+          "tests/architecture/p04_identity_log_feed_e2e.py",
+          "tests/architecture/p05v12_owner_feed_e2e.py"
+        ],
+        "proto_fields:LogMetadata.resource": [
+          "core/src/runtime/platform/observation_feed_rpc.cpp",
+          "core/src/application/target/observation_feed_application.cpp",
+          "core/src/application/target/identity_log_feed_application.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/scheduler_service.cpp",
+          "tests/architecture/p04_identity_log_feed_e2e.py",
+          "tests/architecture/p05v12_owner_feed_e2e.py"
+        ],
+        "proto_fields:LogMetadata.request_id": [
+          "core/src/runtime/platform/observation_feed_rpc.cpp",
+          "core/src/application/target/observation_feed_application.cpp",
+          "core/src/application/target/identity_log_feed_application.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/scheduler_service.cpp",
+          "tests/architecture/p04_identity_log_feed_e2e.py",
+          "tests/architecture/p05v12_owner_feed_e2e.py"
+        ],
+        "proto_fields:LogMetadata.trace_id": [
+          "core/src/runtime/platform/observation_feed_rpc.cpp",
+          "core/src/application/target/observation_feed_application.cpp",
+          "core/src/application/target/identity_log_feed_application.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/scheduler_service.cpp",
+          "tests/architecture/p04_identity_log_feed_e2e.py",
+          "tests/architecture/p05v12_owner_feed_e2e.py"
+        ],
+        "proto_fields:LogMetadata.occurred_at": [
+          "core/src/runtime/platform/observation_feed_rpc.cpp",
+          "core/src/application/target/observation_feed_application.cpp",
+          "core/src/application/target/identity_log_feed_application.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/scheduler_service.cpp",
+          "tests/architecture/p04_identity_log_feed_e2e.py",
+          "tests/architecture/p05v12_owner_feed_e2e.py"
+        ],
+        "proto_fields:LogChange.log": [
+          "core/src/runtime/platform/observation_feed_rpc.cpp",
+          "core/src/application/target/observation_feed_application.cpp",
+          "core/src/application/target/identity_log_feed_application.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/scheduler_service.cpp",
+          "tests/architecture/p04_identity_log_feed_e2e.py",
+          "tests/architecture/p05v12_owner_feed_e2e.py"
+        ],
+        "proto_fields:LogChange.cursor": [
+          "core/src/runtime/platform/observation_feed_rpc.cpp",
+          "core/src/application/target/observation_feed_application.cpp",
+          "core/src/application/target/identity_log_feed_application.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/scheduler_service.cpp",
+          "tests/architecture/p04_identity_log_feed_e2e.py",
+          "tests/architecture/p05v12_owner_feed_e2e.py"
+        ],
+        "proto_fields:LogChangesResponse.changes": [
+          "core/src/runtime/platform/observation_feed_rpc.cpp",
+          "core/src/application/target/observation_feed_application.cpp",
+          "core/src/application/target/identity_log_feed_application.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/scheduler_service.cpp",
+          "tests/architecture/p04_identity_log_feed_e2e.py",
+          "tests/architecture/p05v12_owner_feed_e2e.py"
+        ],
+        "proto_fields:LogChangesResponse.next_cursor": [
+          "core/src/runtime/platform/observation_feed_rpc.cpp",
+          "core/src/application/target/observation_feed_application.cpp",
+          "core/src/application/target/identity_log_feed_application.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/scheduler_service.cpp",
+          "tests/architecture/p04_identity_log_feed_e2e.py",
+          "tests/architecture/p05v12_owner_feed_e2e.py"
+        ],
+        "proto_fields:LogChangesResponse.has_more": [
+          "core/src/runtime/platform/observation_feed_rpc.cpp",
+          "core/src/application/target/observation_feed_application.cpp",
+          "core/src/application/target/identity_log_feed_application.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/scheduler_service.cpp",
+          "tests/architecture/p04_identity_log_feed_e2e.py",
+          "tests/architecture/p05v12_owner_feed_e2e.py"
+        ],
+        "proto_fields:LogChangesResponse.checked_at": [
+          "core/src/runtime/platform/observation_feed_rpc.cpp",
+          "core/src/application/target/observation_feed_application.cpp",
+          "core/src/application/target/identity_log_feed_application.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/scheduler_service.cpp",
+          "tests/architecture/p04_identity_log_feed_e2e.py",
+          "tests/architecture/p05v12_owner_feed_e2e.py"
+        ],
+        "proto_fields:TaskMetadata.owner_service": [
+          "core/src/runtime/platform/observation_feed_rpc.cpp",
+          "core/src/application/target/observation_feed_application.cpp",
+          "core/src/application/target/identity_log_feed_application.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/scheduler_service.cpp",
+          "tests/architecture/p04_identity_log_feed_e2e.py",
+          "tests/architecture/p05v12_owner_feed_e2e.py"
+        ],
+        "proto_fields:TaskMetadata.task_id": [
+          "core/src/runtime/platform/observation_feed_rpc.cpp",
+          "core/src/application/target/observation_feed_application.cpp",
+          "core/src/application/target/identity_log_feed_application.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/scheduler_service.cpp",
+          "tests/architecture/p04_identity_log_feed_e2e.py",
+          "tests/architecture/p05v12_owner_feed_e2e.py"
+        ],
+        "proto_fields:TaskMetadata.owner_instance_id": [
+          "core/src/runtime/platform/observation_feed_rpc.cpp",
+          "core/src/application/target/observation_feed_application.cpp",
+          "core/src/application/target/identity_log_feed_application.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/scheduler_service.cpp",
+          "tests/architecture/p04_identity_log_feed_e2e.py",
+          "tests/architecture/p05v12_owner_feed_e2e.py"
+        ],
+        "proto_fields:TaskMetadata.state": [
+          "core/src/runtime/platform/observation_feed_rpc.cpp",
+          "core/src/application/target/observation_feed_application.cpp",
+          "core/src/application/target/identity_log_feed_application.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/scheduler_service.cpp",
+          "tests/architecture/p04_identity_log_feed_e2e.py",
+          "tests/architecture/p05v12_owner_feed_e2e.py"
+        ],
+        "proto_fields:TaskMetadata.version": [
+          "core/src/runtime/platform/observation_feed_rpc.cpp",
+          "core/src/application/target/observation_feed_application.cpp",
+          "core/src/application/target/identity_log_feed_application.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/scheduler_service.cpp",
+          "tests/architecture/p04_identity_log_feed_e2e.py",
+          "tests/architecture/p05v12_owner_feed_e2e.py"
+        ],
+        "proto_fields:TaskMetadata.updated_at": [
+          "core/src/runtime/platform/observation_feed_rpc.cpp",
+          "core/src/application/target/observation_feed_application.cpp",
+          "core/src/application/target/identity_log_feed_application.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/scheduler_service.cpp",
+          "tests/architecture/p04_identity_log_feed_e2e.py",
+          "tests/architecture/p05v12_owner_feed_e2e.py"
+        ],
+        "proto_fields:TaskMetadata.cancel_requested": [
+          "core/src/runtime/platform/observation_feed_rpc.cpp",
+          "core/src/application/target/observation_feed_application.cpp",
+          "core/src/application/target/identity_log_feed_application.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/scheduler_service.cpp",
+          "tests/architecture/p04_identity_log_feed_e2e.py",
+          "tests/architecture/p05v12_owner_feed_e2e.py"
+        ],
+        "proto_fields:TaskMetadata.occurrence_id": [
+          "core/src/runtime/platform/observation_feed_rpc.cpp",
+          "core/src/application/target/observation_feed_application.cpp",
+          "core/src/application/target/identity_log_feed_application.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/scheduler_service.cpp",
+          "tests/architecture/p04_identity_log_feed_e2e.py",
+          "tests/architecture/p05v12_owner_feed_e2e.py"
+        ],
+        "proto_fields:TaskMetadata.reason_code": [
+          "core/src/runtime/platform/observation_feed_rpc.cpp",
+          "core/src/application/target/observation_feed_application.cpp",
+          "core/src/application/target/identity_log_feed_application.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/scheduler_service.cpp",
+          "tests/architecture/p04_identity_log_feed_e2e.py",
+          "tests/architecture/p05v12_owner_feed_e2e.py"
+        ],
+        "proto_fields:TaskChange.task": [
+          "core/src/runtime/platform/observation_feed_rpc.cpp",
+          "core/src/application/target/observation_feed_application.cpp",
+          "core/src/application/target/identity_log_feed_application.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/scheduler_service.cpp",
+          "tests/architecture/p04_identity_log_feed_e2e.py",
+          "tests/architecture/p05v12_owner_feed_e2e.py"
+        ],
+        "proto_fields:TaskChange.cursor": [
+          "core/src/runtime/platform/observation_feed_rpc.cpp",
+          "core/src/application/target/observation_feed_application.cpp",
+          "core/src/application/target/identity_log_feed_application.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/scheduler_service.cpp",
+          "tests/architecture/p04_identity_log_feed_e2e.py",
+          "tests/architecture/p05v12_owner_feed_e2e.py"
+        ],
+        "proto_fields:TaskChangesResponse.changes": [
+          "core/src/runtime/platform/observation_feed_rpc.cpp",
+          "core/src/application/target/observation_feed_application.cpp",
+          "core/src/application/target/identity_log_feed_application.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/scheduler_service.cpp",
+          "tests/architecture/p04_identity_log_feed_e2e.py",
+          "tests/architecture/p05v12_owner_feed_e2e.py"
+        ],
+        "proto_fields:TaskChangesResponse.next_cursor": [
+          "core/src/runtime/platform/observation_feed_rpc.cpp",
+          "core/src/application/target/observation_feed_application.cpp",
+          "core/src/application/target/identity_log_feed_application.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/scheduler_service.cpp",
+          "tests/architecture/p04_identity_log_feed_e2e.py",
+          "tests/architecture/p05v12_owner_feed_e2e.py"
+        ],
+        "proto_fields:TaskChangesResponse.has_more": [
+          "core/src/runtime/platform/observation_feed_rpc.cpp",
+          "core/src/application/target/observation_feed_application.cpp",
+          "core/src/application/target/identity_log_feed_application.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/scheduler_service.cpp",
+          "tests/architecture/p04_identity_log_feed_e2e.py",
+          "tests/architecture/p05v12_owner_feed_e2e.py"
+        ],
+        "proto_fields:TaskChangesResponse.checked_at": [
+          "core/src/runtime/platform/observation_feed_rpc.cpp",
+          "core/src/application/target/observation_feed_application.cpp",
+          "core/src/application/target/identity_log_feed_application.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/scheduler_service.cpp",
+          "tests/architecture/p04_identity_log_feed_e2e.py",
+          "tests/architecture/p05v12_owner_feed_e2e.py"
+        ],
+        "proto_fields:MessageMetadata.owner_service": [
+          "core/src/runtime/platform/observation_feed_rpc.cpp",
+          "core/src/application/target/observation_feed_application.cpp",
+          "core/src/application/target/identity_log_feed_application.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/scheduler_service.cpp",
+          "tests/architecture/p04_identity_log_feed_e2e.py",
+          "tests/architecture/p05v12_owner_feed_e2e.py"
+        ],
+        "proto_fields:MessageMetadata.message_id": [
+          "core/src/runtime/platform/observation_feed_rpc.cpp",
+          "core/src/application/target/observation_feed_application.cpp",
+          "core/src/application/target/identity_log_feed_application.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/scheduler_service.cpp",
+          "tests/architecture/p04_identity_log_feed_e2e.py",
+          "tests/architecture/p05v12_owner_feed_e2e.py"
+        ],
+        "proto_fields:MessageMetadata.conversation_id": [
+          "core/src/runtime/platform/observation_feed_rpc.cpp",
+          "core/src/application/target/observation_feed_application.cpp",
+          "core/src/application/target/identity_log_feed_application.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/scheduler_service.cpp",
+          "tests/architecture/p04_identity_log_feed_e2e.py",
+          "tests/architecture/p05v12_owner_feed_e2e.py"
+        ],
+        "proto_fields:MessageMetadata.account_id": [
+          "core/src/runtime/platform/observation_feed_rpc.cpp",
+          "core/src/application/target/observation_feed_application.cpp",
+          "core/src/application/target/identity_log_feed_application.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/scheduler_service.cpp",
+          "tests/architecture/p04_identity_log_feed_e2e.py",
+          "tests/architecture/p05v12_owner_feed_e2e.py"
+        ],
+        "proto_fields:MessageMetadata.received_at": [
+          "core/src/runtime/platform/observation_feed_rpc.cpp",
+          "core/src/application/target/observation_feed_application.cpp",
+          "core/src/application/target/identity_log_feed_application.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/scheduler_service.cpp",
+          "tests/architecture/p04_identity_log_feed_e2e.py",
+          "tests/architecture/p05v12_owner_feed_e2e.py"
+        ],
+        "proto_fields:MessageMetadataChange.message": [
+          "core/src/runtime/platform/observation_feed_rpc.cpp",
+          "core/src/application/target/observation_feed_application.cpp",
+          "core/src/application/target/identity_log_feed_application.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/scheduler_service.cpp",
+          "tests/architecture/p04_identity_log_feed_e2e.py",
+          "tests/architecture/p05v12_owner_feed_e2e.py"
+        ],
+        "proto_fields:MessageMetadataChange.cursor": [
+          "core/src/runtime/platform/observation_feed_rpc.cpp",
+          "core/src/application/target/observation_feed_application.cpp",
+          "core/src/application/target/identity_log_feed_application.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/scheduler_service.cpp",
+          "tests/architecture/p04_identity_log_feed_e2e.py",
+          "tests/architecture/p05v12_owner_feed_e2e.py"
+        ],
+        "proto_fields:MessageMetadataChangesResponse.changes": [
+          "core/src/runtime/platform/observation_feed_rpc.cpp",
+          "core/src/application/target/observation_feed_application.cpp",
+          "core/src/application/target/identity_log_feed_application.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/scheduler_service.cpp",
+          "tests/architecture/p04_identity_log_feed_e2e.py",
+          "tests/architecture/p05v12_owner_feed_e2e.py"
+        ],
+        "proto_fields:MessageMetadataChangesResponse.next_cursor": [
+          "core/src/runtime/platform/observation_feed_rpc.cpp",
+          "core/src/application/target/observation_feed_application.cpp",
+          "core/src/application/target/identity_log_feed_application.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/scheduler_service.cpp",
+          "tests/architecture/p04_identity_log_feed_e2e.py",
+          "tests/architecture/p05v12_owner_feed_e2e.py"
+        ],
+        "proto_fields:MessageMetadataChangesResponse.has_more": [
+          "core/src/runtime/platform/observation_feed_rpc.cpp",
+          "core/src/application/target/observation_feed_application.cpp",
+          "core/src/application/target/identity_log_feed_application.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/scheduler_service.cpp",
+          "tests/architecture/p04_identity_log_feed_e2e.py",
+          "tests/architecture/p05v12_owner_feed_e2e.py"
+        ],
+        "proto_fields:MessageMetadataChangesResponse.checked_at": [
+          "core/src/runtime/platform/observation_feed_rpc.cpp",
+          "core/src/application/target/observation_feed_application.cpp",
+          "core/src/application/target/identity_log_feed_application.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/scheduler_service.cpp",
+          "tests/architecture/p04_identity_log_feed_e2e.py",
+          "tests/architecture/p05v12_owner_feed_e2e.py"
+        ],
+        "semantic_rules:semantic.observation.feed_family_isolation": [
+          "core/src/runtime/platform/observation_feed_rpc.cpp",
+          "core/src/application/target/observation_feed_application.cpp",
+          "core/src/application/target/identity_log_feed_application.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/scheduler_service.cpp",
+          "tests/architecture/p04_identity_log_feed_e2e.py",
+          "tests/architecture/p05v12_owner_feed_e2e.py"
+        ],
+        "semantic_rules:semantic.observation.safe_change_projection": [
+          "core/src/runtime/platform/observation_feed_rpc.cpp",
+          "core/src/application/target/observation_feed_application.cpp",
+          "core/src/application/target/identity_log_feed_application.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/scheduler_service.cpp",
+          "tests/architecture/p04_identity_log_feed_e2e.py",
+          "tests/architecture/p05v12_owner_feed_e2e.py"
         ]
       }
     }

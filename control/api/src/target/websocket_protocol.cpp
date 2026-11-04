@@ -140,10 +140,10 @@ bool selected_kind(const WebSocketSelection& route, v1::ResourceKind kind) {
     return kind == v1::RESOURCE_CATALOG;
   }
   if (route.channel == "adapters") {
-    return kind == v1::RESOURCE_ADAPTER;
+    return kind == v1::RESOURCE_ADAPTER || kind == v1::RESOURCE_CATALOG;
   }
   if (route.channel == "plugins") {
-    return kind == v1::RESOURCE_INSTANCE;
+    return kind == v1::RESOURCE_INSTANCE || kind == v1::RESOURCE_CATALOG;
   }
   if (route.channel == "tasks") {
     return kind == v1::RESOURCE_TASK || kind == v1::RESOURCE_INSTANCE;
@@ -184,7 +184,10 @@ bool scope(const Json& input, const WebSocketSelection& route, v1::ResourceScope
       return false;
     }
     const auto id = item["id"].get<std::string>();
-    if (kind == v1::RESOURCE_CATALOG ? id != "control" : !identifier(id)) {
+    const bool feed_catalog =
+        kind == v1::RESOURCE_CATALOG && (route.channel == "adapters" || route.channel == "plugins");
+    if (kind == v1::RESOURCE_CATALOG ? (feed_catalog ? !identifier(id) : id != "control")
+                                     : !identifier(id)) {
       return false;
     }
     resources.emplace_back(kind, id);
@@ -194,6 +197,19 @@ bool scope(const Json& input, const WebSocketSelection& route, v1::ResourceScope
       ((route.owner == "host" || route.channel == "health" || route.channel == "logs") &&
        resources.size() != 1)) {
     return false;
+  }
+  // adapters/plugins accept either exact child resources or exactly one deployment catalog
+  // resource (directory mode); mixing the two is ambiguous and rejected.
+  if (route.channel == "adapters" || route.channel == "plugins") {
+    const bool has_catalog = std::any_of(resources.begin(), resources.end(), [](const auto& item) {
+      return item.first == v1::RESOURCE_CATALOG;
+    });
+    const bool has_exact = std::any_of(resources.begin(), resources.end(), [](const auto& item) {
+      return item.first != v1::RESOURCE_CATALOG;
+    });
+    if (has_catalog && (has_exact || resources.size() != 1)) {
+      return false;
+    }
   }
   for (const auto& [kind, id] : resources) {
     auto* resource = output.add_resources();

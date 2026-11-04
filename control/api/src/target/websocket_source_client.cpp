@@ -44,6 +44,11 @@ std::string identifier() {
   }
   return result;
 }
+bool bounded_printable(std::string_view value, std::size_t minimum, std::size_t maximum) {
+  return value.size() >= minimum && value.size() <= maximum &&
+         std::all_of(value.begin(), value.end(),
+                     [](unsigned char c) { return c >= 32 && c <= 126; });
+}
 bool is_authorization_failure(const grpc::Status& status) {
   if (status.error_details().empty()) {
     return status.error_code() == grpc::StatusCode::UNAUTHENTICATED ||
@@ -332,6 +337,11 @@ public:
     if (!runtime_) {
       return WebSocketFailure{v1::CAPABILITY_NOT_SUPPORTED, false};
     }
+    const bool catalog_mode = selection.scope.resources_size() == 1 &&
+                              selection.scope.resources(0).kind() == v1::RESOURCE_CATALOG;
+    if (catalog_mode) {
+      return poll_catalog_scan(selection, std::move(identity), access_token, deadline, adapters);
+    }
     for (const auto& selected : selection.scope.resources()) {
       v1::ResourceScope single;
       *single.add_resources() = selected;
@@ -433,6 +443,175 @@ public:
         }
       }
     }
+    if (std::chrono::steady_clock::now() >= deadline) {
+      return WebSocketFailure{v1::TIMEOUT, false};
+    }
+    result.snapshot = std::move(batch);
+    return result;
+  }
+
+  // Full-directory immutable-page scan for adapters/plugins. The authorized request scope selects
+  // exactly one deployment catalog resource; the owner ListAdapters/ListInstances pages are bound
+  // to one immutable snapshot, every page re-authorizes online with a fresh delegation, and a
+  // wrong snapshot/expired page/owner error closes the stream instead of yielding an empty page.
+  WebSocketResult<WebSocketPoll> poll_catalog_scan(const WebSocketSelection& selection,
+                                                   WebSocketIdentity identity,
+                                                   std::string_view access_token,
+                                                   WebSocketDeadline deadline, bool adapters) {
+    deadline =
+        std::min(deadline, std::chrono::steady_clock::now() + std::chrono::milliseconds{500});
+    WebSocketPoll result;
+    result.identity = std::move(identity);
+    WebSocketSnapshotBatch batch;
+    v1::ResourceScope catalog_scope;
+    *catalog_scope.add_resources() = selection.scope.resources(0);
+    const auto permission = adapters ? v1::PERMISSION_ADAPTER_READ : v1::PERMISSION_PLUGIN_READ;
+    constexpr std::size_t kMaximumCatalogPages = 64;
+    constexpr std::uint32_t kCatalogPageSize = 100;
+    std::string page_token;
+    std::string snapshot_id;
+    std::uint64_t snapshot_authorization_version = 0;
+    std::size_t pages = 0;
+    do {
+      if (std::chrono::steady_clock::now() >= deadline) {
+        return WebSocketFailure{v1::TIMEOUT, false};
+      }
+      if (++pages > kMaximumCatalogPages) {
+        return WebSocketFailure{v1::UPSTREAM_UNAVAILABLE, false};
+      }
+      // Online per-page authorization: a new delegation for every page, never a scan-wide grant.
+      const auto proof =
+          identity_->delegate_stream("runtime", permission, catalog_scope, access_token, deadline);
+      if (const auto* error = std::get_if<WebSocketFailure>(&proof)) {
+        return *error;
+      }
+      const auto id = identifier();
+      const auto trace = identifier();
+      const auto remaining = deadline - std::chrono::steady_clock::now();
+      if (id.empty() || trace.empty() || remaining <= std::chrono::steady_clock::duration::zero()) {
+        return WebSocketFailure{v1::INTERNAL, false};
+      }
+      const auto wall = std::chrono::system_clock::now() + remaining;
+      const auto encoded = codec::to_wire(core::target::TimePoint{
+          std::chrono::duration_cast<core::target::TimePoint::duration>(wall.time_since_epoch())});
+      if (!std::holds_alternative<google::protobuf::Timestamp>(encoded)) {
+        return WebSocketFailure{v1::INTERNAL, false};
+      }
+      grpc::ClientContext call;
+      const auto remaining_micros = std::chrono::duration_cast<std::chrono::microseconds>(
+          wall - std::chrono::system_clock::now());
+      call.set_deadline(gpr_time_add(
+          gpr_now(GPR_CLOCK_MONOTONIC),
+          gpr_time_from_micros(std::max<std::int64_t>(remaining_micros.count(), 1), GPR_TIMESPAN)));
+      struct Registration {
+        Client& owner;
+        grpc::ClientContext& context;
+        ~Registration() {
+          const std::lock_guard lock(owner.mutex_);
+          owner.active_.erase(&context);
+        }
+      } registration{*this, call};
+      {
+        const std::lock_guard lock(mutex_);
+        if (cancelled_) {
+          return WebSocketFailure{v1::UPSTREAM_UNAVAILABLE, false};
+        }
+        active_.insert(&call);
+      }
+      v1::RequestContext context;
+      context.set_request_id(id);
+      context.set_trace_id(trace);
+      context.set_delegation(std::get<std::string>(proof));
+      *context.mutable_deadline() = std::get<google::protobuf::Timestamp>(encoded);
+      const auto validate_snapshot = [&](const v1::SnapshotInfo& snapshot) {
+        if (!snapshot.has_observed_at() || !snapshot.has_expires_at() ||
+            !bounded_printable(snapshot.snapshot_id(), 1, 128) ||
+            snapshot.authorization_version() == 0 || snapshot.owner_service() != "runtime" ||
+            !snapshot.has_page()) {
+          return false;
+        }
+        const auto observed_wire = codec::from_wire(snapshot.observed_at());
+        const auto expires_wire = codec::from_wire(snapshot.expires_at());
+        const auto* observed = std::get_if<core::target::TimePoint>(&observed_wire);
+        const auto* expires = std::get_if<core::target::TimePoint>(&expires_wire);
+        if (observed == nullptr || expires == nullptr || *expires <= *observed) {
+          return false;
+        }
+        if (snapshot_id.empty()) {
+          snapshot_id = snapshot.snapshot_id();
+          snapshot_authorization_version = snapshot.authorization_version();
+        } else if (snapshot.snapshot_id() != snapshot_id ||
+                   snapshot.authorization_version() != snapshot_authorization_version) {
+          // The directory changed under the scan: fail closed instead of mixing two snapshots.
+          return false;
+        }
+        const auto now =
+            core::target::TimePoint{std::chrono::duration_cast<core::target::TimePoint::duration>(
+                std::chrono::system_clock::now().time_since_epoch())};
+        return *expires > now;
+      };
+      if (adapters) {
+        v1::RuntimeListAdaptersRequest input;
+        *input.mutable_context() = context;
+        *input.mutable_catalog() = selection.scope.resources(0);
+        input.mutable_page()->set_page_size(kCatalogPageSize);
+        if (!page_token.empty()) {
+          input.mutable_page()->set_page_token(page_token);
+        }
+        v1::RuntimeListAdaptersResponse response;
+        const auto status = runtime_->ListAdapters(&call, input, &response);
+        if (!status.ok()) {
+          return is_authorization_failure(status)
+                     ? failed(status, context)
+                     : WebSocketFailure{v1::UPSTREAM_UNAVAILABLE, false};
+        }
+        if (!response.has_snapshot() || !validate_snapshot(response.snapshot()) ||
+            static_cast<std::size_t>(response.adapters_size()) > kCatalogPageSize) {
+          return WebSocketFailure{v1::INTERNAL, false};
+        }
+        for (const auto& record : response.adapters()) {
+          if (record.resource().kind() != v1::RESOURCE_ADAPTER || record.resource().id().empty() ||
+              record.version() == 0) {
+            return WebSocketFailure{v1::INTERNAL, false};
+          }
+          WebSocketAdapterObservation observation;
+          observation.record = record;
+          observation.available = true;
+          batch.adapters.push_back(std::move(observation));
+        }
+        page_token = response.snapshot().page().next_page_token();
+      } else {
+        v1::RuntimeListInstancesRequest input;
+        *input.mutable_context() = context;
+        *input.mutable_catalog() = selection.scope.resources(0);
+        input.mutable_page()->set_page_size(kCatalogPageSize);
+        if (!page_token.empty()) {
+          input.mutable_page()->set_page_token(page_token);
+        }
+        v1::RuntimeListInstancesResponse response;
+        const auto status = runtime_->ListInstances(&call, input, &response);
+        if (!status.ok()) {
+          return is_authorization_failure(status)
+                     ? failed(status, context)
+                     : WebSocketFailure{v1::UPSTREAM_UNAVAILABLE, false};
+        }
+        if (!response.has_snapshot() || !validate_snapshot(response.snapshot()) ||
+            static_cast<std::size_t>(response.instances_size()) > kCatalogPageSize) {
+          return WebSocketFailure{v1::INTERNAL, false};
+        }
+        for (const auto& record : response.instances()) {
+          if (record.instance_id().empty() || record.state().version() == 0 ||
+              record.state().resource().kind() != v1::RESOURCE_INSTANCE) {
+            return WebSocketFailure{v1::INTERNAL, false};
+          }
+          WebSocketPluginObservation observation;
+          observation.record = record;
+          observation.available = true;
+          batch.plugins.push_back(std::move(observation));
+        }
+        page_token = response.snapshot().page().next_page_token();
+      }
+    } while (!page_token.empty());
     if (std::chrono::steady_clock::now() >= deadline) {
       return WebSocketFailure{v1::TIMEOUT, false};
     }

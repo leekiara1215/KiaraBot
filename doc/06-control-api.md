@@ -209,7 +209,7 @@ GET  /api/v1/operations/model/{operationId}            resource.read GetOperatio
   Runtime 允许的资源种类同 GetOperation，Model 仅 `RESOURCE_MODEL`，Scheduler 仅
   `RESOURCE_TASK|RESOURCE_INSTANCE`，Host 仅此 endpoint 自己的一个 `RESOURCE_HOST`。
 - `/ws/health`：owner=control，scope 恰为 `RESOURCE_CATALOG/control`，需 `health.read`。
-- `/ws/adapters`、`/ws/plugins`：owner=runtime，分别为精确 `RESOURCE_ADAPTER`/`RESOURCE_INSTANCE`，
+- `/ws/adapters`、`/ws/plugins`：owner=runtime；支持“恰好一个 `RESOURCE_ADAPTER`/`RESOURCE_INSTANCE`”的 exact 订阅，或“恰好一个部署 `RESOURCE_CATALOG`”的目录模式（immutable 分页快照 + 每页在线逐页授权，catalog 仅作选择器、不派生 child 授权；catalog+exact 混选拒绝），
   分别需 `adapter.read`/`plugin.read`；`/ws/tasks` 为 scheduler 的精确 task/instance scope，需 `task.read`。
 - `/ws/logs?owner_service=identity|runtime`：单 owner 的 `RESOURCE_CATALOG/control`，需显式 `log.read`；
   不派生 `audit.read`，不新增 audit 频道。
@@ -1000,3 +1000,37 @@ expected_version不匹配CONFLICT。新版本必须恰为expected_version+1；�
   单测 `target_websocket_protocol_test`/schema 校验，`p12_target_websocket` 5/5。未覆盖：Identity
   不可确认的进程级 e2e（仅单测），snapshot 撤权单列用例，真实 owner 进程+PG 的 feed 页（Identity
   侧见 `p04_identity_log_feed_e2e`，Runtime/Scheduler 仍待补）。
+
+## 2026-11-04 v1.2 owner feed RPC 语义（实现已登记 target，真实进程验收）
+
+Identity/Runtime 的 `ListLogChanges`、Runtime 的 `ListMessageMetadataChanges` 与 Scheduler 的
+`ListTaskChanges` 均只接受已注册 Control mTLS peer + 对应 owner audience 的精确 Identity
+delegation 与在线 permission：logs 为 `log.read` 且 scope 恰 `RESOURCE_CATALOG/control`；messages 为
+`message.read` 且 scope 恰 `RESOURCE_ACCOUNT`；tasks 为 `task.read` 且 scope `RESOURCE_TASK` 或
+`RESOURCE_INSTANCE`。省略 cursor 时捕获 committed head 并返回空页（合法，仅 owner 确认 head）；
+cursor 页只返回 bounded 安全 metadata。epoch/sequence 不匹配或未来 sequence → `CONFLICT`
+(NOT_ACCEPTED/RESYNC_SNAPSHOT)；错 owner/scope/permission/peer 一律 fail-closed，不得用空页伪装。
+每个 `(owner, family)` 有独立 durable epoch：log/message/task cursor 不交叉，跨 family/旧数据
+cursor 拒绝。日志无 audit payload/自由文本；任务无 payload/target 且终态可观察；message 仅 received
+的内部 id（确定性 UUIDv5 派生，平台 raw id 不出现）与 received_at，无正文/平台原始包。
+
+Runtime/Scheduler 的 owner RPC 在请求缺省 exact scope 时返回 `INVALID_ARGUMENT`（owner 先校验必填
+scope 形状）；Identity 的空 probe 仍按部署能力语义返回 `CAPABILITY_NOT_SUPPORTED`。证据：
+`p04_identity_log_feed_e2e`（真实 Identity + PG）、`p05v12_owner_feed_e2e`（真实 Identity/Runtime/
+Scheduler 三进程 + 真实 AdapterBridge + PG journal）。
+
+## 2026-11-04 WS adapters/plugins 目录模式与客户端稳定性（补充）
+
+`/ws/adapters`、`/ws/plugins` 的 target scope 在 exact 订阅之外新增“恰好一个部署
+`RESOURCE_CATALOG`”目录模式：source 用真实 Runtime `ListAdapters`/`ListInstances` 取 immutable
+分页快照（page_size 100、≤64 页），每页新 delegation 在线授权，校验
+`snapshot_id`/`authorization_version`/owner/expiry 跨页一致；页错或撤权 → 4403，snapshot 变化/
+过期/owner 不符 → 1011，绝不空页伪造；catalog+exact 混选、两个 catalog 均 `INVALID_ARGUMENT`。
+值变化去重仍忽略 observed_at-only。目录模式依赖客户端已知部署 catalog UUID（与 REST catalog 契约
+一致），未做 catalog 自动发现。
+
+WS e2e 稳定性：此前 `p12_target_websocket_https`/`producers` 的低频握手 EOF/SIGSEGV 经 macOS
+崩溃报告与独立单线程 raw 客户端 100/100 压测定位为 **CPython 3.11 + OpenSSL 3.5 下
+`websockets.sync` 客户端后台线程 SSL 竞态**（libssl `SSL_read`，与 Control 无关）；测试 harness
+改用仓库内单线程 RFC6455 客户端 `control/api/tests/architecture/ws_client.py`，并删除握手重试，
+断言与授权零放宽；修复后两测试各 20/20 通过。

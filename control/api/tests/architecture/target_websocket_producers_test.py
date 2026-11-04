@@ -184,6 +184,90 @@ def plugins_case(harness):
     ws.close()
 
 
+ADAPTER_CATALOG = 'c1111111-1111-4111-8111-111111111111'
+ADAPTER_FAIL_CATALOG = 'd1111111-1111-4111-8111-111111111111'
+ADAPTER_MISMATCH_CATALOG = 'e1111111-1111-4111-8111-111111111111'
+INSTANCE_CATALOG = 'f1111111-1111-4111-8111-111111111111'
+INSTANCE_FAIL_CATALOG = 'a2111111-1111-4111-8111-111111111111'
+INSTANCE_MISMATCH_CATALOG = 'b2111111-1111-4111-8111-111111111111'
+ADAPTER_CONSTANT = '77777777-7777-4777-8777-000000000a01'
+ADAPTER_CHANGING = '77777777-7777-4777-8777-000000000a02'
+ADAPTER_PAGE_TWO = '77777777-7777-4777-8777-000000000a03'
+INSTANCE_CONSTANT = '66666666-6666-4666-8666-000000000b01'
+INSTANCE_CHANGING = '66666666-6666-4666-8666-000000000b02'
+INSTANCE_PAGE_TWO = '66666666-6666-4666-8666-000000000b03'
+
+
+def collect_catalog_events(ws, event_type, expected_ids, timeout=8.0):
+    """Collect the first immutable-snapshot page events until every child id was emitted once."""
+    seen = {}
+    deadline = time.monotonic() + timeout
+    while set(seen) != set(expected_ids) and time.monotonic() < deadline:
+        message = recv_json(ws, timeout=max(0.05, deadline - time.monotonic()))
+        if message is None or message.get('event_type') != event_type:
+            continue
+        payload = message['payload']
+        seen.setdefault(payload['id'], []).append(payload)
+    assert set(seen) == set(expected_ids), (set(seen), expected_ids)
+    return seen
+
+
+def no_repeat_for_id(ws, event_type, resource_id, timeout=1.2):
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        message = recv_json(ws, timeout=max(0.05, deadline - time.monotonic()))
+        if message is None:
+            continue
+        if message.get('event_type') == event_type:
+            assert message['payload']['id'] != resource_id, \
+                f'unexpected unchanged {resource_id} re-emission'
+
+
+def catalog_scan_case(harness):
+    # Directory mode: one deployment catalog in scope selects the immutable-page owner scan.
+    ws = harness.websocket(path='/ws/adapters')
+    ws.send(hello([{'kind': 'RESOURCE_CATALOG', 'id': ADAPTER_CATALOG}]))
+    ready(ws)
+    seen = collect_catalog_events(
+        ws, 'adapter.updated', {ADAPTER_CONSTANT, ADAPTER_CHANGING, ADAPTER_PAGE_TWO})
+    assert int(seen[ADAPTER_CONSTANT][0]['version']) == 1
+    assert int(seen[ADAPTER_PAGE_TWO][0]['version']) == 1
+    # later pages are included: page two child appears in the same snapshot scan.
+    changed = wait_event(
+        ws, 'adapter.updated',
+        lambda payload: payload['id'] == ADAPTER_CHANGING and
+        int(payload['version']) > int(seen[ADAPTER_CHANGING][0]['version']))
+    assert int(changed['payload']['version']) > int(seen[ADAPTER_CHANGING][0]['version'])
+    # The constant child must not be re-emitted by the periodic re-scan.
+    no_repeat_for_id(ws, 'adapter.updated', ADAPTER_CONSTANT)
+    ws.close()
+
+    # Fail closed: page-2 authorization denial must close instead of producing a partial success.
+    ws = harness.websocket(path='/ws/adapters')
+    ws.send(hello([{'kind': 'RESOURCE_CATALOG', 'id': ADAPTER_FAIL_CATALOG}]))
+    expect_closed(ws, 4403)
+    # Fail closed: a snapshot change mid-scan is an internal inconsistency, never mixed pages.
+    ws = harness.websocket(path='/ws/adapters')
+    ws.send(hello([{'kind': 'RESOURCE_CATALOG', 'id': ADAPTER_MISMATCH_CATALOG}]))
+    expect_closed(ws, 1011)
+
+    # Plugins catalog scan: same immutable-page contract over ListInstances.
+    ws = harness.websocket(path='/ws/plugins')
+    ws.send(hello([{'kind': 'RESOURCE_CATALOG', 'id': INSTANCE_CATALOG}]))
+    ready(ws)
+    seen = collect_catalog_events(
+        ws, 'plugin.updated', {INSTANCE_CONSTANT, INSTANCE_CHANGING, INSTANCE_PAGE_TWO})
+    assert int(seen[INSTANCE_CONSTANT][0]['version']) == 1
+    assert int(seen[INSTANCE_PAGE_TWO][0]['version']) == 1
+    ws.close()
+    ws = harness.websocket(path='/ws/plugins')
+    ws.send(hello([{'kind': 'RESOURCE_CATALOG', 'id': INSTANCE_FAIL_CATALOG}]))
+    expect_closed(ws, 4403)
+    ws = harness.websocket(path='/ws/plugins')
+    ws.send(hello([{'kind': 'RESOURCE_CATALOG', 'id': INSTANCE_MISMATCH_CATALOG}]))
+    expect_closed(ws, 1011)
+
+
 def logs_case(harness):
     path = '/ws/logs?owner_service=identity'
     ws = harness.websocket(path=path)
@@ -271,6 +355,7 @@ def main(control, identity_fixture, owner_fixture):
         degraded_health_case(harness)
         adapters_case(harness)
         plugins_case(harness)
+        catalog_scan_case(harness)
         fail_closed_case(harness)
     except BaseException:
         harness.cleanup()

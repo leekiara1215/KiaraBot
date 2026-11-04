@@ -499,6 +499,55 @@ wire::MessageMetadataChange message_change() {
   *message->mutable_received_at() = stamp(1790000000);
   return result;
 }
+void catalog_scope_rules() {
+  const auto adapters = accepted(target::websocket_route("/ws/adapters"), "adapters route");
+  const auto plugins = accepted(target::websocket_route("/ws/plugins"), "plugins route");
+  const auto health = accepted(target::websocket_route("/ws/health"), "health route");
+  constexpr char kAdapterCatalog[] = "c1111111-1111-4111-8111-111111111111";
+  constexpr char kUnknownCatalog[] = "c2222222-2222-4222-8222-222222222222";
+  const auto catalog_scope =
+      std::string{"{\"resources\":[{\"kind\":\"RESOURCE_CATALOG\",\"id\":\""} + kAdapterCatalog +
+      "\"}]}";
+  const auto other_catalog_scope =
+      std::string{"{\"resources\":[{\"kind\":\"RESOURCE_CATALOG\",\"id\":\""} + kUnknownCatalog +
+      "\"}]}";
+  const auto exact_adapter_scope =
+      std::string{"{\"resources\":[{\"kind\":\"RESOURCE_ADAPTER\",\"id\":\""} + kAdapter + "\"}]}";
+  const auto mixed_scope = std::string{"{\"resources\":[{\"kind\":\"RESOURCE_CATALOG\",\"id\":\""} +
+                           kAdapterCatalog + "\"},{\"kind\":\"RESOURCE_ADAPTER\",\"id\":\"" +
+                           kAdapter + "\"}]}";
+  const auto two_catalogs =
+      std::string{"{\"resources\":[{\"kind\":\"RESOURCE_CATALOG\",\"id\":\""} + kAdapterCatalog +
+      "\"},{\"kind\":\"RESOURCE_CATALOG\",\"id\":\"" + kUnknownCatalog + "\"}]}";
+  // Directory mode: exactly one deployment catalog resource selects the full immutable-page scan.
+  require(std::holds_alternative<target::WebSocketFirstFrame>(
+              target::websocket_first_frame(first_frame_json("hello", catalog_scope), adapters)),
+          "adapters catalog selection accepted");
+  require(std::holds_alternative<target::WebSocketFirstFrame>(
+              target::websocket_first_frame(first_frame_json("hello", catalog_scope), plugins)),
+          "plugins catalog selection accepted");
+  // Exact-scope mode is preserved for child resources.
+  require(std::holds_alternative<target::WebSocketFirstFrame>(target::websocket_first_frame(
+              first_frame_json("hello", exact_adapter_scope), adapters)),
+          "adapters exact selection accepted");
+  // Mixing catalog and exact children, or selecting more than one catalog, is ambiguous.
+  require(std::holds_alternative<target::WebSocketFailure>(
+              target::websocket_first_frame(first_frame_json("hello", mixed_scope), adapters)),
+          "mixed catalog/exact scope rejected");
+  require(std::holds_alternative<target::WebSocketFailure>(
+              target::websocket_first_frame(first_frame_json("hello", two_catalogs), adapters)),
+          "two catalogs rejected");
+  // Only adapters/plugins may select a non-control catalog; health keeps catalog/control.
+  require(std::holds_alternative<target::WebSocketFailure>(
+              target::websocket_first_frame(first_frame_json("hello", catalog_scope), health)),
+          "health rejects a non-control catalog");
+  const auto control_scope =
+      std::string{"{\"resources\":[{\"kind\":\"RESOURCE_CATALOG\",\"id\":\"control\"}]}"};
+  require(std::holds_alternative<target::WebSocketFirstFrame>(
+              target::websocket_first_frame(first_frame_json("hello", control_scope), health)),
+          "health accepts catalog/control");
+}
+
 void snapshot_event_rules() {
   target::WebSocketHealthObservation healthy;
   healthy.identity_confirmed = true;
@@ -620,6 +669,7 @@ int main(int argc, char** argv) {
     event_rules();
     cursor_and_frame_rules();
     snapshot_event_rules();
+    catalog_scope_rules();
     if (argc == 3 && std::string_view{argv[1]} == "--emit") {
       emit(argv[2]);
     }

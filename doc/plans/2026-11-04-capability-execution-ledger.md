@@ -348,3 +348,16 @@ S1 通过、S2 无测试，Runtime gate/PG 持久化/Control host 路由未实�
   新增测试：`p04_identity_log_feed_e2e`、`p12_host_control_chain_e2e`、`p12_target_websocket_producers`。
   遗留风险：WSS 两测试在连接 churn/并行下低概率握手失败或 SEGFAULT（串行稳定性 10/10、9/10），
   下一 round 需定位。
+
+## 2026-11-04 goal round 2：真实 feeds + registry 翻转 + WSS 稳定性
+
+- 真实 owner feed e2e：`p05v12_owner_feed_e2e`（真实 Identity/Runtime/Scheduler + owned PG +
+  真实 AdapterBridge）覆盖 Runtime log/message、Scheduler task 非空页/续读/typed conflict/拒绝路径；
+  与 `p04_identity_log_feed_e2e` 一起作为 v1.2 feed 的 target 证据。
+- registry：v1.2 feed 10 messages/46 fields/2 semantic rules + 4 RPC target_spec 翻转为 implemented；
+  HOST-04 4 个 host REST op 补齐 target override+evidence；contracts/target/api gates 全绿。
+- WSS flake：定位为 CPython+OpenSSL 的 websockets.sync 客户端竞态（非产品），harness 改单线程
+  RFC6455 客户端；https 20/20、producers 20/20。
+- adapters/plugins 目录 immutable page 扫描落地（真实 Runtime ListAdapters/ListInstances + 逐页授权
+  + fail-closed）；asyncapi/doc06 同步。
+- 验证：全量 CTest 208/208 exit 0（547.79s）；契约/target/api/架构/SDK 门禁 exit 0；格式 0 新增。

@@ -2386,7 +2386,7 @@
       "idempotency": "none",
       "deadline_ms": 500,
       "server_streaming": false,
-      "status": "not_implemented",
+      "status": "implemented",
       "max_deadline_ms": 500,
       "requires_idempotency_key": false,
       "scope_kinds": [
@@ -2408,7 +2408,7 @@
       "idempotency": "none",
       "deadline_ms": 500,
       "server_streaming": false,
-      "status": "not_implemented",
+      "status": "implemented",
       "max_deadline_ms": 500,
       "requires_idempotency_key": false,
       "scope_kinds": [
@@ -2430,7 +2430,7 @@
       "idempotency": "none",
       "deadline_ms": 500,
       "server_streaming": false,
-      "status": "not_implemented",
+      "status": "implemented",
       "max_deadline_ms": 500,
       "requires_idempotency_key": false,
       "scope_kinds": [
@@ -2452,7 +2452,7 @@
       "idempotency": "none",
       "deadline_ms": 500,
       "server_streaming": false,
-      "status": "not_implemented",
+      "status": "implemented",
       "max_deadline_ms": 500,
       "requires_idempotency_key": false,
       "scope_kinds": [

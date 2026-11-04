@@ -204,6 +204,25 @@ if(UNIX)
     LABELS "p14;integration;fault" TIMEOUT 300
     ENVIRONMENT "PATH=${P14F_OPENSSL_BIN_DIR}:${P14F_PYTHON_BIN_DIR}:$ENV{PATH}")
 
+  # v1.2 owner feeds: real Identity/Runtime/Scheduler processes + owned PG16.4 + real
+  # AdapterBridge; Control certificate + Identity delegation exercies Runtime.ListLogChanges,
+  # Runtime.ListMessageMetadataChanges and Scheduler.ListTaskChanges against durable journals.
+  add_test(NAME p05v12_owner_feed_e2e COMMAND "${KIARABOT_TARGET_PYTHON}"
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_database_test.py"
+    --pg-bin "${KIARABOT_TEST_PG_BIN}" --openssl "${KIARABOT_TEST_OPENSSL}"
+    --initializer $<TARGET_FILE:kiarabot-pg-initialize>
+    --test "${CMAKE_SOURCE_DIR}/tests/architecture/p05v12_owner_feed_e2e.py"
+    --test-argument $<TARGET_FILE:kiarabot-identity-bootstrap>
+    --test-argument "${KIARABOT_TEST_PG_BIN}"
+    --test-argument $<TARGET_FILE:kiarabot-identity>
+    --test-argument $<TARGET_FILE:kiarabot-runtime>
+    --test-argument $<TARGET_FILE:kiarabot-scheduler>
+    --test-argument $<TARGET_FILE:kiarabot_postgres_runtime_bridge_seed>
+    --test-argument "${KIARABOT_TEST_OPENSSL}")
+  set_tests_properties(p05v12_owner_feed_e2e PROPERTIES
+    LABELS "p05;p12;boot;integration;security;fault" TIMEOUT 420
+    ENVIRONMENT "PATH=${P14F_OPENSSL_BIN_DIR}:${P14F_PYTHON_BIN_DIR}:$ENV{PATH};PYTHONPATH=${CMAKE_SOURCE_DIR}/sdk/python/build/generated")
+
   # BOOT-05: real Control(HTTPS) -> Runtime issuance -> Identity -> private PG -> file sink chain.
   add_test(NAME p12_bootstrap_delivery_e2e COMMAND "${KIARABOT_TARGET_PYTHON}"
     "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_database_test.py"

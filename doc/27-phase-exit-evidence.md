@@ -441,3 +441,39 @@ PluginBridge 刷新失败帧的 INTERNAL 与终止状态偏差仍待专项；格
 - **registry 翻转**：本 round 只翻转 HOST-04 的 4 个 REST operation（有单链+fixture 证据）；v1.2
   四个 feed RPC 仍 `not_implemented`（Identity ListLogChanges 有真实进程证据，Runtime/Scheduler
   只有 PG/handler 级，避免混合翻转）。
+
+### goal round 2（进行中 → 待 WS task-19 收口后补最终数字）
+
+- **v1.2 owner feed 真实进程级 e2e**：新增 `p05v12_owner_feed_e2e`（真实 Identity/Runtime/
+  Scheduler 三进程 + owned PG16.4 + 真实 AdapterBridge TLS；Control 证书 + Identity delegation）：
+  Runtime log feed（真实 UpdateAccount 事务写 audit+journal→非空页/续读/typed conflict）、Runtime
+  message metadata（真实 adapter 受理→派生 UUIDv5、平台 raw id 不出现、重放 DUPLICATE 不双写、
+  family epoch 独立）、Scheduler task feed（真实 create×3/cancel→4 行/多页/终态可观察/typed gap）；
+  错 scope/owner/audience/无权限/缺 scope 均 fail-closed。CTest exit 0（7.6s），直驱 3 次 exit 0。
+- **registry 翻转**：`execution_scopes.target` 增加 v1.2 feed 的 10 messages + 46 fields + 2
+  observation semantic rules 的 implemented override 与 evidence（production source + p04/p05v12
+  真实 e2e）；`target_spec` 将 4 个 feed RPC 状态翻为 implemented；doc/01-contracts execution-scopes
+  表、evidence_scopes 期望 allowlist、doc/06 feed 语义同步；contracts/target/api gates exit 0
+  （impl-status/evidence-scopes/semantic-rules/target-contract 全绿）。
+- HOST-04 target override 补齐：4 个 host REST op 增加 target override+evidence（源 + 单链/单测），
+  doc target 表与 evidence 期望同步，impl-status/evidence-scopes 通过。
+- **WS task-19 收口**：WSS 握手 EOF/SIGSEGV 根因定位为 **CPython 3.11+OpenSSL 3.5 的
+  `websockets.sync` 客户端后台线程 SSL 竞态**（macOS 崩溃报告栈在 python libssl `SSL_read`，同期
+  无 Control 崩溃；独立单线程 raw 客户端对 Control 压测 WS 100/100、HTTPS 100/100 全过）。修复为
+  harness-only：仓库新增单线程 RFC6455 客户端 `control/api/tests/architecture/ws_client.py`，两个
+  WS e2e 切换并删除握手重试，断言/授权零放宽；修复后 https 20/20、producers 20/20。产品侧监控
+  Control 崩溃报告确认无此问题。
+- **adapters/plugins 全目录 immutable page 扫描**：target scope 允许“恰好一个部署 RESOURCE_CATALOG”，
+  source 用真实 Runtime `ListAdapters`/`ListInstances` 分页（page_size 100/≤64 页、每页新 delegation
+  在线授权、snapshot/authorization_version/owner/expiry 跨页一致性、页错/撤权 4403、snapshot 变化/
+  过期 1011、绝不空页）；exact scope 保留；asyncapi scope 文本与 doc/06 已同步；fixture 两页分页 +
+  失败模式；`p12_target_websocket` 5/5。
+- **最终验收（本轮）**：全量构建 exit 0；**全量 CTest 208/208 通过 exit 0**（`round3-ctest.log`，
+  547.79s，`--parallel 3`，新增 `p05v12_owner_feed_e2e`）；contracts（含 impl-status/evidence-scopes/
+  semantic-rules/target-feature）、target 往返+baseline/v1.1 兼容、openapi/asyncapi/target-api/
+  reference、boundaries/inner/links/database、SDK pytest 全 exit 0；格式 27 个基线违规、0 新增；
+  Panel lint/build/contracts exit 0，test 唯一失败仍为基线 stale 断言。
+- **registry 翻转（本轮）**：v1.2 feed 的 10 messages + 46 fields + 2 observation semantic rules
+  增加 target override+evidence，4 个 feed RPC target_spec status→implemented；HOST-04 的 4 个 REST
+  operation target override+evidence 补齐（此前仅 categories/文档翻转）。历史 reference scope 保持
+  不变（inline CONTRACT_STATUS 注释仍为 reference 状态）。

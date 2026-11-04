@@ -145,6 +145,15 @@ void stream_page(const wire::OperationChangesRequest& request,
   stream_cursor(output->mutable_next_cursor(), scope, next);
   stamp_now(output->mutable_checked_at());
 }
+// Deterministic full-directory scan fixtures: two immutable-snapshot pages per catalog plus error
+// modes for the fail-closed assertions (authorization denial on page 2 / snapshot change mid-scan).
+constexpr char kAdapterCatalog[] = "c1111111-1111-4111-8111-111111111111";
+constexpr char kAdapterFailCatalog[] = "d1111111-1111-4111-8111-111111111111";
+constexpr char kAdapterMismatchCatalog[] = "e1111111-1111-4111-8111-111111111111";
+constexpr char kInstanceCatalog[] = "f1111111-1111-4111-8111-111111111111";
+constexpr char kInstanceFailCatalog[] = "a2111111-1111-4111-8111-111111111111";
+constexpr char kInstanceMismatchCatalog[] = "b2111111-1111-4111-8111-111111111111";
+
 class FakeRuntime final : public wire::RuntimeService::Service {
 public:
   std::atomic<int> logs_feed_state_{0};
@@ -381,17 +390,124 @@ public:
       output->add_installations()->set_installation_id(id);
     });
   }
+  // Full-directory immutable-page fixture for the WS catalog scan. Non-WS catalogs keep the
+  // historical fixture-catalog behavior used by the REST catalog acceptance.
   grpc::Status ListInstances(grpc::ServerContext*, const wire::RuntimeListInstancesRequest* input,
                              wire::RuntimeListInstancesResponse* output) override {
+    if (input->has_catalog() && input->catalog().kind() == wire::RESOURCE_CATALOG &&
+        (input->catalog().id() == kInstanceCatalog ||
+         input->catalog().id() == kInstanceFailCatalog ||
+         input->catalog().id() == kInstanceMismatchCatalog)) {
+      return instance_catalog_page(input, output);
+    }
     return catalog_page(input, output, [&](const std::string& id) {
       output->add_instances()->set_instance_id(id);
     });
   }
   grpc::Status ListAdapters(grpc::ServerContext*, const wire::RuntimeListAdaptersRequest* input,
                             wire::RuntimeListAdaptersResponse* output) override {
+    if (input->has_catalog() && input->catalog().kind() == wire::RESOURCE_CATALOG &&
+        (input->catalog().id() == kAdapterCatalog || input->catalog().id() == kAdapterFailCatalog ||
+         input->catalog().id() == kAdapterMismatchCatalog)) {
+      return adapter_catalog_page(input, output);
+    }
     return catalog_page(input, output, [&](const std::string& id) {
       output->add_adapters()->mutable_resource()->set_id(id);
     });
+  }
+  void adapter_catalog_record(wire::AdapterRecord* record, const std::string& id,
+                              std::uint64_t version) {
+    record->mutable_resource()->set_kind(wire::RESOURCE_ADAPTER);
+    record->mutable_resource()->set_id(id);
+    record->set_version(version);
+    record->set_online(true);
+    record->set_lifecycle(wire::LIFECYCLE_ACTIVE);
+    record->mutable_observed_at()->set_seconds(kNow + static_cast<std::int64_t>(version));
+    auto* fence = record->mutable_current_fence();
+    fence->set_instance_id("66666666-6666-4666-8666-000000000001");
+    fence->set_execution_generation(1);
+    fence->set_connection_generation(1);
+    fence->set_runtime_epoch("fixture-runtime-epoch-1");
+  }
+  void instance_catalog_record(wire::InstanceRecord* record, const std::string& id,
+                               std::uint64_t version) {
+    record->set_instance_id(id);
+    record->set_installation_id("99999999-9999-4999-8999-000000000001");
+    record->set_host_id("88888888-8888-4888-8888-000000000001");
+    record->set_externally_managed(false);
+    auto* state = record->mutable_state();
+    state->mutable_resource()->set_kind(wire::RESOURCE_INSTANCE);
+    state->mutable_resource()->set_id(id);
+    state->set_version(version);
+    state->set_lifecycle(wire::LIFECYCLE_ACTIVE);
+    state->mutable_observed_at()->set_seconds(kNow + static_cast<std::int64_t>(version));
+  }
+  grpc::Status adapter_catalog_page(const wire::RuntimeListAdaptersRequest* input,
+                                    wire::RuntimeListAdaptersResponse* output) {
+    const std::string page_token = input->page().page_token();
+    auto* snapshot = output->mutable_snapshot();
+    snapshot->set_owner_service("runtime");
+    snapshot->set_authorization_version(1);
+    stamp_now(snapshot->mutable_observed_at());
+    stamp_now(snapshot->mutable_expires_at());
+    snapshot->mutable_expires_at()->set_seconds(snapshot->expires_at().seconds() + 600);
+    snapshot->mutable_page()->set_page_size(input->page().page_size());
+    if (page_token.empty()) {
+      snapshot->set_snapshot_id(input->catalog().id() == kAdapterMismatchCatalog
+                                    ? "adapter-catalog-snapshot-a"
+                                    : "adapter-catalog-snapshot-1");
+      snapshot->mutable_page()->set_next_page_token("page-2");
+      adapter_catalog_record(output->add_adapters(), "77777777-7777-4777-8777-000000000a01", 1);
+      adapter_catalog_record(output->add_adapters(), "77777777-7777-4777-8777-000000000a02",
+                             static_cast<std::uint64_t>(1 + changing_adapter_calls_.fetch_add(1)));
+      return grpc::Status::OK;
+    }
+    if (page_token != "page-2") {
+      return failure(wire::INVALID_ARGUMENT, grpc::StatusCode::INVALID_ARGUMENT, input->context());
+    }
+    if (input->catalog().id() == kAdapterFailCatalog) {
+      return failure(wire::PERMISSION_DENIED, grpc::StatusCode::PERMISSION_DENIED,
+                     input->context());
+    }
+    snapshot->set_snapshot_id(input->catalog().id() == kAdapterMismatchCatalog
+                                  ? "adapter-catalog-snapshot-b"
+                                  : "adapter-catalog-snapshot-1");
+    adapter_catalog_record(output->add_adapters(), "77777777-7777-4777-8777-000000000a03", 1);
+    return grpc::Status::OK;
+  }
+  grpc::Status instance_catalog_page(const wire::RuntimeListInstancesRequest* input,
+                                     wire::RuntimeListInstancesResponse* output) {
+    const std::string page_token = input->page().page_token();
+    auto* snapshot = output->mutable_snapshot();
+    snapshot->set_owner_service("runtime");
+    snapshot->set_authorization_version(1);
+    stamp_now(snapshot->mutable_observed_at());
+    stamp_now(snapshot->mutable_expires_at());
+    snapshot->mutable_expires_at()->set_seconds(snapshot->expires_at().seconds() + 600);
+    snapshot->mutable_page()->set_page_size(input->page().page_size());
+    if (page_token.empty()) {
+      snapshot->set_snapshot_id(input->catalog().id() == kInstanceMismatchCatalog
+                                    ? "instance-catalog-snapshot-a"
+                                    : "instance-catalog-snapshot-1");
+      snapshot->mutable_page()->set_next_page_token("page-2");
+      instance_catalog_record(output->add_instances(), "66666666-6666-4666-8666-000000000b01", 1);
+      instance_catalog_record(
+          output->add_instances(), "66666666-6666-4666-8666-000000000b02",
+          static_cast<std::uint64_t>(1 + changing_instance_calls_.fetch_add(1)));
+      return grpc::Status::OK;
+    }
+    if (page_token != "page-2") {
+      return failure(wire::INVALID_ARGUMENT, grpc::StatusCode::INVALID_ARGUMENT, input->context());
+    }
+    if (input->catalog().id() == kInstanceFailCatalog) {
+      return failure(wire::PERMISSION_DENIED, grpc::StatusCode::PERMISSION_DENIED,
+                     input->context());
+    }
+    snapshot->set_snapshot_id(input->catalog().id() == kInstanceMismatchCatalog
+                                  ? "instance-catalog-snapshot-b"
+                                  : "instance-catalog-snapshot-1");
+    instance_catalog_record(output->add_instances(), "66666666-6666-4666-8666-000000000b03", 1);
+    return grpc::Status::OK;
   }
   grpc::Status ListHosts(grpc::ServerContext*, const wire::RuntimeListHostsRequest* input,
                          wire::RuntimeListHostsResponse*) override {

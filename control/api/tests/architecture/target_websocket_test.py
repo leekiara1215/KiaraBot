@@ -23,12 +23,11 @@ import tempfile
 import time
 from pathlib import Path
 
-from websockets.exceptions import ConnectionClosed, InvalidHandshake, InvalidStatus
-from websockets.sync.client import connect
-
 REPO = Path(__file__).resolve().parents[4]
 sys.path.insert(0, str(REPO / 'core/tests/platform'))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 from service_config_test import certificates  # noqa: E402
+from ws_client import ConnectionClosed, RawWebSocket  # noqa: E402
 
 ACCESS = 'secret-access-credential-login'
 PASSWORD = 'never-print-password'
@@ -149,23 +148,12 @@ class Harness:
         self.folder.cleanup()
 
     def websocket(self, port=None, origin=ORIGIN, path=OPERATIONS_PATH):
-        # The synchronous client spawns an OS thread per connection; under rapid abnormal-close
-        # churn on macOS its TLS handshake occasionally EOFs before the server's 101. A clean
-        # retry of the client handshake keeps the server-side assertions strict without turning a
-        # client-library race into a false transport regression.
-        failure = None
-        for _ in range(3):
-            context = ssl.create_default_context(cafile=self.ca)
-            try:
-                return connect(f'wss://localhost:{port or self.port}{path}',
-                               ssl=context, origin=origin, open_timeout=5, close_timeout=2,
-                               max_size=4 * 1024 * 1024, proxy=None, ping_interval=None)
-            except InvalidStatus:
-                raise
-            except (TimeoutError, OSError, InvalidHandshake) as error:
-                failure = error
-                time.sleep(0.2)
-        raise failure
+        # Single-threaded client: exactly one thread owns the TLS socket for the whole connection.
+        # The threaded websockets sync client performs SSL_read on a receiver thread concurrently
+        # with main-thread SSL_write/close; on this toolchain that caused spurious handshake EOFs
+        # and a libssl segfault inside the client process (task-19 A evidence). This client is
+        # test-harness only: no server assertion or authorization behavior is relaxed.
+        return RawWebSocket('localhost', port or self.port, path, self.ca, origin, timeout=5)
 
     def request(self, method, path, body=None, headers=None, port=None):
         context = ssl.create_default_context(cafile=self.ca)
@@ -471,6 +459,34 @@ def revocation(harness):
     expect_closed(denied, 4401, timeout=3)
 
 
+def diagnose(harness):
+    """Failure-path only: capture Control process state and probe the listener synchronously."""
+    import shutil
+    if shutil.which('lsof') is None:
+        print('diagnose: lsof unavailable', file=sys.stderr)
+    try:
+        pid = harness.control.pid if harness.control else None
+        if pid:
+            print('diagnose ps:', subprocess.run(
+                ['ps', '-o', 'pid,ppid,stat,thcount,etime,command', '-p', str(pid)],
+                capture_output=True, text=True).stdout, file=sys.stderr)
+            print('diagnose lsof:', subprocess.run(
+                ['lsof', '-nP', '-p', str(pid)], capture_output=True, text=True).stdout,
+                file=sys.stderr)
+    except Exception as error:  # noqa: BLE001 - diagnostics only
+        print(f'diagnose process: {error!r}', file=sys.stderr)
+    for attempt in range(3):
+        try:
+            context = ssl.create_default_context(cafile=harness.ca)
+            with socket.create_connection(('127.0.0.1', harness.port), timeout=3) as raw:
+                with context.wrap_socket(raw, server_hostname='localhost') as tls:
+                    tls.sendall(b'GET /api/v1/health HTTP/1.1\r\nHost: localhost\r\n\r\n')
+                    data = tls.recv(4096)
+                    print(f'diagnose probe{attempt}: {data[:160]!r}', file=sys.stderr)
+        except Exception as error:  # noqa: BLE001 - diagnostics only
+            print(f'diagnose probe{attempt}: {type(error).__name__} {error}', file=sys.stderr)
+
+
 def main(control, identity_fixture, owner_fixture):
     harness = Harness(control, identity_fixture, owner_fixture)
     try:
@@ -483,6 +499,7 @@ def main(control, identity_fixture, owner_fixture):
         slow_consumer(harness)
         revocation(harness)
     except BaseException:
+        diagnose(harness)
         harness.cleanup()
         print('---- control/fixture logs ----', file=sys.stderr)
         print(harness.logs, file=sys.stderr)

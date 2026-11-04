@@ -1091,6 +1091,27 @@ class ScopeTest(unittest.TestCase):
             'listAccounts', 'listInstallations', 'listInstances', 'listAdapterInstances',
             'createAccount', 'createInstallation', 'createInstance',
         ))
+        # HOST-04 reviewed availability: Control host maintenance REST routes now reach a real
+        # HostManagementService through the owner gateway (p12_host_control_rest /
+        # p12_host_control_chain_e2e / p08_host_management_rpc).
+        expected.update(('operations', 'operations.' + operation) for operation in (
+            'getHostMaintenance', 'beginHostMaintenance', 'resumeHostAdmission',
+            'cancelHostOperation',
+        ))
+        # v1.2 observation feed: real Identity/Runtime/Scheduler process + real PG journal
+        # evidence (p04_identity_log_feed_e2e, p05v12_owner_feed_e2e).
+        expected.update(('proto_messages', message) for message in (
+            'ObservationChangesRequest', 'LogMetadata', 'LogChange', 'LogChangesResponse',
+            'TaskMetadata', 'TaskChange', 'TaskChangesResponse', 'MessageMetadata',
+            'MessageMetadataChange', 'MessageMetadataChangesResponse',
+        ))
+        expected.update(('proto_fields', field) for field in (
+            'ObservationChangesRequest.context', 'ObservationChangesRequest.scope', 'ObservationChangesRequest.cursor', 'ObservationChangesRequest.page_size', 'LogMetadata.owner_service', 'LogMetadata.entry_id', 'LogMetadata.severity', 'LogMetadata.component', 'LogMetadata.method', 'LogMetadata.event', 'LogMetadata.resource', 'LogMetadata.request_id', 'LogMetadata.trace_id', 'LogMetadata.occurred_at', 'LogChange.log', 'LogChange.cursor', 'LogChangesResponse.changes', 'LogChangesResponse.next_cursor', 'LogChangesResponse.has_more', 'LogChangesResponse.checked_at', 'TaskMetadata.owner_service', 'TaskMetadata.task_id', 'TaskMetadata.owner_instance_id', 'TaskMetadata.state', 'TaskMetadata.version', 'TaskMetadata.updated_at', 'TaskMetadata.cancel_requested', 'TaskMetadata.occurrence_id', 'TaskMetadata.reason_code', 'TaskChange.task', 'TaskChange.cursor', 'TaskChangesResponse.changes', 'TaskChangesResponse.next_cursor', 'TaskChangesResponse.has_more', 'TaskChangesResponse.checked_at', 'MessageMetadata.owner_service', 'MessageMetadata.message_id', 'MessageMetadata.conversation_id', 'MessageMetadata.account_id', 'MessageMetadata.received_at', 'MessageMetadataChange.message', 'MessageMetadataChange.cursor', 'MessageMetadataChangesResponse.changes', 'MessageMetadataChangesResponse.next_cursor', 'MessageMetadataChangesResponse.has_more', 'MessageMetadataChangesResponse.checked_at'
+        ))
+        expected.update(('semantic_rules', rule) for rule in (
+            'semantic.observation.feed_family_isolation',
+            'semantic.observation.safe_change_projection',
+        ))
         # HERR-02/03: real authenticated PluginBridge raw-wire refusals; no broader Host family.
         expected.update(('semantic_rules', semantic) for semantic in (
             'semantic.host.request_operation_classification',

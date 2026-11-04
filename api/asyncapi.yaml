@@ -35,10 +35,14 @@ x-target-contract:
     Operations uses OperationHello/OperationResume. Other target channels use
     TargetScopedHello/TargetScopedResume, requiring scope; reference Hello/Resume
     remain historical variants. Health scope is exactly RESOURCE_CATALOG/control;
-    logs uses that explicit catalog with log.read; other target scopes contain
+    logs uses that explicit catalog with log.read; exact-scope channels contain
     1..127 distinct exact resources, never catalog-derived child grants. Target
-    adapters uses RESOURCE_ADAPTER, plugins uses RESOURCE_INSTANCE, tasks uses
-    RESOURCE_TASK|RESOURCE_INSTANCE, messages uses RESOURCE_ACCOUNT. Canonicalize
+    adapters accepts exactly one RESOURCE_CATALOG deployment catalog for an
+    immutable full-directory scan (owner pages are re-authorized online per page;
+    the catalog is a selector, never a child grant) or exactly one
+    RESOURCE_ADAPTER; plugins accepts exactly one RESOURCE_CATALOG or exactly one
+    RESOURCE_INSTANCE; tasks uses RESOURCE_TASK|RESOURCE_INSTANCE, messages uses
+    RESOURCE_ACCOUNT. Mixed catalog+exact selections are rejected. Canonicalize
     by kind/id and bind principal, Identity session, authorization version, channel,
     owner and canonical scope. A cursor is not an authorization capability.
   delivery_batches:
