@@ -327,3 +327,6 @@ S1 通过、S2 无测试，Runtime gate/PG 持久化/Control host 路由未实�
   导致 Runtime 重启后永久无法重连（已按契约删除 4 处 host.has_value 拒绝，保留其余授权校验）。
 - 最终全量 CTest 结果与逐项失败/通过证据见 `build/logs/final-acceptance/final3-ctest.log`；
   第一轮失败日志 `final2-ctest.log`（混合旧二进制配对）保留，不作为最终结论。
+- **最终全量 CTest：204/204 通过（exit 0，457.23s，`--parallel 3`，`final5-ctest-parallel3.log`）**；
+  并行 6 窗口的 STR09 时序失败已由 driver 有界窗口重试收敛，空闲单跑 121.58s exit 0
+  （`final4-str09-isolated.log`），不作为最终失败。

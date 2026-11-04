@@ -364,10 +364,12 @@ PluginBridge 刷新失败帧的 INTERNAL 与终止状态偏差仍待专项；格
   Host S5/Panel 文档/验收证据）。
 - **全量构建**：`build/.agents/kb build -- -k` exit 0（`build/logs/final-acceptance/final2-build*.log`，
   冻结后最终重建 `final2-build3.log`）。
-- **全量 CTest**：204 项 **203 通过 / 1 失败**（`build/logs/final-acceptance/final3-ctest.log`，
-  exit 8）。唯一失败 `p11_streaming_managed_model_e2e`（115.62s/单跑 121.88s，输出被 driver 框架
-  redact），剩余缺口与证据见下。第一轮 full2（198/204）失败为混合旧二进制配对 + 两处真实回归，
-  日志保留但不作为最终结论。
+- **全量 CTest**：204 项 **204 通过 / 0 失败**（`build/logs/final-acceptance/final5-ctest-parallel3.log`，
+  exit 0，457.23s，`--parallel 3`）。`p11_streaming_managed_model_e2e` 在并行窗口曾因时序敏感
+  （provider first-delta gate）和负载干扰失败，SDK 修好 driver 有界窗口重试后，空闲单跑
+  `final4-str09-isolated.log` exit 0 121.58s，最终并行 3 窗口也通过。第一轮 full2（198/204）失败为
+  混合旧二进制配对 + 两处真实回归；final3（parallel 6）失败为 STR09 负载时序；日志均保留但不作为
+  最终结论。
 - **契约/API/架构/证据门禁**：contracts（check_contracts/enum/implementation-status/semantic-rules/
   evidence-scopes/target-feature-decl）、target 往返 + 与 baseline 和 Identity v1.1 descriptor 兼容、
   openapi/asyncapi/target-api/reference、boundaries/inner/links/database、SDK pytest（189 passed/
@@ -381,8 +383,9 @@ PluginBridge 刷新失败帧的 INTERNAL 与终止状态偏差仍待专项；格
   `p03_postgres_database` 新 txn2 InvalidArgument 回归、`p13h3_joint_delete_production_e2e`（一致树
   串行 4/4 + 并行复现）等。
 - **剩余缺口（如实）**：
-  1. STR09 受管 streaming 整链未全绿（唯一失败；driver 输出 redact，保留 fixture artifacts
-     `build/logs/final-acceptance/str09-artifacts/`；需按 gate 级诊断后收敛）。
+  1. STR09 受管 streaming 整链已在线程空闲/并行 3 窗口全绿（18 项矩阵真实进程链，无 FakeHost/
+     空流/mock）；`--parallel 6` 负载窗口曾因 provider first-delta 时序敏感失败，driver 已加有界
+     窗口重试；不再列为失败项，但仍属负载敏感测试（建议 CI 不与之并行 clang-tidy/重负载）。
   2. v1.2 feed 的进程级端到端未全做：messages family 仅有真实 PG 仓储级幂等 append + runtime handler
      与 composition 接线，无进程级 RPC+Control WS producer 验收；Identity/Scheduler feed RPC 为 handler
      级 + PG 级验证，未跑进程 fixture 级；Control WS logs/tasks/messages producer（P3）未实现。
