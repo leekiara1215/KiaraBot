@@ -406,4 +406,6 @@ CreateTask 幂等由 task_id/idempotency receipt 保证，COMPLETED 仅证明 Ti
 
 用户已批准五项管理写入在 Runtime 同一事务中保存版本化附属回执、原 operation 引用和实例提交状态。附属行引用 command_receipts(result_id) ON DELETE CASCADE，普通回执不保存 bootstrap 明文。新建隔离数据库验收；现有部署数据库不得由启动流程自动升级。原地迁移另行审查。完整重放只在原 retain_until 内承诺，过期 UNKNOWN 仍需核对原操作。
 
+随后用户明确本机旧 P14 业务数据无需保留，允许新版切换验收完成后完全删除旧数据。本轮因此采用新版空库初始化、真实链验收、入口切换、移除旧项目及独占卷的替换流程，不实施存量行/旧回执格式转换，也不维护旧 writer 重试服务。该授权只针对本次明确指定的可丢弃旧部署；不是对其他部署跳过保留窗口、删除未知操作或自动清库的授权。新的 owner 库及 QQ/Provider 独立环境材料须排除在旧项目清理之外。
+
 Runtime mutate 的 effect 返回失败时，先回滚整个业务 UoW，再用独立短 UoW 尝试追加拒绝审计。crypto/ID 等纯端口在写行后失败也不得留下资源、operation、命令或半份回执；拒绝审计失败或提交未知保留原命令错误，因为业务事务已回滚。

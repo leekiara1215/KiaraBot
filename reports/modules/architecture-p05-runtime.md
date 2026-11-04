@@ -2,9 +2,9 @@
 
 ## 2026-11-04 已批准的实施范围
 
-维护者批准按创建/目录授权与五项持久回执两份方案推进，使用独立 worktree、teammate、能力颗粒度本地提交。持久回执只在隔离新库验收，保留数据的原地迁移另行审查。通过原生检查后重建 Compose 镜像并使用新项目、新卷验收；不推送。目录完整未知对象发现、Host 持久登记等两份方案明确列出的后续项继续按各自阶段处理。
+维护者批准按创建/目录授权与五项持久回执两份方案推进，使用独立 worktree、teammate、能力颗粒度本地提交。持久回执先在隔离新库验收；随后用户明确旧 P14 数据无需保留，允许新版切换成功后删除旧数据，故本机采用新库替换，不实施保留数据的原地迁移。通过原生检查后重建 Compose 镜像并使用新项目、新卷验收；不推送。目录完整未知对象发现、Host 持久登记等两份方案明确列出的后续项继续按各自阶段处理。
 
-文档影响包括 proto/runtime 与 OpenAPI 唯一来源、doc/01、doc/02、doc/06 的授权/分页规则，doc/08、doc/22 的新库初始化与回执语义，以及必要的 proto/README、运行语义和实际测试报告。doc/18 只读。原地迁移工具和升级已有部署库不在本轮验收内。
+文档影响包括 proto/runtime 与 OpenAPI 唯一来源、doc/01、doc/02、doc/06 的授权/分页规则，doc/08、doc/22 的新库初始化与回执语义，以及必要的 proto/README、运行语义和实际测试报告。doc/18 只读。原地迁移工具不在本轮验收内；后续新增授权只允许本机旧 P14 数据在新版切换验收后删除，不扩展至其他环境。
 
 本次批准范围的最终结果见文末“2026-11-04 集成与隔离 Compose 验收”。正文较早的待确认、未实施及单次失败记录保留为阶段证据，不代表当前最终状态。
 
@@ -330,7 +330,7 @@ Bridge 双连接隔离修复及 P06 容量重投集成后，主构建重新编�
 
 五项写操作在原事务中保存版本化结果、原 operation；实例操作保存提交时完整 ResourceState。同键换 request_id、后续资源被修改及 Runtime 真重启后均返回原业务结果，重放前重新在线授权。持久 fingerprint 使用确定性 protobuf 编码，避免 Struct/map 插入顺序误报 CONFLICT。SecretPort 等 effect 失败先回滚业务事务，再单独尝试记录拒绝审计，防止拒绝同时残留部分业务变更。隔离 PostgreSQL 故障测试覆盖该路径。一次性 bootstrap 明文不落普通回执、不在重试中泄露。
 
-Runtime 新库 schema 为 v18，descriptor `4c5649131c56be99dd4e6d06af3a9aa1`（154 relations）；新增 `runtime_management_receipts` 随通用 command receipt 同事务保存，并随其外键级联清理。Identity、Scheduler、Model 的 owner schema descriptor 未变化。仅初始化新库；旧部署库及其回执未迁移，旧 fingerprint/回执不能据此宣布兼容。原地升级、存量回执保留窗口及预检仍须另行审查。
+Runtime 新库 schema 为 v18，descriptor `4c5649131c56be99dd4e6d06af3a9aa1`（154 relations）；新增 `runtime_management_receipts` 随通用 command receipt 同事务保存，并随其外键级联清理。Identity、Scheduler、Model 的 owner schema descriptor 未变化。仅初始化新库；未转换旧回执或宣称旧 fingerprint 兼容。用户随后确认旧 P14 数据可丢弃，本机在新库切换验收后删除旧卷，不为该可丢弃环境实现原地升级或旧回执兼容。需要保留数据的其他环境仍须另行审查。
 
 原生与工具检查：
 
@@ -342,7 +342,7 @@ Runtime 新库 schema 为 v18，descriptor `4c5649131c56be99dd4e6d06af3a9aa1`（
 
 实际重建八个 Compose 镜像，统一 tag `p05-20261104`，本机 image ID 前缀：Runtime `b6b9d55fc53c`、Identity `c2fdfcba202d`、Scheduler `07542a5214bc`、Model `3f0286ad494d`、Control `42817e741382`、PluginHost `438681e17046`、tools `fa1e5971ed17`、Panel `214d554b5c28`。镜像包含最终生产代码；之后的改动仅测试夹具、验收脚本、状态登记和文档，不需要再次重建生产镜像。
 
-隔离项目 `p05accept-20261104` 使用全新卷、`identity_p05/runtime_p05/scheduler_p05/model_p05` 四库及独立本地测试 CA，完成四 owner 初始化、离线 Identity bootstrap、真实服务启动。Control HTTPS 为 `https://localhost:28080`，Panel 为 `http://localhost:28082`。八个常驻应用/数据库容器当前均 healthy；tools 为一次性工具镜像。旧 P14 项目及卷保留，未用新版 initializer 访问旧库。
+隔离项目 `p05accept-20261104` 使用全新卷、`identity_p05/runtime_p05/scheduler_p05/model_p05` 四库及独立本地测试 CA，完成四 owner 初始化、离线 Identity bootstrap、真实服务启动。初验入口为 28080/28082；切换后新版接管原 Control HTTPS `https://localhost:18080`、Panel `http://localhost:18082`。八个常驻应用/数据库容器最终复查全部 healthy；tools 为一次性工具镜像。未用新版 initializer 访问旧库；新版切换验收后，按用户新增授权删除旧 P14 项目和独占卷，详见下文。
 
 容器验收实际结果：
 
@@ -350,10 +350,14 @@ Runtime 新库 schema 为 v18，descriptor `4c5649131c56be99dd4e6d06af3a9aa1`（
 - CreateAccount、CreateInstallation、精确父安装 CreateInstance 成功；同幂等键换 request_id 重放保持创建业务结果，创建出的新 child 无隐式读权限。CreateInstance 当前投影观察时间可刷新，沿用现有 API 语义；本轮五项管理回执的冻结观察时间保证不扩展到该创建 API。
 - 五项管理操作在后续变更后重放原结果；真正重启 Runtime 容器，再签发当前委托，五项原结果全部保持，成功轮瞬时签发重试次数为 0。Bind 重放不含 bootstrap 明文。检查点仅存本机权限 0600 文件，未提交凭据。
 - Panel 初次启动的本地 CA 公共证书读取权限问题已修正为 0644；私钥仍 0600。Panel 就绪接口 HEALTHY，页面返回 200。
-- 过程中 Identity 因 VM 时钟检查返回不可用；确认 NTP 同步及 host/VM UTC 后，仅重启本轮新 Identity 恢复，后续真实链及持续健康检查通过。采样观察到 VM wall/monotonic 调整，尚不能确定最初触发原因；没有修改时钟安全阈值或宣称根因修复。旧 P14 Identity 同类健康问题未借本项重启或迁移。
+- 初次仅重启 Identity 后，时钟故障再次出现，故没有以短期恢复结束验收。后续将失效窗口内 Lima 的 17 次回拨与日志对齐，累计 2040.892ms，最后一次越过固定基线两秒保护后约一秒失效。客体 timesyncd 与 Lima 宿主校时同时运行，前者安装了 +500ppm 频率及 PLL 相位校正。仅在本机 VM 停用重复 timesyncd、记录原值并以 ADJ_FREQUENCY 单项清零遗留频率，保留 Lima 校时；不设置 UTC，不改应用阈值、固定基线或锁定行为。宿主 timed 运行，独立 sntp 查询偏差 +0.141909±0.078033 秒；客体与宿主差值有界小于两秒。重启新 Identity 后连续采样 **662.938 秒**，661 条记录的频率和相位始终为零，658 条 ≤1ms 的合格测量中 wall−monotonic 范围 **0.4835ms**，末值相对首值仅 +0.000584ms；Identity 全程保持健康，覆盖此前约五分半的复发窗口。该证据不等同长期运行或宿主休眠恢复验收。
 
-关键本机日志：`/tmp/kiarabot-p05-final-ctest.log`、`/tmp/kiarabot-p05-final-ctest-retry.log`、`/tmp/kiarabot-p05-final-fixture-ctest.log`、`/tmp/kiarabot-p05-dev-fixed-ctest.log`、`/tmp/kiarabot-p05-suite-images-final.log`、`/tmp/kiarabot-p05-compose-verify.log`、`/tmp/kiarabot-p05-compose-rest-create.log`。容器验收可复用 `tests/architecture/p05_control_catalog_smoke.py`，额外提供 `--create-installation --parent-installation UUID` 覆盖剩余创建入口；真实 RPC、重启和授权负例保留于原生架构 E2E。
+切换后的附加复验仍观察到宿主繁忙时的单次 Login、RPC 或列表 TIMEOUT；原 Runtime CheckAuthorization 500ms、Control 2s 等预算和业务断言均未放宽。实际 cgroup 显示 Identity 存在 CPU 节流，因此本机覆盖将 Identity/Control 配额由 1 核提高到 2 核，未改变仓库默认部署值或镜像。最终原五回执/真 Runtime 重启完整流程通过（签发重试 0），REST CLI 第一轮列表仍曾超时、原断言重跑全部通过，包括四类列表和三类创建。未把本轮功能验收宣称为延迟/压力验收，也未隐藏失败轮次。
+
+用户确认旧数据不需保留后，新版接管 18080/18082 并完成上述复验，再删除 `p14local-zlr0qk95` 的八个旧容器、默认网络及独占卷 `p14-pg-ZLr0qk95`。仅删除 VM `/var/lib/kiarabot-p14/{single-host,preflight-material}` 与本机 P14 的旧 Compose、CA、管理员和预验收材料；逐资源核对标签、停止状态、全容器挂载及固定目录清单后执行。旧 Host 正常关闭移除的两个精确 SQLite sidecar 允许缺失，其余未知/缺失/类型变化均拒绝。没有全局 prune。QQ `qq.env`、VM `onebot.token`、`deepseek-model.json` 和全部新版资源保留，前后元数据一致。删除后独立确认旧容器/卷/网络/专属目录不存在、新版八容器 healthy；本机 `cutover-accepted.json` 和 `retirement-complete.json` 记录非秘密验收结果。该流程是获准丢弃旧数据后的新库替换，不是存量数据原地转换。
+
+关键本机日志：`/tmp/kiarabot-p05-final-ctest.log`、`/tmp/kiarabot-p05-final-ctest-retry.log`、`/tmp/kiarabot-p05-final-fixture-ctest.log`、`/tmp/kiarabot-p05-dev-fixed-ctest.log`、`/tmp/kiarabot-p05-suite-images-final.log`、`/tmp/kiarabot-p05-compose-verify.log`、`/tmp/kiarabot-p05-compose-rest-create.log`、`/tmp/kiarabot-p05-compose-cutover-verify-2.log`、`/tmp/kiarabot-p05-compose-cutover-catalog-2.log`、`/tmp/kiarabot-p05-clock-soak.jsonl`、`/tmp/kiarabot-p05-p14-retire-execute.log`。容器验收可复用 `tests/architecture/p05_control_catalog_smoke.py`，额外提供 `--create-installation --parent-installation UUID` 覆盖剩余创建入口；真实 RPC、重启和授权负例保留于原生架构 E2E。
 
 文档影响与校验：实际同步 `proto/kiarabot/v1/runtime.proto`、`proto/README.md`、`api/openapi.yaml`、`doc/01-contracts.md`、`doc/01-runtime-semantics.md`、`doc/02-core.md`、`doc/06-control-api.md`、`doc/08-operations.md`、`doc/22-transactions-and-migration-design.md`、两份获批方案及本报告。以 `proto/tests/check_contracts.sh`、`proto/tests/target_api_test.rb`、`scripts/quality/check-target-api.sh`、`scripts/quality/check-contract-status-consistency.rb` 和 `git diff --check` 校验协议、状态与 schema。AsyncAPI 无事件协议变化，Adapter/SDK 无公共协议变化，doc/00 模块边界、doc/12 工具链基线及 doc/23 阶段顺序均无变化，故无需改写；doc/18 保持只读。未提交生成物、密钥及本机配置。
 
-本次批准的两项能力与隔离新库验收已完成，P04–P14 整体未据此宣布完成。仍有 ListHosts typed 来源、新建资源合法授权供给流程及首次 bootstrap 字段等后续能力；真实 QQ 扫码、DeepSeek 凭据与费用上限、生产 CA 和离站备份资源验收仍需独立环境与证据。GitHub 登录按用户要求暂缓；全部变更只在本地提交，不 push。
+本次批准的两项能力、新库 Compose 业务验收、时钟部署修复和旧 P14 清理已完成，新版环境当前健康；P04–P14 整体未据此宣布完成。仍有 ListHosts typed 来源、新建资源合法授权供给流程及首次 bootstrap 字段等后续能力；真实 QQ 扫码、DeepSeek 凭据与费用上限、生产 CA 和离站备份资源验收仍需独立环境与证据。GitHub 登录按用户要求暂缓；全部变更只在本地提交，不 push。
