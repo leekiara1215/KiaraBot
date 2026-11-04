@@ -161,7 +161,7 @@ HostIdentityClient::check(const target::AuthenticationContext& context,
                           target::Permission permission, const target::ResourceRef& resource,
                           target::TimePoint deadline) {
   try {
-    if (!stub_ || !available()) {
+    if (!stub_) {
       return unavailable();
     }
     if (context.proof.empty() || resource.kind != t::ResourceKind::Host ||

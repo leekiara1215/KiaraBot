@@ -34,7 +34,8 @@ def main():
                     'p13h3_joint_delete_production_e2e',
                     'p13h3_joint_delete_production_e2e.py',
                     'p05b_model_chain_e2e', 'p05b_model_chain_e2e.py',
-                    'bootstrap_delivery_e2e.py')
+                    'bootstrap_delivery_e2e.py',
+                    'kiarabot_postgres_observation_feed_test')
     environment = {key: value for key, value in os.environ.items() if not key.startswith('PG')}
     environment['LC_ALL'] = 'C'
 

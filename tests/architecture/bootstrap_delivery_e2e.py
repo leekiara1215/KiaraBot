@@ -272,18 +272,11 @@ def run_scenario(root, https_port, binaries, children):
         'expected_version': '1',
     }
     stage('first issuance')
+    bind_key = str(uuid.uuid4())
     status, body = request('PUT', f'/api/v1/adapter-bindings/{account}', binding_body, token,
-                           str(uuid.uuid4()))
-    if status != 200 or not isinstance(body, dict):
-        debug = sql_runtime(
-            f"SELECT 'binding='||version||':'||state FROM kiarabot.adapter_bindings "
-            f"WHERE account='{account}';"
-            f"SELECT 'credentials='||count(*) FROM kiarabot.bridge_credentials "
-            f"WHERE resource_id='{adapter}';"
-            f"SELECT 'deliveries='||count(*) FROM kiarabot.bootstrap_deliveries "
-            f"WHERE resource_id='{account}';")
-        require(False,
-                f'first bind status {status} body {json.dumps(body)[:200]} db={debug[:200]}')
+                           bind_key)
+    require(status == 200 and isinstance(body, dict),
+            f'first bind status {status} body {json.dumps(body)[:200]}')
     require('bootstrap_credential' not in body, 'ordinary REST never echoes the plaintext')
     issued = body.get('delivery')
     require(isinstance(issued, dict), 'first bind returns no-secret delivery metadata')
@@ -317,7 +310,7 @@ def run_scenario(root, https_port, binaries, children):
 
     stage('idempotent replay recovery')
     status, replay = request('PUT', f'/api/v1/adapter-bindings/{account}', binding_body, token,
-                             str(uuid.uuid4()))
+                             bind_key)
     require(status == 200 and isinstance(replay, dict), 'replay status')
     require('bootstrap_credential' not in replay, 'replay never re-exposes the plaintext')
     require(replay.get('delivery', {}).get('delivery_id') == delivery_id,
@@ -385,9 +378,11 @@ def run_scenario(root, https_port, binaries, children):
     status, replay = request(
         'POST', f'/api/v1/accounts/{account}/bootstrap/reissue',
         {'recipient_id': recipient, 'expected_credential_version': '1'}, token, reissue_key)
-    require(status == 200 and 'bootstrap_credential' not in replay, 'reissue replay no secret')
-    require(replay['delivery']['delivery_id'] == STATE['reissue_delivery'],
-            'reissue replay restores the original delivery identity')
+    require(status == 200 and 'bootstrap_credential' not in replay,
+            f'reissue replay status={status} body={json.dumps(replay)[:250]}')
+    require(isinstance(replay, dict) and
+            replay.get('delivery', {}).get('delivery_id') == STATE['reissue_delivery'],
+            f'reissue replay identity status={status} body={json.dumps(replay)[:250]}')
     status, stale = request(
         'POST', f'/api/v1/accounts/{account}/bootstrap/reissue',
         {'recipient_id': recipient, 'expected_credential_version': '1'}, token,

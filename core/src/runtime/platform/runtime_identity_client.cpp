@@ -380,7 +380,9 @@ RuntimeIdentityClient::create(RuntimeIdentityClientOptions options) {
       options.maximum_budget.count() <= 0 || options.budget > options.maximum_budget ||
       options.delegation_budget.count() <= 0 || options.delegation_maximum_budget.count() <= 0 ||
       options.delegation_budget > options.delegation_maximum_budget ||
-      options.delegation_maximum_budget > std::chrono::seconds{30}) {
+      options.delegation_maximum_budget > std::chrono::seconds{30} ||
+      options.delegation_lifetime.count() <= 0 ||
+      options.delegation_lifetime > std::chrono::seconds{30}) {
     return failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput);
   }
   try {
@@ -531,9 +533,15 @@ RuntimeIdentityClient::exchange_delegation(std::string_view parent_proof, target
     // per-attempt transport key, not a durable command receipt.
     context->set_idempotency_key(random_uuid());
     const auto started = now();
-    auto deadline =
+    // Two distinct deadlines: the wire RequestContext.deadline bounds the issued child
+    // delegation lifetime (Identity takes min(parent expiry, this deadline)), while the gRPC
+    // network deadline stays short so a slow Identity surfaces quickly. Reusing the short network
+    // budget for the wire deadline capped child delegations at ~2s and made every business call
+    // longer than that (notably model streaming) fail-closed with a clipped execution deadline.
+    const auto network_deadline =
         started + std::min(options_.delegation_budget, options_.delegation_maximum_budget);
-    if (!timestamp(deadline, context->mutable_deadline())) {
+    const auto lifetime_deadline = started + options_.delegation_lifetime;
+    if (!timestamp(lifetime_deadline, context->mutable_deadline())) {
       return failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput);
     }
     input.set_parent_proof(std::string{parent_proof});
@@ -560,7 +568,7 @@ RuntimeIdentityClient::exchange_delegation(std::string_view parent_proof, target
     grpc::ClientContext call;
     call.set_deadline(std::chrono::system_clock::time_point{
         std::chrono::duration_cast<std::chrono::system_clock::duration>(
-            deadline.time_since_epoch())});
+            network_deadline.time_since_epoch())});
     v1::IdentityExchangeDelegationResponse output;
     const auto status = stub_->ExchangeDelegation(&call, input, &output);
     if (!status.ok()) {
@@ -589,6 +597,79 @@ RuntimeIdentityClient::exchange_delegation(std::string_view parent_proof, target
     return unavailable();
   } catch (...) {
     return failure(t::ErrorCode::Internal, t::Recovery::QuerySameIdentity, t::Acceptance::Unknown);
+  }
+}
+
+target::Outcome<target::ResourceVersion>
+RuntimeIdentityClient::check_host_gate(const target::ResourceRef& host,
+                                       const target::Sha256Digest& host_certificate,
+                                       target::TimePoint deadline) {
+  try {
+    if (host.kind != target::ResourceKind::Host || host.id.value.empty() || !stub_) {
+      return unauthenticated();
+    }
+    const auto started = now();
+    auto budget = std::min(options_.budget, options_.maximum_budget);
+    const auto remaining =
+        std::chrono::duration_cast<std::chrono::milliseconds>(deadline - started);
+    if (remaining <= std::chrono::milliseconds::zero()) {
+      return failure(target::ErrorCode::Timeout, target::Recovery::QuerySameIdentity);
+    }
+    budget = std::min(budget, remaining);
+    v1::IdentityCheckHostGateAuthorizationRequest input;
+    auto* context = input.mutable_context();
+    context->set_request_id(random_uuid());
+    context->set_trace_id(random_uuid());
+    context->set_idempotency_key(random_uuid());
+    if (!timestamp(started + budget, context->mutable_deadline())) {
+      return failure(target::ErrorCode::Internal);
+    }
+    const auto encoded = target_codec::to_wire(host);
+    if (!std::holds_alternative<v1::ResourceRef>(encoded)) {
+      return unauthenticated();
+    }
+    *input.mutable_host() = std::get<v1::ResourceRef>(encoded);
+    std::string fingerprint(host_certificate.bytes.size(), '\0');
+    for (std::size_t index = 0; index < host_certificate.bytes.size(); ++index) {
+      fingerprint[index] =
+          static_cast<char>(std::to_integer<unsigned>(host_certificate.bytes[index]));
+    }
+    input.set_host_certificate_sha256(fingerprint);
+    v1::IdentityCheckHostGateAuthorizationResponse output;
+    grpc::ClientContext call;
+    call.set_deadline(std::chrono::system_clock::now() + budget);
+    const auto status = stub_->CheckHostGateAuthorization(&call, input, &output);
+    if (!status.ok()) {
+      return grpc_failure(status);
+    }
+    const auto& decision = output.decision();
+    if (!output.has_decision() || decision.authorization_version() == 0 ||
+        !decision.has_checked_at() || output.host_credential_version() == 0 ||
+        output.host_principal_version() == 0 || decision.allowed() == decision.has_denial()) {
+      return target::Failure{target::ErrorCode::Internal, target::Acceptance::Unknown,
+                             target::Recovery::QuerySameIdentity, std::nullopt, std::nullopt};
+    }
+    if (decision.has_denial() && decision.denial().code() != v1::PERMISSION_DENIED) {
+      return target::Failure{target::ErrorCode::Internal, target::Acceptance::Unknown,
+                             target::Recovery::QuerySameIdentity, std::nullopt, std::nullopt};
+    }
+    const auto checked = target_codec::from_wire(decision.checked_at());
+    const auto* checked_at = std::get_if<target::TimePoint>(&checked);
+    const auto current = now();
+    if (!checked_at || *checked_at > current + std::chrono::seconds{2} ||
+        current - *checked_at > std::chrono::seconds{60}) {
+      return target::Failure{target::ErrorCode::Internal, target::Acceptance::Unknown,
+                             target::Recovery::QuerySameIdentity, std::nullopt, std::nullopt};
+    }
+    if (!decision.allowed()) {
+      return failure(target::ErrorCode::PermissionDenied, target::Recovery::ReadCurrent);
+    }
+    return target::ResourceVersion{decision.authorization_version()};
+  } catch (const std::bad_alloc&) {
+    return unavailable();
+  } catch (...) {
+    return target::Failure{target::ErrorCode::Internal, target::Acceptance::Unknown,
+                           target::Recovery::QuerySameIdentity, std::nullopt, std::nullopt};
   }
 }
 

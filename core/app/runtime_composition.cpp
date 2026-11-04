@@ -28,6 +28,8 @@
 #include "kiarabot/core/runtime/platform/instance_delegation_provider.hpp"
 #include "kiarabot/core/runtime/platform/peer_certificate.hpp"
 #include "kiarabot/core/runtime/platform/runtime_bridge.hpp"
+#include "kiarabot/core/application/target/runtime_host_application.hpp"
+#include "kiarabot/core/ports/target/host_registration_ports.hpp"
 #include "kiarabot/core/runtime/platform/runtime_identity_client.hpp"
 #include "kiarabot/core/runtime/platform/runtime_model_client.hpp"
 #include "kiarabot/core/runtime/platform/runtime_rpc.hpp"
@@ -316,6 +318,10 @@ struct State {
   std::unique_ptr<target::RuntimeAuditApplication> audit;
   std::unique_ptr<target::OperationObservationApplication> observations;
   std::unique_ptr<target::RuntimeBootstrapDeliveryApplication> bootstrap_delivery;
+  std::unique_ptr<target::HostFenceRegistry> host_fences;
+  std::unique_ptr<target::SystemHostClockPort> host_gate_clock;
+  std::unique_ptr<platform::RuntimeHostGateAuthorization> host_gate_authorization;
+  std::unique_ptr<target::RuntimeHostGateApplication> host_gate;
   target::RuntimeActionApplication* action_application = nullptr;
   std::unique_ptr<target::RuntimeBridgeApplication> bridge;
   std::unique_ptr<target::HostLifecycleParticipantPort> host_lifecycle;
@@ -525,6 +531,26 @@ compose_runtime_service(const platform::ProcessConfig& config) {
           auto application =
               std::move(std::get<std::unique_ptr<target::RuntimeResourceApplication>>(built));
           state->application = application.get();
+          // HOST-03 Runtime-owned admission gate: live HostBridge fence + Identity v1.1 check +
+          // one owner-local UoW. The fence registry is populated by the HostBridge registration
+          // path below, so the gate application can verify the presented fence against the
+          // currently accepted connection.
+          std::vector<target::HostCertificateBinding> gate_allowlist;
+          for (const auto& host : config.hosts) {
+            gate_allowlist.push_back({host.host_id, host.certificate_sha256});
+          }
+          state->host_fences = std::make_unique<target::HostFenceRegistry>();
+          state->host_gate_clock = std::make_unique<target::SystemHostClockPort>();
+          if (state->identity_client) {
+            state->host_gate_authorization =
+                std::make_unique<platform::RuntimeHostGateAuthorization>(*state->identity_client);
+            state->host_gate = std::make_unique<target::RuntimeHostGateApplication>(
+                [&factory]() -> target::Outcome<std::unique_ptr<target::RuntimeUnitOfWork>> {
+                  return factory.begin();
+                },
+                *state->host_fences, *state->host_gate_authorization, *state->host_gate_clock,
+                std::move(gate_allowlist));
+          }
           auto audit = target::make_runtime_audit_application({factory, *state->authorization});
           if (std::holds_alternative<target::Failure>(audit)) {
             return {};
@@ -702,6 +728,7 @@ compose_runtime_service(const platform::ProcessConfig& config) {
       options.audit = state->audit.get();
       options.observations = state->observations.get();
       options.bootstrap = state->bootstrap_delivery.get();
+      options.host_gate = state->host_gate.get();
       // BOOT-02 Control platform peer: only the deployment-enrolled actual mTLS leaf fingerprint
       // carrying the Control URI SAN may report/query delivery evidence. Empty allowlist leaves
       // `options.control_peer` unset, so the runtime refuses those calls (fail closed).
@@ -827,8 +854,8 @@ compose_runtime_service(const platform::ProcessConfig& config) {
               return target::Status{std::monostate{}};
             };
       }
-      auto host_bridge = platform::make_deployment_host_bridge(*state->ids, host_allowlist, {},
-                                                               std::move(host_persistence));
+      auto host_bridge = platform::make_deployment_host_bridge(
+          *state->ids, host_allowlist, {}, std::move(host_persistence), state->host_fences.get());
       if (const auto* failure = std::get_if<target::Failure>(&host_bridge)) {
         return *failure;
       }

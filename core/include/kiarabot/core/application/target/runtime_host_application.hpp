@@ -1,12 +1,16 @@
 #pragma once
 
+#include <algorithm>
 #include <cstdint>
+#include <functional>
+#include <memory>
 #include <optional>
 #include <string>
 #include <vector>
 
 #include "kiarabot/core/domain/target/invariants.hpp"
 #include "kiarabot/core/ports/target/host_registration_ports.hpp"
+#include "kiarabot/core/ports/target/unit_of_work.hpp"
 
 namespace kiarabot::core::target {
 
@@ -142,6 +146,144 @@ public:
 private:
   HostRegistrationPort& store_;
   HostClockPort& clock_;
+};
+
+// HOST-03 Runtime-owned dispatch gate commands. The certificate fingerprint and live fence are
+// trusted boundary observations (actual mTLS leaf / accepted HostBridge registration), never wire
+// self-report. Identity online authorization happens before the local durable gate transaction.
+struct HostAdmissionGateCommand {
+  std::string certificate_sha256;
+  ResourceId host;
+  HostFence fence;
+  OperationRef operation;
+  std::uint64_t maintenance_version = 0;
+  std::optional<std::uint64_t> expected_gate_version;
+  bool admission_open = false;
+  TimePoint deadline;
+};
+struct HostAdmissionGateResult {
+  HostAdmissionGateRecord gate;
+};
+// Narrow v1.1 Runtime -> Identity check: only the current Host leaf and exact RESOURCE_HOST are
+// inspected; the response is a current decision/version, never a reusable ticket.
+class HostGateAuthorizationPort {
+public:
+  virtual ~HostGateAuthorizationPort() = default;
+  virtual Outcome<ResourceVersion>
+  check(const ResourceRef& host, const Sha256Digest& host_certificate, TimePoint deadline) = 0;
+};
+inline Outcome<Sha256Digest> digest_from_hex(std::string_view value) {
+  if (value.size() != 64) {
+    return rejected(ErrorCode::InvalidArgument, Recovery::CorrectInput);
+  }
+  Sha256Digest digest{};
+  for (std::size_t index = 0; index < 32; ++index) {
+    const auto nibble = [](char character) -> int {
+      if (character >= '0' && character <= '9') {
+        return character - '0';
+      }
+      if (character >= 'a' && character <= 'f') {
+        return character - 'a' + 10;
+      }
+      return -1;
+    };
+    const int high = nibble(value[index * 2]);
+    const int low = nibble(value[index * 2 + 1]);
+    if (high < 0 || low < 0) {
+      return rejected(ErrorCode::InvalidArgument, Recovery::CorrectInput);
+    }
+    digest.bytes[index] = static_cast<std::byte>((high << 4) | low);
+  }
+  return digest;
+}
+// Persists the Runtime-owned gate inside one owner UoW after re-validating the trusted leaf,
+// the live accepted fence and the current Identity decision. Equal intent replays return the same
+// gate; a mismatched expected version is CONFLICT and is never a fake "admission closed" success.
+class RuntimeHostGateApplication {
+public:
+  RuntimeHostGateApplication(
+      std::function<Outcome<std::unique_ptr<RuntimeUnitOfWork>>()> transactions,
+      HostFenceRegistry& fences, HostGateAuthorizationPort& authorization, HostClockPort& clock,
+      std::vector<HostCertificateBinding> certificate_allowlist)
+      : transactions_(std::move(transactions)), fences_(fences), authorization_(authorization),
+        clock_(clock), allowlist_(std::move(certificate_allowlist)) {}
+
+  Outcome<HostAdmissionGateResult> set_admission_gate(const HostAdmissionGateCommand& command) {
+    if (command.host.value.empty() || command.fence.host != command.host ||
+        command.fence.connection_generation == 0 || command.fence.runtime_epoch.empty() ||
+        command.operation.owner != Service::Host || command.operation.id.value.empty() ||
+        command.operation.resource != ResourceRef{ResourceKind::Host, command.host} ||
+        command.maintenance_version == 0 ||
+        (command.expected_gate_version && *command.expected_gate_version == 0)) {
+      return rejected(ErrorCode::InvalidArgument, Recovery::CorrectInput);
+    }
+    auto bound = std::find_if(allowlist_.begin(), allowlist_.end(), [&](const auto& entry) {
+      return entry.host_id == command.host.value &&
+             entry.certificate_sha256 == command.certificate_sha256;
+    });
+    if (bound == allowlist_.end()) {
+      return rejected(ErrorCode::Unauthenticated, Recovery::Authenticate);
+    }
+    auto live = fences_.current(command.host);
+    if (const auto* failure = std::get_if<Failure>(&live)) {
+      return *failure;
+    }
+    const auto& fence = std::get<std::optional<HostFence>>(live);
+    if (!fence || *fence != command.fence) {
+      return rejected(ErrorCode::Unauthenticated, Recovery::Authenticate);
+    }
+    const auto now = clock_.now();
+    if (const auto* failure = std::get_if<Failure>(&now)) {
+      return *failure;
+    }
+    if (command.deadline <= std::get<TimePoint>(now)) {
+      return rejected(ErrorCode::Timeout, Recovery::Backoff);
+    }
+    auto digest = digest_from_hex(command.certificate_sha256);
+    if (const auto* failure = std::get_if<Failure>(&digest)) {
+      return *failure;
+    }
+    auto authorized = authorization_.check(ResourceRef{ResourceKind::Host, command.host},
+                                           std::get<Sha256Digest>(digest), command.deadline);
+    if (const auto* failure = std::get_if<Failure>(&authorized)) {
+      return *failure;
+    }
+    if (std::get<ResourceVersion>(authorized).value == 0) {
+      return rejected(ErrorCode::Internal, Recovery::Diagnose);
+    }
+    HostAdmissionGateRecord record{
+        command.host,           command.operation,       command.maintenance_version, 0,
+        command.admission_open, std::get<TimePoint>(now)};
+    auto work = transactions_();
+    if (const auto* failure = std::get_if<Failure>(&work)) {
+      return *failure;
+    }
+    auto unit = std::get<std::unique_ptr<RuntimeUnitOfWork>>(std::move(work));
+    if (!unit) {
+      return rejected(ErrorCode::Internal, Recovery::Diagnose);
+    }
+    auto saved = unit->host_admission_gates().save(record, command.expected_gate_version);
+    if (const auto* failure = std::get_if<Failure>(&saved)) {
+      return *failure;
+    }
+    const auto committed = unit->commit();
+    switch (committed) {
+    case CommitResult::Committed:
+      return HostAdmissionGateResult{std::get<HostAdmissionGateRecord>(saved)};
+    case CommitResult::RolledBack:
+      return rejected(ErrorCode::UpstreamUnavailable, Recovery::Backoff);
+    default:
+      return Failure{ErrorCode::UpstreamUnavailable, Acceptance::Unknown,
+                     Recovery::QuerySameIdentity, std::nullopt, std::nullopt};
+    }
+  }
+
+private:
+  std::function<Outcome<std::unique_ptr<RuntimeUnitOfWork>>()> transactions_;
+  HostFenceRegistry& fences_;
+  HostGateAuthorizationPort& authorization_;
+  HostClockPort& clock_;
+  std::vector<HostCertificateBinding> allowlist_;
 };
 
 // A managed instance may only be started on a host whose connection is current and online; the

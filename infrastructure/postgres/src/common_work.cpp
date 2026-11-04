@@ -16,6 +16,7 @@
 #include <sys/socket.h>
 
 #include "kiarabot/core/domain/target/persistence_rules.hpp"
+#include "observation_feeds.hpp"
 #include "operation_observations.hpp"
 #include "record_codec.hpp"
 #include "session.hpp"
@@ -24,6 +25,19 @@ namespace kiarabot::infrastructure::postgres::detail {
 namespace {
 namespace target = core::target;
 
+// v1.2 owner-local feed family binding: an owner journal only ever produces the families it owns.
+// Kept here (storage layer) so the UoW adapter cannot accept a foreign family by construction.
+bool feed_family_owns(target::Service owner, target::ObservationFamily family) {
+  switch (family) {
+  case target::ObservationFamily::Logs:
+    return owner == target::Service::Identity || owner == target::Service::Runtime;
+  case target::ObservationFamily::Messages:
+    return owner == target::Service::Runtime;
+  case target::ObservationFamily::Tasks:
+    return owner == target::Service::Scheduler;
+  }
+  return false;
+}
 target::Failure error(target::ErrorCode code) {
   auto recovery = target::Recovery::Diagnose;
   if (code == target::ErrorCode::Conflict) {
@@ -625,6 +639,32 @@ public:
       return target::unsupported_lifecycle_read();
     }
     return prune_operation_observations(*this, limit);
+  }
+  // v1.2 owner observation feed journal: same-UoW append, bounded read and low-water prune.
+  target::Outcome<target::ObservationFeedPage>
+  query_observation_changes(const target::ObservationFeedQuery& query) override {
+    if (!observed_owner()) {
+      return target::unsupported_lifecycle_read();
+    }
+    return ::kiarabot::infrastructure::postgres::detail::query_observation_changes(*this, owner_,
+                                                                                  query);
+  }
+  target::Outcome<std::size_t>
+  prune_observation_changes(target::ObservationFamily family, std::size_t limit) override {
+    if (!observed_owner() || !feed_family_owns(owner_, family)) {
+      return target::unsupported_lifecycle_read();
+    }
+    return ::kiarabot::infrastructure::postgres::detail::prune_observation_feeds(*this, family,
+                                                                                limit);
+  }
+  target::Status append_observation_changes(
+      target::ObservationFamily family,
+      const std::vector<target::ObservationFeedAppend>& changes) override {
+    if (!observed_owner()) {
+      return target::unsupported_lifecycle_read();
+    }
+    return ::kiarabot::infrastructure::postgres::detail::append_observation_changes(
+        *this, owner_, family, changes);
   }
   target::Outcome<std::size_t> prune_outbox(target::TimePoint now, std::size_t limit) override {
     (void)now;

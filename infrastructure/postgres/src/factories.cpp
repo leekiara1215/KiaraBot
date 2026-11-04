@@ -223,6 +223,19 @@ public:
   target::Outcome<std::size_t> prune_operation_changes(std::size_t limit) override {
     return common_->prune_operation_changes(limit);
   }
+  target::Outcome<target::ObservationFeedPage>
+  query_observation_changes(const target::ObservationFeedQuery& query) override {
+    return common_->query_observation_changes(query);
+  }
+  target::Outcome<std::size_t>
+  prune_observation_changes(target::ObservationFamily family, std::size_t limit) override {
+    return common_->prune_observation_changes(family, limit);
+  }
+  target::Status append_observation_changes(
+      target::ObservationFamily family,
+      const std::vector<target::ObservationFeedAppend>& changes) override {
+    return common_->append_observation_changes(family, changes);
+  }
   target::Outcome<std::vector<target::OperationParticipant>>
   operation_participants(const target::OperationId& id) override {
     return common_->operation_participants(id);
@@ -329,7 +342,7 @@ public:
         namespace_quota_(*common.sql), storage_receipts_(*common.sql),
         host_registration_(work(), *common.sql, std::move(host_allowlist)),
         host_commands_(*common.sql), management_sql_(*common.sql),
-        bootstrap_deliveries_(*common.sql) {}
+        bootstrap_deliveries_(*common.sql), host_admission_gates_(*common.sql) {}
   target::Repository<target::ResourceId, target::BotAccount>& accounts() override {
     return accounts_;
   }
@@ -345,6 +358,9 @@ public:
   }
   target::BootstrapDeliveryRepository& bootstrap_deliveries() override {
     return bootstrap_deliveries_;
+  }
+  target::HostAdmissionGateStore& host_admission_gates() override {
+    return host_admission_gates_;
   }
   target::Outcome<std::size_t>
   active_bindings(const target::InstanceId& adapter_instance) override {
@@ -440,6 +456,7 @@ private:
   detail::HostCommandOutbox host_commands_;
   detail::SqlWork& management_sql_;
   detail::BootstrapDeliveryRecords bootstrap_deliveries_;
+  detail::HostAdmissionGateRecords host_admission_gates_;
 };
 class RuntimeFactory final : public target::RuntimeUnitOfWorkFactory {
 public:
@@ -633,6 +650,19 @@ public:
   }
   target::Outcome<std::size_t> prune_operation_changes(std::size_t limit) override {
     return work().prune_operation_changes(limit);
+  }
+  target::Outcome<target::ObservationFeedPage>
+  query_observation_changes(const target::ObservationFeedQuery& query) override {
+    return work().query_observation_changes(query);
+  }
+  target::Outcome<std::size_t>
+  prune_observation_changes(target::ObservationFamily family, std::size_t limit) override {
+    return work().prune_observation_changes(family, limit);
+  }
+  target::Status append_observation_changes(
+      target::ObservationFamily family,
+      const std::vector<target::ObservationFeedAppend>& changes) override {
+    return work().append_observation_changes(family, changes);
   }
   target::Outcome<std::vector<target::OperationParticipant>>
   operation_participants(const target::OperationId& id) override {

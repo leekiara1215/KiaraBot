@@ -101,5 +101,49 @@ for (const message of Object.values(spec.components.messages)) {
 const expectedEvents = [...implementedEvents].sort();
 assert.deepEqual(knownEvents, expectedEvents, `KNOWN_EVENTS (${knownEvents}) drifts from implemented AsyncAPI events (${expectedEvents})`);
 
+// 4. The panel target scoped stream client owns a frozen copy of wire constants that cannot be
+//    imported from YAML at runtime. Keep it aligned with api/asyncapi.yaml (frozen target contract)
+//    so a contract change cannot silently drift from the panel's close-code/resync/limit handling.
+const targetProtocolSource = await readFile(new URL('../src/stream/target-protocol.ts', import.meta.url), 'utf8');
+const targetPolicy = spec['x-control-session-policy'];
+const closeCodeBlock = targetProtocolSource.match(/TARGET_CLOSE_CODE\s*=\s*\{([^}]+)\}/);
+assert.ok(closeCodeBlock, 'TARGET_CLOSE_CODE declaration is missing from target-protocol.ts');
+const panelCloseCodes = Object.fromEntries([...closeCodeBlock[1].matchAll(/(\w+):\s*(\d+)/g)]
+  .map((match) => [match[1], Number(match[2])]));
+for (const [panelName, contractName] of Object.entries({
+  invalidFirstFrame: 'invalid_first_frame', unauthenticated: 'unauthenticated', forbidden: 'forbidden',
+  internal: 'internal', slowConsumer: 'slow_consumer', shutdown: 'shutdown',
+})) {
+  assert.equal(panelCloseCodes[panelName], targetPolicy.close_codes[contractName],
+    `target close code ${panelName} drifts from AsyncAPI ${contractName}`);
+}
+assert.equal(panelCloseCodes.normal, 1000, 'resync/documented normal close is 1000');
+
+const resyncReasons = spec.components.schemas.ResyncRequired.properties.reason.enum;
+const panelReasonsBlock = targetProtocolSource.match(/TARGET_RESYNC_REASONS\s*=\s*\[([^\]]+)\]/);
+assert.ok(panelReasonsBlock, 'TARGET_RESYNC_REASONS declaration is missing from target-protocol.ts');
+const panelReasons = [...panelReasonsBlock[1].matchAll(/'([^']+)'/g)].map((match) => match[1]).sort();
+assert.deepEqual(panelReasons, [...resyncReasons].sort(),
+  `panel resync reasons (${panelReasons}) drift from AsyncAPI (${resyncReasons})`);
+
+const firstFrame = Number((targetProtocolSource.match(/TARGET_FIRST_FRAME_TIMEOUT_MS\s*=\s*([\d_]+)/) ?? [])[1]?.replace(/_/g, ''));
+assert.equal(firstFrame, spec['x-target-contract'].limits.first_frame_timeout_ms,
+  'panel first-frame deadline drifts from AsyncAPI limits.first_frame_timeout_ms');
+
+const scopeLimit = Number((targetProtocolSource.match(/TARGET_SCOPE_LIMIT\s*=\s*([\d_]+)/) ?? [])[1]?.replace(/_/g, ''));
+const exactScope = spec.components.schemas.TargetExactScope.allOf[1].properties.resources;
+assert.equal(scopeLimit, exactScope.maxItems, 'panel scope limit drifts from TargetExactScope.resources.maxItems');
+assert.equal(exactScope.minItems, 1, 'target exact scope requires at least one resource');
+
+const safeSequence = Number((targetProtocolSource.match(/TARGET_MAX_SAFE_SEQUENCE\s*=\s*([\d_]+)/) ?? [])[1]?.replace(/_/g, ''));
+assert.equal(safeSequence, spec.components.schemas.SessionReady.properties.last_sequence.maximum,
+  'panel Control sequence bound drifts from AsyncAPI');
+
+const cursorServices = spec.components.schemas.TargetOwnerCursor.allOf[1].properties.source_service.enum;
+const panelCursorServices = [...(targetProtocolSource.match(/TARGET_CURSOR_SERVICES\s*=\s*\[([^\]]+)\]/) ?? [])[1]?.matchAll(/'([^']+)'/g) ?? []]
+  .map((match) => match[1]).sort();
+assert.deepEqual(panelCursorServices, [...cursorServices].sort(),
+  'panel owner cursor services drift from AsyncAPI TargetOwnerCursor');
+
 await openapiTS(openapiPath);
 console.log(`OpenAPI generation and AsyncAPI parsing passed; ${operations.length} panel endpoints and ${knownEvents.length} known events match the contracts.`);

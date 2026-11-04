@@ -37,4 +37,19 @@ private:
   std::vector<core::target::HostCertificateBinding> allowlist_;
 };
 
+// Runtime-owned Host admission gate rows (R21 runtime_host_admission_gates.hpp). Borrows the same
+// owner UoW; no commit, no network, no business authorization here.
+class HostAdmissionGateRecords final : public core::target::HostAdmissionGateStore {
+public:
+  explicit HostAdmissionGateRecords(SqlWork& sql) : sql_(sql) {}
+  core::target::Outcome<std::optional<core::target::HostAdmissionGateRecord>>
+  current(const core::target::ResourceId& host) override;
+  core::target::Outcome<core::target::HostAdmissionGateRecord>
+  save(const core::target::HostAdmissionGateRecord& value,
+       std::optional<std::uint64_t> expected_gate_version) override;
+
+private:
+  SqlWork& sql_;
+};
+
 } // namespace kiarabot::infrastructure::postgres::detail

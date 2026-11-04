@@ -52,6 +52,9 @@ struct HostBridgeServerDependencies {
   HostPeerCertificateResolver peer_certificate;
   HostBridgeCallbacks callbacks;
   HostBridgePersistence persistence;
+  // Read-only live fence registry for Runtime coordination calls (Host admission gate). Null keeps
+  // the listener transport-only; ownership stays with the composition root.
+  target::HostFenceRegistry* fences = nullptr;
 };
 
 // Synchronous bidirectional HostBridge server for the Runtime internal mTLS listener. The first
@@ -70,6 +73,7 @@ make_host_bridge(HostBridgeServerDependencies dependencies);
 // persistence is passed separately through HostBridgePersistence (P08b-3a/3b).
 target::Outcome<std::unique_ptr<v1::HostBridge::Service>> make_deployment_host_bridge(
     target::RuntimeIdPort& ids, std::vector<target::HostCertificateBinding> allowlist,
-    HostBridgeCallbacks callbacks = {}, HostBridgePersistence persistence = {});
+    HostBridgeCallbacks callbacks = {}, HostBridgePersistence persistence = {},
+    target::HostFenceRegistry* fences = nullptr);
 
 } // namespace kiarabot::core::platform

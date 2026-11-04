@@ -1368,8 +1368,6 @@ private:
                         session->queued_bytes + bytes > target::kModelStreamMaximumQueuedBytes)) {
         return target::ModelStreamSinkResult::Full;
       }
-      std::fprintf(stderr, "[hub-sink] seq=%llu terminal=%d\n",
-                   static_cast<unsigned long long>(event.sequence), static_cast<int>(terminal));
       if (terminal) {
         session->terminal_queued = true;
       } else {
@@ -1469,8 +1467,6 @@ private:
         continue;
       }
       const bool terminal = next->has_terminal();
-      std::fprintf(stderr, "[hub-write] seq=%llu terminal=%d\n",
-                   static_cast<unsigned long long>(next->sequence()), static_cast<int>(terminal));
       if (!write_event(*next)) {
         session->cancel.request_stop();
         break;

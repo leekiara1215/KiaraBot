@@ -306,6 +306,14 @@ void check_tests() {
               server.service.exchange_request.permissions_size() == 1 &&
               server.service.exchange_request.client_certificate_sha256().size() == 32,
           "exchange request wire contract incomplete");
+    // The wire delegate lifetime must cover long business calls (Model stream deadline 30s) even
+    // though the network call keeps its short budget; capping the child delegation at the network
+    // budget made long streaming calls fail closed with a clipped execution deadline.
+    const auto delegate_deadline =
+        std::chrono::system_clock::time_point{std::chrono::seconds{
+            server.service.exchange_request.context().deadline().seconds()}};
+    check(delegate_deadline >= now() + std::chrono::seconds{25},
+          "exchange delegation wire lifetime was clipped to the network budget");
   }
   {
     // ExchangeDelegation has its own budget: a 700ms Identity exchange exceeds the 500ms hot-path
@@ -332,6 +340,17 @@ void check_tests() {
          std::chrono::milliseconds{1000}, std::chrono::milliseconds{3000},
          std::chrono::milliseconds{2000}});
     check(std::holds_alternative<t::Failure>(inverted), "inverted delegation budget accepted");
+    auto no_lifetime = kiarabot::core::platform::RuntimeIdentityClient::create(
+        {"127.0.0.1:1", grpc::InsecureChannelCredentials(), std::chrono::milliseconds{500},
+         std::chrono::milliseconds{1000}, std::chrono::milliseconds{2000},
+         std::chrono::milliseconds{5000}, std::chrono::milliseconds{0}});
+    check(std::holds_alternative<t::Failure>(no_lifetime), "zero delegation lifetime accepted");
+    auto oversized_lifetime = kiarabot::core::platform::RuntimeIdentityClient::create(
+        {"127.0.0.1:1", grpc::InsecureChannelCredentials(), std::chrono::milliseconds{500},
+         std::chrono::milliseconds{1000}, std::chrono::milliseconds{2000},
+         std::chrono::milliseconds{5000}, std::chrono::milliseconds{30001}});
+    check(std::holds_alternative<t::Failure>(oversized_lifetime),
+          "oversized delegation lifetime accepted");
     auto unbounded = kiarabot::core::platform::RuntimeIdentityClient::create(
         {"127.0.0.1:1", grpc::InsecureChannelCredentials(), std::chrono::milliseconds{500},
          std::chrono::milliseconds{1000}, std::chrono::milliseconds{2000},

@@ -2,7 +2,6 @@
 
 #include <algorithm>
 #include <chrono>
-#include <cstdio>
 #include <functional>
 #include <memory>
 #include <optional>
@@ -196,10 +195,6 @@ RuntimeModelClient::chat_stream(const t::RuntimeModelStreamRequest& request,
       input_bytes += message.text.size();
     }
     const auto started = now();
-    std::fprintf(stderr, "[stream-client] remaining_ms=%lld\n",
-                 static_cast<long long>(
-                     std::chrono::duration_cast<std::chrono::milliseconds>(deadline - started)
-                         .count()));
     if (deadline <= started) {
       return unknown_delivery(t::ErrorCode::Timeout);
     }
@@ -298,8 +293,6 @@ RuntimeModelClient::chat_stream(const t::RuntimeModelStreamRequest& request,
       }
     }
     const auto status = reader->Finish();
-    std::fprintf(stderr, "[stream-client] finish code=%d started=%d\n",
-                 static_cast<int>(status.error_code()), static_cast<int>(saw_started));
     if (terminal) {
       result.terminal = std::move(terminal);
       result.cancelled_by_consumer = false;

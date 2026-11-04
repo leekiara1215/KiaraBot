@@ -905,6 +905,36 @@ void model(const DatabaseConfig& config) {
             !loaded_call->may_have_billed && loaded_call->provider_request_id == "req-1" &&
             loaded_call->latency_ms == 12,
         "P11 durable call facts lost");
+  // v1.2 regression: a definite provider rejection maps to the domain ErrorCode::InvalidArgument
+  // (0) and must be durably storable as a FAILED terminal fact on the dedicated call repository.
+  // The shared model_intents snapshot CHECK previously rejected 0, so txn2 failed and the call
+  // stayed Started/UNKNOWN instead. A dedicated call row keeps the in-flight retention case intact.
+  auto invalid_argument_call = *loaded_call;
+  invalid_argument_call.logical_call_id = "p11-invalid-argument-call";
+  invalid_argument_call.version = {1};
+  invalid_argument_call.state = target::ModelCallState::Started;
+  invalid_argument_call.error.reset();
+  take(work->model_calls().insert(invalid_argument_call));
+  commit(*work);
+  work = take(factory->begin());
+  auto rejected_fact = take(
+      work->model_calls().find({invalid_argument_call.owner, invalid_argument_call.logical_call_id}));
+  rejected_fact->state = target::ModelCallState::Failed;
+  rejected_fact->error = target::ErrorCode::InvalidArgument;
+  rejected_fact->usage_known = true;
+  rejected_fact->may_have_billed = false;
+  ++rejected_fact->version.value;
+  take(work->model_calls().save(*rejected_fact, invalid_argument_call.version));
+  commit(*work);
+  work = take(factory->begin());
+  const auto stored_rejection = take(
+      work->model_calls().find({invalid_argument_call.owner, invalid_argument_call.logical_call_id}));
+  check(stored_rejection && stored_rejection->state == target::ModelCallState::Failed &&
+            stored_rejection->error == target::ErrorCode::InvalidArgument,
+        "definite InvalidArgument rejection was not durably stored");
+  work->rollback();
+
+  work = take(factory->begin());
   // Query cutoff uses the caller DB sample exactly, not wall-clock time in the adapter.
   auto expired_started = *loaded_call;
   expired_started.logical_call_id = "p11-started-35s";

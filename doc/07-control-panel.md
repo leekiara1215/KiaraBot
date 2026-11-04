@@ -314,3 +314,22 @@ Panel 侧仍只到“已接线路由+mock transport 单测”，尚未做真实�
 - 真实结果：登录/refresh 200；`/health/live|ready` 200 HEALTHY；受权 `/api/v1/health` **200 HEALTHY**（四个真实 owner 组件）；未认证/bad token 401；非法 filter 400。
 - 已知 gap：principals 503 CAPABILITY_NOT_SUPPORTED（P12l ListPrincipals 待实现）；logs/audit/tasks/models/action/delete-restore 仍为 stable known-gap（P14j 对齐 scope/参数中），严格模式按 Lead 口径记录为 known-gap，不伪造成功；依赖故障 503。
 - 复现命令/CTest `p12j_panel_live`、完整矩阵见 [P12j 报告](../reports/modules/architecture-p12j-panel-live.md)。pre-fix 4e88fb4 全部 owner 400 的对照也保留在报告。
+
+## 2026-11-04 target scoped WS 客户端与实时恢复（WS-06 Panel）
+
+`panel/src/stream/target-stream.ts` 为目标 scoped WS 客户端：单 socket 单 channel/owner/1–127 精确
+scope；hello/resume；`owner_cursor`（uint64 字符串）与 Control `sequence`（JS safe integer）分离；
+token 轮换经 token provider 重连 resume 保 cursor；scope/channel 切换销毁旧 socket；首帧 5s、断线
+1s→16s 退避；4401 回登录，4403/4400/1013 停止自动重试，1011/1000 退避恢复；重复事件去重，跳序/
+畸形帧/owner cursor 不一致/`RESYNC_REQUIRED` 清会话重新 hello。`target-protocol.ts` 固定 close code
+与 RESYNC reason 闭集、scope 规范化、owner cursor 比较与首帧约束。
+
+恢复流程：`SESSION_READY` 先记 cursor 再拉权威 REST；读取期间事件标 dirty、完成后刷新受影响资源；
+resync/跳序提升 generation 丢弃晚到旧快照；resume 完成后再刷新；流不可用不阻塞 REST，页面显示
+“实时不可用 + 最后确认时间”。`views/p12-live.tsx::OperationTracker` 改为 `operation.updated` 触发
+owner `GetOperation` 复核：HTTP 200/202 不是完成，`BLOCKED`/`UNKNOWN` 保持未知，断流不重发管理写；
+流不可用时以 10 秒慢速 REST 快照回退（不再以 2 秒轮询为唯一来源）。
+
+验证边界：mock/vitest 覆盖 token 轮换、旧 socket 消息隔离、首帧/退避、close codes、重复/跳序/
+replay/resync、snapshot race、REST fallback 与 OperationTracker 复核；`panel/src/generated` 为
+本地生成物不入库。真实 target WSS 全频道联调仍以 WS-10 集成证据为准。

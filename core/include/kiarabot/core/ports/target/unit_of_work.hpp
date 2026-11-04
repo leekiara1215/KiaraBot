@@ -12,6 +12,7 @@
 #include "kiarabot/core/ports/target/host_command_ports.hpp"
 #include "kiarabot/core/ports/target/host_registration_ports.hpp"
 #include "kiarabot/core/ports/target/namespace_ports.hpp"
+#include "kiarabot/core/ports/target/observation_feed_ports.hpp"
 #include "kiarabot/core/ports/target/operation_observation_ports.hpp"
 #include "kiarabot/core/ports/target/runtime_bootstrap_deliveries.hpp"
 
@@ -82,6 +83,24 @@ public:
 inline HostCommandOutbox& unsupported_host_commands() {
   static UnsupportedHostCommandOutbox instance;
   return instance;
+}
+// HOST-03 Runtime-owned admission gate defaults fail closed: an adapter without PG gate support
+// must never report a fake open/closed state or a fabricated dispatch authorization.
+class UnsupportedHostAdmissionGateStore final : public HostAdmissionGateStore {
+public:
+  Outcome<std::optional<HostAdmissionGateRecord>> current(const ResourceId&) override {
+    return Failure{ErrorCode::CapabilityNotSupported, Acceptance::NotAccepted,
+                   Recovery::Diagnose, std::nullopt, std::nullopt};
+  }
+  Outcome<HostAdmissionGateRecord>
+  save(const HostAdmissionGateRecord&, std::optional<std::uint64_t>) override {
+    return Failure{ErrorCode::CapabilityNotSupported, Acceptance::NotAccepted,
+                   Recovery::Diagnose, std::nullopt, std::nullopt};
+  }
+};
+inline HostAdmissionGateStore& unsupported_host_admission_gates() {
+  static UnsupportedHostAdmissionGateStore store;
+  return store;
 }
 } // namespace host_ports_detail
 namespace bootstrap_ports_detail {
@@ -168,7 +187,7 @@ inline Failure unsupported_lifecycle_read() {
   return {ErrorCode::CapabilityNotSupported, Acceptance::NotAccepted, Recovery::Diagnose,
           std::nullopt, std::nullopt};
 }
-class UnitOfWork : public OperationObservationPort {
+class UnitOfWork : public OperationObservationPort, public ObservationFeedPort {
 public:
   ~UnitOfWork() override = default;
   virtual Service owner() const noexcept = 0;
@@ -186,6 +205,18 @@ public:
     return unsupported_lifecycle_read();
   }
   Outcome<std::size_t> prune_operation_changes(std::size_t) override {
+    return unsupported_lifecycle_read();
+  }
+  // v1.2 owner observation feed journal (logs/messages/tasks). Defaults fail closed so a partial
+  // adapter never fabricates a feed page or drops a business mutation without its journal row.
+  Outcome<ObservationFeedPage> query_observation_changes(const ObservationFeedQuery&) override {
+    return unsupported_lifecycle_read();
+  }
+  Outcome<std::size_t> prune_observation_changes(ObservationFamily, std::size_t) override {
+    return unsupported_lifecycle_read();
+  }
+  Status append_observation_changes(ObservationFamily,
+                                    const std::vector<ObservationFeedAppend>&) override {
     return unsupported_lifecycle_read();
   }
   // P13a owner-local participant projection for an operation row. The frozen wire Operation
@@ -379,6 +410,10 @@ public:
   // never reports a fake successful command enqueue/delivery.
   virtual HostCommandOutbox& host_commands() {
     return host_ports_detail::unsupported_host_commands();
+  }
+  // HOST-03 Runtime-owned Host admission gate rows (owner-local UoW; never commits here).
+  virtual HostAdmissionGateStore& host_admission_gates() {
+    return host_ports_detail::unsupported_host_admission_gates();
   }
   // P09 storage/shared-namespace groups. Phase-1 defaults fail closed so an adapter that has not
   // implemented P09 never reports a fake empty namespace; P09 phase 2 overrides them with PG

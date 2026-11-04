@@ -321,22 +321,6 @@ read_delivery(RuntimeUnitOfWorkFactory& transactions, const CommandContext& cont
       });
 }
 
-Outcome<Operation> read_operation(RuntimeUnitOfWorkFactory& transactions,
-                                  const CommandContext& context, const OperationRef& reference) {
-  return with_work<Operation>(transactions, context,
-                              [&](RuntimeUnitOfWork& work, TimePoint) -> Outcome<Operation> {
-                                auto found = work.operations().find(reference.id);
-                                if (const auto* rejected = std::get_if<Failure>(&found)) {
-                                  return *rejected;
-                                }
-                                const auto& operation = std::get<std::optional<Operation>>(found);
-                                if (!operation || operation->ref != reference) {
-                                  return internal_failure();
-                                }
-                                return *operation;
-                              });
-}
-
 class RuntimeBootstrapDeliveryApplicationImpl final : public RuntimeBootstrapDeliveryApplication {
 public:
   explicit RuntimeBootstrapDeliveryApplicationImpl(BootstrapDeliveryDependencies dependencies)
@@ -477,20 +461,16 @@ public:
       return BootstrapReissueResult{std::move(*issued_delivery), std::move(plaintext),
                                     std::move(*issued_operation)};
     }
-    if (!mutation.operation) {
-      return internal_failure();
-    }
+    // Idempotent replay: the receipt restores the original Operation value (including its original
+    // operation reference), while the current no-secret intent is read in a fresh authorized UoW.
+    // A replayed request id never identifies a new operation.
     auto delivery = read_delivery(transactions_, request.context, request.resource, std::string{},
-                                  mutation.operation);
+                                  std::nullopt);
     if (const auto* rejected = std::get_if<Failure>(&delivery)) {
       return *rejected;
     }
-    auto stored_operation = read_operation(transactions_, request.context, *mutation.operation);
-    if (const auto* rejected = std::get_if<Failure>(&stored_operation)) {
-      return *rejected;
-    }
     return BootstrapReissueResult{std::move(std::get<BootstrapDeliveryRecord>(delivery)),
-                                  std::string{}, std::move(std::get<Operation>(stored_operation))};
+                                  std::string{}, mutation.value};
   }
 
   Outcome<BootstrapDeliveryRecord> report(const ReportBootstrapDeliveryCommand& request,

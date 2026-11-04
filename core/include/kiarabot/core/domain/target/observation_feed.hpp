@@ -33,14 +33,6 @@ struct ObservationFeedCursor {
   bool operator==(const ObservationFeedCursor&) const = default;
 };
 
-// One append unit staged by the owning business UoW. The payload is the owner's already safe
-// projection and never contains audit payloads, task payload/target, message bodies or secrets.
-struct ObservationFeedAppend {
-  ResourceRef resource;
-  std::string safe_payload_json;
-  TimePoint observed_at{};
-};
-
 struct ObservationFeedQuery {
   ObservationFamily family = ObservationFamily::Logs;
   // Caller must currently authorize every exact resource before storage access.
@@ -85,6 +77,14 @@ struct MessageObservation {
 };
 
 using ObservationPayload = std::variant<LogObservation, TaskObservation, MessageObservation>;
+
+// One append unit staged by the owning business UoW. The payload is the owner's already safe
+// typed projection; infrastructure encodes it and the business mutation commits atomically.
+struct ObservationFeedAppend {
+  ResourceRef resource;
+  ObservationPayload payload;
+  TimePoint observed_at{};
+};
 
 struct ObservationFeedChange {
   ObservationPayload payload;

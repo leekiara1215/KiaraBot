@@ -6,6 +6,7 @@
 #include <grpcpp/channel.h>
 #include <grpcpp/grpcpp.h>
 
+#include "kiarabot/core/application/target/runtime_host_application.hpp"
 #include "kiarabot/core/domain/target/context.hpp"
 #include "kiarabot/core/ports/target/runtime_authorization.hpp"
 #include "kiarabot/v1/identity.grpc.pb.h"
@@ -27,6 +28,10 @@ struct RuntimeIdentityClientOptions {
   // separate, bounded delegation budget.
   std::chrono::milliseconds delegation_budget{2000};
   std::chrono::milliseconds delegation_maximum_budget{5000};
+  // Wire RequestContext deadline of ExchangeDelegation. Identity also bounds the issued child
+  // delegation lifetime by it, so it must cover the longest business call (Model stream max 30s)
+  // while the gRPC network deadline above stays short. Bounded by the RPC max_deadline_ms=30000.
+  std::chrono::milliseconds delegation_lifetime{30000};
 };
 
 // Decoded, NOT cryptographically verified delegation claims. Runtime treats these as request
@@ -74,12 +79,33 @@ public:
                       const std::vector<target::ResourceRef>& scope,
                       const std::vector<target::Permission>& permissions,
                       const target::Sha256Digest& caller_certificate);
+  // HOST-03: Runtime uses its own actual mTLS leaf as the caller of the narrow v1.1 Host gate
+  // check. Only the exact RESOURCE_HOST and the real Host leaf fingerprint are sent; the returned
+  // version is a current decision, never a reusable ticket, and denial is a stable failure.
+  target::Outcome<target::ResourceVersion>
+  check_host_gate(const target::ResourceRef& host, const target::Sha256Digest& host_certificate,
+                  target::TimePoint deadline);
 
 private:
   explicit RuntimeIdentityClient(RuntimeIdentityClientOptions options);
   RuntimeIdentityClientOptions options_;
   std::shared_ptr<grpc::Channel> channel_;
   std::unique_ptr<v1::IdentityService::Stub> stub_;
+};
+
+// Adapter from the Runtime Host gate application port to the real Identity client. No local
+// authorization, cache or default-allow path: every call crosses Identity.
+class RuntimeHostGateAuthorization final : public target::HostGateAuthorizationPort {
+public:
+  explicit RuntimeHostGateAuthorization(RuntimeIdentityClient& client) : client_(client) {}
+  target::Outcome<target::ResourceVersion> check(const target::ResourceRef& host,
+                                                 const target::Sha256Digest& host_certificate,
+                                                 target::TimePoint deadline) override {
+    return client_.check_host_gate(host, host_certificate, deadline);
+  }
+
+private:
+  RuntimeIdentityClient& client_;
 };
 
 } // namespace kiarabot::core::platform

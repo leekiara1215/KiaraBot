@@ -942,3 +942,12 @@ expected_version不匹配CONFLICT。新版本必须恰为expected_version+1；�
 
 验收状态：Control 编排、owner gateway 路由与 deploy helper 已实现并有单元/模块测试；
 真实 HTTPS Control + Runtime 签发 + 文件 sink + report 全链 e2e 尚未执行（BOOT-05，剩余缺口）。
+
+## 2026-11-04 target WS 客户端与恢复（Panel 侧）
+
+目标 Panel 使用 `/ws/operations` 等 target scoped 频道：首帧 hello/resume、单 owner 与显式 scope、
+`owner_cursor` 与 Control sequence 分离、token 轮换 resume 保 cursor、跳序/畸形/`RESYNC_REQUIRED`
+清会话并全量 REST 重取。流不可用时 REST 快照仍可用，页面标注“实时不可用+最后确认时间”；
+`operation.updated` 只作为触发 owner `GetOperation` 复核的提示，HTTP 200/202 不代表完成，
+`BLOCKED`/`UNKNOWN` 保持未知且不自动重做管理写。传输与 producer 侧语义见前述 WS 契约节，
+真实全频道验收在 WS-10 集成证据登记。

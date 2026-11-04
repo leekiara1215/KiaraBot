@@ -155,6 +155,39 @@ scope kinds，生产Identity检查会以INVALID_ARGUMENT拒绝；fixture以显�
 文档影响：更新本节、SDK尚未接线说明和基础设施验收证据；wire字段/API/稳定错误码均未改变，
 proto、API及doc01无需修改。doc18保持只读；功能协商须待Runtime/Bridge/SDK及真实链完成后启用。
 
+### STR-07 Runtime Model 客户端与 PluginBridge 流式调度（2026-11-04，组件级已验收；受管整链待 STR09）
+
+本切片把 STR-06 的 Model ChatStream 接到 Runtime，不新增 wire 字段：
+`RuntimeModelPort::chat_stream` 使用值请求/结果与 `RuntimeModelStreamSink`，默认实现
+`CAPABILITY_NOT_SUPPORTED`，旧非流式实现不受影响。`RuntimeModelClient::chat_stream` 每个 attempt
+用与 Model RPC 相同的严格 `ModelStreamDecoder` 校验关联、序号、presence、replay 零 delta；pre-start
+gRPC 拒绝经结构化 `RpcFailure` trailer 还原稳定 `Failure`（保留 acceptance/recovery），已发 started
+后丢失 terminal 只返回 `Acceptance::Unknown / QuerySameIdentity`，绝不伪造完成；消费者取消返回
+`cancelled_by_consumer`，sink `Full` 以 250ms 上限重试同一帧后取消；host deadline 先与客户端上限取小，
+停止通过 `stop_callback` 触发 gRPC `TryCancel`，无重连、无 Provider 重调。
+
+PluginBridge 侧：每连接一个 `PluginStreamHub`，`HostRequest.model_stream_start` 先做形状/实例绑定/
+特性（`host.model.stream.v1`+`host.model.v1`）/`model.chat`/profile installation 准入，任一失败以
+`HostResponse.error(request_id=start request_id)` 结束 pending；成功 start 不回 HostResponse，只发
+有序 `CoreToPlugin.model_stream_event`（外层当前连接 Fence，内层原 request/trace/logical 关联）。
+每连接≤4 条、进程≤64 条 active 流，超限为 retryable `RATE_LIMITED`；重复 start_request_id 为
+`INVALID_ARGUMENT`。producer 线程只做有界非阻塞入队（32 帧/64KiB），独立 writer 线程串行写网络并
+带 1 秒写预算；取消/撤权后不再补 delta。cancel 是独立 receipt（CANCELLATION_REQUESTED /
+ALREADY_TERMINAL / NOT_ACTIVE，含 owning-instance 校验与近期终态记忆），只确认本连接处理。
+refresh 成功会轮换 Fence 并取消在途流；连接关闭/未知交付主动断连，SDK 据此把在途 attempt 标为
+unknown delivery；shutdown 先请求停止、唤醒、join 全部 producer/writer 再清会话，StreamGuard 只以
+weak_ptr 捕获，无悬空引用。流请求与 unary 一样从可信连接快照派生 instance/installation（installation
+缺失时 PermissionDenied），绝不取自 HostRequest。
+
+验收（2026-11-04，锁定树）：`p11_runtime_model_client` 覆盖严格消费、pre-start 结构化拒绝、
+缺 terminal→UNKNOWN、malformed prefix、消费者取消、sink 取消；`p11_model_bridge` 13.24s 覆盖有序
+started/delta/terminal 且 start 无 HostResponse、特性缺失/非法形状/pre-start 拒绝、cancel receipt+
+in-band CANCELLED(partial/may_have_billed)、重复 cancel=ALREADY_TERMINAL、他人 logical id=NOT_ACTIVE、
+第 5 条流 RATE_LIMITED、两连接并发流不串帧，并断言 stream 请求携带注册 installation；旧非流式
+Model/Task/Storage bridge 回归保持通过。文档影响：仅本节；wire/API/错误码/schema 未变。
+已知限制：1 秒写预算在环回 gRPC 上无法因果触发（单 attempt 文本受 64KiB 上限、客户端 H2 缓冲吸收），
+已记录并留给 STR09 受管整链验证；受管插件 Provider→SDK 端到端由 STR09 验收，本切片不宣称整链完成。
+
 ## reference 首版实现记录（T 阶段）
 
 T08a 增加同进程 IControlApplication v1 类型化端口与请求形状、默认角色、HTTP 错误映射辅助函数。它接收凭据而非调用者自报身份，真实会话验证/查询/管理实现由 T08b 完成；控制端口与 PluginSession 权限不混用。API/WS 决策以 OpenAPI/AsyncAPI 为准，Core 不依赖 HTTP 框架或面板类型。

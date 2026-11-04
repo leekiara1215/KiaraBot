@@ -1,18 +1,19 @@
 #include "observation_feeds.hpp"
 
-#include "record_codec.hpp"
-
 #include <algorithm>
 #include <chrono>
 #include <cstdint>
 #include <limits>
-#include <nlohmann/json.hpp>
 #include <optional>
 #include <stdexcept>
 #include <string>
 #include <string_view>
 #include <utility>
 #include <vector>
+
+#include <nlohmann/json.hpp>
+
+#include "record_codec.hpp"
 
 namespace kiarabot::infrastructure::postgres::detail {
 namespace {
@@ -66,8 +67,7 @@ bool scope_resource_valid(t::ObservationFamily family, const t::ResourceRef& res
     return resource.kind == t::ResourceKind::Catalog && resource.id.value == "control";
   }
   if (family == t::ObservationFamily::Tasks) {
-    return (resource.kind == t::ResourceKind::Task ||
-            resource.kind == t::ResourceKind::Instance) &&
+    return (resource.kind == t::ResourceKind::Task || resource.kind == t::ResourceKind::Instance) &&
            bounded_text(resource.id.value, 1, 256);
   }
   return resource.kind == t::ResourceKind::Account && bounded_text(resource.id.value, 1, 256);
@@ -155,8 +155,8 @@ Json resource_json(const t::ResourceRef& resource) {
   return {{"kind", static_cast<int>(resource.kind)}, {"id", resource.id.value}};
 }
 bool read_resource(const Json& value, t::ResourceRef& resource) {
-  if (!value.is_object() || value.size() != 2 || !value.contains("kind") ||
-      !value.contains("id") || !value["kind"].is_number_integer() || !value["id"].is_string()) {
+  if (!value.is_object() || value.size() != 2 || !value.contains("kind") || !value.contains("id") ||
+      !value["kind"].is_number_integer() || !value["id"].is_string()) {
     return false;
   }
   const auto kind = value["kind"].get<int>();
@@ -184,12 +184,10 @@ std::string encode_payload(t::ObservationFamily family, const t::ObservationPayl
   }
   if (family == t::ObservationFamily::Tasks) {
     const auto& task = std::get<t::TaskObservation>(payload);
-    Json value{{"owner_instance_id", task.owner_instance_id},
-               {"task_id", task.task_id},
-               {"state", static_cast<int>(task.state)},
-               {"version", task.version},
-               {"updated_at", nanos(task.updated_at)},
-               {"cancel_requested", task.cancel_requested}};
+    Json value{
+        {"owner_instance_id", task.owner_instance_id}, {"task_id", task.task_id},
+        {"state", static_cast<int>(task.state)},       {"version", task.version},
+        {"updated_at", nanos(task.updated_at)},        {"cancel_requested", task.cancel_requested}};
     if (task.occurrence_id) {
       value["occurrence_id"] = *task.occurrence_id;
     }
@@ -239,7 +237,8 @@ bool valid_payload(t::ObservationFamily family, const t::ObservationPayload& pay
          bounded_text(message->conversation_id, 1, 256) &&
          bounded_text(message->account_id, 1, 256) && message->received_at > t::TimePoint{};
 }
-bool decode_payload(t::ObservationFamily family, std::string_view text, t::ObservationPayload& payload) {
+bool decode_payload(t::ObservationFamily family, std::string_view text,
+                    t::ObservationPayload& payload) {
   const auto value = Json::parse(text, nullptr, false);
   if (value.is_discarded() || !value.is_object()) {
     return false;
@@ -264,7 +263,8 @@ bool decode_payload(t::ObservationFamily family, std::string_view text, t::Obser
     }
     log.request_id = value["request_id"].get<std::string>();
     log.trace_id = value["trace_id"].get<std::string>();
-    log.occurred_at = t::TimePoint{std::chrono::nanoseconds{value["occurred_at"].get<std::int64_t>()}};
+    log.occurred_at =
+        t::TimePoint{std::chrono::nanoseconds{value["occurred_at"].get<std::int64_t>()}};
     payload = std::move(log);
     return true;
   }
@@ -283,7 +283,8 @@ bool decode_payload(t::ObservationFamily family, std::string_view text, t::Obser
     }
     task.state = static_cast<t::TaskFeedState>(state);
     task.version = value["version"].get<std::uint64_t>();
-    task.updated_at = t::TimePoint{std::chrono::nanoseconds{value["updated_at"].get<std::int64_t>()}};
+    task.updated_at =
+        t::TimePoint{std::chrono::nanoseconds{value["updated_at"].get<std::int64_t>()}};
     task.cancel_requested = value["cancel_requested"].get<bool>();
     if (value.contains("occurrence_id") && value["occurrence_id"].is_string()) {
       task.occurrence_id = value["occurrence_id"].get<std::string>();
@@ -302,41 +303,43 @@ bool decode_payload(t::ObservationFamily family, std::string_view text, t::Obser
   message.message_id = value["message_id"].get<std::string>();
   message.conversation_id = value["conversation_id"].get<std::string>();
   message.account_id = value["account_id"].get<std::string>();
-  message.received_at = t::TimePoint{std::chrono::nanoseconds{value["received_at"].get<std::int64_t>()}};
+  message.received_at =
+      t::TimePoint{std::chrono::nanoseconds{value["received_at"].get<std::int64_t>()}};
   payload = std::move(message);
   return true;
 }
 } // namespace
 
-t::Status append_observation_feed(SqlWork& work, t::ObservationFamily family,
-                                  const std::vector<t::ObservationFeedAppend>& changes) {
+t::Status append_observation_changes(SqlWork& work, t::Service owner,
+                                     t::ObservationFamily family,
+                                     const std::vector<t::ObservationFeedAppend>& changes) {
   if (changes.empty()) {
     return std::monostate{};
   }
   const auto family_value = family_number(family);
-  if (family_value == 0 || changes.size() > 1000) {
+  const bool owner_family =
+      (owner == t::Service::Identity && family == t::ObservationFamily::Logs) ||
+      (owner == t::Service::Runtime && (family == t::ObservationFamily::Logs ||
+                                        family == t::ObservationFamily::Messages)) ||
+      (owner == t::Service::Scheduler && family == t::ObservationFamily::Tasks);
+  if (family_value == 0 || !owner_family || changes.size() > 1000) {
     return t::rejected(t::ErrorCode::RateLimited, t::Recovery::Backoff);
   }
   return work.run([&](pqxx::transaction_base& tx) -> t::Status {
     std::vector<std::pair<t::ResourceRef, std::string>> encoded;
     encoded.reserve(changes.size());
     for (const auto& change : changes) {
-      auto payload = Json::parse(change.safe_payload_json, nullptr, false);
-      if (payload.is_discarded() || change.safe_payload_json.size() > t::kObservationFeedMaximumPayloadBytes ||
-          !append_resource_valid(family, change.resource) ||
-          change.observed_at <= t::TimePoint{}) {
-        return invalid();
-      }
-      // Re-encode through the family decoder so a caller cannot stage an unchecked payload shape.
-      t::ObservationPayload decoded;
-      if (!decode_payload(family, change.safe_payload_json, decoded)) {
-        return invalid();
-      }
       t::ResourceRef resource;
-      if (!valid_payload(family, decoded, resource) || !(resource == change.resource)) {
+      if (!append_resource_valid(family, change.resource) ||
+          change.observed_at <= t::TimePoint{} ||
+          !valid_payload(family, change.payload, resource) || !(resource == change.resource)) {
         return invalid();
       }
-      encoded.emplace_back(std::move(resource), change.safe_payload_json);
+      const auto payload = encode_payload(family, change.payload);
+      if (payload.size() > t::kObservationFeedMaximumPayloadBytes) {
+        return invalid();
+      }
+      encoded.emplace_back(resource, payload);
     }
     auto current = head(tx, family_value, true);
     if (current.sequence > std::numeric_limits<std::uint64_t>::max() - encoded.size()) {
@@ -348,8 +351,7 @@ t::Status append_observation_feed(SqlWork& work, t::ObservationFamily family,
       tx.exec("INSERT INTO kiarabot.observation_feed_changes(family,sequence,resource_kind,"
               "resource_id,observed_at,payload,encoded_bytes) VALUES($1,$2,$3,$4,$5,$6,$7)",
               pqxx::params{family_value, sequence, static_cast<int>(resource.kind),
-                           resource.id.value, now, payload,
-                           static_cast<int>(payload.size())});
+                           resource.id.value, now, payload, static_cast<int>(payload.size())});
     }
     tx.exec("UPDATE kiarabot.observation_feed_head SET sequence=$1,observed_at=$2 WHERE family=$3",
             pqxx::params{current.sequence, now, family_value});
@@ -359,14 +361,14 @@ t::Status append_observation_feed(SqlWork& work, t::ObservationFamily family,
 }
 
 t::Outcome<t::ObservationFeedPage>
-query_observation_feed(SqlWork& work, t::Service owner, const t::ObservationFeedQuery& query) {
+query_observation_changes(SqlWork& work, t::Service owner, const t::ObservationFeedQuery& query) {
   const auto family = query.family;
   auto scope = query.scope;
   const auto family_value = family_number(family);
   const bool owner_family =
       (owner == t::Service::Identity && family == t::ObservationFamily::Logs) ||
-      (owner == t::Service::Runtime && (family == t::ObservationFamily::Logs ||
-                                        family == t::ObservationFamily::Messages)) ||
+      (owner == t::Service::Runtime &&
+       (family == t::ObservationFamily::Logs || family == t::ObservationFamily::Messages)) ||
       (owner == t::Service::Scheduler && family == t::ObservationFamily::Tasks);
   if (family_value == 0 || !owner_family || !canonical_scope(family, scope) ||
       query.page_size > 100) {
@@ -375,8 +377,8 @@ query_observation_feed(SqlWork& work, t::Service owner, const t::ObservationFeed
   if (query.cursor) {
     auto previous_scope = query.cursor->scope;
     if (query.cursor->owner != owner || query.cursor->family != family ||
-        !bounded_text(query.cursor->epoch, 1, 128) ||
-        !canonical_scope(family, previous_scope) || previous_scope != scope) {
+        !bounded_text(query.cursor->epoch, 1, 128) || !canonical_scope(family, previous_scope) ||
+        previous_scope != scope) {
       return invalid();
     }
   }
@@ -424,13 +426,15 @@ query_observation_feed(SqlWork& work, t::Service owner, const t::ObservationFeed
       }
       id_values += ids[index];
     }
-    const auto rows = tx.exec(
-        "SELECT sequence,resource_kind,resource_id,observed_at,payload FROM "
-        "kiarabot.observation_feed_changes WHERE family=$1 AND sequence>$2 AND "
-        "resource_kind=ANY(string_to_array($3,',')::int[]) AND "
-        "resource_id=ANY(string_to_array($4,E'\x1f')) ORDER BY sequence LIMIT $5",
-        pqxx::params{family_value, previous.sequence, kind_values, id_values,
-                     static_cast<int>(page_size + 1)});
+    // Log feeds are authorized by the explicit catalog/control scope and every redacted entry
+    // belongs to that authorized feed; task/message feeds additionally match the exact scope.
+    const auto rows =
+        tx.exec("SELECT sequence,resource_kind,resource_id,observed_at,payload FROM "
+                "kiarabot.observation_feed_changes WHERE family=$1 AND sequence>$2 AND "
+                "(family=1 OR (resource_kind=ANY(string_to_array($3,',')::int[]) AND "
+                "resource_id=ANY(string_to_array($4,E'\x1f')))) ORDER BY sequence LIMIT $5",
+                pqxx::params{family_value, previous.sequence, kind_values, id_values,
+                             static_cast<int>(page_size + 1)});
     std::uint64_t last_sequence = previous.sequence;
     for (const auto& row : rows) {
       if (result.changes.size() == page_size) {
@@ -450,8 +454,7 @@ query_observation_feed(SqlWork& work, t::Service owner, const t::ObservationFeed
         return t::rejected(t::ErrorCode::Internal);
       }
       result.changes.push_back(
-          {std::move(payload),
-           {owner, family, current.epoch, scope, sequence}});
+          {std::move(payload), {owner, family, current.epoch, scope, sequence}});
       last_sequence = sequence;
     }
     if (!result.has_more) {
@@ -468,7 +471,7 @@ query_observation_feed(SqlWork& work, t::Service owner, const t::ObservationFeed
   return result;
 }
 
-t::Outcome<std::size_t> prune_observation_feed(SqlWork& work, t::ObservationFamily family,
+t::Outcome<std::size_t> prune_observation_feeds(SqlWork& work, t::ObservationFamily family,
                                                std::size_t limit) {
   const auto family_value = family_number(family);
   if (family_value == 0 || limit == 0 || limit > 1000) {
@@ -508,8 +511,7 @@ t::Status rotate_observation_feed_epoch(SqlWork& work, t::ObservationFamily fami
 t::ObservationFeedAppend make_log_feed_append(const t::LogObservation& log) {
   t::ObservationFeedAppend append;
   append.resource = log.resource;
-  append.safe_payload_json =
-      encode_payload(t::ObservationFamily::Logs, t::ObservationPayload{log});
+  append.payload = log;
   append.observed_at = log.occurred_at;
   return append;
 }
@@ -517,8 +519,7 @@ t::ObservationFeedAppend make_task_feed_append(const t::TaskObservation& task,
                                                const t::ResourceRef& resource) {
   t::ObservationFeedAppend append;
   append.resource = resource;
-  append.safe_payload_json =
-      encode_payload(t::ObservationFamily::Tasks, t::ObservationPayload{task});
+  append.payload = task;
   append.observed_at = task.updated_at;
   return append;
 }
@@ -526,8 +527,7 @@ t::ObservationFeedAppend make_message_feed_append(const t::MessageObservation& m
                                                   const t::ResourceRef& resource) {
   t::ObservationFeedAppend append;
   append.resource = resource;
-  append.safe_payload_json =
-      encode_payload(t::ObservationFamily::Messages, t::ObservationPayload{message});
+  append.payload = message;
   append.observed_at = message.received_at;
   return append;
 }

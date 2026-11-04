@@ -297,6 +297,20 @@ public:
     }
     time_to_timestamp(registered.registration.observed_at, record->mutable_observed_at());
     fence_to_wire(fence, accepted->mutable_fence());
+    // The accepted fence is the live coordination view for Runtime calls; it is removed when this
+    // stream ends so a stale connection can never satisfy a later admission-gate check.
+    struct LiveFence {
+      t::HostFenceRegistry* registry = nullptr;
+      t::HostFence fence;
+      ~LiveFence() {
+        if (registry != nullptr) {
+          registry->erase(fence);
+        }
+      }
+    } live_fence{dependencies_.fences, fence};
+    if (dependencies_.fences != nullptr) {
+      dependencies_.fences->record(fence);
+    }
     if (!stream->Write(response)) {
       return grpc::Status::OK;
     }
@@ -640,18 +654,19 @@ make_host_bridge(HostBridgeServerDependencies dependencies) {
 
 t::Outcome<std::unique_ptr<v1::HostBridge::Service>>
 make_deployment_host_bridge(t::RuntimeIdPort& ids, std::vector<t::HostCertificateBinding> allowlist,
-                            HostBridgeCallbacks callbacks, HostBridgePersistence persistence) {
+                            HostBridgeCallbacks callbacks, HostBridgePersistence persistence,
+                            t::HostFenceRegistry* fences) {
   try {
     // Keep the in-memory ports alive for the lifetime of the service, which borrows them.
     class OwnedBridge final : public v1::HostBridge::Service {
     public:
       OwnedBridge(std::unique_ptr<t::HostRegistrationPort> store,
                   std::unique_ptr<t::HostClockPort> clock, HostBridgeCallbacks callbacks,
-                  HostBridgePersistence persistence)
+                  HostBridgePersistence persistence, t::HostFenceRegistry* fences)
           : store_(std::move(store)), clock_(std::move(clock)),
-            service_(std::make_unique<HostBridgeImpl>(
-                HostBridgeServerDependencies{*store_, *clock_, default_peer_certificate,
-                                             std::move(callbacks), std::move(persistence)})) {}
+            service_(std::make_unique<HostBridgeImpl>(HostBridgeServerDependencies{
+                *store_, *clock_, default_peer_certificate, std::move(callbacks),
+                std::move(persistence), fences})) {}
       grpc::Status
       Connect(grpc::ServerContext* context,
               grpc::ServerReaderWriter<v1::RuntimeToHost, v1::HostToRuntime>* stream) override {
@@ -663,9 +678,10 @@ make_deployment_host_bridge(t::RuntimeIdPort& ids, std::vector<t::HostCertificat
       std::unique_ptr<t::HostClockPort> clock_;
       std::unique_ptr<HostBridgeImpl> service_;
     };
-    return std::unique_ptr<v1::HostBridge::Service>(std::make_unique<OwnedBridge>(
-        std::make_unique<InMemoryHostStore>(std::move(allowlist)),
-        std::make_unique<DeploymentHostClock>(ids), std::move(callbacks), std::move(persistence)));
+    return std::unique_ptr<v1::HostBridge::Service>(
+        std::make_unique<OwnedBridge>(std::make_unique<InMemoryHostStore>(std::move(allowlist)),
+                                      std::make_unique<DeploymentHostClock>(ids),
+                                      std::move(callbacks), std::move(persistence), fences));
   } catch (const std::bad_alloc&) {
     return failure(t::ErrorCode::UpstreamUnavailable, t::Recovery::Backoff);
   } catch (...) {

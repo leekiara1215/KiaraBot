@@ -17,6 +17,7 @@
 #include <openssl/sha.h>
 
 #include "kiarabot/core/runtime/platform/operation_observation_rpc.hpp"
+#include "kiarabot/core/runtime/platform/peer_certificate.hpp"
 #include "kiarabot/core/runtime/platform/runtime_fence_codec.hpp"
 #include "kiarabot/core/runtime/platform/target_codec.hpp"
 #include "kiarabot/v1/common.pb.h"
@@ -2500,6 +2501,126 @@ public:
     if (!bootstrap_delivery(std::get<t::BootstrapDeliveryRecord>(reported),
                             response->mutable_delivery())) {
       return error_status(internal_failure(), context.request, context.trace);
+    }
+    return grpc::Status::OK;
+  }
+
+  grpc::Status SetHostAdmissionGate(grpc::ServerContext* transport,
+                                    const v1::RuntimeSetHostAdmissionGateRequest* request,
+                                    v1::RuntimeSetHostAdmissionGateResponse* response) override {
+    const auto& input = request->context();
+    const std::string request_id =
+        canonical_uuid(input.request_id()) ? input.request_id() : random_uuid();
+    const std::string trace_id =
+        canonical_uuid(input.trace_id()) ? input.trace_id() : random_uuid();
+    if (options_.host_gate == nullptr) {
+      return error_status(failure(t::ErrorCode::CapabilityNotSupported), request_id, trace_id);
+    }
+    if (!request->has_context() || !canonical_uuid(input.request_id()) ||
+        !canonical_uuid(input.trace_id()) || !input.has_deadline() ||
+        !safe_key(input.idempotency_key()) || request->host_id().empty() ||
+        request->host_id().size() > 128 || !request->has_fence() || !request->has_operation() ||
+        request->maintenance_version() == 0 ||
+        (request->has_expected_gate_version() && request->expected_gate_version() == 0) ||
+        (request->admission() != v1::HOST_ADMISSION_OPEN &&
+         request->admission() != v1::HOST_ADMISSION_CLOSED)) {
+      return error_status(failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput),
+                          request_id, trace_id);
+    }
+    const auto decoded = codec::from_wire(input.deadline());
+    const auto* requested = std::get_if<t::TimePoint>(&decoded);
+    if (!requested) {
+      return error_status(failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput),
+                          request_id, trace_id);
+    }
+    const auto started = now();
+    auto deadline = std::min(*requested, started + std::chrono::seconds{30});
+    if (transport->deadline() != std::chrono::system_clock::time_point::max()) {
+      deadline =
+          std::min(deadline, t::TimePoint{std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                 transport->deadline().time_since_epoch())});
+    }
+    if (options_.invocation_deadline) {
+      auto own = options_.invocation_deadline();
+      if (const auto* rejected = std::get_if<t::Failure>(&own)) {
+        return error_status(*rejected, request_id, trace_id);
+      }
+      deadline = std::min(deadline, std::get<t::TimePoint>(own));
+    }
+    if (transport->IsCancelled() || deadline <= started) {
+      return error_status(failure(t::ErrorCode::Timeout, t::Recovery::QuerySameIdentity),
+                          request_id, trace_id);
+    }
+    const auto& fence = request->fence();
+    if (fence.instance_id() != request->host_id() || fence.has_execution_generation() ||
+        !fence.has_connection_generation() || fence.connection_generation() == 0 ||
+        fence.runtime_epoch().empty()) {
+      return error_status(failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput),
+                          request_id, trace_id);
+    }
+    const auto& operation = request->operation();
+    if (operation.owner_service() != "host" || !canonical_uuid(operation.operation_id()) ||
+        !operation.has_resource()) {
+      return error_status(failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput),
+                          request_id, trace_id);
+    }
+    const auto resource = codec::from_wire(operation.resource());
+    const auto* host_resource = std::get_if<t::ResourceRef>(&resource);
+    if (!host_resource || host_resource->kind != t::ResourceKind::Host ||
+        host_resource->id.value != request->host_id()) {
+      return error_status(failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput),
+                          request_id, trace_id);
+    }
+    // Actual inbound mTLS leaf; the application requires the deployment allowlist binding and the
+    // live HostBridge fence, so a self-reported Host label is never trusted.
+    const auto* auth = transport->auth_context().get();
+    if (auth == nullptr) {
+      return error_status(failure(t::ErrorCode::Unauthenticated, t::Recovery::Authenticate),
+                          request_id, trace_id);
+    }
+    const auto evidence = platform::extract_peer_certificate(*auth);
+    const auto* certificate = std::get_if<platform::PeerCertificateEvidence>(&evidence);
+    if (certificate == nullptr) {
+      return error_status(failure(t::ErrorCode::Unauthenticated, t::Recovery::Authenticate),
+                          request_id, trace_id);
+    }
+    static constexpr char kHex[] = "0123456789abcdef";
+    std::string fingerprint;
+    fingerprint.reserve(64);
+    for (const auto byte : certificate->leaf_fingerprint.bytes) {
+      const auto value = std::to_integer<unsigned>(byte);
+      fingerprint.push_back(kHex[value >> 4]);
+      fingerprint.push_back(kHex[value & 0x0f]);
+    }
+    t::HostAdmissionGateCommand command;
+    command.certificate_sha256 = std::move(fingerprint);
+    command.host = t::ResourceId{request->host_id()};
+    command.fence =
+        t::HostFence{command.host, fence.connection_generation(), fence.runtime_epoch()};
+    command.operation =
+        t::OperationRef{t::Service::Host, t::OperationId{operation.operation_id()}, *host_resource};
+    command.maintenance_version = request->maintenance_version();
+    if (request->has_expected_gate_version()) {
+      command.expected_gate_version = request->expected_gate_version();
+    }
+    command.admission_open = request->admission() == v1::HOST_ADMISSION_OPEN;
+    command.deadline = deadline;
+    auto result = options_.host_gate->set_admission_gate(command);
+    if (const auto* rejected = std::get_if<t::Failure>(&result)) {
+      return error_status(*rejected, request_id, trace_id);
+    }
+    const auto& gate = std::get<t::HostAdmissionGateResult>(result).gate;
+    if (gate.gate_version == 0 || gate.maintenance_version != command.maintenance_version ||
+        gate.admission_open != command.admission_open || gate.operation != command.operation) {
+      return error_status(internal_failure(), request_id, trace_id);
+    }
+    response->set_host_id(gate.host.value);
+    response->set_gate_version(gate.gate_version);
+    response->set_maintenance_version(gate.maintenance_version);
+    response->set_admission(gate.admission_open ? v1::HOST_ADMISSION_OPEN
+                                                : v1::HOST_ADMISSION_CLOSED);
+    if (!operation_ref(gate.operation, response->mutable_operation())) {
+      return error_status(internal_failure(), request_id, trace_id);
     }
     return grpc::Status::OK;
   }

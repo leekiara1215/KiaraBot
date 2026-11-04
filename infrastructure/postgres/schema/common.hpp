@@ -162,7 +162,10 @@ CREATE TABLE kiarabot.result_grant_scopes (
     usage_known boolean, may_have_billed boolean,
     provider_request_id text CHECK(provider_request_id IS NULL OR octet_length(provider_request_id)<=128),
     latency_ms integer CHECK(latency_ms IS NULL OR (latency_ms>=0 AND latency_ms<=300000)),
-    error integer CHECK(error IS NULL OR (error BETWEEN 1 AND 10)),
+    -- Model store encodes the domain ErrorCode directly: 0 = InvalidArgument. The other result
+    -- snapshots already allow 0..10; excluding 0 made a definite HTTP-400 rejection fail its txn2
+    -- CHECK and left the call durably Started instead of Failed/InvalidArgument.
+    error integer CHECK(error IS NULL OR (error BETWEEN 0 AND 10)),
     disposition integer CHECK(disposition IS NULL OR disposition BETWEEN 0 AND 4),
     resolved_at bigint, resolved_by text,
     retain_until bigint

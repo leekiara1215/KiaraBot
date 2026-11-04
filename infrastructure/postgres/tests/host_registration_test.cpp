@@ -193,6 +193,89 @@ void run(std::uint16_t port, const std::filesystem::path& root,
       require(work->commit() == target::CommitResult::Committed, "replacement commit");
     }
     {
+      // HOST-03 Runtime-owned admission gate: durable CAS/version rows on real PG. A replay of
+      // the exact intent returns the same gate; changed intent needs the current version.
+      class GateAuthorization final : public target::HostGateAuthorizationPort {
+      public:
+        bool allow = true;
+        int calls = 0;
+        target::Outcome<target::ResourceVersion> check(const target::ResourceRef& host,
+                                                       const target::Sha256Digest& digest,
+                                                       target::TimePoint) override {
+          ++calls;
+          require(host.kind == target::ResourceKind::Host && host.id.value == "host-1",
+                  "gate exact host scope");
+          require(digest.bytes[0] == std::byte{0xaa} && digest.bytes[31] == std::byte{0xaa},
+                  "gate current Host leaf digest");
+          if (!allow) {
+            return target::Failure{target::ErrorCode::PermissionDenied,
+                                   target::Acceptance::NotAccepted, target::Recovery::ReadCurrent,
+                                   std::nullopt, std::nullopt};
+          }
+          return target::ResourceVersion{7};
+        }
+      };
+      GateAuthorization authorization;
+      target::HostFenceRegistry fences;
+      const target::HostFence fence{target::ResourceId{"host-1"}, 2, "epoch-2"};
+      fences.record(fence);
+      const std::string certificate(64, 'a');
+      auto app = target::RuntimeHostGateApplication(
+          [&factory]() -> target::Outcome<std::unique_ptr<target::RuntimeUnitOfWork>> {
+            return factory->begin();
+          },
+          fences, authorization, clock,
+          std::vector<target::HostCertificateBinding>{{"host-1", certificate}});
+      target::HostAdmissionGateCommand command_value;
+      command_value.certificate_sha256 = certificate;
+      command_value.host = target::ResourceId{"host-1"};
+      command_value.fence = fence;
+      command_value.operation = target::OperationRef{
+          target::Service::Host, target::OperationId{std::string(36, 'a')},
+          target::ResourceRef{target::ResourceKind::Host, target::ResourceId{"host-1"}}};
+      command_value.maintenance_version = 1;
+      command_value.admission_open = false;
+      command_value.deadline = clock.current + 10s;
+      const auto first = take(app.set_admission_gate(command_value), "first gate");
+      require(first.gate.gate_version == 1 && !first.gate.admission_open &&
+                  first.gate.maintenance_version == 1,
+              "first gate version 1 durable rows");
+      const auto replay = take(app.set_admission_gate(command_value), "gate replay");
+      require(replay.gate.gate_version == 1, "same intent replay returns same gate");
+      auto changed = command_value;
+      changed.expected_gate_version = 1;
+      changed.maintenance_version = 2;
+      changed.admission_open = true;
+      const auto second = take(app.set_admission_gate(changed), "gate advance");
+      require(second.gate.gate_version == 2 && second.gate.admission_open,
+              "expected version advances gate monotonically");
+      auto stale = changed;
+      stale.maintenance_version = 3;
+      stale.admission_open = false;
+      stale.expected_gate_version = 1;
+      expect_failure(app.set_admission_gate(stale), target::ErrorCode::Conflict,
+                     "stale expected gate version conflict");
+      authorization.allow = false;
+      auto next = command_value;
+      next.maintenance_version = 4;
+      next.expected_gate_version = 2;
+      expect_failure(app.set_admission_gate(next), target::ErrorCode::PermissionDenied,
+                     "current Identity denial blocks gate persistence");
+      authorization.allow = true;
+      fences.erase(fence);
+      expect_failure(app.set_admission_gate(next), target::ErrorCode::Unauthenticated,
+                     "missing live fence blocks gate persistence");
+      fences.record(fence);
+      auto verify_work = begin(*factory);
+      const auto stored =
+          take(verify_work->host_admission_gates().current({"host-1"}), "read stored gate");
+      require(stored && stored->gate_version == 2 && stored->admission_open &&
+                  stored->maintenance_version == 2 &&
+                  stored->operation.id.value == std::string(36, 'a'),
+              "gate rows persist without a fabricated admission/process success");
+      verify_work->rollback();
+    }
+    {
       auto work = begin(*factory);
       auto current = take(work->host_registration().connection({"host-1"}), "read replacement");
       require(current.has_value(), "replacement connection present");

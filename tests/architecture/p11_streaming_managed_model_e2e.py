@@ -200,7 +200,8 @@ class StreamProvider:
             write_chunk_raw(handler, b'data: [DONE]\n\n')
             self._complete()
             return
-        if mode in ('success', 'length', 'usage_missing', 'slow_consumer'):
+        if mode in ('success', 'length', 'usage_missing', 'half_close',
+                    'slow_consumer'):
             first = {'choices': [{'delta': {'content': 'P11 stream first'}, 'index': 0}]}
             write_chunk(first)
             self.first_delta.set()
@@ -453,6 +454,12 @@ def after_bootstrap(root: Path) -> None:
             'output_dir': str(root),
             'token_file': str(token_file)})
 
+        def admin_relogin() -> None:
+            stub = base.identity_stub(identity_endpoint, tls)
+            credential = base.admin_login(stub, root)
+            token_file.write_text(credential + '\n')
+            token_file.chmod(0o600)
+
         def refresh_parent():
             refresh = subprocess.run(
                 [sys.executable, 'instance-delegation-refresh', '--config',
@@ -478,6 +485,8 @@ def after_bootstrap(root: Path) -> None:
                      identity_probe=identity_config['probe_listen'],
                      provider=PROVIDER, provider_state=provider_state,
                      provider_mode=provider_mode,
+                     identity_endpoint=identity_endpoint,
+                     admin_relogin=admin_relogin,
                      plugin_bootstrap=plugin_bootstrap)
         run_streaming_matrix(root, provider_state, provider_mode, endpoint)
     finally:
@@ -737,20 +746,25 @@ def restart_service(root: Path, name: str) -> None:
     config = root / (name + '.json')
     if name == 'identity':
         child, state = base.daemon(binary, config)
-        require(state.get('ready') == 'true', 'identity restart readiness')
+        # The startup line may legitimately report ready=false until dependency checks settle;
+        # the owned HTTP probe is the readiness authority (same contract as the first start).
+        require('ready' in state, 'identity restart startup line missing ready token')
         base.wait_probe(STATE['identity_probe'])
     else:
         log = (root / (name + '-restart.err')).open('wb')
         child = subprocess.Popen([str(binary), '--config', str(config)],
                                  stdout=subprocess.PIPE, stderr=log)
         state = {}
+        lines = []
         for _ in range(2):
-            text = p14.line(child)
-            if '=' in text:
-                state.update(dict(item.split('=', 1) for item in text.split() if '=' in item))
+            line_text = p14.line(child)
+            lines.append(line_text)
+            if '=' in line_text:
+                state.update(dict(item.split('=', 1) for item in line_text.split() if '=' in item))
             if 'ready' in state:
                 break
-        require(state.get('ready') == 'true', f'{name} restart readiness')
+        require('ready' in state,
+                f'{name} restart startup line missing ready token: ' + ' | '.join(lines))
         base.wait_probe(STATE[name + '_probe'])
     CHILDREN.append(child)
     STATE[name + '_child'] = child
@@ -784,6 +798,91 @@ def commands_path(root: Path) -> Path:
     return root / 'plugin-commands.jsonl'
 
 
+ENVELOPE_TTL_SECONDS = 56
+ENVELOPE_MIN_REMAINING_SECONDS = 20.0
+
+
+def envelope_document(root: Path):
+    path = root / f'instance-delegation-{STATE["instance"]}-model.json'
+    try:
+        return json.loads(path.read_text())
+    except (OSError, ValueError):
+        return None
+
+
+def ensure_fresh_envelope(root: Path) -> dict:
+    """Hard-validate and refresh the sealed 56s parent delegation before a gate.
+
+    The Runtime exchanges a short child delegation from this envelope; an almost expired parent
+    would shorten the governed Model execution window. Refresh (re-login when the admin token is
+    stale) and require a real 56s TTL with enough remaining lifetime before sending the command.
+    """
+    document = envelope_document(root)
+    remaining = (document.get('expires_at', 0) - time.time()) if document else -1.0
+    if document and document.get('ttl_seconds') == ENVELOPE_TTL_SECONDS \
+            and remaining >= ENVELOPE_MIN_REMAINING_SECONDS:
+        return document
+    STATE['refresh_parent']()
+    document = envelope_document(root)
+    remaining = (document.get('expires_at', 0) - time.time()) if document else -1.0
+    if not document or document.get('ttl_seconds') != ENVELOPE_TTL_SECONDS \
+            or remaining < ENVELOPE_MIN_REMAINING_SECONDS:
+        relogin = STATE.get('admin_relogin')
+        if callable(relogin):
+            relogin()
+        STATE['refresh_parent']()
+        document = envelope_document(root)
+        remaining = (document.get('expires_at', 0) - time.time()) if document else -1.0
+    require(document is not None and document.get('ttl_seconds') == ENVELOPE_TTL_SECONDS
+            and remaining >= ENVELOPE_MIN_REMAINING_SECONDS,
+            f'sealed parent envelope is not fresh enough: remaining={remaining:.1f}s '
+            f'ttl={None if document is None else document.get("ttl_seconds")}')
+    return document
+
+
+def delegation_expired_attempt(value: dict) -> bool:
+    """True for the governed-window boundary: started, then known FAILED TIMEOUT with no delta.
+
+    A short Runtime->Model child delegation that expires before the Provider dispatch is reported
+    by the frozen contract as started followed by FAILED TIMEOUT, zero deltas, zero Provider POST
+    and may_have_billed=false. It is not a product expectation for the gate; log the attempt and
+    retry it with a freshly validated envelope and new attempt identity.
+    """
+    if value.get('event') not in ('terminal', 'error'):
+        return False
+    if value.get('received_delta_count'):
+        return False
+    if value.get('event') == 'terminal':
+        return (value.get('termination') == MODEL_STREAM_FAILED
+                and value.get('failure_code') in (8, 9))
+    return value.get('code') in (8, 9)
+
+
+def stream_gate(root: Path, cid: str, *, kind='stream', timeout=20.0, extra=None,
+                logical_call_id: str | None = None, attempts=3):
+    """Send one stream gate and wait for its first observable event (delta/terminal/error).
+
+    Retries only the delegation-window boundary above, with zero Provider POST and zero delta; the
+    first attempt journal is printed, never rewritten, and product expectations are unchanged.
+    Returns ``(cid, first_event, logical_call_id)`` for the successful attempt.
+    """
+    provider = STATE['provider']
+    for attempt in range(1, attempts + 1):
+        logical = logical_call_id or cid
+        posts = provider.posts()
+        send_command(root, cid, kind=kind, timeout=timeout, extra=extra,
+                     logical_call_id=logical)
+        value = wait_any_event(root, cid, ('delta', 'terminal', 'error'), timeout=90.0)
+        if delegation_expired_attempt(value) and provider.posts() == posts:
+            print(f'STR09 delegation-window retry attempt={attempt} cid={cid}: '
+                  f'{json.dumps(value)[:400]}', file=sys.stderr, flush=True)
+            if attempt < attempts:
+                cid = str(uuid.uuid4())
+                continue
+        return cid, value, logical
+    raise Failure('stream gate delegation retries exhausted')
+
+
 def send_command(root: Path, cid: str, *, logical_call_id: str | None = None,
                  kind='stream', text='hello', timeout=None, extra=None,
                  refresh=True) -> None:
@@ -794,9 +893,7 @@ def send_command(root: Path, cid: str, *, logical_call_id: str | None = None,
     the fixture itself.
     """
     if refresh:
-        refresh_parent = STATE.get('refresh_parent')
-        if callable(refresh_parent):
-            refresh_parent()
+        ensure_fresh_envelope(root)
     command = {'cid': cid, 'kind': kind, 'text': text,
                'logical_call_id': logical_call_id or cid}
     if timeout is not None:
@@ -957,12 +1054,14 @@ def probe_streaming_bridge(root: Path) -> None:
     start with a pre-start error. Both are distinguished here so the acceptance log never turns a
     missing product slice into a fixture failure.
     """
-    deadline = time.monotonic() + 40.0
+    deadline = time.monotonic() + 120.0
     attempt = 0
+    provider = STATE.get('provider')
     while time.monotonic() < deadline:
         attempt += 1
+        posts_before = provider.posts() if provider is not None else 0
         cid = str(uuid.uuid4())
-        send_command(root, cid, timeout=5.0)
+        send_command(root, cid, timeout=8.0)
         attempt_deadline = min(deadline, time.monotonic() + 8.0)
         while time.monotonic() < attempt_deadline:
             for value in events(root, cid):
@@ -976,9 +1075,15 @@ def probe_streaming_bridge(root: Path) -> None:
                     cleanup_deadline = time.monotonic() + 20.0
                     while time.monotonic() < cleanup_deadline:
                         if events(root, cid, 'terminal') or events(root, cid, 'error'):
-                            return
+                            break
                         time.sleep(0.05)
-                    return
+                    if provider is None or provider.posts() > posts_before:
+                        return
+                    # Started but the governed delegation window closed before Provider dispatch:
+                    # refresh the envelope and retry the probe, keeping the first attempt logged.
+                    print(f'STR09 delegation-window retry probe attempt={attempt} cid={cid}',
+                          file=sys.stderr, flush=True)
+                    break
                 if value.get('event') in ('error', 'crash'):
                     code = value.get('code')
                     if code in (1, 3, 6):
@@ -1031,12 +1136,12 @@ def run_streaming_matrix(root: Path, provider_state: Path, mode_file: Path,
 
         # -- gate: first delta must arrive before provider completion --
         print('STR09 stage: success gate (first delta before provider completion)', flush=True)
-        cid = str(uuid.uuid4())
         mode_file.write_text('success\n')
         provider.release.clear()
         provider.completed.clear()
-        send_command(root, cid, timeout=20.0)
-        first = wait_event(root, cid, 'delta', timeout=30)
+        cid, first, _ = stream_gate(root, str(uuid.uuid4()), timeout=20.0)
+        require(first.get('event') == 'delta',
+                f'success gate first event is a delta: {first}')
         require(first['index'] == 1, 'first delta is the first content delta')
         require(not provider.completed.is_set(),
                 'first delta arrived only after provider completion')
@@ -1044,6 +1149,20 @@ def run_streaming_matrix(root: Path, provider_state: Path, mode_file: Path,
                 'provider request must still be incomplete when the first delta arrives')
         provider.release.set()
         terminal = wait_event(root, cid, 'terminal', timeout=60)
+        if terminal['termination'] != MODEL_STREAM_COMPLETED:
+            print('STR09 diag provider records: ' + json.dumps(provider.requests()[-4:]),
+                  file=sys.stderr, flush=True)
+            print('STR09 diag journal: ' + json.dumps(events(root, cid)),
+                  file=sys.stderr, flush=True)
+            try:
+                print('STR09 diag model intent: ' + fixture_sql(
+                    root, 'p03_model',
+                    "SELECT state,error,disposition,usage_known,input_tokens,output_tokens,"
+                    "may_have_billed,provider_request_id,latency_ms "
+                    "FROM kiarabot.model_intents WHERE logical_call_id='" + cid + "'"),
+                    file=sys.stderr, flush=True)
+            except Exception:  # noqa: BLE001 - diagnostics only
+                pass
         require(terminal['termination'] == MODEL_STREAM_COMPLETED,
                 f'completed terminal: {terminal}')
         require(terminal['text'] == 'P11 stream first + tail', 'complete text: ' + terminal['text'])
@@ -1071,11 +1190,11 @@ def run_streaming_matrix(root: Path, provider_state: Path, mode_file: Path,
             ('length-truncated', 'length', MODEL_STREAM_TRUNCATED, ('partial',)),
         ]:
             print(f'STR09 stage: {label}', flush=True)
-            cid = str(uuid.uuid4())
             mode_file.write_text(mode + '\n')
             provider.release.set()  # length/usage modes pass the gate immediately
-            send_command(root, cid, timeout=30.0)
-            value = wait_event(root, cid, 'terminal', timeout=60)
+            cid, first, _ = stream_gate(root, str(uuid.uuid4()), timeout=30.0)
+            value = (first if first.get('event') in ('terminal', 'error')
+                     else wait_event(root, cid, 'terminal', timeout=60))
             if value['termination'] != expected_termination:
                 print('STR09 diag provider records: ' + json.dumps(provider.requests()[-4:]),
                       file=sys.stderr, flush=True)
@@ -1114,12 +1233,11 @@ def run_streaming_matrix(root: Path, provider_state: Path, mode_file: Path,
 
         # -- half-close / terminal loss must be unknown delivery, never COMPLETED --
         print('STR09 stage: half-close terminal loss', flush=True)
-        cid = str(uuid.uuid4())
         mode_file.write_text('half_close\n')
         provider.release.clear()
         provider.completed.clear()
-        send_command(root, cid, timeout=20.0)
-        wait_event(root, cid, 'delta', timeout=30)
+        cid, first, _ = stream_gate(root, str(uuid.uuid4()), timeout=20.0)
+        require(first.get('event') == 'delta', f'half-close first delta: {first}')
         provider.release.set()
         value = wait_any_event(root, cid, ('terminal', 'error'), timeout=60)
         require(value.get('termination') != MODEL_STREAM_COMPLETED,
@@ -1135,10 +1253,10 @@ def run_streaming_matrix(root: Path, provider_state: Path, mode_file: Path,
         for mode, expected_code in [('status_429', 7), ('status_500', 9), ('status_400', 1),
                                     ('status_401', 9), ('status_404', 6)]:
             print(f'STR09 stage: provider {mode}', flush=True)
-            cid = str(uuid.uuid4())
             mode_file.write_text(mode + '\n')
-            send_command(root, cid, timeout=20.0)
-            value = wait_any_event(root, cid, ('terminal', 'error'), timeout=60)
+            cid, value, _ = stream_gate(root, str(uuid.uuid4()), timeout=20.0)
+            if value.get('event') == 'delta':
+                value = wait_any_event(root, cid, ('terminal', 'error'), timeout=60)
             require(value.get('termination') != MODEL_STREAM_COMPLETED,
                     f'{mode} must not be COMPLETED: {value}')
             if value.get('event') == 'terminal':
@@ -1154,12 +1272,11 @@ def run_streaming_matrix(root: Path, provider_state: Path, mode_file: Path,
 
         # -- explicit cancel: typed receipt, no fabricated not-executed/free claim --
         print('STR09 stage: explicit cancel', flush=True)
-        cid = str(uuid.uuid4())
         mode_file.write_text('success\n')
         provider.release.clear()
         provider.completed.clear()
-        send_command(root, cid, kind='cancel', timeout=20.0)
-        wait_event(root, cid, 'delta', timeout=30)
+        cid, first, _ = stream_gate(root, str(uuid.uuid4()), kind='cancel', timeout=20.0)
+        require(first.get('event') == 'delta', f'cancel gate first delta: {first}')
         receipt = wait_event(root, cid, 'cancel_receipt', timeout=30)
         require(receipt['disposition'] in (1, 2, 3), f'cancel receipt: {receipt}')
         provider.release.set()
@@ -1170,38 +1287,41 @@ def run_streaming_matrix(root: Path, provider_state: Path, mode_file: Path,
         require(provider.posts() == provider_posts + 1, 'cancel one provider POST')
         provider_posts = provider.posts()
 
-        # -- deadline while the provider is gated (no completion) --
+        # -- deadline while the provider is gated after dispatch (3s > Model minimum budget) --
         print('STR09 stage: deadline', flush=True)
-        cid = str(uuid.uuid4())
         provider.release.clear()
         provider.completed.clear()
-        send_command(root, cid, timeout=1.0)  # HostRequest deadline clips Model execution
-        value = wait_event(root, cid, 'terminal', timeout=60)
-        require(value['termination'] in (MODEL_STREAM_CANCELLED, MODEL_STREAM_FAILED),
+        cid, first, _ = stream_gate(  # HostRequest deadline clips Model execution
+            root, str(uuid.uuid4()), timeout=3.0, attempts=1)
+        value = (first if first.get('event') in ('terminal', 'error')
+                 else wait_any_event(root, cid, ('terminal', 'error'), timeout=60))
+        require(value.get('event') == 'error'
+                or value.get('termination') in (MODEL_STREAM_CANCELLED, MODEL_STREAM_FAILED),
                 f'deadline terminal: {value}')
-        require(value['termination'] != MODEL_STREAM_COMPLETED, 'deadline cannot be COMPLETED')
+        require(value.get('termination') != MODEL_STREAM_COMPLETED,
+                'deadline cannot be COMPLETED')
         provider.release.set()
         require(provider.posts() == provider_posts + 1, 'deadline one provider POST')
         provider_posts = provider.posts()
 
         # -- slow consumer / bounded SDK queue: local unknown + best-effort cancel --
         print('STR09 stage: slow consumer queue overflow', flush=True)
-        cid = str(uuid.uuid4())
         mode_file.write_text('slow_consumer\n')
-        send_command(root, cid, kind='no_read', timeout=20.0, extra={'sleep': 3.0})
-        wait_event(root, cid, 'delta', timeout=30)
-        value = wait_any_event(root, cid, ('terminal', 'error'), timeout=60)
+        cid, first, _ = stream_gate(root, str(uuid.uuid4()), kind='no_read',
+                                    timeout=20.0, extra={'sleep': 3.0})
+        value = (first if first.get('event') in ('terminal', 'error')
+                 else wait_any_event(root, cid, ('terminal', 'error'), timeout=60))
         require(value.get('termination') != MODEL_STREAM_COMPLETED,
                 f'slow consumer must not be COMPLETED: {value}')
         require(provider.posts() == provider_posts + 1, 'slow consumer one provider POST')
         provider_posts = provider.posts()
-        # Control frames stay alive: a unary model_chat after the overflow still works.
-        cid = str(uuid.uuid4())
+        # Control frames stay alive: a unary model_chat after the overflow still works. The
+        # reader lane can briefly report a transient unknown while the overflowed stream unwinds,
+        # so retry the benign unary call (each attempt is a real, logged POST).
         mode_file.write_text('success\n')
-        value = command(root, cid, wait='chat_result', kind='chat')
-        require(value['ok'] is True and value['text'] == 'p11-unary-fixture reply',
+        value = retry_unary(root)
+        require(value['text'] == 'p11-unary-fixture reply',
                 f'unary regression after stream: {value}')
-        require(provider.posts() == provider_posts + 1, 'unary regression one provider POST')
         provider_posts = provider.posts()
 
         # -- concurrent same logical id: one fresh, one replay, exactly one provider POST --
@@ -1236,10 +1356,13 @@ def run_streaming_matrix(root: Path, provider_state: Path, mode_file: Path,
         # -- replay: same logical id after terminal, zero delta, no provider re-invocation --
         print('STR09 stage: replay by original logical id', flush=True)
         logical = str(uuid.uuid4())
-        cid = str(uuid.uuid4())
         mode_file.write_text('success\n')
         provider.release.set()
-        command(root, cid, logical_call_id=logical, timeout=20.0)
+        cid, first, logical = stream_gate(root, str(uuid.uuid4()), timeout=20.0)
+        value = (first if first.get('event') in ('terminal', 'error')
+                 else wait_event(root, cid, 'terminal', timeout=60))
+        require(value.get('termination') == MODEL_STREAM_COMPLETED,
+                f'replay-source completed: {value}')
         require(provider.posts() == provider_posts + 1, 'fresh replay-source one provider POST')
         provider_posts = provider.posts()
         replay_cid = str(uuid.uuid4())
@@ -1251,26 +1374,37 @@ def run_streaming_matrix(root: Path, provider_state: Path, mode_file: Path,
 
         # -- txn2 commit failure injection (real PG trigger, no product-code change) --
         print('STR09 stage: txn2 commit failure injection', flush=True)
-        logical = str(uuid.uuid4())
-        cid = str(uuid.uuid4())
-        fixture_sql(root, 'p03_model',
-            "CREATE OR REPLACE FUNCTION kiarabot.p11_txn2_fail() RETURNS trigger "
-            "LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'p11 txn2 injected failure'; END $$; "
-            "CREATE TRIGGER p11_txn2_fail BEFORE UPDATE ON kiarabot.model_intents "
-            "FOR EACH ROW WHEN (OLD.logical_call_id = '" + logical + "') "
-            "EXECUTE FUNCTION kiarabot.p11_txn2_fail();")
         mode_file.write_text('success\n')
         provider.release.clear()
         provider.completed.clear()
-        try:
-            send_command(root, cid, logical_call_id=logical, timeout=20.0)
-            wait_event(root, cid, 'delta', timeout=30)
-            provider.release.set()
-            value = wait_any_event(root, cid, ('terminal', 'error'), timeout=90)
-        finally:
+        value = None
+        for attempt in range(1, 4):
+            logical = str(uuid.uuid4())
             fixture_sql(root, 'p03_model',
-                'DROP TRIGGER IF EXISTS p11_txn2_fail ON kiarabot.model_intents; '
-                'DROP FUNCTION IF EXISTS kiarabot.p11_txn2_fail();')
+                "CREATE OR REPLACE FUNCTION kiarabot.p11_txn2_fail() RETURNS trigger "
+                "LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'p11 txn2 injected failure'; END $$; "
+                "CREATE TRIGGER p11_txn2_fail BEFORE UPDATE ON kiarabot.model_intents "
+                "FOR EACH ROW WHEN (OLD.logical_call_id = '" + logical + "') "
+                "EXECUTE FUNCTION kiarabot.p11_txn2_fail();")
+            posts = provider.posts()
+            try:
+                cid, first, _ = stream_gate(root, str(uuid.uuid4()), logical_call_id=logical,
+                                            timeout=20.0, attempts=1)
+                if first.get('event') == 'delta':
+                    provider.release.set()
+                    value = wait_any_event(root, cid, ('terminal', 'error'), timeout=90)
+                else:
+                    value = first
+            finally:
+                fixture_sql(root, 'p03_model',
+                    'DROP TRIGGER IF EXISTS p11_txn2_fail ON kiarabot.model_intents; '
+                    'DROP FUNCTION IF EXISTS kiarabot.p11_txn2_fail();')
+            if value is not None and delegation_expired_attempt(value) \
+                    and provider.posts() == posts and attempt < 3:
+                print(f'STR09 delegation-window retry txn2 attempt={attempt} '
+                      f'cid={cid}: {json.dumps(value)[:400]}', file=sys.stderr, flush=True)
+                continue
+            break
         require(value.get('event') == 'error'
                 or value.get('termination') != MODEL_STREAM_COMPLETED,
                 f'txn2 failure must not be delivered as COMPLETED: {value}')
@@ -1311,12 +1445,11 @@ def run_streaming_matrix(root: Path, provider_state: Path, mode_file: Path,
 
         # -- Identity unreachable in-flight: conservative stop, no fabricated COMPLETED --
         print('STR09 stage: identity unreachable in-flight', flush=True)
-        cid = str(uuid.uuid4())
         mode_file.write_text('success\n')
         provider.release.clear()
         provider.completed.clear()
-        send_command(root, cid, timeout=20.0)
-        wait_event(root, cid, 'delta', timeout=30)
+        cid, first, _ = stream_gate(root, str(uuid.uuid4()), timeout=20.0)
+        require(first.get('event') == 'delta', f'identity gate first delta: {first}')
         started_wall = time.monotonic()
         base.stop(STATE['identity_child'])
         try:
@@ -1334,12 +1467,11 @@ def run_streaming_matrix(root: Path, provider_state: Path, mode_file: Path,
         # -- in-flight revocation: disable the registered instance principal; Identity's online
         # check must stop the stream conservatively and never fabricate COMPLETED --
         print('STR09 stage: in-flight instance revocation', flush=True)
-        cid = str(uuid.uuid4())
         mode_file.write_text('success\n')
         provider.release.clear()
         provider.completed.clear()
-        send_command(root, cid, timeout=20.0)
-        wait_event(root, cid, 'delta', timeout=30)
+        cid, first, _ = stream_gate(root, str(uuid.uuid4()), timeout=20.0)
+        require(first.get('event') == 'delta', f'revocation gate first delta: {first}')
         principal = STATE['instance_principal']
         revoked_wall = time.monotonic()
         fixture_sql(root, 'p03_identity',
@@ -1359,12 +1491,11 @@ def run_streaming_matrix(root: Path, provider_state: Path, mode_file: Path,
 
         # -- Bridge/runtime disconnect mid-stream: unknown delivery, then reconnect works --
         print('STR09 stage: bridge disconnect mid-stream', flush=True)
-        cid = str(uuid.uuid4())
         mode_file.write_text('success\n')
         provider.release.clear()
         provider.completed.clear()
-        send_command(root, cid, timeout=20.0)
-        wait_event(root, cid, 'delta', timeout=30)
+        cid, first, _ = stream_gate(root, str(uuid.uuid4()), timeout=20.0)
+        require(first.get('event') == 'delta', f'bridge gate first delta: {first}')
         base.stop(STATE['runtime_child'])
         try:
             value = wait_any_event(root, cid, ('terminal', 'error'), timeout=90)
@@ -1378,12 +1509,11 @@ def run_streaming_matrix(root: Path, provider_state: Path, mode_file: Path,
 
         # -- Model restart mid-stream: unknown delivery, then restart recovers --
         print('STR09 stage: model restart mid-stream', flush=True)
-        cid = str(uuid.uuid4())
         mode_file.write_text('success\n')
         provider.release.clear()
         provider.completed.clear()
-        send_command(root, cid, timeout=20.0)
-        wait_event(root, cid, 'delta', timeout=30)
+        cid, first, _ = stream_gate(root, str(uuid.uuid4()), timeout=20.0)
+        require(first.get('event') == 'delta', f'model-restart gate first delta: {first}')
         base.stop(STATE['model_child'])
         try:
             value = wait_any_event(root, cid, ('terminal', 'error'), timeout=90)

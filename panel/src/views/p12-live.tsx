@@ -40,6 +40,13 @@ import type {
 } from '../api/client';
 import { ApiError } from '../api/client';
 import { describeError, FailureNotice, formatTime, label, type Failure } from '../ui';
+import { SnapshotSync } from '../stream/snapshot-sync';
+import {
+  TargetScopedStream, type OperationsStreamConfig, type TargetStreamStatus,
+} from '../stream/target-stream';
+import {
+  TARGET_CURSOR_SERVICES, canonicalizeScope, targetChannelUrl, type TargetEventEnvelope,
+} from '../stream/target-protocol';
 import type { P12PageKey } from '../p12/catalog';
 
 type Account = Schemas['TargetAccountRecord'];
@@ -85,36 +92,120 @@ function CatalogField({ id, onChange }: { id: string; onChange: (value: string) 
     <input aria-label="catalog ID" value={id} onChange={(event) => onChange(event.target.value)} />
   </label>;
 }
-/** Poll an owner operation. HTTP 200 for the snapshot never means the work completed. */
-function OperationTracker({ api, operation, scope }: {
-  api: ApiClient; operation?: TargetOperationRef; scope?: TargetResourceScope;
+const FALLBACK_POLL_MS = 10_000;
+const STREAM_STATUS_TEXT: Record<TargetStreamStatus, string> = {
+  idle: '未连接', connecting: '正在连接', connected: '实时已连接', recovering: '恢复中（重新同步）',
+  resync: '重新同步', disconnected: '已断开（实时不可用）', unauthorized: '会话失效（实时不可用）',
+  forbidden: '无权访问（实时不可用）', throttled: '服务端限流（实时不可用）',
+  protocol: '协议/会话不兼容（实时不可用）', stopped: '已停止',
+};
+const TERMINAL_STREAM = new Set<TargetStreamStatus>(['unauthorized', 'forbidden', 'throttled', 'protocol', 'stopped']);
+
+/** Owner REST projection is authoritative; the stream only tells us when to re-read it. */
+function operationRefFromPayload(payload: Record<string, unknown>): TargetOperationRef | undefined {
+  const ref = payload.ref;
+  if (!ref || typeof ref !== 'object' || Array.isArray(ref)) return undefined;
+  const value = ref as Record<string, unknown>;
+  return typeof value.operation_id === 'string' ? (value as unknown as TargetOperationRef) : undefined;
+}
+
+/**
+ * Verify an owner operation through the authoritative owner GetOperation snapshot.
+ *
+ * HTTP 200/202 is only a read/accept; completion requires an owner terminal state, and
+ * BLOCKED/UNKNOWN stay unknown (never failure, never "done"). The target `/ws/operations` channel
+ * triggers re-verification on `operation.updated`; when the stream is unavailable the tracker
+ * falls back to a slow REST snapshot poll, never to re-sending a management write.
+ */
+export function OperationTracker({ api, operation, scope, stream }: {
+  api: ApiClient; operation?: TargetOperationRef; scope?: TargetResourceScope; stream?: OperationsStreamConfig;
 }) {
   const [snapshot, setSnapshot] = useState<TargetOperation>();
   const [failure, setFailure] = useState<Failure>();
+  const [streamState, setStreamState] = useState<{ status: TargetStreamStatus; lastConfirmedAt?: number }>();
   const owner = operation?.owner_service;
   const operationId = operation?.operation_id;
   useEffect(() => {
-    if (!owner || !operationId) { setSnapshot(undefined); return; }
+    if (!owner || !operationId) { setSnapshot(undefined); setFailure(undefined); setStreamState(undefined); return; }
     let active = true;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const poll = async () => {
-      try {
-        const next = (await api.operation(owner, operationId, scope)).operation;
+    let client: TargetScopedStream | undefined;
+    let pollTimer: ReturnType<typeof setTimeout> | undefined;
+    let streamConnected = false;
+    let terminalSeen = false;
+    const stopPoll = () => { if (pollTimer !== undefined) { clearTimeout(pollTimer); pollTimer = undefined; } };
+    const teardown = () => { stopPoll(); client?.stop(); client = undefined; };
+    const verify = new SnapshotSync<TargetOperation>({
+      load: () => api.operation(owner, operationId, scope).then((reply) => reply.operation),
+      apply: (next) => {
         if (!active) return;
         setSnapshot(next); setFailure(undefined);
-        if (!terminalOperationStates.has(next.state)) timer = setTimeout(() => void poll(), 2000);
-      } catch (error) {
-        if (!active) return;
-        setFailure(describeError(error));
-      }
+        terminalSeen = terminalOperationStates.has(next.state);
+        if (terminalSeen) teardown();
+      },
+      onError: (error) => { if (active) setFailure(describeError(error)); },
+    });
+    const schedulePoll = () => {
+      if (!active || terminalSeen || streamConnected || pollTimer !== undefined) return;
+      pollTimer = setTimeout(() => {
+        pollTimer = undefined;
+        void verify.sync('fallback').finally(() => { if (active && !terminalSeen && !streamConnected) schedulePoll(); });
+      }, FALLBACK_POLL_MS);
     };
-    void poll();
-    return () => { active = false; if (timer) clearTimeout(timer); };
-  }, [api, owner, operationId, scope]);
+    // The first authoritative owner snapshot is not blocked by stream setup/failure.
+    void verify.sync('session-ready').finally(() => schedulePoll());
+
+    const streamOwner = owner && (TARGET_CURSOR_SERVICES as readonly string[]).includes(owner) ? owner : undefined;
+    if (stream && streamOwner && scope && scope.resources.length > 0) {
+      try {
+        client = new TargetScopedStream({
+          url: targetChannelUrl(stream.wsUrl, 'operations', streamOwner),
+          selection: {
+            channel: 'operations', owner: streamOwner,
+            scope: canonicalizeScope({ resources: scope.resources.map((item) => ({ kind: item.kind, id: item.id })) }),
+          },
+          factory: stream.socketFactory,
+          tokenProvider: stream.tokenProvider,
+          onStatus: (status) => {
+            if (!active) return;
+            streamConnected = status === 'connected';
+            setStreamState((previous) => ({ status, lastConfirmedAt: previous?.lastConfirmedAt }));
+            if (streamConnected) stopPoll(); else if (TERMINAL_STREAM.has(status)) stopPoll(); else schedulePoll();
+          },
+          onReady: (ready) => {
+            if (!active) return;
+            // The stream already recorded the processed Control sequence/owner cursor; only then
+            // re-read the authoritative REST snapshot and refresh after a resume.
+            setStreamState({ status: 'connected', lastConfirmedAt: ready.at });
+            void verify.sync(ready.resumed ? 'resume' : 'session-ready');
+          },
+          onEvent: (event: TargetEventEnvelope) => {
+            if (!active || event.event_type !== 'operation.updated') return;
+            const ref = operationRefFromPayload(event.payload);
+            if (ref && ref.operation_id !== operationId) return;
+            if (ref?.owner_service && ref.owner_service !== owner) return;
+            setStreamState((previous) => ({ status: previous?.status ?? 'connected', lastConfirmedAt: Date.now() }));
+            void verify.sync('event');
+          },
+          onRecovery: () => { if (active) void verify.recover(); },
+        });
+        client.start();
+      } catch {
+        // Unbuildable channel URL/scope: keep the REST view; the page already shows the fallback.
+        client = undefined;
+      }
+    }
+    return () => { active = false; teardown(); };
+  }, [api, owner, operationId, scope, stream]);
   if (!operation) return null;
+  const streamLabel = streamState
+    ? `${STREAM_STATUS_TEXT[streamState.status]}${streamState.status === 'connected' ? '' : '；REST 快照回退中'}`
+    : '未配置 target operations 频道；REST 快照回退';
+  const confirmedLabel = streamState?.lastConfirmedAt
+    ? formatTime(new Date(streamState.lastConfirmedAt).toISOString()) : '尚未确认';
   return <section className="table-card"><div className="table-head"><div><p className="eyebrow">ASYNC · OWNER OPERATION</p>
-    <h2>已受理，轮询 {operation.owner_service}/{operation.operation_id}</h2></div></div>
-    <p className="muted">写操作 HTTP 200/202 只表示已受理；此处状态来自 owner 快照，200 不等于完成。</p>
+    <h2>已受理，owner GetOperation 复核 {operation.owner_service}/{operation.operation_id}</h2></div></div>
+    <p className="muted">写操作 HTTP 200/202 只表示已受理；此处状态来自 owner 快照，200 不等于完成。`operation.updated` 实时通知只触发复核，流不可用时按 {FALLBACK_POLL_MS / 1000}s REST 快照回退；断流不重发任何管理写，BLOCKED/UNKNOWN 保持未知。</p>
+    <p className="muted">实时事件流：{streamLabel}；最后确认：{confirmedLabel}。</p>
     {failure && <FailureNotice failure={failure} />}
     {snapshot && <div className="table-wrap"><table><tbody>
       <tr><th>state</th><td>{OPERATION_STATE_TEXT[snapshot.state] ?? snapshot.state}</td></tr>
@@ -190,7 +281,7 @@ function TableCard({ title, eyebrow, count, columns, rows }: {
   </section>;
 }
 
-function AccountsPage({ api, permissions, revision }: { api: ApiClient; permissions: string[]; revision: number }) {
+function AccountsPage({ api, permissions, revision, stream }: { api: ApiClient; permissions: string[]; revision: number; stream?: OperationsStreamConfig }) {
   const [selected, setSelected] = useState<Account>();
   const [policy, setPolicy] = useState<TargetActionPolicy>();
   const [bindingAccount, setBindingAccount] = useState('');
@@ -284,7 +375,7 @@ function AccountsPage({ api, permissions, revision }: { api: ApiClient; permissi
       </tbody></table></div>}
       {policy && <button className="primary" onClick={() => void savePolicy()}>保存策略</button>}
     </section>
-    <OperationTracker api={api} operation={operation} scope={trackerScope} />
+    <OperationTracker api={api} operation={operation} scope={trackerScope} stream={stream} />
     <ActionMetadataSection api={api} permissions={permissions} revision={revision} />
   </div>;
 }
@@ -320,7 +411,7 @@ function ActionMetadataSection({ api, permissions, revision }: { api: ApiClient;
   </section>;
 }
 
-function LifecyclePanel({ api }: { api: ApiClient }) {
+function LifecyclePanel({ api, stream }: { api: ApiClient; stream?: OperationsStreamConfig }) {
   const [kind, setKind] = useState('RESOURCE_INSTANCE');
   const [resourceId, setResourceId] = useState('');
   const [expectedVersion, setExpectedVersion] = useState('1');
@@ -371,11 +462,11 @@ function LifecyclePanel({ api }: { api: ApiClient }) {
     {pending && <div className="failure"><strong>删除/恢复当前不可用（后端 404/501/503）</strong>
       <p>Panel 保持显式不可用状态，不伪造删除/恢复成功；后端可用后按 operation 终态展示 BLOCKED/409/30 天恢复窗。</p></div>}
     {notice && <p className="success">{notice}</p>}{failure && <FailureNotice failure={failure} />}
-    <OperationTracker api={api} operation={operation} scope={parsedScope} />
+    <OperationTracker api={api} operation={operation} scope={parsedScope} stream={stream} />
   </section>;
 }
 
-function InstallationsPage({ api, revision }: { api: ApiClient; revision: number }) {
+function InstallationsPage({ api, revision, stream }: { api: ApiClient; revision: number; stream?: OperationsStreamConfig }) {
   const [catalogId, setCatalogId] = useState('');
   const [pageToken, setPageToken] = useState<string>();
   const installations = useQuery<TargetInstallationPage>((active) => api.installationPage(
@@ -559,12 +650,12 @@ function InstallationsPage({ api, revision }: { api: ApiClient; revision: number
       <div className="row-actions"><label>configuration（JSON 对象）<textarea aria-label="实例配置值" rows={4} value={configText} spellCheck={false} onChange={(event) => setConfigText(event.target.value)} /></label>
         <button className="secondary" onClick={() => void updateConfig()} disabled={!installationId || !instanceId}>更新 configuration</button></div>
     </section>
-    <OperationTracker api={api} operation={operation} scope={trackerScope} />
-    <LifecyclePanel api={api} />
+    <OperationTracker api={api} operation={operation} scope={trackerScope} stream={stream} />
+    <LifecyclePanel api={api} stream={stream} />
   </div>;
 }
 
-function OperationsPage({ api, revision }: { api: ApiClient; revision: number }) {
+function OperationsPage({ api, revision, stream }: { api: ApiClient; revision: number; stream?: OperationsStreamConfig }) {
   const [owner, setOwner] = useState<'runtime' | 'scheduler' | 'model'>('runtime');
   const [operationId, setOperationId] = useState('');
   const [scope, setScope] = useState(() => scopeText(defaultScope()));
@@ -599,7 +690,7 @@ function OperationsPage({ api, revision }: { api: ApiClient; revision: number })
       {notFound && <p className="empty">owner 返回 NOT_FOUND：操作不存在或当前 scope 不可见；不要据此推断执行失败。</p>}
       {failure && <FailureNotice failure={failure} />}
     </section>
-    <OperationTracker api={api} operation={operation} scope={parsedScope} />
+    <OperationTracker api={api} operation={operation} scope={parsedScope} stream={stream} />
   </div>;
 }
 
@@ -671,7 +762,7 @@ function TasksPage({ api, revision }: { api: ApiClient; revision: number }) {
   </div>;
 }
 
-function ModelsPage({ api, permissions, revision }: { api: ApiClient; permissions: string[]; revision: number }) {
+function ModelsPage({ api, permissions, revision, stream }: { api: ApiClient; permissions: string[]; revision: number; stream?: OperationsStreamConfig }) {
   const [scope, setScope] = useState(() => scopeText(defaultScope()));
   const parsedScope = useMemo(() => parseScopeText(scope), [scope]);
   const [modelId, setModelId] = useState('');
@@ -740,7 +831,7 @@ function ModelsPage({ api, permissions, revision }: { api: ApiClient; permission
       </tbody></table></div>
       <button className="primary" onClick={() => void save()} disabled={!canManage}>保存配置（expected_version={configuration.config.version}）</button>
     </section>}
-    <OperationTracker api={api} operation={operation} scope={parsedScope} />
+    <OperationTracker api={api} operation={operation} scope={parsedScope} stream={stream} />
   </section></div>;
 }
 
@@ -873,16 +964,16 @@ export function PrincipalsDirectory({ api, revision }: { api: ApiClient; revisio
   </section>;
 }
 
-export function P12LiveView({ page, api, permissions, revision }: {
-  page: P12PageKey; api: ApiClient; permissions: string[]; revision: number;
+export function P12LiveView({ page, api, permissions, revision, stream }: {
+  page: P12PageKey; api: ApiClient; permissions: string[]; revision: number; stream?: OperationsStreamConfig;
 }) {
   switch (page) {
     case 'p12-overview': return <OverviewPage api={api} permissions={permissions} revision={revision} />;
-    case 'p12-accounts': return <AccountsPage api={api} permissions={permissions} revision={revision} />;
-    case 'p12-installations': return <InstallationsPage api={api} revision={revision} />;
-    case 'p12-operations': return <OperationsPage api={api} revision={revision} />;
+    case 'p12-accounts': return <AccountsPage api={api} permissions={permissions} revision={revision} stream={stream} />;
+    case 'p12-installations': return <InstallationsPage api={api} revision={revision} stream={stream} />;
+    case 'p12-operations': return <OperationsPage api={api} revision={revision} stream={stream} />;
     case 'p12-tasks': return <TasksPage api={api} revision={revision} />;
-    case 'p12-model-config': return <ModelsPage api={api} permissions={permissions} revision={revision} />;
+    case 'p12-model-config': return <ModelsPage api={api} permissions={permissions} revision={revision} stream={stream} />;
     case 'p12-health': return <HealthPage api={api} revision={revision} />;
   }
 }

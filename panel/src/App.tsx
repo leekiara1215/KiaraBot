@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ApiClient, ApiError, type Health, type Page as ApiPage, type TokenPair, type Schemas } from './api/client';
 import { ControlStream, type SocketFactory, type StreamStatus } from './stream/control-stream';
+import type { OperationsStreamConfig } from './stream/target-stream';
 import { describeError, FailureNotice, formatTime, label, StateTag, type Failure } from './ui';
 import { PluginsView } from './views/plugins';
 import { SessionsPanel } from './views/sessions';
@@ -123,37 +124,71 @@ export function App({ api, socketFactory, streamUrl = '/ws/control', mock = fals
   const [authError, setAuthError] = useState('');
   const [principal, setPrincipal] = useState<Schemas['Principal']>();
   const [streamReady, setStreamReady] = useState(false);
+  const [lastConfirmedAt, setLastConfirmedAt] = useState<number>();
+  const tokenRef = useRef<string>(); const previousToken = useRef<string>();
+  const streamRef = useRef<ControlStream>();
+  const authenticated = tokens !== undefined;
   const expire = useCallback(() => {
     api.setToken(); setTokens(undefined); setPrincipal(undefined); setStreamReady(false);
     setPage('overview'); setAuthError('会话已失效，请重新登录');
   }, [api]);
   useEffect(() => { api.setUnauthorizedHandler(expire); return () => api.setUnauthorizedHandler(); }, [api, expire]);
   useEffect(() => {
-    if (!tokens) return;
+    if (!authenticated) return;
     let active = true;
     api.principal().then((value) => { if (active) setPrincipal(value); }).catch(() => { if (active) expire(); });
     return () => { active = false; };
-  }, [api, tokens, expire]);
+  }, [api, authenticated, expire]);
   const [status, setStatus] = useState<StreamStatus>('disconnected'); const [revision, setRevision] = useState(0);
   const [streamAttempted, setStreamAttempted] = useState(false);
   const [streamFallback, setStreamFallback] = useState(false);
+  // Keep the provider current; an actual rotation re-authenticates the existing session (resume
+  // keeps the reference cursor) instead of continuing to use the old access token.
   useEffect(() => {
-    if (!tokens) return;
+    const token = tokens?.access_token;
+    if (!token) return;
+    const changed = previousToken.current !== undefined && previousToken.current !== token;
+    previousToken.current = token; tokenRef.current = token;
+    if (changed) streamRef.current?.reauthenticate();
+  }, [tokens]);
+  // One reference stream per logged-in session. Token rotation updates the provider instead of
+  // recreating the stream, so the resumed session/sequence survives the rotation.
+  useEffect(() => {
+    if (!authenticated) return;
     const stream = new ControlStream({
-      url: streamUrl, accessToken: tokens.access_token, factory: socketFactory,
-      onStatus: (value) => { setStatus(value); setStreamReady(value === 'connected'); if (value === 'connecting') setStreamAttempted(true); if (value === 'connected') { setStreamAttempted(false); setStreamFallback(false); } if (terminal.has(value)) setStreamReady(false); },
-      onUnauthorized: expire, onRefresh: () => setRevision((n) => n + 1),
+      url: streamUrl, accessToken: () => tokenRef.current ?? '', factory: socketFactory,
+      onStatus: (value) => {
+        setStatus(value); setStreamReady(value === 'connected');
+        if (value === 'connecting') setStreamAttempted(true);
+        if (value === 'connected') { setStreamAttempted(false); setStreamFallback(false); setLastConfirmedAt(Date.now()); }
+        if (terminal.has(value)) setStreamReady(false);
+      },
+      onUnauthorized: expire,
+      onRefresh: () => { setLastConfirmedAt(Date.now()); setRevision((n) => n + 1); },
     });
-    stream.start(); return () => stream.stop();
-  }, [tokens, socketFactory, streamUrl, expire]);
+    streamRef.current = stream; stream.start();
+    return () => { streamRef.current = undefined; stream.stop(); };
+  }, [authenticated, socketFactory, streamUrl, expire]);
+  // Keep the provider current; an actual rotation re-authenticates the existing session (resume
+  // keeps the reference cursor) instead of continuing to use the old access token.
   useEffect(() => {
-    if (!tokens) return;
+    const token = tokens?.access_token;
+    if (!token) return;
+    const changed = previousToken.current !== undefined && previousToken.current !== token;
+    previousToken.current = token; tokenRef.current = token;
+    if (changed) streamRef.current?.reauthenticate();
+  }, [tokens]);
+  useEffect(() => {
+    if (!authenticated) return;
     if (status === 'connected') { setStreamFallback(false); return; }
     if (status === 'disconnected' && streamAttempted) setStreamFallback(true);
-  }, [status, streamAttempted, tokens]);
+  }, [status, streamAttempted, authenticated]);
   useEffect(() => {
     if (streamFallback) setRevision((n) => n + 1);
   }, [streamFallback]);
+  const streamConfig = useMemo<OperationsStreamConfig>(() => ({
+    wsUrl: streamUrl, socketFactory, tokenProvider: () => tokenRef.current ?? '',
+  }), [socketFactory, streamUrl]);
   useEffect(() => {
     if (!tokens) return;
     let active = true;
@@ -174,8 +209,8 @@ export function App({ api, socketFactory, streamUrl = '/ws/control', mock = fals
   const pageLabel = page === 'p12-overview' ? (mock ? 'P12 预研' : 'P12 总览') : nav.find((item) => item.key === page)?.label ?? P12_PAGES[page as P12Page]?.label;
   const isP12 = P12_PAGE_KEYS.includes(page as P12PageKey);
   const permissions = principal?.permissions ?? [];
-  const restAvailable = streamReady || streamFallback;
-  return <div className="shell"><aside className="sidebar"><div className="brand"><span className="brand-icon">K</span><div><strong>KiaraBot</strong><small>CONTROL PLANE</small></div></div><div className="nav-label">工作空间</div><nav aria-label="主导航">{visibleNav.map((item) => <button key={item.key} className={page === item.key ? 'nav-item selected' : 'nav-item'} onClick={() => setPage(item.key)}><span aria-hidden="true">{item.icon}</span>{item.label}</button>)}{visibleP12Nav.length > 0 && <><div className="nav-label">{mock ? 'P12 预览（未接线）' : 'P12 管理'}</div>{visibleP12Nav.map((item) => <button key={item.key} className={page === item.key ? 'nav-item selected' : 'nav-item'} onClick={() => setPage(item.key)}><span aria-hidden="true">{item.icon}</span>{item.label}</button>)}</>}</nav><div className="sidebar-bottom"><span className={`dot ${status}`} /> <span>{statusText[status]}</span></div></aside><main><header className="topbar"><div><span className="crumb">工作空间 / </span><strong>{pageLabel}</strong></div><div className="top-actions"><span>{principal?.roles.join('、')}</span>{mock && <span className="mock-badge">MOCK 环境</span>}<button className="text-button" onClick={async () => { try { if (principal) await api.revokeSession(principal.session_id); } finally { api.setToken(); setTokens(undefined); setPrincipal(undefined); setStreamReady(false); setPage('overview'); } }}>退出登录</button></div></header><div className="content"><div className="page-title"><div><p className="eyebrow">KIARABOT CONTROL</p><h1>{pageLabel}</h1><p className="muted">{page === 'overview' ? '系统运行状态与服务概览' : isP12 ? mock ? 'P12 预研骨架：仅契约与 mock 预览，不发起真实请求' : 'P12 live：契约端点真实请求；P12c 后端并行接入' : '来自控制 API 的最新数据；服务端仍独立鉴权与校验'}</p></div><button className="secondary" onClick={() => setRevision((n) => n + 1)}>↻ 刷新</button></div><div role="status" className={`connection ${status}`}><span className={`dot ${status}`} />{statusText[status]}</div>{streamFallback && !streamReady && <div role="alert" className="failure unavailable"><strong>实时连接不可用，当前为 REST 快照（非最新）</strong><p>WS 未建立或已断开；页面已重新拉取 REST 权威快照并标注为非最新，重连收到 SESSION_READY 后会再次刷新。</p></div>}{terminal.has(status) ? <div role="alert" className="failure forbidden"><strong>实时连接不可用</strong><p>{statusText[status]}。REST 视图需要先建立事件流；请检查权限、限流或服务端状态后刷新重试。</p></div> : (!restAvailable || !principal) ? <p className="empty">正在建立会话…（首个 SESSION_READY 之前不装载 REST 视图）</p> : page === 'overview' ? <Overview api={api} revision={revision} /> : page === 'plugins' ? <PluginsView api={api} permissions={permissions} revision={revision} /> : page === 'permissions' ? <PermissionsView api={api} revision={revision} permissions={permissions} /> : page === 'actions' ? <ActionsView api={api} permissions={permissions} /> : (page === 'logs' || page === 'audit') ? <LogsAuditView key={page} api={api} kind={page} revision={revision} /> : isP12 ? (mock ? <P12PreviewView key={page} page={page as P12PageKey} mock /> : <P12LiveView key={page} page={page as P12PageKey} api={api} permissions={permissions} revision={revision} />) : <ResourceView key={page} api={api} page={page as LegacyPage} revision={revision} />}</div></main></div>;
+  const confirmedLabel = lastConfirmedAt ? formatTime(new Date(lastConfirmedAt).toISOString()) : '尚未确认';
+  return <div className="shell"><aside className="sidebar"><div className="brand"><span className="brand-icon">K</span><div><strong>KiaraBot</strong><small>CONTROL PLANE</small></div></div><div className="nav-label">工作空间</div><nav aria-label="主导航">{visibleNav.map((item) => <button key={item.key} className={page === item.key ? 'nav-item selected' : 'nav-item'} onClick={() => setPage(item.key)}><span aria-hidden="true">{item.icon}</span>{item.label}</button>)}{visibleP12Nav.length > 0 && <><div className="nav-label">{mock ? 'P12 预览（未接线）' : 'P12 管理'}</div>{visibleP12Nav.map((item) => <button key={item.key} className={page === item.key ? 'nav-item selected' : 'nav-item'} onClick={() => setPage(item.key)}><span aria-hidden="true">{item.icon}</span>{item.label}</button>)}</>}</nav><div className="sidebar-bottom"><span className={`dot ${status}`} /> <span>{statusText[status]}</span></div></aside><main><header className="topbar"><div><span className="crumb">工作空间 / </span><strong>{pageLabel}</strong></div><div className="top-actions"><span>{principal?.roles.join('、')}</span>{mock && <span className="mock-badge">MOCK 环境</span>}<button className="text-button" onClick={async () => { try { if (principal) await api.revokeSession(principal.session_id); } finally { api.setToken(); setTokens(undefined); setPrincipal(undefined); setStreamReady(false); setPage('overview'); } }}>退出登录</button></div></header><div className="content"><div className="page-title"><div><p className="eyebrow">KIARABOT CONTROL</p><h1>{pageLabel}</h1><p className="muted">{page === 'overview' ? '系统运行状态与服务概览' : isP12 ? mock ? 'P12 预研骨架：仅契约与 mock 预览，不发起真实请求' : 'P12 live：契约端点真实请求；P12c 后端并行接入' : '来自控制 API 的最新数据；服务端仍独立鉴权与校验'}</p></div><button className="secondary" onClick={() => setRevision((n) => n + 1)}>↻ 刷新</button></div><div role="status" className={`connection ${status}`}><span className={`dot ${status}`} />{statusText[status]}</div>{!streamReady && <div role="alert" className="failure unavailable"><strong>实时连接不可用，当前为 REST 快照（非最新）</strong><p>实时事件流未建立或已中断，页面按服务端独立授权的 REST 权威快照继续展示（不阻塞 REST 视图）；最后确认：{confirmedLabel}。重连/重新同步成功后会再次刷新并更新时间。</p></div>}{terminal.has(status) && <div role="alert" className="failure forbidden"><strong>实时事件流已停止</strong><p>{statusText[status]}。自动重连已停止；REST 视图不受影响，可继续按权限使用。请检查权限、限流或服务端状态后再恢复实时视图。</p></div>}{!principal ? <p className="empty">正在加载会话…</p> : page === 'overview' ? <Overview api={api} revision={revision} /> : page === 'plugins' ? <PluginsView api={api} permissions={permissions} revision={revision} /> : page === 'permissions' ? <PermissionsView api={api} revision={revision} permissions={permissions} /> : page === 'actions' ? <ActionsView api={api} permissions={permissions} /> : (page === 'logs' || page === 'audit') ? <LogsAuditView key={page} api={api} kind={page} revision={revision} /> : isP12 ? (mock ? <P12PreviewView key={page} page={page as P12PageKey} mock /> : <P12LiveView key={page} page={page as P12PageKey} api={api} permissions={permissions} revision={revision} stream={streamConfig} />) : <ResourceView key={page} api={api} page={page as LegacyPage} revision={revision} />}</div></main></div>;
 }
 function Login({ api, onLogin, mock, initialError }: { api: ApiClient; onLogin: (tokens: TokenPair) => void; mock: boolean; initialError: string }) {
   const [username, setUsername] = useState(''); const [password, setPassword] = useState(''); const [error, setError] = useState(initialError); const [busy, setBusy] = useState(false);

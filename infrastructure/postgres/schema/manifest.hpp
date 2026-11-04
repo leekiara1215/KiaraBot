@@ -34,15 +34,18 @@ SELECT md5(string_agg(descriptor,E'\n' ORDER BY descriptor)) FROM (
 inline constexpr std::string_view descriptor(core::target::Service owner) {
   switch (owner) {
   case core::target::Service::Identity:
-    return "decc8401bef9d3ac3c92116e7608b2f4";
+    // v1.2 owner-local observation feed journal (logs family).
+    return "5ce460015b05a6557f576b19faa0290a";
   case core::target::Service::Runtime:
     // BOOT-02 bootstrap delivery intent/receipt + bridge credential version; HOST-03 Host
-    // admission gate row.
-    return "adde0280cf84974080615363dfcb3da1";
+    // admission gate row; v1.2 owner-local observation feed journal (logs + messages families).
+    return "b5f53a0b1372606210b174e124e96e31";
   case core::target::Service::Scheduler:
-    return "1d2af0ada31b0233a160a34715870dc2";
+    // v1.2 owner-local observation feed journal (tasks family).
+    return "f036ea3b2d80181268d281ee2876b1c3";
   case core::target::Service::Model:
-    return "51d9e7782bb74769dd2a1cc5fee58408";
+    // v1.2 model_intents error CHECK allows the domain InvalidArgument encoding (0).
+    return "e556cdf66c22626e4a5b26f621fde42e";
   default:
     return {};
   }
@@ -50,11 +53,11 @@ inline constexpr std::string_view descriptor(core::target::Service owner) {
 inline constexpr int relation_count(core::target::Service owner) {
   switch (owner) {
   case core::target::Service::Identity:
-    return 135;
+    return 141;
   case core::target::Service::Runtime:
-    return 167;
+    return 173;
   case core::target::Service::Scheduler:
-    return 91;
+    return 97;
   case core::target::Service::Model:
     return 85;
   default:

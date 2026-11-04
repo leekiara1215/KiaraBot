@@ -5,6 +5,7 @@
 
 #include "identity_security.hpp"
 #include "kiarabot/core/domain/target/foundation.hpp"
+#include "observation_feed.hpp"
 #include "operation_observations.hpp"
 #include "runtime_actions.hpp"
 #include "runtime_bootstrap_deliveries.hpp"
@@ -51,6 +52,7 @@ CREATE UNIQUE INDEX principals_binding_unique ON kiarabot.principals(binding_kin
   WHERE binding_kind IS NOT NULL AND binding_id IS NOT NULL;
 )sql";
     sql += kIdentitySecurity;
+    sql += kObservationFeeds;
     break;
   case core::target::Service::Runtime:
     sql += kRuntimeManagementReceipts;
@@ -110,6 +112,7 @@ CREATE INDEX lifecycle_tombstones_purge ON kiarabot.lifecycle_tombstones(state,p
     sql += kRuntimeHostCommands;
     sql += kRuntimeStorage;
     sql += kRuntimeBootstrapDeliveries;
+    sql += kObservationFeeds;
     break;
   case core::target::Service::Scheduler:
     relation("tasks", "owner,task_id");
@@ -130,6 +133,7 @@ CREATE TABLE kiarabot.scheduler_quota_counters (
 ALTER TABLE kiarabot.occurrences ADD UNIQUE(owner,task_id);
 ALTER TABLE kiarabot.occurrences ADD FOREIGN KEY(owner,task_id,installation,occurrence_id) REFERENCES kiarabot.tasks(owner,task_id,installation,occurrence_id);
 )sql";
+    sql += kObservationFeeds;
     break;
   case core::target::Service::Model:
     // P03 declaration-level intent relation extended in place by P11; see common.hpp.

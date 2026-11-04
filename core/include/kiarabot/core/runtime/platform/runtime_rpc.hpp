@@ -8,6 +8,7 @@
 #include "kiarabot/core/application/target/operation_observation_application.hpp"
 #include "kiarabot/core/application/target/runtime_action_application.hpp"
 #include "kiarabot/core/application/target/runtime_audit_application.hpp"
+#include "kiarabot/core/application/target/runtime_host_application.hpp"
 #include "kiarabot/core/application/target/runtime_resource_application.hpp"
 #include "kiarabot/core/application/target/runtime_resources/bootstrap.hpp"
 #include "kiarabot/core/application/target/runtime_storage_application.hpp"
@@ -59,6 +60,10 @@ struct RuntimeRpcOptions {
   // Verified Control platform peer: actual inbound mTLS leaf fingerprint plus explicit deployment
   // allowlist. Absent means delivery reports/queries are refused (fail closed, never implicit).
   RuntimePlatformPeerAuthorizer control_peer;
+  // HOST-03 Runtime-owned Host admission gate. Null keeps SetHostAdmissionGate at
+  // CAPABILITY_NOT_SUPPORTED; the application validates the actual Host leaf allowlist, live
+  // HostBridge fence, current Identity decision and monotonic persisted gate version.
+  target::RuntimeHostGateApplication* host_gate = nullptr;
 };
 
 // Transport adapter for the P05 production unary surface: accounts, explicit bindings, plugin

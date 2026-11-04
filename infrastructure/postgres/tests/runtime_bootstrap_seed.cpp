@@ -65,10 +65,13 @@ int main(int argc, char* argv[]) {
                                    "Bootstrap One", {1},  target::LifecycleState::Active};
     const target::BotAccount second{second_account,  "qq", "bootstrap-2",
                                     "Bootstrap Two", {1},  target::LifecycleState::Active};
+    // Disabled pre-bindings mirror an offline A1 deployment: BindAdapter creates the first active
+    // binding (version 1 -> 2) and every later unbind can CAS on the committed version. An already
+    // active binding would reject the first bind with CONFLICT by design.
     const target::AdapterBindingRecord first_binding{
-        account, adapter_instance, {1}, target::LifecycleState::Active};
+        account, adapter_instance, {1}, target::LifecycleState::Disabled};
     const target::AdapterBindingRecord second_binding{
-        second_account, second_adapter_instance, {1}, target::LifecycleState::Active};
+        second_account, second_adapter_instance, {1}, target::LifecycleState::Disabled};
     const target::PluginInstallation installed{
         installation, plugin_type, {1}, target::LifecycleState::Active, {}};
     if (std::holds_alternative<target::Failure>(work->accounts().save(first, std::nullopt)) ||
