@@ -6,6 +6,7 @@
 
 #include <pqxx/pqxx>
 
+#include "kiarabot/core/application/target/runtime_resource_application.hpp"
 #include "kiarabot/infrastructure/postgres/factories.hpp"
 #include "typed_work_checks.hpp"
 
@@ -56,6 +57,156 @@ void assert_no_orphans(const DatabaseConfig& config) {
                 .as<int>() == 0,
         "P05 orphan supplement survived");
 }
+// Only the pure dependency is injected: business writes and audit use the production PG UoW.
+class FailingSecrets final : public t::RuntimeSecretPort {
+public:
+  bool fail_credential = true;
+  t::Outcome<std::string> bootstrap_credential() override {
+    if (fail_credential)
+      return t::rejected(t::ErrorCode::UpstreamUnavailable);
+    return std::string(64, 'a');
+  }
+  t::Outcome<std::array<std::byte, 32>> opaque_secret() override {
+    return t::rejected(t::ErrorCode::UpstreamUnavailable);
+  }
+  t::Outcome<t::Sha256Digest> sha256(std::string_view) override {
+    return t::rejected(t::ErrorCode::UpstreamUnavailable);
+  }
+};
+class UnusedIds final : public t::RuntimeIdPort {
+public:
+  t::Outcome<t::ResourceId> account_id() override {
+    return t::rejected(t::ErrorCode::Internal);
+  }
+  t::Outcome<t::InstallationId> installation_id() override {
+    return t::rejected(t::ErrorCode::Internal);
+  }
+  t::Outcome<t::InstanceId> instance_id() override {
+    return t::rejected(t::ErrorCode::Internal);
+  }
+  t::Outcome<t::InstanceId> adapter_instance_id() override {
+    return t::rejected(t::ErrorCode::Internal);
+  }
+  t::Outcome<t::ConnectionId> connection_id() override {
+    return t::rejected(t::ErrorCode::Internal);
+  }
+  t::Outcome<t::OperationId> operation_id() override {
+    return t::rejected(t::ErrorCode::Internal);
+  }
+  t::Outcome<t::RuntimeEpoch> runtime_epoch() override {
+    return t::rejected(t::ErrorCode::Internal);
+  }
+  t::Outcome<std::string> snapshot_id() override {
+    return t::rejected(t::ErrorCode::Internal);
+  }
+};
+class OnlineAllow final : public t::RuntimeAuthorizationPort {
+public:
+  bool available() const noexcept override {
+    return true;
+  }
+  t::Outcome<t::RuntimeAuthorizationDecision>
+  check(const t::RuntimeAuthorizationRequest& request) override {
+    return t::RuntimeAuthorizationDecision{true,
+                                           request.authentication.subject,
+                                           request.permission,
+                                           request.scope,
+                                           {1},
+                                           std::chrono::system_clock::now(),
+                                           {}};
+  }
+};
+void check_pure_port_failure(t::RuntimeUnitOfWorkFactory& factory,
+                             const DatabaseConfig& migration) {
+  const t::ResourceId account_id{"95000000-0000-4000-8000-000000000001"};
+  const t::InstallationId installation_id{"95000000-0000-4000-8000-000000000002"};
+  const t::InstanceId instance_id{"95000000-0000-4000-8000-000000000003"};
+  auto work = take(factory.begin());
+  take(work->accounts().save(
+      {account_id, "pure-fault", "remote", "original", {1}, t::LifecycleState::Active}, {}));
+  take(work->installations().save({installation_id, {"pure-type"}, {1}, t::LifecycleState::Active},
+                                  {}));
+  take(work->instances().save({instance_id,
+                               installation_id,
+                               {"pure-type"},
+                               {1},
+                               {0},
+                               {},
+                               {1},
+                               t::LifecycleState::Active,
+                               t::ResourceId{"pure-host"},
+                               t::DesiredState::Stopped},
+                              {}));
+  commit(*work);
+  work.reset();
+  UnusedIds ids;
+  FailingSecrets secrets;
+  OnlineAllow authorization;
+  auto application =
+      take(t::make_runtime_resource_application({factory, ids, secrets, authorization, {}}));
+  t::CommandContext context;
+  const t::SubjectId subject{"95000000-0000-4000-8000-000000000004"};
+  const auto now = std::chrono::system_clock::now();
+  context.authentication = {subject,
+                            t::PlatformPeer{t::Service::Control, subject},
+                            t::Service::Runtime,
+                            {},
+                            {},
+                            {1},
+                            now - std::chrono::seconds{1},
+                            now + std::chrono::seconds{60}};
+  context.trace_id = "95000000-0000-4000-8000-000000000005";
+  context.deadline = now + std::chrono::seconds{30};
+  context.idempotency_key = "pure-port-failure-key";
+  auto require_rejection = [&](const auto& result) {
+    check(std::holds_alternative<t::Failure>(result) &&
+              std::get<t::Failure>(result).code == t::ErrorCode::UpstreamUnavailable,
+          "P05 pure-port rejection changed by rejection audit failure");
+  };
+  for (const bool fail_credential : {true, false}) {
+    secrets.fail_credential = fail_credential;
+    context.request_id = fail_credential ? "95000000-0000-4000-8000-000000000006"
+                                         : "95000000-0000-4000-8000-000000000007";
+    context.method = "kiarabot.v1.RuntimeService/BindAdapter";
+    require_rejection(
+        application->bind_adapter({context, account_id, {"95000000-0000-4000-8000-000000000008"}}));
+    work = take(factory.begin());
+    check(!take(work->adapter_bindings().find(account_id)) &&
+              !take(work->operations().find({context.request_id})),
+          "P05 pure bootstrap/hash failure committed binding or operation");
+    work->rollback();
+  }
+  // Deny only the rejection-audit INSERT after startup, then restore the exact runtime grant.
+  {
+    pqxx::connection connection(dsn(migration));
+    pqxx::work tx(connection);
+    tx.exec("REVOKE INSERT ON kiarabot.audit_entries FROM " +
+            tx.quote_name(migration.runtime_role));
+    tx.commit();
+  }
+  context.request_id = "95000000-0000-4000-8000-000000000009";
+  context.method = "kiarabot.v1.RuntimeService/SetDesiredState";
+  context.expected_version = t::ResourceVersion{1};
+  require_rejection(
+      application->apply_desired_state({context, instance_id, t::DesiredState::Running}));
+  {
+    pqxx::connection connection(dsn(migration));
+    pqxx::work tx(connection);
+    tx.exec("GRANT INSERT ON kiarabot.audit_entries TO " + tx.quote_name(migration.runtime_role));
+    tx.commit();
+  }
+  work = take(factory.begin());
+  const auto instance = take(work->instances().find(instance_id));
+  const t::ReceiptKey key{subject,
+                          context.method,
+                          {t::ResourceKind::Instance, {instance_id.value}},
+                          context.idempotency_key};
+  check(instance && instance->version.value == 1 && instance->desired == t::DesiredState::Stopped &&
+            !take(work->operations().find({context.request_id})) &&
+            !take(work->receipts().find(key)) && !take(work->management_receipt(key)),
+        "P05 pure host hash failure committed partial state");
+  work->rollback();
+}
 } // namespace
 
 void check_runtime_management_receipts(const DatabaseConfig& runtime,
@@ -63,6 +214,7 @@ void check_runtime_management_receipts(const DatabaseConfig& runtime,
                                        const std::filesystem::path& root,
                                        std::uint16_t proxy_port) {
   auto factory = take(open_runtime(runtime));
+  check_pure_port_failure(*factory, migration);
   auto work = take(factory->begin());
   const auto now = take(work->current_time());
   const t::ResourceRef resource{t::ResourceKind::Account, {"management-account"}};
@@ -84,6 +236,11 @@ void check_runtime_management_receipts(const DatabaseConfig& runtime,
   const auto loaded = take(work->management_receipt(key));
   check(loaded && loaded->operation == supplement.operation && !loaded->committed_state,
         "P05 restart lost immutable original operation");
+  auto another_subject = key;
+  another_subject.subject = {"management-other-actor"};
+  check(!take(work->receipts().find(another_subject)) &&
+            !take(work->management_receipt(another_subject)),
+        "P05 another subject read original receipt");
   work->rollback();
 
   // Same parent key cannot replace its immutable supplement; conflicting arguments never write.

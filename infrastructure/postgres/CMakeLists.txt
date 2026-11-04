@@ -242,7 +242,8 @@ if(UNIX)
   add_executable(kiarabot_postgres_database_test
     tests/database_test.cpp tests/common_work_checks.cpp tests/typed_work_checks.cpp
     tests/runtime_management_receipt_checks.cpp)
-  target_link_libraries(kiarabot_postgres_database_test PRIVATE kiarabot_postgres libpqxx::pqxx)
+  target_link_libraries(kiarabot_postgres_database_test PRIVATE
+    kiarabot_postgres libpqxx::pqxx kiarabot_runtime_resource_application)
   kiarabot_platform_warnings(kiarabot_postgres_database_test)
   # One process owns setup, faults and cleanup; parallel runs have private clusters.
   add_test(NAME p03_postgres_database COMMAND "${KIARABOT_TARGET_PYTHON}"
