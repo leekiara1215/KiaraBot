@@ -896,7 +896,7 @@ paths:
       x-contract-status: "not_implemented"
       description: "Exact registered catalog is required; return only the current subject independently granted child resources of this method kind. Catalog permission is not a grant to every child. Snapshot covers only the selected delegation child scope. Separate batches have independent pagination and do not imply global discovery. Immutable 10 minute snapshot; no global totals or empty-scope wildcard."
       parameters:
-        - {"name":"scope","in":"query","required":false,"description":"Explicit child selection for this independent snapshot, at most 127 exact child references. Omitted selection uses current same-permission assignments and fails RATE_LIMITED if it exceeds that limit. Catalog authorization is always checked separately.","content":{"application/json":{"schema":{"$ref":"#/components/schemas/ResourceScope"}}}}
+        - {"name":"scope","in":"query","required":false,"description":"Explicit child selection for this independent snapshot, at most 127 exact child references. Omitted selection uses current same-permission assignments and fails RATE_LIMITED if it exceeds that limit. Catalog authorization is always checked separately.","content":{"application/json":{"schema":{"$ref":"#/components/schemas/TargetResourceScope"}}}}
         - {"name":"catalog","in":"query","required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/TargetCatalogRef"}}}}
         - {"$ref":"#/components/parameters/PageSize"}
         - {"$ref":"#/components/parameters/PageToken"}
@@ -1218,7 +1218,7 @@ paths:
       x-contract-status: "not_implemented"
       description: "Exact registered catalog is required; return only the current subject independently granted child resources of this method kind. Catalog permission is not a grant to every child. Snapshot covers only the selected delegation child scope. Separate batches have independent pagination and do not imply global discovery. Immutable 10 minute snapshot; no global totals or empty-scope wildcard."
       parameters:
-        - {"name":"scope","in":"query","required":false,"description":"Explicit child selection for this independent snapshot, at most 127 exact child references. Omitted selection uses current same-permission assignments and fails RATE_LIMITED if it exceeds that limit. Catalog authorization is always checked separately.","content":{"application/json":{"schema":{"$ref":"#/components/schemas/ResourceScope"}}}}
+        - {"name":"scope","in":"query","required":false,"description":"Explicit child selection for this independent snapshot, at most 127 exact child references. Omitted selection uses current same-permission assignments and fails RATE_LIMITED if it exceeds that limit. Catalog authorization is always checked separately.","content":{"application/json":{"schema":{"$ref":"#/components/schemas/TargetResourceScope"}}}}
         - {"name":"catalog","in":"query","required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/TargetCatalogRef"}}}}
         - {"$ref":"#/components/parameters/PageSize"}
         - {"$ref":"#/components/parameters/PageToken"}
@@ -3329,7 +3329,7 @@ paths:
       x-contract-status: "not_implemented"
       description: "Exact registered catalog is required; return only the current subject independently granted child resources of this method kind. Catalog permission is not a grant to every child. Snapshot covers only the selected delegation child scope. Separate batches have independent pagination and do not imply global discovery. Immutable 10 minute snapshot; no global totals or empty-scope wildcard."
       parameters:
-        - {"name":"scope","in":"query","required":false,"description":"Explicit child selection for this independent snapshot, at most 127 exact child references. Omitted selection uses current same-permission assignments and fails RATE_LIMITED if it exceeds that limit. Catalog authorization is always checked separately.","content":{"application/json":{"schema":{"$ref":"#/components/schemas/ResourceScope"}}}}
+        - {"name":"scope","in":"query","required":false,"description":"Explicit child selection for this independent snapshot, at most 127 exact child references. Omitted selection uses current same-permission assignments and fails RATE_LIMITED if it exceeds that limit. Catalog authorization is always checked separately.","content":{"application/json":{"schema":{"$ref":"#/components/schemas/TargetResourceScope"}}}}
         - {"name":"catalog","in":"query","required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/TargetCatalogRef"}}}}
         - {"$ref":"#/components/parameters/PageSize"}
         - {"$ref":"#/components/parameters/PageToken"}
@@ -3377,7 +3377,7 @@ paths:
       x-contract-status: "not_implemented"
       description: "Exact registered catalog is required; return only the current subject independently granted child resources of this method kind. Catalog permission is not a grant to every child. Snapshot covers only the selected delegation child scope. Separate batches have independent pagination and do not imply global discovery. Immutable 10 minute snapshot; no global totals or empty-scope wildcard."
       parameters:
-        - {"name":"scope","in":"query","required":false,"description":"Explicit child selection for this independent snapshot, at most 127 exact child references. Omitted selection uses current same-permission assignments and fails RATE_LIMITED if it exceeds that limit. Catalog authorization is always checked separately.","content":{"application/json":{"schema":{"$ref":"#/components/schemas/ResourceScope"}}}}
+        - {"name":"scope","in":"query","required":false,"description":"Explicit child selection for this independent snapshot, at most 127 exact child references. Omitted selection uses current same-permission assignments and fails RATE_LIMITED if it exceeds that limit. Catalog authorization is always checked separately.","content":{"application/json":{"schema":{"$ref":"#/components/schemas/TargetResourceScope"}}}}
         - {"name":"catalog","in":"query","required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/TargetCatalogRef"}}}}
         - {"$ref":"#/components/parameters/PageSize"}
         - {"$ref":"#/components/parameters/PageToken"}
@@ -3425,7 +3425,7 @@ paths:
       x-contract-status: "not_implemented"
       description: "Exact registered catalog is required; return only the current subject independently granted child resources of this method kind. Catalog permission is not a grant to every child. Snapshot covers only the selected delegation child scope. Separate batches have independent pagination and do not imply global discovery. Snapshot covers only the selected delegation child scope. Separate batches have independent pagination and do not imply global discovery. Immutable 10 minute snapshot; no global totals or empty-scope wildcard."
       parameters:
-        - {"name":"scope","in":"query","required":false,"description":"Explicit child selection for this independent snapshot, at most 127 exact child references. Omitted selection uses current same-permission assignments and fails RATE_LIMITED if it exceeds that limit. Catalog authorization is always checked separately.","content":{"application/json":{"schema":{"$ref":"#/components/schemas/ResourceScope"}}}}
+        - {"name":"scope","in":"query","required":false,"description":"Explicit child selection for this independent snapshot, at most 127 exact child references. Omitted selection uses current same-permission assignments and fails RATE_LIMITED if it exceeds that limit. Catalog authorization is always checked separately.","content":{"application/json":{"schema":{"$ref":"#/components/schemas/TargetResourceScope"}}}}
         - {"name":"catalog","in":"query","required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/TargetCatalogRef"}}}}
         - {"$ref":"#/components/parameters/PageSize"}
         - {"$ref":"#/components/parameters/PageToken"}
