@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <map>
 #include <optional>
+#include <set>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -118,6 +119,31 @@ std::optional<wire::ResourceScope> parse_scope(const std::map<std::string, std::
       scope.resources_size() != 1) {
     return std::nullopt;
   }
+  return scope;
+}
+bool catalog_uuid(std::string_view value) {
+  if (value.size() != 36) {
+    return false;
+  }
+  for (std::size_t index = 0; index < value.size(); ++index) {
+    const auto character = value[index];
+    if (index == 8 || index == 13 || index == 18 || index == 23) {
+      if (character != '-') {
+        return false;
+      }
+    } else if (!((character >= '0' && character <= '9') ||
+                 (character >= 'a' && character <= 'f'))) {
+      return false;
+    }
+  }
+  return true;
+}
+bool valid_catalog(const wire::ResourceRef& resource) {
+  return resource.kind() == wire::RESOURCE_CATALOG && catalog_uuid(resource.id());
+}
+wire::ResourceScope exact_scope(const wire::ResourceRef& resource) {
+  wire::ResourceScope scope;
+  *scope.add_resources() = resource;
   return scope;
 }
 std::string json_time(const google::protobuf::Timestamp& value) {
@@ -681,6 +707,13 @@ bool fill_context(wire::RequestContext* context, std::string_view request_id,
                   std::string_view trace_id, const OwnerHttpRequest& request) {
   context->set_request_id(std::string{request_id});
   context->set_trace_id(std::string{trace_id});
+  if (request.method != "GET" && request.method != "HEAD") {
+    const auto key = header(request, "idempotency-key");
+    if (!key || key->empty() || key->size() > 128) {
+      return false;
+    }
+    context->set_idempotency_key(*key);
+  }
   const auto deadline = codec::to_wire(request.deadline);
   if (const auto* timestamp = std::get_if<google::protobuf::Timestamp>(&deadline)) {
     *context->mutable_deadline() = *timestamp;
@@ -971,6 +1004,124 @@ std::optional<OwnerHttpResult> OwnerGateway::handle(const OwnerHttpRequest& requ
       }
       return OwnerHttpResult{200, body};
     }
+    // A snapshot is deliberately limited to the exact current child grants for one permission.
+    // The owner validates the registered catalog family and rechecks each child on every page.
+    if ((request.method == "GET" || request.method == "HEAD") &&
+        (path == "/api/v1/accounts" || path == "/api/v1/installations" ||
+         path == "/api/v1/instances" || path == "/api/v1/adapter-instances" ||
+         path == "/api/v1/hosts")) {
+      const auto fail = [&](OwnerFailure failure) {
+        return OwnerHttpResult{
+            owner_http_status(failure.code),
+            owner_error_body(failure.code, request_id, trace_id, failure.retryable)};
+      };
+      if (!resources_) {
+        return fail({wire::UPSTREAM_UNAVAILABLE, true});
+      }
+      const auto query = parse_query(request.target);
+      wire::ResourceRef catalog;
+      if (!query || !query->contains("catalog") ||
+          !google::protobuf::util::JsonStringToMessage(query->at("catalog"), &catalog).ok() ||
+          !valid_catalog(catalog)) {
+        return fail({wire::INVALID_ARGUMENT, false});
+      }
+      for (const auto& [key, value] : *query) {
+        if (key != "catalog" && key != "scope" && key != "page_size" && key != "page_token") {
+          return fail({wire::INVALID_ARGUMENT, false});
+        }
+      }
+      auto permission = wire::PERMISSION_ACCOUNT_READ;
+      auto child_kind = wire::RESOURCE_ACCOUNT;
+      if (path == "/api/v1/installations" || path == "/api/v1/instances") {
+        permission = wire::PERMISSION_PLUGIN_READ;
+        child_kind =
+            path == "/api/v1/installations" ? wire::RESOURCE_INSTALLATION : wire::RESOURCE_INSTANCE;
+      } else if (path == "/api/v1/adapter-instances") {
+        permission = wire::PERMISSION_ADAPTER_READ;
+        child_kind = wire::RESOURCE_ADAPTER;
+      } else if (path == "/api/v1/hosts") {
+        permission = wire::PERMISSION_HOST_READ;
+        child_kind = wire::RESOURCE_HOST;
+      }
+      std::optional<wire::ResourceScope> selection;
+      if (query->contains("scope")) {
+        selection.emplace();
+        if (!google::protobuf::util::JsonStringToMessage(query->at("scope"), &*selection).ok()) {
+          return fail({wire::INVALID_ARGUMENT, false});
+        }
+        std::set<std::string> unique;
+        for (const auto& resource : selection->resources()) {
+          if (resource.kind() != child_kind || !catalog_uuid(resource.id()) ||
+              !unique.insert(resource.id()).second) {
+            return fail({wire::INVALID_ARGUMENT, false});
+          }
+        }
+        if (selection->resources_size() > 127) {
+          return fail({wire::RATE_LIMITED, true});
+        }
+      }
+      wire::PageRequest page;
+      if (query->contains("page_size")) {
+        const auto& raw = query->at("page_size");
+        std::uint32_t size = 0;
+        const auto parsed = std::from_chars(raw.data(), raw.data() + raw.size(), size);
+        if (parsed.ec != std::errc{} || parsed.ptr != raw.data() + raw.size() || size == 0 ||
+            size > 100) {
+          return fail({wire::INVALID_ARGUMENT, false});
+        }
+        page.set_page_size(size);
+      }
+      if (query->contains("page_token")) {
+        page.set_page_token(query->at("page_token"));
+      }
+      auto scope = delegation_.catalog_scope(permission, catalog, child_kind, selection,
+                                             request.access_token, request.deadline);
+      if (const auto* failure = std::get_if<OwnerFailure>(&scope)) {
+        return fail(*failure);
+      }
+      auto proof = delegation_.issue("runtime", permission, std::get<wire::ResourceScope>(scope),
+                                     request.access_token, request.deadline);
+      if (const auto* failure = std::get_if<OwnerFailure>(&proof)) {
+        return fail(*failure);
+      }
+      const auto forward =
+          [&]<typename Input, typename Response>(OwnerOutcome<Response> (
+              RuntimeResourcesPort::*call)(const Input&, std::string_view)) -> OwnerHttpResult {
+        Input input;
+        if (!fill_context(input.mutable_context(), request_id, trace_id, request)) {
+          return fail({wire::INVALID_ARGUMENT, false});
+        }
+        *input.mutable_catalog() = catalog;
+        *input.mutable_page() = page;
+        const auto result = (resources_->*call)(input, std::get<std::string>(proof));
+        if (const auto* failure = std::get_if<OwnerFailure>(&result)) {
+          return fail(*failure);
+        }
+        auto value = json_request_value(json_response(std::get<Response>(result)));
+        const auto field = child_kind == wire::RESOURCE_ACCOUNT        ? "accounts"
+                           : child_kind == wire::RESOURCE_INSTALLATION ? "installations"
+                           : child_kind == wire::RESOURCE_INSTANCE     ? "instances"
+                           : child_kind == wire::RESOURCE_ADAPTER      ? "adapters"
+                                                                       : "hosts";
+        if (!value.contains(field)) {
+          value[field] = Json::array();
+        }
+        return {200, value.dump()};
+      };
+      if (child_kind == wire::RESOURCE_ACCOUNT) {
+        return forward(&RuntimeResourcesPort::list_accounts);
+      }
+      if (child_kind == wire::RESOURCE_INSTALLATION) {
+        return forward(&RuntimeResourcesPort::list_installations);
+      }
+      if (child_kind == wire::RESOURCE_INSTANCE) {
+        return forward(&RuntimeResourcesPort::list_instances);
+      }
+      if (child_kind == wire::RESOURCE_ADAPTER) {
+        return forward(&RuntimeResourcesPort::list_adapters);
+      }
+      return forward(&RuntimeResourcesPort::list_hosts);
+    }
     constexpr std::string_view kOperations = "/api/v1/operations/";
     if (path.starts_with(kOperations)) {
       if (!operations_) {
@@ -1042,8 +1193,9 @@ std::optional<OwnerHttpResult> OwnerGateway::handle(const OwnerHttpRequest& requ
         return OwnerHttpResult{owner_http_status(code),
                                owner_error_body(code, request_id, trace_id, false)};
       };
-      if (!resources_ && (path.starts_with(kBind) || path == kInstallations ||
-                          path.starts_with(kInstances) || path.starts_with(kPolicy))) {
+      if (!resources_ &&
+          (path.starts_with(kBind) || path == kInstallations || path == "/api/v1/accounts" ||
+           path.starts_with(kInstances) || path.starts_with(kPolicy))) {
         return missing(wire::UPSTREAM_UNAVAILABLE);
       }
       if (!tasks_ && path.starts_with(kTasks)) {
@@ -1102,15 +1254,36 @@ std::optional<OwnerHttpResult> OwnerGateway::handle(const OwnerHttpRequest& requ
         }
         return missing(wire::INVALID_ARGUMENT);
       }
-      if (path == kInstallations && method == "POST") {
-        wire::RuntimeCreateInstallationRequest input;
-        if (!json_request(request.body, input) ||
+      if (path == "/api/v1/accounts" && method == "POST") {
+        wire::RuntimeCreateAccountRequest input;
+        if (!json_request(request.body, input) || !input.has_catalog() ||
+            !valid_catalog(input.catalog()) ||
             !fill_context(input.mutable_context(), request_id, trace_id, request)) {
           return missing(wire::INVALID_ARGUMENT);
         }
         auto delegation =
-            delegation_.issue("runtime", wire::PERMISSION_PLUGIN_MANAGE, control_catalog_scope(),
-                              request.access_token, request.deadline);
+            delegation_.issue("runtime", wire::PERMISSION_ACCOUNT_MANAGE,
+                              exact_scope(input.catalog()), request.access_token, request.deadline);
+        if (const auto* failure = std::get_if<OwnerFailure>(&delegation)) {
+          return missing(failure->code);
+        }
+        auto result = resources_->create_account(input, std::get<std::string>(delegation));
+        if (const auto* failure = std::get_if<OwnerFailure>(&result)) {
+          return missing(failure->code);
+        }
+        return OwnerHttpResult{200,
+                               json_response(std::get<wire::RuntimeCreateAccountResponse>(result))};
+      }
+      if (path == kInstallations && method == "POST") {
+        wire::RuntimeCreateInstallationRequest input;
+        if (!json_request(request.body, input) || !input.has_catalog() ||
+            !valid_catalog(input.catalog()) ||
+            !fill_context(input.mutable_context(), request_id, trace_id, request)) {
+          return missing(wire::INVALID_ARGUMENT);
+        }
+        auto delegation =
+            delegation_.issue("runtime", wire::PERMISSION_PLUGIN_MANAGE,
+                              exact_scope(input.catalog()), request.access_token, request.deadline);
         if (const auto* failure = std::get_if<OwnerFailure>(&delegation)) {
           return missing(failure->code);
         }
@@ -1132,8 +1305,11 @@ std::optional<OwnerHttpResult> OwnerGateway::handle(const OwnerHttpRequest& requ
             !fill_context(input.mutable_context(), request_id, trace_id, request)) {
           return missing(wire::INVALID_ARGUMENT);
         }
+        wire::ResourceRef parent;
+        parent.set_kind(wire::RESOURCE_INSTALLATION);
+        parent.set_id(installation);
         auto delegation =
-            delegation_.issue("runtime", wire::PERMISSION_PLUGIN_MANAGE, control_catalog_scope(),
+            delegation_.issue("runtime", wire::PERMISSION_PLUGIN_MANAGE, exact_scope(parent),
                               request.access_token, request.deadline);
         if (const auto* failure = std::get_if<OwnerFailure>(&delegation)) {
           return missing(failure->code);

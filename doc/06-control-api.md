@@ -792,6 +792,8 @@ OpenAPI `ModelPage`/`GenericResource` 契约本身与意图一致，无需改 P1
 
 创建账号和安装的请求必须显式携带 `catalog`，类型为 `TargetCatalogRef`。Control 原样转发该目录，以账号管理或插件管理单一权限签发 Runtime 委托。实例创建以路径和 body 一致的父安装签发精确安装委托。创建不会自动授予新资源权限。目录族到 UUID 的权威映射由 Runtime 验证，Control 不从 catalog ID 推断资源族或赋予权限。
 
-五类目录列表逐次使用真实 ValidateSession 的当前 AssignmentRecord。只选择同一方法读权限和 child kind 的精确资源，将目录作为独立引用加入同权限委托，不拼接权限与全部资源的笛卡尔积。可选 `scope` 查询只选择本次查询的明确 child 引用，最多 127 个；未提供时选择当前同权限 assignments，超过上限整体返回 RATE_LIMITED，不静默截断。不同选择是独立快照和分页，某批末页不代表全量目录末页。目录权限和逐对象授权均由 Identity/Runtime 复核。Host 当前权威来源缺口保留其稳定拒绝。
+五类目录列表逐次使用真实 ValidateSession 的当前 AssignmentRecord。只选择同一方法读权限和 child kind 的精确资源，将目录作为独立引用加入同权限委托，不拼接权限与全部资源的笛卡尔积。可选 `scope` 查询只选择本次查询的明确 child 引用，最多 127 个；未提供时选择当前同权限 assignments，超过上限整体返回 RATE_LIMITED，不静默截断。不同选择是独立快照和分页，某批末页不代表全量目录末页。127 是委托逻辑上限；HTTPS 既有 8192 字节请求头上限仍适用，percent-encoded 查询须使用更小批次。目录权限和逐对象授权均由 Identity/Runtime 复核。Host 当前权威来源缺口保留其稳定拒绝。
 
 参数缺失或错误 kind 返回 INVALID_ARGUMENT。未获授权、已撤权由 Identity 返回 PERMISSION_DENIED；依赖故障沿用 UPSTREAM_UNAVAILABLE，超时 TIMEOUT。创建响应的秘密字段继续按现有一次性交付边界处理。该项外部可观察变化同步 OpenAPI 和相关 Panel 请求，异步事件、Action/Model/Scheduler 契约无需同步，受保护基线保持只读。
+
+资源写路径逐字转发调用者的 `Idempotency-Key` 到 Runtime RequestContext；缺失/空值或超过 128 字节返回 INVALID_ARGUMENT。同键换 request_id 不生成新业务幂等身份，回执内容仍由 Runtime 持久保存并重新授权后返回。Control 不合成回执。

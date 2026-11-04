@@ -37,6 +37,9 @@ std::string scope_json() {
 target::OwnerHttpRequest request(std::string method, std::string target_url) {
   target::OwnerHttpRequest value;
   value.method = std::move(method);
+  if (value.method != "GET" && value.method != "HEAD") {
+    value.headers["idempotency-key"] = "fixture-write-key-0001";
+  }
   value.target = std::move(target_url);
   value.headers["x-request-id"] = "request-123";
   value.access_token = "access-token";
@@ -52,6 +55,30 @@ struct FakeDelegation final : target::DelegationPort {
   std::string audience;
   wire::Permission permission = wire::PERMISSION_UNSPECIFIED;
   int scope_resources = 0;
+  wire::ResourceScope last_scope;
+  std::optional<target::OwnerFailure> catalog_failure;
+  std::optional<wire::ResourceScope> selected;
+  wire::ResourceRef last_catalog;
+  wire::ResourceKind child_kind = wire::RESOURCE_KIND_UNSPECIFIED;
+  target::OwnerOutcome<wire::ResourceScope>
+  catalog_scope(wire::Permission, const wire::ResourceRef& catalog, wire::ResourceKind kind,
+                const std::optional<wire::ResourceScope>& selection, std::string_view,
+                core::target::TimePoint) override {
+    last_catalog = catalog;
+    child_kind = kind;
+    selected = selection;
+    if (catalog_failure) {
+      return *catalog_failure;
+    }
+    wire::ResourceScope result;
+    *result.add_resources() = catalog;
+    if (selection) {
+      for (const auto& resource : selection->resources()) {
+        *result.add_resources() = resource;
+      }
+    }
+    return result;
+  }
   target::OwnerOutcome<std::string> issue(std::string_view audience_value,
                                           wire::Permission permission_value,
                                           const wire::ResourceScope& scope, std::string_view,
@@ -60,6 +87,7 @@ struct FakeDelegation final : target::DelegationPort {
     audience = std::string{audience_value};
     permission = permission_value;
     scope_resources = scope.resources_size();
+    last_scope = scope;
     if (failure) {
       return *failure;
     }
@@ -140,6 +168,25 @@ struct Gateway {
 struct FakeResources final : target::RuntimeResourcesPort {
   std::optional<target::OwnerFailure> failure;
   int calls = 0;
+  wire::RuntimeCreateAccountRequest last_account;
+  wire::RuntimeCreateInstallationRequest last_installation;
+  wire::RuntimeListAccountsRequest last_accounts_page;
+  target::OwnerOutcome<wire::RuntimeCreateAccountResponse>
+  create_account(const wire::RuntimeCreateAccountRequest& input, std::string_view) override {
+    ++calls;
+    last_account = input;
+    wire::RuntimeCreateAccountResponse response;
+    response.mutable_account()->set_account_id("11111111-1111-4111-8111-111111111111");
+    return ok(response);
+  }
+  target::OwnerOutcome<wire::RuntimeListAccountsResponse>
+  list_accounts(const wire::RuntimeListAccountsRequest& input, std::string_view) override {
+    ++calls;
+    last_accounts_page = input;
+    wire::RuntimeListAccountsResponse response;
+    response.mutable_snapshot()->set_snapshot_id("snapshot-1");
+    return ok(response);
+  }
   wire::RuntimeBindAdapterRequest last_bind;
   wire::RuntimeSetDesiredStateRequest last_state;
   wire::RuntimeUpdateActionPolicyRequest last_policy;
@@ -171,6 +218,7 @@ struct FakeResources final : target::RuntimeResourcesPort {
   create_installation(const wire::RuntimeCreateInstallationRequest& input,
                       std::string_view) override {
     ++calls;
+    last_installation = input;
     wire::RuntimeCreateInstallationResponse response;
     response.mutable_installation()->set_installation_id("installation-1");
     return ok(response);
@@ -647,6 +695,55 @@ void principals_catalog() {
   fixture.principals.failure = target::OwnerFailure{wire::PERMISSION_DENIED, false};
   auto denied = fixture.gateway.handle(request("GET", "/api/v1/principals"));
   require(denied && denied->status == 403, "principal catalog denied");
+}
+
+void runtime_catalogs() {
+  OwnerCommands fixture;
+  const std::string catalog =
+      R"({"kind":"RESOURCE_CATALOG","id":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"})";
+  auto create = request("POST", "/api/v1/accounts");
+  create.body = R"({"platform":"qq","platform_account_id":"test","catalog":)" + catalog + "}";
+  auto created = fixture.gateway.handle(create);
+  require(created && created->status == 200 && fixture.resources.last_account.has_catalog() &&
+              fixture.delegation.last_scope.resources(0).id() ==
+                  "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" &&
+              fixture.delegation.permission == wire::PERMISSION_ACCOUNT_MANAGE,
+          "create account forwards exact catalog");
+  require(fixture.resources.last_account.context().idempotency_key() == "fixture-write-key-0001",
+          "write key survives Control boundary");
+  create.headers["x-request-id"] = "new-request-id";
+  require(fixture.gateway.handle(create)->status == 200 &&
+              fixture.resources.last_account.context().idempotency_key() ==
+                  "fixture-write-key-0001",
+          "new request id preserves caller key");
+  create.body = R"({"platform":"qq","platform_account_id":"test"})";
+  require(fixture.gateway.handle(create)->status == 400, "missing create catalog fails closed");
+  create.body =
+      R"({"catalog":{"kind":"RESOURCE_ACCOUNT","id":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"}})";
+  require(fixture.gateway.handle(create)->status == 400, "catalog cannot be a child resource");
+  auto listing =
+      request("GET", "/api/v1/accounts?catalog=" + catalog + "&page_size=2&page_token=cursor");
+  auto empty = fixture.gateway.handle(listing);
+  require(empty && empty->status == 200 && nlohmann::json::parse(empty->body)["accounts"].empty() &&
+              fixture.delegation.scope_resources == 1 &&
+              fixture.resources.last_accounts_page.page().page_token() == "cursor",
+          "empty child set still delegates catalog and emits a typed empty page");
+  listing.target += "&scope=" + scope_json();
+  require(fixture.gateway.handle(listing)->status == 200 &&
+              fixture.delegation.scope_resources == 2 && fixture.delegation.selected &&
+              fixture.delegation.selected->resources_size() == 1,
+          "explicit selection contains only child references");
+  auto wrong = request("GET", "/api/v1/accounts?catalog=" + catalog + "&scope={\"resources\":[" +
+                                  catalog + "]}");
+  require(fixture.gateway.handle(wrong)->status == 400,
+          "selection rejects catalog instead of expanding its children");
+  fixture.delegation.catalog_failure = target::OwnerFailure{wire::PERMISSION_DENIED, false};
+  require(fixture.gateway.handle(listing)->status == 403, "revoked child grant fails closed");
+  fixture.delegation.catalog_failure = target::OwnerFailure{wire::UPSTREAM_UNAVAILABLE, true};
+  require(fixture.gateway.handle(listing)->status == 503,
+          "assignment dependency outage fails closed");
+  fixture.delegation.catalog_failure = target::OwnerFailure{wire::RATE_LIMITED, true};
+  require(fixture.gateway.handle(listing)->status == 429, "oversized child grants require a batch");
 }
 
 void owner_commands() {
@@ -1414,6 +1511,7 @@ int main() {
     principals_catalog();
     sensitive_read_permissions();
     owner_commands();
+    runtime_catalogs();
     operation_snapshots();
     audit_logs_aggregation();
     lifecycle_delete_restore();

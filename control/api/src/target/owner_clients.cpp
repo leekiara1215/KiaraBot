@@ -1,11 +1,13 @@
 #include "kiarabot/control/target/owner_clients.hpp"
 
+#include <algorithm>
 #include <array>
 #include <chrono>
 #include <cstddef>
 #include <map>
 #include <memory>
 #include <optional>
+#include <set>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -18,6 +20,7 @@
 #include <openssl/x509.h>
 
 #include "kiarabot/control/target/owner_gateway.hpp"
+#include "kiarabot/core/domain/target/identity_policy.hpp"
 #include "kiarabot/core/runtime/platform/target_codec.hpp"
 #include "kiarabot/v1/identity.grpc.pb.h"
 #include "kiarabot/v1/model.grpc.pb.h"
@@ -229,6 +232,121 @@ public:
   }
 
 private:
+  OwnerOutcome<wire::ResourceScope>
+  catalog_scope(wire::Permission permission, const wire::ResourceRef& catalog,
+                wire::ResourceKind child_kind, const std::optional<wire::ResourceScope>& selection,
+                std::string_view access_token, core::target::TimePoint deadline) override {
+    if (!identity_ || access_token.empty()) {
+      return OwnerFailure{wire::UNAUTHENTICATED, false};
+    }
+    wire::IdentityValidateSessionRequest input;
+    input.set_access_token(std::string{access_token});
+    input.mutable_context()->set_request_id(random_identifier());
+    input.mutable_context()->set_trace_id(random_identifier());
+    const auto encoded = codec::to_wire(deadline);
+    if (!std::holds_alternative<google::protobuf::Timestamp>(encoded)) {
+      return OwnerFailure{wire::INVALID_ARGUMENT, false};
+    }
+    *input.mutable_context()->mutable_deadline() = std::get<google::protobuf::Timestamp>(encoded);
+    grpc::ClientContext call;
+    call.set_deadline(std::chrono::system_clock::time_point{
+        std::chrono::duration_cast<std::chrono::system_clock::duration>(
+            deadline.time_since_epoch())});
+    wire::IdentityValidateSessionResponse current;
+    const auto status = identity_->ValidateSession(&call, input, &current);
+    if (!status.ok()) {
+      return OwnerFailure{extract_error_code(status).value_or(wire::UPSTREAM_UNAVAILABLE), false};
+    }
+    const auto checked = codec::from_wire(current.checked_at());
+    const auto expires = codec::from_wire(current.session().expires_at());
+    if (!current.has_principal() || !current.has_session() || !current.has_checked_at() ||
+        current.principal().principal_id().empty() || current.authorization_version() == 0 ||
+        current.principal().state() != wire::LIFECYCLE_ACTIVE || current.session().revoked() ||
+        current.session().principal_id() != current.principal().principal_id() ||
+        !std::holds_alternative<core::target::TimePoint>(checked) ||
+        !std::holds_alternative<core::target::TimePoint>(expires) ||
+        std::get<core::target::TimePoint>(expires) <= std::get<core::target::TimePoint>(checked)) {
+      return OwnerFailure{wire::UPSTREAM_UNAVAILABLE, false};
+    }
+    std::set<std::string> children;
+    std::set<std::string> assignment_ids;
+    const auto neutral_permission = codec::from_wire(permission);
+    if (!std::holds_alternative<core::target::Permission>(neutral_permission)) {
+      return OwnerFailure{wire::INVALID_ARGUMENT, false};
+    }
+    for (const auto& assignment : current.assignments()) {
+      if (assignment.principal_id() != current.principal().principal_id() ||
+          assignment.assignment_id().empty() ||
+          !assignment_ids.insert(assignment.assignment_id()).second || assignment.version() == 0 ||
+          !assignment.has_scope() || assignment.scope().resources().empty()) {
+        return OwnerFailure{wire::UPSTREAM_UNAVAILABLE, false};
+      }
+      bool includes = false;
+      std::set<int> seen_permissions;
+      for (const auto granted : assignment.permissions()) {
+        if (!std::holds_alternative<core::target::Permission>(
+                codec::from_wire(static_cast<wire::Permission>(granted))) ||
+            !seen_permissions.insert(granted).second) {
+          return OwnerFailure{wire::UPSTREAM_UNAVAILABLE, false};
+        }
+        includes = includes || granted == permission;
+      }
+      if (assignment.role() == wire::FIXED_ROLE_UNSPECIFIED && assignment.permissions().empty()) {
+        return OwnerFailure{wire::UPSTREAM_UNAVAILABLE, false};
+      }
+      if (assignment.role() != wire::FIXED_ROLE_UNSPECIFIED) {
+        if (!assignment.permissions().empty()) {
+          return OwnerFailure{wire::UPSTREAM_UNAVAILABLE, false};
+        }
+        core::target::FixedRole role;
+        switch (assignment.role()) {
+        case wire::ROLE_ADMIN:
+          role = core::target::FixedRole::Admin;
+          break;
+        case wire::ROLE_OPERATOR:
+          role = core::target::FixedRole::Operator;
+          break;
+        case wire::ROLE_VIEWER:
+          role = core::target::FixedRole::Viewer;
+          break;
+        default:
+          return OwnerFailure{wire::UPSTREAM_UNAVAILABLE, false};
+        }
+        includes = core::target::default_role_allows(
+            role, std::get<core::target::Permission>(neutral_permission));
+      }
+      std::set<std::pair<int, std::string>> seen_resources;
+      for (const auto& resource : assignment.scope().resources()) {
+        if (!std::holds_alternative<core::target::ResourceRef>(codec::from_wire(resource)) ||
+            !seen_resources.emplace(resource.kind(), resource.id()).second) {
+          return OwnerFailure{wire::UPSTREAM_UNAVAILABLE, false};
+        }
+        if (includes && resource.kind() == child_kind) {
+          children.insert(resource.id());
+        }
+      }
+    }
+    wire::ResourceScope result;
+    *result.add_resources() = catalog;
+    if (selection) {
+      for (const auto& resource : selection->resources()) {
+        if (!children.contains(resource.id())) {
+          return OwnerFailure{wire::PERMISSION_DENIED, false};
+        }
+        *result.add_resources() = resource;
+      }
+    } else {
+      if (children.size() > 127) {
+        return OwnerFailure{wire::RATE_LIMITED, true};
+      }
+      for (const auto& id : children) {
+        auto* resource = result.add_resources();
+        resource->set_kind(child_kind);
+        resource->set_id(id);
+      }
+    }
+    return result;
+  }
   OwnerOutcome<std::string> issue(std::string_view audience, wire::Permission permission,
                                   const wire::ResourceScope& scope, std::string_view access_token,
                                   core::target::TimePoint deadline) override {
@@ -367,6 +485,35 @@ private:
       return OwnerFailure{code.value_or(wire::UPSTREAM_UNAVAILABLE), false};
     }
     return output;
+  }
+  OwnerOutcome<wire::RuntimeCreateAccountResponse>
+  create_account(const wire::RuntimeCreateAccountRequest& input,
+                 std::string_view delegation) override {
+    return unary(&wire::RuntimeService::Stub::CreateAccount, input, delegation);
+  }
+  OwnerOutcome<wire::RuntimeListAccountsResponse>
+  list_accounts(const wire::RuntimeListAccountsRequest& input,
+                std::string_view delegation) override {
+    return unary(&wire::RuntimeService::Stub::ListAccounts, input, delegation);
+  }
+  OwnerOutcome<wire::RuntimeListInstallationsResponse>
+  list_installations(const wire::RuntimeListInstallationsRequest& input,
+                     std::string_view delegation) override {
+    return unary(&wire::RuntimeService::Stub::ListInstallations, input, delegation);
+  }
+  OwnerOutcome<wire::RuntimeListInstancesResponse>
+  list_instances(const wire::RuntimeListInstancesRequest& input,
+                 std::string_view delegation) override {
+    return unary(&wire::RuntimeService::Stub::ListInstances, input, delegation);
+  }
+  OwnerOutcome<wire::RuntimeListAdaptersResponse>
+  list_adapters(const wire::RuntimeListAdaptersRequest& input,
+                std::string_view delegation) override {
+    return unary(&wire::RuntimeService::Stub::ListAdapters, input, delegation);
+  }
+  OwnerOutcome<wire::RuntimeListHostsResponse>
+  list_hosts(const wire::RuntimeListHostsRequest& input, std::string_view delegation) override {
+    return unary(&wire::RuntimeService::Stub::ListHosts, input, delegation);
   }
   OwnerOutcome<wire::RuntimeBindAdapterResponse>
   bind_adapter(const wire::RuntimeBindAdapterRequest& input, std::string_view delegation) override {

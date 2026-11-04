@@ -43,6 +43,13 @@ template <typename Value> using OwnerOutcome = std::variant<Value, OwnerFailure>
 class DelegationPort {
 public:
   virtual ~DelegationPort() = default;
+  virtual OwnerOutcome<kiarabot::v1::ResourceScope>
+  catalog_scope(kiarabot::v1::Permission, const kiarabot::v1::ResourceRef&,
+                kiarabot::v1::ResourceKind, const std::optional<kiarabot::v1::ResourceScope>&,
+                std::string_view, core::target::TimePoint) {
+    return OwnerFailure{kiarabot::v1::CAPABILITY_NOT_SUPPORTED, false};
+  }
+
   virtual OwnerOutcome<std::string> issue(std::string_view audience,
                                           kiarabot::v1::Permission permission,
                                           const kiarabot::v1::ResourceScope& scope,
@@ -84,6 +91,36 @@ public:
 class RuntimeResourcesPort {
 public:
   virtual ~RuntimeResourcesPort() = default;
+  virtual OwnerOutcome<kiarabot::v1::RuntimeCreateAccountResponse>
+  create_account(const kiarabot::v1::RuntimeCreateAccountRequest&, std::string_view) {
+    return OwnerFailure{kiarabot::v1::CAPABILITY_NOT_SUPPORTED, false};
+  }
+
+  virtual OwnerOutcome<kiarabot::v1::RuntimeListAccountsResponse>
+  list_accounts(const kiarabot::v1::RuntimeListAccountsRequest&, std::string_view) {
+    return OwnerFailure{kiarabot::v1::CAPABILITY_NOT_SUPPORTED, false};
+  }
+
+  virtual OwnerOutcome<kiarabot::v1::RuntimeListInstallationsResponse>
+  list_installations(const kiarabot::v1::RuntimeListInstallationsRequest&, std::string_view) {
+    return OwnerFailure{kiarabot::v1::CAPABILITY_NOT_SUPPORTED, false};
+  }
+
+  virtual OwnerOutcome<kiarabot::v1::RuntimeListInstancesResponse>
+  list_instances(const kiarabot::v1::RuntimeListInstancesRequest&, std::string_view) {
+    return OwnerFailure{kiarabot::v1::CAPABILITY_NOT_SUPPORTED, false};
+  }
+
+  virtual OwnerOutcome<kiarabot::v1::RuntimeListAdaptersResponse>
+  list_adapters(const kiarabot::v1::RuntimeListAdaptersRequest&, std::string_view) {
+    return OwnerFailure{kiarabot::v1::CAPABILITY_NOT_SUPPORTED, false};
+  }
+
+  virtual OwnerOutcome<kiarabot::v1::RuntimeListHostsResponse>
+  list_hosts(const kiarabot::v1::RuntimeListHostsRequest&, std::string_view) {
+    return OwnerFailure{kiarabot::v1::CAPABILITY_NOT_SUPPORTED, false};
+  }
+
   virtual OwnerOutcome<kiarabot::v1::RuntimeBindAdapterResponse>
   bind_adapter(const kiarabot::v1::RuntimeBindAdapterRequest&, std::string_view) = 0;
   virtual OwnerOutcome<kiarabot::v1::RuntimeUnbindAdapterResponse>

@@ -382,6 +382,7 @@ function InstallationsPage({ api, revision }: { api: ApiClient; revision: number
     catalogId ? { kind: 'RESOURCE_CATALOG', id: catalogId } : undefined, pageToken,
   ).then((value) => { if (!active()) return value; return value; }), [api, catalogId, pageToken], revision);
   const [pluginTypeId, setPluginTypeId] = useState('');
+  const [installationCatalog, setInstallationCatalog] = useState('');
   const [manifestText, setManifestText] = useState('{}');
   const [installationId, setInstallationId] = useState('');
   const [hostId, setHostId] = useState('');
@@ -403,7 +404,7 @@ function InstallationsPage({ api, revision }: { api: ApiClient; revision: number
     try { manifest = JSON.parse(manifestText) as Record<string, unknown>; }
     catch { setFailure({ kind: 'invalid', title: 'manifest 不是合法 JSON', detail: '请提交 PluginManifest JSON 对象。' }); return; }
     try {
-      const reply = await api.createInstallation({ plugin_type_id: pluginTypeId, manifest } as TargetCreateInstallationRequest);
+      const reply = await api.createInstallation({ plugin_type_id: pluginTypeId, manifest, catalog: { kind: 'RESOURCE_CATALOG', id: installationCatalog } } as TargetCreateInstallationRequest);
       setNotice(`安装创建返回 ${reply.installation.installation_id}（HTTP 200 记录已创建，不代表实例已运行）；plugin.manage 与目标后端就绪后生效`);
       setInstallationId(reply.installation.installation_id);
     } catch (error) { setFailure(describeError(error)); }
@@ -520,9 +521,10 @@ function InstallationsPage({ api, revision }: { api: ApiClient; revision: number
     <section className="table-card"><div className="table-head"><div><p className="eyebrow">CREATE · INSTALLATION / INSTANCE</p><h2>安装与实例创建</h2></div></div>
       <p className="muted">写操作返回 200/202 只是已受理/已记录；是否进入运行由 desired-state、进程事实与 operation 状态决定。成功响应中的 bootstrap_credential 由 Control 移除，Panel 不展示密钥。</p>
       <div className="row-actions">
+        <label>安装目录 UUID<input aria-label="installation catalog UUID" value={installationCatalog} onChange={(event) => setInstallationCatalog(event.target.value)} /></label>
         <label>plugin type ID<input aria-label="plugin type ID" value={pluginTypeId} onChange={(event) => setPluginTypeId(event.target.value)} /></label>
         <label>manifest（JSON）<textarea aria-label="plugin manifest" rows={3} value={manifestText} spellCheck={false} onChange={(event) => setManifestText(event.target.value)} /></label>
-        <button className="secondary" onClick={() => void createInstallation()} disabled={!pluginTypeId}>创建安装</button>
+        <button className="secondary" onClick={() => void createInstallation()} disabled={!pluginTypeId || !installationCatalog}>创建安装</button>
       </div>
       <div className="row-actions">
         <label>安装 ID<input aria-label="创建实例的安装 ID" value={installationId} onChange={(event) => setInstallationId(event.target.value)} /></label>
