@@ -96,8 +96,8 @@ TlsMaterial make_tls_material() {
   return {bio_string(cert_bio.get()), bio_string(key_bio.get())};
 }
 
-// Fake application: only registration/frame authorization/profile are implemented; every other
-// bridge surface is unused and fails closed.
+// Fake application: registration, frame authorization, profile and stream sink ownership are
+// implemented. Business surfaces unused by this fixture fail closed.
 class FakeBridge final : public target::RuntimeBridgeApplication {
 public:
   bool grant_model_chat = true;
@@ -109,6 +109,8 @@ public:
   int registrations = 0;
   int config_mutations = 0;
   target::BridgeAuthorization authorization;
+  std::optional<target::DeliverySink> delivery_sink;
+  std::optional<target::ShutdownSink> shutdown_sink;
 
   target::Outcome<target::BridgeRegistrationResult>
   register_adapter(const target::BridgeAdapterRegistration&) override {
@@ -168,11 +170,23 @@ public:
                                                        const target::BridgeEventIngress&) override {
     return bridge_failure(target::ErrorCode::CapabilityNotSupported);
   }
-  target::Status attach_plugin_delivery(const target::InstanceId&, target::ConnectionGeneration,
-                                        const target::DeliverySink&) override {
-    return bridge_failure(target::ErrorCode::CapabilityNotSupported);
+  target::Status attach_plugin_delivery(const target::InstanceId& instance,
+                                        target::ConnectionGeneration generation,
+                                        const target::DeliverySink& sink) override {
+    if (instance != authorization.fence.instance ||
+        generation != authorization.fence.connection_generation) {
+      return bridge_failure(target::ErrorCode::PermissionDenied);
+    }
+    delivery_sink = sink;
+    return std::monostate{};
   }
-  void detach_plugin_delivery(const target::InstanceId&, target::ConnectionGeneration) override {}
+  void detach_plugin_delivery(const target::InstanceId& instance,
+                              target::ConnectionGeneration generation) override {
+    if (instance == authorization.fence.instance &&
+        generation == authorization.fence.connection_generation) {
+      delivery_sink.reset();
+    }
+  }
   target::Outcome<BridgePluginProfile> plugin_profile(const target::InstanceId&) override {
     auto permissions = profile_permissions;
     if (grant_model_chat) {
@@ -212,13 +226,24 @@ public:
   target::Status maintenance() override {
     return std::monostate{};
   }
-  target::Status attach_shutdown_sink(target::BridgePeerKind, const target::InstanceId&,
-                                      target::ConnectionGeneration,
-                                      const target::ShutdownSink&) override {
-    return bridge_failure(target::ErrorCode::CapabilityNotSupported);
+  target::Status attach_shutdown_sink(target::BridgePeerKind kind,
+                                      const target::InstanceId& instance,
+                                      target::ConnectionGeneration generation,
+                                      const target::ShutdownSink& sink) override {
+    if (kind != target::BridgePeerKind::Plugin || instance != authorization.fence.instance ||
+        generation != authorization.fence.connection_generation) {
+      return bridge_failure(target::ErrorCode::PermissionDenied);
+    }
+    shutdown_sink = sink;
+    return std::monostate{};
   }
-  void detach_shutdown_sink(target::BridgePeerKind, const target::InstanceId&,
-                            target::ConnectionGeneration) override {}
+  void detach_shutdown_sink(target::BridgePeerKind kind, const target::InstanceId& instance,
+                            target::ConnectionGeneration generation) override {
+    if (kind == target::BridgePeerKind::Plugin && instance == authorization.fence.instance &&
+        generation == authorization.fence.connection_generation) {
+      shutdown_sink.reset();
+    }
+  }
   target::Status shutdown_notice() override {
     return std::monostate{};
   }
@@ -393,6 +418,8 @@ struct Fixture {
 };
 
 struct PluginConnection {
+  std::string case_name;
+  FakeBridge& application;
   std::unique_ptr<grpc::ClientContext> context;
   std::unique_ptr<grpc::ClientReaderWriter<wire::PluginToCore, wire::CoreToPlugin>> stream;
   wire::ConnectionAuthorization authorization;
@@ -401,12 +428,12 @@ struct PluginConnection {
   std::vector<std::string> features;
   std::vector<std::string> capabilities;
 
-  explicit PluginConnection(Fixture& fixture,
+  explicit PluginConnection(Fixture& fixture, std::string_view scenario,
                             std::vector<std::string> plugin_permissions = {"model.chat"},
                             std::vector<std::string> plugin_features = {"host.model.v1"},
                             std::vector<std::string> plugin_capabilities = {})
-      : permissions(std::move(plugin_permissions)), features(std::move(plugin_features)),
-        capabilities(std::move(plugin_capabilities)) {
+      : case_name(scenario), application(fixture.app), permissions(std::move(plugin_permissions)),
+        features(std::move(plugin_features)), capabilities(std::move(plugin_capabilities)) {
     context = std::make_unique<grpc::ClientContext>();
     context->set_deadline(std::chrono::system_clock::now() + 20s);
     context->AddMetadata("authorization", "Bearer " + std::string(32, 'p'));
@@ -430,10 +457,14 @@ struct PluginConnection {
     for (const auto& capability : capabilities) {
       registration->mutable_manifest()->add_capabilities(capability);
     }
-    require(stream->Write(register_frame), "register frame write");
+    if (!stream->Write(register_frame)) {
+      fail_stream("register-write", 0);
+    }
     wire::CoreToPlugin response;
-    require(stream->Read(&response) && response.has_register_result(), "register response");
-    require(response.register_result().accepted(), "registration rejected");
+    if (!stream->Read(&response) || !response.has_register_result() ||
+        !response.register_result().accepted()) {
+      fail_stream("register-read", 0);
+    }
     authorization = response.register_result().authorization();
   }
   wire::PluginToCore frame(wire::HostRequest request) {
@@ -477,20 +508,43 @@ struct PluginConnection {
     }
     return request;
   }
+  [[noreturn]] void fail_stream(std::string_view phase, int request_operation) {
+    stream->WritesDone();
+    wire::CoreToPlugin ignored;
+    while (stream->Read(&ignored)) {
+    }
+    const auto status = stream->Finish();
+    // Only fixed fixture labels and the stable status code are safe diagnostics. Frames and
+    // arbitrary transport messages can contain connection proofs or other authorization material.
+    std::cerr << "model bridge case=" << case_name << " phase=" << phase
+              << " request_operation=" << request_operation
+              << " grpc_code=" << static_cast<int>(status.error_code()) << '\n';
+    throw std::runtime_error("P11e bridge assertion: stream failure");
+  }
   wire::HostResponse host(wire::HostRequest request) {
-    require(stream->Write(frame(std::move(request))), "host frame write");
+    const auto request_operation = static_cast<int>(request.operation_case());
+    if (!stream->Write(frame(std::move(request)))) {
+      fail_stream("host-write", request_operation);
+    }
     wire::CoreToPlugin response;
     if (!stream->Read(&response) || !response.has_host_response()) {
-      auto status = stream->Finish();
-      std::cerr << "host read failed: code=" << static_cast<int>(status.error_code())
-                << " message=" << status.error_message() << " body=" << response.DebugString()
-                << '\n';
-      throw std::runtime_error("P11e bridge assertion: host response");
+      fail_stream("host-read", request_operation);
     }
     return response.host_response();
   }
   void close() {
     stream->WritesDone();
+    wire::CoreToPlugin ignored;
+    while (stream->Read(&ignored)) {
+    }
+    const auto status = stream->Finish();
+    if (!status.ok()) {
+      std::cerr << "model bridge case=" << case_name
+                << " phase=close grpc_code=" << static_cast<int>(status.error_code()) << '\n';
+    }
+    require(status.ok(), "clean stream close");
+    require(!application.delivery_sink && !application.shutdown_sink,
+            "connection sinks detach before stream close completes");
     stream.reset();
     context.reset();
   }
@@ -498,7 +552,7 @@ struct PluginConnection {
 
 void run() {
   Fixture fixture;
-  PluginConnection connection(fixture);
+  PluginConnection connection(fixture, "model-outcomes");
   const auto success = connection.host(connection.chat_request("call-success"));
   require(!success.has_error() && success.has_model_chat() &&
               success.model_chat().text() == "answer" && success.model_chat().input_tokens() == 3 &&
@@ -542,7 +596,7 @@ void run() {
 
   // Revoked registration grant: model.chat not granted -> permission denied before the port.
   Fixture denied_fixture(false);
-  PluginConnection denied(denied_fixture);
+  PluginConnection denied(denied_fixture, "model-permission-denied");
   const auto denied_response = denied.host(denied.chat_request("call-denied"));
   require(denied_response.has_error() &&
               denied_response.error().code() == wire::PERMISSION_DENIED &&
@@ -552,8 +606,8 @@ void run() {
 
   // P10k: authenticated PluginBridge task ingress -> RuntimeTaskApplication -> SchedulerTaskPort.
   Fixture task_fixture;
-  PluginConnection tasks(task_fixture, {"task.schedule", "task.read"}, {"host.tasks.v1"},
-                         {"event.timer.triggered"});
+  PluginConnection tasks(task_fixture, "task-outcomes", {"task.schedule", "task.read"},
+                         {"host.tasks.v1"}, {"event.timer.triggered"});
   const auto created = tasks.host(tasks.task_request("create"));
   require(!created.has_error() && created.has_task_create() &&
               created.task_create().task_id() == "task-1" &&
@@ -600,8 +654,9 @@ void run() {
   // A registered plugin without task.schedule cannot create tasks even with host.tasks.v1.
   Fixture missing_permission_fixture;
   missing_permission_fixture.app.profile_permissions = {"task.read"};
-  PluginConnection missing_permission(missing_permission_fixture, {"task.schedule", "task.read"},
-                                      {"host.tasks.v1"}, {"event.timer.triggered"});
+  PluginConnection missing_permission(missing_permission_fixture, "task-permission-denied",
+                                      {"task.schedule", "task.read"}, {"host.tasks.v1"},
+                                      {"event.timer.triggered"});
   const auto permission_denied = missing_permission.host(missing_permission.task_request("create"));
   require(permission_denied.has_error() &&
               permission_denied.error().code() == wire::PERMISSION_DENIED &&
@@ -612,8 +667,9 @@ void run() {
   // Port reports unavailable -> fail closed as retryable UPSTREAM_UNAVAILABLE.
   Fixture unavailable_fixture;
   unavailable_fixture.tasks.mode = FakeTaskPort::Mode::Unavailable;
-  PluginConnection unavailable_task(unavailable_fixture, {"task.schedule", "task.read"},
-                                    {"host.tasks.v1"}, {"event.timer.triggered"});
+  PluginConnection unavailable_task(unavailable_fixture, "task-port-unavailable",
+                                    {"task.schedule", "task.read"}, {"host.tasks.v1"},
+                                    {"event.timer.triggered"});
   const auto port_unavailable = unavailable_task.host(unavailable_task.task_request("create"));
   require(port_unavailable.has_error() &&
               port_unavailable.error().code() == wire::UPSTREAM_UNAVAILABLE &&
@@ -623,8 +679,8 @@ void run() {
 
   // No host.tasks.v1 feature -> capability rejected before the port.
   Fixture no_feature_fixture;
-  PluginConnection no_feature(no_feature_fixture, {"task.schedule"}, {"host.model.v1"},
-                              {"event.timer.triggered"});
+  PluginConnection no_feature(no_feature_fixture, "task-feature-missing", {"task.schedule"},
+                              {"host.model.v1"}, {"event.timer.triggered"});
   const auto unsupported = no_feature.host(no_feature.task_request("create"));
   require(unsupported.has_error() && unsupported.error().code() == wire::CAPABILITY_NOT_SUPPORTED &&
               no_feature_fixture.tasks.create_calls == 0,
@@ -633,8 +689,9 @@ void run() {
 
   // Missing task port/provider -> fail closed, never a fabricated task.
   Fixture fail_closed_fixture(true, false);
-  PluginConnection fail_closed(fail_closed_fixture, {"task.schedule", "task.read"},
-                               {"host.tasks.v1"}, {"event.timer.triggered"});
+  PluginConnection fail_closed(fail_closed_fixture, "task-provider-missing",
+                               {"task.schedule", "task.read"}, {"host.tasks.v1"},
+                               {"event.timer.triggered"});
   const auto unavailable = fail_closed.host(fail_closed.task_request("create"));
   require(unavailable.has_error() && unavailable.error().code() == wire::UPSTREAM_UNAVAILABLE &&
               unavailable.error().retryable() && fail_closed_fixture.tasks.create_calls == 0,
