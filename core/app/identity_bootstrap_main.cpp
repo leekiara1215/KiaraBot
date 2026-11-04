@@ -311,6 +311,9 @@ t::Service platform_service(const Json& peer) {
   if (name == "model") {
     return t::Service::Model;
   }
+  if (name == "host") {
+    return t::Service::Host;
+  }
   require(false);
   return t::Service::Runtime;
 }
@@ -357,16 +360,23 @@ std::vector<PlatformEnrollment> platform_peers(const Json& document) {
   const auto& rows = document["platform_peers"];
   require(rows.is_array() && rows.size() <= 16);
   for (const auto& peer : rows) {
-    require(exact(peer, {"service", "principal_id", "credential_id", "certificate_chain_file",
-                         "san", "assignments"}));
     const auto service = platform_service(peer);
+    if (service == t::Service::Host) {
+      require(exact(peer, {"service", "principal_id", "credential_id", "certificate_chain_file",
+                           "san", "assignments", "host_id"}));
+    } else {
+      require(exact(peer, {"service", "principal_id", "credential_id", "certificate_chain_file",
+                           "san", "assignments"}));
+    }
     const t::SubjectId principal{identifier(peer, "principal_id")};
     const t::CredentialId credential{identifier(peer, "credential_id")};
     auto enrolled = platform_certificate(peer, principal, service);
-    result.push_back(
-        PlatformEnrollment{{service, principal, credential, std::move(enrolled.binding),
-                            assignments(peer["assignments"], principal)},
-                           std::move(enrolled.chain)});
+    result.push_back(PlatformEnrollment{
+        {service, principal, credential, std::move(enrolled.binding),
+         assignments(peer["assignments"], principal),
+         service == t::Service::Host ? std::optional<t::ResourceId>{{text(peer, "host_id")}}
+                                     : std::nullopt},
+        std::move(enrolled.chain)});
   }
   return result;
 }

@@ -17,7 +17,8 @@ Failure internal_failure() {
 // Only the target platform services that must call Identity as an mTLS consumer/mutator peer.
 // Control keeps its dedicated enrollment shape and Identity is never a client of itself here.
 bool service_peer(Service service) {
-  return service == Service::Runtime || service == Service::Scheduler || service == Service::Model;
+  return service == Service::Runtime || service == Service::Scheduler ||
+         service == Service::Model || service == Service::Host;
 }
 Status check_deadline(TimePoint now, TimePoint deadline) {
   if (now >= deadline) {
@@ -71,7 +72,10 @@ Outcome<RegisteredPeer> read_peer(IdentitySecurityUnitOfWork& work,
     return *failure;
   }
   if (principal->kind == PrincipalKind::PlatformService && certificate->platform_service) {
-    if (head->binding != ResourceRef{ResourceKind::Principal, ResourceId{principal->id.value}}) {
+    const bool host = *certificate->platform_service == Service::Host;
+    if ((host && (!principal->binding || principal->binding->kind != ResourceKind::Host ||
+                  principal->binding->id.value.empty() || head->binding != *principal->binding)) ||
+        (!host && head->binding != ResourceRef{ResourceKind::Principal, {principal->id.value}})) {
       return internal_failure();
     }
     return RegisteredPeer{PlatformPeer{*certificate->platform_service, principal->id},
@@ -252,6 +256,7 @@ IdentityAdminApplication::bootstrap_offline(const OfflineIdentityBootstrap& requ
     std::set<std::string> credential_ids{request.password_credential.value,
                                          request.control_credential.value};
     std::set<std::string> assignment_ids;
+    std::set<std::string> host_ids;
     for (const auto& assignment : request.administrator_assignments) {
       assignment_ids.insert(assignment.id.value);
     }
@@ -259,6 +264,11 @@ IdentityAdminApplication::bootstrap_offline(const OfflineIdentityBootstrap& requ
       assignment_ids.insert(assignment.id.value);
     }
     for (const auto& peer : request.platform_peers) {
+      if ((peer.service == Service::Host) != peer.host.has_value() ||
+          (peer.host && (peer.host->value.empty() || peer.host->value.size() > 128 ||
+                         !host_ids.insert(peer.host->value).second))) {
+        return rejected(ErrorCode::InvalidArgument, Recovery::CorrectInput);
+      }
       if (peer.principal.value.empty() || peer.credential.value.empty() ||
           !service_peer(peer.service) || peer.certificate.subject != peer.principal ||
           peer.certificate.platform_service != peer.service ||
@@ -399,18 +409,17 @@ IdentityAdminApplication::bootstrap_offline(const OfflineIdentityBootstrap& requ
     // explicit self binding, certificate credential, authorization watermark and offline audit.
     for (const auto& peer : request.platform_peers) {
       const ResourceRef peer_resource{ResourceKind::Principal, ResourceId{peer.principal.value}};
-      const Principal platform_principal{peer.principal,
-                                         PrincipalKind::PlatformService,
-                                         peer_resource,
-                                         {1},
-                                         LifecycleState::Active};
+      const ResourceRef binding =
+          peer.host ? ResourceRef{ResourceKind::Host, *peer.host} : peer_resource;
+      const Principal platform_principal{
+          peer.principal, PrincipalKind::PlatformService, binding, {1}, LifecycleState::Active};
       const CredentialVersionRecord certificate{{peer.credential, {1}},
                                                 peer.principal,
                                                 peer.certificate,
                                                 CredentialState::Active,
                                                 now,
                                                 std::nullopt,
-                                                peer_resource,
+                                                binding,
                                                 peer.certificate.not_after};
       const auto valid = validate_credential_record(certificate);
       if (const auto* failure = std::get_if<Failure>(&valid)) {

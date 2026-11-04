@@ -13,6 +13,7 @@
 #include "kiarabot/core/application/target/model_gateway_application.hpp"
 #include "kiarabot/core/runtime/platform/model_identity_client.hpp"
 #include "kiarabot/core/runtime/platform/model_rpc.hpp"
+#include "kiarabot/core/runtime/platform/runtime_identity_client.hpp"
 #include "kiarabot/core/runtime/platform/service_process.hpp"
 #include "kiarabot/core/runtime/platform/service_rpc.hpp"
 #include "kiarabot/infrastructure/identity_crypto/key_files.hpp"
@@ -72,6 +73,8 @@ struct State {
   std::unique_ptr<target::ModelDigestPort> digest;
   std::unique_ptr<RandomModelIds> ids;
   std::unique_ptr<platform::ModelIdentityClient> identity;
+  std::unique_ptr<platform::RuntimeIdentityClient> observation_identity;
+  std::unique_ptr<target::OperationObservationApplication> observations;
   std::unique_ptr<FailClosedModelAuthorization> fail_closed_authorization;
   std::unique_ptr<target::ModelGatewayApplication> application;
 };
@@ -157,6 +160,31 @@ build_application(const platform::ProcessConfig& config, target::ModelUnitOfWork
       return *failure;
     }
     state->identity = std::move(std::get<std::unique_ptr<platform::ModelIdentityClient>>(client));
+    auto observation_client = platform::RuntimeIdentityClient::create(
+        {*config.identity_endpoint, grpc::SslCredentials(ssl), std::chrono::milliseconds{500},
+         std::chrono::milliseconds{500}});
+    if (const auto* failure = std::get_if<target::Failure>(&observation_client)) {
+      return *failure;
+    }
+    state->observation_identity =
+        std::move(std::get<std::unique_ptr<platform::RuntimeIdentityClient>>(observation_client));
+    auto observations = target::make_operation_observation_application(
+        {target::Service::Model,
+         [&factory]() -> target::Outcome<std::unique_ptr<target::UnitOfWork>> {
+           auto begun = factory.begin();
+           if (const auto* failure = std::get_if<target::Failure>(&begun)) {
+             return *failure;
+           }
+           return std::unique_ptr<target::UnitOfWork>{
+               std::move(std::get<std::unique_ptr<target::ModelUnitOfWork>>(begun))};
+         },
+         *state->observation_identity,
+         {}});
+    if (const auto* failure = std::get_if<target::Failure>(&observations)) {
+      return *failure;
+    }
+    state->observations =
+        std::move(std::get<std::unique_ptr<target::OperationObservationApplication>>(observations));
   } else {
     state->fail_closed_authorization = std::make_unique<FailClosedModelAuthorization>();
   }
@@ -246,8 +274,8 @@ compose_model_service(const platform::ProcessConfig& config, ModelCompositionOpt
         return *failure;
       }
       auto adapter = platform::make_model_rpc(
-          *state->application,
-          std::move(std::get<platform::ModelPeerAuthenticator>(authenticator)));
+          *state->application, std::move(std::get<platform::ModelPeerAuthenticator>(authenticator)),
+          state->observations.get());
       if (const auto* failure = std::get_if<target::Failure>(&adapter)) {
         return *failure;
       }

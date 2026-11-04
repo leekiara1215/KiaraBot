@@ -108,6 +108,28 @@ std::string token(t::TimePoint now, const std::string& audience, const std::stri
 }
 void decode_tests() {
   const auto leaf = digest();
+  // Metadata decoding remains certificate/audience-bound. The observation RPC
+  // separately requires the actual Control SAN and online Identity authorization.
+  const auto model = kiarabot::core::platform::decode_delegation_claims(
+      token(now(), "model", hex(leaf)), leaf, now(), t::Service::Model);
+  check(std::holds_alternative<t::AuthenticationContext>(model),
+        "Model delegation metadata rejected");
+  const auto& model_context = std::get<t::AuthenticationContext>(model);
+  const auto* model_peer = std::get_if<t::PlatformPeer>(&model_context.direct_peer);
+  check(model_context.audience == t::Service::Model && model_peer &&
+            model_peer->service == t::Service::Control && model_peer->subject.value == kActor,
+        "Model delegation metadata lost audience/Control actor binding");
+  for (const auto& invalid :
+       {token(now(), "runtime", hex(leaf)), token(now(), "scheduler", hex(leaf)),
+        token(now(), "model", std::string(64, 'f')),
+        token(now() - std::chrono::minutes{2}, "model", hex(leaf))}) {
+    check(std::holds_alternative<t::Failure>(kiarabot::core::platform::decode_delegation_claims(
+              invalid, leaf, now(), t::Service::Model)),
+          "Model metadata accepted foreign audience/certificate/expired delegation");
+  }
+  check(std::holds_alternative<t::Failure>(kiarabot::core::platform::decode_delegation_claims(
+            token(now(), "model", hex(leaf)), leaf, now())),
+        "Runtime decoder accepted a Model delegation");
   const auto proof = token(now(), "runtime", hex(leaf));
   auto decoded = kiarabot::core::platform::decode_delegation_claims(proof, leaf, now());
   check(std::holds_alternative<t::AuthenticationContext>(decoded), "valid delegation rejected");

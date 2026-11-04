@@ -213,6 +213,8 @@ void decode_cases() {
   const auto valid = p::decode_model_delegation(proof(leaf), leaf, now);
   require(std::holds_alternative<t::ModelCaller>(valid), "valid delegation decodes");
   const auto& caller = std::get<t::ModelCaller>(valid);
+  require(caller.delegation_expires_at && *caller.delegation_expires_at > now,
+          "proof expiry preserved");
   require(caller.subject && caller.owner && caller.direct_actor && caller.runtime_origin &&
               caller.delegation.find('.') != std::string::npos,
           "runtime caller derives owner");
@@ -253,6 +255,21 @@ void authorize_cases() {
   require(fake.calls() == 1 && fake.full_method() == "/kiarabot.v1.ModelService/Chat" &&
               fake.subject_proof() == "proof",
           "authorize sends proof/method once");
+  auto streaming = client->authorize(runtime_caller("/kiarabot.v1.ModelService/ChatStream"),
+                                     t::Permission::ModelChat, resource, 500ms);
+  require(std::holds_alternative<t::ModelAuthorizationDecision>(streaming),
+          "Runtime ChatStream allowed");
+  const auto before_rejected = fake.calls();
+  for (const auto method :
+       {"/kiarabot.v1.ModelService/GetCallStatus", "/kiarabot.v1.ModelService/ListOperationChanges",
+        "/kiarabot.v1.ModelService/FutureMethod"}) {
+    auto denied =
+        client->authorize(runtime_caller(method), t::Permission::ResourceRead, resource, 500ms);
+    require(std::holds_alternative<t::Failure>(denied) &&
+                std::get<t::Failure>(denied).code == t::ErrorCode::PermissionDenied,
+            "Runtime Model method set is explicit");
+  }
+  require(fake.calls() == before_rejected, "unsupported Runtime methods never reach Identity");
   // A Runtime-origin caller cannot invoke a management method; a nested origin cannot Chat.
   auto management = client->authorize(runtime_caller("/kiarabot.v1.ModelService/UpdateModel"),
                                       t::Permission::ModelManage, resource, 500ms);

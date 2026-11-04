@@ -6,7 +6,9 @@
 #include <utility>
 #include <vector>
 
+#include "kiarabot/control/target/websocket_types.hpp"
 #include "kiarabot/core/runtime/platform/service_config.hpp"
+#include "kiarabot/v1/policy.pb.h"
 
 namespace kiarabot::control::target {
 
@@ -36,6 +38,15 @@ public:
   IdentityAuthClient(const IdentityAuthClient&) = delete;
   IdentityAuthClient& operator=(const IdentityAuthClient&) = delete;
   AuthHttpResponse handle(const AuthHttpRequest& request);
+  // Same live Identity channel, cancellation registry and projection validation as HTTP.
+  // The caller owns a separate bounded WS worker budget; these calls cache no grant.
+  WebSocketResult<WebSocketIdentity> validate_stream(std::string_view access_token,
+                                                     WebSocketDeadline deadline);
+  WebSocketResult<std::string> delegate_stream(std::string_view owner, v1::Permission permission,
+                                               const v1::ResourceScope& scope,
+                                               std::string_view access_token,
+                                               WebSocketDeadline deadline);
+
   // Read-only readiness observation of the Control->Identity channel (no RPC, bounded).
   bool identity_ready() const;
   void cancel() noexcept;

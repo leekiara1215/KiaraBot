@@ -8,6 +8,7 @@ import "kiarabot/v1/actions.proto";
 import "kiarabot/v1/common.proto";
 import "kiarabot/v1/events.proto";
 import "kiarabot/v1/platform.proto";
+import "kiarabot/v1/model_stream.proto";
 
 message PluginManifest {
   string id = 1;
@@ -112,6 +113,9 @@ message CoreToPlugin {
     DeliveryReceipt delivery_receipt = 9;
     // CONTRACT_STATUS: not_implemented - rotates connection secrets, not delivery leases.
     ConnectionAuthorizationResult authorization_result = 10;
+    // CONTRACT_STATUS: not_implemented - STR-01; requires negotiated host.model.stream.v1.
+    // Ordered stream events have their own registry; never repeated HostResponse completions.
+    ModelStreamEvent model_stream_event = 11;
   }
 }
 
@@ -189,6 +193,14 @@ message HostRequest {
   string trace_id = 2;
   google.protobuf.Timestamp deadline = 3;
   string idempotency_key = 4;
+  // Tags 10..127 are allocated for length-delimited operation payloads, including future ones;
+  // this is an allocation rule, NOT a reserved range. Tags outside that range are metadata.
+  // Target old-reader classification: no operation and no candidate unknown operation is
+  // INVALID_ARGUMENT; exactly one unknown length-delimited candidate with no known operation is
+  // CAPABILITY_NOT_SUPPORTED. Known+unknown candidate, multiple unknown candidates, or candidate
+  // with wrong wire type is INVALID_ARGUMENT. Known oneof fields use standard protobuf last-wins
+  // semantics; typed gRPC does not retain their raw duplicates. Unknown metadata outside 10..127
+  // alone never supplies an operation. Validate before dispatch/side effects.
   oneof operation {
     ModelChatRequest model_chat = 10;
     StorageGetRequest storage_get = 11;
@@ -199,6 +211,10 @@ message HostRequest {
     TaskGetRequest task_get = 16;
     // CONTRACT_STATUS: not_implemented - P09 target declaration, no producer.
     StorageCompareAndSetRequest storage_compare_and_set = 17;
+    // CONTRACT_STATUS: not_implemented - STR-01; ModelStreamEvent is the response, not HostResponse.
+    ModelStreamStartRequest model_stream_start = 18;
+    // CONTRACT_STATUS: not_implemented - STR-01; same connection, idempotent best-effort stop.
+    ModelStreamCancelRequest model_stream_cancel = 19;
   }
 }
 
@@ -217,6 +233,8 @@ message HostResponse {
     TaskResponse task_get = 16;
     // CONTRACT_STATUS: not_implemented - P09 target declaration, no producer.
     StorageCompareAndSetResponse storage_compare_and_set = 17;
+    // CONTRACT_STATUS: not_implemented - STR-01 cancel receipt only; not provider completion.
+    ModelStreamCancelResponse model_stream_cancel = 18;
   }
 }
 
@@ -238,6 +256,25 @@ message ModelChatResponse {
   string text = 1;
   uint64 input_tokens = 2;
   uint64 output_tokens = 3;
+}
+
+// Separate from non-streaming model_chat; SDK model_chat(..., stream=False) is unchanged and
+// stream=True remains unsupported there. The new model_stream() API requires model.chat and
+// negotiated host.model.stream.v1. Server derives owner/installation from the authenticated
+// instance. request/trace/logical IDs are lowercase UUIDv4; idempotency_key stays empty.
+// Input <=128 messages/65536 canonical bytes; roles system/user/assistant, no NUL in text.
+// Deadline is future and <=30s, further bounded by config, delegation and transport budgets.
+// Per attempt: <=32 queued frames AND <=65536 queued bytes (terminal control slot separate),
+// <=4 active streams/connection, <=64/process; old/new calls share Model concurrency admission.
+// Provider enqueue wait <=250ms, Bridge write <=1s and remaining deadline. Slow SDK consumers
+// cancel only their stream; the shared reader must continue heartbeat/refresh/ACK processing.
+// Stream plaintext/sequence/partial are not persisted; duplicate logical identity returns only
+// replay metadata with zero delta, even across old Chat/new ChatStream, and never calls Provider.
+// CONTRACT_STATUS: not_implemented - STR-01 text streaming start declaration, no producer.
+message ModelStreamStartRequest {
+  string model = 1;
+  repeated ModelMessage messages = 2;
+  string logical_call_id = 3;
 }
 // P09 target storage frames: namespace scope is resolved by Runtime from the authenticated
 // instance; the plugin never supplies an owner. Shared-namespace Set/Delete/CAS require a

@@ -1,0 +1,151 @@
+syntax = "proto3";
+package kiarabot.v1;
+
+import "google/protobuf/timestamp.proto";
+import "kiarabot/v1/common.proto";
+import "kiarabot/v1/platform.proto";
+
+// STR-01 declaration only. Model owns provider execution facts; a stream is one delivery attempt.
+// Text/sequence/partial are ephemeral, never persisted or replayed. No provider JSON or secret
+// crosses this boundary. All declarations in this file remain target not_implemented.
+
+// CONTRACT_STATUS: not_implemented - STR-01 stream admission/replay declaration, no producer.
+enum ModelStreamDisposition {
+  MODEL_STREAM_DISPOSITION_UNSPECIFIED = 0;
+  MODEL_STREAM_FRESH = 1;
+  MODEL_STREAM_REPLAY_IN_PROGRESS = 2;
+  MODEL_STREAM_REPLAY_TERMINAL = 3;
+}
+
+// Delivery termination is independent of the durable call's OperationState/ExecutionOutcome.
+// CANCELLED does not mean the provider was not executed; REPLAY never carries text.
+// CONTRACT_STATUS: not_implemented - STR-01 stream termination declaration, no producer.
+enum ModelStreamTermination {
+  MODEL_STREAM_TERMINATION_UNSPECIFIED = 0;
+  MODEL_STREAM_COMPLETED = 1;
+  MODEL_STREAM_TRUNCATED = 2;
+  MODEL_STREAM_FAILED = 3;
+  MODEL_STREAM_CANCELLED = 4;
+  MODEL_STREAM_REPLAY = 5;
+}
+
+// Closed, sanitized text-only provider finish vocabulary. Tool/nontext finishes are unsupported
+// and cannot be converted into COMPLETED or a known-unbilled provider rejection.
+// CONTRACT_STATUS: not_implemented - STR-01 text finish declaration, no producer.
+enum ModelStreamFinishReason {
+  MODEL_STREAM_FINISH_REASON_UNSPECIFIED = 0;
+  MODEL_STREAM_FINISH_STOP = 1;
+  MODEL_STREAM_FINISH_LENGTH = 2;
+  MODEL_STREAM_FINISH_CONTENT_FILTER = 3;
+}
+
+// CONTRACT_STATUS: not_implemented - STR-01 authoritative usage declaration, no producer.
+message ModelStreamUsage {
+  // False requires both counters to be zero; zero then means unknown, never free billing.
+  bool known = 1;
+  uint64 input_tokens = 2;
+  uint64 output_tokens = 3;
+}
+
+// Stream-specific projection of existing ModelCallRecord facts. Kept in a dependency-leaf file
+// so plugins.proto does not import model.proto or create a cycle. No new durable call state.
+// Required when started is sent and on a terminal whose committed call is available.
+// CONTRACT_STATUS: not_implemented - STR-01 call snapshot declaration, no producer.
+message ModelStreamCallSnapshot {
+  string logical_call_id = 1;
+  string owner_instance_id = 2;
+  string model_id = 3;
+  uint64 config_version = 4;
+  uint64 secret_version = 5;
+  OperationState state = 6;
+  ExecutionOutcome execution_outcome = 7;
+  ModelStreamUsage usage = 8;
+  // Required presence. Unknown execution/commit after dispatch is conservatively true.
+  optional bool may_have_billed = 9;
+  google.protobuf.Timestamp observed_at = 10;
+  Error reason = 11;
+  // Sanitized existing call facts; request id <=128 bytes, never a secret.
+  string provider_request_id = 12;
+  uint32 latency_ms = 13;
+}
+
+// CONTRACT_STATUS: not_implemented - STR-01 stream admission declaration, no producer.
+message ModelStreamStarted {
+  ModelStreamDisposition disposition = 1;
+  ModelStreamCallSnapshot call = 2;
+}
+
+// CONTRACT_STATUS: not_implemented - STR-01 append-only text declaration, no producer.
+message ModelStreamDelta {
+  // Nonempty valid UTF-8, <=4096 bytes at code-point boundaries; total text <=65536 bytes.
+  string text = 1;
+}
+
+// Exactly one terminal on a writable attempt. Hard transport closure may deliver none and means
+// unknown delivery. COMPLETED requires finish STOP + provider [DONE] + confirmed txn2 + all
+// preceding deltas; HTTP EOF, grpc OK or a cancel receipt alone never supplies completion.
+// A complete provider result may remain durably successful even if delivery later fails.
+// CONTRACT_STATUS: not_implemented - STR-01 stream terminal declaration, no producer.
+message ModelStreamTerminal {
+  ModelStreamTermination termination = 1;
+  // True iff this attempt emitted nonempty text without COMPLETED. A zero-delta failure is
+  // false, but does not imply provider non-execution. Replay always has false and zero counts.
+  bool partial = 2;
+  // Model's emissions, not an acknowledgement of SDK/UI consumption. Match preceding deltas.
+  uint64 emitted_bytes = 3;
+  uint64 emitted_delta_count = 4;
+  ModelStreamFinishReason finish_reason = 5;
+  // Required for FAILED; absent for COMPLETED/TRUNCATED/REPLAY. Optional for CANCELLED.
+  // Stable Error + AcceptanceState/RecoveryAction; never raw upstream diagnostics.
+  RpcFailure failure = 6;
+  ModelStreamCallSnapshot call = 7;
+  // Required, even when unknown. Must agree with call when the same authoritative facts exist.
+  ModelStreamUsage usage = 8;
+  optional bool may_have_billed = 9;
+}
+
+// Attempt correlation is distinct from the durable logical_call_id. On PluginBridge the outer
+// CoreToPlugin Fence must be current. sequence: started=0; deltas=1..N; terminal=N+1 (including
+// no-delta terminal=1). A pre-start rejection/unknown admission has only terminal=0, no call may
+// be available. Replay is started=0 + terminal=1, no delta, no provider re-invocation.
+// Requests share the old Chat fingerprint (model/messages, excluding transport mode/deadline).
+// Same owner/id with changed input is CONFLICT; identical input across Chat/ChatStream is replay.
+// No automatic retry, EventSource reconnect or Last-Event-ID may reissue a provider POST.
+// CONTRACT_STATUS: not_implemented - STR-01 ordered attempt event declaration, no producer.
+message ModelStreamEvent {
+  string request_id = 1;
+  string logical_call_id = 2;
+  uint64 sequence = 3;
+  string trace_id = 4;
+  oneof body {
+    ModelStreamStarted started = 10;
+    ModelStreamDelta delta = 11;
+    ModelStreamTerminal terminal = 12;
+  }
+}
+
+// Same authenticated PluginBridge connection only. No self-reported owner/installation/fence.
+// The cancel HostRequest has its own request_id/deadline; it cannot start provider work.
+// CONTRACT_STATUS: not_implemented - STR-01 per-attempt cancellation declaration, no producer.
+message ModelStreamCancelRequest {
+  string start_request_id = 1;
+  string logical_call_id = 2;
+}
+
+// CONTRACT_STATUS: not_implemented - STR-01 cancellation receipt declaration, no producer.
+enum ModelStreamCancelDisposition {
+  MODEL_STREAM_CANCEL_DISPOSITION_UNSPECIFIED = 0;
+  MODEL_STREAM_CANCELLATION_REQUESTED = 1;
+  MODEL_STREAM_ALREADY_TERMINAL = 2;
+  MODEL_STREAM_NOT_ACTIVE = 3;
+}
+
+// A receipt acknowledges only local cancellation handling. In-flight provider execution/billing
+// remains unknown until an authoritative terminal/call snapshot; cancelling cannot undo it.
+// Duplicate cancel is harmless. NOT_ACTIVE exposes no other connection/owner's call existence.
+// CONTRACT_STATUS: not_implemented - STR-01 cancellation receipt declaration, no producer.
+message ModelStreamCancelResponse {
+  string start_request_id = 1;
+  string logical_call_id = 2;
+  ModelStreamCancelDisposition disposition = 3;
+}

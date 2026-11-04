@@ -46,11 +46,15 @@ openapi['paths'].each do |path, verbs|
   verbs.each do |verb, operation|
     next unless operation.is_a?(Hash) && operation['x-owner-rpc']
     raise 'missing unavailable marker' unless operation['x-contract-status'] == 'not_implemented'
-    raise 'missing permission' unless operation['x-permission']
+    raise 'missing permission policy' unless operation['x-permission'] || operation['x-owner-permissions']
     bindings = operation['x-owner-rpc'].is_a?(Hash) ? operation['x-owner-rpc'].values : [operation['x-owner-rpc']]
     raise 'internal dispatcher RPC exposed through REST' if bindings.any? {|rpc| internal_rpcs.include?(rpc)}
     raise 'owner RPC mapping is undeclared' unless bindings.all? {|rpc| declared_rpcs.include?(rpc)}
     if operation['x-owner-rpc'].is_a?(Hash)
+      if operation.key?('x-permission')
+        raise 'multi-owner permission must exactly match every branch, never union/widen' unless operation.fetch('x-owner-permissions').values.uniq == [operation['x-permission']]
+      end
+      raise 'owner permission coverage drift' unless operation.fetch('x-owner-permissions').keys.sort == operation['x-owner-rpc'].keys.sort
       operation['x-owner-rpc'].each do |owner, rpc|
         method = spec['methods'].find {|m| m['service'] + '.' + m['method'] == rpc}
         raise 'owner permission mapping drift' unless operation.fetch('x-owner-permissions').fetch(owner) == method['permission']

@@ -9,6 +9,8 @@
 #include <utility>
 #include <vector>
 
+#include "kiarabot/core/runtime/platform/model_stream_rpc.hpp"
+#include "kiarabot/core/runtime/platform/operation_observation_rpc.hpp"
 #include "kiarabot/core/runtime/platform/service_config.hpp"
 #include "kiarabot/core/runtime/platform/target_codec.hpp"
 #include "kiarabot/v1/common.pb.h"
@@ -318,8 +320,10 @@ bool resource_ref_from_wire(const v1::ResourceRef& wire, t::ResourceRef& output)
 
 class ModelRpcImpl final : public v1::ModelService::Service {
 public:
-  ModelRpcImpl(t::ModelGatewayApplication& application, ModelPeerAuthenticator authenticate)
-      : application_(application), authenticate_(std::move(authenticate)) {}
+  ModelRpcImpl(t::ModelGatewayApplication& application, ModelPeerAuthenticator authenticate,
+               t::OperationObservationApplication* observations)
+      : application_(application), authenticate_(std::move(authenticate)),
+        observations_(observations) {}
 
   grpc::Status Chat(grpc::ServerContext* context, const v1::ModelGatewayChatRequest* request,
                     v1::ModelGatewayChatResponse* response) override {
@@ -354,6 +358,95 @@ public:
       result->set_output_tokens(value.call.output_tokens);
     }
     call_wire(value.call, response->mutable_call());
+    return grpc::Status::OK;
+  }
+
+  grpc::Status ChatStream(grpc::ServerContext* context, const v1::ModelGatewayChatRequest* request,
+                          grpc::ServerWriter<v1::ModelStreamEvent>* writer) override {
+    try {
+      t::ModelCallContext call_context;
+      if (!request->has_context() || !context_from_wire(request->context(), false, call_context) ||
+          !t::valid_model_identifier(call_context.request_id) ||
+          !t::valid_model_identifier(call_context.trace_id) ||
+          !t::valid_model_identifier(request->logical_call_id()) ||
+          !call_context.idempotency_key.empty() || request->model_id().empty() ||
+          request->model_id().size() > 256 || request->messages_size() < 1 ||
+          request->messages_size() > static_cast<int>(t::kModelMaximumMessages)) {
+        return invalid_status(request->context().request_id(), request->context().trace_id());
+      }
+      const auto now = t::TimePoint{std::chrono::duration_cast<std::chrono::nanoseconds>(
+          std::chrono::system_clock::now().time_since_epoch())};
+      if (call_context.deadline <= now || context->IsCancelled()) {
+        return error_status(transport_failure(t::ErrorCode::Timeout, t::Recovery::Backoff),
+                            call_context.request_id, call_context.trace_id);
+      }
+      call_context.deadline = std::min(call_context.deadline, now + std::chrono::seconds{30});
+      if (context->deadline() != std::chrono::system_clock::time_point::max()) {
+        call_context.deadline =
+            std::min(call_context.deadline,
+                     t::TimePoint{std::chrono::duration_cast<std::chrono::nanoseconds>(
+                         context->deadline().time_since_epoch())});
+      }
+      std::size_t bytes = 0;
+      std::vector<t::ModelMessage> messages;
+      for (const auto& message : request->messages()) {
+        if (message.text().size() > t::kModelMaximumRequestBytes - bytes ||
+            !t::valid_model_message_role(message.role()) ||
+            message.text().find('\0') != std::string::npos) {
+          return invalid_status(call_context.request_id, call_context.trace_id);
+        }
+        bytes += message.text().size();
+        messages.push_back({message.role(), message.text()});
+      }
+      t::ModelCaller caller;
+      auto status =
+          caller_for(*context, request->context(), "/kiarabot.v1.ModelService/ChatStream", caller);
+      if (!status.ok()) {
+        return status;
+      }
+      if (!caller.runtime_origin || !caller.owner || !caller.delegation_expires_at) {
+        return error_status(
+            transport_failure(t::ErrorCode::PermissionDenied, t::Recovery::Authenticate),
+            call_context.request_id, call_context.trace_id);
+      }
+      call_context.deadline = std::min(call_context.deadline, *caller.delegation_expires_at);
+      if (call_context.deadline <= now) {
+        return error_status(
+            transport_failure(t::ErrorCode::Unauthenticated, t::Recovery::Authenticate),
+            call_context.request_id, call_context.trace_id);
+      }
+      return serve_model_chat_stream(*context, *writer, application_,
+                                     {std::move(caller), std::move(call_context),
+                                      request->logical_call_id(), request->model_id(),
+                                      std::move(messages)});
+    } catch (...) {
+      return error_status(transport_failure(t::ErrorCode::Internal),
+                          request->context().request_id(), request->context().trace_id());
+    }
+  }
+
+  grpc::Status ListOperationChanges(grpc::ServerContext* context,
+                                    const v1::OperationChangesRequest* request,
+                                    v1::OperationChangesResponse* response) override {
+    if (!observations_) {
+      return error_status(
+          transport_failure(t::ErrorCode::CapabilityNotSupported, t::Recovery::CorrectInput),
+          request->context().request_id(), request->context().trace_id());
+    }
+    auto command = prepare_operation_observation(*context, *request, t::Service::Model);
+    if (const auto* failure = std::get_if<t::Failure>(&command)) {
+      return error_status(*failure, request->context().request_id(), request->context().trace_id());
+    }
+    auto result = observations_->query(std::get<t::OperationObservationCommand>(command));
+    if (const auto* failure = std::get_if<t::Failure>(&result)) {
+      return error_status(*failure, request->context().request_id(), request->context().trace_id());
+    }
+    auto encoded = encode_operation_observation_page(std::get<t::OperationObservationPage>(result),
+                                                     request->context(), *response);
+    if (const auto* failure = std::get_if<t::Failure>(&encoded)) {
+      response->Clear();
+      return error_status(*failure, request->context().request_id(), request->context().trace_id());
+    }
     return grpc::Status::OK;
   }
 
@@ -687,15 +780,17 @@ private:
   }
   t::ModelGatewayApplication& application_;
   ModelPeerAuthenticator authenticate_;
+  t::OperationObservationApplication* observations_;
 };
 
 } // namespace
 
 target::Outcome<std::unique_ptr<v1::ModelService::Service>>
-make_model_rpc(target::ModelGatewayApplication& application, ModelPeerAuthenticator authenticate) {
+make_model_rpc(target::ModelGatewayApplication& application, ModelPeerAuthenticator authenticate,
+               target::OperationObservationApplication* observations) {
   try {
     return std::unique_ptr<v1::ModelService::Service>(
-        std::make_unique<ModelRpcImpl>(application, std::move(authenticate)));
+        std::make_unique<ModelRpcImpl>(application, std::move(authenticate), observations));
   } catch (...) {
     return transport_failure(t::ErrorCode::Internal);
   }

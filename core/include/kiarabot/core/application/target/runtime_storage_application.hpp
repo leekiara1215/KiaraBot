@@ -31,9 +31,9 @@ struct StorageCommandContext {
   ResourceId shared_namespace_id;
   // P09b: a PluginBridge frame carries an authorization decision produced by the trusted P06
   // bridge session (authentication + ConnectionAuthorization + granted manifest permission).
-  // Wire frames can never populate this; only the bridge transport sets it after verifying the
-  // registered plugin profile. When present the application validates the decision binding and
-  // skips the extra Identity round-trip for that frame.
+  // Wire frames can never populate this; the plugin capability application derives it from the
+  // verified connection and admitted registration profile. When present the application validates
+  // the decision binding and skips the extra Identity round-trip for that frame.
   std::optional<RuntimeAuthorizationDecision> bridge_authorization;
 };
 struct StorageGetRequest {

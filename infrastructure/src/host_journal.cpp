@@ -4,11 +4,10 @@
 #include <cstdint>
 #include <filesystem>
 #include <limits>
+#include <sqlite3.h>
 #include <string>
 #include <utility>
 #include <vector>
-
-#include <sqlite3.h>
 
 namespace kiarabot::infrastructure::host {
 namespace {
@@ -74,9 +73,10 @@ public:
   }
   std::string column_text(int index) const {
     const auto* value = sqlite3_column_text(statement_, index);
-    return value == nullptr ? std::string{}
-                            : std::string(reinterpret_cast<const char*>(value),
-                                          static_cast<std::size_t>(sqlite3_column_bytes(statement_, index)));
+    return value == nullptr
+               ? std::string{}
+               : std::string(reinterpret_cast<const char*>(value),
+                             static_cast<std::size_t>(sqlite3_column_bytes(statement_, index)));
   }
   std::int64_t column_int64(int index) const {
     return sqlite3_column_int64(statement_, index);
@@ -259,9 +259,8 @@ bool decode_execution(std::string_view payload, t::ManagedExecution& execution) 
 }
 
 std::int64_t retention_for(const t::ManagedExecution& execution) {
-  const auto base = execution.observed_at.time_since_epoch().count() > 0
-                        ? execution.observed_at
-                        : execution.started_at;
+  const auto base = execution.observed_at.time_since_epoch().count() > 0 ? execution.observed_at
+                                                                         : execution.started_at;
   const auto horizon = execution.state == t::ManagedExecutionState::Exited
                            ? t::kHostResolvedRetention
                            : t::kHostUnresolvedRetention;
@@ -284,10 +283,9 @@ public:
     if (path.has_parent_path()) {
       std::filesystem::create_directories(path.parent_path(), error);
     }
-    if (error ||
-        sqlite3_open_v2(path_.c_str(), &database_, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE |
-                                                      SQLITE_OPEN_FULLMUTEX,
-                        nullptr) != SQLITE_OK) {
+    if (error || sqlite3_open_v2(path_.c_str(), &database_,
+                                 SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_FULLMUTEX,
+                                 nullptr) != SQLITE_OK) {
       close();
       return upstream();
     }
@@ -369,9 +367,8 @@ public:
     insert.integer(9, nanos(command.updated_at));
     insert.integer(10, nanos(command.retain_until));
     const bool inserted = insert.step() == SQLITE_DONE;
-    const int result =
-        inserted ? sqlite3_exec(database_, "COMMIT;", nullptr, nullptr, nullptr)
-                 : sqlite3_exec(database_, "ROLLBACK;", nullptr, nullptr, nullptr);
+    const int result = inserted ? sqlite3_exec(database_, "COMMIT;", nullptr, nullptr, nullptr)
+                                : sqlite3_exec(database_, "ROLLBACK;", nullptr, nullptr, nullptr);
     if (!inserted || result != SQLITE_OK) {
       return internal();
     }
@@ -434,8 +431,8 @@ public:
     return commands;
   }
 
-  t::Outcome<std::optional<t::ManagedExecution>> find_execution(
-      const t::InstanceId& instance, t::ExecutionGeneration generation) override {
+  t::Outcome<std::optional<t::ManagedExecution>>
+  find_execution(const t::InstanceId& instance, t::ExecutionGeneration generation) override {
     if (database_ == nullptr) {
       return upstream();
     }
@@ -463,10 +460,12 @@ public:
                     "SELECT instance_id,execution_generation,host_id,installation_id,"
                     "desired_version,pid,process_marker,state,outcome,exit_code,exit_signal,"
                     "started_at,exited_at,observed_at,command_id FROM managed_executions "
-                    "WHERE state<>3 ORDER BY started_at;");
+                    "WHERE state<>?1 OR outcome=?2 ORDER BY started_at;");
     if (!query.valid()) {
       return internal();
     }
+    query.integer(1, static_cast<int>(t::ManagedExecutionState::Exited));
+    query.integer(2, static_cast<int>(t::ExecutionOutcome::Unknown));
     std::vector<t::ManagedExecution> executions;
     while (query.step() == SQLITE_ROW) {
       executions.push_back(read_execution(query));
@@ -518,8 +517,8 @@ public:
     return std::monostate{};
   }
 
-  t::Outcome<t::ExecutionObservation> append_observation(
-      t::ExecutionObservation observation) override {
+  t::Outcome<t::ExecutionObservation>
+  append_observation(t::ExecutionObservation observation) override {
     if (database_ == nullptr) {
       return upstream();
     }
@@ -549,8 +548,7 @@ public:
     insert.text(4, observation.command_id);
     insert.text(5, encode_execution(observation.execution));
     insert.integer(6, nanos(observation.execution.observed_at));
-    insert.integer(
-        7, nanos(observation.execution.observed_at + t::kHostResolvedRetention));
+    insert.integer(7, nanos(observation.execution.observed_at + t::kHostResolvedRetention));
     if (insert.step() != SQLITE_DONE ||
         sqlite3_exec(database_, "COMMIT;", nullptr, nullptr, nullptr) != SQLITE_OK) {
       sqlite3_exec(database_, "ROLLBACK;", nullptr, nullptr, nullptr);
@@ -559,8 +557,8 @@ public:
     return observation;
   }
 
-  t::Outcome<std::vector<t::ExecutionObservation>> pending_observations(
-      std::size_t limit) override {
+  t::Outcome<std::vector<t::ExecutionObservation>>
+  pending_observations(std::size_t limit) override {
     if (database_ == nullptr || limit == 0 || limit > 256) {
       return failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput);
     }
@@ -590,8 +588,7 @@ public:
     if (database_ == nullptr) {
       return upstream();
     }
-    Statement update(database_,
-                     "UPDATE execution_observations SET reported=1 WHERE sequence=?1;");
+    Statement update(database_, "UPDATE execution_observations SET reported=1 WHERE sequence=?1;");
     if (!update.valid()) {
       return internal();
     }
@@ -606,9 +603,8 @@ public:
     if (database_ == nullptr) {
       return upstream();
     }
-    Statement query(database_,
-                    "SELECT COALESCE(MAX(sequence),0) FROM execution_observations "
-                    "WHERE reported=1;");
+    Statement query(database_, "SELECT COALESCE(MAX(sequence),0) FROM execution_observations "
+                               "WHERE reported=1;");
     if (!query.valid() || query.step() != SQLITE_ROW) {
       return internal();
     }

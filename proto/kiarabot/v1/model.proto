@@ -5,6 +5,8 @@ import "kiarabot/v1/common.proto";
 import "kiarabot/v1/platform.proto";
 import "kiarabot/v1/policy.proto";
 import "kiarabot/v1/plugins.proto";
+import "kiarabot/v1/model_stream.proto";
+import "kiarabot/v1/observations.proto";
 
 // CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
 message ModelMetadata {
@@ -271,6 +273,23 @@ service ModelService {
     // Exact business scope is the Model resource family; no instance/namespace widening.
     option (scope_kinds) = RESOURCE_MODEL;
   }
+  // CONTRACT_STATUS: not_implemented - STR-01 frozen declaration, producer/consumer pending.
+  // Runtime-origin instance delegation only, same owner/fingerprint/deduplication as Chat.
+  // Online authorization before admission, first output, at most every 1s, and final release;
+  // stop output while checking. Effective deadline also bounds delegation lifetime/config.
+  // Cancel/timeout/transport loss after provider dispatch: UNKNOWN, may_have_billed=true unless
+  // an authoritative provider result is already committed. Never retry the provider POST.
+  // Pre-start failure uses structured RpcFailure trailers; after started use a terminal event
+  // and grpc OK. An absent terminal after transport closure means unknown delivery, not failure
+  // of any already committed provider fact. Standard HTTP SSE parsing stays in infrastructure.
+  rpc ChatStream(ModelGatewayChatRequest) returns (stream ModelStreamEvent) {
+    option (required_permission) = PERMISSION_MODEL_CHAT;
+    option (requires_idempotency) = false;
+    option (default_deadline_ms) = 30000;
+    option (max_deadline_ms) = 30000;
+    option (requires_online_authorization) = true;
+    option (scope_kinds) = RESOURCE_MODEL;
+  }
   rpc GetCallStatus(ModelGetCallStatusRequest) returns (ModelGetCallStatusResponse) {
     option (required_permission) = PERMISSION_MODEL_CALL_INSPECT;
     option (requires_idempotency) = false;
@@ -283,6 +302,17 @@ service ModelService {
     option (requires_idempotency) = false;
     option (default_deadline_ms) = 2000;
     option (max_deadline_ms) = 5000;
+    option (requires_online_authorization) = true;
+  }
+  // CONTRACT_STATUS: not_implemented - WS-01 owner observation declaration, no producer.
+  // Control platform caller + current scoped delegation; never a Runtime-origin plugin method.
+  // No cursor captures head with no changes; gap/expired epoch requires CONFLICT+RESYNC_SNAPSHOT.
+  rpc ListOperationChanges(OperationChangesRequest) returns (OperationChangesResponse) {
+    option (required_permission) = PERMISSION_RESOURCE_READ;
+    option (scope_kinds) = RESOURCE_MODEL;
+    option (requires_idempotency) = false;
+    option (default_deadline_ms) = 500;
+    option (max_deadline_ms) = 500;
     option (requires_online_authorization) = true;
   }
   rpc GetModelConfiguration(ModelGetModelConfigurationRequest) returns (ModelGetModelConfigurationResponse) {

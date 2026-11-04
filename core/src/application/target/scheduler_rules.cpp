@@ -5,8 +5,6 @@
 #include <cstddef>
 #include <string_view>
 
-#include <openssl/sha.h>
-
 #include "kiarabot/core/ports/target/scheduler_ports.hpp"
 
 namespace kiarabot::core::target {
@@ -116,7 +114,11 @@ Outcome<TimePoint> resolve_run_at(const TaskCreationInput& input, SchedulerTimeZ
   return run_at;
 }
 
-Sha256Digest creation_fingerprint(const TaskCreationInput& input) {
+Outcome<Sha256Digest> creation_fingerprint(const TaskCreationInput& input,
+                                           SchedulerDigestPort& digests) {
+  if (!input.run_at && !input.local_time) {
+    return scheduler_invalid();
+  }
   std::vector<std::byte> canonical;
   append(canonical, input.task_id);
   append(canonical, input.target.adapter.value);
@@ -137,10 +139,8 @@ Sha256Digest creation_fingerprint(const TaskCreationInput& input) {
     append_i32(canonical, input.local_time->second);
     append(canonical, input.local_time->time_zone);
   }
-  Sha256Digest digest;
-  SHA256(reinterpret_cast<const unsigned char*>(canonical.data()), canonical.size(),
-         reinterpret_cast<unsigned char*>(digest.bytes.data()));
-  return digest;
+  return digests.sha256(
+      std::string_view(reinterpret_cast<const char*>(canonical.data()), canonical.size()));
 }
 
 } // namespace kiarabot::core::target

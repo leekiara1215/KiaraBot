@@ -46,6 +46,7 @@ endforeach()
 # typed Model UoW; no SQL, protobuf, HTTP or logging dependency.
 add_library(kiarabot_model_gateway_application STATIC
   src/application/target/model_gateway_application.cpp)
+set_property(TARGET kiarabot_model_gateway_application PROPERTY KIARABOT_LAYER INNER)
 target_include_directories(kiarabot_model_gateway_application PUBLIC include)
 target_compile_features(kiarabot_model_gateway_application PUBLIC cxx_std_20)
 target_compile_options(kiarabot_model_gateway_application PRIVATE
@@ -67,6 +68,8 @@ add_test(NAME p11_model_gateway_application
   COMMAND kiarabot_model_gateway_application_test)
 set_tests_properties(p11_model_gateway_application PROPERTIES
   LABELS "p11;unit" TIMEOUT 30)
+
+include(${CMAKE_CURRENT_LIST_DIR}/cmake/model-streaming-application.cmake)
 
 foreach(COMPONENT runtime_host_application)
   add_executable(kiarabot_${COMPONENT}_test tests/architecture/${COMPONENT}_test.cpp)
@@ -114,6 +117,7 @@ endforeach()
 foreach(COMPONENT identity_admin identity_delegation identity_exchange)
   add_library(kiarabot_${COMPONENT}_application STATIC
     src/application/target/${COMPONENT}_application.cpp)
+  set_property(TARGET kiarabot_${COMPONENT}_application PROPERTY KIARABOT_LAYER INNER)
   target_include_directories(kiarabot_${COMPONENT}_application PUBLIC include)
   target_compile_features(kiarabot_${COMPONENT}_application PUBLIC cxx_std_20)
   target_compile_options(kiarabot_${COMPONENT}_application PRIVATE
@@ -141,6 +145,7 @@ set_tests_properties(p04_identity_admin_application PROPERTIES
 
 add_library(kiarabot_identity_security_application STATIC
   src/application/target/identity_security_application.cpp)
+set_property(TARGET kiarabot_identity_security_application PROPERTY KIARABOT_LAYER INNER)
 target_include_directories(kiarabot_identity_security_application PUBLIC include)
 target_compile_features(kiarabot_identity_security_application PUBLIC cxx_std_20)
 target_compile_options(kiarabot_identity_security_application PRIVATE
@@ -160,6 +165,7 @@ set_tests_properties(p04_identity_security_application PROPERTIES
 # adapter and the outer PG security factory.
 add_library(kiarabot_identity_principal_application STATIC
   src/application/target/identity_principal_application.cpp)
+set_property(TARGET kiarabot_identity_principal_application PROPERTY KIARABOT_LAYER INNER)
 target_include_directories(kiarabot_identity_principal_application PUBLIC include)
 target_compile_features(kiarabot_identity_principal_application PUBLIC cxx_std_20)
 target_compile_options(kiarabot_identity_principal_application PRIVATE
@@ -186,6 +192,7 @@ set_tests_properties(p04_identity_role_catalog PROPERTIES
 # Public-key lookup is a pure use case; the shared security helper is an internal header.
 add_library(kiarabot_identity_verification_keys_application STATIC
   src/application/target/identity_verification_keys_application.cpp)
+set_property(TARGET kiarabot_identity_verification_keys_application PROPERTY KIARABOT_LAYER INNER)
 target_include_directories(kiarabot_identity_verification_keys_application PUBLIC include)
 target_compile_features(kiarabot_identity_verification_keys_application PUBLIC cxx_std_20)
 target_compile_options(kiarabot_identity_verification_keys_application PRIVATE
@@ -205,6 +212,7 @@ set_tests_properties(p04_identity_verification_keys_application PROPERTIES
 # Online authority checking remains independent of proto, RPC, crypto implementations and SQL.
 add_library(kiarabot_identity_authorization_application STATIC
   src/application/target/identity_authorization_application.cpp)
+set_property(TARGET kiarabot_identity_authorization_application PROPERTY KIARABOT_LAYER INNER)
 target_include_directories(kiarabot_identity_authorization_application PUBLIC include)
 target_compile_features(kiarabot_identity_authorization_application PUBLIC cxx_std_20)
 target_compile_options(kiarabot_identity_authorization_application PRIVATE
@@ -234,12 +242,14 @@ set_tests_properties(p12e_audit_query PROPERTIES LABELS "p12;unit" TIMEOUT 10)
 # transport/composition owns RPC wiring and the real PG source remains owner-local.
 add_library(kiarabot_identity_audit_application STATIC
   src/application/target/identity_audit_application.cpp)
+set_property(TARGET kiarabot_identity_audit_application PROPERTY KIARABOT_LAYER INNER)
 target_include_directories(kiarabot_identity_audit_application PUBLIC include)
 target_compile_features(kiarabot_identity_audit_application PUBLIC cxx_std_20)
 target_compile_options(kiarabot_identity_audit_application PRIVATE
   $<$<CXX_COMPILER_ID:AppleClang,Clang,GNU>:-Wall -Wextra -Wpedantic>)
 add_library(kiarabot_runtime_audit_application STATIC
   src/application/target/runtime_audit_application.cpp)
+set_property(TARGET kiarabot_runtime_audit_application PROPERTY KIARABOT_LAYER INNER)
 target_include_directories(kiarabot_runtime_audit_application PUBLIC include)
 target_compile_features(kiarabot_runtime_audit_application PUBLIC cxx_std_20)
 target_compile_options(kiarabot_runtime_audit_application PRIVATE
@@ -248,12 +258,14 @@ target_compile_options(kiarabot_runtime_audit_application PRIVATE
 # P12l read-only human principal directory; pure application, no proto/SQL in the library.
 add_library(kiarabot_identity_principal_directory_application STATIC
   src/application/target/identity_principal_directory_application.cpp)
+set_property(TARGET kiarabot_identity_principal_directory_application PROPERTY KIARABOT_LAYER INNER)
 target_include_directories(kiarabot_identity_principal_directory_application PUBLIC include)
 target_compile_features(kiarabot_identity_principal_directory_application PUBLIC cxx_std_20)
 target_compile_options(kiarabot_identity_principal_directory_application PRIVATE
   $<$<CXX_COMPILER_ID:AppleClang,Clang,GNU>:-Wall -Wextra -Wpedantic>)
 add_library(kiarabot_identity_invalidation_application STATIC
   src/application/target/identity_invalidation_application.cpp)
+set_property(TARGET kiarabot_identity_invalidation_application PROPERTY KIARABOT_LAYER INNER)
 target_include_directories(kiarabot_identity_invalidation_application PUBLIC include)
 target_compile_features(kiarabot_identity_invalidation_application PUBLIC cxx_std_20)
 target_compile_options(kiarabot_identity_invalidation_application PRIVATE
@@ -263,6 +275,7 @@ target_compile_options(kiarabot_identity_invalidation_application PRIVATE
 # fingerprints are an injected port and every write owns ONE short security transaction.
 add_library(kiarabot_identity_assignment_application STATIC
   src/application/target/identity_assignment_application.cpp)
+set_property(TARGET kiarabot_identity_assignment_application PROPERTY KIARABOT_LAYER INNER)
 target_include_directories(kiarabot_identity_assignment_application PUBLIC include)
 target_compile_features(kiarabot_identity_assignment_application PUBLIC cxx_std_20)
 target_compile_options(kiarabot_identity_assignment_application PRIVATE
@@ -293,19 +306,24 @@ add_test(NAME p04_identity_invalidation_application
   COMMAND kiarabot_identity_invalidation_application_test)
 set_tests_properties(p04_identity_invalidation_application PROPERTIES
   LABELS "p04;unit;security" TIMEOUT 10)
-find_package(OpenSSL 3.0 REQUIRED)
 # P05 Runtime resources, bindings and current generations. The application owns business rules over
 # the pure Runtime UoW ports; RPC/transport mapping and PG adapters stay in outer layers.
 add_library(kiarabot_runtime_resource_application STATIC
   src/application/target/runtime_resource_application.cpp
+  src/application/target/runtime_resources/account_adapter.cpp
+  src/application/target/runtime_resources/common.cpp
+  src/application/target/runtime_resources/host_command_snapshot.cpp
+  src/application/target/runtime_resources/host_commands.cpp
+  src/application/target/runtime_resources/instances.cpp
+  src/application/target/runtime_resources/lifecycle.cpp
+  src/application/target/runtime_resources/timer.cpp
   src/application/target/runtime_bridge_application.cpp
   src/application/target/runtime_action_application.cpp
   src/application/target/runtime_task_application.cpp
+  src/application/target/runtime_plugin_capability.cpp
   src/application/target/runtime_lifecycle_participants.cpp)
+set_property(TARGET kiarabot_runtime_resource_application PROPERTY KIARABOT_LAYER INNER)
 target_include_directories(kiarabot_runtime_resource_application PUBLIC include)
-target_link_libraries(kiarabot_runtime_resource_application PRIVATE OpenSSL::Crypto)
-target_include_directories(kiarabot_runtime_resource_application SYSTEM PRIVATE
-  $<TARGET_PROPERTY:OpenSSL::Crypto,INTERFACE_INCLUDE_DIRECTORIES>)
 target_compile_features(kiarabot_runtime_resource_application PUBLIC cxx_std_20)
 target_compile_options(kiarabot_runtime_resource_application PRIVATE
   $<$<CXX_COMPILER_ID:AppleClang,Clang,GNU>:-Wall -Wextra -Wpedantic>)
@@ -353,6 +371,7 @@ set_tests_properties(p13_scheduler_lifecycle PROPERTIES
 # quota, receipt replay and audit ordering.
 add_library(kiarabot_runtime_storage_application STATIC
   src/application/target/runtime_storage_application.cpp)
+set_property(TARGET kiarabot_runtime_storage_application PROPERTY KIARABOT_LAYER INNER)
 target_include_directories(kiarabot_runtime_storage_application PUBLIC include)
 target_compile_features(kiarabot_runtime_storage_application PUBLIC cxx_std_20)
 target_compile_options(kiarabot_runtime_storage_application PRIVATE
@@ -370,3 +389,16 @@ add_test(NAME p09a_runtime_storage_application
   COMMAND kiarabot_runtime_storage_application_test)
 set_tests_properties(p09a_runtime_storage_application PROPERTIES
   LABELS "p09;unit" TIMEOUT 30)
+
+add_executable(kiarabot_runtime_plugin_capability_test
+  tests/architecture/runtime_plugin_capability_test.cpp)
+target_link_libraries(kiarabot_runtime_plugin_capability_test PRIVATE
+  kiarabot_runtime_resource_application)
+target_compile_options(kiarabot_runtime_plugin_capability_test PRIVATE
+  $<$<CXX_COMPILER_ID:AppleClang,Clang,GNU>:-Wall -Wextra -Wpedantic -UNDEBUG>
+  $<$<CXX_COMPILER_ID:MSVC>:/UNDEBUG>)
+add_test(NAME p06_runtime_plugin_capability COMMAND kiarabot_runtime_plugin_capability_test)
+set_tests_properties(p06_runtime_plugin_capability PROPERTIES LABELS "p06;unit;security" TIMEOUT 10)
+
+include(${CMAKE_CURRENT_LIST_DIR}/cmake/operation-observation.cmake)
+include(${CMAKE_SOURCE_DIR}/cmake/host-maintenance.cmake)

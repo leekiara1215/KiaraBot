@@ -70,11 +70,19 @@ struct Store {
   std::vector<t::BridgeCredentialRecord> bridge_credentials;
   std::vector<std::pair<t::ReceiptKey, t::CommandReceipt>> receipts;
   std::vector<t::AuditEntry> audits;
+  bool transactional = false;
+  bool fail_host_insert = false;
+  bool fail_audit = false;
+  bool fail_receipt = false;
+  bool unknown_commit_persisted = true;
+  int open_works = 0;
   bool fail_reads = false;
   bool fail_writes = false;
   bool fail_cleanup = false;
   bool fail_commit = false;
   bool unknown_commit = false;
+  bool accept_timer_events = false;
+  std::optional<t::EventRecord> timer_event;
   int commits = 0;
   int rollbacks = 0;
 };
@@ -273,7 +281,7 @@ public:
   }
   t::Outcome<t::ReceiptWrite> insert(const t::CommandReceipt& receipt,
                                      t::ReceiptCapacity) override {
-    if (store_.fail_writes) {
+    if (store_.fail_writes || store_.fail_receipt) {
       return failure(t::ErrorCode::UpstreamUnavailable);
     }
     for (const auto& [key, stored] : store_.receipts) {
@@ -298,7 +306,7 @@ class MemoryJournal final : public t::JournalRepository {
 public:
   explicit MemoryJournal(Store& store) : store_(store) {}
   t::Status append_audit(const t::AuditEntry& entry) override {
-    if (store_.fail_writes) {
+    if (store_.fail_writes || store_.fail_audit) {
       return failure(t::ErrorCode::UpstreamUnavailable);
     }
     store_.audits.push_back(entry);
@@ -384,16 +392,32 @@ public:
 private:
   Store& store_;
 };
-// P05 runtime resource tests do not exercise event delivery; the merged UoW contract still
-// requires an EventRepository. Every call fails closed so an accidental dependency is visible.
+// Only the explicit timer digest fixture enables accept; other event operations fail closed.
 class UnusedEvents final : public t::EventRepository {
 public:
-  t::Outcome<t::EventAcceptanceResult> accept(const t::EventRecord&,
-                                              const std::vector<t::DeliveryRecord>&,
+  explicit UnusedEvents(Store& store) : store_(store) {}
+  t::Outcome<t::EventAcceptanceResult> accept(const t::EventRecord& event,
+                                              const std::vector<t::DeliveryRecord>& targets,
                                               const t::EventCapacityLimits&) override {
-    return failure(t::ErrorCode::CapabilityNotSupported);
+    if (!store_.accept_timer_events) {
+      return failure(t::ErrorCode::CapabilityNotSupported);
+    }
+    check(targets.size() == 1 && targets.front().delivery.event == event.key,
+          "timer digest fixture lost target identity");
+    const bool duplicate = store_.timer_event.has_value();
+    if (duplicate && store_.timer_event->fingerprint != event.fingerprint) {
+      return failure(t::ErrorCode::Conflict);
+    }
+    store_.timer_event = event;
+    t::EventAcceptanceResult result{};
+    result.duplicate = duplicate;
+    return result;
   }
   t::Outcome<std::vector<t::DeliveryClaim>> claim(const t::DeliveryClaimRequest&) override {
+    return failure(t::ErrorCode::CapabilityNotSupported);
+  }
+  t::Outcome<std::optional<t::DeliveryAttempt>> find_attempt(const t::InstanceId&, std::string_view,
+                                                             const t::AttemptId&) override {
     return failure(t::ErrorCode::CapabilityNotSupported);
   }
   t::Outcome<t::DeliveryReceipt> acknowledge(const t::DeliveryAcknowledgement&,
@@ -422,6 +446,9 @@ public:
   t::Outcome<std::size_t> prune_expired(t::TimePoint, std::size_t) override {
     return failure(t::ErrorCode::CapabilityNotSupported);
   }
+
+private:
+  Store& store_;
 };
 // P07 Action ports are not exercised by this P05/P06 application fixture. They stay fail-closed
 // exactly like a missing PG relation so an accidental call is visible instead of looking absent.
@@ -500,6 +527,9 @@ class MemoryHostCommands final : public t::HostCommandOutbox {
 public:
   explicit MemoryHostCommands(Store& store) : store_(store) {}
   t::Outcome<t::PersistedHostCommand> insert(const t::HostCommandOutboxRecord& record) override {
+    if (store_.fail_host_insert) {
+      return failure(t::ErrorCode::UpstreamUnavailable);
+    }
     auto found = store_.host_commands.find(record.command_id);
     if (found != store_.host_commands.end()) {
       if (found->second.payload_sha256 != record.payload_sha256) {
@@ -580,8 +610,18 @@ class MemoryWork final : public t::RuntimeUnitOfWork {
 public:
   explicit MemoryWork(Store& store)
       : store_(store), accounts_(store), bindings_(store), adapters_(store), hosts_(store),
-        installations_(store), instances_(store), configs_(store), operations_(store),
-        credentials_(store), receipts_(store), journal_(store) {}
+        installations_(store), instances_(store), configs_(store), events_(store),
+        operations_(store), credentials_(store), receipts_(store), journal_(store) {
+    if (store_.transactional) {
+      snapshot_ = std::make_unique<Store>(store_);
+    }
+    ++store_.open_works;
+  }
+  ~MemoryWork() override {
+    if (active_) {
+      rollback();
+    }
+  }
   t::Service owner() const noexcept override {
     return t::Service::Runtime;
   }
@@ -616,14 +656,44 @@ public:
     return operations_;
   }
   t::CommitResult commit() override {
+    check(active_, "committed a closed UoW");
     ++store_.commits;
+    if (store_.unknown_commit && !store_.unknown_commit_persisted) {
+      rollback();
+      return t::CommitResult::Unknown;
+    }
+    active_ = false;
+    --store_.open_works;
     if (store_.unknown_commit) {
       return t::CommitResult::Unknown;
     }
     return t::CommitResult::Committed;
   }
   void rollback() noexcept override {
+    if (!active_) {
+      return;
+    }
+    active_ = false;
+    --store_.open_works;
     ++store_.rollbacks;
+    if (snapshot_) {
+      store_.accounts = std::move(snapshot_->accounts);
+      store_.bindings = std::move(snapshot_->bindings);
+      store_.adapters = std::move(snapshot_->adapters);
+      store_.hosts = std::move(snapshot_->hosts);
+      store_.installations = std::move(snapshot_->installations);
+      store_.instances = std::move(snapshot_->instances);
+      store_.configs = std::move(snapshot_->configs);
+      store_.operations = std::move(snapshot_->operations);
+      store_.operation_participants = std::move(snapshot_->operation_participants);
+      store_.tombstones = std::move(snapshot_->tombstones);
+      store_.host_commands = std::move(snapshot_->host_commands);
+      store_.management_receipts = std::move(snapshot_->management_receipts);
+      store_.bridge_credentials = std::move(snapshot_->bridge_credentials);
+      store_.receipts = std::move(snapshot_->receipts);
+      store_.audits = std::move(snapshot_->audits);
+      store_.timer_event = std::move(snapshot_->timer_event);
+    }
   }
   t::Repository<t::ResourceId, t::BotAccount>& accounts() override {
     return accounts_;
@@ -839,6 +909,8 @@ public:
 
 private:
   Store& store_;
+  std::unique_ptr<Store> snapshot_;
+  bool active_ = true;
   MemoryRepository<t::ResourceId, t::BotAccount> accounts_;
   MemoryRepository<t::ResourceId, t::AdapterBindingRecord> bindings_;
   MemoryAdapters adapters_;
@@ -922,6 +994,10 @@ public:
     return bytes;
   }
   t::Outcome<t::Sha256Digest> sha256(std::string_view value) override {
+    sha_inputs.emplace_back(value);
+    if (sha_inputs.size() == fail_sha_at) {
+      return failure(t::ErrorCode::UpstreamUnavailable);
+    }
     t::Sha256Digest digest;
     for (std::size_t index = 0; index < digest.bytes.size(); ++index) {
       digest.bytes[index] = static_cast<std::byte>(
@@ -930,6 +1006,8 @@ public:
     return digest;
   }
   std::uint64_t counter_ = 0;
+  std::vector<std::string> sha_inputs;
+  std::size_t fail_sha_at = 0;
 };
 class Authorization final : public t::RuntimeAuthorizationPort {
 public:
@@ -942,11 +1020,15 @@ public:
   std::uint64_t version = 7;
   std::optional<t::ResourceRef> last_scope;
   std::set<std::string> denied_resources;
+  std::function<void(const t::RuntimeAuthorizationRequest&)> on_check;
   bool available() const noexcept override {
     return chain_available && !unavailable;
   }
   t::Outcome<t::RuntimeAuthorizationDecision>
   check(const t::RuntimeAuthorizationRequest& request) override {
+    if (on_check) {
+      on_check(request);
+    }
     if (unavailable) {
       return failure(t::ErrorCode::UpstreamUnavailable);
     }
@@ -1638,6 +1720,13 @@ void catalog_rejection_and_capacity_flow() {
   query.context.request_id = context("runtime.list_accounts", digest(99)).request_id;
   check(failure_is(harness.application->list_accounts(query), t::ErrorCode::RateLimited),
         "snapshot subject budget silently evicted a live snapshot");
+  t::AdapterListQuery cross_family{
+      context("runtime.list_adapters", digest(95)),
+      {1, ""},
+      {t::ResourceKind::Catalog, {"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa4"}}};
+  check(failure_is(harness.application->list_adapters(cross_family), t::ErrorCode::RateLimited),
+        "splitting resource applications bypassed the shared subject snapshot capacity");
+
   harness.store.now += 600s;
   query.context.deadline += 600s;
   query.context.request_id = context("runtime.list_accounts", digest(99)).request_id;
@@ -2091,9 +2180,203 @@ void lifecycle_host_participant_flow() {
         "rejected host stop was treated as done");
 }
 
+void timer_digest_flow() {
+  t::AcceptTimerTriggerRequest request;
+  request.context = context("kiarabot.v1.RuntimeService/AcceptTimerTrigger", digest(1));
+  request.occurrence_id = t::MessageId{kSubject};
+  request.task_id = "timer-1";
+  request.owner_instance_id = t::InstanceId{kPeer};
+  request.schedule_version = t::ResourceVersion{7};
+  request.conversation_id = "room";
+  request.conversation_kind = t::ConversationKey::Kind::Group;
+  request.payload = {std::byte{'a'}, std::byte{0}, std::byte{'b'}, std::byte{255}};
+  request.serialized_envelope = "opaque-boundary-envelope";
+  request.platform_peer_authorized = true;
+  request.handoff.source = t::Service::Scheduler;
+  request.handoff.message = request.occurrence_id;
+  request.handoff.resource = {t::ResourceKind::Task, t::ResourceId{request.task_id}};
+  request.handoff.operation = {t::Service::Scheduler, t::OperationId{kSubject},
+                               request.handoff.resource};
+  request.handoff.version = request.schedule_version;
+  request.handoff.valid_until = t::TimePoint{std::chrono::seconds{1500}};
+  const std::string payload("a\0b\xff", 4);
+  Secrets reference;
+  request.handoff.payload_hash = std::get<t::Sha256Digest>(reference.sha256(payload));
+  const std::string canonical =
+      std::string("36:") + kSubject + "7:timer-136:" + kPeer + "1:74:room1:24:" + payload;
+  const auto expected = std::get<t::Sha256Digest>(reference.sha256(canonical));
+  Harness harness;
+  harness.store.accept_timer_events = true;
+  const auto accepted = harness.application->accept_timer_trigger(request);
+  check(std::holds_alternative<t::TimerTriggerAcceptance>(accepted), "timer acceptance failed");
+  check(harness.secrets.sha_inputs == std::vector<std::string>{payload, canonical},
+        "timer SHA-256 input encoding changed");
+  check(harness.store.timer_event && harness.store.timer_event->fingerprint == expected,
+        "timer fingerprint did not use the injected digest result");
+  request.serialized_envelope = "different-envelope-same-semantic-content";
+  const auto replay = harness.application->accept_timer_trigger(request);
+  check(std::get<t::TimerTriggerAcceptance>(replay).duplicate && harness.store.commits == 1,
+        "changed transport envelope lost timer idempotency");
+  request.payload[0] = std::byte{'z'};
+  check(failure_is(harness.application->accept_timer_trigger(request), t::ErrorCode::Conflict),
+        "changed timer payload bypassed hash integrity");
+  request.payload[0] = std::byte{'a'};
+  for (const std::size_t failing_call : {1U, 2U}) {
+    Harness failing;
+    failing.store.accept_timer_events = true;
+    failing.secrets.fail_sha_at = failing_call;
+    const auto rejected = failing.application->accept_timer_trigger(request);
+    check(failure_is(rejected, t::ErrorCode::UpstreamUnavailable),
+          "timer digest dependency failure lost stable error");
+    check(!failing.store.timer_event && failing.store.commits == 0,
+          "timer digest failure persisted an event");
+    check(failing.store.rollbacks == (failing_call == 2 ? 1 : 0),
+          "timer fingerprint failure failed to roll back the UoW");
+  }
+}
+
+t::AdapterRegistrationCommand registration_for(const t::BotAccount& account) {
+  t::AdapterRegistrationCommand request;
+  request.authentication = adapter_authentication(kAdapter);
+  request.request_id = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
+  request.trace_id = "ffffffff-ffff-4fff-8fff-ffffffffffff";
+  request.deadline = t::TimePoint{std::chrono::seconds{1300}};
+  request.adapter = t::ResourceId{kAdapter};
+  request.metadata = {
+      "nonebot", "1.0.0", "kiarabot.v1", {{"action.send_message.text.v1", "1"}}, {}};
+  request.declared_accounts = {account.id};
+  return request;
+}
+void adapter_authorization_transaction_flow() {
+  Harness harness;
+  t::BotAccount account;
+  create_account(harness, &account);
+  auto request = registration_for(account);
+  int calls = 0;
+  harness.authorization.on_check = [&](const t::RuntimeAuthorizationRequest& checked) {
+    check(harness.store.open_works == 0, "online registration authorization held an open UoW");
+    check(checked.authentication.subject == request.authentication.subject &&
+              checked.permission == t::Permission::AdapterConnect &&
+              checked.scope == std::vector<t::ResourceRef>{{t::ResourceKind::Adapter, {kAdapter}}},
+          "registration changed trusted authorization subject or scope");
+    ++calls;
+    harness.store.accounts.at(account.id.value).state = t::LifecycleState::Disabled;
+    ++harness.store.accounts.at(account.id.value).version.value;
+  };
+  const auto before_audits = harness.store.audits.size();
+  check(failure_is(harness.application->register_adapter(request), t::ErrorCode::Conflict),
+        "registration used a resource snapshot from before online authorization");
+  check(calls == 1 && harness.store.adapters.empty() &&
+            harness.store.audits.size() == before_audits && harness.store.open_works == 0,
+        "registration after concurrent disable wrote an adapter or leaked a UoW");
+  harness.store.accounts.at(account.id.value).state = t::LifecycleState::Active;
+  harness.authorization.on_check = [&](const t::RuntimeAuthorizationRequest&) {
+    check(harness.store.open_works == 0, "registration deadline check held an open UoW");
+    harness.store.now = request.deadline;
+  };
+  check(failure_is(harness.application->register_adapter(request), t::ErrorCode::Timeout),
+        "registration failed to recheck the database deadline after online authorization");
+  check(harness.store.adapters.empty(), "expired registration committed after authorization");
+  harness.store.now = t::TimePoint{std::chrono::seconds{1000}};
+  harness.authorization.on_check = [&](const t::RuntimeAuthorizationRequest&) {
+    check(harness.store.open_works == 0, "registration authentication check held an open UoW");
+    harness.store.now = request.authentication.expires_at;
+  };
+  request.deadline = request.authentication.expires_at + std::chrono::seconds{1};
+  check(failure_is(harness.application->register_adapter(request), t::ErrorCode::Unauthenticated),
+        "registration failed to recheck authentication expiry after online authorization");
+  check(harness.store.adapters.empty(), "expired authentication committed a registration");
+}
+void host_command_failure_atomicity_flow() {
+  constexpr auto kInstallation = "33333333-3333-4333-8333-333333333333";
+  constexpr auto kInstance = "44444444-4444-4444-8444-444444444444";
+  for (const int failed_stage : {1, 2, 3, 4, 5}) {
+    Harness harness;
+    harness.store.installations.emplace(
+        kInstallation, t::PluginInstallation{{kInstallation},
+                                             {"plugin-type"},
+                                             {1},
+                                             t::LifecycleState::Active,
+                                             {std::byte{0x61}, std::byte{0x00}, std::byte{0xff}}});
+    t::PluginInstance instance;
+    instance.id = {kInstance};
+    instance.installation = {kInstallation};
+    instance.plugin_type = {"plugin-type"};
+    instance.version = {1};
+    instance.desired_version = {1};
+    instance.state = t::LifecycleState::Active;
+    instance.host = t::ResourceId{kHost};
+    instance.desired = t::DesiredState::Running;
+    harness.store.instances.emplace(kInstance, instance);
+    harness.store.transactional = true;
+    harness.secrets.fail_sha_at = failed_stage < 3 ? static_cast<std::size_t>(failed_stage) : 0;
+    harness.store.fail_host_insert = failed_stage == 3;
+    harness.store.fail_audit = failed_stage == 4;
+    harness.store.fail_receipt = failed_stage == 5;
+    t::SetDesiredStateRequest request{
+        context("runtime.set_desired_state", digest(88)), {kInstance}, t::DesiredState::Stopped};
+    request.context.expected_version = t::ResourceVersion{1};
+    const auto rejected = harness.application->apply_desired_state(request);
+    check(failure_is(rejected, t::ErrorCode::UpstreamUnavailable),
+          "Host snapshot dependency failure changed the stable error code");
+    const auto& retained = harness.store.instances.at(kInstance);
+    check(retained.version.value == 1 && retained.desired == t::DesiredState::Running &&
+              harness.store.operations.empty() && harness.store.host_commands.empty() &&
+              harness.store.receipts.empty() && harness.store.management_receipts.empty() &&
+              harness.store.bridge_credentials.empty() && harness.store.open_works == 0,
+          "Host snapshot failure partially committed business state, command or success receipt");
+    check(failed_stage <= 3
+              ? harness.store.audits.size() == 1 &&
+                    harness.store.audits.front().rejection == t::ErrorCode::UpstreamUnavailable
+              : harness.store.audits.empty(),
+          "Host snapshot failure retained an audit from a rolled back success transaction");
+    harness.secrets.fail_sha_at = 0;
+    harness.store.fail_host_insert = false;
+    harness.store.fail_audit = false;
+    harness.store.fail_receipt = false;
+    harness.store.unknown_commit = true;
+    const auto uncertain = harness.application->apply_desired_state(request);
+    const auto* unknown = std::get_if<t::Failure>(&uncertain);
+    check(unknown && unknown->acceptance == t::Acceptance::Unknown &&
+              unknown->recovery == t::Recovery::QuerySameIdentity,
+          "unknown Host snapshot commit did not require the original identity");
+    const auto audits = harness.store.audits.size();
+    const auto commits = harness.store.commits;
+    harness.store.unknown_commit = false;
+    request.context.request_id = context("retry", digest(88)).request_id;
+    const auto replay = harness.application->apply_desired_state(request);
+    check(std::holds_alternative<t::InstanceMutation>(replay) &&
+              harness.store.host_commands.size() == 1 && harness.store.operations.size() == 1 &&
+              harness.store.receipts.size() == 1 && harness.store.management_receipts.size() == 1 &&
+              harness.store.audits.size() == audits && harness.store.commits == commits,
+          "unknown Host command replay repeated effects instead of restoring the receipt");
+    harness.store.unknown_commit = true;
+    harness.store.unknown_commit_persisted = false;
+    t::SetDesiredStateRequest uncommitted{
+        context("runtime.set_desired_state", digest(89)), {kInstance}, t::DesiredState::Running};
+    uncommitted.context.expected_version = t::ResourceVersion{2};
+    const auto unresolved = harness.application->apply_desired_state(uncommitted);
+    const auto* unresolved_failure = std::get_if<t::Failure>(&unresolved);
+    check(unresolved_failure && unresolved_failure->acceptance == t::Acceptance::Unknown &&
+              unresolved_failure->recovery == t::Recovery::QuerySameIdentity,
+          "unknown uncommitted Host snapshot was reported as a known rejection");
+    check(harness.store.instances.at(kInstance).version.value == 2 &&
+              harness.store.instances.at(kInstance).desired == t::DesiredState::Stopped &&
+              harness.store.host_commands.size() == 1 && harness.store.operations.size() == 1 &&
+              harness.store.receipts.size() == 1 && harness.store.management_receipts.size() == 1 &&
+              harness.store.audits.size() == audits && harness.store.commits == commits + 1 &&
+              harness.store.open_works == 0,
+          "unknown uncommitted Host snapshot left effects or retried automatically");
+  }
+}
+
 } // namespace
 
 int main() {
+  bridge_flow();
+  adapter_authorization_transaction_flow();
+  host_command_failure_atomicity_flow();
+  timer_digest_flow();
   {
     Harness harness;
     account_flow(harness);

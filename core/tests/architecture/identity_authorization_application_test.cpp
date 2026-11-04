@@ -931,8 +931,89 @@ void workload_and_single_hop() {
   assert(std::get<t::CheckAuthorizationReply>(first.app->check_authorization(first.request()))
              .allowed);
 }
+void host_gate_current_registration_and_exact_grant() {
+  for (unsigned mutation = 0; mutation != 15; ++mutation) {
+    Fixture f;
+    f.state.add_platform("host-principal", t::Service::Host, 4);
+    const t::ResourceRef host{t::ResourceKind::Host, {"host-distinct-id"}};
+    f.state.principals.back().binding = host;
+    f.state.credentials.back().binding = host;
+    f.state.assignments.push_back(
+        {{"runtime-check-host"},
+         {"runtime"},
+         {},
+         {{t::Permission::IdentityAuthorizationCheck, {t::ResourceKind::Principal, {"runtime"}}}},
+         {1}});
+    f.state.assignments.push_back(
+        {{"host-exact-grant"}, {"host-principal"}, {}, {{t::Permission::HostExecute, host}}, {1}});
+    const auto& row = f.state.credentials[2];
+    const auto& certificate = std::get<t::CertificateBinding>(row.material);
+    t::CheckHostGateAuthorizationRequest request{
+        {"host-gate", "trace", {}, f.state.now + std::chrono::seconds{1}},
+        {{t::PlatformPeer{t::Service::Runtime, row.subject}, certificate, row.ref}, f.state.now},
+        host,
+        std::get<t::CertificateBinding>(f.state.credentials.back().material).fingerprint};
+    if (mutation == 1) {
+      f.state.assignments.back().explicit_permissions.clear();
+      f.state.assignments.pop_back();
+    }
+    if (mutation == 2)
+      request.host.id.value = "another-host";
+    if (mutation == 3)
+      request.host_certificate.bytes[0] = std::byte{99};
+    if (mutation == 4)
+      f.state.credentials.back().state = t::CredentialState::Revoked;
+    if (mutation == 5)
+      f.state.principals.back().state = t::LifecycleState::Disabled;
+    if (mutation == 6) {
+      std::get<t::PlatformPeer>(request.recipient.binding.peer).service = t::Service::Control;
+    }
+    if (mutation == 7)
+      f.state.assignments.erase(f.state.assignments.end() - 2);
+    if (mutation == 8) {
+      f.state.principals.back().binding =
+          t::ResourceRef{t::ResourceKind::Principal, {"host-principal"}};
+    }
+    if (mutation == 9)
+      f.state.credentials[2].state = t::CredentialState::Revoked;
+    if (mutation == 10)
+      request.context.deadline = f.state.now;
+    if (mutation == 11)
+      f.state.fail_begin = true;
+    if (mutation == 12) {
+      f.state.before_begin = [&] {
+        if (f.state.begins == 2)
+          ++f.state.authorizations.back().version.value;
+      };
+    }
+    if (mutation == 13)
+      request.host.kind = t::ResourceKind::Principal;
+    if (mutation == 14)
+      f.clock.trusted = false;
+    const auto result = f.app->check_host_gate_authorization(request);
+    assert(f.crypto.calls == 0);
+    if (mutation == 0 || mutation == 1) {
+      assert(std::holds_alternative<t::CheckHostGateAuthorizationReply>(result));
+      const auto& reply = std::get<t::CheckHostGateAuthorizationReply>(result);
+      assert(reply.decision.allowed == (mutation == 0));
+      assert(reply.decision.authorization_version.value == 5);
+      assert(reply.host_credential_version.value == 1 && reply.host_principal_version.value == 1);
+      assert(mutation == 0 || (reply.decision.denial &&
+                               reply.decision.denial->code == t::ErrorCode::PermissionDenied));
+    } else {
+      assert(std::holds_alternative<t::Failure>(result));
+      const auto expected = mutation == 7                      ? t::ErrorCode::PermissionDenied
+                            : mutation == 10                   ? t::ErrorCode::Timeout
+                            : mutation == 11 || mutation == 14 ? t::ErrorCode::UpstreamUnavailable
+                            : mutation == 13                   ? t::ErrorCode::InvalidArgument
+                                                               : t::ErrorCode::Unauthenticated;
+      assert(std::get<t::Failure>(result).code == expected);
+    }
+  }
+}
 } // namespace
 int main() {
+  host_gate_current_registration_and_exact_grant();
   allowed_and_known_versions();
   business_denial_is_a_decision();
   consumer_capability_and_method_boundary();

@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "kiarabot/core/application/target/scheduler_service.hpp"
+#include "kiarabot/infrastructure/identity_crypto/sha256.hpp"
 
 namespace {
 namespace t = kiarabot::core::target;
@@ -388,15 +389,28 @@ public:
   t::TimerDeliveryRequest last_request;
 };
 
+class Digests final : public t::SchedulerDigestPort {
+public:
+  bool fail = false;
+  kiarabot::infrastructure::identity_crypto::Sha256 adapter;
+  t::Outcome<t::Sha256Digest> sha256(std::string_view value) override {
+    if (fail) {
+      return t::scheduler_unavailable();
+    }
+    return adapter.sha256(value);
+  }
+};
+
 struct Harness {
   std::shared_ptr<Store> store = std::make_shared<Store>();
   Factory factory{store};
   FakeZones zones;
   FakeIds ids;
   FakeDelivery delivery;
+  Digests digests;
   t::SchedulerService service{t::SchedulerServiceDependencies{
-      factory, ids, zones, t::kTaskHorizon, t::kInstanceTaskCapacity, t::kInstallationTaskCapacity,
-      &delivery}};
+      factory, ids, zones, digests, t::kTaskHorizon, t::kInstanceTaskCapacity,
+      t::kInstallationTaskCapacity, &delivery}};
 
   t::SchedulerCommandContext context() const {
     return t::SchedulerCommandContext{
@@ -635,7 +649,56 @@ void test_deliver_trigger_success_rejection_and_retry() {
           retry_harness.store->occurrences.begin()->second.occurrence_id);
 }
 
+std::string digest_hex(const t::Sha256Digest& digest) {
+  constexpr char kDigits[] = "0123456789abcdef";
+  std::string result;
+  for (const auto byte : digest.bytes) {
+    const auto value = static_cast<unsigned char>(byte);
+    result.push_back(kDigits[value >> 4U]);
+    result.push_back(kDigits[value & 15U]);
+  }
+  return result;
+}
+
+void test_digest_compatibility_and_failures() {
+  Harness harness;
+  t::TaskCreationInput input;
+  input.task_id = "task-1";
+  input.target = {t::ResourceId{"a"}, t::ResourceId{"b"}, "room", t::ConversationKey::Kind::Group};
+  input.payload = {std::byte{'a'}, std::byte{0}, std::byte{'b'}, std::byte{255}};
+  input.run_at = at(1500);
+  // Golden values of the original big-endian, length-prefixed input encoding.
+  require(digest_hex(std::get<t::Sha256Digest>(t::creation_fingerprint(input, harness.digests))) ==
+          "27df48306afe37282a2e04142f463337b298b5ceac2fcb474a60512a1565efee");
+  input.run_at.reset();
+  input.local_time = t::LocalCivilTime{2026, 11, 4, 1, 2, 3, "Asia/Shanghai"};
+  require(digest_hex(std::get<t::Sha256Digest>(t::creation_fingerprint(input, harness.digests))) ==
+          "61d5b5277b2ac191b6ceb360ee78c895a4caf55cbd758bdf6ce05d636e63164f");
+  const t::TaskCreationInput cancel{"task-1", {}, {}, std::nullopt, t::LocalCivilTime{}};
+  require(digest_hex(std::get<t::Sha256Digest>(t::creation_fingerprint(cancel, harness.digests))) ==
+          "0672cbe4adb0cb9e0e5680a3b8c05fbafddb312d72467db5f84620873e6ee044");
+
+  harness.digests.fail = true;
+  auto created = harness.service.create_task(harness.context(), harness.input("task-1", at(1500)));
+  require(std::get<t::Failure>(created).code == t::ErrorCode::UpstreamUnavailable);
+  require(harness.store->tasks.empty() && harness.store->receipts.empty());
+  harness.digests.fail = false;
+  require(std::holds_alternative<t::ScheduledTask>(
+      harness.service.create_task(harness.context(), harness.input("task-1", at(1500)))));
+  harness.digests.fail = true;
+  const auto cancelled = harness.service.cancel_task(harness.context(), "task-1");
+  require(std::get<t::Failure>(cancelled).code == t::ErrorCode::UpstreamUnavailable);
+  require(harness.store->tasks.begin()->second.state == t::TaskState::Pending);
+  require(harness.store->receipts.size() == 1);
+  const auto swept = harness.service.due_sweep(at(1600), 10);
+  require(std::get<t::Failure>(swept).code == t::ErrorCode::UpstreamUnavailable);
+  require(harness.store->operations.empty() && harness.store->occurrences.empty() &&
+          harness.store->outbox.empty());
+  require(harness.store->tasks.begin()->second.state == t::TaskState::Pending);
+}
+
 void run() {
+  test_digest_compatibility_and_failures();
   test_create_replay_capacity_and_invalid_time();
   test_local_time_gap_fold_and_missing_zone_data();
   test_cancel_window_and_handoff_lifecycle();

@@ -2,7 +2,7 @@
 
 #include <memory>
 
-#include "kiarabot/control/target/readiness.hpp"
+#include "kiarabot/control/application/target/readiness.hpp"
 #include "kiarabot/core/runtime/platform/service_config.hpp"
 #include "kiarabot/core/runtime/platform/service_process.hpp"
 

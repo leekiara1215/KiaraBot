@@ -65,9 +65,39 @@ panel/
 - 日志和消息内容按 API 返回的脱敏结果展示；
 - 前端不直接调用 NapCat 或数据库。
 
-## 实时状态
+## 实时状态（WS-01 目标契约，2026-11-04）
 
-服务端以 `SESSION_READY` 返回会话 ID 和确认序号；客户端断线后按退避重连并以 `resume` 发送 access token、会话 ID 和最后处理的序号。收到 `RESYNC_REQUIRED` 时清除旧会话，以 `hello` 建立新会话并重新拉取 REST 快照，重连状态显示"正在重新同步"而不是误导性的"已断开"。`4403`/`4400`/`1013` 是终止性失败，面板停止重连并显示精确原因；`4401` 回到登录。日志事件使用 `log.updated` 和 OpenAPI `LogEntry`。客户端允许未知事件和未知字段，权限页面展示服务端计算的有效权限。`message.updated` 已实现，但只携带消息元数据且没有可刷新的 REST 消息投影：面板收到时只触发既有视图刷新，不展示消息正文或历史，也不新增消息页面；未授予 `message.read` 时服务端以 4403 关闭。
+本节规定新增 target 客户端行为，尚未声称 Panel 已接线；全部 target WS 仍 `not_implemented`，
+历史 reference ControlStream 与 mock 成功不代表目标 WSS 验收。频道、帧、payload和限额以
+[`api/asyncapi.yaml`](../api/asyncapi.yaml) 为唯一来源。
+
+每 socket 绑定单一 owner 与明确 scope；operations URL 用 `owner_service=runtime|scheduler|model|host`，
+首帧 OperationHello/Resume 携带 scope。其他 target 频道使用 TargetScopedHello/Resume，scope为
+1–127个不同精确资源（health/logs仅显式control目录）。operations的权限沿owner REST：
+runtime/model resource.read、scheduler task.read、host host.read。面板不以display_permissions裁决真实授权，
+不拼接资源和权限，不把catalog授权当child授权；多个owner使用独立连接与cursor。
+
+成功 SESSION_READY 确认已处理sequence；OperationSessionReady额外给对应owner_cursor，
+第一条事件前断线也可resume。Control sequence限定JS safe integer，owner uint64是十进制字符串，
+用bigint/字符串处理，不转Number。收到重复事件去重，跳序/边界错进入恢复，不能把服务端head当作
+自己已处理。未知事件/字段允许前向兼容。流会话与token仅在内存，token轮换保留同Identity session
+的cursor，用新access token重连认证；旧socket或旧scope回调不能推进新会话。
+
+先建立流再拉权威REST；快照加载期间有事件则记dirty，加载完成再刷受影响资源，防止旧请求覆盖
+新视图。operation.updated触发owner GetOperation，并保持200/202仅受理或读取成功、
+BLOCKED/UNKNOWN不等于完成；断流不得重发管理写。RESYNC_REQUIRED携带CURSOR_EXPIRED、
+INVALID_CURSOR或SERVER_RESTART时丢弃旧流、重新hello并全量刷新当前可见资源与operation tracker。
+普通断线按退避resume；4401清会话回登录；4400/4403/1013停止自动重试并显示协议/权限/限流原因；
+1011按有界退避恢复，不能显示正常空资源。WS不可用不阻挡独立授权REST，显示快照最后确认时间。
+
+目标adapter/plugin分别消费TargetAdapterRecord/TargetInstanceRecord安全状态分支；显示online、
+lifecycle、Runtime期望、Host执行结果与Plugin应用版本，不把Host离线/UNKNOWN映射为停止，
+不把desired=RUNNING写成插件已运行。target task只消费安全元数据，消息只有received metadata，
+不显示正文、模型输出或重建历史；bootstrap、token、cursor原文不进URL、存储或日志。
+
+首批接operation/health/adapter/plugin，第二批task/log，第三批message metadata，Host operation
+随独立Host owner接入。未完成批次明确不可用，不用reference事件白名单或成功空流代替。
+`plugin.updated.health_state`仍待真实owner健康事实，不从配置ACK推导健康。
 
 ## 管理动作与错误状态（W4）
 

@@ -5,6 +5,7 @@
 
 #include <grpcpp/grpcpp.h>
 
+#include "kiarabot/core/application/target/operation_observation_application.hpp"
 #include "kiarabot/core/application/target/runtime_action_application.hpp"
 #include "kiarabot/core/application/target/runtime_audit_application.hpp"
 #include "kiarabot/core/application/target/runtime_resource_application.hpp"
@@ -50,6 +51,7 @@ struct RuntimeRpcOptions {
   target::RuntimeActionApplication* actions = nullptr;
   // Optional process-level deadline bound (shared shutdown budget); expired -> TIMEOUT.
   std::function<target::Outcome<target::TimePoint>()> invocation_deadline;
+  target::OperationObservationApplication* observations = nullptr;
 };
 
 // Transport adapter for the P05 production unary surface: accounts, explicit bindings, plugin

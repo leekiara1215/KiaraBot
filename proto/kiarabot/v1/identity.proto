@@ -305,6 +305,31 @@ message IdentityCheckAuthorizationResponse {
   AuthorizationDecision decision = 1;
 }
 
+// CONTRACT_STATUS: not_implemented - target v1.1 declaration; no general platform bypass.
+// Only a current registered Runtime mTLS peer with its explicit own-Principal
+// identity.authorization.check capability may call this. The caller obtains the fingerprint
+// from the ACTUAL inbound Host TLS leaf, never from SetHostAdmissionGate business input.
+// The only authorized downstream method is RuntimeService.SetHostAdmissionGate. Identity
+// resolves the current Host certificate/principal by fingerprint, requires its stored exact
+// RESOURCE_HOST binding to equal host, and checks explicit host.execute on that exact resource.
+// No subject proof is substituted into the existing CheckAuthorization delegation protocol.
+message IdentityCheckHostGateAuthorizationRequest {
+  RequestContext context = 1;
+  ResourceRef host = 2;
+  bytes host_certificate_sha256 = 3; // Exactly 32 bytes, actual TLS evidence asserted by Runtime.
+}
+
+// CONTRACT_STATUS: not_implemented - target v1.1 declaration.
+// No bearer, private material, caller-selected principal or reusable authorization ticket.
+// On allowed=true the two versions are positive current Host registration watermarks; Runtime
+// still compares actual TLS, current HostBridge registration/fence and gate intent/version.
+// An allow decision is for this request only and cannot be cached to outlive revocation.
+message IdentityCheckHostGateAuthorizationResponse {
+  AuthorizationDecision decision = 1;
+  uint64 host_credential_version = 2;
+  uint64 host_principal_version = 3;
+}
+
 // CONTRACT_STATUS: not_implemented - historical reference; see target execution scope.
 message IdentityListAssignmentsRequest {
   RequestContext context = 1;
@@ -667,6 +692,14 @@ service IdentityService {
     option (requires_idempotency) = false;
     option (default_deadline_ms) = 2000;
     option (max_deadline_ms) = 5000;
+    option (requires_online_authorization) = true;
+  }
+  rpc CheckHostGateAuthorization(IdentityCheckHostGateAuthorizationRequest) returns (IdentityCheckHostGateAuthorizationResponse) {
+    option (required_permission) = PERMISSION_IDENTITY_AUTHORIZATION_CHECK;
+    option (scope_kinds) = RESOURCE_HOST;
+    option (requires_idempotency) = false;
+    option (default_deadline_ms) = 500;
+    option (max_deadline_ms) = 1000;
     option (requires_online_authorization) = true;
   }
 }

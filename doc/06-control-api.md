@@ -1,13 +1,21 @@
 # 控制面板 API 设计
 
+## 当前阅读入口（2026-11-04）
+
+当前 Control 为独立 HTTPS 服务，经 Identity 验证会话和委托，向 Runtime、Identity、
+Scheduler、Model 的 owner RPC 转发管理操作；不使用 reference `IControlApplication`
+或 RuntimeSnapshot。目标 WS 已批准延期，以 REST operation 快照恢复状态。
+本页 T/W 记录是同进程 reference 历史，P 记录保留各自日期作用域；具体实现、
+测试注册、本机实测和目标环境验收统一见 [阶段证据矩阵](27-phase-exit-evidence.md)。
+
 ## 接入向导进程内模型
 
 Control 接入驱动模型、配置校验和接口见 [接入方案](26-real-qq-onboarding.md#第一项进程内通用模型与驱动端口)。
 此阶段不新增 HTTP/WS 路由，驱动执行、操作持久化、权限和向导尚未接线；账号与绑定仍由 Runtime 拥有。
 
-## T08a 冻结决策（2026-10-30）
+## reference T08a 冻结决策（2026-10-30）
 
-控制 API 使用同进程 C++ 应用端口 IControlApplication（core/include/kiarabot/core/application/control_application.hpp），由组合根注入到 control/api；不新增跨进程管理 RPC，不改变当前 Python 适配器/SDK 和 TypeScript 面板。端口覆盖当前全部 REST 操作；输入为 bearer 凭据、request_id/trace_id/deadline（最长三十秒）、幂等键及类型化命令，禁止自报 actor/role。Core 每次重新核验会话、执行授权、事务和审计；端口返回显式 PortResult，资源文档在输出前脱敏，HTTP 层按 OpenAPI 校验映射。T08b 已实现并完成本机 REST 服务验收。
+控制 API 使用同进程 C++ 应用端口 IControlApplication（core/reference/include/kiarabot/core/application/control_application.hpp），由组合根注入到 control/api；不新增跨进程管理 RPC，不改变当前 Python 适配器/SDK 和 TypeScript 面板。端口覆盖当前全部 REST 操作；输入为 bearer 凭据、request_id/trace_id/deadline（最长三十秒）、幂等键及类型化命令，禁止自报 actor/role。Core 每次重新核验会话、执行授权、事务和审计；端口返回显式 PortResult，资源文档在输出前脱敏，HTTP 层按 OpenAPI 校验映射。T08b 已实现并完成本机 REST 服务验收。
 
 已逐项核对历史 doc/13 交接：SessionReady 和 Action 查询已由前序任务定义，保留现行契约；其余 P0 决策写入 OpenAPI 的 x-control-policy、操作 x-permission 和 AsyncAPI 的 x-control-session-policy，作为唯一来源。新增 GET /auth/me（服务端角色/权限）、GET /auth/sessions 和 POST /auth/sessions/{sessionId}/revoke；管理员可管理全部会话，其他角色仅自己，不可见与不存在均 NOT_FOUND。TokenPair 保留既有字段，通过 /auth/me 查询当前 session_id。
 
@@ -40,19 +48,30 @@ AsyncAPI：api/asyncapi.yaml
 
 ## 目录
 
-下图是目标职责划分；当前实现集中在 `control/api/src/` 的 `http_server.cpp`、`http_mapper.cpp`、`event_stream.cpp` 和 `configuration.cpp`。
+当前独立 Control 的组合根在 `control/api/app/main.cpp`，内部应用和 readiness 位于
+`include/kiarabot/control/application/target/`，传输与远端 owner 适配位于 `src/target/`：
 
 ```text
 control/api/
-  src/
-    auth/
-    rbac/
-    rest/
-    websocket/
-    health/
-    mappers/
+  app/main.cpp
+  src/target/
+    https_endpoint.cpp
+    identity_auth_client.cpp
+    owner_clients.cpp
+    owner_gateway.cpp
+    owner_gateway/
+      internal.hpp
+      common.cpp
+      health.cpp principals.cpp catalogs.cpp operations.cpp
+      accounts.cpp instances.cpp tasks.cpp audit_logs.cpp
+      lifecycle.cpp models.cpp actions.cpp
   tests/
 ```
+
+`owner_gateway.cpp` 仅创建公共请求上下文、按原顺序选择 11 个资源族 handler、转换顶层异常；
+`common.cpp` 共享错误、委托、分页和转换辅助，各 handler 保留自己的方法、输入校验和授权顺序。
+`owner_clients.cpp` 实现远端 owner 适配，handler 不拥有业务状态、不访问数据库。
+旧 `src/http_server.cpp`、`http_mapper.cpp`、`event_stream.cpp`、`configuration.cpp` 属 reference 路径。
 
 `api/openapi.yaml` 和 `api/asyncapi.yaml` 是契约；`control/api/` 只实现服务和协议映射，不复制契约定义。
 
@@ -174,37 +193,83 @@ GET  /api/v1/operations/model/{operationId}            resource.read GetOperatio
 - `/api/v1/operations/{owner}/{id}` 统一 owner 分支：`model` 走 ModelService.GetOperation；`runtime`/`scheduler`/`host` 的 Control operation 适配器未接线时稳定返回 `CAPABILITY_NOT_SUPPORTED`（503），不按 404/405 猜测。
 - 当前 target REST operations 仍登记 not_implemented（owner REST 契约状态另行翻转）；ModelService 生产 RPC 已由 P11d 证据翻转。
 
-## WebSocket 频道
+## WebSocket 频道（WS-01 目标契约，2026-11-04）
 
-T09a 已实现同一监听提供以下频道；各频道状态如下：
+唯一来源为 [`api/asyncapi.yaml`](../api/asyncapi.yaml)。本节冻结新增 target 契约，
+不宣称服务端或 Panel 已实现：target transport、全部 target 频道、新 payload 和 owner
+`ListOperationChanges` 的对外能力登记仍是 `not_implemented`。WS-02 已完成 Runtime/Scheduler/Model
+同事务持久 journal，WS-03 已通过 Runtime/Scheduler 真实 PG/mTLS owner RPC 与在线授权验收；尚未完成
+整条 WSS/Panel 验收前不翻转状态。历史 T09a/W5 reference 频道继续保留原帧，
+不能将 reference 成功当成目标六服务的证据。
 
-```text
-/ws/health      # health.updated 仍标 x-contract-status: not_implemented（频道可建但无可推送事件）
-/ws/logs        # 需显式 log.read（P12 权限 48），任何默认角色都不派生
-/ws/adapters
-/ws/plugins
-/ws/tasks
-/ws/messages    # 已实现（W5）：仅推送 message.updated 元数据；需每用户显式 message.read
-```
+目标连接为 WSS，每个 socket 绑定一个 owner、一个规范化的精确 scope：
 
-WebSocket 只推送经过权限过滤的数据。普通面板用户不能订阅全部私聊消息或完整模型上下文。
+- `/ws/operations?owner_service=runtime|scheduler|model|host`：OperationHello/OperationResume；
+  runtime/model 用 `resource.read`，scheduler 用 `task.read`，host 用 `host.read`。
+  Runtime 允许的资源种类同 GetOperation，Model 仅 `RESOURCE_MODEL`，Scheduler 仅
+  `RESOURCE_TASK|RESOURCE_INSTANCE`，Host 仅此 endpoint 自己的一个 `RESOURCE_HOST`。
+- `/ws/health`：owner=control，scope 恰为 `RESOURCE_CATALOG/control`，需 `health.read`。
+- `/ws/adapters`、`/ws/plugins`：owner=runtime，分别为精确 `RESOURCE_ADAPTER`/`RESOURCE_INSTANCE`，
+  分别需 `adapter.read`/`plugin.read`；`/ws/tasks` 为 scheduler 的精确 task/instance scope，需 `task.read`。
+- `/ws/logs?owner_service=identity|runtime`：单 owner 的 `RESOURCE_CATALOG/control`，需显式 `log.read`；
+  不派生 `audit.read`，不新增 audit 频道。
+- `/ws/messages`：owner=runtime，精确 `RESOURCE_ACCOUNT` 和显式 `message.read`；
+  仅 `received` 元数据，无正文、模型上下文或 REST 消息历史。
+- `/ws/control?owner_service=control|runtime|scheduler|identity`：只汇聚该 owner、该精确 scope 内
+  已实现且逐事件授权的事件，不聚合 operations，不推导跨 owner 总序或原子快照。
 
-WebSocket 服务端使用 WSS；首帧必须是携带 access token 的 `hello` 或同时携带 access token 与已有会话 ID 的 `resume`，不能要求浏览器在握手时设置自定义 Authorization 头。成功后服务端发送 `SESSION_READY`，包含 `session_id` 和确认的 `last_sequence`；会话 ID 是绑定认证主体和频道的不可预测秘密，必须保护、过期和撤销，不能记录或放入 URL。断线后客户端携带会话 ID 和最后处理的序号重连。服务端保留 10 分钟事件，无法补齐时返回 `RESYNC_REQUIRED`：客户端丢弃旧会话、重新以 `hello` 建立会话，并重新拉取 REST 快照。客户端忽略未知事件及字段，已知事件触发对应快照刷新；日志事件 `log.updated` 的 payload 使用 OpenAPI `LogEntry`；订阅该频道要求显式 `log.read`。审计没有 WebSocket 频道，`/audit` 仅经 `audit.read` 的 REST 读取，二者不得复用同一权限。`message.updated` 是自包含元数据通知，没有可刷新的 REST 消息投影：客户端只触发既有刷新，不得据此重建历史，也不应期待消息正文；订阅需显式 `message.read`，未授予仍以 4403 关闭。每个消息组件都有唯一 `messageId`。
+Operations 首帧仍为 hello/resume+scope，其他 target 频道使用 TargetScopedHello/Resume；
+目标 scope 必须 1–127 个不同资源，按 kind/id 规范化。仅 health/logs 的显式控制目录可用 catalog，
+不继承 child 授权、不拼接不同 assignment 的权限与资源。access token 只放首帧，不使用 query、
+cookie 或浏览器自定义 Authorization 头认证。检查同源 Origin allowlist；非浏览器无 Origin 需显式配置。
 
-所有事件使用 `schema_version`、`event_type`、`sequence`、UTC `occurred_at` 和 `payload` envelope。`/ws/control` 汇聚事件；独立频道与它使用相同事件类型和 payload：
+所有事件保留 `schema_version/event_type/sequence/occurred_at/payload` envelope。
+`operation.updated` 使用 owner 的 TargetOperation 和逐项 `owner_cursor`；OperationSessionReady
+在 SESSION_READY 三字段之外返回该已处理边界的 `owner_cursor`，覆盖第一条事件前断线。
+Control sequence 是 JS safe integer，owner sequence 为十进制 uint64 字符串；二者不能互换。
+SESSION_READY 的 last_sequence 确认客户端已处理位置，不是尚未交付的服务端 head。
 
-- `health.updated`：`state`、`components`，使用 `HealthState`；
-- `log.updated`：使用 OpenAPI `LogEntry`，必须脱敏；
-- `adapter.updated`：`id`、`state`、`implementation`，可选 `version`、`capabilities`；
-- `plugin.updated`：`id`、`version`，至少一个 `state`（`PluginState`）或 `health_state`（`HealthState`），可选 `reason`；
-- `task.updated`：`id`、`name`、字符串 `state`；
-- `message.updated`：`message_id`、`conversation_id`、`direction`（`received`/`sent`，v1 只产生 `received`），可选 `action_id`（字段保留，v1 不产生）；payload 不含任何消息正文。该通知自包含，不提供 REST 消息投影。
+`adapter.updated` target payload 为 `{id,version,target:TargetAdapterRecord}`，
+`plugin.updated` 为 `{id,version,target:TargetInstanceRecord}`；id/version 必须与 target 对应字段一致。
+保留 online/lifecycle/注册事实，以及 Runtime desired、Host process_outcome、Plugin applied 版本，
+不伪造旧 HEALTHY/PluginState，也不含 configuration/bootstrap。target task payload 使用闭集
+ScheduledTaskState 与安全元数据，不推送 TaskRecord.payload。旧 reference payload 是独立分支，
+目标状态分支保持 `not_implemented`；plugin.updated.health_state 必须等待真实 owner 健康事实。
 
-每个频道只推送已授权的数据。具体 schema 和字段约束以 AsyncAPI 为准。
+新增 owner `RuntimeService/SchedulerService/ModelService/HostManagementService.ListOperationChanges`
+复用 `observations.proto` 三个消息。请求 context/scope/可选 cursor/page_size；缺 cursor 时只捕获已提交
+head，返回空 changes 及 next_cursor。每项变化带自身 cursor，整页消费后才能推进 next_cursor；默认32、
+最大100条，每次RPC总期限500ms。每页重新在线授权，资源必须来自真实 Operation.ref.resource。
+Operation 和 participant-only 修订与 journal 同 UoW 提交；提交序高水位不能越过尚未提交的低序号，
+不能直接把 nextval 分配序当提交序。journal 保留600秒并有容量/持久 low-water；owner epoch 表示
+数据集、跨普通进程重启保留，恢复旧备份、重建日志或重置 sequence 时改变。Control 不持业务库，
+也不以临时收集本进程 operation ref 冒充完整 scope 订阅。
 
-频道、首帧、消息 envelope 和重连语义以 [`api/asyncapi.yaml`](../api/asyncapi.yaml) 为唯一契约。OpenAPI 只描述 REST，不再把 WebSocket 仅作为文字建议。插件健康查询使用 `GET /plugins/{pluginId}/health`，返回统一 `Health` schema。
+WS-03 owner 查询应用在打开本地只读 UoW 前核验实际 Control mTLS leaf 与证书绑定委派，
+再调用当前 `Identity.CheckAuthorization`。Runtime 用 `resource.read`、Scheduler 用 `task.read`；
+每次请求按 exact scope 与 owner audience 校验，客户端 deadline、gRPC deadline、进程预算和500ms
+取最短期限。空 cursor 只捕获 head，持久 gap/epoch 不匹配以 typed `CONFLICT/RESYNC_SNAPSHOT`
+拒绝；依赖不可用不返回缓存成功。返回 final journal 快照及脱敏闭集错误、participant 和 observed_at，
+无 config、secret、模型正文或委派。此独立入口不扩展 Scheduler 原有 Runtime 平台调用白名单；
+Model/Host 接入同一纯应用边界由其 owner 工作流继续完成。
 
-当前 AsyncAPI 固定为 2.6.0，以保持现有频道/操作模型和生成工具兼容；校验器对 3.x 的提示属于升级建议，不改变当前契约的有效性。
+会话绑定 principal、Identity session、authorization_version、channel、owner 和 scope，
+每250ms启动或共享当前Identity检查（500ms预算）；最近成功确认超过750ms即停止发送并关闭，
+撤权/到期后整体不超过1秒。replay/live/慢写排队均适用，不用本地缓存延长授权。
+失效4401、权限拒绝/身份或scope绑定错4403、首帧非法4400、依赖不可确认/超时/内部或未实现源1011、
+慢消费者/限流1013、停机1001。Owner CONFLICT+NOT_ACCEPTED+RESYNC_SNAPSHOT 保守映射
+`RESYNC_REQUIRED/CURSOR_EXPIRED`；Control本地边界非法为INVALID_CURSOR、Control重启为SERVER_RESTART，
+发resync后1000关闭。TIMEOUT/UPSTREAM_UNAVAILABLE不伪成功空页；4401回登录，4400/4403/1013停止自动重试。
+
+首帧5秒、text帧64KiB、待写队列最多128帧或1MiB；replay每批32、每流最多4096事件/4MiB，
+最多1024 retained sessions/总64MiB。byte/event额度淘汰明确导致resync，不静默丢帧；active连接和
+认证RPC另有满足撤销时限的接纳额度，并为REST保留容量。session_id、token、proof、cursor原文、
+bootstrap、配置、消息/模型正文和上游自由错误文本均不进日志、指标或事件。
+
+分批实现完整范围：首批 operation/health/adapter/plugin；第二批 task/log；第三批 message metadata；
+Host operation 接独立Host owner工作流。每批需真实producer与恢复证据再翻状态，未实现源认证后
+以1011失败关闭，不能建立假空流。断流从权威REST重新拉快照；消息无历史投影，不能重建漏失历史。
+异步状态通知不替代操作完成事实、审计或副作用ACK，BLOCKED/UNKNOWN不得推断成功。
 
 ## 错误格式
 
@@ -471,6 +536,13 @@ admin/operator。本人会话规则不变。`proto/tests/identity_role_catalog_t
 
 ## P12c 首批 REST/WS 实现状态（2026-11-02）
 
+本节及其分批子节保留 2026-11-02 实施记录，较后接线以对应后续章节和
+[证据矩阵](27-phase-exit-evidence.md) 为准。2026-11-04 的入口拆分位置见页首“目录”。
+安装下创建实例、实例 plugin-state PUT、configuration GET/PUT 缺少
+`RuntimeResourcesPort` 时，在原输入校验和委托认证顺序完成后、实际 owner 调用前返回
+HTTP 503 / `UPSTREAM_UNAVAILABLE`、`retryable=true`，不访问空端口、不产生业务副作用。
+原有非法输入与 401/403 的优先级保持；这是本轮单独修复的缺依赖路径。
+
 P12c 在独立 Control 进程的 HTTPS 边界新增 owner-backed 转发层（`control/api/src/target/owner_gateway.cpp`），
 只做传输/映射，不含本地权威数据：
 
@@ -581,9 +653,29 @@ P12c 在独立 Control 进程的 HTTPS 边界新增 owner-backed 转发层（`co
 
 `policy.proto` 新增 `PERMISSION_HEALTH_READ = 50`（0–49 不变）。匿名 `/health/live` 与 `/health/ready` 保持匿名；受权 `GET /api/v1/health` 要求显式 `health.read`（P12 permission 50），返回四依赖聚合与逐组件详情，不向匿名探针泄漏组件信息。
 
-### target Control WebSocket：P12 v1 无 WS
+### target Control WebSocket：WS-01 契约与实现状态
 
-P12 v1 target **不提供** Control WebSocket 服务端；`api/asyncapi.yaml` 的频道/帧是冻结目标契约并整体登记靶向 `not_implemented`（P12 v1 无 WS transport）。断流恢复以 REST operation 快照 `GET /api/v1/operations/{ownerService}/{operationId}` 为唯一权威 resync 源：客户端恢复后必须全量刷新，不得假设错过事件；未来若实现 WS，优先复用已登记的 `operations`/`operation.updated`、`health.updated` 等频道名与帧语义，不新增传输级私有协议。
+2026-11-04 已按 [获批扩展计划](29-approved-capability-expansion-plan.md) 更新本页
+“WebSocket 频道”目标契约：单 owner/exact scope、有界持久 owner change feed、首帧和恢复。
+`observations.proto` 与 AsyncAPI 是新的公共契约，全部新增 target 能力仍 `not_implemented`；
+当前 target HTTPS 尚未接入 WS，REST operation 快照仍是当前权威恢复方式。后续继续实现与验收，
+不再把历史延期或“只文档化”当作这项获批范围的终止条件。Host/Bootstrap 由其工作流提供真实owner
+和秘密交付边界；WS永不推送bootstrap明文。
+
+### WS-04 target transport 模块（实施中）
+
+目标 WSS 使用现有锁定 Boost.Beast/Asio/OpenSSL，RFC6455 Upgrade、frame 与 TLS 由库处理。
+Control 的配置新增 `control_api.websocket_origins`（明确 HTTPS Origin 列表，缺省空）和
+`websocket_allow_missing_origin`（缺省 false）；两者缺省时所有 Upgrade 均拒绝，REST 继续服务。
+浏览器 Origin 必须逐字匹配允许列表；非浏览器缺 Origin 仅显式允许时可进入首帧认证。
+
+该模块另有有界 WSS worker、active socket/auth RPC 配额与 retained delivery session，保留 REST
+四 worker。首帧5秒、文本帧64KiB、待写128帧/1MiB；过载1013，源不可用1011。每轮空闲轮询也
+走当前 ValidateSession→IssueDelegation→owner ListOperationChanges，不等待业务变化才检查撤权。
+会话绑定人类 principal、Identity session、授权版本、频道、owner、规范化 scope；恢复时重新在线
+认证并核对已处理 sequence/owner cursor。事件应用后才推进客户端游标；REST 快照负责恢复当前状态。
+恢复旧业务备份必须在后续受控离线工具实际 rotate dataset epoch，不能把普通进程重启等同新数据集。
+本节描述正在实现的模块边界，全部 target WS 状态待真实 WSS/Panel 验收后统一登记。
 
 ### /logs 与 /audit 聚合契约
 
@@ -753,6 +845,11 @@ P14k 原生栈发现 Identity `CheckAuthorization` 对 4 个 owner 方法返回 
 
 ## Model 配置更新及 Provider 密钥轮换
 
+2026-11-04 修复既有映射缺口：disable、enable、resolve 与其余要求幂等的 Model 写操作一样，
+将必需 `Idempotency-Key` 原值写入 owner RPC 的 `RequestContext.idempotency_key`。
+相同键的请求仍委托业务 owner 判断重放，不在 Control 缓存成功；缺失或空键拒绝且不调用 owner。
+这项修复遵守现行 OpenAPI/proto，区别于本轮其余请求入口的职责拆分。
+
 Model 配置更新及 Provider 密钥轮换在 Control 转发后按对应 owner RPC 的 `RESOURCE_MODEL` 描述符在线核验；Control 调用者及委托主体须对路径中的模型具有 `model.manage`。两条 PUT 均将 HTTP `Idempotency-Key` 原样写入 owner 请求上下文。
 
 ## P14m：/logs /audit Runtime 源 401 修复（2026-11-03）
@@ -801,3 +898,22 @@ OpenAPI `ModelPage`/`GenericResource` 契约本身与意图一致，无需改 P1
 P05 Control 可复用容器验收入口：`tests/architecture/p05_control_catalog_smoke.py --base-url https://localhost:PORT --ca-file /local/ca.pem --token-file /local/access-token --catalogs-file /local/catalogs.json --expect-host-gap --create-account`。catalog 文件为五个资源族到 UUID 的同部署配置；可选 `--selections-file` 显式指定独立批次子 UUID 数组。脚本覆盖正常列表、游标重复读取、空选择、跨族/缺目录拒绝及创建同键换 request_id 重试，不修改 Identity grants。创建后的精确 Get 拒绝、合法权限供给、真实 owner 撤权/持久回执重启仍须以真实 Identity/Runtime 验收，不得把 fixture 的授权矩阵当作该证明。
 
 可加 `--create-installation` 验收安装创建；`--parent-installation UUID` 必须使用已获精确管理权限的既有父安装，验收实例创建。CreateInstance 沿用 OpenAPI 200 的原提交结果或当前授权投影语义：重试保持原实例及业务结果，当前投影的 `state.observed_at` 可以刷新，不能据此宣称完整冻结状态回执。冻结提交时状态及观察时间的本轮保证仅适用于 DisableAccount、BindAdapter、UnbindAdapter、SetDesiredState、UpdateConfig 五项获批管理操作；普通重放不包含 bootstrap 明文。
+
+## 受控 bootstrap 交付模块（2026-11-04，BOOT-03）
+
+Control的独立SecretDeliveryApplication/SecretDeliveryPort接受已获owner授权的投递意图，纯内层类型
+不含protobuf/JSON/SQL/文件系统。调用方必须先完成Runtime与Identity授权；该模块不自行签发凭据、
+不创建业务资源、不替代Runtime交付operation权威。本切片仅交付可复用模块，尚未将普通REST/Runtime
+签发/报告/重发链路接入，不能宣称bootstrap字段级闭环或target能力完成。
+
+意图绑定delivery_id、精确ACCOUNT/INSTANCE、固定recipient_id、credential_version与expected_version；
+明文仅进入store输入，无秘密receipt/query响应。recipient配置由组合根离线提供，绑定固定资源、固定
+peer文件名、目录及消费者UID/GID，客户端不能指定路径、owner、argv或env值。普通REST继续剔除明文，
+旧create/bind省略recipient维持原行为。本模块的store同identity+材料幂等；同identity异材料、旧版本或
+expected_version不匹配CONFLICT。新版本必须恰为expected_version+1；初次expected_version=0。
+
+外层文件sink持久intent后再原子安装0600秘密文件，最后持久无秘密receipt。中断后的query只核对固定
+文件的版本/受限摘要，匹配则补receipt，无法确认则返回UNKNOWN；缺receipt不等价未写。迟到旧worker
+被版本CAS拒绝，不能覆盖新材料。IO在效果可能发生后失败返回ACCEPTANCE_UNKNOWN/QUERY_SAME_INTENT，
+忙锁为UPSTREAM_UNAVAILABLE/Backoff；路径/owner/模式边界fail-closed。该sink不创建秘密数据库、不实现
+加密协议，摘要只用外层成熟SHA-256适配器；文件与metadata均不由Control普通业务查询直接暴露。

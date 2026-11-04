@@ -52,6 +52,9 @@ target::OwnerHttpRequest request(std::string method, std::string target_url) {
 struct FakeDelegation final : target::DelegationPort {
   std::optional<target::OwnerFailure> failure;
   int calls = 0;
+  bool throws_ = false;
+  std::string access_token_;
+  core::target::TimePoint deadline_;
   std::string audience;
   wire::Permission permission = wire::PERMISSION_UNSPECIFIED;
   int scope_resources = 0;
@@ -81,9 +84,14 @@ struct FakeDelegation final : target::DelegationPort {
   }
   target::OwnerOutcome<std::string> issue(std::string_view audience_value,
                                           wire::Permission permission_value,
-                                          const wire::ResourceScope& scope, std::string_view,
-                                          core::target::TimePoint) override {
+                                          const wire::ResourceScope& scope, std::string_view token,
+                                          core::target::TimePoint until) override {
     ++calls;
+    if (throws_) {
+      throw std::runtime_error("private exception");
+    }
+    access_token_ = token;
+    deadline_ = until;
     audience = std::string{audience_value};
     permission = permission_value;
     scope_resources = scope.resources_size();
@@ -186,6 +194,26 @@ struct FakeResources final : target::RuntimeResourcesPort {
     wire::RuntimeListAccountsResponse response;
     response.mutable_snapshot()->set_snapshot_id("snapshot-1");
     return ok(response);
+  }
+  target::OwnerOutcome<wire::RuntimeListInstallationsResponse>
+  list_installations(const wire::RuntimeListInstallationsRequest&, std::string_view) override {
+    ++calls;
+    return ok(wire::RuntimeListInstallationsResponse{});
+  }
+  target::OwnerOutcome<wire::RuntimeListInstancesResponse>
+  list_instances(const wire::RuntimeListInstancesRequest&, std::string_view) override {
+    ++calls;
+    return ok(wire::RuntimeListInstancesResponse{});
+  }
+  target::OwnerOutcome<wire::RuntimeListAdaptersResponse>
+  list_adapters(const wire::RuntimeListAdaptersRequest&, std::string_view) override {
+    ++calls;
+    return ok(wire::RuntimeListAdaptersResponse{});
+  }
+  target::OwnerOutcome<wire::RuntimeListHostsResponse>
+  list_hosts(const wire::RuntimeListHostsRequest&, std::string_view) override {
+    ++calls;
+    return ok(wire::RuntimeListHostsResponse{});
   }
   wire::RuntimeBindAdapterRequest last_bind;
   wire::RuntimeSetDesiredStateRequest last_state;
@@ -1504,6 +1532,479 @@ void model_management_surface() {
           "model routes without an injected owner stay explicitly unavailable");
 }
 
+// One inventory exercises every owner-backed operation with the same public gateway. Each
+// scenario checks the permission/audience/scope and both delegation and owner failure paths.
+struct RoutedOwners {
+  FakeDelegation delegation_;
+  FakeRuntime runtime_;
+  FakePrincipals principals_;
+  FakeHealth health_;
+  FakeResources resources_;
+  FakeTasks tasks_;
+  FakeOperations operations_;
+  FakeAuditLogs audit_logs_;
+  FakeModel model_;
+  target::OwnerGateway gateway_{delegation_, runtime_,     &principals_, &health_,    &resources_,
+                                &tasks_,     &operations_, &model_,      &audit_logs_};
+};
+struct OwnerRoute {
+  std::string method_;
+  std::string path_;
+  std::string body_;
+  std::string audience_;
+  wire::Permission permission_;
+  wire::ResourceKind scope_kind_;
+  std::string scope_id_;
+  bool preserves_retryable_ = true;
+  unsigned int status_ = 200;
+};
+std::vector<OwnerRoute> owner_routes() {
+  const std::string catalog_id = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  const std::string catalog = R"({"kind":"RESOURCE_CATALOG","id":")" + catalog_id + R"("})";
+  const auto catalog_query = "?catalog=" + catalog;
+  const auto account_query = "?scope=" + scope_json();
+  const std::string account_id = "11111111-1111-4111-8111-111111111111";
+  const std::string instance_base = "/api/v1/installations/installation-1/instances/inst-1";
+  const std::string binding =
+      R"({"binding":{"account_id":"account-1","adapter_instance_id":"adapter-1"},"expected_version":"2"})";
+  const std::string state =
+      R"({"instance_id":"inst-1","desired_state":"DESIRED_RUNNING","expected_version":"3"})";
+  const std::string config =
+      R"({"resource":{"kind":"RESOURCE_INSTANCE","id":"inst-1"},"config":{},"expected_version":"2"})";
+  const std::string lifecycle =
+      R"({"resource":{"kind":"RESOURCE_ACCOUNT","id":"account-1"},"expected_version":"2"})";
+  return {
+      {"GET",
+       "/api/v1/health",
+       {},
+       "control",
+       wire::PERMISSION_HEALTH_READ,
+       wire::RESOURCE_CATALOG,
+       "control"},
+      {"GET",
+       "/api/v1/principals",
+       {},
+       "identity",
+       wire::PERMISSION_IDENTITY_PRINCIPAL_READ,
+       wire::RESOURCE_CATALOG,
+       "control"},
+      {"GET",
+       "/api/v1/accounts" + catalog_query,
+       {},
+       "runtime",
+       wire::PERMISSION_ACCOUNT_READ,
+       wire::RESOURCE_CATALOG,
+       catalog_id},
+      {"GET",
+       "/api/v1/installations" + catalog_query,
+       {},
+       "runtime",
+       wire::PERMISSION_PLUGIN_READ,
+       wire::RESOURCE_CATALOG,
+       catalog_id},
+      {"GET",
+       "/api/v1/instances" + catalog_query,
+       {},
+       "runtime",
+       wire::PERMISSION_PLUGIN_READ,
+       wire::RESOURCE_CATALOG,
+       catalog_id},
+      {"GET",
+       "/api/v1/adapter-instances" + catalog_query,
+       {},
+       "runtime",
+       wire::PERMISSION_ADAPTER_READ,
+       wire::RESOURCE_CATALOG,
+       catalog_id},
+      {"GET",
+       "/api/v1/hosts" + catalog_query,
+       {},
+       "runtime",
+       wire::PERMISSION_HOST_READ,
+       wire::RESOURCE_CATALOG,
+       catalog_id},
+      {"PUT", "/api/v1/adapter-bindings/account-1", binding, "runtime",
+       wire::PERMISSION_ACCOUNT_MANAGE, wire::RESOURCE_ACCOUNT, "account-1", false},
+      {"DELETE", "/api/v1/adapter-bindings/account-1", binding, "runtime",
+       wire::PERMISSION_ACCOUNT_MANAGE, wire::RESOURCE_ACCOUNT, "account-1", false},
+      {"POST", "/api/v1/accounts", R"({"catalog":)" + catalog + "}", "runtime",
+       wire::PERMISSION_ACCOUNT_MANAGE, wire::RESOURCE_CATALOG, catalog_id, false},
+      {"POST", "/api/v1/installations", R"({"catalog":)" + catalog + "}", "runtime",
+       wire::PERMISSION_PLUGIN_MANAGE, wire::RESOURCE_CATALOG, catalog_id, false},
+      {"POST", "/api/v1/installations/installation-1/instances",
+       R"({"installation_id":"installation-1","externally_managed":true})", "runtime",
+       wire::PERMISSION_PLUGIN_MANAGE, wire::RESOURCE_INSTALLATION, "installation-1", false},
+      {"PUT", instance_base + "/plugin-state",
+       R"({"installation_id":"installation-1","instance_id":"inst-1","desired":"DESIRED_RUNNING","expected_version":"2"})",
+       "runtime", wire::PERMISSION_PLUGIN_MANAGE, wire::RESOURCE_INSTANCE, "inst-1"},
+      {"GET",
+       instance_base + "/configuration",
+       {},
+       "runtime",
+       wire::PERMISSION_PLUGIN_CONFIG_READ,
+       wire::RESOURCE_INSTANCE,
+       "inst-1"},
+      {"PUT", instance_base + "/configuration",
+       R"({"configuration":{"timeout":5},"expected_version":"2"})", "runtime",
+       wire::PERMISSION_PLUGIN_MANAGE, wire::RESOURCE_INSTANCE, "inst-1"},
+      {"PUT", "/api/v1/instances/inst-1/desired-state", state, "runtime",
+       wire::PERMISSION_PLUGIN_MANAGE, wire::RESOURCE_INSTANCE, "inst-1", false},
+      {"PUT", "/api/v1/instances/inst-1/config", config, "runtime", wire::PERMISSION_PLUGIN_MANAGE,
+       wire::RESOURCE_INSTANCE, "inst-1", false},
+      {"GET",
+       "/api/v1/instances/inst-1/config",
+       {},
+       "runtime",
+       wire::PERMISSION_PLUGIN_CONFIG_READ,
+       wire::RESOURCE_INSTANCE,
+       "inst-1",
+       false},
+      {"GET",
+       "/api/v1/accounts/account-1/action-policy",
+       {},
+       "runtime",
+       wire::PERMISSION_ACCOUNT_POLICY_READ,
+       wire::RESOURCE_ACCOUNT,
+       "account-1",
+       false},
+      {"PUT", "/api/v1/accounts/account-1/action-policy",
+       R"({"policy":{"account_id":"account-1"},"expected_version":"2"})", "runtime",
+       wire::PERMISSION_ACCOUNT_POLICY_MANAGE, wire::RESOURCE_ACCOUNT, "account-1", false},
+      {"GET",
+       "/api/v1/tasks" + account_query,
+       {},
+       "scheduler",
+       wire::PERMISSION_TASK_READ,
+       wire::RESOURCE_ACCOUNT,
+       account_id,
+       false},
+      {"GET",
+       "/api/v1/tasks/task-1" + account_query,
+       {},
+       "scheduler",
+       wire::PERMISSION_TASK_READ,
+       wire::RESOURCE_ACCOUNT,
+       account_id,
+       false},
+      {"POST",
+       "/api/v1/tasks/task-1/cancel" + account_query,
+       {},
+       "scheduler",
+       wire::PERMISSION_TASK_SCHEDULE,
+       wire::RESOURCE_ACCOUNT,
+       account_id,
+       false},
+      {"GET",
+       "/api/v1/occurrences/occurrence-1" + account_query,
+       {},
+       "scheduler",
+       wire::PERMISSION_TASK_READ,
+       wire::RESOURCE_ACCOUNT,
+       account_id},
+      {"GET",
+       "/api/v1/operations/runtime/operation-1" + account_query,
+       {},
+       "runtime",
+       wire::PERMISSION_RESOURCE_READ,
+       wire::RESOURCE_ACCOUNT,
+       account_id},
+      {"GET",
+       "/api/v1/operations/scheduler/operation-1" + account_query,
+       {},
+       "scheduler",
+       wire::PERMISSION_TASK_READ,
+       wire::RESOURCE_ACCOUNT,
+       account_id},
+      {"GET",
+       "/api/v1/operations/model/operation-1" + account_query,
+       {},
+       "model",
+       wire::PERMISSION_RESOURCE_READ,
+       wire::RESOURCE_ACCOUNT,
+       account_id},
+      {"GET",
+       "/api/v1/logs",
+       {},
+       "runtime",
+       wire::PERMISSION_LOG_READ,
+       wire::RESOURCE_CATALOG,
+       "control"},
+      {"GET",
+       "/api/v1/audit",
+       {},
+       "runtime",
+       wire::PERMISSION_AUDIT_READ,
+       wire::RESOURCE_CATALOG,
+       "control"},
+      {"POST", "/api/v1/resources/RESOURCE_ACCOUNT/account-1/delete", lifecycle, "runtime",
+       wire::PERMISSION_ACCOUNT_MANAGE, wire::RESOURCE_ACCOUNT, "account-1", true, 202},
+      {"POST", "/api/v1/resources/RESOURCE_ACCOUNT/account-1/restore", lifecycle, "runtime",
+       wire::PERMISSION_ACCOUNT_MANAGE, wire::RESOURCE_ACCOUNT, "account-1", true, 202},
+      {"GET",
+       "/api/v1/models" + model_scope_query(),
+       {},
+       "model",
+       wire::PERMISSION_MODEL_READ,
+       wire::RESOURCE_MODEL,
+       "model-1"},
+      {"GET",
+       model_path(),
+       {},
+       "model",
+       wire::PERMISSION_MODEL_READ,
+       wire::RESOURCE_MODEL,
+       "model-1"},
+      {"PUT", "/api/v1/models/model-1", R"({"config":{"model_id":"model-1"}})", "model",
+       wire::PERMISSION_MODEL_MANAGE, wire::RESOURCE_MODEL, "model-1"},
+      {"POST", "/api/v1/models/model-1/disable", R"({"expected_version":"2"})", "model",
+       wire::PERMISSION_MODEL_MANAGE, wire::RESOURCE_MODEL, "model-1"},
+      {"POST", "/api/v1/models/model-1/enable", R"({"expected_version":"2"})", "model",
+       wire::PERMISSION_MODEL_MANAGE, wire::RESOURCE_MODEL, "model-1"},
+      {"PUT", "/api/v1/models/model-1/secret",
+       R"({"model_id":"model-1","new_secret":"c2VjcmV0","expected_version":"2"})", "model",
+       wire::PERMISSION_MODEL_MANAGE, wire::RESOURCE_MODEL, "model-1"},
+      {"GET",
+       model_path("/configuration"),
+       {},
+       "model",
+       wire::PERMISSION_MODEL_MANAGE,
+       wire::RESOURCE_MODEL,
+       "model-1"},
+      {"GET",
+       model_path("/calls/call-1"),
+       {},
+       "model",
+       wire::PERMISSION_MODEL_CALL_INSPECT,
+       wire::RESOURCE_MODEL,
+       "model-1"},
+      {"POST", model_path("/calls/call-1/resolve"),
+       R"({"disposition":"EXECUTED_BILLED","expected_version":"2"})", "model",
+       wire::PERMISSION_MODEL_MANAGE, wire::RESOURCE_MODEL, "model-1"},
+      {"GET",
+       action_scope_path(),
+       {},
+       "runtime",
+       wire::PERMISSION_ACTION_INSPECT,
+       wire::RESOURCE_ACCOUNT,
+       account_id},
+      {"GET",
+       action_scope_path("by-idempotency-key") + "&owner_instance=instance-1",
+       {},
+       "runtime",
+       wire::PERMISSION_ACTION_INSPECT,
+       wire::RESOURCE_ACCOUNT,
+       account_id},
+  };
+}
+void require_failure(const std::optional<target::OwnerHttpResult>& result, wire::ErrorCode code,
+                     bool retryable, std::string_view scenario) {
+  require(result && result->status == target::owner_http_status(code), scenario);
+  const auto body = nlohmann::json::parse(result->body);
+  require(body["code"] == wire::ErrorCode_Name(code) && body["retryable"] == retryable &&
+              body["request_id"] == "request-123" &&
+              body["trace_id"] == "0123456789abcdef0123456789abcdef" && body["details"].empty(),
+          scenario);
+}
+target::OwnerHttpRequest route_request(const OwnerRoute& route) {
+  auto input = request(route.method_, route.path_);
+  input.body = route.body_;
+  input.headers["traceparent"] = "00-0123456789abcdef0123456789abcdef-0123456789abcdef-01";
+  input.headers["Idempotency-Key"] = "fixture-write-key-0001";
+  return input;
+}
+void owner_route_inventory() {
+  for (const auto& route : owner_routes()) {
+    RoutedOwners fixture;
+    const auto input = route_request(route);
+    const auto result = fixture.gateway_.handle(input);
+    const auto scenario = route.method_ + " " + route.path_;
+    require(result && result->status == route.status_, scenario);
+    require(fixture.delegation_.calls == 1 && fixture.delegation_.audience == route.audience_ &&
+                fixture.delegation_.permission == route.permission_ &&
+                fixture.delegation_.last_scope.resources_size() == 1 &&
+                fixture.delegation_.last_scope.resources(0).kind() == route.scope_kind_ &&
+                fixture.delegation_.last_scope.resources(0).id() == route.scope_id_ &&
+                fixture.delegation_.access_token_ == input.access_token &&
+                fixture.delegation_.deadline_ == input.deadline,
+            scenario + " exact delegation and request budget");
+    for (const auto code : {wire::UNAUTHENTICATED, wire::PERMISSION_DENIED,
+                            wire::UPSTREAM_UNAVAILABLE, wire::TIMEOUT}) {
+      fixture.delegation_.failure = target::OwnerFailure{code, true};
+      require_failure(fixture.gateway_.handle(input), code, route.preserves_retryable_,
+                      scenario + " delegation error");
+      fixture.delegation_.failure.reset();
+      fixture.runtime_.failure = target::OwnerFailure{code, true};
+      fixture.principals_.failure = target::OwnerFailure{code, true};
+      fixture.resources_.failure = target::OwnerFailure{code, true};
+      fixture.tasks_.failure = target::OwnerFailure{code, true};
+      fixture.operations_.failure = target::OwnerFailure{code, true};
+      fixture.audit_logs_.runtime_failure = target::OwnerFailure{code, true};
+      fixture.model_.failure = target::OwnerFailure{code, true};
+      // Local health has no owner RPC after its Identity delegation.
+      if (route.path_ != "/api/v1/health") {
+        require_failure(fixture.gateway_.handle(input), code, route.preserves_retryable_,
+                        scenario + " owner error");
+      }
+      fixture.runtime_.failure.reset();
+      fixture.principals_.failure.reset();
+      fixture.resources_.failure.reset();
+      fixture.tasks_.failure.reset();
+      fixture.operations_.failure.reset();
+      fixture.audit_logs_.runtime_failure.reset();
+      fixture.model_.failure.reset();
+    }
+  }
+}
+void head_and_unmatched_routes() {
+  RoutedOwners fixture;
+  const auto query = "?scope=" + scope_json();
+  for (const auto& path :
+       {std::string{"/health/live"}, std::string{"/health/ready"}, std::string{"/api/v1/health"},
+        std::string{"/api/v1/principals"}, std::string{"/api/v1/instances/inst-1/config"},
+        std::string{"/api/v1/tasks/task-1"} + query,
+        std::string{"/api/v1/occurrences/occurrence-1"} + query,
+        std::string{"/api/v1/operations/runtime/operation-1"} + query, std::string{"/api/v1/logs"},
+        std::string{"/api/v1/audit"}, model_path(),
+        std::string{"/api/v1/models"} + model_scope_query(), action_scope_path()}) {
+    const auto result = fixture.gateway_.handle(request("HEAD", path));
+    require(result && result->status == 200 && !result->body.empty(),
+            "gateway HEAD preserves GET body for HTTPS suppression: " + path);
+  }
+  for (const auto& path : {"/unknown", "/api/v1/auth/me", "/api/v1/accounts/account-1",
+                           "/api/v1/installations/installation-1", "/api/v1/tasks"}) {
+    const int calls = fixture.delegation_.calls;
+    require(!fixture.gateway_.handle(request("PATCH", path)) && fixture.delegation_.calls == calls,
+            "unmatched method/path stays available to another handler");
+  }
+  auto nested_action = request("GET", action_scope_path("action-1/nested"));
+  require(!fixture.gateway_.handle(nested_action), "nested Action selector remains unmatched");
+  const auto unsupported_head =
+      fixture.gateway_.handle(request("HEAD", model_path("/configuration")));
+  require(unsupported_head && unsupported_head->status == 503,
+          "configuration HEAD keeps existing capability response");
+  const auto wrong_method = fixture.gateway_.handle(request("POST", action_scope_path()));
+  require(wrong_method && wrong_method->status == 405, "Action method mismatch stays 405");
+  fixture.delegation_.throws_ = true;
+  const auto exception = fixture.gateway_.handle(request("GET", action_scope_path()));
+  require(exception && exception->status == 500 &&
+              nlohmann::json::parse(exception->body)["code"] == "INTERNAL" &&
+              exception->body.find("private exception") == std::string::npos,
+          "top-level boundary converts unexpected exceptions without leaking details");
+}
+void pagination_and_request_context() {
+  RoutedOwners fixture;
+  auto action = route_request(owner_routes().back());
+  require(fixture.gateway_.handle(action)->status == 200, "Action request context forwarded");
+  const auto& context = fixture.runtime_.last_request.context();
+  require(
+      context.request_id() == "request-123" &&
+          context.trace_id() == "0123456789abcdef0123456789abcdef" &&
+          context.deadline().seconds() ==
+              std::chrono::duration_cast<std::chrono::seconds>(action.deadline.time_since_epoch())
+                  .count() &&
+          context.deadline().nanos() == action.deadline.time_since_epoch().count() % 1'000'000'000,
+      "Action owner receives the exact identifiers and unextended deadline");
+  for (const auto& size : {"0", "1", "100", "101", "4294967295", "4294967296", "1x", "-1"}) {
+    const auto principals = fixture.gateway_.handle(
+        request("GET", "/api/v1/principals?page_size=" + std::string{size}));
+    const auto tasks =
+        fixture.gateway_.handle(request("GET", "/api/v1/tasks?page_size=" + std::string{size}));
+    const auto models = fixture.gateway_.handle(
+        request("GET", "/api/v1/models" + model_scope_query() + "&page_size=" + size));
+    const bool integer = std::string_view{size} == "0" || std::string_view{size} == "1" ||
+                         std::string_view{size} == "100" || std::string_view{size} == "101" ||
+                         std::string_view{size} == "4294967295";
+    require(principals &&
+                principals->status == (integer && std::string_view{size} != "0" ? 200 : 400),
+            "principal pagination keeps owner validation range");
+    require(tasks && tasks->status == (integer ? 200 : 400),
+            "task pagination keeps owner validation range");
+    require(models &&
+                models->status ==
+                    (std::string_view{size} == "1" || std::string_view{size} == "100" ? 200 : 400),
+            "model pagination keeps Control bound");
+  }
+  const auto bad_query =
+      fixture.gateway_.handle(request("GET", "/api/v1/tasks?page_size=1&page_size=2"));
+  require(bad_query && bad_query->status == 400, "duplicate query fields remain invalid");
+  require(fixture.gateway_.handle(request("GET", "/api/v1/principals"))->status == 200 &&
+              !fixture.principals_.last_request.has_page(),
+          "omitted page remains absent after shared pagination parsing");
+}
+
+void model_mutation_idempotency_context() {
+  for (const auto& route : owner_routes()) {
+    if (route.path_ != "/api/v1/models/model-1/disable" &&
+        route.path_ != "/api/v1/models/model-1/enable" &&
+        route.path_ != model_path("/calls/call-1/resolve")) {
+      continue;
+    }
+    RoutedOwners fixture;
+    auto input = route_request(route);
+    input.headers.erase("idempotency-key");
+    input.headers["Idempotency-Key"] = "model-mutation-exact-key";
+    const auto first = fixture.gateway_.handle(input);
+    const auto second = fixture.gateway_.handle(input);
+    require(first && second && first->status == 200 && second->status == 200 &&
+                first->body == second->body && fixture.model_.calls == 2 &&
+                fixture.delegation_.calls == 2,
+            "model mutation retries delegate again and forward to the owner");
+    const auto& context =
+        route.path_.ends_with("/disable")  ? fixture.model_.disable_request.context()
+        : route.path_.ends_with("/enable") ? fixture.model_.enable_request.context()
+                                           : fixture.model_.resolve_request.context();
+    require(context.idempotency_key() == "model-mutation-exact-key" &&
+                context.request_id() == "request-123" &&
+                context.trace_id() == "0123456789abcdef0123456789abcdef",
+            "model mutation forwards the exact case-insensitive header and correlation");
+    input.headers.erase("Idempotency-Key");
+    require_failure(fixture.gateway_.handle(input), wire::INVALID_ARGUMENT, false,
+                    "missing model mutation key rejected");
+    input.headers["Idempotency-Key"] = "";
+    require_failure(fixture.gateway_.handle(input), wire::INVALID_ARGUMENT, false,
+                    "empty model mutation key rejected");
+    require(fixture.model_.calls == 2 && fixture.delegation_.calls == 2,
+            "missing/empty mutation keys do not delegate or invoke the owner");
+  }
+}
+void missing_nested_instance_owner() {
+  for (const auto& route : owner_routes()) {
+    if (!route.path_.starts_with("/api/v1/installations/installation-1/instances")) {
+      continue;
+    }
+    FakeDelegation delegation;
+    FakeRuntime runtime;
+    target::OwnerGateway gateway{delegation, runtime};
+    auto input = route_request(route);
+    require_failure(gateway.handle(input), wire::UPSTREAM_UNAVAILABLE, true,
+                    "missing nested instance owner is a stable dependency error");
+    require(delegation.calls == 1 && runtime.calls == 0,
+            "missing owner preserves delegation before dependency failure");
+    delegation.failure = target::OwnerFailure{wire::UNAUTHENTICATED, false};
+    input.access_token.clear();
+    require_failure(gateway.handle(input), wire::UNAUTHENTICATED, false,
+                    "nested instance authentication rejection precedes owner absence");
+    input.access_token = "access-token";
+    delegation.failure = target::OwnerFailure{wire::PERMISSION_DENIED, false};
+    require_failure(gateway.handle(input), wire::PERMISSION_DENIED, false,
+                    "nested instance permission rejection precedes owner absence");
+    delegation.failure.reset();
+    if (route.method_ != "GET") {
+      input.body = "{";
+      require_failure(gateway.handle(input), wire::INVALID_ARGUMENT, false,
+                      "nested instance malformed body precedes owner absence");
+      // Configuration historically authenticates before parsing its mutation body. Other
+      // nested writes validate their shape first; the dependency guard must preserve both.
+      delegation.failure = target::OwnerFailure{wire::UNAUTHENTICATED, false};
+      const auto expected =
+          route.path_.ends_with("/configuration") ? wire::UNAUTHENTICATED : wire::INVALID_ARGUMENT;
+      require_failure(gateway.handle(input), expected, false,
+                      "nested instance input/auth ordering survives the dependency guard");
+    }
+    require(runtime.calls == 0, "missing resources never invokes an unrelated owner");
+  }
+}
+
 } // namespace
 
 int main() {
@@ -1525,6 +2026,11 @@ int main() {
     instance_plugin_state_and_configuration();
     validation_rules();
     model_management_surface();
+    owner_route_inventory();
+    head_and_unmatched_routes();
+    pagination_and_request_context();
+    model_mutation_idempotency_context();
+    missing_nested_instance_owner();
   } catch (const std::exception& error) {
     std::cerr << error.what() << '\n';
     return 1;

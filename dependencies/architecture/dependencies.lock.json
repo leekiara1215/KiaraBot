@@ -140,5 +140,25 @@
     "archive-name": "openssl-openssl-openssl-3.5.0.tar.gz",
     "sha512": "a1ef09ecc810b761b3adcdb79b5746ba06244a10f626a40e495a3df19411546b98d75f6c7e7c13de7c15753caf3db87af7096ed0bb835afed8cc6dbc366b542f",
     "configure": "shared no-tests no-docs; make install_sw install_ssldirs"
+  },
+  "source-archives": {
+    "eventsource-c": {
+      "version": "0.2.0",
+      "repository": "https://github.com/rexxars/eventsource-c",
+      "revision": "95309f6191df705e7c00acfba0675a110ebb79fa",
+      "url": "https://codeload.github.com/rexxars/eventsource-c/tar.gz/95309f6191df705e7c00acfba0675a110ebb79fa",
+      "sha256": "87b1cc6c5a3128a0ad13059e1124c4b89981fc0d149cc9491e237e1f88733263",
+      "sha512": "59d8f7012c5f9e42bc1d54f906b1d0bf99dc50023ab645a0d66c99b3cad710d6ac55702dfe67959788a606f8b745d5d0ee53760d62c890fdace51bd82325ba33",
+      "license": "MIT",
+      "production-sources": [
+        "src/sse_parser.c"
+      ],
+      "files-sha256": {
+        "LICENSE": "835eb611a23301b27115ca1be9f754c876e643ceb7fe63049c6b50609a1cafeb",
+        "src/sse_parser.c": "2a7d1db3ecf848ba64ddeaac94ba9b35edc00b314ad933d8ded388a2b2530b75",
+        "include/eventsource/sse_parser.h": "b79b4987d34d6c850f3962d05ac3430cef69f9db7d14e8cbdc8025f25114784b"
+      },
+      "integration": "Only the C99 byte parser is linked to production; upstream client/transport/reconnect excluded. curl remains the existing locked HTTP transport."
+    }
   }
 }

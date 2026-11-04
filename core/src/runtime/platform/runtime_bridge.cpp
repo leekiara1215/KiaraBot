@@ -19,6 +19,7 @@
 
 #include "kiarabot/core/application/target/runtime_storage_application.hpp"
 #include "kiarabot/core/ports/target/runtime_model.hpp"
+#include "kiarabot/core/runtime/platform/host_request_shape.hpp"
 #include "kiarabot/core/runtime/platform/target_codec.hpp"
 #include "kiarabot/v1/adapters.pb.h"
 #include "kiarabot/v1/events.pb.h"
@@ -691,8 +692,12 @@ public:
       return grpc::Status::OK;
     }
     const auto& result = std::get<target::BridgeRegistrationResult>(outcome);
-    StreamState state{
-        target::BridgePeerKind::Adapter, result.authorization, command.adapter.value, {}, false};
+    StreamState state{target::BridgePeerKind::Adapter,
+                      result.authorization,
+                      command.adapter.value,
+                      {},
+                      false,
+                      {}};
     const auto stream_instance = result.authorization.fence.instance;
     const auto stream_generation = result.authorization.fence.connection_generation;
     bool shutdown_attached = false;
@@ -1083,6 +1088,276 @@ bool storage_entry_to_wire(const target::NamespaceValue& value, const std::strin
   return true;
 }
 
+using PluginStreamGuard = StreamGuard<v1::CoreToPlugin, v1::PluginToCore>;
+
+// A frame may either continue the read loop, stop after a failed write (OK), or terminate with a
+// transport rejection. Business Host/Action failures stay response frames on the same connection.
+struct PluginFrameResult {
+  bool read_next = true;
+  grpc::Status status = grpc::Status::OK;
+};
+
+class PluginHostReply {
+public:
+  PluginHostReply(const target::BridgeFence& fence, const v1::HostRequest& request,
+                  const std::shared_ptr<PluginStreamGuard>& guard)
+      : request_(request), guard_(guard) {
+    fence_to_wire(fence, frame_.mutable_fence());
+    body()->set_request_id(request.request_id());
+  }
+  v1::HostResponse* body() {
+    return frame_.mutable_host_response();
+  }
+  bool write() {
+    return guard_->write(frame_);
+  }
+  bool reject(target::ErrorCode code, bool retryable = false) {
+    *body()->mutable_error() =
+        wire_error(code, request_.request_id(), request_.trace_id(), retryable);
+    return write();
+  }
+
+private:
+  const v1::HostRequest& request_;
+  const std::shared_ptr<PluginStreamGuard>& guard_;
+  v1::CoreToPlugin frame_;
+};
+
+target::BridgePluginRegistration
+plugin_registration_from_wire(const v1::RegisterPluginRequest& registered,
+                              const std::string& bearer) {
+  target::BridgePluginRegistration command;
+  command.request_id = "plugin-register-" + registered.instance_id();
+  command.instance_id = registered.instance_id();
+  command.bearer_credential = bearer;
+  command.manifest.id = registered.manifest().id();
+  command.manifest.name = registered.manifest().name();
+  command.manifest.version = registered.manifest().version();
+  command.manifest.api_version = registered.manifest().api_version();
+  command.manifest.runtime = registered.manifest().runtime();
+  command.manifest.entrypoint = registered.manifest().entrypoint();
+  command.manifest.isolation = registered.manifest().isolation();
+  command.manifest.config_schema = registered.manifest().config_schema();
+  command.manifest.ordered = registered.manifest().ordered();
+  command.manifest.capabilities.assign(registered.manifest().capabilities().begin(),
+                                       registered.manifest().capabilities().end());
+  command.manifest.permissions.assign(registered.manifest().permissions().begin(),
+                                      registered.manifest().permissions().end());
+  command.manifest.dependencies.assign(registered.manifest().dependencies().begin(),
+                                       registered.manifest().dependencies().end());
+  command.supported_features.assign(registered.supported_features().begin(),
+                                    registered.supported_features().end());
+  if (!registered.installation_id().empty()) {
+    command.installation_id = target::InstallationId{registered.installation_id()};
+  }
+  if (registered.has_execution_generation()) {
+    command.execution_generation = registered.execution_generation();
+  }
+  return command;
+}
+
+target::Outcome<target::TaskCreationInput>
+task_creation_from_wire(const v1::TaskCreateRequest& request) {
+  target::TaskCreationInput input;
+  input.task_id = request.task_id();
+  input.target = target::ConversationKey{
+      {}, {}, request.target_conversation(), target::ConversationKey::Kind::Group};
+  const auto& payload = request.payload();
+  input.payload.resize(static_cast<std::size_t>(payload.size()));
+  std::memcpy(input.payload.data(), payload.data(), input.payload.size());
+  if (request.when_case() == v1::TaskCreateRequest::kRunAt) {
+    const auto decoded = codec::from_wire(request.run_at());
+    const auto* value = std::get_if<target::TimePoint>(&decoded);
+    if (!value) {
+      return failure(target::ErrorCode::InvalidArgument);
+    }
+    input.run_at = *value;
+  } else if (request.when_case() == v1::TaskCreateRequest::kLocalTime) {
+    const auto& local = request.local_time();
+    input.local_time =
+        target::LocalCivilTime{local.year(),   local.month(),  local.day(),      local.hour(),
+                               local.minute(), local.second(), local.time_zone()};
+  } else {
+    return failure(target::ErrorCode::InvalidArgument);
+  }
+  return input;
+}
+
+// Owns exactly one accepted connection. Delivery and shutdown callbacks hold weak guards; cleanup
+// detaches callbacks, closes the guard, then disconnects the matching generation in that order.
+class PluginConnection {
+public:
+  PluginConnection(target::RuntimeBridgeApplication& application,
+                   std::shared_ptr<PluginStreamGuard> guard, target::BridgeFence fence)
+      : application_(application), guard_(std::move(guard)), fence_(std::move(fence)) {}
+  PluginConnection(const PluginConnection&) = delete;
+  PluginConnection& operator=(const PluginConnection&) = delete;
+  ~PluginConnection() {
+    if (delivery_attached_) {
+      application_.detach_plugin_delivery(fence_.instance, fence_.connection_generation);
+    }
+    if (shutdown_attached_) {
+      application_.detach_shutdown_sink(target::BridgePeerKind::Plugin, fence_.instance,
+                                        fence_.connection_generation);
+    }
+    guard_->close();
+    application_.disconnect(target::BridgePeerKind::Plugin, fence_.instance,
+                            fence_.connection_generation);
+  }
+  target::Status attach_delivery() {
+    std::weak_ptr<StreamGuard<v1::CoreToPlugin, v1::PluginToCore>> weak = guard_;
+    target::DeliverySink delivery_sink = [weak](const target::EventRecord& event,
+                                                const target::DeliveryAttempt& attempt,
+                                                std::string_view) -> target::Status {
+      auto guard = weak.lock();
+      if (!guard) {
+        return target::Failure{target::ErrorCode::UpstreamUnavailable,
+                               target::Acceptance::NotAccepted,
+                               target::Recovery::Backoff,
+                               {},
+                               {}};
+      }
+      v1::EventEnvelope envelope;
+      if (!envelope.ParseFromString(event.serialized_envelope)) {
+        return target::Failure{target::ErrorCode::Internal,
+                               target::Acceptance::NotAccepted,
+                               target::Recovery::Diagnose,
+                               {},
+                               {}};
+      }
+      v1::CoreToPlugin frame;
+      fence_to_wire(target::BridgeFence{attempt.fence.instance, attempt.fence.runtime_epoch,
+                                        attempt.fence.execution_generation,
+                                        attempt.fence.connection_generation},
+                    frame.mutable_fence());
+      frame.mutable_delivery_attempt()->CopyFrom(attempt_to_wire(attempt));
+      *frame.mutable_event() = std::move(envelope);
+      if (!guard->write(frame)) {
+        return target::Failure{target::ErrorCode::UpstreamUnavailable,
+                               target::Acceptance::NotAccepted,
+                               target::Recovery::Backoff,
+                               {},
+                               {}};
+      }
+      return std::monostate{};
+    };
+    const auto attached = application_.attach_plugin_delivery(
+        fence_.instance, fence_.connection_generation, delivery_sink);
+    if (const auto* rejected = std::get_if<target::Failure>(&attached)) {
+      return *rejected;
+    }
+    delivery_attached_ = true;
+    return std::monostate{};
+  }
+  target::Status attach_shutdown() {
+    const auto shutdown_fence = fence_;
+    std::weak_ptr<StreamGuard<v1::CoreToPlugin, v1::PluginToCore>> weak = guard_;
+    const auto attached = application_.attach_shutdown_sink(
+        target::BridgePeerKind::Plugin, fence_.instance, fence_.connection_generation,
+        [weak, shutdown_fence]() -> target::Status {
+          auto guard = weak.lock();
+          if (!guard) {
+            return retryable_failure(target::ErrorCode::UpstreamUnavailable);
+          }
+          v1::CoreToPlugin notice;
+          fence_to_wire(shutdown_fence, notice.mutable_fence());
+          notice.mutable_shutdown()->set_reason("shutdown");
+          notice.mutable_shutdown()->set_drain_timeout_ms(1000);
+          if (!bounded_write(guard, notice, std::chrono::milliseconds{1000})) {
+            return retryable_failure(target::ErrorCode::UpstreamUnavailable);
+          }
+          return std::monostate{};
+        });
+    if (const auto* rejected = std::get_if<target::Failure>(&attached)) {
+      return *rejected;
+    }
+    shutdown_attached_ = true;
+    return std::monostate{};
+  }
+
+private:
+  target::RuntimeBridgeApplication& application_;
+  std::shared_ptr<PluginStreamGuard> guard_;
+  target::BridgeFence fence_;
+  bool delivery_attached_ = false;
+  bool shutdown_attached_ = false;
+};
+
+struct StorageWireOperation {
+  const v1::NamespaceScope* scope;
+  const google::protobuf::Message* message;
+  std::string method;
+  bool mutating;
+};
+
+target::Outcome<StorageWireOperation> storage_operation_from_wire(const v1::HostRequest& host) {
+  const v1::NamespaceScope* wire_scope = nullptr;
+  const google::protobuf::Message* operation = nullptr;
+  std::string method;
+  bool mutating = true;
+  switch (host.operation_case()) {
+  case v1::HostRequest::kStorageGet:
+    wire_scope = host.storage_get().has_scope() ? &host.storage_get().scope() : nullptr;
+    operation = &host.storage_get();
+    method = "plugin.storage.get";
+    mutating = false;
+    break;
+  case v1::HostRequest::kStorageSet:
+    wire_scope = host.storage_set().has_scope() ? &host.storage_set().scope() : nullptr;
+    operation = &host.storage_set();
+    method = "plugin.storage.set";
+    break;
+  case v1::HostRequest::kStorageDelete:
+    wire_scope = host.storage_delete().has_scope() ? &host.storage_delete().scope() : nullptr;
+    operation = &host.storage_delete();
+    method = "plugin.storage.delete";
+    break;
+  case v1::HostRequest::kStorageCompareAndSet:
+    wire_scope = host.storage_compare_and_set().has_scope()
+                     ? &host.storage_compare_and_set().scope()
+                     : nullptr;
+    operation = &host.storage_compare_and_set();
+    method = "plugin.storage.compare_and_set";
+    break;
+  default:
+    return failure(target::ErrorCode::CapabilityNotSupported);
+  }
+  return StorageWireOperation{wire_scope, operation, std::move(method), mutating};
+}
+
+target::Outcome<target::RequestedScopeKind>
+storage_scope_from_wire(const v1::NamespaceScope* wire_scope, const target::InstanceId& instance,
+                        const target::PluginCapabilityProfile& profile) {
+  auto requested = target::RequestedScopeKind::DefaultPrivate;
+  if (wire_scope != nullptr) {
+    switch (wire_scope->scope_case()) {
+    case v1::NamespaceScope::SCOPE_NOT_SET:
+    case v1::NamespaceScope::kInstancePrivate:
+      if (wire_scope->scope_case() == v1::NamespaceScope::kInstancePrivate &&
+          !wire_scope->instance_private()) {
+        return failure(target::ErrorCode::InvalidArgument);
+      }
+      break;
+    case v1::NamespaceScope::kInstallationShared:
+      if (const auto resolved = target::plugin_storage_resource(
+              instance, profile, target::RequestedScopeKind::InstallationShared);
+          std::holds_alternative<target::Failure>(resolved)) {
+        return std::get<target::Failure>(resolved);
+      }
+      if (!wire_scope->installation_shared()) {
+        return failure(target::ErrorCode::InvalidArgument);
+      }
+      requested = target::RequestedScopeKind::InstallationShared;
+      break;
+    case v1::NamespaceScope::kInstallationSharedId:
+      // Plugin frames never self-report a namespace id; it is derived from the registered
+      // installation. Only Runtime internal dispatcher frames may use the explicit id.
+      return failure(target::ErrorCode::CapabilityNotSupported);
+    }
+  }
+  return requested;
+}
+
 class PluginBridgeImpl final : public v1::PluginBridge::Service {
 public:
   PluginBridgeImpl(target::RuntimeBridgeApplication& application, PluginBridgeOptions options)
@@ -1099,38 +1374,11 @@ public:
       return {grpc::StatusCode::UNAUTHENTICATED, "bridge authorization missing"};
     }
     v1::PluginToCore first;
-    if (!stream->Read(&first) || first.body_case() != v1::AdapterToCore::kRegister) {
+    if (!stream->Read(&first) || first.body_case() != v1::PluginToCore::kRegister) {
       return {grpc::StatusCode::INVALID_ARGUMENT, "registration frame required"};
     }
     watchdog.finish();
-    const auto& registered = first.register_();
-    target::BridgePluginRegistration command;
-    command.request_id = "plugin-register-" + registered.instance_id();
-    command.instance_id = registered.instance_id();
-    command.bearer_credential = bearer;
-    command.manifest.id = registered.manifest().id();
-    command.manifest.name = registered.manifest().name();
-    command.manifest.version = registered.manifest().version();
-    command.manifest.api_version = registered.manifest().api_version();
-    command.manifest.runtime = registered.manifest().runtime();
-    command.manifest.entrypoint = registered.manifest().entrypoint();
-    command.manifest.isolation = registered.manifest().isolation();
-    command.manifest.config_schema = registered.manifest().config_schema();
-    command.manifest.ordered = registered.manifest().ordered();
-    command.manifest.capabilities.assign(registered.manifest().capabilities().begin(),
-                                         registered.manifest().capabilities().end());
-    command.manifest.permissions.assign(registered.manifest().permissions().begin(),
-                                        registered.manifest().permissions().end());
-    command.manifest.dependencies.assign(registered.manifest().dependencies().begin(),
-                                         registered.manifest().dependencies().end());
-    command.supported_features.assign(registered.supported_features().begin(),
-                                      registered.supported_features().end());
-    if (!registered.installation_id().empty()) {
-      command.installation_id = target::InstallationId{registered.installation_id()};
-    }
-    if (registered.has_execution_generation()) {
-      command.execution_generation = registered.execution_generation();
-    }
+    const auto command = plugin_registration_from_wire(first.register_(), bearer);
     auto outcome = application_.register_plugin(command);
     if (const auto* rejected = std::get_if<target::Failure>(&outcome)) {
       if (transport_registration_failure(rejected->code)) {
@@ -1147,29 +1395,7 @@ public:
     const auto& result = std::get<target::BridgeRegistrationResult>(outcome);
     StreamState state{target::BridgePeerKind::Plugin, result.authorization, {}, {}, false,
                       result.granted_permissions};
-    const auto stream_instance = result.authorization.fence.instance;
-    const auto stream_generation = result.authorization.fence.connection_generation;
-    bool delivery_attached = false;
-    bool shutdown_attached = false;
-    struct Exit {
-      target::RuntimeBridgeApplication& application;
-      std::shared_ptr<StreamGuard<v1::CoreToPlugin, v1::PluginToCore>> guard;
-      target::InstanceId instance;
-      target::ConnectionGeneration generation;
-      bool* delivery_attached;
-      bool* shutdown_attached;
-      ~Exit() {
-        if (*delivery_attached) {
-          application.detach_plugin_delivery(instance, generation);
-        }
-        if (*shutdown_attached) {
-          application.detach_shutdown_sink(target::BridgePeerKind::Plugin, instance, generation);
-        }
-        guard->close();
-        application.disconnect(target::BridgePeerKind::Plugin, instance, generation);
-      }
-    } exit_guard{application_,      stream_guard,       stream_instance,
-                 stream_generation, &delivery_attached, &shutdown_attached};
+    PluginConnection connection{application_, stream_guard, state.authorization.fence};
     {
       v1::CoreToPlugin response;
       auto* registered_response = response.mutable_register_result();
@@ -1189,74 +1415,13 @@ public:
         return grpc::Status::OK;
       }
     }
-    const auto delivered_instance = result.authorization.fence.instance;
-    {
-      std::weak_ptr<StreamGuard<v1::CoreToPlugin, v1::PluginToCore>> weak = stream_guard;
-      target::DeliverySink delivery_sink = [weak](const target::EventRecord& event,
-                                                  const target::DeliveryAttempt& attempt,
-                                                  std::string_view) -> target::Status {
-        auto guard = weak.lock();
-        if (!guard) {
-          return target::Failure{target::ErrorCode::UpstreamUnavailable,
-                                 target::Acceptance::NotAccepted,
-                                 target::Recovery::Backoff,
-                                 {},
-                                 {}};
-        }
-        v1::EventEnvelope envelope;
-        if (!envelope.ParseFromString(event.serialized_envelope)) {
-          return target::Failure{target::ErrorCode::Internal,
-                                 target::Acceptance::NotAccepted,
-                                 target::Recovery::Diagnose,
-                                 {},
-                                 {}};
-        }
-        v1::CoreToPlugin frame;
-        fence_to_wire(target::BridgeFence{attempt.fence.instance, attempt.fence.runtime_epoch,
-                                          attempt.fence.execution_generation,
-                                          attempt.fence.connection_generation},
-                      frame.mutable_fence());
-        frame.mutable_delivery_attempt()->CopyFrom(attempt_to_wire(attempt));
-        *frame.mutable_event() = std::move(envelope);
-        if (!guard->write(frame)) {
-          return target::Failure{target::ErrorCode::UpstreamUnavailable,
-                                 target::Acceptance::NotAccepted,
-                                 target::Recovery::Backoff,
-                                 {},
-                                 {}};
-        }
-        return std::monostate{};
-      };
-      const auto attached =
-          application_.attach_plugin_delivery(delivered_instance, stream_generation, delivery_sink);
-      if (const auto* rejected = std::get_if<target::Failure>(&attached)) {
-        return rejected_status(*rejected);
-      }
-      delivery_attached = true;
+    if (const auto attached = connection.attach_delivery();
+        std::holds_alternative<target::Failure>(attached)) {
+      return rejected_status(std::get<target::Failure>(attached));
     }
-    const auto shutdown_fence = state.authorization.fence;
-    {
-      std::weak_ptr<StreamGuard<v1::CoreToPlugin, v1::PluginToCore>> weak = stream_guard;
-      const auto attached = application_.attach_shutdown_sink(
-          target::BridgePeerKind::Plugin, delivered_instance, stream_generation,
-          [weak, shutdown_fence]() -> target::Status {
-            auto guard = weak.lock();
-            if (!guard) {
-              return retryable_failure(target::ErrorCode::UpstreamUnavailable);
-            }
-            v1::CoreToPlugin notice;
-            fence_to_wire(shutdown_fence, notice.mutable_fence());
-            notice.mutable_shutdown()->set_reason("shutdown");
-            notice.mutable_shutdown()->set_drain_timeout_ms(1000);
-            if (!bounded_write(guard, notice, std::chrono::milliseconds{1000})) {
-              return retryable_failure(target::ErrorCode::UpstreamUnavailable);
-            }
-            return std::monostate{};
-          });
-      if (const auto* rejected = std::get_if<target::Failure>(&attached)) {
-        return rejected_status(*rejected);
-      }
-      shutdown_attached = true;
+    if (const auto attached = connection.attach_shutdown();
+        std::holds_alternative<target::Failure>(attached)) {
+      return rejected_status(std::get<target::Failure>(attached));
     }
     grpc::Status status = grpc::Status::OK;
     while (!context->IsCancelled()) {
@@ -1270,764 +1435,583 @@ public:
         status = rejected_status(*rejected);
         break;
       }
-      const auto body = frame.body_case();
-      if (body == v1::PluginToCore::kHeartbeat) {
-        v1::CoreToPlugin response;
-        fence_to_wire(state.authorization.fence, response.mutable_fence());
-        fill_heartbeat_ack(response.mutable_heartbeat_ack());
-        state.sampled = false;
-        if (!stream_guard->write(response)) {
-          break;
-        }
-      } else if (body == v1::PluginToCore::kRefreshAuthorization) {
-        auto refreshed = refresh(application_, state, frame.refresh_authorization());
-        if (const auto* rejected = std::get_if<target::Failure>(&refreshed)) {
-          if (rejected->code == target::ErrorCode::Unauthenticated ||
-              rejected->code == target::ErrorCode::PermissionDenied) {
-            status = rejected_status(*rejected);
-            break;
-          }
-          v1::CoreToPlugin response;
-          fence_to_wire(state.authorization.fence, response.mutable_fence());
-          auto* result = response.mutable_authorization_result();
-          result->set_request_id(frame.refresh_authorization().request_id());
-          *result->mutable_error() =
-              wire_error(rejected->code, frame.refresh_authorization().request_id(), {});
-          state.sampled = false;
-          if (!stream_guard->write(response)) {
-            break;
-          }
-          status = rejected_status(*rejected);
-          break;
-        }
-        state.authorization = std::get<target::BridgeAuthorization>(refreshed);
-        state.sampled = false;
-        v1::CoreToPlugin response;
-        fence_to_wire(state.authorization.fence, response.mutable_fence());
-        auto* result = response.mutable_authorization_result();
-        result->set_request_id(frame.refresh_authorization().request_id());
-        authorization_to_wire(state.authorization, result->mutable_authorization());
-        if (!stream_guard->write(response)) {
-          break;
-        }
-      } else if (body == v1::PluginToCore::kEventAck) {
-        auto reference = attempt_from_wire(frame.event_ack().attempt());
-        if (const auto* rejected = std::get_if<target::Failure>(&reference)) {
-          status = rejected_status(*rejected);
-          break;
-        }
-        const auto& ack_wire = frame.event_ack();
-        std::optional<target::Failure> failure;
-        if (ack_wire.has_error()) {
-          failure = failure_from_wire(ack_wire.error());
-          if (!failure) {
-            status = {grpc::StatusCode::INVALID_ARGUMENT, "invalid error code"};
-            break;
-          }
-        }
-        if (!ack_wire.accepted() && !failure) {
-          status = {grpc::StatusCode::INVALID_ARGUMENT, "rejected ack requires an error"};
-          break;
-        }
-        auto receipt = application_.acknowledge_delivery(
-            state.authorization.fence.instance, std::get<target::BridgeAttemptRef>(reference),
-            ack_wire.accepted(), failure, ack_wire.has_error() && ack_wire.error().retryable());
-        if (const auto* rejected = std::get_if<target::Failure>(&receipt)) {
-          status = rejected_status(*rejected);
-          break;
-        }
-        v1::CoreToPlugin response;
-        fence_to_wire(state.authorization.fence, response.mutable_fence());
-        receipt_to_wire(std::get<target::DeliveryReceipt>(receipt),
-                        response.mutable_delivery_receipt());
-        if (!stream_guard->write(response)) {
-          break;
-        }
-      } else if (body == v1::PluginToCore::kRenewDelivery) {
-        auto reference = attempt_from_wire(frame.renew_delivery());
-        if (const auto* rejected = std::get_if<target::Failure>(&reference)) {
-          status = rejected_status(*rejected);
-          break;
-        }
-        auto receipt = application_.renew_delivery(state.authorization.fence.instance,
-                                                   std::get<target::BridgeAttemptRef>(reference));
-        if (const auto* rejected = std::get_if<target::Failure>(&receipt)) {
-          status = rejected_status(*rejected);
-          break;
-        }
-        v1::CoreToPlugin response;
-        fence_to_wire(state.authorization.fence, response.mutable_fence());
-        receipt_to_wire(std::get<target::DeliveryReceipt>(receipt),
-                        response.mutable_delivery_receipt());
-        if (!stream_guard->write(response)) {
-          break;
-        }
-      } else if (body == v1::PluginToCore::kRegister) {
-        status = {grpc::StatusCode::INVALID_ARGUMENT, "duplicate registration frame"};
+      const auto handled = dispatch_frame(state, frame, stream_guard);
+      if (!handled.read_next) {
+        status = handled.status;
         break;
-      } else if (body == v1::PluginToCore::kAction) {
-        const auto& request = frame.action();
-        v1::CoreToPlugin response;
-        fence_to_wire(state.authorization.fence, response.mutable_fence());
-        auto* action_response = response.mutable_action_response();
-        action_response->set_request_id(request.request_id());
-        std::string serialized;
-        const bool serialized_ok = request.action().SerializeToString(&serialized);
-        target::BridgeActionSubmit submit;
-        if (!decode_plugin_action(request.action(), serialized, &submit)) {
-          *action_response->mutable_error() =
-              wire_error(target::ErrorCode::InvalidArgument, request.request_id(),
-                         request.action().trace_id(), false);
-          if (!stream_guard->write(response)) {
-            break;
-          }
-          continue;
-        }
-        auto submitted =
-            application_.submit_plugin_action(state.authorization.fence.instance, submit);
-        if (const auto* rejected = std::get_if<target::Failure>(&submitted)) {
-          *action_response->mutable_error() =
-              wire_error(rejected->code, request.request_id(), request.action().trace_id(),
-                         rejected->recovery == target::Recovery::Backoff);
-        } else {
-          (void)action_result_to_wire(std::get<target::ActionRecord>(submitted),
-                                      action_response->mutable_result());
-        }
-        if (!stream_guard->write(response)) {
-          break;
-        }
-      } else if (body == v1::PluginToCore::kActionQuery) {
-        const auto& query = frame.action_query();
-        v1::CoreToPlugin response;
-        fence_to_wire(state.authorization.fence, response.mutable_fence());
-        auto* action_response = response.mutable_action_response();
-        action_response->set_request_id(query.request_id());
-        std::optional<target::ActionId> action_id;
-        std::optional<std::string> idempotency_key;
-        if (query.selector_case() == v1::PluginActionQuery::kActionId) {
-          action_id = target::ActionId{query.action_id()};
-        } else if (query.selector_case() == v1::PluginActionQuery::kIdempotencyKey) {
-          idempotency_key = query.idempotency_key();
-        } else {
-          *action_response->mutable_error() = wire_error(
-              target::ErrorCode::InvalidArgument, query.request_id(), query.trace_id(), false);
-          if (!stream_guard->write(response)) {
-            break;
-          }
-          continue;
-        }
-        auto found = application_.query_plugin_action(
-            state.authorization.fence.instance, std::move(action_id), std::move(idempotency_key));
-        if (const auto* rejected = std::get_if<target::Failure>(&found)) {
-          *action_response->mutable_error() =
-              wire_error(rejected->code, query.request_id(), query.trace_id(), false);
-        } else {
-          (void)action_result_to_wire(std::get<target::ActionRecord>(found),
-                                      action_response->mutable_result());
-        }
-        if (!stream_guard->write(response)) {
-          break;
-        }
-      } else if (body == v1::PluginToCore::kActionCancel) {
-        const auto& cancel = frame.action_cancel();
-        v1::CoreToPlugin response;
-        fence_to_wire(state.authorization.fence, response.mutable_fence());
-        auto* action_response = response.mutable_action_response();
-        action_response->set_request_id(cancel.request_id());
-        if (cancel.action_id().empty()) {
-          *action_response->mutable_error() = wire_error(
-              target::ErrorCode::InvalidArgument, cancel.request_id(), cancel.trace_id(), false);
-          if (!stream_guard->write(response)) {
-            break;
-          }
-          continue;
-        }
-        auto cancelled = application_.cancel_plugin_action(state.authorization.fence.instance,
-                                                           target::ActionId{cancel.action_id()});
-        if (const auto* rejected = std::get_if<target::Failure>(&cancelled)) {
-          *action_response->mutable_error() =
-              wire_error(rejected->code, cancel.request_id(), cancel.trace_id(), false);
-        } else {
-          (void)action_result_to_wire(std::get<target::ActionRecord>(cancelled),
-                                      action_response->mutable_result());
-        }
-        if (!stream_guard->write(response)) {
-          break;
-        }
-      } else if (body == v1::PluginToCore::kHostRequest) {
-        const auto& host = frame.host_request();
-        v1::CoreToPlugin response;
-        fence_to_wire(state.authorization.fence, response.mutable_fence());
-        auto* host_response = response.mutable_host_response();
-        host_response->set_request_id(host.request_id());
-        const auto reject = [&](target::ErrorCode code, bool retryable = false) {
-          *host_response->mutable_error() =
-              wire_error(code, host.request_id(), host.trace_id(), retryable);
-          return stream_guard->write(response);
-        };
-        const bool task_operation = host.operation_case() == v1::HostRequest::kTaskCreate ||
-                                    host.operation_case() == v1::HostRequest::kTaskGet ||
-                                    host.operation_case() == v1::HostRequest::kTaskCancel;
-        if (task_operation) {
-          if (!options_.tasks) {
-            if (!reject(target::ErrorCode::CapabilityNotSupported)) {
-              break;
-            }
-            continue;
-          }
-          if (!bridge_uuid(host.request_id()) || !bridge_uuid(host.trace_id())) {
-            if (!reject(target::ErrorCode::InvalidArgument)) {
-              break;
-            }
-            continue;
-          }
-          const auto installed = application_.plugin_profile(state.authorization.fence.instance);
-          if (const auto* rejected = std::get_if<target::Failure>(&installed)) {
-            if (!reject(rejected->code, rejected->recovery == target::Recovery::Backoff)) {
-              break;
-            }
-            continue;
-          }
-          const auto& profile =
-              std::get<target::RuntimeBridgeApplication::BridgePluginProfile>(installed);
-          if (!profile.installation) {
-            if (!reject(target::ErrorCode::PermissionDenied)) {
-              break;
-            }
-            continue;
-          }
-          if (std::find(profile.features.begin(), profile.features.end(), "host.tasks.v1") ==
-              profile.features.end()) {
-            if (!reject(target::ErrorCode::CapabilityNotSupported)) {
-              break;
-            }
-            continue;
-          }
-          const auto has_permission = [&](std::string_view permission) {
-            return std::find(profile.permissions.begin(), profile.permissions.end(), permission) !=
-                   profile.permissions.end();
-          };
-          const bool create = host.operation_case() == v1::HostRequest::kTaskCreate;
-          const bool read = host.operation_case() == v1::HostRequest::kTaskGet;
-          if ((create && !has_permission("task.schedule")) ||
-              (!create && read && !has_permission("task.read")) ||
-              (!create && !read && !has_permission("task.schedule"))) {
-            if (!reject(target::ErrorCode::PermissionDenied)) {
-              break;
-            }
-            continue;
-          }
-          if (create && std::find(profile.subscriptions.begin(), profile.subscriptions.end(),
-                                  "event.timer.triggered") == profile.subscriptions.end()) {
-            if (!reject(target::ErrorCode::PermissionDenied)) {
-              break;
-            }
-            continue;
-          }
-          if (!host.idempotency_key().empty() && host.idempotency_key().size() > 256) {
-            if (!reject(target::ErrorCode::InvalidArgument)) {
-              break;
-            }
-            continue;
-          }
-          auto sampled = application_.current_time();
-          if (const auto* rejected = std::get_if<target::Failure>(&sampled)) {
-            if (!reject(rejected->code, rejected->recovery == target::Recovery::Backoff)) {
-              break;
-            }
-            continue;
-          }
-          const auto now = std::get<target::TimePoint>(sampled);
-          target::TimePoint deadline = now + std::chrono::seconds{5};
-          if (host.has_deadline()) {
-            const auto decoded = codec::from_wire(host.deadline());
-            const auto* value = std::get_if<target::TimePoint>(&decoded);
-            if (!value || *value <= now) {
-              if (!reject(target::ErrorCode::InvalidArgument)) {
-                break;
-              }
-              continue;
-            }
-            deadline = *value;
-          }
-          target::SchedulerTaskContext context{state.authorization.fence.instance,
-                                               *profile.installation,
-                                               host.request_id(),
-                                               host.trace_id(),
-                                               deadline,
-                                               host.idempotency_key()};
-          const auto finish = [&](const auto& result) {
-            if (const auto* rejected = std::get_if<target::Failure>(&result)) {
-              const bool retryable = rejected->recovery == target::Recovery::Backoff ||
-                                     rejected->recovery == target::Recovery::QuerySameIdentity;
-              return reject(rejected->code, retryable);
-            }
-            const auto& task = std::get<target::ScheduledTask>(result);
-            v1::TaskResponse* wire = nullptr;
-            switch (host.operation_case()) {
-            case v1::HostRequest::kTaskCreate:
-              wire = host_response->mutable_task_create();
-              break;
-            case v1::HostRequest::kTaskGet:
-              wire = host_response->mutable_task_get();
-              break;
-            case v1::HostRequest::kTaskCancel:
-              wire = host_response->mutable_task_cancel();
-              break;
-            default:
-              return reject(target::ErrorCode::Internal);
-            }
-            wire->set_task_id(task.key.task_id);
-            switch (task.state) {
-            case target::TaskState::Pending:
-              wire->set_state(v1::SCHEDULED_TASK_PENDING);
-              break;
-            case target::TaskState::Running:
-              wire->set_state(v1::SCHEDULED_TASK_RUNNING);
-              break;
-            case target::TaskState::Retrying:
-              wire->set_state(v1::SCHEDULED_TASK_RETRYING);
-              break;
-            case target::TaskState::Completed:
-              wire->set_state(v1::SCHEDULED_TASK_COMPLETED);
-              break;
-            case target::TaskState::Failed:
-              wire->set_state(v1::SCHEDULED_TASK_FAILED);
-              break;
-            case target::TaskState::Cancelled:
-              wire->set_state(v1::SCHEDULED_TASK_CANCELLED);
-              break;
-            }
-            if (!time_to_wire(task.run_at, wire->mutable_next_run_at())) {
-              return reject(target::ErrorCode::Internal);
-            }
-            wire->set_version(task.version.value);
-            if (!task.occurrence.value.empty()) {
-              wire->set_occurrence_id(task.occurrence.value);
-            }
-            return stream_guard->write(response);
-          };
-          if (create) {
-            if (host.task_create().task_id().empty() || host.idempotency_key().empty() ||
-                host.task_create().target_conversation().empty()) {
-              if (!reject(target::ErrorCode::InvalidArgument)) {
-                break;
-              }
-              continue;
-            }
-            target::TaskCreationInput input;
-            input.task_id = host.task_create().task_id();
-            input.target = target::ConversationKey{{},
-                                                   {},
-                                                   host.task_create().target_conversation(),
-                                                   target::ConversationKey::Kind::Group};
-            const auto& payload = host.task_create().payload();
-            input.payload.resize(static_cast<std::size_t>(payload.size()));
-            std::memcpy(input.payload.data(), payload.data(), input.payload.size());
-            if (host.task_create().when_case() == v1::TaskCreateRequest::kRunAt) {
-              const auto decoded = codec::from_wire(host.task_create().run_at());
-              const auto* value = std::get_if<target::TimePoint>(&decoded);
-              if (!value) {
-                if (!reject(target::ErrorCode::InvalidArgument)) {
-                  break;
-                }
-                continue;
-              }
-              input.run_at = *value;
-            } else if (host.task_create().when_case() == v1::TaskCreateRequest::kLocalTime) {
-              const auto& local = host.task_create().local_time();
-              input.local_time = target::LocalCivilTime{
-                  local.year(),   local.month(),  local.day(),      local.hour(),
-                  local.minute(), local.second(), local.time_zone()};
-            } else {
-              if (!reject(target::ErrorCode::InvalidArgument)) {
-                break;
-              }
-              continue;
-            }
-            if (!finish(options_.tasks->create_task(context, std::move(input)))) {
-              break;
-            }
-          } else if (read) {
-            if (!finish(options_.tasks->get_task(context, host.task_get().task_id()))) {
-              break;
-            }
-          } else {
-            if (!finish(options_.tasks->cancel_task(context, host.task_cancel().task_id()))) {
-              break;
-            }
-          }
-          continue;
-        }
-        if (options_.storage && host.operation_case() != v1::HostRequest::kModelChat) {
-          if (!bridge_uuid(host.request_id()) || !bridge_uuid(host.trace_id())) {
-            if (!reject(target::ErrorCode::InvalidArgument)) {
-              break;
-            }
-            continue;
-          }
-          const auto installed = application_.plugin_profile(state.authorization.fence.instance);
-          if (const auto* rejected = std::get_if<target::Failure>(&installed)) {
-            if (!reject(rejected->code, rejected->recovery == target::Recovery::Backoff)) {
-              break;
-            }
-            continue;
-          }
-          const auto& profile =
-              std::get<target::RuntimeBridgeApplication::BridgePluginProfile>(installed);
-          if (std::find(profile.permissions.begin(), profile.permissions.end(),
-                        "storage.namespace") == profile.permissions.end()) {
-            if (!reject(target::ErrorCode::PermissionDenied)) {
-              break;
-            }
-            continue;
-          }
-          const v1::NamespaceScope* wire_scope = nullptr;
-          const google::protobuf::Message* operation = nullptr;
-          target::RequestedScopeKind requested = target::RequestedScopeKind::DefaultPrivate;
-          std::string method;
-          bool mutating = true;
-          switch (host.operation_case()) {
-          case v1::HostRequest::kStorageGet:
-            wire_scope = host.storage_get().has_scope() ? &host.storage_get().scope() : nullptr;
-            operation = &host.storage_get();
-            method = "plugin.storage.get";
-            mutating = false;
-            break;
-          case v1::HostRequest::kStorageSet:
-            wire_scope = host.storage_set().has_scope() ? &host.storage_set().scope() : nullptr;
-            operation = &host.storage_set();
-            method = "plugin.storage.set";
-            break;
-          case v1::HostRequest::kStorageDelete:
-            wire_scope =
-                host.storage_delete().has_scope() ? &host.storage_delete().scope() : nullptr;
-            operation = &host.storage_delete();
-            method = "plugin.storage.delete";
-            break;
-          case v1::HostRequest::kStorageCompareAndSet:
-            wire_scope = host.storage_compare_and_set().has_scope()
-                             ? &host.storage_compare_and_set().scope()
-                             : nullptr;
-            operation = &host.storage_compare_and_set();
-            method = "plugin.storage.compare_and_set";
-            break;
-          default:
-            if (!reject(target::ErrorCode::CapabilityNotSupported)) {
-              break;
-            }
-            continue;
-          }
-          target::InstallationId shared_installation;
-          if (wire_scope != nullptr) {
-            switch (wire_scope->scope_case()) {
-            case v1::NamespaceScope::SCOPE_NOT_SET:
-            case v1::NamespaceScope::kInstancePrivate:
-              if (wire_scope->scope_case() == v1::NamespaceScope::kInstancePrivate &&
-                  !wire_scope->instance_private()) {
-                if (!reject(target::ErrorCode::InvalidArgument)) {
-                  break;
-                }
-                continue;
-              }
-              break;
-            case v1::NamespaceScope::kInstallationShared:
-              if (!wire_scope->installation_shared() || !profile.installation) {
-                if (!reject(profile.installation ? target::ErrorCode::InvalidArgument
-                                                 : target::ErrorCode::PermissionDenied)) {
-                  break;
-                }
-                continue;
-              }
-              requested = target::RequestedScopeKind::InstallationShared;
-              shared_installation = *profile.installation;
-              break;
-            case v1::NamespaceScope::kInstallationSharedId:
-              // Plugin frames never self-report a namespace id; it is derived from the registered
-              // installation. Only Runtime internal dispatcher frames may use the explicit id.
-              if (!reject(target::ErrorCode::CapabilityNotSupported)) {
-                break;
-              }
-              continue;
-            }
-          }
-          const target::ResourceRef authorization_resource =
-              requested == target::RequestedScopeKind::InstallationShared
-                  ? target::ResourceRef{target::ResourceKind::Installation,
-                                        {shared_installation.value}}
-                  : target::ResourceRef{target::ResourceKind::Instance,
-                                        {state.authorization.fence.instance.value}};
-          auto sampled = application_.current_time();
-          if (const auto* rejected = std::get_if<target::Failure>(&sampled)) {
-            if (!reject(rejected->code, rejected->recovery == target::Recovery::Backoff)) {
-              break;
-            }
-            continue;
-          }
-          const auto now = std::get<target::TimePoint>(sampled);
-          target::TimePoint deadline = now + std::chrono::seconds{30};
-          if (host.has_deadline()) {
-            const auto decoded = codec::from_wire(host.deadline());
-            const auto* value = std::get_if<target::TimePoint>(&decoded);
-            if (!value) {
-              if (!reject(target::ErrorCode::InvalidArgument)) {
-                break;
-              }
-              continue;
-            }
-            deadline = *value;
-          }
-          target::StorageCommandContext context;
-          context.authentication.subject = {state.authorization.fence.instance.value};
-          context.authentication.direct_peer =
-              target::PluginPeer{state.authorization.fence.instance,
-                                 target::SubjectId{state.authorization.fence.instance.value}};
-          context.authentication.audience = target::Service::Runtime;
-          context.authentication.actors = {context.authentication.subject};
-          context.authentication.scopes = {{authorization_resource, "storage.namespace"}};
-          context.authentication.authorization_version = {
-              state.authorization.authorization_version};
-          context.authentication.verified_at = state.authorization.issued_at;
-          context.authentication.expires_at = state.authorization.expires_at;
-          context.request_id = host.request_id();
-          context.trace_id = host.trace_id();
-          context.method = method;
-          context.idempotency_key = host.idempotency_key();
-          context.deadline = deadline;
-          context.instance = state.authorization.fence.instance;
-          context.requested = requested;
-          context.bridge_authorization =
-              target::RuntimeAuthorizationDecision{true,
-                                                   context.authentication.subject,
-                                                   target::Permission::StorageNamespace,
-                                                   {authorization_resource},
-                                                   {state.authorization.authorization_version},
-                                                   now,
-                                                   std::nullopt};
-          if (mutating) {
-            context.fingerprint = storage_fingerprint(*operation);
-          }
-          const auto reject_failure = [&](const target::Failure& failure) {
-            return reject(failure.code, failure.recovery == target::Recovery::Backoff);
-          };
-          if (host.operation_case() == v1::HostRequest::kStorageGet) {
-            auto found = options_.storage->get_storage({context, host.storage_get().key()});
-            if (const auto* rejected = std::get_if<target::Failure>(&found)) {
-              if (!reject_failure(*rejected)) {
-                break;
-              }
-              continue;
-            }
-            const auto& entry = std::get<target::StorageEntryResult>(found);
-            auto* wire = host_response->mutable_storage_get();
-            wire->set_value(entry.value.bytes.data(), entry.value.bytes.size());
-            wire->set_version(entry.value.version.value);
-            if (entry.value.expires_at &&
-                !time_to_wire(*entry.value.expires_at, wire->mutable_expires_at())) {
-              if (!reject(target::ErrorCode::Internal)) {
-                break;
-              }
-              continue;
-            }
-          } else if (host.operation_case() == v1::HostRequest::kStorageSet) {
-            std::optional<target::TimePoint> expires;
-            if (host.storage_set().has_expires_at()) {
-              const auto decoded = codec::from_wire(host.storage_set().expires_at());
-              const auto* value = std::get_if<target::TimePoint>(&decoded);
-              if (!value) {
-                if (!reject(target::ErrorCode::InvalidArgument)) {
-                  break;
-                }
-                continue;
-              }
-              expires = *value;
-            }
-            std::optional<target::CompareCondition> condition;
-            if (host.storage_set().has_condition()) {
-              condition = storage_condition_from_wire(host.storage_set().condition());
-              if (!condition) {
-                if (!reject(target::ErrorCode::InvalidArgument)) {
-                  break;
-                }
-                continue;
-              }
-            }
-            const auto& bytes = host.storage_set().value();
-            std::vector<std::byte> value(bytes.size());
-            std::memcpy(value.data(), bytes.data(), bytes.size());
-            auto written = options_.storage->set_storage(
-                {context, host.storage_set().key(), std::move(value), expires, condition});
-            if (const auto* rejected = std::get_if<target::Failure>(&written)) {
-              if (!reject_failure(*rejected)) {
-                break;
-              }
-              continue;
-            }
-            const auto& entry = std::get<target::StorageEntryResult>(written);
-            auto* wire = host_response->mutable_storage_set();
-            wire->set_version(entry.value.version.value);
-            if (entry.value.expires_at &&
-                !time_to_wire(*entry.value.expires_at, wire->mutable_expires_at())) {
-              if (!reject(target::ErrorCode::Internal)) {
-                break;
-              }
-              continue;
-            }
-          } else if (host.operation_case() == v1::HostRequest::kStorageDelete) {
-            std::optional<target::CompareCondition> condition;
-            if (host.storage_delete().has_condition()) {
-              condition = storage_condition_from_wire(host.storage_delete().condition());
-              if (!condition) {
-                if (!reject(target::ErrorCode::InvalidArgument)) {
-                  break;
-                }
-                continue;
-              }
-            }
-            auto removed =
-                options_.storage->delete_storage({context, host.storage_delete().key(), condition});
-            if (const auto* rejected = std::get_if<target::Failure>(&removed)) {
-              if (!reject_failure(*rejected)) {
-                break;
-              }
-              continue;
-            }
-            const auto& result = std::get<target::StorageDeleteResult>(removed);
-            auto* wire = host_response->mutable_storage_delete();
-            wire->set_deleted(result.deleted);
-            if (result.version) {
-              wire->set_version(result.version->value);
-            }
-          } else {
-            std::optional<target::TimePoint> expires;
-            if (host.storage_compare_and_set().has_expires_at()) {
-              const auto decoded = codec::from_wire(host.storage_compare_and_set().expires_at());
-              const auto* value = std::get_if<target::TimePoint>(&decoded);
-              if (!value) {
-                if (!reject(target::ErrorCode::InvalidArgument)) {
-                  break;
-                }
-                continue;
-              }
-              expires = *value;
-            }
-            if (!host.storage_compare_and_set().has_condition()) {
-              if (!reject(target::ErrorCode::InvalidArgument)) {
-                break;
-              }
-              continue;
-            }
-            auto condition =
-                storage_condition_from_wire(host.storage_compare_and_set().condition());
-            if (!condition) {
-              if (!reject(target::ErrorCode::InvalidArgument)) {
-                break;
-              }
-              continue;
-            }
-            const auto& bytes = host.storage_compare_and_set().value();
-            std::vector<std::byte> value(bytes.size());
-            std::memcpy(value.data(), bytes.data(), bytes.size());
-            auto written = options_.storage->compare_and_set_storage(
-                {context, host.storage_compare_and_set().key(), std::move(value), *condition,
-                 expires});
-            if (const auto* rejected = std::get_if<target::Failure>(&written)) {
-              if (!reject_failure(*rejected)) {
-                break;
-              }
-              continue;
-            }
-            const auto& entry = std::get<target::StorageEntryResult>(written);
-            if (!storage_entry_to_wire(
-                    entry.value, host.storage_compare_and_set().key(),
-                    host_response->mutable_storage_compare_and_set()->mutable_entry())) {
-              if (!reject(target::ErrorCode::Internal)) {
-                break;
-              }
-              continue;
-            }
-          }
-          if (!stream_guard->write(response)) {
-            break;
-          }
-          continue;
-        }
-        const auto grant = std::find(state.permissions.begin(), state.permissions.end(),
-                                     "model.chat") != state.permissions.end();
-        auto deadline = codec::from_wire(host.deadline());
-        if (host.operation_case() != v1::HostRequest::kModelChat) {
-          *host_response->mutable_error() = wire_error(target::ErrorCode::CapabilityNotSupported,
-                                                       host.request_id(), host.trace_id());
-        } else if (!options_.model) {
-          *host_response->mutable_error() = wire_error(target::ErrorCode::CapabilityNotSupported,
-                                                       host.request_id(), host.trace_id());
-        } else if (!grant) {
-          *host_response->mutable_error() =
-              wire_error(target::ErrorCode::PermissionDenied, host.request_id(), host.trace_id());
-        } else if (const auto* parsed = std::get_if<target::TimePoint>(&deadline);
-                   parsed == nullptr) {
-          *host_response->mutable_error() =
-              wire_error(target::ErrorCode::InvalidArgument, host.request_id(), host.trace_id());
-        } else {
-          const auto& chat = host.model_chat();
-          target::RuntimeModelChatRequest command;
-          command.instance = state.authorization.fence.instance;
-          command.request_id = host.request_id();
-          command.logical_call_id = chat.logical_call_id();
-          command.model = chat.model();
-          command.messages.reserve(static_cast<std::size_t>(chat.messages_size()));
-          for (const auto& message : chat.messages()) {
-            command.messages.push_back({message.role(), message.text()});
-          }
-          const auto installed_profile =
-              application_.plugin_profile(state.authorization.fence.instance);
-          if (const auto* rejected = std::get_if<target::Failure>(&installed_profile)) {
-            *host_response->mutable_error() =
-                wire_error(rejected->code, host.request_id(), host.trace_id());
-          } else {
-            const auto& profile =
-                std::get<target::RuntimeBridgeApplication::BridgePluginProfile>(installed_profile);
-            if (!profile.installation) {
-              *host_response->mutable_error() = wire_error(target::ErrorCode::PermissionDenied,
-                                                           host.request_id(), host.trace_id());
-            } else if (command.logical_call_id.empty() || command.model.empty() ||
-                       command.messages.empty()) {
-              *host_response->mutable_error() = wire_error(target::ErrorCode::InvalidArgument,
-                                                           host.request_id(), host.trace_id());
-            } else {
-              command.installation = *profile.installation;
-              auto reply = options_.model->chat(command, *parsed);
-              if (const auto* failure = std::get_if<target::Failure>(&reply)) {
-                const bool retryable = failure->recovery == target::Recovery::QuerySameIdentity ||
-                                       failure->code == target::ErrorCode::RateLimited;
-                *host_response->mutable_error() =
-                    wire_error(failure->code, host.request_id(), host.trace_id(), retryable);
-              } else {
-                const auto& value = std::get<target::RuntimeModelChatReply>(reply);
-                auto* result = host_response->mutable_model_chat();
-                result->set_text(value.text);
-                result->set_input_tokens(value.input_tokens);
-                result->set_output_tokens(value.output_tokens);
-              }
-            }
-          }
-        }
-        if (!stream_guard->write(response)) {
-          break;
-        }
-      } else {
-        v1::CoreToPlugin response;
-        fence_to_wire(state.authorization.fence, response.mutable_fence());
-        *response.mutable_error() = wire_error(target::ErrorCode::CapabilityNotSupported, {}, {});
-        if (!stream_guard->write(response)) {
-          break;
-        }
       }
     }
     return status;
   }
 
 private:
+  PluginFrameResult handle_heartbeat(StreamState& state, const v1::PluginToCore&,
+                                     const std::shared_ptr<PluginStreamGuard>& stream_guard) {
+    grpc::Status status = grpc::Status::OK;
+    v1::CoreToPlugin response;
+    fence_to_wire(state.authorization.fence, response.mutable_fence());
+    fill_heartbeat_ack(response.mutable_heartbeat_ack());
+    state.sampled = false;
+    if (!stream_guard->write(response)) {
+      return {false, status};
+    }
+    return {};
+  }
+  PluginFrameResult handle_refresh(StreamState& state, const v1::PluginToCore& frame,
+                                   const std::shared_ptr<PluginStreamGuard>& stream_guard) {
+    grpc::Status status = grpc::Status::OK;
+    auto refreshed = refresh(application_, state, frame.refresh_authorization());
+    if (const auto* rejected = std::get_if<target::Failure>(&refreshed)) {
+      if (rejected->code == target::ErrorCode::Unauthenticated ||
+          rejected->code == target::ErrorCode::PermissionDenied) {
+        status = rejected_status(*rejected);
+        return {false, status};
+      }
+      v1::CoreToPlugin response;
+      fence_to_wire(state.authorization.fence, response.mutable_fence());
+      auto* result = response.mutable_authorization_result();
+      result->set_request_id(frame.refresh_authorization().request_id());
+      *result->mutable_error() =
+          wire_error(rejected->code, frame.refresh_authorization().request_id(), {});
+      state.sampled = false;
+      if (!stream_guard->write(response)) {
+        return {false, status};
+      }
+      status = rejected_status(*rejected);
+      return {false, status};
+    }
+    state.authorization = std::get<target::BridgeAuthorization>(refreshed);
+    state.sampled = false;
+    v1::CoreToPlugin response;
+    fence_to_wire(state.authorization.fence, response.mutable_fence());
+    auto* result = response.mutable_authorization_result();
+    result->set_request_id(frame.refresh_authorization().request_id());
+    authorization_to_wire(state.authorization, result->mutable_authorization());
+    if (!stream_guard->write(response)) {
+      return {false, status};
+    }
+    return {};
+  }
+  PluginFrameResult handle_ack(StreamState& state, const v1::PluginToCore& frame,
+                               const std::shared_ptr<PluginStreamGuard>& stream_guard) {
+    grpc::Status status = grpc::Status::OK;
+    auto reference = attempt_from_wire(frame.event_ack().attempt());
+    if (const auto* rejected = std::get_if<target::Failure>(&reference)) {
+      status = rejected_status(*rejected);
+      return {false, status};
+    }
+    const auto& ack_wire = frame.event_ack();
+    std::optional<target::Failure> failure;
+    if (ack_wire.has_error()) {
+      failure = failure_from_wire(ack_wire.error());
+      if (!failure) {
+        status = {grpc::StatusCode::INVALID_ARGUMENT, "invalid error code"};
+        return {false, status};
+      }
+    }
+    if (!ack_wire.accepted() && !failure) {
+      status = {grpc::StatusCode::INVALID_ARGUMENT, "rejected ack requires an error"};
+      return {false, status};
+    }
+    auto receipt = application_.acknowledge_delivery(
+        state.authorization.fence.instance, std::get<target::BridgeAttemptRef>(reference),
+        ack_wire.accepted(), failure, ack_wire.has_error() && ack_wire.error().retryable());
+    if (const auto* rejected = std::get_if<target::Failure>(&receipt)) {
+      status = rejected_status(*rejected);
+      return {false, status};
+    }
+    v1::CoreToPlugin response;
+    fence_to_wire(state.authorization.fence, response.mutable_fence());
+    receipt_to_wire(std::get<target::DeliveryReceipt>(receipt),
+                    response.mutable_delivery_receipt());
+    if (!stream_guard->write(response)) {
+      return {false, status};
+    }
+    return {};
+  }
+  PluginFrameResult handle_renew(StreamState& state, const v1::PluginToCore& frame,
+                                 const std::shared_ptr<PluginStreamGuard>& stream_guard) {
+    grpc::Status status = grpc::Status::OK;
+    auto reference = attempt_from_wire(frame.renew_delivery());
+    if (const auto* rejected = std::get_if<target::Failure>(&reference)) {
+      status = rejected_status(*rejected);
+      return {false, status};
+    }
+    auto receipt = application_.renew_delivery(state.authorization.fence.instance,
+                                               std::get<target::BridgeAttemptRef>(reference));
+    if (const auto* rejected = std::get_if<target::Failure>(&receipt)) {
+      status = rejected_status(*rejected);
+      return {false, status};
+    }
+    v1::CoreToPlugin response;
+    fence_to_wire(state.authorization.fence, response.mutable_fence());
+    receipt_to_wire(std::get<target::DeliveryReceipt>(receipt),
+                    response.mutable_delivery_receipt());
+    if (!stream_guard->write(response)) {
+      return {false, status};
+    }
+    return {};
+  }
+  bool handle_action_submit(StreamState& state, const v1::PluginToCore& frame,
+                            const std::shared_ptr<PluginStreamGuard>& stream_guard) {
+    const auto& request = frame.action();
+    v1::CoreToPlugin response;
+    fence_to_wire(state.authorization.fence, response.mutable_fence());
+    auto* action_response = response.mutable_action_response();
+    action_response->set_request_id(request.request_id());
+    std::string serialized;
+    (void)request.action().SerializeToString(&serialized);
+    target::BridgeActionSubmit submit;
+    if (!decode_plugin_action(request.action(), serialized, &submit)) {
+      *action_response->mutable_error() =
+          wire_error(target::ErrorCode::InvalidArgument, request.request_id(),
+                     request.action().trace_id(), false);
+      return stream_guard->write(response);
+    }
+    auto submitted = application_.submit_plugin_action(state.authorization.fence.instance, submit);
+    if (const auto* rejected = std::get_if<target::Failure>(&submitted)) {
+      *action_response->mutable_error() =
+          wire_error(rejected->code, request.request_id(), request.action().trace_id(),
+                     rejected->recovery == target::Recovery::Backoff);
+    } else {
+      (void)action_result_to_wire(std::get<target::ActionRecord>(submitted),
+                                  action_response->mutable_result());
+    }
+    return stream_guard->write(response);
+  }
+  bool handle_action_query(StreamState& state, const v1::PluginToCore& frame,
+                           const std::shared_ptr<PluginStreamGuard>& stream_guard) {
+    const auto& query = frame.action_query();
+    v1::CoreToPlugin response;
+    fence_to_wire(state.authorization.fence, response.mutable_fence());
+    auto* action_response = response.mutable_action_response();
+    action_response->set_request_id(query.request_id());
+    std::optional<target::ActionId> action_id;
+    std::optional<std::string> idempotency_key;
+    if (query.selector_case() == v1::PluginActionQuery::kActionId) {
+      action_id = target::ActionId{query.action_id()};
+    } else if (query.selector_case() == v1::PluginActionQuery::kIdempotencyKey) {
+      idempotency_key = query.idempotency_key();
+    } else {
+      *action_response->mutable_error() = wire_error(target::ErrorCode::InvalidArgument,
+                                                     query.request_id(), query.trace_id(), false);
+      return stream_guard->write(response);
+    }
+    auto found = application_.query_plugin_action(state.authorization.fence.instance,
+                                                  std::move(action_id), std::move(idempotency_key));
+    if (const auto* rejected = std::get_if<target::Failure>(&found)) {
+      *action_response->mutable_error() =
+          wire_error(rejected->code, query.request_id(), query.trace_id(), false);
+    } else {
+      (void)action_result_to_wire(std::get<target::ActionRecord>(found),
+                                  action_response->mutable_result());
+    }
+    return stream_guard->write(response);
+  }
+  bool handle_action_cancel(StreamState& state, const v1::PluginToCore& frame,
+                            const std::shared_ptr<PluginStreamGuard>& stream_guard) {
+    const auto& cancel = frame.action_cancel();
+    v1::CoreToPlugin response;
+    fence_to_wire(state.authorization.fence, response.mutable_fence());
+    auto* action_response = response.mutable_action_response();
+    action_response->set_request_id(cancel.request_id());
+    if (cancel.action_id().empty()) {
+      *action_response->mutable_error() = wire_error(target::ErrorCode::InvalidArgument,
+                                                     cancel.request_id(), cancel.trace_id(), false);
+      return stream_guard->write(response);
+    }
+    auto cancelled = application_.cancel_plugin_action(state.authorization.fence.instance,
+                                                       target::ActionId{cancel.action_id()});
+    if (const auto* rejected = std::get_if<target::Failure>(&cancelled)) {
+      *action_response->mutable_error() =
+          wire_error(rejected->code, cancel.request_id(), cancel.trace_id(), false);
+    } else {
+      (void)action_result_to_wire(std::get<target::ActionRecord>(cancelled),
+                                  action_response->mutable_result());
+    }
+    return stream_guard->write(response);
+  }
+  bool finish_task(v1::HostRequest::OperationCase operation,
+                   const target::Outcome<target::ScheduledTask>& result, PluginHostReply& reply) {
+    if (const auto* rejected = std::get_if<target::Failure>(&result)) {
+      const bool retryable = rejected->recovery == target::Recovery::Backoff ||
+                             rejected->recovery == target::Recovery::QuerySameIdentity;
+      return reply.reject(rejected->code, retryable);
+    }
+    const auto& task = std::get<target::ScheduledTask>(result);
+    v1::TaskResponse* wire = nullptr;
+    switch (operation) {
+    case v1::HostRequest::kTaskCreate:
+      wire = reply.body()->mutable_task_create();
+      break;
+    case v1::HostRequest::kTaskGet:
+      wire = reply.body()->mutable_task_get();
+      break;
+    case v1::HostRequest::kTaskCancel:
+      wire = reply.body()->mutable_task_cancel();
+      break;
+    default:
+      return reply.reject(target::ErrorCode::Internal);
+    }
+    wire->set_task_id(task.key.task_id);
+    switch (task.state) {
+    case target::TaskState::Pending:
+      wire->set_state(v1::SCHEDULED_TASK_PENDING);
+      break;
+    case target::TaskState::Running:
+      wire->set_state(v1::SCHEDULED_TASK_RUNNING);
+      break;
+    case target::TaskState::Retrying:
+      wire->set_state(v1::SCHEDULED_TASK_RETRYING);
+      break;
+    case target::TaskState::Completed:
+      wire->set_state(v1::SCHEDULED_TASK_COMPLETED);
+      break;
+    case target::TaskState::Failed:
+      wire->set_state(v1::SCHEDULED_TASK_FAILED);
+      break;
+    case target::TaskState::Cancelled:
+      wire->set_state(v1::SCHEDULED_TASK_CANCELLED);
+      break;
+    }
+    if (!time_to_wire(task.run_at, wire->mutable_next_run_at())) {
+      return reply.reject(target::ErrorCode::Internal);
+    }
+    wire->set_version(task.version.value);
+    if (!task.occurrence.value.empty()) {
+      wire->set_occurrence_id(task.occurrence.value);
+    }
+    return reply.write();
+  }
+  bool handle_task(StreamState& state, const v1::HostRequest& host, PluginHostReply& reply) {
+    if (!options_.tasks) {
+      return reply.reject(target::ErrorCode::CapabilityNotSupported);
+    }
+    if (!bridge_uuid(host.request_id()) || !bridge_uuid(host.trace_id())) {
+      return reply.reject(target::ErrorCode::InvalidArgument);
+    }
+    const bool create = host.operation_case() == v1::HostRequest::kTaskCreate;
+    const bool read = host.operation_case() == v1::HostRequest::kTaskGet;
+    const auto operation =
+        create ? target::PluginTaskOperation::Create
+               : (read ? target::PluginTaskOperation::Read : target::PluginTaskOperation::Cancel);
+    const auto installed = application_.task_profile(state.authorization.fence.instance, operation);
+    if (const auto* rejected = std::get_if<target::Failure>(&installed)) {
+      return reply.reject(rejected->code, rejected->recovery == target::Recovery::Backoff);
+    }
+    const auto& profile =
+        std::get<target::RuntimeBridgeApplication::BridgePluginProfile>(installed);
+    if (!host.idempotency_key().empty() && host.idempotency_key().size() > 256) {
+      return reply.reject(target::ErrorCode::InvalidArgument);
+    }
+    auto sampled = application_.current_time();
+    if (const auto* rejected = std::get_if<target::Failure>(&sampled)) {
+      return reply.reject(rejected->code, rejected->recovery == target::Recovery::Backoff);
+    }
+    const auto now = std::get<target::TimePoint>(sampled);
+    target::TimePoint deadline = now + std::chrono::seconds{5};
+    if (host.has_deadline()) {
+      const auto decoded = codec::from_wire(host.deadline());
+      const auto* value = std::get_if<target::TimePoint>(&decoded);
+      if (!value || *value <= now) {
+        return reply.reject(target::ErrorCode::InvalidArgument);
+      }
+      deadline = *value;
+    }
+    target::SchedulerTaskContext context{state.authorization.fence.instance,
+                                         *profile.installation,
+                                         host.request_id(),
+                                         host.trace_id(),
+                                         deadline,
+                                         host.idempotency_key()};
+    if (create) {
+      if (host.task_create().task_id().empty() || host.idempotency_key().empty() ||
+          host.task_create().target_conversation().empty()) {
+        return reply.reject(target::ErrorCode::InvalidArgument);
+      }
+      auto decoded = task_creation_from_wire(host.task_create());
+      if (const auto* rejected = std::get_if<target::Failure>(&decoded)) {
+        return reply.reject(rejected->code);
+      }
+      auto input = std::get<target::TaskCreationInput>(std::move(decoded));
+      return finish_task(host.operation_case(),
+                         options_.tasks->create_task(context, std::move(input)), reply);
+    } else if (read) {
+      return finish_task(host.operation_case(),
+                         options_.tasks->get_task(context, host.task_get().task_id()), reply);
+    } else {
+      return finish_task(host.operation_case(),
+                         options_.tasks->cancel_task(context, host.task_cancel().task_id()), reply);
+    }
+  }
+  bool handle_storage(StreamState& state, const v1::HostRequest& host, PluginHostReply& reply) {
+    if (!bridge_uuid(host.request_id()) || !bridge_uuid(host.trace_id())) {
+      return reply.reject(target::ErrorCode::InvalidArgument);
+    }
+    const auto installed = application_.storage_profile(state.authorization.fence.instance);
+    if (const auto* rejected = std::get_if<target::Failure>(&installed)) {
+      return reply.reject(rejected->code, rejected->recovery == target::Recovery::Backoff);
+    }
+    const auto& profile =
+        std::get<target::RuntimeBridgeApplication::BridgePluginProfile>(installed);
+    auto decoded = storage_operation_from_wire(host);
+    if (const auto* rejected = std::get_if<target::Failure>(&decoded)) {
+      return reply.reject(rejected->code);
+    }
+    const auto& operation = std::get<StorageWireOperation>(decoded);
+    auto scope =
+        storage_scope_from_wire(operation.scope, state.authorization.fence.instance, profile);
+    if (const auto* rejected = std::get_if<target::Failure>(&scope)) {
+      return reply.reject(rejected->code);
+    }
+    const auto requested = std::get<target::RequestedScopeKind>(scope);
+    auto sampled = application_.current_time();
+    if (const auto* rejected = std::get_if<target::Failure>(&sampled)) {
+      return reply.reject(rejected->code, rejected->recovery == target::Recovery::Backoff);
+    }
+    const auto now = std::get<target::TimePoint>(sampled);
+    target::TimePoint deadline = now + std::chrono::seconds{30};
+    if (host.has_deadline()) {
+      const auto decoded = codec::from_wire(host.deadline());
+      const auto* value = std::get_if<target::TimePoint>(&decoded);
+      if (!value) {
+        return reply.reject(target::ErrorCode::InvalidArgument);
+      }
+      deadline = *value;
+    }
+    auto admitted_context = target::plugin_storage_context(
+        state.authorization, profile, requested,
+        {host.request_id(), host.trace_id(), operation.method, host.idempotency_key(), deadline},
+        now);
+    if (const auto* rejected = std::get_if<target::Failure>(&admitted_context)) {
+      return reply.reject(rejected->code);
+    }
+    auto context = std::get<target::StorageCommandContext>(std::move(admitted_context));
+    if (operation.mutating) {
+      context.fingerprint = storage_fingerprint(*operation.message);
+    }
+    switch (host.operation_case()) {
+    case v1::HostRequest::kStorageGet:
+      return handle_storage_get(context, host, reply);
+    case v1::HostRequest::kStorageSet:
+      return handle_storage_set(context, host, reply);
+    case v1::HostRequest::kStorageDelete:
+      return handle_storage_delete(context, host, reply);
+    case v1::HostRequest::kStorageCompareAndSet:
+      return handle_storage_cas(context, host, reply);
+    default:
+      return reply.reject(target::ErrorCode::CapabilityNotSupported);
+    }
+  }
+  bool handle_storage_get(const target::StorageCommandContext& context, const v1::HostRequest& host,
+                          PluginHostReply& reply) {
+    auto found = options_.storage->get_storage({context, host.storage_get().key()});
+    if (const auto* rejected = std::get_if<target::Failure>(&found)) {
+      return reply.reject(rejected->code, rejected->recovery == target::Recovery::Backoff);
+    }
+    const auto& entry = std::get<target::StorageEntryResult>(found);
+    auto* wire = reply.body()->mutable_storage_get();
+    wire->set_value(entry.value.bytes.data(), entry.value.bytes.size());
+    wire->set_version(entry.value.version.value);
+    if (entry.value.expires_at &&
+        !time_to_wire(*entry.value.expires_at, wire->mutable_expires_at())) {
+      return reply.reject(target::ErrorCode::Internal);
+    }
+    return reply.write();
+  }
+  bool handle_storage_set(const target::StorageCommandContext& context, const v1::HostRequest& host,
+                          PluginHostReply& reply) {
+    std::optional<target::TimePoint> expires;
+    if (host.storage_set().has_expires_at()) {
+      const auto decoded = codec::from_wire(host.storage_set().expires_at());
+      const auto* value = std::get_if<target::TimePoint>(&decoded);
+      if (!value) {
+        return reply.reject(target::ErrorCode::InvalidArgument);
+      }
+      expires = *value;
+    }
+    std::optional<target::CompareCondition> condition;
+    if (host.storage_set().has_condition()) {
+      condition = storage_condition_from_wire(host.storage_set().condition());
+      if (!condition) {
+        return reply.reject(target::ErrorCode::InvalidArgument);
+      }
+    }
+    const auto& bytes = host.storage_set().value();
+    std::vector<std::byte> value(bytes.size());
+    std::memcpy(value.data(), bytes.data(), bytes.size());
+    auto written = options_.storage->set_storage(
+        {context, host.storage_set().key(), std::move(value), expires, condition});
+    if (const auto* rejected = std::get_if<target::Failure>(&written)) {
+      return reply.reject(rejected->code, rejected->recovery == target::Recovery::Backoff);
+    }
+    const auto& entry = std::get<target::StorageEntryResult>(written);
+    auto* wire = reply.body()->mutable_storage_set();
+    wire->set_version(entry.value.version.value);
+    if (entry.value.expires_at &&
+        !time_to_wire(*entry.value.expires_at, wire->mutable_expires_at())) {
+      return reply.reject(target::ErrorCode::Internal);
+    }
+    return reply.write();
+  }
+  bool handle_storage_delete(const target::StorageCommandContext& context,
+                             const v1::HostRequest& host, PluginHostReply& reply) {
+    std::optional<target::CompareCondition> condition;
+    if (host.storage_delete().has_condition()) {
+      condition = storage_condition_from_wire(host.storage_delete().condition());
+      if (!condition) {
+        return reply.reject(target::ErrorCode::InvalidArgument);
+      }
+    }
+    auto removed =
+        options_.storage->delete_storage({context, host.storage_delete().key(), condition});
+    if (const auto* rejected = std::get_if<target::Failure>(&removed)) {
+      return reply.reject(rejected->code, rejected->recovery == target::Recovery::Backoff);
+    }
+    const auto& result = std::get<target::StorageDeleteResult>(removed);
+    auto* wire = reply.body()->mutable_storage_delete();
+    wire->set_deleted(result.deleted);
+    if (result.version) {
+      wire->set_version(result.version->value);
+    }
+    return reply.write();
+  }
+  bool handle_storage_cas(const target::StorageCommandContext& context, const v1::HostRequest& host,
+                          PluginHostReply& reply) {
+    std::optional<target::TimePoint> expires;
+    if (host.storage_compare_and_set().has_expires_at()) {
+      const auto decoded = codec::from_wire(host.storage_compare_and_set().expires_at());
+      const auto* value = std::get_if<target::TimePoint>(&decoded);
+      if (!value) {
+        return reply.reject(target::ErrorCode::InvalidArgument);
+      }
+      expires = *value;
+    }
+    if (!host.storage_compare_and_set().has_condition()) {
+      return reply.reject(target::ErrorCode::InvalidArgument);
+    }
+    auto condition = storage_condition_from_wire(host.storage_compare_and_set().condition());
+    if (!condition) {
+      return reply.reject(target::ErrorCode::InvalidArgument);
+    }
+    const auto& bytes = host.storage_compare_and_set().value();
+    std::vector<std::byte> value(bytes.size());
+    std::memcpy(value.data(), bytes.data(), bytes.size());
+    auto written = options_.storage->compare_and_set_storage(
+        {context, host.storage_compare_and_set().key(), std::move(value), *condition, expires});
+    if (const auto* rejected = std::get_if<target::Failure>(&written)) {
+      return reply.reject(rejected->code, rejected->recovery == target::Recovery::Backoff);
+    }
+    const auto& entry = std::get<target::StorageEntryResult>(written);
+    if (!storage_entry_to_wire(entry.value, host.storage_compare_and_set().key(),
+                               reply.body()->mutable_storage_compare_and_set()->mutable_entry())) {
+      return reply.reject(target::ErrorCode::Internal);
+    }
+    return reply.write();
+  }
+  bool handle_model(StreamState& state, const v1::HostRequest& host, PluginHostReply& reply) {
+    const auto admitted = target::admit_plugin_model(state.permissions);
+    auto deadline = codec::from_wire(host.deadline());
+    if (host.operation_case() != v1::HostRequest::kModelChat) {
+      *reply.body()->mutable_error() =
+          wire_error(target::ErrorCode::CapabilityNotSupported, host.request_id(), host.trace_id());
+    } else if (!options_.model) {
+      *reply.body()->mutable_error() =
+          wire_error(target::ErrorCode::CapabilityNotSupported, host.request_id(), host.trace_id());
+    } else if (const auto* rejected = std::get_if<target::Failure>(&admitted)) {
+      *reply.body()->mutable_error() =
+          wire_error(rejected->code, host.request_id(), host.trace_id());
+    } else if (const auto* parsed = std::get_if<target::TimePoint>(&deadline); parsed == nullptr) {
+      *reply.body()->mutable_error() =
+          wire_error(target::ErrorCode::InvalidArgument, host.request_id(), host.trace_id());
+    } else {
+      const auto& chat = host.model_chat();
+      target::RuntimeModelChatRequest command;
+      command.instance = state.authorization.fence.instance;
+      command.request_id = host.request_id();
+      command.logical_call_id = chat.logical_call_id();
+      command.model = chat.model();
+      command.messages.reserve(static_cast<std::size_t>(chat.messages_size()));
+      for (const auto& message : chat.messages()) {
+        command.messages.push_back({message.role(), message.text()});
+      }
+      const auto installed_profile =
+          application_.plugin_profile(state.authorization.fence.instance);
+      if (const auto* rejected = std::get_if<target::Failure>(&installed_profile)) {
+        *reply.body()->mutable_error() =
+            wire_error(rejected->code, host.request_id(), host.trace_id());
+      } else {
+        const auto& profile =
+            std::get<target::RuntimeBridgeApplication::BridgePluginProfile>(installed_profile);
+        auto outcome =
+            target::submit_plugin_model(*options_.model, state.authorization.fence.instance,
+                                        state.permissions, profile, std::move(command), *parsed);
+        if (const auto* failure = std::get_if<target::Failure>(&outcome)) {
+          const bool retryable = failure->recovery == target::Recovery::QuerySameIdentity ||
+                                 failure->code == target::ErrorCode::RateLimited;
+          *reply.body()->mutable_error() =
+              wire_error(failure->code, host.request_id(), host.trace_id(), retryable);
+        } else {
+          const auto& value = std::get<target::RuntimeModelChatReply>(outcome);
+          auto* result = reply.body()->mutable_model_chat();
+          result->set_text(value.text);
+          result->set_input_tokens(value.input_tokens);
+          result->set_output_tokens(value.output_tokens);
+        }
+      }
+    }
+    return reply.write();
+  }
+  bool handle_host(StreamState& state, const v1::HostRequest& host,
+                   const std::shared_ptr<PluginStreamGuard>& stream_guard) {
+    PluginHostReply reply{state.authorization.fence, host, stream_guard};
+    if (const auto rejected = host_request_shape_error(host)) {
+      return reply.reject(*rejected);
+    }
+    switch (host.operation_case()) {
+    case v1::HostRequest::kTaskCreate:
+    case v1::HostRequest::kTaskGet:
+    case v1::HostRequest::kTaskCancel:
+      return handle_task(state, host, reply);
+    case v1::HostRequest::kModelChat:
+      return handle_model(state, host, reply);
+    default:
+      if (options_.storage) {
+        return handle_storage(state, host, reply);
+      }
+      return reply.reject(target::ErrorCode::CapabilityNotSupported);
+    }
+  }
+
+  PluginFrameResult dispatch_frame(StreamState& state, const v1::PluginToCore& frame,
+                                   const std::shared_ptr<PluginStreamGuard>& stream_guard) {
+    switch (frame.body_case()) {
+    case v1::PluginToCore::kHeartbeat:
+      return handle_heartbeat(state, frame, stream_guard);
+    case v1::PluginToCore::kRefreshAuthorization:
+      return handle_refresh(state, frame, stream_guard);
+    case v1::PluginToCore::kEventAck:
+      return handle_ack(state, frame, stream_guard);
+    case v1::PluginToCore::kRenewDelivery:
+      return handle_renew(state, frame, stream_guard);
+    case v1::PluginToCore::kRegister:
+      return {false, {grpc::StatusCode::INVALID_ARGUMENT, "duplicate registration frame"}};
+    case v1::PluginToCore::kAction:
+      return {handle_action_submit(state, frame, stream_guard), grpc::Status::OK};
+    case v1::PluginToCore::kActionQuery:
+      return {handle_action_query(state, frame, stream_guard), grpc::Status::OK};
+    case v1::PluginToCore::kActionCancel:
+      return {handle_action_cancel(state, frame, stream_guard), grpc::Status::OK};
+    case v1::PluginToCore::kHostRequest:
+      return {handle_host(state, frame.host_request(), stream_guard), grpc::Status::OK};
+    default:
+      v1::CoreToPlugin response;
+      fence_to_wire(state.authorization.fence, response.mutable_fence());
+      *response.mutable_error() = wire_error(target::ErrorCode::CapabilityNotSupported, {}, {});
+      return {stream_guard->write(response), grpc::Status::OK};
+    }
+  }
+
   target::RuntimeBridgeApplication& application_;
   PluginBridgeOptions options_;
 };

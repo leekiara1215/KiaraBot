@@ -22,19 +22,22 @@ inline constexpr int version(core::target::Service owner) {
     // installation snapshot column; P08b-3b fixes the command-kind CHECK range); P13a adds
     // operation retention/participants, audit/outbox cleanup indexes and the lifecycle tombstone
     // relation; P14h aligns the shared result_exact_permissions CHECK with wire Permission 1..50.
-    return 18;
+    // WS-02 owner-local operation observation journal; Identity remains unchanged.
+    return 19;
   case core::target::Service::Scheduler:
     // P10a adds task/occurrence observation columns, the quota counter relation and due/owner
     // indexes; P07 adds the shared nullable audit target columns to every service schema. The
     // merged schema keeps version 9 (both prior increments were measured at Scheduler v8);
     // P14h aligns the shared result_exact_permissions CHECK with wire Permission 1..50.
-    return 10;
+    // WS-02 owner-local operation observation journal.
+    return 11;
   case core::target::Service::Model:
     // P11a adds model_configs + encrypted_provider_secrets and extends model_intents with the
     // durable call facts (disposition/UNKNOWN resolution/usage); P07 adds the shared nullable
     // audit target columns to every service schema; P14h aligns the shared
     // result_exact_permissions CHECK with wire Permission 1..50.
-    return 9;
+    // WS-02 owner-local operation observation journal.
+    return 10;
   }
   return 0;
 }

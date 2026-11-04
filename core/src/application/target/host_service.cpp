@@ -7,10 +7,11 @@
 #include <fcntl.h>
 #include <string>
 #include <string_view>
-#include <sys/stat.h>
 #include <unistd.h>
 #include <utility>
 #include <vector>
+
+#include <sys/stat.h>
 
 namespace kiarabot::core::target {
 namespace {
@@ -58,9 +59,8 @@ bool command_id(std::string_view value) {
   if (value.empty() || value.size() > 128) {
     return false;
   }
-  return std::all_of(value.begin(), value.end(), [](char character) {
-    return character > 32 && character < 127;
-  });
+  return std::all_of(value.begin(), value.end(),
+                     [](char character) { return character > 32 && character < 127; });
 }
 bool token(std::string_view value, std::size_t maximum) {
   if (value.empty() || value.size() > maximum) {
@@ -76,9 +76,8 @@ bool argument_value(std::string_view value) {
   if (value.size() > 1024) {
     return false;
   }
-  return std::all_of(value.begin(), value.end(), [](char character) {
-    return character >= 32 && character < 127;
-  });
+  return std::all_of(value.begin(), value.end(),
+                     [](char character) { return character >= 32 && character < 127; });
 }
 bool environment_value(std::string_view value) {
   if (value.empty() || value.size() > 4096) {
@@ -203,8 +202,8 @@ std::string HostService::deployment_environment(std::string_view name) const {
 }
 
 Outcome<std::string> HostService::credential_for(std::string_view instance_id) const {
-  const std::string path = dependencies_.credential_directory + "/" + std::string(instance_id) +
-                           ".bootstrap";
+  const std::string path =
+      dependencies_.credential_directory + "/" + std::string(instance_id) + ".bootstrap";
   const int descriptor = ::open(path.c_str(), O_RDONLY | O_NOFOLLOW | O_CLOEXEC);
   if (descriptor < 0) {
     return failure(ErrorCode::InvalidArgument, Recovery::CorrectInput);
@@ -212,9 +211,8 @@ Outcome<std::string> HostService::credential_for(std::string_view instance_id) c
   struct stat information {};
   std::string value;
   const bool valid = ::fstat(descriptor, &information) == 0 && S_ISREG(information.st_mode) &&
-                     (information.st_mode & 0777) == 0600 &&
-                     information.st_uid == ::geteuid() && information.st_size >= 32 &&
-                     information.st_size <= 4096;
+                     (information.st_mode & 0777) == 0600 && information.st_uid == ::geteuid() &&
+                     information.st_size >= 32 && information.st_size <= 4096;
   if (valid) {
     value.resize(static_cast<std::size_t>(information.st_size));
     std::size_t offset = 0;
@@ -237,8 +235,7 @@ Outcome<std::string> HostService::credential_for(std::string_view instance_id) c
   return value;
 }
 
-Outcome<HostService::ResolvedProcess> HostService::resolve_locked(
-    const HostProcessSpec& process) {
+Outcome<HostService::ResolvedProcess> HostService::resolve_locked(const HostProcessSpec& process) {
   if (!canonical_id(process.instance_id) || !canonical_id(process.installation_id) ||
       process.execution_generation == 0 || process.desired_version == 0 ||
       !digest(process.package_sha256) || !token(process.launch_profile, 128) ||
@@ -256,8 +253,7 @@ Outcome<HostService::ResolvedProcess> HostService::resolve_locked(
   std::vector<std::string> argument_names;
   for (const auto& argument : process.arguments) {
     const auto separator = argument.find('=');
-    if (separator == std::string::npos || separator == 0 ||
-        !argument_value(argument)) {
+    if (separator == std::string::npos || separator == 0 || !argument_value(argument)) {
       return invalid();
     }
     const auto name = argument.substr(0, separator);
@@ -319,18 +315,21 @@ HostReceipt HostService::receipt_locked(const HostCommandRecord& command) const 
   return HostReceipt{command.command_id, true, command.execution};
 }
 
-void HostService::publish_locked(const ManagedExecution& execution, std::string_view command_id) {
+Status HostService::publish_locked(const ManagedExecution& execution, std::string_view command_id) {
   ExecutionObservation observation;
   observation.execution = execution;
   observation.command_id = std::string(command_id);
   const auto stored = dependencies_.journal.append_observation(observation);
-  if (const auto* value = std::get_if<ExecutionObservation>(&stored)) {
-    if (dependencies_.bridge.registered() &&
-        std::holds_alternative<std::monostate>(
-            dependencies_.bridge.send_observation(*value))) {
-      (void)dependencies_.journal.mark_observation_reported(value->sequence);
-    }
+  if (const auto* failed = std::get_if<Failure>(&stored)) {
+    return *failed;
   }
+  const auto& value = std::get<ExecutionObservation>(stored);
+  if (dependencies_.bridge.registered() &&
+      std::holds_alternative<std::monostate>(dependencies_.bridge.send_observation(value))) {
+    return dependencies_.journal.mark_observation_reported(value.sequence);
+  }
+  // Local durable observation is sufficient here; network acknowledgement may be recovered.
+  return std::monostate{};
 }
 
 void HostService::flush_pending_locked() {
@@ -413,6 +412,15 @@ Outcome<HostReceipt> HostService::apply_desired_process(const HostProcessSpec& p
     return invalid();
   }
   std::optional<ResolvedProcess> resolved;
+  if (process.desired_state == DesiredState::Running && dependencies_.admission != nullptr) {
+    const auto admission = dependencies_.admission->allows_start();
+    if (const auto* failed = std::get_if<Failure>(&admission)) {
+      return *failed;
+    }
+    if (!std::get<bool>(admission)) {
+      return conflict();
+    }
+  }
   if (process.desired_state == DesiredState::Running) {
     auto candidate = resolve_locked(process);
     if (const auto* failed = std::get_if<Failure>(&candidate)) {
@@ -568,8 +576,14 @@ Outcome<HostReceipt> HostService::stop_instance_locked(std::string_view instance
       execution.outcome = ExecutionOutcome::Unknown;
       execution.observed_at = now_of(dependencies_.clock);
       execution.exited_at = execution.observed_at;
-      (void)dependencies_.journal.save_execution(execution);
-      publish_locked(execution, command);
+      const auto saved = dependencies_.journal.save_execution(execution);
+      if (const auto* failed = std::get_if<Failure>(&saved)) {
+        return *failed;
+      }
+      const auto published = publish_locked(execution, command);
+      if (const auto* failed = std::get_if<Failure>(&published)) {
+        return *failed;
+      }
       return HostReceipt{std::string(command), true, execution};
     }
     const auto terminated = dependencies_.supervisor.terminate(
@@ -578,26 +592,37 @@ Outcome<HostReceipt> HostService::stop_instance_locked(std::string_view instance
       execution.state = ManagedExecutionState::Unknown;
       execution.outcome = ExecutionOutcome::Unknown;
       execution.observed_at = now_of(dependencies_.clock);
-      (void)dependencies_.journal.save_execution(execution);
-      publish_locked(execution, command);
+      const auto saved = dependencies_.journal.save_execution(execution);
+      if (const auto* failed = std::get_if<Failure>(&saved)) {
+        return *failed;
+      }
+      const auto published = publish_locked(execution, command);
+      if (const auto* failed = std::get_if<Failure>(&published)) {
+        return *failed;
+      }
       return *failed;
     }
     execution.state = ManagedExecutionState::Exited;
     execution.outcome = ExecutionOutcome::KnownSucceeded;
     execution.observed_at = now_of(dependencies_.clock);
     execution.exited_at = execution.observed_at;
-    (void)dependencies_.journal.save_execution(execution);
-    publish_locked(execution, command);
+    const auto saved = dependencies_.journal.save_execution(execution);
+    if (const auto* failed = std::get_if<Failure>(&saved)) {
+      return *failed;
+    }
+    const auto published = publish_locked(execution, command);
+    if (const auto* failed = std::get_if<Failure>(&published)) {
+      return *failed;
+    }
     return HostReceipt{std::string(command), true, execution};
   }
   return HostReceipt{std::string(command), true, std::nullopt};
 }
 
 Outcome<HostReceipt> HostService::stop_execution(std::string_view instance_id,
-                                                  std::uint64_t execution_generation,
-                                                  std::uint32_t grace_ms,
-                                                  std::string_view command,
-                                                  std::string_view payload_sha256) {
+                                                 std::uint64_t execution_generation,
+                                                 std::uint32_t grace_ms, std::string_view command,
+                                                 std::string_view payload_sha256) {
   if (!canonical_id(instance_id) || execution_generation == 0 || !command_id(command) ||
       !digest(payload_sha256)) {
     return invalid();
@@ -625,10 +650,9 @@ Outcome<HostReceipt> HostService::stop_execution(std::string_view instance_id,
   if (stored.duplicate) {
     return receipt_locked(stored.record);
   }
-  const auto grace = std::chrono::milliseconds{
-      std::min<std::uint32_t>(grace_ms == 0 ? 10'000 : grace_ms, 10'000)};
-  const auto stopped =
-      stop_instance_locked(instance_id, execution_generation, grace, command);
+  const auto grace =
+      std::chrono::milliseconds{std::min<std::uint32_t>(grace_ms == 0 ? 10'000 : grace_ms, 10'000)};
+  const auto stopped = stop_instance_locked(instance_id, execution_generation, grace, command);
   if (const auto* failed = std::get_if<Failure>(&stopped)) {
     auto failed_command = stored.record;
     mark_command_locked(failed_command, HostCommandState::Unknown, std::nullopt);
@@ -663,25 +687,106 @@ Outcome<HostReceipt> HostService::drain_host(std::uint32_t grace_ms, std::string
   }
   auto stored = std::get<PersistedCommand>(std::move(persisted));
   if (stored.duplicate) {
+    if (stored.record.state != HostCommandState::Completed) {
+      return Failure{
+          ErrorCode::UpstreamUnavailable, Acceptance::Unknown, Recovery::QuerySameIdentity, {}, {}};
+    }
     return receipt_locked(stored.record);
   }
-  const auto grace = std::chrono::milliseconds{
-      std::min<std::uint32_t>(grace_ms == 0 ? 10'000 : grace_ms, 10'000)};
+  const auto grace =
+      std::chrono::milliseconds{std::min<std::uint32_t>(grace_ms == 0 ? 10'000 : grace_ms, 10'000)};
   const auto active = dependencies_.journal.active_executions();
-  if (const auto* executions = std::get_if<std::vector<ManagedExecution>>(&active)) {
-    for (const auto& execution : *executions) {
-      if (terminal_state(execution.state)) {
-        continue;
+  std::optional<Failure> unresolved;
+  if (const auto* failed = std::get_if<Failure>(&active)) {
+    unresolved = *failed;
+  } else {
+    for (const auto& execution : std::get<std::vector<ManagedExecution>>(active)) {
+      const auto stopped = stop_instance_locked(execution.instance_id,
+                                                execution.execution_generation, grace, command);
+      if (const auto* failed = std::get_if<Failure>(&stopped)) {
+        unresolved = *failed;
+      } else {
+        const auto& evidence = std::get<HostReceipt>(stopped).execution;
+        if (!evidence || evidence->state != ManagedExecutionState::Exited ||
+            (evidence->outcome != ExecutionOutcome::KnownSucceeded &&
+             evidence->outcome != ExecutionOutcome::KnownFailed)) {
+          unresolved = unavailable();
+        }
       }
-      (void)stop_instance_locked(execution.instance_id, execution.execution_generation, grace,
-                                 command);
     }
   }
   flush_pending_locked();
   auto updated = stored.record;
-  mark_command_locked(updated, HostCommandState::Completed, std::nullopt);
-  // Drain receipt only means "durably accepted"; per-instance results travel as observations.
+  updated.state = unresolved ? HostCommandState::Unknown : HostCommandState::Completed;
+  updated.updated_at = now_of(dependencies_.clock);
+  updated.retain_until = unresolved ? unresolved_retention(updated.updated_at)
+                                    : terminal_retention(updated.updated_at);
+  const auto saved = dependencies_.journal.update_command(updated);
+  if (const auto* failed = std::get_if<Failure>(&saved)) {
+    unresolved = *failed;
+  }
+  if (unresolved) {
+    unresolved->acceptance = Acceptance::Unknown;
+    unresolved->recovery = Recovery::QuerySameIdentity;
+    return *unresolved;
+  }
   return HostReceipt{std::string(command), true, std::nullopt};
+}
+
+Outcome<std::vector<ManagedExecution>> HostService::maintenance_executions() {
+  std::lock_guard lock(mutex_);
+  if (!journal_open_) {
+    return unavailable();
+  }
+  return dependencies_.journal.active_executions();
+}
+
+Outcome<ManagedExecution> HostService::stop_for_maintenance(const ManagedExecution& target,
+                                                            std::uint32_t grace_ms,
+                                                            std::string_view operation_id) {
+  if (!canonical_id(target.instance_id) || target.execution_generation == 0 ||
+      !command_id(operation_id) || grace_ms > 10000) {
+    return invalid();
+  }
+  std::lock_guard lock(mutex_);
+  if (!journal_open_) {
+    return unavailable();
+  }
+  const auto found = dependencies_.journal.find_execution(
+      InstanceId{target.instance_id}, ExecutionGeneration{target.execution_generation});
+  if (const auto* failed = std::get_if<Failure>(&found)) {
+    return *failed;
+  }
+  const auto& current = std::get<std::optional<ManagedExecution>>(found);
+  if (!current || current->host_id != dependencies_.identity.host_id ||
+      current->pid != target.pid || current->process_marker != target.process_marker) {
+    return Failure{ErrorCode::Conflict, Acceptance::Unknown, Recovery::QuerySameIdentity, {}, {}};
+  }
+  const bool already_terminal = terminal_state(current->state);
+  const auto stopped = stop_instance_locked(
+      target.instance_id, target.execution_generation,
+      std::chrono::milliseconds{grace_ms == 0 ? 10000U : grace_ms}, operation_id);
+  if (const auto* failed = std::get_if<Failure>(&stopped)) {
+    auto result = *failed;
+    result.acceptance = Acceptance::Unknown;
+    result.recovery = Recovery::QuerySameIdentity;
+    return result;
+  }
+  const auto& evidence = std::get<HostReceipt>(stopped).execution;
+  if (!evidence) {
+    return Failure{
+        ErrorCode::UpstreamUnavailable, Acceptance::Unknown, Recovery::QuerySameIdentity, {}, {}};
+  }
+  if (already_terminal) {
+    const auto published = publish_locked(*evidence, operation_id);
+    if (const auto* failed = std::get_if<Failure>(&published)) {
+      auto result = *failed;
+      result.acceptance = Acceptance::Unknown;
+      result.recovery = Recovery::QuerySameIdentity;
+      return result;
+    }
+  }
+  return *evidence;
 }
 
 } // namespace kiarabot::core::target

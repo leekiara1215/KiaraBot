@@ -80,6 +80,7 @@ struct SchedulerServiceDependencies {
   SchedulerUnitOfWorkFactory& transactions;
   SchedulerIdPort& ids;
   SchedulerTimeZonePort& timezone;
+  SchedulerDigestPort& digests;
   std::chrono::hours horizon{kTaskHorizon};
   std::size_t instance_capacity{kInstanceTaskCapacity};
   std::size_t installation_capacity{kInstallationTaskCapacity};

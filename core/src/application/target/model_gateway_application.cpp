@@ -133,12 +133,6 @@ ModelChatDisposition replay_disposition(ModelCallState state) {
   return state == ModelCallState::Started ? ModelChatDisposition::ReplayInProgress
                                           : ModelChatDisposition::ReplayTerminal;
 }
-bool valid_configuration(const ModelConfiguration& config) {
-  return valid_model_identifier(config.model_id.value) && valid_model_alias(config.alias) &&
-         valid_model_endpoint(config.endpoint) && valid_provider_model(config.provider_model) &&
-         valid_model_timeout(config.timeout_ms) &&
-         valid_model_concurrency(config.max_concurrency) && config.version.value > 0;
-}
 
 } // namespace
 
@@ -223,17 +217,64 @@ Outcome<ModelMetadataView> ModelGatewayApplication::load_metadata(ModelUnitOfWor
   return ModelMetadataView{*stored, current ? current->secret_version : ResourceVersion{0}};
 }
 
-Outcome<ModelChatReply> ModelGatewayApplication::chat(const ModelChatCommand& command) {
+struct ModelGatewayApplication::ActiveLease {
+  ModelGatewayApplication& application;
+  ResourceId model;
+  ActiveLease(ModelGatewayApplication& app, ResourceId id)
+      : application(app), model(std::move(id)) {}
+  ~ActiveLease() {
+    application.release_call(model);
+  }
+};
+
+Outcome<std::shared_ptr<ModelGatewayApplication::ActiveLease>>
+ModelGatewayApplication::acquire_call(const ResourceId& model, std::uint32_t maximum) {
+  std::lock_guard lock{active_mutex_};
+  const auto found = active_calls_.find(model.value);
+  const auto count = found == active_calls_.end() ? 0 : found->second;
+  if (active_total_ >= kModelStreamMaximumProcessCalls || count >= maximum) {
+    return fail(ErrorCode::RateLimited, Recovery::Backoff);
+  }
+  // Allocate before incrementing counters so an allocation failure cannot leak a slot.
+  auto [entry, inserted] = active_calls_.try_emplace(model.value, count);
+  std::shared_ptr<ActiveLease> lease;
+  try {
+    lease = std::make_shared<ActiveLease>(*this, model);
+  } catch (...) {
+    if (inserted) {
+      active_calls_.erase(entry);
+    }
+    throw;
+  }
+  entry->second = count + 1;
+  ++active_total_;
+  return lease;
+}
+
+void ModelGatewayApplication::release_call(const ResourceId& model) noexcept {
+  std::lock_guard lock{active_mutex_};
+  const auto found = active_calls_.find(model.value);
+  if (found != active_calls_.end() && --found->second == 0) {
+    active_calls_.erase(found);
+  }
+  --active_total_;
+}
+
+Outcome<ModelGatewayApplication::ChatAdmission>
+ModelGatewayApplication::admit_chat(const ModelChatCommand& command) {
   if (!command.caller.owner || !valid_context(command.context) ||
       !valid_model_identifier(command.logical_call_id) || command.model.empty() ||
       command.model.size() > 256 || command.messages.empty() ||
       command.messages.size() > kModelMaximumMessages) {
     return invalid();
   }
+  std::size_t input_text_bytes = 0;
   for (const auto& message : command.messages) {
-    if (!valid_model_message_role(message.role) || message.text.find('\0') != std::string::npos) {
+    if (message.text.size() > kModelMaximumRequestBytes - input_text_bytes ||
+        !valid_model_message_role(message.role) || message.text.find('\0') != std::string::npos) {
       return invalid();
     }
+    input_text_bytes += message.text.size();
   }
   const auto canonical = model_request_canonical(command.model, command.messages);
   if (canonical.size() > kModelMaximumRequestBytes) {
@@ -273,7 +314,7 @@ Outcome<ModelChatReply> ModelGatewayApplication::chat(const ModelChatCommand& co
       if (const auto* rejected = std::get_if<Failure>(&decision)) {
         return *rejected;
       }
-      return ModelChatReply{replay_disposition(call.state), call, std::nullopt};
+      return ChatAdmission{replay_disposition(call.state), call, {}, {}, {}};
     }
     work->rollback();
   }
@@ -314,6 +355,8 @@ Outcome<ModelChatReply> ModelGatewayApplication::chat(const ModelChatCommand& co
 
   ProviderSecretRecord pinned_secret;
   ModelConfiguration pinned_config;
+  ModelIntent admitted_call;
+  std::shared_ptr<ActiveLease> lease;
   {
     auto begun = dependencies_.transactions.begin();
     if (const auto* rejected = std::get_if<Failure>(&begun)) {
@@ -339,7 +382,7 @@ Outcome<ModelChatReply> ModelGatewayApplication::chat(const ModelChatCommand& co
       if (call.request_hash != request_hash) {
         return conflict();
       }
-      return ModelChatReply{replay_disposition(call.state), call, std::nullopt};
+      return ChatAdmission{replay_disposition(call.state), call, {}, {}, {}};
     }
     auto resolved = work->model_configs().find(model_id);
     if (const auto* rejected = std::get_if<Failure>(&resolved)) {
@@ -361,6 +404,12 @@ Outcome<ModelChatReply> ModelGatewayApplication::chat(const ModelChatCommand& co
       work->rollback();
       return unavailable();
     }
+    auto slot = acquire_call(model_id, config->max_concurrency);
+    if (const auto* rejected = std::get_if<Failure>(&slot)) {
+      work->rollback();
+      return *rejected;
+    }
+    lease = std::move(std::get<std::shared_ptr<ActiveLease>>(slot));
     pinned_config = *config;
     pinned_secret = *current_secret;
     ModelIntent intent;
@@ -370,6 +419,7 @@ Outcome<ModelChatReply> ModelGatewayApplication::chat(const ModelChatCommand& co
     intent.config_version = config->version;
     intent.request_hash = request_hash;
     intent.state = ModelCallState::Started;
+    intent.may_have_billed = true;
     intent.version = {1};
     intent.created_at = std::get<TimePoint>(now);
     intent.observed_at = intent.created_at;
@@ -379,6 +429,7 @@ Outcome<ModelChatReply> ModelGatewayApplication::chat(const ModelChatCommand& co
       work->rollback();
       return *rejected;
     }
+    admitted_call = intent;
     switch (work->commit()) {
     case CommitResult::Committed:
       break;
@@ -389,25 +440,98 @@ Outcome<ModelChatReply> ModelGatewayApplication::chat(const ModelChatCommand& co
     }
   }
 
+  return ChatAdmission{ModelChatDisposition::FreshResult, admitted_call, pinned_config,
+                       pinned_secret, std::move(lease)};
+}
+
+Outcome<ModelIntent> ModelGatewayApplication::settle_chat(const ChatAdmission& admission,
+                                                          const ModelCallMutation& mutation) {
+  // Second transaction: persist known success/failure or UNKNOWN. Never roll a call back to
+  // "provider not invoked" after the provider call started.
+  ModelIntent committed_call;
+  {
+    auto begun = dependencies_.transactions.begin();
+    if (std::holds_alternative<Failure>(begun)) {
+      return unknown_result(ErrorCode::UpstreamUnavailable);
+    }
+    auto work = std::move(std::get<std::unique_ptr<ModelUnitOfWork>>(begun));
+    if (!work) {
+      return unknown_result(ErrorCode::UpstreamUnavailable);
+    }
+    const auto now = work->current_time();
+    if (std::holds_alternative<Failure>(now)) {
+      work->rollback();
+      return unknown_result(ErrorCode::UpstreamUnavailable);
+    }
+    auto existing =
+        work->model_calls().find({admission.call.owner, admission.call.logical_call_id});
+    if (std::holds_alternative<Failure>(existing)) {
+      work->rollback();
+      return unknown_result(ErrorCode::UpstreamUnavailable);
+    }
+    const auto& stored = std::get<std::optional<ModelIntent>>(existing);
+    if (!stored || stored->state != ModelCallState::Started ||
+        stored->version != admission.call.version) {
+      work->rollback();
+      return unknown_result(ErrorCode::UpstreamUnavailable);
+    }
+    ModelIntent updated = *stored;
+    updated.state = mutation.state;
+    updated.observed_at = std::get<TimePoint>(now);
+    updated.secret_version = admission.secret.secret_version;
+    updated.usage_known = mutation.usage_known;
+    updated.input_tokens = mutation.input_tokens;
+    updated.output_tokens = mutation.output_tokens;
+    updated.may_have_billed = mutation.may_have_billed;
+    updated.provider_request_id = mutation.provider_request_id;
+    updated.latency_ms = mutation.latency_ms;
+    updated.error = mutation.error;
+    updated.version.value += 1;
+    auto saved = work->model_calls().save(updated, stored->version);
+    if (std::holds_alternative<Failure>(saved)) {
+      work->rollback();
+      return unknown_result(ErrorCode::UpstreamUnavailable);
+    }
+    switch (work->commit()) {
+    case CommitResult::Committed:
+      committed_call = updated;
+      break;
+    case CommitResult::RolledBack:
+    case CommitResult::Unknown:
+      return unknown_result(ErrorCode::UpstreamUnavailable);
+    }
+  }
+  return committed_call;
+}
+
+Outcome<ModelChatReply> ModelGatewayApplication::chat(const ModelChatCommand& command) {
+  auto admitted = admit_chat(command);
+  if (const auto* rejected = std::get_if<Failure>(&admitted)) {
+    return *rejected;
+  }
+  auto admission = std::move(std::get<ChatAdmission>(admitted));
+  if (admission.disposition != ModelChatDisposition::FreshResult) {
+    return ModelChatReply{admission.disposition, admission.call, std::nullopt};
+  }
   // Provider call happens outside every transaction. The borrowed plaintext secret is destroyed
   // with the returned buffer before the second transaction begins.
   ModelCallMutation mutation;
   std::optional<std::string> result_text;
   {
-    auto aad = model_secret_aad(pinned_secret.model_id, pinned_secret.secret_version,
-                                pinned_secret.root_key_version);
+    auto aad = model_secret_aad(admission.secret.model_id, admission.secret.secret_version,
+                                admission.secret.root_key_version);
     auto plaintext =
-        dependencies_.crypto.open(pinned_secret.sealed_secret, aad, pinned_secret.nonce);
-    if (const auto* rejected = std::get_if<Failure>(&plaintext)) {
+        dependencies_.crypto.open(admission.secret.sealed_secret, aad, admission.secret.nonce);
+    if (std::holds_alternative<Failure>(plaintext)) {
       mutation = model_definite_failure_mutation(ErrorCode::UpstreamUnavailable);
       mutation.may_have_billed = false;
     } else {
       const auto secret = std::get<OwnedSecret>(plaintext).get();
       ModelProviderRequest request;
-      request.endpoint = pinned_config.endpoint;
-      request.provider_model = pinned_config.provider_model;
+      request.endpoint = admission.config.endpoint;
+      request.provider_model = admission.config.provider_model;
       const auto timeout_ms =
-          model_timeout_budget(pinned_config.timeout_ms, command.context.deadline, wall_now());
+          model_timeout_budget(admission.config.timeout_ms, command.context.deadline, wall_now());
       if (timeout_ms < kModelMinimumTimeoutMs) {
         mutation = model_definite_failure_mutation(ErrorCode::Timeout);
         mutation.may_have_billed = false;
@@ -445,58 +569,9 @@ Outcome<ModelChatReply> ModelGatewayApplication::chat(const ModelChatCommand& co
     }
   }
 
-  // Second transaction: persist known success/failure or UNKNOWN. Never roll a call back to
-  // "provider not invoked" after the provider call started.
-  ModelIntent committed_call;
-  {
-    auto begun = dependencies_.transactions.begin();
-    if (const auto* rejected = std::get_if<Failure>(&begun)) {
-      return *rejected;
-    }
-    auto work = std::move(std::get<std::unique_ptr<ModelUnitOfWork>>(begun));
-    if (!work) {
-      return unknown_result(ErrorCode::UpstreamUnavailable);
-    }
-    const auto now = work->current_time();
-    if (const auto* rejected = std::get_if<Failure>(&now)) {
-      work->rollback();
-      return unknown_result(ErrorCode::UpstreamUnavailable);
-    }
-    auto existing = work->model_calls().find(call_key);
-    if (const auto* rejected = std::get_if<Failure>(&existing)) {
-      work->rollback();
-      return unknown_result(ErrorCode::UpstreamUnavailable);
-    }
-    const auto& stored = std::get<std::optional<ModelIntent>>(existing);
-    if (!stored) {
-      work->rollback();
-      return unknown_result(ErrorCode::UpstreamUnavailable);
-    }
-    ModelIntent updated = *stored;
-    updated.state = mutation.state;
-    updated.observed_at = std::get<TimePoint>(now);
-    updated.secret_version = pinned_secret.secret_version;
-    updated.usage_known = mutation.usage_known;
-    updated.input_tokens = mutation.input_tokens;
-    updated.output_tokens = mutation.output_tokens;
-    updated.may_have_billed = mutation.may_have_billed;
-    updated.provider_request_id = mutation.provider_request_id;
-    updated.latency_ms = mutation.latency_ms;
-    updated.error = mutation.error;
-    updated.version.value += 1;
-    auto saved = work->model_calls().save(updated, stored->version);
-    if (const auto* rejected = std::get_if<Failure>(&saved)) {
-      work->rollback();
-      return unknown_result(ErrorCode::UpstreamUnavailable);
-    }
-    switch (work->commit()) {
-    case CommitResult::Committed:
-      committed_call = updated;
-      break;
-    case CommitResult::RolledBack:
-    case CommitResult::Unknown:
-      return unknown_result(ErrorCode::UpstreamUnavailable);
-    }
+  auto committed = settle_chat(admission, mutation);
+  if (const auto* rejected = std::get_if<Failure>(&committed)) {
+    return *rejected;
   }
   if (mutation.state == ModelCallState::Unknown) {
     return unknown_result(mutation.error.value_or(ErrorCode::UpstreamUnavailable));
@@ -504,7 +579,8 @@ Outcome<ModelChatReply> ModelGatewayApplication::chat(const ModelChatCommand& co
   if (mutation.state == ModelCallState::Failed) {
     return accepted_failure(mutation.error.value_or(ErrorCode::Internal), mutation.retry_after);
   }
-  return ModelChatReply{ModelChatDisposition::FreshResult, committed_call, std::move(result_text)};
+  return ModelChatReply{ModelChatDisposition::FreshResult, std::get<ModelIntent>(committed),
+                        std::move(result_text)};
 }
 
 Outcome<ModelIntent>
@@ -1184,12 +1260,53 @@ Status ModelGatewayApplication::maintenance() {
       return *rejected;
     }
     const auto timestamp = std::get<TimePoint>(now);
+    auto expired =
+        work->model_calls().list_expired_started(timestamp - std::chrono::seconds{35}, 32);
+    if (const auto* rejected = std::get_if<Failure>(&expired)) {
+      work->rollback();
+      return *rejected;
+    }
+    for (const auto& call : std::get<std::vector<ModelIntent>>(expired)) {
+      if (call.state != ModelCallState::Started ||
+          call.created_at + std::chrono::seconds{35} > timestamp) {
+        continue;
+      }
+      auto recovered = call;
+      recovered.state = ModelCallState::Unknown;
+      recovered.observed_at = timestamp;
+      recovered.usage_known = false;
+      recovered.input_tokens = 0;
+      recovered.output_tokens = 0;
+      recovered.may_have_billed = true;
+      recovered.error = ErrorCode::Timeout;
+      ++recovered.version.value;
+      auto saved = work->model_calls().save(recovered, call.version);
+      if (const auto* rejected = std::get_if<Failure>(&saved)) {
+        work->rollback();
+        return *rejected;
+      }
+      auto audited = work->journal().append_audit(AuditEntry{SubjectId{"model-maintenance"},
+                                                             model_resource(call.model),
+                                                             {},
+                                                             {},
+                                                             "ModelService.RecoverStarted",
+                                                             std::nullopt,
+                                                             {1},
+                                                             timestamp});
+      if (const auto* rejected = std::get_if<Failure>(&audited)) {
+        work->rollback();
+        return *rejected;
+      }
+    }
     auto unresolved = work->model_calls().list_unresolved_unknown(timestamp, 32);
     if (const auto* rejected = std::get_if<Failure>(&unresolved)) {
       work->rollback();
       return *rejected;
     }
     for (const auto& call : std::get<std::vector<ModelIntent>>(unresolved)) {
+      if (!model_unknown_resolution_due(call, timestamp)) {
+        continue;
+      }
       auto abandoned = model_abandon_unknown(call, timestamp, "model-maintenance");
       auto saved = work->model_calls().save(abandoned, call.version);
       if (const auto* rejected = std::get_if<Failure>(&saved)) {

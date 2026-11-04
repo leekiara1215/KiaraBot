@@ -1,0 +1,82 @@
+syntax = "proto3";
+package kiarabot.v1;
+
+import "google/protobuf/timestamp.proto";
+import "kiarabot/v1/platform.proto";
+
+// WS-01 target contract. All three messages and their owner RPCs remain
+// not_implemented until the target implementation and scoped evidence are registered.
+// This is a read-only, bounded owner journal, not a business command or an audit log.
+// CONTRACT_STATUS: not_implemented - target operation change feed, producer pending.
+message OperationChangesRequest {
+  RequestContext context = 1;
+  // Required, 1..127 distinct exact resources, canonicalized by (kind,id). No
+  // RESOURCE_CATALOG, wildcard, inherited child grant or cross-assignment product.
+  // Every resource must be currently authorized for this method's permission.
+  // Runtime: resource.read; Model: resource.read on RESOURCE_MODEL;
+  // Scheduler: task.read on RESOURCE_TASK/RESOURCE_INSTANCE;
+  // Host: host.read on the one RESOURCE_HOST owned by the addressed Host endpoint.
+  ResourceScope scope = 2;
+  // Absent: atomically capture the current committed head, return no changes and
+  // next_cursor=head. Establish this boundary BEFORE loading owner REST snapshots.
+  // Present: source_service must name the addressed owner, scope must equal the
+  // canonical request scope, and epoch/sequence must be valid for that dataset.
+  // The cursor is NOT an authorization capability. Each call uses current online
+  // authorization; Control additionally binds replay to the principal, Identity
+  // session, authorization version, channel, owner and canonical scope.
+  optional StreamCursor cursor = 3;
+  // 0 means 32; otherwise 1..100. Larger values are INVALID_ARGUMENT.
+  uint32 page_size = 4;
+}
+
+// CONTRACT_STATUS: not_implemented - target operation change feed, producer pending.
+message OperationChange {
+  // Required complete public owner progress, including participant-only changes.
+  // ref.owner_service equals cursor.source_service; ref.operation_id is the
+  // persistent operation identity; ref.resource is present and is an exact member
+  // of the authorized request scope. Never infer a resource from a caller's ID.
+  // No credentials, configuration, message/model bodies or arbitrary upstream text.
+  Operation operation = 1;
+  // Required cursor of THIS change, not the end of the response page. Sequence is
+  // strictly increasing in the owner's commit-ordered journal, not operation.version.
+  // Sequence gaps may belong to resources outside the requested scope.
+  StreamCursor cursor = 2;
+}
+
+// CONTRACT_STATUS: not_implemented - target operation change feed, producer pending.
+message OperationChangesResponse {
+  // At most effective page_size entries, strictly ordered by cursor.sequence.
+  // Notifications can coalesce intermediate progress; they never prove side effects
+  // beyond the owner Operation. UNKNOWN/BLOCKED are preserved, never made successful.
+  repeated OperationChange changes = 1;
+  // Required committed scan boundary, >= every returned change cursor, safe to use
+  // only after consuming the entire page. An authorized empty page can advance past
+  // unrelated resources. Empty must never disguise an unavailable/denied source.
+  StreamCursor next_cursor = 2;
+  // More matching committed changes exist beyond next_cursor. False describes this
+  // read boundary only, not permanent completion or an atomic multi-owner snapshot.
+  bool has_more = 3;
+  // Required UTC sampled by the owner's authoritative storage transaction.
+  google.protobuf.Timestamp checked_at = 4;
+}
+
+// Normative owner persistence and failure semantics for ListOperationChanges:
+// - Append operation progress and participant changes in the SAME local UoW as the
+//   authoritative mutation. Rollback publishes nothing; Control never owns this DB.
+// - A committed head cannot pass an uncommitted lower sequence. Do not use nextval
+//   allocation order as commit order. Serialize the short per-owner append boundary
+//   with a transactional counter/lock and a consistent repository lock order.
+// - Keep a bounded journal for 600 seconds, with a persistent low-water mark.
+//   Capacity eviction advances that mark explicitly; never silently skip a gap.
+// - epoch identifies the durable dataset, survives ordinary owner process restart,
+//   and changes after journal rebuild, restore to older data, or sequence reset.
+// - Invalid shape/owner/scope/page size is INVALID_ARGUMENT. A structurally valid
+//   future sequence, old epoch or evicted boundary is CONFLICT with NOT_ACCEPTED /
+//   RESYNC_SNAPSHOT. No mutation occurred; no synthetic operation is attached.
+//   Control maps this owner resync failure conservatively to CURSOR_EXPIRED.
+//   INVALID_CURSOR is reserved for a locally invalid Control replay boundary;
+//   SERVER_RESTART identifies a changed Control stream process epoch.
+// - Current identity/session/permission failures stay UNAUTHENTICATED or
+//   PERMISSION_DENIED; do not reveal whether an inaccessible operation exists.
+//   TIMEOUT, UPSTREAM_UNAVAILABLE and RATE_LIMITED remain typed RpcFailure, never
+//   successful empty pages. All failures use existing ErrorCode/FailureContext.

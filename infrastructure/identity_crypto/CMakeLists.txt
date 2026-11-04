@@ -5,7 +5,7 @@ find_package(nlohmann_json 3.11.3 EXACT CONFIG REQUIRED)
 add_library(kiarabot_identity_crypto STATIC src/password_crypto.cpp src/token_crypto.cpp
   src/receipt_crypto.cpp src/peer_certificate.cpp src/delegation_crypto.cpp src/key_files.cpp
   src/verification_keys.cpp src/assignment_fingerprint.cpp src/principal_fingerprint.cpp
-  src/model_secret_crypto.cpp)
+  src/model_secret_crypto.cpp src/sha256.cpp)
 target_include_directories(kiarabot_identity_crypto PUBLIC
   include ${CMAKE_SOURCE_DIR}/core/include)
 target_link_libraries(kiarabot_identity_crypto PRIVATE unofficial-sodium::sodium
@@ -59,4 +59,17 @@ set_tests_properties(p04_key_files PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT
 
 # Verification material tests create real Ed25519 public keys with the locked OpenSSL headers.
 target_include_directories(kiarabot_verification_keys_test SYSTEM PRIVATE
+  $<TARGET_PROPERTY:OpenSSL::Crypto,INTERFACE_INCLUDE_DIRECTORIES>)
+
+# Digest dependency remains on the outer adapter and its direct consumers.
+target_link_libraries(kiarabot_identity_crypto PRIVATE OpenSSL::Crypto)
+if(TARGET kiarabot_postgres_scheduler_test)
+  target_link_libraries(kiarabot_postgres_scheduler_test PRIVATE kiarabot_identity_crypto)
+endif()
+add_executable(kiarabot_sha256_test tests/sha256_test.cpp)
+target_link_libraries(kiarabot_sha256_test PRIVATE kiarabot_identity_crypto)
+kiarabot_platform_warnings(kiarabot_sha256_test)
+add_test(NAME architecture_sha256 COMMAND kiarabot_sha256_test)
+set_tests_properties(architecture_sha256 PROPERTIES LABELS "unit;security" TIMEOUT 10)
+target_include_directories(kiarabot_sha256_test SYSTEM PRIVATE
   $<TARGET_PROPERTY:OpenSSL::Crypto,INTERFACE_INCLUDE_DIRECTORIES>)

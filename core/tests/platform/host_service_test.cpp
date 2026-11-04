@@ -11,11 +11,11 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <unistd.h>
 #include <utility>
 #include <vector>
 
 #include <sys/stat.h>
-#include <unistd.h>
 
 #include "kiarabot/core/application/target/host_service.hpp"
 
@@ -72,8 +72,8 @@ public:
   }
   t::Status update_command(const t::HostCommandRecord& record) override {
     if (commands.find(record.command_id) == commands.end()) {
-      return t::Failure{t::ErrorCode::Internal, t::Acceptance::NotAccepted,
-                        t::Recovery::Diagnose, std::nullopt, std::nullopt};
+      return t::Failure{t::ErrorCode::Internal, t::Acceptance::NotAccepted, t::Recovery::Diagnose,
+                        std::nullopt, std::nullopt};
     }
     commands[record.command_id] = record;
     return std::monostate{};
@@ -89,8 +89,8 @@ public:
     }
     return result;
   }
-  t::Outcome<std::optional<t::ManagedExecution>> find_execution(
-      const t::InstanceId& instance, t::ExecutionGeneration generation) override {
+  t::Outcome<std::optional<t::ManagedExecution>>
+  find_execution(const t::InstanceId& instance, t::ExecutionGeneration generation) override {
     const auto key = instance.value + "#" + std::to_string(generation.value);
     const auto found = executions.find(key);
     if (found == executions.end()) {
@@ -101,7 +101,8 @@ public:
   t::Outcome<std::vector<t::ManagedExecution>> active_executions() override {
     std::vector<t::ManagedExecution> result;
     for (const auto& [key, execution] : executions) {
-      if (execution.state != t::ManagedExecutionState::Exited) {
+      if (execution.state != t::ManagedExecutionState::Exited ||
+          execution.outcome == t::ExecutionOutcome::Unknown) {
         result.push_back(execution);
       }
     }
@@ -112,15 +113,15 @@ public:
         execution;
     return std::monostate{};
   }
-  t::Outcome<t::ExecutionObservation> append_observation(
-      t::ExecutionObservation observation) override {
+  t::Outcome<t::ExecutionObservation>
+  append_observation(t::ExecutionObservation observation) override {
     observation.sequence = ++sequence;
     observation.observation_id = std::to_string(observation.sequence);
     observations.push_back(observation);
     return observation;
   }
-  t::Outcome<std::vector<t::ExecutionObservation>> pending_observations(
-      std::size_t limit) override {
+  t::Outcome<std::vector<t::ExecutionObservation>>
+  pending_observations(std::size_t limit) override {
     std::vector<t::ExecutionObservation> result;
     for (const auto& observation : observations) {
       if (!observation.reported) {
@@ -139,8 +140,8 @@ public:
         return std::monostate{};
       }
     }
-    return t::Failure{t::ErrorCode::Internal, t::Acceptance::NotAccepted,
-                      t::Recovery::Diagnose, std::nullopt, std::nullopt};
+    return t::Failure{t::ErrorCode::Internal, t::Acceptance::NotAccepted, t::Recovery::Diagnose,
+                      std::nullopt, std::nullopt};
   }
   t::Outcome<std::uint64_t> last_reported_sequence() override {
     std::uint64_t last = 0;
@@ -287,8 +288,9 @@ struct Harness {
     profiles.push_back(profile);
     environment = {{"PYTHONUNBUFFERED", "1"}};
     write_credential(kInstance, "bootstrap-secret-value-0123456789abcdef");
-    t::HostServiceDependencies dependencies{journal, supervisor, bridge, clock, identity,
-                                            profiles, environment, directory, 1s, 8};
+    t::HostServiceDependencies dependencies{journal,  supervisor, bridge,      clock,
+                                            identity, profiles,   environment, directory,
+                                            1s,       8,          {},          nullptr};
     service = std::make_unique<t::HostService>(std::move(dependencies));
   }
   ~Harness() {
@@ -298,13 +300,12 @@ struct Harness {
     std::filesystem::remove_all(directory);
   }
   void write_credential(std::string_view instance, std::string_view value) {
-    const auto path = std::filesystem::path(directory) /
-                      (std::string(instance) + ".bootstrap");
+    const auto path = std::filesystem::path(directory) / (std::string(instance) + ".bootstrap");
     std::ofstream stream(path);
     stream << value << '\n';
     stream.close();
     std::filesystem::permissions(path, std::filesystem::perms::owner_read |
-                                            std::filesystem::perms::owner_write);
+                                           std::filesystem::perms::owner_write);
   }
 };
 
@@ -338,8 +339,8 @@ void test_apply_spawn_and_idempotent_replay() {
   require(harness.supervisor.specs.size() == 1);
   const auto& launched = harness.supervisor.specs.front();
   require(launched.executable == "/usr/bin/python3");
-  require(std::find(launched.arguments.begin(), launched.arguments.end(),
-                    "instance=instance-1") != launched.arguments.end());
+  require(std::find(launched.arguments.begin(), launched.arguments.end(), "instance=instance-1") !=
+          launched.arguments.end());
   require(std::find(launched.environment.begin(), launched.environment.end(),
                     "KIARABOT_PLUGIN_BOOTSTRAP=bootstrap-secret-value-0123456789abcdef") !=
           launched.environment.end());
@@ -375,8 +376,8 @@ void test_validation_fails_closed_without_effect() {
   require(harness.supervisor.specs.empty());
   require(harness.journal.commands.empty());
   // Credential file with insecure permissions must be rejected before spawn.
-  const auto path = std::filesystem::path(harness.directory) /
-                    (std::string(kInstance) + ".bootstrap");
+  const auto path =
+      std::filesystem::path(harness.directory) / (std::string(kInstance) + ".bootstrap");
   std::filesystem::permissions(path, std::filesystem::perms::all);
   require(std::holds_alternative<t::Failure>(
       harness.service->apply_desired_process(spec(), "command-5", sha("b"))));
@@ -391,8 +392,7 @@ void test_stop_known_and_unknown_outcomes() {
   auto stopped = harness.service->stop_execution(kInstance, 1, 1000, "command-2", sha("c"));
   require(std::holds_alternative<t::HostReceipt>(stopped));
   require(std::get<t::HostReceipt>(stopped).execution.has_value());
-  require(std::get<t::HostReceipt>(stopped).execution->state ==
-          t::ManagedExecutionState::Exited);
+  require(std::get<t::HostReceipt>(stopped).execution->state == t::ManagedExecutionState::Exited);
   require(std::get<t::HostReceipt>(stopped).execution->outcome ==
           t::ExecutionOutcome::KnownSucceeded);
   // Unconfirmed termination must be UNKNOWN, never FAILED or "stopped".
@@ -480,6 +480,22 @@ void test_drain_stops_all_and_reports_accepted_only() {
   require(harness.supervisor.terminate_calls.size() == 2);
 }
 
+void test_drain_failure_stays_unknown() {
+  Harness harness;
+  require(std::holds_alternative<std::monostate>(harness.service->start()));
+  require(std::holds_alternative<t::HostReceipt>(
+      harness.service->apply_desired_process(spec(), "command-1", sha("b"))));
+  harness.supervisor.terminate_failure = t::ErrorCode::UpstreamUnavailable;
+  const auto drained = harness.service->drain_host(1000, "command-drain", sha("d"));
+  require(std::holds_alternative<t::Failure>(drained));
+  require(std::get<t::Failure>(drained).acceptance == t::Acceptance::Unknown);
+  require(harness.journal.commands.at("command-drain").state == t::HostCommandState::Unknown);
+  const auto attempts = harness.supervisor.terminate_calls.size();
+  require(std::holds_alternative<t::Failure>(
+      harness.service->drain_host(1000, "command-drain", sha("d"))));
+  require(harness.supervisor.terminate_calls.size() == attempts);
+}
+
 void test_recovery_never_respawns() {
   Harness harness;
   t::ManagedExecution running;
@@ -501,8 +517,7 @@ void test_recovery_never_respawns() {
   require(std::holds_alternative<std::monostate>(harness.service->start()));
   require(harness.supervisor.specs.empty());
   require(!harness.journal.observations.empty());
-  require(harness.journal.observations.back().execution.state ==
-          t::ManagedExecutionState::Running);
+  require(harness.journal.observations.back().execution.state == t::ManagedExecutionState::Running);
   // Lost process after restart is UNKNOWN, not a synthetic stop.
   Harness lost;
   lost.supervisor.alive_processes[77] = false;
@@ -548,6 +563,7 @@ void run() {
   test_stop_known_and_unknown_outcomes();
   test_same_generation_never_respawns();
   test_drain_stops_all_and_reports_accepted_only();
+  test_drain_failure_stays_unknown();
   test_stop_is_bounded_and_flushes_before_journal_close();
   test_stop_unconfirmed_termination_is_unknown_not_stopped();
   test_recovery_never_respawns();

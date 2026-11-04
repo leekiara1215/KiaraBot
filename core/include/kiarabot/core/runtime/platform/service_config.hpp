@@ -48,6 +48,8 @@ struct ControlApiMaterial {
   std::optional<std::string> scheduler_endpoint;
   std::optional<std::string> model_endpoint;
   std::optional<std::string> host_endpoint;
+  std::vector<std::string> websocket_origins{};
+  bool websocket_allow_missing_origin = false;
 };
 // Trusted file references only; mature crypto loaders own secret allocation and key validation.
 struct IdentitySymmetricKeyFile {

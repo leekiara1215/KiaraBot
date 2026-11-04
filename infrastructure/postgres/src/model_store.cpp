@@ -360,6 +360,27 @@ public:
         });
   }
   target::Outcome<std::vector<target::ModelIntent>>
+  list_expired_started(target::TimePoint cutoff, std::size_t limit) override {
+    if (limit == 0 || limit > 100) {
+      return invalid();
+    }
+    return query<std::vector<target::ModelIntent>>(
+        sql_,
+        [&](pqxx::transaction_base& transaction)
+            -> target::Outcome<std::vector<target::ModelIntent>> {
+          const auto rows = transaction.exec(
+              "SELECT * FROM kiarabot.model_intents WHERE state=0 AND created_at<=$1 "
+              "ORDER BY created_at,owner,logical_call_id LIMIT $2",
+              pqxx::params{timestamp(cutoff), static_cast<int>(limit)});
+          std::vector<target::ModelIntent> result;
+          result.reserve(rows.size());
+          for (const auto& row : rows) {
+            result.push_back(read_call(row));
+          }
+          return result;
+        });
+  }
+  target::Outcome<std::vector<target::ModelIntent>>
   list_unresolved_unknown(target::TimePoint now, std::size_t limit) override {
     if (limit == 0 || limit > 100) {
       return invalid();
@@ -372,7 +393,8 @@ public:
               transaction.exec("SELECT * FROM kiarabot.model_intents WHERE state=3 "
                                "AND (disposition IS NULL OR disposition=0) AND created_at<=$1 "
                                "ORDER BY created_at LIMIT $2",
-                               pqxx::params{timestamp(now), static_cast<int>(limit)});
+                               pqxx::params{timestamp(now - target::kModelUnknownResolutionWindow),
+                                            static_cast<int>(limit)});
           std::vector<target::ModelIntent> result;
           result.reserve(rows.size());
           for (const auto& row : rows) {

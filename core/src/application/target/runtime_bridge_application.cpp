@@ -45,9 +45,9 @@ Failure runtime_conflict_failure() {
 // Frozen plugin permission vocabulary from doc/03-plugin-sdk.md. It is a declaration vocabulary,
 // not an authorization decision; every Action/model/storage call is still authorized online.
 constexpr std::array<std::string_view, 12> kPluginPermissionVocabulary{
-    "message.read",  "message.send", "member.read",       "member.mute",
-    "member.kick",   "request.read", "request.approve",   "adapter.read",
-    "task.schedule", "task.read",    "model.chat",        "storage.namespace",
+    "message.read",  "message.send", "member.read",     "member.mute",
+    "member.kick",   "request.read", "request.approve", "adapter.read",
+    "task.schedule", "task.read",    "model.chat",      "storage.namespace",
 };
 constexpr std::string_view kPluginApiVersion = "kiarabot.plugin.v1";
 constexpr std::string_view kAdapterProtocolVersion = "kiarabot.v1";
@@ -710,6 +710,7 @@ public:
       return unauthenticated();
     }
     BridgePluginProfile snapshot;
+    snapshot.instance = instance;
     snapshot.permissions = profile->second.permissions;
     snapshot.installation = profile->second.installation;
     snapshot.features = profile->second.enabled_features;
@@ -1153,18 +1154,21 @@ private:
   Outcome<DeliveryReceipt> settle_delivery(const InstanceId& instance,
                                            const BridgeAttemptRef& supplied,
                                            std::optional<DeliveryAcknowledgement> acknowledgement) {
-    DeliveryKey delivery;
+    if (!identifier(supplied.event_id) || !identifier(supplied.attempt.value)) {
+      return stale_receipt(supplied);
+    }
     {
       std::lock_guard<std::mutex> lock(mutex_);
-      const auto entry = sinks_.find(instance.value);
-      if (entry == sinks_.end()) {
+      const auto sink = sinks_.find(instance.value);
+      if (sink == sinks_.end()) {
         return stale_receipt(supplied);
       }
-      const auto attempt = entry->second.attempts.find(supplied.attempt.value);
-      if (attempt == entry->second.attempts.end()) {
+      // Only a positive ACK may recover a retired routing entry. Renew and negative ACK retain
+      // their original stale behavior; no route is ever sufficient to authorize an attempt.
+      if ((!acknowledgement || !acknowledgement->accepted) &&
+          sink->second.attempts.find(supplied.attempt.value) == sink->second.attempts.end()) {
         return stale_receipt(supplied);
       }
-      delivery = attempt->second;
     }
     try {
       auto begun = transactions_.begin();
@@ -1175,17 +1179,26 @@ private:
       if (!work) {
         return internal_failure();
       }
-      auto sampled = work->current_time();
-      if (const auto* failure = std::get_if<Failure>(&sampled)) {
-        return *failure;
+      // Routing cache entries are intentionally erased on ACK. Resolve the complete attempt
+      // from the durable ledger, including for a duplicate, and retain its owner/target locks.
+      auto persisted = work->events().find_attempt(instance, supplied.event_id, supplied.attempt);
+      if (const auto* rejected = std::get_if<Failure>(&persisted)) {
+        return *rejected;
       }
-      const auto now = std::get<TimePoint>(sampled);
+      const auto& stored = std::get<std::optional<DeliveryAttempt>>(persisted);
+      if (!stored || stored->delivery.instance != instance ||
+          stored->delivery.event.event_id != supplied.event_id ||
+          stored->attempt != supplied.attempt) {
+        return stale_receipt(supplied);
+      }
       auto found = work->instances().find(instance);
       if (const auto* failure = std::get_if<Failure>(&found)) {
         return *failure;
       }
       const auto record = std::get<std::optional<PluginInstance>>(found);
       if (!record || !record->current || record->state != LifecycleState::Active ||
+          record->current->instance != instance || *record->current != stored->fence ||
+          supplied.fence.instance != instance ||
           record->current->runtime_epoch.value != supplied.fence.runtime_epoch.value ||
           record->current->execution_generation.value !=
               supplied.fence.execution_generation.value ||
@@ -1193,12 +1206,13 @@ private:
               supplied.fence.connection_generation.value) {
         return stale_receipt(supplied);
       }
-      DeliveryAttempt attempt;
-      attempt.delivery = delivery;
-      attempt.attempt = supplied.attempt;
-      attempt.fence = *record->current;
-      attempt.started_at = now;
-      attempt.lease_until = now;
+      // Sample after acquiring the ledger locks so lock wait cannot extend an expired lease.
+      auto sampled = work->current_time();
+      if (const auto* failure = std::get_if<Failure>(&sampled)) {
+        return *failure;
+      }
+      const auto now = std::get<TimePoint>(sampled);
+      const auto& attempt = *stored;
       Outcome<DeliveryReceipt> receipt = stale_receipt(supplied);
       if (acknowledgement) {
         acknowledgement->attempt = attempt;

@@ -74,6 +74,14 @@ x-contract-status:
     - setInstancePluginState
     - getInstanceConfiguration
     - updateInstanceConfiguration
+    - getHostMaintenance
+    - beginHostMaintenance
+    - resumeHostAdmission
+    - cancelHostOperation
+    - getAdapterBootstrapDelivery
+    - getPluginBootstrapDelivery
+    - reissueAdapterBootstrap
+    - reissuePluginBootstrap
   deprecated: []
 x-control-policy:
   application_port: typed-owner-rpc-v1
@@ -210,6 +218,449 @@ x-control-policy:
   limits: Login is limited to 30 attempts per normalized username per minute. At most 4096 unexpired authentication sessions, 10000 retained successful receipts and 1024 in-memory page cursors. Exceeding a limit returns RATE_LIMITED.
   audit: Every mutation, authorization denial and authentication failure records a stable outcome without credentials or message bodies. Audit failure prevents new effects.
 paths:
+  "/hosts/{hostId}/maintenance":
+    get:
+      operationId: getHostMaintenance
+      summary: Read the Host-owned admission version
+      x-contract-status: not_implemented
+      x-owner-service: host
+      x-owner-rpc: HostManagementService.GetMaintenance
+      x-permission: host.read
+      x-mutating: false
+      description: Read the Host-owned admission version. The fixed offline host registry
+        chooses the endpoint; clients cannot supply an endpoint.
+      parameters:
+      - name: hostId
+        in: path
+        required: true
+        schema:
+          type: string
+          minLength: 1
+      responses:
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+        '404':
+          "$ref": "#/components/responses/NotFound"
+        '409':
+          "$ref": "#/components/responses/Conflict"
+        '429':
+          "$ref": "#/components/responses/RateLimited"
+        '500':
+          "$ref": "#/components/responses/Internal"
+        '503':
+          "$ref": "#/components/responses/Unavailable"
+        '504':
+          "$ref": "#/components/responses/Timeout"
+        '200':
+          description: Authoritative scoped result; completion is determined by operation
+            state.
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/TargetHostGetMaintenanceResponse"
+    post:
+      operationId: beginHostMaintenance
+      summary: Close admission and drain the finite managed execution set
+      x-contract-status: not_implemented
+      x-owner-service: host
+      x-owner-rpc: HostManagementService.BeginMaintenance
+      x-permission: host.execute
+      x-mutating: true
+      description: Close admission and drain the finite managed execution set. Host
+        SQLite owns the operation; Runtime gate acknowledgement and known stopped evidence
+        are required for success. UNKNOWN remains BLOCKED. No arbitrary shell, launch
+        or daemon restart.
+      parameters:
+      - name: hostId
+        in: path
+        required: true
+        schema:
+          type: string
+          minLength: 1
+      - "$ref": "#/components/parameters/IdempotencyKey"
+      responses:
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+        '404':
+          "$ref": "#/components/responses/NotFound"
+        '409':
+          "$ref": "#/components/responses/Conflict"
+        '429':
+          "$ref": "#/components/responses/RateLimited"
+        '500':
+          "$ref": "#/components/responses/Internal"
+        '503':
+          "$ref": "#/components/responses/Unavailable"
+        '504':
+          "$ref": "#/components/responses/Timeout"
+        '200':
+          description: Authoritative scoped result; completion is determined by operation
+            state.
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/TargetHostMaintenanceResponse"
+        '202':
+          description: Durably accepted; query the original owner operation. Timeout
+            or disconnection does not cancel it.
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/TargetHostMaintenanceResponse"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/TargetHostBeginMaintenanceRequest"
+  "/hosts/{hostId}/resume":
+    post:
+      operationId: resumeHostAdmission
+      summary: Explicitly resume Host admission
+      x-contract-status: not_implemented
+      x-owner-service: host
+      x-owner-rpc: HostManagementService.ResumeAdmission
+      x-permission: host.execute
+      x-mutating: true
+      description: Explicitly resume Host admission. Require current version, no unresolved
+        UNKNOWN and Runtime gate coordination; do not recreate tasks, credentials or
+        old executions.
+      parameters:
+      - name: hostId
+        in: path
+        required: true
+        schema:
+          type: string
+          minLength: 1
+      - "$ref": "#/components/parameters/IdempotencyKey"
+      responses:
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+        '404':
+          "$ref": "#/components/responses/NotFound"
+        '409':
+          "$ref": "#/components/responses/Conflict"
+        '429':
+          "$ref": "#/components/responses/RateLimited"
+        '500':
+          "$ref": "#/components/responses/Internal"
+        '503':
+          "$ref": "#/components/responses/Unavailable"
+        '504':
+          "$ref": "#/components/responses/Timeout"
+        '200':
+          description: Authoritative scoped result; completion is determined by operation
+            state.
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/TargetHostMaintenanceResponse"
+        '202':
+          description: Durably accepted; query the original owner operation. Timeout
+            or disconnection does not cancel it.
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/TargetHostMaintenanceResponse"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/TargetHostResumeAdmissionRequest"
+  "/operations/host/{operationId}/cancel":
+    post:
+      operationId: cancelHostOperation
+      summary: Cancel only before admission changes or any Runtime gate request
+      x-contract-status: not_implemented
+      x-owner-service: host
+      x-owner-rpc: HostManagementService.CancelOperation
+      x-permission: host.execute
+      x-mutating: true
+      description: Cancel only before admission changes or any Runtime gate request.
+        Later cancellation is CONFLICT; stopped executions are not undone and resume
+        is a separate operation.
+      parameters:
+      - name: operationId
+        in: path
+        required: true
+        schema:
+          type: string
+          minLength: 1
+      - "$ref": "#/components/parameters/IdempotencyKey"
+      responses:
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+        '404':
+          "$ref": "#/components/responses/NotFound"
+        '409':
+          "$ref": "#/components/responses/Conflict"
+        '429':
+          "$ref": "#/components/responses/RateLimited"
+        '500':
+          "$ref": "#/components/responses/Internal"
+        '503':
+          "$ref": "#/components/responses/Unavailable"
+        '504':
+          "$ref": "#/components/responses/Timeout"
+        '200':
+          description: Authoritative scoped result; completion is determined by operation
+            state.
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/TargetRuntimeGetOperationResponse"
+        '202':
+          description: Durably accepted; query the original owner operation. Timeout
+            or disconnection does not cancel it.
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/TargetRuntimeGetOperationResponse"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/TargetHostCancelOperationRequest"
+  "/accounts/{accountId}/bootstrap-deliveries/{deliveryId}":
+    get:
+      operationId: getAdapterBootstrapDelivery
+      summary: Read secret-free delivery metadata for the exact account
+      x-contract-status: not_implemented
+      x-owner-service: runtime
+      x-owner-rpc: RuntimeService.GetBootstrapDelivery
+      x-permission: resource.read
+      x-mutating: false
+      description: Read secret-free delivery metadata for the exact account. Runtime
+        checks the stored owner resource; a different resource or invisible delivery
+        is NOT_FOUND.
+      parameters:
+      - name: accountId
+        in: path
+        required: true
+        schema:
+          type: string
+          minLength: 1
+      - name: deliveryId
+        in: path
+        required: true
+        schema:
+          type: string
+          minLength: 1
+      responses:
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+        '404':
+          "$ref": "#/components/responses/NotFound"
+        '409':
+          "$ref": "#/components/responses/Conflict"
+        '429':
+          "$ref": "#/components/responses/RateLimited"
+        '500':
+          "$ref": "#/components/responses/Internal"
+        '503':
+          "$ref": "#/components/responses/Unavailable"
+        '504':
+          "$ref": "#/components/responses/Timeout"
+        '200':
+          description: Authoritative scoped result; completion is determined by operation
+            state.
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/TargetGetBootstrapDeliveryResponse"
+  "/instances/{instanceId}/bootstrap-deliveries/{deliveryId}":
+    get:
+      operationId: getPluginBootstrapDelivery
+      summary: Read secret-free delivery metadata for the exact plugin instance
+      x-contract-status: not_implemented
+      x-owner-service: runtime
+      x-owner-rpc: RuntimeService.GetBootstrapDelivery
+      x-permission: resource.read
+      x-mutating: false
+      description: Read secret-free delivery metadata for the exact plugin instance.
+        Managed and externally-managed recipients are separate offline bindings.
+      parameters:
+      - name: instanceId
+        in: path
+        required: true
+        schema:
+          type: string
+          minLength: 1
+      - name: deliveryId
+        in: path
+        required: true
+        schema:
+          type: string
+          minLength: 1
+      responses:
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+        '404':
+          "$ref": "#/components/responses/NotFound"
+        '409':
+          "$ref": "#/components/responses/Conflict"
+        '429':
+          "$ref": "#/components/responses/RateLimited"
+        '500':
+          "$ref": "#/components/responses/Internal"
+        '503':
+          "$ref": "#/components/responses/Unavailable"
+        '504':
+          "$ref": "#/components/responses/Timeout"
+        '200':
+          description: Authoritative scoped result; completion is determined by operation
+            state.
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/TargetGetBootstrapDeliveryResponse"
+  "/accounts/{accountId}/bootstrap/reissue":
+    post:
+      operationId: reissueAdapterBootstrap
+      summary: Reissue a bootstrap for the adapter derived from the current account
+        binding
+      x-contract-status: not_implemented
+      x-owner-service: runtime
+      x-owner-rpc: RuntimeService.ReissueAdapterBootstrap
+      x-permission: account.manage
+      x-mutating: true
+      description: Reissue a bootstrap for the adapter derived from the current account
+        binding. Require expected credential version and new idempotency identity; revoke
+        old bootstrap/proof/refresh, store only digest, and deliver through the fixed
+        SecretDeliveryPort recipient.
+      parameters:
+      - name: accountId
+        in: path
+        required: true
+        schema:
+          type: string
+          minLength: 1
+      - "$ref": "#/components/parameters/IdempotencyKey"
+      responses:
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+        '404':
+          "$ref": "#/components/responses/NotFound"
+        '409':
+          "$ref": "#/components/responses/Conflict"
+        '429':
+          "$ref": "#/components/responses/RateLimited"
+        '500':
+          "$ref": "#/components/responses/Internal"
+        '503':
+          "$ref": "#/components/responses/Unavailable"
+        '504':
+          "$ref": "#/components/responses/Timeout"
+        '200':
+          description: Authoritative scoped result; completion is determined by operation
+            state.
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/TargetReissueBootstrapResponse"
+        '202':
+          description: Durably accepted; query the original owner operation. Timeout
+            or disconnection does not cancel it.
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/TargetReissueBootstrapResponse"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/TargetReissueBootstrapRequest"
+  "/instances/{instanceId}/bootstrap/reissue":
+    post:
+      operationId: reissuePluginBootstrap
+      summary: Reissue a bootstrap for the exact instance
+      x-contract-status: not_implemented
+      x-owner-service: runtime
+      x-owner-rpc: RuntimeService.ReissuePluginBootstrap
+      x-permission: plugin.manage
+      x-mutating: true
+      description: Reissue a bootstrap for the exact instance. A confirmed stopped gate
+        is required; Host-managed delivery targets its registered Host directory while
+        externally-managed delivery targets its own deployment. No ordinary REST secret
+        echo.
+      parameters:
+      - name: instanceId
+        in: path
+        required: true
+        schema:
+          type: string
+          minLength: 1
+      - "$ref": "#/components/parameters/IdempotencyKey"
+      responses:
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '403':
+          "$ref": "#/components/responses/Forbidden"
+        '404':
+          "$ref": "#/components/responses/NotFound"
+        '409':
+          "$ref": "#/components/responses/Conflict"
+        '429':
+          "$ref": "#/components/responses/RateLimited"
+        '500':
+          "$ref": "#/components/responses/Internal"
+        '503':
+          "$ref": "#/components/responses/Unavailable"
+        '504':
+          "$ref": "#/components/responses/Timeout"
+        '200':
+          description: Authoritative scoped result; completion is determined by operation
+            state.
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/TargetReissueBootstrapResponse"
+        '202':
+          description: Durably accepted; query the original owner operation. Timeout
+            or disconnection does not cancel it.
+          content:
+            application/json:
+              schema:
+                "$ref": "#/components/schemas/TargetReissueBootstrapResponse"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              "$ref": "#/components/schemas/TargetReissueBootstrapRequest"
   /health/live:
     servers: [{ url: / }]
     get:
@@ -1767,9 +2218,9 @@ paths:
         runtime: RuntimeService.GetOperation
         scheduler: SchedulerService.GetOperation
         model: ModelService.GetOperation
-      x-permission: resource.read
+        host: HostManagementService.GetOperation
       x-mutating: false
-      description: Target not implemented. Route to the named owner only. Current Identity
+      description: Target not implemented for the new host branch. Host scope is exactly one RESOURCE_HOST; route to its fixed registered endpoint. Route to the named owner only. Current Identity
         authorization is checked against the stored operation resource; client-supplied
         scope cannot relabel an operation. Missing or invisible operations return NOT_FOUND.
         No request or model response body is returned.
@@ -1783,6 +2234,7 @@ paths:
           - runtime
           - scheduler
           - model
+          - host
       - name: operationId
         in: path
         required: true
@@ -1825,6 +2277,7 @@ paths:
         runtime: resource.read
         scheduler: task.read
         model: resource.read
+        host: host.read
 
   /actions/metadata:
     get:
@@ -3555,6 +4008,183 @@ components:
       description: Query timed out (TIMEOUT); action outcome may remain unknown
       content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
   schemas:
+    TargetHostScope:
+      type: object
+      additionalProperties: false
+      required: [resources]
+      properties:
+        resources:
+          type: array
+          minItems: 1
+          maxItems: 1
+          items:
+            allOf:
+            - "$ref": "#/components/schemas/TargetResourceRef"
+            - type: object
+              properties:
+                kind: {type: string, enum: [RESOURCE_HOST]}
+      x-contract-status: not_implemented
+    TargetHostMaintenanceRecord:
+      type: object
+      additionalProperties: false
+      properties:
+        host_id:
+          type: string
+          minLength: 1
+        version:
+          "$ref": "#/components/schemas/TargetPositiveUint64"
+        admission:
+          type: string
+          enum:
+          - HOST_ADMISSION_OPEN
+          - HOST_ADMISSION_CLOSED
+        operation:
+          "$ref": "#/components/schemas/TargetOperationRef"
+        observed_at:
+          type: string
+          format: date-time
+      required:
+      - host_id
+      - version
+      - admission
+      - observed_at
+      x-contract-status: not_implemented
+    TargetHostGetMaintenanceResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        maintenance:
+          "$ref": "#/components/schemas/TargetHostMaintenanceRecord"
+      required:
+      - maintenance
+      x-contract-status: not_implemented
+    TargetHostBeginMaintenanceRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        expected_version:
+          "$ref": "#/components/schemas/TargetPositiveUint64"
+        grace_ms:
+          type: integer
+          minimum: 0
+          maximum: 10000
+          default: 10000
+      required:
+      - expected_version
+      x-contract-status: not_implemented
+    TargetHostResumeAdmissionRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        expected_version:
+          "$ref": "#/components/schemas/TargetPositiveUint64"
+      required:
+      - expected_version
+      x-contract-status: not_implemented
+    TargetHostMaintenanceResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        maintenance:
+          "$ref": "#/components/schemas/TargetHostMaintenanceRecord"
+        operation:
+          "$ref": "#/components/schemas/TargetOperation"
+      required:
+      - maintenance
+      - operation
+      x-contract-status: not_implemented
+    TargetHostCancelOperationRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        expected_version:
+          "$ref": "#/components/schemas/TargetPositiveUint64"
+        scope:
+          "$ref": "#/components/schemas/TargetHostScope"
+      required:
+      - expected_version
+      - scope
+      x-contract-status: not_implemented
+      description: Scope contains exactly one RESOURCE_HOST matching the stored operation
+        and registered endpoint.
+    TargetBootstrapDelivery:
+      type: object
+      additionalProperties: false
+      properties:
+        delivery_id:
+          type: string
+          minLength: 1
+        resource:
+          "$ref": "#/components/schemas/TargetResourceRef"
+        recipient_id:
+          type: string
+          minLength: 1
+        credential_version:
+          "$ref": "#/components/schemas/TargetPositiveUint64"
+        state:
+          type: string
+          enum:
+          - BOOTSTRAP_DELIVERY_PENDING
+          - BOOTSTRAP_DELIVERY_DELIVERED
+          - BOOTSTRAP_DELIVERY_UNKNOWN
+          - BOOTSTRAP_DELIVERY_REVOKED
+        operation:
+          "$ref": "#/components/schemas/TargetOperationRef"
+        observed_at:
+          type: string
+          format: date-time
+      required:
+      - delivery_id
+      - resource
+      - recipient_id
+      - credential_version
+      - state
+      - operation
+      - observed_at
+      x-contract-status: not_implemented
+      description: No secret/digest/path/environment value. DELIVERED proves installation
+        at a fixed registered recipient, never peer registration or process/configuration
+        success.
+    TargetGetBootstrapDeliveryResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        delivery:
+          "$ref": "#/components/schemas/TargetBootstrapDelivery"
+      required:
+      - delivery
+      x-contract-status: not_implemented
+    TargetReissueBootstrapRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        recipient_id:
+          type: string
+          minLength: 1
+        expected_credential_version:
+          "$ref": "#/components/schemas/TargetPositiveUint64"
+      required:
+      - recipient_id
+      - expected_credential_version
+      x-contract-status: not_implemented
+      description: Fixed offline recipient only. A managed peer must be stopped behind
+        a confirmed gate; old authorization is revoked and never restored. Replay does
+        not return plaintext.
+    TargetReissueBootstrapResponse:
+      type: object
+      additionalProperties: false
+      properties:
+        delivery:
+          "$ref": "#/components/schemas/TargetBootstrapDelivery"
+        operation:
+          "$ref": "#/components/schemas/TargetOperation"
+      required:
+      - delivery
+      - operation
+      x-contract-status: not_implemented
+      description: Ordinary REST strips internal bootstrap_credential, including first
+        issue and replay. Lost plaintext requires a fresh authorized reissue identity;
+        inspect the original operation first.
     ProcessProbe:
       type: object
       required: [state]
@@ -4066,6 +4696,10 @@ components:
       type: object
       additionalProperties: false
       properties:
+        bootstrap_recipient_id:
+          type: string
+          minLength: 1
+          description: Explicit opt-in to controlled delivery using an offline fixed recipient ID. Omitted preserves the existing create/bind path without new deployment side effects or delivery intent. Unknown/unavailable recipient is rejected before mutation. No path/URL/owner/env value is accepted.
         binding:
           "$ref": "#/components/schemas/TargetAdapterBinding"
         expected_version:
@@ -4095,6 +4729,8 @@ components:
       type: object
       additionalProperties: false
       properties:
+        delivery:
+          "$ref": "#/components/schemas/TargetBootstrapDelivery"
         binding:
           "$ref": "#/components/schemas/TargetAdapterBinding"
         operation:
@@ -4220,6 +4856,10 @@ components:
       type: object
       additionalProperties: false
       properties:
+        bootstrap_recipient_id:
+          type: string
+          minLength: 1
+          description: Explicit opt-in to controlled delivery using an offline fixed recipient ID. Omitted preserves the existing create/bind path without new deployment side effects or delivery intent. Unknown/unavailable recipient is rejected before mutation. No path/URL/owner/env value is accepted.
         installation_id:
           type: string
           minLength: 1
@@ -4243,6 +4883,8 @@ components:
       type: object
       additionalProperties: false
       properties:
+        delivery:
+          "$ref": "#/components/schemas/TargetBootstrapDelivery"
         instance:
           "$ref": "#/components/schemas/TargetInstanceRecord"
       x-contract-status: not_implemented

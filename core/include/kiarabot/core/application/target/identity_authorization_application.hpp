@@ -18,6 +18,17 @@ struct CheckAuthorizationReply {
   TimePoint checked_at;
   std::optional<Failure> denial;
 };
+struct CheckHostGateAuthorizationRequest {
+  IdentityRequestContext context;
+  VerifiedPeer recipient;
+  ResourceRef host;
+  Sha256Digest host_certificate;
+};
+struct CheckHostGateAuthorizationReply {
+  CheckAuthorizationReply decision;
+  ResourceVersion host_credential_version;
+  ResourceVersion host_principal_version;
+};
 // Online current authority only. The business owner must separately bind proof to its actual
 // inbound TLS direct peer with ordinary DelegationCryptoPort::verify before business execution.
 // Only Runtime/Host/Scheduler/Model may check their own methods/audience with explicit exact
@@ -28,6 +39,10 @@ public:
   virtual ~IdentityAuthorizationApplication() = default;
   virtual Outcome<CheckAuthorizationReply>
   check_authorization(const CheckAuthorizationRequest&) = 0;
+  // Only registered Runtime, for its fixed SetHostAdmissionGate method. Fingerprint is actual
+  // inbound Host TLS evidence; stored Host binding plus exact current HostExecute are required.
+  virtual Outcome<CheckHostGateAuthorizationReply>
+  check_host_gate_authorization(const CheckHostGateAuthorizationRequest&) = 0;
 };
 // Borrowed dependencies outlive all calls; each concurrent call owns separate readonly UoWs.
 Outcome<std::unique_ptr<IdentityAuthorizationApplication>>

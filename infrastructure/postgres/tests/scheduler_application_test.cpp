@@ -25,6 +25,7 @@ extern char** environ;
 
 #include "kiarabot/core/application/target/scheduler_service.hpp"
 #include "kiarabot/core/ports/target/scheduler_ports.hpp"
+#include "kiarabot/infrastructure/identity_crypto/sha256.hpp"
 #include "kiarabot/infrastructure/postgres/factories.hpp"
 
 namespace pg = kiarabot::infrastructure::postgres;
@@ -181,7 +182,8 @@ void run(std::uint16_t port, const std::filesystem::path& root,
   auto factory = std::move(std::get<std::unique_ptr<target::SchedulerUnitOfWorkFactory>>(opened));
   Zones zones;
   Ids ids;
-  target::SchedulerServiceDependencies dependencies{*factory, ids, zones};
+  kiarabot::infrastructure::identity_crypto::Sha256 digests;
+  target::SchedulerServiceDependencies dependencies{*factory, ids, zones, digests};
   target::SchedulerService service{dependencies};
   const auto ctx = context();
   const auto db_now = [&]() {
@@ -279,7 +281,7 @@ void run(std::uint16_t port, const std::filesystem::path& root,
   require(!std::holds_alternative<target::Failure>(reopened), "scheduler reopen failed");
   auto reopened_factory =
       std::move(std::get<std::unique_ptr<target::SchedulerUnitOfWorkFactory>>(reopened));
-  target::SchedulerServiceDependencies restarted{*reopened_factory, ids, zones};
+  target::SchedulerServiceDependencies restarted{*reopened_factory, ids, zones, digests};
   target::SchedulerService restarted_service{restarted};
   auto persisted = restarted_service.get_task(ctx, "task-1");
   require(std::holds_alternative<target::ScheduledTask>(persisted) &&
@@ -294,7 +296,7 @@ void run(std::uint16_t port, const std::filesystem::path& root,
   pqxx::nontransaction schema_check(inspection);
   const auto version =
       schema_check.exec("SELECT version FROM kiarabot.schema_versions").one_row()[0].as<int>();
-  require(version == 10, "scheduler schema version must be 10");
+  require(version == 11, "scheduler schema version must be 11");
   const auto columns = schema_check.exec(
       "SELECT count(*) FROM information_schema.columns WHERE table_schema='kiarabot' AND "
       "((table_name='tasks' AND column_name IN ('cancel_requested','reason','created_at','"

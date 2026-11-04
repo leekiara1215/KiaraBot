@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "kiarabot/core/application/target/runtime_action_application.hpp"
+#include "kiarabot/core/application/target/runtime_plugin_capability.hpp"
 #include "kiarabot/core/application/target/runtime_resource_application.hpp"
 #include "kiarabot/core/domain/target/bridge_rules.hpp"
 #include "kiarabot/core/domain/target/event_delivery.hpp"
@@ -213,17 +214,15 @@ public:
                                         const DeliverySink& sink) = 0;
   virtual void detach_plugin_delivery(const InstanceId& instance,
                                       ConnectionGeneration connection_generation) = 0;
-  // P09b: registered plugin profile facts needed by the storage frame ingress. Read-only and
-  // keyed by the authenticated instance; absent for unregistered/stale instances.
-  struct BridgePluginProfile {
-    std::vector<std::string> permissions;
-    std::optional<InstallationId> installation;
-    // P10k: negotiated bridge features (host.tasks.v1) and declared event capabilities
-    // (event.timer.triggered). Derived from the registered session's manifest, never client frames.
-    std::vector<std::string> features;
-    std::vector<std::string> subscriptions;
-  };
+  // Server-owned registration facts, keyed by the authenticated instance. Absent for stale or
+  // unregistered instances. The caller must first verify the current connection's fence/proof.
+  // Capability entry points fetch a fresh snapshot for each ingress and apply business admission
+  // before downstream I/O; an admitted snapshot is not a reusable connection authorization.
+  using BridgePluginProfile = PluginCapabilityProfile;
   virtual Outcome<BridgePluginProfile> plugin_profile(const InstanceId& instance) = 0;
+  Outcome<BridgePluginProfile> task_profile(const InstanceId& instance,
+                                            PluginTaskOperation operation);
+  Outcome<BridgePluginProfile> storage_profile(const InstanceId& instance);
   // P07 plugin Action surface (action.result.v1): submit/query/cancel scoped to the authenticated
   // plugin instance. The bridge resolves manifest permissions/features from the registered profile.
   virtual Outcome<ActionRecord> submit_plugin_action(const InstanceId& instance,

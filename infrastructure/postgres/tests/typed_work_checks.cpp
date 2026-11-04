@@ -905,6 +905,30 @@ void model(const DatabaseConfig& config) {
             !loaded_call->may_have_billed && loaded_call->provider_request_id == "req-1" &&
             loaded_call->latency_ms == 12,
         "P11 durable call facts lost");
+  // Query cutoff uses the caller DB sample exactly, not wall-clock time in the adapter.
+  auto expired_started = *loaded_call;
+  expired_started.logical_call_id = "p11-started-35s";
+  expired_started.created_at = call_now - std::chrono::seconds{35};
+  expired_started.observed_at = expired_started.created_at;
+  expired_started.may_have_billed = true;
+  take(work->model_calls().insert(expired_started));
+  auto recent_started = expired_started;
+  recent_started.logical_call_id = "p11-started-34s";
+  recent_started.created_at = call_now - std::chrono::seconds{34};
+  recent_started.observed_at = recent_started.created_at;
+  take(work->model_calls().insert(recent_started));
+  auto unknown_29 = *loaded_call;
+  unknown_29.logical_call_id = "p11-unknown-29d";
+  unknown_29.state = target::ModelCallState::Unknown;
+  unknown_29.created_at = call_now - std::chrono::hours{24 * 29};
+  unknown_29.observed_at = unknown_29.created_at;
+  unknown_29.may_have_billed = true;
+  take(work->model_calls().insert(unknown_29));
+  auto unknown_30 = unknown_29;
+  unknown_30.logical_call_id = "p11-unknown-30d";
+  unknown_30.created_at = call_now - target::kModelUnknownResolutionWindow;
+  unknown_30.observed_at = unknown_30.created_at;
+  take(work->model_calls().insert(unknown_30));
   auto unknown_call = *loaded_call;
   unknown_call.logical_call_id = "p11-unknown-call";
   unknown_call.state = target::ModelCallState::Unknown;
@@ -921,11 +945,62 @@ void model(const DatabaseConfig& config) {
                       return value.logical_call_id == "p11-unknown-call";
                     }),
         "P11 stale UNKNOWN projection failed");
+  const auto contains_call = [](const auto& values, std::string_view id) {
+    return std::any_of(values.begin(), values.end(), [&](const target::ModelIntent& value) {
+      return value.logical_call_id == id;
+    });
+  };
+  check(!contains_call(unresolved, "p11-unknown-29d") &&
+            contains_call(unresolved, "p11-unknown-30d"),
+        "P11 real UNKNOWN query violated the 29/30-day boundary");
+  const auto expired =
+      take(work->model_calls().list_expired_started(call_now - std::chrono::seconds{35}, 10));
+  check(contains_call(expired, "p11-started-35s") && !contains_call(expired, "p11-started-34s") &&
+            !contains_call(expired, "p11-unknown-30d"),
+        "P11 expired STARTED query violated 35-second/state boundary");
+  auto recovered = expired_started;
+  recovered.state = target::ModelCallState::Unknown;
+  recovered.may_have_billed = true;
+  recovered.usage_known = false;
+  recovered.observed_at = call_now;
+  recovered.error = target::ErrorCode::Timeout;
+  ++recovered.version.value;
+  take(work->model_calls().save(recovered, expired_started.version));
+  check(target::model_unknown_resolution_due(unknown_30, call_now) &&
+            !target::model_unknown_resolution_due(unknown_29, call_now),
+        "P11 Core UNKNOWN window disagrees with real query");
+  take(work->model_calls().save(
+      target::model_abandon_unknown(unknown_30, call_now, "p11-maintenance"), unknown_30.version));
   const auto stale_call =
       take(work->model_calls().find({unknown_call.owner, unknown_call.logical_call_id}));
   const auto abandoned = target::model_abandon_unknown(*stale_call, call_now, "p11-maintenance");
   take(work->model_calls().save(abandoned, stale_call->version));
   commit(*work);
+
+  // A late Provider still owns version1; recovery's version2 wins, including under a new UoW.
+  work = take(factory->begin());
+  auto late_success = expired_started;
+  late_success.state = target::ModelCallState::Succeeded;
+  ++late_success.version.value;
+  expect(work->model_calls().save(late_success, expired_started.version),
+         target::ErrorCode::Conflict);
+  rollback_rejected(*work);
+  work = take(factory->begin());
+  const auto recovered_call =
+      take(work->model_calls().find({expired_started.owner, expired_started.logical_call_id}));
+  check(recovered_call && recovered_call->state == target::ModelCallState::Unknown &&
+            recovered_call->version.value == 2 && recovered_call->may_have_billed,
+        "P11 stale Provider CAS overwrote STARTED recovery");
+  const auto kept_29 =
+      take(work->model_calls().find({unknown_29.owner, unknown_29.logical_call_id}));
+  const auto disposed_30 =
+      take(work->model_calls().find({unknown_30.owner, unknown_30.logical_call_id}));
+  check(kept_29 && kept_29->state == target::ModelCallState::Unknown &&
+            kept_29->disposition == target::ModelCallDisposition::Unspecified && disposed_30 &&
+            disposed_30->state == target::ModelCallState::Failed &&
+            disposed_30->disposition == target::ModelCallDisposition::Abandoned,
+        "P11 real 29-day retention/30-day disposition did not persist");
+  work->rollback();
 
   work = take(factory->begin());
   const auto resolved_call =

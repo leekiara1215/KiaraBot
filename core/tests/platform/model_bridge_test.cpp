@@ -22,6 +22,7 @@
 #include <openssl/x509v3.h>
 
 #include "kiarabot/core/application/target/runtime_bridge_application.hpp"
+#include "kiarabot/core/application/target/runtime_storage_application.hpp"
 #include "kiarabot/core/application/target/runtime_task_application.hpp"
 #include "kiarabot/core/ports/target/runtime_model.hpp"
 #include "kiarabot/core/runtime/platform/runtime_bridge.hpp"
@@ -106,6 +107,9 @@ public:
   std::vector<std::string> subscriptions;
   std::vector<std::string> profile_permissions{"task.schedule", "task.read"};
   std::vector<std::string> registered_features;
+  target::ErrorCode refresh_failure = target::ErrorCode::Unauthenticated;
+  bool mismatched_profile = false;
+  std::vector<std::string> cleanup;
   int registrations = 0;
   int config_mutations = 0;
   target::BridgeAuthorization authorization;
@@ -149,7 +153,7 @@ public:
   target::Outcome<target::BridgeAuthorization>
   refresh(target::BridgePeerKind, const target::InstanceId&, const target::BridgeAuthorization&,
           const target::BridgeRefreshRequest&) override {
-    return bridge_failure(target::ErrorCode::Unauthenticated);
+    return bridge_failure(refresh_failure);
   }
   target::Status authorize_frame(target::BridgePeerKind kind,
                                  const target::BridgeAuthorization& current,
@@ -164,6 +168,8 @@ public:
   }
   target::Status disconnect(target::BridgePeerKind, const target::InstanceId&,
                             target::ConnectionGeneration) override {
+    cleanup.push_back("disconnect");
+    require(!delivery_sink && !shutdown_sink, "sinks detached before disconnect");
     return std::monostate{};
   }
   target::Outcome<target::BridgeEventAck> ingest_event(const target::InstanceId&,
@@ -184,6 +190,7 @@ public:
                               target::ConnectionGeneration generation) override {
     if (instance == authorization.fence.instance &&
         generation == authorization.fence.connection_generation) {
+      cleanup.push_back("delivery");
       delivery_sink.reset();
     }
   }
@@ -192,9 +199,10 @@ public:
     if (grant_model_chat) {
       permissions.push_back("model.chat");
     }
-    return BridgePluginProfile{std::move(permissions), installation,
-                               registered_features.empty() ? features : registered_features,
-                               subscriptions};
+    return BridgePluginProfile{
+        std::move(permissions), installation,
+        registered_features.empty() ? features : registered_features, subscriptions,
+        mismatched_profile ? target::InstanceId{"another-instance"} : authorization.fence.instance};
   }
   target::Outcome<target::ActionRecord>
   submit_plugin_action(const target::InstanceId&, const target::BridgeActionSubmit&) override {
@@ -241,6 +249,7 @@ public:
                             target::ConnectionGeneration generation) override {
     if (kind == target::BridgePeerKind::Plugin && instance == authorization.fence.instance &&
         generation == authorization.fence.connection_generation) {
+      cleanup.push_back("shutdown");
       shutdown_sink.reset();
     }
   }
@@ -372,11 +381,52 @@ struct FakeTaskPort final : target::SchedulerTaskPort {
   }
 };
 
+struct CountingStorage final : target::RuntimeStorageApplication {
+  int calls = 0;
+  target::Failure rejected() {
+    ++calls;
+    return bridge_failure(target::ErrorCode::CapabilityNotSupported);
+  }
+  target::Outcome<target::StorageEntryResult>
+  get_storage(const target::StorageGetRequest&) override {
+    return rejected();
+  }
+  target::Outcome<target::StorageEntryResult>
+  set_storage(const target::StorageSetRequest&) override {
+    return rejected();
+  }
+  target::Outcome<target::StorageDeleteResult>
+  delete_storage(const target::StorageDeleteRequest&) override {
+    return rejected();
+  }
+  target::Outcome<target::StorageEntryResult>
+  compare_and_set_storage(const target::StorageCompareAndSetRequest&) override {
+    return rejected();
+  }
+  target::Outcome<target::NamespaceMutation>
+  create_shared_namespace(const target::CreateSharedNamespaceRequest&) override {
+    return rejected();
+  }
+  target::Outcome<target::NamespaceView>
+  get_shared_namespace(const target::GetSharedNamespaceQuery&) override {
+    return rejected();
+  }
+  target::Outcome<target::SharedMembersMutation>
+  set_shared_members(const target::SetSharedMembersRequest&) override {
+    return rejected();
+  }
+  target::Outcome<target::SharedMembersMutation>
+  disable_shared_namespace(const target::DisableSharedNamespaceRequest&) override {
+    return rejected();
+  }
+};
+
 struct Fixture {
   TlsMaterial tls = make_tls_material();
   FakeBridge app;
   FakeModel model;
   FakeTaskPort tasks;
+  CountingStorage storage;
   std::unique_ptr<target::RuntimeTaskApplication> task_app;
   std::unique_ptr<wire::PluginBridge::Service> service;
   std::unique_ptr<grpc::Server> server;
@@ -384,7 +434,8 @@ struct Fixture {
   std::shared_ptr<grpc::Channel> channel;
   std::unique_ptr<wire::PluginBridge::Stub> stub;
 
-  explicit Fixture(bool grant_model_chat = true, bool task_provider = true) {
+  explicit Fixture(bool grant_model_chat = true, bool task_provider = true,
+                   bool storage_provider = false) {
     app.grant_model_chat = grant_model_chat;
     app.installation = target::InstallationId{"55555555-5555-4555-8555-555555555555"};
     app.features = {"host.model.v1", "host.tasks.v1"};
@@ -392,7 +443,8 @@ struct Fixture {
     task_app = std::make_unique<target::RuntimeTaskApplication>(
         target::RuntimeTaskApplicationDependencies{task_provider ? &tasks : nullptr});
     auto built = kiarabot::core::platform::make_plugin_bridge(
-        app, kiarabot::core::platform::PluginBridgeOptions{nullptr, &model, task_app.get()});
+        app, kiarabot::core::platform::PluginBridgeOptions{storage_provider ? &storage : nullptr,
+                                                           &model, task_app.get()});
     require(std::holds_alternative<std::unique_ptr<wire::PluginBridge::Service>>(built),
             "make_plugin_bridge");
     service = std::move(std::get<std::unique_ptr<wire::PluginBridge::Service>>(built));
@@ -532,23 +584,89 @@ struct PluginConnection {
     }
     return response.host_response();
   }
-  void close() {
+  void close(grpc::StatusCode expected = grpc::StatusCode::OK) {
     stream->WritesDone();
     wire::CoreToPlugin ignored;
     while (stream->Read(&ignored)) {
     }
     const auto status = stream->Finish();
-    if (!status.ok()) {
+    if (status.error_code() != expected) {
       std::cerr << "model bridge case=" << case_name
                 << " phase=close grpc_code=" << static_cast<int>(status.error_code()) << '\n';
     }
-    require(status.ok(), "clean stream close");
+    require(status.error_code() == expected,
+            "stream completion preserves expected transport status");
     require(!application.delivery_sink && !application.shutdown_sink,
             "connection sinks detach before stream close completes");
+    require(application.cleanup == std::vector<std::string>{"delivery", "shutdown", "disconnect"},
+            "delivery detach then shutdown detach then disconnect");
     stream.reset();
     context.reset();
   }
 };
+
+std::string raw_field(unsigned int tag, bool length_delimited = true) {
+  unsigned int value = (tag << 3) | (length_delimited ? 2U : 0U);
+  std::string bytes;
+  while (value > 127U) {
+    bytes.push_back(static_cast<char>((value & 127U) | 128U));
+    value >>= 7;
+  }
+  bytes.push_back(static_cast<char>(value));
+  bytes.push_back(length_delimited ? '\0' : '\1');
+  return bytes;
+}
+
+void host_request_shapes() {
+  Fixture fixture(true, true, true);
+  PluginConnection connection(fixture, "host-request-shapes", {"model.chat", "task.read"},
+                              {"host.model.v1", "host.tasks.v1"});
+  auto metadata = connection.task_request("get");
+  metadata.clear_operation();
+  const auto check = [&](const std::string& raw, wire::ErrorCode expected) {
+    wire::HostRequest parsed;
+    require(parsed.ParseFromString(raw), "raw HostRequest parse");
+    const auto response = connection.host(std::move(parsed));
+    require(response.has_error() && response.error().code() == expected &&
+                !response.error().retryable() &&
+                response.result_case() == wire::HostResponse::RESULT_NOT_SET &&
+                response.request_id() == metadata.request_id() &&
+                response.error().request_id() == metadata.request_id() &&
+                response.error().trace_id() == metadata.trace_id(),
+            "operation shape refusal is correlated and has no result");
+    require(fixture.model.attempts == 0 && fixture.tasks.create_calls == 0 &&
+                fixture.tasks.get_calls == 0 && fixture.tasks.cancel_calls == 0 &&
+                fixture.storage.calls == 0,
+            "shape refusal never invokes any downstream port");
+  };
+  const auto envelope = metadata.SerializeAsString();
+  check(envelope, wire::INVALID_ARGUMENT);
+  check(envelope + raw_field(128), wire::INVALID_ARGUMENT);
+  check(envelope + raw_field(100), wire::CAPABILITY_NOT_SUPPORTED);
+  check(envelope + raw_field(100, false), wire::INVALID_ARGUMENT);
+  check(envelope + raw_field(100) + raw_field(101), wire::INVALID_ARGUMENT);
+  check(envelope + raw_field(100) + raw_field(100), wire::INVALID_ARGUMENT);
+  check(envelope + raw_field(10) + raw_field(100), wire::INVALID_ARGUMENT);
+  check(envelope + raw_field(16) + raw_field(100), wire::INVALID_ARGUMENT);
+  // An authenticated stream remains usable after refusal; ordinary metadata is ignored.
+  wire::HostRequest accepted;
+  require(accepted.ParseFromString(connection.chat_request("shape-valid").SerializeAsString() +
+                                   raw_field(128)),
+          "known operation with future metadata parse");
+  const auto success = connection.host(std::move(accepted));
+  require(success.has_model_chat() && !success.has_error() && fixture.model.attempts == 1,
+          "known operation continues after shape refusals");
+  wire::HostRequest last_wins;
+  require(last_wins.ParseFromString(connection.chat_request("not-dispatched").SerializeAsString() +
+                                    connection.task_request("get").SerializeAsString()),
+          "standard repeated known oneof parse");
+  require(last_wins.has_task_get(), "known protobuf oneof uses last-one-wins");
+  const auto missing = connection.host(std::move(last_wins));
+  require(missing.has_error() && missing.error().code() == wire::NOT_FOUND &&
+              fixture.tasks.get_calls == 1 && fixture.model.attempts == 1,
+          "only final known operation dispatches");
+  connection.close();
+}
 
 void run() {
   Fixture fixture;
@@ -649,6 +767,12 @@ void run() {
   require(denied_task.has_error() && denied_task.error().code() == wire::PERMISSION_DENIED &&
               !denied_task.error().retryable(),
           "Scheduler authorization denial maps to stable wire PERMISSION_DENIED");
+  const auto read_calls = task_fixture.tasks.get_calls;
+  task_fixture.app.profile_permissions.clear();
+  const auto revoked_task = tasks.host(tasks.task_request("get"));
+  require(revoked_task.has_error() && revoked_task.error().code() == wire::PERMISSION_DENIED &&
+              task_fixture.tasks.get_calls == read_calls,
+          "each ingress reads current server grants instead of reusing an admitted profile");
   tasks.close();
 
   // A registered plugin without task.schedule cannot create tasks even with host.tasks.v1.
@@ -687,6 +811,68 @@ void run() {
           "missing host.tasks.v1 feature rejected before the task port");
   no_feature.close();
 
+  Fixture no_subscription_fixture;
+  no_subscription_fixture.app.subscriptions.clear();
+  PluginConnection no_subscription(no_subscription_fixture, "task-subscription-missing",
+                                   {"task.schedule"}, {"host.tasks.v1"});
+  const auto unsubscribed = no_subscription.host(no_subscription.task_request("create"));
+  require(unsubscribed.has_error() && unsubscribed.error().code() == wire::PERMISSION_DENIED &&
+              no_subscription_fixture.tasks.create_calls == 0,
+          "missing TimerTriggered subscription denied without downstream side effects");
+  no_subscription.close();
+
+  Fixture mismatched_fixture;
+  mismatched_fixture.app.mismatched_profile = true;
+  PluginConnection mismatched(mismatched_fixture, "task-profile-identity-mismatch",
+                              {"task.schedule"}, {"host.tasks.v1"}, {"event.timer.triggered"});
+  const auto wrong_owner = mismatched.host(mismatched.task_request("create"));
+  require(wrong_owner.has_error() && wrong_owner.error().code() == wire::UNAUTHENTICATED &&
+              mismatched_fixture.tasks.create_calls == 0,
+          "profile binding mismatch denies before SchedulerTaskPort");
+  // Business ingress refusal is a HostResponse and preserves the connection for a heartbeat.
+  wire::PluginToCore heartbeat;
+  heartbeat.mutable_fence()->CopyFrom(mismatched.authorization.fence());
+  heartbeat.set_connection_proof(mismatched.authorization.proof());
+  heartbeat.mutable_heartbeat();
+  require(mismatched.stream->Write(heartbeat), "heartbeat after business denial");
+  wire::CoreToPlugin heartbeat_ack;
+  require(mismatched.stream->Read(&heartbeat_ack) && heartbeat_ack.has_heartbeat_ack(),
+          "business rejection keeps the stream alive");
+  mismatched.close();
+
+  Fixture refresh_unavailable_fixture;
+  refresh_unavailable_fixture.app.refresh_failure = target::ErrorCode::UpstreamUnavailable;
+  PluginConnection refresh_unavailable(refresh_unavailable_fixture, "refresh-dependency-failure");
+  wire::PluginToCore refresh_frame;
+  refresh_frame.mutable_fence()->CopyFrom(refresh_unavailable.authorization.fence());
+  refresh_frame.set_connection_proof(refresh_unavailable.authorization.proof());
+  auto* refresh = refresh_frame.mutable_refresh_authorization();
+  refresh->set_request_id("cccccccc-cccc-4ccc-8ccc-cccccccccccc");
+  refresh->mutable_fence()->CopyFrom(refresh_unavailable.authorization.fence());
+  refresh->set_proof(refresh_unavailable.authorization.proof());
+  refresh->set_refresh_credential(refresh_unavailable.authorization.refresh_credential());
+  refresh->set_refresh_generation(refresh_unavailable.authorization.refresh_generation());
+  require(refresh_unavailable.stream->Write(refresh_frame), "write refresh request");
+  wire::CoreToPlugin refresh_response;
+  // Baseline characterization: the existing refresh error builder supplies an empty trace_id,
+  // which the shared codec maps to INTERNAL. Preserve this existing response while retaining the
+  // original dependency failure as the terminal gRPC status; this is not the desired contract.
+  require(refresh_unavailable.stream->Read(&refresh_response) &&
+              refresh_response.has_authorization_result() &&
+              refresh_response.authorization_result().has_error() &&
+              refresh_response.authorization_result().error().code() == wire::INTERNAL,
+          "baseline refresh error response precedes dependency transport termination");
+  refresh_unavailable.close(grpc::StatusCode::UNAVAILABLE);
+
+  Fixture malformed_ack_fixture;
+  PluginConnection malformed_ack(malformed_ack_fixture, "malformed-ack-terminates");
+  wire::PluginToCore ack_frame;
+  ack_frame.mutable_fence()->CopyFrom(malformed_ack.authorization.fence());
+  ack_frame.set_connection_proof(malformed_ack.authorization.proof());
+  ack_frame.mutable_event_ack()->set_accepted(true);
+  require(malformed_ack.stream->Write(ack_frame), "write malformed ACK");
+  malformed_ack.close(grpc::StatusCode::INVALID_ARGUMENT);
+
   // Missing task port/provider -> fail closed, never a fabricated task.
   Fixture fail_closed_fixture(true, false);
   PluginConnection fail_closed(fail_closed_fixture, "task-provider-missing",
@@ -703,6 +889,7 @@ void run() {
 
 int main() {
   try {
+    host_request_shapes();
     run();
   } catch (const std::exception& error) {
     std::cerr << error.what() << '\n';

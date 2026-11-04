@@ -48,7 +48,8 @@ class ArchitectureTest(unittest.TestCase):
             inner.mkdir(parents=True)
             source = inner / 'service.cpp'
             for include in ('kiarabot/v1/identity.pb.h', 'google/protobuf/struct.pb.h',
-                            'grpcpp/grpcpp.h', 'nlohmann/json.hpp', 'pqxx/pqxx', 'libpq-fe.h'):
+                            'grpcpp/grpcpp.h', 'nlohmann/json.hpp', 'pqxx/pqxx', 'libpq-fe.h',
+                            'openssl/sha.h', 'openssl/evp.h'):
                 source.write_text(f'#include <{include}>\n')
                 with self.subTest(include=include):
                     self.assertTrue(list(GATE.inner_errors(root)))
@@ -63,9 +64,12 @@ class ArchitectureTest(unittest.TestCase):
             inner = root / 'control/api/src/application/target'
             inner.mkdir(parents=True)
             source = inner / 'application.cpp'
-            source.write_text('#include "kiarabot/control/application/target/application.hpp"\n')
+            source.write_text('#include "kiarabot/control/application/target/application.hpp"\n'
+                              '#include "kiarabot/control/application/target/readiness.hpp"\n')
             self.assertEqual(list(GATE.inner_errors(root)), [])
-            for include in ('nlohmann/json.hpp', 'kiarabot/v1/runtime.pb.h', 'pqxx/pqxx'):
+            for include in ('nlohmann/json.hpp', 'kiarabot/v1/runtime.pb.h', 'pqxx/pqxx',
+                            'kiarabot/control/target/https_endpoint.hpp',
+                            'kiarabot/control/target/readiness.hpp'):
                 source.write_text(f'#include <{include}>\n')
                 self.assertTrue(list(GATE.inner_errors(root)))
 
@@ -79,13 +83,63 @@ class ArchitectureTest(unittest.TestCase):
     def test_transitive_private_outer_link_is_rejected(self):
         graph = {}
         for name in ('control', 'identity', 'runtime', 'plugin_host', 'scheduler', 'model'):
-            graph[f'kiarabot_{name}_application'] = {'TYPE': ['STATIC_LIBRARY']}
+            graph[f'kiarabot_{name}_application'] = {
+                'TYPE': ['STATIC_LIBRARY'], 'KIARABOT_LAYER': ['INNER']}
         self.assertEqual(GATE.link_errors(graph, require_services=False), [])
         graph['kiarabot_identity_application']['LINK_LIBRARIES'] = ['$<LINK_ONLY:helper>']
         graph['helper'] = {'LINK_LIBRARIES': ['protobuf::libprotobuf']}
         self.assertTrue(GATE.link_errors(graph, require_services=False))
         graph['helper'] = {'KIARABOT_REFERENCE': ['TRUE']}
         self.assertTrue(GATE.link_errors(graph, require_services=False))
+
+    def test_arbitrary_business_target_must_register_its_layer(self):
+        for source, directory in (
+                ('src/application/target/new_use_case.cpp', '/repo/core'),
+                ('/repo/core/src/domain/target/rules.cpp', '/repo'),
+                ('/repo/core/include/kiarabot/core/ports/target/new.hpp', '/repo'),
+                ('src/application/target/new.cpp', '/repo/control/api')):
+            with self.subTest(source=source):
+                graph = {'new_business_name': {'SOURCE_DIR': [directory], 'SOURCES': [source]}}
+                errors = GATE.link_errors(graph, require_services=False)
+                self.assertTrue(any('missing INNER layer' in error for error in errors))
+                # Reference marking cannot conceal target business sources.
+                graph['new_business_name']['KIARABOT_REFERENCE'] = ['TRUE']
+                self.assertTrue(any('missing INNER layer' in error for error in
+                                    GATE.link_errors(graph, require_services=False)))
+                graph['new_business_name'].pop('KIARABOT_REFERENCE')
+                graph['new_business_name']['KIARABOT_LAYER'] = ['INNER']
+                self.assertEqual(GATE.link_errors(graph, require_services=False), [])
+                graph['new_business_name']['LINK_LIBRARIES'] = ['$<LINK_ONLY:helper>']
+                graph['helper'] = {'INTERFACE_LINK_LIBRARIES': ['OpenSSL::Crypto']}
+                self.assertTrue(any('crypto' in error for error in
+                                    GATE.link_errors(graph, require_services=False)))
+
+    def test_inner_library_name_may_contain_hyphens(self):
+        graph = {'kiarabot-new-business': {'TYPE': ['STATIC_LIBRARY'],
+                                           'KIARABOT_LAYER': ['INNER']}}
+        self.assertEqual(GATE.link_errors(graph, require_services=False), [])
+
+    def test_registered_inner_targets_cannot_leak_interface_include_paths(self):
+        graph = {'rules': {'KIARABOT_LAYER': ['INNER'],
+                           'INTERFACE_INCLUDE_DIRECTORIES': ['/repo/generated']}}
+        self.assertTrue(GATE.link_errors(graph, require_services=False))
+
+    def test_production_infrastructure_allowed_but_reference_still_rejected(self):
+        graph = {f'kiarabot-{service}': {'TYPE': ['EXECUTABLE']} for service in GATE.SERVICES}
+        graph['rules'] = {'KIARABOT_LAYER': ['INNER']}
+        graph['kiarabot-plugin-host']['LINK_LIBRARIES'] = ['kiarabot_host_journal']
+        graph['kiarabot-model']['LINK_LIBRARIES'] = ['kiarabot_model_http_provider']
+        graph['kiarabot_host_journal'] = {'LINK_LIBRARIES': ['SQLite3::SQLite3']}
+        graph['kiarabot_model_http_provider'] = {'LINK_LIBRARIES': ['CURL::libcurl']}
+        self.assertEqual(GATE.link_errors(graph), [])
+        graph['kiarabot_host_journal']['KIARABOT_REFERENCE'] = ['TRUE']
+        self.assertTrue(any('production links reference' in error for error in
+                            GATE.link_errors(graph)))
+        graph['kiarabot_host_journal'].pop('KIARABOT_REFERENCE')
+        graph['kiarabot-model']['LINK_LIBRARIES'].append('historical')
+        graph['historical'] = {'SOURCES': ['/repo/core/reference/src/old.cpp']}
+        self.assertTrue(any('production links reference' in error for error in
+                            GATE.link_errors(graph)))
 
     def test_empty_or_unclassified_stage_fails(self):
         self.assertTrue(GATE.stage_errors({'tests': []}, 'p03'))

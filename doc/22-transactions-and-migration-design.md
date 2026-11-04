@@ -1,10 +1,18 @@
 # KiaraBot 事务、数据模型与初始化设计
 
-- 版本：v1.0（设计定稿，未实现）
+- 版本：v1.0（2026-11-01 设计定稿快照）
 - 日期：2026-11-01
 - 来源：用户授权助手决定后续细节，并明确开发阶段无需历史兼容包袱
 - 依据：[方向基线](19-architecture-direction-baseline.md)、[总览](20-detailed-architecture-design.md)、[通信与方法](21-service-contract-design.md)
 - 范围：目标关系模型、原子组、恢复、初始化及验收；不执行 DDL、迁移、清库或修改实现
+
+## 阅读说明（2026-11-04）
+
+本文关系模型、原子组和初始化设计保留 2026-11-01 定稿语境；页首“未实现”与正文的
+未来式不代表当前全部未实现。后附日期章节描述局部实施，当前 Repository/UoW 职责见
+[Core](02-core.md)、[基础设施](05-infrastructure.md)，实现与真实依赖验证的差别见
+[阶段证据矩阵](27-phase-exit-evidence.md)。实际 schema 以基础设施定义为准，线协议以
+`proto/`、`api/` 为准，不由设计表宣告实现完成或允许清理数据。
 
 ## 1. 统一事务决策（DD04.1）
 
@@ -409,3 +417,41 @@ CreateTask 幂等由 task_id/idempotency receipt 保证，COMPLETED 仅证明 Ti
 随后用户明确本机旧 P14 业务数据无需保留，允许新版切换验收完成后完全删除旧数据。本轮因此采用新版空库初始化、真实链验收、入口切换、移除旧项目及独占卷的替换流程，不实施存量行/旧回执格式转换，也不维护旧 writer 重试服务。该授权只针对本次明确指定的可丢弃旧部署；不是对其他部署跳过保留窗口、删除未知操作或自动清库的授权。新的 owner 库及 QQ/Provider 独立环境材料须排除在旧项目清理之外。
 
 Runtime mutate 的 effect 返回失败时，先回滚整个业务 UoW，再用独立短 UoW 尝试追加拒绝审计。crypto/ID 等纯端口在写行后失败也不得留下资源、operation、命令或半份回执；拒绝审计失败或提交未知保留原命令错误，因为业务事务已回滚。
+
+
+## Runtime 资源用例拆分的事务边界（2026-11-04）
+
+以下为本轮实现的事务约束，本机验证范围和剩余检查见 [证据矩阵](27-phase-exit-evidence.md)。
+
+资源应用的兼容 facade 不持有业务共享可变上下文。账号/适配器与安装/实例/配置用例沿用各自 Runtime UoW，成功状态、收据、必要审计、operation 与必要 Host outbox 仍在原本地原子组内；Repository 不提交事务。生命周期仍按观察 UoW → 事务外参与者 → 应用 UoW 推进，BLOCKED/UNKNOWN、重删身份和恢复不复活凭据/任务/租约的语义不变。Host 回执与观察各用短 UoW，Timer 事件与唯一 owner target 同 UoW。
+
+RegisterAdapter 的时间/认证/直接 peer 前置校验在只读 UoW 完成并回滚，在线授权在其后执行，写入阶段另开 UoW 重读资源事实与版本并重核时间/认证，避免网络等待占用事务及使用授权期间陈旧的绑定。未知提交仍返回原身份查询恢复建议，不自动重发业务副作用；本轮不改 schema、初始化和保留窗口。
+
+
+## WS journal 的实际事务与版本（2026-11-04，WS-02/03）
+
+当前新空库版本为Identity15、Runtime19、Scheduler11、Model10。只有R/S/M添加
+operation_observation_head、operation_observations和participants关系；Identity未变。
+真实PG16.4测得对象计数162/91/85和descriptor已写schema/manifest.hpp；不自动迁移或重置现有库。
+
+CommonWork在live operation save和实际participants变化时登记dirty ID，提交前读取最终安全快照，
+最后取得head行锁分配事务内提交有序sequence，再与业务行、回执和审计同一次commit。
+同UoW同ID只发布最终状态；回执编码/重放不登记dirty，Rollback不发通知，Unknown沿原身份恢复。
+head锁之后不再取业务/配额锁，禁止用非事务sequence分配次序冒充提交序。journal独立于live行保留，
+不级联到已清理operation；安全快照无正文、配置、凭据或自由错误文本。
+
+保留600秒、最大65536条/64MiB保守编码字节；过期和容量淘汰仅删除序列前缀并推进持久low-water。
+每项cursor和整页next_cursor不同；普通owner进程重启保持epoch，恢复旧备份/日志重建/序号重置
+必须在受控恢复流程中旋转数据集epoch，不能推断数据库自动发现restore。Control重启的stream epoch
+另行变化，不冒充owner数据集epoch。当前PG专属真实测试覆盖rollback、幂等无伪事件、低水位、
+子进程重开、uint64和实际head锁等待屏障；首轮与修复证据见阶段矩阵，不是全链路发布验收。
+
+WS-03查询先在事务外在线核验当前精确scope，再开只读owner UoW，500ms内查询并rollback释放。
+没有跨owner原子快照，没有Control业务库，也不会在持锁期间等待Identity；源不可用、过期/失效cursor
+与授权拒绝分别保留稳定Failure，不以空页掩盖。
+
+WS-03真实owner验收使用生产UoW seed与实际Control mTLS、在线Identity，重放的blocked reason、
+participant和observed_at由最终journal快照返回。`ws03_operation_observation_e2e`覆盖空cursor=head、
+精确scope/证书拒绝、deadline、typed epoch gap、当前grant撤销及Identity停机，查询不产生写事件。
+旧委派的authorization_version失效返回UNAUTHENTICATED；仍有效人类会话的新委派申请返回
+PERMISSION_DENIED。此处仅证明Runtime/Scheduler owner读取链，WSS交付/replay与Panel恢复继续验收。

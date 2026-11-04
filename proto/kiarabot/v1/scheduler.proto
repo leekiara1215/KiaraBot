@@ -4,6 +4,7 @@ import "google/protobuf/timestamp.proto";
 import "kiarabot/v1/common.proto";
 import "kiarabot/v1/platform.proto";
 import "kiarabot/v1/policy.proto";
+import "kiarabot/v1/observations.proto";
 
 // CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
 message TaskRecord {
@@ -187,6 +188,17 @@ service SchedulerService {
     option (requires_idempotency) = false;
     option (default_deadline_ms) = 2000;
     option (max_deadline_ms) = 5000;
+    option (requires_online_authorization) = true;
+  }
+  // CONTRACT_STATUS: not_implemented - WS-01 bounded owner journal, producer pending.
+  // Control caller only; current exact scope authorization on every page.
+  rpc ListOperationChanges(OperationChangesRequest) returns (OperationChangesResponse) {
+    option (required_permission) = PERMISSION_TASK_READ;
+    option (scope_kinds) = RESOURCE_TASK;
+    option (scope_kinds) = RESOURCE_INSTANCE;
+    option (requires_idempotency) = false;
+    option (default_deadline_ms) = 500;
+    option (max_deadline_ms) = 500;
     option (requires_online_authorization) = true;
   }
 }

@@ -1297,112 +1297,112 @@ public:
   grpc::Status IssueDelegation(grpc::ServerContext* transport,
                                const v1::IdentityIssueDelegationRequest* request,
                                v1::IdentityIssueDelegationResponse* response) override {
-    return run(transport, request->has_context(), request->context(), response,
-               [&](const t::VerifiedPeer& peer, const t::IdentityRequestContext& context)
-                   -> t::Outcome<v1::IdentityIssueDelegationResponse> {
-                 if (!issuer_) {
-                   return failure(t::ErrorCode::CapabilityNotSupported);
-                 }
-                 if (!within_delegation_budget(*request)) {
-                   return failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput);
-                 }
-                 const auto target = audience(request->audience());
-                 const auto* service = std::get_if<t::Service>(&target);
-                 const auto bytes = secret(request->client_certificate_sha256());
-                 if (!service || request->subject_proof().empty() ||
-                     request->scope().resources().empty() || request->permissions().empty() ||
-                     bytes.size() != peer.binding.certificate.fingerprint.bytes.size() ||
-                     !std::equal(bytes.begin(), bytes.end(),
-                                 peer.binding.certificate.fingerprint.bytes.begin())) {
-                   return failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput);
-                 }
-                 // No Bearer normalization, body actor or delegation-token substitution: the Core
-                 // request is explicitly an AccessSessionRequest and validates the raw current
-                 // session token.
-                 for (const unsigned char character : request->subject_proof()) {
-                   if (character < 33 || character > 126) {
-                     return failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput);
-                   }
-                 }
-                 std::set<t::ResourceRef, t::PolicyResourceLess> resources;
-                 for (const auto& reference : request->scope().resources()) {
-                   const auto decoded = codec::from_wire(reference);
-                   const auto* resource = std::get_if<t::ResourceRef>(&decoded);
-                   if (!resource || !resources.insert(*resource).second) {
-                     return failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput);
-                   }
-                 }
-                 std::set<t::Permission> permissions;
-                 for (int index = 0; index < request->permissions_size(); ++index) {
-                   const auto decoded = codec::from_wire(request->permissions(index));
-                   const auto* permission = std::get_if<t::Permission>(&decoded);
-                   if (!permission || !permissions.insert(*permission).second) {
-                     return failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput);
-                   }
-                 }
-                 std::optional<t::ResourceId> instance_id;
-                 if (!request->instance_id().empty()) {
-                   if (request->instance_id().size() > 128 ||
-                       request->audience() != "runtime") {
-                     return failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput);
-                   }
-                   instance_id = t::ResourceId{request->instance_id()};
-                 }
-                 t::IssueIdentityDelegationRequest input{
-                     {context, peer, secret(request->subject_proof())}, *service, {},
-                     std::move(instance_id)};
-                 input.permissions.reserve(resources.size() * permissions.size());
-                 for (const auto& resource : resources) {
-                   for (const auto permission : permissions) {
-                     input.permissions.push_back({permission, resource});
-                   }
-                 }
-                 auto result = issuer_->issue_delegation(input);
-                 if (const auto* error = std::get_if<t::Failure>(&result)) {
-                   return *error;
-                 }
-                 const auto& reply = std::get<t::IdentityDelegationReply>(result);
-                 const auto* actor = std::get_if<t::PlatformPeer>(&peer.binding.peer);
-                 const auto& claims = reply.claims;
-                 if (!reply.proof || reply.proof->bytes().empty() || !actor ||
-                     !positive(reply.checked_at) ||
-                     std::holds_alternative<t::Failure>(t::validate_delegation_shape(claims)) ||
-                     claims.audience != *service ||
-                     claims.client_certificate != peer.binding.certificate.fingerprint ||
-                     claims.direct_actor != actor->subject ||
-                     claims.actor_chain != std::vector<t::SubjectId>{actor->subject} ||
-                     !uuid(claims.subject.value) || !positive(claims.issued_at) ||
-                     claims.business_hops != 1 || claims.expires_at <= reply.checked_at ||
-                     !uuid(claims.proof_id.value) || !claims.source_session ||
-                     !uuid(claims.source_session->value) ||
-                     !uuid(claims.source_credential.id.value) ||
-                     claims.permissions.size() != input.permissions.size()) {
-                   return invalid_result();
-                 }
-                 for (const auto& binding : input.permissions) {
-                   if (std::find(claims.permissions.begin(), claims.permissions.end(), binding) ==
-                       claims.permissions.end()) {
-                     return invalid_result();
-                   }
-                 }
-                 v1::IdentityIssueDelegationResponse output;
-                 auto* proof = output.mutable_delegation();
-                 const auto proof_bytes = reply.proof->bytes();
-                 for (const auto byte : proof_bytes) {
-                   if (std::to_integer<unsigned int>(byte) < 33 ||
-                       std::to_integer<unsigned int>(byte) > 126) {
-                     return invalid_result();
-                   }
-                 }
-                 proof->set_proof(std::string(reinterpret_cast<const char*>(proof_bytes.data()),
-                                              proof_bytes.size()));
-                 proof->set_audience(request->audience());
-                 proof->set_business_hops(claims.business_hops);
-                 if (!timestamp(claims.expires_at, proof->mutable_expires_at())) {
-                   return invalid_result();
-                 }
-                 return output;
-               });
+    return run(
+        transport, request->has_context(), request->context(), response,
+        [&](const t::VerifiedPeer& peer, const t::IdentityRequestContext& context)
+            -> t::Outcome<v1::IdentityIssueDelegationResponse> {
+          if (!issuer_) {
+            return failure(t::ErrorCode::CapabilityNotSupported);
+          }
+          if (!within_delegation_budget(*request)) {
+            return failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput);
+          }
+          const auto target = audience(request->audience());
+          const auto* service = std::get_if<t::Service>(&target);
+          const auto bytes = secret(request->client_certificate_sha256());
+          if (!service || request->subject_proof().empty() ||
+              request->scope().resources().empty() || request->permissions().empty() ||
+              bytes.size() != peer.binding.certificate.fingerprint.bytes.size() ||
+              !std::equal(bytes.begin(), bytes.end(),
+                          peer.binding.certificate.fingerprint.bytes.begin())) {
+            return failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput);
+          }
+          // No Bearer normalization, body actor or delegation-token substitution: the Core
+          // request is explicitly an AccessSessionRequest and validates the raw current
+          // session token.
+          for (const unsigned char character : request->subject_proof()) {
+            if (character < 33 || character > 126) {
+              return failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput);
+            }
+          }
+          std::set<t::ResourceRef, t::PolicyResourceLess> resources;
+          for (const auto& reference : request->scope().resources()) {
+            const auto decoded = codec::from_wire(reference);
+            const auto* resource = std::get_if<t::ResourceRef>(&decoded);
+            if (!resource || !resources.insert(*resource).second) {
+              return failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput);
+            }
+          }
+          std::set<t::Permission> permissions;
+          for (int index = 0; index < request->permissions_size(); ++index) {
+            const auto decoded = codec::from_wire(request->permissions(index));
+            const auto* permission = std::get_if<t::Permission>(&decoded);
+            if (!permission || !permissions.insert(*permission).second) {
+              return failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput);
+            }
+          }
+          std::optional<t::ResourceId> instance_id;
+          if (!request->instance_id().empty()) {
+            if (request->instance_id().size() > 128 || request->audience() != "runtime") {
+              return failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput);
+            }
+            instance_id = t::ResourceId{request->instance_id()};
+          }
+          t::IssueIdentityDelegationRequest input{{context, peer, secret(request->subject_proof())},
+                                                  *service,
+                                                  {},
+                                                  std::move(instance_id)};
+          input.permissions.reserve(resources.size() * permissions.size());
+          for (const auto& resource : resources) {
+            for (const auto permission : permissions) {
+              input.permissions.push_back({permission, resource});
+            }
+          }
+          auto result = issuer_->issue_delegation(input);
+          if (const auto* error = std::get_if<t::Failure>(&result)) {
+            return *error;
+          }
+          const auto& reply = std::get<t::IdentityDelegationReply>(result);
+          const auto* actor = std::get_if<t::PlatformPeer>(&peer.binding.peer);
+          const auto& claims = reply.claims;
+          if (!reply.proof || reply.proof->bytes().empty() || !actor ||
+              !positive(reply.checked_at) ||
+              std::holds_alternative<t::Failure>(t::validate_delegation_shape(claims)) ||
+              claims.audience != *service ||
+              claims.client_certificate != peer.binding.certificate.fingerprint ||
+              claims.direct_actor != actor->subject ||
+              claims.actor_chain != std::vector<t::SubjectId>{actor->subject} ||
+              !uuid(claims.subject.value) || !positive(claims.issued_at) ||
+              claims.business_hops != 1 || claims.expires_at <= reply.checked_at ||
+              !uuid(claims.proof_id.value) || !claims.source_session ||
+              !uuid(claims.source_session->value) || !uuid(claims.source_credential.id.value) ||
+              claims.permissions.size() != input.permissions.size()) {
+            return invalid_result();
+          }
+          for (const auto& binding : input.permissions) {
+            if (std::find(claims.permissions.begin(), claims.permissions.end(), binding) ==
+                claims.permissions.end()) {
+              return invalid_result();
+            }
+          }
+          v1::IdentityIssueDelegationResponse output;
+          auto* proof = output.mutable_delegation();
+          const auto proof_bytes = reply.proof->bytes();
+          for (const auto byte : proof_bytes) {
+            if (std::to_integer<unsigned int>(byte) < 33 ||
+                std::to_integer<unsigned int>(byte) > 126) {
+              return invalid_result();
+            }
+          }
+          proof->set_proof(
+              std::string(reinterpret_cast<const char*>(proof_bytes.data()), proof_bytes.size()));
+          proof->set_audience(request->audience());
+          proof->set_business_hops(claims.business_hops);
+          if (!timestamp(claims.expires_at, proof->mutable_expires_at())) {
+            return invalid_result();
+          }
+          return output;
+        });
   }
 
   grpc::Status ExchangeDelegation(grpc::ServerContext* transport,
@@ -1565,6 +1565,63 @@ public:
             }
             *decision->mutable_denial() = std::get<v1::Error>(encoded);
           }
+          return output;
+        },
+        false);
+  }
+  grpc::Status
+  CheckHostGateAuthorization(grpc::ServerContext* transport,
+                             const v1::IdentityCheckHostGateAuthorizationRequest* request,
+                             v1::IdentityCheckHostGateAuthorizationResponse* response) override {
+    return run(
+        transport, request->has_context(), request->context(), response,
+        [&](const t::VerifiedPeer& peer, const t::IdentityRequestContext& context)
+            -> t::Outcome<v1::IdentityCheckHostGateAuthorizationResponse> {
+          if (!authorization_) {
+            return failure(t::ErrorCode::CapabilityNotSupported);
+          }
+          if (!request->has_host() || request->host_certificate_sha256().size() != 32) {
+            return failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput);
+          }
+          auto decoded = codec::from_wire(request->host());
+          const auto* host = std::get_if<t::ResourceRef>(&decoded);
+          if (!host || host->kind != t::ResourceKind::Host) {
+            return failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput);
+          }
+          t::Sha256Digest fingerprint;
+          const auto bytes = secret(request->host_certificate_sha256());
+          std::copy(bytes.begin(), bytes.end(), fingerprint.bytes.begin());
+          auto checked =
+              authorization_->check_host_gate_authorization({context, peer, *host, fingerprint});
+          if (const auto* error = std::get_if<t::Failure>(&checked)) {
+            return *error;
+          }
+          const auto& result = std::get<t::CheckHostGateAuthorizationReply>(checked);
+          const auto& decision = result.decision;
+          if (!positive(decision.checked_at) || decision.authorization_version.value == 0 ||
+              result.host_credential_version.value == 0 ||
+              result.host_principal_version.value == 0 || (decision.allowed && decision.denial) ||
+              (!decision.allowed &&
+               (!decision.denial || decision.denial->code != t::ErrorCode::PermissionDenied))) {
+            return invalid_result();
+          }
+          v1::IdentityCheckHostGateAuthorizationResponse output;
+          auto* wire = output.mutable_decision();
+          wire->set_allowed(decision.allowed);
+          wire->set_authorization_version(decision.authorization_version.value);
+          if (!timestamp(decision.checked_at, wire->mutable_checked_at())) {
+            return invalid_result();
+          }
+          if (decision.denial) {
+            auto encoded = codec::make_error(decision.denial->code, context.request_id,
+                                             context.trace_id, false);
+            if (const auto* error = std::get_if<t::Failure>(&encoded)) {
+              return *error;
+            }
+            *wire->mutable_denial() = std::get<v1::Error>(encoded);
+          }
+          output.set_host_credential_version(result.host_credential_version.value);
+          output.set_host_principal_version(result.host_principal_version.value);
           return output;
         },
         false);

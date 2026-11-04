@@ -1,5 +1,50 @@
 # 基础设施适配器设计
 
+## 当前阅读入口（2026-11-04）
+
+目标使用 `infrastructure/postgres/` 实现四个 owner 私有库的 Repository/UoW，
+`infrastructure/identity_crypto/` 提供外层密码学适配。`infrastructure/src/` 与
+`infrastructure/include/` 同时包含目标 Host journal/Model HTTP Provider 和 reference 实现，
+不能把这个共享目录整体当成历史代码。目标业务端口位于
+`core/include/kiarabot/core/ports/target/`，组合根注入实现，内层不直接依赖 SQL、OpenSSL 或 HTTP。
+
+下方 T 阶段、首版建议目录及 2026-10-31 端口表是 reference 历史快照，
+其中“当前”“未实现”不代表目标 PostgreSQL/服务现状。后附 P 记录保留各自日期和范围；
+当前实现、实测与目标环境验收统一见 [阶段证据矩阵](27-phase-exit-evidence.md)。
+
+## WS-02 owner operation journal（2026-11-04，PG切片）
+
+Runtime/Scheduler/Model 私有 PG 库为 `observations.proto` 的 owner 增量查询保存有界关系日志。
+纯值类型和查询端口归 Core；授权归随后接入的 owner 应用，存储端口只接受已授权的精确 scope，
+不派生目录子授权。Identity 不增加 operation 日志；Host SQLite 仍由 Host 模块单独实现。
+
+`operations().save` 和实际变化的 participants 登记本 UoW 的 dirty operation；提交前统一读取
+最终 operation/participants，最后获取单行 journal head 锁、分配提交有序 sequence 并写独立安全快照。
+同 UoW 同 operation 只产生一条最终通知；回滚无通知，收据快照或普通幂等读取不触发 append。
+head 锁之后不再取业务行/配额锁；禁止以 nextval 的分配顺序冒充提交顺序。flush 失败整体回滚，
+未知提交仍为 Unknown，不自动换身份重试。journal 不外键依赖可被清理的 operation live 行。
+
+日志按数据库 UTC 保留600秒，硬上限65536条/64MiB保守编码字节；容量淘汰明确推进持久 low-water，
+不静默补洞。空 cursor 只取 head；逐项 cursor 与整页 next_cursor 分开，默认32、最大100条，
+1–127个精确资源；过期/未来/旧数据集 cursor 返回 Conflict/ReadCurrent，不伪空页。
+普通重开保留 epoch；恢复旧备份、重建日志或重置 sequence 的受控恢复路径必须显式旋转 epoch，
+本切片不提供自动检测备份恢复或破坏性重置。参与者名称/资源标识有界，日志不保存配置、凭据、
+消息/模型正文或任意错误文本；Model token streaming 不是此 operation feed。
+Provider/parser 的流式实现另见 [Model streaming 基础设施](05-infrastructure-model-streaming.md)。
+
+新空库版本为 Identity15（不变）、Runtime19、Scheduler11、Model10；现有库不自动升级或清空。
+R/S/M的descriptor和relation_count已由自有真实PG16.4 DDL测得并写回manifest，分别为162/91/85个对象。
+本切片已实现纯值/端口、typed UoW转发与PG journal，专属
+`ctest --preset full-locked -R '^ws02_postgres_operation_observations$' --no-tests=error --output-on-failure`
+在本机重新构建后1/1通过，覆盖最终快照、rollback、回执不伪事件、分页/低水位/容量、
+epoch/子进程重开、uint64边界及真实PG提交排序屏障。首轮因测试错误假设Model已支持旧live清理端口
+失败；修正为明确断言其CapabilityNotSupported，再在自有PG事务清理live行，journal保留断言不变。
+原失败及复跑证据归档在`build/logs/capability-expansion/ctest-ws02-journal-{first,fixed}.log`。
+owner在线授权用例/RPC、WSS与Panel尚未接入，target API/事件仍not_implemented；本机PG切片通过不代表
+目标部署、真实全链路或全仓门禁已通过。
+
+## reference 快照存储记录（T 阶段）
+
 T06a schema v4 在 RuntimeSnapshot 中增加 namespaces（身份→键→值/过期时间）和 host_receipts（身份→幂等键→fingerprint/响应/保留期限）。旧 v1/v2/v3 在同一事务迁移，新增集合初始为空；原有事件、Action、插件、审计保留。运行时和桥接的其他状态更新必须保留这两组集合。Host 存储通过现有 RuntimeTransaction 与审计、幂等记录共同提交，不另建独立提交的 namespace 数据库。
 
 T04b RuntimeSnapshot 的 ActionRecord 增加 owner、serialized_envelope、fingerprint，ActionEntry 增加 dispatched。SQLite schema v3 在同一事务从 v1/v2 解码旧字段后重编码；旧记录缺少所有者，不能通过新的插件查询获得。迁移失败整体回滚，新版本拒绝未知 schema。此处只保存 Core 定义的数据，不执行权限或平台规则。
@@ -35,9 +80,9 @@ infrastructure/
   fake/
 ```
 
-上图为目标目录；当前实现位于 `infrastructure/src/` 和 `infrastructure/include/`，SQLite 迁移在 `sqlite_runtime_store.cpp` 中实现，`migrate.cpp` 提供命令入口。`deploy/` 只负责编排和调用迁移命令。
+上图为首版建议目录（历史）；reference 实现位于 `infrastructure/src/` 和 `infrastructure/include/`，SQLite 迁移在 `sqlite_runtime_store.cpp` 中实现，`migrate.cpp` 提供命令入口。`deploy/` 只负责编排和调用迁移命令。
 
-## 第一批端口
+## reference 第一批端口
 
 ```text
 IModelProvider
@@ -51,17 +96,17 @@ IAuditLogger
 
 2026-10-31 核对：`ports.hpp` 中实际存在的首批接口是 `IModelProvider`、`IScheduler`、`IFileStorage`、`IAuditLogger`（另有 `ITimeZoneResolver`、`INamespaceStore`、`IIdempotencyStore`、`IUnitOfWork` 等）。其中模型、时区由基础设施实现，调度器由 Core `TaskScheduler` 实现，文件存储已实现但未接线，审计端口未实现（审计写入 `RuntimeSnapshot`）。`IConversationStore`/`IUserRepository`/`IPermissionStore` 尚无接口或实现，属于未来扩展，不能按名字假定可用。
 
-## Core 端口
+## reference Core 端口
 
-Core 内部接口位于 `core/include/kiarabot/core/ports/ports.hpp`，协议类型和稳定错误使用生成的 `kiarabot.v1` 类型。所有调用必须区分协议 `Error` 与成功值；数据库故障不能伪装为重复或未找到。事务、任务领取、时区转换、文件和模型实现必须遵守端口及 `doc/01-contracts.md`、`doc/01-runtime-semantics.md` 的语义。接口的存在不表示适配器或插件 Host 服务已经接入。
+Core 内部接口位于 `core/reference/include/kiarabot/core/ports/ports.hpp`，协议类型和稳定错误使用生成的 `kiarabot.v1` 类型。所有调用必须区分协议 `Error` 与成功值；数据库故障不能伪装为重复或未找到。事务、任务领取、时区转换、文件和模型实现必须遵守端口及 `doc/01-contracts.md`、`doc/01-runtime-semantics.md` 的语义。接口的存在不表示适配器或插件 Host 服务已经接入。
 
-## 端口覆盖现状（2026-10-31）
+## reference 端口覆盖快照（2026-10-31）
 
-下表记录 `core/include/kiarabot/core/ports/ports.hpp` 各端口在当前实现的真实状态；接口存在不等于已实现或已接线。
+下表记录 `core/reference/include/kiarabot/core/ports/ports.hpp` 各端口在当前实现的真实状态；接口存在不等于已实现或已接线。
 
 | 端口 | infrastructure 实现 | 组合根接线 | 状态 |
 | --- | --- | --- | --- |
-| `RuntimeStore` / `RuntimeTransaction` | `SqliteRuntimeStore` | `core/app/main.cpp` 在启用 SQLite 且配置 `KIARABOT_RUNTIME_DB` 时创建，外层包 Core `LoggingRuntimeStore` | 已接线（条件性） |
+| `RuntimeStore` / `RuntimeTransaction` | `SqliteRuntimeStore` | `core/reference/app/main.cpp` 在启用 SQLite 且配置 `KIARABOT_RUNTIME_DB` 时创建，外层包 Core `LoggingRuntimeStore` | 已接线（条件性） |
 | `IModelProvider` | `HttpModelProvider`（T06b） | 三个 `KIARABOT_MODEL_*` 齐全时创建 | 已接线（条件性） |
 | `ITimeZoneResolver` | `TimeZoneResolver`（T06c） | 由 Core `TaskScheduler` 使用 | 已接线 |
 | `IFileStorage` | `FileStorage` + `FakeFileStorage` | **无**：Core 当前没有文件存储用例，组合根未创建；`FileStorage` 仅由 `file_storage_test` 使用 | 未接线（实现存在；`FakeFileStorage` 只用于测试） |
@@ -75,7 +120,7 @@ Core 内部接口位于 `core/include/kiarabot/core/ports/ports.hpp`，协议类
 
 - 本模块不删除、不修改 `core/include/kiarabot/core/ports/` 的接口；若 Core 决定启用 `IUnitOfWork` 系列、独立仓储或审计端口，应先由 Core 确定事务所有权和错误语义，再在 infrastructure 增加适配器（交接 core 分支）。
 - `FileStorage` 的 POSIX 实现和 `FakeFileStorage` 已有单测，但没有任何 Core 调用链；接入前需要先由 Core 定义文件存储用例（上传/附件等）以及目录所有权、容量和清理策略。
-- `doc/18` 基线列出的 `PostgresAdapter`/`RedisAdapter` 未实现、无任务、无验收，属未排期未来项；`CronSchedulerAdapter` 由 Core `TaskScheduler` 替代，不再单独实现。
+- 2026-10-31 的旧实现没有 `doc/18` 所列 `PostgresAdapter`/`RedisAdapter`；目标 PostgreSQL 后续实现见本页 P03 及后续记录，Redis 仍无本轮用例；`CronSchedulerAdapter` 由 Core `TaskScheduler` 替代，不再单独实现。
 
 ## P11a Model 私有存储与密钥边界
 
@@ -138,7 +183,7 @@ ctest --test-dir /tmp/kiarabot-infrastructure-build --output-on-failure
 
 ## 调度器
 
-T06c 的规则由 Core TaskScheduler 实现，基础设施提供 SQLite 任务快照（当前 schema v6）和 Abseil 时区解析端口。沿用 Protobuf/gRPC 已依赖的 Abseil time，使用系统 IANA zoneinfo；不通过进程全局 TZ 环境切换时区。允许 UTC 或 IANA 地区名称，公历年份 1970–2100，拒绝非法日期、无效时区及 DST 重复/缺失时间；UTC run_at 也限制在此范围且必须晚于当前时间。启动预检与错误区分（2026-10-31 补齐）：`TimeZoneResolver::zone_info_available()` 用真实 IANA 地区名探测系统 zoneinfo（`UTC` 可能内建于 Abseil，不能作为探测依据）；`resolve()` 在 zone 数据不可用时返回 `UPSTREAM_UNAVAILABLE`，只有名称/日期/夏令时歧义等调用方错误返回 `INVALID_ARGUMENT`。Core 组合根应在监听前调用预检并拒绝启动；当前 `core/app/main.cpp` 尚未接入该预检（交接 core 分支，不属于本模块可改范围）。测试见 `infrastructure/tests/time_zone_resolver_test.cpp`（有效 UTC/IANA、非法日期/名称、DST gap/fold、注入数据不可用路径）。
+T06c 的规则由 Core TaskScheduler 实现，基础设施提供 SQLite 任务快照（当前 schema v6）和 Abseil 时区解析端口。沿用 Protobuf/gRPC 已依赖的 Abseil time，使用系统 IANA zoneinfo；不通过进程全局 TZ 环境切换时区。允许 UTC 或 IANA 地区名称，公历年份 1970–2100，拒绝非法日期、无效时区及 DST 重复/缺失时间；UTC run_at 也限制在此范围且必须晚于当前时间。启动预检与错误区分（2026-10-31 补齐）：`TimeZoneResolver::zone_info_available()` 用真实 IANA 地区名探测系统 zoneinfo（`UTC` 可能内建于 Abseil，不能作为探测依据）；`resolve()` 在 zone 数据不可用时返回 `UPSTREAM_UNAVAILABLE`，只有名称/日期/夏令时歧义等调用方错误返回 `INVALID_ARGUMENT`。Core 组合根应在监听前调用预检并拒绝启动；当前 `core/reference/app/main.cpp` 尚未接入该预检（交接 core 分支，不属于本模块可改范围）。测试见 `infrastructure/tests/time_zone_resolver_test.cpp`（有效 UTC/IANA、非法日期/名称、DST gap/fold、注入数据不可用路径）。
 
 每插件最多 1024 个任务（含终态），payload 最多 64 KiB，task_id 1–128 个 ASCII 字母/数字/点/横线/下划线，目标会话 1–256 字节。任务记录不自动清理，超限 RATE_LIMITED。Host 创建/取消与成功幂等响应、审计同一事务；读/取消其他插件任务 NOT_FOUND。新旧 Runtime 操作必须保留任务集合，v1–v5 数据库迁移为 v6；旧二进制回滚需备份。
 
@@ -713,3 +758,30 @@ P11h（2026-11-03）：独立 managed Host→Runtime→Model→真实本地 HTTP
 匹配 stopped 稳定文案。Runtime provider 增加 per-instance/permission single-flight，避免并发
 Exchange 放大；缓存 child proof 释放时 best-effort OPENSSL_cleanse。sealed JWT 仍会驻留进程
 内存，主机必须禁用 core dump/限制 ptrace（容器可配 `ulimit -c 0`、`core_pattern`、只读卷）。
+
+## Runtime / Scheduler 原始字节摘要端口（2026-11-04）
+
+`identity_crypto::Sha256` 是无业务编码的外层 OpenSSL EVP SHA-256 适配器；每次调用
+拥有独立摘要状态，输入按 `string_view` 的完整长度处理，包括 NUL，输出固定32字节。
+EVP 失败返回既有 `UpstreamUnavailable / NotAccepted / Backoff`，无零摘要或成功回退。
+Runtime 组合根通过现有 `RuntimeSecretPort::sha256` 复用它；Scheduler 组合根注入
+`SchedulerDigestPort` 并持有其生命周期。已核对现有端口：RuntimeSecretPort 同时承担
+随机秘密能力，ModelDigestPort 位于包含 Model 请求/身份模型的专属聚合头，且已有实现
+使用 Model 的 Internal 失败语义；Scheduler 使用最小独立端口以保持所属服务边界和
+依赖失败语义，不引入这些无关能力。规范化、校验、收据及交接身份仍由 Core 决定，
+适配器不访问数据库、不决定授权或重试，不改变 schema/协议/稳定错误码。
+
+Scheduler 创建指纹仍按原四字节字符串长度、八字节大端整数、payload 原字节以及
+UTC/当地时间分支编码；payload hash 不添加域标签。取消收据显式使用全零 civil-time
+字段，消除旧实现对空 optional 的解引用，不改变预期的全零字段编码。Runtime timer
+指纹继续使用十进制长度加冒号的字段编码，并排除可变的边界 envelope。摘要失败沿
+现有 Failure 返回，并回滚当前 UoW，不能留下任务/operation/outbox/event/成功收据。
+
+## PluginBridge 持久 attempt 定位（2026-11-04）
+
+PostgreSQL 的 `RuntimeEvents` 实现 Core `EventRepository::find_attempt(instance,event_id,attempt_id)`，
+按完整稳定身份读取持久 `DeliveryAttempt`。同一 UoW 先对 instance 行取共享锁，再对 delivery
+target 取 ACK 所用更新锁，随后由应用验证当前资源/fence 并调用原 ACK 条件更新；锁后采样 UTC，
+不因等待锁延长过期租约。未命中、错事件或跨实例不暴露其他 owner 的记录，SQL 依赖故障返回 Failure。
+正重复 ACK 不新增表或 schema，不改写终态、保留期、尝试次数或审计，也不恢复易失路由来假造成功。
+该端口仅表达存储定位，授权和 ACK 处置仍由 Core 决定；本轮未扩大负 ACK/续租的恢复范围。

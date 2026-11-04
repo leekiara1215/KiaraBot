@@ -6,6 +6,7 @@
 #include <limits>
 #include <mutex>
 #include <optional>
+#include <set>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -15,6 +16,7 @@
 #include <sys/socket.h>
 
 #include "kiarabot/core/domain/target/persistence_rules.hpp"
+#include "operation_observations.hpp"
 #include "record_codec.hpp"
 #include "session.hpp"
 
@@ -214,6 +216,13 @@ public:
       return terminal_;
     }
     if (failed_ || std::chrono::steady_clock::now() >= deadline_) {
+      rollback();
+      return terminal_;
+    }
+    // All business writes are complete. Flush the final safe snapshots under the
+    // last lock class before commit; a failure rolls back business and journal.
+    if (const auto flushed = flush_operation_observations(*this, owner_, dirty_operations_);
+        std::holds_alternative<target::Failure>(flushed)) {
       rollback();
       return terminal_;
     }
@@ -567,6 +576,26 @@ public:
       if (!valid_sql_text(id.value) || participants.size() > 16) {
         return error(target::ErrorCode::InvalidArgument);
       }
+      auto previous = operation_participants(id);
+      if (const auto* failure = std::get_if<target::Failure>(&previous)) {
+        return *failure;
+      }
+      auto ordered = participants;
+      std::sort(ordered.begin(), ordered.end(), [](const auto& left, const auto& right) {
+        return left.participant < right.participant;
+      });
+      const auto& old = std::get<std::vector<target::OperationParticipant>>(previous);
+      const bool unchanged = old.size() == ordered.size() &&
+                             std::equal(old.begin(), old.end(), ordered.begin(),
+                                        [](const auto& left, const auto& right) {
+                                          return left.participant == right.participant &&
+                                                 left.state == right.state &&
+                                                 left.reason == right.reason &&
+                                                 left.next_attempt == right.next_attempt;
+                                        });
+      if (unchanged) {
+        return std::monostate{};
+      }
       exec("DELETE FROM kiarabot.operation_participants WHERE operation_id=$1", {id.value});
       for (const auto& participant : participants) {
         if (!valid_sql_text(participant.participant)) {
@@ -581,8 +610,21 @@ public:
                   ? std::optional<std::string>(timestamp(*participant.next_attempt))
                   : std::nullopt});
       }
-      return std::monostate{};
+      return mark_operation_dirty(id);
     });
+  }
+  target::Outcome<target::OperationObservationPage>
+  query_operation_changes(const target::OperationObservationQuery& query) override {
+    if (!observed_owner()) {
+      return target::unsupported_lifecycle_read();
+    }
+    return query_operation_observations(*this, owner_, query);
+  }
+  target::Outcome<std::size_t> prune_operation_changes(std::size_t limit) override {
+    if (!observed_owner()) {
+      return target::unsupported_lifecycle_read();
+    }
+    return prune_operation_observations(*this, limit);
   }
   target::Outcome<std::size_t> prune_outbox(target::TimePoint now, std::size_t limit) override {
     (void)now;
@@ -1046,7 +1088,7 @@ public:
           return error(target::ErrorCode::Conflict);
         }
       }
-      return std::monostate{};
+      return mark_operation_dirty(value.ref.id);
     });
   }
 
@@ -1284,6 +1326,19 @@ public:
   }
 
 private:
+  bool observed_owner() const noexcept {
+    return owner_ == target::Service::Runtime || owner_ == target::Service::Scheduler ||
+           owner_ == target::Service::Model;
+  }
+  target::Status mark_operation_dirty(const target::OperationId& id) {
+    if (observed_owner()) {
+      if (dirty_operations_.size() >= 1000 && !dirty_operations_.contains(id.value)) {
+        return error(target::ErrorCode::RateLimited);
+      }
+      dirty_operations_.insert(id.value);
+    }
+    return std::monostate{};
+  }
   template <typename Value, typename Function> target::Outcome<Value> invoke(Function function) {
     if (!transaction_ || failed_ || session_->disabled) {
       return error(target::ErrorCode::UpstreamUnavailable);
@@ -1389,6 +1444,7 @@ private:
   Deadline budget_;
   std::unique_ptr<pqxx::work> transaction_;
   bool failed_ = false;
+  std::set<std::string> dirty_operations_;
   target::CommitResult terminal_ = target::CommitResult::RolledBack;
 };
 } // namespace

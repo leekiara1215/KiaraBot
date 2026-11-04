@@ -16,6 +16,7 @@
 #include <openssl/rand.h>
 #include <openssl/sha.h>
 
+#include "kiarabot/core/runtime/platform/operation_observation_rpc.hpp"
 #include "kiarabot/core/runtime/platform/runtime_fence_codec.hpp"
 #include "kiarabot/core/runtime/platform/target_codec.hpp"
 #include "kiarabot/v1/common.pb.h"
@@ -1617,6 +1618,35 @@ public:
     }
     if (!operation_ref(std::get<t::Operation>(restored).ref, response->mutable_operation())) {
       return error_status(internal_failure(), context.request, context.trace);
+    }
+    return grpc::Status::OK;
+  }
+  grpc::Status ListOperationChanges(grpc::ServerContext* transport,
+                                    const v1::OperationChangesRequest* request,
+                                    v1::OperationChangesResponse* response) override {
+    const auto prepared = prepare_operation_observation(*transport, *request, t::Service::Runtime,
+                                                        options_.invocation_deadline);
+    if (const auto* rejected = std::get_if<t::Failure>(&prepared)) {
+      return error_status(*rejected, request->context().request_id(),
+                          request->context().trace_id());
+    }
+    const auto& command = std::get<t::OperationObservationCommand>(prepared);
+    if (!options_.observations) {
+      return error_status(failure(t::ErrorCode::CapabilityNotSupported), command.context.request_id,
+                          command.context.trace_id);
+    }
+    const auto found = options_.observations->query(command);
+    if (const auto* rejected = std::get_if<t::Failure>(&found)) {
+      return error_status(*rejected, command.context.request_id, command.context.trace_id);
+    }
+    if (transport->IsCancelled() || now() >= command.context.deadline) {
+      return error_status(failure(t::ErrorCode::Timeout, t::Recovery::Backoff),
+                          command.context.request_id, command.context.trace_id);
+    }
+    const auto encoded = encode_operation_observation_page(
+        std::get<t::OperationObservationPage>(found), request->context(), *response);
+    if (const auto* rejected = std::get_if<t::Failure>(&encoded)) {
+      return error_status(*rejected, command.context.request_id, command.context.trace_id);
     }
     return grpc::Status::OK;
   }

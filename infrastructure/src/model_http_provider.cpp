@@ -21,6 +21,7 @@
 #include <google/protobuf/util/json_util.h>
 
 #include "kiarabot/core/domain/target/model_gateway.hpp"
+#include "model_http_stream_provider.hpp"
 
 namespace kiarabot::infrastructure {
 namespace {
@@ -199,6 +200,14 @@ public:
     } catch (...) {
       return unknown(target::ErrorCode::Internal);
     }
+  }
+  bool supports_streaming() const noexcept override {
+    return true;
+  }
+  target::ModelProviderStreamResult
+  chat_stream(const target::ModelProviderRequest& request, target::ModelProviderStreamSink& sink,
+              target::ModelStreamCancellation cancellation) override {
+    return perform_model_http_stream(request, sink, cancellation);
   }
 
 private:

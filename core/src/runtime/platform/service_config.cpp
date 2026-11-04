@@ -359,6 +359,70 @@ bool endpoint_valid(const std::string& endpoint) {
                   c == '-' || c == '.';
          });
 }
+bool https_origin(const std::string& origin) {
+  if (origin.size() > 512 || !origin.starts_with("https://")) {
+    return false;
+  }
+  const auto authority = origin.substr(8);
+  if (authority.empty() || std::any_of(authority.begin(), authority.end(), [](unsigned char c) {
+        return c <= 32 || c >= 127 || std::string_view{"/\\?#@*"}.find(c) != std::string_view::npos;
+      })) {
+    return false;
+  }
+  std::string port;
+  if (authority.front() == '[') {
+    const auto close = authority.find(']');
+    if (close == std::string::npos) {
+      return false;
+    }
+    in6_addr address{};
+    if (::inet_pton(AF_INET6, authority.substr(1, close - 1).c_str(), &address) != 1) {
+      return false;
+    }
+    if (close + 1 < authority.size()) {
+      if (authority[close + 1] != ':') {
+        return false;
+      }
+      port = authority.substr(close + 2);
+      if (port.empty()) {
+        return false;
+      }
+    }
+  } else {
+    const auto colon = authority.find(':');
+    const auto host = authority.substr(0, colon);
+    if (!endpoint_valid(host + ":443") ||
+        std::any_of(host.begin(), host.end(),
+                    [](unsigned char c) { return c >= 'A' && c <= 'Z'; })) {
+      return false;
+    }
+    std::size_t start = 0;
+    while (start < host.size()) {
+      const auto end = host.find('.', start);
+      const auto label = host.substr(start, end == std::string::npos ? end : end - start);
+      if (label.empty() || label.size() > 63 || label.front() == '-' || label.back() == '-') {
+        return false;
+      }
+      if (end == std::string::npos) {
+        break;
+      }
+      start = end + 1;
+    }
+    if (colon != std::string::npos) {
+      port = authority.substr(colon + 1);
+      if (port.empty()) {
+        return false;
+      }
+    }
+  }
+  if (!port.empty()) {
+    unsigned number = 0;
+    const auto parsed = std::from_chars(port.data(), port.data() + port.size(), number);
+    return parsed.ec == std::errc{} && parsed.ptr == port.data() + port.size() && number > 0 &&
+           number <= 65535;
+  }
+  return true;
+}
 bool control_api_shape(const nlohmann::json& value) {
   if (!value.is_object() || !value.contains("listen") || !value.contains("identity_endpoint") ||
       !value["listen"].is_string() || !value["identity_endpoint"].is_string() ||
@@ -368,6 +432,25 @@ bool control_api_shape(const nlohmann::json& value) {
   }
   for (const auto& [key, entry] : value.items()) {
     if (key == "listen" || key == "identity_endpoint") {
+      continue;
+    }
+    if (key == "websocket_origins") {
+      if (!entry.is_array() || entry.size() > 32) {
+        return false;
+      }
+      std::set<std::string> unique;
+      for (const auto& origin : entry) {
+        if (!origin.is_string() || !https_origin(origin.get<std::string>()) ||
+            !unique.insert(origin.get<std::string>()).second) {
+          return false;
+        }
+      }
+      continue;
+    }
+    if (key == "websocket_allow_missing_origin") {
+      if (!entry.is_boolean()) {
+        return false;
+      }
       continue;
     }
     if (key != "runtime_endpoint" && key != "scheduler_endpoint" && key != "model_endpoint" &&
@@ -663,7 +746,7 @@ ConfigResult load_service_config(const std::string& path, target::Service servic
     }
     if (document.contains("identity_endpoint")) {
       if ((service != target::Service::Runtime && service != target::Service::Scheduler &&
-           service != target::Service::Model) ||
+           service != target::Service::Model && service != target::Service::Host) ||
           !document["identity_endpoint"].is_string() ||
           !endpoint_valid(document["identity_endpoint"].get<std::string>())) {
         return ConfigFailure{2, "invalid_identity_endpoint_config"};
@@ -834,7 +917,9 @@ ConfigResult load_service_config(const std::string& path, target::Service servic
           std::nullopt,
           std::nullopt,
           std::nullopt,
-          std::nullopt};
+          std::nullopt,
+          {},
+          false};
       for (const auto& [key, field] :
            std::initializer_list<std::pair<const char*, std::optional<std::string>*>>{
                {"runtime_endpoint", &control_material.runtime_endpoint},
@@ -845,6 +930,12 @@ ConfigResult load_service_config(const std::string& path, target::Service servic
           *field = document["control_api"][key].get<std::string>();
         }
       }
+      if (document["control_api"].contains("websocket_origins")) {
+        control_material.websocket_origins =
+            document["control_api"]["websocket_origins"].get<std::vector<std::string>>();
+      }
+      control_material.websocket_allow_missing_origin =
+          document["control_api"].value("websocket_allow_missing_origin", false);
       config.control_api = std::move(control_material);
     }
     if (document.contains("model_security")) {

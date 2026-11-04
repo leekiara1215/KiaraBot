@@ -4,16 +4,19 @@
 
 namespace kiarabot::core::target {
 
-// Trusted offline enrollment of one non-Control platform service peer (Runtime/Scheduler/Model).
-// The CA/SAN/chain verification happens in the offline CLI adapter before this struct is built;
-// the pure application still re-validates kind, binding, service, certificate shape and assignment
-// uniqueness so a malformed composition cannot persist an unauthenticated peer.
+// Trusted offline enrollment of one non-Control platform service peer
+// (Runtime/Scheduler/Model/Host). The CA/SAN/chain verification happens in the offline CLI adapter
+// before this struct is built; the pure application still re-validates kind, binding, service,
+// certificate shape and assignment uniqueness so a malformed composition cannot persist an
+// unauthenticated peer.
 struct PlatformPeerEnrollment {
   Service service;
   SubjectId principal;
   CredentialId credential;
   CertificateBinding certificate;
   std::vector<ExactAssignment> assignments;
+  // Host only: explicit business resource binding, independent from principal/credential IDs.
+  std::optional<ResourceId> host{};
 };
 
 // Only trusted OFFLINE composition can construct this request. Password derivation and enrolled

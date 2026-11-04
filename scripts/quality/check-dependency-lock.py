@@ -41,6 +41,29 @@ def validate(lock, manifest):
     if len(lock['node']['sha256']) != 2 or any(
             not re.fullmatch(r'[a-f0-9]{64}', value) for value in lock['node']['sha256'].values()):
         errors.append('missing/invalid Node archive hashes')
+    archives = lock.get('source-archives', {})
+    if set(archives) != {'eventsource-c'}:
+        errors.append('source archives must cover exactly the reviewed eventsource-c dependency')
+    for name, entry in archives.items():
+        revision = entry.get('revision', '')
+        if not re.fullmatch(r'[a-f0-9]{40}', revision):
+            errors.append(f'{name}: invalid source revision')
+        if entry.get('repository') != 'https://github.com/rexxars/eventsource-c':
+            errors.append(f'{name}: unreviewed source repository')
+        if entry.get('url') != f'https://codeload.github.com/rexxars/eventsource-c/tar.gz/{revision}':
+            errors.append(f'{name}: source URL is not pinned to the reviewed revision')
+        for field, length in [('sha256', 64), ('sha512', 128)]:
+            if not re.fullmatch('[a-f0-9]{%d}' % length, entry.get(field, '')):
+                errors.append(f'{name}: invalid archive {field}')
+        if entry.get('license') != 'MIT' or entry.get('version') != '0.2.0':
+            errors.append(f'{name}: unreviewed license/version')
+        if entry.get('production-sources') != ['src/sse_parser.c']:
+            errors.append(f'{name}: only the parser is a reviewed production source')
+        files = entry.get('files-sha256', {})
+        if set(files) != {'LICENSE', 'src/sse_parser.c', 'include/eventsource/sse_parser.h'}:
+            errors.append(f'{name}: incomplete source/header/license checksum coverage')
+        if any(not re.fullmatch(r'[a-f0-9]{64}', value) for value in files.values()):
+            errors.append(f'{name}: invalid source/header/license checksum')
     return errors
 
 
@@ -110,6 +133,8 @@ def main():
         archives.update({entry['archive-name']: ('sha256', entry['sha256'])
                          for entry in lock['python']['artifacts'].values()})
         archives.update({tool['url'].rsplit('/', 1)[1]: ('sha256', tool['sha256']) for tool in build_tools})
+        archives.update({entry['revision'] + '.tar.gz': ('sha512', entry['sha512'])
+                         for entry in lock.get('source-archives', {}).values()})
         if args.archive.name not in archives:
             raise ValueError('archive is not present in lock')
         algorithm, expected = archives[args.archive.name]

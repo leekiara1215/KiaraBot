@@ -88,9 +88,26 @@ def target_errors(codemodel):
 
 def link_errors(graph, require_services=True):
     errors = []
-    inner = [f'kiarabot_{name}_application' for name in
-             ('control', 'identity', 'runtime', 'plugin_host', 'scheduler', 'model')]
-    roots = ([f'kiarabot-{name}' for name in SERVICES] if require_services else []) + inner
+    # Layer registration is explicit in CMake. Source ownership independently verifies that a
+    # newly added business target (regardless of its name/type) cannot silently escape auditing.
+    inner = []
+    business_path = re.compile(
+        r'(?:^|/)core/(?:src|include/kiarabot/core)/(?:domain|application|ports)/|'
+        r'(?:^|/)control/api/(?:src|include/kiarabot/control)/application/')
+    for name, node in graph.items():
+        directory = node.get('SOURCE_DIR', [''])
+        base = Path(directory[0]) if directory else Path()
+        owned = any(business_path.search((base / source).resolve().as_posix())
+                    for source in node.get('SOURCES', []))
+        layer = node.get('KIARABOT_LAYER', [])
+        if owned and layer != ['INNER']:
+            errors.append('business target missing INNER layer registration: ' + name)
+        if layer == ['INNER']:
+            inner.append(name)
+    if not inner:
+        errors.append('no INNER targets registered')
+    service_roots = [f'kiarabot-{name}' for name in SERVICES] if require_services else []
+    roots = service_roots + inner
     forbidden = re.compile(r'(?:protobuf|grpc|json|pqxx|libpq|sqlite|OpenSSL|sodium|curl|Boost)', re.I)
     def walk(name, chain, pure, seen):
         if name in seen:
@@ -103,7 +120,8 @@ def link_errors(graph, require_services=True):
                          'kiarabot_model', 'kiarabot_core_log', 'kiarabot_runtime_log'}):
             errors.append('production links reference: ' + ' -> '.join(chain))
         if pure:
-            for directory in node.get('INCLUDE_DIRECTORIES', []):
+            for directory in (node.get('INCLUDE_DIRECTORIES', []) +
+                              node.get('INTERFACE_INCLUDE_DIRECTORIES', [])):
                 if ('/reference/' in directory or '/generated' in directory or
                         'infrastructure' in directory or '/dependencies/' in directory):
                     errors.append('inner include path leaks outer dependency: ' + ' -> '.join(chain))
@@ -118,7 +136,7 @@ def link_errors(graph, require_services=True):
         if root not in graph:
             errors.append('architecture target absent: ' + root)
             continue
-        if root.startswith('kiarabot-') and graph[root].get('TYPE') != ['EXECUTABLE']:
+        if root in service_roots and graph[root].get('TYPE') != ['EXECUTABLE']:
             errors.append('service target is not executable: ' + root)
         walk(root, [root], root in inner, set())
     return errors

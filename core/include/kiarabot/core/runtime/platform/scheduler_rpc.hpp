@@ -6,6 +6,7 @@
 
 #include <grpcpp/grpcpp.h>
 
+#include "kiarabot/core/application/target/operation_observation_application.hpp"
 #include "kiarabot/core/application/target/scheduler_commands.hpp"
 #include "kiarabot/core/application/target/scheduler_service.hpp"
 #include "kiarabot/v1/scheduler.grpc.pb.h"
@@ -43,6 +44,8 @@ struct SchedulerRpcOptions {
   SchedulerPlatformPeerAuthorizer platform_peer;
   // Process-level deadline bound (shared shutdown budget); expired -> TIMEOUT.
   std::function<target::Outcome<target::TimePoint>()> invocation_deadline;
+  // Dedicated Control read; never consults Runtime's lifecycle platform-peer path.
+  target::OperationObservationApplication* observations = nullptr;
 };
 
 // Transport adapter for the frozen P10 SchedulerService surface: CreateTask/CancelTask/GetTask/

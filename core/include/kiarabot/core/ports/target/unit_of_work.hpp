@@ -12,6 +12,7 @@
 #include "kiarabot/core/ports/target/host_command_ports.hpp"
 #include "kiarabot/core/ports/target/host_registration_ports.hpp"
 #include "kiarabot/core/ports/target/namespace_ports.hpp"
+#include "kiarabot/core/ports/target/operation_observation_ports.hpp"
 
 namespace kiarabot::core::target {
 namespace host_ports_detail {
@@ -144,9 +145,9 @@ inline Failure unsupported_lifecycle_read() {
   return {ErrorCode::CapabilityNotSupported, Acceptance::NotAccepted, Recovery::Diagnose,
           std::nullopt, std::nullopt};
 }
-class UnitOfWork {
+class UnitOfWork : public OperationObservationPort {
 public:
-  virtual ~UnitOfWork() = default;
+  ~UnitOfWork() override = default;
   virtual Service owner() const noexcept = 0;
   // Sample authoritative database UTC at this call, NOT transaction-start CURRENT_TIMESTAMP
   // frozen by the database, and never system_clock substituted on failure. Explicit dependency
@@ -157,6 +158,13 @@ public:
   virtual ReceiptRepository& receipts() = 0;
   virtual JournalRepository& journal() = 0;
   virtual Repository<OperationId, Operation>& operations() = 0;
+  Outcome<OperationObservationPage>
+  query_operation_changes(const OperationObservationQuery&) override {
+    return unsupported_lifecycle_read();
+  }
+  Outcome<std::size_t> prune_operation_changes(std::size_t) override {
+    return unsupported_lifecycle_read();
+  }
   // P13a owner-local participant projection for an operation row. The frozen wire Operation
   // already carries participants; storage keeps them in an owner-private relation so the generic
   // Operation repository row stays unchanged.
@@ -409,6 +417,9 @@ public:
   // ambiguous -> Conflict (never an arbitrary row).
   virtual Outcome<std::optional<ModelIntent>>
   find_by_call_id(const std::string& logical_call_id) = 0;
+  // STARTED at or before the supplied DB-time cutoff, oldest first, limit 1..100.
+  virtual Outcome<std::vector<ModelIntent>> list_expired_started(TimePoint cutoff,
+                                                                 std::size_t limit) = 0;
   // Bounded maintenance projection of unresolved UNKNOWN rows whose 30-day window elapsed.
   virtual Outcome<std::vector<ModelIntent>> list_unresolved_unknown(TimePoint now,
                                                                     std::size_t limit) = 0;

@@ -264,6 +264,44 @@
       "EXECUTED_NOT_BILLED": 2,
       "EXECUTED_BILLED": 3,
       "ABANDONED": 4
+    },
+    "kiarabot.v1.HostAdmissionState": {
+      "HOST_ADMISSION_STATE_UNSPECIFIED": 0,
+      "HOST_ADMISSION_OPEN": 1,
+      "HOST_ADMISSION_CLOSED": 2
+    },
+    "kiarabot.v1.ModelStreamDisposition": {
+      "MODEL_STREAM_DISPOSITION_UNSPECIFIED": 0,
+      "MODEL_STREAM_FRESH": 1,
+      "MODEL_STREAM_REPLAY_IN_PROGRESS": 2,
+      "MODEL_STREAM_REPLAY_TERMINAL": 3
+    },
+    "kiarabot.v1.ModelStreamTermination": {
+      "MODEL_STREAM_TERMINATION_UNSPECIFIED": 0,
+      "MODEL_STREAM_COMPLETED": 1,
+      "MODEL_STREAM_TRUNCATED": 2,
+      "MODEL_STREAM_FAILED": 3,
+      "MODEL_STREAM_CANCELLED": 4,
+      "MODEL_STREAM_REPLAY": 5
+    },
+    "kiarabot.v1.ModelStreamFinishReason": {
+      "MODEL_STREAM_FINISH_REASON_UNSPECIFIED": 0,
+      "MODEL_STREAM_FINISH_STOP": 1,
+      "MODEL_STREAM_FINISH_LENGTH": 2,
+      "MODEL_STREAM_FINISH_CONTENT_FILTER": 3
+    },
+    "kiarabot.v1.ModelStreamCancelDisposition": {
+      "MODEL_STREAM_CANCEL_DISPOSITION_UNSPECIFIED": 0,
+      "MODEL_STREAM_CANCELLATION_REQUESTED": 1,
+      "MODEL_STREAM_ALREADY_TERMINAL": 2,
+      "MODEL_STREAM_NOT_ACTIVE": 3
+    },
+    "kiarabot.v1.BootstrapDeliveryState": {
+      "BOOTSTRAP_DELIVERY_STATE_UNSPECIFIED": 0,
+      "BOOTSTRAP_DELIVERY_PENDING": 1,
+      "BOOTSTRAP_DELIVERY_DELIVERED": 2,
+      "BOOTSTRAP_DELIVERY_UNKNOWN": 3,
+      "BOOTSTRAP_DELIVERY_REVOKED": 4
     }
   }
 }

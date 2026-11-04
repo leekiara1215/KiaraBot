@@ -10,6 +10,7 @@ import "kiarabot/v1/adapters.proto";
 import "kiarabot/v1/events.proto";
 import "kiarabot/v1/actions.proto";
 import "kiarabot/v1/host.proto";
+import "kiarabot/v1/observations.proto";
 
 // CONTRACT_STATUS: not_implemented - historical reference; see target execution scope.
 message AccountRecord {
@@ -141,6 +142,10 @@ message RuntimeBindAdapterRequest {
   RequestContext context = 1;
   AdapterBinding binding = 2;
   optional uint64 expected_version = 3;
+  // Empty preserves the existing create/bind path with no new delivery intent/effects.
+  // Non-empty explicitly opts in to the fixed offline recipient; validate before mutation.
+  // CONTRACT_STATUS: not_implemented - fixed offline deployment recipient; no path/URL.
+  string bootstrap_recipient_id = 4;
 }
 
 // CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
@@ -148,10 +153,12 @@ message RuntimeBindAdapterResponse {
   AdapterBinding binding = 1;
   OperationRef operation = 2;
   // CONTRACT_STATUS: not_implemented - P06 one-time adapter bridge bootstrap credential.
-  // Returned only when this binding creates the adapter instance registration; the caller
-  // (Control) must deliver it once to the adapter deployment and never persist or log it.
-  // Runtime stores only the SHA-256 of the opaque text; every other response leaves it empty.
+  // First issuance only; never replayed. Control delivers directly to the fixed recipient
+  // through SecretDeliveryPort and strips it from ordinary REST/WS/logs/receipts.
+  // Runtime stores only the SHA-256. Lost plaintext requires an explicit authorized reissue.
   string bootstrap_credential = 3;
+  // CONTRACT_STATUS: not_implemented - no-secret delivery metadata; managed separately from binding.
+  BootstrapDelivery delivery = 4;
 }
 
 // CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
@@ -236,16 +243,23 @@ message RuntimeCreateInstanceRequest {
   string installation_id = 2;
   string host_id = 3;
   bool externally_managed = 4;
+  // Empty preserves the existing create/bind path with no new delivery intent/effects.
+  // Non-empty explicitly opts in to the fixed offline recipient; validate before mutation.
+  // CONTRACT_STATUS: not_implemented - fixed offline deployment recipient; no path/URL.
+  string bootstrap_recipient_id = 5;
 }
 
 // CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
 message RuntimeCreateInstanceResponse {
   InstanceRecord instance = 1;
   // CONTRACT_STATUS: not_implemented - P06 one-time plugin bridge bootstrap credential.
-  // Returned only for externally_managed=true instances; Host-managed instances leave it empty
-  // and authenticate through the Host bridge instead. The caller (Control) must deliver it once
-  // to the plugin deployment and never persist or log it. Runtime stores only its SHA-256.
+  // First issuance for both Host-managed and externally-managed plugin instances. A managed
+  // plugin still uses PluginBridge bootstrap; the Host platform itself authenticates by mTLS.
+  // Control delivers once to the fixed deployment recipient and never echoes it in REST/WS.
+  // Runtime stores only SHA-256; ordinary replay omits plaintext, lost plaintext needs reissue.
   string bootstrap_credential = 2;
+  // CONTRACT_STATUS: not_implemented - no-secret delivery metadata, not proof of registration.
+  BootstrapDelivery delivery = 3;
 }
 
 // CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
@@ -945,6 +959,120 @@ message RuntimeListLogsResponse {
   google.protobuf.Timestamp checked_at = 3;
 }
 
+
+// CONTRACT_STATUS: not_implemented - controlled bootstrap delivery, no plaintext state.
+enum BootstrapDeliveryState {
+  BOOTSTRAP_DELIVERY_STATE_UNSPECIFIED = 0;
+  BOOTSTRAP_DELIVERY_PENDING = 1;
+  BOOTSTRAP_DELIVERY_DELIVERED = 2;
+  BOOTSTRAP_DELIVERY_UNKNOWN = 3;
+  BOOTSTRAP_DELIVERY_REVOKED = 4;
+}
+
+// No credential, digest, filesystem path, owner UID or environment value is public metadata.
+// DELIVERED means the version is durably installed at the registered deployment recipient;
+// it never means the peer registered, the process ran, or configuration was applied.
+// CONTRACT_STATUS: not_implemented - controlled bootstrap delivery.
+message BootstrapDelivery {
+  string delivery_id = 1;
+  ResourceRef resource = 2;
+  string recipient_id = 3;
+  uint64 credential_version = 4;
+  BootstrapDeliveryState state = 5;
+  OperationRef operation = 6;
+  google.protobuf.Timestamp observed_at = 7;
+}
+
+// CONTRACT_STATUS: not_implemented - no-secret delivery query.
+message RuntimeGetBootstrapDeliveryRequest {
+  RequestContext context = 1;
+  ResourceRef resource = 2;
+  string delivery_id = 3;
+}
+
+// CONTRACT_STATUS: not_implemented - controlled bootstrap delivery metadata.
+message RuntimeGetBootstrapDeliveryResponse {
+  BootstrapDelivery delivery = 1;
+}
+
+// Resource is derived from the current binding; no arbitrary adapter subject is accepted.
+// CONTRACT_STATUS: not_implemented - explicit reissue, new identity and expected version.
+message RuntimeReissueAdapterBootstrapRequest {
+  RequestContext context = 1;
+  string account_id = 2;
+  string recipient_id = 3;
+  optional uint64 expected_credential_version = 4;
+}
+
+// CONTRACT_STATUS: not_implemented - explicit reissue, new identity and expected version.
+message RuntimeReissuePluginBootstrapRequest {
+  RequestContext context = 1;
+  string instance_id = 2;
+  string recipient_id = 3;
+  optional uint64 expected_credential_version = 4;
+}
+
+// First committed response only; repeat returns the same metadata/operation but no plaintext.
+// Reissue atomically revokes prior digest/version; old proof/refresh fail the current-version
+// gate within the existing one-second bound. It never revives old authorization or executions.
+// CONTRACT_STATUS: not_implemented - explicit controlled bootstrap reissue.
+message RuntimeReissueBootstrapResponse {
+  BootstrapDelivery delivery = 1;
+  string bootstrap_credential = 2;
+  Operation operation = 3;
+}
+
+// Submitted only by the registered Control peer, with the original intent/resource/recipient
+// and current exact management grant. Report accepts DELIVERED (receipt required) or UNKNOWN;
+// callers cannot report REVOKED or make a superseded version current.
+// CONTRACT_STATUS: not_implemented - secret-free deployment evidence.
+message BootstrapDeliveryReport {
+  string delivery_id = 1;
+  string recipient_id = 2;
+  uint64 credential_version = 3;
+  BootstrapDeliveryState state = 4;
+  string receipt_id = 5;
+  google.protobuf.Timestamp observed_at = 6;
+}
+
+// CONTRACT_STATUS: not_implemented - exact account management delivery report.
+message RuntimeReportAdapterBootstrapDeliveryRequest {
+  RequestContext context = 1;
+  string account_id = 2;
+  BootstrapDeliveryReport report = 3;
+}
+
+// CONTRACT_STATUS: not_implemented - exact plugin management delivery report.
+message RuntimeReportPluginBootstrapDeliveryRequest {
+  RequestContext context = 1;
+  string instance_id = 2;
+  BootstrapDeliveryReport report = 3;
+}
+
+// Registered Host peer may change only its own admission gate, with current HostBridge fence,
+// original Host-owned maintenance intent and exact host.execute grant. No generic Runtime peer
+// whitelist expansion; no process launch or business desired-state edit is authorized here.
+// Repeated same intent/version/payload returns the same gate; mismatch is CONFLICT.
+// CONTRACT_STATUS: not_implemented - Host/Runtime maintenance coordination.
+message RuntimeSetHostAdmissionGateRequest {
+  RequestContext context = 1;
+  string host_id = 2;
+  Fence fence = 3;
+  OperationRef operation = 4;
+  uint64 maintenance_version = 5;
+  optional uint64 expected_gate_version = 6;
+  HostAdmissionState admission = 7;
+}
+
+// CONTRACT_STATUS: not_implemented - Runtime-owned dispatch gate, not Host process evidence.
+message RuntimeSetHostAdmissionGateResponse {
+  string host_id = 1;
+  uint64 gate_version = 2;
+  uint64 maintenance_version = 3;
+  HostAdmissionState admission = 4;
+  OperationRef operation = 5;
+}
+
 service RuntimeService {
   rpc CreateAccount(RuntimeCreateAccountRequest) returns (RuntimeCreateAccountResponse) {
     option (required_permission) = PERMISSION_ACCOUNT_MANAGE;
@@ -1387,6 +1515,69 @@ service RuntimeService {
     option (requires_idempotency) = false;
     option (default_deadline_ms) = 2000;
     option (max_deadline_ms) = 5000;
+    option (requires_online_authorization) = true;
+  }
+
+  // CONTRACT_STATUS: not_implemented - approved capability expansion, target producer pending.
+  rpc ListOperationChanges(OperationChangesRequest) returns (OperationChangesResponse) {
+    option (required_permission) = PERMISSION_RESOURCE_READ;
+    option (scope_kinds) = RESOURCE_ACCOUNT;
+    option (scope_kinds) = RESOURCE_ADAPTER;
+    option (scope_kinds) = RESOURCE_INSTALLATION;
+    option (scope_kinds) = RESOURCE_INSTANCE;
+    option (scope_kinds) = RESOURCE_HOST;
+    option (requires_idempotency) = false;
+    option (default_deadline_ms) = 500;
+    option (max_deadline_ms) = 500;
+    option (requires_online_authorization) = true;
+  }
+  rpc SetHostAdmissionGate(RuntimeSetHostAdmissionGateRequest) returns (RuntimeSetHostAdmissionGateResponse) {
+    option (required_permission) = PERMISSION_HOST_EXECUTE;
+    option (scope_kinds) = RESOURCE_HOST;
+    option (requires_idempotency) = true;
+    option (default_deadline_ms) = 5000;
+    option (max_deadline_ms) = 30000;
+    option (requires_online_authorization) = true;
+  }
+  rpc GetBootstrapDelivery(RuntimeGetBootstrapDeliveryRequest) returns (RuntimeGetBootstrapDeliveryResponse) {
+    option (required_permission) = PERMISSION_RESOURCE_READ;
+    option (scope_kinds) = RESOURCE_ACCOUNT;
+    option (scope_kinds) = RESOURCE_INSTANCE;
+    option (requires_idempotency) = false;
+    option (default_deadline_ms) = 2000;
+    option (max_deadline_ms) = 5000;
+    option (requires_online_authorization) = true;
+  }
+  rpc ReissueAdapterBootstrap(RuntimeReissueAdapterBootstrapRequest) returns (RuntimeReissueBootstrapResponse) {
+    option (required_permission) = PERMISSION_ACCOUNT_MANAGE;
+    option (scope_kinds) = RESOURCE_ACCOUNT;
+    option (requires_idempotency) = true;
+    option (default_deadline_ms) = 5000;
+    option (max_deadline_ms) = 30000;
+    option (requires_online_authorization) = true;
+  }
+  rpc ReissuePluginBootstrap(RuntimeReissuePluginBootstrapRequest) returns (RuntimeReissueBootstrapResponse) {
+    option (required_permission) = PERMISSION_PLUGIN_MANAGE;
+    option (scope_kinds) = RESOURCE_INSTANCE;
+    option (requires_idempotency) = true;
+    option (default_deadline_ms) = 5000;
+    option (max_deadline_ms) = 30000;
+    option (requires_online_authorization) = true;
+  }
+  rpc ReportAdapterBootstrapDelivery(RuntimeReportAdapterBootstrapDeliveryRequest) returns (RuntimeGetBootstrapDeliveryResponse) {
+    option (required_permission) = PERMISSION_ACCOUNT_MANAGE;
+    option (scope_kinds) = RESOURCE_ACCOUNT;
+    option (requires_idempotency) = true;
+    option (default_deadline_ms) = 5000;
+    option (max_deadline_ms) = 30000;
+    option (requires_online_authorization) = true;
+  }
+  rpc ReportPluginBootstrapDelivery(RuntimeReportPluginBootstrapDeliveryRequest) returns (RuntimeGetBootstrapDeliveryResponse) {
+    option (required_permission) = PERMISSION_PLUGIN_MANAGE;
+    option (scope_kinds) = RESOURCE_INSTANCE;
+    option (requires_idempotency) = true;
+    option (default_deadline_ms) = 5000;
+    option (max_deadline_ms) = 30000;
     option (requires_online_authorization) = true;
   }
 }

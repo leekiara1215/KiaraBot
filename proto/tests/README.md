@@ -73,3 +73,23 @@ symlink拒绝，历史implemented保留且不自动传播target，target声明�
 Identity 投影 fixture 校验逐条 role/scope 与显式权限依据、拒绝显示并集扩权、AssignmentSpec 创建/条件更新、权威 Session created_at/checked_at 到期和 TTL。Ajv 验证严格目标身份响应必填、PENDING 不带到期、ACTIVE 必须到期、凭据禁止秘密；wire golden 固定状态/注册初始引用/绑定响应/创建请求。它们仅是契约 oracle，不证明生产授权或并发发放。
 
 外部连接授权fixture覆盖缺/短proof、异TLS流/异Fence、56秒名义/60秒总预算边界、UTC和单调到期、撤销/凭据版本/gate、Identity故障、原子轮换后旧refresh拒绝、丢响应的新代次重连、auth不扩展lease。三类载荷及双向Bridge帧固定wire golden；这是规格oracle，不证明TLS绑定、CSPRNG或生产原子性实现。
+
+## 2026-11-04 新增能力冻结测试
+
+`target_contract_test.py`把HostManagementService作为既有Host owner的独立方法族纳入完整descriptor
+方法集合比较，不新增第七平台进程；共用OperationChanges请求按canonical输入descriptor构建，不假定
+消息位于声明service的同一个文件。`capability_expansion_contract_test.py`使用真实raw-wire解析验证
+缺操作/future operation/未知metadata/歧义候选与已知oneof last-one-wins；验证opt-in字段缺省兼容及
+Host/Bootstrap的精确权限/scope。新增goldens固定Host维护、Runtime gate、无秘密delivery/reissue、
+owner head和模型stream事件/取消回执；原goldens保留。这些是规格oracle和跨语言测试，不能当作生产实现。
+
+`scripts/quality/check-target-api.sh`沿用固定Ajv，另运行`ws_expansion_schema_test.cjs`与
+`host_bootstrap_schema_test.cjs`。后者拒绝Host空/跨kind/多资源scope、非法版本/grace、任意shell/path、
+bootstrap/digest等秘密属性，验证旧请求不opt-in仍有效及各owner权限映射。异权限的多owner REST路由
+不得带无条件x-permission或permission union，只按x-owner-permissions选择该owner的唯一权限；所有
+分支确实同权限的既有logs/audit路由可以保留等值单权限。正式解析/lint仍使用仓库固定工具版本。
+
+受控target功能声明在registry的vocabulary.target_features单独登记，不修改reference已支持词表。
+host.model.stream.v1复用model.chat权限，绑定semantic.model.stream_delivery；未实现声明不要求生产
+源码“占位”字符串，更不能因此advertise。target_feature_declaration_test.py以五个拒绝场景证明
+未取得target证据不能升级status、虚构权限、无条件发布、引用reference或未知语义。此门禁已接check_contracts.sh。

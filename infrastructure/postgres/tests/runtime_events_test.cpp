@@ -22,6 +22,7 @@ extern char** environ;
 
 #include <pqxx/pqxx>
 
+#include "../src/runtime_events.hpp"
 #include "kiarabot/core/application/target/runtime_resource_application.hpp"
 #include "kiarabot/core/domain/target/event_delivery.hpp"
 #include "kiarabot/core/domain/target/persistence.hpp"
@@ -29,6 +30,7 @@ extern char** environ;
 #include "kiarabot/core/ports/target/runtime_authorization.hpp"
 #include "kiarabot/core/ports/target/runtime_ids.hpp"
 #include "kiarabot/core/ports/target/runtime_secrets.hpp"
+#include "kiarabot/infrastructure/identity_crypto/sha256.hpp"
 #include "kiarabot/infrastructure/postgres/database.hpp"
 #include "kiarabot/infrastructure/postgres/factories.hpp"
 
@@ -152,12 +154,12 @@ public:
     return std::array<std::byte, 32>{};
   }
   target::Outcome<target::Sha256Digest> sha256(std::string_view value) override {
-    target::Sha256Digest digest;
-    for (std::size_t index = 0; index < digest.bytes.size() && index < value.size(); ++index) {
-      digest.bytes[index] = static_cast<std::byte>(value[index]);
-    }
-    return digest;
+    // This fixture verifies the real handoff hash contract, including SHA-256(empty).
+    return digests_.sha256(value);
   }
+
+private:
+  kiarabot::infrastructure::identity_crypto::Sha256 digests_;
 };
 
 class FakeRuntimeAuthorization final : public target::RuntimeAuthorizationPort {
@@ -332,6 +334,55 @@ void run(std::uint16_t port, const std::filesystem::path& root,
     require(work->commit() == target::CommitResult::Committed, "claim/ack transaction commits");
   }
 
+  // Reopen the UoW: lookup is durable and owner-scoped, independent of any bridge routing cache.
+  {
+    auto work = begin();
+    auto found = work->events().find_attempt({"instance-a"}, "event-1", {"attempt-1"});
+    require(std::holds_alternative<std::optional<target::DeliveryAttempt>>(found) &&
+                std::get<std::optional<target::DeliveryAttempt>>(found).has_value(),
+            "committed attempt lookup survives a new UoW");
+    const auto stored = *std::get<std::optional<target::DeliveryAttempt>>(found);
+    require(stored.delivery.event.source.value == "adapter" &&
+                stored.delivery.event.event_id == "event-1" &&
+                stored.delivery.instance.value == "instance-a" &&
+                stored.fence.connection_generation.value == 1,
+            "lookup returns the complete persisted routing key and fence");
+    for (const auto& result :
+         {work->events().find_attempt({"instance-b"}, "event-1", {"attempt-1"}),
+          work->events().find_attempt({"instance-a"}, "another-event", {"attempt-1"}),
+          work->events().find_attempt({"instance-a"}, "event-1", {"unknown-attempt"})}) {
+      require(std::holds_alternative<std::optional<target::DeliveryAttempt>>(result) &&
+                  !std::get<std::optional<target::DeliveryAttempt>>(result),
+              "lookup hides cross-owner/event and unknown attempts");
+    }
+    target::DeliveryAcknowledgement ack;
+    ack.attempt = stored;
+    ack.accepted = true;
+    auto duplicate = work->events().acknowledge(ack, now(work));
+    require(std::holds_alternative<target::DeliveryReceipt>(duplicate) &&
+                std::get<target::DeliveryReceipt>(duplicate).disposition ==
+                    target::DeliveryDisposition::Duplicate,
+            "persisted lookup feeds the existing conditional duplicate adjudication");
+    require(work->commit() == target::CommitResult::Committed, "durable duplicate lookup commits");
+  }
+  {
+    class UnavailableSql final : public pg::detail::SqlWork {
+    public:
+      target::Status run(const std::function<target::Status(pqxx::transaction_base&)>&) override {
+        return target::Failure{target::ErrorCode::UpstreamUnavailable,
+                               target::Acceptance::NotAccepted,
+                               target::Recovery::Backoff,
+                               {},
+                               {}};
+      }
+    } sql;
+    pg::detail::RuntimeEvents events{sql};
+    const auto failed = events.find_attempt({"instance-a"}, "event-1", {"attempt-1"});
+    require(std::holds_alternative<target::Failure>(failed) &&
+                std::get<target::Failure>(failed).code == target::ErrorCode::UpstreamUnavailable,
+            "attempt lookup dependency failure cannot masquerade as absent or duplicate");
+  }
+
   // --- retry backoff, dead letter, stale ACK after a new attempt ---
   {
     auto work = begin();
@@ -472,8 +523,8 @@ void run(std::uint16_t port, const std::filesystem::path& root,
     request.handoff.message = target::MessageId{occurrence};
     request.handoff.operation =
         target::OperationRef{target::Service::Scheduler, target::OperationId{uuid_like('6')},
-                             target::ResourceRef{target::ResourceKind::Task, "task-1"}};
-    request.handoff.resource = target::ResourceRef{target::ResourceKind::Task, "task-1"};
+                             target::ResourceRef{target::ResourceKind::Task, {"task-1"}}};
+    request.handoff.resource = target::ResourceRef{target::ResourceKind::Task, {"task-1"}};
     request.handoff.version = {1};
     request.handoff.actor = target::SubjectId{owner};
     request.handoff.authorization_version = {1};

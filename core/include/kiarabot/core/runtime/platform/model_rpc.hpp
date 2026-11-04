@@ -6,6 +6,7 @@
 #include <grpcpp/grpcpp.h>
 
 #include "kiarabot/core/application/target/model_gateway_application.hpp"
+#include "kiarabot/core/application/target/operation_observation_application.hpp"
 #include "kiarabot/v1/model.grpc.pb.h"
 
 namespace kiarabot::core::platform {
@@ -20,6 +21,7 @@ using ModelPeerAuthenticator = std::function<target::Outcome<target::ModelCaller
 // ModelService transport adapter. All authority/state decisions live in the application; this
 // boundary only validates presence/encoding, converts values and maps stable failures.
 target::Outcome<std::unique_ptr<v1::ModelService::Service>>
-make_model_rpc(target::ModelGatewayApplication& application, ModelPeerAuthenticator authenticate);
+make_model_rpc(target::ModelGatewayApplication& application, ModelPeerAuthenticator authenticate,
+               target::OperationObservationApplication* observations = nullptr);
 
 } // namespace kiarabot::core::platform

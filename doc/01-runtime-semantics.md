@@ -290,3 +290,45 @@ CreateAccount、ValidateManifest 和 CreateInstallation 必须携带所属目录
 五项管理写入（DisableAccount、BindAdapter、UnbindAdapter、SetDesiredState、UpdateConfig）将父回执、Runtime 专用附属回执、原业务版本、审计及已有 operation/Host 命令意图在同一 UoW 原子提交。附属表保存 format_version=1、方法/结果辨别信息、完整 Runtime OperationRef，以及实例提交状态；重试重验授权后按原身份恢复，原 operation 当前行被清理也不改变回执引用。提交未知沿用 UNKNOWN/同身份查询，不能换键重做。附属行在父回执过期清理或过期键替换时级联删除；retain_until 到期即不承诺完整回放，即使尚未物理清理。至少七天保留不保证过期 UNKNOWN 可安全重试，仍需人工核对原操作。
 
 Runtime unary 指纹清除 RequestContext 后采用固定版本 protobuf deterministic 编码，再求 SHA-256；Struct map 的字段插入顺序和进程内 hash 顺序不参与幂等身份。配置等有业务意义的字段、expected_version 与完整资源仍参与指纹。该编码修复仅在已批准的隔离新库验收；不得直接切换仍持旧指纹回执的部署。
+
+## 2026-11-04 新能力冻结：Host维护、bootstrap与owner变化源
+
+本节为用户批准的新契约，新增能力全部target not_implemented。不得用既有reference/fixture或创建RPC成功
+证明交付/维护/流式能力已实现。具体线类型在proto，REST/WS分别在OpenAPI/AsyncAPI。
+
+Host维护operation由Host SQLite独立拥有：受理→关闭本地接纳→Runtime持久禁派确认→冻结执行集合→
+逐执行已知停止→SUCCEEDED。任一停止证据UNKNOWN或gate/提交结果不明均BLOCKED；Host命令receipt
+persisted、command Completed、心跳离线不能替代完成。Host与Runtime之间只作各自本地事务、幂等交接，
+不跨库提交；同operation/version/hash重试不重复副作用。取消只在接纳变化与发Runtime gate请求之前允许，
+之后CONFLICT；网络取消不撤销已受理意图。Resume是新受权操作，不隐式撤销排空，不复活旧任务、凭据、
+租约、execution_generation。依赖故障/重启沿原identity恢复，未决保留至少30天，已决至少7天。
+
+bootstrap的业务资源、秘密签发、交付状态、SDK注册、进程事实、配置应用是六种不同事实。只有非空
+bootstrap_recipient_id显式opt-in才创建新增交付intent/operation；省略保持原创建/绑定响应、版本、幂等及
+受限部署行为，不自动交付，不追加隐式部署副作用。Runtime原子
+写摘要/真实version/recipient binding/无秘密delivery intent和operation；明文一次RPC返回给Control受控
+SecretDeliveryPort，事务内不调用部署目标。普通REST/WS不含秘密，受管插件以Host0600文件→白名单env
+交付，Adapter/外管插件走其各自部署固定目录。文件+receipt不能伪称跨文件原子：持久intent/阶段恢复后
+核对固定目标版本与受限摘要再补receipt。目标写成功但ACK丢失查询原delivery receipt；查不清保持UNKNOWN。
+签发成功但RPC明文丢失时不可从SHA恢复；先查原资源/operation，再用明确新identity+expected版本重新发放。
+同键重放不重发明文，不重复创建资源；异内容CONFLICT，旧worker/旧版本不能覆盖新secret。撤销旧digest
+与提升version原子化，首连/当前流/refresh都核验版本，旧proof/refresh在既有1秒gate内失效。轮换前必须
+有确认停止gate，恢复/Restore不复活旧材料。已签发后的取消只能显式撤销并完成部署清理，不能恢复旧秘密。
+
+owner ListOperationChanges是进度提示，不是逐转换审计或跨owner快照。原业务/operation/participant写入和
+change append同一UoW；回滚无事件，未知提交按原业务身份恢复。使用提交序计数与一致锁顺序，不把
+nextval分配顺序当可见提交head。默认32/最大100、无cursor只捕获head；每项cursor可恢复部分已处理批次。
+保留600秒、有容量上限和持久low-water；gap/旧epoch/未来sequence→CONFLICT+RESYNC_SNAPSHOT，绝不
+静默跳漏。dataset epoch普通重启不变，旧备份恢复/日志重建后变更；Control进程epoch则每次启动变化。
+当前授权每页重核，精确scope最多127且无catalog/all；空页必须是owner成功读取，依赖故障不伪成功空页。
+WS断线不重做管理写请求，operation.updated后读取权威REST；BLOCKED/UNKNOWN不能转换为FAILED或成功。
+
+插件HostRequest缺operation→INVALID_ARGUMENT，单个future-oneof候选→CAPABILITY_NOT_SUPPORTED；已知
+不支持同样CAPABILITY_NOT_SUPPORTED，均不派发副作用。已知oneof保留Protobuf last-one-wins，解析后不
+虚构重复字段检测；未来候选只来自operation分配区10..127，不是所有unknown字段。reference错误保持历史。
+
+
+v1.1 Host gate：每次Runtime处理SetHostAdmissionGate均通过Identity.CheckHostGateAuthorization在线核定
+当前实际TLS Host叶、存储Host绑定和精确host.execute；检查结果只服务本次请求，不是持久授权票据。
+依赖故障/超时不开放gate，不将operation UNKNOWN改为成功。Host后台只持久intent与版本，不持久Control
+bearer；重启后沿原intent重试并重新核定当前Host授权。原CheckAuthorization非空delegation语义不变。

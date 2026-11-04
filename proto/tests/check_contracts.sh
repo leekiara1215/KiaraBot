@@ -16,6 +16,7 @@ fi
 
 python3 "$proto_dir/tests/check_enum_consistency.py"
 python3 "$proto_dir/tests/evidence_scopes_test.py"
+python3 "$proto_dir/tests/target_feature_declaration_test.py"
 python3 "$proto_dir/tests/check_implementation_status.py"
 python3 "$proto_dir/tests/check_semantic_rules.py"
 

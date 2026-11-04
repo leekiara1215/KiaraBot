@@ -1,5 +1,103 @@
 # PluginSDK 与插件运行时设计
 
+## 当前阅读入口（2026-11-04）
+
+目标 SDK 连接独立 Runtime 的 PluginBridge，受管进程由 Plugin Host 管理；
+当前链路、已确认未完成及目标环境验收统一见 [阶段证据矩阵](27-phase-exit-evidence.md)。
+本页带日期的 P 记录保留当时证据，T03a/T03b 的旧注册身份、回环参数和一体 Core
+启动方式属于 reference，不能覆盖目标的稳定实例身份、TLS 与 fence 规则。
+`FakeTargetRuntime` 只证明测试夹具范围；后附真实 PG/TLS/受管进程证据另有明确作用域。
+
+用户 2026-11-04 已批准模型 streaming、Host 请求错误语义和 bootstrap 安全交付的后续实施，
+任务与模块归属见 [五项扩展计划](29-approved-capability-expansion-plan.md)。
+下文“streaming 明确不做”等带历史日期的范围结论保留当时作用域；当前仍只有非流式实现，
+新增协议与 SDK 能力待对应契约、实现和验收完成后登记。
+
+## STR-01 文本 streaming 契约（2026-11-04，未实现）
+
+新范围见[已批准计划](29-approved-capability-expansion-plan.md)及[流式子计划](plans/2026-11-04-model-streaming-plan.md)。
+唯一线协议是 `proto/kiarabot/v1/model_stream.proto`、`plugins.proto` 和 `model.proto`；本节描述
+已声明契约，不表示 Provider、Runtime、Bridge 或 SDK 已实现。旧 P11 的“不做streaming”保留历史作用域。
+基础设施Provider首切片的独立实现与实测见[流式Provider](05-infrastructure-model-streaming.md)；
+纯Model应用的事务、增量drain及恢复切片见[Core](02-core.md)；这些不启用SDK/PluginBridge协商，Model RPC接线正在STR-06独立验收，以下新SDK入口仍待实现，尚不协商host.model.stream.v1。
+
+新增能力 `host.model.stream.v1` 必须协商且获授 `model.chat`，不能由 `host.model.v1` 隐含启用。
+SDK新入口约定为 `Context.model_stream(model, messages, logical_call_id=..., timeout=...)`，
+返回支持 `async with`、`async for`、`cancel()/aclose()` 及终态读取的对象。当前SDK仍只有非流式
+`model_chat`，返回ModelChatResponse的行为不变，`model_chat(stream=True)`继续CAPABILITY_NOT_SUPPORTED，
+不能暗中改变返回类型。上述新入口须完成SDK实现后才可用。
+
+`HostRequest.model_stream_start`（18）使用ModelStreamStartRequest：model(1)、messages(2)、
+logical_call_id(3)。owner/installation由当前认证实例派生；request_id/trace_id/logical_call_id
+必须为小写UUIDv4，前两项属于attempt，后一项属于稳定业务身份。新业务调用前保存logical id，
+超时/断线复用；start的idempotency_key为空。输入最多128条、规范化总计64KiB，role只允许
+system/user/assistant，text不含NUL；deadline未来且≤30秒，受服务端配置/委派/传输期限进一步约束。
+
+start通过 `CoreToPlugin.model_stream_event`（11）响应，不重复完成HostResponse Future。
+每帧关联request_id、logical_call_id、trace_id及当前外层Fence；ModelStreamEvent.body为
+started(10)、delta(11)、terminal(12)：
+
+- 受理/重放时started恰一次、sequence=0；fresh在intent确认持久后才能发。
+- delta为非空UTF-8追加文本，sequence=1..N，每帧≤4096字节，累计≤65536字节。
+- terminal恰一次、sequence=N+1（无delta为1）；之后不能再发delta。pre-start拒绝或admission
+  未知只有sequence=0的terminal，可没有call。硬断连可能无terminal，不能伪造完成。
+- termination封闭为COMPLETED、TRUNCATED、FAILED、CANCELLED、REPLAY（完整名称以proto为准）。
+  COMPLETED须STOP、Provider `[DONE]`、结果提交确认及连续完整delta；TRUNCATED为明确不完整输出。
+  partial指当前attempt已发非空文本且没有COMPLETED；零delta失败partial=false仍可能执行/计费。
+
+terminal用RpcFailure保留稳定Error及acceptance/recovery，不把retryable当自动重试许可。
+usage只取权威最终数据，known=false时计数为0而非免费；may_have_billed必须显式存在。
+dispatch后取消/超时/半流失败/提交未知，缺少可信完整事实时保守UNKNOWN、可能计费；Model已持久
+成功后，SDK丢正文/terminal只说明交付未知，不改写上游事实。FAILED必须有failure，COMPLETED/
+TRUNCATED/REPLAY不带failure，CANCELLED可带原因。SDK保留本地收到的partial及计数，不冒充持久状态。
+
+同owner+logical id+相同model/messages跨Chat/ChatStream共用防重，异内容CONFLICT。重放只有
+started(REPLAY_IN_PROGRESS/REPLAY_TERMINAL)+terminal(REPLAY)，零delta，不补正文、不加入原流、
+不再次调用Provider。SDK可显式读取owner重放状态；本次不开放Control管理GetCallStatus权限。
+
+取消走独立 `HostRequest.model_stream_cancel`（19），目标为同连接start_request_id和logical_call_id；
+`HostResponse.model_stream_cancel`（18）只回CANCELLATION_REQUESTED、ALREADY_TERMINAL或NOT_ACTIVE。
+cancel request_id属于自己的收据，不替代start终态。取消幂等、不产生Provider工作，NOT_ACTIVE
+不泄漏其他owner/连接的调用。收据不承诺未执行或未计费；提早退出上下文发送尽力取消，连接关闭/
+授权过期/撤权也应停止该连接活跃流。
+
+每流队列同时≤32帧和64KiB，terminal独立控制槽；每连接≤4流，每进程≤64流，旧Chat和新Stream
+共用Model并发准入。Provider入队等待≤250ms，Bridge单次写≤1秒且不越deadline；持续慢消费者
+取消其流。SDK共用reader不得等待慢流queue.put，溢出终止该流并继续heartbeat/refresh/ACK/Action；
+停止后释放registry及有界join，不能分离后台线程放任积压。逐帧当前Fence与序号gap/乱序必须验证。
+
+HostRequest.operation的10..127是future operation分配区，不是reserved：空操作INVALID_ARGUMENT；
+恰一个length-delimited未知候选且无已知operation为CAPABILITY_NOT_SUPPORTED；已知+未知候选、多个
+未知候选或错wire type为INVALID_ARGUMENT。区外unknown metadata不能补足空操作。已知oneof重复字段
+采用标准Protobuf last-wins；typed gRPC不保留其原始重复信息，本批不引入自定义反序列化。
+该HERR语义仍须目标边界实现和原始unknown-field wire测试证明。
+
+网页正文依赖WS工作流另冻授权事件来源，Panel不直连Model；SDK流不等于网页已接线。QQ默认完整
+聚合，仅COMPLETED后提交一次既有幂等Action，半截/未知/取消/无正文重放不发送。本批不进行真实QQ
+主动发送或付费Provider调用。新增声明当前均target not_implemented，生成/兼容/SDK/受管链验收见子计划。
+
+## PluginBridge 准入与重复 ACK（2026-11-04）
+
+Bridge 传输负责 bootstrap/proof/fence、wire 形状、逐帧当前连接授权、写入和连接生命周期；
+Task/Storage/Model 准入由 Core 应用处理，详细归属见 [Core](02-core.md#pluginbridge-传输与应用准入职责2026-11-04)。
+Task/Storage 每次入口获取服务端 registry 的可信实例 profile；Model 沿用可信注册结果中的权限
+及原刷新语义，不因移动函数另行扩权。私有/共享 Storage owner 与授权 scope 在应用层派生，
+Model owner/installation 同样由认证实例和服务端 profile 派生，下游仍独立检查授权与业务条件。
+准入拒绝不会调用对应下游业务端口，客户端不能提供可信 grants、owner 或 installation。
+
+成功 ACK 已持久确认后，同一当前连接重复 ACK 的 DUPLICATE 分类由持久 attempt 定位与原
+ACK 条件事务保证，不依赖重建进程内路由缓存。SDK 对 DUPLICATE 仍按原成功语义处理；
+旧 fence、错事件/attempt、重连后复用或改写旧 attempt 均不能确认新尝试。
+此处重申既有协议承诺，未新增 ACK 状态；局部真实 PG/TLS 回归与主树集成状态分见证据矩阵。
+
+## PluginBridge 刷新错误的既有偏差（2026-11-04）
+
+刷新发生非认证/权限类失败时，既有传输路径向错误构造器传空 trace；codec 拒绝该形状，
+响应帧错误回退为 INTERNAL，随后 gRPC 仍按原错误终止，例如 UNAVAILABLE。
+本轮保留此偏差并以明确的 baseline characterization 验证“先响应、后终止”；
+这不表示 INTERNAL 符合原错误契约，也不允许客户端把它解释成授权拒绝或确定未执行。
+此项待独立错误语义任务处理，未伪造 trace 或放宽公共 codec 校验。
+
 ## 目标 Bridge 传输与投递（P06b SDK 第一阶段）
 
 目标 SDK 只连接 Runtime 的可选外部 Bridge 监听（server-verified TLS，不请求客户端证书），没有 insecure 回退：`Options` 必须提供 CA（或 `PLUGIN_TLS_ROOT`），bootstrap credential 作为唯一 `authorization: Bearer ...` metadata 完成首连。注册成功后必须解析 `RegisterPluginResponse.fence` 与 `connection_authorization`：fence 至少包含 instance_id、正 runtime_epoch、正 connection_generation 与 execution_generation；proof/refresh_credential 为 32 字节且有效期不超过 56 秒。此后每一帧都带当前完整 Fence 与 `connection_proof`，fence/proof 失配立即关闭连接并用 bootstrap 重连（新的 connection_generation）；旧材料不重放。
@@ -47,7 +145,7 @@ Action 客户端固定在 `PluginBridge`：`submit_action`/`query_action`/`cance
 - 结果语义：`ActionResult.execution_outcome` 按冻结矩阵校验——`ACCEPTED`=`NOT_STARTED|UNKNOWN`、`SUCCEEDED`=`KNOWN_SUCCEEDED`、`FAILED`=`KNOWN_FAILED`+稳定错误码、`EXPIRED`=`NOT_STARTED|UNKNOWN`（error=TIMEOUT）、`CANCELLED`=`NOT_STARTED`；派发态（UNKNOWN/KNOWN_*）必须回带 UUIDv4 `dispatch_attempt_id`，终态必须带 `completed_at`。`ACCEPTED`/`EXPIRED`+`UNKNOWN` 的 `ActionExecutionEvidence`/`action_receipt` 处置通过结果形状体现：重投为原快照（RECORDED/DUPLICATE 等价）、迟到结果为 `EXPIRED+UNKNOWN`（EVIDENCE_ONLY 等价）、异内容/派发后取消为 `CONFLICT`；客户端不接收 adapter receipt，也绝不解包成 FAILED。
 - 安全边界：畸形/矩阵矛盾/相关性错误的响应按重试性 `UPSTREAM_UNAVAILABLE` 处理（结果未知，不能伪造 FAILED）；断线/超时同样为未知，SDK 不自动重发可能已有副作用的 submit，重连后调用方用同一 `action_id`/`idempotency_key` 查询。工具函数 `kiarabot_sdk.action_kind`、`is_action_terminal`、`is_action_unknown`、`may_have_executed` 供插件判定风险。每-kind 权限仍由 Runtime/Identity 校验（冻结 Permission 41–46），SDK 只映射稳定错误码。P07a Runtime 侧与真实 Runtime 端到端验收前，以上由 `FakeTargetRuntime` 验证。
 
-## T03b Python SDK 与进程生命周期
+## reference T03b Python SDK 与进程生命周期
 
 `sdk/python` 提供 `Plugin.on_start(context)`、`on_event(EventEnvelope, context)`、`on_stop(reason)` 和本机 gRPC runner，事件类型直接使用生成协议。插件自行实现业务幂等；SDK 不把网络 ACK 当作 Action 完成。清单由 protobuf JSON 解析并校验现行 T03a 子集，不导入 Core 或 NoneBot。
 
@@ -57,7 +155,7 @@ Core 可启动配置的 Python 插件子进程，使用 argv 而非 shell，显�
 
 SDK 提供真实本机 gRPC FakeHost，用于注册、事件、ACK、拒绝、断线、心跳不返回（`heartbeat_acks=False`）以及 Action/Host/配置帧的成功和故障交互；模型调用由 T06b、任务由 T06c、配置由 T08b 接线。依赖由 sdk/python/uv.lock 固定，生成代码进入忽略的 build 目录。验收入口见 sdk/python/README.md。
 
-## 运行时参数（T03b 补充）
+## reference 运行时参数（T03b 补充）
 
 `python -m kiarabot_sdk --manifest <path>` 只从环境读取以下变量；缺失必填项或非法数值以稳定码 `INVALID_ARGUMENT` 退出：
 
@@ -83,7 +181,7 @@ Core 受管启动器当前只传递最小 PATH、endpoint、token 与可选 PYTH
 
 基线要求的三类示例插件中，`ai_chat` 由 `ai-reply` 对应；`group_admin`、`reminder` 现在以 v1 现有协议能力补齐，示例不构造未使用的 Action payload（`group_admin` 的 Mute/Kick/Approve 虽已实现，却不在本示例权限内）。两个新示例的配置样例为 `plugins/<name>/config.example.json`，经 `plugin.config.v1` 下发（当前只支持空 schema，插件在 `on_config` 中自行校验）。插件测试：`sdk/python/.venv/bin/python -m pytest -q -c sdk/python/pyproject.toml plugins/group_admin/tests plugins/reminder/tests`。
 
-## T03a 当前桥接子集
+## reference T03a 桥接子集
 
 PluginBridge 首帧注册绑定认证主体，要求 api_version=kiarabot.plugin.v1、runtime=python-rpc、isolation=process。当前只支持无依赖、空配置 schema（空串或 {}）的事件插件；未实现的配置 schema/依赖/运行时明确返回 CAPABILITY_NOT_SUPPORTED。权限必须是宿主配置允许列表的子集，自报清单不会授予权限。
 
@@ -213,7 +311,7 @@ stop(reason)
 
 ### ModelService
 
-状态：**仅非流式已实现**（`Context.model_chat`，T06b；P11e 已用真实 TLS PluginBridge fixture 覆盖 target host_request ModelChatRequest/Response/ModelMessage 与 logical_call_id 重放，streaming 明确不做）。`stream_chat` 未实现，协议没有流式消息。插件提交模型请求，但不能获得模型 API Key；Provider、模型、超时、配额和重试由 Core 管理。
+状态：**仅非流式已实现**（`Context.model_chat`，T06b；P11e 已用真实 TLS PluginBridge fixture 覆盖 target host_request ModelChatRequest/Response/ModelMessage 与 logical_call_id 重放）。模型 streaming 已于 2026-11-04 纳入[扩展计划](29-approved-capability-expansion-plan.md)，当前 `stream_chat` 仍未实现，协议尚无已实现的流式消息。插件提交模型请求，但不能获得模型 API Key；Provider、模型、超时、配额和重试由 Core 管理。
 
 ### ConversationService
 
@@ -395,3 +493,14 @@ P11h（2026-11-03，独立验收）：真实 managed plugin（`kiarabot-plugin-h
 `task_get`；真实 Runtime 对 task_create/get/cancel 分别校验 task.schedule/task.read/
 task.schedule，并要求 create 声明 `event.timer.triggered`。SDK task 方法在真实 PluginBridge
 与真实 Scheduler 下通过 `p05b_task_chain_e2e` 验证；不再仅依赖 fake Scheduler fixture。
+
+## HostRequest 操作形状拒绝（2026-11-04，HERR-02）
+
+目标PluginBridge在当前连接的fence/proof授权通过后，先分类HostRequest的operation，再调用任何
+Task/Storage/Model应用。真正缺operation返回关联HostResponse.error=INVALID_ARGUMENT；无已知operation且
+恰一10..127内length-delimited未知字段返回CAPABILITY_NOT_SUPPORTED。已知操作+未知候选、多未知候选、
+候选wire type错误返回INVALID_ARGUMENT。未知metadata（区间外）被忽略，不补足缺操作。合法已知oneof
+保持标准Protobuf last-one-wins，typed解析后不伪造重复字段检测。拒绝不调用下游、不写幂等或业务状态，
+retryable=false、result unset，流仍可继续合法调用。字段形状本身不代替各操作的内容/权限/时限校验。
+reference校验器及manifest保持原blob；本节只描述target实现。流式新operation在完整实现前仍按既有
+未支持行为拒绝，本切片不接入流式处理，也不提前advertise新feature。

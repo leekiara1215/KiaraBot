@@ -111,8 +111,139 @@ public:
       return failure(ErrorCode::Internal);
     }
   }
+  Outcome<CheckHostGateAuthorizationReply>
+  check_host_gate_authorization(const CheckHostGateAuthorizationRequest& request) override {
+    try {
+      return execute_host_gate(request);
+    } catch (const std::bad_alloc&) {
+      return failure(ErrorCode::UpstreamUnavailable);
+    } catch (...) {
+      return failure(ErrorCode::Internal);
+    }
+  }
 
 private:
+  Outcome<Authority> host_gate_authority(const CheckHostGateAuthorizationRequest& request) {
+    auto opened = detail::begin(transactions_, request.context);
+    if (const auto* error = std::get_if<Failure>(&opened)) {
+      return *error;
+    }
+    auto& work = std::get<detail::Work>(opened);
+    Authority result{work.now, TimePoint::max(), {}, {}, {}, {}, true};
+    auto caller = recipient_current(work, request.recipient, &result);
+    if (const auto* error = std::get_if<Failure>(&caller)) {
+      return *error;
+    }
+    result.valid_until = std::get<TimePoint>(caller);
+    auto located = work.transaction->credentials().by_certificate(request.host_certificate);
+    if (const auto* error = std::get_if<Failure>(&located)) {
+      return *error;
+    }
+    const auto& row = std::get<std::optional<CredentialVersionRecord>>(located);
+    if (!row) {
+      return authentication_rejected();
+    }
+    auto head = work.transaction->credentials().current(row->ref.id);
+    if (const auto* error = std::get_if<Failure>(&head)) {
+      return *error;
+    }
+    const auto& current = std::get<std::optional<CredentialVersionRecord>>(head);
+    if (!current || current->ref != row->ref || current->subject != row->subject) {
+      return authentication_rejected();
+    }
+    auto found = detail::read_subject(*work.transaction, row->subject);
+    if (const auto* error = std::get_if<Failure>(&found)) {
+      return *error;
+    }
+    const auto& host = std::get<detail::SubjectAuthority>(found);
+    const auto* certificate = std::get_if<CertificateBinding>(&current->material);
+    if (host.principal.kind != PrincipalKind::PlatformService || !certificate ||
+        certificate->platform_service != Service::Host ||
+        certificate->subject != host.principal.id ||
+        certificate->fingerprint != request.host_certificate ||
+        !detail::bounded_text(certificate->registered_san) ||
+        host.principal.binding != std::optional{request.host} || current->binding != request.host) {
+      return authentication_rejected();
+    }
+    auto valid = require_current_credential(host.principal, *current, row->ref, work.now);
+    if (const auto* error = std::get_if<Failure>(&valid)) {
+      return *error;
+    }
+    const PermissionBinding exact{Permission::HostExecute, request.host};
+    result.allowed = std::any_of(host.assignments.begin(), host.assignments.end(),
+                                 [&](const ExactAssignment& assignment) {
+                                   return std::find(assignment.explicit_permissions.begin(),
+                                                    assignment.explicit_permissions.end(),
+                                                    exact) != assignment.explicit_permissions.end();
+                                 });
+    result.version = host.authorization.version;
+    record(result, host, *current);
+    auto checked = detail::final_check(work, request.context, result.valid_until, true);
+    if (const auto* error = std::get_if<Failure>(&checked)) {
+      return *error;
+    }
+    result.now = work.now;
+    return result;
+  }
+  Outcome<CheckHostGateAuthorizationReply>
+  execute_host_gate(const CheckHostGateAuthorizationRequest& request) {
+    auto shape = detail::context_valid(request.context, false);
+    if (const auto* error = std::get_if<Failure>(&shape)) {
+      return *error;
+    }
+    if (request.host.kind != ResourceKind::Host || !valid_policy_resource(request.host)) {
+      return failure(ErrorCode::InvalidArgument, Recovery::CorrectInput);
+    }
+    const auto* caller = std::get_if<PlatformPeer>(&request.recipient.binding.peer);
+    if (!caller || caller->service != Service::Runtime) {
+      return authentication_rejected();
+    }
+    auto sampled = clock_.sample();
+    if (const auto* error = std::get_if<Failure>(&sampled)) {
+      return *error;
+    }
+    const auto clock = std::get<SecurityClockSample>(sampled);
+    if (!trusted_clock(clock)) {
+      return failure(ErrorCode::UpstreamUnavailable);
+    }
+    auto first = host_gate_authority(request);
+    if (const auto* error = std::get_if<Failure>(&first)) {
+      return *error;
+    }
+    auto last = host_gate_authority(request);
+    if (const auto* error = std::get_if<Failure>(&last)) {
+      return *error;
+    }
+    const auto& before = std::get<Authority>(first);
+    const auto& after = std::get<Authority>(last);
+    if (after.now < before.now || after.now > before.now + std::chrono::seconds{1}) {
+      return failure(ErrorCode::UpstreamUnavailable);
+    }
+    if (before.watermarks != after.watermarks || before.allowed != after.allowed ||
+        before.version != after.version) {
+      return authentication_rejected();
+    }
+    auto final_sample = clock_.sample();
+    if (const auto* error = std::get_if<Failure>(&final_sample)) {
+      return *error;
+    }
+    const auto& final_clock = std::get<SecurityClockSample>(final_sample);
+    if (!trusted_clock(final_clock) || final_clock.utc < clock.utc ||
+        final_clock.monotonic < clock.monotonic ||
+        clock.monotonic > std::chrono::steady_clock::time_point::max() - std::chrono::seconds{1} ||
+        final_clock.monotonic > clock.monotonic + std::chrono::seconds{1}) {
+      return failure(ErrorCode::UpstreamUnavailable);
+    }
+    if (std::max(final_clock.utc, after.now) >=
+        std::min(after.valid_until, request.context.deadline)) {
+      return failure(ErrorCode::Timeout, Recovery::Backoff);
+    }
+    return CheckHostGateAuthorizationReply{
+        {after.allowed, after.version, after.now,
+         after.allowed ? std::nullopt : std::optional{failure(ErrorCode::PermissionDenied)}},
+        after.watermarks.at(1).credential.version,
+        after.watermarks.at(1).principal};
+  }
   Outcome<TimePoint> recipient_current(detail::Work& work, const VerifiedPeer& peer,
                                        Authority* snapshot = nullptr) {
     const auto* platform = std::get_if<PlatformPeer>(&peer.binding.peer);
@@ -192,10 +323,10 @@ private:
     // B1: instance-subject delegation source credential/session belong to the administrator at
     // actor_chain.front(), not to the instance principal. Re-read that administrator authority and
     // use it for permission checks; still require the instance principal/binding to be current.
-    const bool instance_subject =
-        authority.principal.kind == PrincipalKind::Plugin && authority.principal.binding &&
-        authority.principal.binding->kind == ResourceKind::Instance &&
-        source->subject != claims.subject;
+    const bool instance_subject = authority.principal.kind == PrincipalKind::Plugin &&
+                                  authority.principal.binding &&
+                                  authority.principal.binding->kind == ResourceKind::Instance &&
+                                  source->subject != claims.subject;
     std::optional<detail::SubjectAuthority> effective_authority;
     const detail::SubjectAuthority* effective = &authority;
     Status valid = std::monostate{};
@@ -206,13 +337,12 @@ private:
       }
       effective_authority = std::move(std::get<detail::SubjectAuthority>(administrator));
       auto instance_current = require_delegation_instance_source_current(
-          claims, effective_authority->principal, *source, session ? &*session : nullptr,
-          work.now);
+          claims, effective_authority->principal, *source, session ? &*session : nullptr, work.now);
       if (const auto* error = std::get_if<Failure>(&instance_current)) {
         return *error;
       }
-      if (authority.principal.state != LifecycleState::Active ||
-          claims.business_hops < 1 || claims.business_hops > 2) {
+      if (authority.principal.state != LifecycleState::Active || claims.business_hops < 1 ||
+          claims.business_hops > 2) {
         return authentication_rejected();
       }
       effective = &*effective_authority;
@@ -294,9 +424,8 @@ private:
           claims.permissions.end()) {
         result.allowed = false;
       }
-      auto authorized =
-          authorize_exact(effective->principal, policy.permission, resource,
-                          effective->assignments);
+      auto authorized = authorize_exact(effective->principal, policy.permission, resource,
+                                        effective->assignments);
       if (const auto* error = std::get_if<Failure>(&authorized)) {
         if (error->code != ErrorCode::PermissionDenied) {
           return *error;

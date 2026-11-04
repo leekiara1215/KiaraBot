@@ -8,8 +8,6 @@
 #include <utility>
 #include <vector>
 
-#include <openssl/sha.h>
-
 namespace kiarabot::core::target {
 namespace {
 
@@ -47,20 +45,8 @@ bool valid_context(const SchedulerCommandContext& context, bool mutating) {
   }
   return true;
 }
-Sha256Digest digest_of(std::string_view value) {
-  Sha256Digest digest;
-  SHA256(reinterpret_cast<const unsigned char*>(value.data()), value.size(),
-         reinterpret_cast<unsigned char*>(digest.bytes.data()));
-  return digest;
-}
-Sha256Digest payload_digest(const std::vector<std::byte>& payload) {
-  Sha256Digest digest;
-  SHA256(reinterpret_cast<const unsigned char*>(payload.data()), payload.size(),
-         reinterpret_cast<unsigned char*>(digest.bytes.data()));
-  return digest;
-}
 ResourceRef task_resource(std::string_view task_id) {
-  return ResourceRef{ResourceKind::Task, std::string(task_id)};
+  return ResourceRef{ResourceKind::Task, ResourceId{std::string(task_id)}};
 }
 ReceiptKey receipt_key(const SchedulerCommandContext& context, std::string_view method,
                        std::string_view task_id) {
@@ -116,7 +102,12 @@ Outcome<ScheduledTask> SchedulerService::create_task(const SchedulerCommandConte
     return *failed;
   }
   const auto now = std::get<TimePoint>(now_result);
-  const auto fingerprint = creation_fingerprint(input);
+  const auto hashed = creation_fingerprint(input, dependencies_.digests);
+  if (const auto* failed = outcome_failure(hashed)) {
+    uow->rollback();
+    return *failed;
+  }
+  const auto fingerprint = std::get<Sha256Digest>(hashed);
   const auto receipt = receipt_key(context, "SchedulerCreateTask", input.task_id);
   const auto existing = uow->receipts().find(receipt);
   if (const auto* failed = outcome_failure(existing)) {
@@ -258,10 +249,15 @@ Outcome<ScheduledTask> SchedulerService::cancel_task(const SchedulerCommandConte
     uow->rollback();
     return *failed;
   }
-  CommandReceipt written{
-      receipt,
-      creation_fingerprint(TaskCreationInput{std::string(task_id), {}, {}, std::nullopt, {}}), task,
-      now, now + kTriggerValidFor};
+  const auto hashed = creation_fingerprint(
+      TaskCreationInput{std::string(task_id), {}, {}, std::nullopt, LocalCivilTime{}},
+      dependencies_.digests);
+  if (const auto* failed = outcome_failure(hashed)) {
+    uow->rollback();
+    return *failed;
+  }
+  CommandReceipt written{receipt, std::get<Sha256Digest>(hashed), task, now,
+                         now + kTriggerValidFor};
   const auto stored = uow->receipts().insert(written, ReceiptCapacity{});
   if (const auto* failed = outcome_failure(stored)) {
     uow->rollback();
@@ -451,7 +447,13 @@ Outcome<std::size_t> SchedulerService::due_sweep(TimePoint now, std::size_t limi
     handoff.version = current->version;
     handoff.actor = SubjectId{current->key.owner.value};
     handoff.authorization_version = ResourceVersion{0};
-    handoff.payload_hash = payload_digest(current->payload);
+    const auto hashed = dependencies_.digests.sha256(std::string_view(
+        reinterpret_cast<const char*>(current->payload.data()), current->payload.size()));
+    if (const auto* failed = outcome_failure(hashed)) {
+      task_uow->rollback();
+      return *failed;
+    }
+    handoff.payload_hash = std::get<Sha256Digest>(hashed);
     handoff.created_at = stamp;
     handoff.valid_until = stamp + kTriggerValidFor;
     Occurrence occurrence;
@@ -555,7 +557,7 @@ SchedulerService::claim_triggers(TimePoint now, std::size_t limit, std::chrono::
 
 Outcome<Occurrence> SchedulerService::confirm_trigger_accepted(const OutboxClaim& claim,
                                                                std::string_view accepted_event_id,
-                                                               TimePoint now) {
+                                                               TimePoint) {
   if (!uuid(claim.entry.context.message.value) ||
       (accepted_event_id.size() > 256 || accepted_event_id.empty())) {
     return scheduler_invalid();
@@ -725,7 +727,7 @@ Outcome<SchedulerDeliverySummary> SchedulerService::deliver_triggers(TimePoint n
     request.handoff = trigger.occurrence.handoff;
     request.trace_id = trigger.claim.entry.context.actor.value;
     auto work = dependencies_.transactions.begin();
-    if (const auto* rejected = std::get_if<Failure>(&work)) {
+    if (std::holds_alternative<Failure>(work)) {
       ++summary.retried;
       continue;
     }
@@ -787,7 +789,7 @@ Outcome<SchedulerDeliverySummary> SchedulerService::deliver_triggers(TimePoint n
 }
 
 Outcome<Occurrence> SchedulerService::fail_trigger(const OutboxClaim& claim, ErrorCode reason,
-                                                   TimePoint now) {
+                                                   TimePoint) {
   auto work = dependencies_.transactions.begin();
   if (const auto* rejected = std::get_if<Failure>(&work)) {
     return *rejected;

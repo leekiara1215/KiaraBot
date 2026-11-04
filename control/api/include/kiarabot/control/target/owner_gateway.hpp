@@ -257,14 +257,11 @@ unsigned int owner_http_status(kiarabot::v1::ErrorCode code);
 std::string owner_error_body(kiarabot::v1::ErrorCode code, std::string_view request_id,
                              std::string_view trace_id, bool retryable);
 
-// P12c first-batch REST surface backed by owner RPCs:
-//  - GET /api/v1/actions/{actionId}?scope=<json>            (action.inspect)
-//  - GET /api/v1/actions/by-idempotency-key?scope&owner_instance (+ Idempotency-Key header)
-//  - GET /api/v1/logs, /api/v1/audit: authoritative source not yet registered -> 503 UNAVAILABLE
-//    (never a successful empty page; log.read/audit.read permissions land with the P12a contract)
-//  - GET/PUT /api/v1/models/...: P11d Model management forwarding to ModelService with exactly one
-//    model delegation scope; secrets are write-only and never echoed.
-// Returns nullopt for paths owned by another handler (auth, health, tasks).
+// REST boundary for owner-backed health/principal/catalog queries, Runtime resources and
+// Actions, Scheduler tasks/occurrences, Model management, owner operations and audit/log pages.
+// Internal resource-family handlers share request correlation and stable error conversion;
+// authorization and business state remain with the existing delegation/owner ports.
+// Returns nullopt when the request belongs to another HTTPS handler.
 class OwnerGateway {
 public:
   OwnerGateway(DelegationPort& delegation, RuntimeActionsPort& runtime,

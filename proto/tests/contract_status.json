@@ -356,7 +356,41 @@
       "ModelResolveModelCallResponse": "not_implemented",
       "IdentityPrincipalSummary": "not_implemented",
       "IdentityListPrincipalsRequest": "not_implemented",
-      "IdentityListPrincipalsResponse": "not_implemented"
+      "IdentityListPrincipalsResponse": "not_implemented",
+      "HostMaintenanceRecord": "not_implemented",
+      "HostBeginMaintenanceRequest": "not_implemented",
+      "HostResumeAdmissionRequest": "not_implemented",
+      "HostMaintenanceResponse": "not_implemented",
+      "HostGetMaintenanceRequest": "not_implemented",
+      "HostGetMaintenanceResponse": "not_implemented",
+      "HostGetOperationRequest": "not_implemented",
+      "HostGetOperationResponse": "not_implemented",
+      "HostCancelOperationRequest": "not_implemented",
+      "ModelStreamUsage": "not_implemented",
+      "ModelStreamCallSnapshot": "not_implemented",
+      "ModelStreamStarted": "not_implemented",
+      "ModelStreamDelta": "not_implemented",
+      "ModelStreamTerminal": "not_implemented",
+      "ModelStreamEvent": "not_implemented",
+      "ModelStreamCancelRequest": "not_implemented",
+      "ModelStreamCancelResponse": "not_implemented",
+      "OperationChangesRequest": "not_implemented",
+      "OperationChange": "not_implemented",
+      "OperationChangesResponse": "not_implemented",
+      "ModelStreamStartRequest": "not_implemented",
+      "BootstrapDelivery": "not_implemented",
+      "RuntimeGetBootstrapDeliveryRequest": "not_implemented",
+      "RuntimeGetBootstrapDeliveryResponse": "not_implemented",
+      "RuntimeReissueAdapterBootstrapRequest": "not_implemented",
+      "RuntimeReissuePluginBootstrapRequest": "not_implemented",
+      "RuntimeReissueBootstrapResponse": "not_implemented",
+      "BootstrapDeliveryReport": "not_implemented",
+      "RuntimeReportAdapterBootstrapDeliveryRequest": "not_implemented",
+      "RuntimeReportPluginBootstrapDeliveryRequest": "not_implemented",
+      "RuntimeSetHostAdmissionGateRequest": "not_implemented",
+      "RuntimeSetHostAdmissionGateResponse": "not_implemented",
+      "IdentityCheckHostGateAuthorizationRequest": "not_implemented",
+      "IdentityCheckHostGateAuthorizationResponse": "not_implemented"
     },
     "proto_fields": {
       "IdentityAuditFilter.scope": "implemented",
@@ -1627,7 +1661,143 @@
       "IdentityListPrincipalsResponse.checked_at": "not_implemented",
       "RuntimeCreateAccountRequest.catalog": "not_implemented",
       "RuntimeValidateManifestRequest.catalog": "not_implemented",
-      "RuntimeCreateInstallationRequest.catalog": "not_implemented"
+      "RuntimeCreateInstallationRequest.catalog": "not_implemented",
+      "HostMaintenanceRecord.host_id": "not_implemented",
+      "HostMaintenanceRecord.version": "not_implemented",
+      "HostMaintenanceRecord.admission": "not_implemented",
+      "HostMaintenanceRecord.operation": "not_implemented",
+      "HostMaintenanceRecord.observed_at": "not_implemented",
+      "HostBeginMaintenanceRequest.context": "not_implemented",
+      "HostBeginMaintenanceRequest.host_id": "not_implemented",
+      "HostBeginMaintenanceRequest.expected_version": "not_implemented",
+      "HostBeginMaintenanceRequest.grace_ms": "not_implemented",
+      "HostResumeAdmissionRequest.context": "not_implemented",
+      "HostResumeAdmissionRequest.host_id": "not_implemented",
+      "HostResumeAdmissionRequest.expected_version": "not_implemented",
+      "HostMaintenanceResponse.maintenance": "not_implemented",
+      "HostMaintenanceResponse.operation": "not_implemented",
+      "HostGetMaintenanceRequest.context": "not_implemented",
+      "HostGetMaintenanceRequest.host_id": "not_implemented",
+      "HostGetMaintenanceResponse.maintenance": "not_implemented",
+      "HostGetOperationRequest.context": "not_implemented",
+      "HostGetOperationRequest.operation": "not_implemented",
+      "HostGetOperationResponse.operation": "not_implemented",
+      "HostCancelOperationRequest.context": "not_implemented",
+      "HostCancelOperationRequest.operation": "not_implemented",
+      "HostCancelOperationRequest.expected_version": "not_implemented",
+      "ModelStreamUsage.known": "not_implemented",
+      "ModelStreamUsage.input_tokens": "not_implemented",
+      "ModelStreamUsage.output_tokens": "not_implemented",
+      "ModelStreamCallSnapshot.logical_call_id": "not_implemented",
+      "ModelStreamCallSnapshot.owner_instance_id": "not_implemented",
+      "ModelStreamCallSnapshot.model_id": "not_implemented",
+      "ModelStreamCallSnapshot.config_version": "not_implemented",
+      "ModelStreamCallSnapshot.secret_version": "not_implemented",
+      "ModelStreamCallSnapshot.state": "not_implemented",
+      "ModelStreamCallSnapshot.execution_outcome": "not_implemented",
+      "ModelStreamCallSnapshot.usage": "not_implemented",
+      "ModelStreamCallSnapshot.may_have_billed": "not_implemented",
+      "ModelStreamCallSnapshot.observed_at": "not_implemented",
+      "ModelStreamCallSnapshot.reason": "not_implemented",
+      "ModelStreamCallSnapshot.provider_request_id": "not_implemented",
+      "ModelStreamCallSnapshot.latency_ms": "not_implemented",
+      "ModelStreamStarted.disposition": "not_implemented",
+      "ModelStreamStarted.call": "not_implemented",
+      "ModelStreamDelta.text": "not_implemented",
+      "ModelStreamTerminal.termination": "not_implemented",
+      "ModelStreamTerminal.partial": "not_implemented",
+      "ModelStreamTerminal.emitted_bytes": "not_implemented",
+      "ModelStreamTerminal.emitted_delta_count": "not_implemented",
+      "ModelStreamTerminal.finish_reason": "not_implemented",
+      "ModelStreamTerminal.failure": "not_implemented",
+      "ModelStreamTerminal.call": "not_implemented",
+      "ModelStreamTerminal.usage": "not_implemented",
+      "ModelStreamTerminal.may_have_billed": "not_implemented",
+      "ModelStreamEvent.request_id": "not_implemented",
+      "ModelStreamEvent.logical_call_id": "not_implemented",
+      "ModelStreamEvent.sequence": "not_implemented",
+      "ModelStreamEvent.trace_id": "not_implemented",
+      "ModelStreamEvent.started": "not_implemented",
+      "ModelStreamEvent.delta": "not_implemented",
+      "ModelStreamEvent.terminal": "not_implemented",
+      "ModelStreamCancelRequest.start_request_id": "not_implemented",
+      "ModelStreamCancelRequest.logical_call_id": "not_implemented",
+      "ModelStreamCancelResponse.start_request_id": "not_implemented",
+      "ModelStreamCancelResponse.logical_call_id": "not_implemented",
+      "ModelStreamCancelResponse.disposition": "not_implemented",
+      "OperationChangesRequest.context": "not_implemented",
+      "OperationChangesRequest.scope": "not_implemented",
+      "OperationChangesRequest.cursor": "not_implemented",
+      "OperationChangesRequest.page_size": "not_implemented",
+      "OperationChange.operation": "not_implemented",
+      "OperationChange.cursor": "not_implemented",
+      "OperationChangesResponse.changes": "not_implemented",
+      "OperationChangesResponse.next_cursor": "not_implemented",
+      "OperationChangesResponse.has_more": "not_implemented",
+      "OperationChangesResponse.checked_at": "not_implemented",
+      "CoreToPlugin.model_stream_event": "not_implemented",
+      "HostRequest.model_stream_start": "not_implemented",
+      "HostRequest.model_stream_cancel": "not_implemented",
+      "HostResponse.model_stream_cancel": "not_implemented",
+      "ModelStreamStartRequest.model": "not_implemented",
+      "ModelStreamStartRequest.messages": "not_implemented",
+      "ModelStreamStartRequest.logical_call_id": "not_implemented",
+      "RuntimeBindAdapterRequest.bootstrap_recipient_id": "not_implemented",
+      "RuntimeBindAdapterResponse.delivery": "not_implemented",
+      "RuntimeCreateInstanceRequest.bootstrap_recipient_id": "not_implemented",
+      "RuntimeCreateInstanceResponse.delivery": "not_implemented",
+      "BootstrapDelivery.delivery_id": "not_implemented",
+      "BootstrapDelivery.resource": "not_implemented",
+      "BootstrapDelivery.recipient_id": "not_implemented",
+      "BootstrapDelivery.credential_version": "not_implemented",
+      "BootstrapDelivery.state": "not_implemented",
+      "BootstrapDelivery.operation": "not_implemented",
+      "BootstrapDelivery.observed_at": "not_implemented",
+      "RuntimeGetBootstrapDeliveryRequest.context": "not_implemented",
+      "RuntimeGetBootstrapDeliveryRequest.resource": "not_implemented",
+      "RuntimeGetBootstrapDeliveryRequest.delivery_id": "not_implemented",
+      "RuntimeGetBootstrapDeliveryResponse.delivery": "not_implemented",
+      "RuntimeReissueAdapterBootstrapRequest.context": "not_implemented",
+      "RuntimeReissueAdapterBootstrapRequest.account_id": "not_implemented",
+      "RuntimeReissueAdapterBootstrapRequest.recipient_id": "not_implemented",
+      "RuntimeReissueAdapterBootstrapRequest.expected_credential_version": "not_implemented",
+      "RuntimeReissuePluginBootstrapRequest.context": "not_implemented",
+      "RuntimeReissuePluginBootstrapRequest.instance_id": "not_implemented",
+      "RuntimeReissuePluginBootstrapRequest.recipient_id": "not_implemented",
+      "RuntimeReissuePluginBootstrapRequest.expected_credential_version": "not_implemented",
+      "RuntimeReissueBootstrapResponse.delivery": "not_implemented",
+      "RuntimeReissueBootstrapResponse.bootstrap_credential": "not_implemented",
+      "RuntimeReissueBootstrapResponse.operation": "not_implemented",
+      "BootstrapDeliveryReport.delivery_id": "not_implemented",
+      "BootstrapDeliveryReport.recipient_id": "not_implemented",
+      "BootstrapDeliveryReport.credential_version": "not_implemented",
+      "BootstrapDeliveryReport.state": "not_implemented",
+      "BootstrapDeliveryReport.receipt_id": "not_implemented",
+      "BootstrapDeliveryReport.observed_at": "not_implemented",
+      "RuntimeReportAdapterBootstrapDeliveryRequest.context": "not_implemented",
+      "RuntimeReportAdapterBootstrapDeliveryRequest.account_id": "not_implemented",
+      "RuntimeReportAdapterBootstrapDeliveryRequest.report": "not_implemented",
+      "RuntimeReportPluginBootstrapDeliveryRequest.context": "not_implemented",
+      "RuntimeReportPluginBootstrapDeliveryRequest.instance_id": "not_implemented",
+      "RuntimeReportPluginBootstrapDeliveryRequest.report": "not_implemented",
+      "RuntimeSetHostAdmissionGateRequest.context": "not_implemented",
+      "RuntimeSetHostAdmissionGateRequest.host_id": "not_implemented",
+      "RuntimeSetHostAdmissionGateRequest.fence": "not_implemented",
+      "RuntimeSetHostAdmissionGateRequest.operation": "not_implemented",
+      "RuntimeSetHostAdmissionGateRequest.maintenance_version": "not_implemented",
+      "RuntimeSetHostAdmissionGateRequest.expected_gate_version": "not_implemented",
+      "RuntimeSetHostAdmissionGateRequest.admission": "not_implemented",
+      "RuntimeSetHostAdmissionGateResponse.host_id": "not_implemented",
+      "RuntimeSetHostAdmissionGateResponse.gate_version": "not_implemented",
+      "RuntimeSetHostAdmissionGateResponse.maintenance_version": "not_implemented",
+      "RuntimeSetHostAdmissionGateResponse.admission": "not_implemented",
+      "RuntimeSetHostAdmissionGateResponse.operation": "not_implemented",
+      "IdentityCheckHostGateAuthorizationRequest.context": "not_implemented",
+      "IdentityCheckHostGateAuthorizationRequest.host": "not_implemented",
+      "IdentityCheckHostGateAuthorizationRequest.host_certificate_sha256": "not_implemented",
+      "IdentityCheckHostGateAuthorizationResponse.decision": "not_implemented",
+      "IdentityCheckHostGateAuthorizationResponse.host_credential_version": "not_implemented",
+      "IdentityCheckHostGateAuthorizationResponse.host_principal_version": "not_implemented"
     },
     "event_payloads": {
       "EventEnvelope.message_received": "implemented",
@@ -1655,7 +1825,9 @@
       "HostRequest.task_create": "implemented",
       "HostRequest.task_cancel": "implemented",
       "HostRequest.task_get": "implemented",
-      "HostRequest.storage_compare_and_set": "not_implemented"
+      "HostRequest.storage_compare_and_set": "not_implemented",
+      "HostRequest.model_stream_start": "not_implemented",
+      "HostRequest.model_stream_cancel": "not_implemented"
     },
     "host_results": {
       "HostResponse.model_chat": "implemented",
@@ -1665,7 +1837,8 @@
       "HostResponse.task_create": "implemented",
       "HostResponse.task_cancel": "implemented",
       "HostResponse.task_get": "implemented",
-      "HostResponse.storage_compare_and_set": "not_implemented"
+      "HostResponse.storage_compare_and_set": "not_implemented",
+      "HostResponse.model_stream_cancel": "not_implemented"
     },
     "bridge_methods": {
       "AdapterBridge.Connect": "implemented",
@@ -1823,7 +1996,33 @@
       "ModelCallDisposition.ABANDONED": "not_implemented",
       "Permission.PERMISSION_LOG_READ": "not_implemented",
       "Permission.PERMISSION_AUDIT_READ": "not_implemented",
-      "Permission.PERMISSION_HEALTH_READ": "not_implemented"
+      "Permission.PERMISSION_HEALTH_READ": "not_implemented",
+      "HostAdmissionState.HOST_ADMISSION_STATE_UNSPECIFIED": "not_implemented",
+      "HostAdmissionState.HOST_ADMISSION_OPEN": "not_implemented",
+      "HostAdmissionState.HOST_ADMISSION_CLOSED": "not_implemented",
+      "ModelStreamDisposition.MODEL_STREAM_DISPOSITION_UNSPECIFIED": "not_implemented",
+      "ModelStreamDisposition.MODEL_STREAM_FRESH": "not_implemented",
+      "ModelStreamDisposition.MODEL_STREAM_REPLAY_IN_PROGRESS": "not_implemented",
+      "ModelStreamDisposition.MODEL_STREAM_REPLAY_TERMINAL": "not_implemented",
+      "ModelStreamTermination.MODEL_STREAM_TERMINATION_UNSPECIFIED": "not_implemented",
+      "ModelStreamTermination.MODEL_STREAM_COMPLETED": "not_implemented",
+      "ModelStreamTermination.MODEL_STREAM_TRUNCATED": "not_implemented",
+      "ModelStreamTermination.MODEL_STREAM_FAILED": "not_implemented",
+      "ModelStreamTermination.MODEL_STREAM_CANCELLED": "not_implemented",
+      "ModelStreamTermination.MODEL_STREAM_REPLAY": "not_implemented",
+      "ModelStreamFinishReason.MODEL_STREAM_FINISH_REASON_UNSPECIFIED": "not_implemented",
+      "ModelStreamFinishReason.MODEL_STREAM_FINISH_STOP": "not_implemented",
+      "ModelStreamFinishReason.MODEL_STREAM_FINISH_LENGTH": "not_implemented",
+      "ModelStreamFinishReason.MODEL_STREAM_FINISH_CONTENT_FILTER": "not_implemented",
+      "ModelStreamCancelDisposition.MODEL_STREAM_CANCEL_DISPOSITION_UNSPECIFIED": "not_implemented",
+      "ModelStreamCancelDisposition.MODEL_STREAM_CANCELLATION_REQUESTED": "not_implemented",
+      "ModelStreamCancelDisposition.MODEL_STREAM_ALREADY_TERMINAL": "not_implemented",
+      "ModelStreamCancelDisposition.MODEL_STREAM_NOT_ACTIVE": "not_implemented",
+      "BootstrapDeliveryState.BOOTSTRAP_DELIVERY_STATE_UNSPECIFIED": "not_implemented",
+      "BootstrapDeliveryState.BOOTSTRAP_DELIVERY_PENDING": "not_implemented",
+      "BootstrapDeliveryState.BOOTSTRAP_DELIVERY_DELIVERED": "not_implemented",
+      "BootstrapDeliveryState.BOOTSTRAP_DELIVERY_UNKNOWN": "not_implemented",
+      "BootstrapDeliveryState.BOOTSTRAP_DELIVERY_REVOKED": "not_implemented"
     },
     "channels": {
       "channels.control": "implemented",
@@ -1925,7 +2124,15 @@
       "operations.disableModel": "not_implemented",
       "operations.enableModel": "not_implemented",
       "operations.getModelCallStatus": "not_implemented",
-      "operations.resolveModelCall": "not_implemented"
+      "operations.resolveModelCall": "not_implemented",
+      "operations.getHostMaintenance": "not_implemented",
+      "operations.beginHostMaintenance": "not_implemented",
+      "operations.resumeHostAdmission": "not_implemented",
+      "operations.cancelHostOperation": "not_implemented",
+      "operations.getAdapterBootstrapDelivery": "not_implemented",
+      "operations.getPluginBootstrapDelivery": "not_implemented",
+      "operations.reissueAdapterBootstrap": "not_implemented",
+      "operations.reissuePluginBootstrap": "not_implemented"
     },
     "semantic_rules": {
       "semantic.action.deadline_max_300s": "not_implemented",
@@ -1970,7 +2177,16 @@
       "semantic.model.secret_rotation_pinning": "not_implemented",
       "semantic.model.provider_error_mapping": "not_implemented",
       "semantic.model.usage_known_billing": "not_implemented",
-      "semantic.model.instance_delegation": "not_implemented"
+      "semantic.model.instance_delegation": "not_implemented",
+      "semantic.host.request_operation_classification": "not_implemented",
+      "semantic.host.maintenance_operation": "not_implemented",
+      "semantic.host.runtime_admission_gate": "not_implemented",
+      "semantic.bootstrap.controlled_delivery": "not_implemented",
+      "semantic.bootstrap.reissue_version": "not_implemented",
+      "semantic.operations.change_journal": "not_implemented",
+      "semantic.model.stream_delivery": "not_implemented",
+      "semantic.model.stream_cancel_billing": "not_implemented",
+      "semantic.host.gate_authorization": "not_implemented"
     }
   },
   "evidence": {
@@ -2046,7 +2262,7 @@
       "core/src/runtime/bridge_server.cpp"
     ],
     "semantic.host.unknown_operation_error": [
-      "core/include/kiarabot/core/application/host_validation.hpp"
+      "core/reference/include/kiarabot/core/application/host_validation.hpp"
     ],
     "semantic.transport.graceful_shutdown": [
       "core/src/runtime/bridge_server.cpp",
@@ -5727,6 +5943,655 @@
     ],
     "RuntimeCreateInstallationRequest.catalog": [
       "proto/kiarabot/v1/runtime.proto"
+    ],
+    "HostMaintenanceRecord": [
+      "proto/kiarabot/v1/host.proto"
+    ],
+    "HostBeginMaintenanceRequest": [
+      "proto/kiarabot/v1/host.proto"
+    ],
+    "HostResumeAdmissionRequest": [
+      "proto/kiarabot/v1/host.proto"
+    ],
+    "HostMaintenanceResponse": [
+      "proto/kiarabot/v1/host.proto"
+    ],
+    "HostGetMaintenanceRequest": [
+      "proto/kiarabot/v1/host.proto"
+    ],
+    "HostGetMaintenanceResponse": [
+      "proto/kiarabot/v1/host.proto"
+    ],
+    "HostGetOperationRequest": [
+      "proto/kiarabot/v1/host.proto"
+    ],
+    "HostGetOperationResponse": [
+      "proto/kiarabot/v1/host.proto"
+    ],
+    "HostCancelOperationRequest": [
+      "proto/kiarabot/v1/host.proto"
+    ],
+    "ModelStreamUsage": [
+      "proto/kiarabot/v1/model_stream.proto"
+    ],
+    "ModelStreamCallSnapshot": [
+      "proto/kiarabot/v1/model_stream.proto"
+    ],
+    "ModelStreamStarted": [
+      "proto/kiarabot/v1/model_stream.proto"
+    ],
+    "ModelStreamDelta": [
+      "proto/kiarabot/v1/model_stream.proto"
+    ],
+    "ModelStreamTerminal": [
+      "proto/kiarabot/v1/model_stream.proto"
+    ],
+    "ModelStreamEvent": [
+      "proto/kiarabot/v1/model_stream.proto"
+    ],
+    "ModelStreamCancelRequest": [
+      "proto/kiarabot/v1/model_stream.proto"
+    ],
+    "ModelStreamCancelResponse": [
+      "proto/kiarabot/v1/model_stream.proto"
+    ],
+    "OperationChangesRequest": [
+      "proto/kiarabot/v1/observations.proto"
+    ],
+    "OperationChange": [
+      "proto/kiarabot/v1/observations.proto"
+    ],
+    "OperationChangesResponse": [
+      "proto/kiarabot/v1/observations.proto"
+    ],
+    "ModelStreamStartRequest": [
+      "proto/kiarabot/v1/plugins.proto"
+    ],
+    "BootstrapDelivery": [
+      "proto/kiarabot/v1/runtime.proto"
+    ],
+    "RuntimeGetBootstrapDeliveryRequest": [
+      "proto/kiarabot/v1/runtime.proto"
+    ],
+    "RuntimeGetBootstrapDeliveryResponse": [
+      "proto/kiarabot/v1/runtime.proto"
+    ],
+    "RuntimeReissueAdapterBootstrapRequest": [
+      "proto/kiarabot/v1/runtime.proto"
+    ],
+    "RuntimeReissuePluginBootstrapRequest": [
+      "proto/kiarabot/v1/runtime.proto"
+    ],
+    "RuntimeReissueBootstrapResponse": [
+      "proto/kiarabot/v1/runtime.proto"
+    ],
+    "BootstrapDeliveryReport": [
+      "proto/kiarabot/v1/runtime.proto"
+    ],
+    "RuntimeReportAdapterBootstrapDeliveryRequest": [
+      "proto/kiarabot/v1/runtime.proto"
+    ],
+    "RuntimeReportPluginBootstrapDeliveryRequest": [
+      "proto/kiarabot/v1/runtime.proto"
+    ],
+    "RuntimeSetHostAdmissionGateRequest": [
+      "proto/kiarabot/v1/runtime.proto"
+    ],
+    "RuntimeSetHostAdmissionGateResponse": [
+      "proto/kiarabot/v1/runtime.proto"
+    ],
+    "HostMaintenanceRecord.host_id": [
+      "proto/kiarabot/v1/host.proto"
+    ],
+    "HostMaintenanceRecord.version": [
+      "proto/kiarabot/v1/host.proto"
+    ],
+    "HostMaintenanceRecord.admission": [
+      "proto/kiarabot/v1/host.proto"
+    ],
+    "HostMaintenanceRecord.operation": [
+      "proto/kiarabot/v1/host.proto"
+    ],
+    "HostMaintenanceRecord.observed_at": [
+      "proto/kiarabot/v1/host.proto"
+    ],
+    "HostBeginMaintenanceRequest.context": [
+      "proto/kiarabot/v1/host.proto"
+    ],
+    "HostBeginMaintenanceRequest.host_id": [
+      "proto/kiarabot/v1/host.proto"
+    ],
+    "HostBeginMaintenanceRequest.expected_version": [
+      "proto/kiarabot/v1/host.proto"
+    ],
+    "HostBeginMaintenanceRequest.grace_ms": [
+      "proto/kiarabot/v1/host.proto"
+    ],
+    "HostResumeAdmissionRequest.context": [
+      "proto/kiarabot/v1/host.proto"
+    ],
+    "HostResumeAdmissionRequest.host_id": [
+      "proto/kiarabot/v1/host.proto"
+    ],
+    "HostResumeAdmissionRequest.expected_version": [
+      "proto/kiarabot/v1/host.proto"
+    ],
+    "HostMaintenanceResponse.maintenance": [
+      "proto/kiarabot/v1/host.proto"
+    ],
+    "HostMaintenanceResponse.operation": [
+      "proto/kiarabot/v1/host.proto"
+    ],
+    "HostGetMaintenanceRequest.context": [
+      "proto/kiarabot/v1/host.proto"
+    ],
+    "HostGetMaintenanceRequest.host_id": [
+      "proto/kiarabot/v1/host.proto"
+    ],
+    "HostGetMaintenanceResponse.maintenance": [
+      "proto/kiarabot/v1/host.proto"
+    ],
+    "HostGetOperationRequest.context": [
+      "proto/kiarabot/v1/host.proto"
+    ],
+    "HostGetOperationRequest.operation": [
+      "proto/kiarabot/v1/host.proto"
+    ],
+    "HostGetOperationResponse.operation": [
+      "proto/kiarabot/v1/host.proto"
+    ],
+    "HostCancelOperationRequest.context": [
+      "proto/kiarabot/v1/host.proto"
+    ],
+    "HostCancelOperationRequest.operation": [
+      "proto/kiarabot/v1/host.proto"
+    ],
+    "HostCancelOperationRequest.expected_version": [
+      "proto/kiarabot/v1/host.proto"
+    ],
+    "ModelStreamUsage.known": [
+      "proto/kiarabot/v1/model_stream.proto"
+    ],
+    "ModelStreamUsage.input_tokens": [
+      "proto/kiarabot/v1/model_stream.proto"
+    ],
+    "ModelStreamUsage.output_tokens": [
+      "proto/kiarabot/v1/model_stream.proto"
+    ],
+    "ModelStreamCallSnapshot.logical_call_id": [
+      "proto/kiarabot/v1/model_stream.proto"
+    ],
+    "ModelStreamCallSnapshot.owner_instance_id": [
+      "proto/kiarabot/v1/model_stream.proto"
+    ],
+    "ModelStreamCallSnapshot.model_id": [
+      "proto/kiarabot/v1/model_stream.proto"
+    ],
+    "ModelStreamCallSnapshot.config_version": [
+      "proto/kiarabot/v1/model_stream.proto"
+    ],
+    "ModelStreamCallSnapshot.secret_version": [
+      "proto/kiarabot/v1/model_stream.proto"
+    ],
+    "ModelStreamCallSnapshot.state": [
+      "proto/kiarabot/v1/model_stream.proto"
+    ],
+    "ModelStreamCallSnapshot.execution_outcome": [
+      "proto/kiarabot/v1/model_stream.proto"
+    ],
+    "ModelStreamCallSnapshot.usage": [
+      "proto/kiarabot/v1/model_stream.proto"
+    ],
+    "ModelStreamCallSnapshot.may_have_billed": [
+      "proto/kiarabot/v1/model_stream.proto"
+    ],
+    "ModelStreamCallSnapshot.observed_at": [
+      "proto/kiarabot/v1/model_stream.proto"
+    ],
+    "ModelStreamCallSnapshot.reason": [
+      "proto/kiarabot/v1/model_stream.proto"
+    ],
+    "ModelStreamCallSnapshot.provider_request_id": [
+      "proto/kiarabot/v1/model_stream.proto"
+    ],
+    "ModelStreamCallSnapshot.latency_ms": [
+      "proto/kiarabot/v1/model_stream.proto"
+    ],
+    "ModelStreamStarted.disposition": [
+      "proto/kiarabot/v1/model_stream.proto"
+    ],
+    "ModelStreamStarted.call": [
+      "proto/kiarabot/v1/model_stream.proto"
+    ],
+    "ModelStreamDelta.text": [
+      "proto/kiarabot/v1/model_stream.proto"
+    ],
+    "ModelStreamTerminal.termination": [
+      "proto/kiarabot/v1/model_stream.proto"
+    ],
+    "ModelStreamTerminal.partial": [
+      "proto/kiarabot/v1/model_stream.proto"
+    ],
+    "ModelStreamTerminal.emitted_bytes": [
+      "proto/kiarabot/v1/model_stream.proto"
+    ],
+    "ModelStreamTerminal.emitted_delta_count": [
+      "proto/kiarabot/v1/model_stream.proto"
+    ],
+    "ModelStreamTerminal.finish_reason": [
+      "proto/kiarabot/v1/model_stream.proto"
+    ],
+    "ModelStreamTerminal.failure": [
+      "proto/kiarabot/v1/model_stream.proto"
+    ],
+    "ModelStreamTerminal.call": [
+      "proto/kiarabot/v1/model_stream.proto"
+    ],
+    "ModelStreamTerminal.usage": [
+      "proto/kiarabot/v1/model_stream.proto"
+    ],
+    "ModelStreamTerminal.may_have_billed": [
+      "proto/kiarabot/v1/model_stream.proto"
+    ],
+    "ModelStreamEvent.request_id": [
+      "proto/kiarabot/v1/model_stream.proto"
+    ],
+    "ModelStreamEvent.logical_call_id": [
+      "proto/kiarabot/v1/model_stream.proto"
+    ],
+    "ModelStreamEvent.sequence": [
+      "proto/kiarabot/v1/model_stream.proto"
+    ],
+    "ModelStreamEvent.trace_id": [
+      "proto/kiarabot/v1/model_stream.proto"
+    ],
+    "ModelStreamEvent.started": [
+      "proto/kiarabot/v1/model_stream.proto"
+    ],
+    "ModelStreamEvent.delta": [
+      "proto/kiarabot/v1/model_stream.proto"
+    ],
+    "ModelStreamEvent.terminal": [
+      "proto/kiarabot/v1/model_stream.proto"
+    ],
+    "ModelStreamCancelRequest.start_request_id": [
+      "proto/kiarabot/v1/model_stream.proto"
+    ],
+    "ModelStreamCancelRequest.logical_call_id": [
+      "proto/kiarabot/v1/model_stream.proto"
+    ],
+    "ModelStreamCancelResponse.start_request_id": [
+      "proto/kiarabot/v1/model_stream.proto"
+    ],
+    "ModelStreamCancelResponse.logical_call_id": [
+      "proto/kiarabot/v1/model_stream.proto"
+    ],
+    "ModelStreamCancelResponse.disposition": [
+      "proto/kiarabot/v1/model_stream.proto"
+    ],
+    "OperationChangesRequest.context": [
+      "proto/kiarabot/v1/observations.proto"
+    ],
+    "OperationChangesRequest.scope": [
+      "proto/kiarabot/v1/observations.proto"
+    ],
+    "OperationChangesRequest.cursor": [
+      "proto/kiarabot/v1/observations.proto"
+    ],
+    "OperationChangesRequest.page_size": [
+      "proto/kiarabot/v1/observations.proto"
+    ],
+    "OperationChange.operation": [
+      "proto/kiarabot/v1/observations.proto"
+    ],
+    "OperationChange.cursor": [
+      "proto/kiarabot/v1/observations.proto"
+    ],
+    "OperationChangesResponse.changes": [
+      "proto/kiarabot/v1/observations.proto"
+    ],
+    "OperationChangesResponse.next_cursor": [
+      "proto/kiarabot/v1/observations.proto"
+    ],
+    "OperationChangesResponse.has_more": [
+      "proto/kiarabot/v1/observations.proto"
+    ],
+    "OperationChangesResponse.checked_at": [
+      "proto/kiarabot/v1/observations.proto"
+    ],
+    "CoreToPlugin.model_stream_event": [
+      "proto/kiarabot/v1/plugins.proto"
+    ],
+    "HostRequest.model_stream_start": [
+      "proto/kiarabot/v1/plugins.proto"
+    ],
+    "HostRequest.model_stream_cancel": [
+      "proto/kiarabot/v1/plugins.proto"
+    ],
+    "HostResponse.model_stream_cancel": [
+      "proto/kiarabot/v1/plugins.proto"
+    ],
+    "ModelStreamStartRequest.model": [
+      "proto/kiarabot/v1/plugins.proto"
+    ],
+    "ModelStreamStartRequest.messages": [
+      "proto/kiarabot/v1/plugins.proto"
+    ],
+    "ModelStreamStartRequest.logical_call_id": [
+      "proto/kiarabot/v1/plugins.proto"
+    ],
+    "RuntimeBindAdapterRequest.bootstrap_recipient_id": [
+      "proto/kiarabot/v1/runtime.proto"
+    ],
+    "RuntimeBindAdapterResponse.delivery": [
+      "proto/kiarabot/v1/runtime.proto"
+    ],
+    "RuntimeCreateInstanceRequest.bootstrap_recipient_id": [
+      "proto/kiarabot/v1/runtime.proto"
+    ],
+    "RuntimeCreateInstanceResponse.delivery": [
+      "proto/kiarabot/v1/runtime.proto"
+    ],
+    "BootstrapDelivery.delivery_id": [
+      "proto/kiarabot/v1/runtime.proto"
+    ],
+    "BootstrapDelivery.resource": [
+      "proto/kiarabot/v1/runtime.proto"
+    ],
+    "BootstrapDelivery.recipient_id": [
+      "proto/kiarabot/v1/runtime.proto"
+    ],
+    "BootstrapDelivery.credential_version": [
+      "proto/kiarabot/v1/runtime.proto"
+    ],
+    "BootstrapDelivery.state": [
+      "proto/kiarabot/v1/runtime.proto"
+    ],
+    "BootstrapDelivery.operation": [
+      "proto/kiarabot/v1/runtime.proto"
+    ],
+    "BootstrapDelivery.observed_at": [
+      "proto/kiarabot/v1/runtime.proto"
+    ],
+    "RuntimeGetBootstrapDeliveryRequest.context": [
+      "proto/kiarabot/v1/runtime.proto"
+    ],
+    "RuntimeGetBootstrapDeliveryRequest.resource": [
+      "proto/kiarabot/v1/runtime.proto"
+    ],
+    "RuntimeGetBootstrapDeliveryRequest.delivery_id": [
+      "proto/kiarabot/v1/runtime.proto"
+    ],
+    "RuntimeGetBootstrapDeliveryResponse.delivery": [
+      "proto/kiarabot/v1/runtime.proto"
+    ],
+    "RuntimeReissueAdapterBootstrapRequest.context": [
+      "proto/kiarabot/v1/runtime.proto"
+    ],
+    "RuntimeReissueAdapterBootstrapRequest.account_id": [
+      "proto/kiarabot/v1/runtime.proto"
+    ],
+    "RuntimeReissueAdapterBootstrapRequest.recipient_id": [
+      "proto/kiarabot/v1/runtime.proto"
+    ],
+    "RuntimeReissueAdapterBootstrapRequest.expected_credential_version": [
+      "proto/kiarabot/v1/runtime.proto"
+    ],
+    "RuntimeReissuePluginBootstrapRequest.context": [
+      "proto/kiarabot/v1/runtime.proto"
+    ],
+    "RuntimeReissuePluginBootstrapRequest.instance_id": [
+      "proto/kiarabot/v1/runtime.proto"
+    ],
+    "RuntimeReissuePluginBootstrapRequest.recipient_id": [
+      "proto/kiarabot/v1/runtime.proto"
+    ],
+    "RuntimeReissuePluginBootstrapRequest.expected_credential_version": [
+      "proto/kiarabot/v1/runtime.proto"
+    ],
+    "RuntimeReissueBootstrapResponse.delivery": [
+      "proto/kiarabot/v1/runtime.proto"
+    ],
+    "RuntimeReissueBootstrapResponse.bootstrap_credential": [
+      "proto/kiarabot/v1/runtime.proto"
+    ],
+    "RuntimeReissueBootstrapResponse.operation": [
+      "proto/kiarabot/v1/runtime.proto"
+    ],
+    "BootstrapDeliveryReport.delivery_id": [
+      "proto/kiarabot/v1/runtime.proto"
+    ],
+    "BootstrapDeliveryReport.recipient_id": [
+      "proto/kiarabot/v1/runtime.proto"
+    ],
+    "BootstrapDeliveryReport.credential_version": [
+      "proto/kiarabot/v1/runtime.proto"
+    ],
+    "BootstrapDeliveryReport.state": [
+      "proto/kiarabot/v1/runtime.proto"
+    ],
+    "BootstrapDeliveryReport.receipt_id": [
+      "proto/kiarabot/v1/runtime.proto"
+    ],
+    "BootstrapDeliveryReport.observed_at": [
+      "proto/kiarabot/v1/runtime.proto"
+    ],
+    "RuntimeReportAdapterBootstrapDeliveryRequest.context": [
+      "proto/kiarabot/v1/runtime.proto"
+    ],
+    "RuntimeReportAdapterBootstrapDeliveryRequest.account_id": [
+      "proto/kiarabot/v1/runtime.proto"
+    ],
+    "RuntimeReportAdapterBootstrapDeliveryRequest.report": [
+      "proto/kiarabot/v1/runtime.proto"
+    ],
+    "RuntimeReportPluginBootstrapDeliveryRequest.context": [
+      "proto/kiarabot/v1/runtime.proto"
+    ],
+    "RuntimeReportPluginBootstrapDeliveryRequest.instance_id": [
+      "proto/kiarabot/v1/runtime.proto"
+    ],
+    "RuntimeReportPluginBootstrapDeliveryRequest.report": [
+      "proto/kiarabot/v1/runtime.proto"
+    ],
+    "RuntimeSetHostAdmissionGateRequest.context": [
+      "proto/kiarabot/v1/runtime.proto"
+    ],
+    "RuntimeSetHostAdmissionGateRequest.host_id": [
+      "proto/kiarabot/v1/runtime.proto"
+    ],
+    "RuntimeSetHostAdmissionGateRequest.fence": [
+      "proto/kiarabot/v1/runtime.proto"
+    ],
+    "RuntimeSetHostAdmissionGateRequest.operation": [
+      "proto/kiarabot/v1/runtime.proto"
+    ],
+    "RuntimeSetHostAdmissionGateRequest.maintenance_version": [
+      "proto/kiarabot/v1/runtime.proto"
+    ],
+    "RuntimeSetHostAdmissionGateRequest.expected_gate_version": [
+      "proto/kiarabot/v1/runtime.proto"
+    ],
+    "RuntimeSetHostAdmissionGateRequest.admission": [
+      "proto/kiarabot/v1/runtime.proto"
+    ],
+    "RuntimeSetHostAdmissionGateResponse.host_id": [
+      "proto/kiarabot/v1/runtime.proto"
+    ],
+    "RuntimeSetHostAdmissionGateResponse.gate_version": [
+      "proto/kiarabot/v1/runtime.proto"
+    ],
+    "RuntimeSetHostAdmissionGateResponse.maintenance_version": [
+      "proto/kiarabot/v1/runtime.proto"
+    ],
+    "RuntimeSetHostAdmissionGateResponse.admission": [
+      "proto/kiarabot/v1/runtime.proto"
+    ],
+    "RuntimeSetHostAdmissionGateResponse.operation": [
+      "proto/kiarabot/v1/runtime.proto"
+    ],
+    "HostAdmissionState.HOST_ADMISSION_STATE_UNSPECIFIED": [
+      "proto/kiarabot/v1/host.proto"
+    ],
+    "HostAdmissionState.HOST_ADMISSION_OPEN": [
+      "proto/kiarabot/v1/host.proto"
+    ],
+    "HostAdmissionState.HOST_ADMISSION_CLOSED": [
+      "proto/kiarabot/v1/host.proto"
+    ],
+    "ModelStreamDisposition.MODEL_STREAM_DISPOSITION_UNSPECIFIED": [
+      "proto/kiarabot/v1/model_stream.proto"
+    ],
+    "ModelStreamDisposition.MODEL_STREAM_FRESH": [
+      "proto/kiarabot/v1/model_stream.proto"
+    ],
+    "ModelStreamDisposition.MODEL_STREAM_REPLAY_IN_PROGRESS": [
+      "proto/kiarabot/v1/model_stream.proto"
+    ],
+    "ModelStreamDisposition.MODEL_STREAM_REPLAY_TERMINAL": [
+      "proto/kiarabot/v1/model_stream.proto"
+    ],
+    "ModelStreamTermination.MODEL_STREAM_TERMINATION_UNSPECIFIED": [
+      "proto/kiarabot/v1/model_stream.proto"
+    ],
+    "ModelStreamTermination.MODEL_STREAM_COMPLETED": [
+      "proto/kiarabot/v1/model_stream.proto"
+    ],
+    "ModelStreamTermination.MODEL_STREAM_TRUNCATED": [
+      "proto/kiarabot/v1/model_stream.proto"
+    ],
+    "ModelStreamTermination.MODEL_STREAM_FAILED": [
+      "proto/kiarabot/v1/model_stream.proto"
+    ],
+    "ModelStreamTermination.MODEL_STREAM_CANCELLED": [
+      "proto/kiarabot/v1/model_stream.proto"
+    ],
+    "ModelStreamTermination.MODEL_STREAM_REPLAY": [
+      "proto/kiarabot/v1/model_stream.proto"
+    ],
+    "ModelStreamFinishReason.MODEL_STREAM_FINISH_REASON_UNSPECIFIED": [
+      "proto/kiarabot/v1/model_stream.proto"
+    ],
+    "ModelStreamFinishReason.MODEL_STREAM_FINISH_STOP": [
+      "proto/kiarabot/v1/model_stream.proto"
+    ],
+    "ModelStreamFinishReason.MODEL_STREAM_FINISH_LENGTH": [
+      "proto/kiarabot/v1/model_stream.proto"
+    ],
+    "ModelStreamFinishReason.MODEL_STREAM_FINISH_CONTENT_FILTER": [
+      "proto/kiarabot/v1/model_stream.proto"
+    ],
+    "ModelStreamCancelDisposition.MODEL_STREAM_CANCEL_DISPOSITION_UNSPECIFIED": [
+      "proto/kiarabot/v1/model_stream.proto"
+    ],
+    "ModelStreamCancelDisposition.MODEL_STREAM_CANCELLATION_REQUESTED": [
+      "proto/kiarabot/v1/model_stream.proto"
+    ],
+    "ModelStreamCancelDisposition.MODEL_STREAM_ALREADY_TERMINAL": [
+      "proto/kiarabot/v1/model_stream.proto"
+    ],
+    "ModelStreamCancelDisposition.MODEL_STREAM_NOT_ACTIVE": [
+      "proto/kiarabot/v1/model_stream.proto"
+    ],
+    "BootstrapDeliveryState.BOOTSTRAP_DELIVERY_STATE_UNSPECIFIED": [
+      "proto/kiarabot/v1/runtime.proto"
+    ],
+    "BootstrapDeliveryState.BOOTSTRAP_DELIVERY_PENDING": [
+      "proto/kiarabot/v1/runtime.proto"
+    ],
+    "BootstrapDeliveryState.BOOTSTRAP_DELIVERY_DELIVERED": [
+      "proto/kiarabot/v1/runtime.proto"
+    ],
+    "BootstrapDeliveryState.BOOTSTRAP_DELIVERY_UNKNOWN": [
+      "proto/kiarabot/v1/runtime.proto"
+    ],
+    "BootstrapDeliveryState.BOOTSTRAP_DELIVERY_REVOKED": [
+      "proto/kiarabot/v1/runtime.proto"
+    ],
+    "operations.getHostMaintenance": [
+      "api/openapi.yaml"
+    ],
+    "operations.beginHostMaintenance": [
+      "api/openapi.yaml"
+    ],
+    "operations.resumeHostAdmission": [
+      "api/openapi.yaml"
+    ],
+    "operations.cancelHostOperation": [
+      "api/openapi.yaml"
+    ],
+    "operations.getAdapterBootstrapDelivery": [
+      "api/openapi.yaml"
+    ],
+    "operations.getPluginBootstrapDelivery": [
+      "api/openapi.yaml"
+    ],
+    "operations.reissueAdapterBootstrap": [
+      "api/openapi.yaml"
+    ],
+    "operations.reissuePluginBootstrap": [
+      "api/openapi.yaml"
+    ],
+    "semantic.host.request_operation_classification": [
+      "proto/kiarabot/v1/plugins.proto",
+      "doc/01-contracts.md"
+    ],
+    "semantic.host.maintenance_operation": [
+      "proto/kiarabot/v1/host.proto",
+      "doc/01-runtime-semantics.md"
+    ],
+    "semantic.host.runtime_admission_gate": [
+      "proto/kiarabot/v1/runtime.proto",
+      "doc/01-runtime-semantics.md"
+    ],
+    "semantic.bootstrap.controlled_delivery": [
+      "proto/kiarabot/v1/runtime.proto",
+      "api/openapi.yaml",
+      "doc/01-runtime-semantics.md"
+    ],
+    "semantic.bootstrap.reissue_version": [
+      "proto/kiarabot/v1/runtime.proto",
+      "doc/01-runtime-semantics.md"
+    ],
+    "semantic.operations.change_journal": [
+      "proto/kiarabot/v1/observations.proto",
+      "api/asyncapi.yaml"
+    ],
+    "semantic.model.stream_delivery": [
+      "proto/kiarabot/v1/model_stream.proto",
+      "proto/kiarabot/v1/model.proto"
+    ],
+    "semantic.model.stream_cancel_billing": [
+      "proto/kiarabot/v1/model_stream.proto",
+      "proto/kiarabot/v1/plugins.proto"
+    ],
+    "IdentityCheckHostGateAuthorizationRequest": [
+      "doc/01-contracts.md"
+    ],
+    "IdentityCheckHostGateAuthorizationRequest.context": [
+      "doc/01-contracts.md"
+    ],
+    "IdentityCheckHostGateAuthorizationRequest.host": [
+      "doc/01-contracts.md"
+    ],
+    "IdentityCheckHostGateAuthorizationRequest.host_certificate_sha256": [
+      "doc/01-contracts.md"
+    ],
+    "IdentityCheckHostGateAuthorizationResponse": [
+      "doc/01-contracts.md"
+    ],
+    "IdentityCheckHostGateAuthorizationResponse.decision": [
+      "doc/01-contracts.md"
+    ],
+    "IdentityCheckHostGateAuthorizationResponse.host_credential_version": [
+      "doc/01-contracts.md"
+    ],
+    "IdentityCheckHostGateAuthorizationResponse.host_principal_version": [
+      "doc/01-contracts.md"
+    ],
+    "semantic.host.gate_authorization": [
+      "doc/01-contracts.md",
+      "doc/02-core.md"
     ]
   },
   "vocabulary": {
@@ -5767,7 +6632,16 @@
       "action.mute_member.v1",
       "action.kick_member.v1",
       "action.approve_request.v1"
-    ]
+    ],
+    "target_features": {
+      "host.model.stream.v1": {
+        "permission": "model.chat",
+        "status": "not_implemented",
+        "semantic_rule": "semantic.model.stream_delivery",
+        "declaration_source": "proto/kiarabot/v1/plugins.proto",
+        "advertise": "only_after_target_semantic_implemented"
+      }
+    }
   },
   "schema_enum_implemented_values": {
     "PluginManifest.runtime": [
@@ -6817,7 +7691,9 @@
           "semantic.scheduler.owner_derivation": "implemented",
           "semantic.scheduler.cancel_window": "implemented",
           "semantic.scheduler.handoff_expiry": "implemented",
-          "semantic.scheduler.timer_occurrence_identity": "implemented"
+          "semantic.scheduler.timer_occurrence_identity": "implemented",
+          "semantic.host.request_operation_classification": "implemented",
+          "semantic.host.unknown_operation_error": "implemented"
         },
         "enum_values": {
           "DeliveryDisposition.DELIVERY_ACKNOWLEDGED": "implemented",
@@ -13545,6 +14421,18 @@
           "core/src/application/target/runtime_resource_application.cpp",
           "core/tests/platform/runtime_catalog_management_e2e.py",
           "tests/architecture/p05_control_catalog_smoke.py"
+        ],
+        "semantic_rules:semantic.host.request_operation_classification": [
+          "core/include/kiarabot/core/runtime/platform/host_request_shape.hpp",
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/tests/platform/model_bridge_test.cpp",
+          "reports/modules/architecture-host-bootstrap-slices.md"
+        ],
+        "semantic_rules:semantic.host.unknown_operation_error": [
+          "core/include/kiarabot/core/runtime/platform/host_request_shape.hpp",
+          "core/src/runtime/platform/runtime_bridge.cpp",
+          "core/tests/platform/model_bridge_test.cpp",
+          "reports/modules/architecture-host-bootstrap-slices.md"
         ]
       }
     }

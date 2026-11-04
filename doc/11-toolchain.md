@@ -1,7 +1,8 @@
 # 开发工具链与本地质量检查
 
 前部Txx及旧dev/proto流程保留为reference历史；本轮目标构建、固定环境和实际验收以本文
-P00/P02章节及模块执行报告为准。reference通过不表示六服务业务已经实现。
+P00/P02章节及末尾“内层依赖与架构链接门禁”章节为准。逐次运行结果与未关闭检查集中在
+[证据矩阵](27-phase-exit-evidence.md)；reference 通过、命令存在或测试注册均不表示当前工作区通过。
 
 T06c 时区转换使用 Protobuf/gRPC 已依赖的 Abseil CMake 包（absl::time）和系统 zoneinfo；Linux 验收机安装 tzdata。独立 infrastructure 构建也显式查找该包，Core 领域代码只依赖 ITimeZoneResolver。新增 task_scheduler CTest 和 SDK test_tasks.py 覆盖跨进程恢复。
 
@@ -666,3 +667,53 @@ Check允许、proof范围不足/当前业务grant不足的正常拒绝、旧sour
 P04 已集成的新增契约测试及普通成功快照索引13/14继续参与构建，避免留下坏构建。
 晚间验收入口和换机续开发说明以 doc/24-single-host-mvp.md、doc/25-development-handoff.md
 为准；原完整工具链仍是以后恢复目标架构时的检查入口。
+
+## 内层依赖与架构链接门禁（2026-11-04）
+
+业务目标在 CMake 声明处以 `KIARABOT_LAYER=INNER` 登记；导出图同时保存
+`SOURCE_DIR`、`SOURCES` 和 PRIVATE/PUBLIC/INTERFACE 依赖。`--links` 对所有已登记
+内层目标逐个追踪传递依赖，而不只检查六个服务的初始 application 库。门禁还独立根据
+Core domain/application/ports 和 Control application 的实际源码归属核对登记；新业务
+目标无论叫什么名字、是否贴 reference 标签，漏登记都失败。相对源路径依据实际
+`SOURCE_DIR` 解析；内层的普通及 INTERFACE include 路径一并检查。
+
+六生产进程继续检查 reference 传递依赖。基础设施明确登记真正的历史实现与测试，
+Host journal 和目标 Model HTTP Provider 保持生产分类；它们在外层链接 SQLite/curl
+属于合法依赖，不能因此把基础设施整体当 reference，也不能删除 reference 门禁。
+Control readiness 的三个原子状态字段归入 `control/application/target/readiness.hpp`，
+内层只允许自身 application 路径；HTTP/数据库/Control 外层头仍被拒绝。
+
+Runtime 资源应用和 Scheduler service 均不链接 OpenSSL。摘要操作从组合根注入外层
+适配器，输入编码仍由内层决定。`architecture_sha256` 直接验证空输入、普通文本、
+含 NUL/非 ASCII 二进制、64KiB 载荷和 OpenSSL 故障；Scheduler 单测验证 UTC/当地
+时间/取消的固定摘要，以及创建、取消、到期路径摘要失败时整 UoW 回滚；Runtime
+单测验证 payload 与事件指纹的精确输入编码和两个失败点。`p10_postgres_scheduler`
+使用同一生产摘要适配器验证真实 PG 持久化与重启恢复。
+
+从本工作树配置并重新构建后，执行（固定环境准备见上文 P00）：
+
+```bash
+cmake --preset full-locked -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+cmake --build --preset full-locked --parallel 4
+python3 scripts/quality/tests/architecture_test.py
+python3 scripts/quality/check-architecture.py --inner
+python3 scripts/quality/check-architecture.py --links build/full-locked/architecture-targets.json
+python3 scripts/quality/check-architecture.py --database build/full-locked/compile_commands.json
+ctest --preset full-locked -R '^(architecture_sha256|p05_runtime_resource_application|p10_scheduler_service|p10_postgres_scheduler|p10_scheduler_rpc|p10_timer_e2e|p08_host_journal|p11_model_http_provider)$' --no-tests=error --output-on-failure
+```
+
+自测覆盖新增业务目标漏登记、任意命名的已登记业务库间接链接 Crypto、INTERFACE
+include 泄漏、真实 reference 拒绝及合法 Host/Model 基础设施不误报；自测通过不能代替
+本次 configure 生成的实际链接图和新二进制验证。
+
+## Model streaming第三方解析器接入（2026-11-04）
+
+根工程启用C仅用于固定commit的eventsource-c解析器，生产目标仍C++20；第三方私有target局限
+C99，不把其transport/client/reconnect加入生产。source-archives锁记录来源、commit、archive
+SHA256/SHA512、MIT及三个许可/源文件hash，配置只下载到build缓存。依赖检查需运行
+`python3 scripts/quality/check-dependency-lock.py`及对应tests/dependency_lock_test.py；带archive
+参数时额外验证缓存tarball。禁止将第三方缓存源码/生成物提交仓库。
+
+许可随构建准备并可独立安装：`cmake --install build/full-locked --component model-streaming-licenses
+--prefix <staging>`，目标目录为share/kiarabot/licenses/eventsource-c，含MIT LICENSE和锁定来源
+provenance.json，供打包与后续SBOM使用。本轮不修改整套发布流水线，不进行发布。

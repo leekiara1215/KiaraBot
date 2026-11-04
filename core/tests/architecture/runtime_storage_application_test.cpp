@@ -83,7 +83,7 @@ template <typename Key, typename Value>
 class MemoryRepository final : public t::Repository<Key, Value> {
 public:
   explicit MemoryRepository(Store& store) : store_(store) {}
-  t::Outcome<std::optional<Value>> find(const Key& key) override {
+  t::Outcome<std::optional<Value>> find(const Key&) override {
     if (store_.fail_reads) {
       return unavailable();
     }
@@ -592,6 +592,10 @@ private:
     t::Outcome<std::vector<t::DeliveryClaim>> claim(const t::DeliveryClaimRequest&) override {
       return unavailable();
     }
+    t::Outcome<std::optional<t::DeliveryAttempt>>
+    find_attempt(const t::InstanceId&, std::string_view, const t::AttemptId&) override {
+      return unavailable();
+    }
     t::Outcome<t::DeliveryReceipt> acknowledge(const t::DeliveryAcknowledgement&,
                                                t::TimePoint) override {
       return unavailable();
@@ -809,7 +813,8 @@ struct Fixture {
             base_now() + std::chrono::seconds{20},
             t::InstanceId{instance},
             t::RequestedScopeKind::DefaultPrivate,
-            {}};
+            {},
+            std::nullopt};
   }
   t::CommandContext management_context(std::string method = "CreateSharedNamespace",
                                        std::string idempotency = "0123456789abcdef") const {

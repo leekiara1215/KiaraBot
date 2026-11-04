@@ -762,6 +762,77 @@ public:
     }
   }
 
+  wire::RequestContext stream_context(WebSocketDeadline deadline) {
+    const auto remaining = deadline - std::chrono::steady_clock::now();
+    if (remaining <= std::chrono::steady_clock::duration::zero()) {
+      throw RpcError{wire::TIMEOUT};
+    }
+    wire::RequestContext result;
+    const auto id = request_id();
+    result.set_request_id(id);
+    result.set_trace_id(id);
+    const auto wall = std::chrono::system_clock::now() + remaining;
+    *result.mutable_deadline() = checked_value(codec::to_wire(core::target::TimePoint{
+        std::chrono::duration_cast<core::target::TimePoint::duration>(wall.time_since_epoch())}));
+    return result;
+  }
+  WebSocketResult<WebSocketIdentity> validate_stream(std::string_view access,
+                                                     WebSocketDeadline deadline) {
+    try {
+      if (!safe_text(access, 20, 4096)) {
+        return WebSocketFailure{wire::UNAUTHENTICATED, false};
+      }
+      const auto context = stream_context(deadline);
+      wire::IdentityValidateSessionRequest input;
+      input.set_access_token(std::string{access});
+      wire::IdentityValidateSessionResponse output;
+      call(&wire::IdentityService::Stub::ValidateSession, input, output, context, deadline);
+      (void)principal_json(output);
+      WebSocketIdentity identity;
+      identity.principal = output.principal().principal_id();
+      identity.identity_session = output.session().session_id();
+      identity.authorization_version = output.authorization_version();
+      identity.expires_at = checked_value(codec::from_wire(output.session().expires_at()));
+      identity.checked_at = checked_value(codec::from_wire(output.checked_at()));
+      return identity;
+    } catch (const RpcError& error) {
+      return WebSocketFailure{error.code, false};
+    } catch (...) {
+      return WebSocketFailure{wire::INTERNAL, false};
+    }
+  }
+  WebSocketResult<std::string> delegate_stream(std::string_view owner, wire::Permission permission,
+                                               const wire::ResourceScope& scope,
+                                               std::string_view access,
+                                               WebSocketDeadline deadline) {
+    try {
+      if (!safe_text(access, 20, 4096) || scope.resources_size() == 0 ||
+          scope.resources_size() > 127) {
+        return WebSocketFailure{wire::UNAUTHENTICATED, false};
+      }
+      const auto context = stream_context(deadline);
+      wire::IdentityIssueDelegationRequest input;
+      input.set_subject_proof(std::string{access});
+      input.set_audience(std::string{owner});
+      *input.mutable_scope() = scope;
+      input.add_permissions(permission);
+      input.set_client_certificate_sha256(fingerprint_);
+      wire::IdentityIssueDelegationResponse output;
+      call(&wire::IdentityService::Stub::IssueDelegation, input, output, context, deadline);
+      if (!output.has_delegation() || output.delegation().audience() != owner ||
+          !safe_text(output.delegation().proof(), 20, 32768) ||
+          !output.delegation().has_expires_at()) {
+        return WebSocketFailure{wire::INTERNAL, false};
+      }
+      (void)checked_value(codec::from_wire(output.delegation().expires_at()));
+      return output.delegation().proof();
+    } catch (const RpcError& error) {
+      return WebSocketFailure{error.code, false};
+    } catch (...) {
+      return WebSocketFailure{wire::INTERNAL, false};
+    }
+  }
+
   bool identity_ready() const {
     return channel_ && channel_->GetState(true) == GRPC_CHANNEL_READY;
   }
@@ -788,6 +859,17 @@ IdentityAuthClient::~IdentityAuthClient() {
 }
 AuthHttpResponse IdentityAuthClient::handle(const AuthHttpRequest& request) {
   return impl_->handle(request);
+}
+WebSocketResult<WebSocketIdentity>
+IdentityAuthClient::validate_stream(std::string_view access_token, WebSocketDeadline deadline) {
+  return impl_->validate_stream(access_token, deadline);
+}
+WebSocketResult<std::string> IdentityAuthClient::delegate_stream(std::string_view owner,
+                                                                 v1::Permission permission,
+                                                                 const v1::ResourceScope& scope,
+                                                                 std::string_view access_token,
+                                                                 WebSocketDeadline deadline) {
+  return impl_->delegate_stream(owner, permission, scope, access_token, deadline);
 }
 bool IdentityAuthClient::identity_ready() const {
   return impl_->identity_ready();

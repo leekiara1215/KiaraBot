@@ -1,5 +1,21 @@
 # 部署与可观测性设计
 
+## 当前源码的目标库校验（2026-11-04，WS-02）
+
+新空库初始化与服务启动必须匹配当前源码的Identity15、Runtime19、Scheduler11、Model10。
+版本唯一来源是`infrastructure/postgres/schema/v1.hpp`，完整结构校验取`schema/manifest.hpp`；
+WS-02只在Runtime/Scheduler/Model增加owner operation journal，Identity未变。当前PG16.4描述值为：
+
+- Identity：`decc8401bef9d3ac3c92116e7608b2f4`，135项relation；
+- Runtime：`3b472a7194e1d5417caeee118e58087f`，162项relation；
+- Scheduler：`1d2af0ada31b0233a160a34715870dc2`，91项relation；
+- Model：`51d9e7782bb74769dd2a1cc5fee58408`，85项relation。
+
+恢复时备份版本/descriptor必须与拟启动二进制一致；旧版本备份仍按其manifest核对并配匹配版本二进制，
+不能改`--expect`、版本表或descriptor伪装升级。当前不做自动DDL/原地补表，不清空现有运行库。下方有日期
+的P03/P04/P14历史记录保留当时证据作用域，不能当作当前初始化参数；后续BOOT变更再按实际schema同步。
+
+
 T07b 真实联调环境尚未提供（用户已确认）。准备说明和不含密钥的模板见 [真实联调环境准备](../tests/acceptance/real-environment.md)。先以 event-observer 验证接收，模板不自动发送平台消息或模型请求；真实收发、模型和恢复结果仍待实际环境验收，不能用 T07a 替代。
 
 T06c 持久化插件入口装配 TaskScheduler 并协商 host.tasks.v1；插件权限显式添加 task.schedule，定时事件订阅为 event.timer.triggered。数据库升级至 v5，包含任务/领取 token；启动在开启监听前恢复 RUNNING，恢复失败拒绝启动。一个数据库只运行一个 Core；替换进程必须先停止旧进程。任务每 100ms 检查，系统必须安装 IANA zoneinfo（Linux tzdata）；备份任务/inbox/幂等记录须保持同一快照。COMPLETED 只表示入队，排障同时检查插件投递状态。
@@ -455,7 +471,7 @@ socket，不继续受理。暂时忙等可恢复情况由具体组合根区分�
 ### P03 common transaction limits
 
 
-P03 公共 schema 为 v3；P04 Identity 空库含安全关系、完整会话结果、当前 bootstrap 定位、源 Control 会话绑定、平台当前定位索引、Assignment墓碑、完整普通结果、Pending 凭据受众关系及一个 binding 只对应一个 Principal 的唯一索引；P14h 对齐 exact_permissions 权限范围后 Identity 为 v15、Runtime v17、Scheduler v10、Model v9。要求UTF8数据库；
+P03 公共 schema 为 v3；P04 Identity 空库含安全关系、完整会话结果、当前 bootstrap 定位、源 Control 会话绑定、平台当前定位索引、Assignment墓碑、完整普通结果、Pending 凭据受众关系及一个 binding 只对应一个 Principal 的唯一索引；P14h 对齐权限后继续经WS-02扩展，当前源码为 Identity v15、Runtime v19、Scheduler v11、Model v10（版本和descriptor见页首当前校验入口）。要求UTF8数据库；
 旧版本或其他结构不自动升级，必须按本轮空库部署
 流程初始化新的专属库，不能清空原库或自动补表。schema结构描述/对象owner/运行权限均参与
 启动验证。当前仅存储公共能力，业务就绪仍由各服务已实现依赖决定。
@@ -629,7 +645,7 @@ wrapper仅核对返回指纹、正verified_at、受信clock/已知偏差及与ve
 ### P04 离线管理员与 Control 登记命令
 
 `kiarabot-identity-bootstrap` 只在可信部署主机离线运行，不提供 HTTP/gRPC 初始化入口。
-先显式初始化 Identity 空库（当前 schema11），停止同库 Identity daemon，再执行：
+先显式初始化 Identity 空库（当前源码 schema15；早期P04记录为11），停止同库 Identity daemon，再执行：
 
 ```bash
 kiarabot-identity-bootstrap --config identity.json --enrollment enrollment.json --password-file administrator-password
@@ -1324,9 +1340,9 @@ Docker 部署通过 PG 发布的回环端口执行这两个脚本时，备份主
 scripts/ops/target-restore.sh \
   --root /path/deploy/target \
   --env /path/operator/target.env \
-  --input /path/backups/target-20261102T121944Z-XXXX \
+  --input /path/backups/target-current-version-XXXX \
   --confirm \
-  --expect identity=15 --expect runtime=17 --expect scheduler=10 --expect model=9 \
+  --expect identity=15 --expect runtime=19 --expect scheduler=11 --expect model=10 \
   --verify-sql /path/operator/verify.sql
 ```
 
@@ -1807,3 +1823,43 @@ provider。
 仅 Runtime 接受顶层 `resource_catalogs`，值为封闭对象，必须且只能含 accounts、installations、instances、adapters、hosts，五值为互异的规范小写 UUIDv4。未知键、缺失键、重复 ID、非 UUIDv4 使配置加载以 exit 2 / `invalid_resource_catalogs` 拒绝。缺少整个对象可启动，但受影响的目录和创建方法保持 CAPABILITY_NOT_SUPPORTED；这不使既有 exact 方法绕过授权。
 
 目录身份由部署初始化源生成并长期保存，禁止进程重启时随机创建。Runtime 映射、Control 家族映射与 Identity 离线 enrollment 使用同一来源并分别显式赋权；灾备恢复保留三者一致。改目录 ID 不能替代撤权，映射变更按停写配置迁移处理。目录 grant 不含 child 权限，新资源的后续授权仍需合法供给流程。进程内快照重启丢失，旧 token 返回 CONFLICT，客户端应重新开始列表；每主体 64 / 全局 1024 快照、单快照 4096 / 全局 16384 候选及 64 MiB 保守计费上限耗尽返回 RATE_LIMITED，不驱逐有效 token。
+
+## BOOT-03 固定 recipient 文件 sink（2026-11-04）
+
+此模块尚未接入Runtime签发/重发与REST。部署组合根离线登记每个recipient的精确资源、固定peer ID、
+绝对目录、目标UID/GID；目录必须是调用进程拥有的0700真实目录，路径各组件拒绝symlink和`..`。
+目标为该目录下固定`<peer_id>.bootstrap`，不存在请求自定路径。临时文件、intent、receipt、lock均0600，
+拒绝symlink/非regular/多硬链接/错误owner或模式。消费者只读挂载秘密文件；Control的写权限仅限投递根。
+
+每个peer使用有界非阻塞文件锁串行CAS；写intent→同目录临时文件fsync→rename→目录fsync→receipt
+fsync。intent/receipt只保存固定身份、版本和受限摘要，绝不保存明文；query输出只有receipt身份/状态。
+崩溃后同delivery查询可从匹配目标补receipt，未安装/无法确认保持UNKNOWN；新版本更新依赖明确expected
+版本，旧请求不可覆盖。遗留本peer临时文件由持锁恢复清理，不能跟随symlink或清理其他peer文件。
+
+部署应先确认实例停止/维护gate才重新发放。重新发放由Runtime后续任务负责撤销旧bootstrap/proof与
+提升真实版本；本地文件替换本身不能当作远端撤销或SDK重新注册。丢明文不能从摘要恢复，保持原delivery
+查询/UNKNOWN并走显式受权重发，不手工改receipt标成功。现有target_host_credential.py仍供受限手动部署，
+保留0600/stdin/atomic/verify规则；本模块使用相同文件约定并增加版本CAS及无秘密恢复收据，不把helper
+普通store成功当作新自动交付链已完成。
+
+## HOST-02 维护SQLite运行边界（2026-11-04）
+
+独立维护存储与既有Host执行journal同属Host，可使用同一SQLite文件的独立短事务连接；不访问四业务PG。
+维护operation/阶段/admission/命令幂等/audit/changes是本地权威，Runtime gate只有typed端口，真实backend
+和RPC接线尚待后续。维护关闭接纳先于Runtime禁派确认；重启保留Closed，未知执行不能被Restore/Resume
+清零。后台每次最多处理一个已冻结执行，TERM/KILL沿既有marker和白名单机制，不开放shell。
+
+operation changes复用统一Host owner cursor，scope仅自身RESOURCE_HOST，600秒有界窗口、持久epoch/
+sequence/low-water，operation及participants变更与append同事务。普通Host重启epoch不变；日志重建或恢复
+旧备份需要可信离线重置epoch，使旧cursor显式CONFLICT/RESYNC，不静默略过缺口。操作终态保留至少7天、
+未决至少30天，Unknown超窗仍需人工证据处置，不能凭心跳离线或执行记录缺失标成功。
+
+存储详细责任见`doc/modules/host-maintenance-storage.md`。本切片只证明纯应用、SQLite与受限本地进程测试，
+不证明HostManagement HTTP/RPC、真实Runtime禁派授权、两主机接管或整条HOST验收。
+
+
+v1.1 Host登记要求受控platform_peers中service=host时额外显式host_id（与principal_id独立），其证书/主体
+绑定该Host资源；只有该exactHost的显式host.execute才能用于gate。Host配置可增加identity_endpoint以
+在线核验管理委托。Runtime使用实际TLS叶摘要调用受限Identity检查，并核对现有Host allowlist/fence。
+既有非Host enrollment不变，无新数据库/关系/DDL；已初始化Identity不能靠再次bootstrap覆盖登记，须沿
+正式受控注册流程处理。不得将CA/SAN或本地allowlist当作Identity grant，不存储Control bearer供后台恢复。

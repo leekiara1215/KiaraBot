@@ -168,6 +168,7 @@ P10 Scheduler 的 domain/RPC/PG16.4/三进程 mTLS 交接已本地实测通过�
 
 | `operations.listAccounts`、`operations.listInstallations`、`operations.listInstances`、`operations.listAdapterInstances` | implemented | P05 Control HTTPS → Identity 精确授权委托 → Runtime 真实 Compose 隔离库验收（`tests/architecture/p05_control_catalog_smoke.py`）：目录 + 明确 child 集合、目录单独授权空页、分页重放、默认 page_size=20、缺失/跨族目录拒绝；每批只代表该显式范围。Host 目录来源仍为能力缺口，`operations.listHosts` 保持未实现。OpenAPI 历史内联 marker 不变。 |
 | `operations.createAccount`、`operations.createInstallation`、`operations.createInstance` | implemented | P05 真实 Compose 创建验收（`tests/architecture/p05_control_catalog_smoke.py`）：账号/安装要求所属目录授权，实例要求父安装精确授权；同幂等键换 request_id 重放保留原业务结果，实例观测时间按当前投影可前进。创建不派生新 child 权限，后置授权供给缺口保持记录。OpenAPI 历史内联 marker 不变。 |
+| `semantic.host.request_operation_classification`、`semantic.host.unknown_operation_error` | implemented | HERR-02/03 target PluginBridge形状边界：真实TLS raw-wire测试覆盖缺操作、单future候选、known+unknown/多候选/wrong-wire、metadata128兼容和下游零调用；标准已知oneof last-wins。2026-11-04主代理p11_model_bridge 1/1、3.94s及锁定format/tidy通过，见模块切片报告；不扩大到streaming或Host管理族。 |
 <!-- execution-scopes:end -->
 
 **P13h-1 Scheduler 平台 peer 授权语义注记（2026-11-03）**：`SchedulerService.ListTasks` 与
@@ -217,7 +218,7 @@ P05 Runtime 资源方法、Identity ListPrincipals 等有本机测试证据但 t
 | `semantic.action.deadline_max_300s`、`semantic.action.target_source_id_charset` | not_implemented | deadline 只校验正时间戳，无 300 秒上限；Action 的 `target_source` 用比入口更窄的字符集。 |
 | `semantic.adapter.backpressure_retryable_rate_limited` | not_implemented | 契约要求队列满返回可重试 `RATE_LIMITED`，实现返回 `retryable=false` 且不关流。 |
 | `semantic.bridge.connection_authorization`、`semantic.bridge.external_listener`、`semantic.bridge.plugin_delivery_lease` | not_implemented | P06 目标：Runtime 外部 Bridge 监听（server-verified TLS）、bootstrap→`ConnectionAuthorization`/fence/proof/refresh、插件投递 attempt 租约与 `DELIVERY_STALE`/`DELIVERY_DUPLICATE`；reference 无外部监听、连接授权和 attempt，P06 实现后按 target scope 翻转。 |
-| `semantic.host.unknown_operation_error` | not_implemented | 契约要求未知 Host operation 返回 `CAPABILITY_NOT_SUPPORTED`，实现先返回 `INVALID_ARGUMENT`。 |
+| `semantic.host.unknown_operation_error` | not_implemented | 历史reference路径`core/reference/include/kiarabot/core/application/host_validation.hpp`对OPERATION_NOT_SET仍返回`INVALID_ARGUMENT`，reference保持not_implemented；目标缺操作与future候选已分开并按target独立证据登记。 |
 | `semantic.rest.action_query_terminal_retention`、`semantic.rest.action_query_deadline_expired` | not_implemented | REST 查询未实现 168 小时终态保留与到期 `EXPIRED` 迁移；语义已冻结，待 control-api 接线。 |
 | `semantic.grpc.business_error_mapping` | deprecated | 旧文档的 `CONFLICT→ALREADY_EXISTS/ABORTED` 等业务错误映射已废止；业务错误以 in-band `Error` 帧为准，见“错误模型”。 |
 | `semantic.rest.admin_role_wildcard` | deprecated | 旧 `admin: ['*']` 通配授权已废止；角色改为显式权限列表，任何默认角色都不含 `message.read`。 |
@@ -1514,6 +1515,65 @@ P05 Runtime 资源方法、Identity ListPrincipals 等有本机测试证据但 t
 | `operations.getInstanceConfiguration` | not_implemented | Q6 实例级配置读取：显式 installation/instance 路径，返回 Runtime 期望/Host 观察/插件 ACK 分离事实，密钥不返回。 |
 | `operations.updateInstanceConfiguration` | not_implemented | Q6 实例级配置更新：显式 installation/instance 路径 + 幂等键/expected_version；202 受理不表示 Host/插件已应用。 |
 | `operations.disableModel`、`operations.enableModel`、`operations.getModelCallStatus`、`operations.resolveModelCall` | not_implemented | P11d Control REST 契约：Model 生命周期/调用状态/UNKNOWN 处置转发端点，经单模型 scope 与精确权限；target 仍按 not_implemented 登记，Control 实现见 P11d 记录。 |
+
+### 2026-11-04 新增声明登记（尚无生产实现）
+
+| 契约项 | 状态 | 范围 |
+| --- | --- | --- |
+| `HostMaintenanceRecord`、`HostBeginMaintenanceRequest`、`HostResumeAdmissionRequest`、`HostMaintenanceResponse`、`HostGetMaintenanceRequest` | not_implemented | 批准扩展的声明与规格测试；等待独立生产实现和验收，不能借用旧能力证据。 |
+| `HostGetMaintenanceResponse`、`HostGetOperationRequest`、`HostGetOperationResponse`、`HostCancelOperationRequest`、`ModelStreamUsage` | not_implemented | 批准扩展的声明与规格测试；等待独立生产实现和验收，不能借用旧能力证据。 |
+| `ModelStreamCallSnapshot`、`ModelStreamStarted`、`ModelStreamDelta`、`ModelStreamTerminal`、`ModelStreamEvent` | not_implemented | 批准扩展的声明与规格测试；等待独立生产实现和验收，不能借用旧能力证据。 |
+| `ModelStreamCancelRequest`、`ModelStreamCancelResponse`、`OperationChangesRequest`、`OperationChange`、`OperationChangesResponse` | not_implemented | 批准扩展的声明与规格测试；等待独立生产实现和验收，不能借用旧能力证据。 |
+| `ModelStreamStartRequest`、`BootstrapDelivery`、`RuntimeGetBootstrapDeliveryRequest`、`RuntimeGetBootstrapDeliveryResponse`、`RuntimeReissueAdapterBootstrapRequest` | not_implemented | 批准扩展的声明与规格测试；等待独立生产实现和验收，不能借用旧能力证据。 |
+| `RuntimeReissuePluginBootstrapRequest`、`RuntimeReissueBootstrapResponse`、`BootstrapDeliveryReport`、`RuntimeReportAdapterBootstrapDeliveryRequest`、`RuntimeReportPluginBootstrapDeliveryRequest` | not_implemented | 批准扩展的声明与规格测试；等待独立生产实现和验收，不能借用旧能力证据。 |
+| `RuntimeSetHostAdmissionGateRequest`、`RuntimeSetHostAdmissionGateResponse` | not_implemented | 批准扩展的声明与规格测试；等待独立生产实现和验收，不能借用旧能力证据。 |
+| `HostMaintenanceRecord.host_id`、`HostMaintenanceRecord.version`、`HostMaintenanceRecord.admission`、`HostMaintenanceRecord.operation`、`HostMaintenanceRecord.observed_at` | not_implemented | 批准扩展的声明与规格测试；等待独立生产实现和验收，不能借用旧能力证据。 |
+| `HostBeginMaintenanceRequest.context`、`HostBeginMaintenanceRequest.host_id`、`HostBeginMaintenanceRequest.expected_version`、`HostBeginMaintenanceRequest.grace_ms`、`HostResumeAdmissionRequest.context` | not_implemented | 批准扩展的声明与规格测试；等待独立生产实现和验收，不能借用旧能力证据。 |
+| `HostResumeAdmissionRequest.host_id`、`HostResumeAdmissionRequest.expected_version`、`HostMaintenanceResponse.maintenance`、`HostMaintenanceResponse.operation`、`HostGetMaintenanceRequest.context` | not_implemented | 批准扩展的声明与规格测试；等待独立生产实现和验收，不能借用旧能力证据。 |
+| `HostGetMaintenanceRequest.host_id`、`HostGetMaintenanceResponse.maintenance`、`HostGetOperationRequest.context`、`HostGetOperationRequest.operation`、`HostGetOperationResponse.operation` | not_implemented | 批准扩展的声明与规格测试；等待独立生产实现和验收，不能借用旧能力证据。 |
+| `HostCancelOperationRequest.context`、`HostCancelOperationRequest.operation`、`HostCancelOperationRequest.expected_version`、`ModelStreamUsage.known`、`ModelStreamUsage.input_tokens` | not_implemented | 批准扩展的声明与规格测试；等待独立生产实现和验收，不能借用旧能力证据。 |
+| `ModelStreamUsage.output_tokens`、`ModelStreamCallSnapshot.logical_call_id`、`ModelStreamCallSnapshot.owner_instance_id`、`ModelStreamCallSnapshot.model_id`、`ModelStreamCallSnapshot.config_version` | not_implemented | 批准扩展的声明与规格测试；等待独立生产实现和验收，不能借用旧能力证据。 |
+| `ModelStreamCallSnapshot.secret_version`、`ModelStreamCallSnapshot.state`、`ModelStreamCallSnapshot.execution_outcome`、`ModelStreamCallSnapshot.usage`、`ModelStreamCallSnapshot.may_have_billed` | not_implemented | 批准扩展的声明与规格测试；等待独立生产实现和验收，不能借用旧能力证据。 |
+| `ModelStreamCallSnapshot.observed_at`、`ModelStreamCallSnapshot.reason`、`ModelStreamCallSnapshot.provider_request_id`、`ModelStreamCallSnapshot.latency_ms`、`ModelStreamStarted.disposition` | not_implemented | 批准扩展的声明与规格测试；等待独立生产实现和验收，不能借用旧能力证据。 |
+| `ModelStreamStarted.call`、`ModelStreamDelta.text`、`ModelStreamTerminal.termination`、`ModelStreamTerminal.partial`、`ModelStreamTerminal.emitted_bytes` | not_implemented | 批准扩展的声明与规格测试；等待独立生产实现和验收，不能借用旧能力证据。 |
+| `ModelStreamTerminal.emitted_delta_count`、`ModelStreamTerminal.finish_reason`、`ModelStreamTerminal.failure`、`ModelStreamTerminal.call`、`ModelStreamTerminal.usage` | not_implemented | 批准扩展的声明与规格测试；等待独立生产实现和验收，不能借用旧能力证据。 |
+| `ModelStreamTerminal.may_have_billed`、`ModelStreamEvent.request_id`、`ModelStreamEvent.logical_call_id`、`ModelStreamEvent.sequence`、`ModelStreamEvent.trace_id` | not_implemented | 批准扩展的声明与规格测试；等待独立生产实现和验收，不能借用旧能力证据。 |
+| `ModelStreamEvent.started`、`ModelStreamEvent.delta`、`ModelStreamEvent.terminal`、`ModelStreamCancelRequest.start_request_id`、`ModelStreamCancelRequest.logical_call_id` | not_implemented | 批准扩展的声明与规格测试；等待独立生产实现和验收，不能借用旧能力证据。 |
+| `ModelStreamCancelResponse.start_request_id`、`ModelStreamCancelResponse.logical_call_id`、`ModelStreamCancelResponse.disposition`、`OperationChangesRequest.context`、`OperationChangesRequest.scope` | not_implemented | 批准扩展的声明与规格测试；等待独立生产实现和验收，不能借用旧能力证据。 |
+| `OperationChangesRequest.cursor`、`OperationChangesRequest.page_size`、`OperationChange.operation`、`OperationChange.cursor`、`OperationChangesResponse.changes` | not_implemented | 批准扩展的声明与规格测试；等待独立生产实现和验收，不能借用旧能力证据。 |
+| `OperationChangesResponse.next_cursor`、`OperationChangesResponse.has_more`、`OperationChangesResponse.checked_at`、`CoreToPlugin.model_stream_event`、`HostRequest.model_stream_start` | not_implemented | 批准扩展的声明与规格测试；等待独立生产实现和验收，不能借用旧能力证据。 |
+| `HostRequest.model_stream_cancel`、`HostResponse.model_stream_cancel`、`ModelStreamStartRequest.model`、`ModelStreamStartRequest.messages`、`ModelStreamStartRequest.logical_call_id` | not_implemented | 批准扩展的声明与规格测试；等待独立生产实现和验收，不能借用旧能力证据。 |
+| `RuntimeBindAdapterRequest.bootstrap_recipient_id`、`RuntimeBindAdapterResponse.delivery`、`RuntimeCreateInstanceRequest.bootstrap_recipient_id`、`RuntimeCreateInstanceResponse.delivery`、`BootstrapDelivery.delivery_id` | not_implemented | 批准扩展的声明与规格测试；等待独立生产实现和验收，不能借用旧能力证据。 |
+| `BootstrapDelivery.resource`、`BootstrapDelivery.recipient_id`、`BootstrapDelivery.credential_version`、`BootstrapDelivery.state`、`BootstrapDelivery.operation` | not_implemented | 批准扩展的声明与规格测试；等待独立生产实现和验收，不能借用旧能力证据。 |
+| `BootstrapDelivery.observed_at`、`RuntimeGetBootstrapDeliveryRequest.context`、`RuntimeGetBootstrapDeliveryRequest.resource`、`RuntimeGetBootstrapDeliveryRequest.delivery_id`、`RuntimeGetBootstrapDeliveryResponse.delivery` | not_implemented | 批准扩展的声明与规格测试；等待独立生产实现和验收，不能借用旧能力证据。 |
+| `RuntimeReissueAdapterBootstrapRequest.context`、`RuntimeReissueAdapterBootstrapRequest.account_id`、`RuntimeReissueAdapterBootstrapRequest.recipient_id`、`RuntimeReissueAdapterBootstrapRequest.expected_credential_version`、`RuntimeReissuePluginBootstrapRequest.context` | not_implemented | 批准扩展的声明与规格测试；等待独立生产实现和验收，不能借用旧能力证据。 |
+| `RuntimeReissuePluginBootstrapRequest.instance_id`、`RuntimeReissuePluginBootstrapRequest.recipient_id`、`RuntimeReissuePluginBootstrapRequest.expected_credential_version`、`RuntimeReissueBootstrapResponse.delivery`、`RuntimeReissueBootstrapResponse.bootstrap_credential` | not_implemented | 批准扩展的声明与规格测试；等待独立生产实现和验收，不能借用旧能力证据。 |
+| `RuntimeReissueBootstrapResponse.operation`、`BootstrapDeliveryReport.delivery_id`、`BootstrapDeliveryReport.recipient_id`、`BootstrapDeliveryReport.credential_version`、`BootstrapDeliveryReport.state` | not_implemented | 批准扩展的声明与规格测试；等待独立生产实现和验收，不能借用旧能力证据。 |
+| `BootstrapDeliveryReport.receipt_id`、`BootstrapDeliveryReport.observed_at`、`RuntimeReportAdapterBootstrapDeliveryRequest.context`、`RuntimeReportAdapterBootstrapDeliveryRequest.account_id`、`RuntimeReportAdapterBootstrapDeliveryRequest.report` | not_implemented | 批准扩展的声明与规格测试；等待独立生产实现和验收，不能借用旧能力证据。 |
+| `RuntimeReportPluginBootstrapDeliveryRequest.context`、`RuntimeReportPluginBootstrapDeliveryRequest.instance_id`、`RuntimeReportPluginBootstrapDeliveryRequest.report`、`RuntimeSetHostAdmissionGateRequest.context`、`RuntimeSetHostAdmissionGateRequest.host_id` | not_implemented | 批准扩展的声明与规格测试；等待独立生产实现和验收，不能借用旧能力证据。 |
+| `RuntimeSetHostAdmissionGateRequest.fence`、`RuntimeSetHostAdmissionGateRequest.operation`、`RuntimeSetHostAdmissionGateRequest.maintenance_version`、`RuntimeSetHostAdmissionGateRequest.expected_gate_version`、`RuntimeSetHostAdmissionGateRequest.admission` | not_implemented | 批准扩展的声明与规格测试；等待独立生产实现和验收，不能借用旧能力证据。 |
+| `RuntimeSetHostAdmissionGateResponse.host_id`、`RuntimeSetHostAdmissionGateResponse.gate_version`、`RuntimeSetHostAdmissionGateResponse.maintenance_version`、`RuntimeSetHostAdmissionGateResponse.admission`、`RuntimeSetHostAdmissionGateResponse.operation` | not_implemented | 批准扩展的声明与规格测试；等待独立生产实现和验收，不能借用旧能力证据。 |
+| `HostRequest.model_stream_start`、`HostRequest.model_stream_cancel` | not_implemented | 批准扩展的声明与规格测试；等待独立生产实现和验收，不能借用旧能力证据。 |
+| `HostResponse.model_stream_cancel` | not_implemented | 批准扩展的声明与规格测试；等待独立生产实现和验收，不能借用旧能力证据。 |
+| `HostAdmissionState.HOST_ADMISSION_STATE_UNSPECIFIED`、`HostAdmissionState.HOST_ADMISSION_OPEN`、`HostAdmissionState.HOST_ADMISSION_CLOSED`、`ModelStreamDisposition.MODEL_STREAM_DISPOSITION_UNSPECIFIED`、`ModelStreamDisposition.MODEL_STREAM_FRESH` | not_implemented | 批准扩展的声明与规格测试；等待独立生产实现和验收，不能借用旧能力证据。 |
+| `ModelStreamDisposition.MODEL_STREAM_REPLAY_IN_PROGRESS`、`ModelStreamDisposition.MODEL_STREAM_REPLAY_TERMINAL`、`ModelStreamTermination.MODEL_STREAM_TERMINATION_UNSPECIFIED`、`ModelStreamTermination.MODEL_STREAM_COMPLETED`、`ModelStreamTermination.MODEL_STREAM_TRUNCATED` | not_implemented | 批准扩展的声明与规格测试；等待独立生产实现和验收，不能借用旧能力证据。 |
+| `ModelStreamTermination.MODEL_STREAM_FAILED`、`ModelStreamTermination.MODEL_STREAM_CANCELLED`、`ModelStreamTermination.MODEL_STREAM_REPLAY`、`ModelStreamFinishReason.MODEL_STREAM_FINISH_REASON_UNSPECIFIED`、`ModelStreamFinishReason.MODEL_STREAM_FINISH_STOP` | not_implemented | 批准扩展的声明与规格测试；等待独立生产实现和验收，不能借用旧能力证据。 |
+| `ModelStreamFinishReason.MODEL_STREAM_FINISH_LENGTH`、`ModelStreamFinishReason.MODEL_STREAM_FINISH_CONTENT_FILTER`、`ModelStreamCancelDisposition.MODEL_STREAM_CANCEL_DISPOSITION_UNSPECIFIED`、`ModelStreamCancelDisposition.MODEL_STREAM_CANCELLATION_REQUESTED`、`ModelStreamCancelDisposition.MODEL_STREAM_ALREADY_TERMINAL` | not_implemented | 批准扩展的声明与规格测试；等待独立生产实现和验收，不能借用旧能力证据。 |
+| `ModelStreamCancelDisposition.MODEL_STREAM_NOT_ACTIVE`、`BootstrapDeliveryState.BOOTSTRAP_DELIVERY_STATE_UNSPECIFIED`、`BootstrapDeliveryState.BOOTSTRAP_DELIVERY_PENDING`、`BootstrapDeliveryState.BOOTSTRAP_DELIVERY_DELIVERED`、`BootstrapDeliveryState.BOOTSTRAP_DELIVERY_UNKNOWN` | not_implemented | 批准扩展的声明与规格测试；等待独立生产实现和验收，不能借用旧能力证据。 |
+| `BootstrapDeliveryState.BOOTSTRAP_DELIVERY_REVOKED` | not_implemented | 批准扩展的声明与规格测试；等待独立生产实现和验收，不能借用旧能力证据。 |
+| `operations.getHostMaintenance`、`operations.beginHostMaintenance`、`operations.resumeHostAdmission`、`operations.cancelHostOperation`、`operations.getAdapterBootstrapDelivery` | not_implemented | 批准扩展的声明与规格测试；等待独立生产实现和验收，不能借用旧能力证据。 |
+| `operations.getPluginBootstrapDelivery`、`operations.reissueAdapterBootstrap`、`operations.reissuePluginBootstrap` | not_implemented | 批准扩展的声明与规格测试；等待独立生产实现和验收，不能借用旧能力证据。 |
+| `semantic.host.request_operation_classification`、`semantic.host.maintenance_operation`、`semantic.host.runtime_admission_gate`、`semantic.bootstrap.controlled_delivery`、`semantic.bootstrap.reissue_version` | not_implemented | 批准扩展的声明与规格测试；等待独立生产实现和验收，不能借用旧能力证据。 |
+| `semantic.operations.change_journal`、`semantic.model.stream_delivery`、`semantic.model.stream_cancel_billing` | not_implemented | 批准扩展的声明与规格测试；等待独立生产实现和验收，不能借用旧能力证据。 |
+
+| `IdentityCheckHostGateAuthorizationRequest.context` | not_implemented | 受限Host gate声明与规格oracle；等待真实Identity/Runtime验收。 |
+| `IdentityCheckHostGateAuthorizationRequest.host` | not_implemented | 受限Host gate声明与规格oracle；等待真实Identity/Runtime验收。 |
+| `IdentityCheckHostGateAuthorizationRequest.host_certificate_sha256` | not_implemented | 受限Host gate声明与规格oracle；等待真实Identity/Runtime验收。 |
+| `IdentityCheckHostGateAuthorizationResponse.decision` | not_implemented | 受限Host gate声明与规格oracle；等待真实Identity/Runtime验收。 |
+| `IdentityCheckHostGateAuthorizationResponse.host_credential_version` | not_implemented | 受限Host gate声明与规格oracle；等待真实Identity/Runtime验收。 |
+| `IdentityCheckHostGateAuthorizationResponse.host_principal_version` | not_implemented | 受限Host gate声明与规格oracle；等待真实Identity/Runtime验收。 |
+| `semantic.host.gate_authorization` | not_implemented | 受限Host gate声明与规格oracle；等待真实Identity/Runtime验收。 |
+
 <!-- contract-status:end -->
 
 `/ws/messages` 自 2026-10-31（W5）起为 `implemented`：只有被私有控制配置显式授予 `message.read` 的用户可订阅，事件 `message.updated` 仅含消息元数据（`message_id`、`conversation_id`、`direction`；v1 只产生 `received`），不推送正文、没有 REST 消息投影、也不构成审计；任何默认角色（含 admin）都不持有 `message.read`。授权模型见 `doc/08-operations.md`。
@@ -1804,9 +1864,18 @@ action.mute_member.v1
 action.kick_member.v1
 action.approve_request.v1
 ```
+单独登记的 target 功能声明（不加入上述 reference 已支持词表，不表示可协商成功）：
+
+| 功能协商名 | 所需权限 | 状态 | 发布门槛 |
+| --- | --- | --- | --- |
+| `host.model.stream.v1` | `model.chat` | not_implemented | 绑定 `semantic.model.stream_delivery` 的 target 独立端到端证据；只有对应 target 语义 implemented 后才可 advertise/enable。 |
+
+仅存在新 proto、Runtime 方法或 manifest 字符串都不能开启该 feature。客户端声明也不授予能力；
+服务端必须同时具备完整 Model/Provider/Runtime/SDK 路径和当前精确 model.chat 权限，协商确认后才发流帧。
+它是新功能名，不是新增权限名；非流 host.model.v1 不隐含 host.model.stream.v1。
 <!-- vocabulary:end -->
 
-v1 不存在其他功能/权限名；`doc/03-plugin-sdk.md` 中更宽的规划词表不构成本契约承诺。`message.send`、`message.react`、`message.delete`、`member.mute`、`member.kick`、`request.approve` 只对 Action 生效且互不隐含；`message.read` 不授予任何控制面默认角色。
+除词表中单独标注且保持未实现的 target 功能声明外，v1 不存在其他功能/权限名；`doc/03-plugin-sdk.md` 中更宽的规划词表不构成本契约承诺。`message.send`、`message.react`、`message.delete`、`member.mute`、`member.kick`、`request.approve` 只对 Action 生效且互不隐含；`message.read` 不授予任何控制面默认角色。
 
 ### P07 目标 Action 权限与能力映射（未实现）
 
@@ -2234,3 +2303,122 @@ P05 首页空 page_token 重试按同 subject/method/request_id 定位原十分�
 ## Runtime 五项管理写入回执（2026-11-04）
 
 `DisableAccount`、`BindAdapter`、`UnbindAdapter`、`SetDesiredState`、`UpdateConfig` 的成功回执在原保留期内返回原业务快照和原 `OperationRef`；同幂等键更换 request_id/trace_id/deadline 不改变原操作身份。重试仍按当前身份、权限和完整资源范围在线核验；同键异参维持 `CONFLICT`。实例两项同时重放提交时的完整 `VersionedResourceState`（包括原 observed_at、实例版本与 STOPPED/Running 意图），不读当前行重建。`BindAdapter` 普通回执不保存或再次交付 bootstrap 明文。附属回执缺失、未知版本或资源/owner 不匹配时拒绝，不按新 request_id 猜 operation。该保证限定这五项；其他方法继续遵守其独立回执契约。wire 字段及现有 ReplayResult 索引保持不变。
+
+## 2026-11-04 批准扩展：契约冻结与实现状态
+
+依据 `reports/analysis/user-decisions-2026-11-04.md` 与 `doc/29-approved-capability-expansion-plan.md`，
+本节冻结新增公共契约；**新增声明全部 target not_implemented**。已有 GetOperation 的 target
+实现证据只覆盖既有 owner 分支，不包含本次新增 host 分支；已有 CreateInstance/BindAdapter
+也不能证明新增 recipient、delivery metadata、重新发放或真实 credential_version 已实现。
+协议唯一来源为 `proto/`，REST/WS 分别以 OpenAPI/AsyncAPI 为准；后续实现先契约再应用、适配、验证。
+
+### HostRequest：缺失、future operation 与不支持
+
+此处 HostRequest 是插件调用 Core 的 Host API，不是 Plugin Host 平台管理 RPC。
+现有 reference `validate_host_request` 位于 `core/reference/`，保留 blob 与其历史断言；其
+INVALID_ARGUMENT 分支不能当 target 证据，也不为翻 marker 修改 reference manifest。
+目标 PluginBridge 在已认证当前流与 fence/proof 检查之后分类：
+
+- 无已知 operation、也无未来 operation 候选：INVALID_ARGUMENT，retryable=false。
+- 无已知 operation，恰一 tag 10..127 的 length-delimited unknown field：future operation，
+  CAPABILITY_NOT_SUPPORTED，retryable=false。10..127 是 operation 编号分配区，不在 proto 整段 reserved；
+  现已知编号以 plugins.proto 为准，普通 metadata 不占此区间。
+- 已知 operation 与 future 候选共存、多 unknown 候选、候选 wire type 错误：INVALID_ARGUMENT。
+  区间外未知字段遵守 Protobuf 前向兼容，不能让真正缺 operation 被识别为 future operation。
+- 已知且形状合法的操作在功能未启用或未协商时 CAPABILITY_NOT_SUPPORTED；其输入、权限、超时、依赖失败
+  仍按各操作原稳定码。不支持分类不证明未来业务输入有效，不产生下游调用、幂等收据或业务副作用。
+- 合法已知 oneof 重复标签保留标准 Protobuf last-one-wins；typed gRPC 解析后不能追溯被覆盖字段，
+  不承诺额外识别。畸形 wire 或无法形成合法 request_id/trace_id 关联响应的输入以传输错误拒绝，
+  不伪造关联字段。有效 envelope 的分类错误使用 HostResponse.error，result unset。
+
+### 独立 Host 管理与 Runtime 禁派协调
+
+新增 `HostManagementService` 在现有 Host owner mTLS 监听注册，六个方法为 GetMaintenance、
+BeginMaintenance、ResumeAdmission、GetOperation、CancelOperation、ListOperationChanges。
+原 `HostService` 七方法仍是 host_bridge 命令目录，不因本次扩展成为可由 Control 任意执行的入口。
+读/changes 需要 host.read，写/取消需要 host.execute，均仅精确 RESOURCE_HOST。Control 按部署登记的
+host_id→endpoint 路由，禁止客户端指定网络目标、路径、argv、环境值或任意 shell。Host 本地 SQLite
+拥有 admission/version、operation/participants、审计与变化序列；不增加第七类平台进程。
+
+BeginMaintenance 必须带 Idempotency-Key、正 expected_version；grace_ms=0 取10000ms，超过10000拒绝。
+受理不等待排空；仅持久受理成功可返回 operation。先关闭本地 spawn 接纳，再请求 Runtime
+SetHostAdmissionGate 持久禁派，随后冻结本机 managed execution 集合并按 marker/generation 排空。
+Runtime owns 禁派 gate/outbox/desired state，不能从 Control 或 Host 直改 Runtime 表；Host owns 真实进程事实。
+Runtime SetHostAdmissionGate 只接受登记 Host 自身的 mTLS peer、当前 HostBridge fence、原 Host-owned
+intent、精确 host.execute grant 与匹配版本；不得扩大其他 Runtime 方法的平台 peer 白名单。
+仅 gate 已确认且全部执行已知停止才能 SUCCEEDED；persisted receipt、command Completed、heartbeat
+离线、超时或没观察到 PID 都不能替代已知停止证据，UNKNOWN 保持 BLOCKED 并按原 identity 恢复。
+
+同 actor/method/Host/idempotency key 的同内容返回原 operation，异内容 CONFLICT；本地接纳变化或发出
+Runtime gate 请求前可取消为 CANCELLED/NOT_STARTED，之后 CONFLICT。请求断开/超时不取消已受理操作。
+Resume 是单独受权 operation，要求当前版本、未决 UNKNOWN 已处理、Runtime gate 代次匹配；先确认
+Runtime 开放再持久开放本地接纳，任何中途失败本地仍关闭。恢复不重建任务、租约、凭据，不复活旧代次。
+缺失/不可见操作 NOT_FOUND；错版本 CONFLICT；依赖失败 UPSTREAM_UNAVAILABLE/TIMEOUT；未知提交
+保留 ACCEPTANCE_UNKNOWN/QUERY_SAME_INTENT，不伪造 FAILED。已决至少7天、未决至少30天，未决超期
+转人工处置，不删除其恢复证据。
+
+### bootstrap：固定 recipient、一次秘密与受控重新发放
+
+RuntimeBindAdapterRequest.bootstrap_recipient_id=4、RuntimeCreateInstanceRequest.bootstrap_recipient_id=5
+选择离线固定 recipient；只有非空显式 opt-in 才进入新增交付 intent/operation。省略字段保持已有
+BindAdapter/CreateInstance 的响应、版本、幂等及受限部署行为，不自动产生部署副作用，也不宣称完成自动交付。
+显式选择的 recipient 未登记或不可用必须在任何业务副作用前稳定拒绝（未知为 INVALID_ARGUMENT，依赖不可用503）。
+不接受请求自报 path/URL/owner/env。旧可信部署直接 RPC 的一次响应使用仍兼容；新增受控流程需要固定
+recipient 和 delivery metadata。BindAdapterResponse.delivery=4、CreateInstanceResponse.delivery=3
+与新 BootstrapDelivery 只含 ID、资源、recipient、真实单调 credential_version、状态、operation、时间，
+不含 digest、文件路径或秘密。原 bootstrap_credential 字段号不变，首次 RPC 明文仅在短时内存出现，普通
+重放不带秘密。managed plugin 与 externally_managed plugin 都用 PluginBridge bootstrap；Host 平台本身
+使用部署 mTLS，不能用 HostBridge 替代插件 bootstrap。
+
+管理权限固定到 descriptor：ReissueAdapterBootstrap/ReportAdapterBootstrapDelivery 为 account.manage +
+RESOURCE_ACCOUNT，adapter 身份从当前 binding 派生；插件对应两方法为 plugin.manage + RESOURCE_INSTANCE。
+GetBootstrapDelivery 为 resource.read + 精确 ACCOUNT/INSTANCE，无秘密。报告仅注册 Control peer、原
+intent/resource/recipient/version、当前管理授权可用；客户端不能自己将交付标记为 DELIVERED。
+Runtime 在本地 UoW 原子记录摘要、version、recipient绑定、无秘密intent/receipt/runtime operation；事务内
+不调文件/远端。Control 使用 SecretDeliveryPort 投递离线固定部署目录，目标采用现有0600原子文件规则。
+Adapter/外管插件使用自己的部署秘密；managed插件写指定Host的instance bootstrap文件，再由白名单env
+注入SDK。不把QQ密码、Identity密码、Host mTLS私钥、B1业务父委托放到这个流程。
+
+PENDING 表示签发提交但未确认安装；DELIVERED只证明当前版本已在固定recipient持久安装；UNKNOWN
+表示交付结果无法确认；REVOKED由Runtime撤销/生命周期产生。交付成功不证明注册、进程启动或配置应用。
+普通REST/WS/日志/审计/outbox/业务幂等收据永不回显明文，REST新重发响应也剔除bootstrap_credential。
+文件和无秘密receipt不是跨文件原子事务，sink须有持久intent/阶段恢复，重启后核对固定目标版本及受限摘要
+再补receipt；不能因receipt不存在断言未写。相同delivery/version同内容幂等，异内容CONFLICT；版本CAS
+使迟到旧worker不能覆盖新文件。收到receipt后Control报告Runtime；报告丢响应按原ID查询，不再取秘密。
+
+RPC响应在Control收到前丢失时SHA无法恢复明文：先用原identity查询原资源/operation；若不能确认交付，
+显式新Idempotency-Key+expected_credential_version重新发放。原子撤销旧digest、提升持久version、写新
+intent/摘要；重放同键只返原metadata/operation，不再返明文。再次丢响应仍UNKNOWN，禁止换键偷偷重建
+资源或假重放旧秘密。首连、逐帧失效检查、refresh核对当前version，旧proof/refresh在既有1秒gate内失效，
+新注册提升connection_generation。必须确认停止/维护gate再轮换；离线不等于进程已停。已签发后的撤销
+不能恢复旧秘密，资源禁用/解绑/删除使pending delivery及迟到report/store失效，Restore不恢复旧授权。
+
+### owner operation changes 与流模型
+
+四 owner 复用 observations.proto 的 OperationChangesRequest/OperationChange/OperationChangesResponse，
+500ms有界unary、默认32/最多100条、1..127精确scope、当前逐页授权，缺cursor仅捕获head不返回历史。
+Runtime resource.read，Model resource.read，Scheduler task.read，Host host.read；各descriptor scope_kinds
+为唯一方法授权来源。持久变更日志与operation及participants更新同UoW，按提交序排列，600秒窗口与
+low-water显式gap，普通进程重启保留dataset epoch。cursor失效为CONFLICT/NOT_ACCEPTED/RESYNC_SNAPSHOT，
+Control保守映射CURSOR_EXPIRED；空成功页不能掩饰源故障。完整WS首帧、恢复、身份边界以AsyncAPI为准。
+模型streaming的事件、取消、partial/usage/账单以model_stream.proto及Model/PluginBridge声明为准；本节和
+新增oracle只证明契约，不是provider、授权时限或生产流实现证据。
+
+
+## 2026-11-04 v1.1：Host gate 当前登记与精确授权
+
+新增IdentityService.CheckHostGateAuthorization（identity.proto为唯一来源）：当前登记Runtime mTLS调用者，
+自身RESOURCE_PRINCIPAL显式identity.authorization.check，online、只读、无幂等写键、默认500ms/最大1000ms，
+scope仅单RESOURCE_HOST。请求context、host、host_certificate_sha256；叶摘要必须取自Runtime实际入站
+Host TLS，不来自管理业务请求；方法固定为RuntimeService.SetHostAdmissionGate，不接受动态方法/permission。
+
+Identity按叶摘要定位当前证书，核定当前Active Host PlatformService Principal、当前有效证书及显式存储的
+RESOURCE_HOST(host_id)绑定，并只接受该Principal当前显式host.execute于该exactHost。HostId与PrincipalId
+不要求相同，SAN/CA不构成业务grant。未登记/撤销/过期/绑定不符UNAUTHENTICATED，当前Host缺grant返回
+allowed=false及PERMISSION_DENIED；调用者无检查能力PERMISSION_DENIED；坏输入INVALID_ARGUMENT；依赖
+故障UPSTREAM_UNAVAILABLE，超时TIMEOUT。响应decision及Host credential/principal正版本，不含秘密。
+
+Runtime仅对该请求使用allow结果，同时重查实际TLS、既有Host证书allowlist、当前HostBridge fence与
+maintenance intent/version；不得缓存allow覆盖撤销。旧CheckAuthorization继续要求非空delegation proof，
+HostManagement人类请求仍复用该协议。新增字段/RPC及semantic.host.gate_authorization登记not_implemented，
+契约oracle不算生产证据。无REST/WS新增面，Scheduler受限A两方法范围不变。

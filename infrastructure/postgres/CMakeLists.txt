@@ -5,7 +5,8 @@ add_library(kiarabot_postgres STATIC
   src/identity_security.cpp src/identity_sessions.cpp src/identity_receipts.cpp
   src/identity_assignments.cpp src/identity_invalidations.cpp src/runtime_events.cpp
   src/model_store.cpp src/action_records.cpp src/storage_records.cpp
-  src/host_registration.cpp src/host_command_outbox.cpp src/runtime_management_receipts.cpp)
+  src/host_registration.cpp src/host_command_outbox.cpp src/runtime_management_receipts.cpp
+  src/operation_observations.cpp)
 target_include_directories(kiarabot_postgres PUBLIC
   include ${CMAKE_SOURCE_DIR}/core/include)
 # Keep the native libpq target and its transitive TLS libraries in static link order.
@@ -22,6 +23,18 @@ target_link_libraries(kiarabot-pg-initialize PRIVATE kiarabot_postgres)
 kiarabot_platform_warnings(kiarabot-pg-initialize)
 
 if(UNIX)
+  add_executable(kiarabot_postgres_operation_observations_test
+    tests/operation_observations_test.cpp)
+  target_link_libraries(kiarabot_postgres_operation_observations_test PRIVATE
+    kiarabot_postgres libpqxx::pqxx)
+  kiarabot_platform_warnings(kiarabot_postgres_operation_observations_test)
+  add_test(NAME ws02_postgres_operation_observations COMMAND "${KIARABOT_TARGET_PYTHON}"
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_database_test.py"
+    --pg-bin "${KIARABOT_TEST_PG_BIN}" --openssl "${KIARABOT_TEST_OPENSSL}"
+    --test $<TARGET_FILE:kiarabot_postgres_operation_observations_test>
+    --initializer $<TARGET_FILE:kiarabot-pg-initialize>)
+  set_tests_properties(ws02_postgres_operation_observations PROPERTIES
+    LABELS "ws02;integration;fault" TIMEOUT 180)
   add_executable(kiarabot_identity_application_test
     tests/identity_application_test.cpp tests/identity_application_tls.cpp
     tests/identity_authorization_checks.cpp)
@@ -45,7 +58,7 @@ if(UNIX)
 
   add_executable(kiarabot_postgres_runtime_events_test tests/runtime_events_test.cpp)
   target_link_libraries(kiarabot_postgres_runtime_events_test PRIVATE
-    kiarabot_postgres kiarabot_runtime_resource_application libpqxx::pqxx)
+    kiarabot_postgres kiarabot_runtime_resource_application kiarabot_identity_crypto libpqxx::pqxx)
   kiarabot_platform_warnings(kiarabot_postgres_runtime_events_test)
   add_executable(kiarabot_postgres_runtime_bridge_seed tests/runtime_bridge_seed.cpp)
   target_link_libraries(kiarabot_postgres_runtime_bridge_seed PRIVATE

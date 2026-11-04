@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "kiarabot/core/domain/target/host_records.hpp"
+#include "kiarabot/core/ports/target/host_maintenance.hpp"
 #include "kiarabot/core/ports/target/host_ports.hpp"
 #include "kiarabot/core/ports/target/service_readiness.hpp"
 
@@ -29,12 +30,16 @@ struct HostServiceDependencies {
   // Composition-root owned dependency bundle (journal/supervisor/bridge/clock). The application
   // stores it so the borrowed references stay valid for the whole service lifetime.
   std::shared_ptr<void> keep_alive;
+  // Optional local maintenance gate; null preserves the existing deployment behavior.
+  HostLocalAdmissionPort* admission = nullptr;
 };
 
 // P08a Plugin Host application. Owns process reality and the Host-local journal only; desired
 // state, registration and config-application facts stay with Runtime. Commands arrive on the
 // authenticated HostBridge stream and every observation carries the journal's monotonic sequence.
-class HostService final : public ServiceReadinessPort, public HostBridgeHandler {
+class HostService final : public ServiceReadinessPort,
+                          public HostBridgeHandler,
+                          public HostMaintenanceExecutionPort {
 public:
   explicit HostService(HostServiceDependencies dependencies);
   ~HostService() override;
@@ -56,6 +61,10 @@ public:
                                       std::string_view payload_sha256) override;
   Outcome<HostReceipt> drain_host(std::uint32_t grace_ms, std::string_view command_id,
                                   std::string_view payload_sha256) override;
+  Outcome<std::vector<ManagedExecution>> maintenance_executions() override;
+  Outcome<ManagedExecution> stop_for_maintenance(const ManagedExecution& target,
+                                                 std::uint32_t grace_ms,
+                                                 std::string_view operation_id) override;
   void bridge_ready() override;
   void bridge_resync() override;
 
@@ -67,8 +76,8 @@ private:
   };
   Outcome<ResolvedProcess> resolve_locked(const HostProcessSpec& process);
   Outcome<HostReceipt> apply_running_locked(const HostCommandRecord& command,
-                                           const HostProcessSpec& process,
-                                           const ResolvedProcess& resolved);
+                                            const HostProcessSpec& process,
+                                            const ResolvedProcess& resolved);
   Outcome<HostReceipt> apply_stopped_locked(const HostCommandRecord& command,
                                             const HostProcessSpec& process);
   Outcome<HostReceipt> stop_instance_locked(std::string_view instance_id,
@@ -76,7 +85,7 @@ private:
                                             std::chrono::milliseconds grace,
                                             std::string_view command_id);
   void recover_locked();
-  void publish_locked(const ManagedExecution& execution, std::string_view command_id);
+  Status publish_locked(const ManagedExecution& execution, std::string_view command_id);
   void flush_pending_locked();
   void mark_command_locked(HostCommandRecord& command, HostCommandState state,
                            std::optional<ManagedExecution> execution);

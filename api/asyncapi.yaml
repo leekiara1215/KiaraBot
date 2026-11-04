@@ -17,18 +17,84 @@ tags:
 defaultContentType: application/json
 x-target-transport: not_implemented
 x-target-transport-note: >-
-  P12 v1 target Control has no WebSocket server binding. REST operation snapshots
-  (GET /api/v1/operations/{ownerService}/{operationId}) are the only authoritative progress
-  and resync source; clients must recover from stream loss by full REST refresh, never by
-  assuming missed events. This AsyncAPI document describes the frozen channel/message contract
-  and remains registered not_implemented for target execution; a future Control WS server may
-  implement it without changing the frames. Listed future channels include operations +
-  operation.updated (durable progress), health.updated, and plugin.updated.health_state.
+  WS-01 freezes the target protocol only; the target transport, all target channels,
+  target payload variants and owner ListOperationChanges RPCs remain not_implemented.
+  Reference channel evidence does not implement the target transport. Each target
+  connection binds one owner and an exact authorized scope. Owner REST snapshots
+  remain the authoritative recovery source; notifications never prove completion.
+x-target-contract:
+  status: not_implemented
+  routes: >-
+    /ws/operations requires owner_service=runtime|scheduler|model|host in the query.
+    /ws/control requires owner_service=control|runtime|scheduler|identity; target
+    control aggregates only event types belonging to that one owner and authorized
+    scope. /ws/logs requires owner_service=identity|runtime. Dedicated health,
+    adapters, plugins, tasks and messages bind control, runtime, runtime, scheduler
+    and runtime respectively. No access token, stream session or cursor belongs in a URL.
+  handshakes: >-
+    Operations uses OperationHello/OperationResume. Other target channels use
+    TargetScopedHello/TargetScopedResume, requiring scope; reference Hello/Resume
+    remain historical variants. Health scope is exactly RESOURCE_CATALOG/control;
+    logs uses that explicit catalog with log.read; other target scopes contain
+    1..127 distinct exact resources, never catalog-derived child grants. Target
+    adapters uses RESOURCE_ADAPTER, plugins uses RESOURCE_INSTANCE, tasks uses
+    RESOURCE_TASK|RESOURCE_INSTANCE, messages uses RESOURCE_ACCOUNT. Canonicalize
+    by kind/id and bind principal, Identity session, authorization version, channel,
+    owner and canonical scope. A cursor is not an authorization capability.
+  delivery_batches:
+    first: [operation.updated, health.updated, adapter.updated, plugin.updated]
+    second: [task.updated, log.updated]
+    third: [message.updated]
+    host_operation_dependency: Independent Host operation ownership and authorization.
+  unavailable: >-
+    Every batch remains unavailable until its own real target producer, transport
+    and recovery evidence are registered. A supported route without an implemented
+    producer fails closed with 1011 after authentication; it never establishes a
+    successful empty stream. Unknown routes remain HTTP NOT_FOUND. plugin.updated
+    health_state stays unavailable until the owner provides a real health fact.
+  operation_changes: >-
+    RuntimeService/SchedulerService/ModelService/HostManagementService.ListOperationChanges
+    uses observations.proto. Missing cursor captures committed head with no changes;
+    each returned change has its own owner cursor, and next_cursor is consumed only
+    after the entire page. Default page size 32, maximum 100; unary deadline 500ms.
+    Append operation and participant progress in the same owner UoW, using commit
+    order rather than pre-commit nextval order. Keep a bounded 600-second journal
+    and durable low-water mark. Dataset epoch survives ordinary owner restart and
+    changes after restore, journal rebuild or sequence reset. No Control-owned DB
+    or temporary operation-id collection can replace the owner journal.
+  operation_permissions: {runtime: resource.read, model: resource.read, scheduler: task.read, host: host.read}
+  operation_scope: >-
+    Runtime exact resources follow RuntimeService.GetOperation scope kinds; Model
+    requires RESOURCE_MODEL; Scheduler requires RESOURCE_TASK|RESOURCE_INSTANCE;
+    Host accepts exactly its own RESOURCE_HOST. Permission checks occur online on
+    every page and before emitting replay/live data. No new WS business permission.
+  origin: >-
+    Production uses WSS and an explicit same-origin allowlist. Browser Origin is
+    checked before Upgrade; no wildcard origin. Non-browser missing-Origin policy
+    must be explicitly configured. Never authenticate from cookies or query tokens.
+  limits:
+    first_frame_timeout_ms: 5000
+    max_frame_bytes: 65536
+    max_pending_frames: 128
+    max_pending_bytes: 1048576
+    replay_batch_size: 32
+    max_replay_bytes_per_session: 4194304
+    max_retained_bytes: 67108864
+    frame_type: text
+  quotas: >-
+    Retained sessions and active socket/auth RPC quotas are separate. Admission must
+    preserve bounded REST capacity and the one-second revocation deadline; reject
+    excess sockets with 1013. Retained byte eviction advances an explicit replay
+    boundary. Never silently discard a queued event or reuse another session's cursor.
+  secrecy: >-
+    No token, refresh token, proof, session_id, raw cursor, bootstrap, configuration,
+    message/model body or arbitrary upstream error text in logs, metrics or event
+    payloads. Operation reasons use stable codes and approved closed-set messages.
 x-control-session-policy:
   authorization: Current roles and permissions follow openapi.yaml x-control-policy; control contains the union of allowed channels, never unfiltered data.
-  permissions: {operations: resource.read, health: health.read, logs: log.read, adapters: adapter.read, plugins: plugin.read, tasks: task.read, messages: message.read}
+  permissions: {operations: owner-specific, health: health.read, logs: log.read, adapters: adapter.read, plugins: plugin.read, tasks: task.read, messages: message.read}
   health_aggregation: >-
-    The health R4EST contract in openapi.yaml x-control-policy.health_aggregation is authoritative:
+    The health REST contract in openapi.yaml x-control-policy.health_aggregation is authoritative:
     four direct dependencies identity/runtime/scheduler/model; Identity/credential-chain/revocation
     failure is unready, while Runtime/Scheduler/Model single failure is DEGRADED for affected
     features only. The health.updated stream stays not_implemented until a real producer exists;
@@ -49,19 +115,39 @@ x-control-session-policy:
     control configuration); there is no role or wildcard path to it. The channel
     is an event-only metadata feed: payloads carry message_id, conversation_id
     and direction, never message content, and v1 produces `received` only
-    because `event.message.sent` stays not_implemented. There is no REST message
+    because `event.message.sent` stays not_implemented. Target uses current Identity
+    exact-resource assignments instead of the reference private user configuration. There is no REST message
     projection: a message.updated notification is self-contained metadata, the
     stream keeps bounded ten-minute replay and is not an audit log, and clients
     must not reconstruct history after a restart or resync.
   sequences: Per authenticated stream session; SESSION_READY.last_sequence is the accepted replay boundary. Replay follows SESSION_READY before live events.
   snapshots: Establish stream before REST reads, buffer events during reads, then refresh affected resources. A lost stream during snapshot loading requires resume or a new hello and full refresh.
   retention_seconds: 600
-  coalescing: Resource snapshots are compared every 100ms; notifications may coalesce intermediate states and are not an audit log. Every published notification is sequenced.
-  capacity: At most 4096 retained events per stream and 1024 retained stream sessions. Gaps caused by eviction require RESYNC_REQUIRED; replay is delivered in bounded batches before live events.
+  coalescing: Resource snapshots are compared every 100ms; changes to query-only observed_at/checked_at alone are not notifications. Meaningful state changes may coalesce intermediate states and are not an audit log. Every published notification is sequenced.
+  capacity: At most 4096 retained events and 4MiB per stream, 1024 retained sessions and 64MiB total retained bytes. Eviction requires RESYNC_REQUIRED; replay is delivered in batches of at most 32 before live events.
   target_session_check: Every 250ms start or share current Identity validation; each call has 500ms budget. Close when last confirmation is older than 750ms; scheduling allowance must keep total under 1 second, otherwise not ready.
   revoke_expiry: Validate at handshake and before every event; close within one second after session revocation, permission loss or access expiry.
-  close_codes: {invalid_first_frame: 4400, unauthenticated: 4401, forbidden: 4403, internal: 1011, slow_consumer: 1013}
+  close_codes: {invalid_first_frame: 4400, unauthenticated: 4401, forbidden: 4403, internal: 1011, slow_consumer: 1013, shutdown: 1001}
   resync: Send RESYNC_REQUIRED with CURSOR_EXPIRED, INVALID_CURSOR or SERVER_RESTART, then close 1000. Client discards the stream session.
+  failure_mapping: >-
+    Malformed first frame/scope/owner selector is 4400; session invalid/expired is
+    4401; current authorization refusal or principal/channel/owner/scope binding
+    mismatch is 4403. Identity cannot be confirmed within the freshness budget,
+    owner TIMEOUT/UPSTREAM_UNAVAILABLE, malformed upstream or unimplemented source
+    is 1011; no cached grant or successful empty stream. RATE_LIMITED or a slow
+    consumer is 1013. Invalid local replay sequence/cursor binding sends
+    INVALID_CURSOR; retained owner/Control cursor expiration or owner dataset epoch
+    change sends CURSOR_EXPIRED; Control process epoch change sends SERVER_RESTART.
+    Owner CONFLICT+NOT_ACCEPTED+RESYNC_SNAPSHOT maps conservatively to CURSOR_EXPIRED.
+  client_recovery: >-
+    SESSION_READY acknowledges the client's accepted processed sequence, never the
+    server's undelivered head. OperationSessionReady also returns the owner cursor
+    at that exact boundary, including before the first event. Token rotation in
+    the same Identity session resumes with new token and retained cursor. Buffer
+    dirty resources during REST snapshot reads and refresh afterward. WS failure
+    does not deny independently authorized REST; show stale/last-confirmed state.
+    4401 returns to login; 4400/4403/1013 stop automatic retries. Messages have no
+    REST history: resync cannot reconstruct metadata missed outside replay.
 x-contract-status:
   contract_version: kiarabot.v1
   status_registry: proto/tests/contract_status.json
@@ -79,13 +165,17 @@ servers:
     description: Production requires TLS; hello and resume authenticate with an access token in the first frame. Resume requires a session bound to the same identity and channel. Local development may use ws on loopback.
 channels:
   control:
+    x-target-contract-status: not_implemented
+    x-target-handshake: [TargetControlHello, TargetControlResume]
     publish:
       operationId: receiveClientHandshake
       summary: Client authentication and resume handshake
       message:
         oneOf:
           - $ref: '#/components/messages/Hello'
+          - $ref: '#/components/messages/TargetControlHello'
           - $ref: '#/components/messages/Resume'
+          - $ref: '#/components/messages/TargetControlResume'
     subscribe:
       operationId: receiveControlEvent
       message:
@@ -95,16 +185,23 @@ channels:
           - $ref: '#/components/messages/HealthUpdate'
           - $ref: '#/components/messages/LogUpdate'
           - $ref: '#/components/messages/AdapterUpdate'
+          - $ref: '#/components/messages/TargetControlAdapterUpdate'
           - $ref: '#/components/messages/PluginUpdate'
+          - $ref: '#/components/messages/TargetControlPluginUpdate'
           - $ref: '#/components/messages/TaskUpdate'
+          - $ref: '#/components/messages/TargetControlTaskUpdate'
           - $ref: '#/components/messages/MessageUpdate'
   health:
+    x-target-contract-status: not_implemented
+    x-target-handshake: [TargetHealthHello, TargetHealthResume]
     publish:
       operationId: handshakeHealthChannel
       message:
         oneOf:
           - $ref: '#/components/messages/HealthHello'
+          - $ref: '#/components/messages/TargetHealthHello'
           - $ref: '#/components/messages/HealthResume'
+          - $ref: '#/components/messages/TargetHealthResume'
     subscribe:
       operationId: subscribeHealth
       message:
@@ -113,12 +210,16 @@ channels:
           - $ref: '#/components/messages/HealthResyncRequired'
           - $ref: '#/components/messages/HealthChannelUpdate'
   logs:
+    x-target-contract-status: not_implemented
+    x-target-handshake: [TargetLogHello, TargetLogResume]
     publish:
       operationId: handshakeLogChannel
       message:
         oneOf:
           - $ref: '#/components/messages/LogHello'
+          - $ref: '#/components/messages/TargetLogHello'
           - $ref: '#/components/messages/LogResume'
+          - $ref: '#/components/messages/TargetLogResume'
     subscribe:
       operationId: subscribeLogs
       message:
@@ -127,12 +228,16 @@ channels:
           - $ref: '#/components/messages/LogResyncRequired'
           - $ref: '#/components/messages/LogChannelUpdate'
   adapters:
+    x-target-contract-status: not_implemented
+    x-target-handshake: [TargetAdapterHello, TargetAdapterResume]
     publish:
       operationId: handshakeAdapterChannel
       message:
         oneOf:
           - $ref: '#/components/messages/AdapterHello'
+          - $ref: '#/components/messages/TargetAdapterHello'
           - $ref: '#/components/messages/AdapterResume'
+          - $ref: '#/components/messages/TargetAdapterResume'
     subscribe:
       operationId: subscribeAdapters
       message:
@@ -140,13 +245,18 @@ channels:
           - $ref: '#/components/messages/AdapterSession'
           - $ref: '#/components/messages/AdapterResyncRequired'
           - $ref: '#/components/messages/AdapterChannelUpdate'
+          - $ref: '#/components/messages/TargetAdapterUpdate'
   plugins:
+    x-target-contract-status: not_implemented
+    x-target-handshake: [TargetPluginHello, TargetPluginResume]
     publish:
       operationId: handshakePluginChannel
       message:
         oneOf:
           - $ref: '#/components/messages/PluginHello'
+          - $ref: '#/components/messages/TargetPluginHello'
           - $ref: '#/components/messages/PluginResume'
+          - $ref: '#/components/messages/TargetPluginResume'
     subscribe:
       operationId: subscribePlugins
       message:
@@ -154,13 +264,18 @@ channels:
           - $ref: '#/components/messages/PluginSession'
           - $ref: '#/components/messages/PluginResyncRequired'
           - $ref: '#/components/messages/PluginChannelUpdate'
+          - $ref: '#/components/messages/TargetPluginUpdate'
   tasks:
+    x-target-contract-status: not_implemented
+    x-target-handshake: [TargetTaskHello, TargetTaskResume]
     publish:
       operationId: handshakeTaskChannel
       message:
         oneOf:
           - $ref: '#/components/messages/TaskHello'
+          - $ref: '#/components/messages/TargetTaskHello'
           - $ref: '#/components/messages/TaskResume'
+          - $ref: '#/components/messages/TargetTaskResume'
     subscribe:
       operationId: subscribeTasks
       message:
@@ -168,9 +283,12 @@ channels:
           - $ref: '#/components/messages/TaskSession'
           - $ref: '#/components/messages/TaskResyncRequired'
           - $ref: '#/components/messages/TaskChannelUpdate'
+          - $ref: '#/components/messages/TargetTaskUpdate'
   messages:
+    x-target-contract-status: not_implemented
+    x-target-handshake: [TargetMessageHello, TargetMessageResume]
     description: >-
-      Implemented metadata-only notification feed. The server emits
+      Reference metadata-only notification feed; target remains not_implemented. The reference server emits
       message.updated for newly accepted platform messages when, and only when,
       the authenticated user holds an explicit message.read grant; no default
       role does. Payloads carry message_id, conversation_id and direction and
@@ -184,7 +302,9 @@ channels:
       message:
         oneOf:
           - $ref: '#/components/messages/MessageHello'
+          - $ref: '#/components/messages/TargetMessageHello'
           - $ref: '#/components/messages/MessageResume'
+          - $ref: '#/components/messages/TargetMessageResume'
     subscribe:
       operationId: subscribeMessages
       message:
@@ -193,8 +313,9 @@ channels:
           - $ref: '#/components/messages/MessageResyncRequired'
           - $ref: '#/components/messages/MessageChannelUpdate'
   operations:
+    x-target-contract-status: not_implemented
     x-contract-status: not_implemented
-    description: Scoped owner operation progress; no production publisher yet. A current Identity session and resource.read grant are required. First frame authenticates and supplies scope. Resume is bound to the same principal and scope. SESSION_READY precedes replay/live events. Owner cursor gaps require RESYNC_REQUIRED and a fresh owner snapshot; no cross-owner atomic snapshot is implied.
+    description: Scoped single-owner operation progress; no production publisher yet. Current Identity session and owner-specific operation read permission are required. First frame authenticates and supplies scope. Resume is bound to the same principal and scope. SESSION_READY precedes replay/live events. Owner cursor gaps require RESYNC_REQUIRED and a fresh owner snapshot; no cross-owner atomic snapshot is implied.
     publish:
       operationId: handshakeOperations
       message:
@@ -227,7 +348,7 @@ components:
       payload: { $ref: '#/components/schemas/OperationResume' }
     OperationReady:
       messageId: operation-ready
-      payload: { $ref: '#/components/schemas/SessionReady' }
+      payload: { $ref: '#/components/schemas/OperationSessionReady' }
     OperationResync:
       messageId: operation-resync
       payload: { $ref: '#/components/schemas/ResyncRequired' }
@@ -244,12 +365,12 @@ components:
       name: Hello
       messageId: hello
       title: Initial authentication handshake
-      payload: { $ref: '#/components/schemas/Hello' }
+      payload: { $ref: '#/components/schemas/ReferenceHello' }
     Resume:
       name: Resume
       messageId: resume
       title: Resume a previous WebSocket session
-      payload: { $ref: '#/components/schemas/Resume' }
+      payload: { $ref: '#/components/schemas/ReferenceResume' }
     ResyncRequired:
       name: ResyncRequired
       messageId: resync-required
@@ -258,7 +379,7 @@ components:
     HealthUpdate:
       messageId: health-update
       x-contract-status: not_implemented
-      description: Contract status not_implemented; the v1 health projection is a fixed HEALTHY snapshot, so health.updated is never produced.
+      description: Target not_implemented; the future producer reuses the authorized four-dependency REST health observation, never a fixed HEALTHY value.
       payload: { $ref: '#/components/schemas/HealthEnvelope' }
     LogUpdate:
       messageId: log-update
@@ -298,10 +419,10 @@ components:
       payload: { $ref: '#/components/schemas/MessageEnvelope' }
     HealthHello:
       messageId: health-hello
-      payload: { $ref: '#/components/schemas/Hello' }
+      payload: { $ref: '#/components/schemas/ReferenceHello' }
     HealthResume:
       messageId: health-resume
-      payload: { $ref: '#/components/schemas/Resume' }
+      payload: { $ref: '#/components/schemas/ReferenceResume' }
     HealthSession:
       messageId: health-session
       payload: { $ref: '#/components/schemas/SessionReady' }
@@ -310,10 +431,10 @@ components:
       payload: { $ref: '#/components/schemas/ResyncRequired' }
     LogHello:
       messageId: logs-hello
-      payload: { $ref: '#/components/schemas/Hello' }
+      payload: { $ref: '#/components/schemas/ReferenceHello' }
     LogResume:
       messageId: logs-resume
-      payload: { $ref: '#/components/schemas/Resume' }
+      payload: { $ref: '#/components/schemas/ReferenceResume' }
     LogSession:
       messageId: logs-session
       payload: { $ref: '#/components/schemas/SessionReady' }
@@ -322,10 +443,10 @@ components:
       payload: { $ref: '#/components/schemas/ResyncRequired' }
     AdapterHello:
       messageId: adapters-hello
-      payload: { $ref: '#/components/schemas/Hello' }
+      payload: { $ref: '#/components/schemas/ReferenceHello' }
     AdapterResume:
       messageId: adapters-resume
-      payload: { $ref: '#/components/schemas/Resume' }
+      payload: { $ref: '#/components/schemas/ReferenceResume' }
     AdapterSession:
       messageId: adapters-session
       payload: { $ref: '#/components/schemas/SessionReady' }
@@ -334,10 +455,10 @@ components:
       payload: { $ref: '#/components/schemas/ResyncRequired' }
     PluginHello:
       messageId: plugins-hello
-      payload: { $ref: '#/components/schemas/Hello' }
+      payload: { $ref: '#/components/schemas/ReferenceHello' }
     PluginResume:
       messageId: plugins-resume
-      payload: { $ref: '#/components/schemas/Resume' }
+      payload: { $ref: '#/components/schemas/ReferenceResume' }
     PluginSession:
       messageId: plugins-session
       payload: { $ref: '#/components/schemas/SessionReady' }
@@ -346,10 +467,10 @@ components:
       payload: { $ref: '#/components/schemas/ResyncRequired' }
     TaskHello:
       messageId: tasks-hello
-      payload: { $ref: '#/components/schemas/Hello' }
+      payload: { $ref: '#/components/schemas/ReferenceHello' }
     TaskResume:
       messageId: tasks-resume
-      payload: { $ref: '#/components/schemas/Resume' }
+      payload: { $ref: '#/components/schemas/ReferenceResume' }
     TaskSession:
       messageId: tasks-session
       payload: { $ref: '#/components/schemas/SessionReady' }
@@ -358,24 +479,104 @@ components:
       payload: { $ref: '#/components/schemas/ResyncRequired' }
     MessageHello:
       messageId: messages-hello
-      payload: { $ref: '#/components/schemas/Hello' }
+      payload: { $ref: '#/components/schemas/ReferenceHello' }
     MessageResume:
       messageId: messages-resume
-      payload: { $ref: '#/components/schemas/Resume' }
+      payload: { $ref: '#/components/schemas/ReferenceResume' }
     MessageSession:
       messageId: messages-session
       payload: { $ref: '#/components/schemas/SessionReady' }
     MessageResyncRequired:
       messageId: messages-resync-required
       payload: { $ref: '#/components/schemas/ResyncRequired' }
+    TargetControlHello:
+      messageId: target-control-hello
+      x-contract-status: not_implemented
+      payload: { $ref: '#/components/schemas/TargetScopedHello' }
+    TargetControlResume:
+      messageId: target-control-resume
+      x-contract-status: not_implemented
+      payload: { $ref: '#/components/schemas/TargetScopedResume' }
+    TargetHealthHello:
+      messageId: target-health-hello
+      x-contract-status: not_implemented
+      payload: { $ref: '#/components/schemas/TargetScopedHello' }
+    TargetHealthResume:
+      messageId: target-health-resume
+      x-contract-status: not_implemented
+      payload: { $ref: '#/components/schemas/TargetScopedResume' }
+    TargetLogHello:
+      messageId: target-log-hello
+      x-contract-status: not_implemented
+      payload: { $ref: '#/components/schemas/TargetScopedHello' }
+    TargetLogResume:
+      messageId: target-log-resume
+      x-contract-status: not_implemented
+      payload: { $ref: '#/components/schemas/TargetScopedResume' }
+    TargetAdapterHello:
+      messageId: target-adapter-hello
+      x-contract-status: not_implemented
+      payload: { $ref: '#/components/schemas/TargetScopedHello' }
+    TargetAdapterResume:
+      messageId: target-adapter-resume
+      x-contract-status: not_implemented
+      payload: { $ref: '#/components/schemas/TargetScopedResume' }
+    TargetPluginHello:
+      messageId: target-plugin-hello
+      x-contract-status: not_implemented
+      payload: { $ref: '#/components/schemas/TargetScopedHello' }
+    TargetPluginResume:
+      messageId: target-plugin-resume
+      x-contract-status: not_implemented
+      payload: { $ref: '#/components/schemas/TargetScopedResume' }
+    TargetTaskHello:
+      messageId: target-task-hello
+      x-contract-status: not_implemented
+      payload: { $ref: '#/components/schemas/TargetScopedHello' }
+    TargetTaskResume:
+      messageId: target-task-resume
+      x-contract-status: not_implemented
+      payload: { $ref: '#/components/schemas/TargetScopedResume' }
+    TargetMessageHello:
+      messageId: target-message-hello
+      x-contract-status: not_implemented
+      payload: { $ref: '#/components/schemas/TargetScopedHello' }
+    TargetMessageResume:
+      messageId: target-message-resume
+      x-contract-status: not_implemented
+      payload: { $ref: '#/components/schemas/TargetScopedResume' }
+    TargetControlAdapterUpdate:
+      messageId: target-control-adapter-update
+      x-contract-status: not_implemented
+      payload: { $ref: '#/components/schemas/TargetAdapterEnvelope' }
+    TargetControlPluginUpdate:
+      messageId: target-control-plugin-update
+      x-contract-status: not_implemented
+      payload: { $ref: '#/components/schemas/TargetPluginEnvelope' }
+    TargetControlTaskUpdate:
+      messageId: target-control-task-update
+      x-contract-status: not_implemented
+      payload: { $ref: '#/components/schemas/TargetTaskEnvelope' }
+    TargetAdapterUpdate:
+      messageId: target-adapter-update
+      x-contract-status: not_implemented
+      payload: { $ref: '#/components/schemas/TargetAdapterEnvelope' }
+    TargetPluginUpdate:
+      messageId: target-plugin-update
+      x-contract-status: not_implemented
+      payload: { $ref: '#/components/schemas/TargetPluginEnvelope' }
+    TargetTaskUpdate:
+      messageId: target-task-update
+      x-contract-status: not_implemented
+      payload: { $ref: '#/components/schemas/TargetTaskEnvelope' }
   schemas:
     SessionReady:
       type: object
       required: [type, session_id, last_sequence]
       properties:
         type: { type: string, enum: [SESSION_READY] }
-        session_id: { type: string, minLength: 32, description: Opaque secret session capability bound to the authenticated principal }
-        last_sequence: { type: integer, format: int64, minimum: 0 }
+        session_id: { type: string, minLength: 32, maxLength: 256, description: Opaque secret session capability bound to the authenticated principal }
+        last_sequence: { type: integer, format: int64, minimum: 0, maximum: 9007199254740991 }
     StreamEnvelope:
       type: object
       description: Sequence increases within one authorized session; replay retains events for 10 minutes. Different sessions do not share a sequence space. All times use UTC.
@@ -383,7 +584,7 @@ components:
       properties:
         schema_version: { type: string, example: kiarabot.stream.v1 }
         event_type: { type: string }
-        sequence: { type: integer, format: int64, minimum: 0, description: Monotonic within the authenticated stream session. }
+        sequence: { type: integer, format: int64, minimum: 0, maximum: 9007199254740991, description: Monotonic within the authenticated stream session. }
         occurred_at: { type: string, format: date-time }
         payload: { type: object, additionalProperties: true }
     LogStreamEnvelope:
@@ -400,7 +601,7 @@ components:
       required: [type, access_token, last_sequence]
       properties:
         type: { type: string, enum: [hello] }
-        access_token: { type: string, minLength: 20 }
+        access_token: { type: string, minLength: 20, maxLength: 4096 }
         last_sequence: { type: integer, format: int64, enum: [0] }
     Resume:
       type: object
@@ -408,16 +609,16 @@ components:
       required: [type, access_token, session_id, last_sequence]
       properties:
         type: { type: string, enum: [resume] }
-        access_token: { type: string, minLength: 20 }
-        session_id: { type: string, minLength: 32, description: Opaque secret session capability returned by SESSION_READY }
-        last_sequence: { type: integer, format: int64, minimum: 0 }
+        access_token: { type: string, minLength: 20, maxLength: 4096 }
+        session_id: { type: string, minLength: 32, maxLength: 256, description: Opaque secret session capability returned by SESSION_READY }
+        last_sequence: { type: integer, format: int64, minimum: 0, maximum: 9007199254740991 }
     ResyncRequired:
       type: object
       description: Replay is unavailable or the cursor is invalid; obtain a fresh REST snapshot and start a new session.
       required: [type, reason]
       properties:
         type: { type: string, enum: [RESYNC_REQUIRED] }
-        reason: { type: string }
+        reason: { type: string, enum: [CURSOR_EXPIRED, INVALID_CURSOR, SERVER_RESTART] }
     ErrorCode:
       type: string
       enum: [ERROR_CODE_UNSPECIFIED, INVALID_ARGUMENT, UNAUTHENTICATED, PERMISSION_DENIED, NOT_FOUND, CONFLICT, CAPABILITY_NOT_SUPPORTED, RATE_LIMITED, TIMEOUT, UPSTREAM_UNAVAILABLE, PLUGIN_UNAVAILABLE, INTERNAL]
@@ -559,15 +760,15 @@ components:
         - type: object
           required: [scope]
           properties:
-            scope: { $ref: './openapi.yaml#/components/schemas/TargetResourceScope' }
+            scope: { $ref: '#/components/schemas/TargetOperationScope' }
     OperationResume:
       allOf:
         - $ref: '#/components/schemas/Resume'
         - type: object
           required: [scope, owner_cursor]
           properties:
-            scope: { $ref: './openapi.yaml#/components/schemas/TargetResourceScope' }
-            owner_cursor: { $ref: './openapi.yaml#/components/schemas/TargetStreamCursor' }
+            scope: { $ref: '#/components/schemas/TargetOperationScope' }
+            owner_cursor: { $ref: '#/components/schemas/TargetOwnerCursor' }
     OperationEnvelope:
       allOf:
         - $ref: '#/components/schemas/StreamEnvelope'
@@ -575,5 +776,136 @@ components:
           required: [event_type, payload, owner_cursor]
           properties:
             event_type: { type: string, enum: [operation.updated] }
-            payload: { $ref: './openapi.yaml#/components/schemas/TargetOperation' }
-            owner_cursor: { $ref: './openapi.yaml#/components/schemas/TargetStreamCursor' }
+            payload:
+              allOf:
+                - $ref: './openapi.yaml#/components/schemas/TargetOperation'
+                - type: object
+                  properties:
+                    ref:
+                      type: object
+                      required: [resource]
+                  description: Every change is bound to its real operation resource, never a caller-supplied guess.
+            owner_cursor: { $ref: '#/components/schemas/TargetOwnerCursor' }
+
+    TargetExactScope:
+      allOf:
+        - $ref: './openapi.yaml#/components/schemas/TargetResourceScope'
+        - type: object
+          properties:
+            resources: { type: array, minItems: 1, maxItems: 127, uniqueItems: true }
+      description: Exact authorized resources, canonicalized by kind/id; catalog is allowed only for explicit health/log control scope, never as a child grant.
+    TargetScopedHello:
+      allOf:
+        - $ref: '#/components/schemas/Hello'
+        - type: object
+          required: [scope]
+          properties:
+            scope: { $ref: '#/components/schemas/TargetExactScope' }
+    TargetScopedResume:
+      allOf:
+        - $ref: '#/components/schemas/Resume'
+        - type: object
+          required: [scope]
+          properties:
+            scope: { $ref: '#/components/schemas/TargetExactScope' }
+    OperationSessionReady:
+      allOf:
+        - $ref: '#/components/schemas/SessionReady'
+        - type: object
+          required: [owner_cursor]
+          properties:
+            owner_cursor: { $ref: '#/components/schemas/TargetOwnerCursor' }
+      description: Owner cursor at the accepted processed stream sequence, including the initial head before the first event; never an undelivered server head.
+    TargetAdapterPayload:
+      type: object
+      additionalProperties: false
+      required: [id, version, target]
+      properties:
+        id: { type: string, description: Exact adapter resource ID, equal to target.resource.id. }
+        version: { $ref: './openapi.yaml#/components/schemas/TargetPositiveUint64' }
+        target: { $ref: './openapi.yaml#/components/schemas/TargetAdapterRecord' }
+      description: Target owner adapter projection; online/lifecycle/registration facts are not a fabricated legacy HEALTHY state. version equals target.version.
+    TargetPluginPayload:
+      type: object
+      additionalProperties: false
+      required: [id, version, target]
+      properties:
+        id: { type: string, description: Exact instance ID, equal to target.instance_id. }
+        version: { $ref: './openapi.yaml#/components/schemas/TargetPositiveUint64' }
+        target: { $ref: './openapi.yaml#/components/schemas/TargetInstanceRecord' }
+      description: Target instance facts; version equals target.state.version. Runtime desired state, Host process_outcome and Plugin applied configuration remain distinct. Never includes configuration or bootstrap secrets; no inferred PluginState/health_state.
+    TargetTaskPayload:
+      type: object
+      additionalProperties: false
+      required: [id, version, target]
+      properties:
+        id: { type: string }
+        version: { $ref: './openapi.yaml#/components/schemas/TargetPositiveUint64' }
+        target:
+          type: object
+          additionalProperties: false
+          required: [owner_instance_id, state, updated_at, cancel_requested]
+          properties:
+            owner_instance_id: { type: string }
+            state: { type: string, enum: [SCHEDULED_TASK_PENDING, SCHEDULED_TASK_RUNNING, SCHEDULED_TASK_RETRYING, SCHEDULED_TASK_COMPLETED, SCHEDULED_TASK_FAILED, SCHEDULED_TASK_CANCELLED] }
+            updated_at: { type: string, format: date-time }
+            cancel_requested: { type: boolean }
+            occurrence_id: { type: string }
+            reason_code: { $ref: '#/components/schemas/ErrorCode' }
+      description: Metadata-only Scheduler task state; no task payload, message body or arbitrary reason text. SCHEDULED_TASK_COMPLETED means durable trigger handoff, not plugin callback success.
+    TargetAdapterEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/StreamEnvelope'
+        - type: object
+          required: [event_type, payload]
+          properties:
+            event_type: { type: string, enum: [adapter.updated] }
+            payload: { $ref: '#/components/schemas/TargetAdapterPayload' }
+    TargetPluginEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/StreamEnvelope'
+        - type: object
+          required: [event_type, payload]
+          properties:
+            event_type: { type: string, enum: [plugin.updated] }
+            payload: { $ref: '#/components/schemas/TargetPluginPayload' }
+    TargetTaskEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/StreamEnvelope'
+        - type: object
+          required: [event_type, payload]
+          properties:
+            event_type: { type: string, enum: [task.updated] }
+            payload: { $ref: '#/components/schemas/TargetTaskPayload' }
+
+    ReferenceHello:
+      allOf:
+        - $ref: '#/components/schemas/Hello'
+        - not: { required: [scope] }
+      description: Historical reference variant; a scope selects the distinct target handshake variant.
+    ReferenceResume:
+      allOf:
+        - $ref: '#/components/schemas/Resume'
+        - not: { required: [scope] }
+      description: Historical reference variant; target resumption must carry scope.
+
+    TargetOperationScope:
+      allOf:
+        - $ref: '#/components/schemas/TargetExactScope'
+        - type: object
+          properties:
+            resources:
+              type: array
+              items:
+                type: object
+                properties:
+                  kind: { type: string, enum: [RESOURCE_ACCOUNT, RESOURCE_ADAPTER, RESOURCE_INSTALLATION, RESOURCE_INSTANCE, RESOURCE_HOST, RESOURCE_TASK, RESOURCE_MODEL] }
+      description: Operation resource kinds only; the selected owner method further restricts kinds and current exact authorization. No catalog or inferred child scope.
+    TargetOwnerCursor:
+      allOf:
+        - $ref: './openapi.yaml#/components/schemas/TargetStreamCursor'
+        - type: object
+          properties:
+            source_service: { type: string, enum: [runtime, scheduler, model, host] }
+            scope: { $ref: '#/components/schemas/TargetOperationScope' }
+      description: One owner/dataset/scope boundary; not a cross-owner cursor or an authorization capability. Must equal the session's accepted processed boundary.

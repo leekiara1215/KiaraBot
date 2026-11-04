@@ -4,6 +4,18 @@ add_library(kiarabot_control_auth STATIC
   ${CMAKE_SOURCE_DIR}/control/api/src/target/identity_auth_client.cpp
   ${CMAKE_SOURCE_DIR}/control/api/src/target/https_endpoint.cpp
   ${CMAKE_SOURCE_DIR}/control/api/src/target/owner_gateway.cpp
+  ${CMAKE_SOURCE_DIR}/control/api/src/target/owner_gateway/common.cpp
+  ${CMAKE_SOURCE_DIR}/control/api/src/target/owner_gateway/health.cpp
+  ${CMAKE_SOURCE_DIR}/control/api/src/target/owner_gateway/principals.cpp
+  ${CMAKE_SOURCE_DIR}/control/api/src/target/owner_gateway/catalogs.cpp
+  ${CMAKE_SOURCE_DIR}/control/api/src/target/owner_gateway/operations.cpp
+  ${CMAKE_SOURCE_DIR}/control/api/src/target/owner_gateway/accounts.cpp
+  ${CMAKE_SOURCE_DIR}/control/api/src/target/owner_gateway/instances.cpp
+  ${CMAKE_SOURCE_DIR}/control/api/src/target/owner_gateway/tasks.cpp
+  ${CMAKE_SOURCE_DIR}/control/api/src/target/owner_gateway/audit_logs.cpp
+  ${CMAKE_SOURCE_DIR}/control/api/src/target/owner_gateway/lifecycle.cpp
+  ${CMAKE_SOURCE_DIR}/control/api/src/target/owner_gateway/models.cpp
+  ${CMAKE_SOURCE_DIR}/control/api/src/target/owner_gateway/actions.cpp
   ${CMAKE_SOURCE_DIR}/control/api/src/target/owner_clients.cpp)
 target_include_directories(kiarabot_control_auth PUBLIC
   ${CMAKE_SOURCE_DIR}/core/include ${CMAKE_SOURCE_DIR}/control/api/include)
@@ -67,3 +79,27 @@ add_test(NAME p10_scheduler_rest COMMAND "${KIARABOT_TARGET_PYTHON}"
 set_tests_properties(p10_scheduler_rest PROPERTIES
   LABELS "p10;control;scheduler;integration;fault" TIMEOUT 90 RESOURCE_LOCK control_https
   RUN_SERIAL TRUE ENVIRONMENT "PATH=${OPENSSL_BIN_DIR}:$ENV{PATH}")
+
+# BOOT-03 module only: the owner RPC/REST delivery workflow is connected in a later slice.
+add_library(kiarabot_secret_delivery_application STATIC
+  ${CMAKE_SOURCE_DIR}/control/api/src/application/target/secret_delivery.cpp)
+set_property(TARGET kiarabot_secret_delivery_application PROPERTY KIARABOT_LAYER INNER)
+target_include_directories(kiarabot_secret_delivery_application PUBLIC
+  ${CMAKE_SOURCE_DIR}/core/include ${CMAKE_SOURCE_DIR}/control/api/include)
+kiarabot_platform_warnings(kiarabot_secret_delivery_application)
+
+add_library(kiarabot_secret_file_delivery STATIC
+  ${CMAKE_SOURCE_DIR}/control/api/src/target/secret_file_delivery.cpp)
+target_include_directories(kiarabot_secret_file_delivery PUBLIC
+  ${CMAKE_SOURCE_DIR}/core/include ${CMAKE_SOURCE_DIR}/control/api/include)
+target_link_libraries(kiarabot_secret_file_delivery PUBLIC kiarabot_secret_delivery_application
+  PRIVATE kiarabot_core_json OpenSSL::Crypto)
+kiarabot_platform_warnings(kiarabot_secret_file_delivery)
+
+add_executable(kiarabot_secret_delivery_test
+  ${CMAKE_SOURCE_DIR}/control/api/tests/secret_delivery_test.cpp)
+target_link_libraries(kiarabot_secret_delivery_test PRIVATE kiarabot_secret_file_delivery)
+kiarabot_platform_warnings(kiarabot_secret_delivery_test)
+add_test(NAME p12_secret_delivery COMMAND kiarabot_secret_delivery_test
+  "${KIARABOT_TARGET_PYTHON}" "${CMAKE_SOURCE_DIR}/scripts/deploy/target_host_credential.py")
+set_tests_properties(p12_secret_delivery PROPERTIES LABELS "p12;unit;fault;security" TIMEOUT 30)

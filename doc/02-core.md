@@ -1,5 +1,142 @@
 # C++ Core 设计
 
+## 当前阅读入口（2026-11-04）
+
+当前 Core 表示 Identity、Runtime、Plugin Host、Scheduler、Model 的领域、应用和端口，
+不等于共享内存的单一服务。各进程入口在 `core/app/*_main.cpp`，组合根在对应
+`*_composition.cpp`；内部模型和端口位于 `domain/target/`、`application/target/`、
+`ports/target/`，传输适配位于 `runtime/platform/`。Control 独立入口在
+`control/api/app/main.cpp`，经目标 RPC 交给业务所有者。
+
+本页 T/W 阶段的同进程、RuntimeSnapshot、旧端口及下方首版目录树属于
+`core/reference/` 历史实现。P 阶段记录保留当时的实现和验证作用域，其中“未实现”
+不能覆盖较后证据。当前实现、测试注册、本机实测和目标环境验收统一见
+[阶段证据矩阵](27-phase-exit-evidence.md)，不以本页旧阶段结论宣告本轮全绿。
+
+## WS-03 operation 观察用例（2026-11-04，Runtime/Scheduler owner 链已验收）
+
+共用纯 `OperationObservationApplication` 接受可信边界构造的context和WS-02查询值，
+owner限定Runtime/Scheduler/Model/Host；直接调用者必须是真实认证的Control platform peer，
+不走Runtime实例委托或Scheduler既有platform-peer白名单回退。Runtime/Model需resource.read，
+Scheduler需task.read，Host需host.read，scope为descriptor允许的明确资源集合。
+
+用例复用现有纯exact-scope授权request/decision词汇，经当前Identity在线检查并验证subject、
+permission、完整scope、authorization_version和checked_at，再开启所属owner的本地UoW；
+事务内不做网络，查询后rollback释放，不提交业务修改。请求body/gRPC/process/token预算取最早，
+上限500ms；拒绝、到期或Identity不可确认时存储查询数必须为零。存储gap保留Conflict/ReadCurrent，
+不改成成功空页。返回再次检查owner/scope/逐项cursor/资源引用，不允许错误adapter泄漏另一资源。
+
+WS-02 journal是数据源，owner RPC是这层用例的外部适配，WSS/Panel继续在后续切片；
+Runtime/Scheduler纯应用与真实PG/mTLS owner链已通过专属测试；WSS/Panel尚未验收，对外target状态
+继续保持未实现。Model分支由Model工作流接入同一纯应用，
+不扩Model Runtime-origin白名单；Host的SQLite仍归Host。当前数据集/事务事实见
+[基础设施journal](05-infrastructure.md)和[事务设计](22-transactions-and-migration-design.md)。
+
+验收：`ws03_operation_observation_application` 与 `ws03_operation_observation_e2e`，后者由
+owned PG fixture 启动真实 Identity/Runtime/Scheduler 进程，覆盖精确当前授权、实际 Control leaf、
+head/replay/participant 安全快照、typed epoch gap、deadline 与依赖故障。撤权后旧 proof 因授权版本
+失效返回 UNAUTHENTICATED；同 actual Control channel 的 ValidateSession 仍成功，同 scope 新委派
+申请则 PERMISSION_DENIED，确认拒绝来自当前 grant 消失。测试不输出凭据或自由异常。
+
+## STR-01 Model streaming 边界（2026-11-04，契约已声明、未实现）
+
+本节对应[五项扩展计划](29-approved-capability-expansion-plan.md)与[Model子计划](plans/2026-11-04-model-streaming-plan.md)。
+第一基础设施切片已实现纯事件/sink/stop_token端口与真实HTTP Provider增量转换，局部检查见
+[Provider流式子文档](05-infrastructure-model-streaming.md)；本节“未实现”仍指RPC到SDK完整闭环；应用事务/恢复切片另见下节与局部门禁。
+新增 `ModelService.ChatStream(ModelGatewayChatRequest) returns (stream ModelStreamEvent)`；
+旧Chat及非流式SDK不变。权限为精确Model scope的model.chat，仅实际Runtime peer携带插件实例
+受限委派可调用；不能把Control管理调用者、连接Fence或自报owner当实例。新方法须单独进入
+Runtime-origin方法白名单，契约声明不代表该白名单已经实现。
+
+model_stream.proto是只依赖common/platform的共享类型叶节点，供plugins/model引用，避免循环。
+ModelStreamCallSnapshot投影既有执行事实，不创建新持久状态。事件关联request_id/logical_call_id/
+trace_id：started=0，追加delta=1..N，terminal=N+1；未受理拒绝/受理未知可只有terminal=0。
+字段、封闭枚举和SDK消费矩阵见proto与[SDK流式契约](03-plugin-sdk.md)。
+
+Model应用负责状态机：可信owner+logical id防重，沿现有model/messages规范化hash，Chat/ChatStream
+同身份共用防重，异内容CONFLICT；txn1提交STARTED后才允许fresh started与Provider；事务外调用
+Provider/在线Identity/sink，再txn2 CAS保存结果。重复id只给元数据及REPLAY终态，不重调Provider，
+不保存/回放正文；配置/secret沿pinned版本，轮换不改变旧调用。HTTP/protobuf/SQL类型留在外层，
+流端口/取消/sink只含纯领域值和明确所有权。
+
+在途STARTED快照不能把ModelIntent默认false当作未计费承诺：受理时先保守保存may_have_billed=true，
+仅确证Provider未发出的本地失败/取消再落false。旧Chat共用受理路径时，这项在途计费投影变化也须
+同步文档与回归；不因“尚未收到第一个token”推断上游未执行。
+
+Provider负责成熟HTTP客户端、WHATWG标准SSE字节解码、Chat Completions文本delta/finish/usage
+转换、限额及尽力取消；不得在Core引入第三方模型SDK、按网络块切JSON或发明SSE变体。新请求才
+stream=true，旧路径仍stream=false；兼容错误/半流不得自动重发POST。上游明文字节≤1MiB，SSE
+行/事件≤64KiB，输出累计≤64KiB，delta在UTF-8边界拆成≤4KiB。首批不做工具/多模态，已执行的
+unsupported输出不能套用“已知未计费拒绝”。
+
+Runtime应用完成权限/feature和可信instance/installation准入，持有有界流句柄；Model客户端
+传递原logical id、逐事件解码与结构化RpcFailure、取消gRPC。Bridge只做当前proof/Fence校验、
+wire转换和调度：start worker不能阻塞reader的heartbeat/refresh/cancel，唯一writer串行有界
+输出，worker不捕获handler栈引用，不在应用锁/UoW内调用网络或未知回调。关闭连接先取消、唤醒
+队列再join，不改旧Task/Storage/ACK准入。SDK不用unary pending Future反复完成增量。
+
+执行事实与交付事实独立：COMPLETED须STOP+[DONE]+结果提交确认；TRUNCATED是协议结束但文本
+不完整；FAILED/CANCELLED已有文本标partial。dispatch后超时/取消/断线/解析失败/结果提交未知，
+无可信完整事实则UNKNOWN、may_have_billed=true。usage仅用权威最终chunk，known=false/计数0不
+代表免费；明确4xx拒绝沿既有矩阵。已持久的Provider成功不因Bridge丢帧改失败。
+
+在线授权在admission、首输出前、最长每1秒及最终释放前检查，检查期间停止新delta。期限取请求、
+配置、30秒上限及委派有效期最小值，等待用单调时钟；撤权/Identity故障/委派到期/连接关闭时停
+输出并取消Provider，不承诺瞬时撤权或撤回账单。文本deadline不因收尾延长，另给最多5秒持久
+收尾预算。超期STARTED按既有created_at+35秒全局界限、有界扫描和版本/state CAS保守转UNKNOWN，
+迟到worker不得覆盖恢复/终结事实；该数据库查询与恢复由STR-03/04应用切片实现，不新增正文/partial字段。
+
+背压为每流32帧且64KiB、独立terminal槽，每连接4流/进程64流；旧Chat/新Stream共用Model配置
+并发。Provider入队≤250ms，Bridge网络写≤1秒及剩余期限。SDK慢流溢出仅取消该流并继续控制帧；
+连接写持续卡住才取消连接。有界内存还覆盖SSE未完成行/事件、JSON临时值和所有队列，固定worker
+饱和拒绝，不建立无界等待队列。
+
+另新增ModelService.ListOperationChanges：resource.read、RESOURCE_MODEL scope、500ms默认/最大
+deadline，当前Control平台caller+受限委派逐页在线授权；共享载荷来自observations.proto。此方法
+只提供管理operation变化，不获取插件正文，不进入Runtime-origin方法白名单。
+
+本次仅声明契约和责任。新增方法、消息、字段、枚举均target not_implemented；端口/调度/
+Provider/SDK/PG恢复须按计划实现并用真实TLS/HTTP/PG受管插件链验收后才更新状态。
+
+### STR-03/04 应用切片（2026-11-04，局部验证中）
+
+本切片只接纯应用端口与Model持久调用日志，不宣告RPC/Runtime/SDK可消费。Chat和ChatStream
+共用规范化指纹、txn1受理及配置并发槽；构造canonical副本前逐条限制累计文本64KiB，随后仍以
+完整编码精确限额。在途先保存保守may_have_billed=true。Fresh流使用独立
+Provider worker和32帧/64KiB有界队列，应用drain线程逐次调用非阻塞sink，首帧前、最长1秒及
+终帧前重查当前授权；撤权、取消、期限、消费者停滞使Provider停止，已接受文本保持partial。
+输出期限后不再释放文本，结算另有最多5秒预算。生产PG工厂复用启动时Session；begin仅250ms
+permit等待，CommonWork构造起2秒socket deadline，disabled立即失败，不在结算时重连；最终授权
+至多1秒、终帧入队250ms，均不续延文本deadline。纯端口实现必须遵守对应有界调用约定。
+txn2仅能更新原STARTED版本，迟到worker不能覆盖恢复事实；重复逻辑id跨两种模式只回元数据且绝不重新调用Provider或回放正文。
+
+维护使用DB当前时间：STARTED达到35秒按版本CAS转UNKNOWN；未解决UNKNOWN只在原created_at
+达到30天后规则放弃。真实PG查询与领域due判断均执行该窗口，不以fake仓库替代SQL证据。
+当前新增查询使用既有列和有界limit，不涉及PG schema/manifest或journal变更。
+
+文档影响：本节及基础设施流子文档同步应用/恢复行为；SDK节保留尚未接线状态；工具链新增第三方
+C99、源码锁与许可component说明。wire字段/错误码/REST/WS均未变，proto、API、doc01及受保护
+基线无需修改；运维恢复描述由主代理/Host owner统一同步doc08，不并发编辑该主文。
+
+### STR-06 Model RPC接线（2026-11-04，实现中）
+
+应用与真实PG首轮门禁3/3已通过（旧Chat1.01s、Stream4.03s、p03 PG20.05s，总25.10s，
+ctest-model-app-pg-first.log）。本切片实现已冻结ChatStream/Model ListOperationChanges，不新增wire字段。
+RPC流编解码逐项校验UUID关联、presence、封闭枚举、UTF-8、序号、usage/billing及终态约束；
+Core应用保持纯值端口。实际gRPC writer在调用线程串行写，应用worker只向32帧/64KiB队列做非阻塞
+try_emit，独立终帧槽；写入1秒或剩余期限耗尽时取消gRPC并传播stop，退出唤醒并join所有worker。
+请求deadline裁剪到gRPC、30秒上限和证书绑定delegation expiry最小值；每秒在线授权仍由应用负责。
+
+ListOperationChanges复用共享OperationObservationApplication/prepare/encode，当前Control实际mTLS
+证书、audience Model、RESOURCE_MODEL exact scope和resource.read，默认/最大500ms。它读取管理
+operation journal，不暴露Model文本，不进入Runtime-origin准入。生产Model配置同一mTLS凭据建立
+当前Identity观察授权client，并将ModelUoW仅经base端口回调注入观察应用。
+
+文档影响：更新本节、SDK尚未接线说明和基础设施验收证据；线协议/API/稳定错误码均未改变，
+proto、API及doc01无需修改。doc18保持只读；功能协商须待Runtime/Bridge/SDK及真实链完成后启用。
+
+## reference 首版实现记录（T 阶段）
+
 T08a 增加同进程 IControlApplication v1 类型化端口与请求形状、默认角色、HTTP 错误映射辅助函数。它接收凭据而非调用者自报身份，真实会话验证/查询/管理实现由 T08b 完成；控制端口与 PluginSession 权限不混用。API/WS 决策以 OpenAPI/AsyncAPI 为准，Core 不依赖 HTTP 框架或面板类型。
 
 T07a tests/acceptance/run.sh 提供独立闭环验收入口。test_closed_loop.py 将真实 Core/SQLite/SDK 与协议 fake 平台相连，验证权限拒绝无平台副作用、重复事件、平台已执行但 ActionResult 丢失后的断线/重启恢复，以及按原 action_id 回放结果。与模型/任务验收一同执行；真实平台联调结果单独由 T07b 记录。
@@ -51,9 +188,9 @@ spdlog 或同类结构化日志库
 
 具体库可以替换，但必须保持外部协议不变。
 
-## 目录
+## 分层与 reference 目录
 
-Core 头文件和实现按 `domain/`（状态与状态机）、`application/`（用例与调度）、`ports/`（端口）、`runtime/`（传输、进程和运行时支撑）分组；进程组合根在 `core/app/main.cpp`。`RuntimeEngine` 通过内部 `RuntimeStatePort` 操作事务私有状态；`RuntimeState` 将快照适配为该端口。持久化端口 `runtime_store.hpp` 与测试和本地开发用的 `in_memory_runtime_store.hpp` 分开。Core 的 CMake 文件负责声明自身源码及日志目标，外层只链接 Core 目标。
+Core 头文件和实现按 `domain/`（状态与状态机）、`application/`（用例与调度）、`ports/`（端口）、`runtime/`（传输、进程和运行时支撑）分组；当前目标组合根见页首；下列目录树为 reference 历史结构，其组合根在 `core/reference/app/main.cpp`。`RuntimeEngine` 通过内部 `RuntimeStatePort` 操作事务私有状态；`RuntimeState` 将快照适配为该端口。持久化端口 `runtime_store.hpp` 与测试和本地开发用的 `in_memory_runtime_store.hpp` 分开。Core 的 CMake 文件负责声明自身源码及日志目标，外层只链接 Core 目标。
 
 ```text
 core/
@@ -112,7 +249,7 @@ ApplicationService
   └─ commit or rollback
 ```
 
-当前 C++ runtime 以 `RuntimeStore` 和 `RuntimeTransaction` 作为 Core 端口：它们负责 inbox、会话顺序、Action 和插件状态的持久化及提交/回滚，Runtime 负责去重、会话顺序、背压、重试、死信查询和重放、Action 生命周期与插件重连状态转换。事件及其会话状态在同一事务写入；写入或提交失败时回滚并向调用方报告失败。Action 重复提交返回原记录及其状态或结果。时间、随机样本和存储均可注入。参考 Runtime 和内存存储要求调用方串行访问；生产存储须提供事务隔离和唯一约束。默认的 `InMemoryRuntimeStore` 只用于测试和本地开发；生产环境必须由基础设施提供持久化实现，不能把内存实现当作生产存储。
+reference C++ runtime 以 `RuntimeStore` 和 `RuntimeTransaction` 作为 Core 端口：它们负责 inbox、会话顺序、Action 和插件状态的持久化及提交/回滚，Runtime 负责去重、会话顺序、背压、重试、死信查询和重放、Action 生命周期与插件重连状态转换。事件及其会话状态在同一事务写入；写入或提交失败时回滚并向调用方报告失败。Action 重复提交返回原记录及其状态或结果。时间、随机样本和存储均可注入。参考 Runtime 和内存存储要求调用方串行访问；生产存储须提供事务隔离和唯一约束。默认的 `InMemoryRuntimeStore` 只用于测试和本地开发；生产环境必须由基础设施提供持久化实现，不能把内存实现当作生产存储。
 
 宿主在确认旧投递者已停止后调用 `recover_inflight_events()`，将重启前未确认的投递转换为重试或死信，再从 `dispatchable_events()` 取得可投递事件；恢复失败时保留未处理记录并报告存储错误。Action 即使在首次提交时已到期，也须持久化其 `EXPIRED` 结果及幂等键。`RuntimeTransaction` 的失败提交必须不改变持久状态；如果存储不能确定提交结果，则不得将该结果报告为可回滚的失败。
 
@@ -129,7 +266,7 @@ ApplicationService
 
 ## 基础设施端口契约
 
-`core/include/kiarabot/core/ports/ports.hpp` 定义 Core 内部端口，直接使用生成的 `kiarabot.v1` Host 消息和 `Error`，不复制跨语言类型。端口返回 `PortResult<T>`：成功值或已有协议 `Error`，不可把依赖故障伪装成未找到或重复。Core 应用服务负责鉴权、业务策略和事务边界；命名空间及任务所有者由 Core 从认证身份传入，基础设施不能接受插件直接访问。
+`core/reference/include/kiarabot/core/ports/ports.hpp` 定义 Core 内部端口，直接使用生成的 `kiarabot.v1` Host 消息和 `Error`，不复制跨语言类型。端口返回 `PortResult<T>`：成功值或已有协议 `Error`，不可把依赖故障伪装成未找到或重复。Core 应用服务负责鉴权、业务策略和事务边界；命名空间及任务所有者由 Core 从认证身份传入，基础设施不能接受插件直接访问。
 
 Unit of Work 将 Repository、命名空间、任务、幂等结果和审计写入绑定到同一事务，显式 commit 或 rollback；销毁未提交事务须回滚。模型端口不暴露凭据，超时与结果通过端口表达。调度端口的领取和完成/重试操作必须持久化，重启恢复与取消语义见 `doc/01-runtime-semantics.md`。审计端口只接受明确的标识和状态字段，不接受消息正文或密钥。文件存储以逻辑键访问，不向调用方暴露文件系统路径。
 
@@ -1726,3 +1863,71 @@ ListAccounts/ListInstallations/ListInstances/ListAdapters 每次先授权对应�
 ## Runtime 管理回执职责（2026-11-04）
 
 Core 定义中立 `RuntimeManagementReceipt` 和提交时 `ResourceState`，Runtime UoW 在原事务内读写附属回执；基础设施仅实现列映射、约束和原子存储。DisableAccount/BindAdapter/UnbindAdapter/SetDesiredState/UpdateConfig 重放原资源快照和 operation 引用；实例两项把已保存的完整状态交给 RPC 转换，配置版本不得冒充实例资源版本，STOPPED 不得转换为 Running。该分支不使用本次 request_id 查询操作；其余 mutate 调用的既有行为不因此获得完整回执承诺。每次重放仍经过当前在线授权。Runtime schema v18 仅接受新隔离空库，原地升级、旧活跃回执回填和旧库切换另审。
+
+
+## PluginBridge 传输与应用准入职责（2026-11-04）
+
+`core/src/runtime/platform/runtime_bridge.cpp` 的 `PluginBridgeImpl::Connect` 负责注册、
+可信连接状态、投递/停机 sink 挂接、逐帧当前 proof/fence 授权及帧分发；heartbeat、refresh、
+ACK、renew、Action、Task、Storage、Model 分别由传输 handler 转换和写回。
+`PluginConnection` 先解除投递与停机 sink，再关闭 guard、断开匹配的连接代次；
+回调继续使用 weak guard，注册响应仍先于 sink 挂接，不在应用锁或 UoW 内调用网络回调。
+
+Task、Storage、Model 的业务准入属于 `application/target/runtime_plugin_capability.hpp/.cpp`。
+`RuntimeBridgeApplication::task_profile`、`storage_profile` 从服务端 registry 取得与已认证
+instance 绑定的快照；应用判断 task.schedule/task.read、host.tasks.v1、TimerTriggered
+订阅、storage.namespace 及安装归属。私有 instance/shared installation 的 ResourceRef 和
+Storage 授权上下文由应用派生，客户端不能自报 owner、installation、scope 或 grants。
+Model 的 `admit_plugin_model`/`submit_plugin_model` 同样在应用层派生实例/安装，
+权限来源仍是可信注册结果，保持 availability → grant → deadline → profile → 安装/内容 →
+调用的检查顺序及原刷新语义。最后 Model 增量的实测范围见证据矩阵。
+下游 Scheduler、Storage、Model 的独立授权和事务门禁继续执行，准入快照不替代逐帧授权。
+
+成功 ACK 在内存路由已释放时，通过 `EventRepository::find_attempt(instance,event_id,attempt_id)`
+在同一 UoW 定位持久 attempt；应用重核认证实例、事件、attempt 和当前完整 fence，再交原条件
+ACK 事务分类。同当前连接的重复成功 ACK 返回 DUPLICATE，不重复审计、推进状态或延长保留期；
+旧连接、改写旧 attempt fence、错事件或跨实例仍为 STALE，查询依赖失败显式返回 Failure。
+负 ACK 和续租没有获得额外路由恢复能力。此为本轮单独批准的契约一致性修复；
+refresh 错误的既有偏差见 [SDK 限界](03-plugin-sdk.md#pluginbridge-刷新错误的既有偏差2026-11-04)。
+
+## Runtime 资源应用职责拆分（2026-11-04）
+
+以下为本轮拆分职责；本机构建、全量测试及静态门禁的实际结果统一见 [证据矩阵](27-phase-exit-evidence.md)。
+
+`RuntimeResourceApplication` 保留兼容调用入口，按账号/适配器、安装/实例/配置、生命周期、Host 命令与观察、Timer 接收五个窄应用接口委派；各组件独立持有其所需端口，生命周期组件独占维护轮次。分页组件唯一持有跨四种资源共享的有界不可变快照缓存，保持原主体、查询、scope、授权版本、页大小及已发游标绑定和总容量约束。
+
+窄接口位于 `core/include/kiarabot/core/application/target/runtime_resources/`，实现位于
+`core/src/application/target/runtime_resources/` 的 `account_adapter.cpp`、`instances.cpp`、
+`lifecycle.cpp`、`host_commands.cpp`、`timer.cpp`，分别承接 11/10/5/5/1 个方法。
+共享辅助承担上下文/事务辅助和 Host 命令快照编码；`snapshot_pages.hpp` 的 `SnapshotPages`
+只保留一份全局/主体额度状态，由 facade 先构造、组件借用，组件在缓存销毁前释放。
+不能拆成各组件独立缓存后放大原 64 个/主体等容量承诺，也不能给旧游标重新起算期限。
+
+Adapter 注册先在短只读 UoW 中校验数据库时间、认证期限和直接 peer 绑定并结束事务，再在线检查 AdapterConnect；随后新建写 UoW 重查时间、认证和当前资源/绑定/版本，最后原子保存注册与审计。bootstrap 已认证路径保持既有授权豁免及绑定校验；不在持有 UoW 时调用 Identity。
+
+## HOST-02 独立维护应用与本地持久化（2026-11-04）
+
+新增纯HostMaintenanceApplication/typed ports与Host私有SQLite实现。此切片不接HostManagement RPC、
+Control路由或真实Runtime gate backend；局部测试gate不能证明整条HOST退出。Host操作、admission、
+幂等收据、审计及operation changes在Host本地事务保存；变化类型复用operation_observation.hpp，
+不另造游标。首次Host状态版本1、admission Open；Begin/Resume持久受理后后台逐步推进，查询仍做
+当前host.read授权，维护/恢复/取消做当前host.execute精确Host授权，认证/授权依赖故障fail-closed。
+
+Begin受理与实际关闭接纳分开，使Cancel只在Accepted且未改变接纳/未请求gate时可用。后台先原子关闭
+本地接纳并记录阶段，再调用typed RuntimeAdmissionGatePort确认禁派；确认后冻结有限受管执行集合，
+逐次按marker/generation停止。任一未知停止/依赖故障/提交结果不明都BLOCKED，已知停止才推进成功。
+不持有SQLite事务调用gate或进程端口。重启读取原operation/阶段/快照与幂等身份恢复，不重复分配operation。
+Resume要求无活动维护冲突且无未决执行，先持久不可取消阶段再确认Runtime开放，最后本地原子开放。
+请求取消/超时不撤销已受理operation；恢复不重建任务、租约或凭据。
+
+HostService在配置本地admission端口后，对新Running命令在进程副作用前检查gate；同一HostService锁下
+快照捕获已越过检查的在途spawn，使其包含在有限排空集合。停止端口不接受任意PID/命令，只核对既有
+journal的instance/generation/marker。原drain忽略逐执行失败的行为在本切片纠正：未知/失败保持Unknown
+命令而不记Completed；Exited+UNKNOWN记录仍进入维护检查，不能在恢复后被当作已排空。
+
+
+v1.1身份链前置：Identity的受控离线platform enrollment新增Host，必填独立host_id，存入既有Principal与
+certificate的RESOURCE_HOST绑定；其他平台继续自身Principal绑定。当前Host gate授权由受限
+CheckHostGateAuthorization核定当前注册证书/主体/绑定/显式host.execute，Runtime调用者也必须有自身
+Principal上的检查能力；不扩大其他平台peer或Scheduler受限A范围。此新增契约状态仍为not_implemented，
+生产代码与真实Identity/RPC验收分别记录，HOST-02测试替身不替代它。

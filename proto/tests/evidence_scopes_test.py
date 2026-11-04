@@ -1091,6 +1091,11 @@ class ScopeTest(unittest.TestCase):
             'listAccounts', 'listInstallations', 'listInstances', 'listAdapterInstances',
             'createAccount', 'createInstallation', 'createInstance',
         ))
+        # HERR-02/03: real authenticated PluginBridge raw-wire refusals; no broader Host family.
+        expected.update(('semantic_rules', semantic) for semantic in (
+            'semantic.host.request_operation_classification',
+            'semantic.host.unknown_operation_error',
+        ))
         self.assertEqual(available, expected)
         self.assertEqual(effective_status(registry, 'reference', 'action_payloads', 'ActionEnvelope.send_message'), 'implemented')
         self.assertEqual(effective_status(registry, 'target', 'action_payloads', 'ActionEnvelope.send_message'), 'implemented')

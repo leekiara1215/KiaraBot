@@ -47,6 +47,7 @@ foreach(SERVICE identity runtime plugin_host scheduler model)
   endif()
   add_library(kiarabot_${SERVICE}_application STATIC
     ${CMAKE_SOURCE_DIR}/core/src/application/target/${APPLICATION_SOURCE}_application.cpp)
+  set_property(TARGET kiarabot_${SERVICE}_application PROPERTY KIARABOT_LAYER INNER)
   target_include_directories(kiarabot_${SERVICE}_application PUBLIC ${CMAKE_SOURCE_DIR}/core/include)
   kiarabot_platform_warnings(kiarabot_${SERVICE}_application)
 endforeach()
@@ -79,27 +80,29 @@ add_library(kiarabot_scheduler_rpc STATIC
   ${CMAKE_SOURCE_DIR}/core/src/runtime/platform/scheduler_rpc.cpp)
 target_include_directories(kiarabot_scheduler_rpc PUBLIC ${CMAKE_SOURCE_DIR}/core/include)
 target_link_libraries(kiarabot_scheduler_rpc PUBLIC kiarabot_scheduler_service kiarabot_proto
-  kiarabot_target_codec)
+  kiarabot_target_codec kiarabot_operation_observation_rpc)
 kiarabot_platform_warnings(kiarabot_scheduler_rpc)
 
 add_library(kiarabot_scheduler_service STATIC
   ${CMAKE_SOURCE_DIR}/core/src/application/target/scheduler_rules.cpp
   ${CMAKE_SOURCE_DIR}/core/src/application/target/scheduler_service.cpp)
+set_property(TARGET kiarabot_scheduler_service PROPERTY KIARABOT_LAYER INNER)
 target_include_directories(kiarabot_scheduler_service PUBLIC ${CMAKE_SOURCE_DIR}/core/include)
-target_link_libraries(kiarabot_scheduler_service PRIVATE OpenSSL::Crypto)
 kiarabot_platform_warnings(kiarabot_scheduler_service)
 add_executable(kiarabot_scheduler_service_test
   ${CMAKE_SOURCE_DIR}/core/tests/platform/scheduler_service_test.cpp)
 target_link_libraries(kiarabot_scheduler_service_test PRIVATE kiarabot_scheduler_service
-  OpenSSL::Crypto)
+  kiarabot_identity_crypto)
 kiarabot_platform_warnings(kiarabot_scheduler_service_test)
 add_test(NAME p10_scheduler_service COMMAND kiarabot_scheduler_service_test)
 set_tests_properties(p10_scheduler_service PROPERTIES LABELS "p10;unit;fault" TIMEOUT 30)
 
 add_library(kiarabot_control_application STATIC
   ${CMAKE_SOURCE_DIR}/control/api/src/application/target/application.cpp)
+set_property(TARGET kiarabot_control_application PROPERTY KIARABOT_LAYER INNER)
 target_include_directories(kiarabot_control_application PUBLIC
   ${CMAKE_SOURCE_DIR}/core/include ${CMAKE_SOURCE_DIR}/control/api/include)
+set_property(TARGET kiarabot_onboarding PROPERTY KIARABOT_LAYER INNER)
 target_link_libraries(kiarabot_control_application PUBLIC kiarabot_onboarding)
 kiarabot_platform_warnings(kiarabot_control_application)
 
@@ -202,6 +205,7 @@ endif()
 
 add_library(kiarabot_host_service STATIC
   ${CMAKE_SOURCE_DIR}/core/src/application/target/host_service.cpp)
+set_property(TARGET kiarabot_host_service PROPERTY KIARABOT_LAYER INNER)
 target_include_directories(kiarabot_host_service PUBLIC ${CMAKE_SOURCE_DIR}/core/include)
 kiarabot_platform_warnings(kiarabot_host_service)
 add_executable(kiarabot_host_service_test
@@ -421,13 +425,22 @@ target_link_libraries(kiarabot_runtime_identity_client PUBLIC kiarabot_proto
   PRIVATE kiarabot_target_codec kiarabot_service_process nlohmann_json::nlohmann_json
           OpenSSL::Crypto)
 
+add_library(kiarabot_operation_observation_rpc STATIC
+  ${CMAKE_SOURCE_DIR}/core/src/runtime/platform/operation_observation_rpc.cpp)
+target_include_directories(kiarabot_operation_observation_rpc PUBLIC
+  ${CMAKE_SOURCE_DIR}/core/include)
+target_link_libraries(kiarabot_operation_observation_rpc PUBLIC
+  kiarabot_proto kiarabot_operation_observation_application
+  PRIVATE kiarabot_runtime_identity_client kiarabot_target_codec)
+kiarabot_platform_warnings(kiarabot_operation_observation_rpc)
+
 add_library(kiarabot_runtime_rpc STATIC
   ${CMAKE_SOURCE_DIR}/core/src/runtime/platform/runtime_rpc.cpp
   ${CMAKE_SOURCE_DIR}/core/src/runtime/platform/runtime_bridge.cpp)
 target_include_directories(kiarabot_runtime_rpc PUBLIC ${CMAKE_SOURCE_DIR}/core/include)
 kiarabot_platform_warnings(kiarabot_runtime_rpc)
 target_link_libraries(kiarabot_runtime_rpc PUBLIC kiarabot_proto kiarabot_target_codec
-  PRIVATE kiarabot_runtime_resource_application OpenSSL::Crypto)
+  kiarabot_operation_observation_rpc PRIVATE kiarabot_runtime_resource_application OpenSSL::Crypto)
 
 add_library(kiarabot_runtime_model_client STATIC
   ${CMAKE_SOURCE_DIR}/core/src/runtime/platform/runtime_model_client.cpp)
@@ -517,6 +530,9 @@ foreach(SERVICE identity runtime plugin_host scheduler model)
       OpenSSL::Crypto)
     target_compile_definitions(kiarabot-${BINARY} PRIVATE KIARABOT_HOST_COMPOSITION=1)
   endif()
+  if(SERVICE STREQUAL "scheduler")
+    target_link_libraries(kiarabot-scheduler PRIVATE kiarabot_identity_crypto)
+  endif()
   if(SERVICE STREQUAL "model")
     # P11a Model composition owns the typed PG factory, deployment root key, secret/digest
     # adapters and the development provider/RPC surface. HTTP provider and real Identity caller
@@ -535,7 +551,7 @@ foreach(SERVICE identity runtime plugin_host scheduler model)
     target_link_libraries(kiarabot-runtime PRIVATE
       kiarabot_runtime_model_client kiarabot_scheduler_task_client kiarabot_host_bridge
       kiarabot_runtime_rpc kiarabot_runtime_identity_client kiarabot_runtime_storage_application
-      kiarabot_runtime_audit_application kiarabot_postgres OpenSSL::Crypto)
+      kiarabot_runtime_audit_application kiarabot_postgres kiarabot_identity_crypto OpenSSL::Crypto)
   endif()
   set_target_properties(kiarabot-${BINARY} PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
   kiarabot_platform_warnings(kiarabot-${BINARY})
@@ -552,7 +568,7 @@ target_link_libraries(kiarabot-runtime-p13g PRIVATE
   kiarabot_runtime_application kiarabot_service_process
   kiarabot_runtime_model_client kiarabot_scheduler_task_client kiarabot_host_bridge
   kiarabot_runtime_rpc kiarabot_runtime_identity_client kiarabot_runtime_storage_application
-  kiarabot_runtime_audit_application kiarabot_postgres OpenSSL::Crypto)
+  kiarabot_runtime_audit_application kiarabot_postgres kiarabot_identity_crypto OpenSSL::Crypto)
 target_include_directories(kiarabot-runtime-p13g PRIVATE
   ${CMAKE_SOURCE_DIR}/core/app)
 set_target_properties(kiarabot-runtime-p13g PROPERTIES
@@ -753,3 +769,24 @@ if(EXISTS "${KIARABOT_TARGET_PYTHON}")
     LABELS "p11h;p11;unit;provider" TIMEOUT 60
     WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
 endif()
+
+# WS03: the fixture seeds through production UoW, then queries real owner processes
+# using Control mTLS and live Identity. The wrapper owns every PG/CA secret.
+add_executable(kiarabot_operation_observation_seed
+  ${CMAKE_SOURCE_DIR}/core/tests/platform/operation_observation_seed.cpp)
+target_link_libraries(kiarabot_operation_observation_seed PRIVATE kiarabot_postgres)
+kiarabot_platform_warnings(kiarabot_operation_observation_seed)
+add_test(NAME ws03_operation_observation_e2e COMMAND "${KIARABOT_TARGET_PYTHON}"
+  "${CMAKE_SOURCE_DIR}/infrastructure/postgres/tests/run_database_test.py"
+  --pg-bin "${KIARABOT_TEST_PG_BIN}" --openssl "${KIARABOT_TEST_OPENSSL}"
+  --initializer $<TARGET_FILE:kiarabot-pg-initialize>
+  --test "${CMAKE_SOURCE_DIR}/core/tests/platform/operation_observation_e2e_test.py"
+  --test-argument $<TARGET_FILE:kiarabot-identity-bootstrap>
+  --test-argument "${KIARABOT_TEST_PG_BIN}"
+  --test-argument $<TARGET_FILE:kiarabot-identity>
+  --test-argument $<TARGET_FILE:kiarabot-runtime>
+  --test-argument $<TARGET_FILE:kiarabot-scheduler>
+  --test-argument $<TARGET_FILE:kiarabot_operation_observation_seed>)
+set_tests_properties(ws03_operation_observation_e2e PROPERTIES
+  LABELS "ws03;integration;security;fault" TIMEOUT 180
+  ENVIRONMENT "PATH=${RUNTIME_E2E_OPENSSL_BIN_DIR}:${RUNTIME_E2E_PYTHON_BIN_DIR}:$ENV{PATH};PYTHONPATH=${CMAKE_SOURCE_DIR}/sdk/python/build/generated")

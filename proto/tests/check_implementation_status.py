@@ -619,6 +619,35 @@ def main() -> int:
             if name not in sources:
                 fail(f"implementation sources do not reference declared {group} name {name}")
 
+    # Target-only feature declarations are separate from the frozen reference vocabulary.
+    # A declaration can precede implementation; publishing requires the corresponding target
+    # semantic rule and its reviewed evidence, not a proto string or a reference code match.
+    for name, declaration in vocabulary.get("target_features", {}).items():
+        required = {"permission", "status", "semantic_rule", "declaration_source", "advertise"}
+        if set(declaration) != required:
+            fail(f"target feature {name} has an incomplete declaration")
+            continue
+        if declaration["permission"] not in vocabulary.get("permissions", []):
+            fail(f"target feature {name} names an undeclared permission")
+        if name not in vocabulary_section or declaration["permission"] not in vocabulary_section:
+            fail(f"doc/01-contracts.md target vocabulary omits {name} or its permission")
+        rule = declaration["semantic_rule"]
+        if rule not in categories["semantic_rules"]:
+            fail(f"target feature {name} names an unknown semantic rule {rule}")
+            continue
+        status = effective_status(registry, "target", "semantic_rules", rule)
+        if declaration["status"] != status or status not in STATUS_VALUES:
+            fail(f"target feature {name} status differs from its target semantic evidence")
+        if declaration["advertise"] != "only_after_target_semantic_implemented":
+            fail(f"target feature {name} must not advertise from declaration alone")
+        source = (ROOT / declaration["declaration_source"]).resolve()
+        if not source.is_relative_to(PROTO_DIR.resolve()) or not source.is_file():
+            fail(f"target feature {name} has an invalid canonical declaration source")
+        elif name not in source.read_text(encoding="utf-8"):
+            fail(f"target feature {name} is absent from its canonical declaration")
+        if status == "implemented" and name not in implementation_text("target"):
+            fail(f"implemented target feature {name} is absent from target production sources")
+
     try:
         target_table = read_doc_section(DOC_CONTRACTS, "<!-- execution-scopes:start -->",
                                        "<!-- execution-scopes:end -->")

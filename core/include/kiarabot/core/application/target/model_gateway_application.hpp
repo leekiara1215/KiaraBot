@@ -2,7 +2,9 @@
 
 #include <chrono>
 #include <cstdint>
+#include <map>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <vector>
@@ -141,6 +143,11 @@ public:
   virtual ~ModelGatewayApplication() = default;
 
   virtual Outcome<ModelChatReply> chat(const ModelChatCommand& command);
+  // Synchronous drain on the calling thread; Provider work runs on an owned, joined worker.
+  // Sink admission is nonblocking. Full is retried at most 250ms; cancellation is cooperative.
+  // Returns the terminal facts even if the consumer closed before its terminal was admitted.
+  virtual ModelStreamTerminal chat_stream(const ModelChatCommand& command, ModelStreamSink& sink,
+                                          ModelStreamCancellation cancellation = {});
   virtual Outcome<ModelIntent> get_call_status(const ModelGetCallStatusQuery& query);
   virtual Outcome<ModelMetadataView> get_model_metadata(const ModelMetadataQuery& query);
   virtual Outcome<ModelListMetadataReply> list_model_metadata(const ModelListMetadataQuery& query);
@@ -156,6 +163,20 @@ public:
   Status maintenance();
 
 private:
+  struct ActiveLease;
+  struct ChatAdmission {
+    ModelChatDisposition disposition = ModelChatDisposition::FreshResult;
+    ModelIntent call;
+    ModelConfiguration config;
+    ProviderSecretRecord secret;
+    std::shared_ptr<ActiveLease> lease;
+  };
+  Outcome<ChatAdmission> admit_chat(const ModelChatCommand& command);
+  Outcome<ModelIntent> settle_chat(const ChatAdmission& admission,
+                                   const ModelCallMutation& mutation);
+  Outcome<std::shared_ptr<ActiveLease>> acquire_call(const ResourceId& model,
+                                                     std::uint32_t maximum);
+  void release_call(const ResourceId& model) noexcept;
   Outcome<ModelAuthorizationDecision> authorize(const ModelCaller& caller, Permission permission,
                                                 const ResourceRef& resource,
                                                 const ModelCallContext& context);
@@ -175,6 +196,9 @@ private:
                                             const std::vector<std::byte>& payload);
 
   ModelApplicationDependencies dependencies_;
+  std::mutex active_mutex_;
+  std::map<std::string, std::size_t> active_calls_;
+  std::size_t active_total_ = 0;
 };
 
 std::unique_ptr<ModelGatewayApplication>

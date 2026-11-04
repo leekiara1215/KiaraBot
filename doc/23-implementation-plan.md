@@ -1,29 +1,28 @@
 # KiaraBot 新架构分步实施计划
 
-- 版本：v1.3
-- 日期：2026-11-02
-- 状态：P00–P14 实现主体已合入 main（P14t/P05b-13 最终基线 `04f7044`；P13 生产退出 PASS（本验收范围）、P11 独立验收 PASS、P10k 真实 Scheduler 任务链 PASS、P05b B1 链完成（安全评审 0 Critical/High；Medium 全部处置：F-1/F-2 已修、F-3/F-4/F-5/F-6 已加固；F-5 host/core 边界文档化）；previous gate **161/161@7b8fb0f/1051.70s**；final exact-HEAD gate @04f7044：**161/162 CTest passed，1025.87s**（`build/logs/recheck-ctest-162320.log`，2026-11-03 16:23:19→16:40:30）；唯一失败 `p08_managed_host_e2e` 35.77s（psql SSL negotiation invalid response，套件负载下时序问题）；孤立复跑 **2/2 Passed 58.64s/56.72s**（Lead 57.39s），判定负载时序 flake，不是断言/实现回归；原生单机栈矩阵 **9 success+1 stable-ok+0 known-gap**）；阶段退出/发布证据矩阵见 [P14t 矩阵](27-phase-exit-evidence.md)，发布门禁见 [P14t 发布清单](28-p14d-release-checklist.md)，最终状态索引见 [P14t 交付状态](../reports/modules/architecture-delivery-status.md)。单机 Docker Compose 六服务已通过本地门禁。两主机/断网、远端 CI/release、真实 QQ/NapCat、真实付费 Provider、生产 CA/密钥/备份离站、部署级错误 Runtime 叶证书仍未验收；P12 host operation/bootstrap_credential 保持 not_implemented（用户确认）；P14 本机 Docker 已就绪，gh 登录暂缓。
-- 依据：[方向基线](19-architecture-direction-baseline.md)、[设计总览](20-detailed-architecture-design.md)、[通信方法](21-service-contract-design.md)、[事务与初始化](22-transactions-and-migration-design.md)
-- 当前执行（2026-11-03）：按 P04–P14 顺序复验尚未关闭的能力，使用独立 git worktree 并行实施，由 Lead 审查、验证和本地提交。GitHub 登录和推送暂缓。协议/API 语义、模块或服务边界、存储模型、工具链基线变更先由维护者确认。
-- 当前进度：P04 本地收尾门禁通过，P05 正在逐项复验。真实 QQ 测试号已登录，NapCat 状态可读；目标 Runtime 绑定及消息闭环尚待验收。DeepSeek 已登记为禁用配置，付费调用待凭据及预算。详见 [Identity 收尾](../reports/modules/architecture-p04-identity.md) 与 [Runtime 资源](../reports/modules/architecture-p05-runtime.md)。
+- 文档职责：保留阶段目标、依赖、实施顺序和历史决策；当前逐阶段状态只在 [证据矩阵](27-phase-exit-evidence.md) 维护。
+- 当前阅读入口（2026-11-04）：六服务源码入口见 [文档索引](README.md)，启动和部署见 [运维](08-operations.md)，发布操作见 [发布清单](28-p14d-release-checklist.md)。
+- 新增批准范围（2026-11-04）：[五项能力扩展计划](29-approved-capability-expansion-plan.md)，覆盖目标 Control WS、模型 streaming、Host 请求错误语义、独立 host operation 和 bootstrap 安全交付；两主机/断网演练继续延期。
+- 依据：[方向基线](19-architecture-direction-baseline.md)、[设计总览](20-detailed-architecture-design.md)、[通信方法](21-service-contract-design.md)、[事务与初始化](22-transactions-and-migration-design.md)。
 
-## 0. 2026-11-02 P14d 阶段状态汇总
+## 0. 实施与验收口径
 
-按用户要求把“完成/未完成/延期”分开记录；本计划此前“P04 部分实现后暂停”的历史状态不再代表当前实现进度。
-完整证据、命令、测试名与缺口见 [P04–P14 阶段退出证据矩阵](27-phase-exit-evidence.md)；发布操作见
-[P14t 发布清单](28-p14d-release-checklist.md)。
+P00–P14 已有目标实现和历史分阶段证据；不能从此前某一轮“未开始”“实施中”或
+“主体完成”推断今天逐项状态。测试注册、代码实现、本机实测、目标环境验收分别记录，
+本轮未提交差异基于 `0496b90053d046fd61d7f106090bb87fff172f8a`，不是新的已验收提交。
+本轮依赖隔离、Control、PluginBridge 与 Runtime 资源应用工作及残余检查统一写入证据矩阵，
+不在每份模块文档复制一套完成清单。`doc/18` 冻结基线保持只读。
 
-| 分类 | 覆盖 |
-|---|---|
-| 已完成实现（合入 main，按阶段退出矩阵有测试/报告支撑） | P00–P14 主体：工具链/契约/PG/UoW；Identity/Control 认证；Runtime 资源与授权链；Bridge/投递/SDK/Adapter；Action/配额；Host 期望状态与进程桥；Storage/namespace；Scheduler；Model 网关/Provider/调用者校验；Control owner REST/健康/operation 快照；P13 生命周期清理与 drain；P14 部署文件/CI/备份恢复 runbook |
-| 已实测（真实依赖/本机真实进程） | 真实 PG16.4 事务/投递/存储/调度/Action；真实 TLS Bridge/Control 认证；P14c 本地备份/恢复故障矩阵（RPO=0s、RTO≈4.6–12.1s，小数据量）；P14b-2 workflow 本地静态检查 |
-| 待验收（实现有，验收环境/链路未满足） | 单机 Docker Compose 启动/healthcheck/官方 PG 镜像；P14c 生产数据量 RTO；Control/Panel live 全批准入口与断流恢复；Host/插件 ACK 与三类事实的真实 Compose 链；P05b 深链路（用户已批准 B1，P05b-2/4/5 实施中，单链路未验收） |
-| 延期/未验证（用户已确认或明确排除） | 两主机/跨主机断网演练（默认单主机，延期）；target Control WS（P12a-2 延期，REST operation 快照为 resync 源）；streaming Model（明确不做）；真实模型/真实 QQ 联调（环境/授权单独执行） |
-| 未运行/未就绪 | 远端 GitHub Actions（`gh` 未认证，未 workflow_dispatch）；GHCR 推送/签名/SBOM 发布；正式 release（Environment/凭据/审批未配置）；真实生产部署 |
+用户随后批准把五项原延期/缺口纳入计划，并指定主代理统筹、GPT-6.1 Sol/high subagent
+执行；[本轮决策](plans/user-decisions-2026-11-04.md) 和
+[扩展计划](29-approved-capability-expansion-plan.md) 取代五项原来的范围限制。
+这不把 `not_implemented` 提前改为可用，也不使历史 `167/167` 成为新增能力的验收证据。
 
-本轮 P14d 只做文档/证据整合，不修改实现、契约或部署脚本；`doc/18` 冻结基线保持只读。阶段是否“完成”以矩阵中的“已实测”证据与退出条件为准，不以提交/文档存在为准。
+下列 2026-11-01 临时运行轨与后文带日期阶段记录为历史决策和实施依据；
+reference MVP 不替代六服务当前入口。两主机演练沿用户确认延期，不升级为本轮强制要求；
+真实 QQ 收发/恢复、付费 Provider、生产密钥和远端发布的剩余范围见证据矩阵。
 
-## 2026-11-01晚间优先级调整
+## 历史：2026-11-01 晚间优先级调整
 
 后续用户已明确：暂停其他功能，先安装配置NapCat并完成真实QQ收发，扫码时通知用户。
 同时提出程序内方便安装/配置且不绑定NapCat的要求。实际接入进度及“统一向导＋可替换
@@ -55,23 +54,25 @@ P00–P02 在同一集成工作分支形成目标构建基线；P01 的契约生
 
 ## 2. 总体顺序与依赖
 
-| 阶段 | 交付目标 | 前置 | 状态 |
-| --- | --- | --- | --- |
-| P00 | 实施规格、依赖锁、文件归属与测试入口 | 定稿设计 | 本机固定环境/来源锁与统一入口通过；远端发布环境留 P14 |
-| P01 | 统一目标 proto/API 与内部公共接口 | P00 | 基线完整门禁通过；后续补全契约按各能力另验收 |
-| P02 | 六进程、分层构建与阶段测试门禁 | P01 | 已通过本机完整构建、六进程/图隔离、全仓静态分析和统一门禁 |
-| P03 | 私有 PostgreSQL 库、UoW、收据、outbox/inbox、显式初始化 | P02 | 本机固定环境统一门禁通过：四库typed仓储、原子收据/交接、提交未知及四daemon接线已实测；后续缺陷独立修复 |
-| P04 | Identity 全链路与 Control 最小认证入口 | P03 | 本地收尾通过：23 个 Identity 方法已登记，46/46 集成检查通过；浏览器 WebSocket 空闲撤销另在 P12 验收 |
-| P05 | Runtime 账号/插件资源、代次与注册 | P04 | 精确资源查询和单进程连接替换已复验；目录授权、写操作完整回执与跨重启 Host 注册仍有缺口 |
-| P06 | Adapter 事件→Runtime→Plugin，尝试与续租 | P05 | 未开始 |
-| P07 | SDK Action→Runtime→Adapter→平台替身闭环 | P06 | 未开始 |
-| P08 | 插件宿主、期望状态与配置应用闭环 | P05、P06 | 未开始 |
-| P09 | 私有/共享 namespace、CAS、配额与收据 | P05、P03 | 未开始 |
-| P10 | Scheduler 一次性任务及可靠触发 | P06、P03、P04 | 已实现 P10a–P10c、本地实测（ctest p10 5/5、p03_postgres 1/1、SDK tasks pytest 43 passed）并完成 P10g target 登记（6 方法/14 消息/52 字段/4 semantic）；3 个 Control REST 任务 operation 因无限定目录 target 测试未翻；真实环境项见 [architecture-p10-scheduler.md](../reports/modules/architecture-p10-scheduler.md) |
-| P11 | Model 配置/密钥及调用前后记账 | P05、P03、P04 | 未开始 |
-| P12 | Control 与 Panel 核心运行管理全部接线 | P07–P11 | 未开始 |
-| P13 | 生命周期协调、分类清理与容量观测 | P07–P12 | 已实现 P13a–P13e（含 HostBridge live stop/drain 与共享删除隔离）与 P13g test-only 联合 e2e；用户已批准**限定方案 A**（仅 Scheduler ListTasks/CancelTask，mTLS+白名单+显式授权），P13h-1/2/3 实施中，**生产验收未完成**；生产 Scheduler 委托、真实 Host 回执单链、真实满盘/跨主机仍待验收 |
-| P14 | 跨主机部署、故障矩阵、恢复及统一发布验收 | P13 | 本机六服务 Compose 及隔离 PG 备份恢复通过；两主机、生产 CA、离站备份及远端发布仍待验收 |
+下表只列实施依赖，当前状态见 [证据矩阵](27-phase-exit-evidence.md)。
+
+| 阶段 | 交付目标 | 前置 |
+| --- | --- | --- |
+| P00 | 实施规格、依赖锁、文件归属与测试入口 | 定稿设计 |
+| P01 | 统一目标 proto/API 与内部公共接口 | P00 |
+| P02 | 六进程、分层构建与阶段测试门禁 | P01 |
+| P03 | 私有 PostgreSQL 库、UoW、收据、outbox/inbox、显式初始化 | P02 |
+| P04 | Identity 全链路与 Control 最小认证入口 | P03 |
+| P05 | Runtime 账号/插件资源、代次与注册 | P04 |
+| P06 | Adapter 事件→Runtime→Plugin，尝试与续租 | P05 |
+| P07 | SDK Action→Runtime→Adapter→平台替身闭环 | P06 |
+| P08 | 插件宿主、期望状态与配置应用闭环 | P05、P06 |
+| P09 | 私有/共享 namespace、CAS、配额与收据 | P05、P03 |
+| P10 | Scheduler 一次性任务及可靠触发 | P06、P03、P04 |
+| P11 | Model 配置/密钥及调用前后记账 | P05、P03、P04 |
+| P12 | Control 与 Panel 核心运行管理全部接线 | P07–P11 |
+| P13 | 生命周期协调、分类清理与容量观测 | P07–P12 |
+| P14 | 跨主机部署、故障矩阵、恢复及统一发布验收 | P13 |
 
 推荐单人执行顺序为表中顺序。多人实施时，P08/P09/P10/P11 可在公共契约与相应前置通过后分别推进；P12 页面骨架可提前开发，但真实能力完成必须等待业务所有者。并行对话与工作区分配见 [执行记录](../reports/execution/2026-11-01-architecture-parallel.md)；按依赖逐波启动，不让业务线程自行发明共享协议。
 
@@ -82,13 +83,15 @@ P00–P02 在同一集成工作分支形成目标构建基线；P01 的契约生
 | M1 可信运行基础 | P00–P05 | 六进程构建、私有库、真实身份与资源注册 | 完整消息机器人或管理平台 |
 | M2 消息业务闭环 | P06–P07 | 真实 gRPC/PG/SDK/Adapter 与协议平台替身收发、拒绝与恢复 | 真实 QQ 或生产验收 |
 | M3 核心能力齐备 | P08–P13 | 宿主、配置、共享存储、任务、模型、面板管理及清理 | 高可用、无限容量或自动故障接管 |
-| M4 可交付部署 | P14 | 跨主机身份、故障恢复、成对备份演练及目标检查全通过 | 未执行的真实平台/外部模型联调 |
+| M4 可交付部署 | P14 | 按确认的部署范围验证身份、故障恢复、成对备份及目标检查；两主机演练沿用户决定延期 | 未执行的真实平台/外部模型联调与两主机验证 |
 
 ## 3. 文件归属与依赖版本
 
 ### 3.1 目标目录约定
 
-尽量沿用模块根，不为了进程拆分搬动全部仓库。P00 固定具体文件清单；以下为新文件建议位置，当前尚未创建。
+尽量沿用模块根，不为了进程拆分搬动全部仓库。下表保留 P00 约定的所有权范围，
+具体当前路径查模块文档；内层代码已按 `target/` 分组，PG/密码学实现分别位于
+`infrastructure/postgres/`、`infrastructure/identity_crypto/`，不再把建议位置写成“尚未创建”。
 
 | 所有者 | 允许的主要实现范围 | 禁止事项 |
 | --- | --- | --- |
@@ -116,7 +119,10 @@ P00 必须输出一份可重复的目标依赖清单：PostgreSQL 服务端与�
 
 ## 4. 验证命令与门禁配置
 
-以下命令为实施时执行清单，本轮未执行。V1–V4 使用仓库现有入口；P02/P03 必须按目标结构扩展覆盖。V5 的 `pNN` 是计划新增 CTest label（如 p03/p07），目前尚不存在，缺 label/无测试必须失败，不可误报通过。
+以下命令为实施与复核入口，不是本轮执行记录；实际运行命令和结果见证据矩阵。
+V1–V4 保留原阶段入口，当前目标固定环境查 doc/11 的 P00/P02 与末尾架构门禁章节。
+`pNN` 标签已有注册，复核以 `ctest --preset full-locked --show-only=json-v1` 为准；
+注册不表示执行，缺 label/无测试仍须失败，不可误报通过。
 
 ### V0：文档和变更范围（所有阶段）
 

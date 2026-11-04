@@ -1,4 +1,222 @@
-# KiaraBot P04–P14 阶段退出证据矩阵（P14t 最终刷新）
+# KiaraBot 实现与阶段验收证据
+
+## 0. 当前证据入口（2026-11-04）
+
+本节区分本轮未提交工作区与已提交历史证据。当前基准为
+`0496b90053d046fd61d7f106090bb87fff172f8a`；下述任务变更尚未形成新提交，
+各任务的实测只适用于各自测试时的差异，不代表后续集成工作区全绿。
+测试名存在或 `ctest --show-only` 成功仅表示注册，必须有重新构建后的执行结果才能记为实测。
+本节新增证据的日期为 2026-11-04；下方 P14t 门禁保留 2026-11-03 的提交/日志作用域。
+
+### 五项扩展：契约冻结通过、首批实施中（2026-11-04）
+
+用户已继续授权契约冻结后按依赖实现，由主代理统筹验收、GPT-6.1 Sol/high subagent 执行，
+无需逐步重复确认。公共契约已按 [冻结记录](30-capability-expansion-contract-freeze.md) 收口：
+118 RPC 描述/权限、376 跨语言消息、25 wire golden、26 模型流语义用例、固定 Node22 的
+67 HTTP operation、WS 36/Host-bootstrap 38 项边界，以及完整 contracts/真实 descriptor 兼容均通过。
+新增 RPC、WS/streaming/Host/bootstrap 能力仍未宣告可用，没有把旧 reference 或既有 `167/167` 当新增功能证据。
+
+实际实现已分派 WS-02 owner 持久变化源、STR parser/Provider/纯流端口、HERR-02 和 BOOT-03
+安全文件交付切片。运行验收尚未完成；当前文件/构建归属、实际命令和后续依赖见
+[执行台账](plans/2026-11-04-capability-execution-ledger.md)。本轮 proto/API 有文档影响，
+已同步 proto README、doc/01/运行语义、Core/SDK、Control/Panel 及相关契约测试/生成清单。
+基础设施和运维的新增行为随各实现任务更新，受保护 doc/18 保持原样。
+
+首个实现切片 HERR 已有局部实测：新 HostRequest wire 分类接入目标 PluginBridge 后，
+重建 `kiarabot_model_bridge_test` exit 0；`p11_model_bridge` 1/1 通过（3.94s），
+覆盖 raw-wire 拒绝/错误关联/无下游调用及继续处理合法请求。HERR/BOOT 五个 TU 格式和专项 tidy 已通过；
+该结果不证明 STR、WS、Host 管理或 bootstrap 全链完成，细节和日志见执行台账。
+
+后续局部实测：WS-02 真实 PG journal 1/1 通过（4.99s），当前实测 schema 为 I15/R19/S11/M10；
+Provider/parser/依赖及旧非流式首轮 13/13，通过修复后的生产三项回归 3/3（5.54s）；
+BOOT-03 固定目录秘密文件交付及故障恢复最终 1/1（0.85s）。首轮失败及修正保留在
+[执行台账](plans/2026-11-04-capability-execution-ledger.md)，这些均为局部能力证据。
+WS owner RPC、Model 应用与 Host SQLite 切片待统一运行，完整链路和最终集成仍未验收。
+Host 实际授权链的窄范围 Identity v1.1 契约补充已通过：119 RPC/378 消息/27 golden，生产身份链继续实施。
+
+HERR-03 已单独收口：只把 target 的 `semantic.host.request_operation_classification` 和
+`semantic.host.unknown_operation_error` 按真实 TLS raw-wire、格式与 tidy 证据登记 implemented；
+reference 状态和 blob 未改，其他新增能力未随之翻转。主代理复跑 registry 与 evidence 9/9 门禁通过；
+最终全工作区集成仍待执行。
+
+### 上一轮：批准范围和任务拆分（2026-11-04）
+
+用户已批准目标 Control WS、模型 streaming、未知 Host 请求错误语义对齐、独立 host operation
+管理、bootstrap 安全交付及字段级验收进入计划；两主机/断网演练继续延期。
+详见 [本轮决策](plans/user-decisions-2026-11-04.md) 和
+[扩展计划](29-approved-capability-expansion-plan.md)。旧记录中 WS 延期、streaming 不做、
+Host/bootstrap 只文档化的范围限制由新计划替代；现有代码/契约仍按实际实现状态登记。
+
+主代理已向三名 `gpt-6.1-sol` / high subagent 分派 WS、STR、HERR/HOST/BOOT 工作流，
+首批源码核对、契约提案、任务依赖与文件归属已完成并经主代理收口，合计 34 个任务，
+三份子计划和本轮用户决策已归档到可被 Git 跟踪的 `doc/plans/`。
+当前五项均为**计划与分工已完成、契约待冻结**，
+没有新增功能实现或验收通过声明；本轮计划整理不重跑 C++ 构建/测试，之前的全量与静态检查
+结果仍限定于下文原工作区。新增协议/API 在实际契约任务中再更新、生成并校验。
+
+本轮实际检查：`git diff --check` exit 0；Python 临时文档检查脚本验证五份新计划/决策文件
+的本地 Markdown 链接、UTF-8、末尾换行、无尾空白和 34 个任务 ID 唯一/完整，exit 0；
+逐文件 `git check-ignore` 均 exit 1 且无输出，确认不被忽略。基准 SHA-256 对比确认
+既有非计划改动与 `doc/18` 未改变。WS subagent 实际运行 `check-asyncapi.sh` exit 0
+（5 条现有提示）和 `check-openapi.sh` exit 0（13 条现有 warning）；未改契约，
+这两项不能记作新增 WS 的运行验收。C++/Python/Panel 产品测试和构建未运行：本轮只改计划，
+没有产品源码、协议、配置或数据库变化；直接需要同步与无需同步的文档及理由见扩展计划第 6 节。
+
+### 最终主工作区验证
+
+任务 1–4 的最后增量已集成到上述基准加未提交差异，使用本机 macOS arm64 的
+`full-locked` 锁定依赖、PG16.4、OpenSSL 3.5.0 和 Python 3.11.18 重新配置/全量构建，均 exit 0。
+工作区差异清单和内容摘要由 `build/logs/refactor-integration/integrated-files.txt`、
+`integrated-file-manifest.json` 记录，文档收口后统一刷新。
+本轮唯一一次最终全量 `ctest --preset full-locked --no-tests=error --output-on-failure`
+exit 0，**167/167 通过、无跳过**，外层耗时 1032.63s（CTest 自计 1032.53s）。
+这证明本轮新二进制在该本机环境通过注册套件，不是新的提交 SHA、目标部署或正式发布验收。
+来源：`build/logs/refactor-integration/commands.jsonl`、`configure-final.log`、`build-final.log`、
+`full-ctest-final.log`（第 337 行汇总）、`required-test-registration.json`（167 注册；要求的 27 项全部存在且未禁用）。
+
+边界、strict inner、实际 CMake 链接图、编译数据库覆盖、架构自测和 diff 检查均通过，
+日志位于同目录 `boundaries-final.log`、`inner-final.log`、`links-final.log`、`database-final.log`、
+`architecture-tests-final.log`、`diff-check-final.log`。66 个改动 C++ 文件完整格式检查通过；
+全仓格式仍 exit 1，27 个失败路径均未修改，与本轮改动交集为空，见 `changed-format-final.log`、
+`whole-format-final.log`、`format-baseline-final.json`。
+
+最后改动 TU 专项 tidy 为 **37/40 通过、3 个失败**：`core/app/scheduler_composition.cpp`、
+`core/tests/platform/scheduler_service_test.cpp`、`infrastructure/postgres/tests/scheduler_application_test.cpp`。
+10 次原始 error 诊断（9 个源码位置）均逐条匹配任务 1 基线，新增为 0；
+这仍是未通过的专项门禁，不表述成 40/40 或全仓质量全绿。
+明细：`build/logs/refactor-integration/changed-tidy/results.json`、`tidy-baseline-comparison.json`。
+任务 1 的 251 TU 全量 tidy 保留原结果；未对最终源码重复全 251 TU，也未重跑
+`scripts/check-toolchain.sh`，因其会重复 dev/standalone/工具链工作及已知格式/tidy 失败项；
+本轮实际检查由锁定全量构建/CTest 和上述显式门禁组成。
+
+### 本轮职责整理与实测
+
+- **任务 1，内层依赖与摘要端口：局部实现与实测完成，完整质量门禁未通过。**
+  主工作区 `build/full-locked`（锁定依赖、clang-tidy 22.1.8、clang-format 16.0.6）重新配置/构建通过；
+  9 项 CTest 通过，分组 6/6（68.39s）和 3/3（2.95s）。边界自测 7、架构自测 11 通过；
+  24 个 INNER 目标登记与链接变异检查、251 个手写翻译单元编译数据库覆盖通过。
+  SHA-256 适配器、固定编码/失败回滚测试通过，256 组有定义的旧新输入摘要逐字节一致。
+  旧取消路径解引用空 optional 属未定义行为，不能声称该路径旧新字节一致；新代码以显式零字段
+  和 golden vector 固定预期编码。职责和命令见 [基础设施](05-infrastructure.md)、[工具链](11-toolchain.md)。
+  来源：`build/logs/inner-remediation-validation.log`、`inner-remediation-ctest-final.log`、
+  `inner-remediation-extra-ctest-final.log`、`inner-remediation-final-checks.json`。
+- **任务 1 的未关闭检查：**19 个改动 C++ 文件格式通过，全仓格式仍因 29 个未改文件失败。
+  最终全量 tidy 实际执行 251/251，53 个翻译单元失败；最初串行扫描在 118/251 被停止（exit 143），
+  后以相同参数逐单元完整复跑，不能将中断算作通过。Runtime 组合根栈地址逃逸、资源应用未初始化
+  诊断在基准源码复现；任务 4 明确所有权和正常拆分后专项复查不再出现，
+  不能据诊断消失反推原程序一定有可复现的真实未初始化缺陷。
+  来源：`build/logs/inner-remediation-full-tidy-results.json`、`inner-remediation-tidy-summary.json`、
+  `inner-remediation-format-baseline.json`、`inner-remediation-tidy-baseline.log`。
+- **任务 2，Control owner 请求入口：隔离实测及最终主树全量通过。**
+  工作区 `/Users/betta/Worktrees/KiaraBot-control-refactor-20261104`，同一基准及锁定依赖。
+  11 个资源族 handler 保留原有路由优先级；入口 Lizard 1.25.0 指标从 length 1660 / CCN 500
+  变为 length 29 / CCN 4，不能据此推断所有 handler 或跨函数总复杂度同比下降。
+  两项单独批准的修复为 Model disable/enable/resolve 透传既有幂等键，以及四条安装嵌套实例路径
+  缺 Runtime owner 时稳定 503；相关精确请求捕获、校验顺序和无副作用负例已通过。
+  20,160 条旧新请求差分匹配，比较路由/响应/委托/owner 请求字段；已批准修复单独断言，不要求旧缺陷一致。
+  5 项相关 CTest 分组 3/3（33.90s）、2/2（32.91s）；14 个改动翻译单元 tidy、16 个改动 C++ 文件格式通过。
+  来源为 worker 最终报告 `/tmp/kiarabot-control-refactor-report.txt`，测试日志
+  `/tmp/kiarabot-control-ctest.log`、`/tmp/kiarabot-control-additional-ctest.log`、
+  `/tmp/kiarabot-control-tidy-results.json` 和 `/tmp/kiarabot-control-differential.log`。
+  临时证据路径仅用于本机复核，不等同已归档发布材料；职责与失败映射见 [Control](06-control-api.md)。
+- **任务 3，PluginBridge 准入：隔离回归及含最后 Model 增量的主树全量通过。**
+  工作区 `/Users/betta/Worktrees/KiaraBot-bridge-refactor-20261104`，基准同上，
+  full-locked 共用只读锁定依赖、PG16.4、OpenSSL 3.5.0、clang-tidy 22.1.8。
+  Task/Storage/Model 准入归应用；重复成功 ACK 以持久 attempt 定位复用原条件 ACK 事务，
+  当前连接返回 DUPLICATE，错事件/旧 fence/改写旧 attempt fence 保持 STALE，保留期、审计和尝试次数不变。
+  9 项相关 CTest 通过（95.09s）；随后 PG/Storage/Bridge 3/3（42.96s），最后 Model 增量 2/2（15.40s）。
+  新准入测试还以不链接 gRPC 的 C++20 直接编译执行，拒绝路径下游调用数为零。
+  8 个改动翻译单元 analyzer 通过，resource 测试的旧 unused `bridge_flow` 留主集成接回原断言复验，未抑制或删除。
+  Connect 的 Lizard 1.25.0 length 937 → 79、CCN 213 → 15；职责与既有 refresh 错误偏差见
+  [Core](02-core.md#pluginbridge-传输与应用准入职责2026-11-04)、[SDK](03-plugin-sdk.md#pluginbridge-刷新错误的既有偏差2026-11-04)。
+  来源：`/tmp/kiarabot-bridge-refactor-report.md`（SHA256 `2c116562d830db9689349bd8407a93b8559d335bcb2262a7d87106de7645b180`）、
+  `/tmp/kiarabot-bridge-lizard.json` 与报告逐条命令/退出码/日志。早期新 Storage 准入缺授权、重复 ACK=STALE
+  失败均有记录并修复；refresh INTERNAL 偏差明确保留，不能算成正确契约。
+  基准完整格式检查 30 路径失败、改动 hunk 检查通过；30 路径逐个基准源码复现，
+  与任务 1 的 29 差异来自后者已格式化 scheduler_rules.hpp，不能拼作当前最终计数。
+  主树最后 66 个改动文件格式及 167 项全量 CTest 通过，剩余静态检查限制见本节开头。
+- **任务 4，RuntimeResource 组件：已实现，本轮本机构建/全量 CTest 通过。**
+  主工作区重新配置和全量构建首轮通过（78.83s）；32 方法 facade 向五类应用委派，
+  共享分页组件保持跨资源原额度，Adapter 注册改为事务外在线授权再开写 UoW 重核。
+  3 项应用/生命周期单测通过，9 个 Task4 翻译单元专项 tidy 通过；原栈地址逃逸/未初始化诊断
+  在明确所有权和正常拆分后局部复查不再出现，不据此声称已证实并修复真实未初始化缺陷。
+  源文件 3016 行 → facade 188 行；Lizard 的旧单 TU NLOC 2846/max CCN 57，facade NLOC 151/max CCN 3。
+  业务组件 register_adapter 的 CCN 为 62（新增授权后重核），lifecycle maintenance 为 51；
+  不能用 facade 指标宣称业务检查或跨函数总复杂度同比消失。
+  来源：`build/logs/refactor-integration/commands.jsonl`、`build-first.log`、
+  `resource-complexity.json` 与 `build/logs/resource-tidy/results.json`；最后集成报告为
+  `/tmp/kiarabot-resource-integration-report.txt`，最终命令以本节开头的主树日志为准。
+
+### 主工作区首轮失败、修复与复跑
+
+主树专项首轮 7/10（211.71s），失败为 `p10_timer_e2e`（fixture）、
+`p05_runtime_catalog_e2e`（deadline）、`p13_joint_delete_e2e`（GetOperation ABORTED/CONFLICT）。
+首轮记录保留，不能用隔离工作树通过覆盖。
+命令、环境及失败全文在 `build/logs/refactor-integration/commands.jsonl` 与
+`build/logs/refactor-integration/resource-regression-first.log`。
+Control/Bridge 专项首轮为 13/15（254.32s），`p05b_task_chain_e2e` 与
+`p06_postgres_runtime_events` 失败，外层 fixture 脱敏输出不构成根因结论；
+来源为 `build/logs/refactor-integration/control-bridge-regression-first.log`。
+该首轮正则还含两个无当前注册的旧名，15 项结果不证明旧名对应能力已覆盖；
+最后已按当前 27 个要求名逐项检查存在且未禁用，并在最终 167 全量中实际执行。
+按 CTest 原命令/环境/工作目录、无重型工具争用时单独复跑，p10 55.71s、catalog 9.75s、
+taskchain 26.30s、joint delete 37.02s 均通过，最终全量也通过；这四项的首次失败原因仍未确定，
+不据复跑通过宣称已定因 flake。对应 `*-diagnostic-exact.log` 与 `p13-joint-diagnostic-no-tool-load.log`
+保留在同目录；初次诊断 wrapper 解释器错误的失败也保留于命令台账，不充作有效业务复跑。
+
+PG events 失败可重复，根因已核定：任务 1 注入真实 SHA-256 后，旧测试 `FakeRuntimeSecrets`
+对空输入给全零，而请求与断言使用真实 SHA256(empty)=`e3b0…`，导致 Timer 接收 CONFLICT。
+最小修复只使该测试 fake 委派既有 `identity_crypto::Sha256` 并给该测试 PRIVATE 链接；
+生产逻辑、真实摘要及持久接收断言未改变。修复后单跑 1/1（3.34s）、最后有限回归 5/5（5.65s）
+及最终 167 全量均通过。证据：`p06_postgres_runtime_events-diagnostic-exact.log`、
+`p06-postgres-runtime-events-fixed.log`、`final-finite-regression.log` 和完整命令台账。
+
+本轮未重建目标 Compose，未访问真实 QQ、付费 Provider 或远端 CI/release；
+这些目标环境验收不能引用本机全量或下方历史门禁替代。
+
+上述局部实测的复核命令（在各自工作区执行，配置细节和退出码见对应日志）：
+
+```bash
+# 任务 1：主工作区，锁定环境见 doc/11
+cmake --preset full-locked -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+cmake --build --preset full-locked --parallel 4
+python3 scripts/quality/tests/boundaries_test.py
+python3 scripts/quality/tests/architecture_test.py
+python3 scripts/quality/check-boundaries.py
+python3 scripts/quality/check-architecture.py --inner
+python3 scripts/quality/check-architecture.py --links build/full-locked/architecture-targets.json
+python3 scripts/quality/check-architecture.py --database build/full-locked/compile_commands.json
+ctest --preset full-locked -R '^(p10_scheduler_service|p10_scheduler_rpc|p10_timer_e2e|p11_model_http_provider|p05_runtime_resource_application|p08_host_journal)$' --no-tests=error --output-on-failure
+ctest --preset full-locked -R '^(p02_control_application|p10_postgres_scheduler|architecture_sha256)$' --no-tests=error --output-on-failure
+# 任务 2：Control 隔离工作树，最终源码和依赖参数见 worker 报告
+cmake --build --preset full-locked --target kiarabot_control_owner_gateway_test kiarabot-control --parallel 1
+ctest --preset full-locked -R '^(p12_control_owner_gateway|p04_control_auth_https|p10_scheduler_rest)$' --no-tests=error --output-on-failure
+ctest --preset full-locked -R '^(p11_control_model_rest|p12_audit_logs_rest)$' --no-tests=error --output-on-failure
+# 任务 3：Bridge 隔离工作树；后续 3 项及最后 Model 2 项复跑见报告
+ctest --preset full-locked -R '^(p06_runtime_event_delivery|p07_action_rules|p09a_runtime_storage_application|p06_runtime_plugin_capability|p11_model_bridge|p06_postgres_runtime_events|p06_bridge_acceptance|p06_client_e2e|p05_runtime_resource_application)$' --no-tests=error --output-on-failure
+# 主工作区专项首轮（7/10，首轮结果保留）
+ctest --preset full-locked -R '^(p05_runtime_rules|p05_runtime_resource_application|p05_runtime_identity_e2e|p05_runtime_catalog_e2e|p13_runtime_lifecycle|p13_scheduler_lifecycle|p08_host_bridge_e2e|p13_joint_delete_e2e|p13h3_joint_delete_production_e2e|p10_timer_e2e)$' --no-tests=error --output-on-failure
+# 最终主工作区：最后增量重新 configure/build 后，167/167、无跳过
+ctest --preset full-locked --no-tests=error --output-on-failure
+```
+
+### 已知范围与环境限制
+
+本节沿用下方后续环境矩阵中的最近证据：单机六服务 Compose 的本地门禁、QQ 登录与只读鉴权
+已有记录；QQ 的目标 Runtime 注册、真实会话收发及断连恢复仍未验收。真实付费 Provider、
+生产 CA/密钥托管和离站备份、远端 CI/release 仍有缺口。两主机/断网演练为用户确认可选延期，
+不作为本轮新增强制门槛。历史原生叶证书负例通过不等于 Compose 挂载复演通过。
+host operation/bootstrap_credential、目标 Control WS 与模型 streaming 当前仍未完成对应新增能力，
+现已按 [五项扩展计划](29-approved-capability-expansion-plan.md) 纳入实施；旧“不扩契约/延期/不做”
+范围限制不再适用于新计划，但在真实实现与验收前不得翻转 `implemented`。
+ACK/重新注册没有专门的并发屏障测试；当前证据是持久完整 key/fence 条件、锁顺序源码核对、
+真实 PG 与 TLS 的重复 ACK/旧代次/重连负例，不推断生产并发压力已验收。
+PluginBridge 刷新失败帧的 INTERNAL 与终止状态偏差仍待专项；格式与 tidy 基线限制见本节开头。
+
+## 历史：P14t 门禁与 P04–P14 证据（2026-11-03）
+
+以下各阶段矩阵和“最终门禁”属于原提交/当时环境，保留历史依据；与后附环境进度不同的旧结论
+只用于追溯，当前工作区状态读第 0 节，不从某次孤立复跑推断历史首轮或今天全量通过。
 
 2026-11-03 本轮工作树（基于 `254f017`）full-locked 构建通过。全量 CTest 首轮 160/162（1040.38 秒），`p10_timer_e2e` 和 `p02_core_process` 失败；仅重跑这两项，2/2 通过（81.06 秒）。下列带提交号的门禁保留各自历史结果。
 
@@ -16,7 +234,7 @@
 | 状态 | 含义 |
 |---|---|
 | 退出通过/范围完成 | 阶段验收项已有真实依赖或明确 loopback 证据，证据测试与报告可复现；残余环境/后续项已列明且不阻塞本阶段目标 |
-| 已实现 | 代码/契约/文档已合入 main；未配置依赖时按契约显式失败，无 stub/假成功 |
+| 已实现 | 指定提交或明确工作区差异中有实现；须另列是否合入及实测范围，未配置依赖时不假成功 |
 | 已实测 | 在真实依赖（PG16.4/SQLite/TLS/进程等）或明确 loopback 假服务上跑过，有命令/测试名/日期/HEAD |
 | 待验收 | 实现存在，但验收环境/链路（Docker/跨主机/远端/真实平台/Provider）未满足 |
 | 已知缺口 | 明确未实现或仅部分实现，发布说明必须保留 |

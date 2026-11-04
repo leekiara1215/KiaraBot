@@ -5,6 +5,10 @@
 - 关联：[阶段退出证据矩阵](27-phase-exit-evidence.md)、[运维 runbook/P14c](08-operations.md)、[CI/CD/P14b-2](12-ci-cd.md)、[实施计划](23-implementation-plan.md)。
 - 原则：**没有证据的项不得打勾**；本清单是发布门禁，不是“已发布”声明。`doc/18` 冻结基线只读。
 
+2026-11-04 用户新增批准的五项能力见 [扩展计划](29-approved-capability-expansion-plan.md)。
+后续发布若包含该批能力，必须取得对应契约、实现和集成验收证据，不能沿用下方历史的
+WS/streaming/Host/bootstrap 延期说明将其视作完成或豁免。两主机/断网演练仍延期。
+
 ## 1. 发布元数据（发布时填写）
 
 | 字段 | 值（占位） | 证据/命令 |
@@ -14,7 +18,7 @@
 | 分支/tag | `main` / `vX.Y.Z` | tag 必须受保护；发布记录含批准人 |
 | 发布负责人/批准 | `<name>` / `<approver>` | `release-gated` Environment 审批记录 |
 | 日期（UTC） | `<YYYY-MM-DD>` | workflow run id |
-| Schema 版本 | Identity `14`、Runtime `15`、Scheduler `9`、Model `8` | `infrastructure/postgres/schema/v1.hpp`；发布前重新核对 |
+| Schema 版本 | 当前工作区 Identity `15`、Runtime `19`、Scheduler `11`、Model `10`（2026-11-04 WS-02 实测） | `infrastructure/postgres/schema/v1.hpp` 和真实 describe；发布前重新核对 |
 | Service config schema | `1`（`doc/08` 严格配置） | `schema_version=1`；Control `control_api` 端点/秘密路径以发布 env 为准 |
 | Compose/镜像版本变量 | `KIARABOT_VERSION=vX.Y.Z` | `deploy/target.env`；`target-smoke.sh --release` 校验非 dev 版本与 digest |
 | PostgreSQL 镜像 | `postgres:16.4-bookworm@sha256:<digest>` | release 时 PG16 当前修订 + digest；`target-smoke --release` 强制 |
@@ -77,7 +81,7 @@ scripts/ops/tests/ops_scripts_test.sh
 - 单机 Compose 启动：PG → 初始化/迁移（显式，不自动）→ Identity → Runtime/Scheduler/Model → Host → Adapter → Control；每步 readiness 不通过即停止，不跳过。
 - 健康：`/health/live` 进程存活；匿名 `/health/ready` 达到接流量条件；受权 `/api/v1/health` 四依赖聚合；Identity/凭据/撤销异常必须 UNHEALTHY，Runtime/Scheduler/Model 单点故障为 DEGRADED 且对应功能 503，不整体摘流。
 - 数据层：执行一次 P14c 备份/恢复演练（本地脚本已验证 PASS，生产数据量未验证），确认四库 `schema_versions`、SQLite integrity、材料 0600。
-- 回滚：停止新流量并按 P14c 顺序停机 → 使用最近完整备份 `target-restore.sh --confirm --expect identity=14 --expect runtime=15 --expect scheduler=9 --expect model=8` → 恢复上一版本镜像 digest 与配置 → 按启动顺序恢复 → 观察窗口。禁止只恢复单库后启动、禁止服务自动迁移、禁止用新 CA/root key 顶替旧材料。
+- 回滚：停止新流量并按 P14c 顺序停机 → 使用最近完整备份 `target-restore.sh --confirm --expect identity=<备份版本> --expect runtime=<备份版本> --expect scheduler=<备份版本> --expect model=<备份版本>`（四个值分别取自该备份 manifest，不能套用当前版本）→ 恢复与备份 schema 相容的上一版本镜像 digest 与配置 → 按启动顺序恢复 → 观察窗口。禁止只恢复单库后启动、禁止服务自动迁移、禁止用新 CA/root key 顶替旧材料。包含 operation journal 的恢复还须按 owner epoch 恢复规则处理，不得向旧 cursor 声称连续。
 - 若发布后无法在约定窗口内恢复，保持停机并升级人工处理；不得为缩短停机删除 journal/outbox/未决记录。详见 `doc/08`「P14c 本地真实备份/恢复与故障 runbook」。
 
 ## 6. 待确认项（发布前由用户/管理员确认）

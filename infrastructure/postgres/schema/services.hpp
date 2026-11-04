@@ -5,6 +5,7 @@
 
 #include "identity_security.hpp"
 #include "kiarabot/core/domain/target/foundation.hpp"
+#include "operation_observations.hpp"
 #include "runtime_actions.hpp"
 #include "runtime_events.hpp"
 #include "runtime_host_commands.hpp"
@@ -159,6 +160,10 @@ CREATE TABLE kiarabot.encrypted_provider_secrets (
     break;
   default:
     break;
+  }
+  if (owner == core::target::Service::Runtime || owner == core::target::Service::Scheduler ||
+      owner == core::target::Service::Model) {
+    sql += kOperationObservations;
   }
   return sql;
 }

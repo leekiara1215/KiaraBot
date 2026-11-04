@@ -339,7 +339,10 @@ RuntimeEvents::accept(const target::EventRecord& event,
                          target::conversation_key_text(event.conversation),
                          static_cast<int>(event.payload), event.has_conversation,
                          event.has_sequence ? event.sequence : std::optional<std::uint64_t>{},
-                         event.has_sequence, pqxx::binarystring{event.serialized_envelope},
+                         event.has_sequence,
+                         pqxx::bytes_view{
+                             reinterpret_cast<const std::byte*>(event.serialized_envelope.data()),
+                             event.serialized_envelope.size()},
                          timestamp(event.occurred_at), terminal ? 1 : 0});
         const auto conversation_key = target::conversation_key_text(event.conversation);
         for (const auto& target : targets) {
@@ -425,6 +428,33 @@ RuntimeEvents::claim(const target::DeliveryClaimRequest& request) {
           claims.push_back(std::move(claim));
         }
         return claims;
+      });
+}
+
+target::Outcome<std::optional<target::DeliveryAttempt>>
+RuntimeEvents::find_attempt(const target::InstanceId& instance, std::string_view event_id,
+                            const target::AttemptId& attempt) {
+  return query<std::optional<target::DeliveryAttempt>>(
+      sql_,
+      [&](pqxx::transaction_base& transaction)
+          -> target::Outcome<std::optional<target::DeliveryAttempt>> {
+        if (!valid_id(instance.value) || !valid_id(event_id) || !valid_id(attempt.value)) {
+          return invalid();
+        }
+        // Keep the owner's current generation stable before the application reads it. Always lock
+        // instance before target, and take the target's ACK lock directly (no shared-lock upgrade).
+        transaction.exec("SELECT id FROM kiarabot.instances WHERE id=$1 FOR SHARE",
+                         pqxx::params{instance.value});
+        const auto rows = transaction.exec(
+            "SELECT a.* FROM kiarabot.delivery_attempts a "
+            "JOIN kiarabot.delivery_targets t ON t.adapter=a.adapter AND t.event_id=a.event_id "
+            "AND t.instance=a.instance "
+            "WHERE a.instance=$1 AND a.event_id=$2 AND a.attempt_id=$3 FOR UPDATE OF t",
+            pqxx::params{instance.value, event_id, attempt.value});
+        if (rows.empty()) {
+          return std::optional<target::DeliveryAttempt>{};
+        }
+        return std::optional<target::DeliveryAttempt>{read_attempt(rows.one_row())};
       });
 }
 

@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <limits>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -154,7 +155,7 @@ t::Failure grpc_failure(const grpc::Status& status) {
   }
 }
 bool management_method(std::string_view method) {
-  // Control REST management surface. Runtime (plugin model_chat) only calls Chat; all metadata,
+  // Control REST management surface. Runtime calls Chat/ChatStream; all metadata,
   // call-status, operation and configuration reads are Control-origin delegations.
   return method == "/kiarabot.v1.ModelService/GetModelMetadata" ||
          method == "/kiarabot.v1.ModelService/ListModelMetadata" ||
@@ -162,6 +163,7 @@ bool management_method(std::string_view method) {
          method == "/kiarabot.v1.ModelService/RotateProviderSecret" ||
          method == "/kiarabot.v1.ModelService/GetCallStatus" ||
          method == "/kiarabot.v1.ModelService/GetOperation" ||
+         method == "/kiarabot.v1.ModelService/ListOperationChanges" ||
          method == "/kiarabot.v1.ModelService/DisableModel" ||
          method == "/kiarabot.v1.ModelService/EnableModel" ||
          method == "/kiarabot.v1.ModelService/ResolveModelCall" ||
@@ -293,6 +295,10 @@ decode_model_delegation(std::string_view proof, const target::Sha256Digest& leaf
                                          : std::nullopt;
     caller.delegation = std::string{proof};
     caller.peer_fingerprint = leaf_fingerprint;
+    if (*expires > std::numeric_limits<std::int64_t>::max()/1000000000 || *expires <= 0) {
+      return unauthenticated();
+    }
+    caller.delegation_expires_at = t::TimePoint{std::chrono::seconds{*expires}};
     return caller;
   } catch (...) {
     return failure(t::ErrorCode::Internal);
@@ -362,6 +368,11 @@ ModelIdentityClient::authorize(const t::ModelCaller& caller, t::Permission permi
       return unauthenticated();
     }
     const auto is_management = management_method(caller.method);
+    const bool runtime_method = caller.method == "/kiarabot.v1.ModelService/Chat" ||
+                                caller.method == "/kiarabot.v1.ModelService/ChatStream";
+    if (!is_management && !runtime_method) {
+      return forbidden();
+    }
     if (is_management && caller.runtime_origin) {
       return forbidden();
     }

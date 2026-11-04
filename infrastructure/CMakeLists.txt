@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.24)
-project(kiarabot_infrastructure LANGUAGES CXX)
+project(kiarabot_infrastructure LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -11,7 +11,7 @@ else()
 endif()
 set(PROTO_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../proto)
 set(PROTO_OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/generated)
-set(PROTO_NAMES common events actions adapters plugins services policy platform identity runtime host scheduler model)
+set(PROTO_NAMES common events actions adapters plugins services policy platform observations model_stream identity runtime host scheduler model)
 set(PROTO_INPUTS)
 set(PROTO_SOURCES)
 set(PROTO_HEADERS)
@@ -55,6 +55,7 @@ target_link_libraries(kiarabot_model_http_provider PUBLIC infrastructure_proto
   PRIVATE CURL::libcurl)
 target_compile_options(kiarabot_model_http_provider PRIVATE
   $<$<CXX_COMPILER_ID:AppleClang,Clang,GNU>:-Wall -Wextra -Wpedantic>)
+include(${CMAKE_CURRENT_LIST_DIR}/../cmake/model-streaming.cmake)
 add_library(kiarabot_infrastructure STATIC src/file_storage.cpp)
 target_include_directories(kiarabot_infrastructure PUBLIC include ../core/reference/include)
 target_link_libraries(kiarabot_infrastructure PUBLIC infrastructure_proto)
@@ -146,11 +147,22 @@ if(UNIX)
   set_tests_properties(migrate_cli PROPERTIES TIMEOUT 120)
 endif()
 
-get_property(REFERENCE_TESTS DIRECTORY PROPERTY TESTS)
+# Only historical implementations are reference. Target Host journal and Model HTTP Provider
+# retain their production classification and pNN test labels, even in this shared build directory.
+set(REFERENCE_TESTS time_zone_resolver http_model_provider file_storage sqlite_runtime_store
+  snapshot_limits crash_recovery authorized_commands runtime_log message_projection migrate_cli)
 foreach(TEST_NAME IN LISTS REFERENCE_TESTS)
-  set_tests_properties(${TEST_NAME} PROPERTIES LABELS "reference")
+  if(TEST ${TEST_NAME})
+    set_tests_properties(${TEST_NAME} PROPERTIES LABELS "reference")
+  endif()
 endforeach()
-get_property(REFERENCE_TARGETS DIRECTORY PROPERTY BUILDSYSTEM_TARGETS)
+set(REFERENCE_TARGETS kiarabot_time_zone kiarabot_model kiarabot_infrastructure
+  kiarabot_sqlite_runtime kiarabot_runtime_log kiarabot_message_projection kiarabot-migrate
+  time_zone_resolver_test http_model_provider_test file_storage_test sqlite_runtime_store_test
+  snapshot_limits_test crash_recovery_test authorized_commands_test runtime_log_test
+  message_projection_test migrate_cli_test)
 foreach(TARGET_NAME IN LISTS REFERENCE_TARGETS)
-  set_property(TARGET ${TARGET_NAME} PROPERTY KIARABOT_REFERENCE TRUE)
+  if(TARGET ${TARGET_NAME})
+    set_property(TARGET ${TARGET_NAME} PROPERTY KIARABOT_REFERENCE TRUE)
+  endif()
 endforeach()

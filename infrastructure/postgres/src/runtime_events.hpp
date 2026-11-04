@@ -19,6 +19,9 @@ public:
          const core::target::EventCapacityLimits& limits) override;
   core::target::Outcome<std::vector<core::target::DeliveryClaim>>
   claim(const core::target::DeliveryClaimRequest& request) override;
+  core::target::Outcome<std::optional<core::target::DeliveryAttempt>>
+  find_attempt(const core::target::InstanceId& instance, std::string_view event_id,
+               const core::target::AttemptId& attempt) override;
   core::target::Outcome<core::target::DeliveryReceipt>
   acknowledge(const core::target::DeliveryAcknowledgement& acknowledgement,
               core::target::TimePoint now) override;

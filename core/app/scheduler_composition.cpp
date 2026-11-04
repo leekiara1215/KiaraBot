@@ -16,10 +16,12 @@
 
 #include "kiarabot/core/application/target/scheduler_service.hpp"
 #include "kiarabot/core/runtime/platform/peer_certificate.hpp"
+#include "kiarabot/core/runtime/platform/runtime_identity_client.hpp"
 #include "kiarabot/core/runtime/platform/scheduler_identity_client.hpp"
 #include "kiarabot/core/runtime/platform/scheduler_rpc.hpp"
 #include "kiarabot/core/runtime/platform/scheduler_runtime_client.hpp"
 #include "kiarabot/core/runtime/platform/service_rpc.hpp"
+#include "kiarabot/infrastructure/identity_crypto/sha256.hpp"
 #include "kiarabot/infrastructure/postgres/factories.hpp"
 #include "postgres_service.hpp"
 
@@ -250,6 +252,7 @@ target::Outcome<platform::ServiceComposition> compose(const platform::ProcessCon
   }
   auto zones = std::make_shared<SchedulerZones>();
   auto ids = std::make_shared<SchedulerIds>();
+  auto digests = std::make_shared<infrastructure::identity_crypto::Sha256>();
   std::shared_ptr<platform::SchedulerRuntimeClient> runtime_client;
   if (configured && config.runtime_endpoint) {
     grpc::SslCredentialsOptions ssl;
@@ -264,6 +267,7 @@ target::Outcome<platform::ServiceComposition> compose(const platform::ProcessCon
     runtime_client = std::move(std::get<std::unique_ptr<platform::SchedulerRuntimeClient>>(client));
   }
   std::shared_ptr<platform::SchedulerIdentityClient> identity_client;
+  std::shared_ptr<platform::RuntimeIdentityClient> observation_identity;
   if (configured && config.identity_endpoint) {
     grpc::SslCredentialsOptions ssl;
     ssl.pem_root_certs = config.tls.ca;
@@ -277,21 +281,52 @@ target::Outcome<platform::ServiceComposition> compose(const platform::ProcessCon
     }
     identity_client =
         std::move(std::get<std::unique_ptr<platform::SchedulerIdentityClient>>(client));
+    auto observation_client = platform::RuntimeIdentityClient::create(
+        {*config.identity_endpoint, grpc::SslCredentials(ssl), std::chrono::milliseconds{500},
+         std::chrono::milliseconds{500}});
+    if (const auto* rejected = std::get_if<target::Failure>(&observation_client)) {
+      return *rejected;
+    }
+    observation_identity =
+        std::move(std::get<std::unique_ptr<platform::RuntimeIdentityClient>>(observation_client));
+  }
+  std::shared_ptr<target::OperationObservationApplication> observations;
+  if (observation_identity) {
+    auto built = target::make_operation_observation_application(
+        {target::Service::Scheduler,
+         [factory]() -> target::Outcome<std::unique_ptr<target::UnitOfWork>> {
+           auto begun = factory->begin();
+           if (const auto* failure = std::get_if<target::Failure>(&begun))
+             return *failure;
+           return std::unique_ptr<target::UnitOfWork>(
+               std::move(std::get<std::unique_ptr<target::SchedulerUnitOfWork>>(begun)));
+         },
+         *observation_identity,
+         {}});
+    if (const auto* rejected = std::get_if<target::Failure>(&built))
+      return *rejected;
+    observations =
+        std::move(std::get<std::unique_ptr<target::OperationObservationApplication>>(built));
   }
   struct KeepAlive {
     std::shared_ptr<target::SchedulerUnitOfWorkFactory> factory;
     std::shared_ptr<SchedulerZones> zones;
     std::shared_ptr<SchedulerIds> ids;
+    std::shared_ptr<infrastructure::identity_crypto::Sha256> digests;
     std::shared_ptr<platform::SchedulerRuntimeClient> runtime_client;
     std::shared_ptr<platform::SchedulerIdentityClient> identity_client;
+    std::shared_ptr<platform::RuntimeIdentityClient> observation_identity;
+    std::shared_ptr<target::OperationObservationApplication> observations;
   };
   auto keep_alive =
-      std::make_shared<KeepAlive>(KeepAlive{factory, zones, ids, runtime_client, identity_client});
+      std::make_shared<KeepAlive>(KeepAlive{factory, zones, ids, digests, runtime_client,
+                                            identity_client, observation_identity, observations});
   auto service = std::make_shared<target::SchedulerService>(target::SchedulerServiceDependencies{
-      *factory, *ids, *zones, target::kTaskHorizon, target::kInstanceTaskCapacity,
+      *factory, *ids, *zones, *digests, target::kTaskHorizon, target::kInstanceTaskCapacity,
       target::kInstallationTaskCapacity, runtime_client.get(), keep_alive});
 
   platform::SchedulerRpcOptions rpc_options;
+  rpc_options.observations = observations.get();
   if (!config.runtime_peers.empty()) {
     rpc_options.platform_peer = [peers = config.runtime_peers](grpc::ServerContext& transport,
                                                                std::string_view method,

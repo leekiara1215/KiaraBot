@@ -1167,6 +1167,38 @@ async def async_main(args) -> None:
             require(ack_receipt.delivery_receipt.disposition ==
                     platform.DELIVERY_ACKNOWLEDGED, 'ACK disposition mismatch')
 
+            duplicate_state_before = psql(pg_bin, root, port, runtime_password,
+                "SELECT state,attempts,updated_at,retain_until FROM kiarabot.delivery_targets "
+                f"WHERE event_id={quote_sql(event_id)} ORDER BY instance; "
+                "SELECT count(*) FROM kiarabot.audit_entries").stdout
+            await plugin_call.write(plugins.PluginToCore(
+                fence=plugin_fence, connection_proof=plugin_proof,
+                event_ack=plugins.PluginEventAck(event_id=event_id, accepted=True,
+                                                 attempt=attempt)))
+            duplicate_ack = await read_or_fail(plugin_call, 'duplicate plugin ACK receipt')
+            require(duplicate_ack.WhichOneof('body') == 'delivery_receipt' and
+                    duplicate_ack.delivery_receipt.disposition == platform.DELIVERY_DUPLICATE and
+                    duplicate_ack.delivery_receipt.attempt.attempt_id == attempt.attempt_id,
+                    'duplicate ACK did not preserve the original attempt receipt')
+            duplicate_state_after = psql(pg_bin, root, port, runtime_password,
+                "SELECT state,attempts,updated_at,retain_until FROM kiarabot.delivery_targets "
+                f"WHERE event_id={quote_sql(event_id)} ORDER BY instance; "
+                "SELECT count(*) FROM kiarabot.audit_entries").stdout
+            require(duplicate_state_before == duplicate_state_after,
+                    'duplicate ACK changed terminal state, retention, attempt count or audit')
+            wrong_event_attempt = platform.DeliveryAttempt()
+            wrong_event_attempt.CopyFrom(attempt)
+            wrong_event_attempt.event_id = str(__import__('uuid').uuid4())
+            await plugin_call.write(plugins.PluginToCore(
+                fence=plugin_fence, connection_proof=plugin_proof,
+                event_ack=plugins.PluginEventAck(event_id=wrong_event_attempt.event_id,
+                                                 accepted=True, attempt=wrong_event_attempt)))
+            wrong_event_ack = await read_or_fail(plugin_call, 'wrong event duplicate ACK')
+            require(wrong_event_ack.WhichOneof('body') == 'delivery_receipt' and
+                    wrong_event_ack.delivery_receipt.disposition == platform.DELIVERY_STALE,
+                    'ACK lookup accepted an event/attempt identity mismatch')
+
+
             # Stale attempt: the acknowledged attempt is no longer current and must never confirm
             # a future attempt. The stream stays usable.
             await plugin_call.write(plugins.PluginToCore(
@@ -1266,6 +1298,69 @@ async def async_main(args) -> None:
                 ADAPTER_INSTANCE, ACCOUNT, INSTALLATION, SHUTDOWN_INSTANCE, SHUTDOWN_BOOTSTRAP,
                 ((adapter_call, renewed), (plugin_call, plugin_result.authorization)),
                 read_or_fail, expect_rpc_error, require)
+
+            # Plugin refresh rotates authority before the response; failed refresh must close the
+            # stream instead of accepting another frame with the old material.
+            plugin_auth = plugin_result.authorization
+            plugin_refresh_id = str(__import__('uuid').uuid4())
+            await plugin_call.write(plugins.PluginToCore(
+                fence=plugin_fence, connection_proof=plugin_proof,
+                refresh_authorization=platform.RefreshConnectionAuthorization(
+                    request_id=plugin_refresh_id, fence=plugin_fence, proof=plugin_proof,
+                    refresh_credential=plugin_auth.refresh_credential,
+                    refresh_generation=plugin_auth.refresh_generation)))
+            plugin_refreshed = await read_or_fail(plugin_call, 'plugin refresh result')
+            require(plugin_refreshed.WhichOneof('body') == 'authorization_result' and
+                    plugin_refreshed.authorization_result.request_id == plugin_refresh_id and
+                    plugin_refreshed.authorization_result.WhichOneof('outcome') == 'authorization',
+                    'plugin refresh did not return correlated authority')
+            plugin_renewed = plugin_refreshed.authorization_result.authorization
+            require(plugin_renewed.fence == plugin_fence and
+                    plugin_renewed.refresh_generation == plugin_auth.refresh_generation + 1 and
+                    plugin_renewed.proof != plugin_proof and
+                    plugin_renewed.refresh_credential != plugin_auth.refresh_credential,
+                    'plugin refresh did not rotate both secrets while preserving the fence')
+            await plugin_call.write(plugins.PluginToCore(
+                fence=plugin_fence, connection_proof=plugin_renewed.proof,
+                refresh_authorization=platform.RefreshConnectionAuthorization(
+                    request_id=str(__import__('uuid').uuid4()), fence=plugin_fence,
+                    proof=plugin_renewed.proof,
+                    refresh_credential=plugin_auth.refresh_credential,
+                    refresh_generation=plugin_renewed.refresh_generation)))
+            await expect_rpc_error(plugin_call, 'plugin refresh with stale credential',
+                                   {_grpc().StatusCode.UNAUTHENTICATED})
+            plugin_call = plugin_factory(
+                metadata=(('authorization', 'Bearer ' + PLUGIN_BOOTSTRAP),))
+            await plugin_call.write(plugin_registration)
+            reconnected_plugin = await read_or_fail(plugin_call, 'plugin reconnect after refresh failure')
+            require(reconnected_plugin.WhichOneof('body') == 'register_result' and
+                    reconnected_plugin.register_result.accepted,
+                    'plugin did not reconnect after failed refresh')
+            plugin_fence = reconnected_plugin.register_result.authorization.fence
+            plugin_proof = reconnected_plugin.register_result.authorization.proof
+            require(plugin_fence.connection_generation > plugin_auth.fence.connection_generation and
+                    plugin_fence.execution_generation == plugin_auth.fence.execution_generation,
+                    'reconnect advances connection generation while preserving execution generation')
+
+            # An authenticated new stream cannot rebind an old attempt to its new generation.
+            await plugin_call.write(plugins.PluginToCore(
+                fence=plugin_fence, connection_proof=plugin_proof,
+                event_ack=plugins.PluginEventAck(event_id=event_id, accepted=True, attempt=attempt)))
+            old_generation_ack = await read_or_fail(plugin_call, 'old generation duplicate ACK')
+            require(old_generation_ack.WhichOneof('body') == 'delivery_receipt' and
+                    old_generation_ack.delivery_receipt.disposition == platform.DELIVERY_STALE,
+                    'new connection accepted an old-fence attempt')
+            rewritten_attempt = platform.DeliveryAttempt()
+            rewritten_attempt.CopyFrom(attempt)
+            rewritten_attempt.fence.CopyFrom(plugin_fence)
+            await plugin_call.write(plugins.PluginToCore(
+                fence=plugin_fence, connection_proof=plugin_proof,
+                event_ack=plugins.PluginEventAck(event_id=event_id, accepted=True,
+                                                 attempt=rewritten_attempt)))
+            rewritten_ack = await read_or_fail(plugin_call, 'rewritten old attempt fence')
+            require(rewritten_ack.WhichOneof('body') == 'delivery_receipt' and
+                    rewritten_ack.delivery_receipt.disposition == platform.DELIVERY_STALE,
+                    'wire fence rewrite overrode the persisted attempt fence')
 
             # Revocation must win within <=1s even though the peer still has valid proof.
             psql(pg_bin, root, port, runtime_password,

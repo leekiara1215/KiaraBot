@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <variant>
 #include <vector>
 
@@ -74,6 +75,13 @@ public:
   // earliest non-terminal target; every claim persists a new attempt (new attempt id, fence,
   // started_at, lease_until) before returning.
   virtual Outcome<std::vector<DeliveryClaim>> claim(const DeliveryClaimRequest& request) = 0;
+  // Look up the durable attempt by the authenticated owner and complete wire attempt identity.
+  // Empty means absent/invisible; dependency errors remain Failure. This read retains the owner
+  // instance and delivery-target locks until this UoW ends so the application can verify the
+  // current fence and then call acknowledge/renew without a concurrent generation/state change. It
+  // does not authorize the request or classify a duplicate; ACK/Renew still adjudicate the ledger.
+  virtual Outcome<std::optional<DeliveryAttempt>>
+  find_attempt(const InstanceId& instance, std::string_view event_id, const AttemptId& attempt) = 0;
   // ACK maps to DELIVERY_ACKNOWLEDGED/DUPLICATE/STALE/REJECTED; a rejected retryable error
   // schedules backoff and a non-retryable/exhausted error dead-letters in the same transaction.
   virtual Outcome<DeliveryReceipt> acknowledge(const DeliveryAcknowledgement& acknowledgement,
@@ -167,8 +175,8 @@ public:
   // Bounded dispatch claim source for the bridge: accepted, not-dispatched rows targeting this
   // adapter resource whose deadline is still in the future. The caller marks each row dispatched
   // in the same UoW; the rows are selected FOR UPDATE SKIP LOCKED by the PG adapter.
-  virtual Outcome<std::vector<ActionRecord>>
-  list_due(const ResourceId& adapter_id, std::size_t limit, TimePoint now) = 0;
+  virtual Outcome<std::vector<ActionRecord>> list_due(const ResourceId& adapter_id,
+                                                      std::size_t limit, TimePoint now) = 0;
   // Removes only terminal rows whose retain_until elapsed; pending/unknown rows are never pruned.
   virtual Outcome<std::size_t> prune_terminal(TimePoint now, std::size_t limit) = 0;
 };

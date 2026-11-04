@@ -2,8 +2,8 @@
 #include <memory>
 
 #include "kiarabot/control/application/target/application.hpp"
+#include "kiarabot/control/application/target/readiness.hpp"
 #include "kiarabot/control/target/https_endpoint.hpp"
-#include "kiarabot/control/target/readiness.hpp"
 #include "kiarabot/core/runtime/platform/service_process.hpp"
 
 int main(int argc, char* argv[]) {

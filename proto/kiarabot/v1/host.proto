@@ -4,6 +4,7 @@ import "google/protobuf/timestamp.proto";
 import "kiarabot/v1/common.proto";
 import "kiarabot/v1/platform.proto";
 import "kiarabot/v1/policy.proto";
+import "kiarabot/v1/observations.proto";
 
 // CONTRACT_STATUS: not_implemented - P01 target declaration, no producer.
 message HostPackage {
@@ -275,4 +276,132 @@ message RuntimeToHost {
 // CONTRACT_STATUS: not_implemented - P08 target declaration, no producer.
 service HostBridge {
   rpc Connect(stream HostToRuntime) returns (stream RuntimeToHost);
+}
+
+// HOST-01: independent owner management; target implementation pending.
+// The seven HostService methods above remain HostBridge-only. These bounded management
+// methods use the existing Host owner mTLS listener, never an arbitrary process/shell port.
+// CONTRACT_STATUS: not_implemented - approved Host maintenance contract.
+enum HostAdmissionState {
+  HOST_ADMISSION_STATE_UNSPECIFIED = 0;
+  HOST_ADMISSION_OPEN = 1;
+  HOST_ADMISSION_CLOSED = 2;
+}
+
+// CONTRACT_STATUS: not_implemented - approved Host maintenance contract.
+message HostMaintenanceRecord {
+  string host_id = 1;
+  uint64 version = 2;
+  HostAdmissionState admission = 3;
+  OperationRef operation = 4;
+  google.protobuf.Timestamp observed_at = 5;
+}
+
+// CONTRACT_STATUS: not_implemented - approved Host maintenance contract.
+message HostBeginMaintenanceRequest {
+  RequestContext context = 1;
+  string host_id = 2;
+  optional uint64 expected_version = 3;
+  // Always drains the finite managed-execution set after Runtime forbids new dispatch.
+  // Zero selects 10000ms; values above 10000 are INVALID_ARGUMENT.
+  uint32 grace_ms = 4;
+}
+
+// CONTRACT_STATUS: not_implemented - approved Host maintenance contract.
+message HostResumeAdmissionRequest {
+  RequestContext context = 1;
+  string host_id = 2;
+  optional uint64 expected_version = 3;
+}
+
+// CONTRACT_STATUS: not_implemented - approved Host maintenance contract.
+message HostMaintenanceResponse {
+  HostMaintenanceRecord maintenance = 1;
+  Operation operation = 2;
+}
+
+// CONTRACT_STATUS: not_implemented - approved Host maintenance contract.
+message HostGetMaintenanceRequest {
+  RequestContext context = 1;
+  string host_id = 2;
+}
+
+// CONTRACT_STATUS: not_implemented - approved Host maintenance contract.
+message HostGetMaintenanceResponse {
+  HostMaintenanceRecord maintenance = 1;
+}
+
+// CONTRACT_STATUS: not_implemented - approved Host maintenance contract.
+message HostGetOperationRequest {
+  RequestContext context = 1;
+  OperationRef operation = 2;
+}
+
+// CONTRACT_STATUS: not_implemented - approved Host maintenance contract.
+message HostGetOperationResponse {
+  Operation operation = 1;
+}
+
+// CONTRACT_STATUS: not_implemented - approved Host maintenance contract.
+message HostCancelOperationRequest {
+  RequestContext context = 1;
+  OperationRef operation = 2;
+  optional uint64 expected_version = 3;
+}
+
+// All calls require a registered Control mTLS platform peer and fresh Identity delegation
+// for this exact Host. Stored resource identity, not a caller relabel, determines scope.
+// SQLite owns operation/admission/change-journal truth. Receipt persisted=true is NOT completion.
+// Cancel is allowed only before admission changes or any Runtime gate request; later CONFLICT.
+// Resume never revives old credentials/tasks/generations or resolves UNKNOWN by assumption.
+// CONTRACT_STATUS: not_implemented - approved Host owner management, no target producer yet.
+service HostManagementService {
+  rpc GetMaintenance(HostGetMaintenanceRequest) returns (HostGetMaintenanceResponse) {
+    option (required_permission) = PERMISSION_HOST_READ;
+    option (scope_kinds) = RESOURCE_HOST;
+    option (requires_idempotency) = false;
+    option (default_deadline_ms) = 2000;
+    option (max_deadline_ms) = 5000;
+    option (requires_online_authorization) = true;
+  }
+  rpc BeginMaintenance(HostBeginMaintenanceRequest) returns (HostMaintenanceResponse) {
+    option (required_permission) = PERMISSION_HOST_EXECUTE;
+    option (scope_kinds) = RESOURCE_HOST;
+    option (requires_idempotency) = true;
+    option (default_deadline_ms) = 5000;
+    option (max_deadline_ms) = 30000;
+    option (requires_online_authorization) = true;
+  }
+  rpc ResumeAdmission(HostResumeAdmissionRequest) returns (HostMaintenanceResponse) {
+    option (required_permission) = PERMISSION_HOST_EXECUTE;
+    option (scope_kinds) = RESOURCE_HOST;
+    option (requires_idempotency) = true;
+    option (default_deadline_ms) = 5000;
+    option (max_deadline_ms) = 30000;
+    option (requires_online_authorization) = true;
+  }
+  rpc GetOperation(HostGetOperationRequest) returns (HostGetOperationResponse) {
+    option (required_permission) = PERMISSION_HOST_READ;
+    option (scope_kinds) = RESOURCE_HOST;
+    option (requires_idempotency) = false;
+    option (default_deadline_ms) = 2000;
+    option (max_deadline_ms) = 5000;
+    option (requires_online_authorization) = true;
+  }
+  rpc CancelOperation(HostCancelOperationRequest) returns (HostGetOperationResponse) {
+    option (required_permission) = PERMISSION_HOST_EXECUTE;
+    option (scope_kinds) = RESOURCE_HOST;
+    option (requires_idempotency) = true;
+    option (default_deadline_ms) = 5000;
+    option (max_deadline_ms) = 30000;
+    option (requires_online_authorization) = true;
+  }
+  rpc ListOperationChanges(OperationChangesRequest) returns (OperationChangesResponse) {
+    option (required_permission) = PERMISSION_HOST_READ;
+    option (scope_kinds) = RESOURCE_HOST;
+    option (requires_idempotency) = false;
+    option (default_deadline_ms) = 500;
+    option (max_deadline_ms) = 500;
+    option (requires_online_authorization) = true;
+  }
 }

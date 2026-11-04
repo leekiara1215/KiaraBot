@@ -10,6 +10,9 @@ from google.protobuf import descriptor_pb2, message_factory
 from google.protobuf.json_format import ParseDict
 from kiarabot.v1 import common_pb2, platform_pb2, policy_pb2, runtime_pb2, identity_pb2
 from resource_query_rules import runtime_query_valid
+from capability_expansion_contract_test import check_expansion_contract
+from model_stream_contract_test import check_model_stream_contract
+from host_gate_authorization_contract_test import check_host_gate_authorization_contract
 from identity_projection_rules import allows, validate_current_projection, session_state, access_seconds_remaining, assignment_command_valid
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -61,7 +64,7 @@ def main():
     expected_methods = {(m['service'], m['method']) for m in SPEC['methods']}
     actual_methods = {(service.name, rpc.name) for file in files.values()
                       for service in file.service if service.name in
-                      {'IdentityService', 'RuntimeService', 'HostService', 'SchedulerService', 'ModelService'}
+                      {'IdentityService', 'RuntimeService', 'HostService', 'HostManagementService', 'SchedulerService', 'ModelService'}
                       for rpc in service.method}
     assert actual_methods == expected_methods, (actual_methods - expected_methods, expected_methods - actual_methods)
     # External Bridge transports are streaming entry points without owner policy options;
@@ -125,7 +128,11 @@ def main():
         assert actual_scope_kinds == (expected_scope_kinds or []), (
             method['service'], method['method'], actual_scope_kinds, expected_scope_kinds)
         module = importlib.import_module('kiarabot.v1.' + Path(method['file']).stem + '_pb2')
-        request = getattr(module, method['request'])()
+        # The shared observation request lives in observations.proto, not the service file.
+        # Resolve its canonical descriptor so imported request types are checked as strictly.
+        service_descriptor = module.DESCRIPTOR.services_by_name[method['service']]
+        request_descriptor = service_descriptor.methods_by_name[method['method']].input_type
+        request = message_factory.GetMessageClass(request_descriptor)()
         assert request.DESCRIPTOR.fields_by_name['context'].message_type.full_name == 'kiarabot.v1.RequestContext'
         assert 'operation_name' not in request.DESCRIPTOR.fields_by_name
         checked += 1
@@ -333,6 +340,9 @@ def main():
         assert frame.WhichOneof('body') == 'authorization_result'
         frame.authorization_result.error.code = 1
         assert frame.authorization_result.WhichOneof('outcome') == 'error'
+    check_expansion_contract()
+    check_model_stream_contract()
+    check_host_gate_authorization_contract()
     goldens = json.loads((ROOT / 'proto/tests/target_wire_goldens.json').read_text())
     assert goldens['schema_version'] == 1
     for fixture in goldens['fixtures']:

@@ -4,6 +4,7 @@
 #include <chrono>
 #include <cstdint>
 #include <fcntl.h>
+#include <iostream>
 #include <optional>
 #include <signal.h>
 #include <spawn.h>
@@ -167,7 +168,10 @@ public:
     if (!alive(pid, marker)) {
       return false;
     }
-    if (kill(-static_cast<pid_t>(pid), SIGTERM) != 0 && errno != ESRCH) {
+    const int term_result = kill(-static_cast<pid_t>(pid), SIGTERM);
+    const int term_errno = term_result == 0 ? 0 : errno;
+    if (term_result != 0 && term_errno != ESRCH) {
+      std::cerr << "owned fixture signal diagnostic stage=TERM errno=" << term_errno << '\n';
       return process_failure(ErrorCode::UpstreamUnavailable, Recovery::Backoff);
     }
     const auto deadline = std::chrono::steady_clock::now() + grace;
@@ -178,7 +182,11 @@ public:
       }
       std::this_thread::sleep_for(std::chrono::milliseconds{10});
     }
-    if (kill(-static_cast<pid_t>(pid), SIGKILL) != 0 && errno != ESRCH) {
+    const int kill_result = kill(-static_cast<pid_t>(pid), SIGKILL);
+    const int kill_errno = kill_result == 0 ? 0 : errno;
+    if (kill_result != 0 && kill_errno != ESRCH) {
+      std::cerr << "owned fixture signal diagnostic stage=KILL errno=" << kill_errno
+                << " same_execution_alive=" << alive(pid, marker) << '\n';
       return process_failure(ErrorCode::UpstreamUnavailable, Recovery::Backoff);
     }
     const auto kill_deadline = std::chrono::steady_clock::now() + std::chrono::seconds{2};

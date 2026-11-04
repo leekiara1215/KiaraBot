@@ -206,6 +206,13 @@ public:
   target::Repository<target::OperationId, target::Operation>& operations() override {
     return common_->operations();
   }
+  target::Outcome<target::OperationObservationPage>
+  query_operation_changes(const target::OperationObservationQuery& query) override {
+    return common_->query_operation_changes(query);
+  }
+  target::Outcome<std::size_t> prune_operation_changes(std::size_t limit) override {
+    return common_->prune_operation_changes(limit);
+  }
   target::Outcome<std::vector<target::OperationParticipant>>
   operation_participants(const target::OperationId& id) override {
     return common_->operation_participants(id);
@@ -604,6 +611,22 @@ public:
   }
   target::Repository<target::OperationId, target::Operation>& operations() override {
     return work().operations();
+  }
+  target::Outcome<target::OperationObservationPage>
+  query_operation_changes(const target::OperationObservationQuery& query) override {
+    return work().query_operation_changes(query);
+  }
+  target::Outcome<std::size_t> prune_operation_changes(std::size_t limit) override {
+    return work().prune_operation_changes(limit);
+  }
+  target::Outcome<std::vector<target::OperationParticipant>>
+  operation_participants(const target::OperationId& id) override {
+    return work().operation_participants(id);
+  }
+  target::Status save_operation_participants(
+      const target::OperationId& id,
+      const std::vector<target::OperationParticipant>& participants) override {
+    return work().save_operation_participants(id, participants);
   }
   target::CommitResult commit() override {
     return work().commit();

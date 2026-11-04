@@ -150,3 +150,29 @@ CreateAccount.catalog=5, ValidateManifest.catalog=3 and CreateInstallation.catal
 ## Runtime 管理回执
 
 五项管理 RPC（DisableAccount、BindAdapter、UnbindAdapter、SetDesiredState、UpdateConfig）在有效保留窗内重放原资源结果、原 OperationRef 和实例提交状态，重试仍校验当前授权；BindAdapter 不重放 bootstrap 明文。本次修复不增加 wire 字段或重排共享 ReplayResult；Runtime schema v18 的附属回执仅做隔离新库验收，原地迁移另行审查。语义见 doc/01-contracts.md 与 doc/01-runtime-semantics.md。
+
+## 2026-11-04 批准扩展契约（全部新增target未实现）
+
+`observations.proto` 定义四owner共用的有界OperationChanges查询；Host另增独立
+`HostManagementService`（既有Host进程/owner mTLS监听），原七个HostService命令仍只经HostBridge。
+Runtime追加自身Host禁派gate及固定权限的bootstrap查询/重新发放/交付报告方法，managed插件和外管插件
+都经PluginBridge bootstrap，Host平台仍只用mTLS。普通REST/WS绝不回显bootstrap；Runtime只存digest和
+真实单调version，固定recipient经Control SecretDeliveryPort交付0600文件；丢明文显式重新发放，不重放秘密。
+`model_stream.proto`承载Model/PluginBridge共用流事件，保留原unary字段与方法；精确类型以proto为准。
+所有新增messages/fields/oneof/RPC/REST/语义登记为not_implemented，原implemented证据不扩大到新分支。
+
+根CMake的`KIARABOT_PROTO_FILES`显式包含observations.proto/model_stream.proto；SDK生成脚本及独立
+check_target入口glob全部canonical proto。临时生成产物不得提交。新HostManagementService是既有Host owner
+方法族，不是第七平台进程；target descriptor门禁将其与原五owner service一起完整双向核对。错误/时序、
+持久化/取消/UNKNOWN/恢复规范见doc/01-contracts与doc/01-runtime-semantics的2026-11-04扩展节。
+
+
+## 2026-11-04 v1.1 Host gate 在线授权补充
+
+IdentityService.CheckHostGateAuthorization只允许当前登记Runtime mTLS peer调用，要求调用者自身Principal
+上的显式identity.authorization.check。请求固定为单RESOURCE_HOST与实际入站Host TLS叶SHA256（32字节），
+不含可选择方法、permission、主体或subject_proof；唯一用途为RuntimeService.SetHostAdmissionGate。
+Identity核对当前Host证书/Principal及其存储的RESOURCE_HOST绑定，再核验精确host.execute。响应仅含
+AuthorizationDecision、Host credential/principal版本，不是可复用授权票据；Runtime仍核对实际TLS、
+HostBridge登记、当前fence及intent/version。旧CheckAuthorization仍强制delegation proof。新增契约登记
+not_implemented，生产接线与验收前不得宣称可用。Host enrollment的host_id显式绑定与PrincipalId独立。

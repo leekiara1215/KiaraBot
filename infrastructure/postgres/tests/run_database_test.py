@@ -27,6 +27,8 @@ def main():
                     'kiarabot_identity_application_test_sanitized',
                     'kiarabot_postgres_host_registration_test',
                     'kiarabot_postgres_scheduler_test',
+                    'kiarabot_postgres_operation_observations_test',
+                    'operation_observation_e2e_test.py',
                     'p14_native_single_host', 'p14_native_single_host.py',
                     'p13h3_joint_delete_production_e2e',
                     'p13h3_joint_delete_production_e2e.py',

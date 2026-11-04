@@ -1,7 +1,6 @@
 #pragma once
 
 #include <atomic>
-#include <memory>
 
 namespace kiarabot::control::target {
 

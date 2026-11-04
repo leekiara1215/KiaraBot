@@ -2,7 +2,7 @@
 
 #include <memory>
 
-#include "kiarabot/control/target/readiness.hpp"
+#include "kiarabot/control/application/target/readiness.hpp"
 #include "kiarabot/core/ports/target/service_readiness.hpp"
 
 namespace kiarabot::control::target {

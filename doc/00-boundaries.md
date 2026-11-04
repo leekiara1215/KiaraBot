@@ -36,13 +36,13 @@ Python NoneBot2 适配器由本仓库 `adapters/nonebot/` 维护，不再作为�
 
 负责可选业务能力。插件必须通过 PluginSDK 访问消息、模型、存储、权限和任务服务，不能直接访问数据库、OneBot 或控制面板 API。
 
-SDK 的实现位于 `sdk/`，具体插件位于 `plugins/`；Core 内的插件宿主属于 `core/runtime/`。
+SDK 的实现位于 `sdk/`，具体插件位于 `plugins/`；Core 内的插件宿主属于 runtime 分层，当前实现位于 `core/src/runtime/platform/`。
 
 ### 基础设施模块
 
 目录：`infrastructure/`
 
-负责实现 Core 在 `core/ports/` 定义的数据库、模型、调度、审计和测试替身，不决定业务规则，也不接收插件的直接调用。
+负责实现 Core 在 `core/include/kiarabot/core/ports/target/` 定义的数据库、模型、调度、审计和测试替身，不决定业务规则，也不接收插件的直接调用。
 
 ### 控制面板模块
 
@@ -63,8 +63,8 @@ SDK 的实现位于 `sdk/`，具体插件位于 `plugins/`；Core 内的插件�
 ```text
 proto       ← core / adapters / plugins / sdk
 api         ← control/api / panel / sdk/typescript
-core        ← control/api
-core/ports  ← infrastructure
+目标协议     ← control/api 的远端 owner 适配
+core/ports  ← infrastructure（只实现端口；组合根连接外层）
 control/api ← panel
 ```
 
@@ -118,10 +118,11 @@ infrastructure → 插件业务逻辑 / 控制面板页面
 ## 2026-11-01 目标架构实施边界（P00）
 
 本轮目标以 [方向基线](19-architecture-direction-baseline.md)、[详细设计](20-detailed-architecture-design.md)
-及 [分步计划](23-implementation-plan.md) 为准。上述旧运行路径说明不代表六服务已接线；
-目标接口暂位于 `core/include/kiarabot/core/{domain,application,ports}/target/`。
+及 [分步计划](23-implementation-plan.md) 为准。本节记录 P00 的边界，阶段状态以
+[证据矩阵](27-phase-exit-evidence.md) 为准；目标内部接口位于
+`core/include/kiarabot/core/{domain,application,ports}/target/`。
 旧 Core 源码已逐字节隔离到 `core/reference/`，新服务不链接它；旧断言及 reference
-构建结果只作为后续业务重建依据。新入口与应用已接线并通过进程测试，完整门禁仍在收尾，尚未实现业务。
+构建结果只作为业务重建依据。当前六服务已有目标业务实现；不能用 P00 接线结果证明后续业务或本轮重构已验收。
 `doc/18` 保持人类维护的只读原文。
 
 - Control、Identity、Runtime、Plugin Host、Scheduler、Model 是六类独立平台进程；

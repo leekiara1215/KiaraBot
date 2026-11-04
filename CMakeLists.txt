@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.24)
-project(kiarabot LANGUAGES CXX)
+project(kiarabot LANGUAGES C CXX)
 
 option(KIARABOT_GENERATE_PROTO "Generate protobuf and gRPC sources" OFF)
 set(KIARABOT_PROTOBUF_MIN_VERSION "25.0" CACHE STRING "Minimum Protobuf version")
@@ -60,7 +60,7 @@ endif()
   set(KIARABOT_DESCRIPTOR ${CMAKE_BINARY_DIR}/generated/kiarabot-v1.pb)
   set(KIARABOT_PROTO_FILES
     common.proto events.proto actions.proto adapters.proto plugins.proto services.proto
-    policy.proto platform.proto identity.proto runtime.proto host.proto scheduler.proto model.proto)
+    policy.proto platform.proto observations.proto model_stream.proto identity.proto runtime.proto host.proto scheduler.proto model.proto)
   set(KIARABOT_PROTO_INPUTS)
   set(KIARABOT_PROTO_OUTPUTS)
   set(KIARABOT_PROTO_SOURCES)

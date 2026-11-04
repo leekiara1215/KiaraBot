@@ -21,6 +21,8 @@ public:
   // 32 bytes of CSPRNG entropy as opaque binary material for short-lived bridge proofs and
   // refresh credentials. The value exists only in Runtime memory, never in storage or logs.
   virtual Outcome<std::array<std::byte, 32>> opaque_secret() = 0;
+  // Hash exactly value.size() bytes (including NUL), for secrets and public handoff content.
+  // Return the 32 SHA-256 bytes or the existing Failure; never a success fallback.
   virtual Outcome<Sha256Digest> sha256(std::string_view value) = 0;
 };
 

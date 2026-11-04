@@ -14,7 +14,6 @@
 #include <vector>
 
 #include <openssl/rand.h>
-#include <openssl/sha.h>
 
 #include "kiarabot/core/application/target/runtime_action_application.hpp"
 #include "kiarabot/core/application/target/runtime_application.hpp"
@@ -35,6 +34,7 @@
 #include "kiarabot/core/runtime/platform/scheduler_task_client.hpp"
 #include "kiarabot/core/runtime/platform/sealed_instance_delegation_source.hpp"
 #include "kiarabot/core/runtime/platform/service_rpc.hpp"
+#include "kiarabot/infrastructure/identity_crypto/sha256.hpp"
 #include "kiarabot/infrastructure/postgres/factories.hpp"
 #include "postgres_service.hpp"
 
@@ -146,11 +146,11 @@ public:
     return bytes;
   }
   target::Outcome<target::Sha256Digest> sha256(std::string_view value) override {
-    target::Sha256Digest digest;
-    SHA256(reinterpret_cast<const unsigned char*>(value.data()), value.size(),
-           reinterpret_cast<unsigned char*>(digest.bytes.data()));
-    return digest;
+    return digests_.sha256(value);
   }
+
+private:
+  infrastructure::identity_crypto::Sha256 digests_;
 };
 // Fail-closed until the real Identity current-authorization/delegation client is wired. It never
 // allows a request, and its availability observation is false so readiness stays false.
@@ -314,6 +314,7 @@ struct State {
   std::unique_ptr<target::RuntimeStorageApplication> storage;
   std::unique_ptr<target::RuntimeActionApplication> actions;
   std::unique_ptr<target::RuntimeAuditApplication> audit;
+  std::unique_ptr<target::OperationObservationApplication> observations;
   target::RuntimeActionApplication* action_application = nullptr;
   std::unique_ptr<target::RuntimeBridgeApplication> bridge;
   std::unique_ptr<target::HostLifecycleParticipantPort> host_lifecycle;
@@ -393,7 +394,7 @@ compose_runtime_service(const platform::ProcessConfig& config) {
             auto client = platform::RuntimeIdentityClient::create(
                 {*config.identity_endpoint, grpc::SslCredentials(ssl),
                  std::chrono::milliseconds{500}, std::chrono::milliseconds{1000}});
-            if (const auto* failure = std::get_if<target::Failure>(&client)) {
+            if (std::holds_alternative<target::Failure>(client)) {
               return {};
             }
             state->identity_client =
@@ -414,7 +415,7 @@ compose_runtime_service(const platform::ProcessConfig& config) {
 #endif
           auto host_lifecycle =
               target::make_runtime_host_lifecycle_participant(factory, *state->secrets);
-          if (const auto* failure = std::get_if<target::Failure>(&host_lifecycle)) {
+          if (std::holds_alternative<target::Failure>(host_lifecycle)) {
             return {};
           }
           state->host_lifecycle = std::move(
@@ -432,7 +433,7 @@ compose_runtime_service(const platform::ProcessConfig& config) {
             const std::string primary_path = task_path ? *task_path : *model_path;
             auto source = platform::SealedInstanceDelegationSource::create(
                 {primary_path, model_path.value_or("")});
-            if (const auto* failure = std::get_if<target::Failure>(&source)) {
+            if (std::holds_alternative<target::Failure>(source)) {
               return {};
             }
             std::shared_ptr<platform::InstanceParentDelegationSource> parent_source(std::move(
@@ -440,7 +441,7 @@ compose_runtime_service(const platform::ProcessConfig& config) {
             auto provider = platform::RuntimeInstanceDelegationProvider::create(
                 {std::move(parent_source), config.tls.certificate, state->identity_client.get(),
                  std::chrono::milliseconds{5000}});
-            if (const auto* failure = std::get_if<target::Failure>(&provider)) {
+            if (std::holds_alternative<target::Failure>(provider)) {
               return {};
             }
             state->instance_delegation = std::move(
@@ -463,7 +464,7 @@ compose_runtime_service(const platform::ProcessConfig& config) {
             auto client = platform::SchedulerTaskClient::create(
                 {*config.scheduler_endpoint, grpc::SslCredentials(ssl), task_delegation,
                  std::chrono::milliseconds{5000}});
-            if (const auto* failure = std::get_if<target::Failure>(&client)) {
+            if (std::holds_alternative<target::Failure>(client)) {
               return {};
             }
             state->scheduler_tasks =
@@ -475,14 +476,14 @@ compose_runtime_service(const platform::ProcessConfig& config) {
             auto lifecycle_client = platform::SchedulerTaskClient::create(
                 {*config.scheduler_endpoint, grpc::SslCredentials(ssl), nullptr,
                  std::chrono::milliseconds{2000}, true});
-            if (const auto* failure = std::get_if<target::Failure>(&lifecycle_client)) {
+            if (std::holds_alternative<target::Failure>(lifecycle_client)) {
               return {};
             }
             state->scheduler_lifecycle_tasks = std::move(
                 std::get<std::unique_ptr<platform::SchedulerTaskClient>>(lifecycle_client));
             auto scheduler_lifecycle = target::make_runtime_scheduler_lifecycle_participant(
                 *state->scheduler_lifecycle_tasks, *state->ids);
-            if (const auto* failure = std::get_if<target::Failure>(&scheduler_lifecycle)) {
+            if (std::holds_alternative<target::Failure>(scheduler_lifecycle)) {
               return {};
             }
             state->scheduler_lifecycle =
@@ -517,22 +518,39 @@ compose_runtime_service(const platform::ProcessConfig& config) {
                state->scheduler_lifecycle.get(),
 #endif
                std::move(catalogs)});
-          if (const auto* failure = std::get_if<target::Failure>(&built)) {
+          if (std::holds_alternative<target::Failure>(built)) {
             return {};
           }
           auto application =
               std::move(std::get<std::unique_ptr<target::RuntimeResourceApplication>>(built));
           state->application = application.get();
           auto audit = target::make_runtime_audit_application({factory, *state->authorization});
-          if (const auto* failure = std::get_if<target::Failure>(&audit)) {
+          if (std::holds_alternative<target::Failure>(audit)) {
             return {};
           }
           state->audit =
               std::move(std::get<std::unique_ptr<target::RuntimeAuditApplication>>(audit));
+          auto observations = target::make_operation_observation_application(
+              {target::Service::Runtime,
+               [&factory]() -> target::Outcome<std::unique_ptr<target::UnitOfWork>> {
+                 auto begun = factory.begin();
+                 if (const auto* failure = std::get_if<target::Failure>(&begun)) {
+                   return *failure;
+                 }
+                 return std::unique_ptr<target::UnitOfWork>(
+                     std::move(std::get<std::unique_ptr<target::RuntimeUnitOfWork>>(begun)));
+               },
+               *state->authorization,
+               {}});
+          if (std::holds_alternative<target::Failure>(observations)) {
+            return {};
+          }
+          state->observations = std::move(
+              std::get<std::unique_ptr<target::OperationObservationApplication>>(observations));
           auto action = target::make_runtime_action_application(
               {factory, *state->ids, *state->secrets, state->authorization,
                target::ActionCapacity{}, target::ActionQuotaLimits{}});
-          if (const auto* failure = std::get_if<target::Failure>(&action)) {
+          if (std::holds_alternative<target::Failure>(action)) {
             return {};
           }
           state->actions =
@@ -540,7 +558,7 @@ compose_runtime_service(const platform::ProcessConfig& config) {
           state->action_application = state->actions.get();
           auto storage = target::make_runtime_storage_application(
               {factory, *state->ids, *state->authorization});
-          if (const auto* failure = std::get_if<target::Failure>(&storage)) {
+          if (std::holds_alternative<target::Failure>(storage)) {
             return {};
           }
           state->storage =
@@ -555,7 +573,7 @@ compose_runtime_service(const platform::ProcessConfig& config) {
                  *state->application,
                  state->action_application,
                  {"plugin.config.v1", "action.result.v1", "host.tasks.v1", "host.model.v1"}});
-            if (const auto* failure = std::get_if<target::Failure>(&bridge)) {
+            if (std::holds_alternative<target::Failure>(bridge)) {
               return {};
             }
             if (config.model_endpoint) {
@@ -585,7 +603,7 @@ compose_runtime_service(const platform::ProcessConfig& config) {
               auto model_client = platform::RuntimeModelClient::create(
                   {*config.model_endpoint, grpc::SslCredentials(ssl), std::move(model_delegation),
                    std::chrono::milliseconds{30000}});
-              if (const auto* failure = std::get_if<target::Failure>(&model_client)) {
+              if (std::holds_alternative<target::Failure>(model_client)) {
                 return {};
               }
               state->model_client =
@@ -599,7 +617,7 @@ compose_runtime_service(const platform::ProcessConfig& config) {
     if (const auto* failure = std::get_if<target::Failure>(&composition)) {
       return *failure;
     }
-    auto& result = std::get<platform::ServiceComposition>(composition);
+    auto result = std::move(std::get<platform::ServiceComposition>(composition));
     if (!state->application) {
       return unavailable();
     }
@@ -666,6 +684,7 @@ compose_runtime_service(const platform::ProcessConfig& config) {
       options.storage = state->storage.get();
       options.actions = state->action_application;
       options.audit = state->audit.get();
+      options.observations = state->observations.get();
       if (state->identity_client) {
         auto* client = state->identity_client.get();
         options.authorize = [client](grpc::ServerContext& transport,
@@ -797,7 +816,7 @@ compose_runtime_service(const platform::ProcessConfig& config) {
       return sent;
     };
     result.application = std::make_unique<RuntimeReadiness>(std::move(result.application), state);
-    return std::move(result);
+    return result;
   } catch (...) {
     return unavailable();
   }

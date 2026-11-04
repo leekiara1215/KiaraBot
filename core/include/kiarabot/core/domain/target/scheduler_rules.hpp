@@ -55,10 +55,12 @@ bool occurrence_terminal(OperationState state);
 // Exactly one of run_at/local_time, strictly future and within the horizon. local_time is resolved
 // only through the injected IANA port: nonexistent/ambiguous civil times and invalid zones are
 // INVALID_ARGUMENT, unavailable zone data is UPSTREAM_UNAVAILABLE (never a guessed UTC offset).
-Outcome<TimePoint> resolve_run_at(const TaskCreationInput& input, class SchedulerTimeZonePort& zones,
-                                  TimePoint now, std::chrono::hours horizon = kTaskHorizon);
+Outcome<TimePoint> resolve_run_at(const TaskCreationInput& input,
+                                  class SchedulerTimeZonePort& zones, TimePoint now,
+                                  std::chrono::hours horizon = kTaskHorizon);
 
 // Deterministic owner-bound fingerprint of creation fields (excluding transport ids/deadline).
-Sha256Digest creation_fingerprint(const TaskCreationInput& input);
+Outcome<Sha256Digest> creation_fingerprint(const TaskCreationInput& input,
+                                           class SchedulerDigestPort& digests);
 
 } // namespace kiarabot::core::target
