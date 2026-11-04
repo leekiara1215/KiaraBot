@@ -81,7 +81,7 @@ std::optional<std::string> percent_decode(std::string_view value) {
       result.push_back(static_cast<char>(number));
       index += 2;
     } else {
-      result.push_back(value[index]);
+      result.push_back(value[index] == '+' ? ' ' : value[index]);
     }
   }
   return result;
