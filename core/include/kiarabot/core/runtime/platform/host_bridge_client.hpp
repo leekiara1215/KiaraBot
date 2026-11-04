@@ -8,6 +8,7 @@
 
 #include "kiarabot/core/domain/target/host_records.hpp"
 #include "kiarabot/core/ports/target/host_ports.hpp"
+#include "kiarabot/core/ports/target/host_registration_ports.hpp"
 
 namespace kiarabot::core::platform {
 
@@ -34,10 +35,13 @@ public:
   core::target::Status start(core::target::HostBridgeHandler& handler) override;
   void stop() override;
   bool registered() const override;
-  core::target::Status send_observation(
-      const core::target::ExecutionObservation& observation) override;
+  core::target::Status
+  send_observation(const core::target::ExecutionObservation& observation) override;
   core::target::Status send_receipt(const core::target::HostReceipt& receipt) override;
   std::uint64_t delivered_sequence() const override;
+  // Current registration fence for Host->Runtime coordination calls (admission gate). Absent
+  // until this connection has been accepted by Runtime; callers must fail closed, never invent it.
+  core::target::Outcome<core::target::HostFence> current_fence() const;
 
 private:
   class Impl;

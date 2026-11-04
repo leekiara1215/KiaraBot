@@ -36,6 +36,17 @@ std::optional<OwnerHttpResult> handle_accounts(const RequestContext& context, co
       if (!fill_context(input.mutable_context(), request_id, trace_id, request)) {
         return context.error(wire::INVALID_ARGUMENT);
       }
+      if (!input.bootstrap_recipient_id().empty()) {
+        wire::ResourceRef resource;
+        resource.set_kind(wire::RESOURCE_ACCOUNT);
+        resource.set_id(account);
+        // Fixed offline recipient validation happens before the owner mutation so an unknown or
+        // wrong-resource recipient never leaves a committed credential without a delivery target.
+        if (ports.bootstrap_recipients_ == nullptr ||
+            !ports.bootstrap_recipients_->known(input.bootstrap_recipient_id(), resource)) {
+          return context.error(wire::INVALID_ARGUMENT);
+        }
+      }
       auto delegation = context.delegate(ports.delegation_, "runtime",
                                          wire::PERMISSION_ACCOUNT_MANAGE, account_scope(account));
       if (const auto* failure = std::get_if<OwnerFailure>(&delegation)) {

@@ -805,8 +805,10 @@ void streaming() {
   }
   require(fixture.model.stream_attempts == 1 && fixture.model.last_stream_request &&
               fixture.model.last_stream_request->instance.value == connection.instance &&
+              fixture.model.last_stream_request->installation.value ==
+                  "55555555-5555-4555-8555-555555555555" &&
               fixture.model.last_stream_request->messages.size() == 1,
-          "stream request derives instance from the authenticated session");
+          "stream request derives instance and registered installation from the session");
   connection.close();
 
   // Feature not negotiated: failure precedes the model port.

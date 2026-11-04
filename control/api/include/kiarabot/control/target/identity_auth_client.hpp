@@ -12,6 +12,9 @@
 
 namespace kiarabot::control::target {
 
+class SecretDeliveryApplication;
+class BootstrapRecipientsPort;
+
 // Transport-only values. They do not enter the pure Control application or Core ports.
 struct AuthHttpRequest {
   std::string method;
@@ -33,7 +36,9 @@ class IdentityAuthClient {
 public:
   IdentityAuthClient(const std::string& endpoint, const std::string& runtime_endpoint,
                      const std::string& scheduler_endpoint, const std::string& model_endpoint,
-                     const std::string& host_endpoint, const core::platform::TlsMaterial& tls);
+                     const std::string& host_endpoint, const core::platform::TlsMaterial& tls,
+                     SecretDeliveryApplication* secret_delivery = nullptr,
+                     BootstrapRecipientsPort* bootstrap_recipients = nullptr);
   ~IdentityAuthClient();
   IdentityAuthClient(const IdentityAuthClient&) = delete;
   IdentityAuthClient& operator=(const IdentityAuthClient&) = delete;

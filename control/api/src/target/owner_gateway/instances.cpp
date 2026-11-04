@@ -93,6 +93,16 @@ std::optional<OwnerHttpResult> handle_instances(const RequestContext& context, c
         !fill_context(input.mutable_context(), request_id, trace_id, request)) {
       return context.error(wire::INVALID_ARGUMENT);
     }
+    if (!input.bootstrap_recipient_id().empty()) {
+      // The instance identity is allocated by Runtime, so only a kind-level INSTANCE recipient can
+      // be pre-validated here; an exact-resource recipient is rejected before any mutation.
+      wire::ResourceRef resource;
+      resource.set_kind(wire::RESOURCE_INSTANCE);
+      if (ports.bootstrap_recipients_ == nullptr ||
+          !ports.bootstrap_recipients_->known(input.bootstrap_recipient_id(), resource)) {
+        return context.error(wire::INVALID_ARGUMENT);
+      }
+    }
     wire::ResourceRef parent;
     parent.set_kind(wire::RESOURCE_INSTALLATION);
     parent.set_id(installation);

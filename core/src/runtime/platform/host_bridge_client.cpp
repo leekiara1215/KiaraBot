@@ -216,6 +216,18 @@ public:
     return delivered_.load();
   }
 
+  t::Outcome<t::HostFence> current_fence() const {
+    std::lock_guard lock(mutex_);
+    if (!registered_.load() || fence_.instance_id().empty() ||
+        !fence_.has_connection_generation() || fence_.connection_generation() == 0 ||
+        fence_.runtime_epoch().empty()) {
+      return t::Failure{t::ErrorCode::UpstreamUnavailable, t::Acceptance::NotAccepted,
+                        t::Recovery::Backoff, std::nullopt, std::nullopt};
+    }
+    return t::HostFence{t::ResourceId{fence_.instance_id()}, fence_.connection_generation(),
+                        fence_.runtime_epoch()};
+  }
+
 private:
   bool stopping() const {
     return stopping_.load();
@@ -531,6 +543,10 @@ private:
   std::thread writer_;
   std::thread heartbeat_;
 };
+
+t::Outcome<t::HostFence> HostBridgeClient::current_fence() const {
+  return impl_->current_fence();
+}
 
 HostBridgeClient::HostBridgeClient(HostBridgeClientConfig config)
     : impl_(std::make_unique<Impl>(std::move(config))) {}

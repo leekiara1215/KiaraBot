@@ -174,6 +174,7 @@ decode_delegation_claims(std::string_view proof, const target::Sha256Digest& lea
                                          : expected_audience == target::Service::Scheduler
                                              ? "scheduler"
                                          : expected_audience == target::Service::Model ? "model"
+                                         : expected_audience == target::Service::Host  ? "host"
                                                                                        : "";
   try {
     if (proof.empty() || proof.size() > 32768) {

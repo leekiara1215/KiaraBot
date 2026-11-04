@@ -207,7 +207,7 @@ std::optional<std::pair<std::uint32_t, std::uint32_t>> owner_identity(const Json
 } // namespace
 
 core::target::Outcome<ControlBootstrapDelivery>
-make_control_bootstrap_delivery(const std::string& registry_path) {
+make_control_bootstrap_delivery_impl(const std::string& registry_path) {
   try {
     auto content = read_registry(registry_path);
     if (!content) {
@@ -574,3 +574,14 @@ std::optional<OwnerHttpResult> handle_bootstrap(const RequestContext& context, c
 }
 
 } // namespace kiarabot::control::target::owner_gateway
+
+namespace kiarabot::control::target {
+
+// Public composition entry declared in owner_gateway.hpp; the implementation lives with the
+// owner-gateway registry parsing it already uses.
+core::target::Outcome<ControlBootstrapDelivery>
+make_control_bootstrap_delivery(const std::string& registry_path) {
+  return owner_gateway::make_control_bootstrap_delivery_impl(registry_path);
+}
+
+} // namespace kiarabot::control::target

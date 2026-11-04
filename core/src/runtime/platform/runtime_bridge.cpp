@@ -1216,7 +1216,8 @@ public:
   }
 
   target::Status start(const v1::HostRequest& host, const v1::ModelStreamStartRequest& start,
-                       const target::BridgeFence& fence, target::TimePoint deadline) {
+                       const target::BridgeFence& fence, target::TimePoint deadline,
+                       const target::InstallationId& installation) {
     reap();
     {
       std::lock_guard lock(hub_mutex_);
@@ -1248,6 +1249,9 @@ public:
       sessions_.emplace(session->start_request_id, session);
       target::RuntimeModelStreamRequest request;
       request.instance = fence.instance;
+      // The sealed model parent envelope binds the registered installation; the stream start must
+      // carry it exactly like unary submit_plugin_model or delegation acquisition fails closed.
+      request.installation = installation;
       request.request_id = host.request_id();
       request.trace_id = host.trace_id();
       request.logical_call_id = start.logical_call_id();
@@ -1364,6 +1368,8 @@ private:
                         session->queued_bytes + bytes > target::kModelStreamMaximumQueuedBytes)) {
         return target::ModelStreamSinkResult::Full;
       }
+      std::fprintf(stderr, "[hub-sink] seq=%llu terminal=%d\n",
+                   static_cast<unsigned long long>(event.sequence), static_cast<int>(terminal));
       if (terminal) {
         session->terminal_queued = true;
       } else {
@@ -1463,6 +1469,8 @@ private:
         continue;
       }
       const bool terminal = next->has_terminal();
+      std::fprintf(stderr, "[hub-write] seq=%llu terminal=%d\n",
+                   static_cast<unsigned long long>(next->sequence()), static_cast<int>(terminal));
       if (!write_event(*next)) {
         session->cancel.request_stop();
         break;
@@ -2446,6 +2454,9 @@ private:
     }
     const auto& installed =
         std::get<target::RuntimeBridgeApplication::BridgePluginProfile>(profile);
+    if (!installed.installation) {
+      return reject_stream_start(reply, target::ErrorCode::PermissionDenied);
+    }
     const auto admitted = target::admit_plugin_model_stream(state.authorization.fence.instance,
                                                             installed, state.permissions);
     if (const auto* rejected = std::get_if<target::Failure>(&admitted)) {
@@ -2453,8 +2464,9 @@ private:
                                  rejected->recovery == target::Recovery::Backoff ||
                                      rejected->code == target::ErrorCode::RateLimited);
     }
-    const auto started = state.streams->start(host, start, state.authorization.fence,
-                                              std::get<target::TimePoint>(parsed_deadline));
+    const auto started =
+        state.streams->start(host, start, state.authorization.fence,
+                             std::get<target::TimePoint>(parsed_deadline), *installed.installation);
     if (const auto* rejected = std::get_if<target::Failure>(&started)) {
       return reject_stream_start(reply, rejected->code,
                                  rejected->recovery == target::Recovery::Backoff ||

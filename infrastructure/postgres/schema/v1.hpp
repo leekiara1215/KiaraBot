@@ -23,9 +23,10 @@ inline constexpr int version(core::target::Service owner) {
     // operation retention/participants, audit/outbox cleanup indexes and the lifecycle tombstone
     // relation; P14h aligns the shared result_exact_permissions CHECK with wire Permission 1..50.
     // WS-02 owner-local operation observation journal; BOOT-02 adds the Runtime bootstrap
-    // delivery intent/receipt relation and the persisted bridge credential version. Empty-database
-    // schema only, no migration. Identity remains unchanged.
-    return 20;
+    // delivery intent/receipt relation and the persisted bridge credential version; HOST-03 adds
+    // the Runtime-owned Host admission gate row. Empty-database schema only, no migration.
+    // Identity remains unchanged.
+    return 21;
   case core::target::Service::Scheduler:
     // P10a adds task/occurrence observation columns, the quota counter relation and due/owner
     // indexes; P07 adds the shared nullable audit target columns to every service schema. The

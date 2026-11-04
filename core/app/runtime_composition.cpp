@@ -575,13 +575,18 @@ compose_runtime_service(const platform::ProcessConfig& config) {
           state->task_application = std::make_unique<target::RuntimeTaskApplication>(
               target::RuntimeTaskApplicationDependencies{state->scheduler_tasks.get()});
           if (config.bridge_listen) {
+            // Advertised feature catalog. host.model.stream.v1 is only negotiable when this
+            // composition actually has a Model endpoint; the Bridge still fails closed when the
+            // requested flow is unavailable for a connection, and the chain is not advertised by
+            // the SDK before its own end-to-end acceptance.
+            std::vector<std::string> bridge_features{"plugin.config.v1", "action.result.v1",
+                                                     "host.tasks.v1", "host.model.v1"};
+            if (config.model_endpoint) {
+              bridge_features.push_back("host.model.stream.v1");
+            }
             auto bridge = target::make_runtime_bridge_application(
-                {factory,
-                 *state->ids,
-                 *state->secrets,
-                 *state->application,
-                 state->action_application,
-                 {"plugin.config.v1", "action.result.v1", "host.tasks.v1", "host.model.v1"}});
+                {factory, *state->ids, *state->secrets, *state->application,
+                 state->action_application, bridge_features});
             if (std::holds_alternative<target::Failure>(bridge)) {
               return {};
             }

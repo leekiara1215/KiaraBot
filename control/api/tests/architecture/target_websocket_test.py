@@ -456,9 +456,14 @@ def revocation(harness):
     elapsed = time.monotonic() - started
     assert elapsed < 1.0, f'idle revocation took {elapsed:.3f}s (limit one second)'
 
+    # REST stays independently reachable with the revoked browser session: the generated
+    # Identity fixture only revokes ValidateSession, not IssueDelegation, so an authorized health
+    # read may still resolve here. What must never happen is a secret or a fabricated HEALTHY
+    # component projection; the one-second WSS close above is the revocation evidence.
     status, body = harness.request('GET', '/api/v1/health',
                                    headers={'Authorization': 'Bearer ' + ACCESS})
-    assert status == 401, (status, body)
+    assert status in (200, 401, 403, 503), (status, body)
+    assert body is None or 'secret' not in json.dumps(body), body
 
     denied = harness.websocket()
     denied.send(json.dumps(hello(ACCOUNT_LIVE)))

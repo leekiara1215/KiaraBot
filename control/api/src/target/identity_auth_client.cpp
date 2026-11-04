@@ -457,7 +457,8 @@ class IdentityAuthClient::Impl {
 public:
   Impl(const std::string& endpoint, const std::string& runtime_endpoint,
        const std::string& scheduler_endpoint, const std::string& model_endpoint,
-       const std::string& host_endpoint, const core::platform::TlsMaterial& tls) {
+       const std::string& host_endpoint, const core::platform::TlsMaterial& tls,
+       SecretDeliveryApplication* secret_delivery, BootstrapRecipientsPort* bootstrap_recipients) {
     grpc::SslCredentialsOptions options;
     options.pem_root_certs = tls.ca;
     options.pem_cert_chain = tls.certificate;
@@ -483,7 +484,8 @@ public:
     }
     fingerprint_.assign(reinterpret_cast<const char*>(digest.data()), length);
     owners_ = std::make_unique<OwnerClients>(endpoint, runtime_endpoint, scheduler_endpoint,
-                                             model_endpoint, host_endpoint, tls);
+                                             model_endpoint, host_endpoint, tls, secret_delivery,
+                                             bootstrap_recipients);
   }
   template <typename Request, typename Response, typename Method>
   void call(Method method, Request& request, Response& response,
@@ -851,9 +853,11 @@ IdentityAuthClient::IdentityAuthClient(const std::string& endpoint,
                                        const std::string& scheduler_endpoint,
                                        const std::string& model_endpoint,
                                        const std::string& host_endpoint,
-                                       const core::platform::TlsMaterial& tls)
+                                       const core::platform::TlsMaterial& tls,
+                                       SecretDeliveryApplication* secret_delivery,
+                                       BootstrapRecipientsPort* bootstrap_recipients)
     : impl_(std::make_unique<Impl>(endpoint, runtime_endpoint, scheduler_endpoint, model_endpoint,
-                                   host_endpoint, tls)) {}
+                                   host_endpoint, tls, secret_delivery, bootstrap_recipients)) {}
 IdentityAuthClient::~IdentityAuthClient() {
   impl_->cancel();
 }

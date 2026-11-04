@@ -80,6 +80,12 @@ if(UNIX)
   target_link_libraries(kiarabot_postgres_runtime_bridge_seed PRIVATE
     kiarabot_postgres libpqxx::pqxx OpenSSL::Crypto)
   kiarabot_platform_warnings(kiarabot_postgres_runtime_bridge_seed)
+  # BOOT-05: first-issuance seed with no pre-existing bridge credentials.
+  add_executable(kiarabot_postgres_runtime_bootstrap_seed
+    tests/runtime_bootstrap_seed.cpp)
+  target_link_libraries(kiarabot_postgres_runtime_bootstrap_seed PRIVATE
+    kiarabot_postgres libpqxx::pqxx)
+  kiarabot_platform_warnings(kiarabot_postgres_runtime_bootstrap_seed)
   add_test(NAME p06_client_e2e COMMAND "${KIARABOT_TARGET_PYTHON}"
     "${CMAKE_SOURCE_DIR}/tests/architecture/p06_client_e2e.py"
     --runtime $<TARGET_FILE:kiarabot-runtime>
@@ -196,6 +202,22 @@ if(UNIX)
     --test-argument $<TARGET_FILE:kiarabot-control>)
   set_tests_properties(p14_native_single_host PROPERTIES
     LABELS "p14;integration;fault" TIMEOUT 300
+    ENVIRONMENT "PATH=${P14F_OPENSSL_BIN_DIR}:${P14F_PYTHON_BIN_DIR}:$ENV{PATH}")
+
+  # BOOT-05: real Control(HTTPS) -> Runtime issuance -> Identity -> private PG -> file sink chain.
+  add_test(NAME p12_bootstrap_delivery_e2e COMMAND "${KIARABOT_TARGET_PYTHON}"
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_database_test.py"
+    --pg-bin "${KIARABOT_TEST_PG_BIN}" --openssl "${KIARABOT_TEST_OPENSSL}"
+    --initializer $<TARGET_FILE:kiarabot-pg-initialize>
+    --test "${CMAKE_SOURCE_DIR}/tests/architecture/bootstrap_delivery_e2e.py"
+    --test-argument $<TARGET_FILE:kiarabot-identity-bootstrap>
+    --test-argument "${KIARABOT_TEST_PG_BIN}"
+    --test-argument $<TARGET_FILE:kiarabot-identity>
+    --test-argument $<TARGET_FILE:kiarabot-runtime>
+    --test-argument $<TARGET_FILE:kiarabot-control>
+    --test-argument $<TARGET_FILE:kiarabot_postgres_runtime_bootstrap_seed>)
+  set_tests_properties(p12_bootstrap_delivery_e2e PROPERTIES
+    LABELS "p12;p05;boot;integration;security;fault" TIMEOUT 600
     ENVIRONMENT "PATH=${P14F_OPENSSL_BIN_DIR}:${P14F_PYTHON_BIN_DIR}:$ENV{PATH}")
 
   # P12j: Panel API client contract matrix against the same real native target stack.

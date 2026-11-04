@@ -149,7 +149,7 @@ void WebSocketEndpoint::accept(WebSocketTransportStream&& stream,
   }
   auto session = make_web_socket_connection(
       WebSocketStream(std::move(stream)), std::move(request), std::move(selection), store_, source_,
-      workers_, config_.session, [this](WebSocketConnection* completed) { erase(completed); });
+      workers_, io_, config_.session, [this](WebSocketConnection* completed) { erase(completed); });
   sessions_.insert(session);
   active_.fetch_add(1, std::memory_order_acq_rel);
   session->start();

@@ -131,3 +131,33 @@ request/completed 计数、unary 回归、429/500/400/401/404/invalid_json 状�
 - Provider fixture 是本地真实 HTTP，不是外部 Provider；secret 只出现在请求头，断言 PG 记录
   不含 provider secret。
 - 日志/报告不得包含 prompt/completion 全文或秘密；driver 只打印有界诊断。
+
+## 8. 首次真实整链执行记录（2026-11-04，checkpoint 7b092da）
+
+`build/.agents/kb ctest -R '^p11_streaming_managed_model_e2e$' --no-tests=error` 首轮 exit 8/1（driver exit 1），
+CTest 输出重定向日志 `build/logs/final-acceptance/str09-round1.log`，driver 未脱敏输出保留于
+`build/logs/final-acceptance/str09-round1-driver.out` 及 `/tmp/str09-driver.out` 复现包装（`/tmp/str09_repro.py`：
+用 CTest json-v1 的 command/env 替换 `--test` 为 stderr 捕获 wrapper，不改产品与测试语义）。
+
+定位并已修复的 **fixture 缺陷**：
+
+1. model readiness 判断错误。真实 owned service 启动行是
+   `service=model probe_port=... grpc_port=... bridge_port=0 ready=false`；依赖收敛前 `ready=false`
+   是正常状态，HTTP probe 才是最终就绪权威（与 P05b 一致）。原 driver 要求 `ready==true` 导致
+   `model readiness` 失败。现只校验 `ready` token 存在并等待 `/health/ready` probe。
+2. 插件 journal 缺口：subject 在 `context.model_stream()` 抛本地错误时异常发生在 try 之外，
+   probe 只看到 "无事件"。现已包入 try 并写 `error` journal，probe 能精确报告失败码。
+
+定位到的 **产品侧缺口（非本文件范围）**：managed SDK 插件注册后
+`context.model_stream()` 本地抛 `CAPABILITY_NOT_SUPPORTED`（journal code=6，probe 报
+"feature not enabled at registration"）。根因是 Runtime Bridge 的 trusted feature catalog
+（`core/app/runtime_composition.cpp` 创建 `make_runtime_bridge_application` 处）仍为
+`{"plugin.config.v1","action.result.v1","host.tasks.v1","host.model.v1"}`，缺
+`host.model.stream.v1`；registration 的 `enabled_features` 只取请求 ∩ catalog，故生产
+`kiarabot-runtime` 永远不会 advertise。建议最小修：在 `config.model_endpoint` 存在时把
+`host.model.stream.v1` 加入该 vector 后传入。该修复属于 STR07 owner 的允许文件，需 lead
+开窗/指派；修复并重建 Runtime 后本 driver 才能进入 18 项矩阵实际执行。
+
+已确认的 fixture 行为（在本轮可通过的真实阶段）：identity bootstrap、runtime seed、Identity
+daemon readiness、Model daemon 启动行、admin login、model seed、instance principal 注册、
+sealed 56s parent 写入、managed plugin-host 启动与 SDK 插件注册（注册本身成功）。

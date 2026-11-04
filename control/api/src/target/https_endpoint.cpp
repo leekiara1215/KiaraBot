@@ -17,6 +17,7 @@
 #include <openssl/ssl.h>
 
 #include "kiarabot/control/target/identity_auth_client.hpp"
+#include "kiarabot/control/target/owner_gateway.hpp"
 #include "kiarabot/control/target/websocket_endpoint.hpp"
 
 namespace kiarabot::control::target {
@@ -167,14 +168,18 @@ private:
 class HttpsEndpoint final : public core::platform::ServiceEndpoint {
 public:
   HttpsEndpoint(const core::platform::ProcessConfig& config,
-                std::shared_ptr<ControlReadiness> readiness)
+                std::shared_ptr<ControlReadiness> readiness,
+                std::unique_ptr<ControlBootstrapDelivery> bootstrap_delivery)
       : tls_(asio::ssl::context::tls_server), acceptor_(io_), workers_(4),
+        bootstrap_delivery_(std::move(bootstrap_delivery)),
         client_(std::make_shared<IdentityAuthClient>(
             config.control_api->identity_endpoint,
             config.control_api->runtime_endpoint.value_or(""),
             config.control_api->scheduler_endpoint.value_or(""),
             config.control_api->model_endpoint.value_or(""),
-            config.control_api->host_endpoint.value_or(""), config.tls)),
+            config.control_api->host_endpoint.value_or(""), config.tls,
+            bootstrap_delivery_ ? bootstrap_delivery_->application.get() : nullptr,
+            bootstrap_delivery_ ? bootstrap_delivery_->recipients.get() : nullptr)),
         websocket_(make_websocket_endpoint(config, client_, io_)),
         readiness_(std::move(readiness)), listen_(config.control_api->listen) {
     tls_.set_options(asio::ssl::context::default_workarounds | asio::ssl::context::no_sslv2 |
@@ -307,6 +312,9 @@ private:
   asio::ssl::context tls_;
   Tcp::acceptor acceptor_;
   asio::thread_pool workers_;
+  // Declared before client_ so the controlled-delivery application/recipients outlive the
+  // IdentityAuthClient -> OwnerClients -> OwnerGateway that holds raw pointers into them.
+  std::unique_ptr<ControlBootstrapDelivery> bootstrap_delivery_;
   std::shared_ptr<IdentityAuthClient> client_;
   std::unique_ptr<WebSocketEndpoint> websocket_;
   std::shared_ptr<ControlReadiness> readiness_;
@@ -331,6 +339,17 @@ make_https_endpoint(const core::platform::ProcessConfig& config,
   if (!config.control_api || config.service != core::target::Service::Control) {
     return {};
   }
-  return std::make_unique<HttpsEndpoint>(config, std::move(readiness));
+  std::unique_ptr<ControlBootstrapDelivery> bootstrap_delivery;
+  if (config.control_api->secret_delivery_recipients) {
+    auto composed =
+        make_control_bootstrap_delivery(*config.control_api->secret_delivery_recipients);
+    if (std::holds_alternative<core::target::Failure>(composed)) {
+      return {}; // registry/root/owner invalid: fail startup, never silently disable
+    }
+    bootstrap_delivery = std::make_unique<ControlBootstrapDelivery>(
+        std::move(std::get<ControlBootstrapDelivery>(composed)));
+  }
+  return std::make_unique<HttpsEndpoint>(config, std::move(readiness),
+                                         std::move(bootstrap_delivery));
 }
 } // namespace kiarabot::control::target

@@ -22,3 +22,4 @@ if(TARGET kiarabot_control_auth)
     ${CMAKE_SOURCE_DIR}/control/api/src/target/owner_gateway/bootstrap.cpp)
   target_link_libraries(kiarabot_control_auth PRIVATE kiarabot_secret_file_delivery)
 endif()
+

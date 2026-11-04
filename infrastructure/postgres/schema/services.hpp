@@ -9,6 +9,7 @@
 #include "runtime_actions.hpp"
 #include "runtime_bootstrap_deliveries.hpp"
 #include "runtime_events.hpp"
+#include "runtime_host_admission_gates.hpp"
 #include "runtime_host_commands.hpp"
 #include "runtime_host_connections.hpp"
 #include "runtime_management_receipts.hpp"
@@ -105,6 +106,7 @@ CREATE INDEX lifecycle_tombstones_purge ON kiarabot.lifecycle_tombstones(state,p
     sql += kRuntimeEvents;
     sql += kRuntimeActions;
     sql += kRuntimeHostConnections;
+    sql += kRuntimeHostAdmissionGates;
     sql += kRuntimeHostCommands;
     sql += kRuntimeStorage;
     sql += kRuntimeBootstrapDeliveries;

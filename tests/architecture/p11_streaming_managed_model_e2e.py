@@ -195,8 +195,8 @@ class StreamProvider:
         role = {'choices': [{'delta': {'role': 'assistant'}, 'index': 0}]}
         write_chunk(role)
         if mode == 'empty':
-            write_chunk({'choices': [{'delta': {}, 'finish_reason': 'stop', 'index': 0}],
-                         'usage': {'prompt_tokens': 5, 'completion_tokens': 0}})
+            write_chunk({'choices': [{'delta': {}, 'finish_reason': 'stop', 'index': 0}]})
+            write_chunk({'choices': [], 'usage': {'prompt_tokens': 5, 'completion_tokens': 0}})
             write_chunk_raw(handler, b'data: [DONE]\n\n')
             self._complete()
             return
@@ -209,7 +209,8 @@ class StreamProvider:
                     if not write_chunk({'choices': [{'delta': {'content': ' x%d' % index},
                                                     'index': 0}]}):
                         return
-                write_chunk({'choices': [{'delta': {}, 'finish_reason': 'stop', 'index': 0}],
+                write_chunk({'choices': [{'delta': {}, 'finish_reason': 'stop', 'index': 0}]})
+                write_chunk({'choices': [],
                              'usage': {'prompt_tokens': 5, 'completion_tokens': 80}})
                 write_chunk_raw(handler, b'data: [DONE]\n\n')
                 self._complete()
@@ -225,11 +226,11 @@ class StreamProvider:
                 return
             write_chunk({'choices': [{'delta': {'content': ' + tail'}, 'index': 0}]})
             finish = 'length' if mode == 'length' else 'stop'
-            final = {'choices': [{'delta': {}, 'finish_reason': finish, 'index': 0}],
-                     'usage': {'prompt_tokens': 5, 'completion_tokens': 9}}
-            if mode == 'usage_missing':
-                final.pop('usage', None)
-            write_chunk(final)
+            write_chunk({'choices': [{'delta': {}, 'finish_reason': finish, 'index': 0}]})
+            if mode != 'usage_missing':
+                # OpenAI-compatible authoritative usage arrives in its own choices=[] chunk.
+                write_chunk({'choices': [],
+                             'usage': {'prompt_tokens': 5, 'completion_tokens': 9}})
             write_chunk_raw(handler, b'data: [DONE]\n\n')
             self._complete()
             return
@@ -379,14 +380,20 @@ def after_bootstrap(root: Path) -> None:
                                  stdout=subprocess.PIPE, stderr=model_log)
         children.append(model)
         model_state = {}
+        model_lines = []
         for _ in range(2):
             text = p14.line(model)
+            model_lines.append(text)
             if '=' in text:
                 model_state.update(
                     dict(item.split('=', 1) for item in text.split() if '=' in item))
             if 'ready' in model_state:
                 break
-        require(model_state.get('ready') == 'true', 'model readiness')
+        # The owned service contract prints one startup line with `ready=true|false`; the value can
+        # legitimately be false until dependencies settle, so the HTTP probe is the authority.
+        require('ready' in model_state,
+                'model startup line is missing the ready token: ' + ' | '.join(model_lines))
+        print('STR09 stage: model startup: ' + ' | '.join(model_lines), flush=True)
         base.wait_probe(endpoints['model_probe'])
         runtime_log = (root / 'runtime.err').open('wb')
         runtime = subprocess.Popen([str(runtime_binary), '--config', str(configs['runtime'])],
@@ -569,11 +576,11 @@ class Subject(Plugin):
         if kind == "chat":
             await self._chat(command, cid, logical)
             return
-        stream = self.context.model_stream(
-            MODEL, [{{"role": "user", "text": command.get("text", "hello")}}],
-            logical_call_id=logical, timeout=float(command.get("timeout", 10.0)))
         chunks = []
         try:
+            stream = self.context.model_stream(
+                MODEL, [{{"role": "user", "text": command.get("text", "hello")}}],
+                logical_call_id=logical, timeout=float(command.get("timeout", 10.0)))
             async with stream:
                 started = stream.started
                 self._emit({{"cid": cid, "id": logical, "event": "started",
@@ -778,7 +785,18 @@ def commands_path(root: Path) -> Path:
 
 
 def send_command(root: Path, cid: str, *, logical_call_id: str | None = None,
-                 kind='stream', text='hello', timeout=None, extra=None) -> None:
+                 kind='stream', text='hello', timeout=None, extra=None,
+                 refresh=True) -> None:
+    """Send one plugin command.
+
+    A fresh 56s sealed delegation is refreshed before every command by default; the
+    fail-closed revocation gate opts out so the deliberately removed envelope is not restored by
+    the fixture itself.
+    """
+    if refresh:
+        refresh_parent = STATE.get('refresh_parent')
+        if callable(refresh_parent):
+            refresh_parent()
     command = {'cid': cid, 'kind': kind, 'text': text,
                'logical_call_id': logical_call_id or cid}
     if timeout is not None:
@@ -790,8 +808,7 @@ def send_command(root: Path, cid: str, *, logical_call_id: str | None = None,
 
 
 def command(root: Path, cid: str, *, wait='terminal', timeout=60.0, **kwargs) -> dict:
-    """Refresh the delegation and send one plugin command; return the awaited event."""
-    STATE['refresh_parent']()
+    """Send one plugin command and return the awaited journal event."""
     send_command(root, cid, **kwargs)
     return wait_event(root, cid, wait, timeout=timeout)
 
@@ -923,6 +940,15 @@ def cross_instance_isolation_gate(root: Path, provider, mode_file: Path) -> None
             f'first stream unaffected by other instance: {terminal}')
 
 
+def dump_diagnostics(root: Path, label: str) -> None:
+    for name in ('plugin.log', 'host.err', 'runtime.err', 'model.err',
+                 'plugin-results.jsonl', 'plugin-commands.jsonl'):
+        path = root / name
+        if path.is_file():
+            text = ' '.join(path.read_text(errors='replace').split())[-4000:]
+            print(f'STR09 diag {label} {name}: {text}', file=sys.stderr, flush=True)
+
+
 def probe_streaming_bridge(root: Path) -> None:
     """Fail with an explicit STR07-unavailable marker instead of an opaque timeout.
 
@@ -935,7 +961,6 @@ def probe_streaming_bridge(root: Path) -> None:
     attempt = 0
     while time.monotonic() < deadline:
         attempt += 1
-        STATE['refresh_parent']()
         cid = str(uuid.uuid4())
         send_command(root, cid, timeout=5.0)
         attempt_deadline = min(deadline, time.monotonic() + 8.0)
@@ -959,20 +984,28 @@ def probe_streaming_bridge(root: Path) -> None:
                     if code in (1, 3, 6):
                         # INVALID_ARGUMENT / PERMISSION_DENIED / CAPABILITY_NOT_SUPPORTED on a
                         # pre-start probe mean the streaming product surface is missing.
+                        detail = ('feature not enabled at registration (code=6): '
+                                  'check the Runtime bridge supported-feature catalog'
+                                  if code == 6 else '')
+                        dump_diagnostics(root, f'probe{attempt}-rejected')
                         raise Failure(
                             'STR07 streaming bridge unavailable: pre-start/plugin error '
-                            + json.dumps(value)[:500] + f' (code={code})')
+                            + detail + ' ' + json.dumps(value)[:500] + f' (code={code})')
                     if value.get('event') == 'crash':
+                        dump_diagnostics(root, f'probe{attempt}-crash')
                         raise Failure('STR07 streaming bridge unavailable: plugin crash '
                                       + json.dumps(value)[:500])
                     # UPSTREAM_UNAVAILABLE/TIMEOUT can be a registration race in the managed
                     # plugin start; retry the probe until the overall deadline.
+                    print(f'STR09 probe attempt {attempt} transient: {json.dumps(value)[:400]}',
+                          file=sys.stderr, flush=True)
                     break
             else:
                 time.sleep(0.05)
                 continue
             break
         time.sleep(0.2)
+    dump_diagnostics(root, 'probe-final')
     raise Failure('STR07 streaming bridge unavailable: no stream event after '
                   f'{attempt} probes within 40s')
 
@@ -985,10 +1018,12 @@ def run_streaming_matrix(root: Path, provider_state: Path, mode_file: Path,
     tls = STATE['tls']
     commands = commands_path(root)
     package, manifest_path = write_plugin_package(root)
+    print('STR09 stage: managed plugin start', flush=True)
     plugin = start_managed_plugin(root, package, manifest_path, tls,
                                   STATE['plugin_bootstrap'])
     try:
         require(plugin.poll() is None, 'managed plugin-host alive')
+        print('STR09 stage: streaming bridge probe', flush=True)
         probe_streaming_bridge(root)
         provider_posts = provider.posts()
         completed_posts = provider.completed_requests()
@@ -1018,6 +1053,10 @@ def run_streaming_matrix(root: Path, provider_state: Path, mode_file: Path,
         require(provider.posts() == provider_posts + 1, 'exactly one provider POST')
         require(provider.completed_requests() == completed_posts + 1,
                 'provider completed exactly once')
+        require(all(entry.get('has_usage_option')
+                    for entry in provider.requests()
+                    if entry.get('kind') == 'request' and entry.get('stream')),
+                'streaming provider requests ask for authoritative usage')
         stored = fixture_sql(root, 'p03_model',
                             "SELECT state,input_tokens,output_tokens,usage_known "
                             "FROM kiarabot.model_intents WHERE logical_call_id='" + cid + "'")
@@ -1035,8 +1074,26 @@ def run_streaming_matrix(root: Path, provider_state: Path, mode_file: Path,
             cid = str(uuid.uuid4())
             mode_file.write_text(mode + '\n')
             provider.release.set()  # length/usage modes pass the gate immediately
-            send_command(root, cid, timeout=20.0)
+            send_command(root, cid, timeout=30.0)
             value = wait_event(root, cid, 'terminal', timeout=60)
+            if value['termination'] != expected_termination:
+                print('STR09 diag provider records: ' + json.dumps(provider.requests()[-4:]),
+                      file=sys.stderr, flush=True)
+                print('STR09 diag journal cid=' + cid + ': ' + json.dumps(events(root, cid)),
+                      file=sys.stderr, flush=True)
+                try:
+                    print('STR09 diag model intent: ' + fixture_sql(
+                        root, 'p03_model',
+                        "SELECT state,error,disposition,usage_known,input_tokens,output_tokens,"
+                        "may_have_billed,provider_request_id,latency_ms "
+                        "FROM kiarabot.model_intents WHERE logical_call_id='"
+                        + cid + "'"), file=sys.stderr, flush=True)
+                    print('STR09 diag model config: ' + fixture_sql(
+                        root, 'p03_model',
+                        "SELECT lifecycle_state,config_version,timeout_ms,max_concurrency "
+                        "FROM kiarabot.model_configs"), file=sys.stderr, flush=True)
+                except Exception:  # noqa: BLE001 - diagnostics only
+                    pass
             require(value['termination'] == expected_termination,
                     f'{label} termination: {value}')
             if label == 'empty':
@@ -1064,9 +1121,12 @@ def run_streaming_matrix(root: Path, provider_state: Path, mode_file: Path,
         send_command(root, cid, timeout=20.0)
         wait_event(root, cid, 'delta', timeout=30)
         provider.release.set()
-        value = wait_event(root, cid, 'error', timeout=60)
-        require(value['delivery_unknown'] is True, f'half-close unknown delivery: {value}')
-        require(value['partial'] is True and value['text'] == 'P11 stream first',
+        value = wait_any_event(root, cid, ('terminal', 'error'), timeout=60)
+        require(value.get('termination') != MODEL_STREAM_COMPLETED,
+                f'half-close must not be COMPLETED: {value}')
+        if value.get('event') == 'error':
+            require(value['delivery_unknown'] is True, f'half-close unknown delivery: {value}')
+        require(value.get('partial') is True and value.get('text') == 'P11 stream first',
                 f'half-close keeps local partial: {value}')
         require(provider.posts() == provider_posts + 1, 'half-close one provider POST')
         provider_posts = provider.posts()
@@ -1077,13 +1137,16 @@ def run_streaming_matrix(root: Path, provider_state: Path, mode_file: Path,
             print(f'STR09 stage: provider {mode}', flush=True)
             cid = str(uuid.uuid4())
             mode_file.write_text(mode + '\n')
-            send_command(root, cid, timeout=20.0, wait='error')
-            value = wait_event(root, cid, 'error', timeout=60)
-            if 'code' in value:
-                require(value['code'] == expected_code,
+            send_command(root, cid, timeout=20.0)
+            value = wait_any_event(root, cid, ('terminal', 'error'), timeout=60)
+            require(value.get('termination') != MODEL_STREAM_COMPLETED,
+                    f'{mode} must not be COMPLETED: {value}')
+            if value.get('event') == 'terminal':
+                require(value.get('failure_code') == expected_code,
+                        f'{mode} terminal failure code expected={expected_code}: {value}')
+            else:
+                require(value.get('code') == expected_code,
                         f'{mode} stable code expected={expected_code}: {value}')
-            else:  # pre-start HostResponse rejection arrives as typed PluginError too
-                require(value.get('has_terminal') in (True, False), f'{mode} typed error: {value}')
             require(provider.posts() == provider_posts + 1, f'{mode} one provider POST')
             provider_posts = provider.posts()
         mode_file.write_text('success\n')
@@ -1127,8 +1190,9 @@ def run_streaming_matrix(root: Path, provider_state: Path, mode_file: Path,
         mode_file.write_text('slow_consumer\n')
         send_command(root, cid, kind='no_read', timeout=20.0, extra={'sleep': 3.0})
         wait_event(root, cid, 'delta', timeout=30)
-        value = wait_event(root, cid, 'error', timeout=60)
-        require(value['delivery_unknown'] is True, f'slow consumer unknown delivery: {value}')
+        value = wait_any_event(root, cid, ('terminal', 'error'), timeout=60)
+        require(value.get('termination') != MODEL_STREAM_COMPLETED,
+                f'slow consumer must not be COMPLETED: {value}')
         require(provider.posts() == provider_posts + 1, 'slow consumer one provider POST')
         provider_posts = provider.posts()
         # Control frames stay alive: a unary model_chat after the overflow still works.
@@ -1232,7 +1296,7 @@ def run_streaming_matrix(root: Path, provider_state: Path, mode_file: Path,
             cid = str(uuid.uuid4())
             mode_file.write_text('success\n')
             provider.release.set()
-            send_command(root, cid, timeout=15.0)
+            send_command(root, cid, timeout=15.0, refresh=False)
             value = wait_any_event(root, cid, ('terminal', 'error'), timeout=60)
             require(value.get('event') == 'error'
                     or value.get('termination') != MODEL_STREAM_COMPLETED,

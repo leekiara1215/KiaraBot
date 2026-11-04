@@ -7,6 +7,8 @@
 #include <memory>
 #include <string>
 
+#include <boost/asio/io_context.hpp>
+#include <boost/asio/strand.hpp>
 #include <boost/asio/thread_pool.hpp>
 #include <boost/beast/core.hpp>
 #include <boost/beast/http.hpp>
@@ -50,6 +52,7 @@ std::shared_ptr<WebSocketConnection> make_web_socket_connection(
     WebSocketStream stream, boost::beast::http::request<boost::beast::http::string_body> request,
     WebSocketSelection route, std::shared_ptr<WebSocketStreamStore> store,
     std::shared_ptr<WebSocketSourcePort> source, boost::asio::thread_pool& workers,
-    WebSocketSessionConfig config, std::function<void(WebSocketConnection*)> completed);
+    boost::asio::io_context& io, WebSocketSessionConfig config,
+    std::function<void(WebSocketConnection*)> completed);
 
 } // namespace kiarabot::control::target

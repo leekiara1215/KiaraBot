@@ -36,8 +36,9 @@ inline constexpr std::string_view descriptor(core::target::Service owner) {
   case core::target::Service::Identity:
     return "decc8401bef9d3ac3c92116e7608b2f4";
   case core::target::Service::Runtime:
-    // BOOT-02 bootstrap delivery intent/receipt relation + persisted bridge credential version.
-    return "d87a56d0ddcf7ccd8ebb91b56250dc94";
+    // BOOT-02 bootstrap delivery intent/receipt + bridge credential version; HOST-03 Host
+    // admission gate row.
+    return "adde0280cf84974080615363dfcb3da1";
   case core::target::Service::Scheduler:
     return "1d2af0ada31b0233a160a34715870dc2";
   case core::target::Service::Model:
@@ -51,7 +52,7 @@ inline constexpr int relation_count(core::target::Service owner) {
   case core::target::Service::Identity:
     return 135;
   case core::target::Service::Runtime:
-    return 165;
+    return 167;
   case core::target::Service::Scheduler:
     return 91;
   case core::target::Service::Model:
