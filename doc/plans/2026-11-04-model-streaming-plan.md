@@ -2,7 +2,7 @@
 
 ## 1. 授权、范围和本轮产物
 
-用户已把模型 streaming 纳入计划，并要求主代理统筹、GPT-6.1 Sol / high subagents 执行。授权来源见 [用户决策注册](user-decisions-2026-11-04.md)。历史 P11 的“streaming 明确不做”只说明当时范围；新授权没有使现有实现或 target 状态自动变成已完成。
+用户已把模型 streaming 纳入计划，并要求主代理统筹、subagents 执行。授权来源见 [用户决策注册](user-decisions-2026-11-04.md)。历史 P11 的“streaming 明确不做”只说明当时范围；新授权没有使现有实现或 target 状态自动变成已完成。
 
 本轮只新增本报告，不修改产品代码、共享 proto/API、数据库、依赖锁或保护清单。`doc/18-architecture-baseline.md` 只读。工作区已有未提交重构保持原样；本报告不是这些差异的新验收证据。主代理将计划汇入 `doc/29-approved-capability-expansion-plan.md`，随后按依赖分派实现。
 

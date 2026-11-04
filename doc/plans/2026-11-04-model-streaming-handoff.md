@@ -2,7 +2,7 @@
 
 ## 接手指令与边界
 
-接手 agent 使用 **GPT-6.1 Sol / high**。用户已授权依依赖继续契约冻结与实现，但本 agent 按用户最新指示停止扩展实现；本次最后操作仅写本交接。仓库有大量多人未提交修改，禁止 reset、stash、回滚他人修改或整体覆盖文件；不提交既有差异。不改 `doc/18-architecture-baseline.md`、保护清单、reference blob 或生成物。共享 `build/full-locked` configure、生成、编译、昂贵测试由统筹 agent 串行调度，接手 agent 不自行并行运行。仅本地 HTTP/TLS/PG fixture，无付费调用、QQ 主动消息；QQ 默认最终聚合一次发送，网页承载归 WS 工作流。
+用户已授权依依赖继续契约冻结与实现，但本 agent 按用户最新指示停止扩展实现；本次最后操作仅写本交接。仓库有大量多人未提交修改，禁止 reset、stash、回滚他人修改或整体覆盖文件；不提交既有差异。不改 `doc/18-architecture-baseline.md`、保护清单、reference blob 或生成物。共享 `build/full-locked` configure、生成、编译、昂贵测试由统筹 agent 串行调度，接手 agent 不自行并行运行。仅本地 HTTP/TLS/PG fixture，无付费调用、QQ 主动消息；QQ 默认最终聚合一次发送，网页承载归 WS 工作流。
 
 开工先读 AGENTS、doc/12、doc/00、doc/02 的 Model 章节、doc/03 streaming 章节、doc/05-infrastructure-model-streaming.md、doc/11 新第三方 C99 节、doc/plans/2026-11-04-model-streaming-plan.md 及相应 proto。结构查询使用 codebase-memory skill；最近已核对 generation 2026-11-04T08:26:54Z，application/target 等未覆盖范围必须回读源，不能用空图证明缺失。
 
@@ -101,13 +101,13 @@ configure 应沿用统筹已有 locked cache/preset 参数，不能用无参数�
 
 ## 后续 agent 任务提示词与依赖
 
-**RPC 接手 agent（先做 STR06）**：使用 GPT-6.1 Sol/high。按本交接从半成品继续，不重做已通过 Provider/应用切片。独占上述 STR06 文件及 Model 文档章节；与 WS 协调 platform CMake，保持共享 decoder 的单 editor。先修具体风险、跑严格 codec/loopback、真实TLS/PG/HTTP fixture、旧 syncChat 回归，取得统筹可审查日志后冻结源码。未通过前不更新能力 target 为 implemented、不宣告 streaming 可用。不得扩工具调用/multimodal或改 PG schema。
+**RPC 接手 agent（先做 STR06）**：按本交接从半成品继续，不重做已通过 Provider/应用切片。独占上述 STR06 文件及 Model 文档章节；与 WS 协调 platform CMake，保持共享 decoder 的单 editor。先修具体风险、跑严格 codec/loopback、真实TLS/PG/HTTP fixture、旧 syncChat 回归，取得统筹可审查日志后冻结源码。未通过前不更新能力 target 为 implemented、不宣告 streaming 可用。不得扩工具调用/multimodal或改 PG schema。
 
-**Runtime/Bridge agent（STR07，依赖 STR06 严格 codec 与 RPC 通过）**：使用 GPT-6.1 Sol/high。实现 runtime_model_client ChatStream 消费，复用严格 Decoder 检查全部 presence/关联/sequence；取消、proof min expiry、缺 terminal→UNKNOWN/保守 may_have_billed，不做重连重调 Provider。设计异步 bridge 会话与 Host start/cancel、CoreToPlugin 有序事件；禁止阻塞 Host 主循环；实现 process64、per-connection4、bounded queues/慢消费者 failclosed、撤权/deadline/worker join。保留既有非流式、HERR 已验收逻辑和 Runtime 既有调用白名单。开始前让统筹分配 runtime_bridge/runtime_model_client/runtime composition/测试的独占锁，勿同时改 WS R/S/平台接线。
+**Runtime/Bridge agent（STR07，依赖 STR06 严格 codec 与 RPC 通过）**：实现 runtime_model_client ChatStream 消费，复用严格 Decoder 检查全部 presence/关联/sequence；取消、proof min expiry、缺 terminal→UNKNOWN/保守 may_have_billed，不做重连重调 Provider。设计异步 bridge 会话与 Host start/cancel、CoreToPlugin 有序事件；禁止阻塞 Host 主循环；实现 process64、per-connection4、bounded queues/慢消费者 failclosed、撤权/deadline/worker join。保留既有非流式、HERR 已验收逻辑和 Runtime 既有调用白名单。开始前让统筹分配 runtime_bridge/runtime_model_client/runtime composition/测试的独占锁，勿同时改 WS R/S/平台接线。
 
-**SDK agent（STR08，依赖 STR07 wire 生命周期稳定）**：使用 GPT-6.1 Sol/high。实现 Python async iterator/显式 cancel/context lifecycle、capability host.model.stream.v1 与能力缺失拒绝、逻辑调用 id 和最终结果保留，严验事件序号/关联/terminal/usage/billing，不从异常推断免费，不因重放假装返回历史 delta。普通 chat 保持旧行为；SDK 不直接访问 Provider 或平台。与 Runtime agent 先约定 session ownership、取消 acknowledgment 和 event callback 不阻塞策略，再做真实受管插件闭环。
+**SDK agent（STR08，依赖 STR07 wire 生命周期稳定）**：实现 Python async iterator/显式 cancel/context lifecycle、capability host.model.stream.v1 与能力缺失拒绝、逻辑调用 id 和最终结果保留，严验事件序号/关联/terminal/usage/billing，不从异常推断免费，不因重放假装返回历史 delta。普通 chat 保持旧行为；SDK 不直接访问 Provider 或平台。与 Runtime agent 先约定 session ownership、取消 acknowledgment 和 event callback 不阻塞策略，再做真实受管插件闭环。
 
-**最终验收 agent（STR09..11，依赖完整闭环）**：使用 GPT-6.1 Sol/high。真实本地 HTTP→Model TLS/PG→Runtime→Bridge→受管 SDK 插件验证第一 delta 在 Provider 完成前到达、成功/截断/失败/partial/取消/撤权/deadline/重放/崩溃恢复/背压/不支持能力；同时跑旧非流式回归。更新直接模块/运行语义/工具链及 target registry 实现状态时只能登记实际已验收能力。网页承载与 WS owner 对接，QQ 默认完整聚合一次发送。两主机/断网演练不加入本轮；不以 mock 切片、stream=true或规格oracle代替生产闭环证据。
+**最终验收 agent（STR09..11，依赖完整闭环）**：真实本地 HTTP→Model TLS/PG→Runtime→Bridge→受管 SDK 插件验证第一 delta 在 Provider 完成前到达、成功/截断/失败/partial/取消/撤权/deadline/重放/崩溃恢复/背压/不支持能力；同时跑旧非流式回归。更新直接模块/运行语义/工具链及 target registry 实现状态时只能登记实际已验收能力。网页承载与 WS owner 对接，QQ 默认完整聚合一次发送。两主机/断网演练不加入本轮；不以 mock 切片、stream=true或规格oracle代替生产闭环证据。
 
 ## 文档影响与交付限制
 

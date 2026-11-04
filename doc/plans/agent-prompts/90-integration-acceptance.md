@@ -1,6 +1,6 @@
 # 提示词：最终集成验收
 
-你负责KiaraBot五项扩展的最终集成验收，GPT-6.1 Sol/high，目录`/Users/betta/Workspace/KiaraBot`。
+你负责KiaraBot五项扩展的最终集成验收，目录`/Users/betta/Workspace/KiaraBot`。
 先读`doc/plans/2026-11-04-next-agent-prompts.md`、各交接/后续实现报告、AGENTS与规范。
 你不是唯一编辑者，不回滚已有差异；先确认其他agent已冻结源码和共享契约/构建锁已交你。
 

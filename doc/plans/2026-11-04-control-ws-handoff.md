@@ -4,7 +4,7 @@
 
 ## 给接手 agent 的提示词
 
-你接手 KiaraBot 已获批的完整 target Control WebSocket 工作流。继续使用 GPT-6.1 Sol/high。先读当前 AGENTS.md、`doc/12-cpp-coding-standard.md`、`doc/00-boundaries.md`、`doc/06-control-api.md`、`doc/07-control-panel.md`、`doc/11-toolchain.md`、本交接、`doc/plans/2026-11-04-control-ws-plan.md`、`doc/29-approved-capability-expansion-plan.md` 和 `doc/30-capability-expansion-contract-freeze.md`。保留所有既有 WIP，禁止 reset/revert/stash，禁止编辑受保护 `doc/18-architecture-baseline.md`、保护清单、reference blob、生成物。不要把 reference WebSocket 或临时收集 operation ref 当作 target 的完整 owner 数据源。
+你接手 KiaraBot 已获批的完整 target Control WebSocket 工作流。先读当前 AGENTS.md、`doc/12-cpp-coding-standard.md`、`doc/00-boundaries.md`、`doc/06-control-api.md`、`doc/07-control-panel.md`、`doc/11-toolchain.md`、本交接、`doc/plans/2026-11-04-control-ws-plan.md`、`doc/29-approved-capability-expansion-plan.md` 和 `doc/30-capability-expansion-contract-freeze.md`。保留所有既有 WIP，禁止 reset/revert/stash，禁止编辑受保护 `doc/18-architecture-baseline.md`、保护清单、reference blob、生成物。不要把 reference WebSocket 或临时收集 operation ref 当作 target 的完整 owner 数据源。
 
 用户已授权五项能力按依赖继续实现，不需逐步向用户确认；由主代理协调文件锁、契约 gate、共享构建。此交接时用户要求当前 agent 停止，所以你必须先与主代理核对接手范围及锁再恢复工作。不能因首批 operations 可用而取消其他已批准频道、Host 接入、真实 restore epoch hook 或 Panel 恢复。
 

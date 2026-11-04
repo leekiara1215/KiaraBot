@@ -1,6 +1,6 @@
 # 提示词：Host维护、身份链与独立Operation
 
-你接手KiaraBot HOST工作流，GPT-6.1 Sol/high，目录`/Users/betta/Workspace/KiaraBot`。
+你接手KiaraBot HOST工作流，目录`/Users/betta/Workspace/KiaraBot`。
 先读`doc/plans/2026-11-04-next-agent-prompts.md`及Host源码交接，按AGENTS读规范、
 doc/01/02/08、host-maintenance-storage子文档、v1.1冻结记录。你不是唯一编辑者，保留所有既有改动。
 

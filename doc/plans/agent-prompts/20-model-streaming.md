@@ -1,6 +1,6 @@
 # 提示词：打通模型Streaming完整链路
 
-你接手KiaraBot STR工作流，GPT-6.1 Sol/high，目录`/Users/betta/Workspace/KiaraBot`。
+你接手KiaraBot STR工作流，目录`/Users/betta/Workspace/KiaraBot`。
 先读`doc/plans/2026-11-04-next-agent-prompts.md`及Model源码交接，按AGENTS读规范、
 doc/01/02/03/05-infrastructure-model-streaming.md和冻结记录。你不是唯一编辑者，不能覆盖其他工作。
 

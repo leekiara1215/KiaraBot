@@ -10,7 +10,7 @@
 
 ### 五项扩展：契约冻结通过、首批实施中（2026-11-04）
 
-用户已继续授权契约冻结后按依赖实现，由主代理统筹验收、GPT-6.1 Sol/high subagent 执行，
+用户已继续授权契约冻结后按依赖实现，由主代理统筹验收、subagent 执行，
 无需逐步重复确认。公共契约已按 [冻结记录](30-capability-expansion-contract-freeze.md) 收口：
 118 RPC 描述/权限、376 跨语言消息、25 wire golden、26 模型流语义用例、固定 Node22 的
 67 HTTP operation、WS 36/Host-bootstrap 38 项边界，以及完整 contracts/真实 descriptor 兼容均通过。
@@ -47,7 +47,7 @@ reference 状态和 blob 未改，其他新增能力未随之翻转。主代理�
 [扩展计划](29-approved-capability-expansion-plan.md)。旧记录中 WS 延期、streaming 不做、
 Host/bootstrap 只文档化的范围限制由新计划替代；现有代码/契约仍按实际实现状态登记。
 
-主代理已向三名 `gpt-6.1-sol` / high subagent 分派 WS、STR、HERR/HOST/BOOT 工作流，
+主代理已向三名 subagent 分派 WS、STR、HERR/HOST/BOOT 工作流，
 首批源码核对、契约提案、任务依赖与文件归属已完成并经主代理收口，合计 34 个任务，
 三份子计划和本轮用户决策已归档到可被 Git 跟踪的 `doc/plans/`。
 当前五项均为**计划与分工已完成、契约待冻结**，

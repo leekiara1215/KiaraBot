@@ -18,7 +18,7 @@
 
 2026-11-04 新增批准的 Control WS、模型 streaming、Host 错误语义/独立 operation 与
 bootstrap 交付见 [五项扩展计划](29-approved-capability-expansion-plan.md)。
-主代理统筹，GPT-6.1 Sol/high subagent 执行；批准纳入计划不等于当前实现已可用。
+主代理统筹，subagent 执行；批准纳入计划不等于当前实现已可用。
 
 ## 首版开发目标（历史示意）
 

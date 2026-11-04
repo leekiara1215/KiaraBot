@@ -3,7 +3,7 @@
 - 决策日期：2026-11-04。
 - 来源：[本轮用户决策](plans/user-decisions-2026-11-04.md)。
 - 基础：[原实施计划](23-implementation-plan.md)、[当前证据矩阵](27-phase-exit-evidence.md)。
-- 组织：主代理统筹；具体任务交由 `gpt-6.1-sol`、`reasoning_effort=high` subagent。
+- 组织：主代理统筹；具体任务交由 subagent。
 - 后续执行：用户已继续授权契约冻结及按依赖实现，实际进度与命令见[执行台账](plans/2026-11-04-capability-execution-ledger.md)。下文“本轮交付”与第 6 节保留计划整理阶段的作用域。
 - 本轮交付：正式登记范围、源码核对、依赖拆分、文件所有权、实现及验收任务定义。
   本文和子计划不是已实现、已冻结线协议或已通过验收的声明。
@@ -61,7 +61,7 @@ subagent 必须先读根 `AGENTS.md`、[C++ 规范](12-cpp-coding-standard.md)�
 
 ### WS：Control WebSocket
 
-- 执行者：`/root/control_ws`，GPT-6.1 Sol / high。
+- 执行者：`/root/control_ws`。
 - 首批产物：[WS 子计划](plans/2026-11-04-control-ws-plan.md)。
 - 输入：当前 Identity 会话/权限、真实 owner 状态与游标、客户端 hello/resume。
 - 输出：按当前用户和资源授权过滤的事件、有限重放、`RESYNC_REQUIRED` 与权威 REST 恢复。
@@ -76,7 +76,7 @@ subagent 必须先读根 `AGENTS.md`、[C++ 规范](12-cpp-coding-standard.md)�
 
 ### STR：模型 streaming
 
-- 执行者：`/root/model_streaming`，GPT-6.1 Sol / high。
+- 执行者：`/root/model_streaming`。
 - 首批产物：[模型 streaming 子计划](plans/2026-11-04-model-streaming-plan.md)。
 - 输入：认证实例、模型、逻辑调用 id、消息、deadline 和取消。
 - 输出：有序文本增量、明确终结结果、usage 来源和可能计费事实；现有非流式调用保持可用。
@@ -92,7 +92,7 @@ subagent 必须先读根 `AGENTS.md`、[C++ 规范](12-cpp-coding-standard.md)�
 
 ### HERR、HOST、BOOT：分别跟踪的 Host/凭据工作流
 
-- 执行者：`/root/host_bootstrap`，GPT-6.1 Sol / high。
+- 执行者：`/root/host_bootstrap`。
 - 首批产物：[Host/Bootstrap 子计划](plans/2026-11-04-host-bootstrap-plan.md)。
 - **HERR 输入/输出**：HostRequest 的 envelope、oneof 与协商能力 → 稳定业务错误和传输映射。
   `OPERATION_NOT_SET`、未知 wire 字段、已知未支持能力必须分别测试；旧 reference 的错误差异

@@ -13,7 +13,7 @@ P00–P14 已有目标实现和历史分阶段证据；不能从此前某一轮�
 本轮依赖隔离、Control、PluginBridge 与 Runtime 资源应用工作及残余检查统一写入证据矩阵，
 不在每份模块文档复制一套完成清单。`doc/18` 冻结基线保持只读。
 
-用户随后批准把五项原延期/缺口纳入计划，并指定主代理统筹、GPT-6.1 Sol/high subagent
+用户随后批准把五项原延期/缺口纳入计划，并指定主代理统筹、subagent
 执行；[本轮决策](plans/user-decisions-2026-11-04.md) 和
 [扩展计划](29-approved-capability-expansion-plan.md) 取代五项原来的范围限制。
 这不把 `not_implemented` 提前改为可用，也不使历史 `167/167` 成为新增能力的验收证据。

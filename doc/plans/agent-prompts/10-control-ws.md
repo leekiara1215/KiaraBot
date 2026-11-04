@@ -1,6 +1,6 @@
 # 提示词：完整目标WSS与Panel恢复
 
-你接手KiaraBot的WS工作流，使用GPT-6.1 Sol/high，目录`/Users/betta/Workspace/KiaraBot`。
+你接手KiaraBot的WS工作流，目录`/Users/betta/Workspace/KiaraBot`。
 先读`doc/plans/2026-11-04-next-agent-prompts.md`和`2026-11-04-control-ws-handoff.md`，
 并按AGENTS读取规范与doc/01/02/06/07/08。你不是唯一编辑者，保留其他agent改动。
 

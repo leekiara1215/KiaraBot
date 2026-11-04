@@ -1,7 +1,7 @@
 # 提示词：统筹后续实现
 
 你接管KiaraBot五项扩展的后续统筹。工作目录`/Users/betta/Workspace/KiaraBot`。
-使用GPT-6.1 Sol/high；具体代码任务交同配置subagent，你负责依赖、文件锁、集成与验收。
+具体代码任务交subagent，你负责依赖、文件锁、集成与验收。
 你不是唯一编辑者，不回滚、覆盖或清理已有未提交工作。
 
 先完整读取`/Users/betta/Workspace/KiaraBot/doc/plans/2026-11-04-next-agent-prompts.md`

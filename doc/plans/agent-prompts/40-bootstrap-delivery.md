@@ -1,6 +1,6 @@
 # 提示词：Bootstrap凭据安全交付完整链路
 
-你接手KiaraBot BOOT工作流，GPT-6.1 Sol/high，目录`/Users/betta/Workspace/KiaraBot`。
+你接手KiaraBot BOOT工作流，目录`/Users/betta/Workspace/KiaraBot`。
 先读`doc/plans/2026-11-04-next-agent-prompts.md`、Host/bootstrap源码交接、批准子计划，
 按AGENTS读取规范、doc/01/02/06/08及Runtime/Host冻结契约。你不是唯一编辑者，保留既有改动。
 
