@@ -938,6 +938,9 @@ P05 Runtime 资源方法、Identity ListPrincipals 等有本机测试证据但 t
 | `RuntimeCreateAccountRequest.platform` | not_implemented | P01 目标声明；无生产实现，见模块报告。 |
 | `RuntimeCreateAccountRequest.platform_account_id` | not_implemented | P01 目标声明；无生产实现，见模块报告。 |
 | `RuntimeCreateAccountRequest.display_name` | not_implemented | P01 目标声明；无生产实现，见模块报告。 |
+| `RuntimeCreateAccountRequest.catalog` | not_implemented | Approved P05 catalog input, target evidence pending. |
+| `RuntimeValidateManifestRequest.catalog` | not_implemented | Approved P05 catalog input, target evidence pending. |
+| `RuntimeCreateInstallationRequest.catalog` | not_implemented | Approved P05 catalog input, target evidence pending. |
 | `RuntimeCreateAccountResponse.account` | not_implemented | P01 目标声明；无生产实现，见模块报告。 |
 | `RuntimeUpdateAccountRequest.context` | not_implemented | P01 目标声明；无生产实现，见模块报告。 |
 | `RuntimeUpdateAccountRequest.account_id` | not_implemented | P01 目标声明；无生产实现，见模块报告。 |

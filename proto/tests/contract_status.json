@@ -1624,7 +1624,10 @@
       "IdentityListPrincipalsRequest.state_filter": "not_implemented",
       "IdentityListPrincipalsResponse.principals": "not_implemented",
       "IdentityListPrincipalsResponse.page": "not_implemented",
-      "IdentityListPrincipalsResponse.checked_at": "not_implemented"
+      "IdentityListPrincipalsResponse.checked_at": "not_implemented",
+      "RuntimeCreateAccountRequest.catalog": "not_implemented",
+      "RuntimeValidateManifestRequest.catalog": "not_implemented",
+      "RuntimeCreateInstallationRequest.catalog": "not_implemented"
     },
     "event_payloads": {
       "EventEnvelope.message_received": "implemented",
@@ -5715,6 +5718,15 @@
     ],
     "operations.resolveModelCall": [
       "api/openapi.yaml"
+    ],
+    "RuntimeCreateAccountRequest.catalog": [
+      "proto/kiarabot/v1/runtime.proto"
+    ],
+    "RuntimeValidateManifestRequest.catalog": [
+      "proto/kiarabot/v1/runtime.proto"
+    ],
+    "RuntimeCreateInstallationRequest.catalog": [
+      "proto/kiarabot/v1/runtime.proto"
     ]
   },
   "vocabulary": {
