@@ -17,6 +17,7 @@
 #include "model_store.hpp"
 #include "record_access.hpp"
 #include "runtime_events.hpp"
+#include "runtime_management_receipts.hpp"
 #include "storage_records.hpp"
 
 namespace kiarabot::infrastructure::postgres {
@@ -290,6 +291,14 @@ private:
 
 class RuntimeWork final : public WorkDelegate<target::RuntimeUnitOfWork> {
 public:
+  target::Outcome<std::optional<target::RuntimeManagementReceipt>>
+  management_receipt(const target::ReceiptKey& key) override {
+    return detail::find_management_receipt(management_sql_, key);
+  }
+  target::Status save_management_receipt(const target::ReceiptKey& key,
+                                         const target::RuntimeManagementReceipt& value) override {
+    return detail::save_management_receipt(management_sql_, key, value);
+  }
   RuntimeWork(detail::CommonWorkAccess common,
               std::vector<target::HostCertificateBinding> host_allowlist)
       : WorkDelegate(std::move(common.work)), accounts_(work(), detail::RecordKind::Account),
@@ -302,7 +311,7 @@ public:
         action_evidence_(*common.sql), namespaces_(*common.sql), shared_namespaces_(*common.sql),
         namespace_quota_(*common.sql), storage_receipts_(*common.sql),
         host_registration_(work(), *common.sql, std::move(host_allowlist)),
-        host_commands_(*common.sql) {}
+        host_commands_(*common.sql), management_sql_(*common.sql) {}
   target::Repository<target::ResourceId, target::BotAccount>& accounts() override {
     return accounts_;
   }
@@ -408,6 +417,7 @@ private:
   detail::StorageReceiptRecords storage_receipts_;
   detail::HostRegistration host_registration_;
   detail::HostCommandOutbox host_commands_;
+  detail::SqlWork& management_sql_;
 };
 class RuntimeFactory final : public target::RuntimeUnitOfWorkFactory {
 public:

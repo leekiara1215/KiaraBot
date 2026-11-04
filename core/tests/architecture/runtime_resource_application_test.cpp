@@ -66,6 +66,7 @@ struct Store {
   std::map<std::string, std::vector<t::OperationParticipant>> operation_participants;
   std::map<std::pair<int, std::string>, t::LifecycleTombstone> tombstones;
   std::map<std::string, t::HostCommandOutboxRecord> host_commands;
+  std::vector<std::pair<t::ReceiptKey, t::RuntimeManagementReceipt>> management_receipts;
   std::vector<t::BridgeCredentialRecord> bridge_credentials;
   std::vector<std::pair<t::ReceiptKey, t::CommandReceipt>> receipts;
   std::vector<t::AuditEntry> audits;
@@ -589,6 +590,21 @@ public:
   }
   t::HostCommandOutbox& host_commands() override {
     return host_commands_;
+  }
+  t::Outcome<std::optional<t::RuntimeManagementReceipt>>
+  management_receipt(const t::ReceiptKey& key) override {
+    for (const auto& [stored, value] : store_.management_receipts) {
+      if (stored == key)
+        return std::optional<t::RuntimeManagementReceipt>{value};
+    }
+    return std::optional<t::RuntimeManagementReceipt>{};
+  }
+  t::Status save_management_receipt(const t::ReceiptKey& key,
+                                    const t::RuntimeManagementReceipt& value) override {
+    if (store_.fail_writes)
+      return failure(t::ErrorCode::UpstreamUnavailable);
+    store_.management_receipts.emplace_back(key, value);
+    return std::monostate{};
   }
   t::ReceiptRepository& receipts() override {
     return receipts_;

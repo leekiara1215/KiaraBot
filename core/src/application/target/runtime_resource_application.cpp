@@ -602,6 +602,7 @@ observe_work(RuntimeUnitOfWorkFactory& transactions,
 template <typename Value> struct Mutation {
   Value value;
   std::optional<OperationRef> operation;
+  std::optional<ResourceState> committed_state{};
 };
 
 // Shared mutation transaction: authorization already succeeded outside the UoW; this helper owns
@@ -615,7 +616,8 @@ mutate(RuntimeUnitOfWorkFactory& transactions, const CommandContext& context,
        const ResourceRef& resource, const ResourceVersion& authorization_version,
        const std::function<Outcome<Value>(RuntimeUnitOfWork&, TimePoint now)>& effect,
        const std::function<ResourceRef(const Value&)>& result_resource,
-       const std::function<ResourceVersion(const Value&)>& result_version) {
+       const std::function<ResourceVersion(const Value&)>& result_version,
+       bool management_receipt = false) {
   try {
     auto begun = transactions.begin();
     if (const auto* failure = std::get_if<Failure>(&begun)) {
@@ -655,7 +657,25 @@ mutate(RuntimeUnitOfWorkFactory& transactions, const CommandContext& context,
         return stale_version();
       }
       if (const auto* value = std::get_if<Value>(&original->result)) {
-        return Mutation<Value>{*value, restore_operation()};
+        if (management_receipt) {
+          auto saved = work->management_receipt(receipt_key(context, resource));
+          if (const auto* failure = std::get_if<Failure>(&saved)) {
+            return *failure;
+          }
+          const auto& receipt = std::get<std::optional<RuntimeManagementReceipt>>(saved);
+          if (!receipt || receipt->format_version != 1 ||
+              receipt->operation.owner != Service::Runtime ||
+              receipt->operation.resource != resource ||
+              (resource.kind == ResourceKind::Instance) != receipt->committed_state.has_value() ||
+              (receipt->committed_state &&
+               (receipt->committed_state->resource != resource ||
+                receipt->committed_state->source_service != Service::Runtime ||
+                receipt->committed_state->adapter_fence))) {
+            return internal_failure();
+          }
+          return Mutation<Value>{*value, receipt->operation, receipt->committed_state};
+        }
+        return Mutation<Value>{*value, restore_operation(), std::nullopt};
       }
       return internal_failure();
     }
@@ -687,11 +707,44 @@ mutate(RuntimeUnitOfWorkFactory& transactions, const CommandContext& context,
       return internal_failure();
     }
     auto operation = restore_operation();
+    std::optional<ResourceState> committed_state{};
+    if (management_receipt) {
+      if (!operation) {
+        return internal_failure();
+      }
+      if (resource.kind == ResourceKind::Instance) {
+        auto found = work->instances().find(InstanceId{resource.id.value});
+        if (const auto* failure = std::get_if<Failure>(&found)) {
+          return *failure;
+        }
+        const auto& instance = std::get<std::optional<PluginInstance>>(found);
+        if (!instance) {
+          return internal_failure();
+        }
+        committed_state = ResourceState{resource,
+                                        instance->version,
+                                        instance->state,
+                                        instance->desired,
+                                        instance->current,
+                                        std::nullopt,
+                                        instance->current.has_value(),
+                                        instance->desired_version,
+                                        instance->applied_config_version,
+                                        ExecutionOutcome::NotStarted,
+                                        now,
+                                        Service::Runtime};
+      }
+      const auto saved = work->save_management_receipt(
+          receipt_key(context, resource), RuntimeManagementReceipt{1, *operation, committed_state});
+      if (const auto* failure = std::get_if<Failure>(&saved)) {
+        return *failure;
+      }
+    }
     const auto committed = work->commit();
     if (committed != CommitResult::Committed) {
       return map_commit(committed);
     }
-    return Mutation<Value>{std::move(value), std::move(operation)};
+    return Mutation<Value>{std::move(value), std::move(operation), std::move(committed_state)};
   } catch (const std::bad_alloc&) {
     return unavailable();
   } catch (...) {
@@ -892,7 +945,7 @@ public:
         [](const BotAccount& value) {
           return ResourceRef{ResourceKind::Account, value.id};
         },
-        [](const BotAccount& value) { return value.version; });
+        [](const BotAccount& value) { return value.version; }, true);
     if (const auto* failure = std::get_if<Failure>(&result)) {
       return *failure;
     }
@@ -1024,7 +1077,7 @@ public:
         [](const AdapterBindingRecord& value) {
           return ResourceRef{ResourceKind::Account, value.account};
         },
-        [](const AdapterBindingRecord& value) { return value.version; });
+        [](const AdapterBindingRecord& value) { return value.version; }, true);
     if (const auto* failure = std::get_if<Failure>(&result)) {
       return *failure;
     }
@@ -1091,7 +1144,7 @@ public:
         [](const AdapterBindingRecord& value) {
           return ResourceRef{ResourceKind::Account, value.account};
         },
-        [](const AdapterBindingRecord& value) { return value.version; });
+        [](const AdapterBindingRecord& value) { return value.version; }, true);
     if (const auto* failure = std::get_if<Failure>(&result)) {
       return *failure;
     }
@@ -1721,12 +1774,13 @@ public:
         [](const PluginInstance& value) {
           return ResourceRef{ResourceKind::Instance, {value.id.value}};
         },
-        [](const PluginInstance& value) { return value.version; });
+        [](const PluginInstance& value) { return value.version; }, true);
     if (const auto* failure = std::get_if<Failure>(&result)) {
       return *failure;
     }
     auto mutation = std::move(std::get<Mutation<PluginInstance>>(result));
-    return InstanceMutation{std::move(mutation.value), accepted(std::move(mutation.operation))};
+    return InstanceMutation{std::move(mutation.value), accepted(std::move(mutation.operation)),
+                            std::move(mutation.committed_state)};
   }
 
   Outcome<ConfigMutation> update_config(const UpdateConfigRequest& request) override {
@@ -1795,12 +1849,13 @@ public:
         [](const InstanceConfiguration& value) {
           return ResourceRef{ResourceKind::Instance, {value.instance.value}};
         },
-        [](const InstanceConfiguration& value) { return value.version; });
+        [](const InstanceConfiguration& value) { return value.version; }, true);
     if (const auto* failure = std::get_if<Failure>(&result)) {
       return *failure;
     }
     auto mutation = std::move(std::get<Mutation<InstanceConfiguration>>(result));
-    return ConfigMutation{std::move(mutation.value), accepted(std::move(mutation.operation))};
+    return ConfigMutation{std::move(mutation.value), accepted(std::move(mutation.operation)),
+                          std::move(mutation.committed_state)};
   }
 
   Outcome<ResourceState> get_resource_state(const ResourceStateQuery& request) override {

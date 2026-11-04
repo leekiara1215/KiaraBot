@@ -22,7 +22,7 @@ inline constexpr int version(core::target::Service owner) {
     // installation snapshot column; P08b-3b fixes the command-kind CHECK range); P13a adds
     // operation retention/participants, audit/outbox cleanup indexes and the lifecycle tombstone
     // relation; P14h aligns the shared result_exact_permissions CHECK with wire Permission 1..50.
-    return 17;
+    return 18;
   case core::target::Service::Scheduler:
     // P10a adds task/occurrence observation columns, the quota counter relation and due/owner
     // indexes; P07 adds the shared nullable audit target columns to every service schema. The

@@ -9,6 +9,7 @@
 #include "runtime_events.hpp"
 #include "runtime_host_commands.hpp"
 #include "runtime_host_connections.hpp"
+#include "runtime_management_receipts.hpp"
 #include "runtime_storage.hpp"
 
 namespace kiarabot::infrastructure::postgres::schema {
@@ -49,6 +50,7 @@ CREATE UNIQUE INDEX principals_binding_unique ON kiarabot.principals(binding_kin
     sql += kIdentitySecurity;
     break;
   case core::target::Service::Runtime:
+    sql += kRuntimeManagementReceipts;
     relation("accounts", "id");
     relation("installations", "id");
     relation("instances", "id");

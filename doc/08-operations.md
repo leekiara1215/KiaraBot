@@ -1796,3 +1796,7 @@ provider。
 - `instance-delegation-refresh` 输出 `token_expired|token_age_exceeded|token_max_age_exceeded|identity_UNAUTHENTICATED|identity_PERMISSION_DENIED` 且退出非零时，触发“委托刷新停止”告警；按文案提示重新登录 Control 管理员、生成新的 0600 token 文件并重启 refresher。
 - refresher principal 只授予 `identity.delegation.issue`、目标实例 `resource.manage` 与白名单任务权限；不要使用通用高权管理员 token，`--max-token-age` 建议 300s（必须小于部署 token TTL 与委托刷新周期上限 56s 的运维预算）。
 - Runtime host 需 `ulimit -c 0`/禁用 core dump、限制 ptrace；sealed token 是短期秘密但仍驻留内存。
+
+## 2026-11-04 Runtime 管理回执
+
+用户已批准五项管理写入在 Runtime 同一事务中保存版本化附属回执、原 operation 引用和实例提交状态。附属行引用 command_receipts(result_id) ON DELETE CASCADE，普通回执不保存 bootstrap 明文。新建隔离数据库验收；现有部署数据库不得由启动流程自动升级。原地迁移另行审查。完整重放只在原 retain_until 内承诺，过期 UNKNOWN 仍需核对原操作。

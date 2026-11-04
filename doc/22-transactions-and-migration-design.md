@@ -401,3 +401,7 @@ Runtime `RuntimeInstanceDelegationProvider` 从 sealed task envelope 读取父�
 PluginBridge task 帧经 RuntimeTaskApplication→SchedulerTaskClient→真实 Scheduler RPC；Scheduler
 CreateTask 幂等由 task_id/idempotency receipt 保证，COMPLETED 仅证明 TimerTriggered 事件入队。
 无 scheduler_endpoint 时 Runtime readiness 为 false 且任务帧 fail-closed。
+
+## 2026-11-04 Runtime 管理回执
+
+用户已批准五项管理写入在 Runtime 同一事务中保存版本化附属回执、原 operation 引用和实例提交状态。附属行引用 command_receipts(result_id) ON DELETE CASCADE，普通回执不保存 bootstrap 明文。新建隔离数据库验收；现有部署数据库不得由启动流程自动升级。原地迁移另行审查。完整重放只在原 retain_until 内承诺，过期 UNKNOWN 仍需核对原操作。

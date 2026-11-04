@@ -63,6 +63,7 @@ struct HeartbeatResult {
 struct InstanceMutation {
   PluginInstance instance;
   std::optional<OperationAccepted> operation;
+  std::optional<ResourceState> committed_state{};
 };
 struct InstanceCreation {
   PluginInstance instance;
@@ -71,26 +72,11 @@ struct InstanceCreation {
 struct ConfigMutation {
   InstanceConfiguration config;
   std::optional<OperationAccepted> operation;
+  std::optional<ResourceState> committed_state{};
 };
 struct ManifestValidation {
   bool valid = false;
   std::vector<Failure> violations;
-};
-// Neutral typed resource state projection; the boundary renders the wire VersionedResourceState.
-struct ResourceState {
-  ResourceRef resource;
-  ResourceVersion version;
-  LifecycleState lifecycle = LifecycleState::Active;
-  DesiredState desired = DesiredState::Running;
-  std::optional<Fence> fence;
-  // Adapter resources carry a connection-only fence (no trusted process execution in P05).
-  std::optional<AdapterFence> adapter_fence;
-  bool registered = false;
-  ResourceVersion desired_config_version;
-  ResourceVersion applied_config_version;
-  ExecutionOutcome process_outcome = ExecutionOutcome::NotStarted;
-  TimePoint observed_at;
-  Service source_service = Service::Runtime;
 };
 
 struct CreateAccountRequest {

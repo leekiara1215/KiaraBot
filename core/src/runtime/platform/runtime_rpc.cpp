@@ -1456,7 +1456,10 @@ public:
       return fail(context, *rejected);
     }
     const auto& mutation = std::get<t::InstanceMutation>(changed);
-    if (!instance(mutation.instance, response->mutable_instance(), now()) ||
+    if (!mutation.committed_state ||
+        !instance(mutation.instance, response->mutable_instance(),
+                  mutation.committed_state->observed_at) ||
+        !state(*mutation.committed_state, response->mutable_instance()->mutable_state()) ||
         (mutation.operation &&
          !operation_ref(mutation.operation->operation, response->mutable_operation()))) {
       return error_status(internal_failure(), context.request, context.trace);
@@ -1495,20 +1498,7 @@ public:
       return fail(context, *rejected);
     }
     const auto& mutation = std::get<t::ConfigMutation>(changed);
-    t::ResourceState observed{
-        t::ResourceRef{t::ResourceKind::Instance, {mutation.config.instance.value}},
-        mutation.config.version,
-        t::LifecycleState::Active,
-        t::DesiredState::Running,
-        mutation.config.fence,
-        std::nullopt,
-        mutation.config.fence.has_value(),
-        mutation.config.desired_version,
-        mutation.config.applied_version,
-        t::ExecutionOutcome::NotStarted,
-        mutation.config.observed_at,
-        t::Service::Runtime};
-    if (!state(observed, response->mutable_state()) ||
+    if (!mutation.committed_state || !state(*mutation.committed_state, response->mutable_state()) ||
         (mutation.operation &&
          !operation_ref(mutation.operation->operation, response->mutable_operation()))) {
       return error_status(internal_failure(), context.request, context.trace);

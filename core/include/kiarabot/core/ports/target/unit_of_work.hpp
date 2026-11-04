@@ -257,6 +257,13 @@ public:
 };
 class RuntimeUnitOfWork : public UnitOfWork {
 public:
+  // Borrows this transaction. Persisted with the parent receipt; no independent commit.
+  virtual Outcome<std::optional<RuntimeManagementReceipt>> management_receipt(const ReceiptKey&) {
+    return rejected(ErrorCode::CapabilityNotSupported, Recovery::Diagnose);
+  }
+  virtual Status save_management_receipt(const ReceiptKey&, const RuntimeManagementReceipt&) {
+    return rejected(ErrorCode::CapabilityNotSupported, Recovery::Diagnose);
+  }
   virtual Repository<ResourceId, BotAccount>& accounts() = 0;
   // Keyed by the bound account; one account is served by at most one adapter instance and an
   // adapter serves many accounts.

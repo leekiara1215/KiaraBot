@@ -1,6 +1,6 @@
 # P05 五项写操作的持久回执方案
 
-2026-11-04。状态为待维护者审查。本文提出存储和升级选择，不授权执行 DDL、切换数据库或修改契约。范围为 Runtime 的 DisableAccount、BindAdapter、UnbindAdapter、SetDesiredState、UpdateConfig。
+2026-11-04。维护者已批准 Runtime 专用附属表、五项原子持久回执及 RPC 原始状态重放；仅授权隔离新库验收。原地迁移、旧库 DDL 和部署切换须另行审查。范围为 Runtime 的 DisableAccount、BindAdapter、UnbindAdapter、SetDesiredState、UpdateConfig。
 
 ## 现有缺口和保持的契约
 
@@ -12,7 +12,7 @@
 
 ## 建议的 Runtime 专用存储
 
-推荐为 Runtime 增加版本化的结果附属表，暂名 runtime_management_receipts。以 result_id 为主键，外键明确指向 command_receipts(result_id)，采用 ON DELETE CASCADE。父表该列已有 UNIQUE；不能只关联 replay_results。现有清理先删除 command_receipts 再删除 replay_results，附属表必须随父回执删除，覆盖定期清理和过期键替换两条路径。保持现有 ReplayResult variant 的索引和其他三个 owner 的编码方式。该方案比扩展共享 ReplayResult 多一种类型更局部，但仍属于待批准的存储模型变更。
+推荐为 Runtime 增加版本化的结果附属表，暂名 runtime_management_receipts。以 result_id 为主键，外键明确指向 command_receipts(result_id)，采用 ON DELETE CASCADE。父表该列已有 UNIQUE；不能只关联 replay_results。现有清理先删除 command_receipts 再删除 replay_results，附属表必须随父回执删除，覆盖定期清理和过期键替换两条路径。保持现有 ReplayResult variant 的索引和其他三个 owner 的编码方式。该方案比扩展共享 ReplayResult 多一种类型更局部，此存储模型已获本任务批准。
 
 表保存 format_version=1、方法/结果类型辨别信息、原始 OperationRef 的 owner/operation_id/resource_kind/resource_id，以及必要的提交时状态。原资源快照仍保留在现有 replay_results 及对应结果表，附属表只补缺失信息。约束 operation owner 必须为 Runtime，引用资源必须匹配原结果和回执资源。五项成功写入必须同时存在父回执和完整附属记录。实现时需由 Runtime 专用仓储验证字段与方法组合，不能将任意 blob 视为合法回执。
 
