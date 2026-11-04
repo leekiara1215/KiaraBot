@@ -19,6 +19,7 @@ import asyncio
 import json
 from pathlib import Path
 import signal
+import sqlite3
 import sys
 import tempfile
 import time
@@ -221,8 +222,18 @@ async def async_main(args) -> None:
                 endpoint=endpoint, ca_file=str(ca_path), bootstrap_file=str(bootstrap_file),
                 adapter_instance_id=ADAPTER_INSTANCE, account_id=ACCOUNT,
                 adapter_id=ADAPTER_ID, timeout=5.0, retry_base=0.1, idle_interval=0.1)
-            outbox = Outbox(root / 'adapter-outbox.db')
-            adapter_client = BridgeClient(adapter_config, outbox)
+            outbox_path = root / 'adapter-outbox.db'
+            outbox = Outbox(outbox_path)
+            event_receipts = []
+
+            class ObservedBridgeClient(BridgeClient):
+                def handle_event_ack(self, event, ack):
+                    # Observe real server replies while retaining the shipped client's handling.
+                    event_receipts.append((event.event_id, event.sequence, event.trace_id,
+                                           ack.error.code, ack.error.retryable, ack.retry_after_ms))
+                    return super().handle_event_ack(event, ack)
+
+            adapter_client = ObservedBridgeClient(adapter_config, outbox)
             adapter_stop = asyncio.Event()
             adapter_task = asyncio.create_task(adapter_client.run(adapter_stop))
             tasks.append((adapter_task, adapter_stop))
@@ -257,16 +268,52 @@ async def async_main(args) -> None:
             }
             event = map_message(raw_message, ADAPTER_ID, ACCOUNT)
             event.source.adapter_id = ADAPTER_ID
+            # Only unrelated capacity occupants are provisioned. The measured event enters
+            # through the real mapper, durable SQLite outbox and production BridgeClient.
+            fixture.psql(Path(args.pg_bin), root, port, runtime_password,
+                         "INSERT INTO kiarabot.events(adapter,event_id,fingerprint,"
+                         "conversation_key,payload_kind,has_conversation,sequence,has_sequence,"
+                         "serialized_envelope,occurred_at,state,received_at) "
+                         "SELECT 'p06-capacity','capacity-'||n,decode(repeat('00',32),'hex'),"
+                         "'',0,false,NULL,false,''::bytea,1,0,1 FROM generate_series(1,1024) n")
+            prior_generation = adapter_client.authorization.fence.connection_generation
             outbox.enqueue(event)
+            await wait_until(lambda: any(row[3] == common.RATE_LIMITED for row in event_receipts),
+                             'real Runtime capacity rejection', 20.0)
+            rejection = next(row for row in event_receipts if row[3] == common.RATE_LIMITED)
+            require(rejection[4] and rejection[5] > 0, 'backpressure must be retryable with delay')
+            with sqlite3.connect(outbox_path) as persisted:
+                row = persisted.execute('SELECT status,payload FROM outbox WHERE id=?',
+                                        (event.event_id,)).fetchone()
+            require(row is not None and row[0] == 'pending', 'rejected event remains durable')
+            pending = type(event).FromString(row[1])
+            require((pending.event_id, pending.sequence, pending.trace_id) == rejection[:3],
+                    'capacity rejection changed the durable event identity')
+            missing = fixture.psql(Path(args.pg_bin), root, port, runtime_password,
+                                   'SELECT count(*) FROM kiarabot.events WHERE event_id=' +
+                                   fixture.quote_sql(event.event_id))
+            require(missing.stdout.strip() == b'0', 'rejected event was committed')
+            fixture.psql(Path(args.pg_bin), root, port, runtime_password,
+                         "DELETE FROM kiarabot.events WHERE adapter='p06-capacity'")
             first_event = await asyncio.wait_for(delivered.get(), 20)
             require(first_event == event.event_id, 'SDK plugin received a different event id')
+            require(adapter_client.authorization.fence.connection_generation > prior_generation,
+                    'backpressure did not reconnect the adapter')
             await wait_until(lambda: outbox.next_pending() is None, 'adapter event ACK', 20.0)
+            successes = [row for row in event_receipts if row[0] == event.event_id and row[3] == 0]
+            require(successes and all(row[:3] == rejection[:3] for row in successes),
+                    'backpressure retry changed event id, sequence or trace')
             await wait_until(
                 lambda: platform.DELIVERY_ACKNOWLEDGED in runner.last_dispositions,
                 'SDK delivery ACK receipt', 20.0)
             rows = fixture.psql(Path(args.pg_bin), root, port, runtime_password,
                                 'SELECT state FROM kiarabot.delivery_targets')
             require(rows.stdout.split() == [b'3'], f'delivery target not acked: {rows.stdout!r}')
+            unique = fixture.psql(Path(args.pg_bin), root, port, runtime_password,
+                                  'SELECT count(*) FROM kiarabot.events WHERE event_id=' +
+                                  fixture.quote_sql(event.event_id))
+            require(unique.stdout.strip() == b'1' and delivered.empty(),
+                    'capacity retry duplicated an event or plugin delivery')
 
             # ---- periodic proof refresh of the real adapter client -------------------
             before_refresh = adapter_client.authorization.refresh_generation

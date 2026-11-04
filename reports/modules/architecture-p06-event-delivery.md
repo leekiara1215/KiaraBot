@@ -59,8 +59,7 @@
 
 - 真实 QQ 与 NoneBot 平台进程、OneBot WebSocket 未接线（P07/M2）；P06 e2e 用合成 OneBot JSON 经真实
   mapper/bridge/outbox，不伪造网络平台。
-- Adapter 本地 outbox 队列/背压的 `semantic.adapter.backpressure_retryable_rate_limited` 未做真实
-  饱和测试，保持 not_implemented；Runtime 入站容量拒绝已返回 retryable RATE_LIMITED+关流。
+- Runtime 入站容量饱和与真实 Adapter outbox 保留/重投已于 2026-11-04 补充，见下方复验；Adapter 本地队列达到上限的容量断言仍来自单元测试。
 - 插件 manifest permissions 的 Identity 授予过滤未实现（P06b/P08 后续）；当前为声明词表原样回显 +
   逐操作在线鉴权占位，fan-out 只基于当前连接实例的声明订阅。
 - P05 `RuntimeBindAdapterResponse.bootstrap_credential`/`CreateInstanceResponse.bootstrap_credential`
@@ -68,3 +67,13 @@
   bootstrap 的端到端验收留 P05/P07 联合。
 - 慢消费者 per-stream writer 线程与 ASAN 重连竞态压力测试未做（shutdown 写已有 deadline，
   注册首帧/连接数已设界）。
+
+## P06 真实入站背压与持久重投复验（2026-11-04）
+
+`tests/architecture/p06_client_e2e.py` 在私有 PG16.4 集群中预置 1024 条待处理事件，占满 Runtime 的默认事件容量。仅背景容量记录由夹具准备；被测事件经发布的 mapper、SQLite Outbox、BridgeClient 和真实 TLS Runtime 完成入站。观察客户端继承原 BridgeClient，只记录 ACK 后调用原处理逻辑。
+
+测试断言真实拒绝包含 RATE_LIMITED、retryable=true 和非零退避时间；另开 SQLite 连接可读到同一 pending 载荷，Runtime 尚无被拒事件。释放背景容量后，客户端以新连接代次重投，event_id、sequence 和 trace_id 与拒绝前一致。最终 PG 仅有一条该事件、一个 ACKNOWLEDGED 投递目标，SDK 插件收到一次事件。该测试继续覆盖原有刷新、Runtime 重启和 ShutdownNotice。
+
+文档影响限于本报告对验收缺口的更新。生产实现、wire/API、授权、库结构与公共输入输出均无变化，相关协议及模块文档无需同步；受保护架构基线未修改。检查命令为现有 `p06_client_e2e` 的参数组，在 worktree 脚本上执行并复用 main 的已构建 Runtime、seed、initializer、固定 PG16.4/OpenSSL3.5 及客户端依赖。
+
+实际结果为真实客户端全链路 PASS，耗时约 58 秒；`python3 -m py_compile tests/architecture/p06_client_e2e.py` 和 `git diff --check` 通过。C++ 未修改，未重建 C++ 目标。
