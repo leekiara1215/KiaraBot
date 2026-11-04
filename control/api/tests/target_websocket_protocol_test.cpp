@@ -25,6 +25,11 @@ using Json = nlohmann::json;
 
 constexpr char kAccount[] = "11111111-1111-4111-8111-111111111111";
 constexpr char kModel[] = "22222222-2222-4222-8222-222222222222";
+constexpr char kAdapter[] = "77777777-7777-4777-8777-777777777777";
+constexpr char kInstance[] = "66666666-6666-4666-8666-666666666666";
+constexpr char kTask[] = "55555555-5555-4555-8555-555555555555";
+constexpr char kMessage[] = "33333333-3333-4333-8333-333333333333";
+constexpr char kConversation[] = "44444444-4444-4444-8444-444444444444";
 
 void require(bool condition, std::string_view message) {
   if (!condition) {
@@ -433,6 +438,113 @@ struct Fixtures {
   std::map<std::string, std::string> files;
 };
 
+wire::AdapterRecord adapter_record(std::uint64_t version = 1) {
+  wire::AdapterRecord result;
+  *result.mutable_resource() = resource(wire::RESOURCE_ADAPTER, kAdapter);
+  result.set_version(version);
+  result.set_online(true);
+  result.set_lifecycle(wire::LIFECYCLE_ACTIVE);
+  *result.mutable_observed_at() = stamp(1790000000);
+  auto* fence = result.mutable_current_fence();
+  fence->set_instance_id(kInstance);
+  fence->set_execution_generation(1);
+  fence->set_connection_generation(1);
+  fence->set_runtime_epoch("runtime-epoch-1");
+  return result;
+}
+wire::InstanceRecord instance_record(std::uint64_t version = 1) {
+  wire::InstanceRecord result;
+  result.set_instance_id(kInstance);
+  result.set_installation_id("44444444-4444-4444-8444-444444444444");
+  result.set_host_id("55555555-5555-4555-8555-555555555555");
+  result.set_externally_managed(false);
+  auto* state = result.mutable_state();
+  *state->mutable_resource() = resource(wire::RESOURCE_INSTANCE, kInstance);
+  state->set_version(version);
+  state->set_lifecycle(wire::LIFECYCLE_ACTIVE);
+  *state->mutable_observed_at() = stamp(1790000000);
+  return result;
+}
+wire::LogChange log_change() {
+  wire::LogChange result;
+  auto* log = result.mutable_log();
+  log->set_owner_service("identity");
+  log->set_entry_id("entry-1");
+  log->set_severity("INFO");
+  log->set_component("identity");
+  log->set_method("kiarabot.v1.IdentityService/ListLogs");
+  log->set_event("request.recorded");
+  *log->mutable_resource() = resource(wire::RESOURCE_CATALOG, "control");
+  *log->mutable_occurred_at() = stamp(1790000000);
+  return result;
+}
+wire::TaskChange task_change() {
+  wire::TaskChange result;
+  auto* task = result.mutable_task();
+  task->set_owner_service("scheduler");
+  task->set_task_id(kTask);
+  task->set_owner_instance_id(kInstance);
+  task->set_state(wire::SCHEDULED_TASK_PENDING);
+  task->set_version(2);
+  *task->mutable_updated_at() = stamp(1790000000);
+  return result;
+}
+wire::MessageMetadataChange message_change() {
+  wire::MessageMetadataChange result;
+  auto* message = result.mutable_message();
+  message->set_owner_service("runtime");
+  message->set_message_id(kMessage);
+  message->set_conversation_id(kConversation);
+  message->set_account_id(kAccount);
+  *message->mutable_received_at() = stamp(1790000000);
+  return result;
+}
+void snapshot_event_rules() {
+  target::WebSocketHealthObservation healthy;
+  healthy.identity_confirmed = true;
+  healthy.runtime_ready = true;
+  healthy.scheduler_ready = true;
+  healthy.model_ready = true;
+  const auto healthy_event =
+      Json::parse(accepted(target::websocket_health_event(healthy, 1), "healthy snapshot event"));
+  require(healthy_event["event_type"] == "health.updated", "health event type");
+  require(healthy_event["payload"]["state"] == "HEALTHY", "all-confirmed health state");
+  require(healthy_event["payload"]["components"].size() == 4, "health component count");
+  // Identity cannot be confirmed: withhold every other component detail instead of fabricating.
+  target::WebSocketHealthObservation unconfirmed;
+  const auto unconfirmed_event = Json::parse(
+      accepted(target::websocket_health_event(unconfirmed, 1), "unconfirmed snapshot event"));
+  require(unconfirmed_event["payload"]["state"] == "UNHEALTHY", "unconfirmed state");
+  require(unconfirmed_event["payload"]["components"].size() == 1, "no component details leak");
+  require(unconfirmed_event["payload"]["components"][0]["component"] == "identity",
+          "only the identity component is reported");
+  // Value signature ignores observed_at-only refreshes.
+  auto refreshed = adapter_record();
+  *refreshed.mutable_observed_at() = stamp(1790000099);
+  const auto left = target::websocket_adapter_signature(adapter_record());
+  const auto right = target::websocket_adapter_signature(refreshed);
+  require(left.has_value() && right.has_value() && *left == *right,
+          "observed_at must not change the adapter value signature");
+  auto changed = adapter_record(2);
+  const auto changed_signature = target::websocket_adapter_signature(changed);
+  require(changed_signature.has_value() && *changed_signature != *left,
+          "version change must change the adapter signature");
+  const auto adapter_event =
+      Json::parse(accepted(target::websocket_adapter_event(adapter_record(), 1), "adapter event"));
+  require(adapter_event["event_type"] == "adapter.updated", "adapter event type");
+  require(adapter_event["payload"]["target"]["lifecycle"] == "LIFECYCLE_ACTIVE",
+          "adapter lifecycle projection");
+  const auto plugin_event =
+      Json::parse(accepted(target::websocket_plugin_event(instance_record(), 1), "plugin event"));
+  require(plugin_event["event_type"] == "plugin.updated", "plugin event type");
+  require(plugin_event["payload"]["target"]["state"]["lifecycle"] == "LIFECYCLE_ACTIVE",
+          "plugin lifecycle projection");
+  // Online adapter without a complete fence is a malformed owner projection, never fabricated.
+  auto broken = adapter_record();
+  broken.clear_current_fence();
+  rejected(target::websocket_adapter_event(broken, 1), "online adapter without fence");
+}
+
 Fixtures schema_fixtures() {
   Fixtures fixtures;
   const auto selected = scope({resource(wire::RESOURCE_ACCOUNT, kAccount)});
@@ -457,6 +569,23 @@ Fixtures schema_fixtures() {
   host->mutable_reason()->set_request_id("request-3");
   host->mutable_reason()->set_trace_id("trace-3");
   *host->mutable_next_attempt_at() = stamp(1790000002);
+  fixtures.files["event_log.json"] =
+      accepted(target::websocket_feed_event(log_change(), 1), "log feed fixture");
+  fixtures.files["event_task.json"] =
+      accepted(target::websocket_feed_event(task_change(), 1), "task feed fixture");
+  fixtures.files["event_message.json"] =
+      accepted(target::websocket_feed_event(message_change(), 1), "message feed fixture");
+  target::WebSocketHealthObservation healthy;
+  healthy.identity_confirmed = true;
+  healthy.runtime_ready = true;
+  healthy.scheduler_ready = true;
+  healthy.model_ready = true;
+  fixtures.files["health_healthy.json"] =
+      accepted(target::websocket_health_event(healthy, 1), "healthy health fixture");
+  fixtures.files["event_adapter.json"] =
+      accepted(target::websocket_adapter_event(adapter_record(), 1), "adapter fixture");
+  fixtures.files["event_plugin.json"] =
+      accepted(target::websocket_plugin_event(instance_record(), 1), "plugin fixture");
   fixtures.files["event_participants.json"] =
       accepted(target::websocket_operation_event(participants, 3), "participant fixture");
   fixtures.files["session_ready.json"] = accepted(
@@ -490,6 +619,7 @@ int main(int argc, char** argv) {
     origin_rules();
     event_rules();
     cursor_and_frame_rules();
+    snapshot_event_rules();
     if (argc == 3 && std::string_view{argv[1]} == "--emit") {
       emit(argv[2]);
     }

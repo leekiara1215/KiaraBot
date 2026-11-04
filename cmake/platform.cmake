@@ -806,6 +806,18 @@ set_tests_properties(p08_host_management_e2e PROPERTIES
   ENVIRONMENT "PATH=${RUNTIME_E2E_OPENSSL_BIN_DIR}:${RUNTIME_E2E_PYTHON_BIN_DIR}:$ENV{PATH};PYTHONPATH=${CMAKE_SOURCE_DIR}/sdk/python/build/generated"
   LABELS "p08;host;integration;security;fault" TIMEOUT 120)
 
+# HOST-04 single chain: real Control binary + real TLS Identity/owner fixtures + real Host
+# process HostManagementService + fake Runtime gate. Complements p12_host_control_rest (fake
+# HostManagement) with the real owner RPC path.
+add_test(NAME p12_host_control_chain_e2e COMMAND "${KIARABOT_TARGET_PYTHON}"
+  ${CMAKE_SOURCE_DIR}/tests/architecture/p12_host_control_chain_e2e.py
+  $<TARGET_FILE:kiarabot-control> $<TARGET_FILE:kiarabot_control_identity_fixture>
+  $<TARGET_FILE:kiarabot-plugin-host>)
+set_tests_properties(p12_host_control_chain_e2e PROPERTIES
+  ENVIRONMENT "PATH=${RUNTIME_E2E_OPENSSL_BIN_DIR}:${RUNTIME_E2E_PYTHON_BIN_DIR}:$ENV{PATH};PYTHONPATH=${CMAKE_SOURCE_DIR}/sdk/python/build/generated"
+  LABELS "p12;host;control;integration;fault" TIMEOUT 120 RESOURCE_LOCK control_https
+  RUN_SERIAL TRUE)
+
 # STR09 full managed-plugin streaming chain (real owned PG/TLS/Runtime/Model/plugin-host with a
 # local gated SSE Provider). Registered once STR07 landed; the driver reports exit 3 only while the
 # bridge is unavailable and that is not counted as a pass.
@@ -824,6 +836,11 @@ add_test(NAME p11_streaming_managed_model_e2e COMMAND "${KIARABOT_TARGET_PYTHON}
   --test-argument $<TARGET_FILE:kiarabot-plugin-host>)
 set_tests_properties(p11_streaming_managed_model_e2e PROPERTIES
   LABELS "p11;streaming;integration;security;fault" TIMEOUT 600
+  # The managed streaming e2e asserts a first-delta-before-provider-completion deadline plus
+  # delegation-window retries; running it concurrently with other heavy e2e makes those timing
+  # assertions flaky for reasons unrelated to the product (observed in the parallel-6 window,
+  # passing reliably when serialized). Serialize it rather than weakening any assertion.
+  RUN_SERIAL TRUE
   WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
   ENVIRONMENT "PATH=${RUNTIME_E2E_OPENSSL_BIN_DIR}:${RUNTIME_E2E_PYTHON_BIN_DIR}:$ENV{PATH};PYTHONPATH=${CMAKE_SOURCE_DIR}/sdk/python/build/generated")
 

@@ -59,6 +59,9 @@ class LockedManagementPort final : public t::HostManagementApplicationPort {
 public:
   LockedManagementPort(std::mutex& mutex, t::HostMaintenanceApplication& application)
       : mutex_(mutex), application_(application) {}
+  const t::ResourceId& host_id() const noexcept override {
+    return application_.host_id();
+  }
   t::Outcome<t::HostMaintenanceState> maintenance_state(const t::AuthenticationContext& context,
                                                         t::TimePoint deadline) override {
     std::lock_guard lock(mutex_);

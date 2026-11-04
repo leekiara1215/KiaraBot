@@ -149,6 +149,10 @@ std::string delegation_proof(std::string_view audience = "host") {
 }
 class FakeApplication final : public t::HostManagementApplicationPort {
 public:
+  const t::ResourceId& host_id() const noexcept override {
+    return host;
+  }
+  t::ResourceId host{std::string{kHost}};
   std::optional<t::HostMaintenanceRequest> last_request;
   std::optional<t::HostMaintenanceCancelRequest> last_cancel;
   std::optional<t::AuthenticationContext> last_context;
@@ -346,6 +350,14 @@ void get_maintenance(Harness& harness) {
             response.maintenance().operation().operation_id() == kOperation &&
             response.maintenance().has_observed_at(),
         "maintenance record projection");
+  auto foreign_host = request;
+  foreign_host.set_host_id("22222222-2222-4222-8222-222222222222");
+  v1::HostGetMaintenanceResponse foreign_response;
+  auto foreign_context = client_context();
+  check(failure_code(
+            harness.stub->GetMaintenance(foreign_context.get(), foreign_host, &foreign_response),
+            t::ErrorCode::NotFound),
+        "another host label is NOT_FOUND, never a cross-host projection");
   auto denied = request;
   denied.set_host_id(std::string(129, 'x'));
   v1::HostGetMaintenanceResponse denied_response;
@@ -443,6 +455,15 @@ void operation_calls(Harness& harness) {
                      t::ErrorCode::NotFound),
         "GetOperation hidden operation not found");
   harness.application.mode = FakeApplication::Mode::Success;
+  auto foreign_operation = request;
+  foreign_operation.mutable_operation()->mutable_resource()->set_id(
+      "22222222-2222-4222-8222-222222222222");
+  v1::HostGetOperationResponse foreign_operation_response;
+  auto foreign_operation_context = client_context();
+  check(failure_code(harness.stub->GetOperation(foreign_operation_context.get(), foreign_operation,
+                                                &foreign_operation_response),
+                     t::ErrorCode::NotFound),
+        "cross-host operation label is NOT_FOUND");
   auto wrong_owner = request;
   wrong_owner.mutable_operation()->set_owner_service("runtime");
   v1::HostGetOperationResponse wrong_response;

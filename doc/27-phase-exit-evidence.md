@@ -394,3 +394,50 @@ PluginBridge 刷新失败帧的 INTERNAL 与终止状态偏差仍待专项；格
   4. BOOT-05 仍未覆盖：sink 后 ACK 丢失的确定性注入、delivery cancel（冻结契约无 RPC）。
   5. 无两主机断网/主机迁移演练、真实 QQ 连接、付费模型调用、发布/推送；`register_plugin` 受管重连
      修复的 host 绑定矩阵单测缺失（仅有 STR09 端到端证据）。
+## 2026-11-04 第二轮收口（goal round 1）
+
+- **HOST-04 单链**：新增 `p12_host_control_chain_e2e`（真实 Control→真实 Identity 委托 fixture→
+  Control host REST→真实 HostManagementService→fake Runtime gate），连续 3/3；发现并修复真实安全缺陷：
+  HostManagementService 曾按 wire `host_id` 决定存储可见性，跨 host operation 可读——现 RPC 先校验
+  本 owner 存储 host id（不匹配 `NOT_FOUND`），application 增加存储 ref 防御校验；补
+  `p08_host_management_rpc` 跨 host NOT_FOUND 单测。
+- **HOST-04 契约翻转**：`/hosts/{id}/maintenance`（GET/POST）、`/hosts/{id}/resume`、
+  `/operations/host/{id}/cancel` 4 个 REST operation 从 `not_implemented` 翻转为 `implemented`
+  （`api/openapi.yaml` 顶部/内联标记、`proto/tests/contract_status.json`、`doc/01-contracts.md`
+  状态表同步；`check_implementation_status.py`/`check_semantic_rules.py` exit 0）。
+- **v1.2 Identity log feed 真实进程 e2e**：新增 `p04_identity_log_feed_e2e`（真实 Identity 进程 +
+  owned PG16.4 + 离线 bootstrap + 真实 mTLS Control 委托）：head 捕获、非空页/字段闭集、cursor 续读、
+  空页合法、epoch/未来 sequence typed CONFLICT、错 scope/owner/page_size、缺 scope UNIMPLEMENTED、
+  delegation 不能替代 peer 授权、撤销 credential 后拒绝。过程中发现并修复真实产品 bug（两层）：
+  Postgres UoW feed 门禁 `observed_owner()` 不含 Identity、`IdentitySecurityWork` 未转发 feed 方法，
+  导致真实 Identity 的 `ListLogChanges` 永远 CAPABILITY_NOT_SUPPORTED；现 `feed_owner()` 门禁 +
+  IdentitySecurityWork 三方法转发，真实页可达。
+- **WS-05/06 producer**：health/adapters/plugins scope 快照频道（真实 readiness/owner 查询、值变化
+  才发、DEGRADED/不泄详情、host 1011）+ logs/tasks/messages v1.2 feed 频道（owner cursor/typed
+  RESYNC）+ 真实 asyncapi/openapi Ajv 校验；`p12_target_websocket` 5/5，含
+  `p12_target_websocket_producers`；host/health/adapters/plugins 的 owner 进程级数据仍以 fixture 提供
+  （health 为真实 readiness）。
+- 仍缺：registry 翻转仅 HOST-04 完成；`target_spec` 的 4 个 v1.2 feed RPC 仍 not_implemented
+  （Identity 有真实进程证据，Runtime/Scheduler 只有 PG/handler 级）；全目录 immutable page 扫描、
+  snapshot 撤权单列、Identity 不可确认进程 e2e、多 host endpoint 部署验证；`p12_target_websocket_https`
+  有一次间歇 SEGFAULT（随后连续通过，全量复跑复核中）。
+
+### goal round 1 验收结果（2026-11-04）
+
+- **全量构建** exit 0（`build/logs/final-acceptance/round2-build.log`）。
+- **全量 CTest：207/207 通过，exit 0**（`round2b-ctest.log`，549.00s，`--parallel 3`；本 round
+  新增 `p04_identity_log_feed_e2e`、`p12_host_control_chain_e2e`、`p12_target_websocket_producers`
+  三项）。`p11_streaming_managed_model_e2e` 增加 `RUN_SERIAL`（时序敏感，禁止与其他重 e2e 并行；
+  断言未放宽），此后整轮通过。
+- **门禁**：contracts/enum/implementation-status/semantic/evidence/target-feature、target 往返 +
+  baseline 与 v1.1 descriptor 兼容、openapi/asyncapi/target-api/reference、boundaries/inner/links/
+  database、SDK pytest 全部 exit 0；格式 27 个违规全部为 HEAD 既有基线、本轮 0 新增
+  （`round2-format-baseline.txt`）；Panel lint/build/contracts exit 0，test 唯一失败仍是基线
+  `p12-live.test.tsx:131` stale 断言（未改）。
+- **已知不稳定项（本 round 未修，如实记录）**：WS 复杂度导致 `p12_target_websocket_https` 在反复
+  串行压测中 9/10 通过、1 次握手 EOF（Control 连接被提前关闭）；`p12_target_websocket_producers`
+  在并行全量窗口出现过 1 次 SEGFAULT、串行 10/10 通过。两者暂按“传输在连接 churn 下的握手
+  活性/客户端库稳定性风险”登记，需后续定位（不能据此宣称 WSS 完全稳定）。
+- **registry 翻转**：本 round 只翻转 HOST-04 的 4 个 REST operation（有单链+fixture 证据）；v1.2
+  四个 feed RPC 仍 `not_implemented`（Identity ListLogChanges 有真实进程证据，Runtime/Scheduler
+  只有 PG/handler 级，避免混合翻转）。

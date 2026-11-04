@@ -13,6 +13,8 @@ namespace kiarabot::core::target {
 class HostManagementApplicationPort {
 public:
   virtual ~HostManagementApplicationPort() = default;
+  // This Host's own owner identity. Wire host labels never decide stored-resource visibility.
+  virtual const ResourceId& host_id() const noexcept = 0;
   virtual Outcome<HostMaintenanceState> maintenance_state(const AuthenticationContext& context,
                                                           TimePoint deadline) = 0;
   virtual Outcome<HostMaintenanceOperation> begin(const HostMaintenanceRequest& request) = 0;
@@ -31,6 +33,9 @@ class HostMaintenanceApplicationAdapter final : public HostManagementApplication
 public:
   explicit HostMaintenanceApplicationAdapter(HostMaintenanceApplication& application)
       : application_(application) {}
+  const ResourceId& host_id() const noexcept override {
+    return application_.host_id();
+  }
   Outcome<HostMaintenanceState> maintenance_state(const AuthenticationContext& context,
                                                   TimePoint deadline) override {
     return application_.state(context, deadline);

@@ -38,6 +38,9 @@ t::Failure timeout() {
 t::Failure internal() {
   return {t::ErrorCode::Internal, t::Acceptance::Unknown, t::Recovery::QuerySameIdentity, {}, {}};
 }
+t::Failure not_found() {
+  return {t::ErrorCode::NotFound, t::Acceptance::NotAccepted, t::Recovery::ReadCurrent, {}, {}};
+}
 bool canonical_uuid(std::string_view value) {
   if (value.size() != 36) {
     return false;
@@ -244,6 +247,13 @@ public:
       if (!request->has_context() || !valid_context(context, false)) {
         return failure_status(invalid(), context.request_id(), context.trace_id());
       }
+      if (request->host_id().empty() || request->host_id().size() > 128) {
+        return failure_status(invalid(), context.request_id(), context.trace_id());
+      }
+      if (request->host_id() != dependencies_.application.host_id().value) {
+        // This owner serves only its stored host identity; a different wire label is NOT_FOUND.
+        return failure_status(not_found(), context.request_id(), context.trace_id());
+      }
       const auto scope = host_scope(request->host_id());
       if (!scope) {
         return failure_status(invalid(), context.request_id(), context.trace_id());
@@ -300,6 +310,10 @@ public:
       if (!operation_identity(request->operation(), &identifier, &host_id)) {
         return failure_status(invalid(), context.request_id(), context.trace_id());
       }
+      if (host_id != dependencies_.application.host_id().value) {
+        // Stored resource identity, not the caller wire label, decides visibility.
+        return failure_status(not_found(), context.request_id(), context.trace_id());
+      }
       const auto scope = host_scope(host_id);
       if (!scope) {
         return failure_status(invalid(), context.request_id(), context.trace_id());
@@ -341,6 +355,10 @@ public:
       std::string host_id;
       if (!operation_identity(request->operation(), &identifier, &host_id)) {
         return failure_status(invalid(), context.request_id(), context.trace_id());
+      }
+      if (host_id != dependencies_.application.host_id().value) {
+        // Stored resource identity, not the caller wire label, decides visibility.
+        return failure_status(not_found(), context.request_id(), context.trace_id());
       }
       const auto scope = host_scope(host_id);
       if (!scope) {
@@ -463,6 +481,12 @@ private:
     try {
       if (!has_context || !valid_context(context, true)) {
         return failure_status(invalid(), context.request_id(), context.trace_id());
+      }
+      if (host_id.empty() || host_id.size() > 128) {
+        return failure_status(invalid(), context.request_id(), context.trace_id());
+      }
+      if (host_id != dependencies_.application.host_id().value) {
+        return failure_status(not_found(), context.request_id(), context.trace_id());
       }
       const auto scope = host_scope(host_id);
       if (!scope || expected_version == 0) {

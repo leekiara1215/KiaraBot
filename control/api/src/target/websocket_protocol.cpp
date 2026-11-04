@@ -761,6 +761,177 @@ WebSocketResult<std::string> websocket_operation_event(const v1::OperationChange
   }
 }
 
+std::optional<std::string> utc_now_text() {
+  try {
+    const auto now = std::chrono::system_clock::now();
+    const auto seconds = std::chrono::system_clock::to_time_t(now);
+    std::tm utc{};
+#if defined(_WIN32)
+    if (gmtime_s(&utc, &seconds) != 0) {
+      return {};
+    }
+#else
+    if (gmtime_r(&seconds, &utc) == nullptr) {
+      return {};
+    }
+#endif
+    std::array<char, 32> buffer{};
+    if (std::strftime(buffer.data(), buffer.size(), "%Y-%m-%dT%H:%M:%SZ", &utc) == 0) {
+      return {};
+    }
+    return std::string{buffer.data()};
+  } catch (...) {
+    return {};
+  }
+}
+std::optional<Json> target_resource(const v1::ResourceRef& resource) {
+  if (resource.kind() == v1::RESOURCE_KIND_UNSPECIFIED ||
+      !printable(resource.id(), 1, kMaximumIdentifierBytes)) {
+    return {};
+  }
+  return Json{{"kind", v1::ResourceKind_Name(resource.kind())}, {"id", resource.id()}};
+}
+std::optional<Json> target_fence(const v1::Fence& fence) {
+  if (!printable(fence.instance_id(), 1, kMaximumIdentifierBytes) ||
+      !fence.has_execution_generation() || !fence.has_connection_generation() ||
+      fence.execution_generation() == 0 || fence.connection_generation() == 0 ||
+      !printable(fence.runtime_epoch(), 1, kMaximumIdentifierBytes)) {
+    return {};
+  }
+  return Json{{"instance_id", fence.instance_id()},
+              {"execution_generation", std::to_string(fence.execution_generation())},
+              {"connection_generation", std::to_string(fence.connection_generation())},
+              {"runtime_epoch", fence.runtime_epoch()}};
+}
+std::optional<std::string> lifecycle_name(v1::LifecycleState lifecycle) {
+  if (!v1::LifecycleState_IsValid(lifecycle) || lifecycle == v1::LIFECYCLE_UNSPECIFIED) {
+    return {};
+  }
+  return std::string{v1::LifecycleState_Name(lifecycle)};
+}
+
+// v1.2 scoped feed event builders. The owner wire projection is validated field-by-field against
+// the frozen AsyncAPI schemas; any malformed producer output becomes INTERNAL instead of a
+// partially populated envelope.
+std::optional<Json> log_payload(const v1::LogMetadata& log) {
+  if (log.owner_service() != "identity" && log.owner_service() != "runtime") {
+    return {};
+  }
+  if (!printable(log.entry_id(), 1, kMaximumIdentifierBytes) ||
+      (log.severity() != "DEBUG" && log.severity() != "INFO" && log.severity() != "WARN" &&
+       log.severity() != "ERROR") ||
+      !printable(log.component(), 1, kMaximumIdentifierBytes) ||
+      !printable(log.method(), 1, kMaximumIdentifierBytes) ||
+      (log.event() != "request.recorded" && log.event() != "request.rejected") ||
+      !log.has_resource() || log.resource().kind() == v1::RESOURCE_KIND_UNSPECIFIED ||
+      !printable(log.resource().id(), 1, kMaximumIdentifierBytes) ||
+      !timestamp(log.occurred_at())) {
+    return {};
+  }
+  const auto occurred = timestamp_text(log.occurred_at());
+  if (!occurred) {
+    return {};
+  }
+  Json payload{{"id", log.entry_id()},      {"occurred_at", *occurred},
+               {"level", log.severity()},   {"component", log.component()},
+               {"operation", log.method()}, {"outcome", log.event()}};
+  if (!log.request_id().empty()) {
+    if (!printable(log.request_id(), 1, kMaximumIdentifierBytes)) {
+      return {};
+    }
+    payload["request_id"] = log.request_id();
+  }
+  if (!log.trace_id().empty()) {
+    if (!printable(log.trace_id(), 1, kMaximumIdentifierBytes)) {
+      return {};
+    }
+    payload["trace_id"] = log.trace_id();
+  }
+  return payload;
+}
+std::optional<Json> task_payload(const v1::TaskMetadata& task) {
+  if (task.owner_service() != "scheduler" ||
+      !printable(task.task_id(), 1, kMaximumIdentifierBytes) ||
+      !printable(task.owner_instance_id(), 1, kMaximumIdentifierBytes) ||
+      !v1::ScheduledTaskState_IsValid(task.state()) ||
+      task.state() == v1::SCHEDULED_TASK_STATE_UNSPECIFIED || task.version() == 0 ||
+      !timestamp(task.updated_at())) {
+    return {};
+  }
+  const auto updated = timestamp_text(task.updated_at());
+  if (!updated) {
+    return {};
+  }
+  Json target{{"owner_instance_id", task.owner_instance_id()},
+              {"state", v1::ScheduledTaskState_Name(task.state())},
+              {"updated_at", *updated},
+              {"cancel_requested", task.cancel_requested()}};
+  if (task.has_occurrence_id()) {
+    if (!printable(task.occurrence_id(), 1, kMaximumIdentifierBytes)) {
+      return {};
+    }
+    target["occurrence_id"] = task.occurrence_id();
+  }
+  if (task.has_reason_code()) {
+    const auto code = task.reason_code();
+    switch (code) {
+    case v1::INVALID_ARGUMENT:
+    case v1::UNAUTHENTICATED:
+    case v1::PERMISSION_DENIED:
+    case v1::NOT_FOUND:
+    case v1::CONFLICT:
+    case v1::CAPABILITY_NOT_SUPPORTED:
+    case v1::RATE_LIMITED:
+    case v1::TIMEOUT:
+    case v1::UPSTREAM_UNAVAILABLE:
+    case v1::PLUGIN_UNAVAILABLE:
+    case v1::INTERNAL:
+      target["reason_code"] = v1::ErrorCode_Name(code);
+      break;
+    default:
+      return {};
+    }
+  }
+  return Json{{"id", task.task_id()}, {"version", task.version()}, {"target", std::move(target)}};
+}
+std::optional<Json> message_payload(const v1::MessageMetadata& message) {
+  if (message.owner_service() != "runtime" ||
+      !printable(message.message_id(), 1, kMaximumIdentifierBytes) ||
+      !printable(message.conversation_id(), 1, kMaximumIdentifierBytes) ||
+      !printable(message.account_id(), 1, kMaximumIdentifierBytes) ||
+      !timestamp(message.received_at())) {
+    return {};
+  }
+  const auto received = timestamp_text(message.received_at());
+  if (!received) {
+    return {};
+  }
+  return Json{{"message_id", message.message_id()},
+              {"conversation_id", message.conversation_id()},
+              {"direction", "received"},
+              {"received_at", *received}};
+}
+WebSocketResult<std::string> feed_envelope(std::string_view event_type, std::string_view occurred,
+                                           std::uint64_t sequence, Json payload) {
+  if (!printable(occurred, 20, 40) || sequence > kMaximumSafeSequence) {
+    return WebSocketFailure{v1::INTERNAL, false};
+  }
+  try {
+    const auto result = Json{{"schema_version", "kiarabot.stream.v1"},
+                             {"event_type", std::string{event_type}},
+                             {"sequence", sequence},
+                             {"occurred_at", std::string{occurred}},
+                             {"payload", std::move(payload)}}
+                            .dump();
+    if (result.size() > kMaximumEventBytes) {
+      return WebSocketFailure{v1::INTERNAL, false};
+    }
+    return result;
+  } catch (...) {
+    return WebSocketFailure{v1::INTERNAL, false};
+  }
+}
+
 WebSocketResult<std::string>
 websocket_session_ready(std::string_view session_id, std::uint64_t last_sequence,
                         const std::optional<v1::StreamCursor>& owner_cursor) {
@@ -851,6 +1022,162 @@ bool websocket_valid_event(std::string_view json) {
   }
 }
 
+WebSocketResult<std::string> websocket_feed_event(const v1::LogChange& change,
+                                                  std::uint64_t sequence) {
+  if (!change.has_log()) {
+    return WebSocketFailure{v1::INTERNAL, false};
+  }
+  const auto payload = log_payload(change.log());
+  if (!payload) {
+    return WebSocketFailure{v1::INTERNAL, false};
+  }
+  const auto occurred = timestamp_text(change.log().occurred_at());
+  if (!occurred) {
+    return WebSocketFailure{v1::INTERNAL, false};
+  }
+  return feed_envelope("log.updated", *occurred, sequence, *payload);
+}
+WebSocketResult<std::string> websocket_feed_event(const v1::TaskChange& change,
+                                                  std::uint64_t sequence) {
+  if (!change.has_task()) {
+    return WebSocketFailure{v1::INTERNAL, false};
+  }
+  const auto payload = task_payload(change.task());
+  if (!payload) {
+    return WebSocketFailure{v1::INTERNAL, false};
+  }
+  const auto occurred = timestamp_text(change.task().updated_at());
+  if (!occurred) {
+    return WebSocketFailure{v1::INTERNAL, false};
+  }
+  return feed_envelope("task.updated", *occurred, sequence, *payload);
+}
+WebSocketResult<std::string> websocket_feed_event(const v1::MessageMetadataChange& change,
+                                                  std::uint64_t sequence) {
+  if (!change.has_message()) {
+    return WebSocketFailure{v1::INTERNAL, false};
+  }
+  const auto payload = message_payload(change.message());
+  if (!payload) {
+    return WebSocketFailure{v1::INTERNAL, false};
+  }
+  const auto occurred = timestamp_text(change.message().received_at());
+  if (!occurred) {
+    return WebSocketFailure{v1::INTERNAL, false};
+  }
+  return feed_envelope("message.updated", *occurred, sequence, *payload);
+}
+
+WebSocketResult<std::string> websocket_health_event(const WebSocketHealthObservation& observation,
+                                                    std::uint64_t sequence) {
+  const auto occurred = utc_now_text();
+  if (!occurred) {
+    return WebSocketFailure{v1::INTERNAL, false};
+  }
+  Json payload;
+  if (!observation.identity_confirmed) {
+    // Identity cannot be confirmed: withhold every other component detail instead of fabricating
+    // healthy/degraded component rows.
+    payload = Json{{"state", "UNHEALTHY"},
+                   {"components", Json::array({{{"component", "identity"},
+                                                {"state", "UNHEALTHY"},
+                                                {"reason", "identity_unavailable"}}})}};
+  } else {
+    Json components = Json::array();
+    const auto add = [&](const char* component, bool ready) {
+      components.push_back(
+          Json{{"component", component}, {"state", ready ? "HEALTHY" : "DEGRADED"}});
+    };
+    add("identity", true);
+    add("runtime", observation.runtime_ready);
+    add("scheduler", observation.scheduler_ready);
+    add("model", observation.model_ready);
+    const bool healthy =
+        observation.runtime_ready && observation.scheduler_ready && observation.model_ready;
+    payload =
+        Json{{"state", healthy ? "HEALTHY" : "DEGRADED"}, {"components", std::move(components)}};
+  }
+  return feed_envelope("health.updated", *occurred, sequence, std::move(payload));
+}
+std::optional<std::string> websocket_adapter_signature(const v1::AdapterRecord& record) {
+  const auto resource = target_resource(record.resource());
+  const auto lifecycle = lifecycle_name(record.lifecycle());
+  if (!resource || !lifecycle || record.version() == 0 ||
+      record.resource().kind() != v1::RESOURCE_ADAPTER) {
+    return {};
+  }
+  return std::to_string(record.version()) + "|" + (record.online() ? "online" : "offline") + "|" +
+         *lifecycle + "|" + record.resource().id();
+}
+WebSocketResult<std::string> websocket_adapter_event(const v1::AdapterRecord& record,
+                                                     std::uint64_t sequence) {
+  const auto occurred = timestamp_text(record.observed_at());
+  const auto resource = target_resource(record.resource());
+  const auto lifecycle = lifecycle_name(record.lifecycle());
+  if (!occurred || !resource || !lifecycle || record.version() == 0 ||
+      record.resource().kind() != v1::RESOURCE_ADAPTER) {
+    return WebSocketFailure{v1::INTERNAL, false};
+  }
+  Json target{{"resource", *resource},
+              {"version", std::to_string(record.version())},
+              {"online", record.online()},
+              {"observed_at", *occurred},
+              {"lifecycle", *lifecycle}};
+  if (record.online()) {
+    if (!record.has_current_fence()) {
+      return WebSocketFailure{v1::INTERNAL, false};
+    }
+    const auto fence = target_fence(record.current_fence());
+    if (!fence) {
+      return WebSocketFailure{v1::INTERNAL, false};
+    }
+    target["current_fence"] = *fence;
+  }
+  const auto payload = Json{{"id", record.resource().id()},
+                            {"version", std::to_string(record.version())},
+                            {"target", std::move(target)}};
+  return feed_envelope("adapter.updated", *occurred, sequence, payload);
+}
+std::optional<std::string> websocket_plugin_signature(const v1::InstanceRecord& record) {
+  const auto resource = target_resource(record.state().resource());
+  const auto lifecycle = lifecycle_name(record.state().lifecycle());
+  if (!resource || !lifecycle || record.instance_id().empty() ||
+      !identifier(record.instance_id()) || record.state().version() == 0 ||
+      record.state().resource().kind() != v1::RESOURCE_INSTANCE) {
+    return {};
+  }
+  return record.instance_id() + "|" + std::to_string(record.state().version()) + "|" +
+         (record.externally_managed() ? "external" : "managed") + "|" + record.host_id() + "|" +
+         *lifecycle;
+}
+WebSocketResult<std::string> websocket_plugin_event(const v1::InstanceRecord& record,
+                                                    std::uint64_t sequence) {
+  const auto occurred = timestamp_text(record.state().observed_at());
+  const auto resource = target_resource(record.state().resource());
+  const auto lifecycle = lifecycle_name(record.state().lifecycle());
+  if (!occurred || !resource || !lifecycle || record.instance_id().empty() ||
+      !identifier(record.instance_id()) || !identifier(record.installation_id()) ||
+      record.state().version() == 0 || record.state().resource().kind() != v1::RESOURCE_INSTANCE) {
+    return WebSocketFailure{v1::INTERNAL, false};
+  }
+  Json state{{"resource", *resource},
+             {"version", std::to_string(record.state().version())},
+             {"lifecycle", *lifecycle}};
+  Json target{{"instance_id", record.instance_id()},
+              {"installation_id", record.installation_id()},
+              {"externally_managed", record.externally_managed()},
+              {"state", std::move(state)}};
+  if (!record.externally_managed()) {
+    if (!identifier(record.host_id())) {
+      return WebSocketFailure{v1::INTERNAL, false};
+    }
+    target["host_id"] = record.host_id();
+  }
+  const auto payload = Json{{"id", record.instance_id()},
+                            {"version", std::to_string(record.state().version())},
+                            {"target", std::move(target)}};
+  return feed_envelope("plugin.updated", *occurred, sequence, payload);
+}
 unsigned short websocket_close_code(WebSocketFailure failure) {
   switch (failure.code) {
   case v1::INVALID_ARGUMENT:

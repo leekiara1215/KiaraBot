@@ -29,6 +29,26 @@ bool websocket_same_cursor(const v1::StreamCursor& left, const v1::StreamCursor&
 WebSocketResult<std::string> websocket_cursor_json(const v1::StreamCursor& cursor);
 WebSocketResult<std::string> websocket_operation_event(const v1::OperationChange& change,
                                                        std::uint64_t sequence);
+// v1.2 scoped feed events: StreamEnvelope + the frozen AsyncAPI payload shape. The owners' safe
+// metadata is projected one-to-one; malformed/missing fields are an internal producer failure.
+WebSocketResult<std::string> websocket_feed_event(const v1::LogChange& change,
+                                                  std::uint64_t sequence);
+WebSocketResult<std::string> websocket_feed_event(const v1::TaskChange& change,
+                                                  std::uint64_t sequence);
+WebSocketResult<std::string> websocket_feed_event(const v1::MessageMetadataChange& change,
+                                                  std::uint64_t sequence);
+// Snapshot channels. health events never fabricate component health: when Identity is not
+// confirmed the payload withholds component details and reports UNHEALTHY. Adapter/plugin events
+// project only the frozen target record fields.
+WebSocketResult<std::string> websocket_health_event(const WebSocketHealthObservation& observation,
+                                                    std::uint64_t sequence);
+WebSocketResult<std::string> websocket_adapter_event(const v1::AdapterRecord& record,
+                                                     std::uint64_t sequence);
+WebSocketResult<std::string> websocket_plugin_event(const v1::InstanceRecord& record,
+                                                    std::uint64_t sequence);
+// Stable value signature for change detection: the frozen target fields minus observed_at.
+std::optional<std::string> websocket_adapter_signature(const v1::AdapterRecord& record);
+std::optional<std::string> websocket_plugin_signature(const v1::InstanceRecord& record);
 // Server frames. owner_cursor is required for the operations channel (OperationSessionReady);
 // channels without an owner cursor emit the plain SessionReady shape.
 WebSocketResult<std::string>

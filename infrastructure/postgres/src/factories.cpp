@@ -799,6 +799,22 @@ public:
   target::Outcome<target::LogPage> query_logs(const target::LogQuery& query) override {
     return work().query_logs(query);
   }
+  // v1.2 Identity log feed journal shares the canonical Identity transaction. Without these
+  // overrides the fail-closed UnitOfWork defaults return CAPABILITY_NOT_SUPPORTED, so the frozen
+  // Identity.ListLogChanges could never serve a real page (task-18 real-process finding).
+  target::Outcome<target::ObservationFeedPage>
+  query_observation_changes(const target::ObservationFeedQuery& query) override {
+    return work().query_observation_changes(query);
+  }
+  target::Outcome<std::size_t>
+  prune_observation_changes(target::ObservationFamily family, std::size_t limit) override {
+    return work().prune_observation_changes(family, limit);
+  }
+  target::Status append_observation_changes(
+      target::ObservationFamily family,
+      const std::vector<target::ObservationFeedAppend>& changes) override {
+    return work().append_observation_changes(family, changes);
+  }
 
 private:
   target::UnitOfWork& work() {

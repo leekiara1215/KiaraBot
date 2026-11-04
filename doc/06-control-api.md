@@ -951,3 +951,52 @@ expected_version不匹配CONFLICT。新版本必须恰为expected_version+1；�
 `operation.updated` 只作为触发 owner `GetOperation` 复核的提示，HTTP 200/202 不代表完成，
 `BLOCKED`/`UNKNOWN` 保持未知且不自动重做管理写。传输与 producer 侧语义见前述 WS 契约节，
 真实全频道验收在 WS-10 集成证据登记。
+
+## 2026-11-04 HOST-04 Host 维护 REST 路由实现翻转（已实现）
+
+`/hosts/{hostId}/maintenance`（GET `getHostMaintenance`、POST `beginHostMaintenance`）、
+`/hosts/{hostId}/resume`（`resumeHostAdmission`）与 `/operations/host/{operationId}/cancel`
+（`cancelHostOperation`）从 `not_implemented` 翻转为 `implemented`：
+
+- Control owner gateway 以 admin 会话 + Identity 短委托（audience=host、`host.read`/`host.execute`）
+  调已登记 host endpoint 的 `HostManagementService`（真实 mTLS）；host endpoint 由固定离线配置决定，
+  客户端不能自传 endpoint/路径；缺端点 `503`、未知 owner `400`、跨 host 不可见 `404`、坏 scope
+  `400`，不造 progress，`202` 仅表示 durably accepted，`200` 返回 owner 当前快照。
+- 维护序列由 Host 拥有：持久受理→本地关接纳→Runtime gate 确认（`SetHostAdmissionGate` 经
+  Identity `CheckHostGateAuthorization` 在线核定）→冻结执行集合→逐执行 marker/generation 确认→
+  全部已知停止才 `SUCCEEDED`；UNKNOWN/BLOCKED 不伪成功，Resume 是显式新操作。
+- 存储资源身份决定可见性：HostManagementService 以本 owner 存储 host id 校验请求 host，跨 host
+  操作返回 `NOT_FOUND`（2026-11-04 修复的真实安全缺陷），caller 不能靠改 wire `host_id` 扩大可见性。
+- 证据：`p12_host_control_rest`（真实 Control + fake HostManagement 的 REST/委托/错误映射）、
+  `p12_host_control_chain_e2e`（真实 Control→真实 Identity 委托→真实 HostManagement 单链）、
+  `p12_control_owner_gateway`、`p08_host_management_e2e`、`p08_host_management_rpc`（含跨 host
+  NOT_FOUND 单测）。仍缺：真实 PG Identity enrollment/`CheckHostGateAuthorization` 在单链内的
+  组合、真实 Runtime 持久 gate 在单链内的组合、固定离线多 host endpoint 注册表的部署验证。
+
+## 2026-11-04 target WS v1.2 producer 与 scope 快照频道（实现）
+
+在既有 WS-04 传输之上接入真实 producer（不改 AsyncAPI/契约）：
+
+- **scope 快照频道**（health/adapters/plugins）：`SESSION_READY` 为 plain 首帧（不伪造 owner
+  cursor），先发首轮快照，之后仅在值变化时发事件；客户端 `resume` 时 retained replay 后再按快照
+  签名去重。`health.updated` 用真实依赖观测（Identity readiness + Identity/Runtime/Scheduler/
+  Model gRPC channel `READY`）：Identity 不可确认时发 `UNHEALTHY` 且只含 identity 组件、不带其他
+  组件详情；全确认 `HEALTHY`；单点故障 `DEGRADED`，不得伪健康。`adapter.updated`/`plugin.updated`
+  对请求 scope 内 selected exact resource 逐个真实调用 Runtime `GetAdapter`/`GetInstance`（每资源
+  一次性 delegation），只投影冻结 `TargetAdapterPayload`/`TargetPluginPayload`（managed instance
+  必须有 host_id，online 必须有完整 fence）；值签名不含 `observed_at`，只有语义值变化才发事件；
+  transient 失败保持 unknown/stale 且不造值，auth/permission 失败断流。
+- **v1.2 变化 feed 频道**（logs/tasks/messages）：source 直连 owner 查询——Identity/Runtime
+  `ListLogChanges`、Scheduler `ListTaskChanges`、Runtime `ListMessageMetadataChanges`；cursor/epoch
+  复用冻结 owner cursor，typed CONFLICT 映射 `RESYNC_REQUIRED`+1000，空成功页只在 owner 确认 head
+  时合法，跨 family/错 dataset cursor 拒绝。`log.updated`/`task.updated`/`message.updated`
+  envelope 逐字段对齐冻结 AsyncAPI，并用真实 `api/asyncapi.yaml`+`api/openapi.yaml` 的 Ajv schema
+  校验（`target_websocket_schema.cjs`）。
+- **host 频道**：认证通过后仍以 1011 `CAPABILITY_NOT_SUPPORTED` 明确失败，不发空流；health/
+  adapters/plugins 的 owner 数据在当前目标目录以 exact-scope 语义暴露，全目录 immutable page 扫描
+  仍等待 `ListAdapters`/`ListInstances` owner RPC 实现。
+- 证据：`p12_target_websocket_producers`（真实 Control + 真 TLS Identity + fixture owner 的
+  health/HEALTHY/DEGRADED、constant 不重复、version 递增才发、transient 恢复、host 1011、未知路由）、
+  单测 `target_websocket_protocol_test`/schema 校验，`p12_target_websocket` 5/5。未覆盖：Identity
+  不可确认的进程级 e2e（仅单测），snapshot 撤权单列用例，真实 owner 进程+PG 的 feed 页（Identity
+  侧见 `p04_identity_log_feed_e2e`，Runtime/Scheduler 仍待补）。

@@ -159,7 +159,9 @@ HostMaintenanceApplication::operation(const AuthenticationContext& context, Time
     return *failure;
   }
   const auto& value = std::get<std::optional<HostMaintenanceOperation>>(found);
-  if (!value) {
+  if (!value || value->operation.ref.resource != ResourceRef{ResourceKind::Host, host_}) {
+    // Stored resource identity decides visibility; a caller relabel of the wire host is not a
+    // cross-host disclosure and never becomes success.
     return failed(ErrorCode::NotFound);
   }
   return *value;

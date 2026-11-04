@@ -2,6 +2,7 @@
 // Both services listen on one mutually-authenticated TLS endpoint; responses are typed, canonical
 // and only cover the paths Control forwards. Marker ids containing "conflict"/"unavailable" force
 // stable owner failures so the Control error mapping can be asserted without mutating fixtures.
+#include <atomic>
 #include <chrono>
 #include <fstream>
 #include <iostream>
@@ -146,6 +147,12 @@ void stream_page(const wire::OperationChangesRequest& request,
 }
 class FakeRuntime final : public wire::RuntimeService::Service {
 public:
+  std::atomic<int> logs_feed_state_{0};
+  std::atomic<int> messages_feed_state_{0};
+  std::atomic<int> changing_adapter_calls_{0};
+  std::atomic<int> error_adapter_calls_{0};
+  std::atomic<int> changing_instance_calls_{0};
+  std::atomic<int> error_instance_calls_{0};
   grpc::Status ListOperationChanges(grpc::ServerContext*,
                                     const wire::OperationChangesRequest* input,
                                     wire::OperationChangesResponse* output) override {
@@ -164,6 +171,157 @@ public:
       return failure(wire::INVALID_ARGUMENT, grpc::StatusCode::INVALID_ARGUMENT, input->context());
     }
     stream_page(*input, output);
+    return grpc::Status::OK;
+  }
+  // v1.2 Runtime feeds: deterministic non-empty first page, cursor continuation, typed RESYNC for
+  // a wrong-dataset cursor. No log payload/message body is ever fabricated.
+  grpc::Status ListLogChanges(grpc::ServerContext*, const wire::ObservationChangesRequest* input,
+                              wire::LogChangesResponse* output) override {
+    if (!input->has_context() || !input->has_scope() || input->scope().resources_size() != 1 ||
+        input->scope().resources(0).kind() != wire::RESOURCE_CATALOG ||
+        input->scope().resources(0).id() != "control" || input->page_size() > 100) {
+      return failure(wire::INVALID_ARGUMENT, grpc::StatusCode::INVALID_ARGUMENT, input->context());
+    }
+    const auto dataset = [&](wire::StreamCursor* cursor, std::uint64_t sequence) {
+      cursor->set_source_service("runtime");
+      cursor->set_epoch("2d000000-0000-4000-8000-000000000001");
+      *cursor->mutable_scope() = input->scope();
+      cursor->set_sequence(sequence);
+    };
+    if (input->has_cursor() && (input->cursor().source_service() != "runtime" ||
+                                input->cursor().epoch() != "2d000000-0000-4000-8000-000000000001" ||
+                                !same_scope(input->cursor().scope(), input->scope()))) {
+      return stream_resync(input->context());
+    }
+    std::uint64_t next = 1;
+    if (!input->has_cursor()) {
+      logs_feed_state_.store(1);
+      next = 0;
+    } else if (input->cursor().sequence() == 0 && logs_feed_state_.load() == 1) {
+      auto* change = output->add_changes();
+      dataset(change->mutable_cursor(), 1);
+      auto* log = change->mutable_log();
+      log->set_owner_service("runtime");
+      log->set_entry_id("runtime-log-1");
+      log->set_severity("INFO");
+      log->set_component("runtime");
+      log->set_method("kiarabot.v1.RuntimeService/ListAccounts");
+      log->set_event("request.recorded");
+      log->mutable_resource()->set_kind(wire::RESOURCE_CATALOG);
+      log->mutable_resource()->set_id("control");
+      log->set_request_id("00000000-0000-4000-8000-000000000101");
+      log->set_trace_id("10000000-0000-4000-8000-000000000101");
+      log->mutable_occurred_at()->set_seconds(kNow);
+      logs_feed_state_.store(2);
+      next = 1;
+    } else {
+      next = input->cursor().sequence();
+    }
+    dataset(output->mutable_next_cursor(), next);
+    output->set_has_more(false);
+    stamp_now(output->mutable_checked_at());
+    return grpc::Status::OK;
+  }
+
+  grpc::Status ListMessageMetadataChanges(grpc::ServerContext*,
+                                          const wire::ObservationChangesRequest* input,
+                                          wire::MessageMetadataChangesResponse* output) override {
+    if (!input->has_context() || !input->has_scope() || input->scope().resources_size() != 1 ||
+        input->scope().resources(0).kind() != wire::RESOURCE_ACCOUNT || input->page_size() > 100) {
+      return failure(wire::INVALID_ARGUMENT, grpc::StatusCode::INVALID_ARGUMENT, input->context());
+    }
+    const auto dataset = [&](wire::StreamCursor* cursor, std::uint64_t sequence) {
+      cursor->set_source_service("runtime");
+      cursor->set_epoch("2d000000-0000-4000-8000-000000000002");
+      *cursor->mutable_scope() = input->scope();
+      cursor->set_sequence(sequence);
+    };
+    if (input->has_cursor() && (input->cursor().source_service() != "runtime" ||
+                                input->cursor().epoch() != "2d000000-0000-4000-8000-000000000002" ||
+                                !same_scope(input->cursor().scope(), input->scope()))) {
+      return stream_resync(input->context());
+    }
+    std::uint64_t next = 1;
+    if (!input->has_cursor()) {
+      messages_feed_state_.store(1);
+      next = 0;
+    } else if (input->cursor().sequence() == 0 && messages_feed_state_.load() == 1) {
+      auto* change = output->add_changes();
+      dataset(change->mutable_cursor(), 1);
+      auto* message = change->mutable_message();
+      message->set_owner_service("runtime");
+      message->set_message_id("33333333-3333-4333-8333-000000000001");
+      message->set_conversation_id("44444444-4444-4444-8444-000000000001");
+      message->set_account_id(input->scope().resources(0).id());
+      message->mutable_received_at()->set_seconds(kNow);
+      messages_feed_state_.store(2);
+      next = 1;
+    } else {
+      next = input->cursor().sequence();
+    }
+    dataset(output->mutable_next_cursor(), next);
+    output->set_has_more(false);
+    stamp_now(output->mutable_checked_at());
+    return grpc::Status::OK;
+  }
+
+  // Snapshot channels: exact-resource owner queries with deterministic values. Constant ids keep
+  // the same value (no repeat event); changing ids advance version; error ids fail once before a
+  // real value so the producer must stay unknown/stale rather than fabricate.
+  grpc::Status GetAdapter(grpc::ServerContext*, const wire::RuntimeGetAdapterRequest* input,
+                          wire::RuntimeGetAdapterResponse* output) override {
+    if (!input->has_resource() || input->resource().kind() != wire::RESOURCE_ADAPTER ||
+        input->resource().id().empty()) {
+      return failure(wire::INVALID_ARGUMENT, grpc::StatusCode::INVALID_ARGUMENT, input->context());
+    }
+    const std::string id = input->resource().id();
+    if (id.ends_with("0e01") && error_adapter_calls_.fetch_add(1) == 0) {
+      return failure(wire::UPSTREAM_UNAVAILABLE, grpc::StatusCode::UNAVAILABLE, input->context());
+    }
+    std::uint64_t version = 1;
+    if (id.ends_with("0a02")) {
+      version = static_cast<std::uint64_t>(1 + changing_adapter_calls_.fetch_add(1));
+    }
+    auto* record = output->mutable_adapter();
+    record->mutable_resource()->set_kind(wire::RESOURCE_ADAPTER);
+    record->mutable_resource()->set_id(id);
+    record->set_version(version);
+    record->set_online(true);
+    record->set_lifecycle(wire::LIFECYCLE_ACTIVE);
+    record->mutable_observed_at()->set_seconds(kNow + static_cast<std::int64_t>(version));
+    record->mutable_last_registered_at()->set_seconds(kNow);
+    auto* fence = record->mutable_current_fence();
+    fence->set_instance_id("66666666-6666-4666-8666-000000000001");
+    fence->set_execution_generation(1);
+    fence->set_connection_generation(1);
+    fence->set_runtime_epoch("fixture-runtime-epoch-1");
+    return grpc::Status::OK;
+  }
+  grpc::Status GetInstance(grpc::ServerContext*, const wire::RuntimeGetInstanceRequest* input,
+                           wire::RuntimeGetInstanceResponse* output) override {
+    if (!input->has_resource() || input->resource().kind() != wire::RESOURCE_INSTANCE ||
+        input->resource().id().empty()) {
+      return failure(wire::INVALID_ARGUMENT, grpc::StatusCode::INVALID_ARGUMENT, input->context());
+    }
+    const std::string id = input->resource().id();
+    if (id.ends_with("0f01") && error_instance_calls_.fetch_add(1) == 0) {
+      return failure(wire::UPSTREAM_UNAVAILABLE, grpc::StatusCode::UNAVAILABLE, input->context());
+    }
+    std::uint64_t version = 1;
+    if (id.ends_with("0b02")) {
+      version = static_cast<std::uint64_t>(1 + changing_instance_calls_.fetch_add(1));
+    }
+    auto* record = output->mutable_instance();
+    record->set_instance_id(id);
+    record->set_installation_id("99999999-9999-4999-8999-000000000001");
+    record->set_host_id("88888888-8888-4888-8888-000000000001");
+    record->set_externally_managed(false);
+    auto* state = record->mutable_state();
+    state->mutable_resource()->set_kind(wire::RESOURCE_INSTANCE);
+    state->mutable_resource()->set_id(id);
+    state->set_version(version);
+    state->set_lifecycle(wire::LIFECYCLE_ACTIVE);
+    state->mutable_observed_at()->set_seconds(kNow + static_cast<std::int64_t>(version));
     return grpc::Status::OK;
   }
   grpc::Status CreateAccount(grpc::ServerContext*, const wire::RuntimeCreateAccountRequest* input,
@@ -465,6 +623,61 @@ void task(wire::TaskRecord* output, const std::string& id) {
 }
 class FakeScheduler final : public wire::SchedulerService::Service {
 public:
+  std::atomic<int> tasks_feed_state_{0};
+  // v1.2 Scheduler task metadata feed: non-empty first page + cursor continuation.
+  grpc::Status ListTaskChanges(grpc::ServerContext*, const wire::ObservationChangesRequest* input,
+                               wire::TaskChangesResponse* output) override {
+    if (!input->has_context() || !input->has_scope() || input->scope().resources_size() != 1 ||
+        (input->scope().resources(0).kind() != wire::RESOURCE_TASK &&
+         input->scope().resources(0).kind() != wire::RESOURCE_INSTANCE) ||
+        input->page_size() > 100) {
+      return failure(wire::INVALID_ARGUMENT, grpc::StatusCode::INVALID_ARGUMENT, input->context());
+    }
+    const bool gap = input->scope().resources(0).kind() == wire::RESOURCE_TASK &&
+                     input->scope().resources(0).id() == "00000000-0000-4000-8000-0000000000ff";
+    const auto dataset = [&](wire::StreamCursor* cursor, std::uint64_t sequence) {
+      cursor->set_source_service("scheduler");
+      cursor->set_epoch("3d000000-0000-4000-8000-000000000001");
+      *cursor->mutable_scope() = input->scope();
+      cursor->set_sequence(sequence);
+    };
+    if (input->has_cursor()) {
+      if (input->cursor().source_service() != "scheduler" ||
+          input->cursor().epoch() != "3d000000-0000-4000-8000-000000000001" ||
+          !same_scope(input->cursor().scope(), input->scope())) {
+        return stream_resync(input->context());
+      }
+      if (gap) {
+        // Simulate an evicted journal boundary: the captured head is no longer resumable.
+        return stream_resync(input->context());
+      }
+    }
+    std::uint64_t next = gap ? 5 : 1;
+    if (!input->has_cursor()) {
+      tasks_feed_state_.store(gap ? 0 : 1);
+      next = gap ? 5 : 0;
+    } else if (!gap && input->cursor().sequence() == 0 && tasks_feed_state_.load() == 1) {
+      auto* change = output->add_changes();
+      dataset(change->mutable_cursor(), 1);
+      auto* task = change->mutable_task();
+      task->set_owner_service("scheduler");
+      task->set_task_id("55555555-5555-4555-8555-000000000001");
+      task->set_owner_instance_id("66666666-6666-4666-8666-000000000001");
+      task->set_state(wire::SCHEDULED_TASK_PENDING);
+      task->set_version(1);
+      task->set_cancel_requested(false);
+      task->mutable_updated_at()->set_seconds(kNow);
+      tasks_feed_state_.store(2);
+      next = 1;
+    } else {
+      next = input->cursor().sequence();
+    }
+    dataset(output->mutable_next_cursor(), next);
+    output->set_has_more(false);
+    stamp_now(output->mutable_checked_at());
+    return grpc::Status::OK;
+  }
+
   grpc::Status ListTasks(grpc::ServerContext*, const wire::SchedulerListTasksRequest* input,
                          wire::SchedulerListTasksResponse* output) override {
     bool handled = false;

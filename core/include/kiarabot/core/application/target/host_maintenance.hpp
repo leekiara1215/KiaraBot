@@ -15,6 +15,9 @@ public:
                              HostMaintenanceAuthorizationPort& authorization, HostClock& clock)
       : host_(std::move(host)), store_(store), executions_(executions), gate_(gate),
         authorization_(authorization), clock_(clock) {}
+  const ResourceId& host_id() const noexcept {
+    return host_;
+  }
   Outcome<HostMaintenanceOperation> begin(const HostMaintenanceRequest& request);
   Outcome<HostMaintenanceOperation> resume(const HostMaintenanceRequest& request);
   Outcome<HostMaintenanceOperation> cancel(const HostMaintenanceCancelRequest& request);

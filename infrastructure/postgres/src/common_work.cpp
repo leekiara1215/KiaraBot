@@ -668,10 +668,12 @@ public:
     }
     return prune_operation_observations(*this, limit);
   }
-  // v1.2 owner observation feed journal: same-UoW append, bounded read and low-water prune.
+  // v1.2 owner observation feed journal: same-UoW append, bounded read and low-water prune. Feed
+  // ownership is broader than the operation-observation owner set: Identity owns its redacted log
+  // family too, so the gate is feed_owner() (Identity/Runtime/Scheduler), never observed_owner().
   target::Outcome<target::ObservationFeedPage>
   query_observation_changes(const target::ObservationFeedQuery& query) override {
-    if (!observed_owner()) {
+    if (!feed_owner()) {
       return target::unsupported_lifecycle_read();
     }
     return ::kiarabot::infrastructure::postgres::detail::query_observation_changes(*this, owner_,
@@ -679,7 +681,7 @@ public:
   }
   target::Outcome<std::size_t> prune_observation_changes(target::ObservationFamily family,
                                                          std::size_t limit) override {
-    if (!observed_owner() || !feed_family_owns(owner_, family)) {
+    if (!feed_owner() || !feed_family_owns(owner_, family)) {
       return target::unsupported_lifecycle_read();
     }
     return ::kiarabot::infrastructure::postgres::detail::prune_observation_feeds(*this, family,
@@ -688,7 +690,7 @@ public:
   target::Status
   append_observation_changes(target::ObservationFamily family,
                              const std::vector<target::ObservationFeedAppend>& changes) override {
-    if (!observed_owner()) {
+    if (!feed_owner()) {
       return target::unsupported_lifecycle_read();
     }
     return ::kiarabot::infrastructure::postgres::detail::append_observation_changes(

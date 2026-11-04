@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <atomic>
 #include <charconv>
 #include <chrono>
 #include <cstdint>
@@ -154,8 +155,67 @@ void fill_log_row(const AuditRow& row, wire::IdentityLogRecord* output) {
   output->mutable_occurred_at()->set_nanos(static_cast<std::int32_t>(row.nanos % 1'000'000'000LL));
 }
 
+std::int64_t now_seconds() {
+  return std::chrono::duration_cast<std::chrono::seconds>(
+             std::chrono::system_clock::now().time_since_epoch())
+      .count();
+}
+std::string base64url(std::string_view input) {
+  static constexpr char kAlphabet[] =
+      "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+  std::string output;
+  std::uint32_t buffer = 0;
+  int bits = 0;
+  for (const unsigned char character : input) {
+    buffer = (buffer << 8U) | character;
+    bits += 8;
+    while (bits >= 6) {
+      bits -= 6;
+      output.push_back(kAlphabet[(buffer >> static_cast<unsigned>(bits)) & 0x3fU]);
+    }
+  }
+  if (bits > 0) {
+    output.push_back(kAlphabet[(buffer << static_cast<unsigned>(6 - bits)) & 0x3fU]);
+  }
+  return output;
+}
+std::string hex(std::string_view input) {
+  static constexpr char kDigits[] = "0123456789abcdef";
+  std::string output;
+  output.reserve(input.size() * 2);
+  for (const unsigned char value : input) {
+    output.push_back(kDigits[value >> 4]);
+    output.push_back(kDigits[value & 0x0f]);
+  }
+  return output;
+}
+// The mature Identity signer emits a JWT-shaped delegation envelope (three base64url segments,
+// claims in the payload). This fixture keeps the same structural wire shape for transport tests
+// but does not sign; online CheckAuthorization below is the authoritative fixture decision.
+std::string host_delegation_proof(const wire::IdentityIssueDelegationRequest& input) {
+  const auto now = now_seconds();
+  const auto actor = std::string{kSession};
+  const auto permission = std::to_string(static_cast<int>(input.permissions(0)));
+  // Delegation claims use target domain enum values: ResourceKind::Host == 5, Permission
+  // HostExecute/HostRead keep wire-identical 9/10.
+  const auto kind = std::to_string(5);
+  const auto resource = input.scope().resources(0).id();
+  const std::string document =
+      "{\"sub\":\"" + std::string{kSession} + "\",\"aud\":\"host\",\"jti\":\"" +
+      std::string{kOther} + "\",\"iss\":\"" + std::string{kThird} +
+      "\",\"iat\":" + std::to_string(now - 1) + ",\"nbf\":" + std::to_string(now - 1) +
+      ",\"exp\":" + std::to_string(now + 30) + ",\"delegation\":{\"direct_actor\":\"" + actor +
+      "\",\"actor_chain\":[\"" + actor + "\"],\"permissions\":[[\"" + permission + "\",\"" + kind +
+      "\",\"" + resource + "\"]],\"client_certificate\":\"" +
+      hex(input.client_certificate_sha256()) +
+      "\",\"authorization_version\":\"5\",\"business_hops\":\"0\",\"source_credential\":[\"" +
+      actor + "\",\"1\"],\"scope\":[]}}";
+  return base64url("{}") + "." + base64url(document) + "." + base64url("sig");
+}
+
 class Fixture final : public wire::IdentityService::Service {
 public:
+  std::atomic<int> feed_state_{0}; // 0/1: headline pending, 2: drained
   grpc::Status Login(grpc::ServerContext* context, const wire::IdentityLoginRequest* input,
                      wire::IdentityLoginResponse* output) override {
     if (!context->auth_context()->IsPeerAuthenticated()) {
@@ -453,6 +513,9 @@ public:
          input->permissions(0) == wire::PERMISSION_ACCOUNT_POLICY_READ ||
          input->permissions(0) == wire::PERMISSION_ACCOUNT_POLICY_MANAGE ||
          input->permissions(0) == wire::PERMISSION_TASK_READ ||
+         input->permissions(0) == wire::PERMISSION_MESSAGE_READ ||
+         input->permissions(0) == wire::PERMISSION_ADAPTER_READ ||
+         input->permissions(0) == wire::PERMISSION_PLUGIN_READ ||
          input->permissions(0) == wire::PERMISSION_ACTION_INSPECT ||
          input->permissions(0) == wire::PERMISSION_RESOURCE_READ);
     const bool scheduler_delegation = input->audience() == "scheduler" &&
@@ -468,6 +531,12 @@ public:
         !scheduler_delegation && !host_delegation) {
       return error(wire::PERMISSION_DENIED, grpc::StatusCode::PERMISSION_DENIED, input->context());
     }
+    if (host_delegation) {
+      output->mutable_delegation()->set_proof(host_delegation_proof(*input));
+      output->mutable_delegation()->set_audience(input->audience());
+      output->mutable_delegation()->mutable_expires_at()->set_seconds(kChecked + 30);
+      return grpc::Status::OK;
+    }
     output->mutable_delegation()->set_proof(
         std::string{host_delegation    ? "fixture-host-proof:"
                     : model_delegation ? "fixture-model-proof:"
@@ -481,6 +550,29 @@ public:
     output->mutable_delegation()->mutable_expires_at()->set_seconds(kChecked + 30);
     return grpc::Status::OK;
   }
+  grpc::Status CheckAuthorization(grpc::ServerContext*,
+                                  const wire::IdentityCheckAuthorizationRequest* input,
+                                  wire::IdentityCheckAuthorizationResponse* output) override {
+    if (!input->has_context() || input->subject_proof().empty() || input->full_method().empty() ||
+        input->scope().resources_size() != 1) {
+      return error(wire::INVALID_ARGUMENT, grpc::StatusCode::INVALID_ARGUMENT, input->context());
+    }
+    const auto& resource = input->scope().resources(0);
+    if (resource.kind() != wire::RESOURCE_HOST || resource.id().empty()) {
+      return error(wire::PERMISSION_DENIED, grpc::StatusCode::PERMISSION_DENIED, input->context());
+    }
+    const auto method = input->full_method();
+    if (method != "kiarabot.v1.HostManagementService/GetMaintenance" &&
+        method != "kiarabot.v1.HostManagementService/BeginMaintenance") {
+      return error(wire::PERMISSION_DENIED, grpc::StatusCode::PERMISSION_DENIED, input->context());
+    }
+    auto* decision = output->mutable_decision();
+    decision->set_allowed(true);
+    decision->set_authorization_version(5);
+    decision->mutable_checked_at()->set_seconds(now_seconds());
+    return grpc::Status::OK;
+  }
+
   grpc::Status ListPrincipals(grpc::ServerContext*,
                               const wire::IdentityListPrincipalsRequest* input,
                               wire::IdentityListPrincipalsResponse* output) override {
@@ -514,6 +606,70 @@ public:
     output->mutable_checked_at()->set_seconds(kChecked);
     return grpc::Status::OK;
   }
+  // v1.2 Identity log change feed fixture. Deterministic non-empty first page (two committed
+  // entries) and cursor continuation; a wrong-dataset cursor is a typed RESYNC conflict, never an
+  // empty success page.
+  grpc::Status ListLogChanges(grpc::ServerContext*, const wire::ObservationChangesRequest* input,
+                              wire::LogChangesResponse* output) override {
+    if (!input->has_context() || !input->has_scope() || input->scope().resources_size() != 1 ||
+        input->scope().resources(0).kind() != wire::RESOURCE_CATALOG ||
+        input->scope().resources(0).id() != "control" || input->page_size() > 100) {
+      return error(wire::INVALID_ARGUMENT, grpc::StatusCode::INVALID_ARGUMENT, input->context());
+    }
+    const auto dataset = [&](wire::StreamCursor* cursor, std::uint64_t sequence) {
+      cursor->set_source_service("identity");
+      cursor->set_epoch("1d000000-0000-4000-8000-000000000001");
+      *cursor->mutable_scope() = input->scope();
+      cursor->set_sequence(sequence);
+    };
+    if (input->has_cursor() &&
+        (input->cursor().source_service() != "identity" ||
+         input->cursor().epoch() != "1d000000-0000-4000-8000-000000000001" ||
+         input->cursor().scope().resources_size() != 1 ||
+         input->cursor().scope().resources(0).kind() != wire::RESOURCE_CATALOG ||
+         input->cursor().scope().resources(0).id() != "control")) {
+      wire::RpcFailure failure;
+      failure.mutable_context()->set_acceptance(wire::NOT_ACCEPTED);
+      failure.mutable_context()->set_recovery(wire::RESYNC_SNAPSHOT);
+      failure.mutable_error()->set_code(wire::CONFLICT);
+      failure.mutable_error()->set_request_id(input->context().request_id());
+      failure.mutable_error()->set_trace_id(input->context().trace_id());
+      failure.mutable_error()->set_message("never-print-upstream-secret");
+      return {grpc::StatusCode::ABORTED, "never-print-upstream-secret",
+              failure.SerializeAsString()};
+    }
+    std::uint64_t next = 1;
+    if (!input->has_cursor()) {
+      // Capture the committed head: empty page, boundary at the head sequence. This is the first
+      // (pre-SESSION_READY) poll; the next cursor poll below publishes one committed entry.
+      feed_state_.store(1);
+      next = 0;
+    } else if (input->cursor().sequence() == 0 && feed_state_.load() == 1) {
+      auto* change = output->add_changes();
+      dataset(change->mutable_cursor(), 1);
+      auto* log = change->mutable_log();
+      log->set_owner_service("identity");
+      log->set_entry_id("identity-log-1");
+      log->set_severity("INFO");
+      log->set_component("identity");
+      log->set_method("kiarabot.v1.IdentityService/ListLogs");
+      log->set_event("request.recorded");
+      log->mutable_resource()->set_kind(wire::RESOURCE_CATALOG);
+      log->mutable_resource()->set_id("control");
+      log->set_request_id("00000000-0000-4000-8000-000000000001");
+      log->set_trace_id("10000000-0000-4000-8000-000000000001");
+      log->mutable_occurred_at()->set_seconds(kChecked);
+      feed_state_.store(2);
+      next = 1;
+    } else {
+      next = input->cursor().sequence();
+    }
+    dataset(output->mutable_next_cursor(), next);
+    output->set_has_more(false);
+    output->mutable_checked_at()->set_seconds(kChecked);
+    return grpc::Status::OK;
+  }
+
   grpc::Status ListLogs(grpc::ServerContext*, const wire::IdentityListLogsRequest* input,
                         wire::IdentityListLogsResponse* output) override {
     if (!input->has_filter() || input->filter().scope().resources_size() != 1) {

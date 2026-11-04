@@ -65,8 +65,21 @@ if(EXISTS "${KIARABOT_WS_PYTHON}" AND TARGET kiarabot_control_identity_fixture A
     LABELS "p12;control;integration;fault;security"
     TIMEOUT 180 RESOURCE_LOCK control_https RUN_SERIAL TRUE
     ENVIRONMENT "PATH=${RUNTIME_E2E_OPENSSL_BIN_DIR}:$ENV{PATH}")
+  # WS-05/06: v1.2 feed channel producers (logs/tasks/messages) and fail-closed channels. Uses the
+  # same real Control binary + TLS identity/owner fixtures; source owners are fixtures, not real
+  # owner processes.
+  add_test(NAME p12_target_websocket_producers
+    COMMAND "${KIARABOT_WS_PYTHON}"
+      "${CMAKE_SOURCE_DIR}/control/api/tests/architecture/target_websocket_producers_test.py"
+      $<TARGET_FILE:kiarabot-control>
+      $<TARGET_FILE:kiarabot_control_identity_fixture>
+      $<TARGET_FILE:kiarabot_control_owner_fixture>)
+  set_tests_properties(p12_target_websocket_producers PROPERTIES
+    LABELS "p12;control;integration;fault;security"
+    TIMEOUT 180 RESOURCE_LOCK control_https RUN_SERIAL TRUE
+    ENVIRONMENT "PATH=${RUNTIME_E2E_OPENSSL_BIN_DIR}:$ENV{PATH}")
 else()
   message(WARNING
     "control/api/tests/.venv or Control fixtures missing: "
-    "p12_target_websocket_https is not registered")
+    "p12_target_websocket_https/p12_target_websocket_producers are not registered")
 endif()

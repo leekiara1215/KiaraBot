@@ -4,6 +4,7 @@
 #include <chrono>
 #include <cstdint>
 #include <deque>
+#include <map>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -45,8 +46,8 @@ public:
              asio::io_context& io, WebSocketSessionConfig config,
              std::function<void(WebSocketConnection*)> completed)
       : ws_(std::move(stream)), request_(std::move(request)), route_(std::move(route)),
-        store_(std::move(store)), source_(std::move(source)), workers_(workers),
-        config_(config), completed_(std::move(completed)), strand_(asio::make_strand(io)),
+        store_(std::move(store)), source_(std::move(source)), workers_(workers), config_(config),
+        completed_(std::move(completed)), strand_(asio::make_strand(io)),
         first_frame_timer_(strand_), poll_timer_(strand_), force_timer_(strand_) {
     ws_.read_message_max(kMaximumFirstFrameBytes);
     ws_.text(true);
@@ -114,17 +115,17 @@ private:
     accept_pending_ = true;
     beast::get_lowest_layer(ws_).expires_never();
     first_frame_timer_.expires_after(config_.first_frame_timeout);
-    first_frame_timer_.async_wait(asio::bind_executor(
-        strand_, [self = shared_from_this()](const Error& error) {
+    first_frame_timer_.async_wait(
+        asio::bind_executor(strand_, [self = shared_from_this()](const Error& error) {
           if (!error && self->active()) {
             self->begin_close(4400);
           }
         }));
-    ws_.async_accept(request_, asio::bind_executor(
-                                  strand_, [self = shared_from_this()](const Error& error) {
-                                    self->accept_pending_ = false;
-                                    self->on_accept(error);
-                                  }));
+    ws_.async_accept(request_,
+                     asio::bind_executor(strand_, [self = shared_from_this()](const Error& error) {
+                       self->accept_pending_ = false;
+                       self->on_accept(error);
+                     }));
   }
   void on_accept(const Error& error) {
     if (state_ == State::Closing) {
@@ -158,11 +159,10 @@ private:
     }
     read_pending_ = true;
     beast::get_lowest_layer(ws_).expires_never();
-    ws_.async_read(buffer_, asio::bind_executor(
-                                strand_, [self = shared_from_this()](const Error& error,
-                                                                    std::size_t size) {
-                                  self->on_read(error, size);
-                                }));
+    ws_.async_read(buffer_, asio::bind_executor(strand_, [self = shared_from_this()](
+                                                             const Error& error, std::size_t size) {
+                     self->on_read(error, size);
+                   }));
     return true;
   }
   void on_read(const Error& error, std::size_t size) {
@@ -234,6 +234,51 @@ private:
     }
   }
   void establish_hello(WebSocketPoll poll) {
+    if (poll.scoped) {
+      // v1.2 scoped feed channels have no client-visible owner cursor: SESSION_READY is the plain
+      // shape and the owner page boundary stays in the retained server session for replay-safe
+      // continuation.
+      const auto created = store_->create(poll.identity, route_, std::nullopt, handle());
+      if (const auto* failure = std::get_if<WebSocketFailure>(&created)) {
+        begin_close(close_code(*failure));
+        return;
+      }
+      session_id_ = std::get<std::string>(created);
+      if (!store_->set_owner_cursor(session_id_, handle(), poll.scoped->next_cursor)) {
+        abort_now();
+        return;
+      }
+      const auto ready = websocket_session_ready(session_id_, 0, std::nullopt);
+      if (const auto* failure = std::get_if<WebSocketFailure>(&ready)) {
+        begin_close(close_code(*failure));
+        return;
+      }
+      state_ = State::Established;
+      enqueue({std::get<std::string>(ready), 0, {}});
+      start_established();
+      return;
+    }
+    if (poll.snapshot) {
+      // health/adapters/plugins have no client-visible owner cursor and emit value changes only.
+      const auto created = store_->create(poll.identity, route_, std::nullopt, handle());
+      if (const auto* failure = std::get_if<WebSocketFailure>(&created)) {
+        begin_close(close_code(*failure));
+        return;
+      }
+      session_id_ = std::get<std::string>(created);
+      const auto ready = websocket_session_ready(session_id_, 0, std::nullopt);
+      if (const auto* failure = std::get_if<WebSocketFailure>(&ready)) {
+        begin_close(close_code(*failure));
+        return;
+      }
+      state_ = State::Established;
+      enqueue({std::get<std::string>(ready), 0, {}});
+      if (!apply_snapshot_page(*poll.snapshot)) {
+        return;
+      }
+      start_established();
+      return;
+    }
     if (!poll.operations.has_next_cursor()) {
       abort_now();
       return;
@@ -255,8 +300,8 @@ private:
     start_established();
   }
   void establish_resume(WebSocketFirstFrame frame, WebSocketPoll poll) {
-    const auto resumed = store_->resume(frame.session_id, poll.identity, route_, frame.last_sequence,
-                                        frame.owner_cursor, handle());
+    const auto resumed = store_->resume(frame.session_id, poll.identity, route_,
+                                        frame.last_sequence, frame.owner_cursor, handle());
     switch (resumed.status) {
     case WebSocketResumeResult::Status::Rejected:
       begin_close(close_code(resumed.failure));
@@ -283,6 +328,9 @@ private:
     }
     state_ = State::Established;
     enqueue({std::get<std::string>(ready), 0, {}});
+    if (poll.snapshot) {
+      seed_snapshot(*poll.snapshot);
+    }
     start_established();
   }
   void resync_then_close(std::string frame) {
@@ -304,8 +352,8 @@ private:
       return;
     }
     poll_timer_.expires_after(delay);
-    poll_timer_.async_wait(asio::bind_executor(
-        strand_, [self = shared_from_this()](const Error& error) {
+    poll_timer_.async_wait(
+        asio::bind_executor(strand_, [self = shared_from_this()](const Error& error) {
           if (!error && self->active() && self->accept_events_) {
             self->begin_poll();
           }
@@ -357,6 +405,30 @@ private:
       return;
     }
     last_confirmed_ = std::chrono::steady_clock::now();
+    if (poll.snapshot) {
+      if (!apply_snapshot_page(*poll.snapshot)) {
+        return;
+      }
+      pump_events();
+      schedule_poll(config_.poll_interval);
+      return;
+    }
+    if (poll.scoped) {
+      if (!apply_scoped_page(*poll.scoped)) {
+        return;
+      }
+      pump_events();
+      if (backpressure_) {
+        schedule_poll(config_.poll_interval);
+        return;
+      }
+      if (poll.scoped->has_more) {
+        begin_poll();
+        return;
+      }
+      schedule_poll(config_.poll_interval);
+      return;
+    }
     if (!apply_page(poll.operations)) {
       return;
     }
@@ -370,6 +442,174 @@ private:
       return;
     }
     schedule_poll(config_.poll_interval);
+  }
+  // Append one already-built snapshot event at the next session sequence. Snapshot channels carry
+  // no owner cursor; replay is the retained Control store only.
+  bool append_snapshot_event(std::string json) {
+    const auto head = store_->head(session_id_, handle());
+    if (!head) {
+      abort_now();
+      return false;
+    }
+    const auto sequence = *head + 1;
+    if (!store_->append(session_id_, handle(), sequence, std::move(json), std::nullopt)) {
+      abort_now();
+      return false;
+    }
+    return true;
+  }
+  // health/adapters/plugins emit only on a value change. observed_at-only refreshes are ignored;
+  // unavailable owner queries leave the last known value (unknown/stale) without an event.
+  bool apply_snapshot_page(const WebSocketSnapshotBatch& batch) {
+    if (batch.health) {
+      const auto& health = *batch.health;
+      const std::string signature =
+          std::string{health.identity_confirmed ? "1" : "0"} + (health.runtime_ready ? "1" : "0") +
+          (health.scheduler_ready ? "1" : "0") + (health.model_ready ? "1" : "0");
+      if (signature != health_signature_) {
+        const auto head = store_->head(session_id_, handle());
+        if (!head) {
+          abort_now();
+          return false;
+        }
+        const auto event = websocket_health_event(health, *head + 1);
+        if (const auto* failure = std::get_if<WebSocketFailure>(&event)) {
+          begin_close(close_code(*failure));
+          return false;
+        }
+        if (!append_snapshot_event(std::get<std::string>(event))) {
+          return false;
+        }
+        health_signature_ = signature;
+      }
+    }
+    for (const auto& observation : batch.adapters) {
+      if (!observation.available) {
+        continue;
+      }
+      const auto signature = websocket_adapter_signature(observation.record);
+      if (!signature) {
+        begin_close(1011);
+        return false;
+      }
+      const auto& id = observation.record.resource().id();
+      const auto found = adapter_signatures_.find(id);
+      if (found != adapter_signatures_.end() && found->second == *signature) {
+        continue;
+      }
+      const auto head = store_->head(session_id_, handle());
+      if (!head) {
+        abort_now();
+        return false;
+      }
+      const auto event = websocket_adapter_event(observation.record, *head + 1);
+      if (const auto* failure = std::get_if<WebSocketFailure>(&event)) {
+        begin_close(close_code(*failure));
+        return false;
+      }
+      if (!append_snapshot_event(std::get<std::string>(event))) {
+        return false;
+      }
+      adapter_signatures_[id] = *signature;
+    }
+    for (const auto& observation : batch.plugins) {
+      if (!observation.available) {
+        continue;
+      }
+      const auto signature = websocket_plugin_signature(observation.record);
+      if (!signature) {
+        begin_close(1011);
+        return false;
+      }
+      const auto& id = observation.record.instance_id();
+      const auto found = plugin_signatures_.find(id);
+      if (found != plugin_signatures_.end() && found->second == *signature) {
+        continue;
+      }
+      const auto head = store_->head(session_id_, handle());
+      if (!head) {
+        abort_now();
+        return false;
+      }
+      const auto event = websocket_plugin_event(observation.record, *head + 1);
+      if (const auto* failure = std::get_if<WebSocketFailure>(&event)) {
+        begin_close(close_code(*failure));
+        return false;
+      }
+      if (!append_snapshot_event(std::get<std::string>(event))) {
+        return false;
+      }
+      plugin_signatures_[id] = *signature;
+    }
+    return true;
+  }
+  // A resume already replayed retained events; seed the value signatures so the next poll does not
+  // duplicate unchanged snapshot facts.
+  void seed_snapshot(const WebSocketSnapshotBatch& batch) {
+    if (batch.health) {
+      const auto& health = *batch.health;
+      health_signature_ = std::string{health.identity_confirmed ? "1" : "0"} +
+                          (health.runtime_ready ? "1" : "0") +
+                          (health.scheduler_ready ? "1" : "0") + (health.model_ready ? "1" : "0");
+    }
+    for (const auto& observation : batch.adapters) {
+      if (observation.available) {
+        if (const auto signature = websocket_adapter_signature(observation.record)) {
+          adapter_signatures_[observation.record.resource().id()] = *signature;
+        }
+      }
+    }
+    for (const auto& observation : batch.plugins) {
+      if (observation.available) {
+        if (const auto signature = websocket_plugin_signature(observation.record)) {
+          plugin_signatures_[observation.record.instance_id()] = *signature;
+        }
+      }
+    }
+  }
+  // Append exactly the owner-confirmed changes of one v1.2 feed page at increasing session
+  // sequences. The owner cursor stays attached to every event so replay/resume can continue the
+  // owner journal without inventing cursor state.
+  bool apply_scoped_page(const WebSocketScopedBatch& batch) {
+    const auto emit = [&](const auto& change) -> bool {
+      const auto head = store_->head(session_id_, handle());
+      if (!head) {
+        abort_now();
+        return false;
+      }
+      const auto sequence = *head + 1;
+      const auto event = websocket_feed_event(change, sequence);
+      if (const auto* failure = std::get_if<WebSocketFailure>(&event)) {
+        begin_close(close_code(*failure));
+        return false;
+      }
+      if (!store_->append(session_id_, handle(), sequence, std::get<std::string>(event),
+                          change.cursor())) {
+        abort_now();
+        return false;
+      }
+      return true;
+    };
+    for (const auto& change : batch.logs) {
+      if (!emit(change)) {
+        return false;
+      }
+    }
+    for (const auto& change : batch.tasks) {
+      if (!emit(change)) {
+        return false;
+      }
+    }
+    for (const auto& change : batch.messages) {
+      if (!emit(change)) {
+        return false;
+      }
+    }
+    if (!store_->set_owner_cursor(session_id_, handle(), batch.next_cursor)) {
+      abort_now();
+      return false;
+    }
+    return true;
   }
   bool apply_page(const v1::OperationChangesResponse& page) {
     for (const auto& change : page.changes()) {
@@ -412,11 +652,11 @@ private:
     }
     write_pending_ = true;
     beast::get_lowest_layer(ws_).expires_after(config_.write_timeout);
-    ws_.async_write(asio::buffer(frames_.front().json),
-                    asio::bind_executor(
-                        strand_, [self = shared_from_this()](const Error& error, std::size_t) {
-                          self->on_write(error);
-                        }));
+    ws_.async_write(
+        asio::buffer(frames_.front().json),
+        asio::bind_executor(strand_, [self = shared_from_this()](const Error& error, std::size_t) {
+          self->on_write(error);
+        }));
   }
   void on_write(const Error& error) {
     write_pending_ = false;
@@ -506,8 +746,8 @@ private:
     access_token_.clear();
     cancel_timers();
     force_timer_.expires_after(config_.close_timeout);
-    force_timer_.async_wait(asio::bind_executor(
-        strand_, [self = shared_from_this()](const Error& error) {
+    force_timer_.async_wait(
+        asio::bind_executor(strand_, [self = shared_from_this()](const Error& error) {
           if (!error && self->state_ == State::Closing) {
             self->force_abort();
           }
@@ -617,6 +857,9 @@ private:
   beast::flat_buffer buffer_;
   std::shared_ptr<WebSocketSocketHandle> handle_;
   std::string access_token_;
+  std::optional<std::string> health_signature_;
+  std::map<std::string, std::string> adapter_signatures_;
+  std::map<std::string, std::string> plugin_signatures_;
   std::string session_id_;
   WebSocketIdentity established_identity_;
   std::chrono::steady_clock::time_point last_confirmed_{};
@@ -636,11 +879,12 @@ private:
 };
 } // namespace
 
-std::shared_ptr<WebSocketConnection> make_web_socket_connection(
-    WebSocketStream stream, http::request<http::string_body> request, WebSocketSelection route,
-    std::shared_ptr<WebSocketStreamStore> store, std::shared_ptr<WebSocketSourcePort> source,
-    asio::thread_pool& workers, asio::io_context& io, WebSocketSessionConfig config,
-    std::function<void(WebSocketConnection*)> completed) {
+std::shared_ptr<WebSocketConnection>
+make_web_socket_connection(WebSocketStream stream, http::request<http::string_body> request,
+                           WebSocketSelection route, std::shared_ptr<WebSocketStreamStore> store,
+                           std::shared_ptr<WebSocketSourcePort> source, asio::thread_pool& workers,
+                           asio::io_context& io, WebSocketSessionConfig config,
+                           std::function<void(WebSocketConnection*)> completed) {
   return std::make_shared<Connection>(std::move(stream), std::move(request), std::move(route),
                                       std::move(store), std::move(source), workers, io, config,
                                       std::move(completed));

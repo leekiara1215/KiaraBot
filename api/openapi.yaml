@@ -74,10 +74,6 @@ x-contract-status:
     - setInstancePluginState
     - getInstanceConfiguration
     - updateInstanceConfiguration
-    - getHostMaintenance
-    - beginHostMaintenance
-    - resumeHostAdmission
-    - cancelHostOperation
     - getAdapterBootstrapDelivery
     - getPluginBootstrapDelivery
     - reissueAdapterBootstrap
@@ -222,7 +218,6 @@ paths:
     get:
       operationId: getHostMaintenance
       summary: Read the Host-owned admission version
-      x-contract-status: not_implemented
       x-owner-service: host
       x-owner-rpc: HostManagementService.GetMaintenance
       x-permission: host.read
@@ -265,7 +260,6 @@ paths:
     post:
       operationId: beginHostMaintenance
       summary: Close admission and drain the finite managed execution set
-      x-contract-status: not_implemented
       x-owner-service: host
       x-owner-rpc: HostManagementService.BeginMaintenance
       x-permission: host.execute
@@ -325,7 +319,6 @@ paths:
     post:
       operationId: resumeHostAdmission
       summary: Explicitly resume Host admission
-      x-contract-status: not_implemented
       x-owner-service: host
       x-owner-rpc: HostManagementService.ResumeAdmission
       x-permission: host.execute
@@ -384,7 +377,6 @@ paths:
     post:
       operationId: cancelHostOperation
       summary: Cancel only before admission changes or any Runtime gate request
-      x-contract-status: not_implemented
       x-owner-service: host
       x-owner-rpc: HostManagementService.CancelOperation
       x-permission: host.execute
@@ -1002,7 +994,6 @@ paths:
       x-permission: audit.read
       x-owner-rpc: { identity: IdentityService.ListAudit, runtime: RuntimeService.ListAudit }
       x-owner-permissions: { identity: audit.read, runtime: audit.read }
-      x-contract-status: not_implemented
       summary: Query audit entries
       description: >-
         Control read-only aggregate of owner-service audit facts; requires the distinct audit.read
@@ -1248,7 +1239,6 @@ paths:
       x-permission: log.read
       x-owner-rpc: { identity: IdentityService.ListLogs, runtime: RuntimeService.ListLogs }
       x-owner-permissions: { identity: log.read, runtime: log.read }
-      x-contract-status: not_implemented
       summary: Query redacted structured logs
       description: >-
         Control read-only aggregate of redacted structured logs; requires the distinct log.read

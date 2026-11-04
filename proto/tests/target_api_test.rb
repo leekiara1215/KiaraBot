@@ -41,11 +41,26 @@ openapi['paths'].each do |path, methods|
     raise 'auth projection missing authoritative time' unless projection.fetch('required').include?('checked_at')
   end
 end
+registry = JSON.parse(File.read(root.join('proto/tests/contract_status.json')))
+registry_operations = registry.fetch('categories').fetch('operations')
 count = 0
 openapi['paths'].each do |path, verbs|
   verbs.each do |verb, operation|
     next unless operation.is_a?(Hash) && operation['x-owner-rpc']
-    raise 'missing unavailable marker' unless operation['x-contract-status'] == 'not_implemented'
+    # Inline availability markers must mirror the single registry, not a blanket "everything is
+    # unavailable" rule: a REST route bound to an owner RPC is unavailable exactly when the registry
+    # still marks its operationId not_implemented. This keeps the target schema consistent after a
+    # reviewed availability flip (HOST-04 host maintenance routes, 2026-11-04) without letting an
+    # unlisted route silently claim availability.
+    operation_key = "operations.#{operation.fetch('x-operation-id', '')}"
+    operation_key = "operations.#{operation['operationId']}" if operation['operationId']
+    registry_status = registry_operations[operation_key]
+    raise "owner RPC route has no registry status: #{operation_key}" if registry_status.nil?
+    if registry_status == 'not_implemented'
+      raise 'missing unavailable marker' unless operation['x-contract-status'] == 'not_implemented'
+    else
+      raise 'unexpected unavailable marker' if operation['x-contract-status'] == 'not_implemented'
+    end
     raise 'missing permission policy' unless operation['x-permission'] || operation['x-owner-permissions']
     bindings = operation['x-owner-rpc'].is_a?(Hash) ? operation['x-owner-rpc'].values : [operation['x-owner-rpc']]
     raise 'internal dispatcher RPC exposed through REST' if bindings.any? {|rpc| internal_rpcs.include?(rpc)}

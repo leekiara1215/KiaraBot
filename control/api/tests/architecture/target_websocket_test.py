@@ -102,6 +102,7 @@ class Harness:
                 'identity_endpoint': f'localhost:{identity_port}',
                 'runtime_endpoint': f'localhost:{owner_port}',
                 'scheduler_endpoint': f'localhost:{owner_port}',
+                'model_endpoint': f'localhost:{owner_port}',
                 'websocket_origins': [ORIGIN],
             }
             self.config_path = self.root / 'control.json'
@@ -147,7 +148,7 @@ class Harness:
         self.logs = output.decode(errors='replace')
         self.folder.cleanup()
 
-    def websocket(self, port=None, origin=ORIGIN):
+    def websocket(self, port=None, origin=ORIGIN, path=OPERATIONS_PATH):
         # The synchronous client spawns an OS thread per connection; under rapid abnormal-close
         # churn on macOS its TLS handshake occasionally EOFs before the server's 101. A clean
         # retry of the client handshake keeps the server-side assertions strict without turning a
@@ -156,7 +157,7 @@ class Harness:
         for _ in range(3):
             context = ssl.create_default_context(cafile=self.ca)
             try:
-                return connect(f'wss://localhost:{port or self.port}{OPERATIONS_PATH}',
+                return connect(f'wss://localhost:{port or self.port}{path}',
                                ssl=context, origin=origin, open_timeout=5, close_timeout=2,
                                max_size=4 * 1024 * 1024, proxy=None, ping_interval=None)
             except InvalidStatus:
