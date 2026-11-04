@@ -400,7 +400,8 @@ def main(control, fixture, model_fixture=None, owner_fixture=None, runtime_fixtu
                                           {**auth_header, 'Content-Type': 'application/json',
                                            'Idempotency-Key': 'matrix-unbind-1'})
                 assert status == 200, (status, body)
-                installation = {'plugin_type_id': 'plugin-fixture',
+                installation = {'catalog': {'kind': 'RESOURCE_CATALOG', 'id': 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'},
+                                'plugin_type_id': 'plugin-fixture',
                                 'manifest': {'id': 'plugin-fixture', 'name': 'fixture',
                                              'version': '1.0.0', 'api_version': 'kiarabot.plugin.v1',
                                              'runtime': 'python-rpc', 'isolation': 'process',
@@ -409,6 +410,52 @@ def main(control, fixture, model_fixture=None, owner_fixture=None, runtime_fixtu
                                           {**auth_header, 'Content-Type': 'application/json',
                                            'Idempotency-Key': 'matrix-install-1'})
                 assert status == 200 and body['installation'], (status, body)
+                catalog = {'kind': 'RESOURCE_CATALOG', 'id': 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'}
+                catalog_query = urllib.parse.urlencode({'catalog': json.dumps(catalog), 'page_size': 2})
+                account_id = '11111111-1111-4111-8111-111111111111'
+                for route, field, expected in [('accounts', 'accounts', [account_id]),
+                                               ('installations', 'installations', ['33333333-3333-4333-8333-333333333333']),
+                                               ('instances', 'instances', ['44444444-4444-4444-8444-444444444444']),
+                                               ('adapter-instances', 'adapters', [])]:
+                    result = request('GET', '/api/v1/' + route + '?' + catalog_query, headers=auth_header)
+                    assert result[0] == 200, (route, result)
+                    assert len(result[1][field]) == len(expected), result
+                    if expected:
+                        assert list(result[1][field][0].values())[0] == expected[0], result
+                    replay = request('GET', '/api/v1/' + route + '?' + catalog_query, headers=auth_header)
+                    assert replay[:2] == result[:2], (result, replay)
+                assert request('GET', '/api/v1/hosts?' + catalog_query, headers=auth_header)[0] == 503
+                selection = {'resources': [{'kind': 'RESOURCE_ACCOUNT', 'id': account_id}]}
+                selected_query = catalog_query + '&' + urllib.parse.urlencode({'scope': json.dumps(selection)})
+                assert request('GET', '/api/v1/accounts?' + selected_query, headers=auth_header)[0] == 200
+                selection['resources'][0]['id'] = '22222222-2222-4222-8222-222222222222'
+                refused_query = catalog_query + '&' + urllib.parse.urlencode({'scope': json.dumps(selection)})
+                assert request('GET', '/api/v1/accounts?' + refused_query, headers=auth_header)[0] == 403
+                selection['resources'][0] = catalog
+                malformed_query = catalog_query + '&' + urllib.parse.urlencode({'scope': json.dumps(selection)})
+                assert request('GET', '/api/v1/accounts?' + malformed_query, headers=auth_header)[0] == 400
+                assert request('GET', '/api/v1/accounts', headers=auth_header)[0] == 400
+                assert request('GET', '/api/v1/accounts?' + catalog_query + '&page_token=bad', headers=auth_header)[0] == 400
+                assert request('GET', '/api/v1/accounts?' + catalog_query + '&page_token=down', headers=auth_header)[0] == 503
+                empty_page = request('GET', '/api/v1/accounts?' + catalog_query,
+                                     headers={'Authorization': 'Bearer fixture-empty'})
+                assert empty_page[0] == 200 and empty_page[1]['accounts'] == [], empty_page
+                oversized = request('GET', '/api/v1/accounts?' + catalog_query,
+                                    headers={'Authorization': 'Bearer fixture-many'})
+                assert oversized[0] == 429 and oversized[1]['code'] == 'RATE_LIMITED', oversized
+                for suffix in ['revoked', 'disabled', 'expired']:
+                    refused = request('GET', '/api/v1/accounts?' + catalog_query,
+                                      headers={'Authorization': 'Bearer fixture-' + suffix})
+                    assert refused[0] == 503, refused
+                created_account_body = {'catalog': catalog, 'platform': 'qq', 'platform_account_id': 'fixture'}
+                account_headers = {**auth_header, 'Content-Type': 'application/json',
+                                   'Idempotency-Key': 'matrix-account-create-0001'}
+                account_created = request('POST', '/api/v1/accounts', created_account_body, account_headers)
+                assert account_created[0] == 200, account_created
+                account_replay = request('POST', '/api/v1/accounts', created_account_body,
+                                         {**account_headers, 'X-Request-ID': 'new-request-for-same-key'})
+                assert account_replay[:2] == account_created[:2], account_replay
+                assert request('POST', '/api/v1/accounts', created_account_body, auth_header)[0] == 400
                 instance_body = {'installation_id': 'installation-fixture',
                                  'host_id': 'host-fixture', 'externally_managed': False}
                 status, body, _ = request('POST', '/api/v1/installations/installation-fixture/instances',

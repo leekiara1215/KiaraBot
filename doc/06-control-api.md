@@ -797,3 +797,5 @@ OpenAPI `ModelPage`/`GenericResource` 契约本身与意图一致，无需改 P1
 参数缺失或错误 kind 返回 INVALID_ARGUMENT。未获授权、已撤权由 Identity 返回 PERMISSION_DENIED；依赖故障沿用 UPSTREAM_UNAVAILABLE，超时 TIMEOUT。创建响应的秘密字段继续按现有一次性交付边界处理。该项外部可观察变化同步 OpenAPI 和相关 Panel 请求，异步事件、Action/Model/Scheduler 契约无需同步，受保护基线保持只读。
 
 资源写路径逐字转发调用者的 `Idempotency-Key` 到 Runtime RequestContext；缺失/空值或超过 128 字节返回 INVALID_ARGUMENT。同键换 request_id 不生成新业务幂等身份，回执内容仍由 Runtime 持久保存并重新授权后返回。Control 不合成回执。
+
+P05 Control 可复用容器验收入口：`tests/architecture/p05_control_catalog_smoke.py --base-url https://localhost:PORT --ca-file /local/ca.pem --token-file /local/access-token --catalogs-file /local/catalogs.json --expect-host-gap --create-account`。catalog 文件为五个资源族到 UUID 的同部署配置；可选 `--selections-file` 显式指定独立批次子 UUID 数组。脚本覆盖正常列表、游标重复读取、空选择、跨族/缺目录拒绝及创建同键换 request_id 重试，不修改 Identity grants。创建后的精确 Get 拒绝、合法权限供给、真实 owner 撤权/持久回执重启仍须以真实 Identity/Runtime 验收，不得把 fixture 的授权矩阵当作该证明。

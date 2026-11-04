@@ -13,6 +13,7 @@
 #include <utility>
 #include <vector>
 
+#include <google/protobuf/util/json_util.h>
 #include <grpcpp/grpcpp.h>
 #include <openssl/pem.h>
 #include <openssl/x509.h>
@@ -322,6 +323,35 @@ public:
     if (mode == "fixture-zero-version") {
       principal->set_version(0);
     }
+    // Distinct permission/scope pairs catch accidental display-permission x resource unions.
+    const auto grant = [&](wire::Permission permission, wire::ResourceKind kind, std::string id,
+                           std::string assignment_id) {
+      auto* item = output->add_assignments();
+      item->set_assignment_id(std::move(assignment_id));
+      item->set_principal_id(principal->principal_id());
+      item->set_version(1);
+      item->add_permissions(permission);
+      auto* ref = item->mutable_scope()->add_resources();
+      ref->set_kind(kind);
+      ref->set_id(std::move(id));
+    };
+    if (mode != "fixture-empty") {
+      grant(wire::PERMISSION_ACCOUNT_READ, wire::RESOURCE_ACCOUNT,
+            "11111111-1111-4111-8111-111111111111", "71111111-1111-4111-8111-111111111111");
+      grant(wire::PERMISSION_ACCOUNT_MANAGE, wire::RESOURCE_ACCOUNT,
+            "22222222-2222-4222-8222-222222222222", "72222222-2222-4222-8222-222222222222");
+      grant(wire::PERMISSION_PLUGIN_READ, wire::RESOURCE_INSTALLATION,
+            "33333333-3333-4333-8333-333333333333", "73333333-3333-4333-8333-333333333333");
+      grant(wire::PERMISSION_PLUGIN_READ, wire::RESOURCE_INSTANCE,
+            "44444444-4444-4444-8444-444444444444", "74444444-4444-4444-8444-444444444444");
+    }
+    if (mode == "fixture-many") {
+      for (int index = 0; index < 128; ++index) {
+        auto suffix = std::to_string(100000000000ULL + index);
+        grant(wire::PERMISSION_ACCOUNT_READ, wire::RESOURCE_ACCOUNT,
+              "55555555-5555-4555-8555-" + suffix, "75555555-5555-4555-8555-" + suffix);
+      }
+    }
     return grpc::Status::OK;
   }
   grpc::Status IssueDelegation(grpc::ServerContext* context,
@@ -340,9 +370,24 @@ public:
     if (!cert || X509_digest(cert.get(), EVP_sha256(), digest, &length) != 1 || length != 32 ||
         input->client_certificate_sha256() !=
             std::string(reinterpret_cast<const char*>(digest), length) ||
-        input->subject_proof() != "secret-access-credential-login" ||
+        (input->subject_proof() != "secret-access-credential-login" &&
+         input->subject_proof() != "fixture-empty" && input->subject_proof() != "fixture-many") ||
         input->permissions_size() != 1) {
       return error(wire::PERMISSION_DENIED, grpc::StatusCode::PERMISSION_DENIED, input->context());
+    }
+    if (input->audience() == "runtime" && !input->scope().resources().empty() &&
+        input->scope().resources(0).kind() == wire::RESOURCE_CATALOG &&
+        input->scope().resources(0).id() == "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" &&
+        (input->permissions(0) == wire::PERMISSION_ACCOUNT_READ ||
+         input->permissions(0) == wire::PERMISSION_PLUGIN_READ ||
+         input->permissions(0) == wire::PERMISSION_ADAPTER_READ ||
+         input->permissions(0) == wire::PERMISSION_HOST_READ)) {
+      std::string json;
+      if (!google::protobuf::util::MessageToJsonString(input->scope(), &json).ok()) {
+        return error(wire::INTERNAL, grpc::StatusCode::INTERNAL, input->context());
+      }
+      output->mutable_delegation()->set_proof("fixture-catalog:" + json);
+      return grpc::Status::OK;
     }
     const auto empty_scope_proof = [&](std::string_view proof) {
       output->mutable_delegation()->set_proof(std::string{proof});

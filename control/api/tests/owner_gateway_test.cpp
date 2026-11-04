@@ -208,7 +208,7 @@ struct FakeResources final : target::RuntimeResourcesPort {
     return ok(response);
   }
   target::OwnerOutcome<wire::RuntimeUnbindAdapterResponse>
-  unbind_adapter(const wire::RuntimeUnbindAdapterRequest& input, std::string_view) override {
+  unbind_adapter(const wire::RuntimeUnbindAdapterRequest&, std::string_view) override {
     ++calls;
     wire::RuntimeUnbindAdapterResponse response;
     response.mutable_operation()->set_operation_id("operation-2");
@@ -224,7 +224,7 @@ struct FakeResources final : target::RuntimeResourcesPort {
     return ok(response);
   }
   target::OwnerOutcome<wire::RuntimeCreateInstanceResponse>
-  create_instance(const wire::RuntimeCreateInstanceRequest& input, std::string_view) override {
+  create_instance(const wire::RuntimeCreateInstanceRequest&, std::string_view) override {
     ++calls;
     wire::RuntimeCreateInstanceResponse response;
     response.mutable_instance()->set_instance_id("instance-1");

@@ -8,6 +8,7 @@
 #include <sstream>
 #include <string>
 
+#include <google/protobuf/util/json_util.h>
 #include <grpcpp/grpcpp.h>
 
 #include "kiarabot/v1/runtime.grpc.pb.h"
@@ -57,6 +58,77 @@ void operation(wire::OperationRef* output, std::string_view id, std::string_view
 }
 class FakeRuntime final : public wire::RuntimeService::Service {
 public:
+  grpc::Status CreateAccount(grpc::ServerContext*, const wire::RuntimeCreateAccountRequest* input,
+                             wire::RuntimeCreateAccountResponse* output) override {
+    if (input->catalog().kind() != wire::RESOURCE_CATALOG ||
+        input->catalog().id() != "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" ||
+        input->context().idempotency_key() != "matrix-account-create-0001") {
+      return failure(wire::PERMISSION_DENIED, grpc::StatusCode::PERMISSION_DENIED,
+                     input->context());
+    }
+    output->mutable_account()->set_account_id("55555555-5555-4555-8555-555555555555");
+    output->mutable_account()->set_platform(input->platform());
+    return grpc::Status::OK;
+  }
+  template <typename Input, typename Response, typename Append>
+  grpc::Status catalog_page(const Input* input, Response* output, Append append) {
+    const std::string prefix = "fixture-catalog:";
+    wire::ResourceScope scope;
+    if (!input->context().delegation().starts_with(prefix) ||
+        !google::protobuf::util::JsonStringToMessage(
+             input->context().delegation().substr(prefix.size()), &scope)
+             .ok()) {
+      return failure(wire::PERMISSION_DENIED, grpc::StatusCode::PERMISSION_DENIED,
+                     input->context());
+    }
+    if (input->page().page_token() == "bad") {
+      return failure(wire::INVALID_ARGUMENT, grpc::StatusCode::INVALID_ARGUMENT, input->context());
+    }
+    if (input->page().page_token() == "down") {
+      return failure(wire::UPSTREAM_UNAVAILABLE, grpc::StatusCode::UNAVAILABLE, input->context());
+    }
+    for (int index = 1; index < scope.resources_size(); ++index) {
+      append(scope.resources(index).id());
+    }
+    auto* snapshot = output->mutable_snapshot();
+    snapshot->set_snapshot_id("snapshot-fixture");
+    snapshot->set_authorization_version(1);
+    snapshot->set_owner_service("runtime");
+    snapshot->mutable_observed_at()->set_seconds(kNow);
+    snapshot->mutable_expires_at()->set_seconds(kNow + 600);
+    snapshot->mutable_page()->set_page_size(
+        input->page().page_size() == 0 ? 20 : input->page().page_size());
+    return grpc::Status::OK;
+  }
+  grpc::Status ListAccounts(grpc::ServerContext*, const wire::RuntimeListAccountsRequest* input,
+                            wire::RuntimeListAccountsResponse* output) override {
+    return catalog_page(input, output,
+                        [&](const std::string& id) { output->add_accounts()->set_account_id(id); });
+  }
+  grpc::Status ListInstallations(grpc::ServerContext*,
+                                 const wire::RuntimeListInstallationsRequest* input,
+                                 wire::RuntimeListInstallationsResponse* output) override {
+    return catalog_page(input, output, [&](const std::string& id) {
+      output->add_installations()->set_installation_id(id);
+    });
+  }
+  grpc::Status ListInstances(grpc::ServerContext*, const wire::RuntimeListInstancesRequest* input,
+                             wire::RuntimeListInstancesResponse* output) override {
+    return catalog_page(input, output, [&](const std::string& id) {
+      output->add_instances()->set_instance_id(id);
+    });
+  }
+  grpc::Status ListAdapters(grpc::ServerContext*, const wire::RuntimeListAdaptersRequest* input,
+                            wire::RuntimeListAdaptersResponse* output) override {
+    return catalog_page(input, output, [&](const std::string& id) {
+      output->add_adapters()->mutable_resource()->set_id(id);
+    });
+  }
+  grpc::Status ListHosts(grpc::ServerContext*, const wire::RuntimeListHostsRequest* input,
+                         wire::RuntimeListHostsResponse*) override {
+    return failure(wire::CAPABILITY_NOT_SUPPORTED, grpc::StatusCode::UNIMPLEMENTED,
+                   input->context());
+  }
   grpc::Status QueryActionResult(grpc::ServerContext*,
                                  const wire::RuntimeQueryActionResultRequest* input,
                                  wire::RuntimeQueryActionResultResponse* output) override {
