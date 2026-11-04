@@ -166,6 +166,8 @@ P10 Scheduler 的 domain/RPC/PG16.4/三进程 mTLS 交接已本地实测通过�
 | `RuntimeValidateManifestRequest`、`RuntimeValidateManifestResponse`、`RuntimeValidateManifestRequest.context`、`RuntimeValidateManifestRequest.manifest`、`RuntimeValidateManifestResponse.valid`、`RuntimeValidateManifestRequest.catalog` | implemented | P05 真实 Identity/Runtime mTLS 与隔离 PostgreSQL 目录验收（`p05_runtime_catalog_e2e`）；仅登记逐项覆盖字段，未测字段与 REST 支持另行登记。 |
 | `PageRequest`、`PageInfo`、`SnapshotInfo`、`PageInfo.next_page_token`、`PageInfo.page_size`、`PageRequest.page_size`、`PageRequest.page_token`、`SnapshotInfo.snapshot_id`、`SnapshotInfo.observed_at`、`SnapshotInfo.expires_at`、`SnapshotInfo.authorization_version`、`SnapshotInfo.owner_service`、`SnapshotInfo.page` | implemented | P05 typed 资源列表分页与固定十分钟快照；原生真实目录链及应用分页/授权版本/容量测试，具体证据见 target registry。 |
 
+| `operations.listAccounts`、`operations.listInstallations`、`operations.listInstances`、`operations.listAdapterInstances` | implemented | P05 Control HTTPS → Identity 精确授权委托 → Runtime 真实 Compose 隔离库验收（`tests/architecture/p05_control_catalog_smoke.py`）：目录 + 明确 child 集合、目录单独授权空页、分页重放、默认 page_size=20、缺失/跨族目录拒绝；每批只代表该显式范围。Host 目录来源仍为能力缺口，`operations.listHosts` 保持未实现。OpenAPI 历史内联 marker 不变。 |
+| `operations.createAccount`、`operations.createInstallation`、`operations.createInstance` | implemented | P05 真实 Compose 创建验收（`tests/architecture/p05_control_catalog_smoke.py`）：账号/安装要求所属目录授权，实例要求父安装精确授权；同幂等键换 request_id 重放保留原业务结果，实例观测时间按当前投影可前进。创建不派生新 child 权限，后置授权供给缺口保持记录。OpenAPI 历史内联 marker 不变。 |
 <!-- execution-scopes:end -->
 
 **P13h-1 Scheduler 平台 peer 授权语义注记（2026-11-03）**：`SchedulerService.ListTasks` 与

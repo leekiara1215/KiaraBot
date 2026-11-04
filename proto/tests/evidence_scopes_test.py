@@ -1062,6 +1062,35 @@ class ScopeTest(unittest.TestCase):
             ('proto_fields', 'AdapterRegistrationMetadata.implementation_version'),
             ('proto_fields', 'AdapterRegistrationMetadata.protocol_version'),
         })
+        # P05 accepted catalog/creation surfaces. Keep the field allowlist explicit so untested
+        # host placement, bootstrap credentials and manifest violations remain unavailable.
+        for message, fields in {
+            'RuntimeCreateAccountRequest': 'context platform platform_account_id display_name catalog',
+            'RuntimeCreateAccountResponse': 'account',
+            'RuntimeValidateManifestRequest': 'context manifest catalog',
+            'RuntimeValidateManifestResponse': 'valid',
+            'RuntimeCreateInstallationRequest': 'context plugin_type_id manifest catalog',
+            'RuntimeCreateInstallationResponse': 'installation',
+            'RuntimeCreateInstanceRequest': 'context installation_id externally_managed',
+            'RuntimeCreateInstanceResponse': 'instance',
+            'RuntimeListAccountsRequest': 'context catalog page',
+            'RuntimeListAccountsResponse': 'accounts snapshot',
+            'RuntimeListInstallationsRequest': 'context catalog page',
+            'RuntimeListInstallationsResponse': 'installations snapshot',
+            'RuntimeListInstancesRequest': 'context catalog page',
+            'RuntimeListInstancesResponse': 'instances snapshot',
+            'RuntimeListAdaptersRequest': 'context catalog page',
+            'RuntimeListAdaptersResponse': 'adapters snapshot',
+            'PageRequest': 'page_size page_token',
+            'PageInfo': 'next_page_token page_size',
+            'SnapshotInfo': 'snapshot_id observed_at expires_at authorization_version owner_service page',
+        }.items():
+            expected.add(('proto_messages', message))
+            expected.update(('proto_fields', f'{message}.{field}') for field in fields.split())
+        expected.update(('operations', 'operations.' + operation) for operation in (
+            'listAccounts', 'listInstallations', 'listInstances', 'listAdapterInstances',
+            'createAccount', 'createInstallation', 'createInstance',
+        ))
         self.assertEqual(available, expected)
         self.assertEqual(effective_status(registry, 'reference', 'action_payloads', 'ActionEnvelope.send_message'), 'implemented')
         self.assertEqual(effective_status(registry, 'target', 'action_payloads', 'ActionEnvelope.send_message'), 'implemented')

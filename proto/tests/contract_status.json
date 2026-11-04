@@ -5807,7 +5807,14 @@
           "operations.getActionPolicy": "implemented",
           "operations.updateActionPolicy": "implemented",
           "operations.getOccurrence": "implemented",
-          "operations.listPrincipals": "implemented"
+          "operations.listPrincipals": "implemented",
+          "operations.listAccounts": "implemented",
+          "operations.listInstallations": "implemented",
+          "operations.listInstances": "implemented",
+          "operations.listAdapterInstances": "implemented",
+          "operations.createAccount": "implemented",
+          "operations.createInstallation": "implemented",
+          "operations.createInstance": "implemented"
         },
         "proto_messages": {
           "HostRegisterHostResponse": "implemented",
@@ -13475,6 +13482,69 @@
           "core/src/application/target/runtime_resource_application.cpp",
           "core/tests/platform/runtime_catalog_management_e2e.py",
           "core/tests/architecture/runtime_resource_application_test.cpp"
+        ],
+        "operations:operations.listAccounts": [
+          "control/api/src/target/owner_gateway.cpp",
+          "control/api/app/main.cpp",
+          "control/api/tests/owner_gateway_test.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_resource_application.cpp",
+          "core/tests/platform/runtime_catalog_management_e2e.py",
+          "tests/architecture/p05_control_catalog_smoke.py"
+        ],
+        "operations:operations.listInstallations": [
+          "control/api/src/target/owner_gateway.cpp",
+          "control/api/app/main.cpp",
+          "control/api/tests/owner_gateway_test.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_resource_application.cpp",
+          "core/tests/platform/runtime_catalog_management_e2e.py",
+          "tests/architecture/p05_control_catalog_smoke.py"
+        ],
+        "operations:operations.listInstances": [
+          "control/api/src/target/owner_gateway.cpp",
+          "control/api/app/main.cpp",
+          "control/api/tests/owner_gateway_test.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_resource_application.cpp",
+          "core/tests/platform/runtime_catalog_management_e2e.py",
+          "tests/architecture/p05_control_catalog_smoke.py"
+        ],
+        "operations:operations.listAdapterInstances": [
+          "control/api/src/target/owner_gateway.cpp",
+          "control/api/app/main.cpp",
+          "control/api/tests/owner_gateway_test.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_resource_application.cpp",
+          "core/tests/platform/runtime_catalog_management_e2e.py",
+          "tests/architecture/p05_control_catalog_smoke.py"
+        ],
+        "operations:operations.createAccount": [
+          "control/api/src/target/owner_gateway.cpp",
+          "control/api/app/main.cpp",
+          "control/api/tests/owner_gateway_test.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_resource_application.cpp",
+          "core/tests/platform/runtime_catalog_management_e2e.py",
+          "tests/architecture/p05_control_catalog_smoke.py"
+        ],
+        "operations:operations.createInstallation": [
+          "control/api/src/target/owner_gateway.cpp",
+          "control/api/app/main.cpp",
+          "control/api/tests/owner_gateway_test.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_resource_application.cpp",
+          "core/tests/platform/runtime_catalog_management_e2e.py",
+          "tests/architecture/p05_control_catalog_smoke.py"
+        ],
+        "operations:operations.createInstance": [
+          "control/api/src/target/owner_gateway.cpp",
+          "control/api/app/main.cpp",
+          "control/api/tests/owner_gateway_test.cpp",
+          "core/src/runtime/platform/runtime_rpc.cpp",
+          "core/src/application/target/runtime_resource_application.cpp",
+          "core/tests/platform/runtime_catalog_management_e2e.py",
+          "tests/architecture/p05_control_catalog_smoke.py"
         ]
       }
     }
