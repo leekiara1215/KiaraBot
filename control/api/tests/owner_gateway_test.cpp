@@ -728,6 +728,11 @@ void runtime_catalogs() {
               fixture.delegation.scope_resources == 1 &&
               fixture.resources.last_accounts_page.page().page_token() == "cursor",
           "empty child set still delegates catalog and emits a typed empty page");
+  const auto default_page =
+      fixture.gateway.handle(request("GET", "/api/v1/accounts?catalog=" + catalog));
+  require(default_page && default_page->status == 200 &&
+              fixture.resources.last_accounts_page.page().page_size() == 20,
+          "omitted page_size forwards the OpenAPI default to Runtime");
   listing.target += "&scope=" + scope_json();
   require(fixture.gateway.handle(listing)->status == 200 &&
               fixture.delegation.scope_resources == 2 && fixture.delegation.selected &&

@@ -1061,6 +1061,7 @@ std::optional<OwnerHttpResult> OwnerGateway::handle(const OwnerHttpRequest& requ
         }
       }
       wire::PageRequest page;
+      page.set_page_size(20);
       if (query->contains("page_size")) {
         const auto& raw = query->at("page_size");
         std::uint32_t size = 0;

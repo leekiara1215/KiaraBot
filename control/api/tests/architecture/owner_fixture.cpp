@@ -72,6 +72,9 @@ public:
   }
   template <typename Input, typename Response, typename Append>
   grpc::Status catalog_page(const Input* input, Response* output, Append append) {
+    if (input->page().page_size() == 0) {
+      return failure(wire::INVALID_ARGUMENT, grpc::StatusCode::INVALID_ARGUMENT, input->context());
+    }
     const std::string prefix = "fixture-catalog:";
     wire::ResourceScope scope;
     if (!input->context().delegation().starts_with(prefix) ||

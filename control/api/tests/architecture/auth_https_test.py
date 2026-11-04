@@ -424,6 +424,10 @@ def main(control, fixture, model_fixture=None, owner_fixture=None, runtime_fixtu
                         assert list(result[1][field][0].values())[0] == expected[0], result
                     replay = request('GET', '/api/v1/' + route + '?' + catalog_query, headers=auth_header)
                     assert replay[:2] == result[:2], (result, replay)
+                default_query = urllib.parse.urlencode({'catalog': json.dumps(catalog)})
+                for route in ['accounts', 'installations', 'instances', 'adapter-instances']:
+                    default_page = request('GET', '/api/v1/' + route + '?' + default_query, headers=auth_header)
+                    assert default_page[0] == 200 and default_page[1]['snapshot']['page']['page_size'] == 20, default_page
                 assert request('GET', '/api/v1/hosts?' + catalog_query, headers=auth_header)[0] == 503
                 selection = {'resources': [{'kind': 'RESOURCE_ACCOUNT', 'id': account_id}]}
                 selected_query = catalog_query + '&' + urllib.parse.urlencode({'scope': json.dumps(selection)})
