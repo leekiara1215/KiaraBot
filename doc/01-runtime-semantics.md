@@ -286,3 +286,5 @@ CreateAccount、ValidateManifest 和 CreateInstallation 必须携带所属目录
 ## Runtime 管理命令重放（2026-11-04）
 
 五项管理写入（DisableAccount、BindAdapter、UnbindAdapter、SetDesiredState、UpdateConfig）将父回执、Runtime 专用附属回执、原业务版本、审计及已有 operation/Host 命令意图在同一 UoW 原子提交。附属表保存 format_version=1、方法/结果辨别信息、完整 Runtime OperationRef，以及实例提交状态；重试重验授权后按原身份恢复，原 operation 当前行被清理也不改变回执引用。提交未知沿用 UNKNOWN/同身份查询，不能换键重做。附属行在父回执过期清理或过期键替换时级联删除；retain_until 到期即不承诺完整回放，即使尚未物理清理。至少七天保留不保证过期 UNKNOWN 可安全重试，仍需人工核对原操作。
+
+Runtime unary 指纹清除 RequestContext 后采用固定版本 protobuf deterministic 编码，再求 SHA-256；Struct map 的字段插入顺序和进程内 hash 顺序不参与幂等身份。配置等有业务意义的字段、expected_version 与完整资源仍参与指纹。该编码修复仅在已批准的隔离新库验收；不得直接切换仍持旧指纹回执的部署。

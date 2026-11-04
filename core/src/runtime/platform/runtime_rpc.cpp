@@ -5,11 +5,14 @@
 #include <chrono>
 #include <cstdint>
 #include <cstring>
+#include <memory>
 #include <string>
 #include <string_view>
 #include <utility>
 #include <vector>
 
+#include <google/protobuf/io/coded_stream.h>
+#include <google/protobuf/io/zero_copy_stream_impl_lite.h>
 #include <openssl/rand.h>
 #include <openssl/sha.h>
 
@@ -132,18 +135,26 @@ bool safe_key(std::string_view value) {
                      [](unsigned char character) { return character >= 33 && character < 127; });
 }
 // Canonical typed request fingerprint: full payload including idempotency-relevant fields but
-// excluding transport identifiers and deadline. Protobuf reflection clears only RequestContext.
-t::Sha256Digest fingerprint(const google::protobuf::Message& request) {
-  google::protobuf::Message* copy = request.New();
+// excluding transport identifiers and deadline. Reflection clears only RequestContext;
+// deterministic protobuf map encoding makes Struct key order/process hash seed irrelevant.
+t::Outcome<t::Sha256Digest> fingerprint(const google::protobuf::Message& request) {
+  std::unique_ptr<google::protobuf::Message> copy(request.New());
   copy->CopyFrom(request);
   const auto* descriptor = copy->GetDescriptor();
   const auto* reflection = copy->GetReflection();
   const auto* field = descriptor->FindFieldByName("context");
   if (field != nullptr) {
-    reflection->ClearField(copy, field);
+    reflection->ClearField(copy.get(), field);
   }
-  const auto serialized = copy->SerializeAsString();
-  delete copy;
+  std::string serialized;
+  {
+    google::protobuf::io::StringOutputStream output(&serialized);
+    google::protobuf::io::CodedOutputStream coded(&output);
+    coded.SetSerializationDeterministic(true);
+    if (!copy->SerializeToCodedStream(&coded) || coded.HadError()) {
+      return failure(t::ErrorCode::Internal);
+    }
+  }
   t::Sha256Digest digest;
   SHA256(reinterpret_cast<const unsigned char*>(serialized.data()), serialized.size(),
          reinterpret_cast<unsigned char*>(digest.bytes.data()));
@@ -587,7 +598,11 @@ t::Outcome<Prepared> prepare(grpc::ServerContext& transport, const v1::RequestCo
   prepared.command.trace_id = prepared.trace;
   prepared.command.method = std::string(method);
   prepared.command.idempotency_key = input.idempotency_key();
-  prepared.command.fingerprint = fingerprint(payload);
+  auto fingerprinted = fingerprint(payload);
+  if (const auto* rejected = std::get_if<t::Failure>(&fingerprinted)) {
+    return *rejected;
+  }
+  prepared.command.fingerprint = std::get<t::Sha256Digest>(fingerprinted);
   prepared.command.deadline = effective;
   return prepared;
 }

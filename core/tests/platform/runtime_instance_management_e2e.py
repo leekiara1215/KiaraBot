@@ -81,7 +81,7 @@ def verify(stub, issue, runtime_sql, installation_id, instance_id, context, requ
 
     patch = r.RuntimeUpdateConfigRequest(context=ctx(inst, perm.PERMISSION_PLUGIN_MANAGE),
                                          resource=inst, expected_version=2)
-    patch.config.update({'greeting': 'hello'})
+    patch.config.update({'greeting': 'hello', 'priority': 3, 'enabled': True})
     saved_context_key = patch.context.idempotency_key
     saved = stub.UpdateConfig(patch, timeout=5)
     require(saved.operation.resource == inst and saved.state.desired_config_version == 2,
@@ -137,6 +137,8 @@ def verify(stub, issue, runtime_sql, installation_id, instance_id, context, requ
         patch.context.idempotency_key = saved_key
         patch.context.request_id = str(uuid.uuid4())
         patch.resource.CopyFrom(inst)
+        patch.config.Clear()
+        patch.config.update({'enabled': True, 'priority': 3, 'greeting': 'hello'})
         require((new_stub or stub).UpdateConfig(patch, timeout=5) == saved,
                 'config replay preserves state after subsequent mutations and restart')
         stopped_key = stopped_patch.context.idempotency_key
