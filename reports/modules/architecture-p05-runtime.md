@@ -282,3 +282,13 @@ SetDesiredState 通过预期版本 CAS 更新运行意图，UpdateConfig 产生�
 2. 五项写操作的持久回执。拟在原业务事务中保存版本化的不可变结果，包含原 operation 引用；实例操作另保存提交时的版本、期望状态和观察时间。同键同参重试须在重新核验权限后返回原始业务结果，一次性 bootstrap 明文不得进入普通回执。旧回执无法由现有数据唯一重建时，升级预检应阻止切换。可停用受影响写入、保留旧版本的重试服务，等全部相关旧回执越过各自的 retain_until 后再切换（普通回执至少七天）。验收需覆盖更换 request_id、进程重启、其间资源已被后续命令修改、同键异参及旧格式升级预检。
 
 两项均为待确认方案。当前 GetOperation 已在读取参与者前比对已授权的请求引用与存储的完整引用。真实 mTLS/PG 回归验证了已获授权的账号不能读取归属实例的 operation，引用归属不符返回 NOT_FOUND。
+
+### 2026-11-04 审查材料与本地回归
+
+创建和目录授权详见 [契约提案](../analysis/p05-catalog-authorization-proposal.md)，五项操作回执详见 [存储及升级提案](../analysis/p05-mutation-receipt-proposal.md)。两份均待维护者审查，尚未实施提案中的协议或存储变更。
+
+Bridge 双连接隔离修复及 P06 容量重投集成后，主构建重新编译 Runtime 和资源应用测试，执行 `ctest --test-dir build/full-locked -R '^p06_(bridge_acceptance|client_e2e)$|^p05_runtime_resource_application$' --output-on-failure`，3/3 通过，86.41 秒。两次 Connect 不再共享响应 writer，旧 refresh 和延迟 sink 不能覆盖当前代次。容量满时真实客户端保持 SQLite 原事件，恢复后同身份重投且仅投递一次。编译仍报告既有警告，未宣称零警告。
+
+前一轮阶段全量回归 163/163 通过，1126.98 秒，执行期间包含其他集成变更，不能作为本次固定提交完整门禁。本轮新代码尚未重建进现有 Compose 镜像。
+
+文档影响限于上述两份待审方案、doc/02 中既有连接隔离规则与 P06 模块的背压验收报告。未改 wire、API schema、scope 或数据库，故修复无需变更 doc/01、doc/06、doc/22 的契约；已登记的兼容性检查保持原实测范围。方案本身通过 diff 和文档链接检查，实施前仍须按其列出的契约和迁移门禁验证。
