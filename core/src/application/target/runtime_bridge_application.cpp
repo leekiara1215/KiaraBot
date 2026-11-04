@@ -1,8 +1,10 @@
 #include "kiarabot/core/application/target/runtime_bridge_application.hpp"
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cmath>
+#include <functional>
 #include <map>
 #include <mutex>
 #include <optional>
@@ -187,6 +189,8 @@ public:
           request.presented_instance->value != bootstrap.resource.value) {
         return permission_denied();
       }
+      // Keep the committed generation, proof and registration profile in the same order.
+      const std::lock_guard register_instance(registration_slot(bootstrap.resource.value));
       auto epoch = process_epoch();
       if (const auto* failure = std::get_if<Failure>(&epoch)) {
         return *failure;
@@ -267,6 +271,8 @@ public:
       if (request.instance_id != instance.value) {
         return permission_denied();
       }
+      // Keep the committed generation, proof and registration profile in the same order.
+      const std::lock_guard register_instance(registration_slot(bootstrap.resource.value));
       auto epoch = process_epoch();
       if (const auto* failure = std::get_if<Failure>(&epoch)) {
         return *failure;
@@ -479,7 +485,12 @@ public:
       }
       {
         std::lock_guard<std::mutex> lock(mutex_);
-        current_[key] = renewed;
+        auto found = current_.find(key);
+        if (found == current_.end() || found->second.fence != current.fence ||
+            !bridge_secret_equal(found->second.proof, current.proof)) {
+          return unauthenticated();
+        }
+        found->second = renewed;
       }
       return renewed;
     } catch (const std::bad_alloc&) {
@@ -667,6 +678,9 @@ public:
       return invalid_runtime_input();
     }
     std::lock_guard<std::mutex> lock(mutex_);
+    if (!current_generation(BridgePeerKind::Plugin, instance, connection_generation)) {
+      return unauthenticated();
+    }
     sinks_[instance.value] = SinkEntry{sink, {}, connection_generation};
     return std::monostate{};
   }
@@ -817,6 +831,9 @@ public:
       return invalid_runtime_input();
     }
     std::lock_guard<std::mutex> lock(mutex_);
+    if (!current_generation(BridgePeerKind::Adapter, instance, connection_generation)) {
+      return unauthenticated();
+    }
     action_sinks_[instance.value] = ActionSinkEntry{sink, connection_generation};
     return std::monostate{};
   }
@@ -995,6 +1012,9 @@ public:
       return invalid_runtime_input();
     }
     std::lock_guard<std::mutex> lock(mutex_);
+    if (!current_generation(kind, instance, connection_generation)) {
+      return unauthenticated();
+    }
     shutdown_sinks_[bridge_key(kind, instance)] = ShutdownEntry{connection_generation, sink};
     return std::monostate{};
   }
@@ -1335,6 +1355,18 @@ private:
     bool allowed = false;
   };
 
+  std::mutex& registration_slot(const std::string& instance) {
+    return registration_slots_[std::hash<std::string>{}(instance) % registration_slots_.size()];
+  }
+
+  // Called with mutex_ held. A slow stream must not replace the new stream's sink.
+  bool current_generation(BridgePeerKind kind, const InstanceId& instance,
+                          ConnectionGeneration generation) const {
+    const auto found = current_.find(bridge_key(kind, instance));
+    return found != current_.end() && found->second.fence.connection_generation == generation;
+  }
+
+  std::array<std::mutex, 64> registration_slots_;
   RuntimeUnitOfWorkFactory& transactions_;
   RuntimeIdPort& ids_;
   RuntimeSecretPort& secrets_;

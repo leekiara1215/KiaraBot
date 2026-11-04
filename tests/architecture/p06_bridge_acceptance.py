@@ -149,8 +149,8 @@ async def read_or_fail(call, label, timeout=15.0):
 async def expect_rpc_error(call, label, allowed):
     grpc = _grpc()
     try:
-        response = await asyncio.wait_for(call.read(), 5)
-        raise AcceptanceFailure(f'{label}: expected a gRPC error, got {response}')
+        await asyncio.wait_for(call.read(), 5)
+        raise AcceptanceFailure(f'{label}: expected a gRPC error, received a response')
     except grpc.RpcError as error:
         require(error.code() in allowed, f'{label}: unexpected gRPC code {error.code()}')
 
@@ -261,7 +261,7 @@ async def async_main(args) -> None:
             deadline = timestamp(time.time() + 5)
             request_id = str(__import__('uuid').uuid4())
             trace_id = str(__import__('uuid').uuid4())
-            await plugin_call.write(plugins.PluginToCore(register=plugins.RegisterPluginRequest(
+            plugin_registration = plugins.PluginToCore(register=plugins.RegisterPluginRequest(
                 manifest=plugins.PluginManifest(
                     id='p06.bridge.plugin', name='P06 Bridge Plugin', version='1.0.0',
                     api_version='kiarabot.plugin.v1', runtime='python-rpc',
@@ -271,7 +271,8 @@ async def async_main(args) -> None:
                                   'request.approve', 'storage.namespace']),
                 instance_id=PLUGIN_INSTANCE,
                 installation_id=INSTALLATION,
-                supported_features=['plugin.config.v1', 'action.result.v1'])))
+                supported_features=['plugin.config.v1', 'action.result.v1']))
+            await plugin_call.write(plugin_registration)
             plugin_registered = await read_or_fail(plugin_call, 'plugin registration')
             require(plugin_registered.WhichOneof('body') == 'register_result',
                     'plugin registration returned the wrong frame')
@@ -293,7 +294,7 @@ async def async_main(args) -> None:
                     'plugin ConnectionAuthorization incomplete')
             plugin_proof = plugin_result.authorization.proof
 
-            await adapter_call.write(adapters.AdapterToCore(register=adapters.RegisterAdapterRequest(
+            adapter_registration = adapters.AdapterToCore(register=adapters.RegisterAdapterRequest(
                 adapter_id=ADAPTER_ID, implementation='p06-acceptance',
                 implementation_version='1.0.0', protocol_version='kiarabot.v1',
                 adapter_instance_id=ADAPTER_INSTANCE,
@@ -305,7 +306,8 @@ async def async_main(args) -> None:
                               common.Capability(name='action.kick_member.v1', version='1', supported=True),
                               common.Capability(name='action.approve_request.v1', version='1', supported=True)],
                 context=platform.RequestContext(request_id=request_id, trace_id=trace_id,
-                                                deadline=deadline))))
+                                                deadline=deadline)))
+            await adapter_call.write(adapter_registration)
             adapter_registered = await read_or_fail(adapter_call, 'adapter registration')
             require(adapter_registered.WhichOneof('body') == 'register_result',
                     'adapter registration returned the wrong frame')
@@ -1257,6 +1259,14 @@ async def async_main(args) -> None:
             require(sorted(psql_result.stdout.split()) == [b'3', b'3'],
                     f'delivery targets not acknowledged: {psql_result.stdout!r}')
 
+            from p05_bridge_ownership import check_parallel_ownership
+            await check_parallel_ownership(
+                lambda sql: psql(pg_bin, root, port, runtime_password, sql),
+                adapter_factory, plugin_factory, adapter_registration, plugin_registration, envelope,
+                ADAPTER_INSTANCE, ACCOUNT, INSTALLATION, SHUTDOWN_INSTANCE, SHUTDOWN_BOOTSTRAP,
+                ((adapter_call, renewed), (plugin_call, plugin_result.authorization)),
+                read_or_fail, expect_rpc_error, require)
+
             # Revocation must win within <=1s even though the peer still has valid proof.
             psql(pg_bin, root, port, runtime_password,
                  f"UPDATE kiarabot.bridge_credentials SET revoked=true WHERE "
@@ -1271,6 +1281,12 @@ async def async_main(args) -> None:
                                    {_grpc().StatusCode.UNAUTHENTICATED,
                                     _grpc().StatusCode.PERMISSION_DENIED})
             require(time.monotonic() - started < 3.0, 'revocation took too long')
+
+            revoked_registration = plugin_factory(
+                metadata=(('authorization', 'Bearer ' + PLUGIN_BOOTSTRAP),))
+            await revoked_registration.write(plugin_registration)
+            await expect_rpc_error(revoked_registration, 'revoked plugin bootstrap registration',
+                                   {_grpc().StatusCode.UNAUTHENTICATED})
 
             # Cross-account injection must terminate the adapter stream without persistence or
             # fan-out.

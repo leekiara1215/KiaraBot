@@ -1233,6 +1233,8 @@ Runtime 资源层按 P05 拆分：账号与适配器绑定、适配器注册/当
 `runtime_resource_application.cpp`，只依赖内层端口；PG 仓储在
 `infrastructure/postgres`，RPC 只做协议转换与稳定错误映射。
 
+每条外部流的响应只写回该流，其他适配器或插件实例的注册不会改变响应目的地。同一外部实例注册时，Runtime 按提交顺序发布连接代次、凭据和插件配置。连接被取代后，即使旧流仍打开，其事件、心跳和刷新都会被拒绝；延迟结束的刷新或流写入器登记不能覆盖新流。其他实例按自己的绑定账户或安装独立注册。
+
 **身份层次与代次**：外部 Adapter 不是 Runtime 监督的进程，因此 RegisterAdapter 只分配/
 递增 `connection_generation`（重连换代）并携带当前 `runtime_epoch`；Runtime 重启换 epoch，
 旧 epoch 或旧 connection_generation 的后续帧拒绝（保留稳定错误映射）。P05 的 adapter
