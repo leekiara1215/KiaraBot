@@ -799,3 +799,5 @@ OpenAPI `ModelPage`/`GenericResource` 契约本身与意图一致，无需改 P1
 资源写路径逐字转发调用者的 `Idempotency-Key` 到 Runtime RequestContext；缺失/空值或超过 128 字节返回 INVALID_ARGUMENT。同键换 request_id 不生成新业务幂等身份，回执内容仍由 Runtime 持久保存并重新授权后返回。Control 不合成回执。
 
 P05 Control 可复用容器验收入口：`tests/architecture/p05_control_catalog_smoke.py --base-url https://localhost:PORT --ca-file /local/ca.pem --token-file /local/access-token --catalogs-file /local/catalogs.json --expect-host-gap --create-account`。catalog 文件为五个资源族到 UUID 的同部署配置；可选 `--selections-file` 显式指定独立批次子 UUID 数组。脚本覆盖正常列表、游标重复读取、空选择、跨族/缺目录拒绝及创建同键换 request_id 重试，不修改 Identity grants。创建后的精确 Get 拒绝、合法权限供给、真实 owner 撤权/持久回执重启仍须以真实 Identity/Runtime 验收，不得把 fixture 的授权矩阵当作该证明。
+
+可加 `--create-installation` 验收安装创建；`--parent-installation UUID` 必须使用已获精确管理权限的既有父安装，验收实例创建。CreateInstance 沿用 OpenAPI 200 的原提交结果或当前授权投影语义：重试保持原实例及业务结果，当前投影的 `state.observed_at` 可以刷新，不能据此宣称完整冻结状态回执。冻结提交时状态及观察时间的本轮保证仅适用于 DisableAccount、BindAdapter、UnbindAdapter、SetDesiredState、UpdateConfig 五项获批管理操作；普通重放不包含 bootstrap 明文。

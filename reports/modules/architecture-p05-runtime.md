@@ -6,6 +6,8 @@
 
 文档影响包括 proto/runtime 与 OpenAPI 唯一来源、doc/01、doc/02、doc/06 的授权/分页规则，doc/08、doc/22 的新库初始化与回执语义，以及必要的 proto/README、运行语义和实际测试报告。doc/18 只读。原地迁移工具和升级已有部署库不在本轮验收内。
 
+本次批准范围的最终结果见文末“2026-11-04 集成与隔离 Compose 验收”。正文较早的待确认、未实施及单次失败记录保留为阶段证据，不代表当前最终状态。
+
 
 基点：`main`（P06/P07 契约前快照）+ P05 分支 `codex/p05-runtime`。本报告只描述本分支已实现
 并实际验证的范围；未接线部分见“未完成/降级项”。受保护 doc/18 未修改。
@@ -321,3 +323,37 @@ Bridge 双连接隔离修复及 P06 容量重投集成后，主构建重新编�
 同 subject/method/request_id 的首页空 token 重试使用有界索引复用原快照，校验目录查询、page_size、委托范围及当前授权版本；绑定失配 CONFLICT，新 request_id 建立新视图。并发首次发布二次检查同请求索引；索引随快照到期清理，逐 child 在线授权不持缓存锁。过期但仍被在途页面持有的数据继续占容量，最后读者释放后才回收，防止重复释放 64 MiB 预算。
 
 新增单测覆盖同 request_id 重试在资源变更后仍返回原记录和固定 ID/时间，错误 page_size/scope/version 拒绝、新 request_id 新视图，以及更新后的独立 64 请求容量检查；resource application 和 P13 lifecycle 回归通过。真实目录用例追加 exact UpdateAccount 改数据后首页重试及新请求对比；本轮在 Identity IssueDelegation 的 10 秒 transport 预算处遇 DEADLINE_EXCEEDED（helper ctx，原业务断言未降低），等待无并行构建负载时重跑。此前目录基础真实链通过证据仍为 9.43 秒。
+
+### 2026-11-04 集成与隔离 Compose 验收
+
+两份方案已按批准范围实施并集成本地 main。Runtime 完成目录创建授权、精确父安装授权、四类 typed 目录快照；Control 转发经当前 AssignmentRecord 筛选的同权限精确 scope。目录不隐含 child 权限，创建不自动分配新资源权限。首页重试、后续页面都绑定授权版本及查询参数，快照容量包含仍由在途读者持有的过期数据。目标登记补齐对应原生 RPC、已验证消息/字段及七项 REST（四类列表、三类创建）；ListHosts 与未验证的 bootstrap 等字段保持缺口。
+
+五项写操作在原事务中保存版本化结果、原 operation；实例操作保存提交时完整 ResourceState。同键换 request_id、后续资源被修改及 Runtime 真重启后均返回原业务结果，重放前重新在线授权。持久 fingerprint 使用确定性 protobuf 编码，避免 Struct/map 插入顺序误报 CONFLICT。SecretPort 等 effect 失败先回滚业务事务，再单独尝试记录拒绝审计，防止拒绝同时残留部分业务变更。隔离 PostgreSQL 故障测试覆盖该路径。一次性 bootstrap 明文不落普通回执、不在重试中泄露。
+
+Runtime 新库 schema 为 v18，descriptor `4c5649131c56be99dd4e6d06af3a9aa1`（154 relations）；新增 `runtime_management_receipts` 随通用 command receipt 同事务保存，并随其外键级联清理。Identity、Scheduler、Model 的 owner schema descriptor 未变化。仅初始化新库；旧部署库及其回执未迁移，旧 fingerprint/回执不能据此宣布兼容。原地升级、存量回执保留窗口及预检仍须另行审查。
+
+原生与工具检查：
+
+- 完整 `cmake --build build/full-locked` 成功；`ctest --test-dir build/full-locked --output-on-failure` 首轮 **162/165**，1320.82 秒。失败项为 p10_timer_e2e、p05_runtime_exact_accounts、p11_model_bridge。前两项串行原断言重跑分别通过（54.13/8.93 秒）；Model Bridge 的 FakeBridge 未实现生产已要求的两类 sink 注册，修正测试夹具后主构建复测通过（4.19 秒），原权限/投递断言保留，并增加正常关闭及 sink 清理断言。由此 165 项均取得通过证据，不能表述成一次固定提交的 165/165 全绿。
+- dev 构建暴露 Model application 测试无条件引用未启用的 HTTP infrastructure，修复测试构建 guard，原 fake 用例始终运行，full-locked 保留 HTTP 用例。`cmake --build build/dev -j3` 和 dev **47/47** 通过（58.67 秒）；主 full-locked 的 Model application 再构建复测通过（0.82 秒）。两项测试修复均无生产接口或行为变化。
+- 本轮完整回归中，真实 PG/mTLS 的 runtime_identity_e2e（21.23 秒）、runtime_catalog_e2e（10.61 秒）、runtime_exact_accounts 串行复测、Control HTTPS（23.14 秒）、PostgreSQL 故障测试（20.02 秒）及 P14 native single-host（18.57 秒）通过。目录用例最终覆盖更新真实账号后的首页原快照重试、新请求新视图及错 page_size 拒绝。
+- descriptor/基线兼容、旧 Python reader、target API/schema、implementation-status、semantic rules、enum consistency、evidence scopes 和 target status consistency 检查通过。Panel 在锁定 Node 22.14.0 下重新生成本地协议类型并通过 lint / check:contracts；生成物未提交。
+- 本轮修改 C++ 的 clang-format 16.0.6 检查通过；新增 receipt 存储文件 clang-tidy 22.1.8 通过；边界与 reference blob 检查通过。全仓格式检查仍有 374 个既有格式诊断；严格 inner architecture 检查仍有六项既有依赖违规（Host/Model 基础设施 reference 标记、Core OpenSSL SHA 依赖、Control readiness 依赖），没有借本项改模块边界。统一 check-toolchain 曾在 dev 测试编译处失败，此后用上述构建/测试逐项复验，未宣称统一脚本或全仓 tidy 全绿。历史 api_contract_test.rb 的 not_implemented 列表断言也在变更前主干同位置失败，历史 marker 未被擅自改写。
+
+实际重建八个 Compose 镜像，统一 tag `p05-20261104`，本机 image ID 前缀：Runtime `b6b9d55fc53c`、Identity `c2fdfcba202d`、Scheduler `07542a5214bc`、Model `3f0286ad494d`、Control `42817e741382`、PluginHost `438681e17046`、tools `fa1e5971ed17`、Panel `214d554b5c28`。镜像包含最终生产代码；之后的改动仅测试夹具、验收脚本、状态登记和文档，不需要再次重建生产镜像。
+
+隔离项目 `p05accept-20261104` 使用全新卷、`identity_p05/runtime_p05/scheduler_p05/model_p05` 四库及独立本地测试 CA，完成四 owner 初始化、离线 Identity bootstrap、真实服务启动。Control HTTPS 为 `https://localhost:28080`，Panel 为 `http://localhost:28082`。八个常驻应用/数据库容器当前均 healthy；tools 为一次性工具镜像。旧 P14 项目及卷保留，未用新版 initializer 访问旧库。
+
+容器验收实际结果：
+
+- 真实 Control HTTPS 登录、当前 session/AssignmentRecord、Identity 签发委托、Runtime 再在线授权链通过；四种 typed 列表、目录独有空选择、缺目录 400、错族目录 403、默认 page_size=20 及 Host 缺源 503 符合契约。
+- CreateAccount、CreateInstallation、精确父安装 CreateInstance 成功；同幂等键换 request_id 重放保持创建业务结果，创建出的新 child 无隐式读权限。CreateInstance 当前投影观察时间可刷新，沿用现有 API 语义；本轮五项管理回执的冻结观察时间保证不扩展到该创建 API。
+- 五项管理操作在后续变更后重放原结果；真正重启 Runtime 容器，再签发当前委托，五项原结果全部保持，成功轮瞬时签发重试次数为 0。Bind 重放不含 bootstrap 明文。检查点仅存本机权限 0600 文件，未提交凭据。
+- Panel 初次启动的本地 CA 公共证书读取权限问题已修正为 0644；私钥仍 0600。Panel 就绪接口 HEALTHY，页面返回 200。
+- 过程中 Identity 因 VM 时钟检查返回不可用；确认 NTP 同步及 host/VM UTC 后，仅重启本轮新 Identity 恢复，后续真实链及持续健康检查通过。采样观察到 VM wall/monotonic 调整，尚不能确定最初触发原因；没有修改时钟安全阈值或宣称根因修复。旧 P14 Identity 同类健康问题未借本项重启或迁移。
+
+关键本机日志：`/tmp/kiarabot-p05-final-ctest.log`、`/tmp/kiarabot-p05-final-ctest-retry.log`、`/tmp/kiarabot-p05-final-fixture-ctest.log`、`/tmp/kiarabot-p05-dev-fixed-ctest.log`、`/tmp/kiarabot-p05-suite-images-final.log`、`/tmp/kiarabot-p05-compose-verify.log`、`/tmp/kiarabot-p05-compose-rest-create.log`。容器验收可复用 `tests/architecture/p05_control_catalog_smoke.py`，额外提供 `--create-installation --parent-installation UUID` 覆盖剩余创建入口；真实 RPC、重启和授权负例保留于原生架构 E2E。
+
+文档影响与校验：实际同步 `proto/kiarabot/v1/runtime.proto`、`proto/README.md`、`api/openapi.yaml`、`doc/01-contracts.md`、`doc/01-runtime-semantics.md`、`doc/02-core.md`、`doc/06-control-api.md`、`doc/08-operations.md`、`doc/22-transactions-and-migration-design.md`、两份获批方案及本报告。以 `proto/tests/check_contracts.sh`、`proto/tests/target_api_test.rb`、`scripts/quality/check-target-api.sh`、`scripts/quality/check-contract-status-consistency.rb` 和 `git diff --check` 校验协议、状态与 schema。AsyncAPI 无事件协议变化，Adapter/SDK 无公共协议变化，doc/00 模块边界、doc/12 工具链基线及 doc/23 阶段顺序均无变化，故无需改写；doc/18 保持只读。未提交生成物、密钥及本机配置。
+
+本次批准的两项能力与隔离新库验收已完成，P04–P14 整体未据此宣布完成。仍有 ListHosts typed 来源、新建资源合法授权供给流程及首次 bootstrap 字段等后续能力；真实 QQ 扫码、DeepSeek 凭据与费用上限、生产 CA 和离站备份资源验收仍需独立环境与证据。GitHub 登录按用户要求暂缓；全部变更只在本地提交，不 push。

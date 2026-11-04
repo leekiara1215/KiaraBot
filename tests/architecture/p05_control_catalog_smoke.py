@@ -13,8 +13,11 @@ Example:
 catalogs.json: five keys accounts/installations/instances/adapters/hosts with catalog UUID values.
 Optional selections.json: the same family keys with arrays of exact child UUIDs (missing = empty).
 Each selection is a separate snapshot, never a promise to discover ungranted or unknown children.
+Optional --create-installation creates a new installation; --parent-installation UUID creates an
+instance under an existing precisely authorized installation. These do not grant new child access.
 """
 import argparse
+from datetime import datetime
 import json
 from pathlib import Path
 import ssl
@@ -41,9 +44,18 @@ def main():
     parser.add_argument('--selections-file', type=Path)
     parser.add_argument('--expect-host-gap', action='store_true')
     parser.add_argument('--create-account', action='store_true')
+    parser.add_argument('--create-installation', action='store_true')
+    parser.add_argument('--parent-installation', help='Existing precisely authorized parent UUID')
     args = parser.parse_args()
     if urllib.parse.urlsplit(args.base_url).scheme != 'https':
         parser.error('--base-url must use HTTPS')
+    if args.parent_installation:
+        try:
+            canonical_parent = str(uuid.UUID(args.parent_installation))
+        except ValueError:
+            parser.error('--parent-installation must be a canonical UUID')
+        if canonical_parent != args.parent_installation:
+            parser.error('--parent-installation must be a canonical UUID')
     token = args.token_file.read_text().strip()
     if not token or '\n' in token or '\r' in token:
         parser.error('token file must contain one non-empty access token')
@@ -132,6 +144,40 @@ def main():
             raise RuntimeError('same-key account creation changed its committed response')
         # Resource IDs are public; the full response remains local and is never printed.
         checked.append('created account ID: ' + created['account']['account_id'])
+    if args.create_installation:
+        plugin_type = str(uuid.uuid4())
+        body = {'plugin_type_id': plugin_type,
+                'manifest': {'id': plugin_type, 'name': 'p05-isolated-test', 'version': '1.0.0',
+                             'api_version': 'kiarabot.v1', 'runtime': 'python-rpc',
+                             'entrypoint': 'plugin:create'},
+                'catalog': {'kind': 'RESOURCE_CATALOG', 'id': catalogs['installations']}}
+        key = 'p05-install-' + str(uuid.uuid4())
+        created = expect(call('POST', 'installations', body, key), 200, 'installation created')
+        replay = expect(call('POST', 'installations', body, key), 200,
+                        'installation replay with new request ID')
+        if replay != created:
+            raise RuntimeError('same-key installation creation changed its committed response')
+        checked.append('created installation ID: ' + created['installation']['installation_id'])
+    if args.parent_installation:
+        parent = args.parent_installation
+        body = {'installation_id': parent, 'externally_managed': True}
+        path = 'installations/' + parent + '/instances'
+        key = 'p05-instance-' + str(uuid.uuid4())
+        created = expect(call('POST', path, body, key), 200, 'instance created from exact parent')
+        replay = expect(call('POST', path, body, key), 200,
+                        'instance replay with new request ID')
+        original_state = created['instance']['state']
+        replay_state = replay['instance']['state']
+        original_observed = datetime.fromisoformat(
+            original_state.pop('observed_at').replace('Z', '+00:00'))
+        replay_observed = datetime.fromisoformat(
+            replay_state.pop('observed_at').replace('Z', '+00:00'))
+        # This creation API permits a current scoped projection. The five approved management
+        # receipts have the stronger frozen observation-time guarantee, tested separately.
+        if (replay != created or replay_observed < original_observed or
+                'bootstrap_credential' in created or 'bootstrap_credential' in replay):
+            raise RuntimeError('instance business receipt changed or disclosed deferred bootstrap material')
+        checked.append('created instance ID: ' + created['instance']['instance_id'])
     print(json.dumps({'checks': checked, 'result': 'passed'}, ensure_ascii=False))
 
 
