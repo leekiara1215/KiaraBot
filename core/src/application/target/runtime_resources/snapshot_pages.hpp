@@ -198,25 +198,84 @@ public:
         }
         snapshot = stored->second;
       } else {
-        std::size_t count = 0;
-        std::size_t records = building->records.size();
-        std::size_t bytes = building->bytes;
+        // Expired snapshots are reclaimed only once every reader released its encoded bytes.
         for (auto it = snapshots_.begin(); it != snapshots_.end();) {
-          // An in-flight reader still retains these encoded bytes; reclaim only after it releases.
           if (it->second->expires_at <= now && it->second.use_count() == 1) {
             first_pages_.erase(it->second->first_page_key);
             issued_offsets_.erase(it->first);
             it = snapshots_.erase(it);
           } else {
-            count += it->second->subject == building->subject;
-            records += it->second->records.size();
-            bytes += it->second->bytes;
             ++it;
           }
         }
-        if (count >= kMaximumSubjectSnapshots || snapshots_.size() >= kMaximumSnapshots ||
-            records > kMaximumTotalSnapshotRecords || bytes > kMaximumSnapshotBytes) {
-          return failure(ErrorCode::RateLimited, Recovery::Backoff);
+        // Bounded capacity: a long-lived directory session issues one immutable snapshot per poll.
+        // When a subject (or a global bound) is full, evict the oldest snapshot that no reader
+        // currently holds (use_count==1) so the session continues instead of exhausting the
+        // quota; an evicted snapshot's old cursor is rejected by the existing stale/conflict path.
+        // All-active capacity pressure remains a stable RATE_LIMITED.
+        std::int64_t subject_count = 0;
+        std::int64_t total_records = 0;
+        std::int64_t total_bytes = 0;
+        const auto rebuild_totals = [&] {
+          subject_count = 0;
+          total_records = 0;
+          total_bytes = 0;
+          for (const auto& [id, value] : snapshots_) {
+            (void)id;
+            subject_count += value->subject == building->subject ? 1 : 0;
+            total_records += static_cast<std::int64_t>(value->records.size());
+            total_bytes += static_cast<std::int64_t>(value->bytes);
+          }
+        };
+        rebuild_totals();
+        const auto evict_oldest = [&](const std::optional<SubjectId>& subject,
+                                      const bool global) -> bool {
+          auto candidate = snapshots_.end();
+          for (auto it = snapshots_.begin(); it != snapshots_.end(); ++it) {
+            if (it->second.use_count() != 1) {
+              continue;
+            }
+            if (!global && subject && it->second->subject != *subject) {
+              continue;
+            }
+            if (candidate == snapshots_.end() ||
+                it->second->observed_at < candidate->second->observed_at ||
+                (it->second->observed_at == candidate->second->observed_at &&
+                 it->first < candidate->first)) {
+              candidate = it;
+            }
+          }
+          if (candidate == snapshots_.end()) {
+            return false;
+          }
+          first_pages_.erase(candidate->second->first_page_key);
+          issued_offsets_.erase(candidate->first);
+          snapshots_.erase(candidate);
+          return true;
+        };
+        for (;;) {
+          const auto subject_full =
+              subject_count >= static_cast<std::int64_t>(kMaximumSubjectSnapshots);
+          const auto global_full =
+              snapshots_.size() >= kMaximumSnapshots ||
+              total_records + static_cast<std::int64_t>(building->records.size()) >
+                  static_cast<std::int64_t>(kMaximumTotalSnapshotRecords) ||
+              total_bytes + static_cast<std::int64_t>(building->bytes) >
+                  static_cast<std::int64_t>(kMaximumSnapshotBytes);
+          if (!subject_full && !global_full) {
+            break;
+          }
+          auto evicted = false;
+          if (subject_full) {
+            evicted = evict_oldest(std::optional<SubjectId>{building->subject}, false);
+          }
+          if (!evicted && global_full) {
+            evicted = evict_oldest(std::nullopt, true);
+          }
+          if (!evicted) {
+            return failure(ErrorCode::RateLimited, Recovery::Backoff);
+          }
+          rebuild_totals();
         }
         if (!snapshots_.emplace(building->id, building).second) {
           return internal_failure();

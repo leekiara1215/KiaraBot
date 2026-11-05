@@ -729,7 +729,14 @@ public:
           application.detach_shutdown_sink(target::BridgePeerKind::Adapter, instance, generation);
         }
         guard->close();
-        application.disconnect(target::BridgePeerKind::Adapter, instance, generation);
+        const auto disconnected =
+            application.disconnect(target::BridgePeerKind::Adapter, instance, generation);
+        if (const auto* failure = std::get_if<target::Failure>(&disconnected)) {
+          // Presence is a projection, so a failed owner-UoW write must not abort the disconnecting
+          // stream thread; keep the fault observable in the service diagnostics instead.
+          std::cerr << "operation=adapter_presence_disconnect outcome=failed code="
+                    << static_cast<int>(failure->code) << " adapter=" << instance.value << '\n';
+        }
       }
     } exit_guard{application_,      stream_guard,       stream_instance,
                  stream_generation, &shutdown_attached, &action_attached};

@@ -53,6 +53,7 @@ from kiarabot.v1 import common_pb2, identity_pb2, identity_pb2_grpc, platform_pb
 from kiarabot.v1 import policy_pb2, runtime_pb2, runtime_pb2_grpc  # noqa: E402
 
 STATE = {}
+TRANSCRIPT = []
 ACCOUNT = p06.ACCOUNT
 ADAPTER_ID = p06.ADAPTER_ID
 ADAPTER_INSTANCE = p06.ADAPTER_INSTANCE
@@ -175,6 +176,7 @@ class WebSocketClient:
     """Minimal RFC 6455 client (TLS, text frames, close codes) for the frozen control protocol."""
 
     def __init__(self, port, path):
+        self.path = path
         context = ssl.create_default_context(cafile=str(STATE['tls'] / 'ca.pem'))
         raw = socket.create_connection(('127.0.0.1', port), timeout=10)
         self.socket = context.wrap_socket(raw, server_hostname='localhost')
@@ -244,6 +246,8 @@ class WebSocketClient:
                 data = bytes(byte ^ mask[index % 4] for index, byte in enumerate(data))
             if opcode == 8:
                 code = struct.unpack('>H', data[:2])[0] if len(data) >= 2 else 1005
+                TRANSCRIPT.append(f'{self.path} close={code}')
+                del TRANSCRIPT[:-80]
                 raise WsClosed(code, data[2:].decode(errors='replace'))
             if opcode == 9:
                 self._send_control(0x8A, data)
@@ -251,7 +255,15 @@ class WebSocketClient:
             if opcode == 10:
                 continue
             if opcode in (1, 2):
-                return data.decode()
+                text = data.decode()
+                try:
+                    frame = json.loads(text)
+                    kind = frame.get('type') or frame.get('event_type')
+                    TRANSCRIPT.append(f'{self.path} {kind}')
+                except ValueError:
+                    TRANSCRIPT.append(f'{self.path} text')
+                del TRANSCRIPT[:-80]
+                return text
 
     def _send_control(self, opcode, payload):
         mask = os.urandom(4)
@@ -857,9 +869,36 @@ async def run_checks(root, identity_endpoint):
             validate_adapter_event(baseline, online_expected=True)
             require(not collect_events(adapters_ws, idle=1.5),
                     'unchanged adapters poll must not re-emit an event')
-            # The adapter value-transition (online/offline fence change) is covered by the WS
-            # producer fixtures; the real-process e2e keeps the directory snapshot and its
-            # change-driven no-repeat behaviour to stay inside the frozen poll budget.
+            stage('adapters WS real online/offline transition')
+            baseline_version = baseline['payload']['target'].get('version')
+            bridge_stream.cancel()
+            await bridge_channel.close()
+            offline, _ = recv_until_event(
+                adapters_ws, 'adapter.updated',
+                lambda event: event['payload']['id'] == ADAPTER_ID and
+                event['payload']['target'].get('online') is False and
+                event['payload']['target'].get('version') != baseline_version,
+                idle=10.0)
+            require(offline is not None, 'real bridge disconnect emits online=false value change')
+            validate_adapter_event(offline, online_expected=False)
+            bridge_channel, bridge_stream = await bridge_register(
+                STATE['runtime_bridge_port'], ca)
+            online, _ = recv_until_event(
+                adapters_ws, 'adapter.updated',
+                lambda event: event['payload']['id'] == ADAPTER_ID and
+                event['payload']['target'].get('online') is True and
+                event['payload']['target'].get('version') !=
+                offline['payload']['target'].get('version'),
+                idle=10.0)
+            require(online is not None, 'real bridge reconnect emits online=true value change')
+            validate_adapter_event(online, online_expected=True)
+            require(not collect_events(adapters_ws, idle=1.5),
+                    'transitions emit value-change events only, no observed_at-only repeats')
+            stage('adapters WS long-session stability')
+            # A catalog directory session keeps re-polling the owner; the fixed Runtime snapshot
+            # page budget must not exhaust and close an idle-but-established session.
+            require(not collect_events(adapters_ws, idle=12.0),
+                    'long-lived unchanged directory session stays open without fabricated events')
         finally:
             adapters_ws.close()
 
@@ -1108,6 +1147,13 @@ if __name__ == '__main__':
     try:
         main()
     except Exception as error:  # noqa: BLE001 - bounded redacted diagnostic below
+        try:
+            report = REPO / 'build/logs/capability-expansion/p12_ws_owner_directory_e2e-failure.txt'
+            report.parent.mkdir(parents=True, exist_ok=True)
+            report.write_text('stage=' + str(STATE.get('stage')) + '\n' +
+                              str(error) + '\n' + '\n'.join(TRANSCRIPT[-80:]) + '\n')
+        except OSError:
+            pass
         message = str(error)[:700]
         if 'fixture backend directory mismatch' not in message:
             message = f'P12 WS owner directory e2e ({STATE.get("stage", "bootstrap")}): ' + message

@@ -347,6 +347,19 @@ add_test(NAME p05_runtime_resource_application
 set_tests_properties(p05_runtime_resource_application PROPERTIES
   LABELS "p05;unit" TIMEOUT 30)
 
+# P06 adapter bridge presence projection: AdapterBridge disconnect ends the persisted adapter
+# presence in the owner UoW (online_until=now, version+1) instead of leaving the 90s crash lease;
+# reconnect writes presence back. Pure fake-repository application matrix.
+add_executable(kiarabot_runtime_bridge_presence_test
+  tests/architecture/runtime_bridge_presence_test.cpp)
+target_link_libraries(kiarabot_runtime_bridge_presence_test PRIVATE
+  kiarabot_runtime_resource_application)
+target_compile_options(kiarabot_runtime_bridge_presence_test PRIVATE
+  $<$<CXX_COMPILER_ID:AppleClang,Clang,GNU>:-Wall -Wextra -Wpedantic -UNDEBUG>
+  $<$<CXX_COMPILER_ID:MSVC>:/UNDEBUG>)
+add_test(NAME p06_bridge_presence COMMAND kiarabot_runtime_bridge_presence_test)
+set_tests_properties(p06_bridge_presence PROPERTIES LABELS "p06;unit" TIMEOUT 10)
+
 # P13a/P13b lifecycle drain/recovery application matrix label; the same binary also carries the
 # historical p05 label so existing phase gates keep their registration.
 add_test(NAME p13_runtime_lifecycle COMMAND kiarabot_runtime_resource_application_test)

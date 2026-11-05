@@ -13,6 +13,7 @@
 #include <string>
 #include <string_view>
 #include <variant>
+#include <vector>
 
 #include <openssl/sha.h>
 
@@ -40,11 +41,45 @@ target::Sha256Digest digest(std::string_view value) {
          reinterpret_cast<unsigned char*>(result.bytes.data()));
   return result;
 }
+std::string hex(const target::Sha256Digest& value) {
+  static constexpr char kDigits[] = "0123456789abcdef";
+  std::string text;
+  for (const auto byte : value.bytes) {
+    text += kDigits[std::to_integer<unsigned>(byte) >> 4U];
+    text += kDigits[std::to_integer<unsigned>(byte) & 0x0fU];
+  }
+  return text;
+}
+// Deterministic UUIDv4-shaped fixture identity for the scale adapter bindings.
+std::string fixture_uuid(std::string_view label, int index) {
+  const std::string seed = std::string{label} + "-" + std::to_string(index);
+  target::Sha256Digest hashed;
+  SHA256(reinterpret_cast<const unsigned char*>(seed.data()), seed.size(),
+         reinterpret_cast<unsigned char*>(hashed.bytes.data()));
+  auto text = hex(hashed);
+  std::string result;
+  result.reserve(36);
+  for (int position = 0; position < 32; ++position) {
+    if (position == 8 || position == 12 || position == 16 || position == 20) {
+      result += '-';
+    }
+    if (position == 12) {
+      result += '4';
+      continue;
+    }
+    if (position == 16) {
+      result += "89ab"[static_cast<unsigned char>(text[position]) % 4];
+      continue;
+    }
+    result += text[position];
+  }
+  return result;
+}
 } // namespace
 
 int main(int argc, char* argv[]) {
   try {
-    if (argc != 11) {
+    if (argc != 11 && argc != 13) {
       return 2;
     }
     const std::filesystem::path root{argv[1]};
@@ -57,6 +92,9 @@ int main(int argc, char* argv[]) {
     const target::InstallationId installation{argv[8]};
     const target::InstanceId shutdown_instance{argv[9]};
     const std::string shutdown_bootstrap{argv[10]};
+    const int extra_adapter_count = argc == 13 ? std::stoi(argv[11]) : 0;
+    const std::filesystem::path extra_mapping =
+        argc == 13 ? std::filesystem::path{argv[12]} : std::filesystem::path{};
     pg::DatabaseConfig config{target::Service::Runtime,
                               "localhost",
                               port,
@@ -132,8 +170,41 @@ int main(int argc, char* argv[]) {
     const auto saved_instance = work->instances().save(instance_record, std::nullopt);
     const auto saved_shutdown_instance = work->instances().save(shutdown_record, std::nullopt);
     const auto saved_shutdown_credential = work->bridge_credentials().insert(shutdown_credential);
+    std::vector<target::BridgeCredentialRecord> extra_credentials;
+    std::vector<target::BotAccount> extra_accounts;
+    std::vector<target::AdapterBindingRecord> extra_bindings;
+    extra_credentials.reserve(static_cast<std::size_t>(extra_adapter_count));
+    extra_accounts.reserve(static_cast<std::size_t>(extra_adapter_count));
+    extra_bindings.reserve(static_cast<std::size_t>(extra_adapter_count));
+    for (int index = 1; index <= extra_adapter_count; ++index) {
+      const target::InstanceId scale_instance{fixture_uuid("scale-adapter-instance", index)};
+      const target::ResourceId scale_account{fixture_uuid("scale-account", index)};
+      const std::string bootstrap =
+          hex(digest(std::string{"p12-scale-adapter-bootstrap-"} + std::to_string(index)));
+      extra_accounts.push_back(
+          target::BotAccount{scale_account, "qq", "scale-" + std::to_string(index),
+                             "Scale Adapter " + std::to_string(index), target::ResourceVersion{1},
+                             target::LifecycleState::Active});
+      extra_bindings.push_back(target::AdapterBindingRecord{scale_account, scale_instance,
+                                                            target::ResourceVersion{1},
+                                                            target::LifecycleState::Active});
+      extra_credentials.push_back(
+          target::BridgeCredentialRecord{fixture_uuid("scale-adapter-credential", index),
+                                         scale_instance.value, digest(bootstrap), now, false});
+    }
     const auto saved_adapter_credential = work->bridge_credentials().insert(adapter_credential);
     const auto saved_plugin_credential = work->bridge_credentials().insert(plugin_credential);
+    for (std::size_t index = 0; index < extra_accounts.size(); ++index) {
+      const auto account_saved = work->accounts().save(extra_accounts[index], std::nullopt);
+      const auto binding_saved = work->adapter_bindings().save(extra_bindings[index], std::nullopt);
+      const auto credential_saved = work->bridge_credentials().insert(extra_credentials[index]);
+      if (std::holds_alternative<target::Failure>(account_saved) ||
+          std::holds_alternative<target::Failure>(binding_saved) ||
+          std::holds_alternative<target::Failure>(credential_saved)) {
+        std::cerr << "scale seed writes failed\n";
+        return 1;
+      }
+    }
     if (std::holds_alternative<target::Failure>(saved_account) ||
         std::holds_alternative<target::Failure>(saved_binding) ||
         std::holds_alternative<target::Failure>(saved_installation) ||
@@ -148,6 +219,26 @@ int main(int argc, char* argv[]) {
     if (work->commit() != target::CommitResult::Committed) {
       std::cerr << "seed commit failed\n";
       return 1;
+    }
+    if (extra_adapter_count > 0) {
+      std::ofstream mapping{extra_mapping};
+      if (!mapping) {
+        std::cerr << "scale mapping unavailable\n";
+        return 1;
+      }
+      mapping << "[";
+      for (int index = 1; index <= extra_adapter_count; ++index) {
+        if (index > 1) {
+          mapping << ",";
+        }
+        const auto instance = fixture_uuid("scale-adapter-instance", index);
+        const auto account = fixture_uuid("scale-account", index);
+        const auto bootstrap =
+            hex(digest(std::string{"p12-scale-adapter-bootstrap-"} + std::to_string(index)));
+        mapping << "{\"account\":\"" << account << "\",\"adapter_instance\":\"" << instance
+                << "\",\"bootstrap\":\"" << bootstrap << "\"}";
+      }
+      mapping << "]\n";
     }
     std::cout << "SEEDED\n";
     return 0;

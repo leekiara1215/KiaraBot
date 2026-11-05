@@ -1388,9 +1388,12 @@ server 停止/Wait；原 issuer、InvocationDeadline 及 verification_keys 参�
 
 封闭 permission/resource 去重并在解码、笛卡尔积展开前限制最多128个 exact tuples；
 父 proof 非空、可见 ASCII 且最多32768字节。无普通写入幂等键要求、无收据或库写入。
-继承当前 mTLS、请求/transport/自身 TLS InvocationDeadline 的最小期限与完整 RpcFailure
-映射。成功只投影 Core 返回的原始 proof、audience、expiry、hop2，校验当前 Runtime
-指纹、actor 链和请求精确集合；异常成功结果失败关闭，不发送部分 proof。
+其它 unary RPC 继承当前 mTLS、请求/transport/自身 TLS InvocationDeadline 的最小期限与
+完整 RpcFailure 映射；ExchangeDelegation 的请求 context deadline 是**子委派寿命**（受契约
+max_deadline_ms=30000 约束），transport 期限只用于“RPC 已过期则 Timeout”，不得再裁剪签发
+寿命，否则短网络 budget 会把每次子委派压到 ~2s 并饿死 Model 流式等受治理调用。成功只投影
+Core 返回的原始 proof、audience、expiry、hop2，校验当前 Runtime 指纹、actor 链和请求精确
+集合；异常成功结果失败关闭，不发送部分 proof。
 
 真实 mTLS fixture 覆盖该适配与实际 Core 编排；测试的仓储、随机和签验仍为明确替身，
 不代表生产 PostgreSQL、JWT 材料端口或组合根已接线可用。
@@ -1463,6 +1466,10 @@ bridge 登记用 bootstrap resource_id 创建/补全 AdapterRecord 并要求 `as
 等于该 id、声明的 account binding 全部属于该实例。B1：外部自管 peer 的目标 execution
 generation 为登记连接代表（adapter 固定 1，plugin 首次分配 1 并持久，重连只推进
 connection_generation）；Host 受管执行仍使用真实进程代次。
+真实 AdapterBridge 流结束（断开/被替换/关闭）时 Runtime 通过 owner UoW 立即把 adapter
+presence 投影写为离线（`online_until=now`、version 递增，等价 GetAdapter/ListAdapters
+`online=false`），重连注册按正常登记路径写回在线；实例缺失/已删/owner 不匹配/旧代次/重复断开
+幂等忽略；写失败不终止断开线程，以结构化诊断可观测，90s online 窗口只作为崩溃租约。
 
 **P06a-2 Bridge 组合（已实现）**：Runtime 组合根在配置 `bridge_listen` 时创建
 RuntimeBridgeApplication，并把真实 AdapterBridge/PluginBridge 注册在外部监听；`grpc_listen`

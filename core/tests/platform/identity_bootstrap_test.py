@@ -19,7 +19,8 @@ HOST_STATE = {}
 
 
 def main(*, control_server_certificate=False, after_bootstrap=None,
-         verification_catalog=None, prepare=None, host_enrollment=False):
+         verification_catalog=None, prepare=None, host_enrollment=False,
+         host_permissions=None):
     root = Path(sys.argv[1]).resolve()
     port, initializer = sys.argv[2:4]
     bootstrap = str(Path(sys.argv[5]).resolve())
@@ -142,7 +143,10 @@ def main(*, control_server_certificate=False, after_bootstrap=None,
         # explicit RESOURCE_HOST binding. host-1 has the exact host.execute grant; host-2 does not,
         # so the real Identity gate must answer a denial decision instead of a fake allow.
         HOST_STATE.clear()
-        for name, permissions in (('host-1', ['host.execute']), ('host-2', ['host.read'])):
+        enrolled_hosts = host_permissions or {'host-1': ['host.execute'],
+                                              'host-2': ['host.read']}
+        for name in ('host-1', 'host-2'):
+            permissions = enrolled_hosts.get(name, ['host.read'])
             extension = tls_root / f'{name}.ext'
             # The real Host process uses this single material both as the enrolled HostBridge /
             # Identity client identity and as its owner mTLS server certificate, so the SANs must

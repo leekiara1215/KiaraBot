@@ -174,6 +174,14 @@ struct RuntimeBridgeDependencies {
   std::vector<std::string> supported_features;
 };
 
+// Ends the durable AdapterRecord presence projection for one bridge connection through the owner
+// adapter repository. Returns true when the projection was written (online_until := now, version
+// bumped) and false for an idempotent no-op (absent/deleted/owner-mismatched record, a newer
+// connection generation, or an already-offline row). Storage faults are Failure; the helper never
+// creates, revives or retargets a row, so a stale or repeated teardown cannot resurrect presence.
+Outcome<bool> end_adapter_presence(AdapterRegistryRepository& adapters, const InstanceId& instance,
+                                   ConnectionGeneration connection_generation, TimePoint now);
+
 class RuntimeBridgeApplication {
 public:
   virtual ~RuntimeBridgeApplication() = default;
@@ -199,7 +207,10 @@ public:
   virtual Status authorize_frame(BridgePeerKind kind, const BridgeAuthorization& current,
                                  const BridgeFence& fence, const std::array<std::byte, 32>& proof,
                                  TimePoint now) = 0;
-  // Idempotent cleanup after the stream ends; only removes the still-current connection.
+  // Idempotent cleanup after the stream ends; only removes the still-current connection. An
+  // Adapter stream end additionally ends the durable presence projection immediately (the online
+  // window is only a crash lease) through the Runtime owner UoW; a projection write fault is
+  // reported to the transport but never fatal for the disconnecting thread.
   virtual Status disconnect(BridgePeerKind kind, const InstanceId& instance,
                             ConnectionGeneration connection_generation) = 0;
   // Adapter event frame -> durable inbox acceptance. Fan-out targets are the currently connected

@@ -297,6 +297,44 @@ if(UNIX)
     RUN_SERIAL TRUE
     ENVIRONMENT "PATH=${P14F_OPENSSL_BIN_DIR}:${P14F_PYTHON_BIN_DIR}:$ENV{PATH};PYTHONPATH=${CMAKE_SOURCE_DIR}/sdk/python/build/generated")
 
+  # HOST-04 deployment scale: two real Host processes behind one Control fixed offline host
+  # registry (host_endpoints), one real Runtime with two HostBridge connections/fences; routing
+  # isolation, cross-host 404, unregistered 503, failure isolation, gate rows per host and restart
+  # persistence.
+  add_test(NAME p12_host_dual_host_chain_e2e COMMAND "${KIARABOT_TARGET_PYTHON}"
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_database_test.py"
+    --pg-bin "${KIARABOT_TEST_PG_BIN}" --openssl "${KIARABOT_TEST_OPENSSL}"
+    --initializer $<TARGET_FILE:kiarabot-pg-initialize>
+    --test "${CMAKE_SOURCE_DIR}/tests/architecture/p12_host_dual_host_chain_e2e.py"
+    --test-argument $<TARGET_FILE:kiarabot-identity-bootstrap>
+    --test-argument "${KIARABOT_TEST_PG_BIN}"
+    --test-argument $<TARGET_FILE:kiarabot-identity>
+    --test-argument $<TARGET_FILE:kiarabot-runtime>
+    --test-argument $<TARGET_FILE:kiarabot-control>
+    --test-argument $<TARGET_FILE:kiarabot-plugin-host>)
+  set_tests_properties(p12_host_dual_host_chain_e2e PROPERTIES
+    LABELS "p12;host;control;integration;security;fault" TIMEOUT 240
+    WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+    ENVIRONMENT "PATH=${P14F_OPENSSL_BIN_DIR}:${P14F_PYTHON_BIN_DIR}:$ENV{PATH};PYTHONPATH=${CMAKE_SOURCE_DIR}/sdk/python/build/generated")
+
+  # WS catalog scale boundary: 127 real registered adapters + explicit grants exceed the frozen
+  # 126-child expansion limit; the directory channel must fail closed with 1013 (no fake events).
+  add_test(NAME p12_ws_owner_directory_scale_e2e COMMAND "${KIARABOT_TARGET_PYTHON}"
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_database_test.py"
+    --pg-bin "${KIARABOT_TEST_PG_BIN}" --openssl "${KIARABOT_TEST_OPENSSL}"
+    --initializer $<TARGET_FILE:kiarabot-pg-initialize>
+    --test "${CMAKE_SOURCE_DIR}/tests/architecture/p12_ws_owner_directory_scale_e2e.py"
+    --test-argument $<TARGET_FILE:kiarabot-identity-bootstrap>
+    --test-argument "${KIARABOT_TEST_PG_BIN}"
+    --test-argument $<TARGET_FILE:kiarabot-identity>
+    --test-argument $<TARGET_FILE:kiarabot-runtime>
+    --test-argument $<TARGET_FILE:kiarabot-control>
+    --test-argument $<TARGET_FILE:kiarabot_postgres_runtime_bridge_seed>
+    --test-argument "${KIARABOT_TEST_OPENSSL}")
+  set_tests_properties(p12_ws_owner_directory_scale_e2e PROPERTIES
+    LABELS "p12;integration;security;fault" TIMEOUT 420 RUN_SERIAL TRUE
+    ENVIRONMENT "PATH=${P14F_OPENSSL_BIN_DIR}:${P14F_PYTHON_BIN_DIR}:$ENV{PATH};PYTHONPATH=${CMAKE_SOURCE_DIR}/sdk/python/build/generated")
+
   # P12j: Panel API client contract matrix against the same real native target stack.
   # Default mode records the pre-P14g/P14h fail-closed 400s as known and still asserts all
   # auth/error/page shapes; after the fixes are merged rerun with KIARABOT_P12J_EXPECT_FIXED=1

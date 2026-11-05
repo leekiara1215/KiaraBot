@@ -1,6 +1,8 @@
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <cassert>
+#include <condition_variable>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -8,9 +10,11 @@
 #include <iostream>
 #include <map>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <set>
 #include <string>
+#include <thread>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -1549,6 +1553,129 @@ void authorization_flow() {
   check(failure_is(unavailable.application->get_account(query), t::ErrorCode::UpstreamUnavailable),
         "authorization dependency failure was swallowed");
 }
+t::AccountListQuery account_page_query(t::CommandContext context, std::uint32_t page_size,
+                                       std::string token = {}) {
+  t::AccountListQuery query{std::move(context),
+                            {page_size, std::move(token)},
+                            {t::ResourceKind::Catalog, {"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1"}}};
+  return query;
+}
+
+void require_account_page(const t::Outcome<t::ListResult<t::BotAccount>>& page, const char* label) {
+  check(std::holds_alternative<t::ListResult<t::BotAccount>>(page), label);
+}
+
+// Long-lived directory sessions issue one immutable first-page snapshot per poll. The subject
+// quota must reclaim the oldest idle snapshot instead of exhausting RATE_LIMITED at 64 polls,
+// while active readers and the fixed lifetime still bound memory.
+void snapshot_quota_flow() {
+  Harness harness;
+  for (int index = 0; index < 3; ++index) {
+    t::CreateAccountRequest request{
+        context("runtime.create_account", digest(static_cast<std::uint8_t>(120 + index))),
+        "qq",
+        std::to_string(30000 + index),
+        "Bot",
+        {t::ResourceKind::Catalog, {"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1"}}};
+    check(std::holds_alternative<t::BotAccount>(
+              harness.application->create_account(std::move(request))),
+          "snapshot quota fixture creation failed");
+  }
+  // 100 rapid first pages (one snapshot each) must stay accepted after bounded eviction.
+  for (int index = 0; index < 100; ++index) {
+    require_account_page(
+        harness.application->list_accounts(account_page_query(
+            context("runtime.list_accounts", digest(static_cast<std::uint8_t>(index + 1))), 1)),
+        "rapid first-page snapshot exhausted the subject quota");
+  }
+  // Capture a page token, then poll enough to evict its (oldest) snapshot: the cursor must fail
+  // with the existing typed conflict, never silently return data from another snapshot.
+  t::AccountListQuery token_query =
+      account_page_query(context("runtime.list_accounts", digest(41)), 1);
+  const auto token_page = harness.application->list_accounts(token_query);
+  require_account_page(token_page, "snapshot token page failed");
+  const auto old_token = std::get<t::ListResult<t::BotAccount>>(token_page).page.next_page_token;
+  check(!old_token.empty(), "snapshot token page did not issue a cursor");
+  for (int index = 0; index < 70; ++index) {
+    harness.store.now += 1s;
+    require_account_page(
+        harness.application->list_accounts(account_page_query(
+            context("runtime.list_accounts", digest(static_cast<std::uint8_t>(index + 1))), 1)),
+        "snapshot eviction stopped accepting first pages");
+  }
+  auto stale = account_page_query(context("runtime.list_accounts", digest(43)), 1, old_token);
+  check(failure_is(harness.application->list_accounts(stale), t::ErrorCode::Conflict),
+        "evicted snapshot cursor was accepted");
+  // Quota pressure with every retained snapshot actively read must stay RATE_LIMITED.
+  std::vector<std::string> active_tokens;
+  active_tokens.reserve(64);
+  for (int index = 0; index < 64; ++index) {
+    const auto page = harness.application->list_accounts(
+        account_page_query(context("runtime.list_accounts", digest(44)), 1));
+    require_account_page(page, "active snapshot fixture page failed");
+    active_tokens.push_back(std::get<t::ListResult<t::BotAccount>>(page).page.next_page_token);
+  }
+  std::atomic<int> waiting{0};
+  std::atomic<bool> release{false};
+  std::mutex barrier_mutex;
+  std::condition_variable barrier;
+  harness.authorization.on_check = [&](const t::RuntimeAuthorizationRequest& checked) {
+    // The catalog pre-check happens before the immutable snapshot is resolved; only the per-row
+    // resource check keeps the snapshot alive. Block only that one so every retained snapshot has
+    // an active reader when the next first page arrives.
+    if (checked.scope.empty() || checked.scope.front().kind != t::ResourceKind::Account) {
+      return;
+    }
+    ++waiting;
+    std::unique_lock lock(barrier_mutex);
+    barrier.wait(lock, [&] { return release.load(); });
+  };
+  std::vector<t::Outcome<t::ListResult<t::BotAccount>>> active_results(active_tokens.size());
+  std::vector<std::thread> readers;
+  readers.reserve(active_tokens.size());
+  for (std::size_t index = 0; index < active_tokens.size(); ++index) {
+    readers.emplace_back([&, index] {
+      active_results[index] = harness.application->list_accounts(account_page_query(
+          context("runtime.list_accounts", digest(45)), 1, active_tokens[index]));
+    });
+  }
+  const auto active_deadline = std::chrono::steady_clock::now() + 10s;
+  while (waiting.load() < static_cast<int>(active_tokens.size()) &&
+         std::chrono::steady_clock::now() < active_deadline) {
+    std::this_thread::sleep_for(std::chrono::milliseconds{1});
+  }
+  check(waiting.load() == static_cast<int>(active_tokens.size()),
+        "active snapshot readers did not reach the authorization barrier");
+  const auto overflow = harness.application->list_accounts(
+      account_page_query(context("runtime.list_accounts", digest(46)), 1));
+  check(failure_is(overflow, t::ErrorCode::RateLimited),
+        "all-active snapshot pressure did not stay RATE_LIMITED");
+  release.store(true);
+  barrier.notify_all();
+  for (auto& reader : readers) {
+    reader.join();
+  }
+  harness.authorization.on_check = nullptr;
+  for (const auto& result : active_results) {
+    require_account_page(result, "active snapshot reader lost its immutable page");
+  }
+  // The fixed ten minute lifetime still reclaims; after expiry the same subject can mint new
+  // snapshots and the expired cursor is a typed conflict.
+  harness.store.now += 601s;
+  auto lifetime_context = context("runtime.list_accounts", digest(48));
+  lifetime_context.deadline = harness.store.now + 30s;
+  auto expired_query = account_page_query(std::move(lifetime_context), 1, old_token);
+  check(failure_is(harness.application->list_accounts(expired_query), t::ErrorCode::Conflict),
+        "expired snapshot cursor was accepted");
+  for (int index = 0; index < 3; ++index) {
+    auto fresh_context = context("runtime.list_accounts", digest(47));
+    fresh_context.deadline = harness.store.now + 30s;
+    require_account_page(
+        harness.application->list_accounts(account_page_query(std::move(fresh_context), 1)),
+        "lifetime reclaim did not free snapshot capacity");
+  }
+}
+
 void pagination_flow(Harness& harness) {
   for (int index = 0; index < 3; ++index) {
     t::CreateAccountRequest request{
@@ -1720,15 +1847,24 @@ void catalog_rejection_and_capacity_flow() {
               harness.application->list_accounts(query)),
           "snapshot capacity rejected below configured limit");
   }
-  query.context.request_id = context("runtime.list_accounts", digest(99)).request_id;
-  check(failure_is(harness.application->list_accounts(query), t::ErrorCode::RateLimited),
-        "snapshot subject budget silently evicted a live snapshot");
+  // Bounded idle-snapshot eviction keeps a long-lived directory session accepted; a full quota
+  // of actively-read snapshots is still RATE_LIMITED (covered by snapshot_quota_flow) and an
+  // evicted cursor is a typed conflict rather than a silent data change.
+  for (std::size_t index = 0; index < 8; ++index) {
+    query.context.request_id = context("runtime.list_accounts", digest(99)).request_id;
+    check(std::holds_alternative<t::ListResult<t::BotAccount>>(
+              harness.application->list_accounts(query)),
+          "snapshot subject budget rejected a first page after idle eviction");
+  }
   t::AdapterListQuery cross_family{
       context("runtime.list_adapters", digest(95)),
       {1, ""},
       {t::ResourceKind::Catalog, {"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa4"}}};
-  check(failure_is(harness.application->list_adapters(cross_family), t::ErrorCode::RateLimited),
-        "splitting resource applications bypassed the shared subject snapshot capacity");
+  // Capacity is still shared per subject, but idle snapshots are reclaimable: another family's
+  // first page evicts an idle account snapshot instead of exhausting the shared budget.
+  check(std::holds_alternative<t::ListResult<t::AdapterRecord>>(
+            harness.application->list_adapters(cross_family)),
+        "shared subject snapshot capacity rejected a reclaimable first page");
 
   harness.store.now += 600s;
   query.context.deadline += 600s;
@@ -2400,6 +2536,7 @@ int main() {
     Harness harness;
     pagination_flow(harness);
   }
+  snapshot_quota_flow();
   catalog_rejection_and_capacity_flow();
   readiness_flow();
   {

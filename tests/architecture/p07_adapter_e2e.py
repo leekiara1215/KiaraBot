@@ -614,11 +614,34 @@ async def async_main(args) -> int:
                 await p06.wait_until(lambda: len(onebot.calls) > calls_before_crash,
                                      'crash Action reached platform', 20)
                 await asyncio.sleep(0.5)
+                def adapter_presence():
+                    text = psql(
+                        'SELECT online_until, version, (extract(epoch from clock_timestamp())'
+                        '*1000000000)::bigint FROM kiarabot.adapters').stdout.decode().strip()
+                    values = text.split('|')
+                    require(len(values) == 3, f'adapter presence row shape: {values}')
+                    return int(values[0]), int(values[1]), int(values[2])
                 generation_before_crash = psql(
                     'SELECT connection_generation FROM kiarabot.adapters'
                 ).stdout.strip()
+                online_before_crash, version_before_crash, now_before_crash = adapter_presence()
+                require(online_before_crash > now_before_crash,
+                        'adapter presence was offline while its bridge was connected')
                 adapter_process.kill()
                 await adapter_process.wait()
+                # Defect A: the real AdapterBridge stream end ends the durable presence projection
+                # immediately (online_until=now + version bump through the Runtime owner UoW)
+                # instead of leaving the 90s crash lease online.
+                for _ in range(60):
+                    offline_until, offline_version, offline_now = adapter_presence()
+                    if offline_until <= offline_now and offline_version > version_before_crash:
+                        break
+                    await asyncio.sleep(0.05)
+                else:
+                    raise AssertionError(
+                        'adapter presence stayed online after a real bridge disconnect')
+                require(offline_until != online_before_crash,
+                        'adapter disconnect did not change the online_until projection')
                 adapter_process = await spawn_adapter()
                 await p06.wait_until(lambda: onebot.connections >= 3,
                                      'adapter platform reconnect after crash', 30)
@@ -626,6 +649,8 @@ async def async_main(args) -> int:
                     lambda: psql('SELECT connection_generation FROM kiarabot.adapters'
                                  ).stdout.strip() != generation_before_crash,
                     'adapter bridge reconnect after crash', 30)
+                await p06.wait_until(lambda: adapter_presence()[0] > adapter_presence()[2],
+                                     'adapter presence online after reconnect', 30, interval=0.1)
                 await p06.wait_until(lambda: evidence_count(crashed) >= 1,
                                      'adapter crash UNKNOWN evidence persisted', 30)
                 crash_state = action_state(crashed)

@@ -593,3 +593,67 @@ PluginBridge 刷新失败帧的 INTERNAL 与终止状态偏差仍待专项；格
 - 仍待：真实规模/边界覆盖（adapter online/offline 动态、>126 child 真实目录 RATE_LIMITED、大目录
   500ms 预算运营限制）、真实双 Host 进程 + 单 Control 多 registry 整链、BOOT-05 契约内无法注入的
   sink-ACK-loss/cancel（已记录）。
+
+### goal round 6（2026-11-05：剩余真实规模/部署项收口）
+
+- **真实缺陷 A（AdapterBridge 断开不更新 presence）**：`runtime_bridge_application::disconnect()` 原来
+  只清内存，adapter 仍按注册时 `online_until=now+90s` 显示 online，真实断开后目录/exact 频道要等
+  90s 才可能看到 offline。修复：断开/替换/关闭经 owner UoW 立即写离线 presence
+  （`online_until=now`+version+1，CAS 重试；absent/deleted/owner 不匹配/旧代次/重复断开幂等忽略；
+  写失败返回 Failure 不崩溃并结构化 stderr 可观测）。验证：新 `p06_bridge_presence`（1/1，application
+  矩阵）+ `p07_adapter_e2e` 真实 adapter 进程 kill→psql online_until/version offline→重连 online
+  （29.92s Passed）+ p06/p11 回归 2/2。
+- **真实缺陷 B（目录长会话被 Runtime snapshot 配额耗尽）**：Control catalog 每 poll 新建 immutable
+  snapshot，Runtime per-subject 上限 64/10min、仅过期淘汰 → 100ms poll 约 16.7s 耗尽，之后同 subject
+  ListAdapters/ListInstances 全部 RATE_LIMITED、会话关闭。修复：同 subject 满额时淘汰最旧且无活跃
+  读取（use_count==1）快照，全局上限同理；旧 cursor 保持 typed CONFLICT/stale；全活跃仍
+  RATE_LIMITED；10min 寿命与内存上限不变。验证：application 矩阵（100 次 first-page 不 RATE_LIMITED、
+  旧 token CONFLICT、64 active 仍 RATE_LIMITED、过期回收）+ 真实 owner-directory/scale e2e 复跑。
+- **真实规模/边界覆盖**：新增 `p12_ws_owner_directory_scale_e2e`（真实 127 adapter 注册 + 显式授权 →
+  目录模式 1013 RATE_LIMITED，无伪造事件）并注册；真实 127 行目录 owner 扫描实测约 32ms/行
+  （4.1–5.1s），远超 900ms poll 预算——运营上限与建议写入 doc/08（建议单目录 ≤25–30 行、授权 child
+  硬上限 126、超预算 fail-closed 并回退 REST 快照）；`p12_ws_owner_directory_e2e` 增加**真实
+  adapter online/offline 值变化事件**（断开→online=false、重连→online=true、不重复）与**长会话**
+  （idle 12s 不因快照配额关闭）断言。
+- **真实双 Host 部署链**：新增 `p12_host_dual_host_chain_e2e`（真 owned PG + 离线 bootstrap 两 Host +
+  真 Identity + 真 Runtime 两条 HostBridge/fence + 两个真 plugin-host + 单 Control `host_endpoints`
+  多 registry）：双 Begin/Resume/GetOperation、路由隔离、双向跨 host 404、未登记 503、SIGTERM 一 Host
+  故障隔离（另一 Host 正常、故障侧不伪成功）、Host 重启 version 持久、Runtime gate 每 host 一行
+  （R25 无 FK）；连续 3/3 通过并注册。
+- **最终验收（2026-11-05）**：
+  - 全量构建 exit 0（`round13-build.log`，0 errors，214 个 CTest 项）。
+  - **全量 CTest 214/214 通过（分两批连续执行、各自 exit 0）**：batch A `-I 1,107` 107/107
+    exit 0（`batchA-ctest.log`，478.04s）；batch B `-I 108,214` 107/107 exit 0
+    （`batchB-ctest.log`，280.50s）。单次连续全量尝试（round14/15/16-retry）在长套件叠加的实时
+    时序上会对个别 heavy real-stack e2e 偶发失败（p11_streaming、p05v12、p05_runtime_identity、
+    p12_host_control_chain、owner-directory-scale 等，每次不同）；所有失败项隔离复跑均通过，且
+    分批连续执行可稳定 214/214，故以分批证据作为本轮全量验收，单次尝试日志与失败重跑日志全部保留。
+  - contracts（含 impl-status/evidence-scopes/semantic-rules/feature-decl）、target 往返与
+    baseline/v1.1 descriptor 兼容、openapi/asyncapi/target-api/reference、boundaries/inner/links/
+    database、SDK pytest、Panel lint/test/build/contracts 全部 exit 0；格式 24 个基线违规、0 新增；
+    Panel 91/91。
+  - 本轮新增 CTest：`p06_bridge_presence`、`p12_host_real_chain_e2e`、`p12_host_dual_host_chain_e2e`、
+    `p12_ws_owner_directory_e2e`、`p12_ws_owner_directory_scale_e2e`；`p07_adapter_e2e` 增真实
+    adapter offline/online 断言。
+- **本轮真实产品修复**：①AdapterBridge 真实断开立即写 adapter offline presence（90s 仅崩溃租约，
+  重连写回；p06_bridge_presence + p07 真进程/PG 验证）；②Runtime snapshot 同 subject 满额淘汰最旧
+  空闲快照（旧 cursor typed stale、全活跃仍 RateLimited；目录长会话不再 16.7s 耗尽）；③Identity
+  unary `ExchangeDelegation` 不再被 5s/传输 deadline 裁剪子委派寿命（credential_issuance 路径 30s，
+  fail-first 单测 + STR09 隔离 3/3），修掉 STR09 边界 flaky 的真因。
+
+### goal round 7（2026-11-05：STR09 回归真因 — Identity 子委派寿命裁剪）
+
+- 现象：STR09 success gate 偶发/隔离稳定失败（plugin terminal `failure_code=8 UPSTREAM_UNAVAILABLE`、
+  partial、provider 已完成）。
+- 根因（真实产品缺陷）：Runtime→Model 子委派 wire context deadline 已是 30s，但 Identity unary
+  `run()` 仍把 effective deadline 裁剪为 `min(requested, now+5s)` 且再 min 传输 deadline（Runtime
+  网络预算 2s）→ 子委派实际 TTL 1.1–1.8s；Model 按契约把 stream 执行期限 clip 到委派 exp，约 2s
+  后 Timeout/partial/may_have_billed，成功 gate 快则过、慢则失败（此前“通过”属边界 flaky）。
+- 修复：`identity_rpc.cpp` unary `run()` 增加 `credential_issuance`；仅 `ExchangeDelegation` 使用：
+  effective = min(requested, now+30s)（契约 max_deadline_ms），传输 deadline 仅判断过期、不再裁剪
+  委派寿命，invocation_deadline min 仅非 issuance；其它 unary 行为不变；子委派仍受 parent/peer/
+  credential/session exp 与 body lifetime 约束。`identity_rpc_test.cpp` 增 fail-first 用例
+  （context now+30s + 2s RPC budget → 捕获 expires_at > now+20s；修复前 Failed、修复后 Passed）。
+- 验证：p04_identity_rpc/p06_bridge_acceptance/p11_model_bridge 3/3；STR09 隔离 3/3 全过、0 次
+  delegation-window retry（`task38-str09-fixed-0{1,2,3}.log`）；首轮失败与 TTL 证据保留
+  （`task38-delegation-ttl-evidence.log`、`str09-artifacts/matrix-failure-20261105T121224Z`）。

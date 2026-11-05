@@ -1894,3 +1894,19 @@ v1.1 Host登记要求受控platform_peers中service=host时额外显式host_id�
   部署目录，三种消费方不被混同。交付完成、插件注册、进程运行、配置生效是四种不同事实。
 - 验收状态：配置解析/校验、owner RPC、PG 意图/收据、deploy helper 与 sink 模块已有单元/模块测试；
   真实 Control→Runtime→文件→消费端整链（BOOT-05）与运维演练尚未执行，属剩余缺口。
+
+## 2026-11-05 v1.2 WS 目录模式运营规模限制（实测）
+
+`/ws/adapters`、`/ws/plugins` 的“恰好一个部署 `RESOURCE_CATALOG`”目录模式在每次 owner 轮询重建
+immutable snapshot，并由 Runtime 逐记录做在线授权（P05 逐子语义）。本机真实栈（owned PG16.4 +
+真 Identity/Runtime/Control）实测 owner 全量扫描约 **36–45ms/行**：127 行目录 4.5–5.8s（2 页 ~5.2s），
+1–60 授权 child 单页 4.5–5.8s；该耗时主要由目录总行数决定、与授权 child 数关系较小。Control 的
+snapshot poll 预算是 900ms（部分观测 500ms），因此运营上需控制单目录规模：
+
+- 授权 child 硬上限 **126**（>126 展开必然 `RATE_LIMITED` 1013，已由真实 127-adapter e2e 验证，
+  关闭前不产生伪造事件）。
+- 建议将单目录 adapter/instance 行数控制在一页 owner 构建 ≤900ms 的量级（本机参考 **≤20–30 行**，
+  以部署硬件与压测为准）；超过时轮询会超预算并 fail-closed（1013/1011，客户端应退避并回退授权
+  REST 快照），不会伪造空流或事件。
+- 扩容/批量授权前先做目录规模压测；后续可优化方向是 owner 侧分页授权批量化和快照复用（当前未做，
+  已登记为性能缺口）。

@@ -1862,6 +1862,21 @@ void exercise_exchange(const std::string& leaf, const std::string& ca, const std
             signer.captured->subject == signer.parent.subject &&
             signer.captured->expires_at <= signer.parent.expires_at);
   }
+  // Credential issuance lifetime is request data, not the RPC response budget: Runtime requests a
+  // 30s child delegation (Model clips streaming execution to it) with a deliberately short 2s RPC
+  // deadline, so the issued child must stay near the requested window instead of being clipped to
+  // the network retry budget.
+  {
+    auto issued = request;
+    issued.set_audience("model");
+    response.Clear();
+    const auto call_started = std::chrono::system_clock::now();
+    require(call(*stub, &w::IdentityService::Stub::ExchangeDelegation, issued, &response,
+                 std::chrono::milliseconds{2000})
+                .ok());
+    require(signer.captured &&
+            signer.captured->expires_at > call_started + std::chrono::seconds{20});
+  }
   const auto reject = [&](const w::IdentityExchangeDelegationRequest& input,
                           grpc::StatusCode code) {
     response.Clear();

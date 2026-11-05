@@ -1581,7 +1581,7 @@ public:
           }
           return output;
         },
-        false);
+        false, true);
   }
 
   grpc::Status CheckAuthorization(grpc::ServerContext* transport,
@@ -2231,9 +2231,14 @@ private:
   }
 
   template <typename Output, typename Invoke>
+  // credential_issuance separates the RPC response budget from the requested credential
+  // lifetime: ExchangeDelegation's context deadline is the child delegation lifetime (bounded by
+  // the RPC contract max_deadline_ms), so clipping it by the short server transport deadline or
+  // the generic 5s handler budget would cap every issued child delegation at the caller's network
+  // retry budget and starve governed work (Model streaming clips execution to the child expiry).
   grpc::Status run(grpc::ServerContext* transport, bool has_context,
                    const v1::RequestContext& incoming, Output* response, Invoke invoke,
-                   bool control_only = true) noexcept {
+                   bool control_only = true, bool credential_issuance = false) noexcept {
     std::string request;
     std::string trace;
     bool invoked = false;
@@ -2257,26 +2262,34 @@ private:
         return fail(failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput));
       }
       const auto started = now();
-      auto effective = std::min(*requested, started + std::chrono::seconds{5});
+      // Requested credential lifetime for issuance (contract max_deadline_ms=30000) versus the
+      // generic 5s unary handler budget for every other RPC.
+      auto effective = credential_issuance
+                           ? std::min(*requested, started + std::chrono::seconds{30})
+                           : std::min(*requested, started + std::chrono::seconds{5});
       const auto transport_limit = transport->deadline();
-      if (transport_limit == std::chrono::system_clock::time_point::max()) {
-        effective = std::min(effective, started + std::chrono::seconds{2});
-      } else if (transport_limit <= std::chrono::system_clock::now()) {
+      if (transport_limit != std::chrono::system_clock::time_point::max() &&
+          transport_limit <= std::chrono::system_clock::now()) {
         return fail(failure(t::ErrorCode::Timeout, t::Recovery::QuerySameIdentity));
-      } else if (transport_limit < std::chrono::system_clock::now() + std::chrono::seconds{5}) {
-        const auto converted = codec::from_wire(std::get<google::protobuf::Timestamp>(
-            codec::to_wire(t::TimePoint{std::chrono::duration_cast<std::chrono::nanoseconds>(
-                transport_limit.time_since_epoch())})));
-        if (const auto* limit = std::get_if<t::TimePoint>(&converted)) {
-          effective = std::min(effective, *limit);
-        } else {
-          return fail(failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput));
+      }
+      if (!credential_issuance) {
+        if (transport_limit == std::chrono::system_clock::time_point::max()) {
+          effective = std::min(effective, started + std::chrono::seconds{2});
+        } else if (transport_limit < std::chrono::system_clock::now() + std::chrono::seconds{5}) {
+          const auto converted = codec::from_wire(std::get<google::protobuf::Timestamp>(
+              codec::to_wire(t::TimePoint{std::chrono::duration_cast<std::chrono::nanoseconds>(
+                  transport_limit.time_since_epoch())})));
+          if (const auto* limit = std::get_if<t::TimePoint>(&converted)) {
+            effective = std::min(effective, *limit);
+          } else {
+            return fail(failure(t::ErrorCode::InvalidArgument, t::Recovery::CorrectInput));
+          }
         }
       }
       if (effective <= now() || transport->IsCancelled()) {
         return fail(failure(t::ErrorCode::Timeout, t::Recovery::QuerySameIdentity));
       }
-      if (invocation_deadline_) {
+      if (invocation_deadline_ && !credential_issuance) {
         auto own_limit = invocation_deadline_();
         if (const auto* error = std::get_if<t::Failure>(&own_limit)) {
           return fail(*error);

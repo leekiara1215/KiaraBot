@@ -18,6 +18,46 @@
 #include "kiarabot/core/ports/target/business_ports.hpp"
 
 namespace kiarabot::core::target {
+
+Outcome<bool> end_adapter_presence(AdapterRegistryRepository& adapters, const InstanceId& instance,
+                                   ConnectionGeneration connection_generation, TimePoint now) {
+  constexpr int kPresenceAttempts = 3;
+  for (int attempt = 0; attempt < kPresenceAttempts; ++attempt) {
+    auto found = adapters.by_instance(instance);
+    if (const auto* failure = std::get_if<Failure>(&found)) {
+      return *failure;
+    }
+    auto record = std::move(std::get<std::optional<AdapterRecord>>(found));
+    // Absent, deleted or owner-mismatched projections are idempotent: a disconnect never creates,
+    // revives or retargets an adapter row.
+    if (!record || record->state != LifecycleState::Active ||
+        record->current.instance != instance) {
+      return false;
+    }
+    // A newer registration already owns presence, and an already-offline row is unchanged:
+    // repeating a stale or duplicate disconnect is idempotent.
+    if (record->current.connection_generation != connection_generation ||
+        record->online_until <= now) {
+      return false;
+    }
+    const auto expected_version = record->version;
+    record->online_until = now;
+    record->version.value += 1;
+    const auto saved = adapters.save(*record, expected_version);
+    if (const auto* failure = std::get_if<Failure>(&saved)) {
+      // A concurrent accepted heartbeat bumped the version in this window; the connection is still
+      // gone, so re-read and retry the offline projection.
+      if (failure->code == ErrorCode::Conflict) {
+        continue;
+      }
+      return *failure;
+    }
+    return true;
+  }
+  return Failure{ErrorCode::Conflict, Acceptance::NotAccepted, Recovery::ReadCurrent, std::nullopt,
+                 std::nullopt};
+}
+
 namespace {
 
 Failure bridge_failure(ErrorCode code, Recovery recovery) {
@@ -540,20 +580,70 @@ public:
 
   Status disconnect(BridgePeerKind kind, const InstanceId& instance,
                     ConnectionGeneration connection_generation) override {
-    std::lock_guard<std::mutex> lock(mutex_);
-    const auto key = bridge_key(kind, instance);
-    const auto found = current_.find(key);
-    if (found != current_.end() &&
-        found->second.fence.connection_generation == connection_generation) {
-      current_.erase(found);
-      gates_.erase(key);
+    bool adapter_current = false;
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      const auto key = bridge_key(kind, instance);
+      const auto found = current_.find(key);
+      if (found != current_.end() &&
+          found->second.fence.connection_generation == connection_generation) {
+        current_.erase(found);
+        gates_.erase(key);
+        adapter_current = kind == BridgePeerKind::Adapter;
+      }
+      const auto action_sink = action_sinks_.find(instance.value);
+      if (action_sink != action_sinks_.end() &&
+          action_sink->second.connection_generation.value == connection_generation.value) {
+        action_sinks_.erase(action_sink);
+      }
     }
-    const auto action_sink = action_sinks_.find(instance.value);
-    if (action_sink != action_sinks_.end() &&
-        action_sink->second.connection_generation.value == connection_generation.value) {
-      action_sinks_.erase(action_sink);
+    if (!adapter_current) {
+      return std::monostate{};
     }
-    return std::monostate{};
+    // The 90s online window is a crash lease, not the connection truth: a real stream end ends
+    // adapter presence immediately through the Runtime owner UoW. A write fault is reported (the
+    // transport logs it) and never throws out of the disconnecting thread.
+    return mark_adapter_offline(instance, connection_generation);
+  }
+
+  Status mark_adapter_offline(const InstanceId& instance,
+                              ConnectionGeneration connection_generation) {
+    constexpr int kCommitAttempts = 2;
+    for (int attempt = 0; attempt < kCommitAttempts; ++attempt) {
+      try {
+        auto begun = transactions_.begin();
+        if (const auto* failure = std::get_if<Failure>(&begun)) {
+          return *failure;
+        }
+        auto work = std::move(std::get<std::unique_ptr<RuntimeUnitOfWork>>(begun));
+        if (!work) {
+          return internal_failure();
+        }
+        auto sampled = work->current_time();
+        if (const auto* failure = std::get_if<Failure>(&sampled)) {
+          return *failure;
+        }
+        auto ended = end_adapter_presence(work->adapters(), instance, connection_generation,
+                                          std::get<TimePoint>(sampled));
+        if (const auto* failure = std::get_if<Failure>(&ended)) {
+          work->rollback();
+          return *failure;
+        }
+        if (!std::get<bool>(ended)) {
+          // Idempotent no-op: nothing to commit.
+          work->rollback();
+          return std::monostate{};
+        }
+        if (work->commit() == CommitResult::Committed) {
+          return std::monostate{};
+        }
+      } catch (const std::bad_alloc&) {
+        return unavailable();
+      } catch (...) {
+        return internal_failure();
+      }
+    }
+    return unavailable();
   }
 
   Outcome<TimePoint> current_time() override {

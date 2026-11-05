@@ -403,3 +403,17 @@ S1 通过、S2 无测试，Runtime gate/PG 持久化/Control host 路由未实�
 - target WS 状态翻转：asyncapi x-target-transport/contract + 7 channels + 7 stream events target
   override/evidence（control 聚合仍 not_implemented），evidence roots 纳入 Control target 源/测试；
   api/contracts/target 门禁全绿，WS e2e 复跑通过。
+- goal round 6：修真实缺陷 A（bridge 断开立即写 adapter offline presence；p06_bridge_presence +
+  p07_adapter_e2e 真进程/PG 验证）与 B（Runtime 快照同 subject 满额淘汰最旧空闲，旧 cursor typed
+  stale，全活跃仍 RateLimited；目录长会话/scale e2e 复跑）；新增真实 127-adapter scale e2e、真实
+  adapter online/offline 与长会话断言、真实双 Host + 单 Control 多 registry e2e（均注册）；doc/08
+  记录目录模式运营规模限制（约 32ms/行、建议 ≤25–30 行、child 硬上限 126）。最终全量/门禁待收口。
+- goal round 7：STR09 偶发失败定位为 Identity unary run() 裁剪 ExchangeDelegation 寿命（子委派
+  TTL 1.1–1.8s → Model stream ~2s timeout），修复为 credential issuance 路径 30s 且传输 deadline
+  只判过期；fail-first 单测 + p04/p06/p11 回归 + STR09 隔离 3/3 全过。
+
+- **goal round 7 最终验收**：全量构建 exit 0（214 CTest 项）；全量 CTest 214/214 通过（分两批连续
+  执行 batchA 107/107 + batchB 107/107 均 exit 0；单次连续全量在长套件负载下偶发 heavy real-stack
+  e2e flake，失败项隔离复跑均绿，日志保留）；contracts/target/api/架构/SDK/Panel 门禁全绿；格式
+  24 基线/0 新增。产品修复：adapter offline presence、snapshot 配额淘汰、Identity ExchangeDelegation
+  子委派寿命；新增 bridge presence/双 Host/owner-directory/scale 等 e2e 并注册。
