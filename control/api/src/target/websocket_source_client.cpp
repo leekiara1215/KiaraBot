@@ -4,12 +4,14 @@
 #include <array>
 #include <chrono>
 #include <cstdint>
+#include <cstdio>
 #include <memory>
 #include <mutex>
 #include <optional>
 #include <set>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <utility>
 
 #include <grpcpp/grpcpp.h>
@@ -139,6 +141,19 @@ bool scoped_change_cursor(std::string_view owner, const v1::ResourceScope& scope
          change.sequence() <= next.sequence();
 }
 constexpr std::chrono::milliseconds kSnapshotPollBudget{900};
+void ws_diag32(std::string_view text) {
+  if (FILE* file = std::fopen("/tmp/wsdir32b-wsdiag.log", "a")) {
+    std::fwrite(text.data(), 1, text.size(), file);
+    std::fputc('\n', file);
+    std::fclose(file);
+  }
+}
+constexpr int kOwnerCallAttempts = 3;
+
+bool retryable_owner_status(grpc::StatusCode code) {
+  return code == grpc::StatusCode::DEADLINE_EXCEEDED || code == grpc::StatusCode::UNAVAILABLE ||
+         code == grpc::StatusCode::RESOURCE_EXHAUSTED || code == grpc::StatusCode::CANCELLED;
+}
 class Client final : public WebSocketSourcePort {
 public:
   Client(std::shared_ptr<IdentityAuthClient> identity, const core::platform::ProcessConfig& config)
@@ -170,6 +185,30 @@ public:
   }
   ~Client() override {
     cancel();
+  }
+  WebSocketResult<WebSocketIdentity> authenticate(const WebSocketSelection& selection,
+                                                  std::string_view access_token,
+                                                  WebSocketDeadline deadline) override {
+    try {
+      deadline =
+          std::min(deadline, std::chrono::steady_clock::now() + std::chrono::milliseconds{500});
+      // Channels that still run their first owner poll before SESSION_READY (operations) or that
+      // have no producer keep the existing pre-ready behavior; scoped/snapshot ready frames carry
+      // no owner cursor, so Identity validation alone can establish the session.
+      if (selection.channel == "operations" || selection.owner == "host") {
+        return WebSocketFailure{v1::CAPABILITY_NOT_SUPPORTED, false};
+      }
+      const bool scoped = selection.channel == "logs" || selection.channel == "tasks" ||
+                          selection.channel == "messages";
+      const bool snapshot = selection.channel == "health" || selection.channel == "adapters" ||
+                            selection.channel == "plugins";
+      if (!scoped && !snapshot) {
+        return WebSocketFailure{v1::CAPABILITY_NOT_SUPPORTED, false};
+      }
+      return identity_->validate_stream(access_token, deadline);
+    } catch (...) {
+      return WebSocketFailure{v1::INTERNAL, false};
+    }
   }
   WebSocketResult<WebSocketPoll> poll(const WebSocketSelection& selection,
                                       std::string_view access_token,
@@ -573,12 +612,6 @@ public:
       if (!std::holds_alternative<google::protobuf::Timestamp>(encoded)) {
         return WebSocketFailure{v1::INTERNAL, false};
       }
-      grpc::ClientContext call;
-      const auto remaining_micros = std::chrono::duration_cast<std::chrono::microseconds>(
-          wall - std::chrono::system_clock::now());
-      call.set_deadline(gpr_time_add(
-          gpr_now(GPR_CLOCK_MONOTONIC),
-          gpr_time_from_micros(std::max<std::int64_t>(remaining_micros.count(), 1), GPR_TIMESPAN)));
       struct Registration {
         Client& owner;
         grpc::ClientContext& context;
@@ -586,14 +619,45 @@ public:
           const std::lock_guard lock(owner.mutex_);
           owner.active_.erase(&context);
         }
-      } registration{*this, call};
-      {
-        const std::lock_guard lock(mutex_);
-        if (cancelled_) {
-          return WebSocketFailure{v1::UPSTREAM_UNAVAILABLE, false};
+      };
+      // Bounded retry with backoff inside the remaining poll budget. Every attempt owns a fresh
+      // ClientContext (gRPC contexts are single-call) and is registered for cancellation.
+      const auto send_with_retry = [&](auto&& invoke) -> grpc::Status {
+        grpc::Status status = grpc::Status::OK;
+        for (int attempt = 0; attempt < kOwnerCallAttempts; ++attempt) {
+          if (attempt > 0) {
+            const auto backoff = std::chrono::milliseconds{25 * attempt};
+            if (std::chrono::steady_clock::now() + backoff >= deadline) {
+              break;
+            }
+            std::this_thread::sleep_for(backoff);
+          }
+          const auto attempt_remaining = std::chrono::duration_cast<std::chrono::microseconds>(
+              deadline - std::chrono::steady_clock::now());
+          if (attempt_remaining <= std::chrono::microseconds::zero()) {
+            status = grpc::Status(grpc::StatusCode::DEADLINE_EXCEEDED, "poll budget exhausted");
+            break;
+          }
+          grpc::ClientContext attempt_call;
+          Registration registration{*this, attempt_call};
+          {
+            const std::lock_guard lock(mutex_);
+            if (cancelled_) {
+              return grpc::Status(grpc::StatusCode::UNAVAILABLE, "cancelled");
+            }
+            active_.insert(&attempt_call);
+          }
+          attempt_call.set_deadline(gpr_time_add(
+              gpr_now(GPR_CLOCK_MONOTONIC),
+              gpr_time_from_micros(std::max<std::int64_t>(attempt_remaining.count(), 1),
+                                   GPR_TIMESPAN)));
+          status = invoke(attempt_call);
+          if (status.ok() || !retryable_owner_status(status.error_code())) {
+            break;
+          }
         }
-        active_.insert(&call);
-      }
+        return status;
+      };
       v1::RequestContext context;
       context.set_request_id(id);
       context.set_trace_id(trace);
@@ -635,7 +699,10 @@ public:
           input.mutable_page()->set_page_token(page_token);
         }
         v1::RuntimeListAdaptersResponse response;
-        const auto status = runtime_->ListAdapters(&call, input, &response);
+        const auto status = send_with_retry([&](grpc::ClientContext& call) {
+          response.Clear();
+          return runtime_->ListAdapters(&call, input, &response);
+        });
         if (!status.ok()) {
           return is_authorization_failure(status)
                      ? failed(status, context)
@@ -665,7 +732,10 @@ public:
           input.mutable_page()->set_page_token(page_token);
         }
         v1::RuntimeListInstancesResponse response;
-        const auto status = runtime_->ListInstances(&call, input, &response);
+        const auto status = send_with_retry([&](grpc::ClientContext& call) {
+          response.Clear();
+          return runtime_->ListInstances(&call, input, &response);
+        });
         if (!status.ok()) {
           return is_authorization_failure(status)
                      ? failed(status, context)

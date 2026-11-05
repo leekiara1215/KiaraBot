@@ -160,6 +160,23 @@ def adapters_case(harness):
     ws.close()
 
 
+def slow_owner_ready_case(harness):
+    # The first owner poll is slow (fixture sleeps 800ms in GetAdapter). SESSION_READY must come
+    # from Identity validation alone, well before that owner page; the event still arrives after.
+    slow = '77777777-7777-4777-8777-000000000d01'
+    ws = harness.websocket(path='/ws/adapters')
+    started = time.monotonic()
+    ws.send(hello([{'kind': 'RESOURCE_ADAPTER', 'id': slow}]))
+    message = recv_json(ws, timeout=5)
+    ready_elapsed = time.monotonic() - started
+    assert message['type'] == 'SESSION_READY', message
+    assert ready_elapsed < 0.7, f'slow owner poll delayed SESSION_READY: {ready_elapsed:.3f}s'
+    event_message = event(ws, 'adapter.updated')
+    assert event_message['payload']['id'] == slow
+    assert int(event_message['payload']['version']) == 1
+    ws.close()
+
+
 def plugins_case(harness):
     constant = '66666666-6666-4666-8666-000000000b01'
     ws = harness.websocket(path='/ws/plugins')
@@ -197,6 +214,8 @@ ADAPTER_MISMATCH_CATALOG = 'e1111111-1111-4111-8111-111111111111'
 INSTANCE_CATALOG = 'f1111111-1111-4111-8111-111111111111'
 INSTANCE_FAIL_CATALOG = 'a2111111-1111-4111-8111-111111111111'
 INSTANCE_MISMATCH_CATALOG = 'b2111111-1111-4111-8111-111111111111'
+ADAPTER_TRANSIENT_CATALOG = 'c8111111-1111-4111-8111-111111111111'
+INSTANCE_TRANSIENT_CATALOG = 'c7111111-1111-4111-8111-111111111111'
 ADAPTER_CONSTANT = '77777777-7777-4777-8777-000000000a01'
 ADAPTER_CHANGING = '77777777-7777-4777-8777-000000000a02'
 ADAPTER_PAGE_TWO = '77777777-7777-4777-8777-000000000a03'
@@ -273,6 +292,26 @@ def catalog_scan_case(harness):
     ws = harness.websocket(path='/ws/plugins')
     ws.send(catalog_hello([{'kind': 'RESOURCE_CATALOG', 'id': INSTANCE_MISMATCH_CATALOG}]))
     expect_closed(ws, 1011)
+
+    # Transient owner unavailability (injected DEADLINE_EXCEEDED on the first page calls): the
+    # bounded retries exhaust, the established session must stay open with no fabricated events,
+    # and the next poll recovers with the real adapter/plugin value events.
+    ws = harness.websocket(path='/ws/adapters')
+    ws.send(catalog_hello([{'kind': 'RESOURCE_CATALOG', 'id': ADAPTER_TRANSIENT_CATALOG}]))
+    ready(ws)
+    recovered = collect_catalog_events(
+        ws, 'adapter.updated', {ADAPTER_CONSTANT, ADAPTER_CHANGING, ADAPTER_PAGE_TWO})
+    assert int(recovered[ADAPTER_CONSTANT][0]['version']) == 1
+    assert int(recovered[ADAPTER_PAGE_TWO][0]['version']) == 1
+    ws.close()
+    ws = harness.websocket(path='/ws/plugins')
+    ws.send(catalog_hello([{'kind': 'RESOURCE_CATALOG', 'id': INSTANCE_TRANSIENT_CATALOG}]))
+    ready(ws)
+    recovered = collect_catalog_events(
+        ws, 'plugin.updated', {INSTANCE_CONSTANT, INSTANCE_CHANGING, INSTANCE_PAGE_TWO})
+    assert int(recovered[INSTANCE_CONSTANT][0]['version']) == 1
+    assert int(recovered[INSTANCE_PAGE_TWO][0]['version']) == 1
+    ws.close()
 
     # More exact child grants than the frozen scope bound is RATE_LIMITED, never a truncated
     # directory or an empty success stream.
@@ -368,6 +407,7 @@ def main(control, identity_fixture, owner_fixture):
         health_case(harness)
         degraded_health_case(harness)
         adapters_case(harness)
+        slow_owner_ready_case(harness)
         plugins_case(harness)
         catalog_scan_case(harness)
         fail_closed_case(harness)

@@ -281,14 +281,19 @@ def hello(access_token, resources):
 
 
 def connect(path, access_token, resources):
+    started = time.monotonic()
     client = WebSocketClient(STATE['control_port'], path)
     try:
         client.send_text(hello(access_token, resources))
         ready = json.loads(client.recv())
         require(ready.get('type') == 'SESSION_READY' and ready.get('last_sequence') == 0,
                 f'{path}: SESSION_READY frame')
+        print(f'INFO ws_ready_ms path={path} '
+              f'ms={int((time.monotonic() - started) * 1000)}', flush=True)
         return client
     except BaseException:
+        print(f'INFO ws_ready_fail path={path} '
+              f'ms={int((time.monotonic() - started) * 1000)}', flush=True)
         client.close()
         raise
 
@@ -490,15 +495,20 @@ def ws_expect_close(port, path, token, resources, expected_code):
     client = WebSocketClient(port, path)
     try:
         client.send_text(hello(token, resources))
-        try:
-            client.recv(10.0)
-        except WsClosed as error:
-            require(error.code == expected_code,
-                    f'{path}: expected close {expected_code}, got {error.code}')
-            return
-        except Exception as error:  # noqa: BLE001 - transport failure is also fail-closed
-            require(expected_code == 1011, f'{path}: unexpected transport error {error}')
-            return
+        deadline = time.monotonic() + 20.0
+        while time.monotonic() < deadline:
+            try:
+                client.recv(max(0.05, deadline - time.monotonic()))
+            except WsClosed as error:
+                require(error.code == expected_code,
+                        f'{path}: expected close {expected_code}, got {error.code}')
+                return
+            except socket.timeout:
+                continue
+            except Exception as error:  # noqa: BLE001 - transport failure is also fail-closed
+                require(expected_code == 1011, f'{path}: unexpected transport error {error}')
+                return
+            # SESSION_READY/value frames may precede the fail-closed close; keep reading.
         raise RuntimeError(f'{path}: expected close {expected_code}, stream stayed open')
     finally:
         client.close()

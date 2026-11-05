@@ -8,6 +8,7 @@
 #include <iostream>
 #include <sstream>
 #include <string>
+#include <thread>
 
 #include <google/protobuf/util/json_util.h>
 #include <grpcpp/grpcpp.h>
@@ -153,6 +154,11 @@ constexpr char kAdapterMismatchCatalog[] = "e1111111-1111-4111-8111-111111111111
 constexpr char kInstanceCatalog[] = "f1111111-1111-4111-8111-111111111111";
 constexpr char kInstanceFailCatalog[] = "a2111111-1111-4111-8111-111111111111";
 constexpr char kInstanceMismatchCatalog[] = "b2111111-1111-4111-8111-111111111111";
+// Transient owner unavailability: the first kTransientOwnerCalls page calls fail with
+// DEADLINE_EXCEEDED, then the same immutable-page fixture succeeds.
+constexpr char kAdapterTransientCatalog[] = "c8111111-1111-4111-8111-111111111111";
+constexpr char kInstanceTransientCatalog[] = "c7111111-1111-4111-8111-111111111111";
+constexpr int kTransientOwnerCalls = 3;
 
 class FakeRuntime final : public wire::RuntimeService::Service {
 public:
@@ -162,6 +168,8 @@ public:
   std::atomic<int> error_adapter_calls_{0};
   std::atomic<int> changing_instance_calls_{0};
   std::atomic<int> error_instance_calls_{0};
+  std::atomic<int> transient_adapter_calls_{0};
+  std::atomic<int> transient_instance_calls_{0};
   grpc::Status ListOperationChanges(grpc::ServerContext*,
                                     const wire::OperationChangesRequest* input,
                                     wire::OperationChangesResponse* output) override {
@@ -284,6 +292,10 @@ public:
       return failure(wire::INVALID_ARGUMENT, grpc::StatusCode::INVALID_ARGUMENT, input->context());
     }
     const std::string id = input->resource().id();
+    if (id.ends_with("0d01")) {
+      // Deterministic slow owner page: SESSION_READY must not wait for this first owner poll.
+      std::this_thread::sleep_for(std::chrono::milliseconds{800});
+    }
     if (id.ends_with("0e01") && error_adapter_calls_.fetch_add(1) == 0) {
       return failure(wire::UPSTREAM_UNAVAILABLE, grpc::StatusCode::UNAVAILABLE, input->context());
     }
@@ -405,9 +417,15 @@ public:
   grpc::Status ListInstances(grpc::ServerContext*, const wire::RuntimeListInstancesRequest* input,
                              wire::RuntimeListInstancesResponse* output) override {
     if (input->has_catalog() && input->catalog().kind() == wire::RESOURCE_CATALOG &&
+        input->catalog().id() == kInstanceTransientCatalog &&
+        transient_instance_calls_.fetch_add(1) < kTransientOwnerCalls) {
+      return failure(wire::TIMEOUT, grpc::StatusCode::DEADLINE_EXCEEDED, input->context());
+    }
+    if (input->has_catalog() && input->catalog().kind() == wire::RESOURCE_CATALOG &&
         (input->catalog().id() == kInstanceCatalog ||
          input->catalog().id() == kInstanceFailCatalog ||
-         input->catalog().id() == kInstanceMismatchCatalog)) {
+         input->catalog().id() == kInstanceMismatchCatalog ||
+         input->catalog().id() == kInstanceTransientCatalog)) {
       return instance_catalog_page(input, output);
     }
     return catalog_page(input, output, [&](const std::string& id) {
@@ -417,8 +435,14 @@ public:
   grpc::Status ListAdapters(grpc::ServerContext*, const wire::RuntimeListAdaptersRequest* input,
                             wire::RuntimeListAdaptersResponse* output) override {
     if (input->has_catalog() && input->catalog().kind() == wire::RESOURCE_CATALOG &&
+        input->catalog().id() == kAdapterTransientCatalog &&
+        transient_adapter_calls_.fetch_add(1) < kTransientOwnerCalls) {
+      return failure(wire::TIMEOUT, grpc::StatusCode::DEADLINE_EXCEEDED, input->context());
+    }
+    if (input->has_catalog() && input->catalog().kind() == wire::RESOURCE_CATALOG &&
         (input->catalog().id() == kAdapterCatalog || input->catalog().id() == kAdapterFailCatalog ||
-         input->catalog().id() == kAdapterMismatchCatalog)) {
+         input->catalog().id() == kAdapterMismatchCatalog ||
+         input->catalog().id() == kAdapterTransientCatalog)) {
       return adapter_catalog_page(input, output);
     }
     return catalog_page(input, output, [&](const std::string& id) {

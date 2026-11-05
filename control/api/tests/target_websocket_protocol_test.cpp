@@ -18,6 +18,7 @@
 #include <nlohmann/json.hpp>
 
 #include "kiarabot/control/target/websocket_protocol.hpp"
+#include "kiarabot/control/target/websocket_session.hpp"
 
 namespace {
 namespace target = kiarabot::control::target;
@@ -597,6 +598,41 @@ void catalog_scope_rules() {
           "health accepts catalog/control");
 }
 
+void ready_policy_rules() {
+  // Operations SESSION_READY carries the owner head cursor, so it must poll before ready. Every
+  // scoped/snapshot channel has a plain ready frame and must not wait for owner data.
+  require(!target::websocket_ready_without_owner_data("operations"),
+          "operations requires owner head before ready");
+  for (const auto* channel : {"health", "adapters", "plugins", "logs", "tasks", "messages"}) {
+    require(target::websocket_ready_without_owner_data(channel),
+            "scoped/snapshot channel ready before owner data");
+  }
+  require(!target::websocket_ready_without_owner_data("control"),
+          "control channel is not a plain-ready channel");
+  require(!target::websocket_ready_without_owner_data("unknown"),
+          "unknown channel is not a plain-ready channel");
+  // Snapshot channels keep the established session on transient owner/session availability
+  // failures; authorization/scope/integrity failures still close, and feeds keep fail-closed.
+  for (const auto* channel : {"health", "adapters", "plugins"}) {
+    require(target::websocket_snapshot_transient(channel, wire::TIMEOUT),
+            "snapshot channel retains on owner timeout");
+    require(target::websocket_snapshot_transient(channel, wire::UPSTREAM_UNAVAILABLE),
+            "snapshot channel retains on upstream unavailability");
+    require(!target::websocket_snapshot_transient(channel, wire::RATE_LIMITED),
+            "snapshot channel closes on rate limiting (frozen 1013)");
+    require(!target::websocket_snapshot_transient(channel, wire::PERMISSION_DENIED),
+            "snapshot channel closes on permission denial");
+    require(!target::websocket_snapshot_transient(channel, wire::UNAUTHENTICATED),
+            "snapshot channel closes on authentication failure");
+    require(!target::websocket_snapshot_transient(channel, wire::INTERNAL),
+            "snapshot channel closes on malformed/inconsistent state");
+  }
+  for (const auto* channel : {"logs", "tasks", "messages", "operations"}) {
+    require(!target::websocket_snapshot_transient(channel, wire::TIMEOUT),
+            "non-snapshot channels keep their existing failure mapping");
+  }
+}
+
 void catalog_expansion_rules() {
   constexpr char kPrincipal[] = "33333333-3333-4333-8333-333333333333";
   constexpr char kOtherPrincipal[] = "44444444-4444-4444-8444-444444444444";
@@ -909,6 +945,7 @@ int main(int argc, char** argv) {
     snapshot_event_rules();
     catalog_scope_rules();
     catalog_expansion_rules();
+    ready_policy_rules();
     if (argc == 3 && std::string_view{argv[1]} == "--emit") {
       emit(argv[2]);
     }

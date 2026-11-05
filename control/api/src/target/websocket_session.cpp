@@ -213,10 +213,22 @@ private:
     access_token_ = frame.access_token;
     const auto deadline = std::chrono::steady_clock::now() + poll_budget();
     asio::post(workers_, [self = shared_from_this(), frame = std::move(frame), deadline]() mutable {
-      auto result = self->source_->poll(self->route_, frame.access_token, std::nullopt, deadline);
+      // Operations SESSION_READY carries the owner head cursor, so that channel keeps the owner
+      // poll before ready. v1.2 feeds and snapshot channels have a plain ready frame: validate the
+      // Identity session first, emit SESSION_READY, and run the first owner page/snapshot poll
+      // asynchronously afterwards so a slow owner can never delay the ready frame.
+      if (!websocket_ready_without_owner_data(self->route_.channel)) {
+        auto result = self->source_->poll(self->route_, frame.access_token, std::nullopt, deadline);
+        asio::post(self->strand_,
+                   [self, frame = std::move(frame), result = std::move(result)]() mutable {
+                     self->on_authenticated(std::move(frame), std::move(result));
+                   });
+        return;
+      }
+      auto result = self->source_->authenticate(self->route_, frame.access_token, deadline);
       asio::post(self->strand_,
                  [self, frame = std::move(frame), result = std::move(result)]() mutable {
-                   self->on_authenticated(std::move(frame), std::move(result));
+                   self->on_identity_authenticated(std::move(frame), std::move(result));
                  });
     });
   }
@@ -237,6 +249,73 @@ private:
     } else {
       establish_hello(std::move(poll));
     }
+  }
+  void on_identity_authenticated(WebSocketFirstFrame frame,
+                                 WebSocketResult<WebSocketIdentity> result) {
+    authenticating_ = false;
+    if (state_ != State::Authenticating) {
+      return;
+    }
+    if (const auto* failure = std::get_if<WebSocketFailure>(&result)) {
+      begin_close(close_code(*failure));
+      return;
+    }
+    established_identity_ = std::get<WebSocketIdentity>(std::move(result));
+    last_confirmed_ = std::chrono::steady_clock::now();
+    if (frame.resume) {
+      establish_resume_identity(std::move(frame));
+    } else {
+      establish_hello_identity();
+    }
+  }
+  // Plain SESSION_READY for channels without a client-visible owner cursor. The retained session
+  // starts with no owner boundary; the first normal poll captures the scoped head or full snapshot
+  // and every event is delivered after the ready frame.
+  void establish_hello_identity() {
+    const auto created = store_->create(established_identity_, route_, std::nullopt, handle());
+    if (const auto* failure = std::get_if<WebSocketFailure>(&created)) {
+      begin_close(close_code(*failure));
+      return;
+    }
+    session_id_ = std::get<std::string>(created);
+    const auto ready = websocket_session_ready(session_id_, 0, std::nullopt);
+    if (const auto* failure = std::get_if<WebSocketFailure>(&ready)) {
+      begin_close(close_code(*failure));
+      return;
+    }
+    state_ = State::Established;
+    enqueue({std::get<std::string>(ready), 0, {}});
+    start_established();
+  }
+  void establish_resume_identity(WebSocketFirstFrame frame) {
+    const auto resumed = store_->resume(frame.session_id, established_identity_, route_,
+                                        frame.last_sequence, std::nullopt, handle());
+    switch (resumed.status) {
+    case WebSocketResumeResult::Status::Rejected:
+      begin_close(close_code(resumed.failure));
+      return;
+    case WebSocketResumeResult::Status::Resync: {
+      const auto resync = websocket_resync_required(resumed.resync);
+      if (const auto* failure = std::get_if<WebSocketFailure>(&resync)) {
+        begin_close(close_code(*failure));
+        return;
+      }
+      state_ = State::Established;
+      resync_then_close(std::get<std::string>(resync));
+      return;
+    }
+    case WebSocketResumeResult::Status::Accepted:
+      break;
+    }
+    session_id_ = frame.session_id;
+    const auto ready = websocket_session_ready(session_id_, frame.last_sequence, std::nullopt);
+    if (const auto* failure = std::get_if<WebSocketFailure>(&ready)) {
+      begin_close(close_code(*failure));
+      return;
+    }
+    state_ = State::Established;
+    enqueue({std::get<std::string>(ready), 0, {}});
+    start_established();
   }
   void establish_hello(WebSocketPoll poll) {
     if (poll.scoped) {
@@ -388,6 +467,22 @@ private:
       return;
     }
     if (const auto* failure = std::get_if<WebSocketFailure>(&result)) {
+      if (websocket_snapshot_transient(route_.channel, failure->code)) {
+        // Transient owner/session unavailability: keep the established stream and the last known
+        // values, never emit a value for the failed poll, and retry on the normal cadence. The
+        // next successful full snapshot emits changed/recovered values through the store. A
+        // prolonged outage still fails closed inside the bounded grace window.
+        const auto now = std::chrono::steady_clock::now();
+        if (!transient_since_) {
+          transient_since_ = now;
+        }
+        if (now - *transient_since_ > config_.snapshot_transient_grace) {
+          begin_close(1011);
+          return;
+        }
+        schedule_poll(config_.poll_interval);
+        return;
+      }
       if (failure->cursor_expired) {
         const auto resync = websocket_resync_required(WebSocketResyncReason::CursorExpired);
         if (const auto* rejected = std::get_if<WebSocketFailure>(&resync)) {
@@ -410,6 +505,7 @@ private:
       return;
     }
     last_confirmed_ = std::chrono::steady_clock::now();
+    transient_since_.reset();
     if (poll.snapshot) {
       if (!apply_snapshot_page(*poll.snapshot)) {
         return;
@@ -742,6 +838,7 @@ private:
   }
   // ---- teardown ----------------------------------------------------------
   void begin_close(std::uint16_t code) {
+    transient_since_.reset();
     if (state_ == State::Closing || state_ == State::Finished) {
       return;
     }
@@ -868,6 +965,7 @@ private:
   std::string session_id_;
   WebSocketIdentity established_identity_;
   std::chrono::steady_clock::time_point last_confirmed_{};
+  std::optional<std::chrono::steady_clock::time_point> transient_since_;
   std::deque<WriteFrame> frames_;
   State state_ = State::Idle;
   std::uint16_t close_code_ = 0;
@@ -883,6 +981,22 @@ private:
   bool backpressure_ = false;
 };
 } // namespace
+
+// Public readiness policy shared with the unit test: the factory itself and the session dispatch
+// must agree on which channels can emit SESSION_READY before the first owner data poll.
+bool websocket_ready_without_owner_data(std::string_view channel) {
+  return channel == "health" || channel == "adapters" || channel == "plugins" ||
+         channel == "logs" || channel == "tasks" || channel == "messages";
+}
+
+bool websocket_snapshot_transient(std::string_view channel, v1::ErrorCode code) {
+  if (channel != "health" && channel != "adapters" && channel != "plugins") {
+    return false;
+  }
+  // RATE_LIMITED is the frozen 1013 close (for example the directory child bound), not a
+  // transient owner availability error, so it keeps closing.
+  return code == v1::TIMEOUT || code == v1::UPSTREAM_UNAVAILABLE;
+}
 
 std::shared_ptr<WebSocketConnection>
 make_web_socket_connection(WebSocketStream stream, http::request<http::string_body> request,
