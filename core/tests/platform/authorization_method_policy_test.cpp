@@ -116,6 +116,38 @@ void generated_contract_metadata() {
   assert(call_status->owner == t::Service::Model);
   assert(call_status->scope_kinds.size() == 1 &&
          call_status->scope_kinds.front() == t::ResourceKind::Model);
+  // HOST-04 owner management RPCs are resolved as Host owner with the frozen host.read /
+  // host.execute annotations; a missing mapping made the real Identity online check reject every
+  // HostManagementService call as INVALID_ARGUMENT.
+  const auto host_read =
+      resolve_port(*resolver, "/kiarabot.v1.HostManagementService/GetMaintenance");
+  assert(host_read.has_value());
+  assert(host_read->owner == t::Service::Host);
+  assert(host_read->permission == t::Permission::HostRead);
+  assert(host_read->scope_kinds.size() == 1 &&
+         host_read->scope_kinds.front() == t::ResourceKind::Host);
+  const auto host_execute =
+      resolve_port(*resolver, "/kiarabot.v1.HostManagementService/BeginMaintenance");
+  assert(host_execute.has_value());
+  assert(host_execute->owner == t::Service::Host);
+  assert(host_execute->permission == t::Permission::HostExecute);
+  assert(host_execute->scope_kinds.size() == 1 &&
+         host_execute->scope_kinds.front() == t::ResourceKind::Host);
+  const auto host_operation =
+      resolve_port(*resolver, "/kiarabot.v1.HostManagementService/GetOperation");
+  assert(host_operation.has_value());
+  assert(host_operation->owner == t::Service::Host);
+  assert(host_operation->permission == t::Permission::HostRead);
+  assert(host_operation->scope_kinds.size() == 1 &&
+         host_operation->scope_kinds.front() == t::ResourceKind::Host);
+  const auto host_cancel =
+      resolve_port(*resolver, "/kiarabot.v1.HostManagementService/CancelOperation");
+  assert(host_cancel.has_value());
+  assert(host_cancel->owner == t::Service::Host);
+  assert(host_cancel->permission == t::Permission::HostExecute);
+  assert(host_cancel->scope_kinds.size() == 1 &&
+         host_cancel->scope_kinds.front() == t::ResourceKind::Host);
+
   assert(!resolve_port(*resolver, "/kiarabot.v1.ModelService/NotAMethod").has_value());
   assert(!resolve_port(*resolver, "/kiarabot.v1.UnknownService/Method").has_value());
   assert(!resolve_port(*resolver, "/kiarabot.v1.HostBridge/Connect").has_value());

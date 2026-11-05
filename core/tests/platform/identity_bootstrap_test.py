@@ -144,8 +144,12 @@ def main(*, control_server_certificate=False, after_bootstrap=None,
         HOST_STATE.clear()
         for name, permissions in (('host-1', ['host.execute']), ('host-2', ['host.read'])):
             extension = tls_root / f'{name}.ext'
-            extension.write_text(f'subjectAltName=URI:spiffe://kiarabot/{name}-test\n'
-                                 'extendedKeyUsage=clientAuth\n'
+            # The real Host process uses this single material both as the enrolled HostBridge /
+            # Identity client identity and as its owner mTLS server certificate, so the SANs must
+            # also cover the local endpoint and the EKU must allow serverAuth.
+            extension.write_text(f'subjectAltName=URI:spiffe://kiarabot/{name}-test,'
+                                 'DNS:localhost,IP:127.0.0.1\n'
+                                 'extendedKeyUsage=clientAuth,serverAuth\n'
                                  'basicConstraints=critical,CA:FALSE\n'
                                  'keyUsage=critical,digitalSignature\n'
                                  'subjectKeyIdentifier=hash\n'
@@ -281,8 +285,10 @@ def main(*, control_server_certificate=False, after_bootstrap=None,
                 '5:' + host['host_id']
             assert sql(f"SELECT platform_service::text FROM kiarabot.credential_certificates "
                        f"WHERE id='{host['credential_id']}';", 'p03_identity') == '2'
-            assert sql(f"SELECT count(*) FROM kiarabot.exact_assignments "
-                       f"WHERE subject='{host['principal_id']}';", 'p03_identity') == '1'
+            # The base enrollment always creates the exact host grant; a real Host consumer may
+            # additionally carry identity.authorization.check, so only presence is asserted.
+            assert int(sql(f"SELECT count(*) FROM kiarabot.exact_assignments "
+                           f"WHERE subject='{host['principal_id']}';", 'p03_identity')) >= 1
     assert 'CONFLICT' in run(command, 1)
     assert 'state=consumed version=2' in run(status_arguments)
     print('Real owned PG offline bootstrap, rejected enrollment, once-only state and redaction passed')

@@ -361,3 +361,17 @@ S1 通过、S2 无测试，Runtime gate/PG 持久化/Control host 路由未实�
 - adapters/plugins 目录 immutable page 扫描落地（真实 Runtime ListAdapters/ListInstances + 逐页授权
   + fail-closed）；asyncapi/doc06 同步。
 - 验证：全量 CTest 208/208 exit 0（547.79s）；契约/target/api/架构/SDK 门禁 exit 0；格式 0 新增。
+
+## 2026-11-05 goal round 3：真实缺陷修复 + feeds 加固 + Panel 清理
+
+- 真实产品缺陷：平台客户端非规范 UUID（Host 3 处、Scheduler 2 处）导致真实 owner 拒绝
+  INVALID_ARGUMENT；修复并补 canonical 断言（新增 `p10_scheduler_runtime_client`）。
+- Identity 授权方法表补 `HostManagementService→Host` owner 映射 + 4 方法单测。
+- feeds 加固：真实撤权 fail-closed、真实 COMPLETED 终态、page_size>100/未来 sequence 边界。
+- Panel 基线 stale 测试 setup 修复，91/91 全过。
+- HOST 全真实单链：host.read 链路通过；BeginMaintenance 403 挂起（claims 差异），e2e 未注册。
+- 验证：见全量 CTest/门禁日志；未 push/发布。
+
+- **goal round 3 验收：全量构建 exit 0；全量 CTest 209/209 exit 0（`round4c-ctest.log`，632.21s，
+  `--parallel 3`）；契约/target/api/架构/SDK 门禁全绿；格式 0 新增；Panel 91/91。**
+  `p10_timer_e2e` 因 wall-clock 敏感也加 `RUN_SERIAL`（与 STR09 相同处理，未放宽断言）。

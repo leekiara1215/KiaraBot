@@ -32,7 +32,7 @@ def main():
                     'operation_observation_e2e_test.py',
                     'p14_native_single_host', 'p14_native_single_host.py',
                     'p13h3_joint_delete_production_e2e',
-                    'p13h3_joint_delete_production_e2e.py',
+                    'p13h3_joint_delete_production_e2e.py', 'p12_host_real_chain_e2e.py',
                     'p05b_model_chain_e2e', 'p05b_model_chain_e2e.py',
                     'bootstrap_delivery_e2e.py',
                     'kiarabot_postgres_observation_feed_test')
@@ -48,7 +48,7 @@ def main():
                                           'identity_credential_daemon_test.py', 'runtime_identity_e2e_test.py'):
                 for line in result.stderr.decode(errors='replace').splitlines():
                     if line.startswith(('P03 assertion: ', 'P04 credential check failed at ', 'P05 exact resource failure at ', 'P08 assertion: ', 'P10 ',
-                                          'P14 native single-host', 'P13h-3 ',
+                                          'P14 native single-host', 'P13h-3 ', 'P12H stage:', 'P12H debug:',
                                           'P05b-4 e2e failure: ', 'P05b-4 stage: ')):
                         print(line, flush=True)
             raise RuntimeError(f'fixture command failed: {Path(command[0]).name}; '

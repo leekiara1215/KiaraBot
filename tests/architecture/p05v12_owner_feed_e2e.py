@@ -13,7 +13,11 @@ the offline bootstrap enrollment and temporary mTLS material, then drives the fr
     appends no second row.
   * Scheduler.ListTaskChanges (exact RESOURCE_TASK): real CreateTask/CancelTask owner RPCs stage
     pending/cancelled facts in the same scheduler transaction; multi-page cursor reads and typed
-    gap conflicts are asserted.
+    gap conflicts are asserted, and a due task drives the real handoff (Scheduler maintenance ->
+    Runtime AcceptTimerTrigger -> COMPLETED) so a terminal state is observed in the feed.
+  * Real Identity Set/RevokeAssignment revocation of the delegating subject's log.read,
+    message.read and task.read grants: the next ListXChanges with the existing delegation is a
+    typed refusal (never an empty success page); a fresh grant + delegation restores readability.
 Every owner RPC is called over real mTLS with the Control client certificate and an Identity-issued
 delegation for the exact owner/audience/permission/scope. Refusals (absent optional scope, wrong
 owner scope/audience, missing permission) are asserted as stable gRPC codes, never fake empty pages.
@@ -106,22 +110,39 @@ def grant(permissions, scopes):
 
 def prepare(root, enrolled):
     p14.prepare(root, enrolled)
-    STATE['tasks'] = [str(uuid.uuid4()) for _ in range(3)]
+    # The fourth id is created with a due run_at later to drive a real COMPLETED terminal fact.
+    STATE['tasks'] = [str(uuid.uuid4()) for _ in range(4)]
+    STATE['admin_principal'] = enrolled['administrator_id']
+    STATE['grants'] = {}
+    feed_grants = [
+        ('log', ['log.read'], [{'kind': 'RESOURCE_CATALOG', 'id': 'control'}]),
+        ('message', ['message.read'], [{'kind': 'RESOURCE_ACCOUNT', 'id': ACCOUNT}]),
+        ('task', ['task.read'], [{'kind': 'RESOURCE_TASK', 'id': task_id}
+                                 for task_id in STATE['tasks']]),
+    ]
+    for label, permissions, scope in feed_grants:
+        administrator = grant(permissions, scope)
+        control = grant(permissions, scope)
+        enrolled['administrator_assignments'].append(administrator)
+        enrolled['control_assignments'].append(control)
+        STATE['grants'][label] = {'administrator': administrator, 'control': control}
     grants = [
-        (['log.read'], [{'kind': 'RESOURCE_CATALOG', 'id': 'control'}]),
-        (['message.read'], [{'kind': 'RESOURCE_ACCOUNT', 'id': ACCOUNT}]),
         (['account.manage'], [{'kind': 'RESOURCE_ACCOUNT', 'id': ACCOUNT}]),
         (['task.schedule'], [{'kind': 'RESOURCE_INSTANCE', 'id': ADAPTER_INSTANCE}]),
-        (['task.read'], [{'kind': 'RESOURCE_INSTANCE', 'id': ADAPTER_INSTANCE}]),
         (['task.schedule'], [{'kind': 'RESOURCE_INSTALLATION', 'id': INSTALLATION}]),
-        (['task.read'], [{'kind': 'RESOURCE_INSTALLATION', 'id': INSTALLATION}]),
         (['task.schedule'], [{'kind': 'RESOURCE_TASK', 'id': task_id}
                              for task_id in STATE['tasks']]),
-        (['task.read'], [{'kind': 'RESOURCE_TASK', 'id': task_id} for task_id in STATE['tasks']]),
     ]
     for permissions, scope in grants:
         for key in ('administrator_assignments', 'control_assignments'):
             enrolled[key].append(grant(permissions, scope))
+    # The Control platform principal performs the real assignment revocation/restore through
+    # Identity; it therefore needs the exact assignment-manage scope of every revocable grant.
+    for scope in ([{'kind': 'RESOURCE_CATALOG', 'id': 'control'}],
+                  [{'kind': 'RESOURCE_ACCOUNT', 'id': ACCOUNT}],
+                  [{'kind': 'RESOURCE_TASK', 'id': task_id} for task_id in STATE['tasks']]):
+        enrolled['control_assignments'].append(
+            grant(['identity.assignment.manage'], scope))
 
 
 def sql(database, statement):
@@ -172,6 +193,22 @@ def issue_delegation(identity, access, audience, scope, permissions, client_cert
     return response.delegation.proof
 
 
+RETRYABLE_RPC = (grpc.StatusCode.DEADLINE_EXCEEDED, grpc.StatusCode.UNAVAILABLE,
+                 grpc.StatusCode.RESOURCE_EXHAUSTED)
+
+
+def with_retry(call, label, attempts=3):
+    """Bounded retry for retryable transport codes only; authorization refusals never retry."""
+    for attempt in range(attempts):
+        try:
+            return call()
+        except grpc.RpcError as error:
+            if error.code() in RETRYABLE_RPC and attempt + 1 < attempts:
+                time.sleep(0.2 * (attempt + 1))
+                continue
+            raise
+
+
 def expect_code(call, codes, label):
     try:
         call()
@@ -203,24 +240,82 @@ def page_header(response, expected_scope, owner, page_size):
     require(actual == wanted, 'next cursor canonical scope match')
 
 
+PERMISSIONS = {'log.read': policy_pb2.PERMISSION_LOG_READ,
+               'message.read': policy_pb2.PERMISSION_MESSAGE_READ,
+               'task.read': policy_pb2.PERMISSION_TASK_READ}
+RESOURCE_KINDS = {'RESOURCE_CATALOG': platform_pb2.RESOURCE_CATALOG,
+                  'RESOURCE_ACCOUNT': platform_pb2.RESOURCE_ACCOUNT,
+                  'RESOURCE_TASK': platform_pb2.RESOURCE_TASK,
+                  'RESOURCE_INSTANCE': platform_pb2.RESOURCE_INSTANCE,
+                  'RESOURCE_INSTALLATION': platform_pb2.RESOURCE_INSTALLATION}
+
+
+def scope_from_dict(items):
+    scope = platform_pb2.ResourceScope()
+    for item in items:
+        scope.resources.add(kind=RESOURCE_KINDS[item['kind']], id=item['id'])
+    return scope
+
+
+def assignment_spec(info):
+    spec = identity_pb2.AssignmentSpec(principal_id=STATE['admin_principal'])
+    spec.permissions.extend(PERMISSIONS[name] for name in info['permissions'])
+    spec.scope.CopyFrom(scope_from_dict(info['scope']))
+    return spec
+
+
+def revoke_admin_grant(identity, label):
+    info = STATE['grants'][label]['administrator']
+    identity.RevokeAssignment(identity_pb2.IdentityRevokeAssignmentRequest(
+        context=request_context(), assignment_id=info['assignment_id'],
+        expected_version=1), timeout=10)
+    return info
+
+
+def restore_admin_grant(identity, label):
+    info = STATE['grants'][label]['administrator']
+    response = identity.SetAssignment(identity_pb2.IdentitySetAssignmentRequest(
+        context=request_context(), assignment=assignment_spec(info)), timeout=10)
+    require(response.assignment.version == 1 and response.assignment.assignment_id != '',
+            f'{label} grant restored')
+    return response.assignment
+
+
+def expect_feed_refusal(call, label):
+    try:
+        call()
+    except grpc.RpcError as error:
+        code = error.code()
+        require(code in (grpc.StatusCode.PERMISSION_DENIED, grpc.StatusCode.UNAUTHENTICATED),
+                f'{label}: expected an authorization refusal, got {code.name}')
+        return code
+    raise RuntimeError(f'{label}: revoked feed must be refused, never a successful page')
+
+
+def journal_rows(database, family):
+    return sql(database, 'SELECT count(*) FROM kiarabot.observation_feed_changes '
+                         f'WHERE family={family};')
+
+
 def log_changes(runtime, delegation, cursor=None, page_size=8, scope=None,
                 include_scope=True):
-    return runtime.ListLogChanges(feed_request(scope or catalog_scope(), delegation, cursor,
-                                              page_size, include_scope), timeout=10)
+    return with_retry(lambda: runtime.ListLogChanges(
+        feed_request(scope or catalog_scope(), delegation, cursor, page_size, include_scope),
+        timeout=10), 'log changes')
 
 
 def message_changes(runtime, delegation, cursor=None, page_size=8, scope=None,
                     include_scope=True):
-    return runtime.ListMessageMetadataChanges(feed_request(scope or account_scope(), delegation,
-                                                          cursor, page_size, include_scope),
-                                             timeout=10)
+    return with_retry(lambda: runtime.ListMessageMetadataChanges(
+        feed_request(scope or account_scope(), delegation, cursor, page_size, include_scope),
+        timeout=10), 'message changes')
 
 
 def task_changes(scheduler, delegation, cursor=None, page_size=8, scope=None,
                  include_scope=True):
-    return scheduler.ListTaskChanges(feed_request(scope or task_scope(STATE['tasks']),
-                                                  delegation, cursor, page_size, include_scope),
-                                    timeout=10)
+    return with_retry(lambda: scheduler.ListTaskChanges(
+        feed_request(scope or task_scope(STATE['tasks']), delegation, cursor, page_size,
+                     include_scope), timeout=10), 'task changes')
 
 
 def check_log_metadata(log):
@@ -352,12 +447,49 @@ async def run_owner_feeds(root, ca, control_cert, control_key, identity_endpoint
         access = login.tokens.access_token
 
         stage('delegations')
-        log_delegation = issue_delegation(
-            identity, access, 'runtime', catalog_scope(), [policy_pb2.PERMISSION_LOG_READ],
-            fingerprint, 'runtime-log')
-        message_delegation = issue_delegation(
-            identity, access, 'runtime', account_scope(),
-            [policy_pb2.PERMISSION_MESSAGE_READ], fingerprint, 'runtime-message')
+
+        def issue_feed_delegation(label):
+            if label == 'log':
+                return issue_delegation(identity, access, 'runtime', catalog_scope(),
+                                        [policy_pb2.PERMISSION_LOG_READ], fingerprint,
+                                        'runtime-log')
+            if label == 'message':
+                return issue_delegation(identity, access, 'runtime', account_scope(),
+                                        [policy_pb2.PERMISSION_MESSAGE_READ], fingerprint,
+                                        'runtime-message')
+            return issue_delegation(identity, access, 'scheduler', task_scope(STATE['tasks']),
+                                    [policy_pb2.PERMISSION_TASK_READ], fingerprint,
+                                    'scheduler-read')
+
+        stage('real Identity assignment revocation fail-closed and restore')
+        feed_reads = {'log': lambda proof: log_changes(runtime, proof),
+                      'message': lambda proof: message_changes(runtime, proof),
+                      'task': lambda proof: task_changes(scheduler, proof)}
+        feed_heads = {'log': (catalog_scope(), 'runtime', 'p03_runtime', 1),
+                      'message': (account_scope(), 'runtime', 'p03_runtime', 2),
+                      'task': (task_scope(STATE['tasks']), 'scheduler', 'p03_scheduler', 3)}
+        for label in ('log', 'message', 'task'):
+            expected_scope, owner, database, family = feed_heads[label]
+            delegation = issue_feed_delegation(label)
+            head = feed_reads[label](delegation)
+            page_header(head, expected_scope, owner, 8)
+            require(not head.changes, f'{label} head before revocation is empty')
+            rows = journal_rows(database, family)
+            revoke_admin_grant(identity, label)
+            expect_feed_refusal(lambda: feed_reads[label](delegation),
+                                f'revoked {label}.read delegation')
+            require(journal_rows(database, family) == rows,
+                    f'refused {label} page appends nothing')
+            restore_admin_grant(identity, label)
+            restored = issue_feed_delegation(label)
+            readable = feed_reads[label](restored)
+            page_header(readable, expected_scope, owner, 8)
+
+        # Every revocation bumped the principal's authorization version, so the long-lived owner
+        # delegations used by the main flows are issued after the last restore.
+        log_delegation = issue_feed_delegation('log')
+        message_delegation = issue_feed_delegation('message')
+        task_read_delegation = issue_feed_delegation('task')
         account_delegation = issue_delegation(
             identity, access, 'runtime', account_scope(ACCOUNT),
             [policy_pb2.PERMISSION_ACCOUNT_MANAGE], fingerprint, 'runtime-account')
@@ -370,9 +502,6 @@ async def run_owner_feeds(root, ca, control_cert, control_key, identity_endpoint
                                          id=INSTALLATION)] +
                 list(task_scope(STATE['tasks']).resources)),
             [policy_pb2.PERMISSION_TASK_SCHEDULE], fingerprint, 'scheduler-task')
-        task_read_delegation = issue_delegation(
-            identity, access, 'scheduler', task_scope(STATE['tasks']),
-            [policy_pb2.PERMISSION_TASK_READ], fingerprint, 'scheduler-read')
 
         stage('bridge message acceptance and message feed')
         await bridge_flow(runtime, message_delegation, ca, bridge_port)
@@ -429,7 +558,7 @@ async def run_owner_feeds(root, ca, control_cert, control_key, identity_endpoint
         task_head = task_changes(scheduler, task_read_delegation, page_size=8)
         page_header(task_head, task_scope(STATE['tasks']), 'scheduler', 8)
         require(not task_head.changes, 'task head returns no changes')
-        for index, task_id in enumerate(STATE['tasks']):
+        for index, task_id in enumerate(STATE['tasks'][:3]):
             created = scheduler.CreateTask(scheduler_pb2.SchedulerCreateTaskRequest(
                 context=delegated_context(schedule_delegation), task_id=task_id,
                 target=common_pb2.ConversationRef(id=f'feed-conversation-{index}',
@@ -454,6 +583,8 @@ async def run_owner_feeds(root, ca, control_cert, control_key, identity_endpoint
                                   page_size=2)
             page_header(second, task_scope(STATE['tasks']), 'scheduler', 2)
             collect += list(second.changes)
+        live_cursor = platform_pb2.StreamCursor()
+        live_cursor.CopyFrom(second.next_cursor)
         states = [change.task.state for change in collect]
         require(len(collect) == 4, 'four real task transition rows')
         require(common_pb2.SCHEDULED_TASK_PENDING in states, 'pending task observable')
@@ -480,6 +611,50 @@ async def run_owner_feeds(root, ca, control_cert, control_key, identity_endpoint
                     (grpc.StatusCode.PERMISSION_DENIED,), 'task feed requires task.read')
         expect_code(lambda: task_changes(scheduler, message_delegation),
                     (grpc.StatusCode.UNAUTHENTICATED,), 'task feed wrong delegation audience')
+
+        stage('real Scheduler COMPLETED terminal feed fact')
+        due_task = STATE['tasks'][3]
+        created_due = scheduler.CreateTask(scheduler_pb2.SchedulerCreateTaskRequest(
+            context=delegated_context(schedule_delegation), task_id=due_task,
+            target=common_pb2.ConversationRef(id='feed-completed', type=common_pb2.ConversationRef.GROUP,
+                                              account_id=ACCOUNT),
+            payload=b'{}', run_at=timestamp_in(10)), timeout=10)
+        require(created_due.task.task_id == due_task and
+                created_due.task.state == common_pb2.SCHEDULED_TASK_PENDING,
+                'due task created pending')
+        completed = None
+        observed_states = []
+        live = platform_pb2.StreamCursor()
+        live.CopyFrom(live_cursor)
+        deadline = time.monotonic() + 45
+        while time.monotonic() < deadline and completed is None:
+            # Scheduler probe readiness drives one real maintenance pass (due sweep +
+            # expire + outbox handoff to Runtime AcceptTimerTrigger).
+            rt.probe_ready(STATE['scheduler_probe'])
+            page = task_changes(scheduler, task_read_delegation, cursor=live, page_size=8)
+            page_header(page, task_scope(STATE['tasks']), 'scheduler', 8)
+            for change in page.changes:
+                if change.task.task_id != due_task:
+                    continue
+                observed_states.append(change.task.state)
+                if change.task.state == common_pb2.SCHEDULED_TASK_COMPLETED:
+                    completed = change.task
+            live.CopyFrom(page.next_cursor)
+            if completed is None:
+                time.sleep(0.2)
+        require(completed is not None,
+                'real Scheduler->Runtime handoff produced a COMPLETED task feed fact')
+        require(common_pb2.SCHEDULED_TASK_PENDING in observed_states and
+                common_pb2.SCHEDULED_TASK_RUNNING in observed_states,
+                f'pending/running transitions observable: {observed_states}')
+        require(completed.owner_service == 'scheduler' and completed.version > 1 and
+                completed.owner_instance_id != '' and not completed.cancel_requested,
+                'completed terminal metadata')
+        # Domain TaskState is Pending=0, Running=1, Retrying=2, Completed=3, Failed=4,
+        # Cancelled=5; the owned scheduler row must agree with the feed's COMPLETED fact.
+        sql_state = sql('p03_scheduler', "SELECT state::text FROM kiarabot.tasks "
+                                        f"WHERE task_id='{due_task}';")
+        require(sql_state == '3', f'authoritative scheduler task state is COMPLETED: {sql_state}')
     finally:
         identity_channel.close()
         runtime_channel.close()
@@ -541,8 +716,12 @@ def after_bootstrap(root):
         endpoints, runtime_config, scheduler_config = build_configs(
             root, identity_endpoint, runtime_database, scheduler_database)
         stage('runtime/scheduler startup')
-        start_service('runtime', binaries['runtime'], runtime_config, STATE['children'])
-        start_service('scheduler', binaries['scheduler'], scheduler_config, STATE['children'])
+        runtime_state = start_service('runtime', binaries['runtime'], runtime_config,
+                                      STATE['children'])
+        scheduler_state = start_service('scheduler', binaries['scheduler'], scheduler_config,
+                                        STATE['children'])
+        STATE['runtime_probe'] = int(runtime_state['probe_port'])
+        STATE['scheduler_probe'] = int(scheduler_state['probe_port'])
         control_cert = STATE['tls'] / 'control.pem'
         control_key = STATE['tls'] / 'control.key'
         ca = STATE['tls'] / 'ca.pem'

@@ -127,6 +127,9 @@ describe('P12d-2 live expansion', () => {
     api.setToken('mock-access-token-0123456789');
     render(<P12LiveView page="p12-installations" api={api} permissions={['plugin.read', 'plugin.manage']} revision={0} />);
     fireEvent.change(await screen.findByLabelText('plugin type ID'), { target: { value: 'welcome' } });
+    // The live page requires the explicit installation catalog UUID before it submits Runtime
+    // CreateInstallation (`disabled={!pluginTypeId || !installationCatalog}`).
+    fireEvent.change(screen.getByLabelText('安装目录 UUID'), { target: { value: '11111111-1111-4111-8111-111111111111' } });
     fireEvent.click(screen.getByRole('button', { name: '创建安装' }));
     expect((await screen.findAllByText(/installation-mock-created/)).length).toBeGreaterThan(0);
     fireEvent.change(screen.getByLabelText('创建实例的安装 ID'), { target: { value: 'installation-mock-created' } });

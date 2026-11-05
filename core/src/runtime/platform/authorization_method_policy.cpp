@@ -65,7 +65,9 @@ std::optional<t::Service> service_owner(std::string_view name) {
   if (name == "RuntimeService") {
     return t::Service::Runtime;
   }
-  if (name == "HostService") {
+  if (name == "HostService" || name == "HostManagementService") {
+    // HOST-04 owner management RPCs use the same Host owner and the frozen host.read/
+    // host.execute annotations; the real Identity online check must resolve them by owner.
     return t::Service::Host;
   }
   if (name == "SchedulerService") {

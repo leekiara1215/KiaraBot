@@ -477,3 +477,35 @@ PluginBridge 刷新失败帧的 INTERNAL 与终止状态偏差仍待专项；格
   增加 target override+evidence，4 个 feed RPC target_spec status→implemented；HOST-04 的 4 个 REST
   operation target override+evidence 补齐（此前仅 categories/文档翻转）。历史 reference scope 保持
   不变（inline CONTRACT_STATUS 注释仍为 reference 状态）。
+
+### goal round 3（待办推进：真实缺陷修复 + feeds 加固）
+
+- **真实产品缺陷修复（规范 UUID）**：平台客户端 `request_id/trace_id` 必须是规范 RFC4122 v4
+  UUID，owner 会拒绝非规范 id 为 INVALID_ARGUMENT。Host 侧三处（`host_identity_client.cpp`、
+  `host_runtime_client.cpp`、`host_bridge_client.cpp`）与 Scheduler 侧两处
+  （`scheduler_rpc.cpp`、`scheduler_runtime_client.cpp`）的非规范生成器已修复（`scheduler_identity_client.cpp`
+  原本已规范）；新增/加强 canonical UUID 断言（`scheduler_rpc_test`、`scheduler_runtime_client_test`
+  新增 CTest `p10_scheduler_runtime_client`、`scheduler_identity_client_test` 捕获三 id）。
+- **Identity 授权方法表**：`authorization_method_policy.cpp` 补 `HostManagementService→Service::Host`
+  owner 映射（Host 自授权所需），单测覆盖 4 个 host 方法 owner/permission/scope_kinds；未改其他映射。
+- **feeds 加固（真实进程+PG）**：`p05v12_owner_feed_e2e` 新增真实 Identity `RevokeAssignment`
+  撤销委托主体 log/message/task grants → 下一次 ListXChanges PERMISSION_DENIED/UNAUTHENTICATED 且不伪
+  空页、恢复后重新可读；真实 Scheduler maintenance→outbox→Runtime `AcceptTimerTrigger` 驱动任务
+  PENDING→RUNNING→COMPLETED 终态进入 task feed 且与 PG 一致；PG 边界新增 page_size>100、
+  未来 sequence typed CONFLICT。未覆盖：FAILED 终态（唯一路径 7 天 expiry，fixture 不可达）、Identity
+  ListLogChanges 的 peer 撤权。
+- **Panel 基线清理**：`p12-live.test.tsx:131` setup 补安装目录 UUID（仅测试 setup），Panel
+  91/91 全过；lint/build/check:contracts exit 0。
+- **HOST 全真实单链（进行中，未注册）**：`p12_host_real_chain_e2e.py` 已把真 Identity/Runtime/
+  plugin-host/Control + owned PG 全拉起，host.read 维护读链路通过；`BeginMaintenance` 经 Control 仍
+  403（Control 签发成功、等价直连三跳 allowed，差异在 Control-issued proof claims 细节），挂起为
+  下轮 Identity/Host owner 深挖项；e2e 保留未注册，首轮日志 `p12-host-real-chain-{1..40}.log`。
+- **待办（下一轮）**：Control→Host Begin 403 claims 差异定位；Control 多 host endpoint 固定离线
+  registry（task-24）；真实 owner 目录扫描 e2e；FAILED 终态/Identity peer 撤权；`p12_host_real_chain_e2e`
+  收敛后注册。
+- **本轮验收**：全量构建 exit 0；**全量 CTest 209/209 通过 exit 0**（`round4c-ctest.log`，
+  632.21s，`--parallel 3`；本轮新增 `p10_scheduler_runtime_client`）。`p11_streaming_managed_model_e2e`
+  与 `p10_timer_e2e` 均为 wall-clock 断言敏感的 e2e：全量窗口曾各自偶发失败（`round4-ctest.log`、
+  `round4b-ctest.log`），均单独复跑通过；已给 `p10_timer_e2e` 也加 `RUN_SERIAL`（与 STR09 一致，
+  断言未放宽），此后整轮通过。契约/target/api/架构/SDK 门禁全绿；格式 27 个基线违规、0 新增；
+  Panel 91/91 全过（本轮修复基线 stale setup）。

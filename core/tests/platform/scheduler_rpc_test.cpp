@@ -13,6 +13,7 @@
 
 #include <google/protobuf/util/time_util.h>
 #include <grpcpp/grpcpp.h>
+#include <kiarabot/v1/platform.pb.h>
 #include <kiarabot/v1/scheduler.grpc.pb.h>
 
 #include "kiarabot/core/runtime/platform/scheduler_rpc.hpp"
@@ -28,6 +29,34 @@ void require(bool condition,
     throw std::runtime_error("scheduler rpc assertion failed at line " +
                              std::to_string(location.line()));
   }
+}
+// Frozen wire identity: request/trace correlation ids must be canonical RFC 4122 version 4 UUIDs
+// with the 8-4-4-4-12 lowercase form; owners reject a non-canonical id as INVALID_ARGUMENT.
+bool canonical_v4_uuid(std::string_view value) {
+  if (value.size() != 36) {
+    return false;
+  }
+  for (std::size_t index = 0; index < value.size(); ++index) {
+    const char character = value[index];
+    if (index == 8 || index == 13 || index == 18 || index == 23) {
+      if (character != '-') {
+        return false;
+      }
+      continue;
+    }
+    if (!((character >= '0' && character <= '9') || (character >= 'a' && character <= 'f'))) {
+      return false;
+    }
+  }
+  return value[14] == '4' &&
+         (value[19] == '8' || value[19] == '9' || value[19] == 'a' || value[19] == 'b');
+}
+std::optional<v1::RpcFailure> stable_failure(const grpc::Status& status) {
+  v1::RpcFailure failure;
+  if (!failure.ParseFromString(status.error_details()) || !failure.has_error()) {
+    return std::nullopt;
+  }
+  return failure;
 }
 std::string uuid(char seed) {
   std::string text(36, '0');
@@ -314,6 +343,26 @@ void run() {
       call(*stub, create_request(""), &rejected, &v1::SchedulerService::Stub::CreateTask);
   require(missing_key.error_code() == grpc::StatusCode::INVALID_ARGUMENT);
   require(handler.create_calls == 1);
+  // Early validation failures must still carry canonical v4 correlation ids: the server replaces a
+  // missing/invalid incoming request id with its own UUID, never an empty or malformed value.
+  v1::SchedulerCreateTaskRequest missing_context;
+  v1::SchedulerCreateTaskResponse missing_context_response;
+  const auto missing_context_status = call(*stub, missing_context, &missing_context_response,
+                                           &v1::SchedulerService::Stub::CreateTask);
+  require(missing_context_status.error_code() == grpc::StatusCode::INVALID_ARGUMENT);
+  const auto early = stable_failure(missing_context_status);
+  require(early.has_value() && canonical_v4_uuid(early->error().request_id()) &&
+          canonical_v4_uuid(early->error().trace_id()));
+  auto partial = create_request();
+  partial.mutable_context()->set_request_id("not-a-uuid");
+  const auto partial_trace = partial.mutable_context()->trace_id();
+  v1::SchedulerCreateTaskResponse partial_response;
+  const auto partial_status =
+      call(*stub, partial, &partial_response, &v1::SchedulerService::Stub::CreateTask);
+  require(partial_status.error_code() == grpc::StatusCode::INVALID_ARGUMENT);
+  const auto partial_detail = stable_failure(partial_status);
+  require(partial_detail.has_value() && canonical_v4_uuid(partial_detail->error().request_id()) &&
+          partial_detail->error().trace_id() == partial_trace);
   // Replayed/duplicate command surfaces application CONFLICT (same idempotency key path).
   handler.create_result = failure(t::ErrorCode::Conflict, t::Recovery::ReadCurrent);
   v1::SchedulerCreateTaskResponse conflict;

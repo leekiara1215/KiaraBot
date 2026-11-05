@@ -368,6 +368,22 @@ void run(std::uint16_t port, const std::filesystem::path& root,
               rotated_head.next_cursor.epoch != head.next_cursor.epoch,
           "rotated epoch is fresh");
 
+  // Request boundary: page_size above the frozen 100 maximum is invalid input, and a structurally
+  // valid future sequence is a typed gap (never a successful empty page).
+  auto oversized = rotated;
+  oversized.page_size = 101;
+  require(rejects(f::query_observation_changes(work, t::Service::Runtime, oversized),
+                  t::ErrorCode::InvalidArgument),
+          "page size above 100 rejected");
+  auto future_query = rotated;
+  future_query.cursor =
+      take(f::query_observation_changes(work, t::Service::Runtime, future_query), "future head")
+          .next_cursor;
+  future_query.cursor->sequence += 1000;
+  require(rejects(f::query_observation_changes(work, t::Service::Runtime, future_query),
+                  t::ErrorCode::Conflict),
+          "future cursor sequence is a typed conflict");
+
   // Unsafe payloads are rejected before any head mutation (transaction aborted as a whole).
   const auto before = take(f::query_observation_changes(work, t::Service::Runtime, rotated),
                            "pre-invalid append head");

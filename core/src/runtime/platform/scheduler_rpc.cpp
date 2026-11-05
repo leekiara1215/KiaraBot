@@ -75,26 +75,29 @@ bool canonical_uuid(std::string_view value) {
 std::string random_uuid() {
   static std::mutex mutex;
   static std::mt19937_64 generator{std::random_device{}()};
-  std::uint64_t high = 0;
-  std::uint64_t low = 0;
+  std::array<unsigned char, 16> bytes{};
   {
     std::lock_guard lock(mutex);
-    high = generator();
-    low = generator();
-  }
-  high = (high & 0xffffffffffff0fffULL) | 0x0000000000004000ULL;
-  low = (low & 0x3fffffffffffffffULL) | 0x8000000000000000ULL;
-  static constexpr char kHex[] = "0123456789abcdef";
-  std::string text(36, '-');
-  const std::uint64_t parts[2] = {high, low};
-  std::size_t output = 0;
-  for (int index = 15; index >= 0; --index) {
-    const auto byte = static_cast<unsigned char>((parts[index / 8] >> ((index % 8) * 8)) & 0xff);
-    if (output == 8 || output == 13 || output == 18 || output == 23) {
-      ++output;
+    const auto high = generator();
+    const auto low = generator();
+    for (std::size_t index = 0; index < 8; ++index) {
+      bytes[index] = static_cast<unsigned char>((high >> ((7 - index) * 8)) & 0xffU);
+      bytes[8 + index] = static_cast<unsigned char>((low >> ((7 - index) * 8)) & 0xffU);
     }
-    text[output++] = kHex[byte >> 4];
-    text[output++] = kHex[byte & 0x0f];
+  }
+  // RFC 4122 version 4 and variant bits are part of the frozen wire identity; owners reject a
+  // non-canonical request/trace id as INVALID_ARGUMENT.
+  bytes[6] = static_cast<unsigned char>((bytes[6] & 0x0fU) | 0x40U);
+  bytes[8] = static_cast<unsigned char>((bytes[8] & 0x3fU) | 0x80U);
+  static constexpr char kHex[] = "0123456789abcdef";
+  std::string text;
+  text.reserve(36);
+  for (std::size_t index = 0; index < bytes.size(); ++index) {
+    if (index == 4 || index == 6 || index == 8 || index == 10) {
+      text += '-';
+    }
+    text += kHex[bytes[index] >> 4U];
+    text += kHex[bytes[index] & 0x0fU];
   }
   return text;
 }

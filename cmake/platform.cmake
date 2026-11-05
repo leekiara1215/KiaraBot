@@ -340,6 +340,10 @@ add_test(NAME p10_timer_e2e COMMAND "${KIARABOT_TARGET_PYTHON}"
   --test-argument $<TARGET_FILE:kiarabot_scheduler_delegation_e2e_client>)
 set_tests_properties(p10_timer_e2e PROPERTIES
   LABELS "p10;p13;p05;p06;integration;security;fault" TIMEOUT 360
+  # Scheduler maintenance/due-sweep e2e has wall-clock deadline assertions; a parallel full-suite
+  # window occasionally starves its timer ticks (observed once in round4b). Serialize it instead of
+  # relaxing the timing assertions.
+  RUN_SERIAL TRUE
   ENVIRONMENT "PATH=${RUNTIME_E2E_OPENSSL_BIN_DIR}:${RUNTIME_E2E_PYTHON_BIN_DIR}:$ENV{PATH};PYTHONPATH=${CMAKE_SOURCE_DIR}/sdk/python/build/generated")
 
 add_test(NAME p05_runtime_exact_accounts COMMAND "${KIARABOT_TARGET_PYTHON}"
@@ -817,6 +821,15 @@ set_tests_properties(p12_host_control_chain_e2e PROPERTIES
   ENVIRONMENT "PATH=${RUNTIME_E2E_OPENSSL_BIN_DIR}:${RUNTIME_E2E_PYTHON_BIN_DIR}:$ENV{PATH};PYTHONPATH=${CMAKE_SOURCE_DIR}/sdk/python/build/generated"
   LABELS "p12;host;control;integration;fault" TIMEOUT 120 RESOURCE_LOCK control_https
   RUN_SERIAL TRUE)
+
+# Scheduler runtime client: canonical RFC4122 v4 request/trace ids on AcceptTimerTrigger.
+add_executable(kiarabot_scheduler_runtime_client_test
+  ${CMAKE_SOURCE_DIR}/core/tests/platform/scheduler_runtime_client_test.cpp)
+target_link_libraries(kiarabot_scheduler_runtime_client_test PRIVATE
+  kiarabot_scheduler_runtime_client)
+kiarabot_platform_warnings(kiarabot_scheduler_runtime_client_test)
+add_test(NAME p10_scheduler_runtime_client COMMAND kiarabot_scheduler_runtime_client_test)
+set_tests_properties(p10_scheduler_runtime_client PROPERTIES LABELS "p10;unit;integration" TIMEOUT 30)
 
 # STR09 full managed-plugin streaming chain (real owned PG/TLS/Runtime/Model/plugin-host with a
 # local gated SSE Provider). Registered once STR07 landed; the driver reports exit 3 only while the
