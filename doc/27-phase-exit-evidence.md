@@ -628,6 +628,12 @@ PluginBridge 刷新失败帧的 INTERNAL 与终止状态偏差仍待专项；格
     时序上会对个别 heavy real-stack e2e 偶发失败（p11_streaming、p05v12、p05_runtime_identity、
     p12_host_control_chain、owner-directory-scale 等，每次不同）；所有失败项隔离复跑均通过，且
     分批连续执行可稳定 214/214，故以分批证据作为本轮全量验收，单次尝试日志与失败重跑日志全部保留。
+  - **残余 flake 复验与清理（2026-11-05 补）**：单次连续全量 `build/.agents/kb ctest --parallel 3`
+    **214/214 exit 0**（`round17-full-ctest.log`，770.86s），owner-directory-scale 43.10s 与
+    STR09 114.72s 均通过，round14/15/16 的失败项全部通过；WS 目录类 e2e 的失败 stage 已纳入
+    `run_database_test.py` 转发（下次同类失败可直接看到 stage，不再 output redacted）；变更 TU
+    专项 clang-tidy 发现的 2 条既存 `unused-but-set-variable` 已清理（提交 `54b82bbf`，两 TU
+    tidy exit 0）。
   - contracts（含 impl-status/evidence-scopes/semantic-rules/feature-decl）、target 往返与
     baseline/v1.1 descriptor 兼容、openapi/asyncapi/target-api/reference、boundaries/inner/links/
     database、SDK pytest、Panel lint/test/build/contracts 全部 exit 0；格式 24 个基线违规、0 新增；

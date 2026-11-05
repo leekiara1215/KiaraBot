@@ -417,3 +417,7 @@ S1 通过、S2 无测试，Runtime gate/PG 持久化/Control host 路由未实�
   e2e flake，失败项隔离复跑均绿，日志保留）；contracts/target/api/架构/SDK/Panel 门禁全绿；格式
   24 基线/0 新增。产品修复：adapter offline presence、snapshot 配额淘汰、Identity ExchangeDelegation
   子委派寿命；新增 bridge presence/双 Host/owner-directory/scale 等 e2e 并注册。
+- **2026-11-05 残余收口**：单次连续全量 CTest **214/214 exit 0**（`round17-full-ctest.log`，
+  770.86s，--parallel 3，含此前失败的 STR09/owner-directory-scale）；WS 目录类 e2e 失败 stage 纳入
+  `run_database_test.py` 转发；变更 TU 专项 clang-tidy 的 2 条既存 `unused-but-set-variable` 清零
+  （`54b82bbf`），两 TU tidy exit 0；构建 exit 0。
