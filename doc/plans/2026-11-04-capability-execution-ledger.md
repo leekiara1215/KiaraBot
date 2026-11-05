@@ -398,3 +398,8 @@ S1 通过、S2 无测试，Runtime gate/PG 持久化/Control host 路由未实�
   格式 24 基线/0 新增。修复真实缺陷：HostManagement 二次 host.read、gate FK、SnapshotInfo owner
   大小写、WS catalog 展开、adapter fence、WS v1.2 envelope 契约、P08 测试进程泄漏、STR09 fixture
   时序；新注册 `p12_host_real_chain_e2e`、`p12_ws_owner_directory_e2e`。
+- WS 首帧/轮询稳定性：catalog owner 查询有界重试 + snapshot 频道 transient 保留 stale/unknown、
+  仅持续 >2s 关闭；warm 5/5 + 全量 CTest 单次 211/211 exit 0（701.52s）。
+- target WS 状态翻转：asyncapi x-target-transport/contract + 7 channels + 7 stream events target
+  override/evidence（control 聚合仍 not_implemented），evidence roots 纳入 Control target 源/测试；
+  api/contracts/target 门禁全绿，WS e2e 复跑通过。

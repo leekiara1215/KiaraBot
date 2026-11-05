@@ -75,14 +75,20 @@ const plugin = {id: 'instance-1', version: '1', target: {instance_id: 'instance-
 check('TargetPluginPayload', plugin, true);
 check('TargetPluginPayload', {...plugin, target: {...plugin.target, configuration: {secret: 'secret'}}}, false);
 check('TargetPluginPayload', {...plugin, health_state: 'HEALTHY'}, false);
-for (const name of ['control', 'health', 'logs', 'adapters', 'plugins', 'tasks', 'messages', 'operations']) {
+for (const name of ['control']) {
   assert.equal(stream.channels[name]['x-target-contract-status'], 'not_implemented', `${name} must not claim target availability`);
+}
+for (const name of ['health', 'logs', 'adapters', 'plugins', 'tasks', 'messages', 'operations']) {
+  assert.equal(stream.channels[name]['x-target-contract-status'], undefined, `${name} target producer is implemented`);
 }
 assert.deepEqual(stream['x-target-contract'].operation_permissions, {runtime: 'resource.read', model: 'resource.read', scheduler: 'task.read', host: 'host.read'});
 assert.deepEqual(stream['x-target-contract'].delivery_batches.first, ['operation.updated', 'health.updated', 'adapter.updated', 'plugin.updated']);
 assert.deepEqual(stream['x-target-contract'].delivery_batches.second, ['task.updated', 'log.updated']);
 assert.deepEqual(stream['x-target-contract'].delivery_batches.third, ['message.updated']);
-for (const name of ['TargetAdapterUpdate', 'TargetPluginUpdate', 'TargetTaskUpdate', 'TargetControlAdapterUpdate', 'TargetControlPluginUpdate', 'TargetControlTaskUpdate']) {
+for (const name of ['TargetAdapterUpdate', 'TargetPluginUpdate', 'TargetTaskUpdate', 'TargetLogUpdate', 'TargetMessageUpdate']) {
+  assert.equal(stream.components.messages[name]['x-contract-status'], undefined, `${name} is a produced target variant`);
+}
+for (const name of ['TargetControlAdapterUpdate', 'TargetControlPluginUpdate', 'TargetControlTaskUpdate']) {
   assert.equal(stream.components.messages[name]['x-contract-status'], 'not_implemented');
 }
 const close = stream['x-control-session-policy'].close_codes;

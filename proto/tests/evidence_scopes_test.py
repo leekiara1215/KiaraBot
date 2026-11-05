@@ -1105,6 +1105,18 @@ class ScopeTest(unittest.TestCase):
             'TaskMetadata', 'TaskChange', 'TaskChangesResponse', 'MessageMetadata',
             'MessageMetadataChange', 'MessageMetadataChangesResponse',
         ))
+        # Target WS transport: Control target session/source production sources with real
+        # Control+TLS and real-stack channel evidence (p12_ws_owner_directory_e2e,
+        # p05v12/p04 feed e2e, ws03 operation channel e2e).
+        expected.update(('channels', channel) for channel in (
+            'channels.operations', 'channels.health', 'channels.adapters', 'channels.plugins',
+            'channels.logs', 'channels.tasks', 'channels.messages',
+        ))
+        expected.update(('stream_events', event) for event in (
+            'events.health.updated', 'events.log.updated', 'events.adapter.updated',
+            'events.plugin.updated', 'events.task.updated', 'events.message.updated',
+            'events.operation.updated',
+        ))
         expected.update(('proto_fields', field) for field in (
             'ObservationChangesRequest.context', 'ObservationChangesRequest.scope', 'ObservationChangesRequest.cursor', 'ObservationChangesRequest.page_size', 'LogMetadata.owner_service', 'LogMetadata.entry_id', 'LogMetadata.severity', 'LogMetadata.component', 'LogMetadata.method', 'LogMetadata.event', 'LogMetadata.resource', 'LogMetadata.request_id', 'LogMetadata.trace_id', 'LogMetadata.occurred_at', 'LogChange.log', 'LogChange.cursor', 'LogChangesResponse.changes', 'LogChangesResponse.next_cursor', 'LogChangesResponse.has_more', 'LogChangesResponse.checked_at', 'TaskMetadata.owner_service', 'TaskMetadata.task_id', 'TaskMetadata.owner_instance_id', 'TaskMetadata.state', 'TaskMetadata.version', 'TaskMetadata.updated_at', 'TaskMetadata.cancel_requested', 'TaskMetadata.occurrence_id', 'TaskMetadata.reason_code', 'TaskChange.task', 'TaskChange.cursor', 'TaskChangesResponse.changes', 'TaskChangesResponse.next_cursor', 'TaskChangesResponse.has_more', 'TaskChangesResponse.checked_at', 'MessageMetadata.owner_service', 'MessageMetadata.message_id', 'MessageMetadata.conversation_id', 'MessageMetadata.account_id', 'MessageMetadata.received_at', 'MessageMetadataChange.message', 'MessageMetadataChange.cursor', 'MessageMetadataChangesResponse.changes', 'MessageMetadataChangesResponse.next_cursor', 'MessageMetadataChangesResponse.has_more', 'MessageMetadataChangesResponse.checked_at'
         ))

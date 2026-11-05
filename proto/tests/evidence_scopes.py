@@ -4,9 +4,12 @@ import json
 import re
 from pathlib import PurePosixPath
 
+# Control's target WebSocket transport/session sources live under control/api/src/target; they are
+# production target implementations of the frozen target WS contract, so they may certify target
+# availability (never reference sources).
 TARGET_SOURCE_ROOTS = ('core/src/runtime/platform/', 'core/src/application/target/',
                        'core/src/domain/target/', 'control/api/src/application/target/',
-                       'control/api/app/')
+                       'control/api/src/target/', 'control/api/app/')
 
 
 class EvidenceFailure(ValueError):
@@ -78,7 +81,8 @@ class EvidenceResolver:
         actual = self.resolve(logical)
         relative = actual.relative_to(self.root).as_posix()
         return 'reference' not in actual.relative_to(self.root).parts and (
-            relative.startswith(('tests/architecture/', 'core/tests/platform/', 'core/tests/architecture/'))
+            relative.startswith(('tests/architecture/', 'core/tests/platform/',
+                                 'core/tests/architecture/', 'control/api/tests/'))
         ) and actual.suffix in {'.py', '.cpp', '.cc', '.cjs', '.rb'}
 
 

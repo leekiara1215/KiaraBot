@@ -576,3 +576,20 @@ PluginBridge 刷新失败帧的 INTERNAL 与终止状态偏差仍待专项；格
 - 未覆盖：adapter online/offline 动态变化（真实 WS 500ms 预算下不稳，fixture 覆盖）；>126 真实目录
   10 13（单测覆盖）；真实大目录逐 child 在线授权的 500ms 运营规模限制（已记录）；真实双 Host 进程
   + 单 Control 多 registry 整链（路由已由真 TLS fixture 覆盖）。
+
+### goal round 5（2026-11-05：WS 首帧稳定性收口 + target WS 状态翻转）
+
+- **首帧/轮询稳定性（真实缺陷修复）**：warm 重负载后 `/ws/plugins` 会话因 owner `ListInstances`
+  DEADLINE_EXCEEDED 直接 1011；修复为 catalog owner 查询有界重试（3 次/900ms 预算）+ snapshot
+  频道 TIMEOUT/UPSTREAM 保留上次值、不伪造事件、恢复后发真实值，仅持续 >2s 才关闭；
+  SESSION_READY 与首轮 owner 拉取解耦。验收：warm 条件下 owner-directory e2e **5/5 exit 0**
+  （`task33/post-run-*.log`），**全量 CTest 单次 211/211 exit 0**（701.52s，
+  `task33/full-ctest-parallel3-postfix.log`）。
+- **target WS 状态翻转**：`api/asyncapi.yaml` `x-target-transport`/`x-target-contract.status` 翻转，
+  7 个专用 target 频道与 7 个 stream event 增加 target override+evidence（`/ws/control` 聚合仍
+  not_implemented）；target payload 变体标记移除；evidence roots 明确纳入 Control target 生产源与
+  测试；`ws_expansion_schema_test.cjs` 更新；api/contracts/target/evidence/implementation-status
+  门禁全绿；`p12_target_websocket` 5/5 与 owner-directory e2e 复跑通过。
+- 仍待：真实规模/边界覆盖（adapter online/offline 动态、>126 child 真实目录 RATE_LIMITED、大目录
+  500ms 预算运营限制）、真实双 Host 进程 + 单 Control 多 registry 整链、BOOT-05 契约内无法注入的
+  sink-ACK-loss/cancel（已记录）。

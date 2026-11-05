@@ -1061,3 +1061,21 @@ WS e2e 稳定性：此前 `p12_target_websocket_https`/`producers` 的低频握�
   （registered=true 时严格 `TargetFence`，registered=false 不输出 fence；owner 事实缺失→INTERNAL，
   不伪造）。所有 v1.2 envelope 由 `target_websocket_schema.cjs` 用真实 asyncapi/openapi Ajv 校验
   （含负向畸形用例）。
+
+## 2026-11-05 target WS 频道/事件状态翻转
+
+- `x-target-transport` 与 `x-target-contract.status` 翻为 implemented：WS-04 传输（会话/首帧/重放/
+  retention/close codes/limits）与 7 个专用 target 频道（health、logs、adapters、plugins、tasks、
+  messages、operations）的真实 producer 已落地并有真 Control+TLS、真栈 e2e 证据；`/ws/control`
+  聚合频道仍保留 `x-target-contract-status: not_implemented`（未实现 owner 聚合 producer）。
+- contract registry target overrides：7 个 channel + 7 个 stream event（health/log/adapter/plugin/
+  task/message/operation.updated）登记 implemented，evidence = `control/api/src/target/
+  websocket_{session,source_client,protocol}.cpp` + `control/api/app/main.cpp` 与
+  `p12_ws_owner_directory_e2e`/`p05v12_owner_feed_e2e`/`p04_identity_log_feed_e2e`/
+  `operation_observation_e2e_test`/target WS producer 测试；target evidence source/test roots 明确
+  纳入 `control/api/src/target/` 与 `control/api/tests/`（Control target 传输是生产 target 实现，
+  不引用 reference 来源）。
+- target payload message 变体（TargetAdapterUpdate/TargetPluginUpdate/TargetTaskUpdate/TargetLogUpdate/
+  TargetMessageUpdate）移除 not_implemented 标记；TargetControl* 变体保持不可用。`ws_expansion_schema
+  _test.cjs`/`check-asyncapi`/`check-target-api`/`implementation-status`/`evidence-scopes` 门禁全绿；
+  历史 reference 状态（categories）与 inline CONTRACT_STATUS 注释保持 fail-closed 不变。

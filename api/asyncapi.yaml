@@ -15,15 +15,17 @@ tags:
   - name: control-plane
     description: Authenticated control-panel streaming channels.
 defaultContentType: application/json
-x-target-transport: not_implemented
+x-target-transport: implemented
 x-target-transport-note: >-
-  WS-01 freezes the target protocol only; the target transport, all target channels,
-  target payload variants and owner ListOperationChanges RPCs remain not_implemented.
-  Reference channel evidence does not implement the target transport. Each target
+  The target transport (WS-04 Beast/TLS session, handshake, replay, retention, close
+  codes and limits) is implemented. The dedicated target channels health, logs,
+  adapters, plugins, tasks, messages and operations have real target producers
+  (owner queries or in-process readiness; see per-channel markers). /ws/control
+  aggregation remains not_implemented and keeps its channel marker. Each target
   connection binds one owner and an exact authorized scope. Owner REST snapshots
   remain the authoritative recovery source; notifications never prove completion.
 x-target-contract:
-  status: not_implemented
+  status: implemented
   routes: >-
     /ws/operations requires owner_service=runtime|scheduler|model|host in the query.
     /ws/control requires owner_service=control|runtime|scheduler|identity; target
@@ -51,11 +53,10 @@ x-target-contract:
     third: [message.updated]
     host_operation_dependency: Independent Host operation ownership and authorization.
   unavailable: >-
-    Every batch remains unavailable until its own real target producer, transport
-    and recovery evidence are registered. A supported route without an implemented
-    producer fails closed with 1011 after authentication; it never establishes a
-    successful empty stream. Unknown routes remain HTTP NOT_FOUND. plugin.updated
-    health_state stays unavailable until the owner provides a real health fact.
+    Channel availability is tracked per channel: /ws/control aggregation and
+    plugin.updated.health_state remain not_implemented; a supported route without an
+    implemented producer fails closed with 1011 after authentication and never
+    establishes a successful empty stream. Unknown routes remain HTTP NOT_FOUND.
   operation_changes: >-
     RuntimeService/SchedulerService/ModelService/HostManagementService.ListOperationChanges
     uses observations.proto. Missing cursor captures committed head with no changes;
@@ -196,7 +197,6 @@ channels:
           - $ref: '#/components/messages/TargetControlTaskUpdate'
           - $ref: '#/components/messages/MessageUpdate'
   health:
-    x-target-contract-status: not_implemented
     x-target-handshake: [TargetHealthHello, TargetHealthResume]
     publish:
       operationId: handshakeHealthChannel
@@ -214,7 +214,6 @@ channels:
           - $ref: '#/components/messages/HealthResyncRequired'
           - $ref: '#/components/messages/HealthChannelUpdate'
   logs:
-    x-target-contract-status: not_implemented
     x-target-handshake: [TargetLogHello, TargetLogResume]
     publish:
       operationId: handshakeLogChannel
@@ -233,7 +232,6 @@ channels:
           - $ref: '#/components/messages/LogChannelUpdate'
           - $ref: '#/components/messages/TargetLogUpdate'
   adapters:
-    x-target-contract-status: not_implemented
     x-target-handshake: [TargetAdapterHello, TargetAdapterResume]
     publish:
       operationId: handshakeAdapterChannel
@@ -252,7 +250,6 @@ channels:
           - $ref: '#/components/messages/AdapterChannelUpdate'
           - $ref: '#/components/messages/TargetAdapterUpdate'
   plugins:
-    x-target-contract-status: not_implemented
     x-target-handshake: [TargetPluginHello, TargetPluginResume]
     publish:
       operationId: handshakePluginChannel
@@ -271,7 +268,6 @@ channels:
           - $ref: '#/components/messages/PluginChannelUpdate'
           - $ref: '#/components/messages/TargetPluginUpdate'
   tasks:
-    x-target-contract-status: not_implemented
     x-target-handshake: [TargetTaskHello, TargetTaskResume]
     publish:
       operationId: handshakeTaskChannel
@@ -290,7 +286,6 @@ channels:
           - $ref: '#/components/messages/TaskChannelUpdate'
           - $ref: '#/components/messages/TargetTaskUpdate'
   messages:
-    x-target-contract-status: not_implemented
     x-target-handshake: [TargetMessageHello, TargetMessageResume]
     description: >-
       Reference metadata-only notification feed; target remains not_implemented. The reference server emits
@@ -319,7 +314,6 @@ channels:
           - $ref: '#/components/messages/MessageChannelUpdate'
           - $ref: '#/components/messages/TargetMessageUpdate'
   operations:
-    x-target-contract-status: not_implemented
     x-contract-status: not_implemented
     description: Scoped single-owner operation progress; no production publisher yet. Current Identity session and owner-specific operation read permission are required. First frame authenticates and supplies scope. Resume is bound to the same principal and scope. SESSION_READY precedes replay/live events. Owner cursor gaps require RESYNC_REQUIRED and a fresh owner snapshot; no cross-owner atomic snapshot is implied.
     publish:
@@ -565,23 +559,18 @@ components:
       payload: { $ref: '#/components/schemas/TargetTaskEnvelope' }
     TargetAdapterUpdate:
       messageId: target-adapter-update
-      x-contract-status: not_implemented
       payload: { $ref: '#/components/schemas/TargetAdapterEnvelope' }
     TargetPluginUpdate:
       messageId: target-plugin-update
-      x-contract-status: not_implemented
       payload: { $ref: '#/components/schemas/TargetPluginEnvelope' }
     TargetTaskUpdate:
       messageId: target-task-update
-      x-contract-status: not_implemented
       payload: { $ref: '#/components/schemas/TargetTaskEnvelope' }
     TargetLogUpdate:
       messageId: target-log-update
-      x-contract-status: not_implemented
       payload: { $ref: '#/components/schemas/TargetLogEnvelope' }
     TargetMessageUpdate:
       messageId: target-message-update
-      x-contract-status: not_implemented
       payload: { $ref: '#/components/schemas/TargetMessageEnvelope' }
   schemas:
     SessionReady:

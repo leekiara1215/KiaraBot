@@ -8045,6 +8045,24 @@
         },
         "host_results": {
           "HostResponse.model_chat": "implemented"
+        },
+        "channels": {
+          "channels.operations": "implemented",
+          "channels.health": "implemented",
+          "channels.adapters": "implemented",
+          "channels.plugins": "implemented",
+          "channels.logs": "implemented",
+          "channels.tasks": "implemented",
+          "channels.messages": "implemented"
+        },
+        "stream_events": {
+          "events.operation.updated": "implemented",
+          "events.health.updated": "implemented",
+          "events.adapter.updated": "implemented",
+          "events.plugin.updated": "implemented",
+          "events.log.updated": "implemented",
+          "events.task.updated": "implemented",
+          "events.message.updated": "implemented"
         }
       },
       "evidence": {
@@ -15275,6 +15293,124 @@
           "core/src/application/target/scheduler_service.cpp",
           "tests/architecture/p04_identity_log_feed_e2e.py",
           "tests/architecture/p05v12_owner_feed_e2e.py"
+        ],
+        "channels:channels.operations": [
+          "control/api/src/target/websocket_session.cpp",
+          "control/api/src/target/websocket_source_client.cpp",
+          "control/api/src/target/websocket_protocol.cpp",
+          "control/api/app/main.cpp",
+          "core/tests/platform/operation_observation_e2e_test.py",
+          "control/api/tests/architecture/target_websocket_test.py"
+        ],
+        "channels:channels.health": [
+          "control/api/src/target/websocket_session.cpp",
+          "control/api/src/target/websocket_source_client.cpp",
+          "control/api/src/target/websocket_protocol.cpp",
+          "control/api/app/main.cpp",
+          "tests/architecture/p12_ws_owner_directory_e2e.py",
+          "control/api/tests/architecture/target_websocket_producers_test.py"
+        ],
+        "channels:channels.adapters": [
+          "control/api/src/target/websocket_session.cpp",
+          "control/api/src/target/websocket_source_client.cpp",
+          "control/api/src/target/websocket_protocol.cpp",
+          "control/api/app/main.cpp",
+          "tests/architecture/p12_ws_owner_directory_e2e.py",
+          "control/api/tests/architecture/target_websocket_producers_test.py"
+        ],
+        "channels:channels.plugins": [
+          "control/api/src/target/websocket_session.cpp",
+          "control/api/src/target/websocket_source_client.cpp",
+          "control/api/src/target/websocket_protocol.cpp",
+          "control/api/app/main.cpp",
+          "tests/architecture/p12_ws_owner_directory_e2e.py",
+          "control/api/tests/architecture/target_websocket_producers_test.py"
+        ],
+        "channels:channels.logs": [
+          "control/api/src/target/websocket_session.cpp",
+          "control/api/src/target/websocket_source_client.cpp",
+          "control/api/src/target/websocket_protocol.cpp",
+          "control/api/app/main.cpp",
+          "tests/architecture/p05v12_owner_feed_e2e.py",
+          "tests/architecture/p04_identity_log_feed_e2e.py",
+          "control/api/tests/architecture/target_websocket_producers_test.py"
+        ],
+        "channels:channels.tasks": [
+          "control/api/src/target/websocket_session.cpp",
+          "control/api/src/target/websocket_source_client.cpp",
+          "control/api/src/target/websocket_protocol.cpp",
+          "control/api/app/main.cpp",
+          "tests/architecture/p05v12_owner_feed_e2e.py",
+          "tests/architecture/p04_identity_log_feed_e2e.py",
+          "control/api/tests/architecture/target_websocket_producers_test.py"
+        ],
+        "channels:channels.messages": [
+          "control/api/src/target/websocket_session.cpp",
+          "control/api/src/target/websocket_source_client.cpp",
+          "control/api/src/target/websocket_protocol.cpp",
+          "control/api/app/main.cpp",
+          "tests/architecture/p05v12_owner_feed_e2e.py",
+          "tests/architecture/p04_identity_log_feed_e2e.py",
+          "control/api/tests/architecture/target_websocket_producers_test.py"
+        ],
+        "stream_events:events.operation.updated": [
+          "control/api/src/target/websocket_session.cpp",
+          "control/api/src/target/websocket_source_client.cpp",
+          "control/api/src/target/websocket_protocol.cpp",
+          "control/api/app/main.cpp",
+          "core/tests/platform/operation_observation_e2e_test.py",
+          "control/api/tests/architecture/target_websocket_test.py"
+        ],
+        "stream_events:events.health.updated": [
+          "control/api/src/target/websocket_session.cpp",
+          "control/api/src/target/websocket_source_client.cpp",
+          "control/api/src/target/websocket_protocol.cpp",
+          "control/api/app/main.cpp",
+          "tests/architecture/p12_ws_owner_directory_e2e.py",
+          "control/api/tests/architecture/target_websocket_producers_test.py"
+        ],
+        "stream_events:events.adapter.updated": [
+          "control/api/src/target/websocket_session.cpp",
+          "control/api/src/target/websocket_source_client.cpp",
+          "control/api/src/target/websocket_protocol.cpp",
+          "control/api/app/main.cpp",
+          "tests/architecture/p12_ws_owner_directory_e2e.py",
+          "control/api/tests/architecture/target_websocket_producers_test.py"
+        ],
+        "stream_events:events.plugin.updated": [
+          "control/api/src/target/websocket_session.cpp",
+          "control/api/src/target/websocket_source_client.cpp",
+          "control/api/src/target/websocket_protocol.cpp",
+          "control/api/app/main.cpp",
+          "tests/architecture/p12_ws_owner_directory_e2e.py",
+          "control/api/tests/architecture/target_websocket_producers_test.py"
+        ],
+        "stream_events:events.log.updated": [
+          "control/api/src/target/websocket_session.cpp",
+          "control/api/src/target/websocket_source_client.cpp",
+          "control/api/src/target/websocket_protocol.cpp",
+          "control/api/app/main.cpp",
+          "tests/architecture/p05v12_owner_feed_e2e.py",
+          "tests/architecture/p04_identity_log_feed_e2e.py",
+          "control/api/tests/architecture/target_websocket_producers_test.py"
+        ],
+        "stream_events:events.task.updated": [
+          "control/api/src/target/websocket_session.cpp",
+          "control/api/src/target/websocket_source_client.cpp",
+          "control/api/src/target/websocket_protocol.cpp",
+          "control/api/app/main.cpp",
+          "tests/architecture/p05v12_owner_feed_e2e.py",
+          "tests/architecture/p04_identity_log_feed_e2e.py",
+          "control/api/tests/architecture/target_websocket_producers_test.py"
+        ],
+        "stream_events:events.message.updated": [
+          "control/api/src/target/websocket_session.cpp",
+          "control/api/src/target/websocket_source_client.cpp",
+          "control/api/src/target/websocket_protocol.cpp",
+          "control/api/app/main.cpp",
+          "tests/architecture/p05v12_owner_feed_e2e.py",
+          "tests/architecture/p04_identity_log_feed_e2e.py",
+          "control/api/tests/architecture/target_websocket_producers_test.py"
         ]
       }
     }
