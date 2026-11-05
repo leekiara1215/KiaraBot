@@ -231,6 +231,7 @@ channels:
           - $ref: '#/components/messages/LogSession'
           - $ref: '#/components/messages/LogResyncRequired'
           - $ref: '#/components/messages/LogChannelUpdate'
+          - $ref: '#/components/messages/TargetLogUpdate'
   adapters:
     x-target-contract-status: not_implemented
     x-target-handshake: [TargetAdapterHello, TargetAdapterResume]
@@ -316,6 +317,7 @@ channels:
           - $ref: '#/components/messages/MessageSession'
           - $ref: '#/components/messages/MessageResyncRequired'
           - $ref: '#/components/messages/MessageChannelUpdate'
+          - $ref: '#/components/messages/TargetMessageUpdate'
   operations:
     x-target-contract-status: not_implemented
     x-contract-status: not_implemented
@@ -573,6 +575,14 @@ components:
       messageId: target-task-update
       x-contract-status: not_implemented
       payload: { $ref: '#/components/schemas/TargetTaskEnvelope' }
+    TargetLogUpdate:
+      messageId: target-log-update
+      x-contract-status: not_implemented
+      payload: { $ref: '#/components/schemas/TargetLogEnvelope' }
+    TargetMessageUpdate:
+      messageId: target-message-update
+      x-contract-status: not_implemented
+      payload: { $ref: '#/components/schemas/TargetMessageEnvelope' }
   schemas:
     SessionReady:
       type: object
@@ -659,6 +669,51 @@ components:
       properties:
         state: { $ref: '#/components/schemas/HealthState' }
         components: { type: array, items: { $ref: '#/components/schemas/HealthComponent' } }
+    TargetLogPayload:
+      type: object
+      description: >-
+        v1.2 target owner log metadata projection (ListLogChanges). Owner-issued redacted fact
+        only: no audit payload, free-form message, actor secret or request body. additionalProperties
+        is closed; request_id/trace_id are correlation identifiers only.
+      additionalProperties: false
+      required: [id, occurred_at, level, component, operation, outcome]
+      properties:
+        id: { type: string, minLength: 1 }
+        occurred_at: { type: string, format: date-time }
+        level: { type: string, enum: [DEBUG, INFO, WARN, ERROR] }
+        component: { type: string, minLength: 1 }
+        operation: { type: string, minLength: 1 }
+        outcome: { type: string, enum: [request.recorded, request.rejected] }
+        request_id: { type: string }
+        trace_id: { type: string }
+    TargetLogEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/StreamEnvelope'
+        - type: object
+          required: [event_type, payload]
+          properties:
+            event_type: { type: string, enum: [log.updated] }
+            payload: { $ref: '#/components/schemas/TargetLogPayload' }
+    TargetMessagePayload:
+      type: object
+      description: >-
+        v1.2 received-message metadata (ListMessageMetadataChanges). Self-contained metadata only;
+        no message body, platform raw payload, platform id, action id or sent inference.
+      additionalProperties: false
+      required: [message_id, conversation_id, direction, received_at]
+      properties:
+        message_id: { type: string, minLength: 1 }
+        conversation_id: { type: string, minLength: 1 }
+        direction: { type: string, enum: [received] }
+        received_at: { type: string, format: date-time }
+    TargetMessageEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/StreamEnvelope'
+        - type: object
+          required: [event_type, payload]
+          properties:
+            event_type: { type: string, enum: [message.updated] }
+            payload: { $ref: '#/components/schemas/TargetMessagePayload' }
     LogPayload:
       type: object
       description: Redacted structured log; secrets and message bodies are excluded.

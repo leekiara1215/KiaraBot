@@ -301,7 +301,6 @@ public:
     record->mutable_last_registered_at()->set_seconds(kNow);
     auto* fence = record->mutable_current_fence();
     fence->set_instance_id("66666666-6666-4666-8666-000000000001");
-    fence->set_execution_generation(1);
     fence->set_connection_generation(1);
     fence->set_runtime_epoch("fixture-runtime-epoch-1");
     return grpc::Status::OK;
@@ -330,7 +329,18 @@ public:
     state->mutable_resource()->set_id(id);
     state->set_version(version);
     state->set_lifecycle(wire::LIFECYCLE_ACTIVE);
+    state->set_desired(wire::DESIRED_RUNNING);
+    state->set_registered(true);
+    state->set_desired_config_version(1);
+    state->set_applied_config_version(0);
+    state->set_process_outcome(wire::EXECUTION_UNKNOWN);
+    state->set_source_service("runtime");
     state->mutable_observed_at()->set_seconds(kNow + static_cast<std::int64_t>(version));
+    auto* instance_fence = state->mutable_fence();
+    instance_fence->set_instance_id(id);
+    instance_fence->set_execution_generation(1);
+    instance_fence->set_connection_generation(1);
+    instance_fence->set_runtime_epoch("fixture-runtime-epoch-1");
     return grpc::Status::OK;
   }
   grpc::Status CreateAccount(grpc::ServerContext*, const wire::RuntimeCreateAccountRequest* input,
@@ -425,7 +435,6 @@ public:
     record->mutable_observed_at()->set_seconds(kNow + static_cast<std::int64_t>(version));
     auto* fence = record->mutable_current_fence();
     fence->set_instance_id("66666666-6666-4666-8666-000000000001");
-    fence->set_execution_generation(1);
     fence->set_connection_generation(1);
     fence->set_runtime_epoch("fixture-runtime-epoch-1");
   }
@@ -440,7 +449,18 @@ public:
     state->mutable_resource()->set_id(id);
     state->set_version(version);
     state->set_lifecycle(wire::LIFECYCLE_ACTIVE);
+    state->set_desired(wire::DESIRED_RUNNING);
+    state->set_registered(true);
+    state->set_desired_config_version(1);
+    state->set_applied_config_version(0);
+    state->set_process_outcome(wire::EXECUTION_UNKNOWN);
+    state->set_source_service("runtime");
     state->mutable_observed_at()->set_seconds(kNow + static_cast<std::int64_t>(version));
+    auto* instance_fence = state->mutable_fence();
+    instance_fence->set_instance_id(id);
+    instance_fence->set_execution_generation(1);
+    instance_fence->set_connection_generation(1);
+    instance_fence->set_runtime_epoch("fixture-runtime-epoch-1");
   }
   grpc::Status adapter_catalog_page(const wire::RuntimeListAdaptersRequest* input,
                                     wire::RuntimeListAdaptersResponse* output) {

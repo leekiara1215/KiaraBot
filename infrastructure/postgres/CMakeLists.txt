@@ -254,6 +254,49 @@ if(UNIX)
     LABELS "p04;p12;boot;integration;security;fault" TIMEOUT 300
     ENVIRONMENT "PATH=${P14F_OPENSSL_BIN_DIR}:${P14F_PYTHON_BIN_DIR}:$ENV{PATH};PYTHONPATH=${CMAKE_SOURCE_DIR}/sdk/python/build/generated")
 
+  # HOST-04 all-real single chain: real owned PG, offline bootstrap, real Identity/Runtime/
+  # plugin-host/Control; Begin maintenance -> local admission close -> real HostBridge mTLS ->
+  # Runtime.SetHostAdmissionGate -> Identity.CheckHostGateAuthorization -> persisted gate ->
+  # SUCCEEDED, plus Resume/GetOperation/Cancel, Runtime outage BLOCKED and host-2 denial.
+  add_test(NAME p12_host_real_chain_e2e COMMAND "${KIARABOT_TARGET_PYTHON}"
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_database_test.py"
+    --pg-bin "${KIARABOT_TEST_PG_BIN}" --openssl "${KIARABOT_TEST_OPENSSL}"
+    --initializer $<TARGET_FILE:kiarabot-pg-initialize>
+    --test "${CMAKE_SOURCE_DIR}/tests/architecture/p12_host_real_chain_e2e.py"
+    --test-argument $<TARGET_FILE:kiarabot-identity-bootstrap>
+    --test-argument "${KIARABOT_TEST_PG_BIN}"
+    --test-argument $<TARGET_FILE:kiarabot-identity>
+    --test-argument $<TARGET_FILE:kiarabot-runtime>
+    --test-argument $<TARGET_FILE:kiarabot-control>
+    --test-argument $<TARGET_FILE:kiarabot-plugin-host>)
+  set_tests_properties(p12_host_real_chain_e2e PROPERTIES
+    LABELS "p12;host;control;integration;security;fault" TIMEOUT 180
+    WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+    ENVIRONMENT "PATH=${P14F_OPENSSL_BIN_DIR}:${P14F_PYTHON_BIN_DIR}:$ENV{PATH};PYTHONPATH=${CMAKE_SOURCE_DIR}/sdk/python/build/generated")
+
+  # WS real-owner directory scan: real Identity/Runtime/Control + owned PG + real AdapterBridge;
+  # catalog selector expanded to the operator's explicit child grants, real events, hide semantics
+  # for unauthorized children and 4403/4400/4401/1011 fail-closed paths.
+  add_test(NAME p12_ws_owner_directory_e2e COMMAND "${KIARABOT_TARGET_PYTHON}"
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_database_test.py"
+    --pg-bin "${KIARABOT_TEST_PG_BIN}" --openssl "${KIARABOT_TEST_OPENSSL}"
+    --initializer $<TARGET_FILE:kiarabot-pg-initialize>
+    --test "${CMAKE_SOURCE_DIR}/tests/architecture/p12_ws_owner_directory_e2e.py"
+    --test-argument $<TARGET_FILE:kiarabot-identity-bootstrap>
+    --test-argument "${KIARABOT_TEST_PG_BIN}"
+    --test-argument $<TARGET_FILE:kiarabot-identity>
+    --test-argument $<TARGET_FILE:kiarabot-runtime>
+    --test-argument $<TARGET_FILE:kiarabot-control>
+    --test-argument $<TARGET_FILE:kiarabot_postgres_runtime_bridge_seed>
+    --test-argument "${KIARABOT_TEST_OPENSSL}")
+  set_tests_properties(p12_ws_owner_directory_e2e PROPERTIES
+    LABELS "p12;integration;security;fault" TIMEOUT 300
+    # Real Control/WSS + real Identity/Runtime with 500ms authorization budgets; a parallel
+    # full-suite window starved its first SESSION_READY/event exchange once (round6). Serialize
+    # instead of relaxing the timing/authorization assertions.
+    RUN_SERIAL TRUE
+    ENVIRONMENT "PATH=${P14F_OPENSSL_BIN_DIR}:${P14F_PYTHON_BIN_DIR}:$ENV{PATH};PYTHONPATH=${CMAKE_SOURCE_DIR}/sdk/python/build/generated")
+
   # P12j: Panel API client contract matrix against the same real native target stack.
   # Default mode records the pre-P14g/P14h fail-closed 400s as known and still asserts all
   # auth/error/page shapes; after the fixes are merged rerun with KIARABOT_P12J_EXPECT_FIXED=1

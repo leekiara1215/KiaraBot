@@ -375,3 +375,26 @@ S1 通过、S2 无测试，Runtime gate/PG 持久化/Control host 路由未实�
 - **goal round 3 验收：全量构建 exit 0；全量 CTest 209/209 exit 0（`round4c-ctest.log`，632.21s，
   `--parallel 3`）；契约/target/api/架构/SDK 门禁全绿；格式 0 新增；Panel 91/91。**
   `p10_timer_e2e` 因 wall-clock 敏感也加 `RUN_SERIAL`（与 STR09 相同处理，未放宽断言）。
+
+## 2026-11-05 goal round 4：剩余待办收口
+
+- HOST 全真实单链 `p12_host_real_chain_e2e` 绿并注册；修复 HostManagement 二次 host.read、
+  Runtime gate operation ref 小写 host、gate FK 与真实部署 Host 不兼容（schema 24→25）。
+- Control 多 host endpoint 固定离线 registry（host_endpoints，与 host_endpoint 互斥；懒建 channel；
+  未登记 503；真实/TLS 隔离测试）。
+- 真实 owner WS 目录扫描 `p12_ws_owner_directory_e2e` 绿并注册；修复 SnapshotInfo owner 大小写、
+  WS catalog→已授权 children 展开、adapter fence 语义（TargetAdapterFence）。
+- feeds 收尾：FAILED 终态（真实 Scheduler fail_trigger+PG）与 Identity ListLogChanges 撤权。
+- WS v1.2 envelope 契约对齐（asyncapi additive target schemas、task version string、plugin state
+  全字段、全 envelope Ajv 校验）。
+- 验证：见 round5 构建/CTest/门禁日志；未 push/发布。
+
+- WS v1.2 envelope 契约对齐完成（asyncapi additive target schemas、task version string、plugin
+  state 全字段、全 envelope Ajv 59 assertions）；STR09 全量窗口 flake 定位为 fixture 时序并加固
+  （5 次隔离 + 并发 3/3 通过，断言未放宽）。
+- **goal round 4 最终验收**：全量构建 exit 0（211 CTest 项）；全量 CTest 除 owner-directory 外
+  **210/210 exit 0**（`round12-full-minus-wsdir.log`，667.35s），`p12_ws_owner_directory_e2e` 隔离
+  1/1 Passed 25.51s exit 0（`round12b-wsdir-isolated.log`）；契约/target/api/架构/SDK/Panel 门禁全绿；
+  格式 24 基线/0 新增。修复真实缺陷：HostManagement 二次 host.read、gate FK、SnapshotInfo owner
+  大小写、WS catalog 展开、adapter fence、WS v1.2 envelope 契约、P08 测试进程泄漏、STR09 fixture
+  时序；新注册 `p12_host_real_chain_e2e`、`p12_ws_owner_directory_e2e`。

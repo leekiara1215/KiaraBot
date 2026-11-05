@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "kiarabot/control/target/websocket_types.hpp"
+#include "kiarabot/v1/policy.pb.h"
 
 namespace kiarabot::control::target {
 
@@ -46,6 +47,24 @@ WebSocketResult<std::string> websocket_adapter_event(const v1::AdapterRecord& re
                                                      std::uint64_t sequence);
 WebSocketResult<std::string> websocket_plugin_event(const v1::InstanceRecord& record,
                                                     std::uint64_t sequence);
+// v1.2 target directory selection: a catalog scope is only a selector, never a child grant.
+// Control expands it into the catalog plus the current session principal's explicitly granted
+// exact children of child_kind (fixed-role defaults included), matching the owner's per-child
+// P05 online authorization. Malformed/foreign assignments are ignored (fail closed by hiding);
+// more than kMaximumCatalogChildren grants is RATE_LIMITED rather than a truncated directory.
+constexpr std::size_t kMaximumCatalogChildren = 126;
+// Neutral projection of one current assignment, decoupled from the transport response type.
+struct WebSocketCatalogGrant {
+  std::string assignment_id;
+  std::string principal_id;
+  v1::FixedRole role = v1::FIXED_ROLE_UNSPECIFIED;
+  std::vector<v1::Permission> permissions;
+  v1::ResourceScope scope;
+};
+WebSocketResult<std::vector<v1::ResourceRef>>
+websocket_expand_catalog_children(const std::vector<WebSocketCatalogGrant>& grants,
+                                  std::string_view principal_id, v1::Permission permission,
+                                  v1::ResourceKind child_kind);
 // Stable value signature for change detection: the frozen target fields minus observed_at.
 std::optional<std::string> websocket_adapter_signature(const v1::AdapterRecord& record);
 std::optional<std::string> websocket_plugin_signature(const v1::InstanceRecord& record);

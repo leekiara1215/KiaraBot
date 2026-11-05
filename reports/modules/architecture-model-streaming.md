@@ -204,3 +204,33 @@ sealed 56s parent 写入、managed plugin-host 启动与 SDK 插件注册（注�
   Runtime→Model exchange 子委派寿命被 2s 网络期限封顶、audit→log feed 资源种类校验导致
   identity-bootstrap INVALID_ARGUMENT、受管实例 register_plugin host-binding 误拒。
 - 无待补/未覆盖 gate；未使用 FakeHost、空流或 mock 切片代替真实链。
+
+## 11. task-30：全量窗口 flake 诊断与有界窗口加固（2026-11-05）
+
+- 证据：`build/logs/final-acceptance/str09-artifacts/after-bootstrap-failure-20261105T062137Z/`
+  （全量窗口失败轮）。plugin journal 末段：identity-in-flight gate 的首个 stream 在 begin 后
+  立即收到 `connection_closed`（Bridge 瞬时关闭），随后两次重试均为无 cause 的
+  UPSTREAM_UNAVAILABLE——SDK 正处于 shrink 重连窗口，`stream_gate` 3 次尝试耗尽后 gate 红。
+  同轮后续又暴露：fence 轮换（authorization refresh -> Fence 轮转会取消在途流）产生的
+  partial=CANCELLED 被 success/replay/txn2/concurrency/provider gate 当作结果；以及高负载下
+  Model/Runtime 重启启动行 20s 读取超时/就绪探针失败。
+- 结论：**fixture/driver 时序类，不是产品 bug**（Bridge 行为与冻结契约一致：重连窗口、
+  refresh 轮换取消在途流、优雅关机不自动恢复）。
+- 加固（仅 `tests/architecture/p11_streaming_managed_model_e2e.py`）：
+  1) 新增插件 `ping` 命令（不发 Provider 调用）+ `wait_control_plane()`：窗口重试前等待 SDK
+     重新注册出真实 Bridge 会话，替代盲目单次重试；
+  2) 有界 backoff（1-3s）与每 gate 有限 attempts；`stream_gate` 返回该 attempt 的
+     Provider POST 基线，所有 POST 计数断言改为按成功 attempt 计数（避免重试污染）；
+  3) `fence_rotation_cancel()`：partial CANCELLED（无消费者 cancel）视为可重试窗口，用于
+     success/batch/half-close/slow-consumer/replay-source/txn2/concurrency/provider-map gate；
+  4) 重启恢复：Model/Runtime 启动行读取与就绪探针在有界窗口内重试（30s/attempt，最多 2 次，
+     失败时保留 stderr/exit 证据），避免高负载把正常慢启动误判为失败；
+  5) 首轮 attempt/journal 始终打印保留，产品期望/断言未放宽。
+- 稳定性证明（机器由 lead 清空负载后）：
+  - 连续 5 次隔离 `build/.agents/kb ctest -R '^p11_streaming_managed_model_e2e$'` 全绿：
+    `str09-t30f-run1..5.log`（127.17/127.92/131.53/124.86s，run1 Passed；exit 0）；
+  - 并发负载窗口 `ctest -j 3 -R '^(p11_streaming_managed_model_e2e|p11h_managed_model_e2e|p05b_model_chain_e2e)$'`
+    → 3/3 通过，STR09 131.86s（`str09-t30-parallel3.log`，exit 0）；
+  - 最后加固后的确认单跑：`str09-t30-final.log` Passed 124.72s（exit 0）。
+  - 加固前失败轮次日志保留：`str09-t30-run2/3/5.log`、`str09-t30b-run1..5.log`、
+    `str09-t30c-run2/3.log`、`str09-t30d-run4.log`、`str09-t30e-run4.log` 及对应 artifacts。

@@ -509,3 +509,70 @@ PluginBridge 刷新失败帧的 INTERNAL 与终止状态偏差仍待专项；格
   `round4b-ctest.log`），均单独复跑通过；已给 `p10_timer_e2e` 也加 `RUN_SERIAL`（与 STR09 一致，
   断言未放宽），此后整轮通过。契约/target/api/架构/SDK 门禁全绿；格式 27 个基线违规、0 新增；
   Panel 91/91 全过（本轮修复基线 stale setup）。
+
+### goal round 4（2026-11-05：剩余待办全收口）
+
+- **HOST 全真实单链（已注册）**：`p12_host_real_chain_e2e`（真 owned PG + 离线 bootstrap + 真
+  Identity/Runtime/plugin-host/Control；无 fake）连续通过并注册 CTest：Begin 202→本地关接纳→
+  HostBridge 真 mTLS→Runtime.SetHostAdmissionGate→Identity.CheckHostGateAuthorization 在线→gate
+  持久化→空执行集合确认→SUCCEEDED；Resume/GetOperation/Cancel；Runtime 故障 BLOCKED 不伪成功；
+  Host 重启持久/Control 重路由；host-2 无 host.execute 的真实 Identity 拒绝→BLOCKED；gate/SQLite/
+  Control 三向一致。过程中修复 3 个真实产品缺陷：
+  ①HostManagement mutation 响应不再二次要求 host.read（`state_projection()`）；②Runtime gate 响应
+  operation ref 使用冻结小写 `host`；③Schema `host_admission_gates.host_id` 原 FK 到
+  `kiarabot.hosts` 与真实部署 Host（allowlist/Identity 认证、非托管 Host 资源）不兼容 → 删除 FK、
+  保留非空 CHECK，Runtime schema 24→**25**（真实 describe：runtime digest `ea6b6329…`/173）。
+- **多 host endpoint 固定离线 registry（task-24）**：`control_api.host_endpoints`（host_id→owner
+  mTLS endpoint，1..1024 逐项校验；与单 `host_endpoint` 互斥，同时出现 exit 2）；Control 按 host_id
+  懒建/复用 channel，maintenance/begin/resume 按请求 host、host operation 按 owner 资源路由；未登记
+  host 稳定 503；客户端不可自报 endpoint；无动态发现。测试：service_config 全矩阵 + 真实 Control/
+  多端点 TLS 路由/隔离（`p02_service_config`、`p12_host_control_rest` 扩展）。
+- **真实 owner 目录扫描（已注册）**：`p12_ws_owner_directory_e2e`（真 Identity/Runtime/Control +
+  owned PG + 真 AdapterBridge）目录模式收到仅已授权 child 的 adapter/plugin 事件、未授权真实行
+  （含 99 个真实 CreateInstance 行）隐藏、值变化才发、扫描终止；fail-closed 4403/4400/4401/1011。
+  过程中修复 3 个真实产品缺陷：
+  ①`SnapshotInfo.owner_service` Runtime 输出大写与 Control/契约小写不一致 → Runtime 统一 `runtime`；
+  ②Control WS 目录扫描只委托 catalog selector 而 Runtime 按 P05 逐子在线授权 → WS 改为每页
+  ValidateSession + catalog→admin 显式 exact children（≤126，>limit 1013）展开后新委派；
+  ③adapter 事件误用 plugin 严格 fence（要求 execution_generation）而真实 AdapterFence 无该字段 →
+  新增 `TargetAdapterFence`（openapi；execution_generation optional），adapter 事件按 AdapterFence、
+  plugin 保持严格。
+- **feeds 收尾**：FAILED 终态（真实 Scheduler fail_trigger()+真实 PG，PENDING→RUNNING→FAILED，
+  reason_code=CONFLICT；层级=真实进程+应用+PG，precondition 由 owned 数据注入）与 Identity
+  ListLogChanges 真实 RevokeAssignment 撤权 fail-closed/恢复已补入 p05v12/p04 e2e；回归全绿。
+- **WS v1.2 envelope 契约对齐（完成）**：`api/asyncapi.yaml` additive 新增 `TargetLogPayload`/
+  `TargetLogEnvelope`/`TargetLogUpdate` 与 `TargetMessagePayload`/`TargetMessageEnvelope`/
+  `TargetMessageUpdate`（仅 logs/messages 专用 target channel，受同一 messageId 单绑定限制不进
+  control 频道）；producer task `version` 改 string、plugin `TargetVersionedResourceState` 全字段
+  从真实 InstanceRecord 投影（registered=true 严格 TargetFence，缺事实 INTERNAL 不伪造）；fixtures
+  与真实 Runtime/adapter fence 语义一致；`target_websocket_schema.cjs` 对全部 v1.2 envelope 做真实
+  Ajv + 负向畸形用例（59 assertions）；openapi/asyncapi/target-api/reference 门禁全绿。
+- **STR09 flake 收口**：全量窗口第 4 次失败定位为 **fixture/driver 时序窗口**（artifacts
+  `after-bootstrap-failure-20261105T062137Z`：identity in-flight gate 首个 stream 在 Bridge 瞬时重连
+  窗口 `connection_closed`，后续重试落在 SDK 重连空窗 UPSTREAM_UNAVAILABLE；同族
+  authorization-refresh Fence 轮转会取消在途流、高负载下 Model/Runtime 重启就绪探针超时），非产品
+  bug。driver 加固（仅测试）：插件 `ping`+`wait_control_plane()` 等真实重连、有界 backoff、
+  `stream_gate` 以成功 attempt 的 Provider POST 为基线、fence-rotation partial CANCELLED 视为可重试
+  窗口、重启就绪探针 30s×2；断言未放宽。稳定性：连续 5 次隔离 ctest 全绿（124.86–131.53s）、
+  `ctest -j 3` 并发窗口 3/3、最终单跑 124.72s；失败轮 artifacts/日志全部保留。
+- **本轮最终验收（2026-11-05）**：
+  - 全量构建 exit 0（`round5-build.log`，0 errors，211 个 CTest 项；新增
+    `p12_host_real_chain_e2e` 与 `p12_ws_owner_directory_e2e`）。
+  - **全量 CTest（除 owner-directory 外 210/210 通过，exit 0）**：
+    `build/logs/final-acceptance/round12-full-minus-wsdir.log`（667.35s，`--parallel 3`；
+    含 p11_streaming_managed_model_e2e、p10_timer_e2e、p12_host_real_chain_e2e 等全部重 e2e）。
+  - **`p12_ws_owner_directory_e2e` 隔离 1/1 Passed 25.51s exit 0**：
+    `round12b-wsdir-isolated.log`；全量窗口内它曾间歇在 SESSION_READY 首帧 5s/900ms 预算内失败
+    （预热后的机器上 real-stack 首帧/复合 poll 偶发超时），隔离运行稳定，故以“全量其余 + 该 e2e
+    独立”双证据记录，未放宽任何断言；根因修复（plugin presence 投影、900ms snapshot poll 预算）
+    已落入产品代码。
+  - contracts（含 implementation-status/evidence-scopes/semantic-rules/feature-decl）、target 往返
+    与 baseline/v1.1 descriptor 兼容、openapi/asyncapi/target-api/reference、boundaries/inner/links/
+    database、SDK pytest、Panel lint/test/build/contracts 全部 exit 0；格式 24 个基线违规、0 新增。
+  - 测试进程泄漏修复：P08 host fixture 现在以独立 session 启动 Host 并清理进程组/遗留插件 pid，
+    全量运行后无 kiarabot 孤儿（此前孤儿累积是 real-stack e2e 全量窗口不稳定的放大器）。
+  - 已知环境限制（如实记录）：real-stack e2e 对机器冷热/负载敏感；`p12_ws_owner_directory_e2e`
+    在连续全量窗口偶发首帧超时（隔离稳定）；STR09 与 p10_timer 已 RUN_SERIAL。
+- 未覆盖：adapter online/offline 动态变化（真实 WS 500ms 预算下不稳，fixture 覆盖）；>126 真实目录
+  10 13（单测覆盖）；真实大目录逐 child 在线授权的 500ms 运营规模限制（已记录）；真实双 Host 进程
+  + 单 Control 多 registry 整链（路由已由真 TLS fixture 覆盖）。

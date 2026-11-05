@@ -152,6 +152,10 @@ public:
   const t::ResourceId& host_id() const noexcept override {
     return host;
   }
+  bool deny_state = false;
+  t::Outcome<t::HostMaintenanceState> state_projection() override {
+    return maintenance_state(t::AuthenticationContext{}, t::TimePoint::max());
+  }
   t::ResourceId host{std::string{kHost}};
   std::optional<t::HostMaintenanceRequest> last_request;
   std::optional<t::HostMaintenanceCancelRequest> last_cancel;
@@ -401,6 +405,20 @@ void begin_and_resume(Harness& harness) {
   check(response.operation().ref().operation_id() == kOperation &&
             response.maintenance().version() == 4,
         "BeginMaintenance response");
+  // The mutation response is authorized by host.execute only: a second host.read check would turn
+  // a successful Begin into PERMISSION_DENIED for an execute-only delegation.
+  harness.application.deny_state = true;
+  v1::HostBeginMaintenanceRequest execute_only = request;
+  execute_only.clear_expected_version();
+  execute_only.set_expected_version(3);
+  v1::HostMaintenanceResponse execute_only_response;
+  auto execute_only_context = client_context();
+  check(harness.stub
+                ->BeginMaintenance(execute_only_context.get(), execute_only, &execute_only_response)
+                .ok() &&
+            execute_only_response.maintenance().version() == 4,
+        "execute-only delegation still receives the mutation projection");
+  harness.application.deny_state = false;
   auto missing_version = request;
   missing_version.clear_expected_version();
   v1::HostMaintenanceResponse missing_response;

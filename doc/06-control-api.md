@@ -579,7 +579,12 @@ P12c 在独立 Control 进程的 HTTPS 边界新增 owner-backed 转发层（`co
   P12c 的 REST 聚合接线尚未合入，授权通过后仍返回 503 `UPSTREAM_UNAVAILABLE`，绝不返回成功空页。
 - `control_api` owner 端点统一：`identity_endpoint`（必填）+ 可选 `runtime_endpoint`、
   `scheduler_endpoint`、`model_endpoint`、`host_endpoint`（host:port，逐项校验）；缺省端点使对应
-  owner 读取稳定失败而不伪造数据。健康聚合用这些 mTLS 通道的当前状态观测。
+  owner 读取稳定失败而不伪造数据。健康聚合用这些 mTLS 通道的当前状态观测。多 Host 部署可改用
+  **固定离线 Host registry** `host_endpoints`（`host_id → host:port`，1..1024 项逐项校验，与单
+  `host_endpoint` 互斥，同时出现 exit 2）：Control 按 host_id 懒建并复用 mTLS channel，maintenance/
+  begin/resume 按请求 host、host operation 按 owner 资源路由；未登记 host 稳定 `503`；客户端不能
+  自报 endpoint；无动态发现，新增/轮换 Host 需改配置并重启 Control。跨 host 可见性仍由各 Host
+  存储资源/委托 scope 决定，不因 endpoint 路由变化泄露。
 - 尚未实现（P12d/P11d 依赖或后续批次）：账号/适配器绑定、安装/实例启停配置、插件配置、
   ActionPolicy REST、任务查询/取消、模型管理 REST（P11d 负责专有端点，通用 owner 委托层本任务提供）、
   WS 断流恢复/异步 operation 快照。以上不得返回假资源。
@@ -1034,3 +1039,25 @@ WS e2e 稳定性：此前 `p12_target_websocket_https`/`producers` 的低频握�
 `websockets.sync` 客户端后台线程 SSL 竞态**（libssl `SSL_read`，与 Control 无关）；测试 harness
 改用仓库内单线程 RFC6455 客户端 `control/api/tests/architecture/ws_client.py`，并删除握手重试，
 断言与授权零放宽；修复后两测试各 20/20 通过。
+
+## 2026-11-05 target WS v1.2 envelope 契约对齐（补充）
+
+- **adapter fence**：`adapter.updated` 的 fence 使用新增 `TargetAdapterFence`（`instance_id`/
+  `connection_generation`/`runtime_epoch` 必填；`execution_generation` 为 optional，存在时必须为
+  正 uint64）。Runtime 的 AdapterFence 域模型没有 execution generation（那是插件实例概念），
+  因此真实 adapter 事件不输出该字段；plugin 的 `TargetFence` 仍严格四字段且 `execution_generation`
+  必须为正。
+- **v1.2 log/message target envelope**：新增 `TargetLogPayload`/`TargetLogEnvelope`（id、
+  occurred_at、level 闭集、component、operation、outcome 闭集、可选 request_id/trace_id，无自由
+  文本/audit 原文）与 `TargetMessagePayload`/`TargetMessageEnvelope`（message_id/conversation_id/
+  direction=received/received_at，无正文/平台 raw id），仅绑定 logs/messages 专用 target channel。
+- **versioned resource state presence**：`TargetVersionedResourceState` 的 required 仅保留
+  resource/version/lifecycle/registered/applied_config_version/process_outcome；desired/
+  desired_config_version/observed_at/source_service 按 proto presence 语义可省略（owner 无值时不
+  伪造；REST 与 plugin 事件共用该 schema）。`adapter.updated` 的 `TargetAdapterFence.
+  execution_generation` 亦为 optional。
+- **task**：`TargetTaskPayload.version` 统一为 string（`TargetPositiveUint64`，与 adapter/plugin
+  一致）；**plugin**：`TargetInstanceRecord.state` 按 `TargetVersionedResourceState` 全字段投影
+  （registered=true 时严格 `TargetFence`，registered=false 不输出 fence；owner 事实缺失→INTERNAL，
+  不伪造）。所有 v1.2 envelope 由 `target_websocket_schema.cjs` 用真实 asyncapi/openapi Ajv 校验
+  （含负向畸形用例）。

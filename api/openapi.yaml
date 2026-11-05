@@ -5056,18 +5056,18 @@ components:
         source_service:
           type: string
           minLength: 1
+      description: >-
+        Target versioned resource state. presence follows the frozen protobuf wire semantics:
+        a field that the owner does not currently have a value for is omitted rather than
+        fabricated; registered/applied_config_version/process_outcome are always projected.
       x-contract-status: not_implemented
       required:
       - resource
       - version
       - lifecycle
-      - desired
       - registered
-      - desired_config_version
       - applied_config_version
       - process_outcome
-      - observed_at
-      - source_service
       oneOf:
       - required: [registered]
         properties:
@@ -5099,6 +5099,28 @@ components:
       required:
       - instance_id
       - execution_generation
+      - connection_generation
+      - runtime_epoch
+    TargetAdapterFence:
+      type: object
+      additionalProperties: false
+      properties:
+        instance_id:
+          type: string
+          minLength: 1
+        execution_generation:
+          "$ref": "#/components/schemas/TargetPositiveUint64"
+        connection_generation:
+          "$ref": "#/components/schemas/TargetPositiveUint64"
+        runtime_epoch:
+          type: string
+          minLength: 1
+      description: Adapter connection fence. The Runtime AdapterFence domain has no execution
+        generation (that is a plugin-instance concept); when present the value must be a positive
+        uint64, otherwise it is omitted by the producer.
+      x-contract-status: not_implemented
+      required:
+      - instance_id
       - connection_generation
       - runtime_epoch
     TargetRuntimeSetDesiredStateRequest:
@@ -6793,7 +6815,7 @@ components:
           type: string
           format: date-time
         current_fence:
-          "$ref": "#/components/schemas/TargetFence"
+          "$ref": "#/components/schemas/TargetAdapterFence"
         lifecycle:
           type: string
           enum:

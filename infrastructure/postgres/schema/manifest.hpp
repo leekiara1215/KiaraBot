@@ -38,9 +38,10 @@ inline constexpr std::string_view descriptor(core::target::Service owner) {
     return "1ff26df36e31a5468948032954dbbe8a";
   case core::target::Service::Runtime:
     // BOOT-02 bootstrap delivery intent/receipt + bridge credential version; HOST-03 Host
-    // admission gate row; v1.2 owner-local observation feed journal (logs + messages families;
-    // exact audit-entry resources).
-    return "3949bd1215a7acbf478758330e5ce015";
+    // admission gate row (no kiarabot.hosts FK: deployment Hosts are allowlist/Identity
+    // authenticated, not managed Host resources); v1.2 owner-local observation feed journal
+    // (logs + messages families; exact audit-entry resources).
+    return "ea6b63294371f79c4f2060cb26b35df3";
   case core::target::Service::Scheduler:
     // v1.2 owner-local observation feed journal (tasks family; exact audit-entry resources).
     return "82deb703aa774cd987361be76154e443";

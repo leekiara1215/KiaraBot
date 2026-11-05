@@ -28,9 +28,9 @@ namespace http = beast::http;
 using Tcp = asio::ip::tcp;
 using Error = boost::system::error_code;
 using Stream = beast::ssl_stream<beast::tcp_stream>;
-std::unique_ptr<WebSocketEndpoint> make_websocket_endpoint(
-    const core::platform::ProcessConfig& config, std::shared_ptr<IdentityAuthClient> client,
-    asio::io_context& io);
+std::unique_ptr<WebSocketEndpoint>
+make_websocket_endpoint(const core::platform::ProcessConfig& config,
+                        std::shared_ptr<IdentityAuthClient> client, asio::io_context& io);
 core::target::Failure unavailable() {
   return {core::target::ErrorCode::UpstreamUnavailable,
           core::target::Acceptance::NotAccepted,
@@ -101,8 +101,7 @@ private:
           // to the generic REST route table.
           const bool upgrade_hint =
               beast::websocket::is_upgrade(message) ||
-              (!message[http::field::upgrade].empty() &&
-               !message[http::field::connection].empty());
+              (!message[http::field::upgrade].empty() && !message[http::field::connection].empty());
           if (upgrade_hint && self->websocket_ != nullptr) {
             auto check = self->websocket_->check(message);
             if (!check.accepted()) {
@@ -179,9 +178,10 @@ public:
             config.control_api->model_endpoint.value_or(""),
             config.control_api->host_endpoint.value_or(""), config.tls,
             bootstrap_delivery_ ? bootstrap_delivery_->application.get() : nullptr,
-            bootstrap_delivery_ ? bootstrap_delivery_->recipients.get() : nullptr)),
-        websocket_(make_websocket_endpoint(config, client_, io_)),
-        readiness_(std::move(readiness)), listen_(config.control_api->listen) {
+            bootstrap_delivery_ ? bootstrap_delivery_->recipients.get() : nullptr,
+            config.control_api->host_endpoints)),
+        websocket_(make_websocket_endpoint(config, client_, io_)), readiness_(std::move(readiness)),
+        listen_(config.control_api->listen) {
     tls_.set_options(asio::ssl::context::default_workarounds | asio::ssl::context::no_sslv2 |
                      asio::ssl::context::no_sslv3 | asio::ssl::context::no_tlsv1 |
                      asio::ssl::context::no_tlsv1_1);
@@ -324,9 +324,9 @@ private:
   bool started_ = false;
   std::thread thread_;
 };
-std::unique_ptr<WebSocketEndpoint> make_websocket_endpoint(
-    const core::platform::ProcessConfig& config, std::shared_ptr<IdentityAuthClient> client,
-    asio::io_context& io) {
+std::unique_ptr<WebSocketEndpoint>
+make_websocket_endpoint(const core::platform::ProcessConfig& config,
+                        std::shared_ptr<IdentityAuthClient> client, asio::io_context& io) {
   WebSocketUpgradeConfig websocket;
   websocket.origins = config.control_api->websocket_origins;
   websocket.allow_missing_origin = config.control_api->websocket_allow_missing_origin;

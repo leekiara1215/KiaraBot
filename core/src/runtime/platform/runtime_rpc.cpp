@@ -4,6 +4,8 @@
 #include <array>
 #include <chrono>
 #include <cstdint>
+#include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <memory>
 #include <string>
@@ -557,7 +559,11 @@ void snapshot(const t::SnapshotWindow& window, const t::PageInfo& page, v1::Snap
   (void)timestamp(window.observed_at, output->mutable_observed_at());
   (void)timestamp(window.expires_at, output->mutable_expires_at());
   output->set_authorization_version(window.authorization_version.value);
-  output->set_owner_service(service_text(t::Service::Runtime));
+  // SnapshotInfo.owner_service is the lowercase owner token shared with cursor.source_service,
+  // Control channel selectors and the Panel REST projections (mock: "runtime"); the capitalized
+  // OperationRef/service_text spelling is a legacy operation-journal grammar and must not leak
+  // here or Control's WS catalog scan rejects the page.
+  output->set_owner_service("runtime");
   output->mutable_page()->set_page_size(page.page_size);
   output->mutable_page()->set_next_page_token(page.next_page_token);
 }
@@ -2685,7 +2691,15 @@ public:
     response->set_maintenance_version(gate.maintenance_version);
     response->set_admission(gate.admission_open ? v1::HOST_ADMISSION_OPEN
                                                 : v1::HOST_ADMISSION_CLOSED);
-    if (!operation_ref(gate.operation, response->mutable_operation())) {
+    // Host owns this operation; its wire owner label is the frozen lowercase "host" (the generic
+    // service_text projection capitalizes Runtime/Scheduler/Model owner names).
+    auto* reply_operation = response->mutable_operation();
+    reply_operation->set_owner_service("host");
+    reply_operation->set_operation_id(gate.operation.id.value);
+    const auto encoded_resource = codec::to_wire(gate.operation.resource);
+    if (const auto* wire_resource = std::get_if<v1::ResourceRef>(&encoded_resource)) {
+      *reply_operation->mutable_resource() = *wire_resource;
+    } else {
       return error_status(internal_failure(), request_id, trace_id);
     }
     return grpc::Status::OK;

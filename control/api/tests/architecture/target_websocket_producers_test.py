@@ -33,6 +33,13 @@ def hello(resources):
                        'scope': {'resources': resources}})
 
 
+def catalog_hello(resources, token='fixture-catalog-session'):
+    # Directory mode is expanded from the current session's explicit exact child grants, so the
+    # fixture session carries adapter.read/plugin.read child assignments for this test token.
+    return json.dumps({'type': 'hello', 'access_token': token, 'last_sequence': 0,
+                       'scope': {'resources': resources}})
+
+
 def resume(session_id, last_sequence, resources):
     return json.dumps({'type': 'resume', 'access_token': ACCESS, 'session_id': session_id,
                        'last_sequence': last_sequence,
@@ -226,7 +233,7 @@ def no_repeat_for_id(ws, event_type, resource_id, timeout=1.2):
 def catalog_scan_case(harness):
     # Directory mode: one deployment catalog in scope selects the immutable-page owner scan.
     ws = harness.websocket(path='/ws/adapters')
-    ws.send(hello([{'kind': 'RESOURCE_CATALOG', 'id': ADAPTER_CATALOG}]))
+    ws.send(catalog_hello([{'kind': 'RESOURCE_CATALOG', 'id': ADAPTER_CATALOG}]))
     ready(ws)
     seen = collect_catalog_events(
         ws, 'adapter.updated', {ADAPTER_CONSTANT, ADAPTER_CHANGING, ADAPTER_PAGE_TWO})
@@ -244,16 +251,16 @@ def catalog_scan_case(harness):
 
     # Fail closed: page-2 authorization denial must close instead of producing a partial success.
     ws = harness.websocket(path='/ws/adapters')
-    ws.send(hello([{'kind': 'RESOURCE_CATALOG', 'id': ADAPTER_FAIL_CATALOG}]))
+    ws.send(catalog_hello([{'kind': 'RESOURCE_CATALOG', 'id': ADAPTER_FAIL_CATALOG}]))
     expect_closed(ws, 4403)
     # Fail closed: a snapshot change mid-scan is an internal inconsistency, never mixed pages.
     ws = harness.websocket(path='/ws/adapters')
-    ws.send(hello([{'kind': 'RESOURCE_CATALOG', 'id': ADAPTER_MISMATCH_CATALOG}]))
+    ws.send(catalog_hello([{'kind': 'RESOURCE_CATALOG', 'id': ADAPTER_MISMATCH_CATALOG}]))
     expect_closed(ws, 1011)
 
     # Plugins catalog scan: same immutable-page contract over ListInstances.
     ws = harness.websocket(path='/ws/plugins')
-    ws.send(hello([{'kind': 'RESOURCE_CATALOG', 'id': INSTANCE_CATALOG}]))
+    ws.send(catalog_hello([{'kind': 'RESOURCE_CATALOG', 'id': INSTANCE_CATALOG}]))
     ready(ws)
     seen = collect_catalog_events(
         ws, 'plugin.updated', {INSTANCE_CONSTANT, INSTANCE_CHANGING, INSTANCE_PAGE_TWO})
@@ -261,11 +268,18 @@ def catalog_scan_case(harness):
     assert int(seen[INSTANCE_PAGE_TWO][0]['version']) == 1
     ws.close()
     ws = harness.websocket(path='/ws/plugins')
-    ws.send(hello([{'kind': 'RESOURCE_CATALOG', 'id': INSTANCE_FAIL_CATALOG}]))
+    ws.send(catalog_hello([{'kind': 'RESOURCE_CATALOG', 'id': INSTANCE_FAIL_CATALOG}]))
     expect_closed(ws, 4403)
     ws = harness.websocket(path='/ws/plugins')
-    ws.send(hello([{'kind': 'RESOURCE_CATALOG', 'id': INSTANCE_MISMATCH_CATALOG}]))
+    ws.send(catalog_hello([{'kind': 'RESOURCE_CATALOG', 'id': INSTANCE_MISMATCH_CATALOG}]))
     expect_closed(ws, 1011)
+
+    # More exact child grants than the frozen scope bound is RATE_LIMITED, never a truncated
+    # directory or an empty success stream.
+    ws = harness.websocket(path='/ws/adapters')
+    ws.send(catalog_hello([{'kind': 'RESOURCE_CATALOG', 'id': ADAPTER_CATALOG}],
+                          token='fixture-many-adapters'))
+    expect_closed(ws, 1013)
 
 
 def logs_case(harness):

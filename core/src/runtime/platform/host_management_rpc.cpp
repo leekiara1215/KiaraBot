@@ -518,8 +518,9 @@ private:
                      response->mutable_operation())) {
         return failure_status(internal(), context.request_id(), context.trace_id());
       }
-      auto state = dependencies_.application.maintenance_state(authentication,
-                                                               std::get<t::TimePoint>(deadline));
+      // The caller already passed the exact host.execute check; the mutation response must not
+      // demand a second host.read permission from an execute-only delegation.
+      auto state = dependencies_.application.state_projection();
       if (const auto* failure = std::get_if<t::Failure>(&state)) {
         return failure_status(*failure, context.request_id(), context.trace_id());
       }

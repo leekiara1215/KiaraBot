@@ -22,6 +22,9 @@ public:
   Outcome<HostMaintenanceOperation> resume(const HostMaintenanceRequest& request);
   Outcome<HostMaintenanceOperation> cancel(const HostMaintenanceCancelRequest& request);
   Outcome<HostMaintenanceState> state(const AuthenticationContext& context, TimePoint deadline);
+  // Authoritative owner projection used in the mutation response after the caller already passed
+  // the exact host.execute check for this Host. It performs no second permission check.
+  Outcome<HostMaintenanceState> state_projection();
   Outcome<HostMaintenanceOperation> operation(const AuthenticationContext& context,
                                               TimePoint deadline, const OperationId& operation);
   Outcome<OperationObservationPage> changes(const AuthenticationContext& context,

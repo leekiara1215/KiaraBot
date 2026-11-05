@@ -4,6 +4,7 @@
 // produces instead of a hand-written example. No network, PG or owner is required here.
 #include <algorithm>
 #include <cstdint>
+#include <cstdio>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -447,9 +448,15 @@ wire::AdapterRecord adapter_record(std::uint64_t version = 1) {
   *result.mutable_observed_at() = stamp(1790000000);
   auto* fence = result.mutable_current_fence();
   fence->set_instance_id(kInstance);
-  fence->set_execution_generation(1);
+  // Real Runtime AdapterFence carries no execution generation.
   fence->set_connection_generation(1);
   fence->set_runtime_epoch("runtime-epoch-1");
+  return result;
+}
+wire::AdapterRecord schema_adapter_record(std::uint64_t version = 1) {
+  // Frozen TargetFence schema example: the owner may provide a positive execution generation.
+  auto result = adapter_record(version);
+  result.mutable_current_fence()->set_execution_generation(1);
   return result;
 }
 wire::InstanceRecord instance_record(std::uint64_t version = 1) {
@@ -462,7 +469,49 @@ wire::InstanceRecord instance_record(std::uint64_t version = 1) {
   *state->mutable_resource() = resource(wire::RESOURCE_INSTANCE, kInstance);
   state->set_version(version);
   state->set_lifecycle(wire::LIFECYCLE_ACTIVE);
+  state->set_desired(wire::DESIRED_RUNNING);
+  state->set_registered(true);
+  state->set_desired_config_version(1);
+  state->set_applied_config_version(0);
+  state->set_process_outcome(wire::EXECUTION_UNKNOWN);
+  state->set_source_service("runtime");
   *state->mutable_observed_at() = stamp(1790000000);
+  auto* fence = state->mutable_fence();
+  fence->set_instance_id(kInstance);
+  fence->set_execution_generation(1);
+  fence->set_connection_generation(1);
+  fence->set_runtime_epoch("runtime-epoch-1");
+  return result;
+}
+wire::InstanceRecord unregistered_instance_record(std::uint64_t version = 1) {
+  auto result = instance_record(version);
+  result.mutable_state()->set_registered(false);
+  result.mutable_state()->clear_fence();
+  return result;
+}
+wire::InstanceRecord schema_plugin_record(std::uint64_t version = 1) {
+  // Real plugin event fixture: proto-default optional state facts are omitted (owner never
+  // provided them), while the required frozen state fields and the envelope timestamp remain.
+  auto result = instance_record(version);
+  auto* state = result.mutable_state();
+  state->clear_desired();
+  state->set_desired_config_version(0);
+  state->clear_source_service();
+  return result;
+}
+wire::InstanceRecord external_instance_record(std::uint64_t version = 1) {
+  // Real externally-managed instance: no Runtime-assigned host and only wire-default state facts.
+  // The real Runtime plugin projection still reports EXECUTION_NOT_STARTED for instances.
+  auto result = instance_record(version);
+  result.clear_host_id();
+  result.set_externally_managed(true);
+  auto* state = result.mutable_state();
+  state->set_registered(false);
+  state->clear_fence();
+  state->clear_desired();
+  state->set_desired_config_version(0);
+  state->set_applied_config_version(0);
+  state->set_process_outcome(wire::EXECUTION_NOT_STARTED);
   return result;
 }
 wire::LogChange log_change() {
@@ -548,6 +597,96 @@ void catalog_scope_rules() {
           "health accepts catalog/control");
 }
 
+void catalog_expansion_rules() {
+  constexpr char kPrincipal[] = "33333333-3333-4333-8333-333333333333";
+  constexpr char kOtherPrincipal[] = "44444444-4444-4444-8444-444444444444";
+  const auto grant = [](std::string id, std::string principal, wire::FixedRole role,
+                        std::vector<wire::Permission> permissions,
+                        std::vector<wire::ResourceRef> resources) {
+    target::WebSocketCatalogGrant value;
+    value.assignment_id = std::move(id);
+    value.principal_id = std::move(principal);
+    value.role = role;
+    value.permissions = std::move(permissions);
+    for (auto& resource : resources) {
+      *value.scope.add_resources() = std::move(resource);
+    }
+    return value;
+  };
+  std::vector<target::WebSocketCatalogGrant> grants;
+  grants.push_back(
+      grant("70000000-0000-4000-8000-000000000001", kPrincipal, wire::FIXED_ROLE_UNSPECIFIED,
+            {wire::PERMISSION_ADAPTER_READ},
+            {resource(wire::RESOURCE_ADAPTER, kAdapter),
+             resource(wire::RESOURCE_ADAPTER, "77777777-7777-4777-8777-000000000002")}));
+  // Duplicate resource on a second assignment is deduplicated.
+  grants.push_back(grant("70000000-0000-4000-8000-000000000002", kPrincipal,
+                         wire::FIXED_ROLE_UNSPECIFIED, {wire::PERMISSION_ADAPTER_READ},
+                         {resource(wire::RESOURCE_ADAPTER, kAdapter)}));
+  // Foreign principal, wrong permission and wrong resource kind are not expansion children.
+  grants.push_back(
+      grant("70000000-0000-4000-8000-000000000003", kOtherPrincipal, wire::FIXED_ROLE_UNSPECIFIED,
+            {wire::PERMISSION_ADAPTER_READ},
+            {resource(wire::RESOURCE_ADAPTER, "77777777-7777-4777-8777-000000000003")}));
+  grants.push_back(
+      grant("70000000-0000-4000-8000-000000000004", kPrincipal, wire::FIXED_ROLE_UNSPECIFIED,
+            {wire::PERMISSION_ACCOUNT_READ},
+            {resource(wire::RESOURCE_ADAPTER, "77777777-7777-4777-8777-000000000004")}));
+  grants.push_back(grant("70000000-0000-4000-8000-000000000005", kPrincipal,
+                         wire::FIXED_ROLE_UNSPECIFIED, {wire::PERMISSION_ADAPTER_READ},
+                         {resource(wire::RESOURCE_INSTANCE, kInstance)}));
+  // Fixed-role default read grant applies within the role assignment's own scope.
+  grants.push_back(
+      grant("70000000-0000-4000-8000-000000000006", kPrincipal, wire::ROLE_VIEWER, {},
+            {resource(wire::RESOURCE_ADAPTER, "77777777-7777-4777-8777-000000000006")}));
+  // A role assignment carrying explicit permissions is malformed and ignored.
+  grants.push_back(
+      grant("70000000-0000-4000-8000-000000000007", kPrincipal, wire::ROLE_ADMIN,
+            {wire::PERMISSION_ADAPTER_READ},
+            {resource(wire::RESOURCE_ADAPTER, "77777777-7777-4777-8777-000000000007")}));
+  const auto expanded =
+      accepted(target::websocket_expand_catalog_children(
+                   grants, kPrincipal, wire::PERMISSION_ADAPTER_READ, wire::RESOURCE_ADAPTER),
+               "catalog adapter expansion");
+  require(expanded.size() == 3, "adapter expansion excludes foreign/other-kind/other-permission");
+  std::set<std::string> ids;
+  for (const auto& child : expanded) {
+    require(child.kind() == wire::RESOURCE_ADAPTER, "expanded child keeps adapter kind");
+    ids.insert(child.id());
+  }
+  require(ids == std::set<std::string>{kAdapter, "77777777-7777-4777-8777-000000000002",
+                                       "77777777-7777-4777-8777-000000000006"},
+          "adapter expansion exact id set");
+  // Plugin channel expansion sees instance resources explicitly granted plugin.read.
+  grants.push_back(grant("70000000-0000-4000-8000-000000000009", kPrincipal,
+                         wire::FIXED_ROLE_UNSPECIFIED, {wire::PERMISSION_PLUGIN_READ},
+                         {resource(wire::RESOURCE_INSTANCE, kInstance)}));
+  // The same grants expand for the plugin channel only over instance resources.
+  const auto plugins =
+      accepted(target::websocket_expand_catalog_children(
+                   grants, kPrincipal, wire::PERMISSION_PLUGIN_READ, wire::RESOURCE_INSTANCE),
+               "catalog plugin expansion");
+  require(plugins.size() == 1 && plugins.front().id() == kInstance,
+          "plugin expansion sees only instance children");
+  // Over-limit selections are RATE_LIMITED, never a silently truncated directory.
+  std::vector<target::WebSocketCatalogGrant> many;
+  std::vector<wire::ResourceRef> resources;
+  for (int index = 0; index < static_cast<int>(target::kMaximumCatalogChildren) + 1; ++index) {
+    char id[40]{};
+    std::snprintf(id, sizeof(id), "77777777-7777-4777-8777-%012d", index);
+    resources.push_back(resource(wire::RESOURCE_ADAPTER, id));
+  }
+  many.push_back(grant("70000000-0000-4000-8000-000000000008", kPrincipal,
+                       wire::FIXED_ROLE_UNSPECIFIED, {wire::PERMISSION_ADAPTER_READ},
+                       std::move(resources)));
+  rejected(target::websocket_expand_catalog_children(
+               many, kPrincipal, wire::PERMISSION_ADAPTER_READ, wire::RESOURCE_ADAPTER),
+           "catalog expansion over limit");
+  rejected(target::websocket_expand_catalog_children({}, kPrincipal, wire::PERMISSION_ADAPTER_READ,
+                                                     wire::RESOURCE_CATALOG),
+           "catalog expansion rejects a non-child kind");
+}
+
 void snapshot_event_rules() {
   target::WebSocketHealthObservation healthy;
   healthy.identity_confirmed = true;
@@ -588,6 +727,103 @@ void snapshot_event_rules() {
   require(plugin_event["event_type"] == "plugin.updated", "plugin event type");
   require(plugin_event["payload"]["target"]["state"]["lifecycle"] == "LIFECYCLE_ACTIVE",
           "plugin lifecycle projection");
+  // Real AdapterFence has no execution generation: the event is valid and simply omits it.
+  const auto real_adapter = Json::parse(
+      accepted(target::websocket_adapter_event(adapter_record(), 1), "adapter event without exec"));
+  const auto& real_fence = real_adapter["payload"]["target"]["current_fence"];
+  require(!real_fence.contains("execution_generation"),
+          "adapter fence without execution_generation stays legal");
+  require(real_fence["connection_generation"] == "1" && real_fence["instance_id"] == kInstance,
+          "adapter fence required fields projected");
+  // If the owner does provide a positive execution generation it is projected.
+  const auto generated = Json::parse(accepted(
+      target::websocket_adapter_event(schema_adapter_record(), 1), "adapter event with exec"));
+  require(generated["payload"]["target"]["current_fence"]["execution_generation"] == "1",
+          "provided adapter execution_generation projected");
+  // Malformed adapter fences stay rejected.
+  auto missing_connection = adapter_record();
+  missing_connection.mutable_current_fence()->clear_connection_generation();
+  rejected(target::websocket_adapter_event(missing_connection, 1),
+           "adapter fence requires connection_generation");
+  auto zero_execution = adapter_record();
+  zero_execution.mutable_current_fence()->set_execution_generation(0);
+  rejected(target::websocket_adapter_event(zero_execution, 1),
+           "present adapter execution_generation must be positive");
+  auto missing_epoch = adapter_record();
+  missing_epoch.mutable_current_fence()->clear_runtime_epoch();
+  rejected(target::websocket_adapter_event(missing_epoch, 1),
+           "adapter fence requires runtime_epoch");
+  // Plugin state projects every TargetVersionedResourceState field from the real InstanceRecord.
+  const auto plugin_record = Json::parse(
+      accepted(target::websocket_plugin_event(instance_record(), 1), "plugin state fixture"));
+  const auto& plugin_state = plugin_record["payload"]["target"]["state"];
+  require(plugin_state["desired"] == "DESIRED_RUNNING" && plugin_state["registered"] == true &&
+              plugin_state["desired_config_version"] == "1" &&
+              plugin_state["applied_config_version"] == "0" &&
+              plugin_state["process_outcome"] == "EXECUTION_UNKNOWN" &&
+              plugin_state["source_service"] == "runtime" &&
+              plugin_state["observed_at"] == "2026-09-21T14:13:20Z",
+          "plugin versioned resource state fully projected");
+  require(plugin_state["fence"]["execution_generation"] == "1",
+          "registered plugin fence keeps strict execution generation");
+  // Registered instances require a complete strict plugin fence.
+  auto plugin_without_execution = instance_record();
+  plugin_without_execution.mutable_state()->mutable_fence()->clear_execution_generation();
+  rejected(target::websocket_plugin_event(plugin_without_execution, 1),
+           "plugin fence without execution_generation is rejected");
+  auto plugin_without_fence = instance_record();
+  plugin_without_fence.mutable_state()->clear_fence();
+  rejected(target::websocket_plugin_event(plugin_without_fence, 1),
+           "registered plugin state without fence is rejected");
+  // Unregistered instances omit the fence and keep registered=false.
+  const auto unregistered =
+      Json::parse(accepted(target::websocket_plugin_event(unregistered_instance_record(), 1),
+                           "unregistered plugin fixture"));
+  require(unregistered["payload"]["target"]["state"]["registered"] == false &&
+              !unregistered["payload"]["target"]["state"].contains("fence"),
+          "unregistered plugin state omits the fence");
+  // Proto-presence semantics: default/unset optional scalars are projected honestly, not treated
+  // as malformed. An externally-managed instance may have no desired/registration/config facts.
+  const auto external =
+      Json::parse(accepted(target::websocket_plugin_event(external_instance_record(), 1),
+                           "externally managed plugin fixture"));
+  const auto& external_state = external["payload"]["target"]["state"];
+  require(external["payload"]["target"]["externally_managed"] == true &&
+              !external["payload"]["target"].contains("host_id"),
+          "externally managed instance omits host_id");
+  require(!external_state.contains("desired") && external_state["registered"] == false &&
+              !external_state.contains("desired_config_version") &&
+              external_state["applied_config_version"] == "0" &&
+              external_state["process_outcome"] == "EXECUTION_NOT_STARTED" &&
+              external_state["source_service"] == "runtime" && !external_state.contains("fence"),
+          "externally managed plugin state follows proto defaults");
+  // A managed instance may also have unset optional facts while keeping the strict registered
+  // fence.
+  auto managed_defaults = instance_record();
+  managed_defaults.mutable_state()->clear_desired();
+  managed_defaults.mutable_state()->set_desired_config_version(0);
+  managed_defaults.mutable_state()->clear_source_service();
+  const auto managed = Json::parse(accepted(target::websocket_plugin_event(managed_defaults, 1),
+                                            "managed defaults plugin fixture"));
+  const auto& managed_state = managed["payload"]["target"]["state"];
+  require(!managed_state.contains("desired") && !managed_state.contains("desired_config_version") &&
+              !managed_state.contains("source_service") && managed_state["registered"] == true &&
+              managed_state["fence"]["execution_generation"] == "1" &&
+              managed_state["applied_config_version"] == "0",
+          "managed plugin defaults omit only owner-absent facts");
+  // Impossible contract shapes stay INTERNAL instead of being synthesized.
+  auto missing_resource = instance_record();
+  missing_resource.mutable_state()->clear_resource();
+  rejected(target::websocket_plugin_event(missing_resource, 1),
+           "plugin state missing resource is rejected");
+  auto bad_lifecycle = instance_record();
+  bad_lifecycle.mutable_state()->set_lifecycle(wire::LIFECYCLE_UNSPECIFIED);
+  rejected(target::websocket_plugin_event(bad_lifecycle, 1),
+           "plugin state invalid lifecycle is rejected");
+  auto zero_version = instance_record();
+  zero_version.mutable_state()->set_version(0);
+  rejected(target::websocket_plugin_event(zero_version, 1),
+           "plugin state zero version is rejected");
   // Online adapter without a complete fence is a malformed owner projection, never fabricated.
   auto broken = adapter_record();
   broken.clear_current_fence();
@@ -631,10 +867,12 @@ Fixtures schema_fixtures() {
   healthy.model_ready = true;
   fixtures.files["health_healthy.json"] =
       accepted(target::websocket_health_event(healthy, 1), "healthy health fixture");
+  // Real AdapterFence shape (no execution_generation); the frozen TargetAdapterFence schema allows
+  // the optional field but does not require it.
   fixtures.files["event_adapter.json"] =
       accepted(target::websocket_adapter_event(adapter_record(), 1), "adapter fixture");
   fixtures.files["event_plugin.json"] =
-      accepted(target::websocket_plugin_event(instance_record(), 1), "plugin fixture");
+      accepted(target::websocket_plugin_event(schema_plugin_record(), 1), "plugin fixture");
   fixtures.files["event_participants.json"] =
       accepted(target::websocket_operation_event(participants, 3), "participant fixture");
   fixtures.files["session_ready.json"] = accepted(
@@ -670,6 +908,7 @@ int main(int argc, char** argv) {
     cursor_and_frame_rules();
     snapshot_event_rules();
     catalog_scope_rules();
+    catalog_expansion_rules();
     if (argc == 3 && std::string_view{argv[1]} == "--emit") {
       emit(argv[2]);
     }

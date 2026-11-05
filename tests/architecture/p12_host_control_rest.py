@@ -184,6 +184,81 @@ def main(control, identity_fixture, owner_fixture):
                                            token=token)
             assert missing_cancel_scope[0] == 400 and \
                 missing_cancel_scope[1]['code'] == 'INVALID_ARGUMENT', missing_cancel_scope
+            # Multi-host fixed offline registry: Control routes each request by the host id in
+            # the path/operation ref. The registered owner endpoint is reached; an endpoint that
+            # is down and a host that is not registered both fail closed (503) and never leak a
+            # different host's snapshot.
+            import socket
+            with socket.socket() as reservation:
+                reservation.bind(('127.0.0.1', 0))
+                dead_port = reservation.getsockname()[1]
+            second_host = '55555555-5555-4555-8555-555555555555'
+            multi = json.loads(json.dumps(config))
+            multi['control_api'].pop('host_endpoint', None)
+            multi['control_api']['host_endpoints'] = {
+                HOST_ID: f'localhost:{owner_port}',
+                second_host: f'localhost:{dead_port}',
+            }
+            multi['probe_listen'] = '127.0.0.1:0'
+            multi_path = root / 'control-multi.json'
+            multi_path.write_text(json.dumps(multi))
+            multi_child = subprocess.Popen([control, '--config', str(multi_path)],
+                                           stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                           text=True)
+            try:
+                first_line = line(multi_child)
+                assert first_line.startswith('control_https_port='), first_line
+                multi_port = int(first_line.split('=')[1])
+                line(multi_child)
+
+                def multi_request(method, target):
+                    connection = client.HTTPSConnection('localhost', multi_port,
+                                                       context=context, timeout=10)
+                    headers = {'Authorization': 'Bearer ' + token}
+                    try:
+                        connection.request(method, target, None, headers)
+                        response = connection.getresponse()
+                        content = response.read()
+                        return response.status, json.loads(content) if content else None
+                    finally:
+                        connection.close()
+
+                status, multi_tokens = None, None
+                connection = client.HTTPSConnection('localhost', multi_port, context=context,
+                                                    timeout=10)
+                try:
+                    connection.request('POST', '/api/v1/auth/login',
+                                       json.dumps({'username': 'alice',
+                                                   'password': 'never-print-password'}),
+                                       {'Content-Type': 'application/json',
+                                        'Idempotency-Key': KEY})
+                    response = connection.getresponse()
+                    multi_tokens = json.loads(response.read() or b'{}')
+                    status = response.status
+                finally:
+                    connection.close()
+                if status != 200:
+                    raise RuntimeError('multi-host control login: ' + str((status, multi_tokens)))
+                token = multi_tokens['access_token']
+                routed = multi_request('GET',
+                                       '/api/v1/hosts/' + HOST_ID + '/maintenance')
+                assert routed[0] == 200 and routed[1]['maintenance']['host_id'] == HOST_ID, routed
+                down = multi_request('GET',
+                                     '/api/v1/hosts/' + second_host + '/maintenance')
+                assert down[0] == 503 and down[1]['code'] == 'UPSTREAM_UNAVAILABLE', down
+                unregistered = multi_request(
+                    'GET', '/api/v1/hosts/66666666-6666-4666-8666-666666666666/maintenance')
+                assert unregistered[0] == 503 and \
+                    unregistered[1]['code'] == 'UPSTREAM_UNAVAILABLE', unregistered
+                operation_down = multi_request(
+                    'GET', '/api/v1/operations/host/' + CANCEL_OPERATION +
+                    '?scope=' + urllib.parse.quote(json.dumps(
+                        {'resources': [{'kind': 'RESOURCE_HOST', 'id': second_host}]})))
+                assert operation_down[0] == 503 and \
+                    operation_down[1]['code'] == 'UPSTREAM_UNAVAILABLE', operation_down
+            finally:
+                stop(multi_child)
+
         finally:
             logs = ''
             for process in (child, owner, identity):

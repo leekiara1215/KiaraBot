@@ -549,7 +549,15 @@ PeerCertificatePort信任根由部署配置传入公共PEM，最多16根，每�
 
 Control alone accepts optional `control_api` with exactly `listen` and `identity_endpoint` strings, plus optional `runtime_endpoint`, `scheduler_endpoint`, `model_endpoint`
 and `host_endpoint` owner mTLS endpoints for P12c owner-backed REST/health aggregation (absent endpoints
-keep the corresponding routes stable-failing rather than serving fabricated data). Listen is IPv4:port (port zero is allowed for isolated
+keep the corresponding routes stable-failing rather than serving fabricated data). A deployment with
+more than one Host may instead configure the fixed offline Host registry `host_endpoints`
+(`host_id -> host:port`, same TLS material, 1..1024 entries, each host id non-empty and each endpoint
+a validated `host:port`). `host_endpoints` and the single-name `host_endpoint` are mutually exclusive
+(config exit 2 if both appear); the single name is the one-host compatibility path. Control builds one
+lazy, reused mTLS channel per registered Host, routes maintenance/begin/resume by the request host id
+and host operations by the owner resource id, and answers `503 UPSTREAM_UNAVAILABLE` for an
+unregistered Host; clients can never supply an endpoint. Adding/rotating a Host requires a deployment
+config change and Control restart; there is no dynamic discovery. Listen is IPv4:port (port zero is allowed for isolated
 tests), independent of the loopback probe. Identity is a single ASCII DNS/IPv4
 host:port, port 1–65535; URLs, DSNs, scripts and TLS verification overrides are
 rejected. Unknown/duplicate keys and wrong types exit 2. Validated `tls` material

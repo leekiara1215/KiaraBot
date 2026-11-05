@@ -31,8 +31,10 @@ inline constexpr int version(core::target::Service owner) {
     // the Runtime-owned Host admission gate row; v1.2 adds the owner-local observation feed
     // journal (logs + messages families) and the shared model_intents error CHECK correction.
     // Empty-database schema only, no migration. Identity remains unchanged; feed journal rows
-    // carry exact log-entry resources (catalog included).
-    return 24;
+    // carry exact log-entry resources (catalog included). Host admission gate rows no longer
+    // reference kiarabot.hosts (deployment Hosts are allowlist/Identity-authenticated, not managed
+    // Host resources), so a real registered Host can persist its gate.
+    return 25;
   case core::target::Service::Scheduler:
     // P10a adds task/occurrence observation columns, the quota counter relation and due/owner
     // indexes; P07 adds the shared nullable audit target columns to every service schema. The

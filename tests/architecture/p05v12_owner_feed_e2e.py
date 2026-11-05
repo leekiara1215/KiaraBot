@@ -110,8 +110,8 @@ def grant(permissions, scopes):
 
 def prepare(root, enrolled):
     p14.prepare(root, enrolled)
-    # The fourth id is created with a due run_at later to drive a real COMPLETED terminal fact.
-    STATE['tasks'] = [str(uuid.uuid4()) for _ in range(4)]
+    # The fourth id drives a real COMPLETED fact; the fifth drives a real FAILED fact.
+    STATE['tasks'] = [str(uuid.uuid4()) for _ in range(5)]
     STATE['admin_principal'] = enrolled['administrator_id']
     STATE['grants'] = {}
     feed_grants = [
@@ -175,6 +175,29 @@ def start_service(name, binary, config, children):
             f'{name} startup line incomplete: {state}')
     require(rt.wait_ready(int(state['probe_port']), True, 20.0), f'{name} probe readiness')
     return state
+
+
+def start_runtime_process():
+    """Restart the real Runtime on its original ports; read startup lines until readiness."""
+    child = subprocess.Popen([str(STATE['binaries']['runtime']),
+                              '--config', str(STATE['runtime_config_path'])],
+                             stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    state = {}
+    for _ in range(8):
+        try:
+            text = p14.line(child)
+        except RuntimeError:
+            break
+        if '=' in text:
+            state.update(dict(item.split('=', 1) for item in text.split() if '=' in item))
+        if 'ready' in state:
+            break
+    if 'ready' not in state:
+        tail = ''
+        if child.poll() is not None:
+            tail = child.stderr.read(500).decode(errors='replace')
+        raise RuntimeError(f'runtime restart failed: state={state} tail={tail[:400]}')
+    return child, state
 
 
 def service_channel(endpoint, leaf, key, ca):
@@ -655,6 +678,84 @@ async def run_owner_feeds(root, ca, control_cert, control_key, identity_endpoint
         sql_state = sql('p03_scheduler', "SELECT state::text FROM kiarabot.tasks "
                                         f"WHERE task_id='{due_task}';")
         require(sql_state == '3', f'authoritative scheduler task state is COMPLETED: {sql_state}')
+
+        stage('real Scheduler fail_trigger FAILED terminal feed fact')
+        # Permanent delivery rejection has exactly one observable path: deliver_triggers() treats a
+        # typed Permanent failure from the owner as final and calls the real fail_trigger()
+        # application path. To reach it deterministically without waiting seven days we use the
+        # real processes with a real owner rejection: Runtime validates the handoff payload hash,
+        # so an occurrence whose stored hash no longer matches the task payload (owned-PG tamper)
+        # is answered with a typed CONFLICT. The rest of the path is real: Scheduler process ->
+        # real deliver_triggers -> fail_trigger(stage task feed in the same PG UoW) -> terminal
+        # FAILED row committed and observable by ListTaskChanges.
+        failed_task = STATE['tasks'][4]
+        created_failed = scheduler.CreateTask(scheduler_pb2.SchedulerCreateTaskRequest(
+            context=delegated_context(schedule_delegation), task_id=failed_task,
+            target=common_pb2.ConversationRef(id='feed-failed',
+                                              type=common_pb2.ConversationRef.GROUP,
+                                              account_id=ACCOUNT),
+            payload=b'{}', run_at=timestamp_in(15)), timeout=10)
+        require(created_failed.task.task_id == failed_task and
+                created_failed.task.state == common_pb2.SCHEDULED_TASK_PENDING,
+                'failed-scenario task created pending')
+        p14.stop(STATE['runtime_child'])
+        STATE['runtime_child'] = None
+        occurrence_deadline = time.monotonic() + 35
+        while time.monotonic() < occurrence_deadline:
+            rt.probe_ready(STATE['scheduler_probe'])
+            if sql('p03_scheduler', 'SELECT count(*) FROM kiarabot.occurrences '
+                                    f"WHERE task_id='{failed_task}';") == '1':
+                break
+            time.sleep(0.2)
+        require(sql('p03_scheduler', 'SELECT count(*) FROM kiarabot.occurrences '
+                                     f"WHERE task_id='{failed_task}';") == '1',
+                'due sweep created the real occurrence row')
+        original_hash = sql('p03_scheduler', "SELECT encode(payload_hash,'hex') "
+                                             f"FROM kiarabot.occurrences "
+                                             f"WHERE task_id='{failed_task}';")
+        require(len(original_hash) == 64, 'occurrence payload hash is 32 bytes')
+        flipped = ('00' if original_hash[:2] != '00' else '01') + original_hash[2:]
+        sql('p03_scheduler', "UPDATE kiarabot.occurrences SET "
+                             f"payload_hash=decode('{flipped}','hex') "
+                             f"WHERE task_id='{failed_task}';")
+        child, runtime_state = start_runtime_process()
+        STATE['runtime_child'] = child
+        STATE['children'].append(child)
+        require('probe_port' in runtime_state and 'grpc_port' in runtime_state,
+                f'restarted runtime startup state={runtime_state}')
+        require(rt.wait_ready(int(runtime_state['probe_port']), True, 30.0),
+                'restarted runtime probe readiness')
+        failed = None
+        observed_failed_states = []
+        failed_deadline = time.monotonic() + 60
+        while time.monotonic() < failed_deadline and failed is None:
+            rt.probe_ready(STATE['scheduler_probe'])
+            page = task_changes(scheduler, task_read_delegation, cursor=live, page_size=8)
+            page_header(page, task_scope(STATE['tasks']), 'scheduler', 8)
+            for change in page.changes:
+                if change.task.task_id != failed_task:
+                    continue
+                observed_failed_states.append(change.task.state)
+                if change.task.state == common_pb2.SCHEDULED_TASK_FAILED:
+                    failed = change.task
+            live.CopyFrom(page.next_cursor)
+            if failed is None:
+                time.sleep(0.2)
+        require(failed is not None,
+                'real deliver_triggers -> fail_trigger path produced a FAILED task feed fact')
+        require(common_pb2.SCHEDULED_TASK_PENDING in observed_failed_states and
+                common_pb2.SCHEDULED_TASK_RUNNING in observed_failed_states,
+                f'pending/running transitions observable before FAILED: {observed_failed_states}')
+        require(failed.HasField('reason_code') and
+                failed.reason_code == common_pb2.CONFLICT,
+                f'failed terminal carries the closed delivery reason: {failed.reason_code}')
+        require(failed.owner_service == 'scheduler' and failed.version > 1 and
+                failed.owner_instance_id != '',
+                'failed terminal metadata')
+        # Domain TaskState Failed=4 in the owned scheduler row agrees with the feed.
+        sql_state = sql('p03_scheduler', "SELECT state::text FROM kiarabot.tasks "
+                                        f"WHERE task_id='{failed_task}';")
+        require(sql_state == '4', f'authoritative scheduler task state is FAILED: {sql_state}')
     finally:
         identity_channel.close()
         runtime_channel.close()
@@ -718,9 +819,10 @@ def after_bootstrap(root):
         stage('runtime/scheduler startup')
         runtime_state = start_service('runtime', binaries['runtime'], runtime_config,
                                       STATE['children'])
+        STATE['runtime_child'] = STATE['children'][-1]
+        STATE['runtime_config_path'] = root / 'feed-runtime.json'
         scheduler_state = start_service('scheduler', binaries['scheduler'], scheduler_config,
                                         STATE['children'])
-        STATE['runtime_probe'] = int(runtime_state['probe_port'])
         STATE['scheduler_probe'] = int(scheduler_state['probe_port'])
         control_cert = STATE['tls'] / 'control.pem'
         control_key = STATE['tls'] / 'control.key'

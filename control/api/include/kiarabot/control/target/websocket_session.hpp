@@ -31,6 +31,10 @@ struct WebSocketSessionConfig {
   std::chrono::milliseconds first_frame_timeout{5000};
   std::chrono::milliseconds poll_interval{100};
   std::chrono::milliseconds authorization_budget{500};
+  // Snapshot directory polls combine per-page session validation, delegation and the owner list
+  // call; the frozen session contract allows a total under one second, so directory polling gets a
+  // wider ceiling than the single-call identity budget while each upstream call stays bounded.
+  std::chrono::milliseconds snapshot_poll_budget{900};
   std::chrono::milliseconds authorization_stale{750};
   std::chrono::milliseconds write_timeout{5000};
   std::chrono::milliseconds close_timeout{1000};

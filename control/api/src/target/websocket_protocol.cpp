@@ -4,6 +4,7 @@
 #include <charconv>
 #include <cstdint>
 #include <ctime>
+#include <iostream>
 #include <limits>
 #include <optional>
 #include <set>
@@ -13,6 +14,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include "kiarabot/core/domain/target/identity_policy.hpp"
 #include "kiarabot/core/runtime/platform/target_codec.hpp"
 
 namespace kiarabot::control::target {
@@ -807,6 +809,27 @@ std::optional<Json> target_resource(const v1::ResourceRef& resource) {
   }
   return Json{{"kind", v1::ResourceKind_Name(resource.kind())}, {"id", resource.id()}};
 }
+// AdapterFence is the real Runtime adapter domain projection: it has no execution generation
+// (only the plugin InstanceFence carries one). execution_generation is therefore optional here and
+// emitted only when the owner actually provides a positive value.
+std::optional<Json> target_adapter_fence(const v1::Fence& fence) {
+  if (!printable(fence.instance_id(), 1, kMaximumIdentifierBytes) ||
+      !fence.has_connection_generation() || fence.connection_generation() == 0 ||
+      !printable(fence.runtime_epoch(), 1, kMaximumIdentifierBytes)) {
+    return {};
+  }
+  Json result{{"instance_id", fence.instance_id()},
+              {"connection_generation", std::to_string(fence.connection_generation())},
+              {"runtime_epoch", fence.runtime_epoch()}};
+  if (fence.has_execution_generation()) {
+    if (fence.execution_generation() == 0) {
+      return {};
+    }
+    result["execution_generation"] = std::to_string(fence.execution_generation());
+  }
+  return result;
+}
+// Plugin instance fences keep the strict frozen TargetFence shape (every field required).
 std::optional<Json> target_fence(const v1::Fence& fence) {
   if (!printable(fence.instance_id(), 1, kMaximumIdentifierBytes) ||
       !fence.has_execution_generation() || !fence.has_connection_generation() ||
@@ -908,7 +931,9 @@ std::optional<Json> task_payload(const v1::TaskMetadata& task) {
       return {};
     }
   }
-  return Json{{"id", task.task_id()}, {"version", task.version()}, {"target", std::move(target)}};
+  return Json{{"id", task.task_id()},
+              {"version", std::to_string(task.version())},
+              {"target", std::move(target)}};
 }
 std::optional<Json> message_payload(const v1::MessageMetadata& message) {
   if (message.owner_service() != "runtime" ||
@@ -1143,7 +1168,7 @@ WebSocketResult<std::string> websocket_adapter_event(const v1::AdapterRecord& re
     if (!record.has_current_fence()) {
       return WebSocketFailure{v1::INTERNAL, false};
     }
-    const auto fence = target_fence(record.current_fence());
+    const auto fence = target_adapter_fence(record.current_fence());
     if (!fence) {
       return WebSocketFailure{v1::INTERNAL, false};
     }
@@ -1168,21 +1193,81 @@ std::optional<std::string> websocket_plugin_signature(const v1::InstanceRecord& 
 }
 WebSocketResult<std::string> websocket_plugin_event(const v1::InstanceRecord& record,
                                                     std::uint64_t sequence) {
-  const auto occurred = timestamp_text(record.state().observed_at());
-  const auto resource = target_resource(record.state().resource());
-  const auto lifecycle = lifecycle_name(record.state().lifecycle());
-  if (!occurred || !resource || !lifecycle || record.instance_id().empty() ||
-      !identifier(record.instance_id()) || !identifier(record.installation_id()) ||
-      record.state().version() == 0 || record.state().resource().kind() != v1::RESOURCE_INSTANCE) {
+  // TargetVersionedResourceState projection follows the frozen proto presence semantics: only
+  // contract-required facts (resource/version/lifecycle) are mandatory. Proto3 scalars that are
+  // unset/default are projected as their real wire meaning instead of being treated as malformed:
+  // registered defaults to false; applied_config_version 0 is the valid TargetUint64 value;
+  // EXECUTION_NOT_STARTED (enum 0) is the valid default outcome. A positive-only contract field
+  // with no owner value (desired enum unspecified, desired_config_version 0, observed_at absent,
+  // empty source_service) is omitted rather than synthesized. Registered=true keeps the strict
+  // plugin TargetFence. Impossible shapes (missing resource, invalid lifecycle/version, invalid
+  // enum range, registered without fence) remain INTERNAL.
+  const auto state_projection = [](const v1::VersionedResourceState& state) -> std::optional<Json> {
+    const auto resource = target_resource(state.resource());
+    const auto lifecycle = lifecycle_name(state.lifecycle());
+    if (!resource || !lifecycle || state.version() == 0 ||
+        state.resource().kind() != v1::RESOURCE_INSTANCE) {
+      return {};
+    }
+    Json value{{"resource", *resource},
+               {"version", std::to_string(state.version())},
+               {"lifecycle", *lifecycle},
+               {"registered", state.registered()},
+               {"applied_config_version", std::to_string(state.applied_config_version())}};
+    if (state.desired() != v1::DESIRED_STATE_UNSPECIFIED) {
+      if (!v1::DesiredState_IsValid(state.desired())) {
+        return {};
+      }
+      value["desired"] = v1::DesiredState_Name(state.desired());
+    }
+    if (state.desired_config_version() > 0) {
+      value["desired_config_version"] = std::to_string(state.desired_config_version());
+    }
+    if (!v1::ExecutionOutcome_IsValid(state.process_outcome())) {
+      return {};
+    }
+    value["process_outcome"] = v1::ExecutionOutcome_Name(state.process_outcome());
+    if (timestamp(state.observed_at())) {
+      const auto observed = timestamp_text(state.observed_at());
+      if (!observed) {
+        return {};
+      }
+      value["observed_at"] = *observed;
+    }
+    if (!state.source_service().empty()) {
+      if (!printable(state.source_service(), 1, kMaximumIdentifierBytes)) {
+        return {};
+      }
+      value["source_service"] = state.source_service();
+    }
+    if (state.registered()) {
+      if (!state.has_fence()) {
+        return {};
+      }
+      const auto fence = target_fence(state.fence());
+      if (!fence) {
+        return {};
+      }
+      value["fence"] = *fence;
+    }
+    return value;
+  };
+  if (!record.has_state()) {
     return WebSocketFailure{v1::INTERNAL, false};
   }
-  Json state{{"resource", *resource},
-             {"version", std::to_string(record.state().version())},
-             {"lifecycle", *lifecycle}};
+  const auto state = state_projection(record.state());
+  if (!state) {
+    return WebSocketFailure{v1::INTERNAL, false};
+  }
+  const auto occurred = timestamp_text(record.state().observed_at());
+  if (!occurred || record.instance_id().empty() || !identifier(record.instance_id()) ||
+      !identifier(record.installation_id())) {
+    return WebSocketFailure{v1::INTERNAL, false};
+  }
   Json target{{"instance_id", record.instance_id()},
               {"installation_id", record.installation_id()},
               {"externally_managed", record.externally_managed()},
-              {"state", std::move(state)}};
+              {"state", *state}};
   if (!record.externally_managed()) {
     if (!identifier(record.host_id())) {
       return WebSocketFailure{v1::INTERNAL, false};
@@ -1194,6 +1279,83 @@ WebSocketResult<std::string> websocket_plugin_event(const v1::InstanceRecord& re
                             {"target", std::move(target)}};
   return feed_envelope("plugin.updated", *occurred, sequence, payload);
 }
+WebSocketResult<std::vector<v1::ResourceRef>>
+websocket_expand_catalog_children(const std::vector<WebSocketCatalogGrant>& assignments,
+                                  std::string_view principal_id, v1::Permission permission,
+                                  v1::ResourceKind child_kind) {
+  try {
+    if (!identifier(std::string{principal_id}) ||
+        (child_kind != v1::RESOURCE_ADAPTER && child_kind != v1::RESOURCE_INSTANCE)) {
+      return WebSocketFailure{v1::INVALID_ARGUMENT, false};
+    }
+    const auto neutral = codec::from_wire(permission);
+    if (!std::holds_alternative<core::target::Permission>(neutral)) {
+      return WebSocketFailure{v1::INVALID_ARGUMENT, false};
+    }
+    const auto required = std::get<core::target::Permission>(neutral);
+    std::set<std::string> seen_assignments;
+    std::set<std::string> children;
+    for (const auto& assignment : assignments) {
+      if (assignment.principal_id != principal_id || assignment.assignment_id.empty() ||
+          !seen_assignments.insert(assignment.assignment_id).second ||
+          assignment.scope.resources().empty()) {
+        continue;
+      }
+      bool includes = false;
+      if (assignment.role != v1::FIXED_ROLE_UNSPECIFIED) {
+        if (!assignment.permissions.empty()) {
+          continue;
+        }
+        core::target::FixedRole role = core::target::FixedRole::Viewer;
+        switch (assignment.role) {
+        case v1::ROLE_ADMIN:
+          role = core::target::FixedRole::Admin;
+          break;
+        case v1::ROLE_OPERATOR:
+          role = core::target::FixedRole::Operator;
+          break;
+        case v1::ROLE_VIEWER:
+          role = core::target::FixedRole::Viewer;
+          break;
+        default:
+          continue;
+        }
+        includes = core::target::default_role_allows(role, required);
+      } else {
+        if (assignment.permissions.empty()) {
+          continue;
+        }
+        includes =
+            std::any_of(assignment.permissions.begin(), assignment.permissions.end(),
+                        [&](int granted) { return granted == static_cast<int>(permission); });
+      }
+      if (!includes) {
+        continue;
+      }
+      for (const auto& resource : assignment.scope.resources()) {
+        if (resource.kind() == child_kind && !resource.id().empty() &&
+            resource.id().size() <= 256) {
+          children.insert(resource.id());
+        }
+      }
+    }
+    if (children.size() > kMaximumCatalogChildren) {
+      return WebSocketFailure{v1::RATE_LIMITED, false};
+    }
+    std::vector<v1::ResourceRef> result;
+    result.reserve(children.size());
+    for (const auto& id : children) {
+      v1::ResourceRef resource;
+      resource.set_kind(child_kind);
+      resource.set_id(id);
+      result.push_back(std::move(resource));
+    }
+    return result;
+  } catch (...) {
+    return WebSocketFailure{v1::INTERNAL, false};
+  }
+}
+
 unsigned short websocket_close_code(WebSocketFailure failure) {
   switch (failure.code) {
   case v1::INVALID_ARGUMENT:

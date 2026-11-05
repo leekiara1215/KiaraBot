@@ -90,6 +90,90 @@ for (const name of ['event_running.json', 'event_blocked.json', 'event_participa
     }
   }
 }
+// v1.2 producer envelopes: every emitted stream event must satisfy its frozen channel schema and
+// the shared StreamEnvelope. The adapter example is the real Runtime AdapterFence shape (no
+// execution generation by default); its optional positive form and the plugin strict form are both
+// exercised below.
+for (const [name, schema] of [
+  ['health_healthy.json', 'HealthEnvelope'],
+  ['event_adapter.json', 'TargetAdapterEnvelope'],
+  ['event_log.json', 'TargetLogEnvelope'],
+  ['event_task.json', 'TargetTaskEnvelope'],
+  ['event_message.json', 'TargetMessageEnvelope'],
+  ['event_plugin.json', 'TargetPluginEnvelope'],
+]) {
+  const envelope = read(name);
+  check(schema, envelope, true);
+  check('StreamEnvelope', envelope, true);
+}
+const adapter = read('event_adapter.json');
+assert.equal(adapter.payload.target.online, true);
+checkApi('TargetAdapterFence', adapter.payload.target.current_fence, true);
+assert.equal(adapter.payload.target.current_fence.execution_generation, undefined);
+// Optional positive adapter execution_generation: present-and-positive is valid, zero is rejected;
+// the plugin fence stays strict (execution_generation required).
+const generated = clone(adapter);
+generated.payload.target.current_fence.execution_generation = '1';
+check('TargetAdapterEnvelope', generated, true);
+checkApi('TargetAdapterFence', generated.payload.target.current_fence, true);
+const zeroGeneration = clone(adapter);
+zeroGeneration.payload.target.current_fence.execution_generation = '0';
+checkApi('TargetAdapterFence', zeroGeneration.payload.target.current_fence, false);
+const missingConnection = clone(adapter);
+delete missingConnection.payload.target.current_fence.connection_generation;
+check('TargetAdapterEnvelope', missingConnection, false);
+// Closed v1.2 log metadata: a free-text level or an extra free-text field is rejected.
+const badLog = clone(read('event_log.json'));
+badLog.payload.level = 'VERBOSE';
+check('TargetLogEnvelope', badLog, false);
+const extraLog = clone(read('event_log.json'));
+extraLog.payload.message = 'free text';
+check('TargetLogEnvelope', extraLog, false);
+// Target task version is the canonical positive uint64 string.
+const badTask = clone(read('event_task.json'));
+badTask.payload.version = 2;
+check('TargetTaskEnvelope', badTask, false);
+// Message metadata never infers sent direction nor carries content-like extras.
+const badMessage = clone(read('event_message.json'));
+badMessage.payload.direction = 'sent';
+check('TargetMessageEnvelope', badMessage, false);
+const extraMessage = clone(read('event_message.json'));
+extraMessage.payload.body = 'secret';
+check('TargetMessageEnvelope', extraMessage, false);
+// Plugin state follows the frozen wire-presence schema: resource/version/lifecycle/registered/
+// applied_config_version/process_outcome are required, while desired/desired_config_version/
+// observed_at/source_service are optional and omitted when the owner had no value.
+const plugin = read('event_plugin.json');
+const pluginState = plugin.payload.target.state;
+assert.equal(pluginState.desired, undefined);
+assert.equal(pluginState.desired_config_version, undefined);
+assert.equal(pluginState.source_service, undefined);
+assert.equal(pluginState.registered, true);
+checkApi('TargetVersionedResourceState', pluginState, true);
+// Optional observed_at may also be absent from the state (the StreamEnvelope still carries its own
+// authoritative occurred_at); the frozen schema must accept that presence form.
+const pluginWithoutObserved = clone(plugin);
+delete pluginWithoutObserved.payload.target.state.observed_at;
+check('TargetPluginEnvelope', pluginWithoutObserved, true);
+// Registered instances still require the complete strict plugin fence.
+const pluginWithoutFence = clone(plugin);
+delete pluginWithoutFence.payload.target.state.fence;
+check('TargetPluginEnvelope', pluginWithoutFence, false);
+// Required frozen state facts are never synthesized.
+const pluginMissingLifecycle = clone(plugin);
+delete pluginMissingLifecycle.payload.target.state.lifecycle;
+check('TargetPluginEnvelope', pluginMissingLifecycle, false);
+const pluginMissingApplied = clone(plugin);
+delete pluginMissingApplied.payload.target.state.applied_config_version;
+check('TargetPluginEnvelope', pluginMissingApplied, false);
+const pluginBadOutcome = clone(plugin);
+pluginBadOutcome.payload.target.state.process_outcome = 'EXECUTION_BROKEN';
+check('TargetPluginEnvelope', pluginBadOutcome, false);
+// Health payload keeps the closed state/component shape.
+const badHealth = clone(read('health_healthy.json'));
+badHealth.payload.state = 'BROKEN';
+check('HealthEnvelope', badHealth, false);
+
 const ready = read('session_ready.json');
 check('OperationSessionReady', ready, true);
 check('SessionReady', ready, true);

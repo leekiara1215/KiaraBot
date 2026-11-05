@@ -48,6 +48,9 @@ struct ControlApiMaterial {
   std::optional<std::string> scheduler_endpoint;
   std::optional<std::string> model_endpoint;
   std::optional<std::string> host_endpoint;
+  // HOST-04 fixed offline multi-host registry: host_id -> owner mTLS host:port. Mutually
+  // exclusive with the legacy single host_endpoint; resolved by the Control composition only.
+  std::map<std::string, std::string> host_endpoints;
   std::vector<std::string> websocket_origins{};
   bool websocket_allow_missing_origin = false;
   // BOOT-04: absolute path to the offline non-secret recipient registry JSON. Absent disables the

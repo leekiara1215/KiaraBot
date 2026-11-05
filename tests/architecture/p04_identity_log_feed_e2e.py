@@ -80,9 +80,15 @@ def control_scope():
 def prepare(root, enrolled):
     control_id = enrolled['control_id']
     # Exact Control peer grants for the frozen log feed plus its own credential management.
+    log_assignment = str(uuid.uuid4())
+    enrolled['control_assignments'].append({
+        'assignment_id': log_assignment,
+        'permissions': ['log.read'],
+        'scope': [{'kind': 'RESOURCE_CATALOG', 'id': 'control'}]})
+    # The Control peer performs the real assignment revocation/restore on its own exact grant.
     enrolled['control_assignments'].append({
         'assignment_id': str(uuid.uuid4()),
-        'permissions': ['log.read'],
+        'permissions': ['identity.assignment.manage'],
         'scope': [{'kind': 'RESOURCE_CATALOG', 'id': 'control'}]})
     enrolled['control_assignments'].append({
         'assignment_id': str(uuid.uuid4()),
@@ -94,7 +100,8 @@ def prepare(root, enrolled):
         'permissions': ['log.read'],
         'scope': [{'kind': 'RESOURCE_CATALOG', 'id': 'control'}]})
     STATE.update(control_id=control_id,
-                 control_credential_id=enrolled['control_credential_id'])
+                 control_credential_id=enrolled['control_credential_id'],
+                 control_log_assignment=log_assignment)
 
 
 def start_identity(root, binaries):
@@ -329,6 +336,27 @@ def run_feed_checks(root, grpc_endpoint, binaries):
             lambda: call_changes(remote, delegation=issued.delegation.proof),
             (grpc.StatusCode.UNAUTHENTICATED, grpc.StatusCode.PERMISSION_DENIED),
             'a delegation cannot substitute the Control peer grant')
+
+        stage('real log.read grant revocation stops the feed without a fake empty page')
+        assignment_id = STATE['control_log_assignment']
+        control.RevokeAssignment(identity_pb2.IdentityRevokeAssignmentRequest(
+            context=request_context(), assignment_id=assignment_id, expected_version=1),
+            timeout=10)
+        # The page must be a typed authorization refusal, never a successful empty page.
+        expect_any_code(lambda: call_changes(control),
+                        (grpc.StatusCode.PERMISSION_DENIED, grpc.StatusCode.UNAUTHENTICATED),
+                        'revoked log.read grant is refused')
+        # Restore the exact grant (new assignment, same principal/permission/scope) and read again.
+        restored = control.SetAssignment(identity_pb2.IdentitySetAssignmentRequest(
+            context=request_context(),
+            assignment=identity_pb2.AssignmentSpec(
+                principal_id=STATE['control_id'], permissions=[policy_pb2.PERMISSION_LOG_READ],
+                scope=control_scope())), timeout=10)
+        require(restored.assignment.version == 1 and restored.assignment.assignment_id != '',
+                'log.read grant restored')
+        recovered = call_changes(control)
+        result_page(recovered, page_size=5)
+        require(not recovered.changes, 'restored grant reads the owner-confirmed head')
 
         stage('revoked Control credential stops the feed')
         try:

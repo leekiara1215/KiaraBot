@@ -458,7 +458,8 @@ public:
   Impl(const std::string& endpoint, const std::string& runtime_endpoint,
        const std::string& scheduler_endpoint, const std::string& model_endpoint,
        const std::string& host_endpoint, const core::platform::TlsMaterial& tls,
-       SecretDeliveryApplication* secret_delivery, BootstrapRecipientsPort* bootstrap_recipients) {
+       SecretDeliveryApplication* secret_delivery, BootstrapRecipientsPort* bootstrap_recipients,
+       const std::map<std::string, std::string>& host_endpoints) {
     grpc::SslCredentialsOptions options;
     options.pem_root_certs = tls.ca;
     options.pem_cert_chain = tls.certificate;
@@ -485,7 +486,7 @@ public:
     fingerprint_.assign(reinterpret_cast<const char*>(digest.data()), length);
     owners_ = std::make_unique<OwnerClients>(endpoint, runtime_endpoint, scheduler_endpoint,
                                              model_endpoint, host_endpoint, tls, secret_delivery,
-                                             bootstrap_recipients);
+                                             bootstrap_recipients, host_endpoints);
   }
   template <typename Request, typename Response, typename Method>
   void call(Method method, Request& request, Response& response,
@@ -803,6 +804,76 @@ public:
       return WebSocketFailure{wire::INTERNAL, false};
     }
   }
+  WebSocketResult<StreamSessionContext> validate_stream_context(std::string_view access,
+                                                                WebSocketDeadline deadline) {
+    try {
+      if (!safe_text(access, 20, 4096)) {
+        return WebSocketFailure{wire::UNAUTHENTICATED, false};
+      }
+      const auto context = stream_context(deadline);
+      wire::IdentityValidateSessionRequest input;
+      input.set_access_token(std::string{access});
+      wire::IdentityValidateSessionResponse output;
+      call(&wire::IdentityService::Stub::ValidateSession, input, output, context, deadline);
+      (void)principal_json(output);
+      if (!output.has_principal() || !output.has_session() || !output.has_checked_at() ||
+          output.principal().principal_id().empty() || output.authorization_version() == 0 ||
+          output.principal().state() != wire::LIFECYCLE_ACTIVE || output.session().revoked() ||
+          output.session().principal_id() != output.principal().principal_id()) {
+        return WebSocketFailure{wire::UPSTREAM_UNAVAILABLE, false};
+      }
+      StreamSessionContext result;
+      result.identity.principal = output.principal().principal_id();
+      result.identity.identity_session = output.session().session_id();
+      result.identity.authorization_version = output.authorization_version();
+      result.identity.expires_at = checked_value(codec::from_wire(output.session().expires_at()));
+      result.identity.checked_at = checked_value(codec::from_wire(output.checked_at()));
+      std::set<std::string> seen_assignments;
+      for (const auto& assignment : output.assignments()) {
+        if (assignment.principal_id() != result.identity.principal ||
+            assignment.assignment_id().empty() ||
+            !seen_assignments.insert(assignment.assignment_id()).second ||
+            assignment.version() == 0 || !assignment.has_scope() ||
+            assignment.scope().resources().empty()) {
+          return WebSocketFailure{wire::UPSTREAM_UNAVAILABLE, false};
+        }
+        StreamAssignmentGrant grant;
+        grant.assignment_id = assignment.assignment_id();
+        grant.principal_id = assignment.principal_id();
+        grant.role = assignment.role();
+        std::set<int> seen_permissions;
+        for (const auto granted : assignment.permissions()) {
+          if (!std::holds_alternative<core::target::Permission>(
+                  codec::from_wire(static_cast<wire::Permission>(granted))) ||
+              !seen_permissions.insert(granted).second) {
+            return WebSocketFailure{wire::UPSTREAM_UNAVAILABLE, false};
+          }
+          grant.permissions.push_back(static_cast<wire::Permission>(granted));
+        }
+        if (grant.role != wire::FIXED_ROLE_UNSPECIFIED) {
+          if (!grant.permissions.empty()) {
+            return WebSocketFailure{wire::UPSTREAM_UNAVAILABLE, false};
+          }
+        } else if (grant.permissions.empty()) {
+          return WebSocketFailure{wire::UPSTREAM_UNAVAILABLE, false};
+        }
+        std::set<std::pair<int, std::string>> seen_resources;
+        for (const auto& resource : assignment.scope().resources()) {
+          if (!std::holds_alternative<core::target::ResourceRef>(codec::from_wire(resource)) ||
+              !seen_resources.emplace(resource.kind(), resource.id()).second) {
+            return WebSocketFailure{wire::UPSTREAM_UNAVAILABLE, false};
+          }
+          *grant.scope.add_resources() = resource;
+        }
+        result.assignments.push_back(std::move(grant));
+      }
+      return result;
+    } catch (const RpcError& error) {
+      return WebSocketFailure{error.code, false};
+    } catch (...) {
+      return WebSocketFailure{wire::INTERNAL, false};
+    }
+  }
   WebSocketResult<std::string> delegate_stream(std::string_view owner, wire::Permission permission,
                                                const wire::ResourceScope& scope,
                                                std::string_view access,
@@ -848,16 +919,15 @@ private:
   std::set<grpc::ClientContext*> active_;
   bool cancelled_ = false;
 };
-IdentityAuthClient::IdentityAuthClient(const std::string& endpoint,
-                                       const std::string& runtime_endpoint,
-                                       const std::string& scheduler_endpoint,
-                                       const std::string& model_endpoint,
-                                       const std::string& host_endpoint,
-                                       const core::platform::TlsMaterial& tls,
-                                       SecretDeliveryApplication* secret_delivery,
-                                       BootstrapRecipientsPort* bootstrap_recipients)
+IdentityAuthClient::IdentityAuthClient(
+    const std::string& endpoint, const std::string& runtime_endpoint,
+    const std::string& scheduler_endpoint, const std::string& model_endpoint,
+    const std::string& host_endpoint, const core::platform::TlsMaterial& tls,
+    SecretDeliveryApplication* secret_delivery, BootstrapRecipientsPort* bootstrap_recipients,
+    const std::map<std::string, std::string>& host_endpoints)
     : impl_(std::make_unique<Impl>(endpoint, runtime_endpoint, scheduler_endpoint, model_endpoint,
-                                   host_endpoint, tls, secret_delivery, bootstrap_recipients)) {}
+                                   host_endpoint, tls, secret_delivery, bootstrap_recipients,
+                                   host_endpoints)) {}
 IdentityAuthClient::~IdentityAuthClient() {
   impl_->cancel();
 }
@@ -867,6 +937,11 @@ AuthHttpResponse IdentityAuthClient::handle(const AuthHttpRequest& request) {
 WebSocketResult<WebSocketIdentity>
 IdentityAuthClient::validate_stream(std::string_view access_token, WebSocketDeadline deadline) {
   return impl_->validate_stream(access_token, deadline);
+}
+WebSocketResult<StreamSessionContext>
+IdentityAuthClient::validate_stream_context(std::string_view access_token,
+                                            WebSocketDeadline deadline) {
+  return impl_->validate_stream_context(access_token, deadline);
 }
 WebSocketResult<std::string> IdentityAuthClient::delegate_stream(std::string_view owner,
                                                                  v1::Permission permission,

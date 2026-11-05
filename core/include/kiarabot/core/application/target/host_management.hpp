@@ -17,6 +17,8 @@ public:
   virtual const ResourceId& host_id() const noexcept = 0;
   virtual Outcome<HostMaintenanceState> maintenance_state(const AuthenticationContext& context,
                                                           TimePoint deadline) = 0;
+  // Projection for a mutation response already authorized with host.execute on this exact Host.
+  virtual Outcome<HostMaintenanceState> state_projection() = 0;
   virtual Outcome<HostMaintenanceOperation> begin(const HostMaintenanceRequest& request) = 0;
   virtual Outcome<HostMaintenanceOperation> resume(const HostMaintenanceRequest& request) = 0;
   virtual Outcome<HostMaintenanceOperation> cancel(const HostMaintenanceCancelRequest& request) = 0;
@@ -39,6 +41,9 @@ public:
   Outcome<HostMaintenanceState> maintenance_state(const AuthenticationContext& context,
                                                   TimePoint deadline) override {
     return application_.state(context, deadline);
+  }
+  Outcome<HostMaintenanceState> state_projection() override {
+    return application_.state_projection();
   }
   Outcome<HostMaintenanceOperation> begin(const HostMaintenanceRequest& request) override {
     return application_.begin(request);

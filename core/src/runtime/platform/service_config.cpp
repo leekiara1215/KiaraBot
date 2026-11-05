@@ -262,9 +262,11 @@ bool control_runtime_peers_shape(const nlohmann::json& value) {
     }
     const auto& certificate = entry["certificate_sha256"].get_ref<const std::string&>();
     if (certificate.size() != 64 ||
-        !std::all_of(certificate.begin(), certificate.end(), [](char character) {
-          return (character >= '0' && character <= '9') || (character >= 'a' && character <= 'f');
-        }) ||
+        !std::all_of(certificate.begin(), certificate.end(),
+                     [](char character) {
+                       return (character >= '0' && character <= '9') ||
+                              (character >= 'a' && character <= 'f');
+                     }) ||
         !certificates.insert(certificate).second) {
       return false;
     }
@@ -451,6 +453,11 @@ bool control_api_shape(const nlohmann::json& value) {
       !endpoint_valid(value["identity_endpoint"].get<std::string>())) {
     return false;
   }
+  // A deployment chooses either the legacy single endpoint or the fixed multi-host registry; an
+  // ambiguous combination is rejected so routing never silently prefers one host.
+  if (value.contains("host_endpoint") && value.contains("host_endpoints")) {
+    return false;
+  }
   for (const auto& [key, entry] : value.items()) {
     if (key == "listen" || key == "identity_endpoint") {
       continue;
@@ -463,6 +470,18 @@ bool control_api_shape(const nlohmann::json& value) {
       for (const auto& origin : entry) {
         if (!origin.is_string() || !https_origin(origin.get<std::string>()) ||
             !unique.insert(origin.get<std::string>()).second) {
+          return false;
+        }
+      }
+      continue;
+    }
+    if (key == "host_endpoints") {
+      if (!entry.is_object() || entry.empty() || entry.size() > 1024) {
+        return false;
+      }
+      for (const auto& [host_id, endpoint] : entry.items()) {
+        if (host_id.empty() || host_id.size() > 128 || host_id.find('\0') != std::string::npos ||
+            !endpoint.is_string() || !endpoint_valid(endpoint.get<std::string>())) {
           return false;
         }
       }
@@ -951,20 +970,14 @@ ConfigResult load_service_config(const std::string& path, target::Service servic
     }
     if (document.contains("control_runtime_peers")) {
       for (const auto& entry : document["control_runtime_peers"]) {
-        config.control_runtime_peers.push_back(
-            {entry["certificate_sha256"].get<std::string>()});
+        config.control_runtime_peers.push_back({entry["certificate_sha256"].get<std::string>()});
       }
     }
     if (document.contains("control_api")) {
-      ControlApiMaterial control_material{
-          document["control_api"]["listen"].get<std::string>(),
-          document["control_api"]["identity_endpoint"].get<std::string>(),
-          std::nullopt,
-          std::nullopt,
-          std::nullopt,
-          std::nullopt,
-          {},
-          false};
+      ControlApiMaterial control_material;
+      control_material.listen = document["control_api"]["listen"].get<std::string>();
+      control_material.identity_endpoint =
+          document["control_api"]["identity_endpoint"].get<std::string>();
       for (const auto& [key, field] :
            std::initializer_list<std::pair<const char*, std::optional<std::string>*>>{
                {"runtime_endpoint", &control_material.runtime_endpoint},
@@ -973,6 +986,11 @@ ConfigResult load_service_config(const std::string& path, target::Service servic
                {"host_endpoint", &control_material.host_endpoint}}) {
         if (document["control_api"].contains(key)) {
           *field = document["control_api"][key].get<std::string>();
+        }
+      }
+      if (document["control_api"].contains("host_endpoints")) {
+        for (const auto& [host_id, endpoint] : document["control_api"]["host_endpoints"].items()) {
+          control_material.host_endpoints.emplace(host_id, endpoint.get<std::string>());
         }
       }
       if (document["control_api"].contains("websocket_origins")) {

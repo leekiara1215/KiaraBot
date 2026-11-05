@@ -1,5 +1,6 @@
 #pragma once
 
+#include <map>
 #include <memory>
 #include <optional>
 #include <string>
@@ -21,7 +22,8 @@ public:
                const std::string& scheduler_endpoint, const std::string& model_endpoint,
                const std::string& host_endpoint, const core::platform::TlsMaterial& tls,
                SecretDeliveryApplication* secret_delivery = nullptr,
-               BootstrapRecipientsPort* bootstrap_recipients = nullptr);
+               BootstrapRecipientsPort* bootstrap_recipients = nullptr,
+               const std::map<std::string, std::string>& host_endpoints = {});
   ~OwnerClients();
   OwnerClients(const OwnerClients&) = delete;
   OwnerClients& operator=(const OwnerClients&) = delete;

@@ -3,6 +3,7 @@
 #include <charconv>
 #include <chrono>
 #include <cstdint>
+#include <cstdio>
 #include <fstream>
 #include <iostream>
 #include <memory>
@@ -405,6 +406,31 @@ public:
       grant(wire::PERMISSION_PLUGIN_READ, wire::RESOURCE_INSTANCE,
             "44444444-4444-4444-8444-444444444444", "74444444-4444-4444-8444-444444444444");
     }
+    if (mode == "fixture-catalog-session") {
+      // Directory-mode grants: the catalog is only a selector; these exact children are what
+      // Control may expand into the delegation scope.
+      for (const auto& adapter :
+           {"77777777-7777-4777-8777-000000000a01", "77777777-7777-4777-8777-000000000a02",
+            "77777777-7777-4777-8777-000000000a03"}) {
+        grant(wire::PERMISSION_ADAPTER_READ, wire::RESOURCE_ADAPTER, adapter,
+              std::string{"7a000000-0000-4000-8000-"} + std::string{adapter}.substr(24));
+      }
+      for (const auto& instance :
+           {"66666666-6666-4666-8666-000000000b01", "66666666-6666-4666-8666-000000000b02",
+            "66666666-6666-4666-8666-000000000b03"}) {
+        grant(wire::PERMISSION_PLUGIN_READ, wire::RESOURCE_INSTANCE, instance,
+              std::string{"7b000000-0000-4000-8000-"} + std::string{instance}.substr(24));
+      }
+    }
+    if (mode == "fixture-many-adapters") {
+      for (int index = 0; index <= 127; ++index) {
+        char adapter[40]{};
+        std::snprintf(adapter, sizeof(adapter), "77777777-7777-4777-8777-%012d", index);
+        char assignment[40]{};
+        std::snprintf(assignment, sizeof(assignment), "7c000000-0000-4000-8000-%012d", index);
+        grant(wire::PERMISSION_ADAPTER_READ, wire::RESOURCE_ADAPTER, adapter, assignment);
+      }
+    }
     if (mode == "fixture-many") {
       for (int index = 0; index < 128; ++index) {
         auto suffix = std::to_string(100000000000ULL + index);
@@ -431,7 +457,7 @@ public:
         input->client_certificate_sha256() !=
             std::string(reinterpret_cast<const char*>(digest), length) ||
         (input->subject_proof() != "secret-access-credential-login" &&
-         input->subject_proof() != "fixture-empty" && input->subject_proof() != "fixture-many") ||
+         !input->subject_proof().starts_with("fixture-")) ||
         input->permissions_size() != 1) {
       return error(wire::PERMISSION_DENIED, grpc::StatusCode::PERMISSION_DENIED, input->context());
     }
@@ -474,6 +500,21 @@ public:
         is_control_catalog(input->scope());
     if (principal_delegation || catalog_plugin_delegation) {
       return empty_scope_proof("fixture-principal-proof");
+    }
+    // v1.2 WS catalog directory: Control delegates the catalog selector plus the principal's
+    // explicitly granted exact children (the real Identity would re-validate every exact grant).
+    const bool catalog_directory_delegation =
+        input->audience() == "runtime" && input->scope().resources_size() >= 1 &&
+        input->scope().resources_size() <= 127 &&
+        input->scope().resources(0).kind() == wire::RESOURCE_CATALOG &&
+        (input->permissions(0) == wire::PERMISSION_ADAPTER_READ ||
+         input->permissions(0) == wire::PERMISSION_PLUGIN_READ);
+    if (catalog_directory_delegation) {
+      output->mutable_delegation()->set_proof("fixture-runtime-catalog-proof:" +
+                                              std::to_string(input->scope().resources_size()));
+      output->mutable_delegation()->set_audience(input->audience());
+      output->mutable_delegation()->mutable_expires_at()->set_seconds(kChecked + 30);
+      return grpc::Status::OK;
     }
     if ((input->audience() != "identity" && input->audience() != "runtime" &&
          input->audience() != "model" && input->audience() != "scheduler" &&

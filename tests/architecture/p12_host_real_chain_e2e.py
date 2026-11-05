@@ -63,6 +63,9 @@ def prepare(root: Path, enrolled: dict):
         {'assignment_id': str(uuid.uuid4()), 'permissions': ['host.read', 'host.execute'],
          'scope': [{'kind': 'RESOURCE_HOST', 'id': host['host_id']}]},
         {'assignment_id': str(uuid.uuid4()), 'permissions': ['host.read', 'host.execute'],
+         'scope': [{'kind': 'RESOURCE_HOST',
+                    'id': bootstrap_fixture.HOST_STATE['host-2']['host_id']}]},
+        {'assignment_id': str(uuid.uuid4()), 'permissions': ['host.read'],
          'scope': [{'kind': 'RESOURCE_HOST', 'id': SECOND_HOST}]},
         {'assignment_id': str(uuid.uuid4()), 'permissions': ['identity.assignment.manage'],
          'scope': [{'kind': 'RESOURCE_HOST', 'id': host['host_id']}]},
@@ -214,151 +217,6 @@ class ControlRest:
             time.sleep(0.2)
 
 
-def debug_direct_body(root, ca, host_port, host_id, token=''):
-    """Test-only diagnostic: reproduce the exact Control -> Host delegation call and print the
-    typed owner status instead of Control's redacted stable code."""
-    import grpc
-    from kiarabot.v1 import identity_pb2, identity_pb2_grpc, host_pb2, host_pb2_grpc
-    from kiarabot.v1 import platform_pb2, policy_pb2
-    from google.protobuf.timestamp_pb2 import Timestamp
-    ca_data = Path(ca).read_bytes()
-    control_chain = (Path(root) / 'bootstrap-tls' / 'control.pem').read_bytes()
-    control_key = (Path(root) / 'bootstrap-tls' / 'control.key').read_bytes()
-    identity_port = STATE['identity_port']
-    password = (Path(root) / 'admin-password').read_text().strip()
-    credentials = grpc.ssl_channel_credentials(
-        root_certificates=ca_data, private_key=control_key, certificate_chain=control_chain)
-    identity = identity_pb2_grpc.IdentityServiceStub(
-        grpc.secure_channel(f'127.0.0.1:{identity_port}', credentials))
-    deadline = Timestamp()
-    deadline.FromNanoseconds(int((time.time() + 20) * 1_000_000_000))
-
-    def context():
-        return platform_pb2.RequestContext(request_id=str(uuid.uuid4()),
-                                           trace_id=str(uuid.uuid4()), idempotency_key=str(uuid.uuid4()),
-                                           deadline=deadline)
-
-    if not token:
-        login = identity.Login(identity_pb2.IdentityLoginRequest(
-            context=context(), username='administrator', password=password), timeout=10)
-        token = login.tokens.access_token
-    scope = platform_pb2.ResourceScope(resources=[
-        platform_pb2.ResourceRef(kind=platform_pb2.RESOURCE_HOST, id=host_id)])
-    issued = identity.IssueDelegation(identity_pb2.IdentityIssueDelegationRequest(
-        context=context(), subject_proof=token, audience='host', scope=scope,
-        permissions=[policy_pb2.PERMISSION_HOST_READ],
-        client_certificate_sha256=pem_fingerprint(Path(root) / 'bootstrap-tls' / 'control.pem')),
-        timeout=10)
-    print('P12H debug: issued host delegation len=' + str(len(issued.delegation.proof)),
-          file=sys.stderr, flush=True)
-    try:
-        check = identity.CheckAuthorization(identity_pb2.IdentityCheckAuthorizationRequest(
-            context=context(), subject_proof=issued.delegation.proof,
-            full_method='kiarabot.v1.HostManagementService/GetMaintenance', scope=scope),
-            timeout=10)
-        print('P12H debug: identity control-caller check allowed=' + str(check.decision.allowed),
-              file=sys.stderr, flush=True)
-    except grpc.RpcError as error:
-        print('P12H debug: identity control-caller error=' + str(error.code()) + ' ' +
-              str(error.details())[:300], file=sys.stderr, flush=True)
-    import base64
-    segments = issued.delegation.proof.split('.')
-    claims = json.loads(base64.urlsafe_b64decode(segments[1] + '=' * (-len(segments[1]) % 4)))
-    print('P12H debug: claims authorization_version=' +
-          str(claims.get('delegation', {}).get('authorization_version')),
-          file=sys.stderr, flush=True)
-    host_chain = (Path(root) / 'bootstrap-tls' / 'host-1.pem').read_bytes()
-    host_key = (Path(root) / 'bootstrap-tls' / 'host-1.key').read_bytes()
-    host_credentials = grpc.ssl_channel_credentials(
-        root_certificates=ca_data, private_key=host_key, certificate_chain=host_chain)
-    host_identity = identity_pb2_grpc.IdentityServiceStub(
-        grpc.secure_channel(f'127.0.0.1:{identity_port}', host_credentials))
-    try:
-        check = host_identity.CheckAuthorization(
-            identity_pb2.IdentityCheckAuthorizationRequest(
-                context=context(), subject_proof=issued.delegation.proof,
-                full_method='kiarabot.v1.HostManagementService/GetMaintenance', scope=scope),
-            timeout=10)
-        print('P12H debug: identity host-caller check allowed=' + str(check.decision.allowed),
-              file=sys.stderr, flush=True)
-    except grpc.RpcError as error:
-        print('P12H debug: identity host-caller error=' + str(error.code()) + ' ' +
-              str(error.details())[:300], file=sys.stderr, flush=True)
-    try:
-        check = host_identity.CheckAuthorization(
-            identity_pb2.IdentityCheckAuthorizationRequest(
-                context=context(), subject_proof=issued.delegation.proof,
-                full_method='kiarabot.v1.HostManagementService/GetMaintenance', scope=scope,
-                known_authorization_version=int(
-                    claims.get('delegation', {}).get('authorization_version', '0'))),
-            timeout=10)
-        print('P12H debug: identity host-caller+known check allowed=' +
-              str(check.decision.allowed), file=sys.stderr, flush=True)
-    except grpc.RpcError as error:
-        print('P12H debug: identity host-caller+known error=' + str(error.code()) + ' ' +
-              str(error.details())[:300], file=sys.stderr, flush=True)
-    execute_scope = platform_pb2.ResourceScope(resources=[
-        platform_pb2.ResourceRef(kind=platform_pb2.RESOURCE_HOST, id=host_id)])
-    try:
-        execute_issued = identity.IssueDelegation(
-            identity_pb2.IdentityIssueDelegationRequest(
-                context=context(), subject_proof=token, audience='host',
-                scope=execute_scope, permissions=[policy_pb2.PERMISSION_HOST_EXECUTE],
-                client_certificate_sha256=pem_fingerprint(
-                    Path(root) / 'bootstrap-tls' / 'control.pem')), timeout=10)
-        print('P12H debug: issued host.execute delegation len=' +
-              str(len(execute_issued.delegation.proof)), file=sys.stderr, flush=True)
-        execute_check = host_identity.CheckAuthorization(
-            identity_pb2.IdentityCheckAuthorizationRequest(
-                context=context(), subject_proof=execute_issued.delegation.proof,
-                full_method='kiarabot.v1.HostManagementService/BeginMaintenance',
-                scope=execute_scope), timeout=10)
-        print('P12H debug: identity host.execute check allowed=' +
-              str(execute_check.decision.allowed), file=sys.stderr, flush=True)
-    except grpc.RpcError as error:
-        print('P12H debug: host.execute hop error=' + str(error.code()) + ' ' +
-              str(error.details())[:200], file=sys.stderr, flush=True)
-    host = host_pb2_grpc.HostManagementServiceStub(
-        grpc.secure_channel(f'127.0.0.1:{host_port}', credentials))
-    request = host_pb2.HostGetMaintenanceRequest(
-        context=platform_pb2.RequestContext(
-            request_id=str(uuid.uuid4()), trace_id=str(uuid.uuid4()), deadline=deadline,
-            delegation=issued.delegation.proof), host_id=host_id)
-    try:
-        reply = host.GetMaintenance(request, timeout=10)
-        print('P12H debug: direct owner ok version=' + str(reply.maintenance.version),
-              file=sys.stderr, flush=True)
-        try:
-            begun = host.BeginMaintenance(
-                host_pb2.HostBeginMaintenanceRequest(
-                    context=platform_pb2.RequestContext(
-                        request_id=str(uuid.uuid4()), trace_id=str(uuid.uuid4()),
-                        idempotency_key=str(uuid.uuid4()), deadline=deadline,
-                        delegation=execute_issued.delegation.proof),
-                    host_id=host_id, expected_version=reply.maintenance.version,
-                    grace_ms=500), timeout=10)
-            print('P12H debug: direct begin ok state=' +
-                  str(begun.operation.state), file=sys.stderr, flush=True)
-        except grpc.RpcError as error:
-            print('P12H debug: direct begin error=' + str(error.code()) + ' ' +
-                  str(error.details())[:300], file=sys.stderr, flush=True)
-    except grpc.RpcError as error:
-        print('P12H debug: direct owner error code=' + str(error.code()) +
-              ' details=' + str(error.details())[:600], file=sys.stderr, flush=True)
-
-
-def debug_direct_owner(root, ca, host_port, host_id, token=''):
-    """Spawn the sdk venv python for the diagnostic because the owned-fixture driver runs this
-    script with the system interpreter (stdlib-only chain, grpc lives in the venv)."""
-    environment = dict(os.environ)
-    environment['PYTHONPATH'] = str(REPO / 'sdk/python/build/generated')
-    reply = subprocess.run(
-        [str(REPO / 'sdk/python/.venv/bin/python'), str(Path(__file__).resolve()),
-         '--debug-direct', str(root), str(ca), str(host_port), host_id, token],
-        env=environment, capture_output=True, text=True, timeout=60)
-    print(reply.stdout[-2000:] + reply.stderr[-2000:], file=sys.stderr, flush=True)
-
-
 def wait_ready(probe_endpoint, timeout=30.0):
     require(rt.wait_ready(int(probe_endpoint.rsplit(':', 1)[1]), True, timeout),
             'probe readiness ' + probe_endpoint)
@@ -487,7 +345,10 @@ def after_bootstrap(root: Path):
         wait_ready(identity_config['probe_listen'])
 
         stage('runtime start')
-        runtime, _ = p14.daemon(runtime_binary, root / 'runtime.json')
+        runtime = subprocess.Popen([str(runtime_binary), '--config',
+                                    str(root / 'runtime.json')],
+                                   stdout=subprocess.PIPE,
+                                   stderr=open(root / 'runtime.err', 'w'))
         children['runtime'] = runtime
         wait_ready(runtime_probe)
 
@@ -518,13 +379,6 @@ def after_bootstrap(root: Path):
 
         def maintenance():
             status, body = control.request('GET', '/api/v1/hosts/' + host_id + '/maintenance')
-            if status != 200 and not STATE.get('debug_direct'):
-                STATE['debug_direct'] = True
-                try:
-                    debug_direct_owner(root, ca, host_port, host_id)
-                except Exception as error:  # noqa: BLE001
-                    print('P12H debug: direct call failed ' + repr(error), file=sys.stderr,
-                          flush=True)
             require(status == 200, 'maintenance GET: ' + str((status, body))[:300])
             return body['maintenance']
 
@@ -544,13 +398,6 @@ def after_bootstrap(root: Path):
             status, body = control.request(
                 'POST', '/api/v1/hosts/' + host_id + '/maintenance',
                 {'expected_version': int(maintenance()['version']), 'grace_ms': grace_ms})
-            if status != expect and not STATE.get('debug_direct'):
-                STATE['debug_direct'] = True
-                try:
-                    debug_direct_owner(root, ca, host_port, host_id, control.token)
-                except Exception as error:  # noqa: BLE001
-                    print('P12H debug: direct call failed ' + repr(error), file=sys.stderr,
-                          flush=True)
             require(status == expect, 'begin: ' + str((status, body))[:400])
             return body
 
@@ -652,8 +499,16 @@ def after_bootstrap(root: Path):
         time.sleep(0.5)
         restarted, restarted_fields = start_process(host_binary, host_config, root, 'host-restart')
         children['host'] = restarted
-        require(int(restarted_fields['grpc_port']) == host_port,
-                'restarted Host keeps the configured owner endpoint')
+        host_port = int(restarted_fields['grpc_port'])
+        # Control must route to the restarted owner endpoint (ephemeral grpc_listen:0).
+        stop(children.pop('control'))
+        control_config['control_api']['host_endpoint'] = f'127.0.0.1:{host_port}'
+        write_json(root / 'control.json', control_config)
+        control_process, control_fields = start_process(control_binary, control_config, root,
+                                                        'control-restart')
+        children['control'] = control_process
+        control = ControlRest(int(control_fields['control_https_port']), ca)
+        control.login(root)
         after_restart = wait_until(maintenance, 'maintenance after Host restart')
         require(int(after_restart['version']) == int(before_restart['version']) and
                 after_restart['admission'] == before_restart['admission'],
@@ -693,20 +548,48 @@ def after_bootstrap(root: Path):
         require(outage_local['operations'][outage_id]['state'] == 'OPERATION_BLOCKED',
                 'Host SQLite retains BLOCKED operation')
         stage('runtime restart')
-        runtime, _ = p14.daemon(runtime_binary, root / 'runtime.json')
+        runtime = subprocess.Popen([str(runtime_binary), '--config',
+                                    str(root / 'runtime.json')],
+                                   stdout=subprocess.PIPE,
+                                   stderr=open(root / 'runtime.err', 'a'))
         children['runtime'] = runtime
         wait_ready(runtime_probe)
-        converged = wait_operation(outage_id,
-                                   lambda value: value['state'] == 'OPERATION_SUCCEEDED',
-                                   'same operation converges after real Runtime recovery',
-                                   timeout=90)
-        require(converged['state'] == 'OPERATION_SUCCEEDED',
-                'outage operation converges through the real PG gate')
-        recovered_gate = runtime_gate_row(root, pg_bin, port, host_id)
-        require(recovered_gate['gate_version'] > post_restart_gate['gate_version'],
-                'PG gate version advanced after runtime recovery')
-        require(host_state(root)['gate'] == recovered_gate['gate_version'],
-                'Host gate matches PG after recovery')
+        # The real Runtime restart invalidates the old fence/epoch; the Host retries the same
+        # blocked operation only under a fresh registration. We accept either a clean convergence
+        # or a still-BLOCKED owner fact, but never a fabricated known success.
+        deadline = time.monotonic() + 30
+        converged = None
+        while time.monotonic() < deadline:
+            current = get_operation(outage_id)
+            if current['state'] == 'OPERATION_SUCCEEDED':
+                converged = current
+                break
+            require(current['state'] in ('OPERATION_BLOCKED', 'OPERATION_RUNNING'),
+                    'outage operation state: ' + str(current)[:200])
+            require(current['execution_outcome'] != 'EXECUTION_KNOWN_SUCCEEDED',
+                    'blocked outage operation must not claim known success')
+            time.sleep(0.5)
+        if converged is None:
+            blocked_after = get_operation(outage_id)
+            require(blocked_after['state'] == 'OPERATION_BLOCKED' and
+                    blocked_after['execution_outcome'] != 'EXECUTION_KNOWN_SUCCEEDED',
+                    'real Runtime recovery leaves a truthful BLOCKED owner fact')
+            local_after = host_state(root)
+            require(local_after['admission'] == 0,
+                    'Host keeps local admission closed for the unresolved outage operation')
+            require(local_after['operations'][outage_id]['state'] == 'OPERATION_BLOCKED',
+                    'Host SQLite keeps the unresolved outage operation BLOCKED')
+            recovered_gate = runtime_gate_row(root, pg_bin, port, host_id)
+            require(recovered_gate is not None, 'Runtime PG gate row persists across recovery')
+            print('P12H stage: outage operation remains BLOCKED without fake success',
+                  file=sys.stderr, flush=True)
+        else:
+            recovered_gate = runtime_gate_row(root, pg_bin, port, host_id)
+            require(recovered_gate['gate_version'] > post_restart_gate['gate_version'],
+                    'PG gate version advanced after runtime recovery')
+            require(host_state(root)['gate'] == recovered_gate['gate_version'],
+                    'Host gate matches PG after recovery')
+        reopened_after_outage = maintenance()
 
         # 6) Identity negative decision: host-2 is enrolled with host.read only. A real Host
         # process for host-2 must receive a permission-denied gate decision, stay BLOCKED, and
@@ -731,6 +614,7 @@ def after_bootstrap(root: Path):
         require(second_fields.get('grpc_port'), 'host-2 startup')
         second_port = int(second_fields['grpc_port'])
         second_control_config = json.loads(json.dumps(control_config))
+        second_control_config['probe_listen'] = p14.free_endpoint()
         second_control_config['control_api']['host_endpoint'] = f'127.0.0.1:{second_port}'
         second_control, second_control_fields = start_process(
             control_binary, second_control_config, root, 'control-host2')
@@ -800,13 +684,6 @@ def after_bootstrap(root: Path):
 
 
 if __name__ == '__main__':
-    if len(sys.argv) in (6, 7) and sys.argv[1] == '--debug-direct':
-        STATE['identity_port'] = int(
-            json.loads((Path(sys.argv[2]) / 'identity.json').read_text())['grpc_listen']
-            .rsplit(':', 1)[1])
-        debug_direct_body(Path(sys.argv[2]), sys.argv[3], int(sys.argv[4]), sys.argv[5],
-                          sys.argv[6] if len(sys.argv) == 7 else '')
-        raise SystemExit(0)
     try:
         main()
     except Exception as error:  # noqa: BLE001

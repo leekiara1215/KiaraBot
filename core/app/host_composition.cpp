@@ -67,6 +67,10 @@ public:
     std::lock_guard lock(mutex_);
     return application_.state(context, deadline);
   }
+  t::Outcome<t::HostMaintenanceState> state_projection() override {
+    std::lock_guard lock(mutex_);
+    return application_.state_projection();
+  }
   t::Outcome<t::HostMaintenanceOperation> begin(const t::HostMaintenanceRequest& request) override {
     std::lock_guard lock(mutex_);
     return application_.begin(request);

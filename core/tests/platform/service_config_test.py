@@ -172,6 +172,27 @@ def main(driver, identity=None):
             expect(2, {**control, 'control_api': {**endpoint, **update}}, service='control')
         expect(2, raw=json.dumps({**control, 'control_api': endpoint})[:-1] +
                ',"control_api":' + json.dumps(endpoint) + '}', service='control')
+        # HOST-04 fixed offline multi-host registry: host_id -> owner mTLS endpoint; the legacy
+        # single host_endpoint stays a one-entry deployment and the two forms are not combined.
+        hosts = {'11111111-1111-4111-8111-111111111111': 'host-a.internal:7443',
+                 '22222222-2222-4222-8222-222222222222': 'host-b.internal:7443'}
+        expect(0, {**control, 'control_api': {**endpoint, 'host_endpoints': hosts}},
+               service='control')
+        expect(0, {**control, 'control_api': {
+            **endpoint, 'host_endpoints': {
+                '11111111-1111-4111-8111-111111111111': '127.0.0.1:7443'}}},
+            service='control')
+        for invalid_hosts in [{}, {'11111111-1111-4111-8111-111111111111': 'host:0'},
+                              {'11111111-1111-4111-8111-111111111111': 'https://host:7443'},
+                              {'': 'host:7443'}, {'h' * 129: 'host:7443'},
+                              {'11111111-1111-4111-8111-111111111111': 7443},
+                              ['host:7443'], 'host:7443']:
+            expect(2, {**control, 'control_api': {
+                **endpoint, 'host_endpoints': invalid_hosts}}, service='control')
+        expect(2, {**control, 'control_api': {
+            **endpoint, 'host_endpoint': 'host-a.internal:7443',
+            'host_endpoints': hosts}}, service='control')
+
         # Control WebSocket Origin allowlist: bare HTTPS origins only, bounded and deduplicated.
         origin = 'https://panel.example:8443'
         expect(0, {**control, 'control_api': {

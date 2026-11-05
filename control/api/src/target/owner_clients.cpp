@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <map>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <set>
 #include <string>
@@ -171,7 +172,8 @@ public:
   Impl(const std::string& identity_endpoint, const std::string& runtime_endpoint,
        const std::string& scheduler_endpoint, const std::string& model_endpoint,
        const std::string& host_endpoint, const core::platform::TlsMaterial& tls,
-       SecretDeliveryApplication* secret_delivery, BootstrapRecipientsPort* bootstrap_recipients) {
+       SecretDeliveryApplication* secret_delivery, BootstrapRecipientsPort* bootstrap_recipients,
+       const std::map<std::string, std::string>& host_endpoints) {
     grpc::SslCredentialsOptions ssl;
     ssl.pem_root_certs = tls.ca;
     ssl.pem_cert_chain = tls.certificate;
@@ -191,9 +193,13 @@ public:
       model_channel_ = grpc::CreateChannel(model_endpoint, credentials);
       model_ = wire::ModelService::NewStub(model_channel_);
     }
-    if (!host_endpoint.empty()) {
-      host_channel_ = grpc::CreateChannel(host_endpoint, credentials);
-      host_ = wire::HostManagementService::NewStub(host_channel_);
+    // Fixed offline Host registry: host_id -> owner mTLS endpoint. The legacy single
+    // host_endpoint remains the default for a single-host deployment; clients can never supply an
+    // endpoint. Channels/stubs are created lazily per registered host and reused.
+    default_host_endpoint_ = host_endpoint;
+    host_credentials_ = credentials;
+    for (const auto& [host_id, endpoint] : host_endpoints) {
+      host_endpoints_.emplace(host_id, endpoint);
     }
     fingerprint_ = certificate_fingerprint(tls.certificate);
     gateway_ = std::make_unique<OwnerGateway>(
@@ -792,7 +798,8 @@ private:
       return output.operation();
     }
     if (owner_service == "host") {
-      if (!host_) {
+      auto* stub = host_stub(operation.resource().id());
+      if (stub == nullptr) {
         return OwnerFailure{wire::UPSTREAM_UNAVAILABLE, true};
       }
       wire::HostGetOperationRequest input;
@@ -801,7 +808,7 @@ private:
       wire::HostGetOperationResponse output;
       grpc::ClientContext call;
       call.set_deadline(std::chrono::system_clock::now() + std::chrono::seconds{5});
-      const auto status = host_->GetOperation(&call, input, &output);
+      const auto status = stub->GetOperation(&call, input, &output);
       if (!status.ok()) {
         return OwnerFailure{extract_error_code(status).value_or(wire::UPSTREAM_UNAVAILABLE), false};
       }
@@ -949,42 +956,74 @@ private:
   get_maintenance(const wire::HostGetMaintenanceRequest& request,
                   std::string_view delegation) override {
     return host_call<wire::HostGetMaintenanceRequest, wire::HostGetMaintenanceResponse>(
-        &wire::HostManagementService::Stub::GetMaintenance, request, delegation);
+        &wire::HostManagementService::Stub::GetMaintenance, request, delegation, request.host_id());
   }
   OwnerOutcome<wire::HostMaintenanceResponse>
   begin_maintenance(const wire::HostBeginMaintenanceRequest& request,
                     std::string_view delegation) override {
     return host_call<wire::HostBeginMaintenanceRequest, wire::HostMaintenanceResponse>(
-        &wire::HostManagementService::Stub::BeginMaintenance, request, delegation);
+        &wire::HostManagementService::Stub::BeginMaintenance, request, delegation,
+        request.host_id());
   }
   OwnerOutcome<wire::HostMaintenanceResponse>
   resume_admission(const wire::HostResumeAdmissionRequest& request,
                    std::string_view delegation) override {
     return host_call<wire::HostResumeAdmissionRequest, wire::HostMaintenanceResponse>(
-        &wire::HostManagementService::Stub::ResumeAdmission, request, delegation);
+        &wire::HostManagementService::Stub::ResumeAdmission, request, delegation,
+        request.host_id());
   }
   OwnerOutcome<wire::HostGetOperationResponse>
   get_operation(const wire::HostGetOperationRequest& request,
                 std::string_view delegation) override {
     return host_call<wire::HostGetOperationRequest, wire::HostGetOperationResponse>(
-        &wire::HostManagementService::Stub::GetOperation, request, delegation);
+        &wire::HostManagementService::Stub::GetOperation, request, delegation,
+        request.operation().resource().id());
   }
   OwnerOutcome<wire::HostGetOperationResponse>
   cancel_operation(const wire::HostCancelOperationRequest& request,
                    std::string_view delegation) override {
     return host_call<wire::HostCancelOperationRequest, wire::HostGetOperationResponse>(
-        &wire::HostManagementService::Stub::CancelOperation, request, delegation);
+        &wire::HostManagementService::Stub::CancelOperation, request, delegation,
+        request.operation().resource().id());
   }
   OwnerOutcome<wire::OperationChangesResponse>
   list_operation_changes(const wire::OperationChangesRequest& request,
                          std::string_view delegation) override {
+    const auto changes_host =
+        request.scope().resources_size() == 1 ? request.scope().resources(0).id() : std::string{};
     return host_call<wire::OperationChangesRequest, wire::OperationChangesResponse>(
-        &wire::HostManagementService::Stub::ListOperationChanges, request, delegation);
+        &wire::HostManagementService::Stub::ListOperationChanges, request, delegation,
+        changes_host);
+  }
+
+  wire::HostManagementService::Stub* host_stub(const std::string& host_id) {
+    std::lock_guard lock(host_mutex_);
+    const auto found = host_channels_.find(host_id);
+    if (found != host_channels_.end()) {
+      return found->second.second.get();
+    }
+    std::string endpoint;
+    if (const auto registered = host_endpoints_.find(host_id);
+        registered != host_endpoints_.end()) {
+      endpoint = registered->second;
+    } else {
+      endpoint = default_host_endpoint_;
+    }
+    if (endpoint.empty()) {
+      return nullptr;
+    }
+    auto channel = grpc::CreateChannel(endpoint, host_credentials_);
+    auto stub = wire::HostManagementService::NewStub(channel);
+    auto* raw = stub.get();
+    host_channels_.emplace(host_id, std::make_pair(std::move(channel), std::move(stub)));
+    return raw;
   }
 
   template <typename Request, typename Response, typename Method>
-  OwnerOutcome<Response> host_call(Method method, Request request, std::string_view delegation) {
-    if (!host_) {
+  OwnerOutcome<Response> host_call(Method method, Request request, std::string_view delegation,
+                                   const std::string& host_id) {
+    auto* stub = host_stub(host_id);
+    if (stub == nullptr) {
       return OwnerFailure{wire::UPSTREAM_UNAVAILABLE, true};
     }
     request.mutable_context()->set_delegation(std::string{delegation});
@@ -1003,7 +1042,7 @@ private:
                     .time_since_epoch())});
       }
     }
-    const auto status = ((*host_).*method)(&call, request, &output);
+    const auto status = ((*stub).*method)(&call, request, &output);
     if (!status.ok()) {
       const auto code = extract_error_code(status);
       return OwnerFailure{code.value_or(wire::UPSTREAM_UNAVAILABLE), false};
@@ -1039,8 +1078,13 @@ private:
   std::unique_ptr<wire::SchedulerService::Stub> scheduler_;
   std::shared_ptr<grpc::Channel> model_channel_;
   std::unique_ptr<wire::ModelService::Stub> model_;
-  std::shared_ptr<grpc::Channel> host_channel_;
-  std::unique_ptr<wire::HostManagementService::Stub> host_;
+  std::string default_host_endpoint_;
+  std::shared_ptr<grpc::ChannelCredentials> host_credentials_;
+  std::map<std::string, std::string> host_endpoints_;
+  std::mutex host_mutex_;
+  std::map<std::string, std::pair<std::shared_ptr<grpc::Channel>,
+                                  std::unique_ptr<wire::HostManagementService::Stub>>>
+      host_channels_;
   std::optional<std::array<unsigned char, SHA256_DIGEST_LENGTH>> fingerprint_;
 };
 
@@ -1049,10 +1093,11 @@ OwnerClients::OwnerClients(const std::string& identity_endpoint,
                            const std::string& scheduler_endpoint, const std::string& model_endpoint,
                            const std::string& host_endpoint, const core::platform::TlsMaterial& tls,
                            SecretDeliveryApplication* secret_delivery,
-                           BootstrapRecipientsPort* bootstrap_recipients)
+                           BootstrapRecipientsPort* bootstrap_recipients,
+                           const std::map<std::string, std::string>& host_endpoints)
     : impl_(std::make_unique<Impl>(identity_endpoint, runtime_endpoint, scheduler_endpoint,
                                    model_endpoint, host_endpoint, tls, secret_delivery,
-                                   bootstrap_recipients)) {}
+                                   bootstrap_recipients, host_endpoints)) {}
 OwnerClients::~OwnerClients() = default;
 
 std::optional<AuthHttpResponse> OwnerClients::handle(const AuthHttpRequest& request) {

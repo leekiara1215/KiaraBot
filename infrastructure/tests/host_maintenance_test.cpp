@@ -39,13 +39,6 @@ template <typename V> V take(t::Outcome<V> result) {
   return std::move(std::get<V>(result));
 }
 template <typename V> void rejects(const t::Outcome<V>& result, t::ErrorCode code) {
-  if (!std::holds_alternative<t::Failure>(result) || std::get<t::Failure>(result).code != code) {
-    std::cerr << "DBG expected=" << static_cast<int>(code) << " actual="
-              << (std::holds_alternative<t::Failure>(result)
-                      ? static_cast<int>(std::get<t::Failure>(result).code)
-                      : -1)
-              << '\n';
-  }
   require(std::holds_alternative<t::Failure>(result) && std::get<t::Failure>(result).code == code,
           "expected stable Host maintenance refusal");
 }

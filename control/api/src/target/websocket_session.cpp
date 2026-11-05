@@ -202,11 +202,16 @@ private:
     }
   }
   // ---- authentication ----------------------------------------------------
+  std::chrono::milliseconds poll_budget() const {
+    return route_.channel == "health" || route_.channel == "adapters" || route_.channel == "plugins"
+               ? config_.snapshot_poll_budget
+               : config_.authorization_budget;
+  }
   void authenticate(WebSocketFirstFrame frame) {
     state_ = State::Authenticating;
     authenticating_ = true;
     access_token_ = frame.access_token;
-    const auto deadline = std::chrono::steady_clock::now() + config_.authorization_budget;
+    const auto deadline = std::chrono::steady_clock::now() + poll_budget();
     asio::post(workers_, [self = shared_from_this(), frame = std::move(frame), deadline]() mutable {
       auto result = self->source_->poll(self->route_, frame.access_token, std::nullopt, deadline);
       asio::post(self->strand_,
@@ -365,7 +370,7 @@ private:
       return;
     }
     poll_in_flight_ = true;
-    const auto deadline = std::chrono::steady_clock::now() + config_.authorization_budget;
+    const auto deadline = std::chrono::steady_clock::now() + poll_budget();
     asio::post(workers_, [self = shared_from_this(), deadline]() {
       std::optional<v1::StreamCursor> cursor;
       if (const auto current = self->store_->owner_cursor(self->session_id_, self->handle())) {

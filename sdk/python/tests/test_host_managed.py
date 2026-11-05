@@ -18,6 +18,7 @@ import json
 import os
 from pathlib import Path
 import shutil
+import signal
 import socket
 import sqlite3
 import subprocess
@@ -358,6 +359,60 @@ async def test_real_host_spawns_managed_sdk_and_applies_config(tmp_path):
         await bridge.stop()
 
 
+_MANAGED_PLUGIN_MARKER = 'kiarabot_sdk --manifest'
+
+
+def _kill_process_group(pgid: int, sig: int) -> None:
+    try:
+        os.killpg(pgid, sig)
+    except (ProcessLookupError, PermissionError):
+        pass
+
+
+def _pid_is_managed_plugin(pid: int) -> bool:
+    """Best-effort identity check so a recycled pid is never killed blindly."""
+    try:
+        output = subprocess.run(['ps', '-o', 'command=', '-p', str(pid)],
+                                capture_output=True, text=True, timeout=5).stdout
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return _MANAGED_PLUGIN_MARKER in output
+
+
+def _kill_leftover_managed_plugins(database: Path | None) -> None:
+    """Fallback for Host crash tests: the durable execution pid may outlive its Host.
+
+    ``_stop_fixture`` always kills the Host session group first; if a plugin somehow survives
+    (e.g. it changed its own group), kill its pid only after verifying the command line still
+    looks like the managed SDK plugin started by this fixture.
+    """
+    if database is None or not database.is_file():
+        return
+    pids: list[int] = []
+    try:
+        connection = sqlite3.connect(database)
+        try:
+            pids = [int(row[0]) for row in connection.execute(
+                'SELECT pid FROM managed_executions WHERE pid IS NOT NULL AND pid > 0')]
+        finally:
+            connection.close()
+    except sqlite3.Error:
+        return
+    for pid in pids:
+        if pid == os.getpid() or not _pid_is_managed_plugin(pid):
+            continue
+        try:
+            pgid = os.getpgid(pid)
+        except ProcessLookupError:
+            continue
+        if pgid != os.getpgrp():
+            _kill_process_group(pgid, signal.SIGKILL)
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except (ProcessLookupError, PermissionError):
+            pass
+
+
 async def _start_managed_host(tmp_path, *, name):
     """Start P08a Host + fake bridges with one managed SDK plugin; return fixture data."""
     generate_pki(tmp_path / 'tls')
@@ -380,7 +435,8 @@ async def _start_managed_host(tmp_path, *, name):
     config_path.write_text(json.dumps(config))
     host_process = await asyncio.create_subprocess_exec(
         HOST_BINARY, '--config', str(config_path), cwd=str(tmp_path),
-        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+        start_new_session=True)
     await asyncio.wait_for(bridge.registrations.get(), 10)
     await bridge.send(apply_request(
         host_id=host_id, instance_id=instance_id, installation_id=installation_id,
@@ -399,8 +455,16 @@ async def _start_managed_host(tmp_path, *, name):
 async def _stop_fixture(fixture):
     process = fixture['host_process']
     if process.returncode is None:
-        process.kill()
-        await process.communicate()
+        process.terminate()
+        try:
+            await asyncio.wait_for(process.wait(), 15)
+        except asyncio.TimeoutError:
+            process.kill()
+            await process.communicate()
+    # The Host is a session/group leader (start_new_session): killing the group reaps managed
+    # plugin children that would otherwise survive a SIGKILL of the Host (test_host_crash*).
+    _kill_process_group(process.pid, signal.SIGKILL)
+    _kill_leftover_managed_plugins(fixture.get('database'))
     await fixture['bridge'].stop()
     await fixture['runtime'].__aexit__(None, None, None)
 
@@ -455,7 +519,8 @@ async def test_host_crash_restart_recovers_without_duplicate_spawn_or_fake_succe
         # not rewrite it to known success merely because the Host restarted.
         restarted = await asyncio.create_subprocess_exec(
             HOST_BINARY, '--config', str(tmp_path / 'host.json'), cwd=str(tmp_path),
-            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+            start_new_session=True)
         try:
             await asyncio.wait_for(fixture['bridge'].registrations.get(), 10)
             _, recovered, rows, _, _ = _journal_snapshot(
@@ -475,5 +540,7 @@ async def test_host_crash_restart_recovers_without_duplicate_spawn_or_fake_succe
             if restarted.returncode is None:
                 restarted.kill()
                 await restarted.communicate()
+            _kill_process_group(restarted.pid, signal.SIGKILL)
+            _kill_leftover_managed_plugins(tmp_path / 'host.sqlite')
     finally:
         await _stop_fixture(fixture)

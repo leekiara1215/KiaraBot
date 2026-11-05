@@ -136,6 +136,10 @@ HostMaintenanceApplication::cancel(const HostMaintenanceCancelRequest& request) 
                                  0};
   return store_.cancel_maintenance(identity, request.operation, context.expected_version);
 }
+Outcome<HostMaintenanceState> HostMaintenanceApplication::state_projection() {
+  return store_.maintenance_state();
+}
+
 Outcome<HostMaintenanceState>
 HostMaintenanceApplication::state(const AuthenticationContext& context, TimePoint deadline) {
   auto checked = authorize(context, Permission::HostRead, deadline);

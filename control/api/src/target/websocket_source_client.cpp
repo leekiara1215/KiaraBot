@@ -4,7 +4,6 @@
 #include <array>
 #include <chrono>
 #include <cstdint>
-#include <iostream>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -139,6 +138,7 @@ bool scoped_change_cursor(std::string_view owner, const v1::ResourceScope& scope
          websocket_same_scope(change.scope(), scope) && change.sequence() > previous_sequence &&
          change.sequence() <= next.sequence();
 }
+constexpr std::chrono::milliseconds kSnapshotPollBudget{900};
 class Client final : public WebSocketSourcePort {
 public:
   Client(std::shared_ptr<IdentityAuthClient> identity, const core::platform::ProcessConfig& config)
@@ -176,8 +176,12 @@ public:
                                       const std::optional<v1::StreamCursor>& cursor,
                                       WebSocketDeadline deadline) override {
     try {
-      deadline =
-          std::min(deadline, std::chrono::steady_clock::now() + std::chrono::milliseconds{500});
+      const bool snapshot_channel = selection.channel == "health" ||
+                                    selection.channel == "adapters" ||
+                                    selection.channel == "plugins";
+      deadline = std::min(
+          deadline, std::chrono::steady_clock::now() +
+                        (snapshot_channel ? kSnapshotPollBudget : std::chrono::milliseconds{500}));
       const auto validation = identity_->validate_stream(access_token, deadline);
       if (const auto* error = std::get_if<WebSocketFailure>(&validation)) {
         return *error;
@@ -186,17 +190,19 @@ public:
       // every other non-operations channel (including the not-yet-ready host source) fails closed
       // with CAPABILITY_NOT_SUPPORTED instead of an empty successful stream.
       if (selection.channel != "operations") {
+        WebSocketResult<WebSocketPoll> selected;
         if (selection.channel == "logs" || selection.channel == "tasks" ||
             selection.channel == "messages") {
-          return poll_scoped(selection, std::get<WebSocketIdentity>(validation), access_token,
-                             cursor, deadline);
+          selected = poll_scoped(selection, std::get<WebSocketIdentity>(validation), access_token,
+                                 cursor, deadline);
+        } else if (selection.channel == "health" || selection.channel == "adapters" ||
+                   selection.channel == "plugins") {
+          selected = poll_snapshot(selection, std::get<WebSocketIdentity>(validation), access_token,
+                                   deadline);
+        } else {
+          return WebSocketFailure{v1::CAPABILITY_NOT_SUPPORTED, false};
         }
-        if (selection.channel == "health" || selection.channel == "adapters" ||
-            selection.channel == "plugins") {
-          return poll_snapshot(selection, std::get<WebSocketIdentity>(validation), access_token,
-                               deadline);
-        }
-        return WebSocketFailure{v1::CAPABILITY_NOT_SUPPORTED, false};
+        return selected;
       }
       if (selection.owner == "host") {
         return WebSocketFailure{v1::CAPABILITY_NOT_SUPPORTED, false};
@@ -315,8 +321,7 @@ public:
                                                WebSocketIdentity identity,
                                                std::string_view access_token,
                                                WebSocketDeadline deadline) {
-    deadline =
-        std::min(deadline, std::chrono::steady_clock::now() + std::chrono::milliseconds{500});
+    deadline = std::min(deadline, std::chrono::steady_clock::now() + kSnapshotPollBudget);
     WebSocketPoll result;
     result.identity = std::move(identity);
     WebSocketSnapshotBatch batch;
@@ -340,7 +345,9 @@ public:
     const bool catalog_mode = selection.scope.resources_size() == 1 &&
                               selection.scope.resources(0).kind() == v1::RESOURCE_CATALOG;
     if (catalog_mode) {
-      return poll_catalog_scan(selection, std::move(identity), access_token, deadline, adapters);
+      // The validated stream identity was already moved into result before this dispatch.
+      return poll_catalog_scan(selection, std::move(result.identity), access_token, deadline,
+                               adapters);
     }
     for (const auto& selected : selection.scope.resources()) {
       v1::ResourceScope single;
@@ -458,20 +465,27 @@ public:
                                                    WebSocketIdentity identity,
                                                    std::string_view access_token,
                                                    WebSocketDeadline deadline, bool adapters) {
-    deadline =
-        std::min(deadline, std::chrono::steady_clock::now() + std::chrono::milliseconds{500});
+    deadline = std::min(deadline, std::chrono::steady_clock::now() + kSnapshotPollBudget);
     WebSocketPoll result;
     result.identity = std::move(identity);
     WebSocketSnapshotBatch batch;
-    v1::ResourceScope catalog_scope;
-    *catalog_scope.add_resources() = selection.scope.resources(0);
+    const auto catalog_resource = selection.scope.resources(0);
     const auto permission = adapters ? v1::PERMISSION_ADAPTER_READ : v1::PERMISSION_PLUGIN_READ;
+    const auto child_kind = adapters ? v1::RESOURCE_ADAPTER : v1::RESOURCE_INSTANCE;
     constexpr std::size_t kMaximumCatalogPages = 64;
     constexpr std::uint32_t kCatalogPageSize = 100;
     std::string page_token;
     std::string snapshot_id;
     std::uint64_t snapshot_authorization_version = 0;
     std::size_t pages = 0;
+    // The catalog is a directory selector, not a child authorization. Every page re-validates the
+    // current session and expands the catalog into the principal's explicitly granted exact
+    // children; the delegation therefore carries catalog + those children, matching the owner's
+    // per-child P05 online authorization. Unexpanded (unauthorized) children stay hidden by the
+    // owner's authorized subset.
+    std::vector<v1::ResourceRef> expected_children;
+    WebSocketIdentity expected_identity;
+    bool expanded_once = false;
     do {
       if (std::chrono::steady_clock::now() >= deadline) {
         return WebSocketFailure{v1::TIMEOUT, false};
@@ -479,9 +493,71 @@ public:
       if (++pages > kMaximumCatalogPages) {
         return WebSocketFailure{v1::UPSTREAM_UNAVAILABLE, false};
       }
-      // Online per-page authorization: a new delegation for every page, never a scan-wide grant.
-      const auto proof =
-          identity_->delegate_stream("runtime", permission, catalog_scope, access_token, deadline);
+      // Online per-page authorization: ValidateSession + assignment expansion + a fresh
+      // delegation for every page, never a scan-wide grant.
+      const auto session_result = identity_->validate_stream_context(access_token, deadline);
+      if (const auto* error = std::get_if<WebSocketFailure>(&session_result)) {
+        return *error;
+      }
+      const auto& session = std::get<StreamSessionContext>(session_result);
+      std::vector<WebSocketCatalogGrant> catalog_grants;
+      catalog_grants.reserve(session.assignments.size());
+      for (const auto& assignment : session.assignments) {
+        WebSocketCatalogGrant grant_view;
+        grant_view.assignment_id = assignment.assignment_id;
+        grant_view.principal_id = assignment.principal_id;
+        grant_view.role = assignment.role;
+        grant_view.permissions = assignment.permissions;
+        grant_view.scope = assignment.scope;
+        catalog_grants.push_back(std::move(grant_view));
+      }
+      auto expanded = websocket_expand_catalog_children(catalog_grants, session.identity.principal,
+                                                        permission, child_kind);
+      if (const auto* error = std::get_if<WebSocketFailure>(&expanded)) {
+        if (error->code == v1::RATE_LIMITED) {
+          return WebSocketFailure{v1::RATE_LIMITED, false};
+        }
+        return *error;
+      }
+      auto& children = std::get<std::vector<v1::ResourceRef>>(expanded);
+      if (!expanded_once) {
+        if (session.identity.principal != result.identity.principal ||
+            session.identity.identity_session != result.identity.identity_session ||
+            session.identity.authorization_version != result.identity.authorization_version) {
+          return WebSocketFailure{v1::UNAUTHENTICATED, false};
+        }
+        expected_identity = session.identity;
+        expected_children = children;
+        expanded_once = true;
+      } else {
+        const auto same_children = [](const auto& left, const auto& right) {
+          if (left.size() != right.size()) {
+            return false;
+          }
+          for (std::size_t index = 0; index < left.size(); ++index) {
+            if (left[index].kind() != right[index].kind() ||
+                left[index].id() != right[index].id()) {
+              return false;
+            }
+          }
+          return true;
+        };
+        // The authorization context/selection changed mid-scan: fail closed instead of mixing
+        // pages from two grant sets.
+        if (session.identity.authorization_version != expected_identity.authorization_version ||
+            session.identity.principal != expected_identity.principal ||
+            session.identity.identity_session != expected_identity.identity_session ||
+            !same_children(children, expected_children)) {
+          return WebSocketFailure{v1::INTERNAL, false};
+        }
+      }
+      v1::ResourceScope delegation_scope;
+      *delegation_scope.add_resources() = catalog_resource;
+      for (const auto& child : children) {
+        *delegation_scope.add_resources() = child;
+      }
+      const auto proof = identity_->delegate_stream("runtime", permission, delegation_scope,
+                                                    access_token, deadline);
       if (const auto* error = std::get_if<WebSocketFailure>(&proof)) {
         return *error;
       }
