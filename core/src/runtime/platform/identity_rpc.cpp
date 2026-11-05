@@ -1794,7 +1794,7 @@ public:
             return invalid_result();
           }
           const auto projected = t::project_assignment(result.assignment);
-          if (const auto* error = std::get_if<t::Failure>(&projected)) {
+          if (std::holds_alternative<t::Failure>(projected)) {
             return invalid_result();
           }
           v1::IdentitySetAssignmentResponse output;

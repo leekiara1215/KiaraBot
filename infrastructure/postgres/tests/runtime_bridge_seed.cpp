@@ -112,7 +112,7 @@ int main(int argc, char* argv[]) {
     auto factory = std::move(std::get<std::unique_ptr<target::RuntimeUnitOfWorkFactory>>(opened));
     auto begun = factory->begin();
     if (const auto* failure = std::get_if<target::Failure>(&begun)) {
-      std::cerr << "seed begin failed\n";
+      std::cerr << "seed begin failed code=" << static_cast<int>(failure->code) << '\n';
       return 1;
     }
     auto work = std::move(std::get<std::unique_ptr<target::RuntimeUnitOfWork>>(begun));
