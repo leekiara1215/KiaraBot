@@ -3,7 +3,7 @@
     "Frozen v1 enum name/number baseline. This is a reviewed contract fixture, not a build artifact.",
     "check_enum_consistency.py fails when a published value is renamed or renumbered.",
     "Adding a value is a compatible change and requires updating this file in the same commit.",
-    "proto/tests/README.md documents the review rule; descriptor comparison is not required to catch renumbering."
+    "docs/architecture.md documents the review rule; descriptor comparison is not required to catch renumbering."
   ],
   "enums": {
     "kiarabot.v1.ActionStatus": {

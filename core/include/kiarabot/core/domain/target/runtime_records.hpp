@@ -11,7 +11,7 @@
 
 namespace kiarabot::core::target {
 
-// Closed v1 adapter capability vocabulary (doc/01-contracts.md "权限、能力与订阅词表").
+// Closed v1 adapter capability vocabulary (docs/architecture.md "权限、能力与订阅词表").
 // A declared name outside this list is CAPABILITY_NOT_SUPPORTED; a declared known name is not an
 // authorization grant. Effective capabilities are the negotiation result only.
 inline constexpr std::string_view kRuntimeProtocolVersion = "kiarabot.v1";

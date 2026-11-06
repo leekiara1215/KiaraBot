@@ -50,7 +50,8 @@ struct RuntimeRpcOptions {
   target::RuntimeAuditApplication* audit = nullptr;
   // Optional P07 Action application. When absent QueryActionResult is still wired but returns
   // CAPABILITY_NOT_SUPPORTED; ListActionMetadata and the internal-dispatcher Action methods stay
-  // contract not_implemented per doc/01 (target_spec exposure=internal_dispatcher), not accidental.
+  // contract not_implemented per docs/architecture.md (target_spec exposure=internal_dispatcher),
+  // not accidental.
   target::RuntimeActionApplication* actions = nullptr;
   // Optional process-level deadline bound (shared shutdown budget); expired -> TIMEOUT.
   std::function<target::Outcome<target::TimePoint>()> invocation_deadline;
@@ -76,9 +77,9 @@ struct RuntimeRpcOptions {
 // internal_dispatcher unary methods (RegisterAdapter/Heartbeat/PublishEvent/RegisterPlugin/
 // HeartbeatPlugin/ClaimEvent/DeliverEvent/AckDelivery/RenewDelivery) are deliberately NOT
 // overridden here: they are contract-declared not_implemented and remain generated UNIMPLEMENTED
-// by design (doc/01 P06 topology; target_spec exposure=internal_dispatcher). The production
-// AdapterBridge/PluginBridge streams are the external entry points. Only conversion and stable
-// error mapping live here; all business rules stay in RuntimeResourceApplication.
+// by design (docs/architecture.md P06 topology; target_spec exposure=internal_dispatcher). The
+// production AdapterBridge/PluginBridge streams are the external entry points. Only conversion and
+// stable error mapping live here; all business rules stay in RuntimeResourceApplication.
 target::Outcome<std::unique_ptr<v1::RuntimeService::Service>>
 make_runtime_rpc(target::RuntimeResourceApplication& application, RuntimeRpcOptions options);
 

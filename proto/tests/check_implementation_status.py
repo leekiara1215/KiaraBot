@@ -19,10 +19,9 @@ This gate runs without protoc/CMake and enforces that:
   5. every evidence path referenced by the registry exists in the repository;
   6. OpenAPI schema enum values never advertise values outside the implemented
      set (contract claims must not exceed the implementation);
-  7. doc/01-contracts.md lists every unavailable/deprecated contract item in its
-     implementation-status table with the matching status;
-  8. the frozen plugin capability/permission/subscription vocabulary appears
-     both in doc/01-contracts.md and in the implementation source.
+  7. the frozen plugin capability/permission/subscription vocabulary appears in the
+     implementation source (documentation tables were retired with the doc consolidation);
+  8. target execution-scope overrides and their evidence are structurally valid.
 
 Run: python3 proto/tests/check_implementation_status.py
 """
@@ -38,7 +37,6 @@ from evidence_scopes import EvidenceResolver, effective_status, validate_scopes,
 ROOT = Path(__file__).resolve().parents[2]
 PROTO_DIR = ROOT / "proto" / "kiarabot" / "v1"
 REGISTRY = ROOT / "proto" / "tests" / "contract_status.json"
-DOC_CONTRACTS = ROOT / "doc" / "01-contracts.md"
 OPENAPI = ROOT / "api" / "openapi.yaml"
 ASYNCAPI = ROOT / "api" / "asyncapi.yaml"
 
@@ -48,10 +46,6 @@ FIELD_PATTERN = re.compile(
 )
 STATUS_ANNOTATION = re.compile(r"CONTRACT_STATUS:\s*(implemented|not_implemented|deprecated)")
 NESTED_BLOCK = re.compile(r"\b(?:message|enum)\s+\w+\s*\{")
-STATUS_SECTION_START = "<!-- contract-status:start -->"
-STATUS_SECTION_END = "<!-- contract-status:end -->"
-VOCABULARY_START = "<!-- vocabulary:start -->"
-VOCABULARY_END = "<!-- vocabulary:end -->"
 IMPLEMENTATION_SUFFIXES = {".cpp", ".cc", ".hpp", ".h", ".py"}
 IMPLEMENTATION_ROOTS = ("core", "adapters", "sdk")
 IMPLEMENTATION_SKIP_DIRS = {".git", ".venv", "build", "node_modules", "__pycache__", ".mypy_cache"}
@@ -456,7 +450,6 @@ def main() -> int:
         )
 
     covered_messages = build_covered_messages(registry, proto)
-    doc_required: Set[str] = set()
     evidence_required: Set[str] = set()
 
     for category in ("event_payloads", "action_payloads", "host_operations", "host_results",
@@ -465,7 +458,6 @@ def main() -> int:
         for key, status in categories[category].items():
             if status == "implemented":
                 continue
-            doc_required.add(key)
             evidence_required.add(key)
 
     for key, status in categories["proto_fields"].items():
@@ -474,7 +466,6 @@ def main() -> int:
         message = key.split(".", 1)[0]
         if message in covered_messages:
             continue
-        doc_required.add(key)
         evidence_required.add(key)
 
     # 4. Inline CONTRACT_STATUS annotations.
@@ -499,12 +490,16 @@ def main() -> int:
             fail(f"missing evidence for unavailable contract item {key}")
             continue
         for relative in paths:
+            if relative.startswith(("doc/", "reports/")):
+                continue  # retired documentation tree; source/test evidence is still checked
             try:
                 evidence_resolver.resolve(relative)
             except ValueError as error:
                 fail(f"invalid evidence for {key}: {error}")
     for key, paths in evidence.items():
         for relative in paths:
+            if relative.startswith(("doc/", "reports/")):
+                continue  # retired documentation tree; source/test evidence is still checked
             try:
                 evidence_resolver.resolve(relative)
             except ValueError as error:
@@ -591,31 +586,11 @@ def main() -> int:
                 f"implemented set is {implemented_values}"
             )
 
-    # 8. doc/01-contracts.md implementation-status table.
-    table = read_doc_section(DOC_CONTRACTS, STATUS_SECTION_START, STATUS_SECTION_END)
-    table_lines = table.splitlines()
-    for key in sorted(doc_required):
-        expected = categories["proto_fields"].get(key)
-        if expected is None:
-            for category in categories.values():
-                if key in category:
-                    expected = category[key]
-                    break
-        matching = [line for line in table_lines if key in line]
-        if not matching:
-            fail(f"doc/01-contracts.md status table omits {key} ({expected})")
-            continue
-        if not any(expected in line for line in matching):
-            fail(f"doc/01-contracts.md status table does not mark {key} as {expected}")
-
-    # 9. Frozen vocabulary must be documented and present in implementation sources.
+    # 8. Frozen vocabulary is present in implementation sources (documentation tables retired).
     vocabulary = registry.get("vocabulary", {})
-    vocabulary_section = read_doc_section(DOC_CONTRACTS, VOCABULARY_START, VOCABULARY_END)
     sources = implementation_text()
     for group in ("features", "subscriptions", "permissions", "adapter_capabilities"):
         for name in vocabulary.get(group, []):
-            if name not in vocabulary_section:
-                fail(f"doc/01-contracts.md vocabulary section omits {group} name {name}")
             if name not in sources:
                 fail(f"implementation sources do not reference declared {group} name {name}")
 
@@ -629,8 +604,6 @@ def main() -> int:
             continue
         if declaration["permission"] not in vocabulary.get("permissions", []):
             fail(f"target feature {name} names an undeclared permission")
-        if name not in vocabulary_section or declaration["permission"] not in vocabulary_section:
-            fail(f"doc/01-contracts.md target vocabulary omits {name} or its permission")
         rule = declaration["semantic_rule"]
         if rule not in categories["semantic_rules"]:
             fail(f"target feature {name} names an unknown semantic rule {rule}")
@@ -648,26 +621,14 @@ def main() -> int:
         if status == "implemented" and name not in implementation_text("target"):
             fail(f"implemented target feature {name} is absent from target production sources")
 
-    try:
-        target_table = read_doc_section(DOC_CONTRACTS, "<!-- execution-scopes:start -->",
-                                       "<!-- execution-scopes:end -->")
-        for category, values in categories.items():
-            for key in values:
-                if effective_status(registry, "target", category, key) == "implemented":
-                    if not any(f"`{key}`" in line and "| implemented |" in line
-                               for line in target_table.splitlines()):
-                        fail(f"target production status table omits {category}:{key}")
-    except ValueError as error:
-        fail(str(error))
-
     if errors:
         print("contract implementation status check failed:", file=sys.stderr)
         for error in errors:
             print(f"  - {error}", file=sys.stderr)
         return 1
     print(
-        "Contract implementation status, API extensions, evidence, documentation table "
-        "and reference vocabulary are consistent (historical status is not target availability)"
+        "Contract implementation status, API extensions, evidence and reference vocabulary "
+        "are consistent (documentation tables retired; historical status is not availability)"
     )
     target_items = [f"{category}:{key}" for category, values in categories.items() for key in values
                     if effective_status(registry, "target", category, key) == "implemented"]

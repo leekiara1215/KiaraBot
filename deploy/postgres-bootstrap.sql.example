@@ -12,7 +12,7 @@
 --        -v identity_runtime_password="$(cat ...)" ... \
 --        -f deploy/postgres-bootstrap.sql.example
 --
--- Requirements (doc/08 P03):
+-- Requirements (docs/modules/infrastructure.md P03):
 --   * migration and runtime roles are distinct per database, NOLOGIN inheritance
 --     disabled, no SUPERUSER/CREATEDB/CREATEROLE/REPLICATION/BYPASSRLS;
 --   * pg_hba requires verify-full TLS for these roles (the compose PG serves TLS

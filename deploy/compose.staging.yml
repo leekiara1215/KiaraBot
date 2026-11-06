@@ -1,7 +1,7 @@
 name: ${COMPOSE_PROJECT_NAME:-kiarabot-staging}
 
 # Single-host deployment model: Core, the control API, the adapter health port
-# and the panel reverse proxy all bind 127.0.0.1 only (see doc/08-operations.md,
+# and the panel reverse proxy all bind 127.0.0.1 only (see docs/modules/infrastructure.md,
 # "网络、端口与限制"). Containers therefore use host networking on Linux; that
 # is not supported by Docker Desktop unless host networking is explicitly
 # enabled. NapCat/QQ runs on the same host outside this Compose project and is

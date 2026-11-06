@@ -128,7 +128,7 @@ message Health {
 // CONTRACT_STATUS: not_implemented - v1 servers close bridge streams without sending this frame.
 // When sent, it is followed by stream closure: drain_timeout_ms bounds in-flight work, and a
 // client that never receives it must treat the close as an unknown outcome (see
-// doc/01-runtime-semantics.md, graceful shutdown).
+// docs/architecture.md, graceful shutdown).
 message ShutdownNotice {
   string reason = 1;
   uint32 drain_timeout_ms = 2;

@@ -4,7 +4,7 @@
 
 // P07 Runtime authoritative Action records plus persistent quota/policy/evidence relations.
 // Empty-database schema only (no migration), same policy as the P03 explicit initializer.
-// Six relations are frozen by doc/22:29 and the P07 contract proposal §5.1:
+// Six relations are frozen by docs/architecture.md:29 and the P07 contract proposal §5.1:
 //   actions, action_idempotency, quota_windows, daily_budgets, adapter_result_evidence,
 //   action_policies.
 // Row-level conditional writes own dispatch/result/cancel/expiry races; accepted quota occupancy

@@ -95,7 +95,7 @@ struct SequenceDecision {
   SequenceWatermark watermark;
 };
 
-// Apply doc/01-runtime-semantics "顺序和背压":
+// Apply docs/architecture.md-runtime-semantics "顺序和背压":
 // - sequence 0/absent is treated as not provided: accepted but marks the conversation degraded;
 // - no previous watermark: sequence 1 is contiguous, any other first value degrades;
 // - value <= last_sequence is a non-duplicate out-of-order rejection (duplicates are detected by
@@ -165,7 +165,7 @@ struct StoredDelivery {
   std::optional<TimePoint> updated_at;
 };
 
-// ACK/Renew result mapping frozen by doc/01-contracts P06 section.
+// ACK/Renew result mapping frozen by docs/architecture.md-contracts P06 section.
 enum class DeliveryDisposition { Acknowledged, Duplicate, Stale, Renewed, Rejected };
 
 struct DeliveryReceipt {

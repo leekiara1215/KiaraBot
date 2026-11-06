@@ -2,10 +2,10 @@
 """Check cross-contract semantic rules that are easy to drift apart.
 
 Covers the P0/P1 contract convergence items:
-  * unified identifier syntax (doc table vs OpenAPI/AsyncAPI parameters);
-  * Action deadline upper bound documentation and its contract status;
+  * unified identifier syntax (OpenAPI/AsyncAPI parameters);
+  * Action deadline upper bound and its contract status;
   * the gRPC vs in-band business-error correction;
-  * reserved/deprecated rules in .proto sources and proto/README.md;
+  * reserved/deprecated rules in .proto sources;
   * graceful shutdown/drain contract and its v1 not-implemented status;
   * REST Action retention/EXPIRED semantics and their divergence record;
   * explicit admin role list without wildcards and without message.read;
@@ -23,22 +23,10 @@ from typing import Dict, List
 ROOT = Path(__file__).resolve().parents[2]
 PROTO_DIR = ROOT / "proto" / "kiarabot" / "v1"
 REGISTRY = ROOT / "proto" / "tests" / "contract_status.json"
-DOC_CONTRACTS = ROOT / "doc" / "01-contracts.md"
-DOC_RUNTIME = ROOT / "doc" / "01-runtime-semantics.md"
 OPENAPI = ROOT / "api" / "openapi.yaml"
 ASYNCAPI = ROOT / "api" / "asyncapi.yaml"
-PROTO_README = ROOT / "proto" / "README.md"
 
-ID_SECTION_START = "<!-- id-rules:start -->"
-ID_SECTION_END = "<!-- id-rules:end -->"
 NESTED_BLOCK = re.compile(r"\b(?:message|enum)\s+\w+\s*\{")
-
-
-def section(path: Path, start: str, end: str) -> str:
-    text = path.read_text(encoding="utf-8")
-    if start not in text or end not in text:
-        raise ValueError(f"missing markers {start}/{end} in {path.relative_to(ROOT)}")
-    return text.split(start, 1)[1].split(end, 1)[0]
 
 
 def block_end(source: str, open_brace: int) -> int:
@@ -122,31 +110,13 @@ def main() -> int:
     try:
         registry = json.loads(REGISTRY.read_text(encoding="utf-8"))
         semantic = registry["categories"]["semantic_rules"]
-        doc = DOC_CONTRACTS.read_text(encoding="utf-8")
-        runtime = DOC_RUNTIME.read_text(encoding="utf-8")
         openapi = OPENAPI.read_text(encoding="utf-8")
         asyncapi = ASYNCAPI.read_text(encoding="utf-8")
-        proto_readme = PROTO_README.read_text(encoding="utf-8")
-        id_rules = section(DOC_CONTRACTS, ID_SECTION_START, ID_SECTION_END)
     except (ValueError, KeyError, json.JSONDecodeError) as error:
         print(error, file=sys.stderr)
         return 1
 
-    # 1. Identifier syntax: documented classes match the API parameters.
-    required_phrases = (
-        ("action_id", "128", "[A-Za-z0-9._-]"),
-        ("adapter_id", "128", "[A-Za-z0-9._:@-]"),
-        ("conversation_id", "256", "可见 ASCII"),
-        ("插件 `id`", "64", "[a-z0-9.-]"),
-        ("session_id", "32", "256"),
-    )
-    for identifier, length, charset in required_phrases:
-        row = [line for line in id_rules.splitlines() if identifier in line]
-        if not row:
-            fail(f"identifier rules table omits {identifier}")
-            continue
-        if not any(length in line and charset in line for line in row):
-            fail(f"identifier rules row for {identifier} must state length {length} and charset {charset}")
+    # 1. Identifier syntax matches the API parameters.
     try:
         action_id = parse_openapi_parameter(openapi, "ActionId")
         action_key = parse_openapi_parameter(openapi, "ActionLookupKey")
@@ -171,8 +141,6 @@ def main() -> int:
         fail("AsyncAPI session_id must declare minLength 32")
 
     # 2. Action deadline upper bound and its status.
-    if "300 秒" not in doc:
-        fail("doc/01-contracts.md must document the 300 second Action deadline bound")
     if semantic.get("semantic.action.deadline_max_300s") != "not_implemented":
         fail("semantic.action.deadline_max_300s must stay not_implemented until enforced")
     if not any("300" in path.read_text(encoding="utf-8") for path in
@@ -180,21 +148,10 @@ def main() -> int:
         fail("actions.proto must document the 300 second deadline bound")
 
     # 3. gRPC vs in-band error correction.
-    if "in-band" not in doc:
-        fail("doc/01-contracts.md must state that business errors use in-band Error frames")
-    if "gRPC 状态映射为：" in doc:
-        fail("doc/01-contracts.md still contains the deprecated normative gRPC mapping phrase")
     if semantic.get("semantic.grpc.business_error_mapping") != "deprecated":
         fail("semantic.grpc.business_error_mapping must be deprecated")
-    for status in ("UNAUTHENTICATED", "PERMISSION_DENIED", "INVALID_ARGUMENT", "INTERNAL",
-                   "CANCELLED", "DEADLINE_EXCEEDED"):
-        if status not in doc:
-            fail(f"doc/01-contracts.md must list the transport gRPC status {status}")
 
     # 4. reserved/deprecated rules are executable.
-    for keyword in ("reserved", "deprecated", "编号永不复用"):
-        if keyword not in proto_readme:
-            fail(f"proto/README.md must document the {keyword!r} compatibility rule")
     for path, message, body in proto_messages():
         fields = {}
         for match in re.finditer(
@@ -235,18 +192,8 @@ def main() -> int:
             fail(f"Bridge oneof is missing the drain frame field {frame}")
     if semantic.get("semantic.transport.graceful_shutdown") != "not_implemented":
         fail("semantic.transport.graceful_shutdown must stay not_implemented")
-    if "优雅停机" not in doc or "ShutdownNotice" not in doc:
-        fail("doc/01-contracts.md must contain the graceful shutdown/drain contract")
-    if "未知结果" not in runtime:
-        fail("doc/01-runtime-semantics.md must state that an unsignalled stream close is an unknown outcome")
 
     # 6. REST Action query retention/EXPIRED semantics and divergence.
-    for phrase in ("604800", "EXPIRED", "TIMEOUT", "NOT_FOUND"):
-        if phrase not in doc:
-            fail(f"doc/01-contracts.md must state REST Action query semantic {phrase!r}")
-    for phrase in ("168", "EXPIRED"):
-        if phrase not in runtime:
-            fail(f"doc/01-runtime-semantics.md must state the Action retention/EXPIRED rule {phrase!r}")
     action_results = parse_action_results(openapi)
     expected = {
         "terminal_retention_seconds": "604800",

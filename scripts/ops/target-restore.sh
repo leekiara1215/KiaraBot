@@ -24,7 +24,7 @@ usage: target-restore.sh --root DIR --env FILE --input BACKUP_SET --confirm
 The script restores material (config/tls/secrets/credentials), Host/Adapter SQLite snapshots and
 the four PG dumps in manifest order. A missing/corrupt component aborts before any mutation.
 If a step fails after mutation begins, the script exits non-zero and states that a partial restore
-may exist; keep all services stopped and follow doc/08 recovery guidance. It never runs a migration.
+may exist; keep all services stopped and follow docs/architecture.md recovery guidance. It never runs a migration.
 EOF
 }
 
@@ -118,7 +118,7 @@ for target in "$HOST_SQLITE_PATH" "$ADAPTER_OUTBOX_PATH" ${ADAPTER_ACTIONS_PATH:
 done
 
 log "preflight passed; restoring backup set $input"
-trap 'log "RESTORE FAILED after mutation began: a partial restore may exist; keep services stopped and follow doc/08 before retrying"; exit 1' ERR
+trap 'log "RESTORE FAILED after mutation began: a partial restore may exist; keep services stopped and follow docs/architecture.md before retrying"; exit 1' ERR
 
 # --- material first (operator-owned files; no service is running) -------------------------------
 stage=$(mktemp -d "$root/.p14c-restore.XXXXXX")
@@ -173,4 +173,4 @@ done
 
 trap - ERR
 rm -rf -- "$stage"
-log "restore complete; services remain stopped; start in documented order (doc/08)"
+log "restore complete; services remain stopped; start in documented order (docs/architecture.md)"

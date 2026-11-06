@@ -285,7 +285,7 @@ void fields(Archive& archive, Value& value) {
 
 // Schema v6 migration of the private session ordering keys. Before v6 the key was the
 // three-tuple (adapter_id, account_id, conversation_id); it is now the four-tuple with
-// the conversation type (doc/01-runtime-semantics.md "顺序和背压"). The stored envelope
+// the conversation type (docs/architecture.md "顺序和背压"). The stored envelope
 // is the only place that still carries the type, so each event with a session key is
 // decoded and re-derived; events that cannot be decoded keep their legacy key (and the
 // matching watermark cannot be attributed anymore).

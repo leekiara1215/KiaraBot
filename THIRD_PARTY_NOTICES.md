@@ -54,4 +54,4 @@ AI 插件、模型 SDK、数据库驱动及其他运行时依赖必须按照各�
 - [libsodium](https://github.com/jedisct1/libsodium/blob/master/LICENSE)：ISC；使用 Argon2id、keyed hash 与 secretbox，动态链接系统/CI 安装。
 - [nlohmann/json 3.11.3](https://github.com/nlohmann/json/blob/v3.11.3/LICENSE.MIT)：MIT；单头文件只下载至构建目录，发布二进制应附许可证。
 
-版本和校验值见 [工具链文档](doc/11-toolchain.md)，测试 Python 依赖由 control/api/tests/uv.lock 固定。
+版本和校验值见 [工具链文档](docs/spec/toolchain.md)，测试 Python 依赖由 control/api/tests/uv.lock 固定。

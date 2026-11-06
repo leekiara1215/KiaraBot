@@ -10,7 +10,7 @@
 # Environment:
 #   PATH must include the locked toolchain (Node 22.14.0 via
 #   scripts/toolchain/install-node.sh; protoc/grpc from the P00 vcpkg tree).
-#   Build/test require a configured build/full-locked (see doc/12-ci-cd.md).
+#   Build/test require a configured build/full-locked (see docs/spec/ci-gates.md).
 #   KIARABOT_CHECK_PRESET (default full-locked) is forwarded to check-toolchain.
 #   KIARABOT_JSON (or --json PATH) writes a machine-readable report.
 #
@@ -135,7 +135,7 @@ section_build() {
   local build_dir="${KIARABOT_BUILD_DIR:-build/full-locked}"
   if [[ ! -f "$build_dir/CMakeCache.txt" ]]; then
     if [[ -z "${VCPKG_ROOT:-}" ]]; then
-      skip "configure-full-locked" "build cache missing and VCPKG_ROOT unset; follow doc/12-ci-cd.md P00 shared configure"
+      skip "configure-full-locked" "build cache missing and VCPKG_ROOT unset; follow docs/spec/ci-gates.md P00 shared configure"
       echo "run-ci-local: cannot build without a configured build/full-locked" >&2
       return 1
     fi

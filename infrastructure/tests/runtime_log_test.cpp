@@ -34,7 +34,7 @@ int main() try {
   check(sink->read().size() == 4);
   check(output.str().find("private-body-and-token") == std::string::npos);
   check(output.str().find("RETRYING") != std::string::npos);
-  // doc/08 alias fields: timestamp mirrors occurred_at, resource_id mirrors the
+  // docs/architecture.md alias fields: timestamp mirrors occurred_at, resource_id mirrors the
   // resource identifier (event/action id depending on the operation).
   check(output.str().find("\"timestamp\"") != std::string::npos);
   check(output.str().find("\"occurred_at\"") != std::string::npos);

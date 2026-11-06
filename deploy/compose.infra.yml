@@ -7,7 +7,7 @@
 # The service never falls back to SQLite and never auto-migrates at startup.
 #
 # PostgreSQL TLS material and password files are deployment mounts; nothing in this
-# directory is baked into an image. See deploy/README.md and doc/08-operations.md.
+# directory is baked into an image. See deploy/README.md and docs/modules/infrastructure.md.
 services:
   postgres:
     image: ${POSTGRES_IMAGE:-postgres:16.4-bookworm}

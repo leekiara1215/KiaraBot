@@ -113,7 +113,7 @@ message ActionResult {
   // CONTRACT_STATUS: not_implemented - P07 target execution-knownness.
   // Pairs with status: ACCEPTED is NOT_STARTED or UNKNOWN, SUCCEEDED is KNOWN_SUCCEEDED,
   // FAILED is KNOWN_FAILED, EXPIRED is NOT_STARTED (never dispatched) or UNKNOWN (may have
-  // executed), CANCELLED is NOT_STARTED. See doc/01-runtime-semantics.md.
+  // executed), CANCELLED is NOT_STARTED. See docs/architecture.md.
   ExecutionOutcome execution_outcome = 6;
   // CONTRACT_STATUS: not_implemented - P07 target adapter result correlation.
   // Adapter results echo the dispatch attempt they belong to; plugin queries may observe it.

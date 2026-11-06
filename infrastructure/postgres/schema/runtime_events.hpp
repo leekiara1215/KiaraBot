@@ -3,8 +3,8 @@
 #include <string_view>
 
 // P06 Runtime event inbox and delivery ledger. Explicit empty-database schema v6; there is no
-// migration path from v5 (development databases must be re-initialized, doc/22 explicit init).
-// Five tables are frozen by doc/22:29 and the P06 contract freeze:
+// migration path from v5 (development databases must be re-initialized, docs/architecture.md
+// explicit init). Five tables are frozen by docs/architecture.md:29 and the P06 contract freeze:
 //   events, conversation_watermarks, delivery_targets, delivery_attempts, ordered_delivery_heads.
 // delivery_targets.ordinal is the stable per-acceptance ordering used by ordered groups; the
 // ordered head table only tracks the current head ordinal so a later insert can never jump a

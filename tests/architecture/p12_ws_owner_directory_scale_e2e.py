@@ -10,7 +10,7 @@ Two real-process boundaries for the Control WS adapters directory:
     (WS close 1013) instead of truncating or returning a successful empty/partial stream.
   * large-directory budget measurement: with the same real 127 adapters, a direct owner
     ListAdapters full immutable scan (catalog + 126 exact granted children, page_size=100) is timed
-    page by page; the numbers back the doc/08 operational guidance on how many authorized children
+    page by page; the numbers back the docs/architecture.md operational guidance on how many authorized children
     a single directory scan may expose under the frozen WS snapshot poll budget.
 
 Everything runs against the real Identity/Runtime/Control binaries, real owned PG16.4 and real

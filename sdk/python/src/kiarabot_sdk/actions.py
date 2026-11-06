@@ -3,7 +3,7 @@
 The SDK never decides authorization; it only enforces the frozen wire preconditions that a
 plugin must satisfy before sending, and interprets ``PluginActionResponse`` snapshots without
 turning unknown outcomes into failures. Adapter-side ``action_receipt`` dispositions are not
-visible to plugins; they surface as equivalent result shapes (see doc/03):
+visible to plugins; they surface as equivalent result shapes (see docs/architecture.md):
 
 - fresh submit  -> ``ACCEPTED`` + ``EXECUTION_NOT_STARTED`` (Runtime RECORDED)
 - repeat submit -> the original ``ActionResult`` snapshots (Runtime DUPLICATE)
@@ -39,7 +39,7 @@ ACTION_KINDS = {
 REJECTED_PAYLOADS = frozenset({'schedule_task'})
 TERMINAL_STATUSES = frozenset({actions.SUCCEEDED, actions.FAILED, actions.EXPIRED,
                                actions.CANCELLED})
-#: status -> allowed execution_outcome (frozen matrix in doc/01-contracts P07 section).
+#: status -> allowed execution_outcome (frozen matrix in docs/architecture.md-contracts P07 section).
 STATUS_OUTCOMES = {
     actions.ACCEPTED: frozenset({platform.EXECUTION_NOT_STARTED, platform.EXECUTION_UNKNOWN}),
     actions.SUCCEEDED: frozenset({platform.EXECUTION_KNOWN_SUCCEEDED}),

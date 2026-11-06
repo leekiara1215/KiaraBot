@@ -3,7 +3,7 @@
 The frozen ``PluginBridge`` host surface exposes exactly three task operations —
 ``task_create``, ``task_get`` and ``task_cancel``. ``SchedulerService.ListTasks`` is a
 Control/Runtime wire RPC and intentionally has no plugin bridge frame, so the SDK has no
-``list_tasks`` method (doc/03: "list 未实现，协议无列表操作").
+``list_tasks`` method (docs/architecture.md: "list 未实现，协议无列表操作").
 
 Validation is preflight only: the Scheduler remains authoritative for future deadlines,
 DST/zone resolution, cancel windows, ownership and capacity. The SDK never converts local

@@ -3,7 +3,7 @@
 #
 # The build stage uses the same pinned vcpkg toolchain as CI and installs C++
 # dependencies from the locked P00 architecture manifest
-# (dependencies/architecture, see doc/11-toolchain.md) so the image is built
+# (dependencies/architecture, see docs/spec/toolchain.md) so the image is built
 # with the protocol and infrastructure adapters enabled
 # (KIARABOT_GENERATE_PROTO=ON, KIARABOT_ENABLE_INFRASTRUCTURE=ON). The runtime
 # stage contains kiarabot-core, the standalone migration command

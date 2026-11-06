@@ -82,8 +82,9 @@ Failure runtime_conflict_failure() {
   return bridge_failure(ErrorCode::Conflict, Recovery::ReadCurrent);
 }
 
-// Frozen plugin permission vocabulary from doc/03-plugin-sdk.md. It is a declaration vocabulary,
-// not an authorization decision; every Action/model/storage call is still authorized online.
+// Frozen plugin permission vocabulary from docs/modules/plugin-sdk.md. It is a declaration
+// vocabulary, not an authorization decision; every Action/model/storage call is still authorized
+// online.
 constexpr std::array<std::string_view, 12> kPluginPermissionVocabulary{
     "message.read",  "message.send", "member.read",     "member.mute",
     "member.kick",   "request.read", "request.approve", "adapter.read",

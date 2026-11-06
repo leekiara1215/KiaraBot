@@ -338,7 +338,7 @@ if(UNIX)
   # P12j: Panel API client contract matrix against the same real native target stack.
   # Default mode records the pre-P14g/P14h fail-closed 400s as known and still asserts all
   # auth/error/page shapes; after the fixes are merged rerun with KIARABOT_P12J_EXPECT_FIXED=1
-  # (see reports/modules/architecture-p12j-panel-live.md) to require owner-backed success.
+  # (see docs/architecture.md) to require owner-backed success.
   add_test(NAME p12j_panel_live COMMAND "${KIARABOT_TARGET_PYTHON}"
     "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_database_test.py"
     --pg-bin "${KIARABOT_TEST_PG_BIN}" --openssl "${KIARABOT_TEST_OPENSSL}"

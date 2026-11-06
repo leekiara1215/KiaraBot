@@ -5,8 +5,8 @@ name: CI
 # full 构建 + 全模块静态分析 job；依赖审计扩展到 panel 与 Python（report-only）。
 # 2026-11-02 更新：contracts/full-build 改为从 dependencies/architecture 的锁定
 # manifest 安装固定版本依赖（不再用经典 vcpkg 包列表）；full-build 的 full CTest
-# 仍被 P00 fixture 环境（PG16.4/OpenSSL3.5/Python venv）阻塞，见 doc/12-ci-cd.md。
-# 恢复步骤见 doc/12-ci-cd.md「恢复自动触发」。
+# 仍被 P00 fixture 环境（PG16.4/OpenSSL3.5/Python venv）阻塞，见 docs/spec/ci-gates.md。
+# 恢复步骤见 docs/spec/ci-gates.md「恢复自动触发」。
 on:
   workflow_dispatch:
     inputs:
@@ -21,7 +21,7 @@ on:
         default: ''
         type: string
   # 自动触发已接入但默认门控：仓库变量 CI_AUTO_ENABLED=true 后才执行 job。
-  # 首次启用前先手动 Run workflow 跑绿 full-build（doc/12-ci-cd.md「恢复自动触发」）。
+  # 首次启用前先手动 Run workflow 跑绿 full-build（docs/spec/ci-gates.md「恢复自动触发」）。
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
   push:
@@ -96,7 +96,7 @@ jobs:
       - name: Verify pinned vcpkg registry against the dependency lock
         # Offline gate: registry revision, baseline port versions, port trees and
         # portfile hashes must match dependencies/architecture/dependencies.lock.json
-        # (doc/11-toolchain.md). Runs before the expensive dependency build.
+        # (docs/spec/toolchain.md). Runs before the expensive dependency build.
         run: python3 scripts/quality/check-dependency-lock.py --registry "$VCPKG_ROOT"
       - name: Install locked architecture dependencies
         # GENERATE_PROTO=ON always adds dependencies/architecture/smoke plus
@@ -289,7 +289,7 @@ jobs:
       - name: Audit locked CI dependencies
         run: npm audit --prefix scripts/ci --audit-level=high
       # Panel and Python audits are report-only until their findings are triaged:
-      # they must not be described as complete dependency coverage (see doc/12-ci-cd.md).
+      # they must not be described as complete dependency coverage (see docs/spec/ci-gates.md).
       - name: Audit panel dependencies (report-only)
         continue-on-error: true
         run: npm audit --prefix panel --package-lock-only --audit-level=high
@@ -431,7 +431,7 @@ jobs:
             pkg-config ninja-build python3-venv ruby tzdata
       - name: Install locked P00 fixtures (OpenSSL 3.5.0, PostgreSQL 16.4)
         # The full-locked CTest suite requires the exact P00 fixture versions
-        # (doc/11-toolchain.md). Archives come from the lock URLs and are hash-
+        # (docs/spec/toolchain.md). Archives come from the lock URLs and are hash-
         # verified before extraction; builds stay in ignored build/. OpenSSL is
         # built first because PostgreSQL links against it.
         run: |

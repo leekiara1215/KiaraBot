@@ -9,7 +9,7 @@ import { ApiClient, ApiError } from '../src/api/client';
 import { ControlStream, type SocketLike } from '../src/stream/control-stream';
 
 /**
- * Live suite prerequisites (documented in doc/07-control-panel.md):
+ * Live suite prerequisites (documented in docs/modules/control-panel.md):
  *   - a C++ build tree containing `core/kiarabot-core` and
  *     `control/api/kiarabot-control-credentials` (default `build/proto`,
  *     override with `KIARABOT_ACCEPTANCE_BUILD=build/full`), produced by

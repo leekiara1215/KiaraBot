@@ -1,7 +1,7 @@
 /**
  * Authoritative REST snapshot synchronization for a WS-recovered panel resource.
  *
- * Recovery sequence (doc/07 "实时状态", WS plan 3.4):
+ * Recovery sequence (docs/modules/control-panel.md "实时状态", WS plan 3.4):
  * 1. SESSION_READY records the processed Control sequence / owner cursor in the stream client
  *    **before** any REST read starts.
  * 2. The authoritative REST snapshot is loaded; events that arrive while it is in flight mark the

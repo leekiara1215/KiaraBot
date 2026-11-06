@@ -1001,7 +1001,7 @@ paths:
         (audit committed in its business transaction); Control projects only authorized, redacted
         rows and never credentials, message bodies or model secrets. Pagination uses occurred_at
         plus stable ID; no free-form filters are accepted in v1. Necessary audit facts are retained
-        for 180 days in their owner service (doc/22) and Control must not extend that retention by
+        for 180 days in their owner service (docs/architecture.md) and Control must not extend that retention by
         caching; response rows carry the owner service identity so clients can open the exact owner
         operation. P12e declares the read-only owner RPCs (IdentityService.ListAudit /
         RuntimeService.ListAudit, audit.read on the Control catalog scope); P12c-6 wires Control
@@ -4295,7 +4295,7 @@ components:
         capabilities:
           type: array
           items: { type: string }
-          description: Event subscription names from the frozen vocabulary in doc/01-contracts.md.
+          description: Event subscription names from the frozen vocabulary in docs/architecture.md.
         dependencies:
           type: array
           items: { type: string }
@@ -4308,7 +4308,7 @@ components:
         permissions:
           type: array
           items: { type: string }
-          description: Permission names from the frozen vocabulary in doc/01-contracts.md.
+          description: Permission names from the frozen vocabulary in docs/architecture.md.
     Plugin:
       allOf:
         - $ref: '#/components/schemas/PluginManifest'

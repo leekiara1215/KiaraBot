@@ -112,4 +112,4 @@ if ((${#backups[@]} > retain)); then
   for ((i=0; i<${#backups[@]}-retain; ++i)); do rm -f -- "${backups[i]}"; done
 fi
 echo "target-rotate-secret: replaced $name; backup=$(basename "$backup")" >&2
-echo "target-rotate-secret: restart in order and verify old/new credentials per doc/08" >&2
+echo "target-rotate-secret: restart in order and verify old/new credentials per docs/architecture.md" >&2

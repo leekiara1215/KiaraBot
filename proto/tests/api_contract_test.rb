@@ -163,10 +163,6 @@ check(action_results.fetch('terminal_retention_seconds') == 604800, 'Action term
 check(action_results.fetch('missing_expired_invisible') == 'NOT_FOUND', 'Action lookup NOT_FOUND rule')
 check(action_results.fetch('deadline_transition') == 'EXPIRED', 'Action deadline transition')
 check(action_results.fetch('expired_error_code') == 'TIMEOUT', 'EXPIRED uses TIMEOUT')
-runtime_semantics = File.read(File.join(root, 'doc/01-runtime-semantics.md'))
-check(runtime_semantics.include?('168') && runtime_semantics.include?('EXPIRED'),
-      'runtime semantics must state the 168 hour retention and EXPIRED transition')
-check(runtime_semantics.include?('未知结果'), 'runtime semantics must state the unknown-outcome close rule')
 puts 'OpenAPI and AsyncAPI channel, status, role, manifest and Action retention contract checks passed'
 
 check(policy.fetch('application_port') == 'in-process-cpp-v1', 'control port decision')

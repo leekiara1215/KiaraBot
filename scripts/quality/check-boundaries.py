@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Check module boundaries across C++, Python, TypeScript and build files.
 
-This is the machine-checkable subset of doc/00-boundaries.md:
+This is the machine-checkable subset of docs/spec/boundaries.md:
 
   * Core business code (core/src, core/include) must not include outer/platform
     code, and domain/ports must not include more outward Core layers;

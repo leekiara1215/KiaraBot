@@ -247,7 +247,7 @@ log "main restore passed: RPO=0s (quiesced backup; no writer accepted after --of
 
 # Credential replacement drill (manual rotation phase): rotate one migration credential, verify the
 # old password is rejected, verify the new password is accepted by the same operator scripts, then
-# take a fresh full backup. Service-process restart order is documented in doc/08; process daemons
+# take a fresh full backup. Service-process restart order is documented in docs/architecture.md; process daemons
 # are not part of this local data-layer drill.
 new_pass="identity-rotated-$(python3 -c 'import secrets; print(secrets.token_hex(16))')"
 old_pass=$(cat "$ROOT/secrets/identity-migration.pass")

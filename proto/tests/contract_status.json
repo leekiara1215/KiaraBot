@@ -2412,11 +2412,11 @@
     ],
     "ShutdownNotice.reason": [
       "core/src/runtime/bridge_server.cpp",
-      "doc/01-runtime-semantics.md"
+      "docs/architecture.md"
     ],
     "ShutdownNotice.drain_timeout_ms": [
       "core/src/runtime/bridge_server.cpp",
-      "doc/01-runtime-semantics.md"
+      "docs/architecture.md"
     ],
     "PluginState.PLUGIN_STATE_STARTING": [
       "core/include/kiarabot/core/domain/runtime_engine.hpp"
@@ -2425,2839 +2425,2839 @@
       "core/include/kiarabot/core/domain/runtime_engine.hpp"
     ],
     "RegisterAdapterRequest.adapter_instance_id": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RegisterAdapterRequest.context": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RegisterAdapterResponse.fence": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RegisterAdapterResponse.effective_capabilities": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "AdapterToCore.fence": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "CoreToAdapter.fence": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RequestContext.request_id": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RequestContext.trace_id": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RequestContext.deadline": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RequestContext.idempotency_key": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RequestContext.delegation": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ResourceRef.kind": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ResourceRef.id": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ResourceScope.resources": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "Fence.instance_id": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "Fence.execution_generation": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "Fence.connection_generation": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "Fence.runtime_epoch": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "StreamCursor.source_service": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "StreamCursor.epoch": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "StreamCursor.scope": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "StreamCursor.sequence": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "OperationRef.owner_service": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "OperationRef.operation_id": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "OperationRef.resource": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "FailureContext.acceptance": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "FailureContext.operation": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "FailureContext.recovery": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "FailureContext.retry_after_ms": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "FailureContext.current_version": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RpcFailure.error": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RpcFailure.context": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "OperationProgress.participant": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "OperationProgress.state": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "OperationProgress.reason": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "OperationProgress.next_attempt_at": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "Operation.ref": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "Operation.version": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "Operation.state": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "Operation.execution_outcome": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "Operation.participants": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "Operation.observed_at": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "Operation.reason": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "Operation.next_attempt_at": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "Operation.stalled": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "HandoffContext.source_service": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "HandoffContext.message_id": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "HandoffContext.operation": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "HandoffContext.causation_id": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "HandoffContext.resource": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "HandoffContext.resource_version": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "HandoffContext.payload_sha256": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "HandoffContext.created_at": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "HandoffContext.valid_until": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "DeliveryAttempt.event_id": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "DeliveryAttempt.attempt_id": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "DeliveryAttempt.fence": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "DeliveryAttempt.started_at": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "DeliveryAttempt.lease_until": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "DeliveryAttempt.attempt_number": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "DeliveryReceipt.attempt": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "DeliveryReceipt.disposition": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "DeliveryReceipt.failure": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "VersionedResourceState.resource": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "VersionedResourceState.version": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "VersionedResourceState.lifecycle": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "VersionedResourceState.desired": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "VersionedResourceState.fence": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "VersionedResourceState.registered": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "VersionedResourceState.desired_config_version": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "VersionedResourceState.applied_config_version": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "VersionedResourceState.process_outcome": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "VersionedResourceState.observed_at": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "VersionedResourceState.source_service": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "SnapshotPage.page_size": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "SnapshotPage.page_token": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "SnapshotPage.snapshot_id": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "SnapshotPage.next_page_token": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "SnapshotPage.expires_at": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RegisterPluginRequest.installation_id": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RegisterPluginRequest.execution_generation": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RegisterPluginRequest.context": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RegisterPluginResponse.fence": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RegisterPluginResponse.desired_config_version": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "PluginToCore.fence": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "PluginToCore.renew_delivery": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "CoreToPlugin.fence": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "CoreToPlugin.delivery_attempt": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "CoreToPlugin.delivery_receipt": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "PluginEventAck.attempt": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "PluginConfig.config_version": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "PluginConfig.fence": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "PluginConfigAck.config_version": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "PluginConfigAck.fence": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ResourceKind.RESOURCE_KIND_UNSPECIFIED": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ResourceKind.RESOURCE_ACCOUNT": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ResourceKind.RESOURCE_ADAPTER": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ResourceKind.RESOURCE_PLUGIN_TYPE": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ResourceKind.RESOURCE_INSTALLATION": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ResourceKind.RESOURCE_INSTANCE": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ResourceKind.RESOURCE_HOST": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ResourceKind.RESOURCE_NAMESPACE": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ResourceKind.RESOURCE_TASK": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ResourceKind.RESOURCE_MODEL": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ResourceKind.RESOURCE_PRINCIPAL": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ResourceKind.RESOURCE_SESSION": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ResourceKind.RESOURCE_ACTION": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ResourceKind.RESOURCE_OPERATION": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ResourceKind.RESOURCE_CREDENTIAL": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ResourceKind.RESOURCE_ASSIGNMENT": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "OperationState.OPERATION_STATE_UNSPECIFIED": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "OperationState.OPERATION_ACCEPTED": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "OperationState.OPERATION_RUNNING": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "OperationState.OPERATION_BLOCKED": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "OperationState.OPERATION_SUCCEEDED": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "OperationState.OPERATION_FAILED": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "OperationState.OPERATION_CANCELLED": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "OperationState.OPERATION_EXPIRED": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ExecutionOutcome.EXECUTION_OUTCOME_UNSPECIFIED": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ExecutionOutcome.EXECUTION_NOT_STARTED": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ExecutionOutcome.EXECUTION_KNOWN_SUCCEEDED": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ExecutionOutcome.EXECUTION_KNOWN_FAILED": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ExecutionOutcome.EXECUTION_UNKNOWN": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "AcceptanceState.ACCEPTANCE_UNSPECIFIED": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "AcceptanceState.NOT_ACCEPTED": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "AcceptanceState.DURABLY_ACCEPTED": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "AcceptanceState.ACCEPTANCE_UNKNOWN": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RecoveryAction.RECOVERY_UNSPECIFIED": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RecoveryAction.CORRECT_INPUT": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RecoveryAction.REAUTHENTICATE": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RecoveryAction.DO_NOT_RETRY": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RecoveryAction.QUERY_SAME_INTENT": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RecoveryAction.RETRY_SAME_ID": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RecoveryAction.RESYNC_SNAPSHOT": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RecoveryAction.MANUAL_REVIEW": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "LifecycleState.LIFECYCLE_UNSPECIFIED": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "LifecycleState.LIFECYCLE_ACTIVE": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "LifecycleState.LIFECYCLE_DISABLED": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "LifecycleState.LIFECYCLE_DELETING": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "LifecycleState.LIFECYCLE_DELETED": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "LifecycleState.LIFECYCLE_RESTORING": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "LifecycleState.LIFECYCLE_PURGED": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "DesiredState.DESIRED_STATE_UNSPECIFIED": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "DesiredState.DESIRED_RUNNING": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "DesiredState.DESIRED_STOPPED": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "FixedRole.FIXED_ROLE_UNSPECIFIED": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "FixedRole.ROLE_ADMIN": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "FixedRole.ROLE_OPERATOR": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "FixedRole.ROLE_VIEWER": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "DeliveryDisposition.DELIVERY_DISPOSITION_UNSPECIFIED": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "DeliveryDisposition.DELIVERY_ACKNOWLEDGED": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "DeliveryDisposition.DELIVERY_DUPLICATE": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "DeliveryDisposition.DELIVERY_STALE": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "DeliveryDisposition.DELIVERY_RENEWED": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "DeliveryDisposition.DELIVERY_REJECTED": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "HostPackage.plugin_type_id": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "HostPackage.package_sha256": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "HostPackage.launch_profile": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "HostPackage.allowed_argument_names": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "HostRecord.host_id": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "HostRecord.version": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "HostRecord.packages": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "HostRecord.capabilities": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "HostRecord.observed_at": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ProcessSpec.instance_id": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ProcessSpec.installation_id": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ProcessSpec.execution_generation": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ProcessSpec.desired_version": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ProcessSpec.desired_state": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ProcessSpec.package_sha256": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ProcessSpec.launch_profile": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ProcessSpec.arguments": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ProcessSpec.environment_names": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ExecutionRecord.host_id": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ExecutionRecord.instance_id": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ExecutionRecord.execution_generation": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ExecutionRecord.desired_version": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ExecutionRecord.outcome": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ExecutionRecord.process_marker": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ExecutionRecord.observed_at": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ExecutionRecord.reason": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "HostCommandReceipt.command_id": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "HostCommandReceipt.persisted": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "HostCommandReceipt.execution": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "HostCommandReceipt.operation": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "HostRegisterHostRequest.context": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "HostRegisterHostRequest.host": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "HostRegisterHostResponse.host": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "HostReportInventoryRequest.context": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "HostReportInventoryRequest.host_id": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "HostReportInventoryRequest.packages": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "HostReportInventoryRequest.expected_version": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "HostReportInventoryResponse.host": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "HostApplyDesiredProcessRequest.context": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "HostApplyDesiredProcessRequest.handoff": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "HostApplyDesiredProcessRequest.command_id": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "HostApplyDesiredProcessRequest.process": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "HostApplyDesiredProcessResponse.receipt": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "HostStopExecutionRequest.context": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "HostStopExecutionRequest.handoff": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "HostStopExecutionRequest.command_id": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "HostStopExecutionRequest.host_id": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "HostStopExecutionRequest.instance_id": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "HostStopExecutionRequest.execution_generation": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "HostStopExecutionRequest.grace_ms": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "HostStopExecutionResponse.receipt": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "HostDrainHostRequest.context": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "HostDrainHostRequest.handoff": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "HostDrainHostRequest.command_id": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "HostDrainHostRequest.host_id": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "HostDrainHostRequest.grace_ms": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "HostDrainHostResponse.receipt": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "HostGetExecutionRequest.context": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "HostGetExecutionRequest.host_id": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "HostGetExecutionRequest.instance_id": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "HostGetExecutionRequest.execution_generation": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "HostGetExecutionResponse.execution": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "HostWatchExecutionsRequest.context": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "HostWatchExecutionsRequest.host_id": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "HostWatchExecutionsRequest.scope": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "HostWatchExecutionsRequest.cursor": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "HostWatchExecutionsResponse.execution": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "HostWatchExecutionsResponse.cursor": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "HostWatchExecutionsResponse.resync_required": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "HostToRuntime.context": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "HostToRuntime.registration": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "HostToRuntime.inventory": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "HostToRuntime.receipt": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "HostToRuntime.observation": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeToHost.apply": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeToHost.stop": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeToHost.drain": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeToHost.registered": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeToHost.failure": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "PrincipalRecord.principal_id": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "PrincipalRecord.binding": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "PrincipalRecord.principal_kind": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "PrincipalRecord.version": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "PrincipalRecord.state": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "PrincipalRecord.roles": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "PrincipalRecord.scope": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "SessionRecord.session_id": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "SessionRecord.principal_id": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "SessionRecord.rotation": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "SessionRecord.expires_at": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "SessionRecord.revoked": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "TokenPair.session_id": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "TokenPair.access_token": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "TokenPair.refresh_token": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "TokenPair.access_expires_at": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "TokenPair.refresh_expires_at": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "TokenPair.rotation": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "CredentialDelivery.credential_id": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "CredentialDelivery.version": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "CredentialDelivery.new_secret": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "CredentialDelivery.delivery_receipt_id": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "CredentialDelivery.expires_at": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "AssignmentRecord.assignment_id": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "AssignmentRecord.principal_id": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "AssignmentRecord.role": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "AssignmentRecord.permissions": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "AssignmentRecord.scope": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "AssignmentRecord.version": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "DelegationProof.proof": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "DelegationProof.audience": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "DelegationProof.expires_at": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "DelegationProof.business_hops": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "AuthorizationDecision.allowed": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "AuthorizationDecision.authorization_version": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "AuthorizationDecision.checked_at": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "AuthorizationDecision.denial": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "InvalidationRecord.cursor": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "InvalidationRecord.principal_id": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "InvalidationRecord.authorization_version": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "InvalidationRecord.scope": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "InvalidationRecord.resync_required": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "AuthorizationSnapshot.cursor": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "AuthorizationSnapshot.assignments": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "AuthorizationSnapshot.authorization_version": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "VerificationKey.key_id": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "VerificationKey.ed25519_public_key": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "VerificationKey.version": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "VerificationKey.valid_until": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "IdentityLoginRequest.context": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "IdentityLoginRequest.username": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "IdentityLoginRequest.password": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "IdentityLoginResponse.tokens": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "IdentityRefreshSessionRequest.context": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "IdentityRefreshSessionRequest.refresh_token": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "IdentityRefreshSessionResponse.tokens": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "IdentityValidateSessionRequest.context": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "IdentityValidateSessionRequest.access_token": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "IdentityValidateSessionResponse.principal": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "IdentityValidateSessionResponse.session": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "IdentityGetPrincipalRequest.context": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "IdentityGetPrincipalRequest.access_token": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "IdentityGetPrincipalResponse.principal": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "IdentityListSessionsRequest.context": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "IdentityListSessionsRequest.principal_id": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "IdentityListSessionsRequest.page": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "IdentityListSessionsResponse.sessions": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "IdentityListSessionsResponse.page": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "IdentityRevokeSessionRequest.context": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "IdentityRevokeSessionRequest.session_id": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "IdentityRevokeSessionResponse.session": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "IdentityRegisterPrincipalRequest.context": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "IdentityRegisterPrincipalRequest.principal_kind": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "IdentityRegisterPrincipalRequest.binding": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "IdentityRegisterPrincipalRequest.allowed_services": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "IdentityRegisterPrincipalResponse.principal": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "IdentityRotateCredentialRequest.context": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "IdentityRotateCredentialRequest.credential_id": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "IdentityRotateCredentialRequest.expected_version": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "IdentityRotateCredentialResponse.delivery": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "IdentityRevokeCredentialRequest.context": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "IdentityRevokeCredentialRequest.credential_id": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "IdentityRevokeCredentialRequest.expected_version": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "IdentityRevokeCredentialResponse.version": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "IdentityGetPrincipalStatusRequest.context": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "IdentityGetPrincipalStatusRequest.principal_id": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "IdentityGetPrincipalStatusResponse.principal": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "IdentityIssueDelegationRequest.context": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "IdentityIssueDelegationRequest.subject_proof": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "IdentityIssueDelegationRequest.audience": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "IdentityIssueDelegationRequest.scope": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "IdentityIssueDelegationRequest.permissions": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "IdentityIssueDelegationRequest.client_certificate_sha256": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "IdentityIssueDelegationResponse.delegation": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "IdentityExchangeDelegationRequest.context": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "IdentityExchangeDelegationRequest.parent_proof": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "IdentityExchangeDelegationRequest.audience": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "IdentityExchangeDelegationRequest.scope": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "IdentityExchangeDelegationRequest.permissions": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "IdentityExchangeDelegationRequest.client_certificate_sha256": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "IdentityExchangeDelegationResponse.delegation": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "IdentityCheckAuthorizationRequest.context": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "IdentityCheckAuthorizationRequest.subject_proof": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "IdentityCheckAuthorizationRequest.full_method": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "IdentityCheckAuthorizationRequest.scope": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "IdentityCheckAuthorizationRequest.known_authorization_version": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "IdentityCheckAuthorizationResponse.decision": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "IdentityListAssignmentsRequest.context": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "IdentityListAssignmentsRequest.principal_id": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "IdentityListAssignmentsRequest.scope": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "IdentityListAssignmentsRequest.page": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "IdentityListAssignmentsResponse.assignments": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "IdentityListAssignmentsResponse.page": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "IdentitySetAssignmentRequest.context": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "IdentitySetAssignmentRequest.assignment": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "IdentitySetAssignmentRequest.expected_version": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "IdentitySetAssignmentResponse.assignment": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "IdentityRevokeAssignmentRequest.context": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "IdentityRevokeAssignmentRequest.assignment_id": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "IdentityRevokeAssignmentRequest.expected_version": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "IdentityRevokeAssignmentResponse.version": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "IdentityWatchInvalidationsRequest.context": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "IdentityWatchInvalidationsRequest.scope": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "IdentityWatchInvalidationsRequest.cursor": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "IdentityWatchInvalidationsResponse.invalidation": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "IdentityGetAuthorizationSnapshotRequest.context": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "IdentityGetAuthorizationSnapshotRequest.scope": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "IdentityGetAuthorizationSnapshotRequest.after": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "IdentityGetAuthorizationSnapshotResponse.snapshot": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "IdentityGetVerificationKeysRequest.context": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "IdentityGetVerificationKeysRequest.known_key_version": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "IdentityGetVerificationKeysResponse.keys": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "IdentityGetVerificationKeysResponse.version": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ModelMetadata.model_id": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ModelMetadata.alias": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ModelMetadata.config_version": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ModelMetadata.state": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ModelMetadata.provider_kind": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ModelConfiguration.model_id": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ModelConfiguration.alias": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ModelConfiguration.provider_kind": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ModelConfiguration.endpoint": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ModelConfiguration.provider_model": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ModelConfiguration.timeout_ms": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ModelConfiguration.version": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ModelCallRecord.logical_call_id": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ModelCallRecord.owner_instance_id": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ModelCallRecord.model_id": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ModelCallRecord.config_version": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ModelCallRecord.state": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ModelCallRecord.execution_outcome": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ModelCallRecord.input_tokens": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ModelCallRecord.output_tokens": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ModelCallRecord.observed_at": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ModelCallRecord.reason": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ModelGetModelMetadataRequest.context": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ModelGetModelMetadataRequest.model_id": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ModelGetModelMetadataRequest.scope": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ModelGetModelMetadataResponse.model": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ModelListModelMetadataRequest.context": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ModelListModelMetadataRequest.scope": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ModelListModelMetadataRequest.page": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ModelListModelMetadataResponse.models": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ModelListModelMetadataResponse.page": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ModelUpdateModelRequest.context": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ModelUpdateModelRequest.config": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ModelUpdateModelRequest.expected_version": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ModelUpdateModelResponse.model": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ModelUpdateModelResponse.operation": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ModelRotateProviderSecretRequest.context": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ModelRotateProviderSecretRequest.model_id": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ModelRotateProviderSecretRequest.new_secret": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ModelRotateProviderSecretRequest.expected_version": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ModelRotateProviderSecretResponse.version": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ModelRotateProviderSecretResponse.operation": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ModelGatewayChatRequest.context": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ModelGatewayChatRequest.logical_call_id": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ModelGatewayChatRequest.model_id": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ModelGatewayChatRequest.messages": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ModelGatewayChatResponse.result": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ModelGatewayChatResponse.call": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ModelGetCallStatusRequest.context": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ModelGetCallStatusRequest.logical_call_id": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ModelGetCallStatusRequest.scope": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ModelGetCallStatusResponse.call": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "AccountRecord.account_id": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "AccountRecord.platform": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "AccountRecord.platform_account_id": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "AccountRecord.display_name": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "AccountRecord.version": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "AccountRecord.state": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "AdapterBinding.account_id": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "AdapterBinding.adapter_instance_id": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "AdapterBinding.version": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "InstallationRecord.installation_id": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "InstallationRecord.plugin_type_id": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "InstallationRecord.manifest": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "InstallationRecord.version": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "InstallationRecord.state": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "InstanceRecord.instance_id": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "InstanceRecord.installation_id": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "InstanceRecord.host_id": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "InstanceRecord.externally_managed": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "InstanceRecord.state": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "NamespaceScope.instance_private": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "NamespaceScope.installation_shared_id": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "StorageEntry.key": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "StorageEntry.value": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "StorageEntry.version": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "StorageEntry.expires_at": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "StorageCondition.absent": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "StorageCondition.version": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "SharedMember.instance_id": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "SharedMember.can_read": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "SharedMember.can_write": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ActionMetadata.action_id": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ActionMetadata.owner_instance_id": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ActionMetadata.account_id": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ActionMetadata.status": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ActionMetadata.execution_outcome": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ActionMetadata.updated_at": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "DeadLetter.delivery_id": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "DeadLetter.last_attempt": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "DeadLetter.reason": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "TimerAcceptance.occurrence_id": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "TimerAcceptance.event_id": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "TimerAcceptance.duplicate": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "TimerAcceptance.persisted_at": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ActionPolicy.account_id": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ActionPolicy.mute_enabled": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ActionPolicy.kick_enabled": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ActionPolicy.allowed_group_ids": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ActionPolicy.mute_daily_budget": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ActionPolicy.kick_daily_budget": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ActionPolicy.version": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeCreateAccountRequest.context": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeCreateAccountRequest.platform": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeCreateAccountRequest.platform_account_id": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeCreateAccountRequest.display_name": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeCreateAccountResponse.account": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeUpdateAccountRequest.context": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeUpdateAccountRequest.account_id": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeUpdateAccountRequest.display_name": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeUpdateAccountRequest.expected_version": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeUpdateAccountResponse.account": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeDisableAccountRequest.context": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeDisableAccountRequest.account_id": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeDisableAccountRequest.expected_version": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeDisableAccountResponse.account": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeDisableAccountResponse.operation": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeBindAdapterRequest.context": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeBindAdapterRequest.binding": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeBindAdapterRequest.expected_version": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeBindAdapterResponse.binding": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeBindAdapterResponse.operation": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeBindAdapterResponse.bootstrap_credential": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeUnbindAdapterRequest.context": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeUnbindAdapterRequest.binding": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeUnbindAdapterRequest.expected_version": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeUnbindAdapterResponse.binding": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeUnbindAdapterResponse.operation": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeRegisterAdapterRequest.context": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeRegisterAdapterRequest.registration": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeRegisterAdapterResponse.registration": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeHeartbeatRequest.context": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeHeartbeatRequest.fence": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeHeartbeatResponse.fence": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeHeartbeatResponse.received_at": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimePublishEventRequest.context": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimePublishEventRequest.fence": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimePublishEventRequest.event": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimePublishEventResponse.receipt": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeValidateManifestRequest.context": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeValidateManifestRequest.manifest": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeValidateManifestResponse.valid": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeValidateManifestResponse.violations": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeCreateInstallationRequest.context": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeCreateInstallationRequest.plugin_type_id": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeCreateInstallationRequest.manifest": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeCreateInstallationResponse.installation": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeCreateInstanceRequest.context": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeCreateInstanceRequest.installation_id": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeCreateInstanceRequest.host_id": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeCreateInstanceRequest.externally_managed": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeCreateInstanceResponse.instance": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeCreateInstanceResponse.bootstrap_credential": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeSetDesiredStateRequest.context": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeSetDesiredStateRequest.instance_id": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeSetDesiredStateRequest.desired_state": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeSetDesiredStateRequest.expected_version": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeSetDesiredStateResponse.instance": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeSetDesiredStateResponse.operation": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeUpdateConfigRequest.context": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeUpdateConfigRequest.resource": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeUpdateConfigRequest.config": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeUpdateConfigRequest.expected_version": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeUpdateConfigResponse.state": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeUpdateConfigResponse.operation": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeRegisterPluginRequest.context": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeRegisterPluginRequest.registration": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeRegisterPluginResponse.registration": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeHeartbeatPluginRequest.context": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeHeartbeatPluginRequest.fence": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeHeartbeatPluginResponse.fence": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeHeartbeatPluginResponse.received_at": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeClaimEventRequest.context": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeClaimEventRequest.fence": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeClaimEventResponse.attempt": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeDeliverEventRequest.context": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeDeliverEventRequest.attempt": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeDeliverEventResponse.attempt": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeDeliverEventResponse.event": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeAckDeliveryRequest.context": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeAckDeliveryRequest.attempt": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeAckDeliveryRequest.accepted": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeAckDeliveryRequest.error": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeAckDeliveryResponse.receipt": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeRenewDeliveryRequest.context": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeRenewDeliveryRequest.attempt": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeRenewDeliveryResponse.receipt": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeSubmitActionRequest.context": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeSubmitActionRequest.fence": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeSubmitActionRequest.action": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeSubmitActionResponse.result": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeSubmitActionResponse.execution_outcome": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeQueryActionRequest.context": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeQueryActionRequest.fence": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeQueryActionRequest.action_id": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeQueryActionRequest.idempotency_key": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeQueryActionResponse.result": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeQueryActionResponse.execution_outcome": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeCancelActionRequest.context": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeCancelActionRequest.fence": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeCancelActionRequest.action_id": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeCancelActionResponse.result": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeCancelActionResponse.execution_outcome": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeListActionMetadataRequest.context": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeListActionMetadataRequest.account_scope": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeListActionMetadataRequest.page": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeListActionMetadataResponse.actions": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeListActionMetadataResponse.page": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeInspectActionMetadataRequest.context": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeInspectActionMetadataRequest.account_scope": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeInspectActionMetadataRequest.action_id": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeInspectActionMetadataResponse.action": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeGetStorageRequest.context": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeGetStorageRequest.fence": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeGetStorageRequest.scope": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeGetStorageRequest.key": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeGetStorageResponse.entry": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeSetStorageRequest.context": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeSetStorageRequest.fence": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeSetStorageRequest.scope": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeSetStorageRequest.key": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeSetStorageRequest.value": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeSetStorageRequest.expires_at": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeSetStorageResponse.entry": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeDeleteStorageRequest.context": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeDeleteStorageRequest.fence": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeDeleteStorageRequest.scope": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeDeleteStorageRequest.key": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeDeleteStorageRequest.condition": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeDeleteStorageResponse.deleted": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeDeleteStorageResponse.version": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeCompareAndSetStorageRequest.context": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeCompareAndSetStorageRequest.fence": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeCompareAndSetStorageRequest.scope": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeCompareAndSetStorageRequest.key": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeCompareAndSetStorageRequest.value": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeCompareAndSetStorageRequest.condition": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeCompareAndSetStorageRequest.expires_at": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeCompareAndSetStorageResponse.entry": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeSetSharedMembersRequest.context": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeSetSharedMembersRequest.namespace_id": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeSetSharedMembersRequest.installation_id": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeSetSharedMembersRequest.members": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeSetSharedMembersRequest.expected_version": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeSetSharedMembersResponse.version": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeSetSharedMembersResponse.operation": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeDisableSharedNamespaceRequest.context": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeDisableSharedNamespaceRequest.namespace_id": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeDisableSharedNamespaceRequest.expected_version": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeDisableSharedNamespaceResponse.version": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeDisableSharedNamespaceResponse.operation": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeAcceptTimerTriggerRequest.context": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeAcceptTimerTriggerRequest.handoff": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeAcceptTimerTriggerRequest.occurrence_id": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeAcceptTimerTriggerRequest.task_id": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeAcceptTimerTriggerRequest.owner_instance_id": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeAcceptTimerTriggerRequest.schedule_version": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeAcceptTimerTriggerRequest.target": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeAcceptTimerTriggerRequest.payload": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeAcceptTimerTriggerResponse.receipt": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeGetResourceStateRequest.context": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeGetResourceStateRequest.resource": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeGetResourceStateResponse.state": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeGetOperationRequest.context": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeGetOperationRequest.operation": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeGetOperationResponse.operation": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeListDeadLettersRequest.context": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeListDeadLettersRequest.scope": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeListDeadLettersRequest.page": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeListDeadLettersResponse.deliveries": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeListDeadLettersResponse.page": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeReplayDeliveryRequest.context": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeReplayDeliveryRequest.delivery_id": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeReplayDeliveryRequest.target_instance_id": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeReplayDeliveryRequest.expected_version": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeReplayDeliveryResponse.operation": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeBeginDeleteRequest.context": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeBeginDeleteRequest.resource": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeBeginDeleteRequest.expected_version": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeBeginDeleteResponse.operation": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeRestoreResourceRequest.context": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeRestoreResourceRequest.resource": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeRestoreResourceRequest.expected_version": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeRestoreResourceResponse.operation": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "TaskRecord.task_id": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "TaskRecord.owner_instance_id": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "TaskRecord.installation_id": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "TaskRecord.target": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "TaskRecord.payload": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "TaskRecord.run_at": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "TaskRecord.state": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "TaskRecord.version": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "TaskRecord.occurrence_id": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "OccurrenceRecord.occurrence_id": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "OccurrenceRecord.task_id": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "OccurrenceRecord.state": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "OccurrenceRecord.handoff": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "OccurrenceRecord.accepted_event_id": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "OccurrenceRecord.acknowledged_at": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "SchedulerCreateTaskRequest.context": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "SchedulerCreateTaskRequest.task_id": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "SchedulerCreateTaskRequest.target": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "SchedulerCreateTaskRequest.payload": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "SchedulerCreateTaskRequest.run_at": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "SchedulerCreateTaskRequest.local_time": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "SchedulerCreateTaskResponse.task": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "SchedulerCancelTaskRequest.context": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "SchedulerCancelTaskRequest.task_id": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "SchedulerCancelTaskRequest.scope": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "SchedulerCancelTaskResponse.task": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "SchedulerGetTaskRequest.context": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "SchedulerGetTaskRequest.task_id": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "SchedulerGetTaskRequest.scope": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "SchedulerGetTaskResponse.task": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "SchedulerListTasksRequest.context": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "SchedulerListTasksRequest.scope": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "SchedulerListTasksRequest.page": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "SchedulerListTasksResponse.tasks": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "SchedulerListTasksResponse.page": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "SchedulerGetOccurrenceRequest.context": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "SchedulerGetOccurrenceRequest.occurrence_id": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "SchedulerGetOccurrenceRequest.scope": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "SchedulerGetOccurrenceResponse.occurrence": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "SchedulerGetOperationRequest.context": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "SchedulerGetOperationRequest.operation": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "SchedulerGetOperationResponse.operation": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "Permission.PERMISSION_UNSPECIFIED": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "Permission.PERMISSION_ACCOUNT_MANAGE": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "Permission.PERMISSION_ACTION_EXECUTE": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "Permission.PERMISSION_ACTION_INSPECT": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "Permission.PERMISSION_ADAPTER_CONNECT": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "Permission.PERMISSION_DELIVERY_MANAGE": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "Permission.PERMISSION_DELIVERY_PROCESS": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "Permission.PERMISSION_HOST_EXECUTE": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "Permission.PERMISSION_HOST_READ": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "Permission.PERMISSION_HOST_REGISTER": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "Permission.PERMISSION_IDENTITY_ASSIGNMENT_MANAGE": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "Permission.PERMISSION_IDENTITY_ASSIGNMENT_READ": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "Permission.PERMISSION_IDENTITY_AUTHORIZATION_CHECK": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "Permission.PERMISSION_IDENTITY_DELEGATION_ISSUE": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "Permission.PERMISSION_IDENTITY_INVALIDATION_READ": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "Permission.PERMISSION_IDENTITY_KEYS_READ": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "Permission.PERMISSION_IDENTITY_PRINCIPAL_MANAGE": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "Permission.PERMISSION_IDENTITY_PRINCIPAL_READ": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "Permission.PERMISSION_IDENTITY_SESSION_CREATE": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "Permission.PERMISSION_IDENTITY_SESSION_READ": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "Permission.PERMISSION_IDENTITY_SESSION_REVOKE": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "Permission.PERMISSION_MODEL_CALL_INSPECT": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "Permission.PERMISSION_MODEL_CHAT": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "Permission.PERMISSION_MODEL_MANAGE": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "Permission.PERMISSION_MODEL_READ": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "Permission.PERMISSION_NAMESPACE_MANAGE": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "Permission.PERMISSION_PLUGIN_CONNECT": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "Permission.PERMISSION_PLUGIN_MANAGE": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "Permission.PERMISSION_RESOURCE_MANAGE": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "Permission.PERMISSION_RESOURCE_READ": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "Permission.PERMISSION_STORAGE_NAMESPACE": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "Permission.PERMISSION_TASK_READ": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "Permission.PERMISSION_TASK_SCHEDULE": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "Permission.PERMISSION_TIMER_ACCEPT": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeGetActionPolicyRequest.context": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeGetActionPolicyRequest.account_id": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeGetActionPolicyResponse.policy": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeUpdateActionPolicyRequest.context": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeUpdateActionPolicyRequest.policy": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeUpdateActionPolicyRequest.expected_version": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeUpdateActionPolicyResponse.policy": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "Permission.PERMISSION_ACCOUNT_POLICY_MANAGE": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "Permission.PERMISSION_ACCOUNT_POLICY_READ": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "operations.createAccount": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "operations.updateAccount": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "operations.disableAccount": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "operations.bindAdapter": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "operations.unbindAdapter": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "operations.createInstallation": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "operations.createInstance": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "operations.setInstanceDesiredState": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "operations.updateInstanceConfig": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "operations.getResourceState": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "operations.beginDeleteResource": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "operations.restoreResource": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "operations.getOperation": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "operations.listActionMetadata": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "operations.getActionPolicy": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "operations.updateActionPolicy": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "operations.setSharedMembers": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "operations.disableSharedNamespace": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "operations.listDeadLetters": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "operations.replayDelivery": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "operations.getTask": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "operations.cancelTask": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "operations.getOccurrence": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "operations.getModelMetadata": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "operations.updateModel": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "operations.rotateProviderSecret": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "operations.listAssignments": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "operations.setAssignment": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "operations.revokeAssignment": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "operations.registerPrincipal": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "operations.getPrincipalStatus": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "operations.rotateCredential": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "operations.revokeCredential": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "channels.operations": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "events.operation.updated": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ModelGetOperationRequest.context": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "ModelGetOperationRequest.operation": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "ModelGetOperationResponse.operation": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "ModelGetModelConfigurationRequest.context": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "ModelGetModelConfigurationRequest.model_id": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "ModelGetModelConfigurationRequest.scope": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "ModelGetModelConfigurationResponse.config": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "ModelGetModelConfigurationResponse.secret_configured": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "ModelGetModelConfigurationResponse.observed_at": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "operations.getModelConfiguration": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "SnapshotInfo.snapshot_id": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "SnapshotInfo.observed_at": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "SnapshotInfo.expires_at": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "SnapshotInfo.authorization_version": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "SnapshotInfo.owner_service": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "SnapshotInfo.page": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "AdapterRegistrationMetadata.implementation": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "AdapterRegistrationMetadata.implementation_version": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "AdapterRegistrationMetadata.protocol_version": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "AdapterRegistrationMetadata.declared_capabilities": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "AdapterRegistrationMetadata.effective_capabilities": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "AdapterRecord.resource": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "AdapterRecord.version": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "AdapterRecord.last_registration": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "AdapterRecord.bindings": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "AdapterRecord.online": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "AdapterRecord.last_registered_at": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "AdapterRecord.observed_at": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "AdapterRecord.current_fence": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "AdapterRecord.lifecycle": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "HostRegistrationRecord.host": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "HostRegistrationRecord.lifecycle": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "HostRegistrationRecord.online": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "HostRegistrationRecord.last_heartbeat_at": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "HostRegistrationRecord.observed_at": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "InstanceConfiguration.instance": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "InstanceConfiguration.desired_version": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "InstanceConfiguration.values": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "InstanceConfiguration.applied_version": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "InstanceConfiguration.apply_state": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "InstanceConfiguration.delivery_id": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "InstanceConfiguration.fence": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "InstanceConfiguration.error": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "InstanceConfiguration.observed_at": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "RuntimeGetAccountRequest.context": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "RuntimeGetAccountRequest.resource": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "RuntimeGetAccountResponse.account": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "RuntimeGetAccountResponse.observed_at": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "RuntimeListAccountsRequest.context": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "RuntimeListAccountsRequest.catalog": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "RuntimeListAccountsRequest.page": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "RuntimeListAccountsResponse.accounts": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "RuntimeListAccountsResponse.snapshot": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "RuntimeGetInstallationRequest.context": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "RuntimeGetInstallationRequest.resource": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "RuntimeGetInstallationResponse.installation": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "RuntimeGetInstallationResponse.observed_at": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "RuntimeListInstallationsRequest.context": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "RuntimeListInstallationsRequest.catalog": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "RuntimeListInstallationsRequest.page": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "RuntimeListInstallationsResponse.installations": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "RuntimeListInstallationsResponse.snapshot": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "RuntimeGetInstanceRequest.context": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "RuntimeGetInstanceRequest.resource": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "RuntimeGetInstanceResponse.instance": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "RuntimeGetInstanceResponse.observed_at": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "RuntimeListInstancesRequest.context": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "RuntimeListInstancesRequest.catalog": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "RuntimeListInstancesRequest.page": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "RuntimeListInstancesResponse.instances": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "RuntimeListInstancesResponse.snapshot": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "RuntimeGetAdapterRequest.context": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "RuntimeGetAdapterRequest.resource": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "RuntimeGetAdapterResponse.adapter": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "RuntimeGetAdapterResponse.observed_at": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "RuntimeListAdaptersRequest.context": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "RuntimeListAdaptersRequest.catalog": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "RuntimeListAdaptersRequest.page": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "RuntimeListAdaptersResponse.adapters": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "RuntimeListAdaptersResponse.snapshot": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "RuntimeGetHostRequest.context": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "RuntimeGetHostRequest.resource": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "RuntimeGetHostResponse.host": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "RuntimeGetHostResponse.observed_at": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "RuntimeListHostsRequest.context": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "RuntimeListHostsRequest.catalog": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "RuntimeListHostsRequest.page": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "RuntimeListHostsResponse.hosts": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "RuntimeListHostsResponse.snapshot": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "RuntimeGetInstanceConfigRequest.context": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "RuntimeGetInstanceConfigRequest.resource": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "RuntimeGetInstanceConfigResponse.config": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "ResourceKind.RESOURCE_CATALOG": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "Permission.PERMISSION_ACCOUNT_READ": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "Permission.PERMISSION_PLUGIN_READ": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "Permission.PERMISSION_ADAPTER_READ": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "Permission.PERMISSION_PLUGIN_CONFIG_READ": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "ConfigApplyState.CONFIG_APPLY_STATE_UNSPECIFIED": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "ConfigApplyState.CONFIG_APPLY_PENDING": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "ConfigApplyState.CONFIG_APPLY_APPLIED": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "ConfigApplyState.CONFIG_APPLY_REJECTED": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "ConfigApplyState.CONFIG_APPLY_UNAVAILABLE": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "operations.getAccount": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "operations.listAccounts": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "operations.getInstallation": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "operations.listInstallations": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "operations.getInstance": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "operations.listInstances": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "operations.getAdapterInstance": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "operations.listAdapterInstances": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "operations.getHost": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "operations.listHosts": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "operations.getInstanceConfig": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "PrincipalRecord.display_permissions": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "SessionRecord.created_at": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "IdentityLoginResponse.checked_at": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "IdentityRefreshSessionResponse.checked_at": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "IdentityValidateSessionResponse.assignments": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "IdentityValidateSessionResponse.authorization_version": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "IdentityValidateSessionResponse.checked_at": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "IdentityGetPrincipalResponse.assignments": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "IdentityGetPrincipalResponse.authorization_version": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "IdentityGetPrincipalResponse.checked_at": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "IdentityListSessionsResponse.checked_at": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "IdentityRevokeSessionResponse.checked_at": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "IdentityRegisterPrincipalResponse.initial_credential": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "CredentialStatus.credential_id": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "CredentialStatus.principal_id": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "CredentialStatus.binding": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "CredentialStatus.version": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "CredentialStatus.state": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "CredentialStatus.created_at": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "CredentialStatus.expires_at": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "CredentialStatus.checked_at": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "IdentityGetCredentialStatusRequest.context": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "IdentityGetCredentialStatusRequest.credential_id": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "IdentityGetCredentialStatusResponse.credential": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "CredentialState.CREDENTIAL_STATE_UNSPECIFIED": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "CredentialState.CREDENTIAL_PENDING": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "CredentialState.CREDENTIAL_ACTIVE": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "CredentialState.CREDENTIAL_REVOKED": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "CredentialState.CREDENTIAL_EXPIRED": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "Permission.PERMISSION_MESSAGE_READ": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "operations.getCredentialStatus": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "AssignmentSpec.principal_id": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "AssignmentSpec.role": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "AssignmentSpec.permissions": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "AssignmentSpec.scope": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "IdentitySetAssignmentRequest.assignment_id": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "RegisterAdapterResponse.authorization": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "AdapterToCore.connection_proof": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "AdapterToCore.refresh_authorization": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "CoreToAdapter.authorization_result": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "ConnectionAuthorization.fence": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "ConnectionAuthorization.proof": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "ConnectionAuthorization.issued_at": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "ConnectionAuthorization.expires_at": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "ConnectionAuthorization.refresh_credential": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "ConnectionAuthorization.refresh_generation": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "ConnectionAuthorization.principal_id": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "ConnectionAuthorization.credential_version": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "ConnectionAuthorization.authorization_version": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "RefreshConnectionAuthorization.request_id": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "RefreshConnectionAuthorization.fence": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "RefreshConnectionAuthorization.proof": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "RefreshConnectionAuthorization.refresh_credential": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "RefreshConnectionAuthorization.refresh_generation": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "ConnectionAuthorizationResult.request_id": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "ConnectionAuthorizationResult.authorization": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "ConnectionAuthorizationResult.error": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "RegisterPluginResponse.authorization": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "PluginToCore.connection_proof": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "PluginToCore.refresh_authorization": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "CoreToPlugin.authorization_result": [
-      "reports/modules/architecture-p03-contract-evidence.md"
+      "docs/architecture.md"
     ],
     "semantic.bridge.connection_authorization": [
       "core/src/runtime/platform/service_rpc.cpp"
@@ -5269,181 +5269,181 @@
       "core/src/application/target/runtime_application.cpp"
     ],
     "ActionExecutionEvidence": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ActionReceipt": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeQueryActionResultRequest": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeQueryActionResultResponse": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ActionEnvelope.dispatch_attempt_id": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ActionEnvelope.dispatch_sequence": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ActionResult.execution_outcome": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ActionResult.dispatch_attempt_id": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "AdapterToCore.action_evidence": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "CoreToAdapter.action_receipt": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ActionExecutionEvidence.action_id": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ActionExecutionEvidence.dispatch_attempt_id": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ActionExecutionEvidence.execution_outcome": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ActionExecutionEvidence.observed_at": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ActionExecutionEvidence.last_error": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ActionExecutionEvidence.platform_reference": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ActionReceipt.action_id": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ActionReceipt.dispatch_attempt_id": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ActionReceipt.disposition": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ActionReceipt.error": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ActionReceipt.result": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ActionMetadata.kind": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ActionMetadata.target_account_id": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ActionMetadata.target_conversation_id": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ActionMetadata.created_at": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ActionMetadata.deadline": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ActionMetadata.retain_until": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ActionMetadata.idempotency_key": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ActionMetadata.platform_message_id": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ActionMetadata.dispatch_attempt_id": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ActionMetadata.error": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeListActionMetadataRequest.status": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeListActionMetadataRequest.kind": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeQueryActionResultRequest.context": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeQueryActionResultRequest.account_scope": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeQueryActionResultRequest.action_id": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeQueryActionResultRequest.idempotency_key": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeQueryActionResultRequest.owner_instance_id": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeQueryActionResultResponse.result": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeQueryActionResultResponse.execution_outcome": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "RuntimeQueryActionResultResponse.metadata": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ActionKind.ACTION_KIND_UNSPECIFIED": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ActionKind.ACTION_KIND_SEND_MESSAGE": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ActionKind.ACTION_KIND_REACT_MESSAGE": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ActionKind.ACTION_KIND_DELETE_MESSAGE": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ActionKind.ACTION_KIND_MUTE_MEMBER": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ActionKind.ACTION_KIND_KICK_MEMBER": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ActionKind.ACTION_KIND_APPROVE_REQUEST": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ActionReceiptDisposition.ACTION_RECEIPT_DISPOSITION_UNSPECIFIED": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ActionReceiptDisposition.ACTION_RECEIPT_RECORDED": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ActionReceiptDisposition.ACTION_RECEIPT_DUPLICATE": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ActionReceiptDisposition.ACTION_RECEIPT_EVIDENCE_ONLY": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "ActionReceiptDisposition.ACTION_RECEIPT_CONFLICT": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "Permission.PERMISSION_MESSAGE_SEND": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "Permission.PERMISSION_MESSAGE_REACT": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "Permission.PERMISSION_MESSAGE_DELETE": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "Permission.PERMISSION_MEMBER_MUTE": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "Permission.PERMISSION_MEMBER_KICK": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "Permission.PERMISSION_REQUEST_APPROVE": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "semantic.action.result_execution_outcome": [
       "core/src/application/target/runtime_application.cpp"
@@ -5467,10 +5467,10 @@
       "core/src/application/target/runtime_application.cpp"
     ],
     "IdentityWatchInvalidationsResponse.resync_required": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "IdentityWatchInvalidationsResponse.cursor": [
-      "reports/modules/architecture-contracts.md"
+      "docs/architecture.md"
     ],
     "HostBridge.Connect": [
       "core/src/application/target/host_application.cpp"
@@ -5902,11 +5902,11 @@
       "core/src/application/target/model_application.cpp"
     ],
     "Permission.PERMISSION_LOG_READ": [
-      "doc/06-control-api.md",
+      "docs/modules/control-api.md",
       "api/openapi.yaml"
     ],
     "Permission.PERMISSION_AUDIT_READ": [
-      "doc/06-control-api.md",
+      "docs/modules/control-api.md",
       "api/openapi.yaml"
     ],
     "IdentityPrincipalSummary.principal_id": [
@@ -5963,23 +5963,23 @@
     "Permission.PERMISSION_HEALTH_READ": [
       "proto/kiarabot/v1/policy.proto",
       "api/openapi.yaml",
-      "doc/06-control-api.md",
-      "doc/01-contracts.md"
+      "docs/modules/control-api.md",
+      "docs/architecture.md"
     ],
     "operations.setInstancePluginState": [
       "api/openapi.yaml",
-      "doc/06-control-api.md",
-      "doc/01-contracts.md"
+      "docs/modules/control-api.md",
+      "docs/architecture.md"
     ],
     "operations.getInstanceConfiguration": [
       "api/openapi.yaml",
-      "doc/06-control-api.md",
-      "doc/01-contracts.md"
+      "docs/modules/control-api.md",
+      "docs/architecture.md"
     ],
     "operations.updateInstanceConfiguration": [
       "api/openapi.yaml",
-      "doc/06-control-api.md",
-      "doc/01-contracts.md"
+      "docs/modules/control-api.md",
+      "docs/architecture.md"
     ],
     "operations.disableModel": [
       "api/openapi.yaml"
@@ -6592,24 +6592,24 @@
     ],
     "semantic.host.request_operation_classification": [
       "proto/kiarabot/v1/plugins.proto",
-      "doc/01-contracts.md"
+      "docs/architecture.md"
     ],
     "semantic.host.maintenance_operation": [
       "proto/kiarabot/v1/host.proto",
-      "doc/01-runtime-semantics.md"
+      "docs/architecture.md"
     ],
     "semantic.host.runtime_admission_gate": [
       "proto/kiarabot/v1/runtime.proto",
-      "doc/01-runtime-semantics.md"
+      "docs/architecture.md"
     ],
     "semantic.bootstrap.controlled_delivery": [
       "proto/kiarabot/v1/runtime.proto",
       "api/openapi.yaml",
-      "doc/01-runtime-semantics.md"
+      "docs/architecture.md"
     ],
     "semantic.bootstrap.reissue_version": [
       "proto/kiarabot/v1/runtime.proto",
-      "doc/01-runtime-semantics.md"
+      "docs/architecture.md"
     ],
     "semantic.operations.change_journal": [
       "proto/kiarabot/v1/observations.proto",
@@ -6624,32 +6624,32 @@
       "proto/kiarabot/v1/plugins.proto"
     ],
     "IdentityCheckHostGateAuthorizationRequest": [
-      "doc/01-contracts.md"
+      "docs/architecture.md"
     ],
     "IdentityCheckHostGateAuthorizationRequest.context": [
-      "doc/01-contracts.md"
+      "docs/architecture.md"
     ],
     "IdentityCheckHostGateAuthorizationRequest.host": [
-      "doc/01-contracts.md"
+      "docs/architecture.md"
     ],
     "IdentityCheckHostGateAuthorizationRequest.host_certificate_sha256": [
-      "doc/01-contracts.md"
+      "docs/architecture.md"
     ],
     "IdentityCheckHostGateAuthorizationResponse": [
-      "doc/01-contracts.md"
+      "docs/architecture.md"
     ],
     "IdentityCheckHostGateAuthorizationResponse.decision": [
-      "doc/01-contracts.md"
+      "docs/architecture.md"
     ],
     "IdentityCheckHostGateAuthorizationResponse.host_credential_version": [
-      "doc/01-contracts.md"
+      "docs/architecture.md"
     ],
     "IdentityCheckHostGateAuthorizationResponse.host_principal_version": [
-      "doc/01-contracts.md"
+      "docs/architecture.md"
     ],
     "semantic.host.gate_authorization": [
-      "doc/01-contracts.md",
-      "doc/02-core.md"
+      "docs/architecture.md",
+      "docs/modules/core-runtime.md"
     ],
     "ObservationChangesRequest": [
       "proto/kiarabot/v1/observations.proto"
@@ -14942,13 +14942,13 @@
           "core/include/kiarabot/core/runtime/platform/host_request_shape.hpp",
           "core/src/runtime/platform/runtime_bridge.cpp",
           "core/tests/platform/model_bridge_test.cpp",
-          "reports/modules/architecture-host-bootstrap-slices.md"
+          "docs/architecture.md"
         ],
         "semantic_rules:semantic.host.unknown_operation_error": [
           "core/include/kiarabot/core/runtime/platform/host_request_shape.hpp",
           "core/src/runtime/platform/runtime_bridge.cpp",
           "core/tests/platform/model_bridge_test.cpp",
-          "reports/modules/architecture-host-bootstrap-slices.md"
+          "docs/architecture.md"
         ],
         "operations:operations.getHostMaintenance": [
           "core/src/application/target/host_maintenance.cpp",

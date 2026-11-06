@@ -142,7 +142,7 @@ struct ModelCallMutation {
 };
 
 inline bool valid_model_identifier(std::string_view value) noexcept {
-  // Lowercase UUIDv4, matching doc/21 section 4.1 and target_codec ResourceRef rules.
+  // Lowercase UUIDv4, matching docs/architecture.md section 4.1 and target_codec ResourceRef rules.
   if (value.size() != 36) {
     return false;
   }

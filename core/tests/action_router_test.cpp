@@ -289,7 +289,7 @@ void capacity() {
 }
 
 void quota() {
-  // Production defaults from doc/17: 10 per account per minute, 3 per group per
+  // Production defaults from docs/architecture.md: 10 per account per minute, 3 per group per
   // minute, 1 per private conversation per 10 seconds.
   kiarabot::core::InMemoryRuntimeStore store;
   auto now = RuntimeTimePoint(1000s);

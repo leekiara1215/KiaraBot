@@ -1,7 +1,7 @@
 name: ${COMPOSE_PROJECT_NAME:-kiarabot-production}
 
 # Production uses the same single-host loopback/host-network model as staging
-# (see doc/08-operations.md, "网络、端口与限制"). Images must be immutable
+# (see docs/modules/infrastructure.md, "网络、端口与限制"). Images must be immutable
 # digests: every all-zero digest below is an intentionally unpullable
 # placeholder that the release pipeline must replace before deployment.
 services:
